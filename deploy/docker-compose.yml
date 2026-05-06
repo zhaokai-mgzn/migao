@@ -1,0 +1,99 @@
+version: '3.8'
+
+# 注意：此 docker-compose.yml 用于本地开发环境
+# 生产环境部署时，请使用以下阿里云资源地址：
+# - PostgreSQL: pgm-bp1h7i6rs4ec8964.pg.rds.aliyuncs.com:5432
+# - Redis: r-bp162hozkjd55e18rb.redis.rds.aliyuncs.com:6379
+# 并确保 SERVICE_TOKEN_SECRET 与 SERVICE_TOKEN 保持一致
+
+services:
+  # PostgreSQL 数据库
+  postgres:
+    image: postgres:15-alpine
+    container_name: aikf-postgres
+    environment:
+      POSTGRES_DB: ai_customer_service
+      POSTGRES_USER: app_user
+      POSTGRES_PASSWORD: dev_password_123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../docs/sql/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql
+      - ../docs/sql/002_complete_tables.sql:/docker-entrypoint-initdb.d/002_complete_tables.sql
+      - ../docs/sql/003_orders.sql:/docker-entrypoint-initdb.d/003_orders.sql
+      - ../docs/sql/004_tenant_applications.sql:/docker-entrypoint-initdb.d/004_tenant_applications.sql
+      - ../docs/sql/005_add_product_stock.sql:/docker-entrypoint-initdb.d/005_add_product_stock.sql
+      - ../docs/sql/006_add_updated_at.sql:/docker-entrypoint-initdb.d/006_add_updated_at.sql
+      - ../docs/sql/007_agent_workspace.sql:/docker-entrypoint-initdb.d/007_agent_workspace.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app_user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis 缓存
+  redis:
+    image: redis:7-alpine
+    container_name: aikf-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Java Admin API
+  admin-api:
+    build:
+      context: ../backend/admin-api
+      dockerfile: Dockerfile
+    container_name: aikf-admin-api
+    environment:
+      RDS_HOST: postgres
+      RDS_PORT: 5432
+      RDS_DB: ai_customer_service
+      RDS_USER: app_user
+      RDS_PASSWORD: dev_password_123
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      SERVICE_TOKEN_SECRET: dev-service-token-secret
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Python AI Agent Service
+  ai-agent-service:
+    build:
+      context: ../backend/ai-agent-service
+      dockerfile: Dockerfile
+    container_name: aikf-ai-agent
+    environment:
+      DATABASE_URL: postgresql+asyncpg://app_user:dev_password_123@postgres:5432/ai_customer_service
+      REDIS_URL: redis://redis:6379/0
+      ADMIN_API_BASE_URL: http://admin-api:8080
+      SERVICE_TOKEN: dev-service-token-secret
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
+      DASHSCOPE_MODEL: ${DASHSCOPE_MODEL:-qwen-turbo}
+      DASHVECTOR_API_KEY: ${DASHVECTOR_API_KEY:-}
+      DASHVECTOR_ENDPOINT: ${DASHVECTOR_ENDPOINT:-}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      admin-api:
+        condition: service_started
+
+volumes:
+  postgres_data:
+  redis_data:

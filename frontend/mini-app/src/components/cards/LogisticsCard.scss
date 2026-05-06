@@ -1,0 +1,136 @@
+.logistics-card {
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  overflow: hidden;
+
+  &__header {
+    padding: 20px;
+    border-bottom: 1px solid #f3f4f6;
+  }
+
+  &__company-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  &__icon {
+    font-size: 28px;
+  }
+
+  &__company {
+    font-size: 28px;
+    font-weight: 600;
+    color: #1f2937;
+    flex: 1;
+  }
+
+  &__status {
+    padding: 4px 12px;
+    border-radius: 4px;
+
+    &--transit {
+      background: #e6f7ff;
+    }
+
+    &--delivered {
+      background: #f6ffed;
+    }
+
+    &--pending {
+      background: #fffbe6;
+    }
+
+    &--error {
+      background: #fff2f0;
+    }
+  }
+
+  &__status-text {
+    font-size: 20px;
+    font-weight: 500;
+    color: #1f2937;
+  }
+
+  &__tracking {
+    font-size: 22px;
+    color: #9ca3af;
+    line-height: 1.4;
+  }
+
+  // 时间轴
+  &__timeline {
+    padding: 20px;
+  }
+
+  &__track {
+    display: flex;
+    gap: 16px;
+    min-height: 80px;
+
+    &--active {
+      // 激活状态由子元素控制
+    }
+  }
+
+  &__track-dot-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 20px;
+    flex-shrink: 0;
+    padding-top: 6px;
+  }
+
+  &__track-dot {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #d1d5db;
+    flex-shrink: 0;
+
+    &--active {
+      background: #2f54eb;
+      box-shadow: 0 0 0 4px rgba(47, 84, 235, 0.15);
+    }
+  }
+
+  &__track-line {
+    width: 2px;
+    flex: 1;
+    background: #e5e7eb;
+    margin-top: 4px;
+    margin-bottom: 4px;
+  }
+
+  &__track-content {
+    flex: 1;
+    padding-bottom: 20px;
+  }
+
+  &__track-time {
+    font-size: 22px;
+    color: #9ca3af;
+    line-height: 1.4;
+    display: block;
+    margin-bottom: 4px;
+
+    &--active {
+      color: #2f54eb;
+      font-weight: 500;
+    }
+  }
+
+  &__track-desc {
+    font-size: 24px;
+    color: #6b7280;
+    line-height: 1.5;
+
+    &--active {
+      color: #1f2937;
+      font-weight: 500;
+    }
+  }
+}

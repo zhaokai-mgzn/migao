@@ -1,0 +1,316 @@
+"""
+Skill 基础执行逻辑
+
+提供通用的 Skill 执行函数，避免各 Skill 节点重复代码。
+核心流程：
+1. 从 AgentState 构建 ToolContext 并注入 contextvars
+2. 创建 LLM + bind_tools
+3. 循环执行 Tool Calling 直到 LLM 返回最终回复
+4. 从 Tool 结果中提取实体
+5. 返回更新后的 state 字段
+"""
+
+import asyncio
+import json
+import re
+import traceback
+from typing import List, Any, Optional
+
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import AIMessage, ToolMessage, SystemMessage, HumanMessage
+from loguru import logger
+
+from app.graph.state import AgentState
+from app.tools.base import ToolContext
+from app.tools.registry import ToolRegistry, set_tool_context, get_tool_context
+from app.context.tracker import ConversationTracker
+
+
+# DashScope OpenAI 兼容接口地址
+DASHSCOPE_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+
+# 全局 ConversationTracker 实例（进程内共享）
+_tracker: Optional[ConversationTracker] = None
+
+
+def get_tracker() -> ConversationTracker:
+    """获取全局 ConversationTracker 实例"""
+    global _tracker
+    if _tracker is None:
+        _tracker = ConversationTracker()
+    return _tracker
+
+
+def _strip_think_tags(text: str) -> str:
+    """移除 Qwen3 思考模式的 <think>...</think> 标签及其内容"""
+    if not text:
+        return text
+    # 移除 <think>...</think> 块（含跨行）
+    cleaned = re.sub(r"<think>[\s\S]*?</think>", "", text).strip()
+    return cleaned if cleaned else text
+
+
+def _extract_content(response: AIMessage) -> str:
+    """从 AIMessage 中提取有效文本内容
+
+    兼容 Qwen3 思考模式：
+    1. 优先取 response.content 并移除 <think> 标签
+    2. 若为空，检查 additional_kwargs 中的 reasoning_content（部分模型使用）
+    3. 最终兜底返回空字符串
+    """
+    content = response.content or ""
+    if isinstance(content, list):
+        # 多模态返回：提取文本部分
+        text_parts = [c.get("text", "") for c in content if isinstance(c, dict) and c.get("type") == "text"]
+        content = "".join(text_parts)
+    content = _strip_think_tags(content)
+    if content:
+        return content
+
+    # Fallback: 某些 Qwen3 模型将回复放在 additional_kwargs
+    extra = getattr(response, "additional_kwargs", {}) or {}
+    if extra.get("reasoning_content") and not content:
+        logger.warning("[_extract_content] Only reasoning_content found, no main content")
+    return content
+
+
+def get_skill_llm() -> ChatOpenAI:
+    """创建 Skill 专用 LLM 实例（复用 DashScope 配置）
+
+    注意：启用 Qwen3 的 thinking 模式以提升复杂任务的推理能力
+    """
+    from app.config import settings
+
+    return ChatOpenAI(
+        model=settings.DASHSCOPE_MODEL,
+        api_key=settings.DASHSCOPE_API_KEY,
+        base_url=DASHSCOPE_BASE_URL,
+        temperature=0.7,
+        streaming=True,
+        max_tokens=2048,
+        request_timeout=60,  # LLM 请求超时 60 秒
+        extra_body={"enable_thinking": True},
+    )
+
+
+def build_tool_context(state: AgentState) -> ToolContext:
+    """从 AgentState 构建 ToolContext"""
+    return ToolContext(
+        tenant_id=state["tenant_id"],
+        user_id=str(state["user_id"]),
+        session_id=state.get("session_id", ""),
+        role=state.get("role", "customer"),
+    )
+
+
+def create_skill_registry(tool_names: List[str]) -> ToolRegistry:
+    """创建仅包含指定 Tool 的 Registry 子集
+
+    Args:
+        tool_names: 需要的 Tool 名称列表
+
+    Returns:
+        ToolRegistry: 包含指定 Tool 子集的注册器
+    """
+    from app.tools.registry import create_default_registry
+
+    full_registry = create_default_registry()
+    skill_registry = ToolRegistry()
+
+    for name in tool_names:
+        tool = full_registry.get_tool(name)
+        if tool:
+            skill_registry.register(tool)
+        else:
+            logger.warning(f"[base_skill] Tool '{name}' not found in default registry")
+
+    return skill_registry
+
+
+async def execute_skill(
+    state: AgentState,
+    skill_name: str,
+    tool_names: List[str],
+    system_prompt: str,
+    max_iterations: int = 5,
+) -> dict:
+    """通用 Skill 执行逻辑
+
+    Args:
+        state: 当前图状态
+        skill_name: Skill 名称（用于日志和 state 更新）
+        tool_names: 该 Skill 可用的 Tool 名称列表
+        system_prompt: 该 Skill 的专用 System Prompt
+        max_iterations: 最大 Tool Calling 迭代次数
+
+    Returns:
+        dict: 需要更新的 state 字段
+    """
+    # 1. 构建并注入 ToolContext
+    tool_context = build_tool_context(state)
+    set_tool_context(tool_context)
+
+    # 2. 创建 Skill 的 Tool Registry 子集
+    skill_registry = create_skill_registry(tool_names)
+    langchain_tools = skill_registry.get_langchain_tools()
+
+    # 3. 创建 LLM 并绑定 Tools
+    llm = get_skill_llm()
+    if langchain_tools:
+        llm_with_tools = llm.bind_tools(langchain_tools)
+    else:
+        llm_with_tools = llm
+
+    # 4. 构建消息列表：System Prompt + 历史 messages
+    messages = state["messages"]
+    full_messages: List[Any] = [SystemMessage(content=system_prompt)] + list(messages)
+
+    # 5. Tool Calling 循环
+    tracker = get_tracker()
+    session_id = state.get("session_id", "")
+    final_content = ""
+    new_messages: List[Any] = []
+
+    for iteration in range(max_iterations):
+        logger.info(
+            f"[{skill_name}] Iteration {iteration + 1}/{max_iterations} | "
+            f"tenant={state['tenant_id']} session={session_id}"
+        )
+
+        # 调用 LLM（带超时保护）
+        try:
+            logger.info(
+                f"[{skill_name}][DIAG] LLM call starting | "
+                f"iteration={iteration + 1} msg_count={len(full_messages) + len(new_messages)} "
+                f"tenant={state['tenant_id']} session={session_id}"
+            )
+            response: AIMessage = await asyncio.wait_for(
+                llm_with_tools.ainvoke(full_messages + new_messages),
+                timeout=60.0,
+            )
+            logger.info(
+                f"[{skill_name}][DIAG] LLM call completed | "
+                f"has_tool_calls={bool(response.tool_calls)} "
+                f"content_len={len(response.content or '')} "
+                f"type={type(response).__name__}"
+            )
+        except asyncio.TimeoutError:
+            logger.error(
+                f"[{skill_name}][DIAG] LLM call TIMEOUT after 60s | "
+                f"iteration={iteration + 1} tenant={state['tenant_id']} session={session_id}"
+            )
+            final_content = "抱歉，AI 响应超时，请稍后重试。"
+            break
+        except Exception as e:
+            tb = traceback.format_exc()
+            logger.error(
+                f"[{skill_name}][DIAG] LLM call FAILED | "
+                f"error={type(e).__name__}: {e} | traceback={tb[:500]}"
+            )
+            final_content = "抱歉，AI 响应异常，请稍后重试。"
+            break
+        new_messages.append(response)
+
+        # 检查是否有 tool_calls
+        if not response.tool_calls:
+            # 没有 tool_calls，LLM 返回了最终回复
+            final_content = _extract_content(response)
+            logger.info(
+                f"[{skill_name}] LLM final reply | "
+                f"content_len={len(final_content)} "
+                f"raw_content_len={len(response.content or '')} "
+                f"has_additional_kwargs={bool(getattr(response, 'additional_kwargs', None))}"
+            )
+            break
+
+        # 执行每个 tool_call
+        for tool_call in response.tool_calls:
+            tool_name = tool_call["name"]
+            tool_args = tool_call["args"]
+            tool_call_id = tool_call["id"]
+
+            logger.info(f"[{skill_name}][DIAG] Tool call: {tool_name} | args={tool_args}")
+
+            # 查找并执行 Tool
+            result_str = ""
+            tool_instance = skill_registry.get_tool(tool_name)
+            if tool_instance:
+                try:
+                    logger.info(f"[{skill_name}][DIAG] Tool {tool_name} starting execution")
+                    result = await asyncio.wait_for(
+                        tool_instance.execute(tool_context, **tool_args),
+                        timeout=30.0,  # 工具调用超时 30 秒
+                    )
+                    logger.info(f"[{skill_name}][DIAG] Tool {tool_name} completed | success={result.success}")
+                    result_dict = {
+                        "success": result.success,
+                        "data": result.data,
+                        "error": result.error,
+                        "message": result.message,
+                    }
+                    result_str = json.dumps(result_dict, ensure_ascii=False, default=str)
+
+                    # 从 Tool 结果提取实体
+                    if session_id:
+                        tracker.extract_entities_from_tool_result(
+                            session_id, tool_name, result_dict
+                        )
+                except asyncio.TimeoutError:
+                    logger.error(f"[{skill_name}][DIAG] Tool {tool_name} TIMEOUT after 30s | tenant={state['tenant_id']}")
+                    result_str = json.dumps(
+                        {"success": False, "error": "tool_timeout", "message": f"工具 {tool_name} 执行超时，请稍后重试"},
+                        ensure_ascii=False,
+                    )
+                except Exception as e:
+                    tb = traceback.format_exc()
+                    logger.error(f"[{skill_name}][DIAG] Tool {tool_name} FAILED | error={type(e).__name__}: {e} | traceback={tb[:500]}")
+                    result_str = json.dumps(
+                        {"success": False, "error": "tool_execution_failed", "message": "工具执行失败，请稍后重试"},
+                        ensure_ascii=False,
+                    )
+            else:
+                result_str = json.dumps(
+                    {"success": False, "error": "tool_not_found", "message": f"工具 {tool_name} 不可用"},
+                    ensure_ascii=False,
+                )
+
+            # 添加 ToolMessage（包含 tool name，供 SSE 事件使用）
+            new_messages.append(
+                ToolMessage(content=result_str, tool_call_id=tool_call_id, name=tool_name)
+            )
+    else:
+        # 达到最大迭代次数，取最后一条 AI 消息内容
+        if new_messages:
+            last_ai = [m for m in new_messages if isinstance(m, AIMessage)]
+            if last_ai:
+                extracted = _extract_content(last_ai[-1])
+                final_content = extracted or "抱歉，处理超时，请稍后重试。"
+
+    # 6. 更新实体
+    entities = {}
+    if session_id:
+        extracted = tracker.get_entities(session_id)
+        entities = {
+            "order_nos": extracted.order_nos,
+            "phone_numbers": extracted.phone_numbers,
+            "product_names": extracted.product_names,
+            "product_ids": extracted.product_ids,
+            "amounts": extracted.amounts,
+        }
+
+    # 7. 兜底：如果所有迭代后仍无内容，记录警告
+    if not final_content:
+        logger.warning(
+            f"[{skill_name}] Empty final_content after all iterations | "
+            f"tenant={state['tenant_id']} session={session_id} "
+            f"iterations={min(iteration + 1, max_iterations) if 'iteration' in dir() else 0} "
+            f"new_messages_count={len(new_messages)}"
+        )
+
+    # 8. 返回 state 更新
+    return {
+        "messages": new_messages,
+        "final_answer": final_content,
+        "skill_used": skill_name,
+        "entities": entities,
+    }

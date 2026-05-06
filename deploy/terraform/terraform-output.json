@@ -1,0 +1,32 @@
+{
+  "acr_namespace": {
+    "sensitive": false,
+    "type": "string",
+    "value": "youke"
+  },
+  "admin_api_app_id": {
+    "sensitive": false,
+    "type": "string",
+    "value": "d6a22f49-0c01-48fc-8d0a-7254284a6a16"
+  },
+  "ai_agent_app_id": {
+    "sensitive": false,
+    "type": "string",
+    "value": "01c0759f-4a81-494f-9947-0113d38b86c2"
+  },
+  "database_connection": {
+    "sensitive": false,
+    "type": "string",
+    "value": "pgm-bp1pa751940o7so4.pg.rds.aliyuncs.com"
+  },
+  "oss_bucket_domain": {
+    "sensitive": false,
+    "type": "string",
+    "value": "youke-admin-dev.oss-cn-hangzhou.aliyuncs.com"
+  },
+  "redis_connection": {
+    "sensitive": false,
+    "type": "string",
+    "value": "r-bp11f138b581a864.redis.rds.aliyuncs.com"
+  }
+}

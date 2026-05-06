@@ -1,0 +1,144 @@
+.message-input {
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  border-top: 1px solid #E5E7EB;
+
+  // 图片预览区域
+  &__images {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 16px 24px 0;
+  }
+
+  &__image-item {
+    position: relative;
+    width: 120px;
+    height: 120px;
+  }
+
+  &__image-thumb {
+    width: 120px;
+    height: 120px;
+    border-radius: 8px;
+    background: #F3F4F6;
+  }
+
+  &__image-remove {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__image-remove-icon {
+    color: #ffffff;
+    font-size: 24px;
+    line-height: 1;
+  }
+
+  &__upload-loading {
+    width: 120px;
+    height: 120px;
+    border-radius: 8px;
+    background: #F3F4F6;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__upload-loading-text {
+    font-size: 22px;
+    color: #9CA3AF;
+  }
+
+  // 底部输入栏
+  &__bar {
+    display: flex;
+    align-items: flex-end;
+    padding: 16px 24px;
+    padding-bottom: calc(16px + env(safe-area-inset-bottom));
+    gap: 12px;
+  }
+
+  // 图片选择按钮
+  &__img-btn {
+    flex-shrink: 0;
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    background: #F3F4F6;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    &--disabled {
+      opacity: 0.4;
+    }
+  }
+
+  &__img-btn-icon {
+    font-size: 40px;
+    color: #6B7280;
+    line-height: 1;
+  }
+
+  &__textarea-wrap {
+    flex: 1;
+    background: #F3F4F6;
+    border-radius: 20px;
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+  }
+
+  &__textarea {
+    width: 100%;
+    font-size: 28px;
+    line-height: 1.5;
+    color: #1F2937;
+    max-height: 160px; // 约 4 行
+  }
+
+  &__btn {
+    flex-shrink: 0;
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    padding: 0;
+    margin: 0;
+
+    &::after {
+      border: none;
+    }
+
+    &--active {
+      background: #2F54EB;
+    }
+
+    &--disabled {
+      background: #E5E7EB;
+    }
+
+    &--stop {
+      background: #FF4D4F;
+    }
+  }
+
+  &__btn-icon {
+    font-size: 32px;
+    color: #ffffff;
+    line-height: 1;
+  }
+}

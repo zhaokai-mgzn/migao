@@ -1,0 +1,67 @@
+.knowledge-card {
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  overflow: hidden;
+
+  &__header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 16px 20px;
+    border-bottom: 1px solid #f3f4f6;
+  }
+
+  &__header-icon {
+    font-size: 28px;
+  }
+
+  &__header-title {
+    font-size: 26px;
+    font-weight: 600;
+    color: #1f2937;
+  }
+
+  &__body {
+    padding: 16px 20px;
+  }
+
+  &__title {
+    font-size: 28px;
+    font-weight: 500;
+    color: #1f2937;
+    line-height: 1.5;
+    display: block;
+    margin-bottom: 8px;
+  }
+
+  &__summary {
+    font-size: 24px;
+    color: #6b7280;
+    line-height: 1.6;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 20px;
+    border-top: 1px solid #f3f4f6;
+    background: #f9fafb;
+  }
+
+  &__source {
+    font-size: 22px;
+    color: #9ca3af;
+  }
+
+  &__score {
+    font-size: 22px;
+    color: #9ca3af;
+  }
+}

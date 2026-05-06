@@ -1,0 +1,43 @@
+.chat-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: #F9FAFB;
+  overflow: hidden;
+
+  &__body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+  }
+
+  // 加载状态
+  &__loading {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__loading-text {
+    font-size: 28px;
+    color: #9CA3AF;
+  }
+
+  // 错误提示
+  &__error {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px 24px;
+    background: #FFF2F0;
+    border-bottom: 1px solid #FFCCC7;
+  }
+
+  &__error-text {
+    font-size: 24px;
+    color: #FF4D4F;
+  }
+}

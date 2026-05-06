@@ -1,0 +1,108 @@
+.product-card {
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  padding: 20px;
+  overflow: hidden;
+
+  &__main {
+    display: flex;
+    gap: 16px;
+  }
+
+  &__image {
+    width: 160px;
+    height: 160px;
+    border-radius: 8px;
+    flex-shrink: 0;
+    background: #f3f4f6;
+  }
+
+  &__info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  &__name {
+    font-size: 28px;
+    font-weight: 500;
+    color: #1f2937;
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__price {
+    font-size: 32px;
+    font-weight: 700;
+    color: #ff4d4f;
+    line-height: 1.2;
+  }
+
+  &__sales {
+    font-size: 22px;
+    color: #9ca3af;
+    line-height: 1.2;
+  }
+
+  &__desc {
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid #f3f4f6;
+  }
+
+  &__desc-text {
+    font-size: 24px;
+    color: #6b7280;
+    line-height: 1.5;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__actions {
+    margin-top: 20px;
+    display: flex;
+    gap: 16px;
+  }
+
+  &__btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 64px;
+    border-radius: 8px;
+
+    &--outline {
+      background: #ffffff;
+      border: 1px solid #2f54eb;
+    }
+
+    &--primary {
+      background: #2f54eb;
+    }
+  }
+
+  &__btn-text {
+    font-size: 24px;
+    font-weight: 500;
+
+    &--outline {
+      color: #2f54eb;
+    }
+
+    &--primary {
+      color: #ffffff;
+    }
+  }
+}

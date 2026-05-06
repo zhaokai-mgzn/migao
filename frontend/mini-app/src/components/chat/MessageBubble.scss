@@ -1,0 +1,161 @@
+.message-bubble {
+  display: flex;
+  padding: 8px 24px;
+
+  // 用户消息 - 右对齐
+  &--user {
+    justify-content: flex-end;
+
+    .message-bubble__content {
+      background: #2F54EB;
+      color: #ffffff;
+      border-radius: 16px 16px 4px 16px;
+    }
+
+    .message-bubble__time {
+      text-align: right;
+    }
+  }
+
+  // AI 消息 - 左对齐
+  &--assistant {
+    justify-content: flex-start;
+
+    .message-bubble__content {
+      background: #ffffff;
+      color: #1F2937;
+      border-radius: 16px 16px 16px 4px;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+    }
+
+    .message-bubble__time {
+      text-align: left;
+    }
+  }
+
+  &__wrapper {
+    max-width: 75%;
+    display: flex;
+    flex-direction: column;
+  }
+
+  &__content {
+    padding: 16px 20px;
+    font-size: 28px;
+    line-height: 1.6;
+    word-break: break-all;
+  }
+
+  &__text {
+    white-space: pre-wrap;
+  }
+
+  // 流式光标
+  &__cursor {
+    display: inline;
+    animation: cursor-blink 1s step-end infinite;
+    color: inherit;
+    font-weight: bold;
+  }
+
+  &__time {
+    font-size: 22px;
+    color: #9CA3AF;
+    margin-top: 6px;
+    padding: 0 4px;
+  }
+
+  // 图片区域
+  &__images {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+    padding: 0 4px;
+  }
+
+  &__image {
+    width: 200px;
+    height: 200px;
+    border-radius: 8px;
+    background: #F3F4F6;
+  }
+
+  // 工具调用指示器
+  &__tool-calls {
+    margin-top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  &__tool-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    background: #F3F4F6;
+    border-radius: 8px;
+    font-size: 24px;
+    color: #6B7280;
+  }
+
+  &__tool-icon {
+    font-size: 24px;
+  }
+
+  &__tool-name {
+    font-size: 24px;
+    color: #6B7280;
+  }
+
+  // 卡片区域
+  &__cards {
+    margin-top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  &__card-group {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  &__card-placeholder {
+    padding: 20px;
+    background: #F9FAFB;
+    border: 1px dashed #E5E7EB;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__card-text {
+    font-size: 24px;
+    color: #9CA3AF;
+  }
+
+  // 错误消息
+  &__error {
+    .message-bubble__content {
+      background: #FFF2F0;
+      border: 1px solid #FFCCC7;
+    }
+
+    .message-bubble__text {
+      color: #FF4D4F;
+    }
+  }
+}
+
+@keyframes cursor-blink {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}

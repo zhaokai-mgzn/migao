@@ -1,0 +1,210 @@
+'use client'
+
+import { useState, useCallback } from 'react'
+import {
+  Plus,
+  MessageSquare,
+  Search,
+  X,
+  MoreHorizontal,
+  Trash2,
+} from 'lucide-react'
+import { cn, formatChatTime } from '@/lib/utils'
+import { useChatStore } from '@/store/chat'
+import type { ChatSession } from '@/types'
+
+export default function SessionList() {
+  const {
+    sessions,
+    currentSessionId,
+    isLoadingSessions,
+    searchKeyword,
+    setSearchKeyword,
+    createSession,
+    selectSession,
+    closeSession,
+  } = useChatStore()
+
+  const [contextMenuId, setContextMenuId] = useState<string | null>(null)
+
+  const filteredSessions = sessions.filter(s => {
+    if (!searchKeyword.trim()) return true
+    const kw = searchKeyword.toLowerCase()
+    return (
+      (s.title || '').toLowerCase().includes(kw) ||
+      (s.customer_name || '').toLowerCase().includes(kw) ||
+      (s.last_message || '').toLowerCase().includes(kw)
+    )
+  })
+
+  const handleCloseSession = useCallback(
+    (e: React.MouseEvent, id: string) => {
+      e.stopPropagation()
+      setContextMenuId(null)
+      closeSession(id)
+    },
+    [closeSession]
+  )
+
+
+  return (
+    <div className="w-60 bg-white border-r border-gray-200 flex flex-col h-full flex-shrink-0">
+      {/* 新建会话 */}
+      <div className="p-3 border-b border-gray-100">
+        <button
+          onClick={() => createSession()}
+          className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors text-sm font-medium"
+        >
+          <Plus className="w-4 h-4" />
+          新建对话
+        </button>
+      </div>
+
+      {/* 搜索 */}
+      <div className="px-3 py-2 border-b border-gray-100">
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+          <input
+            type="text"
+            value={searchKeyword}
+            onChange={(e) => setSearchKeyword(e.target.value)}
+            placeholder="搜索会话..."
+            className="w-full h-8 pl-8 pr-8 text-xs bg-gray-50 border border-gray-200 rounded-md focus:outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400/20"
+          />
+          {searchKeyword && (
+            <button
+              onClick={() => setSearchKeyword('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* 会话列表 */}
+      <div className="flex-1 overflow-y-auto">
+        {isLoadingSessions ? (
+          <div className="flex items-center justify-center py-8">
+            <div className="w-5 h-5 border-2 border-primary-600 border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : filteredSessions.length === 0 ? (
+          <div className="text-center py-8 text-gray-400 text-xs">
+            {searchKeyword ? '没有匹配的会话' : '暂无对话记录'}
+          </div>
+        ) : (
+          <div className="py-1">
+            {filteredSessions.map((session) => (
+              <SessionItem
+                key={session.session_id}
+                session={session}
+                isActive={currentSessionId === session.session_id}
+                showContextMenu={contextMenuId === session.session_id}
+                onSelect={() => selectSession(session.session_id)}
+                onToggleMenu={(e) => {
+                  e.stopPropagation()
+                  setContextMenuId(
+                    contextMenuId === session.session_id ? null : session.session_id
+                  )
+                }}
+                onCloseSession={(e) => handleCloseSession(e, session.session_id)}
+                formatTime={formatChatTime}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function SessionItem({
+  session,
+  isActive,
+  showContextMenu,
+  onSelect,
+  onToggleMenu,
+  onCloseSession,
+  formatTime,
+}: {
+  session: ChatSession
+  isActive: boolean
+  showContextMenu: boolean
+  onSelect: () => void
+  onToggleMenu: (e: React.MouseEvent) => void
+  onCloseSession: (e: React.MouseEvent) => void
+  formatTime: (d: string) => string
+}) {
+  return (
+    <div
+      onClick={onSelect}
+      className={cn(
+        'group relative mx-1.5 mb-0.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors',
+        isActive
+          ? 'bg-primary-50 border border-primary-200'
+          : 'hover:bg-gray-50'
+      )}
+    >
+      <div className="flex items-start gap-2.5">
+        {/* 状态指示器 */}
+        <div className="mt-1.5 flex-shrink-0">
+          <div
+            className={cn(
+              'w-2 h-2 rounded-full',
+              session.status === 'active' ? 'bg-green-500' : 'bg-gray-300'
+            )}
+          />
+        </div>
+
+        <div className="flex-1 min-w-0">
+          {/* 标题 + 时间 */}
+          <div className="flex items-center justify-between gap-1">
+            <span
+              className={cn(
+                'text-sm font-medium truncate',
+                isActive ? 'text-primary-700' : 'text-gray-800'
+              )}
+            >
+              {session.title || '新对话'}
+            </span>
+            <span className="text-[10px] text-gray-400 flex-shrink-0">
+              {formatTime(session.updated_at || session.created_at)}
+            </span>
+          </div>
+
+          {/* 最后消息预览 */}
+          <p className="text-xs text-gray-500 truncate mt-0.5">
+            {session.last_message || '暂无消息'}
+          </p>
+        </div>
+
+        {/* 操作菜单 */}
+        <button
+          onClick={onToggleMenu}
+          className={cn(
+            'flex-shrink-0 p-0.5 rounded transition-opacity',
+            showContextMenu
+              ? 'opacity-100'
+              : 'opacity-0 group-hover:opacity-100',
+            'hover:bg-gray-200'
+          )}
+        >
+          <MoreHorizontal className="w-3.5 h-3.5 text-gray-400" />
+        </button>
+      </div>
+
+      {/* 右键菜单 */}
+      {showContextMenu && (
+        <div className="absolute right-2 top-full mt-1 z-20 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[120px]">
+          <button
+            onClick={onCloseSession}
+            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 transition-colors"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            结束会话
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}

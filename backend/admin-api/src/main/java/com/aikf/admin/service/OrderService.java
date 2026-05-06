@@ -1,0 +1,292 @@
+package com.aikf.admin.service;
+
+import com.aikf.admin.config.TenantContext;
+import com.aikf.admin.dto.*;
+import com.aikf.admin.entity.Order;
+import com.aikf.admin.entity.OrderItem;
+import com.aikf.admin.entity.OrderLogistics;
+import com.aikf.admin.exception.BusinessException;
+import com.aikf.admin.mapper.OrderItemMapper;
+import com.aikf.admin.mapper.OrderLogisticsMapper;
+import com.aikf.admin.mapper.OrderMapper;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.BeanUtils;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
+
+/**
+ * 订单服务类
+ * 处理订单的增删改查、状态更新等操作
+ */
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class OrderService extends ServiceImpl<OrderMapper, Order> {
+
+    private final OrderMapper orderMapper;
+    private final OrderItemMapper orderItemMapper;
+    private final OrderLogisticsMapper orderLogisticsMapper;
+
+    /**
+     * 订单号序列号（线程安全）
+     */
+    private static final AtomicInteger ORDER_SEQ = new AtomicInteger(0);
+
+    /**
+     * 合法的状态流转定义
+     * key: 当前状态, value: 允许流转到的目标状态集合
+     */
+    private static final Map<String, Set<String>> STATUS_TRANSITIONS = Map.of(
+            "pending", Set.of("confirmed", "cancelled"),
+            "confirmed", Set.of("producing", "cancelled"),
+            "producing", Set.of("shipped", "cancelled"),
+            "shipped", Set.of("completed"),
+            "completed", Set.of(),
+            "cancelled", Set.of()
+    );
+
+    /**
+     * 分页查询订单列表
+     *
+     * @param page     页码
+     * @param size     每页大小
+     * @param status   订单状态
+     * @param keyword  搜索关键词（客户姓名/电话/订单号）
+     * @param tenantId 租户ID
+     * @return 分页响应
+     */
+    public PageResponse<OrderListResponse> getOrderPage(long page, long size, String status, String keyword, Long tenantId) {
+        LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<>();
+
+        // 状态筛选
+        if (StringUtils.hasText(status)) {
+            wrapper.eq(Order::getStatus, status);
+        }
+
+        // 关键词搜索（客户姓名/电话/订单号）
+        if (StringUtils.hasText(keyword)) {
+            wrapper.and(w -> w.like(Order::getCustomerName, keyword)
+                    .or()
+                    .like(Order::getCustomerPhone, keyword)
+                    .or()
+                    .like(Order::getOrderNo, keyword));
+        }
+
+        // 按创建时间倒序
+        wrapper.orderByDesc(Order::getCreatedAt);
+
+        // 执行分页查询
+        Page<Order> orderPage = new Page<>(page, size);
+        Page<Order> resultPage = orderMapper.selectPage(orderPage, wrapper);
+
+        // 转换为响应 DTO
+        List<OrderListResponse> responses = resultPage.getRecords().stream()
+                .map(this::convertToListResponse)
+                .collect(Collectors.toList());
+
+        return PageResponse.of(resultPage.getTotal(), resultPage.getCurrent(), resultPage.getSize(), responses);
+    }
+
+    /**
+     * 根据ID查询订单详情（含订单明细和物流信息）
+     *
+     * @param id 订单ID
+     * @return 订单详情响应
+     */
+    public OrderDetailResponse getOrderById(String id) {
+        Order order = orderMapper.selectById(id);
+        if (order == null) {
+            throw BusinessException.notFound("订单");
+        }
+
+        return convertToDetailResponse(order);
+    }
+
+    /**
+     * 创建订单
+     *
+     * @param request  创建请求
+     * @param tenantId 租户ID
+     * @return 订单详情响应
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public OrderDetailResponse createOrder(OrderCreateRequest request, Long tenantId) {
+        // 计算总金额
+        BigDecimal totalAmount = request.getItems().stream()
+                .map(OrderCreateRequest.OrderItemRequest::getSubtotal)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        // 创建订单实体
+        Order order = new Order();
+        order.setTenantId(tenantId);
+        order.setOrderNo(generateOrderNo());
+        order.setCustomerName(request.getCustomerName());
+        order.setCustomerPhone(request.getCustomerPhone());
+        order.setCustomerAddress(request.getCustomerAddress());
+        order.setTotalAmount(totalAmount);
+        order.setStatus("pending");
+        order.setRemark(request.getRemark());
+
+        // 保存订单
+        orderMapper.insert(order);
+
+        // 保存订单明细
+        for (OrderCreateRequest.OrderItemRequest itemRequest : request.getItems()) {
+            OrderItem item = new OrderItem();
+            item.setTenantId(tenantId);
+            item.setOrderId(order.getId());
+            item.setProductId(itemRequest.getProductId());
+            item.setProductName(itemRequest.getProductName());
+            item.setQuantity(itemRequest.getQuantity());
+            item.setUnitPrice(itemRequest.getUnitPrice());
+            item.setWidth(itemRequest.getWidth());
+            item.setHeight(itemRequest.getHeight());
+            item.setProcessingInfo(itemRequest.getProcessingInfo());
+            item.setSubtotal(itemRequest.getSubtotal());
+            orderItemMapper.insert(item);
+        }
+
+        log.info("创建订单成功: id={}, orderNo={}, totalAmount={}", order.getId(), order.getOrderNo(), totalAmount);
+
+        return getOrderById(order.getId());
+    }
+
+    /**
+     * 更新订单状态
+     * 遵循状态流转规则：pending -> confirmed -> producing -> shipped -> completed
+     * 支持取消订单（pending / confirmed / producing 状态下）
+     *
+     * @param id     订单ID
+     * @param status 新状态
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void updateOrderStatus(String id, String status) {
+        Order order = orderMapper.selectById(id);
+        if (order == null) {
+            throw BusinessException.notFound("订单");
+        }
+
+        // 校验状态值
+        if (!STATUS_TRANSITIONS.containsKey(status)) {
+            throw BusinessException.validationError("无效的订单状态: " + status);
+        }
+
+        // 校验状态流转是否合法
+        String currentStatus = order.getStatus();
+        Set<String> allowedTargets = STATUS_TRANSITIONS.getOrDefault(currentStatus, Set.of());
+        if (!allowedTargets.contains(status)) {
+            throw BusinessException.validationError(
+                    String.format("订单状态不允许从 [%s] 变更为 [%s]", currentStatus, status));
+        }
+
+        order.setStatus(status);
+        orderMapper.updateById(order);
+
+        log.info("更新订单状态成功: id={}, {} -> {}", id, currentStatus, status);
+    }
+
+    /**
+     * 删除订单（逻辑删除，仅允许待确认状态）
+     *
+     * @param id 订单ID
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void deleteOrder(String id) {
+        Order order = orderMapper.selectById(id);
+        if (order == null) {
+            throw BusinessException.notFound("订单");
+        }
+
+        // 仅允许待确认状态的订单被删除
+        if (!"pending".equals(order.getStatus())) {
+            throw BusinessException.validationError("仅允许删除待确认状态的订单，当前状态: " + order.getStatus());
+        }
+
+        // 逻辑删除订单
+        orderMapper.deleteById(id);
+
+        // 逻辑删除订单明细
+        LambdaQueryWrapper<OrderItem> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(OrderItem::getOrderId, id);
+        List<OrderItem> items = orderItemMapper.selectList(wrapper);
+        for (OrderItem item : items) {
+            orderItemMapper.deleteById(item.getId());
+        }
+
+        log.info("删除订单成功: id={}, orderNo={}", id, order.getOrderNo());
+    }
+
+    /**
+     * 生成订单号
+     * 格式: ORD-yyyyMMdd-XXXX（线程安全）
+     */
+    private String generateOrderNo() {
+        String datePart = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+        int seq = ORDER_SEQ.incrementAndGet() % 10000;
+        return String.format("ORD-%s-%04d", datePart, seq);
+    }
+
+    /**
+     * 转换为列表响应 DTO
+     */
+    private OrderListResponse convertToListResponse(Order order) {
+        OrderListResponse response = new OrderListResponse();
+        BeanUtils.copyProperties(order, response);
+        return response;
+    }
+
+    /**
+     * 转换为详情响应 DTO（含订单明细和物流信息）
+     */
+    private OrderDetailResponse convertToDetailResponse(Order order) {
+        OrderDetailResponse response = new OrderDetailResponse();
+        BeanUtils.copyProperties(order, response);
+
+        // 查询订单明细
+        List<OrderItem> items = orderItemMapper.selectByOrderId(order.getId());
+        List<OrderDetailResponse.OrderItemResponse> itemResponses = items.stream()
+                .map(this::convertToItemResponse)
+                .collect(Collectors.toList());
+        response.setItems(itemResponses);
+
+        // 查询物流信息
+        List<OrderLogistics> logisticsList = orderLogisticsMapper.selectByOrderId(order.getId(), TenantContext.getTenantId());
+        if (logisticsList != null && !logisticsList.isEmpty()) {
+            OrderLogistics logistics = logisticsList.get(0); // 取最新一条
+            OrderDetailResponse.LogisticsInfo logisticsInfo = new OrderDetailResponse.LogisticsInfo();
+            logisticsInfo.setId(logistics.getId());
+            logisticsInfo.setLogisticsCompany(logistics.getLogisticsCompany());
+            logisticsInfo.setTrackingNo(logistics.getTrackingNo());
+            logisticsInfo.setStatus(logistics.getStatus());
+            logisticsInfo.setTrackingInfo(logistics.getTrackingInfo());
+            logisticsInfo.setShippedAt(logistics.getShippedAt());
+            logisticsInfo.setDeliveredAt(logistics.getDeliveredAt());
+            response.setLogistics(logisticsInfo);
+        }
+
+        return response;
+    }
+
+    /**
+     * 转换为订单明细响应 DTO
+     */
+    private OrderDetailResponse.OrderItemResponse convertToItemResponse(OrderItem item) {
+        OrderDetailResponse.OrderItemResponse response = new OrderDetailResponse.OrderItemResponse();
+        BeanUtils.copyProperties(item, response);
+        return response;
+    }
+}
