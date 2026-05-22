@@ -16,6 +16,9 @@ terraform.tfstate.*
 .vscode/
 .idea/
 .qoder/
+!.qoder/
+!.qoder/agents/
+!.qoder/agents/**
 *.swp
 *.swo
 
