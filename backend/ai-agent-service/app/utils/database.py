@@ -19,7 +19,7 @@ from app.config import settings
 # 根据环境选择连接池
 # 开发环境：NullPool 简化配置
 # 生产环境：QueuePool 提高性能
-is_dev = settings.ENVIRONMENT == "development"
+is_dev = settings.DEBUG
 
 if is_dev:
     # 开发环境使用 NullPool
