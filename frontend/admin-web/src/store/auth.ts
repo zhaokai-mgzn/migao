@@ -26,9 +26,9 @@ function setCookie(name: string, value: string, days = 7) {
 }
 
 function deleteCookie(name: string) {
-  let cookieStr = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`
+  let cookieStr = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`
   if (COOKIE_DOMAIN) {
-    cookieStr += ` domain=${COOKIE_DOMAIN};`
+    cookieStr += `; domain=${COOKIE_DOMAIN}`
   }
   document.cookie = cookieStr
 }
