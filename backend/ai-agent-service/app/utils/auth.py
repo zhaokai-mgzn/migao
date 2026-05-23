@@ -162,7 +162,7 @@ def verify_jwt_token(token: str) -> Dict[str, Any]:
             token,
             settings.JWT_PUBLIC_KEY,
             algorithms=["RS256"],
-            audience="youke",  # 验证 audience
+            audience=["youke"],  # 验证 audience
         )
         return payload
     except ExpiredSignatureError:
