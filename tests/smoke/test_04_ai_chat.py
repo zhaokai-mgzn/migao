@@ -27,7 +27,6 @@ class TestAIChatSSE:
         data = resp.json()
         session_data = data.get("data", data)
         assert session_data.get("id"), "Session has no ID"
-        return session_data["id"]
 
     def test_chat_send_message(self, authed_ai_client: SmokeTestClient):
         """发送消息获取 SSE 流式响应"""

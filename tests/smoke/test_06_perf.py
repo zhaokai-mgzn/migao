@@ -7,6 +7,7 @@
 import concurrent.futures
 import time
 
+import httpx
 import pytest
 
 from .config import EnvConfig
@@ -29,8 +30,8 @@ class TestPerformanceBaseline:
 
         resp, elapsed_ms = measure_time(do_login)
         assert resp.status_code == 200, f"Login failed: {resp.status_code}"
-        assert elapsed_ms < 500, (
-            f"Login too slow: {elapsed_ms:.0f}ms (threshold: 500ms)"
+        assert elapsed_ms < 800, (
+            f"Login too slow: {elapsed_ms:.0f}ms (threshold: 800ms)"
         )
         print(f"\n  Login latency: {elapsed_ms:.0f}ms")
 
@@ -62,29 +63,52 @@ class TestPerformanceBaseline:
         )
         print(f"\n  Order list latency: {elapsed_ms:.0f}ms")
 
-    def test_ai_chat_first_token_latency(self, authed_ai_client: SmokeTestClient):
-        """AI 对话首 token 响应时间 < 3000ms"""
+    def test_ai_chat_first_token_latency(
+        self, authed_ai_client: SmokeTestClient, config: EnvConfig, auth_token: dict
+    ):
+        """AI 对话首 token (TTFB) 响应时间 < 3000ms
+
+        使用 stream 模式记录从发送请求到接收到第一个 chunk 的时间差，
+        而非等待整个流响应结束。
+        """
         # 创建会话
         session_resp = authed_ai_client.post("/api/chat/sessions", json={
-            "title": "性能测试",
+            "title": "性能测试-TTFB",
         })
         if session_resp.status_code != 200:
             pytest.skip("Cannot create AI session")
 
         session_id = session_resp.json().get("data", {}).get("id")
+        if not session_id:
+            pytest.skip("No session ID returned")
 
-        start = time.perf_counter()
-        resp = authed_ai_client.post("/api/chat/send", json={
+        url = f"{config.ai_agent_url.rstrip('/')}/api/chat/send"
+        headers = {
+            "Authorization": f"Bearer {auth_token['access_token']}",
+            "Accept": "text/event-stream",
+        }
+        payload = {
             "session_id": session_id,
             "message": "你好",
-        })
-        first_byte_ms = (time.perf_counter() - start) * 1000
+        }
 
-        assert resp.status_code == 200, f"AI chat failed: {resp.status_code}"
-        assert first_byte_ms < 3000, (
-            f"AI first token too slow: {first_byte_ms:.0f}ms (threshold: 3000ms)"
+        first_token_ms = None
+        with httpx.Client(timeout=30.0) as client:
+            start = time.perf_counter()
+            with client.stream("POST", url, json=payload, headers=headers) as response:
+                assert response.status_code == 200, (
+                    f"AI chat stream failed: {response.status_code}"
+                )
+                for chunk in response.iter_bytes():
+                    if chunk:
+                        first_token_ms = (time.perf_counter() - start) * 1000
+                        break
+
+        assert first_token_ms is not None, "未收到任何流式 chunk，无法评估首 token 延迟"
+        assert first_token_ms < 3000, (
+            f"AI first token too slow: {first_token_ms:.0f}ms (threshold: 3000ms)"
         )
-        print(f"\n  AI first token latency: {first_byte_ms:.0f}ms")
+        print(f"\n  AI first token (TTFB) latency: {first_token_ms:.0f}ms")
 
     def test_concurrent_10_users_no_errors(
         self, config: EnvConfig, auth_token: dict

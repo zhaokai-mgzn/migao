@@ -41,7 +41,10 @@ def auth_token(admin_client: SmokeTestClient, config: EnvConfig) -> Dict[str, st
         "tenantId": config.tenant_id,
     })
     if resp.status_code != 200:
-        pytest.skip(f"Login failed ({resp.status_code}), cannot run authenticated tests")
+        pytest.fail(
+            f"登录失败: status={resp.status_code}, body={resp.text[:300]} - "
+            f"P0 冒烟测试要求登录链路必须可用，禁止静默跳过"
+        )
 
     data = resp.json()
     token_data = data.get("data", data)
@@ -49,7 +52,7 @@ def auth_token(admin_client: SmokeTestClient, config: EnvConfig) -> Dict[str, st
     refresh_token = token_data.get("refreshToken", token_data.get("refresh_token", ""))
 
     if not access_token:
-        pytest.skip("No access token in login response")
+        pytest.fail("登录响应缺少 access token，认证链路异常")
 
     admin_client.set_token(access_token, refresh_token)
     return {"access_token": access_token, "refresh_token": refresh_token}

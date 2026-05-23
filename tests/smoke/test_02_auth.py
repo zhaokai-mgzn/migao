@@ -111,12 +111,17 @@ class TestUnauthorizedAccess:
             client.close()
 
     def test_get_current_user(self, authed_admin_client: SmokeTestClient):
-        """已认证用户获取当前用户信息"""
+        """已认证用户获取当前用户信息
+
+        仅在 status_code == 200 时才断言 body 内容，避免对未实现/路由不同
+        的环境误报。非 200 状态下跳过 body 验证但不作为失败。
+        """
         resp = authed_admin_client.get("/api/auth/me")
-        if resp.status_code == 200:
-            data = resp.json()
-            user_data = data.get("data", data)
-            # 验证包含用户基本信息
-            assert "user" in user_data or "username" in user_data or "id" in user_data, (
-                f"Missing user info in /me response: {user_data.keys()}"
-            )
+        if resp.status_code != 200:
+            return
+        data = resp.json()
+        user_data = data.get("data", data)
+        # 验证包含用户基本信息
+        assert "user" in user_data or "username" in user_data or "id" in user_data, (
+            f"Missing user info in /me response: {user_data.keys()}"
+        )
