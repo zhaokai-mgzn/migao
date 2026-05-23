@@ -110,6 +110,9 @@ class OrderQueryTool(BaseTool):
         # 兼容 LLM 传入 order_id 作为 order_no 的别名
         if not order_no and order_id:
             order_no = order_id
+        # 强制转换分页参数为 int（LLM 可能传字符串）
+        page = int(page) if page else 1
+        page_size = int(page_size) if page_size else 10
         # 权限检查
         if not self.check_permission(context):
             return ToolResult(

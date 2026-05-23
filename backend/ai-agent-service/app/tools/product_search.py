@@ -92,6 +92,9 @@ class ProductSearchTool(BaseTool):
         Returns:
             ToolResult: 搜索结果
         """
+        # 强制转换分页参数为 int（LLM 可能传字符串）
+        page = int(page) if page else 1
+        size = int(size) if size else 5
         # 权限检查
         if not self.check_permission(context):
             return ToolResult(
