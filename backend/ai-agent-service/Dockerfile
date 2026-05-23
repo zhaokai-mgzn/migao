@@ -10,9 +10,10 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends gcc libpq-dev && \
     rm -rf /var/lib/apt/lists/*
 
-# 复制并安装 Python 依赖（使用阿里云镜像源加速）
+# 复制并安装 Python 依赖
+ARG PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/
+RUN pip install --no-cache-dir -r requirements.txt -i ${PIP_INDEX_URL} --trusted-host mirrors.aliyun.com --trusted-host pypi.org --trusted-host files.pythonhosted.org
 
 # 复制应用代码
 COPY . .
