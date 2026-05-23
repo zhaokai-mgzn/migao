@@ -803,24 +803,67 @@ ENTRYPOINT ["java", \
 ### 5.2 管理前端 — OSS + CDN 静态托管
 
 ```bash
-# 1. 构建静态文件
+# 1. 构建静态文件（Next.js static export）
 cd frontend/admin-web
-npm run build
+npm run build           # output: 'export' + trailingSlash: true → 生成 out/<route>/index.html
 
 # 2. 上传到 OSS
-ossutil cp -r out/ oss://youke-admin-dev/ --update
+ossutil cp -r out/ oss://ai-customer-service-admin-dev/ --update
 
-# 3. CDN 刷新缓存（可选，更新后执行）
+# 3. 应用 OSS 静态网站托管配置（关键）
+./deploy/scripts/apply-oss-website.sh ai-customer-service-admin-dev cn-hangzhou oss-bucket-put-object
+
+# 4. 清理 ossutil 上传时遗留的空目录标记 object（关键）
+./deploy/scripts/clean-oss-dir-markers.sh ai-customer-service-admin-dev cn-hangzhou oss-bucket-put-object
+
+# 5. CDN 刷新缓存（可选，更新后执行）
 aliyun cdn RefreshObjectCaches --ObjectPath "https://admin.migaozn.com/" --ObjectType Directory
 ```
 
+**OSS 静态网站托管配置说明**（`deploy/oss-website.xml`）：
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<WebsiteConfiguration>
+  <IndexDocument>
+    <Suffix>index.html</Suffix>
+    <SupportSubDir>true</SupportSubDir>   <!-- 支持子目录默认首页 -->
+    <Type>0</Type>                         <!-- 0=Redirect, 1=Index, 2=NoSuchKey -->
+  </IndexDocument>
+  <ErrorDocument>
+    <Key>404.html</Key>
+    <HttpStatus>404</HttpStatus>           <!-- 必须 404；若设 200 会回退到首页伪装内容 -->
+  </ErrorDocument>
+</WebsiteConfiguration>
+```
+
+⚠️ **历史踩坑（已修复）**：
+
+- ErrorDocument 历史配置为 `Key=index.html, HttpStatus=200`，任何 404 请求都会被改写为
+  返回首页 HTML（HTTP 200），导致用户访问 `/dashboard/`、`/products/` 等受保护路由时
+  浏览器看到的是营销首页，从而出现"登录后跳转却看到首页"的诡异现象。
+  当前修复后：`Key=404.html, HttpStatus=404`，且 `SupportSubDir=true`。
+- ossutil 上传时会为每个目录创建 0 字节占位 object（如 `dashboard/`），
+  会遮挡 IndexDocument-SubDir 路由，必须运行 `clean-oss-dir-markers.sh` 清理。
+
 **CDN 配置说明**：
 
-1. 在阿里云 CDN 控制台添加加速域名（如 `admin.migaozn.com`）
-2. 源站类型选择 **OSS 域名**，填入 OSS Bucket 域名
-3. 配置 HTTPS 证书
-4. 启用压缩（Gzip/Brotli）
-5. 配置回源 404 规则重定向到 `index.html`（支持 SPA 路由）
+1. 在阿里云 CDN 控制台添加加速域名（如 `admin.migaozn.com`）。
+2. **源站类型选择 OSS 域名，且填写「静态网站托管域名」**
+   `ai-customer-service-admin-dev.oss-website-cn-hangzhou.aliyuncs.com`，
+   而非 OSS REST 域名。只有这样 SubDir 路由 + ErrorDocument 才会经 CDN 透传到
+   `https://admin.migaozn.com/dashboard/` 等自定义域名 URL。
+3. 配置 HTTPS 证书。
+4. 启用压缩（Gzip/Brotli）。
+5. 自定义错误页（可选）：CDN 配置 404 → `/404.html`。
+
+**关于直接通过 OSS bucket-cname 自定义域名访问**：
+
+- `aliyun oss bucket-cname` 将 `admin.migaozn.com` 直接绑定到 bucket REST endpoint，
+  此模式下 OSS 静态网站托管功能（SubDir、ErrorDocument）不会生效，
+  访问 `/dashboard/` 等子路径将返回 `NoSuchKey 404`。
+- 生产环境必须经过 CDN（或 Aliyun ESA），由 CDN 回源到 website endpoint，
+  才能让 SPA 子路径路由可用。
 
 ---
 

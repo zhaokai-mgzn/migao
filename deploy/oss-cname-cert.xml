@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<BucketCnameConfiguration>
+  <Cname>
+    <Domain>admin.migaozn.com</Domain>
+    <CertificateConfiguration>
+      <CertId>25182882-cn-hangzhou</CertId>
+      <Force>true</Force>
+    </CertificateConfiguration>
+  </Cname>
+</BucketCnameConfiguration>
