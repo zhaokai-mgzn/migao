@@ -298,8 +298,8 @@ export const fileApi = {
 }
 
 // ========== 聊天 API ==========
-// AI Agent 服务可能部署在不同的端口/地址
-const AI_SERVICE_URL = process.env.NEXT_PUBLIC_AI_SERVICE_URL || 'http://localhost:8001'
+// AI Agent 服务部署地址（通过环境变量配置，见 .env.production / .env.development）
+const AI_SERVICE_URL = process.env.NEXT_PUBLIC_AI_API_BASE_URL || 'http://localhost:8001'
 
 export const chatApi = {
   /** 获取会话列表 */
