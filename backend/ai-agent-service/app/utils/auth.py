@@ -157,13 +157,21 @@ def verify_jwt_token(token: str) -> Dict[str, Any]:
             )
     
     try:
-        # 使用 RS256 公钥验证
+        # 使用 RS256 公钥验证（禁用内置 audience 检查，手动验证以兼容 JJWT 数组格式）
         payload = jwt.decode(
             token,
             settings.JWT_PUBLIC_KEY,
             algorithms=["RS256"],
-            audience="youke",  # 验证 audience
+            options={"verify_aud": False},
         )
+        # 手动验证 audience（兼容字符串和数组格式）
+        aud_claim = payload.get("aud", [])
+        if isinstance(aud_claim, str):
+            aud_claim = [aud_claim]
+        if "youke" not in aud_claim:
+            raise jwt.exceptions.InvalidTokenError(
+                f"Audience doesn't match: expected 'youke', got {aud_claim}"
+            )
         return payload
     except ExpiredSignatureError:
         logger.warning("JWT verification failed: token has expired")
