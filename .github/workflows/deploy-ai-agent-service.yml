@@ -1,0 +1,81 @@
+name: Build and Deploy ai-agent-service
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/ai-agent-service/**'
+  workflow_dispatch:  # 支持手动触发
+
+env:
+  ACR_REGISTRY: crpi-qdcgkzwx9p9zckga.cn-hangzhou.personal.cr.aliyuncs.com
+  ACR_NAMESPACE: ai-customer-service
+  IMAGE_NAME: ai-agent-service
+  SAE_APP_ID: 01c0759f-4a81-494f-9947-0113d38b86c2
+  SAE_REGION: cn-hangzhou
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set image tag
+        id: tag
+        run: echo "IMAGE_TAG=v$(date +%Y%m%d%H%M%S)" >> $GITHUB_OUTPUT
+
+      - name: Login to Alibaba Cloud ACR
+        run: |
+          docker login ${{ env.ACR_REGISTRY }} \
+            --username ${{ secrets.ACR_USERNAME }} \
+            --password ${{ secrets.ACR_PASSWORD }}
+
+      - name: Build and push Docker image
+        working-directory: backend/ai-agent-service
+        run: |
+          IMAGE_FULL=${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.IMAGE_TAG }}
+          docker build -t $IMAGE_FULL .
+          docker push $IMAGE_FULL
+          echo "IMAGE_FULL=$IMAGE_FULL" >> $GITHUB_ENV
+
+      - name: Install Aliyun CLI
+        run: |
+          curl -sL https://aliyuncli.alicdn.com/aliyun-cli-linux-latest-amd64.tgz -o aliyun-cli.tgz
+          tar xzf aliyun-cli.tgz
+          sudo mv aliyun /usr/local/bin/
+
+      - name: Deploy to SAE
+        run: |
+          # 配置凭证
+          aliyun configure set \
+            --access-key-id ${{ secrets.ALIYUN_ACCESS_KEY_ID }} \
+            --access-key-secret ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }} \
+            --region ${{ env.SAE_REGION }}
+
+          # 获取当前完整环境变量（全量，避免丢失配置）
+          ENVS=$(aliyun sae DescribeApplicationConfig \
+            --AppId ${{ env.SAE_APP_ID }} | \
+            python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('Data',{}).get('Envs','[]'))")
+
+          # 部署新镜像
+          aliyun sae DeployApplication \
+            --AppId ${{ env.SAE_APP_ID }} \
+            --ImageUrl "$IMAGE_FULL" \
+            --Envs "$ENVS"
+
+          echo "✅ 部署已触发，镜像: $IMAGE_FULL"
+
+      - name: Verify deployment
+        run: |
+          echo "等待服务启动..."
+          sleep 60
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" https://ai-api.migaozn.com/health)
+          echo "健康检查响应码: $HTTP_CODE"
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "❌ 健康检查失败"
+            exit 1
+          fi
+          echo "✅ 部署成功，服务健康"
