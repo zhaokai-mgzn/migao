@@ -65,7 +65,7 @@ class BaseTool(ABC):
     
     # 权限控制
     require_auth: bool = True
-    allowed_roles: list[str] = ["customer", "admin", "agent"]
+    allowed_roles: list[str] = ["customer", "admin", "agent", "super_admin", "tenant_admin"]
     
     def __init__(self):
         """初始化 Tool"""
