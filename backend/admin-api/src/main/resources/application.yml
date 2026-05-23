@@ -22,7 +22,9 @@ spring:
   
   # PostgreSQL 数据库配置
   datasource:
-    url: jdbc:postgresql://${RDS_HOST:localhost}:${RDS_PORT:5432}/${RDS_DB:ai_customer_service}
+    # stringtype=unspecified 使 PostgreSQL JDBC 驱动允许 String 参数隐式转换为 JSONB，
+    # 修复 MyBatis-Plus + JacksonTypeHandler 更新 JSONB 字段时报错 "column is of type jsonb but expression is of type character varying"
+    url: jdbc:postgresql://${RDS_HOST:localhost}:${RDS_PORT:5432}/${RDS_DB:ai_customer_service}?stringtype=unspecified
     username: ${RDS_USER:app_user}
     password: ${RDS_PASSWORD:}
     driver-class-name: org.postgresql.Driver
