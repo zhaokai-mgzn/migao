@@ -2,9 +2,11 @@
 <WebsiteConfiguration>
   <IndexDocument>
     <Suffix>index.html</Suffix>
+    <SupportSubDir>true</SupportSubDir>
+    <Type>0</Type>
   </IndexDocument>
   <ErrorDocument>
-    <Key>index.html</Key>
-    <HttpStatus>200</HttpStatus>
+    <Key>404.html</Key>
+    <HttpStatus>404</HttpStatus>
   </ErrorDocument>
 </WebsiteConfiguration>
