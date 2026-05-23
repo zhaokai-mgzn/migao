@@ -12,7 +12,7 @@ aiohttp==3.11.11
 dashscope==1.20.14
 
 # RAG 相关
-langgraph>=0.2.0
+langgraph==0.2.60
 langchain==0.3.14
 langchain-openai==0.3.6
 langchain-community==0.3.14
@@ -24,7 +24,7 @@ python-docx==1.1.2
 pdfplumber==0.11.4
 
 # 向量计算
-numpy>=1.24.0
+numpy==1.26.4
 
 # SSE
 sse-starlette==2.2.1
@@ -32,7 +32,7 @@ sse-starlette==2.2.1
 # 数据库
 asyncpg==0.30.0
 SQLAlchemy==2.0.37
-greenlet>=3.0.0
+greenlet==3.1.1
 redis==5.2.1
 
 # 工具库
@@ -49,4 +49,4 @@ pytest==8.3.4
 pytest-asyncio==0.25.1
 pytest-cov==6.0.0
 pytest-mock==3.14.0
-httpx>=0.28.0  # for TestClient async
+httpx==0.28.1  # for TestClient async
