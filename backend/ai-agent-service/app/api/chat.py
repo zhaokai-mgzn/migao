@@ -174,64 +174,89 @@ async def _agent_stream_to_sse(
         timed_out = False
         try:
             async with asyncio.timeout(stream_timeout):
-                aiter = agent.astream_chat(message, context, chat_history).__aiter__()
-                while True:
+                # 使用 Queue 解耦心跳与 agent 执行，避免 asyncio.wait_for 取消 async generator
+                event_queue: asyncio.Queue = asyncio.Queue()
+                
+                async def _feed_agent_events():
+                    """在独立 Task 中运行 agent stream，将事件放入队列"""
                     try:
-                        # 每 heartbeat_interval 秒检查一次是否有新事件
-                        response = await asyncio.wait_for(aiter.__anext__(), timeout=heartbeat_interval)
-                    except asyncio.TimeoutError:
-                        # 超过 heartbeat_interval 秒没有新事件，发送心跳保持 ALB 连接
-                        yield SSEEvent.heartbeat()
-                        logger.debug(f"[chat/send] Heartbeat sent | session={session_id}")
-                        continue
-                    except StopAsyncIteration:
-                        # 流正常结束
-                        break
+                        async for resp in agent.astream_chat(message, context, chat_history):
+                            await event_queue.put(("event", resp))
+                    except Exception as feed_err:
+                        await event_queue.put(("error", feed_err))
+                    finally:
+                        await event_queue.put(("done", None))
+                
+                feed_task = asyncio.create_task(_feed_agent_events())
+                try:
+                    while True:
+                        try:
+                            msg_type, payload = await asyncio.wait_for(
+                                event_queue.get(), timeout=heartbeat_interval
+                            )
+                        except asyncio.TimeoutError:
+                            # 超过 heartbeat_interval 秒没有新事件，发送心跳保持 ALB 连接
+                            yield SSEEvent.heartbeat()
+                            logger.debug(f"[chat/send] Heartbeat sent | session={session_id}")
+                            continue
+                        
+                        if msg_type == "done":
+                            break
+                        elif msg_type == "error":
+                            raise payload
+                        
+                        response = payload
 
-                    if response.type == "text":
-                        # 文本回复
-                        if response.content:
-                            full_response.append(response.content)
-                            yield SSEEvent.text(response.content)
-                            
-                    elif response.type == "tool_call":
-                        # Tool 调用通知（AgentExecutor 内部已处理执行）
-                        if response.tool_calls:
-                            for tc in response.tool_calls:
-                                tool_name = tc.get("tool", "")
-                                tool_input = tc.get("tool_input", {})
-                                tool_calls_info.append({
-                                    "tool": tool_name,
-                                    "args": tool_input,
-                                })
-                                yield SSEEvent.tool_call(tool_name, tool_input)
+                        if response.type == "text":
+                            # 文本回复
+                            if response.content:
+                                full_response.append(response.content)
+                                yield SSEEvent.text(response.content)
                                 
-                    elif response.type == "tool_result":
-                        # Tool 执行结果（来自 LangGraph Skill 节点）
-                        if response.tool_calls:
-                            for tc in response.tool_calls:
-                                tool_name = tc.get("tool", "")
-                                result_dict = tc.get("result", {})
-                                yield SSEEvent.tool_result(tool_name, result_dict)
-                                
-                                # 检查是否需要发送卡片
-                                if _should_send_card(tool_name, result_dict):
-                                    card_type = _detect_card_type(tool_name, result_dict)
-                                    if card_type:
-                                        yield SSEEvent.card(card_type, result_dict.get("data", {}))
-                    
-                    elif response.type == "suggestions":
-                        # 后续问题建议（来自 LangGraph suggestions_node）
-                        sugs = response.metadata.get("suggestions", []) if response.metadata else []
-                        if sugs:
-                            yield SSEEvent.suggestions(sugs)
-                    
-                    elif response.type == "error":
-                        # 错误（携带 traceback 诊断信息）
-                        error_msg = response.content or "处理失败"
-                        yield SSEEvent.error(error_msg)
-
-                        return
+                        elif response.type == "tool_call":
+                            # Tool 调用通知（AgentExecutor 内部已处理执行）
+                            if response.tool_calls:
+                                for tc in response.tool_calls:
+                                    tool_name = tc.get("tool", "")
+                                    tool_input = tc.get("tool_input", {})
+                                    tool_calls_info.append({
+                                        "tool": tool_name,
+                                        "args": tool_input,
+                                    })
+                                    yield SSEEvent.tool_call(tool_name, tool_input)
+                                    
+                        elif response.type == "tool_result":
+                            # Tool 执行结果（来自 LangGraph Skill 节点）
+                            if response.tool_calls:
+                                for tc in response.tool_calls:
+                                    tool_name = tc.get("tool", "")
+                                    result_dict = tc.get("result", {})
+                                    yield SSEEvent.tool_result(tool_name, result_dict)
+                                    
+                                    # 检查是否需要发送卡片
+                                    if _should_send_card(tool_name, result_dict):
+                                        card_type = _detect_card_type(tool_name, result_dict)
+                                        if card_type:
+                                            yield SSEEvent.card(card_type, result_dict.get("data", {}))
+                        
+                        elif response.type == "suggestions":
+                            # 后续问题建议（来自 LangGraph suggestions_node）
+                            sugs = response.metadata.get("suggestions", []) if response.metadata else []
+                            if sugs:
+                                yield SSEEvent.suggestions(sugs)
+                        
+                        elif response.type == "error":
+                            # 错误（携带 traceback 诊断信息）
+                            error_msg = response.content or "处理失败"
+                            yield SSEEvent.error(error_msg)
+                            return
+                finally:
+                    if not feed_task.done():
+                        feed_task.cancel()
+                        try:
+                            await feed_task
+                        except (asyncio.CancelledError, Exception):
+                            pass
         except asyncio.TimeoutError:
             timed_out = True
             tb = traceback.format_exc()
