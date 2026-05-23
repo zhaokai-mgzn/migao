@@ -2,8 +2,9 @@ package com.aikf.admin.service;
 
 import com.aikf.admin.config.SmsConfig;
 import com.aliyun.dysmsapi20170525.Client;
-import com.aliyun.dysmsapi20170525.models.SendSmsRequest;
-import com.aliyun.dysmsapi20170525.models.SendSmsResponse;
+// TODO: 接入阿里云短信服务后恢复以下导入
+// import com.aliyun.dysmsapi20170525.models.SendSmsRequest;
+// import com.aliyun.dysmsapi20170525.models.SendSmsResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -29,6 +30,12 @@ public class SmsService {
     private static final String CODE_KEY_PREFIX = "sms:code:";
     private static final String LIMIT_KEY_PREFIX = "sms:limit:";
     private static final String DAILY_KEY_PREFIX = "sms:daily:";
+
+    /**
+     * 硬编码万能验证码（测试阶段使用）
+     * TODO: 接入阿里云短信服务后移除硬编码验证码
+     */
+    private static final String BYPASS_CODE = "123456";
 
     private static final long CODE_TTL_SECONDS = 300; // 5 分钟
     private static final long LIMIT_TTL_SECONDS = 60;  // 60 秒防刷
@@ -92,33 +99,22 @@ public class SmsService {
             redisTemplate.expire(dailyKey, ttl);
         }
 
-        // 调用阿里云 SDK 发送短信
-        if (smsClient != null && smsConfig.getAccessKeyId() != null
-                && !smsConfig.getAccessKeyId().isEmpty()) {
-            try {
-                SendSmsRequest request = new SendSmsRequest()
-                        .setPhoneNumbers(phone)
-                        .setSignName(smsConfig.getSignName())
-                        .setTemplateCode(smsConfig.getTemplateCode())
-                        .setTemplateParam("{\"code\":\"" + code + "\"}");
-                SendSmsResponse response = smsClient.sendSms(request);
-                if (!"OK".equals(response.getBody().getCode())) {
-                    log.error("短信发送失败: phone={}, respCode={}, message={}",
-                            phone, response.getBody().getCode(), response.getBody().getMessage());
-                    // 降级为开发模式：短信发送失败不抛异常，验证码已存入 Redis
-                    log.warn("[开发模式] 短信发送失败，降级处理。验证码: phone={}, code={}", phone, code);
-                } else {
-                    log.info("短信发送成功: phone={}", phone);
-                }
-            } catch (Exception e) {
-                log.error("短信发送异常: phone={}", phone, e);
-                // 降级为开发模式：异常不抛出，验证码已存入 Redis
-                log.warn("[开发模式] 短信服务异常，降级处理。验证码: phone={}, code={}", phone, code);
-            }
-        } else {
-            // 未配置短信服务，输出验证码到控制台（开发调试用）
-            log.warn("[开发模式] 短信服务未配置。验证码: phone={}, code={}", phone, code);
-        }
+        // TODO: 接入阿里云短信服务后移除硬编码验证码
+        // 当前阶段不调用阿里云短信 API，统一使用万能验证码 123456 通过校验
+        // 关联决策：阿里云短信服务暂缓集成-标记TODO
+        log.warn("[测试模式] 短信发送已 bypass，请使用万能验证码 {} 完成校验。phone={}, generatedCode={}",
+                BYPASS_CODE, phone, code);
+
+        // 以下为接入真实短信服务的预留代码（暂不执行）
+        // if (smsClient != null && smsConfig.getAccessKeyId() != null
+        //         && !smsConfig.getAccessKeyId().isEmpty()) {
+        //     SendSmsRequest request = new SendSmsRequest()
+        //             .setPhoneNumbers(phone)
+        //             .setSignName(smsConfig.getSignName())
+        //             .setTemplateCode(smsConfig.getTemplateCode())
+        //             .setTemplateParam("{\"code\":\"" + code + "\"}");
+        //     SendSmsResponse response = smsClient.sendSms(request);
+        // }
     }
 
     /**
@@ -129,9 +125,16 @@ public class SmsService {
      * @return 是否校验通过
      */
     public boolean verifyCode(String phone, String code) {
-        // 开发模式万能验证码
+        // TODO: 接入阿里云短信服务后移除硬编码验证码
+        // 测试阶段：固定验证码 123456 直接通过校验
+        if (BYPASS_CODE.equals(code)) {
+            log.info("[测试模式] 使用硬编码 bypass 验证码通过校验: phone={}", phone);
+            return true;
+        }
+
+        // 兼容旧的 sms.dev-code 配置项（已不推荐，保留避免破坏既有环境配置）
         if (devCode != null && !devCode.isEmpty() && devCode.equals(code)) {
-            log.info("[开发模式] 使用万能验证码通过校验: phone={}", phone);
+            log.info("[开发模式] 使用 dev-code 配置通过校验: phone={}", phone);
             return true;
         }
 
