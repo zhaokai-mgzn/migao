@@ -35,8 +35,8 @@ class ProductManageTool(BaseTool):
         "当需要新增商品、修改商品信息、上架或下架商品时使用。"
     )
     
-    # 仅 admin 和 agent 可使用
-    allowed_roles = ["admin", "agent"]
+    # admin、agent、super_admin、tenant_admin 可使用
+    allowed_roles = ["admin", "agent", "super_admin", "tenant_admin"]
     
     parameters = {
         "type": "object",

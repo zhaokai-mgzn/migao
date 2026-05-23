@@ -32,8 +32,8 @@ class InventoryManageTool(BaseTool):
         "当需要查看库存、调整库存数量、查看低库存预警时使用。"
     )
     
-    # admin、agent 和 customer 可使用（customer 仅限 query 操作）
-    allowed_roles = ["admin", "agent", "customer"]
+    # admin、agent、customer、super_admin、tenant_admin 可使用（customer 仅限 query 操作）
+    allowed_roles = ["admin", "agent", "customer", "super_admin", "tenant_admin"]
     
     parameters = {
         "type": "object",
