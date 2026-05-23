@@ -29,7 +29,7 @@ class Settings(BaseSettings):
 
     # 阿里云百炼 LLM 配置
     DASHSCOPE_API_KEY: str = ""
-    DASHSCOPE_MODEL: str = "qwen3.6-plus"
+    DASHSCOPE_MODEL: str = "qwen3.7-max"
     DASHSCOPE_EMBEDDING_MODEL: str = "text-embedding-v3"
 
     # 意图分类小模型配置
