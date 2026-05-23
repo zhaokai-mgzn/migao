@@ -5,18 +5,32 @@ import type { LoginParams, User } from '@/types'
 import { toast } from 'sonner'
 
 // Cookie 操作工具函数
+const COOKIE_DOMAIN = process.env.NEXT_PUBLIC_COOKIE_DOMAIN || ''
+const IS_HTTPS = typeof window !== 'undefined' && window.location.protocol === 'https:'
+
 function setCookie(name: string, value: string, days = 7) {
   let cookieStr = `${name}=${encodeURIComponent(value)}; path=/; SameSite=Lax`
   if (days > 0) {
     const expires = new Date(Date.now() + days * 864e5).toUTCString()
     cookieStr += `; expires=${expires}`
   }
-  // days=0 时不设置 expires，变成 session cookie（浏览器关闭时才过期）
+  // 生产环境设置 domain 以支持跨子域共享（.migaozn.com）
+  if (COOKIE_DOMAIN) {
+    cookieStr += `; domain=${COOKIE_DOMAIN}`
+  }
+  // HTTPS 环境下启用 Secure 标记
+  if (IS_HTTPS) {
+    cookieStr += '; Secure'
+  }
   document.cookie = cookieStr
 }
 
 function deleteCookie(name: string) {
-  document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`
+  let cookieStr = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`
+  if (COOKIE_DOMAIN) {
+    cookieStr += `; domain=${COOKIE_DOMAIN}`
+  }
+  document.cookie = cookieStr
 }
 
 interface AuthState {
