@@ -25,25 +25,35 @@ terraform.tfstate.*
 .DS_Store
 Thumbs.db
 
-# Java
+# Build artifacts
 target/
+backend/admin-api/target/
+node_modules/
+.next/
+frontend/admin-web/.next/
+out/
+frontend/admin-web/out/
+dist/
+.swc/
 
-# Python
+# Python runtime
 venv/
 .venv/
 __pycache__/
 *.pyc
-.pytest_cache/
 .ruff_cache/
+
+# Test outputs
+.pytest_cache/
+**/**.pytest_cache/
 .coverage
 htmlcov/
 
-# Node.js
-node_modules/
-.next/
-out/
-dist/
-.swc/
+# Temporary files
+.qoder-tmp/
+
+# Screenshots
+e2e-test-*.png
 
 # 日志
 *.log

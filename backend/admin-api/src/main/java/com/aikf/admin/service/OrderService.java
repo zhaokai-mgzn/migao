@@ -40,6 +40,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     private final OrderMapper orderMapper;
     private final OrderItemMapper orderItemMapper;
     private final OrderLogisticsMapper orderLogisticsMapper;
+    private final CustomerService customerService;
 
     /**
      * 订单号序列号（线程安全）
@@ -167,6 +168,15 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         }
 
         log.info("创建订单成功: id={}, orderNo={}, totalAmount={}", order.getId(), order.getOrderNo(), totalAmount);
+
+        // 首次下单自动创建客户档案（失败不影响订单创建）
+        try {
+            customerService.createFromOrder(tenantId, request.getCustomerName(),
+                    request.getCustomerPhone(), request.getCustomerAddress());
+        } catch (Exception e) {
+            log.warn("订单创建后自动建档客户失败，忽略: orderId={}, phone={}, error={}",
+                    order.getId(), request.getCustomerPhone(), e.getMessage());
+        }
 
         return getOrderById(order.getId());
     }

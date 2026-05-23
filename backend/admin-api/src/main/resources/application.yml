@@ -71,7 +71,7 @@ mybatis-plus:
   type-aliases-package: com.aikf.admin.entity
   configuration:
     map-underscore-to-camel-case: true
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    # log-impl: org.apache.ibatis.logging.stdout.StdOutImpl  # 开发调试时可开启，生产环境不输出 SQL
   global-config:
     db-config:
       id-type: ASSIGN_UUID

@@ -3,7 +3,7 @@
 > 项目启动日期：2026-04-12  
 > MVP 目标日期：2026-05-24（6 周）  
 > 当前阶段：Phase 3 - MVP 测试与上线  
-> 整体进度：约 72%
+> 整体进度：约 74%
 
 ---
 
@@ -80,7 +80,7 @@
 | P2-9 | product_detail Tool | AI | ✅ 完成 | 100% | 4/19 | 4/21 | 查询商品详情 |
 | P2-10 | logistics_track Tool | AI | ✅ 完成 | 100% | 4/20 | 4/21 | 物流查询 Tool |
 | P2-11 | knowledge_search Tool | AI | ✅ 完成 | 100% | 4/20 | 4/21 | RAG 知识检索 Tool |
-| P2-12 | SSE 事件流实现 | AI | ✅ 完成 | 90% | 4/20 | 4/22 | SSE 流建立成功，待完善 |
+| P2-12 | SSE 事件流实现 | AI | ✅ 完成 | 100% | 4/20 | 5/23 | SSE 流建立成功；2026-05-23 修复心跳机制误杀 async generator 的 bug（asyncio.Queue + 独立 Task + time.monotonic 总超时）|
 
 ### 3.3 C 端小程序
 
@@ -122,7 +122,7 @@
 | P3-2 | 集成测试（API 联测 + 多租户隔离） | AI | 🟡 进行中 | 60% | 4/24 | - | 31 个 API 端点手动测试通过 |
 | P3-3 | 阿里云生产环境部署 | - | ⬜ 待办 | 0% | - | - | SAE + RDS + Redis 生产就绪 |
 | P3-4 | Docker 镜像构建 + CI/CD | - | ⬜ 待办 | 0% | - | - | 云效流水线 |
-| P3-5 | 上线前检查 + Bug 修复 | AI | ✅ 完成 | 100% | 4/24 | 4/25 | 10 个 Bug 发现并全部修复 |
+| P3-5 | 上线前检查 + Bug 修复 | AI | ✅ 完成 | 100% | 4/24 | 5/23 | 10 个 Bug 全部修复；2026-05-23 代码审查再修复 4 项（Tool 权限、分页参数类型、SSE 心跳、LangGraph 节点命名）|
 
 **Phase 3 里程碑**：
 - [ ] MVP 正式上线
@@ -136,9 +136,9 @@
 | 阶段 | 任务数 | 已完成 | 进行中 | 待开始 | 进度 |
 |------|--------|--------|--------|--------|------|
 | Phase 1：基础搭建 | 11 | 8 | 1 | 2 | 85% |
-| Phase 2：MVP 核心功能 | 23 | 20 | 2 | 1 | 95% |
+| Phase 2：MVP 核心功能 | 23 | 21 | 1 | 1 | 97% |
 | Phase 3：MVP 测试与上线 | 5 | 1 | 2 | 2 | 20% |
-| **总计** | **39** | **29** | **5** | **5** | **约 72%** |
+| **总计** | **39** | **30** | **4** | **5** | **约 74%** |
 
 ### 5.2 按模块统计
 
@@ -251,6 +251,28 @@
 - 小程序编译包体积：480KB（目标 ≤ 3MB，远低于限制）
 - 无 TODO/FIXME/HACK 残留
 
+### 2026-05-23（周六）- 代码审查质量修复验证
+
+**今日完成**（代码审查确认已修复并验证通过）：
+- [x] 权限控制修复：BaseTool 默认 `allowed_roles` 已包含 super_admin / tenant_admin；InventoryManageTool / OrderManageTool / ProductManageTool 显式开放；chat.py 入口路由角色映射一致
+- [x] 分页参数类型转换：OrderQueryTool / ProductSearchTool 的 page / page_size / size 已强制 int() 转换，None / 空字符串 / 0 均有默认值兜底，避免 LLM 传字符串导致 TypeError
+- [x] SSE 心跳机制修复：引入 `asyncio.Queue` + 独立 Task 解耦 agent 输出与心跳；`time.monotonic()` 实现总超时控制（兼容 Python 3.9+）；`finally` 中确保后台 Task 正确清理
+- [x] LangGraph 节点重命名：节点名从 `suggestions` 改为 `suggest_node`，避免与 state key 冲突；所有图边引用已同步更新，无遗漏
+
+**关键产出**：
+- 4 项质量修复均通过代码审查验证，涉及 ai-agent-service 权限、Tool 参数鲁棒性、SSE 稳定性、LangGraph 结构正确性
+- P2-12 SSE 事件流实现从 90% 推进至 100%
+- P3-5 上线前 Bug 修复在原 10 项基础上新增 4 项代码审查修复
+
+**待完成**：
+- 知识库数据填充
+- ai-agent-service + admin-web 单元测试
+- 阿里云生产环境部署
+- CI/CD 流水线搭建
+
+**阻塞/风险**：
+- 无
+
 ---
 
 ## 七、交付物清单跟踪
@@ -339,3 +361,5 @@
 | 2026-04-25 | 完成项目全模块代码审计，更新统计数据和进度 | AI Assistant |
 | 2026-04-25 | 完成微信小程序 MVP 开发（Taro 3.x + React），4个页面 + 9个组件 | AI Assistant |
 | 2026-05-02 | 完成站内通知系统：后端 Entity/Mapper/DTO/Service/Controller + 前端通知中心页面 + 铃铛交互组件 | AI Assistant |
+| 2026-05-23 | 代码审查验证 4 项质量修复：Tool 权限（super_admin/tenant_admin）、分页参数 int 转换、SSE 心跳机制、LangGraph 节点重命名 | AI Assistant |
+| 2026-05-23 | P2-12 SSE 事件流实现 90%→100%；整体进度 72%→74% | AI Assistant |
