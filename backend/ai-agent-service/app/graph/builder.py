@@ -9,8 +9,8 @@ LangGraph StateGraph 构建器
 - xiaobu（小布，C端客服）：customer_order_skill, customer_product_skill, customer_knowledge_skill, customer_general_skill
 
 图结构：
-  START → cache_check →(hit)→ suggestions → END
-                       →(miss)→ intent_router →(条件边)→ Skill 节点 → cache_store → suggestions → END
+  START → cache_check →(hit)→ suggest_node → END
+                       →(miss)→ intent_router →(条件边)→ Skill 节点 → cache_store → suggest_node → END
 """
 
 from langgraph.graph import StateGraph, START, END
@@ -45,7 +45,7 @@ def build_agent_graph(agent_type: str = "xiaobu"):
     graph.add_node("intent_router", intent_router_node)
     graph.add_node("direct_reply", direct_reply_node)
     graph.add_node("cache_store", cache_store_node)
-    graph.add_node("suggestions", suggestions_node)
+    graph.add_node("suggest_node", suggestions_node)
 
     # ── 根据 agent_type 注册不同的 Skill 节点和路由映射 ──
     if agent_type == "mibao":
@@ -119,7 +119,7 @@ def build_agent_graph(agent_type: str = "xiaobu"):
         "cache_check",
         check_cache_hit,
         {
-            "hit": "suggestions",   # 缓存命中，直接生成建议后结束
+            "hit": "suggest_node",   # 缓存命中，直接生成建议后结束
             "miss": "intent_router",  # 未命中，进入意图路由
         },
     )
@@ -136,8 +136,8 @@ def build_agent_graph(agent_type: str = "xiaobu"):
         graph.add_edge(skill_node_name, "cache_store")
 
     # 缓存写入 → 建议生成 → 结束
-    graph.add_edge("cache_store", "suggestions")
-    graph.add_edge("suggestions", END)
+    graph.add_edge("cache_store", "suggest_node")
+    graph.add_edge("suggest_node", END)
 
     return graph.compile()
 
