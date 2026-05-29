@@ -12,7 +12,7 @@ from app.router.intent_config import IntentType, IntentResult
 KEYWORD_MAP: dict[IntentType, list[str]] = {
     IntentType.ORDER_QUERY: ["订单", "我的订单", "订单状态", "查订单"],
     IntentType.LOGISTICS_TRACK: ["物流", "快递", "到哪了", "发货"],
-    IntentType.PRODUCT_INQUIRY: ["商品", "产品", "价格", "多少钱", "有没有"],
+    IntentType.PRODUCT_INQUIRY: ["商品", "产品", "价格", "多少钱", "有没有", "加工项", "加工项目", "加工费"],
     IntentType.AFTER_SALES: ["退货", "退款", "换货", "售后", "维修"],
     IntentType.KNOWLEDGE_FAQ: ["怎么清洗", "怎么安装", "怎么保养", "怎么测量", "怎么选", "如何", "什么是", "为什么", "教程"],
     IntentType.FAREWELL: ["再见", "拜拜", "bye", "goodbye", "下次见", "回见"],

@@ -42,6 +42,7 @@ from app.tools.order_query import OrderQueryTool
 from app.tools.order_manage import OrderManageTool
 from app.tools.product_manage import ProductManageTool
 from app.tools.inventory_manage import InventoryManageTool
+from app.tools.processing_item_query import ProcessingItemQueryTool
 
 __all__ = [
     # 基础设施
@@ -64,4 +65,5 @@ __all__ = [
     "OrderManageTool",
     "ProductManageTool",
     "InventoryManageTool",
+    "ProcessingItemQueryTool",
 ]
