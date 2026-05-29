@@ -62,19 +62,25 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     /**
      * 分页查询订单列表
      *
-     * @param page     页码
-     * @param size     每页大小
-     * @param status   订单状态
-     * @param keyword  搜索关键词（客户姓名/电话/订单号）
-     * @param tenantId 租户ID
+     * @param page         页码
+     * @param size         每页大小
+     * @param status       订单状态
+     * @param keyword      搜索关键词（客户姓名/电话/订单号）
+     * @param followStatus 跟进状态
+     * @param tenantId     租户ID
      * @return 分页响应
      */
-    public PageResponse<OrderListResponse> getOrderPage(long page, long size, String status, String keyword, Long tenantId) {
+    public PageResponse<OrderListResponse> getOrderPage(long page, long size, String status, String keyword, String followStatus, Long tenantId) {
         LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<>();
 
         // 状态筛选
         if (StringUtils.hasText(status)) {
             wrapper.eq(Order::getStatus, status);
+        }
+
+        // 跟进状态筛选
+        if (StringUtils.hasText(followStatus)) {
+            wrapper.eq(Order::getFollowStatus, followStatus);
         }
 
         // 关键词搜索（客户姓名/电话/订单号）
@@ -288,5 +294,136 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         OrderDetailResponse.OrderItemResponse response = new OrderDetailResponse.OrderItemResponse();
         BeanUtils.copyProperties(item, response);
         return response;
+    }
+
+    // ==================== 订单统计与跟进状态 ====================
+
+    /**
+     * 获取订单统计
+     */
+    public OrderStatisticsResponse getOrderStatistics(Long tenantId) {
+        LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<>();
+        List<Order> orders = orderMapper.selectList(wrapper);
+
+        long total = orders.size();
+        long pending = orders.stream().filter(o -> "pending".equals(o.getStatus())).count();
+        long confirmed = orders.stream().filter(o -> "confirmed".equals(o.getStatus())).count();
+        long producing = orders.stream().filter(o -> "producing".equals(o.getStatus())).count();
+        long shipped = orders.stream().filter(o -> "shipped".equals(o.getStatus())).count();
+        long completed = orders.stream().filter(o -> "completed".equals(o.getStatus())).count();
+        long cancelled = orders.stream().filter(o -> "cancelled".equals(o.getStatus())).count();
+
+        return OrderStatisticsResponse.builder()
+                .totalCount(total)
+                .pendingCount(pending)
+                .confirmedCount(confirmed)
+                .producingCount(producing)
+                .shippedCount(shipped)
+                .completedCount(completed)
+                .cancelledCount(cancelled)
+                .unpaidCount(pending)
+                .paidCount(confirmed + producing + shipped + completed)
+                .refundedCount(0)
+                .build();
+    }
+
+    /**
+     * 获取跟进状态统计
+     */
+    public FollowStatusStatsResponse getFollowStatusStats(Long tenantId) {
+        LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<>();
+        List<Order> orders = orderMapper.selectList(wrapper);
+
+        long total = orders.size();
+        long pendingFollow = orders.stream()
+                .filter(o -> o.getFollowStatus() == null || "pending".equals(o.getFollowStatus()))
+                .count();
+        long following = orders.stream().filter(o -> "following".equals(o.getFollowStatus())).count();
+        long completedFollow = orders.stream().filter(o -> "completed".equals(o.getFollowStatus())).count();
+
+        return FollowStatusStatsResponse.builder()
+                .pending(pendingFollow)
+                .following(following)
+                .completed(completedFollow)
+                .total(total)
+                .build();
+    }
+
+    /**
+     * 确认支付
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void confirmPayment(String id) {
+        Order order = orderMapper.selectById(id);
+        if (order == null) {
+            throw BusinessException.notFound("订单");
+        }
+        if (!"pending".equals(order.getStatus())) {
+            throw BusinessException.validationError("只有待确认状态的订单可以确认支付");
+        }
+        order.setStatus("confirmed");
+        orderMapper.updateById(order);
+        log.info("确认支付成功: id={}", id);
+    }
+
+    /**
+     * 取消订单
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void cancelOrder(String id) {
+        Order order = orderMapper.selectById(id);
+        if (order == null) {
+            throw BusinessException.notFound("订单");
+        }
+        Set<String> cancellableStatuses = Set.of("pending", "confirmed", "producing");
+        if (!cancellableStatuses.contains(order.getStatus())) {
+            throw BusinessException.validationError("当前状态不允许取消");
+        }
+        order.setStatus("cancelled");
+        orderMapper.updateById(order);
+        log.info("取消订单成功: id={}", id);
+    }
+
+    /**
+     * 退款
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void refundOrder(String id) {
+        Order order = orderMapper.selectById(id);
+        if (order == null) {
+            throw BusinessException.notFound("订单");
+        }
+        order.setStatus("cancelled");
+        orderMapper.updateById(order);
+        log.info("退款成功: id={}", id);
+    }
+
+    /**
+     * 获取订单跟进状态
+     */
+    public FollowStatusResponse getFollowStatus(String id) {
+        Order order = orderMapper.selectById(id);
+        if (order == null) {
+            throw BusinessException.notFound("订单");
+        }
+        return FollowStatusResponse.builder()
+                .orderId(id)
+                .followStatus(order.getFollowStatus() != null ? order.getFollowStatus() : "pending")
+                .updatedAt(order.getUpdatedAt())
+                .build();
+    }
+
+    /**
+     * 更新跟进状态
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void updateFollowStatus(String id, String followStatus) {
+        Order order = orderMapper.selectById(id);
+        if (order == null) {
+            throw BusinessException.notFound("订单");
+        }
+        order.setFollowStatus(followStatus);
+        orderMapper.updateById(order);
+        log.info("更新跟进状态成功: id={}, followStatus={}", id, followStatus);
     }
 }
