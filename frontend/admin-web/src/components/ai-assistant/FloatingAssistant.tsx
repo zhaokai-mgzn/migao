@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { X, Minus, Send, Loader2, Plus } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { X, Minus, Send, Loader2, Plus, Maximize2 } from 'lucide-react'
 import { MibaoLogo } from '@/components/icons/MibaoLogo'
 import { cn } from '@/lib/utils'
 import { chatApi } from '@/lib/api'
@@ -73,6 +74,7 @@ const touchSession = () => {
 
 // ========== 主组件 ==========
 export default function FloatingAssistant() {
+  const router = useRouter()
   const [isOpen, setIsOpen] = useState(false)
   const [messages, setMessages] = useState<AssistantMessage[]>([])
   const [input, setInput] = useState('')
@@ -388,6 +390,14 @@ export default function FloatingAssistant() {
 
   const togglePanel = () => setIsOpen((prev) => !prev)
 
+  // 跳转到完整工作台，并尽量携带当前会话
+  const handleOpenWorkspace = () => {
+    const target = sessionId
+      ? `/chat/?session_id=${encodeURIComponent(sessionId)}`
+      : '/chat/'
+    router.push(target)
+  }
+
   return (
     <>
       {/* 聊天面板 */}
@@ -415,6 +425,14 @@ export default function FloatingAssistant() {
               title="新对话"
             >
               <Plus className="w-4 h-4 text-white" />
+            </button>
+            <button
+              onClick={handleOpenWorkspace}
+              className="p-1 rounded-md hover:bg-white/20 transition-colors"
+              title="打开工作台"
+              aria-label="打开工作台"
+            >
+              <Maximize2 className="w-4 h-4 text-white" />
             </button>
             <button
               onClick={togglePanel}
