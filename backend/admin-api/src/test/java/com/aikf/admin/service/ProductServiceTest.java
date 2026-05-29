@@ -3,11 +3,18 @@ package com.aikf.admin.service;
 import com.aikf.admin.dto.*;
 import com.aikf.admin.entity.Category;
 import com.aikf.admin.entity.Product;
+import com.aikf.admin.entity.ProductColor;
+import com.aikf.admin.entity.ProductSku;
 import com.aikf.admin.exception.BusinessException;
 import com.aikf.admin.mapper.CategoryMapper;
+import com.aikf.admin.mapper.ProductColorMapper;
 import com.aikf.admin.mapper.ProductMapper;
+import com.aikf.admin.mapper.ProductSkuMapper;
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -17,6 +24,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
+import java.util.Collections;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.*;
@@ -38,11 +46,24 @@ class ProductServiceTest {
     @Mock
     private CategoryMapper categoryMapper;
 
+    @Mock
+    private ProductColorMapper productColorMapper;
+
+    @Mock
+    private ProductSkuMapper productSkuMapper;
+
     private Product testProduct;
     private Category testCategory;
 
     @BeforeEach
     void setUp() {
+        // Initialize MyBatis-Plus table info for LambdaQueryWrapper resolution in unit tests
+        MybatisConfiguration configuration = new MybatisConfiguration();
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(configuration, ""), Product.class);
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(configuration, ""), ProductColor.class);
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(configuration, ""), ProductSku.class);
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(configuration, ""), Category.class);
+
         testCategory = Category.builder()
                 .id("cat-001")
                 .tenantId(1L)
@@ -151,6 +172,8 @@ class ProductServiceTest {
         // Given
         when(productMapper.selectById("prod-001")).thenReturn(testProduct);
         when(categoryMapper.selectById("cat-001")).thenReturn(testCategory);
+        when(productColorMapper.selectCount(any(LambdaQueryWrapper.class))).thenReturn(0L);
+        when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(Collections.emptyList());
 
         // When
         ProductResponse result = productService.getProductById("prod-001", 1L);
@@ -321,25 +344,28 @@ class ProductServiceTest {
     // ======================== 商品状态变更测试 ========================
 
     @Test
-    @DisplayName("商品上架成功")
-    void updateProductStatus_OnSale() {
-        // Given
+    @DisplayName("商品下架成功 - on_sale → in_warehouse")
+    void updateProductStatus_OffShelf() {
+        // Given: 商品当前状态为 on_sale
         when(productMapper.selectById("prod-001")).thenReturn(testProduct);
         when(productMapper.updateById(any(Product.class))).thenReturn(1);
 
-        // When
-        productService.updateProductStatus("prod-001", "on_sale", 1L);
+        // When: 合法流转 on_sale → in_warehouse
+        productService.updateProductStatus("prod-001", "in_warehouse", 1L);
 
         // Then
-        verify(productMapper).updateById(argThat((Product p) -> "on_sale".equals(p.getStatus())));
+        verify(productMapper).updateById(argThat((Product p) -> "in_warehouse".equals(p.getStatus())));
     }
 
     @Test
     @DisplayName("商品状态变更失败 - 无效状态值")
     void updateProductStatus_InvalidStatus() {
-        // When & Then
+        // Given: mock商品存在，当前状态为 on_sale
+        when(productMapper.selectById("prod-001")).thenReturn(testProduct);
+
+        // When & Then: on_sale 不能流转到 invalid_status
         assertThatThrownBy(() -> productService.updateProductStatus("prod-001", "invalid_status", 1L))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("状态值无效");
+                .hasMessageContaining("状态流转无效");
     }
 }
