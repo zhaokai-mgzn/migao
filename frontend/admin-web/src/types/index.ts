@@ -71,7 +71,7 @@ export interface RefreshTokenResponse {
 export type UserInfoResponse = User
 
 // 商品状态
-export type ProductStatus = 'on_sale' | 'off_sale' | 'draft'
+export type ProductStatus = 'on_sale' | 'off_sale' | 'draft' | 'in_warehouse' | 'under_review'
 
 // 计价方式
 export type PricingType = 'per_meter' | 'per_piece' | 'fixed' | 'per_area'
@@ -87,6 +87,8 @@ export const ProductStatusLabels: Record<ProductStatus, string> = {
   on_sale: '上架',
   off_sale: '下架',
   draft: '草稿',
+  in_warehouse: '在仓',
+  under_review: '审核中',
 }
 
 // 商品类型
@@ -293,6 +295,15 @@ export const NextStatusActionLabels: Partial<Record<OrderStatus, string>> = {
   confirmed: '开始生产',
   producing: '确认发货',
   shipped: '确认完成',
+}
+
+// 订单跟进状态
+export type OrderFollowStatus = 'pending' | 'following' | 'completed'
+
+export const OrderFollowStatusLabels: Record<OrderFollowStatus, string> = {
+  pending: '待跟进',
+  following: '跟进中',
+  completed: '已完成',
 }
 
 // 订单明细类型
@@ -966,6 +977,50 @@ export interface UnreadCountResponse {
 }
 
 // ========== 文件上传类型 ==========
+
+// ========== SKU 与颜色类型 ==========
+
+// 售卖方式
+export type SellingMethod = 'bulk_cut' | 'full_roll'
+
+export const SellingMethodLabels: Record<SellingMethod, string> = {
+  bulk_cut: '散剪',
+  full_roll: '整卷',
+}
+
+// SKU 状态
+export type SkuStatus = 'active' | 'inactive' | 'disabled'
+
+export const SkuStatusLabels: Record<SkuStatus, string> = {
+  active: '启用',
+  inactive: '停用',
+  disabled: '已禁用',
+}
+
+// 商品颜色
+export interface ProductColor {
+  id: number
+  colorName: string
+  mainColorHex?: string
+  colorImageUrl?: string
+  remark?: string
+  sortOrder?: number
+}
+
+// 商品 SKU
+export interface ProductSku {
+  id: number
+  colorId: number
+  colorName?: string
+  sellingMethod: SellingMethod
+  doorWidth: string
+  price: number
+  costPrice?: number
+  stock: number
+  salesCount?: number
+  skuCode?: string
+  status: SkuStatus
+}
 
 // 上传文件信息
 export interface UploadedFile {

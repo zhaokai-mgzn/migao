@@ -111,6 +111,8 @@ export default function ProductTable({
           on_sale: 'success',
           off_sale: 'default',
           draft: 'warning',
+          in_warehouse: 'default',
+          under_review: 'warning',
         }
         return (
           <Badge variant={variantMap[record.status]}>

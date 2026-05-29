@@ -27,6 +27,11 @@ public class Product {
 
     private String name;
 
+    /**
+     * 商品货号
+     */
+    private String skuCode;
+
     private String categoryId;
 
     private BigDecimal basePrice;
@@ -53,6 +58,36 @@ public class Product {
      */
     @TableField("stock_warning_threshold")
     private Integer stockWarningThreshold = 10;
+
+    /**
+     * 库存扣减模式：sku/product
+     */
+    private String stockDeductionMode;
+
+    /**
+     * 是否含加工项
+     */
+    private Boolean hasProcessing;
+
+    /**
+     * 累计销量
+     */
+    private Integer salesCount;
+
+    /**
+     * 累计销售额
+     */
+    private BigDecimal salesAmount;
+
+    /**
+     * 最后编辑人
+     */
+    private String editedBy;
+
+    /**
+     * 最后编辑时间
+     */
+    private OffsetDateTime editedAt;
 
     @TableField(fill = FieldFill.INSERT)
     private OffsetDateTime createdAt;

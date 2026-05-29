@@ -37,6 +37,11 @@ public class Order {
 
     private String status;
 
+    /**
+     * 跟进状态: pending/following/completed
+     */
+    private String followStatus;
+
     private String remark;
 
     @TableField(fill = FieldFill.INSERT)
