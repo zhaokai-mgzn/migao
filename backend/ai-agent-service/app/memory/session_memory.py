@@ -368,6 +368,131 @@ class SessionMemory:
         session = await self.get_session(session_id)
         return session is not None
     
+    async def close_session(self, session_id: str) -> bool:
+        """
+        关闭会话：将 status 置为 'closed'，并记录 ended_at；不删除任何消息。
+
+        Args:
+            session_id: 会话 ID
+
+        Returns:
+            bool: 实际更新的会话是否存在（True 表示已关闭或本就 closed）
+        """
+        async with await self._get_session() as db:
+            try:
+                from sqlalchemy import text
+                sql = text("""
+                    UPDATE sessions
+                    SET status = 'closed',
+                        ended_at = COALESCE(ended_at, :now),
+                        updated_at = :now
+                    WHERE id = :session_id
+                """)
+                result = await db.execute(sql, {
+                    "session_id": session_id,
+                    "now": self._now(),
+                })
+                await db.commit()
+                affected = result.rowcount or 0
+                logger.info(
+                    f"[session-memory] Session closed | session_id={session_id} affected={affected}"
+                )
+                return affected > 0
+            except Exception as e:
+                await db.rollback()
+                logger.error(
+                    f"[session-memory] Close session failed | session_id={session_id} error={type(e).__name__}: {e}",
+                    exc_info=True,
+                )
+                raise
+
+    async def close_other_active_sessions(
+        self,
+        tenant_id: int,
+        customer_id: str,
+        except_session_id: Optional[str] = None,
+    ) -> int:
+        """
+        批量关闭某用户在某租户下其他 active 会话。
+
+        Args:
+            tenant_id: 租户 ID
+            customer_id: 客户/用户 ID
+            except_session_id: 排除该会话（一般是新创建/当前活跃的会话）
+
+        Returns:
+            int: 被关闭的会话数量
+        """
+        async with await self._get_session() as db:
+            try:
+                from sqlalchemy import text
+                params = {
+                    "tenant_id": tenant_id,
+                    "customer_id": customer_id,
+                    "now": self._now(),
+                }
+                exclude_clause = ""
+                if except_session_id:
+                    exclude_clause = "AND id <> :except_id"
+                    params["except_id"] = except_session_id
+                sql = text(f"""
+                    UPDATE sessions
+                    SET status = 'closed',
+                        ended_at = COALESCE(ended_at, :now),
+                        updated_at = :now
+                    WHERE tenant_id = :tenant_id
+                      AND customer_id = :customer_id
+                      AND status = 'active'
+                      {exclude_clause}
+                """)
+                result = await db.execute(sql, params)
+                await db.commit()
+                affected = result.rowcount or 0
+                if affected > 0:
+                    logger.info(
+                        f"[session-memory] Closed other active sessions | "
+                        f"tenant={tenant_id} user={customer_id} affected={affected} "
+                        f"except={except_session_id}"
+                    )
+                return affected
+            except Exception as e:
+                await db.rollback()
+                logger.error(
+                    f"[session-memory] Close other active sessions failed | "
+                    f"tenant={tenant_id} user={customer_id} error={type(e).__name__}: {e}",
+                    exc_info=True,
+                )
+                return 0
+
+    async def get_last_message_time(self, session_id: str) -> Optional[datetime]:
+        """
+        获取会话最后一条消息的创建时间，用于空闲超时判断。
+
+        Args:
+            session_id: 会话 ID
+
+        Returns:
+            Optional[datetime]: 最后消息时间；若无消息则返回 None
+        """
+        async with await self._get_session() as db:
+            try:
+                from sqlalchemy import text
+                sql = text("""
+                    SELECT created_at FROM session_messages
+                    WHERE session_id = :session_id
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                """)
+                result = await db.execute(sql, {"session_id": session_id})
+                row = result.fetchone()
+                return row[0] if row else None
+            except Exception as e:
+                logger.error(
+                    f"[session-memory] Get last message time failed | session_id={session_id} error={type(e).__name__}: {e}",
+                    exc_info=True,
+                )
+                return None
+
     async def delete_session(self, session_id: str) -> bool:
         """
         删除会话及其所有消息

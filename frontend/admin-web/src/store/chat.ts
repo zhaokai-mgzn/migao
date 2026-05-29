@@ -125,8 +125,16 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         created_at: sessionData.created_at || new Date().toISOString(),
         updated_at: sessionData.updated_at || new Date().toISOString(),
       }
+      // 后端会自动关闭该用户其他 active 会话，前端同步调整本地状态
       set(state => ({
-        sessions: [newSession, ...state.sessions],
+        sessions: [
+          newSession,
+          ...state.sessions.map(s =>
+            s.status === 'active' && s.session_id !== newSession.session_id
+              ? { ...s, status: 'closed' as const }
+              : s
+          ),
+        ],
         currentSessionId: newSession.session_id,
         messages: [],
       }))
@@ -168,14 +176,12 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 
   closeSession: async (id: string) => {
     try {
-      await chatApi.deleteSession(id, getToken())
+      await chatApi.closeSession(id, getToken())
+      // 仅更新状态为 closed，保留会话与历史消息
       set(state => ({
         sessions: state.sessions.map(s =>
           s.session_id === id ? { ...s, status: 'closed' as const } : s
         ),
-        ...(state.currentSessionId === id
-          ? { currentSessionId: null, messages: [] }
-          : {}),
       }))
       toast.success('会话已结束')
     } catch (error) {
@@ -376,12 +382,20 @@ function handleSSEEvent(
 
       case 'message_end':
       case 'done':
-        set(state => ({
-          isStreaming: false,
-          messages: state.messages.map(msg =>
-            msg.id === aiMsgId ? { ...msg, isStreaming: false } : msg
-          ),
-        }))
+        set(state => {
+          // 后端可能因空闲超时轮换到新 session_id，需同步前端状态
+          const newSessionId =
+            typeof parsedData?.session_id === 'string' ? parsedData.session_id : null
+          const shouldRotate =
+            !!newSessionId && newSessionId !== state.currentSessionId
+          return {
+            isStreaming: false,
+            ...(shouldRotate ? { currentSessionId: newSessionId } : {}),
+            messages: state.messages.map(msg =>
+              msg.id === aiMsgId ? { ...msg, isStreaming: false } : msg
+            ),
+          }
+        })
         break
 
       case 'error':

@@ -12,7 +12,7 @@ import asyncio
 import json
 import traceback
 from typing import AsyncGenerator, Optional, List, Dict, Any, Union
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -33,6 +33,9 @@ from app.tools import ToolRegistry, get_tool_registry
 from app.utils.auth import get_current_user, UserIdentity
 
 router = APIRouter()
+
+# 会话空闲超时：超过该时间未收到新消息，下一次 send 时自动关闭旧会话并新建
+SESSION_IDLE_TIMEOUT_MINUTES = 30
 
 
 # ============ 辅助函数 ============
@@ -373,6 +376,18 @@ async def send_message(
             customer_id=user_id,
             title=None,  # 自动生成标题
         )
+        # 方案 A：创建新会话时，自动关闭该用户的其他 active 会话
+        try:
+            await session_memory.close_other_active_sessions(
+                tenant_id=tenant_id,
+                customer_id=user_id,
+                except_session_id=session_id,
+            )
+        except Exception as close_err:
+            logger.warning(
+                f"[chat/send] close_other_active_sessions failed | "
+                f"tenant={tenant_id} user={user_id} error={close_err}"
+            )
     else:
         # 验证会话存在且属于当前用户
         session = await session_memory.get_session(session_id)
@@ -420,6 +435,65 @@ async def send_message(
                         "message": "无权访问该会话",
                     }
                 }
+            )
+        # 拒绝在已关闭会话上发送消息
+        if session.get("status") == "closed":
+            logger.info(
+                f"[chat/send] Reject send on closed session | session={session_id} user={user_id}"
+            )
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "success": False,
+                    "error": {
+                        "code": "SESSION_CLOSED",
+                        "message": "该会话已结束，请创建新对话",
+                    }
+                }
+            )
+        # 方案 B：空闲超时自动关闭旧会话并新建
+        try:
+            last_msg_time = await session_memory.get_last_message_time(session_id)
+            if last_msg_time is not None:
+                if last_msg_time.tzinfo is None:
+                    last_msg_time = last_msg_time.replace(tzinfo=timezone.utc)
+                now_utc = datetime.now(timezone.utc)
+                if (now_utc - last_msg_time) > timedelta(minutes=SESSION_IDLE_TIMEOUT_MINUTES):
+                    logger.info(
+                        f"[chat/send] Session idle timeout, rotating | session={session_id} "
+                        f"last_msg={last_msg_time.isoformat()} threshold={SESSION_IDLE_TIMEOUT_MINUTES}min"
+                    )
+                    try:
+                        await session_memory.close_session(session_id)
+                    except Exception as close_err:
+                        logger.warning(
+                            f"[chat/send] close_session failed during rotation | "
+                            f"session={session_id} error={close_err}"
+                        )
+                    # 新建会话承接本次发送
+                    session_id = await session_memory.create_session(
+                        tenant_id=tenant_id,
+                        customer_id=user_id,
+                        title=None,
+                    )
+                    # 以防万一，同时关闭该用户其他 active
+                    try:
+                        await session_memory.close_other_active_sessions(
+                            tenant_id=tenant_id,
+                            customer_id=user_id,
+                            except_session_id=session_id,
+                        )
+                    except Exception as close_err:
+                        logger.warning(
+                            f"[chat/send] close_other_active_sessions after rotation failed | "
+                            f"error={close_err}"
+                        )
+        except HTTPException:
+            raise
+        except Exception as idle_err:
+            logger.warning(
+                f"[chat/send] Idle-timeout check failed (non-fatal) | "
+                f"session={session_id} error={idle_err}"
             )
     
     async def event_stream():
@@ -522,6 +596,23 @@ async def create_session(
         title=request.title,
     )
     logger.info(f"Session created: session_id={session_id}, user_id={current_user.user_id}, tenant_id={current_user.tenant_id}")
+
+    # 方案 A：创建新会话后自动关闭该用户其他 active 会话
+    try:
+        closed_count = await session_memory.close_other_active_sessions(
+            tenant_id=current_user.tenant_id,
+            customer_id=current_user.user_id,
+            except_session_id=session_id,
+        )
+        if closed_count:
+            logger.info(
+                f"[chat/sessions] Auto-closed {closed_count} stale session(s) on new session | "
+                f"new_session={session_id} user={current_user.user_id}"
+            )
+    except Exception as close_err:
+        logger.warning(
+            f"[chat/sessions] close_other_active_sessions failed (non-fatal) | error={close_err}"
+        )
     
     # 获取创建的会话信息
     session = await session_memory.get_session(session_id)
@@ -590,6 +681,94 @@ async def list_sessions(
             "size": size,
             "total": len(formatted_sessions),
         }
+    }
+
+
+@router.put("/sessions/{session_id}/close")
+async def close_session_endpoint(
+    session_id: str,
+    current_user: UserIdentity = Depends(get_current_user),
+):
+    """
+    关闭会话（仅转换状态为 'closed'，不删除消息）
+
+    与 DELETE /sessions/{id} 区别：
+    - DELETE: 物理删除会话及其所有消息。
+    - PUT close: 仅将 status 置为 closed，保留历史消息。
+    """
+    session_memory = SessionMemory()
+
+    session = await session_memory.get_session(session_id)
+    if not session:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "success": False,
+                "error": {
+                    "code": "SESSION_NOT_FOUND",
+                    "message": "会话不存在",
+                }
+            },
+        )
+
+    if session.get("tenant_id") != current_user.tenant_id:
+        logger.warning(
+            f"Cross-tenant session close attempt: user_tenant={current_user.tenant_id}, "
+            f"session_tenant={session.get('tenant_id')}, session_id={session_id}, "
+            f"user_id={current_user.user_id}"
+        )
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "success": False,
+                "error": {
+                    "code": "PERMISSION_DENIED",
+                    "message": "无权关闭该会话",
+                }
+            },
+        )
+    if session.get("customer_id") != current_user.user_id:
+        logger.warning(
+            f"Unauthorized session close attempt: user_id={current_user.user_id}, "
+            f"session_owner={session.get('customer_id')}, session_id={session_id}, "
+            f"tenant_id={current_user.tenant_id}"
+        )
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "success": False,
+                "error": {
+                    "code": "PERMISSION_DENIED",
+                    "message": "无权关闭该会话",
+                }
+            },
+        )
+
+    # 幂等语义：已 closed 仍返回成功
+    if session.get("status") == "closed":
+        logger.info(f"[chat/close] Session already closed | session_id={session_id}")
+        return {
+            "success": True,
+            "data": {
+                "session_id": session_id,
+                "status": "closed",
+                "message": "会话已处于关闭状态",
+            },
+        }
+
+    await session_memory.close_session(session_id)
+    logger.info(
+        f"Session closed via API: session_id={session_id}, user_id={current_user.user_id}, "
+        f"tenant_id={current_user.tenant_id}"
+    )
+
+    return {
+        "success": True,
+        "data": {
+            "session_id": session_id,
+            "status": "closed",
+            "message": "会话已结束",
+        },
     }
 
 
