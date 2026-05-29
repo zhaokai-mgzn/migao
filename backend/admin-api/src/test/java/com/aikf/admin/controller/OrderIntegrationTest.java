@@ -59,6 +59,8 @@ class OrderIntegrationTest {
 
     // ======================== 辅助方法 ========================
 
+    private static final String TEST_ORDER_ID = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6";
+
     private OrderDetailResponse buildOrderDetail(String id, String orderNo, String status) {
         OrderDetailResponse detail = new OrderDetailResponse();
         detail.setId(id);
@@ -113,7 +115,7 @@ class OrderIntegrationTest {
     void testCreateOrder() throws Exception {
         // Given
         OrderCreateRequest request = buildCreateRequest();
-        OrderDetailResponse response = buildOrderDetail("order-001", "ORD20250425001", "pending");
+        OrderDetailResponse response = buildOrderDetail(TEST_ORDER_ID, "ORD20250425001", "pending");
 
         when(orderService.createOrder(any(OrderCreateRequest.class), eq(1L)))
                 .thenReturn(response);
@@ -124,7 +126,7 @@ class OrderIntegrationTest {
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
-                .andExpect(jsonPath("$.data.id").value("order-001"))
+                .andExpect(jsonPath("$.data.id").value(TEST_ORDER_ID))
                 .andExpect(jsonPath("$.data.orderNo").value("ORD20250425001"))
                 .andExpect(jsonPath("$.data.status").value("pending"))
                 .andExpect(jsonPath("$.data.customerName").value("张三"))
@@ -156,7 +158,7 @@ class OrderIntegrationTest {
 
         PageResponse<OrderListResponse> pageResponse = PageResponse.of(2L, 1L, 20L, List.of(order1, order2));
 
-        when(orderService.getOrderPage(eq(1L), eq(20L), isNull(), isNull(), eq(1L)))
+        when(orderService.getOrderPage(eq(1L), eq(20L), isNull(), isNull(), isNull(), eq(1L)))
                 .thenReturn(pageResponse);
 
         // When & Then
@@ -179,7 +181,7 @@ class OrderIntegrationTest {
     @DisplayName("获取订单详情 - 包含明细和物流信息")
     void testGetOrderDetail() throws Exception {
         // Given
-        OrderDetailResponse detail = buildOrderDetail("order-001", "ORD20250425001", "shipped");
+        OrderDetailResponse detail = buildOrderDetail(TEST_ORDER_ID, "ORD20250425001", "shipped");
 
         OrderDetailResponse.LogisticsInfo logistics = new OrderDetailResponse.LogisticsInfo();
         logistics.setId("log-001");
@@ -189,14 +191,14 @@ class OrderIntegrationTest {
         logistics.setShippedAt(OffsetDateTime.now());
         detail.setLogistics(logistics);
 
-        when(orderService.getOrderById("order-001")).thenReturn(detail);
+        when(orderService.getOrderById(TEST_ORDER_ID)).thenReturn(detail);
 
         // When & Then
-        mockMvc.perform(get("/api/admin/orders/order-001")
+        mockMvc.perform(get("/api/admin/orders/" + TEST_ORDER_ID)
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
-                .andExpect(jsonPath("$.data.id").value("order-001"))
+                .andExpect(jsonPath("$.data.id").value(TEST_ORDER_ID))
                 .andExpect(jsonPath("$.data.status").value("shipped"))
                 .andExpect(jsonPath("$.data.logistics.logisticsCompany").value("顺丰速运"))
                 .andExpect(jsonPath("$.data.logistics.trackingNo").value("SF1234567890"));
@@ -208,15 +210,15 @@ class OrderIntegrationTest {
     @DisplayName("删除订单 - 成功")
     void testUpdateOrder() throws Exception {
         // Given
-        doNothing().when(orderService).deleteOrder("order-001");
+        doNothing().when(orderService).deleteOrder(TEST_ORDER_ID);
 
         // When & Then
-        mockMvc.perform(delete("/api/admin/orders/order-001")
+        mockMvc.perform(delete("/api/admin/orders/" + TEST_ORDER_ID)
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
 
-        verify(orderService).deleteOrder("order-001");
+        verify(orderService).deleteOrder(TEST_ORDER_ID);
     }
 
     // ======================== 订单状态流转 ========================
@@ -225,48 +227,48 @@ class OrderIntegrationTest {
     @DisplayName("订单确认 - pending -> confirmed")
     void testUpdateOrderStatus_Confirm() throws Exception {
         // Given
-        doNothing().when(orderService).updateOrderStatus("order-001", "confirmed");
+        doNothing().when(orderService).updateOrderStatus(TEST_ORDER_ID, "confirmed");
 
         // When & Then
-        mockMvc.perform(put("/api/admin/orders/order-001/status")
+        mockMvc.perform(put("/api/admin/orders/" + TEST_ORDER_ID + "/status")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"status\":\"confirmed\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
 
-        verify(orderService).updateOrderStatus("order-001", "confirmed");
+        verify(orderService).updateOrderStatus(TEST_ORDER_ID, "confirmed");
     }
 
     @Test
     @DisplayName("订单进入生产 - confirmed -> producing")
     void testUpdateOrderStatus_Ship() throws Exception {
         // Given: confirmed 状态的订单进入生产
-        doNothing().when(orderService).updateOrderStatus("order-001", "producing");
+        doNothing().when(orderService).updateOrderStatus(TEST_ORDER_ID, "producing");
 
         // When & Then
-        mockMvc.perform(put("/api/admin/orders/order-001/status")
+        mockMvc.perform(put("/api/admin/orders/" + TEST_ORDER_ID + "/status")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"status\":\"producing\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
 
-        verify(orderService).updateOrderStatus("order-001", "producing");
+        verify(orderService).updateOrderStatus(TEST_ORDER_ID, "producing");
     }
 
     @Test
     @DisplayName("订单完成 - shipped -> completed")
     void testUpdateOrderStatus_Complete() throws Exception {
         // Given
-        doNothing().when(orderService).updateOrderStatus("order-001", "completed");
+        doNothing().when(orderService).updateOrderStatus(TEST_ORDER_ID, "completed");
 
         // When & Then
-        mockMvc.perform(put("/api/admin/orders/order-001/status")
+        mockMvc.perform(put("/api/admin/orders/" + TEST_ORDER_ID + "/status")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"status\":\"completed\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
 
-        verify(orderService).updateOrderStatus("order-001", "completed");
+        verify(orderService).updateOrderStatus(TEST_ORDER_ID, "completed");
     }
 
     @Test
@@ -274,10 +276,10 @@ class OrderIntegrationTest {
     void testOrderStatusFlowValidation() throws Exception {
         // Given: Service 层抛出业务异常
         doThrow(new BusinessException("INVALID_STATUS", "非法的状态流转: completed -> pending", 400))
-                .when(orderService).updateOrderStatus("order-001", "pending");
+                .when(orderService).updateOrderStatus(TEST_ORDER_ID, "pending");
 
         // When & Then
-        mockMvc.perform(put("/api/admin/orders/order-001/status")
+        mockMvc.perform(put("/api/admin/orders/" + TEST_ORDER_ID + "/status")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"status\":\"pending\"}"))
                 .andExpect(status().isBadRequest())
