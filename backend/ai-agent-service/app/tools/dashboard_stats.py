@@ -30,8 +30,17 @@ class DashboardStatsTool(BaseTool):
 
     name = "dashboard_stats"
     description = (
-        "数据看板工具，支持获取Dashboard统计概览、订单趋势、状态分布、最近订单、活跃会话。"
-        "当需要了解经营数据、查看统计概览、分析订单趋势时使用。"
+        "数据看板工具，用于获取商家后台经营看板的统计概览、订单趋势、订单状态分布、最近订单、活跃会话。"
+        "当需要了解经营数据、查看统计概览、分析订单趋势时使用。支持查询“最近 N 天”的订单趋势数据。"
+        " \n常见调用示例：\n"
+        "- 查看今日经营概览 → action=overview\n"
+        "- 查询最近 7 天订单趋势 → action=order_trend, days=7\n"
+        "- 查询最近 14 天订单趋势 → action=order_trend, days=14\n"
+        "- 查询最近 30 天订单趋势 → action=order_trend, days=30\n"
+        "- 查看订单状态分布 → action=order_status\n"
+        "- 查看最近订单列表 → action=recent_orders, limit=5\n"
+        "- 查看当前活跃会话 → action=active_sessions, limit=5\n"
+        "调用本工具时不要反问用户起止日期，定期间说法如“最近 7 天/14 天/30 天”只需传 days 参数。"
     )
 
     # admin、agent、super_admin、tenant_admin 可使用
@@ -42,17 +51,32 @@ class DashboardStatsTool(BaseTool):
         "properties": {
             "action": {
                 "type": "string",
-                "description": "操作类型：overview（统计概览）/ order_trend（订单趋势）/ order_status（订单状态分布）/ recent_orders（最近订单）/ active_sessions（活跃会话）",
+                "description": (
+                    "操作类型："
+                    "overview（今日经营统计概览，含订单数/客户数/工单等指标） / "
+                    "order_trend（订单趋势折线数据，需配合 days，适用于“最近 N 天订单趋势”场景） / "
+                    "order_status（订单状态分布饼图数据） / "
+                    "recent_orders（最近订单列表，需配合 limit） / "
+                    "active_sessions（当前活跃客服会话列表，需配合 limit）"
+                ),
                 "enum": ["overview", "order_trend", "order_status", "recent_orders", "active_sessions"],
             },
             "days": {
                 "type": "integer",
-                "description": "趋势天数，默认 7（order_trend 时可选）",
+                "description": (
+                    "查询天数范围，仅在 action=order_trend 时生效。"
+                    "例如 7 表示最近 7 天、8 表示最近 8 天、14 表示最近 14 天、30 表示最近 30 天。"
+                    "默认 7 天。用户说“最近 7 天”就传 days=7，“最近一周”也传 days=7，"
+                    "“最近半个月/15天”传 days=15，“最近一个月/30天”传 days=30。"
+                    "不要反问用户具体起止日期。"
+                ),
                 "default": 7,
+                "minimum": 1,
+                "maximum": 365,
             },
             "limit": {
                 "type": "integer",
-                "description": "返回条数限制，默认 5（recent_orders/active_sessions 时可选）",
+                "description": "返回条数限制，仅在 action=recent_orders 或 active_sessions 时生效，默认 5。",
                 "default": 5,
             },
         },

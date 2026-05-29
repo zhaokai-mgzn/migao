@@ -20,6 +20,23 @@ VALID_CHANNELS = {"system", "email", "sms", "wechat"}
 # 通知状态
 VALID_STATUSES = {"unread", "read"}
 
+# 渠道值映射：tool 暴露给 LLM 的语义化值 → admin-api 实际使用的值
+# admin-api 数据库中站内通知 channel 字段实际值为 "internal"，而非 "system"
+CHANNEL_TO_API = {
+    "system": "internal",
+    "internal": "internal",
+    "email": "email",
+    "sms": "sms",
+    "wechat": "wechat",
+}
+
+# 状态值映射：tool 暴露的语义化值 → admin-api 数据库实际状态
+# admin-api notifications.status 实际值为 "sent"（未读）/ "read"（已读）
+STATUS_TO_API = {
+    "unread": "sent",
+    "read": "read",
+}
+
 
 class NotificationManageTool(BaseTool):
     """通知管理 Tool
@@ -164,9 +181,23 @@ class NotificationManageTool(BaseTool):
         """查询通知列表"""
         params: Dict[str, Any] = {"page": page, "size": size}
         if status:
-            params["status"] = status
+            if status not in VALID_STATUSES:
+                return ToolResult(
+                    success=False,
+                    error=f"无效的通知状态: {status}",
+                    message=f"不支持的状态筛选，可选：{', '.join(VALID_STATUSES)}",
+                )
+            # 映射为 admin-api 实际状态值（unread → sent）
+            params["status"] = STATUS_TO_API.get(status, status)
         if channel:
-            params["channel"] = channel
+            if channel not in VALID_CHANNELS:
+                return ToolResult(
+                    success=False,
+                    error=f"无效的通知渠道: {channel}",
+                    message=f"不支持的通知渠道，可选：{', '.join(VALID_CHANNELS)}",
+                )
+            # 映射为 admin-api 实际渠道值（system → internal）
+            params["channel"] = CHANNEL_TO_API.get(channel, channel)
 
         client = get_admin_api_client()
         response = await client.get(
@@ -380,7 +411,8 @@ class NotificationManageTool(BaseTool):
                     error=f"无效的通知渠道: {channel}",
                     message=f"不支持的通知渠道，可选：{', '.join(VALID_CHANNELS)}",
                 )
-            json_data["channel"] = channel
+            # 映射为 admin-api 实际渠道值（system → internal）
+            json_data["channel"] = CHANNEL_TO_API.get(channel, channel)
 
         client = get_admin_api_client()
         response = await client.post(
