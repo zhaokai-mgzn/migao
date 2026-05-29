@@ -57,9 +57,11 @@ export default function ProductDetailPage() {
 
   if (!product) return null
 
-  const statusVariant: Record<ProductStatus, 'success' | 'default' | 'warning'> = {
+  const statusVariant: Record<ProductStatus, 'success' | 'default' | 'warning' | 'info'> = {
     on_sale: 'success',
     off_sale: 'default',
+    in_warehouse: 'default',
+    under_review: 'info',
     draft: 'warning',
     in_warehouse: 'default',
     under_review: 'warning',
@@ -92,7 +94,7 @@ export default function ProductDetailPage() {
         </div>
         <div className="flex items-center gap-2">
           {product.status === 'on_sale' ? (
-            <Button variant="secondary" onClick={() => handleStatusChange('off_sale')}>
+            <Button variant="secondary" onClick={() => handleStatusChange('in_warehouse')}>
               <ArrowDownCircle className="w-4 h-4 mr-1.5" />
               下架
             </Button>
@@ -199,7 +201,14 @@ export default function ProductDetailPage() {
           {product.description && (
             <div className="bg-gray-50 rounded-lg p-4">
               <h3 className="text-sm font-semibold text-gray-700 mb-2">商品描述</h3>
-              <p className="text-sm text-gray-600 whitespace-pre-wrap">{product.description}</p>
+              {/^\s*</.test(product.description) ? (
+                <div
+                  className="product-description text-sm text-gray-700 leading-relaxed"
+                  dangerouslySetInnerHTML={{ __html: product.description }}
+                />
+              ) : (
+                <p className="text-sm text-gray-600 whitespace-pre-wrap">{product.description}</p>
+              )}
             </div>
           )}
 
