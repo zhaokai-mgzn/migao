@@ -126,18 +126,27 @@ def create_app() -> FastAPI:
     # CORS 中间件
     cors_origins = [o.strip() for o in settings.CORS_ALLOWED_ORIGINS.split(",") if o.strip()]
     if settings.DEBUG:
-        # 开发模式下额外允许常见本地开发端口
-        cors_origins.extend([
+        # 开发模式下额外允许常见本地开发端口（Next.js: 3000/3001，Vite: 5173）
+        # 即便 .env 中 CORS_ALLOWED_ORIGINS 配置不全，也保证本地前端可访问
+        dev_origins = [
+            "http://localhost:3000",
+            "http://localhost:3001",
+            "http://127.0.0.1:3000",
+            "http://127.0.0.1:3001",
             "http://localhost:5173",
             "http://127.0.0.1:5173",
-        ])
+        ]
+        for origin in dev_origins:
+            if origin not in cors_origins:
+                cors_origins.append(origin)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=cors_origins,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"],
+        allow_headers=["Authorization", "Content-Type", "X-Request-ID", "X-Tenant-ID", "Accept", "Origin"],
     )
+    logger.info(f"CORS allowed origins: {cors_origins}")
     
     # 请求追踪中间件（在 CORS 之后添加，先于 CORS 执行）
     app.add_middleware(RequestLoggingMiddleware)
