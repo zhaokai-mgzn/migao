@@ -346,6 +346,7 @@ def create_default_registry() -> ToolRegistry:
     - order_manage: 订单管理
     - product_manage: 商品管理
     - inventory_manage: 库存管理
+    - processing_item_query: 加工项查询
     
     Returns:
         ToolRegistry: 配置好的注册器
@@ -358,6 +359,7 @@ def create_default_registry() -> ToolRegistry:
     from app.tools.order_manage import OrderManageTool
     from app.tools.product_manage import ProductManageTool
     from app.tools.inventory_manage import InventoryManageTool
+    from app.tools.processing_item_query import ProcessingItemQueryTool
     
     registry = ToolRegistry()
     
@@ -370,6 +372,7 @@ def create_default_registry() -> ToolRegistry:
     registry.register(OrderManageTool())
     registry.register(ProductManageTool())
     registry.register(InventoryManageTool())
+    registry.register(ProcessingItemQueryTool())
     
     logger.info(f"Default registry created with {len(registry)} tools")
     return registry

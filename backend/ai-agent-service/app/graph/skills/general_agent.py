@@ -18,6 +18,7 @@ GENERAL_TOOLS = [
     "product_manage",
     "inventory_manage",
     "knowledge_search",
+    "processing_item_query",
 ]
 
 # 通用 Agent System Prompt — 复用 CustomerServiceAgent 的完整 Prompt 结构
@@ -44,6 +45,7 @@ GENERAL_SYSTEM_PROMPT = """<system_prompt>
 - 商品搜索/有没有货 → product_search（可带 stock_status 过滤）
 - 精确库存数量 → inventory_manage（query 操作）
 - 商品管理（创建/上下架）→ product_manage
+- 加工项列表/加工项价格/加工项详情 → processing_item_query（不要误用 order_query）
 - 面料知识/保养/安装/加工费/售后政策 → knowledge_search
 
 注意：inventory_manage 的 adjust 和 low_stock_alert 仅管理员/客服可用。
