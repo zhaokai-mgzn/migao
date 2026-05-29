@@ -1,10 +1,11 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { useRouter, useParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import { ArrowLeft, MapPin, Phone, User, Calendar, Package, Truck, Ban } from 'lucide-react'
 import { toast } from 'sonner'
 import { orderApi } from '@/lib/api'
+import { useRouteId } from '@/lib/use-route-id'
 import { Button, Card, Loading, Modal } from '@/components/ui'
 import { OrderStatusBadge, OrderTimeline, OrderItemList, LogisticsInfo, LogisticsForm } from '@/components/orders'
 import type { Order, OrderStatus, LogisticsFormData } from '@/types'
@@ -14,8 +15,7 @@ import { cn } from '@/lib/utils'
 
 export default function OrderDetailPage() {
   const router = useRouter()
-  const params = useParams()
-  const orderId = params.id as string
+  const orderId = useRouteId('id')
 
   const [order, setOrder] = useState<Order | null>(null)
   const [loading, setLoading] = useState(true)

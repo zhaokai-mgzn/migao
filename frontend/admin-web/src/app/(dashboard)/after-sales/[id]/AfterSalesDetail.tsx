@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { useRouter, useParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import {
   ArrowLeft,
   User,
@@ -19,6 +19,7 @@ import Image from 'next/image'
 import { toast } from 'sonner'
 import { afterSalesApi } from '@/lib/api'
 import { Button, Card, Loading, Modal, Badge } from '@/components/ui'
+import { useRouteId } from '@/lib/use-route-id'
 import type { AfterSalesTicket, AfterSalesStatus } from '@/types'
 import {
   AfterSalesStatusLabels,
@@ -63,8 +64,7 @@ const statusTimelineColor: Record<AfterSalesStatus, string> = {
 
 export default function AfterSalesDetailPage() {
   const router = useRouter()
-  const params = useParams()
-  const ticketId = params.id as string
+  const ticketId = useRouteId('id')
 
   const [ticket, setTicket] = useState<AfterSalesTicket | null>(null)
   const [loading, setLoading] = useState(true)

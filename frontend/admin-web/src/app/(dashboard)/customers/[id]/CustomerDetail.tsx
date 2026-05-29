@@ -1,10 +1,11 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { useRouter, useParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import { ArrowLeft, Phone, MapPin, Star, Plus, X, MessageSquare, ShoppingCart, StickyNote, Save } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button, Badge } from '@/components/ui'
+import { useRouteId } from '@/lib/use-route-id'
 import type { CustomerDetail, CustomerTag, CustomerOrder, CustomerSession, CustomerChannel } from '@/types'
 import { CustomerChannelLabels } from '@/types'
 import dayjs from 'dayjs'
@@ -16,8 +17,7 @@ const TAG_COLORS = [
 
 export default function CustomerDetailPage() {
   const router = useRouter()
-  const params = useParams()
-  const id = params.id as string
+  const id = useRouteId('id')
 
   const [customer, setCustomer] = useState<CustomerDetail | null>(null)
   const [loading, setLoading] = useState(true)
@@ -30,6 +30,7 @@ export default function CustomerDetailPage() {
   const [showTagPicker, setShowTagPicker] = useState(false)
 
   const loadCustomer = useCallback(async () => {
+    if (!id) return
     setLoading(true)
     try {
       await new Promise((resolve) => setTimeout(resolve, 500))
