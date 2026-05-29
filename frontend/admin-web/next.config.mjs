@@ -1,13 +1,14 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // 静态导出，用于 OSS 静态网站托管部署
-  output: 'export',
+  // 静态导出仅在生产构建时启用，用于 OSS 静态网站托管部署
+  // 开发模式下不启用，以支持动态路由的即时渲染
+  ...(process.env.NODE_ENV === 'production' ? { output: 'export' } : {}),
 
   images: {
     unoptimized: true,
   },
 
-  // 静态导出时 trailingSlash 确保 OSS 路由回退正常
+  // trailingSlash 确保 OSS 路由回退正常
   trailingSlash: true,
 
   // 生产环境可通过 NEXT_PUBLIC_ASSET_PREFIX 配置 CDN 前缀
