@@ -67,8 +67,10 @@ class TestSkillToolSubsets:
         assert "order_query" not in PRODUCT_TOOLS
 
     def test_knowledge_tools(self):
-        """知识 Skill 只包含 knowledge_search"""
-        assert KNOWLEDGE_TOOLS == ["knowledge_search"]
+        """知识 Skill 包含 knowledge_search 和 knowledge_manage"""
+        assert "knowledge_search" in KNOWLEDGE_TOOLS
+        assert "knowledge_manage" in KNOWLEDGE_TOOLS
+        assert len(KNOWLEDGE_TOOLS) == 2
 
     def test_aftersales_tools(self):
         """售后 Skill 包含正确的 Tool"""
@@ -78,11 +80,17 @@ class TestSkillToolSubsets:
         assert "product_search" not in AFTERSALES_TOOLS
 
     def test_general_tools_includes_all(self):
-        """通用 Agent 包含全部 Tool"""
+        """通用 Agent 包含全部 21 个 Tool"""
         expected = {
             "order_query", "order_manage", "logistics_track",
             "product_search", "product_detail", "product_manage",
             "inventory_manage", "knowledge_search",
+            "processing_item_query", "customer_manage",
+            "employee_manage", "role_manage", "dashboard_stats",
+            "after_sales_manage", "knowledge_manage",
+            "notification_manage", "settings_manage",
+            "session_manage", "quick_reply_manage",
+            "category_manage", "processing_item_manage",
         }
         assert set(GENERAL_TOOLS) == expected
 

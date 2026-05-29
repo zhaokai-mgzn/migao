@@ -43,6 +43,18 @@ from app.tools.order_manage import OrderManageTool
 from app.tools.product_manage import ProductManageTool
 from app.tools.inventory_manage import InventoryManageTool
 from app.tools.processing_item_query import ProcessingItemQueryTool
+from app.tools.customer_manage import CustomerManageTool
+from app.tools.employee_manage import EmployeeManageTool
+from app.tools.role_manage import RoleManageTool
+from app.tools.dashboard_stats import DashboardStatsTool
+from app.tools.after_sales_manage import AfterSalesManageTool
+from app.tools.knowledge_manage import KnowledgeManageTool
+from app.tools.notification_manage import NotificationManageTool
+from app.tools.settings_manage import SettingsManageTool
+from app.tools.session_manage import SessionManageTool
+from app.tools.quick_reply_manage import QuickReplyManageTool
+from app.tools.category_manage import CategoryManageTool
+from app.tools.processing_item_manage import ProcessingItemManageTool
 
 __all__ = [
     # 基础设施
@@ -66,4 +78,16 @@ __all__ = [
     "ProductManageTool",
     "InventoryManageTool",
     "ProcessingItemQueryTool",
+    "CustomerManageTool",
+    "EmployeeManageTool",
+    "RoleManageTool",
+    "DashboardStatsTool",
+    "AfterSalesManageTool",
+    "KnowledgeManageTool",
+    "NotificationManageTool",
+    "SettingsManageTool",
+    "SessionManageTool",
+    "QuickReplyManageTool",
+    "CategoryManageTool",
+    "ProcessingItemManageTool",
 ]

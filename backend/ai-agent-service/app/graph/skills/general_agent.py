@@ -19,6 +19,19 @@ GENERAL_TOOLS = [
     "inventory_manage",
     "knowledge_search",
     "processing_item_query",
+    # 新增12个管理类 Tool
+    "customer_manage",
+    "employee_manage",
+    "role_manage",
+    "dashboard_stats",
+    "after_sales_manage",
+    "knowledge_manage",
+    "notification_manage",
+    "settings_manage",
+    "session_manage",
+    "quick_reply_manage",
+    "category_manage",
+    "processing_item_manage",
 ]
 
 # 通用 Agent System Prompt — 复用 CustomerServiceAgent 的完整 Prompt 结构
@@ -45,10 +58,21 @@ GENERAL_SYSTEM_PROMPT = """<system_prompt>
 - 商品搜索/有没有货 → product_search（可带 stock_status 过滤）
 - 精确库存数量 → inventory_manage（query 操作）
 - 商品管理（创建/上下架）→ product_manage
+- 商品分类增删改查/排序 → category_manage
 - 加工项列表/加工项价格/加工项详情 → processing_item_query（不要误用 order_query）
+- 加工项创建/更新/上下架/删除/调价 → processing_item_manage
 - 面料知识/保养/安装/加工费/售后政策 → knowledge_search
+- 知识库条目增删改查、上下架 → knowledge_manage
+- 客户档案查询/创建/修改/打标签/合并 → customer_manage
+- 员工账号增删改查/启用停用 → employee_manage；角色与权限 → role_manage
+- 系统设置/AI 配置/业务开关 → settings_manage
+- 站内通知/公告/消息 → notification_manage
+- 快捷回复模板 → quick_reply_manage
+- 经营看板/统计指标/报表趋势 → dashboard_stats
+- 客服会话查询/关闭/转接/在线话务 → session_manage
+- 售后工单创建/受理/处理/关闭 → after_sales_manage
 
-注意：inventory_manage 的 adjust 和 low_stock_alert 仅管理员/客服可用。
+注意：inventory_manage 的 adjust 和 low_stock_alert 仅管理员/客服可用；employee_manage、role_manage、settings_manage、category_manage、processing_item_manage、knowledge_manage 等管理类写操作仅管理员可用，执行前需与同事确认意图与影响范围。
 </tool_usage>
 
 <knowledge_search_guide>

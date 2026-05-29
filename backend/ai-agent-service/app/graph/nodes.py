@@ -213,6 +213,25 @@ _INTENT_TO_ROUTE: dict[str, str] = {
     "farewell": "direct_reply",
     "capabilities": "direct_reply",
     "general": "general",
+    # 商家后台（米宝）管理类意图
+    "customer_manage": "customer",
+    "customer_query": "customer",
+    "employee_manage": "staff",
+    "staff_manage": "staff",
+    "role_manage": "staff",
+    "permission_manage": "staff",
+    "system_settings": "settings",
+    "ai_config": "settings",
+    "notification": "settings",
+    "quick_reply": "settings",
+    "dashboard": "data",
+    "statistics": "data",
+    "data_report": "data",
+    "session_manage": "data",
+    "after_sales_create": "aftersales",
+    "knowledge_manage": "knowledge",
+    "category_manage": "product",
+    "processing_manage": "product",
 }
 
 

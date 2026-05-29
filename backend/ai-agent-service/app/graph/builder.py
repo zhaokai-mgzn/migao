@@ -54,6 +54,10 @@ def build_agent_graph(agent_type: str = "xiaobu"):
             product_node,
             knowledge_node,
             aftersales_node,
+            customer_skill_node,
+            staff_skill_node,
+            settings_skill_node,
+            data_skill_node,
             general_node,
         )
 
@@ -61,6 +65,10 @@ def build_agent_graph(agent_type: str = "xiaobu"):
         graph.add_node("product_skill", product_node)
         graph.add_node("knowledge_skill", knowledge_node)
         graph.add_node("aftersales_skill", aftersales_node)
+        graph.add_node("customer_skill", customer_skill_node)
+        graph.add_node("staff_skill", staff_skill_node)
+        graph.add_node("settings_skill", settings_skill_node)
+        graph.add_node("data_skill", data_skill_node)
         graph.add_node("general_agent", general_node)
 
         skill_route_map = {
@@ -69,6 +77,10 @@ def build_agent_graph(agent_type: str = "xiaobu"):
             "product": "product_skill",
             "knowledge": "knowledge_skill",
             "aftersales": "aftersales_skill",
+            "customer": "customer_skill",
+            "staff": "staff_skill",
+            "settings": "settings_skill",
+            "data": "data_skill",
             "general": "general_agent",
         }
         skill_node_names = [
@@ -77,6 +89,10 @@ def build_agent_graph(agent_type: str = "xiaobu"):
             "product_skill",
             "knowledge_skill",
             "aftersales_skill",
+            "customer_skill",
+            "staff_skill",
+            "settings_skill",
+            "data_skill",
             "general_agent",
         ]
     else:
@@ -99,6 +115,10 @@ def build_agent_graph(agent_type: str = "xiaobu"):
             "product": "customer_product_skill",
             "knowledge": "customer_knowledge_skill",
             "aftersales": "customer_general_skill",
+            "customer": "customer_general_skill",
+            "staff": "customer_general_skill",
+            "settings": "customer_general_skill",
+            "data": "customer_general_skill",
             "general": "customer_general_skill",
         }
         skill_node_names = [

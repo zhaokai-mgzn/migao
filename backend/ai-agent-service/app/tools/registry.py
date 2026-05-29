@@ -347,6 +347,18 @@ def create_default_registry() -> ToolRegistry:
     - product_manage: 商品管理
     - inventory_manage: 库存管理
     - processing_item_query: 加工项查询
+    - customer_manage: 客户管理
+    - employee_manage: 员工管理
+    - role_manage: 角色管理
+    - dashboard_stats: 经营数据看板
+    - after_sales_manage: 售后管理
+    - knowledge_manage: 知识库管理
+    - notification_manage: 通知管理
+    - settings_manage: 系统设置
+    - session_manage: 客服会话管理
+    - quick_reply_manage: 快捷回复模板
+    - category_manage: 商品分类管理
+    - processing_item_manage: 加工项管理
     
     Returns:
         ToolRegistry: 配置好的注册器
@@ -360,6 +372,18 @@ def create_default_registry() -> ToolRegistry:
     from app.tools.product_manage import ProductManageTool
     from app.tools.inventory_manage import InventoryManageTool
     from app.tools.processing_item_query import ProcessingItemQueryTool
+    from app.tools.customer_manage import CustomerManageTool
+    from app.tools.employee_manage import EmployeeManageTool
+    from app.tools.role_manage import RoleManageTool
+    from app.tools.dashboard_stats import DashboardStatsTool
+    from app.tools.after_sales_manage import AfterSalesManageTool
+    from app.tools.knowledge_manage import KnowledgeManageTool
+    from app.tools.notification_manage import NotificationManageTool
+    from app.tools.settings_manage import SettingsManageTool
+    from app.tools.session_manage import SessionManageTool
+    from app.tools.quick_reply_manage import QuickReplyManageTool
+    from app.tools.category_manage import CategoryManageTool
+    from app.tools.processing_item_manage import ProcessingItemManageTool
     
     registry = ToolRegistry()
     
@@ -373,6 +397,19 @@ def create_default_registry() -> ToolRegistry:
     registry.register(ProductManageTool())
     registry.register(InventoryManageTool())
     registry.register(ProcessingItemQueryTool())
+    # 新增12个管理类 Tool
+    registry.register(CustomerManageTool())
+    registry.register(EmployeeManageTool())
+    registry.register(RoleManageTool())
+    registry.register(DashboardStatsTool())
+    registry.register(AfterSalesManageTool())
+    registry.register(KnowledgeManageTool())
+    registry.register(NotificationManageTool())
+    registry.register(SettingsManageTool())
+    registry.register(SessionManageTool())
+    registry.register(QuickReplyManageTool())
+    registry.register(CategoryManageTool())
+    registry.register(ProcessingItemManageTool())
     
     logger.info(f"Default registry created with {len(registry)} tools")
     return registry

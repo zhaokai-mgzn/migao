@@ -267,7 +267,7 @@ class TestIntentConfig:
 
     def test_intent_type_values(self):
         """所有意图类型存在"""
-        assert len(IntentType) == 10
+        assert len(IntentType) == 28
 
     def test_intent_tool_map_coverage(self):
         """所有意图类型都有 tool 映射"""

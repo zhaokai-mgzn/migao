@@ -77,9 +77,9 @@ class TestBuildGraph:
         for route in skill_routes:
             assert route in source, f"Route {route} not found"
 
-        # 所有 Skill → cache_store → suggestions → END
+        # 所有 Skill → cache_store → suggest_node → END
         assert '"cache_store"' in source
-        assert '"suggestions"' in source
+        assert '"suggest_node"' in source
         assert "END" in source
 
     def test_intent_to_skill_mapping_complete(self):

@@ -8,7 +8,8 @@ from typing import Optional
 
 
 class IntentType(str, Enum):
-    """意图类型枚举（8类）"""
+    """意图类型枚举"""
+    # 备货 / C 端客服场景
     ORDER_QUERY = "order_query"
     LOGISTICS_TRACK = "logistics_track"
     PRODUCT_INQUIRY = "product_inquiry"
@@ -19,6 +20,25 @@ class IntentType(str, Enum):
     CAPABILITIES = "capabilities"
     COMPLAINT = "complaint"
     GENERAL = "general"
+    # 商家后台（米宝）管理类场景
+    CUSTOMER_MANAGE = "customer_manage"
+    CUSTOMER_QUERY = "customer_query"
+    EMPLOYEE_MANAGE = "employee_manage"
+    STAFF_MANAGE = "staff_manage"
+    ROLE_MANAGE = "role_manage"
+    PERMISSION_MANAGE = "permission_manage"
+    SYSTEM_SETTINGS = "system_settings"
+    AI_CONFIG = "ai_config"
+    NOTIFICATION = "notification"
+    QUICK_REPLY = "quick_reply"
+    DASHBOARD = "dashboard"
+    STATISTICS = "statistics"
+    DATA_REPORT = "data_report"
+    SESSION_MANAGE = "session_manage"
+    AFTER_SALES_CREATE = "after_sales_create"
+    KNOWLEDGE_MANAGE = "knowledge_manage"
+    CATEGORY_MANAGE = "category_manage"
+    PROCESSING_MANAGE = "processing_manage"
 
 
 @dataclass
@@ -51,4 +71,23 @@ INTENT_TOOL_MAP: dict[IntentType, list[str]] = {
     IntentType.CAPABILITIES: [],
     IntentType.COMPLAINT: ["human_handoff"],
     IntentType.GENERAL: [],
+    # 商家后台管理类意图
+    IntentType.CUSTOMER_MANAGE: ["customer_manage"],
+    IntentType.CUSTOMER_QUERY: ["customer_manage"],
+    IntentType.EMPLOYEE_MANAGE: ["employee_manage"],
+    IntentType.STAFF_MANAGE: ["employee_manage", "role_manage"],
+    IntentType.ROLE_MANAGE: ["role_manage"],
+    IntentType.PERMISSION_MANAGE: ["role_manage"],
+    IntentType.SYSTEM_SETTINGS: ["settings_manage"],
+    IntentType.AI_CONFIG: ["settings_manage"],
+    IntentType.NOTIFICATION: ["notification_manage"],
+    IntentType.QUICK_REPLY: ["quick_reply_manage"],
+    IntentType.DASHBOARD: ["dashboard_stats"],
+    IntentType.STATISTICS: ["dashboard_stats"],
+    IntentType.DATA_REPORT: ["dashboard_stats"],
+    IntentType.SESSION_MANAGE: ["session_manage"],
+    IntentType.AFTER_SALES_CREATE: ["after_sales_manage"],
+    IntentType.KNOWLEDGE_MANAGE: ["knowledge_manage"],
+    IntentType.CATEGORY_MANAGE: ["category_manage"],
+    IntentType.PROCESSING_MANAGE: ["processing_item_manage"],
 }
