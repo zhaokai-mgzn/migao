@@ -516,10 +516,11 @@ GET /api/admin/stats/orders?period=month&startDate=2024-01-01
     "averageOrderValue": 406.25,
     "statusBreakdown": {
       "pending": 50,
-      "paid": 100,
+      "confirmed": 80,
+      "producing": 100,
       "shipped": 200,
       "completed": 900,
-      "refunding": 30
+      "cancelled": 30
     },
     "trend": [
       {"date": "2026-01-01", "orders": 40, "revenue": 15000},

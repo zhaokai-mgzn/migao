@@ -81,6 +81,52 @@ public class ProductResponse {
     private Integer stockWarningThreshold;
 
     /**
+     * 商品货号
+     */
+    private String skuCode;
+
+    /**
+     * 库存扣减模式
+     */
+    private String stockDeductionMode;
+
+    /**
+     * 颜色数量
+     */
+    private Integer colorCount;
+
+    /**
+     * SKU总库存
+     */
+    private Integer totalStock;
+
+    /**
+     * 累计销量
+     */
+    private Integer salesCount;
+
+    /**
+     * 累计销售额
+     */
+    private BigDecimal salesAmount;
+
+    /**
+     * SKU列表（详情接口返回）
+     */
+    private List<ProductSkuResponse> skus;
+
+    /**
+     * 最后编辑人
+     */
+    private String editedBy;
+
+    /**
+     * 最后编辑时间
+     */
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private OffsetDateTime editedAt;
+
+    /**
      * 创建时间
      */
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
