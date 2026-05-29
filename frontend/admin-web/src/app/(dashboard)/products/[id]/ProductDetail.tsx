@@ -101,7 +101,7 @@ export default function ProductDetailPage() {
               上架
             </Button>
           )}
-          <Button onClick={() => router.push(`/products/${product.id}/edit`)}>
+          <Button onClick={() => { window.location.href = `/products/${product.id}/edit` }}>
             <Edit className="w-4 h-4 mr-1.5" />
             编辑
           </Button>

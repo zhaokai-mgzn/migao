@@ -1,6 +1,5 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
 import { Table, Badge, Pagination } from '@/components/ui'
 import type { TableColumn } from '@/components/ui'
 import { Edit, Trash2, ArrowUpCircle, ArrowDownCircle, Eye } from 'lucide-react'
@@ -31,8 +30,6 @@ export default function ProductTable({
   onStatusChange,
   onDelete,
 }: ProductTableProps) {
-  const router = useRouter()
-
   const columns: TableColumn<Product>[] = [
     {
       key: 'image',
@@ -129,14 +126,14 @@ export default function ProductTable({
       render: (record) => (
         <div className="flex items-center justify-center gap-1">
           <button
-            onClick={(e) => { e.stopPropagation(); router.push(`/products/${record.id}`) }}
+            onClick={(e) => { e.stopPropagation(); window.location.href = `/products/${record.id}` }}
             className="p-1.5 text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded transition-colors"
             title="查看"
           >
             <Eye className="w-4 h-4" />
           </button>
           <button
-            onClick={(e) => { e.stopPropagation(); router.push(`/products/${record.id}/edit`) }}
+            onClick={(e) => { e.stopPropagation(); window.location.href = `/products/${record.id}/edit` }}
             className="p-1.5 text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded transition-colors"
             title="编辑"
           >
@@ -178,7 +175,7 @@ export default function ProductTable({
         dataSource={products}
         loading={loading}
         rowKey="id"
-        onRowClick={(record) => router.push(`/products/${record.id}`)}
+        onRowClick={(record) => { window.location.href = `/products/${record.id}` }}
       />
       {total > 0 && (
         <Pagination
