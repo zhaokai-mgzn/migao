@@ -19,6 +19,10 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
 
+    concurrency:
+      group: deploy-ai-agent-service
+      cancel-in-progress: false
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -55,6 +59,30 @@ jobs:
             --access-key-secret ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }} \
             --region ${{ env.SAE_REGION }}
 
+          # 等待前一个变更完成
+          echo "检查是否有进行中的变更..."
+          MAX_WAIT=120
+          START_TIME=$(date +%s)
+          while true; do
+            RESULT=$(aliyun sae DescribeApplicationStatus --AppId ${{ env.SAE_APP_ID }})
+            RUNNING=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('Data',{}).get('LastChangeOrderRunning',''))" 2>/dev/null || echo "unknown")
+
+            if [ "$RUNNING" = "false" ] || [ "$RUNNING" = "False" ]; then
+              echo "✅ 没有进行中的变更，开始部署"
+              break
+            fi
+
+            CURRENT_TIME=$(date +%s)
+            ELAPSED=$((CURRENT_TIME - START_TIME))
+            if [ $ELAPSED -gt $MAX_WAIT ]; then
+              echo "❌ 等待超时（${MAX_WAIT}s），仍有变更在进行"
+              exit 1
+            fi
+
+            echo "⏳ 有变更在进行中，等待... ($ELAPSED/${MAX_WAIT}s)"
+            sleep 10
+          done
+
           # 获取当前完整环境变量（全量，避免丢失配置）
           ENVS=$(aliyun sae DescribeApplicationConfig \
             --AppId ${{ env.SAE_APP_ID }} | \
@@ -70,8 +98,31 @@ jobs:
 
       - name: Verify deployment
         run: |
-          echo "等待服务启动..."
-          sleep 60
+          echo "等待 SAE 变更完成..."
+          MAX_WAIT=300
+          START_TIME=$(date +%s)
+          while true; do
+            RESULT=$(aliyun sae DescribeApplicationStatus --AppId ${{ env.SAE_APP_ID }})
+            RUNNING=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('Data',{}).get('LastChangeOrderRunning',''))" 2>/dev/null || echo "unknown")
+
+            if [ "$RUNNING" = "false" ] || [ "$RUNNING" = "False" ]; then
+              echo "✅ 变更已完成"
+              break
+            fi
+
+            CURRENT_TIME=$(date +%s)
+            ELAPSED=$((CURRENT_TIME - START_TIME))
+            if [ $ELAPSED -gt $MAX_WAIT ]; then
+              echo "⚠️ 变更仍在进行，继续做健康检查..."
+              break
+            fi
+
+            echo "⏳ 等待变更完成... ($ELAPSED/${MAX_WAIT}s)"
+            sleep 15
+          done
+
+          sleep 30
+          echo "执行健康检查..."
           HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" https://ai-api.migaozn.com/health)
           echo "健康检查响应码: $HTTP_CODE"
           if [ "$HTTP_CODE" != "200" ]; then
