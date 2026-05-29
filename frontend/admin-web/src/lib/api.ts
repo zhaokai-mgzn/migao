@@ -340,7 +340,20 @@ export const chatApi = {
     return res.json()
   },
 
-  /** 结束会话 */
+  /** 结束会话（仅转换状态为 closed，保留历史消息） */
+  closeSession: async (sessionId: string, token: string) => {
+    const res = await fetch(`${AI_SERVICE_URL}/api/chat/sessions/${sessionId}/close`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+    })
+    if (!res.ok) throw new Error(`结束会话失败: ${res.status}`)
+    return res.json()
+  },
+
+  /** 删除会话（物理删除会话及其所有消息） */
   deleteSession: async (sessionId: string, token: string) => {
     const res = await fetch(`${AI_SERVICE_URL}/api/chat/sessions/${sessionId}`, {
       method: 'DELETE',

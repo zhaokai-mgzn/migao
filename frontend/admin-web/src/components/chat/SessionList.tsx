@@ -103,6 +103,11 @@ export default function SessionList() {
                 onSelect={() => selectSession(session.session_id)}
                 onToggleMenu={(e) => {
                   e.stopPropagation()
+                  // 已关闭会话不提供“结束会话”菜单项，点击按钮不起作用
+                  if (session.status === 'closed') {
+                    setContextMenuId(null)
+                    return
+                  }
                   setContextMenuId(
                     contextMenuId === session.session_id ? null : session.session_id
                   )
@@ -162,7 +167,11 @@ function SessionItem({
             <span
               className={cn(
                 'text-sm font-medium truncate',
-                isActive ? 'text-primary-700' : 'text-gray-800'
+                session.status === 'closed'
+                  ? 'text-gray-400'
+                  : isActive
+                    ? 'text-primary-700'
+                    : 'text-gray-800'
               )}
             >
               {session.title || '新对话'}
@@ -172,25 +181,39 @@ function SessionItem({
             </span>
           </div>
 
-          {/* 最后消息预览 */}
-          <p className="text-xs text-gray-500 truncate mt-0.5">
-            {session.last_message || '暂无消息'}
-          </p>
+          {/* 状态标签 + 最后消息预览 */}
+          <div className="flex items-center gap-1.5 mt-0.5">
+            {session.status === 'closed' && (
+              <span className="inline-flex items-center px-1.5 py-px rounded text-[10px] font-medium bg-gray-100 text-gray-500 flex-shrink-0">
+                已结束
+              </span>
+            )}
+            <p
+              className={cn(
+                'text-xs truncate',
+                session.status === 'closed' ? 'text-gray-400' : 'text-gray-500'
+              )}
+            >
+              {session.last_message || '暂无消息'}
+            </p>
+          </div>
         </div>
 
-        {/* 操作菜单 */}
-        <button
-          onClick={onToggleMenu}
-          className={cn(
-            'flex-shrink-0 p-0.5 rounded transition-opacity',
-            showContextMenu
-              ? 'opacity-100'
-              : 'opacity-0 group-hover:opacity-100',
-            'hover:bg-gray-200'
-          )}
-        >
-          <MoreHorizontal className="w-3.5 h-3.5 text-gray-400" />
-        </button>
+        {/* 操作菜单：已关闭会话不展示 */}
+        {session.status !== 'closed' && (
+          <button
+            onClick={onToggleMenu}
+            className={cn(
+              'flex-shrink-0 p-0.5 rounded transition-opacity',
+              showContextMenu
+                ? 'opacity-100'
+                : 'opacity-0 group-hover:opacity-100',
+              'hover:bg-gray-200'
+            )}
+          >
+            <MoreHorizontal className="w-3.5 h-3.5 text-gray-400" />
+          </button>
+        )}
       </div>
 
       {/* 右键菜单 */}
