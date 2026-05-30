@@ -22,6 +22,10 @@ from app.graph.skills.order_skill import order_node
 from app.graph.skills.product_skill import product_node
 from app.graph.skills.knowledge_skill import knowledge_node
 from app.graph.skills.aftersales_skill import aftersales_node
+from app.graph.skills.customer_skill import customer_skill_node
+from app.graph.skills.staff_skill import staff_skill_node
+from app.graph.skills.settings_skill import settings_skill_node
+from app.graph.skills.data_skill import data_skill_node
 from app.graph.skills.general_agent import general_node
 
 # 小布（C端客服）Skill 节点
@@ -39,6 +43,10 @@ __all__ = [
     "product_node",
     "knowledge_node",
     "aftersales_node",
+    "customer_skill_node",
+    "staff_skill_node",
+    "settings_skill_node",
+    "data_skill_node",
     "general_node",
     # 小布 Skill
     "customer_order_skill_node",

@@ -278,12 +278,13 @@ class TestSuggestionsNode:
         mock_gen = MagicMock()
 
         async def slow_generate(**kwargs):
-            await asyncio.sleep(10)
+            await asyncio.sleep(5)
             return ["建议"]
 
         mock_gen.generate = slow_generate
 
-        with patch("app.suggestions.follow_up.FollowUpSuggestionGenerator", return_value=mock_gen):
+        with patch("app.suggestions.follow_up.FollowUpSuggestionGenerator", return_value=mock_gen), \
+             patch("app.graph.nodes.asyncio.wait_for", side_effect=asyncio.TimeoutError):
             state = _make_state(final_answer="回答", intent_result={"intent": "general"})
             result = await suggestions_node(state)
         assert result["suggestions"] == []
