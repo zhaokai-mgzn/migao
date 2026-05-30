@@ -13,7 +13,7 @@ permissions:
 
 concurrency:
   group: qoder-auto-${{ github.event.issue.number }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   qoder-run:
