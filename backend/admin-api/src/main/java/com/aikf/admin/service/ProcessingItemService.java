@@ -283,9 +283,9 @@ public class ProcessingItemService extends ServiceImpl<ProcessingItemMapper, Pro
      * @param pricingMethod 计价方式
      */
     private void validatePricingMethod(String pricingMethod) {
-        List<String> validMethods = List.of("per_meter", "per_piece", "fixed", "per_area");
+        List<String> validMethods = List.of("per_meter", "per_piece");
         if (!validMethods.contains(pricingMethod)) {
-            throw BusinessException.validationError("无效的计价方式，可选值：per_meter、per_piece、fixed、per_area");
+            throw BusinessException.validationError("无效的计价方式，可选值：per_meter（按购买米数计价）、per_piece（按购买套数计价）");
         }
     }
 

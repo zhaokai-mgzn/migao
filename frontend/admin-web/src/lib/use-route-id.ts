@@ -12,7 +12,7 @@ import { useParams } from 'next/navigation'
  * - 默认取过滤后路径段的倒数第一段；
  * - 若该段是已知后缀（如 'edit'），则向前回退一段。
  */
-const KNOWN_SUFFIX_SEGMENTS = new Set(['edit', 'new', 'create'])
+const KNOWN_SUFFIX_SEGMENTS = new Set(['edit', 'new', 'create', 'ship'])
 
 function extractIdFromPathname(pathname: string): string {
   const segments = pathname.split('/').filter(Boolean)

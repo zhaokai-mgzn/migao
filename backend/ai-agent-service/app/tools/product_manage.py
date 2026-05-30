@@ -70,6 +70,11 @@ class ProductManageTool(BaseTool):
                 "type": "integer",
                 "description": "库存数量（可选）",
             },
+            "processing_item_ids": {
+                "type": "array",
+                "description": "关联的加工项 ID 列表（可选，create/update 时用于绑定商品可用的加工项）",
+                "items": {"type": "string"},
+            },
             "status": {
                 "type": "string",
                 "description": "目标状态（toggle_status 时必填）：on_sale / off_sale",
@@ -89,6 +94,7 @@ class ProductManageTool(BaseTool):
         price: Optional[float] = None,
         description: Optional[str] = None,
         stock_quantity: Optional[int] = None,
+        processing_item_ids: Optional[list] = None,
         status: Optional[str] = None,
     ) -> ToolResult:
         """执行商品管理操作
@@ -102,6 +108,7 @@ class ProductManageTool(BaseTool):
             price: 价格
             description: 商品描述
             stock_quantity: 库存数量
+            processing_item_ids: 关联加工项 ID 列表
             status: 目标状态
             
         Returns:
@@ -126,11 +133,11 @@ class ProductManageTool(BaseTool):
         try:
             if action == "create":
                 return await self._create_product(
-                    context, name, category_id, price, description, stock_quantity
+                    context, name, category_id, price, description, stock_quantity, processing_item_ids
                 )
             elif action == "update":
                 return await self._update_product(
-                    context, product_id, name, category_id, price, description, stock_quantity
+                    context, product_id, name, category_id, price, description, stock_quantity, processing_item_ids
                 )
             elif action == "toggle_status":
                 return await self._toggle_status(context, product_id, status)
@@ -157,6 +164,7 @@ class ProductManageTool(BaseTool):
         price: Optional[float],
         description: Optional[str],
         stock_quantity: Optional[int],
+        processing_item_ids: Optional[list] = None,
     ) -> ToolResult:
         """创建商品
         
@@ -187,6 +195,8 @@ class ProductManageTool(BaseTool):
             json_data["description"] = description
         if stock_quantity is not None:
             json_data["stock"] = stock_quantity
+        if processing_item_ids:
+            json_data["processingItems"] = processing_item_ids
         
         client = get_admin_api_client()
         response = await client.post(
@@ -227,6 +237,7 @@ class ProductManageTool(BaseTool):
         price: Optional[float],
         description: Optional[str],
         stock_quantity: Optional[int],
+        processing_item_ids: Optional[list] = None,
     ) -> ToolResult:
         """更新商品信息
         
@@ -260,6 +271,8 @@ class ProductManageTool(BaseTool):
             json_data["description"] = description
         if stock_quantity is not None:
             json_data["stock"] = stock_quantity
+        if processing_item_ids is not None:
+            json_data["processingItems"] = processing_item_ids
         
         if not json_data:
             return ToolResult(

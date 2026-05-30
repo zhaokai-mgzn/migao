@@ -206,7 +206,8 @@ _INTENT_TO_ROUTE: dict[str, str] = {
     "order_query": "order",
     "logistics_track": "order",
     "product_inquiry": "product",
-    "knowledge_faq": "knowledge",
+    # [RAG 禁用] "knowledge_faq": "knowledge",  # 知识库禁用，fallback 到 general
+    "knowledge_faq": "general",
     "after_sales": "aftersales",
     "complaint": "aftersales",
     "greeting": "direct_reply",
@@ -229,7 +230,8 @@ _INTENT_TO_ROUTE: dict[str, str] = {
     "data_report": "data",
     "session_manage": "data",
     "after_sales_create": "aftersales",
-    "knowledge_manage": "knowledge",
+    # [RAG 禁用] "knowledge_manage": "knowledge",  # 知识库禁用，fallback 到 general
+    "knowledge_manage": "general",
     "category_manage": "product",
     "processing_manage": "product",
 }

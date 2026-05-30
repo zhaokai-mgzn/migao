@@ -1,7 +1,7 @@
 """
 AI 智能客服系统 - 订单管理 Tool
 
-执行订单管理操作，包括更新状态、更新物流信息、取消订单。
+执行订单管理操作，包括更新状态、更新物流信息、取消订单、确认支付、退款。
 """
 
 from typing import Any, Dict, Optional
@@ -17,24 +17,26 @@ VALID_ORDER_STATUSES = {
 }
 
 # 操作类型
-VALID_ACTIONS = {"update_status", "update_logistics", "cancel"}
+VALID_ACTIONS = {"update_status", "update_logistics", "cancel", "confirm_payment", "refund"}
 
 
 class OrderManageTool(BaseTool):
     """订单管理 Tool
     
-    执行订单管理操作：更新状态、更新物流信息、取消订单。
+    执行订单管理操作：更新状态、更新物流信息、取消订单、确认支付、退款。
     
     使用场景：
     - 客服更新订单状态（如确认订单、标记发货）
     - 客服录入物流信息（快递公司、运单号）
     - 客服取消订单
+    - 客服确认客户已支付
+    - 客服发起退款
     """
     
     name = "order_manage"
     description = (
-        "执行订单管理操作，包括更新订单状态、录入物流信息、取消订单。"
-        "当需要修改订单状态、填写物流单号、取消订单时使用。"
+        "执行订单管理操作，包括更新订单状态、录入物流信息、取消订单、确认支付、退款。"
+        "当需要修改订单状态、填写物流单号、取消订单、确认客户已付款或发起退款时使用。"
     )
     
     # admin、agent、tenant_admin 可使用
@@ -45,8 +47,8 @@ class OrderManageTool(BaseTool):
         "properties": {
             "action": {
                 "type": "string",
-                "description": "操作类型：update_status（更新状态）/ update_logistics（更新物流）/ cancel（取消订单）",
-                "enum": ["update_status", "update_logistics", "cancel"],
+                "description": "操作类型：update_status（更新状态）/ update_logistics（更新物流）/ cancel（取消订单）/ confirm_payment（确认支付）/ refund（退款）",
+                "enum": ["update_status", "update_logistics", "cancel", "confirm_payment", "refund"],
             },
             "order_id": {
                 "type": "string",
@@ -54,7 +56,7 @@ class OrderManageTool(BaseTool):
             },
             "status": {
                 "type": "string",
-                "description": "新状态（update_status 时必填）：pending/confirmed/processing/shipped/completed/cancelled",
+                "description": "新状态（update_status 时必填）：pending=待付款, confirmed=待发货, processing=生产中, shipped=已发货, completed=已完成, cancelled=已关闭",
                 "enum": ["pending", "confirmed", "processing", "shipped", "completed", "cancelled"],
             },
             "logistics_company": {
@@ -129,6 +131,10 @@ class OrderManageTool(BaseTool):
                 )
             elif action == "cancel":
                 return await self._cancel_order(context, order_id, cancel_reason)
+            elif action == "confirm_payment":
+                return await self._confirm_payment(context, order_id)
+            elif action == "refund":
+                return await self._refund_order(context, order_id)
             else:
                 return ToolResult(
                     success=False,
@@ -176,7 +182,7 @@ class OrderManageTool(BaseTool):
         
         client = get_admin_api_client()
         response = await client.put(
-            f"/api/admin/orders/{order_id}",
+            f"/api/admin/orders/{order_id}/status",
             json_data={"status": status},
             tenant_id=context.tenant_id,
             user_id=context.user_id,
@@ -237,7 +243,7 @@ class OrderManageTool(BaseTool):
         response = await client.put(
             f"/api/admin/orders/{order_id}/logistics",
             json_data={
-                "company": logistics_company,
+                "logisticsCompany": logistics_company,
                 "trackingNo": tracking_number,
             },
             tenant_id=context.tenant_id,
@@ -286,14 +292,14 @@ class OrderManageTool(BaseTool):
         """
         client = get_admin_api_client()
         
-        # 使用状态更新方式取消订单
-        json_data: Dict[str, Any] = {"status": "cancelled"}
+        # 使用专用取消接口
+        json_data: Dict[str, Any] = {}
         if cancel_reason:
             json_data["cancelReason"] = cancel_reason
         
         response = await client.put(
-            f"/api/admin/orders/{order_id}",
-            json_data=json_data,
+            f"/api/admin/orders/{order_id}/cancel",
+            json_data=json_data if json_data else None,
             tenant_id=context.tenant_id,
             user_id=context.user_id,
         )
@@ -315,4 +321,84 @@ class OrderManageTool(BaseTool):
             success=True,
             data={"order_id": order_id, "status": "cancelled", "reason": cancel_reason},
             message=f"订单已取消" + (f"，原因：{cancel_reason}" if cancel_reason else ""),
+        )
+
+    async def _confirm_payment(
+        self,
+        context: ToolContext,
+        order_id: str,
+    ) -> ToolResult:
+        """确认支付
+        
+        Args:
+            context: Tool 执行上下文
+            order_id: 订单 ID
+            
+        Returns:
+            ToolResult: 操作结果
+        """
+        client = get_admin_api_client()
+        response = await client.put(
+            f"/api/admin/orders/{order_id}/payment",
+            tenant_id=context.tenant_id,
+            user_id=context.user_id,
+        )
+        
+        if not response.get("success"):
+            error_msg = response.get("error", {}).get("message", "确认支付失败")
+            return ToolResult(
+                success=False,
+                error=error_msg,
+                message=f"确认支付失败：{error_msg}",
+            )
+        
+        logger.info(
+            f"Order payment confirmed: order_id={order_id}, "
+            f"tenant={context.tenant_id}, user={context.user_id}"
+        )
+        
+        return ToolResult(
+            success=True,
+            data={"order_id": order_id, "action": "confirm_payment"},
+            message="订单已确认支付",
+        )
+
+    async def _refund_order(
+        self,
+        context: ToolContext,
+        order_id: str,
+    ) -> ToolResult:
+        """退款
+        
+        Args:
+            context: Tool 执行上下文
+            order_id: 订单 ID
+            
+        Returns:
+            ToolResult: 操作结果
+        """
+        client = get_admin_api_client()
+        response = await client.put(
+            f"/api/admin/orders/{order_id}/refund",
+            tenant_id=context.tenant_id,
+            user_id=context.user_id,
+        )
+        
+        if not response.get("success"):
+            error_msg = response.get("error", {}).get("message", "退款失败")
+            return ToolResult(
+                success=False,
+                error=error_msg,
+                message=f"退款操作失败：{error_msg}",
+            )
+        
+        logger.info(
+            f"Order refund initiated: order_id={order_id}, "
+            f"tenant={context.tenant_id}, user={context.user_id}"
+        )
+        
+        return ToolResult(
+            success=True,
+            data={"order_id": order_id, "action": "refund"},
+            message="订单退款已发起",
         )

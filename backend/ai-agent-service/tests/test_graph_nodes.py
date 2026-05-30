@@ -359,12 +359,12 @@ class TestRouteByIntent:
         assert route_by_intent(state) == "product"
 
     def test_knowledge_faq(self):
-        """knowledge_faq 路由到 knowledge"""
+        """knowledge_faq 路由到 general（知识库已禁用，fallback 到 general）"""
         state = _make_state(
             route_decision={"action": "full_agent"},
             intent_result={"intent": "knowledge_faq"},
         )
-        assert route_by_intent(state) == "knowledge"
+        assert route_by_intent(state) == "general"
 
     def test_after_sales(self):
         """after_sales 路由到 aftersales"""

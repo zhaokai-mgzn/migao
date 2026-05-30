@@ -89,7 +89,6 @@ const menuGroups: MenuGroup[] = [
     children: [
       { key: 'products', name: '商品管理', icon: 'Package', path: '/products' },
       { key: 'processing', name: '加工项管理', icon: 'Scissors', path: '/processing' },
-      { key: 'knowledge', name: '知识库管理', icon: 'BookOpen', path: '/knowledge' },
     ],
   },
   {

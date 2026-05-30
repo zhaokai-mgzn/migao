@@ -14,7 +14,7 @@ from app.utils.http_client import get_admin_api_client
 
 # 操作类型
 VALID_ACTIONS = {
-    "create_item", "update_item", "delete_item",
+    "create_item", "update_item", "delete_item", "toggle_item_status",
     "list_categories", "create_category", "update_category", "delete_category",
     "calculate_price",
 }
@@ -49,11 +49,12 @@ class ProcessingItemManageTool(BaseTool):
                 "type": "string",
                 "description": (
                     "操作类型：create_item（创建加工项）/ update_item（更新加工项）/ delete_item（删除加工项）"
+                    "/ toggle_item_status（启用/停用加工项）"
                     "/ list_categories（分类列表）/ create_category（创建分类）/ update_category（更新分类）"
                     "/ delete_category（删除分类）/ calculate_price（计算价格）"
                 ),
                 "enum": [
-                    "create_item", "update_item", "delete_item",
+                    "create_item", "update_item", "delete_item", "toggle_item_status",
                     "list_categories", "create_category", "update_category", "delete_category",
                     "calculate_price",
                 ],
@@ -90,6 +91,11 @@ class ProcessingItemManageTool(BaseTool):
                 "type": "number",
                 "description": "数量（calculate_price 时必填）",
             },
+            "status": {
+                "type": "string",
+                "description": "目标状态（toggle_item_status 时必填）：active（启用）/ inactive（停用）",
+                "enum": ["active", "inactive"],
+            },
         },
         "required": ["action"],
     }
@@ -106,6 +112,7 @@ class ProcessingItemManageTool(BaseTool):
         unit: Optional[str] = None,
         processing_item_id: Optional[str] = None,
         quantity: Optional[float] = None,
+        status: Optional[str] = None,
     ) -> ToolResult:
         """执行加工项管理操作"""
         # 权限检查
@@ -131,6 +138,8 @@ class ProcessingItemManageTool(BaseTool):
                 return await self._update_item(context, item_id, name, category_id, price, description)
             elif action == "delete_item":
                 return await self._delete_item(context, item_id)
+            elif action == "toggle_item_status":
+                return await self._toggle_item_status(context, item_id, status)
             elif action == "list_categories":
                 return await self._list_categories(context)
             elif action == "create_category":
@@ -313,6 +322,54 @@ class ProcessingItemManageTool(BaseTool):
             success=True,
             data={"item_id": item_id},
             message="加工项已删除",
+        )
+
+    async def _toggle_item_status(
+        self,
+        context: ToolContext,
+        item_id: Optional[str],
+        status: Optional[str],
+    ) -> ToolResult:
+        """启用/停用加工项"""
+        if not item_id:
+            return ToolResult(
+                success=False,
+                error="缺少加工项 ID",
+                message="启用/停用加工项时必须提供 item_id",
+            )
+        if not status or status not in ("active", "inactive"):
+            return ToolResult(
+                success=False,
+                error=f"无效的状态值: {status}",
+                message="请提供有效的状态值：active（启用）或 inactive（停用）",
+            )
+
+        logger.info(
+            f"[processing-item-manage] ToggleItemStatus: item_id={item_id}, status={status} "
+            f"| tenant={context.tenant_id}"
+        )
+
+        client = get_admin_api_client()
+        response = await client.put(
+            f"/api/admin/processing-items/{item_id}/status",
+            json_data={"status": status},
+            tenant_id=context.tenant_id,
+            user_id=context.user_id,
+        )
+
+        if not response.get("success"):
+            error_msg = response.get("error", {}).get("message", "操作失败")
+            return ToolResult(
+                success=False,
+                error=error_msg,
+                message=f"加工项状态更新失败：{error_msg}",
+            )
+
+        status_text = "启用" if status == "active" else "停用"
+        return ToolResult(
+            success=True,
+            data={"item_id": item_id, "status": status},
+            message=f"加工项已{status_text}",
         )
 
     async def _list_categories(self, context: ToolContext) -> ToolResult:

@@ -13,16 +13,16 @@ interface OrderTimelineProps {
 }
 
 const statusColors: Record<OrderStatus, { bg: string; border: string; text: string }> = {
-  pending: { bg: 'bg-amber-500', border: 'border-amber-500', text: 'text-amber-700' },
-  confirmed: { bg: 'bg-blue-500', border: 'border-blue-500', text: 'text-blue-700' },
-  producing: { bg: 'bg-purple-500', border: 'border-purple-500', text: 'text-purple-700' },
+  pending_payment: { bg: 'bg-amber-500', border: 'border-amber-500', text: 'text-amber-700' },
+  pending_shipment: { bg: 'bg-blue-500', border: 'border-blue-500', text: 'text-blue-700' },
   shipped: { bg: 'bg-indigo-500', border: 'border-indigo-500', text: 'text-indigo-700' },
   completed: { bg: 'bg-green-500', border: 'border-green-500', text: 'text-green-700' },
-  cancelled: { bg: 'bg-red-500', border: 'border-red-500', text: 'text-red-700' },
+  closed: { bg: 'bg-gray-500', border: 'border-gray-500', text: 'text-gray-700' },
+  refund: { bg: 'bg-red-500', border: 'border-red-500', text: 'text-red-700' },
 }
 
 export default function OrderTimeline({ currentStatus, statusHistory, className }: OrderTimelineProps) {
-  const isCancelled = currentStatus === 'cancelled'
+  const isClosed = currentStatus === 'closed'
   const currentIndex = OrderStatusFlow.indexOf(currentStatus)
 
   const getHistoryItem = (status: OrderStatus) => {
@@ -34,8 +34,8 @@ export default function OrderTimeline({ currentStatus, statusHistory, className 
       {/* 步骤条 */}
       <div className="flex items-center justify-between mb-6">
         {OrderStatusFlow.map((status, index) => {
-          const isCompleted = !isCancelled && currentIndex >= index
-          const isCurrent = !isCancelled && currentIndex === index
+          const isCompleted = !isClosed && currentIndex >= index
+          const isCurrent = !isClosed && currentIndex === index
           const historyItem = getHistoryItem(status)
           const colors = statusColors[status]
 
@@ -79,7 +79,7 @@ export default function OrderTimeline({ currentStatus, statusHistory, className 
                 <div
                   className={cn(
                     'flex-1 h-0.5 mx-2 mt-[-20px]',
-                    !isCancelled && currentIndex > index ? 'bg-green-400' : 'bg-gray-200'
+                    !isClosed && currentIndex > index ? 'bg-green-400' : 'bg-gray-200'
                   )}
                 />
               )}
@@ -88,17 +88,17 @@ export default function OrderTimeline({ currentStatus, statusHistory, className 
         })}
       </div>
 
-      {/* 已取消状态 */}
-      {isCancelled && (
+      {/* 已关闭状态 */}
+      {isClosed && (
         <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg">
           <div className="w-6 h-6 rounded-full bg-red-500 flex items-center justify-center">
             <span className="text-white text-xs font-bold">✕</span>
           </div>
           <div>
-            <span className="text-sm font-medium text-red-700">订单已取消</span>
-            {getHistoryItem('cancelled') && (
+            <span className="text-sm font-medium text-red-700">订单已关闭</span>
+            {getHistoryItem('closed') && (
               <span className="ml-2 text-xs text-red-500">
-                {dayjs(getHistoryItem('cancelled')!.time).format('YYYY-MM-DD HH:mm')}
+                {dayjs(getHistoryItem('closed')!.time).format('YYYY-MM-DD HH:mm')}
               </span>
             )}
           </div>

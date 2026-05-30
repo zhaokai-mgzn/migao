@@ -49,6 +49,7 @@ export interface LoginParams {
   username: string
   password: string
   tenantId?: number
+  tenantCode?: string
 }
 
 // 登录响应
@@ -220,17 +221,27 @@ export interface CategoryFormData {
 // 加工项状态
 export type ProcessingItemStatus = 'active' | 'inactive'
 
+// 加工项计价方式
+export type PricingMethod = 'per_meter' | 'per_piece' | 'fixed' | 'per_area'
+
 // 加工项类型
 export interface ProcessingItem {
   id: string
   name: string
   categoryId: string
   categoryName?: string
+  pricingMethod: PricingMethod
+  unitPrice: number
   unit: string
-  basePrice: number
+  basePrice?: number // legacy alias for unitPrice
   status: ProcessingItemStatus
   pricingRules?: Record<string, unknown>
+  options?: Record<string, unknown>[]
   description?: string
+  minQuantity?: number
+  maxQuantity?: number
+  processingDays?: number
+  aiRecommended?: boolean
   createdAt?: string
   updatedAt?: string
 }
@@ -245,11 +256,16 @@ export interface ProcessingItemListParams extends PageParams {
 export interface ProcessingItemFormData {
   name: string
   categoryId: string
-  unit: string
-  basePrice: number
-  status: ProcessingItemStatus
-  pricingRules?: Record<string, unknown>
+  pricingMethod: PricingMethod
+  unitPrice: number
+  unit?: string
+  status?: ProcessingItemStatus
   description?: string
+  options?: Record<string, unknown>[]
+  minQuantity?: number
+  maxQuantity?: number
+  processingDays?: number
+  aiRecommended?: boolean
 }
 
 // 加工分类类型
@@ -317,72 +333,135 @@ export interface KnowledgeDocumentUploadForm {
   file?: File
 }
 
-// 订单状态
-export type OrderStatus = 'pending' | 'confirmed' | 'producing' | 'shipped' | 'completed' | 'cancelled'
+// ===== 订单状态枚举 =====
+export type OrderStatus = 'pending_payment' | 'pending_shipment' | 'shipped' | 'completed' | 'closed' | 'refund'
 
-// 订单状态标签映射
+// 后端实际订单状态（数据库存储值）
+export type BackendOrderStatus =
+  | 'pending'
+  | 'confirmed'
+  | 'processing'
+  | 'shipped'
+  | 'completed'
+  | 'cancelled'
+
+// 前端到后端状态映射（用于API请求时的status参数）
+export const FrontendToBackendStatus: Record<OrderStatus, BackendOrderStatus> = {
+  pending_payment: 'pending',
+  pending_shipment: 'confirmed', // confirmed 和 processing 都算待发货
+  shipped: 'shipped',
+  completed: 'completed',
+  closed: 'cancelled',
+  refund: 'cancelled', // 退款目前映射到 cancelled（后端暂无独立 refund 状态）
+}
+
+// 后端到前端状态映射（用于API响应的数据展示）
+export const BackendToFrontendStatus: Record<BackendOrderStatus, OrderStatus> = {
+  pending: 'pending_payment',
+  confirmed: 'pending_shipment',
+  processing: 'pending_shipment', // processing 也归入待发货
+  shipped: 'shipped',
+  completed: 'completed',
+  cancelled: 'closed',
+}
+
+// 将任意状态值（前端或后端）规范化为前端展示状态
+export function normalizeOrderStatus(status: string | undefined | null): OrderStatus {
+  if (!status) return 'pending_payment'
+  if (status in BackendToFrontendStatus) {
+    return BackendToFrontendStatus[status as BackendOrderStatus]
+  }
+  return status as OrderStatus
+}
+
+// 状态标签映射
 export const OrderStatusLabels: Record<OrderStatus, string> = {
-  pending: '待确认',
-  confirmed: '已确认',
-  producing: '生产中',
+  pending_payment: '待付款',
+  pending_shipment: '待发货',
   shipped: '已发货',
   completed: '已完成',
-  cancelled: '已取消',
+  closed: '已关闭',
+  refund: '退款/售后',
 }
 
-// 订单状态颜色映射
+// 状态颜色映射
 export const OrderStatusColors: Record<OrderStatus, string> = {
-  pending: 'warning',
-  confirmed: 'info',
-  producing: 'purple',
+  pending_payment: 'warning',
+  pending_shipment: 'info',
   shipped: 'indigo',
   completed: 'success',
-  cancelled: 'error',
+  closed: 'default',
+  refund: 'error',
 }
 
-// 订单状态流转顺序
-export const OrderStatusFlow: OrderStatus[] = ['pending', 'confirmed', 'producing', 'shipped', 'completed']
+// 订单状态流转顺序（正常流程）
+export const OrderStatusFlow: OrderStatus[] = ['pending_payment', 'pending_shipment', 'shipped', 'completed']
 
-// 下一步状态映射
+// 下一状态映射
 export const NextStatusMap: Partial<Record<OrderStatus, OrderStatus>> = {
-  pending: 'confirmed',
-  confirmed: 'producing',
-  producing: 'shipped',
+  pending_payment: 'pending_shipment',
+  pending_shipment: 'shipped',
   shipped: 'completed',
 }
 
-// 下一步操作标签映射
+// 下一步操作标签
 export const NextStatusActionLabels: Partial<Record<OrderStatus, string>> = {
-  pending: '确认订单',
-  confirmed: '开始生产',
-  producing: '确认发货',
-  shipped: '确认完成',
+  pending_payment: '确认付款',
+  pending_shipment: '确认发货',
+  shipped: '确认收货',
 }
 
-// 订单跟进状态
-export type OrderFollowStatus = 'pending' | 'following' | 'completed'
+// 订单状态Tab定义（含特殊筛选项）
+export type OrderStatusTab = OrderStatus | 'all' | 'processing'
 
-export const OrderFollowStatusLabels: Record<OrderFollowStatus, string> = {
-  pending: '待跟进',
-  following: '跟进中',
-  completed: '已完成',
-}
+export const OrderStatusTabs: { key: OrderStatusTab; label: string }[] = [
+  { key: 'all', label: '全部' },
+  { key: 'pending_payment', label: '待付款' },
+  { key: 'pending_shipment', label: '待发货' },
+  { key: 'shipped', label: '已发货' },
+  { key: 'completed', label: '已完成' },
+  { key: 'processing', label: '含加工订单' },
+  { key: 'closed', label: '已关闭' },
+  { key: 'refund', label: '退款/售后' },
+]
 
-// 订单明细类型
+// ===== 订单数据类型 =====
+
+// 订单明细项（单个SKU行）
 export interface OrderItem {
   id: string
   productId?: string
-  productName: string
+  productName: string         // 商品标题
+  productCode?: string        // 商品货号
+  color?: string              // 颜色
+  specification?: string      // 规格尺寸（如"门幅2.8米"）
+  quantity: number            // 数量（米）
+  unitPrice: number           // 单价（元/米）
+  amount: number              // 金额 = unitPrice * quantity
   sku?: string
-  specifications?: string
-  quantity: number
-  unitPrice: number
   width?: number
   height?: number
   processingInfo?: Record<string, unknown>
   processingFee?: number
   subtotal: number
   createdAt?: string
+}
+
+// 加工项
+export interface OrderProcessingItem {
+  id?: string
+  name: string                // 加工项名称（如"韩式打褶定型"、"打孔"）
+  unitPrice: number           // 单价（元/米）
+  quantity: number            // 数量（米）
+  amount: number              // 金额 = unitPrice * quantity
+}
+
+// 订单备注
+export interface OrderRemark {
+  id: string
+  content: string
+  createdAt: string
+  operator?: string
 }
 
 // 物流轨迹
@@ -397,10 +476,11 @@ export interface LogisticsInfo {
   company?: string
   trackingNo?: string
   status?: string
+  shippingMethod?: 'logistics' | 'none'  // 物流发货 / 无需物流
   tracks?: LogisticsTrack[]
 }
 
-// 状态变更历史
+// 订单状态变更历史
 export interface StatusHistory {
   status: OrderStatus
   time: string
@@ -408,32 +488,48 @@ export interface StatusHistory {
   remark?: string
 }
 
-// 订单类型
+// 订单主体
 export interface Order {
   id: string
   orderNo: string
   customerName: string
   customerPhone: string
   customerAddress?: string
-  totalAmount: number
+  totalAmount: number          // 累计金额
+  actualAmount: number         // 实收款（累计金额 - 优惠）
   status: OrderStatus
-  remark?: string
-  items?: OrderItem[]
-  logistics?: LogisticsInfo
+  hasProcessing: boolean       // 是否含加工
+  paymentDeadline?: string     // 支付截止时间（待付款状态用）
+  paymentNo?: string           // 支付宝交易号
+  paidAt?: string              // 支付时间
+  shippedAt?: string           // 发货时间
+  receivedAt?: string          // 确认收货时间
+  items?: OrderItem[]          // 商品明细
+  processingItems?: OrderProcessingItem[]  // 加工项列表
+  logistics?: LogisticsInfo    // 物流信息
   statusHistory?: StatusHistory[]
+  remarks?: OrderRemark[]      // 备注列表
+  closeReason?: string         // 关闭原因
+  remark?: string              // 兼容旧字段
   createdAt?: string
   updatedAt?: string
 }
 
+// ===== 表单与请求参数 =====
+
 // 订单列表查询参数
 export interface OrderListParams extends PageParams {
-  keyword?: string
-  status?: OrderStatus
-  startDate?: string
-  endDate?: string
+  orderId?: string             // 订单ID精准搜索
+  receiver?: string            // 收货人姓名或手机号精准搜索
+  startDate?: string           // 开始日期 (YYYY-MM-DD)
+  endDate?: string             // 结束日期 (YYYY-MM-DD)
+  productCode?: string         // 商品货号精准搜索
+  productTitle?: string        // 商品标题模糊搜索
+  hasProcessing?: boolean | '' // 是否加工筛选
+  status?: OrderStatus | 'processing' | ''  // 状态筛选
 }
 
-// 订单表单数据
+// 订单表单数据（创建/编辑）
 export interface OrderFormData {
   customerName: string
   customerPhone: string
@@ -442,7 +538,7 @@ export interface OrderFormData {
   items: OrderItemFormData[]
 }
 
-// 订单明细表单数据
+// 订单明细表单
 export interface OrderItemFormData {
   productId?: string
   productName: string
@@ -460,6 +556,7 @@ export interface OrderStatusUpdateParams {
   logistics?: {
     company: string
     trackingNo: string
+    shippingMethod?: 'logistics' | 'none'
   }
 }
 
@@ -467,6 +564,13 @@ export interface OrderStatusUpdateParams {
 export interface LogisticsFormData {
   company: string
   trackingNo: string
+  shippingMethod: 'logistics' | 'none'
+}
+
+// 关闭订单参数
+export interface CloseOrderParams {
+  reason: string               // 关闭原因
+  remark?: string              // 其它原因备注
 }
 
 // ========== 知识库搜索类型 ==========

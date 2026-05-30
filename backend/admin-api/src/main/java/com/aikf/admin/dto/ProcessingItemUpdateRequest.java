@@ -1,7 +1,6 @@
 package com.aikf.admin.dto;
 
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.*;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -18,6 +17,7 @@ public class ProcessingItemUpdateRequest {
      * 加工项名称
      */
     @NotBlank(message = "加工项名称不能为空")
+    @Size(max = 20, message = "加工项名称不能超过20个字符")
     private String name;
 
     /**
@@ -35,7 +35,10 @@ public class ProcessingItemUpdateRequest {
     /**
      * 单价
      */
-    @Positive(message = "单价必须大于 0")
+    @NotNull(message = "单价不能为空")
+    @DecimalMin(value = "0.10", message = "加工项价格不能低于0.10")
+    @DecimalMax(value = "999.99", message = "加工项价格不能超过999.99")
+    @Digits(integer = 3, fraction = 2, message = "价格最多支持2位小数")
     private BigDecimal unitPrice;
 
     /**

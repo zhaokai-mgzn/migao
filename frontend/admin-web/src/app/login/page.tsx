@@ -27,7 +27,7 @@ export default function LoginPage() {
   const [sendingCode, setSendingCode] = useState(false)
 
   // 密码登录表单
-  const [passwordForm, setPasswordForm] = useState({ username: '', password: '' })
+  const [passwordForm, setPasswordForm] = useState({ tenantCode: '', username: '', password: '' })
   const [showPassword, setShowPassword] = useState(false)
   const [rememberMe, setRememberMe] = useState(true)
   const [passwordErrors, setPasswordErrors] = useState<Record<string, string>>({})
@@ -106,6 +106,10 @@ export default function LoginPage() {
   // ========== 密码登录逻辑（保持原有不变）==========
   const validatePasswordForm = () => {
     const newErrors: Record<string, string> = {}
+    // 企业编号可选：为空时后端使用默认租户；输入时需为数字
+    if (passwordForm.tenantCode.trim() && !/^\d+$/.test(passwordForm.tenantCode.trim())) {
+      newErrors.tenantCode = '企业编号需为数字'
+    }
     if (!passwordForm.username.trim()) {
       newErrors.username = '请输入用户名/手机号/邮箱'
     }
@@ -123,7 +127,7 @@ export default function LoginPage() {
     setPasswordLoginError('')
     if (!validatePasswordForm()) return
     try {
-      await login(passwordForm.username, passwordForm.password, rememberMe)
+      await login(passwordForm.username, passwordForm.password, rememberMe, passwordForm.tenantCode)
       const callbackUrl = searchParams.get('callbackUrl') || '/dashboard'
       router.push(callbackUrl)
     } catch (error: any) {
@@ -332,6 +336,36 @@ export default function LoginPage() {
               )}
 
               <form onSubmit={handlePasswordSubmit} className="space-y-5">
+                {/* 企业编号 */}
+                <div>
+                  <label
+                    htmlFor="tenantCode"
+                    className="block text-sm font-medium text-gray-700 mb-1.5"
+                  >
+                    企业编号
+                  </label>
+                  <input
+                    id="tenantCode"
+                    name="tenantCode"
+                    type="text"
+                    autoComplete="organization"
+                    value={passwordForm.tenantCode}
+                    onChange={handlePasswordChange}
+                    placeholder="请输入企业编号"
+                    className={cn(
+                      'w-full h-11 px-3.5 rounded-lg border text-sm transition-all',
+                      'focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15',
+                      passwordErrors.tenantCode
+                        ? 'border-red-400 focus:border-red-500 focus:ring-red-500/15'
+                        : 'border-gray-300 hover:border-gray-400'
+                    )}
+                    disabled={isLoading}
+                  />
+                  {passwordErrors.tenantCode && (
+                    <p className="mt-1.5 text-xs text-red-500">{passwordErrors.tenantCode}</p>
+                  )}
+                </div>
+
                 {/* 用户名 */}
                 <div>
                   <label

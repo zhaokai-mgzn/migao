@@ -44,7 +44,7 @@ interface AuthState {
   _hasHydrated: boolean
 
   // 方法
-  login: (username: string, password: string, rememberMe?: boolean) => Promise<void>
+  login: (username: string, password: string, rememberMe?: boolean, tenantCode?: string) => Promise<void>
   smsLogin: (phone: string, code: string) => Promise<void>
   logout: () => Promise<void>
   refreshAccessToken: () => Promise<string | null>
@@ -69,10 +69,16 @@ export const useAuthStore = create<AuthState>()(
       setHasHydrated: (v: boolean) => set({ _hasHydrated: v }),
 
       // 登录
-      login: async (username: string, password: string, rememberMe = true) => {
+      login: async (username: string, password: string, rememberMe = true, tenantCode?: string) => {
         set({ isLoading: true })
         try {
-          const params: LoginParams = { username, password }
+          // 后端要求 tenantId（数字类型），将企业编号输入解析为数字；为空或非法时回退到默认租户 1
+          const parsedTenantId = tenantCode && tenantCode.trim() ? Number(tenantCode.trim()) : NaN
+          const tenantId = Number.isFinite(parsedTenantId) && parsedTenantId > 0 ? parsedTenantId : 1
+          const params: LoginParams = { username, password, tenantId }
+          if (tenantCode && tenantCode.trim()) {
+            params.tenantCode = tenantCode.trim()
+          }
           const response = await authApi.login(params)
           const { data } = response.data
 

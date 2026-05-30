@@ -123,7 +123,7 @@ export default function AfterSalesPage() {
     if (!orderSearchKeyword.trim()) return
     setOrderSearching(true)
     try {
-      const res = await orderApi.getOrders({ keyword: orderSearchKeyword, page: 1, size: 10 })
+      const res = await orderApi.getOrders({ receiver: orderSearchKeyword, page: 1, size: 10 })
       setOrderSearchResults(res.data?.data?.items || [])
     } catch {
       toast.error('搜索订单失败')

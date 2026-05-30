@@ -91,7 +91,7 @@ class TestBuildGraph:
             "order_query": "order",
             "logistics_track": "order",
             "product_inquiry": "product",
-            "knowledge_faq": "knowledge",
+            "knowledge_faq": "general",
             "after_sales": "aftersales",
             "complaint": "aftersales",
             "greeting": "direct_reply",

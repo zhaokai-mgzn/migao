@@ -74,7 +74,7 @@ class OrderQueryTool(BaseTool):
             },
             "status": {
                 "type": "string",
-                "description": "订单状态筛选（可选，仅 action=list 时生效）：pending/confirmed/processing/shipped/completed/cancelled",
+                "description": "订单状态筛选（可选，仅 action=list 时生效）：pending=待付款, confirmed=待发货, processing=生产中/待发货, shipped=已发货, completed=已完成, cancelled=已关闭",
                 "enum": ["pending", "confirmed", "processing", "shipped", "completed", "cancelled"],
             },
             "date_from": {
