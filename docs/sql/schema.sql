@@ -123,7 +123,7 @@ CREATE TABLE categories (
     deleted INTEGER DEFAULT 0
 );
 
--- 商品表：含库存管理字段
+-- 商品表：含库存管理、SKU 矩阵相关字段
 CREATE TABLE products (
     id VARCHAR(64) PRIMARY KEY,
     tenant_id BIGINT NOT NULL REFERENCES tenants(id),
@@ -137,6 +137,15 @@ CREATE TABLE products (
     stock INTEGER DEFAULT 0,
     stock_warning_threshold INTEGER DEFAULT 10,
     status VARCHAR(32) DEFAULT 'active',
+    -- SKU 矩阵相关字段（来自 008_product_sku_matrix.sql）
+    sku_code VARCHAR(30),
+    stock_deduction_mode VARCHAR(20) DEFAULT 'on_order',  -- on_order(拍下减) / on_payment(付款减)
+    sales_count INTEGER DEFAULT 0,                         -- 累计销量
+    sales_amount DECIMAL(12,2) DEFAULT 0,                  -- 累计销售额
+    edited_by VARCHAR(50),                                  -- 最后编辑人
+    edited_at TIMESTAMP WITH TIME ZONE,                     -- 最后编辑时间
+    -- 加工项关联（来自 009_processing_item_price.sql）
+    has_processing BOOLEAN DEFAULT FALSE,                   -- 是否含加工项
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     deleted INTEGER DEFAULT 0
@@ -144,6 +153,81 @@ CREATE TABLE products (
 
 COMMENT ON COLUMN products.stock IS '库存数量';
 COMMENT ON COLUMN products.stock_warning_threshold IS '库存预警阈值';
+COMMENT ON COLUMN products.sku_code IS '商品货号';
+COMMENT ON COLUMN products.stock_deduction_mode IS '库存扣减模式: on_order / on_payment';
+COMMENT ON COLUMN products.sales_count IS '累计销量';
+COMMENT ON COLUMN products.sales_amount IS '累计销售额';
+COMMENT ON COLUMN products.has_processing IS '是否含加工项';
+
+-- ================================================
+-- 商品 SKU 矩阵相关表 (来自 008_product_sku_matrix.sql)
+-- 注意：product_id 类型为 VARCHAR(64)，与 products.id 保持一致
+-- ================================================
+
+-- 商品颜色分类表
+CREATE TABLE product_colors (
+    id BIGSERIAL PRIMARY KEY,
+    tenant_id BIGINT NOT NULL,
+    product_id VARCHAR(64) NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    color_name VARCHAR(30) NOT NULL,
+    main_color_hex VARCHAR(7),
+    color_image_url TEXT,
+    remark VARCHAR(30),
+    sort_order INTEGER DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+CREATE INDEX idx_product_colors_tenant_product ON product_colors(tenant_id, product_id);
+COMMENT ON TABLE product_colors IS '商品颜色分类表，每商品最多200种颜色（应用层校验）';
+
+-- 商品 SKU 矩阵表
+CREATE TABLE product_skus (
+    id BIGSERIAL PRIMARY KEY,
+    tenant_id BIGINT NOT NULL,
+    product_id VARCHAR(64) NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    color_id BIGINT REFERENCES product_colors(id) ON DELETE CASCADE,
+    selling_method VARCHAR(20) NOT NULL,                  -- bulk_cut(散剪) / full_roll(整卷)
+    door_width VARCHAR(20) NOT NULL,                      -- 规格尺寸: 2.8m / 3.2m / 3.4m
+    price DECIMAL(10,2) NOT NULL DEFAULT 0,
+    stock INTEGER NOT NULL DEFAULT 0,
+    sku_code VARCHAR(50),
+    sales_count INTEGER NOT NULL DEFAULT 0,                -- SKU 累计销量（来自 011）
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+CREATE INDEX idx_product_skus_tenant_product ON product_skus(tenant_id, product_id);
+ALTER TABLE product_skus ADD CONSTRAINT uq_product_skus_combination
+    UNIQUE (product_id, color_id, selling_method, door_width);
+COMMENT ON TABLE product_skus IS 'SKU矩阵表，颜色×售卖方式×门幅 组合';
+
+-- 商品属性表
+CREATE TABLE product_attributes (
+    id BIGSERIAL PRIMARY KEY,
+    tenant_id BIGINT NOT NULL,
+    product_id VARCHAR(64) NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    attr_key VARCHAR(30) NOT NULL,                        -- brand/material/weight/function/style/craft/pattern
+    attr_value VARCHAR(100) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+CREATE INDEX idx_product_attributes_tenant_product ON product_attributes(tenant_id, product_id);
+ALTER TABLE product_attributes ADD CONSTRAINT uq_product_attributes_key
+    UNIQUE (product_id, attr_key);
+COMMENT ON TABLE product_attributes IS '商品属性表';
+
+-- 商品-加工项关联表
+CREATE TABLE product_processing_items (
+    id BIGSERIAL PRIMARY KEY,
+    tenant_id BIGINT NOT NULL,
+    product_id VARCHAR(64) NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    processing_item_id VARCHAR(64) NOT NULL REFERENCES processing_items(id) ON DELETE CASCADE,
+    custom_price DECIMAL(10,2),                           -- 商品专属加工价格（NULL 则用默认价）
+    sort_order INTEGER DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+CREATE INDEX idx_product_processing_items_tenant_product ON product_processing_items(tenant_id, product_id);
+ALTER TABLE product_processing_items ADD CONSTRAINT uq_product_processing_items_relation
+    UNIQUE (product_id, processing_item_id);
+COMMENT ON TABLE product_processing_items IS '商品-加工项关联表，支持自定义加工价格';
 
 -- 加工分类表：窗帘加工/配件/纱窗/卷帘等
 CREATE TABLE processing_categories (
@@ -577,6 +661,11 @@ CREATE TABLE orders (
     customer_address TEXT,                          -- 客户地址
     total_amount DECIMAL(12,2) DEFAULT 0,           -- 总金额
     status VARCHAR(20) DEFAULT 'pending',           -- 状态: pending/confirmed/producing/completed/cancelled
+    -- 来自 008_product_sku_matrix.sql
+    payment_status VARCHAR(20) DEFAULT 'unpaid',    -- 支付状态: unpaid/paid/refunded
+    stock_deducted BOOLEAN DEFAULT FALSE,           -- 是否已扣库存
+    -- 来自 010_order_follow_status.sql
+    follow_status VARCHAR(20) DEFAULT 'pending',    -- 跟进状态: pending/following/completed
     remark TEXT,                                     -- 备注
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
