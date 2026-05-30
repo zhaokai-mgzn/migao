@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, Trash2, Truck } from 'lucide-react'
+import { Plus, Trash2, RotateCcw } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button, Input, Select } from '@/components/ui'
 import ImageUploader from './ImageUploader'
@@ -26,7 +26,6 @@ interface ProductFormProps {
   initialData?: Partial<ProductFormData>
   /**
    * 表单提交回调。第二个参数为提交按钮决策的目标状态。
-   * 父组件可在此完成 创建/更新 商品基础信息后再串联 SKU/颜色/属性 的持久化。
    */
   onSubmit: (data: ProductFormData, targetStatus: ProductStatus) => Promise<void>
   submitText?: string
@@ -66,6 +65,30 @@ function flattenCategories(
 }
 
 const TITLE_MAX = 60
+const DEFAULT_FORM: ProductFormData = {
+  name: '',
+  sku: '',
+  skuCode: '',
+  brand: '',
+  categoryId: '',
+  description: '',
+  pricingType: 'fixed',
+  price: 0,
+  costPrice: undefined,
+  unit: '',
+  stockDeductionMode: 'on_place',
+  supportsProcessing: false,
+  status: 'draft',
+  images: [],
+  detailImages: [],
+  specifications: {},
+  processingItems: [],
+  colors: [],
+  sellingMethods: [],
+  doorWidths: [],
+  skus: [],
+  processingItemConfigs: [],
+}
 
 export default function ProductForm({
   initialData,
@@ -78,30 +101,10 @@ export default function ProductForm({
   const [processingItems, setProcessingItems] = useState<ProcessingItem[]>([])
   const [errors, setErrors] = useState<Record<string, string>>({})
   const formRef = useRef<HTMLDivElement>(null)
+  const isEdit = !!initialData
 
   const [form, setForm] = useState<ProductFormData>({
-    name: '',
-    sku: '',
-    skuCode: '',
-    brand: '',
-    categoryId: '',
-    description: '',
-    pricingType: 'fixed',
-    price: 0,
-    costPrice: undefined,
-    unit: '',
-    stockDeductionMode: 'on_place',
-    supportsProcessing: false,
-    status: 'draft',
-    images: [],
-    detailImages: [],
-    specifications: {},
-    processingItems: [],
-    colors: [],
-    sellingMethods: [],
-    doorWidths: [],
-    skus: [],
-    processingItemConfigs: [],
+    ...DEFAULT_FORM,
     ...initialData,
   })
 
@@ -186,7 +189,6 @@ export default function ProductForm({
       merged = {
         ...merged,
         processingItemName: ref?.name,
-        // 若用户尚未设置自定义价，则带入加工项基础价作为默认值
         customPrice:
           merged.customPrice && merged.customPrice > 0
             ? merged.customPrice
@@ -205,7 +207,6 @@ export default function ProductForm({
 
   // ========== 表单校验 ==========
 
-  /** 滚动到第一个错误项 */
   const scrollToFirstError = (errorKeys: string[]) => {
     for (const key of errorKeys) {
       const anchorId = ANCHORS[key as keyof typeof ANCHORS]
@@ -218,9 +219,6 @@ export default function ProductForm({
     }
   }
 
-  /**
-   * 校验表单。targetStatus 为 'draft' 时仅做最低限度校验。
-   */
   const validate = (targetStatus: ProductStatus): boolean => {
     const errs: Record<string, string> = {}
     const isDraft = targetStatus === 'draft'
@@ -238,7 +236,6 @@ export default function ProductForm({
       if (!form.images || form.images.length === 0)
         errs.images = '请至少上传 1 张商品主图'
 
-      // SKU 维度
       if (!form.colors || form.colors.length === 0)
         errs.colors = '请至少添加 1 种颜色'
       else {
@@ -247,22 +244,23 @@ export default function ProductForm({
         )
         if (incomplete) errs.colors = '颜色必须填写名称并上传图片'
       }
-      if (!form.sellingMethods || form.sellingMethods.length === 0)
+      if (!form.sellingMethods || form.sellingMethods.filter(Boolean).length === 0)
         errs.sellingMethods = '请至少添加 1 种售卖方式'
-      if (!form.doorWidths || form.doorWidths.length === 0)
+      if (!form.doorWidths || form.doorWidths.filter(Boolean).length === 0)
         errs.doorWidths = '请至少添加 1 种规格尺寸'
 
-      // SKU 价格 / 库存
       if (
         form.colors &&
         form.colors.length > 0 &&
         form.sellingMethods &&
-        form.sellingMethods.length > 0 &&
+        form.sellingMethods.filter(Boolean).length > 0 &&
         form.doorWidths &&
-        form.doorWidths.length > 0
+        form.doorWidths.filter(Boolean).length > 0
       ) {
         const totalCells =
-          form.colors.length * form.sellingMethods.length * form.doorWidths.length
+          form.colors.length *
+          form.sellingMethods.filter(Boolean).length *
+          form.doorWidths.filter(Boolean).length
         const list = form.skus || []
         const filled = list.filter(
           (s) => Number(s.price) > 0 && Number(s.stock) >= 0
@@ -293,9 +291,6 @@ export default function ProductForm({
 
   // ========== 提交 ==========
 
-  /**
-   * 计算 SKU 矩阵的衍生价格作为兜底（SKU 最低价 → 表单 price 字段）
-   */
   const derivePrice = (skus: ProductSku[] = []): number => {
     if (skus.length === 0) return form.price
     const positive = skus.map((s) => Number(s.price)).filter((p) => p > 0)
@@ -309,8 +304,10 @@ export default function ProductForm({
     try {
       const payload: ProductFormData = {
         ...form,
-        // 兼容老字段：sku 与 skuCode 同步
         sku: form.skuCode || form.sku,
+        // 过滤未选中的空占位值，保证后端拿到干净数据
+        sellingMethods: (form.sellingMethods || []).filter(Boolean),
+        doorWidths: (form.doorWidths || []).filter(Boolean),
         price: derivePrice(form.skus),
         status: targetStatus,
       }
@@ -331,7 +328,23 @@ export default function ProductForm({
     }
   }
 
-  // ========== 渲染 ==========
+  // ========== 重置 ==========
+
+  const handleReset = () => {
+    if (!confirm('确定要重置当前表单吗？已填写的内容将被清空。')) return
+    setForm({ ...DEFAULT_FORM, ...(initialData || {}) })
+    setErrors({})
+    toast.info('表单已重置')
+  }
+
+  // ========== 总库存 ==========
+
+  const totalStock = useMemo(() => {
+    const list = form.skus || []
+    return list.reduce((sum, s) => sum + (Number(s.stock) || 0), 0)
+  }, [form.skus])
+
+  // ========== SKU 子组件 ==========
 
   const skuValue = useMemo(
     () => ({
@@ -358,110 +371,98 @@ export default function ProductForm({
   }
 
   return (
-    <div ref={formRef} className="max-w-5xl mx-auto pb-28">
+    <div ref={formRef} className="max-w-6xl mx-auto pb-28">
+      {/* ============ 顶部标题栏 ============ */}
+      <div className="flex items-center justify-between px-6 py-4 mb-4 bg-white border border-gray-200 rounded-lg">
+        <h2 className="text-lg font-semibold text-gray-900">
+          {isEdit ? '编辑商品' : '新增商品'}
+        </h2>
+        <button
+          type="button"
+          onClick={handleReset}
+          className="inline-flex items-center gap-1.5 px-3 h-8 text-sm text-gray-600 hover:text-primary-600 hover:bg-gray-50 rounded transition-colors"
+        >
+          <RotateCcw className="w-3.5 h-3.5" />
+          重置
+        </button>
+      </div>
+
       {/* ============ 基础信息 ============ */}
-      <Section title="基础信息" desc="商品标题、分类、主图与基础属性">
+      <Section title="基础信息">
         <div className="space-y-5">
-          {/* 标题 */}
-          <div id={ANCHORS.name}>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="text-sm font-medium text-gray-700">
-                商品标题<span className="text-red-500 ml-1">*</span>
-              </label>
+          {/* 商品分类 */}
+          <FieldRow label="商品分类" required>
+            <div id={ANCHORS.categoryId} className="max-w-md">
+              <Select
+                options={categoryOptions}
+                placeholder="请选择"
+                value={form.categoryId}
+                onChange={(e) => updateField('categoryId', e.target.value)}
+                error={errors.categoryId}
+              />
+            </div>
+          </FieldRow>
+
+          {/* 商品标题 */}
+          <FieldRow label="商品标题" required>
+            <div id={ANCHORS.name} className="relative max-w-3xl">
+              <Input
+                maxLength={TITLE_MAX}
+                placeholder="最多可输入30汉字（60字符）"
+                value={form.name}
+                onChange={(e) => updateField('name', e.target.value)}
+                error={errors.name}
+                className="pr-14"
+              />
               <span
-                className={`text-xs tabular-nums ${
+                className={`absolute right-3 top-2.5 text-xs tabular-nums pointer-events-none ${
                   titleCount > TITLE_MAX ? 'text-red-500' : 'text-gray-400'
                 }`}
               >
                 {titleCount}/{TITLE_MAX}
               </span>
             </div>
-            <Input
-              maxLength={TITLE_MAX}
-              placeholder="请输入商品标题（最多 60 字）"
-              value={form.name}
-              onChange={(e) => updateField('name', e.target.value)}
-              error={errors.name}
-            />
-          </div>
+          </FieldRow>
 
-          {/* 分类 */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div id={ANCHORS.categoryId}>
-              <Select
-                label="商品分类"
-                required
-                options={categoryOptions}
-                placeholder="请选择分类"
-                value={form.categoryId}
-                onChange={(e) => updateField('categoryId', e.target.value)}
-                error={errors.categoryId}
+          {/* 商品主图 */}
+          <FieldRow label="商品主图" required alignTop>
+            <div id={ANCHORS.images}>
+              <p className="text-xs text-gray-500 mb-2">
+                照片要求：比例为 1:1，像素尺寸 1440×1440 及以上；至多可上传 5 张，拖拽可调整顺序
+              </p>
+              <ImageUploader
+                value={form.images}
+                onChange={(urls) => updateField('images', urls)}
+                max={5}
+                multiple
+                showOrderBadge
+                confirmRemove
               />
+              {errors.images && (
+                <p className="text-sm text-red-600 mt-2">{errors.images}</p>
+              )}
             </div>
-          </div>
+          </FieldRow>
 
-          {/* 主图 / 详情图 */}
-          <div id={ANCHORS.images} className="space-y-3">
-            <ImageUploader
-              label="商品主图 *"
-              value={form.images}
-              onChange={(urls) => updateField('images', urls)}
-              max={5}
-              multiple
-              showOrderBadge
-              confirmRemove
-              hint="1-5 张，第 1 张为封面（可拖拽调整顺序）；支持 JPG / PNG / WEBP，单张不超过 5MB"
+          {/* 商品属性 */}
+          <FieldRow label="商品属性" alignTop>
+            <ProductAttributes
+              value={{
+                skuCode: form.skuCode || '',
+                brand: form.brand || '',
+                unit: form.unit || '',
+                specifications: form.specifications || {},
+              }}
+              onChange={(patch) => updateMany(patch)}
+              errors={{ skuCode: errors.skuCode, unit: errors.unit }}
             />
-            {errors.images && (
-              <p className="text-sm text-red-600">{errors.images}</p>
-            )}
-            <ImageUploader
-              label="详情图"
-              value={form.detailImages || []}
-              onChange={(urls) => updateField('detailImages', urls)}
-              max={9}
-              multiple
-              hint="最多 9 张，可拖拽排序"
-            />
-          </div>
-
-          {/* 商品描述（富文本） */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
-              商品描述
-            </label>
-            <RichTextEditor
-              value={form.description || ''}
-              onChange={(html) => updateField('description', html)}
-              placeholder="图文介绍商品卖点、规格、使用场景等。支持加粗、标题、列表、图片、链接等"
-              minHeight={300}
-            />
-            <p className="mt-1.5 text-xs text-gray-500">
-              支持插入图片与链接；插入的图片将上传到 OSS
-            </p>
-          </div>
-        </div>
-      </Section>
-
-      {/* ============ 商品属性 ============ */}
-      <Section title="商品属性" desc="货号、品牌、计价单位与扩展属性">
-        <div id={ANCHORS.skuCode}>
-          <ProductAttributes
-            value={{
-              skuCode: form.skuCode || '',
-              brand: form.brand || '',
-              unit: form.unit || '',
-              specifications: form.specifications || {},
-            }}
-            onChange={(patch) => updateMany(patch)}
-            errors={{ skuCode: errors.skuCode, unit: errors.unit }}
-          />
+          </FieldRow>
         </div>
       </Section>
 
       {/* ============ 销售信息 ============ */}
-      <Section title="销售信息" desc="SKU 矩阵、库存策略与加工服务">
-        <div className="space-y-6">
+      <Section title="销售信息">
+        <div className="space-y-7">
           <div id={ANCHORS.colors}>
             <div id={ANCHORS.sellingMethods} />
             <div id={ANCHORS.doorWidths} />
@@ -478,72 +479,59 @@ export default function ProductForm({
             />
           </div>
 
-          {/* 库存扣减模式 */}
-          <FieldRow label="库存扣减" required>
-            <div className="space-y-2">
-              <RadioGroup<StockDeductionMode>
-                value={form.stockDeductionMode || 'on_place'}
-                onChange={(v) => updateField('stockDeductionMode', v)}
-                options={[
-                  { value: 'on_place', label: '拍下减库存' },
-                  { value: 'on_pay', label: '付款减库存' },
-                ]}
-              />
-              <p className="text-xs text-gray-500">
-                拍下减库存：买家下单时扣减库存；付款减库存：买家付款后扣减库存
-              </p>
+          {/* 总库存（只读） */}
+          <FieldRow label="总库存" required alignTop>
+            <div className="flex items-center gap-2">
+              <div className="relative w-44">
+                <input
+                  readOnly
+                  value={totalStock}
+                  className="w-full h-9 px-3 pr-8 text-sm rounded border border-gray-200 bg-gray-50 text-gray-700 cursor-not-allowed"
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">
+                  件
+                </span>
+              </div>
             </div>
+            <p className="mt-1.5 text-xs text-gray-500">
+              此处是商品所有销售规格总库存数量，若需修改请在销售规格表格内修改对应库存
+            </p>
           </FieldRow>
 
-          {/* 加工服务 */}
-          <FieldRow label="是否支持加工" required>
-            <RadioGroup<boolean>
-              value={!!form.supportsProcessing}
-              onChange={(v) => {
-                updateField('supportsProcessing', v)
-                if (!v) updateField('processingItemConfigs', [])
-              }}
+          {/* 拍下减库存 */}
+          <FieldRow label="拍下减库存" required>
+            <RadioGroup<StockDeductionMode>
+              value={form.stockDeductionMode || 'on_place'}
+              onChange={(v) => updateField('stockDeductionMode', v)}
               options={[
-                { value: true, label: '是' },
-                { value: false, label: '否' },
+                { value: 'on_place', label: '是' },
+                { value: 'on_pay', label: '否（付款减库存）' },
               ]}
             />
           </FieldRow>
 
-          {form.supportsProcessing && (
-            <div
-              id={ANCHORS.processingItemConfigs}
-              className="rounded-lg border border-gray-200 bg-gray-50/40 p-4 space-y-3"
-            >
-              <div className="flex items-center justify-between">
-                <h5 className="text-sm font-medium text-gray-800">
-                  加工项配置
-                </h5>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={handleAddProcessingConfig}
-                  type="button"
-                >
-                  <Plus className="w-4 h-4 mr-1" /> 添加加工项
-                </Button>
-              </div>
-              {(form.processingItemConfigs || []).length === 0 ? (
-                <p className="text-sm text-gray-400 text-center py-3">
-                  请添加至少 1 项加工项
-                </p>
-              ) : (
-                <div className="space-y-2">
+          {/* 是否支持加工 */}
+          <FieldRow label="是否支持加工" required alignTop>
+            <div className="space-y-3">
+              <RadioGroup<boolean>
+                value={!!form.supportsProcessing}
+                onChange={(v) => {
+                  updateField('supportsProcessing', v)
+                  if (!v) updateField('processingItemConfigs', [])
+                }}
+                options={[
+                  { value: true, label: '是' },
+                  { value: false, label: '否' },
+                ]}
+              />
+              {form.supportsProcessing && (
+                <div id={ANCHORS.processingItemConfigs} className="space-y-2">
                   {(form.processingItemConfigs || []).map((cfg, idx) => (
-                    <div
-                      key={idx}
-                      className="flex items-end gap-3 bg-white p-3 rounded border border-gray-200"
-                    >
-                      <div className="flex-1">
+                    <div key={idx} className="flex items-center gap-2">
+                      <div className="w-56">
                         <Select
-                          label="加工项"
                           options={[
-                            { value: '', label: '请选择' },
+                            { value: '', label: '请选择加工项' },
                             ...processingItems.map((p) => ({
                               value: String(p.id),
                               label: `${p.name}（基础价 ¥${p.basePrice}/${p.unit}）`,
@@ -561,86 +549,174 @@ export default function ProductForm({
                           }
                         />
                       </div>
-                      <div className="w-40">
+                      <div className="w-44">
                         <Input
-                          label="自定义价格"
                           type="number"
                           min="0"
                           step="0.01"
-                          placeholder="0.00"
-                          value={
-                            cfg.customPrice > 0 ? String(cfg.customPrice) : ''
-                          }
+                          placeholder="请输入加工项价格"
+                          value={cfg.customPrice > 0 ? String(cfg.customPrice) : ''}
                           onChange={(e) =>
                             handleUpdateProcessingConfig(idx, {
                               customPrice: parseFloat(e.target.value) || 0,
                             })
                           }
                         />
-                        {(!cfg.customPrice || cfg.customPrice <= 0) && cfg.processingItemId > 0 && (() => {
-                          const ref = processingItems.find(p => Number(p.id) === Number(cfg.processingItemId))
-                          return ref ? (
-                            <p className="text-xs text-gray-400 mt-1">使用默认价格: ¥{ref.basePrice}/{ref.unit}</p>
-                          ) : null
-                        })()}
                       </div>
-                      <Button
+                      <button
                         type="button"
-                        variant="ghost"
-                        size="sm"
                         onClick={() => handleRemoveProcessingConfig(idx)}
-                        className="text-red-500 hover:text-red-600"
+                        className="w-9 h-9 inline-flex items-center justify-center rounded text-gray-400 hover:text-red-500 hover:bg-red-50"
+                        title="删除"
                       >
                         <Trash2 className="w-4 h-4" />
-                      </Button>
+                      </button>
+                      {idx === (form.processingItemConfigs || []).length - 1 && (
+                        <button
+                          type="button"
+                          onClick={handleAddProcessingConfig}
+                          className="w-9 h-9 inline-flex items-center justify-center rounded border border-dashed border-gray-300 text-gray-500 hover:border-primary-400 hover:text-primary-600"
+                          title="添加"
+                        >
+                          <Plus className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                   ))}
+                  {(form.processingItemConfigs || []).length === 0 && (
+                    <div className="flex items-center gap-2">
+                      <div className="w-56">
+                        <Select
+                          options={[
+                            { value: '', label: '请选择加工项' },
+                            ...processingItems.map((p) => ({
+                              value: String(p.id),
+                              label: `${p.name}（基础价 ¥${p.basePrice}/${p.unit}）`,
+                            })),
+                          ]}
+                          value=""
+                          onChange={(e) => {
+                            if (!e.target.value) return
+                            const ref = processingItems.find(
+                              (p) => Number(p.id) === Number(e.target.value)
+                            )
+                            updateField('processingItemConfigs', [
+                              {
+                                processingItemId: Number(e.target.value),
+                                processingItemName: ref?.name,
+                                customPrice: ref?.basePrice || 0,
+                              },
+                            ])
+                          }}
+                        />
+                      </div>
+                      <div className="w-44">
+                        <Input
+                          disabled
+                          placeholder="请输入加工项价格"
+                          value=""
+                          onChange={() => {}}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        disabled
+                        className="w-9 h-9 inline-flex items-center justify-center rounded text-gray-300 cursor-not-allowed"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleAddProcessingConfig}
+                        className="w-9 h-9 inline-flex items-center justify-center rounded border border-dashed border-gray-300 text-gray-500 hover:border-primary-400 hover:text-primary-600"
+                        title="添加"
+                      >
+                        <Plus className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
+                  {errors.processingItemConfigs && (
+                    <p className="text-sm text-red-600">
+                      {errors.processingItemConfigs}
+                    </p>
+                  )}
                 </div>
               )}
-              {errors.processingItemConfigs && (
-                <p className="text-sm text-red-600">
-                  {errors.processingItemConfigs}
-                </p>
-              )}
             </div>
-          )}
+          </FieldRow>
 
-          {/* 物流服务 */}
-          <FieldRow label="物流服务">
-            <span className="inline-flex items-center gap-1.5 text-sm text-gray-700 bg-gray-100 px-2.5 py-1 rounded">
-              <Truck className="w-3.5 h-3.5" />
-              邮费到付
+          {/* 发货方式 */}
+          <FieldRow label="发货方式">
+            <span className="text-sm text-gray-600">
+              物流发货 <span className="text-gray-400 mx-1">·</span> 邮费到付
             </span>
           </FieldRow>
         </div>
       </Section>
 
-      {/* ============ 提交按钮 ============ */}
+      {/* ============ 图文描述 ============ */}
+      <Section title="图文描述">
+        <FieldRow label="商品描述" alignTop>
+          <RichTextEditor
+            value={form.description || ''}
+            onChange={(html) => updateField('description', html)}
+            placeholder="图文介绍商品卖点、规格、使用场景等。支持加粗、标题、列表、图片、链接等"
+            minHeight={300}
+          />
+          <p className="mt-1.5 text-xs text-gray-500">
+            支持插入图片与链接；插入的图片将上传到 OSS
+          </p>
+        </FieldRow>
+
+        <div className="mt-5">
+          <FieldRow label="详情图" alignTop>
+            <ImageUploader
+              value={form.detailImages || []}
+              onChange={(urls) => updateField('detailImages', urls)}
+              max={9}
+              multiple
+              hint="最多 9 张，可拖拽排序"
+            />
+          </FieldRow>
+        </div>
+      </Section>
+
+      {/* ============ 底部固定操作栏 ============ */}
       <div className="fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur border-t border-gray-200 shadow-[0_-4px_12px_rgba(0,0,0,0.04)]">
-        <div className="max-w-5xl mx-auto flex items-center justify-end gap-3 px-6 py-3">
-          <Button
-            variant="ghost"
-            onClick={() => handleSubmit('draft')}
-            loading={submitting === 'draft'}
-            disabled={submitting !== null && submitting !== 'draft'}
+        <div className="max-w-6xl mx-auto flex items-center justify-between gap-3 px-6 py-3">
+          <button
+            type="button"
+            onClick={handleReset}
+            className="inline-flex items-center gap-1.5 px-3 h-9 text-sm text-gray-600 hover:text-primary-600 hover:bg-gray-50 rounded transition-colors"
           >
-            存为草稿
-          </Button>
-          <Button
-            variant="secondary"
-            onClick={() => handleSubmit('in_warehouse')}
-            loading={submitting === 'in_warehouse'}
-            disabled={submitting !== null && submitting !== 'in_warehouse'}
-          >
-            放入仓库
-          </Button>
-          <Button
-            onClick={() => handleSubmit('on_sale')}
-            loading={submitting === 'on_sale'}
-            disabled={submitting !== null && submitting !== 'on_sale'}
-          >
-            {submitText || '提交并上架'}
-          </Button>
+            <RotateCcw className="w-3.5 h-3.5" />
+            重置
+          </button>
+          <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              onClick={() => handleSubmit('draft')}
+              loading={submitting === 'draft'}
+              disabled={submitting !== null && submitting !== 'draft'}
+            >
+              存草稿
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => handleSubmit('in_warehouse')}
+              loading={submitting === 'in_warehouse'}
+              disabled={submitting !== null && submitting !== 'in_warehouse'}
+            >
+              提交并放入仓库
+            </Button>
+            <Button
+              onClick={() => handleSubmit('on_sale')}
+              loading={submitting === 'on_sale'}
+              disabled={submitting !== null && submitting !== 'on_sale'}
+            >
+              {submitText || '提交并上架'}
+            </Button>
+          </div>
         </div>
       </div>
     </div>
@@ -651,21 +727,18 @@ export default function ProductForm({
 
 function Section({
   title,
-  desc,
   children,
 }: {
   title: string
-  desc?: string
   children: React.ReactNode
 }) {
   return (
     <section className="bg-white rounded-lg border border-gray-200 mb-5 overflow-hidden">
-      <header className="px-6 py-4 border-b border-gray-100">
+      <header className="px-6 py-3.5 border-b border-gray-100">
         <h3 className="text-base font-semibold text-gray-900 flex items-center gap-2">
           <span className="inline-block w-1 h-4 bg-primary-600 rounded" />
           {title}
         </h3>
-        {desc && <p className="text-xs text-gray-500 mt-1 ml-3">{desc}</p>}
       </header>
       <div className="px-6 py-5">{children}</div>
     </section>
@@ -675,17 +748,23 @@ function Section({
 function FieldRow({
   label,
   required,
+  alignTop,
   children,
 }: {
   label: string
   required?: boolean
+  alignTop?: boolean
   children: React.ReactNode
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-4">
-      <label className="text-sm font-medium text-gray-700 w-28 shrink-0">
+    <div className={`flex gap-4 ${alignTop ? 'items-start' : 'items-center'}`}>
+      <label
+        className={`shrink-0 w-28 text-sm text-gray-700 text-right ${
+          alignTop ? 'pt-2' : ''
+        }`}
+      >
+        {required && <span className="text-red-500 mr-0.5">*</span>}
         {label}
-        {required && <span className="text-red-500 ml-1">*</span>}
       </label>
       <div className="flex-1 min-w-0">{children}</div>
     </div>
@@ -707,32 +786,34 @@ function RadioGroup<T extends string | number | boolean>({
   options: RadioOption<T>[]
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-4">
+    <div className="flex flex-wrap items-center gap-5">
       {options.map((opt) => {
         const active = opt.value === value
         return (
           <label
             key={String(opt.value)}
-            className={`inline-flex items-center gap-2 px-3 h-9 rounded border text-sm cursor-pointer transition-colors ${
-              active
-                ? 'border-primary-500 bg-primary-50 text-primary-700'
-                : 'border-gray-300 text-gray-700 hover:border-gray-400'
-            }`}
+            className="inline-flex items-center gap-1.5 text-sm cursor-pointer"
           >
             <span
-              className={`w-3.5 h-3.5 rounded-full border ${
+              className={`w-4 h-4 rounded-full border flex items-center justify-center transition-colors ${
                 active
-                  ? 'border-primary-500 bg-primary-500 ring-2 ring-primary-100'
-                  : 'border-gray-400'
+                  ? 'border-primary-500'
+                  : 'border-gray-300'
               }`}
-            />
+            >
+              {active && (
+                <span className="w-2 h-2 rounded-full bg-primary-500" />
+              )}
+            </span>
             <input
               type="radio"
               className="sr-only"
               checked={active}
               onChange={() => onChange(opt.value)}
             />
-            {opt.label}
+            <span className={active ? 'text-gray-800' : 'text-gray-600'}>
+              {opt.label}
+            </span>
           </label>
         )
       })}

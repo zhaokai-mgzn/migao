@@ -141,8 +141,8 @@ export default function CustomerDetailPage() {
     )
   }
 
-  const initials = customer.name.slice(0, 1)
-  const availableTags = allTags.filter((t) => !customer.tags.find((ct) => ct.id === t.id))
+  const initials = (customer.name || '?').slice(0, 1)
+  const availableTags = allTags.filter((t) => !(customer.tags || []).find((ct) => ct.id === t.id))
 
   return (
     <div className="p-6">
@@ -162,11 +162,11 @@ export default function CustomerDetailPage() {
                 {initials}
               </div>
               <div>
-                <h2 className="text-lg font-semibold text-gray-900">{customer.name}</h2>
+                <h2 className="text-lg font-semibold text-gray-900">{customer.name || '未知客户'}</h2>
                 {customer.nickname && <p className="text-sm text-gray-500">{customer.nickname}</p>}
                 <div className="flex items-center gap-1 mt-1">
-                  {customer.vipLevel > 0 ? (
-                    Array.from({ length: customer.vipLevel }).map((_, i) => (
+                  {(customer.vipLevel ?? 0) > 0 ? (
+                    Array.from({ length: customer.vipLevel ?? 0 }).map((_, i) => (
                       <Star key={i} className="w-4 h-4 fill-amber-400 text-amber-400" />
                     ))
                   ) : (
@@ -220,8 +220,8 @@ export default function CustomerDetailPage() {
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              {customer.tags.length === 0 && <span className="text-xs text-gray-400">暂无标签</span>}
-              {customer.tags.map((tag) => (
+              {(!customer.tags || customer.tags.length === 0) && <span className="text-xs text-gray-400">暂无标签</span>}
+              {(customer.tags || []).map((tag) => (
                 <span
                   key={tag.id}
                   className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium group"
@@ -303,14 +303,14 @@ export default function CustomerDetailPage() {
                       return (
                         <div key={order.id} className="flex items-center justify-between p-4 border border-gray-100 rounded-lg hover:bg-gray-50 transition-colors">
                           <div>
-                            <div className="font-medium text-gray-900">{order.orderNo}</div>
+                            <div className="font-medium text-gray-900">{order.orderNo || '-'}</div>
                             <div className="text-xs text-gray-500 mt-1">
-                              {dayjs(order.createdAt).format('YYYY-MM-DD HH:mm')}
+                              {order.createdAt ? dayjs(order.createdAt).format('YYYY-MM-DD HH:mm') : '-'}
                             </div>
                           </div>
                           <div className="flex items-center gap-4">
                             <span className="text-base font-semibold text-gray-900">
-                              ¥{order.totalAmount.toFixed(2)}
+                              ¥{(order.totalAmount ?? 0).toFixed(2)}
                             </span>
                             <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
                           </div>

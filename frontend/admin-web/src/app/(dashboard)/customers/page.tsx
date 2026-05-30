@@ -86,13 +86,14 @@ export default function CustomersPage() {
   }
 
   // 获取渠道 Badge
-  const getChannelBadge = (channel: CustomerChannel) => {
+  const getChannelBadge = (channel: CustomerChannel | undefined | null) => {
+    if (!channel) return <span className="text-xs text-gray-400">-</span>
     const variantMap: Record<CustomerChannel, 'success' | 'info' | 'default'> = {
       wechat_mini: 'success',
       wechat_mp: 'info',
       web: 'default',
     }
-    return <Badge variant={variantMap[channel]}>{CustomerChannelLabels[channel]}</Badge>
+    return <Badge variant={variantMap[channel] || 'default'}>{CustomerChannelLabels[channel] || channel}</Badge>
   }
 
   // VIP 星级显示
@@ -109,9 +110,9 @@ export default function CustomersPage() {
 
   // 头像
   const renderAvatar = (customer: Customer) => {
-    const initials = customer.name.slice(0, 1)
+    const initials = (customer.name || '?').slice(0, 1)
     const colors = ['bg-blue-500', 'bg-green-500', 'bg-purple-500', 'bg-amber-500', 'bg-rose-500']
-    const colorIdx = customer.id.charCodeAt(0) % colors.length
+    const colorIdx = (customer.id || '0').charCodeAt(0) % colors.length
     return (
       <div className={`w-9 h-9 rounded-full ${colors[colorIdx]} flex items-center justify-center text-white text-sm font-medium`}>
         {initials}
@@ -173,7 +174,7 @@ export default function CustomersPage() {
       title: '客户名',
       render: (record) => (
         <div>
-          <div className="font-medium text-gray-900">{record.name}</div>
+          <div className="font-medium text-gray-900">{record.name || '-'}</div>
           {record.nickname && <div className="text-xs text-gray-500">{record.nickname}</div>}
         </div>
       ),
@@ -194,7 +195,7 @@ export default function CustomersPage() {
       key: 'vipLevel',
       title: 'VIP 等级',
       width: '120px',
-      render: (record) => renderVipLevel(record.vipLevel),
+      render: (record) => renderVipLevel(record.vipLevel ?? 0),
     },
     {
       key: 'tags',
@@ -202,18 +203,18 @@ export default function CustomersPage() {
       width: '200px',
       render: (record) => (
         <div className="flex flex-wrap gap-1">
-          {record.tags.length === 0 && <span className="text-xs text-gray-400">-</span>}
-          {record.tags.map((tag) => (
+          {(!record.tags || record.tags.length === 0) && <span className="text-xs text-gray-400">-</span>}
+          {(record.tags || []).map((tag) => (
             <span
               key={tag.id}
               className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
               style={{
-                backgroundColor: tag.color + '15',
-                color: tag.color,
-                border: `1px solid ${tag.color}30`,
+                backgroundColor: (tag.color || '#999') + '15',
+                color: tag.color || '#999',
+                border: `1px solid ${tag.color || '#999'}30`,
               }}
             >
-              {tag.name}
+              {tag.name || ''}
             </span>
           ))}
         </div>

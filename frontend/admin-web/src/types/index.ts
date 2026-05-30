@@ -84,10 +84,10 @@ export const PricingTypeLabels: Record<PricingType, string> = {
 }
 
 export const ProductStatusLabels: Record<ProductStatus, string> = {
-  on_sale: '上架',
-  off_sale: '下架',
+  on_sale: '出售中',
+  off_sale: '已下架',
   draft: '草稿',
-  in_warehouse: '在仓',
+  in_warehouse: '仓库中',
   under_review: '审核中',
 }
 
@@ -96,6 +96,7 @@ export interface Product {
   id: string
   name: string
   sku?: string
+  skuCode?: string
   brand?: string
   categoryId: string
   categoryName?: string
@@ -110,15 +111,58 @@ export interface Product {
   detailImages?: string[]
   specifications?: Record<string, string>
   processingItems?: string[]
+  // 在售颜色数量
+  colorCount?: number
+  // 累计销量
+  salesCount?: number
+  // 累计销售额
+  salesAmount?: number
+  // 最后编辑人
+  editedBy?: string
+  // 最后编辑时间
+  editedAt?: string
+  // 库存预警阈值
+  stockWarningThreshold?: number
+  // 库存扣减模式：on_order=下单扣减，on_payment=付款扣减
+  stockDeductionMode?: 'on_order' | 'on_payment'
   createdAt?: string
   updatedAt?: string
 }
 
 // 商品列表查询参数
 export interface ProductListParams extends PageParams {
+  // 商品ID搜索
+  productId?: string
+  // 商品标题搜索
+  name?: string
+  // 关键词（保持兼容）
   keyword?: string
+  // 商品货号搜索
+  skuCode?: string
+  // 分类过滤
   categoryId?: string
-  status?: ProductStatus
+  // 状态过滤
+  status?: ProductStatus | ''
+  // 创建时间起始 (yyyy-MM-dd)
+  createdFrom?: string
+  // 创建时间截止 (yyyy-MM-dd)
+  createdTo?: string
+  // 排序字段
+  sortBy?: 'stock' | 'salesCount' | 'salesAmount' | 'createdAt'
+  // 排序方向
+  sortOrder?: 'asc' | 'desc'
+}
+
+// 批量操作请求
+export interface BatchOperationRequest {
+  productIds: string[]
+}
+
+// 批量操作响应
+export interface BatchOperationResponse {
+  success: number
+  failed: number
+  errors?: string[]
 }
 
 // 商品表单数据

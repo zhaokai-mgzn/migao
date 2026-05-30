@@ -115,6 +115,22 @@ export const productApi = {
   
   updateProductStatus: (id: string, status: ProductStatus) => 
     request.put<ApiResponse<Product>>(`/api/admin/products/${id}/status`, { status }),
+
+  // 批量上架
+  batchOnShelf: (productIds: string[]) =>
+    request.post<ApiResponse<void>>('/api/admin/products/batch/on-shelf', { productIds }),
+
+  // 批量下架
+  batchOffShelf: (productIds: string[]) =>
+    request.post<ApiResponse<void>>('/api/admin/products/batch/off-shelf', { productIds }),
+
+  // 批量删除
+  batchDelete: (productIds: string[]) =>
+    request.post<ApiResponse<void>>('/api/admin/products/batch/delete', { productIds }),
+
+  // 导出商品（返回 blob）
+  exportProducts: (params?: ProductListParams) =>
+    request.get<Blob>('/api/admin/products/export', { params, responseType: 'blob' }),
 }
 
 // 分类 API

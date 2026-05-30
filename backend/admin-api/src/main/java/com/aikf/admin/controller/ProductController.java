@@ -3,11 +3,14 @@ package com.aikf.admin.controller;
 import com.aikf.admin.config.TenantContext;
 import com.aikf.admin.dto.*;
 import com.aikf.admin.service.ProductService;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
+import java.io.IOException;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -104,5 +107,63 @@ public class ProductController {
         log.info("更新商品状态: id={}, status={}, tenantId={}", id, status, tenantId);
         productService.updateProductStatus(id, status, tenantId);
         return ApiResponse.success();
+    }
+
+    /**
+     * 批量上架
+     *
+     * POST /api/admin/products/batch/on-shelf
+     * Body: { "productIds": ["id1", "id2", ...] }
+     */
+    @PostMapping("/batch/on-shelf")
+    public ApiResponse<BatchOperationResult> batchOnShelf(@RequestBody Map<String, List<String>> body) {
+        Long tenantId = TenantContext.getTenantId();
+        List<String> productIds = body.get("productIds");
+        log.info("批量上架商品: count={}, tenantId={}", productIds != null ? productIds.size() : 0, tenantId);
+        BatchOperationResult result = productService.batchOnShelf(productIds, tenantId);
+        return ApiResponse.success(result);
+    }
+
+    /**
+     * 批量下架
+     *
+     * POST /api/admin/products/batch/off-shelf
+     * Body: { "productIds": ["id1", "id2", ...] }
+     */
+    @PostMapping("/batch/off-shelf")
+    public ApiResponse<BatchOperationResult> batchOffShelf(@RequestBody Map<String, List<String>> body) {
+        Long tenantId = TenantContext.getTenantId();
+        List<String> productIds = body.get("productIds");
+        log.info("批量下架商品: count={}, tenantId={}", productIds != null ? productIds.size() : 0, tenantId);
+        BatchOperationResult result = productService.batchOffShelf(productIds, tenantId);
+        return ApiResponse.success(result);
+    }
+
+    /**
+     * 批量删除
+     *
+     * POST /api/admin/products/batch/delete
+     * Body: { "productIds": ["id1", "id2", ...] }
+     */
+    @PostMapping("/batch/delete")
+    public ApiResponse<BatchOperationResult> batchDelete(@RequestBody Map<String, List<String>> body) {
+        Long tenantId = TenantContext.getTenantId();
+        List<String> productIds = body.get("productIds");
+        log.info("批量删除商品: count={}, tenantId={}", productIds != null ? productIds.size() : 0, tenantId);
+        BatchOperationResult result = productService.batchDelete(productIds, tenantId);
+        return ApiResponse.success(result);
+    }
+
+    /**
+     * 导出商品
+     *
+     * GET /api/admin/products/export?keyword=xxx&categoryId=xxx&status=on_sale
+     */
+    @GetMapping("/export")
+    public void exportProducts(ProductQueryRequest query, HttpServletResponse response) throws IOException {
+        Long tenantId = TenantContext.getTenantId();
+        log.info("导出商品: keyword={}, categoryId={}, status={}, tenantId={}",
+                query.getKeyword(), query.getCategoryId(), query.getStatus(), tenantId);
+        productService.exportProducts(query, tenantId, response);
     }
 }
