@@ -1,136 +1,264 @@
 'use client'
 
-import { Eye, ClipboardList, Trash2 } from 'lucide-react'
-import { Table } from '@/components/ui'
-import type { TableColumn } from '@/components/ui'
-import type { Order } from '@/types'
-import OrderStatusBadge from './OrderStatusBadge'
+import { ArrowDown } from 'lucide-react'
 import dayjs from 'dayjs'
+import { cn } from '@/lib/utils'
+import type { Order } from '@/types'
+import { OrderStatusLabels, normalizeOrderStatus } from '@/types'
 
-interface OrderTableProps {
+export interface OrderTableProps {
   orders: Order[]
-  loading?: boolean
-  onStatusUpdate?: (order: Order) => void
-  onDelete?: (order: Order) => void
+  loading: boolean
+  selectedIds: string[]
+  onSelectChange: (ids: string[]) => void
+  onView: (order: Order) => void
+  onRemark: (order: Order) => void
+  onClose: (order: Order) => void
+  onShip: (order: Order) => void
+  onRefund?: (order: Order) => void
 }
 
-function formatAmount(amount: number): string {
-  return `¥${(amount ?? 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+function formatNumber(value: number | undefined): string {
+  if (value === undefined || value === null) return '0'
+  return value.toLocaleString('zh-CN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
 }
 
-export default function OrderTable({ orders, loading, onStatusUpdate, onDelete }: OrderTableProps) {
-  const columns: TableColumn<Order>[] = [
-    {
-      key: 'orderNo',
-      title: '订单号',
-      width: '160px',
-      render: (record) => (
-        <span className="font-mono text-sm text-gray-600">{record.orderNo}</span>
-      ),
-    },
-    {
-      key: 'customerName',
-      title: '客户名',
-      width: '120px',
-      render: (record) => (
-        <div>
-          <div className="font-medium text-gray-900">{record.customerName}</div>
-          <div className="text-xs text-gray-400">{record.customerPhone}</div>
-        </div>
-      ),
-    },
-    {
-      key: 'items',
-      title: '商品摘要',
-      render: (record) => {
-        const itemsSummary = record.items?.map((i) => i.productName).join('、') || '-'
-        const count = record.items?.length || 0
-        return (
-          <div className="max-w-[200px]">
-            <div className="text-sm text-gray-700 truncate" title={itemsSummary}>
-              {itemsSummary}
-            </div>
-            {count > 0 && (
-              <span className="text-xs text-gray-400">共 {count} 项</span>
-            )}
-          </div>
-        )
-      },
-    },
-    {
-      key: 'totalAmount',
-      title: '总金额',
-      width: '120px',
-      align: 'right',
-      render: (record) => (
-        <span className="font-semibold text-gray-900">{formatAmount(record.totalAmount)}</span>
-      ),
-    },
-    {
-      key: 'status',
-      title: '状态',
-      width: '110px',
-      render: (record) => (
-        <OrderStatusBadge
-          status={record.status}
-          onClick={onStatusUpdate ? () => onStatusUpdate(record) : undefined}
-        />
-      ),
-    },
-    {
-      key: 'createdAt',
-      title: '下单时间',
-      width: '150px',
-      render: (record) => (
-        <span className="text-sm text-gray-500">
-          {record.createdAt ? dayjs(record.createdAt).format('YYYY-MM-DD HH:mm') : '-'}
-        </span>
-      ),
-    },
-    {
-      key: 'action',
-      title: '操作',
-      width: '130px',
-      align: 'center',
-      render: (record) => (
-        <div className="flex items-center justify-center gap-1">
-          <button
-            onClick={(e) => { e.stopPropagation(); window.location.href = `/orders/${record.id}` }}
-            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
-            title="查看详情"
-          >
-            <Eye className="w-4 h-4" />
-          </button>
-          {onStatusUpdate && (
-            <button
-              onClick={(e) => { e.stopPropagation(); onStatusUpdate(record) }}
-              className="p-1.5 text-purple-600 hover:bg-purple-50 rounded transition-colors"
-              title="更新状态"
-            >
-              <ClipboardList className="w-4 h-4" />
-            </button>
-          )}
-          {onDelete && (
-            <button
-              onClick={(e) => { e.stopPropagation(); onDelete(record) }}
-              className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors"
-              title="删除"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
-          )}
-        </div>
-      ),
-    },
-  ]
+function formatTime(value?: string): string {
+  if (!value) return '-'
+  return dayjs(value).format('YYYY-MM-DD HH:mm')
+}
+
+function ActionLink({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation()
+        onClick()
+      }}
+      className="text-primary-600 hover:text-primary-700 hover:underline transition-colors"
+    >
+      {children}
+    </button>
+  )
+}
+
+export default function OrderTable({
+  orders,
+  loading,
+  selectedIds,
+  onSelectChange,
+  onView,
+  onRemark,
+  onClose,
+  onShip,
+  onRefund,
+}: OrderTableProps) {
+  const allSelected = orders.length > 0 && orders.every((o) => selectedIds.includes(o.id))
+  const someSelected = orders.some((o) => selectedIds.includes(o.id)) && !allSelected
+
+  const toggleAll = () => {
+    if (allSelected) {
+      onSelectChange(selectedIds.filter((id) => !orders.find((o) => o.id === id)))
+    } else {
+      const newIds = Array.from(new Set([...selectedIds, ...orders.map((o) => o.id)]))
+      onSelectChange(newIds)
+    }
+  }
+
+  const toggleOne = (id: string) => {
+    if (selectedIds.includes(id)) {
+      onSelectChange(selectedIds.filter((sid) => sid !== id))
+    } else {
+      onSelectChange([...selectedIds, id])
+    }
+  }
+
+  const renderActions = (order: Order) => {
+    const displayStatus = normalizeOrderStatus(order.status as string)
+    const actions: React.ReactNode[] = [
+      <ActionLink key="view" onClick={() => onView(order)}>查看</ActionLink>,
+      <ActionLink key="remark" onClick={() => onRemark(order)}>备注</ActionLink>,
+    ]
+    if (displayStatus === 'pending_payment') {
+      actions.push(<ActionLink key="close" onClick={() => onClose(order)}>关闭</ActionLink>)
+    } else if (displayStatus === 'pending_shipment') {
+      actions.push(<ActionLink key="ship" onClick={() => onShip(order)}>发货</ActionLink>)
+    } else if (displayStatus === 'refund' && onRefund) {
+      actions.push(<ActionLink key="refund" onClick={() => onRefund(order)}>处理退款</ActionLink>)
+    }
+    return (
+      <div className="flex items-center gap-3 whitespace-nowrap">
+        {actions.map((action, idx) => (
+          <span key={idx}>{action}</span>
+        ))}
+      </div>
+    )
+  }
 
   return (
-    <Table
-      columns={columns}
-      dataSource={orders}
-      loading={loading}
-      rowKey="id"
-      onRowClick={(record) => { window.location.href = `/orders/${record.id}` }}
-    />
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="bg-gray-50 text-gray-600 text-left">
+            <th className="px-4 py-3 font-medium w-10">
+              <input
+                type="checkbox"
+                checked={allSelected}
+                ref={(el) => {
+                  if (el) el.indeterminate = someSelected
+                }}
+                onChange={toggleAll}
+                className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              />
+            </th>
+            <th className="px-4 py-3 font-medium whitespace-nowrap">订单ID</th>
+            <th className="px-4 py-3 font-medium whitespace-nowrap">采购商品</th>
+            <th className="px-4 py-3 font-medium">
+              <div className="flex flex-col">
+                <span>采购明细</span>
+                <span className="text-xs font-normal text-gray-400">(颜色*规格*单价*数量+加工费用)</span>
+              </div>
+            </th>
+            <th className="px-4 py-3 font-medium text-right whitespace-nowrap">累计金额(元)</th>
+            <th className="px-4 py-3 font-medium text-right whitespace-nowrap">实收款(元)</th>
+            <th className="px-4 py-3 font-medium whitespace-nowrap">收货人信息</th>
+            <th className="px-4 py-3 font-medium whitespace-nowrap">
+              <span className="inline-flex items-center gap-1">
+                下单时间
+                <ArrowDown className="w-3.5 h-3.5 text-gray-400" />
+              </span>
+            </th>
+            <th className="px-4 py-3 font-medium whitespace-nowrap">状态</th>
+            <th className="px-4 py-3 font-medium whitespace-nowrap">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          {loading ? (
+            <tr>
+              <td colSpan={10} className="px-4 py-16 text-center text-gray-400">
+                加载中…
+              </td>
+            </tr>
+          ) : orders.length === 0 ? (
+            <tr>
+              <td colSpan={10} className="px-4 py-16 text-center text-gray-400">
+                暂无数据
+              </td>
+            </tr>
+          ) : (
+            orders.map((order) => {
+              const checked = selectedIds.includes(order.id)
+              const firstItem = order.items?.[0]
+              return (
+                <tr
+                  key={order.id}
+                  className={cn(
+                    'border-b border-gray-100 align-top transition-colors',
+                    checked ? 'bg-primary-50/40' : 'hover:bg-gray-50'
+                  )}
+                >
+                  <td className="px-4 py-4">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleOne(order.id)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                    />
+                  </td>
+
+                  {/* 订单ID */}
+                  <td className="px-4 py-4 font-mono text-gray-800 whitespace-nowrap">
+                    {order.orderNo || order.id}
+                  </td>
+
+                  {/* 采购商品（取第一项展示） */}
+                  <td className="px-4 py-4 min-w-[160px]">
+                    {firstItem ? (
+                      <div className="space-y-1">
+                        <div className="text-gray-900 font-medium leading-tight">
+                          {firstItem.productName}
+                        </div>
+                        <div className="text-xs text-gray-400 leading-tight">
+                          标题 {firstItem.productCode || '-'} {firstItem.productId || ''}
+                        </div>
+                      </div>
+                    ) : (
+                      <span className="text-gray-400">-</span>
+                    )}
+                  </td>
+
+                  {/* 采购明细 */}
+                  <td className="px-4 py-4 min-w-[260px]">
+                    <div className="space-y-1.5">
+                      {order.items?.map((item) => (
+                        <div key={item.id} className="text-gray-700 leading-tight">
+                          <span className="font-mono">{item.productCode || '-'}</span>
+                          {item.color ? `-${item.color}` : ''} *{item.specification || '-'}*
+                          <span className="font-mono">{formatNumber(item.unitPrice)}</span>
+                          元/米*
+                          <span className="font-mono">{formatNumber(item.quantity)}</span>
+                          米 =
+                          <span className="font-mono">{formatNumber(item.amount ?? item.subtotal)}</span>
+                          元
+                        </div>
+                      ))}
+                      {order.processingItems?.map((proc, idx) => (
+                        <div
+                          key={proc.id || idx}
+                          className="text-amber-600 leading-tight"
+                        >
+                          {proc.name} <span className="font-mono">{formatNumber(proc.unitPrice)}</span>
+                          元/米*
+                          <span className="font-mono">{formatNumber(proc.quantity)}</span>
+                          米=
+                          <span className="font-mono">{formatNumber(proc.amount)}</span>
+                          元
+                        </div>
+                      ))}
+                    </div>
+                  </td>
+
+                  {/* 累计金额 */}
+                  <td className="px-4 py-4 text-right font-mono text-gray-900 whitespace-nowrap">
+                    {formatNumber(order.totalAmount)}
+                  </td>
+
+                  {/* 实收款 */}
+                  <td className="px-4 py-4 text-right font-mono text-gray-900 whitespace-nowrap">
+                    {formatNumber(order.actualAmount)}
+                  </td>
+
+                  {/* 收货人信息 */}
+                  <td className="px-4 py-4 min-w-[200px]">
+                    <div className="space-y-0.5 text-gray-700 leading-tight">
+                      <div>姓名：{order.customerName || '-'}</div>
+                      <div>电话：{order.customerPhone || '-'}</div>
+                      <div className="truncate max-w-[220px]" title={order.customerAddress}>
+                        地址：{order.customerAddress || '-'}
+                      </div>
+                    </div>
+                  </td>
+
+                  {/* 下单时间 */}
+                  <td className="px-4 py-4 text-gray-600 whitespace-nowrap font-mono">
+                    {formatTime(order.createdAt)}
+                  </td>
+
+                  {/* 状态 */}
+                  <td className="px-4 py-4 whitespace-nowrap text-gray-700">
+                    {OrderStatusLabels[normalizeOrderStatus(order.status as string)]}
+                  </td>
+
+                  {/* 操作 */}
+                  <td className="px-4 py-4">{renderActions(order)}</td>
+                </tr>
+              )
+            })
+          )}
+        </tbody>
+      </table>
+    </div>
   )
 }

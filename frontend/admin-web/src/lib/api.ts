@@ -27,6 +27,7 @@ import type {
   OrderFormData,
   OrderStatusUpdateParams,
   LogisticsFormData,
+  CloseOrderParams,
   ProductStatus,
   AfterSalesTicket,
   AfterSalesListParams,
@@ -64,6 +65,7 @@ import type {
   CreateNotificationRequest,
   UnreadCountResponse,
 } from '@/types'
+import { FrontendToBackendStatus } from '@/types'
 
 // 认证 API
 export const authApi = {
@@ -223,22 +225,58 @@ export const afterSalesApi = {
 
 // 订单 API
 export const orderApi = {
+  // 获取订单列表（支持分页和筛选）
   getOrders: (params?: OrderListParams) => 
     request.get<ApiResponse<PageResponse<Order>>>('/api/admin/orders', { params }),
   
+  // 获取单个订单详情
   getOrder: (id: string) => 
     request.get<ApiResponse<Order>>(`/api/admin/orders/${id}`),
   
+  // 创建订单
   createOrder: (data: OrderFormData) => 
     request.post<ApiResponse<Order>>('/api/admin/orders', data),
   
-  updateOrderStatus: (id: string, data: OrderStatusUpdateParams) => 
-    request.put<ApiResponse<void>>(`/api/admin/orders/${id}/status`, data),
+  // 更新订单状态（可选携带物流信息）
+  // 后端只接收 { status }，且 status 为后端枚举。这里自动将前端枚举映射为后端枚举。
+  updateOrderStatus: (id: string, data: OrderStatusUpdateParams) => {
+    const backendStatus = FrontendToBackendStatus[data.status] ?? (data.status as unknown as string)
+    return request.put<ApiResponse<void>>(`/api/admin/orders/${id}/status`, {
+      status: backendStatus,
+    })
+  },
   
+  // 更新物流信息（发货）
+  // 后端实际只接收 { logisticsCompany, trackingNo }。
   updateLogistics: (id: string, data: LogisticsFormData) =>
-    request.put<ApiResponse<void>>(`/api/admin/orders/${id}/logistics`, data),
-  
-  deleteOrder: (id: string) => 
+    request.put<ApiResponse<void>>(`/api/admin/orders/${id}/logistics`, {
+      logisticsCompany: data.company,
+      trackingNo: data.trackingNo,
+    }),
+
+  // 关闭订单 → 后端实际为取消订单接口（无 body）
+  closeOrder: (id: string, _data?: CloseOrderParams) =>
+    request.put<ApiResponse<void>>(`/api/admin/orders/${id}/cancel`),
+
+  // 确认付款
+  confirmPayment: (id: string) =>
+    request.put<ApiResponse<void>>(`/api/admin/orders/${id}/payment`),
+
+  // 退款
+  refundOrder: (id: string) =>
+    request.put<ApiResponse<void>>(`/api/admin/orders/${id}/refund`),
+
+  // 添加备注：后端暂未提供该接口，暂返回 mock 成功响应
+  addRemark: async (id: string, content: string): Promise<{ data: ApiResponse<void> }> => {
+    console.warn(
+      `[orderApi.addRemark] 后端暂未提供 POST /api/admin/orders/${id}/remarks 接口，跳过请求。content=`,
+      content
+    )
+    return { data: { code: 0, message: 'mock', data: undefined as unknown as void, success: true } }
+  },
+
+  // 删除订单
+  deleteOrder: (id: string) =>
     request.delete<ApiResponse<void>>(`/api/admin/orders/${id}`),
 }
 

@@ -52,7 +52,7 @@ def build_agent_graph(agent_type: str = "xiaobu"):
         from app.graph.skills import (
             order_node,
             product_node,
-            knowledge_node,
+            # [RAG 禁用] knowledge_node,
             aftersales_node,
             customer_skill_node,
             staff_skill_node,
@@ -63,7 +63,7 @@ def build_agent_graph(agent_type: str = "xiaobu"):
 
         graph.add_node("order_skill", order_node)
         graph.add_node("product_skill", product_node)
-        graph.add_node("knowledge_skill", knowledge_node)
+        # [RAG 禁用] graph.add_node("knowledge_skill", knowledge_node)
         graph.add_node("aftersales_skill", aftersales_node)
         graph.add_node("customer_skill", customer_skill_node)
         graph.add_node("staff_skill", staff_skill_node)
@@ -75,7 +75,8 @@ def build_agent_graph(agent_type: str = "xiaobu"):
             "direct_reply": "direct_reply",
             "order": "order_skill",
             "product": "product_skill",
-            "knowledge": "knowledge_skill",
+            # [RAG 禁用] "knowledge": "knowledge_skill",
+            "knowledge": "general_agent",  # 知识库路由 fallback 到 general_agent
             "aftersales": "aftersales_skill",
             "customer": "customer_skill",
             "staff": "staff_skill",
@@ -87,7 +88,7 @@ def build_agent_graph(agent_type: str = "xiaobu"):
             "direct_reply",
             "order_skill",
             "product_skill",
-            "knowledge_skill",
+            # [RAG 禁用] "knowledge_skill",
             "aftersales_skill",
             "customer_skill",
             "staff_skill",
@@ -100,20 +101,21 @@ def build_agent_graph(agent_type: str = "xiaobu"):
         from app.graph.skills import (
             customer_order_skill_node,
             customer_product_skill_node,
-            customer_knowledge_skill_node,
+            # [RAG 禁用] customer_knowledge_skill_node,
             customer_general_skill_node,
         )
 
         graph.add_node("customer_order_skill", customer_order_skill_node)
         graph.add_node("customer_product_skill", customer_product_skill_node)
-        graph.add_node("customer_knowledge_skill", customer_knowledge_skill_node)
+        # [RAG 禁用] graph.add_node("customer_knowledge_skill", customer_knowledge_skill_node)
         graph.add_node("customer_general_skill", customer_general_skill_node)
 
         skill_route_map = {
             "direct_reply": "direct_reply",
             "order": "customer_order_skill",
             "product": "customer_product_skill",
-            "knowledge": "customer_knowledge_skill",
+            # [RAG 禁用] "knowledge": "customer_knowledge_skill",
+            "knowledge": "customer_general_skill",  # 知识库路由 fallback 到 general
             "aftersales": "customer_general_skill",
             "customer": "customer_general_skill",
             "staff": "customer_general_skill",
@@ -125,7 +127,7 @@ def build_agent_graph(agent_type: str = "xiaobu"):
             "direct_reply",
             "customer_order_skill",
             "customer_product_skill",
-            "customer_knowledge_skill",
+            # [RAG 禁用] "customer_knowledge_skill",
             "customer_general_skill",
         ]
 

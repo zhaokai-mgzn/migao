@@ -192,7 +192,7 @@ export default function ProductForm({
         customPrice:
           merged.customPrice && merged.customPrice > 0
             ? merged.customPrice
-            : ref?.basePrice || 0,
+            : ref?.unitPrice || ref?.basePrice || 0,
       }
     }
     list[idx] = merged
@@ -534,7 +534,7 @@ export default function ProductForm({
                             { value: '', label: '请选择加工项' },
                             ...processingItems.map((p) => ({
                               value: String(p.id),
-                              label: `${p.name}（基础价 ¥${p.basePrice}/${p.unit}）`,
+                              label: `${p.name}（基础价 ¥${p.unitPrice ?? p.basePrice}/${p.unit}）`,
                             })),
                           ]}
                           value={
@@ -591,7 +591,7 @@ export default function ProductForm({
                             { value: '', label: '请选择加工项' },
                             ...processingItems.map((p) => ({
                               value: String(p.id),
-                              label: `${p.name}（基础价 ¥${p.basePrice}/${p.unit}）`,
+                              label: `${p.name}（基础价 ¥${p.unitPrice ?? p.basePrice}/${p.unit}）`,
                             })),
                           ]}
                           value=""
@@ -604,7 +604,7 @@ export default function ProductForm({
                               {
                                 processingItemId: Number(e.target.value),
                                 processingItemName: ref?.name,
-                                customPrice: ref?.basePrice || 0,
+                                customPrice: ref?.unitPrice || ref?.basePrice || 0,
                               },
                             ])
                           }}

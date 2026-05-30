@@ -12,12 +12,12 @@ interface RecentOrdersProps {
 }
 
 const statusVariantMap: Record<OrderStatus, 'warning' | 'info' | 'default' | 'success' | 'error'> = {
-  pending: 'warning',
-  confirmed: 'info',
-  producing: 'default',
+  pending_payment: 'warning',
+  pending_shipment: 'info',
   shipped: 'info',
   completed: 'success',
-  cancelled: 'error',
+  closed: 'default',
+  refund: 'error',
 }
 
 function formatAmount(amount: number): string {

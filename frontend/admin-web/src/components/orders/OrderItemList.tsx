@@ -37,8 +37,8 @@ export default function OrderItemList({ items, className }: OrderItemListProps) 
                 {item.sku && (
                   <span className="text-xs text-gray-400">SKU: {item.sku}</span>
                 )}
-                {item.specifications && (
-                  <span className="text-xs text-gray-400">规格: {item.specifications}</span>
+                {item.specification && (
+                  <span className="text-xs text-gray-400">规格: {item.specification}</span>
                 )}
                 {item.width && (
                   <span className="text-xs text-gray-400">宽: {item.width}m</span>

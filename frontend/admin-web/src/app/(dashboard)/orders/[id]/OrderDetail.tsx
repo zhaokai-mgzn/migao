@@ -1,17 +1,70 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, MapPin, Phone, User, Calendar, Package, Truck, Ban } from 'lucide-react'
+import { ChevronRight, Zap } from 'lucide-react'
 import { toast } from 'sonner'
+import dayjs from 'dayjs'
 import { orderApi } from '@/lib/api'
 import { useRouteId } from '@/lib/use-route-id'
-import { Button, Card, Loading, Modal } from '@/components/ui'
-import { OrderStatusBadge, OrderTimeline, OrderItemList, LogisticsInfo, LogisticsForm } from '@/components/orders'
-import type { Order, OrderStatus, LogisticsFormData } from '@/types'
-import { OrderStatusLabels, NextStatusMap, NextStatusActionLabels } from '@/types'
-import dayjs from 'dayjs'
+import { Button, Loading } from '@/components/ui'
+import { OrderProgressSteps } from '@/components/orders'
+import CloseOrderModal from '@/components/orders/CloseOrderModal'
+import type { Order, OrderItem } from '@/types'
+import { normalizeOrderStatus } from '@/types'
 import { cn } from '@/lib/utils'
+
+// 格式化金额（含千分位+两位小数）
+function formatAmount(amount?: number): string {
+  return `¥${(amount ?? 0).toLocaleString('zh-CN', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`
+}
+
+function formatDateTime(time?: string): string {
+  if (!time) return '-'
+  return dayjs(time).format('YYYY-MM-DD HH:mm:ss')
+}
+
+// 倒计时计算
+function calcCountdown(deadline?: string): { h: number; m: number; s: number; expired: boolean } {
+  if (!deadline) return { h: 0, m: 0, s: 0, expired: true }
+  const diff = dayjs(deadline).diff(dayjs(), 'second')
+  if (diff <= 0) return { h: 0, m: 0, s: 0, expired: true }
+  const h = Math.floor(diff / 3600)
+  const m = Math.floor((diff % 3600) / 60)
+  const s = diff % 60
+  return { h, m, s, expired: false }
+}
+
+// 商品分组：同一 productId（或 productName）合并为一组（实现 rowspan 视觉效果）
+interface ProductGroup {
+  key: string
+  productName: string
+  rows: OrderItem[]
+  groupTotal: number
+}
+
+function groupItems(items?: OrderItem[]): ProductGroup[] {
+  if (!items || items.length === 0) return []
+  const map = new Map<string, ProductGroup>()
+  items.forEach((item) => {
+    const key = item.productId || item.productName
+    if (!map.has(key)) {
+      map.set(key, {
+        key,
+        productName: item.productName,
+        rows: [],
+        groupTotal: 0,
+      })
+    }
+    const group = map.get(key)!
+    group.rows.push(item)
+    group.groupTotal += item.amount || 0
+  })
+  return Array.from(map.values())
+}
 
 export default function OrderDetailPage() {
   const router = useRouter()
@@ -19,17 +72,11 @@ export default function OrderDetailPage() {
 
   const [order, setOrder] = useState<Order | null>(null)
   const [loading, setLoading] = useState(true)
+  const [closeModalOpen, setCloseModalOpen] = useState(false)
+  const [closeSubmitting, setCloseSubmitting] = useState(false)
 
-  // 状态更新确认弹窗
-  const [statusConfirmOpen, setStatusConfirmOpen] = useState(false)
-  const [pendingStatus, setPendingStatus] = useState<OrderStatus | null>(null)
-  const [statusUpdating, setStatusUpdating] = useState(false)
-
-  // 取消订单确认弹窗
-  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false)
-
-  // 物流信息弹窗
-  const [logisticsFormOpen, setLogisticsFormOpen] = useState(false)
+  // 倒计时
+  const [countdown, setCountdown] = useState({ h: 0, m: 0, s: 0, expired: false })
 
   // 加载订单
   const loadOrder = useCallback(async () => {
@@ -39,8 +86,8 @@ export default function OrderDetailPage() {
       const res = await orderApi.getOrder(orderId)
       const data = res.data?.data
       if (data) setOrder(data)
-    } catch (error) {
-      console.error('加载订单失败:', error)
+    } catch (e) {
+      console.error('加载订单失败:', e)
       toast.error('加载订单详情失败')
     } finally {
       setLoading(false)
@@ -51,60 +98,37 @@ export default function OrderDetailPage() {
     loadOrder()
   }, [loadOrder])
 
-  // 推进到下一状态
-  const handleNextStatus = () => {
-    if (!order) return
-    const next = NextStatusMap[order.status]
-    if (!next) return
-    setPendingStatus(next)
-    setStatusConfirmOpen(true)
-  }
+  // 待付款倒计时定时器
+  useEffect(() => {
+    const displayStatus = order ? normalizeOrderStatus(order.status as string) : null
+    if (!order || displayStatus !== 'pending_payment' || !order.paymentDeadline) return
+    const update = () => setCountdown(calcCountdown(order.paymentDeadline))
+    update()
+    const timer = setInterval(update, 1000)
+    return () => clearInterval(timer)
+  }, [order])
 
-  // 确认状态更新
-  const confirmStatusUpdate = async () => {
-    if (!order || !pendingStatus) return
-    setStatusUpdating(true)
+  // 关闭订单
+  const handleConfirmClose = async (reason: string) => {
+    if (!order) return
+    setCloseSubmitting(true)
     try {
-      await orderApi.updateOrderStatus(order.id, { status: pendingStatus })
-      toast.success('状态更新成功')
-      setStatusConfirmOpen(false)
-      setPendingStatus(null)
+      await orderApi.closeOrder(order.id, { reason })
+      toast.success('订单已关闭')
+      setCloseModalOpen(false)
       loadOrder()
     } catch {
-      toast.error('状态更新失败')
+      toast.error('关闭订单失败')
     } finally {
-      setStatusUpdating(false)
+      setCloseSubmitting(false)
     }
   }
 
-  // 取消订单
-  const handleCancelOrder = async () => {
-    if (!order) return
-    setStatusUpdating(true)
-    try {
-      await orderApi.updateOrderStatus(order.id, { status: 'cancelled' })
-      toast.success('订单已取消')
-      setCancelConfirmOpen(false)
-      loadOrder()
-    } catch {
-      toast.error('取消订单失败')
-    } finally {
-      setStatusUpdating(false)
-    }
-  }
-
-  // 物流信息提交
-  const handleLogisticsSubmit = async (data: LogisticsFormData) => {
-    if (!order) return
-    await orderApi.updateLogistics(order.id, data)
-    toast.success('物流信息已更新')
-    loadOrder()
-  }
-
-  // 格式化金额
-  const formatAmount = (amount: number) => {
-    return `¥${(amount ?? 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-  }
+  const productGroups = useMemo(() => groupItems(order?.items), [order?.items])
+  const processingTotal = useMemo(
+    () => (order?.processingItems || []).reduce((sum, p) => sum + (p.amount || 0), 0),
+    [order?.processingItems]
+  )
 
   if (loading) {
     return (
@@ -123,227 +147,354 @@ export default function OrderDetailPage() {
     )
   }
 
-  const nextAction = NextStatusActionLabels[order.status]
-  const canCancel = ['pending', 'confirmed'].includes(order.status)
-
   return (
     <div className="p-6">
+      {/* 面包屑 */}
+      <div className="flex items-center gap-1.5 text-sm text-gray-500 mb-3">
+        <button onClick={() => router.push('/')} className="hover:text-primary-600 transition-colors">
+          首页
+        </button>
+        <ChevronRight className="w-3.5 h-3.5" />
+        <span>订单管理</span>
+        <ChevronRight className="w-3.5 h-3.5" />
+        <button onClick={() => router.push('/orders')} className="hover:text-primary-600 transition-colors">
+          订单列表
+        </button>
+        <ChevronRight className="w-3.5 h-3.5" />
+        <span className="text-gray-900">订单详情</span>
+      </div>
+
       {/* 页面标题 */}
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-4">
-          <button
-            onClick={() => router.push('/orders')}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <ArrowLeft className="w-5 h-5 text-gray-600" />
-          </button>
-          <div>
-            <div className="flex items-center gap-3">
-              <h1 className="text-xl font-semibold text-gray-900">订单详情</h1>
-              <OrderStatusBadge status={order.status} />
-            </div>
-            <p className="text-sm text-gray-500 mt-1 font-mono">订单号: {order.orderNo}</p>
-          </div>
+      <h1 className="text-xl font-semibold text-gray-900 mb-5">订单详情</h1>
+
+      {/* 订单状态区域 */}
+      <StatusSection
+        order={order}
+        countdown={countdown}
+        onClose={() => setCloseModalOpen(true)}
+        onShip={() => router.push(`/orders/${order.id}/ship`)}
+      />
+
+      {/* 基础信息 */}
+      <SectionCard title="基础信息">
+        <div className="grid grid-cols-3 gap-y-4 gap-x-8 text-sm">
+          <InfoRow label="订单编号" value={order.orderNo} />
+          <InfoRow label="下单时间" value={formatDateTime(order.createdAt)} />
+          <InfoRow label="支付时间" value={formatDateTime(order.paidAt)} />
+          <InfoRow label="支付交易号" value={order.paymentNo || '-'} />
+          <InfoRow label="发货时间" value={formatDateTime(order.shippedAt)} />
+          <InfoRow label="确认收货时间" value={formatDateTime(order.receivedAt)} />
         </div>
-        <div className="flex items-center gap-2">
-          {nextAction && (
-            <Button onClick={handleNextStatus}>
-              {nextAction}
-            </Button>
-          )}
-          {canCancel && (
-            <Button variant="danger" onClick={() => setCancelConfirmOpen(true)}>
-              <Ban className="w-4 h-4 mr-1.5" />
-              取消订单
-            </Button>
-          )}
-        </div>
-      </div>
+      </SectionCard>
 
-      {/* 状态概览卡片 */}
-      <Card className="mb-6">
-        <div className="p-6">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <p className="text-sm text-gray-500 mb-1">订单金额</p>
-              <p className="text-3xl font-bold text-gray-900">{formatAmount(order.totalAmount)}</p>
-            </div>
-            <div className="text-right">
-              <p className="text-sm text-gray-500 mb-1">下单时间</p>
-              <p className="text-sm font-medium text-gray-700">
-                {order.createdAt ? dayjs(order.createdAt).format('YYYY-MM-DD HH:mm') : '-'}
-              </p>
-            </div>
-          </div>
-
-          {/* 状态流转步骤条 */}
-          <OrderTimeline
-            currentStatus={order.status}
-            statusHistory={order.statusHistory}
-          />
-        </div>
-      </Card>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* 左侧 */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* 订单明细 */}
-          <Card>
-            <div className="p-6">
-              <div className="flex items-center gap-2 mb-4">
-                <Package className="w-5 h-5 text-gray-500" />
-                <h2 className="text-lg font-semibold text-gray-900">订单明细</h2>
-              </div>
-              {order.items && order.items.length > 0 ? (
-                <OrderItemList items={order.items} />
-              ) : (
-                <p className="text-gray-400 text-center py-8">暂无订单明细</p>
-              )}
-            </div>
-          </Card>
-
-          {/* 物流信息 */}
-          <Card>
-            <div className="p-6">
-              <LogisticsInfo
-                logistics={order.logistics}
-                onEdit={() => setLogisticsFormOpen(true)}
-              />
-            </div>
-          </Card>
-
-          {/* 备注 */}
-          {order.remark && (
-            <Card>
-              <div className="p-6">
-                <h2 className="text-lg font-semibold text-gray-900 mb-3">订单备注</h2>
-                <p className="text-gray-600 bg-gray-50 p-4 rounded-lg">{order.remark}</p>
-              </div>
-            </Card>
-          )}
-        </div>
-
-        {/* 右侧 */}
-        <div className="space-y-6">
-          {/* 客户信息 */}
-          <Card>
-            <div className="p-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">客户信息</h2>
-              <div className="space-y-4">
-                <div className="flex items-start gap-3">
-                  <User className="w-5 h-5 text-gray-400 mt-0.5" />
-                  <div>
-                    <p className="text-xs text-gray-500">客户姓名</p>
-                    <p className="font-medium text-gray-900">{order.customerName}</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <Phone className="w-5 h-5 text-gray-400 mt-0.5" />
-                  <div>
-                    <p className="text-xs text-gray-500">联系电话</p>
-                    <p className="font-medium text-gray-900">{order.customerPhone}</p>
-                  </div>
-                </div>
-                {order.customerAddress && (
-                  <div className="flex items-start gap-3">
-                    <MapPin className="w-5 h-5 text-gray-400 mt-0.5" />
-                    <div>
-                      <p className="text-xs text-gray-500">收货地址</p>
-                      <p className="font-medium text-gray-900">{order.customerAddress}</p>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </Card>
-
-          {/* 订单信息 */}
-          <Card>
-            <div className="p-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">订单信息</h2>
-              <div className="space-y-3">
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">订单ID</span>
-                  <span className="font-mono text-gray-600 text-xs">{order.id}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">创建时间</span>
-                  <span className="text-gray-700">
-                    {order.createdAt ? dayjs(order.createdAt).format('YYYY-MM-DD HH:mm') : '-'}
-                  </span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">更新时间</span>
-                  <span className="text-gray-700">
-                    {order.updatedAt ? dayjs(order.updatedAt).format('YYYY-MM-DD HH:mm') : '-'}
-                  </span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">商品数量</span>
-                  <span className="text-gray-700">{order.items?.length || 0} 项</span>
-                </div>
-              </div>
-            </div>
-          </Card>
-        </div>
-      </div>
-
-      {/* 状态确认弹窗 */}
-      <Modal
-        open={statusConfirmOpen}
-        onClose={() => setStatusConfirmOpen(false)}
-        title="确认操作"
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setStatusConfirmOpen(false)} disabled={statusUpdating}>
-              取消
-            </Button>
-            <Button onClick={confirmStatusUpdate} loading={statusUpdating}>
-              确认
-            </Button>
-          </>
+      {/* 商品信息 */}
+      <SectionCard
+        title="商品信息"
+        rightAction={
+          <span className="text-sm text-primary-600 font-medium">
+            订单实收款：{formatAmount(order.actualAmount)}元
+          </span>
         }
       >
-        <p className="text-gray-600">
-          确定要将订单 <span className="font-medium text-gray-900">{order.orderNo}</span> 的状态更新为{' '}
-          <span className="font-medium text-primary-600">
-            {pendingStatus ? OrderStatusLabels[pendingStatus] : ''}
-          </span>{' '}
-          吗？
-        </p>
-      </Modal>
+        <ProductTable groups={productGroups} />
 
-      {/* 取消订单确认弹窗 */}
-      <Modal
-        open={cancelConfirmOpen}
-        onClose={() => setCancelConfirmOpen(false)}
-        title="取消订单"
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setCancelConfirmOpen(false)} disabled={statusUpdating}>
-              暂不取消
-            </Button>
-            <Button variant="danger" onClick={handleCancelOrder} loading={statusUpdating}>
-              确认取消
-            </Button>
-          </>
-        }
-      >
-        <p className="text-gray-600">
-          确定要取消订单 <span className="font-medium text-gray-900">{order.orderNo}</span> 吗？取消后不可恢复。
-        </p>
-      </Modal>
+        {order.processingItems && order.processingItems.length > 0 && (
+          <div className="mt-5">
+            <ProcessingTable items={order.processingItems} total={processingTotal} />
+          </div>
+        )}
+      </SectionCard>
 
-      {/* 物流信息弹窗 */}
-      <LogisticsForm
-        open={logisticsFormOpen}
-        onClose={() => setLogisticsFormOpen(false)}
-        onSubmit={handleLogisticsSubmit}
-        initialData={order.logistics ? {
-          company: order.logistics.company,
-          trackingNo: order.logistics.trackingNo,
-        } : undefined}
+      {/* 收货信息 */}
+      <SectionCard title="收货信息">
+        <div className="grid grid-cols-2 gap-y-4 gap-x-8 text-sm">
+          <InfoRow label="收货人" value={order.customerName} />
+          <InfoRow label="联系电话" value={order.customerPhone} />
+          <div className="col-span-2">
+            <InfoRow label="收货地址" value={order.customerAddress || '-'} />
+          </div>
+        </div>
+      </SectionCard>
+
+      {/* 关闭订单弹窗 */}
+      <CloseOrderModal
+        open={closeModalOpen}
+        onClose={() => setCloseModalOpen(false)}
+        onConfirm={handleConfirmClose}
+        loading={closeSubmitting}
       />
     </div>
+  )
+}
+
+// ============== 子组件 ==============
+
+interface StatusSectionProps {
+  order: Order
+  countdown: { h: number; m: number; s: number; expired: boolean }
+  onClose: () => void
+  onShip: () => void
+}
+
+function StatusSection({ order, countdown, onClose, onShip }: StatusSectionProps) {
+  const status = normalizeOrderStatus(order.status as string)
+
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 shadow-card p-6 mb-5">
+      {status === 'pending_payment' && (
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-2xl font-semibold text-red-500 mb-3">待买家付款</div>
+            <div className="flex items-center gap-2 text-sm text-gray-700">
+              <span className="inline-block w-2 h-2 rounded-full bg-amber-400" />
+              <span>
+                支付倒计时：
+                {countdown.expired ? (
+                  <span className="text-red-500">已超时</span>
+                ) : (
+                  <span className="font-medium">
+                    {countdown.h}h {countdown.m}m {countdown.s}s
+                  </span>
+                )}
+              </span>
+            </div>
+          </div>
+          <Button onClick={onClose} className="gap-1.5">
+            关闭订单
+            <Zap className="w-4 h-4" />
+          </Button>
+        </div>
+      )}
+
+      {status === 'pending_shipment' && (
+        <div className="flex items-center justify-between gap-6">
+          <div className="flex-1">
+            <OrderProgressSteps
+              status={status}
+              paidAt={order.paidAt}
+              shippedAt={order.shippedAt}
+              receivedAt={order.receivedAt}
+            />
+          </div>
+          <Button onClick={onShip} className="gap-1.5 shrink-0">
+            发货
+            <Zap className="w-4 h-4" />
+          </Button>
+        </div>
+      )}
+
+      {status === 'shipped' && (
+        <OrderProgressSteps
+          status={status}
+          paidAt={order.paidAt}
+          shippedAt={order.shippedAt}
+          receivedAt={order.receivedAt}
+        />
+      )}
+
+      {status === 'completed' && (
+        <OrderProgressSteps
+          status={status}
+          paidAt={order.paidAt}
+          shippedAt={order.shippedAt}
+          receivedAt={order.receivedAt}
+        />
+      )}
+
+      {status === 'closed' && (
+        <div>
+          <div className="text-2xl font-semibold text-gray-700 mb-2">已关闭</div>
+          {order.closeReason && (
+            <div className="text-sm text-gray-500">关闭原因：{order.closeReason}</div>
+          )}
+        </div>
+      )}
+
+      {status === 'refund' && (
+        <div className="text-2xl font-semibold text-amber-600">退款/售后中</div>
+      )}
+    </div>
+  )
+}
+
+interface SectionCardProps {
+  title: string
+  rightAction?: React.ReactNode
+  children: React.ReactNode
+}
+
+function SectionCard({ title, rightAction, children }: SectionCardProps) {
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 shadow-card mb-5">
+      <div className="flex items-center justify-between px-6 py-3.5 border-b border-gray-100">
+        <div className="flex items-center gap-2">
+          <span className="inline-block w-1 h-4 bg-primary-500 rounded-sm" />
+          <h2 className="text-base font-semibold text-gray-900">{title}</h2>
+        </div>
+        {rightAction}
+      </div>
+      <div className="px-6 py-5">{children}</div>
+    </div>
+  )
+}
+
+function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex items-baseline gap-2">
+      <span className="text-gray-500 shrink-0">{label}：</span>
+      <span className="text-gray-900 break-all">{value}</span>
+    </div>
+  )
+}
+
+function ProductTable({ groups }: { groups: ProductGroup[] }) {
+  if (groups.length === 0) {
+    return <div className="text-center text-gray-400 py-8 text-sm">暂无商品</div>
+  }
+
+  return (
+    <div className="overflow-x-auto rounded border border-gray-200">
+      <table className="w-full text-sm">
+        <thead className="bg-gray-50 text-gray-600">
+          <tr>
+            <Th>商品</Th>
+            <Th>商品货号</Th>
+            <Th>颜色</Th>
+            <Th>规格尺寸</Th>
+            <Th align="right">单价</Th>
+            <Th align="center">数量</Th>
+            <Th align="right">金额</Th>
+            <Th align="right">商品合计</Th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100">
+          {groups.map((group) =>
+            group.rows.map((row, rowIdx) => (
+              <tr key={`${group.key}-${row.id || rowIdx}`} className="hover:bg-gray-50/50">
+                {rowIdx === 0 && (
+                  <td
+                    rowSpan={group.rows.length}
+                    className="px-3 py-3 align-top border-r border-gray-100 font-medium text-gray-900"
+                  >
+                    {group.productName}
+                  </td>
+                )}
+                <Td>{row.productCode || '-'}</Td>
+                <Td>{row.color || '-'}</Td>
+                <Td>{row.specification || '-'}</Td>
+                <Td align="right" className="text-red-500 font-medium">
+                  {formatAmount(row.unitPrice)}
+                </Td>
+                <Td align="center" className="text-primary-600 font-medium">
+                  {row.quantity}
+                </Td>
+                <Td align="right" className="text-primary-600 font-medium">
+                  {formatAmount(row.amount)}
+                </Td>
+                {rowIdx === 0 && (
+                  <td
+                    rowSpan={group.rows.length}
+                    className="px-3 py-3 text-right align-top border-l border-gray-100 text-primary-600 font-semibold"
+                  >
+                    {formatAmount(group.groupTotal)}
+                  </td>
+                )}
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function ProcessingTable({
+  items,
+  total,
+}: {
+  items: NonNullable<Order['processingItems']>
+  total: number
+}) {
+  return (
+    <div className="overflow-x-auto rounded border border-gray-200">
+      <table className="w-full text-sm">
+        <thead className="bg-gray-50 text-gray-600">
+          <tr>
+            <Th>加工项</Th>
+            <Th align="right">单价</Th>
+            <Th align="center">数量</Th>
+            <Th align="right">金额</Th>
+            <Th align="right">加工合计</Th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100">
+          {items.map((item, idx) => (
+            <tr key={item.id || idx} className="hover:bg-gray-50/50">
+              <Td>{item.name}</Td>
+              <Td align="right">{formatAmount(item.unitPrice)}</Td>
+              <Td align="center" className="text-primary-600 font-medium">
+                {item.quantity}
+              </Td>
+              <Td align="right" className="text-red-500 font-medium">
+                {formatAmount(item.amount)}
+              </Td>
+              {idx === 0 && (
+                <td
+                  rowSpan={items.length}
+                  className="px-3 py-3 text-right align-top border-l border-gray-100 text-primary-600 font-semibold"
+                >
+                  {formatAmount(total)}
+                </td>
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function Th({
+  children,
+  align = 'left',
+}: {
+  children: React.ReactNode
+  align?: 'left' | 'right' | 'center'
+}) {
+  return (
+    <th
+      className={cn(
+        'px-3 py-2.5 text-xs font-semibold text-gray-600 whitespace-nowrap',
+        align === 'right' && 'text-right',
+        align === 'center' && 'text-center',
+        align === 'left' && 'text-left'
+      )}
+    >
+      {children}
+    </th>
+  )
+}
+
+function Td({
+  children,
+  align = 'left',
+  className,
+}: {
+  children: React.ReactNode
+  align?: 'left' | 'right' | 'center'
+  className?: string
+}) {
+  return (
+    <td
+      className={cn(
+        'px-3 py-3 text-gray-700',
+        align === 'right' && 'text-right',
+        align === 'center' && 'text-center',
+        align === 'left' && 'text-left',
+        className
+      )}
+    >
+      {children}
+    </td>
   )
 }
