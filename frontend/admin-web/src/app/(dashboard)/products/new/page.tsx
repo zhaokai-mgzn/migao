@@ -15,7 +15,7 @@ export default function NewProductPage() {
         <h1 className="text-xl font-bold text-gray-900">添加商品</h1>
         <p className="text-sm text-gray-500 mt-1">填写商品信息并提交</p>
       </div>
-      <ProductForm onSubmit={handleSubmit} submitText="创建商品" />
+      <ProductForm onSubmit={handleSubmit} submitText="提交并上架" />
     </div>
   )
 }
