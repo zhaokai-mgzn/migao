@@ -254,7 +254,7 @@ export default function LoginPage() {
                       autoComplete="one-time-code"
                       value={smsForm.code}
                       onChange={handleSmsChange}
-                      placeholder="测试环境验证码: 123456"
+                      placeholder="请输入6位验证码"
                       className={cn(
                         'flex-1 h-11 px-3.5 rounded-lg border text-sm transition-all',
                         'focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15',
