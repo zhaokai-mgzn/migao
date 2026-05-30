@@ -150,7 +150,7 @@ class OrderServiceTest {
     void getOrderById_Found() {
         // given
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
-        when(orderItemMapper.selectByOrderId("order-001")).thenReturn(List.of(testOrderItem));
+        when(orderItemMapper.selectByOrderId("order-001", 1L)).thenReturn(List.of(testOrderItem));
         when(orderLogisticsMapper.selectByOrderId("order-001", 1L)).thenReturn(List.of());
 
         // when
@@ -177,7 +177,7 @@ class OrderServiceTest {
                 .build();
 
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
-        when(orderItemMapper.selectByOrderId("order-001")).thenReturn(List.of(testOrderItem));
+        when(orderItemMapper.selectByOrderId("order-001", 1L)).thenReturn(List.of(testOrderItem));
         when(orderLogisticsMapper.selectByOrderId("order-001", 1L)).thenReturn(List.of(logistics));
 
         // when
@@ -243,7 +243,7 @@ class OrderServiceTest {
                 .status("pending")
                 .build();
         when(orderMapper.selectById("order-new")).thenReturn(savedOrder);
-        when(orderItemMapper.selectByOrderId("order-new")).thenReturn(List.of(testOrderItem));
+        when(orderItemMapper.selectByOrderId("order-new", 1L)).thenReturn(List.of(testOrderItem));
         when(orderLogisticsMapper.selectByOrderId("order-new", 1L)).thenReturn(List.of());
 
         // when
@@ -295,7 +295,7 @@ class OrderServiceTest {
                 .status("pending")
                 .build();
         when(orderMapper.selectById("order-multi")).thenReturn(savedOrder);
-        when(orderItemMapper.selectByOrderId("order-multi")).thenReturn(List.of());
+        when(orderItemMapper.selectByOrderId("order-multi", 1L)).thenReturn(List.of());
         when(orderLogisticsMapper.selectByOrderId("order-multi", 1L)).thenReturn(List.of());
 
         // when
@@ -468,7 +468,7 @@ class OrderServiceTest {
                 .status("pending")
                 .build();
         when(orderMapper.selectById("order-gen")).thenReturn(savedOrder);
-        when(orderItemMapper.selectByOrderId("order-gen")).thenReturn(List.of());
+        when(orderItemMapper.selectByOrderId("order-gen", 1L)).thenReturn(List.of());
         when(orderLogisticsMapper.selectByOrderId("order-gen", 1L)).thenReturn(List.of());
 
         // when
