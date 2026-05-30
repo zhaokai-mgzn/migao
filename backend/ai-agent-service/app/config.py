@@ -68,6 +68,13 @@ class Settings(BaseSettings):
     SSE_TIMEOUT: int = 300  # 5 分钟
     SSE_PING_INTERVAL: int = 30  # 30 秒心跳
 
+    # LLM 管道配置（Factory / Router / CostTracker / Retry）
+    LLM_ENABLE_MODEL_ROUTING: bool = False      # 模型路由开关（默认关闭，保持 DASHSCOPE_MODEL）
+    LLM_COST_TRACKING_ENABLED: bool = True      # 成本追踪开关
+    LLM_MONTHLY_BUDGET_CNY: float = 500.0       # 月预算（元），<=0 表示不限
+    LLM_RETRY_MAX_ATTEMPTS: int = 2             # 最大重试次数（不含首次调用）
+    LLM_RETRY_BASE_DELAY_S: float = 0.5         # 重试基础延迟（秒），指数退避基数
+
     model_config = {"env_file": ".env", "case_sensitive": True, "extra": "ignore"}
 
 
