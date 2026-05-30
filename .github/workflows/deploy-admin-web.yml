@@ -1,0 +1,117 @@
+name: Build and Deploy admin-web
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'frontend/admin-web/**'
+  workflow_dispatch:  # 支持手动触发
+
+env:
+  OSS_BUCKET: ai-customer-service-admin-dev
+  OSS_REGION: cn-hangzhou
+  OSS_ENDPOINT: oss-cn-hangzhou.aliyuncs.com
+  NODE_VERSION: '20'
+  WORKING_DIR: frontend/admin-web
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    concurrency:
+      group: deploy-admin-web
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: ${{ env.WORKING_DIR }}/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ${{ env.WORKING_DIR }}
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Build Next.js (static export)
+        working-directory: ${{ env.WORKING_DIR }}
+        env:
+          NODE_ENV: production
+          # 生产构建环境变量（与 .env.production 对齐，可被 secrets 覆盖）
+          NEXT_PUBLIC_API_BASE_URL: ${{ secrets.NEXT_PUBLIC_API_BASE_URL || 'https://api.migaozn.com' }}
+          NEXT_PUBLIC_AI_API_BASE_URL: ${{ secrets.NEXT_PUBLIC_AI_API_BASE_URL || 'https://ai-api.migaozn.com' }}
+          NEXT_PUBLIC_OSS_DOMAIN: ${{ secrets.NEXT_PUBLIC_OSS_DOMAIN || 'https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com' }}
+          NEXT_PUBLIC_COOKIE_DOMAIN: ${{ secrets.NEXT_PUBLIC_COOKIE_DOMAIN || '.migaozn.com' }}
+          NEXT_PUBLIC_ASSET_PREFIX: ${{ secrets.NEXT_PUBLIC_ASSET_PREFIX }}
+        run: |
+          npx next build
+          if [ ! -d out ]; then
+            echo "❌ 静态导出失败：out/ 目录不存在"
+            exit 1
+          fi
+          if [ ! -f out/index.html ]; then
+            echo "❌ 静态导出失败：out/index.html 不存在"
+            exit 1
+          fi
+          echo "✅ 静态导出完成，产物条目数：$(find out -type f | wc -l)"
+
+      - name: Install Aliyun CLI
+        run: |
+          curl -sL https://aliyuncli.alicdn.com/aliyun-cli-linux-latest-amd64.tgz -o aliyun-cli.tgz
+          tar xzf aliyun-cli.tgz
+          sudo mv aliyun /usr/local/bin/
+          aliyun --version || true
+
+      - name: Configure Aliyun credentials
+        run: |
+          aliyun configure set \
+            --access-key-id ${{ secrets.ALIYUN_ACCESS_KEY_ID }} \
+            --access-key-secret ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }} \
+            --region ${{ env.OSS_REGION }}
+
+      - name: Upload to OSS
+        working-directory: ${{ env.WORKING_DIR }}
+        run: |
+          echo "上传 out/ 到 oss://${{ env.OSS_BUCKET }}/ ..."
+          aliyun oss cp -r out/ oss://${{ env.OSS_BUCKET }}/ \
+            --update \
+            --force \
+            --region ${{ env.OSS_REGION }} \
+            --endpoint https://${{ env.OSS_ENDPOINT }}
+          echo "✅ OSS 上传完成"
+
+      - name: Refresh CDN cache (optional)
+        if: ${{ secrets.CDN_REFRESH_DOMAIN != '' }}
+        continue-on-error: true
+        run: |
+          echo "刷新 CDN 缓存：${{ secrets.CDN_REFRESH_DOMAIN }}"
+          aliyun cdn RefreshObjectCaches \
+            --ObjectPath "${{ secrets.CDN_REFRESH_DOMAIN }}/" \
+            --ObjectType Directory || echo "⚠️ CDN 刷新失败（忽略）"
+
+      - name: Health check
+        run: |
+          URL="http://${{ env.OSS_BUCKET }}.${{ env.OSS_ENDPOINT }}/index.html"
+          echo "执行健康检查: $URL"
+          MAX_RETRY=5
+          for i in $(seq 1 $MAX_RETRY); do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -m 15 "$URL" || echo "000")
+            echo "第 $i 次检查响应码: $HTTP_CODE"
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "✅ 部署成功，admin-web 静态站点可访问"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "❌ 健康检查失败，HTTP 状态码非 200"
+          exit 1
