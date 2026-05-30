@@ -43,7 +43,7 @@ def get_config() -> EnvConfig:
         ),
         "staging": EnvConfig(
             name="staging",
-            admin_api_url=admin_api_url or "http://staging-admin.migaozn.com",
+            admin_api_url=admin_api_url or "https://api.migaozn.com",
             ai_agent_url=ai_agent_url or "http://staging-ai.migaozn.com",
             admin_username=os.getenv("ADMIN_USERNAME", "admin"),
             admin_password=os.getenv("ADMIN_PASSWORD", ""),

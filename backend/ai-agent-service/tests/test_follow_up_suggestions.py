@@ -142,19 +142,17 @@ class TestFollowUpSuggestionGenerator:
             gen = FollowUpSuggestionGenerator()
 
         mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.raise_for_status = MagicMock()
-        mock_response.json.return_value = {
-            "choices": [{"message": {"content": '["追踪物流", "联系卖家", "确认收货"]'}}]
-        }
+        mock_response.content = '["追踪物流", "联系卖家", "确认收货"]'
+        mock_response.response_metadata = {}
+        mock_response.usage_metadata = {}
 
-        with patch("app.suggestions.follow_up.httpx.AsyncClient") as MockClient:
-            mock_client = AsyncMock()
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=False)
-            mock_client.post = AsyncMock(return_value=mock_response)
-            MockClient.return_value = mock_client
+        mock_llm = MagicMock()
+        mock_llm.ainvoke = AsyncMock(return_value=mock_response)
 
+        with patch(
+            "app.suggestions.follow_up.LLMFactory.create_suggestion_llm",
+            return_value=mock_llm,
+        ):
             result = await gen.generate(
                 query="我的快递到哪了",
                 answer="您的订单号：ORD123 预计2025-05-03到达",
@@ -172,13 +170,13 @@ class TestFollowUpSuggestionGenerator:
             mock_settings.INTENT_MODEL = "qwen-turbo"
             gen = FollowUpSuggestionGenerator()
 
-        with patch("app.suggestions.follow_up.httpx.AsyncClient") as MockClient:
-            mock_client = AsyncMock()
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=False)
-            mock_client.post = AsyncMock(side_effect=httpx.TimeoutException("timeout"))
-            MockClient.return_value = mock_client
+        mock_llm = MagicMock()
+        mock_llm.ainvoke = AsyncMock(side_effect=httpx.TimeoutException("timeout"))
 
+        with patch(
+            "app.suggestions.follow_up.LLMFactory.create_suggestion_llm",
+            return_value=mock_llm,
+        ):
             result = await gen.generate(
                 query="我的快递到哪了",
                 answer="您的订单号：ORD123 预计2025-05-03到达",
