@@ -8,10 +8,13 @@ LLM 基础设施层
 from app.llm.factory import LLMFactory
 from app.llm.router import (
     select_model,
+    has_images,
     MODEL_MAX,
     MODEL_PLUS,
     MODEL_TURBO,
     MODEL_FLASH,
+    MODEL_VL_PLUS,
+    MODEL_VL_MAX,
 )
 from app.llm.cost_tracker import CostTracker, CostRecord, MODEL_PRICING
 from app.llm.retry_policy import call_with_retry
@@ -22,10 +25,13 @@ cost_tracker = CostTracker()
 __all__ = [
     "LLMFactory",
     "select_model",
+    "has_images",
     "MODEL_MAX",
     "MODEL_PLUS",
     "MODEL_TURBO",
     "MODEL_FLASH",
+    "MODEL_VL_PLUS",
+    "MODEL_VL_MAX",
     "CostTracker",
     "CostRecord",
     "MODEL_PRICING",
