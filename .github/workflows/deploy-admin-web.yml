@@ -91,12 +91,14 @@ jobs:
           echo "✅ OSS 上传完成"
 
       - name: Refresh CDN cache (optional)
-        if: ${{ secrets.CDN_REFRESH_DOMAIN != '' }}
+        env:
+          CDN_REFRESH_DOMAIN: ${{ secrets.CDN_REFRESH_DOMAIN }}
+        if: env.CDN_REFRESH_DOMAIN != ''
         continue-on-error: true
         run: |
-          echo "刷新 CDN 缓存：${{ secrets.CDN_REFRESH_DOMAIN }}"
+          echo "刷新 CDN 缓存：$CDN_REFRESH_DOMAIN"
           aliyun cdn RefreshObjectCaches \
-            --ObjectPath "${{ secrets.CDN_REFRESH_DOMAIN }}/" \
+            --ObjectPath "$CDN_REFRESH_DOMAIN/" \
             --ObjectType Directory || echo "⚠️ CDN 刷新失败（忽略）"
 
       - name: Health check
