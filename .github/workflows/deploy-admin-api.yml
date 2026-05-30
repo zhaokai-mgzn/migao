@@ -115,9 +115,20 @@ jobs:
       - name: Deploy to SAE
         run: |
           # 获取当前完整环境变量（全量重发，避免清空已有配置）
-          ENVS=$(aliyun sae DescribeApplicationConfig \
-            --AppId ${{ env.SAE_APP_ID }} | \
-            python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('Data',{}).get('Envs','[]'))")
+          # 使用 jq -c 紧凑输出 + 临时文件，规避特殊字符在 shell 中的引号转义问题
+          ENVS_FILE=/tmp/sae_envs.json
+          aliyun sae DescribeApplicationConfig \
+            --AppId ${{ env.SAE_APP_ID }} \
+            | jq -r '.Data.Envs // "[]"' \
+            | jq -c '.' > "$ENVS_FILE"
+
+          if [ ! -s "$ENVS_FILE" ]; then
+            echo "❌ 获取 SAE 环境变量失败"
+            exit 1
+          fi
+
+          ENVS=$(cat "$ENVS_FILE")
+          echo "✅ 已获取 SAE 环境变量（条目数：$(echo "$ENVS" | jq 'length')）"
 
           SIGNED_URL=$(cat "$SIGNED_URL_FILE")
 
