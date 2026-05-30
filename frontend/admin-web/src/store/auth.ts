@@ -72,7 +72,7 @@ export const useAuthStore = create<AuthState>()(
       login: async (username: string, password: string, rememberMe = true) => {
         set({ isLoading: true })
         try {
-          const params: LoginParams = { username, password, tenantId: 1 }
+          const params: LoginParams = { username, password }
           const response = await authApi.login(params)
           const { data } = response.data
 

@@ -2,6 +2,7 @@
 AI 智能客服系统 - AI Agent 服务配置
 """
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -80,6 +81,22 @@ class Settings(BaseSettings):
     DASHSCOPE_VISION_ENABLED: bool = True
 
     model_config = {"env_file": ".env", "case_sensitive": True, "extra": "ignore"}
+
+    @model_validator(mode='after')
+    def validate_production_secrets(self) -> 'Settings':
+        """非 DEBUG 模式下强制验证关键安全配置不为空"""
+        if not self.DEBUG:
+            missing = []
+            if not self.JWT_PUBLIC_KEY:
+                missing.append('JWT_PUBLIC_KEY')
+            if not self.SERVICE_TOKEN:
+                missing.append('SERVICE_TOKEN')
+            if missing:
+                raise ValueError(
+                    f"生产环境必须设置以下环境变量：{', '.join(missing)}。"
+                    f"若在本地开发，请在 .env 文件中设置 DEBUG=true 绕过此校验。"
+                )
+        return self
 
 
 settings = Settings()

@@ -208,6 +208,58 @@ public class CustomerService extends ServiceImpl<CustomerProfileMapper, Customer
     }
 
     /**
+     * 从订单信息自动创建/更新客户档案
+     * 首次下单时自动建档；若已存在同手机号的客户，则刷新最后活跃时间并返回。
+     *
+     * @param tenantId        租户ID
+     * @param customerName    客户姓名（用于昵称兜底）
+     * @param customerPhone   客户手机号（去重主键）
+     * @param customerAddress 客户收货地址（无统一地址字段，记录到 agentNotes）
+     * @return 客户档案
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public CustomerProfile createFromOrder(Long tenantId, String customerName,
+                                            String customerPhone, String customerAddress) {
+        // 手机号为空无法去重，跳过建档
+        if (!StringUtils.hasText(customerPhone)) {
+            log.warn("createFromOrder 跳过：customerPhone 为空, tenantId={}", tenantId);
+            return null;
+        }
+
+        // 按 phone + tenantId 查询是否已存在
+        LambdaQueryWrapper<CustomerProfile> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(CustomerProfile::getPhone, customerPhone)
+                .eq(CustomerProfile::getTenantId, tenantId);
+        CustomerProfile existing = customerProfileMapper.selectOne(wrapper);
+        if (existing != null) {
+            existing.setLastActiveAt(OffsetDateTime.now());
+            customerProfileMapper.updateById(existing);
+            return existing;
+        }
+
+        OffsetDateTime now = OffsetDateTime.now();
+        CustomerProfile profile = CustomerProfile.builder()
+                .tenantId(tenantId)
+                .wechatNickname(customerName)
+                .phone(customerPhone)
+                .agentNotes(StringUtils.hasText(customerAddress) ? "首单收货地址：" + customerAddress : null)
+                .vipLevel("normal")
+                .customerStatus("active")
+                .lifecycleStage("new")
+                .totalOrders(1)
+                .totalConsumption(BigDecimal.ZERO)
+                .sourceChannel("order")
+                .registeredAt(now)
+                .lastActiveAt(now)
+                .build();
+
+        customerProfileMapper.insert(profile);
+        log.info("从订单自动创建客户档案: id={}, phone={}, tenantId={}",
+                profile.getId(), customerPhone, tenantId);
+        return profile;
+    }
+
+    /**
      * 更新客户档案
      *
      * @param customerId 客户ID
