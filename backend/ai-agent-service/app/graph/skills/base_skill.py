@@ -24,6 +24,16 @@ from app.graph.state import AgentState
 from app.tools.base import ToolContext
 from app.tools.registry import ToolRegistry, set_tool_context, get_tool_context
 from app.context.tracker import ConversationTracker
+from app.core import (
+    CircuitBreakerOpenError,
+    LLM_FALLBACK_MESSAGE,
+    get_breaker,
+)
+from app.llm import LLMFactory, select_model, call_with_retry, cost_tracker
+
+
+# LLM 熔断器名（百炼调用路径共用）
+LLM_BREAKER = "llm_dashscope"
 
 
 # DashScope OpenAI 兼容接口地址
@@ -74,23 +84,80 @@ def _extract_content(response: AIMessage) -> str:
     return content
 
 
-def get_skill_llm() -> ChatOpenAI:
-    """创建 Skill 专用 LLM 实例（复用 DashScope 配置）
+def get_skill_llm(
+    intent: str = "",
+    tool_count: int = 0,
+    text_length: int = 0,
+) -> ChatOpenAI:
+    """创建 Skill 专用 LLM 实例（统一走 LLMFactory + Router）
 
-    注意：启用 Qwen3 的 thinking 模式以提升复杂任务的推理能力
+    - LLM_ENABLE_MODEL_ROUTING=False（默认）：使用 settings.DASHSCOPE_MODEL，行为与原一致
+    - LLM_ENABLE_MODEL_ROUTING=True：根据 intent / tool_count / text_length 动态选型
+    - 启用 Qwen3 的 thinking 模式以提升复杂任务的推理能力
     """
-    from app.config import settings
-
-    return ChatOpenAI(
-        model=settings.DASHSCOPE_MODEL,
-        api_key=settings.DASHSCOPE_API_KEY,
-        base_url=DASHSCOPE_BASE_URL,
-        temperature=0.7,
-        streaming=True,
-        max_tokens=2048,
-        request_timeout=60,  # LLM 请求超时 60 秒
-        extra_body={"enable_thinking": True},
+    model = select_model(
+        intent=intent,
+        tool_count=tool_count,
+        text_length=text_length,
     )
+    return LLMFactory.create_skill_llm(model_override=model)
+
+
+def _extract_usage(response: AIMessage) -> Optional[tuple[int, int]]:
+    """从 AIMessage 中提取 (input_tokens, output_tokens)。取不到返回 None。
+
+    兼容 LangChain 不同版本的 usage 位置：
+    - response.usage_metadata: {input_tokens, output_tokens, total_tokens}
+    - response.response_metadata.token_usage: {prompt_tokens, completion_tokens}
+    """
+    try:
+        usage_meta = getattr(response, "usage_metadata", None)
+        if usage_meta:
+            input_tokens = int(usage_meta.get("input_tokens", 0) or 0)
+            output_tokens = int(usage_meta.get("output_tokens", 0) or 0)
+            if input_tokens or output_tokens:
+                return input_tokens, output_tokens
+
+        resp_meta = getattr(response, "response_metadata", None) or {}
+        token_usage = resp_meta.get("token_usage") or resp_meta.get("usage") or {}
+        input_tokens = int(
+            token_usage.get("prompt_tokens")
+            or token_usage.get("input_tokens")
+            or 0
+        )
+        output_tokens = int(
+            token_usage.get("completion_tokens")
+            or token_usage.get("output_tokens")
+            or 0
+        )
+        if input_tokens or output_tokens:
+            return input_tokens, output_tokens
+    except Exception as exc:
+        logger.debug(f"[_extract_usage] failed to extract usage: {exc}")
+    return None
+
+
+def _track_llm_cost(
+    response: AIMessage,
+    model: str,
+    tenant_id: Optional[int],
+    session_id: str,
+) -> None:
+    """安全调用 cost_tracker.track_call，任何异常仅 warning 不影响主流程。"""
+    try:
+        usage = _extract_usage(response)
+        if usage is None:
+            return
+        input_tokens, output_tokens = usage
+        cost_tracker.track_call(
+            model=model,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            tenant_id=tenant_id,
+            session_id=session_id or None,
+        )
+    except Exception as exc:
+        logger.warning(f"[base_skill] cost tracking failed: {exc}")
 
 
 def build_tool_context(state: AgentState) -> ToolContext:
@@ -155,14 +222,32 @@ async def execute_skill(
     langchain_tools = skill_registry.get_langchain_tools()
 
     # 3. 创建 LLM 并绑定 Tools
-    llm = get_skill_llm()
+    #    计算 text_length 以供路由判定（启用 LLM_ENABLE_MODEL_ROUTING 后生效）
+    messages = state["messages"]
+    text_length = sum(len(getattr(m, "content", "") or "") for m in messages) + len(system_prompt)
+    # 从 intent_result 中提取 intent 名，用于 router 简单意图路由
+    intent_result = state.get("intent_result") or {}
+    intent_name = ""
+    if isinstance(intent_result, dict):
+        intent_value = intent_result.get("intent")
+        if hasattr(intent_value, "value"):
+            intent_name = intent_value.value
+        elif intent_value is not None:
+            intent_name = str(intent_value)
+
+    llm = get_skill_llm(
+        intent=intent_name,
+        tool_count=len(langchain_tools),
+        text_length=text_length,
+    )
+    # 记录实际使用的模型名，用于成本追踪
+    llm_model_name = getattr(llm, "model_name", None) or getattr(llm, "model", "")
     if langchain_tools:
         llm_with_tools = llm.bind_tools(langchain_tools)
     else:
         llm_with_tools = llm
 
     # 4. 构建消息列表：System Prompt + 历史 messages
-    messages = state["messages"]
     full_messages: List[Any] = [SystemMessage(content=system_prompt)] + list(messages)
 
     # 5. Tool Calling 循环
@@ -177,16 +262,24 @@ async def execute_skill(
             f"tenant={state['tenant_id']} session={session_id}"
         )
 
-        # 调用 LLM（带超时保护）
+        # 调用 LLM（带超时 + 熔断保护）
         try:
             logger.info(
                 f"[{skill_name}][DIAG] LLM call starting | "
                 f"iteration={iteration + 1} msg_count={len(full_messages) + len(new_messages)} "
                 f"tenant={state['tenant_id']} session={session_id}"
             )
-            response: AIMessage = await asyncio.wait_for(
-                llm_with_tools.ainvoke(full_messages + new_messages),
-                timeout=60.0,
+            llm_breaker = get_breaker(LLM_BREAKER)
+
+            async def _llm_invoke():
+                return await asyncio.wait_for(
+                    llm_with_tools.ainvoke(full_messages + new_messages),
+                    timeout=60.0,
+                )
+
+            # retry 包在 breaker 外层：对整个含熔断的调用进行可重试判定
+            response: AIMessage = await call_with_retry(
+                lambda: llm_breaker.call(_llm_invoke)
             )
             logger.info(
                 f"[{skill_name}][DIAG] LLM call completed | "
@@ -194,20 +287,44 @@ async def execute_skill(
                 f"content_len={len(response.content or '')} "
                 f"type={type(response).__name__}"
             )
+            # 成本追踪（失败不阻塞主流程）
+            _track_llm_cost(
+                response,
+                model=llm_model_name,
+                tenant_id=state.get("tenant_id"),
+                session_id=session_id,
+            )
+        except CircuitBreakerOpenError:
+            # LLM 熔断器处于 OPEN：返回友好提示，不再冲击百炼
+            logger.error(
+                f"[{skill_name}][SLS] LLM circuit_breaker_open | "
+                f"tenant={state['tenant_id']} session={session_id}"
+            )
+            final_content = LLM_FALLBACK_MESSAGE
+            break
         except asyncio.TimeoutError:
             logger.error(
-                f"[{skill_name}][DIAG] LLM call TIMEOUT after 60s | "
+                f"[{skill_name}][SLS] LLM call TIMEOUT after 60s | "
                 f"iteration={iteration + 1} tenant={state['tenant_id']} session={session_id}"
             )
-            final_content = "抱歉，AI 响应超时，请稍后重试。"
+            # 检查是否已熔断，熔断后用超友好的提示
+            if get_breaker(LLM_BREAKER).is_open():
+                final_content = LLM_FALLBACK_MESSAGE
+            else:
+                final_content = "抱歉，AI 响应超时，请稍后重试。"
             break
         except Exception as e:
             tb = traceback.format_exc()
             logger.error(
-                f"[{skill_name}][DIAG] LLM call FAILED | "
+                f"[{skill_name}][SLS] LLM call FAILED | "
+                f"tenant={state['tenant_id']} session={session_id} "
                 f"error={type(e).__name__}: {e} | traceback={tb[:500]}"
             )
-            final_content = "抱歉，AI 响应异常，请稍后重试。"
+            # 连续失败达到阈值后熔断器已进入 OPEN，错误提示更友好
+            if get_breaker(LLM_BREAKER).is_open():
+                final_content = LLM_FALLBACK_MESSAGE
+            else:
+                final_content = "抱歉，AI 响应异常，请稍后重试。"
             break
         new_messages.append(response)
 

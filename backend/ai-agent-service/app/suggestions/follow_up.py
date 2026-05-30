@@ -14,9 +14,11 @@ import re
 from typing import Optional
 
 import httpx
+from langchain_core.messages import HumanMessage
 from loguru import logger
 
 from app.config import settings
+from app.llm import LLMFactory, cost_tracker
 
 
 # 预定义建议模板（高频意图直接返回，无需调用模型）
@@ -94,6 +96,7 @@ class FollowUpSuggestionGenerator:
     def __init__(self):
         self._api_key = settings.DASHSCOPE_API_KEY
         self._model = settings.INTENT_MODEL  # qwen-turbo
+        self._llm = None  # 懒加载 LangChain LLM 实例
 
     async def generate(
         self,
@@ -143,33 +146,47 @@ class FollowUpSuggestionGenerator:
     async def _generate_dynamic(
         self, query: str, answer: str
     ) -> Optional[list[str]]:
-        """使用 qwen-turbo 动态生成后续问题建议"""
+        """使用 qwen-turbo 动态生成后续问题建议（走 LangChain 统一接口）"""
         prompt = DYNAMIC_PROMPT.format(
             query=query[:200],  # 截断避免过长
             answer=answer[:500],
         )
 
         try:
-            async with httpx.AsyncClient(timeout=2.0) as client:
-                response = await client.post(
-                    "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {self._api_key}",
-                        "Content-Type": "application/json",
-                    },
-                    json={
-                        "model": self._model,
-                        "messages": [
-                            {"role": "user", "content": prompt},
-                        ],
-                        "temperature": 0.3,
-                        "max_tokens": 200,
-                    },
-                )
-                response.raise_for_status()
-                data = response.json()
-                content = data["choices"][0]["message"]["content"]
-                return _parse_suggestions_from_response(content)
+            if self._llm is None:
+                self._llm = LLMFactory.create_suggestion_llm()
+
+            response = await self._llm.ainvoke([HumanMessage(content=prompt)])
+
+            # 成本追踪（失败仅 warning）
+            try:
+                usage_meta = getattr(response, "usage_metadata", None) or {}
+                input_tokens = int(usage_meta.get("input_tokens", 0) or 0)
+                output_tokens = int(usage_meta.get("output_tokens", 0) or 0)
+                if not (input_tokens or output_tokens):
+                    resp_meta = getattr(response, "response_metadata", None) or {}
+                    token_usage = resp_meta.get("token_usage") or resp_meta.get("usage") or {}
+                    input_tokens = int(
+                        token_usage.get("prompt_tokens")
+                        or token_usage.get("input_tokens")
+                        or 0
+                    )
+                    output_tokens = int(
+                        token_usage.get("completion_tokens")
+                        or token_usage.get("output_tokens")
+                        or 0
+                    )
+                if input_tokens or output_tokens:
+                    cost_tracker.track_call(
+                        model=self._model,
+                        input_tokens=input_tokens,
+                        output_tokens=output_tokens,
+                    )
+            except Exception as track_exc:
+                logger.warning(f"[follow_up] cost tracking failed: {track_exc}")
+
+            content = response.content if isinstance(response.content, str) else ""
+            return _parse_suggestions_from_response(content)
 
         except httpx.TimeoutException:
             logger.debug("Dynamic suggestion generation timed out, falling back to preset")

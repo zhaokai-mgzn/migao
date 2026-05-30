@@ -10,6 +10,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from loguru import logger
 
 from app.config import settings
+from app.llm import LLMFactory, cost_tracker
 from app.router.intent_config import IntentType, IntentResult
 
 
@@ -53,15 +54,9 @@ class IntentClassifier:
 
     @property
     def llm(self) -> ChatOpenAI:
-        """懒加载 LLM 实例"""
+        """懒加载 LLM 实例（统一走 LLMFactory）"""
         if self._llm is None:
-            self._llm = ChatOpenAI(
-                model=settings.INTENT_MODEL,
-                api_key=settings.DASHSCOPE_API_KEY,
-                base_url=DASHSCOPE_BASE_URL,
-                temperature=0,
-                max_tokens=100,
-            )
+            self._llm = LLMFactory.create_intent_llm()
         return self._llm
 
     async def classify(
@@ -94,6 +89,33 @@ class IntentClassifier:
                 messages.append(HumanMessage(content=message))
 
             response = await self.llm.ainvoke(messages)
+            # 成本追踪（失败仅 warning，不影响主流程）
+            try:
+                usage_meta = getattr(response, "usage_metadata", None) or {}
+                input_tokens = int(usage_meta.get("input_tokens", 0) or 0)
+                output_tokens = int(usage_meta.get("output_tokens", 0) or 0)
+                if not (input_tokens or output_tokens):
+                    resp_meta = getattr(response, "response_metadata", None) or {}
+                    token_usage = resp_meta.get("token_usage") or resp_meta.get("usage") or {}
+                    input_tokens = int(
+                        token_usage.get("prompt_tokens")
+                        or token_usage.get("input_tokens")
+                        or 0
+                    )
+                    output_tokens = int(
+                        token_usage.get("completion_tokens")
+                        or token_usage.get("output_tokens")
+                        or 0
+                    )
+                if input_tokens or output_tokens:
+                    cost_tracker.track_call(
+                        model=settings.INTENT_MODEL,
+                        input_tokens=input_tokens,
+                        output_tokens=output_tokens,
+                    )
+            except Exception as track_exc:
+                logger.warning(f"[intent_classifier] cost tracking failed: {track_exc}")
+
             result = self._parse_response(response.content)
             return result
 
