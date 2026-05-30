@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useCallback } from 'react'
-import { Upload, X, GripVertical, Image as ImageIcon, Loader2 } from 'lucide-react'
+import { Upload, X, GripVertical, Loader2 } from 'lucide-react'
 import Image from 'next/image'
 import { cn } from '@/lib/utils'
 import { fileApi } from '@/lib/api'
@@ -14,6 +14,23 @@ interface ImageUploaderProps {
   multiple?: boolean
   label?: string
   hint?: string
+  /** 显示主图序号角标（拖拽排序时识别封面） */
+  showOrderBadge?: boolean
+  /** 删除前要求确认 */
+  confirmRemove?: boolean
+  /** 允许的 MIME 类型，默认 image/jpeg, image/png, image/webp */
+  accept?: string[]
+  /** 单文件最大字节数，默认 5MB */
+  maxSizeBytes?: number
+}
+
+const DEFAULT_ACCEPT = ['image/jpeg', 'image/png', 'image/webp']
+const DEFAULT_MAX_SIZE = 5 * 1024 * 1024
+
+function formatAcceptHint(types: string[]): string {
+  return types
+    .map((t) => t.replace('image/', '').toUpperCase())
+    .join(' / ')
 }
 
 export default function ImageUploader({
@@ -23,12 +40,19 @@ export default function ImageUploader({
   multiple = false,
   label,
   hint,
+  showOrderBadge = false,
+  confirmRemove = false,
+  accept = DEFAULT_ACCEPT,
+  maxSizeBytes = DEFAULT_MAX_SIZE,
 }: ImageUploaderProps) {
   const [uploading, setUploading] = useState(false)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const acceptAttr = accept.join(',')
+  const maxSizeMB = Math.round((maxSizeBytes / 1024 / 1024) * 10) / 10
 
   const handleFileSelect = useCallback(async (files: FileList | null) => {
     if (!files || files.length === 0) return
@@ -44,14 +68,15 @@ export default function ImageUploader({
 
     try {
       const uploadPromises = filesToUpload.map(async (file) => {
-        // Validate file type
-        if (!file.type.startsWith('image/')) {
-          toast.error(`${file.name} 不是有效的图片文件`)
+        // 严格 MIME 校验（jpg/png/webp）
+        const lowerType = file.type.toLowerCase()
+        if (!accept.includes(lowerType)) {
+          toast.error(`${file.name} 格式不支持，仅允许 ${formatAcceptHint(accept)}`)
           return null
         }
-        // Validate file size (max 5MB)
-        if (file.size > 5 * 1024 * 1024) {
-          toast.error(`${file.name} 超过 5MB 大小限制`)
+        // 大小校验
+        if (file.size > maxSizeBytes) {
+          toast.error(`${file.name} 超过 ${maxSizeMB}MB 大小限制`)
           return null
         }
         try {
@@ -72,7 +97,7 @@ export default function ImageUploader({
       setUploading(false)
       if (fileInputRef.current) fileInputRef.current.value = ''
     }
-  }, [value, max, onChange])
+  }, [value, max, onChange, accept, maxSizeBytes, maxSizeMB])
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -81,15 +106,20 @@ export default function ImageUploader({
   }, [handleFileSelect])
 
   const handleRemove = (index: number) => {
+    if (confirmRemove) {
+      const isCover = index === 0 && showOrderBadge
+      const tip = isCover
+        ? '确定要删除封面图吗？删除后第 2 张将自动成为封面。'
+        : '确定要删除这张图片吗？'
+      if (!window.confirm(tip)) return
+    }
     const newUrls = [...value]
     newUrls.splice(index, 1)
     onChange(newUrls)
   }
 
-  // Drag & drop reorder
-  const handleDragStart = (index: number) => {
-    setDragIndex(index)
-  }
+  // ============ 拖拽排序 ============
+  const handleDragStart = (index: number) => setDragIndex(index)
 
   const handleDragOver = (e: React.DragEvent, index: number) => {
     e.preventDefault()
@@ -109,6 +139,34 @@ export default function ImageUploader({
     setDragOverIndex(null)
   }
 
+  const renderBadge = (index: number) => {
+    if (!showOrderBadge) {
+      // 单图模式保留旧的"主图"标
+      if (index === 0 && !multiple) {
+        return (
+          <span className="absolute bottom-0 left-0 right-0 bg-black/55 text-white text-[11px] text-center py-0.5">
+            主图
+          </span>
+        )
+      }
+      return null
+    }
+    // 多图主图模式：序号 + 封面标识
+    const isCover = index === 0
+    return (
+      <span
+        className={cn(
+          'absolute top-1 left-1 inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded text-[11px] font-medium leading-none',
+          isCover
+            ? 'bg-amber-500 text-white shadow-sm'
+            : 'bg-black/60 text-white'
+        )}
+      >
+        {isCover ? `1·封面` : index + 1}
+      </span>
+    )
+  }
+
   return (
     <div className="w-full">
       {label && (
@@ -118,7 +176,7 @@ export default function ImageUploader({
       )}
 
       <div className="flex flex-wrap gap-3">
-        {/* Existing images */}
+        {/* 已上传图片 */}
         {value.map((url, index) => (
           <div
             key={`${url}-${index}`}
@@ -127,8 +185,9 @@ export default function ImageUploader({
             onDragOver={(e) => handleDragOver(e, index)}
             onDragEnd={handleDragEnd}
             className={cn(
-              'relative group w-24 h-24 rounded-lg border-2 border-gray-200 overflow-hidden',
+              'relative group w-24 h-24 rounded-lg border-2 border-gray-200 overflow-hidden bg-gray-50',
               dragOverIndex === index && 'border-primary-500 border-dashed',
+              dragIndex === index && 'opacity-50',
               multiple && 'cursor-grab active:cursor-grabbing'
             )}
           >
@@ -142,26 +201,23 @@ export default function ImageUploader({
               unoptimized
             />
             {multiple && (
-              <div className="absolute top-1 left-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <div className="absolute top-1 right-7 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
                 <GripVertical className="w-4 h-4 text-white drop-shadow" />
               </div>
             )}
+            {renderBadge(index)}
             <button
               type="button"
               onClick={() => handleRemove(index)}
-              className="absolute top-1 right-1 p-0.5 bg-black/50 rounded-full text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/70"
+              className="absolute top-1 right-1 p-0.5 bg-black/55 rounded-full text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500"
+              title="删除"
             >
               <X className="w-3.5 h-3.5" />
             </button>
-            {index === 0 && !multiple && (
-              <span className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-xs text-center py-0.5">
-                主图
-              </span>
-            )}
           </div>
         ))}
 
-        {/* Upload button */}
+        {/* 上传按钮 */}
         {value.length < max && (
           <div
             onClick={() => fileInputRef.current?.click()}
@@ -174,11 +230,18 @@ export default function ImageUploader({
             )}
           >
             {uploading ? (
-              <div className="w-5 h-5 border-2 border-primary-600 border-t-transparent rounded-full animate-spin" />
+              <Loader2 className="w-5 h-5 text-primary-600 animate-spin" />
             ) : (
               <>
                 <Upload className="w-5 h-5 text-gray-400" />
-                <span className="text-xs text-gray-500">上传图片</span>
+                <span className="text-xs text-gray-500">
+                  {showOrderBadge && value.length === 0 ? '上传封面' : '上传图片'}
+                </span>
+                {showOrderBadge && (
+                  <span className="text-[10px] text-gray-400 leading-none">
+                    {value.length}/{max}
+                  </span>
+                )}
               </>
             )}
           </div>
@@ -192,13 +255,13 @@ export default function ImageUploader({
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/*"
+        accept={acceptAttr}
         multiple={multiple && max > 1}
         className="hidden"
         onChange={(e) => handleFileSelect(e.target.files)}
       />
 
-      {/* Preview modal */}
+      {/* 预览 */}
       {previewUrl && (
         <div
           className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4"
