@@ -29,6 +29,9 @@ MODEL_PRICING: dict[str, dict[str, float]] = {
     "qwen-turbo": {"input": 0.50, "output": 2.00},
     "qwen3.6-plus": {"input": 4.00, "output": 12.00},
     "qwen3.7-max": {"input": 20.00, "output": 60.00},
+    "qwen-vl-plus": {"input": 0.80, "output": 2.00},
+    "qwen-vl-max": {"input": 1.60, "output": 4.00},
+    "qwen-vl-ocr": {"input": 0.30, "output": 0.50},
 }
 
 

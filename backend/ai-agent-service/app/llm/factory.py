@@ -53,6 +53,30 @@ class LLMFactory:
         )
 
     @staticmethod
+    def create_vision_llm(model_override: Optional[str] = None) -> ChatOpenAI:
+        """创建视觉多模态 LLM 实例
+
+        用于处理包含图片的多模态请求。
+        - 使用同一个 DashScope OpenAI 兼容接口
+        - 不启用 thinking 模式（视觉模型不支持）
+
+        Args:
+            model_override: 显式指定模型名（来自 router.select_model 的返回值）。
+                            为空则使用 settings.DASHSCOPE_VISION_MODEL。
+        """
+        model = model_override or settings.DASHSCOPE_VISION_MODEL
+        return ChatOpenAI(
+            model=model,
+            api_key=settings.DASHSCOPE_API_KEY,
+            base_url=DASHSCOPE_BASE_URL,
+            temperature=0.7,
+            streaming=True,
+            max_tokens=2048,
+            request_timeout=60,
+            # 注意：视觉模型不启用 thinking 模式
+        )
+
+    @staticmethod
     def create_intent_llm() -> ChatOpenAI:
         """创建意图分类 LLM
 
