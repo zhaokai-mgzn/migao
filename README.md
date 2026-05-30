@@ -91,3 +91,6 @@ npm run dev
 ## 许可证
 
 MIT License
+
+<!-- qoder-auto: verify automation closed loop (issue #105) -->
+
