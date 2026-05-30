@@ -40,7 +40,7 @@ class ProcessingItemManageTool(BaseTool):
         "当需要新增加工项、修改加工项信息、管理加工分类或计算加工价格时使用。"
     )
 
-    allowed_roles = ["admin", "super_admin", "tenant_admin"]
+    allowed_roles = ["admin", "tenant_admin"]
 
     parameters = {
         "type": "object",

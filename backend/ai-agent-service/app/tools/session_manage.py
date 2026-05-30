@@ -34,7 +34,7 @@ class SessionManageTool(BaseTool):
         "当需要管理客服会话（如查看排队情况、分配会话、结束对话）时使用。"
     )
 
-    allowed_roles = ["admin", "agent", "super_admin", "tenant_admin"]
+    allowed_roles = ["admin", "agent", "tenant_admin"]
 
     parameters = {
         "type": "object",

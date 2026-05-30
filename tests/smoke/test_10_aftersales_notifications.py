@@ -102,22 +102,23 @@ class TestAfterSalesAPI:
         assert ticket_id, "After-sales ticket has no ID field"
 
         # 流转到 processing
+        # 422 表示后端正确拒绝了非法状态回退（如 resolved -> processing），属于预期行为
         processing_resp = authed_admin_client.put(
             f"/api/admin/after-sales/{ticket_id}/status",
             json={"status": "processing", "remark": "smoke test 流转中"},
         )
         _skip_if_unsupported(processing_resp, "Update after-sale status")
-        assert processing_resp.status_code in (200, 400, 409), (
+        assert processing_resp.status_code in (200, 400, 409, 422), (
             f"Unexpected status moving to processing: "
             f"{processing_resp.status_code} {processing_resp.text[:300]}"
         )
 
-        # 流转到 resolved（部分实现可能因前置状态约束返回 400/409，可接受）
+        # 流转到 resolved（部分实现可能因前置状态约束返回 400/409/422，可接受）
         resolved_resp = authed_admin_client.put(
             f"/api/admin/after-sales/{ticket_id}/status",
             json={"status": "resolved", "remark": "smoke test 已完成"},
         )
-        assert resolved_resp.status_code in (200, 400, 409), (
+        assert resolved_resp.status_code in (200, 400, 409, 422), (
             f"Unexpected status moving to resolved: "
             f"{resolved_resp.status_code} {resolved_resp.text[:300]}"
         )

@@ -43,7 +43,7 @@ class KnowledgeManageTool(BaseTool):
         "当需要管理AI客服的知识库内容时使用。"
     )
 
-    allowed_roles = ["admin", "super_admin", "tenant_admin"]
+    allowed_roles = ["admin", "tenant_admin"]
 
     parameters = {
         "type": "object",

@@ -117,8 +117,8 @@ public class RegistrationController {
             throw BusinessException.authFailed("无法获取用户信息");
         }
 
-        // 检查是否拥有超管角色或管理员角色
-        if (!securityUser.getRoles().contains("super_admin") && !securityUser.getRoles().contains("admin")) {
+        // 检查是否拥有管理员角色
+        if (!securityUser.getRoles().contains("admin")) {
             throw BusinessException.permissionDenied();
         }
 

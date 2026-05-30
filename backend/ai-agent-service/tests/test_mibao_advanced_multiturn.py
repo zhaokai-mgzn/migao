@@ -1307,7 +1307,7 @@ class TestMibaoAdvancedMultiturn:
                 skill_used="order", intent="order_query", confidence=0.88,
                 tool_name="order_manage",
                 tool_args={"action": "delete", "order_id": "ORD20250301001"},
-                tool_result_data={"error": "permission_denied", "required_role": "super_admin"},
+                tool_result_data={"error": "permission_denied", "required_role": "admin"},
             ),
             checks=[
                 {"fn": lambda s, r, e: "权限" in r.content or "抱歉" in r.content, "desc": "提示权限不足"},

@@ -17,6 +17,6 @@ public interface OrderItemMapper extends BaseMapper<OrderItem> {
     /**
      * 根据订单 ID 查询订单明细列表
      */
-    @Select("SELECT * FROM order_items WHERE order_id = #{orderId} AND deleted = 0")
-    List<OrderItem> selectByOrderId(@Param("orderId") String orderId);
+    @Select("SELECT * FROM order_items WHERE order_id = #{orderId} AND tenant_id = #{tenantId} AND deleted = 0")
+    List<OrderItem> selectByOrderId(@Param("orderId") String orderId, @Param("tenantId") Long tenantId);
 }

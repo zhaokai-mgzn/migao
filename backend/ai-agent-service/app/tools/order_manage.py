@@ -37,8 +37,8 @@ class OrderManageTool(BaseTool):
         "当需要修改订单状态、填写物流单号、取消订单时使用。"
     )
     
-    # admin、agent、super_admin、tenant_admin 可使用
-    allowed_roles = ["admin", "agent", "super_admin", "tenant_admin"]
+    # admin、agent、tenant_admin 可使用
+    allowed_roles = ["admin", "agent", "tenant_admin"]
     
     parameters = {
         "type": "object",

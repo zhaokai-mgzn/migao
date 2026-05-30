@@ -39,7 +39,7 @@ class SettingsManageTool(BaseTool):
         "当需要查看或修改系统配置、AI配置、账户安全设置时使用。"
     )
 
-    allowed_roles = ["admin", "super_admin", "tenant_admin"]
+    allowed_roles = ["admin", "tenant_admin"]
 
     parameters = {
         "type": "object",

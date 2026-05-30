@@ -34,7 +34,7 @@ class QuickReplyManageTool(BaseTool):
         "当需要管理客服快捷回复模板（如添加话术、修改模板内容、查看分类）时使用。"
     )
 
-    allowed_roles = ["admin", "agent", "super_admin", "tenant_admin"]
+    allowed_roles = ["admin", "agent", "tenant_admin"]
 
     parameters = {
         "type": "object",

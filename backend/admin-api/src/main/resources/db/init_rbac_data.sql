@@ -17,20 +17,19 @@ INSERT INTO permissions (id, tenant_id, name, code, resource_type, resource_id, 
 -- 2. 默认角色数据
 -- --------------------------------------------
 INSERT INTO roles (id, tenant_id, name, code, description, status, deleted, created_at, updated_at) VALUES
-('role_super_admin', 'DEFAULT', '超级管理员', 'super_admin', '拥有所有权限', 'active', 0, NOW(), NOW()),
 ('role_admin', 'DEFAULT', '管理员', 'admin', '拥有大部分管理权限', 'active', 0, NOW(), NOW()),
 ('role_operator', 'DEFAULT', '运营人员', 'operator', '管理商品和知识库', 'active', 0, NOW(), NOW()),
 ('role_product_manager', 'DEFAULT', '商品管理员', 'product_manager', '管理商品和加工项', 'active', 0, NOW(), NOW()),
 ('role_knowledge_editor', 'DEFAULT', '知识库编辑', 'knowledge_editor', '管理知识库', 'active', 0, NOW(), NOW());
 
 -- --------------------------------------------
--- 3. 用户角色关联数据（为管理员用户分配超级管理员角色）
+-- 3. 用户角色关联数据（为管理员用户分配管理员角色）
 -- 注意：需要先创建用户，然后关联角色
 -- --------------------------------------------
 
 -- 假设管理员用户的ID为 'user_admin_001'（需要在用户创建后执行）
 -- INSERT INTO user_roles (id, tenant_id, user_id, role_id, deleted, created_at) VALUES
--- ('ur_admin_001', 'DEFAULT', 'user_admin_001', 'role_super_admin', 0, NOW());
+-- ('ur_admin_001', 'DEFAULT', 'user_admin_001', 'role_admin', 0, NOW());
 
 -- --------------------------------------------
 -- 4. 默认管理员用户（密码: admin123）
@@ -41,12 +40,12 @@ INSERT INTO roles (id, tenant_id, name, code, description, status, deleted, crea
 -- 插入默认管理员用户（如果 users 表结构匹配）
 -- 密码: admin123
 INSERT INTO users (id, tenant_id, phone, password_hash, nickname, avatar, role, session_ttl, status, deleted, created_at, updated_at) VALUES
-('user_admin_001', 'DEFAULT', 'admin', '$2a$10$N.zmdr9k7uOCQb376NoUnuTJ8iAt6Z5EHsM8lE9lBOsl7iAt6Z5EO', '系统管理员', NULL, 'super_admin', 7200, 'active', 0, NOW(), NOW())
+('user_admin_001', 'DEFAULT', 'admin', '$2a$10$N.zmdr9k7uOCQb376NoUnuTJ8iAt6Z5EHsM8lE9lBOsl7iAt6Z5EO', '系统管理员', NULL, 'admin', 7200, 'active', 0, NOW(), NOW())
 ON CONFLICT (id) DO NOTHING;
 
--- 为管理员用户关联超级管理员角色
+-- 为管理员用户关联管理员角色
 INSERT INTO user_roles (id, tenant_id, user_id, role_id, deleted, created_at) VALUES
-('ur_admin_001', 'DEFAULT', 'user_admin_001', 'role_super_admin', 0, NOW())
+('ur_admin_001', 'DEFAULT', 'user_admin_001', 'role_admin', 0, NOW())
 ON CONFLICT DO NOTHING;
 
 -- --------------------------------------------
@@ -71,7 +70,6 @@ ON CONFLICT DO NOTHING;
 --   - system:manage     - 系统管理
 --
 -- 角色权限映射:
---   - super_admin:      拥有所有权限（用 "*" 表示）
 --   - admin:            dashboard:view, product:manage, processing:manage, knowledge:manage, system:manage
 --   - operator:         dashboard:view, product:manage, knowledge:manage
 --   - product_manager:  dashboard:view, product:manage, processing:manage

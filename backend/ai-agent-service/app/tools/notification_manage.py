@@ -58,7 +58,7 @@ class NotificationManageTool(BaseTool):
         "当需要查看或管理系统通知时使用。"
     )
 
-    allowed_roles = ["admin", "agent", "super_admin", "tenant_admin"]
+    allowed_roles = ["admin", "agent", "tenant_admin"]
 
     parameters = {
         "type": "object",

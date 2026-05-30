@@ -39,7 +39,7 @@ class AfterSalesManageTool(BaseTool):
         "当需要处理退款、换货、维修、投诉等售后问题时使用。"
     )
 
-    allowed_roles = ["admin", "agent", "super_admin", "tenant_admin"]
+    allowed_roles = ["admin", "agent", "tenant_admin"]
 
     parameters = {
         "type": "object",

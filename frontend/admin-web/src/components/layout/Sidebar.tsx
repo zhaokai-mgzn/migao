@@ -59,7 +59,6 @@ interface MenuItem {
   icon: string
   path: string
   adminOnly?: boolean
-  superAdminOnly?: boolean
 }
 
 interface MenuGroup {
@@ -147,12 +146,10 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
   }
 
   // 权限过滤
-  const isAdmin = user?.roles?.includes('admin') || user?.roles?.includes('super_admin')
-  const isSuperAdmin = user?.roles?.includes('super_admin')
+  const isAdmin = user?.roles?.includes('admin')
 
   const filterChildren = (children: MenuItem[]) =>
     children.filter(item => {
-      if (item.superAdminOnly) return isSuperAdmin
       if (item.adminOnly) return isAdmin
       return true
     })

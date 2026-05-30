@@ -180,16 +180,12 @@ resource "alicloud_db_account_privilege" "app" {
 }
 
 # ==================== Redis 缓存 ====================
+# 使用已有的包年包月 Redis 实例 (r-bp162hozkjd55e18rb, Redis 7.0, 256MB)
+# 原按量付费实例 r-bp11f138b581a864 已释放
 
-resource "alicloud_kvstore_instance" "redis" {
-  engine_version       = "5.0"
-  instance_type        = "Redis"
-  instance_class       = "redis.master.small.default"
-  db_instance_name     = "${var.project_name}-${var.environment}-redis"
-  vswitch_id           = alicloud_vswitch.main.id
-  security_ips         = ["172.16.0.0/24"]
-  payment_type         = "PostPaid"
-  password             = var.redis_password
+locals {
+  redis_connection_domain = "r-bp162hozkjd55e18rb.redis.rds.aliyuncs.com"
+  redis_port              = "6379"
 }
 
 # ==================== ACR 容器镜像仓库 ====================
@@ -248,7 +244,7 @@ resource "alicloud_sae_application" "admin_api" {
     { name = "RDS_DB", value = "ai_customer_service" },
     { name = "RDS_USER", value = "app_user" },
     { name = "RDS_PASSWORD", value = var.db_password },
-    { name = "REDIS_HOST", value = alicloud_kvstore_instance.redis.connection_domain },
+    { name = "REDIS_HOST", value = local.redis_connection_domain },
     { name = "REDIS_PORT", value = "6379" },
     { name = "REDIS_PASSWORD", value = var.redis_password },
     { name = "JWT_PRIVATE_KEY", value = "classpath:rsa/private.pem" },
@@ -312,7 +308,7 @@ resource "alicloud_sae_application" "ai_agent_service" {
 
   envs = jsonencode([
     { name = "DATABASE_URL", value = "postgresql+asyncpg://app_user:${var.db_password}@${alicloud_db_instance.postgres.connection_string}:5432/ai_customer_service" },
-    { name = "REDIS_URL", value = "redis://:${var.redis_password}@${alicloud_kvstore_instance.redis.connection_domain}:6379/0" },
+    { name = "REDIS_URL", value = "redis://:${var.redis_password}@${local.redis_connection_domain}:${local.redis_port}/0" },
     { name = "DASHSCOPE_API_KEY", value = var.dashscope_api_key },
     { name = "DASHVECTOR_API_KEY", value = var.dashvector_api_key },
     { name = "DASHVECTOR_ENDPOINT", value = var.dashvector_endpoint },
@@ -402,7 +398,7 @@ output "database_connection" {
 
 output "redis_connection" {
   description = "Redis 内网连接地址"
-  value       = alicloud_kvstore_instance.redis.connection_domain
+  value       = local.redis_connection_domain
 }
 
 output "ai_agent_app_id" {

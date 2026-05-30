@@ -43,8 +43,8 @@ class DashboardStatsTool(BaseTool):
         "调用本工具时不要反问用户起止日期，定期间说法如“最近 7 天/14 天/30 天”只需传 days 参数。"
     )
 
-    # admin、agent、super_admin、tenant_admin 可使用
-    allowed_roles = ["admin", "agent", "super_admin", "tenant_admin"]
+    # admin、agent、tenant_admin 可使用
+    allowed_roles = ["admin", "agent", "tenant_admin"]
 
     parameters = {
         "type": "object",

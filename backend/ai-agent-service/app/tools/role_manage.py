@@ -36,8 +36,8 @@ class RoleManageTool(BaseTool):
         "当需要管理系统角色、分配权限、查看角色权限时使用。"
     )
 
-    # 仅 admin、super_admin、tenant_admin 可使用
-    allowed_roles = ["admin", "super_admin", "tenant_admin"]
+    # 仅 admin、tenant_admin 可使用
+    allowed_roles = ["admin", "tenant_admin"]
 
     parameters = {
         "type": "object",

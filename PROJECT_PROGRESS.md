@@ -254,7 +254,7 @@
 ### 2026-05-23（周六）- 代码审查质量修复验证
 
 **今日完成**（代码审查确认已修复并验证通过）：
-- [x] 权限控制修复：BaseTool 默认 `allowed_roles` 已包含 super_admin / tenant_admin；InventoryManageTool / OrderManageTool / ProductManageTool 显式开放；chat.py 入口路由角色映射一致
+- [x] 权限控制修复：BaseTool 默认 `allowed_roles` 已包含 admin / tenant_admin；InventoryManageTool / OrderManageTool / ProductManageTool 显式开放；chat.py 入口路由角色映射一致
 - [x] 分页参数类型转换：OrderQueryTool / ProductSearchTool 的 page / page_size / size 已强制 int() 转换，None / 空字符串 / 0 均有默认值兜底，避免 LLM 传字符串导致 TypeError
 - [x] SSE 心跳机制修复：引入 `asyncio.Queue` + 独立 Task 解耦 agent 输出与心跳；`time.monotonic()` 实现总超时控制（兼容 Python 3.9+）；`finally` 中确保后台 Task 正确清理
 - [x] LangGraph 节点重命名：节点名从 `suggestions` 改为 `suggest_node`，避免与 state key 冲突；所有图边引用已同步更新，无遗漏
@@ -361,5 +361,5 @@
 | 2026-04-25 | 完成项目全模块代码审计，更新统计数据和进度 | AI Assistant |
 | 2026-04-25 | 完成微信小程序 MVP 开发（Taro 3.x + React），4个页面 + 9个组件 | AI Assistant |
 | 2026-05-02 | 完成站内通知系统：后端 Entity/Mapper/DTO/Service/Controller + 前端通知中心页面 + 铃铛交互组件 | AI Assistant |
-| 2026-05-23 | 代码审查验证 4 项质量修复：Tool 权限（super_admin/tenant_admin）、分页参数 int 转换、SSE 心跳机制、LangGraph 节点重命名 | AI Assistant |
+| 2026-05-23 | 代码审查验证 4 项质量修复：Tool 权限（admin/tenant_admin）、分页参数 int 转换、SSE 心跳机制、LangGraph 节点重命名 | AI Assistant |
 | 2026-05-23 | P2-12 SSE 事件流实现 90%→100%；整体进度 72%→74% | AI Assistant |

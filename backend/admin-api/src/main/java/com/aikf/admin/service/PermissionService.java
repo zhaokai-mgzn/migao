@@ -81,20 +81,7 @@ public class PermissionService {
         // 根据角色代码查询对应的权限
         // 这里简化处理，实际项目中可以从 role_permissions 中间表查询
         List<String> permissionCodes = switch (roleCode) {
-            case "super_admin" -> List.of(
-                    "dashboard:view",
-                    "product:manage",
-                    "processing:manage",
-                    "knowledge:manage",
-                    "system:manage"
-            );
-            case "admin" -> List.of(
-                    "dashboard:view",
-                    "product:manage",
-                    "processing:manage",
-                    "knowledge:manage",
-                    "system:manage"
-            );
+            case "admin" -> List.of("*");
             case "operator" -> List.of(
                     "dashboard:view",
                     "product:manage",

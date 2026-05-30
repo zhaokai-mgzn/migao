@@ -56,7 +56,7 @@ public class PermissionInterceptor {
         List<String> userPermissions = roleService.getUserPermissions(userId);
 
         // 检查是否拥有所需权限
-        // super_admin 角色拥有所有权限（用 "*" 表示）
+        // admin 角色拥有所有权限（用 "*" 表示）
         boolean hasPermission = userPermissions.contains("*") || userPermissions.contains(requiredPermission);
 
         if (!hasPermission) {

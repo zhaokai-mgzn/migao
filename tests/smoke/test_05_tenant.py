@@ -186,9 +186,19 @@ class TestServiceTokenAuth:
     """Service Token 认证测试"""
 
     def test_service_token_access_internal_api(
-        self, ai_client: SmokeTestClient, service_token_headers: dict
+        self, ai_client: SmokeTestClient, service_token_headers: dict, config: EnvConfig
     ):
-        """有效 Service Token 可访问内部 API"""
+        """有效 Service Token 可访问内部 API
+
+        说明：staging/production 环境的 SERVICE_TOKEN 由部署侧通过环境变量注入；
+        若运行测试时未提供（或为空字符串），无法执行此用例，跳过以避免误报。
+        """
+        if not config.service_token:
+            pytest.skip(
+                "SERVICE_TOKEN 未配置（环境变量为空），跳过有效 token 用例。"
+                " 请通过 SERVICE_TOKEN 环境变量提供与 ai-agent-service 一致的值。"
+            )
+
         resp = ai_client.get(
             "/api/internal/tools",
             headers=service_token_headers,

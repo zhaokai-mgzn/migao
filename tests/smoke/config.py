@@ -44,7 +44,7 @@ def get_config() -> EnvConfig:
         "staging": EnvConfig(
             name="staging",
             admin_api_url=admin_api_url or "https://api.migaozn.com",
-            ai_agent_url=ai_agent_url or "http://staging-ai.migaozn.com",
+            ai_agent_url=ai_agent_url or "https://ai-api.migaozn.com",
             admin_username=os.getenv("ADMIN_USERNAME", "admin"),
             admin_password=os.getenv("ADMIN_PASSWORD", ""),
             tenant_id=int(os.getenv("TENANT_ID", "1")),
@@ -52,8 +52,8 @@ def get_config() -> EnvConfig:
         ),
         "production": EnvConfig(
             name="production",
-            admin_api_url=admin_api_url or "http://admin.migaozn.com",
-            ai_agent_url=ai_agent_url or "http://ai.migaozn.com",
+            admin_api_url=admin_api_url or "https://api.migaozn.com",
+            ai_agent_url=ai_agent_url or "https://ai-api.migaozn.com",
             admin_username=os.getenv("ADMIN_USERNAME", "admin"),
             admin_password=os.getenv("ADMIN_PASSWORD", ""),
             tenant_id=int(os.getenv("TENANT_ID", "1")),

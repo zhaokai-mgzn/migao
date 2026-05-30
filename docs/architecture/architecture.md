@@ -137,13 +137,13 @@ packages/
 **管理后台 RBAC 角色（JWT role Claim）**：用于管理后台菜单和数据权限控制
 | 角色代码 | 对应 C 端 | 说明 |
 |---------|----------|------|
-| super_admin | admin | 超级管理员，全部菜单 + 本租户全部数据 |
+| admin | admin | 企业管理员（商家系统最高权限），全部菜单 + 本租户全部数据 |
 | operation_manager | admin | 运营经理，数据看板 + AI 配置 + 业务管理 |
 | support_supervisor | agent | 客服主管，客服团队管理 + 服务质量 |
 | support_agent | agent | 客服员工，仅我的会话 + 快捷回复 |
 | product_manager | admin | 商品管理员，商品管理 + 订单只读 |
 
-> C 端 customer/agent/admin 是身份类型，管理后台 super_admin 等 5 个角色是 RBAC 权限角色。一个 C 端 admin 用户在管理后台可以被分配 5 个 RBAC 角色中的任意一个。
+> C 端 customer/agent/admin 是身份类型，管理后台 admin 等 5 个角色是 RBAC 权限角色。一个 C 端 admin 用户在管理后台可以被分配 5 个 RBAC 角色中的任意一个，其中 admin 角色拥有商家系统全部权限。
 
 ### 3.2 统一身份模型
 

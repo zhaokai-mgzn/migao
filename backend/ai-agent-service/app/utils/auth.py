@@ -23,7 +23,6 @@ class UserRole(str, Enum):
     CUSTOMER = "customer"
     AGENT = "agent"
     ADMIN = "admin"
-    SUPER_ADMIN = "super_admin"
 
 
 class UserIdentity(BaseModel):

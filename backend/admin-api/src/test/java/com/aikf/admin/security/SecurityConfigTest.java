@@ -169,11 +169,7 @@ class SecurityConfigTest {
     @MockBean
     private com.aikf.admin.mapper.ProductMapper productMapper;
     @MockBean
-    private com.aikf.admin.mapper.ProductAttributeMapper productAttributeMapper;
-    @MockBean
     private com.aikf.admin.mapper.ProductColorMapper productColorMapper;
-    @MockBean
-    private com.aikf.admin.mapper.ProductProcessingItemMapper productProcessingItemMapper;
     @MockBean
     private com.aikf.admin.mapper.ProductSkuMapper productSkuMapper;
     @MockBean

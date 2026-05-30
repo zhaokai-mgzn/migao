@@ -108,14 +108,7 @@ public class RoleService {
      */
     public List<Permission> getPermissionsByRoleCode(String roleCode) {
         List<String> permissionCodes = switch (roleCode) {
-            case "super_admin" -> List.of("*");
-            case "admin" -> List.of(
-                    "dashboard:view",
-                    "product:manage",
-                    "processing:manage",
-                    "knowledge:manage",
-                    "system:manage"
-            );
+            case "admin" -> List.of("*");
             case "operator" -> List.of(
                     "dashboard:view",
                     "product:manage",
@@ -156,7 +149,7 @@ public class RoleService {
         if (roles.isEmpty()) {
             User user = userMapper.selectById(userId);
             if (user != null && StringUtils.hasText(user.getRole())) {
-                if ("super_admin".equals(user.getRole())) {
+                if ("admin".equals(user.getRole())) {
                     return List.of("*");
                 }
                 return getPermissionsByRoleCode(user.getRole()).stream()
@@ -169,7 +162,7 @@ public class RoleService {
         Set<String> permissionSet = new HashSet<>();
 
         for (Role role : roles) {
-            if ("super_admin".equals(role.getCode())) {
+            if ("admin".equals(role.getCode())) {
                 return List.of("*");
             }
             List<Permission> permissions = getPermissionsByRoleCode(role.getCode());

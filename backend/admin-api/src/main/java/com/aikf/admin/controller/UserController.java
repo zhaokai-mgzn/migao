@@ -43,7 +43,7 @@ public class UserController {
      *   "success": true,
      *   "data": {
      *     "user": { "id": "...", "username": "admin", "nickname": "管理员", "avatar": "..." },
-     *     "roles": ["super_admin"],
+     *     "roles": ["admin"],
      *     "permissions": ["product:manage", "knowledge:manage", ...],
      *     "menus": [
      *       { "key": "dashboard", "name": "数据看板", "icon": "BarChart3", "path": "/dashboard" },
@@ -139,11 +139,11 @@ public class UserController {
     private List<UserInfoResponse.MenuItem> generateMenus(List<String> permissions, List<String> roles) {
         List<UserInfoResponse.MenuItem> menus = new ArrayList<>();
 
-        // 检查是否为超级管理员（拥有所有权限）
-        boolean isSuperAdmin = roles.contains("super_admin") || permissions.contains("*");
+        // 检查是否为管理员（拥有所有权限）
+        boolean isAdmin = roles.contains("admin") || permissions.contains("*");
 
-        // 数据看板菜单 - 需要 dashboard:view 权限或者是超级管理员
-        if (isSuperAdmin || permissions.contains("dashboard:view")) {
+        // 数据看板菜单 - 需要 dashboard:view 权限或者是管理员
+        if (isAdmin || permissions.contains("dashboard:view")) {
             menus.add(UserInfoResponse.MenuItem.builder()
                     .key("dashboard")
                     .name("数据看板")
@@ -152,8 +152,8 @@ public class UserController {
                     .build());
         }
 
-        // 商品管理菜单 - 需要 product:manage 权限或者是超级管理员
-        if (isSuperAdmin || permissions.contains("product:manage")) {
+        // 商品管理菜单 - 需要 product:manage 权限或者是管理员
+        if (isAdmin || permissions.contains("product:manage")) {
             menus.add(UserInfoResponse.MenuItem.builder()
                     .key("products")
                     .name("商品管理")
@@ -162,8 +162,8 @@ public class UserController {
                     .build());
         }
 
-        // 加工项管理菜单 - 需要 processing:manage 权限或者是超级管理员
-        if (isSuperAdmin || permissions.contains("processing:manage")) {
+        // 加工项管理菜单 - 需要 processing:manage 权限或者是管理员
+        if (isAdmin || permissions.contains("processing:manage")) {
             menus.add(UserInfoResponse.MenuItem.builder()
                     .key("processing")
                     .name("加工项管理")
@@ -172,8 +172,8 @@ public class UserController {
                     .build());
         }
 
-        // 知识库管理菜单 - 需要 knowledge:manage 权限或者是超级管理员
-        if (isSuperAdmin || permissions.contains("knowledge:manage")) {
+        // 知识库管理菜单 - 需要 knowledge:manage 权限或者是管理员
+        if (isAdmin || permissions.contains("knowledge:manage")) {
             menus.add(UserInfoResponse.MenuItem.builder()
                     .key("knowledge")
                     .name("知识库管理")
@@ -182,8 +182,8 @@ public class UserController {
                     .build());
         }
 
-        // 系统设置菜单 - 需要 system:manage 权限或者是超级管理员
-        if (isSuperAdmin || permissions.contains("system:manage")) {
+        // 系统设置菜单 - 需要 system:manage 权限或者是管理员
+        if (isAdmin || permissions.contains("system:manage")) {
             menus.add(UserInfoResponse.MenuItem.builder()
                     .key("settings")
                     .name("系统设置")

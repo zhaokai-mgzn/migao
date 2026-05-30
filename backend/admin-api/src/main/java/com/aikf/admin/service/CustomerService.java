@@ -91,6 +91,7 @@ public class CustomerService extends ServiceImpl<CustomerProfileMapper, Customer
         }
 
         Map<String, Object> detail = new HashMap<>();
+        detail.put("id", profile.getId());
         detail.put("profile", profile);
 
         // 查询客户标签

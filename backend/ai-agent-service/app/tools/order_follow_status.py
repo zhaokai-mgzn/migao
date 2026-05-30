@@ -35,8 +35,8 @@ class OrderFollowStatusTool(BaseTool):
         "当需要查看订单跟进进度、标记订单为已跟进/跟进中/已完成、或查看跟进统计数据时使用。"
     )
     
-    # admin、agent、super_admin、tenant_admin 可使用
-    allowed_roles = ["admin", "agent", "super_admin", "tenant_admin"]
+    # admin、agent、tenant_admin 可使用
+    allowed_roles = ["admin", "agent", "tenant_admin"]
     
     parameters = {
         "type": "object",

@@ -36,8 +36,8 @@ class EmployeeManageTool(BaseTool):
         "当需要管理员工账号、查看员工信息、调整员工状态时使用。"
     )
 
-    # 仅 admin、super_admin、tenant_admin 可使用
-    allowed_roles = ["admin", "super_admin", "tenant_admin"]
+    # 仅 admin、tenant_admin 可使用
+    allowed_roles = ["admin", "tenant_admin"]
 
     parameters = {
         "type": "object",

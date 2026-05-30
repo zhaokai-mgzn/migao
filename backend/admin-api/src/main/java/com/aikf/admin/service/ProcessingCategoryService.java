@@ -39,7 +39,8 @@ public class ProcessingCategoryService extends ServiceImpl<ProcessingCategoryMap
      */
     public List<ProcessingCategoryResponse> getProcessingCategories(Long tenantId) {
         LambdaQueryWrapper<ProcessingCategory> wrapper = new LambdaQueryWrapper<>();
-        wrapper.orderByAsc(ProcessingCategory::getSortOrder);
+        wrapper.eq(ProcessingCategory::getTenantId, tenantId)
+                .orderByAsc(ProcessingCategory::getSortOrder);
         List<ProcessingCategory> categories = processingCategoryMapper.selectList(wrapper);
 
         // 批量查询每个分类下的加工项数量

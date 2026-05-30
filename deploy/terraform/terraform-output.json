@@ -27,6 +27,6 @@
   "redis_connection": {
     "sensitive": false,
     "type": "string",
-    "value": "r-bp11f138b581a864.redis.rds.aliyuncs.com"
+    "value": "r-bp162hozkjd55e18rb.redis.rds.aliyuncs.com"
   }
 }

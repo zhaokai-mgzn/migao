@@ -24,9 +24,9 @@ export default function PlatformLayout({
       return
     }
 
-    // 非超管 → 跳转登录页
-    const isSuperAdmin = user.roles?.includes('super_admin')
-    if (!isSuperAdmin) {
+    // 非管理员 → 跳转登录页
+    const isAdmin = user.roles?.includes('admin')
+    if (!isAdmin) {
       router.replace('/login')
       return
     }

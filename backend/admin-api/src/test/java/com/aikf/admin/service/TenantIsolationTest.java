@@ -422,7 +422,7 @@ class TenantIsolationTest {
                 .noneMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
         assertThat(customerUser.getAuthorities())
                 .noneMatch(a -> a.getAuthority().equals("admin"));
-        assertThat(customerUser.getRoles()).doesNotContain("admin", "super_admin");
+        assertThat(customerUser.getRoles()).doesNotContain("admin");
     }
 
     @Test

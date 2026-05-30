@@ -33,7 +33,7 @@ class CategoryManageTool(BaseTool):
         "当需要管理商品分类（如查看分类结构、添加/修改/删除分类）时使用。"
     )
 
-    allowed_roles = ["admin", "super_admin", "tenant_admin"]
+    allowed_roles = ["admin", "tenant_admin"]
 
     parameters = {
         "type": "object",

@@ -28,7 +28,7 @@
 
 | 角色 | 代码 | 菜单权限 | 数据权限 |
 |------|------|---------|---------|
-| 超级管理员 | super_admin | 全部菜单 | 本租户全部数据 |
+| 企业管理员 | admin | 全部菜单 | 本租户全部数据 |
 | 运营经理 | operation_manager | 看板、AI配置、客服团队、业务管理 | 本租户全部数据 |
 | 客服主管 | support_supervisor | 看板、客服团队、快捷回复 | 本租户客服数据 |
 | 客服员工 | support_agent | 看板(仅客服指标)、我的会话、快捷回复 | 仅本人会话 |
@@ -45,14 +45,14 @@
 | 一级菜单 | 二级菜单 | 可见角色 |
 |---------|---------|---------|
 | 📊 数据看板 | 混合Dashboard / 客服看板 / 业务看板 | 全部(内容按角色过滤) |
-| 🤖 AI客服配置 | 基础配置 / 转人工规则 / 快捷回复 / 推荐策略 | super_admin, operation_manager |
-| 👥 客服团队 | 员工管理 / 会话监控 / 服务质量 | super_admin, operation_manager, support_supervisor |
-| 📦 商品管理 | 商品列表 / 分类 / 加工项 / 库存 | super_admin, operation_manager, product_manager |
-| 📚 知识库管理 | 文档管理 / 检索测试 / 同步管理 | super_admin, operation_manager |
-| 📋 订单管理 | 订单列表 / 订单详情 | super_admin, operation_manager, product_manager |
-| 👤 客户管理 | 列表 / 详情 / 标签 / 分群 / 生命周期 / 跟进 / 沟通 / 商机 | super_admin, operation_manager, support_supervisor |
-| 🔄 售后工单 | 工单列表 / 工单详情 | super_admin, operation_manager, support_supervisor |
-| ⚙️ 系统设置 | 租户配置 / 通知 / 员工角色 / 日志 | super_admin |
+| 🤖 AI客服配置 | 基础配置 / 转人工规则 / 快捷回复 / 推荐策略 | admin, operation_manager |
+| 👥 客服团队 | 员工管理 / 会话监控 / 服务质量 | admin, operation_manager, support_supervisor |
+| 📦 商品管理 | 商品列表 / 分类 / 加工项 / 库存 | admin, operation_manager, product_manager |
+| 📚 知识库管理 | 文档管理 / 检索测试 / 同步管理 | admin, operation_manager |
+| 📋 订单管理 | 订单列表 / 订单详情 | admin, operation_manager, product_manager |
+| 👤 客户管理 | 列表 / 详情 / 标签 / 分群 / 生命周期 / 跟进 / 沟通 / 商机 | admin, operation_manager, support_supervisor |
+| 🔄 售后工单 | 工单列表 / 工单详情 | admin, operation_manager, support_supervisor |
+| ⚙️ 系统设置 | 租户配置 / 通知 / 员工角色 / 日志 | admin |
 
 ---
 
@@ -220,7 +220,7 @@
 
 ## 七、系统设置
 
-### 7.1 租户配置（super_admin 独占）
+### 7.1 租户配置（admin 独占）
 
 | 配置区域 | 内容 |
 |---------|------|
@@ -377,7 +377,7 @@ web/admin/src/
 
 ```typescript
 const ROLE_PERMISSIONS = {
-  super_admin: ['*'],
+  admin: ['*'],
   operation_manager: ['dashboard:view', 'ai-config:edit', 'team:view', 'products:edit', 'orders:view', 'after-sales:view', 'knowledge:view', 'customers:view', 'customers:edit', 'tags:manage'],
   support_supervisor: ['dashboard:view', 'team:view', 'team:quality', 'quick-replies:edit', 'after-sales:view', 'customers:view', 'customers:edit-notes'],
   support_agent: ['dashboard:cs-view', 'my-sessions:view', 'quick-replies:view'],
@@ -458,7 +458,7 @@ const ROLE_PERMISSIONS = {
 | `/customers/tasks` | 跟进任务 | admin/manager/supervisor |
 | `/customers/communications` | 沟通记录 | admin/manager/supervisor |
 | `/customers/opportunities` | 商机管理 | admin/manager |
-| `/settings/tenant` | 租户配置 | super_admin |
-| `/settings/notifications` | 通知设置 | super_admin |
-| `/settings/roles` | 角色管理 | super_admin |
-| `/settings/logs` | 操作日志 | super_admin |
+| `/settings/tenant` | 租户配置 | admin |
+| `/settings/notifications` | 通知设置 | admin |
+| `/settings/roles` | 角色管理 | admin |
+| `/settings/logs` | 操作日志 | admin |
