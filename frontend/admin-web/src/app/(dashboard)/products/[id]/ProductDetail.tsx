@@ -1,25 +1,26 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import { ArrowLeft, Edit, ArrowUpCircle, ArrowDownCircle } from 'lucide-react'
 import Image from 'next/image'
 import { Button, Badge, Loading } from '@/components/ui'
 import { productApi } from '@/lib/api'
+import { useRouteId } from '@/lib/use-route-id'
 import { toast } from 'sonner'
 import type { Product, ProductStatus } from '@/types'
 import { ProductStatusLabels, PricingTypeLabels } from '@/types'
 
 export default function ProductDetailPage() {
-  const params = useParams()
   const router = useRouter()
-  const productId = params.id as string
+  const productId = useRouteId('id')
 
   const [product, setProduct] = useState<Product | null>(null)
   const [loading, setLoading] = useState(true)
   const [previewImg, setPreviewImg] = useState<string | null>(null)
 
   useEffect(() => {
+    if (!productId) return
     const loadProduct = async () => {
       setLoading(true)
       try {
@@ -101,7 +102,7 @@ export default function ProductDetailPage() {
               上架
             </Button>
           )}
-          <Button onClick={() => router.push(`/products/${product.id}/edit`)}>
+          <Button onClick={() => { window.location.href = `/products/${product.id}/edit` }}>
             <Edit className="w-4 h-4 mr-1.5" />
             编辑
           </Button>

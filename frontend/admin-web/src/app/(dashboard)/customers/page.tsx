@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
 import { Plus, Tags, X, Star } from 'lucide-react'
 import { toast } from 'sonner'
 import { customerApi } from '@/lib/api'
@@ -18,7 +17,6 @@ const TAG_COLORS = [
 ]
 
 export default function CustomersPage() {
-  const router = useRouter()
   const [customers, setCustomers] = useState<Customer[]>([])
   const [loading, setLoading] = useState(false)
   const [total, setTotal] = useState(0)
@@ -279,7 +277,7 @@ export default function CustomersPage() {
           dataSource={customers}
           loading={loading}
           rowKey="id"
-          onRowClick={(record) => router.push(`/customers/${record.id}`)}
+          onRowClick={(record) => { window.location.href = `/customers/${record.id}` }}
         />
         <Pagination current={current} pageSize={pageSize} total={total} onChange={setCurrent} onPageSizeChange={setPageSize} />
       </div>

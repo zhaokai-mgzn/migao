@@ -1,6 +1,5 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
 import { Eye, ClipboardList, Trash2 } from 'lucide-react'
 import { Table } from '@/components/ui'
 import type { TableColumn } from '@/components/ui'
@@ -20,8 +19,6 @@ function formatAmount(amount: number): string {
 }
 
 export default function OrderTable({ orders, loading, onStatusUpdate, onDelete }: OrderTableProps) {
-  const router = useRouter()
-
   const columns: TableColumn<Order>[] = [
     {
       key: 'orderNo',
@@ -98,7 +95,7 @@ export default function OrderTable({ orders, loading, onStatusUpdate, onDelete }
       render: (record) => (
         <div className="flex items-center justify-center gap-1">
           <button
-            onClick={(e) => { e.stopPropagation(); router.push(`/orders/${record.id}`) }}
+            onClick={(e) => { e.stopPropagation(); window.location.href = `/orders/${record.id}` }}
             className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
             title="查看详情"
           >
@@ -133,7 +130,7 @@ export default function OrderTable({ orders, loading, onStatusUpdate, onDelete }
       dataSource={orders}
       loading={loading}
       rowKey="id"
-      onRowClick={(record) => router.push(`/orders/${record.id}`)}
+      onRowClick={(record) => { window.location.href = `/orders/${record.id}` }}
     />
   )
 }

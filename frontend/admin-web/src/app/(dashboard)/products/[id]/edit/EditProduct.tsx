@@ -1,22 +1,23 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import ProductForm from '@/components/products/ProductForm'
 import { productApi } from '@/lib/api'
 import { Loading } from '@/components/ui'
+import { useRouteId } from '@/lib/use-route-id'
 import { toast } from 'sonner'
 import type { Product, ProductFormData } from '@/types'
 
 export default function EditProductPage() {
-  const params = useParams()
   const router = useRouter()
-  const productId = params.id as string
+  const productId = useRouteId('id')
 
   const [product, setProduct] = useState<Product | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    if (!productId) return
     const loadProduct = async () => {
       setLoading(true)
       try {
