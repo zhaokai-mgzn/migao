@@ -63,8 +63,6 @@ export default function ProductDetailPage() {
     in_warehouse: 'default',
     under_review: 'info',
     draft: 'warning',
-    in_warehouse: 'default',
-    under_review: 'warning',
   }
 
   const allImages = [...(product.images || []), ...(product.detailImages || [])]

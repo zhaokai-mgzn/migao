@@ -122,9 +122,20 @@ export interface ProductListParams extends PageParams {
 }
 
 // 商品表单数据
+// 库存扣减模式
+export type StockDeductionMode = 'on_place' | 'on_pay'
+
+// 商品加工项配置
+export interface ProductProcessingItemConfig {
+  processingItemId: number
+  processingItemName?: string
+  customPrice: number
+}
+
 export interface ProductFormData {
   name: string
   sku?: string
+  skuCode?: string
   brand?: string
   categoryId: string
   description?: string
@@ -132,11 +143,18 @@ export interface ProductFormData {
   price: number
   costPrice?: number
   unit: string
+  stockDeductionMode?: StockDeductionMode
+  supportsProcessing?: boolean
   status: ProductStatus
   images: string[]
   detailImages?: string[]
   specifications?: Record<string, string>
   processingItems?: string[]
+  colors?: ProductColor[]
+  sellingMethods?: SellingMethod[]
+  doorWidths?: string[]
+  skus?: ProductSku[]
+  processingItemConfigs?: ProductProcessingItemConfig[]
 }
 
 // 分类类型
