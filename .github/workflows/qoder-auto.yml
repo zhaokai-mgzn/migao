@@ -1,0 +1,301 @@
+name: Qoder Auto Workflow
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: qoder-auto-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  qoder-run:
+    # 仅当标签为 qoder:fix / qoder:feature / qoder:review 时触发
+    if: >-
+      github.event.label.name == 'qoder:fix' ||
+      github.event.label.name == 'qoder:feature' ||
+      github.event.label.name == 'qoder:review'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      QODER_PAT: ${{ secrets.QODER_PERSONAL_ACCESS_TOKEN }}
+      QODER_PERSONAL_ACCESS_TOKEN: ${{ secrets.QODER_PERSONAL_ACCESS_TOKEN }}
+      ISSUE_NUMBER: ${{ github.event.issue.number }}
+      ISSUE_TITLE: ${{ github.event.issue.title }}
+      ISSUE_BODY: ${{ github.event.issue.body }}
+      LABEL_NAME: ${{ github.event.label.name }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git identity
+        run: |
+          git config user.name "qoder-bot"
+          git config user.email "qoder-bot@users.noreply.github.com"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Qoder CLI
+        run: npm install -g @qoder-ai/qodercli
+
+      - name: Determine task type & prompt template
+        id: task
+        run: |
+          set -euo pipefail
+          case "$LABEL_NAME" in
+            qoder:fix)
+              TASK_TYPE="fix"
+              BRANCH_PREFIX="qoder/fix-issue"
+              TEMPLATE_PATH=".github/qoder-prompts/fix.md"
+              ;;
+            qoder:feature)
+              TASK_TYPE="feature"
+              BRANCH_PREFIX="qoder/feature-issue"
+              TEMPLATE_PATH=".github/qoder-prompts/feature.md"
+              ;;
+            qoder:review)
+              TASK_TYPE="review"
+              BRANCH_PREFIX="qoder/review-issue"
+              TEMPLATE_PATH=".github/qoder-prompts/review.md"
+              ;;
+            *)
+              echo "Unsupported label: $LABEL_NAME"
+              exit 1
+              ;;
+          esac
+          echo "task_type=$TASK_TYPE" >> "$GITHUB_OUTPUT"
+          echo "branch_prefix=$BRANCH_PREFIX" >> "$GITHUB_OUTPUT"
+          echo "template_path=$TEMPLATE_PATH" >> "$GITHUB_OUTPUT"
+          echo "branch_name=${BRANCH_PREFIX}-${ISSUE_NUMBER}" >> "$GITHUB_OUTPUT"
+
+      - name: Render prompt from template
+        id: prompt
+        run: |
+          set -euo pipefail
+          TEMPLATE_PATH="${{ steps.task.outputs.template_path }}"
+          if [ ! -f "$TEMPLATE_PATH" ]; then
+            echo "Template not found: $TEMPLATE_PATH"
+            exit 1
+          fi
+
+          # 处理空 body 兜底
+          BODY="${ISSUE_BODY:-(无详细描述)}"
+
+          # 写入临时文件后做安全替换（避免 shell 元字符问题）
+          mkdir -p .qoder-tmp
+          PROMPT_FILE=".qoder-tmp/prompt-${ISSUE_NUMBER}.md"
+
+          python3 - "$TEMPLATE_PATH" "$PROMPT_FILE" <<'PYEOF'
+          import os, sys
+          tpl_path, out_path = sys.argv[1], sys.argv[2]
+          with open(tpl_path, 'r', encoding='utf-8') as f:
+              tpl = f.read()
+          tpl = tpl.replace('issue_number', os.environ.get('ISSUE_NUMBER', ''))
+          tpl = tpl.replace('issue_title', os.environ.get('ISSUE_TITLE', ''))
+          tpl = tpl.replace('issue_body', os.environ.get('ISSUE_BODY', '') or '(无详细描述)')
+          with open(out_path, 'w', encoding='utf-8') as f:
+              f.write(tpl)
+          PYEOF
+
+          echo "prompt_file=$PROMPT_FILE" >> "$GITHUB_OUTPUT"
+          echo "----- Rendered Prompt (preview) -----"
+          head -c 2000 "$PROMPT_FILE" || true
+          echo
+          echo "-------------------------------------"
+
+      - name: Run Qoder CLI
+        id: qoder
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          START_TS=$(date +%s)
+          PROMPT_FILE="${{ steps.prompt.outputs.prompt_file }}"
+          PROMPT_CONTENT=$(cat "$PROMPT_FILE")
+
+          mkdir -p .qoder-tmp
+          OUTPUT_FILE=".qoder-tmp/qoder-output-${ISSUE_NUMBER}.json"
+          LOG_FILE=".qoder-tmp/qoder-log-${ISSUE_NUMBER}.txt"
+
+          # Qoder CLI 使用账户默认模型（Qwen3.7-Max，已享半折），不需要设置 ANTHROPIC_MODEL
+          set +e
+          qodercli \
+            -p "$PROMPT_CONTENT" \
+            --yolo \
+            --max-turns=30 \
+            --output-format=json \
+            > "$OUTPUT_FILE" 2> "$LOG_FILE"
+          QODER_EXIT=$?
+          set -e
+
+          END_TS=$(date +%s)
+          DURATION=$((END_TS - START_TS))
+
+          echo "exit_code=$QODER_EXIT" >> "$GITHUB_OUTPUT"
+          echo "duration=$DURATION" >> "$GITHUB_OUTPUT"
+          echo "output_file=$OUTPUT_FILE" >> "$GITHUB_OUTPUT"
+          echo "log_file=$LOG_FILE" >> "$GITHUB_OUTPUT"
+
+          echo "----- Qoder CLI exit code: $QODER_EXIT -----"
+          echo "----- Duration: ${DURATION}s -----"
+          echo "----- Log tail -----"
+          tail -c 4000 "$LOG_FILE" || true
+
+      - name: Detect file changes
+        id: changes
+        run: |
+          set -euo pipefail
+          # 排除临时文件
+          git add -A -- ':!.qoder-tmp'
+          if git diff --cached --quiet; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            echo "changed_files=" >> "$GITHUB_OUTPUT"
+            echo "No changes detected."
+          else
+            CHANGED=$(git diff --cached --name-only | head -n 100)
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            {
+              echo 'changed_files<<__CHANGES_EOF__'
+              echo "$CHANGED"
+              echo '__CHANGES_EOF__'
+            } >> "$GITHUB_OUTPUT"
+            echo "Changed files:"
+            echo "$CHANGED"
+          fi
+
+      - name: Create branch, commit & push
+        id: push
+        if: steps.changes.outputs.has_changes == 'true' && steps.qoder.outputs.exit_code == '0' && steps.task.outputs.task_type != 'review'
+        run: |
+          set -euo pipefail
+          BRANCH="${{ steps.task.outputs.branch_name }}"
+          git checkout -b "$BRANCH"
+          git commit -m "${{ steps.task.outputs.task_type }}: resolve issue #${ISSUE_NUMBER} - ${ISSUE_TITLE}
+
+          Closes #${ISSUE_NUMBER}
+
+          Auto-generated by Qoder CLI workflow."
+          git push origin HEAD
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+
+      - name: Create Pull Request
+        id: pr
+        if: steps.push.outcome == 'success'
+        run: |
+          set -euo pipefail
+          BRANCH="${{ steps.task.outputs.branch_name }}"
+          TASK_TYPE="${{ steps.task.outputs.task_type }}"
+
+          PR_BODY_FILE=".qoder-tmp/pr-body-${ISSUE_NUMBER}.md"
+          {
+            echo "## 自动化 ${TASK_TYPE} - Issue #${ISSUE_NUMBER}"
+            echo
+            echo "Closes #${ISSUE_NUMBER}"
+            echo
+            echo "### 触发标签"
+            echo "- \`${LABEL_NAME}\`"
+            echo
+            echo "### 变更文件"
+            echo '```'
+            echo "${{ steps.changes.outputs.changed_files }}"
+            echo '```'
+            echo
+            echo "### 执行信息"
+            echo "- 耗时: ${{ steps.qoder.outputs.duration }}s"
+            echo "- Qoder CLI exit code: ${{ steps.qoder.outputs.exit_code }}"
+            echo
+            echo "_本 PR 由 Qoder CLI 自动生成，请人工 review 后合并。_"
+          } > "$PR_BODY_FILE"
+
+          PR_URL=$(gh pr create \
+            --title "[${TASK_TYPE}] #${ISSUE_NUMBER} ${ISSUE_TITLE}" \
+            --body-file "$PR_BODY_FILE" \
+            --head "$BRANCH" \
+            --base "${{ github.event.repository.default_branch }}")
+
+          echo "pr_url=$PR_URL" >> "$GITHUB_OUTPUT"
+          echo "Created PR: $PR_URL"
+
+      - name: Comment execution summary on Issue
+        if: always()
+        env:
+          QODER_EXIT: ${{ steps.qoder.outputs.exit_code }}
+          DURATION: ${{ steps.qoder.outputs.duration }}
+          HAS_CHANGES: ${{ steps.changes.outputs.has_changes }}
+          CHANGED_FILES: ${{ steps.changes.outputs.changed_files }}
+          PR_URL: ${{ steps.pr.outputs.pr_url }}
+          TASK_TYPE: ${{ steps.task.outputs.task_type }}
+        run: |
+          set -euo pipefail
+          if [ "${QODER_EXIT:-1}" = "0" ]; then
+            STATUS="✅ 成功"
+          else
+            STATUS="❌ 失败 (exit=${QODER_EXIT:-unknown})"
+          fi
+
+          mkdir -p .qoder-tmp
+          COMMENT_FILE=".qoder-tmp/comment-${ISSUE_NUMBER}.md"
+          {
+            echo "## 🤖 Qoder CLI 执行摘要"
+            echo
+            echo "- **任务类型**: \`${TASK_TYPE:-unknown}\`"
+            echo "- **状态**: ${STATUS}"
+            echo "- **耗时**: ${DURATION:-N/A}s"
+            echo "- **是否产生文件变更**: ${HAS_CHANGES:-false}"
+            if [ -n "${PR_URL:-}" ]; then
+              echo "- **关联 PR**: ${PR_URL}"
+            fi
+            echo
+            if [ "${HAS_CHANGES:-false}" = "true" ]; then
+              echo "### 变更文件"
+              echo '```'
+              printf '%s\n' "${CHANGED_FILES:-}"
+              echo '```'
+            fi
+            echo
+            echo "_由 Qoder Auto Workflow 自动生成_"
+          } > "$COMMENT_FILE"
+
+          gh issue comment "$ISSUE_NUMBER" --body-file "$COMMENT_FILE" || true
+
+      - name: Update labels (success)
+        if: steps.qoder.outputs.exit_code == '0'
+        run: |
+          set +e
+          gh issue edit "$ISSUE_NUMBER" --add-label "qoder:done"
+          gh issue edit "$ISSUE_NUMBER" --remove-label "$LABEL_NAME"
+          exit 0
+
+      - name: Update labels (failure)
+        if: steps.qoder.outputs.exit_code != '0'
+        run: |
+          set +e
+          gh issue edit "$ISSUE_NUMBER" --add-label "qoder:failed"
+          exit 0
+
+      - name: Upload Qoder artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qoder-run-${{ github.event.issue.number }}
+          path: |
+            .qoder-tmp/qoder-output-*.json
+            .qoder-tmp/qoder-log-*.txt
+            .qoder-tmp/prompt-*.md
+            .qoder-tmp/comment-*.md
+            .qoder-tmp/pr-body-*.md
+          if-no-files-found: ignore
+          retention-days: 7
