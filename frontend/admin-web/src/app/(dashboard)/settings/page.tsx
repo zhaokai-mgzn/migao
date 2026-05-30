@@ -6,7 +6,7 @@ import Image from 'next/image'
 import { toast } from 'sonner'
 import { Button, Badge } from '@/components/ui'
 import { settingsApi } from '@/lib/api'
-import type { AiConfig, AiModel, SystemSettings, ChangePasswordParams, LoginLog } from '@/types'
+import type { AiConfig, SystemSettings, ChangePasswordParams, LoginLog } from '@/types'
 import dayjs from 'dayjs'
 
 type SettingsTab = 'basic' | 'ai' | 'security'
@@ -15,12 +15,6 @@ const TABS: { key: SettingsTab; label: string; icon: typeof Building2 }[] = [
   { key: 'basic', label: '基本设置', icon: Building2 },
   { key: 'ai', label: 'AI 配置', icon: Bot },
   { key: 'security', label: '账户安全', icon: Shield },
-]
-
-const AI_MODELS: { value: AiModel; label: string; desc: string }[] = [
-  { value: 'qwen-turbo', label: 'Qwen Turbo', desc: '响应最快，适合简单对话' },
-  { value: 'qwen-plus', label: 'Qwen Plus', desc: '性能均衡，推荐使用' },
-  { value: 'qwen-max', label: 'Qwen Max', desc: '能力最强，复杂推理场景' },
 ]
 
 export default function SettingsPage() {
@@ -38,14 +32,8 @@ export default function SettingsPage() {
 
   // AI 配置
   const defaultAiConfig: AiConfig = {
-    model: 'qwen-plus',
-    systemPrompt: '',
-    temperature: 0.7,
-    topP: 0.9,
-    autoReply: true,
-    handoffThreshold: 3,
+    botName: '小布',
     greetingTemplate: '',
-    autoHandoffKeywords: [],
   }
   const [aiConfig, setAiConfig] = useState<AiConfig>(defaultAiConfig)
   const [savingAiConfig, setSavingAiConfig] = useState(false)
@@ -276,130 +264,31 @@ export default function SettingsPage() {
           {activeTab === 'ai' && (
             <div className="bg-white border border-gray-200 rounded-lg p-6">
               <h2 className="text-lg font-semibold text-gray-900 mb-6">AI 配置</h2>
-              <div className="space-y-6 max-w-2xl">
-                {/* 模型选择 */}
+              <div className="space-y-6 max-w-lg">
+                {/* AI 助手名称 */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-3">AI 模型</label>
-                  <div className="grid grid-cols-3 gap-3">
-                    {AI_MODELS.map((model) => (
-                      <button
-                        key={model.value}
-                        className={`p-4 rounded-lg border-2 text-left transition-all ${
-                          aiConfig.model === model.value
-                            ? 'border-primary-500 bg-primary-50'
-                            : 'border-gray-200 hover:border-gray-300'
-                        }`}
-                        onClick={() => setAiConfig({ ...aiConfig, model: model.value })}
-                      >
-                        <div className="font-medium text-sm text-gray-900">{model.label}</div>
-                        <div className="text-xs text-gray-500 mt-1">{model.desc}</div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* System Prompt */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">系统 Prompt</label>
-                  <textarea
-                    rows={5}
-                    className="w-full px-3 py-2 rounded border border-gray-300 text-sm placeholder:text-gray-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 resize-none"
-                    value={aiConfig.systemPrompt}
-                    onChange={(e) => setAiConfig({ ...aiConfig, systemPrompt: e.target.value })}
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">AI 助手名称</label>
+                  <input
+                    type="text"
+                    className="w-full h-9 px-3 rounded border border-gray-300 text-sm placeholder:text-gray-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                    placeholder="小布"
+                    value={aiConfig.botName}
+                    onChange={(e) => setAiConfig({ ...aiConfig, botName: e.target.value })}
                   />
+                  <p className="text-xs text-gray-500 mt-1.5">客户在对话中看到的 AI 助手名称</p>
                 </div>
 
                 {/* 欢迎语 */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">欢迎语模板</label>
-                  <input
-                    type="text"
-                    className="w-full h-9 px-3 rounded border border-gray-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
-                    value={aiConfig.greetingTemplate || ''}
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">欢迎语</label>
+                  <textarea
+                    rows={3}
+                    className="w-full px-3 py-2 rounded border border-gray-300 text-sm placeholder:text-gray-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 resize-none"
+                    placeholder="您好，我是小布，有什么可以帮您？"
+                    value={aiConfig.greetingTemplate}
                     onChange={(e) => setAiConfig({ ...aiConfig, greetingTemplate: e.target.value })}
                   />
-                </div>
-
-                {/* 参数调节 */}
-                <div className="grid grid-cols-2 gap-6">
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <label className="text-sm font-medium text-gray-700">Temperature</label>
-                      <span className="text-sm text-primary-600 font-medium">{(aiConfig.temperature ?? 0.7).toFixed(1)}</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="0"
-                      max="1"
-                      step="0.1"
-                      value={aiConfig.temperature}
-                      onChange={(e) => setAiConfig({ ...aiConfig, temperature: parseFloat(e.target.value) })}
-                      className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-primary-600"
-                    />
-                    <div className="flex justify-between text-xs text-gray-400 mt-1">
-                      <span>精确</span>
-                      <span>创造性</span>
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <label className="text-sm font-medium text-gray-700">Top-P</label>
-                      <span className="text-sm text-primary-600 font-medium">{(aiConfig.topP ?? 0.9).toFixed(1)}</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="0"
-                      max="1"
-                      step="0.1"
-                      value={aiConfig.topP}
-                      onChange={(e) => setAiConfig({ ...aiConfig, topP: parseFloat(e.target.value) })}
-                      className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-primary-600"
-                    />
-                    <div className="flex justify-between text-xs text-gray-400 mt-1">
-                      <span>集中</span>
-                      <span>多样</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 开关选项 */}
-                <div className="space-y-4 border-t border-gray-200 pt-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-sm font-medium text-gray-700">自动回复</div>
-                      <div className="text-xs text-gray-500">AI 自动回复客户消息</div>
-                    </div>
-                    <button
-                      className={`relative w-11 h-6 rounded-full transition-colors ${
-                        aiConfig.autoReply ? 'bg-primary-600' : 'bg-gray-300'
-                      }`}
-                      onClick={() => setAiConfig({ ...aiConfig, autoReply: !aiConfig.autoReply })}
-                    >
-                      <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow ${
-                        aiConfig.autoReply ? 'translate-x-5' : 'translate-x-0'
-                      }`} />
-                    </button>
-                  </div>
-
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <div>
-                        <div className="text-sm font-medium text-gray-700">人工接管阈值</div>
-                        <div className="text-xs text-gray-500">连续 {aiConfig.handoffThreshold} 次低置信度回复后转人工</div>
-                      </div>
-                      <span className="text-sm text-primary-600 font-medium">{aiConfig.handoffThreshold} 次</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="1"
-                      max="10"
-                      step="1"
-                      value={aiConfig.handoffThreshold}
-                      onChange={(e) => setAiConfig({ ...aiConfig, handoffThreshold: parseInt(e.target.value) })}
-                      className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-primary-600"
-                    />
-                  </div>
+                  <p className="text-xs text-gray-500 mt-1.5">客户发起对话时看到的第一条消息</p>
                 </div>
 
                 <div className="pt-4">

@@ -25,6 +25,8 @@ public class TenantAiConfig {
 
     private Long tenantId;
 
+    private String botName;
+
     private String greetingTemplate;
 
     @TableField(typeHandler = com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler.class)

@@ -158,6 +158,9 @@ public class SettingsController {
         }
 
         // 更新已有配置
+        if (config.getBotName() != null) {
+            existing.setBotName(config.getBotName());
+        }
         if (config.getGreetingTemplate() != null) {
             existing.setGreetingTemplate(config.getGreetingTemplate());
         }

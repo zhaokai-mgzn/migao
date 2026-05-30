@@ -521,19 +521,10 @@ export interface CustomerSession {
 
 // ========== 系统设置类型 ==========
 
-// AI 模型选项
-export type AiModel = 'qwen-turbo' | 'qwen-plus' | 'qwen-max'
-
 // AI 配置
 export interface AiConfig {
-  model: AiModel
-  systemPrompt: string
-  temperature: number
-  topP: number
-  autoReply: boolean
-  handoffThreshold: number
-  greetingTemplate?: string
-  autoHandoffKeywords?: string[]
+  botName: string
+  greetingTemplate: string
 }
 
 // 系统设置
