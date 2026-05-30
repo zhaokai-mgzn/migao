@@ -3,6 +3,8 @@ name: Qoder Auto Workflow
 on:
   issues:
     types: [labeled]
+  issue_comment:
+    types: [created]
 
 permissions:
   contents: write
@@ -15,11 +17,25 @@ concurrency:
 
 jobs:
   qoder-run:
-    # 仅当标签为 qoder:fix / qoder:feature / qoder:review 时触发
+    # 同时支持两种触发方式：
+    # 1) 标签触发：qoder:fix / qoder:feature / qoder:review
+    # 2) 评论触发：以 /qoder 开头，且非 bot 自身评论（避免循环）
     if: >-
-      github.event.label.name == 'qoder:fix' ||
-      github.event.label.name == 'qoder:feature' ||
-      github.event.label.name == 'qoder:review'
+      (
+        github.event_name == 'issues' &&
+        (
+          github.event.label.name == 'qoder:fix' ||
+          github.event.label.name == 'qoder:feature' ||
+          github.event.label.name == 'qoder:review'
+        )
+      ) ||
+      (
+        github.event_name == 'issue_comment' &&
+        github.event.issue.pull_request == null &&
+        github.event.comment.user.login != 'github-actions[bot]' &&
+        github.event.comment.user.login != 'qoder-bot' &&
+        startsWith(github.event.comment.body, '/qoder')
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -31,6 +47,8 @@ jobs:
       ISSUE_TITLE: ${{ github.event.issue.title }}
       ISSUE_BODY: ${{ github.event.issue.body }}
       LABEL_NAME: ${{ github.event.label.name }}
+      COMMENT_BODY: ${{ github.event.comment.body }}
+      EVENT_NAME: ${{ github.event_name }}
 
     steps:
       - name: Checkout repository
@@ -56,50 +74,152 @@ jobs:
         id: task
         run: |
           set -euo pipefail
-          case "$LABEL_NAME" in
-            qoder:fix)
-              TASK_TYPE="fix"
-              BRANCH_PREFIX="qoder/fix-issue"
-              TEMPLATE_PATH=".github/qoder-prompts/fix.md"
-              ;;
-            qoder:feature)
-              TASK_TYPE="feature"
-              BRANCH_PREFIX="qoder/feature-issue"
-              TEMPLATE_PATH=".github/qoder-prompts/feature.md"
-              ;;
-            qoder:review)
-              TASK_TYPE="review"
-              BRANCH_PREFIX="qoder/review-issue"
-              TEMPLATE_PATH=".github/qoder-prompts/review.md"
-              ;;
-            *)
-              echo "Unsupported label: $LABEL_NAME"
-              exit 1
-              ;;
-          esac
+
+          # 统一来源：标签触发 or 评论触发
+          TRIGGER_SOURCE=""
+          TASK_TYPE=""
+          BRANCH_PREFIX=""
+          TEMPLATE_PATH=""
+          CUSTOM_INSTRUCTION=""
+          COMMENT_EXTRA=""
+
+          if [ "$EVENT_NAME" = "issues" ]; then
+            TRIGGER_SOURCE="label"
+            case "$LABEL_NAME" in
+              qoder:fix)
+                TASK_TYPE="fix"
+                BRANCH_PREFIX="qoder/fix-issue"
+                TEMPLATE_PATH=".github/qoder-prompts/fix.md"
+                ;;
+              qoder:feature)
+                TASK_TYPE="feature"
+                BRANCH_PREFIX="qoder/feature-issue"
+                TEMPLATE_PATH=".github/qoder-prompts/feature.md"
+                ;;
+              qoder:review)
+                TASK_TYPE="review"
+                BRANCH_PREFIX="qoder/review-issue"
+                TEMPLATE_PATH=".github/qoder-prompts/review.md"
+                ;;
+              *)
+                echo "Unsupported label: $LABEL_NAME"
+                exit 1
+                ;;
+            esac
+          elif [ "$EVENT_NAME" = "issue_comment" ]; then
+            TRIGGER_SOURCE="comment"
+            # 提取 /qoder 后的内容并 trim
+            RAW="${COMMENT_BODY#/qoder}"
+            # 去除前导空白
+            RAW="$(printf '%s' "$RAW" | sed -E 's/^[[:space:]]+//')"
+            # 第一个 token（用于匹配 fix/feature/review）
+            FIRST_TOKEN="$(printf '%s' "$RAW" | awk '{print tolower($1)}')"
+
+            case "$FIRST_TOKEN" in
+              fix)
+                TASK_TYPE="fix"
+                BRANCH_PREFIX="qoder/fix-issue"
+                TEMPLATE_PATH=".github/qoder-prompts/fix.md"
+                # 取除 fix 之外的后续内容作为补充上下文
+                COMMENT_EXTRA="$(printf '%s' "$RAW" | sed -E 's/^[Ff][Ii][Xx]([[:space:]]+|$)//')"
+                ;;
+              feature)
+                TASK_TYPE="feature"
+                BRANCH_PREFIX="qoder/feature-issue"
+                TEMPLATE_PATH=".github/qoder-prompts/feature.md"
+                COMMENT_EXTRA="$(printf '%s' "$RAW" | sed -E 's/^[Ff][Ee][Aa][Tt][Uu][Rr][Ee]([[:space:]]+|$)//')"
+                ;;
+              review)
+                TASK_TYPE="review"
+                BRANCH_PREFIX="qoder/review-issue"
+                TEMPLATE_PATH=".github/qoder-prompts/review.md"
+                COMMENT_EXTRA="$(printf '%s' "$RAW" | sed -E 's/^[Rr][Ee][Vv][Ii][Ee][Ww]([[:space:]]+|$)//')"
+                ;;
+              ""|*)
+                TASK_TYPE="custom"
+                BRANCH_PREFIX="qoder/custom-issue"
+                TEMPLATE_PATH=""
+                CUSTOM_INSTRUCTION="$RAW"
+                ;;
+            esac
+          else
+            echo "Unsupported event: $EVENT_NAME"
+            exit 1
+          fi
+
+          echo "trigger_source=$TRIGGER_SOURCE" >> "$GITHUB_OUTPUT"
           echo "task_type=$TASK_TYPE" >> "$GITHUB_OUTPUT"
           echo "branch_prefix=$BRANCH_PREFIX" >> "$GITHUB_OUTPUT"
           echo "template_path=$TEMPLATE_PATH" >> "$GITHUB_OUTPUT"
           echo "branch_name=${BRANCH_PREFIX}-${ISSUE_NUMBER}" >> "$GITHUB_OUTPUT"
 
-      - name: Render prompt from template
+          # 多行内容通过 heredoc 输出
+          {
+            echo "custom_instruction<<__CUSTOM_EOF__"
+            printf '%s\n' "$CUSTOM_INSTRUCTION"
+            echo "__CUSTOM_EOF__"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "comment_extra<<__EXTRA_EOF__"
+            printf '%s\n' "$COMMENT_EXTRA"
+            echo "__EXTRA_EOF__"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Resolved trigger_source=$TRIGGER_SOURCE task_type=$TASK_TYPE branch=${BRANCH_PREFIX}-${ISSUE_NUMBER}"
+
+      - name: Render prompt
         id: prompt
+        env:
+          TRIGGER_SOURCE: ${{ steps.task.outputs.trigger_source }}
+          TASK_TYPE: ${{ steps.task.outputs.task_type }}
+          TEMPLATE_PATH: ${{ steps.task.outputs.template_path }}
+          CUSTOM_INSTRUCTION: ${{ steps.task.outputs.custom_instruction }}
+          COMMENT_EXTRA: ${{ steps.task.outputs.comment_extra }}
         run: |
           set -euo pipefail
-          TEMPLATE_PATH="${{ steps.task.outputs.template_path }}"
-          if [ ! -f "$TEMPLATE_PATH" ]; then
-            echo "Template not found: $TEMPLATE_PATH"
-            exit 1
-          fi
 
-          # 处理空 body 兜底
-          BODY="${ISSUE_BODY:-(无详细描述)}"
-
-          # 写入临时文件后做安全替换（避免 shell 元字符问题）
           mkdir -p .qoder-tmp
           PROMPT_FILE=".qoder-tmp/prompt-${ISSUE_NUMBER}.md"
 
-          python3 - "$TEMPLATE_PATH" "$PROMPT_FILE" <<'PYEOF'
+          if [ "$TASK_TYPE" = "custom" ]; then
+            # 内联 prompt 模板：直接使用评论内容作为自定义指令
+            python3 - "$PROMPT_FILE" <<'PYEOF'
+          import os, sys
+          out_path = sys.argv[1]
+          issue_number = os.environ.get('ISSUE_NUMBER', '')
+          issue_title = os.environ.get('ISSUE_TITLE', '') or '(无标题)'
+          issue_body = os.environ.get('ISSUE_BODY', '') or '(无详细描述)'
+          instruction = os.environ.get('CUSTOM_INSTRUCTION', '').strip() or '(空指令)'
+          content = f"""# 自定义任务 (Issue #{issue_number})
+
+          你正在处理一个由 GitHub Issue 评论触发的自定义任务。请严格遵循下方"用户指令"完成工作。
+
+          ## Issue 标题
+          {issue_title}
+
+          ## Issue 正文
+          {issue_body}
+
+          ## 用户指令（来自 Issue 评论 /qoder 后的内容）
+          {instruction}
+
+          ## 执行要求
+          1. 仔细理解用户指令的真实意图，必要时阅读相关代码再动手。
+          2. 仅做与指令相关的最小变更，避免无关重构。
+          3. 如涉及代码变更，请确保改动可直接运行/编译。
+          4. 完成后简要说明变更点与影响范围。
+          """
+          with open(out_path, 'w', encoding='utf-8') as f:
+              f.write(content)
+          PYEOF
+          else
+            if [ ! -f "$TEMPLATE_PATH" ]; then
+              echo "Template not found: $TEMPLATE_PATH"
+              exit 1
+            fi
+
+            python3 - "$TEMPLATE_PATH" "$PROMPT_FILE" <<'PYEOF'
           import os, sys
           tpl_path, out_path = sys.argv[1], sys.argv[2]
           with open(tpl_path, 'r', encoding='utf-8') as f:
@@ -107,9 +227,16 @@ jobs:
           tpl = tpl.replace('issue_number', os.environ.get('ISSUE_NUMBER', ''))
           tpl = tpl.replace('issue_title', os.environ.get('ISSUE_TITLE', ''))
           tpl = tpl.replace('issue_body', os.environ.get('ISSUE_BODY', '') or '(无详细描述)')
+
+          # 评论触发时附加补充上下文
+          if os.environ.get('TRIGGER_SOURCE') == 'comment':
+              extra = (os.environ.get('COMMENT_EXTRA') or '').strip()
+              if extra:
+                  tpl += "\n\n## 评论补充上下文（来自 /qoder 命令后的自由文本）\n" + extra + "\n"
           with open(out_path, 'w', encoding='utf-8') as f:
               f.write(tpl)
           PYEOF
+          fi
 
           echo "prompt_file=$PROMPT_FILE" >> "$GITHUB_OUTPUT"
           echo "----- Rendered Prompt (preview) -----"
@@ -196,10 +323,19 @@ jobs:
       - name: Create Pull Request
         id: pr
         if: steps.push.outcome == 'success'
+        env:
+          TRIGGER_SOURCE: ${{ steps.task.outputs.trigger_source }}
         run: |
           set -euo pipefail
           BRANCH="${{ steps.task.outputs.branch_name }}"
           TASK_TYPE="${{ steps.task.outputs.task_type }}"
+
+          # 触发源描述
+          if [ "$TRIGGER_SOURCE" = "comment" ]; then
+            TRIGGER_DESC="评论触发 (\`/qoder ${TASK_TYPE}\`)"
+          else
+            TRIGGER_DESC="标签触发 (\`${LABEL_NAME}\`)"
+          fi
 
           PR_BODY_FILE=".qoder-tmp/pr-body-${ISSUE_NUMBER}.md"
           {
@@ -207,8 +343,8 @@ jobs:
             echo
             echo "Closes #${ISSUE_NUMBER}"
             echo
-            echo "### 触发标签"
-            echo "- \`${LABEL_NAME}\`"
+            echo "### 触发方式"
+            echo "- ${TRIGGER_DESC}"
             echo
             echo "### 变更文件"
             echo '```'
@@ -246,6 +382,7 @@ jobs:
           CHANGED_FILES: ${{ steps.changes.outputs.changed_files }}
           PR_URL: ${{ steps.pr.outputs.pr_url }}
           TASK_TYPE: ${{ steps.task.outputs.task_type }}
+          TRIGGER_SOURCE: ${{ steps.task.outputs.trigger_source }}
         run: |
           set -euo pipefail
           if [ "${QODER_EXIT:-1}" = "0" ]; then
@@ -254,11 +391,18 @@ jobs:
             STATUS="❌ 失败 (exit=${QODER_EXIT:-unknown})"
           fi
 
+          if [ "${TRIGGER_SOURCE:-}" = "comment" ]; then
+            TRIGGER_DESC="评论触发 (\`/qoder ${TASK_TYPE:-}\`)"
+          else
+            TRIGGER_DESC="标签触发 (\`${LABEL_NAME:-}\`)"
+          fi
+
           mkdir -p .qoder-tmp
           COMMENT_FILE=".qoder-tmp/comment-${ISSUE_NUMBER}.md"
           {
             echo "## 🤖 Qoder CLI 执行摘要"
             echo
+            echo "- **触发方式**: ${TRIGGER_DESC}"
             echo "- **任务类型**: \`${TASK_TYPE:-unknown}\`"
             echo "- **状态**: ${STATUS}"
             echo "- **耗时**: ${DURATION:-N/A}s"
@@ -280,7 +424,9 @@ jobs:
           gh issue comment "$ISSUE_NUMBER" --body-file "$COMMENT_FILE" || true
 
       - name: Update labels (success)
+        # 评论触发场景没有触发标签需要移除，跳过
         if: >-
+          steps.task.outputs.trigger_source == 'label' &&
           steps.qoder.outputs.exit_code == '0' &&
           (steps.changes.outputs.has_changes != 'true' ||
            steps.pr.outcome == 'success' ||
@@ -292,7 +438,8 @@ jobs:
           exit 0
 
       - name: Update labels (failure)
-        if: steps.qoder.outputs.exit_code != '0'
+        # 仅在标签触发的失败场景下打 qoder:failed，避免评论触发污染标签
+        if: steps.task.outputs.trigger_source == 'label' && steps.qoder.outputs.exit_code != '0'
         run: |
           set +e
           gh issue edit "$ISSUE_NUMBER" --add-label "qoder:failed"
