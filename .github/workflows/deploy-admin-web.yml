@@ -83,8 +83,8 @@ jobs:
         working-directory: ${{ env.WORKING_DIR }}
         run: |
           echo "上传 out/ 到 oss://${{ env.OSS_BUCKET }}/ ..."
-          aliyun oss cp -r out/ oss://${{ env.OSS_BUCKET }}/ \
-            --update \
+          aliyun oss cp out/ oss://${{ env.OSS_BUCKET }}/ \
+            --recursive \
             --force \
             --region ${{ env.OSS_REGION }} \
             --endpoint https://${{ env.OSS_ENDPOINT }}
