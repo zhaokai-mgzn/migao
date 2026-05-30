@@ -58,16 +58,78 @@ class SecurityConfigTest {
     private com.aikf.admin.service.RegistrationService registrationService;
 
     @MockBean
-    private StringRedisTemplate redisTemplate;
+    private com.aikf.admin.service.UserService userService;
 
     @MockBean
-    private org.springframework.security.core.userdetails.UserDetailsService userDetailsService;
+    private com.aikf.admin.service.AfterSalesTicketService afterSalesTicketService;
+
+    @MockBean
+    private com.aikf.admin.service.AgentEmployeeService agentEmployeeService;
+
+    @MockBean
+    private com.aikf.admin.service.AgentSessionService agentSessionService;
+
+    @MockBean
+    private com.aikf.admin.service.AuditLogService auditLogService;
+
+    @MockBean
+    private com.aikf.admin.service.CategoryService categoryService;
+
+    @MockBean
+    private com.aikf.admin.service.CustomerService customerService;
+
+    @MockBean
+    private com.aikf.admin.service.NotificationService notificationService;
+
+    @MockBean
+    private com.aikf.admin.service.OrderService orderService;
+
+    @MockBean
+    private com.aikf.admin.service.OrderLogisticsService orderLogisticsService;
+
+    // 注意：FileStorageService 是接口，LocalFileStorageService 已默认启用，
+    // OssService 带有 @ConditionalOnBean 在测试环境下不会被加载，
+    // 因此不需要 @MockBean FileStorageService / OssService，
+    // 避免由于多个实现导致 NoUniqueBeanDefinitionException。
+
+    @MockBean
+    private com.aikf.admin.service.PermissionService permissionService;
+
+    @MockBean
+    private com.aikf.admin.service.ProcessingCategoryService processingCategoryService;
+
+    @MockBean
+    private com.aikf.admin.service.ProcessingItemService processingItemService;
+
+    @MockBean
+    private com.aikf.admin.service.QuickReplyTemplateService quickReplyTemplateService;
+
+    @MockBean
+    private com.aikf.admin.service.RoleService roleService;
+
+    @MockBean
+    private com.aikf.admin.service.SmsService smsService;
+
+    @MockBean
+    private com.aikf.admin.service.WechatService wechatService;
+
+    @MockBean
+    private StringRedisTemplate redisTemplate;
+
+    // 注意：UserService 已实现 UserDetailsService，上面的 @MockBean userService 会同时
+    // 满足 UserService 和 UserDetailsService 两种类型的依赖注入需求，
+    // 因此不再重复声明 UserDetailsService 的 @MockBean，避免覆盖后导致
+    // UserService 类型不可被装配。
 
     // Mock all mapper beans that @MapperScan might try to create
     @MockBean
     private com.aikf.admin.mapper.AfterSalesTicketMapper afterSalesTicketMapper;
     @MockBean
     private com.aikf.admin.mapper.AgentEmployeeMapper agentEmployeeMapper;
+    @MockBean
+    private com.aikf.admin.mapper.AgentMessageMapper agentMessageMapper;
+    @MockBean
+    private com.aikf.admin.mapper.AgentSessionMapper agentSessionMapper;
     @MockBean
     private com.aikf.admin.mapper.AuditLogMapper auditLogMapper;
     @MockBean
@@ -89,6 +151,10 @@ class SecurityConfigTest {
     @MockBean
     private com.aikf.admin.mapper.NotificationMapper notificationMapper;
     @MockBean
+    private com.aikf.admin.mapper.NotificationRuleMapper notificationRuleMapper;
+    @MockBean
+    private com.aikf.admin.mapper.NotificationTemplateMapper notificationTemplateMapper;
+    @MockBean
     private com.aikf.admin.mapper.OrderItemMapper orderItemMapper;
     @MockBean
     private com.aikf.admin.mapper.OrderLogisticsMapper orderLogisticsMapper;
@@ -102,6 +168,16 @@ class SecurityConfigTest {
     private com.aikf.admin.mapper.ProcessingItemMapper processingItemMapper;
     @MockBean
     private com.aikf.admin.mapper.ProductMapper productMapper;
+    @MockBean
+    private com.aikf.admin.mapper.ProductAttributeMapper productAttributeMapper;
+    @MockBean
+    private com.aikf.admin.mapper.ProductColorMapper productColorMapper;
+    @MockBean
+    private com.aikf.admin.mapper.ProductProcessingItemMapper productProcessingItemMapper;
+    @MockBean
+    private com.aikf.admin.mapper.ProductSkuMapper productSkuMapper;
+    @MockBean
+    private com.aikf.admin.mapper.QuickReplyTemplateMapper quickReplyTemplateMapper;
     @MockBean
     private com.aikf.admin.mapper.RoleMapper roleMapper;
     @MockBean
