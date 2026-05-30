@@ -115,7 +115,7 @@ jobs:
       - name: Deploy to SAE
         run: |
           # 获取当前完整环境变量（全量重发，避免清空已有配置）
-          # 使用 jq -c 紧凑输出 + 临时文件，规避特殊字符在 shell 中的引号转义问题
+          # 写入临时文件，规避特殊字符（@、!、$、&）在 shell 命令行中的解析问题
           ENVS_FILE=/tmp/sae_envs.json
           aliyun sae DescribeApplicationConfig \
             --AppId ${{ env.SAE_APP_ID }} \
@@ -127,17 +127,46 @@ jobs:
             exit 1
           fi
 
-          ENVS=$(cat "$ENVS_FILE")
-          echo "✅ 已获取 SAE 环境变量（条目数：$(echo "$ENVS" | jq 'length')）"
+          echo "✅ 已获取 SAE 环境变量（条目数：$(jq 'length' "$ENVS_FILE")）"
 
-          SIGNED_URL=$(cat "$SIGNED_URL_FILE")
+          # 使用 Python subprocess 直接 execvp 调用 aliyun CLI
+          # 参数以 list 传入，完全绕过 shell 解析，避免特殊字符（OSS URL 中的 &、密码中的 @!$）被截断或误解析
+          python3 <<'PYEOF'
+          import json, os, subprocess, sys
 
-          # 部署 FatJar
-          aliyun sae DeployApplication \
-            --AppId ${{ env.SAE_APP_ID }} \
-            --PackageUrl "$SIGNED_URL" \
-            --PackageType FatJar \
-            --Envs "$ENVS"
+          with open('/tmp/sae_envs.json', 'r', encoding='utf-8') as f:
+              envs_raw = f.read().strip()
+          with open(os.environ['SIGNED_URL_FILE'], 'r', encoding='utf-8') as f:
+              signed_url = f.read().strip()
+
+          # 校验 envs 是合法 JSON 数组并紧凑序列化
+          envs = json.loads(envs_raw)
+          if not isinstance(envs, list):
+              print(f'❌ Envs 必须是数组，实际类型：{type(envs).__name__}', file=sys.stderr)
+              sys.exit(1)
+          envs_compact = json.dumps(envs, ensure_ascii=False, separators=(',', ':'))
+
+          if not signed_url.startswith('http'):
+              print(f'❌ SIGNED_URL 不是合法 HTTP URL：{signed_url[:80]}', file=sys.stderr)
+              sys.exit(1)
+
+          cmd = [
+              'aliyun', 'sae', 'DeployApplication',
+              '--AppId', os.environ['SAE_APP_ID'],
+              '--PackageUrl', signed_url,
+              '--PackageType', 'FatJar',
+              '--Envs', envs_compact,
+          ]
+          print(f'📤 调用 aliyun sae DeployApplication（envs 条目数：{len(envs)}，PackageUrl 长度：{len(signed_url)}）')
+          result = subprocess.run(cmd, capture_output=True, text=True)
+          if result.stdout:
+              print('STDOUT:', result.stdout)
+          if result.returncode != 0:
+              print('STDERR:', result.stderr, file=sys.stderr)
+              sys.exit(result.returncode)
+          if result.stderr:
+              print('STDERR:', result.stderr)
+          PYEOF
 
           echo "✅ 部署已触发，PackageType=FatJar"
 
