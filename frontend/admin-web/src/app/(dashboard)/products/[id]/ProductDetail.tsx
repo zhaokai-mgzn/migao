@@ -310,12 +310,15 @@ export default function ProductDetailPage() {
           )}
 
           {/* Processing items */}
-          {product.processingItems && product.processingItems.length > 0 && (
+          {product.processingItemConfigs && product.processingItemConfigs.length > 0 && (
             <div className="bg-gray-50 rounded-lg p-4">
               <h3 className="text-sm font-semibold text-gray-700 mb-2">加工项</h3>
-              <div className="flex flex-wrap gap-2">
-                {product.processingItems.map((itemId) => (
-                  <Badge key={itemId} variant="info">{itemId}</Badge>
+              <div className="space-y-2">
+                {product.processingItemConfigs.map((cfg, idx) => (
+                  <div key={idx} className="flex items-center justify-between text-sm">
+                    <span className="font-medium text-gray-800">{cfg.processingItemName || '未知加工项'}</span>
+                    <span className="text-blue-600 font-medium">¥{cfg.customPrice?.toFixed(2) || '0.00'}/米</span>
+                  </div>
                 ))}
               </div>
             </div>

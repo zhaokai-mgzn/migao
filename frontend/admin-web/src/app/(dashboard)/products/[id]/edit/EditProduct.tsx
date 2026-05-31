@@ -64,6 +64,7 @@ export default function EditProductPage() {
     specifications: product.specifications,
     processingItems: product.processingItems,
     processingItemConfigs: product.processingItemConfigs || [],
+    supportsProcessing: (product.processingItemConfigs && product.processingItemConfigs.length > 0) || false,
     colors: product.colors || [],
     sellingMethods: product.sellingMethods || [],
     doorWidths: product.doorWidths || [],
