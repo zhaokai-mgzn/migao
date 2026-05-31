@@ -109,8 +109,15 @@ export const productApi = {
     })
   },
   
-  updateProduct: (id: string, data: ProductFormData) => 
-    request.put<ApiResponse<Product>>(`/api/admin/products/${id}`, data),
+  updateProduct: (id: string, data: ProductFormData) => {
+    const { price, images, ...rest } = data
+    return request.put<ApiResponse<Product>>(`/api/admin/products/${id}`, {
+      ...rest,
+      basePrice: price,
+      mainImage: images?.[0] || null,
+      images,
+    })
+  },
   
   deleteProduct: (id: string) => 
     request.delete<ApiResponse<void>>(`/api/admin/products/${id}`),
