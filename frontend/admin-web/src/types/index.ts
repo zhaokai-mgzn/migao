@@ -532,6 +532,7 @@ export interface OrderListParams extends PageParams {
   productTitle?: string        // 商品标题模糊搜索
   hasProcessing?: boolean | '' // 是否加工筛选
   status?: OrderStatus | 'processing' | ''  // 状态筛选
+  keyword?: string             // 关键词搜索（售后关联订单等场景）
 }
 
 // 订单表单数据（创建/编辑）
