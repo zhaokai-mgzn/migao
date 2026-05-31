@@ -5,6 +5,7 @@ import lombok.Data;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 商品更新请求 DTO
@@ -84,4 +85,21 @@ public class ProductUpdateRequest {
      * SKU 列表
      */
     private List<ProductSkuInput> skus;
+
+    // ========== 商品属性与详情图 ==========
+
+    /**
+     * 品牌
+     */
+    private String brand;
+
+    /**
+     * 商品属性字典，key 可为 weight/material/function/craft/style/pattern 等
+     */
+    private Map<String, String> specifications;
+
+    /**
+     * 详情图列表
+     */
+    private List<String> detailImages;
 }

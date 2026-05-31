@@ -6,6 +6,7 @@ import lombok.Data;
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 商品响应 DTO
@@ -129,6 +130,21 @@ public class ProductResponse {
      * SKU列表（详情接口返回）
      */
     private List<ProductSkuResponse> skus;
+
+    /**
+     * 品牌
+     */
+    private String brand;
+
+    /**
+     * 商品属性字典（weight/material/function/craft/style/pattern 等）
+     */
+    private Map<String, String> specifications;
+
+    /**
+     * 详情图列表
+     */
+    private List<String> detailImages;
 
     /**
      * 最后编辑人
