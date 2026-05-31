@@ -135,11 +135,16 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
                         .reduce(BigDecimal.ZERO, BigDecimal::add);
                 resp.setProcessingFee(processingFee);
                 resp.setActualAmount(resp.getTotalAmount());
+                // 判断是否含加工项：任何一个 OrderItem 的 processingInfo 非空
+                boolean hasProcessing = orderItems.stream()
+                        .anyMatch(item -> item.getProcessingInfo() != null);
+                resp.setHasProcessing(hasProcessing);
             }
         } else {
             for (OrderListResponse resp : responses) {
                 resp.setItems(Collections.emptyList());
                 resp.setProcessingFee(BigDecimal.ZERO);
+                resp.setHasProcessing(false);
                 resp.setActualAmount(resp.getTotalAmount());
             }
         }

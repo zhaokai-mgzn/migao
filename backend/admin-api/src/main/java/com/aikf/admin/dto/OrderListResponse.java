@@ -50,6 +50,11 @@ public class OrderListResponse {
     private BigDecimal processingFee;
 
     /**
+     * 是否含加工项
+     */
+    private Boolean hasProcessing;
+
+    /**
      * 订单状态
      */
     private String status;
