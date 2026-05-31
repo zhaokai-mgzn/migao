@@ -263,6 +263,9 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         // 回填商品属性：brand + specifications
         fillProductAttributes(response, id);
 
+        // 回填加工项配置列表
+        fillProcessingItemConfigs(response, id, tenantId);
+
         return response;
     }
 
@@ -310,6 +313,11 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
 
         // 保存商品属性（brand + specifications，存入 product_attributes 表）
         saveProductAttributes(product.getId(), tenantId, request.getBrand(), request.getSpecifications());
+
+        // 保存加工项配置到关联表
+        if (request.getProcessingItemConfigs() != null) {
+            saveProcessingItemConfigs(product.getId(), tenantId, request.getProcessingItemConfigs());
+        }
 
         log.info("创建商品成功: id={}, name={}", product.getId(), product.getName());
 
@@ -366,6 +374,15 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         // 更新商品属性：仅当请求中明确提交 brand 或 specifications 时才重写，避免误清空
         if (request.getBrand() != null || request.getSpecifications() != null) {
             saveProductAttributes(id, tenantId, request.getBrand(), request.getSpecifications());
+        }
+
+        // 更新加工项配置：先删后插，仅当请求中包含 processingItemConfigs 字段时才更新
+        if (request.getProcessingItemConfigs() != null) {
+            productProcessingItemMapper.delete(
+                    new LambdaQueryWrapper<ProductProcessingItem>()
+                            .eq(ProductProcessingItem::getProductId, id)
+            );
+            saveProcessingItemConfigs(id, tenantId, request.getProcessingItemConfigs());
         }
 
         log.info("更新商品成功: id={}, name={}", id, product.getName());
@@ -503,6 +520,75 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         if (!specifications.isEmpty()) {
             response.setSpecifications(specifications);
         }
+    }
+
+    /**
+     * 保存商品的加工项配置到 product_processing_items 关联表
+     * 调用方负责控制是否先删后插。
+     */
+    private void saveProcessingItemConfigs(String productId, Long tenantId,
+                                           List<ProcessingItemConfigInput> configs) {
+        if (configs == null || configs.isEmpty()) {
+            return;
+        }
+        int idx = 0;
+        for (ProcessingItemConfigInput input : configs) {
+            if (input == null || !StringUtils.hasText(input.getProcessingItemId())) {
+                continue;
+            }
+            ProductProcessingItem entity = new ProductProcessingItem();
+            entity.setTenantId(tenantId);
+            entity.setProductId(productId);
+            entity.setProcessingItemId(input.getProcessingItemId());
+            entity.setCustomPrice(input.getCustomPrice());
+            entity.setSortOrder(idx++);
+            productProcessingItemMapper.insert(entity);
+        }
+    }
+
+    /**
+     * 查询商品加工项配置并填充到 ProductResponse
+     */
+    private void fillProcessingItemConfigs(ProductResponse response, String productId, Long tenantId) {
+        List<ProductProcessingItem> relations = productProcessingItemMapper.selectList(
+                new LambdaQueryWrapper<ProductProcessingItem>()
+                        .eq(ProductProcessingItem::getProductId, productId)
+                        .eq(ProductProcessingItem::getTenantId, tenantId)
+                        .orderByAsc(ProductProcessingItem::getSortOrder)
+        );
+        if (relations == null || relations.isEmpty()) {
+            response.setProcessingItemConfigs(java.util.Collections.emptyList());
+            return;
+        }
+
+        // 批量查询加工项名称
+        List<String> processingItemIds = relations.stream()
+                .map(ProductProcessingItem::getProcessingItemId)
+                .filter(StringUtils::hasText)
+                .distinct()
+                .collect(Collectors.toList());
+        Map<String, String> itemNameMap = new HashMap<>();
+        if (!processingItemIds.isEmpty()) {
+            List<ProcessingItem> items = processingItemMapper.selectList(
+                    new LambdaQueryWrapper<ProcessingItem>()
+                            .in(ProcessingItem::getId, processingItemIds)
+            );
+            if (items != null) {
+                for (ProcessingItem item : items) {
+                    itemNameMap.put(item.getId(), item.getName());
+                }
+            }
+        }
+
+        List<ProcessingItemConfigResponse> configs = new ArrayList<>();
+        for (ProductProcessingItem rel : relations) {
+            ProcessingItemConfigResponse cfg = new ProcessingItemConfigResponse();
+            cfg.setProcessingItemId(rel.getProcessingItemId());
+            cfg.setProcessingItemName(itemNameMap.get(rel.getProcessingItemId()));
+            cfg.setCustomPrice(rel.getCustomPrice());
+            configs.add(cfg);
+        }
+        response.setProcessingItemConfigs(configs);
     }
 
     /**

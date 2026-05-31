@@ -87,6 +87,11 @@ public class ProductResponse {
     private String skuCode;
 
     /**
+     * 计价单位（米/件/套等）
+     */
+    private String unit;
+
+    /**
      * 库存扣减模式
      */
     private String stockDeductionMode;
@@ -145,6 +150,11 @@ public class ProductResponse {
      * 详情图列表
      */
     private List<String> detailImages;
+
+    /**
+     * 加工项配置列表
+     */
+    private List<ProcessingItemConfigResponse> processingItemConfigs;
 
     /**
      * 最后编辑人

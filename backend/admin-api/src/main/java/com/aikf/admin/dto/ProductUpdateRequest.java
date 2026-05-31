@@ -20,6 +20,16 @@ public class ProductUpdateRequest {
     private String name;
 
     /**
+     * 商品货号
+     */
+    private String skuCode;
+
+    /**
+     * 计价单位（米/件/套等）
+     */
+    private String unit;
+
+    /**
      * 分类ID（草稿状态允许为空，Service 层根据 status 校验）
      */
     private String categoryId;
@@ -102,4 +112,9 @@ public class ProductUpdateRequest {
      * 详情图列表
      */
     private List<String> detailImages;
+
+    /**
+     * 加工项配置列表
+     */
+    private List<ProcessingItemConfigInput> processingItemConfigs;
 }
