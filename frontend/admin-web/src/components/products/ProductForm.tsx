@@ -324,8 +324,13 @@ export default function ProductForm({
       }
       toast.success(labelMap[targetStatus])
       router.push('/products')
-    } catch {
-      // Error handled by API layer
+    } catch (error) {
+      console.error(`保存商品失败 (${targetStatus}):`, error)
+      if (error instanceof Error) {
+        toast.error(error.message || '保存失败，请重试')
+      } else {
+        toast.error('保存失败，请重试')
+      }
     } finally {
       setSubmitting(null)
     }

@@ -6,7 +6,7 @@
     <Type>0</Type>
   </IndexDocument>
   <ErrorDocument>
-    <Key>404.html</Key>
-    <HttpStatus>404</HttpStatus>
+    <Key>index.html</Key>
+    <HttpStatus>200</HttpStatus>
   </ErrorDocument>
 </WebsiteConfiguration>

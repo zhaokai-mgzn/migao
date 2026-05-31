@@ -14,6 +14,16 @@ public class ProductQueryRequest {
     private String keyword;
 
     /**
+     * 商品标题搜索
+     */
+    private String name;
+
+    /**
+     * 商品ID搜索
+     */
+    private String productId;
+
+    /**
      * 分类ID
      */
     private String categoryId;

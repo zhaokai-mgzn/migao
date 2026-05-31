@@ -22,6 +22,7 @@ import org.springframework.util.StringUtils;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -105,6 +106,34 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         List<OrderListResponse> responses = resultPage.getRecords().stream()
                 .map(this::convertToListResponse)
                 .collect(Collectors.toList());
+
+        // 批量补充订单明细，避免 N+1 查询；前端列表"采购商品"列依赖 items[0]
+        List<String> orderIds = responses.stream()
+                .map(OrderListResponse::getId)
+                .collect(Collectors.toList());
+        if (!orderIds.isEmpty()) {
+            List<OrderItem> allItems = orderItemMapper.selectList(
+                    new LambdaQueryWrapper<OrderItem>().in(OrderItem::getOrderId, orderIds)
+            );
+            Map<String, List<OrderItem>> itemsMap = allItems.stream()
+                    .collect(Collectors.groupingBy(OrderItem::getOrderId));
+            for (OrderListResponse resp : responses) {
+                List<OrderItem> orderItems = itemsMap.getOrDefault(resp.getId(), Collections.emptyList());
+                resp.setItems(orderItems.stream()
+                        .map(item -> new OrderListResponse.OrderItemBrief(
+                                item.getProductId(),
+                                item.getProductName(),
+                                null,
+                                item.getQuantity(),
+                                item.getUnitPrice()
+                        ))
+                        .collect(Collectors.toList()));
+            }
+        } else {
+            for (OrderListResponse resp : responses) {
+                resp.setItems(Collections.emptyList());
+            }
+        }
 
         return PageResponse.of(resultPage.getTotal(), resultPage.getCurrent(), resultPage.getSize(), responses);
     }

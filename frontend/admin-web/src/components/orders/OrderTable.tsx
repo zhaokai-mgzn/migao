@@ -16,6 +16,8 @@ export interface OrderTableProps {
   onClose: (order: Order) => void
   onShip: (order: Order) => void
   onRefund?: (order: Order) => void
+  onConfirmPayment?: (order: Order) => void
+  onConfirmReceive?: (order: Order) => void
 }
 
 function formatNumber(value: number | undefined): string {
@@ -53,6 +55,8 @@ export default function OrderTable({
   onClose,
   onShip,
   onRefund,
+  onConfirmPayment,
+  onConfirmReceive,
 }: OrderTableProps) {
   const allSelected = orders.length > 0 && orders.every((o) => selectedIds.includes(o.id))
   const someSelected = orders.some((o) => selectedIds.includes(o.id)) && !allSelected
@@ -82,8 +86,21 @@ export default function OrderTable({
     ]
     if (displayStatus === 'pending_payment') {
       actions.push(<ActionLink key="close" onClick={() => onClose(order)}>关闭</ActionLink>)
+      if (onConfirmPayment) {
+        actions.push(
+          <ActionLink key="confirm-payment" onClick={() => onConfirmPayment(order)}>
+            确认付款
+          </ActionLink>
+        )
+      }
     } else if (displayStatus === 'pending_shipment') {
       actions.push(<ActionLink key="ship" onClick={() => onShip(order)}>发货</ActionLink>)
+    } else if (displayStatus === 'shipped' && onConfirmReceive) {
+      actions.push(
+        <ActionLink key="confirm-receive" onClick={() => onConfirmReceive(order)}>
+          确认收货
+        </ActionLink>
+      )
     } else if (displayStatus === 'refund' && onRefund) {
       actions.push(<ActionLink key="refund" onClick={() => onRefund(order)}>处理退款</ActionLink>)
     }

@@ -2,13 +2,15 @@
 # 应用 OSS 静态网站托管配置到指定 bucket
 #
 # 修复历史：
-#   - 历史配置 ErrorDocument=index.html + HttpStatus=200，导致任何 404 都回退
-#     到首页 HTML，浏览器看到"营销首页"取代受保护的 /dashboard/ 等路由。
-#   - 新版本配置：
+#   - 早期使用 ErrorDocument=index.html + HttpStatus=200 出现误展示首页问题，
+#     一度改为 ErrorDocument=404.html + HttpStatus=404；但该配置不支持 Next.js
+#     SPA 动态路由（如 /products/:id/edit），访问会返回真实 404。
+#   - 当前版本配置（恢复 SPA 回退 + 客户端路由守卫）：
 #       IndexDocument: index.html, SupportSubDir=true, Type=0(Redirect)
-#       ErrorDocument: 404.html, HttpStatus=404
-#     从而 /dashboard/ 会真正路由到 dashboard/index.html，错误请求返回 404
-#     而不是误展示首页内容。
+#       ErrorDocument: index.html, HttpStatus=200
+#     OSS 找不到文件时回退到 index.html，由 Next.js 客户端路由接管动态路由；
+#     受保护页面（如 /dashboard/）需依赖前端客户端守卫做鉴权与跳转，
+#     不能再依靠服务端 404 阻止未授权访问。
 #
 # ⚠️ 前置条件：
 #   - OSS website hosting 仅在请求路径走 "bucket.oss-website-{region}.aliyuncs.com"

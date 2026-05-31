@@ -1,8 +1,6 @@
 package com.aikf.admin.dto;
 
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Positive;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -21,16 +19,13 @@ public class ProductCreateRequest {
     private String name;
 
     /**
-     * 分类ID
+     * 分类ID（草稿状态允许为空，Service 层根据 status 校验）
      */
-    @NotBlank(message = "分类ID不能为空")
     private String categoryId;
 
     /**
-     * 基础价格
+     * 基础价格（草稿状态允许为空，Service 层根据 status 校验）
      */
-    @NotNull(message = "基础价格不能为空")
-    @Positive(message = "基础价格必须大于 0")
     private BigDecimal basePrice;
 
     /**

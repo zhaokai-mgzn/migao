@@ -80,6 +80,16 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                     .or().like(Product::getSkuCode, query.getKeyword()));
         }
 
+        // 商品标题模糊搜索
+        if (StringUtils.hasText(query.getName())) {
+            wrapper.like(Product::getName, query.getName());
+        }
+
+        // 商品ID精确搜索
+        if (StringUtils.hasText(query.getProductId())) {
+            wrapper.eq(Product::getId, query.getProductId());
+        }
+
         // SKU货号模糊搜索
         if (StringUtils.hasText(query.getSkuCode())) {
             wrapper.like(Product::getSkuCode, query.getSkuCode());
@@ -220,6 +230,9 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
      */
     @Transactional(rollbackFor = Exception.class)
     public ProductResponse createProduct(ProductCreateRequest request, Long tenantId) {
+        // 根据目标状态校验必填字段（draft 状态放宽）
+        validateRequiredForStatus(request.getStatus(), request.getCategoryId(), request.getBasePrice());
+
         // 校验分类是否存在
         validateCategory(request.getCategoryId());
 
@@ -258,6 +271,9 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         if (product == null) {
             throw BusinessException.notFound("商品");
         }
+
+        // 根据目标状态校验必填字段（draft 状态放宽）
+        validateRequiredForStatus(request.getStatus(), request.getCategoryId(), request.getBasePrice());
 
         // 校验分类是否存在
         validateCategory(request.getCategoryId());
@@ -661,6 +677,25 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         Category category = categoryMapper.selectById(categoryId);
         if (category == null) {
             throw BusinessException.validationError("分类不存在");
+        }
+    }
+
+    /**
+     * 根据目标状态校验必填字段：draft 状态允许留空，其他状态需严格校验。
+     */
+    private void validateRequiredForStatus(String status, String categoryId, java.math.BigDecimal basePrice) {
+        // 未传或为 draft 时不做必填校验
+        if (!StringUtils.hasText(status) || "draft".equalsIgnoreCase(status)) {
+            return;
+        }
+        if (!StringUtils.hasText(categoryId)) {
+            throw BusinessException.validationError("分类ID不能为空");
+        }
+        if (basePrice == null) {
+            throw BusinessException.validationError("基础价格不能为空");
+        }
+        if (basePrice.signum() <= 0) {
+            throw BusinessException.validationError("基础价格必须大于 0");
         }
     }
 

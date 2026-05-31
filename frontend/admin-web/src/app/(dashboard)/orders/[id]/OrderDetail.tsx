@@ -2,15 +2,16 @@
 
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import { ChevronRight, Zap } from 'lucide-react'
+import { ChevronRight, Zap, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 import dayjs from 'dayjs'
 import { orderApi } from '@/lib/api'
 import { useRouteId } from '@/lib/use-route-id'
-import { Button, Loading } from '@/components/ui'
+import { Button, Loading, Modal } from '@/components/ui'
 import { OrderProgressSteps } from '@/components/orders'
 import CloseOrderModal from '@/components/orders/CloseOrderModal'
-import type { Order, OrderItem } from '@/types'
+import LogisticsForm from '@/components/orders/LogisticsForm'
+import type { Order, OrderItem, LogisticsFormData } from '@/types'
 import { normalizeOrderStatus } from '@/types'
 import { cn } from '@/lib/utils'
 
@@ -91,6 +92,13 @@ export default function OrderDetailPage() {
   const [closeModalOpen, setCloseModalOpen] = useState(false)
   const [closeSubmitting, setCloseSubmitting] = useState(false)
 
+  // 确认付款 / 确认收货 / 编辑物流
+  const [confirmPaymentOpen, setConfirmPaymentOpen] = useState(false)
+  const [paymentSubmitting, setPaymentSubmitting] = useState(false)
+  const [confirmReceiveOpen, setConfirmReceiveOpen] = useState(false)
+  const [receiveSubmitting, setReceiveSubmitting] = useState(false)
+  const [showEditLogistics, setShowEditLogistics] = useState(false)
+
   // 倒计时
   const [countdown, setCountdown] = useState({ h: 0, m: 0, s: 0, expired: false })
 
@@ -137,6 +145,52 @@ export default function OrderDetailPage() {
       toast.error('关闭订单失败')
     } finally {
       setCloseSubmitting(false)
+    }
+  }
+
+  // 确认付款
+  const handleConfirmPayment = async () => {
+    if (!order) return
+    setPaymentSubmitting(true)
+    try {
+      await orderApi.confirmPayment(order.id)
+      toast.success('已确认收款')
+      setConfirmPaymentOpen(false)
+      loadOrder()
+    } catch {
+      toast.error('确认付款失败')
+    } finally {
+      setPaymentSubmitting(false)
+    }
+  }
+
+  // 确认收货
+  const handleConfirmReceive = async () => {
+    if (!order) return
+    setReceiveSubmitting(true)
+    try {
+      await orderApi.updateOrderStatus(order.id, { status: 'completed' })
+      toast.success('已确认收货')
+      setConfirmReceiveOpen(false)
+      loadOrder()
+    } catch {
+      toast.error('确认收货失败')
+    } finally {
+      setReceiveSubmitting(false)
+    }
+  }
+
+  // 提交物流信息更新
+  const handleSubmitLogistics = async (data: LogisticsFormData) => {
+    if (!order) return
+    try {
+      await orderApi.updateLogistics(order.id, data)
+      toast.success('物流信息已更新')
+      setShowEditLogistics(false)
+      loadOrder()
+    } catch (err) {
+      toast.error('更新物流信息失败')
+      throw err // 抛出以阻止 LogisticsForm 自动关闭
     }
   }
 
@@ -189,6 +243,9 @@ export default function OrderDetailPage() {
         countdown={countdown}
         onClose={() => setCloseModalOpen(true)}
         onShip={() => router.push(`/orders/${order.id}/ship`)}
+        onConfirmPayment={() => setConfirmPaymentOpen(true)}
+        onConfirmReceive={() => setConfirmReceiveOpen(true)}
+        onEditLogistics={() => setShowEditLogistics(true)}
       />
 
       {/* 基础信息 */}
@@ -239,7 +296,77 @@ export default function OrderDetailPage() {
         onConfirm={handleConfirmClose}
         loading={closeSubmitting}
       />
+
+      {/* 确认付款弹窗 */}
+      <ConfirmModal
+        open={confirmPaymentOpen}
+        title="确认付款"
+        message="确认已收到付款？确认后订单将进入待发货状态。"
+        loading={paymentSubmitting}
+        onClose={() => setConfirmPaymentOpen(false)}
+        onConfirm={handleConfirmPayment}
+      />
+
+      {/* 确认收货弹窗 */}
+      <ConfirmModal
+        open={confirmReceiveOpen}
+        title="确认收货"
+        message="确认客户已收到货物？确认后订单将标记为已完成。"
+        loading={receiveSubmitting}
+        onClose={() => setConfirmReceiveOpen(false)}
+        onConfirm={handleConfirmReceive}
+      />
+
+      {/* 编辑物流弹窗 */}
+      {showEditLogistics && (
+        <LogisticsForm
+          open={showEditLogistics}
+          onClose={() => setShowEditLogistics(false)}
+          onSubmit={handleSubmitLogistics}
+          initialData={{
+            company: order.logistics?.company || '',
+            trackingNo: order.logistics?.trackingNo || '',
+            shippingMethod: order.logistics?.shippingMethod === 'none' ? 'none' : 'logistics',
+          }}
+        />
+      )}
     </div>
+  )
+}
+
+// 通用确认弹窗
+interface ConfirmModalProps {
+  open: boolean
+  title: string
+  message: string
+  loading?: boolean
+  onClose: () => void
+  onConfirm: () => void
+}
+
+function ConfirmModal({ open, title, message, loading, onClose, onConfirm }: ConfirmModalProps) {
+  return (
+    <Modal
+      open={open}
+      onClose={loading ? () => {} : onClose}
+      title={title}
+      maskClosable={!loading}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={loading}>
+            取消
+          </Button>
+          <Button onClick={onConfirm} loading={loading}>
+            确定
+          </Button>
+        </>
+      }
+    >
+      <div className="flex items-start gap-2 py-1">
+        <AlertTriangle className="w-5 h-5 text-amber-500 mt-0.5 flex-shrink-0" />
+        <p className="text-sm text-gray-700 leading-relaxed">{message}</p>
+      </div>
+    </Modal>
   )
 }
 
@@ -250,9 +377,20 @@ interface StatusSectionProps {
   countdown: { h: number; m: number; s: number; expired: boolean }
   onClose: () => void
   onShip: () => void
+  onConfirmPayment: () => void
+  onConfirmReceive: () => void
+  onEditLogistics: () => void
 }
 
-function StatusSection({ order, countdown, onClose, onShip }: StatusSectionProps) {
+function StatusSection({
+  order,
+  countdown,
+  onClose,
+  onShip,
+  onConfirmPayment,
+  onConfirmReceive,
+  onEditLogistics,
+}: StatusSectionProps) {
   const status = normalizeOrderStatus(order.status as string)
 
   return (
@@ -275,10 +413,15 @@ function StatusSection({ order, countdown, onClose, onShip }: StatusSectionProps
               </span>
             </div>
           </div>
-          <Button onClick={onClose} className="gap-1.5">
-            关闭订单
-            <Zap className="w-4 h-4" />
-          </Button>
+          <div className="flex items-center gap-3 shrink-0">
+            <Button variant="secondary" onClick={onClose} className="gap-1.5">
+              关闭订单
+            </Button>
+            <Button onClick={onConfirmPayment} className="gap-1.5">
+              确认付款
+              <Zap className="w-4 h-4" />
+            </Button>
+          </div>
         </div>
       )}
 
@@ -300,12 +443,25 @@ function StatusSection({ order, countdown, onClose, onShip }: StatusSectionProps
       )}
 
       {status === 'shipped' && (
-        <OrderProgressSteps
-          status={status}
-          paidAt={order.paidAt}
-          shippedAt={order.shippedAt}
-          receivedAt={order.receivedAt}
-        />
+        <div className="flex items-center justify-between gap-6">
+          <div className="flex-1">
+            <OrderProgressSteps
+              status={status}
+              paidAt={order.paidAt}
+              shippedAt={order.shippedAt}
+              receivedAt={order.receivedAt}
+            />
+          </div>
+          <div className="flex items-center gap-3 shrink-0">
+            <Button variant="secondary" onClick={onEditLogistics}>
+              编辑物流
+            </Button>
+            <Button onClick={onConfirmReceive} className="gap-1.5">
+              确认收货
+              <Zap className="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
       )}
 
       {status === 'completed' && (

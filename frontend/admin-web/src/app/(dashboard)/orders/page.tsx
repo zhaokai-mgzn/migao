@@ -182,6 +182,32 @@ export default function OrdersPage() {
     router.push(`/orders/${order.id}?action=ship`)
   }
 
+  const handleConfirmPayment = async (order: Order) => {
+    if (!window.confirm('确认已收到客户付款？')) return
+    const toastId = toast.loading('操作中…')
+    try {
+      await orderApi.confirmPayment(order.id)
+      toast.success('付款已确认', { id: toastId })
+      loadOrders()
+    } catch (e) {
+      console.error(e)
+      toast.error('确认付款失败', { id: toastId })
+    }
+  }
+
+  const handleConfirmReceive = async (order: Order) => {
+    if (!window.confirm('确认客户已收到货物？')) return
+    const toastId = toast.loading('操作中…')
+    try {
+      await orderApi.updateOrderStatus(order.id, { status: 'completed' })
+      toast.success('订单已完成', { id: toastId })
+      loadOrders()
+    } catch (e) {
+      console.error(e)
+      toast.error('确认收货失败', { id: toastId })
+    }
+  }
+
   const handleConfirmClose = async (reason: string) => {
     if (!selectedOrder) return
     setActionLoading(true)
@@ -392,6 +418,8 @@ export default function OrdersPage() {
           onClose={handleOpenClose}
           onShip={handleShip}
           onRefund={handleView}
+          onConfirmPayment={handleConfirmPayment}
+          onConfirmReceive={handleConfirmReceive}
         />
 
         {/* 分页 */}
