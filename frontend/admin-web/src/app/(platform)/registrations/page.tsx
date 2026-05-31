@@ -8,7 +8,7 @@ import { Pagination, Modal, Button, Badge } from '@/components/ui'
 import type { Registration, RegistrationStatus } from '@/types'
 import { RegistrationStatusLabels, RegistrationStatusColors } from '@/types'
 import dayjs from 'dayjs'
-import { cn } from '@/lib/utils'
+import { cn, resolveImageUrl } from '@/lib/utils'
 
 // 状态 Tab 配置
 const statusTabs: { key: RegistrationStatus | ''; label: string }[] = [
@@ -344,7 +344,7 @@ export default function RegistrationsPage() {
               <div>
                 <label className="block text-sm font-medium text-gray-500 mb-2">营业执照</label>
                 <img
-                  src={detailItem.businessLicenseUrl}
+                  src={resolveImageUrl(detailItem.businessLicenseUrl)}
                   alt="营业执照"
                   className="max-w-full max-h-64 rounded-lg border border-gray-200 object-contain"
                 />

@@ -2,6 +2,7 @@
 
 import { ShoppingBag } from 'lucide-react'
 import Image from 'next/image'
+import { resolveImageUrl } from '@/lib/utils'
 
 interface ProductCardProps {
   data: Record<string, unknown>
@@ -23,7 +24,7 @@ export default function ProductCard({ data }: ProductCardProps) {
         <div className="w-16 h-16 flex-shrink-0 rounded-lg bg-gray-100 overflow-hidden flex items-center justify-center">
           {images.length > 0 ? (
             <Image
-              src={images[0]}
+              src={resolveImageUrl(images[0])}
               alt={name}
               width={64}
               height={64}

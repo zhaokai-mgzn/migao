@@ -39,7 +39,10 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -187,6 +190,32 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         response.setColorCount(getColorCount(id));
         response.setTotalStock(getTotalStock(id));
 
+        // 查询关联颜色列表
+        List<ProductColor> colorEntities = productColorMapper.selectList(
+                new LambdaQueryWrapper<ProductColor>()
+                        .eq(ProductColor::getProductId, id)
+                        .orderByAsc(ProductColor::getSortOrder)
+                        .orderByAsc(ProductColor::getId)
+        );
+        Map<Long, String> colorNameMap = new HashMap<>();
+        if (colorEntities != null && !colorEntities.isEmpty()) {
+            List<ProductColorResponse> colorResponses = colorEntities.stream().map(c -> {
+                ProductColorResponse cr = new ProductColorResponse();
+                cr.setId(c.getId());
+                cr.setProductId(c.getProductId());
+                cr.setColorName(c.getColorName());
+                cr.setMainColorHex(c.getMainColorHex());
+                cr.setColorImageUrl(c.getColorImageUrl());
+                cr.setRemark(c.getRemark());
+                cr.setSortOrder(c.getSortOrder());
+                cr.setCreatedAt(c.getCreatedAt());
+                cr.setUpdatedAt(c.getUpdatedAt());
+                colorNameMap.put(c.getId(), c.getColorName());
+                return cr;
+            }).collect(Collectors.toList());
+            response.setColors(colorResponses);
+        }
+
         // 查询关联 SKU 列表
         List<ProductSku> skuEntities = productSkuMapper.selectList(
                 new LambdaQueryWrapper<ProductSku>()
@@ -195,21 +224,6 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                         .orderByAsc(ProductSku::getDoorWidth)
         );
         if (skuEntities != null && !skuEntities.isEmpty()) {
-            // 批量获取颜色名称
-            List<Long> colorIds = skuEntities.stream()
-                    .map(ProductSku::getColorId)
-                    .filter(cid -> cid != null)
-                    .distinct()
-                    .collect(Collectors.toList());
-            Map<Long, String> colorNameMap = new HashMap<>();
-            if (!colorIds.isEmpty()) {
-                List<ProductColor> colors = productColorMapper.selectList(
-                        new LambdaQueryWrapper<ProductColor>()
-                                .in(ProductColor::getId, colorIds)
-                );
-                colors.forEach(c -> colorNameMap.put(c.getId(), c.getColorName()));
-            }
-
             List<ProductSkuResponse> skuResponses = skuEntities.stream().map(sku -> {
                 ProductSkuResponse skuResp = new ProductSkuResponse();
                 skuResp.setId(sku.getId());
@@ -226,6 +240,16 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                 return skuResp;
             }).collect(Collectors.toList());
             response.setSkus(skuResponses);
+
+            // 从 SKU 派生 sellingMethods 与 doorWidths（保持插入顺序去重）
+            Set<String> sm = new LinkedHashSet<>();
+            Set<String> dw = new LinkedHashSet<>();
+            for (ProductSku sku : skuEntities) {
+                if (StringUtils.hasText(sku.getSellingMethod())) sm.add(sku.getSellingMethod());
+                if (StringUtils.hasText(sku.getDoorWidth())) dw.add(sku.getDoorWidth());
+            }
+            response.setSellingMethods(new ArrayList<>(sm));
+            response.setDoorWidths(new ArrayList<>(dw));
         }
 
         return response;
@@ -263,6 +287,11 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
 
         // 保存商品
         productMapper.insert(product);
+
+        // 保存销售信息（颜色 + SKU）
+        saveColorsAndSkus(product.getId(), tenantId,
+                request.getColors(), request.getSkus());
+
         log.info("创建商品成功: id={}, name={}", product.getId(), product.getName());
 
         return getProductById(product.getId(), tenantId);
@@ -298,9 +327,89 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         product.setEditedAt(OffsetDateTime.now());
 
         productMapper.updateById(product);
+
+        // 更新销售信息（先删后插）：仅当请求中包含 colors/skus 字段时才更新，避免误清空
+        if (request.getColors() != null || request.getSkus() != null) {
+            // 删除旧颜色和旧 SKU
+            productSkuMapper.delete(new LambdaQueryWrapper<ProductSku>()
+                    .eq(ProductSku::getProductId, id));
+            productColorMapper.delete(new LambdaQueryWrapper<ProductColor>()
+                    .eq(ProductColor::getProductId, id));
+            // 重新保存
+            saveColorsAndSkus(id, tenantId, request.getColors(), request.getSkus());
+        }
+
         log.info("更新商品成功: id={}, name={}", id, product.getName());
 
         return getProductById(id, tenantId);
+    }
+
+    /**
+     * 保存商品的颜色与 SKU 数据
+     *
+     * 1. 先批量插入 colors，每条由数据库生成主键，构建 前端临时ID -> DB主键 映射
+     * 2. 再批量插入 skus，使用映射替换 colorId
+     * 3. 仅在 colors / skus 任一非空时执行；空集合或 null 则跳过
+     */
+    private void saveColorsAndSkus(String productId, Long tenantId,
+                                    List<ProductColorInput> colorInputs,
+                                    List<ProductSkuInput> skuInputs) {
+        if ((colorInputs == null || colorInputs.isEmpty())
+                && (skuInputs == null || skuInputs.isEmpty())) {
+            return;
+        }
+
+        // 前端临时 colorId -> DB 真实 colorId
+        Map<Long, Long> colorIdMap = new LinkedHashMap<>();
+
+        if (colorInputs != null) {
+            int idx = 0;
+            for (ProductColorInput input : colorInputs) {
+                if (input == null) continue;
+                ProductColor entity = new ProductColor();
+                entity.setTenantId(tenantId);
+                entity.setProductId(productId);
+                entity.setColorName(input.getColorName());
+                entity.setMainColorHex(input.getMainColorHex());
+                entity.setColorImageUrl(input.getColorImageUrl());
+                entity.setRemark(input.getRemark());
+                entity.setSortOrder(input.getSortOrder() != null ? input.getSortOrder() : idx);
+                productColorMapper.insert(entity);
+                if (input.getId() != null) {
+                    colorIdMap.put(input.getId(), entity.getId());
+                }
+                idx++;
+            }
+        }
+
+        if (skuInputs != null) {
+            for (ProductSkuInput input : skuInputs) {
+                if (input == null) continue;
+                if (!StringUtils.hasText(input.getSellingMethod())
+                        || !StringUtils.hasText(input.getDoorWidth())) {
+                    continue;
+                }
+                Long mappedColorId = null;
+                if (input.getColorId() != null) {
+                    mappedColorId = colorIdMap.getOrDefault(input.getColorId(), input.getColorId());
+                    // 若映射后非法（前端临时ID未在 colorIdMap 中且其本身为负数），则跳过
+                    if (mappedColorId != null && mappedColorId <= 0) {
+                        continue;
+                    }
+                }
+                ProductSku entity = new ProductSku();
+                entity.setTenantId(tenantId);
+                entity.setProductId(productId);
+                entity.setColorId(mappedColorId);
+                entity.setSellingMethod(input.getSellingMethod());
+                entity.setDoorWidth(input.getDoorWidth());
+                entity.setPrice(input.getPrice() != null ? input.getPrice() : BigDecimal.ZERO);
+                entity.setStock(input.getStock() != null ? input.getStock() : 0);
+                entity.setSkuCode(input.getSkuCode());
+                entity.setSalesCount(0);
+                productSkuMapper.insert(entity);
+            }
+        }
     }
 
     /**

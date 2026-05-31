@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Plus, Tags, X, Star } from 'lucide-react'
 import { toast } from 'sonner'
 import { customerApi } from '@/lib/api'
+import { resolveImageUrl } from '@/lib/utils'
 import { Table, Pagination, Modal, Button, Badge, SearchBar } from '@/components/ui'
 import type { TableColumn } from '@/components/ui'
 import type { Customer, CustomerTag, CustomerTagFormData, CustomerChannel, CustomerListParams } from '@/types'
@@ -172,7 +173,7 @@ export default function CustomersPage() {
     if (avatarSrc) {
       return (
         <img
-          src={avatarSrc}
+          src={resolveImageUrl(avatarSrc)}
           alt={getDisplayName(customer)}
           className="w-9 h-9 rounded-full object-cover"
         />

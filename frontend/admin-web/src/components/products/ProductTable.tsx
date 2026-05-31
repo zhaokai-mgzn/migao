@@ -3,7 +3,7 @@
 import { Table, Badge, Pagination } from '@/components/ui'
 import type { TableColumn } from '@/components/ui'
 import Image from 'next/image'
-import { cn } from '@/lib/utils'
+import { cn, resolveImageUrl } from '@/lib/utils'
 import type { Product, ProductStatus } from '@/types'
 import { ProductStatusLabels } from '@/types'
 
@@ -142,7 +142,7 @@ export default function ProductTable({
           <div className="w-10 h-10 rounded-md overflow-hidden bg-gray-100 flex-shrink-0 border border-gray-200">
             {record.images && record.images.length > 0 ? (
               <Image
-                src={record.images[0]}
+                src={resolveImageUrl(record.images[0])}
                 alt={record.name}
                 width={40}
                 height={40}

@@ -62,6 +62,10 @@ export default function EditProductPage() {
     detailImages: product.detailImages || [],
     specifications: product.specifications,
     processingItems: product.processingItems,
+    colors: product.colors || [],
+    sellingMethods: product.sellingMethods || [],
+    doorWidths: product.doorWidths || [],
+    skus: product.skus || [],
   }
 
   return (

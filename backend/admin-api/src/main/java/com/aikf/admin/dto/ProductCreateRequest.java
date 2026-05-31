@@ -62,4 +62,26 @@ public class ProductCreateRequest {
      * 库存预警阈值，默认 10
      */
     private Integer stockWarningThreshold = 10;
+
+    // ========== 销售信息（颜色 / 售卖方式 / 规格尺寸 / SKU） ==========
+
+    /**
+     * 颜色分类列表
+     */
+    private List<ProductColorInput> colors;
+
+    /**
+     * 售卖方式列表（如 bulk_cut / full_roll）
+     */
+    private List<String> sellingMethods;
+
+    /**
+     * 规格尺寸列表（如 2.8m / 3.2m / 3.4m）
+     */
+    private List<String> doorWidths;
+
+    /**
+     * SKU 列表
+     */
+    private List<ProductSkuInput> skus;
 }

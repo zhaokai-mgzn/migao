@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import Image from 'next/image'
 import { Button, Select } from '@/components/ui'
 import { fileApi } from '@/lib/api'
+import { resolveImageUrl } from '@/lib/utils'
 import type { ProductColor, ProductSku, SellingMethod } from '@/types'
 import { SellingMethodLabels } from '@/types'
 
@@ -663,7 +664,7 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
                                 <div className="w-10 h-10 shrink-0 rounded overflow-hidden border border-gray-200 bg-gray-50">
                                   {color.colorImageUrl && color.colorImageUrl.trim() !== '' ? (
                                     <Image
-                                      src={color.colorImageUrl}
+                                      src={resolveImageUrl(color.colorImageUrl)}
                                       alt={color.colorName || ''}
                                       width={40}
                                       height={40}
@@ -846,7 +847,7 @@ function ColorImage({
       title={url ? '点击替换图片' : '点击上传图片'}
     >
       {url && url.trim() !== '' ? (
-        <Image src={url} alt="color" width={36} height={36} className="w-full h-full object-cover" unoptimized />
+        <Image src={resolveImageUrl(url)} alt="color" width={36} height={36} className="w-full h-full object-cover" unoptimized />
       ) : (
         <ImagePlus className="w-4 h-4 text-gray-400" />
       )}

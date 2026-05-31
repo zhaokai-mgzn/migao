@@ -130,6 +130,12 @@ export interface Product {
   pricingUnit?: string
   // SKU 列表（详情接口返回）
   skus?: ProductSku[]
+  // 商品颜色列表
+  colors?: ProductColor[]
+  // 售卖方式列表
+  sellingMethods?: SellingMethod[]
+  // 门幅列表
+  doorWidths?: string[]
   createdAt?: string
   updatedAt?: string
 }

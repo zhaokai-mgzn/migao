@@ -6,6 +6,7 @@ import { ArrowLeft, Search, Package, User, Receipt, Settings2, Plus, Trash2 } fr
 import { toast } from 'sonner'
 import { orderApi, productApi } from '@/lib/api'
 import type { ProductProcessingItem } from '@/lib/api'
+import { resolveImageUrl } from '@/lib/utils'
 import { Button, Card, Input, Modal } from '@/components/ui'
 import type { Product, OrderItemFormData } from '@/types'
 
@@ -685,7 +686,7 @@ export default function NewOrderPage() {
                     {p.images?.[0] ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
-                        src={p.images[0]}
+                        src={resolveImageUrl(p.images[0])}
                         alt={p.name}
                         className="w-12 h-12 rounded object-cover bg-gray-50 border border-gray-200 shrink-0"
                       />
@@ -793,7 +794,7 @@ function LineItemBlock({
               {line.product.images?.[0] ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={line.product.images[0]}
+                  src={resolveImageUrl(line.product.images[0])}
                   alt={line.product.name}
                   className="w-14 h-14 rounded object-cover bg-white border border-gray-200"
                 />
