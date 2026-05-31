@@ -19,11 +19,29 @@ interface SearchState {
   hasProcessing: '' | 'true' | 'false'
 }
 
+// 将 Date 格式化为 YYYY-MM-DD（与 <input type="date"> 及后端 OrderListParams 一致）
+function formatDate(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+// 默认下单时间范围：最近一个月（开始日期 = 今天往前推一个月，结束日期 = 今天）
+function getDefaultDateRange(): { startDate: string; endDate: string } {
+  const end = new Date()
+  const start = new Date()
+  start.setMonth(start.getMonth() - 1)
+  return { startDate: formatDate(start), endDate: formatDate(end) }
+}
+
+const DEFAULT_DATE_RANGE = getDefaultDateRange()
+
 const EMPTY_SEARCH: SearchState = {
   orderId: '',
   receiver: '',
-  startDate: '',
-  endDate: '',
+  startDate: DEFAULT_DATE_RANGE.startDate,
+  endDate: DEFAULT_DATE_RANGE.endDate,
   productCode: '',
   productTitle: '',
   hasProcessing: '',
@@ -57,8 +75,8 @@ export default function OrdersPage() {
   // 表单输入状态（未提交）
   const [orderId, setOrderId] = useState('')
   const [receiver, setReceiver] = useState('')
-  const [startDate, setStartDate] = useState('')
-  const [endDate, setEndDate] = useState('')
+  const [startDate, setStartDate] = useState(DEFAULT_DATE_RANGE.startDate)
+  const [endDate, setEndDate] = useState(DEFAULT_DATE_RANGE.endDate)
   const [productCode, setProductCode] = useState('')
   const [productTitle, setProductTitle] = useState('')
   const [hasProcessing, setHasProcessing] = useState<'' | 'true' | 'false'>('')
@@ -94,6 +112,10 @@ export default function OrdersPage() {
         page: current,
         size: pageSize,
       }
+
+      // 下单时间范围（YYYY-MM-DD）
+      if (search.startDate) apiParams.startDate = search.startDate
+      if (search.endDate) apiParams.endDate = search.endDate
 
       const keywordCandidates = [
         search.orderId,
@@ -150,8 +172,8 @@ export default function OrdersPage() {
   const handleReset = () => {
     setOrderId('')
     setReceiver('')
-    setStartDate('')
-    setEndDate('')
+    setStartDate(DEFAULT_DATE_RANGE.startDate)
+    setEndDate(DEFAULT_DATE_RANGE.endDate)
     setProductCode('')
     setProductTitle('')
     setHasProcessing('')
