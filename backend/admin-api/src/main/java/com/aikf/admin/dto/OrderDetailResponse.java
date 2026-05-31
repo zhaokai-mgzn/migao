@@ -124,6 +124,11 @@ public class OrderDetailResponse {
         private BigDecimal subtotal;
 
         /**
+         * 金额 = unitPrice * quantity（前端展示用，后端从 unitPrice 与 quantity 计算）
+         */
+        private BigDecimal amount;
+
+        /**
          * 创建时间
          */
         private OffsetDateTime createdAt;

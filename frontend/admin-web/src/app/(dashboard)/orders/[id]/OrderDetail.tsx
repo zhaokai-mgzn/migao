@@ -38,6 +38,22 @@ function calcCountdown(deadline?: string): { h: number; m: number; s: number; ex
   return { h, m, s, expired: false }
 }
 
+// 安全获取明细金额：后端未返回 amount 时依次回退到 subtotal 或 unitPrice*quantity
+function getItemAmount(item: OrderItem): number {
+  if (typeof item.amount === 'number' && !Number.isNaN(item.amount)) return item.amount
+  if (typeof item.subtotal === 'number' && !Number.isNaN(item.subtotal)) return item.subtotal
+  const unit = typeof item.unitPrice === 'number' ? item.unitPrice : 0
+  const qty = typeof item.quantity === 'number' ? item.quantity : 0
+  return unit * qty
+}
+
+function getProcessingItemAmount(item: { amount?: number; unitPrice?: number; quantity?: number }): number {
+  if (typeof item.amount === 'number' && !Number.isNaN(item.amount)) return item.amount
+  const unit = typeof item.unitPrice === 'number' ? item.unitPrice : 0
+  const qty = typeof item.quantity === 'number' ? item.quantity : 0
+  return unit * qty
+}
+
 // 商品分组：同一 productId（或 productName）合并为一组（实现 rowspan 视觉效果）
 interface ProductGroup {
   key: string
@@ -61,7 +77,7 @@ function groupItems(items?: OrderItem[]): ProductGroup[] {
     }
     const group = map.get(key)!
     group.rows.push(item)
-    group.groupTotal += item.amount || 0
+    group.groupTotal += getItemAmount(item)
   })
   return Array.from(map.values())
 }
@@ -126,7 +142,7 @@ export default function OrderDetailPage() {
 
   const productGroups = useMemo(() => groupItems(order?.items), [order?.items])
   const processingTotal = useMemo(
-    () => (order?.processingItems || []).reduce((sum, p) => sum + (p.amount || 0), 0),
+    () => (order?.processingItems || []).reduce((sum, p) => sum + getProcessingItemAmount(p), 0),
     [order?.processingItems]
   )
 
@@ -389,7 +405,7 @@ function ProductTable({ groups }: { groups: ProductGroup[] }) {
                   {row.quantity}
                 </Td>
                 <Td align="right" className="text-primary-600 font-medium">
-                  {formatAmount(row.amount)}
+                  {formatAmount(getItemAmount(row))}
                 </Td>
                 {rowIdx === 0 && (
                   <td
@@ -436,7 +452,7 @@ function ProcessingTable({
                 {item.quantity}
               </Td>
               <Td align="right" className="text-red-500 font-medium">
-                {formatAmount(item.amount)}
+                {formatAmount(getProcessingItemAmount(item))}
               </Td>
               {idx === 0 && (
                 <td

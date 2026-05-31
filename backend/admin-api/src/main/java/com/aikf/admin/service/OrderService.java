@@ -133,9 +133,9 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      */
     @Transactional(rollbackFor = Exception.class)
     public OrderDetailResponse createOrder(OrderCreateRequest request, Long tenantId) {
-        // 计算总金额
+        // 计算总金额：优先使用 subtotal，若为 null 则回退 unitPrice * quantity，避免 totalAmount=0
         BigDecimal totalAmount = request.getItems().stream()
-                .map(OrderCreateRequest.OrderItemRequest::getSubtotal)
+                .map(this::resolveItemSubtotal)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         // 创建订单实体
@@ -164,7 +164,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             item.setWidth(itemRequest.getWidth());
             item.setHeight(itemRequest.getHeight());
             item.setProcessingInfo(itemRequest.getProcessingInfo());
-            item.setSubtotal(itemRequest.getSubtotal());
+            item.setSubtotal(resolveItemSubtotal(itemRequest));
             orderItemMapper.insert(item);
         }
 
@@ -301,11 +301,31 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     }
 
     /**
+     * 计算/解析订单明细小计：优先使用请求中的 subtotal，若为 null 则回退 unitPrice * quantity。
+     * 避免前端未传 subtotal 时 totalAmount 被记录为 0 的问题。
+     */
+    private BigDecimal resolveItemSubtotal(OrderCreateRequest.OrderItemRequest itemRequest) {
+        if (itemRequest.getSubtotal() != null) {
+            return itemRequest.getSubtotal();
+        }
+        if (itemRequest.getUnitPrice() != null && itemRequest.getQuantity() != null) {
+            return itemRequest.getUnitPrice().multiply(BigDecimal.valueOf(itemRequest.getQuantity()));
+        }
+        return BigDecimal.ZERO;
+    }
+
+    /**
      * 转换为订单明细响应 DTO
      */
     private OrderDetailResponse.OrderItemResponse convertToItemResponse(OrderItem item) {
         OrderDetailResponse.OrderItemResponse response = new OrderDetailResponse.OrderItemResponse();
         BeanUtils.copyProperties(item, response);
+        // 计算 amount = unitPrice * quantity（优先），否则回退 subtotal
+        if (item.getUnitPrice() != null && item.getQuantity() != null) {
+            response.setAmount(item.getUnitPrice().multiply(BigDecimal.valueOf(item.getQuantity())));
+        } else {
+            response.setAmount(item.getSubtotal());
+        }
         return response;
     }
 
