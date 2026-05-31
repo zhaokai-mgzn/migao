@@ -7,6 +7,7 @@ import Image from 'next/image'
 import { Button, Badge, Loading } from '@/components/ui'
 import { productApi } from '@/lib/api'
 import { useRouteId } from '@/lib/use-route-id'
+import { resolveImageUrl } from '@/lib/utils'
 import { toast } from 'sonner'
 import type { Product, ProductStatus, ProductSku } from '@/types'
 import { ProductStatusLabels, PricingTypeLabels, SellingMethodLabels } from '@/types'
@@ -181,7 +182,7 @@ export default function ProductDetailPage() {
                     className="w-full aspect-square rounded-lg overflow-hidden bg-white cursor-pointer"
                     onClick={() => setPreviewImg(product.images[0])}
                   >
-                    <Image src={product.images[0]} alt={product.name} width={400} height={400} className="w-full h-full object-cover" unoptimized />
+                    <Image src={resolveImageUrl(product.images[0])} alt={product.name} width={400} height={400} className="w-full h-full object-cover" unoptimized />
                   </div>
                 )}
                 {/* Detail images grid */}
@@ -193,7 +194,7 @@ export default function ProductDetailPage() {
                         className="aspect-square rounded-md overflow-hidden bg-white cursor-pointer"
                         onClick={() => setPreviewImg(url)}
                       >
-                        <Image src={url} alt={`详情图 ${i + 1}`} width={200} height={200} className="w-full h-full object-cover" unoptimized />
+                        <Image src={resolveImageUrl(url)} alt={`详情图 ${i + 1}`} width={200} height={200} className="w-full h-full object-cover" unoptimized />
                       </div>
                     ))}
                   </div>
@@ -343,7 +344,7 @@ export default function ProductDetailPage() {
           className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4 cursor-pointer"
           onClick={() => setPreviewImg(null)}
         >
-          <Image src={previewImg} alt="预览" width={1200} height={900} className="max-w-full max-h-[85vh] object-contain rounded-lg" unoptimized />
+          <Image src={resolveImageUrl(previewImg)} alt="预览" width={1200} height={900} className="max-w-full max-h-[85vh] object-contain rounded-lg" unoptimized />
         </div>
       )}
     </div>

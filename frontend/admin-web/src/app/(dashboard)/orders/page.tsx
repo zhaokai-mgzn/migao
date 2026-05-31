@@ -302,7 +302,7 @@ export default function OrdersPage() {
 
       {/* 查询区域 */}
       <div className="bg-white rounded-lg border border-gray-200 p-5">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-4 mb-4">
+        <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_1.5fr] gap-x-6 gap-y-4 mb-4">
           {/* 订单ID */}
           <div className="flex items-center gap-2">
             <FieldLabel>订单ID</FieldLabel>
@@ -331,7 +331,7 @@ export default function OrdersPage() {
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
               placeholder="开始日期"
-              className="flex-1 min-w-0 h-9 px-3 rounded border border-gray-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+              className="flex-1 min-w-[130px] h-9 px-3 rounded border border-gray-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
             />
             <span className="text-gray-400 text-sm">至</span>
             <input
@@ -339,7 +339,7 @@ export default function OrdersPage() {
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
               placeholder="结束日期"
-              className="flex-1 min-w-0 h-9 px-3 rounded border border-gray-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+              className="flex-1 min-w-[130px] h-9 px-3 rounded border border-gray-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
             />
           </div>
         </div>

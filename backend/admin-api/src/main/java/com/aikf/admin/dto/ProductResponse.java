@@ -111,6 +111,21 @@ public class ProductResponse {
     private BigDecimal salesAmount;
 
     /**
+     * 颜色分类列表（详情接口返回）
+     */
+    private List<ProductColorResponse> colors;
+
+    /**
+     * 售卖方式列表（详情接口返回，去重后从 SKU 派生）
+     */
+    private List<String> sellingMethods;
+
+    /**
+     * 规格尺寸列表（详情接口返回，去重后从 SKU 派生）
+     */
+    private List<String> doorWidths;
+
+    /**
      * SKU列表（详情接口返回）
      */
     private List<ProductSkuResponse> skus;

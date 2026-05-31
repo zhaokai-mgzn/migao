@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback } from 'react'
 import { Upload, X, GripVertical, Loader2, ImageIcon } from 'lucide-react'
 import Image from 'next/image'
-import { cn } from '@/lib/utils'
+import { cn, resolveImageUrl } from '@/lib/utils'
 import { fileApi } from '@/lib/api'
 import { toast } from 'sonner'
 
@@ -193,7 +193,7 @@ export default function ImageUploader({
           >
             {url && typeof url === 'string' && url.trim() !== '' ? (
               <Image
-                src={url}
+                src={resolveImageUrl(url)}
                 alt={`图片 ${index + 1}`}
                 width={96}
                 height={96}
@@ -275,7 +275,7 @@ export default function ImageUploader({
         >
           <div className="relative max-w-4xl max-h-[90vh]">
             {previewUrl && typeof previewUrl === 'string' && previewUrl.trim() !== '' && (
-              <Image src={previewUrl} alt="预览" width={1200} height={900} className="max-w-full max-h-[85vh] object-contain rounded-lg" unoptimized />
+              <Image src={resolveImageUrl(previewUrl)} alt="预览" width={1200} height={900} className="max-w-full max-h-[85vh] object-contain rounded-lg" unoptimized />
             )}
             <button
               onClick={() => setPreviewUrl(null)}

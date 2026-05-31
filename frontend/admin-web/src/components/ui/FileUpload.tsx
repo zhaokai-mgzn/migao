@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback } from 'react'
 import { Upload, X, File, Image as ImageIcon, FileText, Loader2 } from 'lucide-react'
 import NextImage from 'next/image'
-import { cn } from '@/lib/utils'
+import { cn, resolveImageUrl } from '@/lib/utils'
 import { fileApi } from '@/lib/api'
 import { toast } from 'sonner'
 import type { UploadedFile } from '@/types'
@@ -180,7 +180,7 @@ export default function FileUpload({
               {/* Thumbnail or icon */}
               {isImageType(file.type) ? (
                 <NextImage
-                  src={file.url}
+                  src={resolveImageUrl(file.url)}
                   alt={file.name}
                   width={40}
                   height={40}
@@ -289,7 +289,7 @@ export default function FileUpload({
           onClick={() => setPreviewUrl(null)}
         >
           <div className="relative max-w-4xl max-h-[90vh]">
-            <NextImage src={previewUrl} alt="预览" width={1200} height={900} className="max-w-full max-h-[85vh] object-contain rounded-lg" unoptimized />
+            <NextImage src={resolveImageUrl(previewUrl)} alt="预览" width={1200} height={900} className="max-w-full max-h-[85vh] object-contain rounded-lg" unoptimized />
             <button
               onClick={() => setPreviewUrl(null)}
               className="absolute -top-3 -right-3 p-1.5 bg-white rounded-full shadow-lg text-gray-600 hover:text-gray-900"

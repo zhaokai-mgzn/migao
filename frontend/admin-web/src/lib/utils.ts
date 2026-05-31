@@ -6,6 +6,32 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+/**
+ * 解析后端返回的图片 URL 为可访问的绝对地址。
+ *
+ * 后端通常返回相对路径（如 `/api/files/static/products/xxx.png`），
+ * 但前端是 Next.js 静态导出部署在 OSS / CDN 上，与后端 API 不同源，
+ * 需要拼接 `NEXT_PUBLIC_API_BASE_URL` 才能访问到图片。
+ *
+ * 处理规则：
+ * - 空值 / 非字符串：原样返回（由调用方处理空状态）
+ * - data: / blob: / http(s): 协议：原样返回
+ * - 以 `/` 开头的相对路径：拼接 API base URL
+ * - 其他情况：原样返回
+ */
+export function resolveImageUrl(url?: string | null): string {
+  if (!url || typeof url !== 'string') return ''
+  const trimmed = url.trim()
+  if (!trimmed) return ''
+  if (/^(https?:|data:|blob:)/i.test(trimmed)) return trimmed
+  if (trimmed.startsWith('//')) return trimmed
+  if (trimmed.startsWith('/')) {
+    const base = (process.env.NEXT_PUBLIC_API_BASE_URL || '').replace(/\/$/, '')
+    return base ? `${base}${trimmed}` : trimmed
+  }
+  return trimmed
+}
+
 const WEEKDAY_NAMES = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
 
 /**

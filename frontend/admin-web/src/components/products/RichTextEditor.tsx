@@ -16,7 +16,7 @@ import {
   Type,
   Loader2,
 } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, resolveImageUrl } from '@/lib/utils'
 import { fileApi } from '@/lib/api'
 import { toast } from 'sonner'
 
@@ -134,11 +134,12 @@ export default function RichTextEditor({
     try {
       const res = await fileApi.uploadFile(file, uploadDir)
       const url = res.data.data.url
+      const renderUrl = resolveImageUrl(url)
       editorRef.current?.focus()
       document.execCommand(
         'insertHTML',
         false,
-        `<img src="${url}" alt="" style="max-width:100%;height:auto;border-radius:6px;" />`
+        `<img src="${renderUrl}" alt="" style="max-width:100%;height:auto;border-radius:6px;" />`
       )
       handleInput()
     } catch {
