@@ -33,6 +33,11 @@ public class Product {
      */
     private String skuCode;
 
+    /**
+     * 计价单位（米/件/套等）
+     */
+    private String unit;
+
     private String categoryId;
 
     private BigDecimal basePrice;

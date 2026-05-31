@@ -136,6 +136,8 @@ export interface Product {
   sellingMethods?: SellingMethod[]
   // 门幅列表
   doorWidths?: string[]
+  // 加工项配置（详情接口返回，编辑表单回填使用）
+  processingItemConfigs?: ProductProcessingItemConfig[]
   createdAt?: string
   updatedAt?: string
 }

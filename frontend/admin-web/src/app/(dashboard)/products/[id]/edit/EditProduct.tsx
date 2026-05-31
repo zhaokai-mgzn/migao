@@ -50,6 +50,7 @@ export default function EditProductPage() {
   const initialData: Partial<ProductFormData> = {
     name: product.name,
     sku: product.sku,
+    skuCode: product.skuCode,
     brand: product.brand,
     categoryId: product.categoryId,
     description: product.description,
@@ -62,6 +63,7 @@ export default function EditProductPage() {
     detailImages: product.detailImages || [],
     specifications: product.specifications,
     processingItems: product.processingItems,
+    processingItemConfigs: product.processingItemConfigs || [],
     colors: product.colors || [],
     sellingMethods: product.sellingMethods || [],
     doorWidths: product.doorWidths || [],
@@ -70,10 +72,6 @@ export default function EditProductPage() {
 
   return (
     <div>
-      <div className="px-6 pt-6 pb-2">
-        <h1 className="text-xl font-bold text-gray-900">编辑商品</h1>
-        <p className="text-sm text-gray-500 mt-1">修改商品 {product.name} 的信息</p>
-      </div>
       <ProductForm
         initialData={initialData}
         onSubmit={handleSubmit}
