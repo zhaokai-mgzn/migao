@@ -23,13 +23,23 @@ export function resolveImageUrl(url?: string | null): string {
   if (!url || typeof url !== 'string') return ''
   const trimmed = url.trim()
   if (!trimmed) return ''
+  // 完整 URL 直接返回
   if (/^(https?:|data:|blob:)/i.test(trimmed)) return trimmed
+  // 协议相对 URL
   if (trimmed.startsWith('//')) return trimmed
+  // 绝对路径（如 /api/files/static/xxx）拼接后端地址
   if (trimmed.startsWith('/')) {
     const base = (process.env.NEXT_PUBLIC_API_BASE_URL || '').replace(/\/$/, '')
     return base ? `${base}${trimmed}` : trimmed
   }
-  return trimmed
+  // 裸 object key（如 products/xxx.png）拼接 OSS 域名
+  const ossDomain = (process.env.NEXT_PUBLIC_OSS_DOMAIN || '').replace(/\/$/, '')
+  if (ossDomain) {
+    return `${ossDomain}/${trimmed}`
+  }
+  // 兜底：尝试用 API base URL 拼接
+  const base = (process.env.NEXT_PUBLIC_API_BASE_URL || '').replace(/\/$/, '')
+  return base ? `${base}/${trimmed}` : trimmed
 }
 
 const WEEKDAY_NAMES = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
