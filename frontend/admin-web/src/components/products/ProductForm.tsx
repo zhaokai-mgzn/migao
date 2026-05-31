@@ -169,7 +169,7 @@ export default function ProductForm({
   const handleAddProcessingConfig = () => {
     const next = [
       ...(form.processingItemConfigs || []),
-      { processingItemId: 0, customPrice: 0 } as ProductProcessingItemConfig,
+      { processingItemId: null, customPrice: 0 } as ProductProcessingItemConfig,
     ]
     updateField('processingItemConfigs', next)
   }
@@ -182,20 +182,23 @@ export default function ProductForm({
     const current = list[idx]
     if (!current) return
     let merged: ProductProcessingItemConfig = { ...current, ...patch }
-    if (patch.processingItemId !== undefined) {
+    if (patch.processingItemId !== undefined && patch.processingItemId !== null) {
       const ref = processingItems.find(
-        (p) => Number(p.id) === Number(patch.processingItemId)
+        (p) => String(p.id) === String(patch.processingItemId)
       )
-      // 优先采用加工项基础价；仅当用户已显式输入大于 0 的自定义价时保留
-      const hasCustomPrice =
-        current.customPrice !== undefined &&
-        current.customPrice !== null &&
-        Number(current.customPrice) > 0
-      const refPrice = Number(ref?.unitPrice ?? ref?.basePrice ?? 0) || 0
-      merged = {
-        ...merged,
-        processingItemName: ref?.name,
-        customPrice: hasCustomPrice ? Number(current.customPrice) : refPrice,
+      if (ref) {
+        // 优先采用加工项基础价；仅当用户已显式输入大于 0 的自定义价时保留
+        const hasCustomPrice =
+          current.customPrice !== undefined &&
+          current.customPrice !== null &&
+          Number(current.customPrice) > 0
+        const refPrice = Number(ref.unitPrice ?? ref.basePrice ?? 0) || 0
+        merged = {
+          ...merged,
+          processingItemId: patch.processingItemId,
+          processingItemName: ref.name,
+          customPrice: hasCustomPrice ? Number(current.customPrice) : refPrice,
+        }
       }
     }
     list[idx] = merged
@@ -544,7 +547,7 @@ export default function ProductForm({
                             label: `${p.name}（基础价 ¥${p.unitPrice ?? p.basePrice}/${p.unit}）`,
                           }))}
                           value={
-                            cfg.processingItemId
+                            cfg.processingItemId != null && cfg.processingItemId !== 0
                               ? String(cfg.processingItemId)
                               : ''
                           }
@@ -561,7 +564,11 @@ export default function ProductForm({
                           min="0"
                           step="0.01"
                           placeholder="请输入加工项价格"
-                          value={cfg.customPrice > 0 ? String(cfg.customPrice) : ''}
+                          value={
+                            cfg.customPrice != null && Number(cfg.customPrice) > 0
+                              ? String(cfg.customPrice)
+                              : ''
+                          }
                           onChange={(e) =>
                             handleUpdateProcessingConfig(idx, {
                               customPrice: parseFloat(e.target.value) || 0,

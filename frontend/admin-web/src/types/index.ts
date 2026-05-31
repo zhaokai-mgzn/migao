@@ -172,7 +172,7 @@ export type StockDeductionMode = 'on_place' | 'on_pay'
 
 // 商品加工项配置
 export interface ProductProcessingItemConfig {
-  processingItemId: number
+  processingItemId: number | null
   processingItemName?: string
   customPrice: number
 }
