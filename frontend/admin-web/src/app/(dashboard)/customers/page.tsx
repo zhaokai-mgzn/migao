@@ -16,6 +16,56 @@ const TAG_COLORS = [
   '#EC4899', '#06B6D4', '#F97316', '#14B8A6', '#6366F1',
 ]
 
+// —— 字段适配工具 ——
+// 后端 CustomerProfile 直接序列化返回，字段名为 wechatNickname / sourceChannel / avatarUrl 等。
+// 这里统一处理 name / channel / vipLevel / avatar 的兜底取值，避免 "-"/"?" 满屏。
+
+// 手机号脱敏：13880127933 -> 138****7933
+const maskPhone = (phone?: string | null): string => {
+  if (!phone) return ''
+  const p = String(phone).trim()
+  if (p.length < 7) return p
+  return p.slice(0, 3) + '****' + p.slice(-4)
+}
+
+// 客户显示名：name > wechatNickname > nickname > 脱敏手机号 > 未命名
+const getDisplayName = (c: Customer): string => {
+  const n = (c.name || c.wechatNickname || c.nickname || '').trim()
+  if (n) return n
+  if (c.phone) return maskPhone(c.phone)
+  return '未命名'
+}
+
+// 头像文字：姓名首字 > 手机号末2位 > #
+const getAvatarInitials = (c: Customer): string => {
+  const n = (c.name || c.wechatNickname || c.nickname || '').trim()
+  if (n) return n.slice(0, 1)
+  if (c.phone) return String(c.phone).slice(-2)
+  return '#'
+}
+
+// 来源渠道：兼容 channel / sourceChannel
+const getChannel = (c: Customer): CustomerChannel | undefined => {
+  const v = (c.channel || c.sourceChannel) as CustomerChannel | undefined
+  return v || undefined
+}
+
+// VIP 等级：兼容数字 / 字符串（normal/vip1/vip2/vip3）
+const getVipLevelNum = (v: number | string | null | undefined): number => {
+  if (v == null) return 0
+  if (typeof v === 'number') return v
+  const s = String(v).trim().toLowerCase()
+  if (!s || s === 'normal') return 0
+  const m = s.match(/(\d+)/)
+  return m ? Number(m[1]) : 0
+}
+
+// 标签数组：后端可能返回 null / 非数组 JSON
+const getTags = (c: Customer): CustomerTag[] => {
+  if (Array.isArray(c.tags)) return c.tags as CustomerTag[]
+  return []
+}
+
 export default function CustomersPage() {
   const [customers, setCustomers] = useState<Customer[]>([])
   const [loading, setLoading] = useState(false)
@@ -42,16 +92,18 @@ export default function CustomersPage() {
   }, [])
 
   // 加载数据
+  // 后端接收参数名为 sourceChannel 与字符串 vipLevel（vip1/vip2/vip3/normal），这里适配传参。
   const loadData = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await customerApi.getCustomers({
+      const params: Record<string, unknown> = {
         page: current,
         size: pageSize,
         keyword: searchParams.keyword || undefined,
-        channel: (searchParams.channel as CustomerChannel) || undefined,
-        vipLevel: searchParams.vipLevel ? Number(searchParams.vipLevel) : undefined,
-      })
+      }
+      if (searchParams.channel) params.sourceChannel = searchParams.channel
+      if (searchParams.vipLevel) params.vipLevel = searchParams.vipLevel
+      const res = await customerApi.getCustomers(params as CustomerListParams)
       const data = res.data.data
       setCustomers(data?.items || [])
       setTotal(data?.total || 0)
@@ -88,10 +140,12 @@ export default function CustomersPage() {
   // 获取渠道 Badge
   const getChannelBadge = (channel: CustomerChannel | undefined | null) => {
     if (!channel) return <span className="text-xs text-gray-400">-</span>
-    const variantMap: Record<CustomerChannel, 'success' | 'info' | 'default'> = {
+    const variantMap: Record<CustomerChannel, 'success' | 'info' | 'default' | 'warning'> = {
       wechat_mini: 'success',
       wechat_mp: 'info',
       web: 'default',
+      h5: 'info',
+      order: 'warning',
     }
     return <Badge variant={variantMap[channel] || 'default'}>{CustomerChannelLabels[channel] || channel}</Badge>
   }
@@ -108,11 +162,21 @@ export default function CustomersPage() {
     )
   }
 
-  // 头像
+  // 头像：优先头像图片 > 姓名首字 > 手机号末2位 > 默认 #
   const renderAvatar = (customer: Customer) => {
-    const initials = (customer.name || '?').slice(0, 1)
     const colors = ['bg-blue-500', 'bg-green-500', 'bg-purple-500', 'bg-amber-500', 'bg-rose-500']
     const colorIdx = (customer.id || '0').charCodeAt(0) % colors.length
+    const avatarSrc = customer.avatarUrl || customer.avatar
+    if (avatarSrc) {
+      return (
+        <img
+          src={avatarSrc}
+          alt={getDisplayName(customer)}
+          className="w-9 h-9 rounded-full object-cover"
+        />
+      )
+    }
+    const initials = getAvatarInitials(customer)
     return (
       <div className={`w-9 h-9 rounded-full ${colors[colorIdx]} flex items-center justify-center text-white text-sm font-medium`}>
         {initials}
@@ -172,12 +236,16 @@ export default function CustomersPage() {
     {
       key: 'name',
       title: '客户名',
-      render: (record) => (
-        <div>
-          <div className="font-medium text-gray-900">{record.name || '-'}</div>
-          {record.nickname && <div className="text-xs text-gray-500">{record.nickname}</div>}
-        </div>
-      ),
+      render: (record) => {
+        const displayName = getDisplayName(record)
+        const sub = record.nickname || (record.wechatNickname && record.wechatNickname !== displayName ? record.wechatNickname : '')
+        return (
+          <div>
+            <div className="font-medium text-gray-900">{displayName}</div>
+            {sub && <div className="text-xs text-gray-500">{sub}</div>}
+          </div>
+        )
+      },
     },
     {
       key: 'phone',
@@ -189,36 +257,39 @@ export default function CustomersPage() {
       key: 'channel',
       title: '来源渠道',
       width: '120px',
-      render: (record) => getChannelBadge(record.channel),
+      render: (record) => getChannelBadge(getChannel(record)),
     },
     {
       key: 'vipLevel',
       title: 'VIP 等级',
       width: '120px',
-      render: (record) => renderVipLevel(record.vipLevel ?? 0),
+      render: (record) => renderVipLevel(getVipLevelNum(record.vipLevel)),
     },
     {
       key: 'tags',
       title: '标签',
       width: '200px',
-      render: (record) => (
-        <div className="flex flex-wrap gap-1">
-          {(!record.tags || record.tags.length === 0) && <span className="text-xs text-gray-400">-</span>}
-          {(record.tags || []).map((tag) => (
-            <span
-              key={tag.id}
-              className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
-              style={{
-                backgroundColor: (tag.color || '#999') + '15',
-                color: tag.color || '#999',
-                border: `1px solid ${tag.color || '#999'}30`,
-              }}
-            >
-              {tag.name || ''}
-            </span>
-          ))}
-        </div>
-      ),
+      render: (record) => {
+        const tagList = getTags(record)
+        return (
+          <div className="flex flex-wrap gap-1">
+            {tagList.length === 0 && <span className="text-xs text-gray-400">-</span>}
+            {tagList.map((tag) => (
+              <span
+                key={tag.id}
+                className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
+                style={{
+                  backgroundColor: (tag.color || '#999') + '15',
+                  color: tag.color || '#999',
+                  border: `1px solid ${tag.color || '#999'}30`,
+                }}
+              >
+                {tag.name || ''}
+              </span>
+            ))}
+          </div>
+        )
+      },
     },
     {
       key: 'lastActiveAt',
@@ -238,18 +309,18 @@ export default function CustomersPage() {
         { value: 'wechat_mini', label: '微信小程序' },
         { value: 'wechat_mp', label: '公众号' },
         { value: 'web', label: 'Web' },
+        { value: 'order', label: '订单' },
       ],
     },
     {
+      // 后端 vipLevel 为字符串：normal/vip1/vip2/vip3
       key: 'vipLevel', label: 'VIP 等级', type: 'select' as const, placeholder: '请选择',
       options: [
         { value: '', label: '全部' },
-        { value: '0', label: '普通' },
-        { value: '1', label: 'VIP 1' },
-        { value: '2', label: 'VIP 2' },
-        { value: '3', label: 'VIP 3' },
-        { value: '4', label: 'VIP 4' },
-        { value: '5', label: 'VIP 5' },
+        { value: 'normal', label: '普通' },
+        { value: 'vip1', label: 'VIP 1' },
+        { value: 'vip2', label: 'VIP 2' },
+        { value: 'vip3', label: 'VIP 3' },
       ],
     },
   ]

@@ -7,18 +7,14 @@ import { processingItemApi, processingCategoryApi } from '@/lib/api'
 import { Modal, Button } from '@/components/ui'
 import type { ProcessingItem, ProcessingCategory, PricingMethod } from '@/types'
 
-// 行编辑数据类型
-interface RowData {
-  id?: string // 有id表示已保存的项
+// 弹窗内表单数据
+interface FormData {
   name: string
   unitPrice: string
   pricingMethod: PricingMethod | ''
-  discount: string // 优惠类型
-  discountQty: string // 满X件
-  discountRate: string // 折扣力度
-  isEditing: boolean
-  isNew: boolean
-  errors: Record<string, string>
+  discount: string
+  discountQty: string
+  discountRate: string
 }
 
 // 计价方式选项
@@ -39,18 +35,30 @@ const QTY_OPTIONS = Array.from({ length: 98 }, (_, i) => ({
   label: `满${i + 2}件`,
 }))
 
+const EMPTY_FORM: FormData = {
+  name: '',
+  unitPrice: '',
+  pricingMethod: '',
+  discount: '',
+  discountQty: '2',
+  discountRate: '',
+}
+
 export default function ProcessingPage() {
   const [items, setItems] = useState<ProcessingItem[]>([])
   const [categories, setCategories] = useState<ProcessingCategory[]>([])
   const [loading, setLoading] = useState(false)
-  const [rows, setRows] = useState<RowData[]>([])
   const [saving, setSaving] = useState(false)
 
-  // 确认对话框
-  const [editConfirmOpen, setEditConfirmOpen] = useState(false)
-  const [editConfirmIndex, setEditConfirmIndex] = useState<number | null>(null)
+  // 编辑弹窗
+  const [formOpen, setFormOpen] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [form, setForm] = useState<FormData>(EMPTY_FORM)
+  const [errors, setErrors] = useState<Record<string, string>>({})
+
+  // 删除确认
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
-  const [deleteConfirmIndex, setDeleteConfirmIndex] = useState<number | null>(null)
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
 
   // 加载数据
   const loadData = useCallback(async () => {
@@ -61,24 +69,8 @@ export default function ProcessingPage() {
         processingCategoryApi.getProcessingCategories(),
       ])
       const pageData = itemsRes.data?.data
-      const loadedItems = pageData?.items || []
-      setItems(loadedItems)
+      setItems(pageData?.items || [])
       setCategories(catsRes.data?.data || [])
-
-      // 将已保存的项转为行数据（只读状态）
-      const savedRows: RowData[] = loadedItems.map((item) => ({
-        id: item.id,
-        name: item.name,
-        unitPrice: String(item.unitPrice ?? item.basePrice ?? 0),
-        pricingMethod: item.pricingMethod || 'per_meter',
-        discount: '',
-        discountQty: '2',
-        discountRate: '',
-        isEditing: false,
-        isNew: false,
-        errors: {},
-      }))
-      setRows(savedRows)
     } catch (error) {
       console.error('加载数据失败:', error)
       toast.error('加载数据失败')
@@ -91,162 +83,122 @@ export default function ProcessingPage() {
     loadData()
   }, [loadData])
 
-  // 添加新行
-  const handleAddRow = () => {
-    setRows((prev) => [
-      ...prev,
-      {
-        name: '',
-        unitPrice: '',
-        pricingMethod: '',
-        discount: '',
-        discountQty: '2',
-        discountRate: '',
-        isEditing: true,
-        isNew: true,
-        errors: {},
-      },
-    ])
+  // 打开新增弹窗
+  const openCreate = () => {
+    setEditingId(null)
+    setForm(EMPTY_FORM)
+    setErrors({})
+    setFormOpen(true)
   }
 
-  // 更新行数据
-  const updateRow = (index: number, field: keyof RowData, value: string) => {
-    setRows((prev) => {
-      const updated = [...prev]
-      updated[index] = { ...updated[index], [field]: value, errors: { ...updated[index].errors, [field]: '' } }
-      return updated
+  // 打开编辑弹窗
+  const openEdit = (item: ProcessingItem) => {
+    setEditingId(item.id)
+    setForm({
+      name: item.name,
+      unitPrice: String(item.unitPrice ?? item.basePrice ?? ''),
+      pricingMethod: item.pricingMethod || 'per_meter',
+      discount: '',
+      discountQty: '2',
+      discountRate: '',
     })
+    setErrors({})
+    setFormOpen(true)
   }
 
-  // 请求编辑确认
-  const requestEdit = (index: number) => {
-    setEditConfirmIndex(index)
-    setEditConfirmOpen(true)
+  // 关闭弹窗（保存中不允许关闭）
+  const closeForm = () => {
+    if (saving) return
+    setFormOpen(false)
   }
 
-  // 确认编辑
-  const confirmEdit = () => {
-    if (editConfirmIndex !== null) {
-      setRows((prev) => {
-        const updated = [...prev]
-        updated[editConfirmIndex] = { ...updated[editConfirmIndex], isEditing: true }
-        return updated
-      })
-    }
-    setEditConfirmOpen(false)
-    setEditConfirmIndex(null)
+  // 字段变更
+  const updateField = <K extends keyof FormData>(field: K, value: FormData[K]) => {
+    setForm((prev) => ({ ...prev, [field]: value }))
+    setErrors((prev) => ({ ...prev, [field]: '' }))
   }
 
-  // 请求删除确认
-  const requestDelete = (index: number) => {
-    setDeleteConfirmIndex(index)
-    setDeleteConfirmOpen(true)
+  // 校验表单
+  const validate = (): Record<string, string> => {
+    const errs: Record<string, string> = {}
+    if (!form.name.trim()) {
+      errs.name = '请输入加工项名称'
+    } else if (form.name.trim().length > 20) {
+      errs.name = '名称不能超过20个字符'
+    }
+
+    const price = parseFloat(form.unitPrice)
+    if (!form.unitPrice.trim()) {
+      errs.unitPrice = '请输入加工项价格'
+    } else if (isNaN(price) || price < 0.1 || price > 999.99) {
+      errs.unitPrice = '价格范围 0.10 ~ 999.99'
+    } else if (form.unitPrice.includes('.') && form.unitPrice.split('.')[1]?.length > 2) {
+      errs.unitPrice = '最多2位小数'
+    }
+
+    if (!form.pricingMethod) {
+      errs.pricingMethod = '请选择计价方式'
+    }
+
+    return errs
   }
 
-  // 确认删除
-  const confirmDelete = async () => {
-    if (deleteConfirmIndex === null) return
-    const row = rows[deleteConfirmIndex]
-
-    try {
-      if (row.id && !row.isNew) {
-        // 已保存的项需调用API删除
-        await processingItemApi.deleteProcessingItem(row.id)
-      }
-      setRows((prev) => prev.filter((_, i) => i !== deleteConfirmIndex))
-      toast.success('删除成功')
-    } catch (error) {
-      toast.error('删除失败')
-    } finally {
-      setDeleteConfirmOpen(false)
-      setDeleteConfirmIndex(null)
-    }
-  }
-
-  // 校验单行
-  const validateRow = (row: RowData): Record<string, string> => {
-    const errors: Record<string, string> = {}
-    if (!row.name.trim()) {
-      errors.name = '请输入加工项名称'
-    } else if (row.name.trim().length > 20) {
-      errors.name = '名称不能超过20个字符'
-    }
-
-    const price = parseFloat(row.unitPrice)
-    if (!row.unitPrice.trim()) {
-      errors.unitPrice = '请输入加工项价格'
-    } else if (isNaN(price) || price < 0.10 || price > 999.99) {
-      errors.unitPrice = '价格范围 0.10 ~ 999.99'
-    } else if (row.unitPrice.includes('.') && row.unitPrice.split('.')[1]?.length > 2) {
-      errors.unitPrice = '最多2位小数'
-    }
-
-    if (!row.pricingMethod) {
-      errors.pricingMethod = '请选择计价方式'
-    }
-
-    return errors
-  }
-
-  // 保存修改
-  const handleSave = async () => {
-    // 找出需要保存的行（新增或编辑中的）
-    const editingRows = rows.filter((r) => r.isEditing || r.isNew)
-    if (editingRows.length === 0) {
-      toast.info('没有需要保存的修改')
-      return
-    }
-
-    // 校验所有编辑中的行
-    let hasError = false
-    const updatedRows = rows.map((row) => {
-      if (row.isEditing || row.isNew) {
-        const errors = validateRow(row)
-        if (Object.keys(errors).length > 0) {
-          hasError = true
-          return { ...row, errors }
-        }
-      }
-      return row
-    })
-    setRows(updatedRows)
-
-    if (hasError) {
-      toast.error('请修正表单中的错误')
+  // 保存
+  const handleSubmit = async () => {
+    const errs = validate()
+    if (Object.keys(errs).length > 0) {
+      setErrors(errs)
       return
     }
 
     setSaving(true)
     try {
       const defaultCategoryId = categories[0]?.id || 'default'
-
-      for (const row of updatedRows) {
-        if (!row.isEditing && !row.isNew) continue
-
-        const formData = {
-          name: row.name.trim(),
-          categoryId: defaultCategoryId,
-          pricingMethod: row.pricingMethod as PricingMethod,
-          unitPrice: parseFloat(row.unitPrice),
-          unit: row.pricingMethod === 'per_meter' ? '米' : '套',
-          status: 'active' as const,
-        }
-
-        if (row.id && !row.isNew) {
-          // 更新已有项
-          await processingItemApi.updateProcessingItem(row.id, formData)
-        } else {
-          // 创建新项
-          await processingItemApi.createProcessingItem(formData)
-        }
+      const payload = {
+        name: form.name.trim(),
+        categoryId: defaultCategoryId,
+        pricingMethod: form.pricingMethod as PricingMethod,
+        unitPrice: parseFloat(form.unitPrice),
+        unit: form.pricingMethod === 'per_meter' ? '米' : '套',
+        status: 'active' as const,
       }
 
-      toast.success('保存成功')
+      if (editingId) {
+        await processingItemApi.updateProcessingItem(editingId, payload)
+        toast.success('已更新加工项')
+      } else {
+        await processingItemApi.createProcessingItem(payload)
+        toast.success('已新增加工项')
+      }
+
+      setFormOpen(false)
       await loadData()
     } catch (error) {
-      toast.error('保存失败')
+      console.error('保存失败:', error)
+      toast.error('保存失败，请稍后重试')
     } finally {
       setSaving(false)
+    }
+  }
+
+  // 请求删除
+  const requestDelete = (id: string) => {
+    setDeleteTargetId(id)
+    setDeleteConfirmOpen(true)
+  }
+
+  // 确认删除
+  const confirmDelete = async () => {
+    if (!deleteTargetId) return
+    try {
+      await processingItemApi.deleteProcessingItem(deleteTargetId)
+      toast.success('删除成功')
+      await loadData()
+    } catch (error) {
+      toast.error('删除失败')
+    } finally {
+      setDeleteConfirmOpen(false)
+      setDeleteTargetId(null)
     }
   }
 
@@ -256,9 +208,6 @@ export default function ProcessingPage() {
     return opt?.label || method
   }
 
-  // 是否有编辑中的行
-  const hasEditingRows = rows.some((r) => r.isEditing || r.isNew)
-
   return (
     <div className="p-6">
       {/* 页面标题 */}
@@ -266,38 +215,27 @@ export default function ProcessingPage() {
 
       {/* 顶部操作栏 */}
       <div className="flex items-center justify-end gap-3 mb-4">
-        <Button onClick={handleAddRow}>
+        <Button onClick={openCreate}>
           <Plus className="w-4 h-4 mr-1.5" />
           添加加工项
         </Button>
-        <Button
-          variant="secondary"
-          onClick={handleSave}
-          loading={saving}
-          disabled={!hasEditingRows}
-        >
-          保存修改
-        </Button>
       </div>
 
-      {/* 行内编辑表格 */}
+      {/* 列表（只读） */}
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         <table className="w-full border-collapse">
           <thead>
-            <tr className="border-b border-gray-200">
+            <tr className="border-b border-gray-200 bg-gray-50/60">
+              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900 w-[30%]">
+                加工项名称
+              </th>
+              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900 w-[20%]">
+                加工项价格
+              </th>
               <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900 w-[25%]">
-                加工项名称<span className="text-red-500">*</span>
+                加工项计价方式
               </th>
-              <th className="px-4 py-3 text-left text-sm font-semibold text-blue-600 w-[15%]">
-                加工项价格<span className="text-red-500">*</span>
-              </th>
-              <th className="px-4 py-3 text-left text-sm font-semibold text-red-500 w-[20%]">
-                加工项计价方式<span className="text-red-500">*</span>
-              </th>
-              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600 w-[22%]">
-                设置优惠
-              </th>
-              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600 w-[18%]">
+              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900 w-[25%]">
                 操作
               </th>
             </tr>
@@ -305,180 +243,39 @@ export default function ProcessingPage() {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={5} className="px-4 py-12 text-center text-gray-500">
+                <td colSpan={4} className="px-4 py-12 text-center text-gray-500">
                   <div className="flex items-center justify-center gap-2">
                     <div className="w-5 h-5 border-2 border-primary-600 border-t-transparent rounded-full animate-spin" />
                     加载中...
                   </div>
                 </td>
               </tr>
-            ) : rows.length === 0 ? (
-              /* 空状态引导行 */
-              <tr className="border-b border-gray-100">
-                <td className="px-4 py-4 text-sm text-gray-400">请输入加工项名称</td>
-                <td className="px-4 py-4 text-sm text-gray-400">请输入加工项价格</td>
-                <td className="px-4 py-4 text-sm text-gray-400">
-                  <span className="inline-flex items-center gap-1">
-                    按购买套数计价 <span className="text-gray-300">▼</span>
-                  </span>
+            ) : items.length === 0 ? (
+              <tr>
+                <td colSpan={4} className="px-4 py-12 text-center text-sm text-gray-400">
+                  暂无加工项，点击右上角「添加加工项」开始创建
                 </td>
-                <td className="px-4 py-4 text-sm text-gray-400">
-                  <span className="inline-flex items-center gap-1">
-                    按金额满减 <span className="text-gray-300">▼</span>
-                  </span>
-                </td>
-                <td className="px-4 py-4 text-sm text-gray-400">删除</td>
               </tr>
             ) : (
-              rows.map((row, index) => (
-                <tr key={row.id || `new-${index}`} className="border-b border-gray-100">
-                  {/* 加工项名称 */}
-                  <td className="px-4 py-3">
-                    {row.isEditing ? (
-                      <div>
-                        <input
-                          type="text"
-                          className={`w-full h-9 px-3 rounded border text-sm placeholder:text-gray-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 ${
-                            row.errors.name ? 'border-red-500' : 'border-gray-300'
-                          }`}
-                          placeholder="请输入加工项名称"
-                          maxLength={20}
-                          value={row.name}
-                          onChange={(e) => updateRow(index, 'name', e.target.value)}
-                        />
-                        {row.errors.name && (
-                          <p className="mt-1 text-xs text-red-600">{row.errors.name}</p>
-                        )}
-                      </div>
-                    ) : (
-                      <span className="text-sm text-gray-900">{row.name}</span>
-                    )}
+              items.map((item) => (
+                <tr key={item.id} className="border-b border-gray-100 hover:bg-gray-50/40">
+                  <td className="px-4 py-3 text-sm text-gray-900">{item.name}</td>
+                  <td className="px-4 py-3 text-sm text-gray-900">
+                    {Number(item.unitPrice ?? item.basePrice ?? 0).toFixed(2)}
                   </td>
-
-                  {/* 加工项价格 */}
-                  <td className="px-4 py-3">
-                    {row.isEditing ? (
-                      <div>
-                        <input
-                          type="number"
-                          className={`w-full h-9 px-3 rounded border text-sm placeholder:text-gray-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 ${
-                            row.errors.unitPrice ? 'border-red-500' : 'border-gray-300'
-                          }`}
-                          placeholder="请输入加工项价格"
-                          step="0.01"
-                          min="0.10"
-                          max="999.99"
-                          value={row.unitPrice}
-                          onChange={(e) => updateRow(index, 'unitPrice', e.target.value)}
-                        />
-                        {row.errors.unitPrice && (
-                          <p className="mt-1 text-xs text-red-600">{row.errors.unitPrice}</p>
-                        )}
-                      </div>
-                    ) : (
-                      <span className="text-sm text-gray-900">{row.unitPrice}</span>
-                    )}
+                  <td className="px-4 py-3 text-sm text-gray-900">
+                    {getPricingMethodLabel(item.pricingMethod || '')}
                   </td>
-
-                  {/* 计价方式 */}
-                  <td className="px-4 py-3">
-                    {row.isEditing ? (
-                      <div>
-                        <select
-                          className={`w-full h-9 px-3 pr-8 rounded border bg-white text-sm appearance-none focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 ${
-                            row.errors.pricingMethod ? 'border-red-500' : 'border-gray-300'
-                          }`}
-                          value={row.pricingMethod}
-                          onChange={(e) => updateRow(index, 'pricingMethod', e.target.value)}
-                        >
-                          <option value="" disabled>
-                            请选择计价方式
-                          </option>
-                          {PRICING_METHOD_OPTIONS.map((opt) => (
-                            <option key={opt.value} value={opt.value}>
-                              {opt.label}
-                            </option>
-                          ))}
-                        </select>
-                        {row.errors.pricingMethod && (
-                          <p className="mt-1 text-xs text-red-600">{row.errors.pricingMethod}</p>
-                        )}
-                      </div>
-                    ) : (
-                      <span className="text-sm text-gray-900">
-                        {getPricingMethodLabel(row.pricingMethod)}
-                      </span>
-                    )}
-                  </td>
-
-                  {/* 设置优惠 */}
-                  <td className="px-4 py-3">
-                    {row.isEditing ? (
-                      <div className="space-y-2">
-                        <select
-                          className="w-full h-9 px-3 pr-8 rounded border border-gray-300 bg-white text-sm appearance-none focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
-                          value={row.discount}
-                          onChange={(e) => updateRow(index, 'discount', e.target.value)}
-                        >
-                          {DISCOUNT_OPTIONS.map((opt) => (
-                            <option key={opt.value} value={opt.value}>
-                              {opt.label}
-                            </option>
-                          ))}
-                        </select>
-                        {row.discount === 'amount_off' && (
-                          <div className="flex items-center gap-2">
-                            <select
-                              className="h-9 px-3 pr-8 rounded border border-gray-300 bg-white text-sm appearance-none focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
-                              value={row.discountQty}
-                              onChange={(e) => updateRow(index, 'discountQty', e.target.value)}
-                            >
-                              {QTY_OPTIONS.map((opt) => (
-                                <option key={opt.value} value={opt.value}>
-                                  {opt.label}
-                                </option>
-                              ))}
-                            </select>
-                            <div className="flex items-center">
-                              <input
-                                type="text"
-                                className="w-28 h-9 px-3 rounded-l border border-gray-300 text-sm placeholder:text-gray-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
-                                placeholder="请输入折扣力度"
-                                value={row.discountRate}
-                                onChange={(e) => updateRow(index, 'discountRate', e.target.value)}
-                              />
-                              <span className="h-9 px-2 flex items-center border border-l-0 border-gray-300 rounded-r bg-gray-50 text-sm text-gray-600">
-                                折
-                              </span>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <span className="text-sm text-gray-400">—</span>
-                    )}
-                  </td>
-
-                  {/* 操作 */}
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
-                      {!row.isNew && !row.isEditing && (
-                        <button
-                          onClick={() => requestEdit(index)}
-                          className="text-sm text-gray-700 hover:text-primary-600 transition-colors"
-                        >
-                          编辑
-                        </button>
-                      )}
                       <button
-                        onClick={() => {
-                          if (row.isNew) {
-                            // 新增行直接删除不需确认
-                            setRows((prev) => prev.filter((_, i) => i !== index))
-                          } else {
-                            requestDelete(index)
-                          }
-                        }}
+                        onClick={() => openEdit(item)}
+                        className="text-sm text-gray-700 hover:text-primary-600 transition-colors"
+                      >
+                        编辑
+                      </button>
+                      <button
+                        onClick={() => requestDelete(item.id)}
                         className="text-sm text-gray-700 hover:text-red-600 transition-colors"
                       >
                         删除
@@ -492,25 +289,133 @@ export default function ProcessingPage() {
         </table>
       </div>
 
-      {/* 编辑确认对话框 */}
+      {/* 新增/编辑加工项弹窗 */}
       <Modal
-        open={editConfirmOpen}
-        onClose={() => setEditConfirmOpen(false)}
-        title="确认编辑"
+        open={formOpen}
+        onClose={closeForm}
+        title={editingId ? '编辑加工项' : '新增加工项'}
+        width={560}
+        maskClosable={!saving}
         footer={
           <>
-            <Button variant="secondary" onClick={() => setEditConfirmOpen(false)}>
+            <Button variant="secondary" onClick={closeForm} disabled={saving}>
               取消
             </Button>
-            <Button onClick={confirmEdit}>
-              确定
+            <Button onClick={handleSubmit} loading={saving}>
+              保存
             </Button>
           </>
         }
       >
-        <p className="text-gray-600 text-sm leading-relaxed">
-          编辑后，现有商品已关联的加工项老数据将被编辑后的新数据覆盖，但不会影响买家已经提交的历史订单数据。确定要进行编辑吗？
-        </p>
+        <div className="space-y-4">
+          {/* 加工项名称 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-800 mb-1.5">
+              加工项名称<span className="text-red-500 ml-0.5">*</span>
+            </label>
+            <input
+              type="text"
+              className={`w-full h-9 px-3 rounded border text-sm placeholder:text-gray-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 ${
+                errors.name ? 'border-red-500' : 'border-gray-300'
+              }`}
+              placeholder="请输入加工项名称（最多20个字符）"
+              maxLength={20}
+              value={form.name}
+              onChange={(e) => updateField('name', e.target.value)}
+            />
+            {errors.name && <p className="mt-1 text-xs text-red-600">{errors.name}</p>}
+          </div>
+
+          {/* 加工项价格 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-800 mb-1.5">
+              加工项价格<span className="text-red-500 ml-0.5">*</span>
+            </label>
+            <input
+              type="number"
+              className={`w-full h-9 px-3 rounded border text-sm placeholder:text-gray-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 ${
+                errors.unitPrice ? 'border-red-500' : 'border-gray-300'
+              }`}
+              placeholder="请输入价格（0.10 ~ 999.99）"
+              step="0.01"
+              min="0.10"
+              max="999.99"
+              value={form.unitPrice}
+              onChange={(e) => updateField('unitPrice', e.target.value)}
+            />
+            {errors.unitPrice && <p className="mt-1 text-xs text-red-600">{errors.unitPrice}</p>}
+          </div>
+
+          {/* 计价方式 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-800 mb-1.5">
+              加工项计价方式<span className="text-red-500 ml-0.5">*</span>
+            </label>
+            <select
+              className={`w-full h-9 px-3 pr-8 rounded border bg-white text-sm appearance-none focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 ${
+                errors.pricingMethod ? 'border-red-500' : 'border-gray-300'
+              }`}
+              value={form.pricingMethod}
+              onChange={(e) => updateField('pricingMethod', e.target.value as PricingMethod | '')}
+            >
+              <option value="" disabled>
+                请选择计价方式
+              </option>
+              {PRICING_METHOD_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+            {errors.pricingMethod && (
+              <p className="mt-1 text-xs text-red-600">{errors.pricingMethod}</p>
+            )}
+          </div>
+
+          {/* 设置优惠 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-800 mb-1.5">设置优惠</label>
+            <select
+              className="w-full h-9 px-3 pr-8 rounded border border-gray-300 bg-white text-sm appearance-none focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+              value={form.discount}
+              onChange={(e) => updateField('discount', e.target.value)}
+            >
+              {DISCOUNT_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+
+            {form.discount === 'amount_off' && (
+              <div className="mt-2 flex items-center gap-2">
+                <select
+                  className="h-9 px-3 pr-8 rounded border border-gray-300 bg-white text-sm appearance-none focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                  value={form.discountQty}
+                  onChange={(e) => updateField('discountQty', e.target.value)}
+                >
+                  {QTY_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+                <div className="flex items-center">
+                  <input
+                    type="text"
+                    className="w-32 h-9 px-3 rounded-l border border-gray-300 text-sm placeholder:text-gray-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                    placeholder="请输入折扣力度"
+                    value={form.discountRate}
+                    onChange={(e) => updateField('discountRate', e.target.value)}
+                  />
+                  <span className="h-9 px-2 flex items-center border border-l-0 border-gray-300 rounded-r bg-gray-50 text-sm text-gray-600">
+                    折
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       </Modal>
 
       {/* 删除确认对话框 */}

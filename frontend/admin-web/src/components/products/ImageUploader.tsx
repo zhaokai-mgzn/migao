@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useCallback } from 'react'
-import { Upload, X, GripVertical, Loader2 } from 'lucide-react'
+import { Upload, X, GripVertical, Loader2, ImageIcon } from 'lucide-react'
 import Image from 'next/image'
 import { cn } from '@/lib/utils'
 import { fileApi } from '@/lib/api'
@@ -191,15 +191,21 @@ export default function ImageUploader({
               multiple && 'cursor-grab active:cursor-grabbing'
             )}
           >
-            <Image
-              src={url}
-              alt={`图片 ${index + 1}`}
-              width={96}
-              height={96}
-              className="w-full h-full object-cover cursor-pointer"
-              onClick={() => setPreviewUrl(url)}
-              unoptimized
-            />
+            {url && typeof url === 'string' && url.trim() !== '' ? (
+              <Image
+                src={url}
+                alt={`图片 ${index + 1}`}
+                width={96}
+                height={96}
+                className="w-full h-full object-cover cursor-pointer"
+                onClick={() => setPreviewUrl(url)}
+                unoptimized
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-gray-300">
+                <ImageIcon className="w-6 h-6" />
+              </div>
+            )}
             {multiple && (
               <div className="absolute top-1 right-7 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
                 <GripVertical className="w-4 h-4 text-white drop-shadow" />
@@ -268,7 +274,9 @@ export default function ImageUploader({
           onClick={() => setPreviewUrl(null)}
         >
           <div className="relative max-w-4xl max-h-[90vh]">
-            <Image src={previewUrl} alt="预览" width={1200} height={900} className="max-w-full max-h-[85vh] object-contain rounded-lg" unoptimized />
+            {previewUrl && typeof previewUrl === 'string' && previewUrl.trim() !== '' && (
+              <Image src={previewUrl} alt="预览" width={1200} height={900} className="max-w-full max-h-[85vh] object-contain rounded-lg" unoptimized />
+            )}
             <button
               onClick={() => setPreviewUrl(null)}
               className="absolute -top-3 -right-3 p-1.5 bg-white rounded-full shadow-lg text-gray-600 hover:text-gray-900"

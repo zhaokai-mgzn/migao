@@ -93,22 +93,27 @@ export default function CustomerDetailPage() {
 
   const handleAddTag = async (tag: CustomerTag) => {
     if (!customer) return
-    if (customer.tags.find((t) => t.id === tag.id)) {
+    const tags = customer.tags || []
+    if (tags.find((t) => t.id === tag.id)) {
       toast.info('该标签已存在')
       return
     }
-    setCustomer({ ...customer, tags: [...customer.tags, tag] })
+    setCustomer({ ...customer, tags: [...tags, tag] })
     setShowTagPicker(false)
     toast.success(`已添加标签「${tag.name}」`)
   }
 
   const handleRemoveTag = async (tagId: string) => {
     if (!customer) return
-    setCustomer({ ...customer, tags: customer.tags.filter((t) => t.id !== tagId) })
+    const tags = customer.tags || []
+    setCustomer({ ...customer, tags: tags.filter((t) => t.id !== tagId) })
     toast.success('已移除标签')
   }
 
-  const getChannelLabel = (channel: CustomerChannel) => CustomerChannelLabels[channel] || channel
+  const getChannelLabel = (channel: CustomerChannel | string | undefined) => {
+    if (!channel) return ''
+    return CustomerChannelLabels[channel as CustomerChannel] || String(channel)
+  }
 
   const getOrderStatusLabel = (status: string) => {
     const map: Record<string, { label: string; variant: 'success' | 'warning' | 'info' | 'default' | 'error' }> = {
@@ -142,7 +147,13 @@ export default function CustomerDetailPage() {
   }
 
   const initials = (customer.name || '?').slice(0, 1)
-  const availableTags = allTags.filter((t) => !(customer.tags || []).find((ct) => ct.id === t.id))
+  const availableTags = allTags.filter((t) => !((customer.tags || []).find((ct) => ct.id === t.id)))
+  const vipLevelNum = typeof customer.vipLevel === 'number'
+    ? customer.vipLevel
+    : (() => {
+        const m = String(customer.vipLevel ?? '').toLowerCase().match(/(\d+)/)
+        return m ? Number(m[1]) : 0
+      })()
 
   return (
     <div className="p-6">
@@ -165,8 +176,8 @@ export default function CustomerDetailPage() {
                 <h2 className="text-lg font-semibold text-gray-900">{customer.name || '未知客户'}</h2>
                 {customer.nickname && <p className="text-sm text-gray-500">{customer.nickname}</p>}
                 <div className="flex items-center gap-1 mt-1">
-                  {(customer.vipLevel ?? 0) > 0 ? (
-                    Array.from({ length: customer.vipLevel ?? 0 }).map((_, i) => (
+                  {vipLevelNum > 0 ? (
+                    Array.from({ length: vipLevelNum }).map((_, i) => (
                       <Star key={i} className="w-4 h-4 fill-amber-400 text-amber-400" />
                     ))
                   ) : (

@@ -596,13 +596,16 @@ export interface KnowledgeSearchParams {
 // ========== 客户管理类型 ==========
 
 // 客户来源渠道
-export type CustomerChannel = 'wechat_mini' | 'wechat_mp' | 'web'
+// 后端值：wechat_mini / wechat_mp / web / h5 / order（订单自动建档）
+export type CustomerChannel = 'wechat_mini' | 'wechat_mp' | 'web' | 'h5' | 'order'
 
 // 客户来源渠道标签映射
 export const CustomerChannelLabels: Record<CustomerChannel, string> = {
   wechat_mini: '微信小程序',
   wechat_mp: '公众号',
   web: 'Web',
+  h5: 'H5',
+  order: '订单',
 }
 
 // 客户标签
@@ -621,25 +624,36 @@ export interface CustomerTagFormData {
 }
 
 // 客户类型
+// 注意：后端 CustomerProfile 实体直接序列化返回，字段名使用 wechatNickname / sourceChannel / avatarUrl，
+// 且 vipLevel 是字符串（normal/vip1/vip2/vip3）；这里同时声明前端期望字段与后端字段，以兼容渲染。
 export interface Customer {
   id: string
-  name: string
+  // —— 前端别名字段（可选，便于自定义/Mock 数据）——
+  name?: string
   nickname?: string
-  phone?: string
   avatar?: string
-  channel: CustomerChannel
-  vipLevel: number
-  tags: CustomerTag[]
+  channel?: CustomerChannel
+  // —— 后端 CustomerProfile 原始字段 ——
+  wechatNickname?: string
+  avatarUrl?: string
+  sourceChannel?: CustomerChannel | string
+  // —— 公共字段 ——
+  phone?: string
+  // 后端返回字符串（normal/vip1/vip2/vip3），前端 mock 用数字
+  vipLevel?: number | string | null
+  tags?: CustomerTag[] | null
   remark?: string
   lastActiveAt?: string
   createdAt?: string
 }
 
 // 客户列表查询参数
+// 后端接收参数名为 sourceChannel；vipLevel 为字符串（normal/vip1/vip2/vip3）。
 export interface CustomerListParams extends PageParams {
   keyword?: string
   channel?: CustomerChannel | ''
-  vipLevel?: number | ''
+  sourceChannel?: CustomerChannel | string | ''
+  vipLevel?: number | string | ''
   tagId?: string
 }
 
