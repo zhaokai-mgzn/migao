@@ -2,13 +2,17 @@ package com.aikf.admin.service;
 
 import com.aikf.admin.dto.*;
 import com.aikf.admin.entity.Category;
+import com.aikf.admin.entity.ProcessingItem;
 import com.aikf.admin.entity.Product;
 import com.aikf.admin.entity.ProductColor;
+import com.aikf.admin.entity.ProductProcessingItem;
 import com.aikf.admin.entity.ProductSku;
 import com.aikf.admin.exception.BusinessException;
 import com.aikf.admin.mapper.CategoryMapper;
+import com.aikf.admin.mapper.ProcessingItemMapper;
 import com.aikf.admin.mapper.ProductColorMapper;
 import com.aikf.admin.mapper.ProductMapper;
+import com.aikf.admin.mapper.ProductProcessingItemMapper;
 import com.aikf.admin.mapper.ProductSkuMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -54,6 +58,8 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
     private final CategoryMapper categoryMapper;
     private final ProductColorMapper productColorMapper;
     private final ProductSkuMapper productSkuMapper;
+    private final ProductProcessingItemMapper productProcessingItemMapper;
+    private final ProcessingItemMapper processingItemMapper;
 
     /**
      * 合法的状态流转映射
@@ -574,6 +580,74 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
 
             workbook.write(out);
         }
+    }
+
+    /**
+     * 查询商品关联的加工项列表
+     * 1. 查询 product_processing_items 表中该商品的所有关联记录
+     * 2. 根据 processing_item_id 批量查询 processing_items 表获取完整信息
+     * 3. 仅返回 status='active' 的加工项
+     * 4. 合并自定义价格（custom_price 不为空则 finalPrice = customPrice，否则 finalPrice = unitPrice）
+     * 5. 按 sort_order 升序排序
+     */
+    public List<ProductProcessingItemResponse> getProductProcessingItems(String productId, Long tenantId) {
+        // 校验商品存在且属于当前租户
+        Product product = productMapper.selectById(productId);
+        if (product == null) {
+            throw BusinessException.notFound("商品");
+        }
+
+        // 查询关联记录（按 sort_order 升序）
+        List<ProductProcessingItem> relations = productProcessingItemMapper.selectList(
+                new LambdaQueryWrapper<ProductProcessingItem>()
+                        .eq(ProductProcessingItem::getProductId, productId)
+                        .eq(ProductProcessingItem::getTenantId, tenantId)
+                        .orderByAsc(ProductProcessingItem::getSortOrder)
+        );
+        if (relations == null || relations.isEmpty()) {
+            return java.util.Collections.emptyList();
+        }
+
+        // 批量查询加工项详情（仅 active）
+        List<String> processingItemIds = relations.stream()
+                .map(ProductProcessingItem::getProcessingItemId)
+                .filter(StringUtils::hasText)
+                .distinct()
+                .collect(Collectors.toList());
+        if (processingItemIds.isEmpty()) {
+            return java.util.Collections.emptyList();
+        }
+
+        List<ProcessingItem> processingItems = processingItemMapper.selectList(
+                new LambdaQueryWrapper<ProcessingItem>()
+                        .in(ProcessingItem::getId, processingItemIds)
+                        .eq(ProcessingItem::getStatus, "active")
+        );
+        Map<String, ProcessingItem> itemMap = processingItems.stream()
+                .collect(Collectors.toMap(ProcessingItem::getId, item -> item));
+
+        // 按关联表顺序组装响应，过滤已被禁用/不存在的加工项
+        List<ProductProcessingItemResponse> result = new java.util.ArrayList<>();
+        for (ProductProcessingItem relation : relations) {
+            ProcessingItem item = itemMap.get(relation.getProcessingItemId());
+            if (item == null) {
+                continue;
+            }
+            BigDecimal customPrice = relation.getCustomPrice();
+            BigDecimal unitPrice = item.getUnitPrice();
+            BigDecimal finalPrice = customPrice != null ? customPrice : unitPrice;
+
+            result.add(ProductProcessingItemResponse.builder()
+                    .id(item.getId())
+                    .name(item.getName())
+                    .pricingMethod(item.getPricingMethod())
+                    .unitPrice(unitPrice)
+                    .customPrice(customPrice)
+                    .finalPrice(finalPrice)
+                    .unit(item.getUnit())
+                    .build());
+        }
+        return result;
     }
 
     // ========== 私有辅助方法 ==========

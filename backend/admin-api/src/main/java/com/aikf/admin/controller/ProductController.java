@@ -155,6 +155,19 @@ public class ProductController {
     }
 
     /**
+     * 查询商品关联的加工项列表
+     *
+     * GET /api/admin/products/{id}/processing-items
+     */
+    @GetMapping("/{id}/processing-items")
+    public ApiResponse<List<ProductProcessingItemResponse>> getProductProcessingItems(@PathVariable String id) {
+        Long tenantId = TenantContext.getTenantId();
+        log.info("查询商品关联加工项: productId={}, tenantId={}", id, tenantId);
+        List<ProductProcessingItemResponse> items = productService.getProductProcessingItems(id, tenantId);
+        return ApiResponse.success(items);
+    }
+
+    /**
      * 导出商品
      *
      * GET /api/admin/products/export?keyword=xxx&categoryId=xxx&status=on_sale

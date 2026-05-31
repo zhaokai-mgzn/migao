@@ -133,6 +133,23 @@ export const productApi = {
   // 导出商品（返回 blob）
   exportProducts: (params?: ProductListParams) =>
     request.get<Blob>('/api/admin/products/export', { params, responseType: 'blob' }),
+
+  // 获取指定商品的可选加工项（按商品过滤）
+  getProductProcessingItems: (productId: string) =>
+    request.get<ApiResponse<ProductProcessingItem[]>>(
+      `/api/admin/products/${productId}/processing-items`
+    ),
+}
+
+// 商品维度的加工项（用于订单创建按商品过滤）
+export interface ProductProcessingItem {
+  id: string
+  name: string
+  pricingMethod: string // per_meter | per_piece | fixed | per_area
+  unitPrice: number
+  customPrice: number | null
+  finalPrice: number
+  unit: string
 }
 
 // 分类 API
