@@ -55,12 +55,12 @@ export default function CorporateNav() {
 
           {/* Desktop CTA Buttons */}
           <div className="hidden md:flex items-center gap-3">
-            <Link
-              href="/login"
+            <a
+              href="https://merchant.migaozn.com/login"
               className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 transition-colors"
             >
               商家登录
-            </Link>
+            </a>
             <Link
               href="/register"
               className="px-5 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-sm"
@@ -101,13 +101,13 @@ export default function CorporateNav() {
               </Link>
             ))}
             <div className="pt-3 mt-3 border-t border-gray-100 space-y-2">
-              <Link
-                href="/login"
+              <a
+                href="https://merchant.migaozn.com/login"
                 onClick={() => setMobileMenuOpen(false)}
                 className="block px-4 py-2.5 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors text-center"
               >
                 商家登录
-              </Link>
+              </a>
               <Link
                 href="/register"
                 onClick={() => setMobileMenuOpen(false)}

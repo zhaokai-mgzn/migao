@@ -6,11 +6,8 @@ import {
   Users,
   MessageSquare,
   DollarSign,
-  Plus,
-  FileUp,
   CalendarDays,
 } from 'lucide-react'
-import Link from 'next/link'
 import { toast } from 'sonner'
 import { useAuthStore } from '@/store/auth'
 import { dashboardApi } from '@/lib/api'
@@ -145,22 +142,6 @@ export default function DashboardPage() {
             <CalendarDays className="w-3.5 h-3.5" />
             {formatDate()}
           </p>
-        </div>
-        <div className="flex gap-2">
-          <Link
-            href="/orders"
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-primary-600 text-white text-sm font-medium rounded-lg hover:bg-primary-700 transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            新建订单
-          </Link>
-          <Link
-            href="/knowledge"
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white text-gray-700 text-sm font-medium rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors"
-          >
-            <FileUp className="w-4 h-4" />
-            上传文档
-          </Link>
         </div>
       </div>
 

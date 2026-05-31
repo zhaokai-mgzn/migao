@@ -186,13 +186,16 @@ export default function ProductForm({
       const ref = processingItems.find(
         (p) => Number(p.id) === Number(patch.processingItemId)
       )
+      // 优先采用加工项基础价；仅当用户已显式输入大于 0 的自定义价时保留
+      const hasCustomPrice =
+        current.customPrice !== undefined &&
+        current.customPrice !== null &&
+        Number(current.customPrice) > 0
+      const refPrice = Number(ref?.unitPrice ?? ref?.basePrice ?? 0) || 0
       merged = {
         ...merged,
         processingItemName: ref?.name,
-        customPrice:
-          merged.customPrice && merged.customPrice > 0
-            ? merged.customPrice
-            : ref?.unitPrice || ref?.basePrice || 0,
+        customPrice: hasCustomPrice ? Number(current.customPrice) : refPrice,
       }
     }
     list[idx] = merged
@@ -530,13 +533,11 @@ export default function ProductForm({
                     <div key={idx} className="flex items-center gap-2">
                       <div className="w-56">
                         <Select
-                          options={[
-                            { value: '', label: '请选择加工项' },
-                            ...processingItems.map((p) => ({
-                              value: String(p.id),
-                              label: `${p.name}（基础价 ¥${p.unitPrice ?? p.basePrice}/${p.unit}）`,
-                            })),
-                          ]}
+                          placeholder="请选择加工项"
+                          options={processingItems.map((p) => ({
+                            value: String(p.id),
+                            label: `${p.name}（基础价 ¥${p.unitPrice ?? p.basePrice}/${p.unit}）`,
+                          }))}
                           value={
                             cfg.processingItemId
                               ? String(cfg.processingItemId)
@@ -587,13 +588,11 @@ export default function ProductForm({
                     <div className="flex items-center gap-2">
                       <div className="w-56">
                         <Select
-                          options={[
-                            { value: '', label: '请选择加工项' },
-                            ...processingItems.map((p) => ({
-                              value: String(p.id),
-                              label: `${p.name}（基础价 ¥${p.unitPrice ?? p.basePrice}/${p.unit}）`,
-                            })),
-                          ]}
+                          placeholder="请选择加工项"
+                          options={processingItems.map((p) => ({
+                            value: String(p.id),
+                            label: `${p.name}（基础价 ¥${p.unitPrice ?? p.basePrice}/${p.unit}）`,
+                          }))}
                           value=""
                           onChange={(e) => {
                             if (!e.target.value) return
@@ -604,7 +603,8 @@ export default function ProductForm({
                               {
                                 processingItemId: Number(e.target.value),
                                 processingItemName: ref?.name,
-                                customPrice: ref?.unitPrice || ref?.basePrice || 0,
+                                customPrice:
+                                  Number(ref?.unitPrice ?? ref?.basePrice ?? 0) || 0,
                               },
                             ])
                           }}

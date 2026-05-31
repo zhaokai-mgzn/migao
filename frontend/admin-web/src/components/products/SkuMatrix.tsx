@@ -1,7 +1,7 @@
 'use client'
 
-import { useMemo, useRef, useState } from 'react'
-import { Plus, Trash2, GripVertical, ImagePlus } from 'lucide-react'
+import { useMemo, useRef, useState, useEffect } from 'react'
+import { Plus, Trash2, GripVertical, ImagePlus, Check } from 'lucide-react'
 import { toast } from 'sonner'
 import Image from 'next/image'
 import { Button, Select } from '@/components/ui'
@@ -40,6 +40,30 @@ const DOOR_WIDTH_OPTIONS = ['门幅2.8米', '门幅3.2米', '门幅3.4米']
 const COLOR_NAME_MAX = 30
 const MAX_COLORS = 200
 const MAX_SKUS = 600
+
+// 预设颜色（常用窗帘/布艺颜色）
+const PRESET_COLORS: { name: string; hex: string }[] = [
+  { name: '白色', hex: '#FFFFFF' },
+  { name: '米白', hex: '#FFFDD0' },
+  { name: '灰色', hex: '#808080' },
+  { name: '黑色', hex: '#000000' },
+  { name: '红色', hex: '#FF0000' },
+  { name: '酒红', hex: '#722F37' },
+  { name: '粉色', hex: '#FFC0CB' },
+  { name: '橙色', hex: '#FFA500' },
+  { name: '黄色', hex: '#FFFF00' },
+  { name: '金色', hex: '#FFD700' },
+  { name: '绿色', hex: '#008000' },
+  { name: '青色', hex: '#00FFFF' },
+  { name: '蓝色', hex: '#0000FF' },
+  { name: '藏蓝', hex: '#003153' },
+  { name: '紫色', hex: '#800080' },
+  { name: '棕色', hex: '#8B4513' },
+  { name: '咖啡', hex: '#6F4E37' },
+  { name: '卡其', hex: '#C3B091' },
+  { name: '驼色', hex: '#C19A6B' },
+  { name: '银色', hex: '#C0C0C0' },
+]
 
 type BatchScope = 'all' | 'color' | 'method' | 'width'
 
@@ -379,21 +403,18 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
                   url={color.colorImageUrl}
                   onChange={(u) => handleUpdateColor(idx, { colorImageUrl: u })}
                 />
-                {/* 名称 */}
+                {/* 名称 + 主色选择器 */}
                 <div className="flex-1 min-w-0">
-                  <input
-                    type="text"
-                    value={color.colorName}
-                    maxLength={COLOR_NAME_MAX}
-                    placeholder="主色(必选)"
-                    onChange={(e) =>
-                      handleUpdateColor(idx, { colorName: e.target.value })
+                  <ColorPicker
+                    colorName={color.colorName}
+                    mainColorHex={color.mainColorHex}
+                    hasError={!!err}
+                    onChange={(name, hex) =>
+                      handleUpdateColor(idx, { colorName: name, mainColorHex: hex })
                     }
-                    className={`w-full h-9 px-2.5 text-sm rounded border bg-white focus:outline-none focus:ring-2 focus:ring-primary-500/15 ${
-                      err
-                        ? 'border-red-400 focus:border-red-500'
-                        : 'border-gray-300 focus:border-primary-500'
-                    }`}
+                    onNameChange={(name) =>
+                      handleUpdateColor(idx, { colorName: name })
+                    }
                   />
                 </div>
                 {/* 备注 */}
@@ -640,13 +661,14 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
                             >
                               <div className="flex items-center gap-2">
                                 <div className="w-10 h-10 shrink-0 rounded overflow-hidden border border-gray-200 bg-gray-50">
-                                  {color.colorImageUrl ? (
+                                  {color.colorImageUrl && color.colorImageUrl.trim() !== '' ? (
                                     <Image
                                       src={color.colorImageUrl}
                                       alt={color.colorName || ''}
                                       width={40}
                                       height={40}
                                       className="w-full h-full object-cover"
+                                      unoptimized
                                     />
                                   ) : (
                                     <div className="w-full h-full flex items-center justify-center text-gray-300">
@@ -823,7 +845,7 @@ function ColorImage({
       }`}
       title={url ? '点击替换图片' : '点击上传图片'}
     >
-      {url ? (
+      {url && url.trim() !== '' ? (
         <Image src={url} alt="color" width={36} height={36} className="w-full h-full object-cover" unoptimized />
       ) : (
         <ImagePlus className="w-4 h-4 text-gray-400" />
@@ -835,6 +857,140 @@ function ColorImage({
         className="hidden"
         onChange={(e) => handleFiles(e.target.files)}
       />
+    </div>
+  )
+}
+
+// ========== 子组件：主色选择器（名称输入框 + 预设颜色 popover） ==========
+
+function ColorPicker({
+  colorName,
+  mainColorHex,
+  hasError,
+  onChange,
+  onNameChange,
+}: {
+  colorName: string
+  mainColorHex?: string
+  hasError?: boolean
+  onChange: (name: string, hex: string) => void
+  onNameChange: (name: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const wrapperRef = useRef<HTMLDivElement>(null)
+
+  // 点击外部 / ESC 关闭
+  useEffect(() => {
+    if (!open) return
+    const onClickOutside = (e: MouseEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setOpen(false)
+      }
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onClickOutside)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onClickOutside)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  const handlePick = (hex: string, name: string) => {
+    onChange(name, hex)
+    setOpen(false)
+  }
+
+  return (
+    <div ref={wrapperRef} className="relative">
+      <div
+        className={`flex items-stretch h-9 rounded border bg-white focus-within:ring-2 focus-within:ring-primary-500/15 ${
+          hasError
+            ? 'border-red-400 focus-within:border-red-500'
+            : 'border-gray-300 focus-within:border-primary-500'
+        }`}
+      >
+        {/* 色块触发 popover */}
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="shrink-0 w-9 h-full inline-flex items-center justify-center border-r border-gray-200 hover:bg-gray-50 transition-colors"
+          title="选择主色"
+        >
+          {mainColorHex ? (
+            <span
+              className="w-5 h-5 rounded-sm border border-gray-200 shadow-inner"
+              style={{ backgroundColor: mainColorHex }}
+            />
+          ) : (
+            <span
+              className="w-5 h-5 rounded-sm border border-dashed border-gray-300 bg-[conic-gradient(from_45deg,#f87171,#fbbf24,#34d399,#60a5fa,#a78bfa,#f87171)]"
+              aria-hidden
+            />
+          )}
+        </button>
+        {/* 名称输入（可编辑） */}
+        <input
+          type="text"
+          value={colorName}
+          maxLength={COLOR_NAME_MAX}
+          placeholder="主色(必选)"
+          onChange={(e) => onNameChange(e.target.value)}
+          className="flex-1 min-w-0 px-2.5 text-sm bg-transparent focus:outline-none"
+        />
+      </div>
+
+      {/* 预设颜色面板 */}
+      {open && (
+        <div
+          className="absolute z-30 mt-1 left-0 w-[280px] rounded-lg border border-gray-200 bg-white shadow-lg p-3"
+          role="dialog"
+          aria-label="选择主色"
+        >
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs text-gray-500">选择主色（选择后可编辑名称）</span>
+          </div>
+          <div className="grid grid-cols-5 gap-2">
+            {PRESET_COLORS.map((c) => {
+              const selected =
+                mainColorHex && mainColorHex.toUpperCase() === c.hex.toUpperCase()
+              return (
+                <button
+                  key={c.hex}
+                  type="button"
+                  onClick={() => handlePick(c.hex, c.name)}
+                  className="flex flex-col items-center gap-1 p-1 rounded hover:bg-gray-50 transition-colors"
+                  title={`${c.name} ${c.hex}`}
+                >
+                  <span
+                    className={`relative w-8 h-8 rounded border ${
+                      c.hex.toUpperCase() === '#FFFFFF'
+                        ? 'border-gray-300'
+                        : 'border-gray-200'
+                    } shadow-inner`}
+                    style={{ backgroundColor: c.hex }}
+                  >
+                    {selected && (
+                      <Check
+                        className={`absolute inset-0 m-auto w-4 h-4 ${
+                          ['#FFFFFF', '#FFFDD0', '#FFFF00', '#FFC0CB', '#00FFFF', '#C0C0C0', '#C3B091'].includes(
+                            c.hex.toUpperCase()
+                          )
+                            ? 'text-gray-700'
+                            : 'text-white'
+                        }`}
+                      />
+                    )}
+                  </span>
+                  <span className="text-[11px] text-gray-600 leading-none">{c.name}</span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
