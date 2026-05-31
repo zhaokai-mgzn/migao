@@ -313,8 +313,12 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         OrderDetailResponse response = new OrderDetailResponse();
         BeanUtils.copyProperties(order, response);
 
-        // 查询订单明细
-        List<OrderItem> items = orderItemMapper.selectByOrderId(order.getId(), order.getTenantId());
+        // 查询订单明细（使用 LambdaQueryWrapper 走 BaseMapper，确保 processingInfo 经过 JacksonTypeHandler 反序列化为 Map）
+        List<OrderItem> items = orderItemMapper.selectList(
+                new LambdaQueryWrapper<OrderItem>()
+                        .eq(OrderItem::getOrderId, order.getId())
+                        .eq(OrderItem::getTenantId, order.getTenantId())
+        );
         List<OrderDetailResponse.OrderItemResponse> itemResponses = items.stream()
                 .map(this::convertToItemResponse)
                 .collect(Collectors.toList());
