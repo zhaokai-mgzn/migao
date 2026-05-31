@@ -25,7 +25,7 @@ import java.time.OffsetDateTime;
 @TableName("product_processing_items")
 public class ProductProcessingItem {
 
-    @TableId(type = IdType.AUTO)
+    @TableId(type = IdType.ASSIGN_ID)
     private Long id;
 
     private Long tenantId;

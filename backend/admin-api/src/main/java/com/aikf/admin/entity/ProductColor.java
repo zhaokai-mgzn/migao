@@ -19,7 +19,7 @@ import java.time.OffsetDateTime;
 @TableName("product_colors")
 public class ProductColor {
 
-    @TableId(type = IdType.AUTO)
+    @TableId(type = IdType.ASSIGN_ID)
     private Long id;
 
     private Long tenantId;
