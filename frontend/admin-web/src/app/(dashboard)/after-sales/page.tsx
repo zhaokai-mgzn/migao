@@ -125,7 +125,7 @@ export default function AfterSalesPage() {
     if (!orderSearchKeyword.trim()) return
     setOrderSearching(true)
     try {
-      const res = await orderApi.getOrders({ receiver: orderSearchKeyword, page: 1, size: 10 })
+      const res = await orderApi.getOrders({ keyword: orderSearchKeyword, page: 1, size: 10 })
       setOrderSearchResults(res.data?.data?.items || [])
     } catch {
       toast.error('搜索订单失败')
@@ -417,7 +417,7 @@ export default function AfterSalesPage() {
                 <div className="flex gap-2">
                   <input
                     type="text"
-                    placeholder="输入订单号搜索..."
+                    placeholder="请输入订单号/客户姓名/手机号"
                     value={orderSearchKeyword}
                     onChange={(e) => setOrderSearchKeyword(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleOrderSearch()}
