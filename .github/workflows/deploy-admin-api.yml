@@ -74,15 +74,18 @@ jobs:
         id: sign
         run: |
           # SAE DeployApplication 必须使用新签名 URL，旧签名会过期
-          SIGNED_URL=$(aliyun oss sign "oss://${{ env.OSS_BUCKET }}/${{ env.OSS_OBJECT_KEY }}" \
+          # aliyun oss sign 输出多行，最后一行是 "0.000xxx(s) elapsed"，URL 为以 http(s):// 开头的那一行
+          SIGN_OUTPUT=$(aliyun oss sign "oss://${{ env.OSS_BUCKET }}/${{ env.OSS_OBJECT_KEY }}" \
             --timeout 86400 \
             --region ${{ env.SAE_REGION }} \
-            --endpoint ${{ env.OSS_ENDPOINT }} | tail -n 1)
+            --endpoint ${{ env.OSS_ENDPOINT }})
+          SIGNED_URL=$(echo "$SIGN_OUTPUT" | grep -E '^https?://' | head -n 1)
           if [ -z "$SIGNED_URL" ]; then
-            echo "❌ OSS 签名失败"
+            echo "❌ OSS 签名失败，完整输出："
+            echo "$SIGN_OUTPUT"
             exit 1
           fi
-          echo "✅ 已签名 OSS URL"
+          echo "✅ 已签名 OSS URL（长度：${#SIGNED_URL}）"
           # 通过文件传递 URL（含特殊字符），避免在日志中打印
           echo "$SIGNED_URL" > /tmp/signed_url.txt
           echo "SIGNED_URL_FILE=/tmp/signed_url.txt" >> $GITHUB_ENV
