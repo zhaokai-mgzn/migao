@@ -124,8 +124,12 @@ export interface Product {
   editedAt?: string
   // 库存预警阈值
   stockWarningThreshold?: number
-  // 库存扣减模式：on_order=下单扣减，on_payment=付款扣减
-  stockDeductionMode?: 'on_order' | 'on_payment'
+  // 库存扣减模式：兼容后端('on_order' | 'on_payment')与表单('on_place' | 'on_pay')两套枚举
+  stockDeductionMode?: 'on_order' | 'on_payment' | 'on_place' | 'on_pay'
+  // 计价单位（部分接口会单独返回）
+  pricingUnit?: string
+  // SKU 列表（详情接口返回）
+  skus?: ProductSku[]
   createdAt?: string
   updatedAt?: string
 }

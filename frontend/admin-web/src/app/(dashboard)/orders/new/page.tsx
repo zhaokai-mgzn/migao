@@ -8,7 +8,7 @@ import { orderApi, productApi, processingItemApi } from '@/lib/api'
 import { Button, Card, Input, Modal } from '@/components/ui'
 import type { Product, ProcessingItem, OrderItemFormData } from '@/types'
 
-interface ProductSku {
+interface OrderProductSku {
   id: number
   productId?: string
   colorId: number
@@ -20,8 +20,8 @@ interface ProductSku {
   skuCode?: string
 }
 
-interface ProductDetail extends Product {
-  skus?: ProductSku[]
+interface ProductDetail extends Omit<Product, 'skus'> {
+  skus?: OrderProductSku[]
   basePrice?: number
   supportsProcessing?: boolean
 }
@@ -159,7 +159,7 @@ export default function NewOrderPage() {
   }
 
   // 选择规格后，带入价格
-  const handleSelectSku = (sku: ProductSku) => {
+  const handleSelectSku = (sku: OrderProductSku) => {
     setSelectedSkuId(sku.id)
     setUnitPrice(Number(sku.price) || 0)
   }

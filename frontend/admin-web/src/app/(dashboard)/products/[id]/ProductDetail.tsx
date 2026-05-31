@@ -8,8 +8,30 @@ import { Button, Badge, Loading } from '@/components/ui'
 import { productApi } from '@/lib/api'
 import { useRouteId } from '@/lib/use-route-id'
 import { toast } from 'sonner'
-import type { Product, ProductStatus } from '@/types'
-import { ProductStatusLabels, PricingTypeLabels } from '@/types'
+import type { Product, ProductStatus, ProductSku } from '@/types'
+import { ProductStatusLabels, PricingTypeLabels, SellingMethodLabels } from '@/types'
+
+// specifications 中常见 key 的中文标签映射
+const SPEC_LABELS: Record<string, string> = {
+  weight: '克重',
+  material: '材质',
+  function: '功能',
+  craft: '工艺',
+  style: '风格',
+  pattern: '图案',
+  curtainType: '窗帘类型',
+  fabric: '面料材质',
+  shading: '遮光度',
+  scene: '适用场景',
+}
+
+// 库存扣减方式：兼容后端 on_order/on_payment 与表单 on_place/on_pay 两套枚举
+const STOCK_DEDUCTION_LABELS: Record<string, string> = {
+  on_order: '拍下减库存',
+  on_place: '拍下减库存',
+  on_payment: '付款减库存',
+  on_pay: '付款减库存',
+}
 
 export default function ProductDetailPage() {
   const router = useRouter()
@@ -66,6 +88,43 @@ export default function ProductDetailPage() {
   }
 
   const allImages = [...(product.images || []), ...(product.detailImages || [])]
+
+  // 计价单位：优先 pricingUnit，其次 specifications.unit，再次 product.unit
+  const priceUnit =
+    product.pricingUnit ||
+    (product.specifications && product.specifications.unit) ||
+    product.unit ||
+    ''
+  const priceText = priceUnit
+    ? `¥${product.price.toFixed(2)}/${priceUnit}`
+    : `¥${product.price.toFixed(2)}`
+
+  // 商品属性条目（过滤空值）
+  const specEntries: Array<{ key: string; label: string; value: string }> = []
+  const specs = product.specifications || {}
+  // 优先按预定义 key 顺序展示
+  const orderedKeys = Object.keys(SPEC_LABELS)
+  const seen = new Set<string>()
+  for (const k of orderedKeys) {
+    const v = specs[k]
+    if (v && String(v).trim()) {
+      specEntries.push({ key: k, label: SPEC_LABELS[k], value: String(v) })
+      seen.add(k)
+    }
+  }
+  // 其他未识别的 key 原样展示（如 unit 等已在基本信息展示则跳过）
+  const SKIP_SPEC_KEYS = new Set(['unit'])
+  for (const [k, v] of Object.entries(specs)) {
+    if (seen.has(k) || SKIP_SPEC_KEYS.has(k)) continue
+    if (v && String(v).trim()) {
+      specEntries.push({ key: k, label: k, value: String(v) })
+    }
+  }
+
+  const skus: ProductSku[] = product.skus || []
+  const stockDeductionLabel = product.stockDeductionMode
+    ? STOCK_DEDUCTION_LABELS[product.stockDeductionMode]
+    : undefined
 
   return (
     <div className="p-6">
@@ -170,9 +229,7 @@ export default function ProductDetailPage() {
               </div>
               <div>
                 <dt className="text-xs text-gray-500">单价</dt>
-                <dd className="text-sm font-medium text-gray-900 mt-0.5">
-                  ¥{product.price.toFixed(2)}/{product.unit}
-                </dd>
+                <dd className="text-sm font-medium text-gray-900 mt-0.5">{priceText}</dd>
               </div>
               {product.costPrice !== undefined && (
                 <div>
@@ -184,6 +241,12 @@ export default function ProductDetailPage() {
                 <dt className="text-xs text-gray-500">库存</dt>
                 <dd className="text-sm text-gray-900 mt-0.5">{product.stock ?? '-'}</dd>
               </div>
+              {stockDeductionLabel && (
+                <div>
+                  <dt className="text-xs text-gray-500">库存扣减方式</dt>
+                  <dd className="text-sm text-gray-900 mt-0.5">{stockDeductionLabel}</dd>
+                </div>
+              )}
               <div>
                 <dt className="text-xs text-gray-500">创建时间</dt>
                 <dd className="text-sm text-gray-900 mt-0.5">{product.createdAt || '-'}</dd>
@@ -194,6 +257,68 @@ export default function ProductDetailPage() {
               </div>
             </dl>
           </div>
+
+          {/* 商品属性 */}
+          {specEntries.length > 0 && (
+            <div className="bg-gray-50 rounded-lg p-4">
+              <h3 className="text-sm font-semibold text-gray-700 mb-3">商品属性</h3>
+              <dl className="grid grid-cols-2 gap-x-6 gap-y-3">
+                {specEntries.map((item) => (
+                  <div key={item.key}>
+                    <dt className="text-xs text-gray-500">{item.label}</dt>
+                    <dd className="text-sm text-gray-900 mt-0.5">{item.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          )}
+
+          {/* SKU 规格 */}
+          {skus.length > 0 && (
+            <div className="bg-gray-50 rounded-lg p-4">
+              <h3 className="text-sm font-semibold text-gray-700 mb-3">SKU 规格</h3>
+              <div className="overflow-x-auto rounded-md border border-gray-200 bg-white">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-gray-50 text-gray-600">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-medium">颜色</th>
+                      <th className="px-3 py-2 text-left font-medium">售卖方式</th>
+                      <th className="px-3 py-2 text-left font-medium">门幅</th>
+                      <th className="px-3 py-2 text-right font-medium">库存</th>
+                      <th className="px-3 py-2 text-right font-medium">价格</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {skus.map((sku) => (
+                      <tr key={sku.id} className="text-gray-900">
+                        <td className="px-3 py-2">{sku.colorName || '-'}</td>
+                        <td className="px-3 py-2">
+                          {sku.sellingMethod ? SellingMethodLabels[sku.sellingMethod] || sku.sellingMethod : '-'}
+                        </td>
+                        <td className="px-3 py-2">{sku.doorWidth || '-'}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{sku.stock ?? '-'}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">
+                          {typeof sku.price === 'number' ? `¥${sku.price.toFixed(2)}` : '-'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Processing items */}
+          {product.processingItems && product.processingItems.length > 0 && (
+            <div className="bg-gray-50 rounded-lg p-4">
+              <h3 className="text-sm font-semibold text-gray-700 mb-2">加工项</h3>
+              <div className="flex flex-wrap gap-2">
+                {product.processingItems.map((itemId) => (
+                  <Badge key={itemId} variant="info">{itemId}</Badge>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Description */}
           {product.description && (
@@ -207,18 +332,6 @@ export default function ProductDetailPage() {
               ) : (
                 <p className="text-sm text-gray-600 whitespace-pre-wrap">{product.description}</p>
               )}
-            </div>
-          )}
-
-          {/* Processing items */}
-          {product.processingItems && product.processingItems.length > 0 && (
-            <div className="bg-gray-50 rounded-lg p-4">
-              <h3 className="text-sm font-semibold text-gray-700 mb-2">加工项</h3>
-              <div className="flex flex-wrap gap-2">
-                {product.processingItems.map((itemId) => (
-                  <Badge key={itemId} variant="info">{itemId}</Badge>
-                ))}
-              </div>
             </div>
           )}
         </div>

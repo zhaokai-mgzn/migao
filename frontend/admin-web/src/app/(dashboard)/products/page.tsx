@@ -269,7 +269,7 @@ export default function ProductsPage() {
       }
       return {
         title: '删除商品',
-        desc: `是否确认删除${count > 1 ? `选中的 ${count} 个商品` : ''}？商品删除后可到"回收站"查看并恢复删除，但删除后需要24小时后才能操作恢复，非必要请不要删除。`,
+        desc: '确认删除后数据将无法恢复，是否继续？',
         variant: 'primary' as const,
         onSubmit: submitBatch,
         onClose: () => setBatchAction(null),
@@ -297,7 +297,7 @@ export default function ProductsPage() {
       }
       return {
         title: '删除商品',
-        desc: '是否确认删除？商品删除后可到"回收站"查看并恢复删除，但删除后需要24小时后才能操作恢复，非必要请不要删除。',
+        desc: '确认删除后数据将无法恢复，是否继续？',
         variant: 'primary' as const,
         onSubmit: submitSingleConfirm,
         onClose: () => setSingleConfirm(null),
