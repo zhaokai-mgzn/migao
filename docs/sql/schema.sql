@@ -138,6 +138,10 @@ CREATE TABLE products (
     stock INTEGER DEFAULT 0,
     stock_warning_threshold INTEGER DEFAULT 10,
     status VARCHAR(32) DEFAULT 'active',
+    -- 计价单位（来自 011_product_unit.sql）
+    unit VARCHAR(32) DEFAULT '件',
+    -- 计价方式：per_meter / per_piece / fixed / per_area
+    pricing_type VARCHAR(30) DEFAULT 'per_meter',
     -- SKU 矩阵相关字段（来自 008_product_sku_matrix.sql）
     sku_code VARCHAR(30),
     stock_deduction_mode VARCHAR(20) DEFAULT 'on_order',  -- on_order(拍下减) / on_payment(付款减)

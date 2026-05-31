@@ -92,6 +92,11 @@ public class ProductResponse {
     private String unit;
 
     /**
+     * 计价方式：per_meter / per_piece / fixed / per_area
+     */
+    private String pricingType;
+
+    /**
      * 库存扣减模式
      */
     private String stockDeductionMode;

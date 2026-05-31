@@ -30,6 +30,11 @@ public class ProductCreateRequest {
     private String unit;
 
     /**
+     * 计价方式：per_meter / per_piece / fixed / per_area
+     */
+    private String pricingType;
+
+    /**
      * 分类ID（草稿状态允许为空，Service 层根据 status 校验）
      */
     private String categoryId;

@@ -240,7 +240,7 @@ export default function ProductDetailPage() {
               )}
               <div>
                 <dt className="text-xs text-gray-500">库存</dt>
-                <dd className="text-sm text-gray-900 mt-0.5">{product.stock ?? '-'}</dd>
+                <dd className="text-sm text-gray-900 mt-0.5">{product.totalStock ?? product.stock ?? '-'}</dd>
               </div>
               {stockDeductionLabel && (
                 <div>

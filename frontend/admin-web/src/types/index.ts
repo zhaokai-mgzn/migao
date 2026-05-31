@@ -107,6 +107,8 @@ export interface Product {
   costPrice?: number
   unit: string
   stock?: number
+  // SKU 总库存（后端聚合 SKU 库存得出，详情页优先展示）
+  totalStock?: number
   status: ProductStatus
   images: string[]
   detailImages?: string[]

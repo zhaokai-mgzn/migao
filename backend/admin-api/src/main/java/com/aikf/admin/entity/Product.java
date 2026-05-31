@@ -38,6 +38,11 @@ public class Product {
      */
     private String unit;
 
+    /**
+     * 计价方式：per_meter / per_piece / fixed / per_area
+     */
+    private String pricingType;
+
     private String categoryId;
 
     private BigDecimal basePrice;
