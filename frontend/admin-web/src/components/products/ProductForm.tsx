@@ -183,9 +183,9 @@ export default function ProductForm({
     if (!current) return
     let merged: ProductProcessingItemConfig = { ...current, ...patch }
     if (patch.processingItemId !== undefined && patch.processingItemId !== null) {
-      const ref = processingItems.find(
-        (p) => String(p.id) === String(patch.processingItemId)
-      )
+      // 加工项 ID 为字符串 UUID（如 "proc_item_punch_nano"），不能用 Number 转换
+      const targetId = String(patch.processingItemId)
+      const ref = processingItems.find((p) => String(p.id) === targetId)
       if (ref) {
         // 优先采用加工项基础价；仅当用户已显式输入大于 0 的自定义价时保留
         const hasCustomPrice =
@@ -195,7 +195,7 @@ export default function ProductForm({
         const refPrice = Number(ref.unitPrice ?? ref.basePrice ?? 0) || 0
         merged = {
           ...merged,
-          processingItemId: patch.processingItemId,
+          processingItemId: targetId,
           processingItemName: ref.name,
           customPrice: hasCustomPrice ? Number(current.customPrice) : refPrice,
         }
@@ -547,13 +547,13 @@ export default function ProductForm({
                             label: `${p.name}（基础价 ¥${p.unitPrice ?? p.basePrice}/${p.unit}）`,
                           }))}
                           value={
-                            cfg.processingItemId != null && cfg.processingItemId !== 0
+                            cfg.processingItemId != null && cfg.processingItemId !== ''
                               ? String(cfg.processingItemId)
                               : ''
                           }
                           onChange={(e) =>
                             handleUpdateProcessingConfig(idx, {
-                              processingItemId: Number(e.target.value),
+                              processingItemId: e.target.value || null,
                             })
                           }
                         />
@@ -608,12 +608,13 @@ export default function ProductForm({
                           value=""
                           onChange={(e) => {
                             if (!e.target.value) return
+                            const targetId = String(e.target.value)
                             const ref = processingItems.find(
-                              (p) => Number(p.id) === Number(e.target.value)
+                              (p) => String(p.id) === targetId
                             )
                             updateField('processingItemConfigs', [
                               {
-                                processingItemId: Number(e.target.value),
+                                processingItemId: targetId,
                                 processingItemName: ref?.name,
                                 customPrice:
                                   Number(ref?.unitPrice ?? ref?.basePrice ?? 0) || 0,

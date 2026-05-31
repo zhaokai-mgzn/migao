@@ -426,33 +426,31 @@ function StatusSection({
       )}
 
       {status === 'pending_shipment' && (
-        <div className="flex items-center justify-between gap-6">
-          <div className="flex-1">
-            <OrderProgressSteps
-              status={status}
-              paidAt={order.paidAt}
-              shippedAt={order.shippedAt}
-              receivedAt={order.receivedAt}
-            />
+        <div>
+          <OrderProgressSteps
+            status={status}
+            paidAt={order.paidAt}
+            shippedAt={order.shippedAt}
+            receivedAt={order.receivedAt}
+          />
+          <div className="mt-6 pt-5 border-t border-gray-100 flex justify-end">
+            <Button onClick={onShip} className="gap-1.5">
+              发货
+              <Zap className="w-4 h-4" />
+            </Button>
           </div>
-          <Button onClick={onShip} className="gap-1.5 shrink-0">
-            发货
-            <Zap className="w-4 h-4" />
-          </Button>
         </div>
       )}
 
       {status === 'shipped' && (
-        <div className="flex items-center justify-between gap-6">
-          <div className="flex-1">
-            <OrderProgressSteps
-              status={status}
-              paidAt={order.paidAt}
-              shippedAt={order.shippedAt}
-              receivedAt={order.receivedAt}
-            />
-          </div>
-          <div className="flex items-center gap-3 shrink-0">
+        <div>
+          <OrderProgressSteps
+            status={status}
+            paidAt={order.paidAt}
+            shippedAt={order.shippedAt}
+            receivedAt={order.receivedAt}
+          />
+          <div className="mt-6 pt-5 border-t border-gray-100 flex items-center justify-end gap-3">
             <Button variant="secondary" onClick={onEditLogistics}>
               编辑物流
             </Button>

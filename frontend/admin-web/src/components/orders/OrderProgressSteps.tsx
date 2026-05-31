@@ -20,8 +20,8 @@ interface StepDef {
 
 /**
  * 计算每个步骤的状态
- * - completed: 已完成（绿色/蓝色 + 勾号）
- * - current: 当前步骤（蓝色 + 数字）
+ * - completed: 已完成（蓝色 + 勾号）
+ * - current: 当前步骤（蓝色 + 数字 + 外圈光晕）
  * - upcoming: 未来步骤（灰色 + 数字）
  */
 function getStepStates(status: OrderStatus): Array<'completed' | 'current' | 'upcoming'> {
@@ -68,23 +68,39 @@ export default function OrderProgressSteps({
       <div className="flex items-start">
         {steps.map((step, i) => {
           const state = states[i]
+          const isFirst = i === 0
           const isLast = i === steps.length - 1
-          const nextState = !isLast ? states[i + 1] : null
-          // 连接线颜色：当前节点已完成 → 蓝色；否则灰色
-          const lineActive = state === 'completed' && (nextState === 'completed' || nextState === 'current')
+          // 左侧连接线：根据"前一个节点"是否已完成决定颜色
+          const leftActive = !isFirst && states[i - 1] === 'completed'
+          // 右侧连接线：根据"当前节点"是否已完成决定颜色
+          const rightActive = !isLast && state === 'completed'
 
           return (
             <div
               key={step.label}
-              className={cn(
-                'flex-1 flex flex-col items-center relative',
-                isLast ? 'flex-none w-auto' : ''
-              )}
+              className="flex-1 flex flex-col items-center relative"
             >
-              {/* 节点 + 连接线容器 */}
-              <div className="flex items-center w-full">
-                {/* 左侧空白占位（首个节点不需要） */}
-                {i > 0 && <div className="flex-1" />}
+              {/* 节点 + 连接线层 */}
+              <div className="relative w-full flex items-center justify-center h-9">
+                {/* 左侧连接线（首个节点不需要） */}
+                {!isFirst && (
+                  <div
+                    className={cn(
+                      'absolute top-1/2 right-1/2 h-0.5 w-1/2 -translate-y-1/2 transition-colors',
+                      leftActive ? 'bg-primary-500' : 'bg-gray-200'
+                    )}
+                  />
+                )}
+
+                {/* 右侧连接线（末尾节点不需要） */}
+                {!isLast && (
+                  <div
+                    className={cn(
+                      'absolute top-1/2 left-1/2 h-0.5 w-1/2 -translate-y-1/2 transition-colors',
+                      rightActive ? 'bg-primary-500' : 'bg-gray-200'
+                    )}
+                  />
+                )}
 
                 {/* 圆形节点 */}
                 <div
@@ -101,19 +117,6 @@ export default function OrderProgressSteps({
                     <span>{step.index}</span>
                   )}
                 </div>
-
-                {/* 右侧连接线（最后一个节点不需要） */}
-                {!isLast && (
-                  <div className="flex-1 h-0.5 mx-1 relative">
-                    <div className="absolute inset-0 bg-gray-200" />
-                    <div
-                      className={cn(
-                        'absolute inset-0 bg-primary-500 transition-all duration-300',
-                        lineActive ? 'w-full' : 'w-0'
-                      )}
-                    />
-                  </div>
-                )}
               </div>
 
               {/* 标签 */}

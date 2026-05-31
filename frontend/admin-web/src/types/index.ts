@@ -172,7 +172,8 @@ export type StockDeductionMode = 'on_place' | 'on_pay'
 
 // 商品加工项配置
 export interface ProductProcessingItemConfig {
-  processingItemId: number | null
+  // 加工项 ID（与后端一致为字符串/UUID，例如 "proc_item_punch_nano"）
+  processingItemId: string | null
   processingItemName?: string
   customPrice: number
 }

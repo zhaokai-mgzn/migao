@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { Plus, Search, RotateCcw, FileText, ExternalLink } from 'lucide-react'
 import { toast } from 'sonner'
 import { afterSalesApi, orderApi } from '@/lib/api'
@@ -43,6 +44,7 @@ const ticketTypeOptions: { value: AfterSalesType; label: string }[] = [
 ]
 
 export default function AfterSalesPage() {
+  const router = useRouter()
   const [tickets, setTickets] = useState<AfterSalesTicket[]>([])
   const [loading, setLoading] = useState(false)
   const [total, setTotal] = useState(0)
@@ -157,7 +159,7 @@ export default function AfterSalesPage() {
       // 跳转到工单详情
       const ticketId = res.data?.data?.id
       if (ticketId) {
-        window.location.href = `/after-sales/${ticketId}`
+        router.push(`/after-sales/${ticketId}`)
       } else {
         loadTickets()
       }
@@ -313,7 +315,7 @@ export default function AfterSalesPage() {
                   <tr
                     key={ticket.id}
                     className="hover:bg-gray-50/50 cursor-pointer transition-colors"
-                    onClick={() => { window.location.href = `/after-sales/${ticket.id}` }}
+                    onClick={() => router.push(`/after-sales/${ticket.id}`)}
                   >
                     <td className="px-4 py-3">
                       <span className="font-mono text-sm text-gray-900">{ticket.ticketNo}</span>
@@ -353,7 +355,7 @@ export default function AfterSalesPage() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation()
-                          window.location.href = `/after-sales/${ticket.id}`
+                          router.push(`/after-sales/${ticket.id}`)
                         }}
                         className="text-primary-600 hover:text-primary-700 text-sm font-medium"
                       >
