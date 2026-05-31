@@ -35,9 +35,19 @@ public class OrderListResponse {
     private String customerPhone;
 
     /**
-     * 总金额
+     * 总金额（商品小计 + 加工费）
      */
     private BigDecimal totalAmount;
+
+    /**
+     * 实收款（当前 = totalAmount，后续支持优惠时可调整）
+     */
+    private BigDecimal actualAmount;
+
+    /**
+     * 加工费合计
+     */
+    private BigDecimal processingFee;
 
     /**
      * 订单状态

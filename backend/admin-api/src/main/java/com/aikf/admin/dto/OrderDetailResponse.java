@@ -38,9 +38,19 @@ public class OrderDetailResponse {
     private String customerAddress;
 
     /**
-     * 总金额
+     * 总金额（商品小计 + 加工费）
      */
     private BigDecimal totalAmount;
+
+    /**
+     * 实收款（当前 = totalAmount，后续支持优惠时可调整）
+     */
+    private BigDecimal actualAmount;
+
+    /**
+     * 加工费合计（所有订单明细加工项金额之和）
+     */
+    private BigDecimal processingFee;
 
     /**
      * 订单状态
@@ -56,6 +66,11 @@ public class OrderDetailResponse {
      * 订单明细列表
      */
     private List<OrderItemResponse> items;
+
+    /**
+     * 加工项列表（聚合所有订单明细的加工项，便于前端单独展示）
+     */
+    private List<ProcessingItemBrief> processingItems;
 
     /**
      * 物流信息
@@ -132,6 +147,38 @@ public class OrderDetailResponse {
          * 创建时间
          */
         private OffsetDateTime createdAt;
+    }
+
+    /**
+     * 加工项简要响应 DTO
+     */
+    @Data
+    public static class ProcessingItemBrief {
+
+        /**
+         * 加工项ID
+         */
+        private String id;
+
+        /**
+         * 加工项名称
+         */
+        private String name;
+
+        /**
+         * 单价
+         */
+        private BigDecimal unitPrice;
+
+        /**
+         * 数量
+         */
+        private Integer quantity;
+
+        /**
+         * 金额 = unitPrice * quantity
+         */
+        private BigDecimal amount;
     }
 
     /**

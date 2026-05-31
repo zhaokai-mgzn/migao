@@ -22,6 +22,7 @@ import org.springframework.util.StringUtils;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -128,10 +129,18 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
                                 item.getUnitPrice()
                         ))
                         .collect(Collectors.toList()));
+                // 后端统一计算加工费与实收款，避免前端重复计算
+                BigDecimal processingFee = orderItems.stream()
+                        .map(item -> sumProcessingFee(item.getProcessingInfo()))
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+                resp.setProcessingFee(processingFee);
+                resp.setActualAmount(resp.getTotalAmount());
             }
         } else {
             for (OrderListResponse resp : responses) {
                 resp.setItems(Collections.emptyList());
+                resp.setProcessingFee(BigDecimal.ZERO);
+                resp.setActualAmount(resp.getTotalAmount());
             }
         }
 
@@ -311,6 +320,23 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
                 .collect(Collectors.toList());
         response.setItems(itemResponses);
 
+        // 后端统一聚合加工项，并计算加工费 / 实收款（架构决策：费用计算全部在后端）
+        List<OrderDetailResponse.ProcessingItemBrief> aggregatedProcessing = new ArrayList<>();
+        BigDecimal processingFee = BigDecimal.ZERO;
+        for (OrderItem item : items) {
+            List<OrderDetailResponse.ProcessingItemBrief> briefs = extractProcessingItems(item.getProcessingInfo());
+            for (OrderDetailResponse.ProcessingItemBrief brief : briefs) {
+                aggregatedProcessing.add(brief);
+                if (brief.getAmount() != null) {
+                    processingFee = processingFee.add(brief.getAmount());
+                }
+            }
+        }
+        response.setProcessingItems(aggregatedProcessing);
+        response.setProcessingFee(processingFee);
+        // 当前阶段：实收款 = 总金额；后续支持优惠/部分付款时再调整
+        response.setActualAmount(order.getTotalAmount());
+
         // 查询物流信息
         List<OrderLogistics> logisticsList = orderLogisticsMapper.selectByOrderId(order.getId(), TenantContext.getTenantId());
         if (logisticsList != null && !logisticsList.isEmpty()) {
@@ -327,6 +353,84 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         }
 
         return response;
+    }
+
+    /**
+     * 从订单明细的 processingInfo（JSON）中解析加工项列表。
+     * processingInfo 格式来自前端创建订单时写入：
+     * { "processingFee": <number>, "processingItems": [ { id,name,unitPrice,quantity,unit } ] , ... }
+     * 解析失败/缺字段时返回空列表，确保不影响订单查询主流程。
+     */
+    @SuppressWarnings("unchecked")
+    private List<OrderDetailResponse.ProcessingItemBrief> extractProcessingItems(Object processingInfo) {
+        if (!(processingInfo instanceof Map)) {
+            return Collections.emptyList();
+        }
+        try {
+            Map<String, Object> info = (Map<String, Object>) processingInfo;
+            Object raw = info.get("processingItems");
+            if (!(raw instanceof List)) {
+                return Collections.emptyList();
+            }
+            List<Object> rawList = (List<Object>) raw;
+            List<OrderDetailResponse.ProcessingItemBrief> result = new ArrayList<>();
+            for (Object element : rawList) {
+                if (!(element instanceof Map)) {
+                    continue;
+                }
+                Map<String, Object> entry = (Map<String, Object>) element;
+                OrderDetailResponse.ProcessingItemBrief brief = new OrderDetailResponse.ProcessingItemBrief();
+                Object id = entry.get("id");
+                brief.setId(id != null ? String.valueOf(id) : null);
+                Object name = entry.get("name");
+                brief.setName(name != null ? String.valueOf(name) : null);
+                BigDecimal unitPrice = toBigDecimal(entry.get("unitPrice"));
+                brief.setUnitPrice(unitPrice);
+                Integer quantity = toInteger(entry.get("quantity"));
+                brief.setQuantity(quantity);
+                BigDecimal amount = BigDecimal.ZERO;
+                if (unitPrice != null && quantity != null) {
+                    amount = unitPrice.multiply(BigDecimal.valueOf(quantity));
+                }
+                brief.setAmount(amount);
+                result.add(brief);
+            }
+            return result;
+        } catch (Exception e) {
+            log.warn("解析 processingInfo 失败，返回空加工项列表: {}", e.getMessage());
+            return Collections.emptyList();
+        }
+    }
+
+    /**
+     * 计算单个订单明细 processingInfo 的加工费（仅供列表场景使用，无需返回详情）。
+     */
+    private BigDecimal sumProcessingFee(Object processingInfo) {
+        return extractProcessingItems(processingInfo).stream()
+                .map(OrderDetailResponse.ProcessingItemBrief::getAmount)
+                .filter(java.util.Objects::nonNull)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private BigDecimal toBigDecimal(Object value) {
+        if (value == null) return null;
+        if (value instanceof BigDecimal) return (BigDecimal) value;
+        if (value instanceof Number) return BigDecimal.valueOf(((Number) value).doubleValue());
+        try {
+            return new BigDecimal(String.valueOf(value));
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private Integer toInteger(Object value) {
+        if (value == null) return null;
+        if (value instanceof Number) return ((Number) value).intValue();
+        try {
+            return Integer.valueOf(String.valueOf(value));
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     /**
