@@ -14,7 +14,11 @@ env:
   OSS_BUCKET: ai-customer-service-admin-dev
   OSS_OBJECT_KEY: deploy/admin-api.jar
   OSS_ENDPOINT: oss-cn-hangzhou.aliyuncs.com
-  HEALTH_CHECK_URL: https://admin-api.migaozn.com/actuator/health
+  # 健康检查直接命中 SAE Internet SLB IP（HTTP:80 → TargetPort 8080）+ Host header
+  # 域名 admin-api.migaozn.com 的 DNS A 记录尚未配置（需控制台操作，独立 Issue 跟踪）
+  HEALTH_CHECK_HOST: admin-api.migaozn.com
+  HEALTH_CHECK_IP: 8.136.139.170
+  HEALTH_CHECK_PATH: /actuator/health
 
 jobs:
   build-and-deploy:
@@ -199,11 +203,16 @@ jobs:
           done
 
           sleep 30
-          echo "执行健康检查：${{ env.HEALTH_CHECK_URL }}"
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${{ env.HEALTH_CHECK_URL }}")
+          # 直连 SAE 公网 SLB IP，避免 admin-api.migaozn.com DNS 缺失导致 curl exit 6
+          TARGET_URL="http://${HEALTH_CHECK_IP}${HEALTH_CHECK_PATH}"
+          echo "执行健康检查：${TARGET_URL} (Host: ${HEALTH_CHECK_HOST})"
+          HTTP_CODE=$(curl -s -o /tmp/health.txt -w "%{http_code}" -m 15 \
+            -H "Host: ${HEALTH_CHECK_HOST}" "${TARGET_URL}" || echo "000")
           echo "健康检查响应码: $HTTP_CODE"
           if [ "$HTTP_CODE" != "200" ]; then
-            echo "❌ 健康检查失败"
+            echo "❌ 健康检查失败，响应内容："
+            cat /tmp/health.txt 2>/dev/null || true
             exit 1
           fi
           echo "✅ 部署成功，服务健康"
+          cat /tmp/health.txt | head -c 500 && echo
