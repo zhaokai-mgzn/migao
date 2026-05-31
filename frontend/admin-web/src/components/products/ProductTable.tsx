@@ -120,16 +120,25 @@ export default function ProductTable({
     {
       key: 'id',
       title: '商品ID',
-      width: '110px',
-      render: (record) => (
-        <span className="text-gray-700 font-mono text-sm">{record.id}</span>
-      ),
+      width: '100px',
+      render: (record) => {
+        const id = record.id || ''
+        const shortId = id.length > 8 ? `${id.slice(0, 8)}...` : id
+        return (
+          <span
+            className="text-gray-700 font-mono text-sm"
+            title={id}
+          >
+            {shortId}
+          </span>
+        )
+      },
     },
     {
       key: 'name',
       title: '商品标题',
       render: (record) => (
-        <div className="flex items-start gap-3 min-w-[220px]">
+        <div className="flex items-start gap-3 min-w-[200px]">
           <div className="w-10 h-10 rounded-md overflow-hidden bg-gray-100 flex-shrink-0 border border-gray-200">
             {record.images && record.images.length > 0 ? (
               <Image
@@ -153,17 +162,24 @@ export default function ProductTable({
     {
       key: 'skuCode',
       title: '商品货号',
-      width: '140px',
-      render: (record) => (
-        <span className="text-gray-700 text-sm font-mono">
-          {record.skuCode || record.sku || '-'}
-        </span>
-      ),
+      width: '100px',
+      render: (record) => {
+        const code = record.skuCode || record.sku || ''
+        const display = code && code.length > 10 ? `${code.slice(0, 10)}...` : code
+        return (
+          <span
+            className="text-gray-700 text-sm font-mono"
+            title={code || undefined}
+          >
+            {display || '-'}
+          </span>
+        )
+      },
     },
     {
       key: 'colorCount',
       title: '在售颜色',
-      width: '100px',
+      width: '80px',
       align: 'center',
       render: (record) => (
         <span className="text-gray-700 text-sm">共{record.colorCount ?? 0}色</span>
@@ -172,7 +188,7 @@ export default function ProductTable({
     {
       key: 'stock',
       title: '库存',
-      width: '110px',
+      width: '80px',
       align: 'left',
       sortable: true,
       render: (record) => {
@@ -188,7 +204,7 @@ export default function ProductTable({
     {
       key: 'salesCount',
       title: '销量',
-      width: '110px',
+      width: '80px',
       align: 'left',
       sortable: true,
       render: (record) => (
@@ -198,7 +214,7 @@ export default function ProductTable({
     {
       key: 'salesAmount',
       title: '销售额',
-      width: '120px',
+      width: '100px',
       align: 'left',
       sortable: true,
       render: (record) => (
@@ -208,7 +224,7 @@ export default function ProductTable({
     {
       key: 'createdAt',
       title: '创建时间',
-      width: '160px',
+      width: '150px',
       align: 'left',
       sortable: true,
       render: (record) => (
@@ -218,7 +234,7 @@ export default function ProductTable({
     {
       key: 'status',
       title: '状态',
-      width: '100px',
+      width: '80px',
       align: 'left',
       render: (record) => (
         <Badge variant={STATUS_BADGE_VARIANT[record.status]}>
@@ -229,7 +245,7 @@ export default function ProductTable({
     {
       key: 'actions',
       title: '操作',
-      width: '170px',
+      width: '160px',
       align: 'left',
       render: (record) => {
         const stop = (e: React.MouseEvent) => e.stopPropagation()
@@ -293,6 +309,7 @@ export default function ProductTable({
           sortField={sortField}
           sortOrder={sortOrder}
           onSort={(field) => onSortChange(field as ProductSortField)}
+          minWidth={1200}
         />
         {/* 浮动定位的全选 checkbox（落在第一列表头里） */}
         {products.length > 0 && (

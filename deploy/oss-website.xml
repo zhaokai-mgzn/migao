@@ -6,7 +6,7 @@
     <Type>0</Type>
   </IndexDocument>
   <ErrorDocument>
-    <Key>index.html</Key>
+    <Key>_spa-fallback.html</Key>
     <HttpStatus>200</HttpStatus>
   </ErrorDocument>
 </WebsiteConfiguration>

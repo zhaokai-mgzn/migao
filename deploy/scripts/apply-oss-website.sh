@@ -5,12 +5,17 @@
 #   - 早期使用 ErrorDocument=index.html + HttpStatus=200 出现误展示首页问题，
 #     一度改为 ErrorDocument=404.html + HttpStatus=404；但该配置不支持 Next.js
 #     SPA 动态路由（如 /products/:id/edit），访问会返回真实 404。
-#   - 当前版本配置（恢复 SPA 回退 + 客户端路由守卫）：
+#   - 后续恢复 ErrorDocument=index.html+200 + 客户端守卫鉴权。但因为根 index.html
+#     属于 (corporate) 路由组，访问未预渲染的动态路由会回退渲染营销首页，
+#     破坏 /products/:id/edit/ 等 dashboard 路由。
+#   - 当前版本配置（SPA 路由分派器方案）：
 #       IndexDocument: index.html, SupportSubDir=true, Type=0(Redirect)
-#       ErrorDocument: index.html, HttpStatus=200
-#     OSS 找不到文件时回退到 index.html，由 Next.js 客户端路由接管动态路由；
-#     受保护页面（如 /dashboard/）需依赖前端客户端守卫做鉴权与跳转，
-#     不能再依靠服务端 404 阻止未授权访问。
+#       ErrorDocument: _spa-fallback.html, HttpStatus=200
+#     _spa-fallback.html 由 admin-web 构建时通过 scripts/generate-spa-fallback.js
+#     自动生成，包含动态路由模式 → 占位 HTML 的映射。OSS 命中 ErrorDocument 时
+#     先服务该分派器，由其内联脚本将原始 URL 透传到对应占位页（query=__spa_path），
+#     占位页加载后由根 layout 中的早期脚本通过 history.replaceState 还原 URL，
+#     再由前端组件正常渲染 dashboard 内容；受保护页面继续依赖客户端守卫鉴权。
 #
 # ⚠️ 前置条件：
 #   - OSS website hosting 仅在请求路径走 "bucket.oss-website-{region}.aliyuncs.com"

@@ -24,6 +24,8 @@ interface TableProps<T> {
   sortOrder?: 'asc' | 'desc'
   onSort?: (field: string) => void
   emptyText?: string
+  /** 表格最小宽度（px），用于配合外层 overflow-x-auto 实现窄屏横向滚动 */
+  minWidth?: number
 }
 
 function Table<T extends Record<string, any>>({
@@ -36,6 +38,7 @@ function Table<T extends Record<string, any>>({
   sortOrder,
   onSort,
   emptyText = '暂无数据',
+  minWidth,
 }: TableProps<T>) {
   const data = dataSource || []
 
@@ -59,7 +62,10 @@ function Table<T extends Record<string, any>>({
 
   return (
     <div className="w-full overflow-x-auto">
-      <table className="w-full border-collapse">
+      <table
+        className="w-full border-collapse"
+        style={minWidth ? { minWidth: `${minWidth}px` } : undefined}
+      >
         <thead>
           <tr className="bg-gray-50 border-b border-gray-200">
             {columns.map((column) => (
