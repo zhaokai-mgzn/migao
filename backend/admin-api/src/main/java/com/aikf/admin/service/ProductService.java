@@ -4,12 +4,14 @@ import com.aikf.admin.dto.*;
 import com.aikf.admin.entity.Category;
 import com.aikf.admin.entity.ProcessingItem;
 import com.aikf.admin.entity.Product;
+import com.aikf.admin.entity.ProductAttribute;
 import com.aikf.admin.entity.ProductColor;
 import com.aikf.admin.entity.ProductProcessingItem;
 import com.aikf.admin.entity.ProductSku;
 import com.aikf.admin.exception.BusinessException;
 import com.aikf.admin.mapper.CategoryMapper;
 import com.aikf.admin.mapper.ProcessingItemMapper;
+import com.aikf.admin.mapper.ProductAttributeMapper;
 import com.aikf.admin.mapper.ProductColorMapper;
 import com.aikf.admin.mapper.ProductMapper;
 import com.aikf.admin.mapper.ProductProcessingItemMapper;
@@ -63,6 +65,12 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
     private final ProductSkuMapper productSkuMapper;
     private final ProductProcessingItemMapper productProcessingItemMapper;
     private final ProcessingItemMapper processingItemMapper;
+    private final ProductAttributeMapper productAttributeMapper;
+
+    /**
+     * 商品品牌存储在 product_attributes 表的 attr_key
+     */
+    private static final String ATTR_KEY_BRAND = "brand";
 
     /**
      * 合法的状态流转映射
@@ -252,6 +260,9 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             response.setDoorWidths(new ArrayList<>(dw));
         }
 
+        // 回填商品属性：brand + specifications
+        fillProductAttributes(response, id);
+
         return response;
     }
 
@@ -276,6 +287,11 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             product.setImages(request.getImages());
         }
 
+        // 详情图列表（JSONB 存储于 products.detail_images）
+        if (request.getDetailImages() != null) {
+            product.setDetailImages(request.getDetailImages());
+        }
+
         // 设置默认状态
         if (!StringUtils.hasText(product.getStatus())) {
             product.setStatus("draft");
@@ -291,6 +307,9 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         // 保存销售信息（颜色 + SKU）
         saveColorsAndSkus(product.getId(), tenantId,
                 request.getColors(), request.getSkus());
+
+        // 保存商品属性（brand + specifications，存入 product_attributes 表）
+        saveProductAttributes(product.getId(), tenantId, request.getBrand(), request.getSpecifications());
 
         log.info("创建商品成功: id={}, name={}", product.getId(), product.getName());
 
@@ -322,6 +341,11 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             product.setImages(request.getImages());
         }
 
+        // 详情图列表（允许传空数组清空）
+        if (request.getDetailImages() != null) {
+            product.setDetailImages(request.getDetailImages());
+        }
+
         // 更新编辑信息
         product.setEditedBy(getCurrentUsername());
         product.setEditedAt(OffsetDateTime.now());
@@ -337,6 +361,11 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                     .eq(ProductColor::getProductId, id));
             // 重新保存
             saveColorsAndSkus(id, tenantId, request.getColors(), request.getSkus());
+        }
+
+        // 更新商品属性：仅当请求中明确提交 brand 或 specifications 时才重写，避免误清空
+        if (request.getBrand() != null || request.getSpecifications() != null) {
+            saveProductAttributes(id, tenantId, request.getBrand(), request.getSpecifications());
         }
 
         log.info("更新商品成功: id={}, name={}", id, product.getName());
@@ -409,6 +438,70 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                 entity.setSalesCount(0);
                 productSkuMapper.insert(entity);
             }
+        }
+    }
+
+    /**
+     * 保存/更新商品属性（brand + specifications）到 product_attributes 表
+     * 先删后插，语义为全量覆盖。调用方负责判断是否需要调用。
+     */
+    private void saveProductAttributes(String productId, Long tenantId,
+                                       String brand, Map<String, String> specifications) {
+        // 删除已有属性（用于更新场景）
+        productAttributeMapper.delete(new LambdaQueryWrapper<ProductAttribute>()
+                .eq(ProductAttribute::getProductId, productId));
+
+        List<ProductAttribute> attrs = new ArrayList<>();
+        if (StringUtils.hasText(brand)) {
+            ProductAttribute attr = new ProductAttribute();
+            attr.setProductId(productId);
+            attr.setTenantId(tenantId);
+            attr.setAttrKey(ATTR_KEY_BRAND);
+            attr.setAttrValue(brand);
+            attrs.add(attr);
+        }
+        if (specifications != null) {
+            specifications.forEach((key, value) -> {
+                if (StringUtils.hasText(key) && StringUtils.hasText(value)) {
+                    ProductAttribute attr = new ProductAttribute();
+                    attr.setProductId(productId);
+                    attr.setTenantId(tenantId);
+                    attr.setAttrKey(key);
+                    attr.setAttrValue(value);
+                    attrs.add(attr);
+                }
+            });
+        }
+        if (!attrs.isEmpty()) {
+            attrs.forEach(productAttributeMapper::insert);
+        }
+    }
+
+    /**
+     * 查询商品属性并填充到 ProductResponse。
+     * brand 单独取出，其余属性放入 specifications map。
+     */
+    private void fillProductAttributes(ProductResponse response, String productId) {
+        List<ProductAttribute> attrs = productAttributeMapper.selectList(
+                new LambdaQueryWrapper<ProductAttribute>()
+                        .eq(ProductAttribute::getProductId, productId)
+        );
+        if (attrs == null || attrs.isEmpty()) {
+            return;
+        }
+        Map<String, String> specifications = new LinkedHashMap<>();
+        for (ProductAttribute attr : attrs) {
+            if (!StringUtils.hasText(attr.getAttrKey())) {
+                continue;
+            }
+            if (ATTR_KEY_BRAND.equals(attr.getAttrKey())) {
+                response.setBrand(attr.getAttrValue());
+            } else {
+                specifications.put(attr.getAttrKey(), attr.getAttrValue());
+            }
+        }
+        if (!specifications.isEmpty()) {
+            response.setSpecifications(specifications);
         }
     }
 
@@ -957,6 +1050,11 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         // 处理图片列表
         if (product.getImages() instanceof List) {
             response.setImages((List<String>) product.getImages());
+        }
+
+        // 详情图列表（BeanUtils 拷贝同名同类型字段后仍显式设置以提高可读性）
+        if (product.getDetailImages() != null) {
+            response.setDetailImages(product.getDetailImages());
         }
 
         return response;

@@ -133,6 +133,7 @@ CREATE TABLE products (
     description TEXT,
     main_image VARCHAR(512),
     images JSONB DEFAULT '[]',
+    detail_images JSONB DEFAULT '[]',
     knowledge_base_id VARCHAR(64),
     stock INTEGER DEFAULT 0,
     stock_warning_threshold INTEGER DEFAULT 10,
@@ -158,6 +159,7 @@ COMMENT ON COLUMN products.stock_deduction_mode IS '库存扣减模式: on_order
 COMMENT ON COLUMN products.sales_count IS '累计销量';
 COMMENT ON COLUMN products.sales_amount IS '累计销售额';
 COMMENT ON COLUMN products.has_processing IS '是否含加工项';
+COMMENT ON COLUMN products.detail_images IS '商品详情图URL列表（JSONB数组）';
 
 -- ================================================
 -- 商品 SKU 矩阵相关表 (来自 008_product_sku_matrix.sql)

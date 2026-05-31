@@ -8,6 +8,7 @@ import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
+import java.util.List;
 
 /**
  * 商品实体类
@@ -42,6 +43,12 @@ public class Product {
 
     @TableField(typeHandler = com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler.class)
     private Object images;
+
+    /**
+     * 详情图列表（JSONB 存储）
+     */
+    @TableField(value = "detail_images", typeHandler = com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler.class)
+    private List<String> detailImages;
 
     private String knowledgeBaseId;
 
