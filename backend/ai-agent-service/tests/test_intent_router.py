@@ -43,6 +43,12 @@ class TestRuleMatcher:
         assert result.intent == IntentType.LOGISTICS_TRACK
         assert result.confidence == 0.95
 
+    def test_keyword_match_pending_shipment(self, matcher):
+        """关键词匹配：'待发货' → ORDER_QUERY（而非物流）"""
+        result = matcher.match("我的订单待发货")
+        assert result is not None
+        assert result.intent == IntentType.ORDER_QUERY
+
     def test_keyword_match_product_inquiry(self, matcher):
         """关键词匹配：商品咨询"""
         result = matcher.match("这个商品多少钱")
@@ -99,11 +105,28 @@ class TestRuleMatcher:
         assert result.source == "rule"
 
     def test_regex_match_long_number(self, matcher):
-        """正则匹配：长数字串"""
+        """正则匹配：裸长数字不再匹配订单号（需 ORD 前缀，避免误匹配手机号）"""
         result = matcher.match("20250503123456789012")
+        # 裸数字不再匹配 ORDER_QUERY，应返回 None 或匹配其他意图
+        if result is not None:
+            assert result.intent != IntentType.ORDER_QUERY or result.source != "rule"
+
+    def test_regex_match_ord_prefix_required(self, matcher):
+        """正则匹配：订单号必须带 ORD 前缀"""
+        # ORD 前缀匹配
+        result = matcher.match("ORD1234567890123")
         assert result is not None
         assert result.intent == IntentType.ORDER_QUERY
-        assert result.confidence == 0.9
+
+        # 带分隔符也匹配
+        result2 = matcher.match("ORD-1234567890123")
+        assert result2 is not None
+        assert result2.intent == IntentType.ORDER_QUERY
+
+        # 手机号不匹配（11位数字）
+        result3 = matcher.match("13800138000")
+        if result3 is not None:
+            assert result3.intent != IntentType.ORDER_QUERY
 
     # --- 未命中 ---
 
@@ -273,6 +296,19 @@ class TestIntentConfig:
         """所有意图类型都有 tool 映射"""
         for intent in IntentType:
             assert intent in INTENT_TOOL_MAP
+
+    def test_after_sales_maps_to_after_sales_manage(self):
+        """售后意图映射到 after_sales_manage（而非 order_manage）"""
+        tools = INTENT_TOOL_MAP[IntentType.AFTER_SALES]
+        assert "after_sales_manage" in tools
+        assert "order_query" in tools
+        assert "order_manage" not in tools
+
+    def test_order_query_excludes_order_manage(self):
+        """订单查询意图不再包含 order_manage"""
+        tools = INTENT_TOOL_MAP[IntentType.ORDER_QUERY]
+        assert "order_query" in tools
+        assert "order_manage" not in tools
 
     def test_intent_result_defaults(self):
         """IntentResult 默认值"""

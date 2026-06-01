@@ -3,7 +3,9 @@ package com.aikf.admin.controller;
 import com.aikf.admin.config.GlobalExceptionHandler;
 import com.aikf.admin.config.TenantContext;
 import com.aikf.admin.dto.*;
+import com.aikf.admin.entity.OrderLogistics;
 import com.aikf.admin.exception.BusinessException;
+import com.aikf.admin.service.OrderLogisticsService;
 import com.aikf.admin.service.OrderService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
@@ -40,6 +42,9 @@ class OrderIntegrationTest {
 
     @Mock
     private OrderService orderService;
+
+    @Mock
+    private OrderLogisticsService orderLogisticsService;
 
     @InjectMocks
     private OrderController orderController;
@@ -158,7 +163,7 @@ class OrderIntegrationTest {
 
         PageResponse<OrderListResponse> pageResponse = PageResponse.of(2L, 1L, 20L, List.of(order1, order2));
 
-        when(orderService.getOrderPage(eq(1L), eq(20L), isNull(), isNull(), isNull(), eq(1L)))
+        when(orderService.getOrderPage(eq(1L), eq(20L), isNull(), isNull(), isNull(), isNull(), eq(1L)))
                 .thenReturn(pageResponse);
 
         // When & Then
@@ -285,5 +290,104 @@ class OrderIntegrationTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.error.code").value("INVALID_STATUS"));
+    }
+
+    // ======================== 取消订单（带关闭原因） ========================
+
+    @Test
+    @DisplayName("取消订单 - 带关闭原因")
+    void testCancelOrder_WithCloseReason() throws Exception {
+        // Given
+        doNothing().when(orderService).cancelOrder(TEST_ORDER_ID, "缺货");
+
+        // When & Then
+        mockMvc.perform(put("/api/admin/orders/" + TEST_ORDER_ID + "/cancel")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"closeReason\":\"缺货\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+
+        verify(orderService).cancelOrder(TEST_ORDER_ID, "缺货");
+    }
+
+    @Test
+    @DisplayName("取消订单 - 无关闭原因")
+    void testCancelOrder_WithoutCloseReason() throws Exception {
+        // Given
+        doNothing().when(orderService).cancelOrder(TEST_ORDER_ID, null);
+
+        // When & Then
+        mockMvc.perform(put("/api/admin/orders/" + TEST_ORDER_ID + "/cancel")
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+
+        verify(orderService).cancelOrder(eq(TEST_ORDER_ID), isNull());
+    }
+
+    // ======================== 添加备注 ========================
+
+    @Test
+    @DisplayName("添加订单备注 - 成功")
+    void testAddRemark_Success() throws Exception {
+        // Given
+        doNothing().when(orderService).addRemark(TEST_ORDER_ID, "客户催单，请尽快发货");
+
+        // When & Then
+        mockMvc.perform(post("/api/admin/orders/" + TEST_ORDER_ID + "/remark")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"客户催单，请尽快发货\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+
+        verify(orderService).addRemark(TEST_ORDER_ID, "客户催单，请尽快发货");
+    }
+
+    @Test
+    @DisplayName("添加订单备注 - 空内容被拒绝")
+    void testAddRemark_EmptyContent() throws Exception {
+        // Given: Service 层校验拒绝空内容（validationError 返回 422）
+        doThrow(new BusinessException("VALIDATION_ERROR", "备注内容不能为空", 422))
+                .when(orderService).addRemark(eq(TEST_ORDER_ID), isNull());
+
+        // When & Then
+        mockMvc.perform(post("/api/admin/orders/" + TEST_ORDER_ID + "/remark")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.success").value(false));
+    }
+
+    // ======================== 更新物流（状态校验） ========================
+
+    @Test
+    @DisplayName("更新物流 - shipped 状态允许")
+    void testUpdateLogistics_ShippedStatus() throws Exception {
+        // Given
+        OrderDetailResponse detail = buildOrderDetail(TEST_ORDER_ID, "ORD20250425001", "shipped");
+        when(orderService.getOrderById(TEST_ORDER_ID)).thenReturn(detail);
+        when(orderLogisticsService.getByOrderId(TEST_ORDER_ID)).thenReturn(List.of());
+        when(orderLogisticsService.save(any(OrderLogistics.class))).thenReturn(true);
+
+        // When & Then
+        mockMvc.perform(put("/api/admin/orders/" + TEST_ORDER_ID + "/logistics")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"logisticsCompany\":\"顺丰速运\",\"trackingNo\":\"SF123\"}"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("更新物流 - pending 状态被拒绝")
+    void testUpdateLogistics_PendingStatusRejected() throws Exception {
+        // Given
+        OrderDetailResponse detail = buildOrderDetail(TEST_ORDER_ID, "ORD20250425001", "pending");
+        when(orderService.getOrderById(TEST_ORDER_ID)).thenReturn(detail);
+
+        // When & Then: validationError 返回 422
+        mockMvc.perform(put("/api/admin/orders/" + TEST_ORDER_ID + "/logistics")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"logisticsCompany\":\"顺丰速运\",\"trackingNo\":\"SF123\"}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.success").value(false));
     }
 }

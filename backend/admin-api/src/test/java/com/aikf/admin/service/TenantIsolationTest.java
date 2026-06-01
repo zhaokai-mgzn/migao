@@ -77,6 +77,24 @@ class TenantIsolationTest {
     @Mock
     private RoleService roleService;
 
+    @Mock
+    private com.aikf.admin.mapper.OrderItemMapper orderItemMapper;
+
+    @Mock
+    private com.aikf.admin.mapper.OrderLogisticsMapper orderLogisticsMapper;
+
+    @Mock
+    private CustomerService customerService;
+
+    @Mock
+    private com.aikf.admin.mapper.ProductSkuMapper productSkuMapper;
+
+    @Mock
+    private com.fasterxml.jackson.databind.ObjectMapper objectMapper;
+
+    @Mock
+    private com.aikf.admin.mapper.ProductColorMapper productColorMapper;
+
     @InjectMocks
     private ProductService productService;
 
@@ -393,7 +411,7 @@ class TenantIsolationTest {
 
         // When: 以租户A身份查询订单列表
         com.aikf.admin.dto.PageResponse<com.aikf.admin.dto.OrderListResponse> result =
-                orderService.getOrderPage(1, 20, null, null, null, TENANT_A);
+                orderService.getOrderPage(1, 20, null, null, null, null, TENANT_A);
 
         // Then: 只返回租户A的订单
         assertThat(result.getItems()).hasSize(1);

@@ -65,6 +65,11 @@ public class OrderListResponse {
     private String remark;
 
     /**
+     * 关闭/取消原因
+     */
+    private String closeReason;
+
+    /**
      * 创建时间
      */
     private OffsetDateTime createdAt;

@@ -40,9 +40,7 @@ youke/
 │   ├── sql/                # 数据库迁移脚本
 │   ├── deployment/         # 部署文档
 │   └── TEST_REPORT.md      # 测试报告
-├── knowledge_base/         # 知识库原始数据
-└── .qoder/
-    └── agents/             # QoderWake Agent 定义
+└── knowledge_base/         # 知识库原始数据
 ```
 
 ## 分支策略

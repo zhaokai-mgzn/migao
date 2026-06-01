@@ -9,8 +9,11 @@ import com.aikf.admin.exception.BusinessException;
 import com.aikf.admin.mapper.OrderItemMapper;
 import com.aikf.admin.mapper.OrderLogisticsMapper;
 import com.aikf.admin.mapper.OrderMapper;
+import com.aikf.admin.mapper.ProductMapper;
+import com.aikf.admin.mapper.ProductSkuMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -44,6 +47,15 @@ class OrderServiceTest {
 
     @Mock
     private OrderLogisticsMapper orderLogisticsMapper;
+
+    @Mock
+    private ProductMapper productMapper;
+
+    @Mock
+    private ProductSkuMapper productSkuMapper;
+
+    @Mock
+    private ObjectMapper objectMapper;
 
     private Order testOrder;
     private OrderItem testOrderItem;
@@ -95,7 +107,7 @@ class OrderServiceTest {
                 .thenReturn(mockPage);
 
         // when
-        PageResponse<OrderListResponse> result = orderService.getOrderPage(1, 20, null, null, null, 1L);
+        PageResponse<OrderListResponse> result = orderService.getOrderPage(1, 20, null, null, null, null, 1L);
 
         // then
         assertThat(result).isNotNull();
@@ -116,7 +128,7 @@ class OrderServiceTest {
                 .thenReturn(mockPage);
 
         // when
-        PageResponse<OrderListResponse> result = orderService.getOrderPage(1, 10, "pending", "张三", null, 1L);
+        PageResponse<OrderListResponse> result = orderService.getOrderPage(1, 10, "pending", "张三", null, null, 1L);
 
         // then
         assertThat(result).isNotNull();
@@ -136,7 +148,7 @@ class OrderServiceTest {
                 .thenReturn(emptyPage);
 
         // when
-        PageResponse<OrderListResponse> result = orderService.getOrderPage(1, 20, null, null, null, 1L);
+        PageResponse<OrderListResponse> result = orderService.getOrderPage(1, 20, null, null, null, null, 1L);
 
         // then
         assertThat(result.getTotal()).isEqualTo(0);
@@ -150,7 +162,7 @@ class OrderServiceTest {
     void getOrderById_Found() {
         // given
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
-        when(orderItemMapper.selectByOrderId("order-001", 1L)).thenReturn(List.of(testOrderItem));
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(testOrderItem));
         when(orderLogisticsMapper.selectByOrderId("order-001", 1L)).thenReturn(List.of());
 
         // when
@@ -177,7 +189,7 @@ class OrderServiceTest {
                 .build();
 
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
-        when(orderItemMapper.selectByOrderId("order-001", 1L)).thenReturn(List.of(testOrderItem));
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(testOrderItem));
         when(orderLogisticsMapper.selectByOrderId("order-001", 1L)).thenReturn(List.of(logistics));
 
         // when
@@ -243,7 +255,7 @@ class OrderServiceTest {
                 .status("pending")
                 .build();
         when(orderMapper.selectById("order-new")).thenReturn(savedOrder);
-        when(orderItemMapper.selectByOrderId("order-new", 1L)).thenReturn(List.of(testOrderItem));
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(testOrderItem));
         when(orderLogisticsMapper.selectByOrderId("order-new", 1L)).thenReturn(List.of());
 
         // when
@@ -295,7 +307,7 @@ class OrderServiceTest {
                 .status("pending")
                 .build();
         when(orderMapper.selectById("order-multi")).thenReturn(savedOrder);
-        when(orderItemMapper.selectByOrderId("order-multi", 1L)).thenReturn(List.of());
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
         when(orderLogisticsMapper.selectByOrderId("order-multi", 1L)).thenReturn(List.of());
 
         // when
@@ -457,7 +469,7 @@ class OrderServiceTest {
             Order o = invocation.getArgument(0);
             o.setId("order-gen");
             // 验证订单号格式
-            assertThat(o.getOrderNo()).matches("ORD-\\d{8}-\\d{4}");
+            assertThat(o.getOrderNo()).matches("ORD-\\d{8}-\\d+");
             return 1;
         });
         when(orderItemMapper.insert(any(OrderItem.class))).thenReturn(1);
@@ -468,7 +480,7 @@ class OrderServiceTest {
                 .status("pending")
                 .build();
         when(orderMapper.selectById("order-gen")).thenReturn(savedOrder);
-        when(orderItemMapper.selectByOrderId("order-gen", 1L)).thenReturn(List.of());
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
         when(orderLogisticsMapper.selectByOrderId("order-gen", 1L)).thenReturn(List.of());
 
         // when
@@ -476,5 +488,221 @@ class OrderServiceTest {
 
         // then
         verify(orderMapper).insert(argThat((Order o) -> o.getOrderNo() != null && o.getOrderNo().startsWith("ORD-")));
+    }
+
+    // ======================== 确认支付（库存扣减）测试 ========================
+
+    @Test
+    @DisplayName("确认支付 - pending → confirmed 并扣减库存和销量")
+    void confirmPayment_deductsStockAndIncreasesSales() {
+        // given
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderMapper.updateById(any(Order.class))).thenReturn(1);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(testOrderItem));
+
+        // when
+        orderService.confirmPayment("order-001");
+
+        // then
+        verify(orderMapper).updateById(argThat((Order o) -> "confirmed".equals(o.getStatus())));
+        // 商品级：increaseSales 被调用
+        verify(productMapper).increaseSales(eq("prod-001"), eq(2), any(BigDecimal.class));
+    }
+
+    @Test
+    @DisplayName("确认支付 - 非 pending 状态拒绝")
+    void confirmPayment_rejectsNonPendingStatus() {
+        // given
+        testOrder.setStatus("confirmed");
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+
+        // when & then
+        assertThatThrownBy(() -> orderService.confirmPayment("order-001"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("只有待确认状态");
+    }
+
+    // ======================== 取消订单（库存恢复）测试 ========================
+
+    @Test
+    @DisplayName("取消 confirmed 订单 - 恢复库存和销量")
+    void cancelOrder_restoresStock_confirmedOrder() {
+        // given
+        testOrder.setStatus("confirmed");
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderMapper.updateById(any(Order.class))).thenReturn(1);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(testOrderItem));
+
+        // when
+        orderService.cancelOrder("order-001", "缺货");
+
+        // then
+        verify(orderMapper).updateById(argThat((Order o) ->
+                "cancelled".equals(o.getStatus()) && "缺货".equals(o.getCloseReason())));
+        verify(productMapper).decreaseSales(eq("prod-001"), eq(2), any(BigDecimal.class));
+    }
+
+    @Test
+    @DisplayName("取消 pending 订单 - 不恢复库存")
+    void cancelOrder_noStockRestore_pendingOrder() {
+        // given
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderMapper.updateById(any(Order.class))).thenReturn(1);
+
+        // when
+        orderService.cancelOrder("order-001", null);
+
+        // then
+        verify(orderMapper).updateById(argThat((Order o) -> "cancelled".equals(o.getStatus())));
+        // pending 订单取消不应调用库存恢复
+        verify(productMapper, never()).decreaseSales(anyString(), anyInt(), any(BigDecimal.class));
+    }
+
+    @Test
+    @DisplayName("取消订单 - closeReason 超长被拒绝")
+    void cancelOrder_closeReasonTooLong() {
+        // given
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        String longReason = "x".repeat(501);
+
+        // when & then
+        assertThatThrownBy(() -> orderService.cancelOrder("order-001", longReason))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("500");
+    }
+
+    @Test
+    @DisplayName("取消订单 - 不允许从 shipped/completed 状态取消")
+    void cancelOrder_rejectsNonCancellableStatus() {
+        // given
+        testOrder.setStatus("shipped");
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+
+        // when & then
+        assertThatThrownBy(() -> orderService.cancelOrder("order-001", null))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("当前状态不允许取消");
+    }
+
+    // ======================== 退款（库存恢复）测试 ========================
+
+    @Test
+    @DisplayName("退款 confirmed 订单 - 恢复库存并设置 closeReason=退款")
+    void refundOrder_restoresStockAndDecreasesSales() {
+        // given
+        testOrder.setStatus("confirmed");
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderMapper.updateById(any(Order.class))).thenReturn(1);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(testOrderItem));
+
+        // when
+        orderService.refundOrder("order-001");
+
+        // then
+        verify(orderMapper).updateById(argThat((Order o) ->
+                "cancelled".equals(o.getStatus()) && "退款".equals(o.getCloseReason())));
+        verify(productMapper).decreaseSales(eq("prod-001"), eq(2), any(BigDecimal.class));
+    }
+
+    @Test
+    @DisplayName("退款 - pending 状态不允许退款")
+    void refundOrder_rejectsPendingStatus() {
+        // given
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+
+        // when & then
+        assertThatThrownBy(() -> orderService.refundOrder("order-001"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("不允许退款");
+    }
+
+    // ======================== 添加备注测试 ========================
+
+    @Test
+    @DisplayName("添加备注 - 追加带时间戳的备注")
+    void addRemark_appendsWithTimestamp() {
+        // given
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderMapper.updateById(any(Order.class))).thenReturn(1);
+
+        // when
+        orderService.addRemark("order-001", "客户催单");
+
+        // then
+        verify(orderMapper).updateById(argThat((Order o) -> {
+            String remark = o.getRemark();
+            return remark != null
+                    && remark.contains("客户催单")
+                    && remark.matches("(?s).*\\[\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}\\] 客户催单.*");
+        }));
+    }
+
+    @Test
+    @DisplayName("添加备注 - 已有备注时换行追加")
+    void addRemark_appendsToExistingRemark() {
+        // given
+        testOrder.setRemark("[2026-06-01 10:00] 旧备注");
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderMapper.updateById(any(Order.class))).thenReturn(1);
+
+        // when
+        orderService.addRemark("order-001", "新备注");
+
+        // then
+        verify(orderMapper).updateById(argThat((Order o) ->
+                o.getRemark() != null && o.getRemark().contains("\n") && o.getRemark().contains("新备注")));
+    }
+
+    @Test
+    @DisplayName("添加备注 - 空内容被拒绝")
+    void addRemark_rejectsEmptyContent() {
+        // given
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+
+        // when & then
+        assertThatThrownBy(() -> orderService.addRemark("order-001", ""))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("备注内容不能为空");
+    }
+
+    @Test
+    @DisplayName("添加备注 - 超长内容被拒绝")
+    void addRemark_rejectsTooLongContent() {
+        // given
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        String longContent = "x".repeat(2001);
+
+        // when & then
+        assertThatThrownBy(() -> orderService.addRemark("order-001", longContent))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("2000");
+    }
+
+    // ======================== 跟进状态校验测试 ========================
+
+    @Test
+    @DisplayName("更新跟进状态 - 无效值被拒绝")
+    void updateFollowStatus_rejectsInvalidValue() {
+        // given
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+
+        // when & then
+        assertThatThrownBy(() -> orderService.updateFollowStatus("order-001", "invalid"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("无效的跟进状态");
+    }
+
+    @Test
+    @DisplayName("更新跟进状态 - 有效值成功")
+    void updateFollowStatus_acceptsValidValue() {
+        // given
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderMapper.updateById(any(Order.class))).thenReturn(1);
+
+        // when
+        orderService.updateFollowStatus("order-001", "following");
+
+        // then
+        verify(orderMapper).updateById(argThat((Order o) -> "following".equals(o.getFollowStatus())));
     }
 }

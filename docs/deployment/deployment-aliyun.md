@@ -1069,47 +1069,162 @@ ALTER SYSTEM SET pgaudit.log_catalog = off;
 
 ---
 
-## 10. CI/CD 流水线（云效）
+## 10. CI/CD 流水线（GitHub Actions）
 
-### 10.1 创建流水线
+> 本项目使用 **GitHub Actions** 实现自动化部署。代码合并到 `main` 分支后自动触发对应服务的构建与部署，无需手动操作。
 
-使用阿里云云效 Flow 创建 CI/CD 流水线：
+### 10.1 工作流概览
 
-```yaml
-# 流水线配置示例
+仓库 `.github/workflows/` 下有 3 个部署流水线：
 
-# 构建阶段
-stages:
-  - stage: build_ai_agent
-    name: 构建 AI Agent 服务
-    jobs:
-      - job: build
-        steps:
-          - step: build@docker
-            name: 构建 Docker 镜像
-            dockerfile: ai-agent-service/Dockerfile
-            image: registry.cn-hangzhou.aliyuncs.com/youke/ai-agent-service:${BUILD_NUMBER}
-          
-          - step: publish@acr
-            name: 推送镜像到 ACR
-            repository: youke/ai-agent-service
-            tag: ${BUILD_NUMBER}
+| 工作流文件 | 名称 | 触发路径 | 构建方式 | 部署目标 |
+|-----------|------|---------|---------|---------|
+| `deploy-admin-api.yml` | admin-api | `backend/admin-api/**` | Maven → FatJar | SAE（FatJar 部署） |
+| `deploy-ai-agent-service.yml` | ai-agent-service | `backend/ai-agent-service/**` | Docker build → ACR | SAE（镜像部署） |
+| `deploy-admin-web.yml` | admin-web | `frontend/admin-web/**` | Next.js 静态导出 | OSS + CDN |
 
-  - stage: deploy_ai_agent
-    name: 部署 AI Agent 服务
-    jobs:
-      - job: deploy
-        steps:
-          - step: deploy@sae
-            name: 部署到 SAE
-            appId: <app-id>
-            image: registry.cn-hangzhou.aliyuncs.com/youke/ai-agent-service:${BUILD_NUMBER}
+**触发规则**：
+- **自动触发**：PR 合并到 `main` 分支，路径匹配时自动运行对应工作流
+- **手动触发**：每个工作流支持 `workflow_dispatch`，可在 GitHub Actions 页面手动运行
+
+### 10.2 标准部署流程
+
+```
+本地开发 → 创建功能分支 → 提交代码 → 创建 PR → Review 通过 → 合并到 main → GitHub Actions 自动部署
 ```
 
-### 10.2 触发规则
+**具体步骤**：
 
-- 代码推送到 main 分支 → 自动触发构建部署
-- 手动触发 → 选择环境部署
+```bash
+# 1. 创建功能分支
+git checkout -b feat/backend/xxx
+
+# 2. 本地开发...
+
+# 3. 提交并推送
+git add .
+git commit -m "feat(backend): 新增xxx功能"
+git push origin feat/backend/xxx
+
+# 4. 创建 PR
+gh pr create --title "[backend] 新增xxx功能" --base main
+
+# 5. Review 通过后合并（Squash merge 保持 main 整洁）
+gh pr merge --squash --delete-branch
+
+# 6. ✅ GitHub Actions 自动部署，无需任何额外操作
+```
+
+### 10.3 各工作流详解
+
+#### admin-api（Java 后端）
+
+```
+触发条件：backend/admin-api/** 文件变更推送到 main
+构建：JDK 21 (Temurin) + Maven → admin-api-*.jar (FatJar)
+中间产物：FatJar 上传到 OSS（ai-customer-service-admin-dev/deploy/admin-api.jar）
+部署：SAE DeployApplication（PackageType=FatJar）
+健康检查：curl http://8.136.139.170/actuator/health (Host: admin-api.migaozn.com)
+```
+
+**关键实现细节**：
+- **OSS URL 签名**：SAE 部署前会重新签名 OSS URL（有效期 86400s），避免使用过期 URL 导致部署失败
+- **环境变量全量回传**：先通过 `DescribeApplicationConfig` 获取当前 SAE 环境变量，部署时通过 `--Envs` 全量重发。SAE 没有独立的环境变量更新 API，不传 `--Envs` 会清空所有环境变量
+- **Python subprocess 调用**：使用 Python subprocess 调用 `aliyun` CLI，参数以 list 传入，避免 OSS URL 中的 `&`、密码中的 `@!$` 等特殊字符被 shell 误解析
+- **等待前次部署**：部署前检查 `LastChangeOrderRunning` 状态，最多等待 120s
+
+#### ai-agent-service（Python AI 服务）
+
+```
+触发条件：backend/ai-agent-service/** 文件变更推送到 main
+构建：Docker build（时间戳标签 vYYYYMMDDHHMMSS）→ 推送到 ACR
+部署：SAE DeployApplication（ImageUrl）
+健康检查：curl https://ai-api.migaozn.com/health
+```
+
+**关键实现细节**：
+- **ACR 登录**：Docker login 使用 `ACR_USERNAME` + `ACR_PASSWORD` Secrets
+- **Pip 镜像**：CI 构建时 `--build-arg PIP_INDEX_URL=https://pypi.org/simple/` 覆盖默认阿里云镜像（CI 环境阿里云镜像反而更慢）
+- **环境变量全量回传**：与 admin-api 相同，通过 `DescribeApplicationConfig` 获取后 `--Envs` 全量重发
+
+#### admin-web（前端）
+
+```
+触发条件：frontend/admin-web/** 文件变更推送到 main
+构建：Node 20 + npm ci + next build → out/ 静态目录
+部署：aliyun oss cp out/ → OSS 静态托管
+CDN：可选刷新 CDN 缓存（需配置 CDN_REFRESH_DOMAIN Secret）
+健康检查：5 次重试检查 http://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/index.html
+```
+
+**关键实现细节**：
+- **构建时环境变量**：`NEXT_PUBLIC_*` 系列变量在构建时注入，会影响静态导出内容。优先读取 Secrets，回退到默认值
+- **SPA 路由**：OSS 静态托管通过 `_spa-fallback.html` 实现 SPA 路由兜底（详见 `deploy/oss-website.xml`）
+
+### 10.4 并发控制
+
+每个工作流都配置了串行并发控制，防止同一服务的前次部署尚未完成时触发新部署：
+
+```yaml
+concurrency:
+  group: deploy-admin-api    # 每个工作流独立的 group
+  cancel-in-progress: false  # 不取消正在进行的部署，排队等待
+```
+
+此外，每个工作流在部署前会主动检查 SAE 是否有进行中的变更（`LastChangeOrderRunning`），最多等待 120s，超时则中止。
+
+### 10.5 GitHub Secrets 配置
+
+部署到新的生产环境时，需要在 GitHub 仓库 Settings → Secrets and variables → Actions 中配置以下 Secrets：
+
+#### 阿里云凭证（必需）
+
+| Secret 名称 | 说明 |
+|-------------|------|
+| `ALIYUN_ACCESS_KEY_ID` | RAM 子账号 AccessKey ID（需 SAE/OSS/CDN 权限） |
+| `ALIYUN_ACCESS_KEY_SECRET` | RAM 子账号 AccessKey Secret |
+
+#### ACR 容器镜像仓库（ai-agent-service 部署必需）
+
+| Secret 名称 | 说明 |
+|-------------|------|
+| `ACR_USERNAME` | ACR 登录用户名 |
+| `ACR_PASSWORD` | ACR 登录密码 |
+
+#### 前端构建参数（admin-web 部署，可选覆盖）
+
+| Secret 名称 | 默认值 | 说明 |
+|-------------|-------|------|
+| `NEXT_PUBLIC_API_BASE_URL` | `https://api.migaozn.com` | Admin API 地址 |
+| `NEXT_PUBLIC_AI_API_BASE_URL` | `https://ai-api.migaozn.com` | AI Agent API 地址 |
+| `NEXT_PUBLIC_OSS_DOMAIN` | `https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com` | OSS 域名 |
+| `NEXT_PUBLIC_COOKIE_DOMAIN` | `.migaozn.com` | Cookie 域名 |
+| `NEXT_PUBLIC_ASSET_PREFIX` | （空） | 静态资源前缀 |
+| `CDN_REFRESH_DOMAIN` | （空，不刷新） | CDN 刷新域名 |
+
+### 10.6 迁移到新生产环境的注意事项
+
+迁移部署到新环境时，CI/CD 层面需要调整以下内容：
+
+1. **SAE 应用 ID**：修改各工作流 `env` 中的 `SAE_APP_ID` 为新环境的应用 ID
+2. **OSS Bucket**：修改 `OSS_BUCKET` 为新环境的 Bucket 名称
+3. **ACR 地址**：修改 `ACR_REGISTRY`、`ACR_NAMESPACE` 为新环境的镜像仓库
+4. **健康检查地址**：修改 `HEALTH_CHECK_HOST`、`HEALTH_CHECK_IP`、健康检查 URL
+5. **前端域名**：通过 Secrets 覆盖 `NEXT_PUBLIC_*` 系列变量
+6. **GitHub Secrets**：更新阿里云凭证（AccessKey）、ACR 账号等
+7. **SAE 环境变量**：新环境的 SAE 应用需要配置完整的环境变量（RDS、Redis、JWT 密钥、DashScope API Key 等），CI/CD 不会设置这些变量，只会在部署时全量回传已有变量
+8. **CORS 白名单**：新环境的后端 `CORS_ALLOWED_ORIGINS` 需包含新前端域名
+9. **Cookie 域名**：`COOKIE_DOMAIN` 必须设为新的根域名（如 `.newdomain.com`），不能是 `localhost`
+
+> ⚠️ **重要**：SAE 环境变量必须在控制台或 Terraform 中预先配置好。CI/CD 部署时只做全量回传（防止清空），不会自动创建新的环境变量。
+
+### 10.7 手动触发部署
+
+每个工作流都支持手动触发，适用于：
+- 代码未变更但需要重新部署（如 SAE 实例重启后重新拉取镜像）
+- 紧急回滚
+
+操作路径：GitHub 仓库 → Actions → 选择工作流 → Run workflow → 选择分支 → 运行
 
 ---
 

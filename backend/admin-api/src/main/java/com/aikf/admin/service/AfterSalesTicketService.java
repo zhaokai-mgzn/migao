@@ -167,7 +167,8 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
         ticket.setTenantId(tenantId);
         ticket.setTicketNo(generateTicketNo());
         ticket.setOrderId(request.getOrderId());
-        ticket.setCustomerId(order.getCustomerName()); // 用客户名称作为关联标识
+        // TODO: 当前使用客户名称作为关联标识，后续应改为实际客户ID（需客户表支持手机号→ID查询）
+        ticket.setCustomerId(order.getCustomerName());
         ticket.setTicketType(request.getTicketType());
         ticket.setStatus("pending");
         ticket.setDescription(request.getDescription());

@@ -257,7 +257,10 @@ resource "alicloud_sae_application" "admin_api" {
     { name = "OSS_ENDPOINT", value = "oss-cn-hangzhou-internal.aliyuncs.com" },
     { name = "OSS_ACCESS_KEY_ID", value = var.oss_access_key_id },
     { name = "OSS_ACCESS_KEY_SECRET", value = var.oss_access_key_secret },
-    { name = "OSS_BUCKET_NAME", value = alicloud_oss_bucket.admin_frontend.bucket }
+    { name = "OSS_BUCKET_NAME", value = alicloud_oss_bucket.admin_frontend.bucket },
+    # OSS_URL_PREFIX 用于后端拼接对外可访问的图片 URL；使用 CNAME 自定义域名（已绑定到该 bucket，可后续走 CDN）
+    # 若未配置，后端会回退到 OSS_ENDPOINT 拼接内网 URL，浏览器无法访问
+    { name = "OSS_URL_PREFIX", value = "https://admin.migaozn.com" }
   ])
 
   liveness = jsonencode({

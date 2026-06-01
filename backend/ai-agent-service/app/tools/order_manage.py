@@ -71,6 +71,14 @@ class OrderManageTool(BaseTool):
                 "type": "string",
                 "description": "取消原因（cancel 时可选）",
             },
+            "refund_amount": {
+                "type": "number",
+                "description": "退款金额（refund 时可选，不填则为全额退款）",
+            },
+            "refund_reason": {
+                "type": "string",
+                "description": "退款原因（refund 时可选）",
+            },
         },
         "required": ["action", "order_id"],
     }
@@ -84,9 +92,11 @@ class OrderManageTool(BaseTool):
         logistics_company: Optional[str] = None,
         tracking_number: Optional[str] = None,
         cancel_reason: Optional[str] = None,
+        refund_amount: Optional[float] = None,
+        refund_reason: Optional[str] = None,
     ) -> ToolResult:
         """执行订单管理操作
-        
+
         Args:
             context: Tool 执行上下文
             action: 操作类型
@@ -95,6 +105,8 @@ class OrderManageTool(BaseTool):
             logistics_company: 快递公司（update_logistics 时必填）
             tracking_number: 运单号（update_logistics 时必填）
             cancel_reason: 取消原因（cancel 时可选）
+            refund_amount: 退款金额（refund 时可选）
+            refund_reason: 退款原因（refund 时可选）
             
         Returns:
             ToolResult: 操作结果
@@ -134,7 +146,7 @@ class OrderManageTool(BaseTool):
             elif action == "confirm_payment":
                 return await self._confirm_payment(context, order_id)
             elif action == "refund":
-                return await self._refund_order(context, order_id)
+                return await self._refund_order(context, order_id, refund_amount, refund_reason)
             else:
                 return ToolResult(
                     success=False,
@@ -367,19 +379,29 @@ class OrderManageTool(BaseTool):
         self,
         context: ToolContext,
         order_id: str,
+        refund_amount: Optional[float] = None,
+        refund_reason: Optional[str] = None,
     ) -> ToolResult:
         """退款
-        
+
         Args:
             context: Tool 执行上下文
             order_id: 订单 ID
-            
+            refund_amount: 退款金额（可选）
+            refund_reason: 退款原因（可选）
+
         Returns:
             ToolResult: 操作结果
         """
         client = get_admin_api_client()
+        json_data: Dict[str, Any] = {}
+        if refund_amount is not None:
+            json_data["refund_amount"] = refund_amount
+        if refund_reason:
+            json_data["refund_reason"] = refund_reason
         response = await client.put(
             f"/api/admin/orders/{order_id}/refund",
+            json_data=json_data if json_data else None,
             tenant_id=context.tenant_id,
             user_id=context.user_id,
         )
@@ -394,11 +416,17 @@ class OrderManageTool(BaseTool):
         
         logger.info(
             f"Order refund initiated: order_id={order_id}, "
+            f"amount={refund_amount}, reason={refund_reason}, "
             f"tenant={context.tenant_id}, user={context.user_id}"
         )
-        
+
         return ToolResult(
             success=True,
-            data={"order_id": order_id, "action": "refund"},
-            message="订单退款已发起",
+            data={
+                "order_id": order_id,
+                "action": "refund",
+                "refund_amount": refund_amount,
+                "refund_reason": refund_reason,
+            },
+            message="订单退款已发起" + (f"，退款金额：{refund_amount}" if refund_amount is not None else ""),
         )

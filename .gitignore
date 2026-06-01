@@ -14,10 +14,6 @@ terraform.tfstate.*
 # IDE
 .vscode/
 .idea/
-.qoder/
-!.qoder/
-!.qoder/agents/
-!.qoder/agents/**
 *.swp
 *.swo
 
@@ -48,9 +44,6 @@ __pycache__/
 **/**.pytest_cache/
 .coverage
 htmlcov/
-
-# Temporary files
-.qoder-tmp/
 
 # Screenshots
 e2e-test-*.png

@@ -340,9 +340,14 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         // 校验分类是否存在
         validateCategory(request.getCategoryId());
 
+        // 保存原始状态，防止 BeanUtils.copyProperties 绕过状态机
+        String originalStatus = product.getStatus();
+
         // 更新商品属性
         BeanUtils.copyProperties(request, product);
         product.setId(id);
+        // 恢复状态：状态变更必须通过 updateProductStatus 接口（含状态机校验）
+        product.setStatus(originalStatus);
 
         // 处理图片列表
         if (request.getImages() != null) {
@@ -646,6 +651,9 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
     @Transactional(rollbackFor = Exception.class)
     public BatchOperationResult batchOnShelf(List<String> productIds, Long tenantId) {
         BatchOperationResult result = BatchOperationResult.create();
+        if (productIds == null || productIds.isEmpty()) {
+            return result;
+        }
         Set<String> allowedStatuses = Set.of("off_sale", "in_warehouse");
 
         for (String id : productIds) {
@@ -677,6 +685,9 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
     @Transactional(rollbackFor = Exception.class)
     public BatchOperationResult batchOffShelf(List<String> productIds, Long tenantId) {
         BatchOperationResult result = BatchOperationResult.create();
+        if (productIds == null || productIds.isEmpty()) {
+            return result;
+        }
 
         for (String id : productIds) {
             Product product = productMapper.selectById(id);
@@ -707,6 +718,9 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
     @Transactional(rollbackFor = Exception.class)
     public BatchOperationResult batchDelete(List<String> productIds, Long tenantId) {
         BatchOperationResult result = BatchOperationResult.create();
+        if (productIds == null || productIds.isEmpty()) {
+            return result;
+        }
         Set<String> allowedStatuses = Set.of("draft", "off_sale");
 
         for (String id : productIds) {
