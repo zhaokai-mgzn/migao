@@ -1,7 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
-  testDir: './tests/e2e',
+  testDir: './e2e',
   testMatch: /.*\.spec\.ts|.*auth\.setup\.ts/,
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
@@ -37,7 +37,7 @@ export default defineConfig({
       testIgnore: /specs\/auth\/|auth\.setup\.ts/,
       use: {
         ...devices['Desktop Chrome'],
-        storageState: './tests/e2e/.auth/admin.json',
+        storageState: './e2e/.auth/admin.json',
       },
       dependencies: ['auth-setup'],
     },
@@ -47,6 +47,7 @@ export default defineConfig({
     ? undefined
     : {
         command: 'npm run dev',
+        cwd: '../frontend/admin-web',
         port: 3001,
         reuseExistingServer: true,
         timeout: 120_000,

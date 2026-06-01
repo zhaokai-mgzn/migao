@@ -34,7 +34,7 @@
 |------|---------|------|-----------|
 | admin-api | 单元测试 + 集成测试 | JUnit 5 + MockMvc + TestContainers | 核心 Service ≥ 80% |
 | ai-agent-service | 单元测试 + 集成测试 | pytest + httpx | 核心工具 ≥ 80% |
-| admin-web | 组件测试 + E2E 测试 | Playwright + Testing Library | 关键页面 100% |
+| admin-web | 组件测试 + E2E 测试 | Playwright (tests/e2e/) + Testing Library | 关键页面 100% |
 | 全链路 | E2E 冒烟测试 | Playwright (tests/smoke/) | 核心流程 100% |
 
 ### 铁律
@@ -93,7 +93,9 @@ youke/
 │   ├── architecture/       # 架构文档
 │   └── design/             # 设计文档
 ├── knowledge_base/         # RAG 种子数据
-└── tests/smoke/            # E2E 冒烟测试
+└── tests/
+    ├── e2e/                # E2E 浏览器测试（Playwright）
+    └── smoke/              # E2E 冒烟测试（pytest）
 ```
 
 ## 分支策略
@@ -136,7 +138,12 @@ npm install
 npm run build
 npx tsc --noEmit
 
-# E2E 冒烟测试
+# E2E 浏览器测试（Playwright，对 admin-web 全链路）
+cd tests
+npm install && npx playwright install chromium
+npm run e2e                              # 对云 dev 环境：BASE_URL=https://dev.example.com npm run e2e
+
+# E2E 冒烟测试（pytest，对后端 API）
 cd tests/smoke && pytest
 ```
 
