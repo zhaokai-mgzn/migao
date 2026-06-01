@@ -19,13 +19,8 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ../docs/sql/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql
-      - ../docs/sql/002_complete_tables.sql:/docker-entrypoint-initdb.d/002_complete_tables.sql
-      - ../docs/sql/003_orders.sql:/docker-entrypoint-initdb.d/003_orders.sql
-      - ../docs/sql/004_tenant_applications.sql:/docker-entrypoint-initdb.d/004_tenant_applications.sql
-      - ../docs/sql/005_add_product_stock.sql:/docker-entrypoint-initdb.d/005_add_product_stock.sql
-      - ../docs/sql/006_add_updated_at.sql:/docker-entrypoint-initdb.d/006_add_updated_at.sql
-      - ../docs/sql/007_agent_workspace.sql:/docker-entrypoint-initdb.d/007_agent_workspace.sql
+      - ../docs/sql/schema.sql:/docker-entrypoint-initdb.d/001_schema.sql
+      - ../docs/sql/seed_processing_items.sql:/docker-entrypoint-initdb.d/002_seed.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U app_user"]
       interval: 10s
