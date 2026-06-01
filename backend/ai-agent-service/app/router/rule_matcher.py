@@ -10,8 +10,8 @@ from app.router.intent_config import IntentType, IntentResult
 
 # 关键词 → 意图映射表
 KEYWORD_MAP: dict[IntentType, list[str]] = {
-    IntentType.ORDER_QUERY: ["订单", "我的订单", "订单状态", "查订单"],
-    IntentType.LOGISTICS_TRACK: ["物流", "快递", "到哪了", "发货"],
+    IntentType.ORDER_QUERY: ["订单", "我的订单", "订单状态", "查订单", "待发货"],
+    IntentType.LOGISTICS_TRACK: ["物流", "快递", "到哪了"],
     IntentType.PRODUCT_INQUIRY: ["商品", "产品", "价格", "多少钱", "加工项", "加工项目", "加工费"],
     IntentType.AFTER_SALES: ["退货", "退款", "换货", "售后", "维修"],
     IntentType.KNOWLEDGE_FAQ: ["怎么清洗", "怎么安装", "怎么保养", "怎么测量", "怎么选", "如何", "什么是", "为什么", "教程"],
@@ -27,8 +27,8 @@ KEYWORD_MAP: dict[IntentType, list[str]] = {
 
 # 正则规则
 REGEX_RULES: list[tuple[re.Pattern, IntentType]] = [
-    # 订单号格式
-    (re.compile(r"[A-Za-z]{0,3}\d{10,20}"), IntentType.ORDER_QUERY),
+    # 订单号格式（要求 ORD 前缀，避免误匹配手机号）
+    (re.compile(r"ORD[-\s]?\d{10,20}"), IntentType.ORDER_QUERY),
 ]
 
 # Greeting 直接回复内容

@@ -106,6 +106,18 @@ public class CategoryService extends ServiceImpl<CategoryMapper, Category> {
             if (parent == null) {
                 throw BusinessException.validationError("父分类不存在");
             }
+
+            // 循环引用检测：沿父分类链向上遍历，检查是否会形成环
+            String ancestorId = parent.getParentId();
+            int maxDepth = 10; // 防止超深层级
+            while (StringUtils.hasText(ancestorId) && maxDepth-- > 0) {
+                if (ancestorId.equals(id)) {
+                    throw BusinessException.validationError("不能将分类设为自己的子孙分类的父分类（循环引用）");
+                }
+                Category ancestor = categoryMapper.selectById(ancestorId);
+                ancestorId = (ancestor != null) ? ancestor.getParentId() : null;
+            }
+
             // 更新层级
             request.setLevel(parent.getLevel() + 1);
         }

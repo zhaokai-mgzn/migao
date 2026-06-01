@@ -61,10 +61,10 @@ class RouteDecision:
 
 # 意图 → 推荐 Tool 映射
 INTENT_TOOL_MAP: dict[IntentType, list[str]] = {
-    IntentType.ORDER_QUERY: ["order_query", "order_manage"],
+    IntentType.ORDER_QUERY: ["order_query"],
     IntentType.LOGISTICS_TRACK: ["logistics_track"],
     IntentType.PRODUCT_INQUIRY: ["product_search", "product_detail"],
-    IntentType.AFTER_SALES: ["order_query", "human_handoff"],
+    IntentType.AFTER_SALES: ["order_query", "after_sales_manage"],
     IntentType.KNOWLEDGE_FAQ: ["knowledge_search"],
     IntentType.GREETING: [],
     IntentType.FAREWELL: [],

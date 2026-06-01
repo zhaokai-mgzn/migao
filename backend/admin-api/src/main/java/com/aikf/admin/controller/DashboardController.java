@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -48,8 +49,9 @@ public class DashboardController {
         Long tenantId = TenantContext.getTenantId();
         log.info("获取 Dashboard 统计数据: tenantId={}", tenantId);
 
-        // 今日起止时间
-        OffsetDateTime todayStart = LocalDate.now().atStartOfDay().atOffset(ZoneOffset.UTC);
+        // 今日起止时间（使用中国标准时间 UTC+8）
+        ZoneId cst = ZoneId.of("Asia/Shanghai");
+        OffsetDateTime todayStart = LocalDate.now(cst).atStartOfDay().atOffset(ZoneOffset.ofHours(8));
         OffsetDateTime yesterdayStart = todayStart.minusDays(1);
 
         // 商品总数
@@ -96,15 +98,62 @@ public class DashboardController {
                 new LambdaQueryWrapper<AfterSalesTicket>()
                         .eq(AfterSalesTicket::getTenantId, tenantId));
 
+        // 本月营收（已确认+已完成订单的总金额）
+        LocalDate now = LocalDate.now(cst);
+        OffsetDateTime monthStart = now.withDayOfMonth(1).atStartOfDay().atOffset(ZoneOffset.ofHours(8));
+        List<Order> monthOrders = orderMapper.selectList(
+                new LambdaQueryWrapper<Order>()
+                        .eq(Order::getTenantId, tenantId)
+                        .ge(Order::getCreatedAt, monthStart)
+                        .in(Order::getStatus, "confirmed", "producing", "shipped", "completed"));
+        // 使用 BigDecimal 累加避免精度丢失（longValue() 会截断小数）
+        BigDecimal monthRevenueBd = monthOrders.stream()
+                .map(o -> o.getTotalAmount() != null ? o.getTotalAmount() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        long monthRevenue = monthRevenueBd.setScale(0, java.math.RoundingMode.HALF_UP).longValue();
+
+        // 上月营收（环比）
+        OffsetDateTime lastMonthStart = monthStart.minusMonths(1);
+        List<Order> lastMonthOrders = orderMapper.selectList(
+                new LambdaQueryWrapper<Order>()
+                        .eq(Order::getTenantId, tenantId)
+                        .ge(Order::getCreatedAt, lastMonthStart)
+                        .lt(Order::getCreatedAt, monthStart)
+                        .in(Order::getStatus, "confirmed", "producing", "shipped", "completed"));
+        BigDecimal lastMonthRevenueBd = lastMonthOrders.stream()
+                .map(o -> o.getTotalAmount() != null ? o.getTotalAmount() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        long lastMonthRevenue = lastMonthRevenueBd.setScale(0, java.math.RoundingMode.HALF_UP).longValue();
+        double monthRevenueChange = lastMonthRevenue > 0
+                ? ((double) (monthRevenue - lastMonthRevenue) / lastMonthRevenue) * 100
+                : 0;
+
+        // 活跃会话数（最近30分钟内有更新的会话）
+        OffsetDateTime activeThreshold = OffsetDateTime.now(ZoneOffset.ofHours(8)).minusMinutes(30);
+        long activeSessions = sessionMapper.selectCount(
+                new LambdaQueryWrapper<Session>()
+                        .eq(Session::getTenantId, tenantId)
+                        .ge(Session::getUpdatedAt, activeThreshold));
+
+        // AI 会话占比
+        long aiSessions = sessionMapper.selectCount(
+                new LambdaQueryWrapper<Session>()
+                        .eq(Session::getTenantId, tenantId)
+                        .ge(Session::getUpdatedAt, activeThreshold)
+                        .eq(Session::getAiEnabled, true));
+        double aiSessionRate = activeSessions > 0
+                ? Math.round((double) aiSessions / activeSessions * 1000.0) / 10.0
+                : 0;
+
         DashboardStatsResponse stats = DashboardStatsResponse.builder()
                 .todayOrders(todayOrders)
                 .todayOrdersChange(Math.round(todayOrdersChange * 10.0) / 10.0)
                 .totalCustomers(totalCustomers)
                 .newCustomersToday(newCustomersToday)
-                .activeSessions(0)
-                .aiSessionRate(0)
-                .monthRevenue(0)
-                .monthRevenueChange(0)
+                .activeSessions(activeSessions)
+                .aiSessionRate(aiSessionRate)
+                .monthRevenue(monthRevenue)
+                .monthRevenueChange(Math.round(monthRevenueChange * 10.0) / 10.0)
                 .totalProducts(totalProducts)
                 .totalOrders(totalOrders)
                 .totalTickets(totalTickets)
@@ -119,7 +168,8 @@ public class DashboardController {
     public ApiResponse<List<OrderTrendPointResponse>> getOrderTrend(
             @RequestParam(defaultValue = "7") int days) {
         Long tenantId = TenantContext.getTenantId();
-        OffsetDateTime startDate = LocalDate.now().minusDays(days - 1).atStartOfDay().atOffset(ZoneOffset.UTC);
+        ZoneId cst = ZoneId.of("Asia/Shanghai");
+        OffsetDateTime startDate = LocalDate.now(cst).minusDays(days - 1).atStartOfDay().atOffset(ZoneOffset.ofHours(8));
 
         List<Map<String, Object>> rawData = orderMapper.selectOrderTrend(tenantId, startDate);
 
@@ -146,10 +196,10 @@ public class DashboardController {
     // ========== 订单状态分布 ==========
 
     private static final Map<String, String> STATUS_LABELS = Map.of(
-            "pending", "待处理",
+            "pending", "待付款",
             "confirmed", "已确认",
             "producing", "生产中",
-            "shipping", "配送中",
+            "shipped", "已发货",
             "completed", "已完成",
             "cancelled", "已取消"
     );
@@ -158,7 +208,7 @@ public class DashboardController {
             "pending", "#faad14",
             "confirmed", "#2563eb",
             "producing", "#7c3aed",
-            "shipping", "#06b6d4",
+            "shipped", "#06b6d4",
             "completed", "#16a34a",
             "cancelled", "#9ca3af"
     );

@@ -14,8 +14,8 @@ from app.utils.log_sanitizer import LogSanitizer
 
 # 订单状态中文映射
 ORDER_STATUS_TEXT = {
-    "pending": "待确认",
-    "confirmed": "已确认",
+    "pending": "待付款",
+    "confirmed": "已确认（待发货）",
     "processing": "生产中",
     "shipped": "已发货",
     "completed": "已完成",
@@ -74,7 +74,7 @@ class OrderQueryTool(BaseTool):
             },
             "status": {
                 "type": "string",
-                "description": "订单状态筛选（可选，仅 action=list 时生效）：pending=待付款, confirmed=待发货, processing=生产中/待发货, shipped=已发货, completed=已完成, cancelled=已关闭",
+                "description": "订单状态筛选（可选，仅 action=list 时生效）：pending=待付款, confirmed=已确认（待发货）, processing=生产中, shipped=已发货, completed=已完成, cancelled=已取消",
                 "enum": ["pending", "confirmed", "processing", "shipped", "completed", "cancelled"],
             },
             "date_from": {
