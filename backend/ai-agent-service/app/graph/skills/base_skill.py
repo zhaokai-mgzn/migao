@@ -29,7 +29,7 @@ from app.core import (
     LLM_FALLBACK_MESSAGE,
     get_breaker,
 )
-from app.llm import LLMFactory, select_model, has_images, call_with_retry, cost_tracker
+from app.llm import LLMFactory, select_model, has_images, call_with_retry, cost_tracker, StreamingTimeoutError
 
 
 # LLM 熔断器名（百炼调用路径共用）
@@ -58,6 +58,36 @@ def _strip_think_tags(text: str) -> str:
     # 移除 <think>...</think> 块（含跨行）
     cleaned = re.sub(r"<think>[\s\S]*?</think>", "", text).strip()
     return cleaned if cleaned else text
+
+
+def _sanitize_messages(messages: List[Any]) -> List[Any]:
+    """过滤消息历史中的孤立 ToolMessage，避免 DashScope thinking 模式报错
+
+    DashScope 在 enable_thinking=True 模式下要求 ToolMessage 必须有匹配的
+    AIMessage.tool_calls（通过 tool_call_id 配对）。孤立的 ToolMessage 会导致
+    API 返回 400 InvalidParameter 错误。
+
+    Args:
+        messages: 消息列表（可能包含 SystemMessage/HumanMessage/AIMessage/ToolMessage）
+
+    Returns:
+        过滤后的消息列表，仅保留有配对的 ToolMessage
+    """
+    # 收集所有合法的 tool_call_id
+    valid_ids: set = set()
+    for msg in messages:
+        if hasattr(msg, 'tool_calls') and msg.tool_calls:
+            for tc in msg.tool_calls:
+                tc_id = tc.get('id', '') if isinstance(tc, dict) else getattr(tc, 'id', '')
+                if tc_id:
+                    valid_ids.add(tc_id)
+
+    # 过滤：保留非 ToolMessage，以及有匹配的 ToolMessage
+    return [
+        msg for msg in messages
+        if type(msg).__name__ != 'ToolMessage'
+        or getattr(msg, 'tool_call_id', '') in valid_ids
+    ]
 
 
 def _extract_content(response: AIMessage) -> str:
@@ -334,10 +364,21 @@ async def execute_skill(
                 llm_breaker = get_breaker(LLM_BREAKER)
 
                 async def _llm_invoke():
-                    return await asyncio.wait_for(
-                        llm_with_tools.ainvoke(full_messages + new_messages),
-                        timeout=60.0,
-                    )
+                    try:
+                        return await asyncio.wait_for(
+                            llm_with_tools.ainvoke(
+                                _sanitize_messages(full_messages + new_messages)
+                            ),
+                            timeout=30.0,
+                        )
+                    except asyncio.TimeoutError:
+                        # SSE 流式响应超时：DashScope 在 streaming=True 模式下
+                        # 将 400 错误嵌入流体内，导致 ainvoke() 阻塞。
+                        # 转为 StreamingTimeoutError 标记为不可重试。
+                        raise StreamingTimeoutError(
+                            f"LLM SSE stream timed out after 30s "
+                            f"(iteration={iteration + 1})"
+                        )
 
                 # retry 包在 breaker 外层：对整个含熔断的调用进行可重试判定
                 response: AIMessage = await call_with_retry(
@@ -364,9 +405,18 @@ async def execute_skill(
                 )
                 final_content = LLM_FALLBACK_MESSAGE
                 break
+            except StreamingTimeoutError:
+                # SSE 流式响应超时（DashScope 400 错误伪装为流阻塞）
+                # 此异常不可重试，call_with_retry 已直接抛出
+                logger.error(
+                    f"[{skill_name}][SLS] LLM SSE stream TIMEOUT | "
+                    f"iteration={iteration + 1} tenant={state['tenant_id']} session={session_id}"
+                )
+                final_content = "抱歉，AI 服务响应异常，请稍后重试。"
+                break
             except asyncio.TimeoutError:
                 logger.error(
-                    f"[{skill_name}][SLS] LLM call TIMEOUT after 60s | "
+                    f"[{skill_name}][SLS] LLM call TIMEOUT after 30s | "
                     f"iteration={iteration + 1} tenant={state['tenant_id']} session={session_id}"
                 )
                 # 检查是否已熔断，熔断后用超友好的提示
