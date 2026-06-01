@@ -44,6 +44,11 @@ public class Order {
 
     private String remark;
 
+    /**
+     * 关闭原因
+     */
+    private String closeReason;
+
     @TableField(fill = FieldFill.INSERT)
     private OffsetDateTime createdAt;
 

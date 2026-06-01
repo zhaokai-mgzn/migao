@@ -33,7 +33,7 @@ public class OrderController {
     /**
      * 分页查询订单列表
      *
-     * GET /api/admin/orders?page=1&size=20&status=pending&keyword=xxx&followStatus=pending
+     * GET /api/admin/orders?page=1&size=20&status=pending&keyword=xxx&followStatus=pending&hasProcessing=true
      */
     @GetMapping
     public ApiResponse<PageResponse<OrderListResponse>> getOrders(
@@ -41,10 +41,11 @@ public class OrderController {
             @RequestParam(defaultValue = "20") long size,
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String keyword,
-            @RequestParam(required = false) String followStatus) {
-        log.info("查询订单列表: page={}, size={}, status={}, keyword={}, followStatus={}", page, size, status, keyword, followStatus);
+            @RequestParam(required = false) String followStatus,
+            @RequestParam(required = false) Boolean hasProcessing) {
+        log.info("查询订单列表: page={}, size={}, status={}, keyword={}, followStatus={}, hasProcessing={}", page, size, status, keyword, followStatus, hasProcessing);
         Long tenantId = TenantContext.getTenantId();
-        PageResponse<OrderListResponse> result = orderService.getOrderPage(page, size, status, keyword, followStatus, tenantId);
+        PageResponse<OrderListResponse> result = orderService.getOrderPage(page, size, status, keyword, followStatus, hasProcessing, tenantId);
         return ApiResponse.success(result);
     }
 
@@ -128,14 +129,34 @@ public class OrderController {
     }
 
     /**
-     * 取消订单
+     * 取消/关闭订单
      *
      * PUT /api/admin/orders/{id}/cancel
+     * Body: { "closeReason": "缺货" } (可选)
      */
     @PutMapping("/{id:[0-9a-fA-F-]+}/cancel")
-    public ApiResponse<Void> cancelOrder(@PathVariable String id) {
-        log.info("取消订单: orderId={}", id);
-        orderService.cancelOrder(id);
+    public ApiResponse<Void> cancelOrder(
+            @PathVariable String id,
+            @RequestBody(required = false) java.util.Map<String, String> body) {
+        String closeReason = (body != null && body.containsKey("closeReason")) ? body.get("closeReason") : null;
+        log.info("取消订单: orderId={}, closeReason={}", id, closeReason);
+        orderService.cancelOrder(id, closeReason);
+        return ApiResponse.success();
+    }
+
+    /**
+     * 添加订单备注
+     *
+     * POST /api/admin/orders/{id}/remark
+     * Body: { "content": "备注内容" }
+     */
+    @PostMapping("/{id:[0-9a-fA-F-]+}/remark")
+    public ApiResponse<Void> addRemark(
+            @PathVariable String id,
+            @RequestBody java.util.Map<String, String> body) {
+        String content = (body != null && body.containsKey("content")) ? body.get("content") : null;
+        log.info("添加订单备注: orderId={}", id);
+        orderService.addRemark(id, content);
         return ApiResponse.success();
     }
 
@@ -201,8 +222,13 @@ public class OrderController {
         log.info("更新订单物流: orderId={}", id);
         Long tenantId = TenantContext.getTenantId();
 
-        // 检查订单是否存在
-        orderService.getOrderById(id);
+        // 检查订单是否存在并校验状态
+        OrderDetailResponse orderDetail = orderService.getOrderById(id);
+        String orderStatus = orderDetail.getStatus();
+        if (!"shipped".equals(orderStatus) && !"confirmed".equals(orderStatus) && !"producing".equals(orderStatus)) {
+            throw com.aikf.admin.exception.BusinessException.validationError(
+                    "仅已确认/生产中/已发货状态可更新物流，当前状态: " + orderStatus);
+        }
 
         String logisticsCompany = body.get("logisticsCompany");
         String trackingNo = body.get("trackingNo");

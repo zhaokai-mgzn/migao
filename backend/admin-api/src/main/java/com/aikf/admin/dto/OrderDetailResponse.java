@@ -63,6 +63,11 @@ public class OrderDetailResponse {
     private String remark;
 
     /**
+     * 关闭/取消原因
+     */
+    private String closeReason;
+
+    /**
      * 订单明细列表
      */
     private List<OrderItemResponse> items;

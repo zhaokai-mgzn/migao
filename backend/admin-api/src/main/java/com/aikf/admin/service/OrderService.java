@@ -5,10 +5,15 @@ import com.aikf.admin.dto.*;
 import com.aikf.admin.entity.Order;
 import com.aikf.admin.entity.OrderItem;
 import com.aikf.admin.entity.OrderLogistics;
+import com.aikf.admin.entity.Product;
+import com.aikf.admin.entity.ProductSku;
 import com.aikf.admin.exception.BusinessException;
 import com.aikf.admin.mapper.OrderItemMapper;
 import com.aikf.admin.mapper.OrderLogisticsMapper;
 import com.aikf.admin.mapper.OrderMapper;
+import com.aikf.admin.mapper.ProductMapper;
+import com.aikf.admin.mapper.ProductSkuMapper;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -44,6 +49,9 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     private final OrderItemMapper orderItemMapper;
     private final OrderLogisticsMapper orderLogisticsMapper;
     private final CustomerService customerService;
+    private final ProductMapper productMapper;
+    private final ProductSkuMapper productSkuMapper;
+    private final ObjectMapper objectMapper;
 
     /**
      * 订单号序列号（线程安全）
@@ -66,15 +74,16 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     /**
      * 分页查询订单列表
      *
-     * @param page         页码
-     * @param size         每页大小
-     * @param status       订单状态
-     * @param keyword      搜索关键词（客户姓名/电话/订单号）
-     * @param followStatus 跟进状态
-     * @param tenantId     租户ID
+     * @param page            页码
+     * @param size            每页大小
+     * @param status          订单状态
+     * @param keyword         搜索关键词（客户姓名/电话/订单号）
+     * @param followStatus    跟进状态
+     * @param hasProcessing   是否含加工项（true=只查含加工项，false=只查不含加工项，null=不过滤）
+     * @param tenantId        租户ID
      * @return 分页响应
      */
-    public PageResponse<OrderListResponse> getOrderPage(long page, long size, String status, String keyword, String followStatus, Long tenantId) {
+    public PageResponse<OrderListResponse> getOrderPage(long page, long size, String status, String keyword, String followStatus, Boolean hasProcessing, Long tenantId) {
         LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<>();
 
         // 状态筛选
@@ -94,6 +103,32 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
                     .like(Order::getCustomerPhone, keyword)
                     .or()
                     .like(Order::getOrderNo, keyword));
+        }
+
+        // 含加工项过滤：通过子查询 order_items 表，筛选含/不含加工项的订单
+        // 注：tenant_id 由 TenantLineInnerInterceptor 自动注入，无需手动添加
+        if (hasProcessing != null) {
+            Set<String> orderIdsWithProcessing = orderItemMapper.selectList(
+                new LambdaQueryWrapper<OrderItem>()
+                    .isNotNull(OrderItem::getProcessingInfo)
+                    .select(OrderItem::getOrderId)
+            ).stream()
+                .filter(item -> !extractProcessingItems(item.getProcessingInfo()).isEmpty())
+                .map(OrderItem::getOrderId)
+                .collect(Collectors.toSet());
+
+            if (hasProcessing) {
+                // 只查询含加工项的订单
+                if (orderIdsWithProcessing.isEmpty()) {
+                    return PageResponse.of(0L, page, size, Collections.emptyList());
+                }
+                wrapper.in(Order::getId, orderIdsWithProcessing);
+            } else {
+                // 只查询不含加工项的订单
+                if (!orderIdsWithProcessing.isEmpty()) {
+                    wrapper.notIn(Order::getId, orderIdsWithProcessing);
+                }
+            }
         }
 
         // 按创建时间倒序
@@ -135,10 +170,10 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
                         .reduce(BigDecimal.ZERO, BigDecimal::add);
                 resp.setProcessingFee(processingFee);
                 resp.setActualAmount(resp.getTotalAmount());
-                // 判断是否含加工项：任何一个 OrderItem 的 processingInfo 非空
-                boolean hasProcessing = orderItems.stream()
-                        .anyMatch(item -> item.getProcessingInfo() != null);
-                resp.setHasProcessing(hasProcessing);
+                // 判断是否含加工项：复用 extractProcessingItems 解析，避免空 JSONB 对象误判
+                boolean itemHasProcessing = orderItems.stream()
+                        .anyMatch(item -> !extractProcessingItems(item.getProcessingInfo()).isEmpty());
+                resp.setHasProcessing(itemHasProcessing);
             }
         } else {
             for (OrderListResponse resp : responses) {
@@ -176,10 +211,18 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      */
     @Transactional(rollbackFor = Exception.class)
     public OrderDetailResponse createOrder(OrderCreateRequest request, Long tenantId) {
-        // 计算总金额：优先使用 subtotal，若为 null 则回退 unitPrice * quantity，避免 totalAmount=0
-        BigDecimal totalAmount = request.getItems().stream()
-                .map(this::resolveItemSubtotal)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        // 计算总金额（后端独立计算：unitPrice * quantity + 加工费，不依赖前端 subtotal 防止不一致）
+        BigDecimal totalAmount = BigDecimal.ZERO;
+        for (OrderCreateRequest.OrderItemRequest itemRequest : request.getItems()) {
+            // 商品金额 = 单价 × 数量
+            BigDecimal itemAmount = BigDecimal.ZERO;
+            if (itemRequest.getUnitPrice() != null && itemRequest.getQuantity() != null) {
+                itemAmount = itemRequest.getUnitPrice().multiply(BigDecimal.valueOf(itemRequest.getQuantity()));
+            }
+            // 加工费（从 processingInfo 中解析）
+            BigDecimal processingFee = sumProcessingFee(itemRequest.getProcessingInfo());
+            totalAmount = totalAmount.add(itemAmount).add(processingFee);
+        }
 
         // 创建订单实体
         Order order = new Order();
@@ -474,19 +517,23 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     // ==================== 订单统计与跟进状态 ====================
 
     /**
-     * 获取订单统计
+     * 获取订单统计（使用 COUNT 查询，避免全量加载到内存）
      */
     public OrderStatisticsResponse getOrderStatistics(Long tenantId) {
-        LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<>();
-        List<Order> orders = orderMapper.selectList(wrapper);
-
-        long total = orders.size();
-        long pending = orders.stream().filter(o -> "pending".equals(o.getStatus())).count();
-        long confirmed = orders.stream().filter(o -> "confirmed".equals(o.getStatus())).count();
-        long producing = orders.stream().filter(o -> "producing".equals(o.getStatus())).count();
-        long shipped = orders.stream().filter(o -> "shipped".equals(o.getStatus())).count();
-        long completed = orders.stream().filter(o -> "completed".equals(o.getStatus())).count();
-        long cancelled = orders.stream().filter(o -> "cancelled".equals(o.getStatus())).count();
+        long total = orderMapper.selectCount(new LambdaQueryWrapper<Order>()
+                .eq(Order::getTenantId, tenantId));
+        long pending = orderMapper.selectCount(new LambdaQueryWrapper<Order>()
+                .eq(Order::getTenantId, tenantId).eq(Order::getStatus, "pending"));
+        long confirmed = orderMapper.selectCount(new LambdaQueryWrapper<Order>()
+                .eq(Order::getTenantId, tenantId).eq(Order::getStatus, "confirmed"));
+        long producing = orderMapper.selectCount(new LambdaQueryWrapper<Order>()
+                .eq(Order::getTenantId, tenantId).eq(Order::getStatus, "producing"));
+        long shipped = orderMapper.selectCount(new LambdaQueryWrapper<Order>()
+                .eq(Order::getTenantId, tenantId).eq(Order::getStatus, "shipped"));
+        long completed = orderMapper.selectCount(new LambdaQueryWrapper<Order>()
+                .eq(Order::getTenantId, tenantId).eq(Order::getStatus, "completed"));
+        long cancelled = orderMapper.selectCount(new LambdaQueryWrapper<Order>()
+                .eq(Order::getTenantId, tenantId).eq(Order::getStatus, "cancelled"));
 
         return OrderStatisticsResponse.builder()
                 .totalCount(total)
@@ -498,23 +545,22 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
                 .cancelledCount(cancelled)
                 .unpaidCount(pending)
                 .paidCount(confirmed + producing + shipped + completed)
-                .refundedCount(0)
+                .refundedCount(cancelled) // 退款订单即已取消的订单
                 .build();
     }
 
     /**
-     * 获取跟进状态统计
+     * 获取跟进状态统计（使用 COUNT 查询，避免全量加载到内存）
      */
     public FollowStatusStatsResponse getFollowStatusStats(Long tenantId) {
-        LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<>();
-        List<Order> orders = orderMapper.selectList(wrapper);
-
-        long total = orders.size();
-        long pendingFollow = orders.stream()
-                .filter(o -> o.getFollowStatus() == null || "pending".equals(o.getFollowStatus()))
-                .count();
-        long following = orders.stream().filter(o -> "following".equals(o.getFollowStatus())).count();
-        long completedFollow = orders.stream().filter(o -> "completed".equals(o.getFollowStatus())).count();
+        long total = orderMapper.selectCount(new LambdaQueryWrapper<Order>()
+                .eq(Order::getTenantId, tenantId));
+        long following = orderMapper.selectCount(new LambdaQueryWrapper<Order>()
+                .eq(Order::getTenantId, tenantId).eq(Order::getFollowStatus, "following"));
+        long completedFollow = orderMapper.selectCount(new LambdaQueryWrapper<Order>()
+                .eq(Order::getTenantId, tenantId).eq(Order::getFollowStatus, "completed"));
+        // pending = total - following - completed（含 null 值）
+        long pendingFollow = total - following - completedFollow;
 
         return FollowStatusStatsResponse.builder()
                 .pending(pendingFollow)
@@ -526,6 +572,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
 
     /**
      * 确认支付
+     * 状态流转：pending → confirmed，同时扣减库存、增加销量
      */
     @Transactional(rollbackFor = Exception.class)
     public void confirmPayment(String id) {
@@ -538,14 +585,21 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         }
         order.setStatus("confirmed");
         orderMapper.updateById(order);
+
+        // 扣减库存 + 增加销量
+        deductStockAndIncreaseSales(id);
         log.info("确认支付成功: id={}", id);
     }
 
     /**
-     * 取消订单
+     * 取消/关闭订单
+     * 支持从 pending/confirmed/producing 状态取消，恢复库存和销量
+     *
+     * @param id          订单ID
+     * @param closeReason 关闭原因（可选）
      */
     @Transactional(rollbackFor = Exception.class)
-    public void cancelOrder(String id) {
+    public void cancelOrder(String id, String closeReason) {
         Order order = orderMapper.selectById(id);
         if (order == null) {
             throw BusinessException.notFound("订单");
@@ -554,13 +608,27 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         if (!cancellableStatuses.contains(order.getStatus())) {
             throw BusinessException.validationError("当前状态不允许取消");
         }
+
+        String previousStatus = order.getStatus();
         order.setStatus("cancelled");
+        if (closeReason != null && !closeReason.isBlank()) {
+            if (closeReason.length() > 500) {
+                throw BusinessException.validationError("关闭原因不能超过 500 个字符");
+            }
+            order.setCloseReason(closeReason);
+        }
         orderMapper.updateById(order);
-        log.info("取消订单成功: id={}", id);
+
+        // 已确认的订单被取消时，恢复库存和销量
+        if ("confirmed".equals(previousStatus) || "producing".equals(previousStatus)) {
+            restoreStockAndDecreaseSales(id);
+        }
+        log.info("取消订单成功: id={}, reason={}", id, closeReason);
     }
 
     /**
      * 退款
+     * 仅允许已确认/生产中/已发货/已完成状态的订单退款，恢复库存和销量
      */
     @Transactional(rollbackFor = Exception.class)
     public void refundOrder(String id) {
@@ -568,9 +636,22 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         if (order == null) {
             throw BusinessException.notFound("订单");
         }
+        Set<String> refundableStatuses = Set.of("confirmed", "producing", "shipped", "completed");
+        if (!refundableStatuses.contains(order.getStatus())) {
+            throw BusinessException.validationError(
+                    "当前状态[" + order.getStatus() + "]不允许退款，仅已确认/生产中/已发货/已完成可退款");
+        }
+
+        String previousStatus = order.getStatus();
         order.setStatus("cancelled");
+        order.setCloseReason("退款");
         orderMapper.updateById(order);
-        log.info("退款成功: id={}", id);
+
+        // 已确认及以上的订单被退款时，恢复库存和销量
+        if (!"pending".equals(previousStatus)) {
+            restoreStockAndDecreaseSales(id);
+        }
+        log.info("退款成功: id={}, previousStatus={}", id, previousStatus);
     }
 
     /**
@@ -597,8 +678,174 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         if (order == null) {
             throw BusinessException.notFound("订单");
         }
+        Set<String> validStatuses = Set.of("pending", "following", "completed");
+        if (!validStatuses.contains(followStatus)) {
+            throw BusinessException.validationError("无效的跟进状态: " + followStatus + "，可选值: pending/following/completed");
+        }
         order.setFollowStatus(followStatus);
         orderMapper.updateById(order);
         log.info("更新跟进状态成功: id={}, followStatus={}", id, followStatus);
+    }
+
+    /**
+     * 添加订单备注（追加模式）
+     *
+     * @param id      订单ID
+     * @param content 备注内容
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void addRemark(String id, String content) {
+        Order order = orderMapper.selectById(id);
+        if (order == null) {
+            throw BusinessException.notFound("订单");
+        }
+        if (content == null || content.isBlank()) {
+            throw BusinessException.validationError("备注内容不能为空");
+        }
+        if (content.length() > 2000) {
+            throw BusinessException.validationError("备注内容不能超过 2000 个字符");
+        }
+        String timestamp = java.time.LocalDateTime.now()
+                .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
+        String remarkEntry = "[" + timestamp + "] " + content;
+        String existing = order.getRemark() != null ? order.getRemark() : "";
+        order.setRemark(existing.isEmpty() ? remarkEntry : existing + "\n" + remarkEntry);
+        orderMapper.updateById(order);
+        log.info("添加订单备注成功: id={}", id);
+    }
+
+    // ==================== 库存与销量管理 ====================
+
+    /**
+     * 确认支付后：扣减库存 + 增加销量（商品级 + SKU级）
+     */
+    private void deductStockAndIncreaseSales(String orderId) {
+        adjustStockAndSales(orderId, true);
+    }
+
+    /**
+     * 取消/退款后：恢复库存 + 减少销量（商品级 + SKU级）
+     */
+    private void restoreStockAndDecreaseSales(String orderId) {
+        adjustStockAndSales(orderId, false);
+    }
+
+    /**
+     * 统一的库存和销量调整逻辑
+     *
+     * @param orderId  订单ID
+     * @param isDeduct true=扣库存+增销量（确认支付），false=恢复库存+减销量（取消/退款）
+     */
+    @SuppressWarnings("unchecked")
+    private void adjustStockAndSales(String orderId, boolean isDeduct) {
+        List<OrderItem> items = orderItemMapper.selectList(
+                new LambdaQueryWrapper<OrderItem>().eq(OrderItem::getOrderId, orderId));
+        if (items.isEmpty()) return;
+
+        Order order = orderMapper.selectById(orderId);
+        if (order == null) return;
+
+        // 按 productId 聚合数量和金额
+        Map<String, Integer> productQtyMap = new java.util.HashMap<>();
+        Map<String, BigDecimal> productAmountMap = new java.util.HashMap<>();
+
+        for (OrderItem item : items) {
+            if (item.getProductId() == null) continue;
+            int qty = item.getQuantity() != null ? item.getQuantity() : 0;
+            BigDecimal amount = item.getSubtotal() != null ? item.getSubtotal() : BigDecimal.ZERO;
+            productQtyMap.merge(item.getProductId(), qty, Integer::sum);
+            productAmountMap.merge(item.getProductId(), amount, BigDecimal::add);
+
+            // SKU级库存调整：从 processingInfo 中匹配 SKU
+            if (isDeduct) {
+                deductSkuStock(item);
+            } else {
+                restoreSkuStock(item);
+            }
+        }
+
+        // 商品级调整
+        for (Map.Entry<String, Integer> entry : productQtyMap.entrySet()) {
+            String productId = entry.getKey();
+            int totalQty = entry.getValue();
+            BigDecimal totalAmount = productAmountMap.getOrDefault(productId, BigDecimal.ZERO);
+            if (isDeduct) {
+                productMapper.increaseSales(productId, totalQty, totalAmount);
+            } else {
+                productMapper.decreaseSales(productId, totalQty, totalAmount);
+            }
+        }
+    }
+
+    /**
+     * 从 OrderItem 的 processingInfo 中匹配 SKU 并扣减库存
+     */
+    @SuppressWarnings("unchecked")
+    private void deductSkuStock(OrderItem item) {
+        Long skuId = matchSkuId(item);
+        if (skuId != null && item.getQuantity() != null) {
+            productSkuMapper.deductStock(skuId, item.getQuantity());
+            productSkuMapper.increaseSalesCount(skuId, item.getQuantity());
+        }
+    }
+
+    /**
+     * 从 OrderItem 的 processingInfo 中匹配 SKU 并恢复库存
+     */
+    private void restoreSkuStock(OrderItem item) {
+        Long skuId = matchSkuId(item);
+        if (skuId != null && item.getQuantity() != null) {
+            productSkuMapper.restoreStock(skuId, item.getQuantity());
+            productSkuMapper.decreaseSalesCount(skuId, item.getQuantity());
+        }
+    }
+
+    /**
+     * 根据 OrderItem 的 processingInfo 匹配对应的 SKU ID
+     * processingInfo 格式: { "colorId": N, "sellingMethod": "...", "doorWidth": "...", "skuId": N, ... }
+     */
+    @SuppressWarnings("unchecked")
+    private Long matchSkuId(OrderItem item) {
+        if (item.getProductId() == null) return null;
+
+        Object processingInfo = item.getProcessingInfo();
+        if (processingInfo instanceof Map) {
+            Map<String, Object> info = (Map<String, Object>) processingInfo;
+
+            // 优先使用 skuId（如果前端传了）
+            Object skuIdObj = info.get("skuId");
+            if (skuIdObj != null) {
+                try {
+                    return Long.valueOf(skuIdObj.toString());
+                } catch (NumberFormatException e) {
+                    log.warn("matchSkuId: skuId 格式错误, orderId={}, productId={}, skuId={}",
+                            item.getOrderId(), item.getProductId(), skuIdObj);
+                }
+            }
+
+            // 回退：通过 colorId + sellingMethod + doorWidth 匹配
+            Object colorIdObj = info.get("colorId");
+            Object sellingMethod = info.get("sellingMethod");
+            Object doorWidth = info.get("doorWidth");
+
+            if (colorIdObj != null && sellingMethod != null && doorWidth != null) {
+                try {
+                    Long colorId = Long.valueOf(colorIdObj.toString());
+                    LambdaQueryWrapper<ProductSku> wrapper = new LambdaQueryWrapper<ProductSku>()
+                            .eq(ProductSku::getProductId, item.getProductId())
+                            .eq(ProductSku::getColorId, colorId)
+                            .eq(ProductSku::getSellingMethod, sellingMethod.toString())
+                            .eq(ProductSku::getDoorWidth, doorWidth.toString());
+                    ProductSku sku = productSkuMapper.selectOne(wrapper);
+                    if (sku != null) {
+                        return sku.getId();
+                    }
+                } catch (NumberFormatException e) {
+                    log.warn("matchSkuId: colorId 格式错误, orderId={}, productId={}, colorId={}",
+                            item.getOrderId(), item.getProductId(), colorIdObj);
+                }
+            }
+        }
+        return null;
     }
 }
