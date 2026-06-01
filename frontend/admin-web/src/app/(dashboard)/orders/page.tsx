@@ -117,6 +117,8 @@ export default function OrdersPage() {
       if (search.startDate) apiParams.startDate = search.startDate
       if (search.endDate) apiParams.endDate = search.endDate
 
+      // 多字段搜索：分别传递各字段，后端支持 keyword 模糊匹配
+      // 优先使用第一个非空字段作为 keyword（后端当前限制），后续可升级为多字段
       const keywordCandidates = [
         search.orderId,
         search.receiver,
@@ -126,21 +128,23 @@ export default function OrdersPage() {
       if (keywordCandidates.length > 0) {
         apiParams.keyword = keywordCandidates[0]
       }
+      // 同时传递各字段供后端精确匹配（后端如支持则优先使用）
+      if (search.orderId) apiParams.orderId = search.orderId
+      if (search.receiver) apiParams.receiver = search.receiver
+      if (search.productCode) apiParams.productCode = search.productCode
+      if (search.productTitle) apiParams.productTitle = search.productTitle
 
       // 状态映射：前端枚举 → 后端枚举。
-      // 'all' / 'processing' 不传 status，'processing' tab 后续可前端过滤 hasProcessing。
+      // 'all' / 'processing' 不传 status，'processing' tab 传 hasProcessing=true 给后端过滤
       if (activeTab !== 'all' && activeTab !== 'processing') {
         apiParams.status = FrontendToBackendStatus[activeTab as OrderStatus]
+      } else if (activeTab === 'processing') {
+        apiParams.hasProcessing = true
       }
 
       const res = await orderApi.getOrders(apiParams as Parameters<typeof orderApi.getOrders>[0])
       const pageData = res.data?.data
-      let items = pageData?.items || []
-
-      // 含加工订单 tab：前端过滤
-      if (activeTab === 'processing') {
-        items = items.filter((o) => o.hasProcessing)
-      }
+      const items = pageData?.items || []
 
       setOrders(items)
       setTotal(pageData?.total || 0)

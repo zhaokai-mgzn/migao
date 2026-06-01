@@ -279,8 +279,10 @@ export const orderApi = {
     }),
 
   // 关闭订单 → 后端实际为取消订单接口（无 body）
-  closeOrder: (id: string, _data?: CloseOrderParams) =>
-    request.put<ApiResponse<void>>(`/api/admin/orders/${id}/cancel`),
+  closeOrder: (id: string, data?: CloseOrderParams) =>
+    request.put<ApiResponse<void>>(`/api/admin/orders/${id}/cancel`, {
+      closeReason: data?.reason || '',
+    }),
 
   // 确认付款
   confirmPayment: (id: string) =>
@@ -290,14 +292,8 @@ export const orderApi = {
   refundOrder: (id: string) =>
     request.put<ApiResponse<void>>(`/api/admin/orders/${id}/refund`),
 
-  // 添加备注：后端暂未提供该接口，暂返回 mock 成功响应
-  addRemark: async (id: string, content: string): Promise<{ data: ApiResponse<void> }> => {
-    console.warn(
-      `[orderApi.addRemark] 后端暂未提供 POST /api/admin/orders/${id}/remarks 接口，跳过请求。content=`,
-      content
-    )
-    return { data: { code: 0, message: 'mock', data: undefined as unknown as void, success: true } }
-  },
+  addRemark: (id: string, content: string) =>
+    request.post<ApiResponse<void>>(`/api/admin/orders/${id}/remark`, { content }),
 
   // 删除订单
   deleteOrder: (id: string) =>
