@@ -6,6 +6,7 @@
 
 from app.graph.state import AgentState
 from app.graph.skills.base_skill import execute_skill
+from app.graph.skills.skill_config import SkillConfig
 
 
 # 客服订单查询 Skill 可用的 Tool 列表（仅查询类）
@@ -50,3 +51,16 @@ async def customer_order_skill_node(state: AgentState) -> dict:
         tool_names=CUSTOMER_ORDER_TOOLS,
         system_prompt=CUSTOMER_ORDER_SYSTEM_PROMPT,
     )
+
+
+# ────────────── SkillConfig 声明 ──────────────
+CUSTOMER_ORDER_SKILL_CONFIG = SkillConfig(
+    name="customer_order",
+    domain="order",
+    display_name="客服订单查询",
+    tool_names=CUSTOMER_ORDER_TOOLS,
+    route_keys=["order"],
+    intents=["order_query", "logistics_track"],
+    system_prompts={"xiaobu": CUSTOMER_ORDER_SYSTEM_PROMPT},
+    default_persona="xiaobu",
+)

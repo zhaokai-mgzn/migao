@@ -6,6 +6,7 @@
 
 from app.graph.state import AgentState
 from app.graph.skills.base_skill import execute_skill
+from app.graph.skills.skill_config import SkillConfig
 
 
 # 售后 Skill 可用的 Tool 列表
@@ -58,3 +59,16 @@ async def aftersales_node(state: AgentState) -> dict:
         tool_names=AFTERSALES_TOOLS,
         system_prompt=AFTERSALES_SYSTEM_PROMPT,
     )
+
+
+# ────────────── SkillConfig 声明 ──────────────
+AFTERSALES_SKILL_CONFIG = SkillConfig(
+    name="aftersales",
+    domain="order",
+    display_name="售后服务",
+    tool_names=AFTERSALES_TOOLS,
+    route_keys=["aftersales"],
+    intents=["after_sales", "after_sales_create", "complaint"],
+    system_prompts={"mibao": AFTERSALES_SYSTEM_PROMPT},
+    default_persona="mibao",
+)

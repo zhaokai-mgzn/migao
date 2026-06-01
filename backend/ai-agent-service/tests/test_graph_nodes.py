@@ -185,10 +185,12 @@ class TestDirectReplyNode:
         assert result["messages"][0].content == "欢迎光临！"
 
     async def test_direct_reply_fallback(self):
-        """无 direct_reply 时使用默认回复"""
+        """无 direct_reply 时使用 AgentConfig 或默认回复"""
         state = _make_state(route_decision={})
         result = await direct_reply_node(state)
-        assert "帮您" in result["final_answer"]
+        # 兜底应返回非空回复文本
+        assert result["final_answer"]
+        assert len(result["final_answer"]) > 0
         assert result["skill_used"] == "direct_reply"
 
     async def test_direct_reply_no_route_decision(self):

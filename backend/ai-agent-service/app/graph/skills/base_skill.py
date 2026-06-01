@@ -182,15 +182,18 @@ def build_tool_context(state: AgentState) -> ToolContext:
 def create_skill_registry(tool_names: List[str]) -> ToolRegistry:
     """创建仅包含指定 Tool 的 Registry 子集
 
+    从全局单例 ToolRegistry 中引用 Tool 实例（不重复创建），
+    避免每次 Skill 执行都实例化全部 21 个 Tool。
+
     Args:
         tool_names: 需要的 Tool 名称列表
 
     Returns:
         ToolRegistry: 包含指定 Tool 子集的注册器
     """
-    from app.tools.registry import create_default_registry
+    from app.tools.registry import get_tool_registry
 
-    full_registry = create_default_registry()
+    full_registry = get_tool_registry()
     skill_registry = ToolRegistry()
 
     for name in tool_names:
@@ -198,7 +201,7 @@ def create_skill_registry(tool_names: List[str]) -> ToolRegistry:
         if tool:
             skill_registry.register(tool)
         else:
-            logger.warning(f"[base_skill] Tool '{name}' not found in default registry")
+            logger.warning(f"[base_skill] Tool '{name}' not found in global registry")
 
     return skill_registry
 

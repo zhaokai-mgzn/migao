@@ -6,6 +6,7 @@
 
 from app.graph.state import AgentState
 from app.graph.skills.base_skill import execute_skill
+from app.graph.skills.skill_config import SkillConfig
 
 
 # 知识 Skill 可用的 Tool 列表
@@ -55,3 +56,16 @@ async def knowledge_node(state: AgentState) -> dict:
         tool_names=KNOWLEDGE_TOOLS,
         system_prompt=KNOWLEDGE_SYSTEM_PROMPT,
     )
+
+
+# ────────────── SkillConfig 声明 ──────────────
+KNOWLEDGE_SKILL_CONFIG = SkillConfig(
+    name="knowledge",
+    domain="knowledge",
+    display_name="知识库",
+    tool_names=KNOWLEDGE_TOOLS,
+    route_keys=["knowledge"],
+    intents=["knowledge_faq", "knowledge_manage"],
+    system_prompts={"mibao": KNOWLEDGE_SYSTEM_PROMPT},
+    default_persona="mibao",
+)

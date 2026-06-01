@@ -6,6 +6,7 @@
 
 from app.graph.state import AgentState
 from app.graph.skills.base_skill import execute_skill
+from app.graph.skills.skill_config import SkillConfig
 
 
 # 人事 Skill 可用的 Tool 列表
@@ -49,3 +50,16 @@ async def staff_skill_node(state: AgentState) -> dict:
         tool_names=STAFF_TOOLS,
         system_prompt=STAFF_SYSTEM_PROMPT,
     )
+
+
+# ────────────── SkillConfig 声明 ──────────────
+STAFF_SKILL_CONFIG = SkillConfig(
+    name="staff",
+    domain="hr",
+    display_name="人事管理",
+    tool_names=STAFF_TOOLS,
+    route_keys=["staff"],
+    intents=["employee_manage", "staff_manage", "role_manage", "permission_manage"],
+    system_prompts={"mibao": STAFF_SYSTEM_PROMPT},
+    default_persona="mibao",
+)

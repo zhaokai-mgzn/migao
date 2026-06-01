@@ -1,10 +1,10 @@
 """
-双 Agent 拆分测试
+双 Agent 架构测试（Skill-centric 配置驱动版）
 
 覆盖：
-- Agent 实例化（mibao / xiaobu）
+- Agent 配置注册（mibao / xiaobu）
 - Agent 类型验证
-- Greeting 差异化验证
+- Greeting 差异化验证（从 AgentConfig 获取）
 - get_agent 工厂函数
 - Graph Builder 双类型构建
 - 向后兼容性
@@ -15,13 +15,13 @@ from unittest.mock import patch, MagicMock, AsyncMock
 
 from app.agents.customer_service_agent import (
     BaseAgent,
-    CustomerServiceAgent,
-    WorkAssistantAgent,
     AgentContext,
     AgentResponse,
     get_agent,
     reset_agent,
 )
+from app.agents.agent_config import get_agent_config, reset_agent_configs
+from app.graph.skills.skill_registry import reset_skill_registry
 
 
 # ========== Fixtures ==========
@@ -45,95 +45,97 @@ def agent_context():
     )
 
 
-# ========== Agent 类型验证 ==========
+# ========== Agent 配置验证 ==========
 
-class TestAgentTypes:
-    """验证双 Agent 的 _agent_type 属性"""
+class TestAgentConfigs:
+    """验证 AgentConfig 注册正确"""
 
-    def test_customer_service_agent_type(self):
-        """CustomerServiceAgent._agent_type == 'xiaobu'"""
-        assert CustomerServiceAgent._agent_type == "xiaobu"
+    def test_mibao_config_exists(self):
+        """mibao AgentConfig 已注册"""
+        config = get_agent_config("mibao")
+        assert config.name == "mibao"
+        assert config.display_name == "米宝"
+        assert config.persona == "mibao"
 
-    def test_work_assistant_agent_type(self):
-        """WorkAssistantAgent._agent_type == 'mibao'"""
-        assert WorkAssistantAgent._agent_type == "mibao"
+    def test_xiaobu_config_exists(self):
+        """xiaobu AgentConfig 已注册"""
+        config = get_agent_config("xiaobu")
+        assert config.name == "xiaobu"
+        assert config.display_name == "小布"
+        assert config.persona == "xiaobu"
 
-    def test_base_agent_default_type(self):
-        """BaseAgent 默认 _agent_type 为 'xiaobu'"""
-        assert BaseAgent._agent_type == "xiaobu"
+    def test_mibao_skills(self):
+        """米宝使用完整 Skill 集合"""
+        config = get_agent_config("mibao")
+        assert "order" in config.skill_names
+        assert "product" in config.skill_names
+        assert "aftersales" in config.skill_names
+        assert config.fallback_skill == "general"
+
+    def test_xiaobu_skills(self):
+        """小布使用 customer_* 前缀的 Skill"""
+        config = get_agent_config("xiaobu")
+        assert "customer_order" in config.skill_names
+        assert "customer_product" in config.skill_names
+        assert config.fallback_skill == "customer_general"
+
+    def test_mibao_roles(self):
+        """米宝允许内部角色"""
+        config = get_agent_config("mibao")
+        assert config.allows_role("admin")
+        assert config.allows_role("agent")
+        assert not config.allows_role("customer")
+
+    def test_xiaobu_roles(self):
+        """小布允许 C 端角色"""
+        config = get_agent_config("xiaobu")
+        assert config.allows_role("customer")
+        assert not config.allows_role("admin")
 
 
-# ========== Agent 实例化测试 ==========
+# ========== get_agent 工厂函数测试 ==========
 
-class TestAgentInstantiation:
-    """验证双 Agent 实例化"""
+class TestGetAgentFactory:
+    """验证 get_agent 工厂函数"""
 
     @patch("app.graph.builder.build_agent_graph")
     @patch("app.agents.customer_service_agent.create_default_registry")
-    def test_xiaobu_instance(self, mock_create_registry, mock_build_graph):
-        """CustomerServiceAgent 实例化正确"""
+    def test_get_agent_mibao(self, mock_create_registry, mock_build_graph):
+        """get_agent(agent_type='mibao') 返回 BaseAgent"""
         mock_create_registry.return_value = MagicMock()
         mock_build_graph.return_value = MagicMock()
 
-        agent = CustomerServiceAgent()
-        assert isinstance(agent, CustomerServiceAgent)
+        agent = get_agent(agent_type="mibao")
+        assert isinstance(agent, BaseAgent)
+        assert agent._agent_type == "mibao"
+        mock_build_graph.assert_called_once_with("mibao")
+
+    @patch("app.graph.builder.build_agent_graph")
+    @patch("app.agents.customer_service_agent.create_default_registry")
+    def test_get_agent_xiaobu(self, mock_create_registry, mock_build_graph):
+        """get_agent(agent_type='xiaobu') 返回 BaseAgent"""
+        mock_create_registry.return_value = MagicMock()
+        mock_build_graph.return_value = MagicMock()
+
+        agent = get_agent(agent_type="xiaobu")
         assert isinstance(agent, BaseAgent)
         assert agent._agent_type == "xiaobu"
         mock_build_graph.assert_called_once_with("xiaobu")
 
     @patch("app.graph.builder.build_agent_graph")
     @patch("app.agents.customer_service_agent.create_default_registry")
-    def test_mibao_instance(self, mock_create_registry, mock_build_graph):
-        """WorkAssistantAgent 实例化正确"""
-        mock_create_registry.return_value = MagicMock()
-        mock_build_graph.return_value = MagicMock()
-
-        agent = WorkAssistantAgent()
-        assert isinstance(agent, WorkAssistantAgent)
-        assert isinstance(agent, BaseAgent)
-        assert agent._agent_type == "mibao"
-        mock_build_graph.assert_called_once_with("mibao")
-
-
-# ========== get_agent 工厂函数测试 ==========
-
-class TestGetAgentFactory:
-    """验证 get_agent 工厂函数的双 Agent 路由"""
-
-    @patch("app.graph.builder.build_agent_graph")
-    @patch("app.agents.customer_service_agent.create_default_registry")
-    def test_get_agent_mibao(self, mock_create_registry, mock_build_graph):
-        """get_agent(agent_type='mibao') 返回 WorkAssistantAgent"""
-        mock_create_registry.return_value = MagicMock()
-        mock_build_graph.return_value = MagicMock()
-
-        agent = get_agent(agent_type="mibao")
-        assert isinstance(agent, WorkAssistantAgent)
-
-    @patch("app.graph.builder.build_agent_graph")
-    @patch("app.agents.customer_service_agent.create_default_registry")
-    def test_get_agent_xiaobu(self, mock_create_registry, mock_build_graph):
-        """get_agent(agent_type='xiaobu') 返回 CustomerServiceAgent"""
-        mock_create_registry.return_value = MagicMock()
-        mock_build_graph.return_value = MagicMock()
-
-        agent = get_agent(agent_type="xiaobu")
-        assert isinstance(agent, CustomerServiceAgent)
-
-    @patch("app.graph.builder.build_agent_graph")
-    @patch("app.agents.customer_service_agent.create_default_registry")
     def test_get_agent_default_is_xiaobu(self, mock_create_registry, mock_build_graph):
-        """默认 get_agent() 返回 CustomerServiceAgent（向后兼容）"""
+        """默认 get_agent() 返回小布 Agent（向后兼容）"""
         mock_create_registry.return_value = MagicMock()
         mock_build_graph.return_value = MagicMock()
 
         agent = get_agent()
-        assert isinstance(agent, CustomerServiceAgent)
+        assert agent._agent_type == "xiaobu"
 
     @patch("app.graph.builder.build_agent_graph")
     @patch("app.agents.customer_service_agent.create_default_registry")
     def test_get_agent_with_registry(self, mock_create_registry, mock_build_graph):
-        """get_agent 传入 tool_registry 后不调用 create_default_registry"""
+        """get_agent 传入 tool_registry 后使用该 registry"""
         mock_build_graph.return_value = MagicMock()
         custom_registry = MagicMock()
 
@@ -151,23 +153,23 @@ class TestGetAgentFactory:
         mibao = get_agent(agent_type="mibao")
         xiaobu = get_agent(agent_type="xiaobu")
         assert mibao is not xiaobu
-        assert isinstance(mibao, WorkAssistantAgent)
-        assert isinstance(xiaobu, CustomerServiceAgent)
+        assert mibao._agent_type == "mibao"
+        assert xiaobu._agent_type == "xiaobu"
 
 
 # ========== Greeting 差异化测试 ==========
 
 class TestGreetings:
-    """验证双 Agent 欢迎语差异"""
+    """验证双 Agent 欢迎语差异（从 AgentConfig 获取）"""
 
     @patch("app.graph.builder.build_agent_graph")
     @patch("app.agents.customer_service_agent.create_default_registry")
     async def test_mibao_greeting(self, mock_create_registry, mock_build_graph, agent_context):
-        """米宝的 greeting 包含'米宝'和'智能工作助手'"""
+        """米宝的 greeting 包含'米宝'和'工作助手'"""
         mock_create_registry.return_value = MagicMock()
         mock_build_graph.return_value = MagicMock()
 
-        agent = WorkAssistantAgent()
+        agent = get_agent(agent_type="mibao")
         greeting = await agent.get_greeting(agent_context)
         assert "米宝" in greeting
         assert "工作助手" in greeting
@@ -175,37 +177,14 @@ class TestGreetings:
     @patch("app.graph.builder.build_agent_graph")
     @patch("app.agents.customer_service_agent.create_default_registry")
     async def test_xiaobu_greeting(self, mock_create_registry, mock_build_graph, agent_context):
-        """小布的 greeting 包含'小布'和'智能客服'"""
+        """小布的 greeting 包含'小布'和'客服'"""
         mock_create_registry.return_value = MagicMock()
         mock_build_graph.return_value = MagicMock()
 
-        agent = CustomerServiceAgent()
+        agent = get_agent(agent_type="xiaobu")
         greeting = await agent.get_greeting(agent_context)
         assert "小布" in greeting
         assert "客服" in greeting
-
-
-# ========== SKILL_NODES 差异化测试 ==========
-
-class TestSkillNodes:
-    """验证双 Agent 的 SKILL_NODES 配置"""
-
-    def test_xiaobu_skill_nodes(self):
-        """小布使用 customer_* 前缀的 Skill 节点"""
-        expected = {
-            "customer_order_skill", "customer_product_skill",
-            "customer_knowledge_skill", "customer_general_skill",
-            "direct_reply",
-        }
-        assert CustomerServiceAgent._SKILL_NODES == expected
-
-    def test_mibao_skill_nodes(self):
-        """米宝使用完整的 Skill 节点集合"""
-        expected = {
-            "order_skill", "product_skill", "knowledge_skill",
-            "aftersales_skill", "general_agent", "direct_reply",
-        }
-        assert WorkAssistantAgent._SKILL_NODES == expected
 
 
 # ========== Graph Builder 双类型测试 ==========
@@ -238,19 +217,20 @@ class TestImportChain:
     """验证 import 链正确"""
 
     def test_agents_module_exports(self):
-        """app.agents 模块导出所有双 Agent 相关类"""
+        """app.agents 模块导出所有 Agent 相关类"""
         from app.agents import (
-            WorkAssistantAgent,
-            CustomerServiceAgent,
             BaseAgent,
             AgentContext,
             AgentResponse,
             get_agent,
             reset_agent,
+            AgentConfig,
+            get_agent_config,
+            AgentRouter,
         )
-        assert WorkAssistantAgent is not None
-        assert CustomerServiceAgent is not None
         assert BaseAgent is not None
+        assert AgentConfig is not None
+        assert AgentRouter is not None
 
     def test_graph_module_exports(self):
         """app.graph 模块导出 build_agent_graph 和向后兼容的 build_customer_service_graph"""

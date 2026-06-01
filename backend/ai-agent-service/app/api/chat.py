@@ -369,15 +369,17 @@ async def send_message(
     session_memory = SessionMemory()
     tool_registry = get_tool_registry()
     
-    # 根据用户角色选择 Agent 类型
+    # 根据用户角色选择 Agent 类型（配置驱动路由）
+    from app.agents.agent_router import get_agent_router
+    agent_router = get_agent_router()
+    agent_type = agent_router.route(current_user)
+
+    # 确定 Agent 角色（用于 ToolContext 权限检查）
     if current_user.role in ("admin", "agent", "tenant_admin"):
-        # B 端员工 / 管理员 / 企业管理员 → 米宝（工作助手）
-        agent_type = "mibao"
-        agent_role = current_user.role  # 直接复用 JWT 角色，与 ToolContext.allowed_roles 一致
+        agent_role = current_user.role
     else:
-        # C 端普通顾客 → 小布（客服）
-        agent_type = "xiaobu"
         agent_role = "customer"
+
     agent = get_agent(tool_registry, agent_type=agent_type)
     
     # 1. 创建或获取 session

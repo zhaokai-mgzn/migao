@@ -11,7 +11,7 @@ import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
 
 from app.router.intent_config import IntentType, IntentResult, RouteDecision, INTENT_TOOL_MAP
-from app.router.rule_matcher import RuleMatcher, KEYWORD_MAP, GREETING_REPLIES
+from app.router.rule_matcher import RuleMatcher, KEYWORD_MAP
 from app.router.intent_classifier import IntentClassifier
 from app.router.intent_router import IntentRouter
 
@@ -207,13 +207,15 @@ class TestIntentRouter:
     # --- 路由决策逻辑 ---
 
     def test_make_decision_greeting(self, router):
-        """Greeting 高置信度 → direct_reply"""
+        """Greeting 高置信度 → direct_reply（回复由 direct_reply_node 从 AgentConfig 填充）"""
         intent_result = IntentResult(
             intent=IntentType.GREETING, confidence=1.0, source="rule"
         )
         decision = router._make_decision(intent_result)
         assert decision.action == "direct_reply"
-        assert decision.direct_reply == GREETING_REPLIES[0]
+        # 新架构：_make_decision 不再硬编码回复文本，返回 None
+        # 由 direct_reply_node 从 AgentConfig.direct_replies 获取
+        assert decision.direct_reply is None
 
     def test_make_decision_greeting_low_confidence(self, router):
         """Greeting 低置信度(< 0.9) → route_with_hint 而非 direct_reply"""
@@ -261,10 +263,11 @@ class TestIntentRouter:
 
     @pytest.mark.asyncio
     async def test_route_greeting_direct_reply(self, router):
-        """问候语直接回复"""
+        """问候语 → direct_reply action（回复文本由 direct_reply_node 填充）"""
         decision = await router.route("你好")
         assert decision.action == "direct_reply"
-        assert decision.direct_reply is not None
+        # 新架构：回复文本在 direct_reply_node 中从 AgentConfig 获取
+        assert decision.direct_reply is None
 
     @pytest.mark.asyncio
     async def test_route_falls_to_classifier(self, router):

@@ -45,6 +45,13 @@ __pycache__/
 .coverage
 htmlcov/
 
+# Playwright
+tests/e2e/.auth/
+frontend/admin-web/tests/e2e/.auth/
+playwright-report/
+test-results/
+blob-report/
+
 # Screenshots
 e2e-test-*.png
 

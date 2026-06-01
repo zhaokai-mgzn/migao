@@ -1,46 +1,59 @@
 """
-AI 智能客服系统 - Agent 模块
+AI 智能客服系统 - Agent 模块（Skill-centric 架构）
 
-基于 LangChain 实现的 AI Agent 框架
+基于 LangChain + LangGraph 的 Agent 框架，采用 Skill-centric 设计：
+- Skill = 自包含的能力模块（Tool 集合 + Prompt + 意图路由）
+- Agent = Skill 的声明式组合（配置驱动）
 
-架构决策说明：
-================
-原计划使用 Hermes Agent（Nous Research 推出的自进化 Agent 框架），
-但经调研发现：
-1. Hermes Agent 目前主要通过 GitHub 源码安装，非 PyPI 标准包
-2. 安装和配置相对复杂，需要额外的环境准备
-3. 文档和社区支持尚不完善
-
-因此当前采用 LangChain Agent 作为替代方案：
-- LangChain 是成熟的 LLM 应用框架，PyPI 标准包
-- 提供完善的 Tool calling、Memory 管理和 Streaming 支持
-- 与阿里云百炼（DashScope）集成良好
-- 有丰富的文档和社区支持
-
-未来如需迁移到 Hermes Agent，可基于当前 Tool 抽象层进行替换，
-因为 Tool 定义和 Agent 接口设计是框架无关的。
-================
+新增 Agent 只需：
+1. 在 agents/ 目录添加 AgentConfig 声明
+2. 在 graph/skills/ 目录添加需要的 SkillConfig
+3. 注册后即可使用
 
 模块说明：
-- customer_service_agent.py: 双 Agent 实现（BaseAgent / CustomerServiceAgent / WorkAssistantAgent）
+- customer_service_agent.py: BaseAgent 实现 + get_agent 工厂
+- agent_config.py: AgentConfig 数据类 + 注册表
+- agent_router.py: 用户身份 → Agent 类型路由
+- agents/: Agent 声明文件（mibao.py, xiaobu.py, ...）
 """
 
 from app.agents.customer_service_agent import (
     BaseAgent,
-    CustomerServiceAgent,
-    WorkAssistantAgent,
     AgentContext,
     AgentResponse,
     get_agent,
     reset_agent,
+    # 向后兼容别名（测试文件可能仍通过旧类名导入）
+    CustomerServiceAgent,
+    WorkAssistantAgent,
 )
+from app.agents.agent_config import (
+    AgentConfig,
+    register_agent,
+    get_agent_config,
+    get_all_agent_configs,
+)
+from app.agents.agent_router import AgentRouter, get_agent_router
+
+# 注册所有内置 Agent（触发 agents/__init__.py 中的注册逻辑）
+import app.agents.agents  # noqa: F401
 
 __all__ = [
+    # Agent 运行时
     "BaseAgent",
-    "CustomerServiceAgent",
-    "WorkAssistantAgent",
     "AgentContext",
     "AgentResponse",
     "get_agent",
     "reset_agent",
+    # 向后兼容别名
+    "CustomerServiceAgent",
+    "WorkAssistantAgent",
+    # Agent 配置
+    "AgentConfig",
+    "register_agent",
+    "get_agent_config",
+    "get_all_agent_configs",
+    # Agent 路由
+    "AgentRouter",
+    "get_agent_router",
 ]

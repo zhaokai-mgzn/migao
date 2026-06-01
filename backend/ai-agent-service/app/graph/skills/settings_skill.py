@@ -6,6 +6,7 @@
 
 from app.graph.state import AgentState
 from app.graph.skills.base_skill import execute_skill
+from app.graph.skills.skill_config import SkillConfig
 
 
 # 系统配置 Skill 可用的 Tool 列表
@@ -49,3 +50,16 @@ async def settings_skill_node(state: AgentState) -> dict:
         tool_names=SETTINGS_TOOLS,
         system_prompt=SETTINGS_SYSTEM_PROMPT,
     )
+
+
+# ────────────── SkillConfig 声明 ──────────────
+SETTINGS_SKILL_CONFIG = SkillConfig(
+    name="settings",
+    domain="settings",
+    display_name="系统配置",
+    tool_names=SETTINGS_TOOLS,
+    route_keys=["settings"],
+    intents=["system_settings", "ai_config", "notification", "quick_reply"],
+    system_prompts={"mibao": SETTINGS_SYSTEM_PROMPT},
+    default_persona="mibao",
+)
