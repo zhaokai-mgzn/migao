@@ -6,6 +6,7 @@
 
 from app.graph.state import AgentState
 from app.graph.skills.base_skill import execute_skill
+from app.graph.skills.skill_config import SkillConfig
 
 
 # 客服商品咨询 Skill 可用的 Tool 列表（仅查询类）
@@ -48,3 +49,16 @@ async def customer_product_skill_node(state: AgentState) -> dict:
         tool_names=CUSTOMER_PRODUCT_TOOLS,
         system_prompt=CUSTOMER_PRODUCT_SYSTEM_PROMPT,
     )
+
+
+# ────────────── SkillConfig 声明 ──────────────
+CUSTOMER_PRODUCT_SKILL_CONFIG = SkillConfig(
+    name="customer_product",
+    domain="product",
+    display_name="客服商品咨询",
+    tool_names=CUSTOMER_PRODUCT_TOOLS,
+    route_keys=["product"],
+    intents=["product_inquiry"],
+    system_prompts={"xiaobu": CUSTOMER_PRODUCT_SYSTEM_PROMPT},
+    default_persona="xiaobu",
+)

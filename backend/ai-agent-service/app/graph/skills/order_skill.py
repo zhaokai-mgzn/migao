@@ -6,6 +6,7 @@
 
 from app.graph.state import AgentState
 from app.graph.skills.base_skill import execute_skill
+from app.graph.skills.skill_config import SkillConfig
 
 
 # 订单 Skill 可用的 Tool 列表
@@ -46,3 +47,16 @@ async def order_node(state: AgentState) -> dict:
         tool_names=ORDER_TOOLS,
         system_prompt=ORDER_SYSTEM_PROMPT,
     )
+
+
+# ────────────── SkillConfig 声明 ──────────────
+ORDER_SKILL_CONFIG = SkillConfig(
+    name="order",
+    domain="order",
+    display_name="订单管理",
+    tool_names=ORDER_TOOLS,
+    route_keys=["order"],
+    intents=["order_query", "logistics_track"],
+    system_prompts={"mibao": ORDER_SYSTEM_PROMPT},
+    default_persona="mibao",
+)

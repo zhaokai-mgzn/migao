@@ -74,30 +74,33 @@ class AgentContext:
 
 class BaseAgent:
     """
-    Agent 基类
-    
-    提取双 Agent 的公共逻辑：图构建、流式对话、非流式对话等。
-    子类通过 _agent_type, _SKILL_NODES 和 get_greeting 实现差异化。
+    Agent 基类（配置驱动版）
+
+    从 AgentConfig 获取所有差异化配置，无需子类。
+    公共逻辑：图构建、流式对话、非流式对话等。
     """
-    
-    # 子类必须覆盖
-    _agent_type: str = "xiaobu"
-    
-    # 需要处理流式 token 的 Skill 节点名称（子类覆盖）
-    _SKILL_NODES: set = set()
-    
+
     # 不需要流式输出的辅助节点
     _IGNORED_STREAM_NODES = {"suggestions"}
-    
-    def __init__(self, tool_registry: Optional[ToolRegistry] = None):
+
+    def __init__(
+        self,
+        agent_type: str = "xiaobu",
+        tool_registry: Optional[ToolRegistry] = None,
+    ):
         """初始化 Agent
-        
+
         Args:
-            tool_registry: Tool 注册器（保留兼容性，图内各 Skill 自行管理 Tool）
+            agent_type: Agent 类型标识，如 "mibao", "xiaobu"
+            tool_registry: Tool 注册器（保留兼容性）
         """
         from app.graph.builder import build_agent_graph
-        self.graph = build_agent_graph(self._agent_type)
-        
+        from app.agents.agent_config import get_agent_config
+
+        self._agent_type = agent_type
+        self._agent_config = get_agent_config(agent_type)
+        self.graph = build_agent_graph(agent_type)
+
         # 保留 tool_registry 引用（向后兼容）
         if tool_registry is None:
             self.tool_registry = create_default_registry()
@@ -348,45 +351,10 @@ class BaseAgent:
             )
     
     async def get_greeting(self, context: AgentContext) -> str:
-        """获取欢迎语（子类覆盖）"""
-        return "您好！有什么可以帮您的吗？"
-
-
-class CustomerServiceAgent(BaseAgent):
-    """
-    小布 — C 端智能客服 Agent
-    
-    面向消费者，处理商品咨询、订单查询、物流追踪、知识库 FAQ 等。
-    """
-    
-    _agent_type = "xiaobu"
-    
-    _SKILL_NODES = {
-        "customer_order_skill", "customer_product_skill",
-        "customer_knowledge_skill", "customer_general_skill",
-        "direct_reply",
-    }
-    
-    async def get_greeting(self, context: AgentContext) -> str:
-        return "您好！我是小布，米高窗帘的智能客服。我可以为您介绍商品、查询订单、追踪物流，还能解答窗帘相关的各种问题，请问有什么可以帮您的吗？"
-
-
-class WorkAssistantAgent(BaseAgent):
-    """
-    米宝 — B 端智能工作助手 Agent
-    
-    面向商家/管理员，处理商品管理、订单处理、库存查询、售后管理等工作事务。
-    """
-    
-    _agent_type = "mibao"
-    
-    _SKILL_NODES = {
-        "order_skill", "product_skill", "knowledge_skill",
-        "aftersales_skill", "general_agent", "direct_reply",
-    }
-    
-    async def get_greeting(self, context: AgentContext) -> str:
-        return "您好！我是米宝，您的智能工作助手。我可以帮您处理商品管理、订单处理、库存查询等工作事务，有什么需要帮忙的吗？"
+        """获取欢迎语（优先从 direct_replies 获取，避免配置重复）"""
+        # 优先使用 direct_replies["greeting"]，与 direct_reply_node 共用同一文本
+        greeting = self._agent_config.get_direct_reply("greeting")
+        return greeting or self._agent_config.greeting
 
 
 # 全局 Agent 实例（懒加载，按 agent_type 缓存）
@@ -398,25 +366,55 @@ def get_agent(
     agent_type: str = "xiaobu",
 ) -> BaseAgent:
     """
-    获取全局 Agent 实例（单例模式，按 agent_type 缓存）
-    
+    获取全局 Agent 实例（配置驱动单例）
+
+    从 AgentConfig 注册表中获取 Agent 配置，
+    统一使用 BaseAgent 构建，无需区分子类。
+
     Args:
         tool_registry: 可选的 ToolRegistry 实例
-        agent_type: Agent 类型，"mibao" 或 "xiaobu"
-        
+        agent_type: Agent 类型，如 "mibao", "xiaobu"
+
     Returns:
-        BaseAgent: Agent 实例（CustomerServiceAgent 或 WorkAssistantAgent）
+        BaseAgent: Agent 实例
     """
     global _agent_instances
     if agent_type not in _agent_instances:
-        if agent_type == "mibao":
-            _agent_instances[agent_type] = WorkAssistantAgent(tool_registry=tool_registry)
-        else:
-            _agent_instances[agent_type] = CustomerServiceAgent(tool_registry=tool_registry)
+        _agent_instances[agent_type] = BaseAgent(
+            agent_type=agent_type,
+            tool_registry=tool_registry,
+        )
     return _agent_instances[agent_type]
 
 
 def reset_agent():
-    """重置全局 Agent 实例（用于测试）"""
+    """重置全局 Agent 实例（用于测试）
+
+    同时清除 Agent 意图缓存，确保测试间隔离。
+    """
     global _agent_instances
     _agent_instances = {}
+
+    # 同步清除 nodes.py 中的意图缓存
+    try:
+        from app.graph.nodes import reset_agent_intents_cache
+        reset_agent_intents_cache()
+    except (ImportError, AttributeError):
+        pass
+
+
+# ────────────────────── 向后兼容别名 ──────────────────────
+# 测试文件可能仍通过旧类名导入，提供别名避免 ImportError
+
+class CustomerServiceAgent(BaseAgent):
+    """小布 C 端客服（向后兼容别名，等价于 BaseAgent(agent_type='xiaobu')）"""
+
+    def __init__(self, tool_registry: Optional[ToolRegistry] = None):
+        super().__init__(agent_type="xiaobu", tool_registry=tool_registry)
+
+
+class WorkAssistantAgent(BaseAgent):
+    """米宝 B 端工作助手（向后兼容别名，等价于 BaseAgent(agent_type='mibao')）"""
+
+    def __init__(self, tool_registry: Optional[ToolRegistry] = None):
+        super().__init__(agent_type="mibao", tool_registry=tool_registry)

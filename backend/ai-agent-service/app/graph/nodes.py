@@ -21,6 +21,50 @@ from loguru import logger
 from app.graph.state import AgentState
 
 
+# ────────────────────── Agent 感知辅助函数 ──────────────────────
+
+# 缓存：避免每次请求都重新计算
+_agent_intents_cache: dict[str, list[str]] = {}
+
+
+def reset_agent_intents_cache():
+    """重置意图缓存（测试或配置热更新时调用）"""
+    global _agent_intents_cache
+    _agent_intents_cache = {}
+
+
+def _get_agent_intents(agent_type: str) -> list[str]:
+    """获取指定 Agent 可处理的意图列表（带缓存）
+
+    从 SkillRegistry + AgentConfig 聚合该 Agent 的所有意图。
+    分类器收到这个子集后，分类更准确、token 更少。
+    """
+    if agent_type in _agent_intents_cache:
+        return _agent_intents_cache[agent_type]
+
+    try:
+        from app.graph.skills.skill_registry import get_skill_registry
+        from app.agents.agent_config import get_agent_config
+
+        agent_config = get_agent_config(agent_type)
+        registry = get_skill_registry()
+        intents = registry.get_intents_for_skills(agent_config.get_all_skill_names())
+        # 始终包含公共意图
+        intents.extend(["greeting", "farewell", "capabilities", "general"])
+        # 去重后排序，但确保 'general' 始终排在最后（兜底语义）
+        unique_intents = sorted(set(intents) - {"general"})
+        unique_intents.append("general")
+        intents = unique_intents
+    except (KeyError, ImportError) as e:
+        # 配置未就绪时降级为全部意图
+        logger.warning(f"[_get_agent_intents] config not ready for {agent_type}: {e}, falling back to all intents")
+        from app.router.intent_config import IntentType
+        intents = [i.value for i in IntentType]
+
+    _agent_intents_cache[agent_type] = intents
+    return intents
+
+
 # ────────────────────── 辅助节点 ──────────────────────
 
 
@@ -64,10 +108,15 @@ async def cache_check_node(state: AgentState) -> dict:
 
 
 async def intent_router_node(state: AgentState) -> dict:
-    """执行意图路由"""
+    """执行意图路由
+
+    Agent 感知：传入 agent_type，让分类器只考虑该 Agent 能处理的意图，
+    提升分类准确率并降低 token 消耗。
+    """
     from app.router.intent_router import IntentRouter
 
     router = IntentRouter()
+    agent_type = state.get("agent_type", "xiaobu")
 
     # 取最后一条用户消息
     user_message = ""
@@ -87,7 +136,12 @@ async def intent_router_node(state: AgentState) -> dict:
         elif isinstance(msg, AIMessage):
             chat_history.append({"role": "assistant", "content": msg.content})
 
-    route_decision = await router.route(user_message, chat_history)
+    # Agent 感知：获取该 Agent 可处理的意图子集
+    agent_intents = _get_agent_intents(agent_type)
+
+    route_decision = await router.route(
+        user_message, chat_history, agent_intents=agent_intents
+    )
 
     return {
         "intent_result": {
@@ -103,23 +157,38 @@ async def intent_router_node(state: AgentState) -> dict:
     }
 
 
-# 按 agent_type 区分的问候语，避免小布返回米宝的问候
-_AGENT_GREETINGS: dict[str, str] = {
-    "xiaobu": "您好！我是小布，米高窗帘的智能客服。我可以为您介绍商品、查询订单、追踪物流，还能解答窗帘相关的各种问题，请问有什么可以帮您的吗？",
-    "mibao": "您好！我是米宝，您的智能工作助手。我可以帮您处理商品管理、订单处理、库存查询等工作事务，有什么需要帮忙的吗？",
-}
-
-
 async def direct_reply_node(state: AgentState) -> dict:
-    """直接回复，不调用大模型（greeting 等场景）"""
+    """直接回复，不调用大模型（greeting / farewell / capabilities 等场景）
+
+    优先从 AgentConfig.direct_replies 获取回复文本，
+    实现 Agent 级别的回复个性化，不再依赖硬编码映射。
+    """
     route_decision = state.get("route_decision") or {}
     intent = (state.get("intent_result") or {}).get("intent", "")
     reply = route_decision.get("direct_reply") or ""
+    agent_type = state.get("agent_type", "xiaobu")
 
-    # greeting 意图：根据 agent_type 返回对应问候语，而非使用 intent_router 硬编码的回复
-    if intent == "greeting" or not reply:
-        agent_type = state.get("agent_type", "xiaobu")
-        reply = _AGENT_GREETINGS.get(agent_type, reply or "你好！有什么可以帮您的吗？")
+    # 优先从 AgentConfig 获取 direct_reply
+    try:
+        from app.agents.agent_config import get_agent_config
+        agent_config = get_agent_config(agent_type)
+        config_reply = agent_config.get_direct_reply(intent)
+        if config_reply:
+            reply = config_reply
+    except (KeyError, ImportError):
+        pass
+
+    # 兜底：如果 AgentConfig 中没有配置，使用默认值
+    if not reply:
+        if intent == "greeting":
+            reply = "您好！有什么可以帮您的吗？"
+        elif intent == "farewell":
+            reply = "好的，有需要随时找我~ 😊"
+        elif intent == "capabilities":
+            reply = "我可以帮您处理各种问题，有什么需要帮忙的吗？"
+        else:
+            # 非标准意图或配置缺失时的通用兜底，防止返回空消息
+            reply = "有什么可以帮您的吗？"
 
     return {
         "messages": [AIMessage(content=reply)],

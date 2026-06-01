@@ -6,6 +6,7 @@
 
 from app.graph.state import AgentState
 from app.graph.skills.base_skill import execute_skill
+from app.graph.skills.skill_config import SkillConfig
 
 
 # 客服通用 Skill 可用的 Tool 列表 — 全部客服可用工具（仅查询类）
@@ -76,3 +77,20 @@ async def customer_general_skill_node(state: AgentState) -> dict:
         tool_names=CUSTOMER_GENERAL_TOOLS,
         system_prompt=CUSTOMER_GENERAL_SYSTEM_PROMPT,
     )
+
+
+# ────────────── SkillConfig 声明 ──────────────
+CUSTOMER_GENERAL_SKILL_CONFIG = SkillConfig(
+    name="customer_general",
+    domain="general",
+    display_name="客服通用兜底",
+    tool_names=CUSTOMER_GENERAL_TOOLS,
+    route_keys=["general", "aftersales", "customer", "staff", "settings", "data"],
+    intents=["general", "after_sales", "complaint", "customer_manage", "customer_query",
+             "employee_manage", "staff_manage", "role_manage", "permission_manage",
+             "system_settings", "ai_config", "notification", "quick_reply",
+             "dashboard", "statistics", "data_report", "session_manage",
+             "after_sales_create", "knowledge_manage", "category_manage", "processing_manage"],
+    system_prompts={"xiaobu": CUSTOMER_GENERAL_SYSTEM_PROMPT},
+    default_persona="xiaobu",
+)

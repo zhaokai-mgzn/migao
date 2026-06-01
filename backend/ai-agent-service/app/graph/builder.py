@@ -1,35 +1,37 @@
 """
-LangGraph StateGraph 构建器
+LangGraph StateGraph 构建器（配置驱动版）
 
-将所有节点（缓存检查、意图路由、Skill 节点、缓存写入、建议生成）
-和条件边组装成完整的 Agent 图。
+从 AgentConfig + SkillRegistry 动态构建 Agent 图，
+不再使用 if/else 硬编码 Agent 类型。
 
-支持两种 Agent 类型：
-- mibao（米宝，工作助手）：order_skill, product_skill, knowledge_skill, aftersales_skill, general_agent
-- xiaobu（小布，C端客服）：customer_order_skill, customer_product_skill, customer_knowledge_skill, customer_general_skill
-
-图结构：
+图结构（所有 Agent 类型共用）：
   START → cache_check →(hit)→ suggest_node → END
                        →(miss)→ intent_router →(条件边)→ Skill 节点 → cache_store → suggest_node → END
+
+新增 Agent 类型只需：
+1. 在 app/agents/agents/ 中添加 AgentConfig 声明
+2. 在 app/graph/skills/ 中添加需要的 SkillConfig
+3. 注册后即可使用，无需修改本文件
 """
 
 from langgraph.graph import StateGraph, START, END
+from loguru import logger
 
 from app.graph.state import AgentState
 
 
 def build_agent_graph(agent_type: str = "xiaobu"):
-    """构建并编译 Agent StateGraph
+    """构建并编译 Agent StateGraph（配置驱动）
+
+    从 AgentConfig 获取 Skill 列表，从 SkillRegistry 获取 Skill 配置
+    并自动生成节点函数和路由映射。
 
     Args:
-        agent_type: Agent 类型，"mibao" 或 "xiaobu"
+        agent_type: Agent 类型，如 "mibao", "xiaobu"
 
     Returns:
         CompiledGraph: 编译后的 LangGraph 图，可直接 ainvoke / astream
     """
-    graph = StateGraph(AgentState)
-
-    # 导入辅助节点和路由函数
     from app.graph.nodes import (
         cache_check_node,
         intent_router_node,
@@ -40,98 +42,63 @@ def build_agent_graph(agent_type: str = "xiaobu"):
         route_by_intent,
     )
 
-    # ── 注册共用辅助节点 ──
+    # 获取 Agent 配置
+    from app.agents.agent_config import get_agent_config
+    agent_config = get_agent_config(agent_type)
+
+    # 获取 Skill 注册表
+    from app.graph.skills.skill_registry import get_skill_registry
+    skill_registry = get_skill_registry()
+
+    logger.info(
+        f"[builder] Building graph for agent '{agent_type}' ({agent_config.display_name}) | "
+        f"skills={agent_config.skill_names} fallback={agent_config.fallback_skill}"
+    )
+
+    graph = StateGraph(AgentState)
+
+    # ── 1. 注册共用辅助节点 ──
     graph.add_node("cache_check", cache_check_node)
     graph.add_node("intent_router", intent_router_node)
     graph.add_node("direct_reply", direct_reply_node)
     graph.add_node("cache_store", cache_store_node)
     graph.add_node("suggest_node", suggestions_node)
 
-    # ── 根据 agent_type 注册不同的 Skill 节点和路由映射 ──
-    if agent_type == "mibao":
-        from app.graph.skills import (
-            order_node,
-            product_node,
-            # [RAG 禁用] knowledge_node,
-            aftersales_node,
-            customer_skill_node,
-            staff_skill_node,
-            settings_skill_node,
-            data_skill_node,
-            general_node,
+    # ── 2. 从配置动态注册 Skill 节点 ──
+    # 收集所有 Skill 名称（业务 Skill + 兜底 Skill）
+    all_skill_names = agent_config.get_all_skill_names()
+    skill_node_names = ["direct_reply"]
+
+    # 构建路由映射：route_key → node_id
+    skill_route_map = {"direct_reply": "direct_reply"}
+
+    for skill_name in all_skill_names:
+        skill_config = skill_registry.get(skill_name)
+        if not skill_config:
+            logger.warning(
+                f"[builder] Skill '{skill_name}' not found in registry, skipping"
+            )
+            continue
+
+        # 自动生成节点函数（根据 Agent 的 persona 选择对应的 Prompt）
+        node_func = skill_registry.create_node_function(
+            skill_config, agent_config.persona
         )
+        node_id = f"{skill_name}_skill"
 
-        graph.add_node("order_skill", order_node)
-        graph.add_node("product_skill", product_node)
-        # [RAG 禁用] graph.add_node("knowledge_skill", knowledge_node)
-        graph.add_node("aftersales_skill", aftersales_node)
-        graph.add_node("customer_skill", customer_skill_node)
-        graph.add_node("staff_skill", staff_skill_node)
-        graph.add_node("settings_skill", settings_skill_node)
-        graph.add_node("data_skill", data_skill_node)
-        graph.add_node("general_agent", general_node)
+        graph.add_node(node_id, node_func)
+        skill_node_names.append(node_id)
 
-        skill_route_map = {
-            "direct_reply": "direct_reply",
-            "order": "order_skill",
-            "product": "product_skill",
-            # [RAG 禁用] "knowledge": "knowledge_skill",
-            "knowledge": "general_agent",  # 知识库路由 fallback 到 general_agent
-            "aftersales": "aftersales_skill",
-            "customer": "customer_skill",
-            "staff": "staff_skill",
-            "settings": "settings_skill",
-            "data": "data_skill",
-            "general": "general_agent",
-        }
-        skill_node_names = [
-            "direct_reply",
-            "order_skill",
-            "product_skill",
-            # [RAG 禁用] "knowledge_skill",
-            "aftersales_skill",
-            "customer_skill",
-            "staff_skill",
-            "settings_skill",
-            "data_skill",
-            "general_agent",
-        ]
-    else:
-        # xiaobu（默认）
-        from app.graph.skills import (
-            customer_order_skill_node,
-            customer_product_skill_node,
-            # [RAG 禁用] customer_knowledge_skill_node,
-            customer_general_skill_node,
-        )
+        # 将 Skill 的 route_keys 映射到 node_id
+        for route_key in skill_config.route_keys:
+            skill_route_map[route_key] = node_id
 
-        graph.add_node("customer_order_skill", customer_order_skill_node)
-        graph.add_node("customer_product_skill", customer_product_skill_node)
-        # [RAG 禁用] graph.add_node("customer_knowledge_skill", customer_knowledge_skill_node)
-        graph.add_node("customer_general_skill", customer_general_skill_node)
+    logger.info(
+        f"[builder] Registered {len(skill_node_names)} skill nodes | "
+        f"route_map keys={list(skill_route_map.keys())}"
+    )
 
-        skill_route_map = {
-            "direct_reply": "direct_reply",
-            "order": "customer_order_skill",
-            "product": "customer_product_skill",
-            # [RAG 禁用] "knowledge": "customer_knowledge_skill",
-            "knowledge": "customer_general_skill",  # 知识库路由 fallback 到 general
-            "aftersales": "customer_general_skill",
-            "customer": "customer_general_skill",
-            "staff": "customer_general_skill",
-            "settings": "customer_general_skill",
-            "data": "customer_general_skill",
-            "general": "customer_general_skill",
-        }
-        skill_node_names = [
-            "direct_reply",
-            "customer_order_skill",
-            "customer_product_skill",
-            # [RAG 禁用] "customer_knowledge_skill",
-            "customer_general_skill",
-        ]
-
-    # ── 定义边 ──
+    # ── 3. 定义边 ──
 
     # 入口 → 语义缓存检查
     graph.add_edge(START, "cache_check")

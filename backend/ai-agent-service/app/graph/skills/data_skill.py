@@ -6,6 +6,7 @@
 
 from app.graph.state import AgentState
 from app.graph.skills.base_skill import execute_skill
+from app.graph.skills.skill_config import SkillConfig
 
 
 # 数据 Skill 可用的 Tool 列表
@@ -48,3 +49,16 @@ async def data_skill_node(state: AgentState) -> dict:
         tool_names=DATA_TOOLS,
         system_prompt=DATA_SYSTEM_PROMPT,
     )
+
+
+# ────────────── SkillConfig 声明 ──────────────
+DATA_SKILL_CONFIG = SkillConfig(
+    name="data",
+    domain="analytics",
+    display_name="数据分析",
+    tool_names=DATA_TOOLS,
+    route_keys=["data"],
+    intents=["dashboard", "statistics", "data_report", "session_manage"],
+    system_prompts={"mibao": DATA_SYSTEM_PROMPT},
+    default_persona="mibao",
+)

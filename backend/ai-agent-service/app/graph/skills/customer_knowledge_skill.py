@@ -6,6 +6,7 @@
 
 from app.graph.state import AgentState
 from app.graph.skills.base_skill import execute_skill
+from app.graph.skills.skill_config import SkillConfig
 
 
 # 客服知识问答 Skill 可用的 Tool 列表
@@ -54,3 +55,16 @@ async def customer_knowledge_skill_node(state: AgentState) -> dict:
         tool_names=CUSTOMER_KNOWLEDGE_TOOLS,
         system_prompt=CUSTOMER_KNOWLEDGE_SYSTEM_PROMPT,
     )
+
+
+# ────────────── SkillConfig 声明 ──────────────
+CUSTOMER_KNOWLEDGE_SKILL_CONFIG = SkillConfig(
+    name="customer_knowledge",
+    domain="knowledge",
+    display_name="客服知识问答",
+    tool_names=CUSTOMER_KNOWLEDGE_TOOLS,
+    route_keys=["knowledge"],
+    intents=["knowledge_faq"],
+    system_prompts={"xiaobu": CUSTOMER_KNOWLEDGE_SYSTEM_PROMPT},
+    default_persona="xiaobu",
+)

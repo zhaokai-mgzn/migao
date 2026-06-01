@@ -31,25 +31,10 @@ REGEX_RULES: list[tuple[re.Pattern, IntentType]] = [
     (re.compile(r"ORD[-\s]?\d{10,20}"), IntentType.ORDER_QUERY),
 ]
 
-# Greeting 直接回复内容
-GREETING_REPLIES = [
-    "您好！我是米宝，您的智能工作助手。我可以帮您处理商品管理、订单处理、库存查询等工作事务，有什么需要帮忙的吗？",
-]
-
-# Farewell 告别回复
-FAREWELL_REPLIES = [
-    "好的，有需要随时找我~ 祝工作顺利！😊",
-]
-
-# Capabilities 功能介绍回复
-CAPABILITIES_REPLIES = [
-    """您好！我是米宝，您的智能工作助手。我可以帮您：
-🔍 **商品管理** - 搜索商品、查看详情、管理库存
-📦 **订单处理** - 查询订单状态、物流跟踪、订单管理
-📚 **知识查询** - 面料知识、工艺流程、产品规格
-🔧 **售后处理** - 退换货处理、客户投诉、安装指导
-有什么需要帮忙的吗？""",
-]
+# 直接回复内容已迁移到 AgentConfig.direct_replies
+# 参见 agents/mibao.py 和 agents/xiaobu.py 中的配置
+# GREETING_REPLIES / FAREWELL_REPLIES / CAPABILITIES_REPLIES 已删除，
+# 现在由 AgentConfig.get_direct_reply(intent) 统一提供
 
 
 class RuleMatcher:

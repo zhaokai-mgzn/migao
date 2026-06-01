@@ -6,6 +6,7 @@
 
 from app.graph.state import AgentState
 from app.graph.skills.base_skill import execute_skill
+from app.graph.skills.skill_config import SkillConfig
 
 
 # 通用 Agent 可用的 Tool 列表 — 全部 Tool
@@ -100,3 +101,16 @@ async def general_node(state: AgentState) -> dict:
         tool_names=GENERAL_TOOLS,
         system_prompt=GENERAL_SYSTEM_PROMPT,
     )
+
+
+# ────────────── SkillConfig 声明 ──────────────
+GENERAL_SKILL_CONFIG = SkillConfig(
+    name="general",
+    domain="general",
+    display_name="通用兜底",
+    tool_names=GENERAL_TOOLS,
+    route_keys=["general"],
+    intents=["general"],
+    system_prompts={"mibao": GENERAL_SYSTEM_PROMPT},
+    default_persona="mibao",
+)

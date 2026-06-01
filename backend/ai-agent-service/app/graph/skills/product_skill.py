@@ -6,6 +6,7 @@
 
 from app.graph.state import AgentState
 from app.graph.skills.base_skill import execute_skill
+from app.graph.skills.skill_config import SkillConfig
 
 
 # 商品 Skill 可用的 Tool 列表
@@ -61,3 +62,16 @@ async def product_node(state: AgentState) -> dict:
         tool_names=PRODUCT_TOOLS,
         system_prompt=PRODUCT_SYSTEM_PROMPT,
     )
+
+
+# ────────────── SkillConfig 声明 ──────────────
+PRODUCT_SKILL_CONFIG = SkillConfig(
+    name="product",
+    domain="product",
+    display_name="商品管理",
+    tool_names=PRODUCT_TOOLS,
+    route_keys=["product"],
+    intents=["product_inquiry", "category_manage", "processing_manage"],
+    system_prompts={"mibao": PRODUCT_SYSTEM_PROMPT},
+    default_persona="mibao",
+)

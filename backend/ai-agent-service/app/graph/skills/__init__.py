@@ -34,6 +34,14 @@ from app.graph.skills.customer_product_skill import customer_product_skill_node
 from app.graph.skills.customer_knowledge_skill import customer_knowledge_skill_node
 from app.graph.skills.customer_general_skill import customer_general_skill_node
 
+# 配置与注册
+from app.graph.skills.skill_config import SkillConfig, create_skill_config
+from app.graph.skills.skill_registry import (
+    SkillRegistry,
+    get_skill_registry,
+    reset_skill_registry,
+)
+
 # 公共工具
 from app.graph.skills.base_skill import execute_skill, get_skill_llm, build_tool_context
 
@@ -53,6 +61,12 @@ __all__ = [
     "customer_product_skill_node",
     "customer_knowledge_skill_node",
     "customer_general_skill_node",
+    # 配置与注册
+    "SkillConfig",
+    "create_skill_config",
+    "SkillRegistry",
+    "get_skill_registry",
+    "reset_skill_registry",
     # 公共工具
     "execute_skill",
     "get_skill_llm",
