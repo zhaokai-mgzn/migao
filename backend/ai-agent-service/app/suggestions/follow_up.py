@@ -95,7 +95,7 @@ class FollowUpSuggestionGenerator:
 
     def __init__(self):
         self._api_key = DASHSCOPE_API_KEY
-        self._model = settings.INTENT_MODEL  # qwen-turbo
+        self._model = settings.INTENT_MODEL  # qwen3.6-flash（轻量模型，关闭思考）
         self._llm = None  # 懒加载 LangChain LLM 实例
 
     async def generate(
