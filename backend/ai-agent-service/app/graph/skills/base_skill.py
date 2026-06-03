@@ -310,6 +310,18 @@ async def execute_skill(
     user_role = state.get("role", "")
     if user_name:
         system_prompt = f"当前对话用户: {user_name}（角色: {user_role}）\n\n" + system_prompt
+
+    # 如果消息中包含图片，注入图片理解能力说明
+    if is_multimodal:
+        system_prompt = (
+            "【图片理解能力已启用】您可以识别和分析用户上传的图片内容。\n"
+            "当用户上传图片时，请：\n"
+            "1. 仔细观察图片内容，识别其中的关键信息（如商品、文字、数据等）\n"
+            "2. 根据用户的提问，结合图片内容给出准确回答\n"
+            "3. 如果图片中包含可操作的信息（如商品名称、订单号等），可以主动建议使用相关工具处理\n\n"
+            + system_prompt
+        )
+
     full_messages: List[Any] = [SystemMessage(content=system_prompt)] + list(messages)
 
     # 5. Tool Calling 循环
