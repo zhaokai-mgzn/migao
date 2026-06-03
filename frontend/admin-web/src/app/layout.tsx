@@ -31,7 +31,7 @@ const SPA_PATH_RESTORE_SCRIPT = `(() => {
     var raw = sp.get('__spa_path');
     if (!raw) return;
     if (raw.charAt(0) !== '/' || raw.charAt(1) === '/') return;
-    if (!/\/_(\/|$)/.test(url.pathname)) return;
+    if (!/[/]_([/]|$)/.test(url.pathname)) return;
     sp.delete('__spa_path');
     var rest = sp.toString();
     var sepIdx = raw.indexOf('?');
