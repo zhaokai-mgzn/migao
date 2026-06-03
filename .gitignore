@@ -16,6 +16,10 @@ terraform.tfstate.*
 .idea/
 *.swp
 *.swo
+*.classpath
+*.factorypath
+*.project
+.settings/
 
 # OS
 .DS_Store
@@ -46,10 +50,12 @@ __pycache__/
 htmlcov/
 
 # Playwright
+.playwright-mcp/
 tests/e2e/.auth/
 tests/playwright-report/
 tests/test-results/
 tests/blob-report/
+tests/tmp/
 
 # Screenshots
 e2e-test-*.png
