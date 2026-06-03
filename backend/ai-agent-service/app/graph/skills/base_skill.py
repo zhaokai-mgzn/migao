@@ -305,6 +305,11 @@ async def execute_skill(
         llm_with_tools = llm
 
     # 4. 构建消息列表：System Prompt + 历史 messages
+    # 注入用户身份信息，让 Agent 认识当前对话的人
+    user_name = state.get("user_name", "")
+    user_role = state.get("role", "")
+    if user_name:
+        system_prompt = f"当前对话用户: {user_name}（角色: {user_role}）\n\n" + system_prompt
     full_messages: List[Any] = [SystemMessage(content=system_prompt)] + list(messages)
 
     # 5. Tool Calling 循环
