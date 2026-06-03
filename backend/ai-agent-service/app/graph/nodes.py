@@ -266,6 +266,7 @@ async def suggestions_node(state: AgentState) -> dict:
 
     generator = FollowUpSuggestionGenerator()
     intent_type = (state.get("intent_result") or {}).get("intent", "general")
+    agent_type = state.get("agent_type", "mibao")
 
     # 找到用户原始消息
     user_msg = ""
@@ -280,6 +281,7 @@ async def suggestions_node(state: AgentState) -> dict:
                 query=user_msg,
                 answer=state.get("final_answer", ""),
                 intent_type=intent_type,
+                agent_type=agent_type,
             ),
             timeout=15.0,
         )
