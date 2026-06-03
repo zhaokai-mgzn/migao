@@ -37,6 +37,30 @@
 | admin-web | 组件测试 + E2E 测试 | Playwright (tests/e2e/) + Testing Library | 关键页面 100% |
 | 全链路 | E2E 冒烟测试 | Playwright (tests/smoke/) | 核心流程 100% |
 
+### 本地开发环境
+
+- **本地启动**：仅启动有客系统组件（admin-api、ai-agent-service、admin-web）
+- **云 dev 环境**：PostgreSQL + Redis + 其他中间件直接使用云端 dev 环境，无需本地启动
+- **配置文件**：各模块 `.env` 已预置云 dev 环境的连接信息
+
+**启动本地服务**（用于真实场景验证）：
+
+```bash
+# 1. 启动 admin-api（Java 后端，端口 8080）
+cd backend/admin-api && ./mvnw spring-boot:run
+
+# 2. 启动 ai-agent-service（Python AI 服务，端口 8001）
+cd backend/ai-agent-service && python -m uvicorn app.main:app --port 8001 --reload
+
+# 3. 启动 admin-web（Next.js 前端，端口 3000）
+cd frontend/admin-web && npm run dev
+```
+
+启动后可进行真实场景测试：
+- 在 admin-web 页面实际操作
+- 调用 API 验证端到端流程
+- 验证 LLM 真实响应（如图片识别、对话建议）
+
 ### 铁律
 
 - **禁止**先写代码再补测试 — 必须测试先行
@@ -52,7 +76,7 @@
            ┌─────────────┐
            │  E2E 冒烟    │  ← Playwright，覆盖核心用户流程
            ├─────────────┤
-           │ 集成测试     │  ← API 端到端，数据库真实交互
+           │ 集成测试     │  ← API 端到端，连接云 dev 数据库
            ├─────────────┤
            │ 单元测试     │  ← 纯逻辑，Mock 外部依赖
            └─────────────┘
@@ -86,7 +110,6 @@ youke/
 │   ├── admin-web/          # Next.js 管理后台
 │   └── mini-app/           # Taro 微信小程序
 ├── deploy/
-│   ├── docker-compose.yml  # 本地开发
 │   └── terraform/          # 阿里云 IaC
 ├── docs/
 │   ├── deployment/         # 部署文档
