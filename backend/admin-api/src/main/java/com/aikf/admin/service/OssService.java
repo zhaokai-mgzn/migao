@@ -4,6 +4,7 @@ import com.aikf.admin.config.OssConfig;
 import com.aikf.admin.dto.UploadedFileInfo;
 import com.aikf.admin.exception.BusinessException;
 import com.aliyun.oss.OSS;
+import com.aliyun.oss.model.CannedAccessControlList;
 import com.aliyun.oss.model.ObjectMetadata;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -80,6 +81,7 @@ public class OssService implements FileStorageService {
             ObjectMetadata metadata = new ObjectMetadata();
             metadata.setContentType(file.getContentType());
             metadata.setContentLength(file.getSize());
+            metadata.setObjectAcl(CannedAccessControlList.PublicRead);
 
             ossClient.putObject(ossConfig.getBucketName(), objectKey, inputStream, metadata);
 
