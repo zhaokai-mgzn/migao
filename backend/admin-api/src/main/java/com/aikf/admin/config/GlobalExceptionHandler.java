@@ -12,6 +12,8 @@ import org.springframework.security.authentication.AuthenticationCredentialsNotF
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.validation.FieldError;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -142,6 +144,27 @@ public class GlobalExceptionHandler {
         log.warn("请求的资源不存在: {} {}", e.getHttpMethod(), e.getRequestURL());
         ApiResponse<Void> response = ApiResponse.error("NOT_FOUND", "请求的资源不存在: " + e.getRequestURL());
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
+    }
+
+    /**
+     * 处理请求体格式错误或缺失（JSON 解析失败、空 body、缺少 Content-Type 等）
+     */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMessageNotReadable(HttpMessageNotReadableException e) {
+        log.warn("请求体格式错误: {}", e.getMessage());
+        ApiResponse<Void> response = ApiResponse.error("BAD_REQUEST", "请求体格式错误或缺失");
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+    }
+
+    /**
+     * 处理不支持的 Content-Type
+     */
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMediaTypeNotSupported(HttpMediaTypeNotSupportedException e) {
+        log.warn("不支持的 Content-Type: {}", e.getContentType());
+        ApiResponse<Void> response = ApiResponse.error("UNSUPPORTED_MEDIA_TYPE",
+                "不支持的 Content-Type: " + e.getContentType());
+        return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE).body(response);
     }
 
     /**
