@@ -3,12 +3,12 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { 
-  BarChart3, 
-  Package, 
-  Scissors, 
-  BookOpen, 
-  Settings, 
+import {
+  BarChart3,
+  Package,
+  Scissors,
+  BookOpen,
+  Settings,
   Bell,
   ChevronLeft,
   ChevronRight,
@@ -26,6 +26,7 @@ import {
   MessageSquare,
   Monitor,
   Zap,
+  FolderTree,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { cn } from '@/lib/utils'
@@ -51,6 +52,7 @@ const iconMap: Record<string, LucideIcon> = {
   MessageSquare,
   Monitor,
   Zap,
+  FolderTree,
 }
 
 interface MenuItem {
@@ -88,6 +90,7 @@ const menuGroups: MenuGroup[] = [
     icon: 'Store',
     children: [
       { key: 'products', name: '商品管理', icon: 'Package', path: '/products' },
+      { key: 'categories', name: '商品分类', icon: 'FolderTree', path: '/categories' },
       { key: 'processing', name: '加工项管理', icon: 'Scissors', path: '/processing' },
     ],
   },
