@@ -14,11 +14,41 @@
 """
 
 import asyncio
+from typing import Union
 
 from langchain_core.messages import AIMessage, HumanMessage
 from loguru import logger
 
 from app.graph.state import AgentState
+
+
+# ────────────────────── 多模态内容处理 ──────────────────────
+
+
+def _extract_text_from_content(content: Union[str, list, None]) -> str:
+    """从 HumanMessage/AIMessage 的 content 中提取纯文本
+
+    LangChain 多模态消息的 content 可以是：
+    - str: 纯文本消息
+    - list: 多模态消息，格式如 [{"type": "text", "text": "..."}, {"type": "image_url", ...}]
+    - None: 空消息
+
+    Returns:
+        str: 提取的文本内容，多个 text 段用空格拼接
+    """
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, dict) and item.get("type") == "text":
+                text = item.get("text", "")
+                if text:
+                    parts.append(text)
+        return " ".join(parts)
+    return str(content)
 
 
 # ────────────────────── Agent 感知辅助函数 ──────────────────────
@@ -81,7 +111,7 @@ async def cache_check_node(state: AgentState) -> dict:
         user_msg_content = ""
         for msg in reversed(state["messages"]):
             if isinstance(msg, HumanMessage):
-                user_msg_content = msg.content
+                user_msg_content = _extract_text_from_content(msg.content)
                 break
 
         if not user_msg_content:
@@ -118,11 +148,13 @@ async def intent_router_node(state: AgentState) -> dict:
     router = IntentRouter()
     agent_type = state.get("agent_type", "xiaobu")
 
-    # 取最后一条用户消息
+    # 取最后一条用户消息（多模态消息需提取文本部分）
     user_message = ""
+    last_human_msg = None
     for msg in reversed(state["messages"]):
         if isinstance(msg, HumanMessage):
-            user_message = msg.content
+            last_human_msg = msg
+            user_message = _extract_text_from_content(msg.content)
             break
 
     # 构建 chat_history（从 state.messages 中提取，排除最后一条用户消息）
@@ -130,11 +162,11 @@ async def intent_router_node(state: AgentState) -> dict:
     for msg in state["messages"]:
         if isinstance(msg, HumanMessage):
             # 跳过最后一条（即当前用户消息），它会作为 message 参数传入
-            if msg.content == user_message and msg is state["messages"][-1]:
+            if msg is last_human_msg:
                 continue
-            chat_history.append({"role": "user", "content": msg.content})
+            chat_history.append({"role": "user", "content": _extract_text_from_content(msg.content)})
         elif isinstance(msg, AIMessage):
-            chat_history.append({"role": "assistant", "content": msg.content})
+            chat_history.append({"role": "assistant", "content": _extract_text_from_content(msg.content)})
 
     # Agent 感知：获取该 Agent 可处理的意图子集
     agent_intents = _get_agent_intents(agent_type)
@@ -212,7 +244,7 @@ async def cache_store_node(state: AgentState) -> dict:
         user_msg = None
         for msg in reversed(state["messages"]):
             if isinstance(msg, HumanMessage):
-                user_msg = msg.content
+                user_msg = _extract_text_from_content(msg.content)
                 break
 
         if user_msg and state.get("final_answer"):
@@ -239,7 +271,7 @@ async def suggestions_node(state: AgentState) -> dict:
     user_msg = ""
     for msg in reversed(state["messages"]):
         if isinstance(msg, HumanMessage):
-            user_msg = msg.content
+            user_msg = _extract_text_from_content(msg.content)
             break
 
     try:
