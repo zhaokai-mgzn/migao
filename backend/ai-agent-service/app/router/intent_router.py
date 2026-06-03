@@ -2,7 +2,7 @@
 意图路由主逻辑 - 三级路由决策引擎
 """
 
-from typing import Optional
+from typing import Optional, Union
 
 from loguru import logger
 
@@ -32,7 +32,7 @@ class IntentRouter:
 
     async def route(
         self,
-        message: str,
+        message: Union[str, list],
         chat_history: list = None,
         agent_intents: list[str] | None = None,
     ) -> RouteDecision:
@@ -40,7 +40,7 @@ class IntentRouter:
         对用户消息进行意图路由
 
         Args:
-            message: 用户消息文本
+            message: 用户消息文本（str 或多模态 list）
             chat_history: 对话历史
             agent_intents: 该 Agent 可处理的意图列表（可选）。
                            传入后分类器只考虑这些意图，提升准确率。

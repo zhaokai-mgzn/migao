@@ -3,9 +3,30 @@ L1 规则匹配层 - 基于关键词和正则表达式的快速意图匹配
 """
 
 import re
-from typing import Optional
+from typing import Optional, Union
 
 from app.router.intent_config import IntentType, IntentResult
+
+
+def _extract_text(content: Union[str, list, None]) -> str:
+    """从消息内容中提取纯文本
+
+    支持 str 和多模态 list 格式：
+    [{"type": "text", "text": "..."}, {"type": "image_url", ...}]
+    """
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, dict) and item.get("type") == "text":
+                text = item.get("text", "")
+                if text:
+                    parts.append(text)
+        return " ".join(parts)
+    return str(content)
 
 
 # 关键词 → 意图映射表
@@ -46,20 +67,21 @@ class RuleMatcher:
     命中后返回高置信度结果，无需调用小模型。
     """
 
-    def match(self, message: str) -> Optional[IntentResult]:
+    def match(self, message: Union[str, list, None]) -> Optional[IntentResult]:
         """
         对用户消息进行规则匹配
-        
+
         Args:
-            message: 用户消息文本
-            
+            message: 用户消息文本（str 或多模态 list）
+
         Returns:
             IntentResult 或 None（未命中）
         """
-        if not message or not message.strip():
+        text = _extract_text(message)
+        if not text or not text.strip():
             return None
 
-        msg_lower = message.strip().lower()
+        msg_lower = text.strip().lower()
 
         # 1. 关键词匹配
         # --- 优先匹配 capabilities（长短语，避免被其他意图抢占） ---
@@ -113,7 +135,7 @@ class RuleMatcher:
 
         # 2. 正则规则匹配
         for pattern, intent in REGEX_RULES:
-            if pattern.search(message):
+            if pattern.search(text):
                 return IntentResult(
                     intent=intent,
                     confidence=0.9,
