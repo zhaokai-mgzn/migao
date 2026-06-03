@@ -10,14 +10,14 @@ LangGraph Skill 节点测试
 
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
-from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.messages import HumanMessage, AIMessage, ToolMessage, SystemMessage
 
 from app.graph.skills.order_skill import ORDER_TOOLS, order_node
 from app.graph.skills.product_skill import PRODUCT_TOOLS, product_node
 from app.graph.skills.knowledge_skill import KNOWLEDGE_TOOLS, knowledge_node
 from app.graph.skills.aftersales_skill import AFTERSALES_TOOLS, aftersales_node
 from app.graph.skills.general_agent import GENERAL_TOOLS, general_node
-from app.graph.skills.base_skill import build_tool_context, execute_skill
+from app.graph.skills.base_skill import build_tool_context, execute_skill, _sanitize_messages
 from app.tools.base import ToolContext
 
 
@@ -307,3 +307,165 @@ class TestSkillNodes:
         mock_execute.assert_called_once()
         assert mock_execute.call_args.kwargs["skill_name"] == "general"
         assert mock_execute.call_args.kwargs["tool_names"] == GENERAL_TOOLS
+
+
+# ========== _sanitize_messages 测试 ==========
+
+class TestSanitizeMessages:
+    """消息清洗：过滤孤立 ToolMessage，保留合法配对"""
+
+    def test_empty_list(self):
+        """空列表不报错"""
+        assert _sanitize_messages([]) == []
+
+    def test_no_tool_messages_unchanged(self):
+        """不含 ToolMessage 时原样返回"""
+        msgs = [
+            SystemMessage(content="系统提示"),
+            HumanMessage(content="你好"),
+            AIMessage(content="你好！"),
+        ]
+        result = _sanitize_messages(msgs)
+        assert len(result) == 3
+        assert result[0].content == "系统提示"
+        assert result[1].content == "你好"
+        assert result[2].content == "你好！"
+
+    def test_orphaned_tool_message_removed(self):
+        """孤立的 ToolMessage（无匹配 AIMessage.tool_calls）被过滤"""
+        msgs = [
+            SystemMessage(content="系统提示"),
+            HumanMessage(content="查订单"),
+            ToolMessage(content='{"id": "123"}', tool_call_id="tc_orphan", name="order_query"),
+            AIMessage(content="查到了"),
+        ]
+        result = _sanitize_messages(msgs)
+        # ToolMessage 被过滤，其余保留
+        assert len(result) == 3
+        assert all(type(m).__name__ != "ToolMessage" for m in result)
+
+    def test_paired_tool_message_kept(self):
+        """有匹配 AIMessage.tool_calls 的 ToolMessage 被保留"""
+        msgs = [
+            SystemMessage(content="系统提示"),
+            HumanMessage(content="查订单"),
+            AIMessage(
+                content="",
+                tool_calls=[{"name": "order_query", "args": {"order_id": "123"}, "id": "tc_1"}],
+            ),
+            ToolMessage(content='{"id": "123"}', tool_call_id="tc_1", name="order_query"),
+            AIMessage(content="您的订单已找到"),
+        ]
+        result = _sanitize_messages(msgs)
+        # 全部保留
+        assert len(result) == 5
+        tool_msgs = [m for m in result if type(m).__name__ == "ToolMessage"]
+        assert len(tool_msgs) == 1
+        assert tool_msgs[0].tool_call_id == "tc_1"
+
+    def test_multiple_tool_calls_mixed(self):
+        """混合场景：部分 ToolMessage 有配对，部分孤立"""
+        msgs = [
+            SystemMessage(content="系统提示"),
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {"name": "order_query", "args": {}, "id": "tc_valid"},
+                ],
+            ),
+            ToolMessage(content='{"ok": true}', tool_call_id="tc_valid", name="order_query"),
+            ToolMessage(content='{"orphan": true}', tool_call_id="tc_orphan", name="product_search"),
+            AIMessage(content="结果"),
+        ]
+        result = _sanitize_messages(msgs)
+        # tc_valid 保留，tc_orphan 过滤
+        tool_msgs = [m for m in result if type(m).__name__ == "ToolMessage"]
+        assert len(tool_msgs) == 1
+        assert tool_msgs[0].tool_call_id == "tc_valid"
+        assert len(result) == 4  # SystemMessage + AIMessage + 1 ToolMessage + AIMessage
+
+    def test_ai_message_list_content_normalized(self):
+        """AIMessage.content 为 list 类型时被归一化为 string（DashScope enable_thinking 场景）"""
+        msgs = [
+            SystemMessage(content="系统提示"),
+            HumanMessage(content="查订单"),
+            AIMessage(
+                content=[
+                    {"type": "text", "text": "我来帮您查询"},
+                    {"type": "text", "text": "订单信息"},
+                ],
+                tool_calls=[{"name": "order_query", "args": {}, "id": "tc_1"}],
+            ),
+            ToolMessage(content='{"ok": true}', tool_call_id="tc_1", name="order_query"),
+        ]
+        result = _sanitize_messages(msgs)
+        # 所有消息保留
+        assert len(result) == 4
+        # AIMessage 的 list content 被归一化为 string
+        ai_msg = result[2]
+        assert isinstance(ai_msg, AIMessage)
+        assert isinstance(ai_msg.content, str)
+        assert "我来帮您查询" in ai_msg.content
+        assert "订单信息" in ai_msg.content
+        # tool_calls 保留
+        assert len(ai_msg.tool_calls) == 1
+
+    def test_ai_message_empty_content_with_tool_calls_preserved(self):
+        """AIMessage.content 为空字符串但有 tool_calls 时正常保留"""
+        msgs = [
+            SystemMessage(content="系统提示"),
+            AIMessage(
+                content="",
+                tool_calls=[{"name": "order_query", "args": {}, "id": "tc_1"}],
+            ),
+            ToolMessage(content='{"ok": true}', tool_call_id="tc_1", name="order_query"),
+        ]
+        result = _sanitize_messages(msgs)
+        assert len(result) == 3
+        ai_msg = result[1]
+        assert isinstance(ai_msg.content, str)
+        assert ai_msg.content == ""
+        # tool_calls 保留
+        assert len(ai_msg.tool_calls) == 1
+
+    def test_ai_message_thinking_content_stripped(self):
+        """AIMessage 中 <think> 标签内容在归一化时被移除"""
+        msgs = [
+            AIMessage(
+                content="<think>内部推理过程</think>这是最终回复",
+                tool_calls=[],
+            ),
+        ]
+        result = _sanitize_messages(msgs)
+        assert len(result) == 1
+        assert result[0].content == "这是最终回复"
+
+    def test_ai_message_additional_kwargs_reasoning_stripped(self):
+        """AIMessage 的 additional_kwargs 中的 reasoning_content 被移除（防止被序列化回消息）"""
+        msgs = [
+            AIMessage(
+                content="正常回复",
+                additional_kwargs={"reasoning_content": "内部推理..."},
+            ),
+        ]
+        result = _sanitize_messages(msgs)
+        assert len(result) == 1
+        ai_msg = result[0]
+        assert ai_msg.content == "正常回复"
+        # reasoning_content 被移除
+        assert "reasoning_content" not in ai_msg.additional_kwargs
+
+    def test_ai_message_list_content_with_non_text_items(self):
+        """AIMessage 的 list content 中包含非 text 类型时，只提取 text 部分"""
+        msgs = [
+            AIMessage(
+                content=[
+                    {"type": "text", "text": "有效文本"},
+                    {"type": "thinking", "thinking": "内部思考"},
+                    {"type": "unknown_type", "data": "unknown"},
+                ],
+            ),
+        ]
+        result = _sanitize_messages(msgs)
+        assert len(result) == 1
+        assert result[0].content == "有效文本"

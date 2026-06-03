@@ -17,6 +17,7 @@ AI 智能客服系统 - 双 Agent 架构
 from typing import AsyncGenerator, Optional, List, Dict, Any, Union
 from dataclasses import dataclass
 import json
+import time
 import traceback
 
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
@@ -246,9 +247,22 @@ class BaseAgent:
             
             # 5. 使用 graph.astream(stream_mode="updates") 获取节点级输出
             # 每次迭代 yield 一个 dict: {node_name: state_update_dict}
+            # 添加 90s 总超时保护，防止内部节点超时被重试放大导致长时间阻塞
+            graph_deadline = time.monotonic() + 90
             async for node_output in self.graph.astream(
                 initial_state, stream_mode="updates"
             ):
+                # 检查是否超时
+                if time.monotonic() > graph_deadline:
+                    logger.error(
+                        f"[astream_chat] graph.astream TIMEOUT after 90s | "
+                        f"agent={self._agent_type} session={context.session_id}"
+                    )
+                    yield AgentResponse(
+                        type="error",
+                        content="AI 响应超时(90s)，请稍后重试",
+                    )
+                    break
                 # node_output 格式: {"node_name": {state_update_dict}}
                 for node_name, output in node_output.items():
                     if not isinstance(output, dict):

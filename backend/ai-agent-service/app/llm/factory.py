@@ -19,7 +19,7 @@ from app.config import settings
 
 
 # DashScope OpenAI 兼容接口地址
-DASHSCOPE_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+DASHSCOPE_BASE_URL = "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
 
 
 class LLMFactory:

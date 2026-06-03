@@ -11,13 +11,9 @@ from app.llm.router import (
     has_images,
     MODEL_MAX,
     MODEL_PLUS,
-    MODEL_TURBO,
-    MODEL_FLASH,
-    MODEL_VL_PLUS,
-    MODEL_VL_MAX,
 )
 from app.llm.cost_tracker import CostTracker, CostRecord, MODEL_PRICING
-from app.llm.retry_policy import call_with_retry
+from app.llm.retry_policy import call_with_retry, StreamingTimeoutError
 
 # 进程内单例：所有 LLM 调用点统一使用此实例累计成本
 cost_tracker = CostTracker()
@@ -28,13 +24,10 @@ __all__ = [
     "has_images",
     "MODEL_MAX",
     "MODEL_PLUS",
-    "MODEL_TURBO",
-    "MODEL_FLASH",
-    "MODEL_VL_PLUS",
-    "MODEL_VL_MAX",
     "CostTracker",
     "CostRecord",
     "MODEL_PRICING",
     "call_with_retry",
+    "StreamingTimeoutError",
     "cost_tracker",
 ]

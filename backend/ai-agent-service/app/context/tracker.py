@@ -20,7 +20,7 @@ from langchain_openai import ChatOpenAI
 
 
 # DashScope OpenAI 兼容接口地址
-DASHSCOPE_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+DASHSCOPE_BASE_URL = "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
 
 
 class ConversationStage(str, Enum):
@@ -414,7 +414,7 @@ class ConversationTracker:
         self, history: List[Dict[str, Any]], session_id: str
     ) -> str:
         """
-        使用小模型（qwen-turbo）对早期历史生成摘要
+        使用小模型（qwen3.6-plus）对早期历史生成摘要
 
         Args:
             history: 需要摘要的对话历史
@@ -455,7 +455,7 @@ class ConversationTracker:
 
         try:
             llm = ChatOpenAI(
-                model=settings.INTENT_MODEL,  # qwen-turbo
+                model=settings.INTENT_MODEL,  # qwen3.6-plus
                 api_key=settings.DASHSCOPE_API_KEY,
                 base_url=DASHSCOPE_BASE_URL,
                 temperature=0.3,
