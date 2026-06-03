@@ -11,6 +11,9 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.validation.BindingResult;
 import org.springframework.validation.FieldError;
+import org.springframework.http.MediaType;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.servlet.NoHandlerFoundException;
 
@@ -166,6 +169,43 @@ class GlobalExceptionHandlerTest {
         // Then
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
         assertThat(response.getBody().getError().getCode()).isEqualTo("PERMISSION_DENIED");
+    }
+
+    // ======================== 请求体格式异常处理测试 ========================
+
+    @Test
+    @DisplayName("处理 HttpMessageNotReadableException - 请求体格式错误或缺失，返回 400")
+    void handleMessageNotReadable() {
+        // Given
+        HttpMessageNotReadableException ex = new HttpMessageNotReadableException("JSON parse error");
+
+        // When
+        ResponseEntity<ApiResponse<Void>> response = handler.handleMessageNotReadable(ex);
+
+        // Then
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().isSuccess()).isFalse();
+        assertThat(response.getBody().getError().getCode()).isEqualTo("BAD_REQUEST");
+        assertThat(response.getBody().getError().getMessage()).isEqualTo("请求体格式错误或缺失");
+    }
+
+    @Test
+    @DisplayName("处理 HttpMediaTypeNotSupportedException - 不支持的 Content-Type，返回 415")
+    void handleMediaTypeNotSupported() {
+        // Given
+        HttpMediaTypeNotSupportedException ex = new HttpMediaTypeNotSupportedException(
+                MediaType.TEXT_PLAIN, List.of(MediaType.APPLICATION_JSON));
+
+        // When
+        ResponseEntity<ApiResponse<Void>> response = handler.handleMediaTypeNotSupported(ex);
+
+        // Then
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNSUPPORTED_MEDIA_TYPE);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().isSuccess()).isFalse();
+        assertThat(response.getBody().getError().getCode()).isEqualTo("UNSUPPORTED_MEDIA_TYPE");
+        assertThat(response.getBody().getError().getMessage()).contains("text/plain");
     }
 
     // ======================== 通用异常处理测试 ========================
