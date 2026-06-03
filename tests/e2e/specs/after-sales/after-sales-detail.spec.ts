@@ -1,10 +1,64 @@
 import { test, expect } from '@playwright/test'
 import { AfterSalesDetailPage } from '../../pages/after-sales/after-sales-detail.page'
 
+const MOCK_TICKET = {
+  id: '1',
+  ticketNo: 'AS20260601001',
+  orderId: 'ord_001',
+  orderNo: 'YK20260601001',
+  customerId: 'cust_001',
+  customerName: '张三',
+  customerPhone: '13800138000',
+  ticketType: 'refund',
+  status: 'pending',
+  description: '窗帘面料有瑕疵，希望退款处理',
+  images: [],
+  source: 'customer',
+  priority: 'normal',
+  handlerId: null,
+  handlerName: null,
+  refundAmount: 580.00,
+  refundMethod: 'original_route',
+  internalNotes: '',
+  statusHistory: [
+    {
+      status: 'pending',
+      time: '2026-06-01T10:00:00Z',
+      operator: '系统',
+      remark: '客户提交售后申请',
+    },
+  ],
+  createdAt: '2026-06-01T10:00:00Z',
+  updatedAt: '2026-06-01T10:00:00Z',
+}
+
+async function mockAfterSalesApis(page: import('@playwright/test').Page) {
+  // GET /api/admin/after-sales/:id
+  await page.route('**/api/admin/after-sales/1', async (route) => {
+    if (route.request().method() === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ code: 200, data: MOCK_TICKET }),
+      })
+    }
+  })
+
+  // PUT /api/admin/after-sales/:id/status
+  await page.route('**/api/admin/after-sales/1/status', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ code: 200, data: null }),
+    })
+  })
+}
+
 test.describe('售后工单详情页面', () => {
   let pom: AfterSalesDetailPage
 
   test.beforeEach(async ({ page }) => {
+    await mockAfterSalesApis(page)
     pom = new AfterSalesDetailPage(page)
     await pom.goto('1')
     await pom.waitForLoadingComplete()

@@ -53,7 +53,7 @@ const MOCK_PROCESSING_ITEMS = [
 test.describe('订单创建', () => {
   test.beforeEach(async ({ page }) => {
     // 拦截商品列表 API（搜索弹窗使用）
-    await page.route('**/api/products*', async (route) => {
+    await page.route('**/api/admin/products*', async (route) => {
       const url = route.request().url()
       if (route.request().method() === 'GET' && !url.includes('/products/prod_')) {
         await route.fulfill({
@@ -67,7 +67,7 @@ test.describe('订单创建', () => {
     })
 
     // 拦截商品详情 API
-    await page.route('**/api/products/prod_001', async (route) => {
+    await page.route('**/api/admin/products/prod_001', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -76,7 +76,7 @@ test.describe('订单创建', () => {
     })
 
     // 拦截商品加工项 API
-    await page.route('**/api/products/prod_001/processing-items*', async (route) => {
+    await page.route('**/api/admin/products/prod_001/processing-items*', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -140,7 +140,7 @@ test.describe('订单创建', () => {
   test.describe('商品搜索弹窗', () => {
     test('点击搜索按钮应打开商品选择弹窗', async ({ page }) => {
       await page.getByText('点击搜索并选择商品').click()
-      await expect(page.getByText('选择商品')).toBeVisible()
+      await expect(page.getByRole('heading', { name: '选择商品' })).toBeVisible()
     })
 
     test('弹窗应显示搜索框和商品列表', async ({ page }) => {
@@ -239,7 +239,8 @@ test.describe('订单创建', () => {
     test('应显示商品小计、加工费、订单金额', async ({ page }) => {
       await expect(page.getByText('商品小计')).toBeVisible()
       await expect(page.getByText('加工费')).toBeVisible()
-      await expect(page.getByText('订单金额')).toBeVisible()
+      // "订单金额" 在页面中出现多次（标签 + 汇总），使用 first() 匹配
+      await expect(page.getByText('订单金额').first()).toBeVisible()
     })
 
     test('应显示实收款输入框', async ({ page }) => {

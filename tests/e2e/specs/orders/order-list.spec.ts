@@ -12,7 +12,7 @@ const MOCK_ORDERS = [
     customerAddress: '浙江省杭州市西湖区文三路 100 号',
     totalAmount: 1280.5,
     actualAmount: 1280.5,
-    status: 'pending_payment',
+    status: 'pending',
     createdAt: '2026-06-01T10:30:00Z',
     items: [
       {
@@ -38,7 +38,7 @@ const MOCK_ORDERS = [
     customerAddress: '江苏省南京市玄武区中山路 200 号',
     totalAmount: 3560.0,
     actualAmount: 3560.0,
-    status: 'pending_shipment',
+    status: 'confirmed',
     createdAt: '2026-06-01T09:15:00Z',
     items: [
       {
@@ -120,7 +120,7 @@ const MOCK_ORDERS = [
 
 async function mockOrderApis(page: import('@playwright/test').Page) {
   // GET /api/orders (list)
-  await page.route('**/api/orders*', async (route) => {
+  await page.route('**/api/admin/orders*', async (route) => {
     if (route.request().method() !== 'GET') return
     const url = new URL(route.request().url())
 
@@ -164,8 +164,8 @@ async function mockOrderApis(page: import('@playwright/test').Page) {
     })
   })
 
-  // POST /api/orders/*/confirm-payment
-  await page.route('**/api/orders/*/confirm-payment', async (route) => {
+  // PUT /api/admin/orders/{id}/payment (确认付款)
+  await page.route('**/api/admin/orders/*/payment', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -173,8 +173,8 @@ async function mockOrderApis(page: import('@playwright/test').Page) {
     })
   })
 
-  // PATCH /api/orders/*/status
-  await page.route('**/api/orders/*/status', async (route) => {
+  // PUT /api/admin/orders/{id}/status (更新状态)
+  await page.route('**/api/admin/orders/*/status', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -182,8 +182,8 @@ async function mockOrderApis(page: import('@playwright/test').Page) {
     })
   })
 
-  // POST /api/orders/*/close
-  await page.route('**/api/orders/*/close', async (route) => {
+  // PUT /api/admin/orders/{id}/cancel (关闭/取消订单)
+  await page.route('**/api/admin/orders/*/cancel', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -191,8 +191,17 @@ async function mockOrderApis(page: import('@playwright/test').Page) {
     })
   })
 
-  // POST /api/orders/*/remarks
-  await page.route('**/api/orders/*/remarks', async (route) => {
+  // PUT /api/admin/orders/{id}/logistics (更新物流)
+  await page.route('**/api/admin/orders/*/logistics', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ code: 200, data: null }),
+    })
+  })
+
+  // POST /api/admin/orders/{id}/remark (添加备注)
+  await page.route('**/api/admin/orders/*/remark', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -359,7 +368,7 @@ test.describe('订单列表页面', () => {
 
   test('分页器展示及翻页', async ({ page }) => {
     // Mock 大量订单以触发分页
-    await page.route('**/api/orders*', async (route) => {
+    await page.route('**/api/admin/orders*', async (route) => {
       if (route.request().method() !== 'GET') return
       const url = new URL(route.request().url())
       const pg = Number(url.searchParams.get('page')) || 1
@@ -406,19 +415,18 @@ test.describe('订单列表页面', () => {
   })
 
   test('确认付款操作', async ({ page }) => {
-    // pending_payment 订单有 "确认付款" 按钮
+    // pending 订单有 "确认付款" 按钮
     const confirmBtn = page.locator('tbody button').filter({ hasText: '确认付款' }).first()
     if (await confirmBtn.isVisible()) {
-      // window.confirm 需要处理
-      page.on('dialog', async (dialog) => {
-        await dialog.accept()
+      // 覆盖 window.confirm 使其始终返回 true
+      await page.evaluate(() => {
+        window.confirm = () => true
       })
 
       await confirmBtn.click()
-      await page.waitForTimeout(500)
 
-      // 应显示成功提示
-      await expect(page.getByText('付款已确认')).toBeVisible({ timeout: 5_000 })
+      // 应显示成功 toast
+      await expect(page.getByText('付款已确认')).toBeVisible({ timeout: 10_000 })
     }
   })
 
@@ -444,7 +452,7 @@ test.describe('订单列表页面', () => {
       await closeBtn.click()
 
       // 应弹出关闭订单弹窗
-      await expect(page.getByText('关闭订单')).toBeVisible()
+      await expect(page.getByRole('heading', { name: '关闭订单' })).toBeVisible()
       await expect(page.getByText('确定关闭当前订单吗？')).toBeVisible()
 
       // 关闭弹窗
@@ -492,7 +500,7 @@ test.describe('订单列表页面', () => {
       await closeBtn.click()
 
       // 弹窗标题
-      await expect(page.getByText('关闭订单')).toBeVisible()
+      await expect(page.getByRole('heading', { name: '关闭订单' })).toBeVisible()
 
       // 预设原因
       await expect(page.getByText('缺货')).toBeVisible()
@@ -516,9 +524,9 @@ test.describe('订单列表页面', () => {
       // 输入原因后可提交
       await page.locator('textarea[placeholder="请输入关闭原因"]').fill('客户取消')
       await confirmBtn.click()
-      await page.waitForTimeout(500)
 
-      await expect(page.getByText('订单已关闭')).toBeVisible({ timeout: 5_000 })
+      // 应显示成功 toast
+      await expect(page.locator('[data-sonner-toast]').filter({ hasText: '订单已关闭' })).toBeVisible({ timeout: 10_000 })
     }
   })
 
@@ -546,9 +554,9 @@ test.describe('订单列表页面', () => {
 
       // 提交
       await confirmBtn.click()
-      await page.waitForTimeout(500)
 
-      await expect(page.getByText('备注添加成功')).toBeVisible({ timeout: 5_000 })
+      // 应显示成功 toast
+      await expect(page.locator('[data-sonner-toast][data-type="success"]')).toBeVisible({ timeout: 10_000 })
     }
   })
 

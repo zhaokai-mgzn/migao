@@ -383,3 +383,89 @@ class TestSanitizeMessages:
         assert len(tool_msgs) == 1
         assert tool_msgs[0].tool_call_id == "tc_valid"
         assert len(result) == 4  # SystemMessage + AIMessage + 1 ToolMessage + AIMessage
+
+    def test_ai_message_list_content_normalized(self):
+        """AIMessage.content 为 list 类型时被归一化为 string（DashScope enable_thinking 场景）"""
+        msgs = [
+            SystemMessage(content="系统提示"),
+            HumanMessage(content="查订单"),
+            AIMessage(
+                content=[
+                    {"type": "text", "text": "我来帮您查询"},
+                    {"type": "text", "text": "订单信息"},
+                ],
+                tool_calls=[{"name": "order_query", "args": {}, "id": "tc_1"}],
+            ),
+            ToolMessage(content='{"ok": true}', tool_call_id="tc_1", name="order_query"),
+        ]
+        result = _sanitize_messages(msgs)
+        # 所有消息保留
+        assert len(result) == 4
+        # AIMessage 的 list content 被归一化为 string
+        ai_msg = result[2]
+        assert isinstance(ai_msg, AIMessage)
+        assert isinstance(ai_msg.content, str)
+        assert "我来帮您查询" in ai_msg.content
+        assert "订单信息" in ai_msg.content
+        # tool_calls 保留
+        assert len(ai_msg.tool_calls) == 1
+
+    def test_ai_message_empty_content_with_tool_calls_preserved(self):
+        """AIMessage.content 为空字符串但有 tool_calls 时正常保留"""
+        msgs = [
+            SystemMessage(content="系统提示"),
+            AIMessage(
+                content="",
+                tool_calls=[{"name": "order_query", "args": {}, "id": "tc_1"}],
+            ),
+            ToolMessage(content='{"ok": true}', tool_call_id="tc_1", name="order_query"),
+        ]
+        result = _sanitize_messages(msgs)
+        assert len(result) == 3
+        ai_msg = result[1]
+        assert isinstance(ai_msg.content, str)
+        assert ai_msg.content == ""
+        # tool_calls 保留
+        assert len(ai_msg.tool_calls) == 1
+
+    def test_ai_message_thinking_content_stripped(self):
+        """AIMessage 中 <think> 标签内容在归一化时被移除"""
+        msgs = [
+            AIMessage(
+                content="<think>内部推理过程</think>这是最终回复",
+                tool_calls=[],
+            ),
+        ]
+        result = _sanitize_messages(msgs)
+        assert len(result) == 1
+        assert result[0].content == "这是最终回复"
+
+    def test_ai_message_additional_kwargs_reasoning_stripped(self):
+        """AIMessage 的 additional_kwargs 中的 reasoning_content 被移除（防止被序列化回消息）"""
+        msgs = [
+            AIMessage(
+                content="正常回复",
+                additional_kwargs={"reasoning_content": "内部推理..."},
+            ),
+        ]
+        result = _sanitize_messages(msgs)
+        assert len(result) == 1
+        ai_msg = result[0]
+        assert ai_msg.content == "正常回复"
+        # reasoning_content 被移除
+        assert "reasoning_content" not in ai_msg.additional_kwargs
+
+    def test_ai_message_list_content_with_non_text_items(self):
+        """AIMessage 的 list content 中包含非 text 类型时，只提取 text 部分"""
+        msgs = [
+            AIMessage(
+                content=[
+                    {"type": "text", "text": "有效文本"},
+                    {"type": "thinking", "thinking": "内部思考"},
+                    {"type": "unknown_type", "data": "unknown"},
+                ],
+            ),
+        ]
+        result = _sanitize_messages(msgs)
+        assert len(result) == 1
+        assert result[0].content == "有效文本"

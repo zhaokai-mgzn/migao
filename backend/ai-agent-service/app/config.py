@@ -33,8 +33,8 @@ class Settings(BaseSettings):
     DASHSCOPE_MODEL: str = "qwen3.7-max"
     DASHSCOPE_EMBEDDING_MODEL: str = "text-embedding-v3"
 
-    # 意图分类小模型配置
-    INTENT_MODEL: str = "qwen-turbo"
+    # 意图分类模型（qwen3.6-plus：意图识别 + 图片识别）
+    INTENT_MODEL: str = "qwen3.6-plus"
 
     # DashVector 配置
     DASHVECTOR_API_KEY: str = ""
@@ -76,8 +76,8 @@ class Settings(BaseSettings):
     LLM_RETRY_MAX_ATTEMPTS: int = 2             # 最大重试次数（不含首次调用）
     LLM_RETRY_BASE_DELAY_S: float = 0.5         # 重试基础延迟（秒），指数退避基数
 
-    # --- 多模态视觉模型配置 ---
-    DASHSCOPE_VISION_MODEL: str = "qwen-vl-plus"
+    # --- 图片识别模型（qwen3.6-plus） ---
+    DASHSCOPE_VISION_MODEL: str = "qwen3.6-plus"
     DASHSCOPE_VISION_ENABLED: bool = True
 
     model_config = {"env_file": ".env", "case_sensitive": True, "extra": "ignore"}

@@ -70,7 +70,7 @@ const MOCK_ORDER_COMPLETED = {
 
 test.describe('订单详情 - 待付款状态', () => {
   test.beforeEach(async ({ page }) => {
-    await page.route('**/api/orders/order_001', async (route) => {
+    await page.route('**/api/admin/orders/order_001', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -124,7 +124,7 @@ test.describe('订单详情 - 待付款状态', () => {
 
   test('点击关闭订单应弹出确认对话框', async ({ page }) => {
     await page.getByRole('button', { name: '关闭订单' }).click()
-    await expect(page.getByText('关闭订单')).toBeVisible()
+    await expect(page.getByRole('heading', { name: '关闭订单' })).toBeVisible()
     await expect(page.getByText(/确定关闭当前订单/)).toBeVisible()
   })
 
@@ -138,7 +138,7 @@ test.describe('订单详情 - 待付款状态', () => {
 
   test('点击确认付款应弹出确认对话框', async ({ page }) => {
     await page.getByRole('button', { name: /确认付款/ }).click()
-    await expect(page.getByText('确认付款')).toBeVisible()
+    await expect(page.getByRole('heading', { name: '确认付款' })).toBeVisible()
     await expect(page.getByText(/确认已收到付款/)).toBeVisible()
   })
 })
@@ -146,7 +146,7 @@ test.describe('订单详情 - 待付款状态', () => {
 test.describe('订单详情 - 待发货状态', () => {
   test.beforeEach(async ({ page }) => {
     const pendingShipOrder = { ...MOCK_ORDER_PENDING, id: 'order_pending_ship', status: 'pending_shipment', paidAt: '2025-01-15T11:00:00Z' }
-    await page.route('**/api/orders/order_pending_ship', async (route) => {
+    await page.route('**/api/admin/orders/order_pending_ship', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -169,7 +169,7 @@ test.describe('订单详情 - 待发货状态', () => {
 
 test.describe('订单详情 - 已发货状态', () => {
   test.beforeEach(async ({ page }) => {
-    await page.route('**/api/orders/order_002', async (route) => {
+    await page.route('**/api/admin/orders/order_002', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -188,14 +188,14 @@ test.describe('订单详情 - 已发货状态', () => {
 
   test('点击确认收货应弹出确认对话框', async ({ page }) => {
     await page.getByRole('button', { name: /确认收货/ }).click()
-    await expect(page.getByText('确认收货')).toBeVisible()
+    await expect(page.getByRole('heading', { name: '确认收货' })).toBeVisible()
     await expect(page.getByText(/确认客户已收到货物/)).toBeVisible()
   })
 })
 
 test.describe('订单详情 - 已完成状态', () => {
   test.beforeEach(async ({ page }) => {
-    await page.route('**/api/orders/order_003', async (route) => {
+    await page.route('**/api/admin/orders/order_003', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',

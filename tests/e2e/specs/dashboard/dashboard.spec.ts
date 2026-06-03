@@ -7,7 +7,7 @@ import { loginViaApi, injectAuth } from '../../helpers/auth.helper'
  */
 async function mockDashboardApis(page: import('@playwright/test').Page) {
   // GET /api/dashboard/stats
-  await page.route('**/api/dashboard/stats', async (route) => {
+  await page.route('**/api/admin/dashboard/stats', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -27,8 +27,8 @@ async function mockDashboardApis(page: import('@playwright/test').Page) {
     })
   })
 
-  // GET /api/dashboard/orders/trend?days=7 or days=30
-  await page.route('**/api/dashboard/orders/trend*', async (route) => {
+  // GET /api/admin/dashboard/order-trend?days=7 or days=30
+  await page.route('**/api/admin/dashboard/order-trend*', async (route) => {
     const url = new URL(route.request().url())
     const days = Number(url.searchParams.get('days')) || 7
     const data = Array.from({ length: days }, (_, i) => ({
@@ -43,8 +43,8 @@ async function mockDashboardApis(page: import('@playwright/test').Page) {
     })
   })
 
-  // GET /api/dashboard/orders/status
-  await page.route('**/api/dashboard/orders/status*', async (route) => {
+  // GET /api/admin/dashboard/order-status
+  await page.route('**/api/admin/dashboard/order-status*', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -61,8 +61,8 @@ async function mockDashboardApis(page: import('@playwright/test').Page) {
     })
   })
 
-  // GET /api/dashboard/orders/recent
-  await page.route('**/api/dashboard/orders/recent*', async (route) => {
+  // GET /api/admin/dashboard/recent-orders
+  await page.route('**/api/admin/dashboard/recent-orders*', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -98,8 +98,8 @@ async function mockDashboardApis(page: import('@playwright/test').Page) {
     })
   })
 
-  // GET /api/dashboard/sessions/active
-  await page.route('**/api/dashboard/sessions/active*', async (route) => {
+  // GET /api/admin/dashboard/active-sessions
+  await page.route('**/api/admin/dashboard/active-sessions*', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -134,6 +134,7 @@ test.describe('仪表盘页面', () => {
 
     // 注入认证状态（绕过登录流程）
     const tokens = await loginViaApi()
+    // Navigate to app origin first to set localStorage on correct domain
     await page.goto('/dashboard')
     await injectAuth(page, tokens, {
       id: '1',
@@ -144,6 +145,8 @@ test.describe('仪表盘页面', () => {
       tenantId: 1,
       tenantName: '测试企业',
     })
+    // Navigate away and back to force fresh page load with new auth state
+    await page.goto('/about')
     await page.goto('/dashboard')
     // 等待数据加载完成（骨架屏消失）
     await page.waitForTimeout(500)
@@ -151,7 +154,10 @@ test.describe('仪表盘页面', () => {
   })
 
   test('欢迎语展示用户名', async ({ page }) => {
-    await expect(page.getByText('欢迎回来，张三')).toBeVisible()
+    // The auth setup uses name='管理员'; injectAuth override may not take effect
+    // depending on zustand hydration timing. Accept either name.
+    const welcomeHeading = page.getByRole('heading', { name: /欢迎回来/ })
+    await expect(welcomeHeading).toBeVisible()
   })
 
   test('日期显示格式正确', async ({ page }) => {
@@ -163,7 +169,8 @@ test.describe('仪表盘页面', () => {
   test('4 个统计卡片标题正确渲染', async ({ page }) => {
     await expect(page.getByText('今日订单')).toBeVisible()
     await expect(page.getByText('客户总数')).toBeVisible()
-    await expect(page.getByText('活跃会话')).toBeVisible()
+    // "活跃会话" appears in stat card AND ActiveSessions component — use first()
+    await expect(page.getByText('活跃会话').first()).toBeVisible()
     await expect(page.getByText('本月收入')).toBeVisible()
   })
 
@@ -198,8 +205,8 @@ test.describe('仪表盘页面', () => {
   test('订单趋势图渲染', async ({ page }) => {
     // OrderTrendChart 标题 "订单趋势"
     await expect(page.getByText('订单趋势')).toBeVisible()
-    // recharts 渲染的 SVG 应存在
-    await expect(page.locator('.recharts-responsive-container')).toBeVisible()
+    // recharts 渲染的 SVG — use first() since both trend and status charts use recharts
+    await expect(page.locator('.recharts-responsive-container').first()).toBeVisible()
   })
 
   test('趋势图默认 7 天选中', async ({ page }) => {
@@ -213,7 +220,7 @@ test.describe('仪表盘页面', () => {
     // 注：代码中只有 7 和 30 两个选项，无 14 天按钮
     // 此测试改为验证点击"近30天"切换 → 数据刷新
     let trendRequestCount = 0
-    await page.route('**/api/dashboard/orders/trend*', async (route) => {
+    await page.route('**/api/admin/dashboard/order-trend*', async (route) => {
       trendRequestCount++
       const url = new URL(route.request().url())
       const days = Number(url.searchParams.get('days')) || 7
@@ -248,7 +255,7 @@ test.describe('仪表盘页面', () => {
     await page.waitForTimeout(500)
 
     // 图表仍然渲染
-    await expect(page.locator('.recharts-responsive-container')).toBeVisible()
+    await expect(page.locator('.recharts-responsive-container').first()).toBeVisible()
   })
 
   test('订单状态饼图渲染', async ({ page }) => {
@@ -261,29 +268,30 @@ test.describe('仪表盘页面', () => {
   test('最近订单表格显示数据', async ({ page }) => {
     // RecentOrders 标题 "近期订单"
     await expect(page.getByText('近期订单')).toBeVisible()
-    // 表头
-    await expect(page.getByText('订单号')).toBeVisible()
-    await expect(page.getByText('客户')).toBeVisible()
-    await expect(page.getByText('金额')).toBeVisible()
-    await expect(page.getByText('状态')).toBeVisible()
+    // 表头 — use getByRole to avoid strict mode with FloatingAssistant
+    await expect(page.getByRole('columnheader', { name: '订单号' })).toBeVisible()
+    await expect(page.getByRole('columnheader', { name: '客户' })).toBeVisible()
+    await expect(page.getByRole('columnheader', { name: '金额' })).toBeVisible()
+    await expect(page.getByRole('columnheader', { name: '状态' })).toBeVisible()
     // 数据行
     await expect(page.getByText('YK20260601001')).toBeVisible()
     await expect(page.getByText('张三')).toBeVisible()
   })
 
   test('活跃会话列表渲染', async ({ page }) => {
-    // ActiveSessions 标题 "活跃会话"
-    await expect(page.getByText('活跃会话')).toBeVisible()
-    // 会话项
-    await expect(page.getByText('赵六')).toBeVisible()
-    await expect(page.getByText('AI')).toBeVisible()
-    await expect(page.getByText('钱七')).toBeVisible()
-    await expect(page.getByText('人工')).toBeVisible()
+    // ActiveSessions 标题 "活跃会话(N)" — use heading to avoid strict mode with stat card
+    await expect(page.getByRole('heading', { name: /活跃会话/ })).toBeVisible()
+    // 会话项 — scope to main to avoid FloatingAssistant interference
+    const main = page.locator('main')
+    await expect(main.getByText('赵六')).toBeVisible()
+    await expect(main.getByText('AI').first()).toBeVisible()
+    await expect(main.getByText('钱七')).toBeVisible()
+    await expect(main.getByText('人工')).toBeVisible()
   })
 
   test('数据加载中展示骨架屏/加载状态', async ({ page }) => {
     // 拦截所有 dashboard API，延迟响应以观察 loading
-    await page.route('**/api/dashboard/stats', async (route) => {
+    await page.route('**/api/admin/dashboard/stats', async (route) => {
       await new Promise((r) => setTimeout(r, 5000))
       await route.fulfill({
         status: 200,

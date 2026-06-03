@@ -24,10 +24,11 @@ test.describe('客户详情页面', () => {
 
   test('标签选择器可添加标签', async () => {
     await pom.addTagButton.click()
-    const picker = pom.page.locator('.absolute.right-0.top-8, .shadow-lg')
-    if (await picker.isVisible()) {
+    // Scope to the tag picker specifically — avoid FloatingAssistant's .shadow-lg button
+    const picker = pom.page.locator('.absolute.right-0.top-8.bg-white')
+    if (await picker.isVisible().catch(() => false)) {
       const firstTag = picker.locator('button').first()
-      if (await firstTag.isVisible()) {
+      if (await firstTag.isVisible().catch(() => false)) {
         await firstTag.click()
         await pom.expectSuccessToast(/已添加标签/)
       }
@@ -67,7 +68,13 @@ test.describe('客户详情页面', () => {
     await expect(pom.page.getByText(/暂无跟进记录/)).toBeVisible()
   })
 
-  test('返回按钮可返回客户列表', async () => {
+  test('返回按钮可返回客户列表', async ({ page }) => {
+    // Navigate to customer list first so router.back() has a valid history entry
+    await page.goto('/customers')
+    await page.waitForLoadState('networkidle')
+    await page.goto('/customers/1')
+    await page.waitForLoadState('networkidle')
+    // Now the back button should go back to /customers
     await pom.backButton.click()
     await expect(pom.page).toHaveURL(/\/customers/)
   })

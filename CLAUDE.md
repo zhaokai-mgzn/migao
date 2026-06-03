@@ -9,6 +9,7 @@
 核心铁律：
 - **禁止直接 push 到 `main`**，必须走 PR
 - 所有 PR 必须关联 Issue（`Fixes #xxx` / `Closes #xxx`）
+- **所有 PR 必须经过 Review（至少 1 人 approve）才能合并**
 - 所有 Issue 必须打 Label（角色 + 类型）
 - 发现问题自动创建 Issue → 立即修复 → 不询问用户
 - 测试失败自动创建 Issue → 自动修复
@@ -224,7 +225,7 @@ cd tests/smoke && pytest
 | 插件 | 作用 |
 |------|------|
 | `terraform` | Terraform IaC 智能辅助（HCL 补全、plan 分析、drift 检测） |
-| `playwright` | 浏览器自动化 MCP，用于 admin-web 前端调试和 E2E 测试 |
+| `playwright` | 浏览器自动化 MCP，用于 admin-web 前端调试和 E2E 测试（⚠️ 见下方 DashScope 兼容性约束） |
 
 ### 开发效率
 
@@ -232,3 +233,25 @@ cd tests/smoke && pytest
 |------|------|
 | `commit-commands` | `/commit` — 自动生成符合规范的 commit message 并提交 |
 | `claude-md-management` | `/revise-claude-md` — 会话结束后自动更新 CLAUDE.md 捕获学习要点 |
+
+## DashScope API 兼容性约束
+
+本项目 Claude Code 通过 DashScope Anthropic 兼容端点（`token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic`）运行，**不支持 `image` content block（base64）**。一旦对话历史中出现 image 数据，后续所有请求将返回 400 `Unexpected item type in content`，导致会话永久卡死。
+
+### 铁律
+
+- **禁止调用 `browser_take_screenshot`** — 该工具返回 base64 图片，会触发上述错误
+- **调试前端/E2E 时，统一使用 `browser_snapshot`** — 返回文本格式的 accessibility tree，功能等价且不产生 image 数据
+- 对话历史一旦污染无法挽救，必须**新开会话**
+
+### 兼容性矩阵
+
+| 消息类型 | 支持 |
+|---------|------|
+| text, tool_use, tool_result (text) | ✅ |
+| thinking blocks, cache_control | ✅ |
+| tools 定义, 多轮对话, is_error | ✅ |
+| **image content block (base64)** | **❌** |
+| **tool_result 内嵌 image** | **❌** |
+
+> 已在 `.claude/settings.local.json` 中 deny `browser_take_screenshot`，作为硬性防护。

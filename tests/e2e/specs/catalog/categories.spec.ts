@@ -27,7 +27,7 @@ const MOCK_CATEGORIES = [
 test.describe('分类管理', () => {
   test.beforeEach(async ({ page }) => {
     // 拦截分类列表 API
-    await page.route('**/api/categories*', async (route) => {
+    await page.route('**/api/admin/categories*', async (route) => {
       if (route.request().method() === 'GET') {
         await route.fulfill({
           status: 200,
@@ -98,7 +98,7 @@ test.describe('分类管理', () => {
   test.describe('添加分类', () => {
     test('点击添加分类按钮应打开对话框', async ({ page }) => {
       await page.getByRole('button', { name: /添加分类/ }).click()
-      await expect(page.getByText('添加分类')).toBeVisible()
+      await expect(page.getByRole('heading', { name: '添加分类' })).toBeVisible()
       // 对话框应包含名称输入框
       await expect(page.locator('input[placeholder="请输入分类名称"]')).toBeVisible()
     })
@@ -134,7 +134,7 @@ test.describe('分类管理', () => {
   test.describe('编辑分类', () => {
     test('编辑对话框应回填分类名称', async ({ page }) => {
       // 拦截更新 API
-      await page.route('**/api/categories/cat_001', async (route) => {
+      await page.route('**/api/admin/categories/cat_001', async (route) => {
         await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 200 }) })
       })
 
@@ -156,7 +156,7 @@ test.describe('分类管理', () => {
       const treeNode = page.locator('text=沙发面料').locator('..')
       await treeNode.hover()
       await treeNode.getByText('删除').click()
-      await expect(page.getByText('确认删除')).toBeVisible()
+      await expect(page.getByRole('heading', { name: '确认删除' })).toBeVisible()
       await expect(page.getByText(/确定要删除分类/)).toBeVisible()
     })
 
@@ -169,7 +169,7 @@ test.describe('分类管理', () => {
 
     test('确认删除应调用 API', async ({ page }) => {
       let deleteCalled = false
-      await page.route('**/api/categories/cat_004', async (route) => {
+      await page.route('**/api/admin/categories/cat_004', async (route) => {
         if (route.request().method() === 'DELETE') {
           deleteCalled = true
           await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 200 }) })

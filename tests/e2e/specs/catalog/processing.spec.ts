@@ -39,7 +39,7 @@ const MOCK_PROCESSING_ITEMS = [
 test.describe('加工项配置', () => {
   test.beforeEach(async ({ page }) => {
     // 拦截加工项列表 API
-    await page.route('**/api/processing-items*', async (route) => {
+    await page.route('**/api/admin/processing-items*', async (route) => {
       if (route.request().method() === 'GET') {
         await route.fulfill({
           status: 200,
@@ -55,7 +55,7 @@ test.describe('加工项配置', () => {
     })
 
     // 拦截加工分类 API
-    await page.route('**/api/processing-categories*', async (route) => {
+    await page.route('**/api/admin/processing-categories*', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -111,9 +111,10 @@ test.describe('加工项配置', () => {
 
     test('弹窗应包含名称、价格、计价方式字段', async ({ page }) => {
       await page.getByRole('button', { name: /添加加工项/ }).click()
-      await expect(page.getByText('加工项名称')).toBeVisible()
-      await expect(page.getByText('加工项价格')).toBeVisible()
-      await expect(page.getByText('加工项计价方式')).toBeVisible()
+      const dialog = page.locator('.fixed.inset-0.z-50').last()
+      await expect(dialog.getByText('加工项名称')).toBeVisible()
+      await expect(dialog.getByText('加工项价格')).toBeVisible()
+      await expect(dialog.getByText('加工项计价方式')).toBeVisible()
     })
 
     test('名称为空提交应显示错误', async ({ page }) => {
@@ -139,7 +140,8 @@ test.describe('加工项配置', () => {
       await inputs.nth(0).fill('测试加工项')
       await inputs.nth(1).fill('20.00')
       await dialog.getByRole('button', { name: '保存' }).click()
-      await expect(page.getByText('请选择计价方式')).toBeVisible()
+      // Error message is a <p class="text-red-600"> — scope to avoid matching the <option> with same text
+      await expect(dialog.locator('p.text-red-600').filter({ hasText: '请选择计价方式' })).toBeVisible()
     })
 
     test('完整填写后应成功创建', async ({ page }) => {
@@ -187,7 +189,7 @@ test.describe('加工项配置', () => {
 
     test('编辑保存应调用更新 API', async ({ page }) => {
       let updateCalled = false
-      await page.route('**/api/processing-items/proc_001', async (route) => {
+      await page.route('**/api/admin/processing-items/proc_001', async (route) => {
         if (route.request().method() === 'PUT' || route.request().method() === 'PATCH') {
           updateCalled = true
           await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 200 }) })
@@ -216,7 +218,7 @@ test.describe('加工项配置', () => {
 
     test('确认删除应调用 API', async ({ page }) => {
       let deleteCalled = false
-      await page.route('**/api/processing-items/proc_001', async (route) => {
+      await page.route('**/api/admin/processing-items/proc_001', async (route) => {
         if (route.request().method() === 'DELETE') {
           deleteCalled = true
           await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 200 }) })
@@ -242,8 +244,8 @@ test.describe('加工项配置', () => {
 
   test.describe('空状态', () => {
     test('无数据时应显示空状态提示', async ({ page }) => {
-      // 拦截空数据
-      await page.route('**/api/processing-items*', async (route) => {
+      // 拦截所有加工项 API 返回空数据
+      await page.route('**/api/admin/processing-items*', async (route) => {
         if (route.request().method() === 'GET') {
           await route.fulfill({
             status: 200,
@@ -253,7 +255,7 @@ test.describe('加工项配置', () => {
         } else {
           await route.fallback()
         }
-      }, { times: 1 })
+      })
 
       await page.reload()
       await expect(page.getByText(/暂无加工项/)).toBeVisible()

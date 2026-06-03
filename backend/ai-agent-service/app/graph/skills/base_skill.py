@@ -37,7 +37,7 @@ LLM_BREAKER = "llm_dashscope"
 
 
 # DashScope OpenAI 兼容接口地址
-DASHSCOPE_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+DASHSCOPE_BASE_URL = "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
 
 # 全局 ConversationTracker 实例（进程内共享）
 _tracker: Optional[ConversationTracker] = None
@@ -61,17 +61,20 @@ def _strip_think_tags(text: str) -> str:
 
 
 def _sanitize_messages(messages: List[Any]) -> List[Any]:
-    """过滤消息历史中的孤立 ToolMessage，避免 DashScope thinking 模式报错
+    """过滤消息历史中的孤立 ToolMessage，并归一化 AIMessage content 格式
 
-    DashScope 在 enable_thinking=True 模式下要求 ToolMessage 必须有匹配的
-    AIMessage.tool_calls（通过 tool_call_id 配对）。孤立的 ToolMessage 会导致
-    API 返回 400 InvalidParameter 错误。
+    DashScope 在 enable_thinking=True 模式下有两个严格要求：
+    1. ToolMessage 必须有匹配的 AIMessage.tool_calls（通过 tool_call_id 配对）
+    2. AIMessage 的 content 必须是 string 类型，不能是 list
+
+    当 DashScope 返回的 AIMessage.content 是 list 格式（如多模态或 thinking 模式），
+    被原样发送回去会触发 400 InvalidParameter: "Unexpected item type in content"。
 
     Args:
         messages: 消息列表（可能包含 SystemMessage/HumanMessage/AIMessage/ToolMessage）
 
     Returns:
-        过滤后的消息列表，仅保留有配对的 ToolMessage
+        过滤并归一化后的消息列表
     """
     # 收集所有合法的 tool_call_id
     valid_ids: set = set()
@@ -82,12 +85,52 @@ def _sanitize_messages(messages: List[Any]) -> List[Any]:
                 if tc_id:
                     valid_ids.add(tc_id)
 
-    # 过滤：保留非 ToolMessage，以及有匹配的 ToolMessage
-    return [
-        msg for msg in messages
-        if type(msg).__name__ != 'ToolMessage'
-        or getattr(msg, 'tool_call_id', '') in valid_ids
-    ]
+    # 过滤并归一化
+    sanitized: List[Any] = []
+    for msg in messages:
+        # 过滤孤立 ToolMessage
+        if type(msg).__name__ == 'ToolMessage':
+            if getattr(msg, 'tool_call_id', '') not in valid_ids:
+                continue
+
+        # 归一化 AIMessage 的 content
+        if isinstance(msg, AIMessage):
+            content = msg.content
+
+            # 1. list content → string（提取 text 类型项）
+            if isinstance(content, list):
+                text_parts = [
+                    c.get("text", "")
+                    for c in content
+                    if isinstance(c, dict) and c.get("type") == "text"
+                ]
+                content = "".join(text_parts)
+
+            # 2. None → 空字符串
+            if content is None:
+                content = ""
+
+            # 3. 移除  标签
+            if isinstance(content, str):
+                content = _strip_think_tags(content)
+
+            # 4. 移除 additional_kwargs 中的 reasoning_content（防止被序列化回消息）
+            raw_kwargs = getattr(msg, 'additional_kwargs', None) or {}
+            additional_kwargs = dict(raw_kwargs)
+            additional_kwargs.pop('reasoning_content', None)
+
+            # 5. 创建新的 AIMessage，保留 tool_calls 和其他元数据
+            msg = AIMessage(
+                content=content,
+                tool_calls=msg.tool_calls,
+                additional_kwargs=additional_kwargs,
+                response_metadata=getattr(msg, 'response_metadata', {}) or {},
+                id=getattr(msg, 'id', None),
+            )
+
+        sanitized.append(msg)
+
+    return sanitized
 
 
 def _extract_content(response: AIMessage) -> str:
@@ -369,14 +412,14 @@ async def execute_skill(
                             llm_with_tools.ainvoke(
                                 _sanitize_messages(full_messages + new_messages)
                             ),
-                            timeout=30.0,
+                            timeout=90.0,
                         )
                     except asyncio.TimeoutError:
-                        # SSE 流式响应超时：DashScope 在 streaming=True 模式下
-                        # 将 400 错误嵌入流体内，导致 ainvoke() 阻塞。
+                        # SSE 流式响应超时：qwen3.7-max thinking 模式
+                        # 在 token-plan endpoint 上可能需要较长时间思考。
                         # 转为 StreamingTimeoutError 标记为不可重试。
                         raise StreamingTimeoutError(
-                            f"LLM SSE stream timed out after 30s "
+                            f"LLM SSE stream timed out after 90s "
                             f"(iteration={iteration + 1})"
                         )
 

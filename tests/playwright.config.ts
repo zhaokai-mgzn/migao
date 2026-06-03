@@ -1,13 +1,17 @@
 import { defineConfig, devices } from '@playwright/test';
 
+// 所有测试临时文件统一输出到 tests/tmp/，方便清理：rm -rf tests/tmp/
+const TMP_DIR = './tmp';
+
 export default defineConfig({
   testDir: './e2e',
   testMatch: /.*\.spec\.ts|.*auth\.setup\.ts/,
+  outputDir: `${TMP_DIR}/test-results`,
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   workers: process.env.CI ? 4 : undefined,
-  reporter: [['html', { open: 'never' }], ['list']],
+  reporter: [['html', { open: 'never', outputFolder: `${TMP_DIR}/playwright-report` }], ['list']],
   timeout: 30_000,
   expect: { timeout: 5_000 },
 
@@ -15,9 +19,10 @@ export default defineConfig({
     baseURL: process.env.BASE_URL || 'http://localhost:3001',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
-    video: 'retain-on-failure',
+    video: 'off',
     actionTimeout: 10_000,
     navigationTimeout: 15_000,
+    channel: 'chrome',
   },
 
   projects: [
@@ -37,7 +42,7 @@ export default defineConfig({
       testIgnore: /specs\/auth\/|auth\.setup\.ts/,
       use: {
         ...devices['Desktop Chrome'],
-        storageState: './e2e/.auth/admin.json',
+        storageState: `${TMP_DIR}/.auth/admin.json`,
       },
       dependencies: ['auth-setup'],
     },

@@ -35,7 +35,7 @@ test.describe('员工管理页面', () => {
   test('新增员工按钮可打开创建弹窗', async () => {
     await page.createBtn.click()
     await expect(page.employeeModal).toBeVisible()
-    await expect(page.page.getByText('新增员工')).toBeVisible()
+    await expect(page.page.getByRole('heading', { name: '新增员工' })).toBeVisible()
   })
 
   test('创建弹窗包含所有必要字段', async () => {
@@ -151,7 +151,7 @@ test.describe('员工管理页面', () => {
 
   test('重置按钮清空搜索条件', async () => {
     await page.searchInput.fill('测试')
-    await page.page.getByRole('button', { name: /重置/ }).click()
+    await page.clickReset()
     await expect(page.searchInput).toHaveValue('')
   })
 

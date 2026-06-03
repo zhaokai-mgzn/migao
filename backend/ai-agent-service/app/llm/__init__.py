@@ -11,10 +11,6 @@ from app.llm.router import (
     has_images,
     MODEL_MAX,
     MODEL_PLUS,
-    MODEL_TURBO,
-    MODEL_FLASH,
-    MODEL_VL_PLUS,
-    MODEL_VL_MAX,
 )
 from app.llm.cost_tracker import CostTracker, CostRecord, MODEL_PRICING
 from app.llm.retry_policy import call_with_retry, StreamingTimeoutError
@@ -28,10 +24,6 @@ __all__ = [
     "has_images",
     "MODEL_MAX",
     "MODEL_PLUS",
-    "MODEL_TURBO",
-    "MODEL_FLASH",
-    "MODEL_VL_PLUS",
-    "MODEL_VL_MAX",
     "CostTracker",
     "CostRecord",
     "MODEL_PRICING",

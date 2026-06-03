@@ -116,28 +116,32 @@ test.describe('商品创建', () => {
 
   test.describe('售卖方式', () => {
     test('应显示售卖方式区块和添加按钮', async ({ page }) => {
-      await expect(page.getByText('售卖方式')).toBeVisible()
-      // 添加按钮（虚线边框 Plus 图标）
-      const addBtn = page.locator('button[title="添加"]').first()
-      await expect(addBtn).toBeVisible()
+      // "售卖方式(0)" section title — use first() to avoid strict mode with "按售卖方式" option etc.
+      await expect(page.getByText('售卖方式').first()).toBeVisible()
+      // 添加按钮（虚线边框 Plus 图标）— scope to SkuMatrix
+      const addBtns = page.locator('button[title="添加"]')
+      await expect(addBtns.first()).toBeVisible()
     })
 
     test('添加售卖方式应出现下拉选择', async ({ page }) => {
-      // 点击售卖方式区域的添加按钮
-      const smSection = page.locator('text=售卖方式').locator('..').locator('..')
-      const addBtn = smSection.locator('button[title="添加"]')
-      await addBtn.click()
+      // 售卖方式 section 的添加按钮是第二个 button[title="添加"]（第一个是颜色分类）
+      const addBtns = page.locator('button[title="添加"]')
+      await addBtns.nth(1).click()
       await expect(page.locator('select').filter({ hasText: '请选择' }).first()).toBeVisible()
     })
   })
 
   test.describe('规格尺寸', () => {
     test('应显示规格尺寸区块', async ({ page }) => {
-      await expect(page.getByText('规格尺寸')).toBeVisible()
+      // Use first() to avoid strict mode with "按规格尺寸" option etc.
+      await expect(page.getByText('规格尺寸').first()).toBeVisible()
     })
 
     test('添加规格尺寸应出现下拉', async ({ page }) => {
-      const dwSection = page.locator('text=规格尺寸').locator('..').locator('..')
+      // RowSelectorSection renders: <div> <div.header> <span>规格尺寸(N)</span> </div> <div.rows> <button title="添加"> </div> </div>
+      // Scope to the direct parent div of the "规格尺寸" section title
+      const titleSpan = page.locator('span').filter({ hasText: /^规格尺寸/ }).first()
+      const dwSection = titleSpan.locator('xpath=../..')
       const addBtn = dwSection.locator('button[title="添加"]')
       await addBtn.click()
       await expect(page.locator('select').filter({ hasText: '请选择' }).first()).toBeVisible()
@@ -172,12 +176,15 @@ test.describe('商品创建', () => {
     })
 
     test('选择"是"后应显示加工项选择器', async ({ page }) => {
-      // 点击"是" radio（在"是否支持加工"区域）
-      const processingSection = page.locator('text=是否支持加工').locator('..').locator('..')
-      const yesRadio = processingSection.locator('label:has-text("是")').first()
+      // FieldRow 结构：<div.flex.gap-4> <label>*是否支持加工</label> <div.flex-1> <RadioGroup/> </div> </div>
+      // The label contains a red * span before the text
+      const fieldRow = page.locator('label').filter({ hasText: '是否支持加工' }).locator('xpath=..')
+      const yesRadio = fieldRow.locator('label').filter({ hasText: /^是$/ })
       await yesRadio.click()
-      // 验证加工项选择器出现
-      await expect(page.locator('text=请选择加工项').first()).toBeVisible()
+      // Verify the processing item select appears (it has a disabled option with placeholder text)
+      // Use the select element itself rather than the option text, as disabled options may not be "visible"
+      const processingSelect = page.locator('#pf-processing').locator('select').first()
+      await expect(processingSelect).toBeVisible({ timeout: 5_000 })
     })
   })
 

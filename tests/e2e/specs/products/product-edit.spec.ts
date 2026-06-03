@@ -41,7 +41,7 @@ const MOCK_PRODUCT = {
 test.describe('商品编辑', () => {
   test.beforeEach(async ({ page }) => {
     // 拦截商品详情 API
-    await page.route('**/api/products/prod_test_edit_001', async (route) => {
+    await page.route('**/api/admin/products/prod_test_edit_001', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -50,7 +50,7 @@ test.describe('商品编辑', () => {
     })
 
     // 拦截分类 API
-    await page.route('**/api/categories*', async (route) => {
+    await page.route('**/api/admin/categories*', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -62,7 +62,7 @@ test.describe('商品编辑', () => {
     })
 
     // 拦截加工项 API
-    await page.route('**/api/processing-items*', async (route) => {
+    await page.route('**/api/admin/processing-items*', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -112,7 +112,7 @@ test.describe('商品编辑', () => {
 
     // 拦截更新 API
     let updateCalled = false
-    await page.route('**/api/products/prod_test_edit_001', async (route) => {
+    await page.route('**/api/admin/products/prod_test_edit_001', async (route) => {
       if (route.request().method() === 'PUT' || route.request().method() === 'PATCH') {
         updateCalled = true
         await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 200 }) })
@@ -128,7 +128,7 @@ test.describe('商品编辑', () => {
   })
 
   test('保存成功后应跳转到商品列表', async ({ page }) => {
-    await page.route('**/api/products/prod_test_edit_001', async (route) => {
+    await page.route('**/api/admin/products/prod_test_edit_001', async (route) => {
       if (route.request().method() === 'PUT' || route.request().method() === 'PATCH') {
         await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 200 }) })
       } else {

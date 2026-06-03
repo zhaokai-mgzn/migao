@@ -53,8 +53,8 @@ export class CustomerDetailPage extends BasePage {
     // Header
     this.backButton = page.getByRole('button', { name: /返回客户列表/ }).or(page.locator('button').filter({ hasText: /返回/ }).first())
 
-    // Info card
-    this.infoCard = page.locator('.bg-white.border').first()
+    // Info card — scope to main to avoid hidden dropdowns with same classes
+    this.infoCard = page.locator('main .bg-white.border').first()
     this.customerName = this.infoCard.locator('h2')
     this.customerNickname = this.infoCard.locator('p.text-sm.text-gray-500')
     this.vipStars = this.infoCard.locator('svg.fill-amber-400')
@@ -62,14 +62,14 @@ export class CustomerDetailPage extends BasePage {
     this.channelBadge = this.infoCard.locator('span').filter({ hasText: /微信小程序|公众号|Web|订单/ }).first()
 
     // Tags
-    this.tagSection = page.locator('.bg-white.border').filter({ hasText: /标签/ }).first()
+    this.tagSection = page.locator('main .bg-white.border').filter({ hasText: /标签/ }).first()
     this.addTagButton = this.tagSection.locator('button').filter({ has: page.locator('svg') }).first()
-    this.tagPicker = page.locator('.absolute.right-0.top-8').or(page.locator('.shadow-lg'))
+    this.tagPicker = this.tagSection.locator('.absolute').first()
     this.tagPickerItems = this.tagPicker.locator('button')
     this.currentTags = this.tagSection.locator('span.inline-flex')
 
     // Remark
-    this.remarkSection = page.locator('.bg-white.border').filter({ hasText: /备注/ }).first()
+    this.remarkSection = page.locator('main .bg-white.border').filter({ hasText: /备注/ }).first()
     this.remarkTextarea = this.remarkSection.locator('textarea')
     this.saveRemarkButton = this.remarkSection.getByRole('button', { name: /保存/ })
 

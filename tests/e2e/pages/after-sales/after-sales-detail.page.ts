@@ -54,20 +54,20 @@ export class AfterSalesDetailPage extends BasePage {
     this.statusBadge = page.locator('span').filter({ hasText: /待处理|处理中|已完成|已拒绝|已关闭/ }).first()
     this.priorityBadge = page.locator('span').filter({ hasText: /普通|紧急|严重/ }).first()
     this.ticketNoLabel = page.locator('p.font-mono').filter({ hasText: /工单号/ })
-    this.actionButtons = page.locator('.flex.items-center.gap-2').last()
+    this.actionButtons = page.locator('main .flex.items-center.gap-2').first()
 
-    // Ticket info
-    this.ticketInfoCard = page.locator('h2').filter({ hasText: /工单信息/ }).locator('xpath=..')
+    // Ticket info — go up from h2 to the Card wrapper (h2 → flex div → p-6 div → Card)
+    this.ticketInfoCard = page.locator('h2').filter({ hasText: /工单信息/ }).first().locator('xpath=../../..')
     this.ticketType = this.ticketInfoCard.locator('p.text-sm.font-medium').first()
     this.createdAt = this.ticketInfoCard.locator('p.text-sm.font-medium').nth(1)
     this.refundAmount = this.ticketInfoCard.locator('p.text-red-600')
 
-    // Description
+    // Description — h2 → p-6 div → Card
     this.descriptionCard = page.locator('h2').filter({ hasText: /售后原因/ }).locator('xpath=..')
     this.descriptionText = this.descriptionCard.locator('.bg-gray-50, p.whitespace-pre-wrap')
 
-    // Timeline
-    this.timelineCard = page.locator('h2').filter({ hasText: /处理时间线/ }).locator('xpath=..')
+    // Timeline — h2 → flex div → p-6 div → Card
+    this.timelineCard = page.locator('h2').filter({ hasText: /处理时间线/ }).locator('xpath=../../..')
     this.timelineItems = this.timelineCard.locator('.flex.items-start.gap-4')
 
     // Internal notes

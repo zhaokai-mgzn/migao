@@ -14,28 +14,32 @@ import { ChatPage } from '../../pages/chat/chat.page'
  */
 
 /** 通用：发送消息并等待 AI 回复 */
-async function sendAndWait(page: ChatPage, message: string, waitMs = 8000) {
+async function sendAndWait(page: ChatPage, message: string, _waitMs?: number) {
   await page.messageInput.fill(message)
   await page.sendBtn.click()
-  await page.page.waitForTimeout(waitMs)
+  // 短暂等待让 SSE 流启动，实际内容由 expectAiReply 轮询等待
+  await page.page.waitForTimeout(2000)
 }
 
-/** 通用：检查 AI 回复气泡中有内容 */
+/** 通用：检查 AI 回复气泡中有内容（工具调用可能需要 15-45 秒） */
 async function expectAiReply(page: ChatPage) {
   const aiBubble = page.page.locator('.bg-white.border.border-gray-200.rounded-bl-md').last()
   await expect(aiBubble).toBeVisible({ timeout: 15_000 })
-  const text = await aiBubble.textContent()
-  expect(text?.trim().length).toBeGreaterThan(0)
+  await expect(async () => {
+    const text = await aiBubble.textContent()
+    expect(text?.trim().length).toBeGreaterThan(0)
+  }).toPass({ timeout: 60_000 })
 }
 
 /** 通用：检查消息列表最后一条 AI 消息中包含指定文本 */
 async function expectAiMessageContains(page: ChatPage, text: string | RegExp) {
   const messages = page.page.locator('.bg-white.border.border-gray-200.rounded-bl-md')
   const lastMsg = messages.last()
-  await expect(lastMsg).toContainText(text, { timeout: 15_000 })
+  await expect(lastMsg).toContainText(text, { timeout: 30_000 })
 }
 
 test.describe('米宝 C 端工具调用', () => {
+  test.setTimeout(120_000)
   let chat: ChatPage
 
   test.beforeEach(async ({ page }) => {
@@ -76,9 +80,10 @@ test.describe('米宝 C 端工具调用', () => {
 
   test('product_detail - 查看商品详情', async () => {
     // 先搜索商品
-    await sendAndWait(chat, '帮我看看有什么窗帘', 10000)
+    await sendAndWait(chat, '帮我看看有什么窗帘')
+    await expectAiReply(chat)
     // 再询问详情
-    await sendAndWait(chat, '帮我看看第一个商品的详细信息', 10000)
+    await sendAndWait(chat, '帮我看看第一个商品的详细信息')
     await expectAiReply(chat)
   })
 

@@ -60,8 +60,13 @@ youke/
 
 1. **标题格式**：`[角色] 简要描述`，如 `[frontend] 新增商品管理页面`
 2. **描述内容**：变更说明 + 测试方式 + 影响范围
-3. **Review 要求**：至少 1 人 review 后合并
+3. **Review 要求（强制）**：
+   - **所有 PR 必须经过至少 1 人 Review approve 后才能合并，无例外**
+   - AI 提交的 PR 必须请求 `zhaokai-mgzn` 进行 Review
+   - 使用 `gh pr review-request` 请求 Review，`gh pr view --json reviews` 检查状态
+   - Review 中提出的问题必须先修复，再次通过 Review 后才能合并
 4. **合并方式**：Squash merge 保持 main 分支整洁
+5. **合并前必须全部通过**：Review approve + lint + test + build
 
 ### 提交规范
 

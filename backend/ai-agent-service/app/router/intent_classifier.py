@@ -1,5 +1,5 @@
 """
-L2 小模型意图分类 - 使用 qwen-turbo 进行意图识别
+意图分类 - 使用 qwen3.6-plus 进行意图识别
 """
 
 import json
@@ -16,7 +16,7 @@ from app.router.intent_config import IntentType, IntentResult
 
 
 # DashScope OpenAI 兼容接口地址
-DASHSCOPE_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+DASHSCOPE_BASE_URL = "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
 
 # 每个意图的描述（用于动态构建分类器 Prompt）
 _INTENT_DESCRIPTIONS: dict[str, str] = {
@@ -155,7 +155,7 @@ class IntentClassifier:
     """
     L2 意图分类器
     
-    使用 qwen-turbo 小模型进行意图分类，
+    使用 qwen3.6-plus进行意图分类，
     相比大模型调用成本更低、速度更快。
     """
 
