@@ -1,8 +1,9 @@
 """
-L2 小模型意图分类 - 使用 qwen-turbo 进行意图识别
+L2 小模型意图分类 - 使用轻量模型进行意图识别（qwen3.6-flash，关闭思考模式）
 """
 
 import json
+import re
 from functools import lru_cache
 from typing import Optional
 
@@ -245,14 +246,42 @@ class IntentClassifier:
             )
 
     def _parse_response(self, content: str) -> IntentResult:
-        """解析模型返回的 JSON 结果"""
-        try:
-            # 尝试提取 JSON（模型可能会包裹在 markdown 代码块中）
-            text = content.strip()
-            if text.startswith("```"):
-                text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+        """解析模型返回的 JSON 结果
 
-            data = json.loads(text)
+        兼容多种模型输出格式（Fixes #146）：
+        - 纯 JSON: {"intent": "...", "confidence": 0.9}
+        - markdown 代码块: ```json\n{...}\n``` 或 ```{...}```
+        - 空 content（思考模型 reasoning 耗尽 token 的边界情况）
+        - 嵌入在说明文字中的 JSON
+        """
+        try:
+            if not content or not content.strip():
+                logger.warning("Intent classifier returned empty content")
+                return IntentResult(
+                    intent=IntentType.GENERAL,
+                    confidence=0.5,
+                    source="default",
+                    matched_keywords=[],
+                )
+
+            text = content.strip()
+
+            # 1) 去除 markdown 代码块包裹（```json ... ``` 或 ``` ... ```）
+            code_block = re.search(r"```(?:json|JSON)?\s*\n?(.*?)```", text, re.DOTALL)
+            if code_block:
+                text = code_block.group(1).strip()
+
+            # 2) 直接尝试解析
+            try:
+                data = json.loads(text)
+            except json.JSONDecodeError:
+                # 3) 兜底：从文本中提取第一个 {...} 对象
+                json_match = re.search(r"\{[^{}]*\}", text)
+                if json_match:
+                    data = json.loads(json_match.group())
+                else:
+                    raise json.JSONDecodeError("No JSON object found", text, 0)
+
             intent_str = data.get("intent", "general")
             confidence = float(data.get("confidence", 0.5))
 
@@ -270,8 +299,8 @@ class IntentClassifier:
                 matched_keywords=[],
             )
 
-        except (json.JSONDecodeError, KeyError, TypeError) as e:
-            logger.warning(f"Failed to parse classifier response: {content}, error: {e}")
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
+            logger.warning(f"Failed to parse classifier response: {content[:200]}, error: {e}")
             return IntentResult(
                 intent=IntentType.GENERAL,
                 confidence=0.5,
