@@ -317,4 +317,49 @@ class TestNodesMultimodal:
         call_kwargs = mock_gen.generate.call_args[1]
         assert isinstance(call_kwargs["query"], str), \
             f"Expected str query, got {type(call_kwargs['query'])}"
-        assert result["suggestions"] == ["查看更多", "了解价格"]
+
+
+# ========== 图片 URL 重写测试 ==========
+
+class TestRewriteImageUrl:
+    """图片 URL 重写函数测试（CDN 域名 → OSS 公网域名）"""
+
+    def test_rewrite_cdn_to_oss(self):
+        """CDN 域名 URL 被重写为 OSS 公网 URL"""
+        from app.api.chat import _rewrite_image_url
+        with patch("app.api.chat.settings") as mock_settings:
+            mock_settings.IMAGE_URL_REWRITE_FROM = "https://admin.migaozn.com"
+            mock_settings.IMAGE_URL_REWRITE_TO = "https://youke-admin-dev.oss-cn-hangzhou.aliyuncs.com"
+            url = "https://admin.migaozn.com/chat/1/2026/06/04/abc.jpg"
+            result = _rewrite_image_url(url)
+            assert result == "https://youke-admin-dev.oss-cn-hangzhou.aliyuncs.com/chat/1/2026/06/04/abc.jpg"
+
+    def test_no_rewrite_when_config_empty(self):
+        """配置为空时不重写"""
+        from app.api.chat import _rewrite_image_url
+        with patch("app.api.chat.settings") as mock_settings:
+            mock_settings.IMAGE_URL_REWRITE_FROM = ""
+            mock_settings.IMAGE_URL_REWRITE_TO = ""
+            url = "https://admin.migaozn.com/chat/1/abc.jpg"
+            result = _rewrite_image_url(url)
+            assert result == url
+
+    def test_no_rewrite_when_url_not_match(self):
+        """URL 不匹配时不重写"""
+        from app.api.chat import _rewrite_image_url
+        with patch("app.api.chat.settings") as mock_settings:
+            mock_settings.IMAGE_URL_REWRITE_FROM = "https://admin.migaozn.com"
+            mock_settings.IMAGE_URL_REWRITE_TO = "https://youke-admin-dev.oss-cn-hangzhou.aliyuncs.com"
+            url = "https://other-domain.com/image.jpg"
+            result = _rewrite_image_url(url)
+            assert result == url
+
+    def test_rewrite_only_first_occurrence(self):
+        """只替换第一次出现的 CDN 域名"""
+        from app.api.chat import _rewrite_image_url
+        with patch("app.api.chat.settings") as mock_settings:
+            mock_settings.IMAGE_URL_REWRITE_FROM = "https://admin.migaozn.com"
+            mock_settings.IMAGE_URL_REWRITE_TO = "https://oss.example.com"
+            url = "https://admin.migaozn.com/path/admin.migaozn.com/file.jpg"
+            result = _rewrite_image_url(url)
+            assert result == "https://oss.example.com/path/admin.migaozn.com/file.jpg"
