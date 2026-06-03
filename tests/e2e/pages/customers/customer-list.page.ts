@@ -42,11 +42,10 @@ export class CustomerListPage extends BasePage {
     this.pageTitle = page.locator('h1').filter({ hasText: /客户管理/ })
     this.tagManagerButton = page.getByRole('button', { name: /标签管理/ })
 
-    // Search bar — scope selects to the search bar to avoid matching pagination selects
-    const searchBar = page.locator('.bg-gray-50.p-4.rounded-lg').first()
+    // Search bar
     this.keywordInput = page.locator('input[placeholder*="客户名"]')
-    this.channelSelect = searchBar.locator('select').first()
-    this.vipLevelSelect = searchBar.locator('select').last()
+    this.channelSelect = page.locator('select').first()
+    this.vipLevelSelect = page.locator('select').last()
     this.searchButton = page.getByRole('button', { name: /搜索/ })
     this.resetButton = page.getByRole('button', { name: /重置/ })
 

@@ -37,7 +37,7 @@ const MOCK_ORDER = {
 
 test.describe('订单发货', () => {
   test.beforeEach(async ({ page }) => {
-    await page.route('**/api/admin/orders/order_ship_001', async (route) => {
+    await page.route('**/api/orders/order_ship_001', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -55,11 +55,11 @@ test.describe('订单发货', () => {
     })
 
     test('应显示面包屑导航', async ({ page }) => {
-      // 面包屑在页面顶部渲染
-      await expect(page.getByRole('button', { name: '首页' })).toBeVisible()
-      await expect(page.getByRole('button', { name: '订单列表' })).toBeVisible()
-      // 使用 heading 角色避免与面包屑文本冲突
-      await expect(page.getByRole('heading', { name: '商品发货' })).toBeVisible()
+      await expect(page.getByText('首页')).toBeVisible()
+      await expect(page.getByText('订单管理')).toBeVisible()
+      await expect(page.getByText('订单列表')).toBeVisible()
+      await expect(page.getByText('订单详情')).toBeVisible()
+      await expect(page.getByText('商品发货')).toBeVisible()
     })
   })
 
@@ -108,7 +108,8 @@ test.describe('订单发货', () => {
 
     test('应选择"无需物流"隐藏物流字段', async ({ page }) => {
       // 选择"无需物流"
-      await page.getByRole('radio', { name: '无需物流' }).click()
+      const noneRadio = page.getByText('无需物流').locator('..').locator('input[type="radio"]')
+      await noneRadio.click()
       // 物流公司和快递单号应隐藏
       await expect(page.locator('select')).toBeHidden()
       await expect(page.locator('input[placeholder="请输入快递单号"]')).toBeHidden()
@@ -128,12 +129,12 @@ test.describe('订单发货', () => {
     test('填写快递单号后应成功发货', async ({ page }) => {
       // 拦截发货 API
       let shipCalled = false
-      await page.route('**/api/admin/orders/order_ship_001/logistics', async (route) => {
+      await page.route('**/api/orders/order_ship_001/logistics', async (route) => {
         shipCalled = true
         await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 200 }) })
       })
 
-      await page.route('**/api/admin/orders/order_ship_001/status', async (route) => {
+      await page.route('**/api/orders/order_ship_001/status', async (route) => {
         await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 200 }) })
       })
 
@@ -148,17 +149,18 @@ test.describe('订单发货', () => {
 
     test('无需物流模式应直接提交成功', async ({ page }) => {
       let shipCalled = false
-      await page.route('**/api/admin/orders/order_ship_001/logistics', async (route) => {
+      await page.route('**/api/orders/order_ship_001/logistics', async (route) => {
         shipCalled = true
         await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 200 }) })
       })
 
-      await page.route('**/api/admin/orders/order_ship_001/status', async (route) => {
+      await page.route('**/api/orders/order_ship_001/status', async (route) => {
         await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 200 }) })
       })
 
       // 选择无需物流
-      await page.getByRole('radio', { name: '无需物流' }).click()
+      const noneRadio = page.getByText('无需物流').locator('..').locator('input[type="radio"]')
+      await noneRadio.click()
 
       await page.getByRole('button', { name: '确认发货' }).click()
       await page.waitForTimeout(500)

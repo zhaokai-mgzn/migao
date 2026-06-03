@@ -83,7 +83,7 @@ const MOCK_PRODUCTS = [
 
 async function mockProductApis(page: import('@playwright/test').Page) {
   // GET /api/products (list)
-  await page.route('**/api/admin/products*', async (route) => {
+  await page.route('**/api/products*', async (route) => {
     if (route.request().method() !== 'GET') return
     const url = new URL(route.request().url())
     // Filter logic based on query params
@@ -126,7 +126,7 @@ async function mockProductApis(page: import('@playwright/test').Page) {
   })
 
   // POST /api/products/*/status (single update)
-  await page.route('**/api/admin/products/*/status', async (route) => {
+  await page.route('**/api/products/*/status', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -135,7 +135,7 @@ async function mockProductApis(page: import('@playwright/test').Page) {
   })
 
   // DELETE /api/products/*
-  await page.route('**/api/admin/products/p*', async (route) => {
+  await page.route('**/api/products/p*', async (route) => {
     if (route.request().method() === 'DELETE') {
       await route.fulfill({
         status: 200,
@@ -146,7 +146,7 @@ async function mockProductApis(page: import('@playwright/test').Page) {
   })
 
   // POST /api/products/batch/*
-  await page.route('**/api/admin/products/batch/*', async (route) => {
+  await page.route('**/api/products/batch/*', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -155,7 +155,7 @@ async function mockProductApis(page: import('@playwright/test').Page) {
   })
 
   // GET /api/products/export
-  await page.route('**/api/admin/products/export*', async (route) => {
+  await page.route('**/api/products/export*', async (route) => {
     await route.fulfill({
       status: 200,
       headers: { 'Content-Type': 'application/octet-stream' },
@@ -213,8 +213,7 @@ test.describe('商品列表页面', () => {
   })
 
   test('按状态筛选', async ({ page }) => {
-    // Scope to the first select (status filter in search bar), not the pagination select
-    await page.locator('select').first().selectOption('on_sale')
+    await page.locator('select').selectOption('on_sale')
     await page.getByRole('button', { name: /搜索/ }).click()
     await page.waitForTimeout(500)
 
@@ -241,7 +240,7 @@ test.describe('商品列表页面', () => {
     // 填入搜索条件
     await page.fill('input[placeholder="请输入商品ID"]', 'p001')
     await page.fill('input[placeholder="请输入商品标题"]', '遮光')
-    await page.locator('select').first().selectOption('on_sale')
+    await page.locator('select').selectOption('on_sale')
 
     // 点击重置
     await page.getByRole('button', { name: /重置/ }).click()
@@ -250,7 +249,7 @@ test.describe('商品列表页面', () => {
     // 搜索条件应被清空
     await expect(page.locator('input[placeholder="请输入商品ID"]').first()).toHaveValue('')
     await expect(page.locator('input[placeholder="请输入商品标题"]')).toHaveValue('')
-    await expect(page.locator('select').first()).toHaveValue('')
+    await expect(page.locator('select')).toHaveValue('')
   })
 
   test('回车键触发搜索', async ({ page }) => {
@@ -265,14 +264,15 @@ test.describe('商品列表页面', () => {
   test('搜索后 URL 同步查询参数', async ({ page }) => {
     await page.fill('input[placeholder="请输入商品标题"]', '遮光')
     await page.getByRole('button', { name: /搜索/ }).click()
-    // Wait for URL to update
-    await page.waitForURL(/name=/, { timeout: 5_000 })
+    await page.waitForTimeout(500)
+
+    // URL 应包含 name 参数
     expect(page.url()).toContain('name=')
   })
 
   test('搜索 API 调用验证参数传递', async ({ page }) => {
     let capturedUrl = ''
-    await page.route('**/api/admin/products*', async (route) => {
+    await page.route('**/api/products*', async (route) => {
       if (route.request().method() === 'GET') {
         capturedUrl = route.request().url()
       }
@@ -309,32 +309,36 @@ test.describe('商品列表页面', () => {
   // ========== 排序 (11-14) ==========
 
   test('按创建时间排序', async ({ page }) => {
-    // 表头 "创建时间" 在 <th> 中，使用 role 定位以避免匹配搜索表单的同名 label
-    const createdAtHeader = page.locator('th').filter({ hasText: '创建时间' })
+    // 表头 "创建时间" 可点击排序
+    const createdAtHeader = page.getByText('创建时间').first()
     await createdAtHeader.click()
-    // Wait for URL to update via router.replace
-    await page.waitForURL(/sortBy=createdAt/, { timeout: 5_000 })
+    await page.waitForTimeout(500)
+
+    // 验证 URL 包含 sortBy=createdAt
     expect(page.url()).toContain('sortBy=createdAt')
   })
 
   test('按库存排序', async ({ page }) => {
-    const stockHeader = page.locator('th').filter({ hasText: '库存' })
+    const stockHeader = page.getByText('库存').first()
     await stockHeader.click()
-    await page.waitForURL(/sortBy=stock/, { timeout: 5_000 })
+    await page.waitForTimeout(500)
+
     expect(page.url()).toContain('sortBy=stock')
   })
 
   test('按销量排序', async ({ page }) => {
-    const salesHeader = page.locator('th').filter({ hasText: '销量' })
+    const salesHeader = page.getByText('销量').first()
     await salesHeader.click()
-    await page.waitForURL(/sortBy=salesCount/, { timeout: 5_000 })
+    await page.waitForTimeout(500)
+
     expect(page.url()).toContain('sortBy=salesCount')
   })
 
   test('按销售额排序', async ({ page }) => {
-    const salesAmountHeader = page.locator('th').filter({ hasText: '销售额' })
+    const salesAmountHeader = page.getByText('销售额').first()
     await salesAmountHeader.click()
-    await page.waitForURL(/sortBy=salesAmount/, { timeout: 5_000 })
+    await page.waitForTimeout(500)
+
     expect(page.url()).toContain('sortBy=salesAmount')
   })
 
@@ -342,7 +346,7 @@ test.describe('商品列表页面', () => {
 
   test('翻页操作', async ({ page }) => {
     // Mock 更多数据以展示分页
-    await page.route('**/api/admin/products*', async (route) => {
+    await page.route('**/api/products*', async (route) => {
       if (route.request().method() !== 'GET') return
       const url = new URL(route.request().url())
       const pg = Number(url.searchParams.get('page')) || 1
@@ -382,7 +386,7 @@ test.describe('商品列表页面', () => {
 
   test('每页条数切换', async ({ page }) => {
     // Mock 大量数据
-    await page.route('**/api/admin/products*', async (route) => {
+    await page.route('**/api/products*', async (route) => {
       if (route.request().method() !== 'GET') return
       const url = new URL(route.request().url())
       const pg = Number(url.searchParams.get('page')) || 1

@@ -63,9 +63,9 @@ variable "dashvector_api_key" {
 }
 
 variable "dashvector_endpoint" {
-  description = "DashVector 服务端点"
+  description = "DashVector 服务端点（实例地址）"
   type        = string
-  default     = "https://dashvector.cn-hangzhou.aliyuncs.com"
+  default     = "https://vrs-cn-hao4rohwn0002h.dashvector.cn-hangzhou.aliyuncs.com"
 }
 
 variable "internal_service_secret" {
@@ -75,9 +75,9 @@ variable "internal_service_secret" {
 }
 
 variable "cors_allowed_origins" {
-  description = "CORS 允许的前端域名"
+  description = "CORS 允许的前端域名（逗号分隔）"
   type        = string
-  default     = "https://admin.migaozn.com"
+  default     = "https://merchant.migaozn.com,https://admin.migaozn.com"
 }
 
 variable "cookie_domain" {
@@ -188,6 +188,75 @@ locals {
   redis_port              = "6379"
 }
 
+# ==================== SAE 环境变量（唯一真相源）====================
+# 非敏感值直接写在 map 里，敏感值从 variable 注入。
+# 新增环境变量只需在此加一行，无需定义 variable 或改 tfvars。
+
+locals {
+  admin_api_envs = merge({
+    # 应用
+    "SPRING_PROFILES_ACTIVE" = "prod"
+    # 数据库
+    "RDS_HOST"     = alicloud_db_instance.postgres.connection_string
+    "RDS_PORT"     = "5432"
+    "RDS_DB"       = "ai_customer_service"
+    "RDS_USER"     = "app_user"
+    "RDS_PASSWORD" = var.db_password
+    # Redis
+    "REDIS_HOST"     = local.redis_connection_domain
+    "REDIS_PORT"     = "6379"
+    "REDIS_PASSWORD" = var.redis_password
+    # JWT
+    "JWT_PRIVATE_KEY" = "classpath:rsa/private.pem"
+    "JWT_PUBLIC_KEY"  = "classpath:rsa/public.pem"
+    # 内部通信
+    "SERVICE_TOKEN_SECRET" = var.internal_service_secret
+    # CORS / Cookie
+    "CORS_ALLOWED_ORIGINS" = var.cors_allowed_origins
+    "COOKIE_DOMAIN"        = var.cookie_domain
+    # 微信小程序
+    "WECHAT_MINI_APPID"    = var.wechat_mini_appid
+    "WECHAT_MINI_SECRET"   = var.wechat_mini_appsecret
+    # OSS
+    "OSS_ENDPOINT"        = "oss-cn-hangzhou-internal.aliyuncs.com"
+    "OSS_ACCESS_KEY_ID"   = var.oss_access_key_id
+    "OSS_ACCESS_KEY_SECRET" = var.oss_access_key_secret
+    "OSS_BUCKET_NAME"     = alicloud_oss_bucket.admin_frontend.bucket
+    "OSS_URL_PREFIX"      = "https://admin.migaozn.com"
+  })
+
+  ai_agent_envs = merge({
+    # 应用基础
+    "DEBUG"   = "false"
+    "HOST"    = "0.0.0.0"
+    "PORT"    = "8000"
+    "APP_ENV" = var.environment
+    # 数据库
+    "DATABASE_URL" = "postgresql+asyncpg://app_user:${var.db_password}@${alicloud_db_instance.postgres.connection_string}:5432/ai_customer_service"
+    "REDIS_URL"    = "redis://:${var.redis_password}@${local.redis_connection_domain}:${local.redis_port}/0"
+    # DashScope LLM
+    "DASHSCOPE_API_KEY"         = var.dashscope_api_key
+    "DASHSCOPE_BASE_URL"        = "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
+    "DASHSCOPE_MODEL"           = "qwen3.7-max"
+    "DASHSCOPE_EMBEDDING_MODEL" = "text-embedding-v3"
+    # DashVector
+    "DASHVECTOR_API_KEY"    = var.dashvector_api_key
+    "DASHVECTOR_ENDPOINT"   = var.dashvector_endpoint
+    "DASHVECTOR_COLLECTION" = "ai_customer_service"
+    # 内部通信
+    "ADMIN_API_BASE_URL" = "http://172.16.0.122"
+    "SERVICE_TOKEN"      = var.internal_service_secret
+    "JWT_PUBLIC_KEY"     = var.jwt_public_key
+    # 物流查询
+    "LOGISTICS_API_URL" = "https://wuliu.market.alicloudapi.com/kdi"
+    "LOGISTICS_APPCODE" = "d9fca154dd9c47578736b2de19056eb6"
+    # SSE / CORS
+    "SSE_TIMEOUT"          = "300"
+    "SSE_PING_INTERVAL"    = "30"
+    "CORS_ALLOWED_ORIGINS" = var.cors_allowed_origins
+  })
+}
+
 # ==================== ACR 容器镜像仓库 ====================
 # 注意：ACR 个人版需要先在控制台手动激活，Terraform 无法自动初始化
 # 激活后可取消注释并重新 apply
@@ -237,31 +306,7 @@ resource "alicloud_sae_application" "admin_api" {
   vswitch_id        = alicloud_vswitch.main.id
   security_group_id = alicloud_security_group.main.id
 
-  envs = jsonencode([
-    { name = "SPRING_PROFILES_ACTIVE", value = "prod" },
-    { name = "RDS_HOST", value = alicloud_db_instance.postgres.connection_string },
-    { name = "RDS_PORT", value = "5432" },
-    { name = "RDS_DB", value = "ai_customer_service" },
-    { name = "RDS_USER", value = "app_user" },
-    { name = "RDS_PASSWORD", value = var.db_password },
-    { name = "REDIS_HOST", value = local.redis_connection_domain },
-    { name = "REDIS_PORT", value = "6379" },
-    { name = "REDIS_PASSWORD", value = var.redis_password },
-    { name = "JWT_PRIVATE_KEY", value = "classpath:rsa/private.pem" },
-    { name = "JWT_PUBLIC_KEY", value = "classpath:rsa/public.pem" },
-    { name = "SERVICE_TOKEN_SECRET", value = var.internal_service_secret },
-    { name = "CORS_ALLOWED_ORIGINS", value = var.cors_allowed_origins },
-    { name = "COOKIE_DOMAIN", value = var.cookie_domain },
-    { name = "WECHAT_MINI_APPID", value = var.wechat_mini_appid },
-    { name = "WECHAT_MINI_SECRET", value = var.wechat_mini_appsecret },
-    { name = "OSS_ENDPOINT", value = "oss-cn-hangzhou-internal.aliyuncs.com" },
-    { name = "OSS_ACCESS_KEY_ID", value = var.oss_access_key_id },
-    { name = "OSS_ACCESS_KEY_SECRET", value = var.oss_access_key_secret },
-    { name = "OSS_BUCKET_NAME", value = alicloud_oss_bucket.admin_frontend.bucket },
-    # OSS_URL_PREFIX 用于后端拼接对外可访问的图片 URL；使用 CNAME 自定义域名（已绑定到该 bucket，可后续走 CDN）
-    # 若未配置，后端会回退到 OSS_ENDPOINT 拼接内网 URL，浏览器无法访问
-    { name = "OSS_URL_PREFIX", value = "https://admin.migaozn.com" }
-  ])
+  envs = jsonencode([for k, v in local.admin_api_envs : { name = k, value = v }])
 
   liveness = jsonencode({
     httpGet = {
@@ -307,20 +352,7 @@ resource "alicloud_sae_application" "ai_agent_service" {
   vswitch_id        = alicloud_vswitch.main.id
   security_group_id = alicloud_security_group.main.id
 
-  # depends_on = [alicloud_sae_application.admin_api]  # 暂时移除依赖，允许独立创建
-
-  envs = jsonencode([
-    { name = "DATABASE_URL", value = "postgresql+asyncpg://app_user:${var.db_password}@${alicloud_db_instance.postgres.connection_string}:5432/ai_customer_service" },
-    { name = "REDIS_URL", value = "redis://:${var.redis_password}@${local.redis_connection_domain}:${local.redis_port}/0" },
-    { name = "DASHSCOPE_API_KEY", value = var.dashscope_api_key },
-    { name = "DASHVECTOR_API_KEY", value = var.dashvector_api_key },
-    { name = "DASHVECTOR_ENDPOINT", value = var.dashvector_endpoint },
-    { name = "ADMIN_API_BASE_URL", value = "http://172.16.0.122" },
-    { name = "SERVICE_TOKEN", value = var.internal_service_secret },
-    { name = "JWT_PUBLIC_KEY", value = var.jwt_public_key },
-    { name = "CORS_ALLOWED_ORIGINS", value = var.cors_allowed_origins },
-    { name = "APP_ENV", value = var.environment }
-  ])
+  envs = jsonencode([for k, v in local.ai_agent_envs : { name = k, value = v }])
 
   liveness = jsonencode({
     httpGet = {

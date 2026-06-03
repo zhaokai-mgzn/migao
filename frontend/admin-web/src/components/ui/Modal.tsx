@@ -55,7 +55,7 @@ const Modal = ({
   const widthStyle = typeof width === 'number' ? `${width}px` : width
 
   return (
-    <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label={title || undefined}>
+    <div className="fixed inset-0 z-50">
       {/* 遮罩层 */}
       <div
         className="absolute inset-0 bg-black/45 transition-opacity"

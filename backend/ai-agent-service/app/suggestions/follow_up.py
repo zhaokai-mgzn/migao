@@ -5,7 +5,7 @@
 
 策略：
 - 高频意图使用预设模板（<5ms）
-- 涉及具体实体时使用 qwen3.6-plus 动态生成（100-200ms）
+- 涉及具体实体时使用 qwen-turbo 动态生成（100-200ms）
 - 超时或失败时返回预设模板兜底
 """
 
@@ -18,7 +18,7 @@ from langchain_core.messages import HumanMessage
 from loguru import logger
 
 from app.config import settings
-from app.llm import LLMFactory, cost_tracker
+from app.llm import LLMFactory, DASHSCOPE_API_KEY, cost_tracker
 
 
 # 预定义建议模板（高频意图直接返回，无需调用模型）
@@ -94,8 +94,8 @@ class FollowUpSuggestionGenerator:
     """后续问题建议生成器"""
 
     def __init__(self):
-        self._api_key = settings.DASHSCOPE_API_KEY
-        self._model = settings.INTENT_MODEL  # qwen3.6-plus
+        self._api_key = DASHSCOPE_API_KEY
+        self._model = settings.INTENT_MODEL  # qwen-turbo
         self._llm = None  # 懒加载 LangChain LLM 实例
 
     async def generate(
@@ -146,7 +146,7 @@ class FollowUpSuggestionGenerator:
     async def _generate_dynamic(
         self, query: str, answer: str
     ) -> Optional[list[str]]:
-        """使用 qwen3.6-plus 动态生成后续问题建议（走 LangChain 统一接口）"""
+        """使用 qwen-turbo 动态生成后续问题建议（走 LangChain 统一接口）"""
         prompt = DYNAMIC_PROMPT.format(
             query=query[:200],  # 截断避免过长
             answer=answer[:500],

@@ -16,11 +16,6 @@ from typing import Optional, Dict, Any, List
 from dataclasses import dataclass, field
 
 from loguru import logger
-from langchain_openai import ChatOpenAI
-
-
-# DashScope OpenAI 兼容接口地址
-DASHSCOPE_BASE_URL = "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
 
 
 class ConversationStage(str, Enum):
@@ -414,7 +409,7 @@ class ConversationTracker:
         self, history: List[Dict[str, Any]], session_id: str
     ) -> str:
         """
-        使用小模型（qwen3.6-plus）对早期历史生成摘要
+        使用小模型（qwen-turbo）对早期历史生成摘要
 
         Args:
             history: 需要摘要的对话历史
@@ -423,8 +418,6 @@ class ConversationTracker:
         Returns:
             摘要文本
         """
-        from app.config import settings
-
         # 构建待摘要文本
         text_parts: list[str] = []
         for msg in history:
@@ -454,13 +447,8 @@ class ConversationTracker:
         )
 
         try:
-            llm = ChatOpenAI(
-                model=settings.INTENT_MODEL,  # qwen3.6-plus
-                api_key=settings.DASHSCOPE_API_KEY,
-                base_url=DASHSCOPE_BASE_URL,
-                temperature=0.3,
-                max_tokens=512,
-            )
+            from app.llm import LLMFactory
+            llm = LLMFactory.create_summary_llm(temperature=0.3, max_tokens=512)
             response = await llm.ainvoke(summarize_prompt)
             summary = response.content.strip()
             logger.info(

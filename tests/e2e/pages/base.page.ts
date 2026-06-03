@@ -652,10 +652,10 @@ export class BasePage {
   // Utility
   // ════════════════════════════════════════
 
-  /** Take a screenshot of the current page. Outputs to tests/tmp/screenshots/. */
+  /** Take a screenshot of the current page. */
   async screenshot(name: string): Promise<Buffer> {
     return this.page.screenshot({
-      path: `tests/tmp/screenshots/${name}.png`,
+      path: `tests/e2e/screenshots/${name}.png`,
     })
   }
 

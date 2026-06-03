@@ -16,13 +16,6 @@ terraform.tfstate.*
 .idea/
 *.swp
 *.swo
-*.classpath
-*.project
-*.factorypath
-.settings/
-
-# TypeScript build cache
-tsconfig.tsbuildinfo
 
 # OS
 .DS_Store
@@ -52,12 +45,14 @@ __pycache__/
 .coverage
 htmlcov/
 
-# Playwright & E2E 测试临时文件（统一收拢到 tests/tmp/，rm -rf tests/tmp/ 一键清理）
-tests/tmp/
-**/playwright-report/
+# Playwright
+tests/e2e/.auth/
+tests/playwright-report/
+tests/test-results/
+tests/blob-report/
+
+# Screenshots
 e2e-test-*.png
-test-results/
-.playwright-mcp/
 
 # 日志
 *.log

@@ -33,7 +33,6 @@ from app.llm import (
     select_model,
 )
 from app.llm.factory import DASHSCOPE_BASE_URL
-from app.llm.retry_policy import StreamingTimeoutError
 
 
 # =============================================================================
@@ -410,32 +409,6 @@ class TestCallWithRetry:
         with pytest.raises(CircuitBreakerOpenError):
             await call_with_retry(_factory)
         assert call_count["n"] == 1
-
-    async def test_streaming_timeout_not_retried(self, fast_retry):
-        """StreamingTimeoutError（SSE 流解析超时）→ 不重试，直接抛出"""
-        call_count = {"n": 0}
-
-        async def _factory():
-            call_count["n"] += 1
-            raise StreamingTimeoutError("LLM SSE stream timed out")
-
-        with pytest.raises(StreamingTimeoutError):
-            await call_with_retry(_factory)
-        # 关键断言：只调用 1 次，不重试
-        assert call_count["n"] == 1
-
-    async def test_regular_timeout_still_retried(self, fast_retry):
-        """普通 asyncio.TimeoutError 仍可重试（区分 StreamingTimeoutError）"""
-        call_count = {"n": 0}
-
-        async def _factory():
-            call_count["n"] += 1
-            raise asyncio.TimeoutError()
-
-        with pytest.raises(asyncio.TimeoutError):
-            await call_with_retry(_factory)
-        # asyncio.TimeoutError 重试 2 次 + 首次 = 3 次
-        assert call_count["n"] == 3
 
     async def test_max_attempts_respected(self, fast_retry, monkeypatch):
         """重试次数不超过 max_attempts；总尝试次数 = max_retries + 1"""

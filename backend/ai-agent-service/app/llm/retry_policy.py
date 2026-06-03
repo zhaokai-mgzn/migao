@@ -23,17 +23,6 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
-
-class StreamingTimeoutError(Exception):
-    """SSE 流式响应超时——通常是 API 返回了非标准错误事件导致流解析阻塞。
-
-    与 asyncio.TimeoutError 不同，此异常**不可重试**：
-    DashScope 在 streaming=True 模式下将 400 错误嵌入 SSE 流体内（event:error），
-    HTTP 状态码仍为 200，OpenAI SDK 无法识别，继续等待后续 chunk 导致阻塞。
-    重试同样的请求只会再次阻塞，不会成功。
-    """
-    pass
-
 # 可重试的 HTTP 状态码（瞬时错误）
 _RETRYABLE_STATUS: frozenset[int] = frozenset({429, 500, 502, 503, 504})
 
@@ -77,11 +66,6 @@ def _is_retryable(exc: BaseException) -> bool:
     # 熔断器开路：立即向上传播，不重试
     # 这里用字符串判断避免循环依赖
     if type(exc).__name__ == "CircuitBreakerOpenError":
-        return False
-
-    # SSE 流式响应超时：API 返回了非标准错误事件（如 DashScope 400），
-    # 重试同样的请求只会再次阻塞，不可重试
-    if isinstance(exc, StreamingTimeoutError):
         return False
 
     if isinstance(exc, asyncio.TimeoutError):
