@@ -61,7 +61,7 @@ class Settings(BaseSettings):
     DASHSCOPE_VISION_MODEL: str = "qwen3.6-plus"        # 图片识别模型
     DASHSCOPE_VISION_ENABLED: bool = True
 
-    SEMANTIC_CACHE_ENABLED: bool = True
+    SEMANTIC_CACHE_ENABLED: bool = False  # Embedding API key 未就绪，暂时关闭
     SEMANTIC_CACHE_SIMILARITY_THRESHOLD: float = 0.95
     SEMANTIC_CACHE_MAX_ENTRIES: int = 1000
 

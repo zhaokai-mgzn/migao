@@ -158,19 +158,46 @@ class LogisticsTrackTool(BaseTool):
         order_id: str,
     ) -> ToolResult:
         """通过订单号查询物流
-        
+
         Args:
             context: Tool 执行上下文
-            order_id: 订单号
-            
+            order_id: 订单号（如 ORD-20260531-4186447007）
+
         Returns:
             ToolResult: 物流信息
         """
         try:
-            # 先查询订单获取物流单号
             client = get_admin_api_client()
+
+            # 判断是否为 UUID 格式，如果不是则先通过 keyword 搜索获取真实 UUID
+            import re
+            is_uuid = bool(re.match(r'^[0-9a-fA-F-]{36}$', order_id))
+
+            if not is_uuid:
+                # 订单号格式（如 ORD-xxx），通过 keyword 搜索获取 UUID
+                search_response = await client.get(
+                    "/api/admin/orders",
+                    params={"keyword": order_id, "page": 1, "size": 1},
+                    tenant_id=context.tenant_id,
+                    user_id=context.user_id,
+                )
+                search_data = search_response.get("data", {})
+                records = search_data.get("records", [])
+                if not records:
+                    return ToolResult(
+                        success=False,
+                        error="订单不存在",
+                        message="未找到该订单，请检查订单号",
+                    )
+                # 取第一条匹配的 UUID
+                actual_uuid = records[0].get("id")
+                logger.info(f"[logistics] Resolved order_no={order_id} → uuid={actual_uuid}")
+            else:
+                actual_uuid = order_id
+
+            # 用 UUID 查询订单详情获取物流单号
             order_response = await client.get(
-                f"/api/admin/orders/{order_id}",
+                f"/api/admin/orders/{actual_uuid}",
                 tenant_id=context.tenant_id,
                 user_id=context.user_id,
             )
