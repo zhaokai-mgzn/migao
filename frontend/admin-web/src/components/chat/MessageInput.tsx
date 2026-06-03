@@ -2,6 +2,7 @@
 
 import { useRef, useEffect, useState } from 'react'
 import { Send, Loader2, StopCircle, ImagePlus, X } from 'lucide-react'
+import NextImage from 'next/image'
 import { cn } from '@/lib/utils'
 import { useChatStore } from '@/store/chat'
 import { chatApi } from '@/lib/api'
@@ -138,10 +139,13 @@ export default function MessageInput() {
                 key={index}
                 className="relative group w-20 h-20 rounded-lg overflow-hidden border border-gray-200 bg-gray-50 flex-shrink-0"
               >
-                <img
+                <NextImage
                   src={img.localPreview || img.url}
                   alt={img.name}
+                  width={80}
+                  height={80}
                   className="w-full h-full object-cover"
+                  unoptimized
                 />
                 <button
                   onClick={() => removeImage(index)}

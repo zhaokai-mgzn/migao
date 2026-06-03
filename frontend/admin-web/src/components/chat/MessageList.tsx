@@ -10,6 +10,7 @@ import {
   AlertCircle,
   X,
 } from 'lucide-react'
+import NextImage from 'next/image'
 import { cn } from '@/lib/utils'
 import { useChatStore } from '@/store/chat'
 import ReactMarkdown from 'react-markdown'
@@ -255,11 +256,13 @@ function MessageImages({ images }: { images: string[] }) {
             onClick={() => setPreviewUrl(url)}
             className="block w-[120px] h-[120px] rounded-lg overflow-hidden border border-white/20 hover:opacity-90 transition-opacity flex-shrink-0"
           >
-            <img
+            <NextImage
               src={url}
               alt={`图片 ${idx + 1}`}
+              width={120}
+              height={120}
               className="w-full h-full object-cover"
-              loading="lazy"
+              unoptimized
             />
           </button>
         ))}
@@ -277,10 +280,13 @@ function MessageImages({ images }: { images: string[] }) {
           >
             <X className="w-6 h-6" />
           </button>
-          <img
+          <NextImage
             src={previewUrl}
             alt="预览"
+            width={1200}
+            height={900}
             className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg"
+            unoptimized
             onClick={(e) => e.stopPropagation()}
           />
         </div>
