@@ -254,6 +254,9 @@ locals {
     "SSE_TIMEOUT"          = "300"
     "SSE_PING_INTERVAL"    = "30"
     "CORS_ALLOWED_ORIGINS" = var.cors_allowed_origins
+    # 图片 URL 重写：CDN 域名 → OSS 公网域名（DashScope Vision API 需要公网可访问的 URL）
+    "IMAGE_URL_REWRITE_FROM" = "https://admin.migaozn.com"
+    "IMAGE_URL_REWRITE_TO"   = "https://${alicloud_oss_bucket.admin_frontend.bucket}.oss-cn-hangzhou.aliyuncs.com"
   })
 }
 

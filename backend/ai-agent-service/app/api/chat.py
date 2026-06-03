@@ -20,9 +20,10 @@ from fastapi.responses import StreamingResponse
 from loguru import logger
 
 from app.api.schemas import (
-    ChatSendRequest, 
+    ChatSendRequest,
     ChatSessionCreate,
 )
+from app.config import settings
 from app.api.sse import SSEEvent
 from app.memory.session_memory import SessionMemory
 from app.agents.customer_service_agent import (
@@ -72,13 +73,13 @@ def _convert_history_to_agent_format(messages: List[Dict[str, Any]]) -> List[Dic
             entry["content_type"] = content_type
         metadata = msg.get("metadata")
         if isinstance(metadata, dict) and metadata.get("images"):
-            entry["images"] = [url for url in metadata["images"] if _validate_image_url(url)]
+            entry["images"] = [_rewrite_image_url(url) for url in metadata["images"] if _validate_image_url(url)]
         elif isinstance(metadata, str):
             try:
                 import json
                 meta_parsed = json.loads(metadata)
                 if meta_parsed.get("images"):
-                    entry["images"] = [url for url in meta_parsed["images"] if _validate_image_url(url)]
+                    entry["images"] = [_rewrite_image_url(url) for url in meta_parsed["images"] if _validate_image_url(url)]
             except (json.JSONDecodeError, TypeError):
                 pass
         history.append(entry)
@@ -91,6 +92,26 @@ def _validate_image_url(url: str) -> bool:
         return False
     url = url.strip()
     return url.startswith("https://") or url.startswith("/api/files")
+
+
+def _rewrite_image_url(url: str) -> str:
+    """将图片 URL 从 CDN 域名重写为 OSS 公网域名
+
+    DashScope Vision API 需要公网可访问的 HTTPS URL。
+    admin-api 返回的图片 URL 使用 CDN 域名（如 https://admin.migaozn.com），
+    该域名可能未正确配置 DNS/CDN，导致 DashScope 无法访问。
+
+    通过配置 IMAGE_URL_REWRITE_FROM → IMAGE_URL_REWRITE_TO 实现 URL 替换。
+    """
+    if not settings.IMAGE_URL_REWRITE_FROM or not settings.IMAGE_URL_REWRITE_TO:
+        return url
+    if url.startswith(settings.IMAGE_URL_REWRITE_FROM):
+        return url.replace(
+            settings.IMAGE_URL_REWRITE_FROM,
+            settings.IMAGE_URL_REWRITE_TO,
+            1,
+        )
+    return url
 
 
 def _detect_card_type(tool_name: str, result: Dict[str, Any]) -> Optional[str]:
@@ -544,7 +565,7 @@ async def send_message(
                 for img_url in images:
                     user_message_content.append({
                         "type": "image_url",
-                        "image_url": {"url": img_url}
+                        "image_url": {"url": _rewrite_image_url(img_url)}
                     })
             else:
                 user_message_content = request.message

@@ -76,6 +76,14 @@ class Settings(BaseSettings):
     LLM_RETRY_MAX_ATTEMPTS: int = 2
     LLM_RETRY_BASE_DELAY_S: float = 0.5
 
+    # 图片 URL 重写：CDN 域名 → OSS 公网域名
+    # DashScope Vision API 需要公网可访问的 HTTPS URL，
+    # 但 admin-api 返回的图片 URL 使用 CDN 域名（如 https://admin.migaozn.com），
+    # 该域名可能未正确配置 DNS/CDN，导致 DashScope 无法访问。
+    # 配置后将自动替换：IMAGE_URL_REWRITE_FROM → IMAGE_URL_REWRITE_TO
+    IMAGE_URL_REWRITE_FROM: str = ""  # e.g., "https://admin.migaozn.com"
+    IMAGE_URL_REWRITE_TO: str = ""    # e.g., "https://youke-admin-dev.oss-cn-hangzhou.aliyuncs.com"
+
     model_config = {"env_file": ".env", "case_sensitive": True, "extra": "ignore"}
 
     @model_validator(mode='after')
