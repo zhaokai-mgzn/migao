@@ -39,11 +39,11 @@ class TestDashScopeRerankerInit:
         assert reranker.model == "gte-rerank"
         assert reranker._available is True
 
+    @patch("app.rag.reranker.DASHSCOPE_API_KEY", "")
     @patch("app.rag.reranker.settings")
     def test_init_without_api_key(self, mock_settings):
         """无 API Key 时 reranker 不可用"""
         mock_settings.RERANK_MODEL = "gte-rerank"
-        mock_settings.DASHSCOPE_API_KEY = ""
 
         reranker = DashScopeReranker()
         assert reranker._available is False

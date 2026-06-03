@@ -81,6 +81,22 @@ def _extract_content(response: AIMessage) -> str:
     return content
 
 
+# 需要深度思考的意图（涉及多步推理、工具调用、复杂业务逻辑）
+_THINKING_INTENTS = frozenset({
+    "order_query",
+    "logistics_track",
+    "after_sales",
+    "after_sales_create",
+    "complaint",
+    "product_inquiry",
+    "category_manage",
+    "processing_manage",
+    "customer_manage",
+    "employee_manage",
+    "staff_manage",
+})
+
+
 def get_skill_llm(
     intent: str = "",
     tool_count: int = 0,
@@ -92,7 +108,7 @@ def get_skill_llm(
     - LLM_ENABLE_MODEL_ROUTING=False（默认）：使用 settings.DASHSCOPE_MODEL，行为与原一致
     - LLM_ENABLE_MODEL_ROUTING=True：根据 intent / tool_count / text_length 动态选型
     - 若 messages 中含图片且 启用视觉路由，则返回视觉 LLM（不启用 thinking 模式）
-    - 启用 Qwen3 的 thinking 模式以提升复杂任务的推理能力
+    - 深度思考（enable_thinking）仅对复杂意图开启，简单意图（问候/FAQ/闲聊）关闭以提升响应速度
     """
     vision_detected = has_images(messages) if messages else False
 
@@ -106,7 +122,13 @@ def get_skill_llm(
     # 根据模型类型选择工厂方法
     if vision_detected and "vl" in model:
         return LLMFactory.create_vision_llm(model_override=model)
-    return LLMFactory.create_skill_llm(model_override=model)
+
+    # 复杂意图开启深度思考，简单意图关闭（首次响应从 7-15s 降到 1-3s）
+    enable_thinking = intent in _THINKING_INTENTS
+    return LLMFactory.create_skill_llm(
+        model_override=model,
+        enable_thinking=enable_thinking,
+    )
 
 
 def _extract_usage(response: AIMessage) -> Optional[tuple[int, int]]:

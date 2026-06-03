@@ -57,8 +57,8 @@ class Settings(BaseSettings):
 
     # ===== 功能开关与模型参数（有合理默认值，无需外部注入）=====
 
-    INTENT_MODEL: str = "qwen-turbo"                    # 意图分类小模型
-    DASHSCOPE_VISION_MODEL: str = "qwen-vl-plus"        # 多模态视觉模型
+    INTENT_MODEL: str = "qwen3.6-plus"                  # 意图分类模型
+    DASHSCOPE_VISION_MODEL: str = "qwen3.6-plus"        # 图片识别模型
     DASHSCOPE_VISION_ENABLED: bool = True
 
     SEMANTIC_CACHE_ENABLED: bool = True

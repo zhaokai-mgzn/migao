@@ -23,21 +23,26 @@ class LLMFactory:
     """统一 LLM 实例工厂"""
 
     @staticmethod
-    def create_skill_llm(model_override: Optional[str] = None) -> ChatOpenAI:
+    def create_skill_llm(
+        model_override: Optional[str] = None,
+        enable_thinking: bool = False,
+    ) -> ChatOpenAI:
         """创建 Skill 专用 LLM
 
         - temperature=0.7
         - streaming=True
         - max_tokens=2048
         - request_timeout=60
-        - extra_body={"enable_thinking": True}  # Qwen3 思考模式
 
         Args:
             model_override: 显式指定模型名（来自 router.select_model 的返回值）。
                             为空则使用 settings.DASHSCOPE_MODEL。
+            enable_thinking: 是否启用 Qwen3 深度思考模式。
+                             开启后模型先推理再回复，质量更高但首次响应慢 5-15s。
+                             默认关闭（客服场景优先速度），复杂意图由调用方显式开启。
         """
         model = model_override or settings.DASHSCOPE_MODEL
-        return ChatOpenAI(
+        kwargs: dict = dict(
             model=model,
             api_key=DASHSCOPE_API_KEY,
             base_url=DASHSCOPE_BASE_URL,
@@ -45,8 +50,10 @@ class LLMFactory:
             streaming=True,
             max_tokens=2048,
             request_timeout=60,
-            extra_body={"enable_thinking": True},
         )
+        if enable_thinking:
+            kwargs["extra_body"] = {"enable_thinking": True}
+        return ChatOpenAI(**kwargs)
 
     @staticmethod
     def create_vision_llm(model_override: Optional[str] = None) -> ChatOpenAI:
