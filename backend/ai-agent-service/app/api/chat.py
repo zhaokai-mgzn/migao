@@ -554,12 +554,29 @@ async def send_message(
             chat_history = _convert_history_to_agent_format(history_messages)
             
             # 5. 创建 Agent 上下文
+            # 查询用户昵称，注入到 System Prompt 让 Agent 认识当前对话的人
+            user_name: Optional[str] = None
+            try:
+                from sqlalchemy import text
+                from app.utils.database import AsyncSessionLocal
+                async with AsyncSessionLocal() as db:
+                    sql = text("SELECT nickname FROM users WHERE id = :user_id")
+                    result = await db.execute(sql, {"user_id": user_id})
+                    row = result.fetchone()
+                    if row:
+                        user_name = row[0]
+            except Exception as e:
+                logger.warning(
+                    f"[chat/send] Failed to query user nickname | user={user_id} error={e}"
+                )
+
             agent_context = AgentContext(
                 user_id=user_id,
                 tenant_id=tenant_id,
                 session_id=session_id,
                 role=agent_role,
                 identity_type=current_user.identity_type,
+                user_name=user_name,
             )
             
             # 6. 调用 Agent 处理（流式）

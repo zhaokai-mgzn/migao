@@ -18,6 +18,7 @@ class AgentState(TypedDict):
     # 用户身份信息
     tenant_id: int
     user_id: int
+    user_name: Optional[str]         # 用户昵称（注入到 System Prompt）
     session_id: str
     role: str
 

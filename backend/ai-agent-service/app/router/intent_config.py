@@ -20,6 +20,7 @@ class IntentType(str, Enum):
     GENERAL = "general"
     # ── 订单域 (order) ──
     ORDER_QUERY = "order_query"
+    ORDER_CREATE = "order_create"
     LOGISTICS_TRACK = "logistics_track"
     AFTER_SALES = "after_sales"
     AFTER_SALES_CREATE = "after_sales_create"
@@ -59,7 +60,7 @@ class IntentType(str, Enum):
 # 用于意图命名空间化：Agent 只关注自己领域的意图子集
 INTENT_DOMAINS: dict[str, set[str]] = {
     "common": {"greeting", "farewell", "capabilities", "general"},
-    "order": {"order_query", "logistics_track", "after_sales", "after_sales_create", "complaint"},
+    "order": {"order_query", "order_create", "logistics_track", "after_sales", "after_sales_create", "complaint"},
     "product": {"product_inquiry", "category_manage", "processing_manage"},
     "crm": {"customer_manage", "customer_query"},
     "hr": {"employee_manage", "staff_manage", "role_manage", "permission_manage"},
@@ -110,6 +111,7 @@ class RouteDecision:
 # 意图 → 推荐 Tool 映射
 INTENT_TOOL_MAP: dict[IntentType, list[str]] = {
     IntentType.ORDER_QUERY: ["order_query"],
+    IntentType.ORDER_CREATE: ["order_create"],
     IntentType.LOGISTICS_TRACK: ["logistics_track"],
     IntentType.PRODUCT_INQUIRY: ["product_search", "product_detail"],
     IntentType.AFTER_SALES: ["order_query", "after_sales_manage"],

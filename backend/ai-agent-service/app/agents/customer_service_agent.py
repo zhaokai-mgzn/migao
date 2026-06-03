@@ -44,7 +44,7 @@ class AgentResponse:
 class AgentContext:
     """
     Agent 执行上下文
-    
+
     包含用户身份、租户信息、会话信息等
     """
     user_id: str
@@ -52,7 +52,8 @@ class AgentContext:
     session_id: str
     role: str = "customer"
     identity_type: str = "wechat_mini"
-    
+    user_name: Optional[str] = None
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "user_id": self.user_id,
@@ -60,6 +61,7 @@ class AgentContext:
             "session_id": self.session_id,
             "role": self.role,
             "identity_type": self.identity_type,
+            "user_name": self.user_name,
         }
     
     def to_tool_context(self) -> ToolContext:
@@ -146,6 +148,7 @@ class BaseAgent:
             "agent_type": self._agent_type,
             "tenant_id": context.tenant_id,
             "user_id": context.user_id,
+            "user_name": getattr(context, "user_name", None),
             "session_id": context.session_id,
             "role": context.role,
             "intent_result": None,

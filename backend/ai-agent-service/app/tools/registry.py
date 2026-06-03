@@ -344,6 +344,7 @@ def create_default_registry() -> ToolRegistry:
     - knowledge_search: 知识库搜索
     - order_query: 订单查询
     - order_manage: 订单管理
+    - order_create: 订单创建
     - product_manage: 商品管理
     - inventory_manage: 库存管理
     - processing_item_query: 加工项查询
@@ -369,6 +370,7 @@ def create_default_registry() -> ToolRegistry:
     # [RAG 禁用] from app.tools.knowledge_search import KnowledgeSearchTool
     from app.tools.order_query import OrderQueryTool
     from app.tools.order_manage import OrderManageTool
+    from app.tools.order_create import OrderCreateTool
     from app.tools.product_manage import ProductManageTool
     from app.tools.inventory_manage import InventoryManageTool
     from app.tools.processing_item_query import ProcessingItemQueryTool
@@ -394,6 +396,7 @@ def create_default_registry() -> ToolRegistry:
     # [RAG 禁用] registry.register(KnowledgeSearchTool())
     registry.register(OrderQueryTool())
     registry.register(OrderManageTool())
+    registry.register(OrderCreateTool())
     registry.register(ProductManageTool())
     registry.register(InventoryManageTool())
     registry.register(ProcessingItemQueryTool())

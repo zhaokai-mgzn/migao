@@ -11,6 +11,7 @@ from app.router.intent_config import IntentType, IntentResult
 # 关键词 → 意图映射表
 KEYWORD_MAP: dict[IntentType, list[str]] = {
     IntentType.ORDER_QUERY: ["订单", "我的订单", "订单状态", "查订单", "待发货"],
+    IntentType.ORDER_CREATE: ["创建订单", "新建订单", "下单", "开个单", "录单"],
     IntentType.LOGISTICS_TRACK: ["物流", "快递", "到哪了"],
     IntentType.PRODUCT_INQUIRY: ["商品", "产品", "价格", "多少钱", "加工项", "加工项目", "加工费"],
     IntentType.AFTER_SALES: ["退货", "退款", "换货", "售后", "维修"],
