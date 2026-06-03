@@ -395,6 +395,7 @@ export default function FloatingAssistant() {
     const target = sessionId
       ? `/chat/?session_id=${encodeURIComponent(sessionId)}`
       : '/chat/'
+    setIsOpen(false) // 收起悬浮面板，避免在全屏工作台页面上重复显示
     router.push(target)
   }
 
