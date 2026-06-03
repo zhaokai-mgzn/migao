@@ -516,8 +516,15 @@ class TestLLMFactory:
         assert llm.streaming is True
         assert llm.max_tokens == 2048
         assert float(llm.request_timeout) == 60.0
-        assert llm.extra_body == {"enable_thinking": True}
+        # 默认关闭深度思考（客服场景优先响应速度）
+        assert llm.extra_body is None
         assert llm.openai_api_base == DASHSCOPE_BASE_URL
+
+    def test_create_skill_llm_with_thinking(self, monkeypatch):
+        """开启深度思考时 extra_body 正确设置"""
+        monkeypatch.setattr(settings, "DASHSCOPE_MODEL", "qwen3.7-max")
+        llm = LLMFactory.create_skill_llm(enable_thinking=True)
+        assert llm.extra_body == {"enable_thinking": True}
 
     def test_create_skill_llm_with_model_override(self, monkeypatch):
         monkeypatch.setattr(settings, "DASHSCOPE_MODEL", "qwen3.7-max")
