@@ -78,14 +78,17 @@ class LLMFactory:
         """创建意图分类 LLM
 
         - temperature=0  确定性输出，便于 JSON 解析
-        - max_tokens=100 仅需返回 {"intent":..., "confidence":...}
+        - max_tokens=200 仅需返回 {"intent":..., "confidence":...}
+        - enable_thinking=False  关闭 Qwen3 深度思考，节省 300+ reasoning tokens，
+          延迟从 ~7s 降至 ~0.5s（Fixes #146）
         """
         return ChatOpenAI(
             model=settings.INTENT_MODEL,
             api_key=DASHSCOPE_API_KEY,
             base_url=DASHSCOPE_BASE_URL,
             temperature=0,
-            max_tokens=100,
+            max_tokens=200,
+            extra_body={"enable_thinking": False},
         )
 
     @staticmethod
@@ -96,6 +99,7 @@ class LLMFactory:
         """创建摘要/压缩用 LLM
 
         用于对话历史压缩、上下文摘要等轻量任务。
+        关闭思考模式以提升响应速度（Fixes #146）。
 
         Args:
             temperature: 温度参数，默认 0.3
@@ -107,6 +111,7 @@ class LLMFactory:
             base_url=DASHSCOPE_BASE_URL,
             temperature=temperature,
             max_tokens=max_tokens,
+            extra_body={"enable_thinking": False},
         )
 
     @staticmethod
@@ -115,6 +120,7 @@ class LLMFactory:
 
         - temperature=0.3 略带多样性，但避免发散
         - max_tokens=200  建议文本通常较短
+        - enable_thinking=False  关闭思考模式以提升响应速度（Fixes #146）
         """
         return ChatOpenAI(
             model=settings.INTENT_MODEL,
@@ -122,4 +128,5 @@ class LLMFactory:
             base_url=DASHSCOPE_BASE_URL,
             temperature=0.3,
             max_tokens=200,
+            extra_body={"enable_thinking": False},
         )
