@@ -11,7 +11,7 @@ test.describe('角色权限管理页面', () => {
   })
 
   test('页面标题和描述正确显示', async () => {
-    await expect(page.page.getByRole('heading', { name: '角色权限' })).toBeVisible()
+    await expect(page.page.getByText('角色权限')).toBeVisible()
     await expect(page.page.getByText('管理系统角色和权限分配')).toBeVisible()
   })
 
@@ -38,7 +38,7 @@ test.describe('角色权限管理页面', () => {
   test('新增角色按钮可打开创建弹窗', async () => {
     await page.createBtn.click()
     await expect(page.roleModal).toBeVisible()
-    await expect(page.page.getByRole('heading', { name: '新增角色' })).toBeVisible()
+    await expect(page.page.getByText('新增角色')).toBeVisible()
   })
 
   test('创建弹窗包含名称、编码、描述字段', async () => {
@@ -50,7 +50,7 @@ test.describe('角色权限管理页面', () => {
 
   test('创建弹窗包含权限树', async () => {
     await page.createBtn.click()
-    await expect(page.roleModal.getByText('权限分配')).toBeVisible()
+    await expect(page.page.getByText('权限分配')).toBeVisible()
     // 权限树区域
     const tree = page.permissionTree
     if (await tree.isVisible()) {

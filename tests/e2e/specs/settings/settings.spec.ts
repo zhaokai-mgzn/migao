@@ -5,29 +5,6 @@ test.describe('系统设置页面', () => {
   let page: SettingsPage
 
   test.beforeEach(async ({ page: p }) => {
-    // Mock AI config API so the AI tab doesn't fail and reset state
-    await p.route('**/api/admin/tenant/ai-config', async (route) => {
-      if (route.request().method() === 'GET') {
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            code: 200,
-            data: {
-              botName: '小布',
-              greetingTemplate: '您好，我是小布，有什么可以帮您？',
-            },
-          }),
-        })
-      } else {
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({ code: 200, data: null }),
-        })
-      }
-    })
-
     page = new SettingsPage(p)
     await page.goto()
     await page.waitForLoad()
@@ -96,26 +73,20 @@ test.describe('系统设置页面', () => {
   test('AI 助手名称输入框可编辑', async () => {
     await page.aiConfigTab.click()
     await expect(page.botNameInput).toBeVisible()
-    // React 18 受控输入：使用 pressSequentially 确保 onChange 触发
-    await page.botNameInput.click({ clickCount: 3 })
-    await page.botNameInput.pressSequentially('小米宝')
+    await page.botNameInput.fill('小米宝')
     await expect(page.botNameInput).toHaveValue('小米宝')
   })
 
   test('欢迎语文本框可编辑', async () => {
     await page.aiConfigTab.click()
     await expect(page.greetingTextarea).toBeVisible()
-    // React 18 受控 textarea：使用 pressSequentially 确保 onChange 触发
-    await page.greetingTextarea.click({ clickCount: 3 })
-    await page.greetingTextarea.pressSequentially('您好，欢迎咨询！')
+    await page.greetingTextarea.fill('您好，欢迎咨询！')
     await expect(page.greetingTextarea).toHaveValue('您好，欢迎咨询！')
   })
 
   test('保存 AI 配置按钮可提交', async () => {
     await page.aiConfigTab.click()
-    // React 18 受控输入：使用 pressSequentially
-    await page.botNameInput.click({ clickCount: 3 })
-    await page.botNameInput.pressSequentially('测试Bot')
+    await page.botNameInput.fill('测试Bot')
     await page.saveAiBtn.click()
     const toast = page.page.locator('[data-sonner-toast]')
     await expect(toast).toBeVisible({ timeout: 10_000 })

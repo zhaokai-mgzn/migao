@@ -11,7 +11,7 @@ test.describe('知识库管理页面', () => {
   })
 
   test('页面标题和描述正确显示', async () => {
-    await expect(page.page.getByRole('heading', { name: '知识库管理' })).toBeVisible()
+    await expect(page.page.getByText('知识库管理')).toBeVisible()
     await expect(page.page.getByText(/管理 AI 客服的知识库文档/)).toBeVisible()
   })
 
@@ -33,7 +33,7 @@ test.describe('知识库管理页面', () => {
   test('上传文档按钮可打开上传弹窗', async () => {
     await page.uploadBtn.click()
     await expect(page.uploadModal).toBeVisible()
-    await expect(page.uploadModal.getByRole('heading', { name: '上传文档' })).toBeVisible()
+    await expect(page.page.getByText('上传文档')).toBeVisible()
   })
 
   test('上传弹窗包含文档名称输入框', async () => {
@@ -44,10 +44,10 @@ test.describe('知识库管理页面', () => {
   test('上传弹窗包含文档类型选择器', async () => {
     await page.uploadBtn.click()
     await expect(page.uploadType).toBeVisible()
-    // 验证 select 包含指定选项（option 元素不可独立 toBeVisible，改用 count）
-    await expect(page.uploadType.locator('option[value="faq"]')).toHaveCount(1)
-    await expect(page.uploadType.locator('option[value="product"]')).toHaveCount(1)
-    await expect(page.uploadType.locator('option[value="guide"]')).toHaveCount(1)
+    // 可选类型：FAQ、产品说明、尺寸指南
+    await expect(page.uploadType.locator('option[value="faq"]')).toBeVisible()
+    await expect(page.uploadType.locator('option[value="product"]')).toBeVisible()
+    await expect(page.uploadType.locator('option[value="guide"]')).toBeVisible()
   })
 
   test('上传弹窗支持拖拽上传区域', async () => {

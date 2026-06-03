@@ -1,6 +1,7 @@
 # ============================================================
 # Terraform 变量配置
 # 复制此文件为 terraform.tfvars 并填入实际值
+# 注意：非敏感配置（模型名、API 地址等）已内置于 main.tf locals，无需在此配置
 # ============================================================
 
 # 基础配置
@@ -8,40 +9,36 @@ region       = "cn-hangzhou"
 project_name = "ai-customer-service"
 environment  = "dev"
 
+# ---- 密钥与凭证（以下均需填写）----
+
 # 数据库密码（建议随机生成: openssl rand -base64 32）
 db_password = "ChangeMe123!@#"
 
-# Redis 密码（建议随机生成: openssl rand -base64 32）
+# Redis 密码
 redis_password = "ChangeMe456!@#"
 
 # 阿里云百炼 API Key（获取: https://bailian.console.aliyun.com/ → API-KEY 管理）
 dashscope_api_key = "sk-your-dashscope-api-key"
 
-# DashVector 向量数据库（获取: https://dashvector.console.aliyun.com/）
+# DashVector 向量数据库
 dashvector_api_key  = "sk-your-dashvector-api-key"
 dashvector_endpoint = "https://your-instance.dashvector.cn-hangzhou.aliyuncs.com"
 
-# 内部服务 HMAC 认证密钥（建议随机生成: openssl rand -hex 32）
-# admin-api 和 ai-agent-service 共享此密钥
+# 内部服务通信密钥（admin-api 与 ai-agent-service 共享，建议随机生成: openssl rand -hex 32）
 internal_service_secret = "your-internal-service-secret"
 
-# CORS 允许的前端域名（逗号分隔）
-cors_allowed_origins = "https://admin.migaozn.com"
+# CORS / Cookie
+cors_allowed_origins = "https://merchant.migaozn.com,https://admin.migaozn.com"
+cookie_domain        = ".migaozn.com"
 
-# HttpOnly Cookie 域名
-cookie_domain = ".migaozn.com"
-
-# 微信小程序配置（获取: https://mp.weixin.qq.com/ → 开发管理 → 开发设置）
-wechat_mini_appid    = "wx-your-mini-app-id"
+# 微信小程序（获取: https://mp.weixin.qq.com/ → 开发管理 → 开发设置）
+wechat_mini_appid     = "wx-your-mini-app-id"
 wechat_mini_appsecret = "wx-your-mini-app-secret"
 
-# JWT RS256 公钥内容（PEM 格式，ai-agent-service 用于验证 Token）
-# 生成方式:
-#   openssl genrsa -out private.pem 2048
-#   openssl rsa -in private.pem -pubout -out public.pem
-# 然后将 public.pem 内容粘贴到这里
+# JWT RS256 公钥（PEM 格式，ai-agent-service 验证 Token 用）
+# 生成: openssl genrsa -out private.pem 2048 && openssl rsa -in private.pem -pubout -out public.pem
 jwt_public_key = ""
 
-# 阿里云 OSS 配置（获取: RAM 控制台创建子账号并授予 OSS 权限）
+# 阿里云 OSS（RAM 控制台创建子账号并授予 OSS 权限）
 oss_access_key_id     = "your-oss-access-key-id"
 oss_access_key_secret = "your-oss-access-key-secret"

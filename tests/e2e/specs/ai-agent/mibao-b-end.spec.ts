@@ -26,33 +26,28 @@ import { ChatPage } from '../../pages/chat/chat.page'
  */
 
 /** 通用：发送消息并等待 AI 回复 */
-async function sendAndWait(page: ChatPage, message: string, _waitMs?: number) {
+async function sendAndWait(page: ChatPage, message: string, waitMs = 8000) {
   await page.messageInput.fill(message)
   await page.sendBtn.click()
-  // 短暂等待让 SSE 流启动，实际内容由 expectAiReply 轮询等待
-  await page.page.waitForTimeout(2000)
+  await page.page.waitForTimeout(waitMs)
 }
 
 /** 通用：检查是否有工具调用面板出现 */
 async function expectToolCall(page: ChatPage) {
   const toolPanel = page.page.locator('.bg-gray-50.border.border-gray-200.rounded-lg').first()
     .or(page.page.locator('svg.lucide-wrench').first())
-  await expect(toolPanel).toBeVisible({ timeout: 30_000 })
+  await expect(toolPanel).toBeVisible({ timeout: 15_000 })
 }
 
-/** 通用：检查 AI 回复气泡中有内容（工具调用可能需要 15-45 秒） */
+/** 通用：检查 AI 回复气泡中有内容 */
 async function expectAiReply(page: ChatPage) {
   const aiBubble = page.page.locator('.bg-white.border.border-gray-200.rounded-bl-md').last()
   await expect(aiBubble).toBeVisible({ timeout: 15_000 })
-  // 使用 toPass() 轮询等待 AI 回复内容（工具调用场景 LLM 需 15-45 秒）
-  await expect(async () => {
-    const text = await aiBubble.textContent()
-    expect(text?.trim().length).toBeGreaterThan(0)
-  }).toPass({ timeout: 60_000 })
+  const text = await aiBubble.textContent()
+  expect(text?.trim().length).toBeGreaterThan(0)
 }
 
 test.describe('米宝 B 端工具调用', () => {
-  test.setTimeout(120_000)
   let chat: ChatPage
 
   test.beforeEach(async ({ page }) => {

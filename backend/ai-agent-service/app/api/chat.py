@@ -270,10 +270,8 @@ async def _agent_stream_to_sse(
                 if feed_task is not None and not feed_task.done():
                     feed_task.cancel()
                     try:
-                        # 给 await feed_task 加 5s 超时保护
-                        # 防止 graph.astream() 不响应 CancelledError 导致取消也卡住
-                        await asyncio.wait_for(feed_task, timeout=5.0)
-                    except (asyncio.CancelledError, asyncio.TimeoutError, Exception):
+                        await feed_task
+                    except (asyncio.CancelledError, Exception):
                         pass
         except asyncio.TimeoutError:
             timed_out = True

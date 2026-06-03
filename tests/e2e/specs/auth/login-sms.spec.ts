@@ -86,24 +86,13 @@ test.describe('登录页面 - 短信验证码登录', () => {
   })
 
   test('登录失败时显示错误横幅', async () => {
-    // Mock SMS login API to return a business error (HTTP 200 + error code)
-    await page.page.route('**/api/auth/sms/login', async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          code: 400,
-          message: '验证码错误或已过期',
-        }),
-      })
-    })
     await page.phoneInput.fill('13800138000')
     await page.codeInput.fill('000000')
     await page.smsSubmitButton.click()
-    // 等待错误横幅或 toast 出现（两者可能同时出现，分别检查避免 .or() strict mode）
-    const errorBanner = page.page.locator('.bg-red-50').first()
-    const toast = page.page.locator('[data-sonner-toast]').first()
-    await expect(errorBanner).toBeVisible({ timeout: 5_000 }).catch(() => {})
+    // 等待错误横幅出现或 toast 出现
+    await page.page.waitForTimeout(2000)
+    const errorBanner = page.smsLoginError
+    const toast = page.page.locator('[data-sonner-toast]')
     const hasBanner = await errorBanner.isVisible().catch(() => false)
     const hasToast = await toast.isVisible().catch(() => false)
     expect(hasBanner || hasToast).toBeTruthy()
@@ -135,8 +124,7 @@ test.describe('登录页面 - 短信验证码登录', () => {
 
   test('企业入驻链接可见', async () => {
     await page.expectRegisterLinkVisible()
-    // trailingSlash: true → href 可能是 /register 或 /register/
-    await expect(page.registerLink).toHaveAttribute('href', /^\/register\/?$/)
+    await expect(page.registerLink).toHaveAttribute('href', '/register')
   })
 
   test('记住我复选框默认为选中状态', async () => {

@@ -17,6 +17,7 @@ from loguru import logger
 from dashscope import TextReRank
 
 from app.config import settings
+from app.llm import DASHSCOPE_API_KEY
 
 
 class DashScopeReranker:
@@ -39,7 +40,7 @@ class DashScopeReranker:
             api_key: DashScope API Key，默认使用配置中的 DASHSCOPE_API_KEY
         """
         self.model = model or settings.RERANK_MODEL
-        self.api_key = api_key or settings.DASHSCOPE_API_KEY
+        self.api_key = api_key or DASHSCOPE_API_KEY
         self._available = bool(self.api_key)
         
         if not self._available:

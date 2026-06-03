@@ -28,57 +28,53 @@ class Settings(BaseSettings):
     # Redis 配置
     REDIS_URL: str = "redis://localhost:6379/0"
 
-    # 阿里云百炼 LLM 配置
-    DASHSCOPE_API_KEY: str = ""
-    DASHSCOPE_MODEL: str = "qwen3.7-max"
-    DASHSCOPE_EMBEDDING_MODEL: str = "text-embedding-v3"
+    # ===== 必须由 SAE / .env 注入（无默认值，漏配即报错）=====
 
-    # 意图分类模型（qwen3.6-plus：意图识别 + 图片识别）
-    INTENT_MODEL: str = "qwen3.6-plus"
+    # 阿里云百炼 LLM（由 main.tf locals 管理）
+    DASHSCOPE_API_KEY: str
+    DASHSCOPE_BASE_URL: str
+    DASHSCOPE_MODEL: str
+    DASHSCOPE_EMBEDDING_MODEL: str
 
-    # DashVector 配置
-    DASHVECTOR_API_KEY: str = ""
-    DASHVECTOR_ENDPOINT: str = ""
-    DASHVECTOR_COLLECTION: str = "ai_customer_service"
+    # DashVector 向量库（由 main.tf locals 管理）
+    DASHVECTOR_API_KEY: str
+    DASHVECTOR_ENDPOINT: str
+    DASHVECTOR_COLLECTION: str
 
-    # Admin API 服务地址（内部调用）
-    ADMIN_API_BASE_URL: str = "http://admin-api:8080"
+    # 内部服务通信（由 main.tf locals 管理）
+    ADMIN_API_BASE_URL: str
+    SERVICE_TOKEN: str
+    JWT_PUBLIC_KEY: str
 
-    # Service Token（用于调用 admin-api）
-    SERVICE_TOKEN: str = ""
+    # 物流查询 API（由 main.tf locals 管理）
+    LOGISTICS_API_URL: str
+    LOGISTICS_APPCODE: str
 
-    # JWT 公钥（用于验证用户 Token）
-    JWT_PUBLIC_KEY: str = ""
+    # SSE / CORS（由 main.tf locals 管理）
+    SSE_TIMEOUT: int
+    SSE_PING_INTERVAL: int
+    CORS_ALLOWED_ORIGINS: str
 
-    # 物流查询 API 配置（阿里云市场）
-    LOGISTICS_API_URL: str = "https://wuliu.market.alicloudapi.com/kdi"
-    LOGISTICS_APPCODE: str = ""
+    # ===== 功能开关与模型参数（有合理默认值，无需外部注入）=====
 
-    # 语义缓存配置
+    INTENT_MODEL: str = "qwen-turbo"                    # 意图分类小模型
+    DASHSCOPE_VISION_MODEL: str = "qwen-vl-plus"        # 多模态视觉模型
+    DASHSCOPE_VISION_ENABLED: bool = True
+
     SEMANTIC_CACHE_ENABLED: bool = True
     SEMANTIC_CACHE_SIMILARITY_THRESHOLD: float = 0.95
     SEMANTIC_CACHE_MAX_ENTRIES: int = 1000
 
-    # Reranker 配置
     RERANK_ENABLED: bool = True
     RERANK_MODEL: str = "gte-rerank"
     RERANK_TOP_K: int = 3
     RETRIEVAL_TOP_K: int = 10
 
-    # SSE 配置
-    SSE_TIMEOUT: int = 300  # 5 分钟
-    SSE_PING_INTERVAL: int = 30  # 30 秒心跳
-
-    # LLM 管道配置（Factory / Router / CostTracker / Retry）
-    LLM_ENABLE_MODEL_ROUTING: bool = True       # 模型路由开关（默认开启，按场景智能路由）
-    LLM_COST_TRACKING_ENABLED: bool = True      # 成本追踪开关
-    LLM_MONTHLY_BUDGET_CNY: float = 500.0       # 月预算（元），<=0 表示不限
-    LLM_RETRY_MAX_ATTEMPTS: int = 2             # 最大重试次数（不含首次调用）
-    LLM_RETRY_BASE_DELAY_S: float = 0.5         # 重试基础延迟（秒），指数退避基数
-
-    # --- 图片识别模型（qwen3.6-plus） ---
-    DASHSCOPE_VISION_MODEL: str = "qwen3.6-plus"
-    DASHSCOPE_VISION_ENABLED: bool = True
+    LLM_ENABLE_MODEL_ROUTING: bool = True
+    LLM_COST_TRACKING_ENABLED: bool = True
+    LLM_MONTHLY_BUDGET_CNY: float = 500.0
+    LLM_RETRY_MAX_ATTEMPTS: int = 2
+    LLM_RETRY_BASE_DELAY_S: float = 0.5
 
     model_config = {"env_file": ".env", "case_sensitive": True, "extra": "ignore"}
 

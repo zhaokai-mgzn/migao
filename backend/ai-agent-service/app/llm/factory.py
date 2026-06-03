@@ -1,12 +1,8 @@
 """
-LLM Factory - 统一 LLM 实例工厂
+LLM Factory - 唯一 DashScope 配置入口 & LLM 实例工厂
 
-集中管理所有 ChatOpenAI 实例的构造逻辑：
-- Skill LLM: Tool Calling 主力，启用 streaming + Qwen3 thinking
-- Intent LLM: 意图分类小模型，确定性输出
-- Suggestion LLM: 推荐/建议生成，低 temperature
-
-后续若需对接其他 Provider（OpenAI/Anthropic 等），仅需在此处扩展。
+所有 DashScope 相关配置（endpoint、api_key、model）只在此处从 settings 读取一次。
+其他模块统一从本模块导入常量或调用工厂方法，禁止直接 import settings 读取 DashScope 配置。
 """
 
 from __future__ import annotations
@@ -17,9 +13,10 @@ from langchain_openai import ChatOpenAI
 
 from app.config import settings
 
-
-# DashScope OpenAI 兼容接口地址
-DASHSCOPE_BASE_URL = "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
+# ===== 唯一配置读取点（从 settings 读一次，全局共享）=====
+DASHSCOPE_BASE_URL: str = settings.DASHSCOPE_BASE_URL
+DASHSCOPE_API_KEY: str = settings.DASHSCOPE_API_KEY
+DASHSCOPE_EMBEDDING_MODEL: str = settings.DASHSCOPE_EMBEDDING_MODEL
 
 
 class LLMFactory:
@@ -29,7 +26,6 @@ class LLMFactory:
     def create_skill_llm(model_override: Optional[str] = None) -> ChatOpenAI:
         """创建 Skill 专用 LLM
 
-        参数与现有 base_skill.get_skill_llm() 一致，并支持 model_override：
         - temperature=0.7
         - streaming=True
         - max_tokens=2048
@@ -43,7 +39,7 @@ class LLMFactory:
         model = model_override or settings.DASHSCOPE_MODEL
         return ChatOpenAI(
             model=model,
-            api_key=settings.DASHSCOPE_API_KEY,
+            api_key=DASHSCOPE_API_KEY,
             base_url=DASHSCOPE_BASE_URL,
             temperature=0.7,
             streaming=True,
@@ -56,24 +52,18 @@ class LLMFactory:
     def create_vision_llm(model_override: Optional[str] = None) -> ChatOpenAI:
         """创建视觉多模态 LLM 实例
 
-        用于处理包含图片的多模态请求。
         - 使用同一个 DashScope OpenAI 兼容接口
         - 不启用 thinking 模式（视觉模型不支持）
-
-        Args:
-            model_override: 显式指定模型名（来自 router.select_model 的返回值）。
-                            为空则使用 settings.DASHSCOPE_VISION_MODEL。
         """
         model = model_override or settings.DASHSCOPE_VISION_MODEL
         return ChatOpenAI(
             model=model,
-            api_key=settings.DASHSCOPE_API_KEY,
+            api_key=DASHSCOPE_API_KEY,
             base_url=DASHSCOPE_BASE_URL,
             temperature=0.7,
             streaming=True,
             max_tokens=2048,
             request_timeout=60,
-            # 注意：视觉模型不启用 thinking 模式
         )
 
     @staticmethod
@@ -85,10 +75,31 @@ class LLMFactory:
         """
         return ChatOpenAI(
             model=settings.INTENT_MODEL,
-            api_key=settings.DASHSCOPE_API_KEY,
+            api_key=DASHSCOPE_API_KEY,
             base_url=DASHSCOPE_BASE_URL,
             temperature=0,
             max_tokens=100,
+        )
+
+    @staticmethod
+    def create_summary_llm(
+        temperature: float = 0.3,
+        max_tokens: int = 512,
+    ) -> ChatOpenAI:
+        """创建摘要/压缩用 LLM
+
+        用于对话历史压缩、上下文摘要等轻量任务。
+
+        Args:
+            temperature: 温度参数，默认 0.3
+            max_tokens: 最大输出 token，默认 512
+        """
+        return ChatOpenAI(
+            model=settings.INTENT_MODEL,
+            api_key=DASHSCOPE_API_KEY,
+            base_url=DASHSCOPE_BASE_URL,
+            temperature=temperature,
+            max_tokens=max_tokens,
         )
 
     @staticmethod
@@ -100,7 +111,7 @@ class LLMFactory:
         """
         return ChatOpenAI(
             model=settings.INTENT_MODEL,
-            api_key=settings.DASHSCOPE_API_KEY,
+            api_key=DASHSCOPE_API_KEY,
             base_url=DASHSCOPE_BASE_URL,
             temperature=0.3,
             max_tokens=200,

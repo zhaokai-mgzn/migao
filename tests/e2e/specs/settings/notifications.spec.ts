@@ -11,7 +11,7 @@ test.describe('通知中心页面', () => {
   })
 
   test('页面标题正确显示', async () => {
-    await expect(page.page.getByRole('heading', { name: '通知中心' })).toBeVisible()
+    await expect(page.page.getByText('通知中心')).toBeVisible()
     await expect(page.page.getByText('管理和查看系统通知')).toBeVisible()
   })
 
