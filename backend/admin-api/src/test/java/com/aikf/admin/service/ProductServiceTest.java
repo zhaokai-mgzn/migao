@@ -7,8 +7,11 @@ import com.aikf.admin.entity.ProductColor;
 import com.aikf.admin.entity.ProductSku;
 import com.aikf.admin.exception.BusinessException;
 import com.aikf.admin.mapper.CategoryMapper;
+import com.aikf.admin.mapper.ProcessingItemMapper;
+import com.aikf.admin.mapper.ProductAttributeMapper;
 import com.aikf.admin.mapper.ProductColorMapper;
 import com.aikf.admin.mapper.ProductMapper;
+import com.aikf.admin.mapper.ProductProcessingItemMapper;
 import com.aikf.admin.mapper.ProductSkuMapper;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -51,6 +54,15 @@ class ProductServiceTest {
 
     @Mock
     private ProductSkuMapper productSkuMapper;
+
+    @Mock
+    private ProductProcessingItemMapper productProcessingItemMapper;
+
+    @Mock
+    private ProcessingItemMapper processingItemMapper;
+
+    @Mock
+    private ProductAttributeMapper productAttributeMapper;
 
     private Product testProduct;
     private Category testCategory;
