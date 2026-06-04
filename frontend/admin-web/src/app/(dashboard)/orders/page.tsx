@@ -3,6 +3,8 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
+import dayjs from 'dayjs'
+import { RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { orderApi } from '@/lib/api'
 import { OrderTable, CloseOrderModal, RemarkModal } from '@/components/orders'
@@ -103,13 +105,15 @@ export default function OrdersPage() {
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
   const [actionLoading, setActionLoading] = useState(false)
 
-  const loadOrders = useCallback(async () => {
+  const loadOrders = useCallback(async (pageOverride?: number) => {
+    const pageNum = pageOverride ?? current
+    if (pageOverride !== undefined) setCurrent(pageOverride)
     setLoading(true)
     try {
       // 后端列表接口仅支持 page/size/status/keyword/followStatus。
       // 前端 6 字段搜索合并为 keyword（取第一个非空值）。
       const apiParams: Record<string, unknown> = {
-        page: current,
+        page: pageNum,
         size: pageSize,
       }
 
@@ -183,6 +187,20 @@ export default function OrdersPage() {
     setHasProcessing('')
     setCurrent(1)
     setSearch(EMPTY_SEARCH)
+  }
+
+  const handleDateQuickSelect = (preset: 'today' | '7days' | '30days') => {
+    const today = dayjs().format('YYYY-MM-DD')
+    if (preset === 'today') {
+      setStartDate(today)
+      setEndDate(today)
+    } else if (preset === '7days') {
+      setStartDate(dayjs().subtract(6, 'day').format('YYYY-MM-DD'))
+      setEndDate(today)
+    } else {
+      setStartDate(dayjs().subtract(29, 'day').format('YYYY-MM-DD'))
+      setEndDate(today)
+    }
   }
 
   const handleTabChange = (tab: OrderStatusTab) => {
@@ -345,6 +363,29 @@ export default function OrdersPage() {
               placeholder="结束日期"
               className="flex-1 min-w-[130px] h-9 px-3 rounded border border-gray-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
             />
+            <div className="flex gap-1 bg-gray-100 rounded-lg p-0.5">
+              {(['today', '7days', '30days'] as const).map((preset) => {
+                const label = preset === 'today' ? '今天' : preset === '7days' ? '近7天' : '近30天'
+                const isActive = (() => {
+                  const today = dayjs().format('YYYY-MM-DD')
+                  if (preset === 'today') return startDate === today && endDate === today
+                  if (preset === '7days') return startDate === dayjs().subtract(6, 'day').format('YYYY-MM-DD') && endDate === today
+                  return startDate === dayjs().subtract(29, 'day').format('YYYY-MM-DD') && endDate === today
+                })()
+                return (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => handleDateQuickSelect(preset)}
+                    className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                      isActive ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                )
+              })}
+            </div>
           </div>
         </div>
 
@@ -403,6 +444,14 @@ export default function OrdersPage() {
                 <path d="M3 3v5h5" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
               重置
+            </button>
+            <button
+              type="button"
+              onClick={() => loadOrders(1)}
+              className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+              title="刷新"
+            >
+              <RefreshCw className="w-4 h-4" />
             </button>
           </div>
         </div>

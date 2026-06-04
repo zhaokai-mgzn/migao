@@ -33,7 +33,7 @@ public class OrderController {
     /**
      * 分页查询订单列表
      *
-     * GET /api/admin/orders?page=1&size=20&status=pending&keyword=xxx&followStatus=pending&hasProcessing=true
+     * GET /api/admin/orders?page=1&size=20&status=pending&keyword=xxx&followStatus=pending&hasProcessing=true&startDate=2025-01-01&endDate=2025-12-31
      */
     @GetMapping
     public ApiResponse<PageResponse<OrderListResponse>> getOrders(
@@ -42,10 +42,12 @@ public class OrderController {
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String followStatus,
-            @RequestParam(required = false) Boolean hasProcessing) {
-        log.info("查询订单列表: page={}, size={}, status={}, keyword={}, followStatus={}, hasProcessing={}", page, size, status, keyword, followStatus, hasProcessing);
+            @RequestParam(required = false) Boolean hasProcessing,
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate) {
+        log.info("查询订单列表: page={}, size={}, status={}, keyword={}, startDate={}, endDate={}", page, size, status, keyword, startDate, endDate);
         Long tenantId = TenantContext.getTenantId();
-        PageResponse<OrderListResponse> result = orderService.getOrderPage(page, size, status, keyword, followStatus, hasProcessing, tenantId);
+        PageResponse<OrderListResponse> result = orderService.getOrderPage(page, size, status, keyword, followStatus, hasProcessing, startDate, endDate, tenantId);
         return ApiResponse.success(result);
     }
 
