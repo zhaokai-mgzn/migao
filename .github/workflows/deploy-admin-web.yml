@@ -9,7 +9,7 @@ on:
   workflow_dispatch:  # 支持手动触发
 
 env:
-  OSS_BUCKET: youke-admin-dev
+  OSS_BUCKET: ai-customer-service-admin-dev
   OSS_REGION: cn-hangzhou
   OSS_ENDPOINT: oss-cn-hangzhou.aliyuncs.com
   NODE_VERSION: '20'
@@ -47,7 +47,7 @@ jobs:
         working-directory: ${{ env.WORKING_DIR }}
         env:
           NODE_ENV: production
-          # 生产构建：API/Cookie 可被 secrets 覆盖，OSS 域名由 .env.production 提供
+          # 生产构建环境变量（OSS 域名由 .env 提供，API/Cookie 可被 secrets 覆盖）
           NEXT_PUBLIC_API_BASE_URL: ${{ secrets.NEXT_PUBLIC_API_BASE_URL || 'https://api.migaozn.com' }}
           NEXT_PUBLIC_AI_API_BASE_URL: ${{ secrets.NEXT_PUBLIC_AI_API_BASE_URL || 'https://ai-api.migaozn.com' }}
           NEXT_PUBLIC_COOKIE_DOMAIN: ${{ secrets.NEXT_PUBLIC_COOKIE_DOMAIN || '.migaozn.com' }}

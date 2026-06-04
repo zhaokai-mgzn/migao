@@ -10,7 +10,7 @@ on:
 
 env:
   ACR_REGISTRY: crpi-qdcgkzwx9p9zckga.cn-hangzhou.personal.cr.aliyuncs.com
-  ACR_NAMESPACE: youke
+  ACR_NAMESPACE: ai-customer-service
   IMAGE_NAME: ai-agent-service
   SAE_APP_ID: 01c0759f-4a81-494f-9947-0113d38b86c2
   SAE_REGION: cn-hangzhou
