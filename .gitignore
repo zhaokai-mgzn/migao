@@ -35,6 +35,7 @@ out/
 frontend/admin-web/out/
 dist/
 .swc/
+*.tsbuildinfo
 
 # Python runtime
 venv/
