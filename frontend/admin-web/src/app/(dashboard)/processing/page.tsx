@@ -5,7 +5,7 @@ import { Plus, Calculator } from 'lucide-react'
 import { toast } from 'sonner'
 import { processingItemApi, processingCategoryApi, categoryApi } from '@/lib/api'
 import { Modal, Button } from '@/components/ui'
-import type { ProcessingItem, ProcessingCategory, PricingMethod, Category } from '@/types'
+import type { ProcessingItem, ProcessingCategory, PricingMethod, Category, ProcessingCalculateParams } from '@/types'
 
 // 扁平化分类树为 checkbox 选项
 function flattenCategories(
@@ -255,24 +255,17 @@ export default function ProcessingPage() {
     setPreviewId(item.id)
     setPreviewLoading(true)
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const params: any = { processingItemId: item.id }
+      const params: ProcessingCalculateParams = {
+        processingItemId: item.id,
+        quantity: 1,
+      }
       switch (item.pricingMethod) {
         case 'per_meter':
           params.quantity = 3
           break
-        case 'per_piece':
-          params.quantity = 1
-          break
-        case 'fixed':
-          params.quantity = 1
-          break
         case 'per_area':
-          params.quantity = 1
           params.dimensions = { width: 1, height: 1 }
           break
-        default:
-          params.quantity = 1
       }
       const resp = await processingItemApi.calculatePrice(params)
       setPreviewData(resp.data || resp)
