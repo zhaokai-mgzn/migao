@@ -95,7 +95,7 @@ describe('useAuthStore (Zustand auth store)', () => {
       expect(mockLogin).toHaveBeenCalledWith({
         username: 'admin',
         password: '123456',
-        tenantId: 'tenant_default',
+        tenantId: 1,
       })
     })
 

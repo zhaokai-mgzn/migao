@@ -23,33 +23,6 @@ vi.mock('next/navigation', () => ({
   }),
 }))
 
-// Mock lucide-react
-vi.mock('lucide-react', () => {
-  const stub = (name: string) => (props: any) => <span data-testid={`icon-${name}`} {...props} />
-  return {
-    BarChart3: stub('barchart'),
-    Package: stub('package'),
-    Scissors: stub('scissors'),
-    BookOpen: stub('book'),
-    Settings: stub('settings'),
-    Bot: stub('bot'),
-    Bell: stub('bell'),
-    ChevronLeft: stub('chevron-left'),
-    ChevronRight: stub('chevron-right'),
-    ChevronDown: stub('chevron-down'),
-    ClipboardList: stub('clipboard'),
-    MessageSquare: stub('message'),
-    Users: stub('users'),
-    ShieldCheck: stub('shield'),
-    Building2: stub('building2'),
-    LucideIcon: stub('lucide-icon'),
-    LayoutDashboard: stub('layout-dashboard'),
-    Store: stub('store'),
-    ShoppingCart: stub('shopping-cart'),
-    UserCircle: stub('user-circle'),
-  }
-})
-
 // Mock Logo component
 vi.mock('@/components/ui/Logo', () => ({
   default: (props: any) => <span data-testid="logo" {...props} />,
@@ -81,7 +54,7 @@ describe('Sidebar', () => {
     expect(screen.getByText('订单管理')).toBeInTheDocument()
     expect(screen.getByText('售后管理')).toBeInTheDocument()
     expect(screen.getByText('加工项管理')).toBeInTheDocument()
-    expect(screen.getByText('知识库管理')).toBeInTheDocument()
+    expect(screen.getByText('客服工作台')).toBeInTheDocument()
     expect(screen.getByText('客户管理')).toBeInTheDocument()
     expect(screen.getByText('系统设置')).toBeInTheDocument()
   })
