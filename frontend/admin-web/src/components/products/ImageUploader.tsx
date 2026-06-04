@@ -223,14 +223,13 @@ export default function ImageUploader({
           </div>
         ))}
 
-        {/* 上传按钮 */}
+        {/* 上传按钮 — input 铺满整个区域，opacity-0 透明可点击 */}
         {value.length < max && (
           <div
-            onClick={() => fileInputRef.current?.click()}
             onDragOver={(e) => { e.preventDefault(); e.stopPropagation() }}
             onDrop={handleDrop}
             className={cn(
-              'w-24 h-24 rounded-lg border-2 border-dashed border-gray-300 flex flex-col items-center justify-center gap-1 cursor-pointer transition-colors',
+              'relative w-24 h-24 rounded-lg border-2 border-dashed border-gray-300 flex flex-col items-center justify-center gap-1 cursor-pointer transition-colors',
               'hover:border-primary-500 hover:bg-primary-50/50',
               uploading && 'pointer-events-none opacity-60'
             )}
@@ -250,6 +249,14 @@ export default function ImageUploader({
                 )}
               </>
             )}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept={acceptAttr}
+              multiple={multiple && max > 1}
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+              onChange={(e) => handleFileSelect(e.target.files)}
+            />
           </div>
         )}
       </div>
@@ -257,15 +264,6 @@ export default function ImageUploader({
       {hint && (
         <p className="mt-1.5 text-xs text-gray-500">{hint}</p>
       )}
-
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept={acceptAttr}
-        multiple={multiple && max > 1}
-        className="hidden"
-        onChange={(e) => handleFileSelect(e.target.files)}
-      />
 
       {/* 预览 */}
       {previewUrl && (
