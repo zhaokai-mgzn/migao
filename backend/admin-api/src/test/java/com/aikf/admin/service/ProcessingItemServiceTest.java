@@ -183,6 +183,46 @@ class ProcessingItemServiceTest {
     }
 
     @Test
+    @DisplayName("创建加工项成功 - 带适用商品分类")
+    void createProcessingItem_WithApplicableProductCategories() {
+        // given
+        ProcessingItemCreateRequest request = new ProcessingItemCreateRequest();
+        request.setName("打孔加工");
+        request.setCategoryId("pcat-001");
+        request.setPricingMethod("per_meter");
+        request.setUnitPrice(new BigDecimal("15.00"));
+        request.setApplicableProductCategories(List.of("cat-001", "cat-002"));
+
+        when(processingCategoryMapper.selectById("pcat-001")).thenReturn(testCategory);
+        when(processingItemMapper.insert(any(ProcessingItem.class))).thenAnswer(invocation -> {
+            ProcessingItem item = invocation.getArgument(0);
+            item.setId("pi-new");
+            return 1;
+        });
+
+        ProcessingItem savedItem = ProcessingItem.builder()
+                .id("pi-new")
+                .name("打孔加工")
+                .categoryId("pcat-001")
+                .pricingMethod("per_meter")
+                .unitPrice(new BigDecimal("15.00"))
+                .applicableProductCategories(List.of("cat-001", "cat-002"))
+                .status("active")
+                .build();
+        when(processingItemMapper.selectById("pi-new")).thenReturn(savedItem);
+
+        // when
+        ProcessingItemResponse result = processingItemService.createProcessingItem(request, 1L);
+
+        // then
+        assertThat(result).isNotNull();
+        assertThat(result.getApplicableProductCategories()).containsExactly("cat-001", "cat-002");
+        verify(processingItemMapper).insert((ProcessingItem) argThat((ProcessingItem item) ->
+                item.getApplicableProductCategories() != null
+                        && item.getApplicableProductCategories().containsAll(List.of("cat-001", "cat-002"))));
+    }
+
+    @Test
     @DisplayName("创建加工项失败 - 分类不存在")
     void createProcessingItem_CategoryNotFound() {
         // given
@@ -251,6 +291,40 @@ class ProcessingItemServiceTest {
         // then
         assertThat(result).isNotNull();
         verify(processingItemMapper).updateById(any(ProcessingItem.class));
+    }
+
+    @Test
+    @DisplayName("更新加工项成功 - 带适用商品分类")
+    void updateProcessingItem_WithApplicableProductCategories() {
+        // given
+        ProcessingItemUpdateRequest request = new ProcessingItemUpdateRequest();
+        request.setName("更新后的加工项");
+        request.setCategoryId("pcat-001");
+        request.setPricingMethod("per_piece");
+        request.setUnitPrice(new BigDecimal("25.00"));
+        request.setApplicableProductCategories(List.of("cat-003", "cat-004"));
+
+        when(processingItemMapper.selectById("pi-001")).thenReturn(testItem);
+        when(processingCategoryMapper.selectById("pcat-001")).thenReturn(testCategory);
+        when(processingItemMapper.updateById(any(ProcessingItem.class))).thenReturn(1);
+
+        ProcessingItem updatedItem = ProcessingItem.builder()
+                .id("pi-001")
+                .name("更新后的加工项")
+                .categoryId("pcat-001")
+                .pricingMethod("per_piece")
+                .unitPrice(new BigDecimal("25.00"))
+                .applicableProductCategories(List.of("cat-003", "cat-004"))
+                .status("active")
+                .build();
+        when(processingItemMapper.selectById("pi-001")).thenReturn(testItem).thenReturn(updatedItem);
+
+        // when
+        ProcessingItemResponse result = processingItemService.updateProcessingItem("pi-001", request, 1L);
+
+        // then
+        assertThat(result).isNotNull();
+        assertThat(result.getApplicableProductCategories()).containsExactly("cat-003", "cat-004");
     }
 
     @Test
