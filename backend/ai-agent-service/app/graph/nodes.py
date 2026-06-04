@@ -340,17 +340,47 @@ _INTENT_TO_ROUTE: dict[str, str] = {
 }
 
 
+def _last_human_has_image(messages: list) -> bool:
+    """检测最后一条 HumanMessage 是否含图片
+
+    LangChain 多模态消息的 content 格式为 list，其中包含 {type: "image_url"} 项。
+    用于在路由阶段拦截带图片的请求，避免误入 direct_reply 节点。
+    """
+    from langchain_core.messages import HumanMessage
+
+    for msg in reversed(messages):
+        if isinstance(msg, HumanMessage):
+            content = msg.content
+            if isinstance(content, list):
+                return any(
+                    isinstance(item, dict) and item.get("type") == "image_url"
+                    for item in content
+                )
+            return False
+    return False
+
+
 def route_by_intent(state: AgentState) -> str:
     """根据意图路由到对应 Skill
 
     返回的路由 key 会被 builder.py 中的 skill_route_map 映射到实际节点名：
     - mibao: order → order_skill, product → product_skill, ...
     - xiaobu: order → customer_order_skill, product → customer_product_skill, ...
+
+    注意：当 last HumanMessage 含图片时，即使 intent 分类为 greeting/capabilities，
+    也强制路由到 general skill（vision mode），防止直复节点忽略图片输入。
     """
     route = state.get("route_decision") or {}
     action = route.get("action", "full_agent")
 
     if action == "direct_reply":
+        # 多模态输入不走直复节点——直接回复模板没有图片处理能力
+        if _last_human_has_image(state.get("messages", [])):
+            logger.warning(
+                f"[route_by_intent] Multimodal message detected with action=direct_reply; "
+                f"redirecting to 'general' for vision processing | tenant={state.get('tenant_id')}"
+            )
+            return "general"
         return "direct_reply"
 
     intent = (state.get("intent_result") or {}).get("intent", "general")

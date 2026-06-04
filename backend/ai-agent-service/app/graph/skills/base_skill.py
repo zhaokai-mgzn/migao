@@ -68,22 +68,50 @@ def _extract_content(response: AIMessage) -> str:
 
     兼容 Qwen3 思考模式：
     1. 优先取 response.content 并移除 <think> 标签
-    2. 若为空，检查 additional_kwargs 中的 reasoning_content（部分模型使用）
-    3. 最终兜底返回空字符串
+    2. 若 stripped 结果仍含 <think> 标签（仅 thinking 内容），提取内部文本
+    3. 再 fallback 到 additional_kwargs 中的 reasoning_content
+    4. 仍为空则返回原始 content（保留 think 标签，确保有文字输出）
     """
     content = response.content or ""
     if isinstance(content, list):
         # 多模态返回：提取文本部分
         text_parts = [c.get("text", "") for c in content if isinstance(c, dict) and c.get("type") == "text"]
         content = "".join(text_parts)
-    content = _strip_think_tags(content)
-    if content:
-        return content
+
+    stripped = _strip_think_tags(content)
+
+    # _strip_think_tags 在 stripping 结果为空时回退到原文本（含标签）。
+    # 二次检测：如果 stripped 仍含标签，说明只有 thinking 内容，需提取其内部文本。
+    if stripped:
+        if "<think>" in stripped:
+            # thinking-only 情况：提取标签内的思考文本，不暴露给用户
+            think_match = re.search(r"<think>([\s\S]*?)</think>", stripped, re.DOTALL)
+            if think_match:
+                fallback = think_match.group(1).strip()
+                if fallback:
+                    logger.warning(
+                        "[_extract_content] Only thinking content found, using thinking text as fallback"
+                    )
+                    return fallback
+            # 提取失败，至少返回带标签的原文总比空好
+            return stripped
+        return stripped
 
     # Fallback: 某些 Qwen3 模型将回复放在 additional_kwargs
     extra = getattr(response, "additional_kwargs", {}) or {}
-    if extra.get("reasoning_content") and not content:
-        logger.warning("[_extract_content] Only reasoning_content found, no main content")
+    if extra.get("reasoning_content"):
+        logger.warning(
+            "[_extract_content] No main content, falling back to reasoning_content from additional_kwargs"
+        )
+        return extra["reasoning_content"]
+
+    # 终极兜底：返回原始 content（保留 think 标签也不如让用户看到思考过程）
+    if content:
+        logger.info(
+            f"[_extract_content] Returning original content (preserve thinking tags)"
+        )
+        return content
+
     return content
 
 

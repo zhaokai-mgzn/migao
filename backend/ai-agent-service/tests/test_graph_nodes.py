@@ -412,3 +412,32 @@ class TestRouteByIntent:
         """无 route_decision 时默认 full_agent → general"""
         state = _make_state(route_decision=None, intent_result=None)
         assert route_by_intent(state) == "general"
+
+    def test_direct_reply_with_multimodal_routes_to_general(self):
+        """多模态消息 + action=direct_reply 应路由到 general（走 vision mode）而非 direct_reply"""
+        # 模拟最后一条 HumanMessage 含 image_url 的多模态消息
+        from langchain_core.messages import AIMessage
+
+        multimodal_messages = [
+            HumanMessage(content="你好，请介绍一下你自己"),
+            AIMessage(content="您好！我是米宝..."),
+            HumanMessage(content=[
+                {"type": "text", "text": "你能识别图片中的信息吗"},
+                {"type": "image_url", "image_url": {"url": "https://example.com/image.png"}},
+            ]),
+        ]
+        state = _make_state(
+            messages=multimodal_messages,
+            route_decision={"action": "direct_reply"},
+            intent_result={"intent": "capabilities"},
+        )
+        assert route_by_intent(state) == "general"
+
+    def test_direct_reply_without_multimodal_stays_direct_reply(self):
+        """纯文本消息 + action=direct_reply 应保持直复路由（回归保护）"""
+        state = _make_state(
+            messages=[HumanMessage(content="你好")],
+            route_decision={"action": "direct_reply"},
+            intent_result={"intent": "greeting"},
+        )
+        assert route_by_intent(state) == "direct_reply"
