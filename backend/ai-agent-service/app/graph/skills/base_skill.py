@@ -25,6 +25,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import AIMessage, ToolMessage, SystemMessage, HumanMessage
 from loguru import logger
 
+from app.config import settings
 from app.graph.state import AgentState
 from app.tools.base import ToolContext
 from app.tools.registry import ToolRegistry, set_tool_context, get_tool_context
@@ -131,7 +132,9 @@ def get_skill_llm(
     )
 
     # 根据模型类型选择工厂方法
-    if vision_detected and "vl" in model:
+    # 注意：不能用 "vl" in model 判断，qwen3.6-plus 等非 vl 后缀模型也支持视觉
+    # 正确做法：由 vision_detected（消息含图片）+ DASHSCOPE_VISION_ENABLED（功能开关）决定
+    if vision_detected and settings.DASHSCOPE_VISION_ENABLED:
         return LLMFactory.create_vision_llm(model_override=model)
 
     # 复杂意图开启深度思考，简单意图关闭（首次响应从 7-15s 降到 1-3s）

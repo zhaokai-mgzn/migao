@@ -65,6 +65,61 @@ def vision_disabled(monkeypatch):
 
 
 # =============================================================================
+# 0. 回归测试: base_skill 视觉路由不依赖模型名 (Issue #173)
+# =============================================================================
+class TestVisionRoutingNoModelNameCheck:
+    """回归测试: 视觉 LLM 路由不能依赖模型名中的 'vl' 后缀
+
+    Bug 背景 (Issue #173):
+        base_skill.py 曾用 `"vl" in model` 判断是否走视觉 LLM。
+        但 qwen3.6-plus 等非 vl 后缀模型同样支持视觉理解，
+        导致图片被发给文本 LLM 处理，API 调用失败。
+
+    测试策略:
+        - 验证 select_model(has_vision=True) 在非 vl 模型时仍被正确路由
+        - 验证 base_skill 使用 vision_detected + DASHSCOPE_VISION_ENABLED
+          而非 "vl" in model 来决定是否创建视觉 LLM
+    """
+
+    def test_select_model_returns_non_vl_vision_model(self, routing_on, monkeypatch):
+        """DASHSCOPE_VISION_ENABLED=True 时，has_vision=True 可返回非 vl 后缀的视觉模型"""
+        monkeypatch.setattr(settings, "DASHSCOPE_VISION_ENABLED", True)
+        monkeypatch.setattr(settings, "DASHSCOPE_VISION_MODEL", "qwen3.6-plus")
+        model = select_model(has_vision=True)
+        assert model == "qwen3.6-plus"
+
+    def test_base_skill_uses_vision_enabled_not_model_name(self, routing_on, monkeypatch):
+        """base_skill 应通过 vision_detected + DASHSCOPE_VISION_ENABLED 路由，
+        而非 "vl" in model — 确保 qwen3.6-plus 等非 vl 模型也能走视觉 LLM"""
+        from app.graph.skills.base_skill import get_skill_llm
+        from langchain_core.messages import HumanMessage
+
+        monkeypatch.setattr(settings, "DASHSCOPE_VISION_ENABLED", True)
+        monkeypatch.setattr(settings, "DASHSCOPE_VISION_MODEL", "qwen3.6-plus")
+
+        # 构造含图片的消息
+        msg = HumanMessage(
+            content=[
+                {"type": "text", "text": "这是什么？"},
+                {"type": "image_url", "image_url": {"url": "https://example.com/a.jpg"}},
+            ]
+        )
+
+        # 调用 get_skill_llm，验证非 vl 后缀的视觉模型也能走视觉 LLM
+        llm = get_skill_llm(
+            intent="product_inquiry",
+            messages=[msg],
+            tool_count=0,
+            text_length=100,
+        )
+        # 视觉 LLM 不应有 enable_thinking（视觉模型不支持 thinking 模式）
+        extra_body = getattr(llm, "extra_body", None)
+        if extra_body:
+            assert "enable_thinking" not in extra_body
+        assert llm.model_name == "qwen3.6-plus"
+
+
+# =============================================================================
 # 1. 多模态检测 has_images
 # =============================================================================
 class TestHasImages:
