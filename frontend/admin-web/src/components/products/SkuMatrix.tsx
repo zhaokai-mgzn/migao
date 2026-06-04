@@ -840,7 +840,6 @@ function ColorImage({
 
   return (
     <div
-      onClick={() => inputRef.current?.click()}
       className={`relative w-9 h-9 rounded border bg-gray-50 cursor-pointer overflow-hidden flex items-center justify-center transition-colors ${
         url ? 'border-gray-200' : 'border-dashed border-gray-300 hover:border-primary-400 hover:bg-primary-50/30'
       }`}
@@ -855,7 +854,7 @@ function ColorImage({
         ref={inputRef}
         type="file"
         accept="image/jpeg,image/png,image/webp"
-        className="hidden"
+        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
         onChange={(e) => handleFiles(e.target.files)}
       />
     </div>
