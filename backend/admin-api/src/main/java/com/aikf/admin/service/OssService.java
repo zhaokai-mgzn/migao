@@ -76,6 +76,7 @@ public class OssService implements FileStorageService {
 
         String fileId = UUID.randomUUID().toString().replace("-", "");
         String objectKey = generateObjectKey(directory, file.getOriginalFilename());
+        String bucketName = selectBucket(directory);
 
         try (InputStream inputStream = file.getInputStream()) {
             ObjectMetadata metadata = new ObjectMetadata();
@@ -83,10 +84,10 @@ public class OssService implements FileStorageService {
             metadata.setContentLength(file.getSize());
             metadata.setObjectAcl(CannedAccessControlList.PublicRead);
 
-            ossClient.putObject(ossConfig.getBucketName(), objectKey, inputStream, metadata);
+            ossClient.putObject(bucketName, objectKey, inputStream, metadata);
 
             String url = buildAccessUrl(objectKey);
-            log.info("上传文件成功: objectKey={}, url={}", objectKey, url);
+            log.info("上传文件成功: bucket={}, objectKey={}, url={}", bucketName, objectKey, url);
 
             return UploadedFileInfo.builder()
                     .id(fileId)
@@ -213,6 +214,18 @@ public class OssService implements FileStorageService {
             return filename.substring(dotIndex);
         }
         return ".jpg";
+    }
+
+    /**
+     * 根据目录选择 Bucket
+     * - chat/ 目录使用临时 Bucket（7 天自动删除）
+     * - 其他目录使用永久 Bucket
+     */
+    public String selectBucket(String directory) {
+        if (directory != null && directory.startsWith("chat/")) {
+            return ossConfig.getTemporaryBucketName();
+        }
+        return ossConfig.getPermanentBucketName();
     }
 
     private String buildAccessUrl(String objectKey) {

@@ -41,11 +41,17 @@ class OssServiceTest {
     private static final String ENDPOINT = "oss-cn-hangzhou-internal.aliyuncs.com";
     private static final String URL_PREFIX = "https://admin.migaozn.com";
 
+    private static final String PERMANENT_BUCKET = "ai-customer-service-admin-dev";
+    private static final String TEMPORARY_BUCKET = "ai-customer-service-chat-dev";
+
     @BeforeEach
     void setUp() {
         lenient().when(ossConfig.getBucketName()).thenReturn(BUCKET_NAME);
         lenient().when(ossConfig.getEndpoint()).thenReturn(ENDPOINT);
         lenient().when(ossConfig.getUrlPrefix()).thenReturn(URL_PREFIX);
+        // 双 Bucket 配置
+        lenient().when(ossConfig.getPermanentBucketName()).thenReturn(PERMANENT_BUCKET);
+        lenient().when(ossConfig.getTemporaryBucketName()).thenReturn(TEMPORARY_BUCKET);
     }
 
     @Test
@@ -117,5 +123,81 @@ class OssServiceTest {
         ObjectMetadata capturedMetadata = metadataCaptor.getValue();
         assertThat(capturedMetadata.getContentType()).isEqualTo("image/jpeg");
         assertThat(capturedMetadata.getContentLength()).isEqualTo(content.length);
+    }
+
+    // ==================== 双 Bucket 路由测试 ====================
+
+    @Test
+    @DisplayName("上传到 chat/ 目录时应使用临时 Bucket")
+    void upload_toChatDirectory_shouldUseTemporaryBucket() {
+        // Given
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "chat-image.jpg",
+                "image/jpeg",
+                "fake image content".getBytes()
+        );
+
+        // When
+        ossService.upload(file, "chat/tenant-123");
+
+        // Then
+        verify(ossClient).putObject(eq(TEMPORARY_BUCKET), any(String.class), any(InputStream.class), any(ObjectMetadata.class));
+    }
+
+    @Test
+    @DisplayName("上传到 products/ 目录时应使用永久 Bucket")
+    void upload_toProductsDirectory_shouldUsePermanentBucket() {
+        // Given
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "product-image.jpg",
+                "image/jpeg",
+                "fake image content".getBytes()
+        );
+
+        // When
+        ossService.upload(file, "products/123");
+
+        // Then
+        verify(ossClient).putObject(eq(PERMANENT_BUCKET), any(String.class), any(InputStream.class), any(ObjectMetadata.class));
+    }
+
+    @Test
+    @DisplayName("上传到 avatars/ 目录时应使用永久 Bucket")
+    void upload_toAvatarsDirectory_shouldUsePermanentBucket() {
+        // Given
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "avatar.png",
+                "image/png",
+                "fake image content".getBytes()
+        );
+
+        // When
+        ossService.upload(file, "avatars/user-456");
+
+        // Then
+        verify(ossClient).putObject(eq(PERMANENT_BUCKET), any(String.class), any(InputStream.class), any(ObjectMetadata.class));
+    }
+
+    @Test
+    @DisplayName("selectBucket 方法应正确路由 chat/ 目录到临时 Bucket")
+    void selectBucket_chatDirectory_shouldReturnTemporaryBucket() {
+        // When
+        String bucket = ossService.selectBucket("chat/tenant-123/session-456");
+
+        // Then
+        assertThat(bucket).isEqualTo(TEMPORARY_BUCKET);
+    }
+
+    @Test
+    @DisplayName("selectBucket 方法应正确路由非 chat/ 目录到永久 Bucket")
+    void selectBucket_otherDirectories_shouldReturnPermanentBucket() {
+        // When & Then
+        assertThat(ossService.selectBucket("products/123")).isEqualTo(PERMANENT_BUCKET);
+        assertThat(ossService.selectBucket("avatars/456")).isEqualTo(PERMANENT_BUCKET);
+        assertThat(ossService.selectBucket("documents/789")).isEqualTo(PERMANENT_BUCKET);
+        assertThat(ossService.selectBucket("other")).isEqualTo(PERMANENT_BUCKET);
     }
 }
