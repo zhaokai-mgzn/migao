@@ -17,17 +17,144 @@
 
 操作前执行 `/github-ops` 加载完整规范。
 
-## 研发范式：TDD（测试驱动开发）
+## 研发范式：AI-TDD（AI 强制测试驱动开发）
 
-**本项目严格遵循 TDD 研发范式，所有功能开发必须遵循以下流程：**
+> **⚠️ 本章是铁律中的铁律，违反即视为严重违规。AI 必须严格遵守，不得跳过任何检查点。**
 
-### Red → Green → Refactor
+### 核心原则
+
+**本项目强制遵循 TDD 研发范式，所有功能开发必须遵循 Red → Green → Refactor 循环。**
 
 ```
-1. Red（红）   → 先写测试，运行确认测试失败
+1. Red（红）   → 先写测试，运行确认测试失败（证明测试有效）
 2. Green（绿） → 写最小实现代码，让测试通过
 3. Refactor    → 重构代码，保持测试持续通过
 ```
+
+### AI-TDD 强制流程（7 个检查点，缺一不可）
+
+**每次代码变更前，AI 必须按顺序执行以下 7 个检查点，禁止跳过任何一个：**
+
+#### CP-1：识别变更范围（Identify Scope）
+
+**必须回答**：本次变更涉及哪些模块？涉及哪些文件？
+
+```
+□ 后端：admin-api / ai-agent-service
+□ 前端：admin-web / mini-app
+□ 配置：terraform / CI/CD
+□ 测试：新增测试文件 / 修改现有测试
+```
+
+**输出**：明确列出受影响的模块和测试文件路径。
+
+#### CP-2：Red 阶段 — 先写测试（Write Tests First）
+
+**铁律：禁止先写实现代码再补测试。**
+
+- 新增功能：先写功能测试（单元测试 + 集成测试）
+- 修复 Bug：先写能复现 Bug 的失败测试
+- 重构：先确保现有测试覆盖重构目标
+
+**运行测试，确认失败**：
+```bash
+# 运行新增/修改的测试，必须看到 FAIL
+cd backend/ai-agent-service && .venv/bin/python -m pytest tests/test_xxx.py -v
+cd backend/admin-api && ./mvnw test -Dtest=XxxTest
+cd frontend/admin-web && npx vitest run tests/unit/lib/utils.test.ts
+```
+
+**输出**：测试运行结果，必须包含 `FAILED` 或 `FAIL`。
+
+#### CP-3：Green 阶段 — 写最小实现（Implement Minimal Code）
+
+**铁律：只写能让测试通过的最小代码，禁止过度设计。**
+
+- 实现功能代码
+- 运行测试，确认通过
+
+```bash
+# 运行同一组测试，必须看到 PASS
+cd backend/ai-agent-service && .venv/bin/python -m pytest tests/test_xxx.py -v
+cd backend/admin-api && ./mvnw test -Dtest=XxxTest
+cd frontend/admin-web && npx vitest run tests/unit/lib/utils.test.ts
+```
+
+**输出**：测试运行结果，必须包含 `passed` 或 `PASS`。
+
+#### CP-4：Refactor 阶段 — 重构代码（Refactor）
+
+**铁律：重构时必须保持测试持续通过，禁止破坏现有功能。**
+
+- 优化代码结构、消除重复、提升可读性
+- 每次重构后运行测试，确认仍然通过
+
+**输出**：重构后的代码，测试仍然 PASS。
+
+#### CP-5：单测全量验证（Full Unit Test）
+
+**铁律：变更涉及的所有模块，必须运行全量单测。**
+
+```bash
+# 后端 AI 服务（全量）
+cd backend/ai-agent-service && .venv/bin/python -m pytest tests/ -v
+
+# 后端 Java 服务（全量）
+cd backend/admin-api && ./mvnw test
+
+# 前端管理后台（全量，注意是 vitest 不是 jest）
+cd frontend/admin-web && npx vitest run
+```
+
+**输出**：所有单测必须 `passed`，无 `failed`。
+
+#### CP-6：集成测试增量验证（Incremental Integration Test）
+
+**铁律：仅运行本次变更涉及的集成测试文件，避免全量回归耗时过长。**
+
+```bash
+# 后端 AI 服务（增量，替换为实际涉及的测试文件）
+cd backend/ai-agent-service && .venv/bin/python -m pytest tests/test_vision_integration.py -v
+
+# 后端 Java 服务（增量，替换为实际涉及的测试类）
+cd backend/admin-api && ./mvnw test -Dtest=OrderServiceTest,ProductControllerTest
+
+# 前端类型检查（必跑）
+cd frontend/admin-web && npx tsc --noEmit
+```
+
+**输出**：所有集测必须 `passed`，`tsc` 必须 `EXIT: 0`。
+
+#### CP-7：完成自检清单（Self-Check Before Completion）
+
+**铁律：声称"完成"或准备合并 PR 前，必须逐项勾选以下清单。**
+
+```
+□ CP-1：已识别变更范围，列出受影响模块
+□ CP-2：已先写测试，运行确认 FAIL
+□ CP-3：已写实现代码，运行确认 PASS
+□ CP-4：已重构代码，测试仍 PASS
+□ CP-5：已运行所有受影响模块的全量单测，全部 PASS
+□ CP-6：已运行本次变更涉及的增量集测，全部 PASS
+□ CP-7：已完成本自检清单，无遗漏
+□ 代码符合项目规范（命名、格式、注释）
+□ 无硬编码密钥、无敏感信息泄露
+□ 已更新相关文档（如有必要）
+```
+
+**输出**：勾选完整的自检清单，无 `□` 未勾选项。
+
+### 违规后果
+
+**违反任何检查点，即视为严重违规：**
+
+| 违规行为 | 后果 |
+|---------|------|
+| 先写实现后补测试 | 立即停止，删除实现代码，回到 CP-2 重做 |
+| 跳过单测全量验证 | 禁止合并 PR，必须补跑 |
+| 跳过集成测试增量验证 | 禁止合并 PR，必须补跑 |
+| 未完成自检清单就声称"完成" | 视为虚假完成，必须重新执行所有检查点 |
+| 测试失败仍然提交代码 | 立即回滚，修复测试后再提交 |
 
 ### 各模块测试要求
 
@@ -35,8 +162,20 @@
 |------|---------|------|-----------|
 | admin-api | 单元测试 + 集成测试 | JUnit 5 + MockMvc + TestContainers | 核心 Service ≥ 80% |
 | ai-agent-service | 单元测试 + 集成测试 | pytest + httpx | 核心工具 ≥ 80% |
-| admin-web | 组件测试 + E2E 测试 | Playwright (tests/e2e/) + Testing Library | 关键页面 100% |
+| admin-web | 组件测试 + E2E 测试 | Vitest + Testing Library + Playwright | 关键页面 100% |
 | 全链路 | E2E 冒烟测试 | Playwright (tests/smoke/) | 核心流程 100% |
+
+### 测试分层策略
+
+```
+           ┌─────────────┐
+           │  E2E 冒烟    │  ← Playwright，覆盖核心用户流程
+           ├─────────────┤
+           │ 集成测试     │  ← API 端到端，连接云 dev 数据库
+           ├─────────────┤
+           │ 单元测试     │  ← 纯逻辑，Mock 外部依赖
+           └─────────────┘
+```
 
 ### 本地开发环境
 
@@ -62,7 +201,7 @@ cd frontend/admin-web && npm run dev
 - 调用 API 验证端到端流程
 - 验证 LLM 真实响应（如图片识别、对话建议）
 
-### 铁律
+### 铁律（再次强调）
 
 - **禁止**先写代码再补测试 — 必须测试先行
 - **禁止**提交未通过测试的代码到任何分支
@@ -72,40 +211,47 @@ cd frontend/admin-web && npm run dev
 - 发现 Bug 时：先写一个能复现 Bug 的失败测试 → 修复代码 → 测试通过
 - E2E 测试必须覆盖所有页面的核心交互路径
 
-### 本地验证 → 自动合并（必须执行的流程）
-
-每次代码变更后，**必须在本地运行测试并确认通过**，然后才能自动合并：
+### 完整验证命令清单（按顺序执行）
 
 ```bash
-# 1. 单元测试（全量） — 变更模块的全部单元测试必须通过
-cd backend/ai-agent-service && .venv/bin/python -m pytest tests/ -v
-cd backend/admin-api && ./mvnw test
-cd frontend/admin-web && npx jest --passWithNoTests
+# ═══════════════════════════════════════════════════════════════
+# 第一步：单测全量（变更涉及的所有模块）
+# ═══════════════════════════════════════════════════════════════
 
-# 2. 集成测试（增量） — 仅运行本次变更涉及的集成测试文件
+# 后端 AI 服务
+cd backend/ai-agent-service && .venv/bin/python -m pytest tests/ -v
+
+# 后端 Java 服务
+cd backend/admin-api && ./mvnw test
+
+# 前端管理后台（注意：是 vitest，不是 jest）
+cd frontend/admin-web && npx vitest run
+
+# ═══════════════════════════════════════════════════════════════
+# 第二步：集成测试增量（仅运行本次变更涉及的文件/类）
+# ═══════════════════════════════════════════════════════════════
+
+# 后端 AI 服务（替换为实际涉及的测试文件）
 cd backend/ai-agent-service && .venv/bin/python -m pytest tests/test_vision_integration.py -v
+
+# 后端 Java 服务（替换为实际涉及的测试类）
 cd backend/admin-api && ./mvnw test -Dtest=OrderServiceTest,ProductControllerTest
 
-# 3. 类型检查 — 前端变更必须通过 TypeScript 类型检查
+# ═══════════════════════════════════════════════════════════════
+# 第三步：类型检查（前端变更必跑）
+# ═══════════════════════════════════════════════════════════════
+
 cd frontend/admin-web && npx tsc --noEmit
+
+# ═══════════════════════════════════════════════════════════════
+# 第四步：完成自检清单（CP-7）
+# ═══════════════════════════════════════════════════════════════
+
+# 勾选所有检查点，无遗漏后才能声称"完成"
 ```
 
-> **单测全量，集测增量**：单元测试必须跑全量回归；集成测试只跑本次变更涉及的文件/类，避免每次全量回归耗时过长。CI 流水线仍会跑全量集测作为最终兜底。
-
-**验证通过 → 自动 commit + push + 合并 PR**
+**验证通过 → 自动 commit + push + 合并 PR**  
 **验证失败 → 禁止合并，必须先修复测试**
-
-### 测试分层策略
-
-```
-           ┌─────────────┐
-           │  E2E 冒烟    │  ← Playwright，覆盖核心用户流程
-           ├─────────────┤
-           │ 集成测试     │  ← API 端到端，连接云 dev 数据库
-           ├─────────────┤
-           │ 单元测试     │  ← 纯逻辑，Mock 外部依赖
-           └─────────────┘
-```
 
 ## 项目概述
 
@@ -169,29 +315,43 @@ chore: 更新部署文档
 ## 构建与验证命令
 
 ```bash
-# Java 后端
+# ═══════════════════════════════════════════════════════════════
+# Java 后端（admin-api）
+# ═══════════════════════════════════════════════════════════════
 cd backend/admin-api
 ./mvnw clean compile
-./mvnw test
+./mvnw test                              # 单测全量
+./mvnw test -Dtest=XxxTest               # 单测增量（指定类）
 ./mvnw clean package -DskipTests
 
-# Python AI 服务
+# ═══════════════════════════════════════════════════════════════
+# Python AI 服务（ai-agent-service）
+# ═══════════════════════════════════════════════════════════════
 cd backend/ai-agent-service
 pip install -r requirements.txt
-pytest tests/ -v
+.venv/bin/python -m pytest tests/ -v     # 单测全量
+.venv/bin/python -m pytest tests/test_xxx.py -v  # 单测增量
 
-# 前端管理后台
+# ═══════════════════════════════════════════════════════════════
+# 前端管理后台（admin-web）— 使用 vitest，不是 jest
+# ═══════════════════════════════════════════════════════════════
 cd frontend/admin-web
 npm install
+npx vitest run                           # 单测全量
+npx vitest run tests/unit/lib/utils.test.ts  # 单测增量
+npx tsc --noEmit                         # 类型检查
 npm run build
-npx tsc --noEmit
 
+# ═══════════════════════════════════════════════════════════════
 # E2E 浏览器测试（Playwright，对 admin-web 全链路）
+# ═══════════════════════════════════════════════════════════════
 cd tests
 npm install && npx playwright install chromium
 npm run e2e                              # 对云 dev 环境：BASE_URL=https://dev.example.com npm run e2e
 
+# ═══════════════════════════════════════════════════════════════
 # E2E 冒烟测试（pytest，对后端 API）
+# ═══════════════════════════════════════════════════════════════
 cd tests/smoke && pytest
 ```
 
@@ -224,7 +384,7 @@ cd tests/smoke && pytest
 | Skill | 触发场景 |
 |-------|---------|
 | `/systematic-debugging` | 遇到任何 Bug、测试失败、异常行为时，修复前必须先诊断根因 |
-| `/verification-before-completion` | 声称任务完成前，必须运行验证命令并确认输出 |
+| `/verification-before-completion` | **声称任务完成前，必须完成 AI-TDD CP-1 ~ CP-7 全部检查点，逐项勾选自检清单并确认输出** |
 | `/security-review` | 涉及认证、用户输入、密钥、API 端点、支付等敏感功能时 |
 | `/code-review-excellence` | PR Review 时，按规范审查代码质量 |
 | `/5-whys-root-cause-analysis` | 生产事故分析、反复出现的问题、用户说"找根因""排查问题"时 |

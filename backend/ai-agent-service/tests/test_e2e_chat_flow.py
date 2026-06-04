@@ -725,10 +725,11 @@ class TestSessionManagement:
                 actions = data["data"]["actions"]
                 assert len(actions) >= 4
                 action_ids = [a["id"] for a in actions]
-                assert "order_query" in action_ids
-                assert "product_search" in action_ids
-                assert "logistics_track" in action_ids
-                assert "after_sales" in action_ids
+                # B 端管理视角的快捷操作
+                assert "order_manage" in action_ids
+                assert "product_manage" in action_ids
+                assert "dashboard" in action_ids
+                assert "customer_manage" in action_ids
                 # 每个 action 有必要字段
                 for a in actions:
                     assert "name" in a

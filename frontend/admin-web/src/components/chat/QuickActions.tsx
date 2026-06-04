@@ -3,18 +3,18 @@
 import { useEffect } from 'react'
 import {
   Package,
-  ShoppingBag,
-  Truck,
-  RefreshCw,
+  ClipboardList,
+  BarChart3,
+  Users,
   Sparkles,
 } from 'lucide-react'
 import { useChatStore } from '@/store/chat'
 
 const iconMap: Record<string, React.ReactNode> = {
+  'clipboard-list': <ClipboardList className="w-3.5 h-3.5" />,
   'package': <Package className="w-3.5 h-3.5" />,
-  'shopping-bag': <ShoppingBag className="w-3.5 h-3.5" />,
-  'truck': <Truck className="w-3.5 h-3.5" />,
-  'refresh-cw': <RefreshCw className="w-3.5 h-3.5" />,
+  'bar-chart-3': <BarChart3 className="w-3.5 h-3.5" />,
+  'users': <Users className="w-3.5 h-3.5" />,
 }
 
 export default function QuickActions() {

@@ -186,6 +186,8 @@ resource "alicloud_db_account_privilege" "app" {
 locals {
   redis_connection_domain = "r-bp162hozkjd55e18rb.redis.rds.aliyuncs.com"
   redis_port              = "6379"
+  # OSS 域名唯一真相源 — 所有服务、CI/CD、前端均引用此值
+  oss_domain              = "${alicloud_oss_bucket.admin_frontend.bucket}.oss-cn-hangzhou.aliyuncs.com"
 }
 
 # ==================== SAE 环境变量（唯一真相源）====================
@@ -222,7 +224,8 @@ locals {
     "OSS_ACCESS_KEY_ID"   = var.oss_access_key_id
     "OSS_ACCESS_KEY_SECRET" = var.oss_access_key_secret
     "OSS_BUCKET_NAME"     = alicloud_oss_bucket.admin_frontend.bucket
-    "OSS_URL_PREFIX"      = "https://admin.migaozn.com"
+    # 直接使用 OSS 域名（CDN admin.migaozn.com 未正确配置 CNAME）
+    "OSS_URL_PREFIX"      = "https://${local.oss_domain}"
   })
 
   ai_agent_envs = merge({
@@ -256,7 +259,7 @@ locals {
     "CORS_ALLOWED_ORIGINS" = var.cors_allowed_origins
     # 图片 URL 重写：CDN 域名 → OSS 公网域名（DashScope Vision API 需要公网可访问的 URL）
     "IMAGE_URL_REWRITE_FROM" = "https://admin.migaozn.com"
-    "IMAGE_URL_REWRITE_TO"   = "https://${alicloud_oss_bucket.admin_frontend.bucket}.oss-cn-hangzhou.aliyuncs.com"
+    "IMAGE_URL_REWRITE_TO"   = "https://${local.oss_domain}"
   })
 }
 
@@ -299,7 +302,7 @@ resource "alicloud_sae_application" "admin_api" {
   app_name          = "${var.project_name}-admin-api"
   namespace_id      = alicloud_sae_namespace.main.id
   package_type      = "FatJar"
-  package_url       = "https://${alicloud_oss_bucket.admin_frontend.bucket}.oss-cn-hangzhou.aliyuncs.com/deploy/admin-api.jar"
+  package_url       = "https://${local.oss_domain}/deploy/admin-api.jar"
   package_version   = "1.0.0"
   jdk               = "Open JDK 21"
   replicas          = 1
@@ -451,7 +454,7 @@ output "admin_api_app_id" {
 
 output "oss_bucket_domain" {
   description = "OSS 前端静态资源访问域名"
-  value       = "${alicloud_oss_bucket.admin_frontend.bucket}.oss-${var.region}.aliyuncs.com"
+  value       = local.oss_domain
 }
 
 output "acr_namespace" {
