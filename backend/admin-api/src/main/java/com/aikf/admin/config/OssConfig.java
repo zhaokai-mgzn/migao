@@ -3,7 +3,8 @@ package com.aikf.admin.config;
 import com.aliyun.oss.OSS;
 import com.aliyun.oss.OSSClientBuilder;
 import lombok.Data;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -11,6 +12,7 @@ import org.springframework.context.annotation.Configuration;
 /**
  * 阿里云 OSS 配置类
  */
+@Slf4j
 @Data
 @Configuration
 @ConfigurationProperties(prefix = "aliyun.oss")
@@ -28,11 +30,13 @@ public class OssConfig {
 
     /**
      * 创建 OSS 客户端 Bean
-     * 仅在配置了 endpoint 时才创建
+     * 仅在 aliyun.oss.endpoint 环境变量存在时才创建
      */
     @Bean
-    @ConditionalOnExpression("!'${aliyun.oss.endpoint:}'.isEmpty()")
+    @ConditionalOnProperty(name = "aliyun.oss.endpoint")
     public OSS ossClient() {
+        log.info("初始化 OSS 客户端: endpoint={}, bucket={}, permanentBucket={}, temporaryBucket={}",
+                endpoint, bucketName, permanentBucketName, temporaryBucketName);
         return new OSSClientBuilder().build(endpoint, accessKeyId, accessKeySecret);
     }
 }
