@@ -22,6 +22,10 @@ public class OssConfig {
     private String bucketName;
     private String urlPrefix;
 
+    // 双 Bucket 配置：永久存储（商品图片等）和临时存储（聊天图片）
+    private String permanentBucketName;
+    private String temporaryBucketName;
+
     /**
      * 创建 OSS 客户端 Bean
      * 仅在配置了 endpoint 时才创建
