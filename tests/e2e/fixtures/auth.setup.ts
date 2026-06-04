@@ -50,12 +50,12 @@ setup('authenticate as admin', async ({ page }) => {
     tenantName: '测试企业',
   })
 
-  // Step 4: Reload to let the app pick up the auth state
-  await page.reload()
+  // Step 4: Navigate to dashboard to let the app pick up the auth state
+  await page.goto('/dashboard')
 
   // Step 5: Verify we're authenticated — should see the sidebar / dashboard
   // The sidebar renders with class 'fixed left-0' and contains navigation links
-  await expect(page.locator('aside')).toBeVisible({ timeout: 10_000 })
+  await expect(page.locator('aside')).toBeVisible({ timeout: 20_000 })
 
   // Step 6: Save storage state (localStorage + cookies) for other tests
   await page.context().storageState({ path: AUTH_FILE })

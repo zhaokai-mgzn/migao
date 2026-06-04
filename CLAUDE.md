@@ -52,9 +52,19 @@
 
 **铁律：禁止先写实现代码再补测试。**
 
-- 新增功能：先写功能测试（单元测试 + 集成测试）
-- 修复 Bug：先写能复现 Bug 的失败测试
+**测试覆盖范围评估**：
+- 新增功能：先写功能测试（单元测试 + 集成测试 + **E2E 测试**）
+- 修复 Bug：先写能复现 Bug 的失败测试（单元测试 + **E2E 测试**）
 - 重构：先确保现有测试覆盖重构目标
+
+**E2E 测试评估（必须执行）**：
+```
+□ 检查 tests/e2e/ 目录，确认是否有覆盖本次变更的 E2E 测试
+□ 如果没有，评估是否需要新增 E2E 测试：
+  - 需要：用户交互流程、API 端点、跨模块集成、数据持久化
+  - 不需要：纯内部逻辑、配置变更、文档更新、已有 E2E 覆盖
+□ 如果需要，先写 E2E 测试用例（tests/e2e/specs/）
+```
 
 **运行测试，确认失败**：
 ```bash
@@ -62,6 +72,7 @@
 cd backend/ai-agent-service && .venv/bin/python -m pytest tests/test_xxx.py -v
 cd backend/admin-api && ./mvnw test -Dtest=XxxTest
 cd frontend/admin-web && npx vitest run tests/unit/lib/utils.test.ts
+cd tests && npx playwright test tests/e2e/specs/xxx.spec.ts  # 如有新增 E2E
 ```
 
 **输出**：测试运行结果，必须包含 `FAILED` 或 `FAIL`。
@@ -108,9 +119,9 @@ cd frontend/admin-web && npx vitest run
 
 **输出**：所有单测必须 `passed`，无 `failed`。
 
-#### CP-6：集成测试增量验证（Incremental Integration Test）
+#### CP-6：集成测试 + E2E 测试增量验证（Incremental Integration & E2E Test）
 
-**铁律：仅运行本次变更涉及的集成测试文件，避免全量回归耗时过长。**
+**铁律：仅运行本次变更涉及的集成测试和 E2E 测试文件，避免全量回归耗时过长。**
 
 ```bash
 # 后端 AI 服务（增量，替换为实际涉及的测试文件）
@@ -121,9 +132,13 @@ cd backend/admin-api && ./mvnw test -Dtest=OrderServiceTest,ProductControllerTes
 
 # 前端类型检查（必跑）
 cd frontend/admin-web && npx tsc --noEmit
+
+# E2E 测试（增量，替换为实际涉及的测试文件）
+# 注意：跑 E2E 前需重启本地服务，详见 tests/README.md
+cd tests && npx playwright test tests/e2e/specs/products.spec.ts
 ```
 
-**输出**：所有集测必须 `passed`，`tsc` 必须 `EXIT: 0`。
+**输出**：所有集测必须 `passed`，`tsc` 必须 `EXIT: 0`，E2E 测试必须 `passed`（如有新增）。
 
 #### CP-7：完成自检清单（Self-Check Before Completion）
 
@@ -135,8 +150,12 @@ cd frontend/admin-web && npx tsc --noEmit
 □ CP-3：已写实现代码，运行确认 PASS
 □ CP-4：已重构代码，测试仍 PASS
 □ CP-5：已运行所有受影响模块的全量单测，全部 PASS
-□ CP-6：已运行本次变更涉及的增量集测，全部 PASS
+□ CP-6：已运行本次变更涉及的增量集测 + E2E 测试，全部 PASS
 □ CP-7：已完成本自检清单，无遗漏
+□ E2E 测试覆盖决策：
+  - [ ] 已检查 tests/e2e/ 目录
+  - [ ] 已评估是否需要新增 E2E 测试
+  - [ ] 已新增 E2E 测试 / 确认已有 E2E 覆盖 / 确认不需要 E2E（需说明原因）
 □ 代码符合项目规范（命名、格式、注释）
 □ 无硬编码密钥、无敏感信息泄露
 □ 已更新相关文档（如有必要）
@@ -153,6 +172,7 @@ cd frontend/admin-web && npx tsc --noEmit
 | 先写实现后补测试 | 立即停止，删除实现代码，回到 CP-2 重做 |
 | 跳过单测全量验证 | 禁止合并 PR，必须补跑 |
 | 跳过集成测试增量验证 | 禁止合并 PR，必须补跑 |
+| **跳过 E2E 测试评估** | **禁止合并 PR，必须执行 E2E 测试覆盖决策** |
 | 未完成自检清单就声称"完成" | 视为虚假完成，必须重新执行所有检查点 |
 | 测试失败仍然提交代码 | 立即回滚，修复测试后再提交 |
 
