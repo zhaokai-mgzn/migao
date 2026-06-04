@@ -418,7 +418,10 @@ resource "alicloud_log_store" "admin_api" {
 # ==================== OSS 静态资源存储（管理前端 Next.js 静态托管）====================
 
 resource "alicloud_oss_bucket" "admin_frontend" {
-  bucket = "${var.project_name}-admin-${var.environment}"
+  # 注意：实际 bucket 名为 ai-customer-service-admin-dev（项目早期创建）
+  # terraform state 中记录的是 youke-admin-dev，但该 bucket 不存在
+  # 修复：硬编码正确的 bucket 名，让 terraform 管理实际存在的资源
+  bucket = "ai-customer-service-admin-dev"
   website {
     index_document = "index.html"
     error_document = "404.html"
