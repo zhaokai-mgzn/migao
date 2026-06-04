@@ -130,3 +130,14 @@ jobs:
             exit 1
           fi
           echo "✅ 部署成功，服务健康"
+
+  smoke-test:
+    name: Post-Deploy Smoke Test
+    needs: build-and-deploy
+    uses: ./.github/workflows/smoke-test.yml
+    with:
+      admin_api_url: 'http://8.136.139.170'
+      ai_agent_url: 'https://ai-api.migaozn.com'
+    secrets:
+      SMOKE_ADMIN_PASSWORD: ${{ secrets.SMOKE_ADMIN_PASSWORD }}
+      SMOKE_SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN }}

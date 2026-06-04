@@ -1,0 +1,47 @@
+name: Smoke Test (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      admin_api_url:
+        description: 'Admin API base URL'
+        type: string
+        required: true
+      ai_agent_url:
+        description: 'AI Agent base URL'
+        type: string
+        required: true
+    secrets:
+      SMOKE_ADMIN_PASSWORD:
+        required: true
+      SMOKE_SERVICE_TOKEN:
+        required: true
+
+jobs:
+  smoke-test:
+    name: P0 Smoke Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: tests/smoke/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r tests/smoke/requirements.txt
+
+      - name: Run P0 smoke tests
+        env:
+          SMOKE_ENV: production
+          ADMIN_API_URL: ${{ inputs.admin_api_url }}
+          AI_AGENT_URL: ${{ inputs.ai_agent_url }}
+          ADMIN_PASSWORD: ${{ secrets.SMOKE_ADMIN_PASSWORD }}
+          SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN }}
+        run: |
+          cd tests/smoke
+          pytest -m "p0" --tb=short -q --timeout=30
