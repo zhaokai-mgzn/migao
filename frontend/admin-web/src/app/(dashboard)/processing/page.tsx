@@ -3,9 +3,29 @@
 import { useEffect, useState, useCallback } from 'react'
 import { Plus } from 'lucide-react'
 import { toast } from 'sonner'
-import { processingItemApi, processingCategoryApi } from '@/lib/api'
+import { processingItemApi, processingCategoryApi, categoryApi } from '@/lib/api'
 import { Modal, Button } from '@/components/ui'
-import type { ProcessingItem, ProcessingCategory, PricingMethod } from '@/types'
+import type { ProcessingItem, ProcessingCategory, PricingMethod, Category } from '@/types'
+
+// 扁平化分类树为 checkbox 选项
+function flattenCategories(
+  categories: Category[],
+  level = 0
+): { value: string; label: string; indent: number }[] {
+  const result: { value: string; label: string; indent: number }[] = []
+  for (const cat of categories) {
+    const prefix = '  '.repeat(level)
+    result.push({
+      value: cat.id,
+      label: `${prefix}${level > 0 ? '└ ' : ''}${cat.name}`,
+      indent: level,
+    })
+    if (cat.children && cat.children.length > 0) {
+      result.push(...flattenCategories(cat.children, level + 1))
+    }
+  }
+  return result
+}
 
 // 弹窗内表单数据
 interface FormData {
@@ -15,6 +35,7 @@ interface FormData {
   discount: string
   discountQty: string
   discountRate: string
+  applicableProductCategories: string[]
 }
 
 // 计价方式选项
@@ -42,11 +63,14 @@ const EMPTY_FORM: FormData = {
   discount: '',
   discountQty: '2',
   discountRate: '',
+  applicableProductCategories: [],
 }
 
 export default function ProcessingPage() {
   const [items, setItems] = useState<ProcessingItem[]>([])
   const [categories, setCategories] = useState<ProcessingCategory[]>([])
+  const [productCategories, setProductCategories] = useState<Category[]>([])
+  const [catOptions, setCatOptions] = useState<{ value: string; label: string; indent: number }[]>([])
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
 
@@ -64,13 +88,17 @@ export default function ProcessingPage() {
   const loadData = useCallback(async () => {
     setLoading(true)
     try {
-      const [itemsRes, catsRes] = await Promise.all([
+      const [itemsRes, catsRes, prodCatsRes] = await Promise.all([
         processingItemApi.getProcessingItems({ page: 1, size: 999 }),
         processingCategoryApi.getProcessingCategories(),
+        categoryApi.getCategories(),
       ])
       const pageData = itemsRes.data?.data
       setItems(pageData?.items || [])
       setCategories(catsRes.data?.data || [])
+      const prodCats = prodCatsRes.data?.data || []
+      setProductCategories(prodCats)
+      setCatOptions(flattenCategories(prodCats))
     } catch (error) {
       console.error('加载数据失败:', error)
       toast.error('加载数据失败')
@@ -101,6 +129,7 @@ export default function ProcessingPage() {
       discount: '',
       discountQty: '2',
       discountRate: '',
+      applicableProductCategories: item.applicableProductCategories || [],
     })
     setErrors({})
     setFormOpen(true)
@@ -161,6 +190,7 @@ export default function ProcessingPage() {
         unitPrice: parseFloat(form.unitPrice),
         unit: form.pricingMethod === 'per_meter' ? '米' : '套',
         status: 'active' as const,
+        applicableProductCategories: form.applicableProductCategories,
       }
 
       if (editingId) {
@@ -414,6 +444,49 @@ export default function ProcessingPage() {
                 </div>
               </div>
             )}
+          </div>
+
+          {/* 适用商品分类 */}
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-gray-800">适用商品分类</label>
+            <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-2 space-y-1">
+              {catOptions.map((opt) => (
+                <label
+                  key={opt.value}
+                  className="flex items-center gap-2 text-sm hover:bg-gray-50 px-1 py-0.5 rounded cursor-pointer"
+                >
+                  <input
+                    type="checkbox"
+                    checked={form.applicableProductCategories.includes(opt.value)}
+                    onChange={(e) => {
+                      const current = form.applicableProductCategories
+                      if (e.target.checked) {
+                        setForm({
+                          ...form,
+                          applicableProductCategories: [...current, opt.value],
+                        })
+                      } else {
+                        setForm({
+                          ...form,
+                          applicableProductCategories: current.filter((id) => id !== opt.value),
+                        })
+                      }
+                    }}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span
+                    className="text-gray-700"
+                    style={{ paddingLeft: `${opt.indent * 12}px` }}
+                  >
+                    {opt.label.trim()}
+                  </span>
+                </label>
+              ))}
+              {catOptions.length === 0 && (
+                <p className="text-gray-400 text-xs py-1">暂无商品分类</p>
+              )}
+            </div>
+            <p className="text-xs text-gray-400">不选则适用所有商品分类</p>
           </div>
         </div>
       </Modal>

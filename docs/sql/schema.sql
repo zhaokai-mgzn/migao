@@ -260,6 +260,7 @@ CREATE TABLE processing_items (
     max_quantity INTEGER DEFAULT 999,
     description TEXT,
     options JSONB DEFAULT '[]',  -- 加工选项（如打孔：纳米圈/四爪钩/韩式S钩）
+    applicable_product_categories JSONB DEFAULT '[]',  -- 适用商品分类ID列表
     processing_days INTEGER DEFAULT 1,
     ai_recommended BOOLEAN DEFAULT true,
     status VARCHAR(32) DEFAULT 'active',

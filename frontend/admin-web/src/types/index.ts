@@ -252,6 +252,7 @@ export interface ProcessingItem {
   status: ProcessingItemStatus
   pricingRules?: Record<string, unknown>
   options?: Record<string, unknown>[]
+  applicableProductCategories?: string[]
   description?: string
   minQuantity?: number
   maxQuantity?: number
@@ -277,6 +278,7 @@ export interface ProcessingItemFormData {
   status?: ProcessingItemStatus
   description?: string
   options?: Record<string, unknown>[]
+  applicableProductCategories?: string[]
   minQuantity?: number
   maxQuantity?: number
   processingDays?: number

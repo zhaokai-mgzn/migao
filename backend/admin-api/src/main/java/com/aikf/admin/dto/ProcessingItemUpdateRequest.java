@@ -67,6 +67,11 @@ public class ProcessingItemUpdateRequest {
     private List<Map<String, Object>> options;
 
     /**
+     * 适用商品分类ID列表（哪些商品分类需要此加工项）
+     */
+    private java.util.List<String> applicableProductCategories;
+
+    /**
      * 加工天数
      */
     private Integer processingDays;
