@@ -8,6 +8,7 @@
 
 核心铁律：
 - **禁止直接 push 到 `main`**，必须走 PR
+- **本地单测 + 集测全绿才能合并** — 未完成本地验证的 PR 禁止合并
 - 所有 PR 必须关联 Issue（`Fixes #xxx` / `Closes #xxx`）
 - 所有 Issue 必须打 Label（角色 + 类型）
 - 发现问题自动创建 Issue → 立即修复 → 不询问用户
@@ -65,10 +66,34 @@ cd frontend/admin-web && npm run dev
 
 - **禁止**先写代码再补测试 — 必须测试先行
 - **禁止**提交未通过测试的代码到任何分支
+- **禁止**未完成本地单测 + 集测验证就合并 PR — 必须本地全绿才能提交/合并
 - 每个 PR 必须包含对应的测试用例
 - CI 流水线中测试不通过 → **禁止合并**
 - 发现 Bug 时：先写一个能复现 Bug 的失败测试 → 修复代码 → 测试通过
 - E2E 测试必须覆盖所有页面的核心交互路径
+
+### 本地验证 → 自动合并（必须执行的流程）
+
+每次代码变更后，**必须在本地运行测试并确认通过**，然后才能自动合并：
+
+```bash
+# 1. 单元测试（全量） — 变更模块的全部单元测试必须通过
+cd backend/ai-agent-service && .venv/bin/python -m pytest tests/ -v
+cd backend/admin-api && ./mvnw test
+cd frontend/admin-web && npx jest --passWithNoTests
+
+# 2. 集成测试（增量） — 仅运行本次变更涉及的集成测试文件
+cd backend/ai-agent-service && .venv/bin/python -m pytest tests/test_vision_integration.py -v
+cd backend/admin-api && ./mvnw test -Dtest=OrderServiceTest,ProductControllerTest
+
+# 3. 类型检查 — 前端变更必须通过 TypeScript 类型检查
+cd frontend/admin-web && npx tsc --noEmit
+```
+
+> **单测全量，集测增量**：单元测试必须跑全量回归；集成测试只跑本次变更涉及的文件/类，避免每次全量回归耗时过长。CI 流水线仍会跑全量集测作为最终兜底。
+
+**验证通过 → 自动 commit + push + 合并 PR**
+**验证失败 → 禁止合并，必须先修复测试**
 
 ### 测试分层策略
 
