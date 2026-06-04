@@ -48,7 +48,7 @@ export const TEST_PRODUCT = {
   costPrice: 68.00,
   unit: '米',
   status: 'on_sale' as const,
-  images: ['https://mgzn-admin.oss-cn-hangzhou.aliyuncs.com/test/curtain-001.jpg'],
+  images: ['test/curtain-001.jpg'],
   specifications: {
     '材质': '涤纶',
     '门幅': '2.8米',
@@ -90,7 +90,7 @@ export const TEST_PRODUCT_UPDATE = {
   description: 'E2E测试用窗帘布料，升级高密度遮光面料',
   categoryId: 'cat_test_001',
   status: 'on_sale' as const,
-  images: ['https://mgzn-admin.oss-cn-hangzhou.aliyuncs.com/test/curtain-001.jpg'],
+  images: ['test/curtain-001.jpg'],
   unit: '米',
 }
 

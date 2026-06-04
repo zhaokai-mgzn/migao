@@ -9,22 +9,38 @@ export function cn(...inputs: ClassValue[]) {
 /**
  * 解析后端返回的图片 URL 为可访问的绝对地址。
  *
- * 后端通常返回相对路径（如 `/api/files/static/products/xxx.png`），
- * 但前端是 Next.js 静态导出部署在 OSS / CDN 上，与后端 API 不同源，
- * 需要拼接 `NEXT_PUBLIC_API_BASE_URL` 才能访问到图片。
+ * 历史上 OSS_URL_PREFIX 在不同环境使用了不同的域名（CDN / 旧 bucket），
+ * 导致 DB 中存储的图片 URL 域名可能与当前实际 OSS 域名不一致。
  *
- * 处理规则：
- * - 空值 / 非字符串：原样返回（由调用方处理空状态）
- * - data: / blob: / http(s): 协议：原样返回
- * - 以 `/` 开头的相对路径：拼接 API base URL
- * - 其他情况：原样返回
+ * 处理规则（NEXT_PUBLIC_OSS_DOMAIN 为唯一基准域名）：
+ * - 空值 / 非字符串：返回空字符串
+ * - data: / blob: 协议：原样返回
+ * - http(s) URL：域名不匹配 OSS 域名时，提取 path 用 OSS 域名重建
+ * - 以 `/` 开头的绝对路径：拼接 API base URL
+ * - 裸 object key（如 products/xxx.png）：拼接 OSS 域名
  */
 export function resolveImageUrl(url?: string | null): string {
   if (!url || typeof url !== 'string') return ''
   const trimmed = url.trim()
   if (!trimmed) return ''
-  // 完整 URL 直接返回
-  if (/^(https?:|data:|blob:)/i.test(trimmed)) return trimmed
+
+  const ossDomain = (process.env.NEXT_PUBLIC_OSS_DOMAIN || '').replace(/\/$/, '')
+
+  // data: / blob: 协议原样返回
+  if (/^(data:|blob:)/i.test(trimmed)) return trimmed
+
+  // http(s) URL：规范化到当前 OSS 域名（处理历史遗留的各种域名）
+  if (/^https?:/i.test(trimmed)) {
+    if (ossDomain && !trimmed.startsWith(ossDomain + '/')) {
+      try {
+        const parsed = new URL(trimmed)
+        const path = parsed.pathname.replace(/^\//, '')
+        if (path) return `${ossDomain}/${path}${parsed.search}`
+      } catch { /* URL 解析失败则原样返回 */ }
+    }
+    return trimmed
+  }
+
   // 协议相对 URL
   if (trimmed.startsWith('//')) return trimmed
   // 绝对路径（如 /api/files/static/xxx）拼接后端地址
@@ -33,7 +49,6 @@ export function resolveImageUrl(url?: string | null): string {
     return base ? `${base}${trimmed}` : trimmed
   }
   // 裸 object key（如 products/xxx.png）拼接 OSS 域名
-  const ossDomain = (process.env.NEXT_PUBLIC_OSS_DOMAIN || '').replace(/\/$/, '')
   if (ossDomain) {
     return `${ossDomain}/${trimmed}`
   }

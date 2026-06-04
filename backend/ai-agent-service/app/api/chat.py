@@ -1022,31 +1022,31 @@ async def get_quick_actions(
     """
     logger.debug(f"[chat/quick-actions] Fetching | tenant={current_user.tenant_id}")
     
-    # 默认快捷功能
+    # B 端管理视角快捷操作（米宝定位：智能工作助手）
     actions = [
         {
-            "id": "order_query",
-            "name": "订单查询",
+            "id": "order_manage",
+            "name": "订单管理",
+            "icon": "clipboard-list",
+            "prompt": "查看待处理订单",
+        },
+        {
+            "id": "product_manage",
+            "name": "商品管理",
             "icon": "package",
-            "prompt": "我想查询订单",
+            "prompt": "查看商品列表",
         },
         {
-            "id": "product_search",
-            "name": "商品搜索",
-            "icon": "shopping-bag",
-            "prompt": "推荐窗帘产品",
+            "id": "dashboard",
+            "name": "经营看板",
+            "icon": "bar-chart-3",
+            "prompt": "查看今日经营数据",
         },
         {
-            "id": "logistics_track",
-            "name": "物流查询",
-            "icon": "truck",
-            "prompt": "查询物流信息",
-        },
-        {
-            "id": "after_sales",
-            "name": "售后服务",
-            "icon": "refresh-cw",
-            "prompt": "我需要售后服务",
+            "id": "customer_manage",
+            "name": "客户管理",
+            "icon": "users",
+            "prompt": "查看客户列表",
         },
     ]
     
