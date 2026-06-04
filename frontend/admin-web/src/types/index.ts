@@ -303,11 +303,10 @@ export interface ProcessingCategoryFormData {
 // 加工价格计算参数
 export interface ProcessingCalculateParams {
   processingItemId: string
-  params: {
-    width?: number
-    height?: number
-    [key: string]: unknown
-  }
+  quantity: number
+  dimensions?: Record<string, number>
+  selectedOptions?: string[]
+  params?: Record<string, unknown>
 }
 
 // 加工价格计算结果
