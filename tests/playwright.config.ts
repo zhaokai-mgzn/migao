@@ -15,20 +15,30 @@ export default defineConfig({
     baseURL: process.env.BASE_URL || 'http://localhost:3001',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
-    video: 'retain-on-failure',
+    video: 'off',
     actionTimeout: 10_000,
     navigationTimeout: 15_000,
   },
 
   projects: [
     // Auth setup: runs once, saves storage state
-    { name: 'auth-setup', testMatch: /auth\.setup\.ts/ },
+    {
+      name: 'auth-setup',
+      testMatch: /auth\.setup\.ts/,
+      use: {
+        ...devices['Desktop Chrome'],
+        channel: 'chrome',
+      },
+    },
 
     // Unauthenticated tests (login, register)
     {
       name: 'auth-pages',
       testMatch: /specs\/auth\//,
-      use: { ...devices['Desktop Chrome'] },
+      use: {
+        ...devices['Desktop Chrome'],
+        channel: 'chrome', // 使用本地已安装的 Chrome，而不是下载 Chromium
+      },
     },
 
     // All authenticated tests use saved auth state
@@ -37,6 +47,7 @@ export default defineConfig({
       testIgnore: /specs\/auth\/|auth\.setup\.ts/,
       use: {
         ...devices['Desktop Chrome'],
+        channel: 'chrome', // 使用本地已安装的 Chrome，而不是下载 Chromium
         storageState: './e2e/.auth/admin.json',
       },
       dependencies: ['auth-setup'],

@@ -120,6 +120,9 @@ aliyun:
     access-key-secret: ${OSS_ACCESS_KEY_SECRET:}
     bucket-name: ${OSS_BUCKET_NAME:}
     url-prefix: ${OSS_URL_PREFIX:}
+    # 双 Bucket 路由：永久存储（商品图片等）和临时存储（聊天图片等）
+    permanent-bucket-name: ${OSS_PERMANENT_BUCKET:}
+    temporary-bucket-name: ${OSS_TEMPORARY_BUCKET:}
   sms:
     access-key-id: ${ALIYUN_SMS_ACCESS_KEY_ID:}
     access-key-secret: ${ALIYUN_SMS_ACCESS_KEY_SECRET:}
