@@ -1,0 +1,11 @@
+{
+  "Version": "1",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["oss:GetObject"],
+      "Principal": ["*"],
+      "Resource": ["acs:oss:*:*:ai-customer-service-chat-dev/*"]
+    }
+  ]
+}

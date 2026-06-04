@@ -82,7 +82,11 @@ public class OssService implements FileStorageService {
             ObjectMetadata metadata = new ObjectMetadata();
             metadata.setContentType(file.getContentType());
             metadata.setContentLength(file.getSize());
-            metadata.setObjectAcl(CannedAccessControlList.PublicRead);
+            // 仅永久 Bucket 设置 object 级 PublicRead ACL（临时 Bucket 有 BlockPublicAccess 策略，
+            // 拒绝 object 级 public ACL；其公开读权限通过 bucket 级 ACL 保障）
+            if (bucketName.equals(ossConfig.getPermanentBucketName())) {
+                metadata.setObjectAcl(CannedAccessControlList.PublicRead);
+            }
 
             ossClient.putObject(bucketName, objectKey, inputStream, metadata);
 
@@ -218,12 +222,20 @@ public class OssService implements FileStorageService {
 
     /**
      * 根据目录选择 Bucket
-     * - chat/ 目录使用临时 Bucket（7 天自动删除）
+     * - chat/ 目录使用临时 Bucket（如已配置）
      * - 其他目录使用永久 Bucket
+     *
+     * 注：临时 Bucket 需先通过控制台或 API 关闭 BlockPublicAccess，
+     * 否则回退到永久 Bucket。
      */
     public String selectBucket(String directory) {
         if (directory != null && directory.startsWith("chat/")) {
-            return ossConfig.getTemporaryBucketName();
+            String tempBucket = ossConfig.getTemporaryBucketName();
+            if (StringUtils.hasText(tempBucket)) {
+                return tempBucket;
+            }
+            // 临时 Bucket 未配置时回退到永久 Bucket
+            log.debug("临时 Bucket 未配置，使用永久 Bucket 存储聊天图片");
         }
         return ossConfig.getPermanentBucketName();
     }
