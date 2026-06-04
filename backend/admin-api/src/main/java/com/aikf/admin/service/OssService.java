@@ -8,7 +8,7 @@ import com.aliyun.oss.model.CannedAccessControlList;
 import com.aliyun.oss.model.ObjectMetadata;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -25,13 +25,13 @@ import java.util.UUID;
 
 /**
  * 阿里云 OSS 文件存储服务实现
- * 当 OSS 配置存在且有效时使用此实现
+ * 当 aliyun.oss.endpoint 环境变量存在时使用此实现（优先级高于 LocalFileStorageService）
  */
 @Slf4j
 @Service
 @Primary
 @RequiredArgsConstructor
-@ConditionalOnBean(OSS.class)
+@ConditionalOnProperty(name = "aliyun.oss.endpoint")
 public class OssService implements FileStorageService {
 
     private final OSS ossClient;
