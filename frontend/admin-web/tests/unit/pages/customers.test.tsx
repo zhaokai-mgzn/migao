@@ -3,12 +3,17 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 // Mock API
+const mockGetCustomers = vi.fn()
+const mockGetCustomerTags = vi.fn()
+const mockCreateCustomerTag = vi.fn()
+const mockDeleteCustomerTag = vi.fn()
+
 vi.mock('@/lib/api', () => ({
   customerApi: {
-    getCustomers: vi.fn(),
-    getCustomerTags: vi.fn(),
-    createCustomerTag: vi.fn(),
-    deleteCustomerTag: vi.fn(),
+    getCustomers: (...args: any[]) => mockGetCustomers(...args),
+    getCustomerTags: (...args: any[]) => mockGetCustomerTags(...args),
+    createCustomerTag: (...args: any[]) => mockCreateCustomerTag(...args),
+    deleteCustomerTag: (...args: any[]) => mockDeleteCustomerTag(...args),
   },
 }))
 
@@ -140,6 +145,30 @@ describe('CustomersPage', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+
+    // Mock API responses
+    mockGetCustomers.mockResolvedValue({
+      data: {
+        data: {
+          items: [
+            { id: '1', name: '张美丽', phone: '138****1234', channel: 'wechat_mini', vipLevel: 'gold', totalOrders: 5, totalSpent: 12000, createdAt: '2026-04-20T14:30:00Z' },
+            { id: '2', name: '李优雅', phone: '139****5678', channel: 'wechat_mp', vipLevel: 'silver', totalOrders: 3, totalSpent: 8000, createdAt: '2026-04-21T10:00:00Z' },
+          ],
+          total: 2,
+          page: 1,
+          pageSize: 10,
+        },
+      },
+    })
+
+    mockGetCustomerTags.mockResolvedValue({
+      data: {
+        data: [
+          { id: '1', name: 'VIP客户', color: '#ff6b6b' },
+          { id: '2', name: '窗帘定制', color: '#4ecdc4' },
+        ],
+      },
+    })
   })
 
   it('should render page title', async () => {

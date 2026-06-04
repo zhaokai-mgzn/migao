@@ -80,7 +80,7 @@ describe('Multi-Tenant Frontend Isolation', () => {
       })
 
       expect(mockLogin).toHaveBeenCalledWith(
-        expect.objectContaining({ tenantId: 'tenant_default' })
+        expect.objectContaining({ tenantId: 1 })
       )
     })
   })

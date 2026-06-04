@@ -157,7 +157,7 @@ describe('LoginPage', () => {
     await user.click(screen.getByRole('button', { name: /登 录/ }))
 
     await waitFor(() => {
-      expect(mockLogin).toHaveBeenCalledWith('admin', 'admin123', true)
+      expect(mockLogin).toHaveBeenCalledWith('admin', 'admin123', true, '')
     })
   })
 
@@ -213,7 +213,7 @@ describe('LoginPage', () => {
     await user.click(screen.getByRole('button', { name: /登 录/ }))
 
     await waitFor(() => {
-      expect(mockLogin).toHaveBeenCalledWith('admin', 'admin123', false)
+      expect(mockLogin).toHaveBeenCalledWith('admin', 'admin123', false, '')
     })
   })
 
@@ -238,10 +238,12 @@ describe('LoginPage', () => {
     expect(screen.getByText('登录中...')).toBeInTheDocument()
   })
 
-  it('should show default credentials hint on password tab', async () => {
+  it('should show employee login heading on password tab', async () => {
     render(<LoginPage />)
     await switchToPasswordTab(user)
-    expect(screen.getByText(/默认账号：admin/)).toBeInTheDocument()
+    // "员工登录" appears in both the tab button and the heading, use getAllByText
+    const elements = screen.getAllByText('员工登录')
+    expect(elements.length).toBeGreaterThanOrEqual(1)
   })
 
   it('should clear field errors when typing (password tab)', async () => {

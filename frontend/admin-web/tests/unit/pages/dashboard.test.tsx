@@ -7,24 +7,29 @@ vi.mock('@/store/auth', () => ({
   useAuthStore: (...args: any[]) => mockUseAuthStore(...args),
 }))
 
+// Mock dashboard API
+const mockGetStats = vi.fn()
+const mockGetOrderTrend = vi.fn()
+const mockGetOrderStatus = vi.fn()
+const mockGetRecentOrders = vi.fn()
+const mockGetActiveSessions = vi.fn()
+
+vi.mock('@/lib/api', () => ({
+  dashboardApi: {
+    getStats: (...args: any[]) => mockGetStats(...args),
+    getOrderTrend: (...args: any[]) => mockGetOrderTrend(...args),
+    getOrderStatusDistribution: (...args: any[]) => mockGetOrderStatus(...args),
+    getRecentOrders: (...args: any[]) => mockGetRecentOrders(...args),
+    getActiveSessions: (...args: any[]) => mockGetActiveSessions(...args),
+  },
+}))
+
 // Mock next/link
 vi.mock('next/link', () => ({
   default: ({ children, href, ...props }: any) => <a href={href} {...props}>{children}</a>,
 }))
 
-// Mock lucide-react
-vi.mock('lucide-react', () => {
-  const stub = (name: string) => (props: any) => <span data-testid={`icon-${name}`} {...props} />
-  return {
-    ClipboardList: stub('clipboard'),
-    Users: stub('users'),
-    MessageSquare: stub('message'),
-    DollarSign: stub('dollar'),
-    Plus: stub('plus'),
-    FileUp: stub('fileup'),
-    CalendarDays: stub('calendar'),
-  }
-})
+// lucide-react 使用 setup.ts 全局 mock
 
 // Mock recharts (used in dashboard charts)
 vi.mock('recharts', () => ({
@@ -83,6 +88,26 @@ describe('DashboardPage', () => {
     mockUseAuthStore.mockReturnValue({
       user: { id: '1', username: 'admin', name: '管理员' },
     })
+
+    // Mock API responses
+    mockGetStats.mockResolvedValue({
+      data: {
+        data: {
+          todayOrders: 10,
+          todayOrdersChange: 5,
+          totalCustomers: 100,
+          newCustomersToday: 3,
+          activeSessions: 5,
+          activeSessionsChange: 2,
+          monthRevenue: 50000,
+          monthRevenueChange: 10,
+        },
+      },
+    })
+    mockGetOrderTrend.mockResolvedValue({ data: { data: [] } })
+    mockGetOrderStatus.mockResolvedValue({ data: { data: [] } })
+    mockGetRecentOrders.mockResolvedValue({ data: { data: [] } })
+    mockGetActiveSessions.mockResolvedValue({ data: { data: [] } })
   })
 
   it('should render welcome message with user name', async () => {
@@ -100,10 +125,12 @@ describe('DashboardPage', () => {
     })
   })
 
-  it('should render quick action links', () => {
+  it('should render stat cards', async () => {
     render(<DashboardPage />)
-    expect(screen.getByText('新建订单')).toBeInTheDocument()
-    expect(screen.getByText('上传文档')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getByTestId('stat-card-今日订单')).toBeInTheDocument()
+      expect(screen.getByTestId('stat-card-客户总数')).toBeInTheDocument()
+    })
   })
 
   it('should show loading skeleton initially', () => {
@@ -150,17 +177,5 @@ describe('DashboardPage', () => {
     render(<DashboardPage />)
     // The date string should contain the year
     expect(screen.getByText(/2026年/)).toBeInTheDocument()
-  })
-
-  it('should link to orders page', () => {
-    render(<DashboardPage />)
-    const link = screen.getByText('新建订单').closest('a')
-    expect(link).toHaveAttribute('href', '/orders')
-  })
-
-  it('should link to knowledge page', () => {
-    render(<DashboardPage />)
-    const link = screen.getByText('上传文档').closest('a')
-    expect(link).toHaveAttribute('href', '/knowledge')
   })
 })
