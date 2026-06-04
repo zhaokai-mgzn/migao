@@ -26,6 +26,7 @@ import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -80,10 +81,12 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      * @param keyword         搜索关键词（客户姓名/电话/订单号）
      * @param followStatus    跟进状态
      * @param hasProcessing   是否含加工项（true=只查含加工项，false=只查不含加工项，null=不过滤）
+     * @param startDate       开始日期（YYYY-MM-DD 格式）
+     * @param endDate         结束日期（YYYY-MM-DD 格式）
      * @param tenantId        租户ID
      * @return 分页响应
      */
-    public PageResponse<OrderListResponse> getOrderPage(long page, long size, String status, String keyword, String followStatus, Boolean hasProcessing, Long tenantId) {
+    public PageResponse<OrderListResponse> getOrderPage(long page, long size, String status, String keyword, String followStatus, Boolean hasProcessing, String startDate, String endDate, Long tenantId) {
         LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<>();
 
         // 状态筛选
@@ -94,6 +97,14 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         // 跟进状态筛选
         if (StringUtils.hasText(followStatus)) {
             wrapper.eq(Order::getFollowStatus, followStatus);
+        }
+
+        // 时间范围筛选
+        if (StringUtils.hasText(startDate)) {
+            wrapper.ge(Order::getCreatedAt, OffsetDateTime.parse(startDate + "T00:00:00Z"));
+        }
+        if (StringUtils.hasText(endDate)) {
+            wrapper.le(Order::getCreatedAt, OffsetDateTime.parse(endDate + "T23:59:59Z"));
         }
 
         // 关键词搜索（客户姓名/电话/订单号）

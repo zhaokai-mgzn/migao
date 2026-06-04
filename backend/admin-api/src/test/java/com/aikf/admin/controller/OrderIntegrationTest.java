@@ -163,7 +163,7 @@ class OrderIntegrationTest {
 
         PageResponse<OrderListResponse> pageResponse = PageResponse.of(2L, 1L, 20L, List.of(order1, order2));
 
-        when(orderService.getOrderPage(eq(1L), eq(20L), isNull(), isNull(), isNull(), isNull(), eq(1L)))
+        when(orderService.getOrderPage(eq(1L), eq(20L), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(1L)))
                 .thenReturn(pageResponse);
 
         // When & Then
@@ -178,6 +178,40 @@ class OrderIntegrationTest {
                 .andExpect(jsonPath("$.data.items").isArray())
                 .andExpect(jsonPath("$.data.items[0].orderNo").value("ORD20250425001"))
                 .andExpect(jsonPath("$.data.items[1].customerName").value("李四"));
+    }
+
+    @Test
+    @DisplayName("获取订单列表 - 按时间范围筛选")
+    void testGetOrderList_WithDateRange() throws Exception {
+        // Given
+        OrderListResponse order1 = new OrderListResponse();
+        order1.setId("order-001");
+        order1.setOrderNo("ORD20250425001");
+        order1.setCustomerName("张三");
+        order1.setStatus("pending");
+        order1.setTotalAmount(new BigDecimal("1500.00"));
+
+        PageResponse<OrderListResponse> pageResponse = PageResponse.of(1L, 1L, 20L, List.of(order1));
+
+        when(orderService.getOrderPage(eq(1L), eq(20L), isNull(), isNull(), isNull(), isNull(),
+                eq("2025-01-01"), eq("2025-12-31"), eq(1L)))
+                .thenReturn(pageResponse);
+
+        // When & Then
+        mockMvc.perform(get("/api/admin/orders")
+                        .param("page", "1")
+                        .param("size", "20")
+                        .param("startDate", "2025-01-01")
+                        .param("endDate", "2025-12-31")
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.items").isArray())
+                .andExpect(jsonPath("$.data.items[0].orderNo").value("ORD20250425001"));
+
+        verify(orderService).getOrderPage(eq(1L), eq(20L), isNull(), isNull(), isNull(), isNull(),
+                eq("2025-01-01"), eq("2025-12-31"), eq(1L));
     }
 
     // ======================== 查询订单详情 ========================
