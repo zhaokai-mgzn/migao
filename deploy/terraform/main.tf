@@ -115,6 +115,24 @@ variable "oss_access_key_secret" {
   sensitive   = true
 }
 
+variable "permanent_bucket_name" {
+  description = "永久存储 Bucket 名称（管理前端、商品图片等长期数据）"
+  type        = string
+  default     = "ai-customer-service-admin-dev"
+}
+
+variable "temporary_bucket_name" {
+  description = "临时存储 Bucket 名称（聊天图片等临时数据）"
+  type        = string
+  default     = "ai-customer-service-chat-dev"
+}
+
+variable "chat_image_retention_days" {
+  description = "聊天图片保留天数（临时存储自动过期策略）"
+  type        = number
+  default     = 7
+}
+
 # ==================== 网络资源（VPC / VSwitch / 安全组）====================
 
 resource "alicloud_vpc" "main" {
@@ -187,7 +205,10 @@ locals {
   redis_connection_domain = "r-bp162hozkjd55e18rb.redis.rds.aliyuncs.com"
   redis_port              = "6379"
   # OSS 域名唯一真相源 — 所有服务、CI/CD、前端均引用此值
-  oss_domain              = "${alicloud_oss_bucket.admin_frontend.bucket}.oss-cn-hangzhou.aliyuncs.com"
+  # 永久存储（管理前端、商品图片等）
+  oss_domain              = "${alicloud_oss_bucket.permanent.bucket}.oss-cn-hangzhou.aliyuncs.com"
+  # 临时存储（聊天图片等）
+  oss_temporary_domain    = "${alicloud_oss_bucket.temporary.bucket}.oss-cn-hangzhou.aliyuncs.com"
 }
 
 # ==================== SAE 环境变量（唯一真相源）====================
@@ -220,12 +241,16 @@ locals {
     "WECHAT_MINI_APPID"    = var.wechat_mini_appid
     "WECHAT_MINI_SECRET"   = var.wechat_mini_appsecret
     # OSS
-    "OSS_ENDPOINT"        = "oss-cn-hangzhou-internal.aliyuncs.com"
-    "OSS_ACCESS_KEY_ID"   = var.oss_access_key_id
+    "OSS_ENDPOINT"          = "oss-cn-hangzhou-internal.aliyuncs.com"
+    "OSS_ACCESS_KEY_ID"     = var.oss_access_key_id
     "OSS_ACCESS_KEY_SECRET" = var.oss_access_key_secret
-    "OSS_BUCKET_NAME"     = alicloud_oss_bucket.admin_frontend.bucket
+    # 双 Bucket 存储策略
+    "OSS_PERMANENT_BUCKET"  = alicloud_oss_bucket.permanent.bucket
+    "OSS_TEMPORARY_BUCKET"  = alicloud_oss_bucket.temporary.bucket
+    # 向后兼容：OSS_BUCKET_NAME 指向永久 Bucket
+    "OSS_BUCKET_NAME"       = alicloud_oss_bucket.permanent.bucket
     # 直接使用 OSS 域名（CDN admin.migaozn.com 未正确配置 CNAME）
-    "OSS_URL_PREFIX"      = "https://${local.oss_domain}"
+    "OSS_URL_PREFIX"        = "https://${local.oss_domain}"
   })
 
   ai_agent_envs = merge({
@@ -257,6 +282,12 @@ locals {
     "SSE_TIMEOUT"          = "300"
     "SSE_PING_INTERVAL"    = "30"
     "CORS_ALLOWED_ORIGINS" = var.cors_allowed_origins
+    # OSS 双 Bucket 存储策略
+    "OSS_ENDPOINT"         = "oss-cn-hangzhou-internal.aliyuncs.com"
+    "OSS_ACCESS_KEY_ID"    = var.oss_access_key_id
+    "OSS_ACCESS_KEY_SECRET" = var.oss_access_key_secret
+    "OSS_PERMANENT_BUCKET" = alicloud_oss_bucket.permanent.bucket
+    "OSS_TEMPORARY_BUCKET" = alicloud_oss_bucket.temporary.bucket
     # 图片 URL 重写：CDN 域名 → OSS 公网域名（DashScope Vision API 需要公网可访问的 URL）
     "IMAGE_URL_REWRITE_FROM" = "https://admin.migaozn.com"
     "IMAGE_URL_REWRITE_TO"   = "https://${local.oss_domain}"
@@ -415,18 +446,51 @@ resource "alicloud_log_store" "admin_api" {
   retention_period      = 30
 }
 
-# ==================== OSS 静态资源存储（管理前端 Next.js 静态托管）====================
+# ==================== OSS 双 Bucket 存储策略 ====================
 
-resource "alicloud_oss_bucket" "admin_frontend" {
-  bucket = "${var.project_name}-admin-${var.environment}"
+# 永久存储 Bucket（管理前端静态托管、商品图片等长期数据）
+resource "alicloud_oss_bucket" "permanent" {
+  bucket = var.permanent_bucket_name
+
   website {
     index_document = "index.html"
     error_document = "404.html"
   }
+
+  tags = {
+    Environment = var.environment
+    Type        = "permanent-storage"
+  }
 }
 
-resource "alicloud_oss_bucket_acl" "admin_frontend" {
-  bucket = alicloud_oss_bucket.admin_frontend.bucket
+resource "alicloud_oss_bucket_acl" "permanent" {
+  bucket = alicloud_oss_bucket.permanent.bucket
+  acl    = "public-read"
+}
+
+# 临时存储 Bucket（聊天图片等临时数据，自动过期删除）
+resource "alicloud_oss_bucket" "temporary" {
+  bucket = var.temporary_bucket_name
+
+  # 生命周期规则：chat/ 目录下的文件 {chat_image_retention_days} 天后自动删除
+  lifecycle_rule {
+    id      = "auto-delete-chat-images"
+    prefix  = "chat/"
+    enabled = true
+
+    expiration {
+      days = var.chat_image_retention_days
+    }
+  }
+
+  tags = {
+    Environment = var.environment
+    Type        = "temporary-storage"
+  }
+}
+
+resource "alicloud_oss_bucket_acl" "temporary" {
+  bucket = alicloud_oss_bucket.temporary.bucket
   acl    = "public-read"
 }
 
@@ -452,9 +516,14 @@ output "admin_api_app_id" {
   value       = alicloud_sae_application.admin_api.id
 }
 
-output "oss_bucket_domain" {
-  description = "OSS 前端静态资源访问域名"
+output "oss_permanent_bucket_domain" {
+  description = "OSS 永久存储 Bucket 域名（管理前端、商品图片等）"
   value       = local.oss_domain
+}
+
+output "oss_temporary_bucket_domain" {
+  description = "OSS 临时存储 Bucket 域名（聊天图片等）"
+  value       = local.oss_temporary_domain
 }
 
 output "acr_namespace" {
