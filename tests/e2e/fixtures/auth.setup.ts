@@ -38,7 +38,8 @@ setup('authenticate as admin', async ({ page }) => {
   const tokens = await loginViaApi(TEST_USERNAME, TEST_PASSWORD, TEST_TENANT_ID)
 
   // Step 2: Navigate to the app so we're on the correct origin
-  await page.goto('/')
+  // Next.js dev server 首次编译较慢，用 domcontentloaded + 30s 超时
+  await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 })
 
   // Step 3: Inject auth state into the browser
   await injectAuth(page, tokens, {
@@ -51,7 +52,7 @@ setup('authenticate as admin', async ({ page }) => {
   })
 
   // Step 4: Navigate to dashboard to let the app pick up the auth state
-  await page.goto('/dashboard')
+  await page.goto('/dashboard', { waitUntil: 'domcontentloaded', timeout: 30_000 })
 
   // Step 5: Verify we're authenticated — should see the sidebar / dashboard
   // The sidebar renders with class 'fixed left-0' and contains navigation links
