@@ -280,7 +280,7 @@ async def _agent_stream_to_sse(
                                 if tool_name == "interact" and result_dict.get("success"):
                                     data = result_dict.get("data", {})
                                     component_type = data.get("component", "")
-                                    if component_type in ("choice", "confirm"):
+                                    if component_type in ("choice", "confirm", "form"):
                                         yield SSEEvent.interactive(component_type, data)
 
                     elif response.type == "suggestions":
