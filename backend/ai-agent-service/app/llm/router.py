@@ -14,13 +14,12 @@ from typing import Any, List, Optional
 from app.config import settings
 
 
-# ---- 模型常量（与百炼模型对齐） ----
-MODEL_MAX: str = "qwen3.7-max"      # 复杂推理 / 多工具协同
-MODEL_PLUS: str = "qwen3.6-plus"    # 默认平衡档
-MODEL_TURBO: str = "qwen-turbo"     # 简单快速
-MODEL_FLASH: str = "qwen-flash"     # 极简任务
-# 注意：视觉模型由 settings.DASHSCOPE_VISION_MODEL 配置（默认 qwen3.6-flash），
-# 不再硬编码常量，因为百炼可用视觉模型列表可能随账号权限变化。
+# ---- 模型路由常量已收敛到 settings（app/config.py），禁止在此硬编码 ----
+#     settings.LLM_MODEL_MAX   — 复杂推理 / 多工具协同
+#     settings.LLM_MODEL_PLUS  — 默认平衡档
+#     settings.LLM_MODEL_TURBO — 简单快速
+#     settings.LLM_MODEL_FLASH — 极简任务
+#     settings.DASHSCOPE_VISION_MODEL — 视觉模型
 
 # ---- 路由判定阈值 ----
 _SIMPLE_INTENTS = {"greeting", "farewell", "capabilities"}
@@ -90,11 +89,11 @@ def select_model(
 
     # 4. 简单意图 → turbo
     if intent and intent.lower() in _SIMPLE_INTENTS:
-        return MODEL_TURBO
+        return settings.LLM_MODEL_TURBO
 
     # 5. 复杂任务 → max
     if tool_count >= _TOOL_COUNT_MAX_THRESHOLD or text_length > _TEXT_LENGTH_MAX_THRESHOLD:
-        return MODEL_MAX
+        return settings.LLM_MODEL_MAX
 
     # 6. 默认平衡档
-    return MODEL_PLUS
+    return settings.LLM_MODEL_PLUS

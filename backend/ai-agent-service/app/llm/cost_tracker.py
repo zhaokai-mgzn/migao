@@ -24,14 +24,13 @@ logger = logging.getLogger(__name__)
 
 
 # 百炼定价（元 / 百万 tokens，2025-2026 公开价目）
-# 注：qwen-vl-plus/max/ocr 不在当前账号可用模型列表中，已移除。
-#     视觉模型使用 qwen3.6-flash / qwen3.6-plus，定价见下方。
+# 模型名统一使用 settings 常量，下线模型只需改 config.py
+# qwen-turbo / qwen-flash 已下线，其定价条目已移除
+from app.config import settings
 MODEL_PRICING: dict[str, dict[str, float]] = {
-    "qwen-flash": {"input": 0.30, "output": 1.20},
-    "qwen-turbo": {"input": 0.50, "output": 2.00},
-    "qwen3.6-flash": {"input": 0.30, "output": 1.20},  # 轻量推理+视觉（暂定，与 qwen-flash 对齐）
-    "qwen3.6-plus": {"input": 4.00, "output": 12.00},
-    "qwen3.7-max": {"input": 20.00, "output": 60.00},
+    settings.LLM_MODEL_FLASH: {"input": 0.30, "output": 1.20},      # qwen3.6-flash
+    settings.LLM_MODEL_PLUS:  {"input": 4.00, "output": 12.00},      # qwen3.6-plus
+    settings.LLM_MODEL_MAX:   {"input": 20.00, "output": 60.00},     # qwen3.7-max
 }
 
 
