@@ -901,6 +901,37 @@ export interface ChatToolCall {
 // 聊天消息角色
 export type ChatMessageRole = 'user' | 'assistant' | 'system'
 
+// 交互式组件类型
+export type InteractiveComponentType = 'choice' | 'confirm'
+
+// 选项卡片中的选项
+export interface InteractiveOption {
+  label: string
+  value: string
+  description?: string
+}
+
+// 确认卡片中的字段
+export interface InteractiveField {
+  label: string
+  value: string
+}
+
+// 交互式组件数据
+export interface InteractiveComponent {
+  component: InteractiveComponentType
+  title: string
+  // choice 组件
+  options?: InteractiveOption[]
+  multiSelect?: boolean
+  // confirm 组件
+  fields?: InteractiveField[]
+  confirmLabel?: string
+  cancelLabel?: string
+  confirmValue?: string
+  cancelValue?: string
+}
+
 // 聊天消息
 export interface ChatMessage {
   id: string
@@ -914,10 +945,11 @@ export interface ChatMessage {
   created_at?: string
   isStreaming?: boolean
   suggestions?: string[]  // 后续问题建议列表
+  interactive?: InteractiveComponent  // 交互式组件
 }
 
 // SSE 事件类型
-export type SSEEventType = 'message_start' | 'text_delta' | 'text' | 'tool_start' | 'tool_call' | 'tool_result' | 'card' | 'loading' | 'message_end' | 'error' | 'message' | 'done' | 'suggestions'
+export type SSEEventType = 'message_start' | 'text_delta' | 'text' | 'tool_start' | 'tool_call' | 'tool_result' | 'card' | 'loading' | 'message_end' | 'error' | 'message' | 'done' | 'suggestions' | 'interactive'
 
 // 卡片类型
 export type CardType = 'product_list' | 'product_detail' | 'logistics' | 'order' | 'knowledge'

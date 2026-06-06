@@ -20,9 +20,10 @@ import { useState } from 'react'
 import type { ChatMessage, ChatToolCall, ChatCard } from '@/types'
 
 import ToolResultCard from './ToolResultCard'
+import InteractiveMessage from './InteractiveMessage'
 
 export default function MessageList() {
-  const { messages, isStreaming, isLoadingMessages, currentSessionId } =
+  const { messages, isLoadingMessages, currentSessionId } =
     useChatStore()
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -124,12 +125,14 @@ function MessageBubble({ message }: { message: ChatMessage }) {
           )}
         </div>
 
-        {/* 工具调用展示 */}
+        {/* 工具调用展示 — 仅在出错时展示，便于排查 */}
         {isAI && message.tool_calls && message.tool_calls.length > 0 && (
           <div className="mt-2 w-full space-y-1.5">
-            {message.tool_calls.map((tc, index) => (
-              <ToolCallPanel key={index} toolCall={tc} />
-            ))}
+            {message.tool_calls
+              .filter((tc) => tc.status === 'error')
+              .map((tc, index) => (
+                <ToolCallPanel key={index} toolCall={tc} />
+              ))}
           </div>
         )}
 
@@ -139,6 +142,16 @@ function MessageBubble({ message }: { message: ChatMessage }) {
             {message.cards.map((card, index) => (
               <CardRenderer key={index} card={card} />
             ))}
+          </div>
+        )}
+
+        {/* 交互式组件（选项卡片 / 确认卡片） */}
+        {isAI && message.interactive && (
+          <div className="mt-2 w-full">
+            <InteractiveMessage
+              interactive={message.interactive}
+              disabled={!!message.suggestions || message.isStreaming}
+            />
           </div>
         )}
 
@@ -217,10 +230,22 @@ function AIMessageContent({ message }: { message: ChatMessage }) {
     )
   }
 
+  // 清理 AI 回复中的 tool_call 伪代码块（Vision LLM 可能有幻觉输出）
+  const cleanContent = (message.content || '').replace(
+    /```tool_call[\s\S]*?```/g,
+    ''
+  ).trim()
+
+  if (!cleanContent && !message.isStreaming) {
+    return (
+      <p className="text-sm text-gray-400 italic">（已处理）</p>
+    )
+  }
+
   return (
     <div className="prose prose-sm max-w-none text-gray-800 [&_p]:my-1 [&_ul]:my-1 [&_ol]:my-1 [&_pre]:my-2 [&_code]:text-xs [&_code]:bg-gray-100 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded">
       <ReactMarkdown remarkPlugins={[remarkGfm]}>
-        {message.content}
+        {cleanContent}
       </ReactMarkdown>
       {message.isStreaming && (
         <span className="inline-block w-1.5 h-4 bg-primary-600 animate-pulse ml-0.5 align-text-bottom" />

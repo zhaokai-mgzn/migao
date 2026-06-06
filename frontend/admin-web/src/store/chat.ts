@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { chatApi } from '@/lib/api'
 import { useAuthStore } from '@/store/auth'
-import type { ChatSession, ChatMessage, ChatToolCall, ChatCard, QuickAction } from '@/types'
+import type { ChatSession, ChatMessage, ChatToolCall, ChatCard, InteractiveComponent, QuickAction } from '@/types'
 import { toast } from 'sonner'
 import { SSEParser, type SSEEvent } from '@/lib/sse-parser'
 
@@ -374,6 +374,23 @@ function handleSSEEvent(
           messages: state.messages.map(msg =>
             msg.id === aiMsgId
               ? { ...msg, suggestions }
+              : msg
+          ),
+        }))
+        break
+      }
+
+      case 'interactive': {
+        const { type: _type, ...data } = parsedData
+        const interactive: InteractiveComponent = {
+          component: parsedData.type,
+          title: parsedData.title || '',
+          ...data,
+        }
+        set(state => ({
+          messages: state.messages.map(msg =>
+            msg.id === aiMsgId
+              ? { ...msg, interactive }
               : msg
           ),
         }))

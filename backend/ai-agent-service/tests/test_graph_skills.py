@@ -737,7 +737,7 @@ class TestExecuteSkillVisionRetry:
         self, mock_set_ctx, mock_create_reg, mock_get_llm,
         mock_get_tracker, mock_get_breaker,
     ):
-        """首次 Vision 调用返回空内容，重试后成功返回内容"""
+        """首次 Vision 调用返回空内容，重试后成功 → 图片分析结果传给文本 LLM + Tool Calling"""
         # Mock registry
         mock_registry = MagicMock()
         mock_registry.get_langchain_tools.return_value = []
@@ -752,18 +752,28 @@ class TestExecuteSkillVisionRetry:
         mock_breaker.call = _passthrough_breaker
         mock_get_breaker.return_value = mock_breaker
 
-        # 第一次返回空内容，第二次返回正常内容
+        # Vision LLM: 第一次返回空内容，第二次返回图片分析
         empty_response = MagicMock(spec=AIMessage)
         empty_response.content = ""
         empty_response.tool_calls = []
 
-        good_response = MagicMock(spec=AIMessage)
-        good_response.content = "图片显示这是一款 HOME YUUR 品牌的色卡系列"
-        good_response.tool_calls = []
+        vision_response = MagicMock(spec=AIMessage)
+        vision_response.content = "图片显示这是一款 HOME YUUR 品牌的色卡系列"
+        vision_response.tool_calls = []
 
-        mock_llm = MagicMock()
-        mock_llm.ainvoke = AsyncMock(side_effect=[empty_response, good_response])
-        mock_get_llm.return_value = mock_llm
+        # 文本 LLM: 接收图片分析结果后生成最终回复
+        text_response = MagicMock(spec=AIMessage)
+        text_response.content = "根据图片分析，这是一款 HOME YUUR 色卡系列，请问需要创建商品吗？"
+        text_response.tool_calls = []
+
+        mock_vision_llm = MagicMock()
+        mock_vision_llm.ainvoke = AsyncMock(side_effect=[empty_response, vision_response])
+
+        mock_text_llm = MagicMock()
+        mock_text_llm.ainvoke = AsyncMock(return_value=text_response)
+
+        # get_skill_llm 调用顺序：1) Vision LLM  2) 文本 LLM (enable_thinking=True)
+        mock_get_llm.side_effect = [mock_vision_llm, mock_text_llm]
 
         # Mock tracker
         mock_tracker = MagicMock()
@@ -784,10 +794,11 @@ class TestExecuteSkillVisionRetry:
             system_prompt="你是商品助手",
         )
 
-        # 重试后应获得正确内容
-        assert result["final_answer"] == "图片显示这是一款 HOME YUUR 品牌的色卡系列"
-        # LLM 应被调用 2 次（首次空 + 重试成功）
-        assert mock_llm.ainvoke.call_count == 2
+        # 文本 LLM 生成最终回复
+        assert result["final_answer"] == "根据图片分析，这是一款 HOME YUUR 色卡系列，请问需要创建商品吗？"
+        # Vision LLM 调用 2 次，文本 LLM 调用 1 次
+        assert mock_vision_llm.ainvoke.call_count == 2
+        assert mock_text_llm.ainvoke.call_count == 1
 
     @patch("app.graph.skills.base_skill.get_breaker")
     @patch("app.graph.skills.base_skill.get_tracker")
@@ -798,7 +809,7 @@ class TestExecuteSkillVisionRetry:
         self, mock_set_ctx, mock_create_reg, mock_get_llm,
         mock_get_tracker, mock_get_breaker,
     ):
-        """两次 Vision 调用都返回空内容，最终 final_answer 为空"""
+        """两次 Vision 调用都返回空内容 → 返回友好提示，不进入 Tool Calling"""
         # Mock registry
         mock_registry = MagicMock()
         mock_registry.get_langchain_tools.return_value = []
@@ -841,7 +852,7 @@ class TestExecuteSkillVisionRetry:
             system_prompt="你是商品助手",
         )
 
-        # 两次都空 → final_answer 为空（由 chat.py 兜底处理）
-        assert result["final_answer"] == ""
+        # Vision LLM 完全失败 → 返回友好提示，引导用户用文字描述
+        assert "图片分析暂时无法完成" in result["final_answer"]
         # LLM 应被调用 2 次（最大重试次数）
         assert mock_llm.ainvoke.call_count == 2

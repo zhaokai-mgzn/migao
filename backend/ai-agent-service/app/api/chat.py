@@ -276,6 +276,13 @@ async def _agent_stream_to_sse(
                                     if card_type:
                                         yield SSEEvent.card(card_type, result_dict.get("data", {}))
 
+                                # 检查是否来自 interact 工具 → 发送交互式组件事件
+                                if tool_name == "interact" and result_dict.get("success"):
+                                    data = result_dict.get("data", {})
+                                    component_type = data.get("component", "")
+                                    if component_type in ("choice", "confirm"):
+                                        yield SSEEvent.interactive(component_type, data)
+
                     elif response.type == "suggestions":
                         # 后续问题建议（来自 LangGraph suggestions_node）
                         sugs = response.metadata.get("suggestions", []) if response.metadata else []

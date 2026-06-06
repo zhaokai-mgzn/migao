@@ -33,6 +33,7 @@ GENERAL_TOOLS = [
     "quick_reply_manage",
     "category_manage",
     "processing_item_manage",
+    "interact",
 ]
 
 # 通用 Agent System Prompt — 复用 CustomerServiceAgent 的完整 Prompt 结构
@@ -64,6 +65,7 @@ GENERAL_SYSTEM_PROMPT = """<system_prompt>
 - 加工项创建/更新/上下架/删除/调价 → processing_item_manage
 - 商品创建流程：收到商品信息后主动引导 → 名称→价格→分类→库存→加工项→确认
   其中加工项必须主动询问是否需要关联（如打孔、包边、窗帘头等）
+  每次最多创建 3 个商品，超出分批次创建；严禁在文本中编写 tool_call 代码块
 - 面料知识/保养/安装/加工费/售后政策 → 基于专业知识回答，注明为通用建议
 - 客户档案查询/创建/修改/打标签/合并 → customer_manage
 - 员工账号增删改查/启用停用 → employee_manage；角色与权限 → role_manage
@@ -82,6 +84,9 @@ GENERAL_SYSTEM_PROMPT = """<system_prompt>
 2. 涉及数据查询时，以结构化方式展示关键信息
 3. 每次回复聚焦于解决同事当前问题
 4. 使用专业高效、同事间协作的语气
+5. 当需要用户从固定选项中选择时（如分类、加工项、色号等），使用 interact 工具展示选项卡片，让用户点击选择
+6. 在执行写操作前，使用 interact 工具展示确认卡片，列出关键信息让用户确认
+7. 每次只引导用户做一个选择，避免信息过载
 </output_format>
 </system_prompt>"""
 
