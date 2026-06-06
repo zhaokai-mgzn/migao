@@ -325,6 +325,355 @@ def _make_multimodal_state(**overrides):
     return state
 
 
+def _make_text_after_multimodal_state(**overrides):
+    """构建一条文本消息跟随一条多模态消息的状态
+
+    模拟：用户先发图片消息，再发纯文本跟进
+    has_images() 应返回 False（只查最后一条），但历史中包含 image_url
+    """
+    from app.llm.router import has_images
+
+    state = _make_state(**overrides)
+    state["messages"] = [
+        HumanMessage(
+            content=[
+                {"type": "text", "text": "根据图片创建一个商品"},
+                {"type": "image_url", "image_url": {"url": "https://example.com/photo.jpg"}},
+            ]
+        ),
+        AIMessage(content="图片显示这是一款色卡系列，包含2699-01到2699-16共16个色号。请问商品名称和价格？"),
+        HumanMessage(content="2699《花序》23.8元/米"),
+    ]
+    return state
+
+
+class TestExecuteSkillTextAfterMultimodal:
+    """文本消息跟随多模态消息时，text 路径应清理历史 image_url (Issue #204 regression)
+
+    当 has_images() 只查最后一条 HumanMessage 时，文本路径的 full_messages
+    仍包含历史中的 image_url 内容块，会触发 DashScope BadRequestError。
+    """
+
+    @patch("app.graph.skills.base_skill.get_breaker")
+    @patch("app.graph.skills.base_skill.get_tracker")
+    @patch("app.graph.skills.base_skill.get_skill_llm")
+    @patch("app.graph.skills.base_skill.create_skill_registry")
+    @patch("app.graph.skills.base_skill.set_tool_context")
+    async def test_text_path_strips_history_image_url(
+        self, mock_set_ctx, mock_create_reg, mock_get_llm,
+        mock_get_tracker, mock_get_breaker,
+    ):
+        """文本路径应将历史消息中的 image_url 转为纯文本，避免 BadRequestError"""
+        # Mock registry
+        mock_registry = MagicMock()
+        mock_registry.get_langchain_tools.return_value = []
+        mock_create_reg.return_value = mock_registry
+
+        # Mock breaker — 直接透传
+        mock_breaker = MagicMock()
+
+        async def _passthrough_breaker(fn):
+            return await fn()
+
+        mock_breaker.call = _passthrough_breaker
+        mock_get_breaker.return_value = mock_breaker
+
+        # 记录传给 LLM 的消息
+        captured_messages = []
+
+        async def _capture_and_respond(messages):
+            captured_messages.extend(messages)
+            resp = MagicMock(spec=AIMessage)
+            resp.content = "好的，已记录商品信息：《花序》23.8元/米"
+            resp.tool_calls = []
+            return resp
+
+        mock_llm = MagicMock()
+        mock_llm.ainvoke = AsyncMock(side_effect=_capture_and_respond)
+        # Mock model_name for cost tracking
+        mock_llm.model_name = "qwen-turbo"
+        mock_get_llm.return_value = mock_llm
+
+        # Mock tracker
+        mock_tracker = MagicMock()
+        mock_entities = MagicMock()
+        mock_entities.order_nos = []
+        mock_entities.phone_numbers = []
+        mock_entities.product_names = []
+        mock_entities.product_ids = []
+        mock_entities.amounts = []
+        mock_tracker.get_entities.return_value = mock_entities
+        mock_get_tracker.return_value = mock_tracker
+
+        state = _make_text_after_multimodal_state()
+        result = await execute_skill(
+            state=state,
+            skill_name="product",
+            tool_names=[],
+            system_prompt="你是商品助手",
+        )
+
+        # 验证成功返回（没有抛异常）
+        assert "好的，已记录商品信息" in result["final_answer"]
+
+        # 验证传给 LLM 的消息中，历史 HumanMessage 不含 image_url
+        for msg in captured_messages:
+            if isinstance(msg, HumanMessage) and isinstance(msg.content, list):
+                for item in msg.content:
+                    if isinstance(item, dict):
+                        # 不应该还有 image_url 类型的 content block
+                        assert item.get("type") != "image_url", (
+                            f"历史消息中不应包含 image_url: {item}"
+                        )
+
+    @patch("app.graph.skills.base_skill.get_breaker")
+    @patch("app.graph.skills.base_skill.get_tracker")
+    @patch("app.graph.skills.base_skill.get_skill_llm")
+    @patch("app.graph.skills.base_skill.create_skill_registry")
+    @patch("app.graph.skills.base_skill.set_tool_context")
+    async def test_text_path_preserves_standalone_image_as_placeholder(
+        self, mock_set_ctx, mock_create_reg, mock_get_llm,
+        mock_get_tracker, mock_get_breaker,
+    ):
+        """纯图片无文字的历史消息转为占位符 '[图片]'"""
+        mock_registry = MagicMock()
+        mock_registry.get_langchain_tools.return_value = []
+        mock_create_reg.return_value = mock_registry
+
+        mock_breaker = MagicMock()
+
+        async def _passthrough_breaker(fn):
+            return await fn()
+
+        mock_breaker.call = _passthrough_breaker
+        mock_get_breaker.return_value = mock_breaker
+
+        captured_messages = []
+
+        async def _capture_and_respond(messages):
+            captured_messages.extend(messages)
+            resp = MagicMock(spec=AIMessage)
+            resp.content = "好的"
+            resp.tool_calls = []
+            return resp
+
+        mock_llm = MagicMock()
+        mock_llm.ainvoke = AsyncMock(side_effect=_capture_and_respond)
+        mock_llm.model_name = "qwen-turbo"
+        mock_get_llm.return_value = mock_llm
+
+        mock_tracker = MagicMock()
+        mock_entities = MagicMock()
+        mock_entities.order_nos = []
+        mock_entities.phone_numbers = []
+        mock_entities.product_names = []
+        mock_entities.product_ids = []
+        mock_entities.amounts = []
+        mock_tracker.get_entities.return_value = mock_entities
+        mock_get_tracker.return_value = mock_tracker
+
+        # 构造：第一条是纯图片无文字
+        state = _make_state()
+        state["messages"] = [
+            HumanMessage(
+                content=[
+                    {"type": "image_url", "image_url": {"url": "https://example.com/img.jpg"}},
+                ]
+            ),
+            AIMessage(content="图片已收到，请问需要什么帮助？"),
+            HumanMessage(content="库存还剩多少"),
+        ]
+
+        result = await execute_skill(
+            state=state,
+            skill_name="product",
+            tool_names=[],
+            system_prompt="你是商品助手",
+        )
+
+        assert result["final_answer"] == "好的"
+
+        # 历史纯图片消息应转为 "[图片]" 占位符（保留消息存在的事实）
+        found_placeholder = False
+        for msg in captured_messages:
+            if isinstance(msg, HumanMessage) and isinstance(msg.content, str):
+                if msg.content == "[图片]":
+                    found_placeholder = True
+        assert found_placeholder, "纯图片历史消息应转为 '[图片]' 占位符"
+
+    @patch("app.graph.skills.base_skill.get_breaker")
+    @patch("app.graph.skills.base_skill.get_tracker")
+    @patch("app.graph.skills.base_skill.get_skill_llm")
+    @patch("app.graph.skills.base_skill.create_skill_registry")
+    @patch("app.graph.skills.base_skill.set_tool_context")
+    async def test_multi_round_text_after_image_all_succeed(
+        self, mock_set_ctx, mock_create_reg, mock_get_llm,
+        mock_get_tracker, mock_get_breaker,
+    ):
+        """模拟生产场景：图片→文本→文本→文本，所有跟进消息都不崩溃
+
+        这是 issue #204 regression 的真实场景：
+        Turn 1: 图片消息 → Vision 成功
+        Turn 2: "价格信息" → BadRequestError (修复前)
+        Turn 3: "库存信息" → BadRequestError (修复前)
+        Turn 4: "确认" → Circuit breaker OPEN (修复前)
+
+        修复后，Turns 2-4 都应正常执行。
+        """
+        mock_registry = MagicMock()
+        mock_registry.get_langchain_tools.return_value = []
+        mock_create_reg.return_value = mock_registry
+
+        mock_breaker = MagicMock()
+
+        async def _passthrough_breaker(fn):
+            return await fn()
+
+        mock_breaker.call = _passthrough_breaker
+        mock_get_breaker.return_value = mock_breaker
+
+        mock_tracker = MagicMock()
+        mock_entities = MagicMock()
+        mock_entities.order_nos = []
+        mock_entities.phone_numbers = []
+        mock_entities.product_names = []
+        mock_entities.product_ids = []
+        mock_entities.amounts = []
+        mock_tracker.get_entities.return_value = mock_entities
+        mock_get_tracker.return_value = mock_tracker
+
+        # 模拟 3 轮连续调用（Turn 2, 3, 4），每轮 history 中都含有图片
+        calls = []
+        for round_idx, user_msg in enumerate([
+            "2699《花序》23.8元/米",
+            "库存情况 200",
+            "确认创建",
+        ]):
+            # 构建越来越长的历史（image → AI → text → AI → text → ...）
+            messages_for_this_round = [
+                HumanMessage(content=[
+                    {"type": "text", "text": "创建一个商品"},
+                    {"type": "image_url", "image_url": {"url": "https://example.com/skb.jpg"}},
+                ]),
+                AIMessage(content="好的，请提供商品价格"),
+            ]
+            # 添加前几轮的对话
+            for prev_msg, prev_reply in calls:
+                messages_for_this_round.append(HumanMessage(content=prev_msg))
+                messages_for_this_round.append(AIMessage(content=prev_reply))
+            messages_for_this_round.append(HumanMessage(content=user_msg))
+
+            captured = []
+            async def _capture(messages):
+                captured.extend(messages)
+                resp = MagicMock(spec=AIMessage)
+                resp.content = f"已记录: {user_msg}"
+                resp.tool_calls = []
+                return resp
+
+            mock_llm = MagicMock()
+            mock_llm.ainvoke = AsyncMock(side_effect=_capture)
+            mock_llm.model_name = "qwen-turbo"
+            mock_get_llm.return_value = mock_llm
+
+            state = _make_state()
+            state["messages"] = [m for m in messages_for_this_round]  # copy
+
+            result = await execute_skill(
+                state=state,
+                skill_name="product",
+                tool_names=[],
+                system_prompt="你是商品助手",
+            )
+
+            # 每轮都成功返回（没有抛异常）
+            assert user_msg in result["final_answer"], (
+                f"Round {round_idx + 1} failed: {result.get('final_answer', '')}"
+            )
+
+            # 确认传给 LLM 的消息不含 image_url
+            for msg in captured:
+                if isinstance(msg, HumanMessage) and isinstance(msg.content, list):
+                    for item in msg.content:
+                        if isinstance(item, dict):
+                            assert item.get("type") != "image_url", (
+                                f"Round {round_idx + 1}: 不应含 image_url"
+                            )
+
+            calls.append((user_msg, f"已记录: {user_msg}"))
+
+        # 3 轮全部跑完
+        assert len(calls) == 3
+
+    @patch("app.graph.skills.base_skill.get_breaker")
+    @patch("app.graph.skills.base_skill.get_tracker")
+    @patch("app.graph.skills.base_skill.get_skill_llm")
+    @patch("app.graph.skills.base_skill.create_skill_registry")
+    @patch("app.graph.skills.base_skill.set_tool_context")
+    async def test_pure_text_conversation_unchanged(
+        self, mock_set_ctx, mock_create_reg, mock_get_llm,
+        mock_get_tracker, mock_get_breaker,
+    ):
+        """回归测试：纯文本对话完全不受 sanitize 影响"""
+        mock_registry = MagicMock()
+        mock_registry.get_langchain_tools.return_value = []
+        mock_create_reg.return_value = mock_registry
+
+        mock_breaker = MagicMock()
+
+        async def _passthrough_breaker(fn):
+            return await fn()
+
+        mock_breaker.call = _passthrough_breaker
+        mock_get_breaker.return_value = mock_breaker
+
+        captured = []
+        async def _capture(messages):
+            captured.extend(messages)
+            resp = MagicMock(spec=AIMessage)
+            resp.content = "您好，订单 ORD-2024-001 目前状态为配送中"
+            resp.tool_calls = []
+            return resp
+
+        mock_llm = MagicMock()
+        mock_llm.ainvoke = AsyncMock(side_effect=_capture)
+        mock_llm.model_name = "qwen-turbo"
+        mock_get_llm.return_value = mock_llm
+
+        mock_tracker = MagicMock()
+        mock_entities = MagicMock()
+        mock_entities.order_nos = []
+        mock_entities.phone_numbers = []
+        mock_entities.product_names = []
+        mock_entities.product_ids = []
+        mock_entities.amounts = []
+        mock_tracker.get_entities.return_value = mock_entities
+        mock_get_tracker.return_value = mock_tracker
+
+        # 纯文本多轮对话
+        state = _make_state()
+        state["messages"] = [
+            HumanMessage(content="你好"),
+            AIMessage(content="您好！有什么可以帮您？"),
+            HumanMessage(content="帮我查一下订单 ORD-2024-001"),
+        ]
+
+        result = await execute_skill(
+            state=state,
+            skill_name="order_query",
+            tool_names=[],
+            system_prompt="你是订单助手",
+        )
+
+        assert "配送中" in result["final_answer"]
+
+        # 消息数量和内容应与原始一致（无 sanitize 副作用）
+        assert len(captured) == 4  # SystemMessage + 3 history
+        assert captured[1].content == "你好"
+        assert captured[2].content == "您好！有什么可以帮您？"
+        assert captured[3].content == "帮我查一下订单 ORD-2024-001"
+
+
 class TestExecuteSkillVisionRetry:
     """Vision 分支空响应重试 (Issue #204)
 

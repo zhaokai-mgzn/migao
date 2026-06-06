@@ -269,6 +269,44 @@ def create_skill_registry(tool_names: List[str]) -> ToolRegistry:
     return skill_registry
 
 
+def _sanitize_messages_for_text_path(messages):
+    """清理历史消息中的 image_url 内容块，避免文本模型收到无法处理的多模态内容。
+
+    has_images() 只查最后一条 HumanMessage（Issue #204），但当用户先发图片消息、
+    再发纯文本跟进时，历史中仍存在 image_url。文本模型（如 qwen-turbo）不支持
+    content list 中的 image_url → DashScope BadRequestError。
+
+    处理策略：
+    - 混合内容 (text + image_url): 保留 text，丢弃 image_url
+    - 纯 image_url (无 text): 转为占位符 "[图片]"
+    - 纯文本: 原样保留
+    - 非 HumanMessage: 原样保留
+    """
+    from langchain_core.messages import HumanMessage
+
+    sanitized = []
+    for msg in messages:
+        if not isinstance(msg, HumanMessage) or not isinstance(msg.content, list):
+            sanitized.append(msg)
+            continue
+
+        # 从混合 content list 中提取文本
+        text_parts = []
+        for item in msg.content:
+            if isinstance(item, dict):
+                if item.get("type") == "text":
+                    text_parts.append(item.get("text", ""))
+                # image_url / image / 其他非 text 类型 → 丢弃
+
+        if text_parts:
+            sanitized.append(HumanMessage(content=" ".join(text_parts)))
+        else:
+            # 纯图片无文字 → 占位符保留消息存在的事实
+            sanitized.append(HumanMessage(content="[图片]"))
+
+    return sanitized
+
+
 async def execute_skill(
     state: AgentState,
     skill_name: str,
@@ -300,6 +338,12 @@ async def execute_skill(
     #    计算 text_length 以供路由判定（启用 LLM_ENABLE_MODEL_ROUTING 后生效）
     messages = state["messages"]
     is_multimodal = has_images(messages)
+
+    # 文本路径：清理历史消息中的 image_url 内容块
+    # has_images() 只查最后一条 HumanMessage，但历史消息中可能仍有 image_url，
+    # 纯文本模型无法处理这类内容 → BadRequestError "Unexpected item type in content"
+    if not is_multimodal:
+        messages = _sanitize_messages_for_text_path(messages)
     text_length = sum(len(getattr(m, "content", "") or "") for m in messages) + len(system_prompt)
     # 从 intent_result 中提取 intent 名，用于 router 简单意图路由
     intent_result = state.get("intent_result") or {}

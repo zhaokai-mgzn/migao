@@ -305,3 +305,177 @@ class TestVisionModelPricing:
         """qwen-vl-plus / qwen-vl-max / qwen-vl-ocr 不在定价表中（账号不可用）"""
         for m in ("qwen-vl-plus", "qwen-vl-max", "qwen-vl-ocr"):
             assert m not in MODEL_PRICING, f"{m} should be removed (not available)"
+
+
+# =============================================================================
+# 5. _sanitize_messages_for_text_path: 文本路径消息清理
+# =============================================================================
+class TestSanitizeMessagesForTextPath:
+    """文本路径历史消息清理 — 避免 image_url 污染文本模型 (PR #204 regression)
+
+    当 has_images() 只查最后一条 HumanMessage 时，历史消息中可能仍有 image_url。
+    _sanitize_messages_for_text_path 负责清理这些内容块，防止 DashScope
+    BadRequestError: "Unexpected item type in content"。
+    """
+
+    @pytest.fixture
+    def sanitize(self):
+        from app.graph.skills.base_skill import _sanitize_messages_for_text_path
+        return _sanitize_messages_for_text_path
+
+    # ── 纯文本 ──
+
+    def test_text_only_passthrough(self, sanitize):
+        """纯文本消息原样保留"""
+        msgs = [HumanMessage(content="你好")]
+        result = sanitize(msgs)
+        assert len(result) == 1
+        assert result[0].content == "你好"
+
+    def test_text_only_multiple_messages(self, sanitize):
+        """多条纯文本消息全部原样保留"""
+        msgs = [
+            HumanMessage(content="第一条"),
+            AIMessage(content="回复1"),
+            HumanMessage(content="第二条"),
+        ]
+        result = sanitize(msgs)
+        assert len(result) == 3
+        assert result[0].content == "第一条"
+        assert result[1].content == "回复1"
+        assert result[2].content == "第二条"
+
+    # ── 混合内容 (text + image_url) ──
+
+    def test_mixed_content_extracts_text(self, sanitize):
+        """混合内容：保留 text，丢弃 image_url"""
+        msgs = [
+            HumanMessage(content=[
+                {"type": "text", "text": "根据图片创建一个商品"},
+                {"type": "image_url", "image_url": {"url": "https://example.com/a.jpg"}},
+            ]),
+        ]
+        result = sanitize(msgs)
+        assert len(result) == 1
+        assert result[0].content == "根据图片创建一个商品"
+        # content 应该是纯字符串，不是 list
+        assert isinstance(result[0].content, str)
+
+    def test_mixed_content_multiple_text_blocks(self, sanitize):
+        """多个 text 块用空格合并"""
+        msgs = [
+            HumanMessage(content=[
+                {"type": "text", "text": "第一段"},
+                {"type": "image_url", "image_url": {"url": "https://example.com/b.jpg"}},
+                {"type": "text", "text": "第二段"},
+            ]),
+        ]
+        result = sanitize(msgs)
+        assert result[0].content == "第一段 第二段"
+
+    # ── 纯图片 (无 text) ──
+
+    def test_pure_image_becomes_placeholder(self, sanitize):
+        """纯图片无文字 → '[图片]' 占位符"""
+        msgs = [
+            HumanMessage(content=[
+                {"type": "image_url", "image_url": {"url": "https://example.com/photo.jpg"}},
+            ]),
+        ]
+        result = sanitize(msgs)
+        assert result[0].content == "[图片]"
+
+    def test_pure_image_multiple_images(self, sanitize):
+        """多条纯图片消息 → 每条都转为占位符"""
+        msgs = [
+            HumanMessage(content=[
+                {"type": "image_url", "image_url": {"url": "https://example.com/1.jpg"}},
+            ]),
+            AIMessage(content="收到了"),
+            HumanMessage(content=[
+                {"type": "image_url", "image_url": {"url": "https://example.com/2.jpg"}},
+            ]),
+        ]
+        result = sanitize(msgs)
+        assert result[0].content == "[图片]"
+        assert result[1].content == "收到了"
+        assert result[2].content == "[图片]"
+
+    # ── 最后一条含图片 → 应保留(让 Vision 分支处理) ──
+
+    def test_last_message_with_image_preserved(self, sanitize):
+        """最后一条含图片时也需清理(此时 is_multimodal=True，
+        不会调用本函数；但被调用时仍安全处理)"""
+        msgs = [
+            HumanMessage(content=[
+                {"type": "text", "text": "看看这个"},
+                {"type": "image_url", "image_url": {"url": "https://example.com/last.jpg"}},
+            ]),
+        ]
+        result = sanitize(msgs)
+        # text 保留，image_url 丢弃
+        assert result[0].content == "看看这个"
+
+    # ── 边界情况 ──
+
+    def test_empty_list(self, sanitize):
+        """空消息列表 → 返回空列表"""
+        assert sanitize([]) == []
+
+    def test_aimessage_untouched(self, sanitize):
+        """AIMessage 完全不受影响"""
+        msgs = [AIMessage(content="这是一段很长的 AI 回复")]
+        result = sanitize(msgs)
+        assert len(result) == 1
+        assert result[0].content == "这是一段很长的 AI 回复"
+        assert isinstance(result[0], AIMessage)
+
+    def test_system_message_untouched(self, sanitize):
+        """SystemMessage 不受影响"""
+        msgs = [SystemMessage(content="system prompt")]
+        result = sanitize(msgs)
+        assert result[0].content == "system prompt"
+
+    def test_content_is_string_not_list(self, sanitize):
+        """字符串 content 的 HumanMessage 原样保留"""
+        msgs = [HumanMessage(content="纯文本消息")]
+        result = sanitize(msgs)
+        assert result[0].content == "纯文本消息"
+
+    # ── 实际场景模拟 ──
+
+    def test_real_world_scenario(self, sanitize):
+        """模拟真实场景：图片→文本→文本，中间消息的 image_url 应被清理"""
+        msgs = [
+            # 第1轮用户：发图片
+            HumanMessage(content=[
+                {"type": "text", "text": "创建一个商品"},
+                {"type": "image_url", "image_url": {"url": "https://oss.example.com/skb.jpg"}},
+            ]),
+            # 第1轮 AI：识别出商品信息
+            AIMessage(content="图片显示这是《花序》色卡系列，2699号。请提供价格和库存。"),
+            # 第2轮用户：纯文本
+            HumanMessage(content="《花序》23.8元/米"),
+            # 第2轮 AI
+            AIMessage(content="已记录价格。库存数量是多少？"),
+            # 第3轮用户：纯文本
+            HumanMessage(content="库存 200"),
+        ]
+        result = sanitize(msgs)
+
+        assert len(result) == 5
+        # 第1条：image_url 应被清理
+        assert isinstance(result[0].content, str)
+        assert result[0].content == "创建一个商品"
+        # AI 消息原样
+        assert "花序" in result[1].content
+        # 后续文本消息原样
+        assert result[2].content == "《花序》23.8元/米"
+        assert result[3].content == "已记录价格。库存数量是多少？"
+        assert result[4].content == "库存 200"
+
+        # 确认没有任何消息的 content 仍是 list
+        for msg in result:
+            assert not isinstance(msg.content, list), (
+                f"content 不应该是 list: {msg.content[:100]}"
+            )
