@@ -386,6 +386,7 @@ def create_default_registry() -> ToolRegistry:
     from app.tools.quick_reply_manage import QuickReplyManageTool
     from app.tools.category_manage import CategoryManageTool
     from app.tools.processing_item_manage import ProcessingItemManageTool
+    from app.tools.interact import InteractTool
     
     registry = ToolRegistry()
     
@@ -413,6 +414,7 @@ def create_default_registry() -> ToolRegistry:
     registry.register(QuickReplyManageTool())
     registry.register(CategoryManageTool())
     registry.register(ProcessingItemManageTool())
+    registry.register(InteractTool())
     
     logger.info(f"Default registry created with {len(registry)} tools")
     return registry

@@ -406,8 +406,11 @@ async def execute_skill(
     new_messages: List[Any] = []
     iteration = 0
 
-    # 5.a 多模态分支：直接调用视觉 LLM，不进入 Tool Calling 循环
-    #     空响应自动重试 1 次（共 2 次），避免模型偶发空输出触发兜底 (Issue #204)
+    # 5.a 多模态分支：Vision LLM 仅做图片识别，结果传递给主模型做 Tool Calling
+    #     Vision LLM（qwen3.6-flash）不支持 Tool Calling，仅负责理解图片内容。
+    #     图片理解完成后，清理多模态消息中的 image_url、注入图片分析上下文，
+    #     然后回退到主模型 + bind_tools 的标准 Tool Calling 循环。
+    vision_analysis = ""  # 提前声明，供下游条件判断使用
     if is_multimodal:
         max_vision_attempts = 2
         for vision_attempt in range(max_vision_attempts):
@@ -436,16 +439,16 @@ async def execute_skill(
                     session_id=session_id,
                 )
 
-                final_content = _extract_content(response) or (
+                vision_analysis = _extract_content(response) or (
                     response.content if isinstance(response.content, str) else str(response.content)
                 )
                 new_messages.append(response)
                 logger.info(
-                    f"[{skill_name}] Vision request completed | content_len={len(final_content)}"
+                    f"[{skill_name}] Vision LLM completed | analysis_len={len(vision_analysis)}"
                 )
 
                 # 空响应重试（最后一次不再重试）
-                if not final_content and vision_attempt < max_vision_attempts - 1:
+                if not vision_analysis and vision_attempt < max_vision_attempts - 1:
                     logger.warning(
                         f"[{skill_name}] Vision LLM returned empty content, "
                         f"retrying ({vision_attempt + 1}/{max_vision_attempts}) | "
@@ -458,181 +461,235 @@ async def execute_skill(
                     f"[{skill_name}][SLS] Vision LLM circuit_breaker_open | "
                     f"tenant={state['tenant_id']} session={session_id}"
                 )
-                final_content = LLM_FALLBACK_MESSAGE
+                vision_analysis = ""
                 break
             except Exception as e:
                 logger.error(f"[{skill_name}] Vision LLM call failed: {e}")
-                final_content = "抱歉，图片分析暂时无法完成，请稍后重试。"
+                vision_analysis = ""
                 break
-    else:
-        # 5.b 文本分支：Tool Calling 循环
-        for iteration in range(max_iterations):
+
+        if not vision_analysis:
+            # Vision LLM 完全失败：返回友好提示，不进入 Tool Calling
+            logger.error(
+                f"[{skill_name}] Vision LLM failed, no analysis available | "
+                f"tenant={state['tenant_id']} session={session_id}"
+            )
+            final_content = "抱歉，图片分析暂时无法完成，请用文字描述您的需求，我会帮您处理。"
+        else:
+            # Vision 成功 → 图片理解结果注入上下文，切换到主模型 + Tool Calling
+            vision_context = (
+                f"[图片分析结果]\n"
+                f"用户上传了图片，以下是图片中识别到的信息：\n"
+                f"{vision_analysis}\n"
+                f"请严格基于以上分析结果和用户的原始问题，使用可用工具完成操作。"
+                f"不要编造图片中没有的信息。"
+            )
+
+            # 清理历史消息中的 image_url，替换为纯文本（主模型不支持多模态 content list）
+            cleaned_messages = _sanitize_messages_for_text_path(list(messages))
+
+            # 重建消息列表，注入图片分析上下文
+            system_msg = SystemMessage(content=system_prompt)
+            full_messages = [system_msg] + cleaned_messages
+            full_messages.append(SystemMessage(content=vision_context))
+
+            # 重建文本 LLM 并绑定 Tools
+            llm = get_skill_llm(
+                intent=intent_name,
+                tool_count=len(langchain_tools),
+                text_length=text_length,
+                messages=cleaned_messages,
+                enable_thinking=True,  # 开启思考：图片理解后的操作需要推理
+            )
+            llm_model_name = getattr(llm, "model_name", None) or getattr(llm, "model", "")
+
+            # 创建"无思考"变体（迭代 2+ 轮使用）
+            llm_no_thinking = None
+
+            if langchain_tools:
+                llm_with_tools = llm.bind_tools(langchain_tools)
+            else:
+                llm_with_tools = llm
+
             logger.info(
-                f"[{skill_name}] Iteration {iteration + 1}/{max_iterations} | "
+                f"[{skill_name}] Multimodal→Text fallback | "
+                f"text_model={llm_model_name} tools={len(langchain_tools)} "
                 f"tenant={state['tenant_id']} session={session_id}"
             )
 
-            # 策略 2：首轮开 thinking（规划工具调用），后续轮关闭（仅格式化结果）
-            # 节省 5-8s/轮，质量无损（实测：8.0s → 2.7s）
-            if iteration > 0 and intent_name in _THINKING_INTENTS:
-                if llm_no_thinking is None:
-                    llm_no_thinking = get_skill_llm(
-                        intent=intent_name,
-                        tool_count=len(langchain_tools),
-                        text_length=text_length,
-                        messages=messages,
-                        enable_thinking=False,  # 显式关闭
-                    )
-                    if langchain_tools:
-                        llm_no_thinking = llm_no_thinking.bind_tools(langchain_tools)
-                    logger.debug(
-                        f"[{skill_name}][DIAG] Created no-thinking LLM for iter {iteration + 1}+"
-                    )
-                # 切换到无思考变体
-                current_llm = llm_no_thinking
-            else:
-                current_llm = llm_with_tools
-
-            # 调用 LLM（带超时 + 熔断保护）
-            try:
-                logger.info(
-                    f"[{skill_name}][DIAG] LLM call starting | "
-                    f"iteration={iteration + 1} msg_count={len(full_messages) + len(new_messages)} "
-                    f"tenant={state['tenant_id']} session={session_id}"
-                )
-                llm_breaker = get_breaker(LLM_BREAKER)
-
-                async def _llm_invoke():
-                    return await asyncio.wait_for(
-                        current_llm.ainvoke(full_messages + new_messages),
-                        timeout=60.0,
-                    )
-
-                # retry 包在 breaker 外层：对整个含熔断的调用进行可重试判定
-                response: AIMessage = await call_with_retry(
-                    lambda: llm_breaker.call(_llm_invoke)
-                )
-                logger.info(
-                    f"[{skill_name}][DIAG] LLM call completed | "
-                    f"has_tool_calls={bool(response.tool_calls)} "
-                    f"content_len={len(response.content or '')} "
-                    f"type={type(response).__name__}"
-                )
-                # 成本追踪（失败不阻塞主流程）
-                _track_llm_cost(
-                    response,
-                    model=llm_model_name,
-                    tenant_id=state.get("tenant_id"),
-                    session_id=session_id,
-                )
-            except CircuitBreakerOpenError:
-                # LLM 熔断器处于 OPEN：返回友好提示，不再冲击百炼
-                logger.error(
-                    f"[{skill_name}][SLS] LLM circuit_breaker_open | "
-                    f"tenant={state['tenant_id']} session={session_id}"
-                )
-                final_content = LLM_FALLBACK_MESSAGE
-                break
-            except asyncio.TimeoutError:
-                logger.error(
-                    f"[{skill_name}][SLS] LLM call TIMEOUT after 60s | "
-                    f"iteration={iteration + 1} tenant={state['tenant_id']} session={session_id}"
-                )
-                # 检查是否已熔断，熔断后用超友好的提示
-                if get_breaker(LLM_BREAKER).is_open():
-                    final_content = LLM_FALLBACK_MESSAGE
-                else:
-                    final_content = "抱歉，AI 响应超时，请稍后重试。"
-                break
-            except Exception as e:
-                tb = traceback.format_exc()
-                logger.error(
-                    f"[{skill_name}][SLS] LLM call FAILED | "
-                    f"tenant={state['tenant_id']} session={session_id} "
-                    f"error={type(e).__name__}: {e} | traceback={tb[:500]}"
-                )
-                # 连续失败达到阈值后熔断器已进入 OPEN，错误提示更友好
-                if get_breaker(LLM_BREAKER).is_open():
-                    final_content = LLM_FALLBACK_MESSAGE
-                else:
-                    final_content = "抱歉，AI 响应异常，请稍后重试。"
-                break
-            new_messages.append(response)
-
-            # 检查是否有 tool_calls
-            if not response.tool_calls:
-                # 没有 tool_calls，LLM 返回了最终回复
-                final_content = _extract_content(response)
-                logger.info(
-                    f"[{skill_name}] LLM final reply | "
-                    f"content_len={len(final_content)} "
-                    f"raw_content_len={len(response.content or '')} "
-                    f"has_additional_kwargs={bool(getattr(response, 'additional_kwargs', None))}"
-                )
-                break
-
-            # 执行每个 tool_call
-            for tool_call in response.tool_calls:
-                tool_name = tool_call["name"]
-                tool_args = tool_call["args"]
-                tool_call_id = tool_call["id"]
-
-                logger.info(f"[{skill_name}][DIAG] Tool call: {tool_name} | args={tool_args}")
-
-                # 查找并执行 Tool
-                result_str = ""
-                tool_instance = skill_registry.get_tool(tool_name)
-                if tool_instance:
-                    try:
-                        logger.info(f"[{skill_name}][DIAG] Tool {tool_name} starting execution")
-                        result = await asyncio.wait_for(
-                            tool_instance.execute(tool_context, **tool_args),
-                            timeout=30.0,  # 工具调用超时 30 秒
-                        )
-                        logger.info(f"[{skill_name}][DIAG] Tool {tool_name} completed | success={result.success}")
-                        result_dict = {
-                            "success": result.success,
-                            "data": result.data,
-                            "error": result.error,
-                            "message": result.message,
-                        }
-                        result_str = json.dumps(result_dict, ensure_ascii=False, default=str)
-
-                        # 从 Tool 结果提取实体
-                        if session_id:
-                            tracker.extract_entities_from_tool_result(
-                                session_id, tool_name, result_dict
-                            )
-                    except asyncio.TimeoutError:
-                        logger.error(f"[{skill_name}][DIAG] Tool {tool_name} TIMEOUT after 30s | tenant={state['tenant_id']}")
-                        result_str = json.dumps(
-                            {"success": False, "error": "tool_timeout", "message": f"工具 {tool_name} 执行超时，请稍后重试"},
-                            ensure_ascii=False,
-                        )
-                    except Exception as e:
-                        tb = traceback.format_exc()
-                        logger.error(f"[{skill_name}][DIAG] Tool {tool_name} FAILED | error={type(e).__name__}: {e} | traceback={tb[:500]}")
-                        result_str = json.dumps(
-                            {"success": False, "error": "tool_execution_failed", "message": "工具执行失败，请稍后重试"},
-                            ensure_ascii=False,
-                        )
-                else:
-                    result_str = json.dumps(
-                        {"success": False, "error": "tool_not_found", "message": f"工具 {tool_name} 不可用"},
-                        ensure_ascii=False,
-                    )
-
-                # 添加 ToolMessage（包含 tool name，供 SSE 事件使用）
-                new_messages.append(
-                    ToolMessage(content=result_str, tool_call_id=tool_call_id, name=tool_name)
-                )
+    # 5.b Tool Calling 循环（纯文本 Skill 或 图片理解后的主模型处理）
+    if not is_multimodal or (is_multimodal and vision_analysis):
+        # 如果多模态分支已经设置了 final_content（Vision 失败），跳过循环
+        if is_multimodal and not vision_analysis:
+            pass  # 已在上面设置了 final_content = 错误提示
         else:
-            # 达到最大迭代次数，取最后一条 AI 消息内容
-            if new_messages:
-                last_ai = [m for m in new_messages if isinstance(m, AIMessage)]
-                if last_ai:
-                    extracted = _extract_content(last_ai[-1])
-                    final_content = extracted or "抱歉，处理超时，请稍后重试。"
+            for iteration in range(max_iterations):
+                logger.info(
+                    f"[{skill_name}] Iteration {iteration + 1}/{max_iterations} | "
+                    f"tenant={state['tenant_id']} session={session_id}"
+                )
+
+                # 策略 2：首轮开 thinking（规划工具调用），后续轮关闭（仅格式化结果）
+                # 节省 5-8s/轮，质量无损（实测：8.0s → 2.7s）
+                if iteration > 0 and intent_name in _THINKING_INTENTS:
+                    if llm_no_thinking is None:
+                        llm_no_thinking = get_skill_llm(
+                            intent=intent_name,
+                            tool_count=len(langchain_tools),
+                            text_length=text_length,
+                            messages=messages,
+                            enable_thinking=False,  # 显式关闭
+                        )
+                        if langchain_tools:
+                            llm_no_thinking = llm_no_thinking.bind_tools(langchain_tools)
+                        logger.debug(
+                            f"[{skill_name}][DIAG] Created no-thinking LLM for iter {iteration + 1}+"
+                        )
+                    # 切换到无思考变体
+                    current_llm = llm_no_thinking
+                else:
+                    current_llm = llm_with_tools
+
+                # 调用 LLM（带超时 + 熔断保护）
+                try:
+                    logger.info(
+                        f"[{skill_name}][DIAG] LLM call starting | "
+                        f"iteration={iteration + 1} msg_count={len(full_messages) + len(new_messages)} "
+                        f"tenant={state['tenant_id']} session={session_id}"
+                    )
+                    llm_breaker = get_breaker(LLM_BREAKER)
+
+                    async def _llm_invoke():
+                        return await asyncio.wait_for(
+                            current_llm.ainvoke(full_messages + new_messages),
+                            timeout=60.0,
+                        )
+
+                    # retry 包在 breaker 外层：对整个含熔断的调用进行可重试判定
+                    response: AIMessage = await call_with_retry(
+                        lambda: llm_breaker.call(_llm_invoke)
+                    )
+                    logger.info(
+                        f"[{skill_name}][DIAG] LLM call completed | "
+                        f"has_tool_calls={bool(response.tool_calls)} "
+                        f"content_len={len(response.content or '')} "
+                        f"type={type(response).__name__}"
+                    )
+                    # 成本追踪（失败不阻塞主流程）
+                    _track_llm_cost(
+                        response,
+                        model=llm_model_name,
+                        tenant_id=state.get("tenant_id"),
+                        session_id=session_id,
+                    )
+                except CircuitBreakerOpenError:
+                    # LLM 熔断器处于 OPEN：返回友好提示，不再冲击百炼
+                    logger.error(
+                        f"[{skill_name}][SLS] LLM circuit_breaker_open | "
+                        f"tenant={state['tenant_id']} session={session_id}"
+                    )
+                    final_content = LLM_FALLBACK_MESSAGE
+                    break
+                except asyncio.TimeoutError:
+                    logger.error(
+                        f"[{skill_name}][SLS] LLM call TIMEOUT after 60s | "
+                        f"iteration={iteration + 1} tenant={state['tenant_id']} session={session_id}"
+                    )
+                    # 检查是否已熔断，熔断后用超友好的提示
+                    if get_breaker(LLM_BREAKER).is_open():
+                        final_content = LLM_FALLBACK_MESSAGE
+                    else:
+                        final_content = "抱歉，AI 响应超时，请稍后重试。"
+                    break
+                except Exception as e:
+                    tb = traceback.format_exc()
+                    logger.error(
+                        f"[{skill_name}][SLS] LLM call FAILED | "
+                        f"tenant={state['tenant_id']} session={session_id} "
+                        f"error={type(e).__name__}: {e} | traceback={tb[:500]}"
+                    )
+                    # 连续失败达到阈值后熔断器已进入 OPEN，错误提示更友好
+                    if get_breaker(LLM_BREAKER).is_open():
+                        final_content = LLM_FALLBACK_MESSAGE
+                    else:
+                        final_content = "抱歉，AI 响应异常，请稍后重试。"
+                    break
+                new_messages.append(response)
+
+                # 检查是否有 tool_calls
+                if not response.tool_calls:
+                    # 没有 tool_calls，LLM 返回了最终回复
+                    final_content = _extract_content(response)
+                    logger.info(
+                        f"[{skill_name}] LLM final reply | "
+                        f"content_len={len(final_content)} "
+                        f"raw_content_len={len(response.content or '')} "
+                        f"has_additional_kwargs={bool(getattr(response, 'additional_kwargs', None))}"
+                    )
+                    break
+
+                # 执行每个 tool_call
+                for tool_call in response.tool_calls:
+                    tool_name = tool_call["name"]
+                    tool_args = tool_call["args"]
+                    tool_call_id = tool_call["id"]
+
+                    logger.info(f"[{skill_name}][DIAG] Tool call: {tool_name} | args={tool_args}")
+
+                    # 查找并执行 Tool
+                    result_str = ""
+                    tool_instance = skill_registry.get_tool(tool_name)
+                    if tool_instance:
+                        try:
+                            logger.info(f"[{skill_name}][DIAG] Tool {tool_name} starting execution")
+                            result = await asyncio.wait_for(
+                                tool_instance.execute(tool_context, **tool_args),
+                                timeout=30.0,  # 工具调用超时 30 秒
+                            )
+                            logger.info(f"[{skill_name}][DIAG] Tool {tool_name} completed | success={result.success}")
+                            result_dict = {
+                                "success": result.success,
+                                "data": result.data,
+                                "error": result.error,
+                                "message": result.message,
+                            }
+                            result_str = json.dumps(result_dict, ensure_ascii=False, default=str)
+
+                            # 从 Tool 结果提取实体
+                            if session_id:
+                                tracker.extract_entities_from_tool_result(
+                                    session_id, tool_name, result_dict
+                                )
+                        except asyncio.TimeoutError:
+                            logger.error(f"[{skill_name}][DIAG] Tool {tool_name} TIMEOUT after 30s | tenant={state['tenant_id']}")
+                            result_str = json.dumps(
+                                {"success": False, "error": "tool_timeout", "message": f"工具 {tool_name} 执行超时，请稍后重试"},
+                                ensure_ascii=False,
+                            )
+                        except Exception as e:
+                            tb = traceback.format_exc()
+                            logger.error(f"[{skill_name}][DIAG] Tool {tool_name} FAILED | error={type(e).__name__}: {e} | traceback={tb[:500]}")
+                            result_str = json.dumps(
+                                {"success": False, "error": "tool_execution_failed", "message": "工具执行失败，请稍后重试"},
+                                ensure_ascii=False,
+                            )
+                    else:
+                        result_str = json.dumps(
+                            {"success": False, "error": "tool_not_found", "message": f"工具 {tool_name} 不可用"},
+                            ensure_ascii=False,
+                        )
+
+                    # 添加 ToolMessage（包含 tool name，供 SSE 事件使用）
+                    new_messages.append(
+                        ToolMessage(content=result_str, tool_call_id=tool_call_id, name=tool_name)
+                    )
+            else:
+                # 达到最大迭代次数，取最后一条 AI 消息内容
+                if new_messages:
+                    last_ai = [m for m in new_messages if isinstance(m, AIMessage)]
+                    if last_ai:
+                        extracted = _extract_content(last_ai[-1])
+                        final_content = extracted or "抱歉，处理超时，请稍后重试。"
 
     # 6. 更新实体
     entities = {}

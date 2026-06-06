@@ -111,14 +111,32 @@ class SSEEvent:
     def suggestions(questions: list[str]) -> str:
         """
         后续问题建议事件
-        
+
         Args:
             questions: 建议的后续问题列表
-            
+
         Returns:
             SSE 格式字符串
         """
         return f"event: suggestions\ndata: {json.dumps({'questions': questions}, ensure_ascii=False)}\n\n"
+
+    @staticmethod
+    def interactive(component_type: str, data: dict) -> str:
+        """
+        交互式组件事件（Choice / Confirm / Form）
+
+        用于在对话中嵌入可选择、可确认的结构化交互组件，
+        让用户通过点击代替文本输入，提升复杂场景的交互体验。
+
+        Args:
+            component_type: 组件类型 — "choice" | "confirm" | "form"
+            data: 组件数据，结构因 type 而异
+
+        Returns:
+            SSE 格式字符串
+        """
+        payload = {"type": component_type, **data}
+        return f"event: interactive\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
     @staticmethod
     def loading(content: str = "正在处理...") -> str:
