@@ -207,20 +207,14 @@ function FormCard({ interactive, disabled }: Props) {
   }
 
   return (
-    <div className="mt-2 border border-green-200 rounded-xl overflow-hidden bg-white shadow-sm">
-      {/* 标题 */}
-      <div className="px-3 py-2 bg-green-50 border-b border-green-100">
-        <p className="text-xs font-medium text-green-700">{interactive.title}</p>
+    <div className="mt-2 border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm">
+      <div className="px-3 py-2 bg-gray-50 border-b border-gray-100">
+        <p className="text-xs font-medium text-gray-700">{interactive.title}</p>
       </div>
-
-      {/* 表单字段 */}
       <div className="p-3 space-y-2.5">
         {formFields.map((field: InteractiveFormField) => (
           <div key={field.key}>
-            <label className="block text-xs text-gray-500 mb-1">
-              {field.label}
-              {field.required && <span className="text-red-400 ml-0.5">*</span>}
-            </label>
+            <label className="block text-xs text-gray-500 mb-1">{field.label}</label>
             <input
               type="text"
               value={values[field.key] || ''}
@@ -228,18 +222,15 @@ function FormCard({ interactive, disabled }: Props) {
               placeholder={field.placeholder || `请输入${field.label}`}
               disabled={submitted || disabled}
               className={cn(
-                'w-full px-2.5 py-1.5 rounded-lg border text-sm transition-colors',
-                'focus:outline-none focus:ring-1 focus:ring-green-400 focus:border-green-400',
+                'w-full px-2.5 py-1.5 rounded-lg border text-sm outline-none',
                 (submitted || disabled)
                   ? 'bg-gray-50 border-gray-200 text-gray-400'
-                  : 'bg-white border-gray-200 text-gray-800'
+                  : 'bg-white border-gray-200 text-gray-800 focus:border-primary-400'
               )}
             />
           </div>
         ))}
       </div>
-
-      {/* 提交按钮 */}
       {!submitted && (
         <div className="px-3 py-2 border-t border-gray-100 flex justify-end">
           <button
@@ -249,7 +240,7 @@ function FormCard({ interactive, disabled }: Props) {
               'flex items-center gap-1 px-4 py-1.5 rounded-lg text-xs font-medium transition-colors',
               disabled
                 ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                : 'bg-green-600 text-white hover:bg-green-700'
+                : 'bg-primary-600 text-white hover:bg-primary-700'
             )}
           >
             <Check className="w-3 h-3" />
