@@ -494,3 +494,69 @@ class TestP3InteractiveComponents:
         )
         assert has_event_type(events, "done")
         assert has_event_type(events, "done")
+
+
+class TestP4FormFieldCompleteness:
+    """P4 表单字段完整性：验证 LLM 将图片识别信息全量填入 form 而非散落在文本"""
+
+    async def test_image_analysis_all_fields_in_form(self):
+        """
+        模拟 2699 色卡图片识别 → form 必须包含名称/价格/色号等全量字段
+        """
+        vision_analysis = (
+            "图片中是一个布艺色卡，包含以下信息：\n"
+            "- 品牌/系列：HOME YUUR COLOR SELECTION 2699系列\n"
+            "- 色号列表：2699-01, 2699-02, 2699-03, 2699-04, 2699-05, "
+            "2699-06, 2699-07, 2699-08, 2699-09, 2699-10, "
+            "2699-11, 2699-12, 2699-13, 2699-14, 2699-15, 2699-16\n"
+            "- 材质：雪尼尔\n"
+            "- 幅宽：280cm\n"
+            "- 重量：1200g/m\n"
+            "- 标注价格：¥23.8/米"
+        )
+
+        events = await send_chat(
+            f"根据以下图片分析结果创建商品：\n{vision_analysis}"
+        )
+
+        assert_no_error(events)
+        tools = get_tool_calls(events)
+
+        # 必须使用 interact
+        assert "interact" in tools, f"应使用 interact，实际: {tools}"
+
+        # 查找 interactive form
+        form_data = None
+        for e in events:
+            if e.event_type == "interactive":
+                d = e.json_data
+                if d.get("type") == "form":
+                    form_data = d
+                    break
+
+        assert form_data is not None, (
+            f"应有 interactive form 事件，事件类型: {[e.event_type for e in events]}"
+        )
+
+        form_fields = form_data.get("formFields", [])
+        field_keys = {f.get("key", "") for f in form_fields}
+        all_values = " ".join(
+            str(f.get("value", "") or f.get("label", "")) for f in form_fields
+        )
+
+        # 必须字段
+        missing = {"name", "price"} - field_keys
+        assert not missing, f"form 缺少必填字段: {missing}, 实际: {field_keys}"
+
+        # 色号必须在 form 中（key/value/label 任一处出现 2699）
+        assert "2699" in all_values, (
+            f"色号 2699 应在 form 字段中（预填值/label），"
+            f"实际字段: {[(f.get('key'), f.get('value',''), f.get('label','')) for f in form_fields]}"
+        )
+
+        # 价格预填
+        assert any("23.8" in str(f.get("value", "")) for f in form_fields), (
+            f"价格 23.8 应预填到 form，实际预填值: {[(f.get('key'), f.get('value','')) for f in form_fields]}"
+        )
+
+        assert has_event_type(events, "done")
