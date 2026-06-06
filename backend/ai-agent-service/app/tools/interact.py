@@ -10,10 +10,29 @@ AI 智能客服系统 - 交互式组件 Tool
 - form:    内联表单（预留，后续迭代）
 """
 
+import json
 from typing import Any, Dict, List, Optional
 from loguru import logger
 
 from app.tools.base import BaseTool, ToolContext, ToolResult
+
+
+def _ensure_list(value: Any, field_name: str) -> Optional[List]:
+    """将 LLM 可能传入的 JSON 字符串或数组规范化为 list，失败返回 None"""
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+            if isinstance(parsed, list):
+                logger.info(f"[interact] Parsed {field_name} from JSON string, got {len(parsed)} items")
+                return parsed
+        except (json.JSONDecodeError, TypeError):
+            pass
+    logger.warning(
+        f"[interact] {field_name} is not a list: type={type(value).__name__} value={value}"
+    )
+    return None
 
 
 class InteractTool(BaseTool):
@@ -155,12 +174,9 @@ class InteractTool(BaseTool):
             )
 
         if component == "choice":
-            # 类型校验：防止 LLM 传入非数组值导致前端 .map() 崩溃
-            if not isinstance(options, list):
-                logger.warning(
-                    f"[interact] options is not a list: type={type(options).__name__} "
-                    f"value={options}"
-                )
+            # 处理 LLM 可能传入 JSON 字符串而非数组的问题
+            options = _ensure_list(options, "options")
+            if options is None:
                 return ToolResult(
                     success=False,
                     error="options 必须是数组",
@@ -187,12 +203,9 @@ class InteractTool(BaseTool):
             }
 
         elif component == "confirm":
-            # 类型校验：防止 LLM 传入非数组值导致前端 .map() 崩溃
-            if not isinstance(fields, list):
-                logger.warning(
-                    f"[interact] fields is not a list: type={type(fields).__name__} "
-                    f"value={fields}"
-                )
+            # 处理 LLM 可能传入 JSON 字符串而非数组的问题
+            fields = _ensure_list(fields, "fields")
+            if fields is None:
                 return ToolResult(
                     success=False,
                     error="fields 必须是数组",
