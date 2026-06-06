@@ -312,6 +312,10 @@ async def _agent_stream_to_sse(
                 assistant_content = "抱歉，我暂时无法生成回复，请稍后重试或联系人工客服。"
             yield SSEEvent.text(assistant_content)
 
+        # 超时/异常时清除 tool_calls 元数据，避免泄漏到前端
+        if timed_out:
+            tool_calls_info = []
+
         # 保存消息到数据库（带超时保护，避免阻塞 SSE 流关闭）
         message_id = None
         try:
