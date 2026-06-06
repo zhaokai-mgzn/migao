@@ -8,6 +8,7 @@ test.describe('AI 对话页面', () => {
     page = new ChatPage(p)
     await page.goto()
     await page.waitForLoad()
+    await page.waitForAuth()
   })
 
   // ── 三栏布局 ──

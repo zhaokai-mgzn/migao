@@ -31,6 +31,25 @@ export class ChatPage extends BasePage {
     await this.page.goto('/chat')
   }
 
+  /**
+   * 等待 zustand persist 从 localStorage 中完成 hydration。
+   * 否则 getToken() 返回空字符串，导致 createSession API 401。
+   */
+  async waitForAuth(): Promise<void> {
+    await this.page.waitForFunction(
+      () => {
+        const raw = localStorage.getItem('auth-storage')
+        if (!raw) return false
+        try {
+          return !!(JSON.parse(raw)?.state?.accessToken)
+        } catch {
+          return false
+        }
+      },
+      { timeout: 10_000 },
+    )
+  }
+
   sessionItem(n: number): Locator {
     return this.sessionList.locator('.mx-1\\.5').nth(n)
   }
@@ -44,18 +63,9 @@ export class ChatPage extends BasePage {
   }
 
   async fillMessage(text: string): Promise<void> {
-    // pressSequentially 逐字输入，正确触发 React onChange
-    // \n 替换为 Shift+Enter（实际换行），避免 Enter 直接发送
+    // Playwright fill() 在现代 React 中已正确触发 onChange
     await this.messageInput.click()
-    const parts = text.split('\n')
-    for (let i = 0; i < parts.length; i++) {
-      if (i > 0) {
-        await this.messageInput.press('Shift+Enter')
-      }
-      if (parts[i]) {
-        await this.messageInput.pressSequentially(parts[i])
-      }
-    }
+    await this.messageInput.fill(text)
   }
 
   async waitForStreamEnd(): Promise<void> {
