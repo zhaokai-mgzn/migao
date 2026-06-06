@@ -72,6 +72,46 @@ class LangChainToolAdapter:
         return create_model(model_name, **field_definitions)
     
     @staticmethod
+    def _normalize_args(tool: BaseTool, kwargs: dict) -> dict:
+        """根据 Tool 的 JSON Schema 规范化参数类型
+
+        LLM 在 tool calling 时可能将 array/object 参数序列化为 JSON 字符串
+        （如 options='[{"label":"A","value":"a"}]'），自动解析为正确的 Python 类型。
+
+        这样所有 Tool 都能受益，不需要每个 Tool 单独处理此问题。
+        """
+        props = tool.parameters.get("properties", {})
+        if not props:
+            return kwargs
+
+        normalized = dict(kwargs)
+        for field_name, field_schema in props.items():
+            expected_type = field_schema.get("type", "")
+            if expected_type not in ("array", "object"):
+                continue
+            value = normalized.get(field_name)
+            if value is None or not isinstance(value, str):
+                continue  # 已经是正确类型或不需处理
+            try:
+                parsed = json.loads(value)
+                if expected_type == "array" and isinstance(parsed, list):
+                    logger.info(
+                        f"[langchain-adapter] Normalized '{field_name}' for {tool.name}: "
+                        f"JSON string → list ({len(parsed)} items)"
+                    )
+                    normalized[field_name] = parsed
+                elif expected_type == "object" and isinstance(parsed, dict):
+                    logger.info(
+                        f"[langchain-adapter] Normalized '{field_name}' for {tool.name}: "
+                        f"JSON string → dict"
+                    )
+                    normalized[field_name] = parsed
+            except (json.JSONDecodeError, TypeError):
+                pass  # 不是有效 JSON，保留原值让 Tool 自行校验
+
+        return normalized
+
+    @staticmethod
     def create_langchain_tool(
         tool: BaseTool,
         get_context_func,
@@ -97,7 +137,11 @@ class LangChainToolAdapter:
                     "error": "No tool context available",
                     "message": "系统错误，请稍后重试",
                 }, ensure_ascii=False)
-            
+
+            # 规范化参数：LLM 可能将 array/object 参数序列化为 JSON 字符串
+            # 根据 Tool 的 JSON Schema 定义，自动解析应该为 list/dict 的字符串值
+            kwargs = LangChainToolAdapter._normalize_args(tool, kwargs)
+
             try:
                 logger.info(f"[langchain-adapter] Executing: {tool.name} | tenant={ctx.tenant_id}")
                 start = time.time()
