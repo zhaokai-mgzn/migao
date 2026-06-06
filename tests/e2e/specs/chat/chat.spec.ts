@@ -97,7 +97,7 @@ test.describe('AI 对话页面', () => {
     await page.createSessionBtn.click()
     await page.page.waitForTimeout(500)
     // 输入多行文本
-    await page.messageInput.fill('第一行\n第二行\n第三行')
+    await page.fillMessage('第一行\n第二行\n第三行')
     // textarea 高度应该增加
     const height = await page.messageInput.evaluate(el => el.scrollHeight)
     expect(height).toBeGreaterThan(20)
@@ -122,7 +122,7 @@ test.describe('AI 对话页面', () => {
   test('输入消息后发送按钮启用', async () => {
     await page.createSessionBtn.click()
     await page.page.waitForTimeout(500)
-    await page.messageInput.fill('测试消息')
+    await page.fillMessage('测试消息')
     await expect(page.sendBtn).toBeEnabled()
   })
 
@@ -131,7 +131,7 @@ test.describe('AI 对话页面', () => {
   test('发送消息后显示流式文本', async ({ page: p }) => {
     await page.createSessionBtn.click()
     await p.waitForTimeout(500)
-    await page.messageInput.fill('你好')
+    await page.fillMessage('你好')
     await page.sendBtn.click()
     // 等待 AI 回复（流式文本或 loading）
     await p.waitForTimeout(2000)
@@ -144,7 +144,7 @@ test.describe('AI 对话页面', () => {
     // 发送触发工具调用的消息
     await page.createSessionBtn.click()
     await p.waitForTimeout(500)
-    await page.messageInput.fill('帮我查一下最近的订单')
+    await page.fillMessage('帮我查一下最近的订单')
     await page.sendBtn.click()
     await p.waitForTimeout(3000)
     // 工具调用面板可能出现
@@ -156,7 +156,7 @@ test.describe('AI 对话页面', () => {
   test('建议回复 chip 可点击', async ({ page: p }) => {
     await page.createSessionBtn.click()
     await p.waitForTimeout(500)
-    await page.messageInput.fill('你好')
+    await page.fillMessage('你好')
     await page.sendBtn.click()
     await p.waitForTimeout(5000)
     // 建议回复
@@ -203,7 +203,7 @@ test.describe('AI 对话页面', () => {
   test('停止生成按钮在流式响应时可见', async () => {
     await page.createSessionBtn.click()
     await page.page.waitForTimeout(500)
-    await page.messageInput.fill('写一个很长的故事')
+    await page.fillMessage('写一个很长的故事')
     await page.sendBtn.click()
     // 停止按钮可能在流式响应时出现
     await page.page.waitForTimeout(1000)
@@ -255,7 +255,7 @@ test.describe('AI 对话页面', () => {
     await page.createSessionBtn.click()
     await p.waitForTimeout(500)
     // 发送触发交互的消息（如创建商品引导）
-    await page.messageInput.fill('帮我创建一个商品，名称为测试窗帘，价格99元')
+    await page.fillMessage('帮我创建一个商品，名称为测试窗帘，价格99元')
     await page.sendBtn.click()
     // 等待 AI 回复和可能的 interactive 组件
     await p.waitForTimeout(8000)
@@ -268,7 +268,7 @@ test.describe('AI 对话页面', () => {
   test('tool_call 伪代码块不在 AI 消息中显示', async ({ page: p }) => {
     await page.createSessionBtn.click()
     await p.waitForTimeout(500)
-    await page.messageInput.fill('你好')
+    await page.fillMessage('你好')
     await page.sendBtn.click()
     await p.waitForTimeout(5000)
     // AI 消息气泡中不应出现 ```tool_call 代码块
@@ -279,7 +279,7 @@ test.describe('AI 对话页面', () => {
   test('工具调用面板仅在出错时展示', async ({ page: p }) => {
     await page.createSessionBtn.click()
     await p.waitForTimeout(500)
-    await page.messageInput.fill('你好')
+    await page.fillMessage('你好')
     await page.sendBtn.click()
     await p.waitForTimeout(5000)
     // ToolCallPanel 只在 error 状态可见（正常流程不应展示）
@@ -298,7 +298,7 @@ test.describe('AI 对话页面', () => {
     await page.createSessionBtn.click()
     await p.waitForTimeout(500)
     // 触发可能产生交互式组件的对话
-    await page.messageInput.fill('我想查看加工项列表')
+    await page.fillMessage('我想查看加工项列表')
     await page.sendBtn.click()
     await p.waitForTimeout(8000)
     // 查找选项按钮
