@@ -442,7 +442,8 @@ async def execute_skill(
                 vision_analysis = _extract_content(response) or (
                     response.content if isinstance(response.content, str) else str(response.content)
                 )
-                new_messages.append(response)
+                # Vision LLM 的 AIMessage 不加入对话历史（分析结果通过 vision_context SystemMessage 注入）
+                # 避免文本 LLM 看到 Assistant 已"回复"了图片分析，造成语义冲突
                 logger.info(
                     f"[{skill_name}] Vision LLM completed | analysis_len={len(vision_analysis)}"
                 )
@@ -486,19 +487,26 @@ async def execute_skill(
             )
 
             # 清理历史消息中的 image_url，替换为纯文本（主模型不支持多模态 content list）
-            cleaned_messages = _sanitize_messages_for_text_path(list(messages))
+            messages = _sanitize_messages_for_text_path(list(messages))
 
             # 重建消息列表，注入图片分析上下文
             system_msg = SystemMessage(content=system_prompt)
-            full_messages = [system_msg] + cleaned_messages
+            full_messages = [system_msg] + messages
             full_messages.append(SystemMessage(content=vision_context))
+
+            # 重新计算 text_length（含 vision_context），确保模型路由准确
+            text_length = (
+                sum(len(getattr(m, "content", "") or "") for m in messages)
+                + len(system_prompt)
+                + len(vision_context)
+            )
 
             # 重建文本 LLM 并绑定 Tools
             llm = get_skill_llm(
                 intent=intent_name,
                 tool_count=len(langchain_tools),
                 text_length=text_length,
-                messages=cleaned_messages,
+                messages=messages,
                 enable_thinking=True,  # 开启思考：图片理解后的操作需要推理
             )
             llm_model_name = getattr(llm, "model_name", None) or getattr(llm, "model", "")
