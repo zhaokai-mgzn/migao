@@ -14,11 +14,14 @@ from app.llm.factory import (
 from app.llm.router import (
     select_model,
     has_images,
-    MODEL_MAX,
-    MODEL_PLUS,
-    MODEL_TURBO,
-    MODEL_FLASH,
 )
+# 模型路由常量已收敛到 config.py，此处从 settings 重新导出以保持向后兼容
+# 后续新增代码请直接使用 settings.LLM_MODEL_*
+from app.config import settings as _settings
+MODEL_MAX = _settings.LLM_MODEL_MAX
+MODEL_PLUS = _settings.LLM_MODEL_PLUS
+MODEL_TURBO = _settings.LLM_MODEL_TURBO
+MODEL_FLASH = _settings.LLM_MODEL_FLASH
 from app.llm.cost_tracker import CostTracker, CostRecord, MODEL_PRICING
 from app.llm.retry_policy import call_with_retry
 

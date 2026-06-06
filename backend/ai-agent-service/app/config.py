@@ -61,6 +61,13 @@ class Settings(BaseSettings):
     DASHSCOPE_VISION_MODEL: str = "qwen3.6-flash"       # 图片识别模型（轻量推理+视觉，减少空响应）
     DASHSCOPE_VISION_ENABLED: bool = True
 
+    # LLM 模型路由常量 — 所有模型名统一在 config.py 管理，禁止在其他文件中硬编码
+    # 当百炼下线/更名模型时，只需修改此处
+    LLM_MODEL_MAX: str = "qwen3.7-max"       # 复杂推理 / 多工具协同
+    LLM_MODEL_PLUS: str = "qwen3.6-plus"     # 默认平衡档
+    LLM_MODEL_TURBO: str = "qwen3.6-flash"   # 简单快速（原 qwen-turbo 已下线）
+    LLM_MODEL_FLASH: str = "qwen3.6-flash"   # 极简任务（原 qwen-flash 已下线）
+
     SEMANTIC_CACHE_ENABLED: bool = False  # Embedding API key 未就绪，暂时关闭
     SEMANTIC_CACHE_SIMILARITY_THRESHOLD: float = 0.95
     SEMANTIC_CACHE_MAX_ENTRIES: int = 1000
