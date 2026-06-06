@@ -58,7 +58,7 @@ class Settings(BaseSettings):
     # ===== 功能开关与模型参数（有合理默认值，无需外部注入）=====
 
     INTENT_MODEL: str = "qwen3.6-flash"                  # 意图分类模型（轻量快速，关闭思考）
-    DASHSCOPE_VISION_MODEL: str = "qwen3.6-plus"        # 图片识别模型（支持视觉理解的推理模型）
+    DASHSCOPE_VISION_MODEL: str = "qwen3.6-flash"       # 图片识别模型（轻量推理+视觉，减少空响应）
     DASHSCOPE_VISION_ENABLED: bool = True
 
     SEMANTIC_CACHE_ENABLED: bool = False  # Embedding API key 未就绪，暂时关闭

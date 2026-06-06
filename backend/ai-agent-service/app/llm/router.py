@@ -19,8 +19,8 @@ MODEL_MAX: str = "qwen3.7-max"      # 复杂推理 / 多工具协同
 MODEL_PLUS: str = "qwen3.6-plus"    # 默认平衡档
 MODEL_TURBO: str = "qwen-turbo"     # 简单快速
 MODEL_FLASH: str = "qwen-flash"     # 极简任务
-MODEL_VL_PLUS: str = "qwen-vl-plus"  # 视觉多模态平衡档
-MODEL_VL_MAX: str = "qwen-vl-max"    # 视觉多模态高端档
+# 注意：视觉模型由 settings.DASHSCOPE_VISION_MODEL 配置（默认 qwen3.6-flash），
+# 不再硬编码常量，因为百炼可用视觉模型列表可能随账号权限变化。
 
 # ---- 路由判定阈值 ----
 _SIMPLE_INTENTS = {"greeting", "farewell", "capabilities"}
@@ -29,18 +29,23 @@ _TEXT_LENGTH_MAX_THRESHOLD = 8000
 
 
 def has_images(messages: Optional[List[Any]]) -> bool:
-    """检测消息列表中是否包含图片内容
+    """检测最后一条 HumanMessage 是否包含图片内容
 
-    遍历 LangChain 消息列表，检查是否有 image_url 类型的 content。
+    只检查最后一条 HumanMessage，而非全量扫描。
+    避免历史图片污染后续纯文本消息的 LLM 路由决策 (Issue #204)。
     """
     if not messages:
         return False
-    for msg in messages:
-        content = getattr(msg, "content", None)
-        if isinstance(content, list):
-            for item in content:
-                if isinstance(item, dict) and item.get("type") == "image_url":
-                    return True
+    from langchain_core.messages import HumanMessage
+    for msg in reversed(messages):
+        if isinstance(msg, HumanMessage):
+            content = msg.content
+            if isinstance(content, list):
+                return any(
+                    isinstance(item, dict) and item.get("type") == "image_url"
+                    for item in content
+                )
+            return False
     return False
 
 
