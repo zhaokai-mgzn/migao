@@ -307,3 +307,145 @@ class TestSkillNodes:
         mock_execute.assert_called_once()
         assert mock_execute.call_args.kwargs["skill_name"] == "general"
         assert mock_execute.call_args.kwargs["tool_names"] == GENERAL_TOOLS
+
+
+# ========== Vision 空响应重试测试 ==========
+
+def _make_multimodal_state(**overrides):
+    """构建含图片的 AgentState"""
+    state = _make_state(**overrides)
+    state["messages"] = [
+        HumanMessage(
+            content=[
+                {"type": "text", "text": "根据图片创建一个商品"},
+                {"type": "image_url", "image_url": {"url": "https://example.com/a.jpg"}},
+            ]
+        )
+    ]
+    return state
+
+
+class TestExecuteSkillVisionRetry:
+    """Vision 分支空响应重试 (Issue #204)
+
+    当 Vision LLM 返回空内容时，应自动重试 1 次（共 2 次调用），
+    而非直接触发兜底 "暂时无法生成回复"。
+    """
+
+    @patch("app.graph.skills.base_skill.get_breaker")
+    @patch("app.graph.skills.base_skill.get_tracker")
+    @patch("app.graph.skills.base_skill.get_skill_llm")
+    @patch("app.graph.skills.base_skill.create_skill_registry")
+    @patch("app.graph.skills.base_skill.set_tool_context")
+    async def test_vision_empty_first_then_success(
+        self, mock_set_ctx, mock_create_reg, mock_get_llm,
+        mock_get_tracker, mock_get_breaker,
+    ):
+        """首次 Vision 调用返回空内容，重试后成功返回内容"""
+        # Mock registry
+        mock_registry = MagicMock()
+        mock_registry.get_langchain_tools.return_value = []
+        mock_create_reg.return_value = mock_registry
+
+        # Mock breaker — 直接透传调用（不熔断）
+        mock_breaker = MagicMock()
+
+        async def _passthrough_breaker(fn):
+            return await fn()
+
+        mock_breaker.call = _passthrough_breaker
+        mock_get_breaker.return_value = mock_breaker
+
+        # 第一次返回空内容，第二次返回正常内容
+        empty_response = MagicMock(spec=AIMessage)
+        empty_response.content = ""
+        empty_response.tool_calls = []
+
+        good_response = MagicMock(spec=AIMessage)
+        good_response.content = "图片显示这是一款 HOME YUUR 品牌的色卡系列"
+        good_response.tool_calls = []
+
+        mock_llm = MagicMock()
+        mock_llm.ainvoke = AsyncMock(side_effect=[empty_response, good_response])
+        mock_get_llm.return_value = mock_llm
+
+        # Mock tracker
+        mock_tracker = MagicMock()
+        mock_entities = MagicMock()
+        mock_entities.order_nos = []
+        mock_entities.phone_numbers = []
+        mock_entities.product_names = []
+        mock_entities.product_ids = []
+        mock_entities.amounts = []
+        mock_tracker.get_entities.return_value = mock_entities
+        mock_get_tracker.return_value = mock_tracker
+
+        state = _make_multimodal_state()
+        result = await execute_skill(
+            state=state,
+            skill_name="product",
+            tool_names=[],
+            system_prompt="你是商品助手",
+        )
+
+        # 重试后应获得正确内容
+        assert result["final_answer"] == "图片显示这是一款 HOME YUUR 品牌的色卡系列"
+        # LLM 应被调用 2 次（首次空 + 重试成功）
+        assert mock_llm.ainvoke.call_count == 2
+
+    @patch("app.graph.skills.base_skill.get_breaker")
+    @patch("app.graph.skills.base_skill.get_tracker")
+    @patch("app.graph.skills.base_skill.get_skill_llm")
+    @patch("app.graph.skills.base_skill.create_skill_registry")
+    @patch("app.graph.skills.base_skill.set_tool_context")
+    async def test_vision_empty_both_attempts(
+        self, mock_set_ctx, mock_create_reg, mock_get_llm,
+        mock_get_tracker, mock_get_breaker,
+    ):
+        """两次 Vision 调用都返回空内容，最终 final_answer 为空"""
+        # Mock registry
+        mock_registry = MagicMock()
+        mock_registry.get_langchain_tools.return_value = []
+        mock_create_reg.return_value = mock_registry
+
+        # Mock breaker
+        mock_breaker = MagicMock()
+
+        async def _passthrough_breaker(fn):
+            return await fn()
+
+        mock_breaker.call = _passthrough_breaker
+        mock_get_breaker.return_value = mock_breaker
+
+        # 两次都返回空
+        empty_response = MagicMock(spec=AIMessage)
+        empty_response.content = ""
+        empty_response.tool_calls = []
+
+        mock_llm = MagicMock()
+        mock_llm.ainvoke = AsyncMock(return_value=empty_response)
+        mock_get_llm.return_value = mock_llm
+
+        # Mock tracker
+        mock_tracker = MagicMock()
+        mock_entities = MagicMock()
+        mock_entities.order_nos = []
+        mock_entities.phone_numbers = []
+        mock_entities.product_names = []
+        mock_entities.product_ids = []
+        mock_entities.amounts = []
+        mock_tracker.get_entities.return_value = mock_entities
+        mock_get_tracker.return_value = mock_tracker
+
+        state = _make_multimodal_state()
+        result = await execute_skill(
+            state=state,
+            skill_name="product",
+            tool_names=[],
+            system_prompt="你是商品助手",
+        )
+
+        # 两次都空 → final_answer 为空（由 chat.py 兜底处理）
+        assert result["final_answer"] == ""
+        # LLM 应被调用 2 次（最大重试次数）
+        assert mock_llm.ainvoke.call_count == 2

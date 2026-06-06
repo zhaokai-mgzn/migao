@@ -363,47 +363,63 @@ async def execute_skill(
     iteration = 0
 
     # 5.a 多模态分支：直接调用视觉 LLM，不进入 Tool Calling 循环
+    #     空响应自动重试 1 次（共 2 次），避免模型偶发空输出触发兜底 (Issue #204)
     if is_multimodal:
-        try:
-            logger.info(
-                f"[{skill_name}][DIAG] Vision LLM call starting | "
-                f"model={llm_model_name} msg_count={len(full_messages)} "
-                f"tenant={state['tenant_id']} session={session_id}"
-            )
-            llm_breaker = get_breaker(LLM_BREAKER)
+        max_vision_attempts = 2
+        for vision_attempt in range(max_vision_attempts):
+            try:
+                logger.info(
+                    f"[{skill_name}][DIAG] Vision LLM call starting | "
+                    f"model={llm_model_name} msg_count={len(full_messages)} "
+                    f"attempt={vision_attempt + 1}/{max_vision_attempts} "
+                    f"tenant={state['tenant_id']} session={session_id}"
+                )
+                llm_breaker = get_breaker(LLM_BREAKER)
 
-            async def _vision_invoke():
-                return await asyncio.wait_for(
-                    llm.ainvoke(full_messages),
-                    timeout=60.0,
+                async def _vision_invoke():
+                    return await asyncio.wait_for(
+                        llm.ainvoke(full_messages),
+                        timeout=60.0,
+                    )
+
+                response: AIMessage = await call_with_retry(
+                    lambda: llm_breaker.call(_vision_invoke)
+                )
+                _track_llm_cost(
+                    response,
+                    model=llm_model_name,
+                    tenant_id=state.get("tenant_id"),
+                    session_id=session_id,
                 )
 
-            response: AIMessage = await call_with_retry(
-                lambda: llm_breaker.call(_vision_invoke)
-            )
-            _track_llm_cost(
-                response,
-                model=llm_model_name,
-                tenant_id=state.get("tenant_id"),
-                session_id=session_id,
-            )
+                final_content = _extract_content(response) or (
+                    response.content if isinstance(response.content, str) else str(response.content)
+                )
+                new_messages.append(response)
+                logger.info(
+                    f"[{skill_name}] Vision request completed | content_len={len(final_content)}"
+                )
 
-            final_content = _extract_content(response) or (
-                response.content if isinstance(response.content, str) else str(response.content)
-            )
-            new_messages.append(response)
-            logger.info(
-                f"[{skill_name}] Vision request completed | content_len={len(final_content)}"
-            )
-        except CircuitBreakerOpenError:
-            logger.error(
-                f"[{skill_name}][SLS] Vision LLM circuit_breaker_open | "
-                f"tenant={state['tenant_id']} session={session_id}"
-            )
-            final_content = LLM_FALLBACK_MESSAGE
-        except Exception as e:
-            logger.error(f"[{skill_name}] Vision LLM call failed: {e}")
-            final_content = "抱歉，图片分析暂时无法完成，请稍后重试。"
+                # 空响应重试（最后一次不再重试）
+                if not final_content and vision_attempt < max_vision_attempts - 1:
+                    logger.warning(
+                        f"[{skill_name}] Vision LLM returned empty content, "
+                        f"retrying ({vision_attempt + 1}/{max_vision_attempts}) | "
+                        f"tenant={state['tenant_id']} session={session_id}"
+                    )
+                    continue
+                break
+            except CircuitBreakerOpenError:
+                logger.error(
+                    f"[{skill_name}][SLS] Vision LLM circuit_breaker_open | "
+                    f"tenant={state['tenant_id']} session={session_id}"
+                )
+                final_content = LLM_FALLBACK_MESSAGE
+                break
+            except Exception as e:
+                logger.error(f"[{skill_name}] Vision LLM call failed: {e}")
+                final_content = "抱歉，图片分析暂时无法完成，请稍后重试。"
+                break
     else:
         # 5.b 文本分支：Tool Calling 循环
         for iteration in range(max_iterations):

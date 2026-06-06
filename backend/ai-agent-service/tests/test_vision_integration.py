@@ -18,8 +18,6 @@ from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from app.config import settings
 from app.llm import (
     LLMFactory,
-    MODEL_VL_PLUS,
-    MODEL_VL_MAX,
     MODEL_PLUS,
     MODEL_MAX,
     MODEL_TURBO,
@@ -55,7 +53,7 @@ def routing_off(monkeypatch):
 def vision_enabled(monkeypatch):
     """启用视觉路由"""
     monkeypatch.setattr(settings, "DASHSCOPE_VISION_ENABLED", True)
-    monkeypatch.setattr(settings, "DASHSCOPE_VISION_MODEL", "qwen-vl-plus")
+    monkeypatch.setattr(settings, "DASHSCOPE_VISION_MODEL", "qwen3.6-flash")
 
 
 @pytest.fixture
@@ -173,6 +171,39 @@ class TestHasImages:
         )
         assert has_images([msg]) is False
 
+    def test_has_images_only_checks_last_human_message(self):
+        """历史消息有图片但最后一条 HumanMessage 是纯文本，返回 False
+
+        回归场景 (Issue #204): 用户首条消息带图片，后续发纯文本消息时
+        不应再走 Vision 分支，避免历史图片污染 LLM 上下文。
+        """
+        msgs = [
+            SystemMessage(content="你是客服助手"),
+            HumanMessage(
+                content=[
+                    {"type": "text", "text": "根据图片内容创建商品"},
+                    {"type": "image_url", "image_url": {"url": "https://example.com/a.jpg"}},
+                ]
+            ),
+            AIMessage(content="抱歉，我暂时无法生成回复。"),
+            HumanMessage(content="识别图片创建商品"),  # 纯文本后续消息
+        ]
+        assert has_images(msgs) is False
+
+    def test_has_images_last_human_message_has_image(self):
+        """最后一条 HumanMessage 含图片，返回 True"""
+        msgs = [
+            HumanMessage(content="你好"),
+            AIMessage(content="您好"),
+            HumanMessage(
+                content=[
+                    {"type": "text", "text": "看看这个"},
+                    {"type": "image_url", "image_url": {"url": "https://example.com/b.jpg"}},
+                ]
+            ),
+        ]
+        assert has_images(msgs) is True
+
 
 # =============================================================================
 # 2. 视觉模型工厂 LLMFactory.create_vision_llm
@@ -181,10 +212,10 @@ class TestCreateVisionLLM:
     """LLMFactory.create_vision_llm 测试"""
 
     def test_create_vision_llm_default(self, monkeypatch):
-        """默认模型为 qwen-vl-plus（DASHSCOPE_VISION_MODEL）"""
-        monkeypatch.setattr(settings, "DASHSCOPE_VISION_MODEL", "qwen-vl-plus")
+        """默认模型为 qwen3.6-flash（DASHSCOPE_VISION_MODEL）"""
+        monkeypatch.setattr(settings, "DASHSCOPE_VISION_MODEL", "qwen3.6-flash")
         llm = LLMFactory.create_vision_llm()
-        assert llm.model_name == "qwen-vl-plus"
+        assert llm.model_name == "qwen3.6-flash"
         assert llm.temperature == 0.7
         assert llm.streaming is True
         assert llm.max_tokens == 2048
@@ -193,13 +224,13 @@ class TestCreateVisionLLM:
 
     def test_create_vision_llm_override(self, monkeypatch):
         """model_override 显式覆盖默认模型"""
-        monkeypatch.setattr(settings, "DASHSCOPE_VISION_MODEL", "qwen-vl-plus")
-        llm = LLMFactory.create_vision_llm(model_override="qwen-vl-max")
-        assert llm.model_name == "qwen-vl-max"
+        monkeypatch.setattr(settings, "DASHSCOPE_VISION_MODEL", "qwen3.6-flash")
+        llm = LLMFactory.create_vision_llm(model_override="qwen3.6-plus")
+        assert llm.model_name == "qwen3.6-plus"
 
     def test_create_vision_llm_no_thinking(self, monkeypatch):
         """视觉 LLM 不携带 enable_thinking extra_body（视觉模型不支持）"""
-        monkeypatch.setattr(settings, "DASHSCOPE_VISION_MODEL", "qwen-vl-plus")
+        monkeypatch.setattr(settings, "DASHSCOPE_VISION_MODEL", "qwen3.6-flash")
         llm = LLMFactory.create_vision_llm()
         # extra_body 要么为 None/缺失，要么不含 enable_thinking 键
         extra_body = getattr(llm, "extra_body", None)
@@ -217,17 +248,17 @@ class TestSelectModelWithVision:
 
     def test_select_model_with_vision(self, routing_on, vision_enabled, monkeypatch):
         """has_vision=True 且启用视觉，返回 DASHSCOPE_VISION_MODEL"""
-        monkeypatch.setattr(settings, "DASHSCOPE_VISION_MODEL", MODEL_VL_PLUS)
-        assert select_model(has_vision=True) == MODEL_VL_PLUS
+        monkeypatch.setattr(settings, "DASHSCOPE_VISION_MODEL", "qwen3.6-flash")
+        assert select_model(has_vision=True) == "qwen3.6-flash"
 
-        monkeypatch.setattr(settings, "DASHSCOPE_VISION_MODEL", MODEL_VL_MAX)
-        assert select_model(has_vision=True) == MODEL_VL_MAX
+        monkeypatch.setattr(settings, "DASHSCOPE_VISION_MODEL", "qwen3.6-plus")
+        assert select_model(has_vision=True) == "qwen3.6-plus"
 
     def test_select_model_with_vision_overrides_intent(self, routing_on, vision_enabled, monkeypatch):
         """has_vision=True 优先级高于简单意图"""
-        monkeypatch.setattr(settings, "DASHSCOPE_VISION_MODEL", MODEL_VL_PLUS)
+        monkeypatch.setattr(settings, "DASHSCOPE_VISION_MODEL", "qwen3.6-flash")
         # 即便是 greeting 简单意图，含图片也走视觉模型
-        assert select_model(intent="greeting", has_vision=True) == MODEL_VL_PLUS
+        assert select_model(intent="greeting", has_vision=True) == "qwen3.6-flash"
 
     def test_select_model_vision_disabled(self, routing_on, vision_disabled):
         """DASHSCOPE_VISION_ENABLED=False 时即使 has_vision=True 也走正常路由"""
@@ -241,43 +272,36 @@ class TestSelectModelWithVision:
     def test_select_model_vision_with_routing_off(self, routing_off, vision_enabled, monkeypatch):
         """LLM_ENABLE_MODEL_ROUTING=False 时返回默认模型，无视 has_vision"""
         monkeypatch.setattr(settings, "DASHSCOPE_MODEL", "qwen3.7-max")
-        monkeypatch.setattr(settings, "DASHSCOPE_VISION_MODEL", MODEL_VL_PLUS)
+        monkeypatch.setattr(settings, "DASHSCOPE_VISION_MODEL", "qwen3.6-flash")
         assert select_model(has_vision=True) == "qwen3.7-max"
 
-    def test_select_model_vision_constants_aligned(self):
-        """视觉模型常量与百炼模型对齐"""
-        assert MODEL_VL_PLUS == "qwen-vl-plus"
-        assert MODEL_VL_MAX == "qwen-vl-max"
+    def test_select_model_vision_default_is_flash(self):
+        """视觉模型默认使用 qwen3.6-flash（轻量推理+视觉）"""
+        assert settings.DASHSCOPE_VISION_MODEL == "qwen3.6-flash"
 
 
 # =============================================================================
 # 4. 成本追踪 - 视觉模型定价
 # =============================================================================
 class TestVisionModelPricing:
-    """视觉模型定价测试"""
+    """视觉模型定价测试（qwen-vl-* 已移除，使用 qwen3.6-flash/plus）"""
 
     def test_vision_model_pricing(self):
-        """qwen-vl-plus / qwen-vl-max / qwen-vl-ocr 定价存在且正确"""
-        # 关键模型必须存在于 MODEL_PRICING
-        for m in ("qwen-vl-plus", "qwen-vl-max", "qwen-vl-ocr"):
+        """qwen3.6-flash / qwen3.6-plus 定价存在且正确"""
+        for m in ("qwen3.6-flash", "qwen3.6-plus"):
             assert m in MODEL_PRICING, f"missing pricing for {m}"
             assert "input" in MODEL_PRICING[m]
             assert "output" in MODEL_PRICING[m]
             assert MODEL_PRICING[m]["input"] > 0
             assert MODEL_PRICING[m]["output"] > 0
 
-        # 定价数值（与 cost_tracker 中维护的一致）
-        assert MODEL_PRICING["qwen-vl-plus"] == {"input": 0.80, "output": 2.00}
-        assert MODEL_PRICING["qwen-vl-max"] == {"input": 1.60, "output": 4.00}
-        assert MODEL_PRICING["qwen-vl-ocr"] == {"input": 0.30, "output": 0.50}
+        # qwen3.6-flash 比 qwen3.6-plus 便宜
+        flash = MODEL_PRICING["qwen3.6-flash"]
+        plus = MODEL_PRICING["qwen3.6-plus"]
+        assert flash["input"] < plus["input"]
+        assert flash["output"] < plus["output"]
 
-    def test_vision_pricing_relative_order(self):
-        """qwen-vl-max 定价应高于 qwen-vl-plus，qwen-vl-ocr 最便宜"""
-        plus = MODEL_PRICING["qwen-vl-plus"]
-        max_ = MODEL_PRICING["qwen-vl-max"]
-        ocr = MODEL_PRICING["qwen-vl-ocr"]
-
-        assert max_["input"] > plus["input"]
-        assert max_["output"] > plus["output"]
-        assert ocr["input"] < plus["input"]
-        assert ocr["output"] < plus["output"]
+    def test_vl_models_removed(self):
+        """qwen-vl-plus / qwen-vl-max / qwen-vl-ocr 不在定价表中（账号不可用）"""
+        for m in ("qwen-vl-plus", "qwen-vl-max", "qwen-vl-ocr"):
+            assert m not in MODEL_PRICING, f"{m} should be removed (not available)"
