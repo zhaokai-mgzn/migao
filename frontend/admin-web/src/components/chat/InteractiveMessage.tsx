@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
 import { Check, X, ChevronRight } from 'lucide-react'
-import type { InteractiveComponent, InteractiveOption } from '@/types'
+import type { InteractiveComponent, InteractiveOption, InteractiveFormField } from '@/types'
 import { useChatStore } from '@/store/chat'
 
 interface Props {
@@ -17,6 +17,9 @@ export default function InteractiveMessage({ interactive, disabled }: Props) {
   }
   if (interactive.component === 'confirm') {
     return <ConfirmCard interactive={interactive} disabled={disabled} />
+  }
+  if (interactive.component === 'form') {
+    return <FormCard interactive={interactive} disabled={disabled} />
   }
   return null
 }
@@ -163,6 +166,94 @@ function ConfirmCard({ interactive, disabled }: Props) {
           >
             <Check className="w-3 h-3" />
             {confirmLabel}
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * 内联表单 — 一次性收集多个信息字段
+ * 用于图片识别后预填已知信息，让用户补充/确认缺失字段后一次性提交
+ */
+function FormCard({ interactive, disabled }: Props) {
+  const { sendMessage } = useChatStore()
+  const formFields = Array.isArray(interactive.formFields) ? interactive.formFields : []
+  const submitLabel = interactive.submitLabel || '提交'
+
+  const [values, setValues] = useState<Record<string, string>>(() => {
+    const initial: Record<string, string> = {}
+    for (const f of formFields) {
+      initial[f.key] = f.value || ''
+    }
+    return initial
+  })
+  const [submitted, setSubmitted] = useState(false)
+
+  const setField = (key: string, val: string) => {
+    if (submitted || disabled) return
+    setValues(prev => ({ ...prev, [key]: val }))
+  }
+
+  const handleSubmit = () => {
+    if (submitted || disabled) return
+    // 构建结构化提交文本：每行 "label: value"
+    const lines = formFields
+      .map(f => `${f.label}: ${values[f.key] || '（未填写）'}`)
+      .join('\n')
+    setSubmitted(true)
+    sendMessage(lines)
+  }
+
+  return (
+    <div className="mt-2 border border-green-200 rounded-xl overflow-hidden bg-white shadow-sm">
+      {/* 标题 */}
+      <div className="px-3 py-2 bg-green-50 border-b border-green-100">
+        <p className="text-xs font-medium text-green-700">{interactive.title}</p>
+      </div>
+
+      {/* 表单字段 */}
+      <div className="p-3 space-y-2.5">
+        {formFields.map((field: InteractiveFormField) => (
+          <div key={field.key}>
+            <label className="block text-xs text-gray-500 mb-1">
+              {field.label}
+              {field.required && <span className="text-red-400 ml-0.5">*</span>}
+            </label>
+            <input
+              type="text"
+              value={values[field.key] || ''}
+              onChange={e => setField(field.key, e.target.value)}
+              placeholder={field.placeholder || `请输入${field.label}`}
+              disabled={submitted || disabled}
+              className={cn(
+                'w-full px-2.5 py-1.5 rounded-lg border text-sm transition-colors',
+                'focus:outline-none focus:ring-1 focus:ring-green-400 focus:border-green-400',
+                (submitted || disabled)
+                  ? 'bg-gray-50 border-gray-200 text-gray-400'
+                  : 'bg-white border-gray-200 text-gray-800'
+              )}
+            />
+          </div>
+        ))}
+      </div>
+
+      {/* 提交按钮 */}
+      {!submitted && (
+        <div className="px-3 py-2 border-t border-gray-100 flex justify-end">
+          <button
+            onClick={handleSubmit}
+            disabled={disabled}
+            className={cn(
+              'flex items-center gap-1 px-4 py-1.5 rounded-lg text-xs font-medium transition-colors',
+              disabled
+                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                : 'bg-green-600 text-white hover:bg-green-700'
+            )}
+          >
+            <Check className="w-3 h-3" />
+            {submitLabel}
           </button>
         </div>
       )}

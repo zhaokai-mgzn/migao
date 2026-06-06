@@ -902,7 +902,7 @@ export interface ChatToolCall {
 export type ChatMessageRole = 'user' | 'assistant' | 'system'
 
 // 交互式组件类型
-export type InteractiveComponentType = 'choice' | 'confirm'
+export type InteractiveComponentType = 'choice' | 'confirm' | 'form'
 
 // 选项卡片中的选项
 export interface InteractiveOption {
@@ -915,6 +915,15 @@ export interface InteractiveOption {
 export interface InteractiveField {
   label: string
   value: string
+}
+
+// 表单卡片中的字段（带 key，用于一次性收集多个信息）
+export interface InteractiveFormField {
+  key: string        // 字段标识，如 "name", "price"
+  label: string      // 显示标签，如 "商品名称"
+  placeholder?: string
+  value?: string     // 预填值（如图片识别结果）
+  required?: boolean
 }
 
 // 交互式组件数据
@@ -930,6 +939,9 @@ export interface InteractiveComponent {
   cancelLabel?: string
   confirmValue?: string
   cancelValue?: string
+  // form 组件
+  formFields?: InteractiveFormField[]
+  submitLabel?: string
 }
 
 // 聊天消息
