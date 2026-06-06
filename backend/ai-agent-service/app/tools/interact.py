@@ -155,7 +155,18 @@ class InteractTool(BaseTool):
             )
 
         if component == "choice":
-            if not options or len(options) == 0:
+            # 类型校验：防止 LLM 传入非数组值导致前端 .map() 崩溃
+            if not isinstance(options, list):
+                logger.warning(
+                    f"[interact] options is not a list: type={type(options).__name__} "
+                    f"value={options}"
+                )
+                return ToolResult(
+                    success=False,
+                    error="options 必须是数组",
+                    message="选项列表格式错误，请重试",
+                )
+            if len(options) == 0:
                 return ToolResult(
                     success=False,
                     error="choice 组件需要至少一个 option",
@@ -176,7 +187,18 @@ class InteractTool(BaseTool):
             }
 
         elif component == "confirm":
-            if not fields or len(fields) == 0:
+            # 类型校验：防止 LLM 传入非数组值导致前端 .map() 崩溃
+            if not isinstance(fields, list):
+                logger.warning(
+                    f"[interact] fields is not a list: type={type(fields).__name__} "
+                    f"value={fields}"
+                )
+                return ToolResult(
+                    success=False,
+                    error="fields 必须是数组",
+                    message="确认信息格式错误，请重试",
+                )
+            if len(fields) == 0:
                 return ToolResult(
                     success=False,
                     error="confirm 组件需要至少一个 field",
