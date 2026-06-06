@@ -93,6 +93,7 @@ class TestSkillToolSubsets:
             "notification_manage", "settings_manage",
             "session_manage", "quick_reply_manage",
             "category_manage", "processing_item_manage",
+            "interact",
         }
         assert set(GENERAL_TOOLS) == expected
 
