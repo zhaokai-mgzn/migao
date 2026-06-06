@@ -7,7 +7,7 @@ AI 智能客服系统 - 交互式组件 Tool
 组件类型：
 - choice:  单选/多选卡片，用户点击选项即可回复
 - confirm: 确认卡片，展示待确认信息 + 确认/取消按钮
-- form:    内联表单（预留，后续迭代）
+- form:    内联表单，一次性收集多个信息字段，用户填写后提交
 """
 
 import json
@@ -63,8 +63,8 @@ class InteractTool(BaseTool):
         "properties": {
             "component": {
                 "type": "string",
-                "description": "组件类型：choice（选项卡片）/ confirm（确认卡片）",
-                "enum": ["choice", "confirm"],
+                "description": "组件类型：choice（选项卡片）/ confirm（确认卡片）/ form（内联表单，一次性收集多个信息）",
+                "enum": ["choice", "confirm", "form"],
             },
             "title": {
                 "type": "string",
@@ -129,6 +129,26 @@ class InteractTool(BaseTool):
                 "description": "点击取消后发送的文本（默认：取消）",
                 "default": "取消",
             },
+            "formFields": {
+                "type": "array",
+                "description": "form 组件的表单字段列表（component=form 时必填）。每个字段需要 key（标识）、label（显示名）、可选的 placeholder、预填 value、required",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "key": {"type": "string", "description": "字段标识，如 name/price/stock"},
+                        "label": {"type": "string", "description": "显示标签，如 商品名称"},
+                        "placeholder": {"type": "string", "description": "输入提示"},
+                        "value": {"type": "string", "description": "预填值（如图片识别出的信息）"},
+                        "required": {"type": "boolean", "description": "是否必填", "default": False},
+                    },
+                    "required": ["key", "label"],
+                },
+            },
+            "submitLabel": {
+                "type": "string",
+                "description": "form 组件提交按钮文字（默认：提交）",
+                "default": "提交",
+            },
         },
         "required": ["component", "title"],
     }
@@ -145,6 +165,8 @@ class InteractTool(BaseTool):
         cancelLabel: str = "取消",
         confirmValue: str = "确认",
         cancelValue: str = "取消",
+        formFields: Optional[List[Dict[str, str]]] = None,
+        submitLabel: str = "提交",
     ) -> ToolResult:
         """执行交互组件请求
 
@@ -228,11 +250,39 @@ class InteractTool(BaseTool):
                 "cancelValue": cancelValue,
             }
 
+        elif component == "form":
+            formFields = _ensure_list(formFields, "formFields")
+            if formFields is None or len(formFields) == 0:
+                return ToolResult(
+                    success=False,
+                    error="form 组件需要至少一个 formField",
+                    message="表单字段不能为空",
+                )
+            # 限制字段数量
+            if len(formFields) > 6:
+                formFields = formFields[:6]
+
+            # 确保每个字段有 key 和 label
+            for f in formFields:
+                if not isinstance(f, dict) or "key" not in f or "label" not in f:
+                    return ToolResult(
+                        success=False,
+                        error="每个 formField 必须有 key 和 label",
+                        message="表单字段格式错误",
+                    )
+
+            interactive_data = {
+                "component": "form",
+                "title": title,
+                "formFields": formFields,
+                "submitLabel": submitLabel or "提交",
+            }
+
         else:
             return ToolResult(
                 success=False,
                 error=f"不支持的组件类型: {component}",
-                message="仅支持 choice 和 confirm 组件",
+                message="仅支持 choice、confirm、form 组件",
             )
 
         logger.info(
