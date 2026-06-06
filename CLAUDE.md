@@ -20,6 +20,8 @@
 ## 研发范式：AI-TDD（AI 强制测试驱动开发）
 
 > **⚠️ 本章是铁律中的铁律，违反即视为严重违规。AI 必须严格遵守，不得跳过任何检查点。**
+>
+> **📋 完整铁律详见 [`.claude/skills/tdd-iron-law.md`](.claude/skills/tdd-iron-law.md) — 包含 PR 合并前置条件、E2E 质量要求、违规后果。**
 
 ### 核心原则
 
@@ -223,17 +225,40 @@ cd frontend/admin-web && npm run dev
 
 ### 铁律（再次强调）
 
+**所有代码变更必须遵守 `.claude/skills/tdd-iron-law.md`，以下为摘要：**
+
 - **禁止**先写代码再补测试 — 必须测试先行
 - **禁止**提交未通过测试的代码到任何分支
-- **禁止**未完成本地单测 + 集测验证就合并 PR — 必须本地全绿才能提交/合并
-- 每个 PR 必须包含对应的测试用例
+- **PR 合并前必须**：① 重启本地服务 ② 全量单测 PASS ③ 增量集成测试 PASS ④ 增量 E2E 测试 PASS
+- **禁止**未完成以上 4 步就合并 PR — 缺一不可
+- 每个 PR 必须包含对应的测试用例（单测 + 集成 + E2E）
 - CI 流水线中测试不通过 → **禁止合并**
 - 发现 Bug 时：先写一个能复现 Bug 的失败测试 → 修复代码 → 测试通过
-- E2E 测试必须覆盖所有页面的核心交互路径
+- E2E 测试必须覆盖所有页面的核心交互路径，禁止弱断言
+- 新增交互组件必须覆盖完整点击链路（渲染→点击→发送→验证）
 
-### 完整验证命令清单（按顺序执行）
+### 完整验证命令清单（PR 合并前必须按顺序执行）
 
 ```bash
+# ═══════════════════════════════════════════════════════════════
+# 第〇步：重启本地服务（确保运行最新代码）
+# ═══════════════════════════════════════════════════════════════
+
+# 重启 admin-api（Java 后端，端口 8080）
+kill $(lsof -t -i :8080) 2>/dev/null
+cd backend/admin-api && ./mvnw spring-boot:run &
+
+# 重启 ai-agent-service（Python AI 服务，端口 8001）
+kill $(lsof -t -i :8001) 2>/dev/null
+cd backend/ai-agent-service && .venv/bin/python -m uvicorn app.main:app --port 8001 --reload &
+
+# 重启 admin-web（Next.js 前端，端口 3001）
+kill $(lsof -t -i :3001) 2>/dev/null
+cd frontend/admin-web && npm run dev &
+
+# 验证服务就绪
+lsof -i :8080 -sTCP:LISTEN && lsof -i :8001 -sTCP:LISTEN && lsof -i :3001 -sTCP:LISTEN
+
 # ═══════════════════════════════════════════════════════════════
 # 第一步：单测全量（变更涉及的所有模块）
 # ═══════════════════════════════════════════════════════════════
@@ -251,8 +276,8 @@ cd frontend/admin-web && npx vitest run
 # 第二步：集成测试增量（仅运行本次变更涉及的文件/类）
 # ═══════════════════════════════════════════════════════════════
 
-# 后端 AI 服务（替换为实际涉及的测试文件）
-cd backend/ai-agent-service && .venv/bin/python -m pytest tests/test_vision_integration.py -v
+# 后端 AI 服务 — 真实 LLM 调用（替换为实际涉及的测试类）
+cd backend/ai-agent-service && .venv/bin/python -m pytest tests/test_e2e_mibao_scenarios.py -v -k "TestP3InteractiveComponents"
 
 # 后端 Java 服务（替换为实际涉及的测试类）
 cd backend/admin-api && ./mvnw test -Dtest=OrderServiceTest,ProductControllerTest
@@ -264,7 +289,14 @@ cd backend/admin-api && ./mvnw test -Dtest=OrderServiceTest,ProductControllerTes
 cd frontend/admin-web && npx tsc --noEmit
 
 # ═══════════════════════════════════════════════════════════════
-# 第四步：完成自检清单（CP-7）
+# 第四步：E2E 测试增量（Playwright，对本地服务）
+# ═══════════════════════════════════════════════════════════════
+
+cd tests && rm -f e2e/.auth/admin.json
+cd tests && BASE_URL=http://localhost:3001 npx playwright test specs/chat/chat.spec.ts --reporter=list
+
+# ═══════════════════════════════════════════════════════════════
+# 第五步：完成自检清单（tdd-iron-law CP-7）
 # ═══════════════════════════════════════════════════════════════
 
 # 勾选所有检查点，无遗漏后才能声称"完成"
