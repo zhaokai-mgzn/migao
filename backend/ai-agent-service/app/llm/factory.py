@@ -60,7 +60,7 @@ class LLMFactory:
         """创建视觉多模态 LLM 实例
 
         - 使用同一个 DashScope OpenAI 兼容接口
-        - 不启用 thinking 模式（视觉模型不支持）
+        - 显式禁用 thinking 模式（视觉模型不支持，防止思考内容泄漏到用户回复）
         """
         model = model_override or settings.DASHSCOPE_VISION_MODEL
         return ChatOpenAI(
@@ -71,6 +71,7 @@ class LLMFactory:
             streaming=True,
             max_tokens=2048,
             request_timeout=60,
+            extra_body={"enable_thinking": False},
         )
 
     @staticmethod
