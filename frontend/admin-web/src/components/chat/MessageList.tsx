@@ -150,7 +150,6 @@ function MessageBubble({ message }: { message: ChatMessage }) {
           <div className="mt-2 w-full">
             <InteractiveMessage
               interactive={message.interactive}
-              disabled={!!message.suggestions}
             />
           </div>
         )}
