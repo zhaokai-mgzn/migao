@@ -29,7 +29,7 @@ function ChoiceCard({ interactive, disabled }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [submitted, setSubmitted] = useState(false)
 
-  const options = interactive.options || []
+  const options = Array.isArray(interactive.options) ? interactive.options : []
   const multi = interactive.multiSelect || false
 
   const toggleOption = (value: string) => {
@@ -118,7 +118,7 @@ function ConfirmCard({ interactive, disabled }: Props) {
   const { sendMessage } = useChatStore()
   const [submitted, setSubmitted] = useState(false)
 
-  const fields = interactive.fields || []
+  const fields = Array.isArray(interactive.fields) ? interactive.fields : []
   const confirmLabel = interactive.confirmLabel || '确认'
   const cancelLabel = interactive.cancelLabel || '取消'
   const confirmValue = interactive.confirmValue || '确认'
