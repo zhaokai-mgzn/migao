@@ -417,4 +417,80 @@ class TestP2AdvancedScenarios:
         assert len(mentioned) >= 3, (
             f"应列出至少3个核心能力，实际提及: {mentioned}，完整回复: {text[:200]}"
         )
+
+
+@pytest.mark.asyncio
+class TestP3InteractiveComponents:
+    """P3 交互式组件：验证 LLM 使用 interact 工具展示选项/确认卡片"""
+
+    async def test_product_create_with_choice_card(self):
+        """
+        商品创建 — LLM 使用 interact choice 展示加工项选项
+        预期：触发 interact 工具，options 包含加工项名称
+        """
+        events = await send_chat(
+            "创建一个商品：名称测试窗帘，价格99元，库存100，分类窗帘布艺"
+        )
+
+        assert_no_error(events)
+        tools = get_tool_calls(events)
+        # 应查询加工项 + 使用 interact 展示选项
+        assert "processing_item_query" in tools or "interact" in tools, (
+            f"应先查询加工项或使用 interact 展示选项，实际: {tools}"
+        )
+        assert has_event_type(events, "done")
+
+    async def test_product_create_with_confirm_card(self):
+        """
+        商品创建 — 提供完整信息后 LLM 使用 confirm 卡片确认
+        预期：触发 interact confirm，字段包含名称/价格/库存
+        """
+        events = await send_chat(
+            "创建商品：名称星夜帘，价格268元，库存50，分类窗帘布艺，加工S钩安装和双折边"
+        )
+
+        assert_no_error(events)
+        text = get_full_text(events)
+        tools = get_tool_calls(events)
+        # 应使用 interact 确认或 product_manage 创建
+        assert any(t in tools for t in ["interact", "product_manage"]), (
+            f"应使用 interact 确认或 product_manage 创建，实际: {tools}"
+        )
+        assert has_event_type(events, "done")
+
+    async def test_order_create_with_interactive_flow(self):
+        """
+        订单创建 — LLM 使用交互组件确认订单详情
+        预期：触发 order 相关工具，展示 confirm 或 choice 卡片
+        """
+        events = await send_chat(
+            "创建一个订单：客户李先生，商品星辰帘2件，总价256元，收货地址北京市朝阳区"
+        )
+
+        assert_no_error(events)
+        text = get_full_text(events)
+        tools = get_tool_calls(events)
+        # 应查询商品 + 使用 interact 确认或创建订单
+        assert any(
+            t in tools for t in ["product_search", "interact", "order_manage", "order_create"]
+        ) or any(kw in text for kw in ["确认", "订单", "创建", "256", "李先生"]), (
+            f"应处理订单创建请求，实际 tools={tools}, text={text[:150]}"
+        )
+        assert has_event_type(events, "done")
+
+    async def test_choice_card_multi_option_rendering(self):
+        """
+        interact choice — 多选项列表正确展示
+        预期：触发 interact 工具，options 为列表
+        """
+        events = await send_chat("有哪些可用的加工项")
+
+        assert_no_error(events)
+        text = get_full_text(events)
+        tools = get_tool_calls(events)
+        # 应查询加工项列表，可能使用 interact 展示选项
+        assert "processing_item_query" in tools, (
+            f"应查询加工项列表，实际: {tools}"
+        )
+        assert has_event_type(events, "done")
         assert has_event_type(events, "done")

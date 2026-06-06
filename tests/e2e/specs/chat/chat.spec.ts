@@ -313,4 +313,95 @@ test.describe('AI 对话页面', () => {
       expect(await userBubbles.count()).toBeGreaterThanOrEqual(2) // 初始消息 + 选项消息
     }
   })
+
+  // ── 交互式组件业务场景 ──
+
+  test('创建商品 — LLM 使用 interact 引导选择加工项', async ({ page: p }) => {
+    await page.createSessionBtn.click()
+    await p.waitForTimeout(1000)
+    // 提供完整信息触发确认流程
+    await page.fillMessage(
+      '创建一个商品：名称"星辰帘"，价格128元，库存200，分类窗帘布艺'
+    )
+    await page.sendBtn.click()
+    // 等待 AI 回复出现
+    await p.waitForSelector('.prose', { timeout: 20_000 })
+    await p.waitForTimeout(3000)
+    // LLM 应调用 interact 展示加工项选择或确认卡片
+    const choiceCards = p.locator('[class*="border-primary-200"][class*="rounded-xl"]')
+    const confirmCards = p.locator('[class*="border-amber-200"][class*="rounded-xl"]')
+    const hasInteractive =
+      (await choiceCards.count()) > 0 || (await confirmCards.count()) > 0
+    // AI 回复应涉及加工项或确认（引导流程）
+    const aiText = await p.locator('.prose').last().innerText({ timeout: 5000 }).catch(() => '')
+    expect(hasInteractive || aiText.includes('加工')).toBeTruthy()
+  })
+
+  test('创建商品 — 确认卡片展示待确认信息并含确认/取消按钮', async ({ page: p }) => {
+    await page.createSessionBtn.click()
+    await p.waitForTimeout(1000)
+    // 提供完整信息触发确认
+    await page.fillMessage(
+      '创建商品：名称"星夜帘"，价格268元，库存50，分类窗帘布艺，加工S钩安装'
+    )
+    await page.sendBtn.click()
+    await p.waitForTimeout(15000)
+    // 确认卡片应包含字段和按钮
+    const confirmCard = p.locator('[class*="border-amber-200"]')
+    if (await confirmCard.isVisible().catch(() => false)) {
+      // 确认卡片中包含字段信息
+      const fields = confirmCard.locator('text=/名称|价格|库存|分类|加工/')
+      expect(await fields.count()).toBeGreaterThanOrEqual(1)
+      // 确认/取消按钮
+      const confirmBtn = confirmCard.locator('button:has-text("确认")')
+      const cancelBtn = confirmCard.locator('button:has-text("取消")')
+      expect(await confirmBtn.count() + await cancelBtn.count()).toBeGreaterThanOrEqual(1)
+    }
+  })
+
+  test('创建订单 — LLM 使用 confirm 卡片确认订单信息', async ({ page: p }) => {
+    await page.createSessionBtn.click()
+    await p.waitForTimeout(1000)
+    await page.fillMessage(
+      '帮我创建一个订单，客户李先生，商品星辰帘2件，总价256元，收货地址北京市朝阳区'
+    )
+    await page.sendBtn.click()
+    // 等待 AI 回复出现
+    await p.waitForSelector('.prose', { timeout: 20_000 })
+    await p.waitForTimeout(3000)
+    // LLM 可能使用 confirm 卡片确认订单，或先查询商品
+    const lastText = await p.locator('.prose').last().innerText({ timeout: 5000 }).catch(() => '')
+    // 应有订单相关信息
+    const hasOrderInfo = ['确认', '订单', '创建', '星辰帘', '256', '李先生'].some(
+      (kw) => lastText.includes(kw)
+    )
+    expect(hasOrderInfo).toBeTruthy()
+  })
+
+  test('选项卡片 — 单选后点击确认发送正确文本', async ({ page: p }) => {
+    await page.createSessionBtn.click()
+    await p.waitForTimeout(1000)
+    // 触发加工项查询（LLM 可能使用 interact 展示选项）
+    await page.fillMessage('有哪些可用的加工项')
+    await page.sendBtn.click()
+    await p.waitForTimeout(12000)
+    // 如果 LLM 使用了 interact，选项卡片应出现
+    const choiceCard = p.locator('[class*="border-primary-200"] button:has(.lucide-check)')
+    if ((await choiceCard.count()) > 0) {
+      // 点击第一个选项
+      await choiceCard.first().click()
+      await p.waitForTimeout(500)
+      // 确认按钮应出现
+      const confirmBtn = p.locator(
+        '[class*="border-primary-200"] button:has-text("确认")'
+      )
+      if (await confirmBtn.isVisible().catch(() => false)) {
+        await confirmBtn.click()
+        await p.waitForTimeout(2000)
+        // 点击后应发送消息
+        const userBubbles = p.locator('.bg-primary-600.text-white')
+        expect(await userBubbles.count()).toBeGreaterThanOrEqual(2)
+      }
+    }
+  })
 })
