@@ -110,10 +110,14 @@ class TestVisionRoutingNoModelNameCheck:
             tool_count=0,
             text_length=100,
         )
-        # 视觉 LLM 不应有 enable_thinking（视觉模型不支持 thinking 模式）
+        # 视觉 LLM 显式禁用 thinking
         extra_body = getattr(llm, "extra_body", None)
-        if extra_body:
-            assert "enable_thinking" not in extra_body
+        if extra_body is None:
+            model_kwargs = getattr(llm, "model_kwargs", {}) or {}
+            extra_body = model_kwargs.get("extra_body", {})
+        assert extra_body == {"enable_thinking": False}, (
+            "Vision LLM must explicitly disable thinking"
+        )
         assert llm.model_name == "qwen3.6-plus"
 
 
@@ -229,15 +233,16 @@ class TestCreateVisionLLM:
         assert llm.model_name == "qwen3.6-plus"
 
     def test_create_vision_llm_no_thinking(self, monkeypatch):
-        """视觉 LLM 不携带 enable_thinking extra_body（视觉模型不支持）"""
+        """视觉 LLM 显式禁用 thinking，防止思考内容泄漏（#204 regression）"""
         monkeypatch.setattr(settings, "DASHSCOPE_VISION_MODEL", "qwen3.6-flash")
         llm = LLMFactory.create_vision_llm()
-        # extra_body 要么为 None/缺失，要么不含 enable_thinking 键
         extra_body = getattr(llm, "extra_body", None)
-        if extra_body:
-            assert "enable_thinking" not in extra_body
-        else:
-            assert extra_body in (None, {})
+        if extra_body is None:
+            model_kwargs = getattr(llm, "model_kwargs", {}) or {}
+            extra_body = model_kwargs.get("extra_body", {})
+        assert extra_body == {"enable_thinking": False}, (
+            f"create_vision_llm must disable thinking, got extra_body={extra_body}"
+        )
 
 
 # =============================================================================
@@ -305,6 +310,43 @@ class TestVisionModelPricing:
         """qwen-vl-plus / qwen-vl-max / qwen-vl-ocr 不在定价表中（账号不可用）"""
         for m in ("qwen-vl-plus", "qwen-vl-max", "qwen-vl-ocr"):
             assert m not in MODEL_PRICING, f"{m} should be removed (not available)"
+
+
+# =============================================================================
+# 5. Vision LLM thinking 模式控制
+# =============================================================================
+class TestVisionLLMNoThinking:
+    """create_vision_llm 必须显式关闭 thinking，防止思考内容泄漏到用户回复"""
+
+    def test_create_vision_llm_disables_thinking(self, monkeypatch):
+        """create_vision_llm 应包含 extra_body={'enable_thinking': False}"""
+        monkeypatch.setattr(settings, "DASHSCOPE_VISION_MODEL", "qwen3.6-flash")
+
+        llm = LLMFactory.create_vision_llm()
+
+        # ChatOpenAI 存储 extra_body 在 kwargs 中
+        extra_body = getattr(llm, "extra_body", None)
+        # 兼容不同 langchain 版本：可能在 model_kwargs 或直接在对象上
+        if extra_body is None:
+            model_kwargs = getattr(llm, "model_kwargs", {}) or {}
+            extra_body = model_kwargs.get("extra_body", {})
+
+        assert extra_body == {"enable_thinking": False}, (
+            f"create_vision_llm must disable thinking, got extra_body={extra_body}"
+        )
+
+    def test_create_vision_llm_with_model_override(self, monkeypatch):
+        """model_override 时也禁用 thinking"""
+        llm = LLMFactory.create_vision_llm(model_override="qwen3.6-plus")
+
+        extra_body = getattr(llm, "extra_body", None)
+        if extra_body is None:
+            model_kwargs = getattr(llm, "model_kwargs", {}) or {}
+            extra_body = model_kwargs.get("extra_body", {})
+
+        assert extra_body == {"enable_thinking": False}, (
+            f"create_vision_llm with override must disable thinking, got extra_body={extra_body}"
+        )
 
 
 # =============================================================================

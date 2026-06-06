@@ -17,7 +17,7 @@ from app.graph.skills.product_skill import PRODUCT_TOOLS, product_node
 from app.graph.skills.knowledge_skill import KNOWLEDGE_TOOLS, knowledge_node
 from app.graph.skills.aftersales_skill import AFTERSALES_TOOLS, aftersales_node
 from app.graph.skills.general_agent import GENERAL_TOOLS, general_node
-from app.graph.skills.base_skill import build_tool_context, execute_skill
+from app.graph.skills.base_skill import build_tool_context, execute_skill, _extract_content
 from app.tools.base import ToolContext
 
 
@@ -672,6 +672,53 @@ class TestExecuteSkillTextAfterMultimodal:
         assert captured[1].content == "你好"
         assert captured[2].content == "您好！有什么可以帮您？"
         assert captured[3].content == "帮我查一下订单 ORD-2024-001"
+
+
+class TestExtractContentThinkingGuard:
+    """_extract_content 思考内容安全提取
+
+    当 Vision LLM 启用了 thinking 时，DashScope 返回 reasoning_content + content。
+    _extract_content 应优先返回 content（真实回复），仅在 content 为空时
+    才回退到 reasoning_content。
+    """
+
+    def test_normal_content_no_thinking(self):
+        """无 thinking 标签的普通内容直接返回"""
+        response = MagicMock(spec=AIMessage)
+        response.content = "这是一张色卡图片，包含2699系列共16个色号。"
+        response.additional_kwargs = {}
+        assert "色卡" in _extract_content(response)
+
+    def test_strips_think_tags(self):
+        """移除 <think> 标签及其内容"""
+        response = MagicMock(spec=AIMessage)
+        response.content = "<think>分析图片中...</think>这是一张色卡图片。"
+        response.additional_kwargs = {}
+        result = _extract_content(response)
+        assert "这是一张色卡图片" in result
+        assert "<think>" not in result
+
+    def test_reasoning_content_as_fallback(self):
+        """content 为空时回退到 reasoning_content"""
+        response = MagicMock(spec=AIMessage)
+        response.content = ""
+        response.additional_kwargs = {"reasoning_content": "分析图片：色卡包含16个色号"}
+        result = _extract_content(response)
+        assert "16个色号" in result
+
+    def test_reasoning_content_not_leaked_when_content_exists(self):
+        """关键场景：reasoning_content 存在但 content 也有内容时，只返回 content"""
+        response = MagicMock(spec=AIMessage)
+        response.content = "您好，我已识别出这是一张色卡图片。请问需要创建哪个商品？"
+        response.additional_kwargs = {
+            "reasoning_content": "用户希望根据图片创建一个商品。1. 分析图片内容：图片是一个色卡...2. 理解用户意图..."
+        }
+        result = _extract_content(response)
+        # 应该返回 content（真实回复），不包含 reasoning_content
+        assert "我已识别出这是一张色卡图片" in result
+        # 不应该泄漏 thinking 内容
+        assert "分析图片内容" not in result
+        assert "理解用户意图" not in result
 
 
 class TestExecuteSkillVisionRetry:
