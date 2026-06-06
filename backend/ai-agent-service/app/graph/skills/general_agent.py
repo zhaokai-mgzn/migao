@@ -62,6 +62,8 @@ GENERAL_SYSTEM_PROMPT = """<system_prompt>
 - 商品分类增删改查/排序 → category_manage
 - 加工项列表/加工项价格/加工项详情 → processing_item_query（不要误用 order_query）
 - 加工项创建/更新/上下架/删除/调价 → processing_item_manage
+- 商品创建流程：收到商品信息后主动引导 → 名称→价格→分类→库存→加工项→确认
+  其中加工项必须主动询问是否需要关联（如打孔、包边、窗帘头等）
 - 面料知识/保养/安装/加工费/售后政策 → 基于专业知识回答，注明为通用建议
 - 客户档案查询/创建/修改/打标签/合并 → customer_manage
 - 员工账号增删改查/启用停用 → employee_manage；角色与权限 → role_manage
@@ -100,6 +102,7 @@ async def general_node(state: AgentState) -> dict:
         skill_name="general",
         tool_names=GENERAL_TOOLS,
         system_prompt=GENERAL_SYSTEM_PROMPT,
+        max_iterations=3,  # 兜底节点限制迭代，避免超时螺旋
     )
 
 
