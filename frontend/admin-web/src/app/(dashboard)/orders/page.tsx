@@ -146,6 +146,13 @@ export default function OrdersPage() {
         apiParams.hasProcessing = true
       }
 
+      // 搜索表单的「是否加工」筛选项（修复 P0-1：之前该字段未传给 API）
+      if (search.hasProcessing === 'true') {
+        apiParams.hasProcessing = true
+      } else if (search.hasProcessing === 'false') {
+        apiParams.hasProcessing = false
+      }
+
       const res = await orderApi.getOrders(apiParams as Parameters<typeof orderApi.getOrders>[0])
       const pageData = res.data?.data
       const items = pageData?.items || []
@@ -223,7 +230,7 @@ export default function OrdersPage() {
   }
 
   const handleShip = (order: Order) => {
-    router.push(`/orders/${order.id}?action=ship`)
+    router.push(`/orders/${order.id}/ship`)
   }
 
   const handleConfirmPayment = async (order: Order) => {

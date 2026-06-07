@@ -289,6 +289,29 @@ export default function OrderDetailPage() {
         </div>
       </SectionCard>
 
+      {/* 备注信息 */}
+      {order.remarks && order.remarks.length > 0 && (
+        <SectionCard title="备注记录">
+          <div className="space-y-3">
+            {order.remarks.map((remark) => (
+              <div key={remark.id} className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-gray-700 whitespace-pre-wrap">{remark.content}</p>
+                  <div className="flex items-center gap-3 mt-1.5">
+                    {remark.operator && (
+                      <span className="text-xs text-gray-500">操作人：{remark.operator}</span>
+                    )}
+                    <span className="text-xs text-gray-400">
+                      {remark.createdAt ? dayjs(remark.createdAt).format('YYYY-MM-DD HH:mm:ss') : ''}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </SectionCard>
+      )}
+
       {/* 关闭订单弹窗 */}
       <CloseOrderModal
         open={closeModalOpen}

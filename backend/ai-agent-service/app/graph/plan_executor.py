@@ -590,18 +590,38 @@ async def execute_plan(
             if colors and sms and dws and "skus" not in plan.context:
                 sm_list = sms if isinstance(sms, list) else [sms]
                 dw_list = dws if isinstance(dws, list) else [dws]
-                skus = []
+                # 给每个 color 加临时 id（负数），admin-api saveColorsAndSkus 自动映射
                 for ci, c in enumerate(colors):
-                    cid = -(ci + 1)
+                    if isinstance(c, dict) and "id" not in c:
+                        c["id"] = -(ci + 1)
+                # 构造 SKU：每个 color × sellingMethod × doorWidth
+                skus = []
+                total_sku_stock = int(plan.context.get("stock_quantity", plan.context.get("stock", 0)) or 0)
+                for c in colors:
+                    cid = c.get("id", 0) if isinstance(c, dict) else 0
                     for sm in sm_list:
                         for dw in dw_list:
-                            skus.append({"colorId": cid, "sellingMethod": sm, "doorWidth": dw, "price": plan.context.get("price", 0), "stock": plan.context.get("stock_quantity", plan.context.get("stock", 0))})
+                            skus.append({"colorId": cid, "sellingMethod": sm, "doorWidth": dw,
+                                          "price": plan.context.get("price", 0),
+                                          "stock": max(1, total_sku_stock // max(1, len(colors) * len(sm_list) * len(dw_list)))})
+                plan.context["colors"] = colors  # 更新回去带 id
                 plan.context["skus"] = skus
                 logger.info(f"[pe] Auto-generated {len(skus)} SKUs")
             if "processing_item_ids" in plan.context and "processing_item_configs" not in plan.context:
                 pids = plan.context["processing_item_ids"]
                 pid_list = pids if isinstance(pids, list) else [pids]
-                plan.context["processing_item_configs"] = [{"processingItemId": pid} for pid in pid_list if pid]
+                # 从查询结果中匹配价格
+                results = plan.context.get("_query_results", [])
+                price_map = {r.get("id"): r.get("unit_price") for r in results if r.get("id")}
+                configs = []
+                for pid in pid_list:
+                    if pid:
+                        cfg = {"processingItemId": pid}
+                        price = price_map.get(pid)
+                        if price is not None:
+                            cfg["customPrice"] = price
+                        configs.append(cfg)
+                plan.context["processing_item_configs"] = configs
         if current.execute_tool == "order_create":
             if "items" not in plan.context and "product_name" in plan.context:
                 qty = int(plan.context.get("quantity", 1))
