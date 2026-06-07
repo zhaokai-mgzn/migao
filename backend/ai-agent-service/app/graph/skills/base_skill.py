@@ -326,6 +326,20 @@ async def execute_skill(
     Returns:
         dict: 需要更新的 state 字段
     """
+    session_id = state.get("session_id", "")
+
+    # ── Plan-and-Execute 路径 ──
+    # 检查是否有进行中的 Plan 或当前请求适合 P&E
+    from app.graph.plan_executor import execute_plan, should_use_plan_execute, _load_plan
+
+    existing_plan = await _load_plan(session_id) if session_id else None
+    if existing_plan is not None or should_use_plan_execute(state, skill_name):
+        logger.info(f"[{skill_name}] Trying P&E mode | has_plan={existing_plan is not None}")
+        pe_result = await execute_plan(state, skill_name, tool_names, system_prompt)
+        if pe_result is not None:
+            return pe_result
+        logger.info(f"[{skill_name}] P&E fallback to ReAct")
+
     # 1. 构建并注入 ToolContext
     tool_context = build_tool_context(state)
     set_tool_context(tool_context)
@@ -637,6 +651,15 @@ async def execute_skill(
                     )
                     break
 
+                # 有 tool_calls 但 LLM 可能在同一个消息中先输出了文本
+                # 提取该文本作为 final_content，确保 interact 等场景下有文本展示
+                text_before_tools = _extract_content(response)
+                if text_before_tools and not final_content:
+                    final_content = text_before_tools
+                    logger.info(
+                        f"[{skill_name}] Extracted text before tool_calls | len={len(text_before_tools)}"
+                    )
+
                 # 执行每个 tool_call
                 interact_called = False
                 for tool_call in response.tool_calls:
@@ -740,30 +763,10 @@ async def execute_skill(
         )
 
     # 8. 返回 state 更新
-    # 会话连续性：interact 成功后标记 pending skill，下次消息直达原 skill
-    # 同时持久化到 session memory（DB metadata），跨 graph 调用保持状态
     result: dict[str, Any] = {
         "messages": new_messages,
         "final_answer": final_content,
         "skill_used": skill_name,
         "entities": entities,
     }
-    if interact_called:
-        result["pending_interact_skill"] = skill_name
-        # 持久化到 DB：下次消息的 _build_initial_state 会加载此值
-        if session_id:
-            try:
-                from app.memory.session_memory import SessionMemory
-                await SessionMemory().set_pending_skill(session_id, skill_name)
-            except Exception as e:
-                logger.warning(f"[{skill_name}] Failed to persist pending_skill: {e}")
-    elif state.get("pending_interact_skill"):
-        result["pending_interact_skill"] = ""
-        # 用户操作已完成，清除 DB 标记
-        if session_id:
-            try:
-                from app.memory.session_memory import SessionMemory
-                await SessionMemory().clear_pending_skill(session_id)
-            except Exception as e:
-                logger.warning(f"[{skill_name}] Failed to clear pending_skill: {e}")
     return result

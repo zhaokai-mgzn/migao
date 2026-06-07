@@ -61,6 +61,9 @@ function ChoiceCard({ interactive, disabled }: Props) {
       {/* 标题 */}
       <div className="px-3 py-2 bg-primary-50 border-b border-primary-100">
         <p className="text-xs font-medium text-primary-700">{interactive.title}</p>
+        {multi && (
+          <p className="text-[10px] text-primary-400 mt-0.5">可多选，选择后点击下方按钮确认</p>
+        )}
       </div>
 
       {/* 选项列表 */}
@@ -80,21 +83,39 @@ function ChoiceCard({ interactive, disabled }: Props) {
                 (submitted || disabled) && 'opacity-60 cursor-not-allowed'
               )}
             >
+              {/* 多选显示复选框，单选显示右侧勾号 */}
+              {multi && (
+                <span className={cn(
+                  'w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors',
+                  isSelected ? 'bg-primary-600 border-primary-600 text-white' : 'border-gray-300'
+                )}>
+                  {isSelected && <Check className="w-3 h-3" />}
+                </span>
+              )}
               <span className="flex-1">
                 <span className="font-medium">{opt.label}</span>
                 {opt.description && (
                   <span className="ml-1.5 text-xs text-gray-400">{opt.description}</span>
                 )}
               </span>
-              {isSelected && <Check className="w-4 h-4 text-primary-600 flex-shrink-0" />}
+              {!multi && isSelected && <Check className="w-4 h-4 text-primary-600 flex-shrink-0" />}
             </button>
           )
         })}
       </div>
 
-      {/* 确认按钮 */}
+      {/* 确认按钮 — 始终显示，显示选中状态提示 */}
       {!submitted && (
-        <div className="px-3 py-2 border-t border-gray-100 flex justify-end">
+        <div className="px-3 py-2 border-t border-gray-100 flex items-center justify-between">
+          <span className="text-xs text-gray-400">
+            {selected.size > 0
+              ? multi
+                ? `已选 ${selected.size} 项`
+                : '已选择'
+              : multi
+                ? '请选择一项或多项'
+                : '请点击选择一个选项'}
+          </span>
           <button
             onClick={submitChoice}
             disabled={selected.size === 0}
@@ -105,7 +126,7 @@ function ChoiceCard({ interactive, disabled }: Props) {
                 : 'bg-gray-100 text-gray-400 cursor-not-allowed'
             )}
           >
-            {multi ? '确认选择' : '确认'}
+            {multi && selected.size > 0 ? `确认选择 (${selected.size})` : '确认'}
             <ChevronRight className="w-3 h-3" />
           </button>
         </div>

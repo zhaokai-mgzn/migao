@@ -377,17 +377,20 @@ class TestLogisticsTrackTenantValidation:
     ):
         """正常返回当前租户的订单物流"""
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value={
-            "success": True,
-            "data": {
-                "id": "order_own",
-                "tenantId": TENANT_A,
-                "logistics": {
-                    "trackingNo": "SF456",
-                    "company": "顺丰速运",
+        async def mock_get(url, **kwargs):
+            if url == "/api/admin/orders" and kwargs.get("params", {}).get("keyword"):
+                # 列表搜索返回 records
+                return {"success": True, "data": {"records": [{"id": "order_own", "tenantId": TENANT_A}]}}
+            # 详情查询
+            return {
+                "success": True,
+                "data": {
+                    "id": "order_own",
+                    "tenantId": TENANT_A,
+                    "logistics": {"trackingNo": "SF456", "company": "顺丰速运"},
                 },
-            },
-        })
+            }
+        mock_client.get = mock_get
         mock_get_client.return_value = mock_client
 
         result = await tool.execute(context=ctx_tenant_a, order_id="order_own")

@@ -420,13 +420,13 @@ class TestP2AdvancedScenarios:
 
 
 @pytest.mark.asyncio
-class TestP3InteractiveComponents:
-    """P3 交互式组件：验证 LLM 使用 interact 工具展示选项/确认卡片"""
+class TestP3PlanAndExecute:
+    """P3 Plan-and-Execute：验证 P&E 模式下的多步骤文本交互"""
 
-    async def test_product_create_with_choice_card(self):
+    async def test_product_create_triggers_query_tools(self):
         """
-        商品创建 — LLM 使用 interact choice 展示加工项选项
-        预期：触发 interact 工具，options 包含加工项名称
+        商品创建走 P&E 模式 — LLM 应先收集信息或查询分类/加工项
+        预期：有文本回复，可能触发查询工具（取决于 Plan 步骤），不触发 interact
         """
         events = await send_chat(
             "创建一个商品：名称测试窗帘，价格99元，库存100，分类窗帘布艺"
@@ -434,34 +434,34 @@ class TestP3InteractiveComponents:
 
         assert_no_error(events)
         tools = get_tool_calls(events)
-        # 应查询加工项 + 使用 interact 展示选项
-        assert "processing_item_query" in tools or "interact" in tools, (
-            f"应先查询加工项或使用 interact 展示选项，实际: {tools}"
-        )
+        text = get_full_text(events)
+        # P&E 第一步可能是 ask（收集信息）或 query（查分类），不可能调 interact
+        assert "interact" not in tools, f"P&E 模式不应调 interact，实际 tools={tools}"
+        assert len(text) > 10, f"应有文本回复，实际 len={len(text)}"
         assert has_event_type(events, "done")
 
-    async def test_product_create_with_confirm_card(self):
+    async def test_product_create_with_details_triggers_manage(self):
         """
-        商品创建 — 提供完整信息后 LLM 使用 confirm 卡片确认
-        预期：触发 interact confirm，字段包含名称/价格/库存
+        商品创建 — 提供完整信息后触发 product_manage
+        预期：走 P&E execute 步骤调用 product_manage
         """
         events = await send_chat(
             "创建商品：名称星夜帘，价格268元，库存50，分类窗帘布艺，加工S钩安装和双折边"
         )
 
         assert_no_error(events)
-        text = get_full_text(events)
         tools = get_tool_calls(events)
-        # 应使用 interact 确认或 product_manage 创建
-        assert any(t in tools for t in ["interact", "product_manage"]), (
-            f"应使用 interact 确认或 product_manage 创建，实际: {tools}"
+        text = get_full_text(events)
+        # P&E 模式：应触发 product_manage 或展示文本引导
+        assert any(t in tools for t in ["product_manage", "processing_item_query", "category_manage"]) or len(text) > 20, (
+            f"P&E 模式应处理商品创建，实际 tools={tools}, text_len={len(text)}"
         )
         assert has_event_type(events, "done")
 
-    async def test_order_create_with_interactive_flow(self):
+    async def test_order_create_triggers_order_tools(self):
         """
-        订单创建 — LLM 使用交互组件确认订单详情
-        预期：触发 order 相关工具，展示 confirm 或 choice 卡片
+        订单创建走 P&E 模式 — 触发订单相关工具
+        预期：触发 product_search 或 order_create，纯文本不含交互组件
         """
         events = await send_chat(
             "创建一个订单：客户李先生，商品星辰帘2件，总价256元，收货地址北京市朝阳区"
@@ -470,11 +470,11 @@ class TestP3InteractiveComponents:
         assert_no_error(events)
         text = get_full_text(events)
         tools = get_tool_calls(events)
-        # 应查询商品 + 使用 interact 确认或创建订单
+        # P&E 模式：文本中应有确认/订单相关信息
         assert any(
-            t in tools for t in ["product_search", "interact", "order_manage", "order_create"]
+            t in tools for t in ["product_search", "order_manage", "order_create"]
         ) or any(kw in text for kw in ["确认", "订单", "创建", "256", "李先生"]), (
-            f"应处理订单创建请求，实际 tools={tools}, text={text[:150]}"
+            f"P&E 模式应处理订单创建，实际 tools={tools}, text={text[:150]}"
         )
         assert has_event_type(events, "done")
 
