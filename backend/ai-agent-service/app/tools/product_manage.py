@@ -190,7 +190,7 @@ class ProductManageTool(BaseTool):
         if category_id:
             json_data["categoryId"] = category_id
         if price is not None:
-            json_data["price"] = price
+            json_data["basePrice"] = price
         if description:
             json_data["description"] = description
         if stock_quantity is not None:
@@ -266,7 +266,7 @@ class ProductManageTool(BaseTool):
         if category_id:
             json_data["categoryId"] = category_id
         if price is not None:
-            json_data["price"] = price
+            json_data["basePrice"] = price
         if description:
             json_data["description"] = description
         if stock_quantity is not None:
