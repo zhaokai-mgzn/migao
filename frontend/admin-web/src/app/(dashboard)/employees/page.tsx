@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Pencil, RotateCcw, Trash2, ShieldOff, ShieldCheck, KeyRound } from 'lucide-react'
+import { Plus, Pencil, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { employeeApi, roleApi } from '@/lib/api'
 import { Button, Input, Select, Modal, Table, Pagination, Badge } from '@/components/ui'
@@ -9,6 +9,17 @@ import type { TableColumn } from '@/components/ui'
 import type { Employee, EmployeeStatus, Role } from '@/types'
 import { EmployeeStatusLabels } from '@/types'
 import dayjs from 'dayjs'
+
+// 角色颜色映射（按 code 区分颜色）
+const ROLE_COLOR_MAP: Record<string, 'info' | 'success' | 'warning' | 'error'> = {
+  admin: 'error',
+  agent: 'info',
+  operator: 'warning',
+}
+
+function getRoleBadgeVariant(code: string): 'info' | 'success' | 'warning' | 'error' {
+  return ROLE_COLOR_MAP[code] || 'info'
+}
 
 export default function EmployeesPage() {
   // 列表状态
@@ -19,8 +30,10 @@ export default function EmployeesPage() {
   const [pageSize, setPageSize] = useState(10)
   const [keyword, setKeyword] = useState('')
   const [statusFilter, setStatusFilter] = useState<EmployeeStatus | ''>('')
+  const [roleFilter, setRoleFilter] = useState<string>('')
   const [searchKeyword, setSearchKeyword] = useState('')
   const [searchStatus, setSearchStatus] = useState<EmployeeStatus | ''>('')
+  const [searchRole, setSearchRole] = useState<string>('')
 
   // 角色选项
   const [allRoles, setAllRoles] = useState<Role[]>([])
@@ -42,15 +55,6 @@ export default function EmployeesPage() {
   const [deleteTarget, setDeleteTarget] = useState<Employee | null>(null)
   const [deleting, setDeleting] = useState(false)
 
-  // 重置密码对话框
-  const [resetPwdTarget, setResetPwdTarget] = useState<Employee | null>(null)
-  const [newPassword, setNewPassword] = useState('')
-  const [resetPwdLoading, setResetPwdLoading] = useState(false)
-
-  // 禁用/启用确认
-  const [toggleTarget, setToggleTarget] = useState<Employee | null>(null)
-  const [toggling, setToggling] = useState(false)
-
   // 加载角色列表
   useEffect(() => {
     roleApi.getAllRoles().then((res) => {
@@ -62,12 +66,15 @@ export default function EmployeesPage() {
   const loadEmployees = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await employeeApi.getEmployees({
+      const params: Record<string, unknown> = {
         page: current,
         size: pageSize,
         keyword: searchKeyword || undefined,
         status: searchStatus || undefined,
-      })
+      }
+      if (searchRole) params.role = searchRole
+
+      const res = await employeeApi.getEmployees(params as Parameters<typeof employeeApi.getEmployees>[0])
       const data = res.data.data
       setEmployees(data?.items || [])
       setTotal(data?.total || 0)
@@ -76,7 +83,7 @@ export default function EmployeesPage() {
     } finally {
       setLoading(false)
     }
-  }, [current, pageSize, searchKeyword, searchStatus])
+  }, [current, pageSize, searchKeyword, searchStatus, searchRole])
 
   useEffect(() => {
     loadEmployees()
@@ -87,15 +94,18 @@ export default function EmployeesPage() {
     setCurrent(1)
     setSearchKeyword(keyword)
     setSearchStatus(statusFilter)
+    setSearchRole(roleFilter)
   }
 
   // 重置
   const handleReset = () => {
     setKeyword('')
     setStatusFilter('')
+    setRoleFilter('')
     setCurrent(1)
     setSearchKeyword('')
     setSearchStatus('')
+    setSearchRole('')
   }
 
   // 打开新增对话框
@@ -172,37 +182,16 @@ export default function EmployeesPage() {
     }
   }
 
-  // 重置密码
-  const handleResetPassword = async () => {
-    if (!resetPwdTarget) return
-    if (!newPassword.trim()) { toast.error('请输入新密码'); return }
-    setResetPwdLoading(true)
+  // 内联状态切换（直接调 API，无弹窗）
+  const handleToggleStatus = async (employee: Employee) => {
+    const newStatus: EmployeeStatus = employee.status === 'active' ? 'disabled' : 'active'
+    const actionLabel = newStatus === 'active' ? '启用' : '禁用'
     try {
-      await employeeApi.resetPassword(resetPwdTarget.id, { newPassword })
-      toast.success('密码已重置')
-      setResetPwdTarget(null)
-      setNewPassword('')
-    } catch {
-      // Error handled by API layer
-    } finally {
-      setResetPwdLoading(false)
-    }
-  }
-
-  // 启用/禁用
-  const handleToggleStatus = async () => {
-    if (!toggleTarget) return
-    setToggling(true)
-    const newStatus: EmployeeStatus = toggleTarget.status === 'active' ? 'disabled' : 'active'
-    try {
-      await employeeApi.toggleEmployeeStatus(toggleTarget.id, newStatus)
-      toast.success(newStatus === 'active' ? '已启用' : '已禁用')
-      setToggleTarget(null)
+      await employeeApi.toggleEmployeeStatus(employee.id, newStatus)
+      toast.success(`已${actionLabel}`)
       loadEmployees()
     } catch {
-      // Error handled by API layer
-    } finally {
-      setToggling(false)
+      toast.error(`操作失败`)
     }
   }
 
@@ -218,8 +207,27 @@ export default function EmployeesPage() {
 
   // 表格列定义
   const columns: TableColumn<Employee>[] = [
-    { key: 'username', title: '用户名', dataIndex: 'username', width: '120px' },
-    { key: 'name', title: '姓名', dataIndex: 'name', width: '120px' },
+    {
+      key: 'index',
+      title: '序号',
+      width: '70px',
+      render: (_record, index) => (
+        <span className="text-gray-500">{(current - 1) * pageSize + index + 1}</span>
+      ),
+    },
+    {
+      key: 'name',
+      title: '姓名',
+      width: '120px',
+      render: (record) => (
+        <button
+          onClick={() => handleEdit(record)}
+          className="text-primary-600 hover:text-primary-700 hover:underline text-sm font-medium"
+        >
+          {record.name}
+        </button>
+      ),
+    },
     { key: 'phone', title: '手机号', dataIndex: 'phone', width: '140px' },
     {
       key: 'roles',
@@ -229,9 +237,9 @@ export default function EmployeesPage() {
         <div className="flex flex-wrap gap-1">
           {record.roles?.length > 0
             ? record.roles.map(r => (
-              <Badge key={r.id} variant="info">{r.name}</Badge>
+              <Badge key={r.id} variant={getRoleBadgeVariant(r.code)}>{r.name}</Badge>
             ))
-            : <span className="text-gray-400">未分配</span>
+            : <span className="text-gray-400 text-sm">未分配</span>
           }
         </div>
       ),
@@ -239,11 +247,22 @@ export default function EmployeesPage() {
     {
       key: 'status',
       title: '状态',
-      width: '100px',
+      width: '90px',
       render: (record) => (
-        <Badge variant={record.status === 'active' ? 'success' : 'error'}>
-          {EmployeeStatusLabels[record.status]}
-        </Badge>
+        <button
+          type="button"
+          onClick={() => handleToggleStatus(record)}
+          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1 ${
+            record.status === 'active' ? 'bg-primary-600' : 'bg-gray-300'
+          }`}
+          title={record.status === 'active' ? '点击禁用' : '点击启用'}
+        >
+          <span
+            className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${
+              record.status === 'active' ? 'translate-x-6' : 'translate-x-1'
+            }`}
+          />
+        </button>
       ),
     },
     {
@@ -255,29 +274,15 @@ export default function EmployeesPage() {
     {
       key: 'actions',
       title: '操作',
-      width: '240px',
+      width: '140px',
       render: (record) => (
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           <button
             onClick={(e) => { e.stopPropagation(); handleEdit(record) }}
             className="text-primary-600 hover:text-primary-700 text-sm flex items-center gap-1"
           >
             <Pencil className="w-3.5 h-3.5" />
             编辑
-          </button>
-          <button
-            onClick={(e) => { e.stopPropagation(); setResetPwdTarget(record); setNewPassword('') }}
-            className="text-amber-600 hover:text-amber-700 text-sm flex items-center gap-1"
-          >
-            <KeyRound className="w-3.5 h-3.5" />
-            重置密码
-          </button>
-          <button
-            onClick={(e) => { e.stopPropagation(); setToggleTarget(record) }}
-            className={`text-sm flex items-center gap-1 ${record.status === 'active' ? 'text-orange-600 hover:text-orange-700' : 'text-green-600 hover:text-green-700'}`}
-          >
-            {record.status === 'active' ? <ShieldOff className="w-3.5 h-3.5" /> : <ShieldCheck className="w-3.5 h-3.5" />}
-            {record.status === 'active' ? '禁用' : '启用'}
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); setDeleteTarget(record) }}
@@ -301,7 +306,7 @@ export default function EmployeesPage() {
         </div>
         <Button onClick={handleAdd}>
           <Plus className="w-4 h-4 mr-1.5" />
-          新增员工
+          添加员工
         </Button>
       </div>
 
@@ -310,8 +315,8 @@ export default function EmployeesPage() {
         <div className="flex flex-wrap items-end gap-4">
           <div className="min-w-[200px]">
             <Input
-              label="关键词搜索"
-              placeholder="姓名、用户名"
+              label="姓名/手机号"
+              placeholder="输入姓名或手机号搜索"
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
@@ -327,6 +332,17 @@ export default function EmployeesPage() {
               ]}
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value as EmployeeStatus | '')}
+            />
+          </div>
+          <div className="min-w-[140px]">
+            <Select
+              label="角色"
+              options={[
+                { value: '', label: '全部角色' },
+                ...allRoles.map(r => ({ value: r.code, label: r.name })),
+              ]}
+              value={roleFilter}
+              onChange={(e) => setRoleFilter(e.target.value)}
             />
           </div>
           <div className="flex items-center gap-2 ml-auto">
@@ -449,63 +465,6 @@ export default function EmployeesPage() {
       >
         <p className="text-gray-600">
           确定要删除员工 <span className="font-medium text-gray-900">{deleteTarget?.name}</span> 吗？此操作不可撤销。
-        </p>
-      </Modal>
-
-      {/* 重置密码对话框 */}
-      <Modal
-        open={!!resetPwdTarget}
-        onClose={() => setResetPwdTarget(null)}
-        title="重置密码"
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setResetPwdTarget(null)} disabled={resetPwdLoading}>
-              取消
-            </Button>
-            <Button onClick={handleResetPassword} loading={resetPwdLoading}>
-              确认重置
-            </Button>
-          </>
-        }
-      >
-        <div className="space-y-4">
-          <p className="text-gray-600">
-            为 <span className="font-medium text-gray-900">{resetPwdTarget?.name}</span> 重置密码
-          </p>
-          <Input
-            label="新密码"
-            type="password"
-            placeholder="请输入新密码"
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-          />
-        </div>
-      </Modal>
-
-      {/* 启用/禁用确认对话框 */}
-      <Modal
-        open={!!toggleTarget}
-        onClose={() => setToggleTarget(null)}
-        title={toggleTarget?.status === 'active' ? '确认禁用' : '确认启用'}
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setToggleTarget(null)} disabled={toggling}>
-              取消
-            </Button>
-            <Button
-              variant={toggleTarget?.status === 'active' ? 'danger' : 'primary'}
-              onClick={handleToggleStatus}
-              loading={toggling}
-            >
-              {toggleTarget?.status === 'active' ? '确认禁用' : '确认启用'}
-            </Button>
-          </>
-        }
-      >
-        <p className="text-gray-600">
-          确定要{toggleTarget?.status === 'active' ? '禁用' : '启用'}员工
-          <span className="font-medium text-gray-900"> {toggleTarget?.name} </span>吗？
-          {toggleTarget?.status === 'active' && '禁用后该员工将无法登录系统。'}
         </p>
       </Modal>
     </div>

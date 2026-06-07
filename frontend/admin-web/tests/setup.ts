@@ -143,6 +143,7 @@ vi.mock('lucide-react', () => ({
   Monitor: iconStub('monitor'),
   FolderTree: iconStub('folder-tree'),
   Zap: iconStub('zap'),
+  Calculator: iconStub('calculator'),
   Maximize2: iconStub('maximize2'),
   Minus: iconStub('minus'),
   Send: iconStub('send'),

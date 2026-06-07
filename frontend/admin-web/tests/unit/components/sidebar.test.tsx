@@ -50,13 +50,16 @@ describe('Sidebar', () => {
   it('should render all menu items', () => {
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
     expect(screen.getByText('数据看板')).toBeInTheDocument()
-    expect(screen.getByText('商品管理')).toBeInTheDocument()
-    expect(screen.getByText('订单管理')).toBeInTheDocument()
-    expect(screen.getByText('售后管理')).toBeInTheDocument()
+    expect(screen.getByText('商品列表')).toBeInTheDocument()
+    expect(screen.getByText('订单列表')).toBeInTheDocument()
+    expect(screen.getByText('售后工单')).toBeInTheDocument()
     expect(screen.getByText('加工项管理')).toBeInTheDocument()
     expect(screen.getByText('客服工作台')).toBeInTheDocument()
     expect(screen.getByText('客户管理')).toBeInTheDocument()
-    expect(screen.getByText('系统设置')).toBeInTheDocument()
+    // 财务对账、员工管理、企业基础信息同时出现在分组标题和子项中
+    expect(screen.getAllByText('财务对账').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText('员工管理').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText('企业基础信息').length).toBeGreaterThanOrEqual(1)
   })
 
   it('should render navigation links with correct paths', () => {
@@ -64,10 +67,10 @@ describe('Sidebar', () => {
     const dashboardLink = screen.getByText('数据看板').closest('a')
     expect(dashboardLink).toHaveAttribute('href', '/dashboard')
 
-    const productsLink = screen.getByText('商品管理').closest('a')
+    const productsLink = screen.getByText('商品列表').closest('a')
     expect(productsLink).toHaveAttribute('href', '/products')
 
-    const ordersLink = screen.getByText('订单管理').closest('a')
+    const ordersLink = screen.getByText('订单列表').closest('a')
     expect(ordersLink).toHaveAttribute('href', '/orders')
   })
 
@@ -98,21 +101,21 @@ describe('Sidebar', () => {
   it('should highlight active menu item for /products', () => {
     mockUsePathname.mockReturnValue('/products')
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    const productsLink = screen.getByText('商品管理').closest('a')
+    const productsLink = screen.getByText('商品列表').closest('a')
     expect(productsLink?.className).toContain('bg-primary-600')
   })
 
   it('should not highlight inactive menu items', () => {
     mockUsePathname.mockReturnValue('/dashboard')
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    const productsLink = screen.getByText('商品管理').closest('a')
+    const productsLink = screen.getByText('商品列表').closest('a')
     expect(productsLink?.className).not.toContain('bg-primary-600')
   })
 
   it('should highlight products for nested routes like /products/123', () => {
     mockUsePathname.mockReturnValue('/products/123')
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    const productsLink = screen.getByText('商品管理').closest('a')
+    const productsLink = screen.getByText('商品列表').closest('a')
     expect(productsLink?.className).toContain('bg-primary-600')
   })
 

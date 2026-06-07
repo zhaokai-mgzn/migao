@@ -27,6 +27,7 @@ import {
   Monitor,
   Zap,
   FolderTree,
+  Calculator,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { cn } from '@/lib/utils'
@@ -53,6 +54,7 @@ const iconMap: Record<string, LucideIcon> = {
   Monitor,
   Zap,
   FolderTree,
+  Calculator,
 }
 
 interface MenuItem {
@@ -86,50 +88,64 @@ const menuGroups: MenuGroup[] = [
   },
   {
     key: 'product-center',
-    name: '商品中心',
+    name: '商品管理',
     icon: 'Store',
     children: [
-      { key: 'products', name: '商品管理', icon: 'Package', path: '/products' },
-      { key: 'categories', name: '商品分类', icon: 'FolderTree', path: '/categories' },
+      { key: 'products', name: '商品列表', icon: 'Package', path: '/products' },
+      { key: 'categories', name: '商品分类管理', icon: 'FolderTree', path: '/categories' },
       { key: 'processing', name: '加工项管理', icon: 'Scissors', path: '/processing' },
     ],
   },
   {
     key: 'trade-center',
-    name: '交易中心',
+    name: '订单管理',
     icon: 'ShoppingCart',
     children: [
-      { key: 'orders', name: '订单管理', icon: 'ClipboardList', path: '/orders' },
-      { key: 'after-sales', name: '售后管理', icon: 'ShieldCheck', path: '/after-sales' },
+      { key: 'orders', name: '订单列表', icon: 'ClipboardList', path: '/orders' },
+      { key: 'after-sales', name: '售后工单', icon: 'ShieldCheck', path: '/after-sales' },
     ],
   },
   {
-    key: 'customer-center',
-    name: '客户中心',
-    icon: 'UserCircle',
+    key: 'finance',
+    name: '财务对账',
+    icon: 'Calculator',
     children: [
-      { key: 'customers', name: '客户管理', icon: 'Users', path: '/customers' },
+      { key: 'finance-main', name: '财务对账', icon: 'Calculator', path: '/finance' },
     ],
   },
   {
-    key: 'agent-center',
-    name: '客服中心',
+    key: 'employees-group',
+    name: '员工管理',
+    icon: 'Users',
+    children: [
+      { key: 'employees', name: '员工管理', icon: 'Users', path: '/employees' },
+    ],
+  },
+  {
+    key: 'company',
+    name: '企业基础信息',
+    icon: 'Building2',
+    children: [
+      { key: 'settings', name: '企业基础信息', icon: 'Building2', path: '/settings' },
+    ],
+  },
+  {
+    key: 'agent',
+    name: '客服',
     icon: 'Headphones',
     children: [
       { key: 'agent-workspace', name: '客服工作台', icon: 'MessageSquare', path: '/agent-workspace' },
       { key: 'agent-sessions', name: '会话监控', icon: 'Monitor', path: '/agent-workspace/sessions' },
       { key: 'quick-replies', name: '快捷回复', icon: 'Zap', path: '/agent-workspace/quick-replies' },
-      { key: 'employees', name: '客服团队', icon: 'Users', path: '/employees' },
+      { key: 'agent-team', name: '客服团队', icon: 'Users', path: '/employees' },
     ],
   },
   {
-    key: 'system',
-    name: '系统管理',
-    icon: 'Settings',
+    key: 'customer',
+    name: '客户',
+    icon: 'UserCircle',
     children: [
-      { key: 'roles', name: '角色权限', icon: 'ShieldCheck', path: '/roles', adminOnly: true },
-      { key: 'notifications', name: '通知中心', icon: 'Bell', path: '/notifications' },
-      { key: 'settings', name: '系统设置', icon: 'Settings', path: '/settings' },
+      { key: 'customers', name: '客户管理', icon: 'Users', path: '/customers' },
     ],
   },
 ]

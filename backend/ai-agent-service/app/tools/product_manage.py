@@ -238,7 +238,8 @@ class ProductManageTool(BaseTool):
             json_data["images"] = list(images)
             if images:
                 json_data["mainImage"] = images[0]  # 首图作为封面
-        if detail_images:
+        if "stockDeductionMode" not in json_data:
+            json_data["stockDeductionMode"] = "on_order"        if detail_images:
             json_data["detailImages"] = list(detail_images)
         if colors:
             # 规范化：LLM 可能返回字符串数组或对象数组
