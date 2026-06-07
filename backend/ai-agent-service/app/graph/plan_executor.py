@@ -354,6 +354,22 @@ async def execute_plan(
                 except Exception:
                     pass
 
+        # 从 Vision 分析消息中提取商品属性预填充 context
+        for msg in messages:
+            if hasattr(msg, 'content') and isinstance(msg.content, str) and '[图片分析结果]' in msg.content:
+                vision_fields = await _extract_fields(
+                    msg.content,
+                    ["name", "description", "brand", "colors", "specifications",
+                     "pricing_type", "unit", "selling_methods", "door_widths"],
+                    plan.context
+                )
+                for k, v in vision_fields.items():
+                    if v and k not in plan.context:
+                        plan.context[k] = v
+                if vision_fields:
+                    logger.info(f"[pe] Vision data pre-filled: {list(vision_fields.keys())}")
+                break
+
         plan.skill_name = skill_name
         await _save_plan(session_id, plan)
 
