@@ -201,9 +201,13 @@ cd tests && npx playwright test tests/e2e/specs/products.spec.ts
 
 ### 本地开发环境
 
-- **本地启动**：仅启动有客系统组件（admin-api、ai-agent-service、admin-web）
-- **云 dev 环境**：PostgreSQL + Redis + 其他中间件直接使用云端 dev 环境，无需本地启动
-- **配置文件**：各模块 `.env` 已预置云 dev 环境的连接信息
+> **⚠️ 铁律：本地只启动有客系统 3 个组件，DB/Redis/中间件全部用云 dev。**
+>
+> 详见 [`.claude/local-dev-config.md`](.claude/local-dev-config.md) — 包含启动命令、连接信息、禁止行为、测试依赖。
+
+- **本地启动**：admin-api (:8080) + ai-agent-service (:8001) + admin-web (:3001)
+- **云 dev 环境**：PostgreSQL + Redis + DashVector + DashScope + OSS 全部用云端
+- **配置文件**：各模块 `.env` 已预置云 dev 环境的连接信息，禁止改成 localhost
 
 **启动本地服务**（用于真实场景验证）：
 
