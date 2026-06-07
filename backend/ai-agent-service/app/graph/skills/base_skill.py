@@ -345,29 +345,33 @@ async def execute_skill(
     if existing_plan is not None or should_use_plan_execute(state, skill_name):
         # 图片消息：先做 Vision 分析，否则 P&E 步骤看不到图片内容
         if is_multimodal and not existing_plan:
+            # 在用户消息后追加结构化输出指令，让 Vision LLM 一次返回分析+JSON
+            instruct_msg = HumanMessage(content=(
+                "请分析图片内容。在回复末尾，用 ```json\n{...}\n``` 格式输出结构化商品数据：\n"
+                '{"name":"商品名","description":"描述","brand":"品牌",'
+                '"colors":[{"colorName":"色号名"}],"specifications":{"材质":"","风格":""},'
+                '"pricing_type":"per_meter","unit":"米"}\n'
+                "如果图片中没有对应信息，字段值留空。"
+            ))
+            msgs_with_instruct = list(raw_messages) + [instruct_msg]
+
             vision_llm = get_skill_llm(intent="", tool_count=0, text_length=0,
-                                        messages=raw_messages, enable_thinking=False)
+                                        messages=msgs_with_instruct, enable_thinking=False)
             try:
-                vision_response = await vision_llm.ainvoke(raw_messages)
-                vision_text = _extract_content(vision_response) or ""
-                if vision_text:
-                    # 【关键】立即从 Vision 文本提取结构化商品属性
-                    from app.graph.plan_executor import _extract_fields
-                    vision_context = {}
+                vision_response = await vision_llm.ainvoke(msgs_with_instruct)
+                full_reply = _extract_content(vision_response) or ""
+                vision_text = full_reply
+                vision_context = {}
+                if "```json" in full_reply:
                     try:
-                        # 截断过长文本，避免 LLM 超时
-                        truncated = vision_text[:1500]
-                        vision_context = await _extract_fields(
-                            truncated,
-                            ["name", "description", "brand", "colors", "specifications",
-                             "pricing_type", "unit", "selling_methods", "door_widths"],
-                            {}
-                        )
-                        # 剔除失败的 fallback 值
+                        json_str = full_reply.split("```json")[1].split("```")[0].strip()
+                        vision_context = json.loads(json_str)
+                        vision_text = full_reply.split("```json")[0].strip()
                         vision_context.pop("raw_input", None)
                         logger.info(f"[{skill_name}] Vision structured: {list(vision_context.keys())}")
                     except Exception as e:
-                        logger.warning(f"[{skill_name}] Vision extraction failed: {e}")
+                        logger.warning(f"[{skill_name}] Vision JSON parse failed: {e}")
+                if vision_text:
                     # 提取图片 URL
                     img_urls = []
                     for msg in raw_messages:
