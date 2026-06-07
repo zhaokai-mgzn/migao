@@ -318,20 +318,19 @@ async def execute_plan(
         if len(plan.steps) == 1 and plan.steps[0].type in ("ask", "query"):
             return None
 
-        # 从 Vision 分析的结构化数据中预填充 plan.context（仅系统/AI 消息）
+        # 从 Vision 分析消息中提取图片 URL 预填充 plan.context
         for msg in messages:
             role = getattr(msg, 'type', '') or getattr(msg, 'role', '')
             if role not in ('system', 'assistant', 'ai'):
                 continue
-            if hasattr(msg, 'content') and isinstance(msg.content, str) and '[结构化数据]' in msg.content:
+            if hasattr(msg, 'content') and isinstance(msg.content, str) and '[图片URL]' in msg.content:
                 try:
-                    json_start = msg.content.index('{', msg.content.index('[结构化数据]'))
-                    json_end = msg.content.rindex('}') + 1
-                    vision_data = json.loads(msg.content[json_start:json_end])
-                    for k, v in vision_data.items():
-                        if not k.startswith("_") and v:
-                            plan.context[k] = v
-                    logger.info(f"[pe] Vision data pre-filled: {list(vision_data.keys())}")
+                    json_start = msg.content.index('[', msg.content.index('[图片URL]'))
+                    json_end = msg.content.index(']', json_start) + 1
+                    urls = json.loads(msg.content[json_start:json_end])
+                    if urls and "images" not in plan.context:
+                        plan.context["images"] = urls
+                        logger.info(f"[pe] Vision images pre-filled: {len(urls)} urls")
                 except Exception:
                     pass
 

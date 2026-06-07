@@ -351,36 +351,7 @@ async def execute_skill(
                 vision_response = await vision_llm.ainvoke(raw_messages)
                 vision_text = _extract_content(vision_response) or ""
                 if vision_text:
-                    # 从 Vision 分析中提取结构化商品数据
-                    from app.llm import LLMFactory
-                    extract_prompt = (
-                        f"从以下图片分析结果中提取商品关键信息，返回纯 JSON。\n\n"
-                        f"图片分析: {vision_text}\n\n"
-                        f"提取字段:\n"
-                        f"- name: 商品名称\n"
-                        f"- description: 详细描述（包含系列、用途、面料特点等）\n"
-                        f"- brand: 品牌\n"
-                        f"- specifications: 商品属性字典，key 可以是:\n"
-                        f"  材质(material), 克重(weight), 风格(style), 工艺(craft),\n"
-                        f"  图案(pattern), 功能(function), 遮光率, 色牢度等\n"
-                        f"  根据图片内容提取所有可见属性，如 {{\"材质\":\"涤纶\",\"风格\":\"现代简约\",\"克重\":\"300g/m²\"}}\n"
-                        f"- colors: 颜色/色号列表，每个包含 colorName（如'2699-01 象牙白'）\n"
-                        f"- pricing_type: 计价方式，布料类 per_meter，配件类 per_piece\n"
-                        f"- unit: 计价单位，布料类'米'，配件类'个'/'套'\n\n"
-                        f"示例: {{\"name\":\"遮光窗帘\",\"description\":\"...\","
-                        f"\"brand\":\"HOME YUUR\","
-                        f"\"specifications\":{{\"材质\":\"涤纶\",\"风格\":\"现代简约\"}},"
-                        f"\"colors\":[{{\"colorName\":\"2699-01\"}}],"
-                        f"\"pricing_type\":\"per_meter\",\"unit\":\"米\"}}"
-                    )
-                    try:
-                        raw = await LLMFactory.invoke_text_safe(
-                            [HumanMessage(content=extract_prompt)], enable_thinking=False
-                        )
-                        extracted = json.loads(raw.strip().lstrip("```json").rstrip("```").strip())
-                    except Exception:
-                        extracted = {}
-                    # 注入图片 URL，后续传给 product_manage
+                    # 提取图片 URL
                     img_urls = []
                     for msg in raw_messages:
                         if hasattr(msg, 'content') and isinstance(msg.content, list):
@@ -389,18 +360,18 @@ async def execute_skill(
                                     url = item.get("image_url", {}).get("url", "")
                                     if url:
                                         img_urls.append(url)
-                    extracted["_images"] = img_urls
-                    # 将结构化数据注入 state
+                    # 将 Vision 结果 + 图片 URL 注入 state
                     state = dict(state)
                     msgs = list(state.get("messages", []))
                     ctx_msg = (
                         f"[图片分析结果]\n{vision_text}\n\n"
-                        f"[结构化数据]\n{json.dumps(extracted, ensure_ascii=False)}\n\n"
-                        f"请基于以上信息执行操作。"
+                        f"[图片URL]\n{json.dumps(img_urls, ensure_ascii=False)}\n\n"
+                        f"请基于以上信息执行操作。分析图片中的商品属性（品牌、材质、风格、"
+                        f"色号、工艺、图案等），创建商品时一并设置。"
                     )
                     msgs.append(SystemMessage(content=ctx_msg))
                     state["messages"] = msgs
-                    logger.info(f"[{skill_name}] Vision analysis for P&E | len={len(vision_text)} fields={list(extracted.keys())}")
+                    logger.info(f"[{skill_name}] Vision analysis for P&E | len={len(vision_text)} fields=[]")
             except Exception as e:
                 logger.warning(f"[{skill_name}] Vision analysis for P&E failed: {e}")
 
