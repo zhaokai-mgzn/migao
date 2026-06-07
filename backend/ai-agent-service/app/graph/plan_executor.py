@@ -314,8 +314,11 @@ async def execute_plan(
         if len(plan.steps) == 1 and plan.steps[0].type in ("ask", "query"):
             return None
 
-        # 从 Vision 分析的结构化数据中预填充 plan.context
+        # 从 Vision 分析的结构化数据中预填充 plan.context（仅系统/AI 消息）
         for msg in messages:
+            role = getattr(msg, 'type', '') or getattr(msg, 'role', '')
+            if role not in ('system', 'assistant', 'ai'):
+                continue
             if hasattr(msg, 'content') and isinstance(msg.content, str) and '[结构化数据]' in msg.content:
                 try:
                     json_start = msg.content.index('{', msg.content.index('[结构化数据]'))
@@ -493,9 +496,10 @@ async def execute_plan(
             if alias in plan.context and target not in plan.context:
                 plan.context[target] = plan.context[alias]
 
-        # product_manage 实际接受的参数（与 execute 方法签名一致）
+        # product_manage 实际接受的参数
         _SAFE_PARAMS = {"name", "price", "description", "category_id", "stock_quantity",
-                         "processing_item_ids", "product_id", "status", "unit", "cost_price"}
+                         "processing_item_ids", "product_id", "status", "unit", "cost_price",
+                         "brand", "images", "specifications", "pricing_type"}
         _NUMERIC_PARAMS = {"price", "cost_price", "stock_quantity"}
         exec_params = {"action": current.execute_action}
         for k in _SAFE_PARAMS:

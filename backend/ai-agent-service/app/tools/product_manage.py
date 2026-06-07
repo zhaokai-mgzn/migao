@@ -96,6 +96,12 @@ class ProductManageTool(BaseTool):
         stock_quantity: Optional[int] = None,
         processing_item_ids: Optional[list] = None,
         status: Optional[str] = None,
+        brand: Optional[str] = None,
+        images: Optional[list] = None,
+        detail_images: Optional[list] = None,
+        specifications: Optional[dict] = None,
+        unit: Optional[str] = None,
+        pricing_type: Optional[str] = None,
     ) -> ToolResult:
         """执行商品管理操作
         
@@ -133,11 +139,14 @@ class ProductManageTool(BaseTool):
         try:
             if action == "create":
                 return await self._create_product(
-                    context, name, category_id, price, description, stock_quantity, processing_item_ids
+                    context, name, category_id, price, description, stock_quantity,
+                    processing_item_ids, brand, images, detail_images,
+                    specifications, unit, pricing_type
                 )
             elif action == "update":
                 return await self._update_product(
-                    context, product_id, name, category_id, price, description, stock_quantity, processing_item_ids
+                    context, product_id, name, category_id, price, description, stock_quantity,
+                    processing_item_ids, brand, images, detail_images, specifications, unit, pricing_type
                 )
             elif action == "toggle_status":
                 return await self._toggle_status(context, product_id, status)
@@ -165,6 +174,12 @@ class ProductManageTool(BaseTool):
         description: Optional[str],
         stock_quantity: Optional[int],
         processing_item_ids: Optional[list] = None,
+        brand: Optional[str] = None,
+        images: Optional[list] = None,
+        detail_images: Optional[list] = None,
+        specifications: Optional[dict] = None,
+        unit: Optional[str] = None,
+        pricing_type: Optional[str] = None,
     ) -> ToolResult:
         """创建商品
         
@@ -197,6 +212,25 @@ class ProductManageTool(BaseTool):
             json_data["stock"] = stock_quantity
         if processing_item_ids:
             json_data["processingItems"] = processing_item_ids
+        if brand:
+            json_data["brand"] = brand
+        if images:
+            json_data["images"] = list(images)
+            if images:
+                json_data["mainImage"] = images[0]  # 首图作为封面
+        if detail_images:
+            json_data["detailImages"] = list(detail_images)
+        if specifications:
+            if isinstance(specifications, dict):
+                json_data["specifications"] = specifications
+            elif isinstance(specifications, str):
+                # 逗号分隔的字符串转为 {key: key} 格式
+                parts = [p.strip() for p in specifications.split(",") if p.strip()]
+                json_data["specifications"] = {p: p for p in parts}
+        if unit:
+            json_data["unit"] = unit
+        if pricing_type:
+            json_data["pricingType"] = pricing_type
         
         client = get_admin_api_client()
         response = await client.post(
@@ -238,6 +272,12 @@ class ProductManageTool(BaseTool):
         description: Optional[str],
         stock_quantity: Optional[int],
         processing_item_ids: Optional[list] = None,
+        brand: Optional[str] = None,
+        images: Optional[list] = None,
+        detail_images: Optional[list] = None,
+        specifications: Optional[dict] = None,
+        unit: Optional[str] = None,
+        pricing_type: Optional[str] = None,
     ) -> ToolResult:
         """更新商品信息
         
