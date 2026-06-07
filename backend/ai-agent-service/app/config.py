@@ -58,7 +58,7 @@ class Settings(BaseSettings):
     # ===== 功能开关与模型参数（有合理默认值，无需外部注入）=====
 
     INTENT_MODEL: str = "qwen3.6-flash"                  # 意图分类模型（轻量快速，关闭思考模式）
-    DASHSCOPE_VISION_MODEL: str = "qwen2.5-vl-32b-instruct"  # 图片识别模型（视觉理解专用）
+    DASHSCOPE_VISION_MODEL: str = "qwen3.6-flash"       # 图片识别模型（轻量推理 + 视觉理解）
     DASHSCOPE_VISION_ENABLED: bool = True
 
     # LLM 模型路由常量 — 所有模型名统一在 config.py 管理，禁止在其他文件中硬编码

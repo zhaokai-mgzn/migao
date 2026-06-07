@@ -345,63 +345,42 @@ async def execute_skill(
     if existing_plan is not None or should_use_plan_execute(state, skill_name):
         # 图片消息：先做 Vision 分析，否则 P&E 步骤看不到图片内容
         if is_multimodal and not existing_plan:
-            # 在用户消息后追加结构化输出指令，让 Vision LLM 一次返回分析+JSON
-            instruct_msg = HumanMessage(content=(
-                "请分析图片内容。在回复末尾，用 ```json\n{...}\n``` 格式输出结构化商品数据：\n"
-                '{\n'
-                '  "name":"商品名",\n'
-                '  "description":"详细描述(含系列/用途/特点)",\n'
-                '  "brand":"品牌",\n'
-                '  "colors":[{"colorName":"色号名"}],\n'
-                '  "specifications":{"材质":"","克重":"","工艺":"","风格":"","图案":"","功能":"","遮光率":"","色牢度":""},\n'
-                '  "pricing_type":"per_meter或per_piece",\n'
-                '  "unit":"米或本或套",\n'
-                '  "selling_methods":["散剪","整卷"],\n'
-                '  "door_widths":["2.8米","3.2米"]\n'
-                '}\n'
-                "图片中能识别的属性都要填写。窗帘布料类默认 selling_methods=['散剪','整卷'], door_widths=['2.8米','3.2米'], unit='米', pricing_type='per_meter'。"
-            ))
-            msgs_with_instruct = list(raw_messages) + [instruct_msg]
-
             vision_llm = get_skill_llm(intent="", tool_count=0, text_length=0,
-                                        messages=msgs_with_instruct, enable_thinking=False)
+                                        messages=raw_messages, enable_thinking=False)
             try:
-                vision_response = await vision_llm.ainvoke(msgs_with_instruct)
-                full_reply = _extract_content(vision_response) or ""
-                vision_text = full_reply
+                vision_response = await vision_llm.ainvoke(raw_messages)
+                vision_text = _extract_content(vision_response) or ""
                 vision_context = {}
-                # 尝试提取 ```json 块
-                if "```json" in full_reply:
+                if vision_text:
+                    # 用纯文本模型从 Vision 分析中提取 JSON（VL 模型不擅长格式化）
+                    from app.llm import LLMFactory
+                    extract_prompt = (
+                        f"从以下图片分析文本中提取商品结构化数据，只返回纯 JSON：\n\n"
+                        f"{vision_text[:1200]}\n\n"
+                        f'格式: {{"name":"","description":"","brand":"",'
+                        f'"colors":[{{"colorName":""}}],'
+                        f'"specifications":{{"材质":"","克重":"","工艺":"","风格":"","图案":""}},'
+                        f'"pricing_type":"per_meter","unit":"米",'
+                        f'"selling_methods":["散剪","整卷"],"door_widths":["2.8米","3.2米"]}}\n\n'
+                        f"图片中没提到的属性填默认值。只输出 JSON。"
+                    )
                     try:
-                        json_str = full_reply.split("```json")[1].split("```")[0].strip()
-                        vision_context = json.loads(json_str)
-                        vision_text = full_reply.split("```json")[0].strip()
-                    except Exception:
-                        pass
-                # fallback: 从全文提取 JSON 对象
-                if not vision_context:
-                    try:
-                        start = full_reply.rfind("{")
-                        end = full_reply.rfind("}")
+                        raw_json = await LLMFactory.invoke_text_safe(
+                            [HumanMessage(content=extract_prompt)], enable_thinking=False
+                        )
+                        start = raw_json.find("{")
+                        end = raw_json.rfind("}")
                         if start >= 0 and end > start:
-                            vision_context = json.loads(full_reply[start:end + 1])
-                            vision_text = full_reply[:start].strip()
-                    except Exception:
-                        pass
-                vision_context.pop("raw_input", None)
-                # 布料类商品默认值兜底
-                if not vision_context.get("selling_methods"):
-                    vision_context["selling_methods"] = ["散剪", "整卷"]
-                if not vision_context.get("door_widths"):
-                    vision_context["door_widths"] = ["2.8米", "3.2米"]
-                if not vision_context.get("unit"):
-                    vision_context["unit"] = "米"
-                if not vision_context.get("pricing_type"):
-                    vision_context["pricing_type"] = "per_meter"
-                if vision_context:
+                            vision_context = json.loads(raw_json[start:end + 1])
+                    except Exception as e:
+                        logger.warning(f"[{skill_name}] Vision JSON parse: {e}")
+                    # 布料默认值兜底
+                    for k, v in [("selling_methods", ["散剪","整卷"]), ("door_widths", ["2.8米","3.2米"]),
+                                  ("unit", "米"), ("pricing_type", "per_meter")]:
+                        if not vision_context.get(k):
+                            vision_context[k] = v
+                    vision_context.pop("raw_input", None)
                     logger.info(f"[{skill_name}] Vision structured: {list(vision_context.keys())}")
-                else:
-                    logger.warning(f"[{skill_name}] Vision JSON not found in reply")
                 if vision_text:
                     # 提取图片 URL
                     img_urls = []
