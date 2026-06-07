@@ -43,6 +43,7 @@ class PlanStep:
 class Plan:
     """完整 Plan"""
     goal: str
+    skill_name: str = ""  # 所属 skill，用于多轮回合路由
     steps: List[PlanStep] = field(default_factory=list)
     current_step: int = 0
     context: Dict[str, Any] = field(default_factory=dict)
@@ -59,9 +60,9 @@ class Plan:
         return self.current_step >= len(self.steps)
 
     def to_json(self) -> str:
-        """序列化为 JSON 字符串"""
         return json.dumps({
             "goal": self.goal,
+            "skill_name": self.skill_name,
             "steps": [{"type": s.type, "description": s.description,
                         "ask_prompt": s.ask_prompt, "fields": s.fields,
                         "query_tool": s.query_tool, "query_params": s.query_params,
@@ -74,7 +75,6 @@ class Plan:
 
     @staticmethod
     def from_json(data: dict) -> "Plan":
-        """从 dict 反序列化"""
         steps = []
         for s in data.get("steps", []):
             steps.append(PlanStep(
@@ -90,6 +90,7 @@ class Plan:
             ))
         return Plan(
             goal=data.get("goal", ""),
+            skill_name=data.get("skill_name", ""),
             steps=steps,
             current_step=data.get("current_step", 0),
             context=data.get("context", {}),
@@ -262,6 +263,7 @@ async def execute_plan(
         if len(plan.steps) == 1 and plan.steps[0].type in ("ask", "query"):
             return None
 
+        plan.skill_name = skill_name
         await _save_plan(session_id, plan)
 
     # 2. 获取当前步骤

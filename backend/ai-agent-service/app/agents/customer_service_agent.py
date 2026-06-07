@@ -161,12 +161,21 @@ class BaseAgent:
         context: AgentContext,
     ) -> dict:
         """构建 LangGraph 图的初始状态"""
-        # 从 session memory 加载 pending_interact_skill（跨 graph 调用持久化）
+        # 从 session memory 加载路由信息（跨 graph 调用持久化）
         pending_skill = ""
         try:
+            import json
             from app.memory.session_memory import SessionMemory
             mem = SessionMemory()
             pending_skill = await mem.get_pending_skill(context.session_id) or ""
+            # P&E Plan 存在时，用 plan 的 skill 覆盖路由，防止意图分类器跳 skill
+            if not pending_skill:
+                plan_raw = await mem.get_plan_state(context.session_id)
+                if plan_raw:
+                    plan = json.loads(plan_raw)
+                    plan_skill = plan.get("skill_name", "")
+                    if plan_skill:
+                        pending_skill = plan_skill
         except Exception:
             pass
 
