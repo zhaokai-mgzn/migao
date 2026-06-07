@@ -151,7 +151,7 @@ class ProductManageTool(BaseTool):
                 return await self._update_product(
                     context, product_id, name, category_id, price, description, stock_quantity,
                     processing_item_ids, brand, images, detail_images, specifications, unit,
-                    colors, pricing_type
+                    colors, sku_code, pricing_type
                 )
             elif action == "toggle_status":
                 return await self._toggle_status(context, product_id, status)
@@ -257,6 +257,7 @@ class ProductManageTool(BaseTool):
             json_data["pricingType"] = pricing_type
         
         logger.info(f"[product_manage] Creating product with json_data keys={list(json_data.keys())} name={name}")
+        logger.info(f"[product_manage] Creating product keys={list(json_data.keys())} name={name}")
         client = get_admin_api_client()
         response = await client.post(
             "/api/admin/products",
