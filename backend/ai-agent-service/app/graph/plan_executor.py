@@ -210,23 +210,34 @@ def _validate_tool(tool_name: str, allowed_tools: List[str], step_desc: str) -> 
     return True
 
 
+# 中文字段名 → 英文 key 映射
+_FIELD_NAME_MAP = {
+    "名称": "name", "商品名称": "name", "名字": "name",
+    "价格": "price", "售价": "price", "单价": "price",
+    "库存": "stock_quantity", "库存数量": "stock_quantity", "数量": "stock_quantity",
+    "描述": "description", "详情": "description", "介绍": "description",
+    "分类": "category_id",
+}
+
+
 async def _extract_fields(user_message: str, fields: List[str], existing: Dict) -> Dict:
     """从用户自然语言回复中提取字段值"""
     if not fields:
         return {}
-    llm = LLMFactory.create_skill_llm(enable_thinking=False)
+    mapping_hints = "\n".join(
+        f"  {cn} → {en}" for cn, en in _FIELD_NAME_MAP.items() if en in fields
+    )
     prompt = (
-        f"从用户回复中提取以下字段的值。注意字段名可能是中文或英文，请智能映射。\n"
-        f"例如：用户说'名称：xxx'对应字段 name，用户说'价格：99'对应字段 price。\n"
-        f"没提到的字段不要编造。\n\n"
+        f"从用户回复中提取以下字段的值。中文字段名请按映射表转换为英文 key：\n"
+        f"{mapping_hints}\n\n"
         f"用户回复: {user_message}\n"
-        f"需要提取的字段（英文 key）: {', '.join(fields)}\n"
+        f"需要提取的字段: {', '.join(fields)}\n"
         f"已有信息: {json.dumps(existing, ensure_ascii=False)}\n\n"
-        f"返回纯 JSON，key 使用上面给的英文字段名，如 {{\"name\": \"色卡本\", \"price\": \"199\"}}。"
+        f"返回纯 JSON，key 使用英文字段名。没提到的字段不要编造。"
     )
     try:
-        response = await llm.ainvoke([HumanMessage(content=prompt)])
-        content = response.content.strip()
+        content = await LLMFactory.invoke_text_safe([HumanMessage(content=prompt)])
+        content = content.strip()
         if content.startswith("```"):
             lines = content.split("\n")
             content = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
@@ -391,13 +402,41 @@ async def execute_plan(
         ctx = build_tool_context(state)
         set_tool_context(ctx)
 
+        # 如果 name 缺失，从对话历史中兜底提取
+        if "name" not in plan.context or not plan.context.get("name"):
+            # 搜索用户消息和 Vision 分析结果中的商品名称
+            all_text = " ".join(
+                m.content if isinstance(m.content, str) else str(m.content)
+                for m in messages
+                if hasattr(m, 'content')
+            )
+            # 从所有历史文本中提取 name
+            name_fields = await _extract_fields(all_text, ["name"], plan.context)
+            if name_fields.get("name"):
+                plan.context["name"] = name_fields["name"]
+                logger.info(f"[pe] Name fallback extracted: {plan.context['name'][:50]}")
+
         # 只传递白名单字段，防止 context 参数注入
-        _SAFE_PARAMS = {"name", "price", "description", "category_id", "stock_quantity", "stock",
+        # 规范化 context 中的字段名（LLM 可能用中文或简写）
+        _FIELD_ALIASES = {"stock": "stock_quantity", "库存": "stock_quantity"}
+        for alias, target in _FIELD_ALIASES.items():
+            if alias in plan.context and target not in plan.context:
+                plan.context[target] = plan.context[alias]
+
+        _SAFE_PARAMS = {"name", "price", "description", "category_id", "stock_quantity",
                          "processing_item_ids", "product_id", "status", "unit", "cost_price"}
+        _NUMERIC_PARAMS = {"price", "cost_price", "stock_quantity"}
         exec_params = {"action": current.execute_action}
         for k in _SAFE_PARAMS:
             if k in plan.context:
-                exec_params[k] = plan.context[k]
+                v = plan.context[k]
+                # LLM 提取的值是字符串，需要转为数字
+                if k in _NUMERIC_PARAMS and isinstance(v, str):
+                    try:
+                        v = float(v) if "." in v else int(v)
+                    except ValueError:
+                        pass
+                exec_params[k] = v
 
         if tool:
             try:
