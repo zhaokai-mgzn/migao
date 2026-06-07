@@ -637,6 +637,7 @@ async def execute_skill(
                     break
 
                 # 执行每个 tool_call
+                interact_called = False
                 for tool_call in response.tool_calls:
                     tool_name = tool_call["name"]
                     tool_args = tool_call["args"]
@@ -691,6 +692,17 @@ async def execute_skill(
                     new_messages.append(
                         ToolMessage(content=result_str, tool_call_id=tool_call_id, name=tool_name)
                     )
+
+                    # interact 成功后停止迭代，等待用户操作
+                    # 防止 LLM 在一个 turn 内发送多个交互组件互相覆盖
+                    if tool_name == "interact" and result_dict.get("success"):
+                        logger.info(f"[{skill_name}] interact {result.data.get('component', '')} succeeded, breaking to wait for user")
+                        interact_called = True
+                        break
+
+                # interact 成功后跳出外层迭代循环
+                if interact_called:
+                    break
             else:
                 # 达到最大迭代次数，取最后一条 AI 消息内容
                 if new_messages:
