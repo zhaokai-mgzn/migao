@@ -2,6 +2,11 @@
 
 > 本文件在每次 Claude Code (cc) 启动时自动加载，定义项目规范和操作约束。
 
+## 项目 Wiki
+
+> **开发前先查 [`docs/wiki/INDEX.md`](docs/wiki/INDEX.md)** — 按场景索引：架构、AI Agent、部署、开发规范。
+> 每个页面 ~50 行，按需 Read，节省上下文。
+
 ## GitHub 操作规范
 
 **所有 Issue、PR、分支、Label、CI/CD 操作必须遵循 `github-ops` skill 规范。**
