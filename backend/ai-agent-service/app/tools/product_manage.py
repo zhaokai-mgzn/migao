@@ -102,6 +102,8 @@ class ProductManageTool(BaseTool):
         specifications: Optional[dict] = None,
         unit: Optional[str] = None,
         colors: Optional[list] = None,
+        selling_methods: Optional[list] = None,
+        door_widths: Optional[list] = None,
         pricing_type: Optional[str] = None,
     ) -> ToolResult:
         """执行商品管理操作
@@ -142,7 +144,7 @@ class ProductManageTool(BaseTool):
                 return await self._create_product(
                     context, name, category_id, price, description, stock_quantity,
                     processing_item_ids, brand, images, detail_images,
-                    specifications, unit, colors, pricing_type
+                    specifications, unit, colors, selling_methods, door_widths, pricing_type
                 )
             elif action == "update":
                 return await self._update_product(
@@ -182,6 +184,8 @@ class ProductManageTool(BaseTool):
         specifications: Optional[dict] = None,
         unit: Optional[str] = None,
         colors: Optional[list] = None,
+        selling_methods: Optional[list] = None,
+        door_widths: Optional[list] = None,
         pricing_type: Optional[str] = None,
     ) -> ToolResult:
         """创建商品
@@ -225,6 +229,10 @@ class ProductManageTool(BaseTool):
             json_data["detailImages"] = list(detail_images)
         if colors:
             json_data["colors"] = list(colors)
+        if selling_methods:
+            json_data["sellingMethods"] = list(selling_methods)
+        if door_widths:
+            json_data["doorWidths"] = list(door_widths)
         if specifications:
             if isinstance(specifications, dict):
                 json_data["specifications"] = specifications

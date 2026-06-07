@@ -499,7 +499,8 @@ async def execute_plan(
         # product_manage 实际接受的参数
         _SAFE_PARAMS = {"name", "price", "description", "category_id", "stock_quantity",
                          "processing_item_ids", "product_id", "status", "unit", "cost_price",
-                         "brand", "images", "specifications", "colors", "pricing_type"}
+                         "brand", "images", "specifications", "colors",
+                         "selling_methods", "door_widths", "pricing_type"}
         _NUMERIC_PARAMS = {"price", "cost_price", "stock_quantity"}
         exec_params = {"action": current.execute_action}
         for k in _SAFE_PARAMS:
