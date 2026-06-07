@@ -505,13 +505,13 @@ async def execute_plan(
         else:
             query_data = f"工具不可用: {current.query_tool}"
 
-        # LLM 格式化展示——代码已生成编号，LLM 只需展示
+        # LLM 格式化展示——代码已生成编号，LLM 原样输出不要改动
         prompt = (
             f"多步骤操作目标: {plan.goal}\n"
             f"展示提示: {current.query_prompt}\n"
             f"已收集: {json.dumps(plan.context, ensure_ascii=False)}\n\n"
-            f"以下列表已编号，直接展示并请用户回复编号选择:\n{query_data}\n\n"
-            f"不要调用工具。"
+            f"请原样输出以下列表（含编号），不要修改任何一行：\n\n{query_data}\n\n"
+            f"然后请用户回复编号选择。不要调用工具。"
         )
         final_answer = await LLMFactory.invoke_text_safe([
             SystemMessage(content=system_prompt),
