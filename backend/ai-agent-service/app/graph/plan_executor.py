@@ -174,6 +174,25 @@ def _extract_text_from_msg(msg) -> str:
     return str(content) if content else ""
 
 
+def _sanitize_for_text_llm(msgs: list) -> list:
+    """清洗消息列表，移除 image_url，确保纯文本模型不报 invalid_parameter_error"""
+    from langchain_core.messages import HumanMessage, AIMessage
+    cleaned = []
+    for m in msgs:
+        content = m.content if hasattr(m, 'content') else str(m)
+        if isinstance(content, list):
+            text = _extract_text_from_msg(m)
+            if isinstance(m, HumanMessage):
+                cleaned.append(HumanMessage(content=text or "[图片]"))
+            elif isinstance(m, AIMessage):
+                cleaned.append(AIMessage(content=text or ""))
+            else:
+                cleaned.append(type(m)(content=text or ""))
+        else:
+            cleaned.append(m)
+    return cleaned
+
+
 async def _generate_plan(user_message: str, chat_history: list, goal_hint: str = "") -> Optional[Plan]:
     """调用 LLM 生成 Plan，失败返回 None"""
     llm = LLMFactory.create_skill_llm(enable_thinking=True)
@@ -316,7 +335,7 @@ async def execute_plan(
         llm = LLMFactory.create_skill_llm(enable_thinking=False)
         response = await llm.ainvoke([
             SystemMessage(content=system_prompt),
-            *[m for m in messages[-4:]],
+            *_sanitize_for_text_llm(messages[-4:]),
             HumanMessage(content=prompt),
         ])
         final_answer = response.content.strip()
@@ -361,7 +380,7 @@ async def execute_plan(
         llm = LLMFactory.create_skill_llm(enable_thinking=False)
         response = await llm.ainvoke([
             SystemMessage(content=system_prompt),
-            *[m for m in messages[-4:]],
+            *_sanitize_for_text_llm(messages[-4:]),
             HumanMessage(content=prompt),
         ])
         final_answer = response.content.strip()
@@ -377,7 +396,7 @@ async def execute_plan(
         llm = LLMFactory.create_skill_llm(enable_thinking=False)
         response = await llm.ainvoke([
             SystemMessage(content=system_prompt),
-            *[m for m in messages[-4:]],
+            *_sanitize_for_text_llm(messages[-4:]),
             HumanMessage(content=prompt),
         ])
         final_answer = response.content.strip()
@@ -424,7 +443,7 @@ async def execute_plan(
         llm = LLMFactory.create_skill_llm(enable_thinking=False)
         response = await llm.ainvoke([
             SystemMessage(content=system_prompt),
-            *[m for m in messages[-4:]],
+            *_sanitize_for_text_llm(messages[-4:]),
             HumanMessage(content=prompt),
         ])
         final_answer = response.content.strip()

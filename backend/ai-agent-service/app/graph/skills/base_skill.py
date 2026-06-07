@@ -326,14 +326,31 @@ async def execute_skill(
     Returns:
         dict: 需要更新的 state 字段
     """
+    raw_messages = state["messages"]
     session_id = state.get("session_id", "")
+    is_multimodal = has_images(raw_messages)
 
     # ── Plan-and-Execute 路径 ──
-    # 检查是否有进行中的 Plan 或当前请求适合 P&E
     from app.graph.plan_executor import execute_plan, should_use_plan_execute, _load_plan
 
     existing_plan = await _load_plan(session_id) if session_id else None
     if existing_plan is not None or should_use_plan_execute(state, skill_name):
+        # 图片消息：先做 Vision 分析，否则 P&E 步骤看不到图片内容
+        if is_multimodal and not existing_plan:
+            vision_llm = get_skill_llm(intent="", tool_count=0, text_length=0,
+                                        messages=raw_messages, enable_thinking=False)
+            try:
+                vision_response = await vision_llm.ainvoke(raw_messages)
+                vision_text = _extract_content(vision_response) or ""
+                if vision_text:
+                    state = dict(state)
+                    msgs = list(state.get("messages", []))
+                    msgs.append(SystemMessage(content=f"[图片分析结果]\n{vision_text}\n请基于以上信息执行操作。"))
+                    state["messages"] = msgs
+                    logger.info(f"[{skill_name}] Vision analysis for P&E | len={len(vision_text)}")
+            except Exception as e:
+                logger.warning(f"[{skill_name}] Vision analysis for P&E failed: {e}")
+
         logger.info(f"[{skill_name}] Trying P&E mode | has_plan={existing_plan is not None}")
         pe_result = await execute_plan(state, skill_name, tool_names, system_prompt)
         if pe_result is not None:
