@@ -350,8 +350,8 @@ async def execute_plan(
                     json_end = msg.content.index(']', json_start) + 1
                     urls = json.loads(msg.content[json_start:json_end])
                     if urls and "images" not in plan.context:
-                        plan.context["images"] = urls
-                        logger.info(f"[pe] Vision images pre-filled: {len(urls)} urls")
+                        plan.context["images"] = list(dict.fromkeys(urls))  # 去重
+                        logger.info(f"[pe] Vision images pre-filled: {len(plan.context['images'])} urls")
                 except Exception:
                     pass
 
