@@ -507,7 +507,7 @@ class TestAgentAwareSuggestionsIntegration:
             FollowUpSuggestionGenerator, MIBAO_PRESET_SUGGESTIONS,
         )
         with patch("app.suggestions.follow_up.settings") as mock_settings:
-            mock_settings.INTENT_MODEL = "qwen-turbo"
+            mock_settings.INTENT_MODEL = "qwen3.6-flash"
             gen = FollowUpSuggestionGenerator()
             gen._api_key = ""  # 禁用动态生成，只用预设
 
@@ -523,7 +523,7 @@ class TestAgentAwareSuggestionsIntegration:
             FollowUpSuggestionGenerator, XIAOBU_PRESET_SUGGESTIONS,
         )
         with patch("app.suggestions.follow_up.settings") as mock_settings:
-            mock_settings.INTENT_MODEL = "qwen-turbo"
+            mock_settings.INTENT_MODEL = "qwen3.6-flash"
             gen = FollowUpSuggestionGenerator()
             gen._api_key = ""
 

@@ -24,7 +24,7 @@ from app.llm import (
     LLMFactory,
     MODEL_MAX,
     MODEL_PLUS,
-    MODEL_TURBO,
+    MODEL_LITE,
     MODEL_FLASH,
     CostRecord,
     CostTracker,
@@ -119,21 +119,21 @@ class TestSelectModel:
         assert select_model(force_model="qwen3.6-flash") == "qwen3.7-max"
 
     def test_routing_greeting_intent_to_turbo(self, routing_on):
-        """greeting 意图 → MODEL_TURBO"""
-        assert select_model(intent="greeting") == MODEL_TURBO
+        """greeting 意图 → 轻量模型"""
+        assert select_model(intent="greeting") == MODEL_LITE
 
     def test_routing_farewell_intent_to_turbo(self, routing_on):
-        """farewell 意图 → MODEL_TURBO"""
-        assert select_model(intent="farewell") == MODEL_TURBO
+        """farewell 意图 → 轻量模型"""
+        assert select_model(intent="farewell") == MODEL_LITE
 
     def test_routing_capabilities_intent_to_turbo(self, routing_on):
-        """capabilities 意图也属于简单意图 → MODEL_TURBO"""
-        assert select_model(intent="capabilities") == MODEL_TURBO
+        """capabilities 意图也属于简单意图 → 轻量模型"""
+        assert select_model(intent="capabilities") == MODEL_LITE
 
     def test_routing_intent_case_insensitive(self, routing_on):
         """意图判定大小写不敏感"""
-        assert select_model(intent="GREETING") == MODEL_TURBO
-        assert select_model(intent="FareWell") == MODEL_TURBO
+        assert select_model(intent="GREETING") == MODEL_LITE
+        assert select_model(intent="FareWell") == MODEL_LITE
 
     def test_routing_high_tool_count_to_max(self, routing_on):
         """tool_count >= 3 → MODEL_MAX"""
@@ -155,10 +155,10 @@ class TestSelectModel:
         assert select_model(intent="greeting", force_model=MODEL_FLASH) == MODEL_FLASH
 
     def test_model_constants_aligned(self):
-        """模型常量与百炼对齐（qwen-turbo/qwen-flash 已下线，统一使用 qwen3.6-flash）"""
+        """模型常量对齐检查（轻量/平衡/旗舰三级路由）"""
         assert MODEL_MAX == "qwen3.7-max"
         assert MODEL_PLUS == "qwen3.6-plus"
-        assert MODEL_TURBO == "qwen3.6-flash"
+        assert MODEL_LITE == "qwen3.6-flash"
         assert MODEL_FLASH == "qwen3.6-flash"
 
     def test_routing_threshold_boundary(self, routing_on):
@@ -175,12 +175,12 @@ class TestCostRecord:
 
     def test_record_basic_fields(self):
         record = CostRecord(
-            model=MODEL_TURBO,
+            model=MODEL_LITE,
             input_tokens=100,
             output_tokens=50,
             cost_cny=0.0001,
         )
-        assert record.model == MODEL_TURBO
+        assert record.model == MODEL_LITE
         assert record.input_tokens == 100
         assert record.output_tokens == 50
         assert record.cost_cny == 0.0001
@@ -205,34 +205,34 @@ class TestCostTracker:
 
     def test_track_call_returns_record_when_enabled(self, fresh_tracker):
         record = fresh_tracker.track_call(
-            model=MODEL_TURBO,
+            model=MODEL_LITE,
             input_tokens=1_000_000,
             output_tokens=1_000_000,
         )
         assert record is not None
         assert isinstance(record, CostRecord)
-        # qwen3.6-flash (MODEL_TURBO) 定价: input=0.30, output=1.20, 1M tokens 各算 1 单位
+        # 轻量模型 (MODEL_LITE) 定价: input=0.30, output=1.20, 1M tokens 各算 1 单位
         assert record.cost_cny == pytest.approx(0.30 + 1.20, rel=1e-6)
 
     def test_track_call_disabled_returns_none(self, monkeypatch):
         """LLM_COST_TRACKING_ENABLED=False 时 track_call 返回 None 且不计入"""
         monkeypatch.setattr(settings, "LLM_COST_TRACKING_ENABLED", False)
         tracker = CostTracker()
-        result = tracker.track_call(model=MODEL_TURBO, input_tokens=100, output_tokens=50)
+        result = tracker.track_call(model=MODEL_LITE, input_tokens=100, output_tokens=50)
         assert result is None
         assert tracker.total_cost == 0.0
 
     def test_calc_cost_cny_for_each_model(self, fresh_tracker):
         """每个模型的定价计算正确"""
-        # qwen-flash: input=0.30, output=1.20 元/百万
+        # 轻量模型: input=0.30, output=1.20 元/百万
         r = fresh_tracker.track_call(model=MODEL_FLASH, input_tokens=2_000_000, output_tokens=1_000_000)
         assert r.cost_cny == pytest.approx(0.30 * 2 + 1.20 * 1, rel=1e-6)
 
-        # qwen3.6-plus: input=4.00, output=12.00
+        # 平衡模型: input=4.00, output=12.00
         r2 = fresh_tracker.track_call(model="qwen3.6-plus", input_tokens=500_000, output_tokens=500_000)
         assert r2.cost_cny == pytest.approx(4.00 * 0.5 + 12.00 * 0.5, rel=1e-6)
 
-        # qwen3.7-max: input=20.00, output=60.00
+        # 旗舰模型: input=20.00, output=60.00
         r3 = fresh_tracker.track_call(model="qwen3.7-max", input_tokens=100_000, output_tokens=100_000)
         assert r3.cost_cny == pytest.approx(20.00 * 0.1 + 60.00 * 0.1, rel=1e-6)
 
@@ -244,9 +244,9 @@ class TestCostTracker:
 
     def test_total_cost_accumulates(self, fresh_tracker):
         """多次调用累计 total_cost"""
-        fresh_tracker.track_call(model=MODEL_TURBO, input_tokens=1_000_000, output_tokens=0)
-        fresh_tracker.track_call(model=MODEL_TURBO, input_tokens=1_000_000, output_tokens=0)
-        # qwen3.6-flash (MODEL_TURBO): 0.30 * 2 = 0.60
+        fresh_tracker.track_call(model=MODEL_LITE, input_tokens=1_000_000, output_tokens=0)
+        fresh_tracker.track_call(model=MODEL_LITE, input_tokens=1_000_000, output_tokens=0)
+        # 轻量模型 (MODEL_LITE): 0.30 * 2 = 0.60
         assert fresh_tracker.total_cost == pytest.approx(0.60, rel=1e-6)
 
     def test_check_budget_triggers_warning(self, fresh_tracker, monkeypatch, caplog):
@@ -279,23 +279,23 @@ class TestCostTracker:
 
     def test_get_summary_groups_by_model(self, fresh_tracker, monkeypatch):
         monkeypatch.setattr(settings, "LLM_MONTHLY_BUDGET_CNY", 100.0)
-        fresh_tracker.track_call(model=MODEL_TURBO, input_tokens=1_000_000, output_tokens=0)
-        fresh_tracker.track_call(model=MODEL_TURBO, input_tokens=2_000_000, output_tokens=1_000_000)
+        fresh_tracker.track_call(model=MODEL_LITE, input_tokens=1_000_000, output_tokens=0)
+        fresh_tracker.track_call(model=MODEL_LITE, input_tokens=2_000_000, output_tokens=1_000_000)
         fresh_tracker.track_call(model="qwen3.6-plus", input_tokens=500_000, output_tokens=500_000)
 
         summary = fresh_tracker.get_summary()
         assert summary["total_calls"] == 3
-        assert MODEL_TURBO in summary["by_model"]
+        assert MODEL_LITE in summary["by_model"]
         assert "qwen3.6-plus" in summary["by_model"]
-        assert summary["by_model"][MODEL_TURBO]["calls"] == 2
-        assert summary["by_model"][MODEL_TURBO]["input_tokens"] == 3_000_000
-        assert summary["by_model"][MODEL_TURBO]["output_tokens"] == 1_000_000
+        assert summary["by_model"][MODEL_LITE]["calls"] == 2
+        assert summary["by_model"][MODEL_LITE]["input_tokens"] == 3_000_000
+        assert summary["by_model"][MODEL_LITE]["output_tokens"] == 1_000_000
         assert summary["budget_cny"] == 100.0
         assert summary["over_budget"] is False
         assert summary["total_cost"] == pytest.approx(fresh_tracker.total_cost, rel=1e-6)
 
     def test_reset_clears_state(self, fresh_tracker):
-        fresh_tracker.track_call(model=MODEL_TURBO, input_tokens=1_000_000, output_tokens=0)
+        fresh_tracker.track_call(model=MODEL_LITE, input_tokens=1_000_000, output_tokens=0)
         assert fresh_tracker.total_cost > 0
 
         fresh_tracker.reset()
@@ -316,7 +316,7 @@ class TestCostTracker:
 
     def test_model_pricing_table_completeness(self):
         """关键模型必须存在于 MODEL_PRICING"""
-        for m in (MODEL_FLASH, MODEL_TURBO, "qwen3.6-plus", "qwen3.7-max"):
+        for m in (MODEL_FLASH, MODEL_LITE, "qwen3.6-plus", "qwen3.7-max"):
             assert m in MODEL_PRICING
             assert "input" in MODEL_PRICING[m]
             assert "output" in MODEL_PRICING[m]
@@ -528,8 +528,8 @@ class TestLLMFactory:
 
     def test_create_skill_llm_with_model_override(self, monkeypatch):
         monkeypatch.setattr(settings, "DASHSCOPE_MODEL", "qwen3.7-max")
-        llm = LLMFactory.create_skill_llm(model_override=MODEL_TURBO)
-        assert llm.model_name == MODEL_TURBO
+        llm = LLMFactory.create_skill_llm(model_override=MODEL_LITE)
+        assert llm.model_name == MODEL_LITE
         # 其他参数仍按默认
         assert llm.temperature == 0.7
         assert llm.streaming is True
@@ -546,9 +546,9 @@ class TestLLMFactory:
         assert llm.model_name == "qwen3.6-plus"
 
     def test_create_intent_llm_config(self, monkeypatch):
-        monkeypatch.setattr(settings, "INTENT_MODEL", MODEL_TURBO)
+        monkeypatch.setattr(settings, "INTENT_MODEL", MODEL_LITE)
         llm = LLMFactory.create_intent_llm()
-        assert llm.model_name == MODEL_TURBO
+        assert llm.model_name == MODEL_LITE
         assert llm.temperature == 0
         assert llm.max_tokens == 200
         assert llm.openai_api_base == DASHSCOPE_BASE_URL
@@ -556,9 +556,9 @@ class TestLLMFactory:
         assert llm.streaming is False
 
     def test_create_suggestion_llm_config(self, monkeypatch):
-        monkeypatch.setattr(settings, "INTENT_MODEL", MODEL_TURBO)
+        monkeypatch.setattr(settings, "INTENT_MODEL", MODEL_LITE)
         llm = LLMFactory.create_suggestion_llm()
-        assert llm.model_name == MODEL_TURBO
+        assert llm.model_name == MODEL_LITE
         assert llm.temperature == 0.3
         assert llm.max_tokens == 200
         assert llm.openai_api_base == DASHSCOPE_BASE_URL

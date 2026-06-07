@@ -160,7 +160,7 @@ def get_skill_llm(
     )
 
     # 根据模型类型选择工厂方法
-    # 注意：不能用 "vl" in model 判断，qwen3.6-plus 等非 vl 后缀模型也支持视觉
+    # 注意：不能用 "vl" in model 判断，非视觉专用模型也支持视觉理解
     # 正确做法：由 vision_detected（消息含图片）+ DASHSCOPE_VISION_ENABLED（功能开关）决定
     if vision_detected and settings.DASHSCOPE_VISION_ENABLED:
         return LLMFactory.create_vision_llm(model_override=model)
@@ -273,7 +273,7 @@ def _sanitize_messages_for_text_path(messages):
     """清理历史消息中的 image_url 内容块，避免文本模型收到无法处理的多模态内容。
 
     has_images() 只查最后一条 HumanMessage（Issue #204），但当用户先发图片消息、
-    再发纯文本跟进时，历史中仍存在 image_url。文本模型（如 qwen-turbo）不支持
+    再发纯文本跟进时，历史中仍存在 image_url。纯文本模型不支持多模态 content 格式
     content list 中的 image_url → DashScope BadRequestError。
 
     处理策略：
@@ -405,9 +405,10 @@ async def execute_skill(
     final_content = ""
     new_messages: List[Any] = []
     iteration = 0
+    interact_called = False  # 跟踪本轮是否调用了 interact
 
     # 5.a 多模态分支：Vision LLM 仅做图片识别，结果传递给主模型做 Tool Calling
-    #     Vision LLM（qwen3.6-flash）不支持 Tool Calling，仅负责理解图片内容。
+    #     Vision LLM 不支持 Tool Calling，仅负责理解图片内容。
     #     图片理解完成后，清理多模态消息中的 image_url、注入图片分析上下文，
     #     然后回退到主模型 + bind_tools 的标准 Tool Calling 循环。
     vision_analysis = ""  # 提前声明，供下游条件判断使用
@@ -733,9 +734,17 @@ async def execute_skill(
         )
 
     # 8. 返回 state 更新
-    return {
+    # 会话连续性：interact 成功后标记 pending skill，下次消息直达原 skill
+    result: dict[str, Any] = {
         "messages": new_messages,
         "final_answer": final_content,
         "skill_used": skill_name,
         "entities": entities,
     }
+    if interact_called:
+        # interact 被调用 → 标记会话处于等待用户操作状态，下次消息跳过路由直达本 skill
+        result["pending_interact_skill"] = skill_name
+    elif state.get("pending_interact_skill"):
+        # 上一次有 pending 但本次没有再次调用 interact → 用户操作已完成，清除标记
+        result["pending_interact_skill"] = ""
+    return result

@@ -141,6 +141,57 @@ class TestRuleMatcher:
         assert matcher.match("   ") is None
         assert matcher.match(None) is None
 
+    # ── P2-7: L1 关键词修复 ──
+
+    def test_confirm_create_product_matches_product_inquiry(self, matcher):
+        """'确认创建商品' 应匹配 product_inquiry（新增关键词）"""
+        result = matcher.match("确认创建商品")
+        assert result is not None
+        assert result.intent == IntentType.PRODUCT_INQUIRY
+
+    def test_confirm_create_order_matches_order_create(self, matcher):
+        """'确认创建订单' 应匹配 order_create（新增关键词）"""
+        result = matcher.match("确认创建订单")
+        assert result is not None
+        assert result.intent == IntentType.ORDER_CREATE
+
+    def test_create_product_matches_product_inquiry(self, matcher):
+        """'创建商品' 应匹配 product_inquiry（精确短语）"""
+        result = matcher.match("创建商品")
+        assert result is not None
+        assert result.intent == IntentType.PRODUCT_INQUIRY
+
+    def test_new_product_matches_product_inquiry(self, matcher):
+        """'新建商品' 应匹配 product_inquiry（精确短语）"""
+        result = matcher.match("新建商品")
+        assert result is not None
+        assert result.intent == IntentType.PRODUCT_INQUIRY
+
+    def test_standalone_create_no_longer_matches_product_inquiry(self, matcher):
+        """单独的 '创建' 不再匹配 product_inquiry（已从关键词移除）"""
+        result = matcher.match("创建")
+        # L1 不应匹配为 product_inquiry
+        if result is not None:
+            assert result.intent != IntentType.PRODUCT_INQUIRY
+
+    def test_standalone_new_no_longer_matches_product_inquiry(self, matcher):
+        """单独的 '新建' 不再匹配 product_inquiry（已从关键词移除）"""
+        result = matcher.match("新建")
+        if result is not None:
+            assert result.intent != IntentType.PRODUCT_INQUIRY
+
+    def test_product_keyword_still_matches(self, matcher):
+        """'商品' 关键词仍然匹配 product_inquiry（回归保护）"""
+        result = matcher.match("商品")
+        assert result is not None
+        assert result.intent == IntentType.PRODUCT_INQUIRY
+
+    def test_price_keyword_still_matches(self, matcher):
+        """'价格' 关键词仍然匹配 product_inquiry（回归保护）"""
+        result = matcher.match("这个商品多少钱")
+        assert result is not None
+        assert result.intent == IntentType.PRODUCT_INQUIRY
+
 
 # ========== IntentClassifier 测试 ==========
 
@@ -293,7 +344,7 @@ class TestIntentConfig:
 
     def test_intent_type_values(self):
         """所有意图类型存在"""
-        assert len(IntentType) == 28
+        assert len(IntentType) == 29  # 含 order_create
 
     def test_intent_tool_map_coverage(self):
         """所有意图类型都有 tool 映射"""

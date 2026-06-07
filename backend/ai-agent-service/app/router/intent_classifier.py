@@ -1,5 +1,5 @@
 """
-L2 小模型意图分类 - 使用轻量模型进行意图识别（qwen3.6-flash，关闭思考模式）
+L2 轻量模型意图分类 - 使用轻量模型进行意图识别（关闭思考模式以降低延迟）
 """
 
 import json
@@ -170,7 +170,7 @@ class IntentClassifier:
     """
     L2 意图分类器
     
-    使用 qwen-turbo 小模型进行意图分类，
+    使用轻量模型进行意图分类，
     相比大模型调用成本更低、速度更快。
     """
 
@@ -214,7 +214,7 @@ class IntentClassifier:
 
             # 如果有对话历史，提供最近几轮作为上下文
             if chat_history:
-                recent = chat_history[-4:]  # 最近 2 轮对话
+                recent = chat_history[-8:]  # 最近 4 轮对话，为简短确认消息提供更多上下文
                 context_text = "\n".join(
                     f"{'用户' if m.get('role') == 'user' else '客服'}: {_extract_text(m.get('content', ''))}"
                     for m in recent

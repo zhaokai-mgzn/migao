@@ -5,7 +5,7 @@
 
 策略：
 - 高频意图使用预设模板（<5ms）
-- 涉及具体实体时使用 qwen-turbo 动态生成（100-200ms）
+- 涉及具体实体时使用轻量模型动态生成（~100-200ms）
 - 超时或失败时返回预设模板兜底
 
 Agent 感知：
@@ -169,7 +169,7 @@ class FollowUpSuggestionGenerator:
 
     def __init__(self):
         self._api_key = DASHSCOPE_API_KEY
-        self._model = settings.INTENT_MODEL  # qwen3.6-flash（轻量模型，关闭思考）
+        self._model = settings.INTENT_MODEL  # 轻量模型，关闭思考模式
         self._llm = None  # 懒加载 LangChain LLM 实例
 
     async def generate(
@@ -224,7 +224,7 @@ class FollowUpSuggestionGenerator:
     async def _generate_dynamic(
         self, query: str, answer: str, agent_type: str = "mibao"
     ) -> Optional[list[str]]:
-        """使用 qwen-turbo 动态生成后续问题建议（走 LangChain 统一接口）"""
+        """使用轻量模型动态生成后续问题建议（走 LangChain 统一接口）"""
         # 根据 agent_type 选择 prompt
         if agent_type == "xiaobu":
             prompt_template = XIAOBU_DYNAMIC_PROMPT

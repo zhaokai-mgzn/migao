@@ -20,7 +20,7 @@ from app.llm.router import (
 from app.config import settings as _settings
 MODEL_MAX = _settings.LLM_MODEL_MAX
 MODEL_PLUS = _settings.LLM_MODEL_PLUS
-MODEL_TURBO = _settings.LLM_MODEL_TURBO
+MODEL_LITE = _settings.LLM_MODEL_LITE
 MODEL_FLASH = _settings.LLM_MODEL_FLASH
 from app.llm.cost_tracker import CostTracker, CostRecord, MODEL_PRICING
 from app.llm.retry_policy import call_with_retry
@@ -37,7 +37,7 @@ __all__ = [
     "has_images",
     "MODEL_MAX",
     "MODEL_PLUS",
-    "MODEL_TURBO",
+    "MODEL_LITE",
     "MODEL_FLASH",
     "CostTracker",
     "CostRecord",

@@ -17,7 +17,7 @@ from app.config import settings
 # ---- 模型路由常量已收敛到 settings（app/config.py），禁止在此硬编码 ----
 #     settings.LLM_MODEL_MAX   — 复杂推理 / 多工具协同
 #     settings.LLM_MODEL_PLUS  — 默认平衡档
-#     settings.LLM_MODEL_TURBO — 简单快速
+#     settings.LLM_MODEL_LITE — 轻量快速
 #     settings.LLM_MODEL_FLASH — 极简任务
 #     settings.DASHSCOPE_VISION_MODEL — 视觉模型
 
@@ -61,7 +61,7 @@ def select_model(
         1. LLM_ENABLE_MODEL_ROUTING=False → 默认模型（关闭路由）
         2. force_model 显式覆盖
         3. has_vision=True 且启用视觉 → DASHSCOPE_VISION_MODEL
-        4. 简单意图（greeting/farewell/capabilities）→ turbo
+        4. 简单意图（greeting/farewell/capabilities）→ lite
         5. 工具数 >= 3 或文本长度 > 8000 → max
         6. 其他 → plus
 
@@ -87,9 +87,9 @@ def select_model(
     if has_vision and settings.DASHSCOPE_VISION_ENABLED:
         return settings.DASHSCOPE_VISION_MODEL
 
-    # 4. 简单意图 → turbo
+    # 4. 简单意图 → lite
     if intent and intent.lower() in _SIMPLE_INTENTS:
-        return settings.LLM_MODEL_TURBO
+        return settings.LLM_MODEL_LITE
 
     # 5. 复杂任务 → max
     if tool_count >= _TOOL_COUNT_MAX_THRESHOLD or text_length > _TEXT_LENGTH_MAX_THRESHOLD:

@@ -9,30 +9,15 @@ from app.graph.skills.base_skill import execute_skill
 from app.graph.skills.skill_config import SkillConfig
 
 
-# 通用 Agent 可用的 Tool 列表 — 全部 Tool
+# 通用 Agent 可用的 Tool 列表 — 仅只读查询类 Tool + interact
+# 写操作（product_manage, order_create, processing_item_manage 等）仅限领域 Skill 使用
 GENERAL_TOOLS = [
     "order_query",
-    "order_manage",
     "logistics_track",
     "product_search",
     "product_detail",
-    "product_manage",
-    "inventory_manage",
-    # [RAG 禁用] "knowledge_search",
     "processing_item_query",
-    # 新增12个管理类 Tool
-    "customer_manage",
-    "employee_manage",
-    "role_manage",
     "dashboard_stats",
-    "after_sales_manage",
-    # [RAG 禁用] "knowledge_manage",
-    "notification_manage",
-    "settings_manage",
-    "session_manage",
-    "quick_reply_manage",
-    "category_manage",
-    "processing_item_manage",
     "interact",
 ]
 
@@ -53,30 +38,19 @@ GENERAL_SYSTEM_PROMPT = """<system_prompt>
 </core_principles>
 
 <tool_usage>
-工具使用优先级指引：
-- 订单相关问题 → order_query（查询/统计/跟进状态统计三合一）/ order_manage（修改/取消/物流录入/确认支付/退款）
+工具使用优先级指引（当前 Skill 仅提供查询类工具）：
+- 订单相关问题 → order_query（查询/统计/跟进状态统计三合一）
 - 物流追踪 → logistics_track
 - 商品库存/价格/规格 → product_detail（按ID或名称）
 - 商品搜索/有没有货 → product_search（可带 stock_status 过滤）
-- 精确库存数量 → inventory_manage（query 操作）
-- 商品管理（创建/上下架）→ product_manage
-- 商品分类增删改查/排序 → category_manage
-- 加工项列表/加工项价格/加工项详情 → processing_item_query（不要误用 order_query）
-- 加工项创建/更新/上下架/删除/调价 → processing_item_manage
-- 商品创建流程：收到商品信息后主动引导 → 名称→价格→分类→库存→加工项→确认
-  其中加工项必须主动询问是否需要关联（如打孔、包边、窗帘头等）
-  每次最多创建 3 个商品，超出分批次创建；严禁在文本中编写 tool_call 代码块
+- 加工项列表/加工项价格/加工项详情 → processing_item_query
+- 经营看板/统计指标/报表趋势 → dashboard_stats
 - 面料知识/保养/安装/加工费/售后政策 → 基于专业知识回答，注明为通用建议
-- 客户档案查询/创建/修改/打标签/合并 → customer_manage
-- 员工账号增删改查/启用停用 → employee_manage；角色与权限 → role_manage
-- 系统设置/AI 配置/业务开关 → settings_manage
-- 站内通知/公告/消息（包括“有没有未读通知”这类查询）→ notification_manage
-- 快捷回复模板 → quick_reply_manage
-- 经营看板/统计指标/报表趋势（包括“最近 N 天订单趋势”这类查询）→ dashboard_stats
-- 客服会话查询/关闭/转接/在线话务 → session_manage
-- 售后工单创建/受理/处理/关闭 → after_sales_manage
 
-注意：inventory_manage 的 adjust 和 low_stock_alert 仅管理员/客服可用；employee_manage、role_manage、settings_manage、category_manage、processing_item_manage 等管理类写操作仅管理员可用，执行前需与同事确认意图与影响范围。
+能力边界：
+- 本 Skill 仅提供查询类工具，不执行写操作
+- 如果用户需要创建/修改/删除等操作，请使用 interact 引导用户重新描述需求，或建议：”这个操作需要切换到对应的管理模块，请重新描述您的需求”
+- 每次只引导用户做一个交互，避免信息过载
 </tool_usage>
 
 <output_format>

@@ -20,7 +20,7 @@ from app.llm import (
     LLMFactory,
     MODEL_PLUS,
     MODEL_MAX,
-    MODEL_TURBO,
+    MODEL_LITE,
     MODEL_PRICING,
     has_images,
     select_model,
@@ -70,7 +70,7 @@ class TestVisionRoutingNoModelNameCheck:
 
     Bug 背景 (Issue #173):
         base_skill.py 曾用 `"vl" in model` 判断是否走视觉 LLM。
-        但 qwen3.6-plus 等非 vl 后缀模型同样支持视觉理解，
+        但非视觉专用模型同样支持视觉理解，
         导致图片被发给文本 LLM 处理，API 调用失败。
 
     测试策略:
@@ -88,7 +88,7 @@ class TestVisionRoutingNoModelNameCheck:
 
     def test_base_skill_uses_vision_enabled_not_model_name(self, routing_on, monkeypatch):
         """base_skill 应通过 vision_detected + DASHSCOPE_VISION_ENABLED 路由，
-        而非 "vl" in model — 确保 qwen3.6-plus 等非 vl 模型也能走视觉 LLM"""
+        而非 "vl" in model — 确保非视觉专用模型也能走视觉 LLM"""
         from app.graph.skills.base_skill import get_skill_llm
         from langchain_core.messages import HumanMessage
 
@@ -216,7 +216,7 @@ class TestCreateVisionLLM:
     """LLMFactory.create_vision_llm 测试"""
 
     def test_create_vision_llm_default(self, monkeypatch):
-        """默认模型为 qwen3.6-flash（DASHSCOPE_VISION_MODEL）"""
+        """默认视觉模型（DASHSCOPE_VISION_MODEL）"""
         monkeypatch.setattr(settings, "DASHSCOPE_VISION_MODEL", "qwen3.6-flash")
         llm = LLMFactory.create_vision_llm()
         assert llm.model_name == "qwen3.6-flash"
@@ -269,8 +269,8 @@ class TestSelectModelWithVision:
         """DASHSCOPE_VISION_ENABLED=False 时即使 has_vision=True 也走正常路由"""
         # 普通场景 → MODEL_PLUS
         assert select_model(has_vision=True) == MODEL_PLUS
-        # 简单意图 → MODEL_TURBO
-        assert select_model(intent="greeting", has_vision=True) == MODEL_TURBO
+        # 简单意图 → 轻量模型
+        assert select_model(intent="greeting", has_vision=True) == MODEL_LITE
         # 复杂任务 → MODEL_MAX
         assert select_model(tool_count=5, has_vision=True) == MODEL_MAX
 
@@ -281,7 +281,7 @@ class TestSelectModelWithVision:
         assert select_model(has_vision=True) == "qwen3.7-max"
 
     def test_select_model_vision_default_is_flash(self):
-        """视觉模型默认使用 qwen3.6-flash（轻量推理+视觉）"""
+        """视觉模型默认使用轻量推理模型"""
         assert settings.DASHSCOPE_VISION_MODEL == "qwen3.6-flash"
 
 
@@ -289,10 +289,10 @@ class TestSelectModelWithVision:
 # 4. 成本追踪 - 视觉模型定价
 # =============================================================================
 class TestVisionModelPricing:
-    """视觉模型定价测试（qwen-vl-* 已移除，使用 qwen3.6-flash/plus）"""
+    """视觉模型定价测试"""
 
     def test_vision_model_pricing(self):
-        """qwen3.6-flash / qwen3.6-plus 定价存在且正确"""
+        """轻量/平衡视觉模型定价存在且正确"""
         for m in ("qwen3.6-flash", "qwen3.6-plus"):
             assert m in MODEL_PRICING, f"missing pricing for {m}"
             assert "input" in MODEL_PRICING[m]
@@ -300,7 +300,7 @@ class TestVisionModelPricing:
             assert MODEL_PRICING[m]["input"] > 0
             assert MODEL_PRICING[m]["output"] > 0
 
-        # qwen3.6-flash 比 qwen3.6-plus 便宜
+        # 轻量模型应比平衡模型便宜
         flash = MODEL_PRICING["qwen3.6-flash"]
         plus = MODEL_PRICING["qwen3.6-plus"]
         assert flash["input"] < plus["input"]

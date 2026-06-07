@@ -441,3 +441,77 @@ class TestRouteByIntent:
             intent_result={"intent": "greeting"},
         )
         assert route_by_intent(state) == "direct_reply"
+
+    # ── P0-1: order_create 路由修复 ──
+
+    def test_order_create_routes_to_order(self):
+        """Bug 修复：order_create 意图应路由到 order，而非 general"""
+        state = _make_state(
+            route_decision={"action": "full_agent"},
+            intent_result={"intent": "order_create"},
+        )
+        assert route_by_intent(state) == "order"
+
+    def test_order_create_not_general(self):
+        """Bug 修复：order_create 绝对不能路由到 general"""
+        state = _make_state(
+            route_decision={"action": "full_agent"},
+            intent_result={"intent": "order_create", "confidence": 0.5},
+        )
+        assert route_by_intent(state) != "general"
+
+    # ── P0-2: 会话连续性（pending_interact_skill）──
+
+    def test_pending_interact_skill_overrides_low_confidence(self):
+        """interact 后低置信度分类消息仍回到原 skill"""
+        state = _make_state(
+            pending_interact_skill="product",
+            route_decision={"action": "full_agent"},
+            intent_result={"intent": "general", "confidence": 0.3},
+        )
+        assert route_by_intent(state) == "product"
+
+    def test_pending_interact_skill_stays_for_same_intent(self):
+        """interact 后即使分类为同一域，也走 pending skill"""
+        state = _make_state(
+            pending_interact_skill="product",
+            route_decision={"action": "full_agent"},
+            intent_result={"intent": "product_inquiry", "confidence": 0.5},
+        )
+        assert route_by_intent(state) == "product"
+
+    def test_pending_interact_skill_overridden_by_high_confidence_different_intent(self):
+        """高置信度（≥0.9）不同意图可覆盖 pending skill"""
+        state = _make_state(
+            pending_interact_skill="product",
+            route_decision={"action": "full_agent"},
+            intent_result={"intent": "order_query", "confidence": 0.95},
+        )
+        assert route_by_intent(state) == "order"
+
+    def test_pending_interact_skill_overrides_direct_reply(self):
+        """pending skill 存在时，direct_reply 也应被覆盖"""
+        state = _make_state(
+            pending_interact_skill="product",
+            route_decision={"action": "direct_reply"},
+            intent_result={"intent": "greeting", "confidence": 0.99},
+        )
+        assert route_by_intent(state) == "product"
+
+    def test_no_pending_interact_skill_normal_routing(self):
+        """无 pending skill 时正常路由（回归保护）"""
+        state = _make_state(
+            pending_interact_skill="",
+            route_decision={"action": "full_agent"},
+            intent_result={"intent": "order_query"},
+        )
+        assert route_by_intent(state) == "order"
+
+    def test_pending_interact_skill_cleared(self):
+        """pending_interact_skill 为空字符串时不影响路由"""
+        state = _make_state(
+            pending_interact_skill="",
+            route_decision={"action": "full_agent"},
+            intent_result={"intent": "general"},
+        )
+        assert route_by_intent(state) == "general"

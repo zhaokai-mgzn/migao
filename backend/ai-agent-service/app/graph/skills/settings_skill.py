@@ -61,7 +61,7 @@ SETTINGS_SKILL_CONFIG = SkillConfig(
     display_name="系统配置",
     tool_names=SETTINGS_TOOLS,
     route_keys=["settings"],
-    intents=["system_settings", "ai_config", "notification", "quick_reply", "category_manage"],
+    intents=["system_settings", "ai_config", "notification", "quick_reply"],
     system_prompts={"mibao": SETTINGS_SYSTEM_PROMPT},
     default_persona="mibao",
 )
