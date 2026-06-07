@@ -610,6 +610,11 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
           </Button>
         </div>
 
+        {/* 批量填写提示 */}
+        <p className="text-xs text-gray-400 mb-2">
+          提示：选择目标范围并填入价格/库存，点击"批量填写"即可统一设置。多个规格请分批次填写。
+        </p>
+
         {totalSkus === 0 ? (
           <div className="text-sm text-gray-400 text-center py-6 border border-dashed border-gray-200 rounded">
             请先完善颜色分类、售卖方式、规格尺寸

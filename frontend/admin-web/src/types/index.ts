@@ -744,11 +744,21 @@ export interface DashboardStats {
   monthRevenueChange: number // 环比变化百分比
 }
 
+// 待处理任务
+export interface PendingTask {
+  id: string
+  type: 'order' | 'after_sales'
+  title: string
+  priority: 'high' | 'medium' | 'low'
+  createdAt: string
+  link: string
+}
+
 // 订单趋势数据点
 export interface OrderTrendPoint {
   date: string
   orders: number
-  sessions?: number
+  totalAmount?: number  // 当日订单总金额（分）
 }
 
 // 订单状态分布

@@ -248,6 +248,12 @@ export default function ProductDetailPage() {
                   <dd className="text-sm text-gray-900 mt-0.5">{stockDeductionLabel}</dd>
                 </div>
               )}
+              {product.stockWarningThreshold != null && (
+                <div>
+                  <dt className="text-xs text-gray-500">库存预警阈值</dt>
+                  <dd className="text-sm text-gray-900 mt-0.5">{product.stockWarningThreshold}</dd>
+                </div>
+              )}
               <div>
                 <dt className="text-xs text-gray-500">创建时间</dt>
                 <dd className="text-sm text-gray-900 mt-0.5">{product.createdAt || '-'}</dd>

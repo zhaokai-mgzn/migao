@@ -237,7 +237,7 @@ class ProductManageTool(BaseTool):
         if images:
             json_data["images"] = list(images)
             if images:
-                json_data["mainImage"] = images[0]  # 首图作为封面
+                pass  # mainImage no longer set separately
         if "stockDeductionMode" not in json_data:
             json_data["stockDeductionMode"] = "on_order"
         if detail_images:

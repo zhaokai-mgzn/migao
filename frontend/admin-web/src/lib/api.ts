@@ -37,6 +37,7 @@ import type {
   OrderTrendPoint,
   OrderStatusDistribution,
   ActiveSession,
+  PendingTask,
   KnowledgeSearchResult,
   KnowledgeSearchParams,
   Customer,
@@ -317,6 +318,9 @@ export const dashboardApi = {
 
   getActiveSessions: (limit: number = 5) =>
     request.get<ApiResponse<ActiveSession[]>>('/api/admin/dashboard/active-sessions', { params: { limit } }),
+
+  getPendingTasks: () =>
+    request.get<ApiResponse<PendingTask[]>>('/api/admin/dashboard/pending-tasks'),
 }
 
 // 上传 API

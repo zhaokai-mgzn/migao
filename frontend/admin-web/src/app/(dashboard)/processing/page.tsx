@@ -280,7 +280,11 @@ export default function ProcessingPage() {
   return (
     <div className="p-6">
       {/* 页面标题 */}
-      <h1 className="text-xl font-semibold text-gray-900 mb-6">加工项配置</h1>
+      <h1 className="text-xl font-semibold text-gray-900 mb-2">加工项配置</h1>
+      <p className="text-sm text-gray-500 mb-6">
+        加工项是指为特定订单定制的产品修改服务，例如窗帘的长度裁剪、打孔方式选择等。
+        您可以在这里管理可用的加工项类型和价格，下单时客户可选择需要的加工服务。
+      </p>
 
       {/* 顶部操作栏 */}
       <div className="flex items-center justify-end gap-3 mb-4">

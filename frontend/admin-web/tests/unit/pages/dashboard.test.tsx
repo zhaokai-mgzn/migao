@@ -13,6 +13,7 @@ const mockGetOrderTrend = vi.fn()
 const mockGetOrderStatus = vi.fn()
 const mockGetRecentOrders = vi.fn()
 const mockGetActiveSessions = vi.fn()
+const mockGetPendingTasks = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   dashboardApi: {
@@ -21,6 +22,7 @@ vi.mock('@/lib/api', () => ({
     getOrderStatusDistribution: (...args: any[]) => mockGetOrderStatus(...args),
     getRecentOrders: (...args: any[]) => mockGetRecentOrders(...args),
     getActiveSessions: (...args: any[]) => mockGetActiveSessions(...args),
+    getPendingTasks: (...args: any[]) => mockGetPendingTasks(...args),
   },
 }))
 
@@ -108,6 +110,7 @@ describe('DashboardPage', () => {
     mockGetOrderStatus.mockResolvedValue({ data: { data: [] } })
     mockGetRecentOrders.mockResolvedValue({ data: { data: [] } })
     mockGetActiveSessions.mockResolvedValue({ data: { data: [] } })
+    mockGetPendingTasks.mockResolvedValue({ data: { data: [] } })
   })
 
   it('should render welcome message with user name', async () => {

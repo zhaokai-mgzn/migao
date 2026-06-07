@@ -219,6 +219,7 @@ export default function ProductsPage() {
 
   // ===== 批量导出 =====
   const handleExport = async () => {
+    const toastId = toast.loading('正在导出，请稍候...')
     try {
       const res = await productApi.exportProducts({
         productId: productId || undefined,
@@ -237,9 +238,10 @@ export default function ProductsPage() {
       a.click()
       document.body.removeChild(a)
       window.URL.revokeObjectURL(url)
-      toast.success('导出成功')
-    } catch {
-      // handled by API layer
+      toast.success('导出成功', { id: toastId })
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || '导出失败'
+      toast.error(`导出失败：${msg}`, { id: toastId })
     }
   }
 

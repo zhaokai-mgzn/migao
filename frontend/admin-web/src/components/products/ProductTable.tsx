@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { Table, Badge, Pagination } from '@/components/ui'
 import type { TableColumn } from '@/components/ui'
 import Image from 'next/image'
@@ -78,6 +79,8 @@ export default function ProductTable({
   onTakeOffShelf,
   onDelete,
 }: ProductTableProps) {
+  const [brokenImages, setBrokenImages] = useState<Set<string>>(new Set())
+
   const allChecked = products.length > 0 && products.every((p) => selectedIds.includes(p.id))
   const partialChecked = !allChecked && products.some((p) => selectedIds.includes(p.id))
 
@@ -140,7 +143,7 @@ export default function ProductTable({
       render: (record) => (
         <div className="flex items-start gap-3 min-w-[200px]">
           <div className="w-10 h-10 rounded-md overflow-hidden bg-gray-100 flex-shrink-0 border border-gray-200">
-            {record.images && record.images.length > 0 ? (
+            {record.images && record.images.length > 0 && !brokenImages.has(record.images[0]) ? (
               <Image
                 src={resolveImageUrl(record.images[0])}
                 alt={record.name}
@@ -148,6 +151,9 @@ export default function ProductTable({
                 height={40}
                 className="w-full h-full object-cover"
                 unoptimized
+                onError={() => {
+                  setBrokenImages(prev => new Set(prev).add(record.images![0]))
+                }}
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center text-gray-300 text-[10px]">无图</div>

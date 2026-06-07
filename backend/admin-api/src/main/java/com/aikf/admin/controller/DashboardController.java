@@ -184,9 +184,12 @@ public class DashboardController {
         for (int i = days - 1; i >= 0; i--) {
             String dateStr = LocalDate.now().minusDays(i).toString();
             Map<String, Object> row = dataMap.get(dateStr);
+            long amount = row != null && row.get("amount") != null
+                    ? ((Number) row.get("amount")).longValue() : 0L;
             result.add(OrderTrendPointResponse.builder()
                     .date(dateStr)
                     .orders(row != null ? ((Number) row.get("orders")).intValue() : 0)
+                    .amount(amount)
                     .build());
         }
 
@@ -314,6 +317,60 @@ public class DashboardController {
         return ApiResponse.success(result);
     }
 
+    // ========== 待处理任务 ==========
+
+    @GetMapping("/pending-tasks")
+    public ApiResponse<List<PendingTaskResponse>> getPendingTasks() {
+        Long tenantId = TenantContext.getTenantId();
+
+        List<PendingTaskResponse> tasks = new ArrayList<>();
+
+        // 待支付订单
+        List<Order> pendingOrders = orderMapper.selectList(
+                new LambdaQueryWrapper<Order>()
+                        .eq(Order::getTenantId, tenantId)
+                        .eq(Order::getStatus, "pending")
+                        .orderByDesc(Order::getCreatedAt)
+                        .last("LIMIT 5"));
+        for (Order o : pendingOrders) {
+            tasks.add(PendingTaskResponse.builder()
+                    .id(String.valueOf(o.getId()))
+                    .type("order")
+                    .title("订单 " + (o.getOrderNo() != null ? o.getOrderNo() : o.getId()) + " 待支付")
+                    .priority("high")
+                    .createdAt(o.getCreatedAt() != null ? o.getCreatedAt().toString() : null)
+                    .link("/orders/" + o.getId())
+                    .build());
+        }
+
+        // 待处理售后工单
+        List<AfterSalesTicket> openTickets = afterSalesTicketMapper.selectList(
+                new LambdaQueryWrapper<AfterSalesTicket>()
+                        .eq(AfterSalesTicket::getTenantId, tenantId)
+                        .eq(AfterSalesTicket::getStatus, "open")
+                        .orderByDesc(AfterSalesTicket::getCreatedAt)
+                        .last("LIMIT 5"));
+        for (AfterSalesTicket t : openTickets) {
+            tasks.add(PendingTaskResponse.builder()
+                    .id(String.valueOf(t.getId()))
+                    .type("after_sales")
+                    .title("售后工单 " + (t.getTicketNo() != null ? t.getTicketNo() : t.getId()) + " 待处理")
+                    .priority("medium")
+                    .createdAt(t.getCreatedAt() != null ? t.getCreatedAt().toString() : null)
+                    .link("/after-sales/" + t.getId())
+                    .build());
+        }
+
+        // 按创建时间倒序
+        tasks.sort((a, b) -> {
+            if (a.getCreatedAt() == null) return 1;
+            if (b.getCreatedAt() == null) return -1;
+            return b.getCreatedAt().compareTo(a.getCreatedAt());
+        });
+
+        return ApiResponse.success(tasks);
+    }
+
     // ========== Response DTOs ==========
 
     @Data
@@ -337,6 +394,7 @@ public class DashboardController {
     public static class OrderTrendPointResponse {
         private String date;
         private int orders;
+        private long amount;
     }
 
     @Data
@@ -369,5 +427,16 @@ public class DashboardController {
         private String duration;
         private boolean isAI;
         private String startedAt;
+    }
+
+    @Data
+    @Builder
+    public static class PendingTaskResponse {
+        private String id;
+        private String type;       // "order" | "after_sales"
+        private String title;
+        private String priority;   // "high" | "medium" | "low"
+        private String createdAt;
+        private String link;
     }
 }
