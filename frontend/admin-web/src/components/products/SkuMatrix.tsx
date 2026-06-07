@@ -639,7 +639,7 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
 
         {/* 批量填写提示 */}
         <p className="text-xs text-gray-400 mb-2">
-          提示：选择目标范围并填入价格/库存，点击"批量填写"即可统一设置。多个规格请分批次填写。
+          提示：选择目标范围并填入价格/库存，点击&ldquo;批量填写&rdquo;即可统一设置。多个规格请分批次填写。
         </p>
 
         {totalSkus === 0 ? (

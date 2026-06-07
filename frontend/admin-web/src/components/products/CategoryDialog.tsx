@@ -55,7 +55,7 @@ export default function CategoryDialog({
       setForm({ name: '', parentId: presetParentId || '', sort: 0 })
     }
     setErrors({})
-  }, [category, open])
+  }, [category, open, presetParentId])
 
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {}

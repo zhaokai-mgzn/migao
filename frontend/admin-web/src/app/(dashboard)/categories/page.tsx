@@ -107,7 +107,7 @@ export default function CategoriesPage() {
           </div>
         ) : categories.length === 0 ? (
           <div className="py-12 text-center text-sm text-gray-500">
-            暂无分类，点击"添加分类"创建第一个分类
+            暂无分类，点击&ldquo;添加分类&rdquo;创建第一个分类
           </div>
         ) : (
           <CategoryTree
