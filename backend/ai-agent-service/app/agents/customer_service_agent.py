@@ -137,12 +137,21 @@ class BaseAgent:
                     history.append(AIMessage(content=content))
         return history
     
-    def _build_initial_state(
+    async def _build_initial_state(
         self,
         messages: list,
         context: AgentContext,
     ) -> dict:
         """构建 LangGraph 图的初始状态"""
+        # 从 session memory 加载 pending_interact_skill（跨 graph 调用持久化）
+        pending_skill = ""
+        try:
+            from app.memory.session_memory import SessionMemory
+            mem = SessionMemory()
+            pending_skill = await mem.get_pending_skill(context.session_id) or ""
+        except Exception:
+            pass
+
         return {
             "messages": messages,
             "agent_type": self._agent_type,
@@ -160,6 +169,7 @@ class BaseAgent:
             "final_answer": "",
             "skill_used": "",
             "suggestions": [],
+            "pending_interact_skill": pending_skill,
         }
     
     async def achat(
@@ -185,7 +195,7 @@ class BaseAgent:
             
             set_tool_context(context.to_tool_context())
             
-            initial_state = self._build_initial_state(messages, context)
+            initial_state = await self._build_initial_state(messages, context)
             result = await self.graph.ainvoke(initial_state)
             
             return AgentResponse(
@@ -232,7 +242,7 @@ class BaseAgent:
             set_tool_context(context.to_tool_context())
             
             # 3. 构建初始 state
-            initial_state = self._build_initial_state(messages, context)
+            initial_state = await self._build_initial_state(messages, context)
             
             logger.info(
                 f"[astream_chat] Starting graph | agent={self._agent_type} "

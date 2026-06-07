@@ -735,6 +735,7 @@ async def execute_skill(
 
     # 8. 返回 state 更新
     # 会话连续性：interact 成功后标记 pending skill，下次消息直达原 skill
+    # 同时持久化到 session memory（DB metadata），跨 graph 调用保持状态
     result: dict[str, Any] = {
         "messages": new_messages,
         "final_answer": final_content,
@@ -742,9 +743,21 @@ async def execute_skill(
         "entities": entities,
     }
     if interact_called:
-        # interact 被调用 → 标记会话处于等待用户操作状态，下次消息跳过路由直达本 skill
         result["pending_interact_skill"] = skill_name
+        # 持久化到 DB：下次消息的 _build_initial_state 会加载此值
+        if session_id:
+            try:
+                from app.memory.session_memory import SessionMemory
+                await SessionMemory().set_pending_skill(session_id, skill_name)
+            except Exception as e:
+                logger.warning(f"[{skill_name}] Failed to persist pending_skill: {e}")
     elif state.get("pending_interact_skill"):
-        # 上一次有 pending 但本次没有再次调用 interact → 用户操作已完成，清除标记
         result["pending_interact_skill"] = ""
+        # 用户操作已完成，清除 DB 标记
+        if session_id:
+            try:
+                from app.memory.session_memory import SessionMemory
+                await SessionMemory().clear_pending_skill(session_id)
+            except Exception as e:
+                logger.warning(f"[{skill_name}] Failed to clear pending_skill: {e}")
     return result
