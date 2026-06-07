@@ -158,11 +158,7 @@ youke/
 │
 ├── tests/smoke/                # E2E 冒烟测试（11 个测试文件）
 ├── knowledge_base/             # RAG 种子数据（产品目录、FAQ、尺寸指南）
-├── .github/workflows/          # CI/CD（3 个部署流水线）
-├── proxy-server.js             # 本地反向代理（:3001 → 双后端）
-├── AGENTS.md                   # 开发规范
-├── PROJECT_PROGRESS.md         # 项目进度追踪
-└── run_scenarios.sh            # E2E 场景测试脚本
+└── .github/workflows/          # CI/CD（3 个部署流水线）
 ```
 
 ## 🚀 快速开始
@@ -248,16 +244,6 @@ npm run dev:weapp
 # 微信开发者工具打开 dist/ 目录
 ```
 
-### 本地开发代理
-
-前端开发时可使用反向代理统一转发，避免跨域问题：
-
-```bash
-node proxy-server.js
-# /api/* → Admin API
-# /ai/*  → AI Agent Service
-```
-
 ## 🧪 测试
 
 ```bash
@@ -269,9 +255,6 @@ cd backend/ai-agent-service && pytest
 
 # E2E 冒烟测试
 cd tests/smoke && pytest
-
-# 场景化测试（13 个对话场景）
-./run_scenarios.sh
 ```
 
 ## 🚢 部署
@@ -340,8 +323,6 @@ gh pr merge --squash --delete-branch
 | 阶段二：MVP 核心 | 97% | 商品 CRUD、AI 工具、小程序、RAG、SSE |
 | 阶段三：测试上线 | 20% | 单元测试、集成测试、CI/CD、生产部署 |
 
-详细进度追踪：[PROJECT_PROGRESS.md](PROJECT_PROGRESS.md)
-
 ## 🤝 贡献指南
 
 ### 分支策略
@@ -361,8 +342,6 @@ feat(frontend): 添加商品批量上架功能
 fix(backend): 修复多租户数据隔离问题
 test: 补充订单状态机单元测试
 ```
-
-完整开发规范：[AGENTS.md](AGENTS.md)
 
 ## 📄 许可证
 
