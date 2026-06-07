@@ -314,6 +314,20 @@ async def execute_plan(
         if len(plan.steps) == 1 and plan.steps[0].type in ("ask", "query"):
             return None
 
+        # 从 Vision 分析的结构化数据中预填充 plan.context
+        for msg in messages:
+            if hasattr(msg, 'content') and isinstance(msg.content, str) and '[结构化数据]' in msg.content:
+                try:
+                    json_start = msg.content.index('{', msg.content.index('[结构化数据]'))
+                    json_end = msg.content.rindex('}') + 1
+                    vision_data = json.loads(msg.content[json_start:json_end])
+                    for k, v in vision_data.items():
+                        if not k.startswith("_") and v:
+                            plan.context[k] = v
+                    logger.info(f"[pe] Vision data pre-filled: {list(vision_data.keys())}")
+                except Exception:
+                    pass
+
         plan.skill_name = skill_name
         await _save_plan(session_id, plan)
 
@@ -472,12 +486,14 @@ async def execute_plan(
                 logger.info(f"[pe] Name fallback extracted: {plan.context['name'][:50]}")
 
         # 只传递白名单字段，防止 context 参数注入
-        # 规范化 context 中的字段名（LLM 可能用中文或简写）
-        _FIELD_ALIASES = {"stock": "stock_quantity", "库存": "stock_quantity"}
+        # 规范化 context 中的字段名
+        _FIELD_ALIASES = {"stock": "stock_quantity", "库存": "stock_quantity",
+                           "_images": "images"}
         for alias, target in _FIELD_ALIASES.items():
             if alias in plan.context and target not in plan.context:
                 plan.context[target] = plan.context[alias]
 
+        # product_manage 实际接受的参数（与 execute 方法签名一致）
         _SAFE_PARAMS = {"name", "price", "description", "category_id", "stock_quantity",
                          "processing_item_ids", "product_id", "status", "unit", "cost_price"}
         _NUMERIC_PARAMS = {"price", "cost_price", "stock_quantity"}

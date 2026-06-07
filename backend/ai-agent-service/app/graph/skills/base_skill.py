@@ -351,11 +351,44 @@ async def execute_skill(
                 vision_response = await vision_llm.ainvoke(raw_messages)
                 vision_text = _extract_content(vision_response) or ""
                 if vision_text:
+                    # 从 Vision 分析中提取结构化商品数据
+                    from app.llm import LLMFactory
+                    extract_prompt = (
+                        f"从以下图片分析结果中提取商品关键信息，返回纯 JSON。\n\n"
+                        f"图片分析: {vision_text}\n\n"
+                        f"提取字段: name(商品名称), description(详细描述), brand(品牌), "
+                        f"specifications(规格参数，如材质/色号/尺寸等，用逗号分隔)\n\n"
+                        f"示例: {{\"name\":\"遮光窗帘\",\"description\":\"高端布艺...\","
+                        f"\"brand\":\"HOME YUUR\",\"specifications\":\"涤纶,棉麻,2699系列\"}}"
+                    )
+                    try:
+                        raw = await LLMFactory.invoke_text_safe(
+                            [HumanMessage(content=extract_prompt)], enable_thinking=False
+                        )
+                        extracted = json.loads(raw.strip().lstrip("```json").rstrip("```").strip())
+                    except Exception:
+                        extracted = {}
+                    # 注入图片 URL，后续传给 product_manage
+                    img_urls = []
+                    for msg in raw_messages:
+                        if hasattr(msg, 'content') and isinstance(msg.content, list):
+                            for item in msg.content:
+                                if isinstance(item, dict) and item.get("type") == "image_url":
+                                    url = item.get("image_url", {}).get("url", "")
+                                    if url:
+                                        img_urls.append(url)
+                    extracted["_images"] = img_urls
+                    # 将结构化数据注入 state
                     state = dict(state)
                     msgs = list(state.get("messages", []))
-                    msgs.append(SystemMessage(content=f"[图片分析结果]\n{vision_text}\n请基于以上信息执行操作。"))
+                    ctx_msg = (
+                        f"[图片分析结果]\n{vision_text}\n\n"
+                        f"[结构化数据]\n{json.dumps(extracted, ensure_ascii=False)}\n\n"
+                        f"请基于以上信息执行操作。"
+                    )
+                    msgs.append(SystemMessage(content=ctx_msg))
                     state["messages"] = msgs
-                    logger.info(f"[{skill_name}] Vision analysis for P&E | len={len(vision_text)}")
+                    logger.info(f"[{skill_name}] Vision analysis for P&E | len={len(vision_text)} fields={list(extracted.keys())}")
             except Exception as e:
                 logger.warning(f"[{skill_name}] Vision analysis for P&E failed: {e}")
 
