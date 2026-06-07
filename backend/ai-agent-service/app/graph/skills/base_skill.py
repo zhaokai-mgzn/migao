@@ -359,9 +359,10 @@ async def execute_skill(
                         f"{vision_text[:1200]}\n\n"
                         f'格式: {{"name":"","description":"","brand":"",'
                         f'"colors":[{{"colorName":""}}],'
-                        f'"specifications":{{"材质":"","克重":"","工艺":"","风格":"","图案":""}},'
+                        f'"specifications":{{"weight":"克重","material":"材质","craft":"工艺","style":"风格","pattern":"图案","function":"功能"}},'
                         f'"pricing_type":"per_meter","unit":"米",'
                         f'"selling_methods":["散剪","整卷"],"door_widths":["2.8米","3.2米"]}}\n\n'
+                        f"重要: specifications 的 key 必须用英文(weight/material/craft/style/pattern/function)。"
                         f"图片中没提到的属性填默认值。只输出 JSON。"
                     )
                     try:
