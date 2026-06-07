@@ -36,6 +36,13 @@ interface ChatState {
 
 const getToken = () => useAuthStore.getState().accessToken || ''
 
+/** 检查当前会话是否有未完成的交互组件（form/choice/confirm 等待用户操作） */
+function hasPendingInteract(messages: ChatMessage[]): boolean {
+  return messages.some(
+    msg => msg.role === 'assistant' && msg.interactive && !msg.isStreaming
+  )
+}
+
 export const useChatStore = create<ChatState>()((set, get) => ({
   sessions: [],
   currentSessionId: null,
@@ -100,8 +107,9 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       }))
       set({ sessions, error: null })
 
-      // 如果当前没有选中会话，自动选中第一个
-      if (!get().currentSessionId && sessions.length > 0) {
+      // 如果没有选中会话且无未完成交互，自动选中第一个
+      // 如果当前有 active 会话但列表里没包含（刚被关闭），保持现状不自动切换
+      if (!get().currentSessionId && sessions.length > 0 && !hasPendingInteract(get().messages)) {
         get().selectSession(sessions[0].session_id)
       }
     } catch (error) {
@@ -115,6 +123,12 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   },
 
   createSession: async () => {
+    // 检查是否有未完成的交互组件（form/choice/confirm 等待用户操作）
+    if (hasPendingInteract(get().messages)) {
+      toast.warning('当前有未完成的交互操作，请先完成后再创建新对话')
+      return
+    }
+
     try {
       const data = await chatApi.createSession(getToken())
       const sessionData = data?.data || data
@@ -148,6 +162,12 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     const { currentSessionId } = get()
     if (id === currentSessionId) return
 
+    // 检查是否有未完成的交互组件，避免中断交互流程
+    if (hasPendingInteract(get().messages)) {
+      toast.warning('当前有未完成的交互操作，请先完成后再切换会话')
+      return
+    }
+
     set({ currentSessionId: id, messages: [], isLoadingMessages: true })
 
     try {
@@ -175,6 +195,11 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   },
 
   closeSession: async (id: string) => {
+    // 关闭的是当前会话时，检查是否有未完成的交互组件
+    if (id === get().currentSessionId && hasPendingInteract(get().messages)) {
+      toast.warning('当前有未完成的交互操作，请先完成后再关闭会话')
+      return
+    }
     try {
       await chatApi.closeSession(id, getToken())
       // 仅更新状态为 closed，保留会话与历史消息
@@ -261,6 +286,35 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     } catch (error: any) {
       if (error.name === 'AbortError') return
       console.error('发送消息失败:', error)
+
+      // 检查是否是 409 SESSION_CLOSED
+      let isSessionClosed = false
+      if (error instanceof Response && error.status === 409) {
+        isSessionClosed = true
+      } else if (error?.status === 409) {
+        isSessionClosed = true
+      }
+
+      if (isSessionClosed) {
+        // 会话已被后端关闭（空闲超时或其他原因），自动创建新会话
+        set(state => ({
+          isStreaming: false,
+          messages: state.messages.map(msg =>
+            msg.id === aiMsgId
+              ? { ...msg, content: '会话已过期，正在为您创建新会话...', isStreaming: false }
+              : msg
+          ),
+        }))
+        // 自动创建新会话并准备重试
+        try {
+          await get().createSession()
+          toast.info('已创建新会话，请重新发送消息')
+        } catch {
+          toast.error('会话已过期，请手动创建新对话')
+        }
+        return
+      }
+
       set(state => ({
         messages: state.messages.map(msg =>
           msg.id === aiMsgId
@@ -401,10 +455,13 @@ function handleSSEEvent(
       case 'done':
         set(state => {
           // 后端可能因空闲超时轮换到新 session_id，需同步前端状态
+          // 但如果有未完成的交互组件，不执行轮换（防止打断交互流程）
           const newSessionId =
             typeof parsedData?.session_id === 'string' ? parsedData.session_id : null
           const shouldRotate =
-            !!newSessionId && newSessionId !== state.currentSessionId
+            !!newSessionId &&
+            newSessionId !== state.currentSessionId &&
+            !hasPendingInteract(state.messages)
           return {
             isStreaming: false,
             ...(shouldRotate ? { currentSessionId: newSessionId } : {}),
