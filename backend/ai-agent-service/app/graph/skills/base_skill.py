@@ -355,12 +355,16 @@ async def execute_skill(
                     from app.graph.plan_executor import _extract_fields
                     vision_context = {}
                     try:
+                        # 截断过长文本，避免 LLM 超时
+                        truncated = vision_text[:1500]
                         vision_context = await _extract_fields(
-                            vision_text,
+                            truncated,
                             ["name", "description", "brand", "colors", "specifications",
                              "pricing_type", "unit", "selling_methods", "door_widths"],
                             {}
                         )
+                        # 剔除失败的 fallback 值
+                        vision_context.pop("raw_input", None)
                         logger.info(f"[{skill_name}] Vision structured: {list(vision_context.keys())}")
                     except Exception as e:
                         logger.warning(f"[{skill_name}] Vision extraction failed: {e}")

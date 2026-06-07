@@ -364,7 +364,7 @@ async def execute_plan(
                     plan.context
                 )
                 for k, v in vision_fields.items():
-                    if v and k not in plan.context:
+                    if v and k not in plan.context and k != "raw_input":
                         plan.context[k] = v
                 if vision_fields:
                     logger.info(f"[pe] Vision data pre-filled: {list(vision_fields.keys())}")
