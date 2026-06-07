@@ -500,12 +500,18 @@ async def execute_plan(
                 logger.info(f"[pe] Name fallback extracted: {plan.context['name'][:50]}")
 
         # 只传递白名单字段，防止 context 参数注入
-        # 规范化 context 中的字段名
+        # 规范化 context 中的字段名和值格式
         _FIELD_ALIASES = {"stock": "stock_quantity", "库存": "stock_quantity",
                            "_images": "images"}
         for alias, target in _FIELD_ALIASES.items():
             if alias in plan.context and target not in plan.context:
                 plan.context[target] = plan.context[alias]
+        # 列表字段：字符串拆分为数组
+        for list_field in ("selling_methods", "door_widths"):
+            val = plan.context.get(list_field)
+            if isinstance(val, str):
+                import re
+                plan.context[list_field] = [p.strip() for p in re.split(r'[,，、\s]+|和|与', val) if p.strip()]
 
         # product_manage 实际接受的参数
         _SAFE_PARAMS = {"name", "price", "description", "category_id", "stock_quantity",

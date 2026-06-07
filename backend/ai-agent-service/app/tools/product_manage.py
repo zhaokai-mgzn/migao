@@ -15,6 +15,10 @@ from app.utils.http_client import get_admin_api_client
 VALID_ACTIONS = {"create", "update", "toggle_status"}
 
 # 商品状态
+def _split_str(val):
+    import re
+    return [p.strip() for p in re.split(r"[,，、\s]+|和|与", val) if p.strip()]
+
 VALID_PRODUCT_STATUSES = {"on_sale", "off_sale"}
 
 
@@ -240,9 +244,9 @@ class ProductManageTool(BaseTool):
             if normalized:
                 json_data["colors"] = normalized
         if selling_methods:
-            json_data["sellingMethods"] = list(selling_methods)
+            json_data["sellingMethods"] = _split_str(selling_methods) if isinstance(selling_methods, str) else list(selling_methods)
         if door_widths:
-            json_data["doorWidths"] = list(door_widths)
+            json_data["doorWidths"] = _split_str(door_widths) if isinstance(door_widths, str) else list(door_widths)
         if sku_code:
             json_data["skuCode"] = sku_code
         if specifications:
