@@ -351,6 +351,19 @@ async def execute_skill(
                 vision_response = await vision_llm.ainvoke(raw_messages)
                 vision_text = _extract_content(vision_response) or ""
                 if vision_text:
+                    # 【关键】立即从 Vision 文本提取结构化商品属性
+                    from app.graph.plan_executor import _extract_fields
+                    vision_context = {}
+                    try:
+                        vision_context = await _extract_fields(
+                            vision_text,
+                            ["name", "description", "brand", "colors", "specifications",
+                             "pricing_type", "unit", "selling_methods", "door_widths"],
+                            {}
+                        )
+                        logger.info(f"[{skill_name}] Vision structured: {list(vision_context.keys())}")
+                    except Exception as e:
+                        logger.warning(f"[{skill_name}] Vision extraction failed: {e}")
                     # 提取图片 URL
                     img_urls = []
                     for msg in raw_messages:
@@ -365,9 +378,9 @@ async def execute_skill(
                     msgs = list(state.get("messages", []))
                     ctx_msg = (
                         f"[图片分析结果]\n{vision_text}\n\n"
+                        f"[结构化数据]\n{json.dumps(vision_context, ensure_ascii=False)}\n\n"
                         f"[图片URL]\n{json.dumps(img_urls, ensure_ascii=False)}\n\n"
-                        f"请基于以上信息执行操作。分析图片中的商品属性（品牌、材质、风格、"
-                        f"色号、工艺、图案等），创建商品时一并设置。"
+                        f"请基于以上信息执行操作。结构化数据中已提取的字段直接使用，不要重复询问。"
                     )
                     msgs.append(SystemMessage(content=ctx_msg))
                     state["messages"] = msgs
