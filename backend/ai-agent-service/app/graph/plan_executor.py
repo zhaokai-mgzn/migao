@@ -210,6 +210,37 @@ def _validate_tool(tool_name: str, allowed_tools: List[str], step_desc: str) -> 
     return True
 
 
+def _match_user_choice(user_msg: str, results: list) -> Optional[dict]:
+    """从用户回复匹配查询结果中的选项，返回 {field_name: actual_value}
+
+    用户可能回复编号(1,2)、名称或 ID。
+    results 格式: [{"id": "...", "name": "...", ...}, ...]
+    根据 query_tool 类型返回对应的字段，如 category_manage → {category_id: ...}
+    """
+    if not results or not user_msg:
+        return None
+    # 提取数字
+    import re
+    nums = re.findall(r'\d+', user_msg)
+    if nums:
+        idx = int(nums[0]) - 1  # 用户说的"1"对应 results[0]
+        if 0 <= idx < len(results):
+            item = results[idx]
+            # 根据字段名推断用途
+            matched = {}
+            if "id" in item:
+                matched["id"] = item["id"]
+            if "name" in item:
+                matched["name"] = item["name"]
+            return matched
+    # 尝试名称匹配
+    for item in results:
+        name = item.get("name", "")
+        if name and name in user_msg:
+            return {"id": item.get("id"), "name": name}
+    return None
+
+
 # 中文字段名 → 英文 key 映射
 _FIELD_NAME_MAP = {
     "名称": "name", "商品名称": "name", "名字": "name",
@@ -302,6 +333,22 @@ async def execute_plan(
             plan.context.update(extracted)
         elif prev.type == "query":
             plan.context["_user_choice"] = last_user_msg
+            results = plan.context.get("_query_results", [])
+            if results:
+                matched = _match_user_choice(last_user_msg, results)
+                if matched:
+                    # 根据查询工具映射到正确的 context 字段
+                    qt = prev.query_tool
+                    item_id = matched.get("id", "")
+                    if qt == "category_manage":
+                        plan.context["category_id"] = item_id
+                        plan.context["category_name"] = matched.get("name", "")
+                    elif qt == "processing_item_query":
+                        ids = plan.context.get("processing_item_ids", [])
+                        if isinstance(ids, list):
+                            ids.append(item_id)
+                            plan.context["processing_item_ids"] = ids
+                    logger.info(f"[pe] Query choice matched: tool={qt} id={item_id}")
         elif prev.type == "confirm":
             # 仅明确取消词才终止，其余都视为确认（用户可能在确认时补充信息）
             cancel_words = ["取消", "不要了", "算了", "不用了", "不做"]
@@ -353,6 +400,11 @@ async def execute_plan(
                     result.data if result.success else {"error": result.message},
                     ensure_ascii=False
                 )
+                # 存储查询结果，供下一步匹配用户选择
+                if result.success and result.data:
+                    items = result.data.get("items") or result.data.get("tree") or []
+                    if items:
+                        plan.context["_query_results"] = items
             except Exception as e:
                 query_data = json.dumps({"error": str(e)}, ensure_ascii=False)
         else:

@@ -140,9 +140,36 @@ async def cache_check_node(state: AgentState) -> dict:
 async def intent_router_node(state: AgentState) -> dict:
     """执行意图路由
 
-    Agent 感知：传入 agent_type，让分类器只考虑该 Agent 能处理的意图，
-    提升分类准确率并降低 token 消耗。
+    P&E Plan 存在时跳过意图分类，直接返回合成结果（意图重写），
+    节省 LLM 调用且防止短文本（如"1"、"确认"）被误分类。
     """
+    pending_skill = state.get("pending_interact_skill", "")
+    if pending_skill:
+        # 意图重写：P&E 进行中，直接用 plan 的 skill 覆盖意图
+        # 映射 pending_skill → 对应的 intent，让 route_by_intent 正确路由
+        _SKILL_TO_INTENT = {
+            "product": "product_inquiry",
+            "order": "order_query",
+            "aftersales": "after_sales",
+            "customer": "customer_query",
+            "staff": "employee_manage",
+            "settings": "system_settings",
+            "data": "dashboard",
+            "general": "general",
+        }
+        synthetic_intent = _SKILL_TO_INTENT.get(pending_skill, "general")
+        logger.info(
+            f"[intent_router] Intent rewrite: pending_skill={pending_skill} → intent={synthetic_intent}"
+        )
+        return {
+            "intent_result": {
+                "intent": synthetic_intent,
+                "confidence": 0.99,
+                "source": "plan_rewrite",
+            },
+            "route_decision": {"action": "full_agent"},
+        }
+
     from app.router.intent_router import IntentRouter
 
     router = IntentRouter()
