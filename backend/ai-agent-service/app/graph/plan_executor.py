@@ -439,7 +439,13 @@ def should_use_plan_execute(state: AgentState, skill_name: str) -> bool:
     last_msg = ""
     for msg in reversed(messages):
         if isinstance(msg, HumanMessage):
-            last_msg = msg.content if isinstance(msg.content, str) else str(msg.content)
+            content = msg.content
+            if isinstance(content, list):
+                # 多模态消息：提取文本部分
+                parts = [c.get("text", "") for c in content if isinstance(c, dict) and c.get("type") == "text"]
+                last_msg = " ".join(parts)
+            else:
+                last_msg = str(content) if content else ""
             break
 
     create_kw = ["创建", "新增", "添加", "新建", "上架", "录入"]
