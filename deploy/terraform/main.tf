@@ -265,7 +265,8 @@ locals {
     # DashScope LLM
     "DASHSCOPE_API_KEY"         = var.dashscope_api_key
     "DASHSCOPE_BASE_URL"        = "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
-    "DASHSCOPE_MODEL"           = "qwen3.7-max"
+    "DASHSCOPE_MODEL"           = "qwen3.7-plus"
+    "DASHSCOPE_VISION_MODEL"    = "qwen3.6-flash"
     "DASHSCOPE_EMBEDDING_MODEL" = "text-embedding-v3"
     # DashVector
     "DASHVECTOR_API_KEY"    = var.dashvector_api_key
