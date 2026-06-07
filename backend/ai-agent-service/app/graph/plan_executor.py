@@ -165,49 +165,18 @@ async def _clear_plan(session_id: str):
 # ── Plan 生成 ──
 
 
-def _extract_text_from_msg(msg) -> str:
-    """从 LangChain 消息中提取纯文本，移除 image_url 等多模态内容"""
-    content = msg.content if hasattr(msg, 'content') else str(msg)
-    if isinstance(content, list):
-        parts = [c.get("text", "") for c in content if isinstance(c, dict) and c.get("type") == "text"]
-        return " ".join(parts)
-    return str(content) if content else ""
-
-
-def _sanitize_for_text_llm(msgs: list) -> list:
-    """清洗消息列表，移除 image_url，确保纯文本模型不报 invalid_parameter_error"""
-    from langchain_core.messages import HumanMessage, AIMessage
-    cleaned = []
-    for m in msgs:
-        content = m.content if hasattr(m, 'content') else str(m)
-        if isinstance(content, list):
-            text = _extract_text_from_msg(m)
-            if isinstance(m, HumanMessage):
-                cleaned.append(HumanMessage(content=text or "[图片]"))
-            elif isinstance(m, AIMessage):
-                cleaned.append(AIMessage(content=text or ""))
-            else:
-                cleaned.append(type(m)(content=text or ""))
-        else:
-            cleaned.append(m)
-    return cleaned
-
 
 async def _generate_plan(user_message: str, chat_history: list, goal_hint: str = "") -> Optional[Plan]:
     """调用 LLM 生成 Plan，失败返回 None"""
-    llm = LLMFactory.create_skill_llm(enable_thinking=True)
-    # 历史消息只传纯文本——含图片的多模态消息会让纯文本模型报 invalid_parameter_error
-    text_history = [HumanMessage(content=_extract_text_from_msg(m)) for m in chat_history[-4:]]
     prompt = f"用户请求: {user_message}"
     if goal_hint:
         prompt += f"\n意图提示: {goal_hint}"
     prompt += "\n\n请生成执行计划（纯 JSON）。"
 
-    messages = [SystemMessage(content=PLAN_GENERATION_PROMPT), *text_history, HumanMessage(content=prompt)]
+    messages = [SystemMessage(content=PLAN_GENERATION_PROMPT), *chat_history[-4:], HumanMessage(content=prompt)]
 
     try:
-        response = await llm.ainvoke(messages)
-        content = response.content if isinstance(response.content, str) else str(response.content)
+        content = await LLMFactory.invoke_text_safe(messages, enable_thinking=True)
         content = content.strip()
         # 清理 markdown 包裹
         if content.startswith("```"):
@@ -332,13 +301,11 @@ async def execute_plan(
             f"提示: {current.ask_prompt}\n\n"
             f"直接向用户提问，简洁友好。不要调用工具。"
         )
-        llm = LLMFactory.create_skill_llm(enable_thinking=False)
-        response = await llm.ainvoke([
+        final_answer = await LLMFactory.invoke_text_safe([
             SystemMessage(content=system_prompt),
-            *_sanitize_for_text_llm(messages[-4:]),
+            *messages[-4:],
             HumanMessage(content=prompt),
         ])
-        final_answer = response.content.strip()
         new_messages.append(AIMessage(content=final_answer))
         awaiting_user = True
 
@@ -377,13 +344,11 @@ async def execute_plan(
             f"查询结果:\n{query_data}\n\n"
             f"直接展示并请用户选择，不要调用工具。"
         )
-        llm = LLMFactory.create_skill_llm(enable_thinking=False)
-        response = await llm.ainvoke([
+        final_answer = await LLMFactory.invoke_text_safe([
             SystemMessage(content=system_prompt),
-            *_sanitize_for_text_llm(messages[-4:]),
+            *messages[-4:],
             HumanMessage(content=prompt),
         ])
-        final_answer = response.content.strip()
         new_messages.append(AIMessage(content=final_answer))
         awaiting_user = True
 
@@ -393,13 +358,11 @@ async def execute_plan(
             f"完整信息:\n{json.dumps(plan.context, ensure_ascii=False, indent=2)}\n\n"
             f"整理成清单展示，结尾明确请求确认（如'确认创建？回复 确认 或 取消'）。不要调用工具。"
         )
-        llm = LLMFactory.create_skill_llm(enable_thinking=False)
-        response = await llm.ainvoke([
+        final_answer = await LLMFactory.invoke_text_safe([
             SystemMessage(content=system_prompt),
-            *_sanitize_for_text_llm(messages[-4:]),
+            *messages[-4:],
             HumanMessage(content=prompt),
         ])
-        final_answer = response.content.strip()
         new_messages.append(AIMessage(content=final_answer))
         awaiting_user = True
 
@@ -440,13 +403,11 @@ async def execute_plan(
             f"结果: {exec_result}\n\n"
             f"直接回复用户，不要调用工具。"
         )
-        llm = LLMFactory.create_skill_llm(enable_thinking=False)
-        response = await llm.ainvoke([
+        final_answer = await LLMFactory.invoke_text_safe([
             SystemMessage(content=system_prompt),
-            *_sanitize_for_text_llm(messages[-4:]),
+            *messages[-4:],
             HumanMessage(content=prompt),
         ])
-        final_answer = response.content.strip()
         new_messages.append(AIMessage(content=final_answer))
         # execute 完成后清除 Plan
         plan.advance()

@@ -116,6 +116,56 @@ class LLMFactory:
         )
 
     @staticmethod
+    async def invoke_text_safe(
+        messages: list,
+        enable_thinking: bool = False,
+        model_override: Optional[str] = None,
+    ) -> str:
+        """安全调用纯文本 LLM，自动清洗 image_url 多模态内容。
+
+        所有文本 LLM 调用统一走此入口，避免 image_url 泄露到纯文本模型
+        导致 DashScope invalid_parameter_error。
+
+        Args:
+            messages: LangChain 消息列表（可能含多模态内容）
+            enable_thinking: 是否启用深度思考
+            model_override: 模型覆盖
+
+        Returns:
+            str: LLM 响应文本
+        """
+        from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+
+        # 清洗 image_url，只保留纯文本
+        cleaned = []
+        for m in messages:
+            content = getattr(m, 'content', None) or ""
+            if isinstance(content, list):
+                text_parts = [
+                    c.get("text", "")
+                    for c in content
+                    if isinstance(c, dict) and c.get("type") == "text"
+                ]
+                text = " ".join(text_parts).strip()
+                if isinstance(m, SystemMessage):
+                    cleaned.append(SystemMessage(content=text))
+                elif isinstance(m, HumanMessage):
+                    cleaned.append(HumanMessage(content=text or "[图片]"))
+                elif isinstance(m, AIMessage):
+                    cleaned.append(AIMessage(content=text or ""))
+                else:
+                    cleaned.append(type(m)(content=text or ""))
+            else:
+                cleaned.append(m)
+
+        llm = LLMFactory.create_skill_llm(
+            model_override=model_override,
+            enable_thinking=enable_thinking,
+        )
+        response = await llm.ainvoke(cleaned)
+        return response.content.strip() if hasattr(response, 'content') else str(response)
+
+    @staticmethod
     def create_suggestion_llm() -> ChatOpenAI:
         """创建建议/推荐生成 LLM
 
