@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { ChevronRight, ChevronDown, Folder, FolderOpen } from 'lucide-react'
+import { ChevronRight, ChevronDown, Folder, FolderOpen, Plus, Pencil, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Category } from '@/types'
 
@@ -11,7 +11,7 @@ interface CategoryTreeProps {
   onSelect?: (category: Category) => void
   onEdit?: (category: Category) => void
   onDelete?: (category: Category) => void
-  showActions?: boolean
+  onAddChild?: (parent: Category) => void
 }
 
 interface TreeNodeProps {
@@ -21,13 +21,14 @@ interface TreeNodeProps {
   onSelect?: (category: Category) => void
   onEdit?: (category: Category) => void
   onDelete?: (category: Category) => void
-  showActions?: boolean
+  onAddChild?: (parent: Category) => void
 }
 
-function TreeNode({ category, level, selectedId, onSelect, onEdit, onDelete, showActions }: TreeNodeProps) {
+function TreeNode({ category, level, selectedId, onSelect, onEdit, onDelete, onAddChild }: TreeNodeProps) {
   const [expanded, setExpanded] = useState(true)
   const hasChildren = category.children && category.children.length > 0
   const isSelected = selectedId === category.id
+  const canHaveChildren = level === 0  // 仅一级分类可添加子分类（限制最多二级）
 
   return (
     <div>
@@ -65,35 +66,39 @@ function TreeNode({ category, level, selectedId, onSelect, onEdit, onDelete, sho
         {/* Name */}
         <span className="text-sm truncate flex-1">{category.name}</span>
 
-        {/* Actions */}
-        {showActions && (
-          <div className="hidden group-hover:flex items-center gap-1">
-            {onEdit && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onEdit(category)
-                }}
-                className="text-xs text-primary-600 hover:text-primary-700 px-1.5 py-0.5 rounded hover:bg-primary-50"
-              >
-                编辑
-              </button>
-            )}
-            {onDelete && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onDelete(category)
-                }}
-                className="text-xs text-red-600 hover:text-red-700 px-1.5 py-0.5 rounded hover:bg-red-50"
-              >
-                删除
-              </button>
-            )}
-          </div>
-        )}
+        {/* Actions — 始终可见 */}
+        <div className="flex items-center gap-0.5">
+          {canHaveChildren && onAddChild && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onAddChild(category) }}
+              className="p-1 rounded text-gray-400 hover:text-primary-600 hover:bg-primary-50"
+              title="添加子分类"
+            >
+              <Plus className="w-3.5 h-3.5" />
+            </button>
+          )}
+          {onEdit && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onEdit(category) }}
+              className="p-1 rounded text-gray-400 hover:text-primary-600 hover:bg-primary-50"
+              title="编辑"
+            >
+              <Pencil className="w-3.5 h-3.5" />
+            </button>
+          )}
+          {onDelete && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onDelete(category) }}
+              className="p-1 rounded text-gray-400 hover:text-red-600 hover:bg-red-50"
+              title="删除"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Children */}
@@ -108,7 +113,7 @@ function TreeNode({ category, level, selectedId, onSelect, onEdit, onDelete, sho
               onSelect={onSelect}
               onEdit={onEdit}
               onDelete={onDelete}
-              showActions={showActions}
+              onAddChild={onAddChild}
             />
           ))}
         </div>
@@ -123,7 +128,7 @@ export default function CategoryTree({
   onSelect,
   onEdit,
   onDelete,
-  showActions = false,
+  onAddChild,
 }: CategoryTreeProps) {
   if (categories.length === 0) {
     return (
@@ -144,7 +149,7 @@ export default function CategoryTree({
           onSelect={onSelect}
           onEdit={onEdit}
           onDelete={onDelete}
-          showActions={showActions}
+          onAddChild={onAddChild}
         />
       ))}
     </div>

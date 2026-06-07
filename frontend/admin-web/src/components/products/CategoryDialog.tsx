@@ -10,6 +10,7 @@ interface CategoryDialogProps {
   onSubmit: (data: CategoryFormData) => Promise<void>
   category?: Category | null
   categories: Category[]
+  presetParentId?: string
 }
 
 // Flatten category tree for parent selection
@@ -31,6 +32,7 @@ export default function CategoryDialog({
   onSubmit,
   category,
   categories,
+  presetParentId,
 }: CategoryDialogProps) {
   const [form, setForm] = useState<CategoryFormData>({
     name: '',
@@ -50,7 +52,7 @@ export default function CategoryDialog({
         sort: category.sort || 0,
       })
     } else {
-      setForm({ name: '', parentId: '', sort: 0 })
+      setForm({ name: '', parentId: presetParentId || '', sort: 0 })
     }
     setErrors({})
   }, [category, open])
@@ -80,10 +82,12 @@ export default function CategoryDialog({
     }
   }
 
-  // Filter out current category and its children from parent options
+  // 仅一级分类可作为父级（限制最多二级分类）
   const parentOptions = [
     { value: '', label: '无（顶级分类）' },
-    ...flattenCategories(categories).filter((opt) => opt.value !== category?.id),
+    ...categories
+      .filter((c) => c.id !== category?.id)
+      .map((c) => ({ value: c.id, label: c.name })),
   ]
 
   return (
