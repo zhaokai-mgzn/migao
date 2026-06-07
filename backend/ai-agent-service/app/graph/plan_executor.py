@@ -386,11 +386,19 @@ async def execute_plan(
     if current.type == "ask":
         prompt = (
             f"多步骤操作目标: {plan.goal}\n"
-            f"已收集: {json.dumps(plan.context, ensure_ascii=False)}\n"
-            f"还需收集: {json.dumps(current.fields, ensure_ascii=False)}\n"
+            f"需收集的字段: {json.dumps(current.fields, ensure_ascii=False)}\n"
             f"提示: {current.ask_prompt}\n"
-            f"用户说: {last_user_msg}\n\n"
-            f"结合用户刚才的回复和已有上下文，继续提问缺失的信息。简洁友好，不要调用工具。"
+            f"用户说: {last_user_msg}\n"
+            f"对话上下文已包含的信息: {json.dumps(plan.context, ensure_ascii=False)}\n\n"
+            f"规则:\n"
+            f"1. 仔细分析对话上下文——图片识别结果、用户回复中可能已包含部分字段的值\n"
+            f"2. 能从上下文推断的字段直接确认使用，不要重复问\n"
+            f"3. 根据商品类型自动推断：\n"
+            f"   - 窗帘/布料类: selling_methods 默认 ['bulk_cut','full_roll'], door_widths 默认 ['2.8m','3.2m'], unit 默认 '米'\n"
+            f"   - 配件/辅料类: unit 默认 '个' 或 '套', selling_methods 默认 ['per_piece']\n"
+            f"4. 只提问真正缺失且无法推断的字段\n"
+            f"5. 如果所有信息已齐全，直接告诉用户信息已完整可以确认创建\n\n"
+            f"简洁友好地告诉用户你已自动填入了什么，只问缺失的。不要调用工具。"
         )
         final_answer = await LLMFactory.invoke_text_safe([
             SystemMessage(content=system_prompt),
