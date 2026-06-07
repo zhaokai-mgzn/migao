@@ -224,7 +224,7 @@ class ProductManageTool(BaseTool):
         if stock_quantity is not None:
             json_data["stock"] = stock_quantity
         if processing_item_ids:
-            json_data["processingItems"] = processing_item_ids
+            json_data["processingItemConfigs"] = [{"processingItemId": pid} for pid in processing_item_ids]
         if brand:
             json_data["brand"] = brand
         if images:
@@ -343,7 +343,7 @@ class ProductManageTool(BaseTool):
         if stock_quantity is not None:
             json_data["stock"] = stock_quantity
         if processing_item_ids is not None:
-            json_data["processingItems"] = processing_item_ids
+            json_data["processingItemConfigs"] = [{"processingItemId": pid} for pid in processing_item_ids]
         
         if not json_data:
             return ToolResult(

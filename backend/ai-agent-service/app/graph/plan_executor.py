@@ -99,39 +99,33 @@ class Plan:
 
 # ── Prompts ──
 
-PLAN_GENERATION_PROMPT = """你是一个工作流规划器。根据用户的请求，生成一个简洁的执行计划。
+PLAN_GENERATION_PROMPT = """你是一个工作流规划器。根据用户的请求，生成简洁的执行计划。
 
-可用步骤类型：
-- ask: 需要向用户收集信息
-- query: 需要先查询数据再展示给用户选择（如查分类列表、加工项列表）
-- confirm: 汇总已收集的信息，请用户确认
-- execute: 执行最终的写操作
+可用步骤：ask(收集信息) | query(查数据展示选项) | confirm(确认) | execute(执行)
+规则：单步一事，先收集→再查询→确认→执行，≤6步。
 
-规则：
-1. 每步做一件事，不要混合
-2. 先收集信息 → 再查询选项 → 确认 → 执行
-3. 步骤数不超过 6 步
-4. 查询不需要 confirm + execute
+=== 商品创建（含图片上传）===
+用户上传了商品图片，Vision 已分析出 name/description/brand/colors/specifications，
+只需收集缺失的销售属性。
 
-输出纯 JSON（无 markdown 标记）：
 {
-  "goal": "创建遮光窗帘",
+  "goal": "创建2699系列色卡商品",
   "steps": [
-    {"type": "ask", "description": "收集基本信息", "ask_prompt": "请提供价格、库存、货号、售卖方式(散剪/整卷)、规格尺寸(门幅)、计价单位", "fields": ["price", "stock_quantity", "sku_code", "selling_methods", "door_widths", "unit"]},
-    {"type": "query", "description": "选择分类", "query_tool": "category_manage", "query_params": {"action": "tree"}, "query_prompt": "请选择一个分类"},
-    {"type": "query", "description": "选择加工项", "query_tool": "processing_item_query", "query_params": {"status": "active"}, "query_prompt": "请选择加工项（可多选，回复编号如 1,3）"},
+    {"type": "ask", "description": "收集销售属性", "ask_prompt": "请提供价格、库存、货号、售卖方式(散剪/整卷)、规格尺寸(门幅)", "fields": ["price", "stock_quantity", "sku_code", "selling_methods", "door_widths"]},
+    {"type": "query", "description": "选择分类", "query_tool": "category_manage", "query_params": {"action": "tree"}, "query_prompt": "请选择商品分类"},
+    {"type": "query", "description": "选择加工项", "query_tool": "processing_item_query", "query_params": {"status": "active"}, "query_prompt": "请选择加工项（可多选，回复编号如1,3，不需要回复0）"},
     {"type": "confirm", "description": "确认创建"},
     {"type": "execute", "description": "执行创建", "execute_tool": "product_manage", "execute_action": "create"}
   ]
 }
 
-订单创建示例（加工项从选中商品的 product_detail 获取，不是全店查询）：
+=== 订单创建 ===
 {
-  "goal": "为客户李先生创建窗帘订单",
+  "goal": "为客户创建订单",
   "steps": [
-    {"type": "ask", "description": "收集订单信息", "ask_prompt": "请提供客户姓名、电话、收货地址、商品名称和数量", "fields": ["customer_name", "customer_phone", "customer_address", "product_name", "quantity"]},
-    {"type": "query", "description": "搜索商品确认价格", "query_tool": "product_search", "query_params": {"keyword": ""}, "query_prompt": "请选择要下单的商品"},
-    {"type": "query", "description": "查商品详情和加工项", "query_tool": "product_detail", "query_params": {"id": ""}, "query_prompt": "该商品支持的加工项如下，请选择（可多选，不需要回复无）"},
+    {"type": "ask", "description": "收集订单信息", "ask_prompt": "请提供客户姓名、电话、地址、商品名称和数量", "fields": ["customer_name", "customer_phone", "customer_address", "product_name", "quantity"]},
+    {"type": "query", "description": "搜索商品", "query_tool": "product_search", "query_params": {"keyword": ""}, "query_prompt": "请选择商品"},
+    {"type": "query", "description": "查商品加工项", "query_tool": "product_detail", "query_params": {}, "query_prompt": "该商品支持以下加工项，请选择（不需要回复0）"},
     {"type": "confirm", "description": "确认订单"},
     {"type": "execute", "description": "创建订单", "execute_tool": "order_create", "execute_action": "create"}
   ]
@@ -573,6 +567,26 @@ async def execute_plan(
                 plan.context[list_field] = [p.strip() for p in re.split(r'[,，、\s]+|和|与', val) if p.strip()]
 
         # 根据工具类型选择安全参数
+        # product_manage: 从 colors/selling_methods/door_widths 构造 skus
+        if current.execute_tool == "product_manage":
+            colors = plan.context.get("colors", [])
+            sms = plan.context.get("selling_methods", [])
+            dws = plan.context.get("door_widths", [])
+            if colors and sms and dws and "skus" not in plan.context:
+                sm_list = sms if isinstance(sms, list) else [sms]
+                dw_list = dws if isinstance(dws, list) else [dws]
+                skus = []
+                for ci, c in enumerate(colors):
+                    cid = -(ci + 1)
+                    for sm in sm_list:
+                        for dw in dw_list:
+                            skus.append({"colorId": cid, "sellingMethod": sm, "doorWidth": dw, "price": plan.context.get("price", 0), "stock": plan.context.get("stock_quantity", plan.context.get("stock", 0))})
+                plan.context["skus"] = skus
+                logger.info(f"[pe] Auto-generated {len(skus)} SKUs")
+            if "processing_item_ids" in plan.context and "processing_item_configs" not in plan.context:
+                pids = plan.context["processing_item_ids"]
+                pid_list = pids if isinstance(pids, list) else [pids]
+                plan.context["processing_item_configs"] = [{"processingItemId": pid} for pid in pid_list if pid]
         if current.execute_tool == "order_create":
             if "items" not in plan.context and "product_name" in plan.context:
                 qty = int(plan.context.get("quantity", 1))
@@ -583,9 +597,9 @@ async def execute_plan(
             exec_params = {}
         else:
             _SAFE_PARAMS = {"name", "price", "description", "category_id", "stock_quantity",
-                             "processing_item_ids", "product_id", "status", "unit", "cost_price",
-                             "brand", "images", "specifications", "colors",
-                             "selling_methods", "door_widths", "sku_code", "pricing_type"}
+                             "processing_item_ids", "processing_item_configs", "product_id", "status",
+                             "unit", "cost_price", "brand", "images", "specifications", "colors",
+                             "selling_methods", "door_widths", "skus", "sku_code", "pricing_type"}
             _NUMERIC_PARAMS = {"price", "cost_price", "stock_quantity"}
             exec_params = {"action": current.execute_action}
         for k in _SAFE_PARAMS:
