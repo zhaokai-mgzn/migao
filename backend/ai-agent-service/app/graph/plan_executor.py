@@ -479,22 +479,37 @@ async def execute_plan(
                     items = result.data.get("items") or result.data.get("tree") or []
                     if items:
                         plan.context["_query_results"] = items
+                        # 代码直接生成编号列表，不依赖 LLM
+                        lines = []
+                        for i, item in enumerate(items, 1):
+                            name = item.get("name", "")
+                            desc_parts = []
+                            price = item.get("unit_price") or item.get("price") or item.get("basePrice")
+                            if price is not None:
+                                desc_parts.append(f"{price}元")
+                            unit = item.get("unit", "")
+                            if unit:
+                                desc_parts.append(f"/{unit}")
+                            extra = item.get("description") or item.get("category_name", "")
+                            line = f"{i}. {name}"
+                            if desc_parts:
+                                line += f" - {''.join(desc_parts)}"
+                            if extra:
+                                line += f"（{extra}）"
+                            lines.append(line)
+                        query_data = "\n".join(lines)
             except Exception as e:
-                query_data = json.dumps({"error": str(e)}, ensure_ascii=False)
+                query_data = f"查询失败: {e}"
         else:
-            query_data = json.dumps({"error": f"工具不可用: {current.query_tool}"}, ensure_ascii=False)
+            query_data = f"工具不可用: {current.query_tool}"
 
-        # LLM 格式化展示
+        # LLM 格式化展示——代码已生成编号，LLM 只需展示
         prompt = (
             f"多步骤操作目标: {plan.goal}\n"
-            f"用户说: {last_user_msg}\n"
             f"展示提示: {current.query_prompt}\n"
-            f"已收集信息: {json.dumps(plan.context, ensure_ascii=False)}\n\n"
-            f"查询结果:\n{query_data}\n\n"
-            f"要求：每个选项必须以数字编号开头，独占一行。格式：\n"
-            f"1. 选项名称 - 价格/描述\n"
-            f"2. 选项名称 - 价格/描述\n"
-            f"编号从1连续递增。请用户回复编号选择。不要调用工具。"
+            f"已收集: {json.dumps(plan.context, ensure_ascii=False)}\n\n"
+            f"以下列表已编号，直接展示并请用户回复编号选择:\n{query_data}\n\n"
+            f"不要调用工具。"
         )
         final_answer = await LLMFactory.invoke_text_safe([
             SystemMessage(content=system_prompt),
