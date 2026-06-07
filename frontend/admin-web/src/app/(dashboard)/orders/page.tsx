@@ -147,10 +147,13 @@ export default function OrdersPage() {
       }
 
       // 搜索表单的「是否加工」筛选项（修复 P0-1：之前该字段未传给 API）
-      if (search.hasProcessing === 'true') {
-        apiParams.hasProcessing = true
-      } else if (search.hasProcessing === 'false') {
-        apiParams.hasProcessing = false
+      // 仅当非「加工项订单」tab 时，表单的 hasProcessing 才生效（tab 优先）
+      if (activeTab !== 'processing') {
+        if (search.hasProcessing === 'true') {
+          apiParams.hasProcessing = true
+        } else if (search.hasProcessing === 'false') {
+          apiParams.hasProcessing = false
+        }
       }
 
       const res = await orderApi.getOrders(apiParams as Parameters<typeof orderApi.getOrders>[0])

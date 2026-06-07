@@ -198,7 +198,7 @@ export default function OrderTable({
                           {firstItem.productName}
                         </div>
                         <div className="text-xs text-gray-400 leading-tight">
-                          标题 {firstItem.productCode || '-'} {firstItem.productId || ''}
+                          货号 {firstItem.productCode || '-'} {firstItem.productId || ''}
                         </div>
                       </div>
                     ) : (

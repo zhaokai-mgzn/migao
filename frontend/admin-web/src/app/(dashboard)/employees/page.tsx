@@ -55,6 +55,9 @@ export default function EmployeesPage() {
   const [deleteTarget, setDeleteTarget] = useState<Employee | null>(null)
   const [deleting, setDeleting] = useState(false)
 
+  // 内联状态切换 loading（按 ID 防止双击）
+  const [togglingId, setTogglingId] = useState<number | null>(null)
+
   // 加载角色列表
   useEffect(() => {
     roleApi.getAllRoles().then((res) => {
@@ -184,14 +187,18 @@ export default function EmployeesPage() {
 
   // 内联状态切换（直接调 API，无弹窗）
   const handleToggleStatus = async (employee: Employee) => {
+    if (togglingId !== null) return // 防止双击
     const newStatus: EmployeeStatus = employee.status === 'active' ? 'disabled' : 'active'
     const actionLabel = newStatus === 'active' ? '启用' : '禁用'
+    setTogglingId(employee.id)
     try {
       await employeeApi.toggleEmployeeStatus(employee.id, newStatus)
       toast.success(`已${actionLabel}`)
       loadEmployees()
     } catch {
       toast.error(`操作失败`)
+    } finally {
+      setTogglingId(null)
     }
   }
 
@@ -248,14 +255,17 @@ export default function EmployeesPage() {
       key: 'status',
       title: '状态',
       width: '90px',
-      render: (record) => (
+      render: (record) => {
+        const isToggling = togglingId === record.id
+        return (
         <button
           type="button"
           onClick={() => handleToggleStatus(record)}
-          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1 ${
+          disabled={isToggling}
+          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed ${
             record.status === 'active' ? 'bg-primary-600' : 'bg-gray-300'
           }`}
-          title={record.status === 'active' ? '点击禁用' : '点击启用'}
+          title={isToggling ? '处理中...' : record.status === 'active' ? '点击禁用' : '点击启用'}
         >
           <span
             className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${
@@ -263,7 +273,8 @@ export default function EmployeesPage() {
             }`}
           />
         </button>
-      ),
+        )
+      },
     },
     {
       key: 'createdAt',

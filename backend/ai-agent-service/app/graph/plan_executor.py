@@ -229,16 +229,21 @@ def _match_user_choice(user_msg: str, results: list) -> Optional[dict]:
     import re
     nums = re.findall(r'\d+', user_msg)
     if nums:
-        idx = int(nums[0]) - 1  # 用户说的"1"对应 results[0]
-        if 0 <= idx < len(results):
-            item = results[idx]
-            # 根据字段名推断用途
-            matched = {}
-            if "id" in item:
-                matched["id"] = item["id"]
-            if "name" in item:
-                matched["name"] = item["name"]
-            return matched
+        # 支持多选："1,3,5" → 匹配所有编号
+        ids = []
+        names = []
+        for n in nums:
+            idx = int(n) - 1
+            if 0 <= idx < len(results):
+                item = results[idx]
+                if "id" in item:
+                    ids.append(item["id"])
+                if "name" in item:
+                    names.append(item["name"])
+        if ids:
+            return {"id": ids[0] if len(ids) == 1 else ids,
+                    "name": names[0] if len(names) == 1 else names,
+                    "ids": ids, "names": names}
     # 尝试名称匹配
     for item in results:
         name = item.get("name", "")
@@ -389,18 +394,15 @@ async def execute_plan(
             if results:
                 matched = _match_user_choice(last_user_msg, results)
                 if matched:
-                    # 根据查询工具映射到正确的 context 字段
                     qt = prev.query_tool
-                    item_id = matched.get("id", "")
                     if qt == "category_manage":
-                        plan.context["category_id"] = item_id
+                        plan.context["category_id"] = matched.get("id", "")
                         plan.context["category_name"] = matched.get("name", "")
+                        logger.info(f"[pe] Query choice matched: tool={qt} id={matched.get('id')}")
                     elif qt == "processing_item_query":
-                        ids = plan.context.get("processing_item_ids", [])
-                        if isinstance(ids, list):
-                            ids.append(item_id)
-                            plan.context["processing_item_ids"] = ids
-                    logger.info(f"[pe] Query choice matched: tool={qt} id={item_id}")
+                        ids_list = matched.get("ids", [matched.get("id", "")])
+                        plan.context["processing_item_ids"] = [i for i in ids_list if i]
+                        logger.info(f"[pe] Query choice matched: tool={qt} count={len(plan.context['processing_item_ids'])}")
         elif prev.type == "confirm":
             # 仅明确取消词才终止，其余都视为确认（用户可能在确认时补充信息）
             cancel_words = ["取消", "不要了", "算了", "不用了", "不做"]
@@ -590,10 +592,17 @@ async def execute_plan(
             if colors and sms and dws and "skus" not in plan.context:
                 sm_list = sms if isinstance(sms, list) else [sms]
                 dw_list = dws if isinstance(dws, list) else [dws]
-                # 给每个 color 加临时 id（负数），admin-api saveColorsAndSkus 自动映射
+                # 规范化 colors 为 dict 列表，给每个加临时 id
+                normalized_colors = []
                 for ci, c in enumerate(colors):
-                    if isinstance(c, dict) and "id" not in c:
-                        c["id"] = -(ci + 1)
+                    if isinstance(c, str):
+                        normalized_colors.append({"colorName": c, "id": -(ci + 1)})
+                    elif isinstance(c, dict):
+                        if "id" not in c:
+                            c["id"] = -(ci + 1)
+                        normalized_colors.append(c)
+                colors = normalized_colors
+                plan.context["colors"] = colors
                 # 构造 SKU：每个 color × sellingMethod × doorWidth
                 skus = []
                 total_sku_stock = int(plan.context.get("stock_quantity", plan.context.get("stock", 0)) or 0)

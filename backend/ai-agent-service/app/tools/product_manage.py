@@ -239,7 +239,8 @@ class ProductManageTool(BaseTool):
             if images:
                 json_data["mainImage"] = images[0]  # 首图作为封面
         if "stockDeductionMode" not in json_data:
-            json_data["stockDeductionMode"] = "on_order"        if detail_images:
+            json_data["stockDeductionMode"] = "on_order"
+        if detail_images:
             json_data["detailImages"] = list(detail_images)
         if colors:
             # 规范化：LLM 可能返回字符串数组或对象数组
@@ -247,8 +248,10 @@ class ProductManageTool(BaseTool):
             for c in colors:
                 if isinstance(c, str):
                     normalized.append({"colorName": c})
-                elif isinstance(c, dict) and "colorName" in c:
-                    normalized.append(c)
+                elif isinstance(c, dict):
+                    nc = {"colorName": c.get("colorName", c.get("name", ""))}
+                    if c.get("id") is not None: nc["id"] = c["id"]
+                    normalized.append(nc)
             if normalized:
                 json_data["colors"] = normalized
         if selling_methods:
