@@ -190,7 +190,7 @@ async def _generate_plan(user_message: str, chat_history: list, goal_hint: str =
 
     raw = ""
     try:
-        raw = await LLMFactory.invoke_text_safe(messages, enable_thinking=True)
+        raw = await LLMFactory.invoke_text_safe(messages, enable_thinking=False)
         # 从 LLM 回复中提取 JSON 对象（LLM 可能在 JSON 前后加说明文字）
         content = raw.strip()
         # 找到第一个 { 和最后一个 }
