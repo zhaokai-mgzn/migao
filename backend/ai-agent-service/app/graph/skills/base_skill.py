@@ -348,10 +348,18 @@ async def execute_skill(
             # 在用户消息后追加结构化输出指令，让 Vision LLM 一次返回分析+JSON
             instruct_msg = HumanMessage(content=(
                 "请分析图片内容。在回复末尾，用 ```json\n{...}\n``` 格式输出结构化商品数据：\n"
-                '{"name":"商品名","description":"描述","brand":"品牌",'
-                '"colors":[{"colorName":"色号名"}],"specifications":{"材质":"","风格":""},'
-                '"pricing_type":"per_meter","unit":"米"}\n'
-                "如果图片中没有对应信息，字段值留空。"
+                '{\n'
+                '  "name":"商品名",\n'
+                '  "description":"详细描述(含系列/用途/特点)",\n'
+                '  "brand":"品牌",\n'
+                '  "colors":[{"colorName":"色号名"}],\n'
+                '  "specifications":{"材质":"","克重":"","工艺":"","风格":"","图案":"","功能":"","遮光率":"","色牢度":""},\n'
+                '  "pricing_type":"per_meter或per_piece",\n'
+                '  "unit":"米或本或套",\n'
+                '  "selling_methods":["散剪","整卷"],\n'
+                '  "door_widths":["2.8米","3.2米"]\n'
+                '}\n'
+                "图片中能识别的属性都要填写。窗帘布料类默认 selling_methods=['散剪','整卷'], door_widths=['2.8米','3.2米'], unit='米', pricing_type='per_meter'。"
             ))
             msgs_with_instruct = list(raw_messages) + [instruct_msg]
 
@@ -381,6 +389,15 @@ async def execute_skill(
                     except Exception:
                         pass
                 vision_context.pop("raw_input", None)
+                # 布料类商品默认值兜底
+                if not vision_context.get("selling_methods"):
+                    vision_context["selling_methods"] = ["散剪", "整卷"]
+                if not vision_context.get("door_widths"):
+                    vision_context["door_widths"] = ["2.8米", "3.2米"]
+                if not vision_context.get("unit"):
+                    vision_context["unit"] = "米"
+                if not vision_context.get("pricing_type"):
+                    vision_context["pricing_type"] = "per_meter"
                 if vision_context:
                     logger.info(f"[{skill_name}] Vision structured: {list(vision_context.keys())}")
                 else:
