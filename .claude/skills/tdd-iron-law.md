@@ -163,6 +163,8 @@ cd tests && BASE_URL=http://localhost:3001 npx playwright test specs/xxx/xxx.spe
 □ CP-2：已写单测，确认 FAIL
 □ CP-3：已实现代码，单测 PASS
 □ CP-4：全量单测 PASS
+□ L0：状态持久化集成测试 PASS（涉及 State/路由/Interact/执行循环时必跑）
+  □ 如跳过，原因：_____（必须说明）
 □ CP-5：增量集成测试 PASS（_____个）
 □ CP-6：增量 E2E 测试 PASS（_____个）
   □ 如跳过 CP-6，原因：_____
@@ -174,9 +176,68 @@ cd tests && BASE_URL=http://localhost:3001 npx playwright test specs/xxx/xxx.spe
 □ 代码已提交推送
 ```
 
-## 4. E2E 测试开发规范
+## 4. AI Agent Service 状态持久化集成测试（强制）
 
-### 4.1 测试文件命名
+> ⚠️ 涉及以下模块的变更，**必须** 运行 `test_pending_interact_persistence.py`：
+> - `execute_skill` / `base_skill.py`（Tool Calling 循环）
+> - `_build_initial_state` / `customer_service_agent.py`（State 构建）
+> - `route_by_intent` / `nodes.py`（路由逻辑）
+> - `session_memory.py`（session 状态管理）
+> - `interact` tool 相关
+> - 任何新增 State 字段
+
+### 4.1 为什么需要这个测试
+
+**历史教训**：`pending_interact_skill` 机制初版实现了 state 内标记，但 `_build_initial_state` 每次创建全新 state，**从未加载上一轮的值**。整个会话连续性机制形同虚设，多轮交互必定失败。这个 bug 在 Mock 单测中无法发现（mock 不会暴露 state 丢失问题）。
+
+```
+❌ 单测 Mock：execute_skill 返回 pending_skill → assert 通过 → 但 state 实际被丢弃
+✅ 集成测试：execute_skill → 读 DB 验证 → assert pending_skill 真实存在
+```
+
+### 4.2 必须覆盖的验证点
+
+| 验证点 | 测试方法 | 说明 |
+|--------|---------|------|
+| State 字段持久化到 DB | `test_set_and_get` | set 之后能从 DB 读回 |
+| State 字段从 DB 加载 | `test_flow_persistence` | 下次 graph 调用能加载 |
+| 清除机制正确 | `test_clear` / `test_no_interact_clears_db` | 流程结束后清除 |
+| 覆盖写入 | `test_overwrite` | 多次 set 不产生脏数据 |
+| 多会话隔离 | `test_multiple_sessions_independent` | 不同 session 互不干扰 |
+| execute_skill 同步更新 DB | `test_interact_writes_to_db` | 执行路径上的 DB 写入确实发生 |
+
+### 4.3 运行命令
+
+```bash
+# 前置条件：确认 dev DB 可达（RDS 白名单含本机 IP）
+cd backend/ai-agent-service && .venv/bin/python -m pytest tests/test_pending_interact_persistence.py -v
+
+# 如 DB 不可达：添加本机 IP 到 RDS 白名单
+# aliyun rds ModifySecurityIps --DBInstanceId pgm-bp1p7w92k81ob5to \
+#   --SecurityIps "115.196.136.12,$(curl -s ifconfig.me)" \
+#   --DBInstanceIPArrayName dev_local --ModifyMode Cover --region cn-hangzhou
+```
+
+### 4.4 ai-agent-service 全量单测快速命令
+
+```bash
+# 包含状态持久化测试在内（连接真实 dev DB）
+cd backend/ai-agent-service && .venv/bin/python -m pytest tests/ -v \
+  --ignore=tests/test_e2e_mibao_scenarios.py \
+  --ignore=tests/test_e2e_chat_flow.py \
+  --ignore=tests/test_e2e_full_chain.py
+
+# 仅核心测试（路由 + skill + 持久化，快速反馈）
+cd backend/ai-agent-service && .venv/bin/python -m pytest \
+  tests/test_graph_nodes.py \
+  tests/test_graph_skills.py \
+  tests/test_intent_router.py \
+  tests/test_pending_interact_persistence.py -v
+```
+
+## 5. E2E 测试开发规范
+
+### 5.1 测试文件命名
 ```
 tests/e2e/specs/{domain}/{feature}.spec.ts
 
@@ -186,7 +247,7 @@ tests/e2e/specs/{domain}/{feature}.spec.ts
   tests/e2e/specs/products/product-create.spec.ts — 商品创建
 ```
 
-### 4.2 Page Object 模式
+### 5.2 Page Object 模式
 ```
 tests/e2e/pages/{domain}/{page}.page.ts
 
@@ -196,7 +257,7 @@ tests/e2e/pages/{domain}/{page}.page.ts
   - 业务操作函数（如 fillMessage, createProduct 等）
 ```
 
-### 4.3 本地 E2E 运行前检查清单
+### 5.3 本地 E2E 运行前检查清单
 ```
 □ 确认 admin-api 运行在 :8080
 □ 确认 ai-agent-service 运行在 :8001  
@@ -205,7 +266,7 @@ tests/e2e/pages/{domain}/{page}.page.ts
 □ 确认测试数据已准备（如需）
 ```
 
-## 5. 违规后果
+## 6. 违规后果
 
 | 违规行为 | 处理方式 |
 |---------|---------|
@@ -213,19 +274,32 @@ tests/e2e/pages/{domain}/{page}.page.ts
 | 跳过 CP-6 E2E 测试（满足触发条件时） | **禁止合并 PR** |
 | E2E 测试只用弱断言 | **视为未完成，必须重写** |
 | 新增交互组件无 E2E 覆盖 | **禁止合并 PR** |
+| 跳过 L0 状态持久化测试（满足触发条件时） | **禁止合并 PR**，历史多次因 state 不持久化导致交互流程中断 |
 | 只跑单测声称"完成" | **视为虚假完成，重做 CP-1~7** |
 | 新增核心业务流程无 E2E | **禁止合并 PR** |
 
-## 6. 快速命令参考
+## 7. 快速命令参考
 
 ```bash
-# === 三层测试全量（提交前必跑） ===
+# === PR 合并前三层测试全量 ===
 
-# L1: 单元测试
-cd backend/ai-agent-service && .venv/bin/python -m pytest tests/ -v --ignore=tests/test_e2e_mibao_scenarios.py
+# L0: 状态持久化集成测试（涉及 State/路由/Interact 必跑，连接真实 dev DB）
+cd backend/ai-agent-service && .venv/bin/python -m pytest \
+  tests/test_pending_interact_persistence.py -v
+
+# L1: 单元测试（核心模块全量）
+cd backend/ai-agent-service && .venv/bin/python -m pytest \
+  tests/test_graph_nodes.py \
+  tests/test_graph_skills.py \
+  tests/test_intent_router.py \
+  tests/test_pending_interact_persistence.py -v
 cd frontend/admin-web && npx vitest run
 
-# L2: 集成测试（需先启动本地服务）
+# L1-full: ai-agent-service 全量单测
+cd backend/ai-agent-service && .venv/bin/python -m pytest tests/ -v \
+  --ignore=tests/test_e2e_mibao_scenarios.py
+
+# L2: 集成测试（需先启动本地服务，真实 LLM 调用）
 cd backend/ai-agent-service && .venv/bin/python -m pytest tests/test_e2e_mibao_scenarios.py -v
 
 # L3: E2E 测试（需本地服务全启动）
