@@ -104,6 +104,7 @@ class ProductManageTool(BaseTool):
         colors: Optional[list] = None,
         selling_methods: Optional[list] = None,
         door_widths: Optional[list] = None,
+        sku_code: Optional[str] = None,
         pricing_type: Optional[str] = None,
     ) -> ToolResult:
         """执行商品管理操作
@@ -144,7 +145,7 @@ class ProductManageTool(BaseTool):
                 return await self._create_product(
                     context, name, category_id, price, description, stock_quantity,
                     processing_item_ids, brand, images, detail_images,
-                    specifications, unit, colors, selling_methods, door_widths, pricing_type
+                    specifications, unit, colors, selling_methods, door_widths, sku_code, pricing_type
                 )
             elif action == "update":
                 return await self._update_product(
@@ -186,6 +187,7 @@ class ProductManageTool(BaseTool):
         colors: Optional[list] = None,
         selling_methods: Optional[list] = None,
         door_widths: Optional[list] = None,
+        sku_code: Optional[str] = None,
         pricing_type: Optional[str] = None,
     ) -> ToolResult:
         """创建商品
@@ -228,16 +230,25 @@ class ProductManageTool(BaseTool):
         if detail_images:
             json_data["detailImages"] = list(detail_images)
         if colors:
-            json_data["colors"] = list(colors)
+            # 规范化：LLM 可能返回字符串数组或对象数组
+            normalized = []
+            for c in colors:
+                if isinstance(c, str):
+                    normalized.append({"colorName": c})
+                elif isinstance(c, dict) and "colorName" in c:
+                    normalized.append(c)
+            if normalized:
+                json_data["colors"] = normalized
         if selling_methods:
             json_data["sellingMethods"] = list(selling_methods)
         if door_widths:
             json_data["doorWidths"] = list(door_widths)
+        if sku_code:
+            json_data["skuCode"] = sku_code
         if specifications:
             if isinstance(specifications, dict):
-                json_data["specifications"] = specifications
+                json_data["specifications"] = {str(k): str(v) for k, v in specifications.items()}
             elif isinstance(specifications, str):
-                # 逗号分隔的字符串转为 {key: key} 格式
                 parts = [p.strip() for p in specifications.split(",") if p.strip()]
                 json_data["specifications"] = {p: p for p in parts}
         if unit:
@@ -245,6 +256,7 @@ class ProductManageTool(BaseTool):
         if pricing_type:
             json_data["pricingType"] = pricing_type
         
+        logger.info(f"[product_manage] Creating product with json_data keys={list(json_data.keys())} name={name}")
         client = get_admin_api_client()
         response = await client.post(
             "/api/admin/products",
