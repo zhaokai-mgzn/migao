@@ -162,20 +162,20 @@ class BaseAgent:
     ) -> dict:
         """构建 LangGraph 图的初始状态"""
         # 从 session memory 加载路由信息（跨 graph 调用持久化）
+        # Plan state 优先级最高：P&E 进行中时必须回到原 skill
         pending_skill = ""
         try:
             import json
             from app.memory.session_memory import SessionMemory
             mem = SessionMemory()
-            pending_skill = await mem.get_pending_skill(context.session_id) or ""
-            # P&E Plan 存在时，用 plan 的 skill 覆盖路由，防止意图分类器跳 skill
+            plan_raw = await mem.get_plan_state(context.session_id)
+            if plan_raw:
+                plan = json.loads(plan_raw)
+                plan_skill = plan.get("skill_name", "")
+                if plan_skill:
+                    pending_skill = plan_skill
             if not pending_skill:
-                plan_raw = await mem.get_plan_state(context.session_id)
-                if plan_raw:
-                    plan = json.loads(plan_raw)
-                    plan_skill = plan.get("skill_name", "")
-                    if plan_skill:
-                        pending_skill = plan_skill
+                pending_skill = await mem.get_pending_skill(context.session_id) or ""
         except Exception:
             pass
 

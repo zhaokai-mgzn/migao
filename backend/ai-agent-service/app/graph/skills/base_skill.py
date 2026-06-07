@@ -334,6 +334,14 @@ async def execute_skill(
     from app.graph.plan_executor import execute_plan, should_use_plan_execute, _load_plan
 
     existing_plan = await _load_plan(session_id) if session_id else None
+    # 有 Plan 时确保使用 Plan 所属 skill 的 tools，防止意图路由错误
+    if existing_plan and existing_plan.skill_name and existing_plan.skill_name != skill_name:
+        from app.graph.skills.skill_registry import get_skill_registry
+        cfg = get_skill_registry().get(existing_plan.skill_name)
+        if cfg:
+            logger.warning(f"[{skill_name}] Plan redirect: {skill_name} → {existing_plan.skill_name}")
+            skill_name = existing_plan.skill_name
+            tool_names = cfg.tool_names
     if existing_plan is not None or should_use_plan_execute(state, skill_name):
         # 图片消息：先做 Vision 分析，否则 P&E 步骤看不到图片内容
         if is_multimodal and not existing_plan:
