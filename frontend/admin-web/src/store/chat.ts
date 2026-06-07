@@ -264,6 +264,16 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         signal: abortController.signal,
       })
 
+      if (!response.ok) {
+        // 非 2xx 响应：解析错误信息
+        let errorMsg = '请求失败'
+        try {
+          const errData = await response.json()
+          errorMsg = errData?.detail?.error?.message || errData?.detail?.message || errorMsg
+        } catch {}
+        throw { status: response.status, message: errorMsg, isSessionClosed: response.status === 409 }
+      }
+
       if (!response.body) {
         throw new Error('No response body')
       }
@@ -288,12 +298,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       console.error('发送消息失败:', error)
 
       // 检查是否是 409 SESSION_CLOSED
-      let isSessionClosed = false
-      if (error instanceof Response && error.status === 409) {
-        isSessionClosed = true
-      } else if (error?.status === 409) {
-        isSessionClosed = true
-      }
+      const isSessionClosed = error?.isSessionClosed === true || error?.status === 409
 
       if (isSessionClosed) {
         // 会话已被后端关闭（空闲超时或其他原因），自动创建新会话
