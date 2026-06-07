@@ -81,7 +81,7 @@ class TestSkillToolSubsets:
         assert "product_search" not in AFTERSALES_TOOLS
 
     def test_general_tools_includes_all(self):
-        """通用兜底 Skill 仅包含只读查询 Tool + interact（P1-3 修复）"""
+        """通用兜底 Skill 仅包含只读查询 Tool + validate_input + interact"""
         expected = {
             "order_query",
             "logistics_track",
@@ -89,12 +89,13 @@ class TestSkillToolSubsets:
             "product_detail",
             "processing_item_query",
             "dashboard_stats",
+            "validate_input",
             "interact",
         }
         assert set(GENERAL_TOOLS) == expected
 
     def test_general_tools_no_write_operations(self):
-        """P1-3 修复：通用兜底 Skill 不包含任何写操作 Tool"""
+        """通用兜底 Skill 不包含任何写操作 Tool（validate_input 是只读校验，不算写）"""
         write_tools = {
             "order_manage", "order_create",
             "product_manage", "inventory_manage",

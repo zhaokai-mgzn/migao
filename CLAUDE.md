@@ -201,9 +201,13 @@ cd tests && npx playwright test tests/e2e/specs/products.spec.ts
 
 ### 本地开发环境
 
-- **本地启动**：仅启动有客系统组件（admin-api、ai-agent-service、admin-web）
-- **云 dev 环境**：PostgreSQL + Redis + 其他中间件直接使用云端 dev 环境，无需本地启动
-- **配置文件**：各模块 `.env` 已预置云 dev 环境的连接信息
+> **⚠️ 铁律：本地只启动有客系统 3 个组件，DB/Redis/中间件全部用云 dev。**
+>
+> 详见 [`.claude/local-dev-config.md`](.claude/local-dev-config.md) — 包含启动命令、连接信息、禁止行为、测试依赖。
+
+- **本地启动**：admin-api (:8080) + ai-agent-service (:8001) + admin-web (:3001)
+- **云 dev 环境**：PostgreSQL + Redis + DashVector + DashScope + OSS 全部用云端
+- **配置文件**：各模块 `.env` 已预置云 dev 环境的连接信息，禁止改成 localhost
 
 **启动本地服务**（用于真实场景验证）：
 
@@ -236,6 +240,41 @@ cd frontend/admin-web && npm run dev
 - 发现 Bug 时：先写一个能复现 Bug 的失败测试 → 修复代码 → 测试通过
 - E2E 测试必须覆盖所有页面的核心交互路径，禁止弱断言
 - 新增交互组件必须覆盖完整点击链路（渲染→点击→发送→验证）
+
+## 米宝 Skill/Tool 研发标准
+
+> **⚠️ 所有新增或修改的米宝 Skill 和 Tool 必须遵循此标准。**
+
+### Skill 标准化要求
+
+每个 Skill 必须包含：
+```
+app/graph/skills/
+├── {name}_skill.py          # Skill 节点定义 + System Prompt
+└── references/
+    ├── SKILL-{name}.md      # 元数据：name, domain, tools, triggers, constraints
+    └── EXAMPLES-{name}.md   # Few-shot 示例：正确流程 + 反例
+```
+
+### Tool 标准要求
+
+| 要求 | 说明 |
+|------|------|
+| 写操作前校验 | 所有写 Tool 前应有 `validate_input` 校验参数完整性 |
+| 错误即建议 | Tool 失败时必须返回 `suggestion` 字段，告诉 LLM 如何修复 |
+| confirm 强制 | 写操作前 LLM 必须弹 confirm 卡片，不弹 confirm 就不能调写 Tool |
+| 反幻觉 | Prompt 中必须包含 few-shot 示例 + 明确的禁止编造规则 |
+
+### 通用 Skill（兜底）
+
+- `general_skill` 仅持有**只读查询 Tool**，不执行任何写操作
+- 用户意图模糊时引导澄清，而非猜测执行
+- 引导话术必须具体（✅ "请说'创建商品'" / ❌ "请切换模块"）
+
+### 状态持久化
+
+- 跨 graph 调用的状态必须持久化到 DB（参考 `pending_interact_skill`）
+- 新增状态字段必须通过 `test_pending_interact_persistence.py` 验证
 
 ### 完整验证命令清单（PR 合并前必须按顺序执行）
 

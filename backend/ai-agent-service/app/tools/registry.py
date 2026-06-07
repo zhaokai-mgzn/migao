@@ -387,7 +387,8 @@ def create_default_registry() -> ToolRegistry:
     from app.tools.category_manage import CategoryManageTool
     from app.tools.processing_item_manage import ProcessingItemManageTool
     from app.tools.interact import InteractTool
-    
+    from app.tools.validate_input import ValidateInputTool
+
     registry = ToolRegistry()
     
     # 注册所有 Tool
@@ -415,6 +416,7 @@ def create_default_registry() -> ToolRegistry:
     registry.register(CategoryManageTool())
     registry.register(ProcessingItemManageTool())
     registry.register(InteractTool())
-    
+    registry.register(ValidateInputTool())
+
     logger.info(f"Default registry created with {len(registry)} tools")
     return registry

@@ -672,22 +672,28 @@ async def execute_skill(
                                 )
                         except asyncio.TimeoutError:
                             logger.error(f"[{skill_name}][DIAG] Tool {tool_name} TIMEOUT after 30s | tenant={state['tenant_id']}")
-                            result_str = json.dumps(
-                                {"success": False, "error": "tool_timeout", "message": f"工具 {tool_name} 执行超时，请稍后重试"},
-                                ensure_ascii=False,
-                            )
+                            result_str = json.dumps({
+                                "success": False,
+                                "error": "tool_timeout",
+                                "message": f"工具 {tool_name} 执行超时",
+                                "suggestion": "请简化查询条件后重试，或检查网络连接",
+                            }, ensure_ascii=False)
                         except Exception as e:
                             tb = traceback.format_exc()
                             logger.error(f"[{skill_name}][DIAG] Tool {tool_name} FAILED | error={type(e).__name__}: {e} | traceback={tb[:500]}")
-                            result_str = json.dumps(
-                                {"success": False, "error": "tool_execution_failed", "message": "工具执行失败，请稍后重试"},
-                                ensure_ascii=False,
-                            )
+                            result_str = json.dumps({
+                                "success": False,
+                                "error": "tool_execution_failed",
+                                "message": f"工具 {tool_name} 执行失败",
+                                "suggestion": "请检查参数是否正确，或换用其他方式查询",
+                            }, ensure_ascii=False)
                     else:
-                        result_str = json.dumps(
-                            {"success": False, "error": "tool_not_found", "message": f"工具 {tool_name} 不可用"},
-                            ensure_ascii=False,
-                        )
+                        result_str = json.dumps({
+                            "success": False,
+                            "error": "tool_not_found",
+                            "message": f"工具 {tool_name} 不可用",
+                            "suggestion": "请用其他可用工具完成操作",
+                        }, ensure_ascii=False)
 
                     # 添加 ToolMessage（包含 tool name，供 SSE 事件使用）
                     new_messages.append(
