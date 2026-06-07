@@ -176,9 +176,16 @@ async def _generate_plan(user_message: str, chat_history: list, goal_hint: str =
 
     messages = [SystemMessage(content=PLAN_GENERATION_PROMPT), *chat_history[-4:], HumanMessage(content=prompt)]
 
+    raw = ""
     try:
-        content = await LLMFactory.invoke_text_safe(messages, enable_thinking=True)
-        content = content.strip()
+        raw = await LLMFactory.invoke_text_safe(messages, enable_thinking=True)
+        # 从 LLM 回复中提取 JSON 对象（LLM 可能在 JSON 前后加说明文字）
+        content = raw.strip()
+        # 找到第一个 { 和最后一个 }
+        start = content.find("{")
+        end = content.rfind("}")
+        if start >= 0 and end > start:
+            content = content[start:end + 1]
         # 清理 markdown 包裹
         if content.startswith("```"):
             lines = content.split("\n")
@@ -188,7 +195,7 @@ async def _generate_plan(user_message: str, chat_history: list, goal_hint: str =
         logger.info(f"[pe] Plan generated | goal='{plan.goal}' steps={len(plan.steps)}")
         return plan
     except Exception as e:
-        logger.error(f"[pe] Plan generation failed: {e}")
+        logger.error(f"[pe] Plan generation failed: {e} | raw={raw[:300]}")
         return None
 
 
@@ -209,11 +216,13 @@ async def _extract_fields(user_message: str, fields: List[str], existing: Dict) 
         return {}
     llm = LLMFactory.create_skill_llm(enable_thinking=False)
     prompt = (
-        f"从用户回复中提取以下字段的值。没提到的字段不要编造。\n\n"
+        f"从用户回复中提取以下字段的值。注意字段名可能是中文或英文，请智能映射。\n"
+        f"例如：用户说'名称：xxx'对应字段 name，用户说'价格：99'对应字段 price。\n"
+        f"没提到的字段不要编造。\n\n"
         f"用户回复: {user_message}\n"
-        f"需要提取的字段: {', '.join(fields)}\n"
+        f"需要提取的字段（英文 key）: {', '.join(fields)}\n"
         f"已有信息: {json.dumps(existing, ensure_ascii=False)}\n\n"
-        f"返回纯 JSON，如 {{\"字段名\": \"值\"}}。"
+        f"返回纯 JSON，key 使用上面给的英文字段名，如 {{\"name\": \"色卡本\", \"price\": \"199\"}}。"
     )
     try:
         response = await llm.ainvoke([HumanMessage(content=prompt)])
@@ -283,12 +292,12 @@ async def execute_plan(
         elif prev.type == "query":
             plan.context["_user_choice"] = last_user_msg
         elif prev.type == "confirm":
-            yes_words = ["确认", "是的", "可以", "好的", "行", "对", "ok", "yes", "确定", "没问题"]
-            plan.context["_user_confirmed"] = any(w in last_user_msg.lower() for w in yes_words)
-            if not plan.context["_user_confirmed"]:
-                # 用户取消 → 清除 Plan
+            # 仅明确取消词才终止，其余都视为确认（用户可能在确认时补充信息）
+            cancel_words = ["取消", "不要了", "算了", "不用了", "不做"]
+            if any(w in last_user_msg for w in cancel_words):
                 await _clear_plan(session_id)
                 return {"final_answer": "好的，已取消。", "messages": [AIMessage(content="好的，已取消。")], "skill_used": skill_name}
+            plan.context["_user_confirmed"] = True
 
     # 4. 执行当前步骤
     new_messages = []
@@ -383,7 +392,7 @@ async def execute_plan(
         set_tool_context(ctx)
 
         # 只传递白名单字段，防止 context 参数注入
-        _SAFE_PARAMS = {"name", "price", "description", "category_id", "stock_quantity",
+        _SAFE_PARAMS = {"name", "price", "description", "category_id", "stock_quantity", "stock",
                          "processing_item_ids", "product_id", "status", "unit", "cost_price"}
         exec_params = {"action": current.execute_action}
         for k in _SAFE_PARAMS:

@@ -34,9 +34,10 @@ async def send(sid, msg, imgs=None):
                     text += d.get("content", "")
                 if d.get("tool"):
                     tools.append(d["tool"])
-                # done 事件包含 session_id
-                if d.get("session_id"):
-                    new_sid = d["session_id"]
+            # done 事件: event: done\ndata: {"session_id": "...", "message_id": "..."}
+            # httpx stream 不提供 event type，最后一条 data 里的 session_id 就是 done 的
+            if d.get("session_id"):
+                new_sid = d["session_id"]
     return text, tools, new_sid
 
 
@@ -51,12 +52,12 @@ async def main():
 
     # 2. Turn 1: 图片 + "帮我创建商品"（不传 session_id，自动创建）
     t1, tools1, sid = await send("", "帮我创建这个商品", [img_url])
-    print(f"[2] Turn 1: {t1[:200]}...")
+    print(f"[2] Turn 1 (sid={sid}): {t1[:200]}...")
     print(f"    Tools: {tools1}")
 
     # 3. Turn 2: 回复商品信息（模拟用户填了 form）
     t2, tools2, sid = await send(sid, "商品名称：色卡样本册，价格：199元，描述：高端布艺色卡展示册")
-    print(f"\n[3] Turn 2: {t2[:300]}...")
+    print(f"\n[3] Turn 2 (sid={sid}): {t2[:300]}...")
     print(f"    Tools: {tools2}")
 
     # 4. Turn 3: 选分类

@@ -502,13 +502,11 @@ async def send_message(
         try:
             last_msg_time = await session_memory.get_last_message_time(session_id)
             if last_msg_time is not None:
-                if last_msg_time.tzinfo is None:
-                    last_msg_time = last_msg_time.replace(tzinfo=timezone.utc)
-                now_utc = datetime.now(timezone.utc)
-                if (now_utc - last_msg_time) > timedelta(minutes=SESSION_IDLE_TIMEOUT_MINUTES):
+                now = datetime.now()
+                if (now - last_msg_time) > timedelta(minutes=SESSION_IDLE_TIMEOUT_MINUTES):
                     logger.info(
                         f"[chat/send] Session idle timeout, rotating | session={session_id} "
-                        f"last_msg={last_msg_time.isoformat()} threshold={SESSION_IDLE_TIMEOUT_MINUTES}min"
+                        f"last_msg={last_msg_time} threshold={SESSION_IDLE_TIMEOUT_MINUTES}min"
                     )
                     try:
                         await session_memory.close_session(session_id)
