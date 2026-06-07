@@ -101,6 +101,7 @@ class ProductManageTool(BaseTool):
         detail_images: Optional[list] = None,
         specifications: Optional[dict] = None,
         unit: Optional[str] = None,
+        colors: Optional[list] = None,
         pricing_type: Optional[str] = None,
     ) -> ToolResult:
         """执行商品管理操作
@@ -141,12 +142,13 @@ class ProductManageTool(BaseTool):
                 return await self._create_product(
                     context, name, category_id, price, description, stock_quantity,
                     processing_item_ids, brand, images, detail_images,
-                    specifications, unit, pricing_type
+                    specifications, unit, colors, pricing_type
                 )
             elif action == "update":
                 return await self._update_product(
                     context, product_id, name, category_id, price, description, stock_quantity,
-                    processing_item_ids, brand, images, detail_images, specifications, unit, pricing_type
+                    processing_item_ids, brand, images, detail_images, specifications, unit,
+                    colors, pricing_type
                 )
             elif action == "toggle_status":
                 return await self._toggle_status(context, product_id, status)
@@ -179,6 +181,7 @@ class ProductManageTool(BaseTool):
         detail_images: Optional[list] = None,
         specifications: Optional[dict] = None,
         unit: Optional[str] = None,
+        colors: Optional[list] = None,
         pricing_type: Optional[str] = None,
     ) -> ToolResult:
         """创建商品
@@ -220,6 +223,8 @@ class ProductManageTool(BaseTool):
                 json_data["mainImage"] = images[0]  # 首图作为封面
         if detail_images:
             json_data["detailImages"] = list(detail_images)
+        if colors:
+            json_data["colors"] = list(colors)
         if specifications:
             if isinstance(specifications, dict):
                 json_data["specifications"] = specifications
@@ -277,6 +282,7 @@ class ProductManageTool(BaseTool):
         detail_images: Optional[list] = None,
         specifications: Optional[dict] = None,
         unit: Optional[str] = None,
+        colors: Optional[list] = None,
         pricing_type: Optional[str] = None,
     ) -> ToolResult:
         """更新商品信息

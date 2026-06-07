@@ -356,10 +356,16 @@ async def execute_skill(
                     extract_prompt = (
                         f"从以下图片分析结果中提取商品关键信息，返回纯 JSON。\n\n"
                         f"图片分析: {vision_text}\n\n"
-                        f"提取字段: name(商品名称), description(详细描述), brand(品牌), "
-                        f"specifications(规格参数，如材质/色号/尺寸等，用逗号分隔)\n\n"
+                        f"提取字段:\n"
+                        f"- name: 商品名称\n"
+                        f"- description: 详细描述（包含系列、用途等）\n"
+                        f"- brand: 品牌\n"
+                        f"- specifications: 规格参数（材质/工艺等，逗号分隔）\n"
+                        f"- colors: 颜色/色号列表，每个包含 colorName（如'2699-01 象牙白'），"
+                        f"从图片中识别所有可见色号\n\n"
                         f"示例: {{\"name\":\"遮光窗帘\",\"description\":\"高端布艺...\","
-                        f"\"brand\":\"HOME YUUR\",\"specifications\":\"涤纶,棉麻,2699系列\"}}"
+                        f"\"brand\":\"HOME YUUR\",\"specifications\":\"涤纶,棉麻\","
+                        f"\"colors\":[{{\"colorName\":\"2699-01 象牙白\"}},{{\"colorName\":\"2699-02 米黄\"}}]}}"
                     )
                     try:
                         raw = await LLMFactory.invoke_text_safe(
