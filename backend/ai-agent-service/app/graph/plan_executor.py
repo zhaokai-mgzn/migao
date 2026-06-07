@@ -495,7 +495,10 @@ async def execute_plan(
             f"展示提示: {current.query_prompt}\n"
             f"已收集信息: {json.dumps(plan.context, ensure_ascii=False)}\n\n"
             f"查询结果:\n{query_data}\n\n"
-            f"结合用户刚才的回复，用编号列表展示查询结果并请用户选择。不要调用工具。"
+            f"要求:\n"
+            f"1. 用编号列表展示，格式为 '1. 名称 - 价格/描述'\n"
+            f"2. 每个选项独占一行，编号从 1 开始连续\n"
+            f"3. 请用户回复编号选择。不要调用工具。"
         )
         final_answer = await LLMFactory.invoke_text_safe([
             SystemMessage(content=system_prompt),

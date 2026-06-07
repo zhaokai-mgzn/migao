@@ -362,15 +362,29 @@ async def execute_skill(
                 full_reply = _extract_content(vision_response) or ""
                 vision_text = full_reply
                 vision_context = {}
+                # 尝试提取 ```json 块
                 if "```json" in full_reply:
                     try:
                         json_str = full_reply.split("```json")[1].split("```")[0].strip()
                         vision_context = json.loads(json_str)
                         vision_text = full_reply.split("```json")[0].strip()
-                        vision_context.pop("raw_input", None)
-                        logger.info(f"[{skill_name}] Vision structured: {list(vision_context.keys())}")
-                    except Exception as e:
-                        logger.warning(f"[{skill_name}] Vision JSON parse failed: {e}")
+                    except Exception:
+                        pass
+                # fallback: 从全文提取 JSON 对象
+                if not vision_context:
+                    try:
+                        start = full_reply.rfind("{")
+                        end = full_reply.rfind("}")
+                        if start >= 0 and end > start:
+                            vision_context = json.loads(full_reply[start:end + 1])
+                            vision_text = full_reply[:start].strip()
+                    except Exception:
+                        pass
+                vision_context.pop("raw_input", None)
+                if vision_context:
+                    logger.info(f"[{skill_name}] Vision structured: {list(vision_context.keys())}")
+                else:
+                    logger.warning(f"[{skill_name}] Vision JSON not found in reply")
                 if vision_text:
                     # 提取图片 URL
                     img_urls = []
