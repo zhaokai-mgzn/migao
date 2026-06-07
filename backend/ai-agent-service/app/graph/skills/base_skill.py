@@ -686,7 +686,6 @@ async def execute_skill(
                                 "error": "tool_execution_failed",
                                 "message": f"工具 {tool_name} 执行失败",
                                 "suggestion": "请检查参数是否正确，或换用其他方式查询",
-                                "detail": str(e)[:200],
                             }, ensure_ascii=False)
                     else:
                         result_str = json.dumps({
