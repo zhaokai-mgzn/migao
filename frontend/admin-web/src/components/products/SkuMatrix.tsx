@@ -132,6 +132,27 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
     })
   }
 
+  const handleAddColorWithPreset = (name: string, hex: string) => {
+    if (colors.length >= MAX_COLORS) {
+      toast.warning(`最多只能添加 ${MAX_COLORS} 种颜色分类`)
+      return
+    }
+    const newColor: ProductColor = {
+      id: -(Date.now() + Math.random()),
+      colorName: name,
+      mainColorHex: hex || undefined,
+      colorImageUrl: '',
+      remark: '',
+      sortOrder: colors.length,
+    }
+    const nextColors = [...colors, newColor]
+    onChange({
+      ...value,
+      colors: nextColors,
+      skus: rebuildSkus(nextColors, sellingMethods, doorWidths, skus),
+    })
+  }
+
   const handleUpdateColor = (idx: number, patch: Partial<ProductColor>) => {
     const nextColors = [...colors]
     nextColors[idx] = { ...nextColors[idx], ...patch }
@@ -381,6 +402,12 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
             {colorSortMode ? '完成排序' : '排序'}
           </button>
         </div>
+
+        {/* 预设颜色面板 */}
+        <PresetColorPalette onPick={(name, hex) => handleAddColorWithPreset(name, hex)} />
+
+        {/* 批量输入颜色 */}
+        <BatchColorInput onAdd={(names) => names.forEach((name) => handleAddColorWithPreset(name, ''))} />
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
           {colors.map((color, idx) => {
@@ -862,6 +889,96 @@ function ColorImage({
         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
         onChange={(e) => handleFiles(e.target.files)}
       />
+    </div>
+  )
+}
+
+// ========== 预设颜色面板（使用上方 PRESET_COLORS 常量） ==========
+
+function PresetColorPalette({
+  onPick,
+}: {
+  onPick: (name: string, hex: string) => void
+}) {
+  const [collapsed, setCollapsed] = useState(true)
+
+  return (
+    <div className="mb-3">
+      <button
+        type="button"
+        onClick={() => setCollapsed(!collapsed)}
+        className="text-xs text-primary-500 hover:text-primary-700 flex items-center gap-1"
+      >
+        {collapsed ? '▸ 展开预设颜色' : '▾ 收起预设颜色'}
+      </button>
+      {!collapsed && (
+        <div className="flex flex-wrap gap-1.5 mt-2">
+          {PRESET_COLORS.map((c) => (
+            <button
+              key={c.name}
+              type="button"
+              onClick={() => onPick(c.name, c.hex)}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded border border-gray-200 hover:border-primary-400 hover:bg-primary-50 text-xs transition-colors"
+              title={c.name}
+            >
+              <span
+                className="w-3.5 h-3.5 rounded-full border border-gray-300 flex-shrink-0"
+                style={{ backgroundColor: c.hex }}
+              />
+              {c.name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ========== 批量输入颜色 ==========
+
+function BatchColorInput({ onAdd }: { onAdd: (names: string[]) => void }) {
+  const [collapsed, setCollapsed] = useState(true)
+  const [text, setText] = useState('')
+
+  const handleApply = () => {
+    const names = text
+      .split(/[\n,，、]+/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+    if (names.length === 0) return
+    onAdd(names)
+    setText('')
+    setCollapsed(true)
+  }
+
+  return (
+    <div className="mb-3">
+      <button
+        type="button"
+        onClick={() => setCollapsed(!collapsed)}
+        className="text-xs text-primary-500 hover:text-primary-700 flex items-center gap-1"
+      >
+        {collapsed ? '▸ 批量输入颜色' : '▾ 收起批量输入'}
+      </button>
+      {!collapsed && (
+        <div className="mt-2 space-y-2">
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="每行一个颜色名称，或用逗号、顿号分隔&#10;例如：红色, 蓝色, 米色"
+            rows={3}
+            className="w-full px-3 py-2 text-sm rounded border border-gray-300 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 resize-none"
+          />
+          <div className="flex items-center gap-2">
+            <Button type="button" size="sm" onClick={handleApply} disabled={!text.trim()}>
+              添加颜色
+            </Button>
+            <span className="text-xs text-gray-400">
+              支持换行、逗号、顿号分隔
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
