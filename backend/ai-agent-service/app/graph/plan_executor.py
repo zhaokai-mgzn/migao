@@ -241,6 +241,49 @@ def _match_user_choice(user_msg: str, results: list) -> Optional[dict]:
     return None
 
 
+async def _rewrite_user_message(user_msg: str, plan: Plan) -> str:
+    """意图重写：将用户简短的回复扩展为带上下文的完整语义
+
+    例如:
+    - "1" → "选择第1个分类：卧室系列"
+    - "确认" → "确认创建商品：色卡样本册，价格199元"
+    """
+    if not plan or plan.current_step == 0:
+        return user_msg
+
+    prev = plan.steps[plan.current_step - 1] if plan.current_step > 0 else None
+    if not prev:
+        return user_msg
+
+    # 构建上下文
+    context_parts = [f"目标: {plan.goal}", f"当前步骤: {prev.description}"]
+    if plan.context:
+        info = {k: v for k, v in plan.context.items() if not k.startswith("_")}
+        if info:
+            context_parts.append(f"已收集: {json.dumps(info, ensure_ascii=False)}")
+    results = plan.context.get("_query_results", [])
+    if results:
+        items_desc = [f"{i+1}. {r.get('name', r.get('id', ''))}" for i, r in enumerate(results[:5])]
+        context_parts.append(f"可选项: {', '.join(items_desc)}")
+
+    prompt = (
+        f"用户在完成一个多步骤操作。根据上下文，将用户的简短回复改写为完整清晰的意图描述。\n\n"
+        f"{chr(10).join(context_parts)}\n\n"
+        f"用户回复: {user_msg}\n\n"
+        f"改写规则：\n"
+        f"- 如果用户回复是编号(如'1','2')，映射到对应选项\n"
+        f"- 如果用户回复是确认类(如'确认','好的')，结合已收集信息补充完整\n"
+        f"- 如果用户回复信息量已足够，保持原样\n"
+        f"- 不要添加用户没说过的信息\n\n"
+        f"重写后的意图（一句话，直接用作 LLM 输入）:"
+    )
+    try:
+        rewritten = await LLMFactory.invoke_text_safe([HumanMessage(content=prompt)])
+        return rewritten.strip() or user_msg
+    except Exception:
+        return user_msg
+
+
 # 中文字段名 → 英文 key 映射
 _FIELD_NAME_MAP = {
     "名称": "name", "商品名称": "name", "名字": "name",
@@ -325,7 +368,7 @@ async def execute_plan(
 
     logger.info(f"[pe] Step {plan.current_step + 1}/{len(plan.steps)} type={current.type} goal='{plan.goal}'")
 
-    # 3. 如果是延续之前的 Plan（非第一步），从用户回复中提取信息
+    # 4. 如果是延续之前的 Plan（非第一步），从用户回复中提取信息
     if plan.current_step > 0:
         prev = plan.steps[plan.current_step - 1]
         if prev.type == "ask" and prev.fields:
