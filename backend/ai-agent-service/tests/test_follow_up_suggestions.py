@@ -101,7 +101,7 @@ class TestAgentAwareGeneration:
     def generator(self):
         with patch("app.suggestions.follow_up.settings") as mock_settings:
             mock_settings.DASHSCOPE_API_KEY = ""
-            mock_settings.INTENT_MODEL = "qwen-turbo"
+            mock_settings.INTENT_MODEL = "qwen3.6-flash"
             gen = FollowUpSuggestionGenerator()
         return gen
 
@@ -252,7 +252,7 @@ class TestFollowUpSuggestionGenerator:
     def generator(self):
         with patch("app.suggestions.follow_up.settings") as mock_settings:
             mock_settings.DASHSCOPE_API_KEY = ""
-            mock_settings.INTENT_MODEL = "qwen-turbo"
+            mock_settings.INTENT_MODEL = "qwen3.6-flash"
             gen = FollowUpSuggestionGenerator()
         return gen
 
@@ -274,7 +274,7 @@ class TestFollowUpSuggestionGenerator:
         """动态生成成功"""
         with patch("app.suggestions.follow_up.settings") as mock_settings:
             mock_settings.DASHSCOPE_API_KEY = "test-key"
-            mock_settings.INTENT_MODEL = "qwen-turbo"
+            mock_settings.INTENT_MODEL = "qwen3.6-flash"
             gen = FollowUpSuggestionGenerator()
 
         mock_response = MagicMock()
@@ -304,7 +304,7 @@ class TestFollowUpSuggestionGenerator:
 
         with patch("app.suggestions.follow_up.settings") as mock_settings:
             mock_settings.DASHSCOPE_API_KEY = "test-key"
-            mock_settings.INTENT_MODEL = "qwen-turbo"
+            mock_settings.INTENT_MODEL = "qwen3.6-flash"
             gen = FollowUpSuggestionGenerator()
 
         mock_llm = MagicMock()

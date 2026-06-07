@@ -409,7 +409,7 @@ class ConversationTracker:
         self, history: List[Dict[str, Any]], session_id: str
     ) -> str:
         """
-        使用小模型（qwen-turbo）对早期历史生成摘要
+        使用轻量模型对早期历史生成摘要
 
         Args:
             history: 需要摘要的对话历史

@@ -307,6 +307,7 @@ def check_cache_hit(state: AgentState) -> str:
 # 意图 → 路由 key 映射（两种 Agent 共用相同的 key，builder 中映射到不同节点名）
 _INTENT_TO_ROUTE: dict[str, str] = {
     "order_query": "order",
+    "order_create": "order",
     "logistics_track": "order",
     "product_inquiry": "product",
     # [RAG 禁用] "knowledge_faq": "knowledge",  # 知识库禁用，fallback 到 general
@@ -369,7 +370,11 @@ def route_by_intent(state: AgentState) -> str:
 
     注意：当 last HumanMessage 含图片时，即使 intent 分类为 greeting/capabilities，
     也强制路由到 general skill（vision mode），防止直复节点忽略图片输入。
+
+    会话连续性：当 pending_interact_skill 存在时（上次交互组件等待用户操作），
+    优先回到原 skill，除非用户明确表达了不同的高置信度意图。
     """
+    pending_skill = state.get("pending_interact_skill", "")
     route = state.get("route_decision") or {}
     action = route.get("action", "full_agent")
 
@@ -381,8 +386,31 @@ def route_by_intent(state: AgentState) -> str:
                 f"redirecting to 'general' for vision processing | tenant={state.get('tenant_id')}"
             )
             return "general"
+        # 如果有 pending skill，不执行 direct_reply，继续走 skill 流程
+        if pending_skill:
+            logger.info(
+                f"[route_by_intent] Pending interact skill '{pending_skill}' overrides direct_reply"
+            )
+            return pending_skill
         return "direct_reply"
 
     intent = (state.get("intent_result") or {}).get("intent", "general")
+
+    if pending_skill:
+        # 会话连续性：用户回应了交互组件
+        # 只有在高置信度命中不同意图时才跳出当前 skill
+        intended_route = _INTENT_TO_ROUTE.get(intent, "general")
+        confidence = (state.get("intent_result") or {}).get("confidence", 0)
+        if intended_route != pending_skill and confidence >= 0.9:
+            logger.info(
+                f"[route_by_intent] High-confidence intent switch: "
+                f"{pending_skill} → {intended_route} (intent={intent} confidence={confidence})"
+            )
+            return intended_route
+        logger.info(
+            f"[route_by_intent] Session continuity: staying in '{pending_skill}' "
+            f"(intent={intent} confidence={confidence})"
+        )
+        return pending_skill
 
     return _INTENT_TO_ROUTE.get(intent, "general")
