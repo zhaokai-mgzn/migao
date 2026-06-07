@@ -79,7 +79,7 @@ public class Product {
     /**
      * 库存扣减模式：sku/product
      */
-    private String stockDeductionMode;
+    private String stockDeductionMode = "on_order";
 
     /**
      * 是否含加工项

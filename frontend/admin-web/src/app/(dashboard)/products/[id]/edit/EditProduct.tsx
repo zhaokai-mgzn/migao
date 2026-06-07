@@ -65,7 +65,7 @@ export default function EditProductPage() {
     processingItems: product.processingItems,
     processingItemConfigs: product.processingItemConfigs || [],
     supportsProcessing: (product.processingItemConfigs && product.processingItemConfigs.length > 0) || false,
-    stockDeductionMode: (product.stockDeductionMode as ProductFormData['stockDeductionMode']) || 'on_place',
+    stockDeductionMode: (product.stockDeductionMode === 'on_order' ? 'on_place' : product.stockDeductionMode === 'on_payment' ? 'on_pay' : 'on_place') as ProductFormData['stockDeductionMode'],
     colors: product.colors || [],
     sellingMethods: product.sellingMethods || [],
     doorWidths: product.doorWidths || [],
