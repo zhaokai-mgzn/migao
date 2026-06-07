@@ -45,7 +45,7 @@ class TestBuildGraph:
         expected = {
             "cache_check", "intent_router", "direct_reply",
             "cache_store", "suggest_node",
-            "order_skill", "product_skill", "knowledge_skill",
+            "order_skill", "product_skill",
             "aftersales_skill", "customer_skill", "staff_skill",
             "settings_skill", "data_skill", "general_skill",
         }

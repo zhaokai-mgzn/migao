@@ -174,7 +174,7 @@ class TestAgentInit:
 
     @patch("app.graph.builder.build_agent_graph")
     @patch("app.agents.customer_service_agent.create_default_registry")
-    def test_build_initial_state(self, mock_create_registry, mock_build_graph):
+    async def test_build_initial_state(self, mock_create_registry, mock_build_graph):
         """test_build_initial_state: 构建初始状态"""
         mock_registry = MagicMock()
         mock_registry.get_langchain_tools.return_value = []
@@ -183,7 +183,7 @@ class TestAgentInit:
 
         agent = CustomerServiceAgent()
         ctx = AgentContext(user_id="u1", tenant_id=1, session_id="s1")
-        state = agent._build_initial_state([], ctx)
+        state = await agent._build_initial_state([], ctx)
         assert state["tenant_id"] == 1
         assert state["user_id"] == "u1"
         assert state["session_id"] == "s1"

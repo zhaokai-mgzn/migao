@@ -54,7 +54,14 @@ class TestLogisticsTrackByOrder:
     ):
         """通过订单号成功查询物流"""
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value=sample_order_with_logistics)
+        # 两次 HTTP 调用：① 列表搜索 ② 详情查询，需返回不同格式
+        async def mock_get(url, **kwargs):
+            if "/api/admin/orders" == url and kwargs.get("params", {}).get("keyword"):
+                # 列表搜索：返回 records 数组
+                return {"success": True, "data": {"records": [{"id": "order_001"}]}}
+            # 详情查询
+            return sample_order_with_logistics
+        mock_client.get = mock_get
         mock_get_client.return_value = mock_client
 
         result = await tool.execute(
@@ -93,7 +100,11 @@ class TestLogisticsTrackByOrder:
     ):
         """订单未发货"""
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value=sample_order_without_logistics)
+        async def mock_get(url, **kwargs):
+            if "/api/admin/orders" == url and kwargs.get("params", {}).get("keyword"):
+                return {"success": True, "data": {"records": [{"id": "order_002"}]}}
+            return sample_order_without_logistics
+        mock_client.get = mock_get
         mock_get_client.return_value = mock_client
 
         result = await tool.execute(

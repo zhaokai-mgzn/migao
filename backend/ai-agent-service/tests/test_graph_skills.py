@@ -81,7 +81,7 @@ class TestSkillToolSubsets:
         assert "product_search" not in AFTERSALES_TOOLS
 
     def test_general_tools_includes_all(self):
-        """通用兜底 Skill 仅包含只读查询 Tool + validate_input + interact"""
+        """通用兜底 Skill 仅包含只读查询 Tool"""
         expected = {
             "order_query",
             "logistics_track",
@@ -89,13 +89,11 @@ class TestSkillToolSubsets:
             "product_detail",
             "processing_item_query",
             "dashboard_stats",
-            "validate_input",
-            "interact",
         }
         assert set(GENERAL_TOOLS) == expected
 
     def test_general_tools_no_write_operations(self):
-        """通用兜底 Skill 不包含任何写操作 Tool（validate_input 是只读校验，不算写）"""
+        """通用兜底 Skill 不包含任何写操作 Tool"""
         write_tools = {
             "order_manage", "order_create",
             "product_manage", "inventory_manage",
@@ -105,10 +103,6 @@ class TestSkillToolSubsets:
             "category_manage", "processing_item_manage",
         }
         assert set(GENERAL_TOOLS).isdisjoint(write_tools)
-
-    def test_general_tools_has_interact_for_guidance(self):
-        """通用兜底 Skill 保留 interact 用于引导用户"""
-        assert "interact" in GENERAL_TOOLS
 
     def test_general_tools_has_query_tools(self):
         """通用兜底 Skill 保留核心查询能力"""
@@ -273,161 +267,6 @@ class TestExecuteSkill:
         assert result["skill_used"] == "order"
         assert result["entities"]["order_nos"] == ["123"]
 
-    @patch("app.graph.skills.base_skill.get_tracker")
-    @patch("app.graph.skills.base_skill.get_skill_llm")
-    @patch("app.graph.skills.base_skill.create_skill_registry")
-    @patch("app.graph.skills.base_skill.set_tool_context")
-    async def test_interact_sets_pending_skill(
-        self, mock_set_ctx, mock_create_reg, mock_get_llm, mock_get_tracker
-    ):
-        """P0-2: interact 成功调用后设置 pending_interact_skill"""
-        # Mock interact tool
-        mock_tool = MagicMock()
-        mock_tool_result = MagicMock()
-        mock_tool_result.success = True
-        mock_tool_result.data = {"component": "form", "title": "创建商品"}
-        mock_tool_result.error = None
-        mock_tool_result.message = "已展示"
-        mock_tool.execute = AsyncMock(return_value=mock_tool_result)
-
-        mock_registry = MagicMock()
-        mock_registry.get_langchain_tools.return_value = [MagicMock()]
-        mock_registry.get_tool.return_value = mock_tool
-        mock_create_reg.return_value = mock_registry
-
-        # LLM calls interact
-        response = MagicMock(spec=AIMessage)
-        response.content = "请填写商品信息"
-        response.tool_calls = [
-            {"name": "interact", "args": {"component": "form", "title": "创建商品"}, "id": "tc_1"}
-        ]
-
-        mock_llm = MagicMock()
-        mock_llm.bind_tools.return_value = mock_llm
-        mock_llm.ainvoke = AsyncMock(return_value=response)
-        mock_get_llm.return_value = mock_llm
-
-        mock_tracker = MagicMock()
-        mock_entities = MagicMock()
-        mock_entities.order_nos = []
-        mock_entities.phone_numbers = []
-        mock_entities.product_names = []
-        mock_entities.product_ids = []
-        mock_entities.amounts = []
-        mock_tracker.get_entities.return_value = mock_entities
-        mock_get_tracker.return_value = mock_tracker
-
-        state = _make_state()
-        result = await execute_skill(
-            state=state,
-            skill_name="product",
-            tool_names=["interact"],
-            system_prompt="你是商品助手",
-        )
-
-        # interact 成功后必须设置 pending_interact_skill
-        assert result["pending_interact_skill"] == "product"
-
-    @patch("app.graph.skills.base_skill.get_tracker")
-    @patch("app.graph.skills.base_skill.get_skill_llm")
-    @patch("app.graph.skills.base_skill.create_skill_registry")
-    @patch("app.graph.skills.base_skill.set_tool_context")
-    async def test_interact_then_no_interact_clears_pending(
-        self, mock_set_ctx, mock_create_reg, mock_get_llm, mock_get_tracker
-    ):
-        """P0-2: 上一次有 pending，本次不调 interact → 清除 pending"""
-        # Mock tool (not interact this time)
-        mock_tool = MagicMock()
-        mock_tool_result = MagicMock()
-        mock_tool_result.success = True
-        mock_tool_result.data = {"products": []}
-        mock_tool_result.error = None
-        mock_tool_result.message = "查询成功"
-        mock_tool.execute = AsyncMock(return_value=mock_tool_result)
-
-        mock_registry = MagicMock()
-        mock_registry.get_langchain_tools.return_value = [MagicMock()]
-        mock_registry.get_tool.return_value = mock_tool
-        mock_create_reg.return_value = mock_registry
-
-        # LLM calls product_search (not interact)
-        response = MagicMock(spec=AIMessage)
-        response.content = "查询结果如下"
-        response.tool_calls = [
-            {"name": "product_search", "args": {"keyword": "窗帘"}, "id": "tc_1"}
-        ]
-        final_response = MagicMock(spec=AIMessage)
-        final_response.content = "找到3个商品"
-        final_response.tool_calls = []
-
-        mock_llm = MagicMock()
-        mock_llm.bind_tools.return_value = mock_llm
-        mock_llm.ainvoke = AsyncMock(side_effect=[response, final_response])
-        mock_get_llm.return_value = mock_llm
-
-        mock_tracker = MagicMock()
-        mock_entities = MagicMock()
-        mock_entities.order_nos = []
-        mock_entities.phone_numbers = []
-        mock_entities.product_names = ["窗帘"]
-        mock_entities.product_ids = []
-        mock_entities.amounts = []
-        mock_tracker.get_entities.return_value = mock_entities
-        mock_get_tracker.return_value = mock_tracker
-
-        # 模拟上一次调用了 interact，state 中有 pending
-        state = _make_state(pending_interact_skill="product")
-        result = await execute_skill(
-            state=state,
-            skill_name="product",
-            tool_names=["product_search"],
-            system_prompt="你是商品助手",
-        )
-
-        # 本次没有调 interact，pending 应被清除
-        assert result["pending_interact_skill"] == ""
-
-    @patch("app.graph.skills.base_skill.get_tracker")
-    @patch("app.graph.skills.base_skill.get_skill_llm")
-    @patch("app.graph.skills.base_skill.create_skill_registry")
-    @patch("app.graph.skills.base_skill.set_tool_context")
-    async def test_no_interact_no_pending_change(
-        self, mock_set_ctx, mock_create_reg, mock_get_llm, mock_get_tracker
-    ):
-        """无 pending 且无 interact → state 中无 pending_interact_skill"""
-        mock_registry = MagicMock()
-        mock_registry.get_langchain_tools.return_value = []
-        mock_create_reg.return_value = mock_registry
-
-        response = MagicMock(spec=AIMessage)
-        response.content = "你好"
-        response.tool_calls = []
-
-        mock_llm = MagicMock()
-        mock_llm.bind_tools.return_value = mock_llm
-        mock_llm.ainvoke = AsyncMock(return_value=response)
-        mock_get_llm.return_value = mock_llm
-
-        mock_tracker = MagicMock()
-        mock_entities = MagicMock()
-        mock_entities.order_nos = []
-        mock_entities.phone_numbers = []
-        mock_entities.product_names = []
-        mock_entities.product_ids = []
-        mock_entities.amounts = []
-        mock_tracker.get_entities.return_value = mock_entities
-        mock_get_tracker.return_value = mock_tracker
-
-        state = _make_state()
-        result = await execute_skill(
-            state=state,
-            skill_name="test",
-            tool_names=[],
-            system_prompt="你是测试助手",
-        )
-
-        # 无 pending → 结果中不应有 pending_interact_skill（或为空）
-        assert result.get("pending_interact_skill", "") == ""
 
 
 # ========== Skill 节点调用测试 ==========
@@ -679,6 +518,8 @@ class TestExecuteSkillTextAfterMultimodal:
                     found_placeholder = True
         assert found_placeholder, "纯图片历史消息应转为 '[图片]' 占位符"
 
+    @patch("app.graph.plan_executor._load_plan", return_value=None)
+    @patch("app.graph.plan_executor.should_use_plan_execute", return_value=False)
     @patch("app.graph.skills.base_skill.get_breaker")
     @patch("app.graph.skills.base_skill.get_tracker")
     @patch("app.graph.skills.base_skill.get_skill_llm")
@@ -686,7 +527,7 @@ class TestExecuteSkillTextAfterMultimodal:
     @patch("app.graph.skills.base_skill.set_tool_context")
     async def test_multi_round_text_after_image_all_succeed(
         self, mock_set_ctx, mock_create_reg, mock_get_llm,
-        mock_get_tracker, mock_get_breaker,
+        mock_get_tracker, mock_get_breaker, mock_load_plan, mock_pe,
     ):
         """模拟生产场景：图片→文本→文本→文本，所有跟进消息都不崩溃
 

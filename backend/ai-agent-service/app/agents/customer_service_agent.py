@@ -40,6 +40,24 @@ class AgentResponse:
     metadata: Optional[Dict[str, Any]] = None
 
 
+def _extract_msg_content(msg) -> str:
+    """从 AIMessage 中提取有效文本内容（去除 think 标签）
+
+    用于提取 LLM 在 tool_calls 之前生成的文本，确保不丢失展示给用户的文本。
+    """
+    import re
+    content = msg.content or ""
+    if isinstance(content, list):
+        text_parts = [
+            c.get("text", "") for c in content
+            if isinstance(c, dict) and c.get("type") == "text"
+        ]
+        content = "".join(text_parts)
+    # 移除 <think>...</think> 块
+    cleaned = re.sub(r"<think>[\s\S]*?</think>", "", content).strip()
+    return cleaned
+
+
 @dataclass
 class AgentContext:
     """
@@ -278,6 +296,18 @@ class BaseAgent:
                         for msg in node_msgs:
                             # 检测 AIMessage 中的 tool_calls
                             if isinstance(msg, AIMessage) and msg.tool_calls:
+                                # 先流式输出 LLM 在 tool_calls 之前的文本内容（如有）
+                                # 修复 text_streamed=False 问题：Qwen 模型可在同一消息中先输出文本再调用工具
+                                text_before_tools = _extract_msg_content(msg)
+                                if text_before_tools and not text_streamed:
+                                    logger.info(
+                                        f"[astream_chat] Emitting text before tool_calls | "
+                                        f"len={len(text_before_tools)}"
+                                    )
+                                    yield AgentResponse(
+                                        type="text", content=text_before_tools
+                                    )
+                                    text_streamed = True
                                 for tc in msg.tool_calls:
                                     tool_calls_detected.append({
                                         "tool": tc["name"],

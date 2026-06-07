@@ -397,19 +397,13 @@ def route_by_intent(state: AgentState) -> str:
     intent = (state.get("intent_result") or {}).get("intent", "general")
 
     if pending_skill:
-        # 会话连续性：用户回应了交互组件
-        # 只有在高置信度命中不同意图时才跳出当前 skill
-        intended_route = _INTENT_TO_ROUTE.get(intent, "general")
-        confidence = (state.get("intent_result") or {}).get("confidence", 0)
-        if intended_route != pending_skill and confidence >= 0.9:
-            logger.info(
-                f"[route_by_intent] High-confidence intent switch: "
-                f"{pending_skill} → {intended_route} (intent={intent} confidence={confidence})"
-            )
-            return intended_route
+        # 会话连续性：用户回应了交互组件（form/choice/confirm）
+        # 铁律：pending skill 存在时必须回到原 skill，不允许任何意图覆盖
+        # 原因：用户点击交互组件发送的值（如 UUID、简短确认文本）可能被意图分类器误判，
+        # 导致对话跳到无关 skill 而中断创建/管理流程
         logger.info(
             f"[route_by_intent] Session continuity: staying in '{pending_skill}' "
-            f"(intent={intent} confidence={confidence})"
+            f"(intent={intent})"
         )
         return pending_skill
 

@@ -480,14 +480,15 @@ class TestRouteByIntent:
         )
         assert route_by_intent(state) == "product"
 
-    def test_pending_interact_skill_overridden_by_high_confidence_different_intent(self):
-        """高置信度（≥0.9）不同意图可覆盖 pending skill"""
+    def test_pending_interact_skill_not_overridden_by_high_confidence(self):
+        """pending skill 存在时任何意图都不能覆盖，始终回到原 skill"""
         state = _make_state(
             pending_interact_skill="product",
             route_decision={"action": "full_agent"},
             intent_result={"intent": "order_query", "confidence": 0.95},
         )
-        assert route_by_intent(state) == "order"
+        # P&E 模式下 pending skill 是绝对锁，高置信度也不能跳走
+        assert route_by_intent(state) == "product"
 
     def test_pending_interact_skill_overrides_direct_reply(self):
         """pending skill 存在时，direct_reply 也应被覆盖"""

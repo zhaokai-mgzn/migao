@@ -546,6 +546,68 @@ class SessionMemory:
                 logger.warning(f"[session-memory] clear_pending_skill failed: {e}")
                 return False
 
+    # ── Plan State 持久化（Plan-and-Execute 模式）──
+
+    async def set_plan_state(self, session_id: str, plan_json: str) -> bool:
+        """持久化 P&E Plan 状态到 session metadata"""
+        async with await self._get_session() as db:
+            try:
+                from sqlalchemy import text
+                sql = text("""
+                    UPDATE sessions
+                    SET metadata = jsonb_set(
+                        COALESCE(metadata, '{}'::jsonb),
+                        '{plan_state}',
+                        :plan_json ::jsonb
+                    )
+                    WHERE id = :session_id
+                """)
+                await db.execute(sql, {
+                    "session_id": session_id,
+                    "plan_json": plan_json,
+                })
+                await db.commit()
+                logger.debug(f"[session-memory] Plan state set | session={session_id}")
+                return True
+            except Exception as e:
+                await db.rollback()
+                logger.warning(f"[session-memory] set_plan_state failed: {e}")
+                return False
+
+    async def get_plan_state(self, session_id: str) -> Optional[str]:
+        """读取 P&E Plan 状态"""
+        async with await self._get_session() as db:
+            try:
+                from sqlalchemy import text
+                sql = text("""
+                    SELECT COALESCE(metadata->>'plan_state', '') FROM sessions
+                    WHERE id = :session_id
+                """)
+                result = await db.execute(sql, {"session_id": session_id})
+                row = result.fetchone()
+                return row[0] if row and row[0] else None
+            except Exception as e:
+                logger.warning(f"[session-memory] get_plan_state failed: {e}")
+                return None
+
+    async def clear_plan_state(self, session_id: str) -> bool:
+        """清除 P&E Plan 状态"""
+        async with await self._get_session() as db:
+            try:
+                from sqlalchemy import text
+                sql = text("""
+                    UPDATE sessions
+                    SET metadata = COALESCE(metadata, '{}'::jsonb) - 'plan_state'
+                    WHERE id = :session_id
+                """)
+                await db.execute(sql, {"session_id": session_id})
+                await db.commit()
+                return True
+            except Exception as e:
+                await db.rollback()
+                logger.warning(f"[session-memory] clear_plan_state failed: {e}")
+                return False
+
     async def get_last_message_time(self, session_id: str) -> Optional[datetime]:
         """
         获取会话最后一条消息的创建时间，用于空闲超时判断。

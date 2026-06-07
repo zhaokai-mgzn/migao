@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { chatApi } from '@/lib/api'
 import { useAuthStore } from '@/store/auth'
-import type { ChatSession, ChatMessage, ChatToolCall, ChatCard, InteractiveComponent, QuickAction } from '@/types'
+import type { ChatSession, ChatMessage, ChatToolCall, ChatCard, QuickAction } from '@/types'
 import { toast } from 'sonner'
 import { SSEParser, type SSEEvent } from '@/lib/sse-parser'
 
@@ -36,10 +36,10 @@ interface ChatState {
 
 const getToken = () => useAuthStore.getState().accessToken || ''
 
-/** 检查当前会话是否有未完成的交互组件（form/choice/confirm 等待用户操作） */
-function hasPendingInteract(messages: ChatMessage[]): boolean {
+/** 检查当前会话是否有未完成的工具调用 */
+function hasPendingTools(messages: ChatMessage[]): boolean {
   return messages.some(
-    msg => msg.role === 'assistant' && msg.interactive && !msg.isStreaming
+    msg => msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.some(tc => tc.status === 'running')
   )
 }
 
@@ -109,7 +109,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 
       // 如果没有选中会话且无未完成交互，自动选中第一个
       // 如果当前有 active 会话但列表里没包含（刚被关闭），保持现状不自动切换
-      if (!get().currentSessionId && sessions.length > 0 && !hasPendingInteract(get().messages)) {
+      if (!get().currentSessionId && sessions.length > 0 && !hasPendingTools(get().messages)) {
         get().selectSession(sessions[0].session_id)
       }
     } catch (error) {
@@ -124,7 +124,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 
   createSession: async () => {
     // 检查是否有未完成的交互组件（form/choice/confirm 等待用户操作）
-    if (hasPendingInteract(get().messages)) {
+    if (hasPendingTools(get().messages)) {
       toast.warning('当前有未完成的交互操作，请先完成后再创建新对话')
       return
     }
@@ -163,7 +163,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     if (id === currentSessionId) return
 
     // 检查是否有未完成的交互组件，避免中断交互流程
-    if (hasPendingInteract(get().messages)) {
+    if (hasPendingTools(get().messages)) {
       toast.warning('当前有未完成的交互操作，请先完成后再切换会话')
       return
     }
@@ -196,7 +196,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 
   closeSession: async (id: string) => {
     // 关闭的是当前会话时，检查是否有未完成的交互组件
-    if (id === get().currentSessionId && hasPendingInteract(get().messages)) {
+    if (id === get().currentSessionId && hasPendingTools(get().messages)) {
       toast.warning('当前有未完成的交互操作，请先完成后再关闭会话')
       return
     }
@@ -439,23 +439,6 @@ function handleSSEEvent(
         break
       }
 
-      case 'interactive': {
-        const { type: _type, ...data } = parsedData
-        const interactive: InteractiveComponent = {
-          component: parsedData.type,
-          title: parsedData.title || '',
-          ...data,
-        }
-        set(state => ({
-          messages: state.messages.map(msg =>
-            msg.id === aiMsgId
-              ? { ...msg, interactive }
-              : msg
-          ),
-        }))
-        break
-      }
-
       case 'message_end':
       case 'done':
         set(state => {
@@ -466,7 +449,7 @@ function handleSSEEvent(
           const shouldRotate =
             !!newSessionId &&
             newSessionId !== state.currentSessionId &&
-            !hasPendingInteract(state.messages)
+            !hasPendingTools(state.messages)
           return {
             isStreaming: false,
             ...(shouldRotate ? { currentSessionId: newSessionId } : {}),
