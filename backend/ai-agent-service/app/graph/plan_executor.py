@@ -345,7 +345,9 @@ async def execute_plan(
                 continue
             if hasattr(msg, 'content') and isinstance(msg.content, str) and '[图片URL]' in msg.content:
                 try:
-                    json_start = msg.content.index('[', msg.content.index('[图片URL]'))
+                    marker = '[图片URL]'
+                    marker_end = msg.content.index(marker) + len(marker)
+                    json_start = msg.content.index('[', marker_end)
                     json_end = msg.content.index(']', json_start) + 1
                     urls = json.loads(msg.content[json_start:json_end])
                     if urls and "images" not in plan.context:
@@ -558,8 +560,13 @@ async def execute_plan(
         for alias, target in _FIELD_ALIASES.items():
             if alias in plan.context and target not in plan.context:
                 plan.context[target] = plan.context[alias]
+        # processing_item_ids: 从 query 步收集的加工项 ID 列表
+        if "_query_results" in plan.context and not plan.context.get("processing_item_ids"):
+            results = plan.context["_query_results"]
+            if results and results[0].get("id"):
+                plan.context["processing_item_ids"] = [r["id"] for r in results]
         # 列表字段：字符串拆分为数组
-        for list_field in ("selling_methods", "door_widths"):
+        for list_field in ("selling_methods", "door_widths", "processing_item_ids"):
             val = plan.context.get(list_field)
             if isinstance(val, str):
                 import re
