@@ -359,11 +359,14 @@ async def execute_skill(
                         f"{vision_text[:1200]}\n\n"
                         f'格式: {{"name":"","description":"","brand":"",'
                         f'"colors":[{{"colorName":""}}],'
-                        f'"specifications":{{"weight":"克重","material":"材质","craft":"工艺","style":"风格","pattern":"图案","function":"功能"}},'
+                        f'"specifications":{{"weight":"","material":"","craft":"","style":"","pattern":"","function":""}},'
                         f'"pricing_type":"per_meter","unit":"米",'
                         f'"selling_methods":["散剪","整卷"],"door_widths":["2.8米","3.2米"]}}\n\n'
-                        f"重要: specifications 的 key 必须用英文(weight/material/craft/style/pattern/function)。"
-                        f"图片中没提到的属性填默认值。只输出 JSON。"
+                        f"规则:\n"
+                        f"1. specifications 的 key 必须用英文\n"
+                        f"2. 每个属性只填一个最匹配的值，不要填'风格1/风格2/风格3'这种多选\n"
+                        f"3. 图片中能识别的填实际值，识别不出的填空字符串\n"
+                        f"只输出 JSON。"
                     )
                     try:
                         raw_json = await LLMFactory.invoke_text_safe(
