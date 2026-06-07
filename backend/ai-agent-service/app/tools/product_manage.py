@@ -109,6 +109,7 @@ class ProductManageTool(BaseTool):
         selling_methods: Optional[list] = None,
         door_widths: Optional[list] = None,
         sku_code: Optional[str] = None,
+        skus: Optional[list] = None,
         pricing_type: Optional[str] = None,
     ) -> ToolResult:
         """执行商品管理操作
@@ -192,6 +193,7 @@ class ProductManageTool(BaseTool):
         selling_methods: Optional[list] = None,
         door_widths: Optional[list] = None,
         sku_code: Optional[str] = None,
+        skus: Optional[list] = None,
         pricing_type: Optional[str] = None,
     ) -> ToolResult:
         """创建商品
