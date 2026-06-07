@@ -149,7 +149,7 @@ class ProductManageTool(BaseTool):
                 return await self._create_product(
                     context, name, category_id, price, description, stock_quantity,
                     processing_item_ids, brand, images, detail_images,
-                    specifications, unit, colors, selling_methods, door_widths, sku_code, pricing_type
+                    specifications, unit, colors, selling_methods, door_widths, sku_code, skus, processing_item_configs, pricing_type
                 )
             elif action == "update":
                 return await self._update_product(
@@ -224,7 +224,10 @@ class ProductManageTool(BaseTool):
         if stock_quantity is not None:
             json_data["stock"] = stock_quantity
         if processing_item_ids:
-            json_data["processingItemConfigs"] = [{"processingItemId": pid} for pid in processing_item_ids]
+            if processing_item_configs:
+                json_data["processingItemConfigs"] = processing_item_configs
+            elif processing_item_ids:
+                json_data["processingItemConfigs"] = [{"processingItemId": pid} for pid in processing_item_ids]
         if brand:
             json_data["brand"] = brand
         if images:
@@ -247,6 +250,8 @@ class ProductManageTool(BaseTool):
             json_data["sellingMethods"] = _split_str(selling_methods) if isinstance(selling_methods, str) else list(selling_methods)
         if door_widths:
             json_data["doorWidths"] = _split_str(door_widths) if isinstance(door_widths, str) else list(door_widths)
+        if skus:
+            json_data["skus"] = skus
         if sku_code:
             json_data["skuCode"] = sku_code
         if specifications:
@@ -343,7 +348,10 @@ class ProductManageTool(BaseTool):
         if stock_quantity is not None:
             json_data["stock"] = stock_quantity
         if processing_item_ids is not None:
-            json_data["processingItemConfigs"] = [{"processingItemId": pid} for pid in processing_item_ids]
+            if processing_item_configs:
+                json_data["processingItemConfigs"] = processing_item_configs
+            elif processing_item_ids:
+                json_data["processingItemConfigs"] = [{"processingItemId": pid} for pid in processing_item_ids]
         
         if not json_data:
             return ToolResult(
