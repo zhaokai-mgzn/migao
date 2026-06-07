@@ -165,16 +165,26 @@ async def _clear_plan(session_id: str):
 # ── Plan 生成 ──
 
 
+def _extract_text_from_msg(msg) -> str:
+    """从 LangChain 消息中提取纯文本，移除 image_url 等多模态内容"""
+    content = msg.content if hasattr(msg, 'content') else str(msg)
+    if isinstance(content, list):
+        parts = [c.get("text", "") for c in content if isinstance(c, dict) and c.get("type") == "text"]
+        return " ".join(parts)
+    return str(content) if content else ""
+
+
 async def _generate_plan(user_message: str, chat_history: list, goal_hint: str = "") -> Optional[Plan]:
     """调用 LLM 生成 Plan，失败返回 None"""
     llm = LLMFactory.create_skill_llm(enable_thinking=True)
-    history_msgs = [m for m in chat_history[-4:]]
+    # 历史消息只传纯文本——含图片的多模态消息会让纯文本模型报 invalid_parameter_error
+    text_history = [HumanMessage(content=_extract_text_from_msg(m)) for m in chat_history[-4:]]
     prompt = f"用户请求: {user_message}"
     if goal_hint:
         prompt += f"\n意图提示: {goal_hint}"
     prompt += "\n\n请生成执行计划（纯 JSON）。"
 
-    messages = [SystemMessage(content=PLAN_GENERATION_PROMPT), *history_msgs, HumanMessage(content=prompt)]
+    messages = [SystemMessage(content=PLAN_GENERATION_PROMPT), *text_history, HumanMessage(content=prompt)]
 
     try:
         response = await llm.ainvoke(messages)

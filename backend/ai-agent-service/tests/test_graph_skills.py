@@ -527,7 +527,7 @@ class TestExecuteSkillTextAfterMultimodal:
     @patch("app.graph.skills.base_skill.set_tool_context")
     async def test_multi_round_text_after_image_all_succeed(
         self, mock_set_ctx, mock_create_reg, mock_get_llm,
-        mock_get_tracker, mock_get_breaker, mock_load_plan, mock_pe,
+        mock_get_tracker, mock_get_breaker, mock_pe, mock_load_plan,
     ):
         """模拟生产场景：图片→文本→文本→文本，所有跟进消息都不崩溃
 
@@ -747,6 +747,8 @@ class TestExecuteSkillVisionRetry:
     而非直接触发兜底 "暂时无法生成回复"。
     """
 
+    @patch("app.graph.plan_executor._load_plan", return_value=None)
+    @patch("app.graph.plan_executor.should_use_plan_execute", return_value=False)
     @patch("app.graph.skills.base_skill.get_breaker")
     @patch("app.graph.skills.base_skill.get_tracker")
     @patch("app.graph.skills.base_skill.get_skill_llm")
@@ -754,7 +756,7 @@ class TestExecuteSkillVisionRetry:
     @patch("app.graph.skills.base_skill.set_tool_context")
     async def test_vision_empty_first_then_success(
         self, mock_set_ctx, mock_create_reg, mock_get_llm,
-        mock_get_tracker, mock_get_breaker,
+        mock_get_tracker, mock_get_breaker, mock_pe, mock_load_plan,
     ):
         """首次 Vision 调用返回空内容，重试后成功 → 图片分析结果传给文本 LLM + Tool Calling"""
         # Mock registry
@@ -819,6 +821,8 @@ class TestExecuteSkillVisionRetry:
         assert mock_vision_llm.ainvoke.call_count == 2
         assert mock_text_llm.ainvoke.call_count == 1
 
+    @patch("app.graph.plan_executor._load_plan", return_value=None)
+    @patch("app.graph.plan_executor.should_use_plan_execute", return_value=False)
     @patch("app.graph.skills.base_skill.get_breaker")
     @patch("app.graph.skills.base_skill.get_tracker")
     @patch("app.graph.skills.base_skill.get_skill_llm")
@@ -826,7 +830,7 @@ class TestExecuteSkillVisionRetry:
     @patch("app.graph.skills.base_skill.set_tool_context")
     async def test_vision_empty_both_attempts(
         self, mock_set_ctx, mock_create_reg, mock_get_llm,
-        mock_get_tracker, mock_get_breaker,
+        mock_get_tracker, mock_get_breaker, mock_pe, mock_load_plan,
     ):
         """两次 Vision 调用都返回空内容 → 返回友好提示，不进入 Tool Calling"""
         # Mock registry
@@ -880,6 +884,8 @@ class TestExecuteSkillVisionRetry:
 class TestExecuteSkillVisionToTextFixes:
     """验证 Vision→text 回退路径的三个修复 (Code Review #207 补充测试)"""
 
+    @patch("app.graph.plan_executor._load_plan", return_value=None)
+    @patch("app.graph.plan_executor.should_use_plan_execute", return_value=False)
     @patch("app.graph.skills.base_skill.get_breaker")
     @patch("app.graph.skills.base_skill.get_tracker")
     @patch("app.graph.skills.base_skill.get_skill_llm")
@@ -887,7 +893,7 @@ class TestExecuteSkillVisionToTextFixes:
     @patch("app.graph.skills.base_skill.set_tool_context")
     async def test_vision_aimessage_not_in_history(
         self, mock_set_ctx, mock_create_reg, mock_get_llm,
-        mock_get_tracker, mock_get_breaker,
+        mock_get_tracker, mock_get_breaker, mock_pe, mock_load_plan,
     ):
         """修复 #1: Vision LLM 的 AIMessage 不应出现在返回的对话历史中"""
         mock_registry = MagicMock()
@@ -943,6 +949,8 @@ class TestExecuteSkillVisionToTextFixes:
             "Vision LLM AIMessage 不应出现在返回的 messages 中"
         )
 
+    @patch("app.graph.plan_executor._load_plan", return_value=None)
+    @patch("app.graph.plan_executor.should_use_plan_execute", return_value=False)
     @patch("app.graph.skills.base_skill.get_breaker")
     @patch("app.graph.skills.base_skill.get_tracker")
     @patch("app.graph.skills.base_skill.get_skill_llm")
@@ -950,7 +958,7 @@ class TestExecuteSkillVisionToTextFixes:
     @patch("app.graph.skills.base_skill.set_tool_context")
     async def test_messages_cleaned_before_text_llm(
         self, mock_set_ctx, mock_create_reg, mock_get_llm,
-        mock_get_tracker, mock_get_breaker,
+        mock_get_tracker, mock_get_breaker, mock_pe, mock_load_plan,
     ):
         """修复 #2: 文本 LLM 收到的 messages 不应含 image_url"""
         mock_registry = MagicMock()
@@ -1006,6 +1014,8 @@ class TestExecuteSkillVisionToTextFixes:
                     f"文本 LLM 收到的消息不应含 image_url: {msg.content}"
                 )
 
+    @patch("app.graph.plan_executor._load_plan", return_value=None)
+    @patch("app.graph.plan_executor.should_use_plan_execute", return_value=False)
     @patch("app.graph.skills.base_skill.get_breaker")
     @patch("app.graph.skills.base_skill.get_tracker")
     @patch("app.graph.skills.base_skill.get_skill_llm")
@@ -1013,7 +1023,7 @@ class TestExecuteSkillVisionToTextFixes:
     @patch("app.graph.skills.base_skill.set_tool_context")
     async def test_text_length_recalculated_after_vision(
         self, mock_set_ctx, mock_create_reg, mock_get_llm,
-        mock_get_tracker, mock_get_breaker,
+        mock_get_tracker, mock_get_breaker, mock_pe, mock_load_plan,
     ):
         """修复 #3: Vision 成功后 text_length 应重新计算（含 vision_context）"""
         mock_registry = MagicMock()
