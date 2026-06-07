@@ -464,6 +464,88 @@ class SessionMemory:
                 )
                 return 0
 
+    async def set_pending_skill(self, session_id: str, skill_name: str) -> bool:
+        """持久化 pending_interact_skill 到 session metadata
+
+        用于跨 graph 调用维持交互连续性。
+        用户回应交互组件后，下一轮路由时加载此值跳过 L1/L2 分类。
+
+        Args:
+            session_id: 会话 ID
+            skill_name: 当前 skill 名称
+
+        Returns:
+            bool: 是否成功
+        """
+        async with await self._get_session() as db:
+            try:
+                from sqlalchemy import text
+                sql = text("""
+                    UPDATE sessions
+                    SET metadata = jsonb_set(
+                        COALESCE(metadata, '{}'::jsonb),
+                        '{pending_skill}',
+                        :skill_json
+                    )
+                    WHERE id = :session_id
+                """)
+                await db.execute(sql, {
+                    "session_id": session_id,
+                    "skill_json": f'"{skill_name}"',
+                })
+                await db.commit()
+                logger.debug(
+                    f"[session-memory] Pending skill set | "
+                    f"session={session_id} skill={skill_name}"
+                )
+                return True
+            except Exception as e:
+                await db.rollback()
+                logger.warning(f"[session-memory] set_pending_skill failed: {e}")
+                return False
+
+    async def get_pending_skill(self, session_id: str) -> str:
+        """读取 pending_interact_skill
+
+        Args:
+            session_id: 会话 ID
+
+        Returns:
+            str: skill 名称，无则空字符串
+        """
+        async with await self._get_session() as db:
+            try:
+                from sqlalchemy import text
+                sql = text("""
+                    SELECT metadata->>'pending_skill' AS pending_skill
+                    FROM sessions WHERE id = :session_id
+                """)
+                result = await db.execute(sql, {"session_id": session_id})
+                row = result.fetchone()
+                val = row[0] if row else ""
+                return val or ""
+            except Exception as e:
+                logger.warning(f"[session-memory] get_pending_skill failed: {e}")
+                return ""
+
+    async def clear_pending_skill(self, session_id: str) -> bool:
+        """清除 pending_interact_skill"""
+        async with await self._get_session() as db:
+            try:
+                from sqlalchemy import text
+                sql = text("""
+                    UPDATE sessions
+                    SET metadata = COALESCE(metadata, '{}'::jsonb) - 'pending_skill'
+                    WHERE id = :session_id
+                """)
+                await db.execute(sql, {"session_id": session_id})
+                await db.commit()
+                return True
+            except Exception as e:
+                await db.rollback()
+                logger.warning(f"[session-memory] clear_pending_skill failed: {e}")
+                return False
+
     async def get_last_message_time(self, session_id: str) -> Optional[datetime]:
         """
         获取会话最后一条消息的创建时间，用于空闲超时判断。
