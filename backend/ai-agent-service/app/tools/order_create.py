@@ -31,6 +31,9 @@ class OrderCreateTool(BaseTool):
     # admin、agent、tenant_admin 可使用
     allowed_roles = ["admin", "agent", "tenant_admin"]
 
+    # 关联校验工具
+    related_tools = ["validate_input"]
+
     parameters = {
         "type": "object",
         "properties": {

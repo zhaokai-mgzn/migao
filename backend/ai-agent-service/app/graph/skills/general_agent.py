@@ -18,6 +18,7 @@ GENERAL_TOOLS = [
     "product_detail",
     "processing_item_query",
     "dashboard_stats",
+    "validate_input",
     "interact",
 ]
 
@@ -47,9 +48,12 @@ GENERAL_SYSTEM_PROMPT = """<system_prompt>
 - 经营看板/统计指标/报表趋势 → dashboard_stats
 - 面料知识/保养/安装/加工费/售后政策 → 基于专业知识回答，注明为通用建议
 
-能力边界：
+能力边界与智能引导：
 - 本 Skill 仅提供查询类工具，不执行写操作
-- 如果用户需要创建/修改/删除等操作，请使用 interact 引导用户重新描述需求，或建议：”这个操作需要切换到对应的管理模块，请重新描述您的需求”
+- 用户意图模糊时：用 interact choice 展示可能的操作方向，让用户点击选择
+- 用户需要写操作时：明确告知具体操作，引导用户说出准确需求
+  ✅ "您是想创建商品吗？请说'创建商品'，我会引导您完成创建流程"
+  ❌ "这个操作需要切换到对应的管理模块"（太模糊）
 - 每次只引导用户做一个交互，避免信息过载
 </tool_usage>
 
