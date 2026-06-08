@@ -78,27 +78,62 @@ jobs:
             --access-key-secret ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }} \
             --region ${{ env.OSS_REGION }}
 
-      - name: Upload to OSS
+      - name: Upload to OSS (HTML — no cache)
         working-directory: ${{ env.WORKING_DIR }}
         run: |
-          echo "上传 out/ 到 oss://${{ env.OSS_BUCKET }}/ ..."
+          echo "上传 HTML 文件（Cache-Control: no-cache）..."
           aliyun oss cp out/ oss://${{ env.OSS_BUCKET }}/ \
             --recursive \
             --force \
+            --include "*.html" \
+            --meta "Cache-Control:no-cache, max-age=0" \
             --region ${{ env.OSS_REGION }} \
             --endpoint https://${{ env.OSS_ENDPOINT }}
-          echo "✅ OSS 上传完成"
+          echo "✅ HTML 上传完成"
 
-      - name: Refresh CDN cache (optional)
-        env:
-          CDN_REFRESH_DOMAIN: ${{ secrets.CDN_REFRESH_DOMAIN }}
-        if: env.CDN_REFRESH_DOMAIN != ''
+      - name: Upload to OSS (static assets — immutable cache)
+        working-directory: ${{ env.WORKING_DIR }}
+        run: |
+          echo "上传 _next/static 静态资源（Cache-Control: immutable, 1y）..."
+          aliyun oss cp out/_next/static/ oss://${{ env.OSS_BUCKET }}/_next/static/ \
+            --recursive \
+            --force \
+            --meta "Cache-Control:public, max-age=31536000, immutable" \
+            --region ${{ env.OSS_REGION }} \
+            --endpoint https://${{ env.OSS_ENDPOINT }}
+          echo "✅ 静态资源上传完成"
+
+      - name: Upload to OSS (other files)
+        working-directory: ${{ env.WORKING_DIR }}
+        run: |
+          echo "上传其他文件..."
+          aliyun oss cp out/ oss://${{ env.OSS_BUCKET }}/ \
+            --recursive \
+            --force \
+            --exclude "*.html" \
+            --exclude "_next/static/*" \
+            --region ${{ env.OSS_REGION }} \
+            --endpoint https://${{ env.OSS_ENDPOINT }} \
+            || true
+          echo "✅ 上传完成"
+
+      - name: Refresh CDN cache
         continue-on-error: true
         run: |
-          echo "刷新 CDN 缓存：$CDN_REFRESH_DOMAIN"
+          DOMAIN="${{ secrets.CDN_REFRESH_DOMAIN }}"
+          if [ -z "$DOMAIN" ]; then
+            echo "⚠️ CDN_REFRESH_DOMAIN 未配置，跳过 CDN 刷新"
+            echo "⚠️ 请手动在阿里云 CDN 控制台刷新缓存，或配置此 secret"
+            exit 0
+          fi
+          echo "刷新 CDN 目录缓存：$DOMAIN/"
           aliyun cdn RefreshObjectCaches \
-            --ObjectPath "$CDN_REFRESH_DOMAIN/" \
-            --ObjectType Directory || echo "⚠️ CDN 刷新失败（忽略）"
+            --ObjectPath "$DOMAIN/" \
+            --ObjectType Directory
+          echo "刷新 CDN 首页缓存：$DOMAIN/index.html"
+          aliyun cdn RefreshObjectCaches \
+            --ObjectPath "$DOMAIN/index.html" \
+            --ObjectType File
 
       - name: Health check
         run: |
