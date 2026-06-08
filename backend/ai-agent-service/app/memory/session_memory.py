@@ -47,6 +47,24 @@ class SessionMemory:
     def _now(self) -> datetime:
         """获取当前 UTC 时间（datetime 对象，asyncpg 需要）"""
         return datetime.utcnow()
+
+    @staticmethod
+    def _estimate_tokens(text: str) -> int:
+        """估算文本的 token 数量（Qwen BPE 近似）
+
+        Qwen 系列 tokenizer 对中文约 1.5-2 token/字，英文约 1.3 token/词。
+        使用 len(text) * 0.55 作为折中近似，误差在 ±15% 内。
+        对于 token 预算控制（非精确计费）已足够准确。
+
+        Args:
+            text: 待估算的文本
+
+        Returns:
+            int: 估算的 token 数量，最小为 1
+        """
+        if not text:
+            return 0
+        return max(1, int(len(text) * 0.55))
     
     async def create_session(
         self, 
@@ -141,14 +159,20 @@ class SessionMemory:
         if extra_metadata:
             meta_dict.update(extra_metadata)
         metadata = json.dumps(meta_dict) if meta_dict else "{}"
-        
+
+        # 估算 token 数（content + metadata 中的 tool_calls 序列化文本）
+        token_text = content or ""
+        if tool_calls:
+            token_text += json.dumps(tool_calls, ensure_ascii=False)
+        token_count = self._estimate_tokens(token_text)
+
         async with await self._get_session() as db:
             try:
                 from sqlalchemy import text
                 sql = text("""
-                    INSERT INTO session_messages 
-                    (id, session_id, role, content_type, content, metadata, tenant_id, created_at)
-                    VALUES (:id, :session_id, :role, :content_type, :content, CAST(:metadata AS jsonb), :tenant_id, :created_at)
+                    INSERT INTO session_messages
+                    (id, session_id, role, content_type, content, metadata, tenant_id, token_count, created_at)
+                    VALUES (:id, :session_id, :role, :content_type, :content, CAST(:metadata AS jsonb), :tenant_id, :token_count, :created_at)
                 """)
                 await db.execute(sql, {
                     "id": message_id,
@@ -158,6 +182,7 @@ class SessionMemory:
                     "content": content,
                     "metadata": metadata,
                     "tenant_id": tenant_id,
+                    "token_count": token_count,
                     "created_at": now,
                 })
                 
@@ -235,6 +260,111 @@ class SessionMemory:
             except Exception as e:
                 logger.error(f"[session-memory] Operation failed | session_id={session_id} error={type(e).__name__}: {e}", exc_info=True)
                 return []
+
+    async def get_history_by_tokens(
+        self,
+        session_id: str,
+        max_tokens: int = 8000,
+        min_messages: int = 4,
+    ) -> tuple[List[Dict[str, Any]], bool]:
+        """按 token 预算加载会话历史消息
+
+        从最新消息往前累加 token_count，直到达到 max_tokens 预算。
+        如果早期消息被截断，返回 needs_compression=True 供调用方
+        决定是否压缩。
+
+        Args:
+            session_id: 会话 ID
+            max_tokens: token 预算上限（默认 8000）
+            min_messages: 最少保留消息数（防止截断过狠）
+
+        Returns:
+            tuple[List[dict], bool]:
+                - 消息列表（按时间正序）
+                - needs_compression: 是否有消息被截断需要压缩
+        """
+        logger.debug(
+            f"[session-memory] Loading messages by tokens | "
+            f"session={session_id} max_tokens={max_tokens}"
+        )
+        async with await self._get_session() as db:
+            try:
+                from sqlalchemy import text
+                # 查询最近 N 条消息，附带到当前行的累积 token 数
+                sql = text("""
+                    WITH ranked AS (
+                        SELECT id, session_id, role, content_type, content,
+                               metadata, token_count, created_at,
+                               SUM(COALESCE(token_count, 0)) OVER (
+                                   ORDER BY created_at DESC
+                                   ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                               ) AS cumulative_tokens
+                        FROM session_messages
+                        WHERE session_id = :session_id
+                        ORDER BY created_at DESC
+                        LIMIT 200
+                    )
+                    SELECT id, session_id, role, content_type, content,
+                           metadata, token_count, created_at, cumulative_tokens
+                    FROM ranked
+                    WHERE cumulative_tokens <= :max_tokens
+                       OR cumulative_tokens <= (
+                           SELECT COALESCE(MIN(cumulative_tokens), 0)
+                           FROM ranked
+                           WHERE cumulative_tokens > :max_tokens
+                       ) + 0
+                    ORDER BY created_at ASC
+                """)
+                result = await db.execute(sql, {
+                    "session_id": session_id,
+                    "max_tokens": max_tokens,
+                })
+                rows = result.fetchall()
+
+                # 转换并检测截断
+                messages = []
+                for row in rows:
+                    metadata = row[5] or {}
+                    tool_calls = metadata.get("tool_calls") if isinstance(metadata, dict) else None
+                    messages.append({
+                        "id": row[0],
+                        "session_id": row[1],
+                        "role": row[2],
+                        "content_type": row[3],
+                        "content": row[4],
+                        "tool_calls": tool_calls,
+                        "metadata": metadata,
+                        "token_count": row[6] or 0,
+                        "created_at": row[7],
+                    })
+
+                # 还需要再查一次来确认是否有消息被截断
+                # 统计该 session 的总消息数是否 > 返回数
+                count_sql = text("""
+                    SELECT COUNT(*) FROM session_messages WHERE session_id = :session_id
+                """)
+                count_result = await db.execute(count_sql, {"session_id": session_id})
+                total_count = count_result.scalar() or 0
+                needs_compression = total_count > len(messages) and len(messages) > min_messages
+
+                total_tokens = sum(m.get("token_count", 0) for m in messages)
+                logger.info(
+                    f"[session-memory] History loaded by tokens | "
+                    f"session={session_id} messages={len(messages)}/{total_count} "
+                    f"tokens={total_tokens}/{max_tokens} "
+                    f"needs_compression={needs_compression}"
+                )
+                return messages, needs_compression
+
+            except Exception as e:
+                logger.error(
+                    f"[session-memory] get_history_by_tokens failed | "
+                    f"session={session_id} error={type(e).__name__}: {e}",
+                    exc_info=True,
+                )
+                # 降级：回退到硬编码 limit
+                fallback = await self.get_history(session_id, limit=20)
+                return fallback, True
     
     async def get_sessions(
         self, 

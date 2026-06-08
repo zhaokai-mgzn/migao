@@ -9,6 +9,7 @@ AI 智能客服系统 - 对话上下文追踪器
 - 对话历史压缩（超长对话自动摘要）
 """
 
+import asyncio
 import re
 import json
 from enum import Enum
@@ -122,17 +123,110 @@ class ConversationTracker:
     - 对话阶段 (ConversationStage)
     - 意图链 (intent_chain)
 
-    使用内存 dict 存储（同进程生命周期内有效），
-    可扩展为 Redis 存储。
+    双层存储：
+    - 内存 dict 作为一级缓存（同进程零延迟）
+    - Redis 作为二级持久化（重启恢复），TTL 30min
     """
 
+    _TRACKER_KEY_PREFIX = "ai:tracker"
+    _TRACKER_TTL = 1800  # 30 分钟，跟随会话空闲超时
+
     def __init__(self):
-        # session_id → 上下文状态
+        # session_id → 上下文状态（一级缓存）
         self._states: Dict[str, Dict[str, Any]] = {}
+
+    # ========== Redis 持久化 ==========
+
+    @staticmethod
+    def _tracker_key(session_id: str) -> str:
+        return f"{ConversationTracker._TRACKER_KEY_PREFIX}:{session_id}"
+
+    async def _get_redis(self):
+        """获取 Redis 客户端（延迟导入避免循环依赖）"""
+        from app.utils.redis_client import redis_pool
+        import redis.asyncio as redis
+        if not redis_pool:
+            raise RuntimeError("Redis connection pool is not initialized")
+        return redis.Redis(connection_pool=redis_pool)
+
+    async def _load_from_redis(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """从 Redis 加载会话跟踪状态"""
+        try:
+            client = await self._get_redis()
+            key = self._tracker_key(session_id)
+            raw = await client.get(key)
+            await client.close()
+            if raw:
+                data = json.loads(raw)
+                # 反序列化 ExtractedEntities
+                entities = ExtractedEntities(
+                    order_nos=data.get("order_nos", []),
+                    phone_numbers=data.get("phone_numbers", []),
+                    product_names=data.get("product_names", []),
+                    product_ids=data.get("product_ids", []),
+                    amounts=data.get("amounts", []),
+                    custom=data.get("custom", {}),
+                )
+                stage = ConversationStage(data.get("stage", "initial"))
+                intent_chain = data.get("intent_chain", [])
+                logger.debug(
+                    f"[ConversationTracker] Loaded from Redis | session={session_id} "
+                    f"entities={entities.to_summary_str()} stage={stage.value}"
+                )
+                return {"entities": entities, "stage": stage, "intent_chain": intent_chain}
+        except Exception as e:
+            logger.warning(f"[ConversationTracker] Redis load failed: {e}")
+        return None
+
+    async def _save_to_redis(self, session_id: str, state: Dict[str, Any]) -> None:
+        """将会话跟踪状态写入 Redis"""
+        try:
+            entities: ExtractedEntities = state["entities"]
+            data = {
+                "order_nos": entities.order_nos,
+                "phone_numbers": entities.phone_numbers,
+                "product_names": entities.product_names,
+                "product_ids": entities.product_ids,
+                "amounts": entities.amounts,
+                "custom": entities.custom,
+                "stage": state["stage"].value if isinstance(state["stage"], ConversationStage) else state["stage"],
+                "intent_chain": state["intent_chain"],
+            }
+            client = await self._get_redis()
+            key = self._tracker_key(session_id)
+            await client.set(key, json.dumps(data, ensure_ascii=False), ex=self._TRACKER_TTL)
+            await client.close()
+        except Exception as e:
+            logger.warning(f"[ConversationTracker] Redis save failed: {e}")
 
     # ========== 状态管理 ==========
 
+    async def _get_state_async(self, session_id: str) -> Dict[str, Any]:
+        """获取会话状态（内存 → Redis → 新建）"""
+        if session_id in self._states:
+            return self._states[session_id]
+
+        # 尝试从 Redis 恢复
+        redis_state = await self._load_from_redis(session_id)
+        if redis_state:
+            self._states[session_id] = redis_state
+            return redis_state
+
+        # 新建
+        self._states[session_id] = {
+            "entities": ExtractedEntities(),
+            "stage": ConversationStage.INITIAL,
+            "intent_chain": [],
+        }
+        return self._states[session_id]
+
     def _get_state(self, session_id: str) -> Dict[str, Any]:
+        """同步获取会话状态（仅内存缓存，不查 Redis）
+
+        对于高频读取（extract_entities_from_text 等），
+        仅使用内存缓存避免每次等待 Redis 往返。
+        异步恢复由 _get_state_async 在入口处完成。
+        """
         if session_id not in self._states:
             self._states[session_id] = {
                 "entities": ExtractedEntities(),
@@ -140,6 +234,10 @@ class ConversationTracker:
                 "intent_chain": [],
             }
         return self._states[session_id]
+
+    async def ensure_loaded(self, session_id: str) -> None:
+        """确保会话状态已从 Redis 加载（在请求入口处调用一次）"""
+        await self._get_state_async(session_id)
 
     def get_entities(self, session_id: str) -> ExtractedEntities:
         return self._get_state(session_id)["entities"]
@@ -256,8 +354,25 @@ class ConversationTracker:
 
     # ========== 对话阶段与意图链 ==========
 
+    def _schedule_persist(self, session_id: str) -> None:
+        """fire-and-forget 持久化到 Redis（best-effort，失败静默）
+
+        在事件循环中调度 _save_to_redis，若循环未运行则跳过。
+        """
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                loop.create_task(self._save_to_redis(session_id, self._get_state(session_id)))
+        except RuntimeError:
+            pass  # 无事件循环，跳过持久化
+
+    async def persist(self, session_id: str) -> None:
+        """显式持久化会话状态到 Redis（供 async 上下文调用）"""
+        await self._save_to_redis(session_id, self._get_state(session_id))
+
     def update_stage(self, session_id: str, stage: ConversationStage) -> None:
         self._get_state(session_id)["stage"] = stage
+        self._schedule_persist(session_id)
 
     def append_intent(self, session_id: str, intent_value: str) -> None:
         """追加意图到意图链（去连续重复）"""
@@ -267,6 +382,7 @@ class ConversationTracker:
         # 最多保留 20 个
         if len(chain) > 20:
             self._get_state(session_id)["intent_chain"] = chain[-20:]
+        self._schedule_persist(session_id)
 
     def infer_stage_from_intent(self, session_id: str, intent_value: str) -> ConversationStage:
         """根据意图推断并更新对话阶段"""
@@ -465,5 +581,21 @@ class ConversationTracker:
     # ========== 清理 ==========
 
     def clear_session(self, session_id: str) -> None:
-        """清除指定会话的上下文状态"""
+        """清除指定会话的上下文状态（内存 + Redis）"""
         self._states.pop(session_id, None)
+        # fire-and-forget 清除 Redis
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                loop.create_task(self._clear_redis(session_id))
+        except RuntimeError:
+            pass
+
+    async def _clear_redis(self, session_id: str) -> None:
+        """从 Redis 中删除会话跟踪状态"""
+        try:
+            client = await self._get_redis()
+            await client.delete(self._tracker_key(session_id))
+            await client.close()
+        except Exception as e:
+            logger.warning(f"[ConversationTracker] Redis clear failed: {e}")

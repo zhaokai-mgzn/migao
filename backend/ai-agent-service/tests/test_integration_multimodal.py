@@ -120,6 +120,21 @@ class InMemorySessionStore:
         msgs.sort(key=lambda m: m["created_at"])
         return msgs[-limit:]
 
+    async def get_history_by_tokens(self, session_id, max_tokens=8000, min_messages=4):
+        msgs = [m for m in self.messages if m["session_id"] == session_id]
+        msgs.sort(key=lambda m: m["created_at"])
+        total = 0
+        selected = []
+        for m in reversed(msgs):
+            est = max(1, len(m.get("content", "")) * 0.55)
+            if total + est > max_tokens and len(selected) >= min_messages:
+                break
+            total += est
+            selected.append(m)
+        selected.reverse()
+        needs = len(selected) < len(msgs) and len(msgs) > min_messages
+        return selected, needs
+
     async def delete_session(self, session_id):
         self.messages = [m for m in self.messages if m["session_id"] != session_id]
         self.sessions.pop(session_id, None)
@@ -540,7 +555,7 @@ class TestAgentAwareSuggestionsIntegration:
 
         captured_kwargs = {}
 
-        async def _mock_generate(query, answer, intent_type, agent_type="mibao"):
+        async def _mock_generate(query, answer, intent_type, agent_type="mibao", chat_history=None):
             captured_kwargs["agent_type"] = agent_type
             return ["建议1", "建议2"]
 
@@ -569,7 +584,7 @@ class TestAgentAwareSuggestionsIntegration:
 
         captured_kwargs = {}
 
-        async def _mock_generate(query, answer, intent_type, agent_type="mibao"):
+        async def _mock_generate(query, answer, intent_type, agent_type="mibao", chat_history=None):
             captured_kwargs["agent_type"] = agent_type
             return ["s1", "s2"]
 

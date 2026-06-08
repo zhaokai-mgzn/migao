@@ -42,6 +42,30 @@ SESSION_IDLE_TIMEOUT_MINUTES = 30
 
 # ============ 辅助函数 ============
 
+async def _extract_memories_async(
+    tenant_id: int,
+    user_id: str,
+    user_message: str,
+    assistant_reply: str,
+    session_id: str,
+) -> None:
+    """fire-and-forget：从对话中提取并保存用户记忆"""
+    try:
+        from app.memory.extractor import extract_and_save
+        count = await extract_and_save(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            user_message=user_message,
+            assistant_reply=assistant_reply,
+            session_id=session_id,
+        )
+        if count > 0:
+            logger.info(
+                f"[chat/send] Memory extracted | session={session_id} count={count}"
+            )
+    except Exception as e:
+        logger.debug(f"[chat/send] Memory extraction failed (non-fatal): {e}")
+
 def _format_datetime(dt: Any) -> str:
     """格式化日期时间为 ISO 8601 字符串（UTC，以 Z 结尾）"""
     if isinstance(dt, datetime):
@@ -349,6 +373,25 @@ async def _agent_stream_to_sse(
         # suggestions 已在 LangGraph 图内的 suggestions_node 生成并通过流传递
         # 无需在此额外生成
 
+        # 异步提取用户记忆（fire-and-forget，不阻塞 SSE 流）
+        # user_message 提取自 message 参数（可能为 str 或 list）
+        user_msg_text = message if isinstance(message, str) else (
+            " ".join(p.get("text", "") for p in message if isinstance(p, dict) and p.get("type") == "text")
+        ) if isinstance(message, list) else ""
+        if assistant_content and user_msg_text:
+            try:
+                asyncio.create_task(
+                    _extract_memories_async(
+                        tenant_id=tenant_id,
+                        user_id=user_id,
+                        user_message=user_msg_text,
+                        assistant_reply=assistant_content,
+                        session_id=session_id,
+                    )
+                )
+            except Exception as mem_err:
+                logger.debug(f"[chat/send] Memory extraction scheduling skipped: {mem_err}")
+
         # 发送完成事件（始终发送，即使 save_message 失败或超时）
         yield SSEEvent.done(session_id, message_id)
             
@@ -502,7 +545,7 @@ async def send_message(
         try:
             last_msg_time = await session_memory.get_last_message_time(session_id)
             if last_msg_time is not None:
-                now = datetime.now()
+                now = datetime.utcnow()
                 if (now - last_msg_time) > timedelta(minutes=SESSION_IDLE_TIMEOUT_MINUTES):
                     logger.info(
                         f"[chat/send] Session idle timeout, rotating | session={session_id} "
@@ -579,8 +622,32 @@ async def send_message(
             else:
                 user_message_content = request.message
             
-            # 4. 获取对话历史
-            history_messages = await session_memory.get_history(session_id, limit=20)
+            # 4. 获取对话历史（按 token 预算动态加载）
+            MAX_CONTEXT_TOKENS = 8000  # 留给 system prompt + 回复余量
+            history_messages, needs_compression = await session_memory.get_history_by_tokens(
+                session_id, max_tokens=MAX_CONTEXT_TOKENS
+            )
+
+            # 4a. 如果历史超限，压缩早期消息为摘要
+            if needs_compression:
+                try:
+                    from app.context.tracker import ConversationTracker
+                    tracker = ConversationTracker()
+                    history_messages = await tracker.compress_history(
+                        history_messages,
+                        session_id=session_id,
+                        max_turns=10,
+                        keep_recent=5,
+                    )
+                    logger.info(
+                        f"[chat/send] History compressed | session={session_id} "
+                        f"messages={len(history_messages)}"
+                    )
+                except Exception as compress_err:
+                    logger.warning(
+                        f"[chat/send] History compression failed (non-fatal): {compress_err}"
+                    )
+
             chat_history = _convert_history_to_agent_format(history_messages)
             
             # 5. 创建 Agent 上下文
