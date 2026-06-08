@@ -867,6 +867,7 @@ async def execute_plan(
                 if matched:
                     qt = prev.query_tool
                     if qt == "category_manage":
+                        from app.graph.skills.base_skill import build_tool_context
                         plan.context["category_id"] = matched.get("id", "")
                         plan.context["category_name"] = matched.get("name", "")
                         logger.info(f"[pe] Query choice matched: tool={qt} id={matched.get('id')}")
