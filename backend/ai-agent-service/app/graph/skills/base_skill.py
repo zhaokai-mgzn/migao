@@ -307,6 +307,43 @@ def _sanitize_messages_for_text_path(messages):
     return sanitized
 
 
+# EXAMPLES 文档缓存（启动时加载一次）
+_examples_cache: dict = {}
+
+
+def _load_skill_examples(skill_name: str) -> str:
+    """加载 Skill 的 EXAMPLES 参考文档，注入到 System Prompt
+
+    从 references/EXAMPLES-{skill_name}.md 读取 few-shot 示例，
+    缓存到内存避免每次请求都读文件。
+
+    Returns:
+        EXAMPLES 文档内容（含 "## Few-shot 参考示例" 标题），无文件时返回 ""
+    """
+    if skill_name in _examples_cache:
+        return _examples_cache[skill_name]
+
+    import os
+    ref_dir = os.path.join(os.path.dirname(__file__), "references")
+    examples_path = os.path.join(ref_dir, f"EXAMPLES-{skill_name}.md")
+
+    try:
+        with open(examples_path, "r", encoding="utf-8") as f:
+            content = f.read().strip()
+            if content:
+                # 提取 "## ✅ 正确示例" 到 "## ❌ 错误示例" 之间的内容
+                result = "\n## Few-shot 参考示例\n\n以下是该领域的正确和错误示例，请严格遵循正确示例的行为模式：\n\n" + content
+                _examples_cache[skill_name] = result
+                return result
+    except FileNotFoundError:
+        _examples_cache[skill_name] = ""  # 不存在的 skill 缓存空字符串
+    except Exception:
+        pass
+
+    _examples_cache[skill_name] = ""
+    return ""
+
+
 async def execute_skill(
     state: AgentState,
     skill_name: str,
@@ -475,6 +512,11 @@ async def execute_skill(
     user_role = state.get("role", "")
     if user_name:
         system_prompt = f"当前对话用户: {user_name}（角色: {user_role}）\n\n" + system_prompt
+
+    # 加载该 Skill 的 EXAMPLES 参考文档，注入到 System Prompt
+    examples_text = _load_skill_examples(skill_name)
+    if examples_text:
+        system_prompt = system_prompt + "\n\n" + examples_text
 
     # 如果消息中包含图片，注入图片理解能力说明
     if is_multimodal:

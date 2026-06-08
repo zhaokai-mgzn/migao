@@ -25,6 +25,15 @@ function formatNumber(value: number | undefined): string {
   return value.toLocaleString('zh-CN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
 }
 
+/** 安全获取明细金额：amount → subtotal → unitPrice*quantity 三级兜底 */
+function getItemAmount(item: { amount?: number; subtotal?: number; unitPrice?: number; quantity?: number }): number {
+  if (typeof item.amount === 'number' && !Number.isNaN(item.amount)) return item.amount
+  if (typeof item.subtotal === 'number' && !Number.isNaN(item.subtotal)) return item.subtotal
+  const unit = typeof item.unitPrice === 'number' ? item.unitPrice : 0
+  const qty = typeof item.quantity === 'number' ? item.quantity : 0
+  return unit * qty
+}
+
 function formatTime(value?: string): string {
   if (!value) return '-'
   return dayjs(value).format('YYYY-MM-DD HH:mm')
@@ -147,19 +156,20 @@ export default function OrderTable({
               </span>
             </th>
             <th className="px-4 py-3 font-medium whitespace-nowrap">状态</th>
+            <th className="px-4 py-3 font-medium whitespace-nowrap">备注</th>
             <th className="px-4 py-3 font-medium whitespace-nowrap">操作</th>
           </tr>
         </thead>
         <tbody>
           {loading ? (
             <tr>
-              <td colSpan={10} className="px-4 py-16 text-center text-gray-400">
+              <td colSpan={11} className="px-4 py-16 text-center text-gray-400">
                 加载中…
               </td>
             </tr>
           ) : orders.length === 0 ? (
             <tr>
-              <td colSpan={10} className="px-4 py-16 text-center text-gray-400">
+              <td colSpan={11} className="px-4 py-16 text-center text-gray-400">
                 暂无数据
               </td>
             </tr>
@@ -217,7 +227,7 @@ export default function OrderTable({
                           元/米*
                           <span className="font-mono">{formatNumber(item.quantity)}</span>
                           米 =
-                          <span className="font-mono">{formatNumber(item.amount ?? item.subtotal)}</span>
+                          <span className="font-mono">{formatNumber(getItemAmount(item))}</span>
                           元
                         </div>
                       ))}
@@ -266,6 +276,20 @@ export default function OrderTable({
                   {/* 状态 */}
                   <td className="px-4 py-4 whitespace-nowrap text-gray-700">
                     {OrderStatusLabels[normalizeOrderStatus(order.status as string)]}
+                  </td>
+
+                  {/* 备注预览 */}
+                  <td className="px-4 py-4 min-w-[100px] max-w-[160px]">
+                    {order.remark ? (
+                      <span
+                        className="text-xs text-gray-500 truncate block cursor-default"
+                        title={order.remark}
+                      >
+                        💬 {order.remark.length > 20 ? order.remark.slice(0, 20) + '…' : order.remark}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-gray-300">-</span>
+                    )}
                   </td>
 
                   {/* 操作 */}

@@ -332,17 +332,38 @@ class OrderQueryTool(BaseTool):
         )
     
     def _format_orders(self, records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """格式化订单列表
-        
+        """格式化订单列表，包含商品明细
+
         Args:
             records: 原始订单记录
-            
+
         Returns:
             List: 格式化后的订单列表
         """
         orders = []
         for record in records:
             status = record.get("status", "")
+            # 格式化商品明细
+            raw_items = record.get("items", [])
+            items = []
+            for item in raw_items:
+                unit_price = item.get("unitPrice")
+                quantity = item.get("quantity")
+                amount = item.get("amount") or item.get("subtotal")
+                # amount 兜底计算
+                if amount is None and unit_price is not None and quantity is not None:
+                    try:
+                        amount = float(unit_price) * int(quantity)
+                    except (ValueError, TypeError):
+                        amount = 0
+                items.append({
+                    "product_name": item.get("productName"),
+                    "product_code": item.get("productCode"),
+                    "unit_price": unit_price,
+                    "quantity": quantity,
+                    "amount": amount,
+                })
+
             order = {
                 "id": record.get("id"),
                 "order_no": record.get("orderNo"),
@@ -351,11 +372,12 @@ class OrderQueryTool(BaseTool):
                 "total_amount": record.get("totalAmount"),
                 "status": status,
                 "status_text": ORDER_STATUS_TEXT.get(status, status),
-                "items_count": len(record.get("items", [])),
+                "items_count": len(items),
+                "items": items,
                 "logistics": record.get("logistics"),
                 "created_at": record.get("createdAt"),
                 "updated_at": record.get("updatedAt"),
             }
             orders.append(order)
-        
+
         return orders

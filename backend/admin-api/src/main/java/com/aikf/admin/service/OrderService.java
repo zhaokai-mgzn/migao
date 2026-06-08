@@ -86,7 +86,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      * @param tenantId        租户ID
      * @return 分页响应
      */
-    public PageResponse<OrderListResponse> getOrderPage(long page, long size, String status, String keyword, String followStatus, Boolean hasProcessing, String startDate, String endDate, Long tenantId) {
+    public PageResponse<OrderListResponse> getOrderPage(long page, long size, String status, String keyword, String followStatus, Boolean hasProcessing, String startDate, String endDate, String orderId, String receiver, String productCode, String productTitle, Long tenantId) {
         LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<>();
 
         // 状态筛选
@@ -107,7 +107,39 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             wrapper.le(Order::getCreatedAt, OffsetDateTime.parse(endDate + "T23:59:59Z"));
         }
 
-        // 关键词搜索（客户姓名/电话/订单号）
+        // 订单ID精确搜索
+        if (StringUtils.hasText(orderId)) {
+            wrapper.like(Order::getOrderNo, orderId);
+        }
+
+        // 收货人搜索（姓名或手机号）
+        if (StringUtils.hasText(receiver)) {
+            wrapper.and(w -> w.like(Order::getCustomerName, receiver)
+                    .or()
+                    .like(Order::getCustomerPhone, receiver));
+        }
+
+        // 商品货号/标题搜索：通过子查询 order_items 表筛选包含该商品的订单
+        if (StringUtils.hasText(productCode) || StringUtils.hasText(productTitle)) {
+            LambdaQueryWrapper<OrderItem> itemWrapper = new LambdaQueryWrapper<>();
+            if (StringUtils.hasText(productCode)) {
+                itemWrapper.eq(OrderItem::getProductId, productCode);
+            }
+            if (StringUtils.hasText(productTitle)) {
+                itemWrapper.like(OrderItem::getProductName, productTitle);
+            }
+            itemWrapper.select(OrderItem::getOrderId);
+            List<String> matchedOrderIds = orderItemMapper.selectList(itemWrapper).stream()
+                    .map(OrderItem::getOrderId)
+                    .distinct()
+                    .collect(Collectors.toList());
+            if (matchedOrderIds.isEmpty()) {
+                return PageResponse.of(0L, page, size, Collections.emptyList());
+            }
+            wrapper.in(Order::getId, matchedOrderIds);
+        }
+
+        // 关键词搜索（客户姓名/电话/订单号，与分字段搜索取 OR）
         if (StringUtils.hasText(keyword)) {
             wrapper.and(w -> w.like(Order::getCustomerName, keyword)
                     .or()
@@ -167,13 +199,24 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             for (OrderListResponse resp : responses) {
                 List<OrderItem> orderItems = itemsMap.getOrDefault(resp.getId(), Collections.emptyList());
                 resp.setItems(orderItems.stream()
-                        .map(item -> new OrderListResponse.OrderItemBrief(
-                                item.getProductId(),
-                                item.getProductName(),
-                                null,
-                                item.getQuantity(),
-                                item.getUnitPrice()
-                        ))
+                        .map(item -> {
+                            // amount = unitPrice * quantity（兜底：subtotal）
+                            BigDecimal itemAmount = BigDecimal.ZERO;
+                            if (item.getUnitPrice() != null && item.getQuantity() != null) {
+                                itemAmount = item.getUnitPrice().multiply(BigDecimal.valueOf(item.getQuantity()));
+                            } else if (item.getSubtotal() != null) {
+                                itemAmount = item.getSubtotal();
+                            }
+                            return new OrderListResponse.OrderItemBrief(
+                                    item.getProductId(),
+                                    item.getProductName(),
+                                    null,  // productCode: OrderItem 实体暂无此字段
+                                    item.getQuantity(),
+                                    item.getUnitPrice(),
+                                    itemAmount,
+                                    item.getSubtotal()
+                            );
+                        })
                         .collect(Collectors.toList()));
                 // 后端统一计算加工费与实收款，避免前端重复计算
                 BigDecimal processingFee = orderItems.stream()

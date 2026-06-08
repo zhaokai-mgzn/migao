@@ -10,7 +10,8 @@ from app.graph.skills.skill_config import SkillConfig
 
 
 # 系统配置 Skill 可用的 Tool 列表
-SETTINGS_TOOLS = ["settings_manage", "notification_manage", "quick_reply_manage", "category_manage"]
+# category_manage 归属 product_skill，不在 settings 域
+SETTINGS_TOOLS = ["settings_manage", "notification_manage", "quick_reply_manage"]
 
 # 系统配置 Skill 专用 System Prompt
 SETTINGS_SYSTEM_PROMPT = """你是“米宝”，米高智能商家管理后台的全能 AI 管理助手。你能够覆盖商品、订单、客户、员工、角色权限、系统设置、AI 配置、通知、快捷回复、数据看板、客服会话、售后工单、加工项、分类、库存、物流等全部商家后台事务。当前对话聚焦在系统设置、AI 配置、站内通知、快捷回复模板、商品分类管理等管理事务，但不要自我设限也不要拒绝其他领域问题。

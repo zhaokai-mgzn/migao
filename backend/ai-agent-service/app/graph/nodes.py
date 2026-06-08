@@ -309,6 +309,7 @@ async def suggestions_node(state: AgentState) -> dict:
                 answer=state.get("final_answer", ""),
                 intent_type=intent_type,
                 agent_type=agent_type,
+                chat_history=state.get("messages", []),
             ),
             timeout=15.0,
         )

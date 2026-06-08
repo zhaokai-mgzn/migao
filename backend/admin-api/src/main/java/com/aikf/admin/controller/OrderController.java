@@ -44,10 +44,14 @@ public class OrderController {
             @RequestParam(required = false) String followStatus,
             @RequestParam(required = false) Boolean hasProcessing,
             @RequestParam(required = false) String startDate,
-            @RequestParam(required = false) String endDate) {
-        log.info("查询订单列表: page={}, size={}, status={}, keyword={}, startDate={}, endDate={}", page, size, status, keyword, startDate, endDate);
+            @RequestParam(required = false) String endDate,
+            @RequestParam(required = false) String orderId,
+            @RequestParam(required = false) String receiver,
+            @RequestParam(required = false) String productCode,
+            @RequestParam(required = false) String productTitle) {
+        log.info("查询订单列表: page={}, size={}, status={}, keyword={}, orderId={}, receiver={}, startDate={}, endDate={}", page, size, status, keyword, orderId, receiver, startDate, endDate);
         Long tenantId = TenantContext.getTenantId();
-        PageResponse<OrderListResponse> result = orderService.getOrderPage(page, size, status, keyword, followStatus, hasProcessing, startDate, endDate, tenantId);
+        PageResponse<OrderListResponse> result = orderService.getOrderPage(page, size, status, keyword, followStatus, hasProcessing, startDate, endDate, orderId, receiver, productCode, productTitle, tenantId);
         return ApiResponse.success(result);
     }
 
