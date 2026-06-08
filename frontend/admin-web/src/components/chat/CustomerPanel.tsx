@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import {
   PanelRightClose,
   PanelRightOpen,
@@ -10,39 +10,19 @@ import {
   ShoppingBag,
   MessageCircle,
   Clock,
-  Package,
-  Globe,
 } from 'lucide-react'
-import { cn, formatFullDateTime, formatChatTime } from '@/lib/utils'
+import { cn, formatChatTime } from '@/lib/utils'
 import { useChatStore } from '@/store/chat'
-import { chatApi } from '@/lib/api'
-import { useAuthStore } from '@/store/auth'
 import type { ChatCustomerInfo } from '@/types'
 
 export default function CustomerPanel() {
   const [collapsed, setCollapsed] = useState(false)
   const { currentSessionId, sessions } = useChatStore()
-  const [customerInfo, setCustomerInfo] = useState<ChatCustomerInfo | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
+  const [customerInfo] = useState<ChatCustomerInfo | null>(null)
 
   const currentSession = sessions.find(
     (s) => s.session_id === currentSessionId
   )
-
-  // Load customer info when session changes
-  useEffect(() => {
-    if (!currentSessionId) {
-      setCustomerInfo(null)
-      return
-    }
-
-    // Build info from current session data
-    const info: ChatCustomerInfo = {
-      name: currentSession?.customer_name || '未知客户',
-      source: '在线客服',
-    }
-    setCustomerInfo(info)
-  }, [currentSessionId, currentSession])
 
   if (!currentSessionId) return null
 
@@ -87,8 +67,8 @@ export default function CustomerPanel() {
               <p className="text-sm font-medium text-gray-800 truncate">
                 {customerInfo?.name || '未知客户'}
               </p>
-              <p className="text-xs text-gray-500">
-                会话 {currentSessionId?.slice(0, 8)}...
+              <p className="text-xs text-gray-400">
+                {customerInfo?.source || '在线客服'}
               </p>
             </div>
           </div>
@@ -100,12 +80,7 @@ export default function CustomerPanel() {
                 <Star className="w-3 h-3" />
                 {customerInfo.vipLevel}
               </span>
-            ) : (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-50 text-gray-400 border border-gray-200 rounded text-[11px] font-medium">
-                <Star className="w-3 h-3" />
-                未设置等级
-              </span>
-            )}
+            ) : null}
             <span className={cn(
               'inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium',
               currentSession?.status === 'active'
@@ -129,19 +104,9 @@ export default function CustomerPanel() {
               value={customerInfo?.phone || '暂无'}
             />
             <InfoRow
-              icon={<Globe className="w-3.5 h-3.5" />}
-              label="来源"
-              value={customerInfo?.source || '在线客服'}
-            />
-            <InfoRow
               icon={<Clock className="w-3.5 h-3.5" />}
               label="注册"
-              value={customerInfo?.registeredDays !== undefined ? `${customerInfo.registeredDays} 天` : '暂无'}
-            />
-            <InfoRow
-              icon={<Clock className="w-3.5 h-3.5" />}
-              label="开始"
-              value={formatFullDateTime(currentSession?.created_at)}
+              value={customerInfo?.registeredDays !== undefined ? `${customerInfo.registeredDays} 天前` : '暂无'}
             />
           </div>
         </div>
@@ -149,72 +114,39 @@ export default function CustomerPanel() {
         {/* 历史订单摘要 */}
         <div className="px-4 py-3 border-b border-gray-100">
           <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
-            最近订单
+            订单概览
           </h4>
           {customerInfo?.recentOrders && customerInfo.recentOrders.length > 0 ? (
             <>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-2 mb-3">
                 <StatCard
                   icon={<ShoppingBag className="w-4 h-4" />}
                   label="总订单"
                   value={String(customerInfo.totalOrders || 0)}
                 />
                 <StatCard
-                  icon={<Package className="w-4 h-4" />}
+                  icon={<MessageCircle className="w-4 h-4" />}
                   label="总会话"
                   value={String(customerInfo.totalSessions || 0)}
                 />
               </div>
-              <div className="mt-3 space-y-2">
+              <div className="space-y-2">
                 {customerInfo.recentOrders.slice(0, 3).map((order) => (
                   <RecentOrder
                     key={order.id}
                     orderNo={order.orderNo}
                     status={order.status}
-                    amount={`¥${order.totalAmount.toFixed(2)}`}
+                    amount={`¥${(order.totalAmount || 0).toFixed(2)}`}
                     time={formatChatTime(order.createdAt)}
                   />
                 ))}
               </div>
             </>
           ) : (
-            <div className="text-xs text-gray-400 text-center py-3 bg-gray-50 rounded-lg">
+            <div className="text-xs text-gray-400 text-center py-4 bg-gray-50 rounded-lg">
               暂无订单数据
             </div>
           )}
-        </div>
-
-        {/* 会话信息 */}
-        <div className="px-4 py-3">
-          <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
-            会话信息
-          </h4>
-          <div className="space-y-2 text-xs">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-gray-500 shrink-0">会话 ID</span>
-              <div className="flex items-center gap-1 min-w-0">
-                <span className="text-gray-700 font-mono text-[10px] break-all">{currentSessionId || '-'}</span>
-                <button
-                  onClick={() => { navigator.clipboard.writeText(currentSessionId || '') }}
-                  className="text-gray-400 hover:text-gray-600 flex-shrink-0"
-                  title="复制会话ID"
-                >
-                  <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                </button>
-              </div>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-gray-500">状态</span>
-              <span className={cn(
-                'px-1.5 py-0.5 rounded text-[10px] font-medium',
-                currentSession?.status === 'active'
-                  ? 'bg-green-50 text-green-700'
-                  : 'bg-gray-50 text-gray-600'
-              )}>
-                {currentSession?.status === 'active' ? '进行中' : '已结束'}
-              </span>
-            </div>
-          </div>
         </div>
       </div>
     </div>
