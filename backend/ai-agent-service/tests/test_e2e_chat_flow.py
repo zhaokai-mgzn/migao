@@ -153,6 +153,22 @@ class InMemorySessionStore:
         msgs.sort(key=lambda m: m["created_at"])
         return msgs[-limit:]
 
+    async def get_history_by_tokens(self, session_id, max_tokens=8000, min_messages=4):
+        msgs = [m for m in self.messages if m["session_id"] == session_id]
+        msgs.sort(key=lambda m: m["created_at"])
+        # 简单估算：每条消息按 content 长度 * 0.55 估算 token
+        total = 0
+        selected = []
+        for m in reversed(msgs):
+            est = max(1, len(m.get("content", "")) * 0.55)
+            if total + est > max_tokens and len(selected) >= min_messages:
+                break
+            total += est
+            selected.append(m)
+        selected.reverse()
+        needs = len(selected) < len(msgs) and len(msgs) > min_messages
+        return selected, needs
+
     async def delete_session(self, session_id):
         self.messages = [m for m in self.messages if m["session_id"] != session_id]
         self.sessions.pop(session_id, None)
@@ -160,6 +176,27 @@ class InMemorySessionStore:
 
     async def session_exists(self, session_id):
         return session_id in self.sessions
+
+    async def close_session(self, session_id):
+        if session_id in self.sessions:
+            self.sessions[session_id]["status"] = "closed"
+        return True
+
+    async def close_other_active_sessions(self, tenant_id, customer_id, except_session_id=None):
+        count = 0
+        for s in self.sessions.values():
+            if (s["tenant_id"] == tenant_id and s["customer_id"] == customer_id
+                    and s.get("status") == "active" and s["id"] != except_session_id):
+                s["status"] = "closed"
+                count += 1
+        return count
+
+    async def get_last_message_time(self, session_id):
+        msgs = [m for m in self.messages if m["session_id"] == session_id]
+        if msgs:
+            msgs.sort(key=lambda m: m["created_at"])
+            return msgs[-1]["created_at"]
+        return None
 
 
 # 全局 store 实例（每次 fixture 重置）
