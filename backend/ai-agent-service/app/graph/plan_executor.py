@@ -1017,19 +1017,24 @@ async def execute_plan(
         else:
             query_data = f"工具不可用: {current.query_tool}"
 
-        # LLM 格式化展示——代码已生成编号，LLM 原样输出不要改动
-        prompt = (
+        # 代码直接拼接带编号列表，不经过 LLM，避免编号被吃掉
+        intro_prompt = (
             f"多步骤操作目标: {plan.goal}\n"
             f"展示提示: {current.query_prompt}\n"
             f"已收集: {json.dumps(plan.context, ensure_ascii=False)}\n\n"
-            f"请原样输出以下列表（含编号），不要修改任何一行：\n\n{query_data}\n\n"
-            f"然后请用户回复编号选择。不要调用工具。"
+            f"请用一句话引导用户从下方列表中选择（编号已在列表中，你不需要重复列出）。不要调用工具。"
         )
-        final_answer = await LLMFactory.invoke_text_safe([
+        llm_intro = await LLMFactory.invoke_text_safe([
             SystemMessage(content=system_prompt),
             *messages[-4:],
-            HumanMessage(content=prompt),
+            HumanMessage(content=intro_prompt),
         ])
+        # 代码直接拼接编号列表 + 选择引导，LLM 只负责 intro 文案
+        final_answer = (
+            f"{llm_intro.strip()}\n\n"
+            f"{query_data}\n\n"
+            f"请回复对应的数字编号进行选择。"
+        )
         new_messages.append(AIMessage(content=final_answer))
         awaiting_user = True
 
