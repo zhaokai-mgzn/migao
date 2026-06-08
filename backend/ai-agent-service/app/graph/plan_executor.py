@@ -889,7 +889,26 @@ async def execute_plan(
                         plan.context["processing_item_ids"] = [i for i in ids_list if i]
                         logger.info(f"[pe] Query choice matched: tool={qt} count={len(plan.context['processing_item_ids'])}")
         elif prev.type == "confirm":
-            plan.context["_user_confirmed"] = True
+            # 检测用户意图：确认 / 取消 / 修改
+            confirm_keywords = ["确认", "是", "是的", "可以", "好的", "行", "好", "对", "正确", "没错", "ok", "yes", "y"]
+            cancel_keywords = ["取消", "不", "不要", "算了", "不了", "别", "no", "n"]
+            user_lower = last_user_msg.strip().lower()
+            is_confirm = any(kw in user_lower for kw in confirm_keywords)
+            is_cancel = any(kw in user_lower for kw in cancel_keywords)
+            if is_confirm and not is_cancel:
+                plan.context["_user_confirmed"] = True
+            elif is_cancel:
+                await _clear_plan(session_id)
+                return {
+                    "messages": [AIMessage(content="好的，已取消当前操作。")],
+                    "final_answer": "好的，已取消当前操作。",
+                    "skill_used": skill_name,
+                }
+            else:
+                # 用户想修改信息: 回退到 confirm 步骤重新确认
+                plan.current_step -= 1  # 从 execute 回退到 confirm
+                plan.context.pop("_user_confirmed", None)
+                logger.info(f"[pe] Confirm modified, back to step {plan.current_step + 1}. msg={last_user_msg[:60]}")
 
     # ── 2. 执行当前步骤 ──
     new_messages = []
