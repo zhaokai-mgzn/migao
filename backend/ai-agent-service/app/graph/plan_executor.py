@@ -1019,18 +1019,18 @@ async def execute_plan(
             query_data = f"工具不可用: {current.query_tool}"
 
         # 代码直接拼接带编号列表，不经过 LLM，避免编号被吃掉
+        # LLM 只生成一句话引导语，禁止列出选项（列表由代码拼接）
         intro_prompt = (
-            f"多步骤操作目标: {plan.goal}\n"
-            f"展示提示: {current.query_prompt}\n"
-            f"已收集: {json.dumps(plan.context, ensure_ascii=False)}\n\n"
-            f"请用一句话引导用户从下方列表中选择（编号已在列表中，你不需要重复列出）。不要调用工具。"
+            f"你正在帮用户完成: {plan.goal}\n"
+            f"已收集信息: {json.dumps(plan.context, ensure_ascii=False)}\n\n"
+            f"请用一句话引导用户做选择（如'{current.query_prompt}'），但绝对不要列出任何选项名称。不要调用工具。"
         )
         llm_intro = await LLMFactory.invoke_text_safe([
             SystemMessage(content=system_prompt),
             *messages[-4:],
             HumanMessage(content=intro_prompt),
         ])
-        # 代码直接拼接编号列表 + 选择引导，LLM 只负责 intro 文案
+        # 代码直接拼接：引导语 + 带编号的选项列表 + 选择提示
         final_answer = (
             f"{llm_intro.strip()}\n\n"
             f"{query_data}\n\n"
