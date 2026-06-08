@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { usePathname } from 'next/navigation'
 import Sidebar from '@/components/layout/Sidebar'
 import Header from '@/components/layout/Header'
 import { cn } from '@/lib/utils'
@@ -11,12 +12,30 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode
 }) {
+  const pathname = usePathname()
   const [collapsed, setCollapsed] = useState(false)
+  const manualToggle = useRef(false)
+
+  // 进入 /chat 时自动收拢侧边栏，离开时自动恢复
+  useEffect(() => {
+    const isChat = pathname.startsWith('/chat')
+    if (isChat) {
+      manualToggle.current = false
+      setCollapsed(true)
+    } else if (!manualToggle.current) {
+      setCollapsed(false)
+    }
+  }, [pathname])
+
+  const handleToggle = () => {
+    manualToggle.current = true
+    setCollapsed(prev => !prev)
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
       {/* 侧边栏 */}
-      <Sidebar collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} />
+      <Sidebar collapsed={collapsed} onToggle={handleToggle} />
 
       {/* 主内容区 */}
       <div
