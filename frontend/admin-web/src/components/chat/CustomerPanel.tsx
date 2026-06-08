@@ -10,6 +10,8 @@ import {
   ShoppingBag,
   MessageCircle,
   Clock,
+  Copy,
+  Check,
 } from 'lucide-react'
 import { cn, formatChatTime } from '@/lib/utils'
 import { useChatStore } from '@/store/chat'
@@ -17,6 +19,7 @@ import type { ChatCustomerInfo } from '@/types'
 
 export default function CustomerPanel() {
   const [collapsed, setCollapsed] = useState(false)
+  const [copied, setCopied] = useState(false)
   const { currentSessionId, sessions } = useChatStore()
   const [customerInfo] = useState<ChatCustomerInfo | null>(null)
 
@@ -24,9 +27,15 @@ export default function CustomerPanel() {
     (s) => s.session_id === currentSessionId
   )
 
+  const handleCopy = () => {
+    if (!currentSessionId) return
+    navigator.clipboard.writeText(currentSessionId)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
   if (!currentSessionId) return null
 
-  // 收起状态 - 只显示切换按钮
   if (collapsed) {
     return (
       <div className="flex-shrink-0 border-l border-gray-200 bg-white">
@@ -73,14 +82,13 @@ export default function CustomerPanel() {
             </div>
           </div>
 
-          {/* 标签 */}
           <div className="flex flex-wrap gap-1.5 mt-3">
-            {customerInfo?.vipLevel ? (
+            {customerInfo?.vipLevel && (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded text-[11px] font-medium">
                 <Star className="w-3 h-3" />
                 {customerInfo.vipLevel}
               </span>
-            ) : null}
+            )}
             <span className={cn(
               'inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium',
               currentSession?.status === 'active'
@@ -92,56 +100,65 @@ export default function CustomerPanel() {
           </div>
         </div>
 
-        {/* 联系信息 */}
+        {/* 联系 + 会话信息 */}
         <div className="px-4 py-3 border-b border-gray-100">
           <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
-            联系信息
+            基本信息
           </h4>
           <div className="space-y-2">
-            <InfoRow
-              icon={<Phone className="w-3.5 h-3.5" />}
-              label="电话"
-              value={customerInfo?.phone || '暂无'}
-            />
+            <InfoRow icon={<Phone className="w-3.5 h-3.5" />} label="电话" value={customerInfo?.phone || '暂无'} />
             <InfoRow
               icon={<Clock className="w-3.5 h-3.5" />}
               label="注册"
               value={customerInfo?.registeredDays !== undefined ? `${customerInfo.registeredDays} 天前` : '暂无'}
             />
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-gray-400 flex-shrink-0">
+                <MessageCircle className="w-3.5 h-3.5" />
+              </span>
+              <span className="text-gray-500 w-8 flex-shrink-0">会话</span>
+              <span className="text-gray-700 font-mono text-[11px] truncate" title={currentSessionId}>
+                {currentSessionId?.slice(0, 14)}…
+              </span>
+              <button
+                onClick={handleCopy}
+                className="text-gray-400 hover:text-gray-600 flex-shrink-0 ml-auto"
+                title="复制会话ID"
+              >
+                {copied ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* 历史订单摘要 */}
+        {/* 客户统计 */}
         <div className="px-4 py-3 border-b border-gray-100">
           <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
-            订单概览
+            客户画像
+          </h4>
+          <div className="grid grid-cols-2 gap-2">
+            <StatCard icon={<ShoppingBag className="w-4 h-4" />} label="累计订单" value={String(customerInfo?.totalOrders || 0)} />
+            <StatCard icon={<MessageCircle className="w-4 h-4" />} label="历史会话" value={String(customerInfo?.totalSessions || 0)} />
+          </div>
+        </div>
+
+        {/* 最近订单 */}
+        <div className="px-4 py-3">
+          <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+            最近订单
           </h4>
           {customerInfo?.recentOrders && customerInfo.recentOrders.length > 0 ? (
-            <>
-              <div className="grid grid-cols-2 gap-2 mb-3">
-                <StatCard
-                  icon={<ShoppingBag className="w-4 h-4" />}
-                  label="总订单"
-                  value={String(customerInfo.totalOrders || 0)}
+            <div className="space-y-2">
+              {customerInfo.recentOrders.slice(0, 3).map((order) => (
+                <RecentOrder
+                  key={order.id}
+                  orderNo={order.orderNo}
+                  status={order.status}
+                  amount={`¥${(order.totalAmount || 0).toFixed(2)}`}
+                  time={formatChatTime(order.createdAt)}
                 />
-                <StatCard
-                  icon={<MessageCircle className="w-4 h-4" />}
-                  label="总会话"
-                  value={String(customerInfo.totalSessions || 0)}
-                />
-              </div>
-              <div className="space-y-2">
-                {customerInfo.recentOrders.slice(0, 3).map((order) => (
-                  <RecentOrder
-                    key={order.id}
-                    orderNo={order.orderNo}
-                    status={order.status}
-                    amount={`¥${(order.totalAmount || 0).toFixed(2)}`}
-                    time={formatChatTime(order.createdAt)}
-                  />
-                ))}
-              </div>
-            </>
+              ))}
+            </div>
           ) : (
             <div className="text-xs text-gray-400 text-center py-4 bg-gray-50 rounded-lg">
               暂无订单数据
@@ -153,33 +170,17 @@ export default function CustomerPanel() {
   )
 }
 
-function InfoRow({
-  icon,
-  label,
-  value,
-}: {
-  icon: React.ReactNode
-  label: string
-  value: string
-}) {
+function InfoRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
     <div className="flex items-center gap-2 text-xs">
       <span className="text-gray-400">{icon}</span>
       <span className="text-gray-500 w-8">{label}</span>
-      <span className="text-gray-700">{value}</span>
+      <span className="text-gray-700 truncate">{value}</span>
     </div>
   )
 }
 
-function StatCard({
-  icon,
-  label,
-  value,
-}: {
-  icon: React.ReactNode
-  label: string
-  value: string
-}) {
+function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
     <div className="bg-gray-50 rounded-lg p-2.5 flex items-center gap-2">
       <span className="text-primary-500">{icon}</span>
@@ -191,17 +192,7 @@ function StatCard({
   )
 }
 
-function RecentOrder({
-  orderNo,
-  status,
-  amount,
-  time,
-}: {
-  orderNo: string
-  status: string
-  amount: string
-  time: string
-}) {
+function RecentOrder({ orderNo, status, amount, time }: { orderNo: string; status: string; amount: string; time: string }) {
   const statusMap: Record<string, { label: string; className: string }> = {
     pending: { label: '待确认', className: 'bg-amber-50 text-amber-700 border-amber-200' },
     confirmed: { label: '已确认', className: 'bg-blue-50 text-blue-700 border-blue-200' },
@@ -210,19 +201,13 @@ function RecentOrder({
     completed: { label: '已完成', className: 'bg-green-50 text-green-700 border-green-200' },
     cancelled: { label: '已取消', className: 'bg-gray-50 text-gray-600 border-gray-200' },
   }
-
   const info = statusMap[status] || { label: status, className: 'bg-gray-50 text-gray-600 border-gray-200' }
 
   return (
     <div className="bg-gray-50 rounded-lg p-2.5">
       <div className="flex items-center justify-between mb-1">
-        <span className="text-[11px] text-gray-500">{orderNo}</span>
-        <span
-          className={cn(
-            'text-[10px] px-1.5 py-0.5 rounded border font-medium',
-            info.className
-          )}
-        >
+        <span className="text-[11px] text-gray-500 font-mono">{orderNo}</span>
+        <span className={cn('text-[10px] px-1.5 py-0.5 rounded border font-medium', info.className)}>
           {info.label}
         </span>
       </div>
