@@ -143,21 +143,24 @@ export default function ProductTable({
       render: (record) => (
         <div className="flex items-start gap-3 min-w-[200px]">
           <div className="w-10 h-10 rounded-md overflow-hidden bg-gray-100 flex-shrink-0 border border-gray-200">
-            {record.images && record.images.length > 0 && !brokenImages.has(record.images[0]) ? (
-              <Image
-                src={resolveImageUrl(record.images[0])}
-                alt={record.name}
-                width={40}
-                height={40}
-                className="w-full h-full object-cover"
-                unoptimized
-                onError={() => {
-                  setBrokenImages(prev => new Set(prev).add(record.images![0]))
-                }}
-              />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center text-gray-300 text-[10px]">无图</div>
-            )}
+            {(() => {
+              const rawUrl = record.images?.[0]
+              const imgUrl = rawUrl ? resolveImageUrl(rawUrl) : ''
+              if (imgUrl && !brokenImages.has(imgUrl)) {
+                return (
+                  <Image
+                    src={imgUrl}
+                    alt={record.name}
+                    width={40}
+                    height={40}
+                    className="w-full h-full object-cover"
+                    unoptimized
+                    onError={() => setBrokenImages(prev => new Set(prev).add(imgUrl))}
+                  />
+                )
+              }
+              return <div className="w-full h-full flex items-center justify-center text-gray-300 text-[10px]">无图</div>
+            })()}
           </div>
           <div className="flex-1 min-w-0">
             <div className="text-sm text-gray-900 leading-snug break-words line-clamp-2">{record.name}</div>

@@ -68,7 +68,7 @@ function ChoiceCard({ interactive, disabled }: Props) {
 
       {/* 选项列表 */}
       <div className="p-2 space-y-1">
-        {options.map((opt: InteractiveOption) => {
+        {options.map((opt: InteractiveOption, idx: number) => {
           const isSelected = selected.has(opt.value)
           return (
             <button
@@ -92,6 +92,10 @@ function ChoiceCard({ interactive, disabled }: Props) {
                   {isSelected && <Check className="w-3 h-3" />}
                 </span>
               )}
+              {/* 序号标记：用户可通过回复数字选择 */}
+              <span className="w-5 h-5 rounded-full bg-gray-200 text-gray-500 text-[10px] font-semibold flex items-center justify-center flex-shrink-0">
+                {idx + 1}
+              </span>
               <span className="flex-1">
                 <span className="font-medium">{opt.label}</span>
                 {opt.description && (

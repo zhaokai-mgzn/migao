@@ -96,5 +96,9 @@ public class OrderListResponse {
         private String productCode;
         private Integer quantity;
         private BigDecimal unitPrice;
+        /** 金额 = unitPrice * quantity（展示用） */
+        private BigDecimal amount;
+        /** 小计（数据库 subtotal 字段，可能为 null） */
+        private BigDecimal subtotal;
     }
 }
