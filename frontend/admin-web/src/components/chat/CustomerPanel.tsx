@@ -189,27 +189,30 @@ export default function CustomerPanel() {
           <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
             会话信息
           </h4>
-          <div className="space-y-2 text-xs">
-            <div className="flex items-center justify-between">
-              <span className="text-gray-500">会话 ID</span>
-              <span className="text-gray-700 font-mono text-[10px]">{currentSessionId?.slice(0, 12)}...</span>
+          <div className="space-y-2.5 text-xs">
+            <div>
+              <span className="text-gray-500 block mb-1">会话 ID</span>
+              <div className="flex items-center gap-1">
+                <span className="text-gray-700 font-mono text-[11px] break-all">{currentSessionId || '-'}</span>
+                <button
+                  onClick={() => { navigator.clipboard.writeText(currentSessionId || '') }}
+                  className="text-gray-400 hover:text-gray-600 flex-shrink-0"
+                  title="复制会话ID"
+                >
+                  <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                </button>
+              </div>
             </div>
-            <div className="flex items-center justify-between">
-              <span className="text-gray-500">状态</span>
+            <div>
+              <span className="text-gray-500 block mb-1">状态</span>
               <span className={cn(
-                'px-1.5 py-0.5 rounded text-[10px] font-medium',
+                'inline-block px-1.5 py-0.5 rounded text-[11px] font-medium',
                 currentSession?.status === 'active'
                   ? 'bg-green-50 text-green-700'
                   : 'bg-gray-50 text-gray-600'
               )}>
                 {currentSession?.status === 'active' ? '进行中' : '已结束'}
               </span>
-            </div>
-            <div className="mt-2">
-              <span className="text-gray-500 block mb-1">最后消息</span>
-              <p className="text-gray-600 text-[11px] line-clamp-2 bg-gray-50 rounded p-2">
-                {currentSession?.last_message || '暂无消息'}
-              </p>
             </div>
           </div>
         </div>
