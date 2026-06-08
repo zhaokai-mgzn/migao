@@ -1031,7 +1031,7 @@ async def execute_plan(
                             if extra:
                                 line += f" · {extra}"
                             lines.append(line)
-                        query_data = "\n".join(lines)
+                        query_data = "\n\n".join(lines)
             except Exception as e:
                 query_data = f"查询失败: {e}"
         else:
