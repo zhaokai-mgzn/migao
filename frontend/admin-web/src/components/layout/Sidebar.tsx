@@ -77,15 +77,13 @@ interface SidebarProps {
   onToggle: () => void
 }
 
+// 一级菜单项（无子级，直接跳转）
+const topLevelItems: MenuItem[] = [
+  { key: 'dashboard', name: '工作台（数据看板）', icon: 'LayoutDashboard', path: '/dashboard' },
+]
+
+// 带子级的菜单组
 const menuGroups: MenuGroup[] = [
-  {
-    key: 'workspace',
-    name: '工作台',
-    icon: 'LayoutDashboard',
-    children: [
-      { key: 'dashboard', name: '数据看板', icon: 'BarChart3', path: '/dashboard' },
-    ],
-  },
   {
     key: 'product-center',
     name: '商品管理',
@@ -105,49 +103,15 @@ const menuGroups: MenuGroup[] = [
       { key: 'after-sales', name: '售后工单', icon: 'ShieldCheck', path: '/after-sales' },
     ],
   },
-  {
-    key: 'finance',
-    name: '财务对账',
-    icon: 'Calculator',
-    children: [
-      { key: 'finance-main', name: '财务对账', icon: 'Calculator', path: '/finance' },
-    ],
-  },
-  {
-    key: 'employees-group',
-    name: '员工管理',
-    icon: 'Users',
-    children: [
-      { key: 'employees', name: '员工管理', icon: 'Users', path: '/employees' },
-    ],
-  },
-  {
-    key: 'company',
-    name: '企业基础信息',
-    icon: 'Building2',
-    children: [
-      { key: 'settings', name: '企业基础信息', icon: 'Building2', path: '/settings' },
-    ],
-  },
-  {
-    key: 'agent',
-    name: '客服',
-    icon: 'Headphones',
-    children: [
-      { key: 'agent-workspace', name: '客服工作台', icon: 'MessageSquare', path: '/agent-workspace' },
-      { key: 'agent-sessions', name: '会话监控', icon: 'Monitor', path: '/agent-workspace/sessions' },
-      { key: 'quick-replies', name: '快捷回复', icon: 'Zap', path: '/agent-workspace/quick-replies' },
-      { key: 'agent-team', name: '客服团队', icon: 'Users', path: '/employees' },
-    ],
-  },
-  {
-    key: 'customer',
-    name: '客户',
-    icon: 'UserCircle',
-    children: [
-      { key: 'customers', name: '客户管理', icon: 'Users', path: '/customers' },
-    ],
-  },
+]
+
+// 一级独立菜单项（无子级，直接跳转，排在分组后面）
+const standaloneItems: MenuItem[] = [
+  { key: 'customers', name: '客户管理', icon: 'UserCircle', path: '/customers' },
+  { key: 'finance', name: '财务对账', icon: 'Calculator', path: '/finance' },
+  { key: 'chat', name: '机器人设置', icon: 'Zap', path: '/chat' },
+  { key: 'employees', name: '员工管理', icon: 'Users', path: '/employees' },
+  { key: 'settings', name: '企业基础信息', icon: 'Building2', path: '/settings' },
 ]
 
 export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
@@ -205,7 +169,35 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
       {/* 导航菜单 */}
       <nav className="flex-1 py-2 px-2 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 7rem)' }}>
-        {menuGroups.map((group, groupIndex) => {
+
+        {/* 一级菜单项（无子级，直接跳转） */}
+        <div className="space-y-0.5 mb-4">
+          {topLevelItems.map((item) => {
+            const Icon = iconMap[item.icon] || LayoutDashboard
+            const active = isActive(item.path)
+            return (
+              <Link
+                key={item.key}
+                href={item.path}
+                className={cn(
+                  'flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors',
+                  active
+                    ? 'bg-primary-600 text-white'
+                    : 'text-slate-300 hover:bg-slate-800 hover:text-white',
+                  collapsed && 'justify-center px-2'
+                )}
+                title={collapsed ? item.name : undefined}
+              >
+                <Icon className="w-5 h-5 flex-shrink-0" />
+                {!collapsed && <span className="whitespace-nowrap">{item.name}</span>}
+              </Link>
+            )
+          })}
+        </div>
+
+        {/* 带子级的菜单组 */}
+        {collapsed && <div className="mx-2 mb-3 border-t border-slate-700" />}
+        {menuGroups.map((group) => {
           const filteredChildren = filterChildren(group.children)
           if (filteredChildren.length === 0) return null
 
@@ -213,17 +205,14 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
           const isExpanded = expandedGroups[group.key]
 
           return (
-            <div key={group.key} className={cn(groupIndex > 0 && 'mt-4')}>
+            <div key={group.key} className="mb-4">
               {/* 分组标题 */}
               {collapsed ? (
-                // 收起时显示分隔线
-                groupIndex > 0 && (
-                  <div className="mx-2 mb-2 border-t border-slate-700" />
-                )
+                <div className="mx-2 mb-1 border-t border-slate-700" />
               ) : (
                 <button
                   onClick={() => toggleGroup(group.key)}
-                  className="w-full flex items-center justify-between px-3 py-1.5 mb-1 group cursor-pointer"
+                  className="w-full flex items-center justify-between px-3 py-1 mb-1 group cursor-pointer"
                 >
                   <div className="flex items-center gap-2">
                     <GroupIcon className="w-4 h-4 text-slate-400" />
@@ -245,7 +234,6 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
                   {filteredChildren.map((item) => {
                     const Icon = iconMap[item.icon] || BarChart3
                     const active = isActive(item.path)
-
                     return (
                       <Link
                         key={item.key}
@@ -260,9 +248,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
                         title={collapsed ? item.name : undefined}
                       >
                         <Icon className="w-5 h-5 flex-shrink-0" />
-                        {!collapsed && (
-                          <span className="whitespace-nowrap">{item.name}</span>
-                        )}
+                        {!collapsed && <span className="whitespace-nowrap">{item.name}</span>}
                       </Link>
                     )
                   })}
@@ -271,6 +257,32 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
             </div>
           )
         })}
+
+        {/* 一级独立菜单项 */}
+        {collapsed && <div className="mx-2 mb-3 border-t border-slate-700" />}
+        <div className="space-y-0.5">
+          {standaloneItems.map((item) => {
+            const Icon = iconMap[item.icon] || LayoutDashboard
+            const active = isActive(item.path)
+            return (
+              <Link
+                key={item.key}
+                href={item.path}
+                className={cn(
+                  'flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors',
+                  active
+                    ? 'bg-primary-600 text-white'
+                    : 'text-slate-300 hover:bg-slate-800 hover:text-white',
+                  collapsed && 'justify-center px-2'
+                )}
+                title={collapsed ? item.name : undefined}
+              >
+                <Icon className="w-5 h-5 flex-shrink-0" />
+                {!collapsed && <span className="whitespace-nowrap">{item.name}</span>}
+              </Link>
+            )
+          })}
+        </div>
       </nav>
 
       {/* 底部折叠按钮 */}
