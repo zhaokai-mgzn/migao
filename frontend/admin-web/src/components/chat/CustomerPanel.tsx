@@ -193,7 +193,7 @@ export default function CustomerPanel() {
             <div className="flex items-center justify-between gap-2">
               <span className="text-gray-500 shrink-0">会话 ID</span>
               <div className="flex items-center gap-1 min-w-0">
-                <span className="text-gray-700 font-mono text-[10px] truncate">{currentSessionId || '-'}</span>
+                <span className="text-gray-700 font-mono text-[10px] break-all">{currentSessionId || '-'}</span>
                 <button
                   onClick={() => { navigator.clipboard.writeText(currentSessionId || '') }}
                   className="text-gray-400 hover:text-gray-600 flex-shrink-0"
