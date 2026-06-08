@@ -9,15 +9,22 @@ from app.graph.skills.base_skill import execute_skill
 from app.graph.skills.skill_config import SkillConfig
 
 
-# 通用 Agent 可用的 Tool 列表 — 仅只读查询类 Tool + interact
-# 写操作（product_manage, order_create, processing_item_manage 等）仅限领域 Skill 使用
+# 通用 Agent 可用的 Tool 列表 — 覆盖全部只读查询 + 客服工作台 + 交互组件
+# 写操作（product_manage, order_create 等）仅限领域 Skill 使用
 GENERAL_TOOLS = [
+    # 查询
     "order_query",
     "logistics_track",
     "product_search",
     "product_detail",
     "processing_item_query",
+    "customer_manage",
+    # 数据看板 + 客服会话
     "dashboard_stats",
+    "session_manage",
+    # 通知 + 快捷回复
+    "notification_manage",
+    "quick_reply_manage",
 ]
 
 # 通用 Agent System Prompt — 复用 CustomerServiceAgent 的完整 Prompt 结构
