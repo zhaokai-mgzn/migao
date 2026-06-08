@@ -1020,16 +1020,16 @@ async def execute_plan(
                             desc_parts = []
                             price = item.get("unit_price") or item.get("price") or item.get("basePrice")
                             if price is not None:
-                                desc_parts.append(f"{price}元")
+                                desc_parts.append(f"¥{price}")
                             unit = item.get("unit", "")
                             if unit:
                                 desc_parts.append(f"/{unit}")
                             extra = item.get("description") or item.get("category_name", "")
-                            line = f"{i}. {name}"
+                            line = f"  `{i}`　{name}"
                             if desc_parts:
-                                line += f" - {''.join(desc_parts)}"
+                                line += f" · _{' '.join(desc_parts)}_"
                             if extra:
-                                line += f"（{extra}）"
+                                line += f" · {extra}"
                             lines.append(line)
                         query_data = "\n".join(lines)
             except Exception as e:
@@ -1053,7 +1053,7 @@ async def execute_plan(
         final_answer = (
             f"{llm_intro.strip()}\n\n"
             f"{query_data}\n\n"
-            f"请回复对应的数字编号进行选择。"
+            f"↳ 回复数字编号即可选择（如回复 `2`）"
         )
         new_messages.append(AIMessage(content=final_answer))
         awaiting_user = True
