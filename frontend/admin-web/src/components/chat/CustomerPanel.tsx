@@ -189,11 +189,11 @@ export default function CustomerPanel() {
           <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
             会话信息
           </h4>
-          <div className="space-y-2.5 text-xs">
-            <div>
-              <span className="text-gray-500 block mb-1">会话 ID</span>
-              <div className="flex items-center gap-1">
-                <span className="text-gray-700 font-mono text-[11px] break-all">{currentSessionId || '-'}</span>
+          <div className="space-y-2 text-xs">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-gray-500 shrink-0">会话 ID</span>
+              <div className="flex items-center gap-1 min-w-0">
+                <span className="text-gray-700 font-mono text-[10px] truncate">{currentSessionId || '-'}</span>
                 <button
                   onClick={() => { navigator.clipboard.writeText(currentSessionId || '') }}
                   className="text-gray-400 hover:text-gray-600 flex-shrink-0"
@@ -203,10 +203,10 @@ export default function CustomerPanel() {
                 </button>
               </div>
             </div>
-            <div>
-              <span className="text-gray-500 block mb-1">状态</span>
+            <div className="flex items-center justify-between">
+              <span className="text-gray-500">状态</span>
               <span className={cn(
-                'inline-block px-1.5 py-0.5 rounded text-[11px] font-medium',
+                'px-1.5 py-0.5 rounded text-[10px] font-medium',
                 currentSession?.status === 'active'
                   ? 'bg-green-50 text-green-700'
                   : 'bg-gray-50 text-gray-600'
