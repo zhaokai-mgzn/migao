@@ -1130,33 +1130,35 @@ async def execute_plan(
             colors = plan.context.get("colors", [])
             sms = plan.context.get("selling_methods", [])
             dws = plan.context.get("door_widths", [])
-            if colors and sms and dws and "skus" not in plan.context:
-                sm_list = sms if isinstance(sms, list) else [sms]
-                dw_list = dws if isinstance(dws, list) else [dws]
-                # 规范化 colors 为 dict 列表，给每个加临时 id
+            if (sms or dws) and "skus" not in plan.context:
+                sm_list = (sms if isinstance(sms, list) else [sms]) if sms else [None]
+                dw_list = (dws if isinstance(dws, list) else [dws]) if dws else [None]
+                # 规范化 colors: 有就展开，没有就用一个空颜色占位
                 normalized_colors = []
-                for ci, c in enumerate(colors):
-                    if isinstance(c, str):
-                        normalized_colors.append({"colorName": c, "id": -(ci + 1)})
-                    elif isinstance(c, dict):
-                        if "id" not in c:
-                            c["id"] = -(ci + 1)
-                        normalized_colors.append(c)
-                colors = normalized_colors
-                plan.context["colors"] = colors
+                if colors:
+                    for ci, c in enumerate(colors):
+                        if isinstance(c, str):
+                            normalized_colors.append({"colorName": c, "id": -(ci + 1)})
+                        elif isinstance(c, dict):
+                            if "id" not in c:
+                                c["id"] = -(ci + 1)
+                            normalized_colors.append(c)
+                else:
+                    # 无颜色时用一个虚拟颜色，确保 SKU 能生成
+                    normalized_colors.append({"colorName": "默认", "id": -1})
+                plan.context["colors"] = normalized_colors
                 # 构造 SKU：每个 color × sellingMethod × doorWidth
                 skus = []
                 total_sku_stock = int(plan.context.get("stock_quantity", plan.context.get("stock", 0)) or 0)
-                for c in colors:
+                for c in normalized_colors:
                     cid = c.get("id", 0) if isinstance(c, dict) else 0
                     for sm in sm_list:
                         for dw in dw_list:
                             skus.append({"colorId": cid, "sellingMethod": sm, "doorWidth": dw,
                                           "price": plan.context.get("price", 0),
-                                          "stock": max(1, total_sku_stock // max(1, len(colors) * len(sm_list) * len(dw_list)))})
-                plan.context["colors"] = colors  # 更新回去带 id
+                                          "stock": max(1, total_sku_stock // max(1, len(sm_list) * len(dw_list) * len(normalized_colors)))})
                 plan.context["skus"] = skus
-                logger.info(f"[pe] Auto-generated {len(skus)} SKUs")
+                logger.info(f"[pe] Auto-generated {len(skus)} SKUs (colors={len(normalized_colors)} sm={len(sm_list)} dw={len(dw_list)})")
             if "processing_item_ids" in plan.context and "processing_item_configs" not in plan.context:
                 pids = plan.context["processing_item_ids"]
                 pid_list = pids if isinstance(pids, list) else [pids]
