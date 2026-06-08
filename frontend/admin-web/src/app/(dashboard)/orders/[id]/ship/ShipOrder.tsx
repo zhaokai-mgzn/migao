@@ -137,6 +137,17 @@ export default function ShipOrder() {
     )
   }
 
+  // 状态守卫：仅待发货状态可进入发货页
+  const shippableStatuses = new Set(['pending_shipment', 'confirmed', 'processing'])
+  if (!shippableStatuses.has(order.status)) {
+    return (
+      <div className="p-6 text-center py-12">
+        <p className="text-gray-500 mb-4">当前订单状态不允许发货</p>
+        <Button onClick={() => router.push(`/orders/${order.id}`)}>返回订单详情</Button>
+      </div>
+    )
+  }
+
   return (
     <div className="p-6">
       {/* 面包屑 */}

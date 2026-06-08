@@ -33,7 +33,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
@@ -65,7 +64,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      */
     private static final Map<String, Set<String>> STATUS_TRANSITIONS = Map.of(
             "pending", Set.of("confirmed", "cancelled"),
-            "confirmed", Set.of("producing", "cancelled"),
+            "confirmed", Set.of("producing", "shipped", "cancelled"),
             "producing", Set.of("shipped", "cancelled"),
             "shipped", Set.of("completed"),
             "completed", Set.of(),
@@ -389,14 +388,14 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
 
     /**
      * 生成订单号
-     * 格式: ORD-yyyyMMdd-XXXXXXYYYY（毫秒后6位+4位随机数，重启不冲突）
+     * 格式: 17位纯数字 = yyyyMMdd(8) + 9位随机数，简洁唯一
      */
     private String generateOrderNo() {
         String datePart = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
-        // 使用毫秒时间戳后6位 + 4位随机数，确保重启后不冲突
-        long millis = System.currentTimeMillis() % 1000000;
-        int random = ThreadLocalRandom.current().nextInt(1000, 9999);
-        return String.format("ORD-%s-%06d%04d", datePart, millis, random);
+        // 9位随机数：取 nanoTime 尾9位取绝对值，确保非负
+        long raw = System.nanoTime() % 1_000_000_000L;
+        long suffix = raw < 0 ? -raw : raw;
+        return String.format("%s%09d", datePart, suffix);
     }
 
     /**

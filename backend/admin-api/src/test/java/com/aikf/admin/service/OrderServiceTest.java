@@ -469,7 +469,7 @@ class OrderServiceTest {
             Order o = invocation.getArgument(0);
             o.setId("order-gen");
             // 验证订单号格式
-            assertThat(o.getOrderNo()).matches("ORD-\\d{8}-\\d+");
+            assertThat(o.getOrderNo()).matches("\\d{17}");
             return 1;
         });
         when(orderItemMapper.insert(any(OrderItem.class))).thenReturn(1);
@@ -487,7 +487,7 @@ class OrderServiceTest {
         orderService.createOrder(request, 1L);
 
         // then
-        verify(orderMapper).insert(argThat((Order o) -> o.getOrderNo() != null && o.getOrderNo().startsWith("ORD-")));
+        verify(orderMapper).insert(argThat((Order o) -> o.getOrderNo() != null && o.getOrderNo().matches("\\d{17}")));
     }
 
     // ======================== 确认支付（库存扣减）测试 ========================
