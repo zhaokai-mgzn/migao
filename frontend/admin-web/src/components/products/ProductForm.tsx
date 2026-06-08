@@ -246,9 +246,9 @@ export default function ProductForm({
         errs.colors = '请至少添加 1 种颜色'
       else {
         const incomplete = form.colors.find(
-          (c) => !c.colorName || !c.colorName.trim() || !c.colorImageUrl
+          (c) => !c.colorName || !c.colorName.trim()
         )
-        if (incomplete) errs.colors = '颜色必须填写名称并上传图片'
+        if (incomplete) errs.colors = '颜色必须填写名称'
       }
       if (!form.sellingMethods || form.sellingMethods.filter(Boolean).length === 0)
         errs.sellingMethods = '请至少添加 1 种售卖方式'

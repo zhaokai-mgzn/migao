@@ -2,12 +2,9 @@
 'use client'
 
 import { useMemo, useRef, useState, useEffect } from 'react'
-import { Plus, Trash2, GripVertical, ImagePlus, Check } from 'lucide-react'
+import { Plus, Trash2, GripVertical, Check } from 'lucide-react'
 import { toast } from 'sonner'
-import Image from 'next/image'
 import { Button, Select } from '@/components/ui'
-import { fileApi } from '@/lib/api'
-import { resolveImageUrl } from '@/lib/utils'
 import type { ProductColor, ProductSku, SellingMethod } from '@/types'
 import { SellingMethodLabels } from '@/types'
 
@@ -121,7 +118,6 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
     const newColor: ProductColor = {
       id: -(Date.now() + Math.random()),
       colorName: '',
-      colorImageUrl: '',
       remark: '',
       sortOrder: colors.length,
     }
@@ -142,7 +138,6 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
       id: -(Date.now() + Math.random()),
       colorName: name,
       mainColorHex: hex || undefined,
-      colorImageUrl: '',
       remark: '',
       sortOrder: colors.length,
     }
@@ -427,11 +422,6 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
                 {colorSortMode && (
                   <GripVertical className="w-4 h-4 text-gray-400 shrink-0" />
                 )}
-                {/* 图片 */}
-                <ColorImage
-                  url={color.colorImageUrl}
-                  onChange={(u) => handleUpdateColor(idx, { colorImageUrl: u })}
-                />
                 {/* 名称 + 主色选择器 */}
                 <div className="flex-1 min-w-0">
                   <ColorPicker
@@ -693,31 +683,13 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
                               rowSpan={colorRowSpan}
                               className="px-3 py-2 align-middle border-r border-gray-100 bg-white"
                             >
-                              <div className="flex items-center gap-2">
-                                <div className="w-10 h-10 shrink-0 rounded overflow-hidden border border-gray-200 bg-gray-50">
-                                  {color.colorImageUrl && color.colorImageUrl.trim() !== '' ? (
-                                    <Image
-                                      src={resolveImageUrl(color.colorImageUrl)}
-                                      alt={color.colorName || ''}
-                                      width={40}
-                                      height={40}
-                                      className="w-full h-full object-cover"
-                                      unoptimized
-                                    />
-                                  ) : (
-                                    <div className="w-full h-full flex items-center justify-center text-gray-300">
-                                      <ImagePlus className="w-4 h-4" />
-                                    </div>
-                                  )}
-                                </div>
-                                <div className="text-sm text-gray-700 truncate">
-                                  {color.colorName || '未命名'}
-                                  {color.remark && (
-                                    <span className="text-gray-400">
-                                      （{color.remark}）
-                                    </span>
-                                  )}
-                                </div>
+                              <div className="text-sm text-gray-700 truncate">
+                                {color.colorName || '未命名'}
+                                {color.remark && (
+                                  <span className="text-gray-400">
+                                    （{color.remark}）
+                                  </span>
+                                )}
                               </div>
                             </td>
                           )}
@@ -832,64 +804,6 @@ function RowSelectorSection({
         </button>
       </div>
       {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
-    </div>
-  )
-}
-
-// ========== 子组件：颜色行内的小图上传（36x36 微缩） ==========
-
-function ColorImage({
-  url,
-  onChange,
-}: {
-  url?: string
-  onChange: (u: string) => void
-}) {
-  const inputRef = useRef<HTMLInputElement>(null)
-  const uploadingRef = useRef(false)
-
-  const handleFiles = async (files: FileList | null) => {
-    if (!files || !files.length || uploadingRef.current) return
-    const file = files[0]
-    if (!/^image\/(jpeg|png|webp)$/.test(file.type)) {
-      toast.error('仅支持 JPG / PNG / WEBP 图片')
-      return
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error('图片不能超过 5MB')
-      return
-    }
-    uploadingRef.current = true
-    try {
-      const res = await fileApi.uploadFile(file, 'product-color')
-      onChange(res.data.data.url)
-    } catch {
-      // 错误由 API 层提示
-    } finally {
-      uploadingRef.current = false
-      if (inputRef.current) inputRef.current.value = ''
-    }
-  }
-
-  return (
-    <div
-      className={`relative w-9 h-9 rounded border bg-gray-50 cursor-pointer overflow-hidden flex items-center justify-center transition-colors ${
-        url ? 'border-gray-200' : 'border-dashed border-gray-300 hover:border-primary-400 hover:bg-primary-50/30'
-      }`}
-      title={url ? '点击替换图片' : '点击上传图片'}
-    >
-      {url && url.trim() !== '' ? (
-        <Image src={resolveImageUrl(url)} alt="color" width={36} height={36} className="w-full h-full object-cover" unoptimized />
-      ) : (
-        <ImagePlus className="w-4 h-4 text-gray-400" />
-      )}
-      <input
-        ref={inputRef}
-        type="file"
-        accept="image/jpeg,image/png,image/webp"
-        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-        onChange={(e) => handleFiles(e.target.files)}
-      />
     </div>
   )
 }
