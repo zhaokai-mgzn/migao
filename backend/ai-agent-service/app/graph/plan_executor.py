@@ -706,7 +706,8 @@ async def _extract_fields(user_message: str, fields: List[str], existing: Dict) 
         f"用户回复: {user_message}\n"
         f"需要提取的字段: {', '.join(fields)}\n"
         f"已有信息: {json.dumps(existing, ensure_ascii=False)}\n\n"
-        f"返回纯 JSON，key 使用英文字段名。没提到的字段不要编造。"
+        f"返回纯 JSON，key 使用英文字段名。没提到的字段不要编造。\n"
+        f"⚠️ colors/specifications 等列表字段必须原样保留全部值，一个都不能省略。"
     )
     try:
         content = await LLMFactory.invoke_text_safe([HumanMessage(content=prompt)])
