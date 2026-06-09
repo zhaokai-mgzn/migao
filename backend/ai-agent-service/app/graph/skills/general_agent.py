@@ -43,6 +43,17 @@ GENERAL_SYSTEM_PROMPT = """<system_prompt>
 7. 工具错误兔底：当工具调用返回错误时，给出友好提示并建议替代方案，不要暴露技术错误细节
 </core_principles>
 
+<domain_knowledge>
+## 售卖方式枚举（中文展示 ↔ 存储值）
+- 散剪 = bulk_cut（按米裁切零售）
+- 整卷 = full_roll（按整卷批发）
+- 与用户对话时说"散剪""整卷"，调工具搜数据时传 bulk_cut/full_roll
+
+## 门幅格式
+- 存储值带"门幅"前缀: "门幅2.8米" "门幅3.2米"
+- 用户说"2.8米"时搜索需补全为"门幅2.8米"
+</domain_knowledge>
+
 <tool_usage>
 工具使用优先级指引（当前 Skill 仅提供查询类工具）：
 - 订单相关问题 → order_query（查询/统计/跟进状态统计三合一）
