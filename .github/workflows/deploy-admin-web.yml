@@ -78,6 +78,15 @@ jobs:
             --access-key-secret ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }} \
             --region ${{ env.OSS_REGION }}
 
+      - name: Clean old static assets
+        run: |
+          echo "清理旧版本静态资源，避免 CDN 缓存引用"
+          aliyun oss rm oss://${{ env.OSS_BUCKET }}/_next/static/ --recursive --force \
+            --region ${{ env.OSS_REGION }} \
+            --endpoint https://${{ env.OSS_ENDPOINT }} \
+            || true
+          echo "✅ 清理完成"
+
       - name: Upload to OSS (HTML — no cache)
         working-directory: ${{ env.WORKING_DIR }}
         run: |
