@@ -776,20 +776,37 @@ async def execute_plan(
                     pass
 
         # 从 Vision 分析消息中提取商品属性预填充 context
+        # 优先从 [结构化数据] JSON 直接提取（绕过 LLM，保证颜色等列表完整）
         for msg in messages:
-            if hasattr(msg, 'content') and isinstance(msg.content, str) and '[图片分析结果]' in msg.content:
-                vision_fields = await _extract_fields(
-                    msg.content,
-                    ["name", "description", "brand", "colors", "specifications",
-                     "pricing_type", "unit", "selling_methods", "door_widths"],
-                    plan.context
-                )
-                for k, v in vision_fields.items():
-                    if v and k not in plan.context and k != "raw_input":
-                        plan.context[k] = v
-                if vision_fields:
-                    logger.info(f"[pe] Vision data pre-filled: {list(vision_fields.keys())}")
-                break
+            if hasattr(msg, 'content') and isinstance(msg.content, str):
+                if '[结构化数据]' in msg.content:
+                    try:
+                        import re
+                        json_start = msg.content.find('{', msg.content.find('[结构化数据]'))
+                        json_end = msg.content.rfind('}')
+                        if json_start >= 0 and json_end > json_start:
+                            structured = json.loads(msg.content[json_start:json_end + 1])
+                            for k, v in structured.items():
+                                if v and k not in plan.context and k not in ("raw_input",):
+                                    plan.context[k] = v
+                            logger.info(f"[pe] Vision structured JSON pre-filled: {list(structured.keys())}")
+                    except Exception:
+                        pass
+
+                if '[图片分析结果]' in msg.content:
+                    # LLM 兜底：提取 JSON 中没覆盖的字段
+                    remaining_fields = [f for f in ["name", "description", "brand", "colors", "specifications",
+                        "pricing_type", "unit", "selling_methods", "door_widths"] if f not in plan.context]
+                    if remaining_fields:
+                        vision_fields = await _extract_fields(
+                            msg.content, remaining_fields, plan.context
+                        )
+                        for k, v in vision_fields.items():
+                            if v and k not in plan.context and k != "raw_input":
+                                plan.context[k] = v
+                        if vision_fields:
+                            logger.info(f"[pe] Vision LLM fallback: {list(vision_fields.keys())}")
+                    break
 
         plan.skill_name = skill_name
         await _save_plan(session_id, plan)
