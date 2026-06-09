@@ -309,7 +309,7 @@ async def scenario_image_create_product(client):
     if text and ("确认" in text or "创建" in text):
         text = await _sse(client, sid, "确认创建", timeout=60)
         check("9.9 确认创建", bool(text), f"{len(text) if text else 0}字")
-        success = "成功" in text or "创建" in text or "已" in text or "太棒" in text if text else False
+        success = ("成功" in text or "太棒" in text or "已创建" in text or "已经" in text) if text else False
         check("9.10 创建结果", success and "错误" not in text if text else False)
 
         # 数据校验: 调 admin-api 查最新商品

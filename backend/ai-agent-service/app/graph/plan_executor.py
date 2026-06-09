@@ -1232,7 +1232,13 @@ async def execute_plan(
                 plan.context["colors"] = normalized_colors
                 # 构造 SKU：每个 color × sellingMethod × doorWidth
                 skus = []
-                total_sku_stock = int(plan.context.get("stock_quantity", plan.context.get("stock", 0)) or 0)
+                # LLM提取的值可能带单位（"500件""1000米"），清洗后转整数
+                raw_stock = plan.context.get("stock_quantity", plan.context.get("stock", 0)) or 0
+                if isinstance(raw_stock, str):
+                    import re
+                    m = re.search(r'\d+', raw_stock)
+                    raw_stock = int(m.group()) if m else 0
+                total_sku_stock = int(raw_stock) if raw_stock else 0
                 for c in normalized_colors:
                     cid = c.get("id", 0) if isinstance(c, dict) else 0
                     for sm in sm_list:
