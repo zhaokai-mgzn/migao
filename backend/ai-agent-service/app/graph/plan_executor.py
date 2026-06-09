@@ -441,7 +441,57 @@ async def _clear_plan(session_id: str):
 
 
 async def _generate_plan(user_message: str, chat_history: list, goal_hint: str = "") -> Optional[Plan]:
-    """调用 LLM 生成 Plan，失败返回 None"""
+    """生成 Plan：模板匹配优先，LLM 兜底"""
+
+    # 优化: 已知场景直接用模板，跳过 LLM 调用
+    _TEMPLATES = {
+        "product_create": {
+            "goal": "创建商品",
+            "steps": [
+                {"type": "ask", "description": "收集销售属性", "ask_prompt": "请提供价格、库存、货号、售卖方式(散剪/整卷)、规格尺寸(门幅)", "fields": ["price", "stock_quantity", "sku_code", "selling_methods", "door_widths"]},
+                {"type": "query", "description": "选择分类+加工项", "query_tool": "category_manage", "query_params": {"action": "tree"}, "query_prompt": "请选择商品分类"},
+                {"type": "confirm", "description": "确认创建"},
+                {"type": "execute", "description": "执行创建", "execute_tool": "product_manage", "execute_action": "create"},
+            ],
+        },
+        "product_inquiry": {
+            "goal": "创建商品",
+            "steps": [
+                {"type": "ask", "description": "收集销售属性", "ask_prompt": "请提供价格、库存、货号、售卖方式(散剪/整卷)、规格尺寸(门幅)", "fields": ["price", "stock_quantity", "sku_code", "selling_methods", "door_widths"]},
+                {"type": "query", "description": "选择分类+加工项", "query_tool": "category_manage", "query_params": {"action": "tree"}, "query_prompt": "请选择商品分类"},
+                {"type": "confirm", "description": "确认创建"},
+                {"type": "execute", "description": "执行创建", "execute_tool": "product_manage", "execute_action": "create"},
+            ],
+        },
+        "order_create": {
+            "goal": "创建订单",
+            "steps": [
+                {"type": "ask", "description": "收集订单信息", "ask_prompt": "请提供客户姓名、电话、地址、商品名称和数量", "fields": ["customer_name", "customer_phone", "customer_address", "product_name", "quantity"]},
+                {"type": "query", "description": "搜索商品", "query_tool": "product_search", "query_params": {"keyword": ""}, "query_prompt": "请选择商品"},
+                {"type": "confirm", "description": "确认订单"},
+                {"type": "execute", "description": "创建订单", "execute_tool": "order_create", "execute_action": "create"},
+            ],
+        },
+    }
+
+    template = _TEMPLATES.get(goal_hint)
+    if template:
+        # 用对话历史中的商品名个性化 goal
+        goal = template["goal"]
+        for msg in reversed(chat_history[-4:]):
+            if hasattr(msg, 'content') and isinstance(msg.content, str):
+                if "创建" in msg.content and ("商品" in msg.content or "色卡" in msg.content or "布料" in msg.content or "窗帘" in msg.content):
+                    goal = f"创建{msg.content[:30]}商品"
+                    break
+        plan = Plan(
+            goal=goal,
+            steps=[PlanStep(**s) for s in template["steps"]],
+            current_step=0,
+        )
+        logger.info(f"[pe] Plan from template: {goal_hint} | goal='{plan.goal}'")
+        return plan
+
+    # 无匹配模板，LLM 兜底
     prompt = f"用户请求: {user_message}"
     if goal_hint:
         prompt += f"\n意图提示: {goal_hint}"
@@ -452,20 +502,17 @@ async def _generate_plan(user_message: str, chat_history: list, goal_hint: str =
     raw = ""
     try:
         raw = await LLMFactory.invoke_text_safe(messages, enable_thinking=False)
-        # 从 LLM 回复中提取 JSON 对象（LLM 可能在 JSON 前后加说明文字）
         content = raw.strip()
-        # 找到第一个 { 和最后一个 }
         start = content.find("{")
         end = content.rfind("}")
         if start >= 0 and end > start:
             content = content[start:end + 1]
-        # 清理 markdown 包裹
         if content.startswith("```"):
             lines = content.split("\n")
             content = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
         plan_dict = json.loads(content)
         plan = Plan.from_json(plan_dict)
-        logger.info(f"[pe] Plan generated | goal='{plan.goal}' steps={len(plan.steps)}")
+        logger.info(f"[pe] Plan from LLM | goal='{plan.goal}' steps={len(plan.steps)}")
         return plan
     except Exception as e:
         logger.error(f"[pe] Plan generation failed: {e} | raw={raw[:300]}")
@@ -1275,6 +1322,8 @@ async def execute_plan(
         "messages": new_messages,
         "final_answer": final_answer,
         "skill_used": skill_name,
+        # 优化: P&E 等待用户输入时标记 pending，跳过下轮意图分类
+        "pending_interact_skill": skill_name if awaiting_user else "",
     }
 
 

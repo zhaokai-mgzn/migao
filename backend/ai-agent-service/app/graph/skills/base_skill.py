@@ -380,8 +380,9 @@ async def execute_skill(
             skill_name = existing_plan.skill_name
             tool_names = cfg.tool_names
     if existing_plan is not None or should_use_plan_execute(state, skill_name):
-        # 图片消息：先做 Vision 分析，否则 P&E 步骤看不到图片内容
-        if is_multimodal and not existing_plan:
+        # 图片消息：仅商品相关意图做 Vision 分析，避免订单截图等无意义调用
+        _VISION_INTENTS = {"product_inquiry", "product_create", "general"}
+        if is_multimodal and not existing_plan and intent_name in _VISION_INTENTS:
             vision_llm = get_skill_llm(intent="", tool_count=0, text_length=0,
                                         messages=raw_messages, enable_thinking=False)
             try:

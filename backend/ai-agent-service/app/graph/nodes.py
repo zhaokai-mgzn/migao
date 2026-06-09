@@ -289,6 +289,11 @@ async def cache_store_node(state: AgentState) -> dict:
 
 async def suggestions_node(state: AgentState) -> dict:
     """生成后续问题建议"""
+    # 优化: P&E 等待用户输入时跳过建议（ask/confirm 步骤已有引导文案）
+    pending_skill = state.get("pending_interact_skill", "")
+    if pending_skill:
+        return {"suggestions": []}
+
     from app.suggestions.follow_up import FollowUpSuggestionGenerator
 
     generator = FollowUpSuggestionGenerator()
