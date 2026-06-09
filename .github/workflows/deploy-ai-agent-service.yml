@@ -37,12 +37,18 @@ jobs:
             --username ${{ secrets.ACR_USERNAME }} \
             --password ${{ secrets.ACR_PASSWORD }}
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Build and push Docker image
         working-directory: backend/ai-agent-service
         run: |
           IMAGE_FULL=${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.IMAGE_TAG }}
-          docker build --build-arg PIP_INDEX_URL=https://pypi.org/simple/ -t $IMAGE_FULL .
-          docker push $IMAGE_FULL
+          docker buildx build \
+            --build-arg PIP_INDEX_URL=https://pypi.org/simple/ \
+            --cache-from type=gha \
+            --cache-to type=gha,mode=max \
+            -t $IMAGE_FULL --push .
           echo "IMAGE_FULL=$IMAGE_FULL" >> $GITHUB_ENV
 
       - name: Install Aliyun CLI

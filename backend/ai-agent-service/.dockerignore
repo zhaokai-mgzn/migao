@@ -1,0 +1,34 @@
+# Python
+__pycache__
+*.pyc
+*.pyo
+.venv
+venv
+*.egg-info
+
+# Tests
+tests/
+htmlcov/
+.coverage
+.pytest_cache/
+
+# IDE
+.vscode
+.idea
+*.swp
+
+# Git
+.git
+.gitignore
+
+# Docs
+*.md
+!requirements.txt
+
+# Logs
+logs/
+*.log
+
+# Env
+.env
+.env.*
