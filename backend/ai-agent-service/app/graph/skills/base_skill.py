@@ -664,6 +664,14 @@ async def execute_skill(
                     f"tenant={state['tenant_id']} session={session_id}"
                 )
 
+                # Context 管理: 迭代 4+ 轮后裁剪最旧的 tool 结果，防止溢出
+                if iteration >= 4 and len(new_messages) > 6:
+                    keep_recent = 6  # 保留最近 3 轮 (tool+assistant)
+                    trimmed = new_messages[-keep_recent:]
+                    if len(trimmed) < len(new_messages):
+                        logger.info(f"[{skill_name}][CTX] Trimmed {len(new_messages) - len(trimmed)} old messages")
+                        new_messages = trimmed
+
                 # 策略 2：首轮开 thinking（规划工具调用），后续轮关闭（仅格式化结果）
                 # 节省 5-8s/轮，质量无损（实测：8.0s → 2.7s）
                 if iteration > 0 and intent_name in _THINKING_INTENTS:
@@ -781,10 +789,25 @@ async def execute_skill(
 
                     logger.info(f"[{skill_name}][DIAG] Tool call: {tool_name} | args={tool_args}")
 
-                    # 查找并执行 Tool
+                    # 查找并执行 Tool（带结果缓存）
                     result_str = ""
                     tool_instance = skill_registry.get_tool(tool_name)
                     if tool_instance:
+                        # 结果缓存: 同 session 同 tool+参数 60s 内复用
+                        cache_key = f"{tool_name}:{json.dumps(tool_args, sort_keys=True, default=str)}"
+                        if not hasattr(execute_skill, '_tool_cache'):
+                            execute_skill._tool_cache = {}
+                        if cache_key in execute_skill._tool_cache:
+                            cached = execute_skill._tool_cache[cache_key]
+                            if time.time() - cached["ts"] < 60:
+                                logger.info(f"[{skill_name}][CACHE] Hit {tool_name}")
+                                result_str = cached["result"]
+                                result_dict = cached["dict"]
+                                new_messages.append(
+                                    ToolMessage(content=result_str, tool_call_id=tool_call_id, name=tool_name)
+                                )
+                                continue
+
                         try:
                             logger.info(f"[{skill_name}][DIAG] Tool {tool_name} starting execution")
                             result = await asyncio.wait_for(
@@ -801,6 +824,12 @@ async def execute_skill(
                             }
                             result_str = json.dumps(result_dict, ensure_ascii=False, default=str)
 
+                            # 缓存成功的 tool 结果（60s TTL）
+                            if getattr(result, "success", False):
+                                execute_skill._tool_cache[cache_key] = {
+                                    "result": result_str, "dict": result_dict, "ts": time.time()
+                                }
+
                             # 从 Tool 结果提取实体
                             if session_id:
                                 tracker.extract_entities_from_tool_result(
@@ -812,16 +841,19 @@ async def execute_skill(
                                 "success": False,
                                 "error": "tool_timeout",
                                 "message": f"工具 {tool_name} 执行超时",
-                                "suggestion": "请简化查询条件后重试，或检查网络连接",
+                                "suggestion": "请缩小查询范围（如减少page_size、缩短日期范围）后重试",
+                                "retry": True,
                             }, ensure_ascii=False)
                         except Exception as e:
                             tb = traceback.format_exc()
                             logger.error(f"[{skill_name}][DIAG] Tool {tool_name} FAILED | error={type(e).__name__}: {e} | traceback={tb[:500]}")
+                            err_msg = str(e)[:200]
                             result_str = json.dumps({
                                 "success": False,
                                 "error": "tool_execution_failed",
-                                "message": f"工具 {tool_name} 执行失败",
-                                "suggestion": "请检查参数是否正确，或换用其他方式查询",
+                                "message": f"工具 {tool_name} 执行失败: {err_msg}",
+                                "suggestion": f"请根据以上错误信息修正参数后重试（如修正ID格式、检查必填字段），不要直接告诉用户失败",
+                                "retry": True,
                             }, ensure_ascii=False)
                     else:
                         result_str = json.dumps({
