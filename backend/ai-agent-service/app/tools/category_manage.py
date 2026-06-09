@@ -127,10 +127,14 @@ class CategoryManageTool(BaseTool):
                 message=f"获取分类树失败：{error_msg}",
             )
 
+        tree = response.get("data", [])
+        names = [c.get("name", "") for c in tree[:5] if isinstance(c, dict)]
+        summary = f"共{len(tree)}个分类: {', '.join(names)}" if names else "暂无分类"
         return ToolResult(
             success=True,
-            data={"tree": response.get("data", [])},
+            data={"tree": tree},
             message="已获取商品分类树形结构",
+            summary=summary,
         )
 
     async def _create_category(

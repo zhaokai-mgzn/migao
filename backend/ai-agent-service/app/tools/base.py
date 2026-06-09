@@ -24,68 +24,21 @@ class ToolContext(BaseModel):
         arbitrary_types_allowed = True
 
 
-def _auto_summary(data: Any, max_items: int = 15, max_str: int = 500) -> str:
-    """从 ToolResult.data 自动生成 LLM 友好的摘要，减少 LLM 解析损耗"""
-    if data is None:
-        return ""
-    if isinstance(data, list):
-        if len(data) == 0:
-            return "共0条"
-        total = len(data)
-        if total <= 3:
-            names = [str(d.get("name", d.get("id", str(d)[:30]))) for d in data if isinstance(d, dict)]
-            return f"共{total}条: " + ", ".join(names)
-        names = [str(d.get("name", d.get("id", str(d)[:20]))) for d in data[:max_items] if isinstance(d, dict)]
-        suffix = f"等{total}条" if total > max_items else f"共{total}条"
-        return f"{suffix}: " + ", ".join(names[:5]) + ("..." if len(names) > 5 else "")
-    if isinstance(data, dict):
-        # 处理常见嵌套: items, tree, records, orders, products
-        for key in ("items", "records", "orders", "products", "tree"):
-            if key in data and isinstance(data[key], list):
-                inner = data[key]
-                total = data.get("total", len(inner))
-                if len(inner) == 0:
-                    return f"共0条"
-                names = []
-                for d in inner[:5]:
-                    if isinstance(d, dict):
-                        name = d.get("name", d.get("orderNo", d.get("id", str(d)[:30])))
-                        status = d.get("status", d.get("status_text", ""))
-                        if status:
-                            name += f"({status})"
-                        names.append(str(name))
-                more = f"等{total}条" if total > 5 else f"共{total}条"
-                return more + ": " + ", ".join(names)
-        # 统计类数据
-        if any(k in data for k in ("totalCount", "pendingCount", "todayOrders", "monthRevenue")):
-            parts = [f"{k}={v}" for k, v in data.items() if v is not None and not k.startswith("_")]
-            return "统计: " + ", ".join(parts[:10])
-        # 单对象: 取前几个关键字段
-        keys = [k for k in data.keys() if not k.startswith("_")][:8]
-        parts = [f"{k}={str(v)[:40]}" for k, v in [(k, data[k]) for k in keys] if v is not None]
-        return "; ".join(parts[:6])
-    return str(data)[:max_str]
-
-
 class ToolResult(BaseModel):
     """Tool 执行结果
 
-    统一的结果格式，包含状态、数据和错误信息。
-    summary 字段自动从 data 生成 LLM 友好摘要，减少 LLM 解析损耗。
+    summary 字段: LLM 友好的摘要文本。若为 None，fallback 到 message。
+    每个 tool 应自行设定 summary，确保 LLM 能快速理解结果。
+    示例: ToolResult(success=True, data={...}, summary="共3个分类: 卧室系列,窗帘布艺,测试分类")
     """
     success: bool = Field(..., description="是否成功")
     data: Optional[Dict[str, Any]] = Field(None, description="返回数据")
     error: Optional[str] = Field(None, description="错误信息")
     message: Optional[str] = Field(None, description="提示消息（给用户看的）")
-    summary: Optional[str] = Field(None, description="LLM友好摘要（自动生成）")
+    summary: Optional[str] = Field(None, description="LLM友好摘要（每个tool自行填写）")
 
     class Config:
         extra = "allow"
-
-    def model_post_init(self, __context):
-        """自动生成 summary"""
-        if self.summary is None and self.success and self.data is not None:
-            self.summary = _auto_summary(self.data)
 
 
 class BaseTool(ABC):

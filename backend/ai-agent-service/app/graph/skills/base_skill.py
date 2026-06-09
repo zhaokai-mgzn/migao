@@ -27,7 +27,7 @@ from loguru import logger
 
 from app.config import settings
 from app.graph.state import AgentState
-from app.tools.base import ToolContext, _auto_summary
+from app.tools.base import ToolContext
 from app.tools.registry import ToolRegistry, set_tool_context, get_tool_context
 from app.context.tracker import ConversationTracker
 from app.core import (
@@ -794,7 +794,8 @@ async def execute_skill(
                     tool_instance = skill_registry.get_tool(tool_name)
                     if tool_instance:
                         # 结果缓存: 同 session 同 tool+参数 60s 内复用
-                        cache_key = f"{tool_name}:{json.dumps(tool_args, sort_keys=True, default=str)}"
+                        tid = str(state.get("tenant_id", ""))
+                        cache_key = f"{tid}:{tool_name}:{json.dumps(tool_args, sort_keys=True, default=str)}"
                         if not hasattr(execute_skill, '_tool_cache'):
                             execute_skill._tool_cache = {}
                         if cache_key in execute_skill._tool_cache:
@@ -820,7 +821,7 @@ async def execute_skill(
                                 "data": result.data,
                                 "error": result.error,
                                 "message": result.message,
-                                "summary": getattr(result, "summary", "") or (_auto_summary(result.data) if result.success else ""),
+                                "summary": getattr(result, "summary", None) or getattr(result, "message", ""),
                             }
                             result_str = json.dumps(result_dict, ensure_ascii=False, default=str)
 
@@ -851,8 +852,8 @@ async def execute_skill(
                             result_str = json.dumps({
                                 "success": False,
                                 "error": "tool_execution_failed",
-                                "message": f"工具 {tool_name} 执行失败: {err_msg}",
-                                "suggestion": f"请根据以上错误信息修正参数后重试（如修正ID格式、检查必填字段），不要直接告诉用户失败",
+                                "message": f"工具 {tool_name} 执行失败，请检查参数格式后重试",
+                                "suggestion": "修正参数后重试，不要直接告诉用户失败",
                                 "retry": True,
                             }, ensure_ascii=False)
                     else:
