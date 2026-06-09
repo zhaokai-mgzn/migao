@@ -27,7 +27,7 @@ from loguru import logger
 
 from app.config import settings
 from app.graph.state import AgentState
-from app.tools.base import ToolContext
+from app.tools.base import ToolContext, _auto_summary
 from app.tools.registry import ToolRegistry, set_tool_context, get_tool_context
 from app.context.tracker import ConversationTracker
 from app.core import (
@@ -797,6 +797,7 @@ async def execute_skill(
                                 "data": result.data,
                                 "error": result.error,
                                 "message": result.message,
+                                "summary": getattr(result, "summary", "") or (_auto_summary(result.data) if result.success else ""),
                             }
                             result_str = json.dumps(result_dict, ensure_ascii=False, default=str)
 
