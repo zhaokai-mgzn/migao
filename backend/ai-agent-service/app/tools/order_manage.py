@@ -303,14 +303,30 @@ class OrderManageTool(BaseTool):
             ToolResult: 操作结果
         """
         client = get_admin_api_client()
-        
-        # 使用专用取消接口
+
+        # 如果 order_id 是订单号（ORD-开头），先查 API 获取 UUID
+        actual_id = order_id
+        if order_id.upper().startswith("ORD-"):
+            try:
+                lookup = await client.get(
+                    "/api/admin/orders",
+                    params={"keyword": order_id, "page": 1, "size": 1},
+                    tenant_id=context.tenant_id,
+                    user_id=context.user_id,
+                )
+                items = (lookup.get("data", {}) or {}).get("items", [])
+                if items and items[0].get("id"):
+                    actual_id = items[0]["id"]
+                    logger.info(f"[order-manage] Resolved {order_id} → {actual_id}")
+            except Exception:
+                pass
+
         json_data: Dict[str, Any] = {}
         if cancel_reason:
             json_data["cancelReason"] = cancel_reason
-        
+
         response = await client.put(
-            f"/api/admin/orders/{order_id}/cancel",
+            f"/api/admin/orders/{actual_id}/cancel",
             json_data=json_data if json_data else None,
             tenant_id=context.tenant_id,
             user_id=context.user_id,
