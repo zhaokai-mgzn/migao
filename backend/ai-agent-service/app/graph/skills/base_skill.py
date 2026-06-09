@@ -385,37 +385,29 @@ async def execute_skill(
             vision_llm = get_skill_llm(intent="", tool_count=0, text_length=0,
                                         messages=raw_messages, enable_thinking=False)
             try:
-                vision_response = await vision_llm.ainvoke(raw_messages)
+                # 优化: VL 直接输出 JSON，省掉二次 LLM 提取（省 1 次 LLM 调用）
+                from langchain_core.messages import SystemMessage as VSystemMessage
+                json_prompt = (
+                    '请分析图片并直接返回纯JSON（不要markdown），格式：\n'
+                    '{"name":"商品名","description":"描述","brand":"品牌",'
+                    '"colors":[{"colorName":"颜色名"}],'
+                    '"specifications":{"weight":"","material":"","craft":"","style":"","pattern":"","function":""},'
+                    '"pricing_type":"per_meter","unit":"米",'
+                    '"selling_methods":["散剪","整卷"],"door_widths":["2.8米","3.2米"]}\n'
+                    '规则: ①specifications key 用英文 ②每属性一个值 ③色卡下文字标签全部提取，一个不漏 ④只输出JSON'
+                )
+                json_messages = list(raw_messages) + [VSystemMessage(content=json_prompt)]
+                vision_response = await vision_llm.ainvoke(json_messages)
                 vision_text = _extract_content(vision_response) or ""
                 vision_context = {}
                 if vision_text:
-                    # 用纯文本模型从 Vision 分析中提取 JSON（VL 模型不擅长格式化）
-                    from app.llm import LLMFactory
-                    extract_prompt = (
-                        f"从以下图片分析文本中提取商品结构化数据，只返回纯 JSON：\n\n"
-                        f"{vision_text[:3000]}\n\n"
-                        f'格式: {{"name":"","description":"","brand":"",'
-                        f'"colors":[{{"colorName":""}}],'
-                        f'"specifications":{{"weight":"","material":"","craft":"","style":"","pattern":"","function":""}},'
-                        f'"pricing_type":"per_meter","unit":"米",'
-                        f'"selling_methods":["散剪","整卷"],"door_widths":["2.8米","3.2米"]}}\n\n'
-                        f"规则:\n"
-                        f"1. specifications 的 key 必须用英文\n"
-                        f"2. 每个属性只填一个最匹配的值，不要填'风格1/风格2/风格3'这种多选\n"
-                        f"3. 图片中能识别的填实际值，识别不出的填空字符串\n"
-                        f"4. ⚠️ colors: 图中色卡通常带文字标签，必须逐一提取所有颜色名，一个不漏\n"
-                        f"只输出 JSON。"
-                    )
                     try:
-                        raw_json = await LLMFactory.invoke_text_safe(
-                            [HumanMessage(content=extract_prompt)], enable_thinking=False
-                        )
-                        start = raw_json.find("{")
-                        end = raw_json.rfind("}")
+                        start = vision_text.find("{")
+                        end = vision_text.rfind("}")
                         if start >= 0 and end > start:
-                            vision_context = json.loads(raw_json[start:end + 1])
+                            vision_context = json.loads(vision_text[start:end + 1])
                     except Exception as e:
-                        logger.warning(f"[{skill_name}] Vision JSON parse: {e}")
+                        logger.warning(f"[{skill_name}] Vision JSON direct parse: {e}")
                     # 布料默认值兜底
                     for k, v in [("selling_methods", ["散剪","整卷"]), ("door_widths", ["2.8米","3.2米"]),
                                   ("unit", "米"), ("pricing_type", "per_meter")]:
