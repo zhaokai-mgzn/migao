@@ -393,7 +393,7 @@ async def execute_skill(
                     from app.llm import LLMFactory
                     extract_prompt = (
                         f"从以下图片分析文本中提取商品结构化数据，只返回纯 JSON：\n\n"
-                        f"{vision_text[:1200]}\n\n"
+                        f"{vision_text[:3000]}\n\n"
                         f'格式: {{"name":"","description":"","brand":"",'
                         f'"colors":[{{"colorName":""}}],'
                         f'"specifications":{{"weight":"","material":"","craft":"","style":"","pattern":"","function":""}},'
@@ -403,6 +403,7 @@ async def execute_skill(
                         f"1. specifications 的 key 必须用英文\n"
                         f"2. 每个属性只填一个最匹配的值，不要填'风格1/风格2/风格3'这种多选\n"
                         f"3. 图片中能识别的填实际值，识别不出的填空字符串\n"
+                        f"4. ⚠️ colors: 图中色卡通常带文字标签，必须逐一提取所有颜色名，一个不漏\n"
                         f"只输出 JSON。"
                     )
                     try:
