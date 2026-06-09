@@ -1124,6 +1124,23 @@ async def execute_plan(
                 import re
                 plan.context[list_field] = [p.strip() for p in re.split(r'[,，、\s]+|和|与', val) if p.strip()]
 
+        # 售卖方式中文→英文key标准化（前端 SkuMatrix 用英文key匹配）
+        _SM_NORMALIZE = {"散剪": "bulk_cut", "整卷": "full_roll", "按片": "per_piece",
+                         "bulk_cut": "bulk_cut", "full_roll": "full_roll", "per_piece": "per_piece"}
+        sms = plan.context.get("selling_methods", [])
+        if sms:
+            plan.context["selling_methods"] = [_SM_NORMALIZE.get(s, s) for s in (sms if isinstance(sms, list) else [sms])]
+        # 门幅标准化：补全"门幅"前缀
+        dws = plan.context.get("door_widths", [])
+        if dws:
+            normalized = []
+            for d in (dws if isinstance(dws, list) else [dws]):
+                d = str(d).strip()
+                if not d.startswith("门幅"):
+                    d = f"门幅{d}"
+                normalized.append(d)
+            plan.context["door_widths"] = normalized
+
         # 根据工具类型选择安全参数
         # product_manage: 从 colors/selling_methods/door_widths 构造 skus
         if current.execute_tool == "product_manage":
