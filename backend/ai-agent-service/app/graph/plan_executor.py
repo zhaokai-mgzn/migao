@@ -961,6 +961,11 @@ async def execute_plan(
             is_cancel = any(kw in user_lower for kw in cancel_keywords)
             if is_confirm and not is_cancel:
                 plan.context["_user_confirmed"] = True
+                # 确认后立即执行：推进plan并更新current引用
+                plan.advance()
+                current = plan.current()
+                await _save_plan(session_id, plan)
+                logger.info(f"[pe] User confirmed, executing step {plan.current_step + 1} now")
             elif is_cancel:
                 await _clear_plan(session_id)
                 return {
@@ -1024,7 +1029,7 @@ async def execute_plan(
             f"   - 窗帘/布料类: selling_methods 默认 ['bulk_cut','full_roll'], door_widths 默认 ['2.8m','3.2m']\n"
             f"   - 配件/辅料类: selling_methods 默认 ['per_piece']\n"
             f"5. 只提问真正缺失且无法推断的字段\n"
-            f"6. 如果所有信息已齐全，直接告诉用户信息已完整可以确认创建\n"
+            f"6. 如果所有信息已齐全，列出清单并说'信息已齐全，接下来系统会引导您完成分类选择和确认'。绝对不要说'确认创建'或'确认无误'等确认用语，确认步骤由系统单独处理\n"
             f"7. ⚠️ 如果用户消息中包含对已有信息的修正（如\"价格改成200\"\"名字不对，应该是XX\"），"
             f"先在回复开头确认修正（\"好的，已更新XX为YY\"），然后继续提问其他缺失字段\n"
             f"8. ⚠️ 列出已有信息时：颜色/规格等列表字段必须完整列出每一项，禁止\"等X色\"\"等X种\"总结\n"
@@ -1291,7 +1296,7 @@ async def execute_plan(
 
         if tool:
             try:
-                logger.info(f"[pe] Executing {current.execute_tool}.{current.execute_action} | params_keys={list(exec_params.keys())}")
+                logger.info(f"[pe] Executing {current.execute_tool}.{current.execute_action} | params_keys={list(exec_params.keys())} params={json.dumps({k:str(v)[:60] for k,v in exec_params.items()}, ensure_ascii=False)}")
                 result = await tool.execute(ctx, **exec_params)
                 exec_result = result.message if result.success else f"失败: {result.message}"
                 if not result.success:
