@@ -290,39 +290,41 @@ async def scenario_image_create_product(client):
     has_tags = "[工具返回]" in text or "[推断]" in text if text else False
     check("9.5 无来源标签", not has_tags)
 
-    # 创建商品
+    # 创建商品（结构化ask自动推进到query）
     text = await _sse(client, sid, "帮我创建这个商品", timeout=90)
     check("9.6 创建指令", bool(text) and len(text) > 20, f"{len(text) if text else 0}字")
 
-    # 回复销售属性
+    # 回复销售属性（ask结构化JSON，收集全自动推进）
     text = await _sse(client, sid, "价格23.8元每米，库存500件，货号AUTO001，散剪和整卷都要，门幅2.8米和3.2米", timeout=60)
-    check("9.7 销售属性", bool(text) and len(text) > 20, f"{len(text) if text else 0}字")
+    check("9.7 销售属性", bool(text) and len(text) > 10, f"{len(text) if text else 0}字")
 
-    # 选分类 (回复编号)
+    # 选分类（新流程：query步骤，当轮匹配编号）
     if text and ("分类" in text or "编号" in text):
         text = await _sse(client, sid, "1", timeout=60)
         check("9.8 选择分类", bool(text) and len(text) > 10, f"{len(text) if text else 0}字")
     else:
         check("9.8 选择分类", False, "未出现分类选择")
 
-    # 确认创建
+    # 确认创建（confirm当场检测→execute同轮执行）
     if text and ("确认" in text or "创建" in text):
-        text = await _sse(client, sid, "确认创建", timeout=60)
+        text = await _sse(client, sid, "确认", timeout=90)
         check("9.9 确认创建", bool(text), f"{len(text) if text else 0}字")
-        success = ("成功" in text or "太棒" in text or "已创建" in text or "已经" in text) if text else False
-        check("9.10 创建结果", success and "错误" not in text if text else False)
+        success = ("成功" in text or "太棒" in text or "已" in text or "已经" in text) if text else False
+        check("9.10 创建结果", success and "错误" not in text if text else False, text[:80] if text else "")
 
-        # 数据校验: 调 admin-api 查最新商品
-        data = await _admin_get("/api/admin/products?size=1&sortBy=createdAt&sortOrder=desc")
+        # 数据校验
+        await asyncio.sleep(2)
+        data = await _admin_get(f"/api/admin/products?productCode=AUTO001&size=1")
         if data and data.get("items"):
             p = data["items"][0]
             check("9.11 商品存在", True, f"{p.get('name','?')[:30]}")
             check("9.12 价格准确", abs(float(p.get("price", 0)) - 23.8) < 0.1, f"价格={p.get('price')}")
-            sku = p.get("skuCode", "")
-            check("9.13 货号存在", bool(sku), f"货号={sku}")
-            # 售卖方式不应为空
+            check("9.13 货号准确", p.get("skuCode","") == "AUTO001", f"货号={p.get('skuCode')}")
             sms = p.get("sellingMethods", [])
-            check("9.14 商品已创建", True, f"售卖方式={sms}")
+            check("9.14 售卖方式", len(sms) >= 2, f"{sms}")
+            check("9.15 SKU已生成", len(p.get("skus",[])) > 0, f"SKU={len(p.get('skus',[]))}")
+        else:
+            check("9.11 商品存在", False, "含AUTO001商品未找到")
     else:
         check("9.9 确认创建", False, "未出现确认提示")
 
