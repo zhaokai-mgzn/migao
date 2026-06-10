@@ -1291,10 +1291,14 @@ async def execute_plan(
 
         if tool:
             try:
+                logger.info(f"[pe] Executing {current.execute_tool}.{current.execute_action} | params_keys={list(exec_params.keys())}")
                 result = await tool.execute(ctx, **exec_params)
                 exec_result = result.message if result.success else f"失败: {result.message}"
+                if not result.success:
+                    logger.error(f"[pe] Execute failed | tool={current.execute_tool} error={result.error} message={result.message} params={json.dumps(exec_params, ensure_ascii=False, default=str)[:500]}")
             except Exception as e:
                 exec_result = f"异常: {e}"
+                logger.error(f"[pe] Execute exception | tool={current.execute_tool} error={e} params={json.dumps(exec_params, ensure_ascii=False, default=str)[:500]}")
         else:
             exec_result = f"工具不可用: {current.execute_tool}"
 
