@@ -1105,18 +1105,16 @@ async def execute_plan(
             else:
                 query_data = f"工具不可用: {current.query_tool}"
 
-            # 当轮匹配用户选择：如果用户已回复编号/名称，直接处理，不重展列表
-            if items and plan.current_step > 0:
-                prev = plan.steps[plan.current_step - 1]
-                if prev.type == "query" and prev.query_tool == current.query_tool:
-                    matched = _match_user_choice(last_user_msg, items)
-                    if matched:
-                        _apply_query_match(plan, prev.query_tool, matched, state, tool_names)
-                        plan.advance()
-                        current = plan.current()
-                        await _save_plan(session_id, plan)
-                        logger.info(f"[pe] Query matched in-turn: {prev.query_tool}")
-                        continue  # 跳过列表展示，直接进入下一步
+            # 当轮匹配用户选择：用户可能已在消息中直接说了编号/名称
+            if items and last_user_msg.strip():
+                matched = _match_user_choice(last_user_msg, items)
+                if matched:
+                    await _apply_query_match(plan, current.query_tool, matched, state, tool_names)
+                    plan.advance()
+                    current = plan.current()
+                    await _save_plan(session_id, plan)
+                    logger.info(f"[pe] Query matched in-turn: {current.query_tool}")
+                    continue  # 跳过列表展示，直接进入下一步
 
             # 代码直接拼接带编号列表，不经过 LLM，避免编号被吃掉
             # LLM 只生成一句话引导语，禁止列出选项（列表由代码拼接）
