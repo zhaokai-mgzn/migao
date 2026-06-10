@@ -35,7 +35,7 @@ setup('authenticate as admin', async ({ page }) => {
   }
 
   // Step 1: Login via API to get tokens
-  const tokens = await loginViaApi(TEST_USERNAME, TEST_PASSWORD, TEST_TENANT_ID)
+  const tokens = await loginViaApi('13800138000', '123456')
 
   // Step 2: Navigate to the app so we're on the correct origin
   // Next.js dev server 首次编译较慢，用 domcontentloaded + 30s 超时

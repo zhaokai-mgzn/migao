@@ -49,14 +49,13 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8
  * Returns the tokens from the LoginResponse.
  */
 export async function loginViaApi(
-  username = 'admin',
-  password = 'admin123',
-  tenantId = 1,
+  phone = '13800138000',
+  code = '123456',
 ): Promise<AuthTokens> {
   const ctx: APIRequestContext = await pwRequest.newContext()
   try {
-    const response = await ctx.post(`${API_BASE_URL}/api/auth/admin/login`, {
-      data: { username, password, tenantId },
+    const response = await ctx.post(`${API_BASE_URL}/api/auth/sms/login`, {
+      data: { phone, code },
     })
 
     if (!response.ok()) {

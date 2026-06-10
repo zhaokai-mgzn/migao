@@ -40,8 +40,8 @@ def _token():
     global TOKEN, HEADERS, ADMIN_HEADERS
     if not TOKEN:
         try:
-            r = httpx.post(f"{ADMIN_URL}/api/auth/admin/login",
-                           json={"username": "admin", "password": "admin123", "tenantId": 1}, timeout=10)
+            r = httpx.post(f"{ADMIN_URL}/api/auth/sms/login",
+                           json={"phone": "13800138000", "code": "123456"}, timeout=10)
             TOKEN = r.json()["data"]["accessToken"]
             HEADERS = {"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json"}
             ADMIN_HEADERS = {"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json"}
