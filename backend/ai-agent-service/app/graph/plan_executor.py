@@ -991,23 +991,11 @@ async def execute_plan(
                     parts.append(f"  • 售卖方式: {smart_defaults['common_selling_methods']}")
                 if smart_defaults.get("common_door_widths"):
                     parts.append(f"  • 门幅/尺寸: {smart_defaults['common_door_widths']}")
-                if smart_defaults.get("common_unit"):
-                    parts.append(f"  • 计价单位: {smart_defaults['common_unit']}")
-                if smart_defaults.get("common_pricing_type"):
-                    parts.append(f"  • 计价方式: {smart_defaults['common_pricing_type']}")
-                if smart_defaults.get("price_range"):
-                    parts.append(f"  • 价格区间: {smart_defaults['price_range']}")
                 if smart_defaults.get("common_specifications"):
                     spec_str = ", ".join(f"{k}≈{v}" for k, v in smart_defaults["common_specifications"].items())
                     parts.append(f"  • 常见规格属性: {spec_str}")
                 if smart_defaults.get("common_colors"):
                     parts.append(f"  • 常见颜色: {smart_defaults['common_colors'][:5]}")
-                if smart_defaults.get("common_brands"):
-                    parts.append(f"  • 常见品牌: {smart_defaults['common_brands']}")
-                if smart_defaults.get("common_processing_items"):
-                    pi_names = [pi["name"] for pi in smart_defaults["common_processing_items"]]
-                    parts.append(f"  • 常用加工项: {pi_names[:5]}")
-                parts.append("  → 向用户推荐时可直接采用这些常见值，说'同类商品一般用XX'\n")
                 smart_hint = "\n".join(parts)
 
             prompt = (
@@ -1015,43 +1003,22 @@ async def execute_plan(
                 f"需收集的字段: {json.dumps(current.fields, ensure_ascii=False)}\n"
                 f"提示: {current.ask_prompt}\n"
                 f"用户说: {last_user_msg}\n"
-                f"对话上下文已包含的信息: {json.dumps(plan.context, ensure_ascii=False)}"
-                f"{smart_hint}\n"
-                f"规则:\n"
-                f"1. 仔细分析对话上下文——图片识别结果、用户回复中可能已包含部分字段的值\n"
-                f"2. 能从上下文推断的字段直接确认使用，不要重复问\n"
-                f"3. 如果上面有\"同类商品参考\"，优先推荐其中最常见的值（如'同类商品一般用XX'），"
-                f"让用户可以一键确认，不用手动填写每个选项\n"
-                f"4. 如果没有同类商品参考，根据商品名自动推断类型默认值：\n"
-                f"   - 窗帘/布料类: selling_methods 默认 ['bulk_cut','full_roll'], door_widths 默认 ['2.8m','3.2m']\n"
-                f"   - 配件/辅料类: selling_methods 默认 ['per_piece']\n"
-                f"5. 只提问真正缺失且无法推断的字段\n"
-                f"6. 如果所有信息已齐全，列出清单并说'信息已齐全，接下来系统会引导您完成分类选择和确认'。绝对不要说'确认创建'或'确认无误'等确认用语，确认步骤由系统单独处理\n"
-                f"7. ⚠️ 如果用户消息中包含对已有信息的修正（如\"价格改成200\"\"名字不对，应该是XX\"），"
-                f"先在回复开头确认修正（\"好的，已更新XX为YY\"），然后继续提问其他缺失字段\n"
-                f"8. ⚠️ 列出已有信息时：颜色/规格等列表字段必须完整列出每一项，禁止\"等X色\"\"等X种\"总结\n"
-                f"9. ⚠️ 禁止在回复中标注[工具返回][推断][用户提供]等数据来源标签\n\n"
-                f"简洁友好地告诉用户你已自动填入了什么，只问缺失的。不要调用工具。"
+                f"对话上下文: {json.dumps({k:v for k,v in plan.context.items() if not k.startswith('_')}, ensure_ascii=False)}"
+                f"{smart_hint}\n\n"
+                f"规则: 能从上下文推断的字段直接确认,只问缺失的。列出已有信息时禁止等X色总结,禁止标注[工具返回]。不要调用工具。"
             )
             final_answer = await LLMFactory.invoke_text_safe([
-                SystemMessage(content=system_prompt),
-                *messages[-4:],
-                HumanMessage(content=prompt),
+                SystemMessage(content=system_prompt), *messages[-4:], HumanMessage(content=prompt),
             ], enable_thinking=False)
             new_messages.append(AIMessage(content=final_answer))
 
-            # 从对话历史中自动提取可推断的字段值填充 context
-            all_known = " ".join(
-                m.content if isinstance(m.content, str) else str(m.content)
-                for m in messages[-6:]
-                if hasattr(m, "content")
-            )
+            # 提取字段值填充context
+            all_known = " ".join(m.content if isinstance(m.content, str) else str(m.content) for m in messages[-6:] if hasattr(m, "content"))
             inferred = await _extract_fields(all_known, current.fields, plan.context)
             for k, v in inferred.items():
-                if v and k not in plan.context:
-                    plan.context[k] = v
-            if inferred:
-                logger.info(f"[pe] Auto-filled from context: {list(inferred.keys())}")
+                if v and k not in plan.context: plan.context[k] = v
+            if inferred: logger.info(f"[pe] Auto-filled: {list(inferred.keys())}")
+
             awaiting_user = True
 
         elif current.type == "query":
@@ -1265,7 +1232,7 @@ async def execute_plan(
                         raw_stock = int(m.group()) if m else 0
                     total_sku_stock = int(raw_stock) if raw_stock else 0
                     for c in normalized_colors:
-                        cid = c.get("id", 0) if isinstance(c, dict) else 0
+                        cid = 0  # 临时值，admin-api保存时会用真实colorId替换
                         for sm in sm_list:
                             for dw in dw_list:
                                 skus.append({"colorId": cid, "sellingMethod": sm, "doorWidth": dw,
@@ -1306,7 +1273,10 @@ async def execute_plan(
             for k in _SAFE_PARAMS:
                 if k in plan.context:
                     v = plan.context[k]
-                    # LLM 提取的值是字符串，需要转为数字
+                    # 清洗带单位的值（"23.8元每米"→23.8, "500件"→500）
+                    if isinstance(v, str) and k in _NUMERIC_PARAMS:
+                        m = re.search(r'[\d.]+', v)
+                        v = m.group() if m else v
                     if k in _NUMERIC_PARAMS and isinstance(v, str):
                         try:
                             v = float(v) if "." in v else int(v)
