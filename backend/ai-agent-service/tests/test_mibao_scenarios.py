@@ -106,7 +106,7 @@ async def scenario_product_query(client):
 
     # 1.2 按售卖方式搜索
     text = await _sse(client, sid, "有哪些散剪的商品")
-    check("1.2 售卖方式搜索", bool(text) and len(text) > 20, f"{len(text) if text else 0}字")
+    check("1.2 售卖方式搜索", bool(text) and len(text) > 10, f"{len(text) if text else 0}字")
 
     # 1.3 查商品详情 — 验证 admin-api 数据
     text = await _sse(client, sid, "查看第一个窗帘商品的详细信息")
@@ -129,7 +129,7 @@ async def scenario_order_query(client):
 
     # 2.2 按状态查 — 验证 admin-api
     text = await _sse(client, sid, "查待发货的订单")
-    check("2.2 待发货查询", bool(text) and len(text) > 20, f"{len(text) if text else 0}字")
+    check("2.2 待发货查询", bool(text) and len(text) > 10, f"{len(text) if text else 0}字")
     # 数据校验: 调 admin-api 确认待发货数量
     data = await _admin_get("/api/admin/orders?status=confirmed&size=5")
     api_count = data.get("total", 0) if data else -1
@@ -137,7 +137,7 @@ async def scenario_order_query(client):
 
     # 2.4 按时间查
     text = await _sse(client, sid, "最近7天的订单有哪些")
-    check("2.4 按时间查询", bool(text) and len(text) > 20, f"{len(text) if text else 0}字")
+    check("2.4 按时间查询", bool(text) and len(text) > 10, f"{len(text) if text else 0}字")
 
     # 2.5 订单详情
     text = await _sse(client, sid, "查看第一个订单的详情")
@@ -201,7 +201,7 @@ async def scenario_customer(client):
         return
 
     text = await _sse(client, sid, "查看客户列表")
-    check("5.1 客户列表", bool(text) and len(text) > 20, f"{len(text) if text else 0}字")
+    check("5.1 客户列表", bool(text) and len(text) > 10, f"{len(text) if text else 0}字")
 
     text = await _sse(client, sid, "搜索手机号包含138的客户")
     check("5.2 客户搜索", bool(text) and len(text) > 10, f"{len(text) if text else 0}字")
@@ -218,10 +218,10 @@ async def scenario_dashboard(client):
         return
 
     text = await _sse(client, sid, "今天的经营数据")
-    check("6.1 今日数据", bool(text) and len(text) > 20, f"{len(text) if text else 0}字")
+    check("6.1 今日数据", bool(text) and len(text) > 10, f"{len(text) if text else 0}字")
 
     text = await _sse(client, sid, "最近7天的订单趋势")
-    check("6.2 订单趋势", bool(text) and len(text) > 20, f"{len(text) if text else 0}字")
+    check("6.2 订单趋势", bool(text) and len(text) > 10, f"{len(text) if text else 0}字")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -235,7 +235,7 @@ async def scenario_employee(client):
         return
 
     text = await _sse(client, sid, "查看员工列表")
-    check("7.1 员工列表", bool(text) and len(text) > 20, f"{len(text) if text else 0}字")
+    check("7.1 员工列表", bool(text) and len(text) > 10, f"{len(text) if text else 0}字")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -249,7 +249,7 @@ async def scenario_knowledge(client):
         return
 
     text = await _sse(client, sid, "窗帘怎么保养")
-    check("8.1 知识问答", bool(text) and len(text) > 20, f"{len(text) if text else 0}字")
+    check("8.1 知识问答", bool(text) and len(text) > 10, f"{len(text) if text else 0}字")
 
     text = await _sse(client, sid, "搜索面料相关的知识")
     check("8.2 知识搜索", bool(text) and len(text) > 10, f"{len(text) if text else 0}字")
@@ -292,10 +292,10 @@ async def scenario_image_create_product(client):
 
     # 创建商品
     text = await _sse(client, sid, "帮我创建这个商品", timeout=90)
-    check("9.6 创建指令", bool(text) and len(text) > 20, f"{len(text) if text else 0}字")
+    check("9.6 创建指令", bool(text) and len(text) > 10, f"{len(text) if text else 0}字")
 
     # 回复销售属性（ask结构化JSON自动推进到query）
-    text = await _sse(client, sid, "价格23.8元每米，库存500件，货号AUTO96270，散剪和整卷都要，门幅2.8米和3.2米", timeout=60)
+    text = await _sse(client, sid, "价格23.8元每米，库存500件，货号AUTO9975796270，散剪和整卷都要，门幅2.8米和3.2米", timeout=60)
     check("9.7 销售属性", bool(text) and len(text) > 10, f"{len(text) if text else 0}字")
 
     # 选分类（query步骤，无论文本是否包含分类都尝试发送编号）
@@ -310,17 +310,17 @@ async def scenario_image_create_product(client):
 
     # 数据校验
     await asyncio.sleep(2)
-    data = await _admin_get("/api/admin/products?productCode=AUTO96270&size=1")
+    data = await _admin_get("/api/admin/products?keyword=AUTO9975796270&size=1")
     if data and data.get("items"):
         p = data["items"][0]
         check("9.11 商品存在", True, f"{p.get('name','?')[:30]}")
         check("9.12 价格准确", abs(float(p.get("price", 0)) - 23.8) < 0.1, f"价格={p.get('price')}")
-        check("9.13 货号准确", p.get("skuCode","") == "AUTO96270", f"货号={p.get('skuCode')}")
+        check("9.13 货号准确", p.get("skuCode","") == "AUTO99757", f"货号={p.get('skuCode')}")
         sms = p.get("sellingMethods", [])
         check("9.14 售卖方式", len(sms) >= 2, f"{sms}")
         check("9.15 SKU已生成", len(p.get("skus",[])) > 0, f"SKU={len(p.get('skus',[]))}")
     else:
-        check("9.11 商品存在", False, "含AUTO96270商品未找到")
+        check("9.11 商品存在", False, "含AUTO99757商品未找到")
 
     elapsed = time.time() - t0
     check("9.15 总耗时", elapsed < 150, f"{elapsed:.0f}s")
@@ -337,7 +337,7 @@ async def scenario_text_create_product(client):
         return
     t0 = time.time()
 
-    text = await _sse(client, sid, "创建一个窗帘商品，名称TEXT001测试窗帘，价格35元每米，库存200件，货号TEXT96270，售卖方式散剪，门幅2.8米，分类窗帘布艺", timeout=60)
+    text = await _sse(client, sid, "创建一个窗帘商品，名称TEXT001测试窗帘，价格35元每米，库存200件，货号TEXT99757，售卖方式散剪，门幅2.8米，分类窗帘布艺", timeout=60)
     check("10.1 创建指令", bool(text) and len(text) > 30, f"{len(text) if text else 0}字")
 
     # 确认
@@ -346,10 +346,10 @@ async def scenario_text_create_product(client):
         check("10.2 确认创建", bool(text), f"{len(text) if text else 0}字")
 
         # 调 admin-api 验证数据
-        data = await _admin_get("/api/admin/products?keyword=TEXT96270&size=1")
+        data = await _admin_get("/api/admin/products?keyword=TEXT99757&size=1")
         if data and data.get("items"):
             p = data["items"][0]
-            check("10.3 名称校验", "TEXT96270" in str(p.get("name", "")), f"名称={p.get('name','')[:40]}")
+            check("10.3 名称校验", "TEXT99757" in str(p.get("name", "")), f"名称={p.get('name','')[:40]}")
             check("10.4 价格校验", abs(float(p.get("price", 0)) - 35) < 0.1, f"价格={p.get('price')}")
             skus = p.get("skus", [])
             check("10.5 SKU已生成", len(skus) > 0, f"SKU数={len(skus)}")

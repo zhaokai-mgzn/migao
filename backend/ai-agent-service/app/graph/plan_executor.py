@@ -1016,7 +1016,7 @@ async def execute_plan(
             all_known = " ".join(m.content if isinstance(m.content, str) else str(m.content) for m in messages[-6:] if hasattr(m, "content"))
             inferred = await _extract_fields(all_known, current.fields, plan.context)
             for k, v in inferred.items():
-                if v and k not in plan.context: plan.context[k] = v
+                if v: plan.context[k] = v  # 用户输入覆盖Vision预填
             if inferred: logger.info(f"[pe] Auto-filled: {list(inferred.keys())}")
 
             awaiting_user = True
@@ -1232,7 +1232,7 @@ async def execute_plan(
                         raw_stock = int(m.group()) if m else 0
                     total_sku_stock = int(raw_stock) if raw_stock else 0
                     for c in normalized_colors:
-                        cid = 0  # 临时值，admin-api保存时会用真实colorId替换
+                        cid = c.get("id", 0) if isinstance(c, dict) else 0
                         for sm in sm_list:
                             for dw in dw_list:
                                 skus.append({"colorId": cid, "sellingMethod": sm, "doorWidth": dw,
