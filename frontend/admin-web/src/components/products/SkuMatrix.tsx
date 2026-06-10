@@ -34,7 +34,7 @@ const SELLING_METHOD_OPTIONS: { value: SellingMethod; label: string }[] = [
   { value: 'full_roll', label: '整卷' },
 ]
 
-const DOOR_WIDTH_OPTIONS = ['门幅2.8米', '门幅3.2米', '门幅3.4米']
+const DOOR_WIDTH_OPTIONS = ['2.8米', '3.2米', '3.4米']
 
 const COLOR_NAME_MAX = 30
 const MAX_COLORS = 200
@@ -80,11 +80,14 @@ function rebuildSkus(
   for (const color of cs) {
     for (const method of validSms) {
       for (const width of validDws) {
+        // 兼容旧格式'门幅2.8米'和新格式'2.8米'
+        const matchWidth = (db: string, opt: string) =>
+          db === opt || db.replace(/^门幅/, '') === opt
         const found = existing.find(
           (s) =>
             s.colorId === color.id &&
             s.sellingMethod === method &&
-            s.doorWidth === width
+            matchWidth(s.doorWidth || '', width)
         )
         if (found) {
           result.push({ ...found, colorName: color.colorName })

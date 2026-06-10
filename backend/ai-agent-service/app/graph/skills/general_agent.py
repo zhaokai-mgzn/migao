@@ -50,8 +50,7 @@ GENERAL_SYSTEM_PROMPT = """<system_prompt>
 - 与用户对话时说"散剪""整卷"，调工具搜数据时传 bulk_cut/full_roll
 
 ## 门幅格式
-- 存储值带"门幅"前缀: "门幅2.8米" "门幅3.2米"
-- 用户说"2.8米"时搜索需补全为"门幅2.8米"
+- 存储值: "2.8米" "3.2米" "3.4米"（纯数值+单位）
 </domain_knowledge>
 
 <tool_usage>

@@ -1193,9 +1193,9 @@ async def execute_plan(
             if dws:
                 normalized = []
                 for d in (dws if isinstance(dws, list) else [dws]):
-                    d = str(d).strip()
-                    if not d.startswith("门幅"):
-                        d = f"门幅{d}"
+                    d = str(d).strip().lstrip("门幅").lstrip("门")
+                    if not d.endswith("米"):
+                        d = f"{d}米"
                     normalized.append(d)
                 plan.context["door_widths"] = normalized
 
