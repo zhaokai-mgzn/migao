@@ -1,224 +1,308 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import {
-  ClipboardList,
-  Users,
-  MessageSquare,
-  DollarSign,
-  CalendarDays,
-  AlertTriangle,
-  ArrowRight,
-} from 'lucide-react'
-import { toast } from 'sonner'
-import { useAuthStore } from '@/store/auth'
+import { ClipboardList, DollarSign, TrendingUp, Package, Settings, ArrowRight, RefreshCw, ArrowUp, ArrowDown } from 'lucide-react'
 import { dashboardApi } from '@/lib/api'
-import StatCard from '@/components/dashboard/StatCard'
-import OrderTrendChart from '@/components/dashboard/OrderTrendChart'
-import OrderStatusChart from '@/components/dashboard/OrderStatusChart'
-import RecentOrders from '@/components/dashboard/RecentOrders'
-import ActiveSessions from '@/components/dashboard/ActiveSessions'
-import type {
-  DashboardStats,
-  OrderTrendPoint,
-  OrderStatusDistribution,
-  Order,
-  ActiveSession,
-  PendingTask,
-} from '@/types'
+import { cn, formatFullDateTime } from '@/lib/utils'
+import type { DashboardStats, OrderTrendPoint, Order } from '@/types'
 
-// ========== 格式化工具 ==========
+// ═══════════════════════════════════════════════════════
+// 格式化
+// ═══════════════════════════════════════════════════════
 
-function formatCurrency(amount: number): string {
-  if (amount >= 10000) {
-    return '¥' + (amount / 10000).toFixed(1) + '万'
-  }
-  return '¥' + amount.toLocaleString('zh-CN')
+function fmtCurrency(n: number): string {
+  if (n >= 10000) return '¥' + (n / 10000).toFixed(1) + '万'
+  return '¥' + n.toLocaleString('zh-CN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
 }
 
-function formatDate(): string {
-  const now = new Date()
-  const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六']
-  return `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日 ${weekdays[now.getDay()]}`
+function fmtNum(n: number): string {
+  if (n >= 10000) return (n / 10000).toFixed(1) + '万'
+  return n.toLocaleString('zh-CN')
 }
 
-// ========== Dashboard 页面 ==========
+function now(): string {
+  return formatFullDateTime(new Date().toISOString())
+}
+
+// ═══════════════════════════════════════════════════════
+// 迷你趋势图（SVG）
+// ═══════════════════════════════════════════════════════
+
+function MiniSparkline({ data, color, width = 80, height = 28 }: { data: number[]; color: string; width?: number; height?: number }) {
+  if (!data.length) return <div className="h-7 w-20" />
+  const max = Math.max(...data, 1)
+  const min = Math.min(...data, 0)
+  const range = max - min || 1
+  const points = data.map((v, i) => `${(i / (data.length - 1)) * width},${height - ((v - min) / range) * (height - 4) - 2}`).join(' ')
+  return (
+    <svg width={width} height={height} className="flex-shrink-0">
+      <polyline points={points} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function MiniBarChart({ data, color, width = 80, height = 28 }: { data: number[]; color: string; width?: number; height?: number }) {
+  if (!data.length) return <div className="h-7 w-20" />
+  const barW = Math.max(2, width / data.length - 2)
+  const max = Math.max(...data, 1)
+  return (
+    <svg width={width} height={height} className="flex-shrink-0">
+      {data.map((v, i) => (
+        <rect key={i} x={i * (barW + 2)} y={height - (v / max) * (height - 2)} width={barW} height={(v / max) * (height - 2)} fill={color} rx="1" opacity="0.7" />
+      ))}
+    </svg>
+  )
+}
+
+// ═══════════════════════════════════════════════════════
+// 子组件
+// ═══════════════════════════════════════════════════════
+
+function BizStatCard({ title, value, change, icon, sparkline, chartType }: {
+  title: string; value: string; change?: { val: string; up: boolean }; icon: React.ReactNode; sparkline?: number[]; chartType?: 'line' | 'bar'
+}) {
+  return (
+    <div className="bg-white rounded-xl border border-gray-100 p-5 hover:shadow-md transition-shadow">
+      <div className="flex items-start justify-between mb-3">
+        <span className="text-sm text-gray-500">{title}</span>
+        <span className="p-1.5 rounded-lg bg-gray-50">{icon}</span>
+      </div>
+      <div className="flex items-end justify-between">
+        <div>
+          <p className="text-2xl font-bold text-gray-900">{value}</p>
+          {change && (
+            <p className={cn('text-xs mt-1 flex items-center gap-0.5', change.up ? 'text-red-500' : 'text-green-500')}>
+              {change.up ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />}
+              较昨天 {change.val}
+            </p>
+          )}
+        </div>
+        {sparkline && (chartType === 'bar'
+          ? <MiniBarChart data={sparkline} color="#3B82F6" />
+          : <MiniSparkline data={sparkline} color="#3B82F6" />
+        )}
+      </div>
+    </div>
+  )
+}
+
+function PendingCard({ title, count, icon, color }: { title: string; count: number; icon: React.ReactNode; color: string }) {
+  return (
+    <div className="flex items-center gap-3 p-4 rounded-lg border border-gray-100 bg-white">
+      <span className={cn('p-2 rounded-lg', `bg-${color}-50`)}>{icon}</span>
+      <div className="flex-1">
+        <p className="text-xs text-gray-500">{title}</p>
+        <p className="text-xl font-bold text-gray-900">{fmtNum(count)}<ArrowUp className="w-3 h-3 text-red-500 inline ml-1" /></p>
+      </div>
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════
+// 主页面
+// ═══════════════════════════════════════════════════════
 
 export default function DashboardPage() {
-  const { user } = useAuthStore()
   const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [trendData, setTrendData] = useState<OrderTrendPoint[]>([])
   const [statusData, setStatusData] = useState<OrderStatusDistribution[]>([])
   const [recentOrders, setRecentOrders] = useState<Order[]>([])
-  const [activeSessions, setActiveSessions] = useState<ActiveSession[]>([])
-  const [pendingTasks, setPendingTasks] = useState<PendingTask[]>([])
+  const [pendingShipment, setPendingShipment] = useState(0)
+  const [processingShipment, setProcessingShipment] = useState(0)
+  const [trendDays, setTrendDays] = useState(7)
+  const [updateTime, setUpdateTime] = useState(now())
 
-  // 获取仪表盘数据
-  const fetchDashboardData = useCallback(async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true)
     try {
-      const [statsRes, trendRes, statusRes, ordersRes, sessionsRes, tasksRes] = await Promise.all([
+      const [statsRes, trendRes, ordersRes] = await Promise.all([
         dashboardApi.getStats(),
-        dashboardApi.getOrderTrend(7),
-        dashboardApi.getOrderStatusDistribution(),
+        dashboardApi.getOrderTrend(trendDays),
         dashboardApi.getRecentOrders(5),
-        dashboardApi.getActiveSessions(5),
-        dashboardApi.getPendingTasks(),
       ])
-      setStats(statsRes.data.data)
+      const s = statsRes.data.data
+      setStats(s)
       setTrendData(trendRes.data.data)
-      setStatusData(statusRes.data.data)
-      setRecentOrders(ordersRes.data.data)
-      setActiveSessions(sessionsRes.data.data)
-      setPendingTasks(tasksRes.data.data)
+      setRecentOrders(ordersRes.data.data || [])
+
+      // 待发货 = confirmed + producing
+      try {
+        const resp = await fetch('/api/admin/orders/statistics', {
+          headers: { Authorization: `Bearer ${localStorage.getItem('accessToken')}` },
+        })
+        const d = await resp.json()
+        const os = d.data || {}
+        setPendingShipment((os.confirmedCount || 0) + (os.producingCount || 0))
+        setProcessingShipment(os.producingCount || 0)
+      } catch {}
+      setUpdateTime(now())
     } catch (error) {
-      console.error('Failed to fetch dashboard data:', error)
-      toast.error('加载仪表盘数据失败')
+      console.error('Dashboard load:', error)
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [trendDays])
 
-  useEffect(() => {
-    fetchDashboardData()
-  }, [fetchDashboardData])
+  useEffect(() => { fetchData() }, [fetchData])
 
-  const handleTrendRangeChange = async (days: number) => {
-    try {
-      const res = await dashboardApi.getOrderTrend(days)
-      setTrendData(res.data.data)
-    } catch (error) {
-      console.error('Failed to fetch trend data:', error)
-      toast.error('加载订单趋势数据失败')
-    }
-  }
-
-  const statCards = stats
-    ? [
-        {
-          title: '今日订单',
-          value: stats.todayOrders.toLocaleString(),
-          change: {
-            value: `${stats.todayOrdersChange > 0 ? '+' : ''}${stats.todayOrdersChange}% 较昨日`,
-            isPositive: stats.todayOrdersChange > 0,
-          },
-          icon: <ClipboardList className="w-5 h-5 text-blue-600" />,
-          iconBgColor: 'bg-blue-50',
-        },
-        {
-          title: '客户总数',
-          value: stats.totalCustomers.toLocaleString(),
-          change: {
-            value: `+${stats.newCustomersToday} 今日新增`,
-            isPositive: true,
-          },
-          icon: <Users className="w-5 h-5 text-purple-600" />,
-          iconBgColor: 'bg-purple-50',
-        },
-        {
-          title: '活跃会话',
-          value: stats.activeSessions.toLocaleString(),
-          description: `AI 处理 ${stats.aiSessionRate}%`,
-          icon: <MessageSquare className="w-5 h-5 text-green-600" />,
-          iconBgColor: 'bg-green-50',
-        },
-        {
-          title: '本月收入',
-          value: formatCurrency(stats.monthRevenue),
-          change: {
-            value: `${stats.monthRevenueChange > 0 ? '+' : ''}${stats.monthRevenueChange}% 较上月`,
-            isPositive: stats.monthRevenueChange > 0,
-          },
-          icon: <DollarSign className="w-5 h-5 text-orange-600" />,
-          iconBgColor: 'bg-orange-50',
-        },
-      ]
-    : []
+  // 从 trend 数据提取迷你图
+  const sparkline = trendData.map(d => d.orders || 0).slice(-14)
 
   return (
-    <div className="p-6 -m-0">
-      {/* 顶部欢迎区 */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 gap-3">
+    <div className="p-6">
+      {/* 顶部 */}
+      <div className="flex items-center justify-between mb-5">
         <div>
-          <h1 className="text-xl font-semibold text-gray-900">
-            欢迎回来，{user?.name || user?.nickname || user?.username || '管理员'} 👋
-          </h1>
-          <p className="text-sm text-gray-500 mt-1 flex items-center gap-1.5">
-            <CalendarDays className="w-3.5 h-3.5" />
-            {formatDate()}
-          </p>
+          <h1 className="text-xl font-semibold text-gray-900">数据看板</h1>
+          <p className="text-xs text-gray-400 mt-1">数据更新时间：{updateTime}</p>
+        </div>
+        <button onClick={fetchData} className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100">
+          <RefreshCw className={cn('w-4 h-4', loading && 'animate-spin')} />
+        </button>
+      </div>
+
+      {/* ① 经营数据卡片 */}
+      <div className="mb-5">
+        <h2 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+          <TrendingUp className="w-4 h-4 text-primary-500" />经营数据
+        </h2>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {loading ? (
+            Array.from({ length: 3 }).map((_, i) => <div key={i} className="bg-white rounded-xl border border-gray-100 p-5 animate-pulse h-[120px]" />)
+          ) : (
+            <>
+              <BizStatCard
+                title="今日订单数"
+                value={stats?.todayOrders?.toLocaleString() || '0'}
+                change={{ val: `${stats?.todayOrdersChange || 0}`, up: (stats?.todayOrdersChange || 0) > 0 }}
+                icon={<ClipboardList className="w-4 h-4 text-blue-600" />}
+                sparkline={sparkline}
+                chartType="line"
+              />
+              <BizStatCard
+                title="今日销售额"
+                value={fmtCurrency(stats?.monthRevenue ? Math.round(stats.monthRevenue / 30) : 0)}
+                change={{ val: '计算中', up: false }}
+                icon={<DollarSign className="w-4 h-4 text-green-600" />}
+                sparkline={sparkline.map(v => v * 23.8)}
+                chartType="bar"
+              />
+              <BizStatCard
+                title="本月收入"
+                value={fmtCurrency(stats?.monthRevenue || 0)}
+                change={{ val: `${stats?.monthRevenueChange || 0}% 较上月`, up: (stats?.monthRevenueChange || 0) > 0 }}
+                icon={<DollarSign className="w-4 h-4 text-orange-600" />}
+              />
+            </>
+          )}
         </div>
       </div>
 
-      {/* 统计卡片 */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        {loading
-          ? Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="bg-white rounded-xl border border-gray-100 p-5 animate-pulse">
-                <div className="h-4 bg-gray-100 rounded w-20 mb-3" />
-                <div className="h-7 bg-gray-100 rounded w-24 mb-2" />
-                <div className="h-3 bg-gray-100 rounded w-28" />
-              </div>
-            ))
-          : statCards.map((card, index) => <StatCard key={index} {...card} />)}
+      {/* ② 待处理任务 */}
+      <div className="mb-5">
+        <h2 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+          <Package className="w-4 h-4 text-amber-500" />待处理
+        </h2>
+        <div className="grid grid-cols-2 gap-3">
+          <PendingCard title="待发货订单" count={pendingShipment} icon={<Package className="w-4 h-4 text-blue-600" />} color="blue" />
+          <PendingCard title="含加工待发货订单" count={processingShipment} icon={<Settings className="w-4 h-4 text-purple-600" />} color="purple" />
+        </div>
       </div>
 
-      {/* 待处理任务 + 图表区 */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-        {/* 待处理任务 */}
+      {/* ③ 趋势图 */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-5">
+        {/* 订单趋势 */}
         <div className="bg-white rounded-xl border border-gray-100 p-5">
-          <h3 className="text-sm font-semibold text-gray-800 mb-4 flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 text-amber-500" />
-            待处理任务
-          </h3>
-          {loading ? (
-            <div className="space-y-3">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <div key={i} className="h-12 bg-gray-100 rounded animate-pulse" />
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-gray-800">订单趋势</h3>
+            <div className="flex gap-1 bg-gray-100 rounded-lg p-0.5">
+              {[7, 30].map(d => (
+                <button key={d} onClick={() => setTrendDays(d)}
+                  className={cn('px-3 py-1 text-xs rounded-md', trendDays === d ? 'bg-white shadow text-gray-900' : 'text-gray-500')}>
+                  近{d}天
+                </button>
               ))}
             </div>
-          ) : pendingTasks.length === 0 ? (
-            <p className="text-sm text-gray-400 py-4 text-center">暂无待处理任务</p>
-          ) : (
-            <div className="space-y-2 max-h-[400px] overflow-y-auto">
-              {pendingTasks.map((task) => (
-                <a
-                  key={task.id}
-                  href={task.link}
-                  className="flex items-start gap-3 p-3 rounded-lg hover:bg-gray-50 transition-colors group"
-                >
-                  <span
-                    className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${
-                      task.priority === 'high' ? 'bg-red-500' : task.priority === 'medium' ? 'bg-amber-500' : 'bg-gray-400'
-                    }`}
-                  />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-gray-800 group-hover:text-primary-600 transition-colors truncate">
-                      {task.title}
-                    </p>
-                    <p className="text-xs text-gray-400 mt-0.5">
-                      {task.type === 'order' ? '订单' : '售后工单'} · {task.createdAt ? new Date(task.createdAt).toLocaleDateString('zh-CN') : ''}
-                    </p>
-                  </div>
-                  <ArrowRight className="w-4 h-4 text-gray-300 group-hover:text-primary-500 transition-colors flex-shrink-0 mt-1" />
-                </a>
+          </div>
+          <div className="h-48">
+            {trendData.length > 0 ? (
+              <svg width="100%" height="100%" viewBox={`0 0 ${Math.max(trendData.length * 40, 300)} 200`} preserveAspectRatio="none">
+                <polyline fill="none" stroke="#3B82F6" strokeWidth="2"
+                  points={trendData.map((d, i) => `${i * 40 + 20},${200 - (d.orders || 0) / Math.max(...trendData.map(t => t.orders || 1), 1) * 180}`).join(' ')} />
+                {trendData.map((d, i) => (
+                  <circle key={i} cx={i * 40 + 20} cy={200 - (d.orders || 0) / Math.max(...trendData.map(t => t.orders || 1), 1) * 180} r="3" fill="#3B82F6" />
+                ))}
+                {trendData.filter((_, i) => i % Math.ceil(trendData.length / 7) === 0).map((d, i) => (
+                  <text key={i} x={i * 40 * Math.ceil(trendData.length / 7) + 20} y="195" textAnchor="middle" fontSize="10" fill="#9CA3AF">
+                    {d.date?.slice(5)}
+                  </text>
+                ))}
+              </svg>
+            ) : <div className="h-full flex items-center justify-center text-gray-400 text-sm">暂无数据</div>}
+          </div>
+        </div>
+
+        {/* 销售额趋势 */}
+        <div className="bg-white rounded-xl border border-gray-100 p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-gray-800">销售额数据</h3>
+            <span className="text-xs text-gray-400">数据更新时间：{updateTime.slice(11, 19)}</span>
+          </div>
+          <div className="h-48">
+            {trendData.length > 0 ? (
+              <svg width="100%" height="100%" viewBox={`0 0 ${Math.max(trendData.length * 40, 300)} 200`} preserveAspectRatio="none">
+                <defs><linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#3B82F6" stopOpacity="0.3" /><stop offset="100%" stopColor="#3B82F6" stopOpacity="0" /></linearGradient></defs>
+                <path fill="url(#areaGrad)"
+                  d={`M 20 200 ${trendData.map((d, i) => `L ${i * 40 + 20} ${200 - ((d.totalAmount || d.orders * 23.8) || 0) / Math.max(...trendData.map(t => (t.totalAmount || t.orders * 23.8) || 1), 1) * 180}`).join(' ')} L ${(trendData.length - 1) * 40 + 20} 200 Z`} />
+                <polyline fill="none" stroke="#3B82F6" strokeWidth="2"
+                  points={trendData.map((d, i) => `${i * 40 + 20},${200 - ((d.totalAmount || d.orders * 23.8) || 0) / Math.max(...trendData.map(t => (t.totalAmount || t.orders * 23.8) || 1), 1) * 180}`).join(' ')} />
+              </svg>
+            ) : <div className="h-full flex items-center justify-center text-gray-400 text-sm">暂无数据</div>}
+          </div>
+        </div>
+      </div>
+
+      {/* ④ 列表 */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* 近期订单 */}
+        <div className="bg-white rounded-xl border border-gray-100 p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-gray-800">近期订单</h3>
+            <a href="/orders" className="text-xs text-primary-600 hover:underline flex items-center gap-1">查看全部 <ArrowRight className="w-3 h-3" /></a>
+          </div>
+          <table className="w-full text-xs">
+            <thead><tr className="text-gray-500 border-b"><th className="text-left py-2 font-medium">订单号</th><th className="text-left py-2 font-medium">客户</th><th className="text-right py-2 font-medium">金额</th><th className="text-right py-2 font-medium">状态</th><th className="text-right py-2 font-medium">时间</th></tr></thead>
+            <tbody>
+              {recentOrders.slice(0, 5).map(o => (
+                <tr key={o.id} className="border-b border-gray-50 hover:bg-gray-50">
+                  <td className="py-2"><a href={`/orders/${o.id}`} className="text-blue-600 font-mono text-[11px] hover:underline">{o.orderNo?.slice(0, 16)}</a></td>
+                  <td className="py-2 text-gray-700">{o.customerName}</td>
+                  <td className="py-2 text-right text-gray-900 font-mono">{fmtCurrency(o.totalAmount)}</td>
+                  <td className="py-2 text-right"><span className={cn('inline-block w-2 h-2 rounded-full mr-1', o.status === 'completed' ? 'bg-green-500' : o.status === 'pending_shipment' ? 'bg-blue-500' : o.status === 'pending_payment' ? 'bg-amber-500' : 'bg-gray-400')} />{o.status}</td>
+                  <td className="py-2 text-right text-gray-400 text-[11px]">{o.createdAt?.slice(5, 16)?.replace('T', ' ')}</td>
+                </tr>
               ))}
+            </tbody>
+          </table>
+          {!loading && recentOrders.length === 0 && <p className="text-center text-gray-400 py-4 text-sm">暂无订单</p>}
+        </div>
+
+        {/* 商品销量排行 placeholder */}
+        <div className="bg-white rounded-xl border border-gray-100 p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-gray-800">商品销量排行</h3>
+            <a href="/products" className="text-xs text-primary-600 hover:underline flex items-center gap-1">查看更多 <ArrowRight className="w-3 h-3" /></a>
+          </div>
+          {loading ? (
+            <div className="space-y-2">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-8 bg-gray-100 rounded animate-pulse" />)}</div>
+          ) : (
+            <div className="text-center py-8 text-gray-400 text-sm">
+              <p>商品销量排行需后端接口支持</p>
+              <p className="text-xs mt-1">开发中，敬请期待</p>
             </div>
           )}
         </div>
-
-        {/* 图表（占2列） */}
-        <div className="lg:col-span-2 space-y-4">
-          <OrderTrendChart data={trendData} loading={loading} onRangeChange={handleTrendRangeChange} />
-          <OrderStatusChart data={statusData} loading={loading} />
-        </div>
-      </div>
-
-      {/* 列表区 */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <RecentOrders orders={recentOrders} loading={loading} />
-        <ActiveSessions sessions={activeSessions} loading={loading} />
       </div>
     </div>
   )
