@@ -356,10 +356,7 @@ class ProductManageTool(BaseTool):
         if stock_quantity is not None:
             json_data["stock"] = stock_quantity
         if processing_item_ids is not None:
-            if processing_item_configs:
-                json_data["processingItemConfigs"] = processing_item_configs
-            elif processing_item_ids:
-                json_data["processingItemConfigs"] = [{"processingItemId": pid} for pid in processing_item_ids]
+            json_data["processingItemConfigs"] = [{"processingItemId": pid} for pid in processing_item_ids]
         
         if not json_data:
             return ToolResult(

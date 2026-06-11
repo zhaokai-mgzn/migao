@@ -100,51 +100,28 @@ class Plan:
 
 # ── Prompts ──
 
-PLAN_GENERATION_PROMPT = """你是一个工作流规划器。根据用户的请求，生成简洁的执行计划。
+PLAN_GENERATION_PROMPT = """你是工作流规划器。根据用户请求生成执行计划（纯 JSON）。
 
-可用步骤：ask(收集信息) | query(查数据展示选项) | confirm(确认) | execute(执行)
-规则：单步一事，先收集→再查询→确认→执行，≤6步。
+步骤类型:
+  ask     — 收集信息，字段名用英文
+  query   — 调工具查数据并展示选项
+  confirm — 展示汇总请用户确认
+  execute — 调工具执行最终操作
 
-=== 商品创建（含图片上传）===
-Vision 已提取 name/description/brand/colors/specifications，
-系统自动查同类商品推荐分类和加工项。一步确认即可创建。
+规则: 单步一事, ask→query→confirm→execute 顺序, ≤6 步, execute_tool 必须用实际工具名。
 
-{
-  "goal": "创建2699系列色卡商品",
-  "steps": [
-    {"type": "ask", "description": "收集并确认全部信息", "ask_prompt": "我已根据图片和同类商品预填了大部分信息。请确认或补充：价格、库存、货号。没问题直接回'确认创建'", "fields": ["price", "stock_quantity", "sku_code"]},
-    {"type": "confirm", "description": "确认创建"},
-    {"type": "execute", "description": "执行创建", "execute_tool": "product_manage", "execute_action": "create"}
-  ]
-}
-
-=== 订单创建 ===
-{
-  "goal": "为客户创建订单",
-  "steps": [
-    {"type": "ask", "description": "收集订单信息", "ask_prompt": "请提供客户姓名、电话、地址、商品名称和数量", "fields": ["customer_name", "customer_phone", "customer_address", "product_name", "quantity"]},
-    {"type": "query", "description": "搜索商品", "query_tool": "product_search", "query_params": {"keyword": ""}, "query_prompt": "请选择商品"},
-    {"type": "query", "description": "查商品加工项", "query_tool": "product_detail", "query_params": {}, "query_prompt": "该商品支持以下加工项，请选择（不需要回复0）"},
-    {"type": "confirm", "description": "确认订单"},
-    {"type": "execute", "description": "创建订单", "execute_tool": "order_create", "execute_action": "create"}
-  ]
-}
-
-=== 售后工单创建 ===
-用户需要为某个订单创建售后工单（退款/退货/投诉等）。
-
+示例（售后工单创建）:
 {
   "goal": "为订单ORD-xxx创建退款工单",
   "steps": [
-    {"type": "ask", "description": "了解售后诉求", "ask_prompt": "请描述售后问题（退款/退货/换货/投诉），并提供订单号或客户信息", "fields": ["issue_type", "reason", "order_no"]},
-    {"type": "query", "description": "查询订单详情", "query_tool": "order_query", "query_params": {"action": "detail"}, "query_prompt": "找到以下订单，请确认"},
+    {"type": "ask", "description": "了解售后诉求", "ask_prompt": "请描述问题类型并提供订单号", "fields": ["issue_type", "reason", "order_no"]},
+    {"type": "query", "description": "查询订单详情", "query_tool": "order_query", "query_params": {"action": "detail"}, "query_prompt": "找到以下订单"},
     {"type": "confirm", "description": "确认创建工单"},
-    {"type": "execute", "description": "创建售后工单", "execute_tool": "after_sales_manage", "execute_action": "create"}
+    {"type": "execute", "description": "创建工单", "execute_tool": "after_sales_manage", "execute_action": "create"}
   ]
 }
 
-=== 售后工单处理 ===
-用户要处理已有的售后工单（审批/完结/分配等），不需要 P&E，直接 ReAct。
+不需要 P&E 的场景（直接回 ReAct）: 简单查询、单步修改（改价格/上下架）、已存在工单的处理（审批/完结）。
 """
 
 
@@ -688,86 +665,16 @@ def _match_user_choice(user_msg: str, results: list) -> Optional[dict]:
     return None
 
 
-# ── 用户意图检测（修正/回溯/查看进度）──
-
-
-# 修正意图关键词
-_CORRECTION_PATTERNS = [
-    # "字段名 + 改/修改/改成/不对/应该是/不是/换成/更正 + 新值"
-    # 支持中文和英文 key
-    re.compile(
-        r"(?:"
-        r"(?:价格|售价|单价|price)\s*(?:改成?|修改为?|不对[，,]?\s*应该是?|更正为?|换成|不是[，,]?\s*是)\s*([\d.]+)"
-        r")",
-        re.IGNORECASE,
-    ),
-    re.compile(
-        r"(?:"
-        r"(?:名称|名字|商品名|name)\s*(?:改成?|修改为?|不对[，,]?\s*应该是?|更正为?|换成|不是[，,]?\s*是)\s*(.+?)(?:[,，。\s]|$)"
-        r")",
-        re.IGNORECASE,
-    ),
-    re.compile(
-        r"(?:"
-        r"(?:库存|数量|stock)\s*(?:改成?|修改为?|不对[，,]?\s*应该是?|更正为?|换成)\s*([\d]+)"
-        r")",
-        re.IGNORECASE,
-    ),
-    re.compile(
-        r"(?:"
-        r"(?:货号|编码|sku_code)\s*(?:改成?|修改为?|不对[，,]?\s*应该是?|更正为?|换成)\s*(.+?)(?:[,，。\s]|$)"
-        r")",
-        re.IGNORECASE,
-    ),
-    re.compile(
-        r"(?:"
-        r"(?:分类|category)\s*(?:改成?|修改为?|不对[，,]?\s*应该是?|更正为?|换成|换[一个]?)\s*(.+?)(?:[,，。]|$)"
-        r")",
-        re.IGNORECASE,
-    ),
-    re.compile(
-        r"(?:"
-        r"(?:门幅|尺寸|门宽|door_width)\s*(?:改成?|修改为?|不对[，,]?\s*应该是?|更正为?|换成)\s*(.+?)(?:[,，。\s]|$)"
-        r")",
-        re.IGNORECASE,
-    ),
-    re.compile(
-        r"(?:"
-        r"(?:售卖方式|销售方式|selling_method)\s*(?:改成?|修改为?|不对[，,]?\s*应该是?|更正为?|换成)\s*(.+?)(?:[,，。\s]|$)"
-        r")",
-        re.IGNORECASE,
-    ),
-    # 通用模式："XX不对" / "XX应该是YY"
-    re.compile(
-        r"(?:"
-        r"(\S{2,8})\s*(?:不对|错了|有误)[，,]?\s*(?:应该是?|改成?|换成?|更正为?)\s*(.+?)(?:[,，。\s]|$)"
-        r")",
-        re.IGNORECASE,
-    ),
-]
-
-# 回溯关键词
-_BACK_PATTERN = re.compile(r"(?:回到上一步|返回上一步|上一步|返回|后退|back)", re.IGNORECASE)
-
-# 查看进度关键词
-_SHOW_PATTERN = re.compile(r"(?:现在有哪些信息|看看进度|当前信息|汇总|现在填了什么|有哪些字段|show|status)", re.IGNORECASE)
-
-# 步骤名 → 关键词映射（用于"重新选分类"这类意图）
-_STEP_REDO_PATTERNS = [
-    (re.compile(r"重新(?:选|填|选择|填写)\s*(?:分类|category)", re.IGNORECASE), 1),   # 通常分类在第2步
-    (re.compile(r"重新(?:选|填|选择|填写)\s*(?:加工项|加工|processing)", re.IGNORECASE), 2),  # 加工项在第3步
-    (re.compile(r"重新(?:填|填写|输入)\s*(?:信息|属性|价格|库存|货号)", re.IGNORECASE), 0),  # 回到 ask 步
-]
-
 
 async def _detect_user_intent(user_msg: str, plan) -> dict:
-    """分析用户消息意图，支持修正/回溯/查看进度
+    """分析用户消息意图（取消）
 
-    纯规则匹配，零 LLM 调用延迟。
+    字段修正（"价格改成200"）由 ask 步骤中的 _extract_fields（LLM）自然处理，
+    代码不再用正则预检测。
 
     Returns:
-        {action, field?, value?, target_step?}
-        action: "continue" | "correct" | "back" | "goto" | "show" | "cancel"
+        {action}
+        action: "continue" | "cancel"
     """
     if not user_msg:
         return {"action": "continue"}
@@ -783,74 +690,7 @@ async def _detect_user_intent(user_msg: str, plan) -> dict:
     if any(w in user_msg for w in cancel_words):
         return {"action": "cancel"}
 
-    # 2. 检测回溯
-    if _BACK_PATTERN.search(user_msg):
-        return {"action": "back"}
-
-    # 2.5 检测"换分类"/"选加工项"等查询请求
-    for pat, tool_name in [
-        (re.compile(r"换(?:个?|一下|一)?分类|分类有?(哪些|什么|几个)|重新选.*分类"), "category_manage"),
-        (re.compile(r"选(?:个?|一下|一)?加工项|加工项有?(哪些|什么|几个)|重新选.*加工"), "processing_item_query"),
-    ]:
-        if pat.search(user_msg):
-            return {"action": "inline_query", "tool": tool_name}
-
-    # 3. 检测重做某步
-    for pattern, target_step in _STEP_REDO_PATTERNS:
-        if pattern.search(user_msg):
-            return {"action": "goto", "target_step": target_step}
-
-    # 4. 检测查看进度
-    if _SHOW_PATTERN.search(user_msg):
-        return {"action": "show"}
-
-    # 5. 检测字段修正
-    for pattern in _CORRECTION_PATTERNS:
-        m = pattern.search(user_msg)
-        if m:
-            groups = m.groups()
-            if len(groups) == 1:
-                # 单字段模式，从 pattern 推断字段名
-                raw_value = groups[0].strip()
-                field_name = _infer_field_from_pattern(pattern, raw_value)
-                if field_name:
-                    return {"action": "correct", "field": field_name, "value": raw_value}
-            elif len(groups) >= 2:
-                # 通用模式：group(1)=字段名, group(2)=新值
-                cn_field = groups[0].strip()
-                raw_value = groups[1].strip() if len(groups) > 1 else ""
-                field_name = _FIELD_NAME_MAP.get(cn_field, "")
-                if not field_name:
-                    # 尝试用字段名本身匹配
-                    for cn, en in _FIELD_NAME_MAP.items():
-                        if cn_field in cn or cn in cn_field:
-                            field_name = en
-                            break
-                if field_name and raw_value:
-                    return {"action": "correct", "field": field_name, "value": raw_value}
-
     return {"action": "continue"}
-
-
-def _infer_field_from_pattern(pattern: re.Pattern, value: str) -> str:
-    """从正则 pattern 推断对应的英文字段名"""
-    import re as _re
-    pat_str = pattern.pattern
-    if _re.search(r"价格|售价|单价|price", pat_str):
-        return "price"
-    if _re.search(r"名称|名字|商品名|name", pat_str):
-        return "name"
-    if _re.search(r"库存|数量|stock", pat_str):
-        return "stock_quantity"
-    if _re.search(r"货号|编码|sku_code", pat_str):
-        return "sku_code"
-    if _re.search(r"分类|category", pat_str):
-        return "category_name"
-    if _re.search(r"门幅|尺寸|门宽|door_width", pat_str):
-        return "door_widths"
-    if _re.search(r"售卖|销售|selling_method", pat_str):
-        return "selling_methods"
-    return ""
 
 
 # 中文字段名 → 英文 key 映射
@@ -1005,107 +845,16 @@ async def execute_plan(
 
     logger.info(f"[pe] Step {plan.current_step + 1}/{len(plan.steps)} type={current.type} goal='{plan.goal}'")
 
-    # ── 0. 用户意图检测（修正/回溯/查看进度）──
+    # ── 0. 用户意图检测（取消）──
     user_intent = await _detect_user_intent(last_user_msg, plan)
 
     if user_intent["action"] == "cancel":
         await _clear_plan(session_id)
         return {"final_answer": "好的，已取消。", "messages": [AIMessage(content="好的，已取消。")], "skill_used": skill_name}
 
-    need_re_execute = False  # 标记是否需要重新执行当前步骤（修正后不换步）
+    need_re_execute = False  # 标记是否需要重新执行当前步骤（导航回溯后不换步）
 
-    if user_intent["action"] == "back":
-        plan.current_step = max(0, plan.current_step - 1)
-        current = plan.current()
-        logger.info(f"[pe] Backtracked to step {plan.current_step + 1}: {current.type}")
-        need_re_execute = True
-
-    elif user_intent["action"] == "goto":
-        plan.current_step = max(0, min(user_intent["target_step"], len(plan.steps) - 1))
-        current = plan.current()
-        logger.info(f"[pe] Goto step {plan.current_step + 1}: {current.type}")
-        need_re_execute = True
-
-    elif user_intent["action"] == "correct":
-        field = user_intent["field"]
-        value = user_intent["value"]
-        old = plan.context.get(field, "(未设置)")
-        plan.context[field] = value
-        logger.info(f"[pe] Field corrected: {field}={old} → {value}")
-        # 修正信息后重新执行当前步骤，不推进
-        need_re_execute = True
-
-    elif user_intent["action"] == "show":
-        # 展示当前收集的所有信息，不推进步骤
-        show_lines = ["📋 **当前已收集的信息**："]
-        for k, v in plan.context.items():
-            if k.startswith("_"):  # 跳过内部字段
-                continue
-            val_str = str(v)[:80] if v else "(空)"
-            show_lines.append(f"  • {k}: {val_str}")
-        show_lines.append(f"\n_当前步骤 {plan.current_step + 1}/{len(plan.steps)}: {current.description}_")
-        show_lines.append("你可以继续填写，或者对我说\"修改XX为YY\"来更正。")
-        final_answer = "\n".join(show_lines)
-        await _save_plan(session_id, plan)
-        return {"messages": [AIMessage(content=final_answer)], "final_answer": final_answer, "skill_used": skill_name}
-
-    elif user_intent["action"] == "inline_query":
-        # 用户想看分类/加工项列表 → 调用工具展示选项，不推进步骤
-        tool_name = user_intent["tool"]
-        from app.tools.registry import get_tool_registry, set_tool_context
-        from app.graph.skills.base_skill import build_tool_context
-        registry = get_tool_registry()
-        tool = registry.get_tool(tool_name)
-        ctx = build_tool_context(state)
-        set_tool_context(ctx)
-        if tool:
-            try:
-                params = {"action": "tree"} if tool_name == "category_manage" else {"status": "active"}
-                result = await tool.execute(ctx, **params)
-                items = []
-                if result.success and result.data:
-                    items = result.data.get("items") or result.data.get("tree") or []
-                if items:
-                    lines = []
-                    for i, item in enumerate(items, 1):
-                        name = item.get("name", "")
-                        extra = item.get("description", "") or item.get("category_name", "")
-                        lines.append(f"  `{i}`　{name}" + (f"（{extra}）" if extra else ""))
-                    list_text = "\n".join(lines)
-                    hint = "请选择分类" if tool_name == "category_manage" else "请选择加工项（回复编号如1,3，不需要回复0）"
-                    final_answer = f"{hint}：\n\n{list_text}\n\n↳ 回复数字编号即可选择"
-                else:
-                    final_answer = f"暂无可选项"
-            except Exception as e:
-                final_answer = f"查询失败: {e}"
-        else:
-            final_answer = f"工具不可用"
-        await _save_plan(session_id, plan)
-        return {"messages": [AIMessage(content=final_answer)], "final_answer": final_answer, "skill_used": skill_name}
-
-    elif user_intent["action"] == "pick_items":
-        # 用户选了加工项编号: 从 _available_processing_items 匹配
-        avail = plan.context.get("_available_processing_items", [])
-        if avail:
-            selected_ids = []
-            selected_names = []
-            for n in user_intent.get("ids", []):
-                idx = int(n) - 1
-                if 0 <= idx < len(avail):
-                    selected_ids.append(avail[idx]["id"])
-                    selected_names.append(avail[idx]["name"])
-            if selected_ids:
-                plan.context["processing_item_ids"] = selected_ids
-                final_answer = f"已选择加工项: {', '.join(selected_names)}。请确认或回复'确认创建'"
-                logger.info(f"[pe] Processing items selected: {selected_names}")
-            else:
-                final_answer = "编号超出范围，请重新选择"
-        else:
-            final_answer = "暂无可选加工项"
-        await _save_plan(session_id, plan)
-        return {"messages": [AIMessage(content=final_answer)], "final_answer": final_answer, "skill_used": skill_name}
-
-    # 如果发生了回溯/跳转/修正，保存 plan 并重新执行
+    # 如果发生了回溯，保存 plan 并重新执行
     if need_re_execute:
         await _save_plan(session_id, plan)
         # 重建 context 中的内部标记
@@ -1179,19 +928,12 @@ async def execute_plan(
                 pi_names = [f"`{i+1}` {pi['name']}" for i, pi in enumerate(avail_pi[:10])]
                 smart_hint += f"\n\n可选加工项（回复编号选择，如1,3,5）：\n" + "\n".join(pi_names)
 
-            # 可用加工项列表
-            avail_pi = plan.context.get("_available_processing_items")
-            pi_hint = ""
-            if avail_pi:
-                pi_lines = [f"  `{i+1}` {pi['name']}" for i, pi in enumerate(avail_pi[:10])]
-                pi_hint = "\n可选加工项:\n" + "\n".join(pi_lines)
-
             ctx_visible = {k: v for k, v in plan.context.items() if not k.startswith("_")}
             prompt = (
                 f"目标: {plan.goal}\n"
                 f"用户说: {last_user_msg}\n"
                 f"对话上下文: {json.dumps(ctx_visible, ensure_ascii=False, indent=2)}\n"
-                f"{smart_hint}{pi_hint}\n\n"
+                f"{smart_hint}\n\n"
                 f"要求:\n"
                 f"1. 列出全部信息让用户核对（16色必须逐个列出，禁止'等16种'）\n"
                 f"2. 末尾只加一行: 💡 直接描述修改即可，如：价格改成200 | 分类换一个 | 颜色删掉后3个 | 加工项选1,3 | 确认创建\n"
@@ -1201,6 +943,44 @@ async def execute_plan(
                 SystemMessage(content=system_prompt), *messages[-4:], HumanMessage(content=prompt),
             ], enable_thinking=False)
             new_messages.append(AIMessage(content=final_answer))
+
+            # ── 导航意图：LLM 已生成自然回复，代码仅调整 step pointer ──
+            _nav_handled = False
+
+            # 回溯："上一步""返回"
+            if any(kw in last_user_msg for kw in ["上一步", "后退", "回到上一步", "返回上一步"]):
+                plan.current_step = max(0, plan.current_step - 1)
+                logger.info(f"[pe] Backtracked to step {plan.current_step + 1}")
+                need_re_execute = True
+                _nav_handled = True
+
+            # 查看进度
+            elif any(kw in last_user_msg for kw in ["看看进度", "有哪些信息", "现在填了什么"]):
+                ctx_visible = {k: v for k, v in plan.context.items() if not k.startswith("_")}
+                progress_lines = ["📋 **当前已收集的信息**："]
+                for k, v in ctx_visible.items():
+                    progress_lines.append(f"  • {k}: {str(v)[:80] if v else '(空)'}")
+                final_answer = "\n".join(progress_lines)
+                new_messages[-1] = AIMessage(content=final_answer)
+                _nav_handled = True
+
+            # 加工项编号选择："1,3,5"
+            if not _nav_handled:
+                import re as _re_nav
+                digits = _re_nav.findall(r'\d+', last_user_msg)
+                avail_pi = plan.context.get("_available_processing_items", [])
+                if digits and avail_pi and len(last_user_msg.replace(' ', '').replace(',', '').replace('，', '')) <= 20:
+                    selected_ids, selected_names = [], []
+                    for n in digits:
+                        idx = int(n) - 1
+                        if 0 <= idx < len(avail_pi):
+                            selected_ids.append(avail_pi[idx]["id"])
+                            selected_names.append(avail_pi[idx]["name"])
+                    if selected_ids:
+                        plan.context["processing_item_ids"] = selected_ids
+                        final_answer = f"已选择加工项: {', '.join(selected_names)}。请确认或回复'确认创建'"
+                        new_messages[-1] = AIMessage(content=final_answer)
+                        logger.info(f"[pe] Processing items selected: {selected_names}")
 
             # 提取字段值填充context
             all_known = " ".join(m.content if isinstance(m.content, str) else str(m.content) for m in messages[-6:] if hasattr(m, "content"))
@@ -1507,7 +1287,7 @@ async def execute_plan(
     # 5. 保存状态
     if awaiting_user:
         # 修正/回溯/查看进度后不推进步骤，重新执行当前步
-        if not need_re_execute and user_intent["action"] != "correct":
+        if not need_re_execute:
             plan.advance()
         if plan.is_done():
             await _clear_plan(session_id)

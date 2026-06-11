@@ -218,8 +218,8 @@ async def _agent_stream_to_sse(
         logger.debug(f"[chat/send] _agent_stream_to_sse starting | session={session_id} tenant={tenant_id}")
         
         # 调用 Agent 流式对话（整体超时 120 秒，防止流永不关闭）
-        # 注：asyncio.timeout() 是 Python 3.11+ 才引入的上下文管理器，
-        #     生产环境运行 Python 3.9，因此使用 time.monotonic() deadline + asyncio.wait_for 实现兼容超时
+        # 注：使用 time.monotonic() deadline + asyncio.wait_for 实现兼容超时，
+        #     比 asyncio.timeout()（Python 3.11+）更灵活地控制心跳间隔
         stream_timeout = 180  # 秒（P&E 多步骤需多次 LLM 调用）
         heartbeat_interval = 15  # 秒：心跳间隔，远小于 ALB 60 秒空闲超时
         timed_out = False

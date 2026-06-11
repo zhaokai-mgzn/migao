@@ -386,6 +386,22 @@ def _load_skill_examples(skill_name: str) -> str:
     return ""
 
 
+def _extract_intent_name(state: AgentState) -> str:
+    """从 AgentState 中提取 intent 名称字符串
+
+    兼容 intent_result 中 intent 为 Enum/str/None 等多种类型。
+    """
+    intent_result = state.get("intent_result") or {}
+    if not isinstance(intent_result, dict):
+        return ""
+    intent_value = intent_result.get("intent")
+    if hasattr(intent_value, "value"):
+        return intent_value.value
+    elif intent_value is not None:
+        return str(intent_value)
+    return ""
+
+
 async def execute_skill(
     state: AgentState,
     skill_name: str,
@@ -423,14 +439,7 @@ async def execute_skill(
             tool_names = cfg.tool_names
     if existing_plan is not None or should_use_plan_execute(state, skill_name):
         # 提取 intent_name（供 P&E 路径使用）
-        _intent_result = state.get("intent_result") or {}
-        _intent_name = ""
-        if isinstance(_intent_result, dict):
-            _iv = _intent_result.get("intent")
-            if hasattr(_iv, "value"):
-                _intent_name = _iv.value
-            elif _iv is not None:
-                _intent_name = str(_iv)
+        _intent_name = _extract_intent_name(state)
 
         # 图片消息：仅商品相关意图做 Vision 分析，避免订单截图等无意义调用
         _VISION_INTENTS = {"product_inquiry", "general"}
@@ -519,14 +528,7 @@ async def execute_skill(
         messages = _sanitize_messages_for_text_path(messages)
     text_length = sum(len(getattr(m, "content", "") or "") for m in messages) + len(system_prompt)
     # 从 intent_result 中提取 intent 名，用于 router 简单意图路由
-    intent_result = state.get("intent_result") or {}
-    intent_name = ""
-    if isinstance(intent_result, dict):
-        intent_value = intent_result.get("intent")
-        if hasattr(intent_value, "value"):
-            intent_name = intent_value.value
-        elif intent_value is not None:
-            intent_name = str(intent_value)
+    intent_name = _extract_intent_name(state)
 
     llm = get_skill_llm(
         intent=intent_name,

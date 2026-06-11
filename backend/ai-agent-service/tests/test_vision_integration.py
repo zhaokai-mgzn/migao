@@ -281,8 +281,8 @@ class TestSelectModelWithVision:
         assert select_model(has_vision=True) == "qwen3.7-max"
 
     def test_select_model_vision_default_is_flash(self):
-        """视觉模型默认使用轻量推理模型"""
-        assert settings.DASHSCOPE_VISION_MODEL == "qwen3.6-flash"
+        """视觉模型默认配置与 settings 一致"""
+        assert settings.DASHSCOPE_VISION_MODEL == "qwen3.7-plus"
 
 
 # =============================================================================
