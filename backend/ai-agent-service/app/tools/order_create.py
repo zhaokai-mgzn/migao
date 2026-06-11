@@ -23,9 +23,12 @@ class OrderCreateTool(BaseTool):
 
     name = "order_create"
     description = (
-        "创建新订单。当客户需要下单、创建订单时使用。"
-        "需要提供客户姓名、电话、商品明细（商品名称、数量、单价、小计）。"
-        "可选提供客户地址和备注。"
+        "创建新订单。创建前请收集客户信息和商品明细："
+        "必填 — customer_name(客户姓名)、customer_phone(客户电话)、"
+        "items(商品列表，每项包含product_name/quantity/unit_price/subtotal)。"
+        "可选 — customer_address(收货地址)、remark(备注)。"
+        "items 中可选 — product_id(商品ID)、width(宽度)、height(高度)。"
+        "收集完成后展示汇总让用户确认，确认后再调用 create。"
     )
 
     # admin、agent、tenant_admin 可使用
@@ -55,25 +58,37 @@ class OrderCreateTool(BaseTool):
             },
             "items": {
                 "type": "array",
-                "description": "商品明细列表（必填），每项包含：product_name（商品名称）、quantity（数量）、unit_price（单价）、subtotal（小计=数量×单价）",
+                "description": "商品明细列表（必填，至少一项）",
                 "items": {
                     "type": "object",
                     "properties": {
                         "product_name": {
                             "type": "string",
-                            "description": "商品名称",
+                            "description": "商品名称（必填）",
                         },
                         "quantity": {
                             "type": "integer",
-                            "description": "数量",
+                            "description": "数量（必填）",
                         },
                         "unit_price": {
                             "type": "number",
-                            "description": "单价",
+                            "description": "单价（必填）",
                         },
                         "subtotal": {
                             "type": "number",
-                            "description": "小计（数量 × 单价）",
+                            "description": "小计 = 数量 × 单价（必填）",
+                        },
+                        "product_id": {
+                            "type": "string",
+                            "description": "商品ID（可选，有则传）",
+                        },
+                        "width": {
+                            "type": "number",
+                            "description": "宽度（可选，需要尺寸时填写）",
+                        },
+                        "height": {
+                            "type": "number",
+                            "description": "高度（可选，需要尺寸时填写）",
                         },
                     },
                     "required": ["product_name", "quantity", "unit_price", "subtotal"],

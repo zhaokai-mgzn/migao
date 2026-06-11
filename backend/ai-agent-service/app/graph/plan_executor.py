@@ -766,7 +766,11 @@ async def execute_plan(
     if plan is None:
         intent_name = ""
         if isinstance(intent_result, dict):
-            intent_name = intent_result.get("intent", "")
+            intent_value = intent_result.get("intent")
+            if hasattr(intent_value, "value"):
+                intent_name = intent_value.value
+            elif intent_value is not None:
+                intent_name = str(intent_value)
         plan = await _generate_plan(last_user_msg, messages, intent_name)
 
         if plan is None or len(plan.steps) == 0:

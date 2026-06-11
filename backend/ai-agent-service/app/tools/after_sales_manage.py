@@ -35,8 +35,10 @@ class AfterSalesManageTool(BaseTool):
 
     name = "after_sales_manage"
     description = (
-        "售后工单管理工具，支持查询售后工单列表、查看工单详情、创建售后工单、更新工单状态。"
-        "当需要处理退款、换货、维修、投诉等售后问题时使用。"
+        "售后工单管理工具。创建工单前请收集信息："
+        "必填 — ticket_type(退款/换货/维修/投诉/其他)、order_id(关联订单ID)、description(问题描述)。"
+        "可选 — images(凭证图片URL)、priority(优先级: normal/urgent/critical)、refund_amount(退款金额)。"
+        "收集完成后展示汇总让用户确认，确认后再调用 create。"
     )
 
     allowed_roles = ["admin", "agent", "tenant_admin"]
@@ -69,11 +71,25 @@ class AfterSalesManageTool(BaseTool):
             },
             "reason": {
                 "type": "string",
-                "description": "原因说明（create 时必填，update_status 时可选）",
+                "description": "原因说明（create 时必填，如'客户反馈尺寸不符要求退款'）",
             },
             "description": {
                 "type": "string",
-                "description": "详细描述（create 时可选）",
+                "description": "详细问题描述（create 时可选）",
+            },
+            "images": {
+                "type": "array",
+                "description": "凭证图片URL列表（可选）",
+                "items": {"type": "string"},
+            },
+            "priority": {
+                "type": "string",
+                "description": "优先级（可选，默认normal）",
+                "enum": ["normal", "urgent", "critical"],
+            },
+            "refund_amount": {
+                "type": "number",
+                "description": "退款金额（退款类型时填写）",
             },
             "keyword": {
                 "type": "string",
