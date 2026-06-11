@@ -404,6 +404,20 @@ async def _auto_fill_category_and_defaults(
                 pi_list = smart["common_processing_items"]
                 plan.context.setdefault("processing_item_ids", [pi["id"] for pi in pi_list[:5]])
 
+    # 3. 如果同类商品搜不到加工项，拉全部活跃加工项作为备选建议
+    if not plan.context.get("processing_item_ids") and "processing_item_query" in tool_names:
+        pi_tool = registry.get_tool("processing_item_query")
+        if pi_tool:
+            try:
+                result = await pi_tool.execute(ctx, status="active")
+                if result.success and result.data:
+                    items = result.data.get("items") or []
+                    if items:
+                        plan.context["_available_processing_items"] = items
+                        logger.info(f"[pe] Available processing items: {len(items)}")
+            except Exception as e:
+                logger.warning(f"[pe] Processing items fetch failed: {e}")
+
 
 def _match_category_tree(tree: list, hint: str) -> Optional[dict]:
     """在分类树中匹配最接近的分类名"""
@@ -558,7 +572,7 @@ async def _generate_plan(user_message: str, chat_history: list, goal_hint: str =
         "product_create": {
             "goal": "创建商品",
             "steps": [
-                {"type": "ask", "description": "收集并确认全部信息", "ask_prompt": "系统已根据图片同类商品自动推荐了分类和属性。请确认或补充：价格、库存、货号。要改分类说'换分类'，要改加工项说'选加工项'。没问题回'确认创建'", "fields": ["price", "stock_quantity", "sku_code"]},
+                {"type": "ask", "description": "收集并确认全部信息", "ask_prompt": "确认信息并补充缺失项。直接描述修改即可：价格改成200 | 分类换一个 | 加工项选1,3 | 确认创建", "fields": ["price", "stock_quantity", "sku_code"]},
                 {"type": "confirm", "description": "确认创建"},
                 {"type": "execute", "description": "执行创建", "execute_tool": "product_manage", "execute_action": "create"},
             ],
@@ -566,7 +580,7 @@ async def _generate_plan(user_message: str, chat_history: list, goal_hint: str =
         "product_inquiry": {
             "goal": "创建商品",
             "steps": [
-                {"type": "ask", "description": "收集并确认全部信息", "ask_prompt": "系统已根据图片同类商品自动推荐了分类和属性。请确认或补充：价格、库存、货号。要改分类说'换分类'，要改加工项说'选加工项'。没问题回'确认创建'", "fields": ["price", "stock_quantity", "sku_code"]},
+                {"type": "ask", "description": "收集并确认全部信息", "ask_prompt": "确认信息并补充缺失项。直接描述修改即可：价格改成200 | 分类换一个 | 加工项选1,3 | 确认创建", "fields": ["price", "stock_quantity", "sku_code"]},
                 {"type": "confirm", "description": "确认创建"},
                 {"type": "execute", "description": "执行创建", "execute_tool": "product_manage", "execute_action": "create"},
             ],
@@ -757,6 +771,12 @@ async def _detect_user_intent(user_msg: str, plan) -> dict:
     """
     if not user_msg:
         return {"action": "continue"}
+
+    # 0.5 检测加工项编号选择: "1,3,5" 或 "选1,3"
+    import re as _re2
+    digits = _re2.findall(r'\d+', user_msg)
+    if digits and len(user_msg.replace(' ', '').replace(',', '').replace('，', '')) <= 20:
+        return {"action": "pick_items", "ids": digits}
 
     # 1. 检测取消
     cancel_words = ["取消", "不要了", "算了", "不用了", "不做", "不创建了", "放弃"]
@@ -1063,6 +1083,28 @@ async def execute_plan(
         await _save_plan(session_id, plan)
         return {"messages": [AIMessage(content=final_answer)], "final_answer": final_answer, "skill_used": skill_name}
 
+    elif user_intent["action"] == "pick_items":
+        # 用户选了加工项编号: 从 _available_processing_items 匹配
+        avail = plan.context.get("_available_processing_items", [])
+        if avail:
+            selected_ids = []
+            selected_names = []
+            for n in user_intent.get("ids", []):
+                idx = int(n) - 1
+                if 0 <= idx < len(avail):
+                    selected_ids.append(avail[idx]["id"])
+                    selected_names.append(avail[idx]["name"])
+            if selected_ids:
+                plan.context["processing_item_ids"] = selected_ids
+                final_answer = f"已选择加工项: {', '.join(selected_names)}。请确认或回复'确认创建'"
+                logger.info(f"[pe] Processing items selected: {selected_names}")
+            else:
+                final_answer = "编号超出范围，请重新选择"
+        else:
+            final_answer = "暂无可选加工项"
+        await _save_plan(session_id, plan)
+        return {"messages": [AIMessage(content=final_answer)], "final_answer": final_answer, "skill_used": skill_name}
+
     # 如果发生了回溯/跳转/修正，保存 plan 并重新执行
     if need_re_execute:
         await _save_plan(session_id, plan)
@@ -1131,14 +1173,29 @@ async def execute_plan(
                     parts.append(f"  • 常见颜色: {smart_defaults['common_colors'][:5]}")
                 smart_hint = "\n".join(parts)
 
+            # 可用加工项列表（同类商品没数据时的兜底）
+            avail_pi = plan.context.get("_available_processing_items")
+            if avail_pi:
+                pi_names = [f"`{i+1}` {pi['name']}" for i, pi in enumerate(avail_pi[:10])]
+                smart_hint += f"\n\n可选加工项（回复编号选择，如1,3,5）：\n" + "\n".join(pi_names)
+
+            # 可用加工项列表
+            avail_pi = plan.context.get("_available_processing_items")
+            pi_hint = ""
+            if avail_pi:
+                pi_lines = [f"  `{i+1}` {pi['name']}" for i, pi in enumerate(avail_pi[:10])]
+                pi_hint = "\n可选加工项:\n" + "\n".join(pi_lines)
+
+            ctx_visible = {k: v for k, v in plan.context.items() if not k.startswith("_")}
             prompt = (
-                f"多步骤操作目标: {plan.goal}\n"
-                f"需收集的字段: {json.dumps(current.fields, ensure_ascii=False)}\n"
-                f"提示: {current.ask_prompt}\n"
+                f"目标: {plan.goal}\n"
                 f"用户说: {last_user_msg}\n"
-                f"对话上下文: {json.dumps({k:v for k,v in plan.context.items() if not k.startswith('_')}, ensure_ascii=False)}"
-                f"{smart_hint}\n\n"
-                f"规则: 能从上下文推断的字段直接确认,只问缺失的。列出已有信息时禁止等X色总结,禁止标注[工具返回]。不要调用工具。"
+                f"对话上下文: {json.dumps(ctx_visible, ensure_ascii=False, indent=2)}\n"
+                f"{smart_hint}{pi_hint}\n\n"
+                f"要求:\n"
+                f"1. 列出全部信息让用户核对（16色必须逐个列出，禁止'等16种'）\n"
+                f"2. 末尾只加一行: 💡 直接描述修改即可，如：价格改成200 | 分类换一个 | 颜色删掉后3个 | 加工项选1,3 | 确认创建\n"
+                f"3. 回复要简洁，不要调用工具。"
             )
             final_answer = await LLMFactory.invoke_text_safe([
                 SystemMessage(content=system_prompt), *messages[-4:], HumanMessage(content=prompt),
