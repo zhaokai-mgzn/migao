@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { ClipboardList, DollarSign, TrendingUp, Package, Settings, ArrowRight, RefreshCw, ArrowUp, ArrowDown } from 'lucide-react'
 import { dashboardApi } from '@/lib/api'
 import { cn, formatFullDateTime } from '@/lib/utils'
-import type { DashboardStats, OrderTrendPoint, Order } from '@/types'
+import type { DashboardStats, OrderTrendPoint, Order, ProductRanking } from '@/types'
 
 // ═══════════════════════════════════════════════════════
 // 格式化
@@ -108,6 +108,7 @@ export default function DashboardPage() {
   const [trendData, setTrendData] = useState<OrderTrendPoint[]>([])
   const [statusData, setStatusData] = useState<OrderStatusDistribution[]>([])
   const [recentOrders, setRecentOrders] = useState<Order[]>([])
+  const [ranking, setRanking] = useState<ProductRanking[]>([])
   const [pendingShipment, setPendingShipment] = useState(0)
   const [processingShipment, setProcessingShipment] = useState(0)
   const [trendDays, setTrendDays] = useState(7)
@@ -125,6 +126,12 @@ export default function DashboardPage() {
       setStats(s)
       setTrendData(trendRes.data.data)
       setRecentOrders(ordersRes.data.data || [])
+
+      // 商品排行
+      try {
+        const rkResp = await dashboardApi.getProductRanking('day', 10)
+        setRanking((rkResp.data as any)?.data || [])
+      } catch {}
 
       // 待发货 = confirmed + producing
       try {
@@ -182,8 +189,8 @@ export default function DashboardPage() {
               />
               <BizStatCard
                 title="今日销售额"
-                value={fmtCurrency(stats?.monthRevenue ? Math.round(stats.monthRevenue / 30) : 0)}
-                change={{ val: '计算中', up: false }}
+                value={fmtCurrency(stats?.todaySales || 0)}
+                change={{ val: `${stats?.todaySalesChange || 0}`, up: (stats?.todaySalesChange || 0) > 0 }}
                 icon={<DollarSign className="w-4 h-4 text-green-600" />}
                 sparkline={sparkline.map(v => v * 23.8)}
                 chartType="bar"
@@ -288,7 +295,7 @@ export default function DashboardPage() {
           {!loading && recentOrders.length === 0 && <p className="text-center text-gray-400 py-4 text-sm">暂无订单</p>}
         </div>
 
-        {/* 商品销量排行 placeholder */}
+        {/* 商品销量排行 */}
         <div className="bg-white rounded-xl border border-gray-100 p-5">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-semibold text-gray-800">商品销量排行</h3>
@@ -296,11 +303,24 @@ export default function DashboardPage() {
           </div>
           {loading ? (
             <div className="space-y-2">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-8 bg-gray-100 rounded animate-pulse" />)}</div>
+          ) : ranking.length === 0 ? (
+            <p className="text-center text-gray-400 py-4 text-sm">暂无数据</p>
           ) : (
-            <div className="text-center py-8 text-gray-400 text-sm">
-              <p>商品销量排行需后端接口支持</p>
-              <p className="text-xs mt-1">开发中，敬请期待</p>
-            </div>
+            <table className="w-full text-xs">
+              <thead><tr className="text-gray-500 border-b"><th className="text-left py-2 font-medium w-8">#</th><th className="text-left py-2 font-medium">商品</th><th className="text-right py-2 font-medium">成交量</th><th className="text-right py-2 font-medium">日涨</th></tr></thead>
+              <tbody>
+                {ranking.slice(0, 10).map(r => (
+                  <tr key={r.productId} className="border-b border-gray-50 hover:bg-gray-50">
+                    <td className="py-2 text-gray-400">{r.rank}</td>
+                    <td className="py-2 text-gray-700 truncate max-w-[160px]" title={r.productName}>{r.productName}</td>
+                    <td className="py-2 text-right font-mono text-gray-900">{r.qtyDisplay}</td>
+                    <td className={cn('py-2 text-right', r.dailyChange > 0 ? 'text-red-500' : 'text-green-500')}>
+                      {r.dailyChange > 0 ? '▲' : '▼'} {Math.abs(r.dailyChange)}%
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           )}
         </div>
       </div>

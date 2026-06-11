@@ -37,6 +37,7 @@ public class DashboardController {
     private final UserMapper userMapper;
     private final AfterSalesTicketMapper afterSalesTicketMapper;
     private final SessionMapper sessionMapper;
+    private final OrderItemMapper orderItemMapper;
     private final SessionMessageMapper sessionMessageMapper;
 
     /**
@@ -79,6 +80,19 @@ public class DashboardController {
         double todayOrdersChange = yesterdayOrders > 0
                 ? ((double) (todayOrders - yesterdayOrders) / yesterdayOrders) * 100
                 : 0;
+
+        // 今日销售额
+        java.util.List<Order> todayList = orderMapper.selectList(
+                new LambdaQueryWrapper<Order>().eq(Order::getTenantId, tenantId).ge(Order::getCreatedAt, todayStart));
+        long todaySales = todayList.stream().map(o -> o.getTotalAmount() != null ? o.getTotalAmount() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add).longValue();
+        java.util.List<Order> yesterdayList = orderMapper.selectList(
+                new LambdaQueryWrapper<Order>().eq(Order::getTenantId, tenantId)
+                        .ge(Order::getCreatedAt, yesterdayStart).lt(Order::getCreatedAt, todayStart));
+        long yesterdaySales = yesterdayList.stream().map(o -> o.getTotalAmount() != null ? o.getTotalAmount() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add).longValue();
+        double todaySalesChange = yesterdaySales > 0
+                ? ((double) (todaySales - yesterdaySales) / yesterdaySales) * 100 : 0;
 
         // 客户总数（role=customer 的用户）
         long totalCustomers = userMapper.selectCount(
@@ -148,6 +162,8 @@ public class DashboardController {
         DashboardStatsResponse stats = DashboardStatsResponse.builder()
                 .todayOrders(todayOrders)
                 .todayOrdersChange(Math.round(todayOrdersChange * 10.0) / 10.0)
+                .todaySales(todaySales)
+                .todaySalesChange(Math.round(todaySalesChange * 10.0) / 10.0)
                 .totalCustomers(totalCustomers)
                 .newCustomersToday(newCustomersToday)
                 .activeSessions(activeSessions)
@@ -371,6 +387,64 @@ public class DashboardController {
         return ApiResponse.success(tasks);
     }
 
+
+    // ════════════════════════════════════════
+    // 商品销量排行（按订单明细聚合）
+    // ════════════════════════════════════════
+
+    @GetMapping("/product-ranking")
+    public ApiResponse<List<ProductRankingResponse>> getProductRanking(
+            @RequestParam(defaultValue = "day") String period,
+            @RequestParam(defaultValue = "10") int limit) {
+        Long tenantId = TenantContext.getTenantId();
+        ZoneId cst = ZoneId.of("Asia/Shanghai");
+        OffsetDateTime periodStart = "month".equals(period)
+                ? LocalDate.now(cst).withDayOfMonth(1).atStartOfDay().atOffset(ZoneOffset.ofHours(8))
+                : LocalDate.now(cst).atStartOfDay().atOffset(ZoneOffset.ofHours(8));
+        OffsetDateTime prevStart = "month".equals(period) ? periodStart.minusMonths(1) : periodStart.minusDays(1);
+
+        // 查周期内订单明细，按 productId 分组统计
+        List<OrderItem> items = orderItemMapper.selectList(
+                new LambdaQueryWrapper<OrderItem>()
+                        .eq(OrderItem::getTenantId, tenantId)
+                        .ge(OrderItem::getCreatedAt, periodStart));
+        Map<String, long[]> agg = new java.util.LinkedHashMap<>(); // pid -> [qty, amount]
+        Map<String, String> nameMap = new java.util.HashMap<>();
+        for (OrderItem item : items) {
+            String pid = item.getProductId();
+            if (pid == null) continue;
+            long[] v = agg.computeIfAbsent(pid, k -> new long[2]);
+            v[0] += item.getQuantity() != null ? item.getQuantity() : 0;
+            v[1] += item.getSubtotal() != null ? item.getSubtotal().longValue() : 0;
+            nameMap.putIfAbsent(pid, item.getProductName());
+        }
+        // 按销量排序
+        List<Map.Entry<String, long[]>> sorted = new java.util.ArrayList<>(agg.entrySet());
+        sorted.sort((a, b) -> Long.compare(b.getValue()[0], a.getValue()[0]));
+
+        List<ProductRankingResponse> result = new ArrayList<>();
+        int rank = 1;
+        for (Map.Entry<String, long[]> e : sorted) {
+            if (rank > limit) break;
+            String pid = e.getKey();
+            long qty = e.getValue()[0], amt = e.getValue()[1];
+            // 上期数量
+            long prevQty = orderItemMapper.selectList(
+                    new LambdaQueryWrapper<OrderItem>().eq(OrderItem::getProductId, pid)
+                            .eq(OrderItem::getTenantId, tenantId)
+                            .ge(OrderItem::getCreatedAt, prevStart)
+                            .lt(OrderItem::getCreatedAt, periodStart))
+                    .stream().mapToLong(i -> i.getQuantity() != null ? i.getQuantity() : 0).sum();
+            double dc = prevQty > 0 ? ((double)(qty - prevQty) / prevQty) * 100 : 0;
+            result.add(ProductRankingResponse.builder().rank(rank++).productId(pid)
+                    .productName(nameMap.getOrDefault(pid, "")).salesQty(qty).salesAmount(amt)
+                    .qtyDisplay(qty >= 10000 ? String.format("%.1fw", qty/10000.0) : String.valueOf(qty))
+                    .amountDisplay(amt >= 10000 ? String.format("%.1fw", amt/10000.0) : String.valueOf(amt))
+                    .dailyChange(Math.round(dc * 10.0) / 10.0).build());
+        }
+        return ApiResponse.success(result);
+    }
+
     // ========== Response DTOs ==========
 
     @Data
@@ -378,7 +452,8 @@ public class DashboardController {
     public static class DashboardStatsResponse {
         private long todayOrders;
         private double todayOrdersChange;
-        private long totalCustomers;
+        private long todaySales;
+        private double todaySalesChange;        private long totalCustomers;
         private long newCustomersToday;
         private long activeSessions;
         private double aiSessionRate;
@@ -438,5 +513,18 @@ public class DashboardController {
         private String priority;   // "high" | "medium" | "low"
         private String createdAt;
         private String link;
+    }
+
+    @Data
+    @Builder
+    public static class ProductRankingResponse {
+        private int rank;
+        private String productId;
+        private String productName;
+        private long salesQty;
+        private long salesAmount;
+        private String qtyDisplay;
+        private String amountDisplay;
+        private double dailyChange;
     }
 }

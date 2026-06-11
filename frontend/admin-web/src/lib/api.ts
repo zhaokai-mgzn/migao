@@ -38,6 +38,7 @@ import type {
   OrderStatusDistribution,
   ActiveSession,
   PendingTask,
+  ProductRanking,
   KnowledgeSearchResult,
   KnowledgeSearchParams,
   Customer,
@@ -321,6 +322,9 @@ export const dashboardApi = {
 
   getPendingTasks: () =>
     request.get<ApiResponse<PendingTask[]>>('/api/admin/dashboard/pending-tasks'),
+
+  getProductRanking: (period: string = 'day', limit: number = 10) =>
+    request.get<ApiResponse<ProductRanking[]>>('/api/admin/dashboard/product-ranking', { params: { period, limit } }),
 }
 
 // 上传 API

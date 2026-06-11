@@ -735,13 +735,30 @@ export interface LoginLog {
 // Dashboard 统计数据
 export interface DashboardStats {
   todayOrders: number
-  todayOrdersChange: number // 环比变化百分比
+  todayOrdersChange: number
+  todaySales: number
+  todaySalesChange: number
   totalCustomers: number
   newCustomersToday: number
   activeSessions: number
-  aiSessionRate: number // AI 处理占比
+  aiSessionRate: number
   monthRevenue: number
-  monthRevenueChange: number // 环比变化百分比
+  monthRevenueChange: number
+  totalProducts: number
+  totalOrders: number
+  totalTickets: number
+}
+
+// 商品销量排行
+export interface ProductRanking {
+  rank: number
+  productId: string
+  productName: string
+  salesQty: number
+  salesAmount: number
+  qtyDisplay: string
+  amountDisplay: string
+  dailyChange: number
 }
 
 // 待处理任务
