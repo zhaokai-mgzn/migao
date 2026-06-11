@@ -55,7 +55,8 @@ class TestSkillToolSubsets:
         assert "order_query" in ORDER_TOOLS
         assert "logistics_track" in ORDER_TOOLS
         assert "order_manage" in ORDER_TOOLS
-        assert "product_search" not in ORDER_TOOLS
+        assert "product_search" in ORDER_TOOLS  # 订单搜索商品需要
+        assert "product_detail" in ORDER_TOOLS   # 订单查商品加工项需要
         assert "knowledge_search" not in ORDER_TOOLS
 
     def test_product_tools(self):
@@ -81,28 +82,31 @@ class TestSkillToolSubsets:
         assert "product_search" not in AFTERSALES_TOOLS
 
     def test_general_tools_includes_all(self):
-        """通用兜底 Skill 仅包含只读查询 Tool"""
+        """通用兜底 Skill 包含查询 + 基础管理 Tool"""
         expected = {
             "order_query",
             "logistics_track",
             "product_search",
             "product_detail",
             "processing_item_query",
+            "customer_manage",
             "dashboard_stats",
+            "session_manage",
+            "notification_manage",
+            "quick_reply_manage",
         }
         assert set(GENERAL_TOOLS) == expected
 
-    def test_general_tools_no_write_operations(self):
-        """通用兜底 Skill 不包含任何写操作 Tool"""
-        write_tools = {
+    def test_general_tools_no_core_write_operations(self):
+        """通用兜底 Skill 不包含核心写操作 Tool（创建/修改/删除类）"""
+        core_write_tools = {
             "order_manage", "order_create",
             "product_manage", "inventory_manage",
-            "customer_manage", "employee_manage", "role_manage",
-            "after_sales_manage", "notification_manage", "settings_manage",
-            "session_manage", "quick_reply_manage",
+            "employee_manage", "role_manage",
+            "after_sales_manage", "settings_manage",
             "category_manage", "processing_item_manage",
         }
-        assert set(GENERAL_TOOLS).isdisjoint(write_tools)
+        assert set(GENERAL_TOOLS).isdisjoint(core_write_tools)
 
     def test_general_tools_has_query_tools(self):
         """通用兜底 Skill 保留核心查询能力"""

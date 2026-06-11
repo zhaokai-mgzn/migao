@@ -55,6 +55,23 @@ HEADERS = {
 CHAT_ENDPOINT = f"{BASE_URL}/api/chat/send"
 
 
+# === 服务可用性检查 ===
+
+def _is_service_available() -> bool:
+    try:
+        import socket
+        with socket.create_connection(("localhost", 8001), timeout=2):
+            return True
+    except (socket.timeout, ConnectionRefusedError, OSError):
+        return False
+
+SERVICE_AVAILABLE = _is_service_available()
+_skip_if_no_service = pytest.mark.skipif(
+    not SERVICE_AVAILABLE,
+    reason="AI Agent Service 未在 localhost:8001 运行",
+)
+
+
 async def send_chat(
     message: str,
     session_id: Optional[str] = None,
@@ -170,6 +187,7 @@ async def _flush_semantic_cache():
 # === 测试用例 ===
 
 @pytest.mark.asyncio
+@_skip_if_no_service
 class TestP0CoreScenarios:
     """P0 核心场景：验证米宝基础对话能力。"""
 
@@ -251,6 +269,7 @@ class TestP0CoreScenarios:
 
 
 @pytest.mark.asyncio
+@_skip_if_no_service
 class TestP1ExtendedScenarios:
     """P1 扩展场景：验证米宝进阶业务能力。"""
 
@@ -330,6 +349,7 @@ class TestP1ExtendedScenarios:
 
 
 @pytest.mark.asyncio
+@_skip_if_no_service
 class TestP2AdvancedScenarios:
     """P2 高级场景：验证米宝多轮对话与复杂意图处理。"""
 
@@ -420,6 +440,7 @@ class TestP2AdvancedScenarios:
 
 
 @pytest.mark.asyncio
+@_skip_if_no_service
 class TestP3PlanAndExecute:
     """P3 Plan-and-Execute：验证 P&E 模式下的多步骤文本交互"""
 
@@ -496,6 +517,7 @@ class TestP3PlanAndExecute:
         assert has_event_type(events, "done")
 
 
+@_skip_if_no_service
 class TestP4FormFieldCompleteness:
     """P4 表单字段完整性：验证 LLM 将图片识别信息全量填入 form 而非散落在文本"""
 
