@@ -419,6 +419,97 @@ async def _auto_fill_category_and_defaults(
                 logger.warning(f"[pe] Processing items fetch failed: {e}")
 
 
+async def _execute_create_step(
+    plan, state: AgentState, skill_name: str, tool_names: List[str],
+    system_prompt: str, messages: list, session_id: str,
+) -> dict:
+    """执行创建步骤（从confirm_skip快捷路径调用）"""
+    from app.tools.registry import get_tool_registry, set_tool_context
+    from app.graph.skills.base_skill import build_tool_context
+
+    current = plan.current()
+    if not current or current.type != "execute":
+        await _clear_plan(session_id)
+        return {"final_answer": "操作已完成。", "messages": [], "skill_used": skill_name}
+
+    registry = get_tool_registry()
+    tool = registry.get_tool(current.execute_tool)
+    ctx = build_tool_context(state)
+    set_tool_context(ctx)
+
+    # 规范化 context 字段
+    _normalize_context(plan)
+
+    exec_params = {"action": current.execute_action}
+    _SAFE_PARAMS = {"name", "price", "description", "category_id", "stock_quantity",
+                     "processing_item_ids", "processing_item_configs", "product_id", "status",
+                     "unit", "cost_price", "brand", "images", "specifications", "colors",
+                     "selling_methods", "door_widths", "skus", "sku_code", "pricing_type"}
+    _NUMERIC_PARAMS = {"price", "cost_price", "stock_quantity"}
+    for k in _SAFE_PARAMS:
+        if k in plan.context:
+            v = plan.context[k]
+            if k in _NUMERIC_PARAMS and isinstance(v, str):
+                try: v = float(v) if "." in v else int(v)
+                except ValueError: pass
+            exec_params[k] = v
+
+    if tool:
+        try:
+            result = await tool.execute(ctx, **exec_params)
+            exec_result = result.message if result.success else f"失败: {result.message}"
+        except Exception as e:
+            exec_result = f"异常: {e}"
+    else:
+        exec_result = f"工具不可用: {current.execute_tool}"
+
+    prompt = (
+        f"操作: {current.execute_tool}.{current.execute_action}\n"
+        f"结果: {exec_result}\n\n用友好的语气告知用户操作结果。不要调用工具。"
+    )
+    final_answer = await LLMFactory.invoke_text_safe([
+        SystemMessage(content=system_prompt), *messages[-4:], HumanMessage(content=prompt),
+    ], enable_thinking=False)
+    await _clear_plan(session_id)
+    return {"messages": [AIMessage(content=final_answer)], "final_answer": final_answer, "skill_used": skill_name}
+
+
+def _normalize_context(plan):
+    """规范化 context 中的字段格式"""
+    ctx = plan.context
+    _FIELD_ALIASES = {"stock": "stock_quantity", "_images": "images"}
+    for alias, target in _FIELD_ALIASES.items():
+        if alias in ctx and target not in ctx:
+            ctx[target] = ctx[alias]
+    for list_field in ("selling_methods", "door_widths", "processing_item_ids"):
+        val = ctx.get(list_field)
+        if isinstance(val, str):
+            ctx[list_field] = [p.strip() for p in re.split(r'[,，、\s]+|和|与', val) if p.strip()]
+    # 构造SKU
+    colors = ctx.get("colors", [])
+    sms = ctx.get("selling_methods", [])
+    dws = ctx.get("door_widths", [])
+    if colors and sms and dws and "skus" not in ctx:
+        sm_list = sms if isinstance(sms, list) else [sms]
+        dw_list = dws if isinstance(dws, list) else [dws]
+        normalized_colors = []
+        for ci, c in enumerate(colors):
+            if isinstance(c, str): normalized_colors.append({"colorName": c, "id": -(ci + 1)})
+            elif isinstance(c, dict):
+                if "id" not in c: c["id"] = -(ci + 1)
+                normalized_colors.append(c)
+        ctx["colors"] = normalized_colors
+        skus = []
+        total_stock = int(ctx.get("stock_quantity", ctx.get("stock", 0)) or 0)
+        for c in normalized_colors:
+            for sm in sm_list:
+                for dw in dw_list:
+                    skus.append({"colorId": c.get("id", 0), "sellingMethod": sm, "doorWidth": dw,
+                                  "price": ctx.get("price", 0),
+                                  "stock": max(1, total_stock // max(1, len(normalized_colors) * len(sm_list) * len(dw_list)))})
+        ctx["skus"] = skus
+
+
 def _match_category_tree(tree: list, hint: str) -> Optional[dict]:
     """在分类树中匹配最接近的分类名"""
     import re as _re
@@ -772,11 +863,9 @@ async def _detect_user_intent(user_msg: str, plan) -> dict:
     if not user_msg:
         return {"action": "continue"}
 
-    # 0.5 检测加工项编号选择: "1,3,5" 或 "选1,3"
-    import re as _re2
-    digits = _re2.findall(r'\d+', user_msg)
-    if digits and len(user_msg.replace(' ', '').replace(',', '').replace('，', '')) <= 20:
-        return {"action": "pick_items", "ids": digits}
+    # 0. 检测确认创建（ask步骤直接跳到confirm）
+    if re.search(r"确认创建|确认$|^确认|^好的|^可以|^行|没问题|创建吧|^OK$|^ok$", user_msg, re.IGNORECASE):
+        return {"action": "confirm_skip"}
 
     # 1. 检测取消
     cancel_words = ["取消", "不要了", "算了", "不用了", "不做", "不创建了", "放弃"]
@@ -828,6 +917,12 @@ async def _detect_user_intent(user_msg: str, plan) -> dict:
                             break
                 if field_name and raw_value:
                     return {"action": "correct", "field": field_name, "value": raw_value}
+
+    # 最后：纯编号选择（仅数字+逗号/顿号，长度≤15，不含中文语义）
+    if len(user_msg) <= 15 and not re.search(r'[一-鿿]', user_msg):
+        digits = re.findall(r'\d+', user_msg)
+        if digits and len(digits) <= 10:
+            return {"action": "pick_items", "ids": digits}
 
     return {"action": "continue"}
 
@@ -963,7 +1058,6 @@ async def execute_plan(
             if hasattr(msg, 'content') and isinstance(msg.content, str):
                 if '[结构化数据]' in msg.content:
                     try:
-                        import re
                         json_start = msg.content.find('{', msg.content.find('[结构化数据]'))
                         json_end = msg.content.rfind('}')
                         if json_start >= 0 and json_end > json_start:
@@ -1011,6 +1105,13 @@ async def execute_plan(
     if user_intent["action"] == "cancel":
         await _clear_plan(session_id)
         return {"final_answer": "好的，已取消。", "messages": [AIMessage(content="好的，已取消。")], "skill_used": skill_name}
+
+    # 确认创建快捷路径：在ask步骤收到"确认创建"，直接执行创建
+    if user_intent["action"] == "confirm_skip" and current.type in ("ask", "confirm"):
+        # 跳到execute步骤
+        while plan.current() and plan.current().type not in ("execute",):
+            plan.advance()
+        return await _execute_create_step(plan, state, skill_name, tool_names, system_prompt, messages, session_id)
 
     need_re_execute = False  # 标记是否需要重新执行当前步骤（修正后不换步）
 
@@ -1106,9 +1207,22 @@ async def execute_plan(
         return {"messages": [AIMessage(content=final_answer)], "final_answer": final_answer, "skill_used": skill_name}
 
     # 如果发生了回溯/跳转/修正，保存 plan 并重新执行
+    # 同时检查是否有并发加工项编号选择（如 "价格改成100，加工项选1,3,5"）
     if need_re_execute:
+        # 尝试解析消息中的加工项编号
+        import re as _re_digits
+        digits = _re_digits.findall(r'\d+', last_user_msg)
+        avail_pi = plan.context.get("_available_processing_items", [])
+        if digits and avail_pi and len(digits) <= 10:
+            selected_ids = []
+            for n in digits:
+                idx = int(n) - 1
+                if 0 <= idx < len(avail_pi):
+                    selected_ids.append(avail_pi[idx]["id"])
+            if selected_ids:
+                plan.context["processing_item_ids"] = selected_ids
+                logger.info(f"[pe] Concurrent pick_items: {len(selected_ids)} items")
         await _save_plan(session_id, plan)
-        # 重建 context 中的内部标记
         plan.context.pop("_user_choice", None)
         plan.context.pop("_query_results", None)
         plan.context.pop("_user_confirmed", None)
@@ -1152,6 +1266,8 @@ async def execute_plan(
     new_messages = []
     final_answer = ""
     awaiting_user = False
+
+    logger.info(f"[pe] Executing step: type={current.type} current_step={plan.current_step}/{len(plan.steps)} need_re_execute={need_re_execute}")
 
     _retry = True
     while _retry:
@@ -1295,10 +1411,16 @@ async def execute_plan(
             awaiting_user = True
 
         elif current.type == "confirm":
-            # 检测用户意图（修改/取消/确认），代码控制流程
-            cl = last_user_msg.strip().lower()
-            is_confirm = any(k in cl for k in ["确认","是","可以","好的","行","好","对","正确","ok","yes","y"])
-            is_cancel = any(k in cl for k in ["取消","不","不要","算了","no","n"])
+            # 修正/回溯等非确认意图 → 不触发确认快捷键
+            if user_intent["action"] in ("correct", "back", "goto", "inline_query"):
+                has_correction = True
+            else:
+                has_correction = False
+            logger.info(f"[pe] Confirm handler: intent={user_intent['action']} has_correction={has_correction} msg={last_user_msg[:40]}")
+
+            cl = last_user_msg.strip()
+            is_confirm = not has_correction and any(k in cl for k in ["确认创建","确认","是的","可以","好的","没问题","行","创建吧"])
+            is_cancel = any(k in cl for k in ["取消","不要了","算了","不用了","不做"])
             if is_cancel:
                 await _clear_plan(session_id)
                 return {"messages": [AIMessage(content="好的，已取消。")], "final_answer": "好的，已取消。", "skill_used": skill_name}
@@ -1369,7 +1491,6 @@ async def execute_plan(
             for list_field in ("selling_methods", "door_widths", "processing_item_ids"):
                 val = plan.context.get(list_field)
                 if isinstance(val, str):
-                    import re
                     plan.context[list_field] = [p.strip() for p in re.split(r'[,，、\s]+|和|与', val) if p.strip()]
 
             # 售卖方式中文→英文key标准化（前端 SkuMatrix 用英文key匹配）
@@ -1417,7 +1538,6 @@ async def execute_plan(
                     # LLM提取的值可能带单位（"500件""1000米"），清洗后转整数
                     raw_stock = plan.context.get("stock_quantity", plan.context.get("stock", 0)) or 0
                     if isinstance(raw_stock, str):
-                        import re
                         m = re.search(r'\d+', raw_stock)
                         raw_stock = int(m.group()) if m else 0
                     total_sku_stock = int(raw_stock) if raw_stock else 0
