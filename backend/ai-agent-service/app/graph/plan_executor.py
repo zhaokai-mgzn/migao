@@ -1362,6 +1362,12 @@ def should_use_plan_execute(state: AgentState, skill_name: str) -> bool:
     if not any(kw in last_msg for kw in write_kw):
         return False
 
+    # 确认消息不启动 P&E — 让 ReAct 直接调 tool 执行
+    confirm_kw = ["确认创建", "确认下单", "确认提交", "确认", "没问题", "就这样", "直接创建",
+                  "确认没问题", "可以创建", "开始创建", "创建吧"]
+    if any(kw in last_msg for kw in confirm_kw):
+        return False
+
     # 复杂度过滤：简单单步操作跳过 P&E
     for pat, exclusions in _SIMPLE_WRITE_PATTERNS:
         if pat.search(last_msg):
