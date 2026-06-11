@@ -398,14 +398,13 @@ async def _auto_fill_category_and_defaults(
 
 def _match_category_tree(tree: list, hint: str) -> Optional[dict]:
     """在分类树中匹配最接近的分类名"""
-    import re as _re
     best = None
     for node in tree:
         name = node.get("name", "")
         if hint in name or name in hint:
             return {"id": node.get("id", ""), "name": name}
         # 模糊匹配
-        if _re.search(hint[:2], name):
+        if re.search(hint[:2], name):
             best = best or {"id": node.get("id", ""), "name": name}
     return best
 
@@ -639,7 +638,6 @@ def _match_user_choice(user_msg: str, results: list) -> Optional[dict]:
     if not results or not user_msg:
         return None
     # 提取数字
-    import re
     nums = re.findall(r'\d+', user_msg)
     if nums:
         # 支持多选："1,3,5" → 匹配所有编号
@@ -680,8 +678,7 @@ async def _detect_user_intent(user_msg: str, plan) -> dict:
         return {"action": "continue"}
 
     # 0.5 检测加工项编号选择: "1,3,5" 或 "选1,3"
-    import re as _re2
-    digits = _re2.findall(r'\d+', user_msg)
+    digits = re.findall(r'\d+', user_msg)
     if digits and len(user_msg.replace(' ', '').replace(',', '').replace('，', '')) <= 20:
         return {"action": "pick_items", "ids": digits}
 
@@ -803,7 +800,6 @@ async def execute_plan(
             if hasattr(msg, 'content') and isinstance(msg.content, str):
                 if '[结构化数据]' in msg.content:
                     try:
-                        import re
                         json_start = msg.content.find('{', msg.content.find('[结构化数据]'))
                         json_end = msg.content.rfind('}')
                         if json_start >= 0 and json_end > json_start:
@@ -966,8 +962,7 @@ async def execute_plan(
 
             # 加工项编号选择："1,3,5"
             if not _nav_handled:
-                import re as _re_nav
-                digits = _re_nav.findall(r'\d+', last_user_msg)
+                digits = re.findall(r'\d+', last_user_msg)
                 avail_pi = plan.context.get("_available_processing_items", [])
                 if digits and avail_pi and len(last_user_msg.replace(' ', '').replace(',', '').replace('，', '')) <= 20:
                     selected_ids, selected_names = [], []
@@ -1149,7 +1144,6 @@ async def execute_plan(
             for list_field in ("selling_methods", "door_widths", "processing_item_ids"):
                 val = plan.context.get(list_field)
                 if isinstance(val, str):
-                    import re
                     plan.context[list_field] = [p.strip() for p in re.split(r'[,，、\s]+|和|与', val) if p.strip()]
 
             # 售卖方式中文→英文key标准化（前端 SkuMatrix 用英文key匹配）
@@ -1197,7 +1191,6 @@ async def execute_plan(
                     # LLM提取的值可能带单位（"500件""1000米"），清洗后转整数
                     raw_stock = plan.context.get("stock_quantity", plan.context.get("stock", 0)) or 0
                     if isinstance(raw_stock, str):
-                        import re
                         m = re.search(r'\d+', raw_stock)
                         raw_stock = int(m.group()) if m else 0
                     total_sku_stock = int(raw_stock) if raw_stock else 0
