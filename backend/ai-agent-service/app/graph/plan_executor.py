@@ -984,34 +984,21 @@ async def execute_plan(
                 if v: plan.context[k] = v  # 用户输入覆盖Vision预填
             if inferred: logger.info(f"[pe] Auto-filled: {list(inferred.keys())}")
 
-            # ── LLM 判断用户意图：确认 / 取消 / 继续修改 ──
-            ctx_visible = {k: v for k, v in plan.context.items() if not k.startswith("_")}
-            intent_prompt = (
-                f"用户说: {last_user_msg}\n\n"
-                f"当前任务: {plan.goal}\n"
-                f"已收集信息: {json.dumps(ctx_visible, ensure_ascii=False, indent=2)}\n\n"
-                f"请判断用户意图，只输出一个词:\n"
-                f"- confirm (用户确认信息无误，要求立即创建/执行)\n"
-                f"- cancel (用户要取消)\n"
-                f"- modify (用户在补充或修改信息，如改价格/颜色/分类等)\n\n"
-                f"只输出: confirm / cancel / modify"
-            )
-            intent_raw = await LLMFactory.invoke_text_safe(
-                [SystemMessage(content="你是意图分类器。只输出一个词。"), HumanMessage(content=intent_prompt)],
-                enable_thinking=False,
-            )
-            user_intent = intent_raw.strip().lower()
-            logger.info(f"[pe] LLM intent: '{user_intent}' | user_msg='{last_user_msg[:50]}'")
-
-            if "cancel" in user_intent:
+            # ── 检测用户确认意图，从 ask 前进到 execute（跳过 confirm 步骤）──
+            cl = last_user_msg.strip()
+            is_confirm = any(k in cl for k in ["确认创建","确认","没问题","好的","可以","就这些","直接创建","就这样","不用改了"])
+            is_cancel = any(k in cl for k in ["取消","不要了","算了","不用了","不做","不创建了","放弃"])
+            if is_cancel:
                 await _clear_plan(session_id)
                 return {"final_answer": "好的，已取消。", "messages": [AIMessage(content="好的，已取消。")], "skill_used": skill_name}
-            if "confirm" in user_intent and len(plan.steps) >= 3 and plan.steps[-1].type == "execute":
+            if is_confirm and len(plan.steps) >= 3 and plan.steps[-1].type == "execute":
+                # ask→confirm→execute: 跳过 confirm，直达 execute
                 plan.current_step = len(plan.steps) - 1
                 current = plan.current()
-                logger.info(f"[pe] Ask→Execute (LLM confirmed) | step {plan.current_step + 1}")
+                logger.info(f"[pe] Ask→Execute (skip confirm) | step {plan.current_step + 1}")
                 await _save_plan(session_id, plan)
                 need_re_execute = True
+                # 重新进入循环，会走到 execute 分支
                 continue
 
             awaiting_user = True
@@ -1100,29 +1087,14 @@ async def execute_plan(
             awaiting_user = True
 
         elif current.type == "confirm":
-            # LLM 判断用户意图: confirm / cancel / modify
-            ctx_visible = {k: v for k, v in plan.context.items() if not k.startswith("_")}
-            intent_prompt = (
-                f"用户说: {last_user_msg}\n\n"
-                f"当前任务: {plan.goal}\n"
-                f"已收集信息: {json.dumps(ctx_visible, ensure_ascii=False, indent=2)}\n\n"
-                f"请判断用户意图，只输出一个词:\n"
-                f"- confirm (用户确认信息无误，要求立即创建/执行)\n"
-                f"- cancel (用户要取消)\n"
-                f"- modify (用户在补充或修改信息)\n\n"
-                f"只输出: confirm / cancel / modify"
-            )
-            intent_raw = await LLMFactory.invoke_text_safe(
-                [SystemMessage(content="你是意图分类器。只输出一个词。"), HumanMessage(content=intent_prompt)],
-                enable_thinking=False,
-            )
-            user_intent = intent_raw.strip().lower()
-            logger.info(f"[pe] confirm LLM intent: '{user_intent}' | user_msg='{last_user_msg[:50]}'")
-
-            if "cancel" in user_intent:
+            # 检测用户意图（修改/取消/确认），代码控制流程
+            cl = last_user_msg.strip().lower()
+            is_confirm = any(k in cl for k in ["确认","是","可以","好的","行","好","对","正确","ok","yes","y"])
+            is_cancel = any(k in cl for k in ["取消","不","不要","算了","no","n"])
+            if is_cancel:
                 await _clear_plan(session_id)
                 return {"messages": [AIMessage(content="好的，已取消。")], "final_answer": "好的，已取消。", "skill_used": skill_name}
-            if "confirm" in user_intent:
+            if is_confirm:
                 # 用户确认: 立即跳到 execute
                 plan.advance()
                 await _save_plan(session_id, plan)
