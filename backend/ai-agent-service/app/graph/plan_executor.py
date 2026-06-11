@@ -1380,7 +1380,9 @@ def should_use_plan_execute(state: AgentState, skill_name: str) -> bool:
             return False
 
     if skill_name == "product":
-        return any(kw in last_msg for kw in create_kw + update_kw)
+        # 商品创建已迁移到 ReAct + 完整 Schema，不再走 P&E
+        # 简单写操作（上下架/改价格/改库存）也走 ReAct
+        return False
     elif skill_name == "order":
         return any(kw in last_msg for kw in ["创建", "新增", "下单"])
     elif skill_name == "aftersales":
