@@ -969,14 +969,21 @@ async def execute_skill(
         "entities": entities,
     }
 
-    # 跨轮 skill 持久化：创建/收集类对话保持在同一 skill，避免下一轮意图路由跑偏
-    # 检测 LLM 回复是否在等待用户输入（含确认/补全/选择等引导语）
-    is_awaiting_user = (
-        any(kw in final_content for kw in ["确认创建","请选择","请提供","请输入","请确认",
-                                            "直接描述修改","核对","修改即可","汇总"])
-        or len(new_messages) > 0 and hasattr(new_messages[-1], 'tool_calls') and new_messages[-1].tool_calls
-    )
-    if is_awaiting_user and skill_name in ("product",):
-        result["pending_interact_skill"] = skill_name
+    # 跨轮 skill 持久化：写操作类 skill 保持在同一 skill，避免下一轮意图路由跑偏
+    # 检测到用户确认(或仍在收集信息)且未执行完成时，保持当前 skill
+    creation_skills = {"product", "order", "aftersales"}
+    if skill_name in creation_skills:
+        # 检测 LLM 是否还在流程中（等待用户输入/确认/补全）
+        still_in_flow = any(kw in final_content for kw in [
+            "确认创建","确认下单","确认","请选择","请提供","请输入","核对","修改即可",
+            "汇总","创建","直接描述","帮你创建","帮你查","帮您创建","帮您查",
+        ])
+        # 或者 LLM 最近调用了非 product_manage.create 的tool(如 category/search)
+        has_active_tool_calls = any(
+            hasattr(m, 'tool_calls') and m.tool_calls
+            for m in new_messages if hasattr(m, 'tool_calls')
+        )
+        if still_in_flow or has_active_tool_calls:
+            result["pending_interact_skill"] = skill_name
 
     return result

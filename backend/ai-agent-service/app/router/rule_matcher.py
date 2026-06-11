@@ -51,6 +51,10 @@ KEYWORD_MAP: dict[IntentType, list[str]] = {
 REGEX_RULES: list[tuple[re.Pattern, IntentType]] = [
     # 订单号格式（要求 ORD 前缀，避免误匹配手机号）
     (re.compile(r"ORD[-\s]?\d{10,20}"), IntentType.ORDER_QUERY),
+    # 商品创建：创建/新建/添加/上架 + 商品名（不包含"订单"/"工单"/"售后"上下文）
+    (re.compile(r"(?:创建|新建|添加|上架)(?:一个|新的|个)?(?:商品|产品|窗帘|布料|色卡|抱枕|靠垫|桌布|窗纱|卷帘|百叶|罗马帘|床品|沙发垫|桌旗|遮光)"), IntentType.PRODUCT_INQUIRY),
+    # 创建/新建 + 任意商品描述（排除含"订单""工单""售后"的）
+    (re.compile(r"(?:创建|新建|添加)(?!.*(?:订单|工单|售后))(?:一个|新的|个)?.{0,10}(?:商品|产品|窗帘|布料|色卡|窗纱|卷帘|百叶)?"), IntentType.PRODUCT_INQUIRY),
 ]
 
 # 直接回复内容已迁移到 AgentConfig.direct_replies
