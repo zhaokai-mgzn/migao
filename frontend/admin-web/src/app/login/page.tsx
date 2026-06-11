@@ -17,7 +17,8 @@ export default function LoginPage() {
   const searchParams = useSearchParams()
   const { login, smsLogin, isLoading } = useAuthStore()
 
-  
+  // Password tab removed - always SMS login
+
   // 短信登录表单
   const [smsForm, setSmsForm] = useState({ phone: '', code: '' })
   const [smsErrors, setSmsErrors] = useState<Record<string, string>>({})
@@ -164,72 +165,124 @@ export default function LoginPage() {
 
         {/* 登录卡片 */}
         <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl shadow-gray-200/50 border border-gray-100 p-8">
-          {/* 手机号验证码登录 */}
-          <div className="flex items-center justify-center gap-2 mb-6">
-            <Smartphone className="w-5 h-5 text-primary-600" />
-            <h2 className="text-lg font-semibold text-gray-900">
-              手机号登录
-            </h2>
-          </div>
+          {/* Tab 切换 */}
+          <div className="flex rounded-lg bg-gray-100 p-1 mb-6">
+            <button
+              type="button"
+              onClick={() => setActiveTab('sms')}
+              className={cn(
+                'flex-1 flex items-center justify-center gap-1.5 py-2 rounded-md text-sm font-medium transition-all',
+                activeTab === 'sms'
+                  ? 'bg-white text-primary-700 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              )}
+            >
+              <Smartphone className="w-4 h-4" />
+              企业管理员登录
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('password')}
+              className=         )}
 
-          {smsLoginError && (
-            <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-100">
-              <p className="text-sm text-red-600">{smsLoginError}</p>
-            </div>
-          )}
+          {/* ========== Tab 2: 员工密码登录（保留原有逻辑）========== */}
+          {activeTab === 'password' && (
+            <>
+              <div className="flex items-center justify-center gap-2 mb-6">
+                <ShieldCheck className="w-5 h-5 text-primary-600" />
+                <h2 className="text-lg font-semibold text-gray-900">
+                  员工登录
+                </h2>
+              </div>
 
-          <form onSubmit={handleSmsSubmit} className="space-y-5">
-                {/* 手机号 */}
+              {passwordLoginError && (
+                <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-100">
+                  <p className="text-sm text-red-600">{passwordLoginError}</p>
+                </div>
+              )}
+
+              <form onSubmit={handlePasswordSubmit} className="space-y-5">
+                {/* 企业编号 */}
                 <div>
-                  <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-1.5">
-                    手机号
+                  <label
+                    htmlFor="tenantCode"
+                    className="block text-sm font-medium text-gray-700 mb-1.5"
+                  >
+                    企业编号
                   </label>
-                  <div className="relative">
-                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-gray-400" />
-                    <input
-                      id="phone"
-                      name="phone"
-                      type="tel"
-                      autoComplete="tel"
-                      maxLength={11}
-                      value={smsForm.phone}
-                      onChange={handleSmsChange}
-                      placeholder="请输入手机号"
-                      className={cn(
-                        'w-full h-11 pl-10 pr-3.5 rounded-lg border text-sm transition-all',
-                        'focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15',
-                        smsErrors.phone
-                          ? 'border-red-400 focus:border-red-500 focus:ring-red-500/15'
-                          : 'border-gray-300 hover:border-gray-400'
-                      )}
-                      disabled={isLoading}
-                    />
-                  </div>
-                  {smsErrors.phone && (
-                    <p className="mt-1.5 text-xs text-red-500">{smsErrors.phone}</p>
+                  <input
+                    id="tenantCode"
+                    name="tenantCode"
+                    type="text"
+                    autoComplete="organization"
+                    value={passwordForm.tenantCode}
+                    onChange={handlePasswordChange}
+                    placeholder="请输入企业编号"
+                    className={cn(
+                      'w-full h-11 px-3.5 rounded-lg border text-sm transition-all',
+                      'focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15',
+                      passwordErrors.tenantCode
+                        ? 'border-red-400 focus:border-red-500 focus:ring-red-500/15'
+                        : 'border-gray-300 hover:border-gray-400'
+                    )}
+                    disabled={isLoading}
+                  />
+                  {passwordErrors.tenantCode && (
+                    <p className="mt-1.5 text-xs text-red-500">{passwordErrors.tenantCode}</p>
                   )}
                 </div>
 
-                {/* 验证码 */}
+                {/* 用户名 */}
                 <div>
-                  <label htmlFor="code" className="block text-sm font-medium text-gray-700 mb-1.5">
-                    验证码
+                  <label
+                    htmlFor="username"
+                    className="block text-sm font-medium text-gray-700 mb-1.5"
+                  >
+                    账号
                   </label>
-                  <div className="flex gap-3">
+                  <input
+                    id="username"
+                    name="username"
+                    type="text"
+                    autoComplete="username"
+                    value={passwordForm.username}
+                    onChange={handlePasswordChange}
+                    placeholder="用户名 / 手机号 / 邮箱"
+                    className={cn(
+                      'w-full h-11 px-3.5 rounded-lg border text-sm transition-all',
+                      'focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15',
+                      passwordErrors.username
+                        ? 'border-red-400 focus:border-red-500 focus:ring-red-500/15'
+                        : 'border-gray-300 hover:border-gray-400'
+                    )}
+                    disabled={isLoading}
+                  />
+                  {passwordErrors.username && (
+                    <p className="mt-1.5 text-xs text-red-500">{passwordErrors.username}</p>
+                  )}
+                </div>
+
+                {/* 密码 */}
+                <div>
+                  <label
+                    htmlFor="password"
+                    className="block text-sm font-medium text-gray-700 mb-1.5"
+                  >
+                    密码
+                  </label>
+                  <div className="relative">
                     <input
-                      id="code"
-                      name="code"
-                      type="text"
-                      inputMode="numeric"
-                      maxLength={6}
-                      autoComplete="one-time-code"
-                      value={smsForm.code}
-                      onChange={handleSmsChange}
-                      placeholder="请输入6位验证码"
+                      id="password"
+                      name="password"
+                      type={showPassword ? 'text' : 'password'}
+                      autoComplete="current-password"
+                      value={passwordForm.password}
+                      onChange={handlePasswordChange}
+                      placeholder="请输入密码"
                       className={cn(
-                        'flex-1 h-11 px-3.5 rounded-lg border text-sm transition-all',
+                        'w-full h-11 px-3.5 pr-11 rounded-lg border text-sm transition-all',
                         'focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15',
-                        smsErrors.code
+                        passwordErrors.password
                           ? 'border-red-400 focus:border-red-500 focus:ring-red-500/15'
                           : 'border-gray-300 hover:border-gray-400'
                       )}
@@ -237,27 +290,33 @@ export default function LoginPage() {
                     />
                     <button
                       type="button"
-                      onClick={handleSendCode}
-                      disabled={countdown > 0 || sendingCode || isLoading}
-                      className={cn(
-                        'shrink-0 h-11 px-4 rounded-lg text-sm font-medium transition-all',
-                        'border border-primary-300 text-primary-600',
-                        'hover:bg-primary-50',
-                        (countdown > 0 || sendingCode) && 'opacity-60 cursor-not-allowed text-gray-400 border-gray-300 hover:bg-transparent'
-                      )}
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                      tabIndex={-1}
                     >
-                      {sendingCode ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : countdown > 0 ? (
-                        `重新发送(${countdown}s)`
+                      {showPassword ? (
+                        <EyeOff className="w-4.5 h-4.5" />
                       ) : (
-                        '获取验证码'
+                        <Eye className="w-4.5 h-4.5" />
                       )}
                     </button>
                   </div>
-                  {smsErrors.code && (
-                    <p className="mt-1.5 text-xs text-red-500">{smsErrors.code}</p>
+                  {passwordErrors.password && (
+                    <p className="mt-1.5 text-xs text-red-500">{passwordErrors.password}</p>
                   )}
+                </div>
+
+                {/* 记住我 */}
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={rememberMe}
+                      onChange={(e) => setRememberMe(e.target.checked)}
+                      className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500/25 cursor-pointer"
+                    />
+                    <span className="text-sm text-gray-600">记住我</span>
+                  </label>
                 </div>
 
                 {/* 登录按钮 */}
@@ -272,21 +331,6 @@ export default function LoginPage() {
                     'active:scale-[0.98]',
                     isLoading && 'opacity-70 cursor-not-allowed'
                   )}
-                >
-                  {isLoading ? (
-                    <span className="flex items-center justify-center gap-2">
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      登录中...
-                    </span>
-                  ) : (
-                    '登 录'
-                  )}
-                </button>
-              </form>
-            </>
-          )}
-
-                           )}
                 >
                   {isLoading ? (
                     <span className="flex items-center justify-center gap-2">
