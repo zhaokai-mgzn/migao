@@ -968,4 +968,15 @@ async def execute_skill(
         "skill_used": skill_name,
         "entities": entities,
     }
+
+    # 跨轮 skill 持久化：创建/收集类对话保持在同一 skill，避免下一轮意图路由跑偏
+    # 检测 LLM 回复是否在等待用户输入（含确认/补全/选择等引导语）
+    is_awaiting_user = (
+        any(kw in final_content for kw in ["确认创建","请选择","请提供","请输入","请确认",
+                                            "直接描述修改","核对","修改即可","汇总"])
+        or len(new_messages) > 0 and hasattr(new_messages[-1], 'tool_calls') and new_messages[-1].tool_calls
+    )
+    if is_awaiting_user and skill_name in ("product",):
+        result["pending_interact_skill"] = skill_name
+
     return result
