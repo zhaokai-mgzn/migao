@@ -295,7 +295,7 @@ async def scenario_image_create_product(client):
     check("9.6 创建指令", bool(text) and len(text) > 10, f"{len(text) if text else 0}字")
 
     # 回复销售属性（ask结构化JSON自动推进到query）
-    text = await _sse(client, sid, "价格23.8元每米，库存500件，货号AUTO9975796270，散剪和整卷都要，门幅2.8米和3.2米", timeout=60)
+    text = await _sse(client, sid, "价格23.8元每米，库存500件，货号AUTO36561，散剪和整卷都要，门幅2.8米和3.2米", timeout=60)
     check("9.7 销售属性", bool(text) and len(text) > 10, f"{len(text) if text else 0}字")
 
     # 选分类（query步骤，无论文本是否包含分类都尝试发送编号）
@@ -309,8 +309,8 @@ async def scenario_image_create_product(client):
     check("9.10 创建结果", success and "错误" not in text if text else False, text[:80] if text else "")
 
     # 数据校验
-    await asyncio.sleep(2)
-    data = await _admin_get("/api/admin/products?keyword=AUTO9975796270&size=1")
+    await asyncio.sleep(5)
+    data = await _admin_get("/api/admin/products?keyword=IMG36561&size=1")
     if data and data.get("items"):
         p = data["items"][0]
         check("9.11 商品存在", True, f"{p.get('name','?')[:30]}")
@@ -320,7 +320,7 @@ async def scenario_image_create_product(client):
         check("9.14 售卖方式", len(sms) >= 2, f"{sms}")
         check("9.15 SKU已生成", len(p.get("skus",[])) > 0, f"SKU={len(p.get('skus',[]))}")
     else:
-        check("9.11 商品存在", False, "含AUTO99757商品未找到")
+        check("9.11 商品存在", False, "含AUTO36561商品未找到")
 
     elapsed = time.time() - t0
     check("9.15 总耗时", elapsed < 150, f"{elapsed:.0f}s")
@@ -337,7 +337,7 @@ async def scenario_text_create_product(client):
         return
     t0 = time.time()
 
-    text = await _sse(client, sid, "创建一个窗帘商品，名称TEXT001测试窗帘，价格35元每米，库存200件，货号TEXT99757，售卖方式散剪，门幅2.8米，分类窗帘布艺", timeout=60)
+    text = await _sse(client, sid, "创建一个窗帘商品，名称TEXT36561_测试窗帘，价格35元每米，库存200件，货号TEXT99757，售卖方式散剪，门幅2.8米，分类窗帘布艺", timeout=60)
     check("10.1 创建指令", bool(text) and len(text) > 30, f"{len(text) if text else 0}字")
 
     # 确认
@@ -346,7 +346,7 @@ async def scenario_text_create_product(client):
         check("10.2 确认创建", bool(text), f"{len(text) if text else 0}字")
 
         # 调 admin-api 验证数据
-        data = await _admin_get("/api/admin/products?keyword=TEXT99757&size=1")
+        data = await _admin_get("/api/admin/products?keyword=IMG36561&size=1")
         if data and data.get("items"):
             p = data["items"][0]
             check("10.3 名称校验", "TEXT99757" in str(p.get("name", "")), f"名称={p.get('name','')[:40]}")

@@ -75,8 +75,8 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       const data = await res.json()
       const actions = data?.data?.actions || []
       set({ quickActions: actions })
-    } catch (error) {
-      console.error('获取快捷操作失败:', error)
+    } catch {
+      // ai-agent 未启动时静默失败，页面已有空状态提示
     } finally {
       set({ isLoadingQuickActions: false })
     }
@@ -113,10 +113,9 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         get().selectSession(sessions[0].session_id)
       }
     } catch (error) {
-      console.error('获取会话列表失败:', error)
       const message = error instanceof Error ? error.message : '获取会话列表失败'
       set({ error: message })
-      toast.error('获取会话列表失败，请刷新页面重试')
+      // 不弹 toast 刷屏，在页面上友好提示
     } finally {
       set({ isLoadingSessions: false })
     }

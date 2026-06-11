@@ -419,7 +419,7 @@ export default function ProductForm({
             <div id={ANCHORS.name} className="relative max-w-3xl">
               <Input
                 maxLength={TITLE_MAX}
-                placeholder="最多可输入30汉字（60字符）"
+                placeholder="最多可输入50汉字（100字符）"
                 value={form.name}
                 onChange={(e) => updateField('name', e.target.value)}
                 error={errors.name}
