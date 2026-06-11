@@ -984,6 +984,23 @@ async def execute_plan(
                 if v: plan.context[k] = v  # 用户输入覆盖Vision预填
             if inferred: logger.info(f"[pe] Auto-filled: {list(inferred.keys())}")
 
+            # ── 检测用户确认意图，从 ask 前进到 execute（跳过 confirm 步骤）──
+            cl = last_user_msg.strip()
+            is_confirm = any(k in cl for k in ["确认创建","确认","没问题","好的","可以","就这些","直接创建","就这样","不用改了"])
+            is_cancel = any(k in cl for k in ["取消","不要了","算了","不用了","不做","不创建了","放弃"])
+            if is_cancel:
+                await _clear_plan(session_id)
+                return {"final_answer": "好的，已取消。", "messages": [AIMessage(content="好的，已取消。")], "skill_used": skill_name}
+            if is_confirm and len(plan.steps) >= 3 and plan.steps[-1].type == "execute":
+                # ask→confirm→execute: 跳过 confirm，直达 execute
+                plan.current_step = len(plan.steps) - 1
+                current = plan.current()
+                logger.info(f"[pe] Ask→Execute (skip confirm) | step {plan.current_step + 1}")
+                await _save_plan(session_id, plan)
+                need_re_execute = True
+                # 重新进入循环，会走到 execute 分支
+                continue
+
             awaiting_user = True
 
         elif current.type == "query":
