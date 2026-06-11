@@ -35,8 +35,16 @@ class ProductManageTool(BaseTool):
     
     name = "product_manage"
     description = (
-        "创建、更新、上下架商品，管理商品基本信息。"
-        "当需要新增商品、修改商品信息、上架或下架商品时使用。"
+        "创建、更新、上下架商品。创建商品前请先收集用户需求："
+        "商品名称(name,必填)、分类(category_id)、价格(price)、"
+        "颜色(colors)、售卖方式(selling_methods: 散剪/整卷/按片)、"
+        "门幅(door_widths, 如2.8米/3.2米)、计价方式(pricing_type: per_meter/per_piece)、"
+        "单位(unit)、库存(stock_quantity)、描述(description)、品牌(brand)、"
+        "图片(images)、详情图(detail_images)、货号(sku_code)、"
+        "规格(specifications: {克重,材质,工艺,风格,图案,功能})、"
+        "加工项(processing_item_ids, 需先调 processing_item_query 查询可用列表)、"
+        "SKU列表(skus, 一般由系统自动生成)。"
+        "收集完成后展示给用户确认，确认后再调用 create。"
     )
     
     # admin、agent、tenant_admin 可使用
@@ -47,12 +55,12 @@ class ProductManageTool(BaseTool):
         "properties": {
             "action": {
                 "type": "string",
-                "description": "操作类型：create（创建）/ update（更新）/ toggle_status（上下架）",
+                "description": "操作类型",
                 "enum": ["create", "update", "toggle_status"],
             },
             "product_id": {
                 "type": "string",
-                "description": "商品 ID（update/toggle_status 时必填）",
+                "description": "商品 ID（update / toggle_status 时必填）",
             },
             "name": {
                 "type": "string",
@@ -60,28 +68,84 @@ class ProductManageTool(BaseTool):
             },
             "category_id": {
                 "type": "string",
-                "description": "分类 ID（可选）",
+                "description": "分类 ID。可先调 category_manage(action='tree') 获取分类树让用户选择",
             },
             "price": {
                 "type": "number",
-                "description": "价格（可选）",
+                "description": "价格（元），如 199 表示 199元",
             },
             "description": {
                 "type": "string",
-                "description": "商品描述（可选）",
+                "description": "商品描述",
             },
             "stock_quantity": {
                 "type": "integer",
-                "description": "库存数量（可选）",
+                "description": "库存数量",
             },
             "processing_item_ids": {
                 "type": "array",
-                "description": "关联的加工项 ID 列表（可选，create/update 时用于绑定商品可用的加工项）",
+                "description": "加工项 ID 列表。需先调 processing_item_query 获取可用加工项，让用户选择后再传入",
                 "items": {"type": "string"},
+            },
+            "brand": {
+                "type": "string",
+                "description": "品牌名称",
+            },
+            "images": {
+                "type": "array",
+                "description": "商品主图 URL 列表",
+                "items": {"type": "string"},
+            },
+            "detail_images": {
+                "type": "array",
+                "description": "商品详情图 URL 列表",
+                "items": {"type": "string"},
+            },
+            "colors": {
+                "type": "array",
+                "description": "颜色列表。每个元素可以是字符串(颜色名)或对象{colorName:'米白'}。如['米白','深灰','浅蓝']",
+                "items": {
+                    "oneOf": [
+                        {"type": "string"},
+                        {"type": "object", "properties": {"colorName": {"type": "string"}}}
+                    ]
+                },
+            },
+            "selling_methods": {
+                "type": "array",
+                "description": "售卖方式列表。如['散剪','整卷']或['bulk_cut','full_roll']",
+                "items": {"type": "string"},
+            },
+            "door_widths": {
+                "type": "array",
+                "description": "门幅/规格尺寸列表。如['2.8米','3.2米']",
+                "items": {"type": "string"},
+            },
+            "unit": {
+                "type": "string",
+                "description": "计价单位，如'米'、'件'、'套'",
+            },
+            "pricing_type": {
+                "type": "string",
+                "description": "计价方式",
+                "enum": ["per_meter", "per_piece", "per_area", "fixed"],
+            },
+            "specifications": {
+                "type": "object",
+                "description": "规格属性。如{weight:'1200g', material:'雪尼尔', craft:'提花', style:'现代简约', function:'遮光'}",
+            },
+            "sku_code": {
+                "type": "string",
+                "description": "商品货号/SKU编码",
+            },
+            "skus": {
+                "type": "array",
+                "description": "SKU列表。一般由系统自动生成(颜色×售卖方式×门幅)，不需要手动传入",
+                "items": {"type": "object"},
             },
             "status": {
                 "type": "string",
-                "description": "目标状态（toggle_status 时必填）：on_sale / off_sale",
+                "description": "目标状态（toggle_status 时必填）",
                 "enum": ["on_sale", "off_sale"],
             },
         },
