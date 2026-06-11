@@ -1336,15 +1336,31 @@ async def execute_plan(
 # ── 判断是否需要 P&E ──
 
 
+# 简单单步写操作 — 不需要 P&E，ReAct 直接处理
+_SIMPLE_WRITE_PATTERNS = [
+    re.compile(r"上架|下架"),                         # toggle_status
+    re.compile(r"(?:修改|调整|改|更新|变更).*(?:价格|售价|单价)"),  # 单字段 update
+    re.compile(r"(?:价格|售价|单价).*(?:修改|调整|改|更新|变更|改成?|设为)"),
+    re.compile(r"(?:库存|数量).*(?:调到|改成|调整到|改为|设为)"),   # inventory
+    re.compile(r"(?:分类).*(?:改成|改为|换|调整)"),            # category change
+]
+
+
 def should_use_plan_execute(state: AgentState, skill_name: str) -> bool:
-    """判断当前请求是否应走 P&E 模式"""
+    """判断当前请求是否应走 P&E 模式
+
+    两阶段判定：
+    1. 关键词初筛：是否包含写操作关键词
+    2. 复杂度过滤：排除简单单步操作（如"上架""修改价格为200"）
+
+    已有 Plan 的后续消息不经过此函数，直接走 execute_plan()。
+    """
     messages = state.get("messages", [])
     last_msg = ""
     for msg in reversed(messages):
         if isinstance(msg, HumanMessage):
             content = msg.content
             if isinstance(content, list):
-                # 多模态消息：提取文本部分
                 parts = [c.get("text", "") for c in content if isinstance(c, dict) and c.get("type") == "text"]
                 last_msg = " ".join(parts)
             else:
@@ -1357,6 +1373,15 @@ def should_use_plan_execute(state: AgentState, skill_name: str) -> bool:
 
     if not any(kw in last_msg for kw in write_kw):
         return False
+
+    # 复杂度过滤：简单单步操作跳过 P&E
+    for pat in _SIMPLE_WRITE_PATTERNS:
+        if pat.search(last_msg):
+            logger.info(
+                f"[pe] Simple write detected, skipping P&E → ReAct | "
+                f"msg={last_msg[:50]}"
+            )
+            return False
 
     if skill_name == "product":
         return any(kw in last_msg for kw in create_kw + update_kw)

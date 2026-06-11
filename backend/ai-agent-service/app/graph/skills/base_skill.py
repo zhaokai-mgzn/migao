@@ -307,40 +307,81 @@ def _sanitize_messages_for_text_path(messages):
     return sanitized
 
 
-# EXAMPLES 文档缓存（启动时加载一次）
-_examples_cache: dict = {}
+# Prompt 文件缓存（启动时加载一次，避免每次请求读文件）
+import os as _os
+_ref_dir = _os.path.join(_os.path.dirname(__file__), "references")
+_PROMPT_CACHE: dict = {}
+
+
+def _read_cached(path: str) -> str:
+    """读取文件内容，带缓存。文件不存在时返回 ''。"""
+    if path in _PROMPT_CACHE:
+        return _PROMPT_CACHE[path]
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            _PROMPT_CACHE[path] = f.read().strip()
+    except FileNotFoundError:
+        _PROMPT_CACHE[path] = ""
+    except Exception:
+        _PROMPT_CACHE[path] = ""
+    return _PROMPT_CACHE[path]
+
+
+def _build_system_prompt(skill_name: str, inline_prompt: str = "") -> str:
+    """分层组装 System Prompt
+
+    层级（从底到顶）：
+      1. base/identity.md     — 公共身份描述（所有 Skill 共享）
+      2. base/principles.md   — 公共行为准则（所有 Skill 共享）
+      3. prompts/{skill}.md   — 领域规则 + 工具说明（按 Skill）
+      4. inline_prompt        — 调用方传入的额外指令（可选，用于覆盖/追加）
+      5. EXAMPLES-{skill}.md  — few-shot 示例（按 Skill）
+
+    所有文件均为可选，不存在时静默跳过。
+    缓存到 _PROMPT_CACHE 避免每次请求读文件。
+
+    Returns:
+        组装好的完整 System Prompt 字符串
+    """
+    parts = []
+
+    # Layer 1+2: 公共基础（身份 + 原则）
+    identity = _read_cached(_os.path.join(_ref_dir, "base", "identity.md"))
+    if identity:
+        parts.append(identity)
+
+    principles = _read_cached(_os.path.join(_ref_dir, "base", "principles.md"))
+    if principles:
+        parts.append(principles)
+
+    # Layer 3: 领域 Prompt
+    domain = _read_cached(_os.path.join(_ref_dir, "prompts", f"{skill_name}.md"))
+    if domain:
+        # 去掉 YAML frontmatter
+        if domain.startswith("---"):
+            end = domain.find("---", 3)
+            if end > 0:
+                domain = domain[end + 3:].strip()
+        if domain:
+            parts.append(domain)
+
+    # Layer 4: 内联 Prompt（调用方传入，如 Vision 能力的动态追加）
+    if inline_prompt:
+        parts.append(inline_prompt)
+
+    # Layer 5: Few-shot 示例
+    examples = _read_cached(_os.path.join(_ref_dir, "EXAMPLES-" + skill_name + ".md"))
+    if examples:
+        parts.append("\n## Few-shot 参考示例\n\n以下是该领域的正确和错误示例，请严格遵循正确示例的行为模式：\n\n" + examples)
+
+    return "\n\n".join(parts)
 
 
 def _load_skill_examples(skill_name: str) -> str:
-    """加载 Skill 的 EXAMPLES 参考文档，注入到 System Prompt
-
-    从 references/EXAMPLES-{skill_name}.md 读取 few-shot 示例，
-    缓存到内存避免每次请求都读文件。
-
-    Returns:
-        EXAMPLES 文档内容（含 "## Few-shot 参考示例" 标题），无文件时返回 ""
-    """
-    if skill_name in _examples_cache:
-        return _examples_cache[skill_name]
-
-    import os
-    ref_dir = os.path.join(os.path.dirname(__file__), "references")
-    examples_path = os.path.join(ref_dir, f"EXAMPLES-{skill_name}.md")
-
-    try:
-        with open(examples_path, "r", encoding="utf-8") as f:
-            content = f.read().strip()
-            if content:
-                # 提取 "## ✅ 正确示例" 到 "## ❌ 错误示例" 之间的内容
-                result = "\n## Few-shot 参考示例\n\n以下是该领域的正确和错误示例，请严格遵循正确示例的行为模式：\n\n" + content
-                _examples_cache[skill_name] = result
-                return result
-    except FileNotFoundError:
-        _examples_cache[skill_name] = ""  # 不存在的 skill 缓存空字符串
-    except Exception:
-        pass
-
-    _examples_cache[skill_name] = ""
+    """向后兼容别名 — 加载 EXAMPLES 文档（已废弃，建议用 _build_system_prompt）"""
+    examples = _read_cached(_os.path.join(_ref_dir, "EXAMPLES-" + skill_name + ".md"))
+    if examples:
+        return "\n## Few-shot 参考示例\n\n以下是该领域的正确和错误示例，请严格遵循正确示例的行为模式：\n\n" + examples
     return ""
 
 
@@ -507,10 +548,9 @@ async def execute_skill(
     if user_name:
         system_prompt = f"当前对话用户: {user_name}（角色: {user_role}）\n\n" + system_prompt
 
-    # 加载该 Skill 的 EXAMPLES 参考文档，注入到 System Prompt
-    examples_text = _load_skill_examples(skill_name)
-    if examples_text:
-        system_prompt = system_prompt + "\n\n" + examples_text
+    # 分层组装完整 System Prompt（基础身份 + 原则 + 领域规则 + 示例）
+    # 调用方传入的 system_prompt 作为 inline 层（用于动态追加如 Vision 能力说明）
+    system_prompt = _build_system_prompt(skill_name, inline_prompt=system_prompt)
 
     # 如果消息中包含图片，注入图片理解能力说明
     if is_multimodal:
