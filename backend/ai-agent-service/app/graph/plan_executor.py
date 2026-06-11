@@ -1336,14 +1336,20 @@ async def execute_plan(
 # ── 判断是否需要 P&E ──
 
 
-# 简单单步写操作 — 不需要 P&E，ReAct 直接处理
+# 简单单步写操作 — ReAct 直接处理，不需要 P&E
+# 不用复杂正则，用直观的关键词组判断
 _SIMPLE_WRITE_PATTERNS = [
-    re.compile(r"上架|下架"),                         # toggle_status
-    re.compile(r"(?:修改|调整|改|更新|变更).*(?:价格|售价|单价)"),  # 单字段 update
-    re.compile(r"(?:价格|售价|单价).*(?:修改|调整|改|更新|变更|改成?|设为)"),
-    re.compile(r"(?:库存|数量).*(?:调到|改成|调整到|改为|设为)"),   # inventory
-    re.compile(r"(?:分类).*(?:改成|改为|换|调整)"),            # category change
+    # toggle: 含"上架"/"下架"但没有创建/新建/新增语义("上架一个新品"跳过此规则)
+    (re.compile(r"上架|下架"), ["新品", "创建", "新增", "新建", "添加", "录入"]),
+    # 价格修改: 含价格相关词 + 修改动词，允许间隔
+    (re.compile(r"(?:修改|调整|改|更新|变更).{0,4}(?:价格|售价|单价)|(?:价格|售价|单价).{0,4}(?:改|调整|设为|修改|变更|更新)"), []),
+    # 库存调整
+    (re.compile(r"(?:库存|数量).{0,3}(?:调|改|设)"), []),
+    # 分类切换
+    (re.compile(r"分类.{0,3}(?:改|换|调整)"), []),
 ]
+# 注：每个元素是 (match_pattern, exclude_keywords)，
+# match_pattern 匹配 → 且消息不含 exclude_keywords → 跳过 P&E
 
 
 def should_use_plan_execute(state: AgentState, skill_name: str) -> bool:
@@ -1367,7 +1373,7 @@ def should_use_plan_execute(state: AgentState, skill_name: str) -> bool:
                 last_msg = str(content) if content else ""
             break
 
-    create_kw = ["创建", "新增", "添加", "新建", "上架", "录入"]
+    create_kw = ["创建", "新增", "添加", "新建", "上架", "录入", "下单"]
     update_kw = ["修改", "更新", "编辑", "调整", "变更"]
     write_kw = create_kw + update_kw
 
@@ -1375,8 +1381,10 @@ def should_use_plan_execute(state: AgentState, skill_name: str) -> bool:
         return False
 
     # 复杂度过滤：简单单步操作跳过 P&E
-    for pat in _SIMPLE_WRITE_PATTERNS:
+    for pat, exclusions in _SIMPLE_WRITE_PATTERNS:
         if pat.search(last_msg):
+            if exclusions and any(kw in last_msg for kw in exclusions):
+                continue  # 有排除关键词，不是简单单步
             logger.info(
                 f"[pe] Simple write detected, skipping P&E → ReAct | "
                 f"msg={last_msg[:50]}"
