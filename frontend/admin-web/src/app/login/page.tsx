@@ -15,7 +15,7 @@ const COUNTDOWN_SECONDS = 60
 export default function LoginPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { setUser, isAuthenticated } = useAuthStore()
+  const { smsLogin: storeSmsLogin, isAuthenticated } = useAuthStore()
 
   const [phone, setPhone] = useState('')
   const [code, setCode] = useState('')
@@ -52,16 +52,9 @@ export default function LoginPage() {
     setIsLoading(true)
     setLoginError('')
     try {
-      const res = await authApi.smsLogin(phone.trim(), code.trim())
-      const token = res.data?.data?.accessToken || res.data?.accessToken
-      if (token) {
-        localStorage.setItem('accessToken', token)
-        const userRes = await authApi.getUserInfo()
-        const user = userRes.data?.data || userRes.data
-        if (user) setUser(user)
-        const callbackUrl = searchParams.get('callbackUrl') || '/dashboard'
-        router.push(callbackUrl)
-      }
+      await storeSmsLogin(phone.trim(), code.trim())
+      const callbackUrl = searchParams.get('callbackUrl') || '/dashboard'
+      router.push(callbackUrl)
     } catch (error: any) {
       const msg = error?.response?.data?.message || error?.message || '登录失败'
       setLoginError(msg)

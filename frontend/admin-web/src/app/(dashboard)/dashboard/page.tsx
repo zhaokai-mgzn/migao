@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { ClipboardList, DollarSign, TrendingUp, Package, Settings, ArrowRight, RefreshCw, ArrowUp, ArrowDown } from 'lucide-react'
+import request from '@/lib/request'
 import { dashboardApi } from '@/lib/api'
 import { cn, formatFullDateTime } from '@/lib/utils'
 import type { DashboardStats, OrderTrendPoint, Order, ProductRanking } from '@/types'
@@ -106,7 +107,6 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [trendData, setTrendData] = useState<OrderTrendPoint[]>([])
-  const [statusData, setStatusData] = useState<OrderStatusDistribution[]>([])
   const [recentOrders, setRecentOrders] = useState<Order[]>([])
   const [ranking, setRanking] = useState<ProductRanking[]>([])
   const [pendingShipment, setPendingShipment] = useState(0)
@@ -135,11 +135,8 @@ export default function DashboardPage() {
 
       // 待发货 = confirmed + producing
       try {
-        const resp = await fetch('/api/admin/orders/statistics', {
-          headers: { Authorization: `Bearer ${localStorage.getItem('accessToken')}` },
-        })
-        const d = await resp.json()
-        const os = d.data || {}
+        const resp = await request.get('/api/admin/orders/statistics')
+        const os = resp.data?.data || {}
         setPendingShipment((os.confirmedCount || 0) + (os.producingCount || 0))
         setProcessingShipment(os.producingCount || 0)
       } catch {}
