@@ -93,6 +93,10 @@ class SecurityConfigTest {
     @MockBean
     private OSS ossClient;
 
+    // UserMemoryMapper — MyBatis-Plus 自动扫描到的 Mapper，CI 无 sqlSessionFactory
+    @MockBean
+    private com.migao.admin.mapper.UserMemoryMapper userMemoryMapper;
+
     // OssService 带有 @ConditionalOnBean 在测试环境下不会被加载，
     // 因此不需要 @MockBean FileStorageService / OssService，
     // 避免由于多个实现导致 NoUniqueBeanDefinitionException。
