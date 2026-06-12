@@ -29,8 +29,7 @@ class CategoryManageTool(BaseTool):
 
     name = "category_manage"
     description = (
-        "商品分类管理工具，支持获取分类树形结构、创建新分类、更新分类名称、删除分类。"
-        "当需要管理商品分类（如查看分类结构、添加/修改/删除分类）时使用。"
+        "【触发】用户问'分类''有哪些分类''分类树''新建分类''删除分类'时调用。【前置】action=tree 只查分类树(READONLY)。create/update/delete 需要确认后执行。【反例】用 tree action 查分类是安全的，不要因为工具名含 manage 就认为全是写操作。【标注】tree=SAFE_QUERY, create/update/delete=DESTRUCTIVE"
     )
 
     allowed_roles = ["admin", "tenant_admin"]

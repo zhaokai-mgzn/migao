@@ -31,9 +31,7 @@ class ProcessingItemQueryTool(BaseTool):
 
     name = "processing_item_query"
     description = (
-        "查询店铺加工项目录列表或详情（包含加工项名称、分类、单价、单位、状态、加工天数等）。"
-        "当同事询问'加工项列表'、'有哪些加工项'、'打孔/窗帘头多少钱'等加工项相关问题时使用。"
-        "注意：本工具用于查询加工项目录本身，与查询订单（order_query）和查询商品（product_search）无关。"
+        "【触发】用户问'加工项''有哪些加工''加工费''加工价格''打孔''挂钩''褶皱'时调用。【前置】支持按 keyword/category_id/status 筛选。用户只需列表时传 keyword 或空参数。【反例】创建/修改/删除加工项用 processing_item_manage，不要用本工具。【标注】READONLY"
     )
 
     parameters = {

@@ -34,29 +34,9 @@ class ProductManageTool(BaseTool):
     """
     
     name = "product_manage"
-    description = """创建、更新、上下架商品。
-
-创建商品(action="create")收集齐后展示汇总确认,用户确认后调用。可用字段:
-- name(string,必填): 商品名称,如"遮光窗帘"
-- price(number): 价格(元),纯数字如199
-- colors(string[]数组): 颜色名列表,必须传数组不要传JSON字符串,如["米白","深灰","浅蓝"]
-- selling_methods(string[]数组): 售卖方式,可选值 散剪/整卷/按片,如["散剪"]
-- door_widths(string[]数组): 门幅尺寸,如["2.8米","3.2米"]
-- unit(string): 单位,可选值 米/件/套/个/卷/片/平方米
-- pricing_type(string): 计价方式,可选值 per_meter/per_piece/per_area/fixed
-- category_id(string): 分类ID,通过 category_manage(action="tree") 查询获取
-- stock_quantity(integer): 库存数量,如100
-- processing_item_ids(string[]数组): 加工项ID列表,通过 processing_item_query 查询后让用户选择
-- description(string): 商品描述
-- brand(string): 品牌
-- images(string[]数组): 图片URL列表
-- specifications(object): 规格,如{weight:"1200g",material:"雪尼尔",craft:"提花"}
-- sku_code(string): 货号
-
-更新(action="update"): product_id(必填)+需修改的字段
-上下架(action="toggle_status"): product_id(必填)+status(on_sale/off_sale)
-
-铁律: 对话历史中出现的字段必须全部传入,不要遗漏或编造。确认词:"确认创建""好的""行""可以""没问题"。"""
+    description = (
+        "【触发】用户说'创建商品''上架''下架''修改商品''更新商品''删除商品'时调用。【前置】create: 必填 name+price。收集→搜重名→汇总→确认→执行。update: 需要 product_id。toggle_status: product_id+status(on_sale/off_sale)。【反例】仅查看商品用 product_search/detail。调整库存用 inventory_manage。【标注】WRITE|DESTRUCTIVE — create/delete 需确认汇总"
+    )
     
     # admin、agent、tenant_admin 可使用
     allowed_roles = ["admin", "agent", "tenant_admin"]

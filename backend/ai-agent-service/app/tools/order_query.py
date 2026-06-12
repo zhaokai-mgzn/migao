@@ -37,17 +37,7 @@ class OrderQueryTool(BaseTool):
     
     name = "order_query"
     description = (
-        "订单查询工具，支持三种操作："
-        "action=list（默认，按订单号/手机号/状态/日期等条件翻页查询订单列表）、"
-        "action=statistics（订单统计汇总，调用 GET /api/admin/orders/statistics，返回各状态订单总数、订单金额总计等“订单统计数据”）、"
-        "action=follow_status_stats（订单跟进状态统计，调用 GET /api/admin/orders/follow-status/stats，返回各跟进状态的订单数量）。"
-        " \n常见调用示例：\n"
-        "- 查“我的订单”/某个订单号 → action=list, order_no=...\n"
-        "- 查某手机号的订单 → action=list, customer_phone=...\n"
-        "- 查待发货订单 → action=list, status=confirmed/processing\n"
-        "- “订单统计数据”/“订单总览”/“各状态订单数量汇总” → action=statistics\n"
-        "- “跟进状态统计”/“订单跟进情况” → action=follow_status_stats\n"
-        "当用户说“订单统计数据”请使用 action=statistics，不要错误传 action=list。"
+        "【触发】用户问'查订单''我的订单''订单列表''订单统计''订单数据''待发货订单''跟进状态'时调用。【前置】支持三种 action: list(按条件翻页)/statistics(汇总)/follow_status_stats(跟进统计)。用户说'订单统计数据'用 statistics，'订单跟进情况'用 follow_status_stats，不要错传 list。【反例】查物流轨迹用 logistics_track，修改订单用 order_manage。【标注】READONLY"
     )
     
     parameters = {

@@ -28,8 +28,7 @@ class InventoryManageTool(BaseTool):
     
     name = "inventory_manage"
     description = (
-        "查询和调整商品库存，支持库存预警查询。"
-        "当需要查看库存、调整库存数量、查看低库存预警时使用。"
+        "【触发】用户问'库存''还有多少''缺货''低库存''出库''入库''调整库存'时调用。【前置】query: 需要 product_id。adjust: product_id+adjustment+reason。low_stock_alert: 可选 threshold。customer 角色仅允许 query，adjust 和 low_stock_alert 仅限管理员/客服。【反例】查商品详情(含库存字段)用 product_detail，不要混淆。【标注】WRITE(adjust) — query是安全的，adjust需确认"
     )
     
     # admin、agent、customer、tenant_admin 可使用（customer 仅限 query 操作）

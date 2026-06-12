@@ -30,8 +30,7 @@ class SessionManageTool(BaseTool):
 
     name = "session_manage"
     description = (
-        "客服会话管理工具，支持查询会话列表、获取监控面板数据、查看会话详情、手动分配会话给客服、结束会话。"
-        "当需要管理客服会话（如查看排队情况、分配会话、结束对话）时使用。"
+        "【触发】用户问'会话''排队''在线客服''客服状态''分配会话''结束会话'时调用。【前置】list/monitor/detail 可查询。assign 需要 session_id+agent_id。end 需确认。【反例】查经营数据用 dashboard_stats。查客服员工用 employee_manage。【标注】WRITE(assign/end) — 结束会话需确认"
     )
 
     allowed_roles = ["admin", "agent", "tenant_admin"]

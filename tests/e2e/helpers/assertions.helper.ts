@@ -53,30 +53,43 @@ export async function assertNoPlaceholderFallback(
       continue
     }
 
-    // 收集所有可见文本
-    const texts: string[] = []
+    // 收集所有文本
+    let emptyCount = 0
+    let placeholderCount = 0
+    let realValueCount = 0
+    const samples: string[] = []
+
     for (let i = 0; i < cellCount; i++) {
       const text = (await cells.nth(i).textContent())?.trim() || ''
-      texts.push(text)
+      if (text.length === 0) {
+        emptyCount++
+      } else if (text === fallbackValue) {
+        placeholderCount++
+      } else {
+        realValueCount++
+        if (samples.length < 3) samples.push(text)
+      }
     }
 
-    // 检查是否所有非空文本都等于 fallbackValue
-    const nonEmptyTexts = texts.filter((t) => t.length > 0)
-    const allPlaceholder = nonEmptyTexts.length > 0 &&
-      nonEmptyTexts.every((t) => t === fallbackValue)
+    // 只有在以下条件同时满足时才报警：
+    // 1. 有占位符行（说明不是全部为空）
+    // 2. 没有任何一行有真实值（说明这个字段完全没渲染出来）
+    const allDead = placeholderCount > 0 && realValueCount === 0
 
-    if (allPlaceholder) {
+    if (allDead) {
       throw new Error(
-        `[反占位符检查] 列 "${colName}" 的 ${nonEmptyTexts.length} 行全部显示占位符 "${fallbackValue}"。` +
-        `这通常意味着后端未返回该字段，或前端未正确渲染。` +
+        `[反占位符检查] 列 "${colName}" 全部未渲染：` +
+        `${placeholderCount} 行显示占位符 "${fallbackValue}"，${emptyCount} 行空白，` +
+        `0 行有真实值。` +
+        `\n  这通常意味着后端未返回该字段，或前端选择了不存在的数据字段。` +
         `\n  选择器: ${rowSelector} ${cellSelector}`
       )
     }
 
     console.log(
       `[assertNoPlaceholderFallback] ✅ 列 "${colName}": ` +
-      `${cellCount} 行, ${nonEmptyTexts.length} 非空, ` +
-      `占位符 ${fallbackValue}: ${nonEmptyTexts.filter((t) => t === fallbackValue).length} 行`
+      `${cellCount} 行, 占位符 ${placeholderCount}, 空白 ${emptyCount}, 真实值 ${realValueCount}` +
+      (samples.length > 0 ? ` (如: ${samples.join(', ')})` : '')
     )
   }
 }

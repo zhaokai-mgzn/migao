@@ -24,8 +24,7 @@ class ProductDetailTool(BaseTool):
     
     name = "product_detail"
     description = (
-        "查询商品详细信息，包括价格、规格、SKU、库存、描述等。"
-        "当用户询问某个具体商品的信息时使用。"
+        "【触发】用户问'XX商品详情''XX多少钱''XX什么颜色''XX的规格'或指定商品ID时调用。【前置】需要 product_id，如果用户只说了商品名，先调 product_search 获取ID。【反例】搜商品列表用 product_search，查库存用 inventory_manage。【标注】READONLY"
     )
     
     parameters = {

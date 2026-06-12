@@ -32,11 +32,8 @@ class EmployeeManageTool(BaseTool):
 
     name = "employee_manage"
     description = (
-        "员工管理工具，支持查询员工列表、详情、创建、更新、删除、重置密码、启用/禁用。"
-        "当需要管理员工账号、查看员工信息、调整员工状态时使用。"
+        "【触发】用户问'员工''客服''账号''同事''有哪些人''创建账号''禁用账号''删除员工''重置密码'时调用。【前置】list/detail 可查询。create 必填 name+phone。delete/reset_password/toggle_status 是破坏性操作。【反例】管理角色权限用 role_manage。查客户用 customer_manage。【标注】WRITE|DESTRUCTIVE — 删除/禁用/重置密码需二次确认"
     )
-
-    # 仅 admin、tenant_admin 可使用
     allowed_roles = ["admin", "tenant_admin"]
 
     read_only = False

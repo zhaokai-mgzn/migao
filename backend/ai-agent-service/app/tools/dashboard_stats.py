@@ -30,20 +30,8 @@ class DashboardStatsTool(BaseTool):
 
     name = "dashboard_stats"
     description = (
-        "数据看板工具，用于获取商家后台经营看板的统计概览、订单趋势、订单状态分布、最近订单、活跃会话。"
-        "当需要了解经营数据、查看统计概览、分析订单趋势时使用。支持查询“最近 N 天”的订单趋势数据。"
-        " \n常见调用示例：\n"
-        "- 查看今日经营概览 → action=overview\n"
-        "- 查询最近 7 天订单趋势 → action=order_trend, days=7\n"
-        "- 查询最近 14 天订单趋势 → action=order_trend, days=14\n"
-        "- 查询最近 30 天订单趋势 → action=order_trend, days=30\n"
-        "- 查看订单状态分布 → action=order_status\n"
-        "- 查看最近订单列表 → action=recent_orders, limit=5\n"
-        "- 查看当前活跃会话 → action=active_sessions, limit=5\n"
-        "调用本工具时不要反问用户起止日期，定期间说法如“最近 7 天/14 天/30 天”只需传 days 参数。"
+        "【触发】用户问'今天生意''经营数据''看板''统计''订单趋势''最近订单''销售额''活跃会话'时调用。【前置】支持五种 action: overview(概览)/order_trend(趋势)/order_status(状态分布)/recent_orders(最近订单)/active_sessions(活跃会话)。用户说'最近7天'传入 days=7，'最近5条订单'传入 limit=5。【反例】查客服会话详情用 session_manage，查具体订单用 order_query。【标注】READONLY"
     )
-
-    # admin、agent、tenant_admin 可使用
     allowed_roles = ["admin", "agent", "tenant_admin"]
 
     parameters = {

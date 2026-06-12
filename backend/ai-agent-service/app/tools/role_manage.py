@@ -32,11 +32,8 @@ class RoleManageTool(BaseTool):
 
     name = "role_manage"
     description = (
-        "角色与权限管理工具，支持查询角色列表、详情、创建、更新、删除、查询所有权限。"
-        "当需要管理系统角色、分配权限、查看角色权限时使用。"
+        "【触发】用户问'角色''权限''管理员''有哪些角色''创建角色''分配权限'时调用。【前置】list/all 可查询。create/update 需要 name + permission_ids。delete 需二次确认。【反例】管理员工账号用 employee_manage。查系统配置用 settings_manage。【标注】WRITE|DESTRUCTIVE — 删除角色/修改权限需二次确认"
     )
-
-    # 仅 admin、tenant_admin 可使用
     allowed_roles = ["admin", "tenant_admin"]
 
     read_only = False

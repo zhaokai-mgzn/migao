@@ -35,9 +35,7 @@ class ProcessingItemManageTool(BaseTool):
 
     name = "processing_item_manage"
     description = (
-        "加工项管理工具，支持创建/更新/删除加工项、加工分类增删改查、价格计算。"
-        "与 processing_item_query（查询工具）互补，本工具负责写入和管理操作。"
-        "当需要新增加工项、修改加工项信息、管理加工分类或计算加工价格时使用。"
+        "【触发】用户说'新增加工''修改加工项''删除加工项''加工分类'且是写操作时调用。【前置】仅用于创建/更新/删除加工项和分类。查询用 processing_item_query。【反例】仅查看加工项列表用 processing_item_query。【标注】WRITE|DESTRUCTIVE — 删除加工项/分类需确认"
     )
 
     allowed_roles = ["admin", "tenant_admin"]

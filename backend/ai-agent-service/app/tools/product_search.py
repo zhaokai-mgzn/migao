@@ -25,8 +25,7 @@ class ProductSearchTool(BaseTool):
     
     name = "product_search"
     description = (
-        "搜索商品列表，根据关键词、分类等条件查询商品。"
-        "当用户询问有什么产品、想找某种商品、或需要推荐时使用。"
+        "【触发】用户问'有什么XX''搜XX''找XX商品''有没有XX'或提到商品关键词/分类时调用。【前置】keyword 可选，缺关键词时列出全部。支持 stock_status 筛选缺货/低库存。【反例】查单个商品详情用 product_detail，查分类用 category_manage(tree)。【标注】READONLY — 放心调用，无需确认"
     )
     
     parameters = {

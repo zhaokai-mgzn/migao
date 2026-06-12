@@ -35,8 +35,7 @@ class SettingsManageTool(BaseTool):
 
     name = "settings_manage"
     description = (
-        "系统设置管理工具，支持获取和更新系统设置、获取和更新AI客服配置、修改密码、查询登录日志。"
-        "当需要查看或修改系统配置、AI配置、账户安全设置时使用。"
+        "【触发】用户问'系统设置''配置''AI配置''模型''问候语''改密码''登录日志'时调用。【前置】get_settings/get_ai_config/login_logs 是查询。update_settings/update_ai_config/change_password 需确认。【反例】通知管理用 notification_manage。快捷回复用 quick_reply_manage。【标注】WRITE|DESTRUCTIVE — 修改全局配置/密码需二次确认"
     )
 
     allowed_roles = ["admin", "tenant_admin"]

@@ -73,9 +73,7 @@ class ValidateInputTool(BaseTool):
 
     name = "validate_input"
     description = (
-        "在执行写操作前校验参数是否完整。返回缺少的必填字段和格式错误。"
-        "应在调用 product_manage、order_create 等写操作前使用。"
-        "如果校验通过则返回 success=true，可直接执行写操作。"
+        "【触发】调用 product_manage、order_create、order_manage 等写操作前，先调用本工具校验参数完整性。【前置】需要 target_tool + target_action + params。校验通过返回 success=true。【反例】不要跳过校验直接调写操作。查询操作不需要校验。【标注】READONLY — 纯本地校验，不调用外部API"
     )
     allowed_roles = ["admin", "agent", "tenant_admin"]
 

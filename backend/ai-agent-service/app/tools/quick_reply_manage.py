@@ -30,8 +30,7 @@ class QuickReplyManageTool(BaseTool):
 
     name = "quick_reply_manage"
     description = (
-        "快捷回复模板管理工具，支持查询模板列表、获取分类列表、创建/更新/删除快捷回复模板。"
-        "当需要管理客服快捷回复模板（如添加话术、修改模板内容、查看分类）时使用。"
+        "【触发】用户问'快捷回复''话术''模板''回复模板''新建话术''编辑模板'时调用。【前置】list/categories 可查询。create/update/delete 需确认。【反例】发通知用 notification_manage。系统配置用 settings_manage。【标注】WRITE(create/update/delete) — 删除模板需确认"
     )
 
     allowed_roles = ["admin", "agent", "tenant_admin"]

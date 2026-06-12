@@ -514,18 +514,6 @@ async def send_message(
             customer_id=user_id,
             title=None,  # 自动生成标题
         )
-        # 方案 A：创建新会话时，自动关闭该用户的其他 active 会话
-        try:
-            await session_memory.close_other_active_sessions(
-                tenant_id=tenant_id,
-                customer_id=user_id,
-                except_session_id=session_id,
-            )
-        except Exception as close_err:
-            logger.warning(
-                f"[chat/send] close_other_active_sessions failed | "
-                f"tenant={tenant_id} user={user_id} error={close_err}"
-            )
     else:
         # 验证会话存在且属于当前用户
         session = await session_memory.get_session(session_id)
@@ -612,18 +600,7 @@ async def send_message(
                         customer_id=user_id,
                         title=None,
                     )
-                    # 以防万一，同时关闭该用户其他 active
-                    try:
-                        await session_memory.close_other_active_sessions(
-                            tenant_id=tenant_id,
-                            customer_id=user_id,
-                            except_session_id=session_id,
-                        )
-                    except Exception as close_err:
-                        logger.warning(
-                            f"[chat/send] close_other_active_sessions after rotation failed | "
-                            f"error={close_err}"
-                        )
+                    # 方案 B：旧会话已因超时关闭，新会话承接
         except HTTPException:
             raise
         except Exception as idle_err:
@@ -761,23 +738,6 @@ async def create_session(
     )
     logger.info(f"Session created: session_id={session_id}, user_id={current_user.user_id}, tenant_id={current_user.tenant_id}")
 
-    # 方案 A：创建新会话后自动关闭该用户其他 active 会话
-    try:
-        closed_count = await session_memory.close_other_active_sessions(
-            tenant_id=current_user.tenant_id,
-            customer_id=current_user.user_id,
-            except_session_id=session_id,
-        )
-        if closed_count:
-            logger.info(
-                f"[chat/sessions] Auto-closed {closed_count} stale session(s) on new session | "
-                f"new_session={session_id} user={current_user.user_id}"
-            )
-    except Exception as close_err:
-        logger.warning(
-            f"[chat/sessions] close_other_active_sessions failed (non-fatal) | error={close_err}"
-        )
-    
     # 获取创建的会话信息
     session = await session_memory.get_session(session_id)
     

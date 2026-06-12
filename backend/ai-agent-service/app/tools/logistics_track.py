@@ -89,8 +89,7 @@ class LogisticsTrackTool(BaseTool):
     
     name = "logistics_track"
     description = (
-        "查询物流信息，根据订单号或快递单号追踪物流轨迹。"
-        "当用户询问订单物流状态、快递到哪了时使用。"
+        "【触发】用户问'物流''快递''到哪了''发货了吗''配送''签收'时调用。【前置】需要 order_id 或 tracking_number。用户只说'查物流'但没提供单号时，先问订单号，不要空调。【反例】查订单详情(金额/商品/客户)用 order_query，不要混淆。【标注】READONLY"
     )
     
     parameters = {
