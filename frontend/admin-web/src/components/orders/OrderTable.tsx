@@ -219,18 +219,27 @@ export default function OrderTable({
                   {/* 采购明细 */}
                   <td className="px-4 py-4 min-w-[260px]">
                     <div className="space-y-1.5">
-                      {order.items?.map((item) => (
-                        <div key={item.id} className="text-gray-700 leading-tight">
-                          <span className="font-mono">{item.productCode || '-'}</span>
-                          {item.color ? `-${item.color}` : ''} *{item.specification || '-'}*
-                          <span className="font-mono">{formatNumber(item.unitPrice)}</span>
-                          元/米*
-                          <span className="font-mono">{formatNumber(item.quantity)}</span>
-                          米 =
-                          <span className="font-mono">{formatNumber(getItemAmount(item))}</span>
-                          元
-                        </div>
-                      ))}
+                      {order.items?.map((item) => {
+                        const pi = (item as any).processingInfo
+                        const sm: Record<string, string> = { bulk_cut: '散剪', full_roll: '整卷', per_meter: '按米', per_piece: '按件' }
+                        const spec = [
+                          pi?.colorName || '',
+                          pi?.sellingMethod ? (sm[pi.sellingMethod] || pi.sellingMethod) : '',
+                          pi?.doorWidth ? `门幅${pi.doorWidth}` : '',
+                        ].filter(Boolean).join(' / ') || '-'
+                        return (
+                          <div key={item.id} className="text-gray-700 leading-tight">
+                            <span className="font-mono">{item.productCode || '-'}</span>
+                            {' '}{spec}{' '}*
+                            <span className="font-mono">{formatNumber(item.unitPrice)}</span>
+                            元/米*
+                            <span className="font-mono">{formatNumber(item.quantity)}</span>
+                            米 =
+                            <span className="font-mono">{formatNumber(getItemAmount(item))}</span>
+                            元
+                          </div>
+                        )
+                      })}
                       {order.processingItems?.map((proc, idx) => (
                         <div
                           key={proc.id || idx}
