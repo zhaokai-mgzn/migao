@@ -216,16 +216,12 @@ export default function NewOrderPage() {
   // ===== 颜色 / 规格 选择 =====
   const handleSelectColor = (line: OrderLineItem, colorId: number) => {
     const skusOfColor = (line.product?.skus || []).filter((s) => s.colorId === colorId)
-    if (skusOfColor.length === 1) {
-      const sku = skusOfColor[0]
-      updateLineItem(line.id, {
-        selectedColorId: colorId,
-        selectedSku: sku,
-        unitPrice: Number(sku.price) || line.unitPrice,
-      })
-    } else {
-      updateLineItem(line.id, { selectedColorId: colorId, selectedSku: null })
-    }
+    const autoSku = skusOfColor.length === 1 ? skusOfColor[0] : null
+    updateLineItem(line.id, {
+      selectedColorId: colorId,
+      selectedSku: autoSku,
+      unitPrice: autoSku ? Number(autoSku.price) : line.unitPrice,
+    })
   }
 
   const handleSelectSku = (line: OrderLineItem, sku: OrderProductSku) => {
@@ -867,7 +863,7 @@ function LineItemBlock({
 
                 {line.selectedColorId != null && skuOptions.length > 0 && (
                   <div className="mb-4">
-                    <Label required>规格</Label>
+                    <Label required>门幅 / 售卖方式</Label>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       {skuOptions.map((sku) => {
                         const active = line.selectedSku?.id === sku.id

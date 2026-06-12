@@ -1,9 +1,6 @@
 name: E2E Scheduled
 
 on:
-  schedule:
-    # 每天凌晨 2:00（北京时间 10:00 UTC）
-    - cron: '0 2 * * *'
   workflow_dispatch:
 
 env:
