@@ -167,18 +167,17 @@ class TestRuleMatcher:
         assert result is not None
         assert result.intent == IntentType.PRODUCT_INQUIRY
 
-    def test_standalone_create_no_longer_matches_product_inquiry(self, matcher):
-        """单独的 '创建' 不再匹配 product_inquiry（已从关键词移除）"""
+    def test_standalone_create_matches_product_inquiry(self, matcher):
+        """单独的 '创建' 通过正则匹配 product_inquiry（P&E 创建流程入口）"""
         result = matcher.match("创建")
-        # L1 不应匹配为 product_inquiry
-        if result is not None:
-            assert result.intent != IntentType.PRODUCT_INQUIRY
+        assert result is not None
+        assert result.intent == IntentType.PRODUCT_INQUIRY
 
-    def test_standalone_new_no_longer_matches_product_inquiry(self, matcher):
-        """单独的 '新建' 不再匹配 product_inquiry（已从关键词移除）"""
+    def test_standalone_new_matches_product_inquiry(self, matcher):
+        """单独的 '新建' 通过正则匹配 product_inquiry（P&E 创建流程入口）"""
         result = matcher.match("新建")
-        if result is not None:
-            assert result.intent != IntentType.PRODUCT_INQUIRY
+        assert result is not None
+        assert result.intent == IntentType.PRODUCT_INQUIRY
 
     def test_product_keyword_still_matches(self, matcher):
         """'商品' 关键词仍然匹配 product_inquiry（回归保护）"""

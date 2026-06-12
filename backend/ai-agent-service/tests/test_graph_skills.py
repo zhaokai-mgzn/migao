@@ -279,7 +279,7 @@ class TestExecuteSkill:
 class TestSkillNodes:
     """各 Skill 节点通过 create_node_function 正确生成并调用 execute_skill"""
 
-    @patch("app.graph.skills.skill_registry.execute_skill")
+    @patch("app.graph.skills.base_skill.execute_skill")
     async def test_order_node(self, mock_execute):
         """create_node_function(order) 生成可调用的节点函数"""
         mock_execute.return_value = {"final_answer": "ok", "skill_used": "order"}
@@ -291,7 +291,7 @@ class TestSkillNodes:
         assert call_kwargs.kwargs["skill_name"] == "order"
         assert call_kwargs.kwargs["tool_names"] == ORDER_TOOLS
 
-    @patch("app.graph.skills.skill_registry.execute_skill")
+    @patch("app.graph.skills.base_skill.execute_skill")
     async def test_product_node(self, mock_execute):
         """create_node_function(product) 生成可调用的节点函数"""
         mock_execute.return_value = {"final_answer": "ok", "skill_used": "product"}
@@ -302,7 +302,7 @@ class TestSkillNodes:
         assert mock_execute.call_args.kwargs["skill_name"] == "product"
         assert mock_execute.call_args.kwargs["tool_names"] == PRODUCT_TOOLS
 
-    @patch("app.graph.skills.skill_registry.execute_skill")
+    @patch("app.graph.skills.base_skill.execute_skill")
     async def test_knowledge_node(self, mock_execute):
         """create_node_function(knowledge) 生成可调用的节点函数"""
         mock_execute.return_value = {"final_answer": "ok", "skill_used": "knowledge"}
@@ -313,7 +313,7 @@ class TestSkillNodes:
         assert mock_execute.call_args.kwargs["skill_name"] == "knowledge"
         assert mock_execute.call_args.kwargs["tool_names"] == KNOWLEDGE_TOOLS
 
-    @patch("app.graph.skills.skill_registry.execute_skill")
+    @patch("app.graph.skills.base_skill.execute_skill")
     async def test_aftersales_node(self, mock_execute):
         """create_node_function(aftersales) 生成可调用的节点函数"""
         mock_execute.return_value = {"final_answer": "ok", "skill_used": "aftersales"}
@@ -324,7 +324,7 @@ class TestSkillNodes:
         assert mock_execute.call_args.kwargs["skill_name"] == "aftersales"
         assert mock_execute.call_args.kwargs["tool_names"] == AFTERSALES_TOOLS
 
-    @patch("app.graph.skills.skill_registry.execute_skill")
+    @patch("app.graph.skills.base_skill.execute_skill")
     async def test_general_node(self, mock_execute):
         """create_node_function(general) 生成可调用的节点函数"""
         mock_execute.return_value = {"final_answer": "ok", "skill_used": "general"}
