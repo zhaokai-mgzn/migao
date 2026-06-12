@@ -688,9 +688,10 @@ class SessionMemory:
         if not session_id:
             return {}
         try:
-            from app.utils.redis_client import get_redis
-            redis = get_redis()
-            raw = await redis.get(self._field_key(session_id))
+            from app.utils.redis_client import redis_pool
+            import redis as _redis
+            client = _redis.Redis(connection_pool=redis_pool)
+            raw = await client.get(self._field_key(session_id))
             if raw:
                 return json.loads(raw)
         except Exception as e:
@@ -702,10 +703,11 @@ class SessionMemory:
         if not session_id or not fields:
             return False
         try:
-            from app.utils.redis_client import get_redis
-            redis = get_redis()
+            from app.utils.redis_client import redis_pool
+            import redis as _redis
+            client = _redis.Redis(connection_pool=redis_pool)
             key = self._field_key(session_id)
-            await redis.set(key, json.dumps(fields, ensure_ascii=False), ex=self._FIELD_TTL)
+            await client.set(key, json.dumps(fields, ensure_ascii=False), ex=self._FIELD_TTL)
             return True
         except Exception as e:
             logger.warning(f"[session-memory] set_collected_fields failed: {e}")
@@ -716,9 +718,10 @@ class SessionMemory:
         if not session_id:
             return False
         try:
-            from app.utils.redis_client import get_redis
-            redis = get_redis()
-            await redis.delete(self._field_key(session_id))
+            from app.utils.redis_client import redis_pool
+            import redis as _redis
+            client = _redis.Redis(connection_pool=redis_pool)
+            await client.delete(self._field_key(session_id))
             return True
         except Exception as e:
             logger.warning(f"[session-memory] clear_collected_fields failed: {e}")
