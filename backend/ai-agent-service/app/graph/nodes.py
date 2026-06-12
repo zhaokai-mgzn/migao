@@ -337,41 +337,26 @@ def check_cache_hit(state: AgentState) -> str:
     return "miss"
 
 
-# 意图 → 路由 key 映射（两种 Agent 共用相同的 key，builder 中映射到不同节点名）
-_INTENT_TO_ROUTE: dict[str, str] = {
-    "order_query": "order",
-    "order_create": "order",
-    "logistics_track": "order",
-    "product_inquiry": "product",
-    # [RAG 禁用] "knowledge_faq": "knowledge",  # 知识库禁用，fallback 到 general
-    "knowledge_faq": "general",
-    "after_sales": "aftersales",
-    "complaint": "aftersales",
-    "greeting": "direct_reply",
-    "farewell": "direct_reply",
-    "capabilities": "direct_reply",
-    "general": "general",
-    # 商家后台（米宝）管理类意图
-    "customer_manage": "customer",
-    "customer_query": "customer",
-    "employee_manage": "staff",
-    "staff_manage": "staff",
-    "role_manage": "staff",
-    "permission_manage": "staff",
-    "system_settings": "settings",
-    "ai_config": "settings",
-    "notification": "settings",
-    "quick_reply": "settings",
-    "dashboard": "data",
-    "statistics": "data",
-    "data_report": "data",
-    "session_manage": "data",
-    "after_sales_create": "aftersales",
-    # [RAG 禁用] "knowledge_manage": "knowledge",  # 知识库禁用，fallback 到 general
-    "knowledge_manage": "general",
-    "category_manage": "product",
-    "processing_manage": "product",
-}
+# 特殊意图 → direct_reply（不属于任何 skill，直接回复）
+_DIRECT_REPLY_INTENTS = {"greeting", "farewell", "capabilities"}
+
+# RAG 禁用期间知识库意图 fallback 到 general
+_KNOWLEDGE_FALLBACK = {"knowledge_faq": "general", "knowledge_manage": "general"}
+
+
+def _get_intent_to_route() -> dict[str, str]:
+    """意图→路由key映射。从 skill_registry 动态构建,避免硬编码不同步。"""
+    from app.graph.skills.skill_registry import get_skill_registry
+    intent_map = get_skill_registry().get_intent_to_route_map()
+    for intent, route in _DIRECT_REPLY_INTENTS:
+        intent_map[intent] = "direct_reply"
+    intent_map["general"] = "general"
+    intent_map.update(_KNOWLEDGE_FALLBACK)
+    return intent_map
+
+
+# 懒加载缓存
+_INTENT_TO_ROUTE: dict[str, str] | None = None
 
 
 def _last_human_has_image(messages: list) -> bool:
@@ -440,4 +425,7 @@ def route_by_intent(state: AgentState) -> str:
         )
         return pending_skill
 
+    if _INTENT_TO_ROUTE is None: _INTENT_TO_ROUTE = _get_intent_to_route()
+    if _INTENT_TO_ROUTE is None:
+        _INTENT_TO_ROUTE = _get_intent_to_route()
     return _INTENT_TO_ROUTE.get(intent, "general")
