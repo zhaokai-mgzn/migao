@@ -10,7 +10,7 @@ from app.graph.skills.skill_config import SkillConfig
 
 
 # 人事 Skill 可用的 Tool 列表
-STAFF_TOOLS = ["employee_manage", "role_manage"
+STAFF_TOOLS = ["employee_manage", "role_manage",
     "validate_input",  # 写操作前置校验
 ]
 

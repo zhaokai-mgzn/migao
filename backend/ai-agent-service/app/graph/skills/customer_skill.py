@@ -13,7 +13,7 @@ from app.graph.skills.skill_config import SkillConfig
 # customer_manage: 客户CRUD + 标签 + 跟进记录
 # order_query: 查该客户的历史订单
 # product_search: 查推荐商品
-CUSTOMER_TOOLS = ["customer_manage", "order_query", "product_search"
+CUSTOMER_TOOLS = ["customer_manage", "order_query", "product_search",
     "validate_input",  # 写操作前置校验
 ]
 

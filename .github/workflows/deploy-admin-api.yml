@@ -41,9 +41,7 @@ jobs:
 
       - name: Run unit tests
         working-directory: backend/admin-api
-        run: |
-          mvn test -q \
-            -Dtest='!TenantIsolationTest,!SecurityConfigTest'
+        run: mvn test -q
 
       - name: Build admin-api with Maven
         working-directory: backend/admin-api

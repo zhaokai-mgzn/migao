@@ -379,6 +379,25 @@ def _last_human_has_image(messages: list) -> bool:
     return False
 
 
+def _get_last_human_text(messages: list) -> str | None:
+    """获取最后一条 HumanMessage 的纯文本内容"""
+    from langchain_core.messages import HumanMessage
+
+    for msg in reversed(messages):
+        if isinstance(msg, HumanMessage):
+            content = msg.content
+            if isinstance(content, str):
+                return content
+            if isinstance(content, list):
+                texts = [
+                    item.get("text", "")
+                    for item in content
+                    if isinstance(item, dict) and item.get("type") == "text"
+                ]
+                return " ".join(texts) if texts else None
+    return None
+
+
 def route_by_intent(state: AgentState) -> str:
     """根据意图路由到对应 Skill
 
@@ -419,11 +438,28 @@ def route_by_intent(state: AgentState) -> str:
         # 铁律：pending skill 存在时必须回到原 skill，不允许任何意图覆盖
         # 原因：用户点击交互组件发送的值（如 UUID、简短确认文本）可能被意图分类器误判，
         # 导致对话跳到无关 skill 而中断创建/管理流程
-        logger.info(
-            f"[route_by_intent] Session continuity: staying in '{pending_skill}' "
-            f"(intent={intent})"
+        #
+        # 例外（escape hatch）：用户输入长度 > 10 字符且不为纯数字/UUID，
+        # 视为明确的话题切换意图，允许路由到新 skill
+        last_msg = _get_last_human_text(state.get("messages", []))
+        is_short_interact = (
+            not last_msg
+            or len(last_msg) <= 10
+            or last_msg.replace("-", "").replace("_", "").isalnum()  # UUID/纯数字
         )
-        return pending_skill
+        if is_short_interact:
+            logger.info(
+                f"[route_by_intent] Session continuity: staying in '{pending_skill}' "
+                f"(intent={intent}, msg_len={len(last_msg or '')})"
+            )
+            return pending_skill
+        else:
+            logger.info(
+                f"[route_by_intent] Escape hatch: user message length={len(last_msg)} "
+                f"suggests topic switch, routing to intent '{intent}'"
+            )
+            # 清除 pending_skill 避免后续轮次继续锁死
+            state["pending_interact_skill"] = ""
 
     global _INTENT_TO_ROUTE
     if _INTENT_TO_ROUTE is None:

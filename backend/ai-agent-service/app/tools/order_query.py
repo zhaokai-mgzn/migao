@@ -79,11 +79,11 @@ class OrderQueryTool(BaseTool):
             },
             "date_from": {
                 "type": "string",
-                "description": "起始日期，格式 YYYY-MM-DD（可选，仅 action=list 时生效）",
+                "description": "起始日期，格式 YYYYY-MM-DD（可选，仅 action=list 时生效）",
             },
             "date_to": {
                 "type": "string",
-                "description": "截止日期，格式 YYYY-MM-DD（可选，仅 action=list 时生效）",
+                "description": "截止日期，格式 YYYYY-MM-DD（可选，仅 action=list 时生效）",
             },
             "page": {
                 "type": "integer",

@@ -1,5 +1,6 @@
 package com.migao.admin.security;
 
+import com.aliyun.oss.OSS;
 import com.migao.admin.config.GlobalExceptionHandler;
 import com.migao.admin.controller.AuthController;
 import com.migao.admin.controller.ProductController;
@@ -88,6 +89,10 @@ class SecurityConfigTest {
     private com.migao.admin.service.OrderLogisticsService orderLogisticsService;
 
     // 注意：FileStorageService 是接口，LocalFileStorageService 已默认启用，
+    // OSS Client — 防止 OssConfig 尝试创建真实连接（CI 环境无凭证）
+    @MockBean
+    private OSS ossClient;
+
     // OssService 带有 @ConditionalOnBean 在测试环境下不会被加载，
     // 因此不需要 @MockBean FileStorageService / OssService，
     // 避免由于多个实现导致 NoUniqueBeanDefinitionException。

@@ -1,8 +1,14 @@
 package com.migao.admin.service;
 
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
 import com.migao.admin.config.MybatisPlusConfig;
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.entity.Product;
+import com.migao.admin.entity.ProductColor;
+import com.migao.admin.entity.ProductSku;
+import com.migao.admin.entity.Category;
 import com.migao.admin.entity.Order;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.ProductMapper;
@@ -100,6 +106,16 @@ class TenantIsolationTest {
 
     @InjectMocks
     private OrderService orderService;
+
+    @BeforeEach
+    void setUp() {
+        // 初始化 MyBatis-Plus lambda 缓存（CI 环境无 Spring 上下文）
+        MybatisConfiguration configuration = new MybatisConfiguration();
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(configuration, ""), Product.class);
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(configuration, ""), ProductColor.class);
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(configuration, ""), ProductSku.class);
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(configuration, ""), Category.class);
+    }
 
     @AfterEach
     void tearDown() {

@@ -23,9 +23,7 @@ jobs:
 
       - name: Run unit tests
         working-directory: backend/admin-api
-        run: |
-          mvn test -q \
-            -Dtest='!TenantIsolationTest,!SecurityConfigTest'
+        run: mvn test -q
 
   # ============ ai-agent-service 单测全量 ============
   ai-agent-test:

@@ -917,6 +917,13 @@ async def execute_skill(
         )
         if still_in_flow or has_active_tool_calls:
             result["pending_interact_skill"] = skill_name
+            # 持久化到 SessionMemory，确保跨轮路由正确
+            try:
+                from app.memory.session_memory import SessionMemory
+                sm = SessionMemory()
+                await sm.set_pending_skill(session_id, skill_name)
+            except Exception:
+                pass  # 持久化失败不影响本轮响应
 
     # ── 跨轮字段记忆：LLM 从对话中提取所有已讨论字段 ──
     if session_id and final_content and skill_name in creation_skills:
@@ -937,6 +944,11 @@ async def execute_skill(
 
         if created_or_cancelled:
             await sm.clear_collected_fields(session_id)
+            # 同时清除 pending_skill，释放路由锁
+            try:
+                await sm.set_pending_skill(session_id, None)
+            except Exception:
+                pass
         else:
             # LLM 从本轮对话中提取新增字段（轻量, enable_thinking=False）
             try:
