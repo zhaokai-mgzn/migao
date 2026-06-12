@@ -401,14 +401,16 @@ describe('useAuthStore (Zustand auth store)', () => {
     })
 
     it('should set isLoading=true during smsLogin', async () => {
-      mockSmsLogin.mockImplementation(() => new Promise((r) => setTimeout(r, 100)))
-      mockGetUserInfo.mockResolvedValue({ data: { data: {} } })
+      const deferred = { resolve: null as any }
+      const p = new Promise((r) => { deferred.resolve = r })
+      mockSmsLogin.mockReturnValue(p)
 
       const promise = act(async () => {
-        await useAuthStore.getState().smsLogin('13800138000', '123456')
+        useAuthStore.getState().smsLogin('13800138000', '123456').catch(() => {})
       })
 
       expect(useAuthStore.getState().isLoading).toBe(true)
+      deferred.resolve({ data: { data: { accessToken: 't', refreshToken: 'r' } } })
       await promise
     })
 
