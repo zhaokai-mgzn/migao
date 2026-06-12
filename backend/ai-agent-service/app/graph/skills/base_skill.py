@@ -863,6 +863,10 @@ async def execute_skill(
                                 continue
 
                         try:
+                            # 规范化参数：LLM 可能把 array/object 序列化为 JSON 字符串
+                            from app.tools.langchain_adapter import LangChainToolAdapter
+                            tool_args = LangChainToolAdapter._normalize_args(tool_instance, tool_args)
+
                             logger.info(f"[{skill_name}][DIAG] Tool {tool_name} starting execution")
                             result = await asyncio.wait_for(
                                 tool_instance.execute(tool_context, **tool_args),
