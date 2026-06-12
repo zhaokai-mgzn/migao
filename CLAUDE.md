@@ -245,6 +245,7 @@ cd frontend/admin-web && npm run dev
 - 发现 Bug 时：先写一个能复现 Bug 的失败测试 → 修复代码 → 测试通过
 - E2E 测试必须覆盖所有页面的核心交互路径，禁止弱断言
 - 新增交互组件必须覆盖完整点击链路（渲染→点击→发送→验证）
+- **新增数据列表页必须在 `tests/e2e/specs/quality/anti-placeholder.spec.ts` 的 `PAGES` 数组中注册**，确保关键列不会全线显示占位符 `-`
 
 ## 米宝 Skill/Tool 研发标准
 
