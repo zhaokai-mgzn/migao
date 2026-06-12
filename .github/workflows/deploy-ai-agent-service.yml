@@ -46,6 +46,7 @@ jobs:
         working-directory: backend/ai-agent-service
         env:
           DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY || 'ci-dummy-key' }}
+          DASHSCOPE_BASE_URL: https://dashscope.aliyuncs.com/compatible-mode/v1
           DASHSCOPE_MODEL: qwen3.7-max
           DASHSCOPE_EMBEDDING_MODEL: text-embedding-v3
           DASHVECTOR_API_KEY: ci-dummy

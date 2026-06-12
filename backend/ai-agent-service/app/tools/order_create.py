@@ -130,6 +130,7 @@ class OrderCreateTool(BaseTool):
                 success=False,
                 error="权限不足",
                 message="您没有权限创建订单",
+                suggestion="请联系管理员获取订单创建权限",
             )
 
         # 参数校验
@@ -138,6 +139,7 @@ class OrderCreateTool(BaseTool):
                 success=False,
                 error="缺少客户姓名",
                 message="创建订单时必须提供客户姓名（customer_name）",
+                suggestion="请提供客户的姓名",
             )
 
         if not customer_phone:
@@ -145,6 +147,7 @@ class OrderCreateTool(BaseTool):
                 success=False,
                 error="缺少客户电话",
                 message="创建订单时必须提供客户电话（customer_phone）",
+                suggestion="请提供客户的联系电话",
             )
 
         if not items or not isinstance(items, list):
@@ -152,6 +155,7 @@ class OrderCreateTool(BaseTool):
                 success=False,
                 error="缺少商品明细",
                 message="创建订单时必须提供商品明细列表（items）",
+                suggestion="请提供至少一件商品的信息（名称、数量、单价）",
             )
 
         # 校验每个商品项
@@ -238,5 +242,5 @@ class OrderCreateTool(BaseTool):
                 success=False,
                 error="tool_execution_failed",
                 message="创建订单失败，请稍后重试",
-                suggestion="请检查商品信息是否完整，或稍后重试",
+                suggestion="请检查商品信息和客户信息是否完整，确认后重试",
             )

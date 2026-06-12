@@ -136,6 +136,7 @@ class OrderQueryTool(BaseTool):
                 success=False,
                 error="权限不足",
                 message="您没有权限查询订单",
+                suggestion="请联系管理员获取订单查询权限",
             )
 
         # 兼容 LLM 传入 order_id 作为 order_no 的别名
@@ -177,6 +178,7 @@ class OrderQueryTool(BaseTool):
                 success=False,
                 error="tool_execution_failed",
                 message="查询订单时出错，请稍后重试",
+                suggestion="请检查查询条件是否正确，或稍后重试",
             )
 
     async def _statistics(self, context: ToolContext) -> ToolResult:
@@ -291,7 +293,7 @@ class OrderQueryTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message="订单查询失败，请稍后重试",
-                suggestion="请检查参数是否正确，或稍后重试",
+                suggestion="请稍后重试，或尝试输入订单号精确查询",
             )
 
         data = response.get("data", {})
