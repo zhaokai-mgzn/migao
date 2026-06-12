@@ -168,7 +168,7 @@ class EmployeeManageTool(BaseTool):
             logger.error(f"[employee-manage] Error: action={action}, error={type(e).__name__}: {e}")
             return ToolResult(
                 success=False,
-                error=str(e),
+                error="tool_execution_failed",
                 message="员工管理操作失败，请稍后重试",
             )
 

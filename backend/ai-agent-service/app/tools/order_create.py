@@ -236,6 +236,6 @@ class OrderCreateTool(BaseTool):
             )
             return ToolResult(
                 success=False,
-                error=str(e),
+                error="tool_execution_failed",
                 message="创建订单失败，请稍后重试",
             )

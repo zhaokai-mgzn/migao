@@ -173,7 +173,7 @@ class AfterSalesManageTool(BaseTool):
             logger.error(f"After-sales manage error: action={action}, error={e}")
             return ToolResult(
                 success=False,
-                error=str(e),
+                error="tool_execution_failed",
                 message="售后工单操作失败,请稍后重试",
             )
 

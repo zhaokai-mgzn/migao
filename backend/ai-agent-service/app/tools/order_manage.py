@@ -162,7 +162,7 @@ class OrderManageTool(BaseTool):
             logger.error(f"Order manage error: action={action}, order_id={order_id}, error={e}")
             return ToolResult(
                 success=False,
-                error=str(e),
+                error="tool_execution_failed",
                 message="订单操作失败，请稍后重试",
             )
     

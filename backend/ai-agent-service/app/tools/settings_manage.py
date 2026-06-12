@@ -161,7 +161,7 @@ class SettingsManageTool(BaseTool):
             logger.error(f"Settings manage error: action={action}, error={e}")
             return ToolResult(
                 success=False,
-                error=str(e),
+                error="tool_execution_failed",
                 message="系统设置操作失败，请稍后重试",
             )
 

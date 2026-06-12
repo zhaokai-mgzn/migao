@@ -219,7 +219,7 @@ class ProcessingItemQueryTool(BaseTool):
             )
             return ToolResult(
                 success=False,
-                error=str(e),
+                error="tool_execution_failed",
                 message="查询加工项时出错，请稍后重试",
             )
 

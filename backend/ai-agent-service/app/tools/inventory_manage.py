@@ -132,7 +132,7 @@ class InventoryManageTool(BaseTool):
             logger.error(f"Inventory manage error: action={action}, product_id={product_id}, error={e}")
             return ToolResult(
                 success=False,
-                error=str(e),
+                error="tool_execution_failed",
                 message="库存操作失败，请稍后重试",
             )
     

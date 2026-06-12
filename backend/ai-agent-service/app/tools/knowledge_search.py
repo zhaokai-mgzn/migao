@@ -171,7 +171,7 @@ class KnowledgeSearchTool(BaseTool):
             logger.error(f"[knowledge-search] Search failed | tenant={context.tenant_id} error={type(e).__name__}: {e}")
             return ToolResult(
                 success=False,
-                error=str(e),
+                error="tool_execution_failed",
                 message="知识库检索失败，请稍后重试",
             )
     

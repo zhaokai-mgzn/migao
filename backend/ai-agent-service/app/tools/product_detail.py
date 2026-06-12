@@ -137,7 +137,7 @@ class ProductDetailTool(BaseTool):
             logger.error(f"Product detail error: {e}")
             return ToolResult(
                 success=False,
-                error=str(e),
+                error="tool_execution_failed",
                 message="查询商品详情时出错，请稍后重试",
             )
     

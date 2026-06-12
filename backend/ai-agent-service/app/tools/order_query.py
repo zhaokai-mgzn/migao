@@ -175,7 +175,7 @@ class OrderQueryTool(BaseTool):
             logger.error(f"[order-query] Query failed | tenant={context.tenant_id} error={type(e).__name__}: {e}")
             return ToolResult(
                 success=False,
-                error=str(e),
+                error="tool_execution_failed",
                 message="查询订单时出错，请稍后重试",
             )
 

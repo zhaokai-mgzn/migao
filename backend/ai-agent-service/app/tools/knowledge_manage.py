@@ -170,7 +170,7 @@ class KnowledgeManageTool(BaseTool):
             logger.error(f"Knowledge manage error: action={action}, error={e}")
             return ToolResult(
                 success=False,
-                error=str(e),
+                error="tool_execution_failed",
                 message="知识库操作失败，请稍后重试",
             )
 

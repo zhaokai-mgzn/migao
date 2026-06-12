@@ -165,7 +165,7 @@ class ProcessingItemManageTool(BaseTool):
             logger.error(f"[processing-item-manage] Failed: action={action}, error={type(e).__name__}: {e}")
             return ToolResult(
                 success=False,
-                error=str(e),
+                error="tool_execution_failed",
                 message="加工项管理操作失败，请稍后重试",
             )
 

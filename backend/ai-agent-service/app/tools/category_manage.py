@@ -108,7 +108,7 @@ class CategoryManageTool(BaseTool):
             logger.error(f"[category-manage] Failed: action={action}, error={type(e).__name__}: {e}")
             return ToolResult(
                 success=False,
-                error=str(e),
+                error="tool_execution_failed",
                 message="分类管理操作失败，请稍后重试",
             )
 

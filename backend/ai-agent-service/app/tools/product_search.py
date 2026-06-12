@@ -205,7 +205,7 @@ class ProductSearchTool(BaseTool):
             logger.error(f"[product-search] Search failed | tenant={context.tenant_id} error={type(e).__name__}: {e}")
             return ToolResult(
                 success=False,
-                error=str(e),
+                error="tool_execution_failed",
                 message="搜索商品时出错，请稍后重试",
             )
     

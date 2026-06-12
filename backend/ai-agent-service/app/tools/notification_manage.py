@@ -170,7 +170,7 @@ class NotificationManageTool(BaseTool):
             logger.error(f"Notification manage error: action={action}, error={e}")
             return ToolResult(
                 success=False,
-                error=str(e),
+                error="tool_execution_failed",
                 message="通知操作失败，请稍后重试",
             )
 

@@ -46,7 +46,24 @@ jobs:
 
       - name: Run unit tests
         working-directory: backend/ai-agent-service
-        run: .venv/bin/python -m pytest tests/ -v --tb=short -q --ignore=tests/test_post_deploy_verify.py --ignore=tests/manual_test_pe_flow.py --timeout=30
+        env:
+          DASHSCOPE_API_KEY: ci-dummy
+          DASHSCOPE_MODEL: qwen3.7-max
+          DASHSCOPE_EMBEDDING_MODEL: text-embedding-v3
+          DASHVECTOR_API_KEY: ci-dummy
+          DASHVECTOR_ENDPOINT: https://ci-dummy.example.com
+          DASHVECTOR_COLLECTION: ci
+          ADMIN_API_BASE_URL: http://localhost:8080
+          SERVICE_TOKEN: ci-dummy
+          JWT_PUBLIC_KEY: ci-dummy
+          LOGISTICS_API_URL: https://ci-dummy.example.com
+          LOGISTICS_APPCODE: ci-dummy
+          SSE_TIMEOUT: '300'
+          SSE_PING_INTERVAL: '30'
+          CORS_ALLOWED_ORIGINS: http://localhost:3000
+          DATABASE_URL: sqlite:///ci.db
+          REDIS_URL: redis://localhost:6379/0
+        run: python -m pytest tests/ -v --tb=short -q --ignore=tests/test_post_deploy_verify.py --ignore=tests/manual_test_pe_flow.py --timeout=30
 
   # ============ admin-web 类型检查 + 单测 ============
   admin-web-test:
