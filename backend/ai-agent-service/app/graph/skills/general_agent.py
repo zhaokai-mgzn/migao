@@ -8,7 +8,6 @@ from app.graph.state import AgentState
 from app.graph.skills.base_skill import execute_skill
 from app.graph.skills.skill_config import SkillConfig
 
-
 # 通用 Agent 可用的 Tool 列表 — 覆盖全部只读查询 + 客服工作台 + 交互组件
 # 写操作（product_manage, order_create 等）仅限领域 Skill 使用
 GENERAL_TOOLS = [
@@ -30,11 +29,11 @@ GENERAL_TOOLS = [
 # 通用 Agent System Prompt — 复用 CustomerServiceAgent 的完整 Prompt 结构
 GENERAL_SYSTEM_PROMPT = """<system_prompt>
 <role>
-你是“米宝”，词元通达商家管理后台的全能 AI 管理助手。你服务于商家后台的管理员、运营、客服、库管、人事等全部内部同事。你的能力覆盖：商品管理、订单管理、客户管理、员工管理、角色权限、系统设置、AI 配置、通知管理、快捷回复、数据看板、客服会话、售后工单、加工项管理、商品分类、库存管理、物流跟踪等全部商家后台事务。你不应出现“我只负责某某”“这不是我的职责”之类的限制性表达，遇到超出当前工具能力的问题时，也应以全能助手身份承接、建议同事重新描述，或提供可能的处理思路。
+你是米宝，商家后台的通用查询助手。你的能力覆盖全领域查询，不应出现"我只负责某某"之类的限制性表达。
 </role>
 
 <core_principles>
-1. 准确性优先：不确定时明确告知同事“我需要帮你核实一下”
+1. 准确性优先：不确定时明确告知同事"我需要帮你核实一下"
 2. 事实性数据（价格、库存、订单状态、物流信息）：必须通过工具查询，绝不编造
 3. 通用家纺知识（面料、风格、测量、保养）：可基于专业知识回答，需注明为通用建议
 4. 本店特有信息（售后政策、加工定价、促销活动）：必须通过工具查询
@@ -81,28 +80,6 @@ GENERAL_SYSTEM_PROMPT = """<system_prompt>
 </output_format>
 </system_prompt>"""
 
-
-async def general_node(state: AgentState) -> dict:
-    """通用 Agent 节点函数
-
-    兜底节点，处理低置信度和跨领域问题。拥有全部 Tool。
-
-    Args:
-        state: 当前图状态
-
-    Returns:
-        dict: 更新的 state 字段
-    """
-    return await execute_skill(
-        state=state,
-        skill_name="general",
-        tool_names=GENERAL_TOOLS,
-        system_prompt=GENERAL_SYSTEM_PROMPT,
-        max_iterations=3,  # 兜底节点限制迭代，避免超时螺旋
-    )
-
-
-# ────────────── SkillConfig 声明 ──────────────
 GENERAL_SKILL_CONFIG = SkillConfig(
     name="general",
     domain="general",

@@ -37,6 +37,22 @@ export default function OrderItemList({ items, className }: OrderItemListProps) 
                 {item.sku && (
                   <span className="text-xs text-gray-400">SKU: {item.sku}</span>
                 )}
+                {/* 销售信息：颜色、销售方式、门幅 */}
+                {item.processingInfo && typeof item.processingInfo === 'object' && (
+                  <>
+                    {(item.processingInfo as any).colorName && (
+                      <span className="text-xs text-blue-600 font-medium">{(item.processingInfo as any).colorName}</span>
+                    )}
+                    {(item.processingInfo as any).sellingMethod && (
+                      <span className="text-xs text-gray-400">
+                        {(() => { const m: Record<string, string> = { bulk_cut: '散剪', full_roll: '整卷', per_meter: '按米', per_piece: '按件' }; return m[(item.processingInfo as any).sellingMethod] || (item.processingInfo as any).sellingMethod })()}
+                      </span>
+                    )}
+                    {(item.processingInfo as any).doorWidth && (
+                      <span className="text-xs text-gray-400">门幅: {(item.processingInfo as any).doorWidth}</span>
+                    )}
+                  </>
+                )}
                 {item.specification && (
                   <span className="text-xs text-gray-400">规格: {item.specification}</span>
                 )}

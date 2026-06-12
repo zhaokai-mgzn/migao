@@ -213,7 +213,8 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
                                     item.getQuantity(),
                                     item.getUnitPrice(),
                                     itemAmount,
-                                    item.getSubtotal()
+                                    item.getSubtotal(),
+                                    item.getProcessingInfo()  // 销售信息
                             );
                         })
                         .collect(Collectors.toList()));

@@ -9,7 +9,6 @@ from app.graph.state import AgentState
 from app.graph.skills.base_skill import execute_skill
 from app.graph.skills.skill_config import SkillConfig
 
-
 # 商品 Skill 可用的 Tool 列表（查询 + 写操作）
 PRODUCT_TOOLS = [
     "product_search",
@@ -44,16 +43,6 @@ PRODUCT_SYSTEM_PROMPT = """你是"米宝"，专注商品/库存/分类/加工项
 - 展示分类：分类名、父级、排序、启用状态
 - 语气：专业高效，同事间协作风格
 """
-
-
-async def product_node(state: AgentState) -> dict:
-    return await execute_skill(
-        state=state,
-        skill_name="product",
-        tool_names=PRODUCT_TOOLS,
-        system_prompt=PRODUCT_SYSTEM_PROMPT,
-    )
-
 
 PRODUCT_SKILL_CONFIG = SkillConfig(
     name="product",

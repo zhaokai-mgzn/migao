@@ -129,13 +129,11 @@ class TestGraphImports:
     def test_skills_init_exports(self):
         """app.graph.skills.__init__ 导出正确"""
         from app.graph.skills import (
-            order_node, product_node, knowledge_node,
-            aftersales_node, general_node,
+            SkillConfig, SkillRegistry, get_skill_registry, reset_skill_registry,
             execute_skill, get_skill_llm, build_tool_context,
         )
         assert all([
-            order_node, product_node, knowledge_node,
-            aftersales_node, general_node,
+            SkillConfig, SkillRegistry, get_skill_registry, reset_skill_registry,
             execute_skill, get_skill_llm, build_tool_context,
         ])
 

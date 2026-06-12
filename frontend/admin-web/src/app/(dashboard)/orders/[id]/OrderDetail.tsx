@@ -558,9 +558,18 @@ function ProductTable({ groups }: { groups: ProductGroup[] }) {
                     {group.productName}
                   </td>
                 )}
-                <Td>{row.productCode || '-'}</Td>
-                <Td>{row.color || '-'}</Td>
-                <Td>{row.specification || '-'}</Td>
+                <Td>{row.sku || '-'}</Td>
+                <Td>{(row.processingInfo as any)?.colorName || '-'}</Td>
+                <Td>
+                  {(() => {
+                    const pi = row.processingInfo as any
+                    const sm: Record<string, string> = { bulk_cut: '散剪', full_roll: '整卷', per_meter: '按米', per_piece: '按件' }
+                    const parts: string[] = []
+                    if (pi?.sellingMethod) parts.push(sm[pi.sellingMethod] || pi.sellingMethod)
+                    if (pi?.doorWidth) parts.push(`门幅${pi.doorWidth}`)
+                    return parts.join(' / ') || '-'
+                  })()}
+                </Td>
                 <Td align="right" className="text-red-500 font-medium">
                   {formatAmount(row.unitPrice)}
                 </Td>

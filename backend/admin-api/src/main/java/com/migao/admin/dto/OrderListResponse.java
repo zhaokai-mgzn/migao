@@ -100,5 +100,7 @@ public class OrderListResponse {
         private BigDecimal amount;
         /** 小计（数据库 subtotal 字段，可能为 null） */
         private BigDecimal subtotal;
+        /** 销售信息（颜色、销售方式、门幅、SKU 等） */
+        private Object processingInfo;
     }
 }

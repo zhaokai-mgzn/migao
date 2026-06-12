@@ -8,7 +8,6 @@ from app.graph.state import AgentState
 from app.graph.skills.base_skill import execute_skill
 from app.graph.skills.skill_config import SkillConfig
 
-
 # 客服通用 Skill 可用的 Tool 列表 — 全部客服可用工具（仅查询类）
 CUSTOMER_GENERAL_TOOLS = [
     "product_search",
@@ -59,27 +58,6 @@ CUSTOMER_GENERAL_SYSTEM_PROMPT = """你是"小布"，米高窗帘的智能客服
 - 使用亲切自然的语气
 """
 
-
-async def customer_general_skill_node(state: AgentState) -> dict:
-    """客服通用兜底 Skill 节点函数
-
-    面向 C 端消费者，综合处理各类咨询、售后引导、转人工。
-
-    Args:
-        state: 当前图状态
-
-    Returns:
-        dict: 更新的 state 字段
-    """
-    return await execute_skill(
-        state=state,
-        skill_name="customer_general",
-        tool_names=CUSTOMER_GENERAL_TOOLS,
-        system_prompt=CUSTOMER_GENERAL_SYSTEM_PROMPT,
-    )
-
-
-# ────────────── SkillConfig 声明 ──────────────
 CUSTOMER_GENERAL_SKILL_CONFIG = SkillConfig(
     name="customer_general",
     domain="general",

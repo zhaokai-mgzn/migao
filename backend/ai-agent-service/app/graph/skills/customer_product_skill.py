@@ -8,7 +8,6 @@ from app.graph.state import AgentState
 from app.graph.skills.base_skill import execute_skill
 from app.graph.skills.skill_config import SkillConfig
 
-
 # 客服商品咨询 Skill 可用的 Tool 列表（仅查询类）
 CUSTOMER_PRODUCT_TOOLS = ["product_search", "product_detail"]
 
@@ -31,27 +30,6 @@ CUSTOMER_PRODUCT_SYSTEM_PROMPT = """你是"小布"，米高窗帘的智能客服
 - 使用轻松自然的语气，适当使用"亲"等亲切称呼
 """
 
-
-async def customer_product_skill_node(state: AgentState) -> dict:
-    """客服商品咨询 Skill 节点函数
-
-    面向 C 端消费者，处理商品搜索和详情查询请求。
-
-    Args:
-        state: 当前图状态
-
-    Returns:
-        dict: 更新的 state 字段
-    """
-    return await execute_skill(
-        state=state,
-        skill_name="customer_product",
-        tool_names=CUSTOMER_PRODUCT_TOOLS,
-        system_prompt=CUSTOMER_PRODUCT_SYSTEM_PROMPT,
-    )
-
-
-# ────────────── SkillConfig 声明 ──────────────
 CUSTOMER_PRODUCT_SKILL_CONFIG = SkillConfig(
     name="customer_product",
     domain="product",

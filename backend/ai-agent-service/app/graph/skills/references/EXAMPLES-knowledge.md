@@ -1,5 +1,7 @@
 # Knowledge Skill — Few-shot 示例
 
+> ⚠️ RAG 知识库当前禁用。knowledge_search 工具未注册。启用 RAG 后取消此注释。
+
 ## ✅ 正确示例
 
 ### 例1: 查面料知识
