@@ -6,11 +6,22 @@ AI 智能客服系统 - LangChain Tool 适配器
 
 import json
 import time
-from typing import Any, Optional
+from typing import Any, Optional, Annotated
 from loguru import logger
 from pydantic import BaseModel, Field, create_model
+from pydantic.functional_validators import BeforeValidator
 
 from app.tools.base import BaseTool, ToolContext, ToolResult
+
+
+def _json_string_parser(value: Any) -> Any:
+    """BeforeValidator: LLM传了JSON字符串时自动解析为list/dict"""
+    if isinstance(value, str) and value.strip().startswith(("[", "{")):
+        try:
+            return json.loads(value)
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return value
 
 
 class LangChainToolAdapter:
@@ -51,16 +62,21 @@ class LangChainToolAdapter:
             py_type = type_map.get(field_schema.get("type", "string"), str)
             description = field_schema.get("description", "")
             default = field_schema.get("default", ...)
-            
+
+            # array/object 字段加 BeforeValidator，在 Pydantic 类型强制前解析 JSON 字符串
+            # LLM 可能把 colors='[\"米白\"]' 传成字符串，不处理 Pydantic 会用 list(str) 逐字符拆分
+            validators = []
+            if py_type in (list, dict):
+                validators.append(_json_string_parser)
+
             if field_name in required_fields:
                 field_definitions[field_name] = (
-                    py_type,
+                    Annotated[py_type, *validators] if validators else py_type,
                     Field(description=description),
                 )
             else:
-                # 可选参数
                 field_definitions[field_name] = (
-                    Optional[py_type],
+                    Annotated[Optional[py_type], *validators] if validators else Optional[py_type],
                     Field(default=default if default is not ... else None, description=description),
                 )
         
