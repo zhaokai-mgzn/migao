@@ -2,7 +2,7 @@
  * Auth Helper — E2E authentication utilities
  *
  * Mirrors the auth flow in src/store/auth.ts and src/app/login/page.tsx:
- *   - POST /api/auth/admin/login with { username, password, tenantId }
+ *   - POST /api/auth/sms/login with { phone, code }
  *   - zustand persist store key: 'auth-storage' (localStorage)
  *   - Cookie name: 'access_token'
  */
@@ -125,44 +125,3 @@ export async function injectAuth(
   }, tokens.accessToken)
 }
 
-/**
- * Full UI login flow through the login page (password tab).
- *
- * Login page structure (src/app/login/page.tsx):
- *   - Two tabs: "企业管理员登录" (SMS) | "员工登录" (password)
- *   - Password tab fields: #tenantCode, #username, #password
- *   - Submit button text: "登 录"
- *   - On success: redirects to /dashboard (or callbackUrl)
- */
-export async function loginViaUI(
-  page: Page,
-  username: string,
-  password: string,
-  options?: { tenantCode?: string; expectSuccess?: boolean },
-): Promise<void> {
-  const { tenantCode = '', expectSuccess = true } = options ?? {}
-
-  await page.goto('/login')
-
-  // Click the "员工登录" tab to switch to password login
-  await page.getByRole('button', { name: /员工登录/ }).click()
-
-  // Fill tenant code if provided
-  if (tenantCode) {
-    await page.fill('#tenantCode', tenantCode)
-  }
-
-  // Fill username and password
-  await page.fill('#username', username)
-  await page.fill('#password', password)
-
-  // Click the submit button — text is "登 录" (with a space)
-  // Use a flexible locator that handles both "登 录" and "登录中..."
-  const submitBtn = page.locator('form button[type="submit"]').last()
-  await submitBtn.click()
-
-  if (expectSuccess) {
-    // Wait for successful redirect to dashboard
-    await page.waitForURL(/\/dashboard/, { timeout: 15_000 })
-  }
-}

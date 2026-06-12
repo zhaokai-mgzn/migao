@@ -139,8 +139,7 @@ describe('ProductsPage', () => {
     })
   })
 
-  it.skip('should show empty state when no products and no filters', async () => {
-    // TODO: Fix this test - ProductTable mock not rendering empty state correctly
+  it('should show empty state when no products and no filters', async () => {
     mockGetProducts.mockResolvedValue({
       data: { data: { items: [], total: 0 } },
     })

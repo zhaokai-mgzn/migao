@@ -3,6 +3,7 @@ import { act } from '@testing-library/react'
 
 // Mock authApi
 const mockLogin = vi.fn()
+const mockSmsLogin = vi.fn()
 const mockLogout = vi.fn()
 const mockRefreshToken = vi.fn()
 const mockGetUserInfo = vi.fn()
@@ -10,6 +11,7 @@ const mockGetUserInfo = vi.fn()
 vi.mock('@/lib/api', () => ({
   authApi: {
     login: (...args: any[]) => mockLogin(...args),
+    smsLogin: (...args: any[]) => mockSmsLogin(...args),
     logout: (...args: any[]) => mockLogout(...args),
     refreshToken: (...args: any[]) => mockRefreshToken(...args),
     getUserInfo: (...args: any[]) => mockGetUserInfo(...args),
@@ -367,6 +369,102 @@ describe('useAuthStore (Zustand auth store)', () => {
 
       expect(useAuthStore.getState().accessToken).toBeNull()
       expect(useAuthStore.getState().isAuthenticated).toBe(false)
+    })
+  })
+
+  describe('smsLogin', () => {
+    it('should set tokens and isAuthenticated on successful SMS login', async () => {
+      const phone = '13800138000'
+      const code = '123456'
+      mockSmsLogin.mockResolvedValue({
+        data: {
+          data: {
+            accessToken: 'sms-access-token',
+            refreshToken: 'sms-refresh-token',
+          },
+        },
+      })
+      mockGetUserInfo.mockResolvedValue({
+        data: {
+          data: { id: '1', username: 'admin', name: '管理员', roles: ['admin'] },
+        },
+      })
+
+      await act(async () => {
+        await useAuthStore.getState().smsLogin(phone, code)
+      })
+
+      expect(useAuthStore.getState().accessToken).toBe('sms-access-token')
+      expect(useAuthStore.getState().refreshToken).toBe('sms-refresh-token')
+      expect(useAuthStore.getState().isAuthenticated).toBe(true)
+      expect(mockSmsLogin).toHaveBeenCalledWith(phone, code)
+    })
+
+    it('should set isLoading=true during smsLogin', async () => {
+      mockSmsLogin.mockImplementation(() => new Promise((r) => setTimeout(r, 100)))
+      mockGetUserInfo.mockResolvedValue({ data: { data: {} } })
+
+      const promise = act(async () => {
+        await useAuthStore.getState().smsLogin('13800138000', '123456')
+      })
+
+      expect(useAuthStore.getState().isLoading).toBe(true)
+      await promise
+    })
+
+    it('should throw on failed SMS login and not set auth', async () => {
+      mockSmsLogin.mockRejectedValue(new Error('验证码错误'))
+
+      await expect(
+        act(async () => {
+          await useAuthStore.getState().smsLogin('13800138000', '000000')
+        })
+      ).rejects.toThrow()
+
+      expect(useAuthStore.getState().isAuthenticated).toBe(false)
+      expect(useAuthStore.getState().accessToken).toBeNull()
+    })
+  })
+
+  describe('cross-tenant re-login', () => {
+    it('should fully replace state when logging in as different tenant', async () => {
+      // Initial login as tenant A
+      act(() => {
+        useAuthStore.setState({
+          user: { id: '1', username: 'adminA', tenantId: 'tenant_A' } as any,
+          accessToken: 'tenant-A-token',
+          refreshToken: 'tenant-A-refresh',
+          isAuthenticated: true,
+        })
+      })
+
+      // Clear auth (simulates logout)
+      act(() => {
+        useAuthStore.getState().clearAuth()
+      })
+
+      // Login as tenant B
+      mockSmsLogin.mockResolvedValue({
+        data: {
+          data: {
+            accessToken: 'tenant-B-token',
+            refreshToken: 'tenant-B-refresh',
+          },
+        },
+      })
+      mockGetUserInfo.mockResolvedValue({
+        data: {
+          data: { id: '2', username: 'adminB', roles: ['admin'] },
+        },
+      })
+
+      await act(async () => {
+        await useAuthStore.getState().smsLogin('13900000001', '123456')
+      })
+
+      const state = useAuthStore.getState()
+      expect(state.accessToken).toBe('tenant-B-token')
+      expect(state.accessToken).not.toBe('tenant-A-token')
     })
   })
 })

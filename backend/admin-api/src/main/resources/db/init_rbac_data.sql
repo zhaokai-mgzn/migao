@@ -32,15 +32,15 @@ INSERT INTO roles (id, tenant_id, name, code, description, status, deleted, crea
 -- ('ur_admin_001', 'DEFAULT', 'user_admin_001', 'role_admin', 0, NOW());
 
 -- --------------------------------------------
--- 4. 默认管理员用户（密码: admin123）
--- BCrypt 加密后的密码: $2a$10$N.zmdr9k7uOCQb376NoUnuTJ8iAt6Z5EHsM8lE9lBOsl7iAt6Z5EO
+-- 4. 默认管理员用户（手机号: 13800138000，短信验证码: 123456）
+-- BCrypt 加密后的密码: admin123
 -- 注意：请先确认 users 表的字段结构，然后插入
 -- --------------------------------------------
 
 -- 插入默认管理员用户（如果 users 表结构匹配）
--- 密码: admin123
+-- 手机号: 13800138000  短信验证码: 123456（dev 万能码）
 INSERT INTO users (id, tenant_id, phone, password_hash, nickname, avatar, role, session_ttl, status, deleted, created_at, updated_at) VALUES
-('user_admin_001', 'DEFAULT', 'admin', '$2a$10$N.zmdr9k7uOCQb376NoUnuTJ8iAt6Z5EHsM8lE9lBOsl7iAt6Z5EO', '系统管理员', NULL, 'admin', 7200, 'active', 0, NOW(), NOW())
+('user_admin_001', 'DEFAULT', '13800138000', '$2a$10$N.zmdr9k7uOCQb376NoUnuTJ8iAt6Z5EHsM8lE9lBOsl7iAt6Z5EO', '系统管理员', NULL, 'admin', 7200, 'active', 0, NOW(), NOW())
 ON CONFLICT (id) DO NOTHING;
 
 -- 为管理员用户关联管理员角色
@@ -52,9 +52,9 @@ ON CONFLICT DO NOTHING;
 -- 5. 测试用户数据（可选）
 -- --------------------------------------------
 
--- 运营人员账号（密码: operator123）
+-- 运营人员账号（手机号: 13900139000，短信验证码: 123456）
 -- INSERT INTO users (id, tenant_id, phone, password_hash, nickname, avatar, role, session_ttl, status, deleted, created_at, updated_at) VALUES
--- ('user_operator_001', 'DEFAULT', 'operator', '$2a$10$N.zmdr9k7uOCQb376NoUnuTJ8iAt6Z5EHsM8lE9lBOsl7iAt6Z5EO', '运营人员', NULL, 'operator', 7200, 'active', 0, NOW(), NOW());
+-- ('user_operator_001', 'DEFAULT', '13900139000', '$2a$10$N.zmdr9k7uOCQb376NoUnuTJ8iAt6Z5EHsM8lE9lBOsl7iAt6Z5EO', '运营人员', NULL, 'operator', 7200, 'active', 0, NOW(), NOW());
 
 -- INSERT INTO user_roles (id, tenant_id, user_id, role_id, deleted, created_at) VALUES
 -- ('ur_operator_001', 'DEFAULT', 'user_operator_001', 'role_operator', 0, NOW());

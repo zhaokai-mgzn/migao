@@ -15,9 +15,6 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     API_PREFIX: str = "/api"
 
-    # CORS 允许的前端域名（逗号分隔）
-    CORS_ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:3001,http://127.0.0.1:3000,http://127.0.0.1:3001"
-
     # 服务器配置
     HOST: str = "0.0.0.0"
     PORT: int = 8000

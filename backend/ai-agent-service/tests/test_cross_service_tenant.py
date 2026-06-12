@@ -101,14 +101,14 @@ class TestHttpClientTenantHeaders:
         mock_response.raise_for_status = MagicMock()
 
         mock_httpx_client = AsyncMock()
-        mock_httpx_client.get = AsyncMock(return_value=mock_response)
+        mock_httpx_client.request = AsyncMock(return_value=mock_response)
         mock_httpx_client.is_closed = False
         client._client = mock_httpx_client
 
         await client.get("/api/admin/products", tenant_id=TENANT_A, user_id=USER_A)
 
         # 验证请求 headers 包含租户信息
-        call_kwargs = mock_httpx_client.get.call_args
+        call_kwargs = mock_httpx_client.request.call_args
         sent_headers = call_kwargs.kwargs.get("headers", {})
         assert sent_headers["X-Tenant-Id"] == str(TENANT_A)
         assert sent_headers["X-Service-Token"] == SERVICE_TOKEN
@@ -126,17 +126,17 @@ class TestHttpClientTenantHeaders:
         mock_response.raise_for_status = MagicMock()
 
         mock_httpx_client = AsyncMock()
-        mock_httpx_client.get = AsyncMock(return_value=mock_response)
+        mock_httpx_client.request = AsyncMock(return_value=mock_response)
         mock_httpx_client.is_closed = False
         client._client = mock_httpx_client
 
         # 租户 A 请求
         await client.get("/api/admin/products", tenant_id=TENANT_A)
-        headers_a = mock_httpx_client.get.call_args_list[0].kwargs["headers"]
+        headers_a = mock_httpx_client.request.call_args_list[0].kwargs["headers"]
 
         # 租户 B 请求
         await client.get("/api/admin/products", tenant_id=TENANT_B)
-        headers_b = mock_httpx_client.get.call_args_list[1].kwargs["headers"]
+        headers_b = mock_httpx_client.request.call_args_list[1].kwargs["headers"]
 
         assert headers_a["X-Tenant-Id"] == str(TENANT_A)
         assert headers_b["X-Tenant-Id"] == str(TENANT_B)
@@ -154,7 +154,7 @@ class TestHttpClientTenantHeaders:
         mock_response.raise_for_status = MagicMock()
 
         mock_httpx_client = AsyncMock()
-        mock_httpx_client.post = AsyncMock(return_value=mock_response)
+        mock_httpx_client.request = AsyncMock(return_value=mock_response)
         mock_httpx_client.is_closed = False
         client._client = mock_httpx_client
 
@@ -165,7 +165,7 @@ class TestHttpClientTenantHeaders:
             user_id=USER_A,
         )
 
-        sent_headers = mock_httpx_client.post.call_args.kwargs["headers"]
+        sent_headers = mock_httpx_client.request.call_args.kwargs["headers"]
         assert sent_headers["X-Tenant-Id"] == str(TENANT_A)
         assert sent_headers["X-User-Id"] == USER_A
 

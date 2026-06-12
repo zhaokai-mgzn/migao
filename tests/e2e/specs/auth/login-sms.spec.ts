@@ -102,33 +102,4 @@ test.describe('登录页面 - 短信验证码登录', () => {
     await expect(page.smsSubmitButton).toContainText(/登.*录/)
   })
 
-  test('切换到员工登录 Tab', async () => {
-    await page.switchToPasswordTab()
-    await page.expectPasswordTabActive()
-    await expect(page.page.getByText('员工登录').last()).toBeVisible()
-  })
-
-  test('员工登录 Tab 包含企业编号、用户名、密码字段', async () => {
-    await page.switchToPasswordTab()
-    await expect(page.tenantCodeInput).toBeVisible()
-    await expect(page.usernameInput).toBeVisible()
-    await expect(page.passwordInput).toBeVisible()
-  })
-
-  test('员工登录密码字段支持显示/隐藏', async () => {
-    await page.switchToPasswordTab()
-    await expect(page.passwordInput).toHaveAttribute('type', 'password')
-    await page.togglePasswordVisibility()
-    await expect(page.passwordInput).toHaveAttribute('type', 'text')
-  })
-
-  test('企业入驻链接可见', async () => {
-    await page.expectRegisterLinkVisible()
-    await expect(page.registerLink).toHaveAttribute('href', '/register')
-  })
-
-  test('记住我复选框默认为选中状态', async () => {
-    await page.switchToPasswordTab()
-    await expect(page.rememberMeCheckbox).toBeChecked()
-  })
 })

@@ -12,12 +12,13 @@ import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
 from langchain_core.messages import HumanMessage, AIMessage
 
-from app.graph.skills.order_skill import ORDER_TOOLS, order_node
-from app.graph.skills.product_skill import PRODUCT_TOOLS, product_node
-from app.graph.skills.knowledge_skill import KNOWLEDGE_TOOLS, knowledge_node
-from app.graph.skills.aftersales_skill import AFTERSALES_TOOLS, aftersales_node
-from app.graph.skills.general_agent import GENERAL_TOOLS, general_node
+from app.graph.skills.order_skill import ORDER_TOOLS, ORDER_SKILL_CONFIG
+from app.graph.skills.product_skill import PRODUCT_TOOLS, PRODUCT_SKILL_CONFIG
+from app.graph.skills.knowledge_skill import KNOWLEDGE_TOOLS, KNOWLEDGE_SKILL_CONFIG
+from app.graph.skills.aftersales_skill import AFTERSALES_TOOLS, AFTERSALES_SKILL_CONFIG
+from app.graph.skills.general_agent import GENERAL_TOOLS, GENERAL_SKILL_CONFIG
 from app.graph.skills.base_skill import build_tool_context, execute_skill, _extract_content
+from app.graph.skills.skill_registry import SkillRegistry
 from app.tools.base import ToolContext
 
 
@@ -273,58 +274,63 @@ class TestExecuteSkill:
 
 
 
-# ========== Skill 节点调用测试 ==========
+# ========== Skill 节点生成测试 ==========
 
 class TestSkillNodes:
-    """各 Skill 节点正确调用 execute_skill"""
+    """各 Skill 节点通过 create_node_function 正确生成并调用 execute_skill"""
 
-    @patch("app.graph.skills.order_skill.execute_skill")
+    @patch("app.graph.skills.skill_registry.execute_skill")
     async def test_order_node(self, mock_execute):
-        """order_node 调用 execute_skill"""
+        """create_node_function(order) 生成可调用的节点函数"""
         mock_execute.return_value = {"final_answer": "ok", "skill_used": "order"}
         state = _make_state()
-        result = await order_node(state)
+        node_fn = SkillRegistry().create_node_function(ORDER_SKILL_CONFIG, persona="mibao")
+        result = await node_fn(state)
         mock_execute.assert_called_once()
         call_kwargs = mock_execute.call_args
         assert call_kwargs.kwargs["skill_name"] == "order"
         assert call_kwargs.kwargs["tool_names"] == ORDER_TOOLS
 
-    @patch("app.graph.skills.product_skill.execute_skill")
+    @patch("app.graph.skills.skill_registry.execute_skill")
     async def test_product_node(self, mock_execute):
-        """product_node 调用 execute_skill"""
+        """create_node_function(product) 生成可调用的节点函数"""
         mock_execute.return_value = {"final_answer": "ok", "skill_used": "product"}
         state = _make_state()
-        result = await product_node(state)
+        node_fn = SkillRegistry().create_node_function(PRODUCT_SKILL_CONFIG, persona="mibao")
+        result = await node_fn(state)
         mock_execute.assert_called_once()
         assert mock_execute.call_args.kwargs["skill_name"] == "product"
         assert mock_execute.call_args.kwargs["tool_names"] == PRODUCT_TOOLS
 
-    @patch("app.graph.skills.knowledge_skill.execute_skill")
+    @patch("app.graph.skills.skill_registry.execute_skill")
     async def test_knowledge_node(self, mock_execute):
-        """knowledge_node 调用 execute_skill"""
+        """create_node_function(knowledge) 生成可调用的节点函数"""
         mock_execute.return_value = {"final_answer": "ok", "skill_used": "knowledge"}
         state = _make_state()
-        result = await knowledge_node(state)
+        node_fn = SkillRegistry().create_node_function(KNOWLEDGE_SKILL_CONFIG, persona="mibao")
+        result = await node_fn(state)
         mock_execute.assert_called_once()
         assert mock_execute.call_args.kwargs["skill_name"] == "knowledge"
         assert mock_execute.call_args.kwargs["tool_names"] == KNOWLEDGE_TOOLS
 
-    @patch("app.graph.skills.aftersales_skill.execute_skill")
+    @patch("app.graph.skills.skill_registry.execute_skill")
     async def test_aftersales_node(self, mock_execute):
-        """aftersales_node 调用 execute_skill"""
+        """create_node_function(aftersales) 生成可调用的节点函数"""
         mock_execute.return_value = {"final_answer": "ok", "skill_used": "aftersales"}
         state = _make_state()
-        result = await aftersales_node(state)
+        node_fn = create_node_function(AFTERSALES_SKILL_CONFIG, persona="mibao")
+        result = await node_fn(state)
         mock_execute.assert_called_once()
         assert mock_execute.call_args.kwargs["skill_name"] == "aftersales"
         assert mock_execute.call_args.kwargs["tool_names"] == AFTERSALES_TOOLS
 
-    @patch("app.graph.skills.general_agent.execute_skill")
+    @patch("app.graph.skills.skill_registry.execute_skill")
     async def test_general_node(self, mock_execute):
-        """general_node 调用 execute_skill"""
+        """create_node_function(general) 生成可调用的节点函数"""
         mock_execute.return_value = {"final_answer": "ok", "skill_used": "general"}
         state = _make_state()
-        result = await general_node(state)
+        node_fn = create_node_function(GENERAL_SKILL_CONFIG, persona="mibao")
+        result = await node_fn(state)
         mock_execute.assert_called_once()
         assert mock_execute.call_args.kwargs["skill_name"] == "general"
         assert mock_execute.call_args.kwargs["tool_names"] == GENERAL_TOOLS

@@ -54,47 +54,6 @@ vi.mock('@/types', () => ({
   },
 }))
 
-// Mock UI components
-vi.mock('@/components/ui', () => ({
-  Table: ({ columns, dataSource, loading, rowKey, onRowClick }: any) => (
-    <div data-testid="data-table">
-      {loading && <div data-testid="table-loading">加载中...</div>}
-      {!loading && dataSource.length === 0 && <div>暂无数据</div>}
-      {dataSource.map((record: any) => (
-        <div
-          key={typeof rowKey === 'function' ? rowKey(record) : record[rowKey]}
-          data-testid={`customer-${record.id}`}
-          onClick={() => onRowClick?.(record)}
-        >
-          <span>{record.name}</span>
-          <span>{record.phone}</span>
-        </div>
-      ))}
-    </div>
-  ),
-  Pagination: ({ current, total }: any) => (
-    <div data-testid="pagination">第 {current} 页, 共 {total} 条</div>
-  ),
-  Modal: ({ open, onClose, title, children, footer }: any) => (
-    open ? (
-      <div data-testid="modal" role="dialog">
-        <h2>{title}</h2>
-        {children}
-        <div data-testid="modal-footer">{footer}</div>
-      </div>
-    ) : null
-  ),
-  Button: ({ children, onClick, ...props }: any) => <button onClick={onClick} {...props}>{children}</button>,
-  Badge: ({ children, variant }: any) => <span data-variant={variant}>{children}</span>,
-  SearchBar: ({ fields, onSearch, onReset, loading }: any) => (
-    <div data-testid="search-bar">
-      {fields.map((f: any) => <span key={f.key}>{f.label}</span>)}
-      <button onClick={() => onSearch({})}>搜索</button>
-      <button onClick={onReset}>重置</button>
-    </div>
-  ),
-}))
-
 // Need to re-export TableColumn type
 vi.mock('@/components/ui', async (importOriginal) => {
   return {
