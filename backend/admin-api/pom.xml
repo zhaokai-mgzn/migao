@@ -11,7 +11,7 @@
         <relativePath/>
     </parent>
 
-    <groupId>com.aikf</groupId>
+    <groupId>com.migao</groupId>
     <artifactId>admin-api</artifactId>
     <version>1.0.0-SNAPSHOT</version>
     <name>AI Customer Service - Admin API</name>

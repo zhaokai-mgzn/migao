@@ -59,13 +59,22 @@ class BaseTool(ABC):
     # Tool 元数据（子类必须定义）
     name: str = ""
     description: str = ""
-    
+
     # 参数 JSON Schema（用于 LangChain/OpenAI function calling）
     parameters: Dict[str, Any] = {
         "type": "object",
         "properties": {},
     }
-    
+
+    # MCP 风格 Tool Annotations — 帮助 LLM 做工具选择决策
+    # read_only=True  → 纯查询，LLM 可放心调用，无需确认
+    # read_only=False → 会修改数据，LLM 应先确认再调用
+    # destructive=True → 可执行不可逆的删除/销毁操作，LLM 必须弹 confirm 卡片
+    # idempotent=True → 相同参数多次调用结果一致，可安全重试
+    read_only: bool = True
+    destructive: bool = False
+    idempotent: bool = True
+
     # 权限控制
     require_auth: bool = True
     allowed_roles: list[str] = ["customer", "admin", "agent", "tenant_admin"]
@@ -106,15 +115,31 @@ class BaseTool(ABC):
     
     def get_schema(self) -> Dict[str, Any]:
         """获取 LangChain/OpenAI 兼容的 function schema
-        
+
+        description 中自动注入工具类型标注（read_only/destructive/idempotent），
+        帮助 LLM 在 tool choice 阶段做出更好的选择决策。
+
         Returns:
             Dict: OpenAI function schema 格式
         """
+        # 构建工具类型标注
+        tags = []
+        if self.read_only:
+            tags.append("READONLY")
+        else:
+            tags.append("WRITE")
+        if self.destructive:
+            tags.append("DESTRUCTIVE")
+        if not self.idempotent:
+            tags.append("NON_IDEMPOTENT")
+
+        tagged_desc = f"[{'|'.join(tags)}] {self.description}"
+
         return {
             "type": "function",
             "function": {
                 "name": self.name,
-                "description": self.description,
+                "description": tagged_desc,
                 "parameters": self.parameters,
             }
         }

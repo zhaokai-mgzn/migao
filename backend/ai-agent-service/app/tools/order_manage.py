@@ -41,7 +41,11 @@ class OrderManageTool(BaseTool):
     
     # admin、agent、tenant_admin 可使用
     allowed_roles = ["admin", "agent", "tenant_admin"]
-    
+
+    read_only = False
+    destructive = True   # 可取消/退款订单
+    idempotent = False   # 取消/退款非幂等
+
     parameters = {
         "type": "object",
         "properties": {

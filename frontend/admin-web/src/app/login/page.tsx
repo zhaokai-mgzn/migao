@@ -83,7 +83,7 @@ export default function LoginPage() {
       <div className="w-full max-w-[420px] relative z-10">
         <div className="flex flex-col items-center mb-8">
           <Logo size="large" className="mb-4" />
-          <h1 className="text-2xl font-bold text-gray-900">有客</h1>
+          <h1 className="text-2xl font-bold text-gray-900">米高</h1>
           <p className="mt-1.5 text-sm text-gray-500">企业级AI电商管理解决方案</p>
         </div>
 
@@ -134,7 +134,7 @@ export default function LoginPage() {
           </form>
         </div>
 
-        <p className="mt-6 text-center text-xs text-gray-400">© 2026 米高智能 · 有客</p>
+        <p className="mt-6 text-center text-xs text-gray-400">© 2026 词元通达 · 米高</p>
       </div>
     </div>
   )

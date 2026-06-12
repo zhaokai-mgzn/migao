@@ -295,6 +295,7 @@ class LogisticsTrackTool(BaseTool):
                             f"【{data['company']}】{data['tracking_number']}，"
                             f"当前状态：{data['status_text']}"
                         ),
+                        summary=f"物流状态: {data['company']} {data['tracking_number']}, {data['status_text']}",
                     )
             except Exception as e:
                 logger.warning(
@@ -549,4 +550,5 @@ class LogisticsTrackTool(BaseTool):
             success=True,
             data=mock_data,
             message=f"【{mock_data['company']}】{mock_data['tracking_number']}，当前状态：{mock_data['status_text']}",
+            summary=f"物流状态: {mock_data['company']} {mock_data['tracking_number']}, {mock_data['status_text']}",
         )

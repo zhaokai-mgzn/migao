@@ -91,7 +91,7 @@ POST /api/auth/internal/verify         # Token 验证（HMAC 认证）
 |------|------|
 | 算法 | RS256（私钥签发/公钥验证） |
 | iss | `admin-api` |
-| aud | `youke` |
+| aud | `migao` |
 | sub | user_id |
 | Claims | `tenant_id`, `identity_type`, `role` |
 | jti | UUID（用于吊销） |

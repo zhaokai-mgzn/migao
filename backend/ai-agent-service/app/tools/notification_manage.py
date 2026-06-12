@@ -60,6 +60,10 @@ class NotificationManageTool(BaseTool):
 
     allowed_roles = ["admin", "agent", "tenant_admin"]
 
+    read_only = False
+    destructive = False  # 通知的删除非破坏性（可重新发送）
+    idempotent = False   # 创建/删除非幂等
+
     parameters = {
         "type": "object",
         "properties": {

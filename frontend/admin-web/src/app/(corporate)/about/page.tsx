@@ -27,7 +27,7 @@ const timeline = [
   {
     period: '2024 Q1',
     title: '项目启动',
-    description: '完成技术架构设计，确定有客产品方向与AI技术路线',
+    description: '完成技术架构设计，确定米高产品方向与AI技术路线',
   },
   {
     period: '2024 Q2',
@@ -58,7 +58,7 @@ export default function AboutPage() {
       <section className="bg-gradient-to-br from-blue-600 to-blue-800 text-white py-16 sm:py-20">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 text-center">
           <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">
-            关于有客
+            关于米高
           </h1>
           <p className="mt-4 text-lg text-blue-100 max-w-2xl mx-auto">
             以AI双助手重新定义企业电商管理，让智能运营触手可及
@@ -71,13 +71,13 @@ export default function AboutPage() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="max-w-3xl mx-auto space-y-6 text-gray-600 leading-relaxed">
             <p>
-              有客是米高智能旗下的AI智能电商管理平台，致力于为企业提供从内部运营到客户服务的一站式智能解决方案。
+              米高是词元通达旗下的AI智能电商管理平台，致力于为企业提供从内部运营到客户服务的一站式智能解决方案。
             </p>
             <p>
-              我们深知，不同行业的企业在商品管理、订单处理、客户服务等环节面临着各自独特的挑战。传统管理模式人力成本高、响应效率低、多平台协同困难——有客正是为解决这些痛点而生。
+              我们深知，不同行业的企业在商品管理、订单处理、客户服务等环节面临着各自独特的挑战。传统管理模式人力成本高、响应效率低、多平台协同困难——米高正是为解决这些痛点而生。
             </p>
             <p>
-              基于大语言模型技术，有客为每一位商家打造了两位AI助手：面向企业员工的「米宝」智能工作助手，和面向消费者的「小布」智能客服。米宝帮助运营团队高效处理商品管理、订单跟踪、库存盘点、售后协调等日常事务；小布则7×24小时在线，精准理解客户意图，提供专业贴心的购物咨询服务。
+              基于大语言模型技术，米高为每一位商家打造了两位AI助手：面向企业员工的「米宝」智能工作助手，和面向消费者的「小布」智能客服。米宝帮助运营团队高效处理商品管理、订单跟踪、库存盘点、售后协调等日常事务；小布则7×24小时在线，精准理解客户意图，提供专业贴心的购物咨询服务。
             </p>
             <p>
               作为SaaS平台，我们为每位商家提供独立的数据空间和个性化的AI能力，确保数据安全的同时，让AI深度学习每位商家的业务知识，提供越来越精准的智能服务。

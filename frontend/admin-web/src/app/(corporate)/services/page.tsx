@@ -41,10 +41,10 @@ const products = [
     icon: MessageSquare,
     color: 'blue',
     features: [
-      { icon: Wrench, text: '基于通义千问大语言模型，深度理解自然语言语义' },
-      { icon: MessageCircle, text: '多轮对话与上下文记忆，对话自然流畅有温度' },
-      { icon: Zap, text: '智能工具调用：商品查询、物流追踪、知识库检索一键触达' },
-      { icon: Radio, text: 'SSE 流式响应，实时打字机效果，交互体验极佳' },
+      { icon: Wrench, text: '基于大语言模型，精准理解客户意图，应答自然贴切有温度' },
+      { icon: MessageCircle, text: '多轮对话与上下文记忆，像真人客服一样连续沟通' },
+      { icon: Zap, text: '智能工具调用：商品查询、物流追踪、知识检索一键直达' },
+      { icon: Radio, text: '毫秒级流式应答，所见即所得的打字机效果，体验流畅自然' },
     ],
   },
   {

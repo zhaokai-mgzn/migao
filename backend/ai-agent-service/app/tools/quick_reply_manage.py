@@ -36,6 +36,10 @@ class QuickReplyManageTool(BaseTool):
 
     allowed_roles = ["admin", "agent", "tenant_admin"]
 
+    read_only = False
+    destructive = True   # 可删除快捷回复模板
+    idempotent = False   # 创建/删除非幂等
+
     parameters = {
         "type": "object",
         "properties": {

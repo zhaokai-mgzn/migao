@@ -51,7 +51,7 @@ const advantages = [
   {
     icon: Brain,
     title: '大模型深度理解',
-    description: '基于通义千问大语言模型，不是简单问答机器人，真正理解业务场景与客户需求',
+    description: '基于大语言模型，不是简单问答机器人，真正理解业务场景与客户需求',
   },
   {
     icon: Smartphone,
@@ -99,7 +99,7 @@ export default function HomePage() {
               企业智能管理平台
             </h1>
             <p className="mt-6 text-lg sm:text-xl text-blue-100 leading-relaxed">
-              有客SaaS平台，为每一位商家配备专属AI助手——米宝智能工作助手与小布智能客服，从内部运营到客户服务，全方位驱动业务增长。
+              米高 SaaS 平台，为每一位商家配备专属AI助手——米宝智能工作助手与小布智能客服，从内部运营到客户服务，全方位驱动业务增长。
             </p>
             <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
               <Link
@@ -158,7 +158,7 @@ export default function HomePage() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="text-center max-w-2xl mx-auto mb-16">
             <h2 className="text-2xl sm:text-3xl font-bold text-gray-900">
-              为什么选择有客
+              为什么选择米高
             </h2>
             <p className="mt-4 text-gray-600">
               不只是管理工具，更是您的AI智能运营伙伴
@@ -226,7 +226,7 @@ export default function HomePage() {
             准备好让AI助手驱动您的业务增长了吗？
           </h2>
           <p className="mt-4 text-gray-600 max-w-xl mx-auto">
-            立即入驻有客平台，获取专属米宝智能工作助手，开启高效运营新时代
+            立即入驻米高平台，获取专属米宝智能工作助手，开启高效运营新时代
           </p>
           <Link
             href="/register"

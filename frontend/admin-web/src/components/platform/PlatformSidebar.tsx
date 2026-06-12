@@ -38,7 +38,7 @@ export default function PlatformSidebar() {
           <Logo size="small" />
           <div>
             <h2 className="text-sm font-semibold text-gray-900 leading-tight">
-              有客
+              米高
             </h2>
             <p className="text-xs text-gray-500 leading-tight">
               平台管理

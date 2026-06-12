@@ -206,7 +206,7 @@ cd tests && npx playwright test tests/e2e/specs/products.spec.ts
 
 ### 本地开发环境
 
-> **⚠️ 铁律：本地只启动有客系统 3 个组件，DB/Redis/中间件全部用云 dev。**
+> **⚠️ 铁律：本地只启动米高系统 3 个组件，DB/Redis/中间件全部用云 dev。**
 >
 > 详见 [`.claude/local-dev-config.md`](.claude/local-dev-config.md) — 包含启动命令、连接信息、禁止行为、测试依赖。
 
@@ -351,7 +351,7 @@ cd tests && BASE_URL=http://localhost:3001 npx playwright test specs/chat/chat.s
 
 ## 项目概述
 
-优客 AI 智能客服系统 — 面向布艺行业的多租户 SaaS 平台。
+米高 AI 智能客服系统 — 面向布艺行业的多租户 SaaS 平台。
 
 ## 技术栈
 

@@ -158,10 +158,14 @@ class DashboardStatsTool(BaseTool):
         data = response.get("data", {})
         logger.info(f"[dashboard-stats] Overview fetched | tenant={context.tenant_id}")
 
+        # 构建摘要：提取今日订单数和销售额
+        today_orders = data.get("todayOrderCount", data.get("totalOrders", "?"))
+        today_amount = data.get("todaySalesAmount", data.get("totalAmount", "?"))
         return ToolResult(
             success=True,
             data=data,
             message="今日经营概览数据已获取",
+            summary=f"今日订单{today_orders}单, 销售额{today_amount}元",
         )
 
     async def _order_trend(self, context: ToolContext, days: int) -> ToolResult:
@@ -185,10 +189,13 @@ class DashboardStatsTool(BaseTool):
         data = response.get("data", {})
         logger.info(f"[dashboard-stats] Order trend fetched, days={days} | tenant={context.tenant_id}")
 
+        # 构建摘要：统计趋势数据点数量
+        trend_points = len(data.get("list", data.get("trend", data.get("points", []))))
         return ToolResult(
             success=True,
             data=data,
             message=f"近 {days} 天订单趋势数据已获取",
+            summary=f"近{days}天订单趋势: {trend_points}个数据点",
         )
 
     async def _order_status(self, context: ToolContext) -> ToolResult:
@@ -211,10 +218,20 @@ class DashboardStatsTool(BaseTool):
         data = response.get("data", {})
         logger.info(f"[dashboard-stats] Order status distribution fetched | tenant={context.tenant_id}")
 
+        # 构建摘要：汇总各状态的数量
+        status_items = data.get("distribution") or data.get("items") or data.get("list") or []
+        if isinstance(status_items, dict):
+            top_statuses = [f"{k}:{v}" for k, v in list(status_items.items())[:5]]
+            status_text = "、".join(top_statuses) if top_statuses else "无数据"
+        elif isinstance(status_items, list):
+            status_text = f"{len(status_items)}种状态"
+        else:
+            status_text = "已获取"
         return ToolResult(
             success=True,
             data=data,
             message="订单状态分布数据已获取",
+            summary=f"订单状态分布: {status_text}",
         )
 
     async def _recent_orders(self, context: ToolContext, limit: int) -> ToolResult:
@@ -238,10 +255,14 @@ class DashboardStatsTool(BaseTool):
         data = response.get("data", {})
         logger.info(f"[dashboard-stats] Recent orders fetched, limit={limit} | tenant={context.tenant_id}")
 
+        # 构建摘要：统计订单数量
+        orders_list = data.get("list", data.get("records", data.get("items", [])))
+        order_count = len(orders_list) if isinstance(orders_list, list) else 0
         return ToolResult(
             success=True,
             data=data,
             message=f"最近 {limit} 条订单已获取",
+            summary=f"最近{order_count}条订单",
         )
 
     async def _active_sessions(self, context: ToolContext, limit: int) -> ToolResult:
@@ -265,8 +286,12 @@ class DashboardStatsTool(BaseTool):
         data = response.get("data", {})
         logger.info(f"[dashboard-stats] Active sessions fetched, limit={limit} | tenant={context.tenant_id}")
 
+        # 构建摘要：统计会话数量
+        sessions_list = data.get("list", data.get("sessions", data.get("items", [])))
+        session_count = len(sessions_list) if isinstance(sessions_list, list) else 0
         return ToolResult(
             success=True,
             data=data,
             message=f"当前活跃会话数据已获取",
+            summary=f"当前{session_count}个活跃会话",
         )

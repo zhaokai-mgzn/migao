@@ -102,7 +102,7 @@ graph TB
 youke/
 ├── backend/
 │   ├── admin-api/              # Java 管理后台 API（Spring Boot 3.3）
-│   │   ├── src/main/java/com/aikf/admin/
+│   │   ├── src/main/java/com/migao/admin/
 │   │   │   ├── controller/     # 19 个 REST Controller
 │   │   │   ├── service/        # 21 个业务 Service
 │   │   │   ├── entity/         # 31 个数据实体

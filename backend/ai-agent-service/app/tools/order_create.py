@@ -34,6 +34,10 @@ class OrderCreateTool(BaseTool):
     # admin、agent、tenant_admin 可使用
     allowed_roles = ["admin", "agent", "tenant_admin"]
 
+    read_only = False
+    destructive = False
+    idempotent = False  # 每次调用创建新订单
+
     # 关联校验工具
     related_tools = ["validate_input"]
 
@@ -222,6 +226,7 @@ class OrderCreateTool(BaseTool):
                 success=True,
                 data=order_data,
                 message=f"订单创建成功！订单号：{order_id}，客户：{customer_name}，共 {len(items)} 件商品",
+                summary=f"订单创建成功: 订单号{order_id}, 客户{customer_name}, {len(items)}件商品",
             )
 
         except Exception as e:

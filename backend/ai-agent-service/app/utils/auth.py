@@ -167,9 +167,9 @@ def verify_jwt_token(token: str) -> Dict[str, Any]:
         aud_claim = payload.get("aud", [])
         if isinstance(aud_claim, str):
             aud_claim = [aud_claim]
-        if "youke" not in aud_claim:
+        if "migao" not in aud_claim:
             raise jwt.exceptions.InvalidTokenError(
-                f"Audience doesn't match: expected 'youke', got {aud_claim}"
+                f"Audience doesn't match: expected 'migao', got {aud_claim}"
             )
         return payload
     except ExpiredSignatureError:
