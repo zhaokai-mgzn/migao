@@ -37,7 +37,7 @@ class OrderQueryTool(BaseTool):
     
     name = "order_query"
     description = (
-        "【触发】用户问'查订单''我的订单''订单列表''订单统计''订单数据''待发货订单''跟进状态'时调用。【前置】支持三种 action: list(按条件翻页)/statistics(汇总)/follow_status_stats(跟进统计)。用户说'订单统计数据'用 statistics，'订单跟进情况'用 follow_status_stats，不要错传 list。【反例】查物流轨迹用 logistics_track，修改订单用 order_manage。【标注】READONLY"
+        "【触发】查具体订单：用户说'查订单''我的订单''ORD-单号''待发货''某客户订单'时调用。【前置】action: list(翻页)/statistics(汇总)/follow_status_stats(跟进统计)。【何时不用】经营看板的趋势/分布/概览用 dashboard_stats。查物流用 logistics_track。修改用 order_manage。【标注】READONLY — 查具体订单，经营分析用 dashboard_stats"
     )
     
     parameters = {

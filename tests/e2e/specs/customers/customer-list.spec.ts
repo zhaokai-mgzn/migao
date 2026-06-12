@@ -15,25 +15,29 @@ test.describe('客户列表页面', () => {
     await expect(pom.page.getByText('管理客户信息、标签和互动记录')).toBeVisible()
   })
 
-  test('搜索框支持关键词输入并触发搜索', async () => {
+  test('搜索框支持关键词输入并触发搜索 — 搜索后显示匹配结果', async () => {
     await pom.keywordInput.fill('张美丽')
     await pom.searchButton.click()
     await pom.waitForLoadingComplete()
     await expect(pom.table).toBeVisible()
+    await expect(pom.page.getByText('张美丽')).toBeVisible()
+    await expect(pom.page.getByText('暂无数据')).not.toBeVisible()
   })
 
-  test('来源渠道筛选下拉框可正常切换', async () => {
+  test('来源渠道筛选下拉框可正常切换 — 筛选后表格仍渲染', async () => {
     await pom.channelSelect.selectOption('wechat_mini')
     await pom.searchButton.click()
     await pom.waitForLoadingComplete()
     await expect(pom.table).toBeVisible()
+    await expect(pom.page.getByText('暂无数据')).not.toBeVisible()
   })
 
-  test('VIP 等级筛选下拉框可正常切换', async () => {
+  test('VIP 等级筛选下拉框可正常切换 — 筛选后表格仍渲染', async () => {
     await pom.vipLevelSelect.selectOption('vip1')
     await pom.searchButton.click()
     await pom.waitForLoadingComplete()
     await expect(pom.table).toBeVisible()
+    await expect(pom.page.getByText('暂无数据')).not.toBeVisible()
   })
 
   test('表格显示头像列', async () => {

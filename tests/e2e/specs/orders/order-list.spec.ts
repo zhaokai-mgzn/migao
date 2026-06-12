@@ -252,7 +252,7 @@ test.describe('订单列表页面', () => {
     await expect(page.getByText('YK20260601002')).toBeVisible()
   })
 
-  test('按下单日期搜索', async ({ page }) => {
+  test('按下单日期搜索 — 应筛选出指定日期的订单', async ({ page }) => {
     const dateInputs = page.locator('input[type="date"]')
     await dateInputs.first().fill('2026-06-01')
     await dateInputs.last().fill('2026-06-01')
@@ -260,24 +260,31 @@ test.describe('订单列表页面', () => {
     await page.getByRole('button', { name: '查询' }).click()
     await page.waitForTimeout(500)
 
-    // 验证页面正常渲染（mock 数据包含 6/1 的订单）
-    await expect(page.getByText('订单列表')).toBeVisible()
+    // 应只显示 6/1 的订单，不应显示其他日期的
+    await expect(page.getByText('YK20260601001')).toBeVisible()
+    await expect(page.getByText('YK20260530004')).not.toBeVisible()
   })
 
-  test('按商品编码搜索', async ({ page }) => {
+  test('按商品编码搜索 — 搜索后应显示匹配的订单', async ({ page }) => {
     await page.locator('input[placeholder="请输入商品货号"]').fill('CL-GY-001')
     await page.getByRole('button', { name: '查询' }).click()
     await page.waitForTimeout(500)
 
-    await expect(page.getByText('订单列表')).toBeVisible()
+    // 应显示包含该商品编码的订单
+    await expect(page.getByText('YK20260601001')).toBeVisible()
+    // 确认搜索结果不是空列表
+    await expect(page.getByText('暂无数据')).not.toBeVisible()
   })
 
-  test('按商品标题搜索', async ({ page }) => {
+  test('按商品标题搜索 — 搜索后应显示匹配的订单', async ({ page }) => {
     await page.locator('input[placeholder="请输入商品标题"]').fill('遮光')
     await page.getByRole('button', { name: '查询' }).click()
     await page.waitForTimeout(500)
 
-    await expect(page.getByText('订单列表')).toBeVisible()
+    // 搜索结果中应出现包含"遮光"的订单
+    await expect(page.getByText('YK20260601001')).toBeVisible()
+    // 确认搜索结果不是空列表
+    await expect(page.getByText('暂无数据')).not.toBeVisible()
   })
 
   test('按加工订单筛选', async ({ page }) => {

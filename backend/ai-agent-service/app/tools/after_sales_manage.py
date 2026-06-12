@@ -35,7 +35,7 @@ class AfterSalesManageTool(BaseTool):
 
     name = "after_sales_manage"
     description = (
-        "【触发】用户说'售后''退换''退款''投诉''工单''售后工单''处理工单'时调用。【前置】list/detail 可查询。create: ticket_type+order_id+reason 必填。update_status 需确认。创建流程: 查订单→确认问题→收集信息→汇总→确认→执行。【反例】仅查看订单信息用 order_query。执行退款操作用 order_manage(refund)。【标注】WRITE|DESTRUCTIVE — 关闭/拒绝工单需确认"
+        "【触发】含'售后工单''退款''退货''换货''投诉工单'时调用（'查看售后''处理工单'也触发）。【前置】list/detail 查询。create: ticket_type+order_id+reason 必填,汇总确认后执行。【何时不用】仅查订单用 order_query。退款操作配合 order_manage(refund)。【标注】WRITE|DESTRUCTIVE — 创建/关闭需确认"
     )
 
     allowed_roles = ["admin", "agent", "tenant_admin"]

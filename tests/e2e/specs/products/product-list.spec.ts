@@ -222,8 +222,7 @@ test.describe('商品列表页面', () => {
     await expect(page.getByText('p003')).not.toBeVisible() // in_warehouse
   })
 
-  test('按创建日期范围搜索', async ({ page }) => {
-    // 填入开始日期
+  test('按创建日期范围搜索 — 应筛选出日期范围内的商品', async ({ page }) => {
     const dateInputs = page.locator('input[type="date"]')
     await dateInputs.first().fill('2026-05-18')
     await dateInputs.last().fill('2026-05-20')
@@ -231,9 +230,10 @@ test.describe('商品列表页面', () => {
     await page.getByRole('button', { name: /搜索/ }).click()
     await page.waitForTimeout(500)
 
-    // 验证 API 被调用时带了日期参数
-    // 在此 mock 场景下，验证页面正常渲染即可
-    await expect(page.getByText('商品列表')).toBeVisible()
+    // 日期范围内的商品应出现
+    await expect(page.getByText('p002')).toBeVisible()
+    // 日期范围外的商品不应出现
+    await expect(page.getByText('p004')).not.toBeVisible()
   })
 
   test('重置按钮清空所有搜索条件', async ({ page }) => {

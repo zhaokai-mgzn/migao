@@ -30,24 +30,29 @@ test.describe('售后工单列表页面', () => {
     await expect(pom.pendingTab).toHaveClass(/text-primary-600/)
   })
 
-  test('关键词搜索框可输入并搜索', async () => {
+  test('关键词搜索框可输入并搜索 — 搜索后表格有数据', async () => {
     await pom.keywordInput.fill('ORD2026')
     await pom.searchButton.click()
     await pom.waitForLoadingComplete()
     await expect(pom.table).toBeVisible()
+    await expect(pom.page.getByText('暂无数据')).not.toBeVisible()
   })
 
-  test('搜索框支持回车键触发搜索', async () => {
+  test('搜索框支持回车键触发搜索 — 表格正常渲染', async () => {
     await pom.keywordInput.fill('测试')
     await pom.keywordInput.press('Enter')
     await pom.waitForLoadingComplete()
+    await expect(pom.table).toBeVisible()
   })
 
-  test('状态筛选下拉框可正常切换', async () => {
+  test('状态筛选下拉框可正常切换 — 筛选后表格可渲染', async () => {
     await pom.statusSelect.selectOption('pending')
     await pom.searchButton.click()
     await pom.waitForLoadingComplete()
     await expect(pom.table).toBeVisible()
+    // 应根据筛选状态返回对应数据，表格行数应有变化
+    const rows = pom.table.locator('tbody tr')
+    await expect(rows.first()).toBeVisible()
   })
 
   test('表格表头正确显示所有列', async () => {
