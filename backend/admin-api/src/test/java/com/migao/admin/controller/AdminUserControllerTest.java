@@ -1,7 +1,7 @@
 package com.migao.admin.controller;
 
 import com.migao.admin.config.TenantContext;
-import com.migao.admin.exception.GlobalExceptionHandler;
+import com.migao.admin.config.GlobalExceptionHandler;
 import com.migao.admin.security.SecurityUser;
 import com.migao.admin.service.RoleService;
 import com.migao.admin.service.UserService;

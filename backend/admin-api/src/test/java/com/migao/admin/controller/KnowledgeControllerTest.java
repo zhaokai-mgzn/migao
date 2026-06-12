@@ -3,7 +3,7 @@ package com.migao.admin.controller;
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.entity.KnowledgeDocument;
 import com.migao.admin.exception.BusinessException;
-import com.migao.admin.exception.GlobalExceptionHandler;
+import com.migao.admin.config.GlobalExceptionHandler;
 import com.migao.admin.mapper.KnowledgeDocumentMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
