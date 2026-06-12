@@ -69,7 +69,7 @@ describe('LoginPage', () => {
 
   it('should render system title and description', () => {
     render(<LoginPage />)
-    expect(screen.getByText('有客')).toBeInTheDocument()
+    expect(screen.getByText('米高')).toBeInTheDocument()
     expect(screen.getByText('企业级AI电商管理解决方案')).toBeInTheDocument()
   })
 

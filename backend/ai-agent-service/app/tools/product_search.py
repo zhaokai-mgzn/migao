@@ -179,8 +179,15 @@ class ProductSearchTool(BaseTool):
                     success=True,
                     data={"products": [], "total": 0, "page": page, "size": size},
                     message=f"抱歉，没有找到与'{keyword}'相关的商品，换个关键词试试？",
+                    summary=f"未找到与'{keyword}'相关的商品",
                 )
-            
+
+            # 构建摘要：取前3个商品名
+            top_names = [p["name"] for p in products[:3] if p.get("name")]
+            names_str = "、".join(top_names)
+            if len(products) > 3:
+                names_str += "等"
+
             return ToolResult(
                 success=True,
                 data={
@@ -191,6 +198,7 @@ class ProductSearchTool(BaseTool):
                     "total_pages": (total + size - 1) // size,
                 },
                 message=f"找到 {total} 件相关商品",
+                summary=f"找到{total}件商品: {names_str}",
             )
             
         except Exception as e:

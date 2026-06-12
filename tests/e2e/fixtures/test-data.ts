@@ -40,7 +40,7 @@ export const TEST_CREDENTIALS = {
 export const TEST_PRODUCT = {
   name: '测试窗帘布料-遮光款',
   skuCode: 'TEST-CL-001',
-  brand: '优客测试',
+  brand: '米高测试',
   categoryId: 'cat_test_001',
   description: 'E2E测试用窗帘布料，高密度遮光面料，宽幅2.8米',
   pricingType: 'per_meter' as const,
@@ -273,7 +273,7 @@ export const TEST_SETTINGS_UPDATE = {
 }
 
 export const TEST_AI_CONFIG_UPDATE = {
-  botName: '有客AI助手（测试）',
+  botName: '米高AI助手（测试）',
   greetingTemplate: '您好！我是{botName}，有什么可以帮您？',
 }
 

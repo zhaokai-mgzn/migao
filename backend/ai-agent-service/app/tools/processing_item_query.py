@@ -126,10 +126,13 @@ class ProcessingItemQueryTool(BaseTool):
                         message=f"查询加工项详情失败：{error_msg}",
                     )
                 item = self._format_item(response.get("data") or {})
+                item_name = item.get('name', '')
+                price_text = f"{item.get('unit_price')}元/{item.get('unit', '件')}" if item.get('unit_price') is not None else ""
                 return ToolResult(
                     success=True,
                     data={"item": item},
-                    message=f"已找到加工项「{item.get('name', '')}」",
+                    message=f"已找到加工项「{item_name}」",
+                    summary=f"加工项详情: {item_name}, {price_text}".rstrip(", "),
                 )
 
             # 列表查询
@@ -174,6 +177,11 @@ class ProcessingItemQueryTool(BaseTool):
             )
 
             if not items:
+                empty_summary = (
+                    f"未找到与'{keyword}'匹配的加工项"
+                    if keyword
+                    else "暂无加工项数据"
+                )
                 return ToolResult(
                     success=True,
                     data={"items": [], "total": 0, "page": page, "size": size},
@@ -182,7 +190,14 @@ class ProcessingItemQueryTool(BaseTool):
                         if keyword
                         else "暂无加工项数据"
                     ),
+                    summary=empty_summary,
                 )
+
+            # 构建摘要：取前3个加工项名
+            top_names = [i["name"] for i in items[:3] if i.get("name")]
+            names_str = "、".join(top_names)
+            if len(items) > 3:
+                names_str += "等"
 
             return ToolResult(
                 success=True,
@@ -194,6 +209,7 @@ class ProcessingItemQueryTool(BaseTool):
                     "total_pages": (total + size - 1) // size if size else 1,
                 },
                 message=f"共找到 {total} 个加工项",
+                summary=f"找到{total}个加工项: {names_str}",
             )
 
         except Exception as e:

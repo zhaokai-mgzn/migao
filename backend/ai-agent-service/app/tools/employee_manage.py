@@ -39,6 +39,10 @@ class EmployeeManageTool(BaseTool):
     # 仅 admin、tenant_admin 可使用
     allowed_roles = ["admin", "tenant_admin"]
 
+    read_only = False
+    destructive = True   # 可删除员工、重置密码、禁用账号
+    idempotent = False   # 创建/删除非幂等
+
     parameters = {
         "type": "object",
         "properties": {

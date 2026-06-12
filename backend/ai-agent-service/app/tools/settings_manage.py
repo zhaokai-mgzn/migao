@@ -41,6 +41,10 @@ class SettingsManageTool(BaseTool):
 
     allowed_roles = ["admin", "tenant_admin"]
 
+    read_only = False
+    destructive = True   # 可修改关键系统配置/AI配置/密码
+    idempotent = False   # 配置修改非幂等
+
     parameters = {
         "type": "object",
         "properties": {

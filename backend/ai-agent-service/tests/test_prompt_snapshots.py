@@ -32,7 +32,7 @@ def clear_before_each():
 MIBAO_SKILLS = ["product", "order", "aftersales", "customer", "staff", "settings", "data", "general"]
 
 # 每个 Skill 必须包含的关键文本
-REQUIRED_IDENTITY = "米高智能商家管理后台"
+REQUIRED_IDENTITY = "词元通达商家管理后台"
 REQUIRED_PRINCIPLES = "不编造数据"
 
 

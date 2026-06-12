@@ -5,57 +5,38 @@ interface MibaoLogoProps {
   className?: string;
 }
 
+/** 米宝 AI 助手 Logo — 简洁几何机器人头像 */
 export function MibaoLogo({ size = 32, className }: MibaoLogoProps) {
   return (
     <svg
       width={size}
       height={size}
-      viewBox="0 0 128 128"
+      viewBox="0 0 80 80"
       className={className}
       xmlns="http://www.w3.org/2000/svg"
     >
       <defs>
-        <linearGradient id="mibao-headGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#3b82f6" />
-          <stop offset="100%" stopColor="#2563eb" />
+        <linearGradient id="mb-head" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#6366f1" />
+          <stop offset="100%" stopColor="#4f46e5" />
         </linearGradient>
-        <linearGradient id="mibao-faceGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-          <stop offset="0%" stopColor="#dbeafe" />
-          <stop offset="100%" stopColor="#bfdbfe" />
+        <linearGradient id="mb-face" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stopColor="#eef2ff" />
+          <stop offset="100%" stopColor="#e0e7ff" />
         </linearGradient>
       </defs>
-      {/* 天线 */}
-      <line x1="64" y1="18" x2="64" y2="8" stroke="#3b82f6" strokeWidth="3" strokeLinecap="round" />
-      <circle cx="64" cy="6" r="4" fill="#3b82f6" />
-      <circle cx="64" cy="6" r="2" fill="#93c5fd" />
-      {/* 左耳 */}
-      <rect x="12" y="46" width="10" height="24" rx="5" fill="url(#mibao-headGrad)" />
-      <rect x="14" y="50" width="6" height="16" rx="3" fill="#93c5fd" opacity="0.4" />
-      {/* 右耳 */}
-      <rect x="106" y="46" width="10" height="24" rx="5" fill="url(#mibao-headGrad)" />
-      <rect x="108" y="50" width="6" height="16" rx="3" fill="#93c5fd" opacity="0.4" />
-      {/* 头部主体 */}
-      <rect x="22" y="18" width="84" height="80" rx="28" fill="url(#mibao-headGrad)" />
-      {/* 面板/脸部 */}
-      <rect x="32" y="34" width="64" height="50" rx="16" fill="url(#mibao-faceGrad)" />
+      {/* 头部 */}
+      <rect x="8" y="10" width="64" height="56" rx="20" fill="url(#mb-head)" />
+      {/* 脸部面板 */}
+      <rect x="16" y="22" width="48" height="36" rx="12" fill="url(#mb-face)" />
       {/* 左眼 */}
-      <ellipse cx="48" cy="54" rx="9" ry="10" fill="#2563eb" />
-      <ellipse cx="48" cy="53" rx="6" ry="7" fill="#dbeafe" />
-      <circle cx="46" cy="51" r="3" fill="#ffffff" />
-      <circle cx="50" cy="56" r="1.5" fill="#ffffff" opacity="0.6" />
+      <circle cx="30" cy="36" r="6" fill="#4f46e5" />
+      <circle cx="28" cy="34" r="2.5" fill="white" />
       {/* 右眼 */}
-      <ellipse cx="80" cy="54" rx="9" ry="10" fill="#2563eb" />
-      <ellipse cx="80" cy="53" rx="6" ry="7" fill="#dbeafe" />
-      <circle cx="78" cy="51" r="3" fill="#ffffff" />
-      <circle cx="82" cy="56" r="1.5" fill="#ffffff" opacity="0.6" />
+      <circle cx="50" cy="36" r="6" fill="#4f46e5" />
+      <circle cx="48" cy="34" r="2.5" fill="white" />
       {/* 微笑 */}
-      <path d="M52 70 Q64 80 76 70" stroke="#2563eb" strokeWidth="2.5" fill="none" strokeLinecap="round" />
-      {/* 脸颊腮红 */}
-      <ellipse cx="38" cy="68" rx="5" ry="3" fill="#93c5fd" opacity="0.5" />
-      <ellipse cx="90" cy="68" rx="5" ry="3" fill="#93c5fd" opacity="0.5" />
-      {/* 底部装饰条 */}
-      <rect x="44" y="102" width="40" height="6" rx="3" fill="#3b82f6" />
-      <rect x="54" y="112" width="20" height="5" rx="2.5" fill="#93c5fd" />
+      <path d="M32 48 Q40 54 48 48" stroke="#4f46e5" strokeWidth="2" fill="none" strokeLinecap="round" />
     </svg>
   );
 }

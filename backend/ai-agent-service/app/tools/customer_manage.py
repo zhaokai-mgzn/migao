@@ -37,6 +37,10 @@ class CustomerManageTool(BaseTool):
     # admin、agent、tenant_admin 可使用
     allowed_roles = ["admin", "agent", "tenant_admin"]
 
+    read_only = False
+    destructive = True   # 可删除客户/标签
+    idempotent = False   # 创建/删除非幂等
+
     parameters = {
         "type": "object",
         "properties": {

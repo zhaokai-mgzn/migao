@@ -187,7 +187,7 @@ class UserIdentity:
 ```json
 {
   "iss": "admin-api",
-  "aud": "youke",
+  "aud": "migao",
   "sub": "user_abc123",
   "tenant_id": "TENANT001",
   "identity_type": "wechat_mini",

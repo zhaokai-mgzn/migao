@@ -4,7 +4,7 @@ const contactInfo = [
   {
     icon: MapPin,
     label: '公司地址',
-    value: '广东省深圳市南山区科技园xxx大厦',
+    value: '浙江省杭州市余杭区文一西路000号',
   },
   {
     icon: Phone,

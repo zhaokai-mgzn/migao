@@ -51,6 +51,10 @@ class AfterSalesManageTool(BaseTool):
 
     allowed_roles = ["admin", "agent", "tenant_admin"]
 
+    read_only = False
+    destructive = True   # 可关闭/拒绝工单（不可逆）
+    idempotent = False   # 创建/状态变更非幂等
+
     parameters = {
         "type": "object",
         "properties": {

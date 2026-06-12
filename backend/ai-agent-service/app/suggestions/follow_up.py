@@ -93,7 +93,7 @@ XIAOBU_DEFAULT_SUGGESTIONS: list[str] = ["查看我的订单", "浏览商品", "
 
 # ========== 动态生成 Prompt（Agent 感知） ==========
 
-MIBAO_DYNAMIC_PROMPT = """你是米宝，米高智能商家管理后台的企业内部 AI 工作助手。
+MIBAO_DYNAMIC_PROMPT = """你是米宝，词元通达商家管理后台的企业内部 AI 工作助手。
 
 根据以下对话内容，生成 3 个用户最可能继续询问的后续问题。
 

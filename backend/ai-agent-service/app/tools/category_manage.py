@@ -35,6 +35,10 @@ class CategoryManageTool(BaseTool):
 
     allowed_roles = ["admin", "tenant_admin"]
 
+    read_only = False
+    destructive = True   # 可删除分类及子分类
+    idempotent = False   # 创建/删除非幂等
+
     parameters = {
         "type": "object",
         "properties": {

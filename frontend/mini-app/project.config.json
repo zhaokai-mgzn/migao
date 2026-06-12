@@ -1,6 +1,6 @@
 {
   "miniprogramRoot": "./dist",
-  "projectname": "youke-mini"
+  "projectname": "migao-mini"
   "description": "AI智能客服微信小程序",
   "appid": "touristappid",
   "setting": {

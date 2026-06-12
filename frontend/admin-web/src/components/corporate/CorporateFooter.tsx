@@ -20,11 +20,11 @@ export default function CorporateFooter() {
             <div className="flex items-center gap-2.5">
               <Logo size="small" />
               <span className="text-lg font-semibold text-white tracking-tight">
-                有客
+                米高
               </span>
             </div>
             <p className="text-sm text-slate-400 leading-relaxed max-w-xs">
-              有客致力于为企业提供一站式AI电商管理解决方案，
+              米高致力于为企业提供一站式AI电商管理解决方案，
               助力商家提升服务效率与客户体验。
             </p>
           </div>
@@ -72,7 +72,7 @@ export default function CorporateFooter() {
 
         {/* Copyright */}
         <div className="py-6 text-center text-sm text-slate-500">
-          © 2024 米高智能 · 有客 版权所有
+          © 2026 词元通达 · 米高 版权所有
         </div>
       </div>
     </footer>

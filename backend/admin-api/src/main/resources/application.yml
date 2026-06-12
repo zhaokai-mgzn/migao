@@ -68,7 +68,7 @@ spring:
 # MyBatis-Plus 配置
 mybatis-plus:
   mapper-locations: classpath*:mapper/**/*.xml
-  type-aliases-package: com.aikf.admin.entity
+  type-aliases-package: com.migao.admin.entity
   configuration:
     map-underscore-to-camel-case: true
     # log-impl: org.apache.ibatis.logging.stdout.StdOutImpl  # 开发调试时可开启，生产环境不输出 SQL
@@ -138,8 +138,8 @@ wechat:
 # 日志配置
 logging:
   level:
-    com.aikf.admin: INFO
-    com.aikf.admin.mapper: DEBUG
+    com.migao.admin: INFO
+    com.migao.admin.mapper: DEBUG
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
 

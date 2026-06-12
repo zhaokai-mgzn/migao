@@ -125,10 +125,12 @@ class ProductDetailTool(BaseTool):
                 f"tenant={context.tenant_id}"
             )
             
+            price_text = f"{product.get('price')}元" if product.get('price') is not None else "暂无标价"
             return ToolResult(
                 success=True,
                 data=product,
                 message=f"已获取商品【{product.get('name')}】的详细信息",
+                summary=f"商品详情: {product.get('name')}, {price_text}",
             )
             
         except Exception as e:

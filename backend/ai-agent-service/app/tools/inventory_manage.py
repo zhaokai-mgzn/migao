@@ -34,7 +34,11 @@ class InventoryManageTool(BaseTool):
     
     # admin、agent、customer、tenant_admin 可使用（customer 仅限 query 操作）
     allowed_roles = ["admin", "agent", "customer", "tenant_admin"]
-    
+
+    read_only = False
+    destructive = False  # 库存调整可逆
+    idempotent = False   # 调整操作非幂等
+
     parameters = {
         "type": "object",
         "properties": {
@@ -209,6 +213,7 @@ class InventoryManageTool(BaseTool):
                 "status": data.get("status"),
             },
             message=f"商品【{product_name}】当前库存：{stock}",
+            summary=f"库存查询: {product_name}, 库存{stock}件",
         )
     
     async def _adjust_inventory(

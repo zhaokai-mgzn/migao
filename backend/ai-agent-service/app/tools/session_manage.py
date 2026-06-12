@@ -36,6 +36,10 @@ class SessionManageTool(BaseTool):
 
     allowed_roles = ["admin", "agent", "tenant_admin"]
 
+    read_only = False
+    destructive = False  # 分配/结束会话非破坏性（可重新分配）
+    idempotent = False   # 分配/结束非幂等
+
     parameters = {
         "type": "object",
         "properties": {

@@ -196,10 +196,14 @@ class OrderQueryTool(BaseTool):
             )
         data = response.get("data", {})
         logger.info(f"[order-query] Statistics fetched | tenant={context.tenant_id}")
+        # 构建摘要：提取订单数量和金额
+        today_orders = data.get("todayOrderCount") or data.get("totalOrders") or "N/A"
+        today_amount = data.get("todaySalesAmount") or data.get("totalAmount") or "N/A"
         return ToolResult(
             success=True,
             data=data,
             message="订单统计数据已获取",
+            summary=f"订单统计: {today_orders}单, 金额{today_amount}元",
         )
 
     async def _follow_status_stats(self, context: ToolContext) -> ToolResult:
@@ -219,10 +223,17 @@ class OrderQueryTool(BaseTool):
             )
         data = response.get("data", {})
         logger.info(f"[order-query] Follow-status stats fetched | tenant={context.tenant_id}")
+        # 构建摘要：汇总各跟进状态的数量
+        total_count = data.get("totalCount") or sum(
+            v for k, v in (data or {}).items() if isinstance(v, (int, float)) and k != "totalCount"
+        )
+        summary_parts = [f"{k}:{v}" for k, v in (data or {}).items() if isinstance(v, (int, float))]
+        summary_text = "、".join(summary_parts[:5]) if summary_parts else "无数据"
         return ToolResult(
             success=True,
             data=data,
             message="订单跟进状态统计数据已获取",
+            summary=f"订单跟进状态: {summary_text}",
         )
 
     async def _list_orders(
@@ -317,7 +328,14 @@ class OrderQueryTool(BaseTool):
                 success=True,
                 data={"orders": [], "total": 0, "page": page, "page_size": page_size},
                 message="未找到符合条件的订单",
+                summary="未找到符合条件的订单",
             )
+
+        # 构建摘要：取前3个订单号
+        top_nos = [o["order_no"] for o in orders[:3] if o.get("order_no")]
+        nos_str = "、".join(top_nos)
+        if len(orders) > 3:
+            nos_str += "等"
 
         return ToolResult(
             success=True,
@@ -329,6 +347,7 @@ class OrderQueryTool(BaseTool):
                 "total_pages": (total + page_size - 1) // page_size,
             },
             message=f"找到 {total} 个相关订单",
+            summary=f"找到{total}个订单: {nos_str}",
         )
     
     def _format_orders(self, records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

@@ -157,10 +157,10 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
           {!collapsed && (
             <div className="min-w-0">
               <div className="text-white font-semibold text-sm leading-tight truncate">
-                {user?.tenantName || '有客'}
+                {user?.tenantName || '米高'}
               </div>
               {user?.tenantName && (
-                <div className="text-slate-400 text-[11px] leading-tight mt-0.5">有客</div>
+                <div className="text-slate-400 text-[11px] leading-tight mt-0.5">米高</div>
               )}
             </div>
           )}

@@ -172,7 +172,7 @@ export default function RegisterPage() {
             企业入驻申请
           </h1>
           <p className="mt-1.5 text-sm text-gray-500">
-            有客 · AI智能管理平台
+            米高 · AI智能管理平台
           </p>
         </div>
 
@@ -570,7 +570,7 @@ export default function RegisterPage() {
         )}
 
         <p className="mt-8 text-center text-xs text-gray-400">
-          © 2026 米高智能 · 有客
+          © 2026 词元通达 · 米高
         </p>
       </div>
     </div>

@@ -82,7 +82,7 @@ describe('Sidebar', () => {
   it('should hide text labels when collapsed', () => {
     render(<Sidebar collapsed={true} onToggle={mockOnToggle} />)
     expect(screen.queryByText('工作台（数据看板）')).not.toBeInTheDocument()
-    expect(screen.queryByText('有客')).not.toBeInTheDocument()
+    expect(screen.queryByText('米高')).not.toBeInTheDocument()
     expect(screen.queryByText('商品管理')).not.toBeInTheDocument()
   })
 
