@@ -185,6 +185,7 @@ class TestAdminOperationChain:
 
 class TestMultiTenantConcurrentChain:
     """多租户并发场景下的数据隔离测试"""
+    @pytest.mark.integration
     async def test_tenant_switch_session_isolation(self, registry):
         """
         切换租户后会话隔离：

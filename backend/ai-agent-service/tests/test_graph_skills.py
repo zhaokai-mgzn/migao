@@ -318,7 +318,7 @@ class TestSkillNodes:
         """create_node_function(aftersales) 生成可调用的节点函数"""
         mock_execute.return_value = {"final_answer": "ok", "skill_used": "aftersales"}
         state = _make_state()
-        node_fn = create_node_function(AFTERSALES_SKILL_CONFIG, persona="mibao")
+        node_fn = SkillRegistry().create_node_function(AFTERSALES_SKILL_CONFIG, persona="mibao")
         result = await node_fn(state)
         mock_execute.assert_called_once()
         assert mock_execute.call_args.kwargs["skill_name"] == "aftersales"
@@ -329,7 +329,7 @@ class TestSkillNodes:
         """create_node_function(general) 生成可调用的节点函数"""
         mock_execute.return_value = {"final_answer": "ok", "skill_used": "general"}
         state = _make_state()
-        node_fn = create_node_function(GENERAL_SKILL_CONFIG, persona="mibao")
+        node_fn = SkillRegistry().create_node_function(GENERAL_SKILL_CONFIG, persona="mibao")
         result = await node_fn(state)
         mock_execute.assert_called_once()
         assert mock_execute.call_args.kwargs["skill_name"] == "general"

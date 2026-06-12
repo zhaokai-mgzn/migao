@@ -4,24 +4,22 @@
 
 用户: "创建一个遮光窗帘，价格 50 元"
 
-### Step 1: 信息收集（interact form）
-米宝调用:
+### Step 1: 信息收集
+米宝先调 category_manage(action="tree") 获取分类树，然后回复:
 ```
-interact(component="form", title="创建商品",
-  formFields=[
-    {key:"name", label:"商品名称", value:"遮光窗帘", required:true},
-    {key:"price", label:"价格（元）", value:"50", required:true},
-    {key:"category", label:"分类", placeholder:"请选择", required:false},
-    {key:"stock", label:"库存数量", placeholder:"请输入", required:false},
-    {key:"spec", label:"规格/色号", placeholder:"请输入", required:false},
-    {key:"description", label:"描述", placeholder:"请输入", required:false}
-  ])
+好的，我来帮您创建商品！请提供以下信息：
+• 商品名称（必填）
+• 价格（必填，元）
+• 颜色（可选，多个用逗号分隔）
+• 售卖方式（可选：散剪/整卷/按片）
+• 分类（可选，从分类树中选择）
+当前分类：窗帘布艺（卧室系列/客厅系列）
 ```
-米宝回复: "请填写商品信息"（短文本即可，重点在 form 卡片上）
+（不使用 interact form，改用文字引导收集信息）
 
-### Step 2: 用户提交 form → 选加工项（interact choice）
-用户消息: "商品名称: 遮光窗帘\n价格: 50\n..."
-米宝先调 processing_item_query 获取加工项列表，然后调:
+### Step 2: 用户提供信息 → 确认加工项
+用户消息: "遮光窗帘，50元，米白色，散剪"
+米宝先调 processing_item_query 获取加工项列表，然后回复:
 ```
 interact(component="choice", title="选择关联的加工项（可多选）",
   multiSelect=true,
