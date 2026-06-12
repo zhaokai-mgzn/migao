@@ -909,33 +909,46 @@ async def execute_skill(
         if still_in_flow or has_active_tool_calls:
             result["pending_interact_skill"] = skill_name
 
-    # ── 跨轮字段记忆 ──
-    if session_id and skill_name in creation_skills:
+    # ── 跨轮字段记忆：LLM 从对话中提取所有已讨论字段 ──
+    if session_id and final_content and skill_name in creation_skills:
         from app.memory.session_memory import SessionMemory
         sm = SessionMemory()
         fields = await sm.get_collected_fields(session_id)
+
+        # 检测创建成功/取消 → 清除记忆
         created_or_cancelled = False
         for m in new_messages:
             if hasattr(m, 'tool_calls') and m.tool_calls:
                 for tc in m.tool_calls:
-                    tool_name = tc.get("name", "")
                     args = tc.get("args", {})
-                    # 创建工具调用：记住所有字段用于下一轮
-                    if tool_name in ("product_manage", "order_create", "after_sales_manage"):
-                        for k, v in args.items():
-                            if v is not None and k not in ("action", "product_id", "ticket_id", "status"):
-                                fields[k] = v
-                        if args.get("action") in (None, "create"):
-                            created_or_cancelled = True
-                    # Vision/分析工具含结构化结果：记住关键字段
-                    elif tool_name == "category_manage" and "category_id" not in fields:
-                        pass  # category args already handled via create args
-        # 检测取消
+                    if tc.get("name") in ("product_manage", "order_create", "after_sales_manage") and args.get("action") in (None, "create"):
+                        created_or_cancelled = True
         if any(kw in final_content for kw in ["已取消","取消","算了","不创建了"]):
             created_or_cancelled = True
+
         if created_or_cancelled:
             await sm.clear_collected_fields(session_id)
-        elif fields:
-            await sm.set_collected_fields(session_id, fields)
+        else:
+            # LLM 从本轮对话中提取新增字段（轻量, enable_thinking=False）
+            try:
+                extract_prompt = (
+                    f"从以下对话中提取已讨论的商品/订单/工单字段，返回纯JSON:\n"
+                    f"AI回复: {final_content[:500]}\n"
+                    f"已有字段: {json.dumps(fields, ensure_ascii=False)}\n\n"
+                    f"只输出JSON，不要输出其他内容。未讨论的字段不要编造。"
+                )
+                raw = await LLMFactory.invoke_text_safe([
+                    SystemMessage(content="你是字段提取器。只输出JSON。"),
+                    HumanMessage(content=extract_prompt),
+                ], enable_thinking=False)
+                start = raw.find("{"); end = raw.rfind("}")
+                if start >= 0 and end > start:
+                    new_fields = json.loads(raw[start:end + 1])
+                    fields.update({k: v for k, v in new_fields.items() if v})
+                if fields:
+                    await sm.set_collected_fields(session_id, fields)
+                    logger.debug(f"[{skill_name}] Collected {len(fields)} fields | session={session_id}")
+            except Exception:
+                pass  # 非关键路径，静默失败
 
     return result
