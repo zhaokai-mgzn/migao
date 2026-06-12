@@ -402,6 +402,66 @@ def _extract_intent_name(state: AgentState) -> str:
     return ""
 
 
+async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -> tuple:
+    """统一 Tool 执行入口 — normalize + cache + execute + error handling.
+
+    所有 tool 调用走这里，不经过 LangChain adapter 的 _execute。
+    """
+    from app.tools.langchain_adapter import LangChainToolAdapter
+
+    # 1. 规范化参数：LLM 可能把 array/object 序列化为 JSON 字符串
+    tool_args = LangChainToolAdapter._normalize_args(tool, tool_args)
+
+    session_id = state.get("session_id", "")
+    tenant_id = str(state.get("tenant_id", ""))
+    tool_name = tool.name
+    cache_key = f"{tenant_id}:{tool_name}:{json.dumps(tool_args, sort_keys=True, default=str)}"
+
+    # 2. 缓存检查
+    if not hasattr(_execute_tool_safe, '_cache'):
+        _execute_tool_safe._cache = {}
+    if cache_key in _execute_tool_safe._cache:
+        cached = _execute_tool_safe._cache[cache_key]
+        if time.time() - cached["ts"] < 60:
+            logger.info(f"[tool-cache] Hit {tool_name}")
+            return cached["result"], cached["dict"]
+
+    # 3. 执行 + 超时
+    try:
+        logger.info(f"[tool-exec] {tool_name} start")
+        result = await asyncio.wait_for(
+            tool.execute(tool_context, **tool_args),
+            timeout=30.0,
+        )
+        logger.info(f"[tool-exec] {tool_name} done success={result.success}")
+    except asyncio.TimeoutError:
+        logger.error(f"[tool-exec] {tool_name} TIMEOUT 30s")
+        err = json.dumps({"success": False, "error": "timeout", "message": "工具执行超时"}, ensure_ascii=False)
+        return err, {"success": False, "error": "timeout"}
+    except Exception as e:
+        logger.error(f"[tool-exec] {tool_name} ERROR: {e}")
+        err = json.dumps({"success": False, "error": str(e), "message": f"工具执行异常: {e}"}, ensure_ascii=False)
+        return err, {"success": False, "error": str(e)}
+
+    # 4. 格式化结果
+    result_dict = {
+        "success": result.success,
+        "data": result.data,
+        "error": result.error,
+        "message": result.message,
+        "summary": getattr(result, "summary", None) or getattr(result, "message", ""),
+    }
+    result_str = json.dumps(result_dict, ensure_ascii=False, default=str)
+
+    # 5. 缓存
+    if result.success:
+        _execute_tool_safe._cache[cache_key] = {"result": result_str, "dict": result_dict, "ts": time.time()}
+        if len(_execute_tool_safe._cache) > 100:
+            _execute_tool_safe._cache.pop(next(iter(_execute_tool_safe._cache)))
+
+    return result_str, result_dict
+
+
 async def execute_skill(
     state: AgentState,
     skill_name: str,
@@ -833,7 +893,7 @@ async def execute_skill(
                         f"[{skill_name}] Extracted text before tool_calls | len={len(text_before_tools)}"
                     )
 
-                # 执行每个 tool_call
+                # 执行每个 tool_call — 统一经 _execute_tool_safe
                 interact_called = False
                 for tool_call in response.tool_calls:
                     tool_name = tool_call["name"]
@@ -842,98 +902,32 @@ async def execute_skill(
 
                     logger.info(f"[{skill_name}][DIAG] Tool call: {tool_name} | args={tool_args}")
 
-                    # 查找并执行 Tool（带结果缓存）
-                    result_str = ""
                     tool_instance = skill_registry.get_tool(tool_name)
                     if tool_instance:
-                        # 结果缓存: 同 session 同 tool+参数 60s 内复用
-                        tid = str(state.get("tenant_id", ""))
-                        cache_key = f"{tid}:{tool_name}:{json.dumps(tool_args, sort_keys=True, default=str)}"
-                        if not hasattr(execute_skill, '_tool_cache'):
-                            execute_skill._tool_cache = {}
-                        if cache_key in execute_skill._tool_cache:
-                            cached = execute_skill._tool_cache[cache_key]
-                            if time.time() - cached["ts"] < 60:
-                                logger.info(f"[{skill_name}][CACHE] Hit {tool_name}")
-                                result_str = cached["result"]
-                                result_dict = cached["dict"]
-                                new_messages.append(
-                                    ToolMessage(content=result_str, tool_call_id=tool_call_id, name=tool_name)
-                                )
-                                continue
-
-                        try:
-                            # 规范化参数：LLM 可能把 array/object 序列化为 JSON 字符串
-                            from app.tools.langchain_adapter import LangChainToolAdapter
-                            tool_args = LangChainToolAdapter._normalize_args(tool_instance, tool_args)
-
-                            logger.info(f"[{skill_name}][DIAG] Tool {tool_name} starting execution")
-                            result = await asyncio.wait_for(
-                                tool_instance.execute(tool_context, **tool_args),
-                                timeout=30.0,  # 工具调用超时 30 秒
-                            )
-                            logger.info(f"[{skill_name}][DIAG] Tool {tool_name} completed | success={result.success}")
-                            result_dict = {
-                                "success": result.success,
-                                "data": result.data,
-                                "error": result.error,
-                                "message": result.message,
-                                "summary": getattr(result, "summary", None) or getattr(result, "message", ""),
-                            }
-                            result_str = json.dumps(result_dict, ensure_ascii=False, default=str)
-
-                            # 缓存成功的 tool 结果（60s TTL）
-                            if getattr(result, "success", False):
-                                execute_skill._tool_cache[cache_key] = {
-                                    "result": result_str, "dict": result_dict, "ts": time.time()
-                                }
-
-                            # 从 Tool 结果提取实体
-                            if session_id:
-                                tracker.extract_entities_from_tool_result(
-                                    session_id, tool_name, result_dict
-                                )
-                        except asyncio.TimeoutError:
-                            logger.error(f"[{skill_name}][DIAG] Tool {tool_name} TIMEOUT after 30s | tenant={state['tenant_id']}")
-                            result_str = json.dumps({
-                                "success": False,
-                                "error": "tool_timeout",
-                                "message": f"工具 {tool_name} 执行超时",
-                                "suggestion": "请缩小查询范围（如减少page_size、缩短日期范围）后重试",
-                                "retry": True,
-                            }, ensure_ascii=False)
-                        except Exception as e:
-                            tb = traceback.format_exc()
-                            logger.error(f"[{skill_name}][DIAG] Tool {tool_name} FAILED | error={type(e).__name__}: {e} | traceback={tb[:500]}")
-                            err_msg = str(e)[:200]
-                            result_str = json.dumps({
-                                "success": False,
-                                "error": "tool_execution_failed",
-                                "message": f"工具 {tool_name} 执行失败，请检查参数格式后重试",
-                                "suggestion": "修正参数后重试，不要直接告诉用户失败",
-                                "retry": True,
-                            }, ensure_ascii=False)
+                        result_str, result_dict = await _execute_tool_safe(
+                            tool_instance, tool_args, tool_context, state,
+                        )
                     else:
                         result_str = json.dumps({
-                            "success": False,
-                            "error": "tool_not_found",
+                            "success": False, "error": "tool_not_found",
                             "message": f"工具 {tool_name} 不可用",
-                            "suggestion": "请用其他可用工具完成操作",
                         }, ensure_ascii=False)
+                        result_dict = {"success": False}
 
-                    # 添加 ToolMessage（包含 tool name，供 SSE 事件使用）
                     new_messages.append(
                         ToolMessage(content=result_str, tool_call_id=tool_call_id, name=tool_name)
                     )
 
-                    # interact 成功后停止迭代，等待用户操作
-                    # 防止 LLM 在一个 turn 内发送多个交互组件互相覆盖
+                    # 从 Tool 结果提取实体
+                    if session_id:
+                        tracker.extract_entities_from_tool_result(session_id, tool_name, result_dict)
+
+                    # interact 成功后停止迭代
                     if tool_name == "interact" and result_dict.get("success"):
-                        logger.info(f"[{skill_name}] interact {result.data.get('component', '')} succeeded, breaking to wait for user")
+                        logger.info(f"[{skill_name}] interact done, break loop")
                         interact_called = True
                         break
 
-                # interact 成功后跳出外层迭代循环
                 if interact_called:
                     break
             else:
