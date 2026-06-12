@@ -1,648 +1,124 @@
 """
-Plan-and-Execute 执行器
+Product creation utility functions — smart defaults, category inference, field extraction.
 
-多步骤写操作（创建商品、创建订单等）走 P&E 模式：
-1. LLM 一次性生成结构化 Plan（JSON）
-2. 代码按 Plan 逐步执行，每步 LLM 只负责生成展示文本
-3. 需要用户输入时保存 Plan 状态，下次消息恢复执行
-
-查询类/简单操作保持 ReAct 模式，不走此路径。
+P&E (Plan-and-Execute) 已移除。商品创建现在通过 ReAct + 完整 Tool Schema 处理。
+本文件仅保留纯逻辑工具函数，不包含任何 Plan/状态机/流程控制。
 """
 
 import json
 import re
 from typing import Any, Dict, List, Optional
-from dataclasses import dataclass, field
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from loguru import logger
 
 from app.llm import LLMFactory
-from app.graph.state import AgentState
 
 
-# ── Plan 数据结构 ──
+# ── 中文字段名 → 英文 key 映射 ──
 
-@dataclass
-class PlanStep:
-    """Plan 中的一步"""
-    type: str  # ask | query | confirm | execute
-    description: str = ""
-    # ask 步
-    ask_prompt: str = ""
-    fields: List[str] = field(default_factory=list)
-    # query 步
-    query_tool: str = ""
-    query_params: Dict[str, Any] = field(default_factory=dict)
-    query_prompt: str = ""
-    # execute 步
-    execute_tool: str = ""
-    execute_action: str = ""
-
-
-@dataclass
-class Plan:
-    """完整 Plan"""
-    goal: str
-    skill_name: str = ""  # 所属 skill，用于多轮回合路由
-    steps: List[PlanStep] = field(default_factory=list)
-    current_step: int = 0
-    context: Dict[str, Any] = field(default_factory=dict)
-
-    def current(self) -> Optional[PlanStep]:
-        if 0 <= self.current_step < len(self.steps):
-            return self.steps[self.current_step]
-        return None
-
-    def advance(self):
-        self.current_step += 1
-
-    def is_done(self) -> bool:
-        return self.current_step >= len(self.steps)
-
-    def to_json(self) -> str:
-        return json.dumps({
-            "goal": self.goal,
-            "skill_name": self.skill_name,
-            "steps": [{"type": s.type, "description": s.description,
-                        "ask_prompt": s.ask_prompt, "fields": s.fields,
-                        "query_tool": s.query_tool, "query_params": s.query_params,
-                        "query_prompt": s.query_prompt,
-                        "execute_tool": s.execute_tool, "execute_action": s.execute_action}
-                       for s in self.steps],
-            "current_step": self.current_step,
-            "context": self.context,
-        }, ensure_ascii=False)
-
-    @staticmethod
-    def from_json(data: dict) -> "Plan":
-        steps = []
-        for s in data.get("steps", []):
-            steps.append(PlanStep(
-                type=s.get("type", ""),
-                description=s.get("description", ""),
-                ask_prompt=s.get("ask_prompt", ""),
-                fields=s.get("fields", []),
-                query_tool=s.get("query_tool", ""),
-                query_params=s.get("query_params", {}),
-                query_prompt=s.get("query_prompt", ""),
-                execute_tool=s.get("execute_tool", ""),
-                execute_action=s.get("execute_action", ""),
-            ))
-        return Plan(
-            goal=data.get("goal", ""),
-            skill_name=data.get("skill_name", ""),
-            steps=steps,
-            current_step=data.get("current_step", 0),
-            context=data.get("context", {}),
-        )
-
-
-# ── Prompts ──
-
-PLAN_GENERATION_PROMPT = """你是工作流规划器。根据用户请求生成执行计划（纯 JSON）。
-
-步骤类型:
-  ask     — 收集信息，字段名用英文
-  query   — 调工具查数据并展示选项
-  confirm — 展示汇总请用户确认
-  execute — 调工具执行最终操作
-
-规则: 单步一事, ask→query→confirm→execute 顺序, ≤6 步, execute_tool 必须用实际工具名。
-
-示例（售后工单创建）:
-{
-  "goal": "为订单ORD-xxx创建退款工单",
-  "steps": [
-    {"type": "ask", "description": "了解售后诉求", "ask_prompt": "请描述问题类型并提供订单号", "fields": ["issue_type", "reason", "order_no"]},
-    {"type": "query", "description": "查询订单详情", "query_tool": "order_query", "query_params": {"action": "detail"}, "query_prompt": "找到以下订单"},
-    {"type": "confirm", "description": "确认创建工单"},
-    {"type": "execute", "description": "创建工单", "execute_tool": "after_sales_manage", "execute_action": "create"}
-  ]
+_FIELD_NAME_MAP = {
+    "名称": "name", "商品名称": "name", "名字": "name",
+    "价格": "price", "售价": "price", "单价": "price",
+    "库存": "stock_quantity", "库存数量": "stock_quantity", "数量": "stock_quantity",
+    "描述": "description", "详情": "description", "介绍": "description",
+    "分类": "category_id",
+    "货号": "sku_code", "商品货号": "sku_code", "编码": "sku_code",
+    "售卖方式": "selling_methods", "销售方式": "selling_methods",
+    "规格尺寸": "door_widths", "门幅": "door_widths", "尺寸": "door_widths",
+    "单位": "unit", "计价单位": "unit",
+    "品牌": "brand", "商标": "brand",
+    "颜色": "colors", "色号": "colors",
+    "图片": "images", "图片链接": "images", "图片URL": "images",
+    "计价方式": "pricing_type", "定价方式": "pricing_type",
+    "客户姓名": "customer_name", "联系人": "customer_name",
+    "电话": "customer_phone", "手机号": "customer_phone", "手机": "customer_phone",
+    "地址": "customer_address", "收货地址": "customer_address",
+    "备注": "remark", "说明": "remark",
+    "商品": "product_name", "产品": "product_name",
+    "数量": "quantity", "个数": "quantity",
+    "加工项": "processing_item_ids",
+    "折扣": "discount", "优惠": "discount",
+    "问题类型": "issue_type", "售后类型": "issue_type",
+    "原因": "reason", "问题描述": "reason",
+    "订单号": "order_no", "订单编号": "order_no",
 }
 
-不需要 P&E 的场景（直接回 ReAct）: 简单查询、单步修改（改价格/上下架）、已存在工单的处理（审批/完结）。
-"""
+
+# ── 分类推断 ──
+
+_CATEGORY_KEYWORDS = {
+    "窗帘": "窗帘布艺", "窗纱": "窗纱", "卷帘": "卷帘",
+    "柔纱帘": "柔纱帘", "百叶": "百叶帘", "罗马帘": "罗马帘",
+    "床品": "床品", "抱枕": "抱枕", "靠垫": "靠垫",
+    "桌布": "桌布", "桌旗": "桌旗", "沙发垫": "沙发垫",
+}
 
 
-# ── 智能默认值（根据同类商品推荐属性）──
-
-
-async def _fetch_smart_defaults(
-    category_id: str,
-    category_name: str,
-    tool_names: List[str],
-    ctx,
-) -> Dict[str, Any]:
-    """查询同类商品，提取常见属性值作为智能推荐
-
-    在用户选择分类后调用，用 product_search 查同类商品，
-    分析最常见的 selling_methods / door_widths / unit / price_range 等，
-    返回给 ask 步骤作为上下文参考。
-
-    Args:
-        category_id: 分类 ID
-        category_name: 分类名称
-        tool_names: 可用工具列表
-        ctx: ToolContext
-
-    Returns:
-        {common_attributes, price_range, sample_count, category_name}
-    """
-    from app.tools.registry import get_tool_registry, set_tool_context
-
-    if "product_search" not in tool_names:
-        return {}
-
-    set_tool_context(ctx)
-    registry = get_tool_registry()
-    tool = registry.get_tool("product_search")
-    if not tool:
-        return {}
-
-    try:
-        result = await tool.execute(ctx, keyword=category_name, size=10)
-        if not result.success or not result.data:
-            return {}
-
-        products = result.data.get("products") or result.data.get("items") or []
-        if len(products) < 2:
-            return {}  # 样本太少，不推荐
-
-        # 统计常见属性
-        sm_counter: Dict[str, int] = {}
-        dw_counter: Dict[str, int] = {}
-        unit_counter: Dict[str, int] = {}
-        prices: List[float] = []
-        specs: Dict[str, Dict[str, int]] = {}  # spec_key → {value: count}
-        color_counter: Dict[str, int] = {}
-        pricing_counter: Dict[str, int] = {}
-        brand_counter: Dict[str, int] = {}
-        proc_items: Dict[str, str] = {}  # processing_item_id → name
-
-        for p in products:
-            # 售卖方式
-            sms = p.get("sellingMethods") or p.get("selling_methods") or []
-            if isinstance(sms, list):
-                for sm in sms:
-                    sm_counter[sm] = sm_counter.get(sm, 0) + 1
-            elif isinstance(sms, str) and sms:
-                sm_counter[sms] = sm_counter.get(sms, 0) + 1
-
-            # 门幅
-            dws = p.get("doorWidths") or p.get("door_widths") or []
-            if isinstance(dws, list):
-                for dw in dws:
-                    dw_counter[dw] = dw_counter.get(dw, 0) + 1
-            elif isinstance(dws, str) and dws:
-                dw_counter[dws] = dw_counter.get(dws, 0) + 1
-
-            # 单位
-            unit = p.get("unit", "")
-            if unit:
-                unit_counter[unit] = unit_counter.get(unit, 0) + 1
-
-            # 价格
-            price = p.get("price")
-            if price is not None:
-                try:
-                    prices.append(float(price))
-                except (ValueError, TypeError):
-                    pass
-
-            # 规格（克重/工艺/风格/材质/遮光率等全部动态属性）
-            product_specs = p.get("specifications") or {}
-            if isinstance(product_specs, dict):
-                for spec_key, spec_val in product_specs.items():
-                    if spec_key not in specs:
-                        specs[spec_key] = {}
-                    val = str(spec_val)
-                    specs[spec_key][val] = specs[spec_key].get(val, 0) + 1
-
-            # 颜色
-            colors_list = p.get("colors") or []
-            if isinstance(colors_list, list):
-                for c in colors_list:
-                    name = c.get("colorName") or c.get("name") or str(c)
-                    if name:
-                        color_counter[name] = color_counter.get(name, 0) + 1
-
-            # 计价方式
-            pt = p.get("pricingType") or p.get("pricing_type") or ""
-            if pt:
-                pricing_counter[pt] = pricing_counter.get(pt, 0) + 1
-
-            # 品牌
-            brand = p.get("brand", "")
-            if brand:
-                brand_counter[brand] = brand_counter.get(brand, 0) + 1
-
-            # 关联加工项
-            pi_list = p.get("processingItems") or p.get("processing_items") or []
-            if isinstance(pi_list, list):
-                for pi in pi_list:
-                    pid = pi.get("id") or pi.get("processingItemId") or ""
-                    pname = pi.get("name") or pi.get("processingItemName") or ""
-                    if pid and pid not in proc_items:
-                        proc_items[pid] = pname
-
-        # 取最常见的值（出现 >=30% 的才推荐）
-        threshold = max(1, int(len(products) * 0.3))
-        defaults: Dict[str, Any] = {"category_name": category_name, "sample_count": len(products)}
-
-        top_sms = sorted(sm_counter.items(), key=lambda x: -x[1])
-        if top_sms and top_sms[0][1] >= threshold:
-            defaults["common_selling_methods"] = [s for s, _ in top_sms]
-
-        top_dws = sorted(dw_counter.items(), key=lambda x: -x[1])
-        if top_dws and top_dws[0][1] >= threshold:
-            defaults["common_door_widths"] = [d for d, _ in top_dws]
-
-        top_units = sorted(unit_counter.items(), key=lambda x: -x[1])
-        if top_units and top_units[0][1] >= threshold:
-            defaults["common_unit"] = top_units[0][0]
-
-        top_pt = sorted(pricing_counter.items(), key=lambda x: -x[1])
-        if top_pt and top_pt[0][1] >= threshold:
-            defaults["common_pricing_type"] = top_pt[0][0]
-
-        if prices:
-            prices.sort()
-            defaults["price_range"] = f"{prices[0]:.0f}~{prices[-1]:.0f}元"
-
-        # 规格属性（克重/工艺/风格/材质/遮光率等）— 取每个 key 最常见的值
-        if specs:
-            common_specs = {}
-            for spec_key, value_counts in specs.items():
-                top_vals = sorted(value_counts.items(), key=lambda x: -x[1])
-                # 至少出现 2 次或 >=30%
-                if top_vals[0][1] >= max(2, threshold):
-                    common_specs[spec_key] = top_vals[0][0]  # 最常见值
-            if common_specs:
-                defaults["common_specifications"] = common_specs
-
-        # 颜色
-        top_colors = sorted(color_counter.items(), key=lambda x: -x[1])
-        if top_colors and top_colors[0][1] >= threshold:
-            defaults["common_colors"] = [c for c, _ in top_colors[:8]]
-
-        # 品牌
-        top_brands = sorted(brand_counter.items(), key=lambda x: -x[1])
-        if top_brands and top_brands[0][1] >= threshold:
-            defaults["common_brands"] = [b for b, _ in top_brands]
-
-        # 常用加工项
-        if proc_items:
-            defaults["common_processing_items"] = [{"id": pid, "name": pname} for pid, pname in proc_items.items()]
-
-        logger.info(
-            f"[pe] Smart defaults fetched | category={category_name} "
-            f"samples={len(products)} keys={list(defaults.keys())}"
-        )
-        return defaults
-
-    except Exception as e:
-        logger.warning(f"[pe] Smart defaults fetch failed (non-fatal): {e}")
-        return {}
-
-
-async def _auto_fill_category_and_defaults(
-    plan, state: AgentState, tool_names: List[str]
-) -> None:
-    """自动推断分类并获取智能默认值，省去用户手动选择分类步骤
-
-    1. 从 Vision 分析的商品名推断分类（如"窗帘"→"窗帘布艺"）
-    2. 查该分类下的同类商品获取默认值
-    3. 预填到 plan.context 中
-    """
-    from app.tools.registry import get_tool_registry, set_tool_context
-    from app.graph.skills.base_skill import build_tool_context
-
-    product_name = plan.context.get("name", "")
-    if not product_name:
-        return
-
-    # 从商品名推断分类关键词
-    category_hint = ""
-    category_keywords = {
-        "窗帘": "窗帘布艺", "窗纱": "窗纱", "卷帘": "卷帘",
-        "柔纱帘": "柔纱帘", "百叶": "百叶帘", "罗马帘": "罗马帘",
-        "床品": "床品", "抱枕": "抱枕", "靠垫": "靠垫",
-        "桌布": "桌布", "桌旗": "桌旗", "沙发垫": "沙发垫",
-    }
-    for kw, cat in category_keywords.items():
+def infer_category_hint(product_name: str) -> str:
+    """从商品名推断分类关键词"""
+    for kw, cat in _CATEGORY_KEYWORDS.items():
         if kw in product_name:
-            category_hint = cat
-            break
-    if not category_hint:
-        category_hint = product_name[:4]  # 用商品名前4字兜底
-
-    ctx = build_tool_context(state)
-    set_tool_context(ctx)
-    registry = get_tool_registry()
-
-    # 1. 查分类树，匹配最相近的分类
-    cat_tool = registry.get_tool("category_manage")
-    if cat_tool and "category_manage" in tool_names:
-        try:
-            result = await cat_tool.execute(ctx, action="tree")
-            if result.success and result.data:
-                tree = result.data.get("tree") or []
-                best = _match_category_tree(tree, category_hint)
-                if best:
-                    plan.context["category_id"] = best["id"]
-                    plan.context["category_name"] = best["name"]
-                    logger.info(
-                        f"[pe] Auto category: {best['name']} (hint={category_hint})"
-                    )
-        except Exception as e:
-            logger.warning(f"[pe] Auto category failed: {e}")
-
-    # 2. 有分类后获取智能默认值
-    if plan.context.get("category_id"):
-        smart = await _fetch_smart_defaults(
-            category_id=plan.context["category_id"],
-            category_name=plan.context.get("category_name", ""),
-            tool_names=tool_names,
-            ctx=ctx,
-        )
-        if smart:
-            plan.context["_smart_defaults"] = smart
-            # 自动应用最靠谱的默认值
-            if "common_selling_methods" in smart:
-                plan.context.setdefault("selling_methods", smart["common_selling_methods"])
-            if "common_door_widths" in smart:
-                plan.context.setdefault("door_widths", smart["common_door_widths"])
-            if "common_unit" in smart:
-                plan.context.setdefault("unit", smart["common_unit"])
-            if "common_pricing_type" in smart:
-                plan.context.setdefault("pricing_type", smart["common_pricing_type"])
-            if "common_processing_items" in smart:
-                pi_list = smart["common_processing_items"]
-                plan.context.setdefault("processing_item_ids", [pi["id"] for pi in pi_list[:5]])
-
-    # 3. 如果同类商品搜不到加工项，拉全部活跃加工项作为备选建议
-    if not plan.context.get("processing_item_ids") and "processing_item_query" in tool_names:
-        pi_tool = registry.get_tool("processing_item_query")
-        if pi_tool:
-            try:
-                result = await pi_tool.execute(ctx, status="active")
-                if result.success and result.data:
-                    items = result.data.get("items") or []
-                    if items:
-                        plan.context["_available_processing_items"] = items
-                        logger.info(f"[pe] Available processing items: {len(items)}")
-            except Exception as e:
-                logger.warning(f"[pe] Processing items fetch failed: {e}")
+            return cat
+    return product_name[:4] if product_name else ""
 
 
-def _match_category_tree(tree: list, hint: str) -> Optional[dict]:
+def match_category_from_tree(tree: list, hint: str) -> Optional[dict]:
     """在分类树中匹配最接近的分类名"""
     best = None
     for node in tree:
         name = node.get("name", "")
         if hint in name or name in hint:
             return {"id": node.get("id", ""), "name": name}
-        # 模糊匹配
         if re.search(hint[:2], name):
             best = best or {"id": node.get("id", ""), "name": name}
     return best
 
 
-async def _fetch_order_smart_defaults(
-    product_name: str,
-    product_id: str = "",
-    tool_names: List[str] = None,
-    ctx=None,
-) -> Dict[str, Any]:
-    """选好商品后查详情，预填价格/加工项/单位"""
-    if not tool_names or "product_detail" not in tool_names:
-        return {}
-    from app.tools.registry import get_tool_registry, set_tool_context
-    set_tool_context(ctx)
-    registry = get_tool_registry()
-    tool = registry.get_tool("product_detail")
-    if not tool:
-        return {}
-    try:
-        params = {"product_id": product_id} if product_id else {"keyword": product_name}
-        result = await tool.execute(ctx, **params)
-        if not result.success or not result.data:
-            return {}
-        product = result.data.get("product") or result.data
-        if not product:
-            return {}
-        defaults: Dict[str, Any] = {"_source_product": product_name}
-        if product.get("price") is not None:
-            defaults["unit_price"] = product["price"]
-        if product.get("unit"):
-            defaults["unit"] = product["unit"]
-        if product.get("product_id") or product.get("id"):
-            defaults["product_id"] = product.get("product_id") or product.get("id")
-        items = product.get("processingItems") or product.get("processing_items") or []
-        if items:
-            defaults["available_processing_items"] = items
-            logger.info(f"[pe] Order smart defaults: {product_name} price={defaults.get('unit_price')} items={len(items)}")
-        return defaults
-    except Exception as e:
-        logger.warning(f"[pe] Order smart defaults failed (non-fatal): {e}")
+# ── 字段提取（LLM）──
+
+async def extract_fields(user_text: str, fields: List[str], context: dict = None) -> Dict[str, Any]:
+    """LLM 从自然语言中提取结构化字段"""
+    if not fields or not user_text:
         return {}
 
+    field_hints = []
+    for f in fields:
+        cn = next((k for k, v in _FIELD_NAME_MAP.items() if v == f), f)
+        field_hints.append(f"  - {f} ({cn})")
 
-async def _fetch_aftersales_smart_defaults(order_no: str, ctx=None) -> Dict[str, Any]:
-    """根据订单号查详情，预填售后工单的客户/金额/商品"""
-    from app.tools.registry import get_tool_registry, set_tool_context
-    set_tool_context(ctx)
-    registry = get_tool_registry()
-    tool = registry.get_tool("order_query")
-    if not tool:
-        return {}
+    prompt = (
+        f"从以下用户消息中提取字段值，返回纯 JSON:\n"
+        f"用户消息: {user_text}\n\n"
+        f"需要的字段:\n" + "\n".join(field_hints) + "\n\n"
+        f"只输出 JSON，不要其他内容。未提及的字段不要编造。"
+    )
+    if context:
+        prompt += f"\n已有上下文（不要重复已确定的值）: {json.dumps(context, ensure_ascii=False)}"
+
     try:
-        result = await tool.execute(ctx, action="detail", order_no=order_no)
-        if not result.success or not result.data:
-            return {}
-        order = result.data.get("order") or result.data
-        if not order:
-            return {}
-        defaults: Dict[str, Any] = {"_source_order": order_no}
-        if order.get("customer_name"):
-            defaults["customer_name"] = order["customer_name"]
-        if order.get("customer_phone") or order.get("phone"):
-            defaults["customer_phone"] = order.get("customer_phone") or order.get("phone")
-        if order.get("total_amount"):
-            defaults["order_amount"] = order["total_amount"]
-        items = order.get("items") or order.get("order_items") or []
-        if items:
-            defaults["order_items"] = [{"name": i.get("product_name", ""), "qty": i.get("quantity", 1)} for i in items[:5]]
-        logger.info(f"[pe] Aftersales smart defaults: {order_no} customer={defaults.get('customer_name')}")
-        return defaults
-    except Exception as e:
-        logger.warning(f"[pe] Aftersales smart defaults failed (non-fatal): {e}")
-        return {}
-
-
-async def _save_plan(session_id: str, plan: Plan):
-    if not session_id:
-        return
-    try:
-        from app.memory.session_memory import SessionMemory
-        await SessionMemory().set_plan_state(session_id, plan.to_json())
-        logger.info(f"[pe] Plan saved | session={session_id} step={plan.current_step}/{len(plan.steps)}")
-    except Exception as e:
-        logger.warning(f"[pe] save_plan failed: {e}")
-
-
-async def _load_plan(session_id: str) -> Optional[Plan]:
-    if not session_id:
-        return None
-    try:
-        from app.memory.session_memory import SessionMemory
-        raw = await SessionMemory().get_plan_state(session_id)
-        if raw:
-            return Plan.from_json(json.loads(raw))
-    except Exception as e:
-        logger.warning(f"[pe] load_plan failed: {e}")
-    return None
-
-
-async def _clear_plan(session_id: str):
-    if not session_id:
-        return
-    try:
-        from app.memory.session_memory import SessionMemory
-        await SessionMemory().clear_plan_state(session_id)
-    except Exception as e:
-        logger.warning(f"[pe] clear_plan failed: {e}")
-
-
-# ── Plan 生成 ──
-
-
-
-
-async def _apply_query_match(plan, qt, matched, state, tool_names):
-    """将 query 步骤的用户选择写入 plan.context"""
-    if qt == "category_manage":
-        plan.context["category_id"] = matched.get("id", "")
-        plan.context["category_name"] = matched.get("name", "")
-        logger.info(f"[pe] Query matched: category={matched.get('name')}")
-        from app.graph.skills.base_skill import build_tool_context
-        smart = await _fetch_smart_defaults(
-            category_id=plan.context["category_id"],
-            category_name=plan.context["category_name"],
-            tool_names=tool_names,
-            ctx=build_tool_context(state),
-        )
-        if smart:
-            plan.context["_smart_defaults"] = smart
-    elif qt == "processing_item_query":
-        ids_list = matched.get("ids", [matched.get("id", "")])
-        plan.context["processing_item_ids"] = [i for i in ids_list if i]
-        logger.info(f"[pe] Query matched: processing_items={len(plan.context['processing_item_ids'])}")
-
-async def _generate_plan(user_message: str, chat_history: list, goal_hint: str = "") -> Optional[Plan]:
-    """生成 Plan：模板匹配优先，LLM 兜底"""
-
-    # 优化: 已知场景直接用模板，跳过 LLM 调用
-    _TEMPLATES = {
-        "product_create": {
-            "goal": "创建商品",
-            "steps": [
-                {"type": "ask", "description": "收集并确认全部信息", "ask_prompt": "确认信息并补充缺失项。直接描述修改即可：价格改成200 | 分类换一个 | 加工项选1,3 | 确认创建", "fields": ["price", "stock_quantity", "sku_code"]},
-                {"type": "confirm", "description": "确认创建"},
-                {"type": "execute", "description": "执行创建", "execute_tool": "product_manage", "execute_action": "create"},
-            ],
-        },
-        "product_inquiry": {
-            "goal": "创建商品",
-            "steps": [
-                {"type": "ask", "description": "收集并确认全部信息", "ask_prompt": "确认信息并补充缺失项。直接描述修改即可：价格改成200 | 分类换一个 | 加工项选1,3 | 确认创建", "fields": ["price", "stock_quantity", "sku_code"]},
-                {"type": "confirm", "description": "确认创建"},
-                {"type": "execute", "description": "执行创建", "execute_tool": "product_manage", "execute_action": "create"},
-            ],
-        },
-        "order_create": {
-            "goal": "创建订单",
-            "steps": [
-                {"type": "ask", "description": "收集订单信息", "ask_prompt": "请提供客户姓名、电话、地址、商品名称和数量", "fields": ["customer_name", "customer_phone", "customer_address", "product_name", "quantity"]},
-                {"type": "query", "description": "搜索商品", "query_tool": "product_search", "query_params": {"keyword": ""}, "query_prompt": "请选择商品"},
-                {"type": "confirm", "description": "确认订单"},
-                {"type": "execute", "description": "创建订单", "execute_tool": "order_create", "execute_action": "create"},
-            ],
-        },
-    }
-
-    template = _TEMPLATES.get(goal_hint)
-    if template:
-        # 用对话历史中的商品名个性化 goal
-        goal = template["goal"]
-        for msg in reversed(chat_history[-4:]):
-            if hasattr(msg, 'content') and isinstance(msg.content, str):
-                if "创建" in msg.content and ("商品" in msg.content or "色卡" in msg.content or "布料" in msg.content or "窗帘" in msg.content):
-                    goal = f"创建{msg.content[:30]}商品"
-                    break
-        plan = Plan(
-            goal=goal,
-            steps=[PlanStep(**s) for s in template["steps"]],
-            current_step=0,
-        )
-        logger.info(f"[pe] Plan from template: {goal_hint} | goal='{plan.goal}'")
-        return plan
-
-    # 无匹配模板，LLM 兜底
-    prompt = f"用户请求: {user_message}"
-    if goal_hint:
-        prompt += f"\n意图提示: {goal_hint}"
-    prompt += "\n\n请生成执行计划（纯 JSON）。"
-
-    messages = [SystemMessage(content=PLAN_GENERATION_PROMPT), *chat_history[-4:], HumanMessage(content=prompt)]
-
-    raw = ""
-    try:
-        raw = await LLMFactory.invoke_text_safe(messages, enable_thinking=False)
-        content = raw.strip()
-        start = content.find("{")
-        end = content.rfind("}")
+        raw = await LLMFactory.invoke_text_safe([
+            SystemMessage(content="你是字段提取器。只输出 JSON。"),
+            HumanMessage(content=prompt),
+        ], enable_thinking=False)
+        start = raw.find("{")
+        end = raw.rfind("}")
         if start >= 0 and end > start:
-            content = content[start:end + 1]
-        if content.startswith("```"):
-            lines = content.split("\n")
-            content = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
-        plan_dict = json.loads(content)
-        plan = Plan.from_json(plan_dict)
-        logger.info(f"[pe] Plan from LLM | goal='{plan.goal}' steps={len(plan.steps)}")
-        return plan
+            return json.loads(raw[start:end + 1])
     except Exception as e:
-        logger.error(f"[pe] Plan generation failed: {e} | raw={raw[:300]}")
-        return None
+        logger.warning(f"[utils] extract_fields failed: {e}")
+    return {}
 
 
-# ── 信息提取 ──
+# ── 用户选择匹配 ──
 
-
-def _validate_tool(tool_name: str, allowed_tools: List[str], step_desc: str) -> bool:
-    """校验工具是否在允许列表中，防止 LLM prompt injection 越权"""
-    if tool_name and tool_name not in allowed_tools:
-        logger.warning(f"[pe] Tool '{tool_name}' not in allowed {allowed_tools} for step '{step_desc}' — rejected")
-        return False
-    return True
-
-
-def _match_user_choice(user_msg: str, results: list) -> Optional[dict]:
-    """从用户回复匹配查询结果中的选项，返回 {field_name: actual_value}
-
-    用户可能回复编号(1,2)、名称或 ID。
-    results 格式: [{"id": "...", "name": "...", ...}, ...]
-    根据 query_tool 类型返回对应的字段，如 category_manage → {category_id: ...}
-    """
+def match_user_choice(user_msg: str, results: list) -> Optional[dict]:
+    """从用户回复匹配查询结果中的选项（编号/名称/ID）"""
     if not results or not user_msg:
         return None
-    # 提取数字
     nums = re.findall(r'\d+', user_msg)
     if nums:
-        # 支持多选："1,3,5" → 匹配所有编号
-        ids = []
-        names = []
+        ids, names = [], []
         for n in nums:
             idx = int(n) - 1
             if 0 <= idx < len(results):
@@ -655,7 +131,6 @@ def _match_user_choice(user_msg: str, results: list) -> Optional[dict]:
             return {"id": ids[0] if len(ids) == 1 else ids,
                     "name": names[0] if len(names) == 1 else names,
                     "ids": ids, "names": names}
-    # 尝试名称匹配
     for item in results:
         name = item.get("name", "")
         if name and name in user_msg:
@@ -663,729 +138,98 @@ def _match_user_choice(user_msg: str, results: list) -> Optional[dict]:
     return None
 
 
+# ── 智能默认值（同类商品统计）──
 
-async def _detect_user_intent(user_msg: str, plan) -> dict:
-    """分析用户消息意图（取消）
-
-    字段修正（"价格改成200"）由 ask 步骤中的 _extract_fields（LLM）自然处理，
-    代码不再用正则预检测。
-
-    Returns:
-        {action}
-        action: "continue" | "cancel"
-    """
-    if not user_msg:
-        return {"action": "continue"}
-
-    # 0.5 检测加工项编号选择: "1,3,5" 或 "选1,3"
-    digits = re.findall(r'\d+', user_msg)
-    if digits and len(user_msg.replace(' ', '').replace(',', '').replace('，', '')) <= 20:
-        return {"action": "pick_items", "ids": digits}
-
-    # 1. 检测取消
-    cancel_words = ["取消", "不要了", "算了", "不用了", "不做", "不创建了", "放弃"]
-    if any(w in user_msg for w in cancel_words):
-        return {"action": "cancel"}
-
-    return {"action": "continue"}
-
-
-# 中文字段名 → 英文 key 映射
-_FIELD_NAME_MAP = {
-    "名称": "name", "商品名称": "name", "名字": "name",
-    "价格": "price", "售价": "price", "单价": "price",
-    "库存": "stock_quantity", "库存数量": "stock_quantity", "数量": "stock_quantity",
-    "描述": "description", "详情": "description", "介绍": "description",
-    "分类": "category_id",
-    "货号": "sku_code", "商品货号": "sku_code", "编码": "sku_code",
-    "售卖方式": "selling_methods", "销售方式": "selling_methods",
-    "规格尺寸": "door_widths", "门幅": "door_widths", "尺寸": "door_widths",
-    "单位": "unit", "计价单位": "unit",
-    # 订单字段
-    "客户姓名": "customer_name", "客户": "customer_name", "姓名": "customer_name",
-    "电话": "customer_phone", "手机": "customer_phone", "联系电话": "customer_phone",
-    "地址": "customer_address", "收货地址": "customer_address",
-    "备注": "remark", "订单备注": "remark",
-    "商品": "product_name", "商品名称": "product_name",
-    "数量": "quantity", "件数": "quantity",
-    "总价": "total_amount", "金额": "total_amount",
-}
-
-
-async def _extract_fields(user_message: str, fields: List[str], existing: Dict) -> Dict:
-    """从用户自然语言回复中提取字段值"""
-    if not fields:
-        return {}
-    mapping_hints = "\n".join(
-        f"  {cn} → {en}" for cn, en in _FIELD_NAME_MAP.items() if en in fields
-    )
-    prompt = (
-        f"从用户回复中提取以下字段的值。中文字段名请按映射表转换为英文 key：\n"
-        f"{mapping_hints}\n\n"
-        f"用户回复: {user_message}\n"
-        f"需要提取的字段: {', '.join(fields)}\n"
-        f"已有信息: {json.dumps(existing, ensure_ascii=False)}\n\n"
-        f"返回纯 JSON，key 使用英文字段名。没提到的字段不要编造。\n"
-        f"⚠️ colors/specifications 等列表字段必须原样保留全部值，一个都不能省略。"
-    )
-    try:
-        content = await LLMFactory.invoke_text_safe([HumanMessage(content=prompt)], enable_thinking=False)
-        content = content.strip()
-        if content.startswith("```"):
-            lines = content.split("\n")
-            content = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
-        return json.loads(content)
-    except Exception:
-        return {"raw_input": user_message}
-
-
-# ── 主入口 ──
-
-
-async def execute_plan(
-    state: AgentState,
-    skill_name: str,
+async def fetch_smart_defaults(
+    category_id: str,
+    category_name: str,
     tool_names: List[str],
-    system_prompt: str,
-) -> Optional[dict]:
-    """P&E 主入口。返回 None 表示应回退到 ReAct。"""
-    messages = state.get("messages", [])
-    session_id = state.get("session_id", "")
-    intent_result = state.get("intent_result", {})
+    ctx,
+) -> Dict[str, Any]:
+    """查询同类商品，提取常见属性值"""
+    from app.tools.registry import get_tool_registry, set_tool_context
 
-    # 提取最后一条用户消息
-    last_user_msg = ""
-    for msg in reversed(messages):
-        if isinstance(msg, HumanMessage):
-            last_user_msg = msg.content if isinstance(msg.content, str) else str(msg.content)
-            break
+    if "product_search" not in tool_names:
+        return {}
+    set_tool_context(ctx)
+    registry = get_tool_registry()
+    tool = registry.get_tool("product_search")
+    if not tool:
+        return {}
 
-    # 1. 加载或生成 Plan
-    plan = await _load_plan(session_id)
+    try:
+        result = await tool.execute(ctx, keyword=category_name, size=10)
+        if not result.success or not result.data:
+            return {}
+        products = result.data.get("products") or result.data.get("items") or []
+        if len(products) < 2:
+            return {}
 
-    if plan is None:
-        intent_name = ""
-        if isinstance(intent_result, dict):
-            intent_value = intent_result.get("intent")
-            if hasattr(intent_value, "value"):
-                intent_name = intent_value.value
-            elif intent_value is not None:
-                intent_name = str(intent_value)
-        plan = await _generate_plan(last_user_msg, messages, intent_name)
+        sm_counter, dw_counter, unit_counter = {}, {}, {}
+        prices, color_counter, pricing_counter = [], {}, {}
+        spec_counter, brand_counter, proc_items = {}, {}, {}
 
-        if plan is None or len(plan.steps) == 0:
-            return None  # 回退 ReAct
-
-        # 单步简单操作不需要 P&E
-        if len(plan.steps) == 1 and plan.steps[0].type in ("ask", "query"):
-            return None
-
-        # 从 Vision 分析消息中提取图片 URL 预填充 plan.context
-        for msg in messages:
-            role = getattr(msg, 'type', '') or getattr(msg, 'role', '')
-            if role not in ('system', 'assistant', 'ai'):
-                continue
-            if hasattr(msg, 'content') and isinstance(msg.content, str) and '[图片URL]' in msg.content:
+        for p in products:
+            for sm in (p.get("sellingMethods") or p.get("selling_methods") or []):
+                if isinstance(sm, str) and sm:
+                    sm_counter[sm] = sm_counter.get(sm, 0) + 1
+            for dw in (p.get("doorWidths") or p.get("door_widths") or []):
+                if isinstance(dw, str) and dw:
+                    dw_counter[dw] = dw_counter.get(dw, 0) + 1
+            unit = p.get("unit", "")
+            if unit:
+                unit_counter[unit] = unit_counter.get(unit, 0) + 1
+            price = p.get("price")
+            if price is not None:
                 try:
-                    marker = '[图片URL]'
-                    marker_end = msg.content.index(marker) + len(marker)
-                    json_start = msg.content.index('[', marker_end)
-                    json_end = msg.content.index(']', json_start) + 1
-                    urls = json.loads(msg.content[json_start:json_end])
-                    if urls and "images" not in plan.context:
-                        plan.context["images"] = list(dict.fromkeys(urls))  # 去重
-                        logger.info(f"[pe] Vision images pre-filled: {len(plan.context['images'])} urls")
-                except Exception:
+                    prices.append(float(price))
+                except (ValueError, TypeError):
                     pass
+            colors = p.get("colors") or []
+            if isinstance(colors, list):
+                for c in colors:
+                    name = c.get("colorName") or c.get("name") or str(c)
+                    if name:
+                        color_counter[name] = color_counter.get(name, 0) + 1
+            pt = p.get("pricingType") or p.get("pricing_type") or ""
+            if pt:
+                pricing_counter[pt] = pricing_counter.get(pt, 0) + 1
+            specs = p.get("specifications") or {}
+            if isinstance(specs, dict):
+                for sk, sv in specs.items():
+                    spec_counter.setdefault(sk, {})[str(sv)] = spec_counter.get(sk, {}).get(str(sv), 0) + 1
+            brand = p.get("brand", "")
+            if brand:
+                brand_counter[brand] = brand_counter.get(brand, 0) + 1
+            for pi in (p.get("processingItems") or p.get("processingItemConfigs") or []):
+                pid = pi.get("processingItemId") or pi.get("id")
+                if pid and pid not in proc_items:
+                    proc_items[pid] = pi.get("name", pid)
 
-        # 从 Vision 分析消息中提取商品属性预填充 context
-        # 优先从 [结构化数据] JSON 直接提取（绕过 LLM，保证颜色等列表完整）
-        for msg in messages:
-            if hasattr(msg, 'content') and isinstance(msg.content, str):
-                if '[结构化数据]' in msg.content:
-                    try:
-                        json_start = msg.content.find('{', msg.content.find('[结构化数据]'))
-                        json_end = msg.content.rfind('}')
-                        if json_start >= 0 and json_end > json_start:
-                            structured = json.loads(msg.content[json_start:json_end + 1])
-                            for k, v in structured.items():
-                                if v and k not in plan.context and k not in ("raw_input",):
-                                    plan.context[k] = v
-                            logger.info(f"[pe] Vision structured JSON pre-filled: {list(structured.keys())}")
-                    except Exception:
-                        pass
+        total = len(products)
+        threshold = max(1, int(total * 0.3))
 
-                if '[图片分析结果]' in msg.content:
-                    # LLM 兜底：提取 JSON 中没覆盖的字段
-                    remaining_fields = [f for f in ["name", "description", "brand", "colors", "specifications",
-                        "pricing_type", "unit", "selling_methods", "door_widths"] if f not in plan.context]
-                    if remaining_fields:
-                        vision_fields = await _extract_fields(
-                            msg.content, remaining_fields, plan.context
-                        )
-                        for k, v in vision_fields.items():
-                            if v and k not in plan.context and k != "raw_input":
-                                plan.context[k] = v
-                        if vision_fields:
-                            logger.info(f"[pe] Vision LLM fallback: {list(vision_fields.keys())}")
-                    break
+        def top(counter, limit=5):
+            return [k for k, v in sorted(counter.items(), key=lambda x: -x[1])[:limit] if v >= threshold]
 
-        # 自动推断分类和智能默认值（一步到位，省去单独的分类查询步骤）
-        if skill_name == "product" and not plan.context.get("category_id"):
-            await _auto_fill_category_and_defaults(plan, state, tool_names)
-
-        plan.skill_name = skill_name
-        await _save_plan(session_id, plan)
-
-    # 2. 获取当前步骤
-    current = plan.current()
-    if current is None:
-        await _clear_plan(session_id)
-        return {"final_answer": "操作已完成。", "messages": [], "skill_used": skill_name}
-
-    logger.info(f"[pe] Step {plan.current_step + 1}/{len(plan.steps)} type={current.type} goal='{plan.goal}'")
-
-    # ── 0. 用户意图检测（取消）──
-    user_intent = await _detect_user_intent(last_user_msg, plan)
-
-    if user_intent["action"] == "cancel":
-        await _clear_plan(session_id)
-        return {"final_answer": "好的，已取消。", "messages": [AIMessage(content="好的，已取消。")], "skill_used": skill_name}
-
-    need_re_execute = False  # 标记是否需要重新执行当前步骤（导航回溯后不换步）
-
-    # 如果发生了回溯，保存 plan 并重新执行
-    if need_re_execute:
-        await _save_plan(session_id, plan)
-        # 重建 context 中的内部标记
-        plan.context.pop("_user_choice", None)
-        plan.context.pop("_query_results", None)
-        plan.context.pop("_user_confirmed", None)
-
-    # ── 1. 从用户回复中提取信息（延续之前的 Plan）──
-    if plan.current_step > 0 and not need_re_execute:
-        prev = plan.steps[plan.current_step - 1]
-        if prev.type == "ask" and prev.fields:
-            extracted = await _extract_fields(last_user_msg, prev.fields, plan.context)
-            plan.context.update(extracted)
-        elif prev.type == "query":
-            plan.context["_user_choice"] = last_user_msg
-            results = plan.context.get("_query_results", [])
-            if results:
-                matched = _match_user_choice(last_user_msg, results)
-                if matched:
-                    qt = prev.query_tool
-                    if qt == "category_manage":
-                        from app.graph.skills.base_skill import build_tool_context
-                        plan.context["category_id"] = matched.get("id", "")
-                        plan.context["category_name"] = matched.get("name", "")
-                        logger.info(f"[pe] Query choice matched: tool={qt} id={matched.get('id')}")
-                        # 根据同类商品提取智能默认值
-                        smart = await _fetch_smart_defaults(
-                            category_id=plan.context["category_id"],
-                            category_name=plan.context["category_name"],
-                            tool_names=tool_names,
-                            ctx=build_tool_context(state),
-                        )
-                        if smart:
-                            plan.context["_smart_defaults"] = smart
-                            logger.info(
-                                f"[pe] Smart defaults set for category '{smart.get('category_name')}' "
-                                f"({smart.get('sample_count', 0)} samples)"
-                            )
-                    elif qt == "processing_item_query":
-                        ids_list = matched.get("ids", [matched.get("id", "")])
-                        plan.context["processing_item_ids"] = [i for i in ids_list if i]
-                        logger.info(f"[pe] Query choice matched: tool={qt} count={len(plan.context['processing_item_ids'])}")
-    # ── 2. 执行当前步骤 ──
-    new_messages = []
-    final_answer = ""
-    awaiting_user = False
-
-    _retry = True
-    while _retry:
-        _retry = False
-        if current.type == "ask":
-            # 构建智能默认值提示
-            smart_hint = ""
-            smart_defaults = plan.context.get("_smart_defaults", {})
-            if smart_defaults:
-                parts = [f"\n## 同类商品参考（{smart_defaults.get('category_name', '')}分类，{smart_defaults.get('sample_count', 0)}件样本）"]
-                if smart_defaults.get("common_selling_methods"):
-                    parts.append(f"  • 售卖方式: {smart_defaults['common_selling_methods']}")
-                if smart_defaults.get("common_door_widths"):
-                    parts.append(f"  • 门幅/尺寸: {smart_defaults['common_door_widths']}")
-                if smart_defaults.get("common_specifications"):
-                    spec_str = ", ".join(f"{k}≈{v}" for k, v in smart_defaults["common_specifications"].items())
-                    parts.append(f"  • 常见规格属性: {spec_str}")
-                if smart_defaults.get("common_colors"):
-                    parts.append(f"  • 常见颜色: {smart_defaults['common_colors'][:5]}")
-                smart_hint = "\n".join(parts)
-
-            # 可用加工项列表（同类商品没数据时的兜底）
-            avail_pi = plan.context.get("_available_processing_items")
-            if avail_pi:
-                pi_names = [f"`{i+1}` {pi['name']}" for i, pi in enumerate(avail_pi[:10])]
-                smart_hint += f"\n\n可选加工项（回复编号选择，如1,3,5）：\n" + "\n".join(pi_names)
-
-            ctx_visible = {k: v for k, v in plan.context.items() if not k.startswith("_")}
-            prompt = (
-                f"目标: {plan.goal}\n"
-                f"用户说: {last_user_msg}\n"
-                f"对话上下文: {json.dumps(ctx_visible, ensure_ascii=False, indent=2)}\n"
-                f"{smart_hint}\n\n"
-                f"要求:\n"
-                f"1. 列出全部信息让用户核对（16色必须逐个列出，禁止'等16种'）\n"
-                f"2. 末尾只加一行: 💡 直接描述修改即可，如：价格改成200 | 分类换一个 | 颜色删掉后3个 | 加工项选1,3 | 确认创建\n"
-                f"3. 回复要简洁，不要调用工具。"
-            )
-            final_answer = await LLMFactory.invoke_text_safe([
-                SystemMessage(content=system_prompt), *messages[-4:], HumanMessage(content=prompt),
-            ], enable_thinking=False)
-            new_messages.append(AIMessage(content=final_answer))
-
-            # ── 导航意图：LLM 已生成自然回复，代码仅调整 step pointer ──
-            _nav_handled = False
-
-            # 回溯："上一步""返回"
-            if any(kw in last_user_msg for kw in ["上一步", "后退", "回到上一步", "返回上一步"]):
-                plan.current_step = max(0, plan.current_step - 1)
-                logger.info(f"[pe] Backtracked to step {plan.current_step + 1}")
-                need_re_execute = True
-                _nav_handled = True
-
-            # 查看进度
-            elif any(kw in last_user_msg for kw in ["看看进度", "有哪些信息", "现在填了什么"]):
-                ctx_visible = {k: v for k, v in plan.context.items() if not k.startswith("_")}
-                progress_lines = ["📋 **当前已收集的信息**："]
-                for k, v in ctx_visible.items():
-                    progress_lines.append(f"  • {k}: {str(v)[:80] if v else '(空)'}")
-                final_answer = "\n".join(progress_lines)
-                new_messages[-1] = AIMessage(content=final_answer)
-                _nav_handled = True
-
-            # 加工项编号选择："1,3,5"
-            if not _nav_handled:
-                digits = re.findall(r'\d+', last_user_msg)
-                avail_pi = plan.context.get("_available_processing_items", [])
-                if digits and avail_pi and len(last_user_msg.replace(' ', '').replace(',', '').replace('，', '')) <= 20:
-                    selected_ids, selected_names = [], []
-                    for n in digits:
-                        idx = int(n) - 1
-                        if 0 <= idx < len(avail_pi):
-                            selected_ids.append(avail_pi[idx]["id"])
-                            selected_names.append(avail_pi[idx]["name"])
-                    if selected_ids:
-                        plan.context["processing_item_ids"] = selected_ids
-                        final_answer = f"已选择加工项: {', '.join(selected_names)}。请确认或回复'确认创建'"
-                        new_messages[-1] = AIMessage(content=final_answer)
-                        logger.info(f"[pe] Processing items selected: {selected_names}")
-
-            # 提取字段值填充context
-            all_known = " ".join(m.content if isinstance(m.content, str) else str(m.content) for m in messages[-6:] if hasattr(m, "content"))
-            inferred = await _extract_fields(all_known, current.fields, plan.context)
-            for k, v in inferred.items():
-                if v: plan.context[k] = v  # 用户输入覆盖Vision预填
-            if inferred: logger.info(f"[pe] Auto-filled: {list(inferred.keys())}")
-
-            # 检测确认意图，从 ask 直接跳到 execute（跳过 confirm 步骤）
-            cl = last_user_msg.strip()
-            is_confirm = any(k in cl for k in ["确认创建","确认","没问题","好的","可以","行","就这样","直接创建","不用改了","ok","yes"])
-            is_cancel = any(k in cl for k in ["取消","不要了","算了","不做","不创建了","放弃"])
-            if is_cancel:
-                await _clear_plan(session_id)
-                return {"final_answer": "好的，已取消。", "messages": [AIMessage(content="好的，已取消。")], "skill_used": skill_name}
-            if is_confirm and plan.steps and plan.steps[-1].type == "execute":
-                plan.current_step = len(plan.steps) - 1  # 跳到 execute
-                current = plan.current()
-                logger.info(f"[pe] Ask→Execute | step {plan.current_step + 1}")
-                await _save_plan(session_id, plan)
-                need_re_execute = True
-                continue
-
-            awaiting_user = True
-
-        elif current.type == "query":
-            # 校验工具权限
-            if not _validate_tool(current.query_tool, tool_names, current.description):
-                await _clear_plan(session_id)
-                return {"final_answer": "操作无法完成，请重试。", "messages": [AIMessage(content="操作无法完成，请重试。")], "skill_used": skill_name}
-
-            # 执行查询
-            from app.tools.registry import get_tool_registry, set_tool_context
-            from app.graph.skills.base_skill import build_tool_context
-
-            registry = get_tool_registry()
-            tool = registry.get_tool(current.query_tool)
-            ctx = build_tool_context(state)
-            set_tool_context(ctx)
-
-            if tool:
-                try:
-                    result = await tool.execute(ctx, **current.query_params)
-                    query_data = json.dumps(
-                        result.data if result.success else {"error": result.message},
-                        ensure_ascii=False
-                    )
-                    # 存储查询结果，供下一步匹配用户选择
-                    if result.success and result.data:
-                        items = result.data.get("items") or result.data.get("tree") or []
-                        if items:
-                            plan.context["_query_results"] = items
-                            # 代码直接生成编号列表，不依赖 LLM
-                            lines = []
-                            for i, item in enumerate(items, 1):
-                                name = item.get("name", "")
-                                desc_parts = []
-                                price = item.get("unit_price") or item.get("price") or item.get("basePrice")
-                                if price is not None:
-                                    desc_parts.append(f"¥{price}")
-                                unit = item.get("unit", "")
-                                if unit:
-                                    desc_parts.append(f"/{unit}")
-                                extra = item.get("description") or item.get("category_name", "")
-                                line = f"  `{i}`　{name}"
-                                if desc_parts:
-                                    line += f" · _{' '.join(desc_parts)}_"
-                                if extra:
-                                    line += f" · {extra}"
-                                lines.append(line)
-                            query_data = "\n\n".join(lines)
-                except Exception as e:
-                    query_data = f"查询失败: {e}"
-            else:
-                query_data = f"工具不可用: {current.query_tool}"
-
-            # 当轮匹配用户选择：用户可能已在消息中直接说了编号/名称
-            if items and last_user_msg.strip():
-                matched = _match_user_choice(last_user_msg, items)
-                if matched:
-                    await _apply_query_match(plan, current.query_tool, matched, state, tool_names)
-                    plan.advance()
-                    current = plan.current()
-                    await _save_plan(session_id, plan)
-                    logger.info(f"[pe] Query matched in-turn: {current.query_tool}")
-                    continue  # 跳过列表展示，直接进入下一步
-
-            # 代码直接拼接带编号列表，不经过 LLM，避免编号被吃掉
-            # LLM 只生成一句话引导语，禁止列出选项（列表由代码拼接）
-            intro_prompt = (
-                f"你正在帮用户完成: {plan.goal}\n"
-                f"已收集信息: {json.dumps(plan.context, ensure_ascii=False)}\n\n"
-                f"请用一句话引导用户做选择（如'{current.query_prompt}'），但绝对不要列出任何选项名称。不要调用工具。"
-            )
-            llm_intro = await LLMFactory.invoke_text_safe([
-                SystemMessage(content=system_prompt),
-                *messages[-4:],
-                HumanMessage(content=intro_prompt),
-            ], enable_thinking=False)
-            # 代码直接拼接：引导语 + 带编号的选项列表 + 选择提示
-            final_answer = (
-                f"{llm_intro.strip()}\n\n"
-                f"{query_data}\n\n"
-                f"↳ 回复数字编号即可选择（如回复 `2`）"
-            )
-            new_messages.append(AIMessage(content=final_answer))
-            awaiting_user = True
-
-        elif current.type == "confirm":
-            # 检测用户意图（修改/取消/确认），代码控制流程
-            cl = last_user_msg.strip().lower()
-            is_confirm = any(k in cl for k in ["确认","是","可以","好的","行","好","对","正确","ok","yes","y"])
-            is_cancel = any(k in cl for k in ["取消","不","不要","算了","no","n"])
-            if is_cancel:
-                await _clear_plan(session_id)
-                return {"messages": [AIMessage(content="好的，已取消。")], "final_answer": "好的，已取消。", "skill_used": skill_name}
-            if is_confirm:
-                # 用户确认: 立即跳到 execute
-                plan.advance()
-                await _save_plan(session_id, plan)
-                logger.info(f"[pe] Confirm→Execute now")
-                current = plan.current()
-                _retry = True
-                continue
-            # 首次进入或修改信息: LLM 生成清单
-            prompt = (
-                f"目标: {plan.goal}\n用户: {last_user_msg}\n"
-                f"信息:\n{json.dumps({k:v for k,v in plan.context.items() if not k.startswith('_')}, ensure_ascii=False, indent=2)}\n\n"
-                f"整理清单+请求确认。用户修改先确认修改再重展。不调用工具。"
-            )
-            final_answer = await LLMFactory.invoke_text_safe([
-                SystemMessage(content=system_prompt), *messages[-4:], HumanMessage(content=prompt),
-            ], enable_thinking=False)
-            new_messages.append(AIMessage(content=final_answer))
-            awaiting_user = True
-
-        elif current.type == "execute":
-            # 校验工具权限，防止 LLM prompt injection 越权
-            if not _validate_tool(current.execute_tool, tool_names, current.description):
-                await _clear_plan(session_id)
-                return {"final_answer": "操作无法完成，请重试。", "messages": [AIMessage(content="操作无法完成，请重试。")], "skill_used": skill_name}
-
-            from app.tools.registry import get_tool_registry, set_tool_context
-            from app.graph.skills.base_skill import build_tool_context
-
-            registry = get_tool_registry()
-            tool = registry.get_tool(current.execute_tool)
-            ctx = build_tool_context(state)
-            set_tool_context(ctx)
-
-            # 如果 name 缺失，从对话历史中兜底提取
-            if "name" not in plan.context or not plan.context.get("name"):
-                # 搜索用户消息和 Vision 分析结果中的商品名称
-                all_text = " ".join(
-                    m.content if isinstance(m.content, str) else str(m.content)
-                    for m in messages
-                    if hasattr(m, 'content')
-                )
-                # 从所有历史文本中提取 name
-                name_fields = await _extract_fields(all_text, ["name"], plan.context)
-                if name_fields.get("name"):
-                    plan.context["name"] = name_fields["name"]
-                    logger.info(f"[pe] Name fallback extracted: {plan.context['name'][:50]}")
-
-            # 只传递白名单字段，防止 context 参数注入
-            # 规范化 context 中的字段名和值格式
-            _FIELD_ALIASES = {"stock": "stock_quantity", "库存": "stock_quantity",
-                               "_images": "images"}
-            for alias, target in _FIELD_ALIASES.items():
-                if alias in plan.context and target not in plan.context:
-                    plan.context[target] = plan.context[alias]
-            # processing_item_ids: 仅当上一个 query 步是 processing_item_query 时才提取
-            # 防止把 category_manage 的分类 ID 误当作加工项 ID
-            if "_query_results" in plan.context and not plan.context.get("processing_item_ids"):
-                prev = plan.steps[plan.current_step - 1] if plan.current_step > 0 else None
-                if prev and prev.query_tool == "processing_item_query":
-                    results = plan.context["_query_results"]
-                    if results and results[0].get("id"):
-                        plan.context["processing_item_ids"] = [r["id"] for r in results]
-            # 列表字段：字符串拆分为数组
-            for list_field in ("selling_methods", "door_widths", "processing_item_ids"):
-                val = plan.context.get(list_field)
-                if isinstance(val, str):
-                    plan.context[list_field] = [p.strip() for p in re.split(r'[,，、\s]+|和|与', val) if p.strip()]
-
-            # 售卖方式中文→英文key标准化（前端 SkuMatrix 用英文key匹配）
-            _SM_NORMALIZE = {"散剪": "bulk_cut", "整卷": "full_roll", "按片": "per_piece",
-                             "bulk_cut": "bulk_cut", "full_roll": "full_roll", "per_piece": "per_piece"}
-            sms = plan.context.get("selling_methods", [])
-            if sms:
-                plan.context["selling_methods"] = [_SM_NORMALIZE.get(s, s) for s in (sms if isinstance(sms, list) else [sms])]
-            # 门幅标准化：补全"门幅"前缀
-            dws = plan.context.get("door_widths", [])
-            if dws:
-                normalized = []
-                for d in (dws if isinstance(dws, list) else [dws]):
-                    d = str(d).strip().lstrip("门幅").lstrip("门")
-                    if not d.endswith("米"):
-                        d = f"{d}米"
-                    normalized.append(d)
-                plan.context["door_widths"] = normalized
-
-            # 根据工具类型选择安全参数
-            # product_manage: 从 colors/selling_methods/door_widths 构造 skus
-            if current.execute_tool == "product_manage":
-                colors = plan.context.get("colors", [])
-                sms = plan.context.get("selling_methods", [])
-                dws = plan.context.get("door_widths", [])
-                if (sms or dws) and "skus" not in plan.context:
-                    sm_list = (sms if isinstance(sms, list) else [sms]) if sms else [None]
-                    dw_list = (dws if isinstance(dws, list) else [dws]) if dws else [None]
-                    # 规范化 colors: 有就展开，没有就用一个空颜色占位
-                    normalized_colors = []
-                    if colors:
-                        for ci, c in enumerate(colors):
-                            if isinstance(c, str):
-                                normalized_colors.append({"colorName": c, "id": -(ci + 1)})
-                            elif isinstance(c, dict):
-                                if "id" not in c:
-                                    c["id"] = -(ci + 1)
-                                normalized_colors.append(c)
-                    else:
-                        # 无颜色时用一个虚拟颜色，确保 SKU 能生成
-                        normalized_colors.append({"colorName": "默认", "id": -1})
-                    plan.context["colors"] = normalized_colors
-                    # 构造 SKU：每个 color × sellingMethod × doorWidth
-                    skus = []
-                    # LLM提取的值可能带单位（"500件""1000米"），清洗后转整数
-                    raw_stock = plan.context.get("stock_quantity", plan.context.get("stock", 0)) or 0
-                    if isinstance(raw_stock, str):
-                        m = re.search(r'\d+', raw_stock)
-                        raw_stock = int(m.group()) if m else 0
-                    total_sku_stock = int(raw_stock) if raw_stock else 0
-                    for c in normalized_colors:
-                        cid = c.get("id", 0) if isinstance(c, dict) else 0
-                        for sm in sm_list:
-                            for dw in dw_list:
-                                skus.append({"colorId": cid, "sellingMethod": sm, "doorWidth": dw,
-                                              "price": plan.context.get("price", 0),
-                                              "stock": max(1, total_sku_stock // max(1, len(sm_list) * len(dw_list) * len(normalized_colors)))})
-                    plan.context["skus"] = skus
-                    logger.info(f"[pe] Auto-generated {len(skus)} SKUs (colors={len(normalized_colors)} sm={len(sm_list)} dw={len(dw_list)})")
-                if "processing_item_ids" in plan.context and "processing_item_configs" not in plan.context:
-                    pids = plan.context["processing_item_ids"]
-                    pid_list = pids if isinstance(pids, list) else [pids]
-                    # 从查询结果中匹配价格
-                    results = plan.context.get("_query_results", [])
-                    price_map = {r.get("id"): r.get("unit_price") for r in results if r.get("id")}
-                    configs = []
-                    for pid in pid_list:
-                        if pid:
-                            cfg = {"processingItemId": pid}
-                            price = price_map.get(pid)
-                            if price is not None:
-                                cfg["customPrice"] = price
-                            configs.append(cfg)
-                    plan.context["processing_item_configs"] = configs
-            if current.execute_tool == "order_create":
-                if "items" not in plan.context and "product_name" in plan.context:
-                    qty = int(plan.context.get("quantity", 1))
-                    plan.context["items"] = [{"product_name": plan.context.get("product_name", ""), "quantity": qty}]
-                _SAFE_PARAMS = {"customer_name", "customer_phone", "customer_address",
-                                 "remark", "items", "product_name", "quantity", "total_amount"}
-                _NUMERIC_PARAMS = {"quantity", "total_amount"}
-                exec_params = {}
-            else:
-                _SAFE_PARAMS = {"name", "price", "description", "category_id", "stock_quantity",
-                                 "processing_item_ids", "processing_item_configs", "product_id", "status",
-                                 "unit", "cost_price", "brand", "images", "specifications", "colors",
-                                 "selling_methods", "door_widths", "skus", "sku_code", "pricing_type"}
-                _NUMERIC_PARAMS = {"price", "cost_price", "stock_quantity"}
-                exec_params = {"action": current.execute_action}
-            for k in _SAFE_PARAMS:
-                if k in plan.context:
-                    v = plan.context[k]
-                    # 清洗带单位的值（"23.8元每米"→23.8, "500件"→500）
-                    if isinstance(v, str) and k in _NUMERIC_PARAMS:
-                        m = re.search(r'[\d.]+', v)
-                        v = m.group() if m else v
-                    if k in _NUMERIC_PARAMS and isinstance(v, str):
-                        try:
-                            v = float(v) if "." in v else int(v)
-                        except ValueError:
-                            pass
-                    exec_params[k] = v
-
-            if tool:
-                try:
-                    logger.info(f"[pe] Executing {current.execute_tool}.{current.execute_action} | params_keys={list(exec_params.keys())} params={json.dumps({k:str(v)[:60] for k,v in exec_params.items()}, ensure_ascii=False)}")
-                    result = await tool.execute(ctx, **exec_params)
-                    exec_result = result.message if result.success else f"失败: {result.message}"
-                    if not result.success:
-                        logger.error(f"[pe] Execute failed | tool={current.execute_tool} error={result.error} message={result.message} params={json.dumps(exec_params, ensure_ascii=False, default=str)[:500]}")
-                except Exception as e:
-                    exec_result = f"异常: {e}"
-                    logger.error(f"[pe] Execute exception | tool={current.execute_tool} error={e} params={json.dumps(exec_params, ensure_ascii=False, default=str)[:500]}")
-            else:
-                exec_result = f"工具不可用: {current.execute_tool}"
-
-            prompt = (
-                f"多步骤操作目标: {plan.goal}\n"
-                f"操作: {current.execute_tool}.{current.execute_action}\n"
-                f"结果: {exec_result}\n\n"
-                f"用友好的语气告知用户操作结果。不要调用工具。"
-            )
-            final_answer = await LLMFactory.invoke_text_safe([
-                SystemMessage(content=system_prompt),
-                *messages[-4:],
-                HumanMessage(content=prompt),
-            ], enable_thinking=False)
-            new_messages.append(AIMessage(content=final_answer))
-            # execute 完成后清除 Plan
-            plan.advance()
-            await _clear_plan(session_id)
+        return {
+            "category_name": category_name,
+            "sample_count": total,
+            "common_selling_methods": top(sm_counter),
+            "common_door_widths": top(dw_counter),
+            "common_unit": top(unit_counter, 1),
+            "common_pricing_type": top(pricing_counter, 1),
+            "common_colors": top(color_counter, 10),
+            "common_brands": top(brand_counter, 3),
+            "common_specifications": {sk: max(sv, key=sv.get) for sk, sv in spec_counter.items()},
+            "common_processing_items": [{"id": pid, "name": name} for pid, name in list(proc_items.items())[:5]],
+            "price_range": {"min": min(prices) if prices else None, "max": max(prices) if prices else None},
+        }
+    except Exception as e:
+        logger.warning(f"[utils] Smart defaults failed: {e}")
+        return {}
 
 
-    # 5. 保存状态
-    if awaiting_user:
-        # 修正/回溯/查看进度后不推进步骤，重新执行当前步
-        if not need_re_execute:
-            plan.advance()
-        if plan.is_done():
-            await _clear_plan(session_id)
-        else:
-            await _save_plan(session_id, plan)
-
-    return {
-        "messages": new_messages,
-        "final_answer": final_answer,
-        "skill_used": skill_name,
-        # 优化: P&E 等待用户输入时标记 pending，跳过下轮意图分类
-        "pending_interact_skill": skill_name if awaiting_user else "",
-    }
-
-
-# ── 判断是否需要 P&E ──
-
-
-# 简单单步写操作 — ReAct 直接处理，不需要 P&E
-# 不用复杂正则，用直观的关键词组判断
-_SIMPLE_WRITE_PATTERNS = [
-    # toggle: 含"上架"/"下架"但没有创建/新建/新增语义("上架一个新品"跳过此规则)
-    (re.compile(r"上架|下架"), ["新品", "创建", "新增", "新建", "添加", "录入"]),
-    # 价格修改: 含价格相关词 + 修改动词，允许间隔
-    (re.compile(r"(?:修改|调整|改|更新|变更).{0,4}(?:价格|售价|单价)|(?:价格|售价|单价).{0,4}(?:改|调整|设为|修改|变更|更新)"), []),
-    # 库存调整
-    (re.compile(r"(?:库存|数量).{0,3}(?:调|改|设)"), []),
-    # 分类切换
-    (re.compile(r"分类.{0,3}(?:改|换|调整)"), []),
-]
-# 注：每个元素是 (match_pattern, exclude_keywords)，
-# match_pattern 匹配 → 且消息不含 exclude_keywords → 跳过 P&E
-
-
-def should_use_plan_execute(state: AgentState, skill_name: str) -> bool:
-    """判断当前请求是否应走 P&E 模式
-
-    两阶段判定：
-    1. 关键词初筛：是否包含写操作关键词
-    2. 复杂度过滤：排除简单单步操作（如"上架""修改价格为200"）
-
-    已有 Plan 的后续消息不经过此函数，直接走 execute_plan()。
-    """
-    messages = state.get("messages", [])
-    last_msg = ""
-    for msg in reversed(messages):
-        if isinstance(msg, HumanMessage):
-            content = msg.content
-            if isinstance(content, list):
-                parts = [c.get("text", "") for c in content if isinstance(c, dict) and c.get("type") == "text"]
-                last_msg = " ".join(parts)
-            else:
-                last_msg = str(content) if content else ""
-            break
-
-    create_kw = ["创建", "新增", "添加", "新建", "上架", "录入", "下单"]
-    update_kw = ["修改", "更新", "编辑", "调整", "变更"]
-    write_kw = create_kw + update_kw
-
-    if not any(kw in last_msg for kw in write_kw):
-        return False
-
-    # 确认消息不启动 P&E — 让 ReAct 直接调 tool 执行
-    confirm_kw = ["确认创建", "确认下单", "确认提交", "确认", "没问题", "就这样", "直接创建",
-                  "确认没问题", "可以创建", "开始创建", "创建吧"]
-    if any(kw in last_msg for kw in confirm_kw):
-        return False
-
-    # 复杂度过滤：简单单步操作跳过 P&E
-    for pat, exclusions in _SIMPLE_WRITE_PATTERNS:
-        if pat.search(last_msg):
-            if exclusions and any(kw in last_msg for kw in exclusions):
-                continue  # 有排除关键词，不是简单单步
-            logger.info(
-                f"[pe] Simple write detected, skipping P&E → ReAct | "
-                f"msg={last_msg[:50]}"
-            )
-            return False
-
-    if skill_name == "product":
-        # 商品创建已迁移到 ReAct + 完整 Schema，不再走 P&E
-        # 简单写操作（上下架/改价格/改库存）也走 ReAct
-        return False
-    elif skill_name == "order":
-        return any(kw in last_msg for kw in ["创建", "新增", "下单"])
-    elif skill_name == "aftersales":
-        return any(kw in last_msg for kw in create_kw)
-
-    return False
+# auto_fill_category_and_defaults 已迁移到 ReAct:
+# LLM 看到 category_manage/processing_item_query schema 后自行调用
+# infer_category_hint + match_category_from_tree + fetch_smart_defaults 保留供未来使用
