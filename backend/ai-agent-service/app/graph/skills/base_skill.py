@@ -355,6 +355,11 @@ def _build_system_prompt(skill_name: str, inline_prompt: str = "") -> str:
     if principles:
         parts.append(principles)
 
+    # Layer 2.5: 共享 Prompt 规则（Certainty Tagging / P&E / Verification）
+    prompt_rules = _read_cached(_os.path.join(_ref_dir, "PROMPT-rules.md"))
+    if prompt_rules:
+        parts.append(prompt_rules)
+
     # Layer 3: 领域 Prompt
     domain = _read_cached(_os.path.join(_ref_dir, "prompts", f"{skill_name}.md"))
     if domain:
@@ -417,14 +422,16 @@ async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -
     tool_name = tool.name
     cache_key = f"{tenant_id}:{tool_name}:{json.dumps(tool_args, sort_keys=True, default=str)}"
 
-    # 2. 缓存检查
+    # 2. 缓存检查（带 asyncio.Lock 防止并发竞态）
     if not hasattr(_execute_tool_safe, '_cache'):
         _execute_tool_safe._cache = {}
-    if cache_key in _execute_tool_safe._cache:
-        cached = _execute_tool_safe._cache[cache_key]
-        if time.time() - cached["ts"] < 60:
-            logger.info(f"[tool-cache] Hit {tool_name}")
-            return cached["result"], cached["dict"]
+        _execute_tool_safe._cache_lock = asyncio.Lock()
+    async with _execute_tool_safe._cache_lock:
+        if cache_key in _execute_tool_safe._cache:
+            cached = _execute_tool_safe._cache[cache_key]
+            if time.time() - cached["ts"] < 60:
+                logger.info(f"[tool-cache] Hit {tool_name}")
+                return cached["result"], cached["dict"]
 
     # 3. 执行 + 超时
     try:
@@ -455,11 +462,12 @@ async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -
     }
     result_str = json.dumps(result_dict, ensure_ascii=False, default=str)
 
-    # 5. 缓存
+    # 5. 缓存（带锁）
     if result.success:
-        _execute_tool_safe._cache[cache_key] = {"result": result_str, "dict": result_dict, "ts": time.time()}
-        if len(_execute_tool_safe._cache) > 100:
-            _execute_tool_safe._cache.pop(next(iter(_execute_tool_safe._cache)))
+        async with _execute_tool_safe._cache_lock:
+            _execute_tool_safe._cache[cache_key] = {"result": result_str, "dict": result_dict, "ts": time.time()}
+            if len(_execute_tool_safe._cache) > 100:
+                _execute_tool_safe._cache.pop(next(iter(_execute_tool_safe._cache)))
 
     return result_str, result_dict
 

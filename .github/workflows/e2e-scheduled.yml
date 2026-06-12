@@ -31,12 +31,23 @@ jobs:
         working-directory: tests
         run: npx playwright install chromium --with-deps
 
+      - name: Validate secrets
+        run: |
+          if [ -z "$PHONE" ] || [ -z "$CODE" ]; then
+            echo "❌ E2E_ADMIN_PHONE 和 E2E_SMS_CODE 必须配置"
+            exit 1
+          fi
+          echo "✅ Secrets configured"
+        env:
+          PHONE: ${{ secrets.E2E_ADMIN_PHONE }}
+          CODE: ${{ secrets.E2E_SMS_CODE }}
+
       - name: Run E2E tests
         working-directory: tests
         env:
           BASE_URL: ${{ secrets.E2E_BASE_URL || 'https://admin.migaozn.com' }}
-          E2E_ADMIN_PHONE: ${{ secrets.E2E_ADMIN_PHONE || '13800138000' }}
-          E2E_SMS_CODE: ${{ secrets.E2E_SMS_CODE || '123456' }}
+          E2E_ADMIN_PHONE: ${{ secrets.E2E_ADMIN_PHONE }}
+          E2E_SMS_CODE: ${{ secrets.E2E_SMS_CODE }}
         run: |
           npx playwright test \
             --reporter=list \
