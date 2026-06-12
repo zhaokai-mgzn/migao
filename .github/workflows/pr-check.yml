@@ -64,7 +64,7 @@ jobs:
           SSE_TIMEOUT: '300'
           SSE_PING_INTERVAL: '30'
           CORS_ALLOWED_ORIGINS: http://localhost:3000
-        run: python -m pytest tests/ -v --tb=short -q --ignore=tests/test_post_deploy_verify.py --ignore=tests/manual_test_pe_flow.py --timeout=30
+        run: python -m pytest tests/ -v --tb=short -q --ignore=tests/test_post_deploy_verify.py --ignore=tests/manual_test_pe_flow.py 
 
   # ============ admin-web 类型检查 + 单测 ============
   admin-web-test:

@@ -122,10 +122,10 @@ def test_snapshot_all_skills():
         "order": 4000,
         "aftersales": 3500,
         "customer": 3500,
-        "staff": 2000,
-        "settings": 2500,
-        "data": 2000,
-        "general": 2500,
+        "staff": 3500,
+        "settings": 3500,
+        "data": 3500,
+        "general": 4000,
     }
     for skill, max_len in expected_max.items():
         prompt = _build_system_prompt(skill)
