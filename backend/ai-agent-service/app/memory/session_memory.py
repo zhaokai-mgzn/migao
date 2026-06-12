@@ -676,73 +676,53 @@ class SessionMemory:
                 logger.warning(f"[session-memory] clear_pending_skill failed: {e}")
                 return False
 
-    # ── 跨轮字段记忆（sessions.metadata->>'collected_fields', 7天 TTL）──
+    # ── 跨轮字段记忆（Redis, 7天 TTL）──
 
-    async def _cleanup_expired_fields(self, db):
-        """清理过期的 collected_fields"""
-        try:
-            from sqlalchemy import text
-            sql = text(
-                "UPDATE sessions SET metadata = metadata - 'collected_fields' - 'collected_fields_at' "
-                "WHERE metadata->>'collected_fields_at' IS NOT NULL "
-                "AND (metadata->>'collected_fields_at')::timestamptz < NOW() - INTERVAL '7 days'"
-            )
-            await db.execute(sql)
-        except Exception:
-            pass
+    _FIELD_TTL = 7 * 86400
+
+    def _field_key(self, session_id: str) -> str:
+        return f"collected_fields:{session_id}"
+
+    async def _get_redis(self):
+        from app.utils.redis_client import redis_pool
+        import redis.asyncio as aioredis
+        return aioredis.Redis(connection_pool=redis_pool)
 
     async def get_collected_fields(self, session_id: str) -> dict:
         if not session_id:
             return {}
-        async with await self._get_session() as db:
-            try:
-                from sqlalchemy import text
-                sql = text("SELECT metadata->>'collected_fields' AS fields FROM sessions WHERE id = :sid")
-                result = await db.execute(sql, {"sid": session_id})
-                row = result.fetchone()
-                if row and row[0]:
-                    return json.loads(row[0])
-            except Exception as e:
-                logger.warning(f"[session-memory] get_collected_fields failed: {e}")
+        try:
+            r = await self._get_redis()
+            raw = await r.get(self._field_key(session_id))
+            if raw:
+                return json.loads(raw)
+        except Exception as e:
+            logger.warning(f"[session-memory] get_collected_fields failed: {e}")
         return {}
 
     async def set_collected_fields(self, session_id: str, fields: dict) -> bool:
         if not session_id or not fields:
             return False
-        async with await self._get_session() as db:
-            try:
-                from sqlalchemy import text
-                sql = text(
-                    "UPDATE sessions SET metadata = COALESCE(metadata, '{}'::jsonb) || "
-                    "jsonb_build_object('collected_fields', :fields::jsonb, 'collected_fields_at', :ts::text) "
-                    "WHERE id = :sid"
-                )
-                await db.execute(sql, {
-                    "sid": session_id,
-                    "fields": json.dumps(fields, ensure_ascii=False),
-                    "ts": datetime.utcnow().isoformat()
-                })
-                return True
-            except Exception as e:
-                logger.warning(f"[session-memory] set_collected_fields failed: {e}")
-                return False
+        try:
+            r = await self._get_redis()
+            await r.set(self._field_key(session_id),
+                       json.dumps(fields, ensure_ascii=False),
+                       ex=self._FIELD_TTL)
+            return True
+        except Exception as e:
+            logger.warning(f"[session-memory] set_collected_fields failed: {e}")
+            return False
 
     async def clear_collected_fields(self, session_id: str) -> bool:
         if not session_id:
             return False
-        async with await self._get_session() as db:
-            try:
-                from sqlalchemy import text
-                sql = text(
-                    "UPDATE sessions SET metadata = "
-                    "COALESCE(metadata, '{}'::jsonb) - 'collected_fields' - 'collected_fields_at' "
-                    "WHERE id = :sid"
-                )
-                await db.execute(sql, {"sid": session_id})
-                return True
-            except Exception as e:
-                logger.warning(f"[session-memory] clear_collected_fields failed: {e}")
-                return False
+        try:
+            r = await self._get_redis()
+            await r.delete(self._field_key(session_id))
+            return True
+        except Exception as e:
+            logger.warning(f"[session-memory] clear_collected_fields failed: {e}")
+            return False
 
     # ── Plan State 持久化（Plan-and-Execute 模式）──
 
