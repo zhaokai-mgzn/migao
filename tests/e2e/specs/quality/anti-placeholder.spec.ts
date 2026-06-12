@@ -74,6 +74,6 @@ for (const { name, path, rowSelector, columns } of PAGES) {
       return
     }
 
-    await assertNoPlaceholderFallback(page, { rowSelector, columns: columns as Record<string, string>, minRows: 1 })
+    await assertNoPlaceholderFallback(page, { rowSelector, columns: columns as unknown as Record<string, string>, minRows: 1 })
   })
 }
