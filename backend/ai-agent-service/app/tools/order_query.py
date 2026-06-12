@@ -193,6 +193,7 @@ class OrderQueryTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message="订单统计查询失败，请稍后重试",
+                suggestion="请检查参数是否正确，或稍后重试",
             )
         data = response.get("data", {})
         logger.info(f"[order-query] Statistics fetched | tenant={context.tenant_id}")
@@ -220,6 +221,7 @@ class OrderQueryTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message="订单跟进状态统计查询失败，请稍后重试",
+                suggestion="请检查参数是否正确，或稍后重试",
             )
         data = response.get("data", {})
         logger.info(f"[order-query] Follow-status stats fetched | tenant={context.tenant_id}")
@@ -289,6 +291,7 @@ class OrderQueryTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message="订单查询失败，请稍后重试",
+                suggestion="请检查参数是否正确，或稍后重试",
             )
 
         data = response.get("data", {})

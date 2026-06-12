@@ -238,4 +238,5 @@ class OrderCreateTool(BaseTool):
                 success=False,
                 error="tool_execution_failed",
                 message="创建订单失败，请稍后重试",
+                suggestion="请检查商品信息是否完整，或稍后重试",
             )

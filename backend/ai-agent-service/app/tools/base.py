@@ -28,6 +28,7 @@ class ToolResult(BaseModel):
     """Tool 执行结果
 
     summary 字段: LLM 友好的摘要文本。若为 None，fallback 到 message。
+    suggestion 字段: 失败时必须填写，告诉 LLM 如何引导用户修复问题。
     每个 tool 应自行设定 summary，确保 LLM 能快速理解结果。
     示例: ToolResult(success=True, data={...}, summary="共3个分类: 卧室系列,窗帘布艺,测试分类")
     """
@@ -36,6 +37,7 @@ class ToolResult(BaseModel):
     error: Optional[str] = Field(None, description="错误信息")
     message: Optional[str] = Field(None, description="提示消息（给用户看的）")
     summary: Optional[str] = Field(None, description="LLM友好摘要（每个tool自行填写）")
+    suggestion: Optional[str] = Field(None, description="失败时的修复建议（给LLM看，帮助引导用户）")
 
     class Config:
         extra = "allow"

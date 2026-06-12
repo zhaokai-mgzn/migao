@@ -459,6 +459,7 @@ async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -
         "error": result.error,
         "message": result.message,
         "summary": getattr(result, "summary", None) or getattr(result, "message", ""),
+        "suggestion": getattr(result, "suggestion", None) or "",
     }
     result_str = json.dumps(result_dict, ensure_ascii=False, default=str)
 

@@ -101,6 +101,7 @@ class ProductSearchTool(BaseTool):
                 success=False,
                 error="权限不足",
                 message="您没有权限搜索商品",
+                suggestion="请联系管理员获取商品查看权限",
             )
         
         try:
@@ -140,6 +141,7 @@ class ProductSearchTool(BaseTool):
                     success=False,
                     error=error_msg,
                     message="商品搜索失败，请稍后重试",
+                    suggestion="请稍后重试，或尝试更精确的关键词",
                 )
             
             data = response.get("data", {})
@@ -207,6 +209,7 @@ class ProductSearchTool(BaseTool):
                 success=False,
                 error="tool_execution_failed",
                 message="搜索商品时出错，请稍后重试",
+                suggestion="请稍后重试，或尝试更精确的关键词",
             )
     
     def _format_products(self, records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
