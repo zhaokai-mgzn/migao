@@ -5,10 +5,13 @@ import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.dto.PageResponse;
 import com.migao.admin.entity.Role;
 import com.migao.admin.entity.User;
+import com.migao.admin.exception.BusinessException;
+import com.migao.admin.security.SecurityUser;
 import com.migao.admin.service.RoleService;
 import com.migao.admin.service.UserService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
@@ -70,6 +73,20 @@ public class AdminUserController {
     }
 
     /**
+     * 校验当前用户是否为管理员，非管理员抛出权限异常
+     */
+    private void requireAdmin() {
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !(auth.getPrincipal() instanceof SecurityUser)) {
+            throw BusinessException.permissionDenied();
+        }
+        SecurityUser user = (SecurityUser) auth.getPrincipal();
+        if (user.getRoles() == null || !user.getRoles().contains("admin")) {
+            throw BusinessException.permissionDenied();
+        }
+    }
+
+    /**
      * 创建用户
      *
      * POST /api/admin/users
@@ -77,6 +94,7 @@ public class AdminUserController {
      */
     @PostMapping
     public ApiResponse<User> createUser(@RequestBody Map<String, Object> body) {
+        requireAdmin();
         Long tenantId = TenantContext.getTenantId();
         String phone = (String) body.getOrDefault("phone", body.get("username"));
         String password = (String) body.get("password");
@@ -147,6 +165,7 @@ public class AdminUserController {
      */
     @DeleteMapping("/{id}")
     public ApiResponse<Void> deleteUser(@PathVariable String id) {
+        requireAdmin();
         log.info("删除用户: id={}", id);
         userService.deleteUser(id);
         return ApiResponse.success();
@@ -161,6 +180,7 @@ public class AdminUserController {
     @PutMapping("/{id}/reset-password")
     public ApiResponse<Map<String, String>> resetPassword(@PathVariable String id,
                                                            @RequestBody(required = false) Map<String, String> body) {
+        requireAdmin();
         String newPassword = null;
         if (body != null) {
             newPassword = body.get("newPassword");
@@ -185,6 +205,7 @@ public class AdminUserController {
      */
     @PutMapping("/{id}/status")
     public ApiResponse<Void> toggleUserStatus(@PathVariable String id, @RequestBody Map<String, String> body) {
+        requireAdmin();
         String status = body.get("status");
         log.info("切换用户状态: id={}, status={}", id, status);
         if ("active".equals(status)) {

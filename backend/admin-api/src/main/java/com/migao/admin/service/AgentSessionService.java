@@ -1,5 +1,6 @@
 package com.migao.admin.service;
 
+import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.*;
 import com.migao.admin.entity.AgentEmployee;
 import com.migao.admin.entity.AgentMessage;
@@ -142,6 +143,11 @@ public class AgentSessionService extends ServiceImpl<AgentSessionMapper, AgentSe
         if (session == null) {
             throw BusinessException.notFound("客服会话");
         }
+        // 租户隔离校验：禁止跨租户访问
+        Long currentTenantId = TenantContext.getTenantId();
+        if (!session.getTenantId().equals(currentTenantId)) {
+            throw BusinessException.notFound("客服会话");
+        }
 
         // 查询关联消息（按创建时间正序）
         LambdaQueryWrapper<AgentMessage> msgWrapper = new LambdaQueryWrapper<>();
@@ -214,6 +220,11 @@ public class AgentSessionService extends ServiceImpl<AgentSessionMapper, AgentSe
         if (session == null) {
             throw BusinessException.notFound("客服会话");
         }
+        // 租户隔离校验：禁止跨租户操作
+        Long currentTenantId = TenantContext.getTenantId();
+        if (!session.getTenantId().equals(currentTenantId)) {
+            throw BusinessException.notFound("客服会话");
+        }
 
         // 校验会话状态必须为 waiting
         if (!"waiting".equals(session.getStatus())) {
@@ -266,6 +277,11 @@ public class AgentSessionService extends ServiceImpl<AgentSessionMapper, AgentSe
     public void endSession(String sessionId) {
         AgentSession session = agentSessionMapper.selectById(sessionId);
         if (session == null) {
+            throw BusinessException.notFound("客服会话");
+        }
+        // 租户隔离校验：禁止跨租户操作
+        Long currentTenantId = TenantContext.getTenantId();
+        if (!session.getTenantId().equals(currentTenantId)) {
             throw BusinessException.notFound("客服会话");
         }
 
