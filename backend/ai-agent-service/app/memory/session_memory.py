@@ -4,6 +4,7 @@ AI 智能客服系统 - 会话记忆管理
 管理会话消息（短期记忆），存储于 PostgreSQL 的 session_messages 表
 """
 
+import json
 import uuid
 from datetime import datetime
 from typing import Optional, List, Dict, Any
