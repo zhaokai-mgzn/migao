@@ -1,7 +1,7 @@
 """
 AI 智能客服系统 - 售后工单管理 Tool
 
-管理售后工单，支持查询列表、详情、创建工单、更新工单状态。
+管理售后工单,支持查询列表 详情 创建工单 更新工单状态。
 """
 
 from typing import Any, Dict, Optional
@@ -24,21 +24,21 @@ VALID_TICKET_STATUSES = {"pending", "processing", "resolved", "rejected", "close
 class AfterSalesManageTool(BaseTool):
     """售后工单管理 Tool
 
-    管理售后工单：查询列表、查看详情、创建工单、更新状态。
+    管理售后工单:查询列表 查看详情 创建工单 更新状态。
 
-    使用场景：
-    - 查询售后工单列表，按状态或类型筛选
+    使用场景:
+    - 查询售后工单列表,按状态或类型筛选
     - 查看某个售后工单的详细信息
-    - 为订单创建售后工单（退款、换货、维修等）
-    - 更新售后工单状态（处理中、已解决、已拒绝等）
+    - 为订单创建售后工单(退款 换货 维修等)
+    - 更新售后工单状态(处理中 已解决 已拒绝等)
     """
 
     name = "after_sales_manage"
     description = (
-        "售后工单管理工具。创建工单前请收集信息："
-        "必填 — ticket_type(退款/换货/维修/投诉/其他)、order_id(关联订单ID)、description(问题描述)。"
-        "可选 — images(凭证图片URL)、priority(优先级: normal/urgent/critical)、refund_amount(退款金额)。"
-        "收集完成后展示汇总让用户确认，确认后再调用 create。"
+        "售后工单管理工具。创建工单前请收集信息:"
+        "必填 — ticket_type(退款/换货/维修/投诉/其他) order_id(关联订单ID) description(问题描述)。"
+        "可选 — images(凭证图片URL) priority(优先级: normal/urgent/critical) refund_amount(退款金额)。"
+        "收集完成后展示汇总让用户确认,确认后再调用 create。"
     )
 
     allowed_roles = ["admin", "agent", "tenant_admin"]
@@ -48,61 +48,61 @@ class AfterSalesManageTool(BaseTool):
         "properties": {
             "action": {
                 "type": "string",
-                "description": "操作类型：list（查询列表）/ detail（查看详情）/ create（创建工单）/ update_status（更新状态）",
+                "description": "操作类型:list(查询列表)/ detail(查看详情)/ create(创建工单)/ update_status(更新状态)",
                 "enum": ["list", "detail", "create", "update_status"],
             },
             "ticket_id": {
                 "type": "string",
-                "description": "工单 ID（detail/update_status 时必填）",
+                "description": "工单 ID(detail/update_status 时必填)",
             },
             "order_id": {
                 "type": "string",
-                "description": "关联订单 ID（create 时必填）",
+                "description": "关联订单 ID(create 时必填)",
             },
             "ticket_type": {
                 "type": "string",
-                "description": "工单类型：refund（退款）/ exchange（换货）/ repair（维修）/ complaint（投诉）/ other（其他）",
+                "description": "工单类型:refund(退款)/ exchange(换货)/ repair(维修)/ complaint(投诉)/ other(其他)",
                 "enum": ["refund", "exchange", "repair", "complaint", "other"],
             },
             "status": {
                 "type": "string",
-                "description": "工单状态：pending（待处理）/ processing（处理中）/ resolved（已解决）/ rejected（已拒绝）/ closed（已关闭）",
+                "description": "工单状态:pending(待处理)/ processing(处理中)/ resolved(已解决)/ rejected(已拒绝)/ closed(已关闭)",
                 "enum": ["pending", "processing", "resolved", "rejected", "closed"],
             },
             "reason": {
                 "type": "string",
-                "description": "原因说明（create 时必填，如'客户反馈尺寸不符要求退款'）",
+                "description": "原因说明(create 时必填,如'客户反馈尺寸不符要求退款')",
             },
             "description": {
                 "type": "string",
-                "description": "详细问题描述（create 时可选）",
+                "description": "详细问题描述(create 时可选)",
             },
             "images": {
                 "type": "array",
-                "description": "凭证图片URL列表（可选）",
+                "description": "凭证图片URL列表(可选)",
                 "items": {"type": "string"},
             },
             "priority": {
                 "type": "string",
-                "description": "优先级（可选，默认normal）",
+                "description": "优先级(可选,默认normal)",
                 "enum": ["normal", "urgent", "critical"],
             },
             "refund_amount": {
                 "type": "number",
-                "description": "退款金额（退款类型时填写）",
+                "description": "退款金额(退款类型时填写)",
             },
             "keyword": {
                 "type": "string",
-                "description": "搜索关键词（list 时可选）",
+                "description": "搜索关键词(list 时可选)",
             },
             "page": {
                 "type": "integer",
-                "description": "页码，默认 1",
+                "description": "页码,默认 1",
                 "default": 1,
             },
             "size": {
                 "type": "integer",
-                "description": "每页数量，默认 10",
+                "description": "每页数量,默认 10",
                 "default": 10,
             },
         },
@@ -138,7 +138,7 @@ class AfterSalesManageTool(BaseTool):
             return ToolResult(
                 success=False,
                 error=f"无效的操作类型: {action}",
-                message=f"不支持的操作类型，可选：{', '.join(VALID_ACTIONS)}",
+                message=f"不支持的操作类型,可选:{', '.join(VALID_ACTIONS)}",
             )
 
         try:
@@ -162,7 +162,7 @@ class AfterSalesManageTool(BaseTool):
             return ToolResult(
                 success=False,
                 error=str(e),
-                message="售后工单操作失败，请稍后重试",
+                message="售后工单操作失败,请稍后重试",
             )
 
     async def _list_tickets(
@@ -196,7 +196,7 @@ class AfterSalesManageTool(BaseTool):
             return ToolResult(
                 success=False,
                 error=error_msg,
-                message=f"查询售后工单列表失败：{error_msg}",
+                message=f"查询售后工单列表失败:{error_msg}",
             )
 
         data = response.get("data", {})
@@ -224,7 +224,7 @@ class AfterSalesManageTool(BaseTool):
             return ToolResult(
                 success=False,
                 error="缺少工单 ID",
-                message="查看详情时必须提供工单 ID（ticket_id）",
+                message="查看详情时必须提供工单 ID(ticket_id)",
             )
 
         client = get_admin_api_client()
@@ -239,7 +239,7 @@ class AfterSalesManageTool(BaseTool):
             return ToolResult(
                 success=False,
                 error=error_msg,
-                message=f"查询售后工单详情失败：{error_msg}",
+                message=f"查询售后工单详情失败:{error_msg}",
             )
 
         data = response.get("data", {})
@@ -267,28 +267,28 @@ class AfterSalesManageTool(BaseTool):
             return ToolResult(
                 success=False,
                 error="缺少订单 ID",
-                message="创建售后工单时必须提供关联订单 ID（order_id）",
+                message="创建售后工单时必须提供关联订单 ID(order_id)",
             )
 
         if not ticket_type:
             return ToolResult(
                 success=False,
                 error="缺少工单类型",
-                message="创建售后工单时必须提供工单类型（ticket_type）",
+                message="创建售后工单时必须提供工单类型(ticket_type)",
             )
 
         if ticket_type not in VALID_TICKET_TYPES:
             return ToolResult(
                 success=False,
                 error=f"无效的工单类型: {ticket_type}",
-                message=f"不支持的工单类型，可选：{', '.join(VALID_TICKET_TYPES)}",
+                message=f"不支持的工单类型,可选:{', '.join(VALID_TICKET_TYPES)}",
             )
 
         if not reason:
             return ToolResult(
                 success=False,
                 error="缺少原因说明",
-                message="创建售后工单时必须提供原因说明（reason）",
+                message="创建售后工单时必须提供原因说明(reason)",
             )
 
         json_data: Dict[str, Any] = {
@@ -312,7 +312,7 @@ class AfterSalesManageTool(BaseTool):
             return ToolResult(
                 success=False,
                 error=error_msg,
-                message=f"创建售后工单失败：{error_msg}",
+                message=f"创建售后工单失败:{error_msg}",
             )
 
         data = response.get("data", {})
@@ -327,7 +327,7 @@ class AfterSalesManageTool(BaseTool):
         return ToolResult(
             success=True,
             data=data,
-            message=f"售后工单已创建，工单号：{new_ticket_id}",
+            message=f"售后工单已创建,工单号:{new_ticket_id}",
         )
 
     async def _update_status(
@@ -342,21 +342,21 @@ class AfterSalesManageTool(BaseTool):
             return ToolResult(
                 success=False,
                 error="缺少工单 ID",
-                message="更新状态时必须提供工单 ID（ticket_id）",
+                message="更新状态时必须提供工单 ID(ticket_id)",
             )
 
         if not status:
             return ToolResult(
                 success=False,
                 error="缺少状态参数",
-                message="更新状态时必须提供新状态（status）",
+                message="更新状态时必须提供新状态(status)",
             )
 
         if status not in VALID_TICKET_STATUSES:
             return ToolResult(
                 success=False,
                 error=f"无效的工单状态: {status}",
-                message=f"不支持的状态值，可选：{', '.join(VALID_TICKET_STATUSES)}",
+                message=f"不支持的状态值,可选:{', '.join(VALID_TICKET_STATUSES)}",
             )
 
         json_data: Dict[str, Any] = {"status": status}
@@ -376,7 +376,7 @@ class AfterSalesManageTool(BaseTool):
             return ToolResult(
                 success=False,
                 error=error_msg,
-                message=f"更新售后工单状态失败：{error_msg}",
+                message=f"更新售后工单状态失败:{error_msg}",
             )
 
         logger.info(
