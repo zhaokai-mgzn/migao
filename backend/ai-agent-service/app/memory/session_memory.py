@@ -681,11 +681,13 @@ class SessionMemory:
     async def _cleanup_expired_fields(self, db):
         """清理过期的 collected_fields"""
         try:
-            await db.execute(
-                "UPDATE sessions SET metadata = metadata - 'collected_fields' "
+            from sqlalchemy import text
+            sql = text(
+                "UPDATE sessions SET metadata = metadata - 'collected_fields' - 'collected_fields_at' "
                 "WHERE metadata->>'collected_fields_at' IS NOT NULL "
                 "AND (metadata->>'collected_fields_at')::timestamptz < NOW() - INTERVAL '7 days'"
             )
+            await db.execute(sql)
         except Exception:
             pass
 
@@ -694,10 +696,10 @@ class SessionMemory:
             return {}
         async with await self._get_session() as db:
             try:
-                row = await db.fetchone(
-                    "SELECT metadata->>'collected_fields' AS fields FROM sessions WHERE id = $1",
-                    [session_id]
-                )
+                from sqlalchemy import text
+                sql = text("SELECT metadata->>'collected_fields' AS fields FROM sessions WHERE id = :sid")
+                result = await db.execute(sql, {"sid": session_id})
+                row = result.fetchone()
                 if row and row[0]:
                     return json.loads(row[0])
             except Exception as e:
@@ -709,13 +711,17 @@ class SessionMemory:
             return False
         async with await self._get_session() as db:
             try:
-                await db.execute(
+                from sqlalchemy import text
+                sql = text(
                     "UPDATE sessions SET metadata = COALESCE(metadata, '{}'::jsonb) || "
-                    "jsonb_build_object('collected_fields', $2::jsonb, 'collected_fields_at', $3::text) "
-                    "WHERE id = $1",
-                    [session_id, json.dumps(fields, ensure_ascii=False),
-                     datetime.utcnow().isoformat()]
+                    "jsonb_build_object('collected_fields', :fields::jsonb, 'collected_fields_at', :ts::text) "
+                    "WHERE id = :sid"
                 )
+                await db.execute(sql, {
+                    "sid": session_id,
+                    "fields": json.dumps(fields, ensure_ascii=False),
+                    "ts": datetime.utcnow().isoformat()
+                })
                 return True
             except Exception as e:
                 logger.warning(f"[session-memory] set_collected_fields failed: {e}")
@@ -726,11 +732,13 @@ class SessionMemory:
             return False
         async with await self._get_session() as db:
             try:
-                await db.execute(
+                from sqlalchemy import text
+                sql = text(
                     "UPDATE sessions SET metadata = "
                     "COALESCE(metadata, '{}'::jsonb) - 'collected_fields' - 'collected_fields_at' "
-                    "WHERE id = $1", [session_id]
+                    "WHERE id = :sid"
                 )
+                await db.execute(sql, {"sid": session_id})
                 return True
             except Exception as e:
                 logger.warning(f"[session-memory] clear_collected_fields failed: {e}")
