@@ -37,6 +37,17 @@ jobs:
             --username ${{ secrets.ACR_USERNAME }} \
             --password ${{ secrets.ACR_PASSWORD }}
 
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run unit tests
+        working-directory: backend/ai-agent-service
+        run: |
+          pip install -r requirements.txt -q
+          python -m pytest tests/ -v --tb=short -q --ignore=tests/test_post_deploy_verify.py --ignore=tests/manual_test_pe_flow.py --timeout=30
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -137,17 +148,13 @@ jobs:
           fi
           echo "✅ 部署成功，服务健康"
 
-  # ──────────────────────────────────────────────────────────────────────
-  # Smoke Test — 暂时禁用，等生产环境上线后取消注释启用
-  # 启用前需配置 Secrets: SMOKE_ADMIN_PASSWORD, SMOKE_SERVICE_TOKEN
-  # ──────────────────────────────────────────────────────────────────────
-  # smoke-test:
-  #   name: Post-Deploy Smoke Test
-  #   needs: build-and-deploy
-  #   uses: ./.github/workflows/smoke-test.yml
-  #   with:
-  #     admin_api_url: 'http://8.136.139.170'
-  #     ai_agent_url: 'https://ai-api.migaozn.com'
-  #   secrets:
-  #     SMOKE_ADMIN_PASSWORD: ${{ secrets.SMOKE_ADMIN_PASSWORD }}
-  #     SMOKE_SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN }}
+  smoke-test:
+    name: Post-Deploy Smoke Test
+    needs: build-and-deploy
+    uses: ./.github/workflows/smoke-test.yml
+    with:
+      admin_api_url: 'http://8.136.139.170'
+      ai_agent_url: 'https://ai-api.migaozn.com'
+    secrets:
+      SMOKE_ADMIN_PASSWORD: ${{ secrets.SMOKE_ADMIN_PASSWORD }}
+      SMOKE_SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN }}

@@ -43,6 +43,14 @@ jobs:
             npm install
           fi
 
+      - name: TypeScript type check
+        working-directory: ${{ env.WORKING_DIR }}
+        run: npx tsc --noEmit
+
+      - name: Run unit tests
+        working-directory: ${{ env.WORKING_DIR }}
+        run: npx vitest run
+
       - name: Build Next.js (static export)
         working-directory: ${{ env.WORKING_DIR }}
         env:

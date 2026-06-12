@@ -1,0 +1,76 @@
+name: PR Check
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  # ============ admin-api 单测全量 ============
+  admin-api-test:
+    name: admin-api unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Run unit tests
+        working-directory: backend/admin-api
+        run: mvn test -q
+
+  # ============ ai-agent-service 单测全量 ============
+  ai-agent-test:
+    name: ai-agent-service unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/ai-agent-service/requirements.txt
+
+      - name: Install dependencies
+        working-directory: backend/ai-agent-service
+        run: pip install -r requirements.txt
+
+      - name: Run unit tests
+        working-directory: backend/ai-agent-service
+        run: .venv/bin/python -m pytest tests/ -v --tb=short -q --ignore=tests/test_post_deploy_verify.py --ignore=tests/manual_test_pe_flow.py --timeout=30
+
+  # ============ admin-web 类型检查 + 单测 ============
+  admin-web-test:
+    name: admin-web typecheck + unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/admin-web/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend/admin-web
+        run: npm ci
+
+      - name: TypeScript type check
+        working-directory: frontend/admin-web
+        run: npx tsc --noEmit
+
+      - name: Run unit tests
+        working-directory: frontend/admin-web
+        run: npx vitest run
