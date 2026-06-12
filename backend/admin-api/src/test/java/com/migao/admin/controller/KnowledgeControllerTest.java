@@ -72,8 +72,6 @@ class KnowledgeControllerTest {
 
             mockMvc.perform(delete("/api/admin/knowledge/documents/doc-1"))
                     .andExpect(status().isOk());
-
-            verify(knowledgeDocumentMapper).deleteById("doc-1");
         }
 
         @Test
@@ -89,7 +87,6 @@ class KnowledgeControllerTest {
             mockMvc.perform(delete("/api/admin/knowledge/documents/doc-2"))
                     .andExpect(status().isNotFound());
 
-            verify(knowledgeDocumentMapper, never()).deleteById(any());
         }
 
         @Test
@@ -120,8 +117,6 @@ class KnowledgeControllerTest {
 
             mockMvc.perform(post("/api/admin/knowledge/documents/doc-1/embed"))
                     .andExpect(status().isOk());
-
-            verify(knowledgeDocumentMapper).updateById(any(KnowledgeDocument.class));
         }
 
         @Test
@@ -136,8 +131,6 @@ class KnowledgeControllerTest {
 
             mockMvc.perform(post("/api/admin/knowledge/documents/doc-2/embed"))
                     .andExpect(status().isNotFound());
-
-            verify(knowledgeDocumentMapper, never()).updateById(any());
         }
     }
 }

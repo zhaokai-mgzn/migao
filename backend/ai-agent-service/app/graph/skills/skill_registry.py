@@ -147,10 +147,14 @@ class SkillRegistry:
 
     # ────────────── 路由查询 ──────────────
 
-    def get_intent_to_route_map(self) -> Dict[str, str]:
+    def get_intent_to_route_map(self, persona: str | None = "mibao") -> Dict[str, str]:
         """聚合所有 Skill 的意图→路由 key 映射
 
         返回的字典可直接替代 nodes.py 中的 _INTENT_TO_ROUTE 硬编码映射。
+
+        Args:
+            persona: 按 persona 过滤 Skill（None 表示不过滤，返回全部）。
+                     默认 "mibao"，避免 C 端 skill 的意图覆盖 B 端映射。
 
         Returns:
             Dict[str, str]: {intent_value: route_key} 映射
@@ -160,6 +164,9 @@ class SkillRegistry:
         """
         intent_map: Dict[str, str] = {}
         for config in self._skills.values():
+            # 按 persona 过滤：skill 的 system_prompts 包含该 persona 才纳入
+            if persona and persona not in config.system_prompts:
+                continue
             for route_key in config.route_keys:
                 for intent in config.intents:
                     if intent in intent_map and intent_map[intent] != route_key:
