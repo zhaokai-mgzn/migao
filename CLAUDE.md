@@ -245,6 +245,7 @@ cd frontend/admin-web && npm run dev
 - 发现 Bug 时：先写一个能复现 Bug 的失败测试 → 修复代码 → 测试通过
 - E2E 测试必须覆盖所有页面的核心交互路径，禁止弱断言
 - 新增交互组件必须覆盖完整点击链路（渲染→点击→发送→验证）
+- **禁止手写 E2E mock 数据**。使用 Record-Replay 模式：`cd tests && BASE_URL=http://localhost:8080 npx tsx e2e/scripts/record-fixtures.ts` 录制真实 API 响应到 `fixtures/`，测试中 `import fixture from '../fixtures/xxx.json'`
 - **新增数据列表页必须在 `tests/e2e/specs/quality/anti-placeholder.spec.ts` 的 `PAGES` 数组中注册**，确保关键列不会全线显示占位符 `-`
 - **新增/修改 API 返回字段必须在 `tests/e2e/specs/quality/api-contract.spec.ts` 中验证**：必填字段存在、类型正确（number/string/object）、金额字段不能是 string
 - **跨页面数据一致性**：列表页和详情页的同一字段值必须相等（`tests/e2e/specs/quality/cross-page-consistency.spec.ts`）
