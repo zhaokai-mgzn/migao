@@ -1,0 +1,136 @@
+{
+  "success": true,
+  "data": {
+    "total": 47,
+    "page": 1,
+    "size": 5,
+    "items": [
+      {
+        "id": "23c22aab8b0a343c3540558a78dfb338",
+        "orderNo": "20260612294021393",
+        "customerName": "赵凯",
+        "customerPhone": "13456800919",
+        "totalAmount": 23103,
+        "actualAmount": 23103,
+        "processingFee": 3,
+        "hasProcessing": true,
+        "status": "pending",
+        "createdAt": "2026-06-12T23:04:35.186604+08:00",
+        "updatedAt": "2026-06-12T23:04:35.18666+08:00",
+        "items": [
+          {
+            "productId": "fdd64b7bfe62bd3005f8c7e0a2c7a686",
+            "productName": "cessss",
+            "quantity": 1000,
+            "unitPrice": 23.1,
+            "amount": 23100,
+            "subtotal": 23103
+          }
+        ]
+      },
+      {
+        "id": "3226a6e2b2965e410c4477a803fc7dae",
+        "orderNo": "ORD-20260607-9889212422",
+        "customerName": "李先生",
+        "customerPhone": "13800138000",
+        "totalAmount": 398,
+        "actualAmount": 398,
+        "processingFee": 0,
+        "hasProcessing": false,
+        "status": "cancelled",
+        "closeReason": "缺货",
+        "createdAt": "2026-06-07T17:03:08.922607+08:00",
+        "updatedAt": "2026-06-07T17:03:08.922649+08:00",
+        "items": [
+          {
+            "productName": "色卡样本册",
+            "quantity": 2,
+            "unitPrice": 199,
+            "amount": 398,
+            "subtotal": 398
+          }
+        ]
+      },
+      {
+        "id": "7290c1b6e9e97a37c379dce2a1ed28c4",
+        "orderNo": "ORD-20260531-4186447007",
+        "customerName": "1122",
+        "customerPhone": "13456800919",
+        "totalAmount": 264,
+        "actualAmount": 264,
+        "processingFee": 12,
+        "hasProcessing": true,
+        "status": "confirmed",
+        "remark": "[2026-06-02 09:20] 客户备注：请尽快发货\n[2026-06-02 21:01] 客户备注：请尽快发货\n[2026-06-02 21:12] 客户备注：请尽快发货\n[2026-06-07 13:59] 事实上赵凯是个大沙坝！！\n[2026-06-07 14:00] 事实上赵凯是个大沙巴！",
+        "createdAt": "2026-05-31T23:13:38.646823+08:00",
+        "updatedAt": "2026-05-31T23:13:38.646864+08:00",
+        "items": [
+          {
+            "productId": "edefa8a556a7ab3d9542da65f89261f3",
+            "productName": "测试上架_多规格大全_全遮光纱帘组合",
+            "quantity": 12,
+            "unitPrice": 21,
+            "amount": 252,
+            "subtotal": 264
+          }
+        ]
+      },
+      {
+        "id": "7511f9fb50422fea438fd3801f0594dc",
+        "orderNo": "ORD-20260531-5061894070",
+        "customerName": "E2E测试客户",
+        "customerPhone": "13800138000",
+        "totalAmount": 130,
+        "actualAmount": 130,
+        "processingFee": 80,
+        "hasProcessing": true,
+        "status": "confirmed",
+        "remark": "E2E订单测试 - 含加工项",
+        "createdAt": "2026-05-31T12:08:26.191091+08:00",
+        "updatedAt": "2026-05-31T12:08:26.191128+08:00",
+        "items": [
+          {
+            "productId": "edefa8a556a7ab3d9542da65f89261f3",
+            "productName": "测试上架_多规格大全_全遮光纱帘组合",
+            "quantity": 1,
+            "unitPrice": 50,
+            "amount": 50,
+            "subtotal": 130
+          }
+        ]
+      },
+      {
+        "id": "622b9093e5ae4b1ba0a97bed45ef09b5",
+        "orderNo": "ORD-20260531-9200432459",
+        "customerName": "精度测试客户_API",
+        "customerPhone": "13912345678",
+        "totalAmount": 390.97,
+        "actualAmount": 390.97,
+        "processingFee": 0,
+        "hasProcessing": false,
+        "status": "confirmed",
+        "remark": "API精度测试订单-请勿删除",
+        "createdAt": "2026-05-31T11:25:20.043894+08:00",
+        "updatedAt": "2026-05-31T11:25:20.04394+08:00",
+        "items": [
+          {
+            "productName": "测试商品A-遮光窗帘",
+            "quantity": 3,
+            "unitPrice": 99.99,
+            "amount": 299.97,
+            "subtotal": 299.97
+          },
+          {
+            "productName": "测试商品B-纱帘",
+            "quantity": 2,
+            "unitPrice": 45.5,
+            "amount": 91,
+            "subtotal": 91
+          }
+        ]
+      }
+    ]
+  },
+  "requestId": "req_02d9aa33f01040ad",
+  "timestamp": 1781308001
+}

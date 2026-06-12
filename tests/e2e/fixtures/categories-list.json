@@ -1,0 +1,37 @@
+{
+  "success": true,
+  "data": [
+    {
+      "id": "3e24d5a112ead9195994d1d7efb2641c",
+      "name": "卧室系列",
+      "level": 1,
+      "sortOrder": 0,
+      "status": "active",
+      "children": [],
+      "createdAt": "2026-06-06 16:46:45",
+      "updatedAt": "2026-06-06 16:46:45"
+    },
+    {
+      "id": "88b6c50fbc2695fd0fca51705e957d17",
+      "name": "窗帘布艺",
+      "level": 1,
+      "sortOrder": 0,
+      "status": "active",
+      "children": [],
+      "createdAt": "2026-06-06 20:05:43",
+      "updatedAt": "2026-06-06 20:05:43"
+    },
+    {
+      "id": "37a39cdf43eec50a1823d04edb900fb1",
+      "name": "测试分类-1780126346166_ec4b44",
+      "level": 1,
+      "sortOrder": 999,
+      "status": "active",
+      "children": [],
+      "createdAt": "2026-05-30 15:32:26",
+      "updatedAt": "2026-05-30 15:32:26"
+    }
+  ],
+  "requestId": "req_99e5b4b6036e4e99",
+  "timestamp": 1781308015
+}

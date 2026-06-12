@@ -1,0 +1,9 @@
+{
+  "success": false,
+  "error": {
+    "code": "INTERNAL_ERROR",
+    "message": "服务器内部错误"
+  },
+  "requestId": "req_e4d6105da9844797",
+  "timestamp": 1781308006
+}

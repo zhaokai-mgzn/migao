@@ -1,0 +1,29 @@
+{
+  "success": true,
+  "data": {
+    "total": 1,
+    "page": 1,
+    "size": 10,
+    "items": [
+      {
+        "createdAt": "2026-05-30T14:11:23.236386+08:00",
+        "role": "admin",
+        "phone": "13800138000",
+        "roles": [
+          {
+            "code": "tenant_admin",
+            "name": "企业管理员",
+            "id": "role_tenant_admin"
+          }
+        ],
+        "name": "管理员",
+        "id": "user_superadmin",
+        "username": "13800138000",
+        "status": "active",
+        "updatedAt": "2026-05-30T16:56:55.677981+08:00"
+      }
+    ]
+  },
+  "requestId": "req_d2fb4dc8a3b0450e",
+  "timestamp": 1781308015
+}

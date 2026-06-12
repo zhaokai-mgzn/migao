@@ -1,0 +1,23 @@
+{
+  "success": true,
+  "data": {
+    "total": 1,
+    "page": 1,
+    "size": 10,
+    "items": [
+      {
+        "id": "role_tenant_admin",
+        "tenantId": 1,
+        "name": "企业管理员",
+        "code": "tenant_admin",
+        "description": "企业入驻后的默认管理员角色",
+        "status": "active",
+        "createdAt": "2026-05-30T14:11:23.23559+08:00",
+        "updatedAt": "2026-05-30T14:11:23.23559+08:00",
+        "deleted": 0
+      }
+    ]
+  },
+  "requestId": "req_6d8172f1a1444203",
+  "timestamp": 1781308015
+}

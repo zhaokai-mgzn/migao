@@ -1,0 +1,204 @@
+{
+  "success": true,
+  "data": {
+    "id": "fdd64b7bfe62bd3005f8c7e0a2c7a686",
+    "name": "cessss",
+    "categoryId": "3e24d5a112ead9195994d1d7efb2641c",
+    "categoryName": "卧室系列",
+    "basePrice": 23.1,
+    "description": "",
+    "mainImage": "https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/products/2026/06/12/62f8c3277f884b4aa61b9806a589752c.jpg",
+    "images": [
+      "https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/products/2026/06/12/62f8c3277f884b4aa61b9806a589752c.jpg"
+    ],
+    "status": "on_sale",
+    "stock": 0,
+    "stockWarningThreshold": 10,
+    "skuCode": "2699",
+    "unit": "米",
+    "pricingType": "fixed",
+    "stockDeductionMode": "on_order",
+    "colorCount": 4,
+    "totalStock": 800,
+    "salesCount": 0,
+    "salesAmount": 0,
+    "colors": [
+      {
+        "id": 2065449907869094000,
+        "productId": "fdd64b7bfe62bd3005f8c7e0a2c7a686",
+        "colorName": "白色",
+        "mainColorHex": "#FFFFFF",
+        "remark": "",
+        "sortOrder": 0,
+        "createdAt": "2026-06-12 23:03:26",
+        "updatedAt": "2026-06-12 23:03:26"
+      },
+      {
+        "id": 2065449907885871000,
+        "productId": "fdd64b7bfe62bd3005f8c7e0a2c7a686",
+        "colorName": "米白",
+        "mainColorHex": "#FFFDD0",
+        "remark": "",
+        "sortOrder": 1,
+        "createdAt": "2026-06-12 23:03:26",
+        "updatedAt": "2026-06-12 23:03:26"
+      },
+      {
+        "id": 2065449907902648300,
+        "productId": "fdd64b7bfe62bd3005f8c7e0a2c7a686",
+        "colorName": "灰色",
+        "mainColorHex": "#808080",
+        "remark": "",
+        "sortOrder": 2,
+        "createdAt": "2026-06-12 23:03:26",
+        "updatedAt": "2026-06-12 23:03:26"
+      },
+      {
+        "id": 2065449907915231200,
+        "productId": "fdd64b7bfe62bd3005f8c7e0a2c7a686",
+        "colorName": "黑色",
+        "mainColorHex": "#000000",
+        "remark": "",
+        "sortOrder": 3,
+        "createdAt": "2026-06-12 23:03:26",
+        "updatedAt": "2026-06-12 23:03:26"
+      }
+    ],
+    "sellingMethods": [
+      "bulk_cut",
+      "full_roll"
+    ],
+    "doorWidths": [
+      "2.8米"
+    ],
+    "skus": [
+      {
+        "id": 2065449907932008400,
+        "productId": "fdd64b7bfe62bd3005f8c7e0a2c7a686",
+        "colorId": 2065449907869094000,
+        "colorName": "白色",
+        "sellingMethod": "bulk_cut",
+        "doorWidth": "2.8米",
+        "price": 23.1,
+        "stock": 100,
+        "createdAt": "2026-06-12 23:03:26",
+        "updatedAt": "2026-06-12 23:03:26"
+      },
+      {
+        "id": 2065449907944591400,
+        "productId": "fdd64b7bfe62bd3005f8c7e0a2c7a686",
+        "colorId": 2065449907869094000,
+        "colorName": "白色",
+        "sellingMethod": "full_roll",
+        "doorWidth": "2.8米",
+        "price": 23.1,
+        "stock": 100,
+        "createdAt": "2026-06-12 23:03:26",
+        "updatedAt": "2026-06-12 23:03:26"
+      },
+      {
+        "id": 2065449907961368600,
+        "productId": "fdd64b7bfe62bd3005f8c7e0a2c7a686",
+        "colorId": 2065449907885871000,
+        "colorName": "米白",
+        "sellingMethod": "bulk_cut",
+        "doorWidth": "2.8米",
+        "price": 23.1,
+        "stock": 100,
+        "createdAt": "2026-06-12 23:03:26",
+        "updatedAt": "2026-06-12 23:03:26"
+      },
+      {
+        "id": 2065449907978145800,
+        "productId": "fdd64b7bfe62bd3005f8c7e0a2c7a686",
+        "colorId": 2065449907885871000,
+        "colorName": "米白",
+        "sellingMethod": "full_roll",
+        "doorWidth": "2.8米",
+        "price": 23.1,
+        "stock": 100,
+        "createdAt": "2026-06-12 23:03:26",
+        "updatedAt": "2026-06-12 23:03:26"
+      },
+      {
+        "id": 2065449907990728700,
+        "productId": "fdd64b7bfe62bd3005f8c7e0a2c7a686",
+        "colorId": 2065449907902648300,
+        "colorName": "灰色",
+        "sellingMethod": "bulk_cut",
+        "doorWidth": "2.8米",
+        "price": 23.1,
+        "stock": 100,
+        "createdAt": "2026-06-12 23:03:26",
+        "updatedAt": "2026-06-12 23:03:26"
+      },
+      {
+        "id": 2065449908007506000,
+        "productId": "fdd64b7bfe62bd3005f8c7e0a2c7a686",
+        "colorId": 2065449907902648300,
+        "colorName": "灰色",
+        "sellingMethod": "full_roll",
+        "doorWidth": "2.8米",
+        "price": 23.1,
+        "stock": 100,
+        "createdAt": "2026-06-12 23:03:26",
+        "updatedAt": "2026-06-12 23:03:26"
+      },
+      {
+        "id": 2065449908024283100,
+        "productId": "fdd64b7bfe62bd3005f8c7e0a2c7a686",
+        "colorId": 2065449907915231200,
+        "colorName": "黑色",
+        "sellingMethod": "bulk_cut",
+        "doorWidth": "2.8米",
+        "price": 23.1,
+        "stock": 100,
+        "createdAt": "2026-06-12 23:03:26",
+        "updatedAt": "2026-06-12 23:03:26"
+      },
+      {
+        "id": 2065449908041060400,
+        "productId": "fdd64b7bfe62bd3005f8c7e0a2c7a686",
+        "colorId": 2065449907915231200,
+        "colorName": "黑色",
+        "sellingMethod": "full_roll",
+        "doorWidth": "2.8米",
+        "price": 23.1,
+        "stock": 100,
+        "createdAt": "2026-06-12 23:03:26",
+        "updatedAt": "2026-06-12 23:03:26"
+      }
+    ],
+    "brand": "米高",
+    "specifications": {
+      "craft": "提花",
+      "function": "遮光",
+      "material": "涤纶",
+      "pattern": "条纹",
+      "style": "北欧",
+      "weight": "100g以下"
+    },
+    "detailImages": [
+      "https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/products/2026/06/12/956fe02c037846ecaf6809e5c395ce92.jpg"
+    ],
+    "processingItemConfigs": [
+      {
+        "processingItemId": "dce109a60fc30b2cc9cb3b70fe8dc8b1",
+        "processingItemName": "铅坠安装",
+        "customPrice": 3
+      },
+      {
+        "processingItemId": "43d70caa2755b577ddbcfe98af636431",
+        "processingItemName": "罗马杆环安装",
+        "customPrice": 3
+      }
+    ],
+    "editedBy": "13800138000",
+    "editedAt": "2026-06-12 23:03:26",
+    "createdAt": "2026-06-12 23:02:56",
+    "updatedAt": "2026-06-12 23:02:56",
+    "price": 23.1
+  },
+  "requestId": "req_364e3f91d546464c",
+  "timestamp": 1781308015
+}
