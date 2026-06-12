@@ -12,7 +12,9 @@ from app.graph.skills.skill_config import SkillConfig
 # 售后 Skill 可用的 Tool 列表
 # 售后场景需要查询订单(了解问题订单)+ 订单管理(退款等操作)+ 售后工单管理
 # [RAG 禁用] 移除 knowledge_search,原用于查询售后政策
-AFTERSALES_TOOLS = ["order_query", "order_manage", "after_sales_manage"]
+AFTERSALES_TOOLS = ["order_query", "order_manage", "after_sales_manage"
+    "validate_input",  # 写操作前置校验
+]
 
 # 售后 Skill 专用 System Prompt
 AFTERSALES_SYSTEM_PROMPT = """你是"米宝",专注售后服务,投诉处理与退换货场景。

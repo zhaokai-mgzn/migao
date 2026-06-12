@@ -42,6 +42,54 @@ SESSION_IDLE_TIMEOUT_MINUTES = 30
 
 # ============ 辅助函数 ============
 
+async def _get_user_nickname(tenant_id: int, user_id: str) -> Optional[str]:
+    """获取用户昵称（Redis 缓存 → DB 回退）
+
+    缓存 key: nickname:{tenant_id}:{user_id}，TTL 1 小时。
+    失败时静默返回 None（昵称非必需）。
+    """
+    cache_key = f"nickname:{tenant_id}:{user_id}"
+
+    # 1. 尝试 Redis 缓存
+    try:
+        from app.utils.redis_client import redis_pool
+        if redis_pool:
+            import redis.asyncio as aioredis
+            client = aioredis.Redis(connection_pool=redis_pool)
+            cached = await client.get(cache_key)
+            if cached:
+                return cached
+    except Exception:
+        pass  # Redis 不可用时回退到 DB
+
+    # 2. 缓存未命中，查 DB
+    try:
+        from sqlalchemy import text
+        from app.utils.database import AsyncSessionLocal
+        async with AsyncSessionLocal() as db:
+            sql = text("SELECT nickname FROM users WHERE id = :user_id")
+            result = await db.execute(sql, {"user_id": user_id})
+            row = result.fetchone()
+            if row and row[0]:
+                nickname = row[0]
+                # 3. 写入缓存
+                try:
+                    from app.utils.redis_client import redis_pool
+                    if redis_pool:
+                        import redis.asyncio as aioredis
+                        client = aioredis.Redis(connection_pool=redis_pool)
+                        await client.setex(cache_key, 3600, nickname)
+                except Exception:
+                    pass
+                return nickname
+    except Exception as e:
+        logger.warning(
+            f"[chat] Failed to query user nickname | user={user_id} error={e}"
+        )
+
+    return None
+
+
 async def _extract_memories_async(
     tenant_id: int,
     user_id: str,
@@ -651,21 +699,8 @@ async def send_message(
             chat_history = _convert_history_to_agent_format(history_messages)
             
             # 5. 创建 Agent 上下文
-            # 查询用户昵称，注入到 System Prompt 让 Agent 认识当前对话的人
-            user_name: Optional[str] = None
-            try:
-                from sqlalchemy import text
-                from app.utils.database import AsyncSessionLocal
-                async with AsyncSessionLocal() as db:
-                    sql = text("SELECT nickname FROM users WHERE id = :user_id")
-                    result = await db.execute(sql, {"user_id": user_id})
-                    row = result.fetchone()
-                    if row:
-                        user_name = row[0]
-            except Exception as e:
-                logger.warning(
-                    f"[chat/send] Failed to query user nickname | user={user_id} error={e}"
-                )
+            # 查询用户昵称（Redis 缓存 → DB 回退），注入到 System Prompt 让 Agent 认识当前对话的人
+            user_name: Optional[str] = await _get_user_nickname(tenant_id, user_id)
 
             agent_context = AgentContext(
                 user_id=user_id,

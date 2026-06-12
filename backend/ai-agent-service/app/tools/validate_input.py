@@ -22,12 +22,41 @@ _VALIDATION_RULES: Dict[str, Dict[str, Any]] = {
             "category_id": {"type": str, "label": "分类ID"},
             "description": {"type": str, "label": "描述"},
         },
+        "update": {
+            "required": ["product_id"],
+            "product_id": {"type": str, "min_len": 1, "label": "商品ID"},
+        },
     },
     "order_create": {
         "required": ["customer_name", "customer_phone", "items"],
         "customer_name": {"type": str, "min_len": 1, "label": "客户姓名"},
         "customer_phone": {"type": str, "min_len": 1, "label": "客户电话"},
         "items": {"type": list, "min_len": 1, "label": "商品明细"},
+    },
+    "order_manage": {
+        "cancel": {
+            "required": ["order_id"],
+            "order_id": {"type": str, "min_len": 1, "label": "订单ID或订单号"},
+        },
+        "refund": {
+            "required": ["order_id"],
+            "order_id": {"type": str, "min_len": 1, "label": "订单ID或订单号"},
+        },
+    },
+    "after_sales_manage": {
+        "create": {
+            "required": ["ticket_type", "order_id", "reason"],
+            "ticket_type": {"type": str, "min_len": 1, "label": "工单类型(refund/exchange/repair/complaint/other)"},
+            "order_id": {"type": str, "min_len": 1, "label": "关联订单ID"},
+            "reason": {"type": str, "min_len": 1, "label": "原因说明"},
+        },
+    },
+    "employee_manage": {
+        "create": {
+            "required": ["name", "phone"],
+            "name": {"type": str, "min_len": 1, "label": "员工姓名"},
+            "phone": {"type": str, "min_len": 1, "label": "手机号"},
+        },
     },
 }
 

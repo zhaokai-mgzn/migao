@@ -10,7 +10,9 @@ from app.graph.skills.skill_config import SkillConfig
 
 
 # 订单 Skill 可用的 Tool 列表
-ORDER_TOOLS = ["order_query", "order_manage", "order_create", "logistics_track", "product_search", "product_detail"]
+ORDER_TOOLS = ["order_query", "order_manage", "order_create", "logistics_track", "product_search", "product_detail"
+    "validate_input",  # 写操作前置校验
+]
 
 # 订单 Skill 专用 System Prompt
 ORDER_SYSTEM_PROMPT = """你是"米宝",专注订单/物流领域。

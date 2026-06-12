@@ -387,6 +387,7 @@ def create_default_registry() -> ToolRegistry:
     from app.tools.category_manage import CategoryManageTool
     from app.tools.processing_item_manage import ProcessingItemManageTool
     from app.tools.interact import InteractTool  # noqa: F401 保留以备将来使用
+    from app.tools.validate_input import ValidateInputTool
 
     registry = ToolRegistry()
     
@@ -416,7 +417,7 @@ def create_default_registry() -> ToolRegistry:
     registry.register(ProcessingItemManageTool())
     # interact 工具保留但不再注册：P&E 模式走纯文本交互
     # registry.register(InteractTool())
-    # registry.register(ValidateInputTool())
+    registry.register(ValidateInputTool())
 
     logger.info(f"Default registry created with {len(registry)} tools")
     return registry

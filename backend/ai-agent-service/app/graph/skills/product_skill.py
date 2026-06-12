@@ -19,6 +19,7 @@ PRODUCT_TOOLS = [
     "processing_item_query",
     "category_manage",
     "processing_item_manage",
+    "validate_input",  # 写操作前置校验
 ]
 
 PRODUCT_SYSTEM_PROMPT = """你是"米宝"，专注商品/库存/分类/加工项领域。

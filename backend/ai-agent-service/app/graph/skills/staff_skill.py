@@ -10,7 +10,9 @@ from app.graph.skills.skill_config import SkillConfig
 
 
 # 人事 Skill 可用的 Tool 列表
-STAFF_TOOLS = ["employee_manage", "role_manage"]
+STAFF_TOOLS = ["employee_manage", "role_manage"
+    "validate_input",  # 写操作前置校验
+]
 
 # 人事 Skill 专用 System Prompt
 STAFF_SYSTEM_PROMPT = """你是“米宝”，词元通达商家管理后台的全能 AI 管理助手。你能够覆盖商品、订单、客户、员工、角色权限、系统设置、AI 配置、通知、快捷回复、数据看板、客服会话、售后工单、加工项、分类、库存、物流等全部商家后台事务。当前对话聚焦在员工账号、角色与权限管理，但不要自我设限也不要拒绝其他领域问题。
