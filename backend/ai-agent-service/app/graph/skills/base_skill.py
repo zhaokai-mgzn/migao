@@ -555,6 +555,15 @@ async def execute_skill(
             + system_prompt
         )
 
+    # 注入跨轮记忆：已收集字段（避免 LLM 从历史重新提取遗漏）
+    collected = {}
+    if session_id:
+        from app.memory.session_memory import SessionMemory
+        collected = await SessionMemory().get_collected_fields(session_id)
+    if collected:
+        fields_text = "\n".join(f"  - {k}: {json.dumps(v, ensure_ascii=False)[:200]}" for k, v in collected.items())
+        system_prompt += f"\n\n## 已收集字段（从对话历史提取，不要重复询问，直接使用）\n{fields_text}"
+
     full_messages: List[Any] = [SystemMessage(content=system_prompt)] + list(messages)
 
     # 5. Tool Calling 循环
@@ -886,21 +895,47 @@ async def execute_skill(
         "entities": entities,
     }
 
-    # 跨轮 skill 持久化：写操作类 skill 保持在同一 skill，避免下一轮意图路由跑偏
-    # 检测到用户确认(或仍在收集信息)且未执行完成时，保持当前 skill
+    # 跨轮 skill 持久化
     creation_skills = {"product", "order", "aftersales"}
     if skill_name in creation_skills:
-        # 检测 LLM 是否还在流程中（等待用户输入/确认/补全）
         still_in_flow = any(kw in final_content for kw in [
             "确认创建","确认下单","确认","请选择","请提供","请输入","核对","修改即可",
             "汇总","创建","直接描述","帮你创建","帮你查","帮您创建","帮您查",
         ])
-        # 或者 LLM 最近调用了非 product_manage.create 的tool(如 category/search)
         has_active_tool_calls = any(
             hasattr(m, 'tool_calls') and m.tool_calls
             for m in new_messages if hasattr(m, 'tool_calls')
         )
         if still_in_flow or has_active_tool_calls:
             result["pending_interact_skill"] = skill_name
+
+    # ── 跨轮字段记忆 ──
+    if session_id and skill_name in creation_skills:
+        from app.memory.session_memory import SessionMemory
+        sm = SessionMemory()
+        fields = await sm.get_collected_fields(session_id)
+        created_or_cancelled = False
+        for m in new_messages:
+            if hasattr(m, 'tool_calls') and m.tool_calls:
+                for tc in m.tool_calls:
+                    tool_name = tc.get("name", "")
+                    args = tc.get("args", {})
+                    # 创建工具调用：记住所有字段用于下一轮
+                    if tool_name in ("product_manage", "order_create", "after_sales_manage"):
+                        for k, v in args.items():
+                            if v is not None and k not in ("action", "product_id", "ticket_id", "status"):
+                                fields[k] = v
+                        if args.get("action") in (None, "create"):
+                            created_or_cancelled = True
+                    # Vision/分析工具含结构化结果：记住关键字段
+                    elif tool_name == "category_manage" and "category_id" not in fields:
+                        pass  # category args already handled via create args
+        # 检测取消
+        if any(kw in final_content for kw in ["已取消","取消","算了","不创建了"]):
+            created_or_cancelled = True
+        if created_or_cancelled:
+            await sm.clear_collected_fields(session_id)
+        elif fields:
+            await sm.set_collected_fields(session_id, fields)
 
     return result

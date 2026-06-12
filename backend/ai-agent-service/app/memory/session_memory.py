@@ -676,6 +676,58 @@ class SessionMemory:
                 logger.warning(f"[session-memory] clear_pending_skill failed: {e}")
                 return False
 
+    # ── 跨轮字段记忆（ReAct 模式）──
+
+    async def get_collected_fields(self, session_id: str) -> dict:
+        """读取已收集的字段"""
+        if not session_id:
+            return {}
+        async with await self._get_session() as db:
+            try:
+                row = await db.fetchone(
+                    "SELECT metadata->>'collected_fields' AS fields FROM sessions WHERE id = $1",
+                    [session_id]
+                )
+                if row and row[0]:
+                    return json.loads(row[0])
+            except Exception as e:
+                logger.warning(f"[session-memory] get_collected_fields failed: {e}")
+        return {}
+
+    async def set_collected_fields(self, session_id: str, fields: dict) -> bool:
+        """保存已收集的字段"""
+        if not session_id or not fields:
+            return False
+        async with await self._get_session() as db:
+            try:
+                await db.execute(
+                    "UPDATE sessions SET metadata = "
+                    "COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('collected_fields', $2::jsonb) "
+                    "WHERE id = $1",
+                    [session_id, json.dumps(fields, ensure_ascii=False)]
+                )
+                return True
+            except Exception as e:
+                logger.warning(f"[session-memory] set_collected_fields failed: {e}")
+                return False
+
+    async def clear_collected_fields(self, session_id: str) -> bool:
+        """清除已收集的字段"""
+        if not session_id:
+            return False
+        async with await self._get_session() as db:
+            try:
+                await db.execute(
+                    "UPDATE sessions SET metadata = "
+                    "COALESCE(metadata, '{}'::jsonb) - 'collected_fields' "
+                    "WHERE id = $1",
+                    [session_id]
+                )
+                return True
+            except Exception as e:
+                logger.warning(f"[session-memory] clear_collected_fields failed: {e}")
+                return False
+
     # ── Plan State 持久化（Plan-and-Execute 模式）──
 
     async def set_plan_state(self, session_id: str, plan_json: str) -> bool:
