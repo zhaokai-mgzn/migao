@@ -117,6 +117,10 @@ public class KnowledgeController {
         if (doc == null) {
             throw BusinessException.notFound("知识库文档");
         }
+        // 租户隔离校验：禁止跨租户删除
+        if (!doc.getTenantId().equals(tenantId)) {
+            throw BusinessException.notFound("知识库文档");
+        }
 
         knowledgeDocumentMapper.deleteById(id);
         return ApiResponse.success();
@@ -134,6 +138,10 @@ public class KnowledgeController {
 
         KnowledgeDocument doc = knowledgeDocumentMapper.selectById(id);
         if (doc == null) {
+            throw BusinessException.notFound("知识库文档");
+        }
+        // 租户隔离校验：禁止跨租户操作
+        if (!doc.getTenantId().equals(tenantId)) {
             throw BusinessException.notFound("知识库文档");
         }
 
