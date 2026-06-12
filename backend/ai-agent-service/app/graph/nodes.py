@@ -348,7 +348,7 @@ def _get_intent_to_route() -> dict[str, str]:
     """意图→路由key映射。从 skill_registry 动态构建,避免硬编码不同步。"""
     from app.graph.skills.skill_registry import get_skill_registry
     intent_map = get_skill_registry().get_intent_to_route_map()
-    for intent, route in _DIRECT_REPLY_INTENTS:
+    for intent in _DIRECT_REPLY_INTENTS:
         intent_map[intent] = "direct_reply"
     intent_map["general"] = "general"
     intent_map.update(_KNOWLEDGE_FALLBACK)
