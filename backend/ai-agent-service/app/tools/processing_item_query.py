@@ -103,6 +103,7 @@ class ProcessingItemQueryTool(BaseTool):
                 success=False,
                 error="权限不足",
                 message="您没有权限查询加工项信息",
+                suggestion="请联系管理员获取查询加工项信息权限",
             )
 
         try:
@@ -221,6 +222,7 @@ class ProcessingItemQueryTool(BaseTool):
                 success=False,
                 error="tool_execution_failed",
                 message="查询加工项时出错，请稍后重试",
+                suggestion="请稍后重试，如持续失败请联系技术支持",
             )
 
     @staticmethod

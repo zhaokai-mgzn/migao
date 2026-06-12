@@ -125,6 +125,7 @@ class SettingsManageTool(BaseTool):
                 success=False,
                 error="权限不足",
                 message="您没有权限执行系统设置管理操作",
+                suggestion="请联系管理员获取执行系统设置管理操作权限",
             )
 
         # 参数校验
@@ -155,6 +156,7 @@ class SettingsManageTool(BaseTool):
                     success=False,
                     error=f"未知操作: {action}",
                     message="不支持的操作类型",
+                    suggestion="请选择支持的操作类型，查看工具说明了解可用操作",
                 )
 
         except Exception as e:
@@ -163,6 +165,7 @@ class SettingsManageTool(BaseTool):
                 success=False,
                 error="tool_execution_failed",
                 message="系统设置操作失败，请稍后重试",
+                suggestion="请稍后重试，如持续失败请联系技术支持",
             )
 
     async def _get_settings(

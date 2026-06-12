@@ -64,8 +64,6 @@ jobs:
           SSE_TIMEOUT: '300'
           SSE_PING_INTERVAL: '30'
           CORS_ALLOWED_ORIGINS: http://localhost:3000
-          DATABASE_URL: sqlite:///ci.db
-          REDIS_URL: redis://localhost:6379/0
         run: python -m pytest tests/ -v --tb=short -q --ignore=tests/test_post_deploy_verify.py --ignore=tests/manual_test_pe_flow.py --timeout=30
 
   # ============ admin-web 类型检查 + 单测 ============

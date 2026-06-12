@@ -129,6 +129,7 @@ class LogisticsTrackTool(BaseTool):
                 success=False,
                 error="权限不足",
                 message="您没有权限查询物流信息",
+                suggestion="请联系管理员获取查询物流信息权限",
             )
         
         if not tracking_number and not order_id:
@@ -188,6 +189,7 @@ class LogisticsTrackTool(BaseTool):
                         success=False,
                         error="订单不存在",
                         message="未找到该订单，请检查订单号",
+                        suggestion="请检查ID是否正确，或尝试其他搜索条件",
                     )
                 # 取第一条匹配的 UUID
                 actual_uuid = records[0].get("id")
@@ -208,6 +210,7 @@ class LogisticsTrackTool(BaseTool):
                     success=False,
                     error=error_msg,
                     message="未找到该订单，请检查订单号",
+                    suggestion="请检查ID是否正确，或尝试其他搜索条件",
                 )
             
             order = order_response.get("data", {})
@@ -223,6 +226,7 @@ class LogisticsTrackTool(BaseTool):
                     success=False,
                     error="订单不存在",
                     message="未找到该订单，请检查订单号",
+                    suggestion="请检查ID是否正确，或尝试其他搜索条件",
                 )
             
             logistics = order.get("logistics", {})

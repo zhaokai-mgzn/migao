@@ -118,6 +118,7 @@ class CustomerManageTool(BaseTool):
                 success=False,
                 error="权限不足",
                 message="您没有权限执行客户管理操作",
+                suggestion="请联系管理员获取执行客户管理操作权限",
             )
 
         # 参数校验
@@ -152,6 +153,7 @@ class CustomerManageTool(BaseTool):
                     success=False,
                     error=f"未知操作: {action}",
                     message="不支持的操作类型",
+                    suggestion="请选择支持的操作类型，查看工具说明了解可用操作",
                 )
 
         except Exception as e:
@@ -160,6 +162,7 @@ class CustomerManageTool(BaseTool):
                 success=False,
                 error="tool_execution_failed",
                 message="客户管理操作失败，请稍后重试",
+                suggestion="请稍后重试，如持续失败请联系技术支持",
             )
 
     async def _list_customers(
@@ -197,6 +200,7 @@ class CustomerManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message="客户列表查询失败，请稍后重试",
+                suggestion="请稍后重试，如持续失败请联系技术支持",
             )
 
         data = response.get("data", {})
@@ -254,6 +258,7 @@ class CustomerManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message="客户详情查询失败",
+                suggestion="请检查输入参数是否正确，或稍后重试",
             )
 
         data = response.get("data", {})
@@ -411,6 +416,7 @@ class CustomerManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message="标签列表查询失败",
+                suggestion="请检查输入参数是否正确，或稍后重试",
             )
 
         data = response.get("data", [])

@@ -96,6 +96,7 @@ class InventoryManageTool(BaseTool):
                 success=False,
                 error="权限不足",
                 message="您没有权限执行库存管理操作",
+                suggestion="请联系管理员获取执行库存管理操作权限",
             )
         
         # customer 角色仅允许 query 操作
@@ -126,6 +127,7 @@ class InventoryManageTool(BaseTool):
                     success=False,
                     error=f"未知操作: {action}",
                     message="不支持的操作类型",
+                    suggestion="请选择支持的操作类型，查看工具说明了解可用操作",
                 )
                 
         except Exception as e:
@@ -134,6 +136,7 @@ class InventoryManageTool(BaseTool):
                 success=False,
                 error="tool_execution_failed",
                 message="库存操作失败，请稍后重试",
+                suggestion="请稍后重试，如持续失败请联系技术支持",
             )
     
     async def _query_inventory(
@@ -173,12 +176,14 @@ class InventoryManageTool(BaseTool):
                     success=False,
                     error="商品不存在",
                     message="未找到该商品，请检查商品 ID",
+                    suggestion="请检查ID是否正确，或尝试其他搜索条件",
                 )
             
             return ToolResult(
                 success=False,
                 error=error_msg,
                 message="查询库存失败，请稍后重试",
+                suggestion="请稍后重试，如持续失败请联系技术支持",
             )
         
         data = response.get("data", {})
@@ -194,6 +199,7 @@ class InventoryManageTool(BaseTool):
                 success=False,
                 error="商品不存在",
                 message="未找到该商品",
+                suggestion="请检查ID是否正确，或尝试其他搜索条件",
             )
         
         stock = data.get("stock", 0)
@@ -344,6 +350,7 @@ class InventoryManageTool(BaseTool):
                 success=False,
                 error=error_msg,
                 message="低库存预警查询失败，请稍后重试",
+                suggestion="请稍后重试，如持续失败请联系技术支持",
             )
         
         data = response.get("data", {})

@@ -59,6 +59,7 @@ class ProductDetailTool(BaseTool):
                 success=False,
                 error="权限不足",
                 message="您没有权限查看商品详情",
+                suggestion="请联系管理员获取查看商品详情权限",
             )
         
         if not product_id:
@@ -93,6 +94,7 @@ class ProductDetailTool(BaseTool):
                     success=False,
                     error=error_msg,
                     message="查询商品详情失败，请稍后重试",
+                    suggestion="请稍后重试，如持续失败请联系技术支持",
                 )
             
             data = response.get("data", {})
@@ -139,6 +141,7 @@ class ProductDetailTool(BaseTool):
                 success=False,
                 error="tool_execution_failed",
                 message="查询商品详情时出错，请稍后重试",
+                suggestion="请稍后重试，如持续失败请联系技术支持",
             )
     
     def _format_product(self, data: Dict[str, Any]) -> Dict[str, Any]:
