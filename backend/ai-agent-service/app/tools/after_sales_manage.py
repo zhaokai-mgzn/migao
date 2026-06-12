@@ -34,12 +34,20 @@ class AfterSalesManageTool(BaseTool):
     """
 
     name = "after_sales_manage"
-    description = (
-        "售后工单管理工具。创建工单前请收集信息:"
-        "必填 — ticket_type(退款/换货/维修/投诉/其他) order_id(关联订单ID) description(问题描述)。"
-        "可选 — images(凭证图片URL) priority(优先级: normal/urgent/critical) refund_amount(退款金额)。"
-        "收集完成后展示汇总让用户确认,确认后再调用 create。"
-    )
+    description = """售后工单管理。创建工单(action="create")收集齐后确认再调用。可用字段:
+- ticket_type(string,必填): 工单类型 refund/exchange/repair/complaint/other
+- order_id(string,必填): 关联订单ID
+- reason(string,必填): 原因说明
+- description(string): 详细描述
+- images(string[]数组): 凭证图片URL列表
+- priority(string): 优先级 normal/urgent/critical
+- refund_amount(number): 退款金额(退款类型时填写)
+
+查询(action="list"): keyword/status/ticket_type/page/size 可选
+详情(action="detail"): ticket_id 必填
+更新状态(action="update_status"): ticket_id+status 必填
+
+铁律: 收集->确认->执行。确认词:"确认创建""确认""好的""行""可以"。"""
 
     allowed_roles = ["admin", "agent", "tenant_admin"]
 

@@ -22,14 +22,14 @@ class OrderCreateTool(BaseTool):
     """
 
     name = "order_create"
-    description = (
-        "创建新订单。创建前请收集客户信息和商品明细："
-        "必填 — customer_name(客户姓名)、customer_phone(客户电话)、"
-        "items(商品列表，每项包含product_name/quantity/unit_price/subtotal)。"
-        "可选 — customer_address(收货地址)、remark(备注)。"
-        "items 中可选 — product_id(商品ID)、width(宽度)、height(高度)。"
-        "收集完成后展示汇总让用户确认，确认后再调用 create。"
-    )
+    description = """创建新订单。收集齐后展示汇总确认,用户确认后调用。可用字段:
+- customer_name(string,必填): 客户姓名
+- customer_phone(string,必填): 客户电话
+- customer_address(string): 收货地址
+- remark(string): 备注
+- items(object[]数组,必填): 商品明细,每项含 product_name(string,必填) quantity(integer,必填) unit_price(number,必填) subtotal(number,必填=数量*单价) product_id(string,可选) width(number,可选) height(number,可选)
+
+铁律: 收集->确认->执行。确认词:"确认创建""确认下单""好的""行""可以"。"""
 
     # admin、agent、tenant_admin 可使用
     allowed_roles = ["admin", "agent", "tenant_admin"]
