@@ -254,6 +254,40 @@ export default function ProductDetailPage() {
                   <dd className="text-sm text-gray-900 mt-0.5">{product.stockWarningThreshold}</dd>
                 </div>
               )}
+              {product.skuCode && (
+                <div>
+                  <dt className="text-xs text-gray-500">SKU编码</dt>
+                  <dd className="text-sm text-gray-900 mt-0.5 font-mono">{product.skuCode}</dd>
+                </div>
+              )}
+              <div>
+                <dt className="text-xs text-gray-500">在售颜色</dt>
+                <dd className="text-sm text-gray-900 mt-0.5">{product.colorCount ?? (product.colors?.length ?? '-')}</dd>
+              </div>
+              {product.salesCount != null && (
+                <div>
+                  <dt className="text-xs text-gray-500">累计销量</dt>
+                  <dd className="text-sm text-gray-900 mt-0.5">{product.salesCount}</dd>
+                </div>
+              )}
+              {product.salesAmount != null && (
+                <div>
+                  <dt className="text-xs text-gray-500">累计销售额</dt>
+                  <dd className="text-sm text-gray-900 mt-0.5">¥{product.salesAmount.toFixed(2)}</dd>
+                </div>
+              )}
+              {product.editedBy && (
+                <div>
+                  <dt className="text-xs text-gray-500">最后编辑人</dt>
+                  <dd className="text-sm text-gray-900 mt-0.5">{product.editedBy}</dd>
+                </div>
+              )}
+              {product.editedAt && (
+                <div>
+                  <dt className="text-xs text-gray-500">最后编辑时间</dt>
+                  <dd className="text-sm text-gray-900 mt-0.5">{product.editedAt}</dd>
+                </div>
+              )}
               <div>
                 <dt className="text-xs text-gray-500">创建时间</dt>
                 <dd className="text-sm text-gray-900 mt-0.5">{product.createdAt || '-'}</dd>
@@ -291,6 +325,7 @@ export default function ProductDetailPage() {
                       <th className="px-3 py-2 text-left font-medium">颜色</th>
                       <th className="px-3 py-2 text-left font-medium">售卖方式</th>
                       <th className="px-3 py-2 text-left font-medium">门幅</th>
+                      <th className="px-3 py-2 text-left font-medium">SKU编码</th>
                       <th className="px-3 py-2 text-right font-medium">库存</th>
                       <th className="px-3 py-2 text-right font-medium">价格</th>
                     </tr>
@@ -303,6 +338,7 @@ export default function ProductDetailPage() {
                           {sku.sellingMethod ? SellingMethodLabels[sku.sellingMethod] || sku.sellingMethod : '-'}
                         </td>
                         <td className="px-3 py-2">{sku.doorWidth || '-'}</td>
+                        <td className="px-3 py-2 font-mono text-xs">{sku.skuCode || '-'}</td>
                         <td className="px-3 py-2 text-right tabular-nums">{sku.stock ?? '-'}</td>
                         <td className="px-3 py-2 text-right tabular-nums">
                           {typeof sku.price === 'number' ? `¥${sku.price.toFixed(2)}` : '-'}
@@ -311,6 +347,29 @@ export default function ProductDetailPage() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+            </div>
+          )}
+
+          {/* 颜色列表 */}
+          {product.colors && product.colors.length > 0 && (
+            <div className="bg-gray-50 rounded-lg p-4">
+              <h3 className="text-sm font-semibold text-gray-700 mb-3">商品颜色</h3>
+              <div className="flex flex-wrap gap-2">
+                {product.colors.map((c) => (
+                  <div
+                    key={c.id}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-gray-200 bg-white text-sm"
+                  >
+                    {c.mainColorHex && (
+                      <span
+                        className="w-4 h-4 rounded-full border border-gray-300 shrink-0"
+                        style={{ backgroundColor: c.mainColorHex }}
+                      />
+                    )}
+                    <span>{c.colorName}</span>
+                  </div>
+                ))}
               </div>
             </div>
           )}
