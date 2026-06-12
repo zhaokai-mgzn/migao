@@ -373,30 +373,35 @@ export default function OrdersPage() {
               placeholder="结束日期"
               className="flex-1 min-w-[130px] h-9 px-3 rounded border border-gray-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
             />
-            <div className="flex gap-1 bg-gray-100 rounded-lg p-0.5">
-              {(['today', '7days', '30days'] as const).map((preset) => {
-                const label = preset === 'today' ? '今天' : preset === '7days' ? '近7天' : '近30天'
-                const isActive = (() => {
-                  const today = dayjs().format('YYYY-MM-DD')
-                  if (preset === 'today') return startDate === today && endDate === today
-                  if (preset === '7days') return startDate === dayjs().subtract(6, 'day').format('YYYY-MM-DD') && endDate === today
-                  return startDate === dayjs().subtract(29, 'day').format('YYYY-MM-DD') && endDate === today
-                })()
-                return (
-                  <button
-                    key={preset}
-                    type="button"
-                    onClick={() => handleDateQuickSelect(preset)}
-                    className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                      isActive ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                )
-              })}
-            </div>
           </div>
+        </div>
+
+        {/* 快捷时间选择 */}
+        <div className="flex items-center gap-2 mb-4">
+          <span className="text-xs text-gray-400 mr-1">快捷：</span>
+          {(['today', '7days', '30days'] as const).map((preset) => {
+            const label = preset === 'today' ? '今天' : preset === '7days' ? '近7天' : '近30天'
+            const isActive = (() => {
+              const today = dayjs().format('YYYY-MM-DD')
+              if (preset === 'today') return startDate === today && endDate === today
+              if (preset === '7days') return startDate === dayjs().subtract(6, 'day').format('YYYY-MM-DD') && endDate === today
+              return startDate === dayjs().subtract(29, 'day').format('YYYY-MM-DD') && endDate === today
+            })()
+            return (
+              <button
+                key={preset}
+                type="button"
+                onClick={() => handleDateQuickSelect(preset)}
+                className={`h-7 px-3 rounded-full text-xs font-medium border transition-colors ${
+                  isActive
+                    ? 'bg-primary-50 border-primary-300 text-primary-700'
+                    : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300 hover:text-gray-700'
+                }`}
+              >
+                {label}
+              </button>
+            )
+          })}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-[repeat(3,1fr)_auto] gap-x-6 gap-y-4 items-center">
