@@ -425,7 +425,6 @@ def route_by_intent(state: AgentState) -> str:
         )
         return pending_skill
 
-    if _INTENT_TO_ROUTE is None: _INTENT_TO_ROUTE = _get_intent_to_route()
     global _INTENT_TO_ROUTE
     if _INTENT_TO_ROUTE is None:
         _INTENT_TO_ROUTE = _get_intent_to_route()
