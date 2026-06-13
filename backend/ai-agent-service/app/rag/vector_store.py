@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from loguru import logger
 
 from app.config import settings
-from app.llm import DASHSCOPE_API_KEY, DASHSCOPE_EMBEDDING_MODEL
+from app.llm import EMBEDDING_API_KEY, EMBEDDING_MODEL
 
 # 重试配置
 MAX_RETRIES = 3
@@ -65,7 +65,7 @@ class VectorStore:
         """
         self.api_key = api_key or settings.DASHVECTOR_API_KEY
         self.endpoint = endpoint or settings.DASHVECTOR_ENDPOINT
-        self.embedding_api_key = embedding_api_key or DASHSCOPE_API_KEY
+        self.embedding_api_key = embedding_api_key or EMBEDDING_API_KEY
         
         self._client = None
         self._embedding_client = None
@@ -200,7 +200,7 @@ class VectorStore:
             logger.error("Embedding client not available")
             raise RuntimeError("Embedding client not initialized")
         
-        model = DASHSCOPE_EMBEDDING_MODEL
+        model = EMBEDDING_MODEL
         all_embeddings = []
         
         # 批量处理

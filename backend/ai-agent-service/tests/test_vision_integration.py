@@ -52,14 +52,14 @@ def routing_off(monkeypatch):
 @pytest.fixture
 def vision_enabled(monkeypatch):
     """启用视觉路由"""
-    monkeypatch.setattr(settings, "DASHSCOPE_VISION_ENABLED", True)
-    monkeypatch.setattr(settings, "DASHSCOPE_VISION_MODEL", "qwen3.6-flash")
+    monkeypatch.setattr(settings, "MINIMAX_VISION_ENABLED", True)
+    monkeypatch.setattr(settings, "MINIMAX_VISION_MODEL", "qwen3.6-flash")
 
 
 @pytest.fixture
 def vision_disabled(monkeypatch):
     """禁用视觉路由"""
-    monkeypatch.setattr(settings, "DASHSCOPE_VISION_ENABLED", False)
+    monkeypatch.setattr(settings, "MINIMAX_VISION_ENABLED", False)
 
 
 # =============================================================================
@@ -75,25 +75,25 @@ class TestVisionRoutingNoModelNameCheck:
 
     测试策略:
         - 验证 select_model(has_vision=True) 在非 vl 模型时仍被正确路由
-        - 验证 base_skill 使用 vision_detected + DASHSCOPE_VISION_ENABLED
+        - 验证 base_skill 使用 vision_detected + MINIMAX_VISION_ENABLED
           而非 "vl" in model 来决定是否创建视觉 LLM
     """
 
     def test_select_model_returns_non_vl_vision_model(self, routing_on, monkeypatch):
-        """DASHSCOPE_VISION_ENABLED=True 时，has_vision=True 可返回非 vl 后缀的视觉模型"""
-        monkeypatch.setattr(settings, "DASHSCOPE_VISION_ENABLED", True)
-        monkeypatch.setattr(settings, "DASHSCOPE_VISION_MODEL", "qwen3.6-plus")
+        """MINIMAX_VISION_ENABLED=True 时，has_vision=True 可返回非 vl 后缀的视觉模型"""
+        monkeypatch.setattr(settings, "MINIMAX_VISION_ENABLED", True)
+        monkeypatch.setattr(settings, "MINIMAX_VISION_MODEL", "qwen3.6-plus")
         model = select_model(has_vision=True)
         assert model == "qwen3.6-plus"
 
     def test_base_skill_uses_vision_enabled_not_model_name(self, routing_on, monkeypatch):
-        """base_skill 应通过 vision_detected + DASHSCOPE_VISION_ENABLED 路由，
+        """base_skill 应通过 vision_detected + MINIMAX_VISION_ENABLED 路由，
         而非 "vl" in model — 确保非视觉专用模型也能走视觉 LLM"""
         from app.graph.skills.base_skill import get_skill_llm
         from langchain_core.messages import HumanMessage
 
-        monkeypatch.setattr(settings, "DASHSCOPE_VISION_ENABLED", True)
-        monkeypatch.setattr(settings, "DASHSCOPE_VISION_MODEL", "qwen3.6-plus")
+        monkeypatch.setattr(settings, "MINIMAX_VISION_ENABLED", True)
+        monkeypatch.setattr(settings, "MINIMAX_VISION_MODEL", "qwen3.6-plus")
 
         # 构造含图片的消息
         msg = HumanMessage(
@@ -216,8 +216,8 @@ class TestCreateVisionLLM:
     """LLMFactory.create_vision_llm 测试"""
 
     def test_create_vision_llm_default(self, monkeypatch):
-        """默认视觉模型（DASHSCOPE_VISION_MODEL）"""
-        monkeypatch.setattr(settings, "DASHSCOPE_VISION_MODEL", "qwen3.6-flash")
+        """默认视觉模型（MINIMAX_VISION_MODEL）"""
+        monkeypatch.setattr(settings, "MINIMAX_VISION_MODEL", "qwen3.6-flash")
         llm = LLMFactory.create_vision_llm()
         assert llm.model_name == "qwen3.6-flash"
         assert llm.temperature == 0.7
@@ -228,13 +228,13 @@ class TestCreateVisionLLM:
 
     def test_create_vision_llm_override(self, monkeypatch):
         """model_override 显式覆盖默认模型"""
-        monkeypatch.setattr(settings, "DASHSCOPE_VISION_MODEL", "qwen3.6-flash")
+        monkeypatch.setattr(settings, "MINIMAX_VISION_MODEL", "qwen3.6-flash")
         llm = LLMFactory.create_vision_llm(model_override="qwen3.6-plus")
         assert llm.model_name == "qwen3.6-plus"
 
     def test_create_vision_llm_no_thinking(self, monkeypatch):
         """视觉 LLM 显式禁用 thinking，防止思考内容泄漏（#204 regression）"""
-        monkeypatch.setattr(settings, "DASHSCOPE_VISION_MODEL", "qwen3.6-flash")
+        monkeypatch.setattr(settings, "MINIMAX_VISION_MODEL", "qwen3.6-flash")
         llm = LLMFactory.create_vision_llm()
         extra_body = getattr(llm, "extra_body", None)
         if extra_body is None:
@@ -252,21 +252,21 @@ class TestSelectModelWithVision:
     """select_model 视觉路由测试"""
 
     def test_select_model_with_vision(self, routing_on, vision_enabled, monkeypatch):
-        """has_vision=True 且启用视觉，返回 DASHSCOPE_VISION_MODEL"""
-        monkeypatch.setattr(settings, "DASHSCOPE_VISION_MODEL", "qwen3.6-flash")
+        """has_vision=True 且启用视觉，返回 MINIMAX_VISION_MODEL"""
+        monkeypatch.setattr(settings, "MINIMAX_VISION_MODEL", "qwen3.6-flash")
         assert select_model(has_vision=True) == "qwen3.6-flash"
 
-        monkeypatch.setattr(settings, "DASHSCOPE_VISION_MODEL", "qwen3.6-plus")
+        monkeypatch.setattr(settings, "MINIMAX_VISION_MODEL", "qwen3.6-plus")
         assert select_model(has_vision=True) == "qwen3.6-plus"
 
     def test_select_model_with_vision_overrides_intent(self, routing_on, vision_enabled, monkeypatch):
         """has_vision=True 优先级高于简单意图"""
-        monkeypatch.setattr(settings, "DASHSCOPE_VISION_MODEL", "qwen3.6-flash")
+        monkeypatch.setattr(settings, "MINIMAX_VISION_MODEL", "qwen3.6-flash")
         # 即便是 greeting 简单意图，含图片也走视觉模型
         assert select_model(intent="greeting", has_vision=True) == "qwen3.6-flash"
 
     def test_select_model_vision_disabled(self, routing_on, vision_disabled):
-        """DASHSCOPE_VISION_ENABLED=False 时即使 has_vision=True 也走正常路由"""
+        """MINIMAX_VISION_ENABLED=False 时即使 has_vision=True 也走正常路由"""
         # 普通场景 → MODEL_PLUS
         assert select_model(has_vision=True) == MODEL_PLUS
         # 简单意图 → 轻量模型
@@ -276,13 +276,13 @@ class TestSelectModelWithVision:
 
     def test_select_model_vision_with_routing_off(self, routing_off, vision_enabled, monkeypatch):
         """LLM_ENABLE_MODEL_ROUTING=False 时返回默认模型，无视 has_vision"""
-        monkeypatch.setattr(settings, "DASHSCOPE_MODEL", "qwen3.7-max")
-        monkeypatch.setattr(settings, "DASHSCOPE_VISION_MODEL", "qwen3.6-flash")
+        monkeypatch.setattr(settings, "MINIMAX_MODEL", "qwen3.7-max")
+        monkeypatch.setattr(settings, "MINIMAX_VISION_MODEL", "qwen3.6-flash")
         assert select_model(has_vision=True) == "qwen3.7-max"
 
     def test_select_model_vision_default_is_flash(self):
         """视觉模型默认配置与 settings 一致"""
-        assert settings.DASHSCOPE_VISION_MODEL == "qwen3.7-plus"
+        assert settings.MINIMAX_VISION_MODEL == "qwen3.7-plus"
 
 
 # =============================================================================
@@ -320,7 +320,7 @@ class TestVisionLLMNoThinking:
 
     def test_create_vision_llm_disables_thinking(self, monkeypatch):
         """create_vision_llm 应包含 extra_body={'enable_thinking': False}"""
-        monkeypatch.setattr(settings, "DASHSCOPE_VISION_MODEL", "qwen3.6-flash")
+        monkeypatch.setattr(settings, "MINIMAX_VISION_MODEL", "qwen3.6-flash")
 
         llm = LLMFactory.create_vision_llm()
 

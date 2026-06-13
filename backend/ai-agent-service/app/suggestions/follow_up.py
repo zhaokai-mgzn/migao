@@ -22,7 +22,7 @@ from langchain_core.messages import HumanMessage
 from loguru import logger
 
 from app.config import settings
-from app.llm import LLMFactory, DASHSCOPE_API_KEY, cost_tracker
+from app.llm import LLMFactory, MINIMAX_API_KEY, cost_tracker
 
 
 # ========== 米宝预设建议（B 端：企业内部员工的 AI 助手和 AI 操作系统） ==========
@@ -178,7 +178,7 @@ class FollowUpSuggestionGenerator:
     """后续问题建议生成器（Agent 感知）"""
 
     def __init__(self):
-        self._api_key = DASHSCOPE_API_KEY
+        self._api_key = MINIMAX_API_KEY
         self._model = settings.INTENT_MODEL  # 轻量模型，关闭思考模式
         self._llm = None  # 懒加载 LangChain LLM 实例
 

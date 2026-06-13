@@ -40,7 +40,7 @@ from app.llm import LLMFactory, select_model, has_images, call_with_retry, cost_
 
 
 # LLM 熔断器名（百炼调用路径共用）
-LLM_BREAKER = "llm_dashscope"
+LLM_BREAKER = "llm_minimax"
 
 
 # 全局 ConversationTracker 实例（进程内共享）
@@ -142,7 +142,7 @@ def get_skill_llm(
 ) -> ChatOpenAI:
     """创建 Skill 专用 LLM 实例（统一走 LLMFactory + Router，支持多模态自动检测）
 
-    - LLM_ENABLE_MODEL_ROUTING=False（默认）：使用 settings.DASHSCOPE_MODEL，行为与原一致
+    - LLM_ENABLE_MODEL_ROUTING=False（默认）：使用 settings.MINIMAX_MODEL，行为与原一致
     - LLM_ENABLE_MODEL_ROUTING=True：根据 intent / tool_count / text_length 动态选型
     - 若 messages 中含图片且 启用视觉路由，则返回视觉 LLM（不启用 thinking 模式）
     - 深度思考（enable_thinking）仅对复杂意图开启，简单意图（问候/FAQ/闲聊）关闭以提升响应速度
@@ -162,8 +162,8 @@ def get_skill_llm(
 
     # 根据模型类型选择工厂方法
     # 注意：不能用 "vl" in model 判断，非视觉专用模型也支持视觉理解
-    # 正确做法：由 vision_detected（消息含图片）+ DASHSCOPE_VISION_ENABLED（功能开关）决定
-    if vision_detected and settings.DASHSCOPE_VISION_ENABLED:
+    # 正确做法：由 vision_detected（消息含图片）+ MINIMAX_VISION_ENABLED（功能开关）决定
+    if vision_detected and settings.MINIMAX_VISION_ENABLED:
         return LLMFactory.create_vision_llm(model_override=model)
 
     # 复杂意图开启深度思考，简单意图关闭（首次响应从 7-15s 降到 1-3s）

@@ -1,8 +1,8 @@
 """
-LLM Factory - 唯一 DashScope 配置入口 & LLM 实例工厂
+LLM Factory - 唯一 LLM 配置入口 & 实例工厂
 
-所有 DashScope 相关配置（endpoint、api_key、model）只在此处从 settings 读取一次。
-其他模块统一从本模块导入常量或调用工厂方法，禁止直接 import settings 读取 DashScope 配置。
+所有 LLM 相关配置（endpoint、api_key、model）只在此处从 settings 读取一次。
+其他模块统一从本模块导入常量或调用工厂方法，禁止直接 import settings 读取 LLM 配置。
 """
 
 from __future__ import annotations
@@ -14,9 +14,15 @@ from langchain_openai import ChatOpenAI
 from app.config import settings
 
 # ===== 唯一配置读取点（从 settings 读一次，全局共享）=====
-DASHSCOPE_BASE_URL: str = settings.DASHSCOPE_BASE_URL
-DASHSCOPE_API_KEY: str = settings.DASHSCOPE_API_KEY
-DASHSCOPE_EMBEDDING_MODEL: str = settings.DASHSCOPE_EMBEDDING_MODEL
+MINIMAX_BASE_URL: str = settings.MINIMAX_BASE_URL
+MINIMAX_API_KEY: str = settings.MINIMAX_API_KEY
+EMBEDDING_API_KEY: str = settings.DASHSCOPE_API_KEY
+EMBEDDING_MODEL: str = settings.DASHSCOPE_EMBEDDING_MODEL
+
+# === 向后兼容别名（测试/旧代码）===
+DASHSCOPE_BASE_URL = MINIMAX_BASE_URL
+DASHSCOPE_API_KEY = EMBEDDING_API_KEY
+DASHSCOPE_EMBEDDING_MODEL = EMBEDDING_MODEL
 
 
 class LLMFactory:
@@ -31,47 +37,45 @@ class LLMFactory:
 
         - temperature=0.7
         - streaming=True
-        - max_tokens=2048
-        - request_timeout=60
+        - max_completion_tokens=2048
+        - timeout=60
 
         Args:
             model_override: 显式指定模型名（来自 router.select_model 的返回值）。
-                            为空则使用 settings.DASHSCOPE_MODEL。
-            enable_thinking: 是否启用 Qwen3 深度思考模式。
-                             开启后模型先推理再回复，质量更高但首次响应慢 5-15s。
-                             默认关闭（客服场景优先速度），复杂意图由调用方显式开启。
+                            为空则使用 settings.MINIMAX_MODEL。
+            enable_thinking: 是否启用 MiniMax M3 深度思考模式（adaptive thinking）。
+                             M3 默认开启 thinking；设为 False 时不显式关闭（由模型决定）。
         """
-        model = model_override or settings.DASHSCOPE_MODEL
+        model = model_override or settings.MINIMAX_MODEL
         kwargs: dict = dict(
             model=model,
-            api_key=DASHSCOPE_API_KEY,
-            base_url=DASHSCOPE_BASE_URL,
+            api_key=MINIMAX_API_KEY,
+            base_url=MINIMAX_BASE_URL,
             temperature=0.7,
             streaming=True,
-            max_tokens=2048,
+            max_completion_tokens=2048,
             request_timeout=60,
         )
         if enable_thinking:
-            kwargs["extra_body"] = {"enable_thinking": True}
+            kwargs["extra_body"] = {"thinking": {"type": "adaptive"}}
         return ChatOpenAI(**kwargs)
 
     @staticmethod
     def create_vision_llm(model_override: Optional[str] = None) -> ChatOpenAI:
         """创建视觉多模态 LLM 实例
 
-        - 使用同一个 DashScope OpenAI 兼容接口
-        - 显式禁用 thinking 模式（视觉模型不支持，防止思考内容泄漏到用户回复）
+        - 使用 MiniMax M3 原生多模态能力
+        - temperature=0.7, streaming=True, max_completion_tokens=2048
         """
-        model = model_override or settings.DASHSCOPE_VISION_MODEL
+        model = model_override or settings.MINIMAX_VISION_MODEL
         return ChatOpenAI(
             model=model,
-            api_key=DASHSCOPE_API_KEY,
-            base_url=DASHSCOPE_BASE_URL,
+            api_key=MINIMAX_API_KEY,
+            base_url=MINIMAX_BASE_URL,
             temperature=0.7,
             streaming=True,
-            max_tokens=2048,
+            max_completion_tokens=2048,
             request_timeout=60,
-            extra_body={"enable_thinking": False},
         )
 
     @staticmethod
@@ -79,17 +83,16 @@ class LLMFactory:
         """创建意图分类 LLM
 
         - temperature=0  确定性输出，便于 JSON 解析
-        - max_tokens=200 仅需返回 {"intent":..., "confidence":...}
-        - enable_thinking=False  关闭 Qwen3 深度思考，节省 300+ reasoning tokens，
-          延迟从 ~7s 降至 ~0.5s（Fixes #146）
+        - max_completion_tokens=200 仅需返回 {"intent":..., "confidence":...}
+        - thinking=disabled  关闭深度思考，节省 reasoning tokens，降低延迟
         """
         return ChatOpenAI(
             model=settings.INTENT_MODEL,
-            api_key=DASHSCOPE_API_KEY,
-            base_url=DASHSCOPE_BASE_URL,
+            api_key=MINIMAX_API_KEY,
+            base_url=MINIMAX_BASE_URL,
             temperature=0,
-            max_tokens=200,
-            extra_body={"enable_thinking": False},
+            max_completion_tokens=200,
+            extra_body={"thinking": {"type": "disabled"}},
         )
 
     @staticmethod
@@ -100,7 +103,7 @@ class LLMFactory:
         """创建摘要/压缩用 LLM
 
         用于对话历史压缩、上下文摘要等轻量任务。
-        关闭思考模式以提升响应速度（Fixes #146）。
+        关闭深度思考以提升响应速度。
 
         Args:
             temperature: 温度参数，默认 0.3
@@ -108,11 +111,11 @@ class LLMFactory:
         """
         return ChatOpenAI(
             model=settings.INTENT_MODEL,
-            api_key=DASHSCOPE_API_KEY,
-            base_url=DASHSCOPE_BASE_URL,
+            api_key=MINIMAX_API_KEY,
+            base_url=MINIMAX_BASE_URL,
             temperature=temperature,
-            max_tokens=max_tokens,
-            extra_body={"enable_thinking": False},
+            max_completion_tokens=max_tokens,
+            extra_body={"thinking": {"type": "disabled"}},
         )
 
     @staticmethod
@@ -123,8 +126,7 @@ class LLMFactory:
     ) -> str:
         """安全调用纯文本 LLM，自动清洗 image_url 多模态内容。
 
-        所有文本 LLM 调用统一走此入口，避免 image_url 泄露到纯文本模型
-        导致 DashScope invalid_parameter_error。
+        所有文本 LLM 调用统一走此入口，避免 image_url 混合传入导致 API 错误。
 
         Args:
             messages: LangChain 消息列表（可能含多模态内容）
@@ -170,14 +172,14 @@ class LLMFactory:
         """创建建议/推荐生成 LLM
 
         - temperature=0.3 略带多样性，但避免发散
-        - max_tokens=200  建议文本通常较短
-        - enable_thinking=False  关闭思考模式以提升响应速度（Fixes #146）
+        - max_completion_tokens=200  建议文本通常较短
+        - thinking=disabled  关闭思考模式以提升响应速度
         """
         return ChatOpenAI(
             model=settings.INTENT_MODEL,
-            api_key=DASHSCOPE_API_KEY,
-            base_url=DASHSCOPE_BASE_URL,
+            api_key=MINIMAX_API_KEY,
+            base_url=MINIMAX_BASE_URL,
             temperature=0.3,
-            max_tokens=200,
-            extra_body={"enable_thinking": False},
+            max_completion_tokens=200,
+            extra_body={"thinking": {"type": "disabled"}},
         )

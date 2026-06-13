@@ -23,13 +23,12 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 
-# 百炼定价（元 / 百万 tokens，2025-2026 公开价目）
+# MiniMax 定价（元 / 百万 tokens，参考公开价目）
 # 模型名统一使用 settings 常量，下线模型只需改 config.py
 from app.config import settings
 MODEL_PRICING: dict[str, dict[str, float]] = {
-    settings.LLM_MODEL_FLASH: {"input": 0.30, "output": 1.20},      # 轻量模型
-    settings.LLM_MODEL_PLUS:  {"input": 4.00, "output": 12.00},      # 平衡模型
-    settings.LLM_MODEL_MAX:   {"input": 20.00, "output": 60.00},     # 旗舰模型
+    settings.LLM_MODEL_FAST:    {"input": 1.00, "output": 4.00},       # M2.7-highspeed
+    settings.LLM_MODEL_PRIMARY: {"input": 4.00, "output": 16.00},      # MiniMax-M3
 }
 
 
@@ -50,7 +49,7 @@ def _calc_cost_cny(model: str, input_tokens: int, output_tokens: int) -> float:
 
     未匹配到的模型按 plus 档兜底，避免成本被静默漏算。
     """
-    pricing = MODEL_PRICING.get(model) or MODEL_PRICING[settings.LLM_MODEL_PLUS]  # fallback 到平衡模型定价
+    pricing = MODEL_PRICING.get(model) or MODEL_PRICING[settings.LLM_MODEL_PRIMARY]  # fallback 到主模型定价
     cost_input = (input_tokens / 1_000_000.0) * pricing["input"]
     cost_output = (output_tokens / 1_000_000.0) * pricing["output"]
     return round(cost_input + cost_output, 6)

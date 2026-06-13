@@ -18,7 +18,7 @@ import redis.asyncio as redis
 from loguru import logger
 
 from app.config import settings
-from app.llm import DASHSCOPE_API_KEY, DASHSCOPE_EMBEDDING_MODEL
+from app.llm import EMBEDDING_API_KEY, EMBEDDING_MODEL
 from app.utils.redis_client import redis_pool
 
 
@@ -64,8 +64,8 @@ async def get_embedding(text: str) -> List[float]:
     """
     import dashscope
 
-    dashscope.api_key = DASHSCOPE_API_KEY
-    model = DASHSCOPE_EMBEDDING_MODEL
+    dashscope.api_key = EMBEDDING_API_KEY
+    model = EMBEDDING_MODEL
 
     def _call():
         return dashscope.TextEmbedding.call(
