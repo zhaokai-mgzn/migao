@@ -14,18 +14,8 @@ on:
     secrets:
       E2E_REAL_SERVICE_TOKEN:
         required: true
-  workflow_dispatch:
-    inputs:
-      ai_agent_url:
-        description: 'AI Agent URL'
-        type: string
-        default: 'https://ai-api.migaozn.com'
-        required: true
-      admin_api_url:
-        description: 'Admin API URL'
-        type: string
-        default: 'http://8.136.139.170'
-        required: true
+  # ⚠️ workflow_dispatch 已移除 — 防止攻击者通过自定义 URL 截获 SERVICE_TOKEN
+  # 手动触发请通过调用方 workflow（如 deploy-*）间接触发 workflow_call
 
 jobs:
   real-e2e:
