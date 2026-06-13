@@ -39,7 +39,6 @@ from app.tools.registry import (
 from app.tools.product_search import ProductSearchTool
 from app.tools.product_detail import ProductDetailTool
 from app.tools.logistics_track import LogisticsTrackTool
-# [RAG 禁用] from app.tools.knowledge_search import KnowledgeSearchTool
 from app.tools.order_query import OrderQueryTool
 from app.tools.order_manage import OrderManageTool
 from app.tools.product_manage import ProductManageTool
@@ -50,7 +49,6 @@ from app.tools.employee_manage import EmployeeManageTool
 from app.tools.role_manage import RoleManageTool
 from app.tools.dashboard_stats import DashboardStatsTool
 from app.tools.after_sales_manage import AfterSalesManageTool
-# [RAG 禁用] from app.tools.knowledge_manage import KnowledgeManageTool
 from app.tools.notification_manage import NotificationManageTool
 from app.tools.settings_manage import SettingsManageTool
 from app.tools.session_manage import SessionManageTool

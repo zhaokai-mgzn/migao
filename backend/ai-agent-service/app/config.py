@@ -32,15 +32,6 @@ class Settings(BaseSettings):
     MINIMAX_BASE_URL: str
     MINIMAX_MODEL: str
 
-    # 阿里云百炼 Embedding（RAG 仍用百炼）
-    DASHSCOPE_API_KEY: str
-    DASHSCOPE_EMBEDDING_MODEL: str
-
-    # DashVector 向量库（由 main.tf locals 管理）
-    DASHVECTOR_API_KEY: str
-    DASHVECTOR_ENDPOINT: str
-    DASHVECTOR_COLLECTION: str
-
     # 内部服务通信（由 main.tf locals 管理）
     ADMIN_API_BASE_URL: str
     SERVICE_TOKEN: str
@@ -65,28 +56,11 @@ class Settings(BaseSettings):
     LLM_MODEL_PRIMARY: str = "MiniMax-M3"              # 复杂推理 / 多工具协同 / 默认
     LLM_MODEL_FAST: str = "MiniMax-M2.7-highspeed"     # 轻量快速（意图路由、分类、摘要等低延迟场景）
 
-    SEMANTIC_CACHE_ENABLED: bool = False  # Embedding API key 未就绪，暂时关闭
-    SEMANTIC_CACHE_SIMILARITY_THRESHOLD: float = 0.95
-    SEMANTIC_CACHE_MAX_ENTRIES: int = 1000
-
-    RERANK_ENABLED: bool = True
-    RERANK_MODEL: str = "gte-rerank"
-    RERANK_TOP_K: int = 3
-    RETRIEVAL_TOP_K: int = 10
-
     LLM_ENABLE_MODEL_ROUTING: bool = True
     LLM_COST_TRACKING_ENABLED: bool = True
     LLM_MONTHLY_BUDGET_CNY: float = 500.0
     LLM_RETRY_MAX_ATTEMPTS: int = 2
     LLM_RETRY_BASE_DELAY_S: float = 0.5
-
-    # 图片 URL 重写：CDN 域名 → OSS 公网域名
-    # Vision API 需要公网可访问的 HTTPS URL，
-    # 但 admin-api 返回的图片 URL 使用 CDN 域名（如 https://admin.migaozn.com），
-    # 该域名可能未正确配置 DNS/CDN，导致 Vision API 无法访问。
-    # 配置后将自动替换：IMAGE_URL_REWRITE_FROM → IMAGE_URL_REWRITE_TO
-    IMAGE_URL_REWRITE_FROM: str = ""  # e.g., "https://admin.migaozn.com"
-    IMAGE_URL_REWRITE_TO: str = ""    # e.g., "https://youke-admin-dev.oss-cn-hangzhou.aliyuncs.com"
 
     model_config = {"env_file": ".env", "case_sensitive": True, "extra": "ignore"}
 

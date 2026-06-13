@@ -52,24 +52,6 @@ async def lifespan(app: FastAPI):
         if not settings.DEBUG:
             raise
     
-    # 初始化 RAG 组件（DashVector + Embedding）
-    rag_pipeline = None
-    try:
-        from app.rag.vector_store import get_vector_store
-        from app.rag.pipeline import get_rag_pipeline
-        
-        vector_store = await get_vector_store()
-        health = await vector_store.health_check()
-        if health.get("available"):
-            logger.info(f"DashVector initialized: {health}")
-        else:
-            logger.warning(f"DashVector not fully available: {health}")
-        
-        rag_pipeline = await get_rag_pipeline()
-        logger.info("RAG pipeline initialized")
-    except Exception as e:
-        logger.warning(f"RAG initialization failed (non-fatal, graceful degradation): {e}")
-    
     # Agent 采用懒加载策略，首次请求时初始化
     logger.info("AI Agent Service started successfully")
     
@@ -77,23 +59,6 @@ async def lifespan(app: FastAPI):
     
     # 关闭时执行
     logger.info("Shutting down AI Agent Service")
-    
-    # 关闭 RAG 连接
-    try:
-        from app.rag.vector_store import get_vector_store, reset_vector_store
-        from app.rag.pipeline import reset_rag_pipeline
-        from app.rag.retriever import reset_hybrid_retriever
-        from app.rag.bm25_retriever import reset_bm25_retriever
-        
-        vs = await get_vector_store()
-        await vs.close()
-        reset_vector_store()
-        reset_hybrid_retriever()
-        reset_bm25_retriever()
-        reset_rag_pipeline()
-        logger.info("RAG connections closed")
-    except Exception as e:
-        logger.error(f"Error closing RAG connections: {e}")
     
     # 关闭 Redis 连接
     try:

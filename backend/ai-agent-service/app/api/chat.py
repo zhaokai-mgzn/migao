@@ -167,22 +167,7 @@ def _validate_image_url(url: str) -> bool:
 
 
 def _rewrite_image_url(url: str) -> str:
-    """将图片 URL 从 CDN 域名重写为 OSS 公网域名
-
-    DashScope Vision API 需要公网可访问的 HTTPS URL。
-    admin-api 返回的图片 URL 使用 CDN 域名（如 https://admin.migaozn.com），
-    该域名可能未正确配置 DNS/CDN，导致 DashScope 无法访问。
-
-    通过配置 IMAGE_URL_REWRITE_FROM → IMAGE_URL_REWRITE_TO 实现 URL 替换。
-    """
-    if not settings.IMAGE_URL_REWRITE_FROM or not settings.IMAGE_URL_REWRITE_TO:
-        return url
-    if url.startswith(settings.IMAGE_URL_REWRITE_FROM):
-        return url.replace(
-            settings.IMAGE_URL_REWRITE_FROM,
-            settings.IMAGE_URL_REWRITE_TO,
-            1,
-        )
+    """直接返回原始 URL（RAG/URL 重写已移除）"""
     return url
 
 

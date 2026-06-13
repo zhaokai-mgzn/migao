@@ -16,13 +16,9 @@ from app.config import settings
 # ===== 唯一配置读取点（从 settings 读一次，全局共享）=====
 MINIMAX_BASE_URL: str = settings.MINIMAX_BASE_URL
 MINIMAX_API_KEY: str = settings.MINIMAX_API_KEY
-EMBEDDING_API_KEY: str = settings.DASHSCOPE_API_KEY
-EMBEDDING_MODEL: str = settings.DASHSCOPE_EMBEDDING_MODEL
 
 # === 向后兼容别名（测试/旧代码）===
 DASHSCOPE_BASE_URL = MINIMAX_BASE_URL
-DASHSCOPE_API_KEY = EMBEDDING_API_KEY
-DASHSCOPE_EMBEDDING_MODEL = EMBEDDING_MODEL
 
 
 class LLMFactory:
