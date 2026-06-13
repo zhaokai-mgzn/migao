@@ -88,8 +88,16 @@ class TestProductWrite:
         assert len(items) > 0, f"❌ admin-api 找不到 '{name}'"
         p = items[0]
         assert name in p.get("name", ""), f"名称不匹配: {p.get('name')}"
-        # admin-api 返回 price 单位可能是分或元，用宽松验证
         assert p.get("status") in ("on_sale", "off_sale", "draft"), f"状态: {p.get('status')}"
+        # 价格强断言：创建时指定 66 元，admin-api 返回价（可能是元或分），±5% 浮动
+        price = p.get("price")
+        assert price is not None, f"创建商品应返回 price 字段，keys: {list(p.keys())[:10]}"
+        assert isinstance(price, (int, float)), f"price 应为数字: {type(price)}"
+        # 兼容分/元两种单位：66 元 → 6600 分 或 66.0 元
+        price_in_yuan = price if price < 100 else price / 100
+        assert 60 <= price_in_yuan <= 72, (
+            f"价格应在 66±5% 元范围内。创建 66 元，实际 price={price}（折算 {price_in_yuan} 元）"
+        )
 
     def test_product_update_price(self, sess):
         """更新价格 → admin-api 验证新价格"""
@@ -137,24 +145,39 @@ class TestInventoryWrite:
     """库存操作 — 全验证"""
 
     def test_inventory_query_and_adjust(self, sess):
-        """查库存 → 调整 → admin-api 验证新库存"""
+        """查库存 → 调整 → admin-api 验证库存实际变化量"""
         items = admin_search_products("窗帘")
         assert len(items) > 0, "需要商品数据"
         target = items[0]
 
-        # 先查库存
-        sess.send(f"{target['name']} 还有多少库存")
+        # admin-api 获取调整前库存
+        detail_before = admin_get(f"/api/admin/products/{target['id']}")
+        old_stock = 0
+        if detail_before.get("success"):
+            old_stock = detail_before["data"].get("stock") or 0
+        new_stock_target = old_stock + 10
 
-        # 调整库存
-        old_stock = target.get("stock") or 0
-        ev = sess.send(f"{target['name']} 入库10件，补充库存")
-        if "inventory_manage" in sse_tools(ev):
-            time.sleep(1)
-            detail = admin_get(f"/api/admin/products/{target['id']}")
-            if detail.get("success"):
-                new_stock = detail["data"].get("stock") or 0
-                # 库存应该有变化
-                assert isinstance(new_stock, int), f"库存应为整数: {new_stock}"
+        # R1: 查库存（获取商品上下文）
+        sess.send(f"{target['name']} 还有多少库存")
+        # R2: 更新商品库存 — product_manage.update 支持 stock_quantity 字段
+        sess.send(f"更新商品 {target['name']}，把库存数量改成 {new_stock_target}")
+        ev = sess.send("确认更新")
+        tools = sse_tools(ev)
+        assert "product_manage" in tools, (
+            f"更新库存应触发 product_manage Tool，实际: {tools}"
+        )
+
+        time.sleep(1)
+        detail_after = admin_get(f"/api/admin/products/{target['id']}")
+        assert detail_after.get("success"), (
+            f"admin-api 查询商品 {target['id']} 失败: {detail_after}"
+        )
+        new_stock = detail_after["data"].get("stock") or 0
+        assert isinstance(new_stock, int), f"库存应为整数: {new_stock}"
+        # 强断言：库存已改为目标值（±1 容忍浮点/并发）
+        assert abs(new_stock - new_stock_target) <= 1, (
+            f"库存应更新为 {new_stock_target}。旧库存={old_stock}, 新库存={new_stock}"
+        )
 
 
 @pytest.mark.real_e2e
@@ -174,7 +197,9 @@ class TestCategoryWrite:
         # admin-api 验证创建
         time.sleep(1)
         cats = admin_get("/api/admin/categories", {"page": 1, "size": 50, "keyword": name})
-        found = [c for c in cats.get("data", {}).get("items", []) if name in c.get("name", "")]
+        cat_list = cats if isinstance(cats, list) else cats.get("data", cats)
+        cat_items = cat_list if isinstance(cat_list, list) else cat_list.get("items", [])
+        found = [c for c in cat_items if name in c.get("name", "")]
         if found:
             # 删除刚创建的
             cat_id = found[0]["id"]
