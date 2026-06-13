@@ -179,6 +179,8 @@ class AfterSalesManageTool(BaseTool):
         keyword: Optional[str],
     ) -> ToolResult:
         """查询售后工单列表"""
+        page = int(page) if page else 1
+        size = int(size) if size else 10
         params: Dict[str, Any] = {"page": page, "size": size}
         if status:
             params["status"] = status

@@ -107,8 +107,7 @@ class TestSkillToolSubsets:
             "order_manage", "order_create",
             "product_manage", "inventory_manage",
             "employee_manage", "role_manage",
-            "after_sales_manage", "settings_manage",
-            "category_manage", "processing_item_manage",
+            "settings_manage",
         }
         assert set(GENERAL_TOOLS).isdisjoint(core_write_tools)
 

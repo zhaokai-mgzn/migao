@@ -275,12 +275,30 @@ class ToolRegistry:
                 message="您没有权限使用该功能",
             )
         
+        # 写操作审计日志：记录所有非只读操作的用户/参数/结果
+        is_write = not tool.read_only
+        if is_write:
+            logger.info(
+                f"[AUDIT] WRITE tool={name} "
+                f"tenant={context.tenant_id} user={context.user_id} "
+                f"role={context.role} session={context.session_id} "
+                f"params={json.dumps(kwargs, ensure_ascii=False, default=str)[:500]}"
+            )
+
         try:
             logger.info(f"[tool-registry] Executing: {name} | tenant={context.tenant_id}")
             start = time.time()
             result = await tool.execute(context, **kwargs)
             duration_ms = (time.time() - start) * 1000
-            logger.info(f"[tool-registry] Completed: {name} | success={result.success} duration={duration_ms:.1f}ms | tenant={context.tenant_id}")
+            status = "OK" if result.success else "FAIL"
+            if is_write:
+                logger.info(
+                    f"[AUDIT] WRITE_RESULT tool={name} "
+                    f"tenant={context.tenant_id} user={context.user_id} "
+                    f"success={result.success} duration={duration_ms:.1f}ms"
+                )
+            else:
+                logger.info(f"[tool-registry] Completed: {name} | success={result.success} duration={duration_ms:.1f}ms | tenant={context.tenant_id}")
             return result
         except Exception as e:
             # 记录详细错误信息到日志（包含租户上下文便于排查）

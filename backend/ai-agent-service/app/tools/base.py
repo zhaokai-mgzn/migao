@@ -137,6 +137,12 @@ class BaseTool(ABC):
 
         tagged_desc = f"[{'|'.join(tags)}] {self.description}"
 
+        # 破坏性工具：在 schema 末尾追加确认要求（LLM 做 tool choice 时可见）
+        if self.destructive:
+            tagged_desc += " ⛔️铁律: 必须先展示操作预览(dry-run汇总)并获取用户明确确认后才能执行,禁止直接调用。"
+        elif not self.read_only:
+            tagged_desc += " ⚠️ 需先确认再执行,禁止跳过确认直接操作。"
+
         return {
             "type": "function",
             "function": {
