@@ -71,8 +71,9 @@ def test_general_has_only_read_tools():
     registry = get_skill_registry()
     general = registry.get("general")
     assert general is not None
-    # 确认写操作 Tool 不会漏进 general
-    truly_write_only = {"product_manage", "order_create", "inventory_manage"}
+    # 确认核心写操作 Tool 不会漏进 general
+    # processing_item_manage 等管理类 Tool 在 general 中用于列表展示
+    truly_write_only = {"product_manage", "order_create", "inventory_manage", "order_manage", "employee_manage", "role_manage", "settings_manage"}
     for tool in truly_write_only:
         assert tool not in general.tool_names, (
             f"纯写 Tool '{tool}' 不应在 general Skill 中"
