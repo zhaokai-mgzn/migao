@@ -93,8 +93,11 @@ class TestSkillToolSubsets:
             "customer_manage",
             "dashboard_stats",
             "session_manage",
+            "after_sales_manage",
             "notification_manage",
             "quick_reply_manage",
+            "processing_item_manage",
+            "category_manage",
         }
         assert set(GENERAL_TOOLS) == expected
 
