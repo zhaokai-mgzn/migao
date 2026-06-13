@@ -112,11 +112,12 @@ def test_each_skill_has_unique_domain():
 
 def test_all_intents_have_route():
     """所有意图都有对应的路由 key"""
-    from app.graph.nodes import _INTENT_TO_ROUTE
+    from app.graph.nodes import _get_intent_to_route
     from app.router.intent_config import IntentType
 
     all_intents = {i.value for i in IntentType}
-    mapped = set(_INTENT_TO_ROUTE.keys())
+    intent_map = _get_intent_to_route()
+    mapped = set(intent_map.keys())
 
     # 不用 assert 全覆盖，因为有些意图不需要路由
     # 但至少核心意图要有映射
