@@ -1,9 +1,58 @@
 {
-  "success": false,
-  "error": {
-    "code": "INTERNAL_ERROR",
-    "message": "服务器内部错误"
+  "success": true,
+  "data": {
+    "id": "23c22aab8b0a343c3540558a78dfb338",
+    "orderNo": "20260612294021393",
+    "customerName": "赵凯",
+    "customerPhone": "13456800919",
+    "customerAddress": "浙江杭州",
+    "totalAmount": 23103,
+    "actualAmount": 23103,
+    "processingFee": 3,
+    "status": "pending",
+    "items": [
+      {
+        "id": "c2125cd053ea294ff876409cf900f7fb",
+        "productId": "fdd64b7bfe62bd3005f8c7e0a2c7a686",
+        "productName": "cessss",
+        "quantity": 1000,
+        "unitPrice": 23.1,
+        "processingInfo": {
+          "skuId": 2065449907932008400,
+          "colorId": 2065449907869094000,
+          "colorName": "白色",
+          "doorWidth": "2.8米",
+          "processingFee": 3,
+          "sellingMethod": "bulk_cut",
+          "processingItems": [
+            {
+              "id": "dce109a60fc30b2cc9cb3b70fe8dc8b1",
+              "name": "铅坠安装",
+              "unit": "米",
+              "quantity": 1,
+              "subtotal": 3,
+              "unitPrice": 3,
+              "pricingMethod": "per_meter"
+            }
+          ]
+        },
+        "subtotal": 23103,
+        "amount": 23100,
+        "createdAt": "2026-06-12T23:04:35.196396+08:00"
+      }
+    ],
+    "processingItems": [
+      {
+        "id": "dce109a60fc30b2cc9cb3b70fe8dc8b1",
+        "name": "铅坠安装",
+        "unitPrice": 3,
+        "quantity": 1,
+        "amount": 3
+      }
+    ],
+    "createdAt": "2026-06-12T23:04:35.186604+08:00",
+    "updatedAt": "2026-06-12T23:04:35.18666+08:00"
   },
-  "requestId": "req_e4d6105da9844797",
-  "timestamp": 1781308006
+  "requestId": "req_a1305dca98cb4eef",
+  "timestamp": 1781309741
 }

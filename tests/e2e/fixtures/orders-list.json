@@ -24,7 +24,26 @@
             "quantity": 1000,
             "unitPrice": 23.1,
             "amount": 23100,
-            "subtotal": 23103
+            "subtotal": 23103,
+            "processingInfo": {
+              "skuId": 2065449907932008400,
+              "colorId": 2065449907869094000,
+              "colorName": "白色",
+              "doorWidth": "2.8米",
+              "processingFee": 3,
+              "sellingMethod": "bulk_cut",
+              "processingItems": [
+                {
+                  "id": "dce109a60fc30b2cc9cb3b70fe8dc8b1",
+                  "name": "铅坠安装",
+                  "unit": "米",
+                  "quantity": 1,
+                  "subtotal": 3,
+                  "unitPrice": 3,
+                  "pricingMethod": "per_meter"
+                }
+              ]
+            }
           }
         ]
       },
@@ -71,7 +90,26 @@
             "quantity": 12,
             "unitPrice": 21,
             "amount": 252,
-            "subtotal": 264
+            "subtotal": 264,
+            "processingInfo": {
+              "skuId": 2061097172444692500,
+              "colorId": 2061097172381778000,
+              "colorName": "蓝色",
+              "doorWidth": "门幅2.8米",
+              "processingFee": 12,
+              "sellingMethod": "bulk_cut",
+              "processingItems": [
+                {
+                  "id": "2e04eb4d9950c6911d232290f02f3e0b",
+                  "name": "魔术贴安装",
+                  "unit": "米",
+                  "quantity": 3,
+                  "subtotal": 12,
+                  "unitPrice": 4,
+                  "pricingMethod": "per_meter"
+                }
+              ]
+            }
           }
         ]
       },
@@ -95,7 +133,19 @@
             "quantity": 1,
             "unitPrice": 50,
             "amount": 50,
-            "subtotal": 130
+            "subtotal": 130,
+            "processingInfo": {
+              "processingFee": 80,
+              "processingItems": [
+                {
+                  "id": "fe8355839a64c07c7ba8a928eb4c4576",
+                  "name": "窗幔制作",
+                  "unit": "件",
+                  "quantity": 1,
+                  "unitPrice": 80
+                }
+              ]
+            }
           }
         ]
       },
@@ -131,6 +181,6 @@
       }
     ]
   },
-  "requestId": "req_02d9aa33f01040ad",
-  "timestamp": 1781308001
+  "requestId": "req_185e223c039b4d48",
+  "timestamp": 1781309741
 }
