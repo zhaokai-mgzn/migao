@@ -276,13 +276,15 @@ class ToolRegistry:
             )
         
         # 写操作审计日志：记录所有非只读操作的用户/参数/结果
+        # 参数脱敏：仅记录结构化字段名，不记录值（避免 phone/address/name 等 PII 入日志）
         is_write = not tool.read_only
         if is_write:
+            safe_params = {k: f"<{type(v).__name__}>" for k, v in kwargs.items()}
             logger.info(
                 f"[AUDIT] WRITE tool={name} "
                 f"tenant={context.tenant_id} user={context.user_id} "
                 f"role={context.role} session={context.session_id} "
-                f"params={json.dumps(kwargs, ensure_ascii=False, default=str)[:500]}"
+                f"params={json.dumps(safe_params, ensure_ascii=False)}"
             )
 
         try:

@@ -370,9 +370,29 @@ class OrderQueryTool(BaseTool):
                         amount = float(unit_price) * int(quantity)
                     except (ValueError, TypeError):
                         amount = 0
+
+                # 提取销售信息：颜色、售卖方式、门幅、SKU
+                pi = item.get("processingInfo") or {}
+                sales_info = {}
+                if isinstance(pi, dict):
+                    if pi.get("colorName"):
+                        sales_info["颜色"] = pi["colorName"]
+                    if pi.get("sellingMethod"):
+                        SM = {"bulk_cut": "散剪", "full_roll": "整卷", "per_meter": "按米", "per_piece": "按件"}
+                        sales_info["售卖方式"] = SM.get(pi["sellingMethod"], pi["sellingMethod"])
+                    if pi.get("doorWidth"):
+                        sales_info["门幅"] = pi["doorWidth"]
+                    if pi.get("skuCode"):
+                        sales_info["SKU编码"] = pi["skuCode"]
+                    # 加工费
+                    pf = pi.get("processingFee")
+                    if pf is not None and float(pf) > 0:
+                        sales_info["加工费"] = f"¥{float(pf):.2f}"
+
                 items.append({
                     "product_name": item.get("productName"),
                     "product_code": item.get("productCode"),
+                    "销售信息": sales_info if sales_info else None,
                     "unit_price": unit_price,
                     "quantity": quantity,
                     "amount": amount,
