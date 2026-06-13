@@ -241,6 +241,7 @@ class TestP0CoreScenarios:
         assert_no_error(events)
         text = get_full_text(events)
         assert len(text) > 0, "应返回非空文本回复"
+        assert_no_error_text(text)
         assert any(kw in text for kw in ["你好", "您好", "米宝", "助手", "帮"]), (
             f"回复应包含问候或自我介绍关键词，实际: {text[:100]}"
         )
@@ -475,6 +476,8 @@ class TestP2AdvancedScenarios:
 
         assert_no_error(events)
         text = get_full_text(events)
+        assert_no_error_text(text)
+        assert len(text) > 10, "澄清回复不应过短"
         assert any(kw in text for kw in ["具体", "哪", "什么", "请问", "需要", "可以"]), (
             f"模糊问题应引导澄清，实际: {text[:100]}"
         )
@@ -549,10 +552,13 @@ class TestP3PlanAndExecute:
         assert_no_error(events)
         text = get_full_text(events)
         tools = get_tool_calls(events)
-        # P&E 模式：文本中应有确认/订单相关信息
+        assert_no_error_text(text)
+        # P&E 模式：应触发订单相关工具或文本含确认信息
         assert any(
             t in tools for t in ["product_search", "order_manage", "order_create"]
-        ) or any(kw in text for kw in ["确认", "订单", "创建", "256", "李先生"]), (
+        ) or (
+            len(text) > 20 and any(kw in text for kw in ["确认", "订单", "创建", "256", "李先生"])
+        ), (
             f"P&E 模式应处理订单创建，实际 tools={tools}, text={text[:150]}"
         )
         assert has_event_type(events, "done")
