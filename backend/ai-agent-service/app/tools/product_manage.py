@@ -28,7 +28,7 @@ def _normalize_array(val):
     if isinstance(val, str):
         import json as _json
         try: return _json.loads(val) if val.strip().startswith("[") else [val]
-        except: return [v.strip() for v in val.replace("，",",").split(",") if v.strip()]
+        except (ValueError, _json.JSONDecodeError): return [v.strip() for v in val.replace("，",",").split(",") if v.strip()]
     if isinstance(val, dict):
         if "item" in val: return [val["item"]]
         return list(val.values())
@@ -41,7 +41,7 @@ def _normalize_number(val):
     if isinstance(val, (int, float)): return val
     if isinstance(val, str):
         try: return float(val) if "." in val else int(val)
-        except: return val
+        except (ValueError, TypeError): return val
     return val
 
 async def _resolve_category_id(category_id, context):

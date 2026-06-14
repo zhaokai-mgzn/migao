@@ -136,7 +136,9 @@ class TestLogisticsTrackByNumber:
         assert result.success is True
         assert result.data is not None
         assert "tracking_number" in result.data
+        assert result.data["tracking_number"] == "SF9876543210"
         assert "traces" in result.data
+        assert isinstance(result.data["traces"], list)
 
 
 class TestLogisticsTrackValidation:
@@ -183,6 +185,8 @@ class TestLogisticsTrackError:
         assert result.success is True
         assert result.data is not None
         assert "traces" in result.data
+        assert isinstance(result.data["traces"], list)
+        assert len(result.data["traces"]) > 0
 
 
 class TestLogisticsTrackMockResult:

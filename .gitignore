@@ -64,3 +64,6 @@ e2e-test-*.png
 # 日志
 *.log
 logs/
+
+# JWT 私钥（仅本地开发用，生产通过环境变量注入）
+**/rsa/private.pem

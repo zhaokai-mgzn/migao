@@ -23,7 +23,7 @@ from app.tools.base import ToolContext, ToolResult
 from app.tools.product_search import ProductSearchTool
 from app.tools.product_detail import ProductDetailTool
 from app.tools.logistics_track import LogisticsTrackTool
-from app.tools.knowledge_search import KnowledgeSearchTool
+from app.tools.category_manage import CategoryManageTool
 from app.tools.registry import ToolRegistry, set_tool_context
 from app.utils.http_client import AdminApiClient, get_admin_api_client, reset_admin_api_client
 
@@ -99,7 +99,7 @@ def registry():
     reg.register(ProductSearchTool())
     reg.register(ProductDetailTool())
     reg.register(LogisticsTrackTool())
-    reg.register(KnowledgeSearchTool())
+    reg.register(CategoryManageTool())
     return reg
 
 
@@ -125,24 +125,8 @@ def admin_ctx():
 class TestCustomerPurchaseChain:
     """客户通过 AI 对话进行购买流程的全链路测试"""
     async def test_customer_ask_product_detail_via_ai(self, registry, ctx_tenant_a):
-        pass
-
-    async def test_customer_ask_faq_via_knowledge_base(self, registry, ctx_tenant_a):
-        """
-        客户问FAQ走RAG知识库检索：
-        ai-agent-service → KnowledgeSearchTool → RAG Pipeline
-        验证知识库检索结果正确返回（含 RAG 不可用时的降级）
-        """
-        # 当 RAG 不可用时，应该优雅降级
-        with patch("app.tools.knowledge_search._RAG_AVAILABLE", False):
-            result = await registry.execute_tool(
-                "knowledge_search", ctx_tenant_a, query="雪尼尔面料怎么清洗"
-            )
-
-            assert result.success is True
-            assert result.data["chunks"] == []
-            assert result.data["source_count"] == 0
-            assert "知识库功能暂未开启" in result.message
+        """TODO: Issue #274 — 实现客户通过 AI 询问商品详情的全链路测试"""
+        pytest.skip("全链路测试框架待完善")
 
 
 # ============================================================
@@ -159,23 +143,23 @@ class TestAdminOperationChain:
         # 初始状态：4个 Tool
         assert len(registry) == 4
         assert registry.has_tool("product_search")
-        assert registry.has_tool("knowledge_search")
+        assert registry.has_tool("category_manage")
 
-        # 模拟管理员禁用知识库搜索
-        registry.unregister("knowledge_search")
+        # 模拟管理员禁用分类管理
+        registry.unregister("category_manage")
         assert len(registry) == 3
-        assert not registry.has_tool("knowledge_search")
+        assert not registry.has_tool("category_manage")
 
-        # 知识库搜索不再可用
+        # 分类管理不再可用
         result = await registry.execute_tool(
-            "knowledge_search", admin_ctx, query="test"
+            "category_manage", admin_ctx, action="list"
         )
         assert result.success is False
         assert "not found" in result.error
 
         # 重新启用
-        registry.register(KnowledgeSearchTool())
-        assert registry.has_tool("knowledge_search")
+        registry.register(CategoryManageTool())
+        assert registry.has_tool("category_manage")
         assert len(registry) == 4
 
 
@@ -208,7 +192,7 @@ class TestMultiTenantConcurrentChain:
 
         with patch.object(AdminApiClient, '_get_client') as mock_get_client:
             mock_http = AsyncMock()
-            mock_http.get = AsyncMock(side_effect=capture_tenant_get)
+            mock_http.request = AsyncMock(side_effect=capture_tenant_get)
             mock_get_client.return_value = mock_http
 
             # 先用租户A搜索
@@ -236,8 +220,8 @@ class TestMultiTenantConcurrentChain:
         async def mock_get_capture(*args, **kwargs):
             headers = kwargs.get("headers", {})
             tid = headers.get("X-Tenant-Id")
-            path = args[0] if args else kwargs.get("path", "")
-            if "products/" in str(path) and not str(path).endswith("/products"):
+            url = kwargs.get("url", "")
+            if "products/" in str(url) and not str(url).endswith("/products"):
                 tenant_ids_for_product_detail.append(tid)
             else:
                 tenant_ids_for_product_search.append(tid)
@@ -259,7 +243,7 @@ class TestMultiTenantConcurrentChain:
 
         with patch.object(AdminApiClient, '_get_client') as mock_get_client:
             mock_http = AsyncMock()
-            mock_http.get = AsyncMock(side_effect=mock_get_capture)
+            mock_http.request = AsyncMock(side_effect=mock_get_capture)
             mock_get_client.return_value = mock_http
 
             ctx_list = [
@@ -306,7 +290,7 @@ class TestExceptionBoundaryChain:
         with patch.object(AdminApiClient, '_get_client') as mock_get_client:
             mock_http = AsyncMock()
             # 模拟 admin-api 完全不可用
-            mock_http.get = AsyncMock(
+            mock_http.request = AsyncMock(
                 side_effect=httpx.ConnectError("Connection refused")
             )
             mock_get_client.return_value = mock_http
@@ -415,9 +399,7 @@ class TestExceptionBoundaryChain:
         with patch("app.utils.database.init_db", new_callable=AsyncMock), \
              patch("app.utils.database.close_db", new_callable=AsyncMock), \
              patch("app.utils.redis_client.init_redis", new_callable=AsyncMock), \
-             patch("app.utils.redis_client.close_redis", new_callable=AsyncMock), \
-             patch("app.rag.pipeline.get_rag_pipeline", new_callable=AsyncMock, create=True), \
-             patch("app.rag.vector_store.get_vector_store", new_callable=AsyncMock, create=True):
+             patch("app.utils.redis_client.close_redis", new_callable=AsyncMock):
 
             from app.main import create_app
             from fastapi.testclient import TestClient

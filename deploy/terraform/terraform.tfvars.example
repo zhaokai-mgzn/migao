@@ -11,6 +11,16 @@ environment  = "dev"
 
 # ---- 密钥与凭证（以下均需填写）----
 
+# DeepSeek API Key
+deepseek_api_key = "sk-your-deepseek-api-key"
+
+# MiniMax API Key
+minimax_api_key = "sk-your-minimax-api-key"
+
+# 阿里云物流查询 API AppCode
+logistics_appcode = "your-logistics-appcode"
+
+
 # 数据库密码（建议随机生成: openssl rand -base64 32）
 db_password = "ChangeMe123!@#"
 

@@ -32,10 +32,12 @@ public class SmsService {
     private static final String DAILY_KEY_PREFIX = "sms:daily:";
 
     /**
-     * 硬编码万能验证码（测试阶段使用）
-     * TODO: 接入阿里云短信服务后移除硬编码验证码
+     * 测试阶段万能验证码，通过环境变量注入（默认 "123456"）
+     * 生产环境将 sms.bypass-code 设为空字符串以禁用 bypass 机制
+     * TODO: 接入阿里云短信服务后移除此机制
      */
-    private static final String BYPASS_CODE = "123456";
+    @Value("${sms.bypass-code:123456}")
+    private String bypassCode;
 
     private static final long CODE_TTL_SECONDS = 300; // 5 分钟
     private static final long LIMIT_TTL_SECONDS = 60;  // 60 秒防刷
@@ -44,13 +46,6 @@ public class SmsService {
     private final StringRedisTemplate redisTemplate;
     private final SmsConfig smsConfig;
     private final Client smsClient;
-
-    /**
-     * 开发模式万能验证码（默认 "123456"）
-     * 生产环境应设为空字符串以禁用
-     */
-    @Value("${sms.dev-code:123456}")
-    private String devCode;
 
     @Autowired
     public SmsService(StringRedisTemplate redisTemplate,
@@ -103,7 +98,7 @@ public class SmsService {
         // 当前阶段不调用阿里云短信 API，统一使用万能验证码 123456 通过校验
         // 关联决策：阿里云短信服务暂缓集成-标记TODO
         log.warn("[测试模式] 短信发送已 bypass，请使用万能验证码 {} 完成校验。phone={}, generatedCode={}",
-                BYPASS_CODE, phone, code);
+                bypassCode, phone, code);
 
         // 以下为接入真实短信服务的预留代码（暂不执行）
         // if (smsClient != null && smsConfig.getAccessKeyId() != null
@@ -125,16 +120,10 @@ public class SmsService {
      * @return 是否校验通过
      */
     public boolean verifyCode(String phone, String code) {
-        // TODO: 接入阿里云短信服务后移除硬编码验证码
-        // 测试阶段：固定验证码 123456 直接通过校验
-        if (BYPASS_CODE.equals(code)) {
-            log.info("[测试模式] 使用硬编码 bypass 验证码通过校验: phone={}", phone);
-            return true;
-        }
-
-        // 兼容旧的 sms.dev-code 配置项（已不推荐，保留避免破坏既有环境配置）
-        if (devCode != null && !devCode.isEmpty() && devCode.equals(code)) {
-            log.info("[开发模式] 使用 dev-code 配置通过校验: phone={}", phone);
+        // 测试阶段：使用环境变量 sms.bypass-code 注入的万能验证码
+        // 生产环境将 sms.bypass-code 设为空字符串以禁用此机制
+        if (bypassCode != null && !bypassCode.isEmpty() && bypassCode.equals(code)) {
+            log.info("[测试模式] 使用 bypass 验证码通过校验: phone={}", phone);
             return true;
         }
 

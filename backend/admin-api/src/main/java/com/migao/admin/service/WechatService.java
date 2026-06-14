@@ -136,8 +136,8 @@ public class WechatService {
                 hexString.append(hex);
             }
             return hexString.substring(0, 16);
-        } catch (Exception e) {
-            // fallback
+        } catch (NoSuchAlgorithmException e) {
+            log.error("SHA-256 算法不可用，回退到 hashCode: {}", e.getMessage());
             return String.valueOf(Math.abs(input.hashCode()));
         }
     }

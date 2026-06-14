@@ -980,8 +980,8 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         int stock = 0;
         try {
             stock = (int) getCellNumericValue(row, 4);
-        } catch (Exception ignored) {
-            // 库存默认0
+        } catch (NumberFormatException | IndexOutOfBoundsException e) {
+            log.warn("库存解析失败，默认0: {}", e.getMessage());
         }
 
         String description = getCellStringValue(row, 5);
