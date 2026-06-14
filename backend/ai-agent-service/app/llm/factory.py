@@ -63,8 +63,8 @@ class LLMFactory:
     def create_vision_llm(model_override: Optional[str] = None) -> ChatOpenAI:
         """创建视觉多模态 LLM 实例
 
-        - 使用 MiniMax M3 原生多模态能力
-        - temperature=0.7, streaming=True, max_completion_tokens=2048
+        - 使用 MiniMax-M3 原生多模态（文本+图片）
+        - temperature=0.7, streaming=True, max_completion_tokens=16384
         """
         model = model_override or settings.MINIMAX_VISION_MODEL
         return ChatOpenAI(
@@ -73,7 +73,7 @@ class LLMFactory:
             base_url=MINIMAX_BASE_URL,
             temperature=0.7,
             streaming=True,
-            max_completion_tokens=2048,
+            max_completion_tokens=16384,
             request_timeout=60,
         )
 
