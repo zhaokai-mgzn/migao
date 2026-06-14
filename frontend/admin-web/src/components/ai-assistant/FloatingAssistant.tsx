@@ -2,11 +2,14 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { X, Minus, Send, Loader2, Plus, Maximize2 } from 'lucide-react'
+import { X, Minus, Send, Loader2, Plus, Maximize2, Bot, User, Copy, Check } from 'lucide-react'
 import { MibaoLogo } from '@/components/icons/MibaoLogo'
 import { cn } from '@/lib/utils'
 import { chatApi } from '@/lib/api'
 import { useAuthStore } from '@/store/auth'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import dayjs from 'dayjs'
 
 // ========== 类型定义 ==========
 interface AssistantMessage {
@@ -488,48 +491,12 @@ export default function FloatingAssistant() {
           ) : null}
 
           {messages.map((msg) => (
-            <div
+            <AssistantMessageBubble
               key={msg.id}
-              className={cn(
-                'flex',
-                msg.role === 'user' ? 'justify-end' : 'justify-start'
-              )}
-            >
-              <div className="flex flex-col items-start max-w-[80%]">
-                <div
-                  className={cn(
-                    'px-3 py-2 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap break-words',
-                    msg.role === 'user'
-                      ? 'bg-primary-600 text-white rounded-br-md'
-                      : 'bg-gray-100 text-gray-800 rounded-bl-md'
-                  )}
-                >
-                  {msg.content || (msg.isStreaming && (
-                    <span className="inline-flex items-center gap-1 text-gray-400">
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                      正在输入...
-                    </span>
-                  ))}
-                </div>
-                {msg.role === 'assistant' && msg.suggestions && msg.suggestions.length > 0 && (
-                  <div className="mt-2 w-full">
-                    <span className="text-xs text-gray-400">推荐提问：</span>
-                    <div className="flex flex-wrap gap-1.5 mt-1">
-                      {msg.suggestions.map((q, idx) => (
-                        <button
-                          key={idx}
-                          onClick={() => handleSend(q)}
-                          disabled={isStreaming}
-                          className="text-xs px-2.5 py-1 rounded-full bg-gradient-to-r from-primary-50 to-primary-100 border border-primary-200 text-primary-700 hover:from-primary-100 hover:to-primary-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          {q}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
+              msg={msg}
+              isStreaming={isStreaming}
+              onSend={handleSend}
+            />
           ))}
           <div ref={messagesEndRef} />
         </div>
@@ -586,5 +553,152 @@ export default function FloatingAssistant() {
         </div>
       </button>
     </>
+  )
+}
+
+// ========== 消息气泡组件（与会话页面 MessageList 样式一致） ==========
+
+function AssistantMessageBubble({
+  msg,
+  isStreaming,
+  onSend,
+}: {
+  msg: AssistantMessage
+  isStreaming: boolean
+  onSend: (text: string) => void
+}) {
+  const isUser = msg.role === 'user'
+  const isAI = msg.role === 'assistant'
+  const isStreamingEmpty = msg.isStreaming && !msg.content
+
+  return (
+    <div className={cn('flex gap-2', isUser ? 'justify-end' : 'justify-start')}>
+      {/* AI 头像 */}
+      {isAI && (
+        <div className="w-7 h-7 rounded-full bg-primary-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+          <Bot className="w-4 h-4 text-primary-600" />
+        </div>
+      )}
+
+      <div className={cn('flex flex-col max-w-[80%]', isUser ? 'items-end' : 'items-start')}>
+        {/* 消息气泡 */}
+        <div
+          className={cn(
+            'rounded-2xl px-3 py-2 text-sm leading-relaxed',
+            isUser
+              ? 'bg-primary-600 text-white rounded-br-md'
+              : 'bg-white border border-gray-200 text-gray-800 rounded-bl-md shadow-sm'
+          )}
+        >
+          {isAI ? (
+            <AIAssistantContent msg={msg} />
+          ) : (
+            <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+          )}
+        </div>
+
+        {/* 推荐提问 */}
+        {isAI && msg.suggestions && msg.suggestions.length > 0 && !msg.isStreaming && (
+          <div className="mt-2 w-full">
+            <p className="text-xs text-gray-500 mb-1 font-medium px-1">推荐提问：</p>
+            <div className="space-y-1">
+              {msg.suggestions.map((q, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => onSend(q)}
+                  disabled={isStreaming}
+                  className="block w-full text-left px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-primary-50 to-primary-100 border border-primary-200 hover:from-primary-100 hover:to-primary-200 transition-colors text-xs text-primary-700 break-words line-clamp-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 时间戳 */}
+        {msg.createdAt && (
+          <span className="text-[10px] text-gray-400 mt-1 px-1">
+            {dayjs(msg.createdAt).format('HH:mm')}
+          </span>
+        )}
+      </div>
+
+      {/* 用户头像 */}
+      {isUser && (
+        <div className="w-7 h-7 rounded-full bg-gray-200 flex items-center justify-center flex-shrink-0 mt-0.5">
+          <User className="w-4 h-4 text-gray-600" />
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ========== AI 消息内容渲染（Markdown + 加载状态 + 复制按钮） ==========
+
+function AIAssistantContent({ msg }: { msg: AssistantMessage }) {
+  const [copied, setCopied] = useState(false)
+  const isStreamingEmpty = msg.isStreaming && !msg.content
+
+  if (isStreamingEmpty) {
+    return (
+      <div className="flex items-center gap-1.5 py-0.5">
+        <span
+          className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce"
+          style={{ animationDelay: '0ms' }}
+        />
+        <span
+          className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce"
+          style={{ animationDelay: '150ms' }}
+        />
+        <span
+          className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce"
+          style={{ animationDelay: '300ms' }}
+        />
+      </div>
+    )
+  }
+
+  // 清理 AI 回复中的 tool_call 伪代码块
+  const cleanContent = (msg.content || '').replace(
+    /```tool_call[\s\S]*?```/g,
+    ''
+  ).trim()
+
+  if (!cleanContent && !msg.isStreaming) {
+    return <p className="text-sm text-gray-400 italic">（已处理）</p>
+  }
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(cleanContent)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  return (
+    <div className="group relative">
+      <div className="prose prose-sm max-w-none text-gray-800 [&_p]:my-1 [&_ul]:my-1 [&_ol]:my-1 [&_pre]:my-2 [&_code]:text-xs [&_code]:bg-gray-100 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_table]:text-xs [&_table]:border-collapse [&_th]:border [&_th]:border-gray-300 [&_th]:bg-gray-100 [&_th]:px-2 [&_th]:py-1 [&_td]:border [&_td]:border-gray-300 [&_td]:px-2 [&_td]:py-1">
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+          {cleanContent}
+        </ReactMarkdown>
+        {msg.isStreaming && (
+          <span className="inline-block w-1.5 h-4 bg-primary-600 animate-pulse ml-0.5 align-text-bottom" />
+        )}
+      </div>
+      {/* 复制按钮 */}
+      {!msg.isStreaming && (
+        <button
+          onClick={handleCopy}
+          className="absolute top-0 right-0 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600"
+          title="复制回复内容"
+        >
+          {copied ? (
+            <Check className="w-3.5 h-3.5 text-green-500" />
+          ) : (
+            <Copy className="w-3.5 h-3.5" />
+          )}
+        </button>
+      )}
+    </div>
   )
 }

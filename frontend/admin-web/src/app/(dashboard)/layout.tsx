@@ -56,8 +56,8 @@ export default function DashboardLayout({
         </main>
       </div>
 
-      {/* AI 助手悬浮组件 — 聊天页面不显示（已有完整对话界面） */}
-      {pathname !== '/chat' && <FloatingAssistant />}
+      {/* AI 助手悬浮组件 — 聊天相关页面不显示（已有完整对话界面） */}
+      {!pathname.startsWith('/chat') && <FloatingAssistant />}
     </div>
   )
 }

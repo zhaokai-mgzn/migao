@@ -355,7 +355,7 @@ class ProductManageTool(BaseTool):
         if category_id:
             json_data["categoryId"] = category_id
         if price is not None:
-            json_data["basePrice"] = int(float(price) * 100)  # 元→分
+            json_data["basePrice"] = float(price)  # admin-api 直接用元
         if description:
             json_data["description"] = description
         if stock_quantity is not None:
@@ -382,6 +382,8 @@ class ProductManageTool(BaseTool):
                 elif isinstance(c, dict):
                     nc = {"colorName": c.get("colorName", c.get("name", ""))}
                     if c.get("id") is not None: nc["id"] = c["id"]
+                    if c.get("remark") is not None: nc["remark"] = c["remark"]
+                    if c.get("mainColorHex") is not None: nc["mainColorHex"] = c["mainColorHex"]
                     normalized.append(nc)
             if normalized:
                 json_data["colors"] = normalized
@@ -401,8 +403,14 @@ class ProductManageTool(BaseTool):
                 json_data["specifications"] = {p: p for p in parts}
         if unit:
             json_data["unit"] = unit
+        elif category_id:
+            # 默认计价单位：窗帘布艺 → 米
+            json_data["unit"] = "米"
         if pricing_type:
             json_data["pricingType"] = pricing_type
+        elif category_id:
+            # 默认计价方式：窗帘布艺 → per_meter
+            json_data["pricingType"] = "per_meter"
         
         logger.info(f"[product_manage] Creating product with json_data keys={list(json_data.keys())} name={name}")
         logger.info(f"[product_manage] Creating product keys={list(json_data.keys())} name={name}")
@@ -486,7 +494,7 @@ class ProductManageTool(BaseTool):
         if category_id:
             json_data["categoryId"] = category_id
         if price is not None:
-            json_data["basePrice"] = int(float(price) * 100)  # 元→分
+            json_data["basePrice"] = float(price)  # admin-api 直接用元
         if description:
             json_data["description"] = description
         if stock_quantity is not None:

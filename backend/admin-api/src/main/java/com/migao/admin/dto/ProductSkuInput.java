@@ -19,9 +19,14 @@ public class ProductSkuInput {
     private Long id;
 
     /**
-     * 颜色ID（前端临时ID，后端会映射为 DB 主键）
+     * 颜色ID（前端临时ID，后端会映射为 DB 主键；兼容旧数据）
      */
     private Long colorId;
+
+    /**
+     * 颜色标识（色号如"2699-01"或颜色名如"白色"；新数据优先使用此字段）
+     */
+    private String colorName;
 
     /**
      * 售卖方式: bulk_cut / full_roll

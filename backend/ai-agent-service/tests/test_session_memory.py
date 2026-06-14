@@ -310,6 +310,119 @@ class TestDeleteSession:
         mock_db.rollback.assert_called_once()
 
 
+class TestCloseSession:
+    """关闭会话"""
+
+    async def test_close_session_success(self, memory, mock_db):
+        """成功关闭活跃会话"""
+        mock_db.execute.return_value.rowcount = 1
+
+        result = await memory.close_session(session_id="sess_001")
+
+        assert result is True
+        mock_db.commit.assert_called_once()
+
+    async def test_close_session_already_closed(self, memory, mock_db):
+        """关闭已关闭的会话 — rowcount=0 不影响"""
+        mock_db.execute.return_value.rowcount = 0
+
+        result = await memory.close_session(session_id="sess_001")
+
+        # rowcount=0 时返回 False（未更新任何行）
+        assert result is False
+
+    async def test_close_session_db_error(self, memory, mock_db):
+        """关闭会话 - 数据库错误"""
+        mock_db.execute.side_effect = Exception("DB error")
+
+        with pytest.raises(Exception, match="DB error"):
+            await memory.close_session(session_id="sess_001")
+
+        mock_db.rollback.assert_called_once()
+
+
+class TestCloseOtherActiveSessions:
+    """批量关闭其他活跃会话"""
+
+    async def test_close_other_active_sessions_success(self, memory, mock_db):
+        """成功关闭其他活跃会话"""
+        mock_db.execute.return_value.rowcount = 3
+
+        count = await memory.close_other_active_sessions(
+            tenant_id=1,
+            customer_id="user_001",
+            except_session_id="sess_current",
+        )
+
+        assert count == 3
+        mock_db.commit.assert_called_once()
+
+    async def test_close_other_active_sessions_no_others(self, memory, mock_db):
+        """没有其他活跃会话需要关闭"""
+        mock_db.execute.return_value.rowcount = 0
+
+        count = await memory.close_other_active_sessions(
+            tenant_id=1,
+            customer_id="user_001",
+            except_session_id="sess_current",
+        )
+
+        assert count == 0
+
+    async def test_close_other_active_sessions_without_except(self, memory, mock_db):
+        """不排除任何会话 — 关闭该用户所有活跃会话"""
+        mock_db.execute.return_value.rowcount = 2
+
+        count = await memory.close_other_active_sessions(
+            tenant_id=1,
+            customer_id="user_001",
+        )
+
+        assert count == 2
+
+    async def test_close_other_active_sessions_db_error(self, memory, mock_db):
+        """关闭其他活跃会话 - 数据库错误（不抛异常，返回 0）"""
+        mock_db.execute.side_effect = Exception("DB error")
+
+        count = await memory.close_other_active_sessions(
+            tenant_id=1,
+            customer_id="user_001",
+        )
+
+        assert count == 0
+        mock_db.rollback.assert_called_once()
+
+
+class TestReopenSession:
+    """重新打开已关闭会话"""
+
+    async def test_reopen_session_success(self, memory, mock_db):
+        """成功重新打开 closed 会话"""
+        mock_db.execute.return_value.rowcount = 1
+
+        result = await memory.reopen_session(session_id="sess_001")
+
+        assert result is True
+        mock_db.commit.assert_called_once()
+
+    async def test_reopen_session_not_closed(self, memory, mock_db):
+        """重新打开非 closed 会话 — 不会更新"""
+        mock_db.execute.return_value.rowcount = 0
+
+        result = await memory.reopen_session(session_id="sess_001")
+
+        assert result is False
+
+    async def test_reopen_session_db_error(self, memory, mock_db):
+        """重新打开会话 - 数据库错误"""
+        mock_db.execute.side_effect = Exception("DB error")
+
+        with pytest.raises(Exception, match="DB error"):
+            await memory.reopen_session(session_id="sess_001")
+
+        mock_db.rollback.assert_called_once()
+
+
 class TestSessionMemoryHelpers:
     """辅助方法"""
 

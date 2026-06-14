@@ -190,6 +190,9 @@ class ProductDetailTool(BaseTool):
             formatted.append({
                 "id": sku.get("id"),
                 "sku_code": sku.get("skuCode"),
+                "color_name": sku.get("colorName"),
+                "selling_method": sku.get("sellingMethod"),
+                "door_width": sku.get("doorWidth"),
                 "specifications": sku.get("specifications", {}),
                 "price": sku.get("price"),
                 "stock": sku.get("stock"),
