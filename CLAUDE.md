@@ -233,7 +233,7 @@ cd backend/admin-api && ./mvnw spring-boot:run
 # 2. 启动 ai-agent-service（Python AI 服务，端口 8001）
 cd backend/ai-agent-service && python -m uvicorn app.main:app --port 8001 --reload
 
-# 3. 启动 admin-web（Next.js 前端，端口 3000）
+# 3. 启动 admin-web（Next.js 前端，端口 3001）
 cd frontend/admin-web && npm run dev
 ```
 
