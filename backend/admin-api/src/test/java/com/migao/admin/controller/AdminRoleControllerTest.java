@@ -68,7 +68,7 @@ class AdminRoleControllerTest {
             PageResponse<Role> page = new PageResponse<>();
             page.setItems(List.of());
             page.setTotal(0L);
-            when(roleService.getRolePage(anyLong(), anyLong(), any())).thenReturn(page);
+            when(roleService.getRolePage(anyLong(), anyLong(), any(), anyLong())).thenReturn(page);
 
             mockMvc.perform(get("/api/admin/roles"))
                     .andExpect(status().isOk())
@@ -79,7 +79,7 @@ class AdminRoleControllerTest {
         @Test
         @DisplayName("支持 keyword 过滤 -> 200")
         void keywordFilter() throws Exception {
-            when(roleService.getRolePage(anyLong(), anyLong(), any())).thenReturn(new PageResponse<>());
+            when(roleService.getRolePage(anyLong(), anyLong(), any(), anyLong())).thenReturn(new PageResponse<>());
 
             mockMvc.perform(get("/api/admin/roles").param("keyword", "admin"))
                     .andExpect(status().isOk());
@@ -93,7 +93,7 @@ class AdminRoleControllerTest {
         @Test
         @DisplayName("返回所有角色 -> 200")
         void getAllRoles() throws Exception {
-            when(roleService.getAllRoles(any())).thenReturn(List.of());
+            when(roleService.getAllRoles(anyLong())).thenReturn(List.of());
 
             mockMvc.perform(get("/api/admin/roles/all"))
                     .andExpect(status().isOk())
@@ -110,10 +110,10 @@ class AdminRoleControllerTest {
         @DisplayName("查询单个角色 -> 200")
         void getRoleById() throws Exception {
             Role role = new Role();
-            role.setId(1L);
+            role.setId("1");
             role.setName("admin");
             role.setCode("admin");
-            when(roleService.getRoleById(anyLong(), anyLong())).thenReturn(role);
+            when(roleService.getRoleById(anyString())).thenReturn(role);
 
             mockMvc.perform(get("/api/admin/roles/1"))
                     .andExpect(status().isOk())
@@ -130,9 +130,9 @@ class AdminRoleControllerTest {
         @DisplayName("创建角色 -> 200")
         void createRole() throws Exception {
             Role role = new Role();
-            role.setId(2L);
+            role.setId("2");
             role.setName("operator");
-            when(roleService.createRole(anyLong(), any())).thenReturn(role);
+            when(roleService.createRole(anyString(), anyString(), anyString(), anyLong())).thenReturn(role);
 
             Map<String, Object> body = Map.of("name", "operator", "code", "op", "permissionIds", List.of(1, 2));
 
@@ -151,7 +151,7 @@ class AdminRoleControllerTest {
         @Test
         @DisplayName("更新角色 -> 200")
         void updateRole() throws Exception {
-            doNothing().when(roleService).updateRole(anyLong(), anyLong(), any());
+            when(roleService.updateRole(anyString(), anyString(), anyString())).thenReturn(new Role());
 
             Map<String, Object> body = Map.of("name", "updated");
 
@@ -170,7 +170,7 @@ class AdminRoleControllerTest {
         @Test
         @DisplayName("删除角色 -> 200")
         void deleteRole() throws Exception {
-            doNothing().when(roleService).deleteRole(anyLong(), anyLong());
+            doNothing().when(roleService).deleteRole(anyString());
 
             mockMvc.perform(delete("/api/admin/roles/1"))
                     .andExpect(status().isOk())

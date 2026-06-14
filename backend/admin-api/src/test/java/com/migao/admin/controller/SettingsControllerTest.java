@@ -130,7 +130,7 @@ class SettingsControllerTest {
             tenant.setCode("test");
             tenant.setIndustry("布艺");
             when(tenantMapper.selectById(1L)).thenReturn(tenant);
-            when(tenantMapper.updateById(any())).thenReturn(1);
+            when(tenantMapper.updateById(any(Tenant.class))).thenReturn(1);
 
             Map<String, Object> body = Map.of("name", "新名称");
 
@@ -202,7 +202,7 @@ class SettingsControllerTest {
             mockMvc.perform(put("/api/admin/settings/password")
                             .contentType("application/json")
                             .content(objectMapper.writeValueAsString(body)))
-                    .andExpect(status().isOk()) // BusinessException → 401 through handler
+                    .andExpect(status().isUnauthorized())
                     .andExpect(jsonPath("$.success").value(false));
         }
 
@@ -218,7 +218,7 @@ class SettingsControllerTest {
             when(userMapper.selectById("user-1")).thenReturn(user);
             when(passwordEncoder.matches("old", "hashed_old")).thenReturn(true);
             when(passwordEncoder.encode("new")).thenReturn("hashed_new");
-            when(userMapper.updateById(any())).thenReturn(1);
+            when(userMapper.updateById(any(com.migao.admin.entity.User.class))).thenReturn(1);
 
             Map<String, String> body = Map.of("oldPassword", "old", "newPassword", "new");
 
@@ -245,7 +245,7 @@ class SettingsControllerTest {
             mockMvc.perform(put("/api/admin/settings/password")
                             .contentType("application/json")
                             .content(objectMapper.writeValueAsString(body)))
-                    .andExpect(status().isOk())
+                    .andExpect(status().is(422))
                     .andExpect(jsonPath("$.success").value(false));
         }
     }
@@ -262,7 +262,7 @@ class SettingsControllerTest {
             pageResponse.setTotal(0L);
             pageResponse.setPage(1L);
             pageResponse.setSize(10L);
-            when(auditLogService.getAuditLogPage(any(), any(), any(), any(), any(), any(), any(), any()))
+            when(auditLogService.getAuditLogPage(anyLong(), anyLong(), any(), any(), any(), any(), any(), any()))
                     .thenReturn(pageResponse);
 
             mockMvc.perform(get("/api/admin/settings/login-logs"))

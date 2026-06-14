@@ -58,7 +58,7 @@ class AuditLogServiceTest {
     @DisplayName("getAuditLogPage — 返回分页结果")
     void getAuditLogPage_returnsPageResponse() {
         AuditLog log = AuditLog.builder()
-                .id(1L)
+                .id("1")
                 .tenantId(1L)
                 .action("login")
                 .resourceType("user")
@@ -94,7 +94,7 @@ class AuditLogServiceTest {
     @DisplayName("getResourceLogs — 返回指定资源的操作日志")
     void getResourceLogs_returnsLogs() {
         AuditLog log = AuditLog.builder()
-                .id(1L)
+                .id("1")
                 .resourceType("product")
                 .resourceId("prod-1")
                 .build();

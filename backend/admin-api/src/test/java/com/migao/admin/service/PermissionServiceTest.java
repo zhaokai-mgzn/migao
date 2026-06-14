@@ -1,7 +1,6 @@
 package com.migao.admin.service;
 
 import com.migao.admin.entity.Permission;
-import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.PermissionMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -15,7 +14,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
@@ -36,14 +34,14 @@ class PermissionServiceTest {
     @DisplayName("getAllPermissions — 返回激活且未删除的权限")
     void getAllPermissions_returnsActiveUndeleted() {
         Permission p1 = new Permission();
-        p1.setId(1L);
+        p1.setId("1");
         p1.setCode("product:list");
         p1.setName("商品列表");
         p1.setDeleted(0);
         p1.setStatus("active");
 
         Permission p2 = new Permission();
-        p2.setId(2L);
+        p2.setId("2");
         p2.setCode("order:list");
         p2.setName("订单列表");
         p2.setDeleted(0);
@@ -74,7 +72,7 @@ class PermissionServiceTest {
     @DisplayName("getPermissionByCode — 找到权限返回 Permission")
     void getPermissionByCode_found() {
         Permission p = new Permission();
-        p.setId(1L);
+        p.setId("1");
         p.setCode("product:list");
         when(permissionMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(p);
 
@@ -104,15 +102,15 @@ class PermissionServiceTest {
         p.setCode("new:perm");
         p.setName("新权限");
 
-        Permission result = permissionService.createPermission(p);
+        boolean result = permissionService.createPermission(p);
 
-        assertThat(result).isNotNull();
+        assertThat(result).isTrue();
         verify(permissionMapper).insert(any(Permission.class));
     }
 
     @Test
-    @DisplayName("createPermission — code 已存在抛出异常")
-    void createPermission_codeExists_throwsException() {
+    @DisplayName("createPermission — code 已存在返回 false")
+    void createPermission_codeExists_returnsFalse() {
         Permission existing = new Permission();
         existing.setCode("existing:perm");
         when(permissionMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(existing);
@@ -120,8 +118,8 @@ class PermissionServiceTest {
         Permission p = new Permission();
         p.setCode("existing:perm");
 
-        assertThatThrownBy(() -> permissionService.createPermission(p))
-                .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("权限码");
+        boolean result = permissionService.createPermission(p);
+        assertThat(result).isFalse();
+        verify(permissionMapper, never()).insert(any(Permission.class));
     }
 }

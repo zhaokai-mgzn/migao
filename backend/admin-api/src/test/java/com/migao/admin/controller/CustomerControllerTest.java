@@ -70,7 +70,7 @@ class CustomerControllerTest {
             PageResponse<CustomerProfile> page = new PageResponse<>();
             page.setItems(List.of());
             page.setTotal(0L);
-            when(customerService.getCustomers(anyLong(), anyLong(), anyLong(), any(), any(), any(), any()))
+            when(customerService.getCustomerPage(anyLong(), anyLong(), any(), any(), any(), anyLong()))
                     .thenReturn(page);
 
             mockMvc.perform(get("/api/admin/customers"))
@@ -82,7 +82,7 @@ class CustomerControllerTest {
         @Test
         @DisplayName("支持渠道筛选 -> 200")
         void channelFilter() throws Exception {
-            when(customerService.getCustomers(anyLong(), anyLong(), anyLong(), any(), any(), any(), any()))
+            when(customerService.getCustomerPage(anyLong(), anyLong(), any(), any(), any(), anyLong()))
                     .thenReturn(new PageResponse<>());
 
             mockMvc.perform(get("/api/admin/customers").param("sourceChannel", "wechat_mini"))
@@ -92,7 +92,7 @@ class CustomerControllerTest {
         @Test
         @DisplayName("支持 VIP 等级筛选 -> 200")
         void vipLevelFilter() throws Exception {
-            when(customerService.getCustomers(anyLong(), anyLong(), anyLong(), any(), any(), any(), any()))
+            when(customerService.getCustomerPage(anyLong(), anyLong(), any(), any(), any(), anyLong()))
                     .thenReturn(new PageResponse<>());
 
             mockMvc.perform(get("/api/admin/customers").param("vipLevel", "vip1"))
@@ -107,10 +107,8 @@ class CustomerControllerTest {
         @Test
         @DisplayName("查询客户详情 -> 200")
         void getCustomerDetail() throws Exception {
-            CustomerProfile profile = new CustomerProfile();
-            profile.setId("cust-1");
-            profile.setWechatNickname("测试用户");
-            when(customerService.getCustomerById(anyLong(), anyString())).thenReturn(profile);
+            Map<String, Object> detail = Map.of("id", "cust-1", "wechatNickname", "测试用户");
+            when(customerService.getCustomerDetail(anyString())).thenReturn(detail);
 
             mockMvc.perform(get("/api/admin/customers/cust-1"))
                     .andExpect(status().isOk())
@@ -125,7 +123,7 @@ class CustomerControllerTest {
         @Test
         @DisplayName("更新客户信息 -> 200")
         void updateCustomer() throws Exception {
-            doNothing().when(customerService).updateCustomer(anyLong(), anyString(), any());
+            when(customerService.updateCustomer(anyString(), any(CustomerProfile.class))).thenReturn(new CustomerProfile());
 
             Map<String, Object> body = Map.of("remark", "重要客户");
 
@@ -148,7 +146,7 @@ class CustomerControllerTest {
             tag.setId("tag-1");
             tag.setName("VIP");
             tag.setColor("blue");
-            when(customerService.getTagsByTenant(anyLong())).thenReturn(List.of(tag));
+            when(customerService.getCustomerTags(anyLong())).thenReturn(List.of(tag));
 
             mockMvc.perform(get("/api/admin/customer-tags"))
                     .andExpect(status().isOk())
@@ -166,7 +164,7 @@ class CustomerControllerTest {
         void createTag() throws Exception {
             CustomerTag tag = new CustomerTag();
             tag.setId("tag-new");
-            when(customerService.createTag(anyLong(), any())).thenReturn(tag);
+            when(customerService.createTag(any(CustomerTag.class))).thenReturn(tag);
 
             Map<String, String> body = Map.of("name", "新标签", "color", "red");
 
@@ -185,7 +183,7 @@ class CustomerControllerTest {
         @Test
         @DisplayName("更新标签 -> 200")
         void updateTag() throws Exception {
-            doNothing().when(customerService).updateTag(anyLong(), anyString(), any());
+            when(customerService.updateTag(anyString(), any(CustomerTag.class))).thenReturn(new CustomerTag());
 
             Map<String, String> body = Map.of("name", "已更新");
 
@@ -204,7 +202,7 @@ class CustomerControllerTest {
         @Test
         @DisplayName("删除标签 -> 200")
         void deleteTag() throws Exception {
-            doNothing().when(customerService).deleteTag(anyLong(), anyString());
+            doNothing().when(customerService).deleteTag(anyString());
 
             mockMvc.perform(delete("/api/admin/customer-tags/tag-1"))
                     .andExpect(status().isOk())

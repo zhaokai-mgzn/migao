@@ -50,12 +50,12 @@ class MenuControllerTest {
     void topLevelKeys() throws Exception {
         mockMvc.perform(get("/api/admin/menus"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data[?(@.key=='dashboard')]").exists())
-                .andExpect(jsonPath("$.data[?(@.key=='orders')]").exists())
-                .andExpect(jsonPath("$.data[?(@.key=='products')]").exists())
-                .andExpect(jsonPath("$.data[?(@.key=='agent')]").exists())
-                .andExpect(jsonPath("$.data[?(@.key=='employees')]").exists())
-                .andExpect(jsonPath("$.data[?(@.key=='settings')]").exists());
+                .andExpect(jsonPath("$.data[?(@.code=='dashboard')]").exists())
+                .andExpect(jsonPath("$.data[?(@.code=='orders')]").exists())
+                .andExpect(jsonPath("$.data[?(@.code=='products')]").exists())
+                .andExpect(jsonPath("$.data[?(@.code=='agent')]").exists())
+                .andExpect(jsonPath("$.data[?(@.code=='employees')]").exists())
+                .andExpect(jsonPath("$.data[?(@.code=='settings')]").exists());
     }
 
     @Test
@@ -63,8 +63,8 @@ class MenuControllerTest {
     void ordersHasChildren() throws Exception {
         mockMvc.perform(get("/api/admin/menus"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data[?(@.key=='orders')].children").isArray())
-                .andExpect(jsonPath("$.data[?(@.key=='orders')].children.length()").value(3));
+                .andExpect(jsonPath("$.data[?(@.code=='orders')].children").isArray())
+                .andExpect(jsonPath("$.data[?(@.code=='orders')].children.length()").value(3));
     }
 
     @Test
@@ -72,7 +72,7 @@ class MenuControllerTest {
     void productsHasFourChildren() throws Exception {
         mockMvc.perform(get("/api/admin/menus"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data[?(@.key=='products')].children.length()").value(4));
+                .andExpect(jsonPath("$.data[?(@.code=='products')].children.length()").value(4));
     }
 
     @Test
@@ -80,7 +80,7 @@ class MenuControllerTest {
     void employeesHasChildren() throws Exception {
         mockMvc.perform(get("/api/admin/menus"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data[?(@.key=='employees')].children.length()").value(2));
+                .andExpect(jsonPath("$.data[?(@.code=='employees')].children.length()").value(2));
     }
 
     @Test
@@ -88,8 +88,9 @@ class MenuControllerTest {
     void idempotent() throws Exception {
         var result1 = mockMvc.perform(get("/api/admin/menus")).andReturn();
         var result2 = mockMvc.perform(get("/api/admin/menus")).andReturn();
-        // 两次调用 JSON 内容应一致
-        assert result1.getResponse().getContentAsString()
-                .equals(result2.getResponse().getContentAsString());
+        // 两次调用 data 部分应一致（忽略 requestId/timestamp）
+        var data1 = objectMapper.readTree(result1.getResponse().getContentAsString()).get("data");
+        var data2 = objectMapper.readTree(result2.getResponse().getContentAsString()).get("data");
+        org.junit.jupiter.api.Assertions.assertEquals(data1, data2);
     }
 }
