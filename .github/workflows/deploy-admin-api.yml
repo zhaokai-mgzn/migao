@@ -44,6 +44,13 @@ jobs:
         working-directory: backend/admin-api
         run: mvn test -q
 
+      - name: Inject JWT private key
+        working-directory: backend/admin-api
+        run: |
+          mkdir -p src/main/resources/rsa
+          echo "${{ secrets.JWT_PRIVATE_KEY }}" > src/main/resources/rsa/private.pem
+          echo "✅ JWT private key injected"
+
       - name: Build admin-api with Maven
         working-directory: backend/admin-api
         run: |
