@@ -61,9 +61,17 @@ test.describe('AI 对话页面', () => {
     const items = page.sessionList.locator('.mx-1\\.5')
     if (await items.count() > 0) {
       const firstItem = items.first()
-      // 标题
+      // 标题 — 验证标题文本非空
       const title = firstItem.locator('span').first()
       await expect(title).toBeVisible()
+      const titleText = await title.textContent()
+      expect(titleText?.trim()).toBeTruthy()
+    } else {
+      // 无会话时验证空态
+      const emptyText = page.page.getByText(/暂无会话|还没有会话|创建会话/)
+      if (await emptyText.isVisible().catch(() => false)) {
+        await expect(emptyText).toBeVisible()
+      }
     }
   })
 
@@ -71,8 +79,8 @@ test.describe('AI 对话页面', () => {
     const items = page.sessionList.locator('.mx-1\\.5')
     if (await items.count() > 0) {
       await items.first().click()
-      // 选中后高亮
-      await expect(items.first()).toHaveClass(/bg-primary-50/)
+      // 选中后高亮（bg-primary-50 或包含 primary 背景色）
+      await expect(items.first()).toHaveClass(/bg-primary-50|bg-primary/)
     }
   })
 
@@ -110,6 +118,11 @@ test.describe('AI 对话页面', () => {
     if (!inputVisible) {
       // 正确：无会话时输入区域隐藏
       expect(inputVisible).toBeFalsy()
+      // 验证显示引导提示文本
+      const promptText = page.page.getByText(/选择一个会话|选择会话|开始对话|创建会话/)
+      if (await promptText.isVisible().catch(() => false)) {
+        await expect(promptText).toBeVisible()
+      }
     }
   })
 

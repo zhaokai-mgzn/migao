@@ -32,9 +32,15 @@ test.describe('通知中心页面', () => {
     // 通知列表或空状态
     const items = page.notificationList.locator('> div')
     const emptyState = page.page.getByText(/暂无通知/)
-    const hasItems = (await items.count()) > 0
-    const hasEmpty = await emptyState.isVisible().catch(() => false)
-    expect(hasItems || hasEmpty).toBeTruthy()
+    const itemCount = await items.count()
+    if (itemCount > 0) {
+      // 有通知：验证通知标题不为空
+      const firstTitle = items.first().locator('h3, h4, .font-medium, span')
+      await expect(firstTitle.first()).toBeVisible()
+    } else {
+      // 无通知：验证空态显示
+      await expect(emptyState).toBeVisible()
+    }
   })
 
   test('通知渠道 Badge 正确显示', async () => {

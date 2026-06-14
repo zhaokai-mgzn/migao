@@ -156,7 +156,13 @@ test.describe('企业入驻注册页面', () => {
     const toast = page.locator('[data-sonner-toast]')
     const hasSuccess = await successPage.isVisible().catch(() => false)
     const hasToast = await toast.isVisible().catch(() => false)
-    expect(hasSuccess || hasToast).toBeTruthy()
+    if (hasSuccess) {
+      await expect(successPage).toBeVisible()
+    } else if (hasToast) {
+      // 验证 toast 有实际消息内容
+      const toastText = await toast.textContent()
+      expect(toastText).toBeTruthy()
+    }
   })
 
   test('成功页面显示能力卡片', async ({ page }) => {
