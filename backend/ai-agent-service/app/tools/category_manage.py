@@ -29,7 +29,7 @@ class CategoryManageTool(BaseTool):
 
     name = "category_manage"
     description = (
-        "【触发】用户问'分类''有哪些分类''分类树''新建分类''删除分类'时调用。【前置】action=tree 只查分类树(READONLY)。create/update/delete 需要确认后执行。【反例】用 tree action 查分类是安全的，不要因为工具名含 manage 就认为全是写操作。【标注】tree=SAFE_QUERY, create/update/delete=DESTRUCTIVE"
+        "【触发】查分类树/新建/删除分类。action=tree 返回每个分类的 id（长字符串如 88b6c50fbc...），这个 id 直接用作 product_manage 的 category_id 参数。tree 是只读安全的。【标注】tree=READONLY, create/delete=DESTRUCTIVE"
     )
 
     allowed_roles = ["admin", "tenant_admin"]

@@ -5,12 +5,11 @@
 - intent_router_node: 意图路由
 - direct_reply_node: 直接回复（greeting 等）
 - suggestions_node: 后续问题建议
-- check_cache_hit: 缓存命中判断（已废弃，保留兼容）
-- route_by_intent: 意图路由条件边
-"""
-以及条件边路由函数：
+- cache_check_node: 语义缓存检查
+- cache_store_node: 缓存写入
 - check_cache_hit: 缓存命中判断
 - route_by_intent: 意图→Skill 路由
+- _get_last_human_text: 提取最后一条用户消息文本
 """
 
 import asyncio

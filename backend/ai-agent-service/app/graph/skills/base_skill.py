@@ -424,6 +424,12 @@ async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -
     from app.tools.langchain_adapter import LangChainToolAdapter
 
     # 1. 规范化参数：LLM 可能把 array/object 序列化为 JSON 字符串
+    # 兜底：MiniMax 可能把所有参数包在 data 键下
+    if "data" in tool_args and isinstance(tool_args.get("data"), dict):
+        nested = tool_args["data"]
+        if any(k not in tool_args for k in nested):
+            logger.info(f"[tool-exec] Flattened nested data for {tool.name}: keys={list(nested.keys())[:8]}")
+            tool_args = {**nested, **{k: v for k, v in tool_args.items() if k != "data"}}
     tool_args = LangChainToolAdapter._normalize_args(tool, tool_args)
 
     session_id = state.get("session_id", "")
@@ -573,16 +579,21 @@ async def execute_skill(
             + system_prompt
         )
 
-    # 注入跨轮记忆：已收集字段（避免 LLM 从历史重新提取遗漏）
+    # 注入跨轮记忆：已收集字段追加到最后一条用户消息（LLM 不可能忽略）
     collected = {}
     if session_id:
         from app.memory.session_memory import SessionMemory
         collected = await SessionMemory().get_collected_fields(session_id)
-    if collected:
-        fields_text = "\n".join(f"  - {k}: {json.dumps(v, ensure_ascii=False)[:200]}" for k, v in collected.items())
-        system_prompt += f"\n\n## 已收集字段（从对话历史提取，不要重复询问，直接使用）\n{fields_text}"
 
-    full_messages: List[Any] = [SystemMessage(content=system_prompt)] + list(messages)
+    full_messages: List[Any] = [SystemMessage(content=system_prompt)]
+    msg_list = list(messages)
+    if collected and msg_list:
+        fields_hint = "；".join(f"{k}={v}" for k, v in collected.items())
+        last_msg = msg_list[-1]
+        if isinstance(last_msg, HumanMessage):
+            new_content = f"【已收集: {fields_hint}，收到确认后直接执行创建，禁止重复询问】\n{last_msg.content or ''}"
+            msg_list[-1] = HumanMessage(content=new_content)
+    full_messages.extend(msg_list)
 
     # 5. Tool Calling 循环
     tracker = get_tracker()

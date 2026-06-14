@@ -19,6 +19,71 @@ def _split_str(val):
     import re
     return [p.strip() for p in re.split(r"[,，、\s]+|和|与", val) if p.strip()]
 
+# 中文售卖方式 → admin-api 期望值
+_SELLING_TRANSLATE = {"散剪": "bulk_cut", "整卷": "full_roll", "按片": "per_piece", "定高": "fixed_height", "买通": "buy_through"}
+
+def _normalize_array(val):
+    """LLM 可能传 JSON字符串/对象/单项 → 统一为 list"""
+    if val is None: return None
+    if isinstance(val, str):
+        import json as _json
+        try: return _json.loads(val) if val.strip().startswith("[") else [val]
+        except: return [v.strip() for v in val.replace("，",",").split(",") if v.strip()]
+    if isinstance(val, dict):
+        if "item" in val: return [val["item"]]
+        return list(val.values())
+    if isinstance(val, list): return val
+    return [val]
+
+def _normalize_number(val):
+    """LLM 可能传字符串 "66" → 转为数字"""
+    if val is None: return None
+    if isinstance(val, (int, float)): return val
+    if isinstance(val, str):
+        try: return float(val) if "." in val else int(val)
+        except: return val
+    return val
+
+async def _resolve_category_id(category_id, context):
+    """从分类树按名称匹配解析为真实UUID。不信任LLM直接传的值（可能被截断/编造）。"""
+    if not category_id: return category_id
+    try:
+        from app.utils.http_client import get_admin_api_client
+        client = get_admin_api_client()
+        resp = await client.get("/api/admin/categories", tenant_id=context.tenant_id, user_id=context.user_id)
+        cats = resp.get("data", resp) if isinstance(resp, dict) else resp
+        cat_list = cats if isinstance(cats, list) else cats.get("items", []) if isinstance(cats, dict) else []
+
+        # 精确匹配UUID
+        for c in cat_list:
+            if isinstance(c, dict) and c.get("id") == category_id:
+                return category_id
+            for child in c.get("children", []) if isinstance(c, dict) else []:
+                if isinstance(child, dict) and child.get("id") == category_id:
+                    return category_id
+
+        # UUID不匹配 → 按名称匹配 → 按UUID前缀匹配（LLM可能截断UUID）
+        for c in cat_list:
+            if isinstance(c, dict) and c.get("name") == category_id:
+                return c["id"]
+            for child in c.get("children", []) if isinstance(c, dict) else []:
+                if isinstance(child, dict) and child.get("name") == category_id:
+                    return child["id"]
+        # 前缀匹配：LLM传的截断UUID "88b6c50fbcb2..." 匹配真实 "88b6c50fbc269..."
+        if len(category_id) >= 8:
+            for c in cat_list:
+                if isinstance(c, dict) and c.get("id","").startswith(category_id[:16]):
+                    logger.info(f"[product_manage] Resolved truncated UUID {category_id[:20]}... → {c['id']}")
+                    return c["id"]
+                for child in c.get("children", []) if isinstance(c, dict) else []:
+                    if isinstance(child, dict) and child.get("id","").startswith(category_id[:16]):
+                        logger.info(f"[product_manage] Resolved truncated UUID {category_id[:20]}... → {child['id']}")
+                        return child["id"]
+        logger.warning(f"[product_manage] Could not resolve category_id: {category_id}")
+    except Exception as e:
+        logger.warning(f"[product_manage] Category resolution failed: {e}")
+    return category_id
+
 VALID_PRODUCT_STATUSES = {"on_sale", "off_sale"}
 
 
@@ -35,7 +100,7 @@ class ProductManageTool(BaseTool):
     
     name = "product_manage"
     description = (
-        "【触发】用户说'创建商品''上架''下架''修改商品''更新商品''删除商品'时调用。【前置】create: 必填 name+price。收集→搜重名→汇总→确认→执行。update: 需要 product_id。toggle_status: product_id+status(on_sale/off_sale)。【反例】仅查看商品用 product_search/detail。调整库存用 inventory_manage。【标注】WRITE|DESTRUCTIVE — create/delete 需确认汇总"
+        "【触发】创建/修改/上下架商品。create 必填 name+price，收集→确认→执行。update 需 product_id。toggle_status 需 product_id+status。【标注】WRITE|DESTRUCTIVE"
     )
     
     # admin、agent、tenant_admin 可使用
@@ -62,15 +127,18 @@ class ProductManageTool(BaseTool):
             },
             "category_id": {
                 "type": "string",
-                "description": "分类ID。先调 category_manage(action='tree') 获取分类树让用户选择",
+                "description": "分类ID。从 category_manage(tree) 返回数据中取对应分类的 id 字段值",
+                "examples": ["88b6c50fbc2695fd0fca51705e957d17"],
             },
             "price": {
                 "type": "number",
-                "description": "价格（元）。纯数字，如 199 表示199元",
+                "description": "价格（元），纯数字",
+                "examples": [100.0, 23.8],
             },
             "stock_quantity": {
                 "type": "integer",
-                "description": "库存数量。纯整数，如 100",
+                "description": "库存数量，纯整数",
+                "examples": [500],
             },
             "description": {
                 "type": "string",
@@ -97,12 +165,14 @@ class ProductManageTool(BaseTool):
             "colors": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "颜色数组。每个元素为颜色名。必须传数组不要传JSON字符串。例：['米白','深灰','浅蓝']",
+                "description": "颜色数组。传颜色名列表",
+                "examples": [["米白色", "浅灰色", "深蓝色"]],
             },
             "selling_methods": {
                 "type": "array",
-                "items": {"type": "string", "enum": ["散剪", "整卷", "按片", "bulk_cut", "full_roll", "per_piece"]},
-                "description": "售卖方式数组。例：['散剪','整卷']",
+                "items": {"type": "string", "enum": ["散剪", "整卷", "按片", "定高", "买通"]},
+                "description": "售卖方式数组",
+                "examples": [["散剪", "整卷"]],
             },
             "door_widths": {
                 "type": "array",
@@ -274,16 +344,24 @@ class ProductManageTool(BaseTool):
                 message="创建商品时必须提供商品名称（name）",
             )
         
+        # AI 友好：自动规范化 LLM 可能传错的参数
+        category_id = await _resolve_category_id(category_id, context) if category_id else None
+        price = _normalize_number(price)
+        stock_quantity = _normalize_number(stock_quantity)
+        colors = _normalize_array(colors) if colors is not None else None
+        selling_methods = _normalize_array(selling_methods) if selling_methods is not None else None
+
         json_data: Dict[str, Any] = {"name": name}
         if category_id:
             json_data["categoryId"] = category_id
         if price is not None:
-            json_data["basePrice"] = price
+            json_data["basePrice"] = int(float(price) * 100)  # 元→分
         if description:
             json_data["description"] = description
         if stock_quantity is not None:
-            json_data["stock"] = stock_quantity
+            json_data["stock"] = int(stock_quantity)
         if processing_item_ids:
+            processing_item_ids = _normalize_array(processing_item_ids)
             if processing_item_configs:
                 json_data["processingItemConfigs"] = processing_item_configs
             elif processing_item_ids:
@@ -292,14 +370,11 @@ class ProductManageTool(BaseTool):
             json_data["brand"] = brand
         if images:
             json_data["images"] = list(images)
-            if images:
-                pass  # mainImage no longer set separately
         if "stockDeductionMode" not in json_data:
             json_data["stockDeductionMode"] = "on_order"
         if detail_images:
             json_data["detailImages"] = list(detail_images)
         if colors:
-            # 规范化：LLM 可能返回字符串数组或对象数组
             normalized = []
             for c in colors:
                 if isinstance(c, str):
@@ -311,7 +386,7 @@ class ProductManageTool(BaseTool):
             if normalized:
                 json_data["colors"] = normalized
         if selling_methods:
-            json_data["sellingMethods"] = _split_str(selling_methods) if isinstance(selling_methods, str) else list(selling_methods)
+            json_data["sellingMethods"] = [_SELLING_TRANSLATE.get(m, m) for m in selling_methods]
         if door_widths:
             json_data["doorWidths"] = _split_str(door_widths) if isinstance(door_widths, str) else list(door_widths)
         if skus:
@@ -378,6 +453,11 @@ class ProductManageTool(BaseTool):
         unit: Optional[str] = None,
         colors: Optional[list] = None,
         pricing_type: Optional[str] = None,
+        selling_methods: Optional[list] = None,
+        door_widths: Optional[list] = None,
+        sku_code: Optional[str] = None,
+        skus: Optional[list] = None,
+        processing_item_configs: Optional[list] = None,
     ) -> ToolResult:
         """更新商品信息
         
