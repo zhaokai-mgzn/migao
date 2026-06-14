@@ -282,6 +282,7 @@ class BaseAgent:
             tool_results_queue: List[tuple] = []  # (tool_name, result_dict)
             suggestions: List[str] = []
             text_streamed = False
+            text_streamed_content = ""
             tool_calls_detected: List[Dict[str, Any]] = []
             
             # 5. 使用 graph.astream(stream_mode="updates") 获取节点级输出
@@ -345,7 +346,10 @@ class BaseAgent:
                     
                     # — 文本回复（final_answer 来自 Skill 节点或 direct_reply）
                     final_answer = output.get("final_answer", "")
-                    if final_answer and not text_streamed:
+                    text_before = output.get("text_before_tools", "")
+                    already_streamed = text_streamed_content or ""
+                    # 如果 final_answer 有新内容（不是之前发过的 text_before_tools），即使 text_streamed 也要发
+                    if final_answer and final_answer != already_streamed:
                         logger.info(
                             f"[astream_chat] Emitting text from node '{node_name}' | "
                             f"skill_used={output.get('skill_used', '')} len={len(final_answer)}"
@@ -354,6 +358,7 @@ class BaseAgent:
                             type="text", content=final_answer
                         )
                         text_streamed = True
+                        text_streamed_content = final_answer
                     
                     # — 提取 suggestions
                     sugs = output.get("suggestions")
