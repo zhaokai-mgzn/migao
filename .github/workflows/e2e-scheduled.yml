@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
 
 env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   NODE_VERSION: '20'
   PLAYWRIGHT_BROWSERS_PATH: '0'
 
