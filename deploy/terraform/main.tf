@@ -133,6 +133,24 @@ variable "chat_image_retention_days" {
   default     = 7
 }
 
+variable "deepseek_api_key" {
+  description = "DeepSeek API Key (主模型)"
+  type        = string
+  sensitive   = true
+}
+
+variable "minimax_api_key" {
+  description = "MiniMax API Key (视觉模型)"
+  type        = string
+  sensitive   = true
+}
+
+variable "logistics_appcode" {
+  description = "阿里云物流查询 API AppCode"
+  type        = string
+  sensitive   = true
+}
+
 # ==================== 网络资源（VPC / VSwitch / 安全组）====================
 
 resource "alicloud_vpc" "main" {
@@ -282,7 +300,7 @@ locals {
     "JWT_PUBLIC_KEY"     = var.jwt_public_key
     # 物流查询
     "LOGISTICS_API_URL" = "https://wuliu.market.alicloudapi.com/kdi"
-    "LOGISTICS_APPCODE" = "d9fca154dd9c47578736b2de19056eb6"
+    "LOGISTICS_APPCODE" = var.logistics_appcode
     # SSE / CORS
     "SSE_TIMEOUT"          = "300"
     "SSE_PING_INTERVAL"    = "30"

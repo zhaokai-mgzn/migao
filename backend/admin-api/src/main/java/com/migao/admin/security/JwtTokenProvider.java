@@ -45,6 +45,16 @@ public class JwtTokenProvider {
     @Value("${jwt.public-key:classpath:rsa/public.pem}")
     private String publicKeyPath;
 
+    /**
+     * PEM 内容直接注入（优先级高于文件路径）
+     * 设置后将跳过 classpath 文件加载，用于生产环境密钥管理
+     */
+    @Value("${jwt.private-key-pem:#{null}}")
+    private String privateKeyPem;
+
+    @Value("${jwt.public-key-pem:#{null}}")
+    private String publicKeyPem;
+
     @Value("${jwt.access-token-expiration:7200}")
     @Getter
     private long accessTokenExpiration;
@@ -93,10 +103,20 @@ public class JwtTokenProvider {
 
     /**
      * 加载 RSA 密钥
+     * 优先级: 环境变量 PEM 内容 > classpath 文件
      */
     private void loadRsaKeys() {
         try {
-            // 加载私钥
+            // 优先从环境变量加载 PEM 内容（生产环境推荐方式）
+            if (privateKeyPem != null && !privateKeyPem.isEmpty()
+                    && publicKeyPem != null && !publicKeyPem.isEmpty()) {
+                rsaPrivateKey = loadPrivateKey(privateKeyPem);
+                rsaPublicKey = loadPublicKey(publicKeyPem);
+                log.info("RSA 密钥已从环境变量 PEM 内容加载");
+                return;
+            }
+
+            // 回退到 classpath 文件加载（仅用于本地开发）
             Resource privateResource = resourceLoader.getResource(privateKeyPath);
             if (privateResource.exists()) {
                 String privateKeyContent = readKeyContent(privateResource);
@@ -105,7 +125,6 @@ public class JwtTokenProvider {
                 }
             }
 
-            // 加载公钥
             Resource publicResource = resourceLoader.getResource(publicKeyPath);
             if (publicResource.exists()) {
                 String publicKeyContent = readKeyContent(publicResource);
@@ -291,7 +310,11 @@ public class JwtTokenProvider {
         try {
             validateAndParseToken(token);
             return true;
-        } catch (Exception e) {
+        } catch (ExpiredJwtException e) {
+            log.debug("JWT Token 已过期");
+            return false;
+        } catch (JwtException | IllegalArgumentException e) {
+            log.warn("JWT Token 验证失败: {}", e.getMessage());
             return false;
         }
     }
