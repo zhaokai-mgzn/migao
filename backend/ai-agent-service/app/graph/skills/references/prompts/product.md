@@ -26,3 +26,4 @@ tools: product_search, product_detail, product_manage, inventory_manage, process
   2. **确认必填参数**：拿到分类和加工项后，必须继续回复用户确认名称、价格、门幅、颜色等，不要停在第1步
   3. **执行创建**：用户确认后立即调用 product_manage(action=create) 完成创建
 - **关键**：拿到工具结果后不要停，必须继续推进流程直到商品创建完成
+- **图片识别结果必须利用**：如果用户上传了色卡/商品图片，Vision 模型已识别出系列名/款号/颜色列表等信息，直接引用这些信息预填表单，不要忽略图片分析结果重新问用户
