@@ -27,16 +27,26 @@ class Settings(BaseSettings):
 
     # ===== 必须由 SAE / .env 注入（无默认值，漏配即报错）=====
 
-    # 阿里云百炼 LLM（由 main.tf locals 管理）
-    DASHSCOPE_API_KEY: str
-    DASHSCOPE_BASE_URL: str
-    DASHSCOPE_MODEL: str
-    DASHSCOPE_EMBEDDING_MODEL: str
+    # 主 LLM（OpenAI 兼容接口，支持 DeepSeek/MiniMax/Qwen 等）
+    PRIMARY_API_KEY: str = ""
+    PRIMARY_BASE_URL: str = ""
+    PRIMARY_MODEL: str = ""
 
-    # DashVector 向量库（由 main.tf locals 管理）
-    DASHVECTOR_API_KEY: str
-    DASHVECTOR_ENDPOINT: str
-    DASHVECTOR_COLLECTION: str
+    # 视觉多模态 LLM（独立配置，可不同于主模型）
+    VISION_API_KEY: str = ""
+    VISION_BASE_URL: str = ""
+    VISION_MODEL: str = "MiniMax-M3"
+
+    # === 向后兼容：旧 MINIMAX_* 配置作为 fallback ===
+    @property
+    def MINIMAX_API_KEY(self) -> str:
+        return self.PRIMARY_API_KEY or self.VISION_API_KEY
+    @property
+    def MINIMAX_BASE_URL(self) -> str:
+        return self.PRIMARY_BASE_URL or self.VISION_BASE_URL
+    @property
+    def MINIMAX_MODEL(self) -> str:
+        return self.PRIMARY_MODEL or self.VISION_MODEL
 
     # 内部服务通信（由 main.tf locals 管理）
     ADMIN_API_BASE_URL: str
@@ -54,39 +64,19 @@ class Settings(BaseSettings):
 
     # ===== 功能开关与模型参数（有合理默认值，无需外部注入）=====
 
-    INTENT_MODEL: str = "qwen3.6-flash"                  # 意图分类模型（轻量快速，关闭思考模式）
-    DASHSCOPE_VISION_MODEL: str = "qwen3.7-plus"       # 图片识别模型（轻量推理 + 视觉理解）
-    DASHSCOPE_VISION_ENABLED: bool = True
+    INTENT_MODEL: str = "MiniMax-M2.7-highspeed"        # 意图分类/摘要（快速模型）
+    MINIMAX_VISION_MODEL: str = "MiniMax-M3"            # 图片识别（M3 原生多模态）
+    MINIMAX_VISION_ENABLED: bool = True
 
-    # LLM 模型路由常量 — 所有模型名统一在 config.py 管理，禁止在其他文件中硬编码
-    # 当百炼下线/更名模型时，只需修改此处
-    LLM_MODEL_MAX: str = "qwen3.7-max"       # 复杂推理 / 多工具协同
-    LLM_MODEL_PLUS: str = "qwen3.6-plus"     # 默认平衡档
-    LLM_MODEL_LITE: str = "qwen3.6-flash"   # 轻量快速（简单意图路由、分类等低延迟场景）
-    LLM_MODEL_FLASH: str = "qwen3.6-flash"   # 极简任务（最低延迟场景）
-
-    SEMANTIC_CACHE_ENABLED: bool = False  # Embedding API key 未就绪，暂时关闭
-    SEMANTIC_CACHE_SIMILARITY_THRESHOLD: float = 0.95
-    SEMANTIC_CACHE_MAX_ENTRIES: int = 1000
-
-    RERANK_ENABLED: bool = True
-    RERANK_MODEL: str = "gte-rerank"
-    RERANK_TOP_K: int = 3
-    RETRIEVAL_TOP_K: int = 10
+    # LLM 模型路由常量 — 所有模型名统一在 config.py 管理
+    LLM_MODEL_PRIMARY: str = "MiniMax-M3"               # 复杂推理 / 多工具 / 视觉 / 默认
+    LLM_MODEL_FAST: str = "MiniMax-M2.7-highspeed"      # 轻量快速（意图路由、分类、摘要）
 
     LLM_ENABLE_MODEL_ROUTING: bool = True
     LLM_COST_TRACKING_ENABLED: bool = True
     LLM_MONTHLY_BUDGET_CNY: float = 500.0
     LLM_RETRY_MAX_ATTEMPTS: int = 2
     LLM_RETRY_BASE_DELAY_S: float = 0.5
-
-    # 图片 URL 重写：CDN 域名 → OSS 公网域名
-    # DashScope Vision API 需要公网可访问的 HTTPS URL，
-    # 但 admin-api 返回的图片 URL 使用 CDN 域名（如 https://admin.migaozn.com），
-    # 该域名可能未正确配置 DNS/CDN，导致 DashScope 无法访问。
-    # 配置后将自动替换：IMAGE_URL_REWRITE_FROM → IMAGE_URL_REWRITE_TO
-    IMAGE_URL_REWRITE_FROM: str = ""  # e.g., "https://admin.migaozn.com"
-    IMAGE_URL_REWRITE_TO: str = ""    # e.g., "https://youke-admin-dev.oss-cn-hangzhou.aliyuncs.com"
 
     model_config = {"env_file": ".env", "case_sensitive": True, "extra": "ignore"}
 

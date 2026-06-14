@@ -8,16 +8,11 @@ pydantic-settings==2.7.1
 httpx==0.28.1
 aiohttp==3.11.11
 
-# 阿里云百炼 LLM
-dashscope==1.20.14
-
-# RAG 相关
+# RAG 相关（已移除 dashscope/dashvector 依赖）
 langgraph==0.2.60
 langchain==0.3.14
 langchain-openai==0.3.6
 langchain-community==0.3.14
-langchain-text-splitters==0.3.4
-dashvector==1.0.17
 
 # 文档解析
 python-docx==1.1.2

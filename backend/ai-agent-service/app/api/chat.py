@@ -132,12 +132,22 @@ def _format_datetime(dt: Any) -> str:
 
 
 def _convert_history_to_agent_format(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """将数据库消息格式转换为 Agent 所需的格式（支持多模态）"""
+    """将数据库消息格式转换为 Agent 所需的格式（支持多模态）
+
+    对 assistant 消息剥离 <think> 块，防止：
+    1. 旧数据中的思考内容挤占上下文预算
+    2. 上轮推理内容干扰当前轮次的工具调用决策
+    """
+    import re
     history = []
     for msg in messages:
+        role = msg.get("role", "user")
+        content = msg.get("content", "")
+        if role == "assistant":
+            content = re.sub(r"<think>[\s\S]*?</think>", "", content).strip()
         entry: Dict[str, Any] = {
-            "role": msg.get("role", "user"),
-            "content": msg.get("content", ""),
+            "role": role,
+            "content": content,
         }
         # 携带多模态信息
         content_type = msg.get("content_type", "text")
@@ -167,22 +177,7 @@ def _validate_image_url(url: str) -> bool:
 
 
 def _rewrite_image_url(url: str) -> str:
-    """将图片 URL 从 CDN 域名重写为 OSS 公网域名
-
-    DashScope Vision API 需要公网可访问的 HTTPS URL。
-    admin-api 返回的图片 URL 使用 CDN 域名（如 https://admin.migaozn.com），
-    该域名可能未正确配置 DNS/CDN，导致 DashScope 无法访问。
-
-    通过配置 IMAGE_URL_REWRITE_FROM → IMAGE_URL_REWRITE_TO 实现 URL 替换。
-    """
-    if not settings.IMAGE_URL_REWRITE_FROM or not settings.IMAGE_URL_REWRITE_TO:
-        return url
-    if url.startswith(settings.IMAGE_URL_REWRITE_FROM):
-        return url.replace(
-            settings.IMAGE_URL_REWRITE_FROM,
-            settings.IMAGE_URL_REWRITE_TO,
-            1,
-        )
+    """直接返回原始 URL（RAG/URL 重写已移除）"""
     return url
 
 
@@ -381,8 +376,11 @@ async def _agent_stream_to_sse(
             )
             yield SSEEvent.error(f"响应超时({stream_timeout}s)，请重试")
         
-        # 保存 assistant 消息
+        # 保存 assistant 消息（剥离 <think> 块后再存，避免思考内容
+        # 膨胀 token 计数、挤占上下文预算、干扰后续轮次推理）
+        import re
         assistant_content = "".join(full_response)
+        assistant_content = re.sub(r"<think>[\s\S]*?</think>", "", assistant_content).strip()
         if not assistant_content:
             # LLM 未生成文本回复，进行容错降级
             if tool_calls_info:
@@ -648,7 +646,7 @@ async def send_message(
                 user_message_content = request.message
             
             # 4. 获取对话历史（按 token 预算动态加载）
-            MAX_CONTEXT_TOKENS = 8000  # 留给 system prompt + 回复余量
+            MAX_CONTEXT_TOKENS = 65536  # 64K 输入预算，MiniMax-M3 1M 上下文有充足余量
             history_messages, needs_compression = await session_memory.get_history_by_tokens(
                 session_id, max_tokens=MAX_CONTEXT_TOKENS
             )

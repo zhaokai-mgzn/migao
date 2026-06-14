@@ -11,7 +11,7 @@ AI 智能客服系统 - 双 Agent 架构
 - 对话历史管理（Memory）
 - 多租户上下文
 
-使用阿里云百炼（DashScope）的 OpenAI 兼容接口作为 LLM 后端
+使用 MiniMax M3（OpenAI 兼容接口）作为 LLM 后端
 """
 
 from typing import AsyncGenerator, Optional, List, Dict, Any, Union
@@ -306,7 +306,7 @@ class BaseAgent:
                             # 检测 AIMessage 中的 tool_calls
                             if isinstance(msg, AIMessage) and msg.tool_calls:
                                 # 先流式输出 LLM 在 tool_calls 之前的文本内容（如有）
-                                # 修复 text_streamed=False 问题：Qwen 模型可在同一消息中先输出文本再调用工具
+                                # 修复 text_streamed=False 问题：LLM 可在同一消息中先输出文本再调用工具
                                 text_before_tools = _extract_msg_content(msg)
                                 if text_before_tools and not text_streamed:
                                     logger.info(

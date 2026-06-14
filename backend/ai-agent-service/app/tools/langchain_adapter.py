@@ -20,7 +20,10 @@ def _json_string_parser(value: Any) -> Any:
         try:
             return json.loads(value)
         except (json.JSONDecodeError, TypeError):
-            pass
+            logger.warning(
+                f"[LangChainAdapter] Failed to parse JSON string arg: "
+                f"value={value[:200]}"
+            )
     return value
 
 
@@ -123,7 +126,10 @@ class LangChainToolAdapter:
                     )
                     normalized[field_name] = parsed
             except (json.JSONDecodeError, TypeError):
-                pass  # 不是有效 JSON，保留原值让 Tool 自行校验
+                logger.debug(
+                    f"[langchain-adapter] Field '{field_name}' for {tool.name}: "
+                    f"not valid JSON, keeping original value for Tool validation"
+                )
 
         return normalized
 

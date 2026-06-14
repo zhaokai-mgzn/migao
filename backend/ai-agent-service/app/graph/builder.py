@@ -5,8 +5,7 @@ LangGraph StateGraph 构建器（配置驱动版）
 不再使用 if/else 硬编码 Agent 类型。
 
 图结构（所有 Agent 类型共用）：
-  START → cache_check →(hit)→ suggest_node → END
-                       →(miss)→ intent_router →(条件边)→ Skill 节点 → cache_store → suggest_node → END
+  START → intent_router →(条件边)→ Skill 节点 → suggest_node → END
 
 新增 Agent 类型只需：
 1. 在 app/agents/agents/ 中添加 AgentConfig 声明
@@ -33,12 +32,9 @@ def build_agent_graph(agent_type: str = "xiaobu"):
         CompiledGraph: 编译后的 LangGraph 图，可直接 ainvoke / astream
     """
     from app.graph.nodes import (
-        cache_check_node,
         intent_router_node,
         direct_reply_node,
-        cache_store_node,
         suggestions_node,
-        check_cache_hit,
         route_by_intent,
     )
 
@@ -58,10 +54,8 @@ def build_agent_graph(agent_type: str = "xiaobu"):
     graph = StateGraph(AgentState)
 
     # ── 1. 注册共用辅助节点 ──
-    graph.add_node("cache_check", cache_check_node)
     graph.add_node("intent_router", intent_router_node)
     graph.add_node("direct_reply", direct_reply_node)
-    graph.add_node("cache_store", cache_store_node)
     graph.add_node("suggest_node", suggestions_node)
 
     # ── 2. 从配置动态注册 Skill 节点 ──
@@ -100,18 +94,8 @@ def build_agent_graph(agent_type: str = "xiaobu"):
 
     # ── 3. 定义边 ──
 
-    # 入口 → 语义缓存检查
-    graph.add_edge(START, "cache_check")
-
-    # 缓存检查后的条件路由
-    graph.add_conditional_edges(
-        "cache_check",
-        check_cache_hit,
-        {
-            "hit": "suggest_node",   # 缓存命中，直接生成建议后结束
-            "miss": "intent_router",  # 未命中，进入意图路由
-        },
-    )
+    # 入口 → 意图路由
+    graph.add_edge(START, "intent_router")
 
     # 意图路由后的条件边 → 对应 Skill 节点
     graph.add_conditional_edges(
@@ -120,12 +104,10 @@ def build_agent_graph(agent_type: str = "xiaobu"):
         skill_route_map,
     )
 
-    # 所有 Skill 节点 → 缓存写入
+    # 所有 Skill 节点 → 建议生成 → 结束
     for skill_node_name in skill_node_names:
-        graph.add_edge(skill_node_name, "cache_store")
+        graph.add_edge(skill_node_name, "suggest_node")
 
-    # 缓存写入 → 建议生成 → 结束
-    graph.add_edge("cache_store", "suggest_node")
     graph.add_edge("suggest_node", END)
 
     return graph.compile()

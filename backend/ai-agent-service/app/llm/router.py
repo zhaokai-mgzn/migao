@@ -4,7 +4,7 @@ LLM 模型路由
 根据任务复杂度（意图、工具数、文本长度）选择合适的模型，平衡成本与效果。
 
 启用条件：settings.LLM_ENABLE_MODEL_ROUTING=True
-默认关闭：在关闭时直接返回 settings.DASHSCOPE_MODEL，保持原有行为。
+默认关闭：在关闭时直接返回 settings.MINIMAX_MODEL，保持原有行为。
 """
 
 from __future__ import annotations
@@ -15,11 +15,9 @@ from app.config import settings
 
 
 # ---- 模型路由常量已收敛到 settings（app/config.py），禁止在此硬编码 ----
-#     settings.LLM_MODEL_MAX   — 复杂推理 / 多工具协同
-#     settings.LLM_MODEL_PLUS  — 默认平衡档
-#     settings.LLM_MODEL_LITE — 轻量快速
-#     settings.LLM_MODEL_FLASH — 极简任务
-#     settings.DASHSCOPE_VISION_MODEL — 视觉模型
+#     settings.LLM_MODEL_PRIMARY — MiniMax-M3 复杂推理 / 多工具协同 / 默认
+#     settings.LLM_MODEL_FAST    — MiniMax-M2.7-highspeed 轻量快速
+#     settings.MINIMAX_VISION_MODEL — 视觉模型
 
 # ---- 路由判定阈值 ----
 _SIMPLE_INTENTS = {"greeting", "farewell", "capabilities"}
@@ -60,10 +58,10 @@ def select_model(
     判定优先级：
         1. LLM_ENABLE_MODEL_ROUTING=False → 默认模型（关闭路由）
         2. force_model 显式覆盖
-        3. has_vision=True 且启用视觉 → DASHSCOPE_VISION_MODEL
-        4. 简单意图（greeting/farewell/capabilities）→ lite
-        5. 工具数 >= 3 或文本长度 > 8000 → max
-        6. 其他 → plus
+        3. has_vision=True 且启用视觉 → MINIMAX_VISION_MODEL
+        4. 简单意图（greeting/farewell/capabilities）→ fast
+        5. 工具数 >= 3 或文本长度 > 8000 → primary
+        6. 其他 → primary
 
     Args:
         intent: 意图名（与 IntentType 字符串保持一致）
@@ -73,27 +71,27 @@ def select_model(
         has_vision: 是否包含图片内容，需要路由到视觉模型
 
     Returns:
-        模型名（百炼可识别的 model 字段）
+        模型名（MiniMax 可识别的 model 字段）
     """
     # 1. 路由开关关闭时直接走默认模型
     if not settings.LLM_ENABLE_MODEL_ROUTING:
-        return settings.DASHSCOPE_MODEL
+        return settings.MINIMAX_MODEL
 
     # 2. 显式 force_model 优先
     if force_model:
         return force_model
 
     # 3. 多模态视觉请求优先路由到视觉模型
-    if has_vision and settings.DASHSCOPE_VISION_ENABLED:
-        return settings.DASHSCOPE_VISION_MODEL
+    if has_vision and settings.MINIMAX_VISION_ENABLED:
+        return settings.MINIMAX_VISION_MODEL
 
-    # 4. 简单意图 → lite
+    # 4. 简单意图 → fast
     if intent and intent.lower() in _SIMPLE_INTENTS:
-        return settings.LLM_MODEL_LITE
+        return settings.LLM_MODEL_FAST
 
-    # 5. 复杂任务 → max
+    # 5. 复杂任务 → primary
     if tool_count >= _TOOL_COUNT_MAX_THRESHOLD or text_length > _TEXT_LENGTH_MAX_THRESHOLD:
-        return settings.LLM_MODEL_MAX
+        return settings.LLM_MODEL_PRIMARY
 
-    # 6. 默认平衡档
-    return settings.LLM_MODEL_PLUS
+    # 6. 默认
+    return settings.LLM_MODEL_PRIMARY

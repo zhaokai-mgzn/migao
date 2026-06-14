@@ -2,15 +2,14 @@
 辅助节点函数
 
 包含 StateGraph 中除 Skill 节点以外的辅助节点：
-- cache_check_node: 语义缓存检查
 - intent_router_node: 意图路由
 - direct_reply_node: 直接回复（greeting 等）
-- cache_store_node: 缓存写入
 - suggestions_node: 后续问题建议
-
-以及条件边路由函数：
+- cache_check_node: 语义缓存检查
+- cache_store_node: 缓存写入
 - check_cache_hit: 缓存命中判断
 - route_by_intent: 意图→Skill 路由
+- _get_last_human_text: 提取最后一条用户消息文本
 """
 
 import asyncio
@@ -96,45 +95,6 @@ def _get_agent_intents(agent_type: str) -> list[str]:
 
 
 # ────────────────────── 辅助节点 ──────────────────────
-
-
-async def cache_check_node(state: AgentState) -> dict:
-    """检查语义缓存是否命中"""
-    from app.cache.semantic_cache import semantic_cache
-    from app.config import settings
-
-    if not settings.SEMANTIC_CACHE_ENABLED:
-        return {"cached_answer": None}
-
-    try:
-        # 取最后一条用户消息
-        user_msg_content = ""
-        for msg in reversed(state["messages"]):
-            if isinstance(msg, HumanMessage):
-                user_msg_content = _extract_text_from_content(msg.content)
-                break
-
-        if not user_msg_content:
-            return {"cached_answer": None}
-
-        result = await semantic_cache.lookup(
-            tenant_id=str(state["tenant_id"]),
-            query=user_msg_content,
-        )
-        if result:
-            logger.info(
-                f"[cache_check] HIT | tenant={state['tenant_id']} "
-                f"confidence={result.confidence:.4f}"
-            )
-            return {
-                "cached_answer": result.answer,
-                "final_answer": result.answer,
-                "skill_used": "cache",
-            }
-    except Exception as e:
-        logger.warning(f"Cache check failed: {e}")
-
-    return {"cached_answer": None}
 
 
 async def intent_router_node(state: AgentState) -> dict:
@@ -256,37 +216,6 @@ async def direct_reply_node(state: AgentState) -> dict:
     }
 
 
-async def cache_store_node(state: AgentState) -> dict:
-    """将回答写入语义缓存"""
-    from app.cache.semantic_cache import semantic_cache
-    from app.config import settings
-
-    if not settings.SEMANTIC_CACHE_ENABLED:
-        return {}
-
-    try:
-        intent_type = (state.get("intent_result") or {}).get("intent", "general")
-
-        # 找到用户的原始消息（最后一条 HumanMessage）
-        user_msg = None
-        for msg in reversed(state["messages"]):
-            if isinstance(msg, HumanMessage):
-                user_msg = _extract_text_from_content(msg.content)
-                break
-
-        if user_msg and state.get("final_answer"):
-            await semantic_cache.store(
-                tenant_id=str(state["tenant_id"]),
-                query=user_msg,
-                answer=state["final_answer"],
-                intent_type=intent_type,
-            )
-    except Exception as e:
-        logger.warning(f"Cache store failed: {e}")
-
-    return {}
-
-
 async def suggestions_node(state: AgentState) -> dict:
     """生成后续问题建议"""
     # 优化: P&E 等待用户输入时跳过建议（ask/confirm 步骤已有引导文案）
@@ -328,13 +257,6 @@ async def suggestions_node(state: AgentState) -> dict:
 
 
 # ────────────────────── 条件边路由函数（同步）──────────────────────
-
-
-def check_cache_hit(state: AgentState) -> str:
-    """缓存检查后的条件路由"""
-    if state.get("cached_answer"):
-        return "hit"
-    return "miss"
 
 
 # 特殊意图 → direct_reply（不属于任何 skill，直接回复）

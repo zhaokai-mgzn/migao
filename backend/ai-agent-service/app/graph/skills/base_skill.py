@@ -39,8 +39,8 @@ from app.core import (
 from app.llm import LLMFactory, select_model, has_images, call_with_retry, cost_tracker
 
 
-# LLM 熔断器名（百炼调用路径共用）
-LLM_BREAKER = "llm_dashscope"
+# LLM 熔断器名
+LLM_BREAKER = "llm_minimax"
 
 
 # 全局 ConversationTracker 实例（进程内共享）
@@ -56,7 +56,7 @@ def get_tracker() -> ConversationTracker:
 
 
 def _strip_think_tags(text: str) -> str:
-    """移除 Qwen3 思考模式的 <think>...</think> 标签及其内容"""
+    """移除 <think>...</think> 标签及其内容"""
     if not text:
         return text
     # 移除 <think>...</think> 块（含跨行）
@@ -67,7 +67,7 @@ def _strip_think_tags(text: str) -> str:
 def _extract_content(response: AIMessage) -> str:
     """从 AIMessage 中提取有效文本内容
 
-    兼容 Qwen3 思考模式：
+    兼容 MiniMax 思考模式：
     1. 优先取 response.content 并移除 <think> 标签
     2. 若 stripped 结果仍含 <think> 标签（仅 thinking 内容），提取内部文本
     3. 再 fallback 到 additional_kwargs 中的 reasoning_content
@@ -98,7 +98,7 @@ def _extract_content(response: AIMessage) -> str:
             return stripped
         return stripped
 
-    # Fallback: 某些 Qwen3 模型将回复放在 additional_kwargs
+    # Fallback: 某些模型将回复放在 additional_kwargs
     extra = getattr(response, "additional_kwargs", {}) or {}
     if extra.get("reasoning_content"):
         logger.warning(
@@ -122,14 +122,23 @@ def _extract_content(response: AIMessage) -> str:
 # - product_inquiry 不需要：直接回答产品信息，不调工具
 # - order_query/logistics_track：仅首轮需要思考（决定调什么工具），后续轮关闭
 _THINKING_INTENTS = frozenset({
+    # 售后/投诉 — 复杂决策
     "after_sales",
     "after_sales_create",
     "complaint",
+    # 管理操作 — 多步流程
     "category_manage",
     "processing_manage",
     "customer_manage",
     "employee_manage",
     "staff_manage",
+    # 创建/写操作 — 需精确参数和ID解析 (MiniMax-M3 关闭thinking会截断UUID)
+    "product_inquiry",
+    "order_create",
+    "order_query",
+    "dashboard",
+    "settings_manage",
+    "role_manage",
 })
 
 
@@ -142,7 +151,7 @@ def get_skill_llm(
 ) -> ChatOpenAI:
     """创建 Skill 专用 LLM 实例（统一走 LLMFactory + Router，支持多模态自动检测）
 
-    - LLM_ENABLE_MODEL_ROUTING=False（默认）：使用 settings.DASHSCOPE_MODEL，行为与原一致
+    - LLM_ENABLE_MODEL_ROUTING=False（默认）：使用 settings.MINIMAX_MODEL，行为与原一致
     - LLM_ENABLE_MODEL_ROUTING=True：根据 intent / tool_count / text_length 动态选型
     - 若 messages 中含图片且 启用视觉路由，则返回视觉 LLM（不启用 thinking 模式）
     - 深度思考（enable_thinking）仅对复杂意图开启，简单意图（问候/FAQ/闲聊）关闭以提升响应速度
@@ -162,8 +171,8 @@ def get_skill_llm(
 
     # 根据模型类型选择工厂方法
     # 注意：不能用 "vl" in model 判断，非视觉专用模型也支持视觉理解
-    # 正确做法：由 vision_detected（消息含图片）+ DASHSCOPE_VISION_ENABLED（功能开关）决定
-    if vision_detected and settings.DASHSCOPE_VISION_ENABLED:
+    # 正确做法：由 vision_detected（消息含图片）+ MINIMAX_VISION_ENABLED（功能开关）决定
+    if vision_detected and settings.MINIMAX_VISION_ENABLED:
         return LLMFactory.create_vision_llm(model_override=model)
 
     # 复杂意图开启深度思考，简单意图关闭（首次响应从 7-15s 降到 1-3s）
@@ -275,7 +284,7 @@ def _sanitize_messages_for_text_path(messages):
 
     has_images() 只查最后一条 HumanMessage（Issue #204），但当用户先发图片消息、
     再发纯文本跟进时，历史中仍存在 image_url。纯文本模型不支持多模态 content 格式
-    content list 中的 image_url → DashScope BadRequestError。
+    content list 中的 image_url → API BadRequestError。
 
     处理策略：
     - 混合内容 (text + image_url): 保留 text，丢弃 image_url
@@ -415,6 +424,12 @@ async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -
     from app.tools.langchain_adapter import LangChainToolAdapter
 
     # 1. 规范化参数：LLM 可能把 array/object 序列化为 JSON 字符串
+    # 兜底：MiniMax 可能把所有参数包在 data 键下
+    if "data" in tool_args and isinstance(tool_args.get("data"), dict):
+        nested = tool_args["data"]
+        if any(k not in tool_args for k in nested):
+            logger.info(f"[tool-exec] Flattened nested data for {tool.name}: keys={list(nested.keys())[:8]}")
+            tool_args = {**nested, **{k: v for k, v in tool_args.items() if k != "data"}}
     tool_args = LangChainToolAdapter._normalize_args(tool, tool_args)
 
     session_id = state.get("session_id", "")
@@ -564,16 +579,21 @@ async def execute_skill(
             + system_prompt
         )
 
-    # 注入跨轮记忆：已收集字段（避免 LLM 从历史重新提取遗漏）
+    # 注入跨轮记忆：已收集字段追加到最后一条用户消息（LLM 不可能忽略）
     collected = {}
     if session_id:
         from app.memory.session_memory import SessionMemory
         collected = await SessionMemory().get_collected_fields(session_id)
-    if collected:
-        fields_text = "\n".join(f"  - {k}: {json.dumps(v, ensure_ascii=False)[:200]}" for k, v in collected.items())
-        system_prompt += f"\n\n## 已收集字段（从对话历史提取，不要重复询问，直接使用）\n{fields_text}"
 
-    full_messages: List[Any] = [SystemMessage(content=system_prompt)] + list(messages)
+    full_messages: List[Any] = [SystemMessage(content=system_prompt)]
+    msg_list = list(messages)
+    if collected and msg_list:
+        fields_hint = "；".join(f"{k}={v}" for k, v in collected.items())
+        last_msg = msg_list[-1]
+        if isinstance(last_msg, HumanMessage):
+            new_content = f"【已收集: {fields_hint}，收到确认后直接执行创建，禁止重复询问】\n{last_msg.content or ''}"
+            msg_list[-1] = HumanMessage(content=new_content)
+    full_messages.extend(msg_list)
 
     # 5. Tool Calling 循环
     tracker = get_tracker()
@@ -776,7 +796,7 @@ async def execute_skill(
                         session_id=session_id,
                     )
                 except CircuitBreakerOpenError:
-                    # LLM 熔断器处于 OPEN：返回友好提示，不再冲击百炼
+                    # LLM 熔断器处于 OPEN：返回友好提示，不再冲击 LLM
                     logger.error(
                         f"[{skill_name}][SLS] LLM circuit_breaker_open | "
                         f"tenant={state['tenant_id']} session={session_id}"
@@ -950,7 +970,7 @@ async def execute_skill(
             except Exception:
                 pass
         else:
-            # LLM 从本轮对话中提取新增字段（轻量, enable_thinking=False）
+            # LLM 从本轮对话中提取新增字段（轻量任务，显式关思考）
             try:
                 extract_prompt = (
                     f"从以下对话中提取已讨论的商品/订单/工单字段，返回纯JSON:\n"
@@ -961,7 +981,7 @@ async def execute_skill(
                 raw = await LLMFactory.invoke_text_safe([
                     SystemMessage(content="你是字段提取器。只输出JSON。"),
                     HumanMessage(content=extract_prompt),
-                ], enable_thinking=False)
+                ], force_no_think=True)
                 start = raw.find("{"); end = raw.rfind("}")
                 if start >= 0 and end > start:
                     new_fields = json.loads(raw[start:end + 1])

@@ -263,9 +263,14 @@ locals {
     "DATABASE_URL" = "postgresql+asyncpg://app_user:${var.db_password}@${alicloud_db_instance.postgres.connection_string}:5432/ai_customer_service"
     "REDIS_URL"    = "redis://:${var.redis_password}@${local.redis_connection_domain}:${local.redis_port}/0"
     # DashScope LLM
-    "DASHSCOPE_API_KEY"         = var.dashscope_api_key
-    "DASHSCOPE_BASE_URL"        = "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
-    "DASHSCOPE_MODEL"           = "qwen3.7-max"
+    "PRIMARY_API_KEY"    = var.deepseek_api_key
+    "PRIMARY_BASE_URL"   = "https://api.deepseek.com/v1"
+    "PRIMARY_MODEL"      = "deepseek-v4-pro"
+    "PRIMARY_FAST_MODEL" = "deepseek-v4-flash"
+    # 视觉 MiniMax-M3
+    "VISION_API_KEY"  = var.minimax_api_key
+    "VISION_BASE_URL" = "https://api.minimaxi.com/v1"
+    "VISION_MODEL"    = "MiniMax-M3"
     "DASHSCOPE_EMBEDDING_MODEL" = "text-embedding-v3"
     # DashVector
     "DASHVECTOR_API_KEY"    = var.dashvector_api_key
