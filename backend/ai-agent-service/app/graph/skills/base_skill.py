@@ -121,25 +121,9 @@ def _extract_content(response: AIMessage) -> str:
 # - 需要规划多步骤操作（创建工单、管理人员）
 # - product_inquiry 不需要：直接回答产品信息，不调工具
 # - order_query/logistics_track：仅首轮需要思考（决定调什么工具），后续轮关闭
-_THINKING_INTENTS = frozenset({
-    # 售后/投诉 — 复杂决策
-    "after_sales",
-    "after_sales_create",
-    "complaint",
-    # 管理操作 — 多步流程
-    "category_manage",
-    "processing_manage",
-    "customer_manage",
-    "employee_manage",
-    "staff_manage",
-    # 创建/写操作 — 需精确参数和ID解析 (MiniMax-M3 关闭thinking会截断UUID)
-    "product_inquiry",
-    "order_create",
-    "order_query",
-    "dashboard",
-    "settings_manage",
-    "role_manage",
-})
+# DeepSeek thinking 模式与 LangChain 工具调用存在兼容问题，默认关闭。
+# 如需为特定意图开启，在此添加意图名称。
+_THINKING_INTENTS = frozenset()
 
 
 def get_skill_llm(
