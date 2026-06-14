@@ -3,26 +3,17 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { employeeApi, roleApi } from '@/lib/api'
+import { employeeApi } from '@/lib/api'
+import request from '@/lib/request'
 import { Button, Input, Select, Modal, Table, Pagination, Badge } from '@/components/ui'
 import type { TableColumn } from '@/components/ui'
-import type { Employee, EmployeeStatus, Role } from '@/types'
-import { EmployeeStatusLabels } from '@/types'
+import type { Employee, EmployeeStatus } from '@/types'
+import { TreeCheckbox, type TreeNode } from '@/components/ui/TreeCheckbox'
 import dayjs from 'dayjs'
 
 // 预定义岗位列表（可下拉选择，也支持手输）
 const PRESET_POSITIONS = ['管理员', '客服', '运营', '销售', '财务']
 
-// 角色颜色映射（按 code 区分颜色）
-const ROLE_COLOR_MAP: Record<string, 'info' | 'success' | 'warning' | 'error'> = {
-  admin: 'error',
-  agent: 'info',
-  operator: 'warning',
-}
-
-function getRoleBadgeVariant(code: string): 'info' | 'success' | 'warning' | 'error' {
-  return ROLE_COLOR_MAP[code] || 'info'
-}
 
 export default function EmployeesPage() {
   // 列表状态
@@ -38,8 +29,8 @@ export default function EmployeesPage() {
   const [searchStatus, setSearchStatus] = useState<EmployeeStatus | ''>('')
   const [searchRole, setSearchRole] = useState<string>('')
 
-  // 角色选项
-  const [allRoles, setAllRoles] = useState<Role[]>([])
+  // 菜单权限树
+  const [menuTree, setMenuTree] = useState<TreeNode[]>([])
 
   // 新增/编辑对话框
   const [formOpen, setFormOpen] = useState(false)
@@ -52,7 +43,7 @@ export default function EmployeesPage() {
     phone: '',
     email: '',
     position: '',
-    roleIds: [] as number[],
+    permissions: [] as string[],
   })
 
   // 删除确认
@@ -62,10 +53,11 @@ export default function EmployeesPage() {
   // 内联状态切换 loading（按 ID 防止双击）
   const [togglingId, setTogglingId] = useState<number | null>(null)
 
-  // 加载角色列表
+  // 加载菜单权限树
   useEffect(() => {
-    roleApi.getAllRoles().then((res) => {
-      setAllRoles(res.data.data || [])
+    request.get('/api/admin/menus').then((res: any) => {
+      const data = res.data?.data || res.data || []
+      setMenuTree(Array.isArray(data) ? data : [])
     }).catch(() => {})
   }, [])
 
@@ -118,7 +110,7 @@ export default function EmployeesPage() {
   // 打开新增对话框
   const handleAdd = () => {
     setEditingEmployee(null)
-    setFormData({ username: '', password: '', name: '', phone: '', email: '', position: '', roleIds: [] })
+    setFormData({ username: '', password: '', name: '', phone: '', email: '', position: '', permissions: [] })
     setFormOpen(true)
   }
 
@@ -132,7 +124,7 @@ export default function EmployeesPage() {
       phone: employee.phone || '',
       email: employee.email || '',
       position: employee.position || '',
-      roleIds: employee.roles?.map(r => r.id) || [],
+      permissions: (employee as any).permissions || [],
     })
     setFormOpen(true)
   }
@@ -152,8 +144,8 @@ export default function EmployeesPage() {
           email: formData.email || undefined,
           password: formData.password || undefined,
           position: formData.position || undefined,
-          roleIds: formData.roleIds,
-        })
+          permissions: formData.permissions,
+        } as any)
         toast.success('编辑成功')
       } else {
         await employeeApi.createEmployee({
@@ -163,8 +155,8 @@ export default function EmployeesPage() {
           phone: formData.phone || undefined,
           email: formData.email || undefined,
           position: formData.position || undefined,
-          roleIds: formData.roleIds,
-        })
+          permissions: formData.permissions,
+        } as any)
         toast.success('创建成功')
       }
       setFormOpen(false)
@@ -209,16 +201,6 @@ export default function EmployeesPage() {
     }
   }
 
-  // 角色多选切换
-  const toggleRole = (roleId: number) => {
-    setFormData(prev => ({
-      ...prev,
-      roleIds: prev.roleIds.includes(roleId)
-        ? prev.roleIds.filter(id => id !== roleId)
-        : [...prev.roleIds, roleId],
-    }))
-  }
-
   // 表格列定义
   const columns: TableColumn<Employee>[] = [
     {
@@ -252,19 +234,25 @@ export default function EmployeesPage() {
       ),
     },
     {
-      key: 'roles',
+      key: 'permissions',
       title: '权限',
       width: '200px',
-      render: (record) => (
-        <div className="flex flex-wrap gap-1">
-          {record.roles?.length > 0
-            ? record.roles.map(r => (
-              <Badge key={r.id} variant={getRoleBadgeVariant(r.code)}>{r.name}</Badge>
-            ))
-            : <span className="text-gray-400 text-sm">未分配</span>
-          }
-        </div>
-      ),
+      render: (record) => {
+        const codes: string[] = (record as any).permissions || []
+        if (codes.length === 0) return <span className="text-gray-400 text-sm">未分配</span>
+        // 从 menuTree 中解析 code → label
+        const labelMap: Record<string, string> = {}
+        menuTree.forEach(p => {
+          p.children?.forEach(c => { labelMap[c.code] = c.label })
+        })
+        const labels = codes.map(c => labelMap[c] || c).slice(0, 3)
+        return (
+          <div className="flex flex-wrap gap-1">
+            {labels.map((l, i) => <Badge key={i} variant="info">{l}</Badge>)}
+            {codes.length > 3 && <span className="text-xs text-gray-400">+{codes.length - 3}</span>}
+          </div>
+        )
+      },
     },
     {
       key: 'status',
@@ -365,7 +353,7 @@ export default function EmployeesPage() {
               label="岗位"
               options={[
                 { value: '', label: '全部岗位' },
-                ...allRoles.map(r => ({ value: r.code, label: r.name })),
+                ...PRESET_POSITIONS.map(p => ({ value: p, label: p })),
               ]}
               value={roleFilter}
               onChange={(e) => setRoleFilter(e.target.value)}
@@ -464,26 +452,18 @@ export default function EmployeesPage() {
             <p className="text-xs text-gray-400 mt-1">下拉选择或手动输入岗位名称</p>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">账号权限</label>
-            <div className="flex flex-wrap gap-2">
-              {allRoles.length > 0 ? allRoles.map(role => (
-                <button
-                  key={role.id}
-                  type="button"
-                  onClick={() => toggleRole(role.id)}
-                  className={`px-3 py-1.5 rounded-md border text-sm font-medium transition-all ${
-                    formData.roleIds.includes(role.id)
-                      ? 'border-primary-500 bg-primary-50 text-primary-700'
-                      : 'border-gray-200 hover:border-gray-300 text-gray-600'
-                  }`}
-                >
-                  {role.name}
-                </button>
-              )) : (
-                <span className="text-sm text-gray-400">暂无可选权限</span>
-              )}
-            </div>
-            <p className="text-xs text-gray-400 mt-1">勾选该员工的菜单访问权限</p>
+            <label className="block text-sm font-medium text-gray-700 mb-2">账号权限 *</label>
+            {menuTree.length > 0 ? (
+              <div className="max-h-[360px] overflow-y-auto border border-gray-200 rounded-lg p-3">
+                <TreeCheckbox
+                  tree={menuTree}
+                  selected={formData.permissions}
+                  onChange={(codes) => setFormData(prev => ({ ...prev, permissions: codes }))}
+                />
+              </div>
+            ) : (
+              <span className="text-sm text-gray-400">加载菜单权限中...</span>
+            )}
           </div>
         </div>
       </Modal>
