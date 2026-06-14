@@ -6,6 +6,7 @@ import request from '@/lib/request'
 import { dashboardApi } from '@/lib/api'
 import { cn, formatFullDateTime } from '@/lib/utils'
 import type { DashboardStats, OrderTrendPoint, Order, ProductRanking } from '@/types'
+import { normalizeOrderStatus, OrderStatusLabels } from '@/types'
 
 // ═══════════════════════════════════════════════════════
 // 格式化
@@ -283,7 +284,7 @@ export default function DashboardPage() {
                   <td className="py-2"><a href={`/orders/${o.id}`} className="text-blue-600 font-mono text-[11px] hover:underline">{o.orderNo?.slice(0, 16)}</a></td>
                   <td className="py-2 text-gray-700">{o.customerName}</td>
                   <td className="py-2 text-right text-gray-900 font-mono">{fmtCurrency(o.totalAmount)}</td>
-                  <td className="py-2 text-right"><span className={cn('inline-block w-2 h-2 rounded-full mr-1', o.status === 'completed' ? 'bg-green-500' : o.status === 'pending_shipment' ? 'bg-blue-500' : o.status === 'pending_payment' ? 'bg-amber-500' : 'bg-gray-400')} />{o.status}</td>
+                  <td className="py-2 text-right"><StatusBadge status={o.status as string} /></td>
                   <td className="py-2 text-right text-gray-400 text-[11px]">{o.createdAt?.slice(5, 16)?.replace('T', ' ')}</td>
                 </tr>
               ))}
@@ -322,5 +323,23 @@ export default function DashboardPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+// ========== 订单状态徽章（中文） ==========
+
+function StatusBadge({ status }: { status: string }) {
+  const s = normalizeOrderStatus(status)
+  const label = OrderStatusLabels[s]
+  const colorClass =
+    s === 'completed' ? 'bg-green-100 text-green-700' :
+    s === 'pending_shipment' || s === 'shipped' ? 'bg-blue-100 text-blue-700' :
+    s === 'pending_payment' ? 'bg-amber-100 text-amber-700' :
+    s === 'closed' ? 'bg-gray-100 text-gray-500' :
+    'bg-gray-100 text-gray-600'
+  return (
+    <span className={cn('inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium', colorClass)}>
+      {label}
+    </span>
   )
 }

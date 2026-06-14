@@ -380,4 +380,35 @@ class ProductServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("状态流转无效");
     }
+
+    // ═══════════════════════════════════════════════════════════
+    // getLowStockByColor 测试（#316 库存告警按颜色维度）
+    // ═══════════════════════════════════════════════════════════
+
+    @Test
+    @DisplayName("低库存查询(颜色维度) - 有结果")
+    void getLowStockByColor_HasResults() {
+        List<LowStockByColorResponse> mockResult = List.of(
+            new LowStockByColorResponse(1L, "prod-001", "遮光窗帘", "8827-2",
+                100L, "红色", "2.8m", 5, new BigDecimal("8.80"))
+        );
+        when(productMapper.findLowStockByColor(100, 50)).thenReturn(mockResult);
+
+        List<LowStockByColorResponse> result = productService.getLowStockByColor(100, 50);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getProductName()).isEqualTo("遮光窗帘");
+        assertThat(result.get(0).getColorName()).isEqualTo("红色");
+        assertThat(result.get(0).getStock()).isEqualTo(5);
+    }
+
+    @Test
+    @DisplayName("低库存查询(颜色维度) - 无低库存 SKU")
+    void getLowStockByColor_Empty() {
+        when(productMapper.findLowStockByColor(100, 50)).thenReturn(Collections.emptyList());
+
+        List<LowStockByColorResponse> result = productService.getLowStockByColor(100, 50);
+
+        assertThat(result).isEmpty();
+    }
 }
