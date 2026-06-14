@@ -18,14 +18,12 @@ from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from app.config import settings
 from app.llm import (
     LLMFactory,
-    MODEL_PLUS,
-    MODEL_MAX,
-    MODEL_LITE,
+    MODEL_PRIMARY,
+    MODEL_FAST,
     MODEL_PRICING,
     has_images,
     select_model,
 )
-from app.llm.factory import DASHSCOPE_BASE_URL
 
 
 # =============================================================================
@@ -33,8 +31,12 @@ from app.llm.factory import DASHSCOPE_BASE_URL
 # =============================================================================
 @pytest.fixture(autouse=True)
 def _patch_api_key(monkeypatch):
-    """ChatOpenAI 构造需要 api_key 非空"""
-    monkeypatch.setattr(settings, "DASHSCOPE_API_KEY", "test-api-key")
+    """ChatOpenAI 构造需要 api_key 非空。
+    PRIMARY_API_KEY 是 plain str 字段可直接 monkeypatch；
+    MINIMAX_API_KEY 是 @property 只读，不 patch。"""
+    monkeypatch.setattr(settings, "PRIMARY_API_KEY", "test-api-key")
+    # 视觉 LLM 走独立 VISION_API_KEY
+    monkeypatch.setattr(settings, "VISION_API_KEY", "test-vision-key")
 
 
 @pytest.fixture
@@ -53,7 +55,7 @@ def routing_off(monkeypatch):
 def vision_enabled(monkeypatch):
     """启用视觉路由"""
     monkeypatch.setattr(settings, "MINIMAX_VISION_ENABLED", True)
-    monkeypatch.setattr(settings, "MINIMAX_VISION_MODEL", "qwen3.6-flash")
+    monkeypatch.setattr(settings, "MINIMAX_VISION_MODEL", "MiniMax-M2.7-highspeed")
 
 
 @pytest.fixture
@@ -82,9 +84,9 @@ class TestVisionRoutingNoModelNameCheck:
     def test_select_model_returns_non_vl_vision_model(self, routing_on, monkeypatch):
         """MINIMAX_VISION_ENABLED=True 时，has_vision=True 可返回非 vl 后缀的视觉模型"""
         monkeypatch.setattr(settings, "MINIMAX_VISION_ENABLED", True)
-        monkeypatch.setattr(settings, "MINIMAX_VISION_MODEL", "qwen3.6-plus")
+        monkeypatch.setattr(settings, "MINIMAX_VISION_MODEL", "MiniMax-M3")
         model = select_model(has_vision=True)
-        assert model == "qwen3.6-plus"
+        assert model == "MiniMax-M3"
 
     def test_base_skill_uses_vision_enabled_not_model_name(self, routing_on, monkeypatch):
         """base_skill 应通过 vision_detected + MINIMAX_VISION_ENABLED 路由，
@@ -93,7 +95,7 @@ class TestVisionRoutingNoModelNameCheck:
         from langchain_core.messages import HumanMessage
 
         monkeypatch.setattr(settings, "MINIMAX_VISION_ENABLED", True)
-        monkeypatch.setattr(settings, "MINIMAX_VISION_MODEL", "qwen3.6-plus")
+        monkeypatch.setattr(settings, "MINIMAX_VISION_MODEL", "MiniMax-M3")
 
         # 构造含图片的消息
         msg = HumanMessage(
@@ -110,15 +112,8 @@ class TestVisionRoutingNoModelNameCheck:
             tool_count=0,
             text_length=100,
         )
-        # 视觉 LLM 显式禁用 thinking
-        extra_body = getattr(llm, "extra_body", None)
-        if extra_body is None:
-            model_kwargs = getattr(llm, "model_kwargs", {}) or {}
-            extra_body = model_kwargs.get("extra_body", {})
-        assert extra_body == {"enable_thinking": False}, (
-            "Vision LLM must explicitly disable thinking"
-        )
-        assert llm.model_name == "qwen3.6-plus"
+        # MiniMax-M3 原生多模态，无需显式关 thinking
+        assert llm.model_name == "MiniMax-M3"
 
 
 # =============================================================================
@@ -216,33 +211,32 @@ class TestCreateVisionLLM:
     """LLMFactory.create_vision_llm 测试"""
 
     def test_create_vision_llm_default(self, monkeypatch):
-        """默认视觉模型（MINIMAX_VISION_MODEL）"""
-        monkeypatch.setattr(settings, "MINIMAX_VISION_MODEL", "qwen3.6-flash")
+        """默认视觉模型（VISION_MODEL）"""
+        monkeypatch.setattr(settings, "VISION_MODEL", "MiniMax-M2.7-highspeed")
+        monkeypatch.setattr(settings, "VISION_API_KEY", "test-vision-key")
+        monkeypatch.setattr(settings, "VISION_BASE_URL", "https://vision.example.com/v1")
         llm = LLMFactory.create_vision_llm()
-        assert llm.model_name == "qwen3.6-flash"
+        assert llm.model_name == "MiniMax-M2.7-highspeed"
         assert llm.temperature == 0.7
         assert llm.streaming is True
-        assert llm.max_tokens == 2048
+        assert llm.max_tokens == 16384
         assert float(llm.request_timeout) == 60.0
-        assert llm.openai_api_base == DASHSCOPE_BASE_URL
+        assert llm.openai_api_base == "https://vision.example.com/v1"
 
     def test_create_vision_llm_override(self, monkeypatch):
         """model_override 显式覆盖默认模型"""
-        monkeypatch.setattr(settings, "MINIMAX_VISION_MODEL", "qwen3.6-flash")
-        llm = LLMFactory.create_vision_llm(model_override="qwen3.6-plus")
-        assert llm.model_name == "qwen3.6-plus"
+        monkeypatch.setattr(settings, "VISION_MODEL", "MiniMax-M2.7-highspeed")
+        llm = LLMFactory.create_vision_llm(model_override="MiniMax-M3")
+        assert llm.model_name == "MiniMax-M3"
 
     def test_create_vision_llm_no_thinking(self, monkeypatch):
-        """视觉 LLM 显式禁用 thinking，防止思考内容泄漏（#204 regression）"""
-        monkeypatch.setattr(settings, "MINIMAX_VISION_MODEL", "qwen3.6-flash")
+        """视觉 LLM 使用独立 VISION_* 配置（MiniMax-M3 原生多模态，无需显式关 thinking）"""
+        monkeypatch.setattr(settings, "VISION_MODEL", "MiniMax-M2.7-highspeed")
+        monkeypatch.setattr(settings, "VISION_API_KEY", "test-key")
+        monkeypatch.setattr(settings, "VISION_BASE_URL", "https://vision.example.com/v1")
         llm = LLMFactory.create_vision_llm()
-        extra_body = getattr(llm, "extra_body", None)
-        if extra_body is None:
-            model_kwargs = getattr(llm, "model_kwargs", {}) or {}
-            extra_body = model_kwargs.get("extra_body", {})
-        assert extra_body == {"enable_thinking": False}, (
-            f"create_vision_llm must disable thinking, got extra_body={extra_body}"
-        )
+        assert llm.model_name == "MiniMax-M2.7-highspeed"
+        assert llm.openai_api_base == "https://vision.example.com/v1"
 
 
 # =============================================================================
@@ -253,32 +247,31 @@ class TestSelectModelWithVision:
 
     def test_select_model_with_vision(self, routing_on, vision_enabled, monkeypatch):
         """has_vision=True 且启用视觉，返回 MINIMAX_VISION_MODEL"""
-        monkeypatch.setattr(settings, "MINIMAX_VISION_MODEL", "qwen3.6-flash")
-        assert select_model(has_vision=True) == "qwen3.6-flash"
+        monkeypatch.setattr(settings, "MINIMAX_VISION_MODEL", "MiniMax-M2.7-highspeed")
+        assert select_model(has_vision=True) == "MiniMax-M2.7-highspeed"
 
-        monkeypatch.setattr(settings, "MINIMAX_VISION_MODEL", "qwen3.6-plus")
-        assert select_model(has_vision=True) == "qwen3.6-plus"
+        monkeypatch.setattr(settings, "MINIMAX_VISION_MODEL", "MiniMax-M3")
+        assert select_model(has_vision=True) == "MiniMax-M3"
 
     def test_select_model_with_vision_overrides_intent(self, routing_on, vision_enabled, monkeypatch):
         """has_vision=True 优先级高于简单意图"""
-        monkeypatch.setattr(settings, "MINIMAX_VISION_MODEL", "qwen3.6-flash")
+        monkeypatch.setattr(settings, "MINIMAX_VISION_MODEL", "MiniMax-M2.7-highspeed")
         # 即便是 greeting 简单意图，含图片也走视觉模型
-        assert select_model(intent="greeting", has_vision=True) == "qwen3.6-flash"
+        assert select_model(intent="greeting", has_vision=True) == "MiniMax-M2.7-highspeed"
 
     def test_select_model_vision_disabled(self, routing_on, vision_disabled):
         """MINIMAX_VISION_ENABLED=False 时即使 has_vision=True 也走正常路由"""
-        # 普通场景 → MODEL_PLUS
-        assert select_model(has_vision=True) == MODEL_PLUS
-        # 简单意图 → 轻量模型
-        assert select_model(intent="greeting", has_vision=True) == MODEL_LITE
-        # 复杂任务 → MODEL_MAX
-        assert select_model(tool_count=5, has_vision=True) == MODEL_MAX
+        # 场景 → 主模型
+        assert select_model(has_vision=True) == MODEL_PRIMARY
+        # 简单意图 → 快速模型
+        assert select_model(intent="greeting", has_vision=True) == MODEL_FAST
+        # 复杂任务 → 主模型
+        assert select_model(tool_count=5, has_vision=True) == MODEL_PRIMARY
 
-    def test_select_model_vision_with_routing_off(self, routing_off, vision_enabled, monkeypatch):
-        """LLM_ENABLE_MODEL_ROUTING=False 时返回默认模型，无视 has_vision"""
-        monkeypatch.setattr(settings, "MINIMAX_MODEL", "qwen3.7-max")
-        monkeypatch.setattr(settings, "MINIMAX_VISION_MODEL", "qwen3.6-flash")
-        assert select_model(has_vision=True) == "qwen3.7-max"
+    def test_select_model_vision_with_routing_off(self, routing_off, vision_enabled):
+        """LLM_ENABLE_MODEL_ROUTING=False 时返回 MINIMAX_MODEL（即 PRIMARY_MODEL），无视 has_vision"""
+        default = settings.MINIMAX_MODEL
+        assert select_model(has_vision=True) == default
 
     def test_select_model_vision_default_is_flash(self):
         """视觉模型默认配置与 settings 一致"""
@@ -289,64 +282,53 @@ class TestSelectModelWithVision:
 # 4. 成本追踪 - 视觉模型定价
 # =============================================================================
 class TestVisionModelPricing:
-    """视觉模型定价测试"""
+    """付费模型定价测试"""
 
-    def test_vision_model_pricing(self):
-        """轻量/平衡视觉模型定价存在且正确"""
-        for m in ("qwen3.6-flash", "qwen3.6-plus"):
+    def test_model_pricing_exists(self):
+        """MiniMax-M3 / M2.7-highspeed 定价存在且合理"""
+        for m in ("MiniMax-M2.7-highspeed", "MiniMax-M3"):
             assert m in MODEL_PRICING, f"missing pricing for {m}"
             assert "input" in MODEL_PRICING[m]
             assert "output" in MODEL_PRICING[m]
             assert MODEL_PRICING[m]["input"] > 0
             assert MODEL_PRICING[m]["output"] > 0
 
-        # 轻量模型应比平衡模型便宜
-        flash = MODEL_PRICING["qwen3.6-flash"]
-        plus = MODEL_PRICING["qwen3.6-plus"]
-        assert flash["input"] < plus["input"]
-        assert flash["output"] < plus["output"]
+        # 快速模型应比主模型便宜
+        fast = MODEL_PRICING["MiniMax-M2.7-highspeed"]
+        primary = MODEL_PRICING["MiniMax-M3"]
+        assert fast["input"] < primary["input"]
+        assert fast["output"] < primary["output"]
 
-    def test_vl_models_removed(self):
-        """qwen-vl-plus / qwen-vl-max / qwen-vl-ocr 不在定价表中（账号不可用）"""
+    def test_old_models_removed(self):
+        """旧 Qwen VL 模型已从定价表中移除"""
         for m in ("qwen-vl-plus", "qwen-vl-max", "qwen-vl-ocr"):
-            assert m not in MODEL_PRICING, f"{m} should be removed (not available)"
+            assert m not in MODEL_PRICING, f"{m} should be removed from pricing"
 
 
 # =============================================================================
-# 5. Vision LLM thinking 模式控制
+# 5. Vision LLM 独立配置验证
 # =============================================================================
-class TestVisionLLMNoThinking:
-    """create_vision_llm 必须显式关闭 thinking，防止思考内容泄漏到用户回复"""
+class TestVisionLLMConfig:
+    """create_vision_llm 使用独立 VISION_* 配置（MiniMax-M3 原生多模态）"""
 
-    def test_create_vision_llm_disables_thinking(self, monkeypatch):
-        """create_vision_llm 应包含 extra_body={'enable_thinking': False}"""
-        monkeypatch.setattr(settings, "MINIMAX_VISION_MODEL", "qwen3.6-flash")
+    def test_create_vision_llm_uses_vision_config(self, monkeypatch):
+        """create_vision_llm 使用 VISION_API_KEY/BASE_URL/MODEL，非 PRIMARY 配置"""
+        monkeypatch.setattr(settings, "VISION_API_KEY", "sk-vision-key")
+        monkeypatch.setattr(settings, "VISION_BASE_URL", "https://vision.example.com/v1")
+        monkeypatch.setattr(settings, "VISION_MODEL", "MiniMax-M3")
 
         llm = LLMFactory.create_vision_llm()
-
-        # ChatOpenAI 存储 extra_body 在 kwargs 中
-        extra_body = getattr(llm, "extra_body", None)
-        # 兼容不同 langchain 版本：可能在 model_kwargs 或直接在对象上
-        if extra_body is None:
-            model_kwargs = getattr(llm, "model_kwargs", {}) or {}
-            extra_body = model_kwargs.get("extra_body", {})
-
-        assert extra_body == {"enable_thinking": False}, (
-            f"create_vision_llm must disable thinking, got extra_body={extra_body}"
-        )
+        assert llm.model_name == "MiniMax-M3"
+        assert llm.openai_api_base == "https://vision.example.com/v1"
 
     def test_create_vision_llm_with_model_override(self, monkeypatch):
-        """model_override 时也禁用 thinking"""
-        llm = LLMFactory.create_vision_llm(model_override="qwen3.6-plus")
+        """model_override 时使用独立视觉配置"""
+        monkeypatch.setattr(settings, "VISION_API_KEY", "sk-vision-key")
+        monkeypatch.setattr(settings, "VISION_BASE_URL", "https://vision.example.com/v1")
+        llm = LLMFactory.create_vision_llm(model_override="MiniMax-M3")
 
-        extra_body = getattr(llm, "extra_body", None)
-        if extra_body is None:
-            model_kwargs = getattr(llm, "model_kwargs", {}) or {}
-            extra_body = model_kwargs.get("extra_body", {})
-
-        assert extra_body == {"enable_thinking": False}, (
-            f"create_vision_llm with override must disable thinking, got extra_body={extra_body}"
-        )
+        assert llm.model_name == "MiniMax-M3"
+        assert llm.openai_api_base == "https://vision.example.com/v1"
 
 
 # =============================================================================
