@@ -27,10 +27,26 @@ class Settings(BaseSettings):
 
     # ===== 必须由 SAE / .env 注入（无默认值，漏配即报错）=====
 
-    # MiniMax M3 LLM（OpenAI 兼容接口）
-    MINIMAX_API_KEY: str
-    MINIMAX_BASE_URL: str
-    MINIMAX_MODEL: str
+    # 主 LLM（OpenAI 兼容接口，支持 DeepSeek/MiniMax/Qwen 等）
+    PRIMARY_API_KEY: str = ""
+    PRIMARY_BASE_URL: str = ""
+    PRIMARY_MODEL: str = ""
+
+    # 视觉多模态 LLM（独立配置，可不同于主模型）
+    VISION_API_KEY: str = ""
+    VISION_BASE_URL: str = ""
+    VISION_MODEL: str = "MiniMax-M3"
+
+    # === 向后兼容：旧 MINIMAX_* 配置作为 fallback ===
+    @property
+    def MINIMAX_API_KEY(self) -> str:
+        return self.PRIMARY_API_KEY or self.VISION_API_KEY
+    @property
+    def MINIMAX_BASE_URL(self) -> str:
+        return self.PRIMARY_BASE_URL or self.VISION_BASE_URL
+    @property
+    def MINIMAX_MODEL(self) -> str:
+        return self.PRIMARY_MODEL or self.VISION_MODEL
 
     # 内部服务通信（由 main.tf locals 管理）
     ADMIN_API_BASE_URL: str

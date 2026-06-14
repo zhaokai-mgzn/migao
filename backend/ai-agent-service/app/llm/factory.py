@@ -61,16 +61,12 @@ class LLMFactory:
 
     @staticmethod
     def create_vision_llm(model_override: Optional[str] = None) -> ChatOpenAI:
-        """创建视觉多模态 LLM 实例
-
-        - 使用 MiniMax-M3 原生多模态（文本+图片）
-        - temperature=0.7, streaming=True, max_completion_tokens=16384
-        """
-        model = model_override or settings.MINIMAX_VISION_MODEL
+        """创建视觉多模态 LLM 实例（独立视觉模型配置）"""
+        model = model_override or settings.VISION_MODEL
         return ChatOpenAI(
             model=model,
-            api_key=MINIMAX_API_KEY,
-            base_url=MINIMAX_BASE_URL,
+            api_key=settings.VISION_API_KEY,
+            base_url=settings.VISION_BASE_URL,
             temperature=0.7,
             streaming=True,
             max_completion_tokens=16384,
