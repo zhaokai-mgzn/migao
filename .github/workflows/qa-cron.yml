@@ -1,0 +1,267 @@
+name: QA Cron
+
+on:
+  schedule:
+    - cron: '7 */4 * * *'   # 每 4 小时 07 分
+  workflow_dispatch:          # 手动触发
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  # ============================================================
+  # 1. Python 全量单测
+  # ============================================================
+  ai-agent-test:
+    name: ai-agent-service tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      result: ${{ steps.test.outcome }}
+      summary: ${{ steps.test.outputs.summary }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/ai-agent-service/requirements.txt
+
+      - name: Install dependencies
+        working-directory: backend/ai-agent-service
+        run: pip install -r requirements.txt -q
+
+      - name: Run unit tests
+        id: test
+        working-directory: backend/ai-agent-service
+        env:
+          PRIMARY_API_KEY: ci-dummy
+          PRIMARY_BASE_URL: https://api.deepseek.com/v1
+          PRIMARY_MODEL: deepseek-chat
+          ADMIN_API_BASE_URL: http://localhost:8080
+          SERVICE_TOKEN: ci-dummy
+          JWT_PUBLIC_KEY: ci-dummy
+          LOGISTICS_API_URL: https://ci-dummy.example.com
+          LOGISTICS_APPCODE: ci-dummy
+          SSE_TIMEOUT: '300'
+          SSE_PING_INTERVAL: '30'
+          CORS_ALLOWED_ORIGINS: http://localhost:3000
+        continue-on-error: true
+        run: |
+          python -m pytest tests/ -q --tb=line \
+            --ignore=tests/test_post_deploy_verify.py \
+            --ignore=tests/manual_test_pe_flow.py \
+            --ignore=tests/e2e/real/ \
+            -m "not integration" \
+            2>&1 | tee /tmp/ai-agent-test.log
+          echo "summary<<EOF" >> $GITHUB_OUTPUT
+          tail -15 /tmp/ai-agent-test.log >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Upload test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-agent-test-log
+          path: /tmp/ai-agent-test.log
+          retention-days: 3
+
+  # ============================================================
+  # 2. Java 全量单测
+  # ============================================================
+  admin-api-test:
+    name: admin-api tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      result: ${{ steps.test.outcome }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Run unit tests
+        id: test
+        working-directory: backend/admin-api
+        continue-on-error: true
+        run: |
+          mvn test -q 2>&1 | tee /tmp/admin-api-test.log
+          echo "exit_code=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
+
+      - name: Upload test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: admin-api-test-log
+          path: /tmp/admin-api-test.log
+          retention-days: 3
+
+  # ============================================================
+  # 3. 新代码驱动生长扫描（每天 7 点，或手动）
+  # ============================================================
+  growth-scan:
+    name: Growth Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # 只在 schedule 触发时运行（不在 workflow_dispatch 时强制运行）
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Scan new code without test coverage
+        id: scan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          CHANGED=$(git log --since="24 hours ago" --oneline --name-only -- \
+            backend/ai-agent-service/app/ \
+            backend/admin-api/src/ \
+            frontend/admin-web/src/ \
+            deploy/terraform/ 2>/dev/null | grep -E '\.(py|java|tsx?|tf)$' | sort -u)
+
+          if [ -z "$CHANGED" ]; then
+            echo "no_changes=true" >> $GITHUB_OUTPUT
+            echo "No code changes in last 24h, skipping growth scan."
+            exit 0
+          fi
+
+          echo "no_changes=false" >> $GITHUB_OUTPUT
+
+          MISSING=""
+          TEST_FILES=$(git log --since="24 hours ago" --oneline --name-only | grep -E 'test.*\.(py|java|tsx?)$|spec\..*\.ts$' | sort -u)
+
+          for file in $CHANGED; do
+            case "$file" in
+              backend/ai-agent-service/app/tools/*.py)
+                if ! echo "$TEST_FILES" | grep -qE "test_tools_|e2e/real/"; then
+                  MISSING="$MISSING\n- \`$file\`: Tool 变更缺少 L2 单测 + L3 Real E2E"
+                fi ;;
+              backend/admin-api/src/main/java/*/controller/*.java)
+                ctrl=$(basename "$file" .java | sed 's/Controller//')
+                if ! echo "$TEST_FILES" | grep -q "${ctrl}Test\|${ctrl}ControllerTest"; then
+                  MISSING="$MISSING\n- \`$file\`: Controller 变更缺少 MockMvc 集成测试"
+                fi ;;
+              backend/admin-api/src/main/java/*/service/*.java)
+                svc=$(basename "$file" .java | sed 's/Service//')
+                if ! echo "$TEST_FILES" | grep -q "${svc}Test\|${svc}ServiceTest"; then
+                  MISSING="$MISSING\n- \`$file\`: Service 变更缺少 JUnit 单测"
+                fi ;;
+              frontend/admin-web/src/app/*)
+                if ! echo "$TEST_FILES" | grep -q "e2e/specs"; then
+                  MISSING="$MISSING\n- \`$file\`: Page 变更缺少 E2E spec"
+                fi ;;
+              frontend/admin-web/src/components/*)
+                if ! echo "$TEST_FILES" | grep -q "tests/unit/components"; then
+                  MISSING="$MISSING\n- \`$file\`: Component 变更缺少组件测试"
+                fi ;;
+            esac
+          done
+
+          if [ -n "$MISSING" ]; then
+            echo "missing_tests<<EOF" >> $GITHUB_OUTPUT
+            echo -e "$MISSING" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Issue for missing tests
+        if: steps.scan.outputs.missing_tests != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = `## 🔍 QA Growth Scan — 新代码缺少测试覆盖
+
+            过去 24h 的代码变更中，以下文件缺少对应测试：
+            ${{ steps.scan.outputs.missing_tests }}
+
+            > 🤖 自动检测于 QA Cron (GitHub Actions)
+            > 请按提示补充测试，或关联对应 Issue。`;
+
+            // Check for existing growth scan issue
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: ['role/qa', 'enhancement'],
+              state: 'open',
+            });
+
+            const existing = issues.find(i => i.title.includes('Growth Scan'));
+            if (!existing) {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `[QA] Growth Scan — 新代码缺少测试 ${new Date().toISOString().slice(0,10)}`,
+                body,
+                labels: ['role/qa', 'enhancement'],
+              });
+            }
+
+  # ============================================================
+  # 4. 汇总 & 自动建 Issue
+  # ============================================================
+  report:
+    name: Report
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    needs: [ai-agent-test, admin-api-test]
+    if: always()
+    steps:
+      - name: Create Issue on test failure
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const aiResult = '${{ needs.ai-agent-test.outputs.result }}';
+            const apiResult = '${{ needs.admin-api-test.outputs.result }}';
+
+            const failures = [];
+            if (aiResult === 'failure') failures.push('ai-agent-service');
+            if (apiResult === 'failure') failures.push('admin-api');
+
+            if (failures.length === 0) {
+              console.log('All tests passed, no issue needed.');
+              return;
+            }
+
+            const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const body = `## QA Cron 发现测试失败
+
+            | 模块 | 状态 |
+            |------|------|
+            | ai-agent-service | ${aiResult === 'failure' ? '❌ FAIL' : '✅ PASS'} |
+            | admin-api | ${apiResult === 'failure' ? '❌ FAIL' : '✅ PASS'} |
+
+            [查看完整日志](${runUrl})
+
+            > 🤖 自动检测于 QA Cron (GitHub Actions)` ;
+
+            // Dedup: check for existing open QA test failure issue
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: ['bug', 'role/qa'],
+              state: 'open',
+            });
+
+            const existing = issues.find(i => i.title.includes('QA Cron 测试失败'));
+            if (!existing) {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `[QA] QA Cron 测试失败 — ${new Date().toISOString().slice(0,10)}`,
+                body,
+                labels: ['bug', 'role/qa'],
+              });
+              console.log('Issue created.');
+            } else {
+              console.log('Issue already exists, skipping.');
+            }
