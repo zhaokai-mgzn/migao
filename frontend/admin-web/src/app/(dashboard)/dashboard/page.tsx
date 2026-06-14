@@ -88,10 +88,14 @@ function BizStatCard({ title, value, change, icon, sparkline, chartType }: {
   )
 }
 
+const PENDING_COLORS: Record<string, string> = {
+  blue: 'bg-blue-50', purple: 'bg-purple-50', red: 'bg-red-50', amber: 'bg-amber-50', green: 'bg-green-50',
+}
+
 function PendingCard({ title, count, icon, color }: { title: string; count: number; icon: React.ReactNode; color: string }) {
   return (
     <div className="flex items-center gap-3 p-4 rounded-lg border border-gray-100 bg-white">
-      <span className={cn('p-2 rounded-lg', `bg-${color}-50`)}>{icon}</span>
+      <span className={cn('p-2 rounded-lg', PENDING_COLORS[color] || 'bg-gray-50')}>{icon}</span>
       <div className="flex-1">
         <p className="text-xs text-gray-500">{title}</p>
         <p className="text-xl font-bold text-gray-900">{fmtNum(count)}<ArrowUp className="w-3 h-3 text-red-500 inline ml-1" /></p>
@@ -112,6 +116,7 @@ export default function DashboardPage() {
   const [ranking, setRanking] = useState<ProductRanking[]>([])
   const [pendingShipment, setPendingShipment] = useState(0)
   const [processingShipment, setProcessingShipment] = useState(0)
+  const [lowStockCount, setLowStockCount] = useState(0)
   const [trendDays, setTrendDays] = useState(7)
   const [updateTime, setUpdateTime] = useState(now())
 
@@ -141,6 +146,12 @@ export default function DashboardPage() {
         setPendingShipment((os.confirmedCount || 0) + (os.producingCount || 0))
         setProcessingShipment(os.producingCount || 0)
       } catch {}
+      // 待补库存 = 低库存 SKU 数
+      try {
+        const resp = await request.get('/api/admin/products/low-stock-by-color', { params: { threshold: 100, limit: 200 } })
+        const items = resp?.data?.data
+        setLowStockCount(Array.isArray(items) ? items.length : 0)
+      } catch {}
       setUpdateTime(now())
     } catch (error) {
       console.error('Dashboard load:', error)
@@ -167,7 +178,19 @@ export default function DashboardPage() {
         </button>
       </div>
 
-      {/* ① 经营数据卡片 */}
+      {/* ① 待处理任务 */}
+      <div className="mb-5">
+        <h2 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+          <Package className="w-4 h-4 text-amber-500" />待处理
+        </h2>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <PendingCard title="待发货订单" count={pendingShipment} icon={<Package className="w-4 h-4 text-blue-600" />} color="blue" />
+          <PendingCard title="含加工待发货订单" count={processingShipment} icon={<Settings className="w-4 h-4 text-purple-600" />} color="purple" />
+          <PendingCard title="待补库存商品" count={lowStockCount} icon={<Package className="w-4 h-4 text-red-600" />} color="red" />
+        </div>
+      </div>
+
+      {/* ② 经营数据卡片 */}
       <div className="mb-5">
         <h2 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
           <TrendingUp className="w-4 h-4 text-primary-500" />经营数据
@@ -194,24 +217,13 @@ export default function DashboardPage() {
                 chartType="bar"
               />
               <BizStatCard
-                title="本月收入"
+                title="本月销售额"
                 value={fmtCurrency(stats?.monthRevenue || 0)}
                 change={{ val: `${stats?.monthRevenueChange || 0}% 较上月`, up: (stats?.monthRevenueChange || 0) > 0 }}
                 icon={<DollarSign className="w-4 h-4 text-orange-600" />}
               />
             </>
           )}
-        </div>
-      </div>
-
-      {/* ② 待处理任务 */}
-      <div className="mb-5">
-        <h2 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-          <Package className="w-4 h-4 text-amber-500" />待处理
-        </h2>
-        <div className="grid grid-cols-2 gap-3">
-          <PendingCard title="待发货订单" count={pendingShipment} icon={<Package className="w-4 h-4 text-blue-600" />} color="blue" />
-          <PendingCard title="含加工待发货订单" count={processingShipment} icon={<Settings className="w-4 h-4 text-purple-600" />} color="purple" />
         </div>
       </div>
 

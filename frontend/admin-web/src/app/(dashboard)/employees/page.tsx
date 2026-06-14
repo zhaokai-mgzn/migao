@@ -114,7 +114,7 @@ export default function EmployeesPage() {
   // 打开新增对话框
   const handleAdd = () => {
     setEditingEmployee(null)
-    setFormData({ username: '', password: '', name: '', phone: '', email: '', roleIds: [] })
+    setFormData({ username: '', password: '', name: '', phone: '', email: '', roleIds: [] })  // roleIds 复用为权限ID，岗位字段用 role name 匹配
     setFormOpen(true)
   }
 
@@ -237,8 +237,16 @@ export default function EmployeesPage() {
     },
     { key: 'phone', title: '手机号', dataIndex: 'phone', width: '140px' },
     {
+      key: 'position',
+      title: '岗位',
+      width: '100px',
+      render: (record) => (
+        <span className="text-sm text-gray-700">{(record as any).position || '-'}</span>
+      ),
+    },
+    {
       key: 'roles',
-      title: '角色',
+      title: '权限',
       width: '200px',
       render: (record) => (
         <div className="flex flex-wrap gap-1">
@@ -347,9 +355,9 @@ export default function EmployeesPage() {
           </div>
           <div className="min-w-[140px]">
             <Select
-              label="角色"
+              label="岗位"
               options={[
-                { value: '', label: '全部角色' },
+                { value: '', label: '全部岗位' },
                 ...allRoles.map(r => ({ value: r.code, label: r.name })),
               ]}
               value={roleFilter}
@@ -434,8 +442,17 @@ export default function EmployeesPage() {
             value={formData.email}
             onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
           />
+          <Input
+            label="岗位（选填，纯展示）"
+            placeholder="如：客服、销售、运营"
+            value={formData.roleIds.length > 0 ? allRoles.find(r => r.id === formData.roleIds[0])?.name || '' : ''}
+            onChange={(e) => {
+              const role = allRoles.find(r => r.name === e.target.value)
+              setFormData(prev => ({ ...prev, roleIds: role ? [role.id] : [] }))
+            }}
+          />
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">角色分配</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">账号权限</label>
             <div className="flex flex-wrap gap-2">
               {allRoles.length > 0 ? allRoles.map(role => (
                 <button
@@ -451,9 +468,10 @@ export default function EmployeesPage() {
                   {role.name}
                 </button>
               )) : (
-                <span className="text-sm text-gray-400">暂无可选角色</span>
+                <span className="text-sm text-gray-400">暂无可选权限</span>
               )}
             </div>
+            <p className="text-xs text-gray-400 mt-1">勾选该员工的菜单访问权限</p>
           </div>
         </div>
       </Modal>
