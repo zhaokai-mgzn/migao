@@ -9,6 +9,7 @@ on:
   workflow_dispatch:  # 支持手动触发
 
 env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   OSS_BUCKET: ai-customer-service-admin-dev
   OSS_REGION: cn-hangzhou
   OSS_ENDPOINT: oss-cn-hangzhou.aliyuncs.com

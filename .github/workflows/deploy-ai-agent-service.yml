@@ -9,6 +9,7 @@ on:
   workflow_dispatch:  # 支持手动触发
 
 env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   ACR_REGISTRY: crpi-qdcgkzwx9p9zckga.cn-hangzhou.personal.cr.aliyuncs.com
   ACR_NAMESPACE: ai-customer-service
   IMAGE_NAME: ai-agent-service
