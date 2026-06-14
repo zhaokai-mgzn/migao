@@ -633,7 +633,7 @@ async def send_message(
                 user_message_content = request.message
             
             # 4. 获取对话历史（按 token 预算动态加载）
-            MAX_CONTEXT_TOKENS = 8000  # 留给 system prompt + 回复余量
+            MAX_CONTEXT_TOKENS = 65536  # 64K 输入预算，MiniMax-M3 1M 上下文有充足余量
             history_messages, needs_compression = await session_memory.get_history_by_tokens(
                 session_id, max_tokens=MAX_CONTEXT_TOKENS
             )
