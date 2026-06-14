@@ -486,7 +486,7 @@ class ProductManageTool(BaseTool):
         if category_id:
             json_data["categoryId"] = category_id
         if price is not None:
-            json_data["basePrice"] = price
+            json_data["basePrice"] = int(float(price) * 100)  # 元→分
         if description:
             json_data["description"] = description
         if stock_quantity is not None:
