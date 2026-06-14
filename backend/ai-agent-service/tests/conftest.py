@@ -4,6 +4,7 @@ AI 智能客服系统 - 测试公用 Fixtures
 提供 JWT Token 生成、mock 配置等公用工具
 """
 
+import os
 import time
 import jwt
 import pytest
@@ -11,7 +12,24 @@ from unittest.mock import patch, MagicMock, AsyncMock
 
 from fastapi.testclient import TestClient
 
-from app.tools.base import ToolContext
+
+# ========== 在导入 app.* 前注入必需的环境变量 ==========
+# Settings 中部分字段无默认值，pytest 收集阶段就会触发实例化，
+# 因此必须在 import app.tools.base 之前把这些字段塞进 environ。
+os.environ.setdefault("DEBUG", "true")
+os.environ.setdefault("ADMIN_API_BASE_URL", "http://admin-api:8080")
+os.environ.setdefault("SERVICE_TOKEN", "test-service-token")
+os.environ.setdefault(
+    "JWT_PUBLIC_KEY",
+    "-----BEGIN PUBLIC KEY-----\nTESTKEY\n-----END PUBLIC KEY-----",
+)
+os.environ.setdefault("LOGISTICS_API_URL", "https://wuliu.market.alicloudapi.com/kdi")
+os.environ.setdefault("LOGISTICS_APPCODE", "test-appcode")
+os.environ.setdefault("SSE_TIMEOUT", "300")
+os.environ.setdefault("SSE_PING_INTERVAL", "30")
+os.environ.setdefault("CORS_ALLOWED_ORIGINS", "http://localhost:3000")
+
+from app.tools.base import ToolContext  # noqa: E402  (必须在环境变量注入之后)
 
 
 # ========== 测试用 JWT 密钥对（仅用于测试） ==========

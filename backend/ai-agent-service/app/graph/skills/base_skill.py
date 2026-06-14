@@ -847,6 +847,7 @@ async def execute_skill(
                         logger.info(
                             f"[{skill_name}] LLM returned empty reply, keeping previous text | "
                             f"previous_len={len(final_content)}"
+                        )
                     break
 
                 # 有 tool_calls 但 LLM 可能在同一个消息中先输出了文本
