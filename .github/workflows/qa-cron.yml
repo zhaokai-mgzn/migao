@@ -177,15 +177,16 @@ jobs:
       - name: Create Issue for missing tests
         if: steps.scan.outputs.missing_tests != ''
         uses: actions/github-script@v7
+        env:
+          MISSING_TESTS: ${{ steps.scan.outputs.missing_tests }}
         with:
           script: |
-            const body = `## 🔍 QA Growth Scan — 新代码缺少测试覆盖
-
-            过去 24h 的代码变更中，以下文件缺少对应测试：
-            ${{ steps.scan.outputs.missing_tests }}
-
-            > 🤖 自动检测于 QA Cron (GitHub Actions)
-            > 请按提示补充测试，或关联对应 Issue。`;
+            const missing = process.env.MISSING_TESTS;
+            const body = '## QA Growth Scan — 新代码缺少测试覆盖\n\n' +
+              '过去 24h 的代码变更中，以下文件缺少对应测试：\n' +
+              missing + '\n\n' +
+              '> 自动检测于 QA Cron (GitHub Actions)\n' +
+              '> 请按提示补充测试，或关联对应 Issue。';
 
             // Check for existing growth scan issue
             const { data: issues } = await github.rest.issues.listForRepo({
