@@ -302,7 +302,7 @@ export default function ChatConfigPage() {
                 <div className="text-center py-12">
                   <Zap className="w-10 h-10 text-gray-300 mx-auto mb-3" />
                   <p className="text-sm text-gray-500">暂无快捷回复</p>
-                  <p className="text-xs text-gray-400 mt-1">点击"新建回复"添加第一条快捷回复</p>
+                  <p className="text-xs text-gray-400 mt-1">点击&ldquo;新建回复&rdquo;添加第一条快捷回复</p>
                 </div>
               ) : (
                 <div className="space-y-3">
