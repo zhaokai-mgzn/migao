@@ -130,9 +130,6 @@ _THINKING_INTENTS = frozenset({
     "customer_manage",
     "employee_manage",
     "staff_manage",
-    "product_manage",        # 创建/修改商品需要参数规划
-    "order_create",          # 创建订单需要多字段填充
-    "inventory_manage",      # 库存调整需要校验
 })
 
 
@@ -727,7 +724,6 @@ async def execute_skill(
 
                 # 策略 2：首轮开 thinking（规划工具调用），后续轮关闭（仅格式化结果）
                 # 节省 5-8s/轮，质量无损（实测：8.0s → 2.7s）
-                # MiniMax-M3 默认开启 thinking，需显式传 disabled 才生效
                 if iteration > 0 and intent_name in _THINKING_INTENTS:
                     if llm_no_thinking is None:
                         llm_no_thinking = get_skill_llm(
@@ -735,9 +731,8 @@ async def execute_skill(
                             tool_count=len(langchain_tools),
                             text_length=text_length,
                             messages=messages,
+                            enable_thinking=False,  # 显式关闭
                         )
-                        # 显式关闭 thinking（覆盖 factory 默认值）
-                        llm_no_thinking.extra_body = {"thinking": {"type": "disabled"}}
                         if langchain_tools:
                             llm_no_thinking = llm_no_thinking.bind_tools(langchain_tools)
                         logger.debug(

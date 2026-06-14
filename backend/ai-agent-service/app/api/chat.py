@@ -132,12 +132,22 @@ def _format_datetime(dt: Any) -> str:
 
 
 def _convert_history_to_agent_format(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """将数据库消息格式转换为 Agent 所需的格式（支持多模态）"""
+    """将数据库消息格式转换为 Agent 所需的格式（支持多模态）
+
+    对 assistant 消息剥离 <think> 块，防止：
+    1. 旧数据中的思考内容挤占上下文预算
+    2. 上轮推理内容干扰当前轮次的工具调用决策
+    """
+    import re
     history = []
     for msg in messages:
+        role = msg.get("role", "user")
+        content = msg.get("content", "")
+        if role == "assistant":
+            content = re.sub(r"<think>[\s\S]*?</think>", "", content).strip()
         entry: Dict[str, Any] = {
-            "role": msg.get("role", "user"),
-            "content": msg.get("content", ""),
+            "role": role,
+            "content": content,
         }
         # 携带多模态信息
         content_type = msg.get("content_type", "text")
@@ -366,8 +376,11 @@ async def _agent_stream_to_sse(
             )
             yield SSEEvent.error(f"响应超时({stream_timeout}s)，请重试")
         
-        # 保存 assistant 消息
+        # 保存 assistant 消息（剥离 <think> 块后再存，避免思考内容
+        # 膨胀 token 计数、挤占上下文预算、干扰后续轮次推理）
+        import re
         assistant_content = "".join(full_response)
+        assistant_content = re.sub(r"<think>[\s\S]*?</think>", "", assistant_content).strip()
         if not assistant_content:
             # LLM 未生成文本回复，进行容错降级
             if tool_calls_info:
