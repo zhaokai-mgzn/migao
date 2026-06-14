@@ -126,6 +126,19 @@ def _extract_content(response: AIMessage) -> str:
 _THINKING_INTENTS = frozenset()
 
 
+def _should_retry_after_empty(iteration: int, messages: list) -> bool:
+    """判断 LLM 返回空时是否应该追加提示后重试。只重试一次（iteration 0 或 1）。"""
+    if iteration >= 2:
+        return False
+    # 检查前面是否有 ToolMessage（说明执行过工具）
+    for m in reversed(messages):
+        if isinstance(m, ToolMessage):
+            return True
+        if isinstance(m, AIMessage) and m.tool_calls:
+            return True
+    return False
+
+
 def get_skill_llm(
     intent: str = "",
     tool_count: int = 0,
@@ -826,6 +839,16 @@ async def execute_skill(
                             f"[{skill_name}] LLM returned empty final reply | "
                             f"raw_content_len={len(response.content or '')}"
                         )
+                    elif _should_retry_after_empty(iteration, new_messages):
+                        # LLM 返回空但前面执行过工具 → 追加提示后重试一次
+                        new_messages.append(HumanMessage(
+                            content="请根据上面工具返回的结果，继续处理用户的请求。"
+                        ))
+                        logger.info(
+                            f"[{skill_name}] LLM empty after tools, retrying with nudge | "
+                            f"iteration={iteration + 1}"
+                            f"previous_len={len(final_content)}"
+                        continue
                     else:
                         # LLM 返回空但前面已有文本（如 tool 前的文本）→ 保留之前的内容
                         logger.info(
