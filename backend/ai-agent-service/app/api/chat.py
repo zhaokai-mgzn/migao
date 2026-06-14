@@ -23,6 +23,7 @@ from app.api.schemas import (
     ChatSendRequest,
     ChatSessionCreate,
 )
+from app.api.response_models import make_response
 from app.config import settings
 from app.api.sse import SSEEvent
 from app.memory.session_memory import SessionMemory
@@ -487,6 +488,23 @@ async def send_message(
     logger.info(
         f"[chat/send] Message received | tenant={tenant_id} user={user_id} session={request.session_id or 'new'} msg_len={len(request.message)}"
     )
+
+    # 记录被忽略的上一轮建议（用于训练数据分析）
+    if request.ignored_suggestions:
+        import json as _json
+        from app.utils.log_sanitizer import LogSanitizer
+        for s in request.ignored_suggestions:
+            logger.info(
+                "[suggestion:feedback]",
+                _json.dumps({
+                    "session_id": request.session_id or "",
+                    "tenant_id": tenant_id,
+                    "user_id": user_id,
+                    "suggestion": LogSanitizer.mask_text(s),
+                    "clicked": False,
+                    "source": "ignored",
+                }, ensure_ascii=False),
+            )
     
     # 初始化组件
     session_memory = SessionMemory()
@@ -758,18 +776,15 @@ async def create_session(
     # 获取创建的会话信息
     session = await session_memory.get_session(session_id)
     
-    return {
-        "success": True,
-        "data": {
-            "id": session["id"],
-            "tenant_id": session["tenant_id"],
-            "user_id": session["customer_id"],
-            "title": session["title"],
-            "created_at": _format_datetime(session["created_at"]),
-            "updated_at": _format_datetime(session["updated_at"]),
-            "message_count": 0,
-        }
-    }
+    return make_response(True, data={
+        "id": session["id"],
+        "tenant_id": session["tenant_id"],
+        "user_id": session["customer_id"],
+        "title": session["title"],
+        "created_at": _format_datetime(session["created_at"]),
+        "updated_at": _format_datetime(session["updated_at"]),
+        "message_count": 0,
+    })
 
 
 @router.get("/sessions")
@@ -814,15 +829,12 @@ async def list_sessions(
             "updated_at": _format_datetime(session["updated_at"]),
         })
     
-    return {
-        "success": True,
-        "data": {
-            "items": formatted_sessions,
-            "page": page,
-            "size": size,
-            "total": len(formatted_sessions),
-        }
-    }
+    return make_response(True, data={
+        "items": formatted_sessions,
+        "page": page,
+        "size": size,
+        "total": len(formatted_sessions),
+    })
 
 
 @router.put("/sessions/{session_id}/close")
@@ -888,14 +900,11 @@ async def close_session_endpoint(
     # 幂等语义：已 closed 仍返回成功
     if session.get("status") == "closed":
         logger.info(f"[chat/close] Session already closed | session_id={session_id}")
-        return {
-            "success": True,
-            "data": {
-                "session_id": session_id,
-                "status": "closed",
-                "message": "会话已处于关闭状态",
-            },
-        }
+        return make_response(True, data={
+            "session_id": session_id,
+            "status": "closed",
+            "message": "会话已处于关闭状态",
+        })
 
     await session_memory.close_session(session_id)
     logger.info(
@@ -903,14 +912,11 @@ async def close_session_endpoint(
         f"tenant_id={current_user.tenant_id}"
     )
 
-    return {
-        "success": True,
-        "data": {
-            "session_id": session_id,
-            "status": "closed",
-            "message": "会话已结束",
-        },
-    }
+    return make_response(True, data={
+        "session_id": session_id,
+        "status": "closed",
+        "message": "会话已结束",
+    })
 
 
 @router.put("/sessions/{session_id}/reopen")
@@ -935,14 +941,11 @@ async def reopen_session_endpoint(
             detail={"success": False, "error": {"code": "PERMISSION_DENIED", "message": "无权操作该会话"}},
         )
     if session.get("status") != "closed":
-        return {
-            "success": True,
-            "data": {"session_id": session_id, "status": session.get("status"), "message": "会话已是活跃状态"},
-        }
+        return make_response(True, data={"session_id": session_id, "status": session.get("status"), "message": "会话已是活跃状态"})
 
     await session_memory.reopen_session(session_id)
     logger.info(f"Session reopened: session_id={session_id}, user_id={current_user.user_id}")
-    return {"success": True, "data": {"session_id": session_id, "status": "active", "message": "会话已重新打开"}}
+    return make_response(True, data={"session_id": session_id, "status": "active", "message": "会话已重新打开"})
 
 
 @router.delete("/sessions/{session_id}")
@@ -1014,13 +1017,10 @@ async def delete_session(
     await session_memory.delete_session(session_id)
     logger.info(f"Session deleted: session_id={session_id}, user_id={current_user.user_id}, tenant_id={current_user.tenant_id}")
     
-    return {
-        "success": True,
-        "data": {
-            "message": "会话已删除",
-            "session_id": session_id,
-        }
-    }
+    return make_response(True, data={
+        "message": "会话已删除",
+        "session_id": session_id,
+    })
 
 
 @router.get("/history/{session_id}")
@@ -1121,13 +1121,43 @@ async def get_history(
             "created_at": _format_datetime(msg["created_at"]),
         })
     
-    return {
-        "success": True,
-        "data": {
-            "session_id": session_id,
-            "messages": formatted_messages,
-        }
-    }
+    return make_response(True, data={
+        "session_id": session_id,
+        "messages": formatted_messages,
+    })
+
+
+@router.post("/suggestion-feedback")
+async def suggestion_feedback(
+    body: dict,
+    current_user: UserIdentity = Depends(get_current_user),
+):
+    """
+    记录建议反馈（点击），用于后续训练数据分析
+
+    ⚠️ 数据安全：日志包含用户建议文本（已脱敏手机号/邮箱），
+    应配置日志访问权限和保留策略。
+
+    Body:
+        session_id: str - 会话 ID
+        suggestion: str - 被点击的建议文本
+        message_id: str (optional) - 关联的消息 ID
+    """
+    import json as _json
+    from app.utils.log_sanitizer import LogSanitizer
+    logger.info(
+        "[suggestion:feedback]",
+        _json.dumps({
+            "session_id": body.get("session_id", ""),
+            "tenant_id": current_user.tenant_id,
+            "user_id": current_user.user_id,
+            "suggestion": LogSanitizer.mask_text(body.get("suggestion", "")),
+            "clicked": True,
+            "message_id": body.get("message_id", ""),
+            "source": "click",
+        }, ensure_ascii=False),
+    )
+    return {"ok": True}
 
 
 @router.get("/quick-actions")
@@ -1170,9 +1200,6 @@ async def get_quick_actions(
         },
     ]
     
-    return {
-        "success": True,
-        "data": {
-            "actions": actions,
-        }
-    }
+    return make_response(True, data={
+        "actions": actions,
+    })

@@ -1203,4 +1203,15 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
 
         return response;
     }
+
+    /**
+     * 按颜色+规格维度查询低库存 SKU（用于库存告警）
+     *
+     * @param threshold 库存阈值，SKU 库存低于此值视为低库存
+     * @param limit     最大返回条数
+     * @return 低库存 SKU 列表
+     */
+    public List<LowStockByColorResponse> getLowStockByColor(Long tenantId, int threshold, int limit) {
+        return productMapper.findLowStockByColor(tenantId, threshold, limit);
+    }
 }

@@ -156,6 +156,31 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
     })
   }
 
+  // 批量添加颜色：一次 state update 中添加所有颜色，避免 forEach 中的闭包陷阱
+  const handleBatchAddColors = (names: string[]) => {
+    if (colors.length >= MAX_COLORS) {
+      toast.warning(`最多只能添加 ${MAX_COLORS} 种颜色分类`)
+      return
+    }
+    const available = MAX_COLORS - colors.length
+    const toAdd = names.slice(0, available).map((name, i) => ({
+      id: -(Date.now() + Math.random() + i),
+      colorName: name,
+      mainColorHex: undefined as string | undefined,
+      remark: '',
+      sortOrder: colors.length + i,
+    } satisfies ProductColor))
+    if (names.length > available) {
+      toast.warning(`最多只能添加 ${MAX_COLORS} 种颜色，已截取前 ${available} 个`)
+    }
+    const nextColors = [...colors, ...toAdd]
+    onChange({
+      ...value,
+      colors: nextColors,
+      skus: rebuildSkus(nextColors, sellingMethods, doorWidths, skus),
+    })
+  }
+
   const handleUpdateColor = (idx: number, patch: Partial<ProductColor>) => {
     const nextColors = [...colors]
     nextColors[idx] = { ...nextColors[idx], ...patch }
@@ -417,7 +442,7 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
         <PresetColorPalette onPick={(name, hex) => handleAddColorWithPreset(name, hex)} />
 
         {/* 批量输入颜色 */}
-        <BatchColorInput onAdd={(names) => names.forEach((name) => handleAddColorWithPreset(name, ''))} />
+        <BatchColorInput onAdd={handleBatchAddColors} />
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
           {colors.map((color, idx) => {

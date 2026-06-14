@@ -110,6 +110,21 @@ public class ProductController {
     }
 
     /**
+     * 按颜色+规格维度查询低库存 SKU（库存告警用）
+     *
+     * GET /api/admin/products/low-stock-by-color?threshold=100&limit=50
+     */
+    @GetMapping("/low-stock-by-color")
+    public ApiResponse<List<LowStockByColorResponse>> getLowStockByColor(
+            @RequestParam(defaultValue = "100") int threshold,
+            @RequestParam(defaultValue = "50") int limit) {
+        Long tenantId = TenantContext.getTenantId();
+        log.info("低库存查询(颜色维度): threshold={}, limit={}, tenantId={}", threshold, limit, tenantId);
+        List<LowStockByColorResponse> result = productService.getLowStockByColor(tenantId, threshold, limit);
+        return ApiResponse.success(result);
+    }
+
+    /**
      * 批量上架
      *
      * POST /api/admin/products/batch/on-shelf

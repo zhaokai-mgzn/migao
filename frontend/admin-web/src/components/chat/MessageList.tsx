@@ -12,6 +12,8 @@ import {
 import NextImage from 'next/image'
 import { cn } from '@/lib/utils'
 import { useChatStore } from '@/store/chat'
+import { useAuthStore } from '@/store/auth'
+import { chatApi } from '@/lib/api'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import dayjs from 'dayjs'
@@ -144,6 +146,22 @@ function MessageBubble({ message }: { message: ChatMessage }) {
                 <button
                   key={index}
                   onClick={() => {
+                    // 埋点：记录建议被点击
+                    const token = useAuthStore.getState().accessToken || ''
+                    const AI_SERVICE_URL = chatApi.AI_SERVICE_URL
+                    fetch(`${AI_SERVICE_URL}/api/chat/suggestion-feedback`, {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`,
+                      },
+                      body: JSON.stringify({
+                        session_id: message.session_id || useChatStore.getState().currentSessionId,
+                        suggestion,
+                        message_id: message.id,
+                      }),
+                    }).catch(() => { /* fire-and-forget */ })
+
                     const { sendMessage } = useChatStore.getState()
                     sendMessage(suggestion)
                   }}

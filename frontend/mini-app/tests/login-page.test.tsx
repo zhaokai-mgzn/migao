@@ -34,7 +34,7 @@ describe('LoginPage', () => {
   it('应渲染品牌标题和登录按钮', () => {
     render(<LoginPage />)
 
-    expect(screen.getByText('AI 智能客服')).toBeTruthy()
+    expect(screen.getByText('小布 · 智能购物助手')).toBeTruthy()
     expect(screen.getByText('微信一键登录')).toBeTruthy()
     expect(screen.getByText('您的专属智能购物助手')).toBeTruthy()
   })

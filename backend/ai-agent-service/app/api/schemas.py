@@ -13,6 +13,9 @@ class ChatSendRequest(BaseModel):
     session_id: Optional[str] = Field(None, description="会话 ID，不传则创建新会话")
     message: str = Field(..., description="用户消息内容")
     images: Optional[List[str]] = Field(None, description="图片URL列表")
+    ignored_suggestions: Optional[List[str]] = Field(
+        None, description="用户忽略的上一轮建议列表（用于日志分析）"
+    )
 
 
 class ChatSessionCreate(BaseModel):

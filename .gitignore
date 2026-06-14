@@ -67,3 +67,18 @@ logs/
 
 # JWT 私钥（仅本地开发用，生产通过环境变量注入）
 **/rsa/private.pem
+
+# IntelliJ IDEA
+*.iml
+
+# Claude Code local overrides
+.claude/settings.local.json
+
+# Terraform output (generated)
+deploy/terraform/terraform-output.json
+
+# Test artifacts
+test-results/
+**/test-results/
+smoke/report.html
+__pycache__/

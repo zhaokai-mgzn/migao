@@ -231,10 +231,16 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   },
 
   sendMessage: async (content: string, images?: string[]) => {
-    const { currentSessionId, isStreaming } = get()
+    const { currentSessionId, isStreaming, messages } = get()
     if (!currentSessionId || isStreaming || !content.trim()) return
 
     const abortController = new AbortController()
+
+    // 检查上一轮 AI 消息是否有未被采纳的建议（用于日志分析）
+    const lastAiMsg = [...messages].reverse().find(m => m.role === 'assistant')
+    const ignoredSuggestions = lastAiMsg?.suggestions?.filter(
+      s => s !== content.trim()
+    ) || []
 
     // 添加用户消息
     const userMsg: ChatMessage = {
@@ -244,6 +250,13 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       ...(images && images.length > 0 ? { content_type: 'mixed' as const, images } : {}),
       created_at: new Date().toISOString(),
     }
+
+    // 清除上一轮 AI 消息的建议（已被消费）
+    set(state => ({
+      messages: state.messages.map(msg =>
+        msg.id === lastAiMsg?.id ? { ...msg, suggestions: undefined } : msg
+      ),
+    }))
 
     // 添加空 AI 消息占位
     const aiMsgId = generateId()
@@ -275,6 +288,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
           session_id: currentSessionId,
           message: content.trim(),
           ...(images && images.length > 0 ? { images } : {}),
+          ...(ignoredSuggestions.length > 0 ? { ignored_suggestions: ignoredSuggestions } : {}),
         }),
         signal: abortController.signal,
       })

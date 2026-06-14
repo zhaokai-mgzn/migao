@@ -143,7 +143,7 @@ export default function OrderTable({
             <th className="px-4 py-3 font-medium">
               <div className="flex flex-col">
                 <span>采购明细</span>
-                <span className="text-xs font-normal text-gray-400">(颜色*规格*单价*数量+加工费用)</span>
+                <span className="text-xs font-normal text-gray-400">(货号×规格×单价×数量+加工费)</span>
               </div>
             </th>
             <th className="px-4 py-3 font-medium text-right whitespace-nowrap">累计金额(元)</th>
@@ -221,36 +221,26 @@ export default function OrderTable({
                     <div className="space-y-1.5">
                       {order.items?.map((item) => {
                         const pi = (item as any).processingInfo
-                        const sm: Record<string, string> = { bulk_cut: '散剪', full_roll: '整卷', per_meter: '按米', per_piece: '按件' }
-                        const spec = [
-                          pi?.colorName || '',
-                          pi?.sellingMethod ? (sm[pi.sellingMethod] || pi.sellingMethod) : '',
-                          pi?.doorWidth ? `门幅${pi.doorWidth}` : '',
-                        ].filter(Boolean).join(' / ') || '-'
+                        const spec = pi?.doorWidth || ''
                         return (
-                          <div key={item.id} className="text-gray-700 leading-tight">
+                          <div key={item.id} className="text-gray-700 leading-tight text-xs">
                             <span className="font-mono">{item.productCode || '-'}</span>
-                            {' '}{spec}{' '}*
-                            <span className="font-mono">{formatNumber(item.unitPrice)}</span>
-                            元/米*
-                            <span className="font-mono">{formatNumber(item.quantity)}</span>
-                            米 =
-                            <span className="font-mono">{formatNumber(getItemAmount(item))}</span>
-                            元
+                            {spec ? <>{' × '}<span className="font-mono">{spec}</span></> : null}
+                            {' × '}<span className="font-mono">{formatNumber(item.unitPrice)}</span>元/米
+                            {' × '}<span className="font-mono">{formatNumber(item.quantity)}</span>米
+                            {' = '}<span className="font-mono">{formatNumber(getItemAmount(item))}</span>元
                           </div>
                         )
                       })}
                       {order.processingItems?.map((proc, idx) => (
                         <div
                           key={proc.id || idx}
-                          className="text-amber-600 leading-tight"
+                          className="text-amber-600 leading-tight text-xs"
                         >
-                          {proc.name} <span className="font-mono">{formatNumber(proc.unitPrice)}</span>
-                          元/米*
-                          <span className="font-mono">{formatNumber(proc.quantity)}</span>
-                          米=
-                          <span className="font-mono">{formatNumber(proc.amount)}</span>
-                          元
+                          <span className="font-medium">{proc.name}</span>
+                          {' × '}<span className="font-mono">{formatNumber(proc.unitPrice)}</span>元/米
+                          {' × '}<span className="font-mono">{formatNumber(proc.quantity)}</span>米
+                          {' = '}<span className="font-mono">{formatNumber(proc.amount)}</span>元
                         </div>
                       ))}
                     </div>
@@ -290,11 +280,18 @@ export default function OrderTable({
                   {/* 备注预览 */}
                   <td className="px-4 py-4 min-w-[100px] max-w-[160px]">
                     {order.remark ? (
-                      <span
-                        className="text-xs text-gray-500 truncate block cursor-default"
-                        title={order.remark}
-                      >
-                        💬 {order.remark.length > 20 ? order.remark.slice(0, 20) + '…' : order.remark}
+                      <span className="relative group inline-block max-w-full">
+                        <span className="text-xs text-gray-500 truncate block cursor-default">
+                          💬 {order.remark.length > 20 ? order.remark.slice(0, 20) + '…' : order.remark}
+                        </span>
+                        {order.remark.length > 20 && (
+                          <span className="absolute bottom-full left-0 mb-1 hidden group-hover:block z-30
+                            bg-gray-900 text-white text-xs px-2.5 py-1.5 rounded-lg shadow-lg
+                            max-w-[280px] whitespace-pre-wrap break-words leading-relaxed
+                            pointer-events-none">
+                            {order.remark}
+                          </span>
+                        )}
                       </span>
                     ) : (
                       <span className="text-xs text-gray-300">-</span>

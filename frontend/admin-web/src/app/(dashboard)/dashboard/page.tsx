@@ -6,6 +6,7 @@ import request from '@/lib/request'
 import { dashboardApi } from '@/lib/api'
 import { cn, formatFullDateTime } from '@/lib/utils'
 import type { DashboardStats, OrderTrendPoint, Order, ProductRanking } from '@/types'
+import { normalizeOrderStatus, OrderStatusLabels } from '@/types'
 
 // ═══════════════════════════════════════════════════════
 // 格式化
@@ -87,10 +88,14 @@ function BizStatCard({ title, value, change, icon, sparkline, chartType }: {
   )
 }
 
+const PENDING_COLORS: Record<string, string> = {
+  blue: 'bg-blue-50', purple: 'bg-purple-50', red: 'bg-red-50', amber: 'bg-amber-50', green: 'bg-green-50',
+}
+
 function PendingCard({ title, count, icon, color }: { title: string; count: number; icon: React.ReactNode; color: string }) {
   return (
     <div className="flex items-center gap-3 p-4 rounded-lg border border-gray-100 bg-white">
-      <span className={cn('p-2 rounded-lg', `bg-${color}-50`)}>{icon}</span>
+      <span className={cn('p-2 rounded-lg', PENDING_COLORS[color] || 'bg-gray-50')}>{icon}</span>
       <div className="flex-1">
         <p className="text-xs text-gray-500">{title}</p>
         <p className="text-xl font-bold text-gray-900">{fmtNum(count)}<ArrowUp className="w-3 h-3 text-red-500 inline ml-1" /></p>
@@ -111,6 +116,7 @@ export default function DashboardPage() {
   const [ranking, setRanking] = useState<ProductRanking[]>([])
   const [pendingShipment, setPendingShipment] = useState(0)
   const [processingShipment, setProcessingShipment] = useState(0)
+  const [lowStockCount, setLowStockCount] = useState(0)
   const [trendDays, setTrendDays] = useState(7)
   const [updateTime, setUpdateTime] = useState(now())
 
@@ -140,6 +146,12 @@ export default function DashboardPage() {
         setPendingShipment((os.confirmedCount || 0) + (os.producingCount || 0))
         setProcessingShipment(os.producingCount || 0)
       } catch {}
+      // 待补库存 = 低库存 SKU 数
+      try {
+        const resp = await request.get('/api/admin/products/low-stock-by-color', { params: { threshold: 100, limit: 200 } })
+        const items = resp?.data?.data
+        setLowStockCount(Array.isArray(items) ? items.length : 0)
+      } catch {}
       setUpdateTime(now())
     } catch (error) {
       console.error('Dashboard load:', error)
@@ -166,7 +178,19 @@ export default function DashboardPage() {
         </button>
       </div>
 
-      {/* ① 经营数据卡片 */}
+      {/* ① 待处理任务 */}
+      <div className="mb-5">
+        <h2 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+          <Package className="w-4 h-4 text-amber-500" />待处理
+        </h2>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <PendingCard title="待发货订单" count={pendingShipment} icon={<Package className="w-4 h-4 text-blue-600" />} color="blue" />
+          <PendingCard title="含加工待发货订单" count={processingShipment} icon={<Settings className="w-4 h-4 text-purple-600" />} color="purple" />
+          <PendingCard title="待补库存商品" count={lowStockCount} icon={<Package className="w-4 h-4 text-red-600" />} color="red" />
+        </div>
+      </div>
+
+      {/* ② 经营数据卡片 */}
       <div className="mb-5">
         <h2 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
           <TrendingUp className="w-4 h-4 text-primary-500" />经营数据
@@ -193,24 +217,13 @@ export default function DashboardPage() {
                 chartType="bar"
               />
               <BizStatCard
-                title="本月收入"
+                title="本月销售额"
                 value={fmtCurrency(stats?.monthRevenue || 0)}
                 change={{ val: `${stats?.monthRevenueChange || 0}% 较上月`, up: (stats?.monthRevenueChange || 0) > 0 }}
                 icon={<DollarSign className="w-4 h-4 text-orange-600" />}
               />
             </>
           )}
-        </div>
-      </div>
-
-      {/* ② 待处理任务 */}
-      <div className="mb-5">
-        <h2 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-          <Package className="w-4 h-4 text-amber-500" />待处理
-        </h2>
-        <div className="grid grid-cols-2 gap-3">
-          <PendingCard title="待发货订单" count={pendingShipment} icon={<Package className="w-4 h-4 text-blue-600" />} color="blue" />
-          <PendingCard title="含加工待发货订单" count={processingShipment} icon={<Settings className="w-4 h-4 text-purple-600" />} color="purple" />
         </div>
       </div>
 
@@ -283,7 +296,7 @@ export default function DashboardPage() {
                   <td className="py-2"><a href={`/orders/${o.id}`} className="text-blue-600 font-mono text-[11px] hover:underline">{o.orderNo?.slice(0, 16)}</a></td>
                   <td className="py-2 text-gray-700">{o.customerName}</td>
                   <td className="py-2 text-right text-gray-900 font-mono">{fmtCurrency(o.totalAmount)}</td>
-                  <td className="py-2 text-right"><span className={cn('inline-block w-2 h-2 rounded-full mr-1', o.status === 'completed' ? 'bg-green-500' : o.status === 'pending_shipment' ? 'bg-blue-500' : o.status === 'pending_payment' ? 'bg-amber-500' : 'bg-gray-400')} />{o.status}</td>
+                  <td className="py-2 text-right"><StatusBadge status={o.status as string} /></td>
                   <td className="py-2 text-right text-gray-400 text-[11px]">{o.createdAt?.slice(5, 16)?.replace('T', ' ')}</td>
                 </tr>
               ))}
@@ -322,5 +335,23 @@ export default function DashboardPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+// ========== 订单状态徽章（中文） ==========
+
+function StatusBadge({ status }: { status: string }) {
+  const s = normalizeOrderStatus(status)
+  const label = OrderStatusLabels[s]
+  const colorClass =
+    s === 'completed' ? 'bg-green-100 text-green-700' :
+    s === 'pending_shipment' || s === 'shipped' ? 'bg-blue-100 text-blue-700' :
+    s === 'pending_payment' ? 'bg-amber-100 text-amber-700' :
+    s === 'closed' ? 'bg-gray-100 text-gray-500' :
+    'bg-gray-100 text-gray-600'
+  return (
+    <span className={cn('inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium', colorClass)}>
+      {label}
+    </span>
   )
 }
