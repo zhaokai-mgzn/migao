@@ -15,35 +15,41 @@ interface HeaderProps {
   breadcrumbs?: { label: string; href?: string }[]
 }
 
-// 路由 → 面包屑映射（分组 > 当前页）
-// 顺序敏感：更具体的路径放在前面，避免 /agent-workspace 被前缀匹配
+// 路由 → 面包屑映射（与侧边栏菜单结构对齐）
+// 顺序敏感：更具体的子路径放在前面，避免被父路径前缀匹配
 const ROUTE_BREADCRUMB_MAP: Array<{
   match: (path: string) => boolean
   crumbs: { label: string; href?: string }[]
 }> = [
   // 工作台
   { match: (p) => p === '/' || p === '/dashboard', crumbs: [{ label: '工作台', href: '/dashboard' }, { label: '数据看板' }] },
-  // 商品中心
-  { match: (p) => p.startsWith('/products'), crumbs: [{ label: '商品中心' }, { label: '商品管理' }] },
-  { match: (p) => p.startsWith('/processing'), crumbs: [{ label: '商品中心' }, { label: '加工项管理' }] },
-  { match: (p) => p.startsWith('/categories'), crumbs: [{ label: '商品中心' }, { label: '分类管理' }] },
-  { match: (p) => p.startsWith('/knowledge'), crumbs: [{ label: '商品中心' }, { label: '知识库管理' }] },
-  // 交易中心
-  { match: (p) => p.startsWith('/orders'), crumbs: [{ label: '交易中心' }, { label: '订单管理' }] },
-  { match: (p) => p.startsWith('/after-sales'), crumbs: [{ label: '交易中心' }, { label: '售后管理' }] },
-  // 客户中心
-  { match: (p) => p.startsWith('/customers'), crumbs: [{ label: '客户中心' }, { label: '客户管理' }] },
-  // 客服中心（顺序敏感：子路由优先）
+
+  // 商品管理（与侧边栏"商品管理"分组对齐）
+  { match: (p) => p.startsWith('/products'), crumbs: [{ label: '商品管理' }, { label: '商品列表' }] },
+  { match: (p) => p.startsWith('/categories'), crumbs: [{ label: '商品管理' }, { label: '商品分类管理' }] },
+  { match: (p) => p.startsWith('/processing'), crumbs: [{ label: '商品管理' }, { label: '加工项管理' }] },
+  { match: (p) => p.startsWith('/knowledge'), crumbs: [{ label: '商品管理' }, { label: '知识库管理' }] },
+
+  // 订单管理（与侧边栏"订单管理"分组对齐）
+  { match: (p) => p.startsWith('/orders'), crumbs: [{ label: '订单管理' }, { label: '订单列表' }] },
+  { match: (p) => p.startsWith('/after-sales'), crumbs: [{ label: '订单管理' }, { label: '售后工单' }] },
+
+  // 客服中心 — 子路由优先
   { match: (p) => p.startsWith('/agent-workspace/sessions'), crumbs: [{ label: '客服中心' }, { label: '会话监控' }] },
   { match: (p) => p.startsWith('/agent-workspace/quick-replies'), crumbs: [{ label: '客服中心' }, { label: '快捷回复' }] },
   { match: (p) => p.startsWith('/agent-workspace'), crumbs: [{ label: '客服中心' }, { label: '客服工作台' }] },
-  { match: (p) => p.startsWith('/employees'), crumbs: [{ label: '客服中心' }, { label: '客服团队' }] },
-  { match: (p) => p.startsWith('/chat/config'), crumbs: [{ label: '客服中心' }, { label: '机器人设置' }] },
+  { match: (p) => p.startsWith('/chat/config'), crumbs: [{ label: '机器人设置' }] },
   { match: (p) => p.startsWith('/chat'), crumbs: [{ label: '客服中心' }, { label: '在线对话' }] },
-  // 系统管理
+
+  // 系统管理（不在侧边栏主菜单，但在通知/角色页面使用）
   { match: (p) => p.startsWith('/roles'), crumbs: [{ label: '系统管理' }, { label: '角色权限' }] },
   { match: (p) => p.startsWith('/notifications'), crumbs: [{ label: '系统管理' }, { label: '通知中心' }] },
-  { match: (p) => p.startsWith('/settings'), crumbs: [{ label: '系统管理' }, { label: '系统设置' }] },
+
+  // 侧边栏独立菜单项（单级面包屑，名称与侧边栏严格一致）
+  { match: (p) => p.startsWith('/customers'), crumbs: [{ label: '客户管理' }] },
+  { match: (p) => p.startsWith('/finance'), crumbs: [{ label: '财务对账' }] },
+  { match: (p) => p.startsWith('/employees'), crumbs: [{ label: '员工管理' }] },
+  { match: (p) => p.startsWith('/settings'), crumbs: [{ label: '企业基础信息' }] },
 ]
 
 function resolveBreadcrumbs(pathname: string | null): { label: string; href?: string }[] {
