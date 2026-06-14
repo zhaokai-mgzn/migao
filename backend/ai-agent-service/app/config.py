@@ -48,6 +48,28 @@ class Settings(BaseSettings):
     def MINIMAX_MODEL(self) -> str:
         return self.PRIMARY_MODEL or self.VISION_MODEL
 
+    # === 向后兼容：旧 DASHSCOPE_* 配置作为 fallback（测试 monkeypatch 需要）===
+    @property
+    def DASHSCOPE_API_KEY(self) -> str:
+        return self.PRIMARY_API_KEY or self.VISION_API_KEY
+    @DASHSCOPE_API_KEY.setter
+    def DASHSCOPE_API_KEY(self, value: str):
+        self.PRIMARY_API_KEY = value
+
+    @property
+    def DASHSCOPE_BASE_URL(self) -> str:
+        return self.PRIMARY_BASE_URL or self.VISION_BASE_URL
+    @DASHSCOPE_BASE_URL.setter
+    def DASHSCOPE_BASE_URL(self, value: str):
+        self.VISION_BASE_URL = value
+
+    @property
+    def DASHSCOPE_MODEL(self) -> str:
+        return self.PRIMARY_MODEL or self.VISION_MODEL
+    @DASHSCOPE_MODEL.setter
+    def DASHSCOPE_MODEL(self, value: str):
+        self.PRIMARY_MODEL = value
+
     # 内部服务通信（由 main.tf locals 管理）
     ADMIN_API_BASE_URL: str
     SERVICE_TOKEN: str
@@ -57,10 +79,12 @@ class Settings(BaseSettings):
     LOGISTICS_API_URL: str
     LOGISTICS_APPCODE: str
 
-    # SSE / CORS（由 main.tf locals 管理）
+    # SSE / CORS / 图片 URL 重写（由 main.tf locals 管理）
     SSE_TIMEOUT: int
     SSE_PING_INTERVAL: int
     CORS_ALLOWED_ORIGINS: str
+    IMAGE_URL_REWRITE_FROM: str = ""
+    IMAGE_URL_REWRITE_TO: str = ""
 
     # ===== 功能开关与模型参数（有合理默认值，无需外部注入）=====
 
