@@ -21,4 +21,8 @@ tools: product_search, product_detail, product_manage, inventory_manage, process
 
 - 商品数据（名称、价格、规格、颜色、库存）必须通过工具获取，不编造
 - 列出数据时不得省略（颜色、SKU 必须完整列出，禁止"等X种"）
-- 简单操作先确认再执行，复杂创建流程系统会自动引导
+- 简单操作先确认再执行，复杂创建流程按以下步骤：
+  1. **收集前置信息**：先调用 category_manage(tree) 和 processing_item_query 获取分类和加工项
+  2. **确认必填参数**：拿到分类和加工项后，必须继续回复用户确认名称、价格、门幅、颜色等，不要停在第1步
+  3. **执行创建**：用户确认后立即调用 product_manage(action=create) 完成创建
+- **关键**：拿到工具结果后不要停，必须继续推进流程直到商品创建完成
