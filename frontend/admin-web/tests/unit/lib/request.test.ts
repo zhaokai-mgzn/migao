@@ -91,10 +91,10 @@ describe('request (Axios instance)', () => {
   })
 
   describe('response interceptor - success', () => {
-    it('should pass through response when code is 200', async () => {
+    it('should pass through response when success is true', async () => {
       const mockAdapter = vi.fn().mockResolvedValue({
         status: 200,
-        data: { code: 200, data: { id: 1 }, message: 'ok' },
+        data: { success: true, data: { id: 1 } },
         headers: {},
         config: {} as InternalAxiosRequestConfig,
         statusText: 'OK',
@@ -104,15 +104,15 @@ describe('request (Axios instance)', () => {
       request.defaults.adapter = mockAdapter
 
       const response = await request.get('/test')
-      expect(response.data).toEqual({ code: 200, data: { id: 1 }, message: 'ok' })
+      expect(response.data).toEqual({ success: true, data: { id: 1 } })
 
       request.defaults.adapter = originalAdapter
     })
 
-    it('should reject when business code is not 200', async () => {
+    it('should reject when success is false', async () => {
       const mockAdapter = vi.fn().mockResolvedValue({
         status: 200,
-        data: { code: 400, message: '参数错误' },
+        data: { success: false, error: { code: "VALIDATION_ERROR", message: '参数错误' } },
         headers: {},
         config: {} as InternalAxiosRequestConfig,
         statusText: 'OK',
@@ -127,10 +127,10 @@ describe('request (Axios instance)', () => {
       request.defaults.adapter = originalAdapter
     })
 
-    it('should use default error message when business error has no message', async () => {
+    it('should use default error message when success is false without error message', async () => {
       const mockAdapter = vi.fn().mockResolvedValue({
         status: 200,
-        data: { code: 500 },
+        data: { success: false },
         headers: {},
         config: {} as InternalAxiosRequestConfig,
         statusText: 'OK',

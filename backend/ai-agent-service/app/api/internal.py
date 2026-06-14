@@ -14,6 +14,7 @@ from loguru import logger
 
 from app.utils.auth import verify_service_token
 from app.tools import ToolContext, get_tool_registry
+from app.api.response_models import make_response
 
 router = APIRouter()
 
@@ -272,10 +273,10 @@ async def get_knowledge_stats(
         from app.rag.pipeline import get_rag_pipeline
         pipeline = await get_rag_pipeline()
         stats = await pipeline.get_stats(tenant_id)
-        return {"success": True, "data": stats}
+        return make_response(True, data=stats)
     except Exception as e:
         logger.error(f"Failed to get knowledge stats: {e}")
-        return {"success": False, "error": str(e)}
+        return make_response(False, error_code="INTERNAL_ERROR", error_message=str(e))
 
 
 @router.get("/tools")

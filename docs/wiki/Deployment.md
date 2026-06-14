@@ -18,7 +18,7 @@
 | RDS PostgreSQL 15 | 主库 (RLS) |
 | Redis 7 | 会话/缓存 |
 | DashVector | 向量库 (RAG) |
-| DashScope | LLM推理 |
+| DeepSeek / MiniMax | LLM推理 |
 | OSS | 静态资源/文件上传 |
 | CDN | 前端加速 |
 | ACR | 容器镜像 |
@@ -29,7 +29,7 @@
 
 **admin-api**: DB_URL, REDIS_URL, JWT_PRIVATE_KEY, JWT_PUBLIC_KEY, SERVICE_TOKEN
 
-**ai-agent-service**: DASHSCOPE_API_KEY, DASHVECTOR_API_KEY, DASHVECTOR_ENDPOINT, DB_URL, REDIS_URL, OSS_*
+**ai-agent-service**: PRIMARY_API_KEY, DASHVECTOR_API_KEY, DASHVECTOR_ENDPOINT, DB_URL, REDIS_URL, OSS_*
 
 **admin-web**: NEXT_PUBLIC_API_URL, NEXT_PUBLIC_AI_URL
 
@@ -51,8 +51,8 @@ cd backend/admin-api && ./mvnw clean package -DskipTests
 
 # ai-agent-service
 cd backend/ai-agent-service
-docker build -t registry.cn-hangzhou.aliyuncs.com/youke/ai-agent:latest .
-docker push registry.cn-hangzhou.aliyuncs.com/youke/ai-agent:latest
+docker build -t registry.cn-hangzhou.aliyuncs.com/migao/ai-agent:latest .
+docker push registry.cn-hangzhou.aliyuncs.com/migao/ai-agent:latest
 
 # admin-web
 cd frontend/admin-web && npm run build

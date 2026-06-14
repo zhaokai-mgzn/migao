@@ -4,8 +4,8 @@
 
 ```
 小程序(SSE) + 管理后台(REST)
-    → Admin API(:8080, Java)  ←→  AI Agent(:8001, Python)
-    → PostgreSQL(39表,RLS) + Redis + DashVector + DashScope
+    → Admin API(:8080, Java)  ←→  AI Agent(:8000, Python)
+    → PostgreSQL(39表,RLS) + Redis + DashVector + DeepSeek/MiniMax
 ```
 
 ## 多租户隔离 (5层)

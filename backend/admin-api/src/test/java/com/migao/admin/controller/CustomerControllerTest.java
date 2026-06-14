@@ -1,0 +1,214 @@
+package com.migao.admin.controller;
+
+import com.migao.admin.config.TenantContext;
+import com.migao.admin.config.GlobalExceptionHandler;
+import com.migao.admin.dto.PageResponse;
+import com.migao.admin.entity.CustomerProfile;
+import com.migao.admin.entity.CustomerTag;
+import com.migao.admin.service.CustomerService;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+
+import java.time.OffsetDateTime;
+import java.util.List;
+import java.util.Map;
+
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+
+/**
+ * CustomerController 单元测试
+ */
+@ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
+@DisplayName("CustomerController 客户管理测试")
+class CustomerControllerTest {
+
+    private MockMvc mockMvc;
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
+    @Mock
+    private CustomerService customerService;
+
+    @InjectMocks
+    private CustomerController customerController;
+
+    @BeforeEach
+    void setUp() {
+        TenantContext.setTenantId(1L);
+        mockMvc = MockMvcBuilders.standaloneSetup(customerController)
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .build();
+    }
+
+    @AfterEach
+    void tearDown() {
+        TenantContext.clear();
+    }
+
+    @Nested
+    @DisplayName("GET /api/admin/customers")
+    class GetCustomers {
+
+        @Test
+        @DisplayName("分页查询客户列表 -> 200")
+        void getCustomersPaginated() throws Exception {
+            PageResponse<CustomerProfile> page = new PageResponse<>();
+            page.setItems(List.of());
+            page.setTotal(0L);
+            when(customerService.getCustomers(anyLong(), anyLong(), anyLong(), any(), any(), any(), any()))
+                    .thenReturn(page);
+
+            mockMvc.perform(get("/api/admin/customers"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.success").value(true))
+                    .andExpect(jsonPath("$.data.items").isArray());
+        }
+
+        @Test
+        @DisplayName("支持渠道筛选 -> 200")
+        void channelFilter() throws Exception {
+            when(customerService.getCustomers(anyLong(), anyLong(), anyLong(), any(), any(), any(), any()))
+                    .thenReturn(new PageResponse<>());
+
+            mockMvc.perform(get("/api/admin/customers").param("sourceChannel", "wechat_mini"))
+                    .andExpect(status().isOk());
+        }
+
+        @Test
+        @DisplayName("支持 VIP 等级筛选 -> 200")
+        void vipLevelFilter() throws Exception {
+            when(customerService.getCustomers(anyLong(), anyLong(), anyLong(), any(), any(), any(), any()))
+                    .thenReturn(new PageResponse<>());
+
+            mockMvc.perform(get("/api/admin/customers").param("vipLevel", "vip1"))
+                    .andExpect(status().isOk());
+        }
+    }
+
+    @Nested
+    @DisplayName("GET /api/admin/customers/{id}")
+    class GetCustomer {
+
+        @Test
+        @DisplayName("查询客户详情 -> 200")
+        void getCustomerDetail() throws Exception {
+            CustomerProfile profile = new CustomerProfile();
+            profile.setId("cust-1");
+            profile.setWechatNickname("测试用户");
+            when(customerService.getCustomerById(anyLong(), anyString())).thenReturn(profile);
+
+            mockMvc.perform(get("/api/admin/customers/cust-1"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.success").value(true));
+        }
+    }
+
+    @Nested
+    @DisplayName("PUT /api/admin/customers/{id}")
+    class UpdateCustomer {
+
+        @Test
+        @DisplayName("更新客户信息 -> 200")
+        void updateCustomer() throws Exception {
+            doNothing().when(customerService).updateCustomer(anyLong(), anyString(), any());
+
+            Map<String, Object> body = Map.of("remark", "重要客户");
+
+            mockMvc.perform(put("/api/admin/customers/cust-1")
+                            .contentType("application/json")
+                            .content(objectMapper.writeValueAsString(body)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.success").value(true));
+        }
+    }
+
+    @Nested
+    @DisplayName("GET /api/admin/customer-tags")
+    class GetTags {
+
+        @Test
+        @DisplayName("获取标签列表 -> 200")
+        void getTags() throws Exception {
+            CustomerTag tag = new CustomerTag();
+            tag.setId("tag-1");
+            tag.setName("VIP");
+            tag.setColor("blue");
+            when(customerService.getTagsByTenant(anyLong())).thenReturn(List.of(tag));
+
+            mockMvc.perform(get("/api/admin/customer-tags"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.success").value(true))
+                    .andExpect(jsonPath("$.data").isArray());
+        }
+    }
+
+    @Nested
+    @DisplayName("POST /api/admin/customer-tags")
+    class CreateTag {
+
+        @Test
+        @DisplayName("创建标签 -> 200")
+        void createTag() throws Exception {
+            CustomerTag tag = new CustomerTag();
+            tag.setId("tag-new");
+            when(customerService.createTag(anyLong(), any())).thenReturn(tag);
+
+            Map<String, String> body = Map.of("name", "新标签", "color", "red");
+
+            mockMvc.perform(post("/api/admin/customer-tags")
+                            .contentType("application/json")
+                            .content(objectMapper.writeValueAsString(body)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.success").value(true));
+        }
+    }
+
+    @Nested
+    @DisplayName("PUT /api/admin/customer-tags/{id}")
+    class UpdateTag {
+
+        @Test
+        @DisplayName("更新标签 -> 200")
+        void updateTag() throws Exception {
+            doNothing().when(customerService).updateTag(anyLong(), anyString(), any());
+
+            Map<String, String> body = Map.of("name", "已更新");
+
+            mockMvc.perform(put("/api/admin/customer-tags/tag-1")
+                            .contentType("application/json")
+                            .content(objectMapper.writeValueAsString(body)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.success").value(true));
+        }
+    }
+
+    @Nested
+    @DisplayName("DELETE /api/admin/customer-tags/{id}")
+    class DeleteTag {
+
+        @Test
+        @DisplayName("删除标签 -> 200")
+        void deleteTag() throws Exception {
+            doNothing().when(customerService).deleteTag(anyLong(), anyString());
+
+            mockMvc.perform(delete("/api/admin/customer-tags/tag-1"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.success").value(true));
+        }
+    }
+}

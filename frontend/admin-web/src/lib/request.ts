@@ -47,9 +47,10 @@ request.interceptors.response.use(
   (response: AxiosResponse) => {
     const { data } = response
 
-    // 后端返回 code !== 200 视为业务错误
-    if (data.code !== undefined && data.code !== 200) {
-      const errorMessage = data.message || '请求失败'
+    // 后端统一返回 { success: boolean, data, error, requestId, timestamp }
+    // success === false 视为业务错误
+    if (data.success === false) {
+      const errorMessage = data.error?.message || '请求失败'
       toast.error(errorMessage)
       return Promise.reject(new Error(errorMessage))
     }

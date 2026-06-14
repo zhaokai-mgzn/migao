@@ -23,6 +23,7 @@ from app.api.schemas import (
     ChatSendRequest,
     ChatSessionCreate,
 )
+from app.api.response_models import make_response
 from app.config import settings
 from app.api.sse import SSEEvent
 from app.memory.session_memory import SessionMemory
@@ -775,18 +776,15 @@ async def create_session(
     # 获取创建的会话信息
     session = await session_memory.get_session(session_id)
     
-    return {
-        "success": True,
-        "data": {
-            "id": session["id"],
-            "tenant_id": session["tenant_id"],
-            "user_id": session["customer_id"],
-            "title": session["title"],
-            "created_at": _format_datetime(session["created_at"]),
-            "updated_at": _format_datetime(session["updated_at"]),
-            "message_count": 0,
-        }
-    }
+    return make_response(True, data={
+        "id": session["id"],
+        "tenant_id": session["tenant_id"],
+        "user_id": session["customer_id"],
+        "title": session["title"],
+        "created_at": _format_datetime(session["created_at"]),
+        "updated_at": _format_datetime(session["updated_at"]),
+        "message_count": 0,
+    })
 
 
 @router.get("/sessions")
@@ -831,15 +829,12 @@ async def list_sessions(
             "updated_at": _format_datetime(session["updated_at"]),
         })
     
-    return {
-        "success": True,
-        "data": {
-            "items": formatted_sessions,
-            "page": page,
-            "size": size,
-            "total": len(formatted_sessions),
-        }
-    }
+    return make_response(True, data={
+        "items": formatted_sessions,
+        "page": page,
+        "size": size,
+        "total": len(formatted_sessions),
+    })
 
 
 @router.put("/sessions/{session_id}/close")
@@ -905,14 +900,11 @@ async def close_session_endpoint(
     # 幂等语义：已 closed 仍返回成功
     if session.get("status") == "closed":
         logger.info(f"[chat/close] Session already closed | session_id={session_id}")
-        return {
-            "success": True,
-            "data": {
-                "session_id": session_id,
-                "status": "closed",
-                "message": "会话已处于关闭状态",
-            },
-        }
+        return make_response(True, data={
+            "session_id": session_id,
+            "status": "closed",
+            "message": "会话已处于关闭状态",
+        })
 
     await session_memory.close_session(session_id)
     logger.info(
@@ -920,14 +912,11 @@ async def close_session_endpoint(
         f"tenant_id={current_user.tenant_id}"
     )
 
-    return {
-        "success": True,
-        "data": {
-            "session_id": session_id,
-            "status": "closed",
-            "message": "会话已结束",
-        },
-    }
+    return make_response(True, data={
+        "session_id": session_id,
+        "status": "closed",
+        "message": "会话已结束",
+    })
 
 
 @router.put("/sessions/{session_id}/reopen")
@@ -952,14 +941,11 @@ async def reopen_session_endpoint(
             detail={"success": False, "error": {"code": "PERMISSION_DENIED", "message": "无权操作该会话"}},
         )
     if session.get("status") != "closed":
-        return {
-            "success": True,
-            "data": {"session_id": session_id, "status": session.get("status"), "message": "会话已是活跃状态"},
-        }
+        return make_response(True, data={"session_id": session_id, "status": session.get("status"), "message": "会话已是活跃状态"})
 
     await session_memory.reopen_session(session_id)
     logger.info(f"Session reopened: session_id={session_id}, user_id={current_user.user_id}")
-    return {"success": True, "data": {"session_id": session_id, "status": "active", "message": "会话已重新打开"}}
+    return make_response(True, data={"session_id": session_id, "status": "active", "message": "会话已重新打开"})
 
 
 @router.delete("/sessions/{session_id}")
@@ -1031,13 +1017,10 @@ async def delete_session(
     await session_memory.delete_session(session_id)
     logger.info(f"Session deleted: session_id={session_id}, user_id={current_user.user_id}, tenant_id={current_user.tenant_id}")
     
-    return {
-        "success": True,
-        "data": {
-            "message": "会话已删除",
-            "session_id": session_id,
-        }
-    }
+    return make_response(True, data={
+        "message": "会话已删除",
+        "session_id": session_id,
+    })
 
 
 @router.get("/history/{session_id}")
@@ -1138,13 +1121,10 @@ async def get_history(
             "created_at": _format_datetime(msg["created_at"]),
         })
     
-    return {
-        "success": True,
-        "data": {
-            "session_id": session_id,
-            "messages": formatted_messages,
-        }
-    }
+    return make_response(True, data={
+        "session_id": session_id,
+        "messages": formatted_messages,
+    })
 
 
 @router.post("/suggestion-feedback")
@@ -1220,9 +1200,6 @@ async def get_quick_actions(
         },
     ]
     
-    return {
-        "success": True,
-        "data": {
-            "actions": actions,
-        }
-    }
+    return make_response(True, data={
+        "actions": actions,
+    })
