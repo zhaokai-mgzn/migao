@@ -33,14 +33,14 @@ class LLMFactory:
 
         - temperature=0.7
         - streaming=True
-        - max_completion_tokens=2048
+        - max_completion_tokens=16384
         - timeout=60
 
         Args:
             model_override: 显式指定模型名（来自 router.select_model 的返回值）。
                             为空则使用 settings.MINIMAX_MODEL。
-            enable_thinking: 是否启用 MiniMax M3 深度思考模式（adaptive thinking）。
-                             M3 默认开启 thinking；设为 False 时不显式关闭（由模型决定）。
+            enable_thinking: True → 显式 adaptive thinking。
+                             False → 不传 thinking 参数，由模型决定（M3 默认开启）。
         """
         model = model_override or settings.MINIMAX_MODEL
         kwargs: dict = dict(
@@ -49,7 +49,7 @@ class LLMFactory:
             base_url=MINIMAX_BASE_URL,
             temperature=0.7,
             streaming=True,
-            max_completion_tokens=2048,
+            max_completion_tokens=16384,
             request_timeout=60,
         )
         if enable_thinking:
@@ -70,7 +70,7 @@ class LLMFactory:
             base_url=MINIMAX_BASE_URL,
             temperature=0.7,
             streaming=True,
-            max_completion_tokens=2048,
+            max_completion_tokens=16384,
             request_timeout=60,
         )
 
