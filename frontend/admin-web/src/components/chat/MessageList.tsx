@@ -8,6 +8,9 @@ import {
   ChevronDown,
   ChevronRight,
   AlertCircle,
+  CheckCircle2,
+  Copy,
+  Check,
   X,
 } from 'lucide-react'
 import NextImage from 'next/image'
@@ -124,14 +127,12 @@ function MessageBubble({ message }: { message: ChatMessage }) {
           )}
         </div>
 
-        {/* 工具调用展示 — 仅在出错时展示，便于排查 */}
+        {/* 工具调用展示 — 显示所有工具调用，成功默认折叠，错误/运行中展开 */}
         {isAI && message.tool_calls && message.tool_calls.length > 0 && (
           <div className="mt-2 w-full space-y-1.5">
-            {message.tool_calls
-              .filter((tc) => tc.status === 'error')
-              .map((tc, index) => (
-                <ToolCallPanel key={index} toolCall={tc} />
-              ))}
+            {message.tool_calls.map((tc, index) => (
+              <ToolCallPanel key={index} toolCall={tc} />
+            ))}
           </div>
         )}
 
@@ -184,6 +185,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
 }
 
 function AIMessageContent({ message }: { message: ChatMessage }) {
+  const [copied, setCopied] = useState(false)
   const isStreamingEmpty = message.isStreaming && !message.content
 
   // 正在调用工具时的指示器
@@ -231,16 +233,38 @@ function AIMessageContent({ message }: { message: ChatMessage }) {
     )
   }
 
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(cleanContent)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
   return (
-    <div className="prose prose-sm max-w-none text-gray-800 [&_p]:my-1 [&_ul]:my-1 [&_ol]:my-1 [&_pre]:my-2 [&_code]:text-xs [&_code]:bg-gray-100 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded">
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>
-        {cleanContent}
-      </ReactMarkdown>
-      {message.isStreaming && (
-        <span className="inline-block w-1.5 h-4 bg-primary-600 animate-pulse ml-0.5 align-text-bottom" />
-      )}
-      {message.images && message.images.length > 0 && (
-        <MessageImages images={message.images} />
+    <div className="group relative">
+      <div className="prose prose-sm max-w-none text-gray-800 [&_p]:my-1 [&_ul]:my-1 [&_ol]:my-1 [&_pre]:my-2 [&_code]:text-xs [&_code]:bg-gray-100 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_table]:text-xs [&_table]:border-collapse [&_th]:border [&_th]:border-gray-300 [&_th]:bg-gray-100 [&_th]:px-2 [&_th]:py-1 [&_td]:border [&_td]:border-gray-300 [&_td]:px-2 [&_td]:py-1">
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+          {cleanContent}
+        </ReactMarkdown>
+        {message.isStreaming && (
+          <span className="inline-block w-1.5 h-4 bg-primary-600 animate-pulse ml-0.5 align-text-bottom" />
+        )}
+        {message.images && message.images.length > 0 && (
+          <MessageImages images={message.images} />
+        )}
+      </div>
+      {/* 复制按钮 — hover 时显示 */}
+      {!message.isStreaming && (
+        <button
+          onClick={handleCopy}
+          className="absolute top-0 right-0 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600"
+          title="复制回复内容"
+        >
+          {copied ? (
+            <Check className="w-3.5 h-3.5 text-green-500" />
+          ) : (
+            <Copy className="w-3.5 h-3.5" />
+          )}
+        </button>
       )}
     </div>
   )
@@ -310,8 +334,17 @@ function MessageImages({ images }: { images: string[] }) {
 }
 
 function ToolCallPanel({ toolCall }: { toolCall: ChatToolCall }) {
-  const [expanded, setExpanded] = useState(false)
   const isRunning = toolCall.status === 'running'
+  const isError = toolCall.status === 'error'
+  // 错误和运行中默认展开，成功默认折叠
+  const [expanded, setExpanded] = useState(isError || isRunning)
+
+  const statusLabel = isRunning ? '执行中' : isError ? '失败' : '完成'
+  const statusClass = isRunning
+    ? 'text-amber-600 bg-amber-50'
+    : isError
+    ? 'text-red-600 bg-red-50'
+    : 'text-green-600 bg-green-50'
 
   return (
     <div className="bg-gray-50 border border-gray-200 rounded-lg overflow-hidden text-xs">
@@ -321,16 +354,16 @@ function ToolCallPanel({ toolCall }: { toolCall: ChatToolCall }) {
       >
         {isRunning ? (
           <Wrench className="w-3.5 h-3.5 text-amber-500 animate-pulse" />
-        ) : toolCall.status === 'error' ? (
+        ) : isError ? (
           <AlertCircle className="w-3.5 h-3.5 text-red-500" />
         ) : (
-          <Wrench className="w-3.5 h-3.5 text-green-500" />
+          <CheckCircle2 className="w-3.5 h-3.5 text-green-500" />
         )}
         <span className="font-medium text-gray-700 flex-1 text-left">
           {toolCall.name}
-          {isRunning && (
-            <span className="text-gray-400 ml-1">执行中...</span>
-          )}
+        </span>
+        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${statusClass}`}>
+          {statusLabel}
         </span>
         {expanded ? (
           <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
