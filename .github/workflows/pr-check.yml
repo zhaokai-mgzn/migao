@@ -50,7 +50,6 @@ jobs:
           PRIMARY_API_KEY: ci-dummy
           PRIMARY_BASE_URL: https://api.deepseek.com/v1
           PRIMARY_MODEL: deepseek-v4-pro
-          DASHSCOPE_EMBEDDING_MODEL: text-embedding-v3
           DASHVECTOR_API_KEY: ci-dummy
           DASHVECTOR_ENDPOINT: https://ci-dummy.example.com
           DASHVECTOR_COLLECTION: ci
