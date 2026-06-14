@@ -44,13 +44,6 @@ jobs:
         working-directory: backend/admin-api
         run: mvn test -q
 
-      - name: Inject JWT private key
-        working-directory: backend/admin-api
-        run: |
-          mkdir -p src/main/resources/rsa
-          echo "${{ secrets.JWT_PRIVATE_KEY }}" > src/main/resources/rsa/private.pem
-          echo "✅ JWT private key injected"
-
       - name: Build admin-api with Maven
         working-directory: backend/admin-api
         run: |
@@ -132,6 +125,8 @@ jobs:
           done
 
       - name: Deploy to SAE
+        env:
+          JWT_PRIVATE_KEY_PEM: ${{ secrets.JWT_PRIVATE_KEY }}
         run: |
           # 获取当前完整环境变量（全量重发，避免清空已有配置）
           # 写入临时文件，规避特殊字符（@、!、$、&）在 shell 命令行中的解析问题
@@ -148,6 +143,10 @@ jobs:
 
           echo "✅ 已获取 SAE 环境变量（条目数：$(jq 'length' "$ENVS_FILE")）"
 
+          # 读取公钥内容
+          PUBLIC_KEY_PEM=$(cat backend/admin-api/src/main/resources/rsa/public.pem)
+          export PUBLIC_KEY_PEM
+
           # 使用 Python subprocess 直接 execvp 调用 aliyun CLI
           # 参数以 list 传入，完全绕过 shell 解析，避免特殊字符（OSS URL 中的 &、密码中的 @!$）被截断或误解析
           python3 <<'PYEOF'
@@ -158,11 +157,30 @@ jobs:
           with open(os.environ['SIGNED_URL_FILE'], 'r', encoding='utf-8') as f:
               signed_url = f.read().strip()
 
-          # 校验 envs 是合法 JSON 数组并紧凑序列化
+          # 校验 envs 是合法 JSON 数组
           envs = json.loads(envs_raw)
           if not isinstance(envs, list):
               print(f'❌ Envs 必须是数组，实际类型：{type(envs).__name__}', file=sys.stderr)
               sys.exit(1)
+
+          # 注入 RSA 密钥对（环境变量优先级高于 classpath 文件）
+          private_key = os.environ.get('JWT_PRIVATE_KEY_PEM', '').strip()
+          public_key = os.environ.get('PUBLIC_KEY_PEM', '').strip()
+
+          def upsert_env(envs_list, name, value):
+              for e in envs_list:
+                  if e.get('name') == name or e.get('Key') == name:
+                      e['value'] = value
+                      return
+              envs_list.append({'name': name, 'value': value})
+
+          if private_key:
+              upsert_env(envs, 'jwt.private-key-pem', private_key)
+              print('✅ 已注入 jwt.private-key-pem')
+          if public_key:
+              upsert_env(envs, 'jwt.public-key-pem', public_key)
+              print('✅ 已注入 jwt.public-key-pem')
+
           envs_compact = json.dumps(envs, ensure_ascii=False, separators=(',', ':'))
 
           if not signed_url.startswith('http'):
