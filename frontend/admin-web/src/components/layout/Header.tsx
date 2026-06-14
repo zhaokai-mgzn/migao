@@ -38,6 +38,7 @@ const ROUTE_BREADCRUMB_MAP: Array<{
   { match: (p) => p.startsWith('/agent-workspace/quick-replies'), crumbs: [{ label: '客服中心' }, { label: '快捷回复' }] },
   { match: (p) => p.startsWith('/agent-workspace'), crumbs: [{ label: '客服中心' }, { label: '客服工作台' }] },
   { match: (p) => p.startsWith('/employees'), crumbs: [{ label: '客服中心' }, { label: '客服团队' }] },
+  { match: (p) => p.startsWith('/chat/config'), crumbs: [{ label: '客服中心' }, { label: '机器人设置' }] },
   { match: (p) => p.startsWith('/chat'), crumbs: [{ label: '客服中心' }, { label: '在线对话' }] },
   // 系统管理
   { match: (p) => p.startsWith('/roles'), crumbs: [{ label: '系统管理' }, { label: '角色权限' }] },
