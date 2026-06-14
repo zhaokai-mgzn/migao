@@ -284,7 +284,7 @@ class TestFollowUpSuggestionGenerator:
             gen = FollowUpSuggestionGenerator()
 
         mock_response = MagicMock()
-        mock_response.content = '["追踪物流", "联系卖家", "确认收货"]'
+        mock_response.content = '["确认收货", "联系快递客服", "查看其他订单物流"]'
         mock_response.response_metadata = {}
         mock_response.usage_metadata = {}
 
@@ -301,7 +301,7 @@ class TestFollowUpSuggestionGenerator:
                 intent_type="logistics_track",
                 agent_type="xiaobu",
             )
-            assert result == ["追踪物流", "联系卖家", "确认收货"]
+            assert result == ["确认收货", "联系快递客服", "查看其他订单物流"]
 
     @pytest.mark.asyncio
     async def test_generate_dynamic_timeout_fallback(self):
