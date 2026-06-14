@@ -508,11 +508,16 @@ async def send_message(
     # 1. 创建或获取 session
     session_id = request.session_id
     if not session_id:
-        # 创建新会话
+        # 创建新会话，并关闭该用户其他活跃会话
         session_id = await session_memory.create_session(
             tenant_id=tenant_id,
             customer_id=user_id,
             title=None,  # 自动生成标题
+        )
+        await session_memory.close_other_active_sessions(
+            tenant_id=tenant_id,
+            customer_id=user_id,
+            except_session_id=session_id,
         )
     else:
         # 验证会话存在且属于当前用户
@@ -594,11 +599,16 @@ async def send_message(
                             f"[chat/send] close_session failed during rotation | "
                             f"session={session_id} error={close_err}"
                         )
-                    # 新建会话承接本次发送
+                    # 新建会话承接本次发送，并关闭该用户其他活跃会话
                     session_id = await session_memory.create_session(
                         tenant_id=tenant_id,
                         customer_id=user_id,
                         title=None,
+                    )
+                    await session_memory.close_other_active_sessions(
+                        tenant_id=tenant_id,
+                        customer_id=user_id,
+                        except_session_id=session_id,
                     )
                     # 方案 B：旧会话已因超时关闭，新会话承接
         except HTTPException:
@@ -730,13 +740,20 @@ async def create_session(
         ChatSessionResponse: 新创建的会话信息
     """
     session_memory = SessionMemory()
-    
+
     session_id = await session_memory.create_session(
         tenant_id=current_user.tenant_id,
         customer_id=current_user.user_id,
         title=request.title,
     )
     logger.info(f"Session created: session_id={session_id}, user_id={current_user.user_id}, tenant_id={current_user.tenant_id}")
+
+    # 关闭该用户其他活跃会话，保持"一个用户一个活跃会话"语义
+    await session_memory.close_other_active_sessions(
+        tenant_id=current_user.tenant_id,
+        customer_id=current_user.user_id,
+        except_session_id=session_id,
+    )
 
     # 获取创建的会话信息
     session = await session_memory.get_session(session_id)

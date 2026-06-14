@@ -28,9 +28,14 @@ public class ProductSku {
     private String productId;
 
     /**
-     * 关联颜色ID
+     * 关联颜色ID（兼容旧数据，新数据优先使用 colorName）
      */
     private Long colorId;
+
+    /**
+     * 颜色标识（色号如"2699-01"或颜色名如"白色"）
+     */
+    private String colorName;
 
     /**
      * 售卖方式: bulk_cut(散剪) / full_roll(整卷)

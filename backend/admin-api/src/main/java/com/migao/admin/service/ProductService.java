@@ -237,7 +237,12 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                 skuResp.setId(sku.getId());
                 skuResp.setProductId(sku.getProductId());
                 skuResp.setColorId(sku.getColorId());
-                skuResp.setColorName(colorNameMap.get(sku.getColorId()));
+                // 新数据直接取 SKU 的 colorName，旧数据从 product_colors 回退
+                skuResp.setColorName(
+                    StringUtils.hasText(sku.getColorName())
+                        ? sku.getColorName()
+                        : colorNameMap.get(sku.getColorId())
+                );
                 skuResp.setSellingMethod(sku.getSellingMethod());
                 skuResp.setDoorWidth(sku.getDoorWidth());
                 skuResp.setPrice(sku.getPrice());
@@ -307,9 +312,12 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         // 保存商品
         productMapper.insert(product);
 
-        // 保存销售信息（颜色 + SKU）
+        // 保存销售信息（颜色 + SKU），支持笛卡尔积自动生成
         saveColorsAndSkus(product.getId(), tenantId,
-                request.getColors(), request.getSkus());
+                request.getColors(),
+                request.getSellingMethods(), request.getDoorWidths(),
+                product.getBasePrice(), product.getStock(),
+                request.getSkus());
 
         // 保存商品属性（brand + specifications，存入 product_attributes 表）
         saveProductAttributes(product.getId(), tenantId, request.getBrand(), request.getSpecifications());
@@ -365,15 +373,22 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
 
         productMapper.updateById(product);
 
-        // 更新销售信息（先删后插）：仅当请求中包含 colors/skus 字段时才更新，避免误清空
-        if (request.getColors() != null || request.getSkus() != null) {
+        // 更新销售信息（先删后插），支持笛卡尔积自动生成
+        if (request.getColors() != null || request.getSkus() != null
+                || request.getSellingMethods() != null || request.getDoorWidths() != null) {
             // 删除旧颜色和旧 SKU
             productSkuMapper.delete(new LambdaQueryWrapper<ProductSku>()
                     .eq(ProductSku::getProductId, id));
             productColorMapper.delete(new LambdaQueryWrapper<ProductColor>()
                     .eq(ProductColor::getProductId, id));
-            // 重新保存
-            saveColorsAndSkus(id, tenantId, request.getColors(), request.getSkus());
+            // 重新保存（price/stock 优先取请求值，否则用商品当前值）
+            BigDecimal skuPrice = request.getBasePrice() != null ? request.getBasePrice() : product.getBasePrice();
+            Integer skuStock = request.getStock() != null ? request.getStock() : product.getStock();
+            saveColorsAndSkus(id, tenantId,
+                    request.getColors(),
+                    request.getSellingMethods(), request.getDoorWidths(),
+                    skuPrice, skuStock,
+                    request.getSkus());
         }
 
         // 更新商品属性：仅当请求中明确提交 brand 或 specifications 时才重写，避免误清空
@@ -404,15 +419,22 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
      */
     private void saveColorsAndSkus(String productId, Long tenantId,
                                     List<ProductColorInput> colorInputs,
+                                    List<String> sellingMethods,
+                                    List<String> doorWidths,
+                                    BigDecimal basePrice,
+                                    Integer stock,
                                     List<ProductSkuInput> skuInputs) {
-        if ((colorInputs == null || colorInputs.isEmpty())
-                && (skuInputs == null || skuInputs.isEmpty())) {
-            return;
+        // 提取颜色名列表（优先用 colorName，即色号如 "2699-01"）
+        List<String> colorNames = new ArrayList<>();
+        if (colorInputs != null) {
+            for (ProductColorInput input : colorInputs) {
+                if (input == null) continue;
+                colorNames.add(StringUtils.hasText(input.getColorName()) ? input.getColorName() : "");
+            }
         }
 
-        // 前端临时 colorId -> DB 真实 colorId
+        // 保存颜色到 product_colors（兼容前端旧逻辑）
         Map<Long, Long> colorIdMap = new LinkedHashMap<>();
-
         if (colorInputs != null) {
             int idx = 0;
             for (ProductColorInput input : colorInputs) {
@@ -433,6 +455,27 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             }
         }
 
+        // 笛卡尔积自动生成 SKU：colors × sellingMethods × doorWidths
+        if ((skuInputs == null || skuInputs.isEmpty())
+                && !colorNames.isEmpty()
+                && sellingMethods != null && !sellingMethods.isEmpty()
+                && doorWidths != null && !doorWidths.isEmpty()) {
+            skuInputs = new ArrayList<>();
+            for (String colorName : colorNames) {
+                for (String sm : sellingMethods) {
+                    for (String dw : doorWidths) {
+                        ProductSkuInput sku = new ProductSkuInput();
+                        sku.setColorName(colorName);
+                        sku.setSellingMethod(sm);
+                        sku.setDoorWidth(dw);
+                        sku.setPrice(basePrice);
+                        sku.setStock(stock != null && stock > 0 ? stock : 100);
+                        skuInputs.add(sku);
+                    }
+                }
+            }
+        }
+
         if (skuInputs != null) {
             for (ProductSkuInput input : skuInputs) {
                 if (input == null) continue;
@@ -440,18 +483,19 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                         || !StringUtils.hasText(input.getDoorWidth())) {
                     continue;
                 }
+                // 解析 colorId（兼容前端旧逻辑，新数据走 colorName）
                 Long mappedColorId = null;
                 if (input.getColorId() != null) {
                     mappedColorId = colorIdMap.getOrDefault(input.getColorId(), input.getColorId());
-                    // 若映射后非法（前端临时ID未在 colorIdMap 中且其本身为负数），则跳过
                     if (mappedColorId != null && mappedColorId <= 0) {
-                        continue;
+                        mappedColorId = null;
                     }
                 }
                 ProductSku entity = new ProductSku();
                 entity.setTenantId(tenantId);
                 entity.setProductId(productId);
                 entity.setColorId(mappedColorId);
+                entity.setColorName(input.getColorName());
                 entity.setSellingMethod(input.getSellingMethod());
                 entity.setDoorWidth(input.getDoorWidth());
                 entity.setPrice(input.getPrice() != null ? input.getPrice() : BigDecimal.ZERO);

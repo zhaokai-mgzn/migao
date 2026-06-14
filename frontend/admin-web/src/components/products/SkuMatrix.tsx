@@ -84,10 +84,14 @@ function rebuildSkus(
         const matchWidth = (db: string, opt: string) =>
           db === opt || db.replace(/^门幅/, '') === opt
         const found = existing.find(
-          (s) =>
-            s.colorId === color.id &&
-            s.sellingMethod === method &&
-            matchWidth(s.doorWidth || '', width)
+          (s) => {
+            // 优先 colorId 匹配（旧数据），兜底 colorName 匹配（新数据 colorId 可能为 null）
+            const idMatch = s.colorId != null && s.colorId === color.id
+            const nameMatch = s.colorName === color.colorName
+            return (idMatch || (s.colorId == null && nameMatch)) &&
+              s.sellingMethod === method &&
+              matchWidth(s.doorWidth || '', width)
+          }
         )
         if (found) {
           result.push({ ...found, colorName: color.colorName })
@@ -155,14 +159,17 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
   const handleUpdateColor = (idx: number, patch: Partial<ProductColor>) => {
     const nextColors = [...colors]
     nextColors[idx] = { ...nextColors[idx], ...patch }
-    // 同步 sku.colorName
+    // 同步 sku.colorName（兼容 colorId 和 colorName 匹配）
     const nextSkus =
       patch.colorName !== undefined
-        ? skus.map((s) =>
-            s.colorId === nextColors[idx].id
-              ? { ...s, colorName: patch.colorName! }
-              : s
-          )
+        ? skus.map((s) => {
+            const idMatch = s.colorId != null && s.colorId === nextColors[idx].id
+            const nameMatch = s.colorName === nextColors[idx].colorName
+            if (idMatch || (s.colorId == null && nameMatch)) {
+              return { ...s, colorName: patch.colorName! }
+            }
+            return s
+          })
         : skus
     onChange({ ...value, colors: nextColors, skus: nextSkus })
   }
@@ -290,18 +297,22 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
 
   const handleSkuChange = (
     colorId: number,
+    colorName: string,
     method: SellingMethod,
     width: string,
     field: 'price' | 'stock',
     val: number
   ) => {
-    const nextSkus = skus.map((s) =>
-      s.colorId === colorId &&
-      s.sellingMethod === method &&
-      s.doorWidth === width
-        ? { ...s, [field]: val }
-        : s
-    )
+    const nextSkus = skus.map((s) => {
+      const idMatch = s.colorId != null && s.colorId === colorId
+      const nameMatch = s.colorName === colorName
+      if ((idMatch || (s.colorId == null && nameMatch)) &&
+        s.sellingMethod === method &&
+        s.doorWidth === width) {
+        return { ...s, [field]: val }
+      }
+      return s
+    })
     onChange({ ...value, skus: nextSkus })
   }
 
@@ -669,10 +680,13 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
                   return validSellingMethods.map((method, mIdx) =>
                     validDoorWidths.map((width, wIdx) => {
                       const sku = skus.find(
-                        (s) =>
-                          s.colorId === color.id &&
-                          s.sellingMethod === method &&
-                          s.doorWidth === width
+                        (s) => {
+                          const idMatch = s.colorId != null && s.colorId === color.id
+                          const nameMatch = s.colorName === color.colorName
+                          return (idMatch || (s.colorId == null && nameMatch)) &&
+                            s.sellingMethod === method &&
+                            s.doorWidth === width
+                        }
                       )
                       const isFirstRowOfColor = mIdx === 0 && wIdx === 0
                       const isFirstRowOfMethod = wIdx === 0
@@ -717,6 +731,7 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
                               onChange={(e) =>
                                 handleSkuChange(
                                   color.id,
+                                  color.colorName,
                                   method,
                                   width,
                                   'price',
@@ -736,6 +751,7 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
                               onChange={(e) =>
                                 handleSkuChange(
                                   color.id,
+                                  color.colorName,
                                   method,
                                   width,
                                   'stock',
