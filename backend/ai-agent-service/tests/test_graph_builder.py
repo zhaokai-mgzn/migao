@@ -43,8 +43,8 @@ class TestBuildGraph:
         nodes = set(graph.get_graph().nodes.keys())
         # 配置驱动的节点名称：{skill_name}_skill
         expected = {
-            "cache_check", "intent_router", "direct_reply",
-            "cache_store", "suggest_node",
+            "intent_router", "direct_reply",
+            "suggest_node",
             "order_skill", "product_skill",
             "aftersales_skill", "customer_skill", "staff_skill",
             "settings_skill", "data_skill", "general_skill",
@@ -58,8 +58,8 @@ class TestBuildGraph:
         graph = build_agent_graph("xiaobu")
         nodes = set(graph.get_graph().nodes.keys())
         expected = {
-            "cache_check", "intent_router", "direct_reply",
-            "cache_store", "suggest_node",
+            "intent_router", "direct_reply",
+            "suggest_node",
             "customer_order_skill", "customer_product_skill",
             "customer_knowledge_skill", "customer_general_skill",
         }
@@ -73,10 +73,8 @@ class TestBuildGraph:
         nodes = set(graph.get_graph().nodes.keys())
 
         # 辅助节点始终存在
-        assert "cache_check" in nodes
         assert "intent_router" in nodes
         assert "direct_reply" in nodes
-        assert "cache_store" in nodes
         assert "suggest_node" in nodes
 
     def test_intent_to_skill_mapping_complete(self):
@@ -103,19 +101,6 @@ class TestBuildGraph:
             result = route_by_intent(state)
             assert result == expected_skill, f"Intent '{intent}' routed to '{result}', expected '{expected_skill}'"
 
-    def test_cache_check_routing_values(self):
-        """check_cache_hit 返回值与图中条件边的 key 一致"""
-        from app.graph.nodes import check_cache_hit
-
-        # hit case
-        state_hit = {"cached_answer": "cached"}
-        assert check_cache_hit(state_hit) == "hit"
-
-        # miss case
-        state_miss = {"cached_answer": None}
-        assert check_cache_hit(state_miss) == "miss"
-
-
 class TestGraphImports:
     """验证图模块的导入链正确"""
 
@@ -140,14 +125,14 @@ class TestGraphImports:
     def test_nodes_imports(self):
         """app.graph.nodes 导入正确"""
         from app.graph.nodes import (
-            cache_check_node, intent_router_node,
-            direct_reply_node, cache_store_node,
-            suggestions_node, check_cache_hit, route_by_intent,
+            intent_router_node,
+            direct_reply_node,
+            suggestions_node, route_by_intent,
         )
         assert all([
-            cache_check_node, intent_router_node,
-            direct_reply_node, cache_store_node,
-            suggestions_node, check_cache_hit, route_by_intent,
+            intent_router_node,
+            direct_reply_node,
+            suggestions_node, route_by_intent,
         ])
 
     def test_state_import(self):

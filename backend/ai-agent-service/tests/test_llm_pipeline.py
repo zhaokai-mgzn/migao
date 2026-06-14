@@ -155,11 +155,11 @@ class TestSelectModel:
         assert select_model(intent="greeting", force_model=MODEL_FLASH) == MODEL_FLASH
 
     def test_model_constants_aligned(self):
-        """模型常量对齐检查（轻量/平衡/旗舰三级路由）"""
-        assert MODEL_MAX == "qwen3.7-max"
-        assert MODEL_PLUS == "qwen3.6-plus"
-        assert MODEL_LITE == "qwen3.6-flash"
-        assert MODEL_FLASH == "qwen3.6-flash"
+        """模型常量对齐检查（双模型路由: Primary + Fast）"""
+        assert MODEL_MAX == "MiniMax-M3"
+        assert MODEL_PLUS == "MiniMax-M3"
+        assert MODEL_LITE == "MiniMax-M2.7-highspeed"
+        assert MODEL_FLASH == "MiniMax-M2.7-highspeed"
 
     def test_routing_threshold_boundary(self, routing_on):
         """阈值边界: tool_count=2 走 plus, text_length=8000 走 plus"""
