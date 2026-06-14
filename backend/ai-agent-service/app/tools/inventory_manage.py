@@ -357,9 +357,13 @@ class InventoryManageTool(BaseTool):
 
         records = response.get("data", [])
 
-        # 按颜色+规格维度格式化
+        # 按颜色+规格维度格式化（含租户校验，纵深防御）
         low_stock_items = []
         for record in records:
+            # 后端 SQL 已按 tenant 过滤，此处为纵深防御
+            resp_tenant_id = record.get("tenantId")
+            if resp_tenant_id is not None and str(resp_tenant_id) != str(context.tenant_id):
+                continue
             low_stock_items.append({
                 "product_id": record.get("productId"),
                 "product_name": record.get("productName"),

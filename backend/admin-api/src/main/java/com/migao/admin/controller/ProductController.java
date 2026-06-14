@@ -120,7 +120,7 @@ public class ProductController {
             @RequestParam(defaultValue = "50") int limit) {
         Long tenantId = TenantContext.getTenantId();
         log.info("低库存查询(颜色维度): threshold={}, limit={}, tenantId={}", threshold, limit, tenantId);
-        List<LowStockByColorResponse> result = productService.getLowStockByColor(threshold, limit);
+        List<LowStockByColorResponse> result = productService.getLowStockByColor(tenantId, threshold, limit);
         return ApiResponse.success(result);
     }
 

@@ -392,9 +392,9 @@ class ProductServiceTest {
             new LowStockByColorResponse(1L, "prod-001", "遮光窗帘", "8827-2",
                 100L, "红色", "2.8m", 5, new BigDecimal("8.80"))
         );
-        when(productMapper.findLowStockByColor(100, 50)).thenReturn(mockResult);
+        when(productMapper.findLowStockByColor(1L, 100, 50)).thenReturn(mockResult);
 
-        List<LowStockByColorResponse> result = productService.getLowStockByColor(100, 50);
+        List<LowStockByColorResponse> result = productService.getLowStockByColor(1L, 100, 50);
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).getProductName()).isEqualTo("遮光窗帘");
@@ -405,9 +405,9 @@ class ProductServiceTest {
     @Test
     @DisplayName("低库存查询(颜色维度) - 无低库存 SKU")
     void getLowStockByColor_Empty() {
-        when(productMapper.findLowStockByColor(100, 50)).thenReturn(Collections.emptyList());
+        when(productMapper.findLowStockByColor(1L, 100, 50)).thenReturn(Collections.emptyList());
 
-        List<LowStockByColorResponse> result = productService.getLowStockByColor(100, 50);
+        List<LowStockByColorResponse> result = productService.getLowStockByColor(1L, 100, 50);
 
         assertThat(result).isEmpty();
     }

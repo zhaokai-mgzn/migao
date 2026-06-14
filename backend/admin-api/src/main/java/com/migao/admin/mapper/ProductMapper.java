@@ -37,10 +37,10 @@ public interface ProductMapper extends BaseMapper<Product> {
             "ps.color_id AS colorId, COALESCE(ps.color_name, pc.color_name) AS colorName, " +
             "ps.door_width AS doorWidth, ps.stock AS stock, ps.price AS price " +
             "FROM product_skus ps " +
-            "JOIN products p ON ps.product_id = p.id AND p.deleted = 0 " +
+            "JOIN products p ON ps.product_id = p.id AND p.deleted = 0 AND p.tenant_id = #{tenantId} " +
             "LEFT JOIN product_colors pc ON ps.color_id = pc.id " +
             "WHERE ps.stock < #{threshold} AND ps.stock >= 0 " +
             "ORDER BY ps.stock ASC, p.name ASC " +
             "LIMIT #{limit}")
-    List<LowStockByColorResponse> findLowStockByColor(@Param("threshold") int threshold, @Param("limit") int limit);
+    List<LowStockByColorResponse> findLowStockByColor(@Param("tenantId") Long tenantId, @Param("threshold") int threshold, @Param("limit") int limit);
 }
