@@ -464,7 +464,26 @@ async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -
                          ensure_ascii=False)
         return err, {"success": False, "error": "tool_execution_failed"}
 
-    # 4. 格式化结果
+    # 4. 格式化结果 — 精简数据量，避免 LLM 上下文被大 JSON 撑爆
+    data = result.data
+    data_len = len(json.dumps(data, ensure_ascii=False, default=str)) if data else 0
+    if data_len > 2000:
+        # 大结果只保留摘要，丢掉原始 data
+        summary = getattr(result, "summary", "") or result.message or ""
+        result_str = json.dumps({
+            "success": result.success,
+            "message": result.message,
+            "summary": summary,
+            "data_size": data_len,
+            "data_preview": json.dumps(data, ensure_ascii=False, default=str)[:500],
+        }, ensure_ascii=False)
+    else:
+        result_str = json.dumps({
+            "success": result.success,
+            "data": data,
+            "message": result.message,
+            "summary": getattr(result, "summary", "") or result.message or "",
+        }, ensure_ascii=False, default=str)
     result_dict = {
         "success": result.success,
         "data": result.data,
@@ -473,7 +492,6 @@ async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -
         "summary": getattr(result, "summary", None) or getattr(result, "message", ""),
         "suggestion": getattr(result, "suggestion", None) or "",
     }
-    result_str = json.dumps(result_dict, ensure_ascii=False, default=str)
 
     # 5. 缓存（带锁）
     if result.success:
