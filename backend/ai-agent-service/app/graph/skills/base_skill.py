@@ -832,13 +832,21 @@ async def execute_skill(
                 # 检查是否有 tool_calls
                 if not response.tool_calls:
                     # 没有 tool_calls，LLM 返回了最终回复
-                    final_content = _extract_content(response)
-                    logger.info(
-                        f"[{skill_name}] LLM final reply | "
-                        f"content_len={len(final_content)} "
-                        f"raw_content_len={len(response.content or '')} "
-                        f"has_additional_kwargs={bool(getattr(response, 'additional_kwargs', None))}"
-                    )
+                    new_text = _extract_content(response)
+                    if new_text:
+                        final_content = new_text
+                    elif not final_content:
+                        # LLM 返回空、且前面也没有文本 → 兜底提示
+                        final_content = "抱歉，我遇到了一些问题，请重新描述您的需求。"
+                        logger.warning(
+                            f"[{skill_name}] LLM returned empty final reply | "
+                            f"raw_content_len={len(response.content or '')}"
+                        )
+                    else:
+                        # LLM 返回空但前面已有文本（如 tool 前的文本）→ 保留之前的内容
+                        logger.info(
+                            f"[{skill_name}] LLM returned empty reply, keeping previous text | "
+                            f"previous_len={len(final_content)}"
                     break
 
                 # 有 tool_calls 但 LLM 可能在同一个消息中先输出了文本
@@ -907,8 +915,9 @@ async def execute_skill(
             "amounts": extracted.amounts,
         }
 
-    # 7. 兜底：如果所有迭代后仍无内容，记录警告
+    # 7. 兜底：如果所有迭代后仍无内容，记录警告并生成友好提示
     if not final_content:
+        final_content = "抱歉，我遇到了一些问题，请重新描述您的需求，我会继续帮您处理。"
         logger.warning(
             f"[{skill_name}] Empty final_content after all iterations | "
             f"tenant={state['tenant_id']} session={session_id} "
