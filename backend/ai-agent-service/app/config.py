@@ -64,13 +64,13 @@ class Settings(BaseSettings):
 
     # ===== 功能开关与模型参数（有合理默认值，无需外部注入）=====
 
-    INTENT_MODEL: str = "MiniMax-M2.7-highspeed"        # 意图分类/摘要（快速模型）
+    INTENT_MODEL: str = "deepseek-v4-flash"              # 意图分类/摘要（快速模型）
     MINIMAX_VISION_MODEL: str = "MiniMax-M3"            # 图片识别（M3 原生多模态）
     MINIMAX_VISION_ENABLED: bool = True
 
     # LLM 模型路由常量 — 所有模型名统一在 config.py 管理
-    LLM_MODEL_PRIMARY: str = "MiniMax-M3"               # 复杂推理 / 多工具 / 视觉 / 默认
-    LLM_MODEL_FAST: str = "MiniMax-M2.7-highspeed"      # 轻量快速（意图路由、分类、摘要）
+    LLM_MODEL_PRIMARY: str = "deepseek-v4-pro"           # 复杂推理 / 多工具 / 视觉 / 默认
+    LLM_MODEL_FAST: str = "deepseek-v4-flash"            # 轻量快速（意图路由、分类、摘要）
 
     LLM_ENABLE_MODEL_ROUTING: bool = True
     LLM_COST_TRACKING_ENABLED: bool = True
