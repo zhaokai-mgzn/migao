@@ -1101,6 +1101,7 @@ export interface Employee {
   name: string
   phone?: string
   email?: string
+  position?: string
   role: string
   roles: Role[]
   status: EmployeeStatus
@@ -1121,6 +1122,7 @@ export interface EmployeeFormData {
   name: string
   phone?: string
   email?: string
+  position?: string
   roleIds: number[]
 }
 

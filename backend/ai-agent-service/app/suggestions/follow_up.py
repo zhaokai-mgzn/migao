@@ -268,8 +268,15 @@ class FollowUpSuggestionGenerator:
         strategy: str,
         suggestions: list[str],
     ) -> None:
-        """输出结构化日志，用于后续训练数据分析"""
+        """输出结构化日志，用于后续训练数据分析
+
+        ⚠️ 数据安全：日志包含用户对话内容（已脱敏手机号/邮箱），
+        应配置日志访问权限和保留策略，仅用于产品体验优化分析。
+        """
         import json as _json
+        from app.utils.log_sanitizer import LogSanitizer
+
+        sanitized_suggestions = [LogSanitizer.mask_text(s) for s in suggestions]
         logger.info(
             "[suggestion:generated]",
             _json.dumps({
@@ -280,9 +287,9 @@ class FollowUpSuggestionGenerator:
                 "intent_type": intent_type,
                 "stage": stage,
                 "strategy": strategy,
-                "user_query": query[:200],
-                "ai_answer": answer[:300],
-                "suggestions": suggestions,
+                "user_query": LogSanitizer.mask_text(query[:100]),
+                "ai_answer": LogSanitizer.mask_text(answer[:150]),
+                "suggestions": sanitized_suggestions,
             }, ensure_ascii=False),
         )
 

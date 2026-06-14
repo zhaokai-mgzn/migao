@@ -413,8 +413,32 @@ class TestStructuredLogging:
             )
             args = mock_logger.info.call_args[0]
             data = json.loads(args[1])
-            assert len(data["user_query"]) <= 200
-            assert len(data["ai_answer"]) <= 300
+            assert len(data["user_query"]) <= 100
+            assert len(data["ai_answer"]) <= 150
+
+    def test_log_generation_sanitizes_pii(self, generator):
+        """日志脱敏：手机号和邮箱被遮盖"""
+        import json
+        with patch("app.suggestions.follow_up.logger") as mock_logger:
+            generator._log_generation(
+                query="我的手机13812345678请回复",
+                answer="已发送到test@example.com",
+                intent_type="general",
+                agent_type="mibao",
+                stage="initial",
+                session_id="",
+                tenant_id=0,
+                user_id=0,
+                strategy="preset",
+                suggestions=["联系13812345678"],
+            )
+            args = mock_logger.info.call_args[0]
+            data = json.loads(args[1])
+            assert "13812345678" not in data["user_query"]
+            assert "****" in data["user_query"]
+            assert "test@example.com" not in data["ai_answer"]
+            assert "***@" in data["ai_answer"]
+            assert "13812345678" not in data["suggestions"][0]
 
     @pytest.mark.asyncio
     async def test_generate_logs_on_preset(self, generator):

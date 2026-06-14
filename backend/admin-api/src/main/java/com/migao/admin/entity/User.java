@@ -34,6 +34,9 @@ public class User {
 
     private String role;
 
+    /** 岗位（纯展示字段，如"管理员""客服""销售""运营""财务"） */
+    private String position;
+
     private Integer sessionTtl;
 
     private String status;

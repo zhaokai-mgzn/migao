@@ -491,6 +491,7 @@ async def send_message(
     # 记录被忽略的上一轮建议（用于训练数据分析）
     if request.ignored_suggestions:
         import json as _json
+        from app.utils.log_sanitizer import LogSanitizer
         for s in request.ignored_suggestions:
             logger.info(
                 "[suggestion:feedback]",
@@ -498,7 +499,7 @@ async def send_message(
                     "session_id": request.session_id or "",
                     "tenant_id": tenant_id,
                     "user_id": user_id,
-                    "suggestion": s,
+                    "suggestion": LogSanitizer.mask_text(s),
                     "clicked": False,
                     "source": "ignored",
                 }, ensure_ascii=False),
@@ -1152,7 +1153,10 @@ async def suggestion_feedback(
     current_user: UserIdentity = Depends(get_current_user),
 ):
     """
-    记录建议反馈（点击/忽略），用于后续训练数据分析
+    记录建议反馈（点击），用于后续训练数据分析
+
+    ⚠️ 数据安全：日志包含用户建议文本（已脱敏手机号/邮箱），
+    应配置日志访问权限和保留策略。
 
     Body:
         session_id: str - 会话 ID
@@ -1160,13 +1164,14 @@ async def suggestion_feedback(
         message_id: str (optional) - 关联的消息 ID
     """
     import json as _json
+    from app.utils.log_sanitizer import LogSanitizer
     logger.info(
         "[suggestion:feedback]",
         _json.dumps({
             "session_id": body.get("session_id", ""),
             "tenant_id": current_user.tenant_id,
             "user_id": current_user.user_id,
-            "suggestion": body.get("suggestion", ""),
+            "suggestion": LogSanitizer.mask_text(body.get("suggestion", "")),
             "clicked": True,
             "message_id": body.get("message_id", ""),
             "source": "click",

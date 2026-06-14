@@ -10,6 +10,9 @@ import type { Employee, EmployeeStatus, Role } from '@/types'
 import { EmployeeStatusLabels } from '@/types'
 import dayjs from 'dayjs'
 
+// 预定义岗位列表（可下拉选择，也支持手输）
+const PRESET_POSITIONS = ['管理员', '客服', '运营', '销售', '财务']
+
 // 角色颜色映射（按 code 区分颜色）
 const ROLE_COLOR_MAP: Record<string, 'info' | 'success' | 'warning' | 'error'> = {
   admin: 'error',
@@ -48,6 +51,7 @@ export default function EmployeesPage() {
     name: '',
     phone: '',
     email: '',
+    position: '',
     roleIds: [] as number[],
   })
 
@@ -114,7 +118,7 @@ export default function EmployeesPage() {
   // 打开新增对话框
   const handleAdd = () => {
     setEditingEmployee(null)
-    setFormData({ username: '', password: '', name: '', phone: '', email: '', roleIds: [] })  // roleIds 复用为权限ID，岗位字段用 role name 匹配
+    setFormData({ username: '', password: '', name: '', phone: '', email: '', position: '', roleIds: [] })
     setFormOpen(true)
   }
 
@@ -127,6 +131,7 @@ export default function EmployeesPage() {
       name: employee.name,
       phone: employee.phone || '',
       email: employee.email || '',
+      position: employee.position || '',
       roleIds: employee.roles?.map(r => r.id) || [],
     })
     setFormOpen(true)
@@ -146,6 +151,7 @@ export default function EmployeesPage() {
           phone: formData.phone || undefined,
           email: formData.email || undefined,
           password: formData.password || undefined,
+          position: formData.position || undefined,
           roleIds: formData.roleIds,
         })
         toast.success('编辑成功')
@@ -156,6 +162,7 @@ export default function EmployeesPage() {
           name: formData.name,
           phone: formData.phone || undefined,
           email: formData.email || undefined,
+          position: formData.position || undefined,
           roleIds: formData.roleIds,
         })
         toast.success('创建成功')
@@ -241,7 +248,7 @@ export default function EmployeesPage() {
       title: '岗位',
       width: '100px',
       render: (record) => (
-        <span className="text-sm text-gray-700">{(record as any).position || '-'}</span>
+        <span className="text-sm text-gray-700">{record.position || '-'}</span>
       ),
     },
     {
@@ -442,15 +449,20 @@ export default function EmployeesPage() {
             value={formData.email}
             onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
           />
-          <Input
-            label="岗位（选填，纯展示）"
-            placeholder="如：客服、销售、运营"
-            value={formData.roleIds.length > 0 ? allRoles.find(r => r.id === formData.roleIds[0])?.name || '' : ''}
-            onChange={(e) => {
-              const role = allRoles.find(r => r.name === e.target.value)
-              setFormData(prev => ({ ...prev, roleIds: role ? [role.id] : [] }))
-            }}
-          />
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">岗位（选填，纯展示）</label>
+            <input
+              list="position-list"
+              placeholder="选择或输入岗位，如：客服"
+              value={formData.position}
+              onChange={(e) => setFormData(prev => ({ ...prev, position: e.target.value }))}
+              className="w-full h-10 px-3 rounded-lg border border-gray-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-gray-400"
+            />
+            <datalist id="position-list">
+              {PRESET_POSITIONS.map(p => <option key={p} value={p} />)}
+            </datalist>
+            <p className="text-xs text-gray-400 mt-1">下拉选择或手动输入岗位名称</p>
+          </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">账号权限</label>
             <div className="flex flex-wrap gap-2">
