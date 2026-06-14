@@ -28,6 +28,7 @@ interface ChatState {
   selectSession: (id: string) => Promise<void>
   sendMessage: (content: string, images?: string[]) => Promise<void>
   closeSession: (id: string) => Promise<void>
+  reopenSession: (id: string) => Promise<void>
   setSearchKeyword: (keyword: string) => void
   stopStreaming: () => void
   clearCurrentSession: () => void
@@ -211,6 +212,21 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     } catch (error) {
       console.error('结束会话失败:', error)
       toast.error('结束会话失败')
+    }
+  },
+
+  reopenSession: async (id: string) => {
+    try {
+      await chatApi.reopenSession(id, getToken())
+      set(state => ({
+        sessions: state.sessions.map(s =>
+          s.session_id === id ? { ...s, status: 'active' as const } : s
+        ),
+      }))
+      toast.success('会话已重新打开')
+    } catch (error) {
+      console.error('重新打开会话失败:', error)
+      toast.error('重新打开会话失败')
     }
   },
 

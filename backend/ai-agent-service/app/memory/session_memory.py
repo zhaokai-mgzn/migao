@@ -849,3 +849,63 @@ class SessionMemory:
                 logger.warning(f"[session-memory] Transaction rolled back | session_id={session_id} error={e}")
                 logger.error(f"[session-memory] Operation failed | session_id={session_id} error={type(e).__name__}: {e}", exc_info=True)
                 raise
+
+    async def reopen_session(self, session_id: str) -> bool:
+        """
+        重新打开已关闭的会话：status 'closed' → 'active'，清除 ended_at。
+        """
+        async with await self._get_session() as db:
+            try:
+                from sqlalchemy import text
+                sql = text("""
+                    UPDATE sessions
+                    SET status = 'active',
+                        ended_at = NULL,
+                        updated_at = :now
+                    WHERE id = :session_id AND status = 'closed'
+                """)
+                result = await db.execute(sql, {
+                    "session_id": session_id,
+                    "now": self._now(),
+                })
+                await db.commit()
+                affected = result.rowcount or 0
+                logger.info(f"[session-memory] Session reopened | session_id={session_id}")
+                return affected > 0
+            except Exception as e:
+                await db.rollback()
+                logger.error(f"[session-memory] Reopen session failed | session_id={session_id} error={e}")
+                raise
+
+    async def cleanup_closed_sessions(self, older_than_days: int = 90) -> int:
+        """
+        清理超过指定天数的已关闭会话及其消息。
+        """
+        async with await self._get_session() as db:
+            try:
+                from sqlalchemy import text
+                from datetime import timedelta
+                cutoff = self._now() - timedelta(days=older_than_days)
+
+                delete_messages_sql = text("""
+                    DELETE FROM session_messages
+                    WHERE session_id IN (
+                        SELECT id FROM sessions
+                        WHERE status = 'closed' AND updated_at < :cutoff
+                    )
+                """)
+                await db.execute(delete_messages_sql, {"cutoff": cutoff})
+
+                delete_sessions_sql = text("""
+                    DELETE FROM sessions
+                    WHERE status = 'closed' AND updated_at < :cutoff
+                """)
+                result = await db.execute(delete_sessions_sql, {"cutoff": cutoff})
+                await db.commit()
+                count = result.rowcount or 0
+                logger.info(f"[session-memory] Cleaned up {count} closed sessions older than {older_than_days}d")
+                return count
+            except Exception as e:
+                await db.rollback()
+                logger.error(f"[session-memory] Cleanup failed error={e}")
+                raise

@@ -1,17 +1,19 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import {
   Plus,
-  MessageSquare,
   Search,
   X,
   MoreHorizontal,
   Trash2,
+  RotateCcw,
 } from 'lucide-react'
 import { cn, formatChatTime } from '@/lib/utils'
 import { useChatStore } from '@/store/chat'
 import type { ChatSession } from '@/types'
+
+type SessionTab = 'active' | 'closed'
 
 export default function SessionList() {
   const {
@@ -23,19 +25,36 @@ export default function SessionList() {
     createSession,
     selectSession,
     closeSession,
+    reopenSession,
   } = useChatStore()
 
   const [contextMenuId, setContextMenuId] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<SessionTab>('active')
 
-  const filteredSessions = sessions.filter(s => {
-    if (!searchKeyword.trim()) return true
+  // 按 tab 过滤
+  const tabFiltered = useMemo(
+    () => sessions.filter(s => s.status === activeTab || (activeTab === 'active' && !s.status)),
+    [sessions, activeTab]
+  )
+
+  const filteredSessions = useMemo(() => {
+    if (!searchKeyword.trim()) return tabFiltered
     const kw = searchKeyword.toLowerCase()
-    return (
+    return tabFiltered.filter(s =>
       (s.title || '').toLowerCase().includes(kw) ||
       (s.customer_name || '').toLowerCase().includes(kw) ||
       (s.last_message || '').toLowerCase().includes(kw)
     )
-  })
+  }, [tabFiltered, searchKeyword])
+
+  const activeCount = useMemo(
+    () => sessions.filter(s => s.status === 'active' || !s.status).length,
+    [sessions]
+  )
+  const closedCount = useMemo(
+    () => sessions.filter(s => s.status === 'closed').length,
+    [sessions]
+  )
 
   const handleCloseSession = useCallback(
     (e: React.MouseEvent, id: string) => {
@@ -82,6 +101,32 @@ export default function SessionList() {
         </div>
       </div>
 
+      {/* Tab 切换：活跃 / 已关闭 */}
+      <div className="flex border-b border-gray-100">
+        <button
+          onClick={() => setActiveTab('active')}
+          className={cn(
+            'flex-1 py-2 text-xs font-medium transition-colors border-b-2',
+            activeTab === 'active'
+              ? 'text-primary-600 border-primary-600'
+              : 'text-gray-400 border-transparent hover:text-gray-600'
+          )}
+        >
+          活跃 ({activeCount})
+        </button>
+        <button
+          onClick={() => setActiveTab('closed')}
+          className={cn(
+            'flex-1 py-2 text-xs font-medium transition-colors border-b-2',
+            activeTab === 'closed'
+              ? 'text-primary-600 border-primary-600'
+              : 'text-gray-400 border-transparent hover:text-gray-600'
+          )}
+        >
+          已关闭 ({closedCount})
+        </button>
+      </div>
+
       {/* 会话列表 */}
       <div className="flex-1 overflow-y-auto">
         {isLoadingSessions ? (
@@ -90,7 +135,7 @@ export default function SessionList() {
           </div>
         ) : filteredSessions.length === 0 ? (
           <div className="text-center py-8 text-gray-400 text-xs">
-            {searchKeyword ? '没有匹配的会话' : '暂无对话记录'}
+            {searchKeyword ? '没有匹配的会话' : activeTab === 'active' ? '暂无活跃会话' : '暂无已关闭会话'}
           </div>
         ) : (
           <div className="py-1">
@@ -113,6 +158,7 @@ export default function SessionList() {
                   )
                 }}
                 onCloseSession={(e) => handleCloseSession(e, session.session_id)}
+                onReopenSession={() => reopenSession(session.session_id)}
                 formatTime={formatChatTime}
               />
             ))}
@@ -130,6 +176,7 @@ function SessionItem({
   onSelect,
   onToggleMenu,
   onCloseSession,
+  onReopenSession,
   formatTime,
 }: {
   session: ChatSession
@@ -138,6 +185,7 @@ function SessionItem({
   onSelect: () => void
   onToggleMenu: (e: React.MouseEvent) => void
   onCloseSession: (e: React.MouseEvent) => void
+  onReopenSession: () => void
   formatTime: (d: string) => string
 }) {
   return (
@@ -199,8 +247,19 @@ function SessionItem({
           </div>
         </div>
 
-        {/* 操作菜单：已关闭会话不展示 */}
-        {session.status !== 'closed' && (
+        {/* 操作菜单：已关闭会话显示重新打开，活跃会话显示结束 */}
+        {session.status === 'closed' ? (
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              onReopenSession()
+            }}
+            className="flex-shrink-0 p-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity hover:bg-green-100"
+            title="重新打开"
+          >
+            <RotateCcw className="w-3.5 h-3.5 text-green-500" />
+          </button>
+        ) : (
           <button
             onClick={onToggleMenu}
             className={cn(
