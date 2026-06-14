@@ -605,7 +605,24 @@ function AssistantMessageBubble({
               {msg.suggestions.map((q, idx) => (
                 <button
                   key={idx}
-                  onClick={() => onSend(q)}
+                  onClick={() => {
+                    // 埋点：记录建议被点击
+                    const token = useAuthStore.getState().accessToken || ''
+                    const AI_SERVICE_URL = chatApi.AI_SERVICE_URL
+                    fetch(`${AI_SERVICE_URL}/api/chat/suggestion-feedback`, {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`,
+                      },
+                      body: JSON.stringify({
+                        session_id: '',
+                        suggestion: q,
+                        message_id: msg.id,
+                      }),
+                    }).catch(() => { /* fire-and-forget */ })
+                    onSend(q)
+                  }}
                   disabled={isStreaming}
                   className="block w-full text-left px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-primary-50 to-primary-100 border border-primary-200 hover:from-primary-100 hover:to-primary-200 transition-colors text-xs text-primary-700 break-words line-clamp-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >

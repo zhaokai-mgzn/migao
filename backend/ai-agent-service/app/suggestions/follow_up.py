@@ -109,10 +109,16 @@ AI 回复：{answer}
 ## 要求
 
 1. 问题要简短自然（≤15字），像企业内部员工会说的话
-2. 问题必须与当前对话主题紧密相关
+2. 问题必须与当前对话主题紧密相关，且比当前问题更具体（不要建议比用户原问题更泛的问题）
 3. 问题必须在上述 ✅ 能力范围内
 4. 问题之间不要重复
 5. 直接返回 JSON 数组格式，不要其他内容
+
+## 禁止事项
+
+- ❌ 不要建议 AI 已经在回复中明确回答过的问题（如回复已展示订单详情，不要再建议"查看订单详情"）
+- ❌ 不要建议比用户当前问题更泛的问题（如用户问具体订单物流，不要建议"查看订单列表"）
+- ❌ 不要建议"查看所有XX"这类泛泛的列表查看，建议具体的下一步操作
 
 输出格式示例：["问题1", "问题2", "问题3"]"""
 
@@ -125,9 +131,14 @@ AI 回复：{answer}
 
 要求：
 1. 问题要简短自然（≤15字），像消费者会说的话
-2. 问题必须与当前对话主题紧密相关（商品咨询、订单查询、售后服务等）
+2. 问题必须与当前对话主题紧密相关（商品咨询、订单查询、售后服务等），且比当前问题更具体
 3. 问题之间不要重复
 4. 直接返回 JSON 数组格式，不要其他内容
+
+## 禁止事项
+
+- ❌ 不要建议 AI 已经在回复中明确回答过的问题
+- ❌ 不要建议比用户当前问题更泛的问题（如用户问具体订单物流，不要建议"查看我的订单"）
 
 输出格式示例：["问题1", "问题2", "问题3"]"""
 
@@ -189,6 +200,10 @@ class FollowUpSuggestionGenerator:
         intent_type: str,
         chat_history: Optional[list] = None,
         agent_type: str = "mibao",
+        stage: str = "initial",
+        session_id: str = "",
+        tenant_id: int = 0,
+        user_id: int = 0,
     ) -> list[str]:
         """
         生成 2-3 个后续问题建议
@@ -199,10 +214,15 @@ class FollowUpSuggestionGenerator:
             intent_type: 意图类型
             chat_history: 对话历史消息列表（LangChain messages）
             agent_type: Agent 类型（"mibao" 或 "xiaobu"）
+            stage: 对话阶段 (initial/querying/confirming/processing/completed)
+            session_id: 会话 ID（用于日志）
+            tenant_id: 租户 ID（用于日志）
+            user_id: 用户 ID（用于日志）
 
         Returns:
             2-3 个后续问题建议字符串列表
         """
+        strategy = "preset"
         try:
             # 智能选择策略：有 API Key 且回复涉及具体内容时优先动态生成
             if self._should_use_dynamic(answer, intent_type):
@@ -210,14 +230,68 @@ class FollowUpSuggestionGenerator:
                     query, answer, agent_type, chat_history=chat_history
                 )
                 if suggestions:
-                    return suggestions[:3]
+                    strategy = "dynamic"
+                    result = suggestions[:3]
+                    self._log_generation(
+                        query, answer, intent_type, agent_type, stage,
+                        session_id, tenant_id, user_id, strategy, result,
+                    )
+                    return result
 
             # 使用预设模板
-            return self._get_preset(intent_type, agent_type)
+            result = self._get_preset(intent_type, agent_type)
+            self._log_generation(
+                query, answer, intent_type, agent_type, stage,
+                session_id, tenant_id, user_id, strategy, result,
+            )
+            return result
 
         except Exception as e:
             logger.warning(f"Failed to generate follow-up suggestions: {e}")
-            return self._get_preset(intent_type, agent_type)
+            result = self._get_preset(intent_type, agent_type)
+            self._log_generation(
+                query, answer, intent_type, agent_type, stage,
+                session_id, tenant_id, user_id, "preset(fallback)", result,
+            )
+            return result
+
+    @staticmethod
+    def _log_generation(
+        query: str,
+        answer: str,
+        intent_type: str,
+        agent_type: str,
+        stage: str,
+        session_id: str,
+        tenant_id: int,
+        user_id: int,
+        strategy: str,
+        suggestions: list[str],
+    ) -> None:
+        """输出结构化日志，用于后续训练数据分析
+
+        ⚠️ 数据安全：日志包含用户对话内容（已脱敏手机号/邮箱），
+        应配置日志访问权限和保留策略，仅用于产品体验优化分析。
+        """
+        import json as _json
+        from app.utils.log_sanitizer import LogSanitizer
+
+        sanitized_suggestions = [LogSanitizer.mask_text(s) for s in suggestions]
+        logger.info(
+            "[suggestion:generated]",
+            _json.dumps({
+                "session_id": session_id,
+                "tenant_id": tenant_id,
+                "user_id": user_id,
+                "agent_type": agent_type,
+                "intent_type": intent_type,
+                "stage": stage,
+                "strategy": strategy,
+                "user_query": LogSanitizer.mask_text(query[:100]),
+                "ai_answer": LogSanitizer.mask_text(answer[:150]),
+                "suggestions": sanitized_suggestions,
+            }, ensure_ascii=False),
+        )
 
     def _should_use_dynamic(self, answer: str, intent_type: str) -> bool:
         """判断是否应该使用动态生成
