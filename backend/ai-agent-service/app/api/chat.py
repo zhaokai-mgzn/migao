@@ -894,6 +894,38 @@ async def close_session_endpoint(
     }
 
 
+@router.put("/sessions/{session_id}/reopen")
+async def reopen_session_endpoint(
+    session_id: str,
+    current_user: UserIdentity = Depends(get_current_user),
+):
+    """
+    重新打开已关闭的会话：status 'closed' → 'active'。
+    仅会话所有者可操作。
+    """
+    session_memory = SessionMemory()
+    session = await session_memory.get_session(session_id)
+    if not session:
+        raise HTTPException(
+            status_code=404,
+            detail={"success": False, "error": {"code": "SESSION_NOT_FOUND", "message": "会话不存在"}},
+        )
+    if session.get("tenant_id") != current_user.tenant_id or session.get("customer_id") != current_user.user_id:
+        raise HTTPException(
+            status_code=403,
+            detail={"success": False, "error": {"code": "PERMISSION_DENIED", "message": "无权操作该会话"}},
+        )
+    if session.get("status") != "closed":
+        return {
+            "success": True,
+            "data": {"session_id": session_id, "status": session.get("status"), "message": "会话已是活跃状态"},
+        }
+
+    await session_memory.reopen_session(session_id)
+    logger.info(f"Session reopened: session_id={session_id}, user_id={current_user.user_id}")
+    return {"success": True, "data": {"session_id": session_id, "status": "active", "message": "会话已重新打开"}}
+
+
 @router.delete("/sessions/{session_id}")
 async def delete_session(
     session_id: str,
@@ -901,10 +933,10 @@ async def delete_session(
 ):
     """
     结束/删除会话
-    
+
     Args:
         session_id: 会话 ID
-        
+
     Returns:
         删除结果
     """

@@ -49,11 +49,7 @@ public class SecurityConfig {
         String corsOrigins = System.getenv("CORS_ALLOWED_ORIGINS");
         if (corsOrigins != null && !corsOrigins.isEmpty()) {
             List<String> allowedOrigins = Arrays.asList(corsOrigins.split(","));
-            if (allowedOrigins.contains("*")) {
-                config.setAllowedOriginPatterns(List.of("*"));
-            } else {
-                config.setAllowedOrigins(allowedOrigins);
-            }
+            config.setAllowedOrigins(allowedOrigins);
         } else {
             config.setAllowedOrigins(List.of(
                     "http://localhost:3000",
@@ -91,7 +87,15 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-                // 启用 CORS
+                // 安全头
+                .headers(headers -> headers
+                        .frameOptions(frame -> frame.deny())
+                        .httpStrictTransportSecurity(hsts -> hsts
+                                .maxAgeInSeconds(31536000)
+                                .includeSubDomains(true))
+                )
+
+                // 启用 CORS（由 corsConfigurationSource bean 统一管理）
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
 
                 // 禁用 CSRF（REST API 不需要）

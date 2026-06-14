@@ -234,7 +234,6 @@ export const knowledgeApi = {
 }
 
 // 售后工单 API
-// TODO: 后端 Controller 尚未完成，使用约定的 RESTful 路径
 export const afterSalesApi = {
   getTickets: (params?: AfterSalesListParams) =>
     request.get<ApiResponse<PageResponse<AfterSalesTicket>>>('/api/admin/after-sales', { params }),
@@ -303,7 +302,6 @@ export const orderApi = {
 }
 
 // Dashboard API
-// TODO: 后端 API 尚未完全就绪，当前使用 Mock 数据
 export const dashboardApi = {
   getStats: () =>
     request.get<ApiResponse<DashboardStats>>('/api/admin/dashboard/stats'),
@@ -432,6 +430,19 @@ export const chatApi = {
       },
     })
     if (!res.ok) throw new Error(`结束会话失败: ${res.status}`)
+    return res.json()
+  },
+
+  /** 重新打开已关闭的会话 */
+  reopenSession: async (sessionId: string, token: string) => {
+    const res = await fetch(`${AI_SERVICE_URL}/api/chat/sessions/${sessionId}/reopen`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+    })
+    if (!res.ok) throw new Error(`重新打开会话失败: ${res.status}`)
     return res.json()
   },
 
