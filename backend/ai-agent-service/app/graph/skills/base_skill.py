@@ -767,9 +767,11 @@ async def execute_skill(
                         lambda: llm_breaker.call(_llm_invoke)
                     )
                     logger.info(
-                        f"[{skill_name}][DIAG] LLM call completed | "
+                        f"[{skill_name}][DIAG] LLM call completed | iter={iteration + 1} "
                         f"has_tool_calls={bool(response.tool_calls)} "
                         f"content_len={len(response.content or '')} "
+                        f"reasoning_len={len(getattr(response, 'additional_kwargs', {}).get('reasoning_content', '') or '')} "
+                        f"msg_count={len(full_messages) + len(new_messages)}"
                         f"type={type(response).__name__}"
                     )
                     # 成本追踪（失败不阻塞主流程）
