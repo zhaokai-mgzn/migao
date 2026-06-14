@@ -40,7 +40,15 @@ test.describe('售后工单详情页面', () => {
     await expect(pom.timelineCard).toBeVisible()
     const items = pom.timelineItems
     const emptyText = pom.page.getByText('暂无处理记录')
-    expect((await items.count()) > 0 || await emptyText.isVisible().catch(() => false)).toBeTruthy()
+    const itemCount = await items.count()
+    if (itemCount > 0) {
+      // 有处理记录：验证内容不为空
+      const firstText = await items.first().textContent()
+      expect(firstText).toBeTruthy()
+    } else {
+      // 无记录：验证空态文案
+      await expect(emptyText).toBeVisible()
+    }
   })
 
   test('状态操作按钮可见性（待处理状态）', async () => {

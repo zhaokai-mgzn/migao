@@ -19,7 +19,15 @@ test.describe('客户详情页面', () => {
   test('VIP 星级正确显示', async () => {
     const stars = pom.page.locator('svg.fill-amber-400')
     const normal = pom.page.getByText('普通客户')
-    expect((await stars.count()) > 0 || await normal.isVisible().catch(() => false)).toBeTruthy()
+    const starCount = await stars.count()
+    const isNormal = await normal.isVisible().catch(() => false)
+    if (starCount > 0) {
+      // VIP 客户：验证星级在 1-5 之间
+      expect(starCount).toBeGreaterThanOrEqual(1)
+      expect(starCount).toBeLessThanOrEqual(5)
+    } else if (isNormal) {
+      await expect(normal).toBeVisible()
+    }
   })
 
   test('标签选择器可添加标签', async () => {
@@ -37,6 +45,9 @@ test.describe('客户详情页面', () => {
   test('标签可被移除', async () => {
     const tags = pom.currentTags
     if (await tags.count() > 0) {
+      // 验证标签有实际文本内容
+      const firstTagText = await tags.first().textContent()
+      expect(firstTagText).toBeTruthy()
       await tags.first().hover()
       const removeBtn = tags.first().locator('button')
       if (await removeBtn.isVisible()) {
@@ -74,7 +85,12 @@ test.describe('客户详情页面', () => {
 
   test('订单卡片显示订单号和金额', async () => {
     const orderNo = pom.page.locator('text=/ORD\\d+/')
-    if (await orderNo.count() > 0) await expect(orderNo.first()).toBeVisible()
+    if (await orderNo.count() > 0) {
+      await expect(orderNo.first()).toBeVisible()
+      // 验证订单号格式 ORD + 数字
+      const text = await orderNo.first().textContent()
+      expect(text).toMatch(/ORD\d+/)
+    }
   })
 
   test('会话卡片显示消息摘要和类型标签', async () => {

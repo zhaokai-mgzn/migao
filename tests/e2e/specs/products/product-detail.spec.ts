@@ -106,14 +106,10 @@ test.describe('商品详情', () => {
   })
 
   test('点击返回按钮应回到商品列表', async ({ page }) => {
-    // 返回按钮是 ArrowLeft 图标按钮
+    // 返回按钮是 ArrowLeft 图标按钮，验证存在且可点击
     const backBtn = page.locator('button').filter({ has: page.locator('svg.lucide-arrow-left') })
-    // 备用：点击面包屑中的链接
-    if (await backBtn.count() > 0) {
-      await backBtn.click()
-    } else {
-      await page.goto('/products')
-    }
+    await expect(backBtn.first()).toBeVisible()
+    await backBtn.first().click()
     await page.waitForURL(/\/products/)
   })
 })
