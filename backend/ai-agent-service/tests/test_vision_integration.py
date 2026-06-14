@@ -282,7 +282,7 @@ class TestSelectModelWithVision:
 
     def test_select_model_vision_default_is_flash(self):
         """视觉模型默认配置与 settings 一致"""
-        assert settings.MINIMAX_VISION_MODEL == "qwen3.7-plus"
+        assert settings.MINIMAX_VISION_MODEL == "MiniMax-M3"
 
 
 # =============================================================================
