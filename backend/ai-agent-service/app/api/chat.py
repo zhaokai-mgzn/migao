@@ -177,8 +177,10 @@ def _validate_image_url(url: str) -> bool:
 
 
 def _rewrite_image_url(url: str) -> str:
-    """直接返回原始 URL（RAG/URL 重写已移除）"""
-    return url
+    """将 CDN 域名图片 URL 重写为 OSS URL（由 IMAGE_URL_REWRITE_FROM/TO 配置）"""
+    if not settings.IMAGE_URL_REWRITE_FROM or not settings.IMAGE_URL_REWRITE_TO:
+        return url
+    return url.replace(settings.IMAGE_URL_REWRITE_FROM, settings.IMAGE_URL_REWRITE_TO)
 
 
 def _detect_card_type(tool_name: str, result: Dict[str, Any]) -> Optional[str]:

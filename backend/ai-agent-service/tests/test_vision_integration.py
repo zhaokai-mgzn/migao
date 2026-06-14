@@ -285,8 +285,13 @@ class TestVisionModelPricing:
     """付费模型定价测试"""
 
     def test_model_pricing_exists(self):
-        """MiniMax-M3 / M2.7-highspeed 定价存在且合理"""
-        for m in ("MiniMax-M2.7-highspeed", "MiniMax-M3"):
+        """DeepSeek V4 模型定价存在且合理（LLM_MODEL_FAST / LLM_MODEL_PRIMARY）"""
+        from app.config import settings
+
+        fast_model = settings.LLM_MODEL_FAST
+        primary_model = settings.LLM_MODEL_PRIMARY
+
+        for m in (fast_model, primary_model):
             assert m in MODEL_PRICING, f"missing pricing for {m}"
             assert "input" in MODEL_PRICING[m]
             assert "output" in MODEL_PRICING[m]
@@ -294,14 +299,15 @@ class TestVisionModelPricing:
             assert MODEL_PRICING[m]["output"] > 0
 
         # 快速模型应比主模型便宜
-        fast = MODEL_PRICING["MiniMax-M2.7-highspeed"]
-        primary = MODEL_PRICING["MiniMax-M3"]
+        fast = MODEL_PRICING[fast_model]
+        primary = MODEL_PRICING[primary_model]
         assert fast["input"] < primary["input"]
         assert fast["output"] < primary["output"]
 
     def test_old_models_removed(self):
-        """旧 Qwen VL 模型已从定价表中移除"""
-        for m in ("qwen-vl-plus", "qwen-vl-max", "qwen-vl-ocr"):
+        """旧 Qwen VL / MiniMax 模型已从定价表中移除"""
+        for m in ("qwen-vl-plus", "qwen-vl-max", "qwen-vl-ocr",
+                  "MiniMax-M2.7-highspeed", "MiniMax-M3"):
             assert m not in MODEL_PRICING, f"{m} should be removed from pricing"
 
 
