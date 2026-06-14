@@ -28,6 +28,7 @@ class LLMFactory:
     def create_skill_llm(
         model_override: Optional[str] = None,
         enable_thinking: bool = False,
+        force_no_think: bool = False,
     ) -> ChatOpenAI:
         """创建 Skill 专用 LLM
 
@@ -37,10 +38,10 @@ class LLMFactory:
         - timeout=60
 
         Args:
-            model_override: 显式指定模型名（来自 router.select_model 的返回值）。
-                            为空则使用 settings.MINIMAX_MODEL。
-            enable_thinking: 是否启用 MiniMax M3 深度思考模式（adaptive thinking）。
-                             M3 默认开启 thinking；设为 False 时不显式关闭（由模型决定）。
+            model_override: 显式指定模型名。
+            enable_thinking: True → 显式 adaptive thinking。
+            force_no_think: True → 显式 disabled thinking（轻量任务专用）。
+                            不同于 enable_thinking=False（不传参，M3 默认仍开思考）。
         """
         model = model_override or settings.MINIMAX_MODEL
         kwargs: dict = dict(
@@ -52,7 +53,9 @@ class LLMFactory:
             max_completion_tokens=2048,
             request_timeout=60,
         )
-        if enable_thinking:
+        if force_no_think:
+            kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
+        elif enable_thinking:
             kwargs["extra_body"] = {"thinking": {"type": "adaptive"}}
         return ChatOpenAI(**kwargs)
 
@@ -118,6 +121,7 @@ class LLMFactory:
     async def invoke_text_safe(
         messages: list,
         enable_thinking: bool = False,
+        force_no_think: bool = False,
         model_override: Optional[str] = None,
     ) -> str:
         """安全调用纯文本 LLM，自动清洗 image_url 多模态内容。
@@ -127,6 +131,7 @@ class LLMFactory:
         Args:
             messages: LangChain 消息列表（可能含多模态内容）
             enable_thinking: 是否启用深度思考
+            force_no_think: 是否显式关闭思考（轻量任务）
             model_override: 模型覆盖
 
         Returns:
@@ -159,6 +164,7 @@ class LLMFactory:
         llm = LLMFactory.create_skill_llm(
             model_override=model_override,
             enable_thinking=enable_thinking,
+            force_no_think=force_no_think,
         )
         response = await llm.ainvoke(cleaned)
         return response.content.strip() if hasattr(response, 'content') else str(response)

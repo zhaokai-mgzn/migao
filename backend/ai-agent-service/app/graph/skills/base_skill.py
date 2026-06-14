@@ -122,14 +122,23 @@ def _extract_content(response: AIMessage) -> str:
 # - product_inquiry 不需要：直接回答产品信息，不调工具
 # - order_query/logistics_track：仅首轮需要思考（决定调什么工具），后续轮关闭
 _THINKING_INTENTS = frozenset({
+    # 售后/投诉 — 复杂决策
     "after_sales",
     "after_sales_create",
     "complaint",
+    # 管理操作 — 多步流程
     "category_manage",
     "processing_manage",
     "customer_manage",
     "employee_manage",
     "staff_manage",
+    # 创建/写操作 — 需精确参数和ID解析 (MiniMax-M3 关闭thinking会截断UUID)
+    "product_inquiry",
+    "order_create",
+    "order_query",
+    "dashboard",
+    "settings_manage",
+    "role_manage",
 })
 
 
@@ -950,7 +959,7 @@ async def execute_skill(
             except Exception:
                 pass
         else:
-            # LLM 从本轮对话中提取新增字段（轻量, enable_thinking=False）
+            # LLM 从本轮对话中提取新增字段（轻量任务，显式关思考）
             try:
                 extract_prompt = (
                     f"从以下对话中提取已讨论的商品/订单/工单字段，返回纯JSON:\n"
@@ -961,7 +970,7 @@ async def execute_skill(
                 raw = await LLMFactory.invoke_text_safe([
                     SystemMessage(content="你是字段提取器。只输出JSON。"),
                     HumanMessage(content=extract_prompt),
-                ], enable_thinking=False)
+                ], force_no_think=True)
                 start = raw.find("{"); end = raw.rfind("}")
                 if start >= 0 and end > start:
                     new_fields = json.loads(raw[start:end + 1])

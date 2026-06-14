@@ -599,7 +599,7 @@ async def _generate_plan(user_message: str, chat_history: list, goal_hint: str =
 
     raw = ""
     try:
-        raw = await LLMFactory.invoke_text_safe(messages, enable_thinking=False)
+        raw = await LLMFactory.invoke_text_safe(messages, force_no_think=True)
         content = raw.strip()
         start = content.find("{")
         end = content.rfind("}")
@@ -708,7 +708,7 @@ async def _classify_user_action(
     try:
         raw = await LLMFactory.invoke_text_safe(
             [SystemMessage(content="你是意图分类器。只输出 JSON。"), HumanMessage(content=prompt)],
-            enable_thinking=False,
+            force_no_think=True,
         )
         start = raw.find("{")
         end = raw.rfind("}")
@@ -765,7 +765,7 @@ async def _extract_fields(user_message: str, fields: List[str], existing: Dict) 
         f"⚠️ colors/specifications 等列表字段必须原样保留全部值，一个都不能省略。"
     )
     try:
-        content = await LLMFactory.invoke_text_safe([HumanMessage(content=prompt)], enable_thinking=False)
+        content = await LLMFactory.invoke_text_safe([HumanMessage(content=prompt)], force_no_think=True)
         content = content.strip()
         if content.startswith("```"):
             lines = content.split("\n")
@@ -973,7 +973,7 @@ async def execute_plan(
             )
             final_answer = await LLMFactory.invoke_text_safe([
                 SystemMessage(content=system_prompt), *messages[-4:], HumanMessage(content=prompt),
-            ], enable_thinking=False)
+            ], force_no_think=True)
             new_messages.append(AIMessage(content=final_answer))
 
             # ── 导航意图：LLM 已生成自然回复，代码仅调整 step pointer ──
@@ -1034,7 +1034,7 @@ async def execute_plan(
             )
             intent_raw = await LLMFactory.invoke_text_safe(
                 [SystemMessage(content="你是意图分类器。只输出一个词。"), HumanMessage(content=intent_prompt)],
-                enable_thinking=False,
+                force_no_think=True,
             )
             user_intent = intent_raw.strip().lower()
             logger.info(f"[pe] LLM intent: '{user_intent}' | session={session_id}")
@@ -1125,7 +1125,7 @@ async def execute_plan(
                 SystemMessage(content=system_prompt),
                 *messages[-4:],
                 HumanMessage(content=intro_prompt),
-            ], enable_thinking=False)
+            ], force_no_think=True)
             # 代码直接拼接：引导语 + 带编号的选项列表 + 选择提示
             final_answer = (
                 f"{llm_intro.strip()}\n\n"
@@ -1150,7 +1150,7 @@ async def execute_plan(
             )
             intent_raw = await LLMFactory.invoke_text_safe(
                 [SystemMessage(content="你是意图分类器。只输出一个词。"), HumanMessage(content=intent_prompt)],
-                enable_thinking=False,
+                force_no_think=True,
             )
             user_intent = intent_raw.strip().lower()
             logger.info(f"[pe] confirm LLM intent: '{user_intent}' | user_msg='{last_user_msg[:50]}'")
@@ -1174,7 +1174,7 @@ async def execute_plan(
             )
             final_answer = await LLMFactory.invoke_text_safe([
                 SystemMessage(content=system_prompt), *messages[-4:], HumanMessage(content=prompt),
-            ], enable_thinking=False)
+            ], force_no_think=True)
             new_messages.append(AIMessage(content=final_answer))
             awaiting_user = True
 
@@ -1351,7 +1351,7 @@ async def execute_plan(
                 SystemMessage(content=system_prompt),
                 *messages[-4:],
                 HumanMessage(content=prompt),
-            ], enable_thinking=False)
+            ], force_no_think=True)
             new_messages.append(AIMessage(content=final_answer))
             # execute 完成后清除 Plan
             plan.advance()
