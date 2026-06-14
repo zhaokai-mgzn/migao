@@ -16,10 +16,11 @@ export default function DashboardLayout({
   const [collapsed, setCollapsed] = useState(false)
   const manualToggle = useRef(false)
 
-  // 进入 /chat 时自动收拢侧边栏，离开时自动恢复
+  // 进入 /chat（会话页面）时自动收拢侧边栏，离开时自动恢复
+  // /chat/config 是设置页面，侧边栏保持展开
   useEffect(() => {
-    const isChat = pathname.startsWith('/chat')
-    if (isChat) {
+    const isChatConversation = pathname.startsWith('/chat') && !pathname.startsWith('/chat/config')
+    if (isChatConversation) {
       manualToggle.current = false
       setCollapsed(true)
     } else if (!manualToggle.current) {

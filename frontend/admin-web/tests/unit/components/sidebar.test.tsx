@@ -75,6 +75,7 @@ describe('Sidebar', () => {
     expect(screen.getByText('工作台（数据看板）').closest('a')).toHaveAttribute('href', '/dashboard')
     expect(screen.getByText('商品列表').closest('a')).toHaveAttribute('href', '/products')
     expect(screen.getByText('订单列表').closest('a')).toHaveAttribute('href', '/orders')
+    expect(screen.getByText('机器人设置').closest('a')).toHaveAttribute('href', '/chat/config')
   })
 
   // ── 折叠状态 ──

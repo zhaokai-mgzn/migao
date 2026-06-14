@@ -87,6 +87,7 @@ export default function FloatingAssistant() {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const latestSessionFetchedRef = useRef(false)  // 标记是否已尝试拉取最新会话
 
   // 自动滚动到底部
   const scrollToBottom = useCallback(() => {
@@ -98,17 +99,45 @@ export default function FloatingAssistant() {
   }, [messages, scrollToBottom])
 
   // 面板打开时：恢复会话历史 + 聚焦输入框
+  // - 有持久化 sessionId → 直接加载历史
+  // - 无持久化 sessionId → 从 AI 服务拉取最新活跃会话
   useEffect(() => {
     if (isOpen) {
       setTimeout(() => inputRef.current?.focus(), 300)
 
-      // 如果有持久化的 sessionId 且尚未加载过该会话的历史
       if (sessionId && historyLoadedRef.current !== sessionId) {
         loadHistory(sessionId)
+        latestSessionFetchedRef.current = false
+      } else if (!sessionId && !latestSessionFetchedRef.current) {
+        // 没有本地会话，去 AI 服务找最新活跃会话
+        latestSessionFetchedRef.current = true
+        fetchLatestActiveSession()
       }
+    } else {
+      // 面板关闭时重置标记，下次打开重新拉取
+      latestSessionFetchedRef.current = false
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen])
+
+  // 从 AI 服务拉取最新活跃会话，有则加载历史，无则保持欢迎页
+  const fetchLatestActiveSession = async () => {
+    try {
+      const token = getToken()
+      if (!token) return
+      const data = await chatApi.getSessions(token)
+      const items: any[] = data?.data?.items || data?.data?.sessions || data?.sessions || []
+      const activeSession = items.find((s: any) => s.status === 'active')
+      if (activeSession) {
+        const sid = activeSession.id || activeSession.session_id
+        setSessionId(sid)
+        persistSession(sid)
+        loadHistory(sid)
+      }
+    } catch (err) {
+      console.error('拉取最新活跃会话失败:', err)
+    }
+  }
 
   // 加载会话历史消息
   const loadHistory = async (sid: string) => {

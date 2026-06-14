@@ -109,7 +109,7 @@ const menuGroups: MenuGroup[] = [
 const standaloneItems: MenuItem[] = [
   { key: 'customers', name: '客户管理', icon: 'UserCircle', path: '/customers' },
   { key: 'finance', name: '财务对账', icon: 'Calculator', path: '/finance' },
-  { key: 'chat', name: '机器人设置', icon: 'Zap', path: '/chat' },
+  { key: 'chat-config', name: '机器人设置', icon: 'Zap', path: '/chat/config' },
   { key: 'employees', name: '员工管理', icon: 'Users', path: '/employees' },
   { key: 'settings', name: '企业基础信息', icon: 'Building2', path: '/settings' },
 ]
