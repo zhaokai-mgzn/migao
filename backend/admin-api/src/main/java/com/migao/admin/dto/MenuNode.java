@@ -1,7 +1,9 @@
 package com.migao.admin.dto;
 
-import lombok.Data;
+import lombok.EqualsAndHashCode;
+import lombok.Getter;
 import lombok.NoArgsConstructor;
+import lombok.ToString;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -9,7 +11,9 @@ import java.util.List;
 /**
  * 菜单树节点（一级 + 二级，用于权限多选 UI）
  */
-@Data
+@Getter
+@ToString
+@EqualsAndHashCode
 @NoArgsConstructor
 public class MenuNode {
     private String code;

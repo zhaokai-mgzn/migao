@@ -37,6 +37,9 @@ public class User {
     /** 岗位（纯展示字段，如"管理员""客服""销售""运营""财务"） */
     private String position;
 
+    /** 菜单权限码列表（JSON 数组，如 ["orders.list","products.create"]） */
+    private String permissions;
+
     private Integer sessionTtl;
 
     private String status;

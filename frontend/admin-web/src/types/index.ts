@@ -1104,6 +1104,7 @@ export interface Employee {
   position?: string
   role: string
   roles: Role[]
+  permissions?: string[]
   status: EmployeeStatus
   createdAt: string
   updatedAt: string
@@ -1123,7 +1124,7 @@ export interface EmployeeFormData {
   phone?: string
   email?: string
   position?: string
-  roleIds: number[]
+  permissions: string[]
 }
 
 // 重置密码参数

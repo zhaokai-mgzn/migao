@@ -22,19 +22,20 @@ public class MenuController {
     private static final List<MenuNode> MENU_TREE = buildMenuTree();
 
     private static List<MenuNode> buildMenuTree() {
-        MenuNode d1 = new MenuNode("dashboard.view", "数据看板");
-        MenuNode o1 = new MenuNode("orders.list", "订单列表");
-        MenuNode o2 = new MenuNode("orders.detail", "订单详情");
-        MenuNode o3 = new MenuNode("orders.refund", "退换货");
-        MenuNode p1 = new MenuNode("products.list", "商品列表");
-        MenuNode p2 = new MenuNode("products.create", "新增商品");
-        MenuNode p3 = new MenuNode("products.categories", "商品分类管理");
-        MenuNode p4 = new MenuNode("products.processing", "加工项管理");
-        MenuNode a1 = new MenuNode("agent.sessions", "会话监控");
-        MenuNode a2 = new MenuNode("agent.quickreplies", "快捷回复");
-        MenuNode e1 = new MenuNode("employees.list", "员工列表");
-        MenuNode e2 = new MenuNode("employees.create", "新增员工");
-        MenuNode s1 = new MenuNode("settings.tenant", "租户设置");
+        // 权限码格式: 模块:操作 — 与 DB permissions.code 格式一致
+        MenuNode d1 = new MenuNode("dashboard:view", "数据看板");
+        MenuNode o1 = new MenuNode("order:list", "订单列表");
+        MenuNode o2 = new MenuNode("order:detail", "订单详情");
+        MenuNode o3 = new MenuNode("order:refund", "退换货");
+        MenuNode p1 = new MenuNode("product:list", "商品列表");
+        MenuNode p2 = new MenuNode("product:create", "新增商品");
+        MenuNode p3 = new MenuNode("product:category", "商品分类管理");
+        MenuNode p4 = new MenuNode("processing:manage", "加工项管理");
+        MenuNode a1 = new MenuNode("agent:session", "会话监控");
+        MenuNode a2 = new MenuNode("agent:quickreply", "快捷回复");
+        MenuNode e1 = new MenuNode("employee:list", "员工列表");
+        MenuNode e2 = new MenuNode("employee:create", "新增员工");
+        MenuNode s1 = new MenuNode("system:manage", "租户设置");
 
         return List.of(
             new MenuNode("dashboard", "工作台", List.of(d1)),

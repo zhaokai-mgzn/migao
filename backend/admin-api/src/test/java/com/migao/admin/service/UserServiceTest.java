@@ -203,7 +203,7 @@ class UserServiceTest {
         when(userRoleMapper.insert(any(UserRole.class))).thenReturn(1);
 
         // when
-        User result = userService.createUser("13900139000", "password123", "新用户", "admin", 1L);
+        User result = userService.createUser("13900139000", "password123", "新用户", "admin", null, 1L);
 
         // then
         assertThat(result).isNotNull();
@@ -232,7 +232,7 @@ class UserServiceTest {
         when(roleMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null); // 角色不存在，仅日志
 
         // when
-        User result = userService.createUser("13700137000", "password123", "加密测试", "operator", 1L);
+        User result = userService.createUser("13700137000", "password123", "加密测试", "operator", null, 1L);
 
         // then
         assertThat(result).isNotNull();
@@ -246,7 +246,7 @@ class UserServiceTest {
         when(userMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(testUser);
 
         // when & then
-        assertThatThrownBy(() -> userService.createUser("13800138000", "password123", "重复用户", "admin", 1L))
+        assertThatThrownBy(() -> userService.createUser("13800138000", "password123", "重复用户", "admin", null, 1L))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("手机号已被注册");
     }
@@ -263,7 +263,7 @@ class UserServiceTest {
         });
 
         // when
-        User result = userService.createUser("13600136000", "password123", "默认角色", null, 1L);
+        User result = userService.createUser("13600136000", "password123", "默认角色", null, null, 1L);
 
         // then
         assertThat(result).isNotNull();
@@ -280,7 +280,7 @@ class UserServiceTest {
         when(userMapper.updateById(any(User.class))).thenReturn(1);
 
         // when
-        User result = userService.updateUser("user-001", "新昵称", "https://example.com/new-avatar.png", null);
+        User result = userService.updateUser("user-001", "新昵称", "https://example.com/new-avatar.png", null, null);
 
         // then
         assertThat(result).isNotNull();
@@ -300,7 +300,7 @@ class UserServiceTest {
         when(roleMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null); // 角色不存在仅日志
 
         // when
-        User result = userService.updateUser("user-001", null, null, "operator");
+        User result = userService.updateUser("user-001", null, null, "operator", null);
 
         // then
         assertThat(result.getRole()).isEqualTo("operator");
@@ -314,7 +314,7 @@ class UserServiceTest {
         when(userMapper.selectById("nonexistent")).thenReturn(null);
 
         // when & then
-        assertThatThrownBy(() -> userService.updateUser("nonexistent", "新昵称", null, null))
+        assertThatThrownBy(() -> userService.updateUser("nonexistent", "新昵称", null, null, null))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(ex -> {
                     BusinessException bex = (BusinessException) ex;

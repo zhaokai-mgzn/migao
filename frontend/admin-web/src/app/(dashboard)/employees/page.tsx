@@ -1,13 +1,13 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { employeeApi } from '@/lib/api'
+import { employeeApi, roleApi } from '@/lib/api'
 import request from '@/lib/request'
 import { Button, Input, Select, Modal, Table, Pagination, Badge } from '@/components/ui'
 import type { TableColumn } from '@/components/ui'
-import type { Employee, EmployeeStatus } from '@/types'
+import type { Employee, EmployeeStatus, Role } from '@/types'
 import { TreeCheckbox, type TreeNode } from '@/components/ui/TreeCheckbox'
 import dayjs from 'dayjs'
 
@@ -32,6 +32,9 @@ export default function EmployeesPage() {
   // 菜单权限树
   const [menuTree, setMenuTree] = useState<TreeNode[]>([])
 
+  // 角色列表（用于搜索筛选）
+  const [allRoles, setAllRoles] = useState<Role[]>([])
+
   // 新增/编辑对话框
   const [formOpen, setFormOpen] = useState(false)
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null)
@@ -53,13 +56,27 @@ export default function EmployeesPage() {
   // 内联状态切换 loading（按 ID 防止双击）
   const [togglingId, setTogglingId] = useState<number | null>(null)
 
-  // 加载菜单权限树
+  // 加载菜单权限树 + 角色列表
   useEffect(() => {
     request.get('/api/admin/menus').then((res: any) => {
       const data = res.data?.data || res.data || []
       setMenuTree(Array.isArray(data) ? data : [])
+    }).catch(() => {
+      toast.error('加载菜单权限失败，请刷新重试')
+    })
+    roleApi.getAllRoles().then((res) => {
+      setAllRoles(res.data.data || [])
     }).catch(() => {})
   }, [])
+
+  // 从 menuTree 中提取 code → 中文 label 的映射（只计算一次）
+  const permissionLabelMap = useMemo(() => {
+    const map: Record<string, string> = {}
+    menuTree.forEach(p => {
+      p.children?.forEach(c => { map[c.code] = c.label })
+    })
+    return map
+  }, [menuTree])
 
   // 加载员工列表
   const loadEmployees = useCallback(async () => {
@@ -124,7 +141,7 @@ export default function EmployeesPage() {
       phone: employee.phone || '',
       email: employee.email || '',
       position: employee.position || '',
-      permissions: (employee as any).permissions || [],
+      permissions: employee.permissions || [],
     })
     setFormOpen(true)
   }
@@ -145,7 +162,7 @@ export default function EmployeesPage() {
           password: formData.password || undefined,
           position: formData.position || undefined,
           permissions: formData.permissions,
-        } as any)
+        })
         toast.success('编辑成功')
       } else {
         await employeeApi.createEmployee({
@@ -156,7 +173,7 @@ export default function EmployeesPage() {
           email: formData.email || undefined,
           position: formData.position || undefined,
           permissions: formData.permissions,
-        } as any)
+        })
         toast.success('创建成功')
       }
       setFormOpen(false)
@@ -238,14 +255,9 @@ export default function EmployeesPage() {
       title: '权限',
       width: '200px',
       render: (record) => {
-        const codes: string[] = (record as any).permissions || []
+        const codes: string[] = record.permissions || []
         if (codes.length === 0) return <span className="text-gray-400 text-sm">未分配</span>
-        // 从 menuTree 中解析 code → label
-        const labelMap: Record<string, string> = {}
-        menuTree.forEach(p => {
-          p.children?.forEach(c => { labelMap[c.code] = c.label })
-        })
-        const labels = codes.map(c => labelMap[c] || c).slice(0, 3)
+        const labels = codes.map(c => permissionLabelMap[c] || c).slice(0, 3)
         return (
           <div className="flex flex-wrap gap-1">
             {labels.map((l, i) => <Badge key={i} variant="info">{l}</Badge>)}
@@ -350,10 +362,10 @@ export default function EmployeesPage() {
           </div>
           <div className="min-w-[140px]">
             <Select
-              label="岗位"
+              label="角色"
               options={[
-                { value: '', label: '全部岗位' },
-                ...PRESET_POSITIONS.map(p => ({ value: p, label: p })),
+                { value: '', label: '全部角色' },
+                ...allRoles.map(r => ({ value: r.code, label: r.name })),
               ]}
               value={roleFilter}
               onChange={(e) => setRoleFilter(e.target.value)}

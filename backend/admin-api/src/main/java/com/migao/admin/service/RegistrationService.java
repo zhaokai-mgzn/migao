@@ -194,6 +194,7 @@ public class RegistrationService {
                     initialPassword,
                     application.getContactName(),
                     "admin",
+                    null,
                     tenant.getId()
             );
             log.info("创建企业管理员成功: userId={}, phone={}", adminUser.getId(), application.getPhone());
