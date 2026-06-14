@@ -274,14 +274,7 @@ def agent_context_b():
 def _build_mock_patches():
     """构建所有 Mock patch 列表"""
     return {
-        "semantic_cache": patch(
-            "app.graph.nodes.semantic_cache",
-            new_callable=lambda: lambda: MagicMock(
-                lookup=AsyncMock(return_value=None),
-                store=AsyncMock(),
-            ),
-            create=True,
-        ),
+        # [RAG 禁用] semantic_cache 已移除
         "cache_settings": patch("app.graph.nodes.settings", create=True),
         "suggestions": patch(
             "app.graph.nodes.FollowUpSuggestionGenerator", create=True,
@@ -432,9 +425,10 @@ class TestXiaobuMultiTurnScenarios:
                     tool_calls=[{"name": "logistics_track", "args": {"order_id": "ORD20250501001"}, "id": f"tc_{call_idx}"}],
                 )
             if "保养" in user_text or "清洗" in user_text:
+                # [RAG 禁用] knowledge_search 已下线，改为直接文本回复
                 return _make_llm_response(
-                    "",
-                    tool_calls=[{"name": "knowledge_search", "args": {"query": "窗帘保养"}, "id": f"tc_{call_idx}"}],
+                    "窗帘建议每隔3-6个月清洗一次，避免暴晒。\n"
+                    "日常保养可用软毛刷除尘，局部污渍用湿布轻轻擦拭。"
                 )
 
             return _make_llm_response("好的，还有什么需要帮忙的吗？")
@@ -457,7 +451,6 @@ class TestXiaobuMultiTurnScenarios:
              patch("app.graph.skills.base_skill.get_tracker") as mock_tracker, \
              patch("app.config.settings") as mock_settings, \
              patch("app.router.intent_classifier.IntentClassifier.classify") as mock_classify, \
-             patch("app.tools.knowledge_search._RAG_AVAILABLE", False), \
              patch("app.tools.logistics_track.settings") as mock_log_settings:
 
             mock_settings.SEMANTIC_CACHE_ENABLED = False
@@ -827,6 +820,7 @@ class TestXiaobuMultiTurnScenarios:
 
     # ── Case 9：语义缓存验证 ──
 
+    @pytest.mark.skip(reason="semantic_cache module removed — RAG disabled, cache feature pending re-enable")
     @pytest.mark.asyncio
     async def test_case09_semantic_cache_validation(self, agent_context):
         """
