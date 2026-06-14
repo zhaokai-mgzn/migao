@@ -45,10 +45,13 @@ jobs:
       - name: Run unit tests
         working-directory: backend/ai-agent-service
         env:
-          DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY || 'ci-dummy-key' }}
-          DASHSCOPE_BASE_URL: https://dashscope.aliyuncs.com/compatible-mode/v1
-          DASHSCOPE_MODEL: qwen3.7-max
-          DASHSCOPE_EMBEDDING_MODEL: text-embedding-v3
+          PRIMARY_API_KEY: ${{ secrets.DEEPSPEK_API_KEY || 'ci-dummy' }}' }}
+          PRIMARY_BASE_URL: https://api.deepseek.com/v1
+          PRIMARY_MODEL: deepseek-v4-pro
+          PRIMARY_FAST_MODEL: deepseek-v4-flash
+          VISION_API_KEY: ${{ secrets.MINIMAX_API_KEY || 'ci-dummy' }}
+          VISION_BASE_URL: https://api.minimaxi.com/v1
+          VISION_MODEL: MiniMax-M3          DASHSCOPE_EMBEDDING_MODEL: text-embedding-v3
           DASHVECTOR_API_KEY: ci-dummy
           DASHVECTOR_ENDPOINT: https://ci-dummy.dashvector.cn-hangzhou.aliyuncs.com
           DASHVECTOR_COLLECTION: ci
