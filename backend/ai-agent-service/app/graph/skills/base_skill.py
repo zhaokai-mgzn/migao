@@ -39,7 +39,7 @@ from app.core import (
 from app.llm import LLMFactory, select_model, has_images, call_with_retry, cost_tracker
 
 
-# LLM 熔断器名（百炼调用路径共用）
+# LLM 熔断器名
 LLM_BREAKER = "llm_minimax"
 
 
@@ -56,7 +56,7 @@ def get_tracker() -> ConversationTracker:
 
 
 def _strip_think_tags(text: str) -> str:
-    """移除 Qwen3 思考模式的 <think>...</think> 标签及其内容"""
+    """移除 <think>...</think> 标签及其内容"""
     if not text:
         return text
     # 移除 <think>...</think> 块（含跨行）
@@ -67,7 +67,7 @@ def _strip_think_tags(text: str) -> str:
 def _extract_content(response: AIMessage) -> str:
     """从 AIMessage 中提取有效文本内容
 
-    兼容 Qwen3 思考模式：
+    兼容 MiniMax 思考模式：
     1. 优先取 response.content 并移除 <think> 标签
     2. 若 stripped 结果仍含 <think> 标签（仅 thinking 内容），提取内部文本
     3. 再 fallback 到 additional_kwargs 中的 reasoning_content
@@ -98,7 +98,7 @@ def _extract_content(response: AIMessage) -> str:
             return stripped
         return stripped
 
-    # Fallback: 某些 Qwen3 模型将回复放在 additional_kwargs
+    # Fallback: 某些模型将回复放在 additional_kwargs
     extra = getattr(response, "additional_kwargs", {}) or {}
     if extra.get("reasoning_content"):
         logger.warning(
@@ -284,7 +284,7 @@ def _sanitize_messages_for_text_path(messages):
 
     has_images() 只查最后一条 HumanMessage（Issue #204），但当用户先发图片消息、
     再发纯文本跟进时，历史中仍存在 image_url。纯文本模型不支持多模态 content 格式
-    content list 中的 image_url → DashScope BadRequestError。
+    content list 中的 image_url → API BadRequestError。
 
     处理策略：
     - 混合内容 (text + image_url): 保留 text，丢弃 image_url
@@ -785,7 +785,7 @@ async def execute_skill(
                         session_id=session_id,
                     )
                 except CircuitBreakerOpenError:
-                    # LLM 熔断器处于 OPEN：返回友好提示，不再冲击百炼
+                    # LLM 熔断器处于 OPEN：返回友好提示，不再冲击 LLM
                     logger.error(
                         f"[{skill_name}][SLS] LLM circuit_breaker_open | "
                         f"tenant={state['tenant_id']} session={session_id}"

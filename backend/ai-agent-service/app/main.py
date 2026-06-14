@@ -8,7 +8,7 @@ AI 智能客服系统 - AI Agent 服务入口
 - 经调研，Hermes Agent 目前主要通过 GitHub 源码安装，非 PyPI 标准包
 - 考虑到项目稳定性和开发效率，当前采用 LangChain Agent 作为替代方案
 - LangChain 提供成熟的 Tool calling、Memory 管理和 Streaming 支持
-- 与阿里云百炼（DashScope）集成良好
+- 与 MiniMax M3（OpenAI 兼容接口）集成
 - 未来如需迁移到 Hermes Agent，可基于当前 Tool 抽象层进行替换
 ================
 """

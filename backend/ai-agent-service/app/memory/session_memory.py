@@ -51,9 +51,9 @@ class SessionMemory:
 
     @staticmethod
     def _estimate_tokens(text: str) -> int:
-        """估算文本的 token 数量（Qwen BPE 近似）
+        """估算文本的 token 数量（MiniMax BPE 近似，待校准）
 
-        Qwen 系列 tokenizer 对中文约 1.5-2 token/字，英文约 1.3 token/词。
+        MiniMax tokenizer 系数待校准。当前使用 Qwen 时代的 0.55 近似值。
         使用 len(text) * 0.55 作为折中近似，误差在 ±15% 内。
         对于 token 预算控制（非精确计费）已足够准确。
 
