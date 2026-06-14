@@ -4,11 +4,7 @@ import { useEffect, useRef, useCallback } from 'react'
 import {
   Bot,
   User,
-  Wrench,
-  ChevronDown,
-  ChevronRight,
-  AlertCircle,
-  CheckCircle2,
+  Loader2,
   Copy,
   Check,
   X,
@@ -20,7 +16,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import dayjs from 'dayjs'
 import { useState } from 'react'
-import type { ChatMessage, ChatToolCall, ChatCard } from '@/types'
+import type { ChatMessage, ChatCard } from '@/types'
 
 import ToolResultCard from './ToolResultCard'
 
@@ -127,14 +123,8 @@ function MessageBubble({ message }: { message: ChatMessage }) {
           )}
         </div>
 
-        {/* 工具调用展示 — 显示所有工具调用，成功默认折叠，错误/运行中展开 */}
-        {isAI && message.tool_calls && message.tool_calls.length > 0 && (
-          <div className="mt-2 w-full space-y-1.5">
-            {message.tool_calls.map((tc, index) => (
-              <ToolCallPanel key={index} toolCall={tc} />
-            ))}
-          </div>
-        )}
+        {/* 工具执行中进度提示 — 隐藏原始工具调用，仅显示人性化状态 */}
+        <ToolProgressIndicator message={message} />
 
         {/* 卡片展示 */}
         {isAI && message.cards && message.cards.length > 0 && (
@@ -188,16 +178,17 @@ function AIMessageContent({ message }: { message: ChatMessage }) {
   const [copied, setCopied] = useState(false)
   const isStreamingEmpty = message.isStreaming && !message.content
 
-  // 正在调用工具时的指示器
+  // 正在执行中的工具
   const runningTools = (message.tool_calls || []).filter(
     (tc) => tc.status === 'running'
   )
+  const hasRunning = runningTools.length > 0
 
-  if (isStreamingEmpty && runningTools.length > 0) {
+  if (isStreamingEmpty && hasRunning) {
     return (
       <div className="flex items-center gap-2 text-gray-500 text-sm">
-        <Wrench className="w-4 h-4 animate-pulse" />
-        <span>正在{runningTools[0].name}...</span>
+        <Loader2 className="w-4 h-4 animate-spin" />
+        <span>正在处理您的请求...</span>
       </div>
     )
   }
@@ -333,69 +324,29 @@ function MessageImages({ images }: { images: string[] }) {
   )
 }
 
-function ToolCallPanel({ toolCall }: { toolCall: ChatToolCall }) {
-  const isRunning = toolCall.status === 'running'
-  const isError = toolCall.status === 'error'
-  // 错误和运行中默认展开，成功默认折叠
-  const [expanded, setExpanded] = useState(isError || isRunning)
+/** 工具执行进度指示器 — 仅显示人性化状态，不暴露工具细节 */
+function ToolProgressIndicator({ message }: { message: ChatMessage }) {
+  const toolCalls = message.tool_calls || []
+  if (toolCalls.length === 0) return null
 
-  const statusLabel = isRunning ? '执行中' : isError ? '失败' : '完成'
-  const statusClass = isRunning
-    ? 'text-amber-600 bg-amber-50'
-    : isError
-    ? 'text-red-600 bg-red-50'
-    : 'text-green-600 bg-green-50'
+  const runningCount = toolCalls.filter(tc => tc.status === 'running').length
+  const errorCount = toolCalls.filter(tc => tc.status === 'error').length
 
-  return (
-    <div className="bg-gray-50 border border-gray-200 rounded-lg overflow-hidden text-xs">
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-100 transition-colors"
-      >
-        {isRunning ? (
-          <Wrench className="w-3.5 h-3.5 text-amber-500 animate-pulse" />
-        ) : isError ? (
-          <AlertCircle className="w-3.5 h-3.5 text-red-500" />
-        ) : (
-          <CheckCircle2 className="w-3.5 h-3.5 text-green-500" />
-        )}
-        <span className="font-medium text-gray-700 flex-1 text-left">
-          {toolCall.name}
-        </span>
-        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${statusClass}`}>
-          {statusLabel}
-        </span>
-        {expanded ? (
-          <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
-        ) : (
-          <ChevronRight className="w-3.5 h-3.5 text-gray-400" />
-        )}
-      </button>
+  // 还在执行中
+  if (runningCount > 0) {
+    return (
+      <div className="mt-2 flex items-center gap-1.5 text-xs text-gray-400">
+        <Loader2 className="w-3 h-3 animate-spin" />
+        <span>正在处理您的请求...</span>
+      </div>
+    )
+  }
 
-      {expanded && (
-        <div className="border-t border-gray-200 px-3 py-2 space-y-2">
-          {toolCall.input && (
-            <div>
-              <span className="text-gray-500 font-medium">输入参数:</span>
-              <pre className="mt-1 bg-white border border-gray-100 rounded p-2 text-[11px] text-gray-600 overflow-x-auto">
-                {JSON.stringify(toolCall.input, null, 2)}
-              </pre>
-            </div>
-          )}
-          {toolCall.result !== undefined && (
-            <div>
-              <span className="text-gray-500 font-medium">返回结果:</span>
-              <pre className="mt-1 bg-white border border-gray-100 rounded p-2 text-[11px] text-gray-600 overflow-x-auto max-h-40 overflow-y-auto">
-                {typeof toolCall.result === 'string'
-                  ? toolCall.result
-                  : JSON.stringify(toolCall.result, null, 2)}
-              </pre>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  )
+  // 全部完成且有错误 — 静默处理
+  if (errorCount > 0) return null
+
+  // 全部完成 — 不显示
+  return null
 }
 
 function CardRenderer({ card }: { card: ChatCard }) {
