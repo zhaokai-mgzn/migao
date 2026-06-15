@@ -47,30 +47,11 @@ jobs:
         working-directory: tests
         run: npx playwright install chromium --with-deps
 
-      - name: Validate secrets
-        run: |
-          echo "✅ 使用 SMS 验证码登录（13800138000 / dev 万能码 123456）"
-
-      # ═══════════════════════════════════════════════════════
-      # 启动 Next.js dev server（后台运行，测试 PR 新前端代码）
-      # ═══════════════════════════════════════════════════════
-      - name: Start Next.js dev server
-        working-directory: frontend/admin-web
-        run: |
-          npm run dev &
-          # 等待 dev server 就绪
-          for i in $(seq 1 30); do
-            curl -s -o /dev/null http://localhost:3001 && echo "✅ Dev server ready" && break
-            echo "⏳ Waiting for dev server... ($i/30)"
-            sleep 3
-          done
-
       # ═══════════════════════════════════════════════════════
       # 运行 E2E Web 测试
       #
-      # 流程：CI 本地 Next.js dev server (:3001) →
-      #       前端 API 请求直连远程 admin-api →
-      #       Playwright 浏览器打开 localhost:3001 执行测试
+      # Playwright 自动启动 Next.js dev server（见 playwright.config.ts webServer）
+      # 前端 API 请求直连远程 admin-api（NEXT_PUBLIC_API_BASE_URL）
       # ═══════════════════════════════════════════════════════
       - name: Run E2E tests (web only)
         working-directory: tests
