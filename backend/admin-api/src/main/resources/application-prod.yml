@@ -3,3 +3,8 @@ springdoc:
     enabled: false
   swagger-ui:
     enabled: false
+
+spring:
+  flyway:
+    # 生产环境开启迁移校验，防止 drift
+    validate-on-migrate: true
