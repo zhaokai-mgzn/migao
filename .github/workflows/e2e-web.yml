@@ -1,6 +1,7 @@
 name: E2E Web
 
 on:
+  workflow_dispatch:
   pull_request:
     paths:
       - 'frontend/admin-web/**'
