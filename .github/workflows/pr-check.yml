@@ -9,6 +9,26 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  # ============ 安全门禁：拦截 .env 文件 ============
+  block-env-files:
+    name: Block .env files (except .env.example)
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check for forbidden .env files
+        run: |
+          FORBIDDEN=$(git diff --name-only origin/main...HEAD | grep -E '\.env$|\.env\.' | grep -v '\.env\.example' || true)
+          if [ -n "$FORBIDDEN" ]; then
+            echo "❌ PR contains forbidden .env files:"
+            echo "$FORBIDDEN"
+            echo "Use .env.example template instead. Real values go to deployment platform env vars."
+            exit 1
+          fi
+          echo "✅ No forbidden .env files"
+
   # ============ admin-api 单测全量 ============
   admin-api-test:
     name: admin-api unit tests
