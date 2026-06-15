@@ -254,6 +254,7 @@ public class AdminUserController {
         map.put("phone", user.getPhone());
         map.put("email", null);
         map.put("role", user.getRole());
+        map.put("position", user.getPosition() != null ? user.getPosition() : "");
         map.put("status", user.getStatus());
         map.put("createdAt", user.getCreatedAt());
         map.put("updatedAt", user.getUpdatedAt());
