@@ -235,10 +235,10 @@ public class UserService implements UserDetailsService {
         }
 
         // 创建用户
-        // password 为 null 时不设密码（对应 #375 禁用密码登录）
+        // password 为 null 时不设密码（对应 #375 禁用密码登录，走 SMS 验证码）
         String passwordHash = StringUtils.hasText(password)
                 ? PASSWORD_ENCODER.encode(password)
-                : PASSWORD_ENCODER.encode(phone); // fallback: 用手机号作为默认密码
+                : null;
         User user = User.builder()
                 .tenantId(tenantId)
                 .phone(phone)
