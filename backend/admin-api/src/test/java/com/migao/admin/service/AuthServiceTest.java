@@ -86,23 +86,10 @@ class AuthServiceTest {
     // ======================== 登录测试 ========================
 
     @Test
-    @DisplayName("密码登录已禁用 - 返回错误 (#375)")
+    @DisplayName("密码登录已禁用 - 抛出认证异常 (#375)")
     void adminLogin_Disabled() {
         HttpServletResponse response = mock(HttpServletResponse.class);
         assertThatThrownBy(() -> authService.adminLogin(loginRequest, response))
-                .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("密码登录已禁用");
-    }
-
-    @Test
-    @DisplayName("密码登录已禁用 - 任意请求均返回错误")
-    void adminLogin_AlwaysDisabled() {
-        LoginRequest req = new LoginRequest();
-        req.setUsername("any");
-        req.setPassword("any");
-        req.setTenantId(1L);
-        HttpServletResponse response = mock(HttpServletResponse.class);
-        assertThatThrownBy(() -> authService.adminLogin(req, response))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("密码登录已禁用");
     }
