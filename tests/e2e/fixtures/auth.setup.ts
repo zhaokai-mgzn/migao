@@ -16,7 +16,7 @@
  *       move this file to tests/e2e/specs/auth.setup.ts or adjust testDir.
  */
 import { test as setup, expect } from '@playwright/test'
-import { loginViaApi, injectAuth } from '../helpers/auth.helper'
+import { loginViaApi, injectAuth, type AuthTokens } from '../helpers/auth.helper'
 import * as path from 'path'
 import * as fs from 'fs'
 
@@ -33,8 +33,18 @@ setup('authenticate as admin', async ({ page }) => {
     fs.mkdirSync(AUTH_DIR, { recursive: true })
   }
 
-  // Step 1: Login via SMS API (password login 已于 #375 禁用)
-  const tokens = await loginViaApi(TEST_PHONE, TEST_SMS_CODE)
+  // Step 1: Login via SMS API，最多重试 3 次应对云 dev 网络波动
+  let tokens: AuthTokens | undefined
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      tokens = await loginViaApi(TEST_PHONE, TEST_SMS_CODE)
+      break
+    } catch (e) {
+      if (attempt === 3) throw e
+      console.log(`Login attempt ${attempt} failed, retrying...`)
+      await new Promise(r => setTimeout(r, 5000))
+    }
+  }
 
   // Step 2: Navigate to the app so we're on the correct origin
   // Next.js dev server 首次编译较慢，用 domcontentloaded + 30s 超时

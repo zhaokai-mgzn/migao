@@ -174,8 +174,7 @@ public class DashboardController {
         java.util.Set<String> shipOrderIds = orderMapper.selectList(
                 new LambdaQueryWrapper<Order>()
                         .eq(Order::getTenantId, tenantId)
-                        .eq(Order::getStatus, "待发货")
-                        .select(Order::getId))
+                        .eq(Order::getStatus, "待发货"))
                 .stream().map(Order::getId).collect(Collectors.toSet());
         long processingPendingOrders = 0;
         if (!shipOrderIds.isEmpty()) {

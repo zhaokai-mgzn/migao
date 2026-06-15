@@ -62,6 +62,9 @@ class DashboardControllerTest {
     @Mock
     private SessionMessageMapper sessionMessageMapper;
 
+    @Mock
+    private ProductSkuMapper productSkuMapper;
+
     @InjectMocks
     private DashboardController dashboardController;
 
@@ -87,16 +90,20 @@ class DashboardControllerTest {
         void returnFullStats() throws Exception {
             // given: 所有 mapper count 返回合理数值
             when(productMapper.selectCount(any())).thenReturn(100L);
-            when(orderMapper.selectCount(any())).thenReturn(50L, 5L, 3L, 10L);  // total, today, yesterday, month
+            when(orderMapper.selectCount(any())).thenReturn(50L, 5L, 3L, 10L, 5L);  // total, today, yesterday, month, pendingShipOrders
             when(orderMapper.selectList(any())).thenReturn(
                     List.of(mockOrder(1000L)),
                     List.of(mockOrder(800L)),
                     List.of(),
-                    List.of()
+                    List.of(),
+                    List.of()  // shipOrderIds for #387
             );
             when(userMapper.selectCount(any())).thenReturn(200L, 10L);
             when(afterSalesTicketMapper.selectCount(any())).thenReturn(15L);
             when(sessionMapper.selectCount(any())).thenReturn(3L, 2L);
+            // #387: 待处理区 3 卡片
+            when(orderItemMapper.selectList(any())).thenReturn(List.of());
+            when(productSkuMapper.selectCount(any())).thenReturn(8L);
 
             // when & then
             mockMvc.perform(get("/api/admin/dashboard/stats"))
