@@ -11,7 +11,8 @@ test.describe('员工管理页面', () => {
   })
 
   test('页面标题和描述正确显示', async () => {
-    await expect(page.page.getByText('员工管理')).toBeVisible()
+    // 使用 heading 而非 getByText，避免 sidebar/breadcrumb 中同名字符串导致的 strict mode 冲突
+    await expect(page.page.getByRole('heading', { name: '员工管理' })).toBeVisible()
     await expect(page.page.getByText('管理系统用户和员工账号')).toBeVisible()
   })
 
