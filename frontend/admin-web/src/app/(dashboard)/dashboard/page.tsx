@@ -309,7 +309,7 @@ export default function DashboardPage() {
         <div className="bg-white rounded-xl border border-gray-100 p-5">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-semibold text-gray-800">商品销量排行</h3>
-            <a href="/products" className="text-xs text-primary-600 hover:underline flex items-center gap-1">查看更多 <ArrowRight className="w-3 h-3" /></a>
+            <a href="/products?sortBy=salesCount&sortOrder=desc" className="text-xs text-primary-600 hover:underline flex items-center gap-1">查看更多 <ArrowRight className="w-3 h-3" /></a>
           </div>
           {loading ? (
             <div className="space-y-2">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-8 bg-gray-100 rounded animate-pulse" />)}</div>
