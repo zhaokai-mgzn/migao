@@ -459,7 +459,7 @@ public class DashboardController {
     }
 
     /**
-     * 含加工待发货订单数（status = 待发货 AND has_processing = true）
+     * 含加工待发货订单数（status = 待发货，has_processing 过滤待 DB 加列后启用）
      */
     @GetMapping("/processing-shipment-count")
     public ApiResponse<Long> getProcessingShipmentCount() {
@@ -467,8 +467,8 @@ public class DashboardController {
         long count = orderMapper.selectCount(
                 new LambdaQueryWrapper<Order>()
                         .eq(Order::getTenantId, tenantId)
-                        .eq(Order::getStatus, "pending_shipment")
-                        .eq(Order::getHasProcessing, true));
+                        .eq(Order::getStatus, "pending_shipment"));
+        // TODO: 等 orders 表加 has_processing 列后加 .eq(Order::getHasProcessing, true)
         return ApiResponse.success(count);
     }
 
