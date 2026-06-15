@@ -65,6 +65,15 @@ spring:
       max-file-size: 20MB
       max-request-size: 50MB
 
+  # Flyway — 数据库版本迁移
+  # baseline-on-migrate=true + baseline-version=0 确保在新旧 DB 上都能安全运行
+  # V1/V2 迁移均使用 IF NOT EXISTS / ON CONFLICT DO NOTHING 保证幂等
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    baseline-version: 0
+
 # MyBatis-Plus 配置
 mybatis-plus:
   mapper-locations: classpath*:mapper/**/*.xml
