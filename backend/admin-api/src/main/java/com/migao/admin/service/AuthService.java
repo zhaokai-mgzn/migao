@@ -85,53 +85,9 @@ public class AuthService {
      * @param response HTTP 响应（用于设置 Cookie）
      * @return 登录响应
      */
+    @Deprecated // #375
     public LoginResponse adminLogin(LoginRequest request, HttpServletResponse response) {
-        log.info("用户登录: username={}, tenantId={}", request.getUsername(), request.getTenantId());
-
-        // 0. 设置租户上下文（登录请求无JWT，需从请求体获取租户ID）
-        TenantContext.setTenantId(request.getTenantId());
-
-        // 1. 验证用户名密码
-        User user = authenticateUser(request.getUsername(), request.getPassword(), request.getTenantId());
-
-        // 2. 获取用户角色
-        List<String> roles = userService.getUserRoles(user);
-
-        // 3. 签发 JWT Token
-        String accessToken = jwtTokenProvider.generateAccessToken(
-                user.getId(),
-                user.getTenantId(),
-                user.getPhone(),
-                roles
-        );
-
-        String refreshToken = jwtTokenProvider.generateRefreshToken(
-                user.getId(),
-                user.getTenantId()
-        );
-
-        // 4. 设置 HttpOnly Cookie
-        setTokenCookie(response, accessToken, (int) jwtTokenProvider.getAccessTokenExpiration());
-
-        // 5. 查询租户名称
-        String tenantName = getTenantName(user.getTenantId());
-
-        // 6. 构建响应
-        return LoginResponse.builder()
-                .user(LoginResponse.UserInfo.builder()
-                        .id(user.getId())
-                        .nickname(user.getNickname())
-                        .avatar(user.getAvatar())
-                        .role(user.getRole())
-                        .identityType("account")
-                        .roles(roles)
-                        .tenantId(user.getTenantId())
-                        .tenantName(tenantName)
-                        .build())
-                .accessToken(accessToken)
-                .refreshToken(refreshToken)
-                .expiresIn(jwtTokenProvider.getAccessTokenExpiration())
-                .build();
+        throw BusinessException.authFailed("密码登录已禁用，请使用短信验证码登录");
     }
 
     /**
