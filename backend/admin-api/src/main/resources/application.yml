@@ -66,7 +66,7 @@ spring:
       max-request-size: 50MB
 
   # Flyway — 数据库版本迁移
-  # baseline-on-migrate=true + baseline-version=0 确保在新旧 DB 上都能安全运行
+  # baseline-on-migrate=true 确保已有 DB 上首次启动不报错
   # V1/V2 迁移均使用 IF NOT EXISTS / ON CONFLICT DO NOTHING 保证幂等
   flyway:
     enabled: true

@@ -484,6 +484,33 @@ public class DashboardController {
         return ApiResponse.success(result);
     }
 
+    /**
+     * 待发货订单数（status = 待发货）
+     */
+    @GetMapping("/pending-shipment-count")
+    public ApiResponse<Long> getPendingShipmentCount() {
+        Long tenantId = TenantContext.getTenantId();
+        long count = orderMapper.selectCount(
+                new LambdaQueryWrapper<Order>()
+                        .eq(Order::getTenantId, tenantId)
+                        .eq(Order::getStatus, "pending_shipment"));
+        return ApiResponse.success(count);
+    }
+
+    /**
+     * 含加工待发货订单数（status = 待发货，has_processing 过滤待 DB 加列后启用）
+     */
+    @GetMapping("/processing-shipment-count")
+    public ApiResponse<Long> getProcessingShipmentCount() {
+        Long tenantId = TenantContext.getTenantId();
+        long count = orderMapper.selectCount(
+                new LambdaQueryWrapper<Order>()
+                        .eq(Order::getTenantId, tenantId)
+                        .eq(Order::getStatus, "pending_shipment"));
+        // TODO: 等 orders 表加 has_processing 列后加 .eq(Order::getHasProcessing, true)
+        return ApiResponse.success(count);
+    }
+
     // ========== Response DTOs ==========
 
     @Data
