@@ -51,6 +51,7 @@ jobs:
         working-directory: tests
         env:
           BASE_URL: ${{ secrets.E2E_BASE_URL || 'https://admin.migaozn.com' }}
+          NEXT_PUBLIC_API_BASE_URL: ${{ secrets.E2E_API_BASE_URL || 'http://8.136.139.170' }}
           E2E_ADMIN_PHONE: ${{ secrets.E2E_ADMIN_PHONE }}
           E2E_SMS_CODE: ${{ secrets.E2E_SMS_CODE }}
           CI: 'true'
