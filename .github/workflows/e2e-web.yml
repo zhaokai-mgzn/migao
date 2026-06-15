@@ -48,7 +48,7 @@ jobs:
 
       - name: Validate secrets
         run: |
-          echo "✅ 使用固定测试账号 admin/password 登录（种子用户 13800138000）"
+          echo "✅ 使用 SMS 验证码登录（13800138000 / dev 万能码 123456）"
 
       # ═══════════════════════════════════════════════════════
       # 启动 Next.js dev server（后台运行，测试 PR 新前端代码）
@@ -76,6 +76,8 @@ jobs:
         env:
           BASE_URL: http://localhost:3001
           NEXT_PUBLIC_API_BASE_URL: ${{ secrets.E2E_API_BASE_URL || 'http://8.136.139.170' }}
+          E2E_ADMIN_PHONE: ${{ secrets.E2E_ADMIN_PHONE || '13800138000' }}
+          E2E_SMS_CODE: ${{ secrets.E2E_SMS_CODE || '123456' }}
           CI: 'true'
         run: |
           npx playwright test --project=web \

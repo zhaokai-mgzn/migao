@@ -44,8 +44,9 @@ jobs:
         working-directory: tests
         env:
           BASE_URL: ${{ secrets.E2E_BASE_URL || 'https://admin.migaozn.com' }}
-          E2E_ADMIN_PHONE: ${{ secrets.E2E_ADMIN_PHONE }}
-          E2E_SMS_CODE: ${{ secrets.E2E_SMS_CODE }}
+          NEXT_PUBLIC_API_BASE_URL: ${{ secrets.E2E_BASE_URL || 'https://admin.migaozn.com' }}
+          E2E_ADMIN_PHONE: ${{ secrets.E2E_ADMIN_PHONE || '13800138000' }}
+          E2E_SMS_CODE: ${{ secrets.E2E_SMS_CODE || '123456' }}
           CI: 'true'
         run: |
           npx playwright test --project=real \

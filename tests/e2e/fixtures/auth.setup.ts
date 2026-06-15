@@ -23,11 +23,9 @@ import * as fs from 'fs'
 const AUTH_DIR = path.join(__dirname, '..', '.auth')
 const AUTH_FILE = path.join(AUTH_DIR, 'admin.json')
 
-// 固定测试账号（admin 密码登录，不依赖 SMS/secret）
-// 与 V2__init_rbac_data.sql 中种子用户一致
-const TEST_USERNAME = process.env.E2E_ADMIN_USERNAME || '13800138000'
-const TEST_PASSWORD = process.env.E2E_ADMIN_PASSWORD || 'admin123'
-const TEST_TENANT_ID = Number(process.env.E2E_TENANT_ID || process.env.TEST_TENANT_ID) || 1
+// 固定测试账号（SMS 验证码登录，dev 万能码 123456）
+const TEST_PHONE = process.env.E2E_ADMIN_PHONE || '13800138000'
+const TEST_SMS_CODE = process.env.E2E_SMS_CODE || '123456'
 
 setup('authenticate as admin', async ({ page }) => {
   // Ensure .auth directory exists
@@ -35,8 +33,8 @@ setup('authenticate as admin', async ({ page }) => {
     fs.mkdirSync(AUTH_DIR, { recursive: true })
   }
 
-  // Step 1: Login via admin API (password-based, more reliable than SMS)
-  const tokens = await loginViaApi(TEST_USERNAME, TEST_PASSWORD, TEST_TENANT_ID)
+  // Step 1: Login via SMS API (password login 已于 #375 禁用)
+  const tokens = await loginViaApi(TEST_PHONE, TEST_SMS_CODE)
 
   // Step 2: Navigate to the app so we're on the correct origin
   // Next.js dev server 首次编译较慢，用 domcontentloaded + 30s 超时
@@ -45,10 +43,10 @@ setup('authenticate as admin', async ({ page }) => {
   // Step 3: Inject auth state into the browser
   await injectAuth(page, tokens, {
     id: '1',
-    username: TEST_USERNAME,
+    username: TEST_PHONE,
     name: '管理员',
     roles: ['admin'],
-    tenantId: TEST_TENANT_ID,
+    tenantId: 1,
     tenantName: '测试企业',
   })
 

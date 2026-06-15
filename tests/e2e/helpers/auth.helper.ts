@@ -45,19 +45,18 @@ interface ZustandPersistState {
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:8080'
 
 /**
- * Login via the backend admin API (bypasses the UI).
- * Uses password-based admin login (more reliable than SMS across envs).
+ * Login via the backend SMS API (bypasses the UI).
+ * Uses universal dev SMS code 123456 — works across all environments.
  * Returns the tokens from the LoginResponse.
  */
 export async function loginViaApi(
-  username = '13800138000',
-  password = 'admin123',
-  tenantId = 1,
+  phone = '13800138000',
+  code = '123456',
 ): Promise<AuthTokens> {
   const ctx: APIRequestContext = await pwRequest.newContext()
   try {
-    const response = await ctx.post(`${API_BASE_URL}/api/auth/admin/login`, {
-      data: { username, password, tenantId },
+    const response = await ctx.post(`${API_BASE_URL}/api/auth/sms/login`, {
+      data: { phone, code },
     })
 
     if (!response.ok()) {
