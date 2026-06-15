@@ -69,13 +69,14 @@ export default function EmployeesPage() {
     }).catch(() => {})
   }, [])
 
-  // 从 menuTree 中提取 code → 中文 label 的映射（只计算一次）
-  const permissionLabelMap = useMemo(() => {
+  // 从 menuTree 中提取 code → 中文 label 的映射 + 叶子节点总数
+  const { permissionLabelMap, totalLeafCount } = useMemo(() => {
     const map: Record<string, string> = {}
+    let count = 0
     menuTree.forEach(p => {
-      p.children?.forEach(c => { map[c.code] = c.label })
+      p.children?.forEach(c => { map[c.code] = c.label; count++ })
     })
-    return map
+    return { permissionLabelMap: map, totalLeafCount: count }
   }, [menuTree])
 
   // 加载员工列表
@@ -257,6 +258,10 @@ export default function EmployeesPage() {
       render: (record) => {
         const codes: string[] = record.permissions || []
         if (codes.length === 0) return <span className="text-gray-400 text-sm">未分配</span>
+        // 拥有全部权限时折叠为单个标签
+        if (totalLeafCount > 0 && codes.length >= totalLeafCount) {
+          return <Badge variant="success">全部权限</Badge>
+        }
         const labels = codes.map(c => permissionLabelMap[c] || c).slice(0, 3)
         return (
           <div className="flex flex-wrap gap-1">
