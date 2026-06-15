@@ -194,7 +194,6 @@ public class RegistrationService {
                     initialPassword,
                     application.getContactName(),
                     "admin",
-                    "管理员",
                     null,
                     tenant.getId()
             );
