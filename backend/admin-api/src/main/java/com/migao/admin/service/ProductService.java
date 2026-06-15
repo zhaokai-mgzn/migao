@@ -166,9 +166,11 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         List<ProductResponse> responses = productPage.getRecords().stream()
                 .map(product -> {
                     ProductResponse response = convertToResponse(product, categoryNameMap.get(product.getCategoryId()));
-                    // 附加颜色数和总库存
+                    // 附加颜色数和总库存（总库存以 SKU 汇总为准，覆盖 product.stock 可能为 0 的情况）
                     response.setColorCount(getColorCount(product.getId()));
-                    response.setTotalStock(getTotalStock(product.getId()));
+                    int totalStock = getTotalStock(product.getId());
+                    response.setTotalStock(totalStock);
+                    response.setStock(totalStock);
                     return response;
                 })
                 .collect(Collectors.toList());
@@ -196,7 +198,9 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
 
         ProductResponse response = convertToResponse(product, categoryName);
         response.setColorCount(getColorCount(id));
-        response.setTotalStock(getTotalStock(id));
+        int totalStock = getTotalStock(id);
+        response.setTotalStock(totalStock);
+        response.setStock(totalStock);
 
         // 查询关联颜色列表
         List<ProductColor> colorEntities = productColorMapper.selectList(
