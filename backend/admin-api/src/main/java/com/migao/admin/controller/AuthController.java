@@ -3,6 +3,7 @@ package com.migao.admin.controller;
 import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.dto.LoginRequest;
 import com.migao.admin.dto.LoginResponse;
+import com.migao.admin.exception.BusinessException;
 import com.migao.admin.dto.MiniLoginRequest;
 import com.migao.admin.dto.RefreshTokenRequest;
 import com.migao.admin.dto.SmsLoginRequest;
@@ -30,21 +31,22 @@ public class AuthController {
     // ======================== 账号密码登录 ========================
 
     /**
-     * 管理后台登录
+     * 管理后台登录 — 已禁用
      *
      * POST /api/auth/admin/login
      *
-     * Request: { "username": "admin", "password": "xxx", "tenantId": "TENANT001" }
-     * Response: Set-Cookie: access_token=JWT; HttpOnly; Secure; SameSite=Strict; Path=/
-     *           Body: { "success": true, "data": { "user": {...}, "token": "..." } }
+     * 密码登录入口已于 2026-06-15 禁用（#375）。
+     * 请改用 POST /api/auth/sms/login（短信验证码登录）。
+     *
+     * @deprecated 使用短信验证码登录替代
      */
+    @Deprecated
     @PostMapping("/admin/login")
-    public ApiResponse<LoginResponse> adminLogin(
+    public ApiResponse<Void> adminLogin(
             @Valid @RequestBody LoginRequest request,
             HttpServletResponse response) {
-        log.info("管理后台登录请求: username={}, tenantId={}", request.getUsername(), request.getTenantId());
-        LoginResponse loginResponse = authService.adminLogin(request, response);
-        return ApiResponse.success(loginResponse);
+        log.warn("密码登录已禁用 (#375), username={}", request.getUsername());
+        throw BusinessException.authFailed("密码登录已禁用，请使用短信验证码登录");
     }
 
     // ======================== 短信验证码登录 ========================

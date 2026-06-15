@@ -71,43 +71,12 @@ class AuthIntegrationTest {
                         .build())
                 .build();
 
-        when(authService.adminLogin(any(LoginRequest.class), any(HttpServletResponse.class)))
-                .thenReturn(loginResponse);
-
+        // #375: 密码登录已禁用，应返回 AUTH_FAILED
         LoginRequest request = new LoginRequest();
         request.setUsername("admin");
         request.setPassword("password123");
         request.setTenantId(1L);
 
-        // When & Then
-        mockMvc.perform(post("/api/auth/admin/login")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.success").value(true))
-                .andExpect(jsonPath("$.data.accessToken").value("jwt-access-token"))
-                .andExpect(jsonPath("$.data.refreshToken").value("jwt-refresh-token"))
-                .andExpect(jsonPath("$.data.expiresIn").value(7200))
-                .andExpect(jsonPath("$.data.user.id").value("user-001"))
-                .andExpect(jsonPath("$.data.user.nickname").value("管理员"))
-                .andExpect(jsonPath("$.data.user.role").value("admin"));
-
-        verify(authService).adminLogin(any(LoginRequest.class), any(HttpServletResponse.class));
-    }
-
-    @Test
-    @DisplayName("密码错误 - 返回 401 认证失败")
-    void testAccountLoginInvalidPassword() throws Exception {
-        // Given
-        when(authService.adminLogin(any(LoginRequest.class), any(HttpServletResponse.class)))
-                .thenThrow(BusinessException.authFailed("用户名或密码错误"));
-
-        LoginRequest request = new LoginRequest();
-        request.setUsername("admin");
-        request.setPassword("wrong-password");
-        request.setTenantId(1L);
-
-        // When & Then
         mockMvc.perform(post("/api/auth/admin/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
@@ -117,25 +86,37 @@ class AuthIntegrationTest {
     }
 
     @Test
-    @DisplayName("用户不存在 - 返回 401 认证失败")
-    void testAccountLoginNonExistentUser() throws Exception {
-        // Given
-        when(authService.adminLogin(any(LoginRequest.class), any(HttpServletResponse.class)))
-                .thenThrow(BusinessException.authFailed("用户不存在"));
-
+    @DisplayName("密码登录已禁用 - 任意账号密码均返回 401")
+    void testAccountLoginInvalidPassword() throws Exception {
+        // #375: 密码登录已全面禁用，不需要 mock authService
         LoginRequest request = new LoginRequest();
-        request.setUsername("nonexistent");
-        request.setPassword("password123");
+        request.setUsername("admin");
+        request.setPassword("wrong-password");
         request.setTenantId(1L);
 
-        // When & Then
         mockMvc.perform(post("/api/auth/admin/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.success").value(false))
-                .andExpect(jsonPath("$.error.code").value("AUTH_FAILED"))
-                .andExpect(jsonPath("$.error.message").value("用户不存在"));
+                .andExpect(jsonPath("$.error.code").value("AUTH_FAILED"));
+    }
+
+    @Test
+    @DisplayName("密码登录已禁用 - 不存在用户也返回 401")
+    void testAccountLoginNonExistentUser() throws Exception {
+        // #375: 密码登录已全面禁用
+        LoginRequest request = new LoginRequest();
+        request.setUsername("nonexistent");
+        request.setPassword("password123");
+        request.setTenantId(1L);
+
+        mockMvc.perform(post("/api/auth/admin/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error.code").value("AUTH_FAILED"));
     }
 
     // ======================== Token 刷新测试 ========================
