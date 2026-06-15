@@ -143,10 +143,21 @@ jobs:
 
           for file in $CHANGED; do
             case "$file" in
+              # ===== Python ai-agent-service（与 pr-check.yml 同步）=====
               backend/ai-agent-service/app/tools/*.py)
                 if ! echo "$TEST_FILES" | grep -qE "test_tools_|e2e/real/"; then
                   MISSING="$MISSING\n- \`$file\`: Tool 变更缺少 L2 单测 + L3 Real E2E"
                 fi ;;
+              backend/ai-agent-service/app/graph/*.py)
+                if ! echo "$TEST_FILES" | grep -qE "test_graph_|test_skill_"; then
+                  MISSING="$MISSING\n- \`$file\`: Graph/Skill 变更缺少 L2 单测"
+                fi ;;
+              backend/ai-agent-service/app/agents/*.py)
+                if ! echo "$TEST_FILES" | grep -qE "test_agent_|test_intent_"; then
+                  MISSING="$MISSING\n- \`$file\`: Agent 变更缺少 L2 单测"
+                fi ;;
+
+              # ===== Java admin-api（与 pr-check.yml 同步）=====
               backend/admin-api/src/main/java/*/controller/*.java)
                 ctrl=$(basename "$file" .java | sed 's/Controller//')
                 if ! echo "$TEST_FILES" | grep -q "${ctrl}Test\|${ctrl}ControllerTest"; then
@@ -157,6 +168,21 @@ jobs:
                 if ! echo "$TEST_FILES" | grep -q "${svc}Test\|${svc}ServiceTest"; then
                   MISSING="$MISSING\n- \`$file\`: Service 变更缺少 JUnit 单测"
                 fi ;;
+              backend/admin-api/src/main/java/*/mapper/*.java)
+                mapper=$(basename "$file" .java | sed 's/Mapper//')
+                if ! echo "$TEST_FILES" | grep -q "${mapper}Test\|${mapper}MapperTest"; then
+                  MISSING="$MISSING\n- \`$file\`: Mapper 变更缺少 SQL 验证测试"
+                fi ;;
+              backend/admin-api/src/main/java/*/security/*.java)
+                if ! echo "$TEST_FILES" | grep -qE "SecurityConfigTest|JwtTokenProviderTest"; then
+                  MISSING="$MISSING\n- \`$file\`: Security 变更缺少安全测试"
+                fi ;;
+              backend/admin-api/src/main/java/*/entity/*.java|backend/admin-api/src/main/java/*/dto/*.java)
+                if ! echo "$TEST_FILES" | grep -qE "api.contract|api-contract"; then
+                  MISSING="$MISSING\n- \`$file\`: Entity/DTO 变更缺少 API contract E2E 验证"
+                fi ;;
+
+              # ===== Frontend admin-web（与 pr-check.yml 同步）=====
               frontend/admin-web/src/app/*)
                 if ! echo "$TEST_FILES" | grep -q "e2e/specs"; then
                   MISSING="$MISSING\n- \`$file\`: Page 变更缺少 E2E spec"
@@ -164,6 +190,10 @@ jobs:
               frontend/admin-web/src/components/*)
                 if ! echo "$TEST_FILES" | grep -q "tests/unit/components"; then
                   MISSING="$MISSING\n- \`$file\`: Component 变更缺少组件测试"
+                fi ;;
+              frontend/admin-web/src/lib/*.ts|frontend/admin-web/src/store/*.ts)
+                if ! echo "$TEST_FILES" | grep -qE "tests/unit/lib/|tests/unit/store/"; then
+                  MISSING="$MISSING\n- \`$file\`: Lib/Store 变更缺少 L2 单元测试"
                 fi ;;
             esac
           done
