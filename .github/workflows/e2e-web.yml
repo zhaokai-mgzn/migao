@@ -19,7 +19,7 @@ jobs:
   e2e-web:
     name: E2E Web (specs only, no LLM)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -28,7 +28,17 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: Install dependencies
+      # ═══════════════════════════════════════════════════════
+      # 安装前端依赖（Next.js dev server 在 CI 里本地启动）
+      # ═══════════════════════════════════════════════════════
+      - name: Install frontend dependencies
+        working-directory: frontend/admin-web
+        run: npm ci
+
+      # ═══════════════════════════════════════════════════════
+      # 安装 E2E 测试依赖
+      # ═══════════════════════════════════════════════════════
+      - name: Install test dependencies
         working-directory: tests
         run: npm ci
 
@@ -47,10 +57,21 @@ jobs:
           PHONE: ${{ secrets.E2E_ADMIN_PHONE }}
           CODE: ${{ secrets.E2E_SMS_CODE }}
 
+      # ═══════════════════════════════════════════════════════
+      # 运行 E2E Web 测试
+      #
+      # 流程：CI 本地启动 Next.js dev server (:3001) →
+      #       前端 API 请求直连远程 admin-api (8.136.139.170) →
+      #       Playwright 浏览器打开 localhost:3001 执行测试
+      #
+      # 这样测试的是 PR 新前端代码，而非旧 OSS 部署
+      # ═══════════════════════════════════════════════════════
       - name: Run E2E tests (web only)
         working-directory: tests
         env:
-          BASE_URL: ${{ secrets.E2E_BASE_URL || 'https://admin.migaozn.com' }}
+          # Playwright baseURL = 本地 Next.js dev server（新代码）
+          BASE_URL: http://localhost:3001
+          # 前端 JS 中的 API 调用走远程 dev admin-api
           NEXT_PUBLIC_API_BASE_URL: ${{ secrets.E2E_API_BASE_URL || 'http://8.136.139.170' }}
           E2E_ADMIN_PHONE: ${{ secrets.E2E_ADMIN_PHONE }}
           E2E_SMS_CODE: ${{ secrets.E2E_SMS_CODE }}
