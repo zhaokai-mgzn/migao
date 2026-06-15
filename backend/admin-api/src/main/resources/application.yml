@@ -72,10 +72,6 @@ spring:
     enabled: true
     locations: classpath:db/migration
     baseline-on-migrate: true
-    baseline-version: 0
-    # Placeholder 默认值（生产环境通过 application-prod.yml 覆盖）
-    placeholders:
-      flyway_skip_seed_users: false
 
 # MyBatis-Plus 配置
 mybatis-plus:
