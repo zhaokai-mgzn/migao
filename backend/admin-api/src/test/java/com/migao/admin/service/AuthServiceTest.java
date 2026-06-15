@@ -86,88 +86,25 @@ class AuthServiceTest {
     // ======================== 登录测试 ========================
 
     @Test
-    @DisplayName("登录成功 - 正确的用户名和密码")
-    void adminLogin_Success() {
-        // Given: 用户存在且密码正确
-        when(userService.getUserByUsernameAndTenant("13800138000", 1L))
-                .thenReturn(testUser);
-        when(passwordEncoder.matches("password123", "$2a$10$hashedPassword"))
-                .thenReturn(true);
-        when(userService.getUserRoles(testUser))
-                .thenReturn(List.of("admin"));
-        when(jwtTokenProvider.generateAccessToken(eq("user-001"), eq(1L), eq("13800138000"), anyList()))
-                .thenReturn("mock-access-token");
-        when(jwtTokenProvider.generateRefreshToken("user-001", 1L))
-                .thenReturn("mock-refresh-token");
-        when(jwtTokenProvider.getAccessTokenExpiration())
-                .thenReturn(7200L);
-
+    @DisplayName("密码登录已禁用 - 返回错误 (#375)")
+    void adminLogin_Disabled() {
         HttpServletResponse response = mock(HttpServletResponse.class);
-
-        // When: 执行登录
-        LoginResponse result = authService.adminLogin(loginRequest, response);
-
-        // Then: 验证返回结果
-        assertThat(result).isNotNull();
-        assertThat(result.getAccessToken()).isEqualTo("mock-access-token");
-        assertThat(result.getRefreshToken()).isEqualTo("mock-refresh-token");
-        assertThat(result.getExpiresIn()).isEqualTo(7200L);
-        assertThat(result.getUser().getId()).isEqualTo("user-001");
-        assertThat(result.getUser().getNickname()).isEqualTo("测试管理员");
-        assertThat(result.getUser().getRoles()).contains("admin");
-
-        // 验证 Cookie 被设置
-        verify(response).addHeader(eq("Set-Cookie"), contains("access_token=mock-access-token"));
+        assertThatThrownBy(() -> authService.adminLogin(loginRequest, response))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("密码登录已禁用");
     }
 
     @Test
-    @DisplayName("登录失败 - 用户不存在")
-    void adminLogin_UserNotFound() {
-        // Given: 用户不存在
-        when(userService.getUserByUsernameAndTenant("13800138000", 1L))
-                .thenReturn(null);
-
+    @DisplayName("密码登录已禁用 - 任意请求均返回错误")
+    void adminLogin_AlwaysDisabled() {
+        LoginRequest req = new LoginRequest();
+        req.setUsername("any");
+        req.setPassword("any");
+        req.setTenantId(1L);
         HttpServletResponse response = mock(HttpServletResponse.class);
-
-        // When & Then: 应抛出认证失败异常
-        assertThatThrownBy(() -> authService.adminLogin(loginRequest, response))
+        assertThatThrownBy(() -> authService.adminLogin(req, response))
                 .isInstanceOf(BusinessException.class)
-                .hasMessage("用户名或密码错误");
-    }
-
-    @Test
-    @DisplayName("登录失败 - 密码错误")
-    void adminLogin_WrongPassword() {
-        // Given: 用户存在但密码不匹配
-        when(userService.getUserByUsernameAndTenant("13800138000", 1L))
-                .thenReturn(testUser);
-        when(passwordEncoder.matches("password123", "$2a$10$hashedPassword"))
-                .thenReturn(false);
-
-        HttpServletResponse response = mock(HttpServletResponse.class);
-
-        // When & Then: 应抛出认证失败异常
-        assertThatThrownBy(() -> authService.adminLogin(loginRequest, response))
-                .isInstanceOf(BusinessException.class)
-                .hasMessage("用户名或密码错误");
-    }
-
-    @Test
-    @DisplayName("登录失败 - 用户状态异常（被禁用）")
-    void adminLogin_UserInactive() {
-        // Given: 用户存在但状态为 disabled
-        testUser.setStatus("disabled");
-        when(userService.getUserByUsernameAndTenant("13800138000", 1L))
-                .thenReturn(testUser);
-        when(passwordEncoder.matches("password123", "$2a$10$hashedPassword"))
-                .thenReturn(true);
-
-        HttpServletResponse response = mock(HttpServletResponse.class);
-
-        // When & Then: 应抛出用户状态异常
-        assertThatThrownBy(() -> authService.adminLogin(loginRequest, response))
-                .isInstanceOf(BusinessException.class)
-                .hasMessage("用户状态异常");
+                .hasMessageContaining("密码登录已禁用");
     }
 
     // ======================== Token 刷新测试 ========================
