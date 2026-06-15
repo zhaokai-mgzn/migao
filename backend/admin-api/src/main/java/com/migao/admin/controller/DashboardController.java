@@ -119,7 +119,7 @@ public class DashboardController {
                 new LambdaQueryWrapper<Order>()
                         .eq(Order::getTenantId, tenantId)
                         .ge(Order::getCreatedAt, monthStart)
-                        .in(Order::getStatus, "confirmed", "producing", "shipped", "completed"));
+                        .in(Order::getStatus, "pending_shipment", "shipped", "completed"));
         // 使用 BigDecimal 累加避免精度丢失（longValue() 会截断小数）
         BigDecimal monthRevenueBd = monthOrders.stream()
                 .map(o -> o.getTotalAmount() != null ? o.getTotalAmount() : BigDecimal.ZERO)
@@ -133,7 +133,7 @@ public class DashboardController {
                         .eq(Order::getTenantId, tenantId)
                         .ge(Order::getCreatedAt, lastMonthStart)
                         .lt(Order::getCreatedAt, monthStart)
-                        .in(Order::getStatus, "confirmed", "producing", "shipped", "completed"));
+                        .in(Order::getStatus, "pending_shipment", "shipped", "completed"));
         BigDecimal lastMonthRevenueBd = lastMonthOrders.stream()
                 .map(o -> o.getTotalAmount() != null ? o.getTotalAmount() : BigDecimal.ZERO)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
@@ -214,22 +214,23 @@ public class DashboardController {
 
     // ========== 订单状态分布 ==========
 
+    // 标准化 6 个订单状态（#390 规范）
     private static final Map<String, String> STATUS_LABELS = Map.of(
-            "pending", "待付款",
-            "confirmed", "已确认",
-            "producing", "生产中",
+            "pending_payment", "待付款",
+            "pending_shipment", "待发货",
             "shipped", "已发货",
             "completed", "已完成",
-            "cancelled", "已取消"
+            "closed", "已关闭",
+            "refund", "退款/售后"
     );
 
     private static final Map<String, String> STATUS_COLORS = Map.of(
-            "pending", "#faad14",
-            "confirmed", "#2563eb",
-            "producing", "#7c3aed",
+            "pending_payment", "#faad14",
+            "pending_shipment", "#2563eb",
             "shipped", "#06b6d4",
             "completed", "#16a34a",
-            "cancelled", "#9ca3af"
+            "closed", "#9ca3af",
+            "refund", "#ef4444"
     );
 
     @GetMapping("/order-status")
