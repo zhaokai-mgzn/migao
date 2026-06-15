@@ -172,7 +172,16 @@ jobs:
           EXEMPT_PATTERNS=""
           if [ -f "$EXEMPTIONS_FILE" ]; then
             # 从 YAML 中提取 pattern 行（简单解析：匹配 "pattern:" 后的值）
-            EXEMPT_PATTERNS=$(grep -E '^\s*- pattern:' "$EXEMPTIONS_FILE" | sed 's/.*pattern:\s*"\(.*\)".*/\1/' || echo "")
+            RAW_PATTERNS=$(grep -E '^\s*- pattern:' "$EXEMPTIONS_FILE" | sed 's/.*pattern:\s*"\(.*\)".*/\1/' || echo "")
+            # 安全校验：拒绝含 shell 元字符的 pattern（防御深度，文件本身走 PR review）
+            for raw in $RAW_PATTERNS; do
+              case "$raw" in
+                *'$'*|*'`'*|*';'*|*'('*|*')'*|*'|'*|*'&'*|*'<'*|*'>'*)
+                  echo "::warning::跳过不安全的豁免 pattern: $raw" ;;
+                *) EXEMPT_PATTERNS="$EXEMPT_PATTERNS $raw" ;;
+              esac
+            done
+            EXEMPT_PATTERNS="${EXEMPT_PATTERNS# }"
           fi
 
           echo "## 🔍 QA Growth Gate 扫描结果" > $GITHUB_STEP_SUMMARY
