@@ -1,10 +1,16 @@
 import { test, expect } from '@playwright/test'
 import { RolesPage } from '../../pages/admin/roles.page'
+import rolesList from '../../fixtures/roles-list.json'
+import employeesList from '../../fixtures/employees-list.json'
 
 test.describe('角色权限管理页面', () => {
   let page: RolesPage
 
   test.beforeEach(async ({ page: p }) => {
+    // Mock API 响应 — 不依赖云 dev DB 数据
+    await p.route('**/api/admin/roles*', route => route.fulfill({ body: JSON.stringify(rolesList) }))
+    await p.route('**/api/admin/roles/all*', route => route.fulfill({ body: JSON.stringify(rolesList) }))
+    await p.route('**/api/admin/users*', route => route.fulfill({ body: JSON.stringify(employeesList) }))
     page = new RolesPage(p)
     await page.goto()
     await page.waitForLoad()

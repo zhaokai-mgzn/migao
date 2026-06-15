@@ -1,10 +1,20 @@
 import { test, expect } from '@playwright/test'
 import { AfterSalesDetailPage } from '../../pages/after-sales/after-sales-detail.page'
+import afterSalesList from '../../fixtures/after-sales-list.json'
 
 test.describe('售后工单详情页面', () => {
   let pom: AfterSalesDetailPage
 
   test.beforeEach(async ({ page }) => {
+    // Mock API — 用 fixture 数据拦截，不依赖云 dev DB
+    const items = (afterSalesList as any).data?.items || []
+    const firstTicket = items[0] || {}
+    await page.route('**/api/admin/after-sales/*', route => {
+      route.fulfill({ body: JSON.stringify({ success: true, data: firstTicket }) })
+    })
+    await page.route('**/api/admin/after-sales/1/logs*', route => {
+      route.fulfill({ body: JSON.stringify({ success: true, data: [] }) })
+    })
     pom = new AfterSalesDetailPage(page)
     await pom.goto('1')
     await pom.waitForLoadingComplete()
