@@ -41,10 +41,35 @@ export default defineConfig({
       },
     },
 
-    // All authenticated tests use saved auth state
+    // Web 页面 E2E（CI 自动跑，不含 LLM 依赖的 ai-agent/chat）
+    {
+      name: 'web',
+      testMatch: /specs\/.*\.spec\.ts/,
+      testIgnore: /specs\/auth\/|auth\.setup\.ts/,
+      use: {
+        ...devices['Desktop Chrome'],
+        channel: 'chrome',
+        storageState: './e2e/.auth/admin.json',
+      },
+      dependencies: ['auth-setup'],
+    },
+
+    // AI Agent 能力测试（手动触发，依赖 LLM）
+    {
+      name: 'real',
+      testMatch: /real\/.*\.spec\.ts/,
+      use: {
+        ...devices['Desktop Chrome'],
+        channel: 'chrome',
+        storageState: './e2e/.auth/admin.json',
+      },
+      dependencies: ['auth-setup'],
+    },
+
+    // 向后兼容：全部 authenticated 测试（不含 auth 页面和 real/）
     {
       name: 'chromium',
-      testIgnore: /specs\/auth\/|auth\.setup\.ts/,
+      testIgnore: /specs\/auth\/|real\/|auth\.setup\.ts/,
       use: {
         ...devices['Desktop Chrome'],
         channel: 'chrome', // 使用本地已安装的 Chrome，而不是下载 Chromium

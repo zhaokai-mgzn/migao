@@ -1,18 +1,25 @@
-name: E2E Real (AI Agent 能力测试)
+name: E2E Web
 
 on:
-  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'frontend/admin-web/**'
+      - 'backend/admin-api/**'
+      - 'tests/e2e/specs/**'
+      - 'tests/e2e/.auth/**'
+      - 'tests/playwright.config.ts'
+      - 'tests/package.json'
+      - 'tests/package-lock.json'
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   NODE_VERSION: '20'
-  PLAYWRIGHT_BROWSERS_PATH: '0'
 
 jobs:
-  e2e-real:
-    name: E2E Real (AI Agent 能力测试)
+  e2e-web:
+    name: E2E Web (specs only, no LLM)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -40,7 +47,7 @@ jobs:
           PHONE: ${{ secrets.E2E_ADMIN_PHONE }}
           CODE: ${{ secrets.E2E_SMS_CODE }}
 
-      - name: Run E2E tests (real only — AI Agent 能力验证)
+      - name: Run E2E tests (web only)
         working-directory: tests
         env:
           BASE_URL: ${{ secrets.E2E_BASE_URL || 'https://admin.migaozn.com' }}
@@ -48,7 +55,7 @@ jobs:
           E2E_SMS_CODE: ${{ secrets.E2E_SMS_CODE }}
           CI: 'true'
         run: |
-          npx playwright test --project=real \
+          npx playwright test --project=web \
             --reporter=list \
             --retries=2 \
             --max-failures=10
@@ -57,7 +64,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: e2e-real-artifacts
+          name: e2e-web-artifacts
           path: |
             tests/playwright-report/
             tests/test-results/
@@ -71,7 +78,7 @@ jobs:
             await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              title: `[E2E Real] AI Agent 能力测试失败 — ${new Date().toISOString().slice(0, 10)}`,
-              body: `E2E Real 测试失败（AI Agent 能力验证，含 LLM 调用）。\n\n查看详情：${runUrl}`,
+              title: `[E2E Web] PR 门禁失败 — ${new Date().toISOString().slice(0, 10)}`,
+              body: `E2E Web 测试失败（specs only，不含 LLM）。\n\nPR: ${context.payload.pull_request?.html_url || 'N/A'}\n查看详情：${runUrl}`,
               labels: ['bug', 'role/qa'],
             })
