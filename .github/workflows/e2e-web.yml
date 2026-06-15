@@ -48,6 +48,18 @@ jobs:
         run: npx playwright install chromium --with-deps
 
       # ═══════════════════════════════════════════════════════
+      # Record-Replay: 从远程 dev 录制 API fixtures
+      # ═══════════════════════════════════════════════════════
+      - name: Record API fixtures
+        working-directory: tests
+        env:
+          NEXT_PUBLIC_API_BASE_URL: ${{ secrets.E2E_API_BASE_URL || 'http://8.136.139.170' }}
+          E2E_ADMIN_PHONE: ${{ secrets.E2E_ADMIN_PHONE || '13800138000' }}
+          E2E_SMS_CODE: ${{ secrets.E2E_SMS_CODE || '123456' }}
+        run: npx tsx e2e/scripts/record-fixtures.ts
+        continue-on-error: true
+
+      # ═══════════════════════════════════════════════════════
       # 运行 E2E Web 测试
       #
       # Playwright 自动启动 Next.js dev server（见 playwright.config.ts webServer）
