@@ -254,7 +254,12 @@ public class AdminUserController {
         map.put("phone", user.getPhone());
         map.put("email", null);
         map.put("role", user.getRole());
-        map.put("position", user.getPosition() != null ? user.getPosition() : "");
+        // position 为空时回退到 role 名称
+        String position = user.getPosition();
+        if (position == null || position.isBlank()) {
+            position = user.getRole() != null ? user.getRole() : "";
+        }
+        map.put("position", position);
         map.put("status", user.getStatus());
         map.put("createdAt", user.getCreatedAt());
         map.put("updatedAt", user.getUpdatedAt());
