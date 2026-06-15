@@ -3,3 +3,11 @@ springdoc:
     enabled: false
   swagger-ui:
     enabled: false
+
+spring:
+  flyway:
+    # 生产环境开启迁移校验，防止 drift
+    validate-on-migrate: true
+    placeholders:
+      # 生产环境跳过种子用户数据（管理员账号通过独立流程创建）
+      flyway_skip_seed_users: true
