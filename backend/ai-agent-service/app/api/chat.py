@@ -1160,6 +1160,39 @@ async def suggestion_feedback(
     return {"ok": True}
 
 
+@router.post("/suggestion-feedback")
+async def suggestion_feedback(
+    body: dict,
+    current_user: UserIdentity = Depends(get_current_user),
+):
+    """
+    记录建议反馈（点击），用于后续训练数据分析
+
+    ⚠️ 数据安全：日志包含用户建议文本（已脱敏手机号/邮箱），
+    应配置日志访问权限和保留策略。
+
+    Body:
+        session_id: str - 会话 ID
+        suggestion: str - 被点击的建议文本
+        message_id: str (optional) - 关联的消息 ID
+    """
+    import json as _json
+    from app.utils.log_sanitizer import LogSanitizer
+    logger.info(
+        "[suggestion:feedback]",
+        _json.dumps({
+            "session_id": body.get("session_id", ""),
+            "tenant_id": current_user.tenant_id,
+            "user_id": current_user.user_id,
+            "suggestion": LogSanitizer.mask_text(body.get("suggestion", "")),
+            "clicked": True,
+            "message_id": body.get("message_id", ""),
+            "source": "click",
+        }, ensure_ascii=False),
+    )
+    return {"ok": True}
+
+
 @router.get("/quick-actions")
 async def get_quick_actions(
     current_user: UserIdentity = Depends(get_current_user),
