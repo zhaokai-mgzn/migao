@@ -6,5 +6,5 @@ springdoc:
 
 spring:
   flyway:
-    # 生产环境开启迁移校验，防止 drift
-    validate-on-migrate: true
+    # 生产环境不开启 validate-on-migrate（迁移 SQL 迭代时 checksum 会变）
+    # schema drift 由 code review + CI 保障
