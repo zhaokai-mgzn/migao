@@ -231,21 +231,18 @@ class SecurityConfigTest {
                         .build())
                 .build();
 
-        when(authService.adminLogin(any(LoginRequest.class), any()))
-                .thenReturn(loginResponse);
-
+        // #375: 密码登录已禁用
         LoginRequest request = new LoginRequest();
         request.setUsername("admin");
         request.setPassword("password");
         request.setTenantId(1L);
 
-        // When & Then: 登录接口应返回 200
         mockMvc.perform(post("/api/auth/admin/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.success").value(true))
-                .andExpect(jsonPath("$.data.accessToken").value("mock-token"));
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error.code").value("AUTH_FAILED"));
     }
 
     // ======================== 受保护端点测试 ========================
