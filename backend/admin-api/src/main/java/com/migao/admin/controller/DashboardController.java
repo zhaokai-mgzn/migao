@@ -39,6 +39,7 @@ public class DashboardController {
     private final SessionMapper sessionMapper;
     private final OrderItemMapper orderItemMapper;
     private final SessionMessageMapper sessionMessageMapper;
+    private final ProductSkuMapper productSkuMapper;
 
     /**
      * 获取 Dashboard 统计数据
@@ -159,6 +160,39 @@ public class DashboardController {
                 ? Math.round((double) aiSessions / activeSessions * 1000.0) / 10.0
                 : 0;
 
+        // ════════════════════════════════════════
+        // 待处理区 3 卡片（#387）
+        // ════════════════════════════════════════
+
+        // 待发货订单：status = 待发货
+        long pendingShipOrders = orderMapper.selectCount(
+                new LambdaQueryWrapper<Order>()
+                        .eq(Order::getTenantId, tenantId)
+                        .eq(Order::getStatus, "待发货"));
+
+        // 含加工待发货订单：status = 待发货 AND 有关联加工项
+        java.util.Set<String> shipOrderIds = orderMapper.selectList(
+                new LambdaQueryWrapper<Order>()
+                        .eq(Order::getTenantId, tenantId)
+                        .eq(Order::getStatus, "待发货")
+                        .select(Order::getId))
+                .stream().map(Order::getId).collect(Collectors.toSet());
+        long processingPendingOrders = 0;
+        if (!shipOrderIds.isEmpty()) {
+            processingPendingOrders = orderItemMapper.selectList(
+                    new LambdaQueryWrapper<OrderItem>()
+                            .in(OrderItem::getOrderId, shipOrderIds)
+                            .isNotNull(OrderItem::getProcessingInfo)
+                            .select(OrderItem::getOrderId))
+                    .stream().map(OrderItem::getOrderId).distinct().count();
+        }
+
+        // 待补库存商品：SKU 库存 ≤ 100（按颜色规格维度）
+        long lowStockItems = productSkuMapper.selectCount(
+                new LambdaQueryWrapper<ProductSku>()
+                        .eq(ProductSku::getTenantId, tenantId)
+                        .le(ProductSku::getStock, 100));
+
         DashboardStatsResponse stats = DashboardStatsResponse.builder()
                 .todayOrders(todayOrders)
                 .todayOrdersChange(Math.round(todayOrdersChange * 10.0) / 10.0)
@@ -173,6 +207,9 @@ public class DashboardController {
                 .totalProducts(totalProducts)
                 .totalOrders(totalOrders)
                 .totalTickets(totalTickets)
+                .pendingShipOrders(pendingShipOrders)
+                .processingPendingOrders(processingPendingOrders)
+                .lowStockItems(lowStockItems)
                 .build();
 
         return ApiResponse.success(stats);
@@ -464,6 +501,10 @@ public class DashboardController {
         private long totalProducts;
         private long totalOrders;
         private long totalTickets;
+        // 待处理区 3 卡片 (#387)
+        private long pendingShipOrders;
+        private long processingPendingOrders;
+        private long lowStockItems;
     }
 
     @Data

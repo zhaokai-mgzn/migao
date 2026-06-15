@@ -575,6 +575,13 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         } else {
             response.setAmount(item.getSubtotal());
         }
+        // 填充商品货号（从 products 表查）(#386)
+        if (item.getProductId() != null) {
+            Product product = productMapper.selectById(item.getProductId());
+            if (product != null && product.getSkuCode() != null) {
+                response.setSkuCode(product.getSkuCode());
+            }
+        }
         return response;
     }
 
