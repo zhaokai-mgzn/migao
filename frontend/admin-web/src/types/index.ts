@@ -1,9 +1,14 @@
-// 通用 API 响应类型（后端统一格式）
+// 通用 API 响应类型（后端统一格式：{success, data, error, requestId, timestamp}）
 export interface ApiResponse<T = unknown> {
-  code: number
-  message?: string
+  success: boolean
   data: T
-  success?: boolean
+  error?: {
+    code: string
+    message: string
+    details?: { field: string; message: string }[]
+  }
+  requestId?: string
+  timestamp?: number
 }
 
 // 分页响应类型
@@ -1101,8 +1106,10 @@ export interface Employee {
   name: string
   phone?: string
   email?: string
+  position?: string
   role: string
   roles: Role[]
+  permissions?: string[]
   status: EmployeeStatus
   createdAt: string
   updatedAt: string
@@ -1121,7 +1128,8 @@ export interface EmployeeFormData {
   name: string
   phone?: string
   email?: string
-  roleIds: number[]
+  position?: string
+  permissions: string[]
 }
 
 // 重置密码参数

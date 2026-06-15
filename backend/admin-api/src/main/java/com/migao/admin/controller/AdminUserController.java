@@ -14,6 +14,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -30,6 +33,8 @@ import java.util.stream.Collectors;
 @RequestMapping("/api/admin/users")
 @RequiredArgsConstructor
 public class AdminUserController {
+
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final UserService userService;
     private final RoleService roleService;
@@ -118,8 +123,19 @@ public class AdminUserController {
             }
         }
 
+        // 从请求体读取权限列表（前端 TreeCheckbox 发送的菜单权限码 JSON 数组）
+        String permissions = null;
+        Object permsObj = body.get("permissions");
+        if (permsObj instanceof List<?> list && !list.isEmpty()) {
+            try {
+                permissions = OBJECT_MAPPER.writeValueAsString(list);
+            } catch (Exception e) {
+                log.warn("序列化 permissions 失败", e);
+            }
+        }
+
         log.info("创建用户: phone={}, name={}, role={}, tenantId={}", phone, name, role, tenantId);
-        User user = userService.createUser(phone, password, name, role, tenantId);
+        User user = userService.createUser(phone, password, name, role, permissions, tenantId);
 
         // 如果传了 roleIds，同步写入 user_roles 关联表
         if (roleIdList != null && !roleIdList.isEmpty()) {
@@ -153,8 +169,19 @@ public class AdminUserController {
             userService.changePassword(id, password);
         }
 
+        // 从请求体读取权限列表
+        String permissions = null;
+        Object permsObj = body.get("permissions");
+        if (permsObj instanceof List<?> list) {
+            try {
+                permissions = OBJECT_MAPPER.writeValueAsString(list);
+            } catch (Exception e) {
+                log.warn("序列化 permissions 失败", e);
+            }
+        }
+
         log.info("更新用户: id={}, name={}", id, name);
-        User user = userService.updateUser(id, name, avatar, role);
+        User user = userService.updateUser(id, name, avatar, role, permissions);
         return ApiResponse.success(user);
     }
 
@@ -244,6 +271,18 @@ public class AdminUserController {
                 rm.put("code", r.getCode());
                 return rm;
             }).collect(Collectors.toList()));
+        }
+
+        // 解析 permissions JSON 数组，返回给前端
+        try {
+            if (user.getPermissions() != null && !user.getPermissions().isEmpty()) {
+                map.put("permissions", OBJECT_MAPPER.readValue(
+                    user.getPermissions(), List.class));
+            } else {
+                map.put("permissions", List.of());
+            }
+        } catch (Exception e) {
+            map.put("permissions", List.of());
         }
 
         return map;

@@ -324,25 +324,28 @@ class InventoryManageTool(BaseTool):
     async def _low_stock_alert(
         self,
         context: ToolContext,
-        threshold: int,
+        threshold: int = 100,
     ) -> ToolResult:
-        """低库存预警查询
-        
+        """低库存预警查询（按颜色+规格维度）
+
+        调用 admin-api 的 /api/admin/products/low-stock-by-color 接口，
+        按 SKU 级别（颜色 × 门幅）返回低库存明细，而非商品总库存。
+
         Args:
             context: Tool 执行上下文
-            threshold: 库存预警阈值
-            
+            threshold: 库存预警阈值，默认 100
+
         Returns:
-            ToolResult: 低库存商品列表
+            ToolResult: 低库存 SKU 列表（含颜色、规格维度）
         """
         client = get_admin_api_client()
         response = await client.get(
-            "/api/admin/products",
-            params={"stockBelow": threshold, "size": 50},
+            "/api/admin/products/low-stock-by-color",
+            params={"threshold": threshold, "limit": 50},
             tenant_id=context.tenant_id,
             user_id=context.user_id,
         )
-        
+
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "查询失败")
             return ToolResult(
@@ -351,42 +354,38 @@ class InventoryManageTool(BaseTool):
                 message="低库存预警查询失败，请稍后重试",
                 suggestion="请稍后重试，如持续失败请联系技术支持",
             )
-        
-        data = response.get("data", {})
-        records = data.get("items", [])
-        
-        # 验证 tenant_id 并过滤
-        verified_records = []
+
+        records = response.get("data", [])
+
+        # 按颜色+规格维度格式化（含租户校验，纵深防御）
+        low_stock_items = []
         for record in records:
-            resp_tenant_id = record.get("tenantId") or record.get("tenant_id")
+            # 后端 SQL 已按 tenant 过滤，此处为纵深防御
+            resp_tenant_id = record.get("tenantId")
             if resp_tenant_id is not None and str(resp_tenant_id) != str(context.tenant_id):
                 continue
-            verified_records.append(record)
-        
-        # 格式化低库存商品列表
-        low_stock_items = []
-        for record in verified_records:
-            stock = record.get("stock", 0)
-            if stock is not None and stock < threshold:
-                low_stock_items.append({
-                    "product_id": record.get("id"),
-                    "name": record.get("name"),
-                    "stock": stock,
-                    "status": record.get("status"),
-                })
-        
+            low_stock_items.append({
+                "product_id": record.get("productId"),
+                "product_name": record.get("productName"),
+                "sku_code": record.get("skuCode"),
+                "color_name": record.get("colorName"),
+                "door_width": record.get("doorWidth"),
+                "stock": record.get("stock"),
+                "price": record.get("price"),
+            })
+
         logger.info(
-            f"Low stock alert: threshold={threshold}, found={len(low_stock_items)}, "
+            f"Low stock alert (color-dim): threshold={threshold}, found={len(low_stock_items)}, "
             f"tenant={context.tenant_id}"
         )
-        
+
         if not low_stock_items:
             return ToolResult(
                 success=True,
                 data={"items": [], "threshold": threshold, "count": 0},
-                message=f"没有库存低于 {threshold} 的商品，库存状况良好",
+                message=f"没有 SKU 库存低于 {threshold} 的商品，库存状况良好",
             )
-        
+
         return ToolResult(
             success=True,
             data={
@@ -394,5 +393,5 @@ class InventoryManageTool(BaseTool):
                 "threshold": threshold,
                 "count": len(low_stock_items),
             },
-            message=f"发现 {len(low_stock_items)} 件商品库存低于 {threshold}，请及时补货",
+            message=f"发现 {len(low_stock_items)} 个 SKU 库存低于 {threshold}，请按颜色+规格维度及时补货",
         )

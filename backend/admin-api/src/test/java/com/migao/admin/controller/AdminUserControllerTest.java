@@ -102,7 +102,7 @@ class AdminUserControllerTest {
             setAdminUser();
             com.migao.admin.entity.User user = new com.migao.admin.entity.User();
             user.setId("new-user");
-            when(userService.createUser(any(), any(), any(), any(), any())).thenReturn(user);
+            when(userService.createUser(any(), any(), any(), any(), any(), any())).thenReturn(user);
 
             mockMvc.perform(post("/api/admin/users")
                             .contentType("application/json")
@@ -120,7 +120,7 @@ class AdminUserControllerTest {
                             .content("{\"phone\":\"13900000001\",\"password\":\"test123\",\"name\":\"测试\"}"))
                     .andExpect(status().isForbidden());
 
-            verify(userService, never()).createUser(any(), any(), any(), any(), any());
+            verify(userService, never()).createUser(any(), any(), any(), any(), any(), any());
         }
 
         @Test

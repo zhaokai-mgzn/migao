@@ -104,7 +104,7 @@ describe('DashboardPage', () => {
       expect(screen.getByText('经营数据')).toBeInTheDocument()
       expect(screen.getByText('今日订单数')).toBeInTheDocument()
       expect(screen.getByText('今日销售额')).toBeInTheDocument()
-      expect(screen.getByText('本月收入')).toBeInTheDocument()
+      expect(screen.getByText('本月销售额')).toBeInTheDocument()
     })
   })
 
@@ -126,6 +126,7 @@ describe('DashboardPage', () => {
       expect(screen.getByText('待处理')).toBeInTheDocument()
       expect(screen.getByText('待发货订单')).toBeInTheDocument()
       expect(screen.getByText('含加工待发货订单')).toBeInTheDocument()
+      expect(screen.getByText('待补库存商品')).toBeInTheDocument()
     })
   })
 

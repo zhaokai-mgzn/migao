@@ -8,9 +8,19 @@
 -- --------------------------------------------
 INSERT INTO permissions (id, tenant_id, name, code, resource_type, resource_id, action, description, status, deleted, created_at, updated_at) VALUES
 ('perm_dashboard_view', 'DEFAULT', '查看数据看板', 'dashboard:view', 'page', 'dashboard', 'view', '查看数据看板页面', 'active', 0, NOW(), NOW()),
+('perm_order_list', 'DEFAULT', '订单列表', 'order:list', 'page', 'order', 'list', '查看订单列表', 'active', 0, NOW(), NOW()),
+('perm_order_detail', 'DEFAULT', '订单详情', 'order:detail', 'page', 'order', 'detail', '查看订单详情', 'active', 0, NOW(), NOW()),
+('perm_order_refund', 'DEFAULT', '退换货', 'order:refund', 'page', 'order', 'refund', '退换货操作', 'active', 0, NOW(), NOW()),
 ('perm_product_manage', 'DEFAULT', '商品管理', 'product:manage', 'module', 'product', 'manage', '管理商品和分类', 'active', 0, NOW(), NOW()),
+('perm_product_list', 'DEFAULT', '商品列表', 'product:list', 'page', 'product', 'list', '查看商品列表', 'active', 0, NOW(), NOW()),
+('perm_product_create', 'DEFAULT', '新增商品', 'product:create', 'page', 'product', 'create', '新增商品', 'active', 0, NOW(), NOW()),
+('perm_product_category', 'DEFAULT', '商品分类管理', 'product:category', 'page', 'product', 'category', '管理商品分类', 'active', 0, NOW(), NOW()),
 ('perm_processing_manage', 'DEFAULT', '加工项管理', 'processing:manage', 'module', 'processing', 'manage', '管理加工项和分类', 'active', 0, NOW(), NOW()),
 ('perm_knowledge_manage', 'DEFAULT', '知识库管理', 'knowledge:manage', 'module', 'knowledge', 'manage', '管理知识库文档', 'active', 0, NOW(), NOW()),
+('perm_agent_session', 'DEFAULT', '会话监控', 'agent:session', 'page', 'agent', 'session', '监控客服会话', 'active', 0, NOW(), NOW()),
+('perm_agent_quickreply', 'DEFAULT', '快捷回复', 'agent:quickreply', 'page', 'agent', 'quickreply', '管理快捷回复', 'active', 0, NOW(), NOW()),
+('perm_employee_list', 'DEFAULT', '员工列表', 'employee:list', 'page', 'employee', 'list', '查看员工列表', 'active', 0, NOW(), NOW()),
+('perm_employee_create', 'DEFAULT', '新增员工', 'employee:create', 'page', 'employee', 'create', '新增员工', 'active', 0, NOW(), NOW()),
 ('perm_system_manage', 'DEFAULT', '系统管理', 'system:manage', 'module', 'system', 'manage', '系统设置', 'active', 0, NOW(), NOW());
 
 -- --------------------------------------------

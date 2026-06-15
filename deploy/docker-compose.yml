@@ -75,8 +75,8 @@ services:
       REDIS_URL: redis://redis:6379/0
       ADMIN_API_BASE_URL: http://admin-api:8080
       SERVICE_TOKEN: dev-service-token-secret
-      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
-      DASHSCOPE_MODEL: ${DASHSCOPE_MODEL:-qwen-turbo}
+      PRIMARY_API_KEY: ${PRIMARY_API_KEY:-}
+      PRIMARY_MODEL: ${PRIMARY_MODEL:-deepseek-v4-pro}
       DASHVECTOR_API_KEY: ${DASHVECTOR_API_KEY:-}
       DASHVECTOR_ENDPOINT: ${DASHVECTOR_ENDPOINT:-}
     ports:

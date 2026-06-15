@@ -195,6 +195,15 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             );
             Map<String, List<OrderItem>> itemsMap = allItems.stream()
                     .collect(Collectors.groupingBy(OrderItem::getOrderId));
+            // 批量加载商品货号，避免 N+1 查询
+            Set<String> productIds = allItems.stream()
+                    .map(OrderItem::getProductId)
+                    .filter(id -> id != null && !id.isEmpty())
+                    .collect(Collectors.toSet());
+            Map<String, Product> productMap = productIds.isEmpty()
+                    ? Collections.emptyMap()
+                    : productMapper.selectBatchIds(productIds).stream()
+                            .collect(Collectors.toMap(Product::getId, p -> p));
             for (OrderListResponse resp : responses) {
                 List<OrderItem> orderItems = itemsMap.getOrDefault(resp.getId(), Collections.emptyList());
                 resp.setItems(orderItems.stream()
@@ -206,15 +215,16 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
                             } else if (item.getSubtotal() != null) {
                                 itemAmount = item.getSubtotal();
                             }
+                            Product product = productMap.get(item.getProductId());
                             return new OrderListResponse.OrderItemBrief(
                                     item.getProductId(),
                                     item.getProductName(),
-                                    null,  // productCode: OrderItem 实体暂无此字段
+                                    product != null ? product.getSkuCode() : null,
                                     item.getQuantity(),
                                     item.getUnitPrice(),
                                     itemAmount,
                                     item.getSubtotal(),
-                                    item.getProcessingInfo()  // 销售信息
+                                    item.getProcessingInfo()
                             );
                         })
                         .collect(Collectors.toList()));

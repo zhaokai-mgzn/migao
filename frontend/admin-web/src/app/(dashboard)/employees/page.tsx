@@ -1,25 +1,19 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { employeeApi, roleApi } from '@/lib/api'
+import request from '@/lib/request'
 import { Button, Input, Select, Modal, Table, Pagination, Badge } from '@/components/ui'
 import type { TableColumn } from '@/components/ui'
 import type { Employee, EmployeeStatus, Role } from '@/types'
-import { EmployeeStatusLabels } from '@/types'
+import { TreeCheckbox, type TreeNode } from '@/components/ui/TreeCheckbox'
 import dayjs from 'dayjs'
 
-// 角色颜色映射（按 code 区分颜色）
-const ROLE_COLOR_MAP: Record<string, 'info' | 'success' | 'warning' | 'error'> = {
-  admin: 'error',
-  agent: 'info',
-  operator: 'warning',
-}
+// 预定义岗位列表（可下拉选择，也支持手输）
+const PRESET_POSITIONS = ['管理员', '客服', '运营', '销售', '财务']
 
-function getRoleBadgeVariant(code: string): 'info' | 'success' | 'warning' | 'error' {
-  return ROLE_COLOR_MAP[code] || 'info'
-}
 
 export default function EmployeesPage() {
   // 列表状态
@@ -35,7 +29,10 @@ export default function EmployeesPage() {
   const [searchStatus, setSearchStatus] = useState<EmployeeStatus | ''>('')
   const [searchRole, setSearchRole] = useState<string>('')
 
-  // 角色选项
+  // 菜单权限树
+  const [menuTree, setMenuTree] = useState<TreeNode[]>([])
+
+  // 角色列表（用于搜索筛选）
   const [allRoles, setAllRoles] = useState<Role[]>([])
 
   // 新增/编辑对话框
@@ -48,7 +45,8 @@ export default function EmployeesPage() {
     name: '',
     phone: '',
     email: '',
-    roleIds: [] as number[],
+    position: '',
+    permissions: [] as string[],
   })
 
   // 删除确认
@@ -58,12 +56,27 @@ export default function EmployeesPage() {
   // 内联状态切换 loading（按 ID 防止双击）
   const [togglingId, setTogglingId] = useState<number | null>(null)
 
-  // 加载角色列表
+  // 加载菜单权限树 + 角色列表
   useEffect(() => {
+    request.get('/api/admin/menus').then((res: any) => {
+      const data = res.data?.data || res.data || []
+      setMenuTree(Array.isArray(data) ? data : [])
+    }).catch(() => {
+      toast.error('加载菜单权限失败，请刷新重试')
+    })
     roleApi.getAllRoles().then((res) => {
       setAllRoles(res.data.data || [])
     }).catch(() => {})
   }, [])
+
+  // 从 menuTree 中提取 code → 中文 label 的映射（只计算一次）
+  const permissionLabelMap = useMemo(() => {
+    const map: Record<string, string> = {}
+    menuTree.forEach(p => {
+      p.children?.forEach(c => { map[c.code] = c.label })
+    })
+    return map
+  }, [menuTree])
 
   // 加载员工列表
   const loadEmployees = useCallback(async () => {
@@ -114,7 +127,7 @@ export default function EmployeesPage() {
   // 打开新增对话框
   const handleAdd = () => {
     setEditingEmployee(null)
-    setFormData({ username: '', password: '', name: '', phone: '', email: '', roleIds: [] })
+    setFormData({ username: '', password: '', name: '', phone: '', email: '', position: '', permissions: [] })
     setFormOpen(true)
   }
 
@@ -127,7 +140,8 @@ export default function EmployeesPage() {
       name: employee.name,
       phone: employee.phone || '',
       email: employee.email || '',
-      roleIds: employee.roles?.map(r => r.id) || [],
+      position: employee.position || '',
+      permissions: employee.permissions || [],
     })
     setFormOpen(true)
   }
@@ -146,7 +160,8 @@ export default function EmployeesPage() {
           phone: formData.phone || undefined,
           email: formData.email || undefined,
           password: formData.password || undefined,
-          roleIds: formData.roleIds,
+          position: formData.position || undefined,
+          permissions: formData.permissions,
         })
         toast.success('编辑成功')
       } else {
@@ -156,7 +171,8 @@ export default function EmployeesPage() {
           name: formData.name,
           phone: formData.phone || undefined,
           email: formData.email || undefined,
-          roleIds: formData.roleIds,
+          position: formData.position || undefined,
+          permissions: formData.permissions,
         })
         toast.success('创建成功')
       }
@@ -202,16 +218,6 @@ export default function EmployeesPage() {
     }
   }
 
-  // 角色多选切换
-  const toggleRole = (roleId: number) => {
-    setFormData(prev => ({
-      ...prev,
-      roleIds: prev.roleIds.includes(roleId)
-        ? prev.roleIds.filter(id => id !== roleId)
-        : [...prev.roleIds, roleId],
-    }))
-  }
-
   // 表格列定义
   const columns: TableColumn<Employee>[] = [
     {
@@ -237,19 +243,28 @@ export default function EmployeesPage() {
     },
     { key: 'phone', title: '手机号', dataIndex: 'phone', width: '140px' },
     {
-      key: 'roles',
-      title: '角色',
-      width: '200px',
+      key: 'position',
+      title: '岗位',
+      width: '100px',
       render: (record) => (
-        <div className="flex flex-wrap gap-1">
-          {record.roles?.length > 0
-            ? record.roles.map(r => (
-              <Badge key={r.id} variant={getRoleBadgeVariant(r.code)}>{r.name}</Badge>
-            ))
-            : <span className="text-gray-400 text-sm">未分配</span>
-          }
-        </div>
+        <span className="text-sm text-gray-700">{record.position || '-'}</span>
       ),
+    },
+    {
+      key: 'permissions',
+      title: '权限',
+      width: '200px',
+      render: (record) => {
+        const codes: string[] = record.permissions || []
+        if (codes.length === 0) return <span className="text-gray-400 text-sm">未分配</span>
+        const labels = codes.map(c => permissionLabelMap[c] || c).slice(0, 3)
+        return (
+          <div className="flex flex-wrap gap-1">
+            {labels.map((l, i) => <Badge key={i} variant="info">{l}</Badge>)}
+            {codes.length > 3 && <span className="text-xs text-gray-400">+{codes.length - 3}</span>}
+          </div>
+        )
+      },
     },
     {
       key: 'status',
@@ -435,25 +450,32 @@ export default function EmployeesPage() {
             onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
           />
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">角色分配</label>
-            <div className="flex flex-wrap gap-2">
-              {allRoles.length > 0 ? allRoles.map(role => (
-                <button
-                  key={role.id}
-                  type="button"
-                  onClick={() => toggleRole(role.id)}
-                  className={`px-3 py-1.5 rounded-md border text-sm font-medium transition-all ${
-                    formData.roleIds.includes(role.id)
-                      ? 'border-primary-500 bg-primary-50 text-primary-700'
-                      : 'border-gray-200 hover:border-gray-300 text-gray-600'
-                  }`}
-                >
-                  {role.name}
-                </button>
-              )) : (
-                <span className="text-sm text-gray-400">暂无可选角色</span>
-              )}
-            </div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">岗位（选填，纯展示）</label>
+            <input
+              list="position-list"
+              placeholder="选择或输入岗位，如：客服"
+              value={formData.position}
+              onChange={(e) => setFormData(prev => ({ ...prev, position: e.target.value }))}
+              className="w-full h-10 px-3 rounded-lg border border-gray-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-gray-400"
+            />
+            <datalist id="position-list">
+              {PRESET_POSITIONS.map(p => <option key={p} value={p} />)}
+            </datalist>
+            <p className="text-xs text-gray-400 mt-1">下拉选择或手动输入岗位名称</p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">账号权限 *</label>
+            {menuTree.length > 0 ? (
+              <div className="max-h-[360px] overflow-y-auto border border-gray-200 rounded-lg p-3">
+                <TreeCheckbox
+                  tree={menuTree}
+                  selected={formData.permissions}
+                  onChange={(codes) => setFormData(prev => ({ ...prev, permissions: codes }))}
+                />
+              </div>
+            ) : (
+              <span className="text-sm text-gray-400">加载菜单权限中...</span>
+            )}
           </div>
         </div>
       </Modal>

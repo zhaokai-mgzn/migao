@@ -79,7 +79,7 @@ interface SidebarProps {
 
 // 一级菜单项（无子级，直接跳转）
 const topLevelItems: MenuItem[] = [
-  { key: 'dashboard', name: '工作台（数据看板）', icon: 'LayoutDashboard', path: '/dashboard' },
+  { key: 'dashboard', name: '工作台', icon: 'LayoutDashboard', path: '/dashboard' },
 ]
 
 // 带子级的菜单组

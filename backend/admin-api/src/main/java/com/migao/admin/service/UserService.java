@@ -218,11 +218,12 @@ public class UserService implements UserDetailsService {
      * @param password 密码（明文）
      * @param nickname 昵称
      * @param role     角色代码
+     * @param permissions 菜单权限码 JSON（如 ["orders.list","products.create"]）
      * @param tenantId 租户ID
      * @return 创建的用户
      */
     @Transactional(rollbackFor = Exception.class)
-    public User createUser(String phone, String password, String nickname, String role, Long tenantId) {
+    public User createUser(String phone, String password, String nickname, String role, String permissions, Long tenantId) {
         // 验证手机号唯一性
         LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(User::getPhone, phone)
@@ -240,6 +241,7 @@ public class UserService implements UserDetailsService {
                 .passwordHash(PASSWORD_ENCODER.encode(password))
                 .nickname(nickname)
                 .role(role != null ? role : "operator")
+                .permissions(permissions)
                 .status("active")
                 .build();
 
@@ -262,10 +264,11 @@ public class UserService implements UserDetailsService {
      * @param nickname 昵称
      * @param avatar   头像
      * @param role     角色
+     * @param permissions 菜单权限码 JSON（如 ["orders.list","products.create"]），null 表示不修改
      * @return 更新后的用户
      */
     @Transactional(rollbackFor = Exception.class)
-    public User updateUser(String userId, String nickname, String avatar, String role) {
+    public User updateUser(String userId, String nickname, String avatar, String role, String permissions) {
         User user = getUserById(userId);
 
         if (StringUtils.hasText(nickname)) {
@@ -278,6 +281,9 @@ public class UserService implements UserDetailsService {
             user.setRole(role);
             // 更新 user_roles 表
             updateUserRole(userId, role, user.getTenantId());
+        }
+        if (permissions != null) {
+            user.setPermissions(permissions);
         }
 
         userMapper.updateById(user);

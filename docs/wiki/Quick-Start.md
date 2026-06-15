@@ -8,9 +8,9 @@
 # 1. Admin API (:8080)
 cd backend/admin-api && ./mvnw spring-boot:run
 
-# 2. AI Agent (:8001)
+# 2. AI Agent (:8000)
 cd backend/ai-agent-service
-.venv/bin/python -m uvicorn app.main:app --port 8001 --reload
+.venv/bin/python -m uvicorn app.main:app --port 8000 --reload
 
 # 3. Admin Web (:3001)
 cd frontend/admin-web && npm run dev
@@ -45,5 +45,5 @@ cd tests && npm run e2e
 | 模块 | 关键变量 |
 |------|---------|
 | admin-api | DB_URL, REDIS_URL, JWT_PRIVATE_KEY, JWT_PUBLIC_KEY |
-| ai-agent-service | DASHSCOPE_API_KEY, DASHVECTOR_*, DB_URL, REDIS_URL |
+| ai-agent-service | PRIMARY_API_KEY, PRIMARY_MODEL, DASHVECTOR_*, DB_URL, REDIS_URL |
 | admin-web | NEXT_PUBLIC_API_URL, NEXT_PUBLIC_AI_URL |

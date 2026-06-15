@@ -231,7 +231,7 @@ cd tests && npx playwright test tests/e2e/specs/products.spec.ts
 cd backend/admin-api && ./mvnw spring-boot:run
 
 # 2. 启动 ai-agent-service（Python AI 服务，端口 8001）
-cd backend/ai-agent-service && python -m uvicorn app.main:app --port 8001 --reload
+cd backend/ai-agent-service && python -m uvicorn app.main:app --port 8000 --reload
 
 # 3. 启动 admin-web（Next.js 前端，端口 3001）
 cd frontend/admin-web && npm run dev
@@ -306,16 +306,16 @@ app/graph/skills/
 kill $(lsof -t -i :8080) 2>/dev/null
 cd backend/admin-api && ./mvnw spring-boot:run &
 
-# 重启 ai-agent-service（Python AI 服务，端口 8001）
-kill $(lsof -t -i :8001) 2>/dev/null
-cd backend/ai-agent-service && .venv/bin/python -m uvicorn app.main:app --port 8001 --reload &
+# 重启 ai-agent-service（Python AI 服务，端口 8000）
+kill $(lsof -t -i :8000) 2>/dev/null
+cd backend/ai-agent-service && .venv/bin/python -m uvicorn app.main:app --port 8000 --reload &
 
 # 重启 admin-web（Next.js 前端，端口 3001）
 kill $(lsof -t -i :3001) 2>/dev/null
 cd frontend/admin-web && npm run dev &
 
 # 验证服务就绪
-lsof -i :8080 -sTCP:LISTEN && lsof -i :8001 -sTCP:LISTEN && lsof -i :3001 -sTCP:LISTEN
+lsof -i :8080 -sTCP:LISTEN && lsof -i :8000 -sTCP:LISTEN && lsof -i :3001 -sTCP:LISTEN
 
 # ═══════════════════════════════════════════════════════════════
 # 第一步：单测全量（变更涉及的所有模块）
@@ -377,13 +377,13 @@ cd tests && BASE_URL=http://localhost:3001 npx playwright test specs/chat/chat.s
 | mini-app（微信小程序） | Taro 3.6 + React + TypeScript |
 | 数据库 | PostgreSQL 15 + Redis 7 |
 | 向量库 | DashVector |
-| LLM | 阿里云百炼 DashScope (qwen-3.7-max) |
+| LLM | DeepSeek V4 Pro (主) + MiniMax M3 (视觉) |
 | 部署 | 阿里云 SAE + RDS + OSS + CDN + Terraform + GitHub Actions |
 
 ## 目录结构
 
 ```
-youke/
+migao/
 ├── backend/
 │   ├── admin-api/          # Java 管理后端
 │   └── ai-agent-service/   # Python AI 服务

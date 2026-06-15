@@ -9,12 +9,12 @@
 │ 本地启动（你本机跑）                                       │
 │ ┌──────────┐ ┌────────────────┐ ┌───────────┐           │
 │ │ admin-api │ │ ai-agent-service│ │ admin-web  │           │
-│ │ Java :8080│ │ Python :8001    │ │ Next :3001 │           │
+│ │ Java :8080│ │ Python :8000    │ │ Next :3001 │           │
 │ └──────────┘ └────────────────┘ └───────────┘           │
 │                                                          │
 │ 云 dev 环境（已配置好，只连不用启）                        │
 │ ┌──────────┐ ┌───────┐ ┌──────────┐ ┌──────────┐       │
-│ │PostgreSQL│ │ Redis │ │DashVector │ │DashScope │       │
+│ │PostgreSQL│ │ Redis │ │DashVector │ │DeepSeek  │       │
 │ │  (RDS)   │ │ (云)  │ │  (向量库) │ │ (LLM API)│       │
 │ └──────────┘ └───────┘ └──────────┘ └──────────┘       │
 └──────────────────────────────────────────────────────────┘
@@ -28,14 +28,14 @@
 # 1. admin-api（Java，端口 8080）
 cd backend/admin-api && ./mvnw spring-boot:run &
 
-# 2. ai-agent-service（Python，端口 8001）
-cd backend/ai-agent-service && .venv/bin/python -m uvicorn app.main:app --port 8001 --reload &
+# 2. ai-agent-service（Python，端口 8000）
+cd backend/ai-agent-service && .venv/bin/python -m uvicorn app.main:app --port 8000 --reload &
 
 # 3. admin-web（Next.js，端口 3001）
 cd frontend/admin-web && npm run dev &
 
 # 验证就绪
-lsof -i :8080 -sTCP:LISTEN && lsof -i :8001 -sTCP:LISTEN && lsof -i :3001 -sTCP:LISTEN
+lsof -i :8080 -sTCP:LISTEN && lsof -i :8000 -sTCP:LISTEN && lsof -i :3001 -sTCP:LISTEN
 ```
 
 ## 云 dev 环境配置（在 .env 中，已预配好）
@@ -45,7 +45,7 @@ lsof -i :8080 -sTCP:LISTEN && lsof -i :8001 -sTCP:LISTEN && lsof -i :3001 -sTCP:
 | PostgreSQL | `backend/ai-agent-service/.env` → `DATABASE_URL` | RDS 公网地址，端口 5432 |
 | Redis | `backend/ai-agent-service/.env` → `REDIS_URL` | 云 Redis，端口 6379 |
 | DashVector | `backend/ai-agent-service/.env` → `DASHVECTOR_*` | 阿里云向量库 |
-| DashScope | `backend/ai-agent-service/.env` → `DASHSCOPE_*` | 百炼 LLM API |
+| LLM | `backend/ai-agent-service/.env` → `PRIMARY_API_KEY` 等 | DeepSeek + MiniMax API |
 | OSS | `backend/ai-agent-service/.env` → `IMAGE_URL_REWRITE_TO` | 图片存储 |
 
 ## 禁止行为
@@ -82,5 +82,5 @@ print('DB OK'); s.close()
 |---------|:-----------:|:---------:|
 | 单元测试（mock） | ❌ | ❌ |
 | 持久化集成测试 | ❌ | ✅ DB |
-| 真实 LLM 集成测试 | ❌ | ✅ DashScope |
+| 真实 LLM 集成测试 | ❌ | ✅ DeepSeek/MiniMax |
 | Playwright E2E 测试 | ✅ 全部 3 个 | ✅ 全部 |

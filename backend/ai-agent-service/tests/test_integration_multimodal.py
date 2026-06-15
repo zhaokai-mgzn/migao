@@ -555,7 +555,7 @@ class TestAgentAwareSuggestionsIntegration:
 
         captured_kwargs = {}
 
-        async def _mock_generate(query, answer, intent_type, agent_type="mibao", chat_history=None, **kwargs):
+        async def _mock_generate(query, answer, intent_type, agent_type="mibao", chat_history=None, **_):
             captured_kwargs["agent_type"] = agent_type
             return ["建议1", "建议2"]
 
@@ -584,7 +584,7 @@ class TestAgentAwareSuggestionsIntegration:
 
         captured_kwargs = {}
 
-        async def _mock_generate(query, answer, intent_type, agent_type="mibao", chat_history=None):
+        async def _mock_generate(query, answer, intent_type, agent_type="mibao", chat_history=None, **_):
             captured_kwargs["agent_type"] = agent_type
             return ["s1", "s2"]
 
