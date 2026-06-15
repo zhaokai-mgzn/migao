@@ -1,7 +1,9 @@
 # 环境变量
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
+!*/.env.example
+!*/*/.env.example
 *.tfvars
 !*.tfvars.example
 
