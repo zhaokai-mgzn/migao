@@ -51,8 +51,8 @@ class TestAIChatSSE:
         # 验证 SSE 响应格式
         content_type = resp.headers.get("content-type", "")
         if "text/event-stream" in content_type:
-            # 流式响应 - 验证有数据
-            assert len(resp.text) > 0, "Empty SSE response"
+            # 流式响应 - 验证 SSE 数据结构（至少含一个 data: 行）
+            assert "data:" in resp.text, f"SSE response missing data: {resp.text[:100]}"
         else:
             # 非流式响应也接受
             data = resp.json()

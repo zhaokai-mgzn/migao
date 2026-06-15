@@ -28,7 +28,7 @@ class TestAuthLogin:
         # 验证返回 Token
         access_token = token_data.get("accessToken", token_data.get("access_token"))
         assert access_token, f"No accessToken in response: {token_data.keys()}"
-        assert len(access_token) > 20, "Token too short"
+        assert access_token.startswith("eyJ"), f"Token should be JWT but got: {access_token[:20]}..."
 
         # 验证有 refresh token
         refresh_token = token_data.get("refreshToken", token_data.get("refresh_token"))
