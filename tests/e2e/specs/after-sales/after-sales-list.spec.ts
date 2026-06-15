@@ -1,10 +1,12 @@
 import { test, expect } from '@playwright/test'
 import { AfterSalesListPage } from '../../pages/after-sales/after-sales-list.page'
+import afterSalesList from '../../fixtures/after-sales-list.json'
 
 test.describe('售后工单列表页面', () => {
   let pom: AfterSalesListPage
 
   test.beforeEach(async ({ page }) => {
+    await page.route('**/api/admin/after-sales*', r => r.fulfill({ body: JSON.stringify(afterSalesList) }))
     pom = new AfterSalesListPage(page)
     await pom.goto()
     await pom.waitForLoadingComplete()
