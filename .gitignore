@@ -84,3 +84,9 @@ test-results/
 **/test-results/
 smoke/report.html
 __pycache__/
+
+# Coverage reports
+coverage/
+**/htmlcov/
+*.lcov
+target/site/jacoco/
