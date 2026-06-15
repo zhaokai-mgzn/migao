@@ -43,10 +43,10 @@ setup('authenticate as admin', async ({ page }) => {
   // Step 3: Inject auth state into the browser
   await injectAuth(page, tokens, {
     id: '1',
-    username: TEST_USERNAME,
+    username: TEST_PHONE,
     name: '管理员',
     roles: ['admin'],
-    tenantId: TEST_TENANT_ID,
+    tenantId: 1,
     tenantName: '测试企业',
   })
 
