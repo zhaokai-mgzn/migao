@@ -143,7 +143,7 @@ export default function OrderTable({
             <th className="px-4 py-3 font-medium">
               <div className="flex flex-col">
                 <span>采购明细</span>
-                <span className="text-xs font-normal text-gray-400">(货号×规格×单价×数量+加工费)</span>
+                <span className="text-xs font-normal text-gray-400">(名称/单价×数量+加工费)</span>
               </div>
             </th>
             <th className="px-4 py-3 font-medium text-right whitespace-nowrap">累计金额(元)</th>
@@ -200,15 +200,15 @@ export default function OrderTable({
                     {order.orderNo || order.id}
                   </td>
 
-                  {/* 采购商品（取第一项展示） */}
+                  {/* 采购商品（取第一项展示：名称 + 货号） */}
                   <td className="px-4 py-4 min-w-[160px]">
                     {firstItem ? (
                       <div className="space-y-1">
                         <div className="text-gray-900 font-medium leading-tight">
                           {firstItem.productName}
                         </div>
-                        <div className="text-xs text-gray-400 leading-tight">
-                          货号 {firstItem.productCode || '-'} {firstItem.productId || ''}
+                        <div className="text-xs text-gray-500 leading-tight">
+                          货号 {(firstItem as any).skuCode || firstItem.productCode || '-'}
                         </div>
                       </div>
                     ) : (
@@ -216,19 +216,22 @@ export default function OrderTable({
                     )}
                   </td>
 
-                  {/* 采购明细 */}
-                  <td className="px-4 py-4 min-w-[260px]">
+                  {/* 采购明细（名称 / 规格 / 单价 / 数量 / 加工费） */}
+                  <td className="px-4 py-4 min-w-[280px]">
                     <div className="space-y-1.5">
                       {order.items?.map((item) => {
                         const pi = (item as any).processingInfo
-                        const spec = pi?.doorWidth || ''
+                        const fee = pi?.totalAmount || pi?.totalFee || 0
                         return (
                           <div key={item.id} className="text-gray-700 leading-tight text-xs">
-                            <span className="font-mono">{item.productCode || '-'}</span>
-                            {spec ? <>{' × '}<span className="font-mono">{spec}</span></> : null}
-                            {' × '}<span className="font-mono">{formatNumber(item.unitPrice)}</span>元/米
+                            <span>{item.productName || item.productCode || '-'}</span>
+                            {' / '}
+                            <span className="font-mono">{formatNumber(item.unitPrice)}</span>元
                             {' × '}<span className="font-mono">{formatNumber(item.quantity)}</span>米
                             {' = '}<span className="font-mono">{formatNumber(getItemAmount(item))}</span>元
+                            {fee > 0 && (
+                              <span className="text-gray-400">{' + 加工费'}<span className="font-mono">{formatNumber(fee)}</span>元</span>
+                            )}
                           </div>
                         )
                       })}

@@ -42,13 +42,12 @@ INSERT INTO roles (id, tenant_id, name, code, description, status, deleted, crea
 -- ('ur_admin_001', 'DEFAULT', 'user_admin_001', 'role_admin', 0, NOW());
 
 -- --------------------------------------------
--- 4. 默认管理员用户（手机号: 13800138000，短信验证码: 123456）
--- BCrypt 加密后的密码: admin123
--- 注意：请先确认 users 表的字段结构，然后插入
+-- 4. 默认管理员用户（仅非生产环境）
+--    手机号: 13800138000  密码: admin123
+--    生产环境通过 FLYWAY_SKIP_SEED_USERS=true 跳过
+--    ⚠️ 安全提示: 此 INSERT 仅用于 dev/staging 环境
 -- --------------------------------------------
-
--- 插入默认管理员用户（如果 users 表结构匹配）
--- 手机号: 13800138000  短信验证码: 123456（dev 万能码）
+-- 插入默认管理员用户（所有环境幂等，ON CONFLICT 保证不重复，手机号: 13800138000）
 INSERT INTO users (id, tenant_id, phone, password_hash, nickname, avatar, role, position, session_ttl, status, deleted, created_at, updated_at) VALUES
 ('user_admin_001', 'DEFAULT', '13800138000', '$2a$10$N.zmdr9k7uOCQb376NoUnuTJ8iAt6Z5EHsM8lE9lBOsl7iAt6Z5EO', '系统管理员', NULL, 'admin', '管理员', 7200, 'active', 0, NOW(), NOW())
 ON CONFLICT (id) DO NOTHING;

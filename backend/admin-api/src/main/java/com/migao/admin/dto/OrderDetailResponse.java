@@ -114,6 +114,11 @@ public class OrderDetailResponse {
         private String productName;
 
         /**
+         * 商品货号（SKU 编号，用于采购商品列展示）
+         */
+        private String skuCode;
+
+        /**
          * 数量
          */
         private Integer quantity;
