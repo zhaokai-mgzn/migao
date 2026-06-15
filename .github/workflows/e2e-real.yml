@@ -1,4 +1,4 @@
-name: E2E Scheduled
+name: E2E Real (AI Agent 能力测试)
 
 on:
   workflow_dispatch:
@@ -9,8 +9,8 @@ env:
   PLAYWRIGHT_BROWSERS_PATH: '0'
 
 jobs:
-  e2e:
-    name: Full E2E Suite
+  e2e-real:
+    name: E2E Real (AI Agent 能力测试)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -40,14 +40,15 @@ jobs:
           PHONE: ${{ secrets.E2E_ADMIN_PHONE }}
           CODE: ${{ secrets.E2E_SMS_CODE }}
 
-      - name: Run E2E tests
+      - name: Run E2E tests (real only — AI Agent 能力验证)
         working-directory: tests
         env:
           BASE_URL: ${{ secrets.E2E_BASE_URL || 'https://admin.migaozn.com' }}
           E2E_ADMIN_PHONE: ${{ secrets.E2E_ADMIN_PHONE }}
           E2E_SMS_CODE: ${{ secrets.E2E_SMS_CODE }}
+          CI: 'true'
         run: |
-          npx playwright test \
+          npx playwright test --project=real \
             --reporter=list \
             --retries=2 \
             --max-failures=10
@@ -56,7 +57,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: e2e-artifacts
+          name: e2e-real-artifacts
           path: |
             tests/playwright-report/
             tests/test-results/
@@ -70,7 +71,7 @@ jobs:
             await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              title: `[E2E] 定时巡检失败 — ${new Date().toISOString().slice(0, 10)}`,
-              body: `E2E 定时测试失败。\n\n查看详情：${runUrl}`,
-              labels: ['bug', 'e2e'],
+              title: `[E2E Real] AI Agent 能力测试失败 — ${new Date().toISOString().slice(0, 10)}`,
+              body: `E2E Real 测试失败（AI Agent 能力验证，含 LLM 调用）。\n\n查看详情：${runUrl}`,
+              labels: ['bug', 'role/qa'],
             })

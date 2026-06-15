@@ -1,0 +1,43 @@
+name: Mini-App CI
+
+on:
+  pull_request:
+    paths:
+      - 'frontend/mini-app/**'
+  push:
+    branches:
+      - main
+    paths:
+      - 'frontend/mini-app/**'
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  NODE_VERSION: '20'
+  WORKING_DIR: frontend/mini-app
+
+jobs:
+  typecheck-and-test:
+    name: mini-app typecheck + unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: ${{ env.WORKING_DIR }}/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ${{ env.WORKING_DIR }}
+        run: npm ci
+
+      - name: TypeScript type check
+        working-directory: ${{ env.WORKING_DIR }}
+        run: npx tsc --noEmit
+
+      - name: Run unit tests
+        working-directory: ${{ env.WORKING_DIR }}
+        run: npm test

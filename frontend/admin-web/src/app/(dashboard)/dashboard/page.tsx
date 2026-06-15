@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import Link from 'next/link'
 import { ClipboardList, DollarSign, TrendingUp, Package, Settings, ArrowRight, RefreshCw, ArrowUp, ArrowDown } from 'lucide-react'
 import request from '@/lib/request'
 import { dashboardApi } from '@/lib/api'
@@ -139,14 +140,17 @@ export default function DashboardPage() {
         setRanking((rkResp.data as any)?.data || [])
       } catch {}
 
-      // 待发货 = confirmed + producing
+      // 待发货订单数（status = 待发货）
       try {
-        const resp = await request.get('/api/admin/orders/statistics')
-        const os = resp.data?.data || {}
-        setPendingShipment((os.confirmedCount || 0) + (os.producingCount || 0))
-        setProcessingShipment(os.producingCount || 0)
+        const resp = await request.get('/api/admin/dashboard/pending-shipment-count')
+        setPendingShipment(resp.data?.data ?? 0)
       } catch {}
-      // 待补库存 = 低库存 SKU 数
+      // 含加工待发货订单数（status = 待发货 AND has_processing = true）
+      try {
+        const resp = await request.get('/api/admin/dashboard/processing-shipment-count')
+        setProcessingShipment(resp.data?.data ?? 0)
+      } catch {}
+      // 待补库存 = 低库存 SKU 数（按颜色规格维度，库存 ≤ 100）
       try {
         const resp = await request.get('/api/admin/products/low-stock-by-color', { params: { threshold: 100, limit: 200 } })
         const items = resp?.data?.data
@@ -184,9 +188,9 @@ export default function DashboardPage() {
           <Package className="w-4 h-4 text-amber-500" />待处理
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <PendingCard title="待发货订单" count={pendingShipment} icon={<Package className="w-4 h-4 text-blue-600" />} color="blue" />
-          <PendingCard title="含加工待发货订单" count={processingShipment} icon={<Settings className="w-4 h-4 text-purple-600" />} color="purple" />
-          <PendingCard title="待补库存商品" count={lowStockCount} icon={<Package className="w-4 h-4 text-red-600" />} color="red" />
+          <Link href="/orders?status=pending_shipment"><PendingCard title="待发货订单" count={pendingShipment} icon={<Package className="w-4 h-4 text-blue-600" />} color="blue" /></Link>
+          <Link href="/orders?status=pending_shipment&has_processing=true"><PendingCard title="含加工待发货订单" count={processingShipment} icon={<Settings className="w-4 h-4 text-purple-600" />} color="purple" /></Link>
+          <Link href="/products?low_stock=true"><PendingCard title="待补库存商品" count={lowStockCount} icon={<Package className="w-4 h-4 text-red-600" />} color="red" /></Link>
         </div>
       </div>
 
@@ -309,7 +313,7 @@ export default function DashboardPage() {
         <div className="bg-white rounded-xl border border-gray-100 p-5">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-semibold text-gray-800">商品销量排行</h3>
-            <a href="/products" className="text-xs text-primary-600 hover:underline flex items-center gap-1">查看更多 <ArrowRight className="w-3 h-3" /></a>
+            <a href="/products?sortBy=salesCount&sortOrder=desc" className="text-xs text-primary-600 hover:underline flex items-center gap-1">查看更多 <ArrowRight className="w-3 h-3" /></a>
           </div>
           {loading ? (
             <div className="space-y-2">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-8 bg-gray-100 rounded animate-pulse" />)}</div>

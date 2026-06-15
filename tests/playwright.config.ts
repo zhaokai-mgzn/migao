@@ -41,10 +41,36 @@ export default defineConfig({
       },
     },
 
-    // All authenticated tests use saved auth state
+    // Web 页面 E2E（CI 自动跑，不含 LLM 依赖的 ai-agent/chat）
+    {
+      name: 'web',
+      testMatch: /specs\/.*\.spec\.ts/,
+      testIgnore: /specs\/auth\/|auth\.setup\.ts/,
+      use: {
+        ...devices['Desktop Chrome'],
+        channel: 'chrome',
+        storageState: './e2e/.auth/admin.json',
+      },
+      dependencies: ['auth-setup'],
+    },
+
+    // AI Agent 能力测试（手动触发，依赖 LLM，跑远程 dev 环境）
+    {
+      name: 'real',
+      testMatch: /real\/.*\.spec\.ts/,
+      use: {
+        ...devices['Desktop Chrome'],
+        channel: 'chrome',
+        baseURL: process.env.E2E_REAL_BASE_URL || 'https://admin.migaozn.com',
+        storageState: './e2e/.auth/admin.json',
+      },
+      dependencies: ['auth-setup'],
+    },
+
+    // 向后兼容：全部 authenticated 测试（不含 auth 页面和 real/）
     {
       name: 'chromium',
-      testIgnore: /specs\/auth\/|auth\.setup\.ts/,
+      testIgnore: /specs\/auth\/|real\/|auth\.setup\.ts/,
       use: {
         ...devices['Desktop Chrome'],
         channel: 'chrome', // 使用本地已安装的 Chrome，而不是下载 Chromium
@@ -54,13 +80,16 @@ export default defineConfig({
     },
   ],
 
-  webServer: process.env.CI
-    ? undefined
-    : {
-        command: 'npm run dev',
-        cwd: '../frontend/admin-web',
-        port: 3001,
-        reuseExistingServer: true,
-        timeout: 120_000,
-      },
+  // CI 也启动本地 Next.js dev server，E2E 测的是 PR 新代码而非旧部署
+  webServer: {
+    command: 'npm run dev',
+    cwd: '../frontend/admin-web',
+    port: 3001,
+    reuseExistingServer: !process.env.CI,
+    timeout: 180_000,
+    env: {
+      // 前端 API 请求走远程 dev admin-api（CI 里没有本地 Java 后端）
+      NEXT_PUBLIC_API_BASE_URL: process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:8080',
+    },
+  },
 });

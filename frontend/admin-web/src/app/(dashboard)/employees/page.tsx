@@ -41,10 +41,8 @@ export default function EmployeesPage() {
   const [formLoading, setFormLoading] = useState(false)
   const [formData, setFormData] = useState({
     username: '',
-    password: '',
     name: '',
     phone: '',
-    email: '',
     position: '',
     permissions: [] as string[],
   })
@@ -69,13 +67,14 @@ export default function EmployeesPage() {
     }).catch(() => {})
   }, [])
 
-  // 从 menuTree 中提取 code → 中文 label 的映射（只计算一次）
-  const permissionLabelMap = useMemo(() => {
+  // 从 menuTree 中提取 code → 中文 label 的映射 + 叶子节点总数
+  const { permissionLabelMap, totalLeafCount } = useMemo(() => {
     const map: Record<string, string> = {}
+    let count = 0
     menuTree.forEach(p => {
-      p.children?.forEach(c => { map[c.code] = c.label })
+      p.children?.forEach(c => { map[c.code] = c.label; count++ })
     })
-    return map
+    return { permissionLabelMap: map, totalLeafCount: count }
   }, [menuTree])
 
   // 加载员工列表
@@ -127,7 +126,7 @@ export default function EmployeesPage() {
   // 打开新增对话框
   const handleAdd = () => {
     setEditingEmployee(null)
-    setFormData({ username: '', password: '', name: '', phone: '', email: '', position: '', permissions: [] })
+    setFormData({ username: '', name: '', phone: '', position: '', permissions: [] })
     setFormOpen(true)
   }
 
@@ -136,10 +135,8 @@ export default function EmployeesPage() {
     setEditingEmployee(employee)
     setFormData({
       username: employee.username,
-      password: '',
       name: employee.name,
       phone: employee.phone || '',
-      email: employee.email || '',
       position: employee.position || '',
       permissions: employee.permissions || [],
     })
@@ -150,7 +147,8 @@ export default function EmployeesPage() {
   const handleSubmit = async () => {
     if (!formData.username.trim()) { toast.error('请输入用户名'); return }
     if (!formData.name.trim()) { toast.error('请输入姓名'); return }
-    if (!editingEmployee && !formData.password.trim()) { toast.error('请输入密码'); return }
+    if (!formData.phone.trim()) { toast.error('请输入手机号'); return }
+    if (!formData.position.trim()) { toast.error('请选择岗位'); return }
 
     setFormLoading(true)
     try {
@@ -158,8 +156,6 @@ export default function EmployeesPage() {
         await employeeApi.updateEmployee(editingEmployee.id, {
           name: formData.name,
           phone: formData.phone || undefined,
-          email: formData.email || undefined,
-          password: formData.password || undefined,
           position: formData.position || undefined,
           permissions: formData.permissions,
         })
@@ -167,11 +163,9 @@ export default function EmployeesPage() {
       } else {
         await employeeApi.createEmployee({
           username: formData.username,
-          password: formData.password,
           name: formData.name,
-          phone: formData.phone || undefined,
-          email: formData.email || undefined,
-          position: formData.position || undefined,
+          phone: formData.phone,
+          position: formData.position,
           permissions: formData.permissions,
         })
         toast.success('创建成功')
@@ -257,6 +251,10 @@ export default function EmployeesPage() {
       render: (record) => {
         const codes: string[] = record.permissions || []
         if (codes.length === 0) return <span className="text-gray-400 text-sm">未分配</span>
+        // 拥有全部权限时折叠为单个标签
+        if (totalLeafCount > 0 && codes.length >= totalLeafCount) {
+          return <Badge variant="success">全部权限</Badge>
+        }
         const labels = codes.map(c => permissionLabelMap[c] || c).slice(0, 3)
         return (
           <div className="flex flex-wrap gap-1">
@@ -425,32 +423,19 @@ export default function EmployeesPage() {
             disabled={!!editingEmployee}
           />
           <Input
-            label={editingEmployee ? '密码（留空则不修改）' : '密码'}
-            placeholder={editingEmployee ? '留空则不修改密码' : '请输入密码'}
-            type="password"
-            value={formData.password}
-            onChange={(e) => setFormData(prev => ({ ...prev, password: e.target.value }))}
-          />
-          <Input
-            label="姓名"
+            label="姓名 *"
             placeholder="请输入姓名"
             value={formData.name}
             onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
           />
           <Input
-            label="手机号（选填）"
+            label="手机号 *"
             placeholder="请输入手机号"
             value={formData.phone}
             onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
           />
-          <Input
-            label="邮箱（选填）"
-            placeholder="请输入邮箱"
-            value={formData.email}
-            onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
-          />
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">岗位（选填，纯展示）</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">岗位 *</label>
             <input
               list="position-list"
               placeholder="选择或输入岗位，如：客服"
@@ -461,7 +446,7 @@ export default function EmployeesPage() {
             <datalist id="position-list">
               {PRESET_POSITIONS.map(p => <option key={p} value={p} />)}
             </datalist>
-            <p className="text-xs text-gray-400 mt-1">下拉选择或手动输入岗位名称</p>
+            <p className="text-xs text-gray-400 mt-1">选择或输入员工岗位（必填）</p>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">账号权限 *</label>

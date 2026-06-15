@@ -543,13 +543,7 @@ async def send_message(
         if not session:
             raise HTTPException(
                 status_code=404,
-                detail={
-                    "success": False,
-                    "error": {
-                        "code": "SESSION_NOT_FOUND",
-                        "message": "会话不存在",
-                    }
-                }
+                detail=make_response(False, error_code="SESSION_NOT_FOUND", error_message="会话不存在")
             )
         # 先验证租户隔离
         if session.get("tenant_id") != tenant_id:
@@ -560,13 +554,7 @@ async def send_message(
             )
             raise HTTPException(
                 status_code=403,
-                detail={
-                    "success": False,
-                    "error": {
-                        "code": "PERMISSION_DENIED",
-                        "message": "无权访问该会话",
-                    }
-                }
+                detail=make_response(False, error_code="PERMISSION_DENIED", error_message="无权访问该会话")
             )
         # 再验证用户所有权
         if session.get("customer_id") != user_id:
@@ -577,13 +565,7 @@ async def send_message(
             )
             raise HTTPException(
                 status_code=403,
-                detail={
-                    "success": False,
-                    "error": {
-                        "code": "PERMISSION_DENIED",
-                        "message": "无权访问该会话",
-                    }
-                }
+                detail=make_response(False, error_code="PERMISSION_DENIED", error_message="无权访问该会话")
             )
         # 拒绝在已关闭会话上发送消息
         if session.get("status") == "closed":

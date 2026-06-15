@@ -418,6 +418,19 @@ export const OrderStatusColors: Record<OrderStatus, string> = {
 // 订单状态流转顺序（正常流程）
 export const OrderStatusFlow: OrderStatus[] = ['pending_payment', 'pending_shipment', 'shipped', 'completed']
 
+// 订单分类（8 个横向切分 tab）— #390 规范
+// 分类 ≠ 状态：分类是 UI 层的横向过滤维度，"含加工订单" 是 has_processing 维度
+export const ORDER_CATEGORIES = [
+  { key: 'all', label: '全部' },
+  { key: 'pending_payment', label: '待付款' },
+  { key: 'pending_shipment', label: '待发货' },
+  { key: 'shipped', label: '已发货' },
+  { key: 'completed', label: '已完成' },
+  { key: 'closed', label: '已关闭' },
+  { key: 'refund', label: '退款/售后' },
+  { key: 'has_processing', label: '含加工订单' },
+] as const
+
 // 下一状态映射
 export const NextStatusMap: Partial<Record<OrderStatus, OrderStatus>> = {
   pending_payment: 'pending_shipment',
@@ -1124,11 +1137,9 @@ export interface EmployeeListParams extends PageParams {
 // 员工表单数据
 export interface EmployeeFormData {
   username: string
-  password?: string
   name: string
-  phone?: string
-  email?: string
-  position?: string
+  phone: string
+  position: string
   permissions: string[]
 }
 

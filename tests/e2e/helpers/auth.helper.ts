@@ -42,20 +42,22 @@ interface ZustandPersistState {
   version: number
 }
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080'
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:8080'
 
 /**
- * Login via the backend API (bypasses the UI).
+ * Login via the backend admin API (bypasses the UI).
+ * Uses password-based admin login (more reliable than SMS across envs).
  * Returns the tokens from the LoginResponse.
  */
 export async function loginViaApi(
-  phone = '13800138000',
-  code = '123456',
+  username = '13800138000',
+  password = 'admin123',
+  tenantId = 1,
 ): Promise<AuthTokens> {
   const ctx: APIRequestContext = await pwRequest.newContext()
   try {
-    const response = await ctx.post(`${API_BASE_URL}/api/auth/sms/login`, {
-      data: { phone, code },
+    const response = await ctx.post(`${API_BASE_URL}/api/auth/admin/login`, {
+      data: { username, password, tenantId },
     })
 
     if (!response.ok()) {

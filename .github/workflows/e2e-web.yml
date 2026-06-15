@@ -1,0 +1,107 @@
+name: E2E Web
+
+on:
+  pull_request:
+    paths:
+      - 'frontend/admin-web/**'
+      - 'backend/admin-api/**'
+      - 'tests/e2e/specs/**'
+      - 'tests/e2e/.auth/**'
+      - 'tests/playwright.config.ts'
+      - 'tests/package.json'
+      - 'tests/package-lock.json'
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  NODE_VERSION: '20'
+
+jobs:
+  e2e-web:
+    name: E2E Web (specs only, no LLM)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      # ═══════════════════════════════════════════════════════
+      # 安装前端依赖（Next.js dev server 在 CI 里本地启动）
+      # ═══════════════════════════════════════════════════════
+      - name: Install frontend dependencies
+        working-directory: frontend/admin-web
+        run: npm ci
+
+      # ═══════════════════════════════════════════════════════
+      # 安装 E2E 测试依赖
+      # ═══════════════════════════════════════════════════════
+      - name: Install test dependencies
+        working-directory: tests
+        run: npm ci
+
+      - name: Install Playwright browsers
+        working-directory: tests
+        run: npx playwright install chromium --with-deps
+
+      - name: Validate secrets
+        run: |
+          echo "✅ 使用固定测试账号 admin/password 登录（种子用户 13800138000）"
+
+      # ═══════════════════════════════════════════════════════
+      # 启动 Next.js dev server（后台运行，测试 PR 新前端代码）
+      # ═══════════════════════════════════════════════════════
+      - name: Start Next.js dev server
+        working-directory: frontend/admin-web
+        run: |
+          npm run dev &
+          # 等待 dev server 就绪
+          for i in $(seq 1 30); do
+            curl -s -o /dev/null http://localhost:3001 && echo "✅ Dev server ready" && break
+            echo "⏳ Waiting for dev server... ($i/30)"
+            sleep 3
+          done
+
+      # ═══════════════════════════════════════════════════════
+      # 运行 E2E Web 测试
+      #
+      # 流程：CI 本地 Next.js dev server (:3001) →
+      #       前端 API 请求直连远程 admin-api →
+      #       Playwright 浏览器打开 localhost:3001 执行测试
+      # ═══════════════════════════════════════════════════════
+      - name: Run E2E tests (web only)
+        working-directory: tests
+        env:
+          BASE_URL: http://localhost:3001
+          NEXT_PUBLIC_API_BASE_URL: ${{ secrets.E2E_API_BASE_URL || 'http://8.136.139.170' }}
+          CI: 'true'
+        run: |
+          npx playwright test --project=web \
+            --reporter=list \
+            --retries=2 \
+            --max-failures=10
+
+      - name: Upload test artifacts (failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-web-artifacts
+          path: |
+            tests/playwright-report/
+            tests/test-results/
+
+      - name: Create Issue on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `[E2E Web] PR 门禁失败 — ${new Date().toISOString().slice(0, 10)}`,
+              body: `E2E Web 测试失败（specs only，不含 LLM）。\n\nPR: ${context.payload.pull_request?.html_url || 'N/A'}\n查看详情：${runUrl}`,
+              labels: ['bug', 'role/qa'],
+            })

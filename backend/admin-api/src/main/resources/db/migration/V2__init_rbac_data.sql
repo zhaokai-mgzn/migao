@@ -47,16 +47,14 @@ INSERT INTO roles (id, tenant_id, name, code, description, status, deleted, crea
 --    生产环境通过 FLYWAY_SKIP_SEED_USERS=true 跳过
 --    ⚠️ 安全提示: 此 INSERT 仅用于 dev/staging 环境
 -- --------------------------------------------
--- 插入默认管理员用户
-INSERT INTO users (id, tenant_id, phone, password_hash, nickname, avatar, role, session_ttl, status, deleted, created_at, updated_at)
-SELECT 'user_admin_001', 'DEFAULT', '13800138000', '$2a$10$N.zmdr9k7uOCQb376NoUnuTJ8iAt6Z5EHsM8lE9lBOsl7iAt6Z5EO', '系统管理员', NULL, 'admin', 7200, 'active', 0, NOW(), NOW()
-WHERE '${flyway_skip_seed_users}' != 'true'
+-- 插入默认管理员用户（所有环境幂等，ON CONFLICT 保证不重复，手机号: 13800138000）
+INSERT INTO users (id, tenant_id, phone, password_hash, nickname, avatar, role, position, session_ttl, status, deleted, created_at, updated_at) VALUES
+('user_admin_001', 'DEFAULT', '13800138000', '$2a$10$N.zmdr9k7uOCQb376NoUnuTJ8iAt6Z5EHsM8lE9lBOsl7iAt6Z5EO', '系统管理员', NULL, 'admin', '管理员', 7200, 'active', 0, NOW(), NOW())
 ON CONFLICT (id) DO NOTHING;
 
 -- 为管理员用户关联管理员角色
-INSERT INTO user_roles (id, tenant_id, user_id, role_id, deleted, created_at)
-SELECT 'ur_admin_001', 'DEFAULT', 'user_admin_001', 'role_admin', 0, NOW()
-WHERE '${flyway_skip_seed_users}' != 'true'
+INSERT INTO user_roles (id, tenant_id, user_id, role_id, deleted, created_at) VALUES
+('ur_admin_001', 'DEFAULT', 'user_admin_001', 'role_admin', 0, NOW())
 ON CONFLICT DO NOTHING;
 
 -- --------------------------------------------

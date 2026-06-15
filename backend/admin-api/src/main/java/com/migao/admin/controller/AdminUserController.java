@@ -101,9 +101,13 @@ public class AdminUserController {
     public ApiResponse<User> createUser(@RequestBody Map<String, Object> body) {
         requireAdmin();
         Long tenantId = TenantContext.getTenantId();
-        String phone = (String) body.getOrDefault("phone", body.get("username"));
-        String password = (String) body.get("password");
+        String phone = body.containsKey("phone") ? (String) body.get("phone") : (String) body.get("username");
+        if (phone == null || phone.isBlank()) {
+            throw BusinessException.validationError("手机号不能为空");
+        }
+        String password = (String) body.get("password"); // 可选，不传则默认用手机号
         String name = (String) body.getOrDefault("name", "");
+        String position = (String) body.getOrDefault("position", "");
 
         // 从请求体读取角色，支持 role 字段（字符串）或 roleIds（数组取第一个对应的角色代码）
         String role = "operator"; // 默认角色
@@ -123,6 +127,11 @@ public class AdminUserController {
             }
         }
 
+        // 岗位必须
+        if (position.isBlank()) {
+            position = role; // fallback: 岗位 = 角色名
+        }
+
         // 从请求体读取权限列表（前端 TreeCheckbox 发送的菜单权限码 JSON 数组）
         String permissions = null;
         Object permsObj = body.get("permissions");
@@ -134,8 +143,8 @@ public class AdminUserController {
             }
         }
 
-        log.info("创建用户: phone={}, name={}, role={}, tenantId={}", phone, name, role, tenantId);
-        User user = userService.createUser(phone, password, name, role, permissions, tenantId);
+        log.info("创建用户: phone={}, name={}, role={}, position={}, tenantId={}", phone, name, role, position, tenantId);
+        User user = userService.createUser(phone, password, name, role, position, permissions, tenantId);
 
         // 如果传了 roleIds，同步写入 user_roles 关联表
         if (roleIdList != null && !roleIdList.isEmpty()) {
@@ -254,6 +263,12 @@ public class AdminUserController {
         map.put("phone", user.getPhone());
         map.put("email", null);
         map.put("role", user.getRole());
+        // position 为空时回退到 role 名称
+        String position = user.getPosition();
+        if (position == null || position.isBlank()) {
+            position = user.getRole() != null ? user.getRole() : "";
+        }
+        map.put("position", position);
         map.put("status", user.getStatus());
         map.put("createdAt", user.getCreatedAt());
         map.put("updatedAt", user.getUpdatedAt());

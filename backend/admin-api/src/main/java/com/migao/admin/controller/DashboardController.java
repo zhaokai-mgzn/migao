@@ -39,6 +39,7 @@ public class DashboardController {
     private final SessionMapper sessionMapper;
     private final OrderItemMapper orderItemMapper;
     private final SessionMessageMapper sessionMessageMapper;
+    private final ProductSkuMapper productSkuMapper;
 
     /**
      * 获取 Dashboard 统计数据
@@ -119,7 +120,7 @@ public class DashboardController {
                 new LambdaQueryWrapper<Order>()
                         .eq(Order::getTenantId, tenantId)
                         .ge(Order::getCreatedAt, monthStart)
-                        .in(Order::getStatus, "confirmed", "producing", "shipped", "completed"));
+                        .in(Order::getStatus, "pending_shipment", "shipped", "completed"));
         // 使用 BigDecimal 累加避免精度丢失（longValue() 会截断小数）
         BigDecimal monthRevenueBd = monthOrders.stream()
                 .map(o -> o.getTotalAmount() != null ? o.getTotalAmount() : BigDecimal.ZERO)
@@ -133,7 +134,7 @@ public class DashboardController {
                         .eq(Order::getTenantId, tenantId)
                         .ge(Order::getCreatedAt, lastMonthStart)
                         .lt(Order::getCreatedAt, monthStart)
-                        .in(Order::getStatus, "confirmed", "producing", "shipped", "completed"));
+                        .in(Order::getStatus, "pending_shipment", "shipped", "completed"));
         BigDecimal lastMonthRevenueBd = lastMonthOrders.stream()
                 .map(o -> o.getTotalAmount() != null ? o.getTotalAmount() : BigDecimal.ZERO)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
@@ -159,6 +160,39 @@ public class DashboardController {
                 ? Math.round((double) aiSessions / activeSessions * 1000.0) / 10.0
                 : 0;
 
+        // ════════════════════════════════════════
+        // 待处理区 3 卡片（#387）
+        // ════════════════════════════════════════
+
+        // 待发货订单：status = 待发货
+        long pendingShipOrders = orderMapper.selectCount(
+                new LambdaQueryWrapper<Order>()
+                        .eq(Order::getTenantId, tenantId)
+                        .eq(Order::getStatus, "待发货"));
+
+        // 含加工待发货订单：status = 待发货 AND 有关联加工项
+        java.util.Set<String> shipOrderIds = orderMapper.selectList(
+                new LambdaQueryWrapper<Order>()
+                        .eq(Order::getTenantId, tenantId)
+                        .eq(Order::getStatus, "待发货")
+                        .select(Order::getId))
+                .stream().map(Order::getId).collect(Collectors.toSet());
+        long processingPendingOrders = 0;
+        if (!shipOrderIds.isEmpty()) {
+            processingPendingOrders = orderItemMapper.selectList(
+                    new LambdaQueryWrapper<OrderItem>()
+                            .in(OrderItem::getOrderId, shipOrderIds)
+                            .isNotNull(OrderItem::getProcessingInfo)
+                            .select(OrderItem::getOrderId))
+                    .stream().map(OrderItem::getOrderId).distinct().count();
+        }
+
+        // 待补库存商品：SKU 库存 ≤ 100（按颜色规格维度）
+        long lowStockItems = productSkuMapper.selectCount(
+                new LambdaQueryWrapper<ProductSku>()
+                        .eq(ProductSku::getTenantId, tenantId)
+                        .le(ProductSku::getStock, 100));
+
         DashboardStatsResponse stats = DashboardStatsResponse.builder()
                 .todayOrders(todayOrders)
                 .todayOrdersChange(Math.round(todayOrdersChange * 10.0) / 10.0)
@@ -173,6 +207,9 @@ public class DashboardController {
                 .totalProducts(totalProducts)
                 .totalOrders(totalOrders)
                 .totalTickets(totalTickets)
+                .pendingShipOrders(pendingShipOrders)
+                .processingPendingOrders(processingPendingOrders)
+                .lowStockItems(lowStockItems)
                 .build();
 
         return ApiResponse.success(stats);
@@ -214,22 +251,23 @@ public class DashboardController {
 
     // ========== 订单状态分布 ==========
 
+    // 标准化 6 个订单状态（#390 规范）
     private static final Map<String, String> STATUS_LABELS = Map.of(
-            "pending", "待付款",
-            "confirmed", "已确认",
-            "producing", "生产中",
+            "pending_payment", "待付款",
+            "pending_shipment", "待发货",
             "shipped", "已发货",
             "completed", "已完成",
-            "cancelled", "已取消"
+            "closed", "已关闭",
+            "refund", "退款/售后"
     );
 
     private static final Map<String, String> STATUS_COLORS = Map.of(
-            "pending", "#faad14",
-            "confirmed", "#2563eb",
-            "producing", "#7c3aed",
+            "pending_payment", "#faad14",
+            "pending_shipment", "#2563eb",
             "shipped", "#06b6d4",
             "completed", "#16a34a",
-            "cancelled", "#9ca3af"
+            "closed", "#9ca3af",
+            "refund", "#ef4444"
     );
 
     @GetMapping("/order-status")
@@ -398,11 +436,11 @@ public class DashboardController {
             @RequestParam(defaultValue = "10") int limit) {
         Long tenantId = TenantContext.getTenantId();
         ZoneId cst = ZoneId.of("Asia/Shanghai");
-        // day=近7天, month=本月（避免当天无订单时排行全空）
+        // day: 近7天; month: 近30天（避免当天0点无数据导致"暂无数据"）
         OffsetDateTime periodStart = "month".equals(period)
-                ? LocalDate.now(cst).withDayOfMonth(1).atStartOfDay().atOffset(ZoneOffset.ofHours(8))
+                ? LocalDate.now(cst).minusDays(30).atStartOfDay().atOffset(ZoneOffset.ofHours(8))
                 : LocalDate.now(cst).minusDays(7).atStartOfDay().atOffset(ZoneOffset.ofHours(8));
-        OffsetDateTime prevStart = "month".equals(period) ? periodStart.minusMonths(1) : periodStart.minusDays(7);
+        OffsetDateTime prevStart = "month".equals(period) ? periodStart.minusDays(30) : periodStart.minusDays(7);
 
         // 查周期内订单明细，按 productId 分组统计
         List<OrderItem> items = orderItemMapper.selectList(
@@ -446,6 +484,33 @@ public class DashboardController {
         return ApiResponse.success(result);
     }
 
+    /**
+     * 待发货订单数（status = 待发货）
+     */
+    @GetMapping("/pending-shipment-count")
+    public ApiResponse<Long> getPendingShipmentCount() {
+        Long tenantId = TenantContext.getTenantId();
+        long count = orderMapper.selectCount(
+                new LambdaQueryWrapper<Order>()
+                        .eq(Order::getTenantId, tenantId)
+                        .eq(Order::getStatus, "pending_shipment"));
+        return ApiResponse.success(count);
+    }
+
+    /**
+     * 含加工待发货订单数（status = 待发货，has_processing 过滤待 DB 加列后启用）
+     */
+    @GetMapping("/processing-shipment-count")
+    public ApiResponse<Long> getProcessingShipmentCount() {
+        Long tenantId = TenantContext.getTenantId();
+        long count = orderMapper.selectCount(
+                new LambdaQueryWrapper<Order>()
+                        .eq(Order::getTenantId, tenantId)
+                        .eq(Order::getStatus, "pending_shipment"));
+        // TODO: 等 orders 表加 has_processing 列后加 .eq(Order::getHasProcessing, true)
+        return ApiResponse.success(count);
+    }
+
     // ========== Response DTOs ==========
 
     @Data
@@ -463,6 +528,10 @@ public class DashboardController {
         private long totalProducts;
         private long totalOrders;
         private long totalTickets;
+        // 待处理区 3 卡片 (#387)
+        private long pendingShipOrders;
+        private long processingPendingOrders;
+        private long lowStockItems;
     }
 
     @Data
