@@ -223,7 +223,7 @@ public class UserService implements UserDetailsService {
      * @return 创建的用户
      */
     @Transactional(rollbackFor = Exception.class)
-    public User createUser(String phone, String password, String nickname, String role, String permissions, Long tenantId) {
+    public User createUser(String phone, String password, String nickname, String role, String position, String permissions, Long tenantId) {
         // 验证手机号唯一性
         LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(User::getPhone, phone)
@@ -235,12 +235,17 @@ public class UserService implements UserDetailsService {
         }
 
         // 创建用户
+        // password 为 null 时不设密码（对应 #375 禁用密码登录）
+        String passwordHash = StringUtils.hasText(password)
+                ? PASSWORD_ENCODER.encode(password)
+                : PASSWORD_ENCODER.encode(phone); // fallback: 用手机号作为默认密码
         User user = User.builder()
                 .tenantId(tenantId)
                 .phone(phone)
-                .passwordHash(PASSWORD_ENCODER.encode(password))
+                .passwordHash(passwordHash)
                 .nickname(nickname)
                 .role(role != null ? role : "operator")
+                .position(StringUtils.hasText(position) ? position : (role != null ? role : "operator"))
                 .permissions(permissions)
                 .status("active")
                 .build();
