@@ -399,10 +399,11 @@ public class DashboardController {
             @RequestParam(defaultValue = "10") int limit) {
         Long tenantId = TenantContext.getTenantId();
         ZoneId cst = ZoneId.of("Asia/Shanghai");
+        // day: 近7天; month: 近30天（避免当天0点无数据导致"暂无数据"）
         OffsetDateTime periodStart = "month".equals(period)
-                ? LocalDate.now(cst).withDayOfMonth(1).atStartOfDay().atOffset(ZoneOffset.ofHours(8))
-                : LocalDate.now(cst).atStartOfDay().atOffset(ZoneOffset.ofHours(8));
-        OffsetDateTime prevStart = "month".equals(period) ? periodStart.minusMonths(1) : periodStart.minusDays(1);
+                ? LocalDate.now(cst).minusDays(30).atStartOfDay().atOffset(ZoneOffset.ofHours(8))
+                : LocalDate.now(cst).minusDays(7).atStartOfDay().atOffset(ZoneOffset.ofHours(8));
+        OffsetDateTime prevStart = "month".equals(period) ? periodStart.minusDays(30) : periodStart.minusDays(7);
 
         // 查周期内订单明细，按 productId 分组统计
         List<OrderItem> items = orderItemMapper.selectList(

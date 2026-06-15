@@ -220,7 +220,7 @@ cd tests && npx playwright test tests/e2e/specs/products.spec.ts
 >
 > 详见 [`.claude/local-dev-config.md`](.claude/local-dev-config.md) — 包含启动命令、连接信息、禁止行为、测试依赖。
 
-- **本地启动**：admin-api (:8080) + ai-agent-service (:8001) + admin-web (:3001)
+- **本地启动**：admin-api (:8080) + ai-agent-service (:8000) + admin-web (:3001)
 - **云 dev 环境**：PostgreSQL + Redis + DashVector + DashScope + OSS 全部用云端
 - **配置文件**：各模块 `.env` 已预置云 dev 环境的连接信息，禁止改成 localhost
 
@@ -230,7 +230,7 @@ cd tests && npx playwright test tests/e2e/specs/products.spec.ts
 # 1. 启动 admin-api（Java 后端，端口 8080）
 cd backend/admin-api && ./mvnw spring-boot:run
 
-# 2. 启动 ai-agent-service（Python AI 服务，端口 8001）
+# 2. 启动 ai-agent-service（Python AI 服务，端口 8000）
 cd backend/ai-agent-service && python -m uvicorn app.main:app --port 8000 --reload
 
 # 3. 启动 admin-web（Next.js 前端，端口 3001）
