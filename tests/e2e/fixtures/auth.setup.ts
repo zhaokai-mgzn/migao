@@ -23,10 +23,11 @@ import * as fs from 'fs'
 const AUTH_DIR = path.join(__dirname, '..', '.auth')
 const AUTH_FILE = path.join(AUTH_DIR, 'admin.json')
 
-// Test credentials — override via environment variables in CI
-const TEST_USERNAME = process.env.E2E_ADMIN_PHONE || process.env.TEST_USERNAME || '13800138000'
-const TEST_PASSWORD = process.env.TEST_PASSWORD || 'admin123'
-const TEST_TENANT_ID = Number(process.env.TEST_TENANT_ID) || 1
+// 固定测试账号（admin 密码登录，不依赖 SMS/secret）
+// 与 V2__init_rbac_data.sql 中种子用户一致
+const TEST_USERNAME = process.env.E2E_ADMIN_USERNAME || '13800138000'
+const TEST_PASSWORD = process.env.E2E_ADMIN_PASSWORD || 'admin123'
+const TEST_TENANT_ID = Number(process.env.E2E_TENANT_ID || process.env.TEST_TENANT_ID) || 1
 
 setup('authenticate as admin', async ({ page }) => {
   // Ensure .auth directory exists
