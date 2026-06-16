@@ -51,11 +51,26 @@ def extract_specs(issue_body: str):
 
 
 def is_deployment_issue(issue_body: str) -> bool:
-    """检测是否是部署/基础设施类 issue（需云验收，不需本地 spec）"""
-    keywords = ["部署", "SAE", "CrashLoop", "实例", "启动崩溃", "deploy", "terraform",
-                "Flyway", "SPRING_FLYWAY", "迁移", "V1__", "V2__"]
+    """检测是否是部署/基础设施类 issue（需云验收，不需本地 spec）
+
+    精确匹配：
+    - 标题含 [deploy]/[infra] tag
+    - body 含多个部署强信号（SAE+CrashLoop、terraform、迁移文件）
+    """
     body_lower = issue_body.lower()
-    return any(kw.lower() in body_lower for kw in keywords)
+    # 标题 tag 强信号
+    if "[deploy]" in body_lower or "[infra]" in body_lower:
+        return True
+    # 强信号组合（≥2 才算）
+    strong_signals = ["sae", "crashloop", "启动崩溃", "terraform", "flyway"]
+    hits = sum(1 for kw in strong_signals if kw in body_lower)
+    if hits >= 2:
+        return True
+    # 标题有"部署 / CrashLoop / Flyway"
+    title_keywords = ["部署崩溃", "部署失败", "sae crashloop", "flyway"]
+    if any(kw in body_lower for kw in title_keywords):
+        return True
+    return False
 
 
 def run_e2e_spec(spec_path: str) -> dict:
