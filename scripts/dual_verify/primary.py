@@ -24,7 +24,7 @@ def load_issue(issue_id: int) -> dict:
     if issue_id in ISSUE_BODY_CACHE:
         return ISSUE_BODY_CACHE[issue_id]
     p = subprocess.Popen(
-        ["gh", "issue", "view", str(issue_id), "--json", "title,body,labels"],
+        ["gh", "issue", "view", str(issue_id), "--json", "title,body,labels,comments"],
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd="/opt/youke"
     )
     out, err = p.communicate()
@@ -48,6 +48,14 @@ def extract_specs(issue_body: str):
     for match in re.finditer(r"^\s*-\s*[`']?(src/test/java/[^\s`']+Test\.java)[`']?", issue_body, re.MULTILINE):
         specs.append(match.group(1).strip())
     return list(set(specs))
+
+
+def is_deployment_issue(issue_body: str) -> bool:
+    """检测是否是部署/基础设施类 issue（需云验收，不需本地 spec）"""
+    keywords = ["部署", "SAE", "CrashLoop", "实例", "启动崩溃", "deploy", "terraform",
+                "Flyway", "SPRING_FLYWAY", "迁移", "V1__", "V2__"]
+    body_lower = issue_body.lower()
+    return any(kw.lower() in body_lower for kw in keywords)
 
 
 def run_e2e_spec(spec_path: str) -> dict:
@@ -142,6 +150,19 @@ def verify(issue_id: int) -> dict:
     issue = load_issue(issue_id)
     body = issue.get("body", "")
     title = issue.get("title", "")
+    comments = issue.get("comments", [])
+    # 部署类 issue 不需本地 spec，等云验收
+    if is_deployment_issue(body):
+        return {
+            "issue_id": issue_id,
+            "title": title,
+            "verifier": "primary",
+            "status": "skip_deployment",
+            "reason": "部署/基础设施类 issue — 等云验收（cloud）",
+            "specs": [],
+            "confidence": 0,
+            "hint": "需研发 AI 跑云验收（API + DB + 部署日志）"
+        }
     specs = extract_specs(body)
     if not specs:
         return {
@@ -151,7 +172,8 @@ def verify(issue_id: int) -> dict:
             "status": "skip",
             "reason": "issue body 中未找到 spec 路径（需写 L2/L3 case）",
             "specs": [],
-            "confidence": 0
+            "confidence": 0,
+            "comments_count": len(comments)
         }
 
     results = []

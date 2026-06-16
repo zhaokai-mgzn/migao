@@ -75,6 +75,9 @@ def judge(primary: dict, reviewer: dict, cloud: dict = None) -> dict:
     elif not conflicts and p_fail and r_fail:
         decision = "hold"
         verdict = "❌ 双一致 + 都失败，留研发修"
+    elif p_status == "skip_deployment" or "skip_deployment" in p_status:
+        decision = "hold"
+        verdict = "⏸️ 部署类 issue — 等云验收（研发 AI 跑部署验证）"
     elif p_status == "skip" and r_status == "skip":
         decision = "hold"
         verdict = "⏸️ 双方都跳过（可能无 case / 业务真值缺失）"

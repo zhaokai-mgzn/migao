@@ -37,7 +37,7 @@ def load_env() -> dict:
 
 def load_issue(issue_id: int) -> dict:
     p = subprocess.Popen(
-        ["gh", "issue", "view", str(issue_id), "--json", "title,body"],
+        ["gh", "issue", "view", str(issue_id), "--json", "title,body,comments"],
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd="/opt/youke"
     )
     out, err = p.communicate()
@@ -46,23 +46,39 @@ def load_issue(issue_id: int) -> dict:
     return json.loads(out.decode("utf-8"))
 
 
-def extract_business_truths(issue_body: str):
+def extract_business_truths(issue_body: str, comments: "list[dict]" = None):
     """提取业务真值（业务语言）
 
     支持：
-    - 多段标题（业务真值 / 业务定义 / 业务规则 / Acceptance Criteria）
+    - 多段标题（业务真值 / 业务定义 / 业务规则 / 验收标准 / 验收用例 / Acceptance Criteria / 通过标准）
     - 列表项（`- ...` / `* ...`）
     - 表格行（`| col1 | col2 |`，取关键列）
+    - **issue 评论**（凯总式补完 / 军师反推草稿）
+
+    参数:
+        issue_body: issue body
+        comments:  [{author: ..., body: ...}] 评论列表
     """
     truth_patterns = [
-        r"## 业务真值.*?(?=^##|\Z)",
-        r"## 业务定义.*?(?=^##|\Z)",
-        r"## 业务规则.*?(?=^##|\Z)",
-        r"## Acceptance Criteria.*?(?=^##|\Z)",
+        r"##.*?业务真值.*?(?=^##|\Z)",
+        r"##.*?业务定义.*?(?=^##|\Z)",
+        r"##.*?业务规则.*?(?=^##|\Z)",
+        r"##.*?验收标准.*?(?=^##|\Z)",
+        r"##.*?验收用例.*?(?=^##|\Z)",
+        r"##.*?通过标准.*?(?=^##|\Z)",
+        r"##.*?Acceptance Criteria.*?(?=^##|\Z)",
     ]
+    full_text = issue_body
+    # 也读评论（军师反推的草稿通常在评论里）
+    if comments:
+        for c in comments:
+            body = c.get("body", "") if isinstance(c, dict) else ""
+            if body and ("业务真值" in body or "验收" in body or "Acceptance" in body):
+                full_text += "\n\n" + body
+
     truths = []
     for pattern in truth_patterns:
-        match = re.search(pattern, issue_body, re.MULTILINE | re.DOTALL)
+        match = re.search(pattern, full_text, re.MULTILINE | re.DOTALL)
         if not match:
             continue
         section = match.group(0)
@@ -187,7 +203,17 @@ def verify(issue_id: int) -> dict:
     issue = load_issue(issue_id)
     body = issue.get("body", "")
     title = issue.get("title", "")
-    truths = extract_business_truths(body)
+    comments = issue.get("comments", [])
+    # 过滤掉纯反推草稿评论（不含业务真值）
+    # 保留：含"业务真值 / 验收标准 / Acceptance / 通过标准"的评论
+    user_comments = []
+    for c in comments:
+        b = c.get("body", "")
+        # 跳过纯反推草稿（含 "Case 草稿" 且 不含 "业务真值 / 验收标准"）
+        if "Case 草稿" in b and not any(kw in b for kw in ["业务真值", "验收标准", "通过标准", "Acceptance"]):
+            continue
+        user_comments.append(c)
+    truths = extract_business_truths(body, user_comments)
 
     env = load_env()
     asserts = infer_business_asserts(truths)
