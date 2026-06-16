@@ -1,0 +1,157 @@
+{
+  "version": "v1.0",
+  "last_updated": "2026-06-16T15:38:33+08:00",
+  "owner": "junshi (auto-maintained)",
+  "rules": [
+    {
+      "id": "is_deployment_issue",
+      "type": "classifier",
+      "version": "v2",
+      "purpose": "判断 issue 是否为部署/基础设施类（需云验收，不需本地 spec）",
+      "logic": {
+        "strong_match": [
+          "[deploy] tag in body",
+          "[infra] tag in body"
+        ],
+        "strong_signals": [
+          "sae",
+          "crashloop",
+          "启动崩溃",
+          "terraform",
+          "flyway"
+        ],
+        "decision": "≥2 strong_signals hit → True"
+      },
+      "false_positives_learned": [
+        {
+          "issue_id": 420,
+          "triggered_by": "V1__add_permissions_to_users.sql in body",
+          "old_logic": "single keyword V1__ match → True",
+          "new_logic": "≥2 strong signals required",
+          "lesson": "SQL 迁移文件名不能当部署信号"
+        }
+      ],
+      "false_negatives_learned": [],
+      "test": "tests/unit_dual_verify/test_dual_verify.py::TestPrimaryClassifier::test_is_deployment_issue",
+      "last_modified": "2026-06-16T07:19:53Z"
+    },
+    {
+      "id": "extract_business_truths",
+      "type": "extractor",
+      "version": "v3",
+      "purpose": "从 issue body + 评论 提取业务真值",
+      "logic": {
+        "section_patterns": [
+          "## 业务真值",
+          "## 业务定义",
+          "## 业务规则",
+          "## 验收标准",
+          "## 验收用例",
+          "## 通过标准",
+          "## Acceptance Criteria",
+          "## 预期",
+          "## 正确行为",
+          "## 期望行为",
+          "## 修复方案",
+          "## 建议",
+          "## 排查路径",
+          "## 解决方案"
+        ],
+        "section_regex": "##.*?<SECTION>.*?(?=^##|\\Z)",
+        "use_dots_for_emoji": ".*? instead of \\s* (4-byte UTF-8 like 📋)",
+        "table_pattern": "^\\s*\\|(.+)\\|\\s*$",
+        "table_cols_to_extract": [
+          1,
+          2
+        ],
+        "comments": "read comments too, filter pure case_drafts"
+      },
+      "false_positives_learned": [],
+      "false_negatives_learned": [
+        {
+          "issue_id": 387,
+          "section_used": "业务定义 (table format)",
+          "lesson": "支持表格行 (col 2-3)"
+        },
+        {
+          "issue_id": 366,
+          "section_used": "📋 验收标准 (in comment, with emoji)",
+          "lesson": "读评论 + emoji 安全 regex"
+        },
+        {
+          "issue_id": 382,
+          "section_used": "预期",
+          "lesson": "Bug 类用'预期'段"
+        },
+        {
+          "issue_id": 389,
+          "section_used": "排查路径",
+          "lesson": "Bug 类用'排查路径'段"
+        }
+      ],
+      "tests": [
+        "tests/unit_dual_verify/test_dual_verify.py::TestReviewerBusinessTruths::test_extract_from_comments",
+        "tests/unit_dual_verify/test_dual_verify.py::TestReviewerBusinessTruths::test_extract_verification_section",
+        "tests/unit_dual_verify/test_dual_verify.py::TestReviewerBusinessTruths::test_dedup_truths"
+      ],
+      "last_modified": "2026-06-16T07:19:53Z"
+    },
+    {
+      "id": "merge_decision",
+      "type": "decision_matrix",
+      "version": "v2",
+      "purpose": "合并判定（主+复+云 三层）",
+      "matrix": [
+        {
+          "primary": "skip_deployment",
+          "reviewer": "any",
+          "decision": "hold",
+          "verdict": "⏸️ 部署类 issue — 等云验收"
+        },
+        {
+          "primary": "skip",
+          "reviewer": "pass_with_manual",
+          "decision": "block",
+          "verdict": "⚠️ 不一致"
+        },
+        {
+          "primary": "pass (≥90)",
+          "reviewer": "pass (≥90)",
+          "decision": "close",
+          "verdict": "✅ 双一致"
+        },
+        {
+          "primary": "pass",
+          "reviewer": "fail",
+          "decision": "block",
+          "verdict": "⚠️ 不一致"
+        },
+        {
+          "primary": "skip",
+          "reviewer": "skip",
+          "decision": "hold",
+          "verdict": "⏸️ 双跳过"
+        }
+      ],
+      "last_modified": "2026-06-16T07:19:53Z"
+    }
+  ],
+  "stats": {
+    "total_runs": 5,
+    "issues_verified": [
+      420,
+      389,
+      387,
+      382,
+      366
+    ],
+    "decision_distribution": {
+      "close": 0,
+      "hold": 1,
+      "block": 3
+    },
+    "low_truths_count_issues": [],
+    "last_scan": "2026-06-16T15:38:33.628461"
+  },
+  "next_self_update": "2026-06-16T19:38:33+08:00"
+}
