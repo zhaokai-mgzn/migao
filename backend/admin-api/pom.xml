@@ -24,6 +24,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
         <!-- 依赖版本 -->
+        <flyway.version>11.8.2</flyway.version>
         <mybatis-plus.version>3.5.8</mybatis-plus.version>
         <jjwt.version>0.12.6</jjwt.version>
         <bouncy-castle.version>1.78</bouncy-castle.version>
