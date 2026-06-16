@@ -1,0 +1,23 @@
+name: aftersales-flow
+description: 售后流程类需求
+red_flags: []
+
+business_truths:
+  - 售后状态流转：待处理 → 处理中 → 已完成/已关闭
+  - 售后列表按状态筛选
+  - 售后详情显示原订单/处理人/时间线
+
+primary_specs:
+  - tests/e2e/specs/after-sales/after-sales-list.spec.ts
+  - tests/e2e/specs/after-sales/after-sales-detail.spec.ts
+
+reviewer_asserts:
+  - DB: 验证售后状态流转
+  - API: GET /api/admin/aftersales/{id}
+
+confidence_required: 90%
+
+common_pitfalls:
+  - 状态机跳转非法
+  - 租户隔离
+  - 时间线顺序错

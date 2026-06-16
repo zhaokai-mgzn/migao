@@ -1,0 +1,25 @@
+name: dashboard-jump
+description: 看板跳转类需求（#387 红牌）
+red_flags: [387, 388, 389]
+
+business_truths:
+  - 含加工待发货 = 状态为待发货 且 含加工项
+  - 待补库存 = 库存 ≤ 100 的 SKU 数
+  - 卡片数字 = 真实数据
+  - 跳转 URL = /orders?category=含加工订单&status=待发货
+
+primary_specs:
+  - tests/e2e/specs/dashboard/dashboard.spec.ts
+  - tests/e2e/specs/orders/order-list.spec.ts
+
+reviewer_asserts:
+  - DB: SELECT COUNT(*) FROM orders WHERE status='pending_shipment' AND has_processing=true
+  - API: GET /api/admin/dashboard/processing-shipment-count
+  - 跳转URL: 解析 dashboard.spec.ts 中跳转链接
+
+confidence_required: 100%
+
+common_pitfalls:
+  - 用 mock 数据测试（必须真实 API）
+  - 跳转 URL 参数顺序错（先 status 后 category）
+  - 含加工订单数与待发货数混淆

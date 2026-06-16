@@ -1,0 +1,24 @@
+name: auth-sms
+description: 短信登录/注册类需求
+red_flags: [375]
+
+business_truths:
+  - 短信验证码 6 位数字，5 分钟有效
+  - 登录返回 token + 用户信息
+  - 注册需手机号 + 验证码 + 密码（可选）
+  - 已禁用密码登录入口（#375）
+
+primary_specs:
+  - tests/e2e/specs/auth/login-sms.spec.ts
+  - tests/e2e/specs/auth/register.spec.ts
+
+reviewer_asserts:
+  - API: POST /api/auth/sms-login
+  - API: 验证密码登录端点已禁用（返回 403/404）
+
+confidence_required: 100%
+
+common_pitfalls:
+  - 验证码未失效
+  - 密码登录入口没禁用
+  - token 过期时间错

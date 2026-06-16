@@ -1,0 +1,23 @@
+name: customer-list
+description: 客户列表/详情类需求
+red_flags: []
+
+business_truths:
+  - 客户列表支持按手机号/姓名搜索
+  - 客户详情显示订单数/消费总额
+  - 租户隔离：不同租户看不到彼此客户
+
+primary_specs:
+  - tests/e2e/specs/customers/customer-list.spec.ts
+  - tests/e2e/specs/customers/customer-detail.spec.ts
+
+reviewer_asserts:
+  - DB: 验证租户隔离（用另一个租户 ID 查不到）
+  - API: GET /api/admin/customers?keyword=*
+
+confidence_required: 90%
+
+common_pitfalls:
+  - 跨租户数据泄露
+  - 搜索关键词大小写敏感
+  - 客户详情订单数算错
