@@ -69,7 +69,7 @@ spring:
   # baseline-on-migrate=true 确保已有 DB 上首次启动不报错
   # V1/V2 迁移均使用 IF NOT EXISTS / ON CONFLICT DO NOTHING 保证幂等
   flyway:
-    enabled: true
+    enabled: false
     locations: classpath:db/migration
     baseline-on-migrate: true
 
