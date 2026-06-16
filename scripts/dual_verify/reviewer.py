@@ -47,13 +47,41 @@ def load_issue(issue_id: int) -> dict:
 
 
 def extract_business_truths(issue_body: str):
-    """提取业务真值（业务语言）"""
-    match = re.search(r"## 业务真值.*?(?=^##|\Z)", issue_body, re.MULTILINE | re.DOTALL)
-    if not match:
-        return []
-    section = match.group(0)
-    truths = re.findall(r"^\s*[-*]\s*(.+?)$", section, re.MULTILINE)
-    return [t.strip() for t in truths if t.strip() and not t.strip().startswith("<!--")]
+    """提取业务真值（业务语言）
+
+    支持：
+    - 多段标题（业务真值 / 业务定义 / 业务规则 / Acceptance Criteria）
+    - 列表项（`- ...` / `* ...`）
+    - 表格行（`| col1 | col2 |`，取关键列）
+    """
+    truth_patterns = [
+        r"## 业务真值.*?(?=^##|\Z)",
+        r"## 业务定义.*?(?=^##|\Z)",
+        r"## 业务规则.*?(?=^##|\Z)",
+        r"## Acceptance Criteria.*?(?=^##|\Z)",
+    ]
+    truths = []
+    for pattern in truth_patterns:
+        match = re.search(pattern, issue_body, re.MULTILINE | re.DOTALL)
+        if not match:
+            continue
+        section = match.group(0)
+        # 1) 列表项
+        for line in re.findall(r"^\s*[-*]\s*(.+?)$", section, re.MULTILINE):
+            line = line.strip()
+            if line and not line.startswith("<!--") and len(line) > 3:
+                truths.append(line)
+        # 2) 表格行（| ... | ... |）— 允许行首有缩进空格
+        for row in re.findall(r"^\s*\|(.+)\|\s*$", section, re.MULTILINE):
+            cells = [c.strip() for c in row.split("|") if c.strip()]
+            # 过滤表头分隔行 (---)
+            cells = [c for c in cells if c and not re.match(r"^[-:]+$", c)]
+            if len(cells) >= 2:
+                # 取第 2-3 列（业务口径 / 期望实现）
+                key = " | ".join(cells[1:3]) if len(cells) >= 3 else cells[1]
+                if key and len(key) > 3:
+                    truths.append(key)
+    return truths
 
 
 def db_query(sql: str, env: dict) -> "tuple[int, str]":

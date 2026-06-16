@@ -20,8 +20,18 @@ except ImportError:
     print("缺少 PyYAML: pip install pyyaml", file=sys.stderr)
     sys.exit(1)
 
+# 复用 reviewer 的提取函数（避免重复实现 + 行为漂移）
+import importlib.util
+_spec = importlib.util.spec_from_file_location(
+    "dual_verify_reviewer",
+    Path(__file__).resolve().parent / "reviewer.py"
+)
+_reviewer_mod = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_reviewer_mod)
+extract_business_truths = _reviewer_mod.extract_business_truths
 
-TEMPLATE_DIR = Path(__file__).parent.parent.parent / "docs/verification-templates"
+
+TEMPLATE_DIR = Path(__file__).resolve().parent.parent.parent / "docs/verification-templates"
 
 
 def match_template(issue_title: str, issue_body: str) -> Optional[str]:
@@ -51,15 +61,7 @@ def load_template(name: str) -> Optional[dict]:
         return yaml.safe_load(f)
 
 
-def extract_business_truths(issue_body: str) -> "list[str]":
-    """从 issue body 提取业务真值（业务语言）"""
-    match = re.search(r"## 业务真值.*?(?=^##|\Z)", issue_body, re.MULTILINE | re.DOTALL)
-    if not match:
-        return []
-    section = match.group(0)
-    # 提取 - 开头的条目
-    truths = re.findall(r"^\s*[-*]\s*(.+?)$", section, re.MULTILINE)
-    return [t.strip() for t in truths if t.strip() and not t.strip().startswith("<!--")]
+# extract_business_truths 已移到 reviewer.py 复用
 
 
 def draft_l2_cases(business_truths: "list[str]", template: Optional[dict]) -> str:
