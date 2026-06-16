@@ -160,6 +160,30 @@ class TestMergeJudge:
         result = merge.judge(primary_r, reviewer_r)
         assert result["decision"] == "hold"
 
+    def test_three_consistent_pass_close(self):
+        primary_r = {"status": "pass", "confidence": 100}
+        reviewer_r = {"status": "pass", "confidence": 100}
+        cloud_r = {"verdict": "pass"}
+        result = merge.judge(primary_r, reviewer_r, cloud_r)
+        assert result["decision"] == "close"
+        assert "三一致" in result["verdict"]
+
+    def test_cloud_fail_blocks(self):
+        primary_r = {"status": "pass", "confidence": 100}
+        reviewer_r = {"status": "pass", "confidence": 100}
+        cloud_r = {"verdict": "fail"}
+        result = merge.judge(primary_r, reviewer_r, cloud_r)
+        assert result["decision"] == "block"
+        assert "云验收" in result["verdict"]
+
+    def test_cloud_pending_holds(self):
+        primary_r = {"status": "pass", "confidence": 100}
+        reviewer_r = {"status": "pass", "confidence": 100}
+        cloud_r = {"verdict": "skip"}
+        result = merge.judge(primary_r, reviewer_r, cloud_r)
+        assert result["decision"] == "hold"
+        assert "云未验收" in result["verdict"]
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
