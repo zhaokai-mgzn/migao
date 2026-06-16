@@ -6,5 +6,7 @@ springdoc:
 
 spring:
   flyway:
-    # 生产环境不开启 validate-on-migrate（迁移 SQL 迭代时 checksum 会变）
-    # schema drift 由 code review + CI 保障
+    # SAE 禁用 Flyway：PostgreSQL 18 不被 Flyway 11.8.2 支持
+    # db/migration 目录无迁移文件，禁用 Flyway 无风险
+    # 如需重新启用，先确认 Flyway 版本支持 PG 18
+    enabled: false
