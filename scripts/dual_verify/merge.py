@@ -25,18 +25,22 @@ def load_result(issue_id: int, kind: str):
         return json.load(f)
 
 
-def judge(primary: dict, reviewer: dict) -> dict:
-    """比对两个验收结果"""
+def judge(primary: dict, reviewer: dict, cloud: dict = None) -> dict:
+    """比对两个验收结果（+ 可选云验收）"""
     p_status = primary.get("status", "skip")
     r_status = reviewer.get("status", "skip")
     p_conf = primary.get("confidence", 0)
     r_conf = reviewer.get("confidence", 0)
+
+    c_status = cloud.get("status", "skip") if cloud else "skip"
+    c_verdict = cloud.get("verdict", "skip") if cloud else "skip"
 
     # 一致性判定
     p_pass = p_status in ("pass", "pass_with_manual")
     r_pass = r_status in ("pass", "pass_with_manual")
     p_fail = p_status == "fail"
     r_fail = r_status == "fail"
+    c_pass = c_verdict == "pass"
 
     conflicts = []
     if p_pass and not r_pass:
@@ -47,11 +51,27 @@ def judge(primary: dict, reviewer: dict) -> dict:
         conflicts.append("置信度差异大（主高复低）")
     if r_conf >= 90 and p_conf < 60:
         conflicts.append("置信度差异大（复高主低）")
+    if cloud and c_verdict == "fail":
+        conflicts.append("云验收 fail（真实业务不通过）")
 
     # 决策
-    if not conflicts and p_pass and r_pass and p_conf >= 90 and r_conf >= 90:
-        decision = "close"
-        verdict = "✅ 双一致 + 置信度达标"
+    # 云验收 fail 直接 block（即使本地过）
+    if cloud and c_verdict == "fail":
+        decision = "block"
+        verdict = f"🔴 云验收 fail（真实业务不通过）"
+    elif not conflicts and p_pass and r_pass and p_conf >= 90 and r_conf >= 90:
+        if cloud and c_verdict == "pass":
+            decision = "close"
+            verdict = "✅ 主+复+云三一致 + 置信度达标"
+        elif cloud and c_verdict == "skip":
+            decision = "hold"
+            verdict = "⏸️ 本地通过 + 云未验收（等研发 AI 跑云验收）"
+        elif cloud and c_verdict == "manual_review":
+            decision = "hold"
+            verdict = "👀 云验收 manual_review（等人工）"
+        else:
+            decision = "close"
+            verdict = "✅ 双一致 + 置信度达标（无云验收结果）"
     elif not conflicts and p_fail and r_fail:
         decision = "hold"
         verdict = "❌ 双一致 + 都失败，留研发修"
@@ -73,7 +93,8 @@ def judge(primary: dict, reviewer: dict) -> dict:
         "verdict": verdict,
         "conflicts": conflicts,
         "primary": {"status": p_status, "confidence": p_conf},
-        "reviewer": {"status": r_status, "confidence": r_conf}
+        "reviewer": {"status": r_status, "confidence": r_conf},
+        "cloud": {"verdict": c_verdict, "status": c_status} if cloud else None
     }
 
 
@@ -139,13 +160,14 @@ def act_on_decision(issue_id: int, decision: str) -> str:
 def merge(issue_id: int, dry_run: bool = False) -> dict:
     primary = load_result(issue_id, "primary")
     reviewer = load_result(issue_id, "reviewer")
+    cloud = load_result(issue_id, "cloud")
     if not primary or not reviewer:
         return {
             "issue_id": issue_id,
-            "error": f"缺少结果：primary={bool(primary)} reviewer={bool(reviewer)}",
+            "error": f"缺少结果：primary={bool(primary)} reviewer={bool(reviewer)} cloud={bool(cloud)}",
             "hint": "需先跑 verify-primary 和 verify-reviewer"
         }
-    judgment = judge(primary, reviewer)
+    judgment = judge(primary, reviewer, cloud)
     result = {
         "issue_id": issue_id,
         **judgment
