@@ -20,12 +20,11 @@ class TestPerformanceBaseline:
     """性能基线测试"""
 
     def test_login_latency(self, admin_client: SmokeTestClient, config: EnvConfig):
-        """登录接口响应时间 < 500ms"""
+        """SMS 登录接口响应时间 < 800ms"""
         def do_login():
-            return admin_client.post("/api/auth/admin/login", json={
-                "username": config.admin_username,
-                "password": config.admin_password,
-                "tenantId": config.tenant_id,
+            return admin_client.post("/api/auth/sms/login", json={
+                "phone": config.admin_phone,
+                "code": config.admin_sms_code,
             })
 
         resp, elapsed_ms = measure_time(do_login)
