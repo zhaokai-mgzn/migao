@@ -61,10 +61,15 @@ class TestPrimaryClassifier:
         assert primary.classify("foo.txt") == "unknown"
 
     def test_is_deployment_issue(self):
+        # 强信号（≥2 命中）
         assert primary.is_deployment_issue("Flyway 启动崩溃 SAE 实例 CrashLoop") is True
-        assert primary.is_deployment_issue("V1__add_permission.sql 迁移失败") is True
+        assert primary.is_deployment_issue("terraform 部署失败") is True
+        # 单关键词不算（避免误判）
+        assert primary.is_deployment_issue("V1__add_permission.sql 迁移失败") is False
         assert primary.is_deployment_issue("admin-api 返回 500") is False
         assert primary.is_deployment_issue("") is False
+        # [deploy] tag 强匹配
+        assert primary.is_deployment_issue("[deploy] 部署失败") is True
 
 
 class TestReviewerBusinessTruths:
