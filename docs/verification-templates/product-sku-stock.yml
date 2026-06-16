@@ -1,0 +1,22 @@
+name: product-sku-stock
+description: SKU 库存汇总类需求（#382 红牌）
+red_flags: [382]
+
+business_truths:
+  - 商品库存 = 所有 SKU 库存求和
+  - 低库存 = 库存 ≤ 阈值（默认 100）
+  - 库存数字 = 实时数据
+
+primary_specs:
+  - tests/e2e/specs/products/product-list.spec.ts
+
+reviewer_asserts:
+  - DB: SELECT SUM(stock) FROM sku WHERE product_id=X
+  - API: GET /api/admin/products/{id}
+
+confidence_required: 100%
+
+common_pitfalls:
+  - 库存聚合按商品而非 SKU 汇总
+  - 默认阈值 100 写死
+  - 跨 SKU 库存重复计算

@@ -1,0 +1,24 @@
+name: employee-role
+description: 员工/角色权限类需求
+red_flags: [384, 385]
+
+business_truths:
+  - 员工列表显示手机号/岗位/权限
+  - 岗位 = 角色名（迁移自 role）
+  - 权限列 = 权限集合（全权限时折叠为"全部权限"）
+  - 租户隔离
+
+primary_specs:
+  - tests/e2e/specs/admin/employees.spec.ts
+  - tests/e2e/specs/admin/roles.spec.ts
+
+reviewer_asserts:
+  - DB: 验证员工-角色-权限三表关联
+  - API: GET /api/admin/employees
+
+confidence_required: 90%
+
+common_pitfalls:
+  - 权限列展示混乱
+  - 岗位列显示 "-" 而非实际值
+  - 跨租户
