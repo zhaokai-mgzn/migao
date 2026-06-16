@@ -35,14 +35,13 @@ def ai_client(config: EnvConfig) -> SmokeTestClient:
 @pytest.fixture(scope="session")
 def auth_token(admin_client: SmokeTestClient, config: EnvConfig) -> Dict[str, str]:
     """获取认证 Token（session 级别复用）"""
-    resp = admin_client.post("/api/auth/admin/login", json={
-        "username": config.admin_username,
-        "password": config.admin_password,
-        "tenantId": config.tenant_id,
+    resp = admin_client.post("/api/auth/sms/login", json={
+        "phone": config.admin_phone,
+        "code": config.admin_sms_code,
     })
     if resp.status_code != 200:
         pytest.fail(
-            f"登录失败: status={resp.status_code}, body={resp.text[:300]} - "
+            f"SMS 登录失败: status={resp.status_code}, body={resp.text[:300]} - "
             f"P0 冒烟测试要求登录链路必须可用，禁止静默跳过"
         )
 
@@ -52,7 +51,7 @@ def auth_token(admin_client: SmokeTestClient, config: EnvConfig) -> Dict[str, st
     refresh_token = token_data.get("refreshToken", token_data.get("refresh_token", ""))
 
     if not access_token:
-        pytest.fail("登录响应缺少 access token，认证链路异常")
+        pytest.fail("SMS 登录响应缺少 access token，认证链路异常")
 
     admin_client.set_token(access_token, refresh_token)
     return {"access_token": access_token, "refresh_token": refresh_token}

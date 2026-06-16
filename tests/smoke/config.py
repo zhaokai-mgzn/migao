@@ -17,8 +17,8 @@ class EnvConfig:
     name: str
     admin_api_url: str
     ai_agent_url: str
-    admin_username: str
-    admin_password: str
+    admin_phone: str
+    admin_sms_code: str
     tenant_id: int
     service_token: str
 
@@ -36,8 +36,8 @@ def get_config() -> EnvConfig:
             name="local",
             admin_api_url=admin_api_url or "http://localhost:8080",
             ai_agent_url=ai_agent_url or "http://localhost:8000",
-            admin_username=os.getenv("ADMIN_USERNAME", "13800138000"),
-            admin_password=os.getenv("ADMIN_PASSWORD", "admin123"),
+            admin_phone=os.getenv("ADMIN_PHONE", "13800138000"),
+            admin_sms_code=os.getenv("ADMIN_SMS_CODE", "123456"),
             tenant_id=int(os.getenv("TENANT_ID", "1")),
             service_token=os.getenv("SERVICE_TOKEN", "test-service-token"),
         ),
@@ -45,8 +45,8 @@ def get_config() -> EnvConfig:
             name="staging",
             admin_api_url=admin_api_url or "https://api.migaozn.com",
             ai_agent_url=ai_agent_url or "https://ai-api.migaozn.com",
-            admin_username=os.getenv("ADMIN_USERNAME", "13800138000"),
-            admin_password=os.getenv("ADMIN_PASSWORD", ""),
+            admin_phone=os.getenv("ADMIN_PHONE", "13800138000"),
+            admin_sms_code=os.getenv("ADMIN_SMS_CODE", "123456"),
             tenant_id=int(os.getenv("TENANT_ID", "1")),
             service_token=os.getenv("SERVICE_TOKEN", ""),
         ),
@@ -54,8 +54,8 @@ def get_config() -> EnvConfig:
             name="production",
             admin_api_url=admin_api_url or "https://api.migaozn.com",
             ai_agent_url=ai_agent_url or "https://ai-api.migaozn.com",
-            admin_username=os.getenv("ADMIN_USERNAME", "13800138000"),
-            admin_password=os.getenv("ADMIN_PASSWORD", ""),
+            admin_phone=os.getenv("ADMIN_PHONE", "13800138000"),
+            admin_sms_code=os.getenv("ADMIN_SMS_CODE", "123456"),
             tenant_id=int(os.getenv("TENANT_ID", "1")),
             service_token=os.getenv("SERVICE_TOKEN", ""),
         ),

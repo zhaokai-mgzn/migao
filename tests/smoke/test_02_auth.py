@@ -16,11 +16,10 @@ class TestAuthLogin:
     """登录认证测试"""
 
     def test_login_success(self, admin_client: SmokeTestClient, config: EnvConfig):
-        """管理员登录获取 JWT Token"""
-        resp = admin_client.post("/api/auth/admin/login", json={
-            "username": config.admin_username,
-            "password": config.admin_password,
-            "tenantId": config.tenant_id,
+        """管理员 SMS 验证码登录获取 JWT Token"""
+        resp = admin_client.post("/api/auth/sms/login", json={
+            "phone": config.admin_phone,
+            "code": config.admin_sms_code,
         })
         data = assert_success_response(resp)
         token_data = data.get("data", data)
@@ -34,12 +33,11 @@ class TestAuthLogin:
         refresh_token = token_data.get("refreshToken", token_data.get("refresh_token"))
         assert refresh_token, "No refreshToken in response"
 
-    def test_login_wrong_password(self, admin_client: SmokeTestClient, config: EnvConfig):
-        """错误密码登录失败"""
-        resp = admin_client.post("/api/auth/admin/login", json={
-            "username": config.admin_username,
-            "password": "wrong_password_12345",
-            "tenantId": config.tenant_id,
+    def test_login_wrong_code(self, admin_client: SmokeTestClient, config: EnvConfig):
+        """错误验证码登录失败"""
+        resp = admin_client.post("/api/auth/sms/login", json={
+            "phone": config.admin_phone,
+            "code": "000000",
         })
         assert resp.status_code in (400, 401, 403), (
             f"Expected auth error, got {resp.status_code}"
@@ -47,9 +45,25 @@ class TestAuthLogin:
 
     def test_login_missing_fields(self, admin_client: SmokeTestClient):
         """缺少必填字段登录失败"""
-        resp = admin_client.post("/api/auth/admin/login", json={})
+        resp = admin_client.post("/api/auth/sms/login", json={})
         assert resp.status_code in (400, 422), (
             f"Expected validation error, got {resp.status_code}"
+        )
+
+    def test_password_login_disabled(self, admin_client: SmokeTestClient):
+        """#375 密码登录已禁用，应返回错误"""
+        resp = admin_client.post("/api/auth/admin/login", json={
+            "username": "admin",
+            "password": "any_password",
+            "tenantId": 1,
+        })
+        assert resp.status_code in (400, 401, 403), (
+            f"Password login should be disabled, got {resp.status_code}"
+        )
+        body = resp.json()
+        msg = str(body).lower()
+        assert "禁用" in msg or "disabled" in msg or "短信" in msg or "sms" in msg, (
+            f"Should mention password login disabled, got: {resp.text[:200]}"
         )
 
 
