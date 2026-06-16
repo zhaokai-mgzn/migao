@@ -1,12 +1,10 @@
 package com.migao.admin.controller;
 
-import com.migao.admin.config.TenantContext;
-import com.migao.admin.config.GlobalExceptionHandler;
 import com.migao.admin.dto.PageResponse;
 import com.migao.admin.entity.CustomerProfile;
 import com.migao.admin.entity.CustomerTag;
+import com.migao.admin.exception.BusinessException;
 import com.migao.admin.service.CustomerService;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -19,9 +17,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
-import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -36,10 +32,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
 @DisplayName("CustomerController 客户管理测试")
-class CustomerControllerTest {
+class CustomerControllerTest extends BaseControllerTest {
 
     private MockMvc mockMvc;
-    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Mock
     private CustomerService customerService;
@@ -49,15 +44,14 @@ class CustomerControllerTest {
 
     @BeforeEach
     void setUp() {
-        TenantContext.setTenantId(1L);
-        mockMvc = MockMvcBuilders.standaloneSetup(customerController)
-                .setControllerAdvice(new GlobalExceptionHandler())
-                .build();
+        super.baseSetUp();
+        mockMvc = buildMockMvc(customerController);
     }
 
+    @Override
     @AfterEach
-    void tearDown() {
-        TenantContext.clear();
+    void baseTearDown() {
+        super.baseTearDown();
     }
 
     @Nested
@@ -207,6 +201,64 @@ class CustomerControllerTest {
             mockMvc.perform(delete("/api/admin/customer-tags/tag-1"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.success").value(true));
+        }
+    }
+
+    // ==================== 错误路径 ====================
+
+    @Nested
+    @DisplayName("错误路径")
+    class ErrorPaths {
+
+        @Test
+        @DisplayName("查询不存在的客户 -> 404")
+        void customerNotFound() throws Exception {
+            when(customerService.getCustomerDetail("nonexistent"))
+                    .thenThrow(new BusinessException("NOT_FOUND", "客户不存在", 404));
+
+            mockMvc.perform(get("/api/admin/customers/nonexistent"))
+                    .andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.error.code").value("NOT_FOUND"));
+        }
+
+        @Test
+        @DisplayName("更新不存在的客户 -> 404")
+        void updateNotFound() throws Exception {
+            when(customerService.updateCustomer(eq("nonexistent"), any(CustomerProfile.class)))
+                    .thenThrow(new BusinessException("NOT_FOUND", "客户不存在", 404));
+
+            mockMvc.perform(put("/api/admin/customers/nonexistent")
+                            .contentType("application/json")
+                            .content("{\"remark\":\"test\"}"))
+                    .andExpect(status().isNotFound());
+        }
+    }
+
+    // ==================== 租户隔离 ====================
+
+    @Nested
+    @DisplayName("租户隔离验证")
+    class TenantIsolation {
+
+        @Test
+        @DisplayName("列表查询携带租户 ID")
+        void listPassesTenantId() throws Exception {
+            when(customerService.getCustomerPage(anyLong(), anyLong(), isNull(), isNull(), isNull(), eq(TEST_TENANT_ID)))
+                    .thenReturn(new PageResponse<>());
+
+            mockMvc.perform(get("/api/admin/customers"));
+
+            verify(customerService).getCustomerPage(anyLong(), anyLong(), isNull(), isNull(), isNull(), eq(TEST_TENANT_ID));
+        }
+
+        @Test
+        @DisplayName("标签列表携带租户 ID")
+        void tagsPassesTenantId() throws Exception {
+            when(customerService.getCustomerTags(eq(TEST_TENANT_ID))).thenReturn(List.of());
+
+            mockMvc.perform(get("/api/admin/customer-tags"));
+
+            verify(customerService).getCustomerTags(eq(TEST_TENANT_ID));
         }
     }
 }
