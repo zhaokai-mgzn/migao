@@ -60,6 +60,12 @@ class TestPrimaryClassifier:
     def test_unknown(self):
         assert primary.classify("foo.txt") == "unknown"
 
+    def test_is_deployment_issue(self):
+        assert primary.is_deployment_issue("Flyway 启动崩溃 SAE 实例 CrashLoop") is True
+        assert primary.is_deployment_issue("V1__add_permission.sql 迁移失败") is True
+        assert primary.is_deployment_issue("admin-api 返回 500") is False
+        assert primary.is_deployment_issue("") is False
+
 
 class TestReviewerBusinessTruths:
     def test_extract_truths(self):
@@ -123,6 +129,35 @@ class TestReviewerBusinessTruths:
         truths = reviewer.extract_business_truths(body)
         # 跨段不去重（让用户看完整）
         assert len(truths) >= 2
+
+    def test_extract_from_comments(self):
+        """#366 实战：业务真值在评论里（军师反推）"""
+        body = """
+        ## 现象
+        SAE 实例崩溃
+
+        ## 临时方案
+        禁用 Flyway
+        """
+        comments = [
+            {"body": "## 📋 验收标准\n\n- Spring Boot + Flyway 启动**不崩溃**\n- 实例稳定运行"},
+            {"body": "其他不相关评论"},
+        ]
+        truths = reviewer.extract_business_truths(body, comments)
+        # 应该从评论里抓到业务真值
+        assert len(truths) >= 1
+        assert any("崩溃" in t or "稳定" in t for t in truths)
+
+    def test_extract_verification_section(self):
+        """#366 实战：issue body 用'验收标准'段（不是'业务真值'）"""
+        body = """
+        ## 验收标准
+        - admin-api 启动成功
+        - 数据库 schema 正确
+        """
+        truths = reviewer.extract_business_truths(body)
+        assert len(truths) == 2
+        assert "admin-api 启动成功" in truths
 
 
 class TestReviewerAssertInference:
@@ -220,6 +255,14 @@ class TestMergeJudge:
         result = merge.judge(primary_r, reviewer_r, cloud_r)
         assert result["decision"] == "hold"
         assert "云未验收" in result["verdict"]
+
+    def test_deployment_issue_holds(self):
+        """#366 实战：部署类 issue skip_deployment → hold 等云验收"""
+        primary_r = {"status": "skip_deployment", "confidence": 0}
+        reviewer_r = {"status": "manual_review", "confidence": 50}
+        result = merge.judge(primary_r, reviewer_r)
+        assert result["decision"] == "hold"
+        assert "部署" in result["verdict"]
 
 
 if __name__ == "__main__":
