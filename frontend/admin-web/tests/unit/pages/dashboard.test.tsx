@@ -67,8 +67,26 @@ function mockApiSuccess() {
       ],
     },
   })
-  mockRequestGet.mockResolvedValue({
-    data: { data: { confirmedCount: 8, producingCount: 3 } },
+  // dashboard 拆 3 端点：待发货 / 含加工待发货 / 低库存 SKU
+  // 按 URL 分发返回
+  mockRequestGet.mockImplementation((url: string) => {
+    if (url === '/api/admin/dashboard/pending-shipment-count') {
+      return Promise.resolve({ data: { data: 8 } })
+    }
+    if (url === '/api/admin/dashboard/processing-shipment-count') {
+      return Promise.resolve({ data: { data: 3 } })
+    }
+    if (url.startsWith('/api/admin/products/low-stock-by-color')) {
+      return Promise.resolve({
+        data: {
+          data: [
+            { skuId: 's1', productName: '2699色卡', color: '米白', stock: 50 },
+            { skuId: 's2', productName: '窗帘轨道', color: '咖啡', stock: 30 },
+          ],
+        },
+      })
+    }
+    return Promise.resolve({ data: { data: 0 } })
   })
 }
 
@@ -130,20 +148,34 @@ describe('DashboardPage', () => {
     })
   })
 
-  it('should fetch order statistics for pending counts', async () => {
+  it('should fetch dashboard pending counts via 3 separate endpoints', async () => {
     render(<DashboardPage />)
     await waitFor(() => {
-      expect(mockRequestGet).toHaveBeenCalledWith('/api/admin/orders/statistics')
+      expect(mockRequestGet).toHaveBeenCalledWith('/api/admin/dashboard/pending-shipment-count')
+      expect(mockRequestGet).toHaveBeenCalledWith('/api/admin/dashboard/processing-shipment-count')
+      expect(mockRequestGet).toHaveBeenCalledWith(
+        '/api/admin/products/low-stock-by-color',
+        expect.objectContaining({ params: expect.objectContaining({ threshold: 100, limit: 200 }) }),
+      )
     })
   })
 
   it('should display pending shipment counts', async () => {
-    render(<DashboardPage />)
+    const { container } = render(<DashboardPage />)
     await waitFor(() => {
-      // 待发货 = confirmedCount(8) + producingCount(3) = 11
-      expect(screen.getByText('11')).toBeInTheDocument()
-      // 含加工待发货 = producingCount(3) = 3
-      expect(screen.getByText('3')).toBeInTheDocument()
+      // 待发货订单 = 8 — 定位到 "待发货订单" 标题后的 count 节点
+      const card1 = container.querySelector('p:has(+ p)') // 不够精确
+      // 改用更直接的：找到所有 PendingCard 容器，断言 count 数字
+      // PendingCard 渲染：<p className="text-xs">title</p><p className="text-xl">count</p>
+      const allTitles = Array.from(container.querySelectorAll('p.text-xs'))
+      const findCount = (title: string) => {
+        const titleEl = allTitles.find((el) => el.textContent === title)
+        return titleEl?.nextElementSibling?.textContent
+      }
+      // fmtNum 不会改小数字（< 1000 直接返回原值），所以 '8' / '3' / '2'
+      expect(findCount('待发货订单')).toContain('8')
+      expect(findCount('含加工待发货订单')).toContain('3')
+      expect(findCount('待补库存商品')).toContain('2')
     })
   })
 
