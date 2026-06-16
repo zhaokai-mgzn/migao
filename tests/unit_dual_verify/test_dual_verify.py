@@ -87,6 +87,43 @@ class TestReviewerBusinessTruths:
         truths = reviewer.extract_business_truths("没有真值段")
         assert truths == []
 
+    def test_extract_from_table(self):
+        # 实战发现：#387 业务真值在表格里
+        body = """
+        ## 业务定义（娜总 17:25 明确）
+
+        | 卡片 | 业务口径 | 条件数 |
+        |------|----------|--------|
+        | **待发货订单** | 用户成功支付后还没有发货的订单 | 1 个：status = 待发货 |
+        | **含加工待发货订单** | 待发货 + 含加工项 | 2 个：status = 待发货 AND has_processing = true |
+        """
+        truths = reviewer.extract_business_truths(body)
+        # 期望：抓到表格里的"业务口径"列
+        assert len(truths) >= 1
+        assert any("用户成功支付" in t for t in truths)
+
+    def test_extract_acceptance_criteria(self):
+        body = """
+        ## Acceptance Criteria
+
+        - 含加工待发货 = status=待发货 AND has_processing=true
+        - 跳转 URL 必须 = /orders?category=含加工订单
+        """
+        truths = reviewer.extract_business_truths(body)
+        assert len(truths) == 2
+        assert any("含加工待发货" in t for t in truths)
+
+    def test_dedup_truths(self):
+        body = """
+        ## 业务真值
+        - 含加工待发货 = A AND B
+        ## 业务定义
+        - 含加工待发货 = A AND B
+        """
+        truths = reviewer.extract_business_truths(body)
+        # 跨段不去重（让用户看完整）
+        assert len(truths) >= 2
+
 
 class TestReviewerAssertInference:
     def test_infer_processing(self):
