@@ -2,6 +2,19 @@
 
 > 本文件在每次 Claude Code (cc) 启动时自动加载，定义项目规范和操作约束。
 
+## 🎯 AI 验收体系 — 项目生命线（2026-06-16 凯总明确）
+
+**所有交付（人/AI 员工/Claude Code/军师）必须遵守**：
+1. 任何功能/Bug 先开 issue（用 `.github/ISSUE_TEMPLATE/feature.md`）
+2. 业务真值用**业务语言**，不带 SQL/API
+3. 军师反推 case 草稿 → 研发 review + 改/删/补
+4. PR 合 main → 双验收自动跑（主+复，5 层兜底）
+5. 双一致 + 100% → 自动 close
+6. ❌ 禁止：跳过 issue / 技术性业务真值 / 拒绝 review 草稿 / 人为验收
+
+**禁止自己写业务 case 终稿**。**禁止跳过 issue 直接写代码**。
+详见 [`docs/wiki/Development.md`](docs/wiki/Development.md) "AI 验收体系" 段 + issue #450 v3.1。
+
 ## 项目 Wiki
 
 > **开发前先查 [`docs/wiki/INDEX.md`](docs/wiki/INDEX.md)** — 按场景索引：架构、AI Agent、部署、开发规范。

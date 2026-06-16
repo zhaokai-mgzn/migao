@@ -43,3 +43,45 @@ Commit: `feat(frontend): 描述` / `fix(backend): 描述` / `test:` / `refactor:
 - JWT RS256 非对称签名
 - 所有业务表有 tenant_id，查询必须过滤（从 JWT 取）
 - CORS 仅允许已知域名
+
+## 🎯 AI 验收体系（项目生命线，2026-06-16 凯总明确）
+
+**所有交付（人/AI 员工/军师）必须遵守的铁律**：
+
+### 1. 任何功能/Bug 先开 issue
+- 用 `.github/ISSUE_TEMPLATE/feature.md` 或 `bug.md`
+- 自动加 `needs-verification` label
+
+### 2. 业务真值用业务语言（凯总 11:54 明确）
+- ✅ "含加工待发货 = 状态为待发货 且 含加工项"
+- ❌ "SELECT COUNT(*) ..."（技术）
+
+### 3. 军师反推 case 草稿 → 研发 review
+- 提交 issue 后 1-5 分钟，军师自动评论 L2/L3/L4 草稿
+- 研发可改/删/补，**草稿不是命令**
+
+### 4. PR 合 main → 双验收自动跑
+- 主验收：跑 spec + L2/L3 业务断言
+- 复核验收：DB/API 独立断言（**不看 spec**，避免合谋）
+- 双一致 + 100% → 自动 close
+- 不通过 → 留研发/凯总
+
+### 5. 5 层兜底
+1. 置信度评分
+2. 双验收一致性
+3. 业务真值独立断言
+4. 凯总/娜总抽样
+5. commit hash 追溯
+
+### 6. 禁止
+- ❌ 跳过 issue 直接写代码
+- ❌ 业务真值用技术语言
+- ❌ 研发拒绝 review 草稿
+- ❌ 凯总/娜总人为验收（除非 block/override）
+- ❌ 军师写业务 case 终稿
+
+### 参考
+- 模板库：`docs/verification-templates/`
+- 使用手册：`docs/verification-handbook.md`
+- 研发流程：`docs/case-review-workflow.md`
+- 详情见 issue #450 v3.1
