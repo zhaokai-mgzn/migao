@@ -16,8 +16,9 @@ import sys
 import time
 from pathlib import Path
 
-QA_RESULT_ROOT = Path("/opt/qa-results")
-ENV_PATH = Path("/opt/youke/backend/admin-api/.env")
+QA_RESULT_ROOT = Path(os.getenv("QA_RESULT_ROOT", "/opt/qa-results"))
+PROJECT_ROOT = Path(os.getenv("PROJECT_ROOT", "/opt/youke")).resolve()
+ENV_PATH = PROJECT_ROOT / "backend/admin-api/.env"
 
 
 def load_env() -> dict:
@@ -38,7 +39,7 @@ def load_env() -> dict:
 def load_issue(issue_id: int) -> dict:
     p = subprocess.Popen(
         ["gh", "issue", "view", str(issue_id), "--json", "title,body,comments"],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd="/opt/youke"
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=str(PROJECT_ROOT)
     )
     out, err = p.communicate()
     if p.returncode != 0:
@@ -76,6 +77,30 @@ def extract_business_truths(issue_body: str, comments: "list[dict]" = None):
         r"##.*?解决方案.*?(?=^##|\Z)",
     ]
     full_text = issue_body
+
+    # === 优先级 0: 解析 CONTRACT_JSON 机读契约 ===
+    contract_match = re.search(
+        r"```json\s*CONTRACT_JSON\s*\n(.*?)```",
+        full_text, re.DOTALL
+    )
+    if contract_match:
+        try:
+            contract = json.loads(contract_match.group(1))
+            # 提取 specs / verify / truths
+            for spec in contract.get("specs", []):
+                if isinstance(spec, str):
+                    full_text += f"\n- {spec}"
+            for truth in contract.get("truths", []) or contract.get("业务真值", []):
+                if isinstance(truth, str):
+                    full_text += f"\n- {truth}"
+            # 也支持 verify.specs 字段
+            verify = contract.get("verify", {})
+            for spec in verify.get("specs", []):
+                if isinstance(spec, str):
+                    full_text += f"\n- {spec}"
+        except (json.JSONDecodeError, TypeError):
+            pass
+
     # 也读评论（军师反推的草稿通常在评论里）
     if comments:
         for c in comments:

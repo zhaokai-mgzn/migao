@@ -9,6 +9,7 @@ Case 草稿反推脚本（#450b）
     python case_draft.py --dry-run <issue_number>
 """
 import argparse
+import os
 import re
 import sys
 from pathlib import Path
@@ -30,6 +31,8 @@ _reviewer_mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_reviewer_mod)
 extract_business_truths = _reviewer_mod.extract_business_truths
 
+
+PROJECT_ROOT = Path(os.getenv("PROJECT_ROOT", "/opt/youke")).resolve()
 
 TEMPLATE_DIR = Path(__file__).resolve().parent.parent.parent / "docs/verification-templates"
 
@@ -127,7 +130,7 @@ def generate_draft(issue_number: int, dry_run: bool = False) -> str:
     import subprocess
     p = subprocess.Popen(
         ["gh", "issue", "view", str(issue_number), "--json", "title,body"],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd="/opt/youke"
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=str(PROJECT_ROOT)
     )
     out, err = p.communicate()
     out_text = out.decode("utf-8", errors="replace")
@@ -174,6 +177,23 @@ def generate_draft(issue_number: int, dry_run: bool = False) -> str:
     output.append("- ➕ 补 case → 直接加进 issue")
     output.append("")
     output.append("—— 军师（自动反推，请研发 review）")
+    output.append("")
+
+    # 机读契约块（primary/reviewer 读取）
+    import json as _json
+    draft_specs = []
+    if template and "primary_specs" in template:
+        draft_specs = template["primary_specs"]
+    draft_contract = {
+        "issue": issue_number,
+        "template": template_name,
+        "truths": truths,
+        "specs": draft_specs,
+        "drafted_at": __import__("time").strftime("%Y-%m-%dT%H:%M:%S"),
+    }
+    output.append("```json CONTRACT_JSON")
+    output.append(_json.dumps(draft_contract, ensure_ascii=False, indent=2))
+    output.append("```")
 
     draft = "\n".join(output)
     if dry_run:
@@ -181,7 +201,7 @@ def generate_draft(issue_number: int, dry_run: bool = False) -> str:
     # 实际发到 issue
     p = subprocess.Popen(
         ["gh", "issue", "comment", str(issue_number), "--body", draft],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd="/opt/youke"
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=str(PROJECT_ROOT)
     )
     out, err = p.communicate()
     err_text = err.decode("utf-8", errors="replace")

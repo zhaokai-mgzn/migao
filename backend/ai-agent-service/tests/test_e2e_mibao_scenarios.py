@@ -8,7 +8,7 @@
     pytest tests/test_e2e_mibao_scenarios.py -v --timeout=60
 
 前提条件：
-    - AI Agent Service 运行在 localhost:8000（DEBUG=true，默认 admin 用户 → mibao agent）
+    - AI Agent Service 运行在 localhost:8001（DEBUG=true，默认 admin 用户 → mibao agent）
     - DashScope API Key 已配置
     - PostgreSQL 和 Redis 可用
 

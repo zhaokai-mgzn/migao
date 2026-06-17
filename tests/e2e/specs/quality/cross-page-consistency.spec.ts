@@ -72,3 +72,37 @@ test.describe('表格 ↔ 接口数据一致性', () => {
     expect(rowCount).toBe(apiCount)
   })
 })
+
+test.describe('客户列表 ↔ 详情', () => {
+  test('name/phone 一致', async ({ request }) => {
+    const tokens = await loginViaApi(); const auth = { Authorization: `Bearer ${tokens.accessToken}` }
+    const list = await request.get('/api/admin/customers?page=1&size=1', { headers: auth })
+    const first = (await list.json())?.data?.items?.[0]
+    if (!first?.id) { console.log('[skip]'); return }
+    const detail = (await (await request.get(`/api/admin/customers/${first.id}`, { headers: auth })).json())?.data
+    if (first.name) expect(detail?.name).toBe(first.name)
+    if (first.phone) expect(detail?.phone).toBe(first.phone)
+  })
+})
+
+test.describe('售后列表 ↔ 详情', () => {
+  test('ticketNo/status 一致', async ({ request }) => {
+    const tokens = await loginViaApi(); const auth = { Authorization: `Bearer ${tokens.accessToken}` }
+    const list = await request.get('/api/admin/after-sales?page=1&size=1', { headers: auth })
+    const first = (await list.json())?.data?.items?.[0]
+    if (!first?.id) { console.log('[skip]'); return }
+    const detail = (await (await request.get(`/api/admin/after-sales/${first.id}`, { headers: auth })).json())?.data
+    expect(detail?.ticketNo).toBe(first.ticketNo); expect(detail?.status).toBe(first.status)
+  })
+})
+
+test.describe('加工项列表 ↔ 详情', () => {
+  test('name/unitPrice 一致', async ({ request }) => {
+    const tokens = await loginViaApi(); const auth = { Authorization: `Bearer ${tokens.accessToken}` }
+    const list = await request.get('/api/admin/processing-items?page=1&size=1', { headers: auth })
+    const first = (await list.json())?.data?.items?.[0]
+    if (!first?.id) { console.log('[skip]'); return }
+    const detail = (await (await request.get(`/api/admin/processing-items/${first.id}`, { headers: auth })).json())?.data
+    expect(detail?.name).toBe(first.name); expect(detail?.unitPrice).toBe(first.unitPrice)
+  })
+})

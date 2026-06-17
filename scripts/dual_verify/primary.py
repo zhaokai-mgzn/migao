@@ -16,7 +16,8 @@ import sys
 import time
 from pathlib import Path
 
-QA_RESULT_ROOT = Path("/opt/qa-results")
+PROJECT_ROOT = Path(os.getenv("PROJECT_ROOT", "/opt/youke")).resolve()
+QA_RESULT_ROOT = Path(os.getenv("QA_RESULT_ROOT", "/opt/qa-results"))
 ISSUE_BODY_CACHE = {}
 
 
@@ -25,7 +26,7 @@ def load_issue(issue_id: int) -> dict:
         return ISSUE_BODY_CACHE[issue_id]
     p = subprocess.Popen(
         ["gh", "issue", "view", str(issue_id), "--json", "title,body,labels,comments"],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd="/opt/youke"
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=str(PROJECT_ROOT)
     )
     out, err = p.communicate()
     if p.returncode != 0:
@@ -75,13 +76,13 @@ def is_deployment_issue(issue_body: str) -> bool:
 
 def run_e2e_spec(spec_path: str) -> dict:
     """跑 Playwright spec"""
-    full = Path("/opt/youke") / spec_path
+    full = PROJECT_ROOT / spec_path
     if not full.exists():
         return {"spec": spec_path, "status": "skip", "reason": "spec 文件不存在"}
     try:
         p = subprocess.Popen(
             ["npx", "playwright", "test", spec_path, "--reporter=json", "--project=web"],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd="/opt/youke/tests",
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=str(PROJECT_ROOT / "tests"),
             env={**os.environ, "CI": "true"}
         )
         out, err = p.communicate(timeout=300)
@@ -112,13 +113,13 @@ def run_e2e_spec(spec_path: str) -> dict:
 
 def run_python_test(test_path: str) -> dict:
     """跑 pytest"""
-    full = Path("/opt/youke/backend/ai-agent-service") / test_path
+    full = PROJECT_ROOT / "backend/ai-agent-service" / test_path
     if not full.exists():
         return {"test": test_path, "status": "skip", "reason": "文件不存在"}
     p = subprocess.Popen(
         [".venv/bin/python", "-m", "pytest", test_path, "-q", "--tb=line"],
         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        cwd="/opt/youke/backend/ai-agent-service",
+        cwd=str(PROJECT_ROOT / "backend/ai-agent-service"),
     )
     out, err = p.communicate(timeout=300)
     out_text = out.decode("utf-8", "ignore")
@@ -139,7 +140,7 @@ def run_java_test(test_class: str) -> dict:
     p = subprocess.Popen(
         ["./mvnw", "test", "-q", f"-Dtest={test_class}"],
         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        cwd="/opt/youke/backend/admin-api",
+        cwd=str(PROJECT_ROOT / "backend/admin-api"),
     )
     out, err = p.communicate(timeout=600)
     out_text = out.decode("utf-8", "ignore")

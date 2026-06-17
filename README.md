@@ -188,7 +188,7 @@ docker-compose up --build
 
 # 服务启动后：
 # - Admin API:       http://localhost:8080
-# - AI Agent:        http://localhost:8000
+# - AI Agent:        http://localhost:8001
 # - PostgreSQL:      localhost:5432
 # - Redis:           localhost:6379
 ```
@@ -222,8 +222,8 @@ pip install -r requirements.txt
 cp .env.example .env
 # 编辑 .env 配置 DashScope API Key、DashVector、数据库连接等
 
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-# → http://localhost:8000
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8001
+# → http://localhost:8001
 ```
 
 #### 4. 启动管理后台前端（Next.js）
