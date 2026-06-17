@@ -48,18 +48,16 @@ def load_issue(issue_id: int) -> dict:
 
 
 def extract_business_truths(issue_body: str, comments: "list[dict]" = None):
-    """提取业务真值（业务语言）
+    """提取业务真值 — 优先 CONTRACT_JSON，fallback 正则"""
 
-    支持：
-    - 多段标题（业务真值 / 业务定义 / 业务规则 / 验收标准 / 验收用例 / Acceptance Criteria / 通过标准）
-    - 列表项（`- ...` / `* ...`）
-    - 表格行（`| col1 | col2 |`，取关键列）
-    - **issue 评论**（凯总式补完 / 军师反推草稿）
+    # 优先机读
+    m = re.search(r"<!-- CONTRACT_JSON\s*(.*?)\s*-->", issue_body, re.DOTALL)
+    if m:
+        try:
+            truths = json.loads(m.group(1)).get("business_truths", [])
+            if truths: return truths
+        except json.JSONDecodeError: pass
 
-    参数:
-        issue_body: issue body
-        comments:  [{author: ..., body: ...}] 评论列表
-    """
     truth_patterns = [
         r"##.*?业务真值.*?(?=^##|\Z)",
         r"##.*?业务定义.*?(?=^##|\Z)",
