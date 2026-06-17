@@ -226,3 +226,45 @@ Agent push PR
 - 前端改动有对应 E2E spec
 
 以上全部满足 → 自动 merge，不需要人类点按钮。
+
+---
+
+## 契约：研发 Review（Phase 1 Gate）
+
+> Agent 在写码前**必须**完成 Review，贴 REVIEW_JSON 评论。不通过不进 Phase 2。
+
+### 格式
+
+```html
+## ✅ Review 通过 / ❌ Review 不通过 / ➕ 补充 case
+
+<!-- REVIEW_JSON
+{
+  "action": "accept | reject | supplement",
+  "issue_id": 100,
+  "reason": "case 覆盖全部 2 条业务真值",
+  "additions": []
+}
+-->
+```
+
+### 三种动作
+
+| action | 含义 | Agent 下一步 |
+|--------|------|-------------|
+| `accept` | case 覆盖全、真值清晰 | 进入 Phase 2 TDD 写码 |
+| `reject` | case 与真值矛盾 / 真值不清 | **停止**，等军师修正 |
+| `supplement` | case 不全 | 补充后进入 Phase 2 |
+
+### reject 示例
+
+```html
+## ❌ Review 不通过
+
+L2 case 1 覆盖的是"无加工订单"，但业务真值要求"含加工待发货订单"。
+请军师修正 case 草稿。
+
+<!-- REVIEW_JSON
+{"action":"reject","issue_id":100,"reason":"L2 case 1 与业务真值不符","additions":[]}
+-->
+```

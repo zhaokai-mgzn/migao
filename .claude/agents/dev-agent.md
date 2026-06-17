@@ -16,31 +16,52 @@
 
 ## 处理 Issue 的标准流程
 
-### 对于 `needs-verification` issue（新功能/Bug）
+### Phase 1：Review（硬 gate — 不过不写码）
 
 ```
-1. 读 issue body → 提取业务真值（优先解析 <!-- CONTRACT_JSON -->）
-2. 读 issue 评论 → 找军师的 case 草稿（<!-- DRAFT_JSON -->）
-3. 解析 DRAFT_JSON → 获取 L2 测试文件、L3 spec 文件、L4 断言
-4. Review case 草稿：
-   - 如果合理 → issue 评论 "✅ Review 通过" + <!-- REVIEW_JSON accept -->
-   - 如果有问题 → issue 评论 "❌ X case 不合理，原因 Y" + <!-- REVIEW_JSON reject -->
-5. 创建分支: feat/issue-{N}-{short-desc}
-6. 按 TDD 流程写码（Red → Green → Refactor，遵守 tdd-iron-law.md）
-7. 跑全量单测 + 增量集测
-8. Push → 创建 PR（PR body 用 PULL_REQUEST_TEMPLATE.md，填 PR_CONTRACT）
+1. 读 CONTRACT_JSON → 获取业务真值
+2. 读 DRAFT_JSON (军师评论) → 获取 L2/L3/L4 case 草稿
+3. 逐条比对：每个业务真值是否有对应 case 覆盖
+4. 判断：
+   ✅ 合理 → 评论 REVIEW_JSON accept → 进入 Phase 2
+   ❌ 不合理 → 评论 REVIEW_JSON reject + 原因 → 停止（不写码）
+   ➕ 需补充 → 评论 REVIEW_JSON supplement + 补充内容 → 进入 Phase 2
 ```
 
-### 对于 `block/dual-mismatch` issue（验收失败）
+**REVIEW_JSON 格式**（贴到 issue 评论）：
+
+```html
+<!-- REVIEW_JSON
+{"action":"accept|reject|supplement","issue_id":N,"reason":"","additions":[]}
+-->
+```
+
+- `accept`: case 覆盖全、真值清晰 → 直接写码
+- `reject`: case 与真值矛盾 / 真值不清 → 停止，描述原因
+- `supplement`: case 不全 → 补充 case 后继续
+
+### Phase 2：TDD 写码（CP-1~CP-7）
 
 ```
-1. 读 issue 评论 → 找 VERDICT_JSON
-2. 解析 → 获取失败的真值、失败的 spec
-3. 读关联的父 issue → 理解原始需求
-4. 定位根因 → 修复代码
-5. 更新测试（确保失败 case 现在通过）
-6. 创建 PR（PR_CONTRACT 中填 parent_issue）
-7. PR body 写 "Fixes #父issue"
+CP-1 识别范围 → CP-2 写测试确认 FAIL → CP-3 最小实现确认 PASS
+→ CP-4 重构保持 PASS → CP-5 全量单测 → CP-5.5 L0(如需)
+→ CP-6 增量集测+E2E → CP-7 自检清单
+```
+
+### Phase 3：开 PR
+
+```
+PR body: PULL_REQUEST_TEMPLATE.md + PR_CONTRACT JSON
+PR title: feat/fix(scope): 简短描述
+必须关联 issue: Closes #xxx
+```
+
+### 对于 block issue（同 issue 重新抢）
+
+```
+1. 读最新 BLOCK_LOG 评论 → 获取失败原因 + block_depth
+2. 定位根因 → 修复代码 + 更新测试
+3. 跑全量单测 → 开新 PR（关联同一个 issue）
 ```
 
 ## Push 前自检清单（逐项勾选，缺一不 push）
