@@ -123,30 +123,10 @@ def verify_jwt_token(token: str) -> Dict[str, Any]:
         HTTPException: 401 如果 Token 无效或过期
     """
     if not settings.JWT_PUBLIC_KEY:
-        # 开发环境：如果未配置公钥，仅解析不验证签名
-        if settings.DEBUG:
-            logger.warning("JWT_PUBLIC_KEY not configured, parsing without verification")
-            try:
-                return jwt.decode(
-                    token,
-                    options={"verify_signature": False, "verify_aud": False},
-                )
-            except Exception as e:
-                logger.warning(f"JWT verification failed (debug mode): invalid token format - {str(e)}")
-                raise HTTPException(
-                    status_code=401,
-                    detail={
-                        "success": False,
-                        "error": {
-                            "code": "TOKEN_INVALID",
-                            "message": f"Invalid token format: {str(e)}"
-                        }
-                    }
-                )
-        else:
-            raise HTTPException(
-                status_code=500,
-                detail={
+        # 无公钥时拒绝所有请求，避免未验证签名的 Token 被接受
+        raise HTTPException(
+            status_code=500,
+            detail={
                     "success": False,
                     "error": {
                         "code": "CONFIG_ERROR",

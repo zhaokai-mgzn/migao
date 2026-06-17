@@ -171,12 +171,46 @@ resource "alicloud_security_group" "main" {
   vpc_id = alicloud_vpc.main.id
 }
 
-resource "alicloud_security_group_rule" "allow_vpc_internal" {
+# 安全组规则 — 按最小权限原则，只开放必要端口
+resource "alicloud_security_group_rule" "allow_pgsql" {
   type              = "ingress"
   ip_protocol       = "tcp"
   nic_type          = "intranet"
   policy            = "accept"
-  port_range        = "1/65535"
+  port_range        = "5432/5432"
+  priority          = 1
+  security_group_id = alicloud_security_group.main.id
+  cidr_ip           = "172.16.0.0/24"
+}
+
+resource "alicloud_security_group_rule" "allow_redis" {
+  type              = "ingress"
+  ip_protocol       = "tcp"
+  nic_type          = "intranet"
+  policy            = "accept"
+  port_range        = "6379/6379"
+  priority          = 1
+  security_group_id = alicloud_security_group.main.id
+  cidr_ip           = "172.16.0.0/24"
+}
+
+resource "alicloud_security_group_rule" "allow_admin_api" {
+  type              = "ingress"
+  ip_protocol       = "tcp"
+  nic_type          = "intranet"
+  policy            = "accept"
+  port_range        = "8080/8080"
+  priority          = 1
+  security_group_id = alicloud_security_group.main.id
+  cidr_ip           = "172.16.0.0/24"
+}
+
+resource "alicloud_security_group_rule" "allow_ai_agent" {
+  type              = "ingress"
+  ip_protocol       = "tcp"
+  nic_type          = "intranet"
+  policy            = "accept"
+  port_range        = "8000/8001"
   priority          = 1
   security_group_id = alicloud_security_group.main.id
   cidr_ip           = "172.16.0.0/24"
@@ -206,6 +240,8 @@ resource "alicloud_db_account" "app" {
   name        = "app_user"
   password    = var.db_password
   type        = "Normal"
+  # 强制 SSL 连接（DB 实例需支持 SSL）
+  # ssl_action = "Open"  # 需在 alicloud_db_instance 中配置 ssl_action
 }
 
 resource "alicloud_db_account_privilege" "app" {
@@ -249,8 +285,8 @@ locals {
     "REDIS_HOST"     = local.redis_connection_domain
     "REDIS_PORT"     = "6379"
     "REDIS_PASSWORD" = var.redis_password
-    # JWT
-    "JWT_PRIVATE_KEY" = "classpath:rsa/private.pem"
+    # JWT — 私钥由 CI secrets 注入（jwt.private-key-pem），禁止写死在配置中
+    # 公钥由 classpath 加载（非敏感），也可通过 CI 覆盖
     "JWT_PUBLIC_KEY"  = "classpath:rsa/public.pem"
     # 内部通信
     "SERVICE_TOKEN_SECRET" = var.internal_service_secret
@@ -516,7 +552,7 @@ resource "alicloud_oss_bucket" "temporary" {
 
 resource "alicloud_oss_bucket_acl" "temporary" {
   bucket = alicloud_oss_bucket.temporary.bucket
-  acl    = "public-read"
+  acl    = "private"
 }
 
 # ==================== 输出 ====================
