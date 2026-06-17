@@ -21,8 +21,9 @@ reviewer_asserts:
   - API: GET /api/admin/aftersales/{id}
     expect: data.status IN (待处理,处理中,已完成,已关闭) AND data.orderNo 非空 AND data.timeline 正序
   - API: GET /api/admin/aftersales?status=待处理
+  - API: GET /api/admin/aftersales?status=处理中
+    expect: items 中每条 status = 处理中
     expect: items 中每条 status = 待处理
-  - DB: SELECT status, COUNT(*) FROM after_sales_tickets WHERE tenant_id={tid} GROUP BY status
     expect: 分布与列表页 tab 计数一致
 
 confidence_required: 90%

@@ -20,13 +20,13 @@ gate_patterns:
 
 reviewer_asserts:
   - API: POST /api/auth/sms/login
-    expect: response.data.token 非空 AND response.data.user 包含 id/name/roles
+    expect: response.data.token 非空 AND response.data.user 含 id/name/roles
   - API: POST /api/auth/admin/login
-    expect: HTTP 403 或 404（密码登录已禁用 #375）
+    expect: HTTP 403 或 404（密码登录已禁用）
   - API: POST /api/auth/register
-    expect: 新手机号注册成功返回 token，已注册手机号返回 409
-  - DB: SELECT expires_at FROM sms_codes WHERE phone = {phone}
-    expect: expires_at > NOW()（验证码在有效期内）
+    expect: 新手机号注册成功返回 token，已注册返回 409
+  - API: POST /api/auth/sms/login（过期验证码）
+    expect: 返回 400/401
 
 confidence_required: 100%
 

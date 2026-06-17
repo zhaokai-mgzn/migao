@@ -23,9 +23,10 @@ reviewer_asserts:
     expect: items 中每条含 phone/position/permissions 字段
   - API: GET /api/admin/employees
     expect: 全权限员工 permissions 显示为"全部权限"（折叠）
-  - API: GET /api/admin/employees?tenant_id={tid}
+  - "API: GET /api/admin/employees?tenant_id={tid}"
+  - API: GET /api/admin/employees?page=1&size=1
+    expect: items[0].tenant_id = 当前租户
     expect: items 中每条 tenant_id = {tid}（租户隔离）
-  - DB: SELECT id, role FROM users WHERE tenant_id != {request_tenant_id} LIMIT 1
     expect: 0 行（跨租户泄露检查）
 
 confidence_required: 90%

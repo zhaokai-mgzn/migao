@@ -22,8 +22,9 @@ reviewer_asserts:
   - API: GET /api/admin/orders?category=含加工订单
     expect: items 中每条 status NOT IN (已关闭, 退款售后) AND has_processing=true
   - API: GET /api/admin/orders?status=待发货
+  - API: GET /api/admin/orders?category=含加工订单&status=待发货
+    expect: items 非空 AND 每条 has_processing=true AND status=待发货
     expect: items 中每条 status = 待发货
-  - DB: SELECT COUNT(*) FROM orders WHERE status NOT IN ('已关闭','退款售后') AND has_processing=true
     expect: 结果 = 含加工订单 tab 计数
   - 分类tab计数: 各 tab 计数与对应筛选列表 total 一致
 

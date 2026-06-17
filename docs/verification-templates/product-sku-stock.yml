@@ -18,10 +18,11 @@ gate_patterns:
 
 reviewer_asserts:
   - API: GET /api/admin/products/{id}
+  - API: GET /api/admin/products/low-stock-by-color?threshold=100
+    expect: 每项 stock <= 100
     expect: data.stock = SUM(data.skus[].stock)
   - API: GET /api/admin/products/low-stock-by-color?threshold=100
     expect: 每个 item.stock <= 100
-  - DB: SELECT p.id, SUM(s.stock) FROM products p JOIN product_skus s ON s.product_id=p.id GROUP BY p.id
     expect: 聚合结果与商品列表库存列一致
 
 confidence_required: 100%

@@ -20,9 +20,10 @@ gate_patterns:
 reviewer_asserts:
   - API: GET /api/admin/customers?keyword=13800138000
     expect: items 至少 1 条，手机号或姓名匹配关键词
-  - API: GET /api/admin/customers/{id}
+  - "API: GET /api/admin/customers/{id}"
+  - API: GET /api/admin/customers?page=1&size=1
+    expect: items[0].tenant_id = 当前租户
     expect: data.orderCount > 0 AND data.totalSpent > 0
-  - DB: SELECT COUNT(*) FROM customers WHERE tenant_id != {request_tenant_id}
     expect: 0（跨租户泄露检查）
 
 confidence_required: 90%

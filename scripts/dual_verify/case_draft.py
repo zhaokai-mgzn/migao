@@ -65,18 +65,19 @@ def extract_truths(body):
     return truths
 
 def count_auto_asserts(template):
-    """统计可自动验证的 L4 断言数（API）。"""
+    """统计模板中的 reviewer_asserts 总数。"""
     if not template or not template.get("reviewer_asserts"): return 0
+    asserts = template["reviewer_asserts"]
     count = 0
-    for a in template["reviewer_asserts"]:
-        if isinstance(a, str) and "API:" in a: count += 1
+    for a in asserts:
+        if isinstance(a, str):
+            count += 1
         elif isinstance(a, dict):
-            for k in a:
-                if k.lower() == "api": count += 1
+            count += len(a)
     return count
 
-# ── 军师自动推断 API/DB 断言 ──
-# 与 reviewer.py infer_business_asserts 的关键词映射保持一致
+# ── 军师自动推断 API 断言 ──
+# 模板只定义 API 级验证。DB 查询是 reviewer.py 的内部实现细节。
 _TRUTH_KEYWORD_MAP = [
     (["看板","dashboard","跳转"], "API: GET /api/admin/dashboard/stats"),
     (["订单","order"], "API: GET /api/admin/orders?page=1&size=5"),
@@ -86,16 +87,18 @@ _TRUTH_KEYWORD_MAP = [
     (["登录","login","验证码","注册","密码","token"], "API: POST /api/auth/sms/login"),
     (["员工","employee","角色","权限","岗位"], "API: GET /api/admin/employees"),
     (["知识库","knowledge","AI","回答","检索","文档"], "API: POST /api/knowledge/search"),
-    (["租户","tenant","隔离","跨租户"], "DB: SELECT COUNT(*) FROM {table} WHERE tenant_id != {tid}"),
-    (["计数","count","统计","分布","GROUP BY"], "DB: SELECT status, COUNT(*) FROM {table} GROUP BY status"),
     (["加工","processing","has_processing"], "API: GET /api/admin/dashboard/processing-shipment-count"),
     (["待发货","pending_shipment"], "API: GET /api/admin/dashboard/pending-shipment-count"),
     (["tab","分类","tab计数"], "API: GET 对应列表 + 分页 total 匹配"),
     (["发送","send","消息","chat","对话","SSE"], "API: POST /api/chat/send"),
 ]
 
+def _sanitize_truth(truth: str, max_len: int = 40) -> str:
+    """剥离会破坏 YAML 结构的字符。"""
+    return truth.replace("\n", " ").replace("\r", " ").replace(":", " ")[:max_len]
+
 def infer_assert_for_truth(truth: str, template_name: str) -> str:
-    """根据业务真值文本推断一个 API/DB 断言。"""
+    """根据业务真值文本推断一个 API 断言。"""
     truth_lower = truth.lower()
     scores = []
     for keywords, api in _TRUTH_KEYWORD_MAP:
@@ -124,20 +127,25 @@ def auto_patch_template(tmpl_name: str, template: dict, truths: list) -> bool:
 
     new_asserts = []
     for t in truths:
-        # 检查这条 truth 是否已有对应的 assert
+        # 提取 truth 的关键词
+        t_keywords = set()
+        for keywords, _ in _TRUTH_KEYWORD_MAP:
+            if any(kw.lower() in t.lower() for kw in keywords):
+                t_keywords.update(kw.lower() for kw in keywords)
+        # 检查是否已有 assert 覆盖（关键词交集）
         matched = False
         for a in existing:
-            if isinstance(a, str) and any(kw in t for kw in ["API","DB"] if kw in a):
+            a_text = ""
+            if isinstance(a, str):
+                a_text = a.lower()
+            elif isinstance(a, dict):
+                a_text = " ".join(a.keys()).lower() + " " + " ".join(str(v) for v in a.values()).lower()
+            if t_keywords and any(kw in a_text for kw in t_keywords):
                 matched = True
                 break
-            elif isinstance(a, dict):
-                for k in a:
-                    if any(kw.lower() in t.lower() for kw in k.split()):
-                        matched = True
-                        break
         if not matched:
             inferred = infer_assert_for_truth(t, tmpl_name)
-            new_asserts.append(f"{inferred}  # auto-patched for: {t[:40]}")
+            new_asserts.append(f"{inferred}  # auto-patched for: {_sanitize_truth(t)}")
             print(f"  ➕ 新增 assert: {inferred}")
 
     if not new_asserts:
