@@ -585,3 +585,69 @@ python3 scripts/dual_verify/quality_report.py --days 7
 □ 无 truths=1 的新 issue
 □ 熔断 issue = 0（如果有 → 当天处理）
 ```
+
+---
+
+# 军师验收体系 ↔ QA Growth Gate 互补说明
+
+> 两者不是替代关系，是**前后两道防线**。
+
+## 对比
+
+| 维度 | QA Growth Gate | 军师验收体系 |
+|------|---------------|-------------|
+| **时机** | pre-merge（PR 阶段） | post-deploy（merge 后） |
+| **检查内容** | 测试文件是否存在 | 测试是否真正通过 |
+| **断言来源** | 文件名模式匹配 | 模板 reviewer_asserts + 业务真值 |
+| **检查深度** | 浅（有没有写测试） | 深（测试跑得对不对） |
+| **决策** | block PR | close / hold / block issue |
+| **执行位置** | GitHub Actions CI | Agent 服务器 |
+| **速度** | <3 分钟 | ~5-10 分钟 |
+
+## 防线逻辑
+
+```
+PR 阶段                           Merge 后
+────────                          ───────
+QA Growth Gate                    军师验收
+  ↓                                 ↓
+「你写测试了吗？」                  「你的测试写对了吗？」
+  ↓                                 ↓
+缺测试 → block PR                 测试跑不过 → block issue
+有测试 → 放行                     跑过了但 reviewer 不一致 → block issue
+                                  双一致 + 全绿 → close
+```
+
+## 举例
+
+一个订单分类的 issue：
+
+```
+1. Agent 写码 + 测试 + 开 PR
+2. QA Growth Gate 扫 PR diff:
+   → 有 .spec.ts 文件 ✅
+   → 放行
+3. PR merge → deploy
+4. 军师验收:
+   → primary.py 跑 E2E → order-list.spec.ts 实际跑通 ✅
+   → reviewer.py 调 API → GET /api/admin/orders?category=含加工 → 验证了 3/3 业务真值 ✅
+   → close
+```
+
+如果 Agent 写了测试但逻辑错（比如 mock 数据骗过了单测）：
+```
+4. reviewer.py 独立验证 → 实际 API 返回的含加工订单数 ≠ mock 数据
+   → block + 回同 issue
+```
+
+**Gate 防的是偷懒不写测试，验收防的是测试写错了。**
+
+## 协作时序
+
+```
+① Agent PR → CI 跑 QA Growth Gate + 单测 → 全绿
+② 军师 review → merge
+③ deploy
+④ 军师触发验收 → primary.py(真实E2E) + reviewer.py(独立验证) → merge.py
+⑤ close / block
+```
