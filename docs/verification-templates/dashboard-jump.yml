@@ -11,10 +11,27 @@ business_truths:
 primary_specs:
   - tests/e2e/specs/dashboard/dashboard.spec.ts
   - tests/e2e/specs/orders/order-list.spec.ts
+  - frontend/admin-web/tests/unit/pages/dashboard.test.tsx
+
+# Gate 模式 — QA Growth Gate 检查这些文件变更时，必须有对应的测试文件
+gate_patterns:
+  - "frontend/admin-web/src/app/(dashboard)/dashboard/page.tsx"
+  - "frontend/admin-web/src/app/(dashboard)/orders/page.tsx"
+  - "backend/admin-api/src/main/java/com/migao/admin/controller/DashboardController.java"
 
 reviewer_asserts:
+  # 待发货订单数
+  - API: GET /api/admin/dashboard/pending-shipment-count
+    expect: data > 0
+  # 含加工待发货订单数
   - API: GET /api/admin/dashboard/processing-shipment-count
+    expect: data <= pending-shipment-count
+  # 低库存 SKU
+  - API: GET /api/admin/products/low-stock-by-color?threshold=100&limit=200
+    expect: 每个 item.stock <= 100
+  # 跳转 URL 验证
   - 跳转URL: 解析 dashboard.spec.ts 中跳转链接
+    expect: 含加工待发货卡片 href = "/orders?category=含加工订单&status=待发货"
 
 confidence_required: 100%
 
@@ -22,3 +39,4 @@ common_pitfalls:
   - 用 mock 数据测试（必须真实 API）
   - 跳转 URL 参数顺序错（先 status 后 category）
   - 含加工订单数与待发货数混淆
+  - 卡片数字来自 mock 而非真实 DB 查询

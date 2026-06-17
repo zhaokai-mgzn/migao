@@ -122,10 +122,15 @@ chmod +x "$WORK_DIR/scripts/agent-poll.sh" 2>/dev/null || true
 # 添加 cron job（每 5 分钟扫一次，并行处理 block + needs-verification）
 (crontab -l 2>/dev/null | grep -v "agent-poll.sh"; echo "*/5 * * * * cd $WORK_DIR && bash scripts/agent-poll.sh >> /var/log/migao-agent.log 2>&1") | crontab -
 
+# 军师自我进化 cron（每 4 小时扫实战数据，自动更新规则）
+chmod +x "$WORK_DIR/junshi/learn.py" 2>/dev/null || true
+(crontab -l 2>/dev/null | grep -v "learn.py"; echo "7 */4 * * * cd $WORK_DIR && python3 junshi/learn.py --scan >> /var/log/migao-learn.log 2>&1") | crontab -
+
 echo ""
 echo "✅ 初始化完成"
 echo "  工作目录: $WORK_DIR"
-echo "  cron: 每 ${CRON_INTERVAL} 分钟扫一次 GitHub"
-echo "  日志: /var/log/migao-agent.log"
+echo "  cron: 每 ${CRON_INTERVAL} 分钟扫一次 GitHub (agent-poll)"
+echo "  cron: 每 4 小时自我进化 (junshi/learn.py --scan)"
+echo "  日志: /var/log/migao-agent.log, /var/log/migao-learn.log"
 echo ""
 echo "手动触发一次: cd $WORK_DIR && bash scripts/agent-poll.sh"
