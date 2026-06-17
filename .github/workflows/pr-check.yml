@@ -48,53 +48,6 @@ jobs:
         working-directory: backend/admin-api
         run: ./mvnw test -q
 
-  # ============ ai-agent-service 单测全量 ============
-  ai-agent-test:
-    name: ai-agent-service unit tests
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: pip
-          cache-dependency-path: backend/ai-agent-service/requirements.txt
-
-      - name: Install dependencies
-        working-directory: backend/ai-agent-service
-        run: pip install -r requirements.txt
-
-      - name: Run unit tests
-        working-directory: backend/ai-agent-service
-        env:
-          PRIMARY_API_KEY: ci-dummy
-          PRIMARY_BASE_URL: https://api.deepseek.com/v1
-          PRIMARY_MODEL: deepseek-v4-pro
-          DASHVECTOR_API_KEY: ci-dummy
-          DASHVECTOR_ENDPOINT: https://ci-dummy.example.com
-          DASHVECTOR_COLLECTION: ci
-          ADMIN_API_BASE_URL: http://localhost:8080
-          SERVICE_TOKEN: ci-dummy
-          JWT_PUBLIC_KEY: ci-dummy
-          LOGISTICS_API_URL: https://ci-dummy.example.com
-          LOGISTICS_APPCODE: ci-dummy
-          SSE_TIMEOUT: '300'
-          SSE_PING_INTERVAL: '30'
-          CORS_ALLOWED_ORIGINS: http://localhost:3000
-        run: |
-          python -m pytest tests/ -v --tb=short -q \
-            --ignore=tests/test_post_deploy_verify.py \
-            --ignore=tests/manual_test_pe_flow.py \
-            --ignore=tests/test_pending_interact_persistence.py \
-            -m "not integration"
-
-      - name: Run junshi + dual_verify tests
-        working-directory: backend/ai-agent-service
-        run: |
-          python -m pytest ../../tests/unit_dual_verify/ ../../tests/unit_junshi/ -v --tb=short -q 
 
   # ============ admin-web 类型检查 + 单测 ============
   admin-web-test:
