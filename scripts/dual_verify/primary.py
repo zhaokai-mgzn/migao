@@ -192,32 +192,28 @@ def classify(spec_path: str) -> str:
     return "unknown"
 
 
-def verify(issue_id: int, e2e_only: bool = False) -> dict:
-    """主验收入口。e2e_only=True 时只跑 E2E（跳过 pytest/JUnit，CI 已覆盖）。"""
+def verify(issue_id: int) -> dict:
+    """主验收: E2E全量(web+real) + issue spec 中的真实集测(pytest) + JUnit。
+    CI mock 单测不跑——那些已经在 pr-check 里跑过了。"""
     issue = load_issue(issue_id)
     body = issue.get("body", "")
     title = issue.get("title", "")
-    comments = issue.get("comments", [])
 
     if is_deployment_issue(body):
         return {"issue_id": issue_id, "title": title, "verifier": "primary",
                 "status": "skip_deployment", "reason": "部署类", "confidence": 0}
 
-    if e2e_only:
-        # 只跑 E2E web + real（CI 已跑单测+集测）
-        results = _run_e2e_suite()
-    else:
-        specs = extract_specs(body)
-        if not specs:
-            return {"issue_id": issue_id, "title": title, "verifier": "primary",
-                    "status": "skip", "reason": "未找到 spec", "confidence": 0}
-        results = []
-        for spec in specs:
-            kind = classify(spec)
-            if kind == "e2e": results.append(run_e2e_spec(spec))
-            elif kind == "python": results.append(run_python_test(spec))
-            elif kind == "java": results.append(run_java_test(Path(spec).stem))
-            else: results.append({"spec": spec, "status": "skip", "reason": f"未知类型 {kind}"})
+    # 1. E2E 全量（web + real）—— CI 跑不了
+    results = _run_e2e_suite()
+
+    # 2. Issue 中指定的真实集测（pytest）+ JUnit
+    specs = extract_specs(body)
+    for spec in specs:
+        kind = classify(spec)
+        if kind == "e2e": results.append(run_e2e_spec(spec))
+        elif kind == "python": results.append(run_python_test(spec))
+        elif kind == "java": results.append(run_java_test(Path(spec).stem))
+        else: results.append({"spec": spec, "status": "skip", "reason": f"未知类型 {kind}"})
 
     # 计算通过率
     pass_count = sum(1 for r in results if r.get("status") == "pass")
@@ -254,9 +250,8 @@ def main():
     parser = argparse.ArgumentParser(description="主验收")
     parser.add_argument("issue_id", type=int)
     parser.add_argument("--out", type=str, help="输出 JSON 路径")
-    parser.add_argument("--e2e-only", action="store_true", help="只跑E2E(CI已覆盖单测集测)")
     args = parser.parse_args()
-    result = verify(args.issue_id, e2e_only=args.e2e_only)
+    result = verify(args.issue_id)
     if args.out:
         Path(args.out).parent.mkdir(parents=True, exist_ok=True)
         with open(args.out, "w") as f:
