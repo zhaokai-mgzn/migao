@@ -64,6 +64,10 @@ def extract_truths(body):
                 seen.add(line)
     return truths
 
+def _sanitize_truth(t: str) -> str:
+    """防 YAML 注入：真值中的 : 可能导致解析异常"""
+    return t.replace(":", "：").replace("{", "｛").replace("}", "｝")
+
 def count_auto_asserts(template):
     """统计模板中的 reviewer_asserts 总数。"""
     if not template or not template.get("reviewer_asserts"): return 0
