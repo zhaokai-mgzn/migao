@@ -26,9 +26,29 @@ if ! gh auth status 2>/dev/null; then
     exit 1
 fi
 
+# ── 0. 最高优先：PR 被军师打回 needs-changes → 立即修复 ──
+NEEDS_CHANGE_PR=$(gh pr list --label "junshi-review/needs-changes" --state open --limit 5 \
+    --json number,headRefName,body --jq '.[] | select(.body | contains("Closes")) | "\(.number) \(.headRefName)"' 2>/dev/null | head -1)
+if [ -n "$NEEDS_CHANGE_PR" ]; then
+    PR_NUM=$(echo "$NEEDS_CHANGE_PR" | awk '{print $1}')
+    PR_BRANCH=$(echo "$NEEDS_CHANGE_PR" | awk '{print $2}')
+    PR_BODY=$(gh pr view "$PR_NUM" --json body --jq '.body' 2>/dev/null)
+    ISSUE_ID=$(echo "$PR_BODY" | grep -oP 'Closes #\K\d+' | head -1)
+
+    log "🔧 PR #$PR_NUM 被军师打回 needs-changes → 修复"
+    git fetch origin "$PR_BRANCH" && git checkout "$PR_BRANCH" 2>/dev/null
+
+    claude --print \
+        --custom-instructions ".claude/agents/dev-agent.md" \
+        "PR #$PR_NUM (关联 issue #$ISSUE_ID) 被军师标记 needs-changes。读 PR 评论理解要改什么，修复代码，跑测试，push 到同分支。" \
+        2>&1 | tail -10
+
+    log "✅ PR #$PR_NUM 修复完成"
+    exit 0
+fi
+
 # ── 抢一个 issue：优先被阻的（同 issue 内 block 后重新抢）──
 pick_issue() {
-    # 先找含 block/dual-mismatch + needs-verification 的（验收被阻，需立即修复）
     local BLOCKED=$(gh issue list --label "block/dual-mismatch,needs-verification" --state open --limit 10 \
         --json number,assignees --jq '.[] | select(.assignees | length == 0) | .number' 2>/dev/null | head -1)
     if [ -n "$BLOCKED" ]; then
