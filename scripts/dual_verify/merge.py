@@ -97,7 +97,10 @@ def post_comment(iid,judgment,primary,reviewer):
 
 <!-- VERDICT_JSON
 {vj}
--->"""
+-->
+
+> 🎯 军师确认后执行: `python3 scripts/dual_verify/merge.py {iid}`
+"""
     p=subprocess.Popen(["gh","issue","comment",str(iid),"--body",body],stdout=subprocess.PIPE,stderr=subprocess.PIPE,cwd=str(PROJECT_ROOT))
     out,err=p.communicate()
     return "✅ 评论已发" if p.returncode==0 else f"❌ {err.decode('utf-8','ignore')[:200]}"
