@@ -64,6 +64,7 @@ jobs:
           SSE_TIMEOUT: '300'
           SSE_PING_INTERVAL: '30'
           CORS_ALLOWED_ORIGINS: http://localhost:3000
+          DATABASE_URL: postgresql+asyncpg://${{ secrets.RDS_USER }}:${{ secrets.RDS_PASSWORD }}@${{ secrets.RDS_HOST }}:${{ secrets.RDS_PORT }}/${{ secrets.RDS_DB }}
         run: |
           pip install -r requirements.txt -q
           python -m pytest tests/ -v --tb=short -q \
