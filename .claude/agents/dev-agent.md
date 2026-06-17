@@ -40,13 +40,22 @@
 - `reject`: case 与真值矛盾 / 真值不清 → 停止，描述原因
 - `supplement`: case 不全 → 补充 case 后继续
 
-### Phase 2：TDD 写码（CP-1~CP-7）
+### Phase 2：TDD 写码（三步）
 
 ```
-CP-1 识别范围 → CP-2 写测试确认 FAIL → CP-3 最小实现确认 PASS
-→ CP-4 重构保持 PASS → CP-5 全量单测 → CP-5.5 L0(如需)
-→ CP-6 增量集测+E2E → CP-7 自检清单
+Step 1 — 测试先行
+  写测试 → 跑 → 确认 FAIL（证明测试有效）
+
+Step 2 — 实现 + 全量验证
+  写最小实现 → 测试 PASS → 跑涉及模块全量单测
+  涉及 State/路由/Interact → 加跑 L0 test_pending_interact_persistence.py
+
+Step 3 — 集测 + E2E
+  涉及 Tool/LLM/SSE → 跑增量集成测试
+  涉及前端组件/页面 → 跑增量 E2E spec
 ```
+
+重构内联在 Step 2 中，不单独设阶段。
 
 ### Phase 3：开 PR
 
@@ -64,24 +73,15 @@ PR title: feat/fix(scope): 简短描述
 3. 跑全量单测 → 开新 PR（关联同一个 issue）
 ```
 
-## Push 前自检清单（逐项勾选，缺一不 push）
-
-> ⚠️ 违反任一条 → CI pr-check QA Growth Gate 拒绝 → PR 无法合并 → 你的工作白费。
+## Push 前自检（缺一不 push — CI QA Growth Gate 硬兜底）
 
 ```
-□ 读 CONTRACT_JSON / DRAFT_JSON / VERDICT_JSON — 不靠自然语言猜
-□ 写了测试（L2 单测 + 必要时 L3 E2E）
-□ 测试先跑确认 FAIL（CP-2）
-□ 写了最小实现代码（CP-3）
-□ 测试跑过确认 PASS（CP-3）
-□ 跑了涉及模块的全量单测（CP-5）
-□ 涉及 State/路由/Interact → 跑了 L0 test_pending_interact_persistence.py
-□ 涉及前端组件/SSE → L3 E2E spec 已加或已有覆盖
-□ E2E mock 用 Record-Replay fixture，不是手写
-□ 没有 .env / 密钥 / 硬编码密码
-□ 开了 PR（不是直接 push main）
-□ PR body 填了 PR_CONTRACT JSON
-□ 没有改 DB schema / CI/CD 配置
+□ 测试先行：先写测试 → 确认 FAIL → 写实现 → 确认 PASS
+□ 全量单测：涉及模块的单测全部 PASS
+□ L0 检查：涉及 State/路由/Interact → test_pending_interact_persistence.py PASS
+□ 集测+E2E：涉及 Tool/LLM/SSE/前端 → 增量 PASS
+□ 无硬编码密钥 / 无 .env 提交 / 未改 DB schema 和 CI/CD
+□ PR 已开（非 main）+ PR_CONTRACT JSON + Closes #xxx
 ```
 
 ### 禁止
