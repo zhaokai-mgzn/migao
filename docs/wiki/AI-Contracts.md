@@ -275,3 +275,23 @@ PR merge → deploy 完成 →
 ```
 
 Agent 不参与验收。军师验收完成后贴 AI验收报告评论即可。
+
+---
+
+## 验收执行（⑥⑦）
+
+> Agent 执行验收脚本。原因：E2E real + 集成测试需要连接云服务，只有 Agent 服务器有完整测试环境（localhost 服务 + DB 连接 + Playwright）。
+
+```
+PR merge → deploy 完成 →
+  军师检测 →
+    挂 ai-verify/pending →
+    评论: <!-- VERIFY_TRIGGER {"issue_id":N} -->
+
+Agent 扫到 VERIFY_TRIGGER（无 VERIFY_RESULT）→
+  确认服务 alive →
+  python3 primary.py → reviewer.py → merge.py
+  （直接 shell 执行，不走 Claude Code）
+
+merge.py 自动 close/block/hold + 贴 AI验收报告评论
+```
