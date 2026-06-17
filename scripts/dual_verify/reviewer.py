@@ -220,7 +220,7 @@ def verify(issue_id: int) -> dict:
 
     asserts = infer_business_asserts(truths, template)
     token = env.get("SERVICE_TOKEN", "")
-    base = env.get("ADMIN_API_BASE_URL", "http://localhost:8080")
+    base = env.get("ADMIN_API_BASE_URL", "http://localhost:8081")
 
     results = []
     for a in asserts:

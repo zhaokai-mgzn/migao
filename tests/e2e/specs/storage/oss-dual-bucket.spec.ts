@@ -4,7 +4,7 @@ import * as fs from 'fs'
 
 test.describe('OSS 双 Bucket 路由', () => {
   const testImagePath = path.join(__dirname, '../../fixtures/test-image.png')
-  const API_BASE = 'http://localhost:8080'
+  const API_BASE = process.env.API_BASE_URL || 'http://localhost:8080'
   const AI_SERVICE_URL = 'http://localhost:8001'
 
   test.describe('聊天图片上传（临时 Bucket）', () => {
