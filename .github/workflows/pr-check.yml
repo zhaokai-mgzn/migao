@@ -138,15 +138,34 @@ jobs:
             fi
 
             case "$file" in
-              # ===== Python ai-agent-service (info only — PR Check 不跑，deploy 流水线跑) =====
+              # ===== Python ai-agent-service (blocking — 测试文件必须存在，deploy 流水线执行) =====
               backend/ai-agent-service/app/tools/*.py)
-                echo "| $file | Tool (L2+L3) | ℹ️ deploy 流水线验证 |" >> $GITHUB_STEP_SUMMARY
+                tool_name=$(basename "$file" .py)
+                if echo "$CHANGED_FILES" | grep -qE "tests/test_tools_|tests/test_${tool_name}|tests/e2e/real/"; then
+                  echo "| $file | Tool (L2+L3) | ✅ |" >> $GITHUB_STEP_SUMMARY
+                else
+                  echo "| $file | Tool (L2+L3) | ❌ BLOCKED |" >> $GITHUB_STEP_SUMMARY
+                  MISSING_BLOCK="$MISSING_BLOCK\n- **$file**: Tool 变更必须补 L2 单测 + L3 Real E2E"
+                  BLOCKERS=$((BLOCKERS + 1))
+                fi
                 ;;
               backend/ai-agent-service/app/graph/*.py)
-                echo "| $file | Graph/Skill (L2) | ℹ️ deploy 流水线验证 |" >> $GITHUB_STEP_SUMMARY
+                if echo "$CHANGED_FILES" | grep -qE "tests/test_graph_|tests/test_skill_"; then
+                  echo "| $file | Graph/Skill (L2) | ✅ |" >> $GITHUB_STEP_SUMMARY
+                else
+                  echo "| $file | Graph/Skill (L2) | ❌ BLOCKED |" >> $GITHUB_STEP_SUMMARY
+                  MISSING_BLOCK="$MISSING_BLOCK\n- **$file**: Graph/Skill 变更必须补 L2 单测"
+                  BLOCKERS=$((BLOCKERS + 1))
+                fi
                 ;;
               backend/ai-agent-service/app/agents/*.py)
-                echo "| $file | Agent (L2) | ℹ️ deploy 流水线验证 |" >> $GITHUB_STEP_SUMMARY
+                if echo "$CHANGED_FILES" | grep -qE "tests/test_agent_|tests/test_intent_"; then
+                  echo "| $file | Agent (L2) | ✅ |" >> $GITHUB_STEP_SUMMARY
+                else
+                  echo "| $file | Agent (L2) | ❌ BLOCKED |" >> $GITHUB_STEP_SUMMARY
+                  MISSING_BLOCK="$MISSING_BLOCK\n- **$file**: Agent 变更必须补 L2 单测"
+                  BLOCKERS=$((BLOCKERS + 1))
+                fi
                 ;;
 
               # ===== Java admin-api (blocking) =====

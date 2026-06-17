@@ -153,5 +153,29 @@
     "low_truths_count_issues": [],
     "last_scan": "2026-06-16T15:38:33.628461"
   },
-  "next_self_update": "2026-06-16T19:38:33+08:00"
+  "next_self_update": "2026-06-16T19:38:33+08:00",
+  "gate_feedback": {
+    "description": "从验收结果学习，反馈给 QA Growth Gate 的规则建议",
+    "last_updated": "2026-06-17T12:00:00+08:00",
+    "patterns": [
+      {
+        "type": "tighten_mock_check",
+        "trigger": "primary=pass + reviewer=fail → mock 欺骗",
+        "action": "Gate 应对该文件域要求集成测试（不仅是单测）",
+        "last_seen_in": []
+      },
+      {
+        "type": "add_gate_section",
+        "trigger": "issue 缺少业务真值段 → reviewer 提取失败 → hold",
+        "action": "Gate 应检查 issue body 是否包含 ## 业务真值 段",
+        "last_seen_in": []
+      },
+      {
+        "type": "template_insufficient",
+        "trigger": "auto_asserts < truths_count → block rate 高",
+        "action": "对应模板需补充 reviewer_asserts",
+        "last_seen_in": [387]
+      }
+    ]
+  }
 }
