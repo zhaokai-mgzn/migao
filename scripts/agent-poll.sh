@@ -106,39 +106,4 @@ log "✅ issue #$ISSUE_ID 完成"
     exit 0
 fi
 
-# ── 3. 没有 dev 任务 → 扫验收触发 ──
-log "🔍 扫描验收触发..."
-
-VERIFY_ISSUE=""
-while read iid; do
-    # 找 VERIFY_TRIGGER（军师发的）且没有 VERIFY_RESULT（还没验收过）
-    HAS_TRIGGER=$(gh issue view "$iid" --comments --json comments \
-        --jq '.comments[] | select(.body | contains("VERIFY_TRIGGER")) | .body' 2>/dev/null | head -1)
-    HAS_RESULT=$(gh issue view "$iid" --comments --json comments \
-        --jq '.comments[] | select(.body | contains("VERIFY_RESULT")) | .body' 2>/dev/null | head -1)
-
-    # 只处理有 trigger 且最新 trigger 还没 result 的
-    if [ -n "$HAS_TRIGGER" ] && [ -z "$HAS_RESULT" ]; then
-        VERIFY_ISSUE="$iid"
-        break
-    fi
-done < <(gh issue list --state open --limit 20 --json number --jq '.[].number' 2>/dev/null)
-
-if [ -n "$VERIFY_ISSUE" ]; then
-    log "🧪 验收 issue #$VERIFY_ISSUE"
-
-    if ! lsof -i :8080 -sTCP:LISTEN >/dev/null 2>&1 || ! lsof -i :8001 -sTCP:LISTEN >/dev/null 2>&1 || ! lsof -i :3001 -sTCP:LISTEN >/dev/null 2>&1; then
-        log "⚠️ 服务未全部就绪，跳过验收"
-    else
-        # 直接跑脚本，不走 Claude Code（确定性执行，更快更可靠）
-        log "  → primary.py..."
-        cd /opt/youke && python3 scripts/dual_verify/primary.py "$VERIFY_ISSUE" 2>&1 | tail -3
-        log "  → reviewer.py..."
-        cd /opt/youke && python3 scripts/dual_verify/reviewer.py "$VERIFY_ISSUE" 2>&1 | tail -3
-        log "  → merge.py..."
-        cd /opt/youke && python3 scripts/dual_verify/merge.py "$VERIFY_ISSUE" 2>&1 | tail -5
-        log "✅ 验收完成 #$VERIFY_ISSUE"
-    fi
-else
-    log "😴 无待处理任务"
-fi
+log "😴 无待处理任务"
