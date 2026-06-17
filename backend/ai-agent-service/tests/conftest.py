@@ -96,12 +96,27 @@ def expired_payload():
     }
 
 
+# 测试用 RSA 公钥（与 admin-api 的 public.pem 一致，用于 JWT RS256 验证）
+TEST_RSA_PUBLIC_KEY = (
+    "-----BEGIN PUBLIC KEY-----\n"
+    "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyDkix6IDMt3wkCAY1Phk\n"
+    "O56ihiAu9deWNU/kfRn0dnc/iKC3sqmjlE7Te854xOuy1EjvIbDAXDFbaKHMOM76\n"
+    "itKKIvSpOzGsSaEuerNsQH6+il9KgnO2rk4z9fDEoX9ZYnzIjr3n/oM6mv3Nfh+x\n"
+    "17QMdMo9n29cHlznQAVc4kAJ1ACu4eYJVxiH6WZNtXLu6PkiU+YqsaPOGchvp1Xy\n"
+    "PmZXyJJl0r+xDEVCgfXLsStFTau/9B5YxMv28N5gg1JbwpZNBpBYZ00J90lQkT+5\n"
+    "Lpl0Tto5k/R08bFvAn8uf0PcbpOQ70Ibs9R7T/MHfK0NKyBrwZnzEdcIEQ6Pdn9g\n"
+    "RwIDAQAB\n"
+    "-----END PUBLIC KEY-----"
+)
+
+
 @pytest.fixture
 def mock_settings():
     """Mock 应用配置"""
     mock = MagicMock()
     mock.DEBUG = True
-    mock.JWT_PUBLIC_KEY = ""
+    # 测试环境使用真实 RSA 公钥，避免 DEBUG 模式绕过签名验证（#4 安全加固）
+    mock.JWT_PUBLIC_KEY = TEST_RSA_PUBLIC_KEY
     mock.SERVICE_TOKEN = "test-service-token"
     mock.DATABASE_URL = "postgresql+asyncpg://test:test@localhost:5432/test_db"
     mock.REDIS_URL = "redis://localhost:6379/0"

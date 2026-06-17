@@ -43,76 +43,63 @@
 7. PR body 写 "Fixes #父issue"
 ```
 
-## 铁律（不可违反）
+## Push 前自检清单（逐项勾选，缺一不 push）
 
-### 必须
-- **必须先读 CONTRACT_JSON / DRAFT_JSON / VERDICT_JSON**，不靠自然语言猜
-- **必须 TDD**：先写测试 → 确认 FAIL → 写代码 → 确认 PASS → 重构
-- **必须跑全量单测**后再 push（CP-5）
-- **必须开 PR**，禁止直接 push main
-- **所有交互必须有 JSON 机读块**（REVIEW_JSON / COMMENT_JSON）
+> ⚠️ 违反任一条 → CI pr-check QA Growth Gate 拒绝 → PR 无法合并 → 你的工作白费。
+
+```
+□ 读 CONTRACT_JSON / DRAFT_JSON / VERDICT_JSON — 不靠自然语言猜
+□ 写了测试（L2 单测 + 必要时 L3 E2E）
+□ 测试先跑确认 FAIL（CP-2）
+□ 写了最小实现代码（CP-3）
+□ 测试跑过确认 PASS（CP-3）
+□ 跑了涉及模块的全量单测（CP-5）
+□ 涉及 State/路由/Interact → 跑了 L0 test_pending_interact_persistence.py
+□ 涉及前端组件/SSE → L3 E2E spec 已加或已有覆盖
+□ E2E mock 用 Record-Replay fixture，不是手写
+□ 没有 .env / 密钥 / 硬编码密码
+□ 开了 PR（不是直接 push main）
+□ PR body 填了 PR_CONTRACT JSON
+□ 没有改 DB schema / CI/CD 配置
+```
 
 ### 禁止
-- ❌ 禁止在没有 issue 的情况下写代码
-- ❌ 禁止自己 merge PR（merge 后军师会验收）
-- ❌ 禁止修改数据库 schema（需人类审批）
-- ❌ 禁止修改 CI/CD 配置（需人类审批）
-- ❌ 禁止跳过 TDD 检查点
-- ❌ 禁止手写 E2E mock 数据（用 Record-Replay fixture）
-- ❌ 禁止把 .env / 密钥提交到 git
+- ❌ 没有 issue 就写代码
+- ❌ 自己 merge PR
+- ❌ 改 DB schema（需人类审批）
+- ❌ 改 CI/CD 配置（需人类审批）
+- ❌ 跳过测试直接 push
+- ❌ 手写 E2E mock
+- ❌ 提交 .env / 密钥
+- ❌ **声称完成但实际测试没跑** — 测试结果必须贴到 PR body
 
 ### 不确定时
-- 如果 case 草稿与业务真值有矛盾 → reject 并说明原因
-- 如果业务真值不清晰 → issue 评论请求澄清（<!-- COMMENT_JSON intent=clarification -->）
-- 如果需要改 DB schema → 停止，issue 评论说明并请求人类审批
-
-## 模块分工
-
-Agent 同时启动 3 个并行实例，各负责一个模块，按优先级抢 issue：
-
-| Agent 实例 | 负责模块 | 代码路径 |
-|-----------|---------|---------|
-| agent-admin-api | Java 后端 | `backend/admin-api/` |
-| agent-ai-service | Python AI 服务 | `backend/ai-agent-service/` |
-| agent-admin-web | Next.js 前端 | `frontend/admin-web/` |
-
-处理 issue 时：
-- 只改自己模块的代码
-- 如果 issue 涉及多模块，只修自己的部分，PR 中注明"其他模块需另一个 agent 处理"
-- 如果 issue 不涉及自己模块 → 评论说明 + 跳过
+- case 与真值矛盾 → reject + 说明原因
+- 真值不清晰 → issue 评论 <!-- COMMENT_JSON intent=clarification -->
+- 需改 DB schema → 停止 + issue 评论请求人类
 
 ## 约束
 
-- 并发：各模块独立并行，互不阻塞
-- 超时：单个 issue 处理不超过 30 分钟
-- **熔断感知**：如果 issue 的 CONTRACT_JSON 中 `block_depth >= 3`，不要尝试修复，评论说明"已达熔断阈值，需人工介入"
-- 测试：所有测试必须 PASS 才能 push
-- Token 预算：每个 issue 控制在 200k tokens 内
+- 超时：单个 issue 不超过 30 分钟
+- 熔断：`block_depth >= 3` → 跳过 + 评论"已达熔断阈值"
+- 测试：全量单测 PASS 才能 push
+- Token：每个 issue 控制在 200k tokens 内
 
 ## 协作清单
 
-每次完成一个 issue 后，issue 评论：
+每次完成 issue，在 issue 评论贴测试结果：
+
 ```markdown
 ## 🤖 研发 Agent 完成
 
 PR: #_____
 
-### 改动
-- （简述）
-
 ### 测试结果
 - L2: N passed
-- L3: N passed
-- L0: N/A（或 passed）
+- L3: N passed / N/A
+- L0: N/A / passed
 
 <!-- COMMENT_JSON
-{
-  "from": "claude-code-agent",
-  "intent": "pr_submitted",
-  "issue_id": 0,
-  "pr_number": 0,
-  "tests_pass": true,
-  "timestamp": ""
-}
+{"from":"claude-code-agent","intent":"pr_submitted","issue_id":0,"pr_number":0,"tests_pass":true}
 -->
 ```
