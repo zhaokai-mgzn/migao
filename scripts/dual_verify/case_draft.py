@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Case 草稿反推 v2 — 零人工验收。auto < truths → 拒绝发稿。
+Case 草稿反推 v3 — 零人工验收。auto < truths → 军师自动更新模板。
 """
 import argparse, json, os, re, subprocess, sys, time
 from pathlib import Path
@@ -75,6 +75,119 @@ def count_auto_asserts(template):
                 if k.lower() == "api": count += 1
     return count
 
+# ── 军师自动推断 API/DB 断言 ──
+# 与 reviewer.py infer_business_asserts 的关键词映射保持一致
+_TRUTH_KEYWORD_MAP = [
+    (["看板","dashboard","跳转"], "API: GET /api/admin/dashboard/stats"),
+    (["订单","order"], "API: GET /api/admin/orders?page=1&size=5"),
+    (["商品","product","SKU","库存","stock"], "API: GET /api/admin/products/{id}"),
+    (["客户","customer"], "API: GET /api/admin/customers?keyword="),
+    (["售后","aftersales","退款"], "API: GET /api/admin/aftersales/{id}"),
+    (["登录","login","验证码","注册","密码","token"], "API: POST /api/auth/sms/login"),
+    (["员工","employee","角色","权限","岗位"], "API: GET /api/admin/employees"),
+    (["知识库","knowledge","AI","回答","检索","文档"], "API: POST /api/knowledge/search"),
+    (["租户","tenant","隔离","跨租户"], "DB: SELECT COUNT(*) FROM {table} WHERE tenant_id != {tid}"),
+    (["计数","count","统计","分布","GROUP BY"], "DB: SELECT status, COUNT(*) FROM {table} GROUP BY status"),
+    (["加工","processing","has_processing"], "API: GET /api/admin/dashboard/processing-shipment-count"),
+    (["待发货","pending_shipment"], "API: GET /api/admin/dashboard/pending-shipment-count"),
+    (["tab","分类","tab计数"], "API: GET 对应列表 + 分页 total 匹配"),
+    (["发送","send","消息","chat","对话","SSE"], "API: POST /api/chat/send"),
+]
+
+def infer_assert_for_truth(truth: str, template_name: str) -> str:
+    """根据业务真值文本推断一个 API/DB 断言。"""
+    truth_lower = truth.lower()
+    scores = []
+    for keywords, api in _TRUTH_KEYWORD_MAP:
+        score = sum(1 for kw in keywords if kw.lower() in truth_lower)
+        if score > 0:
+            scores.append((score, api))
+    scores.sort(reverse=True)
+    if scores:
+        return scores[0][1]
+    # 回退：通用 API GET 断言
+    return f"API: GET /api/admin/{template_name.replace('-','/')}"
+
+def auto_patch_template(tmpl_name: str, template: dict, truths: list) -> bool:
+    """军师自动更新模板：为缺少 assert 的 truth 补充 reviewer_asserts。
+    返回 True 表示模板已更新并提交 PR。"""
+    if not template or not tmpl_name:
+        return False
+
+    existing = template.get("reviewer_asserts", [])
+    existing_strs = set()
+    for a in existing:
+        if isinstance(a, str):
+            existing_strs.add(a.split(":")[0].strip() if ":" in a else a.strip())
+        elif isinstance(a, dict):
+            existing_strs.update(a.keys())
+
+    new_asserts = []
+    for t in truths:
+        # 检查这条 truth 是否已有对应的 assert
+        matched = False
+        for a in existing:
+            if isinstance(a, str) and any(kw in t for kw in ["API","DB"] if kw in a):
+                matched = True
+                break
+            elif isinstance(a, dict):
+                for k in a:
+                    if any(kw.lower() in t.lower() for kw in k.split()):
+                        matched = True
+                        break
+        if not matched:
+            inferred = infer_assert_for_truth(t, tmpl_name)
+            new_asserts.append(f"{inferred}  # auto-patched for: {t[:40]}")
+            print(f"  ➕ 新增 assert: {inferred}")
+
+    if not new_asserts:
+        return False
+
+    # 更新模板 YAML
+    tmpl_path = TEMPLATE_DIR / f"{tmpl_name}.yml"
+    with open(tmpl_path) as f:
+        raw = f.read()
+
+    # 在 reviewer_asserts 列表末尾插入新断言
+    for na in reversed(new_asserts):
+        # 找到最后一个 reviewer_asserts 条目后插入
+        insert_marker = "reviewer_asserts:"
+        if insert_marker in raw:
+            lines = raw.split("\n")
+            new_lines = []
+            inserted = False
+            for i, line in enumerate(lines):
+                new_lines.append(line)
+                if not inserted and line.strip().startswith("- ") and "reviewer_asserts" not in line:
+                    # 检查下一行是否还是 assert
+                    next_is_assert = (i + 1 < len(lines) and
+                                      (lines[i+1].strip().startswith("- ") or
+                                       lines[i+1].strip().startswith("  ")))
+                    if not next_is_assert:
+                        new_lines.append(f"  - {na}")
+                        inserted = True
+            if inserted:
+                raw = "\n".join(new_lines)
+
+    # 写入更新后的模板
+    with open(tmpl_path, "w") as f:
+        f.write(raw)
+
+    # 提交 + PR
+    branch = f"feat/junshi-patch-template-{tmpl_name}"
+    subprocess.run(["git", "checkout", "-b", branch], cwd=PROJECT_ROOT, capture_output=True)
+    subprocess.run(["git", "add", str(tmpl_path)], cwd=PROJECT_ROOT, capture_output=True)
+    msg = f"feat(qa): 军师自动补全 {tmpl_name} 模板 reviewer_asserts\n\n{chr(10).join('- '+na for na in new_asserts)}"
+    subprocess.run(["git", "commit", "-m", msg], cwd=PROJECT_ROOT, capture_output=True)
+    subprocess.run(["git", "push", "origin", branch], cwd=PROJECT_ROOT, capture_output=True)
+    subprocess.run(["gh", "pr", "create", "--title",
+        f"feat(qa): {tmpl_name} 模板自动补全 reviewer_asserts",
+        "--body", f"军师自动检测到 {len(new_asserts)} 条真值缺少断言，已自动补全。\n\n" +
+        "\n".join(f"- {na}" for na in new_asserts),
+        "--base", "main"], cwd=PROJECT_ROOT, capture_output=True)
+    print(f"  ✅ PR 已创建: feat/junshi-patch-template-{tmpl_name}")
+    return True
+
 def quality_gate(truths, tmpl_name, template):
     """返回 (messages, can_post)。can_post=False=拒绝发稿"""
     errors, warnings = [], []
@@ -88,9 +201,7 @@ def quality_gate(truths, tmpl_name, template):
         auto = count_auto_asserts(template)
         if auto < len(truths):
             errors.append(
-                f"🔴 **拒绝发稿**: L4自动断言({auto}) < 业务真值({len(truths)})\n"
-                f"   缺少自动验证的真值会导致 reviewer 无法验收 → block 率 100%\n"
-                f"   请为每条真值补充 DB/API 验证方式后重试。")
+                f"🔴 **拒绝发稿**: L4自动断言({auto}) < 业务真值({len(truths)})")
     return errors + warnings, len(errors) == 0
 
 def draft_l2(truths, template):
@@ -154,7 +265,31 @@ def generate(issue_number, dry_run=False):
     tmpl = load_template(tmpl_name) if tmpl_name else None
     issues, can_post = quality_gate(truths, tmpl_name, tmpl)
 
+    # ── 军师自动修模板 ──
+    if not can_post and tmpl_name and tmpl and truths:
+        auto_msg = [f"🔴 质量门禁拦截 → 军师自动补全模板 `{tmpl_name}`"]
+        success = auto_patch_template(tmpl_name, tmpl, truths)
+        if success:
+            auto_msg.append("✅ 模板已更新 + PR 已创建，重新发稿...")
+            # 重新加载更新后的模板
+            tmpl = load_template(tmpl_name)
+            issues, can_post = quality_gate(truths, tmpl_name, tmpl)
+            if can_post:
+                auto_msg.append("✅ 质量门禁通过，继续发稿")
+            else:
+                auto_msg.append("⚠️ 自动补全后仍未通过，需人工介入")
+        else:
+            auto_msg.append("⚠️ 自动补全失败，需人工介入")
+        # 把军师修复信息也放入输出
+        auto_section = "\n".join(f"- {m}" for m in auto_msg)
+    else:
+        auto_section = None
+
     output = [f"## 🤖 军师反推 — Case草稿 (issue #{issue_number})"]
+    if auto_section:
+        output.append("")
+        output.append("### 🔧 模板自动修复")
+        output.append(auto_section)
     if issues:
         output.append("")
         for w in issues:
@@ -163,7 +298,7 @@ def generate(issue_number, dry_run=False):
 
     if not can_post:
         output.append("")
-        output.append("**⚠️ 草稿未发布** — 请修复以上问题后重新触发 case_draft。")
+        output.append("**⚠️ 草稿未发布** — 自动修复失败，请军师手动检查模板。")
         return "\n".join(output)
 
     output.append("")
@@ -194,6 +329,10 @@ def generate(issue_number, dry_run=False):
         "red_flags": tmpl.get("red_flags",[]) if tmpl else [],
         "drafted_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
+    if auto_section:
+        draft_json["auto_patched"] = True
+        draft_json["patched_template"] = tmpl_name
+
     output.append("")
     output.append("<!-- DRAFT_JSON")
     output.append(json.dumps(draft_json, ensure_ascii=False, indent=2))

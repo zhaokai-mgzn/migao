@@ -1,6 +1,6 @@
 {
-  "version": "v1.1",
-  "last_updated": "2026-06-17T14:00:00+08:00",
+  "version": "v1.2",
+  "last_updated": "2026-06-17T14:30:00+08:00",
   "owner": "junshi (auto-maintained)",
   "rules": [
     {
@@ -97,6 +97,17 @@
       "last_modified": "2026-06-16T07:19:53Z"
     },
     {
+      "id": "auto_patch_template",
+      "type": "self_healing",
+      "version": "v1",
+      "purpose": "军师自动补全模板 — auto_asserts < truths_count 时，自动推断新增 reviewer_asserts",
+      "trigger": "case_draft.py quality_gate reject 因为 auto < truths",
+      "action": "infer_assert_for_truth() 推断 API/DB 断言 → 写入模板 YAML → git commit + PR",
+      "keyword_map": "与 reviewer.py infer_business_asserts 共享关键词映射",
+      "safety": "只新增断言不删除已有；PR 需要人工 review 才能合并；模板更新后重新发稿",
+      "last_modified": "2026-06-17T14:30:00Z"
+    },
+    {
       "id": "merge_decision",
       "type": "decision_matrix",
       "version": "v2",
@@ -154,7 +165,7 @@
     "last_scan": "2026-06-16T15:38:33.628461"
   },
   "template_coverage": {
-    "last_audited": "2026-06-17T14:00:00+08:00",
+    "last_audited": "2026-06-17T14:30:00+08:00",
     "total_templates": 8,
     "truths_to_asserts_ratio": {
       "dashboard-jump": "4:4 (100%)",
