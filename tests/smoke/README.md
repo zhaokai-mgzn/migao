@@ -32,7 +32,7 @@ pytest tests/smoke/ -v --html=reports/smoke_report.html --self-contained-html
 |------|------|--------|
 | `SMOKE_ENV` | 测试环境 (local/staging/production) | `local` |
 | `ADMIN_API_URL` | admin-api 地址 | `http://localhost:8080` |
-| `AI_AGENT_URL` | ai-agent-service 地址 | `http://localhost:8000` |
+| `AI_AGENT_URL` | ai-agent-service 地址 | `http://localhost:8001` |
 | `ADMIN_USERNAME` | 管理员用户名 | `admin` |
 | `ADMIN_PASSWORD` | 管理员密码 | `admin123` |
 | `TENANT_ID` | 租户 ID | `1` |

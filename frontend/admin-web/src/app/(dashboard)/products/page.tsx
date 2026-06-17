@@ -110,7 +110,7 @@ export default function ProductsPage() {
       const data = res.data.data
       setProducts(data?.items || [])
       setTotal(data?.total || 0)
-    } catch {
+    } catch (e) {
       // Error handled by API layer
     } finally {
       setLoading(false)
@@ -189,7 +189,7 @@ export default function ProductsPage() {
       }
       setSingleConfirm(null)
       loadProducts()
-    } catch {
+    } catch (e) {
       // handled by API layer
     } finally {
       setSubmitting(false)
@@ -214,7 +214,7 @@ export default function ProductsPage() {
       setBatchAction(null)
       setSelectedIds([])
       loadProducts()
-    } catch {
+    } catch (e) {
       // handled by API layer
     } finally {
       setSubmitting(false)

@@ -34,7 +34,7 @@ export default function ChatConfigPage() {
       if (res.data.data) {
         setAiConfig({ ...defaultAiConfig, ...res.data.data })
       }
-    } catch {
+    } catch (e) {
       toast.error('加载 AI 配置失败')
     } finally {
       setLoading(false)
@@ -54,7 +54,7 @@ export default function ChatConfigPage() {
     try {
       await settingsApi.updateAiConfig(aiConfig)
       toast.success('机器人配置已保存')
-    } catch {
+    } catch (e) {
       toast.error('保存失败')
     } finally {
       setSavingAiConfig(false)
@@ -75,7 +75,7 @@ export default function ChatConfigPage() {
     try {
       const res = await quickReplyApi.getTemplates({ page: 1, size: 100 })
       setTemplates(res.data.data?.items || [])
-    } catch {
+    } catch (e) {
       toast.error('加载快捷回复失败')
     } finally {
       setLoadingTemplates(false)
@@ -102,7 +102,7 @@ export default function ChatConfigPage() {
       setNewForm({ title: '', content: '', category: '通用' })
       setShowNewForm(false)
       loadTemplates()
-    } catch {
+    } catch (e) {
       toast.error('创建失败')
     } finally {
       setSavingTemplate(false)
@@ -134,7 +134,7 @@ export default function ChatConfigPage() {
       toast.success('快捷回复已更新')
       cancelEdit()
       loadTemplates()
-    } catch {
+    } catch (e) {
       toast.error('更新失败')
     } finally {
       setSavingTemplate(false)
@@ -147,7 +147,7 @@ export default function ChatConfigPage() {
       await quickReplyApi.deleteTemplate(id)
       toast.success('已删除')
       loadTemplates()
-    } catch {
+    } catch (e) {
       toast.error('删除失败')
     }
   }

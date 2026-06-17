@@ -23,7 +23,7 @@ export default function EditProductPage() {
       try {
         const res = await productApi.getProduct(productId)
         setProduct(res.data.data)
-      } catch {
+      } catch (e) {
         toast.error('加载商品失败')
         router.push('/products')
       } finally {

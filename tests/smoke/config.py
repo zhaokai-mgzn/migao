@@ -35,7 +35,7 @@ def get_config() -> EnvConfig:
         "local": EnvConfig(
             name="local",
             admin_api_url=admin_api_url or "http://localhost:8080",
-            ai_agent_url=ai_agent_url or "http://localhost:8000",
+            ai_agent_url=ai_agent_url or "http://localhost:8001",
             admin_phone=os.getenv("ADMIN_PHONE", "13800138000"),
             admin_sms_code=os.getenv("ADMIN_SMS_CODE", "123456"),
             tenant_id=int(os.getenv("TENANT_ID", "1")),

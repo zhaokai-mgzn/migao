@@ -60,7 +60,7 @@ export default function ProductDetailPage() {
       try {
         const res = await productApi.getProduct(productId)
         setProduct(res.data.data)
-      } catch {
+      } catch (e) {
         toast.error('加载商品失败')
         router.push('/products')
       } finally {
@@ -76,7 +76,7 @@ export default function ProductDetailPage() {
       await productApi.updateProductStatus(product.id, newStatus)
       toast.success(newStatus === 'on_sale' ? '已上架' : '已下架')
       setProduct({ ...product, status: newStatus })
-    } catch {
+    } catch (e) {
       // Error handled by API layer
     }
   }

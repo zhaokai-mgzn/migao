@@ -75,7 +75,7 @@ export default function CategoryDialog({
         parentId: form.parentId || undefined,
       })
       onClose()
-    } catch {
+    } catch (e) {
       // Error handled by API layer
     } finally {
       setSubmitting(false)

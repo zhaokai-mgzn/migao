@@ -36,7 +36,7 @@ export function resolveImageUrl(url?: string | null): string {
         const parsed = new URL(trimmed)
         const path = parsed.pathname.replace(/^\//, '')
         if (path) return `${ossDomain}/${path}${parsed.search}`
-      } catch { /* URL 解析失败则原样返回 */ }
+      } catch (e) { /* URL 解析失败则原样返回 */ }
     }
     return trimmed
   }

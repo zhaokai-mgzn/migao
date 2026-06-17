@@ -245,3 +245,95 @@ test.describe('数值类型一致性', () => {
     }
   })
 })
+
+// ========== 分类 / 员工 / 售后 / 角色 / 知识库 / Dashboard / 通知 ==========
+
+test.describe('分类 API Contract', () => {
+  test('GET /api/admin/categories — 节点必含 id/name/children', async ({ request }) => {
+    const tokens = await loginViaApi()
+    const resp = await request.get('/api/admin/categories', { headers: { Authorization: `Bearer ${tokens.accessToken}` } })
+    expect(resp.status()).toBe(200)
+    const nodes = (await resp.json())?.data || []
+    if (nodes.length === 0) { console.log('[skip] 分类树为空'); return }
+    function check(n: any, p: string) {
+      assertField(n, 'id', typeof n.id === 'string' ? 'string' : 'number')
+      assertField(n, 'name', 'string')
+      if (n.children) { expect(Array.isArray(n.children)).toBe(true); n.children.forEach((c: any, i: number) => check(c, `${p}[${i}]`)) }
+    }
+    nodes.forEach((n: any, i: number) => check(n, `root[${i}]`))
+  })
+})
+
+test.describe('员工 API Contract', () => {
+  test('GET /api/admin/users — 必含 name/phone', async ({ request }) => {
+    const tokens = await loginViaApi()
+    const resp = await request.get('/api/admin/users?page=1&size=5', { headers: { Authorization: `Bearer ${tokens.accessToken}` } })
+    expect(resp.status()).toBe(200)
+    const items = (await resp.json())?.data?.items || []
+    if (items.length === 0) { console.log('[skip]'); return }
+    for (const u of items) {
+      expect(u).toHaveProperty('id'); expect(u).toHaveProperty('name'); expect(u).toHaveProperty('phone')
+      if (!u.name && !u.phone) throw new Error(`员工 ${u.id}: name/phone 同时为空`)
+    }
+  })
+})
+
+test.describe('售后 API Contract', () => {
+  test('GET /api/admin/after-sales — 必含 ticketNo/status', async ({ request }) => {
+    const tokens = await loginViaApi()
+    const resp = await request.get('/api/admin/after-sales?page=1&size=5', { headers: { Authorization: `Bearer ${tokens.accessToken}` } })
+    expect(resp.status()).toBe(200)
+    const items = (await resp.json())?.data?.items || []
+    if (items.length === 0) { console.log('[skip]'); return }
+    for (const t of items) {
+      assertField(t, 'id', 'string'); assertField(t, 'ticketNo', 'string'); assertField(t, 'status', 'string')
+      expect(t).toHaveProperty('customerName'); expect(t).toHaveProperty('ticketType')
+    }
+  })
+})
+
+test.describe('角色 API Contract', () => {
+  test('GET /api/admin/roles — 必含 name/code', async ({ request }) => {
+    const tokens = await loginViaApi()
+    const resp = await request.get('/api/admin/roles?page=1&size=10', { headers: { Authorization: `Bearer ${tokens.accessToken}` } })
+    expect(resp.status()).toBe(200)
+    const items = (await resp.json())?.data?.items || []
+    if (items.length === 0) { console.log('[skip]'); return }
+    for (const r of items) { assertField(r, 'name', 'string'); assertField(r, 'code', 'string') }
+  })
+})
+
+test.describe('知识库 API Contract', () => {
+  test('GET /api/admin/knowledge/documents — 分页结构完整', async ({ request }) => {
+    const tokens = await loginViaApi()
+    const resp = await request.get('/api/admin/knowledge/documents?page=1&size=5', { headers: { Authorization: `Bearer ${tokens.accessToken}` } })
+    expect(resp.status()).toBe(200)
+    const data = (await resp.json()).data
+    expect(data).toHaveProperty('items'); expect(Array.isArray(data.items)).toBe(true)
+  })
+})
+
+test.describe('Dashboard API Contract', () => {
+  test('GET /api/admin/dashboard/stats — 统计数字类型正确', async ({ request }) => {
+    const tokens = await loginViaApi()
+    const resp = await request.get('/api/admin/dashboard/stats', { headers: { Authorization: `Bearer ${tokens.accessToken}` } })
+    if (resp.status() === 404 || resp.status() === 403) { console.log(`[skip] ${resp.status()}`); return }
+    expect(resp.status()).toBe(200)
+    const data = (await resp.json())?.data
+    for (const f of ['todayOrders', 'todayRevenue', 'todayNewCustomers', 'pendingOrders']) {
+      if (data && data[f] !== undefined && data[f] !== null) expect(typeof data[f]).toBe('number')
+    }
+  })
+})
+
+test.describe('通知 API Contract', () => {
+  test('GET /api/admin/notifications — 必含 title/content', async ({ request }) => {
+    const tokens = await loginViaApi()
+    const resp = await request.get('/api/admin/notifications?page=1&size=5', { headers: { Authorization: `Bearer ${tokens.accessToken}` } })
+    if (resp.status() === 404 || resp.status() === 403) { console.log(`[skip] ${resp.status()}`); return }
+    expect(resp.status()).toBe(200)
+    for (const n of ((await resp.json())?.data?.items || [])) {
+      expect(n).toHaveProperty('id'); expect(n).toHaveProperty('title'); expect(n).toHaveProperty('content')
+    }
+  })
+})

@@ -9,7 +9,7 @@
 │ 本地启动（你本机跑）                                       │
 │ ┌──────────┐ ┌────────────────┐ ┌───────────┐           │
 │ │ admin-api │ │ ai-agent-service│ │ admin-web  │           │
-│ │ Java :8080│ │ Python :8000    │ │ Next :3001 │           │
+│ │ Java :8080│ │ Python :8001    │ │ Next :3001 │           │
 │ └──────────┘ └────────────────┘ └───────────┘           │
 │                                                          │
 │ 云 dev 环境（已配置好，只连不用启）                        │
@@ -28,14 +28,14 @@
 # 1. admin-api（Java，端口 8080）
 cd backend/admin-api && ./mvnw spring-boot:run &
 
-# 2. ai-agent-service（Python，端口 8000）
-cd backend/ai-agent-service && .venv/bin/python -m uvicorn app.main:app --port 8000 --reload &
+# 2. ai-agent-service（Python，端口 8001）
+cd backend/ai-agent-service && .venv/bin/python -m uvicorn app.main:app --port 8001 --reload &
 
 # 3. admin-web（Next.js，端口 3001）
 cd frontend/admin-web && npm run dev &
 
 # 验证就绪
-lsof -i :8080 -sTCP:LISTEN && lsof -i :8000 -sTCP:LISTEN && lsof -i :3001 -sTCP:LISTEN
+lsof -i :8080 -sTCP:LISTEN && lsof -i :8001 -sTCP:LISTEN && lsof -i :3001 -sTCP:LISTEN
 ```
 
 ## 云 dev 环境配置（在 .env 中，已预配好）

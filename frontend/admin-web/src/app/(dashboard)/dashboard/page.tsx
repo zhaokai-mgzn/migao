@@ -138,24 +138,24 @@ export default function DashboardPage() {
       try {
         const rkResp = await dashboardApi.getProductRanking('day', 10)
         setRanking((rkResp.data as any)?.data || [])
-      } catch {}
+      } catch (e) { console.error("page.tsx", e); }
 
       // 待发货订单数（status = 待发货）
       try {
         const resp = await request.get('/api/admin/dashboard/pending-shipment-count')
         setPendingShipment(resp.data?.data ?? 0)
-      } catch {}
+      } catch (e) { console.error("page.tsx", e); }
       // 含加工待发货订单数（status = 待发货 AND has_processing = true）
       try {
         const resp = await request.get('/api/admin/dashboard/processing-shipment-count')
         setProcessingShipment(resp.data?.data ?? 0)
-      } catch {}
+      } catch (e) { console.error("page.tsx", e); }
       // 待补库存 = 低库存 SKU 数（按颜色规格维度，库存 ≤ 100）
       try {
         const resp = await request.get('/api/admin/products/low-stock-by-color', { params: { threshold: 100, limit: 200 } })
         const items = resp?.data?.data
         setLowStockCount(Array.isArray(items) ? items.length : 0)
-      } catch {}
+      } catch (e) { console.error("page.tsx", e); }
       setUpdateTime(now())
     } catch (error) {
       console.error('Dashboard load:', error)

@@ -17,7 +17,7 @@ class Settings(BaseSettings):
 
     # 服务器配置
     HOST: str = "0.0.0.0"
-    PORT: int = 8000
+    PORT: int = 8001
 
     # PostgreSQL 配置
     DATABASE_URL: str = "postgresql+asyncpg://app_user:@localhost:5432/ai_customer_service"

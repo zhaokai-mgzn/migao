@@ -93,7 +93,7 @@ export default function EmployeesPage() {
       const data = res.data.data
       setEmployees(data?.items || [])
       setTotal(data?.total || 0)
-    } catch {
+    } catch (e) {
       toast.error('加载员工列表失败')
     } finally {
       setLoading(false)
@@ -172,7 +172,7 @@ export default function EmployeesPage() {
       }
       setFormOpen(false)
       loadEmployees()
-    } catch {
+    } catch (e) {
       // Error handled by API layer
     } finally {
       setFormLoading(false)
@@ -188,7 +188,7 @@ export default function EmployeesPage() {
       toast.success('删除成功')
       setDeleteTarget(null)
       loadEmployees()
-    } catch {
+    } catch (e) {
       // Error handled by API layer
     } finally {
       setDeleting(false)
@@ -205,7 +205,7 @@ export default function EmployeesPage() {
       await employeeApi.toggleEmployeeStatus(employee.id, newStatus)
       toast.success(`已${actionLabel}`)
       loadEmployees()
-    } catch {
+    } catch (e) {
       toast.error(`操作失败`)
     } finally {
       setTogglingId(null)

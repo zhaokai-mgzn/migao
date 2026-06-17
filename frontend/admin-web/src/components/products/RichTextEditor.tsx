@@ -142,7 +142,7 @@ export default function RichTextEditor({
         `<img src="${renderUrl}" alt="" style="max-width:100%;height:auto;border-radius:6px;" />`
       )
       handleInput()
-    } catch {
+    } catch (e) {
       toast.error('图片上传失败')
     } finally {
       setUploading(false)
@@ -160,7 +160,7 @@ export default function RichTextEditor({
   const isCmdActive = (cmd: string) => {
     try {
       return document.queryCommandState(cmd)
-    } catch {
+    } catch (e) {
       return false
     }
   }
@@ -169,7 +169,7 @@ export default function RichTextEditor({
     try {
       const v = document.queryCommandValue('formatBlock')
       return typeof v === 'string' && v.toLowerCase().replace(/[<>]/g, '') === tag
-    } catch {
+    } catch (e) {
       return false
     }
   }

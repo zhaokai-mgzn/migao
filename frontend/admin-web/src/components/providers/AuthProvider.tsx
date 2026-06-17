@@ -13,7 +13,7 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
     const init = async () => {
       try {
         await initialize()
-      } catch {
+      } catch (e) {
         // 初始化失败不阻塞渲染
       } finally {
         setIsReady(true)

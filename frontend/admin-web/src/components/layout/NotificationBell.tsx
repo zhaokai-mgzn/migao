@@ -45,7 +45,7 @@ export default function NotificationBell() {
     try {
       const res = await notificationApi.getUnreadCount()
       setUnreadCount(res.data?.data?.count ?? 0)
-    } catch {
+    } catch (e) {
       // 静默降级
     }
   }, [])
@@ -56,7 +56,7 @@ export default function NotificationBell() {
     try {
       const res = await notificationApi.getNotifications({ page: 1, size: 5 })
       setNotifications(res.data?.data?.items ?? [])
-    } catch {
+    } catch (e) {
       // 静默降级
     } finally {
       setLoading(false)
@@ -104,7 +104,7 @@ export default function NotificationBell() {
         prev.map(n => n.id === notification.id ? { ...n, status: 'read', readAt: new Date().toISOString() } : n)
       )
       setUnreadCount(prev => Math.max(0, prev - 1))
-    } catch {
+    } catch (e) {
       // 静默降级
     }
   }, [])
@@ -115,7 +115,7 @@ export default function NotificationBell() {
       await notificationApi.markAllAsRead()
       setNotifications(prev => prev.map(n => ({ ...n, status: 'read' as const, readAt: new Date().toISOString() })))
       setUnreadCount(0)
-    } catch {
+    } catch (e) {
       // 静默降级
     }
   }, [])

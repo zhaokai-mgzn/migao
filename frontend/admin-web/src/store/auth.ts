@@ -101,7 +101,7 @@ export const useAuthStore = create<AuthState>()(
           // 登录成功后获取用户信息
           try {
             await get().fetchUserInfo()
-          } catch {
+          } catch (e) {
             // 获取用户信息失败不阻塞登录
           }
 
@@ -138,7 +138,7 @@ export const useAuthStore = create<AuthState>()(
           // 登录成功后获取用户信息
           try {
             await get().fetchUserInfo()
-          } catch {
+          } catch (e) {
             // 获取用户信息失败不阻塞登录
           }
 
@@ -153,7 +153,7 @@ export const useAuthStore = create<AuthState>()(
       logout: async () => {
         try {
           await authApi.logout()
-        } catch {
+        } catch (e) {
           // 即使 API 失败也清除本地状态
         } finally {
           get().clearAuth()
@@ -189,7 +189,7 @@ export const useAuthStore = create<AuthState>()(
           })
 
           return newAccessToken
-        } catch {
+        } catch (e) {
           get().clearAuth()
           return null
         }
@@ -230,7 +230,7 @@ export const useAuthStore = create<AuthState>()(
         // 尝试获取用户信息验证 token 有效性
         try {
           await get().fetchUserInfo()
-        } catch {
+        } catch (e) {
           // token 无效，已在 fetchUserInfo 中清除状态
         }
       },

@@ -8,12 +8,25 @@
 1. 任何功能/Bug 先开 issue（用 `.github/ISSUE_TEMPLATE/feature.md`）
 2. 业务真值用**业务语言**，不带 SQL/API
 3. 军师反推 case 草稿 → 研发 review + 改/删/补
-4. PR 合 main → 双验收自动跑（主+复，5 层兜底）
-5. 双一致 + 100% → 自动 close
+4. PR 合 main → 军师AI（远程服务器）触发多角色验收（case_draft → primary + reviewer → merge，5 层兜底）
+5. 主+复双一致 + 100% → 自动 close；不一致 → block 升级人工
 6. ❌ 禁止：跳过 issue / 技术性业务真值 / 拒绝 review 草稿 / 人为验收
 
 **禁止自己写业务 case 终稿**。**禁止跳过 issue 直接写代码**。
-详见 [`docs/wiki/Development.md`](docs/wiki/Development.md) "AI 验收体系" 段 + issue #450 v3.1。
+详见 [`docs/wiki/Development.md`](docs/wiki/Development.md) "AI 验收体系" 段 + issue #450 v3.1，以及 [`docs/wiki/AI-Contracts.md`](docs/wiki/AI-Contracts.md) 的 7 种交互契约。
+**环境变量配置**：军师AI 服务地址等由项目级 `.claude/settings.json` 中的 `env` 字段统一管理，禁止硬编码到脚本中。
+
+### Claude Code 启动自检
+
+**每次 cc 启动时自动执行以下检查，未通过则阻断并提示：**
+
+1. **CLAUDE.md 最新性** — 检查项目根 `CLAUDE.md` 是否与 `.claude/settings.json` 版本号一致
+2. **tdd-iron-law.md 完整性** — 确认 `.claude/skills/tdd-iron-law.md` 包含 CP-1 ~ CP-7 + L0 + E2E 质量规范
+3. **环境变量完整性** — 校验 `env` 中必有 `PROJECT_ROOT`, `QA_RESULT_ROOT`, `CLAUDE_MD_CHECKSUM`
+4. **脚本可执行性** — `scripts/dual_verify/primary.py` / `reviewer.py` / `case_draft.py` 存在且可执行
+5. **E2E 目录结构** — `tests/e2e/specs/quality/` 下 api-contract + cross-page-consistency + anti-placeholder 存在
+
+自检失败 → 自动触发修复 → 再次自检。最多 2 次重试后如仍失败，向用户报告具体缺失项。
 
 ## 项目 Wiki
 
@@ -74,6 +87,10 @@
 □ 前端：admin-web / mini-app
 □ 配置：terraform / CI/CD
 □ 测试：新增测试文件 / 修改现有测试
+□ 涉及新交互组件？（按钮/表单/卡片等）→ 需 E2E 完整点击链路
+□ 涉及新 SSE 事件？（tool_call / tool_result / interact 等）→ 需 E2E 事件验证
+□ 涉及新 Tool？（写操作）→ 需 E2E confirm 前校验 + tool_result 验证
+□ 涉及核心业务流程？（订单/商品/客户等）→ 需 api-contract + cross-page-consistency 更新
 ```
 
 **输出**：明确列出受影响的模块和测试文件路径。
@@ -149,6 +166,31 @@ cd frontend/admin-web && npx vitest run
 
 **输出**：所有单测必须 `passed`，无 `failed`。
 
+#### CP-5.5：L0 状态持久化测试（State Persistence Test）
+
+**铁律：新增状态字段/跨 graph 状态变更/Skill pending 状态，必须跑 `test_pending_interact_persistence.py`（12 case）。**
+
+```bash
+# 必须运行（ai-agent-service 新增状态字段后）
+cd backend/ai-agent-service && .venv/bin/python -m pytest tests/test_pending_interact_persistence.py -v
+
+# 必须 PASS 全部 12 个 case
+# - test_store_customer_selection → 跨 graph 持久化
+# - test_store_product_selection → 跨 graph 持久化
+# - test_store_processing_item_selection → 跨 graph 持久化
+# - test_persist_order_status_filter → 跨 graph 持久化
+# - test_persist_customer_filter → 跨 graph 持久化
+# - test_invalid_skill_rejected → 校验（不持久化无效 skill）
+# - test_empty_data_rejected → 校验（不持久化空数据）
+# - test_sql_injection_blocked → SQL 注入防护
+# - test_concurrent_updates → 并发更新
+# - test_clear_pending_state → 清理逻辑
+# - test_state_recovery_after_restart → 重启恢复
+# - test_tenant_isolation → 多租户隔离
+```
+
+**输出**：12 个 case 全部 `passed`，无 `failed` 或 `skipped`。
+
 #### CP-6：集成测试 + E2E 测试增量验证（Incremental Integration & E2E Test）
 
 **铁律：仅运行本次变更涉及的集成测试和 E2E 测试文件，避免全量回归耗时过长。**
@@ -175,17 +217,26 @@ cd tests && npx playwright test tests/e2e/specs/products.spec.ts
 **铁律：声称"完成"或准备合并 PR 前，必须逐项勾选以下清单。**
 
 ```
-□ CP-1：已识别变更范围，列出受影响模块
+□ CP-1：已识别变更范围，列出受影响模块 + 4 个详细 checkbox（组件/SSE/Tool/业务流程）
 □ CP-2：已先写测试，运行确认 FAIL
 □ CP-3：已写实现代码，运行确认 PASS
 □ CP-4：已重构代码，测试仍 PASS
 □ CP-5：已运行所有受影响模块的全量单测，全部 PASS
+□ CP-5.5：L0 状态持久化测试（如有状态变更），12 case 全部 PASS
 □ CP-6：已运行本次变更涉及的增量集测 + E2E 测试，全部 PASS
 □ CP-7：已完成本自检清单，无遗漏
 □ E2E 测试覆盖决策：
   - [ ] 已检查 tests/e2e/ 目录
   - [ ] 已评估是否需要新增 E2E 测试
   - [ ] 已新增 E2E 测试 / 确认已有 E2E 覆盖 / 确认不需要 E2E（需说明原因）
+□ E2E 质量自检（如有新增/修改 E2E 测试）：
+  - [ ] 新增交互组件 → E2E 覆盖了完整点击链路（渲染→点击→发送→验证）
+  - [ ] 新增数据列表页 → 已在 anti-placeholder.spec.ts 的 PAGES 数组中注册
+  - [ ] 新增/修改 API 返回字段 → 已在 api-contract.spec.ts 中验证必填字段存在 + 类型正确
+  - [ ] 修改列表/详情字段 → 已在 cross-page-consistency.spec.ts 中验证一致性
+  - [ ] E2E 测试命名格式：`{domain}/{feature}.spec.ts`（如 orders/order-create.spec.ts）
+  - [ ] 使用 Page Object 模式封装可复用交互（`tests/e2e/page-objects/`）
+  - [ ] 禁止手写 mock 数据 → 使用 Record-Replay fixture（`tests/e2e/fixtures/`）
 □ 代码符合项目规范（命名、格式、注释）
 □ 无硬编码密钥、无敏感信息泄露
 □ 已更新相关文档（如有必要）
@@ -201,8 +252,12 @@ cd tests && npx playwright test tests/e2e/specs/products.spec.ts
 |---------|------|
 | 先写实现后补测试 | 立即停止，删除实现代码，回到 CP-2 重做 |
 | 跳过单测全量验证 | 禁止合并 PR，必须补跑 |
+| 跳过 L0 状态持久化测试 | 禁止合并 PR，必须补跑 CP-5.5（12 case 全 PASS）|
 | 跳过集成测试增量验证 | 禁止合并 PR，必须补跑 |
 | **跳过 E2E 测试评估** | **禁止合并 PR，必须执行 E2E 测试覆盖决策** |
+| **E2E 弱断言（仅检查可见性/无数据断言）** | **视为虚假完成，必须重写为强断言（tool_result/tool_call/数据字段）** |
+| **新增交互组件未覆盖完整点击链路** | **禁止合并 PR，必须补 E2E 完整链路测试** |
+| **新增业务数据列表/详情页未注册 anti-placeholder** | **禁止合并 PR，必须先注册 PAGES 数组** |
 | 未完成自检清单就声称"完成" | 视为虚假完成，必须重新执行所有检查点 |
 | 测试失败仍然提交代码 | 立即回滚，修复测试后再提交 |
 
@@ -210,16 +265,16 @@ cd tests && npx playwright test tests/e2e/specs/products.spec.ts
 
 | 模块 | 测试类型 | 工具 | 覆盖率要求 |
 |------|---------|------|-----------|
-| admin-api | 单元测试 + 集成测试 | JUnit 5 + MockMvc + TestContainers | 核心 Service ≥ 80% |
-| ai-agent-service | 单元测试 + 集成测试 | pytest + httpx | 核心工具 ≥ 80% |
-| admin-web | 组件测试 + E2E 测试 | Vitest + Testing Library + Playwright | 关键页面 100% |
-| 全链路 | E2E 冒烟测试 | Playwright (tests/smoke/) | 核心流程 100% |
+| admin-api | 单元测试 + 集成测试 | JUnit 5 + MockMvc + Mockito（TestContainers 计划中）| 核心 Service ≥ 80% |
+| ai-agent-service | 单元测试 + 集成测试 | pytest + httpx | 核心工具 ≥ 80%（当前 0%，计划中）|
+| admin-web | 组件测试 + E2E 测试 | Vitest + Testing Library + Playwright | 关键页面 100%（当前 ~20%）|
+| 全链路 | E2E 冒烟测试 | pytest (tests/smoke/) | 核心流程 100%（当前 ~85%）|
 
 ### 测试分层策略
 
 ```
            ┌─────────────┐
-           │  E2E 冒烟    │  ← Playwright，覆盖核心用户流程
+           │  E2E 冒烟    │  ← pytest (tests/smoke/)，覆盖核心 API 流程
            ├─────────────┤
            │ 集成测试     │  ← API 端到端，连接云 dev 数据库
            ├─────────────┤
@@ -227,13 +282,15 @@ cd tests && npx playwright test tests/e2e/specs/products.spec.ts
            └─────────────┘
 ```
 
+> **CI 成熟度说明**：admin-api 有 `./mvnw test` (JUnit) + CI workflow `backend-tests.yml`。ai-agent-service 有 pytest + CI workflow `ai-agent-tests.yml`，但当前覆盖率 ~0%，需补齐。admin-web 有 vitest + CI workflow `frontend-tests.yml`，当前覆盖率 ~20%。E2E smoke 有 pytest + CI workflow `smoke-tests.yml`，当前覆盖率 ~85%。E2E Playwright 测试有 `tests/` 套件 + CI workflow `e2e-tests.yml`，按需增量运行。
+
 ### 本地开发环境
 
 > **⚠️ 铁律：本地只启动米高系统 3 个组件，DB/Redis/中间件全部用云 dev。**
 >
 > 详见 [`.claude/local-dev-config.md`](.claude/local-dev-config.md) — 包含启动命令、连接信息、禁止行为、测试依赖。
 
-- **本地启动**：admin-api (:8080) + ai-agent-service (:8000) + admin-web (:3001)
+- **本地启动**：admin-api (:8080) + ai-agent-service (:8001) + admin-web (:3001)
 - **云 dev 环境**：PostgreSQL + Redis + DashVector + DashScope + OSS 全部用云端
 - **配置文件**：各模块 `.env` 已预置云 dev 环境的连接信息，禁止改成 localhost
 
@@ -243,8 +300,8 @@ cd tests && npx playwright test tests/e2e/specs/products.spec.ts
 # 1. 启动 admin-api（Java 后端，端口 8080）
 cd backend/admin-api && ./mvnw spring-boot:run
 
-# 2. 启动 ai-agent-service（Python AI 服务，端口 8000）
-cd backend/ai-agent-service && python -m uvicorn app.main:app --port 8000 --reload
+# 2. 启动 ai-agent-service（Python AI 服务，端口 8001）
+cd backend/ai-agent-service && python -m uvicorn app.main:app --port 8001 --reload
 
 # 3. 启动 admin-web（Next.js 前端，端口 3001）
 cd frontend/admin-web && npm run dev
@@ -267,11 +324,18 @@ cd frontend/admin-web && npm run dev
 - CI 流水线中测试不通过 → **禁止合并**
 - 发现 Bug 时：先写一个能复现 Bug 的失败测试 → 修复代码 → 测试通过
 - E2E 测试必须覆盖所有页面的核心交互路径，禁止弱断言
+- **E2E 测试文件命名规范**：`tests/e2e/specs/{domain}/{feature}.spec.ts`，禁止扁平放置
+- **E2E 测试使用 Page Object 模式**：封装可复用交互到 `tests/e2e/page-objects/`
 - 新增交互组件必须覆盖完整点击链路（渲染→点击→发送→验证）
 - **禁止手写 E2E mock 数据**。使用 Record-Replay 模式：`cd tests && BASE_URL=http://localhost:8080 npx tsx e2e/scripts/record-fixtures.ts` 录制真实 API 响应到 `fixtures/`，测试中 `import fixture from '../fixtures/xxx.json'`
 - **新增数据列表页必须在 `tests/e2e/specs/quality/anti-placeholder.spec.ts` 的 `PAGES` 数组中注册**，确保关键列不会全线显示占位符 `-`
 - **新增/修改 API 返回字段必须在 `tests/e2e/specs/quality/api-contract.spec.ts` 中验证**：必填字段存在、类型正确（number/string/object）、金额字段不能是 string
 - **跨页面数据一致性**：列表页和详情页的同一字段值必须相等（`tests/e2e/specs/quality/cross-page-consistency.spec.ts`）
+- **E2E 测试命名规范**：`tests/e2e/specs/{domain}/{feature}.spec.ts`，详见 [`tdd-iron-law.md § 5`](.claude/skills/tdd-iron-law.md)
+- **E2E Page Object 模式**：`tests/e2e/pages/{domain}/{page}.page.ts`，每个 Page Object 必须提供元素定位器、goto()、业务操作函数
+- **L0 状态持久化必须验证**：涉及 State/路由/Interact/执行循环的变更，必须运行 `test_pending_interact_persistence.py`。Mock 单测无法发现 state 丢失问题，必须连真实 dev DB 验证
+- **L0 状态持久化**：新增跨 graph 状态字段必须通过 `test_pending_interact_persistence.py`（12 case）验证
+- **新增状态字段类型必须声明在 `test_pending_interact_persistence.py` 的 `SUPPORTED_STATES` 字典中**
 
 ## 米宝 Skill/Tool 研发标准
 
@@ -319,16 +383,16 @@ app/graph/skills/
 kill $(lsof -t -i :8080) 2>/dev/null
 cd backend/admin-api && ./mvnw spring-boot:run &
 
-# 重启 ai-agent-service（Python AI 服务，端口 8000）
-kill $(lsof -t -i :8000) 2>/dev/null
-cd backend/ai-agent-service && .venv/bin/python -m uvicorn app.main:app --port 8000 --reload &
+# 重启 ai-agent-service（Python AI 服务，端口 8001）
+kill $(lsof -t -i :8001) 2>/dev/null
+cd backend/ai-agent-service && .venv/bin/python -m uvicorn app.main:app --port 8001 --reload &
 
 # 重启 admin-web（Next.js 前端，端口 3001）
 kill $(lsof -t -i :3001) 2>/dev/null
 cd frontend/admin-web && npm run dev &
 
 # 验证服务就绪
-lsof -i :8080 -sTCP:LISTEN && lsof -i :8000 -sTCP:LISTEN && lsof -i :3001 -sTCP:LISTEN
+lsof -i :8080 -sTCP:LISTEN && lsof -i :8001 -sTCP:LISTEN && lsof -i :3001 -sTCP:LISTEN
 
 # ═══════════════════════════════════════════════════════════════
 # 第一步：单测全量（变更涉及的所有模块）
@@ -342,6 +406,12 @@ cd backend/admin-api && ./mvnw test
 
 # 前端管理后台（注意：是 vitest，不是 jest）
 cd frontend/admin-web && npx vitest run
+
+# ═══════════════════════════════════════════════════════════════
+# 第〇步（必选）：L0 状态持久化测试（如本次变更涉及状态字段）
+# ═══════════════════════════════════════════════════════════════
+
+cd backend/ai-agent-service && .venv/bin/python -m pytest tests/test_pending_interact_persistence.py -v
 
 # ═══════════════════════════════════════════════════════════════
 # 第二步：集成测试增量（仅运行本次变更涉及的文件/类）

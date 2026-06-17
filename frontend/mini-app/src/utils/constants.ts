@@ -6,7 +6,7 @@
 export const API_BASE_URL = process.env.TARO_APP_API_URL || 'http://localhost:8080'
 
 // AI Agent 服务地址（Python 服务）
-export const AI_API_BASE_URL = process.env.TARO_APP_AI_API_URL || 'http://localhost:8000'
+export const AI_API_BASE_URL = process.env.TARO_APP_AI_API_URL || 'http://localhost:8001'
 
 // 本地存储键名
 export const STORAGE_KEYS = {

@@ -97,7 +97,7 @@ export default function NotificationsPage() {
       await notificationApi.markAllAsRead()
       toast.success('已全部标记为已读')
       loadNotifications()
-    } catch {
+    } catch (e) {
       toast.error('操作失败')
     }
   }
@@ -111,7 +111,7 @@ export default function NotificationsPage() {
         prev.map(n => n.id === notification.id ? { ...n, status: 'read' as const, readAt: new Date().toISOString() } : n)
       )
       toast.success('已标记为已读')
-    } catch {
+    } catch (e) {
       toast.error('操作失败')
     }
   }
@@ -128,7 +128,7 @@ export default function NotificationsPage() {
       await notificationApi.deleteNotification(deletingNotification.id)
       toast.success('删除成功')
       loadNotifications()
-    } catch {
+    } catch (e) {
       toast.error('删除失败')
     } finally {
       setDeleteModalOpen(false)
