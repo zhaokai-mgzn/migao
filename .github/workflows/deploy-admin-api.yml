@@ -42,12 +42,12 @@ jobs:
 
       - name: Run unit tests
         working-directory: backend/admin-api
-        run: mvn test -q
+        run: ./mvnw test -q
 
       - name: Build admin-api with Maven
         working-directory: backend/admin-api
         run: |
-          mvn clean package -DskipTests -q
+          ./mvnw clean package -DskipTests -q
           # 定位产物 JAR（兼容版本号变更）
           JAR_FILE=$(ls target/admin-api-*.jar | grep -v sources | grep -v javadoc | head -n 1)
           if [ -z "$JAR_FILE" ]; then
