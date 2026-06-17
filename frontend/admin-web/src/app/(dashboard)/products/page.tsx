@@ -42,11 +42,13 @@ export default function ProductsPage() {
   // ===== 排序与分页 =====
   const [page, setPage] = useState(Number(searchParams.get('page')) || 1)
   const [pageSize, setPageSize] = useState(Number(searchParams.get('size')) || 10)
+  // #387: low_stock=true → 按库存升序展示（低库存优先）
+  const lowStockOnly = searchParams.get('low_stock') === 'true'
   const [sortField, setSortField] = useState<ProductSortField>(
-    (searchParams.get('sortBy') as ProductSortField) || 'createdAt'
+    (lowStockOnly ? 'stock' : (searchParams.get('sortBy') as ProductSortField)) || 'createdAt'
   )
   const [sortOrder, setSortOrder] = useState<ProductSortOrder>(
-    (searchParams.get('sortOrder') as ProductSortOrder) || 'desc'
+    (lowStockOnly ? 'asc' : (searchParams.get('sortOrder') as ProductSortOrder)) || 'desc'
   )
 
   // ===== 数据 =====
@@ -82,9 +84,11 @@ export default function ProductsPage() {
           url.set(key, String(val))
         }
       })
+      // #387: 保持 low_stock 参数（从 Dashboard 卡片跳转时设置）
+      if (lowStockOnly) url.set('low_stock', 'true')
       router.replace(`/products?${url.toString()}`, { scroll: false })
     },
-    [productId, name, skuCode, status, createdFrom, createdTo, page, pageSize, sortField, sortOrder, router]
+    [productId, name, skuCode, status, createdFrom, createdTo, page, pageSize, sortField, sortOrder, lowStockOnly, router]
   )
 
   // ===== 加载列表（只读取 URL 中已提交的查询参数） =====

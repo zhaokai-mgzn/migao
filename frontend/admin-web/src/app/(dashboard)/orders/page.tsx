@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 import dayjs from 'dayjs'
 import { RefreshCw } from 'lucide-react'
@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils'
 import { orderApi } from '@/lib/api'
 import { OrderTable, CloseOrderModal, RemarkModal } from '@/components/orders'
 import type { Order, OrderStatus, OrderStatusTab } from '@/types'
-import { FrontendToBackendStatus, OrderStatusTabs } from '@/types'
+import { FrontendToBackendStatus, OrderStatusTabs, ORDER_CATEGORIES, OrderStatusLabels } from '@/types'
 
 interface SearchState {
   orderId: string
@@ -71,8 +71,48 @@ function FieldInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
   )
 }
 
+/** 将 URL 参数中的中文标签映射为内部 tab key */
+function resolveCategoryParam(raw: string | null): OrderStatusTab | null {
+  if (!raw) return null
+  // 直接匹配 tab key
+  if (raw === 'processing' || raw === 'all') return raw as OrderStatusTab
+  if (raw === 'has_processing') return 'processing'
+  // 按 ORDER_CATEGORIES label 匹配
+  const cat = ORDER_CATEGORIES.find(c => c.label === raw)
+  if (cat) {
+    return cat.key === 'has_processing' ? 'processing' : (cat.key as OrderStatusTab)
+  }
+  return null
+}
+
+/** 将 URL 中的状态标签（中文或英文）映射为内部 OrderStatus */
+function resolveStatusParam(raw: string | null): OrderStatus | null {
+  if (!raw) return null
+  // 直接匹配 OrderStatus 枚举值
+  const allStatuses: OrderStatus[] = ['pending_payment', 'pending_shipment', 'shipped', 'completed', 'closed', 'refund']
+  if (allStatuses.includes(raw as OrderStatus)) return raw as OrderStatus
+  // 按 OrderStatusLabels label 匹配
+  const entry = Object.entries(OrderStatusLabels).find(([, label]) => label === raw)
+  if (entry) return entry[0] as OrderStatus
+  return null
+}
+
 export default function OrdersPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+
+  // 从 URL 读取初始参数（#387: Dashboard 卡片跳转）
+  const urlCategory = searchParams.get('category')
+  const urlStatus = searchParams.get('status')
+  const urlHasProcessing = searchParams.get('has_processing')
+
+  // 当 category 和 status 同时出现：tab = category, 叠加 status 过滤
+  const initialCategory = resolveCategoryParam(urlCategory)
+  const initialStatus = resolveStatusParam(urlStatus)
+  const initialTab: OrderStatusTab = initialCategory || initialStatus || 'all'
+  // extraStatusFilter: 当同时有 category + status 时，status 作为叠加过滤
+  const initialExtraStatus: OrderStatus | null =
+    (initialCategory && initialStatus) ? initialStatus : null
 
   // 表单输入状态（未提交）
   const [orderId, setOrderId] = useState('')
@@ -81,13 +121,22 @@ export default function OrdersPage() {
   const [endDate, setEndDate] = useState(DEFAULT_DATE_RANGE.endDate)
   const [productCode, setProductCode] = useState('')
   const [productTitle, setProductTitle] = useState('')
-  const [hasProcessing, setHasProcessing] = useState<'' | 'true' | 'false'>('')
+  const [hasProcessing, setHasProcessing] = useState<'' | 'true' | 'false'>(
+    urlHasProcessing === 'true' ? 'true' : urlHasProcessing === 'false' ? 'false' : ''
+  )
 
   // 实际提交的搜索参数
-  const [search, setSearch] = useState<SearchState>(EMPTY_SEARCH)
+  const initialSearch: SearchState = {
+    ...EMPTY_SEARCH,
+    hasProcessing: urlHasProcessing === 'true' ? 'true' : urlHasProcessing === 'false' ? 'false' : '',
+  }
+  const [search, setSearch] = useState<SearchState>(initialSearch)
 
   // Tab
-  const [activeTab, setActiveTab] = useState<OrderStatusTab>('all')
+  const [activeTab, setActiveTab] = useState<OrderStatusTab>(initialTab)
+
+  // 当 category + status 同时指定时，叠加 status 过滤（#387）
+  const [extraStatusFilter, setExtraStatusFilter] = useState<OrderStatus | null>(initialExtraStatus)
 
   // 分页
   const [current, setCurrent] = useState(1)
@@ -144,6 +193,10 @@ export default function OrdersPage() {
         apiParams.status = FrontendToBackendStatus[activeTab as OrderStatus]
       } else if (activeTab === 'processing') {
         apiParams.hasProcessing = true
+        // #387: 当 category + status 同时指定时，叠加 status 过滤
+        if (extraStatusFilter) {
+          apiParams.status = FrontendToBackendStatus[extraStatusFilter]
+        }
       }
 
       // 搜索表单的「是否加工」筛选项（修复 P0-1：之前该字段未传给 API）
@@ -168,7 +221,7 @@ export default function OrdersPage() {
     } finally {
       setLoading(false)
     }
-  }, [current, pageSize, search, activeTab])
+  }, [current, pageSize, search, activeTab, extraStatusFilter])
 
   useEffect(() => {
     loadOrders()
@@ -215,7 +268,13 @@ export default function OrdersPage() {
 
   const handleTabChange = (tab: OrderStatusTab) => {
     setActiveTab(tab)
+    setExtraStatusFilter(null) // 手动切 tab 时清除叠加状态过滤
     setCurrent(1)
+    // #387: 同步 URL 参数
+    const url = new URLSearchParams()
+    if (tab === 'processing') url.set('category', '含加工订单')
+    else if (tab !== 'all') url.set('status', tab)
+    router.replace(`/orders?${url.toString()}`, { scroll: false })
   }
 
   const handleView = (order: Order) => {

@@ -298,4 +298,53 @@ test.describe('仪表盘页面', () => {
     // 骨架屏：4 个 animate-pulse 的占位卡片
     await expect(page.locator('.animate-pulse')).toHaveCount(4, { timeout: 3_000 })
   })
+
+  // #387: 待处理卡片跳转链接验证（娜总 17:29 重点验收）
+  test.describe('待处理区 3 个卡片 — 跳转链接 (#387)', () => {
+    test.beforeEach(async ({ page }) => {
+      // 待发货订单数
+      await page.route('**/api/admin/dashboard/pending-shipment-count', async (route) => {
+        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 200, data: 15 }) })
+      })
+      // 含加工待发货订单数
+      await page.route('**/api/admin/dashboard/processing-shipment-count', async (route) => {
+        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 200, data: 8 }) })
+      })
+      // 待补库存 SKU
+      await page.route('**/api/admin/products/low-stock-by-color*', async (route) => {
+        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 200, data: Array.from({ length: 12 }) }) })
+      })
+
+      await page.goto('/dashboard')
+      await page.waitForTimeout(500)
+      await expect(page.locator('.animate-pulse')).toHaveCount(0, { timeout: 10_000 })
+    })
+
+    test('"待发货订单"卡片链接 → /orders?status=待发货', async ({ page }) => {
+      const link = page.getByRole('link', { name: /待发货订单/ })
+      await expect(link).toBeVisible()
+      await expect(link).toHaveAttribute('href', '/orders?status=%E5%BE%85%E5%8F%91%E8%B4%A7')
+    })
+
+    test('"含加工待发货订单"卡片链接 → /orders?category=含加工订单&status=待发货', async ({ page }) => {
+      const link = page.getByRole('link', { name: /含加工待发货订单/ })
+      await expect(link).toBeVisible()
+      await expect(link).toHaveAttribute('href', '/orders?category=%E5%90%AB%E5%8A%A0%E5%B7%A5%E8%AE%A2%E5%8D%95&status=%E5%BE%85%E5%8F%91%E8%B4%A7')
+    })
+
+    test('"待补库存商品"卡片链接 → /products?low_stock=true', async ({ page }) => {
+      const link = page.getByRole('link', { name: /待补库存商品/ })
+      await expect(link).toBeVisible()
+      await expect(link).toHaveAttribute('href', '/products?low_stock=true')
+    })
+
+    test('点击"含加工待发货订单"卡片 → 跳转到订单页', async ({ page }) => {
+      await page.getByRole('link', { name: /含加工待发货订单/ }).click()
+      await page.waitForURL('**/orders?category=*status=*', { timeout: 10_000 })
+      // 验证 URL 包含两个参数
+      const url = new URL(page.url())
+      expect(url.searchParams.get('category')).toBe('含加工订单')
+      expect(url.searchParams.get('status')).toBe('待发货')
+    })
+  })
 })
