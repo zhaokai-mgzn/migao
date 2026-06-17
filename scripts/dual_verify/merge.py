@@ -99,7 +99,6 @@ def post_comment(iid,judgment,primary,reviewer):
 {vj}
 -->
 
-> 🎯 军师确认后执行: `python3 scripts/dual_verify/merge.py {iid}`
 """
     p=subprocess.Popen(["gh","issue","comment",str(iid),"--body",body],stdout=subprocess.PIPE,stderr=subprocess.PIPE,cwd=str(PROJECT_ROOT))
     out,err=p.communicate()

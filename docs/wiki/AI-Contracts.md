@@ -289,10 +289,10 @@ PR merge → deploy 完成 →
 
 Agent 扫到 VERIFY_TRIGGER（无 VERIFY_RESULT）→
   确认服务 alive →
-  python3 primary.py → reviewer.py → merge.py
-  （直接 shell 执行，不走 Claude Code）
+  primary.py (E2E+真实集测) → reviewer.py (独立DB+API) → merge.py (自动判定+执行)
+  merge.py 自动 close/hold/block + 贴 AI验收报告
 
-merge.py 自动 close/block/hold + 贴 AI验收报告评论
+军师读报告，审计判定是否正确，用于自进化。不执行脚本。
 ```
 
 ---
