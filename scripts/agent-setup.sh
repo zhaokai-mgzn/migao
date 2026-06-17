@@ -58,12 +58,20 @@ if [ ! -f backend/admin-api/.env ]; then
 fi
 
 # ── 5. 配置 Claude Code agent ──
-echo "🤖 配置 Claude Code agent..."
-mkdir -p "$WORK_DIR/.claude"
+echo "🤖 配置 Claude Code agent（无人交互模式）..."
+mkdir -p "$WORK_DIR/.claude/agents"
 
 # 复制 agent 指令（如果从本仓库初始化则已存在）
 if [ ! -f "$WORK_DIR/.claude/agents/dev-agent.md" ]; then
     echo "⚠️  .claude/agents/dev-agent.md 不存在，请从项目仓库复制"
+fi
+
+# agent 专用 settings.json — 预设权限，避免无人值守时阻塞等待确认
+if [ -f "$WORK_DIR/.claude/agents/settings.json" ]; then
+    cp "$WORK_DIR/.claude/agents/settings.json" "$WORK_DIR/.claude/settings.json"
+    echo "   ✅ Agent 权限已预设（git/npm/test/gh 全部 allow，禁止 force push main）"
+else
+    echo "   ⚠️  .claude/agents/settings.json 不存在，Agent 可能因权限提示阻塞"
 fi
 
 # ── 6. 验证 gh 认证 ──
