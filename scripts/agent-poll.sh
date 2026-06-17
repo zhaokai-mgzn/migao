@@ -111,17 +111,13 @@ log "🔍 扫描验收触发..."
 
 VERIFY_ISSUE=""
 while read iid; do
-    # 跳过还在开发的 issue（有 needs-verification 标签说明 PR 还没合）
-    HAS_DEV_LABEL=$(gh issue view "$iid" --json labels --jq '.labels[].name' 2>/dev/null | grep -c "needs-verification" || true)
-    [ "$HAS_DEV_LABEL" -gt 0 ] && continue
-
-    # 找 VERIFY_TRIGGER
+    # 找 VERIFY_TRIGGER（军师发的）且没有 VERIFY_RESULT（还没验收过）
     HAS_TRIGGER=$(gh issue view "$iid" --comments --json comments \
         --jq '.comments[] | select(.body | contains("VERIFY_TRIGGER")) | .body' 2>/dev/null | head -1)
-    # 检查是否已有 VERIFY_RESULT
     HAS_RESULT=$(gh issue view "$iid" --comments --json comments \
         --jq '.comments[] | select(.body | contains("VERIFY_RESULT")) | .body' 2>/dev/null | head -1)
 
+    # 只处理有 trigger 且最新 trigger 还没 result 的
     if [ -n "$HAS_TRIGGER" ] && [ -z "$HAS_RESULT" ]; then
         VERIFY_ISSUE="$iid"
         break
@@ -131,14 +127,16 @@ done < <(gh issue list --state open --limit 20 --json number --jq '.[].number' 2
 if [ -n "$VERIFY_ISSUE" ]; then
     log "🧪 验收 issue #$VERIFY_ISSUE"
 
-    # 确认服务 alive
     if ! lsof -i :8080 -sTCP:LISTEN >/dev/null 2>&1 || ! lsof -i :8001 -sTCP:LISTEN >/dev/null 2>&1 || ! lsof -i :3001 -sTCP:LISTEN >/dev/null 2>&1; then
         log "⚠️ 服务未全部就绪，跳过验收"
     else
-        claude --print \
-            --custom-instructions ".claude/agents/verify-agent.md" \
-            "对 issue #$VERIFY_ISSUE 执行验收全链路：跑 primary.py → reviewer.py → merge.py。merge.py 会自动 close/hold/block。" \
-            2>&1 | tail -10
+        # 直接跑脚本，不走 Claude Code（确定性执行，更快更可靠）
+        log "  → primary.py..."
+        cd /opt/youke && python3 scripts/dual_verify/primary.py "$VERIFY_ISSUE" 2>&1 | tail -3
+        log "  → reviewer.py..."
+        cd /opt/youke && python3 scripts/dual_verify/reviewer.py "$VERIFY_ISSUE" 2>&1 | tail -3
+        log "  → merge.py..."
+        cd /opt/youke && python3 scripts/dual_verify/merge.py "$VERIFY_ISSUE" 2>&1 | tail -5
         log "✅ 验收完成 #$VERIFY_ISSUE"
     fi
 else
