@@ -140,7 +140,7 @@ def verify_jwt_token(token: str) -> Dict[str, Any]:
                 logger.warning(f"JWT verification failed (debug mode): invalid token - {e}")
                 raise HTTPException(status_code=401, detail={
                     "success": False,
-                    "error": {"code": "TOKEN_INVALID", "message": f"Invalid token: {e}"}
+                    "error": {"code": "TOKEN_INVALID", "message": "Invalid token"}
                 })
         else:
             raise HTTPException(status_code=500, detail={
