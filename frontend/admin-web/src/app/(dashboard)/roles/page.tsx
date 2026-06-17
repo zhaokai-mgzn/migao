@@ -53,7 +53,7 @@ export default function RolesPage() {
       } else {
         setRoles(data?.items || [])
       }
-    } catch {
+    } catch (e) {
       toast.error('加载角色列表失败')
     } finally {
       setLoading(false)
@@ -65,7 +65,7 @@ export default function RolesPage() {
     try {
       const res = await permissionApi.getPermissions()
       setAllPermissions(res.data.data || [])
-    } catch {
+    } catch (e) {
       // ignore
     }
   }, [])
@@ -126,7 +126,7 @@ export default function RolesPage() {
       }
       setFormOpen(false)
       loadRoles()
-    } catch {
+    } catch (e) {
       // Error handled by API layer
     } finally {
       setFormLoading(false)
@@ -142,7 +142,7 @@ export default function RolesPage() {
       toast.success('删除成功')
       setDeleteTarget(null)
       loadRoles()
-    } catch {
+    } catch (e) {
       // Error handled by API layer
     } finally {
       setDeleting(false)

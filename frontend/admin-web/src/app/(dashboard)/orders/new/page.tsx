@@ -129,7 +129,7 @@ export default function NewOrderPage() {
         size: 30,
       })
       setProductResults(res.data?.data?.items || [])
-    } catch {
+    } catch (e) {
       toast.error('搜索商品失败')
     } finally {
       setProductSearchLoading(false)
@@ -170,7 +170,7 @@ export default function NewOrderPage() {
     try {
       const res = await productApi.getProduct(product.id)
       detail = res.data?.data as unknown as ProductDetail
-    } catch {
+    } catch (e) {
       toast.error('加载商品详情失败')
       detail = product as unknown as ProductDetail
     }
@@ -204,7 +204,7 @@ export default function NewOrderPage() {
         processingLoading: false,
         selectedProcessing: {},
       })
-    } catch {
+    } catch (e) {
       updateLineItem(lineId, {
         processingItems: [],
         processingLoading: false,

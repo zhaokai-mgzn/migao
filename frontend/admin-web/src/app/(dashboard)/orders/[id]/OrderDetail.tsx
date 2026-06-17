@@ -141,7 +141,7 @@ export default function OrderDetailPage() {
       toast.success('订单已关闭')
       setCloseModalOpen(false)
       loadOrder()
-    } catch {
+    } catch (e) {
       toast.error('关闭订单失败')
     } finally {
       setCloseSubmitting(false)
@@ -157,7 +157,7 @@ export default function OrderDetailPage() {
       toast.success('已确认收款')
       setConfirmPaymentOpen(false)
       loadOrder()
-    } catch {
+    } catch (e) {
       toast.error('确认付款失败')
     } finally {
       setPaymentSubmitting(false)
@@ -173,7 +173,7 @@ export default function OrderDetailPage() {
       toast.success('已确认收货')
       setConfirmReceiveOpen(false)
       loadOrder()
-    } catch {
+    } catch (e) {
       toast.error('确认收货失败')
     } finally {
       setReceiveSubmitting(false)

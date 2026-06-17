@@ -31,7 +31,7 @@ export default function LogisticsForm({ open, onClose, onSubmit, initialData }: 
     try {
       await onSubmit({ company: company.trim(), trackingNo: trackingNo.trim(), shippingMethod: 'logistics' })
       onClose()
-    } catch {
+    } catch (e) {
       // error handled by parent
     } finally {
       setLoading(false)

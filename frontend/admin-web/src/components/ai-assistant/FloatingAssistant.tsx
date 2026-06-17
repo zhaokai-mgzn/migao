@@ -46,7 +46,7 @@ const loadPersistedSession = (): string | null => {
       }
     }
     return sid
-  } catch {
+  } catch (e) {
     return null
   }
 }
@@ -61,7 +61,7 @@ const persistSession = (sid: string | null) => {
       localStorage.removeItem(STORAGE_KEY_SESSION)
       localStorage.removeItem(STORAGE_KEY_TIMESTAMP)
     }
-  } catch {
+  } catch (e) {
     // 忽略 localStorage 不可用的情况
   }
 }
@@ -70,7 +70,7 @@ const persistSession = (sid: string | null) => {
 const touchSession = () => {
   try {
     localStorage.setItem(STORAGE_KEY_TIMESTAMP, String(Date.now()))
-  } catch {
+  } catch (e) {
     // ignore
   }
 }
@@ -223,7 +223,7 @@ export default function FloatingAssistant() {
       // 收到文本后，如果 15 秒无新数据则自动结束流
       if (hasReceivedText) {
         inactivityTimer = setTimeout(() => {
-          try { reader.cancel() } catch {}
+          try { reader.cancel() } catch (e) { console.error("FloatingAssistant.tsx", e); }
         }, 15000)
       }
     }
@@ -318,7 +318,7 @@ export default function FloatingAssistant() {
                   )
                 )
               }
-            } catch {
+            } catch (e) {
               // 非 JSON，直接追加
               if (dataStr.trim()) {
                 setMessages((prev) =>

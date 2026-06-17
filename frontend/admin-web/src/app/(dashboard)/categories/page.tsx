@@ -27,7 +27,7 @@ export default function CategoriesPage() {
     try {
       const res = await categoryApi.getCategories()
       setCategories(res.data.data || [])
-    } catch {
+    } catch (e) {
       // Error handled by API layer
     } finally {
       setLoading(false)
@@ -78,7 +78,7 @@ export default function CategoriesPage() {
       toast.success('分类已删除')
       setDeleteTarget(null)
       loadCategories()
-    } catch {
+    } catch (e) {
       // Error handled by API layer
     } finally {
       setDeleting(false)

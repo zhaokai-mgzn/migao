@@ -106,7 +106,7 @@ export default function FileUpload({
         setUploadingFiles((prev) =>
           prev.map((u) => (u.id === uploadId ? { ...u, progress: 100, status: 'success' } : u))
         )
-      } catch {
+      } catch (e) {
         toast.error(`${file.name} 上传失败`)
         setUploadingFiles((prev) =>
           prev.map((u) => (u.id === uploadId ? { ...u, status: 'error' } : u))

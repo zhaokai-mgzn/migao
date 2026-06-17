@@ -116,7 +116,7 @@ export default function AfterSalesDetailPage() {
       setPendingAction(null)
       setStatusRemark('')
       loadTicket()
-    } catch {
+    } catch (e) {
       toast.error('状态更新失败')
     } finally {
       setStatusUpdating(false)

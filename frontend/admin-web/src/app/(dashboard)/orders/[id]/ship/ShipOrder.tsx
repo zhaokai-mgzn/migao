@@ -108,7 +108,7 @@ export default function ShipOrder() {
       await orderApi.updateOrderStatus(order.id, { status: 'shipped' })
       toast.success('发货成功')
       router.push(`/orders/${order.id}`)
-    } catch {
+    } catch (e) {
       toast.error('发货失败')
     } finally {
       setSubmitting(false)

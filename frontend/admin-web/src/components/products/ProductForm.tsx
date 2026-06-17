@@ -118,7 +118,7 @@ export default function ProductForm({
         ])
         setCategories(catRes.data.data || [])
         setProcessingItems(procRes.data.data?.items || [])
-      } catch {
+      } catch (e) {
         // Errors handled by API layer
       }
     }

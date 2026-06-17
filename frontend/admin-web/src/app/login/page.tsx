@@ -72,7 +72,7 @@ export default function LoginPage() {
       await authApi.sendSmsCode(phone.trim())
       toast.success('验证码已发送')
       setCountdown(COUNTDOWN_SECONDS)
-    } catch {
+    } catch (e) {
       setCountdown(COUNTDOWN_SECONDS)
       toast.success('验证码已发送（测试模式）')
     }

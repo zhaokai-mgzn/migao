@@ -68,7 +68,7 @@ export class SSEParser {
         event: this.currentEventType,
         data,
       })
-    } catch {
+    } catch (e) {
       // 非 JSON 数据，直接传递原始字符串
       this.handler({
         event: this.currentEventType,
@@ -94,7 +94,7 @@ export class SSEParser {
 export function parseSSEData(dataStr: string): any {
   try {
     return JSON.parse(dataStr)
-  } catch {
+  } catch (e) {
     return dataStr
   }
 }

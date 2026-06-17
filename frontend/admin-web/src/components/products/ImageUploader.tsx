@@ -82,7 +82,7 @@ export default function ImageUploader({
         try {
           const res = await fileApi.uploadFile(file, 'products')
           return res.data.data.url
-        } catch {
+        } catch (e) {
           toast.error(`${file.name} 上传失败`)
           return null
         }

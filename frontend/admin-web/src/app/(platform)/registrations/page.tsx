@@ -88,7 +88,7 @@ export default function RegistrationsPage() {
       await registrationApi.approveRegistration(approvingItem.id)
       toast.success('审批通过成功')
       loadRegistrations()
-    } catch {
+    } catch (e) {
       toast.error('审批操作失败')
     } finally {
       setApproving(false)
@@ -115,7 +115,7 @@ export default function RegistrationsPage() {
       await registrationApi.rejectRegistration(rejectingItem.id, rejectReason.trim())
       toast.success('已驳回该申请')
       loadRegistrations()
-    } catch {
+    } catch (e) {
       toast.error('驳回操作失败')
     } finally {
       setRejecting(false)
@@ -130,7 +130,7 @@ export default function RegistrationsPage() {
     try {
       const res = await registrationApi.getRegistrationDetail(item.id)
       setDetailItem(res.data?.data || item)
-    } catch {
+    } catch (e) {
       setDetailItem(item)
     }
     setDetailModalOpen(true)

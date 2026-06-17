@@ -76,7 +76,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       const data = await res.json()
       const actions = data?.data?.actions || []
       set({ quickActions: actions })
-    } catch {
+    } catch (e) {
       // ai-agent 未启动时静默失败，页面已有空状态提示
     } finally {
       set({ isLoadingQuickActions: false })
@@ -299,7 +299,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         try {
           const errData = await response.json()
           errorMsg = errData?.detail?.error?.message || errData?.detail?.message || errorMsg
-        } catch {}
+        } catch (e) { console.error("chat.ts", e); }
         throw { status: response.status, message: errorMsg, isSessionClosed: response.status === 409 }
       }
 
@@ -343,7 +343,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         try {
           await get().createSession()
           toast.info('已创建新会话，请重新发送消息')
-        } catch {
+        } catch (e) {
           toast.error('会话已过期，请手动创建新对话')
         }
         return
@@ -536,7 +536,7 @@ function handleSSEEvent(
         }
         break;
     }
-  } catch {
+  } catch (e) {
     // 解析失败，如果是字符串直接追加
     if (typeof data === 'string' && data.trim()) {
       set(state => ({

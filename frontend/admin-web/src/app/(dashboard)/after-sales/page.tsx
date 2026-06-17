@@ -127,7 +127,7 @@ export default function AfterSalesPage() {
     try {
       const res = await orderApi.getOrders({ keyword: orderSearchKeyword, page: 1, size: 10 })
       setOrderSearchResults(res.data?.data?.items || [])
-    } catch {
+    } catch (e) {
       toast.error('搜索订单失败')
     } finally {
       setOrderSearching(false)
@@ -163,7 +163,7 @@ export default function AfterSalesPage() {
       } else {
         loadTickets()
       }
-    } catch {
+    } catch (e) {
       toast.error('创建工单失败')
     } finally {
       setCreating(false)

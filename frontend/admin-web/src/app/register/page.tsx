@@ -108,7 +108,7 @@ export default function RegisterPage() {
       const response = await fileApi.uploadFile(file, 'license')
       setBusinessLicenseUrl(response.data.data.url)
       toast.success('上传成功')
-    } catch {
+    } catch (e) {
       toast.error('上传失败，请重试')
     } finally {
       setUploading(false)
