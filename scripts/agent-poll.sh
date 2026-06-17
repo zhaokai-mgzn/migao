@@ -26,30 +26,23 @@ if ! gh auth status 2>/dev/null; then
     exit 1
 fi
 
-# ── 抢一个 issue：优先修复 issue，其次新功能 ──
+# ── 抢一个 issue：优先被阻的（同 issue 内 block 后重新抢）──
 pick_issue() {
-    # 先找修复 issue（CONTRACT_JSON 含 parent_issue 的）
-    local FIX=$(gh issue list --label needs-verification --state open --limit 15 \
-        --json number,body,assignees \
-        --jq '.[] | select(.assignees | length == 0) | select(.body | contains("parent_issue")) | .number' 2>/dev/null | head -1)
-
-    if [ -n "$FIX" ]; then
-        echo "$FIX"
+    # 先找含 block/dual-mismatch + needs-verification 的（验收被阻，需立即修复）
+    local BLOCKED=$(gh issue list --label "block/dual-mismatch,needs-verification" --state open --limit 10 \
+        --json number,assignees --jq '.[] | select(.assignees | length == 0) | .number' 2>/dev/null | head -1)
+    if [ -n "$BLOCKED" ]; then
+        echo "$BLOCKED"
         return
     fi
 
-    # 再找普通 issue（军师已出 case 的）
+    # 再找普通 needs-verification（军师已出 case 的）
     local NEW=$(gh issue list --label needs-verification --state open --limit 15 \
         --json number,assignees --jq '.[] | select(.assignees | length == 0) | .number' 2>/dev/null | head -1)
-
     if [ -n "$NEW" ]; then
-        # 确认军师已出 case（有 DRAFT_JSON 评论）
         local HAS_DRAFT=$(gh issue view "$NEW" --comments --json comments \
             --jq '.comments[] | select(.body | contains("DRAFT_JSON")) | .body' 2>/dev/null | head -1)
-        if [ -n "$HAS_DRAFT" ]; then
-            echo "$NEW"
-            return
-        fi
+        if [ -n "$HAS_DRAFT" ]; then echo "$NEW"; return; fi
         log "⏳ issue #$NEW 军师还未出 case"
     fi
 }
@@ -62,26 +55,27 @@ if [ -z "$ISSUE_ID" ]; then
 fi
 
 # ── 熔断检查 ──
-BODY=$(gh issue view "$ISSUE_ID" --json body --jq '.body' 2>/dev/null)
-DEPTH=$(echo "$BODY" | grep -oP '"block_depth"\s*:\s*\K\d+' | head -1)
+BLOCK_COMMENT=$(gh issue view "$ISSUE_ID" --comments --json comments \
+    --jq '.comments[] | select(.body | contains("BLOCK_LOG")) | .body' 2>/dev/null | tail -1)
+DEPTH=$(echo "$BLOCK_COMMENT" | grep -oP '"block_depth"\s*:\s*\K\d+' | head -1)
 if [ "${DEPTH:-0}" -ge 3 ]; then
     log "🛑 issue #$ISSUE_ID block_depth=$DEPTH，已达熔断阈值"
     gh issue edit "$ISSUE_ID" --add-label "block/need-human" 2>/dev/null || true
     exit 0
 fi
 
-# ── 判断是修复还是新功能 ──
-PARENT=$(echo "$BODY" | grep -oP '"parent_issue"\s*:\s*\K\d+' | head -1)
+# ── 判断是新功能还是 re-fix ──
+IS_BLOCKED=$(gh issue view "$ISSUE_ID" --json labels --jq '.labels[].name' 2>/dev/null | grep -c "block/dual-mismatch" || true)
 gh issue edit "$ISSUE_ID" --add-assignee "@me" 2>/dev/null || true
 
-if [ -n "$PARENT" ]; then
-    log "🔧 抢到修复 issue #$ISSUE_ID (父 issue #$PARENT, depth=$DEPTH)"
+if [ "${IS_BLOCKED:-0}" -gt 0 ]; then
+    log "🔧 被阻 issue #$ISSUE_ID (第${DEPTH:-1}次打回) → 修复"
     claude --print \
         --custom-instructions ".claude/agents/dev-agent.md" \
-        "修复验收被阻的 issue #$ISSUE_ID（父 issue #$PARENT）。读 VERDICT_JSON 理解失败原因，修复代码，跑涉及模块的全量单测，创建 PR（PR_CONTRACT 标 parent_issue=$PARENT）。" \
+        "issue #$ISSUE_ID 验收被阻。读最新 BLOCK_LOG 评论理解失败原因，修复代码，跑涉及模块的全量单测，创建新 PR。PR body 关联同一个 issue (Closes #$ISSUE_ID)。" \
         2>&1 | tail -10
 else
-    log "📝 抢到新功能 issue #$ISSUE_ID"
+    log "📝 新功能 issue #$ISSUE_ID"
     claude --print \
         --custom-instructions ".claude/agents/dev-agent.md" \
         "处理 issue #$ISSUE_ID。读 CONTRACT_JSON 和 DRAFT_JSON，review case 草稿，按 TDD 写码，跑全量单测，创建 PR。" \
