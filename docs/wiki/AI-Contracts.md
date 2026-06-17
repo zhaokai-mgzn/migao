@@ -447,3 +447,141 @@ python3 scripts/dual_verify/quality_report.py --days 7
 - **熔断 (≥3 次)**：真值本身可能有歧义，需凯总/娜总澄清
 
 目标：**block 率 < 15%，close 率 > 80%，Agent reject 率 < 10%，L4 人工断言 = 0**。
+
+---
+
+# 质量关键点详解
+
+> 每个环节的防御措施。目标是 block 率 < 15%，Agent reject 率 < 10%，L4 人工断言 = 0。
+
+## ① Issue 创建
+
+| 风险 | 防御 |
+|------|------|
+| 业务真值为空 | CONTRACT_JSON 的 `business_truths` 为空数组 → case_draft quality_gate 直接拒绝 |
+| 真值带 SQL/API 技术语言 | 凯总 2026-06-16 铁律明确禁止。Agent Phase 1 Review 检测到技术语言 → reject |
+| 涉及模块未勾选 | DRAFT_JSON 的 specs 为空 → Agent 无法确定测试文件 → reject |
+| 真值只有 1 条但实际需要 3+ 条 | 军师反推时 `truths_count` 记录在 DRAFT_JSON。军师自进化报告会标出 truths=1 的 issue |
+
+**军师检查清单**：
+```
+□ 业务真值 ≥ 2 条（单条真值往往覆盖不全）
+□ 每条真值格式: "条件 → 期望结果"
+□ 涉及模块至少勾选 1 个
+□ 红牌标记已确认（历史 issue 是否已修复）
+```
+
+## ② Case 草稿
+
+| 风险 | 防御 |
+|------|------|
+| 未匹配模板 | 提示军师手动指定 spec。L3 无法自动生成 |
+| L4 自动断言 < 真值数 | **硬 gate 拒绝发稿**，必须补充 |
+| 模板匹配错误 | 精确关键词 + 最小命中数（dashboard-jump 需 2 个关键词同时命中） |
+| 红牌未标记 | 模板 red_flags 自动检测并告警 |
+| 真值提取遗漏 | 优先 CONTRACT_JSON 机读，fallback 12 个正则模式 |
+
+**军师发前自检**：
+```
+□ auto_asserts ≥ truths_count（不满足 → 不发）
+□ 模板匹配正确（看"匹配模板"字段）
+□ 红牌已确认可忽略或已修复
+□ 无 "⚠️" 告警
+```
+
+## ③ Agent Review
+
+| 风险 | 防御 |
+|------|------|
+| Agent 盲目 accept，不验证真值 vs case | Phase 1 硬 gate：必须逐条比对真值和 case，输出 REVIEW_JSON |
+| Agent reject 但不说明原因 | REVIEW_JSON 必须含 `reason` 字段 |
+| Agent 跳过 Review 直接写码 | dev-agent.md 规定 Phase 1 → Phase 2 顺序，不允许跳过 |
+| 真值模糊但 Agent 猜着写 | 检测到模糊关键词（"正常"、"正确"、"合理" 且无具体数值）→ 必须 reject |
+
+**Agent Review 质量标准**（dev-agent.md 已内置）：
+```
+□ 每条真值都有对应 case（L2+L4 双覆盖）
+□ 没有模糊词（"正常"/"正确"/"合理" 必须有具体定义）
+□ case 可执行（能直接翻译成测试代码，不需要再猜）
+□ 不满足以上 → reject，不发 accept
+```
+
+## ⑤ PR 质量
+
+| 风险 | 防御 |
+|------|------|
+| PR 无关联 issue | 军师 merge 条件：PR body 必须含 Closes/Fixes #xxx |
+| 缺 E2E spec | 军师 merge 条件：前端改动必须有对应 E2E |
+| CI 红但强行 merge | branch protection: 6 个 required checks |
+| PR 改动范围过大 | 军师检测：改动文件 > 10 个 → 标 needs-changes，要求拆分 |
+| PR_CONTRACT 缺失 | Agent dev-agent.md 要求必填 |
+
+**军师 merge 前置条件**：
+```
+□ CI 全绿（6/6）
+□ PR body 含 Closes #xxx
+□ 前端改动 → PR body 或 issue 中有对应 E2E spec 路径
+□ 改动文件 ≤ 10 个（超过 → 拆分 PR）
+□ junshi-review/pass-with-followups 已挂
+```
+
+## ⑦ 验收执行
+
+| 风险 | 防御 |
+|------|------|
+| E2E web 全跑但只测了页面渲染 | anti-placeholder + api-contract + cross-page 质量 spec 兜底 |
+| E2E real 跑不过（LLM 不可用） | `|| true` 不阻塞，merge 时降权（confidence * 0.8） |
+| 服务未就绪盲跑 | agent-poll.sh 先 lsof 检查 3 个端口 |
+| reviewer 查错 DB/API | 直接用 issue 中的 SQL/API 断言（reviewer_asserts），不走 LLM 推断 |
+| primary.json 为空 | merge.py 返回 error，不贴报告 |
+
+**验收完整性检查**：
+```
+□ primary.json 存在且 status ≠ skip
+□ reviewer.json 存在且 status ≠ skip
+□ E2E web 至少 1 个 spec 通过
+□ E2E real 至少跑了（不管结果）
+□ reviewer 断言 ≥ 1 条
+□ 以上不满足 → 军师在报告中标 ⚠️ 验收不完整
+```
+
+## ⑧ Merge 判定
+
+| 风险 | 防御 |
+|------|------|
+| 置信度假高（测试太弱） | reviewer 独立验证 → 双一致才 close |
+| block 率过高 | quality_report.py 每 7 天跑，> 30% 告警 |
+| hold 积压 | hold 超过 7 天 → 军师巡检升级 |
+| 熔断误触发 | block_depth 从 BLOCK_LOG 评论累计，不会多算 |
+
+**判定规则**（merge.py judge 函数）：
+```
+close: 主+复双 pass + 置信度都 ≥ 90% + 无冲突
+block: 主≠复 或 置信度差距 > 30% 或 云验收 fail
+hold:  双 fail / 双 skip / 需人工复核
+熔断:  block_depth ≥ 3 → 不创建新的 BLOCK_LOG，直接 block/need-human
+```
+
+## ⑨ Block 闭环
+
+| 风险 | 防御 |
+|------|------|
+| Agent 重复修同一个 bug 修不对 | BLOCK_LOG 记录每次失败的 spec → Agent 读历史避免重复 |
+| 熔断后 issue 无人管 | block/need-human label → 凯总/娜总介入 |
+| Agent 不读 BLOCK_LOG 盲修 | agent-poll.sh: IS_BLOCKED 检测 → 强制读 BLOCK_LOG |
+| block 后 issue 积压 | Agent 优先抢 block 标签 issue |
+
+---
+
+## 军师 daily 巡检清单（建议 cron）
+
+```bash
+# 每天早上跑一次
+python3 scripts/dual_verify/quality_report.py --days 7
+
+# 检查
+□ block 率 < 15%
+□ hold issue 无超过 7 天的
+□ 无 truths=1 的新 issue
+□ 熔断 issue = 0（如果有 → 当天处理）
+```
