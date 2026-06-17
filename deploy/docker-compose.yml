@@ -1,10 +1,17 @@
 version: '3.8'
 
 # 注意：此 docker-compose.yml 用于本地开发环境
-# 生产环境部署时，请使用以下阿里云资源地址：
-# - PostgreSQL: pgm-bp1h7i6rs4ec8964.pg.rds.aliyuncs.com:5432
-# - Redis: r-bp162hozkjd55e18rb.redis.rds.aliyuncs.com:6379
-# 并确保 SERVICE_TOKEN_SECRET 与 SERVICE_TOKEN 保持一致
+# 生产环境使用阿里云 RDS/Redis，见 deploy/terraform/
+
+x-env: &db-env
+  RDS_HOST: postgres
+  RDS_PORT: "5432"
+  RDS_DB: ai_customer_service
+  RDS_USER: app_user
+  RDS_PASSWORD: ${DEV_DB_PASSWORD:-dev_password_123}
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+  REDIS_PASSWORD: ${DEV_REDIS_PASSWORD:-dev_redis_456}
 
 services:
   # PostgreSQL 数据库
@@ -14,7 +21,7 @@ services:
     environment:
       POSTGRES_DB: ai_customer_service
       POSTGRES_USER: app_user
-      POSTGRES_PASSWORD: dev_password_123
+      POSTGRES_PASSWORD: ${DEV_DB_PASSWORD:-dev_password_123}
     ports:
       - "5432:5432"
     volumes:
@@ -27,16 +34,17 @@ services:
       timeout: 5s
       retries: 5
 
-  # Redis 缓存
+  # Redis 缓存（开发环境仍需密码）
   redis:
     image: redis:7-alpine
     container_name: aikf-redis
+    command: redis-server --requirepass ${DEV_REDIS_PASSWORD:-dev_redis_456}
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "--no-auth-warning", "-a", "${DEV_REDIS_PASSWORD:-dev_redis_456}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -48,14 +56,8 @@ services:
       dockerfile: Dockerfile
     container_name: aikf-admin-api
     environment:
-      RDS_HOST: postgres
-      RDS_PORT: 5432
-      RDS_DB: ai_customer_service
-      RDS_USER: app_user
-      RDS_PASSWORD: dev_password_123
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      SERVICE_TOKEN_SECRET: dev-service-token-secret
+      <<: *db-env
+      SERVICE_TOKEN_SECRET: ${DEV_SERVICE_TOKEN:-dev-service-token-secret}
     ports:
       - "8080:8080"
     depends_on:
@@ -71,10 +73,10 @@ services:
       dockerfile: Dockerfile
     container_name: aikf-ai-agent
     environment:
-      DATABASE_URL: postgresql+asyncpg://app_user:dev_password_123@postgres:5432/ai_customer_service
-      REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: postgresql+asyncpg://app_user:${DEV_DB_PASSWORD:-dev_password_123}@postgres:5432/ai_customer_service
+      REDIS_URL: redis://:${DEV_REDIS_PASSWORD:-dev_redis_456}@redis:6379/0
       ADMIN_API_BASE_URL: http://admin-api:8080
-      SERVICE_TOKEN: dev-service-token-secret
+      SERVICE_TOKEN: ${DEV_SERVICE_TOKEN:-dev-service-token-secret}
       PRIMARY_API_KEY: ${PRIMARY_API_KEY:-}
       PRIMARY_MODEL: ${PRIMARY_MODEL:-deepseek-v4-pro}
       DASHVECTOR_API_KEY: ${DASHVECTOR_API_KEY:-}

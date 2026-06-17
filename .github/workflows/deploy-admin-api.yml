@@ -60,9 +60,12 @@ jobs:
 
       - name: Install Aliyun CLI
         run: |
-          curl -sL https://aliyuncli.alicdn.com/aliyun-cli-linux-latest-amd64.tgz -o aliyun-cli.tgz
+          curl -fsSL --retry 3 https://aliyuncli.alicdn.com/aliyun-cli-linux-latest-amd64.tgz -o aliyun-cli.tgz
+          # 验证下载文件是有效的 gzip 压缩包
+          file aliyun-cli.tgz | grep -q "gzip compressed data" || { echo "❌ 下载文件损坏或非 gzip 格式"; exit 1; }
           tar xzf aliyun-cli.tgz
           sudo mv aliyun /usr/local/bin/
+          echo "✅ Aliyun CLI $(aliyun version 2>/dev/null || echo installed)"
 
       - name: Configure Aliyun credentials
         run: |

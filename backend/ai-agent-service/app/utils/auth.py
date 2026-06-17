@@ -123,37 +123,30 @@ def verify_jwt_token(token: str) -> Dict[str, Any]:
         HTTPException: 401 如果 Token 无效或过期
     """
     if not settings.JWT_PUBLIC_KEY:
-        # 开发环境：如果未配置公钥，仅解析不验证签名
+        # 无公钥配置 — 仅 DEBUG 模式允许未验证签名（开发/测试便利）
+        # 生产环境必须配置 JWT_PUBLIC_KEY，否则启动即报错
         if settings.DEBUG:
-            logger.warning("JWT_PUBLIC_KEY not configured, parsing without verification")
+            logger.error(
+                "SECURITY: JWT_PUBLIC_KEY not configured — accepting tokens WITHOUT "
+                "signature verification! Set JWT_PUBLIC_KEY env var. "
+                "This MUST never happen in production."
+            )
             try:
                 return jwt.decode(
                     token,
                     options={"verify_signature": False, "verify_aud": False},
                 )
             except Exception as e:
-                logger.warning(f"JWT verification failed (debug mode): invalid token format - {str(e)}")
-                raise HTTPException(
-                    status_code=401,
-                    detail={
-                        "success": False,
-                        "error": {
-                            "code": "TOKEN_INVALID",
-                            "message": f"Invalid token format: {str(e)}"
-                        }
-                    }
-                )
-        else:
-            raise HTTPException(
-                status_code=500,
-                detail={
+                logger.warning(f"JWT verification failed (debug mode): invalid token - {e}")
+                raise HTTPException(status_code=401, detail={
                     "success": False,
-                    "error": {
-                        "code": "CONFIG_ERROR",
-                        "message": "JWT_PUBLIC_KEY not configured"
-                    }
-                }
-            )
+                    "error": {"code": "TOKEN_INVALID", "message": "Invalid token"}
+                })
+        else:
+            raise HTTPException(status_code=500, detail={
+                "success": False,
+                "error": {"code": "CONFIG_ERROR", "message": "JWT_PUBLIC_KEY not configured"}
+            })
     
     try:
         # 使用 RS256 公钥验证（禁用内置 audience 检查，手动验证以兼容 JJWT 数组格式）

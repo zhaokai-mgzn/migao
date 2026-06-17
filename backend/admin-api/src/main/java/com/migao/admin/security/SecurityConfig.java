@@ -2,6 +2,7 @@ package com.migao.admin.security;
 
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -39,6 +40,12 @@ public class SecurityConfig {
     private final UserDetailsService userDetailsService;
 
     /**
+     * CORS 允许的域名列表（从 .env / 环境变量注入，支持 Spring 属性解析）
+     */
+    @Value("${CORS_ALLOWED_ORIGINS:}")
+    private String corsAllowedOrigins;
+
+    /**
      * 配置 CORS
      *
      * @return CorsConfigurationSource
@@ -46,7 +53,7 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        String corsOrigins = System.getenv("CORS_ALLOWED_ORIGINS");
+        String corsOrigins = corsAllowedOrigins;
         if (corsOrigins != null && !corsOrigins.isEmpty()) {
             List<String> allowedOrigins = Arrays.asList(corsOrigins.split(","));
             config.setAllowedOrigins(allowedOrigins);

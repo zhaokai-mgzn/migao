@@ -127,7 +127,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             log.warn("JWT Token 已过期: {}", e.getMessage());
             filterChain.doFilter(request, response);
         } catch (Exception e) {
-            log.error("JWT 认证失败: {}", e.getMessage());
+            // 认证基础设施故障（如 Redis 不可达导致黑名单检查失败）
+            // 不阻塞请求但记录完整异常以便排查；SecurityContext 未设置，下游鉴权仍生效
+            log.error("JWT 认证异常（请求继续未认证状态）: {}", e.getMessage(), e);
             filterChain.doFilter(request, response);
         } finally {
             // 确保在请求处理完成后清理租户上下文，防止线程复用导致数据泄漏

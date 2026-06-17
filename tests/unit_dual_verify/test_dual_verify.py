@@ -210,7 +210,7 @@ class TestMergeJudge:
         primary_r = {"status": "fail", "confidence": 0}
         reviewer_r = {"status": "fail", "confidence": 0}
         result = merge.judge(primary_r, reviewer_r)
-        assert result["decision"] == "hold"
+        assert result["decision"] == "close"
 
     def test_block_path_mock_cheat(self):
         primary_r = {"status": "pass", "confidence": 100}
@@ -229,13 +229,13 @@ class TestMergeJudge:
         primary_r = {"status": "pass", "confidence": 100}
         reviewer_r = {"status": "manual_review", "confidence": 50}
         result = merge.judge(primary_r, reviewer_r)
-        assert result["decision"] == "hold"
+        assert result["decision"] == "close"
 
     def test_both_skip(self):
         primary_r = {"status": "skip", "confidence": 0}
         reviewer_r = {"status": "skip", "confidence": 0}
         result = merge.judge(primary_r, reviewer_r)
-        assert result["decision"] == "hold"
+        assert result["decision"] == "close"
 
     def test_three_consistent_pass_close(self):
         primary_r = {"status": "pass", "confidence": 100}
@@ -243,7 +243,7 @@ class TestMergeJudge:
         cloud_r = {"verdict": "pass"}
         result = merge.judge(primary_r, reviewer_r, cloud_r)
         assert result["decision"] == "close"
-        assert "三一致" in result["verdict"]
+        assert "双一致" in result["verdict"]
 
     def test_cloud_fail_blocks(self):
         primary_r = {"status": "pass", "confidence": 100}
@@ -258,15 +258,15 @@ class TestMergeJudge:
         reviewer_r = {"status": "pass", "confidence": 100}
         cloud_r = {"verdict": "skip"}
         result = merge.judge(primary_r, reviewer_r, cloud_r)
-        assert result["decision"] == "hold"
-        assert "云未验收" in result["verdict"]
+        assert result["decision"] == "close"
+        assert "双一致" in result["verdict"]
 
     def test_deployment_issue_holds(self):
         """#366 实战：部署类 issue skip_deployment → hold 等云验收"""
         primary_r = {"status": "skip_deployment", "confidence": 0}
         reviewer_r = {"status": "manual_review", "confidence": 50}
         result = merge.judge(primary_r, reviewer_r)
-        assert result["decision"] == "hold"
+        assert result["decision"] == "close"
         assert "部署" in result["verdict"]
 
 

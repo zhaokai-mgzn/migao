@@ -29,7 +29,7 @@ export default function CustomerPanel() {
 
   const handleCopy = () => {
     if (!currentSessionId) return
-    navigator.clipboard.writeText(currentSessionId)
+    navigator.clipboard.writeText(currentSessionId).catch((e) => console.error('Clipboard write failed:', e))
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }

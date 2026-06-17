@@ -32,11 +32,12 @@ public class SmsService {
     private static final String DAILY_KEY_PREFIX = "sms:daily:";
 
     /**
-     * 测试阶段万能验证码，通过环境变量注入（默认 "123456"）
-     * 生产环境将 sms.bypass-code 设为空字符串以禁用 bypass 机制
+     * 测试阶段万能验证码，通过环境变量注入
+     * 默认空字符串 = 禁用 bypass（生产安全）。
+     * 仅 dev/CI 环境通过 sms.bypass-code 显式注入以启用测试模式。
      * TODO: 接入阿里云短信服务后移除此机制
      */
-    @Value("${sms.bypass-code:123456}")
+    @Value("${sms.bypass-code:}")
     private String bypassCode;
 
     private static final long CODE_TTL_SECONDS = 300; // 5 分钟

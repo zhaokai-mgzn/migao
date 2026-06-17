@@ -34,6 +34,17 @@ const STOCK_DEDUCTION_LABELS: Record<string, string> = {
   on_pay: '付款减库存',
 }
 
+/** 基础 HTML 消毒：移除 script 标签和事件处理器，防 XSS */
+function sanitizeHtml(html: string): string {
+  return html
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+    .replace(/<script\b[^>]*\/>/gi, '')
+    .replace(/\son\w+\s*=\s*"[^"]*"/gi, '')
+    .replace(/\son\w+\s*=\s*'[^']*'/gi, '')
+    .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '')
+    .replace(/javascript\s*:/gi, '')
+}
+
 export default function ProductDetailPage() {
   const router = useRouter()
   const productId = useRouteId('id')
@@ -396,7 +407,7 @@ export default function ProductDetailPage() {
               {/^\s*</.test(product.description) ? (
                 <div
                   className="product-description text-sm text-gray-700 leading-relaxed"
-                  dangerouslySetInnerHTML={{ __html: product.description }}
+                  dangerouslySetInnerHTML={{ __html: sanitizeHtml(product.description) }}
                 />
               ) : (
                 <p className="text-sm text-gray-600 whitespace-pre-wrap">{product.description}</p>

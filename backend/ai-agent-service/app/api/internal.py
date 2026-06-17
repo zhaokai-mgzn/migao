@@ -122,7 +122,17 @@ async def trigger_knowledge_sync(
     )
     
     try:
-        from app.rag.pipeline import get_rag_pipeline
+        try:
+            from app.rag.pipeline import get_rag_pipeline
+        except ImportError:
+            logger.warning("RAG pipeline module not available — knowledge sync is disabled")
+            return {
+                "success": False,
+                "error": {
+                    "code": "RAG_DISABLED",
+                    "message": "RAG pipeline module is not deployed; knowledge sync is unavailable in this environment."
+                }
+            }
         pipeline = await get_rag_pipeline()
         
         sync_type = request.type
@@ -270,7 +280,17 @@ async def get_knowledge_stats(
     获取知识库统计信息
     """
     try:
-        from app.rag.pipeline import get_rag_pipeline
+        try:
+            from app.rag.pipeline import get_rag_pipeline
+        except ImportError:
+            logger.warning("RAG pipeline module not available — knowledge sync is disabled")
+            return {
+                "success": False,
+                "error": {
+                    "code": "RAG_DISABLED",
+                    "message": "RAG pipeline module is not deployed; knowledge sync is unavailable in this environment."
+                }
+            }
         pipeline = await get_rag_pipeline()
         stats = await pipeline.get_stats(tenant_id)
         return make_response(True, data=stats)
