@@ -135,7 +135,6 @@
                        - needs-verification 移除
 
 ⑧ 部署类 issue          ai-verify/skip-deployment   —
-                       (等 cloud verify)
 ```
 
 ### 军师在 PR 阶段的操作

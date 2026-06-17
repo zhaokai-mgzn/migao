@@ -1,8 +1,8 @@
 ---
 name: 云验收任务
-about: 部署到云 dev/staging 后由研发 AI 验收
+about: 部署类问题的手动验收（基础设施变更时使用，日常不用）
 title: "[云验收] "
-labels: ["needs-verification", "needs-cloud-verify"]
+labels: ["needs-cloud-verify"]
 assignees: []
 ---
 
@@ -11,29 +11,24 @@ assignees: []
 
 ## 环境变量
 ```
-API_BASE_URL= WEB_BASE_URL=
+API_BASE_URL=https://api.migaozn.com
+WEB_BASE_URL=https://admin.migaozn.com
 DB_HOST= DB_USER= DB_NAME= DB_PWD=
-E2E_ADMIN_PHONE= SMS_CODE=
 ```
 
-## 业务真值（从原 issue 复制）
-1. 
-2. 
-
 ## 验收步骤
-1. **API 校验**：curl 调对应端点，断言响应字段
-2. **DB 直查**：psql 跑业务真值对应 SQL，断言 count
-3. **页面校验**：Playwright headless 跑对应流程
-4. **一致性**：3 层数据一致（API = DB = 页面）
+1. API curl 对应端点
+2. psql 跑业务真值 SQL
+3. Playwright headless 跑对应页面
+4. 三层数据一致
 
 ## 验收报告
 ```json
-{"issue":0,"step1_api":{"value":0,"passed":true},"step2_db":{"value":0,"passed":true},"step3_page":{"value":0,"passed":true},"verdict":"pass","timestamp":""}
+{"verdict":"pass|fail","timestamp":""}
 ```
-verdict: `pass` / `fail` / `manual_review`
 
-——军师（自动派工）
+> ⚠️ 日常业务流程 issue 不需要这个模板。只有改 Terraform/SAE 配置时才用。
 
 <!-- CONTRACT_JSON
-{"schema_version":"1.0","type":"cloud-verify","parent_issue":0,"business_truths":[],"env_required":["API_BASE_URL","WEB_BASE_URL","DB_HOST","DB_USER","DB_NAME","DB_PWD"]}
+{"schema_version":"1.0","type":"cloud-verify","parent_issue":0,"business_truths":[]}
 -->
