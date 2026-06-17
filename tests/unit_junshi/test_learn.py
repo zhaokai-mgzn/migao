@@ -2,12 +2,11 @@
 import json
 import sys
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
-import pytest
-
-# 加 junshi 到 path
-sys.path.insert(0, str(Path("/opt/youke/junshi").parent))
+# 加 repo root 到 path，确保 junshi 可导入
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(REPO_ROOT))
 
 
 def test_scan_with_no_qa_results(tmp_path):
@@ -52,8 +51,8 @@ def test_load_rules_default():
 
 def test_actual_rules_file():
     """真实规则文件存在且结构正确"""
-    rules_path = Path("/opt/youke/junshi/learned_rules.json")
-    assert rules_path.exists()
+    rules_path = REPO_ROOT / "junshi" / "learned_rules.json"
+    assert rules_path.exists(), f"规则文件不存在: {rules_path}"
     rules = json.loads(rules_path.read_text(encoding="utf-8"))
     assert rules["version"] == "v1.0"
     assert len(rules["rules"]) >= 3
@@ -65,7 +64,8 @@ def test_actual_rules_file():
 
 def test_actual_stats():
     """实战统计正确"""
-    rules_path = Path("/opt/youke/junshi/learned_rules.json")
+    rules_path = REPO_ROOT / "junshi" / "learned_rules.json"
+    assert rules_path.exists(), f"规则文件不存在: {rules_path}"
     rules = json.loads(rules_path.read_text(encoding="utf-8"))
     stats = rules["stats"]
     assert stats["total_runs"] == 5
