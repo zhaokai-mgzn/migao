@@ -1,8 +1,8 @@
 # QA Growth Gate 豁免配置
 exemptions:
-  - pattern: "frontend/admin-web/src/app/(dashboard)/products/[id]/ProductDetail.tsx"
+  - pattern: "frontend/admin-web/src/app/*/products/*/ProductDetail.tsx"
     type: config
-    reason: "defensive XSS fix, no behavior change"
+    reason: "defensive XSS fix"
   - pattern: "frontend/admin-web/src/components/chat/CustomerPanel.tsx"
     type: config
     reason: "defensive clipboard fix"
@@ -12,18 +12,81 @@ exemptions:
   - pattern: "frontend/admin-web/src/components/chat/MessageList.tsx"
     type: config
     reason: "defensive clipboard fix"
-  - pattern: "frontend/admin-web/src/app/(dashboard)/*/page.tsx"
+  - pattern: "frontend/admin-web/src/app/*/dashboard/page.tsx"
     type: config
     reason: "catch block hardening"
-  - pattern: "frontend/admin-web/src/components/*/*.tsx"
+  - pattern: "frontend/admin-web/src/app/*/orders/page.tsx"
     type: config
     reason: "catch block hardening"
-  - pattern: "frontend/admin-web/src/store/*.ts"
+  - pattern: "frontend/admin-web/src/app/*/products/page.tsx"
     type: config
     reason: "catch block hardening"
-  - pattern: "frontend/admin-web/src/lib/*.ts"
+  - pattern: "frontend/admin-web/src/app/*/chat/config/page.tsx"
     type: config
     reason: "catch block hardening"
-  - pattern: "frontend/admin-web/src/app/(dashboard)/*/[id]/*.tsx"
+  - pattern: "frontend/admin-web/src/app/*/roles/page.tsx"
+    type: config
+    reason: "catch block hardening"
+  - pattern: "frontend/admin-web/src/app/*/categories/page.tsx"
+    type: config
+    reason: "catch block hardening"
+  - pattern: "frontend/admin-web/src/app/*/notifications/page.tsx"
+    type: config
+    reason: "catch block hardening"
+  - pattern: "frontend/admin-web/src/app/*/employees/page.tsx"
+    type: config
+    reason: "catch block hardening"
+  - pattern: "frontend/admin-web/src/app/*/after-sales/page.tsx"
+    type: config
+    reason: "catch block hardening"
+  - pattern: "frontend/admin-web/src/app/*/orders/new/page.tsx"
+    type: config
+    reason: "catch block hardening"
+  - pattern: "frontend/admin-web/src/app/*/orders/*/OrderDetail.tsx"
+    type: config
+    reason: "catch block hardening"
+  - pattern: "frontend/admin-web/src/app/*/orders/*/ShipOrder.tsx"
+    type: config
+    reason: "catch block hardening"
+  - pattern: "frontend/admin-web/src/app/*/after-sales/*/AfterSalesDetail.tsx"
+    type: config
+    reason: "catch block hardening"
+  - pattern: "frontend/admin-web/src/app/*/products/*/edit/EditProduct.tsx"
+    type: config
+    reason: "catch block hardening"
+  - pattern: "frontend/admin-web/src/app/login/page.tsx"
+    type: config
+    reason: "catch block hardening"
+  - pattern: "frontend/admin-web/src/app/register/page.tsx"
+    type: config
+    reason: "catch block hardening"
+  - pattern: "frontend/admin-web/src/app/*/registrations/page.tsx"
+    type: config
+    reason: "catch block hardening"
+  - pattern: "frontend/admin-web/src/components/ui/FileUpload.tsx"
+    type: config
+    reason: "catch block hardening"
+  - pattern: "frontend/admin-web/src/components/layout/NotificationBell.tsx"
+    type: config
+    reason: "catch block hardening"
+  - pattern: "frontend/admin-web/src/components/products/ImageUploader.tsx"
+    type: config
+    reason: "catch block hardening"
+  - pattern: "frontend/admin-web/src/components/products/ProductForm.tsx"
+    type: config
+    reason: "catch block hardening"
+  - pattern: "frontend/admin-web/src/components/products/RichTextEditor.tsx"
+    type: config
+    reason: "catch block hardening"
+  - pattern: "frontend/admin-web/src/components/products/CategoryDialog.tsx"
+    type: config
+    reason: "catch block hardening"
+  - pattern: "frontend/admin-web/src/components/providers/AuthProvider.tsx"
+    type: config
+    reason: "catch block hardening"
+  - pattern: "frontend/admin-web/src/store/chat.ts"
+    type: config
+    reason: "catch block hardening"
+  - pattern: "frontend/admin-web/src/lib/utils.ts"
     type: config
     reason: "catch block hardening"
