@@ -1,1 +1,24 @@
+# Build output
+target/
+*.class
+*.jar
+*.war
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.settings/
+.classpath
+.project
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets — keep .env files out of git
+.env
+!.env.example
+
+# Uploads
 uploads/
