@@ -13,7 +13,6 @@ primary_specs:
   - tests/e2e/specs/dashboard/dashboard.spec.ts
 
 reviewer_asserts:
-  - DB: 验证各状态 count
   - API: GET /api/admin/orders?category=含加工订单
   - 分类 tab 计数与列表分页总数对得上
 

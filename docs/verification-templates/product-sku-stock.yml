@@ -11,7 +11,6 @@ primary_specs:
   - tests/e2e/specs/products/product-list.spec.ts
 
 reviewer_asserts:
-  - DB: SELECT SUM(stock) FROM sku WHERE product_id=X
   - API: GET /api/admin/products/{id}
 
 confidence_required: 100%

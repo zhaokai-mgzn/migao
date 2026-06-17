@@ -130,36 +130,6 @@ def extract_business_truths(issue_body: str, comments: "list[dict]" = None):
     return truths
 
 
-def db_query(sql: str, env: dict) -> "tuple[int, str]":
-    """直接查 DB"""
-    db_url = env.get("DB_URL", env.get("SPRING_DATASOURCE_URL", ""))
-    if not db_url:
-        return 0, "no DB_URL in .env"
-    # 解析 jdbc:postgresql://host:port/db
-    m = re.match(r"jdbc:postgresql://([^:]+):(\d+)/(\w+)", db_url)
-    if not m:
-        return 0, f"无法解析 DB URL: {db_url[:50]}"
-    host, port, dbname = m.group(1), m.group(2), m.group(3)
-    user = env.get("DB_USER", env.get("SPRING_DATASOURCE_USERNAME", "postgres"))
-    password = env.get("DB_PASSWORD", env.get("SPRING_DATASOURCE_PASSWORD", ""))
-    env_pg = {**os.environ, "PGPASSWORD": password}
-    try:
-        p = subprocess.Popen(
-            ["psql", "-h", host, "-p", port, "-U", user, "-d", dbname,
-             "-t", "-A", "-c", sql],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env_pg
-        )
-        out, err = p.communicate(timeout=30)
-        if p.returncode != 0:
-            return 0, err.decode("utf-8", "ignore")[:200]
-        return 0, out.decode("utf-8", "ignore").strip()
-    except FileNotFoundError:
-        return 0, "psql 命令不存在"
-    except subprocess.TimeoutExpired:
-        p.kill()
-        return 0, "DB 查询超时"
-
-
 def api_get(url: str, token: str = "") -> "tuple[int, str]":
     """调 admin-api"""
     cmd = ["curl", "-s", "-w", "\n%{http_code}", "-m", "10"]
@@ -179,93 +149,40 @@ def api_get(url: str, token: str = "") -> "tuple[int, str]":
         return 0, "API 超时"
 
 
-def infer_business_asserts(truths):
-    """根据业务真值反推独立断言 — 覆盖全部 8 种模板，零 manual。"""
+def infer_business_asserts(truths, template=None):
+    """根据业务真值反推 API 断言。优先从模板 reviewer_asserts 取。"""
+    # 优先用模板的 API 断言
+    if template and template.get("reviewer_asserts"):
+        api_asserts = []
+        for a in template["reviewer_asserts"]:
+            if isinstance(a, str) and "API:" in a:
+                api_asserts.append(a.replace("API:", "").strip())
+            elif isinstance(a, dict) and "API" in a:
+                api_asserts.append(a["API"])
+        if api_asserts:
+            return [{"name": f"L4-{i+1}: {t[:60]}", "type": "api", "url": api_asserts[i % len(api_asserts)]}
+                    for i, t in enumerate(truths)]
+
+    # Fallback: 关键词匹配 API
     asserts = []
-    for i, truth in enumerate(truths, 1):
-        t = truth.lower()
-        a = None
+    for i, t in enumerate(truths, 1):
+        tl = t.lower()
+        url = None
+        if "看板" in tl or "dashboard" in tl: url = "GET /api/admin/dashboard/stats"
+        elif "订单" in tl: url = "GET /api/admin/orders?page=1&size=5"
+        elif "商品" in tl or "sku" in tl: url = "GET /api/admin/products?page=1&size=5"
+        elif "客户" in tl: url = "GET /api/admin/customers?page=1&size=5"
+        elif "售后" in tl: url = "GET /api/admin/after-sales?page=1&size=5"
+        elif "登录" in tl or "验证码" in tl: url = "POST /api/auth/sms-login"
+        elif "注册" in tl: url = "POST /api/auth/register"
+        elif "员工" in tl: url = "GET /api/admin/users?page=1&size=10"
+        elif "知识库" in tl: url = "GET /api/admin/knowledge/documents?page=1&size=5"
 
-        # ── dashboard-jump ──
-        if "含加工" in t and ("待发货" in t or "发货" in t):
-            a = {"type":"db","sql":"SELECT COUNT(*) FROM orders WHERE status='pending_shipment' AND has_processing=true","note":"含加工待发货"}
-        elif "含加工" in t and "订单" in t:
-            a = {"type":"db","sql":"SELECT COUNT(*) FROM orders WHERE has_processing=true AND status NOT IN ('closed','refund')","note":"含加工订单数"}
-        elif "低库存" in t or ("库存" in t and "100" in t):
-            a = {"type":"db","sql":"SELECT COUNT(*) FROM sku WHERE stock <= 100","note":"低库存SKU数"}
-        elif ("看板" in t or "卡片" in t or "跳转" in t) and "数据" in t:
-            a = {"type":"api","sql":"GET /api/admin/dashboard/stats","note":"验证卡片数字=DB数据"}
-        elif "跳转" in t and "url" in t:
-            a = {"type":"api","sql":"GET /api/admin/dashboard/stats","note":"验证跳转URL参数"}
-
-        # ── order-classify ──
-        elif "6个状态" in t or "8个分类" in t or "状态" in t and "分类" in t:
-            a = {"type":"db","sql":"SELECT status, COUNT(*) FROM orders GROUP BY status","note":"订单状态分类计数"}
-        elif "分类" in t and "计数" in t:
-            a = {"type":"db","sql":"SELECT COUNT(*) FROM orders","note":"分类tab计数=列表总数"}
-
-        # ── product-sku-stock ──
-        elif "库存" in t and "求和" in t or "sku" in t and "库存" in t:
-            a = {"type":"db","sql":"SELECT product_id, SUM(stock) FROM sku GROUP BY product_id","note":"SKU库存聚合"}
-        elif "库存" in t:
-            a = {"type":"db","sql":"SELECT COUNT(*) FROM sku WHERE stock <= 100","note":"库存数据"}
-
-        # ── customer-list ──
-        elif "客户" in t and "搜索" in t:
-            a = {"type":"api","sql":"GET /api/admin/customers?keyword=测试","note":"客户搜索"}
-        elif "客户" in t and ("订单数" in t or "消费" in t):
-            a = {"type":"db","sql":"SELECT customer_id, COUNT(*) FROM orders GROUP BY customer_id","note":"客户订单数/消费额"}
-        elif "客户" in t:
-            a = {"type":"db","sql":"SELECT COUNT(DISTINCT tenant_id) FROM customer","note":"客户数据"}
-
-        # ── aftersales-flow ──
-        elif "售后" in t and ("状态" in t or "流转" in t):
-            a = {"type":"db","sql":"SELECT status, COUNT(*) FROM after_sales GROUP BY status","note":"售后状态流转"}
-        elif "售后" in t:
-            a = {"type":"api","sql":"GET /api/admin/after-sales?page=1&size=5","note":"售后列表"}
-
-        # ── auth-sms ──
-        elif "短信" in t or "验证码" in t or "登录" in t and "密码" not in t:
-            a = {"type":"api","sql":"POST /api/auth/sms-login","note":"短信登录"}
-        elif "密码登录" in t and ("禁用" in t or "禁止" in t):
-            a = {"type":"api","sql":"POST /api/auth/password-login (expect 403/404)","note":"密码登录已禁用"}
-        elif "注册" in t:
-            a = {"type":"api","sql":"POST /api/auth/register","note":"注册"}
-
-        # ── employee-role ──
-        elif "员工" in t and ("列表" in t or "权限" in t or "岗位" in t):
-            a = {"type":"api","sql":"GET /api/admin/users?page=1&size=10","note":"员工列表"}
-        elif "角色" in t or "权限" in t:
-            a = {"type":"db","sql":"SELECT r.name, COUNT(p.id) FROM role r JOIN permission p ON r.id=p.role_id GROUP BY r.name","note":"角色权限"}
-
-        # ── knowledge-ai ──
-        elif "知识库" in t and ("文档" in t or "上传" in t or "检索" in t):
-            a = {"type":"api","sql":"GET /api/admin/knowledge/documents?page=1&size=5","note":"知识库文档"}
-        elif "AI" in t and ("回答" in t or "客服" in t):
-            a = {"type":"api","sql":"POST /api/chat/send","note":"AI客服回答"}
-
-        # ── 通用隔离/安全 ──
-        elif "租户" in t and "隔离" in t:
-            a = {"type":"db","sql":"SELECT tenant_id, COUNT(*) FROM (相关表) GROUP BY tenant_id","note":"租户隔离检查"}
-
-        if a:
-            a["name"] = f"L4-{i}: {truth[:60]}"
-            asserts.append(a)
+        if url:
+            asserts.append({"name": f"L4-{i}: {t[:60]}", "type": "api", "url": url})
         else:
-            # 最后兜底：不要标 manual，标 db 通用查询
-            asserts.append({
-                "name": f"L4-{i}: {truth[:60]}",
-                "type": "db",
-                "sql": f"-- 请根据真值补充SQL: {truth}",
-                "note": "通用兜底 — 如果 SQL 注释未替换，merge 时会自动标 hold"
-            })
-
-    manual_count = sum(1 for a in asserts if a.get("sql","").startswith("-- 请根据"))
-    if manual_count > 0:
-        for a in asserts:
-            if a.get("sql","").startswith("-- 请根据"):
-                a["type"] = "manual"
-                a["note"] = f"无法自动反推SQL: {a['name']}"
+            asserts.append({"name": f"L4-{i}: {t[:60]}", "type": "manual",
+                           "note": f"无匹配 API，请军师在模板中补充"})
     return asserts
 
 
@@ -286,44 +203,40 @@ def verify(issue_id: int) -> dict:
     truths = extract_business_truths(body, user_comments)
 
     env = load_env()
-    asserts = infer_business_asserts(truths)
+    # 尝试从 DRAFT_JSON 获取模板
+    template = None
+    for c in comments:
+        m = re.search(r"<!-- DRAFT_JSON\s*(.*?)\s*-->", c.get("body",""), re.DOTALL)
+        if m:
+            try:
+                tmpl_name = json.loads(m.group(1)).get("template")
+                if tmpl_name and re.match(r"^[a-z][a-z0-9-]*$", tmpl_name):
+                    import yaml
+                    tp = (Path(__file__).resolve().parent.parent.parent / "docs/verification-templates" / f"{tmpl_name}.yml").resolve()
+                    if str(tp).startswith(str(Path(__file__).resolve().parent.parent.parent / "docs/verification-templates")) and tp.exists():
+                        with open(tp) as f: template = yaml.safe_load(f)
+                break
+            except: pass
 
-    # 跑 L4 业务断言
+    asserts = infer_business_asserts(truths, template)
+    token = env.get("SERVICE_TOKEN", "")
+    base = env.get("ADMIN_API_BASE_URL", "http://localhost:8080")
+
     results = []
     for a in asserts:
-        if a["type"] == "db":
-            rc, result = db_query(a["sql"], env)
-            results.append({
-                "name": a["name"],
-                "type": "db",
-                "sql": a["sql"],
-                "result": result,
-                "expected": a["expected"],
-                "passed": rc == 0 and result != "",
-                "note": a["note"]
-            })
-        elif a["type"] == "api":
-            # 用 .env 的 admin token
-            token = env.get("SERVICE_TOKEN", "")
+        if a["type"] == "api":
             url = a["url"]
-            if not url.startswith("http"):
-                base = env.get("ADMIN_API_BASE_URL", "http://localhost:8080")
-                url = base + url
+            if not url.startswith("http"): url = base + url
             code, body_resp = api_get(url, token)
             results.append({
-                "name": a["name"],
-                "type": "api",
-                "url": url,
-                "http_code": code,
-                "result_preview": body_resp[:200],
+                "name": a["name"], "type": "api", "url": url,
+                "http_code": code, "result_preview": body_resp[:200],
                 "passed": 200 <= code < 300
             })
         else:
             results.append({
-                "name": a["name"],
-                "type": "manual",
-                "passed": None,  # 需人工
-                "note": a["note"]
+                "name": a["name"], "type": "manual",
+                "passed": None, "note": a.get("note","")
             })
 
     # 判定

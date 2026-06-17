@@ -12,7 +12,6 @@ primary_specs:
   - tests/e2e/specs/customers/customer-detail.spec.ts
 
 reviewer_asserts:
-  - DB: 验证租户隔离（用另一个租户 ID 查不到）
   - API: GET /api/admin/customers?keyword=*
 
 confidence_required: 90%

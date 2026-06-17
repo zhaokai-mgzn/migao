@@ -65,12 +65,17 @@ PR title: feat/fix(scope): 简短描述
 必须关联 issue: Closes #xxx
 ```
 
-### 对于 block issue（同 issue 重新抢）
+### 对于 block issue / Bug issue（同 issue 重新抢）
 
 ```
 1. 读最新 BLOCK_LOG 评论 → 获取失败原因 + block_depth
-2. 定位根因 → 修复代码 + 更新测试
-3. 跑全量单测 → 开新 PR（关联同一个 issue）
+2. 🔍 **必须查 SLS 日志定位根因**（跳过此步 → 修复无效 → 再次 block）
+   - 读 issue 中的复现步骤/错误时间窗口
+   - gh issue view 或从 CONTRACT_JSON 获取涉及模块
+   - 查 SLS 对应时间段 error/warning 日志
+   - 根因未找到 → 评论 <!-- COMMENT_JSON intent=clarification --> → 停止
+3. 定位根因 → 修复代码 + 更新测试
+4. 跑全量单测 → 开新 PR（关联同一个 issue）
 ```
 
 ## Push 前自检（缺一不 push — CI QA Growth Gate 硬兜底）

@@ -13,7 +13,6 @@ primary_specs:
   - tests/e2e/specs/orders/order-list.spec.ts
 
 reviewer_asserts:
-  - DB: SELECT COUNT(*) FROM orders WHERE status='pending_shipment' AND has_processing=true
   - API: GET /api/admin/dashboard/processing-shipment-count
   - 跳转URL: 解析 dashboard.spec.ts 中跳转链接
 

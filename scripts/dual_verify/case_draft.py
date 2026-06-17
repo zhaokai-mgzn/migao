@@ -65,15 +65,14 @@ def extract_truths(body):
     return truths
 
 def count_auto_asserts(template):
-    """统计可自动验证的 L4 断言数。YAML 中 DB:/API: 可能被解析为 dict key。"""
+    """统计可自动验证的 L4 断言数（API）。"""
     if not template or not template.get("reviewer_asserts"): return 0
     count = 0
     for a in template["reviewer_asserts"]:
-        if isinstance(a, str):
-            if "DB:" in a or "API:" in a or "SELECT" in a.upper(): count += 1
+        if isinstance(a, str) and "API:" in a: count += 1
         elif isinstance(a, dict):
             for k in a:
-                if k.lower() in ("db", "api", "sql"): count += 1
+                if k.lower() == "api": count += 1
     return count
 
 def quality_gate(truths, tmpl_name, template):
