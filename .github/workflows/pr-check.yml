@@ -88,7 +88,12 @@ jobs:
           python -m pytest tests/ -v --tb=short -q \
             --ignore=tests/test_post_deploy_verify.py \
             --ignore=tests/manual_test_pe_flow.py \
-            -m "not integration" 
+            -m "not integration"
+
+      - name: Run junshi + dual_verify tests
+        working-directory: backend/ai-agent-service
+        run: |
+          python -m pytest ../../tests/unit_dual_verify/ ../../tests/unit_junshi/ -v --tb=short -q 
 
   # ============ admin-web 类型检查 + 单测 ============
   admin-web-test:
