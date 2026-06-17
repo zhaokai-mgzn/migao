@@ -35,29 +35,46 @@ def match_template(title, body):
 
 def load_template(name):
     p = TEMPLATE_DIR / f"{name}.yml"
-    return yaml.safe_load(open(p)) if p.exists() else None
+    if not p.exists(): return None
+    try:
+        with open(p) as f: return yaml.safe_load(f)
+    except Exception as e:
+        print(f"⚠️ 模板 {name} 加载失败: {e}", file=sys.stderr)
+        return None
 
 def extract_truths(body):
     m = re.search(r"<!-- CONTRACT_JSON\s*(.*?)\s*-->", body, re.DOTALL)
     if m:
         try:
             t = json.loads(m.group(1)).get("business_truths",[])
-            if t: return t
+            if isinstance(t, list) and len(t) > 0: return t
+            if isinstance(t, str) and t.strip(): return [t.strip()]  # 单条字符串也接受
         except: pass
     truths = []
+    seen = set()
     for pat in [r"##.*?业务真值.*?(?=^##|\Z)",r"##.*?业务规则.*?(?=^##|\Z)",
                 r"##.*?验收标准.*?(?=^##|\Z)",r"##.*?预期.*?(?=^##|\Z)"]:
         m = re.search(pat, body, re.MULTILINE|re.DOTALL)
         if not m: continue
         for line in re.findall(r"^\s*[-*]\s*(.+?)$",m.group(0),re.MULTILINE):
             line = line.strip()
-            if line and not line.startswith("<!--") and len(line)>5: truths.append(line)
+            # 过滤注释和太短的行，去重
+            if line and not line.startswith("<!--") and len(line) >= 3 and line not in seen:
+                truths.append(line)
+                seen.add(line)
     return truths
 
 def count_auto_asserts(template):
+    """统计可自动验证的 L4 断言数。YAML 中 DB:/API: 可能被解析为 dict key。"""
     if not template or not template.get("reviewer_asserts"): return 0
-    return sum(1 for a in template["reviewer_asserts"]
-               if isinstance(a,str) and ("DB:" in a or "API:" in a or "SELECT" in a.upper()))
+    count = 0
+    for a in template["reviewer_asserts"]:
+        if isinstance(a, str):
+            if "DB:" in a or "API:" in a or "SELECT" in a.upper(): count += 1
+        elif isinstance(a, dict):
+            for k in a:
+                if k.lower() in ("db", "api", "sql"): count += 1
+    return count
 
 def quality_gate(truths, tmpl_name, template):
     """返回 (messages, can_post)。can_post=False=拒绝发稿"""
@@ -65,10 +82,10 @@ def quality_gate(truths, tmpl_name, template):
     if len(truths) == 0:
         errors.append("🔴 业务真值为空 — 请先在 issue 中填写")
     if not tmpl_name:
-        warnings.append("🟡 未匹配模板，L3/L4 受限")
+        errors.append("🔴 **拒绝发稿**: 未匹配到任何模板，L4 无法自动验证 → block 率 100%。请军师手动指定模板或补充 reviewer_asserts。")
     elif template:
         if template.get("red_flags"):
-            warnings.append(f"🔴 红牌: {template['red_flags']}")
+            warnings.append(f"🔴 红牌: {template['red_flags']} — 请确认历史 issue 已修复")
         auto = count_auto_asserts(template)
         if auto < len(truths):
             errors.append(
@@ -80,16 +97,21 @@ def quality_gate(truths, tmpl_name, template):
 def draft_l2(truths, template):
     if not truths: return "⚠️ 无业务真值"
     lines = []
+    # 从模板推导测试文件
+    test_files = []
+    if template and template.get("primary_specs"):
+        test_files = [s.replace("tests/e2e/specs/","tests/").replace(".spec.ts",".test.ts") for s in template["primary_specs"]]
+    if not test_files: test_files = ["tests/test_xxx.py (请根据涉及模块选择)"]
+
     for i, t in enumerate(truths, 1):
+        f = test_files[i % len(test_files)]
         lines.append(f"### L2-{i}")
         lines.append(f"**真值**: {t}")
-        lines.append(f"**文件**: `tests/test_xxx.py`（选择涉及模块的测试文件）")
+        lines.append(f"**文件**: `{f}`")
         lines.append(f"**方法**: `test_truth_{i}` — 按真值构造输入 → 断言期望输出")
         if template and template.get("common_pitfalls"):
-            lines.append(f"**陷阱**: {', '.join(template['common_pitfalls'][:3])}")
+            lines.append(f"**⚠️ 陷阱**: {', '.join(template['common_pitfalls'][:3])}")
         lines.append("")
-    if template and template.get("primary_specs"):
-        lines.append(f"**推荐文件**: {', '.join(template['primary_specs'])}")
     return "\n".join(lines)
 
 def draft_l3(template):
