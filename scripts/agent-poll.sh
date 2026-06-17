@@ -130,10 +130,11 @@ if [ -n "$VERIFY_ISSUE" ]; then
     else
         log "  → primary.py (E2E + 真实集测)..."
         cd /opt/youke && python3 scripts/dual_verify/primary.py "$VERIFY_ISSUE" 2>&1 | tail -3
-        log "  → reviewer.py (独立 DB+API 验证)..."
+        log "  → reviewer.py (独立 DB+API)..."
         cd /opt/youke && python3 scripts/dual_verify/reviewer.py "$VERIFY_ISSUE" 2>&1 | tail -3
-        log "  → merge.py (判定)..."
-        cd /opt/youke && python3 scripts/dual_verify/merge.py "$VERIFY_ISSUE" 2>&1 | tail -5
+        log "  → merge.py --dry-run (贴验收报告，不执行)..."
+        cd /opt/youke && python3 scripts/dual_verify/merge.py "$VERIFY_ISSUE" --dry-run 2>&1 | tail -1
+        log "  → 军师请确认报告后执行: python3 scripts/dual_verify/merge.py $VERIFY_ISSUE"
         log "✅ 验收完成 #$VERIFY_ISSUE"
     fi
 else

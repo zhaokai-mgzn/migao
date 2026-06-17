@@ -150,9 +150,12 @@ def merge(iid,dry_run=False):
     if not primary or not reviewer: return {"issue_id":iid,"error":"缺少结果"}
     judgment=judge(primary,reviewer,cloud); body=_get_issue_body(iid)
     result={"issue_id":iid,**judgment}
+    # --dry-run: 贴报告给军师看，但不执行 close/block/hold
+    result["comment"]=post_comment(iid,judgment,primary,reviewer)
     if not dry_run:
-        result["comment"]=post_comment(iid,judgment,primary,reviewer)
         result["action"]=act(iid,judgment["decision"],judgment,primary,reviewer,body)
+    else:
+        result["action"]="dry-run: 报告已贴，军师确认后运行 merge.py 执行"
     return result
 
 def main():
