@@ -89,3 +89,36 @@ else
 fi
 
 log "✅ issue #$ISSUE_ID 完成"
+    exit 0
+fi
+
+# ── 3. 没有 dev 任务 → 扫验收触发 ──
+log "🔍 扫描验收触发..."
+
+# 找军师的 VERIFY_TRIGGER 评论（最近 20 个 issue）
+VERIFY_ISSUE=$(gh issue list --state open --limit 20 --json number --jq '.[].number' 2>/dev/null | while read iid; do
+    HAS_TRIGGER=$(gh issue view "$iid" --comments --json comments \
+        --jq '.comments[] | select(.body | contains("VERIFY_TRIGGER")) | .body' 2>/dev/null | head -1)
+    HAS_RESULT=$(gh issue view "$iid" --comments --json comments \
+        --jq '.comments[] | select(.body | contains("VERIFY_RESULT")) | .body' 2>/dev/null | head -1)
+    if [ -n "$HAS_TRIGGER" ] && [ -z "$HAS_RESULT" ]; then
+        echo "$iid"
+        break
+    fi
+done)
+
+if [ -n "$VERIFY_ISSUE" ]; then
+    # 解析 VERIFY_TRIGGER 获取 kind
+    TRIGGER=$(gh issue view "$VERIFY_ISSUE" --comments --json comments \
+        --jq '.comments[] | select(.body | contains("VERIFY_TRIGGER")) | .body' 2>/dev/null | head -1)
+    KIND=$(echo "$TRIGGER" | grep -oP '"kind"\s*:\s*"\K\w+' | head -1)
+
+    log "🧪 验收 issue #$VERIFY_ISSUE (kind=$KIND)"
+    claude --print \
+        --custom-instructions ".claude/agents/verify-agent.md" \
+        "对 issue #$VERIFY_ISSUE 执行 $KIND 验收。跑对应脚本，贴 VERIFY_RESULT 评论。" \
+        2>&1 | tail -10
+    log "✅ 验收完成 #$VERIFY_ISSUE"
+else
+    log "😴 无待处理 issue / 验收任务"
+fi
