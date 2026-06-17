@@ -50,9 +50,9 @@ Step 2 — 实现 + 全量验证
   写最小实现 → 测试 PASS → 跑涉及模块全量单测
   涉及 State/路由/Interact → 加跑 L0 test_pending_interact_persistence.py
 
-Step 3 — 集测 + E2E
-  涉及 Tool/LLM/SSE → 跑增量集成测试
-  涉及前端组件/页面 → 跑增量 E2E spec
+Step 3 — 增量集测 + 增量 E2E
+  涉及 Tool/LLM/SSE → 跑本次变更相关的集成测试（非全量）
+  涉及前端组件/交互/SSE → 跑本次变更相关的 E2E spec（非全量）
 ```
 
 重构内联在 Step 2 中，不单独设阶段。
@@ -79,7 +79,7 @@ PR title: feat/fix(scope): 简短描述
 □ 测试先行：先写测试 → 确认 FAIL → 写实现 → 确认 PASS
 □ 全量单测：涉及模块的单测全部 PASS
 □ L0 检查：涉及 State/路由/Interact → test_pending_interact_persistence.py PASS
-□ 集测+E2E：涉及 Tool/LLM/SSE/前端 → 增量 PASS
+□ 增量集测+增量E2E：涉及 Tool/LLM/SSE/前端 → 仅跑变更相关的，PASS
 □ 无硬编码密钥 / 无 .env 提交 / 未改 DB schema 和 CI/CD
 □ PR 已开（非 main）+ PR_CONTRACT JSON + Closes #xxx
 ```
