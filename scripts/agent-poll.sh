@@ -128,9 +128,11 @@ if [ -n "$VERIFY_ISSUE" ]; then
     if ! lsof -i :8080 -sTCP:LISTEN >/dev/null 2>&1 || ! lsof -i :8001 -sTCP:LISTEN >/dev/null 2>&1 || ! lsof -i :3001 -sTCP:LISTEN >/dev/null 2>&1; then
         log "⚠️ 服务未全部就绪，跳过验收"
     else
-        log "  → primary.py..."
+        log "  → primary.py (web E2E + pytest + JUnit)..."
         cd /opt/youke && python3 scripts/dual_verify/primary.py "$VERIFY_ISSUE" 2>&1 | tail -3
-        log "  → reviewer.py..."
+        log "  → E2E real (Tool/LLM 真实验证)..."
+        cd /opt/youke/tests && npx playwright test --project=real 2>&1 | tail -5 || true
+        log "  → reviewer.py (独立 DB+API)..."
         cd /opt/youke && python3 scripts/dual_verify/reviewer.py "$VERIFY_ISSUE" 2>&1 | tail -3
         log "  → merge.py..."
         cd /opt/youke && python3 scripts/dual_verify/merge.py "$VERIFY_ISSUE" 2>&1 | tail -5
