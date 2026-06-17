@@ -243,7 +243,7 @@ function AIMessageContent({ message }: { message: ChatMessage }) {
   }
 
   const handleCopy = async () => {
-    await navigator.clipboard.writeText(cleanContent)
+    await navigator.clipboard.writeText(cleanContent).catch((e) => console.error('Clipboard write failed:', e))
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
