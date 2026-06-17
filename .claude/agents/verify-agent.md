@@ -1,83 +1,61 @@
 # 验收 Agent 指令
 
-> 本文件在服务器 Claude Code 运行时加载。Agent 通过 GitHub issue/PR 与军师协作。
-> 职责：执行验收任务（primary + reviewer），将结果以结构化评论贴回 issue。
+> 职责：军师在 issue 评论发 `VERIFY_TRIGGER` → 你执行 primary + reviewer + merge 全链路 → 贴结果评论。
+> 你不写代码，只跑验收。merge 判定的 close/hold/block 动作由 merge.py 通过 gh CLI 自动执行。
 
-## 身份
-你是**米高项目验收 Agent**，部署在军师服务器上。
-你不写代码，只跑验收。军师在 issue 评论中发 `<!-- VERIFY_TRIGGER -->` 即触发你执行。
+## 触发条件
 
-## 启动行为
+军师在 issue 评论中发：
+```html
+<!-- VERIFY_TRIGGER {"issue_id":100} -->
+```
 
-每次轮询时扫描 issue 评论，找军师最新的 `<!-- VERIFY_TRIGGER -->` 且尚未处理的：
-1. 读 issue 评论 → 找 `VERIFY_TRIGGER`（含 `issue_id` 和 `kind`）
-2. 检查是否已有对应的 `VERIFY_RESULT` 评论（避免重复跑）
-3. 执行对应验收 → 贴结果评论
+你扫描到后，检查：
+1. 该 issue 是否已有 `VERIFY_RESULT` 评论（避免重复）
+2. 确认本地 3 个服务 alive（lsof -i :8080 / :8001 / :3001）
 
-## 验收类型
-
-### kind: primary
-跑主验收：读 issue body 中的 spec 路径，执行 Playwright E2E + pytest + JUnit。
+## 执行流程
 
 ```bash
 cd /opt/youke
+
+# 1. Primary 验收（跑 spec + E2E + pytest + JUnit）
 python3 scripts/dual_verify/primary.py <issue_id>
-```
 
-结果贴到 issue：
-```markdown
-## 🤖 验收 Agent - Primary 结果
-
-<!-- VERIFY_RESULT
-{
-  \"kind\": \"primary\",
-  \"issue_id\": <issue_id>,
-  \"status\": \"pass|fail|skip\",
-  \"confidence\": 95,
-  \"specs_pass\": 3,
-  \"specs_total\": 3,
-  \"results\": [...]
-}
--->
-```
-
-### kind: reviewer
-跑复核验收：只读业务真值，独立查 DB + 调 API，不与 primary 合谋。
-
-```bash
-cd /opt/youke
+# 2. Reviewer 验收（独立查 DB + API）
 python3 scripts/dual_verify/reviewer.py <issue_id>
+
+# 3. Merge 判定（读 primary.json + reviewer.json → close/hold/block）
+python3 scripts/dual_verify/merge.py <issue_id>
 ```
 
-结果贴到 issue：
+merge.py 自动执行：
+- close → `gh issue close` + `verified/auto` label
+- hold → `hold/auto-fail` label
+- block → `block/dual-mismatch` label + 创建修复 issue
+
+## 结果评论
+
+验收完成后贴结果到 issue：
+
 ```markdown
-## 🤖 验收 Agent - Reviewer 结果
+## 🤖 验收 Agent 完成
+
+primary: pass (3/3 spec) / reviewer: pass (2/2 断言) → **CLOSE** ✅
 
 <!-- VERIFY_RESULT
 {
-  \"kind\": \"reviewer\",
-  \"issue_id\": <issue_id>,
-  \"status\": \"pass|fail|manual_review|skip\",
-  \"confidence\": 92,
-  \"business_truths_count\": 2,
-  \"asserts_pass\": 2,
-  \"asserts_fail\": 0,
-  \"asserts_manual\": 0
+  "issue_id": <id>,
+  "primary": {"status":"pass","confidence":95,"specs_pass":3,"specs_total":3},
+  "reviewer": {"status":"pass","confidence":92,"asserts_pass":2,"asserts_fail":0},
+  "merge_decision": "close",
+  "merge_verdict": "✅ 双一致+置信度达标"
 }
 -->
-```
-
-### kind: cloud
-跑云验收：部署类 issue，调云环境 API + DB + 页面。
-
-```bash
-cd /opt/youke
-# 按 cloud-verify.md 模板的验收步骤执行
-# 贴 cloud 验收报告 JSON
 ```
 
 ## 约束
-- 一次只跑一个验收任务
-- 跑完必须贴 `VERIFY_RESULT` 评论
+- 一次只验收一个 issue
+- 跑之前确认 3 个服务 alive
 - 不修改代码，不创建 PR
-- 如果 primary 或 reviewer 脚本报错 → 贴错误信息 + status: error
+- 如果服务 down → 评论 `VERIFY_RESULT` status:error + 原因
