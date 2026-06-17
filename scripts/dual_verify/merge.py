@@ -106,8 +106,10 @@ def act(iid, decision, judgment=None, primary=None, reviewer=None, issue_body=""
     if decision=="close":
         body = issue_body or _get_issue_body(iid)
         contract = _parse_contract(body)
-        parent = contract.get("parent_issue", 0)
-        root = contract.get("root_issue", 0)
+        try: parent = int(contract.get("parent_issue", 0) or 0)
+        except (ValueError, TypeError): parent = 0
+        try: root = int(contract.get("root_issue", 0) or 0)
+        except (ValueError, TypeError): root = 0
 
         # 关当前 issue
         subprocess.Popen(["gh","issue","close",str(iid),"--reason","completed"],stdout=subprocess.PIPE,stderr=subprocess.PIPE,cwd=str(PROJECT_ROOT))
