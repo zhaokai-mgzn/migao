@@ -204,3 +204,25 @@ PR merge + deploy 完成 →
 | `junshi-review/pass-with-followups` | PR | 评审通过 | 军师 |
 | `junshi-review/needs-changes` | PR | 评审需改 | 军师 |
 | `junshi-review/blocked` | PR | 评审阻塞 | 军师 |
+
+---
+
+## PR → Merge 时序（军师自动合）
+
+```
+Agent push PR
+  → CI 自动跑 (pr-check: 单测+QA Growth Gate)
+  → CI 全绿 + Fixes #xxx 齐全 + E2E 有覆盖
+      → 军师检测 → 挂 junshi-review/pass-with-followups → merge
+  → CI 红 / 缺测试
+      → 军师检测 → 挂 junshi-review/needs-changes → Agent 修复后 push → CI 重跑
+  → deploy (GitHub Actions, ~3min)
+  → 军师检测 deploy 完成 → 挂 ai-verify/pending → 发 VERIFY_TRIGGER
+```
+
+军师合并条件：
+- CI 全部绿（6 个 required checks）
+- PR body 有关联 issue（Fixes/Closes #xxx）
+- 前端改动有对应 E2E spec
+
+以上全部满足 → 自动 merge，不需要人类点按钮。
