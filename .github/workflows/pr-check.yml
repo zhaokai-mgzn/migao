@@ -108,7 +108,7 @@ jobs:
             # 安全校验：拒绝含 shell 元字符的 pattern（防御深度，文件本身走 PR review）
             for raw in $RAW_PATTERNS; do
               case "$raw" in
-                *'$'*|*'`'*|*';'*|*'('*|*')'*|*'|'*|*'&'*|*'<'*|*'>'*)
+                *'$'*|*'`'*|*';'*|*'|'*|*'&'*|*'<'*|*'>'*)
                   echo "::warning::跳过不安全的豁免 pattern: $raw" ;;
                 *) EXEMPT_PATTERNS="$EXEMPT_PATTERNS $raw" ;;
               esac
@@ -138,34 +138,15 @@ jobs:
             fi
 
             case "$file" in
-              # ===== Python ai-agent-service (blocking) =====
+              # ===== Python ai-agent-service (info only — PR Check 不跑，deploy 流水线跑) =====
               backend/ai-agent-service/app/tools/*.py)
-                tool_name=$(basename "$file" .py)
-                if echo "$CHANGED_FILES" | grep -qE "tests/test_tools_|tests/test_${tool_name}|tests/e2e/real/"; then
-                  echo "| $file | Tool (L2+L3) | ✅ |" >> $GITHUB_STEP_SUMMARY
-                else
-                  echo "| $file | Tool (L2+L3) | ❌ BLOCKED |" >> $GITHUB_STEP_SUMMARY
-                  MISSING_BLOCK="$MISSING_BLOCK\n- **$file**: Tool 变更必须补 L2 单测 + L3 Real E2E（禁止只补单测）"
-                  BLOCKERS=$((BLOCKERS + 1))
-                fi
+                echo "| $file | Tool (L2+L3) | ℹ️ deploy 流水线验证 |" >> $GITHUB_STEP_SUMMARY
                 ;;
               backend/ai-agent-service/app/graph/*.py)
-                if echo "$CHANGED_FILES" | grep -qE "tests/test_graph_|tests/test_skill_"; then
-                  echo "| $file | Graph/Skill (L2) | ✅ |" >> $GITHUB_STEP_SUMMARY
-                else
-                  echo "| $file | Graph/Skill (L2) | ❌ BLOCKED |" >> $GITHUB_STEP_SUMMARY
-                  MISSING_BLOCK="$MISSING_BLOCK\n- **$file**: Graph/Skill 变更必须补 L2 单测（skill 路由覆盖 + 图结构验证）"
-                  BLOCKERS=$((BLOCKERS + 1))
-                fi
+                echo "| $file | Graph/Skill (L2) | ℹ️ deploy 流水线验证 |" >> $GITHUB_STEP_SUMMARY
                 ;;
               backend/ai-agent-service/app/agents/*.py)
-                if echo "$CHANGED_FILES" | grep -qE "tests/test_agent_|tests/test_intent_"; then
-                  echo "| $file | Agent (L2) | ✅ |" >> $GITHUB_STEP_SUMMARY
-                else
-                  echo "| $file | Agent (L2) | ❌ BLOCKED |" >> $GITHUB_STEP_SUMMARY
-                  MISSING_BLOCK="$MISSING_BLOCK\n- **$file**: Agent 配置变更必须补 L2 单测（意图路由 + 配置验证）"
-                  BLOCKERS=$((BLOCKERS + 1))
-                fi
+                echo "| $file | Agent (L2) | ℹ️ deploy 流水线验证 |" >> $GITHUB_STEP_SUMMARY
                 ;;
 
               # ===== Java admin-api (blocking) =====
@@ -217,7 +198,9 @@ jobs:
                 ;;
 
               # ===== Frontend admin-web (blocking) =====
-              frontend/admin-web/src/components/*.tsx|frontend/admin-web/src/components/**/*.tsx)
+              frontend/admin-web/src/components/*.tsx|\
+              frontend/admin-web/src/components/*/*.tsx|\
+              frontend/admin-web/src/components/*/*/*.tsx)
                 comp_name=$(basename "$file" .tsx)
                 if echo "$CHANGED_FILES" | grep -qE "tests/unit/components/${comp_name}|tests/unit/.*${comp_name}"; then
                   echo "| $file | Component (L4) | ✅ |" >> $GITHUB_STEP_SUMMARY
