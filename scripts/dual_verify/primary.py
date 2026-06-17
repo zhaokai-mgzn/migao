@@ -74,8 +74,39 @@ def is_deployment_issue(issue_body: str) -> bool:
     return False
 
 
+def _run_e2e_suite() -> list:
+    """跑全部 E2E: web + real。CI 已覆盖单测/集测，验收只跑 E2E。"""
+    results = []
+    tests_dir = PROJECT_ROOT / "tests"
+    for project in ["web", "real"]:
+        p = subprocess.Popen(
+            ["npx", "playwright", "test", f"--project={project}", "--reporter=json"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            cwd=str(tests_dir), env={**os.environ, "CI": "true"}
+        )
+        try:
+            out, err = p.communicate(timeout=600)
+            try:
+                report = json.loads(out.decode("utf-8", "ignore"))
+                stats = report.get("stats", report.get("suites", [{}])[0].get("specs", [{}])[0] if isinstance(report.get("suites"), list) else {})
+                if isinstance(stats, dict):
+                    results.append({
+                        "spec": f"e2e-{project}", "status": "pass" if p.returncode == 0 else "fail",
+                        "passed": stats.get("expected", stats.get("passed", 0)),
+                        "failed": stats.get("unexpected", stats.get("failed", 0)),
+                    })
+                else:
+                    results.append({"spec": f"e2e-{project}", "status": "pass" if p.returncode == 0 else "fail"})
+            except json.JSONDecodeError:
+                results.append({"spec": f"e2e-{project}", "status": "pass" if p.returncode == 0 else "fail"})
+        except subprocess.TimeoutExpired:
+            p.kill()
+            results.append({"spec": f"e2e-{project}", "status": "fail", "reason": "timeout 600s"})
+    return results
+
+
 def run_e2e_spec(spec_path: str) -> dict:
-    """跑 Playwright spec"""
+    """跑单个 Playwright spec"""
     full = PROJECT_ROOT / spec_path
     if not full.exists():
         return {"spec": spec_path, "status": "skip", "reason": "spec 文件不存在"}
@@ -161,48 +192,32 @@ def classify(spec_path: str) -> str:
     return "unknown"
 
 
-def verify(issue_id: int) -> dict:
-    """主验收入口"""
+def verify(issue_id: int, e2e_only: bool = False) -> dict:
+    """主验收入口。e2e_only=True 时只跑 E2E（跳过 pytest/JUnit，CI 已覆盖）。"""
     issue = load_issue(issue_id)
     body = issue.get("body", "")
     title = issue.get("title", "")
     comments = issue.get("comments", [])
-    # 部署类 issue 不需本地 spec，等云验收
-    if is_deployment_issue(body):
-        return {
-            "issue_id": issue_id,
-            "title": title,
-            "verifier": "primary",
-            "status": "skip_deployment",
-            "reason": "部署/基础设施类 issue — 等云验收（cloud）",
-            "specs": [],
-            "confidence": 0,
-            "hint": "需研发 AI 跑云验收（API + DB + 部署日志）"
-        }
-    specs = extract_specs(body)
-    if not specs:
-        return {
-            "issue_id": issue_id,
-            "title": title,
-            "verifier": "primary",
-            "status": "skip",
-            "reason": "issue body 中未找到 spec 路径（需写 L2/L3 case）",
-            "specs": [],
-            "confidence": 0,
-            "comments_count": len(comments)
-        }
 
-    results = []
-    for spec in specs:
-        kind = classify(spec)
-        if kind == "e2e":
-            results.append(run_e2e_spec(spec))
-        elif kind == "python":
-            results.append(run_python_test(spec))
-        elif kind == "java":
-            results.append(run_java_test(Path(spec).stem))
-        else:
-            results.append({"spec": spec, "status": "skip", "reason": f"未知类型 {kind}"})
+    if is_deployment_issue(body):
+        return {"issue_id": issue_id, "title": title, "verifier": "primary",
+                "status": "skip_deployment", "reason": "部署类", "confidence": 0}
+
+    if e2e_only:
+        # 只跑 E2E web + real（CI 已跑单测+集测）
+        results = _run_e2e_suite()
+    else:
+        specs = extract_specs(body)
+        if not specs:
+            return {"issue_id": issue_id, "title": title, "verifier": "primary",
+                    "status": "skip", "reason": "未找到 spec", "confidence": 0}
+        results = []
+        for spec in specs:
+            kind = classify(spec)
+            if kind == "e2e": results.append(run_e2e_spec(spec))
+            elif kind == "python": results.append(run_python_test(spec))
+            elif kind == "java": results.append(run_java_test(Path(spec).stem))
+            else: results.append({"spec": spec, "status": "skip", "reason": f"未知类型 {kind}"})
 
     # 计算通过率
     pass_count = sum(1 for r in results if r.get("status") == "pass")
@@ -239,8 +254,9 @@ def main():
     parser = argparse.ArgumentParser(description="主验收")
     parser.add_argument("issue_id", type=int)
     parser.add_argument("--out", type=str, help="输出 JSON 路径")
+    parser.add_argument("--e2e-only", action="store_true", help="只跑E2E(CI已覆盖单测集测)")
     args = parser.parse_args()
-    result = verify(args.issue_id)
+    result = verify(args.issue_id, e2e_only=args.e2e_only)
     if args.out:
         Path(args.out).parent.mkdir(parents=True, exist_ok=True)
         with open(args.out, "w") as f:
