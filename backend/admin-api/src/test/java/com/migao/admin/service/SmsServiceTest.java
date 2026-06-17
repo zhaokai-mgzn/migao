@@ -1,5 +1,6 @@
 package com.migao.admin.service;
 
+import com.migao.admin.config.SmsConfig;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -25,6 +26,9 @@ class SmsServiceTest {
 
     @Mock
     private StringRedisTemplate redisTemplate;
+
+    @Mock
+    private SmsConfig smsConfig;
 
     @Mock
     private ValueOperations<String, String> valueOps;
