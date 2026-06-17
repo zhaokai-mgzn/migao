@@ -106,6 +106,7 @@ PR title: feat/fix(scope): 简短描述
 
 ## 约束
 
+- **服务按需启停**：agent-poll.sh 在任务开始前自动启动 admin-api/ai-agent/admin-web，任务结束后自动关闭。Agent 不需要手动管理服务。
 - 超时：单个 issue 不超过 30 分钟
 - 熔断：`block_depth >= 3` → 跳过 + 评论"已达熔断阈值"
 - 测试：全量单测 PASS 才能 push

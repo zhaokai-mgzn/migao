@@ -81,10 +81,8 @@ if ! gh auth status 2>/dev/null; then
     exit 1
 fi
 
-# ── 7. 服务常驻（后台启动，Agent 随时可用）──
-echo "🚀 启动本地服务（常驻后台）..."
-
-# admin-api (Java, :8080)
+# ── 7. 服务按需启停（agent-poll.sh 自动管理）──
+echo "ℹ️  服务由 agent-poll.sh 按需启停，不常驻。任务前启动，任务后关闭。"
 cd "$WORK_DIR/backend/admin-api"
 nohup ./mvnw spring-boot:run > /var/log/migao-admin-api.log 2>&1 &
 echo "   admin-api → :8080 (pid $!)"

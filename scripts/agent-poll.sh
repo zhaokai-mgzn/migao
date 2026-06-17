@@ -8,6 +8,24 @@
 # ═══════════════════════════════════════════════════════════════
 set -e
 
+# ═══════════════════════════════════════════════════════
+# 按需启停服务 — 任务开始前启动，任务结束后关闭
+# ═══════════════════════════════════════════════════════
+start_services() {
+    log "🚀 启动服务..."
+    cd /opt/youke/backend/admin-api && nohup ./mvnw spring-boot:run -q -Dspring-boot.run.arguments='--server.port=8081' > /var/log/migao-admin-api.log 2>&1 &
+    cd /opt/youke/backend/ai-agent-service && nohup .venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8001 > /var/log/migao-ai-agent.log 2>&1 &
+    cd /opt/youke/frontend/admin-web && nohup npm run dev > /var/log/migao-admin-web.log 2>&1 &
+    sleep 30
+}
+
+stop_services() {
+    log "🛑 关闭服务..."
+    fuser -k 8081/tcp 2>/dev/null || true
+    fuser -k 8001/tcp 2>/dev/null || true
+    fuser -k 3001/tcp 2>/dev/null || true
+}
+
 WORK_DIR="${WORK_DIR:-/opt/youke}"
 LOCK_FILE="/tmp/migao-agent.lock"
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"; }
@@ -73,6 +91,10 @@ if [ -z "$ISSUE_ID" ]; then
     log "😴 无待处理 issue"
     exit 0
 fi
+
+# ── 按需启动服务，任务结束后自动关闭 ──
+start_services
+trap 'stop_services' EXIT
 
 # ── 熔断检查 ──
 BLOCK_COMMENT=$(gh issue view "$ISSUE_ID" --comments --json comments \
