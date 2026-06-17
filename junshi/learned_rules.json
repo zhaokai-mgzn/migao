@@ -1,6 +1,6 @@
 {
-  "version": "v1.0",
-  "last_updated": "2026-06-16T15:38:33+08:00",
+  "version": "v1.1",
+  "last_updated": "2026-06-17T14:00:00+08:00",
   "owner": "junshi (auto-maintained)",
   "rules": [
     {
@@ -153,7 +153,23 @@
     "low_truths_count_issues": [],
     "last_scan": "2026-06-16T15:38:33.628461"
   },
-  "next_self_update": "2026-06-16T19:38:33+08:00",
+  "template_coverage": {
+    "last_audited": "2026-06-17T14:00:00+08:00",
+    "total_templates": 8,
+    "truths_to_asserts_ratio": {
+      "dashboard-jump": "4:4 (100%)",
+      "order-classify": "4:4 (100%)",
+      "product-sku-stock": "3:3 (100%)",
+      "customer-list": "3:3 (100%)",
+      "aftersales-flow": "3:3 (100%)",
+      "auth-sms": "4:4 (100%)",
+      "employee-role": "4:4 (100%)",
+      "knowledge-ai": "3:3 (100%)"
+    },
+    "templates_with_gate_patterns": 8,
+    "templates_with_expect_conditions": 8
+  },
+  "next_self_update": "2026-06-17T18:00:00+08:00",
   "gate_feedback": {
     "description": "从验收结果学习，反馈给 QA Growth Gate 的规则建议",
     "last_updated": "2026-06-17T12:00:00+08:00",

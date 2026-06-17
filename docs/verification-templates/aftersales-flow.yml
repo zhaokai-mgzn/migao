@@ -10,9 +10,20 @@ business_truths:
 primary_specs:
   - tests/e2e/specs/after-sales/after-sales-list.spec.ts
   - tests/e2e/specs/after-sales/after-sales-detail.spec.ts
+  - backend/admin-api/src/test/java/com/migao/admin/controller/AfterSalesControllerTest.java
+
+gate_patterns:
+  - "frontend/admin-web/src/app/*/after-sales/page.tsx"
+  - "backend/admin-api/src/main/java/com/migao/admin/controller/AfterSalesController.java"
+  - "backend/admin-api/src/main/java/com/migao/admin/service/AfterSalesTicketService.java"
 
 reviewer_asserts:
   - API: GET /api/admin/aftersales/{id}
+    expect: data.status IN (待处理,处理中,已完成,已关闭) AND data.orderNo 非空 AND data.timeline 正序
+  - API: GET /api/admin/aftersales?status=待处理
+    expect: items 中每条 status = 待处理
+  - DB: SELECT status, COUNT(*) FROM after_sales_tickets WHERE tenant_id={tid} GROUP BY status
+    expect: 分布与列表页 tab 计数一致
 
 confidence_required: 90%
 

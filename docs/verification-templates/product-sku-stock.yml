@@ -9,9 +9,20 @@ business_truths:
 
 primary_specs:
   - tests/e2e/specs/products/product-list.spec.ts
+  - backend/admin-api/src/test/java/com/migao/admin/controller/ProductControllerTest.java
+
+gate_patterns:
+  - "frontend/admin-web/src/app/*/products/page.tsx"
+  - "backend/admin-api/src/main/java/com/migao/admin/controller/ProductController.java"
+  - "backend/admin-api/src/main/java/com/migao/admin/service/ProductService.java"
 
 reviewer_asserts:
   - API: GET /api/admin/products/{id}
+    expect: data.stock = SUM(data.skus[].stock)
+  - API: GET /api/admin/products/low-stock-by-color?threshold=100
+    expect: 每个 item.stock <= 100
+  - DB: SELECT p.id, SUM(s.stock) FROM products p JOIN product_skus s ON s.product_id=p.id GROUP BY p.id
+    expect: 聚合结果与商品列表库存列一致
 
 confidence_required: 100%
 

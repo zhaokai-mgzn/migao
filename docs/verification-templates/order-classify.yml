@@ -11,10 +11,21 @@ business_truths:
 primary_specs:
   - tests/e2e/specs/orders/order-list.spec.ts
   - tests/e2e/specs/dashboard/dashboard.spec.ts
+  - backend/admin-api/src/test/java/com/migao/admin/controller/OrderControllerTest.java
+
+gate_patterns:
+  - "frontend/admin-web/src/app/*/orders/page.tsx"
+  - "backend/admin-api/src/main/java/com/migao/admin/controller/OrderController.java"
+  - "backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java"
 
 reviewer_asserts:
   - API: GET /api/admin/orders?category=含加工订单
-  - 分类 tab 计数与列表分页总数对得上
+    expect: items 中每条 status NOT IN (已关闭, 退款售后) AND has_processing=true
+  - API: GET /api/admin/orders?status=待发货
+    expect: items 中每条 status = 待发货
+  - DB: SELECT COUNT(*) FROM orders WHERE status NOT IN ('已关闭','退款售后') AND has_processing=true
+    expect: 结果 = 含加工订单 tab 计数
+  - 分类tab计数: 各 tab 计数与对应筛选列表 total 一致
 
 confidence_required: 100%
 

@@ -10,9 +10,20 @@ business_truths:
 primary_specs:
   - tests/e2e/specs/customers/customer-list.spec.ts
   - tests/e2e/specs/customers/customer-detail.spec.ts
+  - backend/admin-api/src/test/java/com/migao/admin/controller/CustomerControllerTest.java
+
+gate_patterns:
+  - "frontend/admin-web/src/app/*/customers/page.tsx"
+  - "backend/admin-api/src/main/java/com/migao/admin/controller/CustomerController.java"
+  - "backend/admin-api/src/main/java/com/migao/admin/service/CustomerService.java"
 
 reviewer_asserts:
-  - API: GET /api/admin/customers?keyword=*
+  - API: GET /api/admin/customers?keyword=13800138000
+    expect: items 至少 1 条，手机号或姓名匹配关键词
+  - API: GET /api/admin/customers/{id}
+    expect: data.orderCount > 0 AND data.totalSpent > 0
+  - DB: SELECT COUNT(*) FROM customers WHERE tenant_id != {request_tenant_id}
+    expect: 0（跨租户泄露检查）
 
 confidence_required: 90%
 

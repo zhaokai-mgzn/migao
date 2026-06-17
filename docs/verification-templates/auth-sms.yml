@@ -11,10 +11,22 @@ business_truths:
 primary_specs:
   - tests/e2e/specs/auth/login-sms.spec.ts
   - tests/e2e/specs/auth/register.spec.ts
+  - backend/admin-api/src/test/java/com/migao/admin/controller/AuthIntegrationTest.java
+
+gate_patterns:
+  - "frontend/admin-web/src/app/login/page.tsx"
+  - "backend/admin-api/src/main/java/com/migao/admin/controller/AuthController.java"
+  - "backend/admin-api/src/main/java/com/migao/admin/service/AuthService.java"
 
 reviewer_asserts:
-  - API: POST /api/auth/sms-login
-  - API: 验证密码登录端点已禁用（返回 403/404）
+  - API: POST /api/auth/sms/login
+    expect: response.data.token 非空 AND response.data.user 包含 id/name/roles
+  - API: POST /api/auth/admin/login
+    expect: HTTP 403 或 404（密码登录已禁用 #375）
+  - API: POST /api/auth/register
+    expect: 新手机号注册成功返回 token，已注册手机号返回 409
+  - DB: SELECT expires_at FROM sms_codes WHERE phone = {phone}
+    expect: expires_at > NOW()（验证码在有效期内）
 
 confidence_required: 100%
 
