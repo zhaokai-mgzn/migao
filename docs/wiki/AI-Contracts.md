@@ -337,3 +337,114 @@ merge.py 自动 close/block/hold + 贴 AI验收报告评论
 □ 没有 SQL/API 技术细节泄露到 case 中
 □ 模板匹配正确（8 种业务模式至少命中 1 种）
 ```
+
+---
+
+# 军师自进化手册
+
+> 质量数据全部可追溯、可衡量。每个 issue 的评论链记录了全生命周期数据，军师定期跑质量报告即可识别改进方向。
+
+## 质量源头：第二步 Case 草稿
+
+### 硬 Gate 机制
+
+```
+case_draft.py 发草稿前必须通过 quality_gate：
+
+  auto_asserts >= truths_count  → 通过，正常发稿
+  auto_asserts <  truths_count  → 拒绝发稿，返回错误信息
+  真值数为 0                     → 拒绝发稿
+```
+
+拒绝示例：
+```
+- 🔴 **拒绝发稿**: L4自动断言(1) < 业务真值(3)
+  缺少自动验证的真值会导致 reviewer 无法验收 → block 率 100%
+  请为每条真值补充 DB/API 验证方式后重试。
+```
+
+### 8 个模板 + 关键词匹配
+
+| 模板 | 最小命中 | 关键词 |
+|------|---------|--------|
+| dashboard-jump | 2 | 看板跳转、待发货数、含加工订单数、低库存数 |
+| order-classify | 2 | 订单分类、8个分类、6个状态、含加工订单 |
+| product-sku-stock | 1 | SKU库存、库存汇总、低库存阈值 |
+| customer-list | 1 | 客户列表、客户详情、客户搜索 |
+| aftersales-flow | 1 | 售后工单、售后状态、退款 |
+| auth-sms | 1 | 短信登录、验证码登录、注册 |
+| employee-role | 1 | 员工列表、角色权限、岗位 |
+| knowledge-ai | 2 | 知识库文档、知识库检索、AI回答 |
+
+### Reviewer 自动验证覆盖（25+ 关键词）
+
+reviewer.py 的 `infer_business_asserts` 根据业务真值关键词自动生成 DB/API 断言，覆盖所有 8 种模板：
+
+- **dashboard-jump**: 含加工待发货 / 含加工订单数 / 低库存 / 卡片数据 / 跳转URL
+- **order-classify**: 状态分类 / 分类计数 = 列表总数
+- **product-sku-stock**: SKU库存聚合 / 低库存
+- **customer-list**: 客户搜索 / 客户订单数 / 租户隔离
+- **aftersales-flow**: 售后状态流转 / 售后列表
+- **auth-sms**: 短信登录 / 密码登录已禁用 / 注册
+- **employee-role**: 员工列表 / 角色权限
+- **knowledge-ai**: 知识库文档 / AI客服回答
+
+> 未命中任何关键词的真值 → 兜底标 `manual` → merge 时自动 `hold`（不 block），等军师补充 SQL。
+
+## 可追溯数据
+
+每个 issue 的评论链记录了全流程：
+
+| 评论类型 | JSON 块 | 记录内容 |
+|---------|---------|---------|
+| Case 草稿 | `DRAFT_JSON` | 模板、真值数、L4 自动覆盖率、spec 路径 |
+| Agent Review | `REVIEW_JSON` | accept / reject / supplement + 原因 |
+| 验收报告 | `VERDICT_JSON` | primary/reviewer 状态 + 置信度 + 冲突 |
+| 打回日志 | `BLOCK_LOG` | block_depth、失败 spec、冲突原因 |
+
+merge.py 自动写 `block-rate.jsonl`，每次 block 事件一行。
+
+## 军师自检：跑质量报告
+
+```bash
+cd /opt/youke
+python3 scripts/dual_verify/quality_report.py --days 7
+```
+
+输出示例：
+```
+## 总览
+| **block 率** | 2/10 (20%) |
+| **close 率** | 7/10 (70%) |
+| 平均置信度    | 93%        |
+| Agent reject 率 | 1/10 (10%) |
+| L4 有人工断言   | 2          |
+
+## 模板维度
+| 模板             | 总数 | block率 | L4自动覆盖率 |
+| dashboard-jump   | 3    | 33%     | 67%          |
+| order-classify   | 5    | 0%      | 100%         |
+
+## 改进建议
+- dashboard-jump block率 33% — 请review该模板的reviewer_asserts
+- 2 个 issue 有 L4 人工断言 — 请补充自动验证方式
+```
+
+## 改进闭环
+
+```
+质量报告 → 识别弱项（哪个模板 block 率高？哪个 L4 缺自动断言？）
+       → 军师修正模板或补充 reviewer_asserts
+       → 下一轮 case 质量提升 → block 率下降
+       → 再跑报告验证
+```
+
+## 军师自检节奏
+
+- **每 7 天**：跑 quality_report.py，看 block 率趋势
+- **block 率 > 30%**：暂停新 issue，修正模板 + reviewer 关键词
+- **某个模板 block 率 > 50%**：该模板 reviewer_asserts 需重写
+- **Agent reject 率 > 30%**：case 草稿质量需提升（更具体、更可执行）
+- **熔断 (≥3 次)**：真值本身可能有歧义，需凯总/娜总澄清
+
+目标：**block 率 < 15%，close 率 > 80%，Agent reject 率 < 10%，L4 人工断言 = 0**。
