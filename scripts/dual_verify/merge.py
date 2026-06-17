@@ -104,9 +104,27 @@ def post_comment(iid, judgment, primary, reviewer):
 
 def act(iid, decision, judgment=None, primary=None, reviewer=None, issue_body=""):
     if decision=="close":
+        body = issue_body or _get_issue_body(iid)
+        contract = _parse_contract(body)
+        parent = contract.get("parent_issue", 0)
+        root = contract.get("root_issue", 0)
+
+        # 关当前 issue
         subprocess.Popen(["gh","issue","close",str(iid),"--reason","completed"],stdout=subprocess.PIPE,stderr=subprocess.PIPE,cwd=str(PROJECT_ROOT))
         subprocess.Popen(["gh","issue","edit",str(iid),"--add-label","verified/auto"],stdout=subprocess.PIPE,stderr=subprocess.PIPE,cwd=str(PROJECT_ROOT))
-        return "✅ close+verified/auto"
+
+        # 连锁关闭父 issue + 清除 block 标签
+        if parent:
+            subprocess.Popen(["gh","issue","close",str(parent),"--reason","completed"],stdout=subprocess.PIPE,stderr=subprocess.PIPE,cwd=str(PROJECT_ROOT))
+            subprocess.Popen(["gh","issue","edit",str(parent),"--remove-label","block/dual-mismatch","--add-label","verified/auto"],stdout=subprocess.PIPE,stderr=subprocess.PIPE,cwd=str(PROJECT_ROOT))
+        if root and root != parent:
+            subprocess.Popen(["gh","issue","close",str(root),"--reason","completed"],stdout=subprocess.PIPE,stderr=subprocess.PIPE,cwd=str(PROJECT_ROOT))
+            subprocess.Popen(["gh","issue","edit",str(root),"--remove-label","block/dual-mismatch","--add-label","verified/auto"],stdout=subprocess.PIPE,stderr=subprocess.PIPE,cwd=str(PROJECT_ROOT))
+
+        msg = "✅ close+verified/auto"
+        if parent: msg += f" + 父issue #{parent}"
+        if root and root != parent: msg += f" + 根issue #{root}"
+        return msg
     if decision=="hold":
         subprocess.Popen(["gh","issue","edit",str(iid),"--add-label","hold/auto-fail"],stdout=subprocess.PIPE,stderr=subprocess.PIPE,cwd=str(PROJECT_ROOT))
         return "⚠️ hold"
