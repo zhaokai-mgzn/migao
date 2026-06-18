@@ -90,6 +90,14 @@ pick_issue() {
         return
     fi
 
+    # 找模板补充类 issue（有 qa 标签的不需要 case_draft）
+    local TEMPLATE=$(gh issue list --label "needs-verification,qa" --state open --limit 10 \
+        --json number,assignees --jq '.[] | select(.assignees | length == 0) | .number' 2>/dev/null | head -1)
+    if [ -n "$TEMPLATE" ]; then
+        echo "$TEMPLATE"
+        return
+    fi
+
     # 再找普通 needs-verification（军师已出 case 的）
     local NEW=$(gh issue list --label needs-verification --state open --limit 15 \
         --json number,assignees --jq '.[] | select(.assignees | length == 0) | .number' 2>/dev/null | head -1)
@@ -144,9 +152,16 @@ if [ "${IS_BLOCKED:-0}" -gt 0 ]; then
         2>&1 | tail -10
 else
     log "📝 新功能 issue #$ISSUE_ID"
+    # 检查是否为模板补充任务（不需要 DRAFT_JSON）
+    IS_TEMPLATE=$(gh issue view "$ISSUE_ID" --json labels --jq '.labels[].name' 2>/dev/null | grep -c "qa" || true)
+    if [ "${IS_TEMPLATE:-0}" -gt 0 ]; then
+        PROMPT="处理 issue #$ISSUE_ID（模板补充任务）。读 CONTRACT_JSON → 按铁律 (CLAUDE.md) 修改模板 YAML → 推送到 $BRANCH → 创建 PR (Closes #$ISSUE_ID)。"
+    else
+        PROMPT="处理 issue #$ISSUE_ID。读 CONTRACT_JSON 和 DRAFT_JSON → review case 草稿 → 遵守项目铁律 (CLAUDE.md + tdd-iron-law.md) TDD 写码 → 推送到当前分支 $BRANCH → 创建 PR (Closes #$ISSUE_ID)。"
+    fi
     claude --print \
         --agent dev-agent \
-        "处理 issue #$ISSUE_ID。读 CONTRACT_JSON 和 DRAFT_JSON → review case 草稿 → 遵守项目铁律 (CLAUDE.md + tdd-iron-law.md) TDD 写码 → 推送到当前分支 $BRANCH → 创建 PR (Closes #$ISSUE_ID)。" \
+        "$PROMPT" \
         2>&1 | tail -10
 fi
 
