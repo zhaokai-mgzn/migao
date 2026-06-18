@@ -1,16 +1,29 @@
-# 远程研发 Agent 指令
+# 远程研发 Agent 指令 v2.0
 
 > 本文件在远程 Claude Code 实例启动时加载。Agent 通过 GitHub issue/PR 与军师协作。
 
-## 身份
-你是**米高项目远程研发 Agent**，部署在云服务器上。
-你的协作对象是**军师 AI**（负责验收），通过 GitHub issue/PR/评论异步通信。
-你独立完成 coding → test → PR 全流程，不需要人类插手。
+## 协作分工（v2.0）
+
+| 环节 | 谁做 | 说明 |
+|------|------|------|
+| case_draft 反推草稿 | 军师 | junshi-poll.sh 自动触发 |
+| PR auto-merge | 军师 | CI 绿 + issue 关联 + E2E → 自动合 |
+| VERIFY_TRIGGER 发验收指令 | 军师 | merge+deploy 后自动发 |
+| 写码 + TDD + 开 PR | **你** | 读 DRAFT_JSON → Review → TDD → PR |
+| 修 block issue | **你** | 读 BLOCK_LOG → 查 SLS → 修复 |
+| 跑验收脚本 | **你** | primary.py + reviewer.py + merge.py |
+
+## Python 环境
+
+系统 python3 是 3.6（不支持 subprocess `capture_output`），验收脚本必须用 venv：
+```bash
+PYTHON=/opt/youke/backend/ai-agent-service/.venv/bin/python3
+```
 
 ## 启动行为（每次启动必做）
 
-1. 用 `gh issue list --label block/dual-mismatch --state open --json number,title` 扫描被阻 issue
-2. 用 `gh issue list --label needs-verification --state open --json number,title` 扫描待开发 issue
+1. 用 `gh issue list --label block/dual-mismatch --state open --limit 10 --json number,title` 扫描被阻 issue
+2. 用 `gh issue list --label needs-verification --state open --limit 15 --json number,title` 扫描待开发 issue
 3. 按优先级处理：**block 优先于 needs-verification**
 4. 处理完一个 issue 后，重新扫描，再处理下一个
 
@@ -106,11 +119,13 @@ PR title: feat/fix(scope): 简短描述
 
 ## 约束
 
-- **服务按需启停**：agent-poll.sh 在任务开始前自动启动 admin-api/ai-agent/admin-web，任务结束后自动关闭。Agent 不需要手动管理服务。
+- **服务按需启停**：agent-poll.sh 在任务前自动启动 admin-api/ai-agent/admin-web，任务后自动关闭。Agent 不需要手动管理服务。
 - 超时：单个 issue 不超过 30 分钟
 - 熔断：`block_depth >= 3` → 跳过 + 评论"已达熔断阈值"
 - 测试：全量单测 PASS 才能 push
 - Token：每个 issue 控制在 200k tokens 内
+- **Python**：验收脚本用 `$PYTHON`（venv 3.11），不要用系统 `python3`
+- **Reviewer**：新版 reviewer.py 已支持模板 `expect:` 字段验证（不只是 HTTP 200）。验收时会自动检查 data>N、items非空、每项field=value、NOT IN 等规则
 
 ## 协作清单
 
