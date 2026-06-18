@@ -73,7 +73,7 @@ if [ -n "$NEEDS_CHANGE_PR" ]; then
     git pull origin main 2>/dev/null
 
     claude --print \
-        --custom-instructions ".claude/agents/dev-agent.md" \
+        --agent dev-agent \
         "PR #$PR_NUM (关联 issue #$ISSUE_ID) 被军师标记 needs-changes。读 PR 评论 → 修复 → 遵守项目铁律 (CLAUDE.md + tdd-iron-law.md) → push 到当前分支 $PR_BRANCH。" \
         2>&1 | tail -10
 
@@ -104,9 +104,8 @@ pick_issue() {
 ISSUE_ID=$(pick_issue)
 
 if [ -z "$ISSUE_ID" ]; then
-    log "😴 无待处理 issue"
-    exit 0
-fi
+    log "😴 无待处理 issue，跳过写码，检查验收触发..."
+else
 
 # ── 启动服务前先拉最新代码 ──
 log "📥 同步最新代码..."
@@ -140,19 +139,20 @@ gh issue edit "$ISSUE_ID" --add-assignee "@me" 2>/dev/null || true
 if [ "${IS_BLOCKED:-0}" -gt 0 ]; then
     log "🔧 被阻 issue #$ISSUE_ID (第${DEPTH:-1}次打回) → 修复"
     claude --print \
-        --custom-instructions ".claude/agents/dev-agent.md" \
+        --agent dev-agent \
         "issue #$ISSUE_ID 验收被阻。读 BLOCK_LOG 评论理解失败原因 → 查 SLS 日志定位根因 → 修复代码 → 遵守项目铁律 (CLAUDE.md + tdd-iron-law.md) → 推送到当前分支 $BRANCH → 创建 PR (Closes #$ISSUE_ID)。" \
         2>&1 | tail -10
 else
     log "📝 新功能 issue #$ISSUE_ID"
     claude --print \
-        --custom-instructions ".claude/agents/dev-agent.md" \
+        --agent dev-agent \
         "处理 issue #$ISSUE_ID。读 CONTRACT_JSON 和 DRAFT_JSON → review case 草稿 → 遵守项目铁律 (CLAUDE.md + tdd-iron-law.md) TDD 写码 → 推送到当前分支 $BRANCH → 创建 PR (Closes #$ISSUE_ID)。" \
         2>&1 | tail -10
 fi
 
 log "✅ issue #$ISSUE_ID 完成"
 exit 0
+fi  # 结束 coding if/else
 
 # ── 3. 扫验收触发（军师发 VERIFY_TRIGGER → Agent 跑验收脚本）──
 log "🔍 扫描验收触发..."
@@ -173,17 +173,20 @@ done < <(gh issue list --state open --limit 20 --json number --jq '.[].number' 2
 if [ -n "$VERIFY_ISSUE" ]; then
     log "🧪 验收 issue #$VERIFY_ISSUE"
 
+    # 确保服务起来
     if ! lsof -i :8081 -sTCP:LISTEN >/dev/null 2>&1 || ! lsof -i :8001 -sTCP:LISTEN >/dev/null 2>&1 || ! lsof -i :3001 -sTCP:LISTEN >/dev/null 2>&1; then
-        log "⚠️ 服务未全部就绪，跳过验收"
-    else
-        log "  → primary.py (E2E + 真实集测)..."
-        cd /opt/youke && $PYTHON scripts/dual_verify/primary.py "$VERIFY_ISSUE" 2>&1 | tail -3
-        log "  → reviewer.py (独立 DB+API)..."
-        cd /opt/youke && $PYTHON scripts/dual_verify/reviewer.py "$VERIFY_ISSUE" 2>&1 | tail -3
-        log "  → merge.py (自动判定+执行)..."
-        cd /opt/youke && $PYTHON scripts/dual_verify/merge.py "$VERIFY_ISSUE" 2>&1 | tail -3
-        log "✅ 验收完成 #$VERIFY_ISSUE"
+        log "  ⚠️ 服务未就绪，启动中..."
+        start_services
     fi
+    trap 'stop_services' EXIT
+
+    log "  → primary.py (E2E + 真实集测)..."
+    cd /opt/youke && $PYTHON scripts/dual_verify/primary.py "$VERIFY_ISSUE" 2>&1 | tail -3
+    log "  → reviewer.py (独立 DB+API + expect 验证)..."
+    cd /opt/youke && $PYTHON scripts/dual_verify/reviewer.py "$VERIFY_ISSUE" 2>&1 | tail -3
+    log "  → merge.py (自动判定+执行)..."
+    cd /opt/youke && $PYTHON scripts/dual_verify/merge.py "$VERIFY_ISSUE" 2>&1 | tail -3
+    log "✅ 验收完成 #$VERIFY_ISSUE"
 else
     log "😴 无待处理任务"
 fi
