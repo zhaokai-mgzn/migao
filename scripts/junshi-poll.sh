@@ -119,22 +119,26 @@ for pr in prs:
     if 'Closes #' not in body and 'Fixes #' not in body:
         continue
 
-    # 必须有 E2E spec（前端改动时）
-    # 简化判断：有 tests/e2e/specs/ 路径
-    # 注：实际判断在 pr-check.yml QA Growth Gate 中做
-
-    # CI 状态
+    # CI 状态：必须全部 COMPLETED + 全部 SUCCESS
     checks = pr.get('statusCheckRollup', [])
-    if isinstance(checks, list):
-        all_pass = all(c.get('conclusion') == 'SUCCESS' for c in checks if c.get('status') == 'COMPLETED')
-        any_fail = any(c.get('conclusion') == 'FAILURE' for c in checks)
-    else:
-        all_pass = True
-        any_fail = False
-
-    if any_fail:
-        print(f'SKIP:{num}:CI_FAIL', flush=True)
+    if not isinstance(checks, list) or len(checks) == 0:
+        print(f'SKIP:{num}:CI_NO_CHECKS', flush=True)
         continue
+
+    completed = [c for c in checks if c.get('status') == 'COMPLETED']
+    pending  = [c for c in checks if c.get('status') != 'COMPLETED']
+    failed   = [c for c in completed if c.get('conclusion') != 'SUCCESS']
+
+    # 有未完成的 check → 不能 merge
+    if pending:
+        print(f'SKIP:{num}:CI_PENDING({len(pending)})', flush=True)
+        continue
+    # 有失败的 check → 不能 merge
+    if failed:
+        print(f'SKIP:{num}:CI_FAIL({len(failed)})', flush=True)
+        continue
+    # 全部 COMPLETED + SUCCESS → 可以 merge
+    all_pass = True
 
     # 检查军师 review 标签
     labels = [l['name'] for l in pr.get('labels', [])]
@@ -145,22 +149,24 @@ for pr in prs:
         print(f'SKIP:{num}:BLOCKED_BY_REVIEW', flush=True)
     elif has_pass:
         print(f'MERGE:{num}', flush=True)
-    elif all_pass:
+    else:
         # CI 全绿但没有军师标签 → 自动挂 pass 并 merge
         print(f'AUTOPASS:{num}', flush=True)
-    else:
-        print(f'SKIP:{num}:CI_NOT_COMPLETE', flush=True)
 " 2>/dev/null | while read action; do
     pr_num=$(echo "$action" | cut -d: -f2)
     act=$(echo "$action" | cut -d: -f1)
 
     case "$act" in
         MERGE|AUTOPASS)
-            log "  ✅ PR #$pr_num → merge"
             if [ "$act" = "AUTOPASS" ]; then
                 gh pr edit "$pr_num" --add-label "junshi-review/pass-with-followups" 2>/dev/null || true
             fi
-            gh pr merge "$pr_num" --squash --delete-branch 2>&1 | tail -1
+            MERGE_OUT=$(gh pr merge "$pr_num" --squash --delete-branch 2>&1)
+            if echo "$MERGE_OUT" | grep -qE "Merged|merged|deleted"; then
+                log "  ✅ PR #$pr_num → merged"
+            else
+                log "  ❌ PR #$pr_num merge 失败: $(echo "$MERGE_OUT" | head -1)"
+            fi
             ;;
         SKIP)
             reason=$(echo "$action" | cut -d: -f3)
