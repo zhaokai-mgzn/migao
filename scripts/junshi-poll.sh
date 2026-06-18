@@ -77,7 +77,7 @@ gh issue list --label needs-verification --state open --limit 30 \
         GAP_INFO=$(echo "$DRAFT_OUTPUT" | grep "拒绝发稿" | head -1 | cut -c1-120)
 
         # 避免重复创建
-        HAS_TASK=$(gh issue list --label "type/template" --state open --limit 5 \
+        HAS_TASK=$(gh issue list --label "qa" --state open --limit 10 \
             --search "补充模板: $TMPL_NAME" --json number --jq '.[0].number' 2>/dev/null)
 
         if [ -z "$HAS_TASK" ]; then
@@ -94,7 +94,7 @@ gh issue list --label needs-verification --state open --limit 30 \
 "
             gh issue create \
                 --title "补充模板: $TMPL_NAME — L4 断言不足" \
-                --label "needs-verification,type/template" \
+                --label "needs-verification,qa" \
                 --body "$TASK_BODY" 2>&1 | head -1
             log "  🔧 下发补充模板任务 → $TMPL_NAME"
         fi
