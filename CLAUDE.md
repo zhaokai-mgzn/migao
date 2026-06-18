@@ -290,14 +290,14 @@ cd tests && npx playwright test tests/e2e/specs/products.spec.ts
 >
 > 详见 [`.claude/local-dev-config.md`](.claude/local-dev-config.md) — 包含启动命令、连接信息、禁止行为、测试依赖。
 
-- **本地启动**：admin-api (:8080) + ai-agent-service (:8001) + admin-web (:3001)
+- **本地启动**：admin-api (:8081) + ai-agent-service (:8001) + admin-web (:3001)
 - **云 dev 环境**：PostgreSQL + Redis + DashVector + DashScope + OSS 全部用云端
 - **配置文件**：各模块 `.env` 已预置云 dev 环境的连接信息，禁止改成 localhost
 
 **启动本地服务**（用于真实场景验证）：
 
 ```bash
-# 1. 启动 admin-api（Java 后端，端口 8080）
+# 1. 启动 admin-api（Java 后端，端口 8081）
 cd backend/admin-api && ./mvnw spring-boot:run
 
 # 2. 启动 ai-agent-service（Python AI 服务，端口 8001）
@@ -327,7 +327,7 @@ cd frontend/admin-web && npm run dev
 - **E2E 测试文件命名规范**：`tests/e2e/specs/{domain}/{feature}.spec.ts`，禁止扁平放置
 - **E2E 测试使用 Page Object 模式**：封装可复用交互到 `tests/e2e/page-objects/`
 - 新增交互组件必须覆盖完整点击链路（渲染→点击→发送→验证）
-- **禁止手写 E2E mock 数据**。使用 Record-Replay 模式：`cd tests && BASE_URL=http://localhost:8080 npx tsx e2e/scripts/record-fixtures.ts` 录制真实 API 响应到 `fixtures/`，测试中 `import fixture from '../fixtures/xxx.json'`
+- **禁止手写 E2E mock 数据**。使用 Record-Replay 模式：`cd tests && BASE_URL=http://localhost:8081 npx tsx e2e/scripts/record-fixtures.ts` 录制真实 API 响应到 `fixtures/`，测试中 `import fixture from '../fixtures/xxx.json'`
 - **新增数据列表页必须在 `tests/e2e/specs/quality/anti-placeholder.spec.ts` 的 `PAGES` 数组中注册**，确保关键列不会全线显示占位符 `-`
 - **新增/修改 API 返回字段必须在 `tests/e2e/specs/quality/api-contract.spec.ts` 中验证**：必填字段存在、类型正确（number/string/object）、金额字段不能是 string
 - **跨页面数据一致性**：列表页和详情页的同一字段值必须相等（`tests/e2e/specs/quality/cross-page-consistency.spec.ts`）
@@ -379,8 +379,8 @@ app/graph/skills/
 # 第〇步：重启本地服务（确保运行最新代码）
 # ═══════════════════════════════════════════════════════════════
 
-# 重启 admin-api（Java 后端，端口 8080）
-kill $(lsof -t -i :8080) 2>/dev/null
+# 重启 admin-api（Java 后端，端口 8081）
+kill $(lsof -t -i :8081) 2>/dev/null
 cd backend/admin-api && ./mvnw spring-boot:run &
 
 # 重启 ai-agent-service（Python AI 服务，端口 8001）
@@ -392,7 +392,7 @@ kill $(lsof -t -i :3001) 2>/dev/null
 cd frontend/admin-web && npm run dev &
 
 # 验证服务就绪
-lsof -i :8080 -sTCP:LISTEN && lsof -i :8001 -sTCP:LISTEN && lsof -i :3001 -sTCP:LISTEN
+lsof -i :8081 -sTCP:LISTEN && lsof -i :8001 -sTCP:LISTEN && lsof -i :3001 -sTCP:LISTEN
 
 # ═══════════════════════════════════════════════════════════════
 # 第一步：单测全量（变更涉及的所有模块）

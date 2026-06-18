@@ -130,8 +130,8 @@ def extract_business_truths(issue_body: str, comments: "list[dict]" = None):
     return truths
 
 
-def api_get(url: str, token: str = "") -> "tuple[int, str]":
-    """调 admin-api"""
+def api_get(url: str, token: str = "") -> "tuple[int, str, str]":
+    """调 admin-api。返回 (http_code, response_body, error)"""
     cmd = ["curl", "-s", "-w", "\n%{http_code}", "-m", "10"]
     if token:
         cmd += ["-H", f"Authorization: Bearer {token}"]
@@ -142,28 +142,168 @@ def api_get(url: str, token: str = "") -> "tuple[int, str]":
         out_text = out.decode("utf-8", "ignore")
         if "\n" in out_text:
             body, code = out_text.rsplit("\n", 1)
-            return int(code), body[:500]
-        return 0, out_text[:500]
+            return int(code), body[:2000], ""
+        return 0, out_text[:2000], ""
     except subprocess.TimeoutExpired:
         p.kill()
-        return 0, "API 超时"
+        return 0, "", "API 超时"
+
+
+def validate_expect(body_text: str, expect_rules: list) -> "tuple[bool, str]":
+    """根据模板 expect 规则验证 API 响应体。
+
+    expect_rules 可以是字符串列表或结构化规则列表。
+    支持的字符串模式：
+      - "data > N" / "data >= N" / "data < N" / "data <= N" / "data == N"
+      - "items 非空" / "data 非空"
+      - "每项 <field> <op> <value>" (每项/每个/每条)
+      - "items 中每条 <field> = <value>"
+      - "items 中每条 <field> NOT IN (v1, v2)"
+
+    返回 (passed: bool, detail: str)
+    """
+    if not expect_rules or not body_text:
+        return True, "无 expect 规则或空响应，跳过验证"
+
+    # 尝试解析 JSON
+    data = None
+    try:
+        data = json.loads(body_text)
+    except (json.JSONDecodeError, TypeError):
+        return True, "响应非 JSON，跳过 expect 验证（仅检查 HTTP 状态）"
+
+    results = []
+    for rule in expect_rules:
+        rule_str = rule if isinstance(rule, str) else rule.get("expect", str(rule))
+        passed, detail = _check_one_expect(data, rule_str)
+        results.append((passed, detail))
+
+    all_pass = all(r[0] for r in results)
+    detail_parts = []
+    for p, d in results:
+        icon = "✅" if p else "❌"
+        detail_parts.append(f"{icon} {d}")
+
+    return all_pass, "; ".join(detail_parts)
+
+
+def _check_one_expect(data: dict, rule: str) -> "tuple[bool, str]":
+    """检查单条 expect 规则"""
+    rule_lower = rule.lower().strip()
+
+    # ── data > N / data >= N / data < N / data <= N / data == N ──
+    m = re.match(r"data\s*(>=|<=|>|<|==|=)\s*(\d+)", rule_lower)
+    if m:
+        op, val = m.group(1), int(m.group(2))
+        actual = data.get("data")
+        if isinstance(actual, (int, float)):
+            if op in (">",): ok = actual > val
+            elif op in (">=",): ok = actual >= val
+            elif op in ("<",): ok = actual < val
+            elif op in ("<=",): ok = actual <= val
+            elif op in ("==", "="): ok = actual == val
+            else: ok = False
+            return ok, f"data={actual} {op} {val}: {'PASS' if ok else 'FAIL'}"
+        return False, f"data 字段不是数值 (实际: {type(actual).__name__})"
+
+    # ── items 非空 / data 非空 ──
+    m = re.match(r"(items|data|结果)\s*非空|不为空", rule)
+    if m:
+        field = m.group(1)
+        items = data.get("data", data) if field in ("data", "结果") else data.get("data", {}).get("items", data.get("items", []))
+        if isinstance(items, list):
+            ok = len(items) > 0
+            return ok, f"{field} 非空: 长度={len(items)} {'PASS' if ok else 'FAIL'}"
+        elif isinstance(items, dict):
+            ok = len(items) > 0
+            return ok, f"{field} 非空: keys={len(items)} {'PASS' if ok else 'FAIL'}"
+        return False, f"{field} 不存在或为空"
+
+    # ── items 中每条 <field> = / != / NOT IN ──
+    m = re.match(r"(?:items\s*中\s*)?每(?:条|项|个)\s*(\w+)\s*(>=|<=|!=|>|<|=|==|not\s*in)\s*(.+)", rule_lower)
+    if m:
+        field, op, val_str = m.group(1), m.group(2).replace(" ", ""), m.group(3).strip()
+        items = data.get("data", {}).get("items", data.get("items", data.get("data", [])))
+        if not isinstance(items, list):
+            return False, f"items 不是数组 (实际: {type(items).__name__})"
+        if len(items) == 0:
+            return False, f"items 为空，无法检查 {field}"
+
+        if op == "notin":
+            # NOT IN (v1, v2, v3)
+            vals = [v.strip().strip("'\"") for v in val_str.strip("()").split(",")]
+            failures = []
+            for idx, item in enumerate(items):
+                item_val = str(item.get(field, ""))
+                if item_val in vals:
+                    failures.append(f"[{idx}] {field}={item_val}")
+            if failures:
+                return False, f"{len(failures)}/{len(items)} 项 {field} 在禁止值中: {failures[:3]}"
+            return True, f"全部 {len(items)} 项 {field} NOT IN ({', '.join(vals)})"
+
+        # 数值比较
+        try:
+            expected_val = float(val_str) if val_str.replace(".", "").replace("-", "").isdigit() else val_str.strip("'\"")
+        except ValueError:
+            expected_val = val_str.strip("'\"")
+
+        failures = []
+        for idx, item in enumerate(items):
+            item_val = item.get(field)
+            if item_val is None:
+                failures.append(f"[{idx}] {field}=None")
+                continue
+            if isinstance(expected_val, float) and isinstance(item_val, (int, float)):
+                if op == ">" and not (item_val > expected_val): failures.append(f"[{idx}] {field}={item_val}")
+                elif op == ">=" and not (item_val >= expected_val): failures.append(f"[{idx}] {field}={item_val}")
+                elif op == "<" and not (item_val < expected_val): failures.append(f"[{idx}] {field}={item_val}")
+                elif op == "<=" and not (item_val <= expected_val): failures.append(f"[{idx}] {field}={item_val}")
+                elif op == "!=" and not (item_val != expected_val): failures.append(f"[{idx}] {field}={item_val}")
+                elif op in ("=", "==") and not (item_val == expected_val): failures.append(f"[{idx}] {field}={item_val}")
+            else:
+                sv = str(item_val)
+                ev = str(expected_val)
+                if op in ("=", "==") and sv != ev: failures.append(f"[{idx}] {field}={sv}")
+                elif op == "!=" and sv == ev: failures.append(f"[{idx}] {field}={sv}")
+
+        if failures:
+            return False, f"{len(failures)}/{len(items)} 项不满足 {field} {op} {val_str}: {failures[:3]}"
+        return True, f"全部 {len(items)} 项 {field} {op} {val_str}"
+
+    # ── 兜底：无法解析 → 不阻塞，标记 manual ──
+    return True, f"⚠️ expect 规则无法自动解析: {rule[:60]}"
 
 
 def infer_business_asserts(truths, template=None):
-    """根据业务真值反推 API 断言。优先从模板 reviewer_asserts 取。"""
-    # 优先用模板的 API 断言
+    """根据业务真值反推 API 断言。优先从模板 reviewer_asserts 取。
+
+    返回的每个 assert 包含:
+      - name, type, url (API 类型)
+      - expect: 模板的 expect 规则列表（用于自动验证）
+    """
     if template and template.get("reviewer_asserts"):
-        api_asserts = []
+        api_asserts = []  # list of {url, expect}
         for a in template["reviewer_asserts"]:
             if isinstance(a, str) and "API:" in a:
-                api_asserts.append(a.replace("API:", "").strip())
+                api_asserts.append({"url": a.replace("API:", "").strip(), "expect": []})
             elif isinstance(a, dict) and "API" in a:
-                api_asserts.append(a["API"])
+                expect_rules = a.get("expect", [])
+                if isinstance(expect_rules, str):
+                    expect_rules = [expect_rules]
+                api_asserts.append({"url": a["API"], "expect": expect_rules})
         if api_asserts:
-            return [{"name": f"L4-{i+1}: {t[:60]}", "type": "api", "url": api_asserts[i % len(api_asserts)]}
-                    for i, t in enumerate(truths)]
+            result = []
+            for i, t in enumerate(truths):
+                aa = api_asserts[i % len(api_asserts)]
+                result.append({
+                    "name": f"L4-{i+1}: {t[:60]}",
+                    "type": "api",
+                    "url": aa["url"],
+                    "expect": aa.get("expect", [])
+                })
+            return result
 
-    # Fallback: 关键词匹配 API
+    # Fallback: 关键词匹配 API（无 expect 规则）
     asserts = []
     for i, t in enumerate(truths, 1):
         tl = t.lower()
@@ -179,10 +319,10 @@ def infer_business_asserts(truths, template=None):
         elif "知识库" in tl: url = "GET /api/admin/knowledge/documents?page=1&size=5"
 
         if url:
-            asserts.append({"name": f"L4-{i}: {t[:60]}", "type": "api", "url": url})
+            asserts.append({"name": f"L4-{i}: {t[:60]}", "type": "api", "url": url, "expect": []})
         else:
             asserts.append({"name": f"L4-{i}: {t[:60]}", "type": "manual",
-                           "note": f"无匹配 API，请军师在模板中补充"})
+                           "note": "无匹配 API，请军师在模板中补充"})
     return asserts
 
 
@@ -227,16 +367,32 @@ def verify(issue_id: int) -> dict:
         if a["type"] == "api":
             url = a["url"]
             if not url.startswith("http"): url = base + url
-            code, body_resp = api_get(url, token)
+            code, body_resp, err = api_get(url, token)
+
+            http_ok = 200 <= code < 300
+            expect_ok = True
+            expect_detail = ""
+            expect_rules = a.get("expect", [])
+
+            if expect_rules and body_resp:
+                expect_ok, expect_detail = validate_expect(body_resp, expect_rules)
+
+            # HTTP 状态 + expect 规则双验证
+            passed = http_ok and expect_ok
+
             results.append({
                 "name": a["name"], "type": "api", "url": url,
-                "http_code": code, "result_preview": body_resp[:200],
-                "passed": 200 <= code < 300
+                "http_code": code, "result_preview": body_resp[:200] if body_resp else "",
+                "http_ok": http_ok,
+                "expect_ok": expect_ok,
+                "expect_detail": expect_detail,
+                "expect_rules_count": len(expect_rules),
+                "passed": passed
             })
         else:
             results.append({
                 "name": a["name"], "type": "manual",
-                "passed": None, "note": a.get("note","")
+                "passed": None, "note": a.get("note", "")
             })
 
     # 判定
@@ -245,17 +401,22 @@ def verify(issue_id: int) -> dict:
     auto_pass = sum(1 for r in auto_results if r["passed"])
     auto_fail = sum(1 for r in auto_results if not r["passed"])
 
+    # expect 验证统计
+    expect_total = sum(1 for r in auto_results if r.get("expect_rules_count", 0) > 0)
+    expect_pass = sum(1 for r in auto_results if r.get("expect_ok") and r.get("expect_rules_count", 0) > 0)
+
     if not auto_results:
-        confidence = 50  # 全是 manual，置信度 50%
+        confidence = 50
         status = "manual_review"
     elif auto_fail > 0:
+        # 惩罚：HTTP 通过但 expect 失败 → 置信度降低
         confidence = int(100 * auto_pass / len(auto_results))
         status = "fail"
     elif manual_results:
-        confidence = 100
+        confidence = 100 if expect_total == 0 or expect_pass == expect_total else 80
         status = "pass_with_manual"
     else:
-        confidence = 100
+        confidence = 100 if expect_total == 0 or expect_pass == expect_total else 80
         status = "pass"
 
     return {
@@ -269,6 +430,8 @@ def verify(issue_id: int) -> dict:
         "asserts_pass": auto_pass,
         "asserts_fail": auto_fail,
         "asserts_manual": len(manual_results),
+        "expect_total": expect_total,
+        "expect_pass": expect_pass,
         "results": results,
         "timestamp": int(time.time())
     }

@@ -72,7 +72,7 @@ OSS_TEMPORARY_BUCKET=ai-customer-service-admin-dev
 
 ```bash
 # 指向本地 admin-api
-ADMIN_API_BASE_URL=http://localhost:8080
+ADMIN_API_BASE_URL=http://localhost:8081
 
 # OSS 配置（双 Bucket 策略）
 OSS_PERMANENT_BUCKET=ai-customer-service-admin-dev
@@ -85,7 +85,7 @@ JWT_PUBLIC_KEY="-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----"
 #### frontend/admin-web/.env.development
 
 ```bash
-NEXT_PUBLIC_API_BASE_URL=http://localhost:8080
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8081
 NEXT_PUBLIC_AI_API_BASE_URL=http://localhost:8001
 NEXT_PUBLIC_OSS_DOMAIN=https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com
 ```
@@ -130,7 +130,7 @@ npm run dev
 **验证服务健康：**
 
 ```bash
-curl http://localhost:8080/actuator/health  # admin-api
+curl http://localhost:8081/actuator/health  # admin-api
 curl http://localhost:8001/health            # ai-agent-service
 curl http://localhost:3001                   # admin-web
 ```
@@ -248,8 +248,8 @@ Error: page.goto: Timeout 30000ms exceeded
 
 **解决方案：**
 - 确保 3 个本地服务都已启动（admin-api、ai-agent-service、admin-web）
-- 验证服务健康检查：`curl http://localhost:8080/actuator/health`
-- 检查端口占用：`lsof -i :8080`
+- 验证服务健康检查：`curl http://localhost:8081/actuator/health`
+- 检查端口占用：`lsof -i :8081`
 
 ### 4. 旧进程加载了过期配置
 

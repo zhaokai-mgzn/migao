@@ -85,7 +85,7 @@ fi
 echo "ℹ️  服务由 agent-poll.sh 按需启停，不常驻。任务前启动，任务后关闭。"
 cd "$WORK_DIR/backend/admin-api"
 nohup ./mvnw spring-boot:run > /var/log/migao-admin-api.log 2>&1 &
-echo "   admin-api → :8080 (pid $!)"
+echo "   admin-api → :8081 (pid $!)"
 
 # ai-agent-service (Python, :8001)
 cd "$WORK_DIR/backend/ai-agent-service"
@@ -101,7 +101,7 @@ echo "   admin-web → :3001 (pid $!)"
 sleep 30
 
 # 验证服务就绪
-lsof -i :8080 -sTCP:LISTEN > /dev/null 2>&1 && echo "   ✅ admin-api 就绪" || echo "   ⚠️ admin-api 启动中..."
+lsof -i :8081 -sTCP:LISTEN > /dev/null 2>&1 && echo "   ✅ admin-api 就绪" || echo "   ⚠️ admin-api 启动中..."
 lsof -i :8001 -sTCP:LISTEN > /dev/null 2>&1 && echo "   ✅ ai-agent-service 就绪" || echo "   ⚠️ ai-agent-service 启动中..."
 lsof -i :3001 -sTCP:LISTEN > /dev/null 2>&1 && echo "   ✅ admin-web 就绪" || echo "   ⚠️ admin-web 启动中..."
 

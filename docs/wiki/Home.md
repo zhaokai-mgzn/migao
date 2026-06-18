@@ -7,7 +7,7 @@
 ```
 客户端: 微信小程序(SSE) + 管理后台(REST)
      → API 网关
-     → Admin API(:8080, Java 21/Spring Boot 3.3) + AI Agent(:8000, Python 3.11/FastAPI)
+     → Admin API(:8081, Java 21/Spring Boot 3.3) + AI Agent(:8000, Python 3.11/FastAPI)
      → PostgreSQL 15(RLS) + Redis 7 + DashVector + DeepSeek V4 Pro / MiniMax M3
 ```
 

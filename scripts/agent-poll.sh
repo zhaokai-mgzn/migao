@@ -147,7 +147,7 @@ done < <(gh issue list --state open --limit 20 --json number --jq '.[].number' 2
 if [ -n "$VERIFY_ISSUE" ]; then
     log "🧪 验收 issue #$VERIFY_ISSUE"
 
-    if ! lsof -i :8080 -sTCP:LISTEN >/dev/null 2>&1 || ! lsof -i :8001 -sTCP:LISTEN >/dev/null 2>&1 || ! lsof -i :3001 -sTCP:LISTEN >/dev/null 2>&1; then
+    if ! lsof -i :8081 -sTCP:LISTEN >/dev/null 2>&1 || ! lsof -i :8001 -sTCP:LISTEN >/dev/null 2>&1 || ! lsof -i :3001 -sTCP:LISTEN >/dev/null 2>&1; then
         log "⚠️ 服务未全部就绪，跳过验收"
     else
         log "  → primary.py (E2E + 真实集测)..."

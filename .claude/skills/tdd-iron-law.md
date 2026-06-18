@@ -17,7 +17,7 @@
 **本地服务重启命令：**
 ```bash
 # 1. 重启 admin-api
-kill $(lsof -t -i :8080) 2>/dev/null
+kill $(lsof -t -i :8081) 2>/dev/null
 cd backend/admin-api && ./mvnw spring-boot:run &
 
 # 2. 重启 ai-agent-service  
@@ -29,7 +29,7 @@ kill $(lsof -t -i :3001) 2>/dev/null
 cd frontend/admin-web && npm run dev &
 
 # 4. 验证服务就绪
-lsof -i :8080 -sTCP:LISTEN && lsof -i :8001 -sTCP:LISTEN && lsof -i :3001 -sTCP:LISTEN
+lsof -i :8081 -sTCP:LISTEN && lsof -i :8001 -sTCP:LISTEN && lsof -i :3001 -sTCP:LISTEN
 ```
 
 **禁止在以下情况合并 PR：**
@@ -142,7 +142,7 @@ cd backend/ai-agent-service && .venv/bin/python -m pytest tests/test_e2e_mibao_s
 
 ### CP-6：增量 E2E 测试（Playwright 浏览器）
 ```bash
-# 1. 确认本地服务运行（8080 + 8001 + 3001）
+# 1. 确认本地服务运行（8081 + 8001 + 3001）
 # 2. 运行相关 spec
 cd tests && BASE_URL=http://localhost:3001 npx playwright test specs/xxx/xxx.spec.ts
 ```
@@ -259,7 +259,7 @@ tests/e2e/pages/{domain}/{page}.page.ts
 
 ### 5.3 本地 E2E 运行前检查清单
 ```
-□ 确认 admin-api 运行在 :8080
+□ 确认 admin-api 运行在 :8081
 □ 确认 ai-agent-service 运行在 :8001  
 □ 确认 admin-web 运行在 :3001
 □ 确认 .auth/admin.json 已生成（auth setup 通过）

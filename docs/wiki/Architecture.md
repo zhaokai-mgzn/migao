@@ -4,7 +4,7 @@
 
 ```
 小程序(SSE) + 管理后台(REST)
-    → Admin API(:8080, Java)  ←→  AI Agent(:8000, Python)
+    → Admin API(:8081, Java)  ←→  AI Agent(:8000, Python)
     → PostgreSQL(39表,RLS) + Redis + DashVector + DeepSeek/MiniMax
 ```
 

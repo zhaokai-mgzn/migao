@@ -187,7 +187,7 @@ export PRIMARY_MODEL=deepseek-v4-pro
 docker-compose up --build
 
 # 服务启动后：
-# - Admin API:       http://localhost:8080
+# - Admin API:       http://localhost:8081
 # - AI Agent:        http://localhost:8001
 # - PostgreSQL:      localhost:5432
 # - Redis:           localhost:6379
@@ -210,7 +210,7 @@ cp .env.example .env
 # 编辑 .env 配置数据库、Redis、JWT 密钥等
 
 ./mvnw spring-boot:run
-# → http://localhost:8080
+# → http://localhost:8081
 ```
 
 #### 3. 启动 AI Agent Service（Python）

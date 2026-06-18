@@ -64,9 +64,10 @@ def extract_truths(body):
                 seen.add(line)
     return truths
 
-def _sanitize_truth(t: str) -> str:
-    """防 YAML 注入：真值中的 : 可能导致解析异常"""
-    return t.replace(":", "：").replace("{", "｛").replace("}", "｝")
+def _sanitize_truth(t: str, max_len: int = 80) -> str:
+    """防 YAML 注入 + 截断。全角替换保护 YAML 结构。"""
+    safe = t.replace("\n", " ").replace("\r", " ").replace(":", "：").replace("{", "｛").replace("}", "｝")
+    return safe[:max_len]
 
 def count_auto_asserts(template):
     """统计模板中的 reviewer_asserts 总数。"""
@@ -96,10 +97,6 @@ _TRUTH_KEYWORD_MAP = [
     (["tab","分类","tab计数"], "API: GET 对应列表 + 分页 total 匹配"),
     (["发送","send","消息","chat","对话","SSE"], "API: POST /api/chat/send"),
 ]
-
-def _sanitize_truth(truth: str, max_len: int = 40) -> str:
-    """剥离会破坏 YAML 结构的字符。"""
-    return truth.replace("\n", " ").replace("\r", " ").replace(":", " ")[:max_len]
 
 def infer_assert_for_truth(truth: str, template_name: str) -> str:
     """根据业务真值文本推断一个 API 断言。"""
