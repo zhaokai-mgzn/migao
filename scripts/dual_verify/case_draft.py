@@ -33,6 +33,32 @@ def match_template(title, body):
         if score >= cfg["min"] and score > best_score: best, best_score = name, score
     return best
 
+
+def extract_domain_keywords(title, body):
+    """从 issue 提取业务领域关键词，用于新建模板建议"""
+    text = title + " " + body[:1000]
+    keywords = set()
+    # 常见业务领域词
+    domain_patterns = [
+        r'(?:渠道|channel|微信|抖音|H5|Web|小程序)',
+        r'(?:安全|权限|认证|鉴权|token|session)',
+        r'(?:支付|退款|金额|价格|费用)',
+        r'(?:通知|消息|推送|提醒|报警)',
+        r'(?:报表|统计|看板|dashboard|分析)',
+        r'(?:导入|导出|上传|下载|文件)',
+        r'(?:配置|设置|参数|模板|规则)',
+        r'(?:机器人|客服|AI|智能|对话|聊天)',
+        r'(?:订单|order)',
+        r'(?:商品|product|SKU|库存|stock)',
+        r'(?:客户|customer|会员)',
+        r'(?:售后|退款|工单)',
+        r'(?:员工|角色|权限|岗位)',
+    ]
+    for pat in domain_patterns:
+        m = re.findall(pat, text, re.IGNORECASE)
+        keywords.update(m)
+    return sorted(keywords)[:6]
+
 def load_template(name):
     p = TEMPLATE_DIR / f"{name}.yml"
     if not p.exists(): return None
@@ -192,6 +218,8 @@ def quality_gate(truths, tmpl_name, template):
         errors.append("🔴 业务真值为空 — 请先在 issue 中填写")
     if not tmpl_name:
         errors.append("🔴 **拒绝发稿**: 未匹配到任何模板，L4 无法自动验证 → block 率 100%。请军师手动指定模板或补充 reviewer_asserts。")
+        # 机读信号：需要新建模板
+        errors.append("<!-- NEW_TEMPLATE_NEEDED -->")
     elif template:
         if template.get("red_flags"):
             warnings.append(f"🔴 红牌: {template['red_flags']} — 请确认历史 issue 已修复")
@@ -303,6 +331,11 @@ def generate(issue_number, dry_run=False):
 
     if not can_post:
         output.append("")
+        if not tmpl_name:
+            # 无匹配模板 → 需要新建，输出领域关键词供 junshi 使用
+            kws = extract_domain_keywords(title, body)
+            output.append(f"<!-- NEW_TEMPLATE_KEYWORDS {json.dumps(kws, ensure_ascii=False)} -->")
+            output.append(f"**建议领域关键词**: {', '.join(kws) if kws else '无法自动提取'}")
         output.append("**⚠️ 草稿未发布** — 自动修复失败，请军师手动检查模板。")
         return "\n".join(output)
 

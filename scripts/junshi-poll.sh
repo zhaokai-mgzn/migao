@@ -70,18 +70,52 @@ gh issue list --label needs-verification --state open --limit 30 \
     DRAFT_OUTPUT=$($PYTHON scripts/dual_verify/case_draft.py "$iid" 2>&1)
     echo "$DRAFT_OUTPUT" | tail -3
 
-    # quality_gate 拦截 → 创建"补充模板"任务下发给 Agent
+    # quality_gate 拦截 → 创建模板任务下发给 Agent
     if echo "$DRAFT_OUTPUT" | grep -q "拒绝发稿"; then
-        TMPL_NAME=$(echo "$DRAFT_OUTPUT" | sed -n 's/.*模板 `\([a-z0-9-]*\)`.*/\1/p' | head -1)
-        [ -z "$TMPL_NAME" ] && TMPL_NAME="unknown"
-        GAP_INFO=$(echo "$DRAFT_OUTPUT" | grep "拒绝发稿" | head -1 | cut -c1-120)
+        # 区分：未匹配模板（需新建） vs 已有模板断言不足（需补充）
+        if echo "$DRAFT_OUTPUT" | grep -q "NEW_TEMPLATE_NEEDED"; then
+            # ── 新建模板 ──
+            KWS=$(echo "$DRAFT_OUTPUT" | grep "NEW_TEMPLATE_KEYWORDS" | sed 's/.*\[//;s/\].*//' | tr -d '"')
+            [ -z "$KWS" ] && KWS="未识别"
+            SLUG=$(echo "$KWS" | cut -d, -f1 | tr -d ' ' | tr 'A-Z' 'a-z' | cut -c1-20)
 
-        # 避免重复：按标题精确匹配
-        HAS_TASK=$(gh issue list --label "qa" --state open --limit 20 \
-            --json number,title --jq ".[] | select(.title | startswith(\"补充模板: $TMPL_NAME\")) | .number" 2>/dev/null | head -1)
+            HAS_TASK=$(gh issue list --label "qa" --state open --limit 20 \
+                --json number,title --jq ".[] | select(.title | startswith(\"新建模板\")) | .number" 2>/dev/null | head -1)
 
-        if [ -z "$HAS_TASK" ]; then
-            TASK_BODY="## 补充模板 reviewer_asserts
+            if [ -z "$HAS_TASK" ]; then
+                TASK_BODY="## 新建验证模板
+
+**原 issue**: #$iid（未匹配到任何已有模板）
+**建议领域**: $KWS
+**建议文件名**: \`${SLUG}.yml\`
+
+### 创建步骤
+1. 参考 \`docs/verification-templates/README.md\` 了解模板结构
+2. 参考现有模板（如 order-classify.yml）了解格式
+3. 创建 \`docs/verification-templates/${SLUG}.yml\`
+4. 至少包含：business_truths, primary_specs, reviewer_asserts (≥ issue 真值数), common_pitfalls
+5. 更新 \`README.md\` 模板索引表
+6. 在 \`case_draft.py\` 的 TEMPLATES 字典中注册新模板关键词
+
+<!-- CONTRACT_JSON {\"schema_version\":\"1.0\",\"type\":\"new_template\",\"business_truths\":[\"为 ${KWS} 领域创建验证模板\",\"模板含 reviewer_asserts ≥ issue #$iid 的真值数\"]} -->
+"
+                gh issue create \
+                    --title "新建模板: $SLUG（$KWS）" \
+                    --label "needs-verification,qa" \
+                    --body "$TASK_BODY" 2>&1 | head -1
+                log "  🆕 下发新建模板任务 → $SLUG"
+            fi
+        else
+            # ── 补充已有模板 ──
+            TMPL_NAME=$(echo "$DRAFT_OUTPUT" | sed -n 's/.*模板 `\([a-z0-9-]*\)`.*/\1/p' | head -1)
+            [ -z "$TMPL_NAME" ] && TMPL_NAME="unknown"
+            GAP_INFO=$(echo "$DRAFT_OUTPUT" | grep "拒绝发稿" | head -1 | cut -c1-120)
+
+            HAS_TASK=$(gh issue list --label "qa" --state open --limit 20 \
+                --json number,title --jq ".[] | select(.title | startswith(\"补充模板: $TMPL_NAME\")) | .number" 2>/dev/null | head -1)
+
+            if [ -z "$HAS_TASK" ]; then
+                TASK_BODY="## 补充模板 reviewer_asserts
 
 **模板**: \`$TMPL_NAME\`
 **原 issue**: #$iid
@@ -92,11 +126,12 @@ gh issue list --label needs-verification --state open --limit 30 \
 
 <!-- CONTRACT_JSON {\"schema_version\":\"1.0\",\"type\":\"template\",\"business_truths\":[\"补充 ${TMPL_NAME} 模板的 reviewer_asserts，消除 quality_gate 拦截\"]} -->
 "
-            gh issue create \
-                --title "补充模板: $TMPL_NAME — L4 断言不足" \
-                --label "needs-verification,qa" \
-                --body "$TASK_BODY" 2>&1 | head -1
-            log "  🔧 下发补充模板任务 → $TMPL_NAME"
+                gh issue create \
+                    --title "补充模板: $TMPL_NAME — L4 断言不足" \
+                    --label "needs-verification,qa" \
+                    --body "$TASK_BODY" 2>&1 | head -1
+                log "  🔧 下发补充模板任务 → $TMPL_NAME"
+            fi
         fi
     fi
 done
