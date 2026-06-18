@@ -95,7 +95,7 @@ gh issue list --label needs-verification --state open --limit 30 \
             gh issue create \
                 --title "补充模板: $TMPL_NAME — L4 断言不足" \
                 --label "needs-verification,type/template" \
-                --body "$TASK_BODY" 2>/dev/null
+                --body "$TASK_BODY" 2>&1 | head -1
             log "  🔧 下发补充模板任务 → $TMPL_NAME"
         fi
     fi
@@ -274,11 +274,13 @@ if [ "$HOUR" = "19" ] && [ "$MINUTE" -lt "5" ]; then
         --search "军师质量日报" --json number --jq '.[0].number' 2>/dev/null)
 
     if [ -z "$REPORT_ISSUE" ]; then
-        REPORT_ISSUE=$(gh issue create \
+        gh issue create \
             --title "📊 军师质量日报（持久追踪）" \
             --label "type/report" \
-            --body "军师每日质量报告追踪 issue。每天 19:00 自动追加。" \
-            --json number --jq '.number' 2>/dev/null)
+            --body "军师每日质量报告追踪 issue。每天 19:00 自动追加。" 2>&1 | head -1
+        # 用 list 找回 issue 号
+        REPORT_ISSUE=$(gh issue list --label "type/report" --state open --limit 1 \
+            --search "军师质量日报" --json number --jq '.[0].number' 2>/dev/null)
     fi
 
     if [ -n "$REPORT_ISSUE" ]; then
