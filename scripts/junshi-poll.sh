@@ -72,7 +72,8 @@ gh issue list --label needs-verification --state open --limit 30 \
 
     # quality_gate 拦截 → 创建"补充模板"任务下发给 Agent
     if echo "$DRAFT_OUTPUT" | grep -q "拒绝发稿"; then
-        TMPL_NAME=$(echo "$DRAFT_OUTPUT" | grep -oP "模板 \x60\K[a-z0-9-]+" || echo "unknown")
+        TMPL_NAME=$(echo "$DRAFT_OUTPUT" | sed -n 's/.*模板 `\([a-z0-9-]*\)`.*/\1/p' | head -1)
+        [ -z "$TMPL_NAME" ] && TMPL_NAME="unknown"
         GAP_INFO=$(echo "$DRAFT_OUTPUT" | grep "拒绝发稿" | head -1 | cut -c1-120)
 
         # 避免重复创建
