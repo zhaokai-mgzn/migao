@@ -12,6 +12,7 @@
 | [auth-sms.yml](./auth-sms.yml) | 短信登录/注册 | #375 |
 | [employee-role.yml](./employee-role.yml) | 员工/角色权限 | #384 #385 |
 | [knowledge-ai.yml](./knowledge-ai.yml) | 知识库/AI | — |
+| [unknown.yml](./unknown.yml) | 兜底模板（无特定模板匹配时） | — |
 
 ## 模板字段
 
