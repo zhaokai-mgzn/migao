@@ -178,42 +178,11 @@ def auto_patch_template(tmpl_name: str, template: dict, truths: list) -> bool:
             if inserted:
                 raw = "\n".join(new_lines)
 
-    # 写入更新后的模板
+    # 写入更新后的模板（仅本地，不提交——由 junshi-poll 下发给 Agent 处理）
     with open(tmpl_path, "w") as f:
         f.write(raw)
 
-    # 提交 + PR
-    branch = f"feat/junshi-patch-template-{tmpl_name}"
-    subprocess.run(["git", "checkout", "-b", branch], cwd=PROJECT_ROOT, capture_output=True)
-    subprocess.run(["git", "add", str(tmpl_path)], cwd=PROJECT_ROOT, capture_output=True)
-    msg = f"feat(qa): 军师自动补全 {tmpl_name} 模板 reviewer_asserts\n\n{chr(10).join('- '+na for na in new_asserts)}"
-    subprocess.run(["git", "commit", "-m", msg], cwd=PROJECT_ROOT, capture_output=True)
-    subprocess.run(["git", "push", "origin", branch], cwd=PROJECT_ROOT, capture_output=True)
-    pr_body = f"""## 军师自动补全模板
-
-**模板**: `{tmpl_name}`
-**原因**: auto_asserts < truths_count → quality_gate 拦截
-**新增**: {len(new_asserts)} 条 reviewer_asserts
-
-### 变更
-{chr(10).join(f'- {na}' for na in new_asserts)}
-
-### 军师自检
-- [x] 新增断言与业务真值一一对应
-- [x] 关键词映射命中 `infer_assert_for_truth()`
-- [x] 只新增不删除已有断言
-- [x] 模板 YAML 格式有效
-
-<!-- AUTO_PATCH_JSON
-{{"action":"auto_patch_template","template":"{tmpl_name}","new_asserts_count":{len(new_asserts)},"verdict":"auto_approve"}}
--->
-"""
-    subprocess.run(["gh", "pr", "create", "--title",
-        f"feat(qa): {tmpl_name} 模板自动补全 {len(new_asserts)} 条 reviewer_asserts",
-        "--body", pr_body,
-        "--label", "verified/auto",
-        "--base", "main"], cwd=PROJECT_ROOT, capture_output=True)
-    print(f"  ✅ PR 已创建: feat/junshi-patch-template-{tmpl_name}")
+    print(f"  ⚠️ 模板 {tmpl_name} 已本地补全 {len(new_asserts)} 条断言（未提交，等待 Agent 正式 PR）")
     return True
 
 def quality_gate(truths, tmpl_name, template):

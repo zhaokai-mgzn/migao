@@ -69,6 +69,8 @@ if [ -n "$NEEDS_CHANGE_PR" ]; then
     ISSUE_ID=$(echo "$PR_BODY" | grep -oP 'Closes #\K\d+' | head -1)
 
     log "🔧 PR #$PR_NUM 被军师打回 needs-changes → 修复"
+    git reset --hard HEAD 2>/dev/null
+    git clean -fd 2>/dev/null
     git fetch origin "$PR_BRANCH" && git checkout "$PR_BRANCH" 2>/dev/null
     git pull origin main 2>/dev/null
 
@@ -117,11 +119,13 @@ else
 
 # ── 启动服务前先拉最新代码 ──
 log "📥 同步最新代码..."
+git reset --hard HEAD 2>/dev/null
+git clean -fd 2>/dev/null
 git checkout main 2>/dev/null
 git pull origin main 2>&1 | tail -1
 
 # 创建 issue 专用分支
-ISSUE_TITLE=$(gh issue view "$ISSUE_ID" --json title --jq '.title' 2>/dev/null | tr ' ' '-' | tr -d '[:punct:]' | cut -c1-40)
+ISSUE_TITLE=$(gh issue view "$ISSUE_ID" --json title --jq '.title' 2>/dev/null | sed 's/[^a-zA-Z0-9一-鿿 -]//g' | tr ' ' '-' | head -c 40)
 BRANCH="feat/issue-${ISSUE_ID}-${ISSUE_TITLE}"
 git checkout -b "$BRANCH" 2>/dev/null || git checkout "$BRANCH" 2>/dev/null
 log "🌿 分支: $BRANCH"

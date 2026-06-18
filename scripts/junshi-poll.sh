@@ -76,9 +76,9 @@ gh issue list --label needs-verification --state open --limit 30 \
         [ -z "$TMPL_NAME" ] && TMPL_NAME="unknown"
         GAP_INFO=$(echo "$DRAFT_OUTPUT" | grep "拒绝发稿" | head -1 | cut -c1-120)
 
-        # 避免重复创建
-        HAS_TASK=$(gh issue list --label "qa" --state open --limit 10 \
-            --search "补充模板: $TMPL_NAME" --json number --jq '.[0].number' 2>/dev/null)
+        # 避免重复：按标题精确匹配
+        HAS_TASK=$(gh issue list --label "qa" --state open --limit 20 \
+            --json number,title --jq ".[] | select(.title | startswith(\"补充模板: $TMPL_NAME\")) | .number" 2>/dev/null | head -1)
 
         if [ -z "$HAS_TASK" ]; then
             TASK_BODY="## 补充模板 reviewer_asserts
