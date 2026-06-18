@@ -8,6 +8,15 @@
 # ═══════════════════════════════════════════════════════════════
 set -e
 
+# ── cron 环境保护（PATH 不含 /usr/local/bin，HOME 可能为空）──
+export HOME="${HOME:-/root}"
+export PATH="/usr/local/bin:/usr/bin:/bin${PATH:+:$PATH}"
+
+# venv Python 3.11（系统 python3 可能是 3.6）
+PYTHON="${WORK_DIR:-/opt/youke}/backend/ai-agent-service/.venv/bin/python3"
+[ -x "$PYTHON" ] || PYTHON="python3.11"
+[ -x "$(command -v "$PYTHON" 2>/dev/null)" ] || PYTHON="python3"
+
 # ═══════════════════════════════════════════════════════
 # 按需启停服务 — 任务开始前启动，任务结束后关闭
 # ═══════════════════════════════════════════════════════
@@ -31,8 +40,14 @@ LOCK_FILE="/tmp/migao-agent.lock"
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"; }
 
 if [ -f "$LOCK_FILE" ]; then
-    log "⚠️ 上一个任务还在跑，跳过"
-    exit 0
+    LOCK_AGE=$(($(date +%s) - $(stat -c %Y "$LOCK_FILE" 2>/dev/null || echo 0)))
+    if [ "${LOCK_AGE:-0}" -gt 1800 ]; then
+        log "⚠️ 锁文件超过30分钟，强制清除"
+        rm -f "$LOCK_FILE"
+    else
+        log "⚠️ 上一个任务还在跑 (${LOCK_AGE}s)，跳过"
+        exit 0
+    fi
 fi
 trap "rm -f $LOCK_FILE" EXIT
 touch "$LOCK_FILE"
@@ -125,8 +140,7 @@ else
 fi
 
 log "✅ issue #$ISSUE_ID 完成"
-    exit 0
-fi
+exit 0
 
 # ── 3. 扫验收触发（军师发 VERIFY_TRIGGER → Agent 跑验收脚本）──
 log "🔍 扫描验收触发..."
@@ -151,11 +165,11 @@ if [ -n "$VERIFY_ISSUE" ]; then
         log "⚠️ 服务未全部就绪，跳过验收"
     else
         log "  → primary.py (E2E + 真实集测)..."
-        cd /opt/youke && python3 scripts/dual_verify/primary.py "$VERIFY_ISSUE" 2>&1 | tail -3
+        cd /opt/youke && $PYTHON scripts/dual_verify/primary.py "$VERIFY_ISSUE" 2>&1 | tail -3
         log "  → reviewer.py (独立 DB+API)..."
-        cd /opt/youke && python3 scripts/dual_verify/reviewer.py "$VERIFY_ISSUE" 2>&1 | tail -3
+        cd /opt/youke && $PYTHON scripts/dual_verify/reviewer.py "$VERIFY_ISSUE" 2>&1 | tail -3
         log "  → merge.py (自动判定+执行)..."
-        cd /opt/youke && python3 scripts/dual_verify/merge.py "$VERIFY_ISSUE" 2>&1 | tail -3
+        cd /opt/youke && $PYTHON scripts/dual_verify/merge.py "$VERIFY_ISSUE" 2>&1 | tail -3
         log "✅ 验收完成 #$VERIFY_ISSUE"
     fi
 else

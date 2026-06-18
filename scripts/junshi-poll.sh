@@ -244,9 +244,9 @@ if [ "$HOUR" = "19" ] && [ "$MINUTE" -lt "5" ]; then
 
     if [ -z "$REPORT_ISSUE" ]; then
         REPORT_ISSUE=$(gh issue create \
-            --title "📊 军师质量日报 $(date +%Y-%m-%d)" \
-            --label "type/report,verified/auto" \
-            --body "军师每日质量报告追踪 issue。报告以评论形式追加。" \
+            --title "📊 军师质量日报（持久追踪）" \
+            --label "type/report" \
+            --body "军师每日质量报告追踪 issue。每天 19:00 自动追加。" \
             --json number --jq '.number' 2>/dev/null)
     fi
 
