@@ -67,7 +67,37 @@ gh issue list --label needs-verification --state open --limit 30 \
     fi
 
     log "  📝 issue #$iid → case_draft..."
-    $PYTHON scripts/dual_verify/case_draft.py "$iid" 2>&1 | tail -3
+    DRAFT_OUTPUT=$($PYTHON scripts/dual_verify/case_draft.py "$iid" 2>&1)
+    echo "$DRAFT_OUTPUT" | tail -3
+
+    # quality_gate 拦截 → 创建"补充模板"任务下发给 Agent
+    if echo "$DRAFT_OUTPUT" | grep -q "拒绝发稿"; then
+        TMPL_NAME=$(echo "$DRAFT_OUTPUT" | grep -oP "模板 \x60\K[a-z0-9-]+" || echo "unknown")
+        GAP_INFO=$(echo "$DRAFT_OUTPUT" | grep "拒绝发稿" | head -1 | cut -c1-120)
+
+        # 避免重复创建
+        HAS_TASK=$(gh issue list --label "type/template" --state open --limit 5 \
+            --search "补充模板: $TMPL_NAME" --json number --jq '.[0].number' 2>/dev/null)
+
+        if [ -z "$HAS_TASK" ]; then
+            TASK_BODY="## 补充模板 reviewer_asserts
+
+**模板**: \`$TMPL_NAME\`
+**原 issue**: #$iid
+**错误**: $GAP_INFO
+
+请为该模板补充 reviewer_asserts，使自动断言数 ≥ 原 issue 的业务真值数。
+模板路径: \`docs/verification-templates/${TMPL_NAME}.yml\`
+
+<!-- CONTRACT_JSON {\"schema_version\":\"1.0\",\"type\":\"template\",\"business_truths\":[\"补充 ${TMPL_NAME} 模板的 reviewer_asserts，消除 quality_gate 拦截\"]} -->
+"
+            gh issue create \
+                --title "补充模板: $TMPL_NAME — L4 断言不足" \
+                --label "needs-verification,type/template" \
+                --body "$TASK_BODY" 2>/dev/null
+            log "  🔧 下发补充模板任务 → $TMPL_NAME"
+        fi
+    fi
 done
 
 # ═══════════════════════════════════════════════════════════════
