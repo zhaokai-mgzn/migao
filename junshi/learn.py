@@ -263,25 +263,45 @@ def find_keyword_gaps(manual_truths: list) -> list:
 
 
 def detect_template_gaps() -> list:
-    """检测模板 auto_asserts 不足的情况"""
-    rules = load_rules()
+    """检测模板 reviewer_asserts 数量不足的情况。
+    直接读模板文件，不依赖 learned_rules.json 的过时数据。"""
     gaps = []
-    template_coverage = rules.get("template_coverage", {})
-    truths_ratio = template_coverage.get("truths_to_asserts_ratio", {})
+    template_dir = REPO_ROOT / "docs" / "verification-templates"
+    if not template_dir.exists():
+        return gaps
 
-    for tmpl, ratio_str in truths_ratio.items():
-        # 解析 "4:4 (100%)" 格式
-        m = re.match(r"(\d+):(\d+)", ratio_str)
-        if m:
-            truths = int(m.group(1))
-            asserts = int(m.group(2))
-            if asserts < truths:
+    for tmpl_file in sorted(template_dir.glob("*.yml")):
+        tmpl_name = tmpl_file.stem
+        try:
+            with open(tmpl_file) as f:
+                content = f.read()
+            # 统计 reviewer_asserts 条目数（以 "- API:" 或 "- " 开头的行）
+            in_asserts = False
+            assert_count = 0
+            truth_count = 0
+            for line in content.split("\n"):
+                if line.startswith("reviewer_asserts:"):
+                    in_asserts = True
+                    continue
+                if in_asserts and line.startswith("  - "):
+                    assert_count += 1
+                elif in_asserts and not line.startswith("  "):
+                    in_asserts = False
+                if line.startswith("business_truths:"):
+                    in_asserts = False  # 重置
+                # 统计业务真值数
+                if line.startswith("  - ") and not in_asserts:
+                    truth_count += 1
+
+            if truth_count > assert_count:
                 gaps.append({
-                    "template": tmpl,
-                    "truths": truths,
-                    "asserts": asserts,
-                    "gap": truths - asserts,
+                    "template": tmpl_name,
+                    "truths": truth_count,
+                    "asserts": assert_count,
+                    "gap": truth_count - assert_count,
                 })
+        except Exception:
+            continue
     return gaps
 
 
