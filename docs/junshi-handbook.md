@@ -267,6 +267,116 @@ learn cron 自动生成 patch
 - 实战案例：`docs/verification-casebook.md`
 - 业务模板：`docs/verification-templates/*.yml`
 - 验收协议：`docs/cloud-verify-protocol.md`
+
+---
+
+# v2.0 自主闭环架构（2026-06-18）
+
+> 军师接手时，读本章即可了解全部部署和运行方式。
+
+## 一、服务器布局
+
+```
+/opt/youke/              ← migao 项目代码（git 仓库，不要往里放工作文件）
+/opt/junshi/             ← 军师自己的工作区（prompts/metrics/archive.py）
+/opt/qa-results/         ← 验收结果（{issue_id}/primary.json, reviewer.json）
+/var/log/migao-*.log     ← 各类日志
+```
+
+## 二、定时任务（crontab）
+
+当前应有 4 条 cron，缺一不可：
+
+```
+HOME=/root
+PATH=/usr/local/bin:/usr/bin:/usr/sbin:/bin
+
+# 1. Agent 研发轮询（每 5 分钟）— 抢 issue 写码 + 跑验收
+*/5 * * * * cd /opt/youke && bash scripts/agent-poll.sh >> /var/log/migao-agent.log 2>&1
+
+# 2. 军师调度（每 3 分钟）— case_draft、auto merge、VERIFY_TRIGGER、巡检、日报
+*/3 * * * * cd /opt/youke && bash scripts/junshi-poll.sh >> /var/log/migao-junshi.log 2>&1
+
+# 3. 军师自进化 — 数据扫描（每 4 小时）
+7 */4 * * * cd /opt/youke && python3 junshi/learn.py --scan >> /var/log/migao-learn.log 2>&1
+
+# 4. QA 生长 — 规则自进化（每天凌晨 3:07）
+7 3 * * * cd /opt/youke && python3 junshi/learn.py --grow --apply >> /var/log/migao-grow.log 2>&1
+```
+
+**部署完务必 `crontab -l` 确认 4 条都在。**
+
+## 三、军师职责（只指挥，不跑代码不写测试）
+
+| 脚本 | 干什么 | 频率 |
+|------|--------|------|
+| `junshi-poll.sh` | 6 件事：①扫新 issue→case_draft ②扫 PR→auto merge ③发 VERIFY_TRIGGER ④stale 催促(>3天) ⑤hold 升级(>7天) ⑥19:00 日报 | 每 3 分钟 |
+| `learn.py --scan` | 扫 QA 结果，更新统计 | 每 4 小时 |
+| `learn.py --grow --apply` | 关键词自生长 + 模板缺口检测 + mock 欺骗检测 | 每天 |
+
+**禁止：**
+- ❌ 自己跑 primary.py / reviewer.py / merge.py（Agent 跑）
+- ❌ 自己写代码改模板发 PR（`auto_patch_template` 是历史遗留，不要用它）
+- ❌ 在 `/opt/youke/` 下创建工作文件（用 `/opt/junshi/`）
+
+## 四、Agent 职责
+
+`agent-poll.sh` 每 5 分钟执行：
+
+1. 优先修 `junshi-review/needs-changes` 的 PR
+2. 抢 `block/dual-mismatch` issue 修复
+3. 抢 `needs-verification` + DRAFT_JSON issue 写码
+4. 扫 `VERIFY_TRIGGER` → 跑 primary.py → reviewer.py → merge.py
+
+## 五、完整闭环
+
+```
+Issue 创建 → 军师(case_draft) → Agent(TDD+PR) → CI(QA Growth Gate)
+    → 军师(auto merge) → Deploy → 军师(VERIFY_TRIGGER)
+    → Agent(primary+reviewer+merge) → close/hold/block
+    → learn.py(scan+grow) → 模板/关键词自生长 → 下次更准
+```
+
+## 六、初始化部署步骤
+
+```bash
+# 1. 拉最新代码
+cd /opt/youke && git pull origin main
+
+# 2. 部署 crontab（4 条）
+crontab -l > /tmp/cron.bak
+cat > /tmp/cron.new << 'CRON'
+HOME=/root
+PATH=/usr/local/bin:/usr/bin:/usr/sbin:/bin
+*/5 * * * * cd /opt/youke && bash scripts/agent-poll.sh >> /var/log/migao-agent.log 2>&1
+*/3 * * * * cd /opt/youke && bash scripts/junshi-poll.sh >> /var/log/migao-junshi.log 2>&1
+7 */4 * * * cd /opt/youke && python3 junshi/learn.py --scan >> /var/log/migao-learn.log 2>&1
+7 3 * * * cd /opt/youke && python3 junshi/learn.py --grow --apply >> /var/log/migao-grow.log 2>&1
+CRON
+crontab /tmp/cron.new
+
+# 3. 清残锁
+rm -f /tmp/migao-agent.lock /tmp/junshi-poll.lock
+
+# 4. 验证
+crontab -l
+cd /opt/youke && bash -n scripts/agent-poll.sh && echo "agent OK"
+cd /opt/youke && bash -n scripts/junshi-poll.sh && echo "junshi OK"
+```
+
+## 七、日常自检
+
+```bash
+# 看最近日志
+tail -20 /var/log/migao-junshi.log
+tail -20 /var/log/migao-agent.log
+
+# 看生长状态
+cd /opt/youke && python3 junshi/learn.py --stats
+
+# 看 QA 结果
+ls /opt/qa-results/
+```
 - 流程总览：`docs/verification-handbook.md`
 - 规则库：`junshi/learned_rules.json`
 
