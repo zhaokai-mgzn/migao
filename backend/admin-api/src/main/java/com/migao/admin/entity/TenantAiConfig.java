@@ -56,6 +56,17 @@ public class TenantAiConfig {
     @TableField(typeHandler = com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler.class)
     private Object quickReplies;
 
+    /**
+     * 渠道配置（JSON）
+     * {
+     *   "wechat_mini": {"greeting": "...", "capabilities": "..."},
+     *   "douyin_mini": {"greeting": "..."}
+     * }
+     * 覆盖默认渠道配置，不配置则使用系统默认值。
+     */
+    @TableField(typeHandler = com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler.class)
+    private Object channelConfigs;
+
     @TableField(fill = FieldFill.INSERT)
     private OffsetDateTime createdAt;
 
