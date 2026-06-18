@@ -53,69 +53,36 @@ PYTHON=/opt/youke/backend/ai-agent-service/.venv/bin/python3
 - `reject`: case 与真值矛盾 / 真值不清 → 停止，描述原因
 - `supplement`: case 不全 → 补充 case 后继续
 
-### Phase 2：TDD 写码（三步）
+### Phase 2：TDD 写码
 
-```
-Step 1 — 测试先行
-  写测试 → 跑 → 确认 FAIL（证明测试有效）
+**严格按项目铁律**：读 `CLAUDE.md` 和 `.claude/skills/tdd-iron-law.md`，走完 CP-1 到 CP-7。
 
-Step 2 — 实现 + 全量验证
-  写最小实现 → 测试 PASS → 跑涉及模块全量单测
-  涉及 State/路由/Interact → 加跑 L0 test_pending_interact_persistence.py
-
-Step 3 — 增量集测 + 增量 E2E
-  涉及 Tool/LLM/SSE → 跑本次变更相关的集成测试（非全量）
-  涉及前端组件/交互/SSE → 跑本次变更相关的 E2E spec（非全量）
-```
-
-重构内联在 Step 2 中，不单独设阶段。
+核心铁律：
+- 测试先行（先写→确认 FAIL→写实现→确认 PASS）
+- 涉及 State/路由/Interact → 必跑 L0 `test_pending_interact_persistence.py`（12 case）
+- 涉及 Tool/LLM/SSE/前端 → 增量集测 + 增量 E2E
+- 全量单测 PASS 才能 push
+- 不允许跳过任何检查点
 
 ### Phase 3：开 PR
 
-```
-PR body: PULL_REQUEST_TEMPLATE.md + PR_CONTRACT JSON
-PR title: feat/fix(scope): 简短描述
-必须关联 issue: Closes #xxx
-```
+- 分支名 agent-poll.sh 已创建（如 `feat/issue-{id}-{desc}`）
+- PR body 包含测试结果
+- 必须关联 issue: `Closes #xxx`
+- 不 merge（军师自动合并）
 
-### 对于 block issue / Bug issue（同 issue 重新抢）
+### Block issue 修复
 
-```
-1. 读最新 BLOCK_LOG 评论 → 获取失败原因 + block_depth
-2. 🔍 **必须查 SLS 日志定位根因**（跳过此步 → 修复无效 → 再次 block）
-   - 读 issue 中的复现步骤/错误时间窗口
-   - gh issue view 或从 CONTRACT_JSON 获取涉及模块
-   - 查 SLS 对应时间段 error/warning 日志
-   - 根因未找到 → 评论 <!-- COMMENT_JSON intent=clarification --> → 停止
-3. 定位根因 → 修复代码 + 更新测试
-4. 跑全量单测 → 开新 PR（关联同一个 issue）
-```
+1. 读 BLOCK_LOG → 理解失败原因
+2. 查 SLS 日志定位根因（跳过→修复无效→再次 block）
+3. 根因不明 → 评论 `<!-- COMMENT_JSON intent=clarification -->` → 停止
+4. 修复 + 全量单测 → 推送同分支 → 开 PR
 
-## Push 前自检（缺一不 push — CI QA Growth Gate 硬兜底）
-
-```
-□ 测试先行：先写测试 → 确认 FAIL → 写实现 → 确认 PASS
-□ 全量单测：涉及模块的单测全部 PASS
-□ L0 检查：涉及 State/路由/Interact → test_pending_interact_persistence.py PASS
-□ 增量集测+增量E2E：涉及 Tool/LLM/SSE/前端 → 仅跑变更相关的，PASS
-□ 无硬编码密钥 / 无 .env 提交 / 未改 DB schema 和 CI/CD
-□ PR 已开（非 main）+ PR_CONTRACT JSON + Closes #xxx
-```
-
-### 禁止
-- ❌ 没有 issue 就写代码
-- ❌ 自己 merge PR
-- ❌ 改 DB schema（需人类审批）
-- ❌ 改 CI/CD 配置（需人类审批）
-- ❌ 跳过测试直接 push
-- ❌ 手写 E2E mock
+## 禁止
+- ❌ 跳过 TDD 检查点（铁律 CP-1~CP-7）
+- ❌ 自己 merge PR（军师合并）
+- ❌ 手写 E2E mock（用 Record-Replay）
 - ❌ 提交 .env / 密钥
-- ❌ **声称完成但实际测试没跑** — 测试结果必须贴到 PR body
-
-### 不确定时
-- case 与真值矛盾 → reject + 说明原因
-- 真值不清晰 → issue 评论 <!-- COMMENT_JSON intent=clarification -->
-- 需改 DB schema → 停止 + issue 评论请求人类
 
 ## 约束
 

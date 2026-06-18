@@ -70,10 +70,11 @@ if [ -n "$NEEDS_CHANGE_PR" ]; then
 
     log "🔧 PR #$PR_NUM 被军师打回 needs-changes → 修复"
     git fetch origin "$PR_BRANCH" && git checkout "$PR_BRANCH" 2>/dev/null
+    git pull origin main 2>/dev/null
 
     claude --print \
         --custom-instructions ".claude/agents/dev-agent.md" \
-        "PR #$PR_NUM (关联 issue #$ISSUE_ID) 被军师标记 needs-changes。读 PR 评论理解要改什么，修复代码，跑测试，push 到同分支。" \
+        "PR #$PR_NUM (关联 issue #$ISSUE_ID) 被军师标记 needs-changes。读 PR 评论 → 修复 → 遵守项目铁律 (CLAUDE.md + tdd-iron-law.md) → push 到当前分支 $PR_BRANCH。" \
         2>&1 | tail -10
 
     log "✅ PR #$PR_NUM 修复完成"
@@ -107,6 +108,17 @@ if [ -z "$ISSUE_ID" ]; then
     exit 0
 fi
 
+# ── 启动服务前先拉最新代码 ──
+log "📥 同步最新代码..."
+git checkout main 2>/dev/null
+git pull origin main 2>&1 | tail -1
+
+# 创建 issue 专用分支
+ISSUE_TITLE=$(gh issue view "$ISSUE_ID" --json title --jq '.title' 2>/dev/null | tr ' ' '-' | tr -d '[:punct:]' | cut -c1-40)
+BRANCH="feat/issue-${ISSUE_ID}-${ISSUE_TITLE}"
+git checkout -b "$BRANCH" 2>/dev/null || git checkout "$BRANCH" 2>/dev/null
+log "🌿 分支: $BRANCH"
+
 # ── 按需启动服务，任务结束后自动关闭 ──
 start_services
 trap 'stop_services' EXIT
@@ -129,13 +141,13 @@ if [ "${IS_BLOCKED:-0}" -gt 0 ]; then
     log "🔧 被阻 issue #$ISSUE_ID (第${DEPTH:-1}次打回) → 修复"
     claude --print \
         --custom-instructions ".claude/agents/dev-agent.md" \
-        "issue #$ISSUE_ID 验收被阻。读最新 BLOCK_LOG 评论理解失败原因，修复代码，跑涉及模块的全量单测，创建新 PR。PR body 关联同一个 issue (Closes #$ISSUE_ID)。" \
+        "issue #$ISSUE_ID 验收被阻。读 BLOCK_LOG 评论理解失败原因 → 查 SLS 日志定位根因 → 修复代码 → 遵守项目铁律 (CLAUDE.md + tdd-iron-law.md) → 推送到当前分支 $BRANCH → 创建 PR (Closes #$ISSUE_ID)。" \
         2>&1 | tail -10
 else
     log "📝 新功能 issue #$ISSUE_ID"
     claude --print \
         --custom-instructions ".claude/agents/dev-agent.md" \
-        "处理 issue #$ISSUE_ID。读 CONTRACT_JSON 和 DRAFT_JSON，review case 草稿，按 TDD 写码，跑全量单测，创建 PR。" \
+        "处理 issue #$ISSUE_ID。读 CONTRACT_JSON 和 DRAFT_JSON → review case 草稿 → 遵守项目铁律 (CLAUDE.md + tdd-iron-law.md) TDD 写码 → 推送到当前分支 $BRANCH → 创建 PR (Closes #$ISSUE_ID)。" \
         2>&1 | tail -10
 fi
 
