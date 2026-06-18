@@ -90,3 +90,5 @@ coverage/
 **/htmlcov/
 *.lcov
 target/site/jacoco/
+junshi/archive.py
+.claude/settings.json
