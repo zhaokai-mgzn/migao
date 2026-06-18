@@ -357,7 +357,7 @@ def cmd_grow(dry_run: bool = True):
     else:
         print("   ✅ 未发现 mock 欺骗")
 
-    # 4. 生长行动
+    # 4. 生长行动 — 将发现转化为 Agent 可执行的任务
     print()
     print("4️⃣  生长行动")
 
@@ -368,43 +368,111 @@ def cmd_grow(dry_run: bool = True):
         "mock_deceptions": deceptions,
         "actions_taken": [],
     }
-
     rules = load_rules()
 
-    # 高频关键词 → 自动补充到规则库
+    # ── 关键词生长 (≥3 次) → 创建 issue 让 Agent 更新 keyword map ──
     if keyword_gaps and not dry_run:
-        new_keywords = []
-        for kg in keyword_gaps:
-            if kg["count"] >= 3:  # ≥3 次才自动补充
-                new_keywords.append({"keyword": kg["keyword"], "count": kg["count"]})
-                print(f"   ✅ 自动补充关键词: {kg['keyword']} (×{kg['count']})")
+        high_freq = [kg for kg in keyword_gaps if kg["count"] >= 3]
+        if high_freq:
+            # 去重
+            prev_issues = subprocess.Popen(
+                ["gh", "issue", "list", "--label", "qa", "--state", "open", "--limit", "10",
+                 "--json", "title", "--jq", ".[].title"],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=str(REPO_ROOT))
+            out, _ = prev_issues.communicate()
+            existing_titles = out.decode("utf-8", "ignore") if out else ""
 
-        if new_keywords:
-            rules.setdefault("suggested_keywords", [])
-            for nk in new_keywords:
-                if nk not in rules["suggested_keywords"]:
-                    rules["suggested_keywords"].append(nk)
-            growth_log["actions_taken"].append({
-                "type": "add_keywords",
-                "keywords": new_keywords,
-            })
+            kws_str = ", ".join([kg["keyword"] for kg in high_freq])
+            if "关键词生长" not in existing_titles:
+                examples = "\n".join([f"- {kg['keyword']} (×{kg['count']}): {kg['examples'][0][:60]}" for kg in high_freq])
+                body = f"""## 关键词覆盖生长
 
-    # mock 欺骗 → 生成 Gate 收紧建议
-    if deceptions:
-        affected_files = set()
+以下业务关键词在 review 中反复出现 manual 断言（未被自动验证覆盖），需补充到 keyword map：
+
+{examples}
+
+### 修改文件
+1. `scripts/dual_verify/case_draft.py` — TEMPLATES 字典或 _TRUTH_KEYWORD_MAP
+2. `scripts/dual_verify/reviewer.py` — _TRUTH_KEYWORD_MAP（infer_business_asserts fallback）
+3. `junshi/learn.py` — CURRENT_KEYWORD_COVERAGE 字典
+
+<!-- CONTRACT_JSON {{"schema_version":"1.0","type":"keyword_growth","business_truths":["补充关键词覆盖: {kws_str}"]}} -->
+"""
+                subprocess.run(
+                    ["gh", "issue", "create", "--title", f"关键词生长: {kws_str}",
+                     "--label", "needs-verification,qa", "--body", body],
+                    cwd=str(REPO_ROOT), capture_output=True)
+                print(f"   ✅ 下发关键词生长任务: {kws_str}")
+                growth_log["actions_taken"].append({"type": "keyword_growth_issue", "keywords": [kg["keyword"] for kg in high_freq]})
+
+    # ── 模板缺口 → 创建补充任务（与 junshi-poll 互补）──
+    if template_gaps and not dry_run:
+        for tg in template_gaps:
+            prev = subprocess.Popen(
+                ["gh", "issue", "list", "--label", "qa", "--state", "open", "--limit", "10",
+                 "--json", "title", "--jq", ".[].title"],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=str(REPO_ROOT))
+            out, _ = prev.communicate()
+            existing = out.decode("utf-8", "ignore") if out else ""
+            if f"补充模板: {tg['template']}" not in existing:
+                body = f"""## 补充模板 reviewer_asserts
+
+**模板**: `{tg['template']}`
+**缺口**: {tg['truths']}条真值 vs {tg['asserts']}条断言 (缺{tg['gap']}条)
+
+请补充 reviewer_asserts 消除缺口。模板路径: `docs/verification-templates/{tg['template']}.yml`
+
+<!-- CONTRACT_JSON {{"schema_version":"1.0","type":"template","business_truths":["补充 {tg['template']} 模板 reviewer_asserts"]}} -->
+"""
+                subprocess.run(
+                    ["gh", "issue", "create", "--title", f"补充模板: {tg['template']} — L4 断言不足",
+                     "--label", "needs-verification,qa", "--body", body],
+                    cwd=str(REPO_ROOT), capture_output=True)
+                print(f"   ✅ 下发模板补充任务: {tg['template']} (缺{tg['gap']}条)")
+                growth_log["actions_taken"].append({"type": "template_gap_issue", "template": tg['template']})
+
+    # ── Mock 欺骗 → 创建 Gate 收紧任务 ──
+    if deceptions and not dry_run:
+        files = set()
         for d in deceptions:
             for s in d.get("specs", []):
-                affected_files.add(s)
-        rules["gate_feedback"]["patterns"][0]["last_seen_in"] = list(affected_files)[:5]
-        print(f"   ⚠️  Gate 收紧建议: {len(affected_files)} 个文件需集成测试而非纯单测")
+                files.add(s)
+        prev = subprocess.Popen(
+            ["gh", "issue", "list", "--label", "qa", "--state", "open", "--limit", "10",
+             "--json", "title", "--jq", ".[].title"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=str(REPO_ROOT))
+        out, _ = prev.communicate()
+        existing = out.decode("utf-8", "ignore") if out else ""
+        if "Mock 欺骗" not in existing:
+            file_list = "\n".join([f"- `{f}`" for f in list(files)[:5]])
+            issue_ids = ", ".join([f"#{d['issue_id']}" for d in deceptions[:3]])
+            body = f"""## Mock 欺骗检测 — Gate 收紧
 
-    if not growth_log["actions_taken"] and not deceptions:
+以下 issue 出现 primary=pass + reviewer=fail，可能是 mock 骗过了单测：
+
+涉及 issue: {issue_ids}
+
+### 受影响文件
+{file_list}
+
+### 建议
+QA Growth Gate (pr-check.yml) 应对这些文件类型要求集成测试（非纯单测）。
+
+<!-- CONTRACT_JSON {{"schema_version":"1.0","type":"gate_tighten","business_truths":["收紧 Gate: mock欺骗文件类型需集成测试"]}} -->
+"""
+            subprocess.run(
+                ["gh", "issue", "create", "--title", "Gate 收紧: Mock 欺骗检测 — 需集成测试",
+                 "--label", "needs-verification,qa", "--body", body],
+                cwd=str(REPO_ROOT), capture_output=True)
+            print(f"   ⚠️  下发 Gate 收紧任务（{len(files)} 个文件）")
+            growth_log["actions_taken"].append({"type": "gate_tighten_issue", "files": list(files)[:5]})
+
+    if not growth_log["actions_taken"]:
         print("   ✅ 无需生长 — 当前覆盖充分")
 
-    # 更新规则
+    # 更新生长日志
     rules.setdefault("growth_log", [])
     rules["growth_log"].append(growth_log)
-    # 只保留最近 10 次生长记录
     rules["growth_log"] = rules["growth_log"][-10:]
 
     if not dry_run:
