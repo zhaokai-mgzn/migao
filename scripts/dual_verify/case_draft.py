@@ -260,6 +260,14 @@ def generate(issue_number, dry_run=False):
     truths = extract_truths(body)
     tmpl_name = match_template(title, body)
     tmpl = load_template(tmpl_name) if tmpl_name else None
+
+    # ── Fallback：无匹配模板 → 尝试兜底模板 unknown ──
+    if not tmpl_name or not tmpl:
+        unknown_tmpl = load_template("unknown")
+        if unknown_tmpl:
+            tmpl_name = "unknown"
+            tmpl = unknown_tmpl
+
     issues, can_post = quality_gate(truths, tmpl_name, tmpl)
 
     # ── 军师自动修模板 ──

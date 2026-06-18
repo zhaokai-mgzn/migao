@@ -1,0 +1,40 @@
+name: unknown
+description: 兜底模板 — 无特定业务模板匹配时的通用验收
+red_flags: []
+
+business_truths:
+  - 功能按预期工作，边界情况正确处理
+  - API 返回符合 RESTful 规范（200/201/400/401/403/404/500）
+  - 租户隔离：不同租户数据互不可见
+  - 错误处理：无效输入返回明确错误信息，不暴露内部实现
+
+primary_specs:
+  - tests/e2e/specs/quality/api-contract.spec.ts
+  - tests/e2e/specs/quality/cross-page-consistency.spec.ts
+  - tests/e2e/specs/quality/anti-placeholder.spec.ts
+
+gate_patterns:
+  - "frontend/admin-web/src/app/**/*.tsx"
+  - "backend/admin-api/src/main/java/com/migao/admin/**/*.java"
+  - "backend/ai-agent-service/app/**/*.py"
+
+reviewer_asserts:
+  - API: GET /api/admin/dashboard/stats
+    expect: data 非空
+  - API: GET /api/admin/orders?page=1&size=5
+    expect: items 非空
+  - API: GET /api/admin/products?page=1&size=5
+    expect: items 非空
+  - API: GET /api/admin/customers?page=1&size=5
+    expect: items 非空
+  - API: POST /api/auth/sms/login
+    expect: data 非空
+
+confidence_required: 80%
+
+common_pitfalls:
+  - 跨租户数据泄露
+  - 分页参数未校验
+  - 错误码不标准
+  - 缺少输入校验
+  - 边界情况未处理
