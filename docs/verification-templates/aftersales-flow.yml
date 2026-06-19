@@ -20,20 +20,20 @@ primary_specs:
   - backend/admin-api/src/test/java/com/migao/admin/controller/AfterSalesControllerTest.java
 
 reviewer_asserts:
-  - API: GET /api/admin/aftersales/{id}
+  - API: GET /api/admin/after-sales/{id}
     expect: data.status IN (待处理,处理中,已完成,已关闭) AND data.orderNo 非空 AND data.timeline 正序
-  - API: GET /api/admin/aftersales?status=待处理
+  - API: GET /api/admin/after-sales?status=待处理
     expect: items 中每条 status = 待处理
-  - API: GET /api/admin/aftersales?status=处理中
+  - API: GET /api/admin/after-sales?status=处理中
     expect: items 中每条 status = 处理中
-  - API: GET /api/admin/aftersales?status=已完成
+  - API: GET /api/admin/after-sales?status=已完成
     expect: items 中每条 status = 已完成
-  - API: GET /api/admin/aftersales?status=已关闭
+  - API: GET /api/admin/after-sales?status=已关闭
     expect: items 中每条 status = 已关闭
   - "状态分布一致性: 各 status tab 计数与对应筛选列表 total 一致"
-  - API: GET /api/admin/aftersales/{id}
+  - API: GET /api/admin/after-sales/{id}
     expect: data.timeline 正序 AND data.timeline[0].status = 待处理
-  - "租户隔离: GET /api/admin/aftersales/{id}(跨租户) → expect 403 或空数据"
+  - "租户隔离: GET /api/admin/after-sales/{id}(跨租户) → expect 403 或空数据"
   - API: POST /api/auth/sms/send
     expect: 200 AND 短信发送成功
   - API: POST /api/auth/sms/login
