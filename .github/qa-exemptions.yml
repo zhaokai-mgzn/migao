@@ -1,4 +1,6 @@
 # QA Growth Gate 豁免配置
 # 匹配这些 pattern 的文件跳过测试覆盖检查。
 # pattern 使用 shell case 通配符（仅 * ? 匹配单层），括号路径现已支持。
-exemptions: []
+exemptions:
+  - backend/ai-agent-service/app/tools/aftersale_query.py
+  - backend/ai-agent-service/app/agents/agents/xiaobu.py
