@@ -38,6 +38,9 @@ touch "$LOCK_FILE"
 
 cd "$WORK_DIR"
 
+# 拉取最新代码（agent-poll 有，junshi-poll 也必须有）
+git pull origin main 2>&1 | tail -1 || true
+
 if ! gh auth status 2>/dev/null; then
     log "❌ gh 未认证"
     exit 1
