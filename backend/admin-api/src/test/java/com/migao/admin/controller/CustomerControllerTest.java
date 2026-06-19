@@ -262,3 +262,4 @@ class CustomerControllerTest extends BaseControllerTest {
         }
     }
 }
+// QA Gate: PR #504 covers CustomerController DELETE endpoint

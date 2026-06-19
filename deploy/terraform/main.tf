@@ -307,6 +307,9 @@ locals {
     "OSS_BUCKET_NAME"       = alicloud_oss_bucket.permanent.bucket
     # 直接使用 OSS 域名（CDN admin.migaozn.com 未正确配置 CNAME）
     "OSS_URL_PREFIX"        = "https://${local.oss_domain}"
+    # SMS 验证码 bypass（测试阶段，未接入阿里云短信）
+    # Spring Boot 宽松绑定：SMS_BYPASSCODE → sms.bypass-code
+    "SMS_BYPASSCODE"        = "123456"
   })
 
   ai_agent_envs = merge({
