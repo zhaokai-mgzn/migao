@@ -380,7 +380,15 @@ def verify(issue_id: int) -> dict:
     for a in asserts:
         if a["type"] == "api":
             url = a["url"]
-            if not url.startswith("http"): url = base + url
+            if not url.startswith("http"):
+                # 模板 URL 格式: "GET /api/xxx" 或 "POST /api/xxx"
+                # 去掉 HTTP 方法前缀，拼 base URL
+                path = url
+                for prefix in ["GET ", "POST ", "PUT ", "DELETE ", "PATCH "]:
+                    if path.startswith(prefix):
+                        path = path[len(prefix):]
+                        break
+                url = base.rstrip("/") + "/" + path.lstrip("/")
             code, body_resp, err = api_get(url, token)
 
             http_ok = 200 <= code < 300
