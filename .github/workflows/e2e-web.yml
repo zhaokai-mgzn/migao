@@ -4,8 +4,21 @@ on:
   workflow_dispatch:
   pull_request:
     paths:
+      # ── 前端变更（全部触发）────────────────────────────────
       - 'frontend/admin-web/**'
-      - 'backend/admin-api/**'
+
+      # ── 后端 HTTP 层变更（影响前端交互）────────────────────
+      # 只监听直接影响 HTTP 接口的包，避免纯内部逻辑
+      #（service/mapper/entity/test）变更白白跑 10min E2E
+      - 'backend/admin-api/src/main/java/com/migao/admin/controller/**'
+      - 'backend/admin-api/src/main/java/com/migao/admin/dto/**'
+      - 'backend/admin-api/src/main/java/com/migao/admin/config/**'
+      - 'backend/admin-api/src/main/java/com/migao/admin/security/**'
+      - 'backend/admin-api/src/main/java/com/migao/admin/exception/**'
+      - 'backend/admin-api/src/main/resources/application*.yml'
+      - 'backend/admin-api/src/main/resources/application*.properties'
+
+      # ── E2E 测试基础设施变更 ───────────────────────────────
       - 'tests/e2e/specs/**'
       - 'tests/e2e/.auth/**'
       - 'tests/playwright.config.ts'
