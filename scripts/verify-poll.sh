@@ -1,10 +1,12 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════════
-# 米高二郎神验收轮询触发器（独立于 agent-poll.sh）
+# 米高二郎神验收轮询触发器 v3.3（独立于 agent-poll.sh）
 #
 # cron 每 5 分钟执行。一次处理一个待验收 issue。
-# 职责单一：扫 VERIFY_TRIGGER → claude --agent verify-agent LLM 自主验收
+# 职责单一：扫 VERIFY_TRIGGER → 死循环检测 → claude --agent verify-agent
 # 不与 agent-poll.sh 互斥（独立锁文件），确保验收不被写码阻塞。
+#
+# v3.3 新增：死循环检测 — 同一 issue 连续 3 次相同 HOLD → auto-escalate
 # ═══════════════════════════════════════════════════════════════
 set -e
 
@@ -17,9 +19,9 @@ PYTHON="${WORK_DIR:-/opt/youke}/backend/ai-agent-service/.venv/bin/python3"
 [ -x "$PYTHON" ] || PYTHON="python3.11"
 [ -x "$(command -v "$PYTHON" 2>/dev/null)" ] || PYTHON="python3"
 
-# ═══════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════
 # 按需启停服务
-# ═══════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════
 start_services() {
     log "🚀 启动服务..."
     # 加载 .env 中的 RDS/REDIS 变量（Spring Boot 不自读 .env）
@@ -101,6 +103,54 @@ fi
 
 log "🧪 验收 issue #$VERIFY_ISSUE"
 
+# ═══════════════════════════════════════════════════════════════
+# v3.3 死循环检测：同一 issue 连续 N 次相同 HOLD → auto-escalate
+# ═══════════════════════════════════════════════════════════════
+STUCK_THRESHOLD=3
+MATCHING_HOLD_COUNT=0
+
+# 取最近非 VERIFY_TRIGGER 的非军师评论中的 VERDICT_JSON 判定
+PREV_DECISIONS=$(gh issue view "$VERIFY_ISSUE" --comments --json comments \
+    --jq '[.comments[] | select(.body | contains("VERDICT_JSON")) | .body] | .[-3:] | .[]' 2>/dev/null || true)
+
+if [ -n "$PREV_DECISIONS" ]; then
+    # 检查最后一条 VERDICT_JSON 的 decision
+    LAST_DECISION=$(echo "$PREV_DECISIONS" | tail -1 | python3 -c "
+import sys, json, re
+txt = sys.stdin.read()
+m = re.search(r'\"decision\"\s*:\s*\"(hold|block)\"', txt)
+print(m.group(1) if m else '')
+" 2>/dev/null || true)
+
+    if [ "$LAST_DECISION" = "hold" ]; then
+        # 统计连续 hold 次数
+        MATCHING_HOLD_COUNT=$(echo "$PREV_DECISIONS" | grep -c '"decision".*"hold"' 2>/dev/null || echo 0)
+    fi
+fi
+
+if [ "$MATCHING_HOLD_COUNT" -ge "$STUCK_THRESHOLD" ]; then
+    log "🚨 死循环检测：issue #$VERIFY_ISSUE 已连续 $MATCHING_HOLD_COUNT 次 HOLD，自动升级为 BLOCK"
+
+    gh issue comment "$VERIFY_ISSUE" --body "## 🚨 二郎神死循环检测 — 自动升级为 BLOCK
+
+**原因**: 连续 $MATCHING_HOLD_COUNT 次验收返回 HOLD，判定死循环。
+**行动**: 自动升级为 `block/need-human`。请人工介入。
+
+上一轮判定:
+\`\`\`
+$(echo "$PREV_DECISIONS" | tail -1 | head -c 500)
+\`\`\`"
+
+    if ! gh issue edit "$VERIFY_ISSUE" --add-label "block/need-human" 2>/dev/null; then
+        # label 可能不存在，尝试创建
+        gh label create "block/need-human" --color "B60205" --description "二郎神死循环自动升级 — 需人工介入" 2>/dev/null || true
+        gh issue edit "$VERIFY_ISSUE" --add-label "block/need-human" 2>/dev/null || true
+    fi
+
+    rm -f "$LOCK_FILE"
+    exit 0
+fi
+
 # 如果 issue 被 PR "Closes #xxx" auto-close，先 reopen 再验收
 ISSUE_STATE=$(gh issue view "$VERIFY_ISSUE" --json state --jq '.state' 2>/dev/null)
 if [ "$ISSUE_STATE" = "CLOSED" ]; then
@@ -123,28 +173,30 @@ export DB_USER=$(grep '^RDS_USER=' /opt/youke/backend/admin-api/.env 2>/dev/null
 export DB_NAME=$(grep '^RDS_DB=' /opt/youke/backend/admin-api/.env 2>/dev/null | cut -d= -f2)
 export ADMIN_API=http://localhost:8081
 
-log "  → LLM 自主验收 (调 API + 查 DB + 判定)..."
+log "  → LLM 自主验收 v3.3 (调 API + 查 DB + check_assert 管道校验)..."
+
 cd /opt/youke && claude --print \
     --agent verify-agent \
-    "验收 issue #$VERIFY_ISSUE。独立验证每条业务真值。
+    "验收 issue #$VERIFY_ISSUE。你是执行机器，不是代码审查员。
 
-## 环境（已通过环境变量注入，直接使用）
+## ⛔ 禁止读源码文件（.java/.py/.ts/.tsx/.vue）
+API 路径用约定的 REST 路径表（verify-agent.md 中有完整映射表），不要翻 Controller 源码。
+
+## 环境（已注入，直接用）
 - admin-api: \$ADMIN_API
 - X-Service-Token: \$SERVICE_TOKEN
-- DB: psql -h \$DB_HOST -U \$DB_USER -d \$DB_NAME（密码已在 PGPASSWORD 环境变量）
+- DB: psql -h \$DB_HOST -U \$DB_USER -d \$DB_NAME (PGPASSWORD 已设)
 
-## 步骤
+## 强制要求
 1. gh issue view $VERIFY_ISSUE --json body,comments → 提取 business_truths
-2. 对每条真值调 API 或查 DB 验证
-3. 判定：全部通过→close / 关键失败→hold / 严重→block
-4. 贴 VERDICT_JSON 评论：
-<!-- VERDICT_JSON {\"issue_id\":$VERIFY_ISSUE,\"decision\":\"close|hold|block\",\"verdict\":\"...\",\"verifier\":\"dev-agent-llm\"} -->
+2. **每条 api 真值必须走 curl | check_assert 管道**（不跳过、不替代）
+3. **置信度 = passed / total**（公式强制，pass 不含待人工/手动检查）
+4. VERDICT_JSON 必须贴每条真值的 check_assert 原始 JSON 输出
+5. 不超过 10 分钟
 
-## 边界
-- 不跑 primary.py/reviewer.py/merge.py
-- 不依赖模板 reviewer_asserts（自己推理 API path）
-- 真实 API path 参考：after-sales（有连字符），orders, products, customers
-- API 调不通→先 curl localhost:8081/actuator/health → 仍不行则hold
-- 不超过 10 分钟" 2>&1 | tail -5
+## 判定
+全部 check_assert all_pass → close
+部分 fail → hold（列出失败项 + check_assert 证据）
+全部 API_UNREACHABLE → hold（不 block）" 2>&1 | tail -5
 
 log "✅ LLM 验收完成 #$VERIFY_ISSUE"
