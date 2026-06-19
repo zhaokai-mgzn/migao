@@ -129,7 +129,12 @@ class AftersaleQueryTool(BaseTool):
         status: Optional[str],
     ) -> ToolResult:
         """查询售后工单列表"""
-        params: Dict[str, Any] = {"page": page, "size": size}
+        # Gap-4 安全加固: customer 查询必须带 customer_id 做双重隔离
+        params: Dict[str, Any] = {
+            "page": page,
+            "size": size,
+            "customerId": str(context.user_id),  # 强制 customer_id 过滤
+        }
         if status:
             params["status"] = status
 
@@ -153,6 +158,30 @@ class AftersaleQueryTool(BaseTool):
         items = data.get("items", [])
         total = data.get("total", 0)
 
+        # Gap-4 安全加固: 防御性校验 — 过滤不属于当前客户的工单
+        verified_items = []
+        filtered_count = 0
+        for item in items:
+            resp_customer_id = (
+                item.get("customerId")
+                or item.get("customer_id")
+                or item.get("userId")
+            )
+            if resp_customer_id is not None and str(resp_customer_id) != str(context.user_id):
+                logger.error(
+                    f"Customer data integrity violation in aftersale_query: "
+                    f"response customer_id={resp_customer_id}, expected={context.user_id}"
+                )
+                filtered_count += 1
+                continue
+            verified_items.append(item)
+        if filtered_count > 0:
+            logger.warning(
+                f"Aftersale query filtered {filtered_count} records due to customer_id mismatch, "
+                f"user={context.user_id}"
+            )
+            total = max(0, total - filtered_count)
+
         logger.info(
             f"[aftersale_query] List: page={page}, size={size}, total={total} | "
             f"tenant={context.tenant_id}, user={context.user_id}"
@@ -160,7 +189,7 @@ class AftersaleQueryTool(BaseTool):
 
         return ToolResult(
             success=True,
-            data={"items": items, "total": total, "page": page, "size": size},
+            data={"items": verified_items, "total": total, "page": page, "size": size},
             message=f"您共有 {total} 条售后工单记录",
             summary=f"售后工单: {total}条",
         )
@@ -195,6 +224,25 @@ class AftersaleQueryTool(BaseTool):
             )
 
         data = response.get("data", {})
+
+        # Gap-4 安全加固: 校验工单详情属于当前客户
+        resp_customer_id = (
+            data.get("customerId")
+            or data.get("customer_id")
+            or data.get("userId")
+        )
+        if resp_customer_id is not None and str(resp_customer_id) != str(context.user_id):
+            logger.error(
+                f"Customer data integrity violation in aftersale_query detail: "
+                f"ticket_id={ticket_id}, response customer_id={resp_customer_id}, "
+                f"expected={context.user_id}"
+            )
+            return ToolResult(
+                success=False,
+                error="权限不足",
+                message="该工单不属于您，无法查看",
+                suggestion="请从您的工单列表中选择一个工单查看详情",
+            )
 
         logger.info(
             f"[aftersale_query] Detail: ticket_id={ticket_id} | "

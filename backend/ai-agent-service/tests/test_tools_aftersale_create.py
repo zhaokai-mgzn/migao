@@ -28,10 +28,20 @@ class TestAftersaleCreateSuccess:
 
     @patch("app.tools.aftersale_create.get_admin_api_client")
     async def test_customer_creates_aftersale_with_order_id(self, mock_get_client, sample_tool_context):
-        """客户关联已有订单号创建售后工单"""
+        """客户关联已有订单号创建售后工单（需先验证订单所有权 #518）"""
         from app.tools.aftersale_create import AftersaleCreateTool
 
         mock_client = AsyncMock()
+        # Mock: 订单查询（所有权验证）返回属于当前客户的订单
+        mock_client.get = AsyncMock(return_value={
+            "success": True,
+            "data": {
+                "id": "order-123",
+                "orderNo": "ORD-001",
+                "customerId": sample_tool_context.user_id,  # 属于当前客户
+            },
+        })
+        # Mock: 售后工单创建
         mock_client.post = AsyncMock(return_value={
             "success": True,
             "data": {
@@ -54,6 +64,9 @@ class TestAftersaleCreateSuccess:
 
         assert result.success is True
         assert "as-cust-001" in str(result.data)
+
+        # 验证先调了订单查询（get）再创建（post）
+        assert mock_client.get.called, "必须先查询订单验证所有权"
         mock_client.post.assert_called_once()
 
         # 验证传入了正确的参数
@@ -150,3 +163,156 @@ class TestAftersaleCreateFailure:
 
         assert result.success is False
         assert result.suggestion is not None
+
+
+# ============================================================
+# GAP-2: 售后工单创建 → 必须校验订单属于当前客户
+# 业务真值: 售后工单创建时校验创建者=订单所有者
+# 当前状态: FAIL — 未验证 order_id 是否属于 customer
+# ============================================================
+
+class TestAftersaleCreateOrderOwnership:
+    """Gap-2: 创建售后工单前验证订单属于当前客户"""
+
+    @patch("app.tools.aftersale_create.get_admin_api_client")
+    async def test_verify_order_belongs_to_customer_before_create(self, mock_get_client, sample_tool_context):
+        """创建售后工单前 → 应先查询订单确认属于当前客户"""
+        from app.tools.aftersale_create import AftersaleCreateTool
+
+        # Mock admin-api 对订单查询的响应（order_id 属于 customer user_001）
+        mock_client = AsyncMock()
+        # 第一次调用: 查询订单详情（验证所有权）
+        mock_client.get = AsyncMock(return_value={
+            "success": True,
+            "data": {
+                "id": "order-123",
+                "orderNo": "ORD-001",
+                "customerId": sample_tool_context.user_id,  # 属于当前客户
+                "customerIdRaw": None,
+            },
+        })
+        # 第二次调用: 创建售后工单
+        mock_client.post = AsyncMock(return_value={
+            "success": True,
+            "data": {"id": "as-cust-001", "ticketNo": "AS-001", "status": "pending"},
+        })
+        mock_get_client.return_value = mock_client
+
+        tool = AftersaleCreateTool()
+        result = await tool.execute(
+            context=sample_tool_context,
+            order_id="order-123",
+            ticket_type="refund",
+            reason="商品与描述不符",
+        )
+
+        assert result.success is True, (
+            f"订单属于当前客户时应成功创建: error={result.error}"
+        )
+
+        # 验证先调了订单查询再创建
+        assert mock_client.get.called, "必须先查询订单验证所有权"
+        # 验证查询了订单详情
+        get_call_url = mock_client.get.call_args[0][0] if mock_client.get.call_args else ""
+        assert "order" in get_call_url.lower(), f"应先查询订单: {get_call_url}"
+
+    @patch("app.tools.aftersale_create.get_admin_api_client")
+    async def test_non_owner_cannot_create_aftersale_for_order(self, mock_get_client, sample_tool_context):
+        """订单不属于当前客户时 → 创建售后工单应失败"""
+        from app.tools.aftersale_create import AftersaleCreateTool
+
+        # Mock admin-api: 订单属于另一个客户 (user_999)，不是当前客户 (user_001)
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value={
+            "success": True,
+            "data": {
+                "id": "order-456",
+                "orderNo": "ORD-456",
+                "customerId": "user_999",  # ← 不属于当前客户！
+            },
+        })
+        mock_get_client.return_value = mock_client
+
+        tool = AftersaleCreateTool()
+        result = await tool.execute(
+            context=sample_tool_context,  # user_id = "user_001"
+            order_id="order-456",
+            ticket_type="complaint",
+            reason="不是我自己的订单",
+        )
+
+        assert result.success is False, (
+            f"订单不属于当前客户时应拒绝创建: result={result}"
+        )
+        assert "不属于" in (result.error or "") + (result.message or ""), (
+            f"错误信息应说明订单不属于当前客户: error={result.error}, message={result.message}"
+        )
+
+
+# ============================================================
+# GAP-4: 售后查询 → 必须 tenant_id + customer_id 双重隔离
+# 业务真值: 售后查询做 tenant_id + customer_id 双重隔离
+# 当前状态: FAIL — 只传了 tenant_id/user_id header，未显式过滤
+# ============================================================
+
+class TestAftersaleQueryCustomerIsolation:
+    """Gap-4: 售后查询必须做 customer_id 隔离"""
+
+    @patch("app.tools.aftersale_query.get_admin_api_client")
+    async def test_aftersale_query_for_customer_includes_customer_id_filter(self, mock_get_client, sample_tool_context):
+        """customer角色查询售后工单 → 请求中必须包含 customer_id 过滤参数"""
+        from app.tools.aftersale_query import AftersaleQueryTool
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value={
+            "success": True,
+            "data": {
+                "items": [],
+                "total": 0,
+            },
+        })
+        mock_get_client.return_value = mock_client
+
+        tool = AftersaleQueryTool()
+        result = await tool.execute(
+            context=sample_tool_context,  # role=customer, user_id=user_001
+            action="list",
+            page=1,
+            size=5,
+        )
+
+        assert result.success is True
+
+        # 验证 admin-api 调用参数中包含 customer_id 过滤
+        call_args = mock_client.get.call_args
+        params = call_args[1].get("params", {})
+        assert "customerId" in params or "customer_id" in params, (
+            f"customer查询售后工单必须包含customer_id过滤参数，当前params: {params}"
+        )
+
+    @patch("app.tools.aftersale_query.get_admin_api_client")
+    async def test_aftersale_detail_for_customer_verifies_ownership(self, mock_get_client, sample_tool_context):
+        """customer查看售后详情 → 返回的数据必须属于当前客户"""
+        from app.tools.aftersale_query import AftersaleQueryTool
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value={
+            "success": True,
+            "data": {
+                "id": "ticket-001",
+                "ticketNo": "AS-001",
+                "customerId": sample_tool_context.user_id,  # 属于当前客户
+                "status": "pending",
+            },
+        })
+        mock_get_client.return_value = mock_client
+
+        tool = AftersaleQueryTool()
+        result = await tool.execute(
+            context=sample_tool_context,
+            action="detail",
+            ticket_id="ticket-001",
+        )
+
+        assert result.success is True
+        assert "ticket-001" in str(result.data)
