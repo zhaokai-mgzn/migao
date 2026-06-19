@@ -586,7 +586,7 @@ async def send_message(
         try:
             last_msg_time = await session_memory.get_last_message_time(session_id)
             if last_msg_time is not None:
-                now = datetime.utcnow()
+                now = datetime.now(timezone.utc)  # aware datetime，与 DB 返回一致
                 if (now - last_msg_time) > timedelta(minutes=SESSION_IDLE_TIMEOUT_MINUTES):
                     logger.info(
                         f"[chat/send] Session idle timeout, rotating | session={session_id} "
