@@ -170,8 +170,7 @@ def main():
     except json.JSONDecodeError:
         print(json.dumps({
             "all_pass": False,
-            "error": "stdin 不是有效 JSON",
-            "raw_head": raw[:200]
+            "error": "stdin 不是有效 JSON（curl 可能返回了非 JSON 响应）"
         }, ensure_ascii=False))
         sys.exit(1)
 
