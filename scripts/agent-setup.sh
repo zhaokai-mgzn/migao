@@ -116,9 +116,13 @@ echo "   npm: $(npm --version)"
 
 # ── 9. 安装 cron 触发器 ──
 chmod +x "$WORK_DIR/scripts/agent-poll.sh" 2>/dev/null || true
+chmod +x "$WORK_DIR/scripts/verify-poll.sh" 2>/dev/null || true
 
-# 添加 cron job（每 5 分钟扫一次，并行处理 block + needs-verification）
+# 添加 cron job — agent 写码（每 5 分钟）
 (crontab -l 2>/dev/null | grep -v "agent-poll.sh"; echo "*/5 * * * * cd $WORK_DIR && bash scripts/agent-poll.sh >> /var/log/migao-agent.log 2>&1") | crontab -
+
+# 添加 cron job — 验收（每 5 分钟，独立于 agent-poll）
+(crontab -l 2>/dev/null | grep -v "verify-poll.sh"; echo "*/5 * * * * cd $WORK_DIR && bash scripts/verify-poll.sh >> /var/log/migao-verify.log 2>&1") | crontab -
 
 # 军师自我进化 cron（每 4 小时扫实战数据，自动更新规则）
 chmod +x "$WORK_DIR/junshi/learn.py" 2>/dev/null || true
@@ -127,8 +131,9 @@ chmod +x "$WORK_DIR/junshi/learn.py" 2>/dev/null || true
 echo ""
 echo "✅ 初始化完成"
 echo "  工作目录: $WORK_DIR"
-echo "  cron: 每 ${CRON_INTERVAL} 分钟扫一次 GitHub (agent-poll)"
+echo "  cron: 每 ${CRON_INTERVAL} 分钟扫一次 GitHub (agent-poll) + 验收 (verify-poll)"
 echo "  cron: 每 4 小时自我进化 (junshi/learn.py --scan)"
-echo "  日志: /var/log/migao-agent.log, /var/log/migao-learn.log"
+echo "  日志: /var/log/migao-agent.log, /var/log/migao-verify.log, /var/log/migao-learn.log"
 echo ""
-echo "手动触发一次: cd $WORK_DIR && bash scripts/agent-poll.sh"
+echo "手动触发: cd $WORK_DIR && bash scripts/agent-poll.sh   # 写码"
+echo "手动触发: cd $WORK_DIR && bash scripts/verify-poll.sh  # 验收"

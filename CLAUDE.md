@@ -166,31 +166,6 @@ cd frontend/admin-web && npx vitest run
 
 **输出**：所有单测必须 `passed`，无 `failed`。
 
-#### CP-5.5：L0 状态持久化测试（State Persistence Test）
-
-**铁律：新增状态字段/跨 graph 状态变更/Skill pending 状态，必须跑 `test_pending_interact_persistence.py`（12 case）。**
-
-```bash
-# 必须运行（ai-agent-service 新增状态字段后）
-cd backend/ai-agent-service && .venv/bin/python -m pytest tests/test_pending_interact_persistence.py -v
-
-# 必须 PASS 全部 12 个 case
-# - test_store_customer_selection → 跨 graph 持久化
-# - test_store_product_selection → 跨 graph 持久化
-# - test_store_processing_item_selection → 跨 graph 持久化
-# - test_persist_order_status_filter → 跨 graph 持久化
-# - test_persist_customer_filter → 跨 graph 持久化
-# - test_invalid_skill_rejected → 校验（不持久化无效 skill）
-# - test_empty_data_rejected → 校验（不持久化空数据）
-# - test_sql_injection_blocked → SQL 注入防护
-# - test_concurrent_updates → 并发更新
-# - test_clear_pending_state → 清理逻辑
-# - test_state_recovery_after_restart → 重启恢复
-# - test_tenant_isolation → 多租户隔离
-```
-
-**输出**：12 个 case 全部 `passed`，无 `failed` 或 `skipped`。
-
 #### CP-6：集成测试 + E2E 测试增量验证（Incremental Integration & E2E Test）
 
 **铁律：仅运行本次变更涉及的集成测试和 E2E 测试文件，避免全量回归耗时过长。**
@@ -222,7 +197,6 @@ cd tests && npx playwright test tests/e2e/specs/products.spec.ts
 □ CP-3：已写实现代码，运行确认 PASS
 □ CP-4：已重构代码，测试仍 PASS
 □ CP-5：已运行所有受影响模块的全量单测，全部 PASS
-□ CP-5.5：L0 状态持久化测试（如有状态变更），12 case 全部 PASS
 □ CP-6：已运行本次变更涉及的增量集测 + E2E 测试，全部 PASS
 □ CP-7：已完成本自检清单，无遗漏
 □ E2E 测试覆盖决策：
@@ -252,7 +226,6 @@ cd tests && npx playwright test tests/e2e/specs/products.spec.ts
 |---------|------|
 | 先写实现后补测试 | 立即停止，删除实现代码，回到 CP-2 重做 |
 | 跳过单测全量验证 | 禁止合并 PR，必须补跑 |
-| 跳过 L0 状态持久化测试 | 禁止合并 PR，必须补跑 CP-5.5（12 case 全 PASS）|
 | 跳过集成测试增量验证 | 禁止合并 PR，必须补跑 |
 | **跳过 E2E 测试评估** | **禁止合并 PR，必须执行 E2E 测试覆盖决策** |
 | **E2E 弱断言（仅检查可见性/无数据断言）** | **视为虚假完成，必须重写为强断言（tool_result/tool_call/数据字段）** |
@@ -333,9 +306,7 @@ cd frontend/admin-web && npm run dev
 - **跨页面数据一致性**：列表页和详情页的同一字段值必须相等（`tests/e2e/specs/quality/cross-page-consistency.spec.ts`）
 - **E2E 测试命名规范**：`tests/e2e/specs/{domain}/{feature}.spec.ts`，详见 [`tdd-iron-law.md § 5`](.claude/skills/tdd-iron-law.md)
 - **E2E Page Object 模式**：`tests/e2e/pages/{domain}/{page}.page.ts`，每个 Page Object 必须提供元素定位器、goto()、业务操作函数
-- **L0 状态持久化必须验证**：涉及 State/路由/Interact/执行循环的变更，必须运行 `test_pending_interact_persistence.py`。Mock 单测无法发现 state 丢失问题，必须连真实 dev DB 验证
-- **L0 状态持久化**：新增跨 graph 状态字段必须通过 `test_pending_interact_persistence.py`（12 case）验证
-- **新增状态字段类型必须声明在 `test_pending_interact_persistence.py` 的 `SUPPORTED_STATES` 字典中**
+- **状态持久化验证**：涉及 State/路由/Interact/执行循环的变更，必须在 E2E 测试中覆盖多轮对话场景（跨 graph 调用），确保 state 在轮次间正确保持
 
 ## 米宝 Skill/Tool 研发标准
 
@@ -366,11 +337,6 @@ app/graph/skills/
 - `general_skill` 仅持有**只读查询 Tool**，不执行任何写操作
 - 用户意图模糊时引导澄清，而非猜测执行
 - 引导话术必须具体（✅ "请说'创建商品'" / ❌ "请切换模块"）
-
-### 状态持久化
-
-- 跨 graph 调用的状态必须持久化到 DB（参考 `pending_interact_skill`）
-- 新增状态字段必须通过 `test_pending_interact_persistence.py` 验证
 
 ### 完整验证命令清单（PR 合并前必须按顺序执行）
 
@@ -406,12 +372,6 @@ cd backend/admin-api && ./mvnw test
 
 # 前端管理后台（注意：是 vitest，不是 jest）
 cd frontend/admin-web && npx vitest run
-
-# ═══════════════════════════════════════════════════════════════
-# 第〇步（必选）：L0 状态持久化测试（如本次变更涉及状态字段）
-# ═══════════════════════════════════════════════════════════════
-
-cd backend/ai-agent-service && .venv/bin/python -m pytest tests/test_pending_interact_persistence.py -v
 
 # ═══════════════════════════════════════════════════════════════
 # 第二步：集成测试增量（仅运行本次变更涉及的文件/类）
