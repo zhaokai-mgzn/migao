@@ -200,6 +200,9 @@ public class SettingsController {
         if (config.getQuickReplies() != null) {
             existing.setQuickReplies(config.getQuickReplies());
         }
+        if (config.getChannelConfigs() != null) {
+            existing.setChannelConfigs(config.getChannelConfigs());
+        }
 
         tenantAiConfigMapper.updateById(existing);
         return ApiResponse.success(existing);

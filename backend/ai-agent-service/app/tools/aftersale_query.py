@@ -212,6 +212,7 @@ class AftersaleQueryTool(BaseTool):
         response = await self._call_admin_api(
             method="GET",
             path=f"/api/admin/after-sales/{ticket_id}",
+            params={"customerId": str(context.user_id)},
             context=context,
         )
 

@@ -189,6 +189,71 @@ class SettingsControllerTest {
     }
 
     @Nested
+    @DisplayName("PUT /api/admin/tenant/ai-config")
+    class UpdateAiConfig {
+
+        @Test
+        @DisplayName("更新channelConfigs -> 200 返回包含渠道配置")
+        void updateChannelConfigs_returnsConfig() throws Exception {
+            TenantAiConfig existing = TenantAiConfig.builder()
+                    .tenantId(1L)
+                    .botName("小布")
+                    .build();
+            when(tenantAiConfigMapper.selectOne(any())).thenReturn(existing);
+            when(tenantAiConfigMapper.updateById(any(TenantAiConfig.class))).thenReturn(1);
+
+            Map<String, Object> channelConfig = Map.of(
+                "greeting", "您好！我是定制助手，欢迎光临！"
+            );
+            Map<String, Object> channelConfigs = Map.of(
+                "wechat_mini", channelConfig
+            );
+            Map<String, Object> body = Map.of(
+                "channelConfigs", channelConfigs
+            );
+
+            mockMvc.perform(put("/api/admin/tenant/ai-config")
+                            .contentType("application/json")
+                            .content(objectMapper.writeValueAsString(body)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.success").value(true))
+                    .andExpect(jsonPath("$.data.channelConfigs").exists())
+                    .andExpect(jsonPath("$.data.channelConfigs.wechat_mini.greeting")
+                            .value("您好！我是定制助手，欢迎光临！"));
+        }
+
+        @Test
+        @DisplayName("channelConfigs为null -> 不覆盖已有配置")
+        void nullChannelConfigs_preservesExisting() throws Exception {
+            Map<String, Object> channelGreeting = Map.of(
+                "greeting", "已有欢迎语"
+            );
+            Map<String, Object> existingChannel = Map.of(
+                "wechat_mini", channelGreeting
+            );
+            TenantAiConfig existing = TenantAiConfig.builder()
+                    .tenantId(1L)
+                    .botName("小布")
+                    .channelConfigs(existingChannel)
+                    .build();
+            when(tenantAiConfigMapper.selectOne(any())).thenReturn(existing);
+            when(tenantAiConfigMapper.updateById(any(TenantAiConfig.class))).thenReturn(1);
+
+            // 只更新 botName，不传 channelConfigs
+            Map<String, Object> body = Map.of("botName", "新名称");
+
+            mockMvc.perform(put("/api/admin/tenant/ai-config")
+                            .contentType("application/json")
+                            .content(objectMapper.writeValueAsString(body)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.success").value(true))
+                    .andExpect(jsonPath("$.data.botName").value("新名称"))
+                    .andExpect(jsonPath("$.data.channelConfigs.wechat_mini.greeting")
+                            .value("已有欢迎语"));
+        }
+    }
+
+    @Nested
     @DisplayName("PUT /api/admin/settings/password")
     class ChangePassword {
 
