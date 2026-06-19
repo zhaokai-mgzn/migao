@@ -2,7 +2,11 @@
  * E2E 测试数据清理脚本
  *
  * 每次 E2E 测试运行前/后执行，清除上一次测试产生的脏数据。
- * 识别规则：名称包含 "E2E" 前缀的均为测试数据，直接删除。
+ * 识别规则：
+ *   - 名称包含 "E2E"（大小写不敏感）
+ *   - 名称包含 "测试" / "smoke" / "test-"
+ *   - 名称以 "E2E" 开头（含子分类如 "E2E测试分类_xxx"）
+ *   - 特定测试名称模式（默认值测试、名称修复测试、SKU笛卡尔等）
  *
  * 使用方式：
  *   手动:  cd tests && npx tsx e2e/scripts/cleanup-e2e-data.ts
@@ -47,10 +51,12 @@ async function login(): Promise<string> {
   return json.data.accessToken
 }
 
-const E2E_PATTERN = /^E2E/
+// 匹配所有 E2E / 测试 / smoke 相关数据
+const TEST_NAME_PATTERNS = [/E2E/i, /测试/, /smoke/i, /test-/i, /^默认值测试$/, /^名称修复测试$/, /^SKU笛卡尔/, /^试试看$/]
 
-function isE2EData(name: string): boolean {
-  return E2E_PATTERN.test(name)
+function isTestData(name: string): boolean {
+  if (!name) return false
+  return TEST_NAME_PATTERNS.some((p) => p.test(name))
 }
 
 // ==================== 清理函数 ====================
@@ -68,7 +74,7 @@ async function cleanupResource(
 
   const toDelete = items.filter((item) => {
     const name = String(item[nameField] ?? '')
-    if (isE2EData(name)) return true
+    if (isTestData(name)) return true
     if (extraFilter) return extraFilter(item)
     return false
   })
@@ -79,7 +85,7 @@ async function cleanupResource(
       const res = await apiDelete(deletePath(item.id as string), token)
       if (res.success) deleted++
     } catch {
-      // 删除失败静默跳过（可能已被关联约束保护）
+      // 网络错误跳过
     }
   }
 
@@ -87,6 +93,54 @@ async function cleanupResource(
     console.log(`  ${resource}: 删除 ${deleted}/${toDelete.length}`)
   } else {
     console.log(`  ${resource}: 无脏数据`)
+  }
+
+  return deleted
+}
+
+/**
+ * 递归清理分类（处理子分类，按层级从深到浅删除避免外键约束）
+ */
+async function cleanupCategories(token: string): Promise<number> {
+  const json = await apiGet('/api/admin/categories', token)
+  const all: Record<string, unknown>[] = json?.data ?? []
+
+  // 按 parentId 分层：子分类先删
+  const topLevel = all.filter((c) => !c.parentId)
+  const children = all.filter((c) => c.parentId)
+
+  let deleted = 0
+
+  // 先删子分类中的测试数据
+  for (const cat of children) {
+    const name = String(cat.name ?? '')
+    if (isTestData(name)) {
+      try {
+        const res = await apiDelete(`/api/admin/categories/${cat.id}`, token)
+        if (res.success) deleted++
+      } catch { /* skip */ }
+    }
+  }
+
+  // 再删顶层测试分类
+  for (const cat of topLevel) {
+    const name = String(cat.name ?? '')
+    if (isTestData(name)) {
+      try {
+        const res = await apiDelete(`/api/admin/categories/${cat.id}`, token)
+        if (res.success) deleted++
+      } catch { /* skip */ }
+    }
+  }
+
+  const testChildren = children.filter((c) => isTestData(String(c.name ?? '')))
+  const testTop = topLevel.filter((c) => isTestData(String(c.name ?? '')))
+  const totalTest = testChildren.length + testTop.length
+
+  if (totalTest > 0) {
+    console.log(`  分类: 删除 ${deleted}/${totalTest}（子分类 ${testChildren.length} + 顶层 ${testTop.length}）`)
+  } else {
+    console.log('  分类: 无脏数据')
   }
 
   return deleted
@@ -112,7 +166,7 @@ async function main() {
     'customerName',
   )
 
-  // 商品 — 名称含 "E2E" 前缀
+  // 商品 — 名称含 E2E/测试/smoke 等
   total += await cleanupResource(
     token,
     '商品',
@@ -121,16 +175,10 @@ async function main() {
     'name',
   )
 
-  // 分类 — 名称含 "E2E" 前缀
-  total += await cleanupResource(
-    token,
-    '分类',
-    '/api/admin/categories',
-    (id) => `/api/admin/categories/${id}`,
-    'name',
-  )
+  // 分类 — 递归清理（子分类先删，避免外键约束）
+  total += await cleanupCategories(token)
 
-  // 客户 — 名称含 "E2E"
+  // 客户 — 名称含 E2E
   total += await cleanupResource(
     token,
     '客户',
@@ -139,7 +187,7 @@ async function main() {
     'name',
   )
 
-  // 加工项 — 名称含 "E2E"
+  // 加工项 — 名称含 E2E
   total += await cleanupResource(
     token,
     '加工项',
@@ -148,7 +196,7 @@ async function main() {
     'name',
   )
 
-  // 客户标签 — 名称含 "E2E"
+  // 客户标签 — 名称含 E2E
   total += await cleanupResource(
     token,
     '客户标签',
@@ -157,7 +205,7 @@ async function main() {
     'name',
   )
 
-  // 加工分类 — 名称含 "E2E"
+  // 加工分类 — 名称含 E2E
   total += await cleanupResource(
     token,
     '加工分类',
