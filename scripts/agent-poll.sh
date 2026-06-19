@@ -161,21 +161,55 @@ if [ "${IS_BLOCKED:-0}" -gt 0 ]; then
         --agent dev-agent \
         "issue #$ISSUE_ID 验收被阻。读 BLOCK_LOG 评论理解失败原因 → 查 SLS 日志定位根因 → 修复代码 → 遵守项目铁律 (CLAUDE.md + tdd-iron-law.md) → 推送到当前分支 $BRANCH → 创建 PR (Closes #$ISSUE_ID)。" \
         2>&1 | tee -a /var/log/migao-agent-coding.log | tail -10
-else
-    log "📝 新功能 issue #$ISSUE_ID"
-    # 检查是否为模板补充任务（不需要 DRAFT_JSON）
-    IS_TEMPLATE=$(gh issue view "$ISSUE_ID" --json labels --jq '.labels[].name' 2>/dev/null | grep -c "qa" || true)
-    if [ "${IS_TEMPLATE:-0}" -gt 0 ]; then
-        PROMPT="处理 issue #$ISSUE_ID（模板补充任务）。读 CONTRACT_JSON → 按铁律 (CLAUDE.md) 修改模板 YAML → 推送到 $BRANCH → 创建 PR (Closes #$ISSUE_ID)。"
-    else
-        PROMPT="处理 issue #$ISSUE_ID。读 CONTRACT_JSON 和 DRAFT_JSON → review case 草稿 → 遵守项目铁律 (CLAUDE.md + tdd-iron-law.md) TDD 写码 → 推送到当前分支 $BRANCH → 创建 PR (Closes #$ISSUE_ID)。"
-    fi
-    claude --print \
-        --agent dev-agent \
-        "$PROMPT" \
-        2>&1 | tee -a /var/log/migao-agent-coding.log | tail -10
-fi
+	else
+	    log "📝 新功能 issue #$ISSUE_ID"
+	    # 检查是否为模板补充任务（不需要 case review）
+	    IS_TEMPLATE=$(gh issue view "$ISSUE_ID" --json labels --jq '.labels[].name' 2>/dev/null | grep -c "qa" || true)
+	    if [ "${IS_TEMPLATE:-0}" -gt 0 ]; then
+	        PROMPT="处理 issue #$ISSUE_ID（模板补充任务）。读 CONTRACT_JSON → 按铁律 (CLAUDE.md) 修改模板 YAML → 推送到 $BRANCH → 创建 PR (Closes #$ISSUE_ID)。"
+	        claude --print \
+	            --agent dev-agent \
+	            "$PROMPT" \
+	            2>&1 | tee -a /var/log/migao-agent-coding.log | tail -10
+	    else
+	        # ══ Phase 1: Review（硬 gate — 不过不写码）══
+	        log "🔍 Phase 1: Review case 草稿..."
+	        claude --print \
+	            --agent dev-agent \
+	            "Review issue #$ISSUE_ID。只做 Review，不写代码。
 
-log "✅ issue #$ISSUE_ID 完成"
-exit 0
-fi  # 结束 coding if/else
+## 步骤
+1. 读 CONTRACT_JSON 中的 business_truths
+2. 读 DRAFT_JSON → 理解 L2/L3/L4 case
+3. 逐条比对：每条真值是否有 case 覆盖
+4. 判定 accept/reject/supplement
+5. 贴 REVIEW_JSON + 停止
+
+## REVIEW_JSON 格式
+\`\`\`
+<!-- REVIEW_JSON {\"action\":\"accept|reject|supplement\",\"issue_id\":$ISSUE_ID,\"reason\":\"...\"} -->
+\`\`\`
+
+边界：不写代码、不跑测试、不建 PR。这是硬 gate。" \
+	            2>&1 | tee -a /var/log/migao-agent-review.log | tail -10
+
+	        # ══ 检查 REVIEW_JSON 结果 ══
+	        REVIEW_BODY=$(gh issue view "$ISSUE_ID" --comments --json comments \
+	            --jq '[.comments[] | select(.body | contains("REVIEW_JSON"))] | last | .body' 2>/dev/null)
+	        REVIEW_ACTION=$(echo "$REVIEW_BODY" | grep -oP '"action"\s*:\s*"\K\w+' | head -1)
+
+	        if [ "$REVIEW_ACTION" = "accept" ]; then
+	            log "✅ Review accept → Phase 2: TDD 写码"
+	            claude --print \
+	                --agent dev-agent \
+	                "处理 issue #$ISSUE_ID。REVIEW_JSON 已 accept，直接 TDD 写码。
+	                读 CONTRACT_JSON 和 DRAFT_JSON → 遵守项目铁律 (CLAUDE.md + tdd-iron-law.md) → 推送到 $BRANCH → 创建 PR (Closes #$ISSUE_ID)。" \
+	                2>&1 | tee -a /var/log/migao-agent-coding.log | tail -10
+	        elif [ "$REVIEW_ACTION" = "supplement" ]; then
+	            log "⚠️ Review supplement — 跳过，等军师补 case"
+	            exit 0
+	        else
+	            log "❌ Review reject — 跳过写码"
+	            exit 0
+	        fi
+	    fi
