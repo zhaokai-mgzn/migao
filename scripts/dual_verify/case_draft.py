@@ -19,14 +19,14 @@ TEMPLATES = {
     "order-classify":    {"kw": ["订单分类","8个分类","6个状态","含加工订单"],"min":2},
     "product-sku-stock": {"kw": ["SKU库存","库存汇总","低库存阈值"],"min":1},
     "customer-list":     {"kw": ["客户列表","客户详情","客户搜索"],"min":1},
-    "aftersales-flow":   {"kw": ["售后工单","售后状态","退款"],"min":1},
+    "aftersales-flow":   {"kw": ["售后工单","售后状态","退款","转人工","工单","确认卡片","售后"],"min":1},
     "auth-sms":          {"kw": ["短信登录","验证码登录","注册"],"min":1},
     "employee-role":     {"kw": ["员工列表","角色权限","岗位"],"min":1},
     "knowledge-ai":      {"kw": ["知识库文档","知识库检索","AI回答"],"min":2},
 }
 
 def match_template(title, body):
-    text = title + " " + body[:500]
+    text = title + " " + body[:2000]
     best, best_score = None, 0
     for name, cfg in TEMPLATES.items():
         score = sum(1 for kw in cfg["kw"] if kw in text)
