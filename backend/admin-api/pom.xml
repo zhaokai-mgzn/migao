@@ -182,6 +182,27 @@
 
     <build>
         <plugins>
+            <!-- Maven 版本强制检查：maven-compiler-plugin 3.11+ 要求 Maven ≥ 3.6.3 -->
+            <!-- CI/QA 请用 ./mvnw（内置 Maven 3.9.9），不要直接用系统 mvn -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <version>3.4.1</version>
+                <executions>
+                    <execution>
+                        <id>enforce-maven-version</id>
+                        <goals><goal>enforce</goal></goals>
+                        <configuration>
+                            <rules>
+                                <requireMavenVersion>
+                                    <version>[3.6.3,)</version>
+                                    <message>❌ Maven ${maven.version} 版本太低（需要 ≥ 3.6.3）。请用 ./mvnw 代替 mvn（wrapper 内置 3.9.9）</message>
+                                </requireMavenVersion>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
