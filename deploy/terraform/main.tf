@@ -98,10 +98,10 @@ variable "wechat_mini_appsecret" {
 }
 
 variable "jwt_public_key" {
-  description = "JWT RS256 公钥内容（PEM 格式字符串，用于 ai-agent-service 验证 Token）"
+  description = "JWT RS256 公钥内容（PEM 格式字符串，用于 ai-agent-service 验证 Token）。默认值与 admin-api classpath:rsa/public.pem 一致"
   type        = string
-  sensitive   = true
-  default     = ""
+  sensitive   = false
+  default     = "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyDkix6IDMt3wkCAY1Phk\nO56ihiAu9deWNU/kfRn0dnc/iKC3sqmjlE7Te854xOuy1EjvIbDAXDFbaKHMOM76\nitKKIvSpOzGsSaEuerNsQH6+il9KgnO2rk4z9fDEoX9ZYnzIjr3n/oM6mv3Nfh+x\n17QMdMo9n29cHlznQAVc4kAJ1ACu4eYJVxiH6WZNtXLu6PkiU+YqsaPOGchvp1Xy\nPmZXyJJl0r+xDEVCgfXLsStFTau/9B5YxMv28N5gg1JbwpZNBpBYZ00J90lQkT+5\nLpl0Tto5k/R08bFvAn8uf0PcbpOQ70Ibs9R7T/MHfK0NKyBrwZnzEdcIEQ6Pdn9g\nRwIDAQAB\n-----END PUBLIC KEY-----"
 }
 
 variable "oss_access_key_id" {
