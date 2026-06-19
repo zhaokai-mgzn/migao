@@ -25,7 +25,7 @@ class OrderCreateTool(BaseTool):
     description = (
         "【触发】用户说'创建订单''下单''帮我订''买XX'且有客户信息时调用。【前置】必填: customer_name + customer_phone + items(至少一项)。缺信息时先收集，不要直接调。收集流程: 问客户信息→问商品明细→算金额→展示汇总→用户确认→调用。【反例】用户只说了商品没提客户信息时不要调，先问。修改已有订单用 order_manage。【标注】WRITE|NON_IDEMPOTENT — 先确认再执行"
     )
-    allowed_roles = ["admin", "agent", "tenant_admin"]
+    allowed_roles = ["admin", "agent", "tenant_admin", "customer"]
 
     read_only = False
     destructive = False
@@ -212,6 +212,10 @@ class OrderCreateTool(BaseTool):
                 "customerPhone": customer_phone,
                 "items": items_payload,
             }
+
+            # customer 角色自动绑定 customerId，确保订单归属当前客户
+            if context.role == "customer":
+                json_data["customerId"] = context.user_id
 
             if customer_address:
                 json_data["customerAddress"] = customer_address

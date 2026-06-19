@@ -187,6 +187,7 @@ class BaseAgent:
             "user_name": getattr(context, "user_name", None),
             "session_id": context.session_id,
             "role": context.role,
+            "identity_type": getattr(context, "identity_type", "web"),
             "intent_result": None,
             "route_decision": None,
             "entities": {},
@@ -408,10 +409,31 @@ class BaseAgent:
             )
     
     async def get_greeting(self, context: AgentContext) -> str:
-        """获取欢迎语（优先从 direct_replies 获取，避免配置重复）"""
-        # 优先使用 direct_replies["greeting"]，与 direct_reply_node 共用同一文本
-        greeting = self._agent_config.get_direct_reply("greeting")
-        return greeting or self._agent_config.greeting
+        """获取欢迎语（渠道感知 + 租户配置优先）。
+
+        优先级: 租户 TenantAiConfig.channelConfigs[channel]
+               → 默认渠道配置（含 {bot_name} 占位符）
+               → AgentConfig 硬编码 fallback
+        """
+        try:
+            from app.agents.channel_config import resolve_greeting
+            from app.cache.tenant_ai_config_cache import TenantAiConfigCache
+
+            cache = TenantAiConfigCache()
+            tenant_config = await cache.get_config(context.tenant_id)
+            channel_configs = tenant_config.get("channelConfigs", {}) if tenant_config else {}
+            bot_name = tenant_config.get("botName", "小布") if tenant_config else "小布"
+
+            channel = getattr(context, "identity_type", None) or "web"
+            return resolve_greeting(
+                channel=channel,
+                tenant_config=channel_configs,
+                bot_name=bot_name,
+            )
+        except Exception:
+            # 任何异常（admin-api 不可用、Redis 不可用等）→ 回退到硬编码
+            greeting = self._agent_config.get_direct_reply("greeting")
+            return greeting or self._agent_config.greeting
 
 
 # 全局 Agent 实例（懒加载，按 agent_type 缓存）

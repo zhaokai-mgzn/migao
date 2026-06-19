@@ -373,6 +373,8 @@ def create_default_registry() -> ToolRegistry:
     - role_manage: 角色管理
     - dashboard_stats: 经营数据看板
     - after_sales_manage: 售后管理
+    - aftersale_query: C端售后查询
+    - aftersale_create: C端售后创建
     - knowledge_manage: 知识库管理
     - notification_manage: 通知管理
     - settings_manage: 系统设置
@@ -380,7 +382,8 @@ def create_default_registry() -> ToolRegistry:
     - quick_reply_manage: 快捷回复模板
     - category_manage: 商品分类管理
     - processing_item_manage: 加工项管理
-    
+    - human_handoff: 转人工客服
+
     Returns:
         ToolRegistry: 配置好的注册器
     """
@@ -399,6 +402,8 @@ def create_default_registry() -> ToolRegistry:
     from app.tools.role_manage import RoleManageTool
     from app.tools.dashboard_stats import DashboardStatsTool
     from app.tools.after_sales_manage import AfterSalesManageTool
+    from app.tools.aftersale_query import AftersaleQueryTool
+    from app.tools.aftersale_create import AftersaleCreateTool
     # [RAG 禁用] from app.tools.knowledge_manage import KnowledgeManageTool
     from app.tools.notification_manage import NotificationManageTool
     from app.tools.settings_manage import SettingsManageTool
@@ -408,6 +413,7 @@ def create_default_registry() -> ToolRegistry:
     from app.tools.processing_item_manage import ProcessingItemManageTool
     from app.tools.interact import InteractTool  # noqa: F401 保留以备将来使用
     from app.tools.validate_input import ValidateInputTool
+    from app.tools.human_handoff import HumanHandoffTool
 
     registry = ToolRegistry()
     
@@ -428,6 +434,8 @@ def create_default_registry() -> ToolRegistry:
     registry.register(RoleManageTool())
     registry.register(DashboardStatsTool())
     registry.register(AfterSalesManageTool())
+    registry.register(AftersaleQueryTool())
+    registry.register(AftersaleCreateTool())
     # [RAG 禁用] registry.register(KnowledgeManageTool())
     registry.register(NotificationManageTool())
     registry.register(SettingsManageTool())
@@ -438,6 +446,7 @@ def create_default_registry() -> ToolRegistry:
     # interact 工具保留但不再注册：P&E 模式走纯文本交互
     # registry.register(InteractTool())
     registry.register(ValidateInputTool())
+    registry.register(HumanHandoffTool())
 
     logger.info(f"Default registry created with {len(registry)} tools")
     return registry

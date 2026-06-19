@@ -21,6 +21,7 @@ class AgentState(TypedDict):
     user_name: Optional[str]         # 用户昵称（注入到 System Prompt）
     session_id: str
     role: str
+    identity_type: str               # 渠道标识（wechat_mini/wechat_h5/douyin_mini/web）
 
     # 意图识别
     intent_result: Optional[dict]    # IntentResult 序列化

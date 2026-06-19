@@ -51,6 +51,12 @@ _VALIDATION_RULES: Dict[str, Dict[str, Any]] = {
             "reason": {"type": str, "min_len": 1, "label": "原因说明"},
         },
     },
+    "aftersale_create": {
+        "required": ["order_id", "ticket_type", "reason"],
+        "order_id": {"type": str, "min_len": 1, "label": "关联订单ID"},
+        "ticket_type": {"type": str, "min_len": 1, "label": "工单类型(refund/exchange/repair/complaint/other)"},
+        "reason": {"type": str, "min_len": 1, "label": "原因说明"},
+    },
     "employee_manage": {
         "create": {
             "required": ["name", "phone"],

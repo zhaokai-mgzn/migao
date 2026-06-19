@@ -56,6 +56,7 @@ from app.tools.quick_reply_manage import QuickReplyManageTool
 from app.tools.category_manage import CategoryManageTool
 from app.tools.processing_item_manage import ProcessingItemManageTool
 from app.tools.interact import InteractTool
+from app.tools.human_handoff import HumanHandoffTool
 
 __all__ = [
     # 基础设施
@@ -92,4 +93,5 @@ __all__ = [
     "CategoryManageTool",
     "ProcessingItemManageTool",
     "InteractTool",
+    "HumanHandoffTool",
 ]
