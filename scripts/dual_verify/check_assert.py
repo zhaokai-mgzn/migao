@@ -1,14 +1,22 @@
 #!/usr/bin/env python3
 """
-确定性断言校验工具 — verify-agent 的校验层。
+确定性断言校验工具 v3.3 — verify-agent 的唯一校验层。
 
-verify-agent 推理 API path + expect 规则后，将 curl 返回的 JSON
-通过管道传入本工具做逐项校验。输出确定性 JSON，不受 LLM 波动影响。
+verify-agent 将 curl 返回的 JSON 通过管道传入本工具做逐项校验。
+输出确定性 JSON，不受 LLM 波动影响。check_assert 说 fail 就是 fail。
 
 用法:
+  # 正向断言
   curl -s ... | python3 check_assert.py --rule "data > 0" --rule "items 非空"
   curl -s ... | python3 check_assert.py --rule "每项 status = pending"
-  curl -s ... | python3 check_assert.py --rule "每项 name NOT IN (test1, test2)"
+
+  # HTTP 状态码断言（v3.3 新增）
+  curl -s ... | python3 check_assert.py --rule "status = 200"
+  curl -s ... | python3 check_assert.py --rule "status >= 400"   # 负向测试
+
+  # 响应结构断言（v3.3 新增）
+  curl -s ... | python3 check_assert.py --rule "success = true"
+  curl -s ... | python3 check_assert.py --rule "error.code = VALIDATION_ERROR"
 
 输出:
   {"all_pass": true/false, "rules": [{"rule":"...","pass":true/false,"detail":"..."}]}
@@ -37,6 +45,75 @@ def check_data_op(data: dict, rule: str) -> "tuple[bool, str]":
     elif op in ("==", "="): ok = actual == val
     else: ok = False
     return ok, f"data={actual} {op} {val}"
+
+
+def check_status(data: dict, rule: str) -> "tuple[bool, str]":
+    """HTTP 状态码校验: status = 200 / status >= 400 / status != 500"""
+    rule_lower = rule.lower().strip()
+    m = re.match(r"status\s*(>=|<=|>|<|!=|==|=)\s*(\d+)", rule_lower)
+    if not m:
+        return False, f"无法解析: {rule}"
+    op, expected = m.group(1), int(m.group(2))
+    # HTTP 响应可能包含 status 字段（由调用方在 curl 后注入），
+    # 也可能在 error.code 或顶层 code 字段
+    actual = data.get("status")
+    if actual is None:
+        actual = data.get("code")
+    if actual is None:
+        return False, f"响应中无 status/code 字段，无法校验"
+    if not isinstance(actual, (int, float)):
+        try:
+            actual = int(actual)
+        except (ValueError, TypeError):
+            return False, f"status 字段不是数值 (实际: {type(actual).__name__} = {actual})"
+    if op in (">",): ok = actual > expected
+    elif op in (">=",): ok = actual >= expected
+    elif op in ("<",): ok = actual < expected
+    elif op in ("<=",): ok = actual <= expected
+    elif op in ("==", "="): ok = actual == expected
+    elif op == "!=": ok = actual != expected
+    else: ok = False
+    return ok, f"status={actual} {op} {expected}"
+
+
+def check_response_field(data: dict, rule: str) -> "tuple[bool, str]":
+    """校验响应顶层字段: success = true / error.code = VALIDATION_ERROR"""
+    rule_stripped = rule.strip()
+    m = re.match(r"(success|error\.\w+)\s*(>=|<=|>|<|!=|==|=)\s*(.+)", rule_stripped, re.IGNORECASE)
+    if not m:
+        return False, f"无法解析: {rule}"
+    field, op, expected_str = m.group(1), m.group(2), m.group(3).strip()
+
+    # 支持嵌套字段如 error.code
+    if "." in field:
+        parts = field.split(".")
+        val = data
+        for p in parts:
+            val = val.get(p) if isinstance(val, dict) else None
+    else:
+        val = data.get(field)
+
+    if val is None:
+        return False, f"字段 {field} 不存在或为 null"
+
+    # Boolean handling
+    if isinstance(val, bool) or expected_str.lower() in ("true", "false"):
+        expected_bool = expected_str.lower() == "true"
+        if op in ("==", "="):
+            ok = bool(val) == expected_bool
+        elif op == "!=":
+            ok = bool(val) != expected_bool
+        else:
+            ok = False
+        return ok, f"{field}={val} {op} {expected_str}"
+
+    # String comparison
+    sv = str(val)
+    ev = expected_str.strip("'\"")
+    if op in ("==", "="): ok = sv == ev
+    elif op == "!=": ok = sv != ev
+    else: ok = False
+    return ok, f"{field}={sv} {op} {ev}"
 
 
 def check_nonempty(data: dict, rule: str) -> "tuple[bool, str]":
@@ -126,7 +203,11 @@ def check_one(data: dict, rule: str) -> "tuple[bool, str]":
         detail = " AND ".join(sr[1] for sr in sub_results)
         return all_ok, detail
 
-    # 按模式匹配
+    # 按模式匹配分发
+    if re.match(r"^status\s*(>=|<=|>|<|!=|==|=)\s*\d+", r.lower()):
+        return check_status(data, r)
+    if re.match(r"^(success|error\.\w+)\s*(>=|<=|>|<|!=|==|=)", r, re.IGNORECASE):
+        return check_response_field(data, r)
     if re.match(r"^data\s*(>=|<=|>|<|==|=)\s*\d+", r.lower()):
         return check_data_op(data, r)
     if re.search(r"非空|不为空", r):
