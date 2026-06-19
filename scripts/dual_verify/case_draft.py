@@ -107,8 +107,10 @@ def count_auto_asserts(template):
             count += len(a)
     return count
 
-# ── 军师自动推断 API 断言 ──
-# 模板只定义 API 级验证。DB 查询是 reviewer.py 的内部实现细节。
+# ── 军师自动推断 API 断言（已废弃，仅作 fallback）──
+# 2026-06-19: 军师 (OpenClaw LLM) 出 case 时直接读 Controller 源码确认路径，
+# 不再依赖此映射表。此处保留仅用于 case_draft.py 独立运行时的降级兜底。
+# 映射维护已停止——新增 endpoint 不需要在这里添加。
 _TRUTH_KEYWORD_MAP = [
     (["看板","dashboard","跳转"], "API: GET /api/admin/dashboard/stats"),
     (["订单","order"], "API: GET /api/admin/orders?page=1&size=5"),
