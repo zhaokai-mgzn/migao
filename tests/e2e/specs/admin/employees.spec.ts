@@ -37,7 +37,10 @@ function buildPaginatedResponse(items: typeof MOCK_EMPLOYEES, page = 1, size = 1
 // ==================== Tests ====================
 
 test.describe('员工管理页面', () => {
-  test.beforeEach(async ({ page }) => {
+  let page
+
+  test.beforeEach(async ({ page: p }) => {
+    page = p
     // Mock employees list with filtering
     await page.route('**/api/admin/users*', (route) => {
       const method = route.request().method()
