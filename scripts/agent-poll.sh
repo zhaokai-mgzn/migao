@@ -132,7 +132,7 @@ log "🌿 分支: $BRANCH"
 
 # ── 按需启动服务，任务结束后自动关闭 ──
 start_services
-trap 'stop_services' EXIT
+trap "stop_services; rm -f $LOCK_FILE" EXIT
 
 # ── 熔断检查 ──
 BLOCK_COMMENT=$(gh issue view "$ISSUE_ID" --comments --json comments \
@@ -209,7 +209,7 @@ if [ -n "$VERIFY_ISSUE" ]; then
         log "  ⚠️ 服务未就绪，启动中..."
         start_services
     fi
-    trap 'stop_services' EXIT
+    trap "stop_services; rm -f $LOCK_FILE" EXIT
 
     log "  → primary.py (E2E + 真实集测)..."
     cd /opt/youke && $PYTHON scripts/dual_verify/primary.py "$VERIFY_ISSUE" 2>&1 | tail -3
