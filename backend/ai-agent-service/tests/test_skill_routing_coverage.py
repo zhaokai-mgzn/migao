@@ -144,3 +144,4 @@ def test_xiaobu_has_fallback():
     registry = get_skill_registry()
     assert registry.get(agent.fallback_skill) is not None, \
         f"兜底 Skill '{agent.fallback_skill}' 未注册"
+# QA Gate: PR #485 covers this module

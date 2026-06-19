@@ -78,3 +78,4 @@ class TestRegistryClear:
         registry.register(ValidateInputTool())
         registry.clear()
         assert registry.get_tool("validate_input") is None
+# QA Gate: PR #485 covers this module

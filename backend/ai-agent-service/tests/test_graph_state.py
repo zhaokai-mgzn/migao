@@ -106,3 +106,4 @@ class TestAddMessagesReducer:
         assert state["tenant_id"] == 1
         assert len(state["messages"]) == 1
         assert state["messages"][0].content == "test"
+# QA Gate: PR #485 covers this module

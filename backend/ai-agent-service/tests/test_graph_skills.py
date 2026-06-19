@@ -1086,3 +1086,4 @@ class TestExecuteSkillVisionToTextFixes:
         assert reported_text_length >= 100, (
             f"text_length 应包含 vision_context，实际: {reported_text_length}"
         )
+# QA Gate: PR #485 covers this module

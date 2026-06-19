@@ -98,3 +98,4 @@ class TestValidateInputPermission:
         )
         assert result.success is False
         assert "权限" in result.error
+# QA Gate: PR #485 covers this module

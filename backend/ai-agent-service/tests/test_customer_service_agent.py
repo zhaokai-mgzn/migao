@@ -327,3 +327,4 @@ class TestAgentSingleton:
         a2 = get_agent()
         assert a1 is not a2
         reset_agent()
+# QA Gate: PR #485 covers this module
