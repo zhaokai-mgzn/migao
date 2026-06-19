@@ -1,4 +1,10 @@
 # QA Growth Gate 豁免配置
 # 匹配这些 pattern 的文件跳过测试覆盖检查。
 # pattern 使用 shell case 通配符（仅 * ? 匹配单层），括号路径现已支持。
-exemptions: []
+exemptions:
+  # PR #485: agent 测试为 test_customer_service_agent.py（不匹配 gate 的 test_agent_/test_intent_ 模式）
+  - pattern: "backend/ai-agent-service/app/agents/agents/xiaobu.py"
+  - pattern: "backend/ai-agent-service/app/agents/channel_config.py"
+  - pattern: "backend/ai-agent-service/app/agents/customer_service_agent.py"
+  # cache 模块无独立的 gate 匹配规则
+  - pattern: "backend/ai-agent-service/app/cache/tenant_ai_config_cache.py"
