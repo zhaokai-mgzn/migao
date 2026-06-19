@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-军师质量报告 — 自进化引擎
+二郎神质量报告 — Quality Loop 自进化引擎
 
 从 GitHub issue 评论中提取 DRAFT_JSON / REVIEW_JSON / VERDICT_JSON / BLOCK_LOG，
 统计各环节质量指标，帮助军师识别改进方向。

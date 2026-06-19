@@ -1,6 +1,7 @@
-# 米高 QA 自主闭环 — 完整方案 v2.0
+# 二郎神 (Erlang Shen) — Quality Loop Engineering v2.0
 
-> 给军师（OpenClaw）的部署和执行参考。2026-06-18。
+> 米高项目 Quality Loop Engineering 体系。天眼看穿 mock、哮天犬独立嗅探、守门不放行。
+> 给军师（OpenClaw）的部署和执行参考。2026-06-19。
 
 ## 一、角色分工
 

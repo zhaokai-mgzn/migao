@@ -563,7 +563,7 @@ python3 scripts/dual_verify/quality_report.py --days 7
 
 ---
 
-# 军师验收体系 ↔ QA Growth Gate 互补说明
+# 二郎神 (军师验收体系) ↔ QA Growth Gate 互补说明
 
 > 两者不是替代关系，是**前后两道防线**。
 

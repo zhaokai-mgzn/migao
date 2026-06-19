@@ -2,7 +2,7 @@
 
 > 本文件在每次 Claude Code (cc) 启动时自动加载，定义项目规范和操作约束。
 
-## 🎯 AI 验收体系 — 项目生命线（2026-06-16 凯总明确）
+## 🎯 二郎神 Quality Loop 体系 — 项目生命线（2026-06-16 凯总明确，06-19 定名）
 
 **所有交付（人/AI 员工/Claude Code/军师）必须遵守**：
 1. 任何功能/Bug 先开 issue（用 `.github/ISSUE_TEMPLATE/feature.md`）

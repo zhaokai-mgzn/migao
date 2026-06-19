@@ -235,7 +235,7 @@ gh pr list --state merged --limit 10 --json number,body,mergedAt \
     [ -n "$HAS_RESULT" ] && continue
 
     # 发 VERIFY_TRIGGER
-    TRIGGER_BODY="## 🧪 军师验收触发
+    TRIGGER_BODY="## 🧪 二郎神验收触发
 
 PR #$pr_num 已 merge，请 Agent 执行全链路验收。
 
