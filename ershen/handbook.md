@@ -1,15 +1,15 @@
-# 二郎神 (Erlang Shen) — Quality Loop Engineering v2.0
+# 二郎神 (Erlang Shen) — Quality Loop Engineering v3.0
 
 > 米高项目 Quality Loop Engineering 体系。天眼看穿 mock、哮天犬独立嗅探、守门不放行。
-> 给军师（OpenClaw）的部署和执行参考。2026-06-19。
+> 给军师（OpenClaw）的部署和执行参考。2026-06-19（v3.0 精简版）。
 
 ## 一、角色分工
 
 | 角色 | 实体 | 职责 |
 |------|------|------|
-| **军师** | OpenClaw gateway | 调度、判断、下发任务、汇报。**不写代码不跑测试** |
-| **Agent** | Claude Code (`--agent dev-agent`) | 写码、TDD、跑验收脚本。遵守 CLAUDE.md 铁律 |
-| **CI** | GitHub Actions (pr-check.yml) | QA Growth Gate — 检查测试文件存在性 |
+| **军师** | OpenClaw gateway | 调度、判断、下发任务、case_draft、巡检、日报。**不写代码不跑测试** |
+| **研发 Agent** | Claude Code (`claude --agent dev-agent`) | 写码（TDD）+ **LLM 自主验收**（调 API + 查 DB + 判定） |
+| **CI** | GitHub Actions | 单测 + QA Growth Gate + 部署 |
 
 ## 二、服务器布局
 
@@ -155,19 +155,22 @@ OpenClaw cron 为主，linux crontab 仅保留 Agent 写码和验收两条：
 - cron 环境保护 (HOME + PATH)
 - 验收逻辑已拆分到 verify-poll.sh，本脚本不再承担验收职责
 
-### verify-poll.sh (验收调度，每 5 分钟)
+### verify-poll.sh (验收调度，每 5 分钟) — v3.0 LLM 验收
 
 ```
 1. git pull (同步最新脚本)
-2. 扫 OPEN issue + CLOSED(ai-verify/pending) → 找 VERIFY_TRIGGER 无 VERDICT_JSON 的
-3. reopen（如果 CLOSED）→ 确保服务 → primary.py → reviewer.py → merge.py
-4. 如果没有待验收 issue → 跳过
+2. 扫 OPEN + CLOSED(ai-verify/pending) → 找 VERIFY_TRIGGER 无 VERDICT_JSON
+3. reopen（如果 CLOSED）→ 确保服务（自动 source .env）
+4. claude --agent dev-agent "验收 issue #N..." → LLM 自主调 API + 查 DB + 判定
+5. LLM 贴 VERDICT_JSON + close/hold/block
 ```
 
 关键设计:
-- 独立锁文件 `/tmp/migao-verify.lock`（不与 agent-poll 互斥）
-- 纯验收，不抢 issue、不写码、不创建 PR
-- 服务按需启停（如果 agent-poll 已启动服务则复用）
+- 独立锁文件 `/tmp/migao-verify.lock`
+- **不再跑 primary.py/reviewer.py/merge.py**（2026-06-19 起 LLM 替代）
+- LLM 自行推理 API path、处理认证、解析响应——不依赖模板
+- 凭据通过环境变量传递（SERVICE_TOKEN, PGPASSWORD），不写入 prompt
+- 10 分钟内完成
 
 ### junshi-poll.sh — 已废弃（2026-06-19）
 
@@ -175,12 +178,14 @@ OpenClaw cron 为主，linux crontab 仅保留 Agent 写码和验收两条：
 
 ### dual_verify 脚本
 
-| 脚本 | 谁跑 | 做什么 |
-|------|------|--------|
-| `case_draft.py` | 军师 (openclaw cron) | 匹配模板 → 反推 L2/L3/L4 草稿 → quality_gate 校验 |
-| `primary.py` | Agent (agent-poll) | E2E 全量 + issue spec 中的 pytest/JUnit |
-| `reviewer.py` | Agent (agent-poll) | 独立 API 调用 + 模板 expect 字段真实验证 |
-| `merge.py` | Agent (agent-poll) | 读 primary.json + reviewer.json → close/hold/block |
+| 脚本 | 谁跑 | 做什么 | 状态 |
+|------|------|--------|------|
+| `case_draft.py` | 军师 (openclaw cron) | 匹配模板 → 反推 L2/L3/L4 草稿 → quality_gate 校验 | 活跃 |
+| `primary.py` | — | E2E 全量 + issue spec 中的 pytest/JUnit | 保留备用 |
+| `reviewer.py` | — | 独立 API 调用 + 模板 expect 字段真实验证 | 保留备用 |
+| `merge.py` | — | 读 primary.json + reviewer.json → close/hold/block | 保留备用 |
+
+> **v3.0（2026-06-19）**: primary/reviewer/merge 已被 LLM 自主验收替代。verify-poll.sh 直接触发 `claude --agent dev-agent`，LLM 自行调 API + 查 DB + 判定。Python 脚本保留供 LLM 按需调用。
 
 ### reviewer.py expect 验证 (v2)
 
@@ -225,17 +230,16 @@ PR 阶段按文件类型检查测试文件是否存在于 diff 中：
 模板生长: quality_gate 拦截 → 军师下发任务 → Agent 补充/新建模板 → PR → 下次覆盖更全。
 
 
-## 七、完整闭环
+## 七、完整闭环（v3.0）
 
 ```
 Issue 创建 (CONTRACT_JSON + business_truths)
-  → 军师 case_draft → DRAFT_JSON 评论
+  → 军师 case_draft → DRAFT_JSON
   → Agent 抢单 → Review (REVIEW_JSON) → TDD → PR (Closes #xxx)
   → CI: 单测 + QA Growth Gate
   → Gate pass → 军师 auto-merge
   → Deploy → 军师发 VERIFY_TRIGGER
-  → Agent 验收 (primary + reviewer(with expect) + merge)
-  → merge.py 判定: close / hold / block
+  → Agent LLM 自主验收（调 API + 查 DB → 判定 close/hold/block）
   → 军师 LLM 分析 → 生长 action → 下次更准
 ```
 
@@ -257,10 +261,10 @@ Issue 创建 (CONTRACT_JSON + business_truths)
 | CLAUDE.md + 全部文档: 端口 8080→8081 | 🟡 |
 | AI-Contracts.md: 删除矛盾段落 (军师跑验收) | 🟡 |
 
-## 九、当前已知限制
+## 九、当前已知限制（v3.0）
 
-1. 军师主调度已用 OpenClaw 原生 cron，bash crontab 仅作 fallback — 后续可去冗余
-2. case_draft 模板匹配是关键词硬编码 — OpenClaw LLM 已有 casedraft cron，可逐步接管
-3. gate_patterns 是死数据 — pr-check.yml 不读模板
-4. 关键词映射在 case_draft.py 和 reviewer.py 中重复维护
-5. reviewer expect 验证的 regex 无法处理嵌套 AND/OR 条件
+1. LLM 验收依赖 DB/API 服务可用性 — 服务挂则验收挂（已验证 start_services 自动恢复）
+2. RDS 白名单需手动维护 — 新服务器 IP 需加白名单（2026-06-19 已加 121.40.28.213）
+3. case_draft 模板匹配 LLM 已可替代关键词硬编码 — 待观察
+4. reviewer expect 验证已由 LLM 推理取代 — 不再依赖模板 reviewer_asserts
+5. ~~军师用外部 crontab~~ → 已迁移至 OpenClaw 原生 cron
