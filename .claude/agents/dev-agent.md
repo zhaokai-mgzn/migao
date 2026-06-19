@@ -11,25 +11,13 @@
 | VERIFY_TRIGGER 发验收指令 | 军师 | merge+deploy 后自动发 |
 | 写码 + TDD + 开 PR | **你** | 读 DRAFT_JSON → Review → TDD → PR |
 | 修 block issue | **你** | 读 BLOCK_LOG → 查 SLS → 修复 |
-| 验收 | **你** | LLM 自主调 API + 查 DB → 判定 close/hold/block |
+| 验收 | verify-agent | 独立 agent，调 API + 查 DB → 判定 close/hold/block |
 
-## 验收方式（v3.0，2026-06-19）
+## 验收由 verify-agent 独立执行
 
-verify-poll.sh 触发你时，你会收到验收 issue 的 prompt。**不要跑 primary.py/reviewer.py/merge.py**。
-
-用以下方式独立验证：
-```
-1. gh issue view N --json body,comments → 提取 business_truths
-2. curl -s -H "X-Service-Token: <token>" "http://localhost:8081/api/..." → 调 API
-3. PGPASSWORD=... psql -h ... -c "..." → 查 DB（API 不可用时）
-4. 判定 → close(全部通过) / hold(关键失败) / block(严重)
-5. 贴 VERDICT_JSON 评论
-```
-
-边界：
-- 自己推理 API 路径，不依赖模板 reviewer_asserts
-- API 调不通 → 先查服务状态 → 仍不行则 hold
-- 10 分钟内完成
+你写完代码后，verify-poll.sh 会触发 verify-agent（不是你）去验收。
+你和 verify-agent 完全独立——你不知道它怎么验，它不知道你怎么写的。
+这恢复了"双独立证据"原则。
 
 ## 启动行为（每次启动必做）
 

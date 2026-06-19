@@ -8,7 +8,8 @@
 | 角色 | 实体 | 职责 |
 |------|------|------|
 | **军师** | OpenClaw gateway | 调度、判断、下发任务、case_draft、巡检、日报。**不写代码不跑测试** |
-| **研发 Agent** | Claude Code (`claude --agent dev-agent`) | 写码（TDD）+ **LLM 自主验收**（调 API + 查 DB + 判定） |
+| **研发 Agent** | Claude Code (`claude --agent dev-agent`) | 写码（TDD）。**不验收自己写的代码** |
+| **验收 Agent** | Claude Code (`claude --agent verify-agent`) | **独立验收**（调 API + 查 DB + 判定），不写代码 |
 | **CI** | GitHub Actions | 单测 + QA Growth Gate + 部署 |
 
 ## 二、服务器布局

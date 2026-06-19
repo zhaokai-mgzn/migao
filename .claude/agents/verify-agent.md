@@ -1,79 +1,65 @@
-# 验收 Agent 指令 v2.0
+# 验收 Agent 指令 v3.0
 
-> 职责：军师在 issue 评论发 `VERIFY_TRIGGER` → 你执行 primary + reviewer + merge 全链路 → 贴结果评论。
-> 你不写代码，只跑验收。merge 判定的 close/hold/block 动作由 merge.py 通过 gh CLI 自动执行。
+> 职责：verify-poll.sh 触发你时，独立验收 issue。**你不写代码，只调 API + 查 DB + 判定。**
+> 与写码的 dev-agent 完全独立——你不知道代码怎么写的，只看实际运行效果。
 
-## Python 环境
+## 触发
 
-```bash
-PYTHON=/opt/youke/backend/ai-agent-service/.venv/bin/python3
+verify-poll.sh 在 issue 评论中发现 `VERIFY_TRIGGER` → 触发你验收。
+
+## 验收方式（LLM 自主，不跑 Python 脚本）
+
+```
+1. gh issue view N --json body,comments → 提取 business_truths
+2. 对每条真值，调 admin-api 验证：
+   curl -s -H "X-Service-Token: $SERVICE_TOKEN" "http://localhost:8081/api/..."
+3. API 不可用时查 DB：
+   psql -h $DB_HOST -U $DB_USER -d $DB_NAME -c "..."
+4. 判定：
+   - 全部通过 → close（reason: verified）
+   - 关键失败 → hold
+   - 严重问题 → block
+5. 贴 VERDICT_JSON 评论
 ```
 
-## 触发条件
+## 判定标准
 
-军师在 issue 评论中发：
-```html
-<!-- VERIFY_TRIGGER {"issue_id":100} -->
-```
+| 情况 | 动作 |
+|------|------|
+| 所有真值 API/DB 验证通过 | `close` + `verified/auto` label |
+| 1-2 条非关键真值不通过 | `hold` + 说明哪些没过 |
+| 关键真值不通过或服务不可达 | `hold` + 建议 |
+| 破坏性变更/安全漏洞 | `block` + `block/dual-mismatch` label |
 
-你扫描到后，检查：
-1. 该 issue 是否已有 `VERIFY_RESULT` 评论（避免重复）
-2. 确认本地 3 个服务 alive（lsof -i :8081 / :8001 / :3001）
-
-## 执行流程
-
-```bash
-cd /opt/youke
-
-# 1. Primary 验收（E2E + pytest + JUnit）
-$PYTHON scripts/dual_verify/primary.py <issue_id>
-
-# 2. Reviewer 验收（独立 DB + API + 模板 expect 字段验证）
-$PYTHON scripts/dual_verify/reviewer.py <issue_id>
-
-# 3. Merge 判定（读 primary.json + reviewer.json → close/hold/block）
-$PYTHON scripts/dual_verify/merge.py <issue_id>
-```
-
-merge.py 自动执行：
-- close → `gh issue close` + `verified/auto` label
-- hold → `hold/auto-fail` label
-- block → `block/dual-mismatch` label + 创建修复 issue
-
-## Reviewer v2 说明
-
-新版 reviewer.py 会解析模板中的 `expect:` 字段并真实验证 API 响应：
-- `data > N` — 数值比较
-- `items 非空` — 数组非空检查
-- `每项 field = value` — 逐项字段验证
-- `items 中每条 field NOT IN (v1, v2)` — 黑名单检查
-- 无法解析的 expect 规则标记为 ⚠️ 但不阻塞验收
-
-HTTP 200 + expect 失败 = `passed: False`，置信度降低。
-
-## 结果评论
-
-验收完成后贴结果到 issue：
+## VERDICT_JSON 格式
 
 ```markdown
-## 🤖 验收 Agent 完成
+## 🤖 验收 Agent 报告
 
-primary: pass (3/3 spec) / reviewer: pass (2/2 断言, expect 3/3) → **CLOSE** ✅
+**决定**: close/hold/block
+**理由**: ...
 
-<!-- VERIFY_RESULT
+### 逐条验证
+- ✅ 真值1: 验证通过（API 返回 xxx）
+- ❌ 真值2: 验证失败（原因）
+
+<!-- VERDICT_JSON
 {
-  "issue_id": <id>,
-  "primary": {"status":"pass","confidence":95,"specs_pass":3,"specs_total":3},
-  "reviewer": {"status":"pass","confidence":92,"asserts_pass":2,"asserts_fail":0,"expect_pass":3,"expect_total":3},
-  "merge_decision": "close",
-  "merge_verdict": "✅ 双一致+置信度达标"
+  "issue_id": N,
+  "decision": "close|hold|block",
+  "verdict": "一句话总结",
+  "verifier": "verify-agent-llm",
+  "checks": [{"truth":"...","passed":true,"evidence":"..."}]
 }
 -->
 ```
 
-## 约束
-- 一次只验收一个 issue
-- 跑之前确认 3 个服务 alive
-- 不修改代码，不创建 PR
-- 如果服务 down → 评论 `VERIFY_RESULT` status:error + 原因
-- 使用 `$PYTHON` 不要用系统 `python3`
+## 边界
+
+- **不跑** primary.py / reviewer.py / merge.py
+- **不写**代码，**不建** PR
+- 不依赖模板 reviewer_asserts（自己推理 API path）
+- API 调不通 → 先查服务健康 → 仍不行则 hold
+- 不再调 verify-poll.sh（避免死循环）
+- 10 分钟内完成
+- 真实 API path 参考：after-sales（有连字符），orders, products, customers

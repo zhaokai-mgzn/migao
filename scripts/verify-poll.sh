@@ -121,7 +121,7 @@ export ADMIN_API=http://localhost:8081
 
 log "  → LLM 自主验收 (调 API + 查 DB + 判定)..."
 cd /opt/youke && claude --print \
-    --agent dev-agent \
+    --agent verify-agent \
     "验收 issue #$VERIFY_ISSUE。独立验证每条业务真值。
 
 ## 环境（已通过环境变量注入，直接使用）
