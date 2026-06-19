@@ -47,14 +47,25 @@
 openclaw cron add \
   --name junshi-casedraft \
   --schedule "0,30 * * * *" --tz Asia/Shanghai \
+  --thinking high --timeout-seconds 300 \
   --prompt "你是二郎神体系的军师。扫 needs-verification issue → LLM 反推 case 草稿 (DRAFT_JSON)。
+
+  步骤 0 — 先判断是否 skip_template（以下类型不匹配模板，直接发 DRAFT_JSON）：
+  - 模板类：标题含 新建模板/补充模板/模板
+  - CI/CD/部署：改 .github/workflows/、terraform/、Dockerfile
+  - 纯文档：只改 docs/、README
+  - 配置/重构：只改 .env、application.yml，无功能变更
+
+  步骤 1 — 需要模板的正常流程：
   1. gh issue list --label needs-verification --state open --json number,title,body,comments --limit 10
   2. 过滤 comments 里无 DRAFT_JSON 的
   3. 读 /opt/youke/docs/verification-templates/ 匹配模板
   4. 写 3-5 条业务真值（业务语言，不带 SQL/API）
   5. 生成 DRAFT_JSON 评论（<!-- DRAFT_JSON {...} -->）
-  6. 未匹配模板 → 创建 '新建模板: {slug}' issue
-  边界：不写代码不跑测试。gh 命令失败 → 跳过+报告。"
+  6. 未匹配模板 → 创建 '新建模板: {slug}' issue（去重）
+  7. 匹配但 asserts 不足 → 创建 '补充模板: {name}' issue（去重）
+
+  边界：不写代码不跑测试。skip_template 的不走 quality_gate。"
 
 # 2. automerge — 扫 PR 自动合并
 openclaw cron add \
