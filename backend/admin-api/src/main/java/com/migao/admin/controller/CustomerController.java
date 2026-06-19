@@ -82,6 +82,18 @@ public class CustomerController {
     }
 
     /**
+     * 删除客户档案
+     *
+     * DELETE /api/admin/customers/{id}
+     */
+    @DeleteMapping("/api/admin/customers/{id}")
+    public ApiResponse<Void> deleteCustomer(@PathVariable String id) {
+        log.info("删除客户档案: id={}", id);
+        customerService.removeById(id);
+        return ApiResponse.success();
+    }
+
+    /**
      * 给客户添加标签
      *
      * POST /api/admin/customers/{customerId}/tags/{tagId}
