@@ -134,7 +134,7 @@ def api_get(url: str, token: str = "") -> "tuple[int, str, str]":
     """调 admin-api。返回 (http_code, response_body, error)"""
     cmd = ["curl", "-s", "-w", "\n%{http_code}", "-m", "10"]
     if token:
-        cmd += ["-H", f"Authorization: Bearer {token}"]
+        cmd += ["-H", f"X-Service-Token: {token}"]
     cmd.append(url)
     try:
         p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
