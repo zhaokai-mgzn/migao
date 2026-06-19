@@ -2,6 +2,10 @@
 AI 智能客服系统 - 转人工 Tool (小布专用)
 
 客户说"转人工"时调用，自动创建投诉工单并通知管理员。
+
+安全（#518）:
+- 转人工创建工单后必须通知管理员（系统消息通知）
+- 通知失败不影响工单创建（工单已记录，管理员可通过工单列表查看）
 """
 from typing import Optional, Dict, Any
 from loguru import logger
@@ -14,7 +18,7 @@ class HumanHandoffTool(BaseTool):
     """转人工 Tool
 
     小布（C端客服）专用：客户要求转人工时，自动创建投诉类型售后工单，
-    并返回友好提示告知客户等待人工回电。
+    通知管理员，并返回友好提示告知客户等待人工回电。
 
     使用场景:
     - 客户说"转人工""人工客服""找人工""我要投诉"
@@ -49,6 +53,59 @@ class HumanHandoffTool(BaseTool):
             },
         },
     }
+
+    @staticmethod
+    async def _notify_admins(
+        context: ToolContext,
+        ticket_no: str,
+        handoff_reason: str,
+    ) -> None:
+        """通知管理员：有新的转人工工单
+
+        通过 admin-api 创建系统通知，发送给所有管理员。
+        通知失败仅记录日志，不影响转人工主流程。
+
+        Args:
+            context: Tool 执行上下文
+            ticket_no: 工单编号
+            handoff_reason: 转人工原因
+        """
+        try:
+            client = get_admin_api_client()
+            notify_payload: Dict[str, Any] = {
+                "content": (
+                    f"🔔 客户请求转人工\n"
+                    f"工单编号：{ticket_no}\n"
+                    f"客户ID：{context.user_id}\n"
+                    f"原因：{handoff_reason}"
+                ),
+                "title": f"客户请求转人工 - {ticket_no}",
+                "channel": "system",
+                "recipientRole": "admin",
+                "type": "handoff",
+            }
+            response = await client.post(
+                "/api/admin/notifications",
+                json_data=notify_payload,
+                tenant_id=context.tenant_id,
+                user_id=context.user_id,
+            )
+            if response.get("success"):
+                logger.info(
+                    f"[human_handoff] Admin notified: ticket_no={ticket_no} | "
+                    f"tenant={context.tenant_id}"
+                )
+            else:
+                error = response.get("error", {}).get("message", "unknown")
+                logger.warning(
+                    f"[human_handoff] Admin notification failed (non-fatal): "
+                    f"ticket_no={ticket_no}, error={error}"
+                )
+        except Exception as e:
+            logger.warning(
+                f"[human_handoff] Admin notification exception (non-fatal): "
+                f"ticket_no={ticket_no}, error={type(e).__name__}: {e}"
+            )
 
     async def execute(
         self,
@@ -116,6 +173,9 @@ class HumanHandoffTool(BaseTool):
                 f"[human_handoff] Handoff ticket created: ticket_no={ticket_no} | "
                 f"tenant={context.tenant_id}, user={context.user_id}"
             )
+
+            # Gap-3 安全加固: 通知管理员
+            await self._notify_admins(context, ticket_no, handoff_reason)
 
             return ToolResult(
                 success=True,

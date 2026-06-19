@@ -256,6 +256,13 @@ class OrderQueryTool(BaseTool):
             "size": page_size,
         }
 
+        # Gap-4 安全加固: customer 角色必须带 customer_id 做双重隔离
+        if context.role == "customer":
+            params["customerId"] = str(context.user_id)
+        elif context.role in ("admin", "agent", "tenant_admin"):
+            # admin 可以查看所有客户的订单，不传 customerId
+            pass
+
         if order_no:
             params["orderNo"] = order_no
         if customer_phone:
@@ -302,6 +309,20 @@ class OrderQueryTool(BaseTool):
                 )
                 filtered_count += 1
                 continue
+            # Gap-4 安全加固: customer 角色做 customer_id 双重校验
+            if context.role == "customer":
+                resp_customer_id = (
+                    record.get("customerId")
+                    or record.get("customer_id")
+                    or record.get("userId")
+                )
+                if resp_customer_id is not None and str(resp_customer_id) != str(context.user_id):
+                    logger.error(
+                        f"Customer data integrity violation in order_query: "
+                        f"response customer_id={resp_customer_id}, expected={context.user_id}"
+                    )
+                    filtered_count += 1
+                    continue
             verified_records.append(record)
 
         if filtered_count > 0:

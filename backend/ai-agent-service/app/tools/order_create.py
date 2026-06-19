@@ -2,13 +2,26 @@
 AI 智能客服系统 - 订单创建 Tool
 
 创建新订单，调用 admin-api 的 POST /api/admin/orders 接口。
-"""
 
+安全（#518）:
+- 客户创建订单前必须通过手机号 SMS 验证码验证身份
+- 管理员/客服帮客户下单无需 SMS 验证
+"""
+from __future__ import annotations
+
+import re
 from typing import Any, Dict, List, Optional
 from loguru import logger
 
 from app.tools.base import BaseTool, ToolContext, ToolResult
 from app.utils.http_client import get_admin_api_client
+from app.utils.redis_client import RedisClient
+
+
+# SMS 验证码 Redis key 前缀
+_OTP_KEY_PREFIX = "sms:otp:"
+_OTP_TTL_SECONDS = 300  # 5分钟有效期
+_OTP_VALID_PATTERN = re.compile(r"^\d{4,6}$")  # 4-6位数字验证码
 
 
 class OrderCreateTool(BaseTool):
@@ -19,11 +32,21 @@ class OrderCreateTool(BaseTool):
     使用场景：
     - 客服帮客户下单
     - 客户通过聊天直接创建订单
+
+    安全规则（#518）:
+    - customer 角色：必须提供 sms_code，且通过手机号验证
+    - admin/agent/tenant_admin 角色：无需 SMS 验证（帮客户下单）
     """
 
     name = "order_create"
     description = (
-        "【触发】用户说'创建订单''下单''帮我订''买XX'且有客户信息时调用。【前置】必填: customer_name + customer_phone + items(至少一项)。缺信息时先收集，不要直接调。收集流程: 问客户信息→问商品明细→算金额→展示汇总→用户确认→调用。【反例】用户只说了商品没提客户信息时不要调，先问。修改已有订单用 order_manage。【标注】WRITE|NON_IDEMPOTENT — 先确认再执行"
+        "【触发】用户说'创建订单''下单''帮我订''买XX'且有客户信息时调用。"
+        "【前置】必填: customer_name + customer_phone + items(至少一项)。"
+        "客户(customer)还需: sms_code(短信验证码)。"
+        "缺信息时先收集，不要直接调。"
+        "收集流程: 问客户信息→发送验证码→问商品明细→算金额→展示汇总→用户确认→调用。"
+        "【反例】用户只说了商品没提客户信息时不要调，先问。修改已有订单用 order_manage。"
+        "【标注】WRITE|NON_IDEMPOTENT — 先确认再执行"
     )
     allowed_roles = ["admin", "agent", "tenant_admin", "customer"]
 
@@ -44,6 +67,10 @@ class OrderCreateTool(BaseTool):
             "customer_phone": {
                 "type": "string",
                 "description": "客户电话（必填）",
+            },
+            "sms_code": {
+                "type": "string",
+                "description": "短信验证码，4-6位数字。customer角色必填，admin/agent不需要",
             },
             "customer_address": {
                 "type": "string",
@@ -123,12 +150,85 @@ class OrderCreateTool(BaseTool):
         "required": ["customer_name", "customer_phone", "items"],
     }
 
+    @staticmethod
+    def _otp_key(phone: str, tenant_id: int) -> str:
+        """构造 SMS 验证码 Redis key"""
+        return f"{_OTP_KEY_PREFIX}{tenant_id}:{phone}"
+
+    @staticmethod
+    async def _verify_sms_code(phone: str, code: str, tenant_id: int) -> bool:
+        """验证短信验证码
+
+        从 Redis 读取已存储的验证码并比对。
+        验证成功后删除验证码（一次性使用）。
+
+        Args:
+            phone: 客户手机号
+            code: 用户输入的验证码
+            tenant_id: 租户ID
+
+        Returns:
+            bool: 验证是否通过
+        """
+        if not _OTP_VALID_PATTERN.match(code or ""):
+            return False
+
+        try:
+            redis_client = RedisClient()
+            key = OrderCreateTool._otp_key(phone, tenant_id)
+            stored_code = await redis_client.get(key)
+
+            if stored_code and stored_code.strip() == code.strip():
+                # 验证成功后删除，防止重复使用
+                await redis_client.delete(key)
+                logger.info(f"[sms_verify] Code verified: phone={phone[:3]}****{phone[-4:]}, tenant={tenant_id}")
+                return True
+
+            logger.warning(f"[sms_verify] Code mismatch: phone={phone[:3]}****{phone[-4:]}, tenant={tenant_id}")
+            return False
+        except Exception as e:
+            logger.error(f"[sms_verify] Redis error: {type(e).__name__}: {e}")
+            return False
+
+    @staticmethod
+    async def _store_sms_code(phone: str, code: str, tenant_id: int) -> bool:
+        """存储短信验证码到 Redis
+
+        由 SMS 发送工具调用，存储生成的验证码。
+
+        Args:
+            phone: 客户手机号
+            code: 生成的验证码
+            tenant_id: 租户ID
+
+        Returns:
+            bool: 存储是否成功
+        """
+        try:
+            redis_client = RedisClient()
+            key = OrderCreateTool._otp_key(phone, tenant_id)
+            await redis_client.set(key, code, ttl=_OTP_TTL_SECONDS)
+            logger.info(f"[sms_store] Code stored: phone={phone[:3]}****{phone[-4:]}, tenant={tenant_id}")
+            return True
+        except Exception as e:
+            logger.error(f"[sms_store] Redis error: {type(e).__name__}: {e}")
+            return False
+
+    def _needs_sms_verification(self, context: ToolContext) -> bool:
+        """判断是否需要 SMS 验证
+
+        只有 customer 角色需要短信验证。
+        admin/agent/tenant_admin 帮客户下单时跳过。
+        """
+        return context.role == "customer"
+
     async def execute(
         self,
         context: ToolContext,
         customer_name: str,
         customer_phone: str,
         items: List[Dict[str, Any]],
+        sms_code: Optional[str] = None,
         customer_address: Optional[str] = None,
         remark: Optional[str] = None,
     ) -> ToolResult:
@@ -139,6 +239,7 @@ class OrderCreateTool(BaseTool):
             customer_name: 客户姓名
             customer_phone: 客户电话
             items: 商品明细列表
+            sms_code: 短信验证码（customer角色必填）
             customer_address: 客户收货地址（可选）
             remark: 订单备注（可选）
 
@@ -178,6 +279,35 @@ class OrderCreateTool(BaseTool):
                 message="创建订单时必须提供商品明细列表（items）",
                 suggestion="请提供至少一件商品的信息（名称、数量、单价）",
             )
+
+        # Gap-1 安全加固: SMS 验证码校验（仅 customer 角色需要）
+        if self._needs_sms_verification(context):
+            if not sms_code:
+                return ToolResult(
+                    success=False,
+                    error="缺少短信验证码",
+                    message="为了您的账户安全，创建订单前需要验证手机号。请输入短信验证码",
+                    suggestion="请先请求发送短信验证码到您的手机，然后提供收到的验证码",
+                )
+            if not _OTP_VALID_PATTERN.match(sms_code):
+                return ToolResult(
+                    success=False,
+                    error="验证码格式无效",
+                    message="短信验证码为4-6位数字，请检查后重新输入",
+                    suggestion="请输入您收到的4-6位数字验证码",
+                )
+            verified = await self._verify_sms_code(
+                phone=customer_phone,
+                code=sms_code,
+                tenant_id=context.tenant_id,
+            )
+            if not verified:
+                return ToolResult(
+                    success=False,
+                    error="验证码错误或已过期",
+                    message="短信验证码错误或已过期，请重新获取验证码",
+                    suggestion="请重新请求发送短信验证码，并在5分钟内完成验证",
+                )
 
         # 校验每个商品项
         for i, item in enumerate(items):

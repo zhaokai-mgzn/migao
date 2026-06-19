@@ -1,8 +1,10 @@
 """
-订单查询 Tool 测试 — 验证 processingInfo 销售信息提取
+订单查询 Tool 测试 — 验证 processingInfo 销售信息提取 + 安全隔离
 """
 import pytest
+from unittest.mock import patch, AsyncMock
 from app.tools.order_query import OrderQueryTool
+from app.tools.base import ToolContext
 
 
 class TestFormatOrders:
@@ -126,3 +128,97 @@ class TestFormatOrders:
         assert order["customer_name"] == "测试客户"
         assert order["total_amount"] == 500.0
         assert order["status"] == "pending"
+
+
+# ============================================================
+# GAP-4: 订单查询 → 必须 tenant_id + customer_id 双重隔离
+# 业务真值: 订单查询做 tenant_id + customer_id 双重隔离
+# 当前状态: FAIL — 只传了 tenant_id/user_id header，未显式过滤
+# ============================================================
+
+class TestOrderQueryCustomerIsolation:
+    """Gap-4: 订单查询必须做 customer_id 隔离"""
+
+    @patch("app.tools.order_query.get_admin_api_client")
+    async def test_order_query_for_customer_includes_customer_id_filter(self, mock_get_client, sample_tool_context):
+        """customer角色查询订单 → 请求中必须包含 customer_id 过滤参数"""
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value={
+            "success": True,
+            "data": {
+                "items": [],
+                "total": 0,
+            },
+        })
+        mock_get_client.return_value = mock_client
+
+        tool = OrderQueryTool()
+        result = await tool.execute(
+            context=sample_tool_context,  # role=customer, user_id=user_001
+            action="list",
+            page=1,
+            page_size=10,
+        )
+
+        assert result.success is True
+
+        # 验证 admin-api 调用参数中包含 customer_id 过滤
+        call_args = mock_client.get.call_args
+        params = call_args[1].get("params", {})
+
+        # 对于 customer 角色，必须传 customerId 参数
+        assert "customerId" in params or "customer_id" in params, (
+            f"customer查询订单必须包含customer_id过滤参数，当前params: {params}"
+        )
+
+    @patch("app.tools.order_query.get_admin_api_client")
+    async def test_order_query_for_admin_skips_customer_id_filter(self, mock_get_client, admin_tool_context):
+        """admin角色查询订单 → 不需要 customer_id 过滤（可查看所有客户）"""
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value={
+            "success": True,
+            "data": {
+                "items": [
+                    {"id": "ord-1", "orderNo": "O1", "customerName": "客户A", "customerPhone": "138", "totalAmount": 100, "status": "pending", "createdAt": "", "tenantId": 1},
+                    {"id": "ord-2", "orderNo": "O2", "customerName": "客户B", "customerPhone": "139", "totalAmount": 200, "status": "confirmed", "createdAt": "", "tenantId": 1},
+                ],
+                "total": 2,
+            },
+        })
+        mock_get_client.return_value = mock_client
+
+        tool = OrderQueryTool()
+        result = await tool.execute(
+            context=admin_tool_context,  # role=admin
+            action="list",
+            page=1,
+            page_size=10,
+        )
+
+        assert result.success is True
+        # admin可以看到所有客户的订单
+        assert result.data["total"] == 2
+
+    @patch("app.tools.order_query.get_admin_api_client")
+    async def test_order_query_filters_by_customer_id_for_customer_role(self, mock_get_client, sample_tool_context):
+        """customer角色查询 → 只返回自己的订单（验证返回数据属于当前客户）"""
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value={
+            "success": True,
+            "data": {
+                "items": [
+                    {"id": "ord-mine", "orderNo": "O-MINE-001", "customerName": "我的", "customerPhone": "138", "totalAmount": 100, "status": "pending", "createdAt": "", "tenantId": 1, "customerId": sample_tool_context.user_id},
+                ],
+                "total": 1,
+            },
+        })
+        mock_get_client.return_value = mock_client
+
+        tool = OrderQueryTool()
+        result = await tool.execute(
+            context=sample_tool_context,  # user_id=user_001
+            action="list",
+        )
+
+        assert result.success is True
+        assert result.data["total"] == 1

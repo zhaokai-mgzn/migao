@@ -3,6 +3,9 @@ AI 智能客服系统 - C端售后创建 Tool (小布专用)
 
 客户通过小布创建售后工单：退换货、维修、投诉等。
 与 after_sales_manage（管理员使用）分开：客户只能创建，不能查列表/改状态。
+
+安全（#518）:
+- 创建前必须校验 order_id 属于当前客户（订单所有者验证）
 """
 from typing import Optional, Dict, Any
 from loguru import logger
@@ -24,6 +27,7 @@ class AftersaleCreateTool(BaseTool):
     - 仅 customer 角色可用
     - 创建前必须弹 confirm 卡片
     - tenant_id + user_id 双重隔离
+    - 创建前校验 order_id 属于当前客户（#518 Gap-2）
     """
 
     name = "aftersale_create"
@@ -78,6 +82,60 @@ class AftersaleCreateTool(BaseTool):
         },
         "required": ["order_id", "ticket_type", "reason"],
     }
+
+    @staticmethod
+    async def _verify_order_ownership(
+        context: ToolContext, order_id: str
+    ) -> tuple[bool, Optional[str]]:
+        """验证订单属于当前客户
+
+        调用 admin-api 查询订单详情，校验 customerId 是否匹配 context.user_id。
+
+        Args:
+            context: Tool 执行上下文
+            order_id: 订单ID
+
+        Returns:
+            tuple[bool, Optional[str]]: (是否属于当前客户, 错误信息)
+        """
+        try:
+            client = get_admin_api_client()
+            response = await client.get(
+                f"/api/admin/orders/{order_id}",
+                tenant_id=context.tenant_id,
+                user_id=context.user_id,
+            )
+
+            if not response.get("success"):
+                return False, "订单不存在或无法访问"
+
+            order_data = response.get("data", {})
+            # 兼容两种字段名
+            order_customer_id = (
+                order_data.get("customerId")
+                or order_data.get("customer_id")
+                or order_data.get("userId")
+            )
+
+            if not order_customer_id:
+                return False, "订单缺少客户信息，无法验证所有权"
+
+            if str(order_customer_id) != str(context.user_id):
+                logger.warning(
+                    f"[aftersale_create] Ownership check FAILED: "
+                    f"order_id={order_id}, order_customer={order_customer_id}, "
+                    f"request_user={context.user_id}"
+                )
+                return False, "该订单不属于您，无法创建售后工单"
+
+            return True, None
+
+        except Exception as e:
+            logger.error(
+                f"[aftersale_create] Ownership check error: order_id={order_id}, "
+                f"error={type(e).__name__}: {e}"
+            )
+            return False, f"验证订单所有权时出错，请稍后重试"
 
     async def execute(
         self,
@@ -144,6 +202,16 @@ class AftersaleCreateTool(BaseTool):
                 error="缺少原因说明",
                 message="创建售后工单时必须说明原因",
                 suggestion="请描述您遇到的问题，例如：'窗帘收到后有色差''尺寸不合适需换货'",
+            )
+
+        # Gap-2 安全加固: 校验订单属于当前客户
+        is_owner, error_msg = await self._verify_order_ownership(context, order_id)
+        if not is_owner:
+            return ToolResult(
+                success=False,
+                error=error_msg or "订单所有权校验失败",
+                message=f"创建售后工单失败：{error_msg or '该订单不属于您'}",
+                suggestion="请确认订单号是否正确。您只能对自己订单申请售后，如有疑问请联系客服",
             )
 
         try:
