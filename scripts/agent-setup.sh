@@ -124,9 +124,8 @@ chmod +x "$WORK_DIR/scripts/verify-poll.sh" 2>/dev/null || true
 # 添加 cron job — 验收（每 5 分钟，独立于 agent-poll）
 (crontab -l 2>/dev/null | grep -v "verify-poll.sh"; echo "*/5 * * * * cd $WORK_DIR && bash scripts/verify-poll.sh >> /var/log/migao-verify.log 2>&1") | crontab -
 
-# 军师自我进化 cron（每 4 小时扫实战数据，自动更新规则）
-chmod +x "$WORK_DIR/junshi/learn.py" 2>/dev/null || true
-(crontab -l 2>/dev/null | grep -v "learn.py"; echo "7 */4 * * * cd $WORK_DIR && python3 junshi/learn.py --scan >> /var/log/migao-learn.log 2>&1") | crontab -
+# learn.py 自进化已由军师 OpenClaw LLM 接管（2026-06-19），不再需要独立 cron
+# 按需使用：python3 junshi/learn.py --stats
 
 echo ""
 echo "✅ 初始化完成"

@@ -20,20 +20,36 @@
 /var/log/migao-*.log     ← Agent/军师运行日志
 ```
 
-## 三、定时任务 (crontab)
+## 三、定时任务
 
-服务器上需要 5 条 crontab（当前过渡方案，后续由 OpenClaw 内部 cron 接管）：
+### OpenClaw 内部 cron（主调度，LLM 原生）
+
+军师的核心调度由 OpenClaw gateway 的 `openclaw cron` 管理，LLM 直接执行（非 bash 脚本）：
 
 ```
-HOME=/root
-PATH=/usr/local/bin:/usr/bin:/usr/sbin:/bin
+junshi-verify-trigger   每10min (:02,:12,:22,:32,:42,:52)
+junshi-automerge        每10min (:06,:16,:26,:36,:46,:56)
+junshi-casedraft        每30min (:00, :30)
+主干同步+PR巡检          每30min
+junshi-stale-watch      每30min (:03, :33)
+junshi-hold-escalate    每3h (9:00, 12:00, 15:00, 18:00, 21:00)
+junshi-daily-report     每天 19:00
+```
 
+查看/管理：`openclaw cron list|add|edit|delete`
+
+### Linux crontab（bash 过渡方案，仅 fallback）
+
+服务器上 3 条 crontab，在 OpenClaw cron 之外提供 bash 级兜底：
+
+```
 */5 * * * * cd /opt/youke && bash scripts/agent-poll.sh >> /var/log/migao-agent.log 2>&1
 */5 * * * * cd /opt/youke && bash scripts/verify-poll.sh >> /var/log/migao-verify.log 2>&1
 */3 * * * * cd /opt/youke && bash scripts/junshi-poll.sh >> /var/log/migao-junshi.log 2>&1
-7 */4 * * * cd /opt/youke && python3 junshi/learn.py --scan >> /var/log/migao-learn.log 2>&1
-7 3 * * *   cd /opt/youke && python3 junshi/learn.py --grow --apply >> /var/log/migao-grow.log 2>&1
 ```
+
+> **注意**：junshi-poll.sh 与 OpenClaw cron (casedraft/automerge/verify-trigger) 功能重叠，作为 fallback 保留。后续 OpenClaw cron 稳定后移除。
+> **learn.py 已移除**（2026-06-19）：自进化职责由军师 LLM 直接承担，不再需要独立 cron。
 
 ## 四、脚本职责
 
@@ -101,18 +117,17 @@ PATH=/usr/local/bin:/usr/bin:/usr/sbin:/bin
 
 expect 失败 → passed=False，置信度降低。
 
-### learn.py (自进化)
+### learn.py (自进化 → 已由军师 LLM 接管)
 
-| 命令 | 频率 | 做什么 |
-|------|------|--------|
-| `--scan` | 每 4h | 扫 /opt/qa-results/ 更新统计 |
-| `--grow --apply` | 每天 3:07 | 检测关键词盲区/模板缺口/mock欺骗 → 创建 GitHub issue 下发给 Agent |
-| `--stats` | 按需 | 输出统计数据 |
+2026-06-19 起，自进化职责由军师 OpenClaw LLM 直接承担，不再需要独立 cron 触发 learn.py。
 
-`--grow` 三种生长 issue:
-1. **关键词生长**: ≥3 次出现的未覆盖关键词 → issue 让 Agent 更新 keyword map
-2. **模板缺口**: truths > asserts → 补充模板 issue
-3. **Mock 欺骗**: primary=pass + reviewer=fail → Gate 收紧 issue
+军师 LLM 在空闲周期内自动：
+1. 扫 `/opt/qa-results/` 分析近期验收结果
+2. 检测模式（漏关键词、模板缺口、mock 欺骗）
+3. 创建 issue 或直接更新 `learned_rules.json`
+4. 自改进 prompt/规则
+
+`learn.py` 脚本保留在仓库中，作为 LLM 可调用的工具（`python3 junshi/learn.py --stats` 等按需使用）。
 
 ## 五、QA Growth Gate (pr-check.yml)
 
@@ -146,7 +161,7 @@ Issue 创建 (CONTRACT_JSON + business_truths)
   → Deploy → 军师发 VERIFY_TRIGGER
   → Agent 验收 (primary + reviewer(with expect) + merge)
   → merge.py 判定: close / hold / block
-  → learn.py 分析 → 生长 action → 下次更准
+  → 军师 LLM 分析 → 生长 action → 下次更准
 ```
 
 ## 八、关键修复记录
@@ -169,8 +184,8 @@ Issue 创建 (CONTRACT_JSON + business_truths)
 
 ## 九、当前已知限制
 
-1. 军师用外部 crontab (非 OpenClaw 原生 cron) — 后续可迁移
-2. case_draft 模板匹配是关键词硬编码 — OpenClaw LLM 可替代
+1. 军师主调度已用 OpenClaw 原生 cron，bash crontab 仅作 fallback — 后续可去冗余
+2. case_draft 模板匹配是关键词硬编码 — OpenClaw LLM 已有 casedraft cron，可逐步接管
 3. gate_patterns 是死数据 — pr-check.yml 不读模板
 4. 关键词映射在 case_draft.py 和 reviewer.py 中重复维护
 5. reviewer expect 验证的 regex 无法处理嵌套 AND/OR 条件
