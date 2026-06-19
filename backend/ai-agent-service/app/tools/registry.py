@@ -399,6 +399,9 @@ def create_default_registry() -> ToolRegistry:
     from app.tools.role_manage import RoleManageTool
     from app.tools.dashboard_stats import DashboardStatsTool
     from app.tools.after_sales_manage import AfterSalesManageTool
+    from app.tools.aftersale_create import AftersaleCreateTool
+    from app.tools.aftersale_query import AftersaleQueryTool
+    from app.tools.human_handoff import HumanHandoffTool
     # [RAG 禁用] from app.tools.knowledge_manage import KnowledgeManageTool
     from app.tools.notification_manage import NotificationManageTool
     from app.tools.settings_manage import SettingsManageTool
@@ -428,6 +431,9 @@ def create_default_registry() -> ToolRegistry:
     registry.register(RoleManageTool())
     registry.register(DashboardStatsTool())
     registry.register(AfterSalesManageTool())
+    registry.register(AftersaleCreateTool())
+    registry.register(AftersaleQueryTool())
+    registry.register(HumanHandoffTool())
     # [RAG 禁用] registry.register(KnowledgeManageTool())
     registry.register(NotificationManageTool())
     registry.register(SettingsManageTool())
