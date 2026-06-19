@@ -14,10 +14,10 @@
 军师 (OpenClaw)           Agent (Claude Code)         CI (GitHub Actions)
 ─────────────────        ─────────────────────        ───────────────────
 调度 · 判定 · 汇报         写码 · TDD · 验收             Gate (测试文件存在性)
-junshi-poll.sh           agent-poll.sh                pr-check.yml
+agent-poll.sh           verify-poll.sh              pr-check.yml
 case_draft.py            dev-agent.md                 QA Growth Gate
 quality_report.py        verify-agent.md
-learn.py
+check_assert.py
 ```
 
 ## 三层验证
@@ -25,8 +25,8 @@ learn.py
 | 层 | 机制 | 防什么 |
 |----|------|--------|
 | Gate | 检查测试文件是否存在 | 偷懒不写测试 |
-| 主验收 (primary) | E2E + pytest + JUnit | 测试跑不过 |
-| 复核 (reviewer) | 独立 API + expect 规则 | mock 欺骗 |
+| LLM 验收 (verify-agent) | 调 API + check_assert.py 确定性校验 | 业务真值不通过 |
+| — | verify-agent 与 dev-agent 独立 | 双独立证据 |
 
 ## 目录
 

@@ -33,8 +33,9 @@
 ### 复现命令
 ```bash
 python3 scripts/dual_verify/case_draft.py 387
-python3 scripts/dual_verify/reviewer.py 387 --out /opt/qa-results/387/reviewer.json
-python3 scripts/dual_verify/merge.py 387 --dry-run
+# v3.0: verify-agent LLM 自主验收替代
+# python3 scripts/dual_verify/reviewer.py 387 --out /opt/qa-results/387/reviewer.json
+# python3 scripts/dual_verify/merge.py 387 --dry-run
 ```
 
 ---
@@ -73,8 +74,9 @@ python3 scripts/dual_verify/merge.py 387 --dry-run
 ```bash
 # 触发反推 + 看决策
 python3 scripts/dual_verify/case_draft.py 366
-python3 scripts/dual_verify/reviewer.py 366 --out /opt/qa-results/366/reviewer.json
-python3 scripts/dual_verify/merge.py 366 --dry-run
+# v3.0: verify-agent LLM 自主验收替代
+# python3 scripts/dual_verify/reviewer.py 366 --out /opt/qa-results/366/reviewer.json
+# python3 scripts/dual_verify/merge.py 366 --dry-run
 ```
 
 ---
@@ -178,7 +180,8 @@ security — bug
 python3 scripts/dual_verify/case_draft.py <id>
 
 # 2. 跑主验收（自动）
-python3 scripts/dual_verify/primary.py <id>
+# v3.0: verify-agent LLM 自主验收替代
+# python3 scripts/dual_verify/primary.py <id>
 
 # 3. 跑复核验收（自动）
 python3 scripts/dual_verify/reviewer.py <id>

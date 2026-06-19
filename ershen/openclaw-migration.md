@@ -8,9 +8,9 @@
 ┌─────────────────────────────────────────────────┐
 │              需要改造 (OpenClaw)                   │
 │                                                 │
-│  junshi-poll.sh ───→ OpenClaw 内部 cron          │
+│  junshi-poll.sh ───→ OpenClaw 内部 cron ✅ 已迁移  │
 │  case_draft.py   ───→ OpenClaw LLM 理解           │
-│  learn.py --grow ───→ OpenClaw LLM 生长分析        │
+│  learn.py --grow ───→ OpenClaw LLM 生长分析 ✅ 已迁移 │
 │  quality_report  ───→ OpenClaw 日报生成            │
 │  crontab 管理    ───→ OpenClaw 原生调度            │
 │                                                 │
@@ -18,9 +18,7 @@
 │              保持不动                              │
 │                                                 │
 │  agent-poll.sh       Agent 调度 (机械)            │
-│  primary.py          主验收 (机械)                │
-│  reviewer.py         复核验收 (expect验证)         │
-│  merge.py            合并判定 (规则)              │
+│  primary/reviewer/merge ───→ verify-agent LLM ✅ v3.0 │
 │  pr-check.yml        QA Growth Gate (CI)         │
 │  验证模板 YAML        数据结构                    │
 │  dev-agent.md        Agent 指令                  │
