@@ -66,19 +66,24 @@ gh issue view N --json body,comments
 
 **api 类真值**：
 ```bash
-# 1. 调 API
-RESP=$(curl -s -H "X-Service-Token: $SERVICE_TOKEN" "http://localhost:8081/api/admin/...")
+# 1. 调 API + 捕获 HTTP 状态码（v3.4: --http-status 注入）
+BODY=$(curl -s -w '%{http_code}' -H "X-Service-Token: $SERVICE_TOKEN" "http://localhost:8081/api/admin/...")
+HTTP_CODE="${BODY: -3}"   # 取最后3位=状态码
+JSON_BODY="${BODY%???}"   # 去掉状态码=纯JSON
 
-# 2. 检查 HTTP 状态（curl exit code ≠ 0 则服务不可达）
-if [ $? -ne 0 ]; then
+# 2. 检查 curl 是否成功（HTTP_CODE 为空或 000 则网络不可达）
+if [ -z "$HTTP_CODE" ] || [ "$HTTP_CODE" = "000" ]; then
   echo "API_UNREACHABLE"
   # 本条真值 = fail
 else
-  # 3. 管道进 check_assert（必须）
-  echo "$RESP" | python3 /opt/youke/scripts/dual_verify/check_assert.py \
+  # 3. 管道进 check_assert（必须，含 --http-status）
+  echo "$JSON_BODY" | python3 /opt/youke/scripts/dual_verify/check_assert.py \
+    --http-status "$HTTP_CODE" \
+    --rule "status = 200" \
     --rule "data > 0" \
     --rule "每项 status != deleted"
   # 4. 记录 check_assert 输出的完整 JSON 作为 trace
+  #    如果真值是负向测试（期望错误），用 --rule "status >= 400"
 fi
 ```
 
@@ -158,15 +163,19 @@ API_UNREACHABLE: tried /api/admin/xxx, /api/xxx → all 404
 -->
 ```
 
-## check_assert.py 规则速查
+## check_assert.py 规则速查（v3.4）
 
-| 真值模式 | --rule 语法 |
-|---------|------------|
+| 真值模式 | 用法 |
+|---------|------|
+| HTTP 状态码 | `--http-status $HTTP_CODE --rule "status = 200"` |
+| 负向测试 | `--http-status $HTTP_CODE --rule "status >= 400"` |
 | 返回数据 > N | `--rule "data > 5"` / `--rule "data >= 3"` |
 | 列表不为空 | `--rule "items 非空"` |
 | 每项字段 = 值 | `--rule "每项 status = pending"` |
 | 每项字段 != 值 | `--rule "每项 status != cancelled"` |
 | NOT IN 禁止值 | `--rule "每项 name NOT IN (test1, test2)"` |
+| 响应成功/失败 | `--rule "success = true"` / `--rule "success = false"` |
+| 错误码校验 | `--rule "error.code = VALIDATION_ERROR"` |
 | 组合 AND | `--rule "每项 status = pending AND 每项 hasProcessing = true"` |
 
 ## 边界

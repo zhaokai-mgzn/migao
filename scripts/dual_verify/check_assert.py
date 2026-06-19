@@ -1,20 +1,22 @@
 #!/usr/bin/env python3
 """
-确定性断言校验工具 v3.3 — verify-agent 的唯一校验层。
+确定性断言校验工具 v3.4 — verify-agent 的唯一校验层。
 
 verify-agent 将 curl 返回的 JSON 通过管道传入本工具做逐项校验。
 输出确定性 JSON，不受 LLM 波动影响。check_assert 说 fail 就是 fail。
 
 用法:
-  # 正向断言
+  # 正向断言（JSON body 字段）
   curl -s ... | python3 check_assert.py --rule "data > 0" --rule "items 非空"
   curl -s ... | python3 check_assert.py --rule "每项 status = pending"
 
-  # HTTP 状态码断言（v3.3 新增）
-  curl -s ... | python3 check_assert.py --rule "status = 200"
-  curl -s ... | python3 check_assert.py --rule "status >= 400"   # 负向测试
+  # HTTP 状态码断言 — 必须用 --http-status 注入（v3.4）
+  BODY=$(curl -s -w '%{http_code}' "URL")
+  HTTP_CODE="${BODY: -3}"
+  echo "${BODY%???}" | python3 check_assert.py --http-status $HTTP_CODE --rule "status = 200"
+  echo "${BODY%???}" | python3 check_assert.py --http-status $HTTP_CODE --rule "status >= 400"
 
-  # 响应结构断言（v3.3 新增）
+  # 响应结构断言
   curl -s ... | python3 check_assert.py --rule "success = true"
   curl -s ... | python3 check_assert.py --rule "error.code = VALIDATION_ERROR"
 
@@ -48,24 +50,22 @@ def check_data_op(data: dict, rule: str) -> "tuple[bool, str]":
 
 
 def check_status(data: dict, rule: str) -> "tuple[bool, str]":
-    """HTTP 状态码校验: status = 200 / status >= 400 / status != 500"""
+    """HTTP 状态码校验: status = 200 / status >= 400 / status != 500
+    状态码由 --http-status 注入到 JSON 的 _http_status 字段。
+    """
     rule_lower = rule.lower().strip()
     m = re.match(r"status\s*(>=|<=|>|<|!=|==|=)\s*(\d+)", rule_lower)
     if not m:
         return False, f"无法解析: {rule}"
     op, expected = m.group(1), int(m.group(2))
-    # HTTP 响应可能包含 status 字段（由调用方在 curl 后注入），
-    # 也可能在 error.code 或顶层 code 字段
-    actual = data.get("status")
+    actual = data.get("_http_status")
     if actual is None:
-        actual = data.get("code")
-    if actual is None:
-        return False, f"响应中无 status/code 字段，无法校验"
+        return False, f"_http_status 未注入，请用 --http-status 参数传入 HTTP 状态码"
     if not isinstance(actual, (int, float)):
         try:
             actual = int(actual)
         except (ValueError, TypeError):
-            return False, f"status 字段不是数值 (实际: {type(actual).__name__} = {actual})"
+            return False, f"_http_status 不是数值 (实际: {type(actual).__name__} = {actual})"
     if op in (">",): ok = actual > expected
     elif op in (">=",): ok = actual >= expected
     elif op in ("<",): ok = actual < expected
@@ -84,7 +84,6 @@ def check_response_field(data: dict, rule: str) -> "tuple[bool, str]":
         return False, f"无法解析: {rule}"
     field, op, expected_str = m.group(1), m.group(2), m.group(3).strip()
 
-    # 支持嵌套字段如 error.code
     if "." in field:
         parts = field.split(".")
         val = data
@@ -96,18 +95,13 @@ def check_response_field(data: dict, rule: str) -> "tuple[bool, str]":
     if val is None:
         return False, f"字段 {field} 不存在或为 null"
 
-    # Boolean handling
     if isinstance(val, bool) or expected_str.lower() in ("true", "false"):
         expected_bool = expected_str.lower() == "true"
-        if op in ("==", "="):
-            ok = bool(val) == expected_bool
-        elif op == "!=":
-            ok = bool(val) != expected_bool
-        else:
-            ok = False
+        if op in ("==", "="): ok = bool(val) == expected_bool
+        elif op == "!=": ok = bool(val) != expected_bool
+        else: ok = False
         return ok, f"{field}={val} {op} {expected_str}"
 
-    # String comparison
     sv = str(val)
     ev = expected_str.strip("'\"")
     if op in ("==", "="): ok = sv == ev
@@ -160,7 +154,6 @@ def check_each(data: dict, rule: str) -> "tuple[bool, str]":
             return False, f"{len(failures)}/{len(items)} 项 {field} 在禁止值中: {failures[:3]}"
         return True, f"全部 {len(items)} 项 {field} NOT IN ({', '.join(vals)})"
 
-    # 数值或字符串比较
     try:
         expected_val = float(val_str) if val_str.replace(".", "").replace("-", "").isdigit() else val_str.strip("'\"")
     except ValueError:
@@ -192,7 +185,6 @@ def check_each(data: dict, rule: str) -> "tuple[bool, str]":
 def check_one(data: dict, rule: str) -> "tuple[bool, str]":
     """根据规则类型分发"""
     r = rule.strip()
-    # 组合规则 AND 分解
     if " AND " in r.upper() or " and " in r:
         sub_results = []
         for sub in re.split(r"\s+AND\s+|\s+and\s+", r, flags=re.IGNORECASE):
@@ -203,7 +195,6 @@ def check_one(data: dict, rule: str) -> "tuple[bool, str]":
         detail = " AND ".join(sr[1] for sr in sub_results)
         return all_ok, detail
 
-    # 按模式匹配分发
     if re.match(r"^status\s*(>=|<=|>|<|!=|==|=)\s*\d+", r.lower()):
         return check_status(data, r)
     if re.match(r"^(success|error\.\w+)\s*(>=|<=|>|<|!=|==|=)", r, re.IGNORECASE):
@@ -223,9 +214,11 @@ def main():
         description="确定性断言校验 — stdin 接 curl JSON 输出，--rule 定义校验规则"
     )
     parser.add_argument("--rule", action="append", default=[],
-                        help="校验规则（可重复）。支持: data>N, items非空, 每项 field=value, 每项 field NOT IN(...)")
+                        help="校验规则（可重复）。支持: data>N, items非空, 每项 field=value, status=N, success=true/false, error.code=VALUE")
+    parser.add_argument("--http-status", type=int, default=None,
+                        help="HTTP 状态码（用于 status = N 规则）。curl 返回头不在 JSON body 中，需单独注入。")
     parser.add_argument("--quiet", action="store_true",
-                        help="静默模式，输出干净 JSON（不包含空 API 响应时的警告）")
+                        help="静默模式")
     parser.add_argument("--infile", type=str,
                         help="从文件读 JSON（不通过管道时使用）")
     args = parser.parse_args()
@@ -234,7 +227,6 @@ def main():
         print(json.dumps({"all_pass": False, "error": "至少需要一条 --rule"}, ensure_ascii=False))
         sys.exit(2)
 
-    # 读取输入
     if args.infile:
         with open(args.infile) as f:
             raw = f.read()
@@ -242,8 +234,7 @@ def main():
         raw = sys.stdin.read()
 
     if not raw.strip():
-        print(json.dumps({"all_pass": False, "error": "stdin 为空，curl 可能失败或未返回数据"},
-                         ensure_ascii=False))
+        print(json.dumps({"all_pass": False, "error": "stdin 为空，curl 可能失败或未返回数据"}, ensure_ascii=False))
         sys.exit(1)
 
     try:
@@ -255,7 +246,10 @@ def main():
         }, ensure_ascii=False))
         sys.exit(1)
 
-    # 逐条规则校验
+    # 注入 HTTP 状态码到 JSON（v3.4）
+    if args.http_status is not None:
+        data["_http_status"] = args.http_status
+
     results = []
     for rule in args.rule:
         passed, detail = check_one(data, rule)
