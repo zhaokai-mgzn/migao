@@ -127,7 +127,7 @@ git pull origin main 2>&1 | tail -1
 # 创建 issue 专用分支
 ISSUE_TITLE=$(gh issue view "$ISSUE_ID" --json title --jq '.title' 2>/dev/null | sed 's/[^a-zA-Z0-9一-鿿 -]//g' | tr ' ' '-' | head -c 40)
 BRANCH="feat/issue-${ISSUE_ID}-${ISSUE_TITLE}"
-git checkout -b "$BRANCH" 2>/dev/null || git checkout "$BRANCH" 2>/dev/null
+git checkout -B "$BRANCH" 2>/dev/null
 log "🌿 分支: $BRANCH"
 
 # ── 按需启动服务，任务结束后自动关闭 ──
