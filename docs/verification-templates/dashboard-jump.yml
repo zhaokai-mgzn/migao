@@ -14,11 +14,6 @@ primary_specs:
   - frontend/admin-web/tests/unit/pages/dashboard.test.tsx
 
 # Gate 模式 — QA Growth Gate 检查这些文件变更时，必须有对应的测试文件
-gate_patterns:
-  - "frontend/admin-web/src/app/(dashboard)/dashboard/page.tsx"
-  - "frontend/admin-web/src/app/(dashboard)/orders/page.tsx"
-  - "backend/admin-api/src/main/java/com/migao/admin/controller/DashboardController.java"
-
 reviewer_asserts:
   # 待发货订单数
   - API: GET /api/admin/dashboard/pending-shipment-count

@@ -13,11 +13,6 @@ primary_specs:
   - tests/e2e/specs/auth/register.spec.ts
   - backend/admin-api/src/test/java/com/migao/admin/controller/AuthIntegrationTest.java
 
-gate_patterns:
-  - "frontend/admin-web/src/app/login/page.tsx"
-  - "backend/admin-api/src/main/java/com/migao/admin/controller/AuthController.java"
-  - "backend/admin-api/src/main/java/com/migao/admin/service/AuthService.java"
-
 reviewer_asserts:
   - API: POST /api/auth/sms/login
     expect: response.data.token 非空 AND response.data.user 含 id/name/roles

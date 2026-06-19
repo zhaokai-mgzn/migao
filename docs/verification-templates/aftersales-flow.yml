@@ -16,11 +16,6 @@ primary_specs:
   - tests/e2e/specs/after-sales/after-sales-detail.spec.ts
   - backend/admin-api/src/test/java/com/migao/admin/controller/AfterSalesControllerTest.java
 
-gate_patterns:
-  - "frontend/admin-web/src/app/*/after-sales/page.tsx"
-  - "backend/admin-api/src/main/java/com/migao/admin/controller/AfterSalesController.java"
-  - "backend/admin-api/src/main/java/com/migao/admin/service/AfterSalesTicketService.java"
-
 reviewer_asserts:
   - API: GET /api/admin/aftersales/{id}
     expect: data.status IN (待处理,处理中,已完成,已关闭) AND data.orderNo 非空 AND data.timeline 正序

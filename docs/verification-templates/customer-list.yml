@@ -12,11 +12,6 @@ primary_specs:
   - tests/e2e/specs/customers/customer-detail.spec.ts
   - backend/admin-api/src/test/java/com/migao/admin/controller/CustomerControllerTest.java
 
-gate_patterns:
-  - "frontend/admin-web/src/app/*/customers/page.tsx"
-  - "backend/admin-api/src/main/java/com/migao/admin/controller/CustomerController.java"
-  - "backend/admin-api/src/main/java/com/migao/admin/service/CustomerService.java"
-
 reviewer_asserts:
   - API: GET /api/admin/customers?keyword=13800138000
     expect: items 至少 1 条，手机号或姓名匹配关键词

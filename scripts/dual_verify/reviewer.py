@@ -175,8 +175,22 @@ def validate_expect(body_text: str, expect_rules: list) -> "tuple[bool, str]":
     results = []
     for rule in expect_rules:
         rule_str = rule if isinstance(rule, str) else rule.get("expect", str(rule))
-        passed, detail = _check_one_expect(data, rule_str)
-        results.append((passed, detail))
+
+        # AND 分解："A AND B AND C" → [A, B, C] 分别检查
+        sub_rules = re.split(r"\s+AND\s+|\s+and\s+|\s*&&\s*", rule_str, flags=re.IGNORECASE) if " AND " in rule_str.upper() else [rule_str]
+
+        sub_results = []
+        for sr in sub_rules:
+            sr = sr.strip()
+            if not sr:
+                continue
+            p, d = _check_one_expect(data, sr)
+            sub_results.append((p, d))
+
+        # 所有子规则都通过才算通过
+        all_sub_pass = all(r[0] for r in sub_results)
+        sub_detail = " AND ".join([f"{'✅' if r[0] else '❌'} {r[1]}" for r in sub_results])
+        results.append((all_sub_pass, sub_detail if len(sub_results) > 1 else sub_results[0][1]))
 
     all_pass = all(r[0] for r in results)
     detail_parts = []

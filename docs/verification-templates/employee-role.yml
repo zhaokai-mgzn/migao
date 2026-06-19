@@ -13,11 +13,6 @@ primary_specs:
   - tests/e2e/specs/admin/roles.spec.ts
   - backend/admin-api/src/test/java/com/migao/admin/controller/AdminUserControllerTest.java
 
-gate_patterns:
-  - "frontend/admin-web/src/app/*/employees/page.tsx"
-  - "frontend/admin-web/src/app/*/roles/page.tsx"
-  - "backend/admin-api/src/main/java/com/migao/admin/controller/AdminUserController.java"
-
 reviewer_asserts:
   - API: GET /api/admin/employees
     expect: items 中每条含 phone/position/permissions 字段

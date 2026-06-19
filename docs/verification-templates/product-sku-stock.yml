@@ -11,11 +11,6 @@ primary_specs:
   - tests/e2e/specs/products/product-list.spec.ts
   - backend/admin-api/src/test/java/com/migao/admin/controller/ProductControllerTest.java
 
-gate_patterns:
-  - "frontend/admin-web/src/app/*/products/page.tsx"
-  - "backend/admin-api/src/main/java/com/migao/admin/controller/ProductController.java"
-  - "backend/admin-api/src/main/java/com/migao/admin/service/ProductService.java"
-
 reviewer_asserts:
   - API: GET /api/admin/products/{id}
   - API: GET /api/admin/products/low-stock-by-color?threshold=100

@@ -16,11 +16,6 @@ primary_specs:
   - tests/e2e/specs/quality/cross-page-consistency.spec.ts
   - tests/e2e/specs/quality/anti-placeholder.spec.ts
 
-gate_patterns:
-  - "frontend/admin-web/src/app/**/*.tsx"
-  - "backend/admin-api/src/main/java/com/migao/admin/**/*.java"
-  - "backend/ai-agent-service/app/**/*.py"
-
 reviewer_asserts:
   - API: GET /api/admin/dashboard/stats
     expect: data 非空

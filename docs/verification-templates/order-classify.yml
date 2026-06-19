@@ -13,11 +13,6 @@ primary_specs:
   - tests/e2e/specs/dashboard/dashboard.spec.ts
   - backend/admin-api/src/test/java/com/migao/admin/controller/OrderControllerTest.java
 
-gate_patterns:
-  - "frontend/admin-web/src/app/*/orders/page.tsx"
-  - "backend/admin-api/src/main/java/com/migao/admin/controller/OrderController.java"
-  - "backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java"
-
 reviewer_asserts:
   - API: GET /api/admin/orders?category=含加工订单
     expect: items 中每条 status NOT IN (已关闭, 退款售后) AND has_processing=true

@@ -11,11 +11,6 @@ primary_specs:
   - tests/e2e/specs/knowledge/knowledge.spec.ts
   - backend/ai-agent-service/tests/test_knowledge_search.py
 
-gate_patterns:
-  - "frontend/admin-web/src/app/*/knowledge/page.tsx"
-  - "backend/ai-agent-service/app/tools/knowledge_search.py"
-  - "backend/ai-agent-service/app/graph/skills/knowledge_skill.py"
-
 reviewer_asserts:
   - API: POST /api/knowledge/search
     expect: results 非空 AND 每条含 doc_id/title/snippet

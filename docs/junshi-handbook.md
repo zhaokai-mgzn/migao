@@ -78,7 +78,7 @@ PATH=/usr/local/bin:/usr/bin:/usr/sbin:/bin
 
 ### reviewer.py expect 验证 (v2)
 
-不再只看 HTTP 200。解析模板 `expect:` 字段，支持 6 种验证模式：
+不再只看 HTTP 200。解析模板 `expect:` 字段，支持 AND 组合条件 + 6 种验证模式：
 - `data > N` / `data >= N` / `<` / `<=` / `==`
 - `items 非空` / `data 非空`
 - `每项 field = value` / `!=` / `<` / `>`
@@ -119,7 +119,6 @@ PR 阶段按文件类型检查测试文件是否存在于 diff 中：
 
 模板生长: quality_gate 拦截 → 军师下发任务 → Agent 补充/新建模板 → PR → 下次覆盖更全。
 
-注意: `gate_patterns` 字段当前未被 pr-check.yml 读取（死数据）。
 
 ## 七、完整闭环
 
