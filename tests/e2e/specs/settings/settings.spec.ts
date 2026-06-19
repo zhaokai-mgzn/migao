@@ -1,13 +1,37 @@
 import { test, expect } from '@playwright/test'
 import { SettingsPage } from '../../pages/settings/settings.page'
 
-test.describe('系统设置页面', () => {
+test.describe('系统设置页面 — AI 配置已迁移 (Issue #502)', () => {
   let page: SettingsPage
 
   test.beforeEach(async ({ page: p }) => {
     page = new SettingsPage(p)
     await page.goto()
     await page.waitForLoad()
+  })
+
+  // ── 迁移提示 ──
+
+  test('页面顶部显示 AI 配置迁移提示', async () => {
+    await expect(page.migrationNotice).toBeVisible()
+    await expect(page.page.getByText(/机器人设置/)).toBeVisible()
+  })
+
+  test('迁移提示链接跳转到机器人设置', async () => {
+    await expect(page.migrationLink).toBeVisible()
+    await expect(page.migrationLink).toHaveAttribute('href', '/chat/config')
+  })
+
+  // ── AI 配置 Tab 已移除 ──
+
+  test('不应该存在 AI 配置 tab 按钮', async () => {
+    const aiConfigBtn = page.page.getByRole('button', { name: /AI 配置/ })
+    await expect(aiConfigBtn).not.toBeVisible()
+  })
+
+  test('不应该存在 AI 助手名称输入框', async () => {
+    const botNameInput = page.page.locator('input[placeholder="小布"]')
+    await expect(botNameInput).not.toBeVisible()
   })
 
   // ── 基本设置 Tab ──
@@ -59,35 +83,6 @@ test.describe('系统设置页面', () => {
     await page.companyNameInput.fill('新企业名称')
     await page.saveBasicBtn.click()
     // 应该触发 toast 或 API 调用
-    const toast = page.page.locator('[data-sonner-toast]')
-    await expect(toast).toBeVisible({ timeout: 10_000 })
-  })
-
-  // ── AI 配置 Tab ──
-
-  test('AI 配置 Tab 可切换', async () => {
-    await page.aiConfigTab.click()
-    await expect(page.page.getByText('AI 配置').last()).toBeVisible()
-  })
-
-  test('AI 助手名称输入框可编辑', async () => {
-    await page.aiConfigTab.click()
-    await expect(page.botNameInput).toBeVisible()
-    await page.botNameInput.fill('小米宝')
-    await expect(page.botNameInput).toHaveValue('小米宝')
-  })
-
-  test('欢迎语文本框可编辑', async () => {
-    await page.aiConfigTab.click()
-    await expect(page.greetingTextarea).toBeVisible()
-    await page.greetingTextarea.fill('您好，欢迎咨询！')
-    await expect(page.greetingTextarea).toHaveValue('您好，欢迎咨询！')
-  })
-
-  test('保存 AI 配置按钮可提交', async () => {
-    await page.aiConfigTab.click()
-    await page.botNameInput.fill('测试Bot')
-    await page.saveAiBtn.click()
     const toast = page.page.locator('[data-sonner-toast]')
     await expect(toast).toBeVisible({ timeout: 10_000 })
   })

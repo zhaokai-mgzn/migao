@@ -1,24 +1,34 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Building2, Bot, Shield, Save, Eye, EyeOff } from 'lucide-react'
+import { Building2, Shield, Save, Eye, EyeOff, ArrowRight } from 'lucide-react'
 import Image from 'next/image'
+import Link from 'next/link'
+import { useSearchParams, useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Button, Badge } from '@/components/ui'
 import { settingsApi } from '@/lib/api'
-import type { AiConfig, SystemSettings, ChangePasswordParams, LoginLog } from '@/types'
+import type { SystemSettings, ChangePasswordParams, LoginLog } from '@/types'
 import dayjs from 'dayjs'
 
-type SettingsTab = 'basic' | 'ai' | 'security'
+type SettingsTab = 'basic' | 'security'
 
 const TABS: { key: SettingsTab; label: string; icon: typeof Building2 }[] = [
   { key: 'basic', label: '基本设置', icon: Building2 },
-  { key: 'ai', label: 'AI 配置', icon: Bot },
   { key: 'security', label: '账户安全', icon: Shield },
 ]
 
 export default function SettingsPage() {
+  const searchParams = useSearchParams()
+  const router = useRouter()
   const [activeTab, setActiveTab] = useState<SettingsTab>('basic')
+
+  // 旧链接 /settings?tab=ai → 重定向到机器人设置
+  useEffect(() => {
+    if (searchParams.get('tab') === 'ai') {
+      router.replace('/chat/config')
+    }
+  }, [searchParams, router])
 
   // 基本设置
   const [settings, setSettings] = useState<SystemSettings>({
@@ -29,15 +39,6 @@ export default function SettingsPage() {
   })
   const [savingSettings, setSavingSettings] = useState(false)
   const [loadingSettings, setLoadingSettings] = useState(false)
-
-  // AI 配置
-  const defaultAiConfig: AiConfig = {
-    botName: '小布',
-    greetingTemplate: '',
-  }
-  const [aiConfig, setAiConfig] = useState<AiConfig>(defaultAiConfig)
-  const [savingAiConfig, setSavingAiConfig] = useState(false)
-  const [loadingAiConfig, setLoadingAiConfig] = useState(false)
 
   // 密码
   const [passwordForm, setPasswordForm] = useState<ChangePasswordParams>({
@@ -67,21 +68,6 @@ export default function SettingsPage() {
     }
   }, [])
 
-  // 加载 AI 配置
-  const loadAiConfig = useCallback(async () => {
-    setLoadingAiConfig(true)
-    try {
-      const res = await settingsApi.getAiConfig()
-      if (res.data.data) {
-        setAiConfig({ ...defaultAiConfig, ...res.data.data })
-      }
-    } catch (error) {
-      toast.error('加载 AI 配置失败')
-    } finally {
-      setLoadingAiConfig(false)
-    }
-  }, [])
-
   // 加载登录日志
   const loadLoginLogs = useCallback(async () => {
     setLoadingLogs(true)
@@ -99,12 +85,10 @@ export default function SettingsPage() {
   useEffect(() => {
     if (activeTab === 'basic') {
       loadSettings()
-    } else if (activeTab === 'ai') {
-      loadAiConfig()
     } else if (activeTab === 'security') {
       loadLoginLogs()
     }
-  }, [activeTab, loadSettings, loadAiConfig, loadLoginLogs])
+  }, [activeTab, loadSettings, loadLoginLogs])
 
   const handleSaveSettings = async () => {
     if (!settings.companyName.trim()) {
@@ -119,18 +103,6 @@ export default function SettingsPage() {
       toast.error('保存失败')
     } finally {
       setSavingSettings(false)
-    }
-  }
-
-  const handleSaveAiConfig = async () => {
-    setSavingAiConfig(true)
-    try {
-      await settingsApi.updateAiConfig(aiConfig)
-      toast.success('AI 配置已保存')
-    } catch (error) {
-      toast.error('保存失败')
-    } finally {
-      setSavingAiConfig(false)
     }
   }
 
@@ -156,7 +128,23 @@ export default function SettingsPage() {
     <div className="p-6">
       <div className="mb-6">
         <h1 className="text-xl font-semibold text-gray-900">系统设置</h1>
-        <p className="text-sm text-gray-500 mt-1">配置系统参数、AI 模型和账户安全</p>
+        <p className="text-sm text-gray-500 mt-1">配置系统参数和账户安全</p>
+
+        {/* 迁移提示：AI 配置已迁至机器人设置 */}
+        <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-blue-700">
+              AI 配置功能已迁移至「机器人设置」
+            </span>
+          </div>
+          <Link
+            href="/chat/config"
+            className="flex items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-800 transition-colors"
+          >
+            前往配置
+            <ArrowRight className="w-4 h-4" />
+          </Link>
+        </div>
       </div>
 
       <div className="flex gap-6">
@@ -254,47 +242,6 @@ export default function SettingsPage() {
                   <Button onClick={handleSaveSettings} loading={savingSettings}>
                     <Save className="w-4 h-4 mr-1.5" />
                     保存设置
-                  </Button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* AI 配置 */}
-          {activeTab === 'ai' && (
-            <div className="bg-white border border-gray-200 rounded-lg p-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-6">AI 配置</h2>
-              <div className="space-y-6 max-w-lg">
-                {/* AI 助手名称 */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">AI 助手名称</label>
-                  <input
-                    type="text"
-                    className="w-full h-9 px-3 rounded border border-gray-300 text-sm placeholder:text-gray-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
-                    placeholder="小布"
-                    value={aiConfig.botName}
-                    onChange={(e) => setAiConfig({ ...aiConfig, botName: e.target.value })}
-                  />
-                  <p className="text-xs text-gray-500 mt-1.5">客户在对话中看到的 AI 助手名称</p>
-                </div>
-
-                {/* 欢迎语 */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">欢迎语</label>
-                  <textarea
-                    rows={3}
-                    className="w-full px-3 py-2 rounded border border-gray-300 text-sm placeholder:text-gray-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 resize-none"
-                    placeholder="您好，我是小布，有什么可以帮您？"
-                    value={aiConfig.greetingTemplate}
-                    onChange={(e) => setAiConfig({ ...aiConfig, greetingTemplate: e.target.value })}
-                  />
-                  <p className="text-xs text-gray-500 mt-1.5">客户发起对话时看到的第一条消息</p>
-                </div>
-
-                <div className="pt-4">
-                  <Button onClick={handleSaveAiConfig} loading={savingAiConfig}>
-                    <Save className="w-4 h-4 mr-1.5" />
-                    保存配置
                   </Button>
                 </div>
               </div>
