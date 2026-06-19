@@ -38,10 +38,20 @@ interface FormData {
   applicableProductCategories: string[]
 }
 
+// 计价方式 → 单位映射
+const PRICING_UNIT_MAP: Record<string, string> = {
+  per_meter: '米',
+  per_piece: '套',
+  fixed: '件',
+  per_area: '平方米',
+}
+
 // 计价方式选项
 const PRICING_METHOD_OPTIONS = [
-  { value: 'per_meter', label: '按购买米数计价' },
-  { value: 'per_piece', label: '按购买套数计价' },
+  { value: 'per_meter', label: '按购买米数计价（单价 × 米数）' },
+  { value: 'per_piece', label: '按购买套数计价（单价 × 件数）' },
+  { value: 'fixed', label: '固定一口价（不论尺寸/数量）' },
+  { value: 'per_area', label: '按面积计价（单价 × 宽 × 高 × 数量）' },
 ]
 
 // 优惠类型选项
@@ -190,12 +200,13 @@ export default function ProcessingPage() {
     setSaving(true)
     try {
       const defaultCategoryId = categories[0]?.id || 'default'
+      const pricingMethod = form.pricingMethod as PricingMethod
       const payload = {
         name: form.name.trim(),
         categoryId: defaultCategoryId,
-        pricingMethod: form.pricingMethod as PricingMethod,
+        pricingMethod,
         unitPrice: parseFloat(form.unitPrice),
-        unit: form.pricingMethod === 'per_meter' ? '米' : '套',
+        unit: PRICING_UNIT_MAP[pricingMethod] || '套',
         status: 'active' as const,
         applicableProductCategories: form.applicableProductCategories,
       }
