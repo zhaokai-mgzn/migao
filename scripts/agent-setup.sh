@@ -125,14 +125,13 @@ chmod +x "$WORK_DIR/scripts/verify-poll.sh" 2>/dev/null || true
 (crontab -l 2>/dev/null | grep -v "verify-poll.sh"; echo "*/5 * * * * cd $WORK_DIR && bash scripts/verify-poll.sh >> /var/log/migao-verify.log 2>&1") | crontab -
 
 # learn.py 自进化已由军师 OpenClaw LLM 接管（2026-06-19），不再需要独立 cron
-# 按需使用：python3 junshi/learn.py --stats
 
 echo ""
 echo "✅ 初始化完成"
 echo "  工作目录: $WORK_DIR"
-echo "  cron: 每 ${CRON_INTERVAL} 分钟扫一次 GitHub (agent-poll) + 验收 (verify-poll)"
-echo "  cron: 每 4 小时自我进化 (junshi/learn.py --scan)"
-echo "  日志: /var/log/migao-agent.log, /var/log/migao-verify.log, /var/log/migao-learn.log"
+echo "  crontab: agent-poll.sh (写码) + verify-poll.sh (验收) — 各每 5 分钟"
+echo "  主调度: OpenClaw cron（军师 LLM 原生），详见 ershen/handbook.md"
+echo "  日志: /var/log/migao-agent.log, /var/log/migao-verify.log"
 echo ""
 echo "手动触发: cd $WORK_DIR && bash scripts/agent-poll.sh   # 写码"
 echo "手动触发: cd $WORK_DIR && bash scripts/verify-poll.sh  # 验收"

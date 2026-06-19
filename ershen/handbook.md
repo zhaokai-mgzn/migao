@@ -22,34 +22,109 @@
 
 ## 三、定时任务
 
-### OpenClaw 内部 cron（主调度，LLM 原生）
+### OpenClaw 原生 cron（主调度 — 军师 LLM 直接执行）
 
-军师的核心调度由 OpenClaw gateway 的 `openclaw cron` 管理，LLM 直接执行（非 bash 脚本）：
+二郎神所有调度逻辑由 OpenClaw gateway 的 `openclaw cron` 管理。LLM 直接执行，不依赖 bash 脚本。
 
+**当前 7 条 cron job：**
+
+| # | Job Name | Schedule | 职责 |
+|---|----------|----------|------|
+| 1 | `junshi-casedraft` | `0,30 * * * *` (每30min) | 扫 needs-verification issue，LLM 反推 case 草稿 DRAFT_JSON |
+| 2 | `junshi-automerge` | `6,16,26,36,46,56 * * * *` (每10min) | 扫 open PR，CI/issue/范围/E2E 四条件 → squash merge |
+| 3 | `junshi-verify-trigger` | `12,22,32,42,52,02 * * * *` (每10min) | 扫已 merge PR，deploy 完成后发 VERIFY_TRIGGER |
+| 4 | `junshi-stale-watch` | `3,33 * * * *` (每30min) | 巡检 needs-verification stale (>3天)，评论催促 |
+| 5 | `junshi-hold-escalate` | `0 9,12,15,18,21 * * *` (每3h) | 扫 hold/auto-fail 积压 (>7天)，分级升级 P0/P1/P2 |
+| 6 | `junshi-daily-report` | `0 19 * * *` (每天19:00) | 质量日报，追加到日报 issue + 钉钉摘要 |
+| 7 | `主干同步+PR巡检` | `*/30 * * * *` (每30min) | git 主干同步 + open PR 红牌识别 + 静默/汇报 |
+
+**迁移服务器时重建步骤：**
+
+```bash
+# 前提：OpenClaw gateway 已运行，gh CLI 已认证，/opt/youke 已 clone
+
+# 1. casedraft — 扫新 issue 反推草稿
+openclaw cron add \
+  --name junshi-casedraft \
+  --schedule "0,30 * * * *" --tz Asia/Shanghai \
+  --prompt "你是二郎神体系的军师。扫 needs-verification issue → LLM 反推 case 草稿 (DRAFT_JSON)。
+  1. gh issue list --label needs-verification --state open --json number,title,body,comments --limit 10
+  2. 过滤 comments 里无 DRAFT_JSON 的
+  3. 读 /opt/youke/docs/verification-templates/ 匹配模板
+  4. 写 3-5 条业务真值（业务语言，不带 SQL/API）
+  5. 生成 DRAFT_JSON 评论（<!-- DRAFT_JSON {...} -->）
+  6. 未匹配模板 → 创建 '新建模板: {slug}' issue
+  边界：不写代码不跑测试。gh 命令失败 → 跳过+报告。"
+
+# 2. automerge — 扫 PR 自动合并
+openclaw cron add \
+  --name junshi-automerge \
+  --schedule "6,16,26,36,46,56 * * * *" --tz Asia/Shanghai \
+  --prompt "你是二郎神体系的军师。扫 open PR → 满足条件则 squash merge。
+  条件：① CI 全部 COMPLETED+SUCCESS ② 关联 issue（Fixes/Closes #xxx）
+  ③ 非 infra/config 纯变更 ④ E2E 有对应 spec
+  gh pr list --state open --json number,title,labels,checks,closingIssuesReferences
+  gh pr merge <num> --squash --auto
+  边界：不满足条件不 merge。merge 失败 → 加 junshi-error label。"
+
+# 3. verify-trigger — deploy 后发验收触发
+openclaw cron add \
+  --name junshi-verify-trigger \
+  --schedule "12,22,32,42,52,02 * * * *" --tz Asia/Shanghai \
+  --prompt "你是二郎神体系的军师。扫已 merge PR → deploy 完成后发 VERIFY_TRIGGER。
+  1. gh pr list --state merged --json number,title,closingIssuesReferences,mergedAt --limit 20
+  2. 找关联 issue，跳过已有 VERIFY_TRIGGER 的
+  3. 检查 deploy workflow (gh run list --workflow=deploy-*.yml)
+  4. deploy 成功 → 发 VERIFY_TRIGGER 评论
+  边界：只触发不验收。deploy 失败 → 不触发，加 junshi-error label。"
+
+# 4. stale-watch — 巡检停滞 issue
+openclaw cron add \
+  --name junshi-stale-watch \
+  --schedule "3,33 * * * *" --tz Asia/Shanghai \
+  --prompt "你是二郎神体系的军师。巡检 needs-verification stale (>3天无进展)。
+  gh issue list --label needs-verification --state open --json number,title,updatedAt
+  超过3天 → 评论催促。超过7天 → 升级 block/need-human。
+  边界：只巡检不写码。"
+
+# 5. hold-escalate — 积压升级
+openclaw cron add \
+  --name junshi-hold-escalate \
+  --schedule "0 9,12,15,18,21 * * *" --tz Asia/Shanghai \
+  --prompt "你是二郎神体系的军师。扫 hold/auto-fail 积压 (>7天) → 分级升级。
+  P0 (订单/支付) → block + @ 凯总。P1 (商品/客户) → need-human。P2 → 评论提醒。
+  边界：只升级不处理。"
+
+# 6. daily-report — 质量日报
+openclaw cron add \
+  --name junshi-daily-report \
+  --schedule "0 19 * * *" --tz Asia/Shanghai \
+  --prompt "你是二郎神体系的军师。每天 19:00 生成质量日报。
+  1. 统计当日 issue/PR/验收数据
+  2. 汇总 primary/reviewer 结果
+  3. 追加到日报 issue + 钉钉摘要"
+
+# 7. 主干同步+PR巡检
+openclaw cron add \
+  --name "主干同步+PR巡检" \
+  --schedule "*/30 * * * *" --tz Asia/Shanghai \
+  --prompt "你是二郎神体系的军师。每30分钟同步主干 + 巡检 open PR。
+  阶段1：git fetch + git status，干净则 pull --ff-only。有冲突则 stash 后 pull 再 stash pop。
+  阶段2：gh pr list --state open，红牌识别（关联 #387/#388/#389/#390 的 PR，涉及 controller/service 的 P0 PR）。有动作才汇报。
+  边界：不 force push / reset --hard。不审 PR。不发空汇报。"
 ```
-junshi-verify-trigger   每10min (:02,:12,:22,:32,:42,:52)
-junshi-automerge        每10min (:06,:16,:26,:36,:46,:56)
-junshi-casedraft        每30min (:00, :30)
-主干同步+PR巡检          每30min
-junshi-stale-watch      每30min (:03, :33)
-junshi-hold-escalate    每3h (9:00, 12:00, 15:00, 18:00, 21:00)
-junshi-daily-report     每天 19:00
-```
 
-查看/管理：`openclaw cron list|add|edit|delete`
+### Linux crontab（bash 兜底）
 
-### Linux crontab（bash 过渡方案，仅 fallback）
-
-服务器上 3 条 crontab，在 OpenClaw cron 之外提供 bash 级兜底：
+OpenClaw cron 为主，linux crontab 仅保留 Agent 写码和验收两条：
 
 ```
 */5 * * * * cd /opt/youke && bash scripts/agent-poll.sh >> /var/log/migao-agent.log 2>&1
 */5 * * * * cd /opt/youke && bash scripts/verify-poll.sh >> /var/log/migao-verify.log 2>&1
-*/3 * * * * cd /opt/youke && bash scripts/junshi-poll.sh >> /var/log/migao-junshi.log 2>&1
 ```
 
-> **注意**：junshi-poll.sh 与 OpenClaw cron (casedraft/automerge/verify-trigger) 功能重叠，作为 fallback 保留。后续 OpenClaw cron 稳定后移除。
-> **learn.py 已移除**（2026-06-19）：自进化职责由军师 LLM 直接承担，不再需要独立 cron。
+> **junshi-poll.sh 已删除**（2026-06-19）：全部 6 项职责已迁移至 OpenClaw cron。
+> **learn.py 已移除**（2026-06-19）：自进化由军师 LLM 直接承担。
 
 ## 四、脚本职责
 
@@ -83,26 +158,15 @@ junshi-daily-report     每天 19:00
 - 纯验收，不抢 issue、不写码、不创建 PR
 - 服务按需启停（如果 agent-poll 已启动服务则复用）
 
-### junshi-poll.sh (军师调度，每 3 分钟)
+### junshi-poll.sh — 已废弃（2026-06-19）
 
-6 项职责，按顺序执行：
-
-1. **扫新 issue → case_draft**: 对 needs-verification 且无 DRAFT_JSON/REVIEW_JSON 的 issue 运行 case_draft.py
-2. **quality_gate 拦截 → 下发任务**:
-   - 未匹配模板 (NEW_TEMPLATE_NEEDED) → 创建 "新建模板: {slug}" issue
-   - 已有模板断言不足 → 创建 "补充模板: {name}" issue
-   - 去重：检查是否已有同名 open issue
-3. **扫 PR → auto merge**: CI 全部 COMPLETED+SUCCESS + 关联 issue → merge
-4. **扫 merged PR → VERIFY_TRIGGER**: 对已 merge 但未验收的 issue 发触发评论
-5. **巡检 stale** (>3天 needs-verification 无进展) → 评论催促
-6. **巡检 hold** (>7天 hold/auto-fail) → 升级 block/need-human
-7. **每天 19:00**: quality_report.py → 追加到持久日报 issue
+6 项职责已全部迁移至 OpenClaw 原生 cron（见下方）。bash 脚本已删除，不再在 crontab 中。
 
 ### dual_verify 脚本
 
 | 脚本 | 谁跑 | 做什么 |
 |------|------|--------|
-| `case_draft.py` | 军师 (junshi-poll) | 匹配模板 → 反推 L2/L3/L4 草稿 → quality_gate 校验 |
+| `case_draft.py` | 军师 (openclaw cron) | 匹配模板 → 反推 L2/L3/L4 草稿 → quality_gate 校验 |
 | `primary.py` | Agent (agent-poll) | E2E 全量 + issue spec 中的 pytest/JUnit |
 | `reviewer.py` | Agent (agent-poll) | 独立 API 调用 + 模板 expect 字段真实验证 |
 | `merge.py` | Agent (agent-poll) | 读 primary.json + reviewer.json → close/hold/block |
