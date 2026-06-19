@@ -187,10 +187,22 @@ while read iid; do
         VERIFY_ISSUE="$iid"
         break
     fi
-done < <(gh issue list --state open --limit 20 --json number --jq '.[].number' 2>/dev/null)
+done < <({
+  # 优先 OPEN issue（验收被打回或新触发）
+  gh issue list --state open --limit 20 --json number --jq '.[].number' 2>/dev/null
+  # 也扫 CLOSED 但 pending 的（被 PR "Closes #xxx" auto-close 绕过验收的）
+  gh issue list --state closed --label ai-verify/pending --limit 20 --json number --jq '.[].number' 2>/dev/null
+})
 
 if [ -n "$VERIFY_ISSUE" ]; then
     log "🧪 验收 issue #$VERIFY_ISSUE"
+
+    # 如果 issue 被 PR "Closes #xxx" auto-close，先 reopen 再验收
+    ISSUE_STATE=$(gh issue view "$VERIFY_ISSUE" --json state --jq '.state' 2>/dev/null)
+    if [ "$ISSUE_STATE" = "CLOSED" ]; then
+        log "  🔓 issue 已关闭（可能是 PR auto-close），重新打开..."
+        gh issue reopen "$VERIFY_ISSUE" 2>/dev/null || true
+    fi
 
     # 确保服务起来
     if ! lsof -i :8081 -sTCP:LISTEN >/dev/null 2>&1 || ! lsof -i :8001 -sTCP:LISTEN >/dev/null 2>&1 || ! lsof -i :3001 -sTCP:LISTEN >/dev/null 2>&1; then

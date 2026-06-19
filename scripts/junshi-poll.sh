@@ -82,6 +82,13 @@ gh issue list --label needs-verification --state open --limit 30 \
             HAS_TASK=$(gh issue list --label "qa" --state open --limit 20 \
                 --json number,title --jq ".[] | select(.title | startswith(\"新建模板\")) | .number" 2>/dev/null | head -1)
 
+            # 也查最近关闭的，避免重复创建
+            if [ -z "$HAS_TASK" ]; then
+                HAS_TASK=$(gh issue list --label "qa" --state closed --limit 20 \
+                    --json number,title,updatedAt --jq ".[] | select(.title | startswith(\"新建模板\")) | .number" 2>/dev/null | head -1)
+                [ -n "$HAS_TASK" ] && log "  ⚠️ 已有已关闭的同类任务 #$HAS_TASK，跳过创建"
+            fi
+
             if [ -z "$HAS_TASK" ]; then
                 TASK_BODY="## 新建验证模板
 
@@ -113,6 +120,13 @@ gh issue list --label needs-verification --state open --limit 30 \
 
             HAS_TASK=$(gh issue list --label "qa" --state open --limit 20 \
                 --json number,title --jq ".[] | select(.title | startswith(\"补充模板: $TMPL_NAME\")) | .number" 2>/dev/null | head -1)
+
+            # 也查最近关闭的（可能被 PR auto-close 或手动关），避免重复创建
+            if [ -z "$HAS_TASK" ]; then
+                HAS_TASK=$(gh issue list --label "qa" --state closed --limit 20 \
+                    --json number,title,updatedAt --jq ".[] | select(.title | startswith(\"补充模板: $TMPL_NAME\")) | .number" 2>/dev/null | head -1)
+                [ -n "$HAS_TASK" ] && log "  ⚠️ 已有已关闭的同类任务 #$HAS_TASK，跳过创建"
+            fi
 
             if [ -z "$HAS_TASK" ]; then
                 TASK_BODY="## 补充模板 reviewer_asserts
@@ -234,9 +248,9 @@ for pr in json.load(sys.stdin):
     pr_num=$(echo "$line" | cut -d'|' -f1)
     issue_id=$(echo "$line" | cut -d'|' -f2)
 
-    # 检查 issue 是否仍 open
-    ISSUE_STATE=$(gh issue view "$issue_id" --json state --jq '.state' 2>/dev/null)
-    if [ "$ISSUE_STATE" != "OPEN" ]; then
+    # 跳过手动关闭的 issue（NOT_PLANNED），但允许 auto-close（PR merge）的继续验收
+    ISSUE_STATE=$(gh issue view "$issue_id" --json state,stateReason --jq '"\(.state)|\(.stateReason)"' 2>/dev/null)
+    if [ "$ISSUE_STATE" = "CLOSED|NOT_PLANNED" ]; then
         continue
     fi
 

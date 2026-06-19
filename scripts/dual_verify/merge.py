@@ -118,6 +118,13 @@ def act(iid,decision,judgment=None,primary=None,reviewer=None,issue_body=""):
         depth=_get_block_depth(iid)
         _log_block(iid,depth)
 
+        # 如果 issue 被 PR auto-close 了，需要 reopen 才能被 agent-poll 抢到
+        state_json=subprocess.run(["gh","issue","view",str(iid),"--json","state"],capture_output=True,text=True,cwd=str(PROJECT_ROOT))
+        try:
+            if json.loads(state_json.stdout).get("state")=="CLOSED":
+                subprocess.Popen(["gh","issue","reopen",str(iid)],stdout=subprocess.PIPE,stderr=subprocess.PIPE,cwd=str(PROJECT_ROOT))
+        except: pass
+
         if depth>=MAX_BLOCK_DEPTH:
             subprocess.Popen(["gh","issue","edit",str(iid),"--add-label","block/need-human,block/dual-mismatch","--remove-label","needs-verification"],stdout=subprocess.PIPE,stderr=subprocess.PIPE,cwd=str(PROJECT_ROOT))
             melt=f"## 🛑 熔断：已打回{depth}次\n\n本issue已打回{depth}次（≥{MAX_BLOCK_DEPTH}），自动修复循环已停止。请凯总/娜总人工介入。\n\n可能原因：业务真值歧义 / reviewer验证bug / 代码与真值根本不一致。\n\n<!-- COMMENT_JSON {{\"from\":\"junshi\",\"intent\":\"circuit_breaker\",\"block_depth\":{depth}}} -->"
