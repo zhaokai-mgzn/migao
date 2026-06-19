@@ -22,13 +22,14 @@
 
 ## 三、定时任务 (crontab)
 
-服务器上需要 4 条 crontab（当前过渡方案，后续由 OpenClaw 内部 cron 接管）：
+服务器上需要 5 条 crontab（当前过渡方案，后续由 OpenClaw 内部 cron 接管）：
 
 ```
 HOME=/root
 PATH=/usr/local/bin:/usr/bin:/usr/sbin:/bin
 
 */5 * * * * cd /opt/youke && bash scripts/agent-poll.sh >> /var/log/migao-agent.log 2>&1
+*/5 * * * * cd /opt/youke && bash scripts/verify-poll.sh >> /var/log/migao-verify.log 2>&1
 */3 * * * * cd /opt/youke && bash scripts/junshi-poll.sh >> /var/log/migao-junshi.log 2>&1
 7 */4 * * * cd /opt/youke && python3 junshi/learn.py --scan >> /var/log/migao-learn.log 2>&1
 7 3 * * *   cd /opt/youke && python3 junshi/learn.py --grow --apply >> /var/log/migao-grow.log 2>&1
@@ -43,14 +44,28 @@ PATH=/usr/local/bin:/usr/bin:/usr/sbin:/bin
 2. 抢 issue 优先级: block/dual-mismatch > qa模板任务 > needs-verification(有DRAFT_JSON)
 3. git checkout -b feat/issue-{id}-{desc} (创建分支)
 4. start_services → claude --print --agent dev-agent "遵守铁律..." → stop_services
-5. 如果没有 coding issue → 扫描 VERIFY_TRIGGER → 跑验收 (primary+reviewer+merge)
+5. 如果没有 coding issue → 跳过（验收已拆分到 verify-poll.sh）
 ```
 
 关键设计:
 - PYTHON 变量指向 venv Python 3.11 (`/opt/youke/backend/ai-agent-service/.venv/bin/python3`)
 - 锁文件 `/tmp/migao-agent.lock` 带 30 分钟超时
 - cron 环境保护 (HOME + PATH)
-- 验收路径独立管理服务启停
+- 验收逻辑已拆分到 verify-poll.sh，本脚本不再承担验收职责
+
+### verify-poll.sh (验收调度，每 5 分钟)
+
+```
+1. git pull (同步最新脚本)
+2. 扫 OPEN issue + CLOSED(ai-verify/pending) → 找 VERIFY_TRIGGER 无 VERDICT_JSON 的
+3. reopen（如果 CLOSED）→ 确保服务 → primary.py → reviewer.py → merge.py
+4. 如果没有待验收 issue → 跳过
+```
+
+关键设计:
+- 独立锁文件 `/tmp/migao-verify.lock`（不与 agent-poll 互斥）
+- 纯验收，不抢 issue、不写码、不创建 PR
+- 服务按需启停（如果 agent-poll 已启动服务则复用）
 
 ### junshi-poll.sh (军师调度，每 3 分钟)
 

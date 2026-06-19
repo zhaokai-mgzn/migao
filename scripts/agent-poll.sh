@@ -3,8 +3,11 @@
 # 米高研发 Agent 轮询触发器（单实例版，适配 4C8G）
 #
 # cron 每 5 分钟执行。一次只处理一个 issue。
-# 优先抢修复 issue（parent_issue 不为空），其次抢新功能 issue。
+# 优先抢修复 issue，其次抢新功能 issue。
 # 不直接处理 block/dual-mismatch 标签的原始 issue（那是军师的状态标记）。
+#
+# 注意：验收（VERIFY_TRIGGER → primary/reviewer/merge）已拆分到
+# verify-poll.sh，本脚本只负责写码。
 # ═══════════════════════════════════════════════════════════════
 set -e
 
@@ -114,7 +117,7 @@ pick_issue() {
 ISSUE_ID=$(pick_issue)
 
 if [ -z "$ISSUE_ID" ]; then
-    log "😴 无待处理 issue，跳过写码，检查验收触发..."
+    log "😴 无待处理 issue，跳过"
 else
 
 # ── 启动服务前先拉最新代码 ──
@@ -172,52 +175,3 @@ fi
 log "✅ issue #$ISSUE_ID 完成"
 exit 0
 fi  # 结束 coding if/else
-
-# ── 3. 扫验收触发（军师发 VERIFY_TRIGGER → Agent 跑验收脚本）──
-log "🔍 扫描验收触发..."
-
-VERIFY_ISSUE=""
-while read iid; do
-    HAS_TRIGGER=$(gh issue view "$iid" --comments --json comments \
-        --jq '.comments[] | select(.body | contains("VERIFY_TRIGGER")) | .body' 2>/dev/null | head -1)
-    HAS_RESULT=$(gh issue view "$iid" --comments --json comments \
-        --jq '.comments[] | select(.body | contains("VERDICT_JSON")) | .body' 2>/dev/null | head -1)
-
-    if [ -n "$HAS_TRIGGER" ] && [ -z "$HAS_RESULT" ]; then
-        VERIFY_ISSUE="$iid"
-        break
-    fi
-done < <({
-  # 优先 OPEN issue（验收被打回或新触发）
-  gh issue list --state open --limit 20 --json number --jq '.[].number' 2>/dev/null
-  # 也扫 CLOSED 但 pending 的（被 PR "Closes #xxx" auto-close 绕过验收的）
-  gh issue list --state closed --label ai-verify/pending --limit 20 --json number --jq '.[].number' 2>/dev/null
-})
-
-if [ -n "$VERIFY_ISSUE" ]; then
-    log "🧪 验收 issue #$VERIFY_ISSUE"
-
-    # 如果 issue 被 PR "Closes #xxx" auto-close，先 reopen 再验收
-    ISSUE_STATE=$(gh issue view "$VERIFY_ISSUE" --json state --jq '.state' 2>/dev/null)
-    if [ "$ISSUE_STATE" = "CLOSED" ]; then
-        log "  🔓 issue 已关闭（可能是 PR auto-close），重新打开..."
-        gh issue reopen "$VERIFY_ISSUE" 2>/dev/null || true
-    fi
-
-    # 确保服务起来
-    if ! lsof -i :8081 -sTCP:LISTEN >/dev/null 2>&1 || ! lsof -i :8001 -sTCP:LISTEN >/dev/null 2>&1 || ! lsof -i :3001 -sTCP:LISTEN >/dev/null 2>&1; then
-        log "  ⚠️ 服务未就绪，启动中..."
-        start_services
-    fi
-    trap "stop_services; rm -f $LOCK_FILE" EXIT
-
-    log "  → primary.py (E2E + 真实集测)..."
-    cd /opt/youke && $PYTHON scripts/dual_verify/primary.py "$VERIFY_ISSUE" 2>&1 | tail -3
-    log "  → reviewer.py (独立 DB+API + expect 验证)..."
-    cd /opt/youke && $PYTHON scripts/dual_verify/reviewer.py "$VERIFY_ISSUE" 2>&1 | tail -3
-    log "  → merge.py (自动判定+执行)..."
-    cd /opt/youke && $PYTHON scripts/dual_verify/merge.py "$VERIFY_ISSUE" 2>&1 | tail -3
-    log "✅ 验收完成 #$VERIFY_ISSUE"
-else
-    log "😴 无待处理任务"
-fi
