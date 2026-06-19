@@ -15,6 +15,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from urllib.parse import quote, urlparse, urlunparse
 
 QA_RESULT_ROOT = Path(os.getenv("QA_RESULT_ROOT", "/opt/qa-results"))
 PROJECT_ROOT = Path(os.getenv("PROJECT_ROOT", "/opt/youke")).resolve()
@@ -147,6 +148,81 @@ def api_get(url: str, token: str = "") -> "tuple[int, str, str]":
     except subprocess.TimeoutExpired:
         p.kill()
         return 0, "", "API 超时"
+
+
+def resolve_url(url: str, base: str, token: str) -> str:
+    """解析 URL 中的 {placeholder} 并 URL-编码中文参数。
+
+    支持 {id}, {order_id} 等占位符。通过查 list API 获取真实 ID。
+    """
+    # 1. URL-编码非 ASCII 字符
+    import urllib.parse
+    parsed = urllib.parse.urlparse(url)
+    if parsed.query:
+        query_parts = []
+        for part in parsed.query.split('&'):
+            if '=' in part:
+                k, v = part.split('=', 1)
+                v = urllib.parse.quote(v, safe='')
+                query_parts.append(f'{k}={v}')
+            else:
+                query_parts.append(part)
+        encoded_query = '&'.join(query_parts)
+        url = urllib.parse.urlunparse(parsed._replace(query=encoded_query))
+
+    # 2. 解析 {placeholder} 占位符
+    placeholders = re.findall(r'\{(\w+)\}', url)
+    if not placeholders:
+        return url
+
+    # 3. 推导 list API 并获取真实数据
+    # /api/admin/aftersales/{id} → /api/admin/aftersales?size=1
+    list_url = url
+    for ph in placeholders:
+        # 从 URL path 推导 list endpoint
+        path_parts = url.split('/')
+        for i, part in enumerate(path_parts):
+            if '{' + ph + '}' in part:
+                # 该 segment 之前的部分就是 list endpoint
+                list_url = '/'.join(path_parts[:i]) + '?size=1'
+                break
+
+    if list_url == url and '{' in url:
+        # Fallback: 用 path 前缀
+        prefix = url.split('/{')[0]
+        list_url = prefix + '?size=1'
+
+    code, body, _ = api_get(list_url, token)
+    if code < 200 or code >= 300:
+        return url  # 无法解析，返回原 URL
+
+    # 4. 从响应中提取真实值
+    try:
+        data = json.loads(body)
+    except:
+        return url
+
+    for ph in placeholders:
+        real_val = None
+        # 尝试从 data.id 或 data.data.id 或 items[0].id 提取
+        if isinstance(data, dict):
+            if 'data' in data and isinstance(data['data'], dict):
+                real_val = data['data'].get('id') or data['data'].get(ph)
+            if not real_val:
+                real_val = data.get('id') or data.get(ph)
+            if not real_val and 'items' in data.get('data', {}):
+                items = data['data']['items']
+                if items:
+                    real_val = items[0].get(ph, items[0].get('id'))
+            if not real_val and 'records' in data.get('data', {}):
+                records = data['data']['records']
+                if records:
+                    real_val = records[0].get(ph, records[0].get('id'))
+
+        if real_val is not None:
+            url = url.replace('{' + ph + '}', str(real_val))
+
+    return url
 
 
 def validate_expect(body_text: str, expect_rules: list) -> "tuple[bool, str]":
@@ -382,13 +458,14 @@ def verify(issue_id: int) -> dict:
             url = a["url"]
             if not url.startswith("http"):
                 # 模板 URL 格式: "GET /api/xxx" 或 "POST /api/xxx"
-                # 去掉 HTTP 方法前缀，拼 base URL
                 path = url
                 for prefix in ["GET ", "POST ", "PUT ", "DELETE ", "PATCH "]:
                     if path.startswith(prefix):
                         path = path[len(prefix):]
                         break
                 url = base.rstrip("/") + "/" + path.lstrip("/")
+            # 解析占位符 + URL 编码
+            url = resolve_url(url, base, token)
             code, body_resp, err = api_get(url, token)
 
             http_ok = 200 <= code < 300
