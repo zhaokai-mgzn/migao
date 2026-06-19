@@ -59,7 +59,7 @@ PYTHON=/opt/youke/backend/ai-agent-service/.venv/bin/python3
 
 核心铁律：
 - 测试先行（先写→确认 FAIL→写实现→确认 PASS）
-- 涉及 State/路由/Interact → 必跑 L0 `test_pending_interact_persistence.py`（12 case）
+- 涉及 State/路由/Interact → 必须在 E2E 中覆盖多轮对话验证状态持久化
 - 涉及 Tool/LLM/SSE/前端 → 增量集测 + 增量 E2E
 - 全量单测 PASS 才能 push
 - 不允许跳过任何检查点
