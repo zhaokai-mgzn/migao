@@ -76,7 +76,7 @@ test.describe('员工管理页面', () => {
     })
 
     await page.goto('/employees')
-    await page.waitForLoadState('domcontentloaded')
+    await page.waitForLoadState('networkidle')
   })
 
   test('页面标题正确显示', async () => {
