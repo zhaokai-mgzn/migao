@@ -172,8 +172,29 @@ if [ "${IS_BLOCKED:-0}" -gt 0 ]; then
 	            "$PROMPT" \
 	            2>&1 | tee -a /var/log/migao-agent-coding.log | tail -10
 	    else
-	        # ══ Phase 1: Review（硬 gate — 不过不写码）══
-	        log "🔍 Phase 1: Review case 草稿..."
+	        # ══ Phase 0: bash 客观 gate（客观标准，不靠 LLM 自觉）══
+	        DRAFT=$(gh issue view "$ISSUE_ID" --comments --json comments \
+	            --jq '[.comments[] | select(.body | contains("DRAFT_JSON"))] | last | .body' 2>/dev/null)
+	        TRUTHS_COUNT=$(echo "$DRAFT" | grep -oP '"truths_count"\s*:\s*\K\d+' | head -1)
+	        AUTO_ASSERTS=$(echo "$DRAFT" | grep -oP '"auto_asserts"\s*:\s*\K\d+' | head -1)
+	        TEMPLATE_NAME=$(echo "$DRAFT" | grep -oP '"template"\s*:\s*"\K[^"]+' | head -1)
+
+	        if [ "${TRUTHS_COUNT:-0}" -eq 0 ]; then
+	            log "❌ 业务真值为空 — bash gate reject"
+	            exit 0
+	        fi
+	        if [ "$TEMPLATE_NAME" = "unknown" ] || [ -z "$TEMPLATE_NAME" ]; then
+	            log "❌ 未匹配模板(${TEMPLATE_NAME:-none}) — bash gate reject"
+	            exit 0
+	        fi
+	        if [ "${AUTO_ASSERTS:-0}" -lt "${TRUTHS_COUNT:-1}" ]; then
+	            log "❌ 自动断言(${AUTO_ASSERTS:-0}) < 真值(${TRUTHS_COUNT:-0}) — bash gate reject"
+	            exit 0
+	        fi
+	        log "✅ bash gate pass: ${AUTO_ASSERTS:-0} asserts >= ${TRUTHS_COUNT:-0} truths, template=$TEMPLATE_NAME"
+
+	        # ══ Phase 1: LLM Review（bash gate 通过后才到 LLM）══
+	        log "🔍 Phase 1: LLM Review case 草稿..."
 	        claude --print \
 	            --agent dev-agent \
 	            "Review issue #$ISSUE_ID。只做 Review，不写代码。
