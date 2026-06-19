@@ -74,34 +74,18 @@ def is_deployment_issue(issue_body: str) -> bool:
     return False
 
 
-def _run_e2e_suite() -> list:
-    """跑全部 E2E: web + real。CI 已覆盖单测/集测，验收只跑 E2E。"""
+QUALITY_SPECS = [
+    "tests/e2e/specs/quality/anti-placeholder.spec.ts",
+    "tests/e2e/specs/quality/api-contract.spec.ts",
+    "tests/e2e/specs/quality/cross-page-consistency.spec.ts",
+]
+
+
+def _run_quality_specs() -> list:
+    """跑 3 个质量契约 spec（无 LLM，快）。全量 E2E 太重，token 和时间都不划算。"""
     results = []
-    tests_dir = PROJECT_ROOT / "tests"
-    for project in ["web", "real"]:
-        p = subprocess.Popen(
-            ["npx", "playwright", "test", f"--project={project}", "--reporter=json"],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            cwd=str(tests_dir), env={**os.environ, "CI": "true"}
-        )
-        try:
-            out, err = p.communicate(timeout=600)
-            try:
-                report = json.loads(out.decode("utf-8", "ignore"))
-                stats = report.get("stats", report.get("suites", [{}])[0].get("specs", [{}])[0] if isinstance(report.get("suites"), list) else {})
-                if isinstance(stats, dict):
-                    results.append({
-                        "spec": f"e2e-{project}", "status": "pass" if p.returncode == 0 else "fail",
-                        "passed": stats.get("expected", stats.get("passed", 0)),
-                        "failed": stats.get("unexpected", stats.get("failed", 0)),
-                    })
-                else:
-                    results.append({"spec": f"e2e-{project}", "status": "pass" if p.returncode == 0 else "fail"})
-            except json.JSONDecodeError:
-                results.append({"spec": f"e2e-{project}", "status": "pass" if p.returncode == 0 else "fail"})
-        except subprocess.TimeoutExpired:
-            p.kill()
-            results.append({"spec": f"e2e-{project}", "status": "fail", "reason": "timeout 600s"})
+    for spec_path in QUALITY_SPECS:
+        results.append(run_e2e_spec(spec_path))
     return results
 
 
@@ -193,7 +177,7 @@ def classify(spec_path: str) -> str:
 
 
 def verify(issue_id: int) -> dict:
-    """主验收: E2E全量(web+real) + issue spec 中的真实集测(pytest) + JUnit。
+    """主验收: 质量契约 spec（全量 3 个，无 LLM） + issue 指定的 E2E/pytest/JUnit 增量。
     CI mock 单测不跑——那些已经在 pr-check 里跑过了。"""
     issue = load_issue(issue_id)
     body = issue.get("body", "")
@@ -203,8 +187,8 @@ def verify(issue_id: int) -> dict:
         return {"issue_id": issue_id, "title": title, "verifier": "primary",
                 "status": "skip_deployment", "reason": "部署类", "confidence": 0}
 
-    # 1. E2E 全量（web + real）—— CI 跑不了
-    results = _run_e2e_suite()
+    # 1. 质量契约 spec（全量 3 个，无 LLM，快）
+    results = _run_quality_specs()
 
     # 2. Issue 中指定的真实集测（pytest）+ JUnit
     specs = extract_specs(body)
