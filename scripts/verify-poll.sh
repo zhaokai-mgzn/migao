@@ -108,9 +108,9 @@ fi
 trap "stop_services; rm -f $LOCK_FILE" EXIT
 
 log "  → primary.py (E2E + 真实集测)..."
-cd /opt/youke && $PYTHON scripts/dual_verify/primary.py "$VERIFY_ISSUE" 2>&1 | tail -3
+cd /opt/youke && $PYTHON scripts/dual_verify/primary.py "$VERIFY_ISSUE" --out "/opt/qa-results/$VERIFY_ISSUE/primary.json" 2>&1 | tail -3
 log "  → reviewer.py (独立 DB+API + expect 验证)..."
-cd /opt/youke && $PYTHON scripts/dual_verify/reviewer.py "$VERIFY_ISSUE" 2>&1 | tail -3
+cd /opt/youke && $PYTHON scripts/dual_verify/reviewer.py "$VERIFY_ISSUE" --out "/opt/qa-results/$VERIFY_ISSUE/reviewer.json" 2>&1 | tail -3
 log "  → merge.py (自动判定+执行)..."
 cd /opt/youke && $PYTHON scripts/dual_verify/merge.py "$VERIFY_ISSUE" 2>&1 | tail -3
 log "✅ 验收完成 #$VERIFY_ISSUE"
