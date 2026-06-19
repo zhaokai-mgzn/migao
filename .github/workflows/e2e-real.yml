@@ -5,8 +5,6 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  NODE_VERSION: '20'
-  PLAYWRIGHT_BROWSERS_PATH: '0'
 
 jobs:
   e2e-real:
@@ -16,43 +14,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/ai-agent-service/requirements.txt
 
       - name: Install dependencies
-        working-directory: tests
-        run: npm ci
+        working-directory: backend/ai-agent-service
+        run: pip install -r requirements.txt -q
 
-      - name: Install Playwright browsers
-        working-directory: tests
-        run: npx playwright install chromium --with-deps
-
-      - name: Validate secrets
-        run: |
-          if [ -z "$PHONE" ] || [ -z "$CODE" ]; then
-            echo "❌ E2E_ADMIN_PHONE 和 E2E_SMS_CODE 必须配置"
-            exit 1
-          fi
-          echo "✅ Secrets configured"
+      - name: Run real E2E tests (pytest — 零 Mock，真实 LLM 调用)
+        working-directory: backend/ai-agent-service
         env:
-          PHONE: ${{ secrets.E2E_ADMIN_PHONE }}
-          CODE: ${{ secrets.E2E_SMS_CODE }}
-
-      - name: Run E2E tests (real only — AI Agent 能力验证)
-        working-directory: tests
-        env:
-          BASE_URL: ${{ secrets.E2E_BASE_URL || 'https://admin.migaozn.com' }}
-          NEXT_PUBLIC_API_BASE_URL: ${{ secrets.E2E_BASE_URL || 'https://admin.migaozn.com' }}
-          E2E_ADMIN_PHONE: ${{ secrets.E2E_ADMIN_PHONE || '13800138000' }}
-          E2E_SMS_CODE: ${{ secrets.E2E_SMS_CODE || '123456' }}
           CI: 'true'
+          E2E_REAL_ENABLED: 'true'
+          ADMIN_API_BASE_URL: ${{ secrets.E2E_ADMIN_API_URL || 'https://admin-api.migaozn.com' }}
+          AI_AGENT_URL: ${{ secrets.AI_AGENT_SERVICE_URL }}
+          SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN }}
         run: |
-          npx playwright test --project=real \
-            --reporter=list \
-            --retries=2 \
-            --max-failures=10
+          python -m pytest tests/e2e/real/ -v --tb=long -q \
+            --timeout=120 \
+            --no-cov \
+            --maxfail=10
 
       - name: Upload test artifacts (failure)
         if: failure()
@@ -60,8 +45,8 @@ jobs:
         with:
           name: e2e-real-artifacts
           path: |
-            tests/playwright-report/
-            tests/test-results/
+            backend/ai-agent-service/.pytest_cache/
+            backend/ai-agent-service/tests/e2e/real/__pycache__/
 
       - name: Create Issue on failure
         if: failure()
@@ -73,6 +58,6 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               title: `[E2E Real] AI Agent 能力测试失败 — ${new Date().toISOString().slice(0, 10)}`,
-              body: `E2E Real 测试失败（AI Agent 能力验证，含 LLM 调用）。\n\n查看详情：${runUrl}`,
+              body: `E2E Real 测试失败（零 Mock，真实 LLM 调用）。\n\n查看详情：${runUrl}`,
               labels: ['bug', 'role/qa'],
             })
