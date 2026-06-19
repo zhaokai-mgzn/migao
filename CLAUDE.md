@@ -13,7 +13,7 @@
 6. ❌ 禁止：跳过 issue / 技术性业务真值 / 拒绝 review 草稿 / 人为验收
 
 **禁止自己写业务 case 终稿**。**禁止跳过 issue 直接写代码**。
-详见 [`docs/wiki/Development.md`](docs/wiki/Development.md) "AI 验收体系" 段 + issue #450 v3.1，以及 [`docs/wiki/AI-Contracts.md`](docs/wiki/AI-Contracts.md) 的 7 种交互契约。
+详见 [`docs/wiki/Development.md`](docs/wiki/Development.md) "AI 验收体系" 段 + issue #450 v3.1，以及 [`ershen/contracts/AI-Contracts.md`](ershen/contracts/AI-Contracts.md) 的 7 种交互契约。
 **环境变量配置**：军师AI 服务地址等由项目级 `.claude/settings.json` 中的 `env` 字段统一管理，禁止硬编码到脚本中。
 
 ### Claude Code 启动自检
