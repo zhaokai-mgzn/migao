@@ -88,6 +88,7 @@ class TestCustomerOrderCreateValidation:
             context=sample_tool_context,
             customer_name="测试",
             customer_phone="13800138000",
+            items=[],
         )
         assert result.success is False
         # 缺参数时应有suggestion

@@ -74,6 +74,7 @@ class TestAftersaleCreateValidation:
         tool = AftersaleCreateTool()
         result = await tool.execute(
             context=sample_tool_context,
+            order_id="",
             ticket_type="refund",
             reason="商品有问题",
         )
