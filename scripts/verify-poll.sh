@@ -124,9 +124,29 @@ export DB_NAME=$(grep '^RDS_DB=' /opt/youke/backend/admin-api/.env 2>/dev/null |
 export ADMIN_API=http://localhost:8081
 
 log "  → LLM 自主验收 (调 API + 查 DB + 判定)..."
+
+# v3.2 分级门：先按 issue 复杂度决定跑几层（避免修小 bug 跑 4 层太重）
+COMPLEXITY_JSON=$(python3 /opt/youke/scripts/dual_verify/classify_issue.py "$VERIFY_ISSUE" 2>/dev/null)
+if [ -n "$COMPLEXITY_JSON" ]; then
+    COMPLEXITY=$(echo "$COMPLEXITY_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin).get('complexity','medium_bug'))" 2>/dev/null)
+    LAYERS=$(echo "$COMPLEXITY_JSON" | python3 -c "import json,sys; print(','.join(json.load(sys.stdin).get('layers',['L1','L4'])))" 2>/dev/null)
+    REASON=$(echo "$COMPLEXITY_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin).get('reason',''))" 2>/dev/null)
+    log "  → 分级: $COMPLEXITY [$LAYERS] — $REASON"
+else
+    COMPLEXITY="medium_bug"
+    LAYERS="L1,L2,L4"
+    log "  ⚠️ 分级失败 fallback medium_bug"
+fi
+
 cd /opt/youke && claude --print \
     --agent verify-agent \
     "验收 issue #$VERIFY_ISSUE。独立验证每条业务真值。
+
+## 分级（v3.2 已分级）
+- 复杂度: $COMPLEXITY
+- 触发层: $LAYERS
+- 理由: $REASON
+- **只跑上面触发的层**，不要跑其他层（小 bug 不需要 4 层全套）
 
 ## 环境（已通过环境变量注入，直接使用）
 - admin-api: \$ADMIN_API
