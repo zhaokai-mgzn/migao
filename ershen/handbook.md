@@ -65,6 +65,12 @@ openclaw cron add \
   6. 未匹配模板 → 创建 '新建模板: {slug}' issue（去重）
   7. 匹配但 asserts 不足 → 创建 '补充模板: {name}' issue（去重）
 
+  步骤 2 — 验证 API 路径（步骤 1 完成后必须执行）：
+  涉及 API 断言的 L4 case，必须读 Controller 源码确认路径：
+  1. 根据 issue 涉及的业务模块，到 /opt/youke/backend/admin-api/src/main/java/com/migao/admin/controller/ 找对应 Controller
+  2. 读 @RequestMapping 基路径 + @GetMapping/@PostMapping 子路径拼出完整 API path
+  3. L4 断言中的 API 路径必须与源码一致，禁止凭经验猜测
+
   边界：不写代码不跑测试。skip_template 的不走 quality_gate。"
 
 # 2. automerge — 扫 PR 自动合并
