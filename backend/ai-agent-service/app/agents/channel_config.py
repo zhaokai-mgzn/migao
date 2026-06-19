@@ -36,7 +36,7 @@ DEFAULT_CHANNEL_CONFIGS: Dict[str, ChannelConfig] = {
             "🔍 **商品咨询** - 搜索商品、查看详情\n"
             "📦 **订单查询** - 查订单、追踪物流\n"
             "🛠️ **售后申请** - 提交售后工单\n"
-            "📞 **转人工** - 输入"转人工"联系客服"
+            "📞 **转人工** - 输入「转人工」联系客服"
         ),
     ),
     CHANNEL_WECHAT_H5: ChannelConfig(
