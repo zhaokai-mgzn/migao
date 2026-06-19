@@ -1,38 +1,72 @@
 import { test, expect } from '@playwright/test'
 import { AfterSalesDetailPage } from '../../pages/after-sales/after-sales-detail.page'
-import afterSalesList from '../../fixtures/after-sales-list.json'
 
-// TODO: mock 返回的 detail fixture 结构需要与页面期望对齐
-test.describe.skip('售后工单详情页面', () => {
+// ==================== Inline Mock Data ====================
+
+const MOCK_TICKET_DETAIL = {
+  id: 'as-001',
+  ticketNo: 'AS-20260619-0001',
+  orderId: 'ord-001',
+  orderNo: '20260619376915624',
+  customerId: 'cust-1',
+  customerName: '张美华',
+  customerPhone: '13957168235',
+  ticketType: 'return',
+  status: 'pending',
+  description: '灰色窗帘到手后颜色与预期不符，偏浅，申请退货退款。已附实物照片对比。',
+  images: ['https://example.com/img1.jpg'],
+  priority: 'normal',
+  refundAmount: 340.00,
+  createdAt: '2026-06-19 11:27',
+  updatedAt: '2026-06-19 11:27',
+  statusHistory: [
+    { status: 'pending', operator: '系统', remark: '客户提交退货申请', createdAt: '2026-06-19 11:27' },
+  ],
+}
+
+const MOCK_TICKET_LOGS = [
+  { id: 'log-1', action: 'created', operator: '系统', remark: '工单创建', createdAt: '2026-06-19 11:27' },
+]
+
+// ==================== Tests ====================
+
+test.describe('售后工单详情页面', () => {
   let pom: AfterSalesDetailPage
 
   test.beforeEach(async ({ page }) => {
-    // Mock API — 用 fixture 数据拦截，不依赖云 dev DB
-    const items = (afterSalesList as any).data?.items || []
-    const firstTicket = items[0] || {}
-    await page.route('**/api/admin/after-sales/*', route => {
-      route.fulfill({ body: JSON.stringify({ success: true, data: firstTicket }) })
+    // Mock detail API
+    await page.route('**/api/admin/after-sales/*/logs*', (route) => {
+      route.fulfill({ body: JSON.stringify({ success: true, data: MOCK_TICKET_LOGS }) })
     })
-    await page.route('**/api/admin/after-sales/1/logs*', route => {
-      route.fulfill({ body: JSON.stringify({ success: true, data: [] }) })
+    // Must be after logs route to avoid matching
+    await page.route('**/api/admin/after-sales/*', (route) => {
+      if (route.request().url().includes('/logs')) return // let logs route handle it
+      route.fulfill({ body: JSON.stringify({ success: true, data: MOCK_TICKET_DETAIL }) })
+    })
+    // Mock order link
+    await page.route('**/api/admin/orders/*', (route) => {
+      route.fulfill({ body: JSON.stringify({
+        success: true,
+        data: { id: 'ord-001', orderNo: '20260619376915624', customerName: '张美华', totalAmount: 340, status: 'completed' }
+      })})
     })
     pom = new AfterSalesDetailPage(page)
-    await pom.goto('1')
+    await pom.goto('as-001')
     await pom.waitForLoadingComplete()
   })
 
   test('页面标题显示"工单详情"和状态 Badge', async () => {
     await expect(pom.pageTitle).toBeVisible()
-    // 状态 Badge 可能是待处理/处理中/已完成/已拒绝/已关闭
-    if (await pom.statusBadge.isVisible().catch(() => false)) {
-      await expect(pom.statusBadge).toBeVisible()
-    }
+    // Status badge: pending → 待处理
+    await expect(pom.statusBadge).toBeVisible()
   })
 
   test('工单信息卡片显示售后类型和创建时间', async () => {
     await expect(pom.ticketInfoCard).toBeVisible()
-    await expect(pom.ticketType).toBeVisible()
-    await expect(pom.createdAt).toBeVisible()
+    // ticketType should show "退货"
+    await expect(pom.page.getByText(/退货/).first()).toBeVisible()
+    // createdAt should be visible
+    await expect(pom.page.getByText(/2026-06-19/).first()).toBeVisible()
   })
 
   test('售后原因描述区域正确显示', async () => {
@@ -41,8 +75,9 @@ test.describe.skip('售后工单详情页面', () => {
   })
 
   test('关联订单链接可点击跳转', async () => {
-    if (await pom.relatedOrderLink.isVisible().catch(() => false)) {
-      await pom.relatedOrderLink.click()
+    const orderLink = pom.relatedOrderLink
+    if (await orderLink.isVisible().catch(() => false)) {
+      await orderLink.click()
       await expect(pom.page).toHaveURL(/\/orders\/.+/)
     }
   })
@@ -50,20 +85,18 @@ test.describe.skip('售后工单详情页面', () => {
   test('处理时间线正确显示', async () => {
     await expect(pom.timelineCard).toBeVisible()
     const items = pom.timelineItems
-    const emptyText = pom.page.getByText('暂无处理记录')
     const itemCount = await items.count()
     if (itemCount > 0) {
-      // 有处理记录：验证内容不为空
       const firstText = await items.first().textContent()
       expect(firstText).toBeTruthy()
     } else {
-      // 无记录：验证空态文案
-      await expect(emptyText).toBeVisible()
+      // Fallback: empty state
+      await expect(pom.page.getByText(/暂无/).first()).toBeVisible()
     }
   })
 
   test('状态操作按钮可见性（待处理状态）', async () => {
-    // 接受处理 和 拒绝 按钮仅在 pending 状态可见
+    // pending status should show accept and reject buttons
     const accept = pom.actionButtons.getByRole('button', { name: /接受处理/ })
     const reject = pom.actionButtons.getByRole('button', { name: /^拒绝$/ })
     if (await accept.isVisible().catch(() => false)) {
@@ -72,21 +105,11 @@ test.describe.skip('售后工单详情页面', () => {
     }
   })
 
-  test('状态操作按钮可见性（处理中状态）', async () => {
-    const complete = pom.actionButtons.getByRole('button', { name: /完成处理/ })
-    const close = pom.actionButtons.getByRole('button', { name: /关闭工单/ })
-    if (await complete.isVisible().catch(() => false)) {
-      await expect(complete).toBeVisible()
-      await expect(close).toBeVisible()
-    }
-  })
-
   test('状态操作按钮点击后弹出确认弹窗', async () => {
     const firstAction = pom.actionButtons.getByRole('button').first()
     if (await firstAction.isVisible().catch(() => false)) {
       await firstAction.click()
-      await expect(pom.statusModal).toBeVisible()
-      await expect(pom.statusModalRemark).toBeVisible()
+      await expect(pom.statusModal).toBeVisible({ timeout: 5000 })
     }
   })
 
@@ -94,6 +117,7 @@ test.describe.skip('售后工单详情页面', () => {
     const firstAction = pom.actionButtons.getByRole('button').first()
     if (await firstAction.isVisible().catch(() => false)) {
       await firstAction.click()
+      await expect(pom.statusModal).toBeVisible({ timeout: 5000 })
       await pom.statusModalRemark.fill('测试处理备注')
       await expect(pom.statusModalRemark).toHaveValue('测试处理备注')
     }
@@ -111,6 +135,7 @@ test.describe.skip('售后工单详情页面', () => {
 
   test('客户信息卡片正确显示', async () => {
     await expect(pom.customerInfoCard).toBeVisible()
-    await expect(pom.page.getByText('客户姓名').first()).toBeVisible()
+    // Should show customer name
+    await expect(pom.page.getByText(/张美华/).first()).toBeVisible()
   })
 })

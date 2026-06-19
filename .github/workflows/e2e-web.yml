@@ -20,7 +20,7 @@ jobs:
   e2e-web:
     name: E2E Web (specs only, no LLM)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -66,7 +66,6 @@ jobs:
       # 前端 API 请求直连远程 admin-api（NEXT_PUBLIC_API_BASE_URL）
       # ═══════════════════════════════════════════════════════
       - name: Run E2E tests (web only)
-        continue-on-error: true  # 逐步完善中，先不阻塞
         working-directory: tests
         env:
           BASE_URL: http://localhost:3001
@@ -77,10 +76,9 @@ jobs:
         run: |
           npx playwright test --project=web \
             --reporter=list \
-            --retries=2 \
-            --max-failures=999
+            --retries=1 \
+            --max-failures=0
 
-      # E2E 持续完善中，当前不阻塞 PR（continue-on-error）
       - name: Upload test artifacts
         if: failure()
         uses: actions/upload-artifact@v4
@@ -89,3 +87,17 @@ jobs:
           path: |
             tests/playwright-report/
             tests/test-results/
+
+      - name: Create Issue on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `[E2E Web] 测试失败 — ${new Date().toISOString().slice(0, 10)}`,
+              body: `E2E Web 测试在 PR 中失败。\n\n查看详情：${runUrl}\n\n请在合并前修复失败的测试。`,
+              labels: ['bug', 'role/qa'],
+            })
