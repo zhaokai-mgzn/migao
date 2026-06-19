@@ -262,9 +262,9 @@ for pr in json.load(sys.stdin):
         --jq '.comments[] | select(.body | contains("VERIFY_TRIGGER")) | .body' 2>/dev/null | head -1)
     [ -n "$HAS_TRIGGER" ] && continue
 
-    # 检查是否已有 VERIFY_RESULT（已验收完）
+    # 检查是否已有 VERDICT_JSON（已验收完）
     HAS_RESULT=$(gh issue view "$issue_id" --comments --json comments \
-        --jq '.comments[] | select(.body | contains("VERIFY_RESULT")) | .body' 2>/dev/null | head -1)
+        --jq '.comments[] | select(.body | contains("VERDICT_JSON")) | .body' 2>/dev/null | head -1)
     [ -n "$HAS_RESULT" ] && continue
 
     # 发 VERIFY_TRIGGER

@@ -181,7 +181,7 @@ while read iid; do
     HAS_TRIGGER=$(gh issue view "$iid" --comments --json comments \
         --jq '.comments[] | select(.body | contains("VERIFY_TRIGGER")) | .body' 2>/dev/null | head -1)
     HAS_RESULT=$(gh issue view "$iid" --comments --json comments \
-        --jq '.comments[] | select(.body | contains("VERIFY_RESULT")) | .body' 2>/dev/null | head -1)
+        --jq '.comments[] | select(.body | contains("VERDICT_JSON")) | .body' 2>/dev/null | head -1)
 
     if [ -n "$HAS_TRIGGER" ] && [ -z "$HAS_RESULT" ]; then
         VERIFY_ISSUE="$iid"
