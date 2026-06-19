@@ -336,7 +336,7 @@ locals {
     "DASHVECTOR_ENDPOINT"   = var.dashvector_endpoint
     "DASHVECTOR_COLLECTION" = "ai_customer_service"
     # 内部通信
-    "ADMIN_API_BASE_URL" = "http://172.16.0.217"  # admin-api SAE 容器内网 IP，重新部署后可能变化需同步更新
+    "ADMIN_API_BASE_URL" = "http://8.136.139.170"  # admin-api 公网 SLB IP，稳定不变
     "SERVICE_TOKEN"      = var.internal_service_secret
     "JWT_PUBLIC_KEY"     = var.jwt_public_key
     # 物流查询
