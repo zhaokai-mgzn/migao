@@ -56,9 +56,8 @@ verify-poll.sh 在 issue 评论中发现 `VERIFY_TRIGGER` → 触发你验收。
 
 ## 边界
 
-- **不跑** primary.py / reviewer.py / merge.py
 - **不写**代码，**不建** PR
-- 不依赖模板 reviewer_asserts（自己推理 API path）
+- 自己推理 API path（primary/reviewer/merge 已删除）
 - API 调不通 → 先查服务健康 → 仍不行则 hold
 - 不再调 verify-poll.sh（避免死循环）
 - 10 分钟内完成

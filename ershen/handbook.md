@@ -17,7 +17,7 @@
 ```
 /opt/youke/              ← migao 项目代码 (git 仓库)
 /opt/junshi/             ← 军师工作区 (prompts/metrics/archive.py)
-/opt/qa-results/         ← 验收结果 ({issue_id}/primary.json, reviewer.json)
+/opt/qa-results/         ← 验收结果 ({issue_id}/verdict.json)
 /var/log/migao-*.log     ← Agent/军师运行日志
 ```
 
@@ -188,21 +188,12 @@ OpenClaw cron 为主，linux crontab 仅保留 Agent 写码和验收两条：
 | 脚本 | 谁跑 | 做什么 | 状态 |
 |------|------|--------|------|
 | `case_draft.py` | 军师 (openclaw cron) | 匹配模板 → 反推 L2/L3/L4 草稿 → quality_gate 校验 | 活跃 |
-| `primary.py` | — | E2E 全量 + issue spec 中的 pytest/JUnit | 保留备用 |
-| `reviewer.py` | — | 独立 API 调用 + 模板 expect 字段真实验证 | 保留备用 |
-| `merge.py` | — | 读 primary.json + reviewer.json → close/hold/block | 保留备用 |
+| `primary.py` | — | E2E + pytest/JUnit | ❌ 已删除 |
+| `reviewer.py` | — | API 调用 + 模板 expect | ❌ 已删除 |
+| `merge.py` | — | 读 primary.json + reviewer.json | ❌ 已删除 |
 
-> **v3.0（2026-06-19）**: primary/reviewer/merge 已被 LLM 自主验收替代。verify-poll.sh 直接触发 `claude --agent dev-agent`，LLM 自行调 API + 查 DB + 判定。Python 脚本保留供 LLM 按需调用。
-
-### reviewer.py expect 验证 (v2)
-
-不再只看 HTTP 200。解析模板 `expect:` 字段，支持 AND 组合条件 + 6 种验证模式：
-- `data > N` / `data >= N` / `<` / `<=` / `==`
-- `items 非空` / `data 非空`
-- `每项 field = value` / `!=` / `<` / `>`
-- `items 中每条 field NOT IN (v1, v2)`
-
-expect 失败 → passed=False，置信度降低。
+> **v3.0（2026-06-19）**: primary/reviewer/merge 已删除。verify-poll.sh 触发 `claude --agent verify-agent`，LLM 独立调 API + 查 DB + 判定。
+> verify-agent 与 dev-agent 完全独立——写码的不验，验的不写。恢复双独立证据原则。
 
 ### learn.py (自进化 → 已由军师 LLM 接管)
 
@@ -267,6 +258,8 @@ Issue 创建 (CONTRACT_JSON + business_truths)
 | reviewer.py: expect 字段真实验证 (不只是 HTTP 200) | 🔴 |
 | CLAUDE.md + 全部文档: 端口 8080→8081 | 🟡 |
 | AI-Contracts.md: 删除矛盾段落 (军师跑验收) | 🟡 |
+| primary/reviewer/merge 删除，LLM 替代 (v3.0) | 🔴 |
+| verify-agent 独立验收，恢复双独立证据 | 🔴 |
 
 ## 九、当前已知限制（v3.0）
 

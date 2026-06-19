@@ -91,7 +91,7 @@
 - 测试：全量单测 PASS 才能 push
 - Token：每个 issue 控制在 200k tokens 内
 - **Python**：验收脚本用 `$PYTHON`（venv 3.11），不要用系统 `python3`
-- **Reviewer**：新版 reviewer.py 已支持模板 `expect:` 字段验证（不只是 HTTP 200）。验收时会自动检查 data>N、items非空、每项field=value、NOT IN 等规则
+- **验收**：由 verify-agent 独立执行（调 API + 查 DB → 判定），不再用 Python 脚本
 
 ## 协作清单
 

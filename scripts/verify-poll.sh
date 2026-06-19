@@ -3,7 +3,7 @@
 # 米高二郎神验收轮询触发器（独立于 agent-poll.sh）
 #
 # cron 每 5 分钟执行。一次处理一个待验收 issue。
-# 职责单一：扫 VERIFY_TRIGGER → primary.py → reviewer.py → merge.py
+# 职责单一：扫 VERIFY_TRIGGER → claude --agent verify-agent LLM 自主验收
 # 不与 agent-poll.sh 互斥（独立锁文件），确保验收不被写码阻塞。
 # ═══════════════════════════════════════════════════════════════
 set -e
@@ -64,7 +64,7 @@ if ! gh auth status 2>/dev/null; then
     exit 1
 fi
 
-# 拉取最新代码（确保 primary.py / reviewer.py / merge.py 最新）
+# 拉取最新代码
 git pull origin main 2>&1 | tail -1 || true
 
 # ═══════════════════════════════════════════════════════════════
