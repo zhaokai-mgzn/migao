@@ -22,6 +22,10 @@ PYTHON="${WORK_DIR:-/opt/youke}/backend/ai-agent-service/.venv/bin/python3"
 # ═══════════════════════════════════════════════════════
 start_services() {
     log "🚀 启动服务..."
+    # 加载 .env 中的 RDS/REDIS 变量（Spring Boot 不自读 .env）
+    if [ -f /opt/youke/backend/admin-api/.env ]; then
+        export $(grep -E '^(RDS_|REDIS_)' /opt/youke/backend/admin-api/.env | xargs)
+    fi
     cd /opt/youke/backend/admin-api && nohup ./mvnw spring-boot:run -q -Dspring-boot.run.arguments='--server.port=8081' > /var/log/migao-admin-api.log 2>&1 &
     cd /opt/youke/backend/ai-agent-service && nohup .venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8001 > /var/log/migao-ai-agent.log 2>&1 &
     cd /opt/youke/frontend/admin-web && nohup npm run dev > /var/log/migao-admin-web.log 2>&1 &
