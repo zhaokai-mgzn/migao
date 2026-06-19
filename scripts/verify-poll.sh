@@ -111,10 +111,30 @@ if ! lsof -i :8081 -sTCP:LISTEN >/dev/null 2>&1 || ! lsof -i :8001 -sTCP:LISTEN 
 fi
 trap "stop_services; rm -f $LOCK_FILE" EXIT
 
-log "  → primary.py (E2E + 真实集测)..."
-cd /opt/youke && $PYTHON scripts/dual_verify/primary.py "$VERIFY_ISSUE" --out "/opt/qa-results/$VERIFY_ISSUE/primary.json" 2>&1 | tail -3
-log "  → reviewer.py (独立 DB+API + expect 验证)..."
-cd /opt/youke && $PYTHON scripts/dual_verify/reviewer.py "$VERIFY_ISSUE" --out "/opt/qa-results/$VERIFY_ISSUE/reviewer.json" 2>&1 | tail -3
-log "  → merge.py (自动判定+执行)..."
-cd /opt/youke && $PYTHON scripts/dual_verify/merge.py "$VERIFY_ISSUE" 2>&1 | tail -3
-log "✅ 验收完成 #$VERIFY_ISSUE"
+# 读取 Service Token（LLM 调 API 用）
+SERVICE_TOKEN=$(grep '^SERVICE_TOKEN=' /opt/youke/backend/admin-api/.env 2>/dev/null | cut -d= -f2)
+
+log "  → LLM 自主验收 (调 API + 查 DB + 判定)..."
+cd /opt/youke && claude --print \
+    --agent dev-agent \
+    "验收 issue #$VERIFY_ISSUE。你是二郎神验收者，独立验证每条业务真值。
+
+## 环境
+- admin-api: http://localhost:8081
+- X-Service-Token: $SERVICE_TOKEN
+- DB: PGPASSWORD=Migao2026! psql -h pgm-bp1p7w92k81ob5to-pub.pg.rds.aliyuncs.com -U migao_admin -d ai_customer_service
+
+## 步骤
+1. gh issue view $VERIFY_ISSUE --json body,comments → 提取 business_truths
+2. 对每条真值调 API 或查 DB 验证
+3. 判定：全部通过→close / 关键失败→hold / 严重→block
+4. 贴 VERDICT_JSON 评论：
+<!-- VERDICT_JSON {\"issue_id\":$VERIFY_ISSUE,\"decision\":\"close|hold|block\",\"verdict\":\"...\",\"verifier\":\"dev-agent-llm\"} -->
+
+## 边界
+- 不跑 primary.py/reviewer.py/merge.py
+- 不依赖模板 reviewer_asserts（自己推理 API path）
+- API 调不通→先查服务状态→仍不行则hold
+- 不超过 10 分钟" 2>&1 | tail -5
+
+log "✅ LLM 验收完成 #$VERIFY_ISSUE"
