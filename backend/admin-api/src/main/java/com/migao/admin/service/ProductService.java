@@ -459,6 +459,15 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             }
         }
 
+        // 构建颜色 → 序号映射（用于 SKU 编码生成）
+        Map<String, Integer> colorSeqMap = new LinkedHashMap<>();
+        int seq = 1;
+        for (String cn : colorNames) {
+            if (StringUtils.hasText(cn)) {
+                colorSeqMap.putIfAbsent(cn, seq++);
+            }
+        }
+
         // 笛卡尔积自动生成 SKU：colors × sellingMethods × doorWidths
         if ((skuInputs == null || skuInputs.isEmpty())
                 && !colorNames.isEmpty()
@@ -474,6 +483,10 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                         sku.setDoorWidth(dw);
                         sku.setPrice(basePrice);
                         sku.setStock(stock != null && stock > 0 ? stock : 100);
+                        // 自动生成 SKU 编码
+                        Integer colorSeq = colorSeqMap.get(colorName);
+                        sku.setSkuCode(generateSkuCode(productId,
+                                colorSeq != null ? colorSeq : 0, sm, dw));
                         skuInputs.add(sku);
                     }
                 }
@@ -504,11 +517,47 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                 entity.setDoorWidth(input.getDoorWidth());
                 entity.setPrice(input.getPrice() != null ? input.getPrice() : BigDecimal.ZERO);
                 entity.setStock(input.getStock() != null ? input.getStock() : 0);
-                entity.setSkuCode(input.getSkuCode());
+                // 优先使用传入的 skuCode，未传入则自动生成
+                String skuCode = StringUtils.hasText(input.getSkuCode())
+                        ? input.getSkuCode()
+                        : generateSkuCode(productId,
+                                colorSeqMap.getOrDefault(input.getColorName(), 0),
+                                input.getSellingMethod(), input.getDoorWidth());
+                entity.setSkuCode(skuCode);
                 entity.setSalesCount(0);
                 productSkuMapper.insert(entity);
             }
         }
+    }
+
+    /**
+     * 生成 SKU 编码
+     * 格式: {productId前8位大写}-{颜色序号2位}-{售卖方式缩写}-{门幅缩写}
+     * 示例: 984D744B-01-SJ-28
+     */
+    private String generateSkuCode(String productId, int colorSeq,
+                                   String sellingMethod, String doorWidth) {
+        String prefix = productId.length() >= 8 ? productId.substring(0, 8).toUpperCase() : productId.toUpperCase();
+        return String.format("%s-%02d-%s-%s", prefix, colorSeq, toMethodAbbr(sellingMethod), toWidthShort(doorWidth));
+    }
+
+    /** 售卖方式 → 缩写: bulk_cut→SJ(散剪), full_roll→ZJ(整卷) */
+    private String toMethodAbbr(String sellingMethod) {
+        if (sellingMethod == null) return "XX";
+        return switch (sellingMethod) {
+            case "bulk_cut" -> "SJ";
+            case "full_roll" -> "ZJ";
+            default -> sellingMethod.length() > 3 ? sellingMethod.substring(0, 3).toUpperCase() : sellingMethod.toUpperCase();
+        };
+    }
+
+    /** 门幅 → 数字缩写: "2.8米"→"28", "3.2米"→"32" */
+    private String toWidthShort(String doorWidth) {
+        if (doorWidth == null) return "XX";
+        // 提取数字部分（含小数点），拼接成简短代码
+        String digits = doorWidth.replaceAll("[^0-9.]", "");
+        // 去掉小数点: "2.8"→"28", "3.2"→"32", "3.4"→"34"
+        return digits.replace(".", "");
     }
 
     /**
