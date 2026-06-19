@@ -215,14 +215,30 @@ done
 # ═══════════════════════════════════════════════════════════════
 log "🔍 扫描需要验收触发的 issue..."
 
-# 找最近 merged 的 PR，解析关联的 issue
-gh pr list --state merged --limit 10 --json number,body,mergedAt \
-    --jq '.[] | select(.mergedAt != null) | "\(.number)|\(.body)"' 2>/dev/null | while read line; do
+# 用 jq 逐个处理 PR，避免 | 分隔符被 body 内容破坏
+gh pr list --state merged --limit 10 --json number,body,mergedAt 2>/dev/null | \
+    $PYTHON -c "
+import json, sys, re
+for pr in json.load(sys.stdin):
+    if not pr.get('mergedAt'):
+        continue
+    num = pr['number']
+    body = pr.get('body', '')
+    # 提取关联 issue
+    m = re.search(r'(?:Closes|Fixes)\s+#(\d+)', body)
+    if not m:
+        continue
+    iid = m.group(1)
+    print(f'{num}|{iid}')
+" 2>/dev/null | while read line; do
     pr_num=$(echo "$line" | cut -d'|' -f1)
-    pr_body=$(echo "$line" | cut -d'|' -f2-)
+    issue_id=$(echo "$line" | cut -d'|' -f2)
 
-    issue_id=$(echo "$pr_body" | grep -oP '(?:Closes|Fixes)\s+#\K\d+' | head -1)
-    [ -z "$issue_id" ] && continue
+    # 检查 issue 是否仍 open
+    ISSUE_STATE=$(gh issue view "$issue_id" --json state --jq '.state' 2>/dev/null)
+    if [ "$ISSUE_STATE" != "OPEN" ]; then
+        continue
+    fi
 
     # 检查是否已有 VERIFY_TRIGGER
     HAS_TRIGGER=$(gh issue view "$issue_id" --comments --json comments \

@@ -27,11 +27,10 @@ reviewer_asserts:
     expect: items 中每条 status = 已完成
   - API: GET /api/admin/aftersales?status=已关闭
     expect: items 中每条 status = 已关闭
-  - 状态分布一致性: 各 status tab 计数与对应筛选列表 total 一致
+  - "状态分布一致性: 各 status tab 计数与对应筛选列表 total 一致"
   - API: GET /api/admin/aftersales/{id}
     expect: data.timeline 正序 AND data.timeline[0].status = 待处理
-  - 租户隔离: API: GET /api/admin/aftersales/{id}(跨租户)
-    expect: 403 或空数据
+  - "租户隔离: GET /api/admin/aftersales/{id}(跨租户) → expect 403 或空数据"
 
 confidence_required: 90%
 
