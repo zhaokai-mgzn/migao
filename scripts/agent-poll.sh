@@ -77,7 +77,7 @@ if [ -n "$NEEDS_CHANGE_PR" ]; then
     claude --print \
         --agent dev-agent \
         "PR #$PR_NUM (关联 issue #$ISSUE_ID) 被军师标记 needs-changes。读 PR 评论 → 修复 → 遵守项目铁律 (CLAUDE.md + tdd-iron-law.md) → push 到当前分支 $PR_BRANCH。" \
-        2>&1 | tail -10
+        2>&1 | tee -a /var/log/migao-agent-coding.log | tail -10
 
     log "✅ PR #$PR_NUM 修复完成"
     exit 0
@@ -153,7 +153,7 @@ if [ "${IS_BLOCKED:-0}" -gt 0 ]; then
     claude --print \
         --agent dev-agent \
         "issue #$ISSUE_ID 验收被阻。读 BLOCK_LOG 评论理解失败原因 → 查 SLS 日志定位根因 → 修复代码 → 遵守项目铁律 (CLAUDE.md + tdd-iron-law.md) → 推送到当前分支 $BRANCH → 创建 PR (Closes #$ISSUE_ID)。" \
-        2>&1 | tail -10
+        2>&1 | tee -a /var/log/migao-agent-coding.log | tail -10
 else
     log "📝 新功能 issue #$ISSUE_ID"
     # 检查是否为模板补充任务（不需要 DRAFT_JSON）
@@ -166,7 +166,7 @@ else
     claude --print \
         --agent dev-agent \
         "$PROMPT" \
-        2>&1 | tail -10
+        2>&1 | tee -a /var/log/migao-agent-coding.log | tail -10
 fi
 
 log "✅ issue #$ISSUE_ID 完成"
