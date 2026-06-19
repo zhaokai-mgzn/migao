@@ -32,6 +32,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
+import org.mockito.ArgumentCaptor;
 import static org.mockito.Mockito.*;
 
 /**
@@ -251,6 +252,95 @@ class ProductServiceTest {
         assertThat(result).isNotNull();
         assertThat(result.getName()).isEqualTo("新商品");
         verify(productMapper).insert(any(Product.class));
+    }
+
+    @Test
+    @DisplayName("SKU编码生成 - 优先使用商品货号作为前缀")
+    void generateSkuCode_UsesProductSkuCodePrefix() {
+        // Given: 商品有货号 "2699"，配置颜色/售卖方式/门幅
+        ProductCreateRequest request = new ProductCreateRequest();
+        request.setName("测试商品");
+        request.setCategoryId("cat-001");
+        request.setBasePrice(new BigDecimal("68.00"));
+        request.setStock(100);
+        request.setSkuCode("2699"); // 货号
+        ProductColorInput c1 = new ProductColorInput();
+        c1.setColorName("黑色");
+        ProductColorInput c2 = new ProductColorInput();
+        c2.setColorName("灰色");
+        request.setColors(List.of(c1, c2));
+        request.setSellingMethods(List.of("bulk_cut", "full_roll"));
+        request.setDoorWidths(List.of("2.8米", "3.2米"));
+
+        when(categoryMapper.selectById("cat-001")).thenReturn(testCategory);
+        ArgumentCaptor<Product> productCaptor = ArgumentCaptor.forClass(Product.class);
+        when(productMapper.insert(productCaptor.capture())).thenAnswer(invocation -> {
+            Product p = invocation.getArgument(0);
+            p.setId("prod-sku-test");
+            return 1;
+        });
+        // getProductById 兜底查询
+        Product savedProduct = Product.builder()
+                .id("prod-sku-test")
+                .name("测试商品")
+                .categoryId("cat-001")
+                .basePrice(new BigDecimal("68.00"))
+                .skuCode("2699")
+                .build();
+        when(productMapper.selectById("prod-sku-test")).thenReturn(savedProduct);
+
+        // When
+        productService.createProduct(request, 1L);
+
+        // Verify product.skuCode was set from request
+        Product capturedProduct = productCaptor.getValue();
+        assertThat(capturedProduct.getSkuCode()).isEqualTo("2699");
+
+        // Then: 验证 SKU 插入时 skuCode 以货号 "2699" 为前缀
+        ArgumentCaptor<ProductSku> skuCaptor = ArgumentCaptor.forClass(ProductSku.class);
+        verify(productSkuMapper, atLeastOnce()).insert(skuCaptor.capture());
+        assertThat(skuCaptor.getAllValues()).allMatch(sku ->
+                sku.getSkuCode() != null && sku.getSkuCode().startsWith("2699-"));
+    }
+
+    @Test
+    @DisplayName("SKU编码生成 - 无货号时兜底用商品ID前缀")
+    void generateSkuCode_FallbackToProductIdPrefix() {
+        // Given: 商品无货号
+        ProductCreateRequest request = new ProductCreateRequest();
+        request.setName("无货号商品");
+        request.setCategoryId("cat-001");
+        request.setBasePrice(new BigDecimal("50.00"));
+        request.setStock(50);
+        // skuCode 不设置
+        ProductColorInput c1 = new ProductColorInput();
+        c1.setColorName("红色");
+        request.setColors(List.of(c1));
+        request.setSellingMethods(List.of("bulk_cut"));
+        request.setDoorWidths(List.of("2.8米"));
+
+        when(categoryMapper.selectById("cat-001")).thenReturn(testCategory);
+        when(productMapper.insert(any(Product.class))).thenAnswer(invocation -> {
+            Product p = invocation.getArgument(0);
+            p.setId("prod-no-sku-code-test");
+            return 1;
+        });
+        Product savedProduct = Product.builder()
+                .id("prod-no-sku-code-test")
+                .name("无货号商品")
+                .categoryId("cat-001")
+                .basePrice(new BigDecimal("50.00"))
+                .build();
+        when(productMapper.selectById("prod-no-sku-code-test")).thenReturn(savedProduct);
+
+        // When
+        productService.createProduct(request, 1L);
+
+        // Then: 验证 SKU 插入时 skuCode 以商品ID前缀为前缀
+        ArgumentCaptor<ProductSku> skuCaptor = ArgumentCaptor.forClass(ProductSku.class);
+        verify(productSkuMapper, atLeastOnce()).insert(skuCaptor.capture());
+        assertThat(skuCaptor.getAllValues()).allMatch(sku ->
+                sku.getSkuCode() != null && sku.getSkuCode().startsWith("PROD-NO-"));
     }
 
     @Test

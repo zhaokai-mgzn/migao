@@ -317,7 +317,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         productMapper.insert(product);
 
         // 保存销售信息（颜色 + SKU），支持笛卡尔积自动生成
-        saveColorsAndSkus(product.getId(), tenantId,
+        saveColorsAndSkus(product.getId(), product.getSkuCode(), tenantId,
                 request.getColors(),
                 request.getSellingMethods(), request.getDoorWidths(),
                 product.getBasePrice(), product.getStock(),
@@ -388,7 +388,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             // 重新保存（price/stock 优先取请求值，否则用商品当前值）
             BigDecimal skuPrice = request.getBasePrice() != null ? request.getBasePrice() : product.getBasePrice();
             Integer skuStock = request.getStock() != null ? request.getStock() : product.getStock();
-            saveColorsAndSkus(id, tenantId,
+            saveColorsAndSkus(id, product.getSkuCode(), tenantId,
                     request.getColors(),
                     request.getSellingMethods(), request.getDoorWidths(),
                     skuPrice, skuStock,
@@ -421,7 +421,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
      * 2. 再批量插入 skus，使用映射替换 colorId
      * 3. 仅在 colors / skus 任一非空时执行；空集合或 null 则跳过
      */
-    private void saveColorsAndSkus(String productId, Long tenantId,
+    private void saveColorsAndSkus(String productId, String productSkuCode, Long tenantId,
                                     List<ProductColorInput> colorInputs,
                                     List<String> sellingMethods,
                                     List<String> doorWidths,
@@ -485,7 +485,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                         sku.setStock(stock != null && stock > 0 ? stock : 100);
                         // 自动生成 SKU 编码
                         Integer colorSeq = colorSeqMap.get(colorName);
-                        sku.setSkuCode(generateSkuCode(productId,
+                        sku.setSkuCode(generateSkuCode(productId, productSkuCode,
                                 colorSeq != null ? colorSeq : 0, sm, dw));
                         skuInputs.add(sku);
                     }
@@ -520,7 +520,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                 // 优先使用传入的 skuCode，未传入则自动生成
                 String skuCode = StringUtils.hasText(input.getSkuCode())
                         ? input.getSkuCode()
-                        : generateSkuCode(productId,
+                        : generateSkuCode(productId, productSkuCode,
                                 colorSeqMap.getOrDefault(input.getColorName(), 0),
                                 input.getSellingMethod(), input.getDoorWidth());
                 entity.setSkuCode(skuCode);
@@ -532,12 +532,17 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
 
     /**
      * 生成 SKU 编码
-     * 格式: {productId前8位大写}-{颜色序号2位}-{售卖方式缩写}-{门幅缩写}
-     * 示例: 984D744B-01-SJ-28
+     * 格式: {货号}-{颜色序号2位}-{售卖方式缩写}-{门幅缩写}
+     * 示例: 50181A94-01-SJ-28（有货号优先用货号），984D744B-01-SJ-28（无货号兜底用ID前缀）
      */
-    private String generateSkuCode(String productId, int colorSeq,
+    private String generateSkuCode(String productId, String productSkuCode, int colorSeq,
                                    String sellingMethod, String doorWidth) {
-        String prefix = productId.length() >= 8 ? productId.substring(0, 8).toUpperCase() : productId.toUpperCase();
+        String prefix;
+        if (StringUtils.hasText(productSkuCode)) {
+            prefix = productSkuCode.toUpperCase();
+        } else {
+            prefix = productId.length() >= 8 ? productId.substring(0, 8).toUpperCase() : productId.toUpperCase();
+        }
         return String.format("%s-%02d-%s-%s", prefix, colorSeq, toMethodAbbr(sellingMethod), toWidthShort(doorWidth));
     }
 
