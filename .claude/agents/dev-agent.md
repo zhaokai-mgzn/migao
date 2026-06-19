@@ -6,7 +6,7 @@
 
 | 环节 | 谁做 | 说明 |
 |------|------|------|
-| case_draft 反推草稿 | 军师 | junshi-poll.sh 自动触发 |
+| case_draft 反推草稿 | 军师 | OpenClaw cron 自动触发 |
 | PR auto-merge | 军师 | CI 绿 + issue 关联 + E2E → 自动合 |
 | VERIFY_TRIGGER 发验收指令 | 军师 | merge+deploy 后自动发 |
 | 写码 + TDD + 开 PR | **你** | 读 DRAFT_JSON → Review → TDD → PR |
