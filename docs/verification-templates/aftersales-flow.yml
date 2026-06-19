@@ -10,6 +10,9 @@ business_truths:
   - 客户只能看到自己的售后 → tenant_id + customer_id 双重隔离
   - 售后创建前必须弹确认卡片 → 不确认不执行
   - 客户说转人工 → 自动创建工单并通知管理员
+  - 客户创建订单须通过手机号验证身份 → 只能创建自己订单
+  - 不同渠道欢迎语独立配置 → 微信/抖音/H5/Web 各有专属欢迎语
+  - 企业自定义机器人名称和欢迎语 → 优先使用租户 AI 配置
 
 primary_specs:
   - tests/e2e/specs/after-sales/after-sales-list.spec.ts
@@ -31,6 +34,15 @@ reviewer_asserts:
   - API: GET /api/admin/aftersales/{id}
     expect: data.timeline 正序 AND data.timeline[0].status = 待处理
   - "租户隔离: GET /api/admin/aftersales/{id}(跨租户) → expect 403 或空数据"
+  - API: POST /api/auth/sms/send
+    expect: 200 AND 短信发送成功
+  - API: POST /api/auth/sms/login
+    expect: 200 AND data.token 非空
+  - API: POST /api/admin/orders
+    expect: 200 AND data.id 非空 AND data.customerPhone 符合手机号格式
+  - "渠道欢迎语独立: GET /api/admin/tenant/ai-config → expect data.channelConfigs 非空 AND 微信/抖音/H5/Web 各有独立欢迎语"
+  - "租户 AI 配置: GET /api/admin/tenant/ai-config → expect data.botName 非空 AND data.greetingTemplate 非空"
+  - "租户 AI 配置可更新: PUT /api/admin/tenant/ai-config → expect 200 AND data.botName 非空 AND data.greetingTemplate 非空"
 
 confidence_required: 90%
 
