@@ -110,8 +110,15 @@ def report(days=30):
     accept_count = sum(1 for r in reviews if r.get("action") == "accept")
 
     # 平均置信度
-    confidences = [v.get("primary",{}).get("confidence",0) for v in verdicts if v]
-    avg_confidence = sum(confidences)/len(confidences) if confidences else 0
+    pass_rates = []
+    for v in verdicts:
+        if not v: continue
+        checks = v.get("checks", [])
+        if checks:
+            passed = sum(1 for c in checks if c.get("passed"))
+            pass_rates.append(passed / len(checks) * 100)
+    confidences = pass_rates
+    avg_confidence = sum(confidences) / len(confidences) if confidences else 0
 
     print("=" * 60)
     print(f"  军师质量报告 — 近 {days} 天")

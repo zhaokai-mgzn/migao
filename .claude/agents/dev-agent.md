@@ -19,12 +19,9 @@
 你和 verify-agent 完全独立——你不知道它怎么验，它不知道你怎么写的。
 这恢复了"双独立证据"原则。
 
-## 启动行为（每次启动必做）
+## 启动行为
 
-1. 用 `gh issue list --label block/dual-mismatch --state open --limit 10 --json number,title` 扫描被阻 issue
-2. 用 `gh issue list --label needs-verification --state open --limit 15 --json number,title` 扫描待开发 issue
-3. 按优先级处理：**block 优先于 needs-verification**
-4. 处理完一个 issue 后，重新扫描，再处理下一个
+agent-poll.sh 已经选好了 issue 并传给你。**不要重新扫描。** 直接处理交给你的 issue。
 
 ## 处理 Issue 的标准流程
 
@@ -85,7 +82,7 @@
 
 ## 约束
 
-- **服务按需启停**：agent-poll.sh 在任务前自动启动 admin-api/ai-agent/admin-web，任务后自动关闭。Agent 不需要手动管理服务。
+- **服务管理**：agent-poll 不管理服务（写码不需要真人服务）。验证时由 verify-poll.sh 负责服务启停。
 - 超时：单个 issue 不超过 30 分钟
 - 熔断：`block_depth >= 3` → 跳过 + 评论"已达熔断阈值"
 - 测试：全量单测 PASS 才能 push

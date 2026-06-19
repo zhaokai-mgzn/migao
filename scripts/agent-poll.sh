@@ -6,8 +6,7 @@
 # 优先抢修复 issue，其次抢新功能 issue。
 # 不直接处理 block/dual-mismatch 标签的原始 issue（那是军师的状态标记）。
 #
-# 注意：验收（VERIFY_TRIGGER → primary/reviewer/merge）已拆分到
-# verify-poll.sh，本脚本只负责写码。
+# 注意：验收由 verify-poll.sh 独立执行（claude --agent verify-agent），本脚本只负责写码。
 # ═══════════════════════════════════════════════════════════════
 set -e
 
@@ -21,27 +20,6 @@ PYTHON="${WORK_DIR:-/opt/youke}/backend/ai-agent-service/.venv/bin/python3"
 [ -x "$(command -v "$PYTHON" 2>/dev/null)" ] || PYTHON="python3"
 
 # ═══════════════════════════════════════════════════════
-# 按需启停服务 — 任务开始前启动，任务结束后关闭
-# ═══════════════════════════════════════════════════════
-start_services() {
-    log "🚀 启动服务..."
-    # 加载 .env 中的 RDS/REDIS 变量（Spring Boot 不自读 .env）
-    if [ -f /opt/youke/backend/admin-api/.env ]; then
-        export $(grep -E '^(RDS_|REDIS_)' /opt/youke/backend/admin-api/.env | xargs)
-    fi
-    cd /opt/youke/backend/admin-api && nohup ./mvnw spring-boot:run -q -Dspring-boot.run.arguments='--server.port=8081' > /var/log/migao-admin-api.log 2>&1 &
-    cd /opt/youke/backend/ai-agent-service && nohup .venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8001 > /var/log/migao-ai-agent.log 2>&1 &
-    cd /opt/youke/frontend/admin-web && nohup npm run dev > /var/log/migao-admin-web.log 2>&1 &
-    sleep 30
-}
-
-stop_services() {
-    log "🛑 关闭服务..."
-    fuser -k 8081/tcp 2>/dev/null || true
-    fuser -k 8001/tcp 2>/dev/null || true
-    fuser -k 3001/tcp 2>/dev/null || true
-}
-
 WORK_DIR="${WORK_DIR:-/opt/youke}"
 LOCK_FILE="/tmp/migao-agent.lock"
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"; }
@@ -138,8 +116,6 @@ git checkout -B "$BRANCH" 2>/dev/null
 log "🌿 分支: $BRANCH"
 
 # ── 按需启动服务，任务结束后自动关闭 ──
-start_services
-trap "stop_services; rm -f $LOCK_FILE" EXIT
 
 # ── 熔断检查 ──
 BLOCK_COMMENT=$(gh issue view "$ISSUE_ID" --comments --json comments \

@@ -23,7 +23,7 @@
 1. **CLAUDE.md 最新性** — 检查项目根 `CLAUDE.md` 是否与 `.claude/settings.json` 版本号一致
 2. **tdd-iron-law.md 完整性** — 确认 `.claude/skills/tdd-iron-law.md` 包含 CP-1 ~ CP-7 + L0 + E2E 质量规范
 3. **环境变量完整性** — 校验 `env` 中必有 `PROJECT_ROOT`, `QA_RESULT_ROOT`, `CLAUDE_MD_CHECKSUM`
-4. **脚本可执行性** — `scripts/dual_verify/primary.py` / `reviewer.py` / `case_draft.py` 存在且可执行
+4. **脚本可执行性** — `scripts/dual_verify/case_draft.py` / `check_assert.py` / `quality_report.py` 存在且可执行
 5. **E2E 目录结构** — `tests/e2e/specs/quality/` 下 api-contract + cross-page-consistency + anti-placeholder 存在
 
 自检失败 → 自动触发修复 → 再次自检。最多 2 次重试后如仍失败，向用户报告具体缺失项。

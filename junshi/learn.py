@@ -413,7 +413,7 @@ def cmd_grow(dry_run: bool = True):
 
 ### 修改文件
 1. `scripts/dual_verify/case_draft.py` — TEMPLATES 字典或 _TRUTH_KEYWORD_MAP
-2. `scripts/dual_verify/reviewer.py` — _TRUTH_KEYWORD_MAP（infer_business_asserts fallback）
+2. `scripts/dual_verify/check_assert.py` — _TRUTH_KEYWORD_MAP（infer_business_asserts fallback）
 3. `junshi/learn.py` — CURRENT_KEYWORD_COVERAGE 字典
 
 <!-- CONTRACT_JSON {{"schema_version":"1.0","type":"keyword_growth","business_truths":["补充关键词覆盖: {kws_str}"]}} -->

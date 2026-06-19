@@ -26,17 +26,21 @@ start_services() {
     if [ -f /opt/youke/backend/admin-api/.env ]; then
         export $(grep -E '^(RDS_|REDIS_)' /opt/youke/backend/admin-api/.env | xargs)
     fi
-    cd /opt/youke/backend/admin-api && nohup ./mvnw spring-boot:run -q -Dspring-boot.run.arguments='--server.port=8081' > /var/log/migao-admin-api.log 2>&1 &
-    cd /opt/youke/backend/ai-agent-service && nohup .venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8001 > /var/log/migao-ai-agent.log 2>&1 &
-    cd /opt/youke/frontend/admin-web && nohup npm run dev > /var/log/migao-admin-web.log 2>&1 &
+    cd /opt/youke/backend/admin-api && nohup ./mvnw spring-boot:run -q -Dspring-boot.run.arguments='--server.port=8081' > /var/log/migao-admin-api.log 2>&1 & echo $! > /tmp/migao-verify-admin-api.pid
+    cd /opt/youke/backend/ai-agent-service && nohup .venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8001 > /var/log/migao-ai-agent.log 2>&1 & echo $! > /tmp/migao-verify-ai-agent.pid
+    cd /opt/youke/frontend/admin-web && nohup npm run dev > /var/log/migao-admin-web.log 2>&1 & echo $! > /tmp/migao-verify-admin-web.pid
     sleep 30
 }
 
 stop_services() {
     log "🛑 关闭服务..."
-    fuser -k 8081/tcp 2>/dev/null || true
-    fuser -k 8001/tcp 2>/dev/null || true
-    fuser -k 3001/tcp 2>/dev/null || true
+    # 只杀自己启动的进程，不误杀 agent-poll 启动的服务
+    for pid_file in /tmp/migao-verify-admin-api.pid /tmp/migao-verify-ai-agent.pid /tmp/migao-verify-admin-web.pid; do
+        if [ -f "$pid_file" ]; then
+            kill $(cat "$pid_file") 2>/dev/null || true
+            rm -f "$pid_file"
+        fi
+    done
 }
 
 WORK_DIR="${WORK_DIR:-/opt/youke}"
@@ -113,10 +117,10 @@ trap "stop_services; rm -f $LOCK_FILE" EXIT
 
 # 凭据通过环境变量传递，不写入 prompt 文本
 export SERVICE_TOKEN=$(grep '^SERVICE_TOKEN=' /opt/youke/backend/admin-api/.env 2>/dev/null | cut -d= -f2)
-export PGPASSWORD=Migao2026!
-export DB_HOST=pgm-bp1p7w92k81ob5to-pub.pg.rds.aliyuncs.com
-export DB_USER=migao_admin
-export DB_NAME=ai_customer_service
+export PGPASSWORD=$(grep '^RDS_PASSWORD=' /opt/youke/backend/admin-api/.env 2>/dev/null | cut -d= -f2)
+export DB_HOST=$(grep '^RDS_HOST=' /opt/youke/backend/admin-api/.env 2>/dev/null | cut -d= -f2)
+export DB_USER=$(grep '^RDS_USER=' /opt/youke/backend/admin-api/.env 2>/dev/null | cut -d= -f2)
+export DB_NAME=$(grep '^RDS_DB=' /opt/youke/backend/admin-api/.env 2>/dev/null | cut -d= -f2)
 export ADMIN_API=http://localhost:8081
 
 log "  → LLM 自主验收 (调 API + 查 DB + 判定)..."

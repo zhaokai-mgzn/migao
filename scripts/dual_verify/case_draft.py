@@ -206,7 +206,7 @@ def auto_patch_template(tmpl_name: str, template: dict, truths: list) -> bool:
             if inserted:
                 raw = "\n".join(new_lines)
 
-    # 写入更新后的模板（仅本地，不提交——由 junshi-poll 下发给 Agent 处理）
+    # 写入更新后的模板（仅本地，不提交——由 agent-poll 下发给 Agent 处理）
     with open(tmpl_path, "w") as f:
         f.write(raw)
 

@@ -103,7 +103,7 @@
       "purpose": "军师自动补全模板 — auto_asserts < truths_count 时，自动推断新增 reviewer_asserts",
       "trigger": "case_draft.py quality_gate reject 因为 auto < truths",
       "action": "infer_assert_for_truth() 推断 API/DB 断言 → 写入模板 YAML → git commit + PR",
-      "keyword_map": "与 reviewer.py infer_business_asserts 共享关键词映射",
+      "keyword_map": "与 check_assert.py infer_business_asserts 共享关键词映射",
       "safety": "只新增断言不删除已有；PR 需要人工 review 才能合并；模板更新后重新发稿",
       "last_modified": "2026-06-17T14:30:00Z"
     },
@@ -201,7 +201,9 @@
         "type": "template_insufficient",
         "trigger": "auto_asserts < truths_count → block rate 高",
         "action": "对应模板需补充 reviewer_asserts",
-        "last_seen_in": [387]
+        "last_seen_in": [
+          387
+        ]
       }
     ]
   }

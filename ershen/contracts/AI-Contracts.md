@@ -84,14 +84,14 @@
 ```
 1. block/dual-mismatch + needs-verification  → 验收被阻，立即修复
 2. needs-verification (有 DRAFT_JSON 评论)   → 新功能/Bug，开始写码
-3. VERIFY_TRIGGER 评论 (无 VERIFY_RESULT)    → 跑验收
+3. VERIFY_TRIGGER 评论 (无 VERDICT_JSON)    → 跑验收
 ```
 
 ## 铁律
 
 - **一个 issue 走到底**，不创建子 issue
 - **所有交互带 JSON 机读块**，不靠自然语言猜
-- **军师不跑验收脚本**，只发 VERIFY_TRIGGER + 读 VERIFY_RESULT
+- **军师不跑验收脚本**，只发 VERIFY_TRIGGER + 读 VERDICT_JSON
 - **Agent 跑全链路验收**，merge.py 在服务器本地执行
 - **3 次打回熔断**，block_depth 从 BLOCK_LOG 评论累计
 
@@ -164,7 +164,7 @@ PR merge + deploy 完成 →
       军师挂 ai-verify/pending
       
       Agent 完成验收 →
-        军师读 VERIFY_RESULT:
+        军师读 VERDICT_JSON:
           pass → merge.py 已自动 close + verified/auto
           block → 同 issue 重打 needs-verification
           hold → ai-verify/hold (军师挂)
@@ -262,7 +262,7 @@ PR merge → deploy 完成 →
     挂 ai-verify/pending →
     评论: <!-- VERIFY_TRIGGER {"issue_id":N} -->
 
-Agent 扫到 VERIFY_TRIGGER（无 VERIFY_RESULT）→
+Agent 扫到 VERIFY_TRIGGER（无 VERDICT_JSON）→
   确认服务 alive →
   primary.py (E2E+真实集测) → reviewer.py (独立DB+API) → merge.py (自动判定+执行)
   merge.py 自动 close/hold/block + 贴 AI验收报告
