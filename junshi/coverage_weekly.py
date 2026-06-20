@@ -227,7 +227,7 @@ def run_module_scan(name: str, mod: dict, run_tests: bool = False) -> dict:
                 cwd=REPO_ROOT,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True,
+                universal_newlines=True,
                 timeout=600,
             )
             result["test_exit_code"] = proc.returncode
@@ -566,8 +566,9 @@ def _create_one_issue(title: str, body: str, labels: list) -> str:
                 "--body-file", str(body_file),
                 "--label", ",".join(labels),
             ],
-            capture_output=True,
-            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
             timeout=60,
         )
         if proc.returncode == 0:
@@ -578,7 +579,8 @@ def _create_one_issue(title: str, body: str, labels: list) -> str:
             log(f"  ❌ gh 失败: {proc.stderr}")
             return f"ERROR: {proc.stderr}"
     finally:
-        body_file.unlink(missing_ok=True)
+        if body_file.exists():
+            body_file.unlink()
 
 
 def _add_sub_issue_comment(top_url: str, sub_url: str, feature: str, file_count: int):
@@ -588,8 +590,9 @@ def _add_sub_issue_comment(top_url: str, sub_url: str, feature: str, file_count:
     try:
         proc = subprocess.run(
             ["gh", "issue", "comment", issue_num, "--body", comment],
-            capture_output=True,
-            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
             timeout=30,
         )
         if proc.returncode != 0:
