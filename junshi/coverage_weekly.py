@@ -466,16 +466,18 @@ def build_issue_body(module: str, feature: str, files: list, module_summary: dic
 
 
 def build_top_summary_issue(module: str, module_summary: dict, feature_count: int) -> str:
-    """生成顶层 tracking issue（追踪所有子 issue）。"""
+    """生成顶层 tracking issue（追踪所有子 issue，长期监督）。"""
     return "\n".join([
         f"## 背景",
         f"- 模块：`{module}` 当前行覆盖率 **{module_summary.get('line_pct', 0)}%**（阈值 {THRESHOLD}%）",
         f"- 拆分为 **{feature_count}** 个子 issue 按功能跟进",
-        f"- 顶层 issue 只追踪进度，不强制 close（所有子 issue 关闭后自动 close）",
+        f"- **本顶层 issue 永远不主动 close**（凯总 2026-06-20 09:00 指示）",
+        f"- 累计达 60% 后继续增长，新发现的低覆盖文件会建新子 issue",
         "",
         f"## 业务真值",
         f"凯总指示（2026-06-20 08:51）：大任务按功能拆 issue，不放一个 issue。",
-        f"本顶层 issue 是 tracking 用，研发认领时认领对应子 issue。",
+        f"本顶层 issue 是**长期监督 tracking**，研发认领时认领对应子 issue。",
+        f"覆盖率是'长期健康指标'，不是'完成就关'的任务。",
         "",
         f"## 涉及模块整体统计",
         f"- 总行数：{module_summary.get('lines_total', 0)}",
@@ -495,23 +497,34 @@ def build_top_summary_issue(module: str, module_summary: dict, feature_count: in
             "threshold": THRESHOLD,
             "feature_count": feature_count,
             "verification_method": "qa-growth-gate + pr-check",
+            "auto_close": False,  # 凯总 09:00 指示：永远不 auto close
+            "policy": "long-term-monitoring",
         }, ensure_ascii=False, indent=2),
         "```",
     ])
 
 
 def create_issues(scan_results: list, dry_run: bool = True) -> list:
-    """对每个低于阈值的模块建 issue（按功能拆 + 顶层 tracking）。"""
+    """对每个低于阈值的模块建 issue（按功能拆 + 顶层 tracking）。
+
+    凯总 2026-06-20 09:00 指示：
+    - 顶层 tracking issue 永远不主动 close（即使 ≥ 60% 也保留并继续观察）
+    - 累计达 60% 后继续增长：模块新发现低覆盖文件就建新子 issue
+    - 只有"模块完全无低覆盖文件"才真的不建（这是真正的"全达标"）
+    """
     created = []
     for r in scan_results:
         if "error" in r:
             continue
         line_pct = r.get("line_pct", 0)
-        if line_pct >= THRESHOLD:
-            log(f"[{r['module']}] 覆盖率达标（{line_pct}%），跳过建 issue")
+        files = r.get("files_below_threshold", [])
+
+        # 凯总 09:00 改：永远建顶层 tracking（除非模块真的 100% 覆盖），
+        # 旧的"达标跳过"逻辑去掉 —— 即使 ≥ 60% 也保留顶层继续观察
+        if line_pct >= 100.0 and not files:
+            log(f"[{r['module']}] 完全覆盖（{line_pct}%），跳过建 issue")
             continue
 
-        files = r.get("files_below_threshold", [])
         groups = group_files_by_feature(files, r["module"])
         module_summary = {
             "line_pct": line_pct,
@@ -521,8 +534,11 @@ def create_issues(scan_results: list, dry_run: bool = True) -> list:
             "files_below": len(files),
         }
 
-        # 1. 顶层 tracking issue
-        top_title = f"[coverage-tracking] {r['module']} 覆盖率 {line_pct}% < {THRESHOLD}%（{len(groups)} 个子 issue）"
+        # 1. 顶层 tracking issue（永远建，永不 close）
+        if line_pct >= THRESHOLD:
+            top_title = f"[coverage-tracking] {r['module']} 覆盖率 {line_pct}% ≥ {THRESHOLD}%（持续监督）"
+        else:
+            top_title = f"[coverage-tracking] {r['module']} 覆盖率 {line_pct}% < {THRESHOLD}%（{len(groups)} 个子 issue）"
         top_body = build_top_summary_issue(r["module"], module_summary, len(groups))
         top_labels = ["needs-verification", "coverage-gap", "coverage-tracking", "qa-growth"]
         top_url = None
@@ -534,7 +550,7 @@ def create_issues(scan_results: list, dry_run: bool = True) -> list:
             top_url = _create_one_issue(top_title, top_body, top_labels)
             created.append({"url": top_url, "kind": "tracking", "title": top_title})
 
-        # 2. 每个 feature 一个子 issue
+        # 2. 每个 feature 一个子 issue（即使顶层 ≥ 60%，有新文件就建）
         for feature, feature_files in groups.items():
             sub_title = f"[coverage] {r['module']}/{feature} 覆盖率补全（{len(feature_files)} 个文件）"
             sub_body = build_issue_body(r["module"], feature, feature_files, module_summary)
@@ -546,7 +562,6 @@ def create_issues(scan_results: list, dry_run: bool = True) -> list:
             else:
                 sub_url = _create_one_issue(sub_title, sub_body, sub_labels)
                 created.append({"url": sub_url, "kind": "feature", "title": sub_title})
-                # 在顶层 issue 评论里挂上子 issue 链接
                 if top_url:
                     _add_sub_issue_comment(top_url, sub_url, feature, len(feature_files))
 

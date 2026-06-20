@@ -32,15 +32,18 @@
 
 ## 触发方式
 
-**OpenClaw cron**（待新增）：每周一 10:30
-```bash
-python3 /opt/youke/junshi/coverage_weekly.py --scan --create-issues
-```
+**OpenClaw cron**：每周一 10:30
+- cron id: `b0526a89-ed8d-4ca7-864f-7b656fbc03bf`
+- 命名: `junshi-coverage-weekly`
 
 **首次 dry-run**（2026-06-20 08:50）：凯总指示当天就验一次
-```bash
-python3 /opt/youke/junshi/coverage_weekly.py --scan --dry-run
-```
+- admin-api 50.54% / admin-web 18.58% / ai-agent 59.95%
+- 3 顶层 + 30 子 issue 已建（#552-#584）
+
+**首次正式建 issue**（2026-06-20 08:55-08:58）：按"按模块拆"原则
+- admin-api: #552 + 9 子 (#553-#561)
+- admin-web: #562 + 12 子 (#563-#574)
+- ai-agent-service: #575 + 9 子 (#576-#584)
 
 ## 输出
 
@@ -51,9 +54,26 @@ python3 /opt/youke/junshi/coverage_weekly.py --scan --dry-run
 
 ## 阈值规则
 
-- **行覆盖率 < 60%**：自动建 issue（每模块 1 个，列出 top 20 文件）
+- **行覆盖率 < 60%**：自动建 issue（每模块 1 顶层 + N 子 issue）
 - **关键业务文件 < 80%**：在 issue body 标红，提示研发优先
 - **0 case 文件**：通过现有缺测扫描识别（每 4h 旧 cron 职责，由 pr-check 补）
+
+## 顶层 tracking 永 close 规则（2026-06-20 09:00 凯总指示）
+
+覆盖率周扫的**顶层 tracking issue 永远不主动 close**：
+- 即使模块整体 ≥ 60% 也保留并继续观察
+- 累计达 60% 后继续增长：新发现的低覆盖文件会建新子 issue
+- 只有"模块完全无低覆盖文件"才真的不建新顶层
+
+**逻辑**：覆盖率是"长期健康指标"，不是"完成就关"的任务。
+
+**已建顶层（2026-06-20 09:00）**：
+- #552 admin-api 50.54%（9 个子 issue）
+- #562 admin-web 18.58%（12 个子 issue）
+- #575 ai-agent-service 59.95%（9 个子 issue）
+- #585 verify-trigger #516 typo 跟踪
+
+**禁止**：merge.py / primary.py / reviewer.py 自动 close 上述 issue（即使双验收通过）。
 
 ## 边界
 
