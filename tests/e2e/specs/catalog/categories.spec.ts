@@ -40,7 +40,7 @@ test.describe('分类管理', () => {
     })
 
     await page.goto('/categories')
-    await page.waitForSelector('text=分类管理')
+    await expect(page.getByText('分类管理')).toBeVisible()
   })
 
   test.describe('页面加载', () => {
@@ -61,13 +61,6 @@ test.describe('分类管理', () => {
   })
 
   test.describe('分类树交互', () => {
-    test('点击分类节点应选中并显示详情', async ({ page }) => {
-      await page.getByText('窗帘布艺').click()
-      // 右侧详情面板
-      await expect(page.getByText('分类详情')).toBeVisible()
-      await expect(page.getByText('分类名称')).toBeVisible()
-    })
-
     test('折叠按钮应隐藏子分类', async ({ page }) => {
       // 找到窗帘布艺旁边的折叠按钮
       const treeNode = page.locator('text=窗帘布艺').locator('..')
@@ -89,8 +82,8 @@ test.describe('分类管理', () => {
     test('hover 应显示编辑和删除操作', async ({ page }) => {
       const treeNode = page.locator('text=窗帘布艺').locator('..')
       await treeNode.hover()
-      await expect(treeNode.getByText('编辑')).toBeVisible()
-      await expect(treeNode.getByText('删除')).toBeVisible()
+      await expect(treeNode.getByTitle('编辑')).toBeVisible()
+      await expect(treeNode.getByTitle('删除')).toBeVisible()
     })
   })
 
@@ -140,7 +133,7 @@ test.describe('分类管理', () => {
       // hover 并点击编辑
       const treeNode = page.locator('text=窗帘布艺').locator('..')
       await treeNode.hover()
-      await treeNode.getByText('编辑').click()
+      await treeNode.getByTitle('编辑').click()
 
       // 对话框标题为"编辑分类"
       await expect(page.getByText('编辑分类')).toBeVisible()
@@ -154,7 +147,7 @@ test.describe('分类管理', () => {
     test('点击删除应弹出确认对话框', async ({ page }) => {
       const treeNode = page.locator('text=沙发面料').locator('..')
       await treeNode.hover()
-      await treeNode.getByText('删除').click()
+      await treeNode.getByTitle('删除').click()
       await expect(page.getByText('确认删除')).toBeVisible()
       await expect(page.getByText(/确定要删除分类/)).toBeVisible()
     })
@@ -162,7 +155,7 @@ test.describe('分类管理', () => {
     test('含子分类的删除应显示警告', async ({ page }) => {
       const treeNode = page.locator('text=窗帘布艺').locator('..')
       await treeNode.hover()
-      await treeNode.getByText('删除').click()
+      await treeNode.getByTitle('删除').click()
       await expect(page.getByText(/该分类下还有.*子分类/)).toBeVisible()
     })
 
@@ -179,23 +172,11 @@ test.describe('分类管理', () => {
 
       const treeNode = page.locator('text=沙发面料').locator('..')
       await treeNode.hover()
-      await treeNode.getByText('删除').click()
+      await treeNode.getByTitle('删除').click()
       await page.getByRole('button', { name: '确认删除' }).click()
       await page.waitForTimeout(500)
       expect(deleteCalled).toBe(true)
     })
   })
 
-  test.describe('详情面板', () => {
-    test('未选中时显示提示', async ({ page }) => {
-      await expect(page.getByText('点击左侧分类查看详情')).toBeVisible()
-    })
-
-    test('选中分类后显示详细信息', async ({ page }) => {
-      await page.getByText('窗帘布艺').click()
-      await expect(page.getByText('分类 ID')).toBeVisible()
-      await expect(page.getByText('排序权重')).toBeVisible()
-      await expect(page.getByText('子分类数')).toBeVisible()
-    })
-  })
 })

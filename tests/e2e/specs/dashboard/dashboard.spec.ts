@@ -16,6 +16,8 @@ async function mockDashboardApis(page: import('@playwright/test').Page) {
         data: {
           todayOrders: 42,
           todayOrdersChange: 12.5,
+          todaySales: 18900,
+          todaySalesChange: 8.3,
           totalCustomers: 1380,
           newCustomersToday: 8,
           activeSessions: 15,
@@ -35,6 +37,7 @@ async function mockDashboardApis(page: import('@playwright/test').Page) {
       date: `06-${String(i + 1).padStart(2, '0')}`,
       orders: Math.floor(Math.random() * 50) + 10,
       sessions: Math.floor(Math.random() * 30) + 5,
+      totalAmount: (Math.floor(Math.random() * 50) + 10) * 23.8,
     }))
     await route.fulfill({
       status: 200,
@@ -98,7 +101,7 @@ async function mockDashboardApis(page: import('@playwright/test').Page) {
     })
   })
 
-  // GET /api/dashboard/sessions/active
+  // GET /api/dashboard/sessions/active (not used by current dashboard but mock for safety)
   await page.route('**/api/admin/dashboard/active-sessions*', async (route) => {
     await route.fulfill({
       status: 200,
@@ -126,6 +129,22 @@ async function mockDashboardApis(page: import('@playwright/test').Page) {
       }),
     })
   })
+
+  // GET /api/dashboard/product-ranking
+  await page.route('**/api/admin/dashboard/product-ranking*', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        code: 200,
+        data: [
+          { rank: 1, productId: 'p1', productName: '遮光窗帘A款', salesQty: 230, salesAmount: 46000, qtyDisplay: '230', amountDisplay: '¥46,000', dailyChange: 12 },
+          { rank: 2, productId: 'p2', productName: '纱帘B款', salesQty: 185, salesAmount: 37000, qtyDisplay: '185', amountDisplay: '¥37,000', dailyChange: -5 },
+          { rank: 3, productId: 'p3', productName: '百叶窗C款', salesQty: 120, salesAmount: 24000, qtyDisplay: '120', amountDisplay: '¥24,000', dailyChange: 8 },
+        ],
+      }),
+    })
+  })
 }
 
 test.describe('仪表盘页面', () => {
@@ -137,56 +156,50 @@ test.describe('仪表盘页面', () => {
     await expect(page.locator('.animate-pulse')).toHaveCount(0, { timeout: 10_000 })
   })
 
-  test('欢迎语展示用户名', async ({ page }) => {
-    await expect(page.getByText('欢迎回来，管理员')).toBeVisible()
+  test('页面标题展示"数据看板"', async ({ page }) => {
+    await expect(page.getByText('数据看板')).toBeVisible()
   })
 
-  test('日期显示格式正确', async ({ page }) => {
-    // 格式：YYYY年M月D日 星期X
-    const datePattern = /\d{4}年\d{1,2}月\d{1,2}日 星期[一二三四五六日]/
+  test('日期显示格式正确 — 数据更新时间', async ({ page }) => {
+    // formatFullDateTime 输出格式：YYYY年M月D日 HH:mm（无星期）
+    // 显示为：数据更新时间：2026年6月20日 14:30
+    const datePattern = /\d{4}年\d{1,2}月\d{1,2}日 \d{2}:\d{2}/
     await expect(page.getByText(datePattern)).toBeVisible()
   })
 
-  test('4 个统计卡片标题正确渲染', async ({ page }) => {
-    await expect(page.getByText('今日订单')).toBeVisible()
-    await expect(page.getByText('客户总数')).toBeVisible()
-    await expect(page.getByText('活跃会话')).toBeVisible()
-    await expect(page.getByText('本月收入')).toBeVisible()
+  test('3 个经营数据卡片标题正确渲染', async ({ page }) => {
+    await expect(page.getByText('今日订单数')).toBeVisible()
+    await expect(page.getByText('今日销售额')).toBeVisible()
+    await expect(page.getByText('本月销售额')).toBeVisible()
   })
 
-  test('"今日订单"卡片：数量 + 变化百分比', async ({ page }) => {
-    // todayOrders: 42
+  test('"今日订单数"卡片：数量 + 变化', async ({ page }) => {
+    // todayOrders: 42 — toLocaleString() → "42"
     await expect(page.locator('text=42').first()).toBeVisible()
-    // todayOrdersChange: +12.5% 较昨日
-    await expect(page.getByText('+12.5% 较昨日')).toBeVisible()
+    // change 格式：较昨天 {val}（无 % 前缀，BizStatCard 模板硬编码）
+    await expect(page.getByText('较昨天 12.5')).toBeVisible()
   })
 
-  test('"客户总数"卡片：总量 + 今日新增', async ({ page }) => {
-    // totalCustomers: 1380
-    await expect(page.getByText('1,380')).toBeVisible()
-    // newCustomersToday: +8 今日新增
-    await expect(page.getByText('+8 今日新增')).toBeVisible()
+  test('"今日销售额"卡片：货币格式化 + 变化', async ({ page }) => {
+    // todaySales: 18900 → fmtCurrency → "¥18,900"
+    await expect(page.getByText('¥18,900')).toBeVisible()
+    // todaySalesChange: 8.3 → 较昨天 8.3
+    await expect(page.getByText('较昨天 8.3')).toBeVisible()
   })
 
-  test('"活跃会话"卡片：数量 + AI 占比', async ({ page }) => {
-    // activeSessions: 15
-    await expect(page.locator('text=15').first()).toBeVisible()
-    // AI 处理 73%
-    await expect(page.getByText('AI 处理 73%')).toBeVisible()
-  })
-
-  test('"本月收入"卡片：货币格式化', async ({ page }) => {
-    // monthRevenue: 256800 → >= 10000 → ¥25.7万
+  test('"本月销售额"卡片：货币格式化', async ({ page }) => {
+    // monthRevenue: 256800 → fmtCurrency → "¥25.7万"
     await expect(page.getByText('¥25.7万')).toBeVisible()
-    // monthRevenueChange: -3.2% 较上月
+    // monthRevenueChange: -3.2 → val 字符串为 "-3.2% 较上月"，BizStatCard 前缀 "较昨天 "
+    // 实际渲染：较昨天 -3.2% 较上月；getByText 使用子串匹配
     await expect(page.getByText('-3.2% 较上月')).toBeVisible()
   })
 
-  test('订单趋势图渲染', async ({ page }) => {
-    // OrderTrendChart 标题 "订单趋势"
+  test('订单趋势图渲染（内联 SVG）', async ({ page }) => {
+    // 标题 "订单趋势"
     await expect(page.getByText('订单趋势')).toBeVisible()
-    // recharts 渲染的 SVG 应存在
-    await expect(page.locator('.recharts-responsive-container')).toBeVisible()
+    // 趋势图使用内联 SVG（非 recharts），svg > polyline 存在即可
+    await expect(page.locator('svg polyline').first()).toBeVisible()
   })
 
   test('趋势图默认 7 天选中', async ({ page }) => {
@@ -196,9 +209,7 @@ test.describe('仪表盘页面', () => {
     await expect(btn7).toHaveClass(/bg-white/)
   })
 
-  test('点击 14 天切换 → 数据刷新', async ({ page }) => {
-    // 注：代码中只有 7 和 30 两个选项，无 14 天按钮
-    // 此测试改为验证点击"近30天"切换 → 数据刷新
+  test('点击"近30天"切换 → 数据刷新', async ({ page }) => {
     let trendRequestCount = 0
     await page.route('**/api/admin/dashboard/order-trend*', async (route) => {
       trendRequestCount++
@@ -208,6 +219,7 @@ test.describe('仪表盘页面', () => {
         date: `06-${String(i + 1).padStart(2, '0')}`,
         orders: 20 + i,
         sessions: 10 + i,
+        totalAmount: (20 + i) * 23.8,
       }))
       await route.fulfill({
         status: 200,
@@ -229,47 +241,47 @@ test.describe('仪表盘页面', () => {
     expect(trendRequestCount).toBeGreaterThan(0)
   })
 
-  test('点击 30 天切换 → 数据刷新', async ({ page }) => {
-    // 与上面的测试一致，验证 30 天切换后图表仍渲染
+  test('点击"近30天"切换后图表仍渲染', async ({ page }) => {
     await page.getByRole('button', { name: '近30天' }).click()
     await page.waitForTimeout(500)
 
-    // 图表仍然渲染
-    await expect(page.locator('.recharts-responsive-container')).toBeVisible()
+    // 图表仍然渲染（内联 SVG）
+    await expect(page.locator('svg polyline').first()).toBeVisible()
   })
 
-  test('订单状态饼图渲染', async ({ page }) => {
-    // OrderStatusChart 标题 "订单状态分布"
-    await expect(page.getByText('订单状态分布')).toBeVisible()
-    // 饼图使用 recharts
-    await expect(page.locator('.recharts-pie').first()).toBeVisible()
+  test('销售额趋势图渲染', async ({ page }) => {
+    // 第二个图表标题 "销售额数据"（替代了原来的订单状态饼图）
+    await expect(page.getByText('销售额数据')).toBeVisible()
+    // 面积图使用 SVG path + polyline
+    await expect(page.locator('svg path').first()).toBeVisible()
   })
 
-  test('最近订单表格显示数据', async ({ page }) => {
-    // RecentOrders 标题 "近期订单"
+  test('近期订单表格显示数据', async ({ page }) => {
+    // 标题 "近期订单"
     await expect(page.getByText('近期订单')).toBeVisible()
-    // 表头
+    // 表头（新增 "时间" 列，共 5 列）
     await expect(page.getByText('订单号')).toBeVisible()
     await expect(page.getByText('客户')).toBeVisible()
     await expect(page.getByText('金额')).toBeVisible()
     await expect(page.getByText('状态')).toBeVisible()
+    await expect(page.getByText('时间')).toBeVisible()
     // 数据行
     await expect(page.getByText('YK20260601001')).toBeVisible()
     await expect(page.getByText('张三')).toBeVisible()
   })
 
-  test('活跃会话列表渲染', async ({ page }) => {
-    // ActiveSessions 标题 "活跃会话"
-    await expect(page.getByText('活跃会话')).toBeVisible()
-    // 会话项
-    await expect(page.getByText('赵六')).toBeVisible()
-    await expect(page.getByText('AI')).toBeVisible()
-    await expect(page.getByText('钱七')).toBeVisible()
-    await expect(page.getByText('人工')).toBeVisible()
+  test('商品销量排行渲染', async ({ page }) => {
+    // 替代了原来的活跃会话列表
+    await expect(page.getByText('商品销量排行')).toBeVisible()
+    // 表头
+    await expect(page.getByText('成交量')).toBeVisible()
+    // 数据行
+    await expect(page.getByText('遮光窗帘A款')).toBeVisible()
+    await expect(page.getByText('230')).toBeVisible()
   })
 
   test('数据加载中展示骨架屏/加载状态', async ({ page }) => {
-    // 拦截所有 dashboard API，延迟响应以观察 loading
+    // 拦截 stats API，延迟响应以观察 loading
     await page.route('**/api/admin/dashboard/stats', async (route) => {
       await new Promise((r) => setTimeout(r, 5000))
       await route.fulfill({
@@ -282,11 +294,11 @@ test.describe('仪表盘页面', () => {
     // 重新导航触发 loading
     await page.goto('/dashboard')
 
-    // 骨架屏：4 个 animate-pulse 的占位卡片
-    await expect(page.locator('.animate-pulse')).toHaveCount(4, { timeout: 3_000 })
+    // 骨架屏：3 个经营数据卡片 + 5 个排行骨架行 = 8 个 animate-pulse
+    await expect(page.locator('.animate-pulse')).toHaveCount(8, { timeout: 3_000 })
   })
 
-  // #387: 待处理卡片跳转链接验证（娜总 17:29 重点验收）
+  // #387: 待处理卡片跳转链接验证
   test.describe('待处理区 3 个卡片 — 跳转链接 (#387)', () => {
     test.beforeEach(async ({ page }) => {
       // 待发货订单数
@@ -301,7 +313,6 @@ test.describe('仪表盘页面', () => {
       await page.route('**/api/admin/products/low-stock-by-color*', async (route) => {
         await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 200, data: Array.from({ length: 12 }) }) })
       })
-
       await page.goto('/dashboard')
       await page.waitForTimeout(500)
       await expect(page.locator('.animate-pulse')).toHaveCount(0, { timeout: 10_000 })

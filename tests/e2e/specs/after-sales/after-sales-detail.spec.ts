@@ -20,12 +20,12 @@ const MOCK_TICKET_DETAIL = {
   createdAt: '2026-06-19 11:27',
   updatedAt: '2026-06-19 11:27',
   statusHistory: [
-    { status: 'pending', operator: '系统', remark: '客户提交退货申请', createdAt: '2026-06-19 11:27' },
+    { status: 'pending', operator: '系统', remark: '客户提交退货申请', time: '2026-06-19 11:27' },
   ],
 }
 
 const MOCK_TICKET_LOGS = [
-  { id: 'log-1', action: 'created', operator: '系统', remark: '工单创建', createdAt: '2026-06-19 11:27' },
+  { id: 'log-1', action: 'created', operator: '系统', remark: '工单创建', time: '2026-06-19 11:27' },
 ]
 
 // ==================== Tests ====================

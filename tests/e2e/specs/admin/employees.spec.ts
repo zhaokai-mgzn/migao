@@ -11,21 +11,21 @@ const MOCK_EMPLOYEES = [
 ]
 
 const MOCK_MENUS = [
-  { id: 1, code: 'dashboard', name: '工作台', children: [{ id: 11, code: 'dashboard:view', name: '查看数据看板' }] },
+  { id: 1, code: 'dashboard', name: '工作台', children: [{ id: 11, code: 'dashboard:view', name: '查看数据看板', label: '查看数据看板' }] },
   { id: 2, code: 'products', name: '商品管理', children: [
-    { id: 21, code: 'products:view', name: '查看商品' },
-    { id: 22, code: 'products:edit', name: '编辑商品' },
-    { id: 23, code: 'products:delete', name: '删除商品' },
+    { id: 21, code: 'products:view', name: '查看商品', label: '查看商品' },
+    { id: 22, code: 'products:edit', name: '编辑商品', label: '编辑商品' },
+    { id: 23, code: 'products:delete', name: '删除商品', label: '删除商品' },
   ]},
   { id: 3, code: 'orders', name: '订单管理', children: [
-    { id: 31, code: 'orders:view', name: '查看订单' },
-    { id: 32, code: 'orders:create', name: '创建订单' },
-    { id: 33, code: 'orders:ship', name: '发货管理' },
+    { id: 31, code: 'orders:view', name: '查看订单', label: '查看订单' },
+    { id: 32, code: 'orders:create', name: '创建订单', label: '创建订单' },
+    { id: 33, code: 'orders:ship', name: '发货管理', label: '发货管理' },
   ]},
-  { id: 4, code: 'customers', name: '客户管理', children: [{ id: 41, code: 'customers:view', name: '查看客户' }] },
+  { id: 4, code: 'customers', name: '客户管理', children: [{ id: 41, code: 'customers:view', name: '查看客户', label: '查看客户' }] },
   { id: 5, code: 'settings', name: '系统设置', children: [
-    { id: 51, code: 'employees:manage', name: '员工管理' },
-    { id: 52, code: 'roles:manage', name: '角色管理' },
+    { id: 51, code: 'employees:manage', name: '员工管理', label: '员工管理' },
+    { id: 52, code: 'roles:manage', name: '角色管理', label: '角色管理' },
   ]},
 ]
 
@@ -145,7 +145,7 @@ test.describe('员工管理页面', () => {
     await page.getByRole('button', { name: /添加员工/ }).click()
     const modal = page.locator('[role="dialog"]')
     // Modal 底部默认按钮是"确定"，点击后触发前端校验 toast
-    await modal.getByRole('button', { name: /确定/ }).click()
+    await modal.getByRole('button', { name: /创建|保存/ }).click()
     await expect(page.locator('[data-sonner-toast]').first()).toBeVisible({ timeout: 5000 })
   })
 

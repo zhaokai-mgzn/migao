@@ -12,26 +12,26 @@ const MOCK_ROLES = [
 // Permissions grouped by resource
 const MOCK_PERMISSIONS = [
   // 工作台
-  { id: 11, name: '查看数据看板', code: 'dashboard:view', resourceGroup: '工作台', resourceGroupSort: 1 },
+  { id: 11, name: '查看数据看板', code: 'dashboard:view', resource: '工作台', resourceSort: 1 },
   // 商品管理
-  { id: 21, name: '查看商品', code: 'products:view', resourceGroup: '商品管理', resourceGroupSort: 2 },
-  { id: 22, name: '编辑商品', code: 'products:edit', resourceGroup: '商品管理', resourceGroupSort: 2 },
-  { id: 23, name: '删除商品', code: 'products:delete', resourceGroup: '商品管理', resourceGroupSort: 2 },
-  { id: 24, name: '上下架商品', code: 'products:status', resourceGroup: '商品管理', resourceGroupSort: 2 },
-  { id: 25, name: '管理分类', code: 'categories:manage', resourceGroup: '商品管理', resourceGroupSort: 2 },
-  { id: 26, name: '管理加工项', code: 'processing:manage', resourceGroup: '商品管理', resourceGroupSort: 2 },
+  { id: 21, name: '查看商品', code: 'products:view', resource: '商品管理', resourceSort: 2 },
+  { id: 22, name: '编辑商品', code: 'products:edit', resource: '商品管理', resourceSort: 2 },
+  { id: 23, name: '删除商品', code: 'products:delete', resource: '商品管理', resourceSort: 2 },
+  { id: 24, name: '上下架商品', code: 'products:status', resource: '商品管理', resourceSort: 2 },
+  { id: 25, name: '管理分类', code: 'categories:manage', resource: '商品管理', resourceSort: 2 },
+  { id: 26, name: '管理加工项', code: 'processing:manage', resource: '商品管理', resourceSort: 2 },
   // 订单管理
-  { id: 31, name: '查看订单', code: 'orders:view', resourceGroup: '订单管理', resourceGroupSort: 3 },
-  { id: 32, name: '创建订单', code: 'orders:create', resourceGroup: '订单管理', resourceGroupSort: 3 },
-  { id: 33, name: '编辑订单', code: 'orders:edit', resourceGroup: '订单管理', resourceGroupSort: 3 },
-  { id: 34, name: '发货管理', code: 'orders:ship', resourceGroup: '订单管理', resourceGroupSort: 3 },
-  { id: 35, name: '管理售后', code: 'after-sales:manage', resourceGroup: '订单管理', resourceGroupSort: 3 },
+  { id: 31, name: '查看订单', code: 'orders:view', resource: '订单管理', resourceSort: 3 },
+  { id: 32, name: '创建订单', code: 'orders:create', resource: '订单管理', resourceSort: 3 },
+  { id: 33, name: '编辑订单', code: 'orders:edit', resource: '订单管理', resourceSort: 3 },
+  { id: 34, name: '发货管理', code: 'orders:ship', resource: '订单管理', resourceSort: 3 },
+  { id: 35, name: '管理售后', code: 'after-sales:manage', resource: '订单管理', resourceSort: 3 },
   // 客户管理
-  { id: 41, name: '查看客户', code: 'customers:view', resourceGroup: '客户管理', resourceGroupSort: 4 },
+  { id: 41, name: '查看客户', code: 'customers:view', resource: '客户管理', resourceSort: 4 },
   // 系统设置
-  { id: 51, name: '员工管理', code: 'employees:manage', resourceGroup: '系统设置', resourceGroupSort: 5 },
-  { id: 52, name: '角色管理', code: 'roles:manage', resourceGroup: '系统设置', resourceGroupSort: 5 },
-  { id: 53, name: '系统配置', code: 'settings:manage', resourceGroup: '系统设置', resourceGroupSort: 5 },
+  { id: 51, name: '员工管理', code: 'employees:manage', resource: '系统设置', resourceSort: 5 },
+  { id: 52, name: '角色管理', code: 'roles:manage', resource: '系统设置', resourceSort: 5 },
+  { id: 53, name: '系统配置', code: 'settings:manage', resource: '系统设置', resourceSort: 5 },
 ]
 
 // ==================== Tests ====================
