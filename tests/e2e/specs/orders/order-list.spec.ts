@@ -138,6 +138,16 @@ async function mockOrderApis(page: import('@playwright/test').Page) {
       filtered = filtered.filter((o) => o.processingItems && o.processingItems.length > 0)
     }
 
+    // 日期过滤
+    const startDate = url.searchParams.get('startDate')
+    if (startDate) {
+      filtered = filtered.filter((o) => o.createdAt >= startDate)
+    }
+    const endDate = url.searchParams.get('endDate')
+    if (endDate) {
+      filtered = filtered.filter((o) => o.createdAt <= endDate + 'T23:59:59Z')
+    }
+
     // keyword 模糊搜索
     const keyword = url.searchParams.get('keyword')
     if (keyword) {

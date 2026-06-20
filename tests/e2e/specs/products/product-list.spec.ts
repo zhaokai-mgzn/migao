@@ -310,8 +310,7 @@ test.describe('商品列表页面', () => {
   // ========== 排序 (11-14) ==========
 
   test('按创建时间排序', async ({ page }) => {
-    // 表头 "创建时间" 可点击排序
-    const createdAtHeader = page.getByText('创建时间').first()
+    const createdAtHeader = page.getByRole('columnheader', { name: '创建时间' })
     await createdAtHeader.click()
     await page.waitForTimeout(500)
 
