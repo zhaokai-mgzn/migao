@@ -3,18 +3,13 @@
  * 验证米宝创建的商品在编辑页各字段是否正确展示
  */
 import { test, expect } from '@playwright/test'
-import { loginViaApi, injectAuth } from '../../helpers/auth.helper'
 
 const TEST_PRODUCT_ID = 'f60ac4b060a4ebaf8542e890f03b3594'
-const BASE_URL = process.env.BASE_URL || 'http://localhost:3001'
 
 test.describe('商品编辑页 — 字段反显验证', () => {
 
   test.beforeEach(async ({ page }) => {
-    const tokens = await loginViaApi('13800138000', '123456')
-    await page.goto(BASE_URL)
-    await injectAuth(page, tokens)
-    await page.goto(`${BASE_URL}/products/${TEST_PRODUCT_ID}/edit`)
+    await page.goto(`/products/${TEST_PRODUCT_ID}/edit`)
     await page.waitForLoadState('load')
     await page.waitForTimeout(2000)
   })

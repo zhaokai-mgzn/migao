@@ -1,5 +1,4 @@
 import { test, expect } from '@playwright/test'
-import { loginViaApi, injectAuth } from '../../helpers/auth.helper'
 
 /**
  * Mock dashboard API responses so tests run deterministically
@@ -131,19 +130,6 @@ async function mockDashboardApis(page: import('@playwright/test').Page) {
 test.describe('仪表盘页面', () => {
   test.beforeEach(async ({ page }) => {
     await mockDashboardApis(page)
-
-    // 注入认证状态（绕过登录流程）
-    const tokens = await loginViaApi()
-    await page.goto('/dashboard')
-    await injectAuth(page, tokens, {
-      id: '1',
-      username: 'admin',
-      name: '张三',
-      nickname: '张三',
-      roles: ['admin'],
-      tenantId: 1,
-      tenantName: '测试企业',
-    })
     await page.goto('/dashboard')
     // 等待数据加载完成（骨架屏消失）
     await page.waitForTimeout(500)

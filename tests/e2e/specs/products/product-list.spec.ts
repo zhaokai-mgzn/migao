@@ -103,6 +103,14 @@ async function mockProductApis(page: import('@playwright/test').Page) {
     if (statusParam) {
       filtered = filtered.filter((p) => p.status === statusParam)
     }
+    const createdFrom = url.searchParams.get('createdFrom')
+    if (createdFrom) {
+      filtered = filtered.filter((p) => new Date(p.createdAt) >= new Date(createdFrom))
+    }
+    const createdTo = url.searchParams.get('createdTo')
+    if (createdTo) {
+      filtered = filtered.filter((p) => new Date(p.createdAt) <= new Date(createdTo + 'T23:59:59Z'))
+    }
     const sortBy = url.searchParams.get('sortBy') || 'createdAt'
     const sortOrder = url.searchParams.get('sortOrder') || 'desc'
     filtered.sort((a, b) => {
@@ -303,7 +311,7 @@ test.describe('商品列表页面', () => {
 
   test('按创建时间排序', async ({ page }) => {
     // 表头 "创建时间" 可点击排序
-    const createdAtHeader = page.getByText('创建时间').first()
+    const createdAtHeader = page.locator('th').filter({ hasText: '创建时间' }).first()
     await createdAtHeader.click()
     await page.waitForTimeout(500)
 
@@ -312,7 +320,7 @@ test.describe('商品列表页面', () => {
   })
 
   test('按库存排序', async ({ page }) => {
-    const stockHeader = page.getByText('库存').first()
+    const stockHeader = page.locator('th').filter({ hasText: '库存' }).first()
     await stockHeader.click()
     await page.waitForTimeout(500)
 
@@ -320,7 +328,7 @@ test.describe('商品列表页面', () => {
   })
 
   test('按销量排序', async ({ page }) => {
-    const salesHeader = page.getByText('销量').first()
+    const salesHeader = page.locator('th').filter({ hasText: '销量' }).first()
     await salesHeader.click()
     await page.waitForTimeout(500)
 
@@ -328,7 +336,7 @@ test.describe('商品列表页面', () => {
   })
 
   test('按销售额排序', async ({ page }) => {
-    const salesAmountHeader = page.getByText('销售额').first()
+    const salesAmountHeader = page.locator('th').filter({ hasText: '销售额' }).first()
     await salesAmountHeader.click()
     await page.waitForTimeout(500)
 
