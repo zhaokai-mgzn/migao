@@ -1,5 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
 
+// 本地开发无后端 SMS API，默认 mock。CI 由 workflow env 覆盖
+if (!process.env.CI) process.env.E2E_MOCK_AUTH = 'true'
+
 export default defineConfig({
   testDir: './e2e',
   testMatch: /.*\.spec\.ts|.*auth\.setup\.ts/,
@@ -13,6 +16,8 @@ export default defineConfig({
   expect: { timeout: 5_000 },
 
   use: {
+    // 本地开发默认 mock SMS API（无后端），CI 通过 env 传入真实 API 地址
+    testIdAttribute: 'data-testid',
     baseURL: process.env.BASE_URL || 'http://localhost:3001',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
