@@ -249,3 +249,77 @@ cd tests && BASE_URL=http://localhost:3001 npx playwright test specs/chat/chat.s
 # 2. ai-agent:     cd backend/ai-agent-service && .venv/bin/python -m uvicorn app.main:app --port 8001 --reload
 # 3. admin-web:    cd frontend/admin-web && npm run dev
 ```
+
+## 8. E2E 测试铁律（2026-06-20 实战教训总结）
+
+> 经历 101→22 失败、7 轮修复、3 次回退后的经验法则。
+
+### 8.1 前端变更必须同步更新 E2E
+
+| 前端变更类型 | E2E 必须做的事 |
+|-------------|---------------|
+| 页面 UI 重构（卡片/图表/布局） | 重写对应 spec 的断言和选择器 |
+| API 路由变更（加 `/admin/` 前缀等） | 更新 mock `page.route()` pattern |
+| 组件替换（recharts→内联 SVG 等） | 更新 locator（`recharts-responsive-container`→`svg`） |
+| 按钮改图标（文字→SVG） | `getByText('编辑')`→`getByTitle('编辑')` 或 `getByRole('button', { name: '编辑' })` |
+| 删除功能/面板 | 删除对应测试，不留死代码 |
+| AuthProvider 新增 API 调用 | 补 `page.route('**/api/auth/me')` mock |
+
+**铁律**：修改前端代码时，必须同时 grep 对应的 E2E spec 并更新。不允许"先改前端，E2E 后面再说"。
+
+### 8.2 auth.setup.ts 修改必须本地 + CI 双验证
+
+| 规则 | 说明 |
+|------|------|
+| 禁止仅验证 CI 通过 | CI 用真实 SMS token，本地用 mock token，行为不同 |
+| 修改后必须清缓存重跑 | `rm -f e2e/.auth/admin.json && npx playwright test --project=auth-setup` |
+| injectAuth 方案已被证明不可靠 | `page.evaluate` 设置 `document.cookie` + `localStorage` 无法保证 Zustand 水合时序。**优先用 `addCookies` + `addInitScript`** |
+| mock token 场景必测 | `E2E_MOCK_AUTH=true` 是本地默认值，必须能过 |
+
+### 8.3 禁止批量 sed 脚本修改 spec 文件
+
+**2026-06-20 教训**：用 sed 批处理 18 个文件的 import 导致：
+- JSDoc 注释首行 `/**` 被截断为 `*`
+- `import { test, expect }` 被误删
+- 重复 import 导致语法错误
+- 176 failed（比修之前更差）
+
+**铁律**：
+- 修改 spec 文件必须逐个读取、逐个编辑
+- 每个 spec 的 import 结构、beforeEach 签名、缩进风格不同
+- 批量操作后用 `grep -rn "import { test, expect }" specs/` 校验
+
+### 8.4 CI 失败定位流程
+
+```
+1. 先查 auth-setup 是否通过（auth-setup 失败 → 级联所有测试）
+2. 看错误类型分布（strict mode / element not found / timeout）
+3. strict mode → getByText 匹配了 sidebar 导航项，改用 getByRole
+4. element not found → 页面可能重定向到 /login，检查 /api/auth/me mock
+5. timeout → mock 路由可能没拦截到（检查 /admin/ 前缀）
+```
+
+### 8.5 E2E 选择器优先级
+
+```
+1. getByRole('heading', { name: '...' })   # 页面标题
+2. getByRole('button', { name: '...' })    # 按钮
+3. getByRole('columnheader', { name })     # 表头
+4. getByTitle('...')                        # 图标按钮（无文字）
+5. getByLabel('...')                        # 表单字段
+6. getByText('...', { exact: true })       # 唯一文本
+7. locator('.class').filter({ hasText })    # 限定作用域
+8. getByText('...').first()                 # 最后手段
+```
+
+**禁止**：裸 `getByText('短词')` 用于包含 sidebar 的页面（`分类管理`、`订单管理`、`客户` 等会匹配到 sidebar 导航链接）。
+
+### 8.6 提交前自检
+
+```
+□ 本次前端变更涉及哪些页面？对应的 E2E spec 是否已更新？
+□ auth.setup.ts 是否有改动？是否已清缓存本地验证？
+□ 新增/修改的 mock route 是否匹配实际 API 路径（含 /admin/ 前缀）？
+□ 是否使用了 getByText 短词？在 sidebar 页面需改用 getByRole
+□ 是否批量修改了 spec 文件？是否已逐个文件校验 import 完整性？
+```
