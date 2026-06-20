@@ -1,0 +1,26 @@
+name: settings-manage
+description: 系统设置/租户配置管理
+red_flags: []
+business_truths:
+  - 系统设置支持读取和更新
+  - 租户 AI 配置支持独立配置（botName/greetingTemplate/channelConfigs）
+  - 配置变更后立即生效
+  - 敏感配置（密钥/token）不在 API 响应中明文返回
+
+primary_specs:
+  - tests/e2e/specs/settings/settings.spec.ts
+  - backend/admin-api/src/test/java/com/migao/admin/controller/SettingsControllerTest.java
+
+reviewer_asserts:
+  - API: GET /api/admin/settings
+    expect: data 非空
+  - API: PUT /api/admin/settings
+    expect: status = 200
+  - API: GET /api/admin/tenant/ai-config
+    expect: data 非空 AND data.botName 非空
+  - 敏感字段: 响应中不包含 accessKeyId, accessKeySecret, apiKey, secret
+
+confidence_required: 80%
+common_pitfalls:
+  - 密钥明文泄露
+  - 配置更新不生效
