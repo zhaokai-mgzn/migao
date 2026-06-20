@@ -4,8 +4,3 @@
 exemptions:
   - pattern: "backend/ai-agent-service/app/tools/aftersale_query.py"
   - pattern: "backend/ai-agent-service/app/agents/agents/xiaobu.py"
-  # === PR #542: 清理双重 tenant_id — Mapper/Controller 纯 SQL 字符串删除，行为由 TenantLineInnerInterceptor 覆盖 ===
-  - pattern: "backend/admin-api/src/main/java/com/migao/admin/controller/NotificationController.java"
-  - pattern: "backend/admin-api/src/main/java/com/migao/admin/mapper/NotificationMapper.java"
-  - pattern: "backend/admin-api/src/main/java/com/migao/admin/mapper/OrderMapper.java"
-  - pattern: "backend/admin-api/src/main/java/com/migao/admin/mapper/ProductMapper.java"
