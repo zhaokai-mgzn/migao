@@ -94,6 +94,17 @@
 
 **单 issue 文件上限 8 个**（覆盖率周扫硬规则，其他场景参考）。
 
+## Label 规则（2026-06-20 09:15 凯总确认）
+
+**是否走二郎神**取决于**有没有业务真值**：
+
+| 业务真值 | 走二郎神？ | label | 谁接 |
+|---|---|---|---|
+| ✅ 有（bug/新功能/合规） | ✅ | `needs-verification` | dev agent 写 case |
+| ❌ 无（覆盖率/重构/工具/跟踪） | ❌ | `qa-todo` 或 `process-improvement` | 研发自取 |
+
+**覆盖率周扫所有 issue 都用 `qa-todo` + `coverage-gap`**，**不打 `needs-verification`**。
+
 ## 关联
 
 - 二郎神 loop：`docs/wiki/qa/ershen-loop.md`
