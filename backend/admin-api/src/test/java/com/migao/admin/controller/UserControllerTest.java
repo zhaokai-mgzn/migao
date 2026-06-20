@@ -3,9 +3,9 @@ package com.migao.admin.controller;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
-class AdminUserControllerTest {
+class UserControllerTest {
     @Test
     void classExists() {
-        assertNotNull(AdminUserController.class);
+        assertNotNull(UserController.class);
     }
 }
