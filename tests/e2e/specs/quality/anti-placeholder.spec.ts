@@ -9,6 +9,13 @@
 import { test } from '@playwright/test'
 import { assertNoPlaceholderFallback } from '../../helpers/assertions.helper'
 import ordersFixture from '../../fixtures/orders-list.json'
+import productsFixture from '../../fixtures/products-list.json'
+import customersFixture from '../../fixtures/customers-list.json'
+import afterSalesFixture from '../../fixtures/after-sales-list.json'
+import employeesFixture from '../../fixtures/employees-list.json'
+import categoriesFixture from '../../fixtures/categories-tree.json'
+import processingFixture from '../../fixtures/processing-list.json'
+import knowledgeFixture from '../../fixtures/knowledge-list.json'
 
 /** Mock API 路由返回 fixture 数据 */
 async function mockWithFixture(page: any, urlPattern: string, fixture: any) {
@@ -17,34 +24,21 @@ async function mockWithFixture(page: any, urlPattern: string, fixture: any) {
   })
 }
 
-/** 所有需要检查的页面 */
+/** 所有需要检查的页面 — fixture 直接从 import 获取 */
 const PAGES = [
   { name: '订单列表', path: '/orders', rowSelector: 'tbody tr', columns: { '采购明细': 'td:nth-child(4)' }, fixture: ordersFixture, api: '**/api/admin/orders*' },
-  { name: '商品列表', path: '/products', rowSelector: 'tbody tr, [data-testid="product-table"] > div', columns: { '商品名称': 'td:nth-child(2), [data-testid^="product-"] span:first-child' }, fixture: 'products', api: '**/api/admin/products*' },
-  { name: '客户列表', path: '/customers', rowSelector: 'tbody tr, [data-testid="data-table"] > div', columns: { '客户名称': 'td:nth-child(2), [data-testid^="customer-"] span:first-child' }, fixture: 'customers', api: '**/api/admin/customers*' },
-  { name: '售后列表', path: '/after-sales', rowSelector: 'tbody tr', columns: { '工单信息': 'td:nth-child(2)' }, fixture: 'after-sales', api: '**/api/admin/after-sales*' },
-  { name: '员工列表', path: '/employees', rowSelector: 'tbody tr, [data-testid="data-table"] > div', columns: { '员工名称': 'td:nth-child(2)' }, fixture: 'employees', api: '**/api/admin/users*' },
-  { name: '分类列表', path: '/categories', rowSelector: 'tbody tr', columns: { '分类名称': 'td:nth-child(2)' }, fixture: 'categories', api: '**/api/admin/categories*' },
-  { name: '加工项列表', path: '/processing', rowSelector: 'tbody tr', columns: { '加工项名称': 'td:nth-child(2)' }, fixture: 'processing', api: '**/api/admin/processing-items*' },
-  { name: '知识库列表', path: '/knowledge', rowSelector: 'tbody tr', columns: { '文档名称': 'td:nth-child(2)' }, fixture: 'knowledge', api: '**/api/admin/knowledge/documents*' },
+  { name: '商品列表', path: '/products', rowSelector: 'tbody tr, [data-testid="product-table"] > div', columns: { '商品名称': 'td:nth-child(2), [data-testid^="product-"] span:first-child' }, fixture: productsFixture, api: '**/api/admin/products*' },
+  { name: '客户列表', path: '/customers', rowSelector: 'tbody tr, [data-testid="data-table"] > div', columns: { '客户名称': 'td:nth-child(2), [data-testid^="customer-"] span:first-child' }, fixture: customersFixture, api: '**/api/admin/customers*' },
+  { name: '售后列表', path: '/after-sales', rowSelector: 'tbody tr', columns: { '工单信息': 'td:nth-child(2)' }, fixture: afterSalesFixture, api: '**/api/admin/after-sales*' },
+  { name: '员工列表', path: '/employees', rowSelector: 'tbody tr, [data-testid="data-table"] > div', columns: { '员工名称': 'td:nth-child(2)' }, fixture: employeesFixture, api: '**/api/admin/users*' },
+  { name: '分类列表', path: '/categories', rowSelector: 'tbody tr', columns: { '分类名称': 'td:nth-child(2)' }, fixture: categoriesFixture, api: '**/api/admin/categories*' },
+  { name: '加工项列表', path: '/processing', rowSelector: 'tbody tr', columns: { '加工项名称': 'td:nth-child(2)' }, fixture: processingFixture, api: '**/api/admin/processing-items*' },
+  { name: '知识库列表', path: '/knowledge', rowSelector: 'tbody tr', columns: { '文档名称': 'td:nth-child(2)' }, fixture: knowledgeFixture, api: '**/api/admin/knowledge/documents*' },
 ]
-
-const FIXTURES: Record<string, any> = {
-  orders: ordersFixture,
-  products: require('../../fixtures/products-list.json'),
-  customers: require('../../fixtures/customers-list.json'),
-  'after-sales': require('../../fixtures/after-sales-list.json'),
-  employees: require('../../fixtures/employees-list.json'),
-  categories: require('../../fixtures/categories-tree.json'),
-  processing: require('../../fixtures/processing-list.json'),
-  knowledge: require('../../fixtures/knowledge-list.json'),
-}
 
 for (const { name, path, rowSelector, columns, fixture, api } of PAGES) {
   test(`反占位符检查 — ${name}`, async ({ page }) => {
-    // Mock API 返回 fixture 数据
-    const fixData = FIXTURES[fixture]
-    if (fixData) await mockWithFixture(page, api, fixData)
+    await mockWithFixture(page, api, fixture)
 
     await page.goto(path)
     await page.waitForTimeout(2000) // 等待 mock 数据渲染
