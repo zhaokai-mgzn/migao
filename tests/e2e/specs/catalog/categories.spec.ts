@@ -89,14 +89,16 @@ test.describe('分类管理', () => {
 
   test.describe('添加分类', () => {
     test('点击添加分类按钮应打开对话框', async ({ page }) => {
-      await page.getByRole('button', { name: /添加分类/ }).click()
-      await expect(page.getByText('添加分类')).toBeVisible()
+      // 精确匹配 header 按钮（避免 CategoryTree 中 title="添加子分类" 的按钮干扰）
+      await page.getByRole('button', { name: '添加分类', exact: true }).click()
+      // 对话框标题也为"添加分类"，取第一个可见元素
+      await expect(page.getByText('添加分类').first()).toBeVisible()
       // 对话框应包含名称输入框
       await expect(page.locator('input[placeholder="请输入分类名称"]')).toBeVisible()
     })
 
     test('分类名称为空提交应显示错误', async ({ page }) => {
-      await page.getByRole('button', { name: /添加分类/ }).click()
+      await page.getByRole('button', { name: '添加分类', exact: true }).click()
       // 点击对话框内的添加按钮
       const dialog = page.locator('.fixed.inset-0.z-50').last()
       await dialog.getByRole('button', { name: '添加' }).click()
@@ -104,7 +106,7 @@ test.describe('分类管理', () => {
     })
 
     test('填写名称后应成功创建', async ({ page }) => {
-      await page.getByRole('button', { name: /添加分类/ }).click()
+      await page.getByRole('button', { name: '添加分类', exact: true }).click()
       const dialog = page.locator('.fixed.inset-0.z-50').last()
       await dialog.locator('input[placeholder="请输入分类名称"]').fill('新分类')
       await dialog.getByRole('button', { name: '添加' }).click()
@@ -113,12 +115,12 @@ test.describe('分类管理', () => {
     })
 
     test('对话框应包含父级分类选择', async ({ page }) => {
-      await page.getByRole('button', { name: /添加分类/ }).click()
+      await page.getByRole('button', { name: '添加分类', exact: true }).click()
       await expect(page.getByText('父级分类')).toBeVisible()
     })
 
     test('对话框应包含排序字段', async ({ page }) => {
-      await page.getByRole('button', { name: /添加分类/ }).click()
+      await page.getByRole('button', { name: '添加分类', exact: true }).click()
       await expect(page.getByText('排序')).toBeVisible()
     })
   })
@@ -148,7 +150,8 @@ test.describe('分类管理', () => {
       const treeNode = page.locator('text=沙发面料').locator('..')
       await treeNode.hover()
       await treeNode.getByTitle('删除').click()
-      await expect(page.getByText('确认删除')).toBeVisible()
+      // 取第一个"确认删除"（Modal 标题），避免 strict mode
+      await expect(page.getByText('确认删除').first()).toBeVisible()
       await expect(page.getByText(/确定要删除分类/)).toBeVisible()
     })
 

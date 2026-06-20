@@ -8,6 +8,44 @@ const TEST_PRODUCT_ID = 'f60ac4b060a4ebaf8542e890f03b3594'
 test.describe('商品编辑页 — 字段反显验证', () => {
 
   test.beforeEach(async ({ page }) => {
+    // Mock 商品详情 API（编辑页必须）
+    await page.route(`**/api/admin/products/${TEST_PRODUCT_ID}`, async (route) => {
+      await route.fulfill({
+        status: 200, contentType: 'application/json',
+        body: JSON.stringify({
+          code: 200,
+          data: {
+            id: TEST_PRODUCT_ID,
+            name: '遮光窗帘',
+            skuCode: 'CL-001',
+            categoryId: 'cat1',
+            sellingMethods: ['bulk_cut', 'full_roll'],
+            colors: [{ colorName: '灰色' }],
+            doorWidths: [{ width: '2.8米' }],
+            skus: [{ id: 'sku1', color: '灰色', width: '2.8米', sellingMethod: 'bulk_cut', price: 100, stock: 10 }],
+            status: 'on_sale',
+            images: [],
+            detailImages: [],
+            processingItemConfigs: [],
+          },
+        }),
+      })
+    })
+    // Mock 分类 API
+    await page.route('**/api/admin/categories*', async (route) => {
+      await route.fulfill({
+        status: 200, contentType: 'application/json',
+        body: JSON.stringify({ code: 200, data: [{ id: 'cat1', name: '窗帘布艺', sort: 1, children: [] }] }),
+      })
+    })
+    // Mock 加工项 API
+    await page.route('**/api/admin/processing-items*', async (route) => {
+      await route.fulfill({
+        status: 200, contentType: 'application/json',
+        body: JSON.stringify({ code: 200, data: { items: [], total: 0 } }),
+      })
+    })
+
     await page.goto(`/products/${TEST_PRODUCT_ID}/edit`)
     await page.waitForLoadState('load')
     await page.waitForTimeout(2000)

@@ -16,8 +16,8 @@ test.describe('客户列表页面', () => {
           body: JSON.stringify({
             success: true,
             data: { items: [
-              { id: 1, name: '张美丽', phone: '13800138001', channel: 'wechat_mini', vipLevel: 3, tags: ['VIP'], lastActiveAt: '2026-06-20T10:00:00Z' },
-              { id: 2, name: '李大力', phone: '13900139002', channel: 'h5', vipLevel: 1, tags: [], lastActiveAt: '2026-06-19T15:00:00Z' },
+              { id: '1', name: '张美丽', phone: '13800138001', channel: 'wechat_mini', vipLevel: 3, tags: [{ id: '1', name: 'VIP', color: '#f59e0b' }], lastActiveAt: '2026-06-20T10:00:00Z' },
+              { id: '2', name: '李大力', phone: '13900139002', channel: 'h5', vipLevel: 1, tags: [], lastActiveAt: '2026-06-19T15:00:00Z' },
             ], total: 2, page: 1, size: 20 }
           }),
         })
@@ -31,7 +31,7 @@ test.describe('客户列表页面', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ success: true, data: [{ id: 1, name: 'VIP', color: '#f59e0b' }] }),
+        body: JSON.stringify({ success: true, data: [{ id: '1', name: 'VIP', color: '#f59e0b' }] }),
       })
     })
 

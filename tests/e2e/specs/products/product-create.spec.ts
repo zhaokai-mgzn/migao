@@ -2,6 +2,20 @@ import { test, expect } from '@playwright/test'
 
 test.describe('商品创建', () => {
   test.beforeEach(async ({ page }) => {
+    // Mock ProductForm 挂载时调用的 API
+    await page.route('**/api/admin/categories*', async (route) => {
+      await route.fulfill({
+        status: 200, contentType: 'application/json',
+        body: JSON.stringify({ code: 200, data: [{ id: 'cat1', name: '窗帘布艺', sort: 1, children: [] }] }),
+      })
+    })
+    await page.route('**/api/admin/processing-items*', async (route) => {
+      await route.fulfill({
+        status: 200, contentType: 'application/json',
+        body: JSON.stringify({ code: 200, data: { items: [], total: 0 } }),
+      })
+    })
+
     await page.goto('/products/new')
     // 等待表单加载完成
     await expect(page.getByRole('heading', { name: '新增商品' })).toBeVisible({ timeout: 10_000 })

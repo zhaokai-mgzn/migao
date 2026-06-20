@@ -164,8 +164,8 @@ async function mockOrderApis(page: import('@playwright/test').Page) {
     })
   })
 
-  // POST /api/orders/*/confirm-payment
-  await page.route('**/api/admin/orders/*/confirm-payment', async (route) => {
+  // PUT /api/orders/*/payment (确认付款)
+  await page.route('**/api/admin/orders/*/payment', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -173,7 +173,7 @@ async function mockOrderApis(page: import('@playwright/test').Page) {
     })
   })
 
-  // PATCH /api/orders/*/status
+  // PUT /api/orders/*/status (更新状态)
   await page.route('**/api/admin/orders/*/status', async (route) => {
     await route.fulfill({
       status: 200,
@@ -182,8 +182,8 @@ async function mockOrderApis(page: import('@playwright/test').Page) {
     })
   })
 
-  // POST /api/orders/*/close
-  await page.route('**/api/admin/orders/*/close', async (route) => {
+  // PUT /api/orders/*/cancel (关闭订单)
+  await page.route('**/api/admin/orders/*/cancel', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -191,8 +191,8 @@ async function mockOrderApis(page: import('@playwright/test').Page) {
     })
   })
 
-  // POST /api/orders/*/remarks
-  await page.route('**/api/admin/orders/*/remarks', async (route) => {
+  // POST /api/orders/*/remark (添加备注)
+  await page.route('**/api/admin/orders/*/remark', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',

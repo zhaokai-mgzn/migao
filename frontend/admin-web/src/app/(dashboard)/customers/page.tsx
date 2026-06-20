@@ -168,7 +168,7 @@ export default function CustomersPage() {
   // 头像：优先头像图片 > 姓名首字 > 手机号末2位 > 默认 #
   const renderAvatar = (customer: Customer) => {
     const colors = ['bg-blue-500', 'bg-green-500', 'bg-purple-500', 'bg-amber-500', 'bg-rose-500']
-    const colorIdx = (customer.id || '0').charCodeAt(0) % colors.length
+    const colorIdx = (String(customer.id || '0')).charCodeAt(0) % colors.length
     const avatarSrc = customer.avatarUrl || customer.avatar
     if (avatarSrc) {
       return (

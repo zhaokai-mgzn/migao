@@ -141,7 +141,8 @@ test.describe('加工项配置', () => {
       await inputs.nth(0).fill('测试加工项')
       await inputs.nth(1).fill('20.00')
       await dialog.getByRole('button', { name: '保存' }).click()
-      await expect(page.getByText('请选择计价方式').first()).toBeVisible()
+      // 验证红色错误文案出现（非 select 内的 option placeholder）
+      await expect(page.locator('p.text-red-600').filter({ hasText: '请选择计价方式' }).first()).toBeVisible()
     })
 
     test('完整填写后应成功创建', async ({ page }) => {

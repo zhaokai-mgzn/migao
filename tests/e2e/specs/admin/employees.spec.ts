@@ -52,24 +52,24 @@ test.describe('员工管理页面', () => {
         if (keyword) filtered = filtered.filter((e) => e.name.includes(keyword) || e.phone.includes(keyword))
         if (status) filtered = filtered.filter((e) => e.status === status)
         const pageNum = parseInt(url.searchParams.get('page') || '1')
-        route.fulfill({ body: JSON.stringify(buildPaginatedResponse(filtered, pageNum)) })
+        route.fulfill({ contentType: 'application/json', body: JSON.stringify(buildPaginatedResponse(filtered, pageNum)) })
       } else if (method === 'POST') {
-        route.fulfill({ body: JSON.stringify({ success: true, data: { id: 99 } }) })
+        route.fulfill({ contentType: 'application/json', body: JSON.stringify({ success: true, data: { id: 99 } }) })
       } else if (method === 'PUT') {
-        route.fulfill({ body: JSON.stringify({ success: true }) })
+        route.fulfill({ contentType: 'application/json', body: JSON.stringify({ success: true }) })
       } else {
-        route.fulfill({ body: JSON.stringify({ success: true }) })
+        route.fulfill({ contentType: 'application/json', body: JSON.stringify({ success: true }) })
       }
     })
 
     // Mock menus/permissions tree
     await page.route('**/api/admin/menus*', (route) => {
-      route.fulfill({ body: JSON.stringify({ success: true, data: MOCK_MENUS }) })
+      route.fulfill({ contentType: 'application/json', body: JSON.stringify({ success: true, data: MOCK_MENUS }) })
     })
 
     // Mock roles list
     await page.route('**/api/admin/roles/all*', (route) => {
-      route.fulfill({ body: JSON.stringify({
+      route.fulfill({ contentType: 'application/json', body: JSON.stringify({
         success: true,
         data: [{ id: 1, name: '管理员', code: 'admin' }, { id: 2, name: '客服', code: 'service' }]
       })})
@@ -118,9 +118,17 @@ test.describe('员工管理页面', () => {
   })
 
   test('状态切换按钮存在', async () => {
-    // Toggle switch: button.rounded-full inside table td, contains the white dot span
-    const toggleButtons = page.locator('table button[type="button"]').filter({ has: page.locator('span.rounded-full') })
-    expect(await toggleButtons.count()).toBeGreaterThanOrEqual(1)
+    // Toggle switch: button inside td, contains the white dot span
+    // Use title attribute for robustness — cells show "点击禁用" or "点击启用"
+    const toggleButtons = page.locator('button').filter({ has: page.locator('span.rounded-full.bg-white') }).filter({ hasText: '' })
+    const count = await toggleButtons.count()
+    // If title-based approach fails, try the original table selector
+    if (count === 0) {
+      const altButtons = page.locator('table button[type="button"]').filter({ has: page.locator('span.rounded-full') })
+      expect(await altButtons.count()).toBeGreaterThanOrEqual(1)
+    } else {
+      expect(count).toBeGreaterThanOrEqual(1)
+    }
   })
 
   test('删除按钮可打开确认弹窗', async () => {

@@ -16,7 +16,7 @@ async function mockDashboardApis(page: import('@playwright/test').Page) {
         data: {
           todayOrders: 42,
           todayOrdersChange: 12.5,
-          todaySales: 18900,
+          todaySales: 8900,
           todaySalesChange: 8.3,
           totalCustomers: 1380,
           newCustomersToday: 8,
@@ -181,8 +181,8 @@ test.describe('仪表盘页面', () => {
   })
 
   test('"今日销售额"卡片：货币格式化 + 变化', async ({ page }) => {
-    // todaySales: 18900 → fmtCurrency → "¥18,900"
-    await expect(page.getByText('¥18,900')).toBeVisible()
+    // todaySales: 8900 → fmtCurrency → "¥8,900"
+    await expect(page.getByText('¥8,900')).toBeVisible()
     // todaySalesChange: 8.3 → 较昨天 8.3
     await expect(page.getByText('较昨天 8.3')).toBeVisible()
   })
@@ -210,35 +210,17 @@ test.describe('仪表盘页面', () => {
   })
 
   test('点击"近30天"切换 → 数据刷新', async ({ page }) => {
-    let trendRequestCount = 0
-    await page.route('**/api/admin/dashboard/order-trend*', async (route) => {
-      trendRequestCount++
-      const url = new URL(route.request().url())
-      const days = Number(url.searchParams.get('days')) || 7
-      const data = Array.from({ length: days }, (_, i) => ({
-        date: `06-${String(i + 1).padStart(2, '0')}`,
-        orders: 20 + i,
-        sessions: 10 + i,
-        totalAmount: (20 + i) * 23.8,
-      }))
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ code: 200, data }),
-      })
-    })
-
+    // 点击后等待趋势 API 带 days=30 的请求完成
     const btn30 = page.getByRole('button', { name: '近30天' })
+    const respPromise = page.waitForResponse(
+      (resp) => resp.url().includes('/dashboard/order-trend') && resp.url().includes('days=30'),
+      { timeout: 10_000 },
+    )
     await btn30.click()
-
-    // 等待新的 API 请求完成
-    await page.waitForTimeout(500)
-
+    // 等待 API 响应
+    await respPromise
     // "近30天" 按钮应变为激活状态
     await expect(btn30).toHaveClass(/bg-white/)
-
-    // 趋势 API 应被再次调用（days=30）
-    expect(trendRequestCount).toBeGreaterThan(0)
   })
 
   test('点击"近30天"切换后图表仍渲染', async ({ page }) => {
