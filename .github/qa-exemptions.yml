@@ -1,11 +1,11 @@
 # QA Growth Gate 豁免配置
-# 匹配这些 pattern 的文件跳过测试覆盖检查。
-# pattern 使用 shell case 通配符（仅 * ? 匹配单层），括号路径现已支持。
+# 匹配这些 pattern 的文件跳过测试覆盖检查（shell case 通配符，* ? 匹配单层）
+# 格式: - pattern: "路径/模式"
 exemptions:
-  - backend/ai-agent-service/app/tools/aftersale_query.py
-  - backend/ai-agent-service/app/agents/agents/xiaobu.py
-  # === PR #542: 清理双重 tenant_id — Mapper 纯 SQL 字符串变更，行为由 TenantLineInnerInterceptor 覆盖 ===
-  - backend/admin-api/src/main/java/com/migao/admin/controller/NotificationController.java
-  - backend/admin-api/src/main/java/com/migao/admin/mapper/NotificationMapper.java
-  - backend/admin-api/src/main/java/com/migao/admin/mapper/OrderMapper.java
-  - backend/admin-api/src/main/java/com/migao/admin/mapper/ProductMapper.java
+  - pattern: "backend/ai-agent-service/app/tools/aftersale_query.py"
+  - pattern: "backend/ai-agent-service/app/agents/agents/xiaobu.py"
+  # === PR #542: 清理双重 tenant_id — Mapper/Controller 纯 SQL 字符串删除，行为由 TenantLineInnerInterceptor 覆盖 ===
+  - pattern: "backend/admin-api/src/main/java/com/migao/admin/controller/NotificationController.java"
+  - pattern: "backend/admin-api/src/main/java/com/migao/admin/mapper/NotificationMapper.java"
+  - pattern: "backend/admin-api/src/main/java/com/migao/admin/mapper/OrderMapper.java"
+  - pattern: "backend/admin-api/src/main/java/com/migao/admin/mapper/ProductMapper.java"
