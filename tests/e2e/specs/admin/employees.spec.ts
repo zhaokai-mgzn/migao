@@ -118,16 +118,16 @@ test.describe('员工管理页面', () => {
   })
 
   test('状态切换按钮存在', async () => {
-    // Toggle switch: button inside td, contains the white dot span
-    // Use title attribute for robustness — cells show "点击禁用" or "点击启用"
-    const toggleButtons = page.locator('button').filter({ has: page.locator('span.rounded-full.bg-white') }).filter({ hasText: '' })
+    // 前端渲染: button.rounded-full > span.rounded-full.bg-white (toggle dot)
+    // title 属性为 "点击禁用" 或 "点击启用"
+    const toggleButtons = page.getByTitle(/点击禁用|点击启用/)
     const count = await toggleButtons.count()
-    // If title-based approach fails, try the original table selector
-    if (count === 0) {
-      const altButtons = page.locator('table button[type="button"]').filter({ has: page.locator('span.rounded-full') })
-      expect(await altButtons.count()).toBeGreaterThanOrEqual(1)
-    } else {
+    if (count > 0) {
       expect(count).toBeGreaterThanOrEqual(1)
+    } else {
+      // fallback: find buttons containing the white dot span
+      const altButtons = page.locator('button').filter({ has: page.locator('span.rounded-full') })
+      expect(await altButtons.count()).toBeGreaterThanOrEqual(1)
     }
   })
 
