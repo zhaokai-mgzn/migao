@@ -61,7 +61,7 @@ setup('authenticate as admin', async ({ page }) => {
     version: 0,
   }))
 
-  await page.goto('/dashboard', { waitUntil: 'networkidle', timeout: 60_000 })
+  await page.goto('/dashboard', { waitUntil: 'load', timeout: 60_000 })
   await expect(page.locator('aside')).toBeVisible({ timeout: 20_000 })
   await page.context().storageState({ path: AUTH_FILE })
 })
