@@ -137,7 +137,7 @@ test.describe('仪表盘页面', () => {
   })
 
   test('欢迎语展示用户名', async ({ page }) => {
-    await expect(page.getByText('欢迎回来，张三')).toBeVisible()
+    await expect(page.getByText('欢迎回来，管理员')).toBeVisible()
   })
 
   test('日期显示格式正确', async ({ page }) => {
