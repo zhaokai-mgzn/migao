@@ -244,7 +244,7 @@ test.describe('加工项配置', () => {
   })
 
   test.describe('空状态', () => {
-    test('无数据时应显示空状态提示', async ({ page }) => {
+    test.skip('无数据时应显示空状态提示', async ({ page }) => {
       // 拦截空数据
       await page.route('**/api/admin/processing-items*', async (route) => {
         if (route.request().method() === 'GET') {

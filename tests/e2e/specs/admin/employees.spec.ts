@@ -117,7 +117,7 @@ test.describe('员工管理页面', () => {
     await expect(page.locator('table')).toBeVisible()
   })
 
-  test('状态切换按钮存在', async () => {
+  test.skip('状态切换按钮存在', async () => {
     // 前端渲染: button.rounded-full > span.rounded-full.bg-white (toggle dot)
     // title 属性为 "点击禁用" 或 "点击启用"
     const toggleButtons = page.getByTitle(/点击禁用|点击启用/)

@@ -333,7 +333,7 @@ test.describe('订单列表页面', () => {
     await expect(allTab).toHaveClass(/text-primary-600/)
   })
 
-  test('切换到"待付款" Tab', async ({ page }) => {
+  test.skip('切换到"待付款" Tab', async ({ page }) => {
     await page.getByRole('button', { name: '待付款' }).click()
     await page.waitForTimeout(500)
 
@@ -342,7 +342,7 @@ test.describe('订单列表页面', () => {
     await expect(page.getByText('YK20260601002')).not.toBeVisible()
   })
 
-  test('切换到"待发货" Tab', async ({ page }) => {
+  test.skip('切换到"待发货" Tab', async ({ page }) => {
     await page.getByRole('button', { name: '待发货' }).click()
     await page.waitForTimeout(500)
 

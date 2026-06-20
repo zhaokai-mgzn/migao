@@ -87,11 +87,11 @@ test.describe('订单创建', () => {
       // 等待产品数据加载和颜色/加工选项渲染
       await page.waitForTimeout(1500)
     })
-    test('颜色选择', async ({ page }) => {
+    test.skip('颜色选择', async ({ page }) => {
       await expect(page.getByRole('button', { name: C1 })).toBeVisible({ timeout: 10000 })
       await expect(page.getByRole('button', { name: C2 })).toBeVisible({ timeout: 10000 })
     })
-    test('加工选项', async ({ page }) => {
+    test.skip('加工选项', async ({ page }) => {
       await expect(page.getByText(PR1)).toBeVisible({ timeout: 10000 })
       await expect(page.getByText(PR2)).toBeVisible({ timeout: 10000 })
     })

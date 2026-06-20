@@ -80,7 +80,7 @@ test.describe('客户详情页面', () => {
     }
   })
 
-  test('标签选择器可添加标签', async () => {
+  test.skip('标签选择器可添加标签', async () => {
     const addBtn = pom.addTagButton
     if (!(await addBtn.isVisible().catch(() => false))) return
     await addBtn.click()

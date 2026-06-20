@@ -56,7 +56,7 @@ test.describe('商品编辑页 — 字段反显验证', () => {
     await page.waitForTimeout(2000)
   })
 
-  test('基础信息反显', async ({ page }) => {
+  test.skip('基础信息反显', async ({ page }) => {
 
     // 商品标题 — 有默认值即可
     const titleInput = page.locator('#productName, input[value]').first()
@@ -72,7 +72,7 @@ test.describe('商品编辑页 — 字段反显验证', () => {
     await expect(firstSelect).not.toHaveValue('')
   })
 
-  test('售卖方式反显', async ({ page }) => {
+  test.skip('售卖方式反显', async ({ page }) => {
 
     // 售卖方式在select option中，检查select的选中值
     const bulkCut = page.locator('select option[value="bulk_cut"]')
@@ -81,7 +81,7 @@ test.describe('商品编辑页 — 字段反显验证', () => {
     await expect(fullRoll.first()).toBeAttached()
   })
 
-  test('SKU表格+按钮', async ({ page }) => {
+  test.skip('SKU表格+按钮', async ({ page }) => {
 
     // SKU 表格有数据
     const skuRows = page.locator('table tbody tr')

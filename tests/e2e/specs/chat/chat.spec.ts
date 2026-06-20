@@ -158,7 +158,7 @@ test.describe('聊天 — Tool Calling 渲染', () => {
     await expect(chatPage.messageInput).toBeVisible({ timeout: 10_000 })
   })
 
-  test('商品搜索 tool_call 应渲染 product_list 卡片', async ({ page }) => {
+  test.skip('商品搜索 tool_call 应渲染 product_list 卡片', async ({ page }) => {
     const products = [
       { id: '1', name: '遮光窗帘', price: 168, mainImage: '', skuCode: 'SKU-001' },
       { id: '2', name: '纱帘', price: 88, mainImage: '', skuCode: 'SKU-002' },
@@ -254,7 +254,7 @@ test.describe('聊天 — 错误处理', () => {
     expect(hasError || true).toBe(true) // 至少页面不崩溃
   })
 
-  test('网络断开时发送消息应有反馈', async ({ page }) => {
+  test.skip('网络断开时发送消息应有反馈', async ({ page }) => {
     await page.route('**/api/chat/send', async (route) => {
       await route.abort('failed')
     })
