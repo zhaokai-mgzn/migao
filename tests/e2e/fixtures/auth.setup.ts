@@ -1,36 +1,21 @@
-/**
- * Auth Setup — Global setup that runs once before all authenticated tests.
- *
- * Playwright config (playwright.config.ts):
- *   - Project 'auth-setup' matches this file: testMatch: /auth\.setup\.ts/
- *   - Project 'chromium' depends on 'auth-setup' and loads:
- *       storageState: './tests/e2e/.auth/admin.json'
- *
- * This setup:
- *   1. Logs in via the backend API to get tokens
- *   2. Pre-sets cookies and localStorage via addCookies / addInitScript
- *      (must happen before first navigation — AuthGuard checks on page load)
- *   3. Navigates to dashboard to verify sidebar is visible
- *   4. Saves browser storage state to tests/e2e/.auth/admin.json
- */
 import { test as setup, expect } from '@playwright/test'
-import { loginViaApi, type AuthTokens } from '../helpers/auth.helper'
+import { loginViaApi, injectAuth, type AuthTokens } from '../helpers/auth.helper'
 import * as path from 'path'
 import * as fs from 'fs'
 
 const AUTH_DIR = path.join(__dirname, '..', '.auth')
 const AUTH_FILE = path.join(AUTH_DIR, 'admin.json')
-
 const TEST_PHONE = process.env.E2E_ADMIN_PHONE || '13800138000'
 const TEST_SMS_CODE = process.env.E2E_SMS_CODE || '123456'
 
 setup('authenticate as admin', async ({ page }) => {
-  setup.setTimeout(120_000)
+  setup.setTimeout(180_000)
 
   if (!fs.existsSync(AUTH_DIR)) {
     fs.mkdirSync(AUTH_DIR, { recursive: true })
   }
 
+  // Step 1: Login via SMS API
   let tokens: AuthTokens
   try {
     tokens = await loginViaApi(TEST_PHONE, TEST_SMS_CODE)
@@ -44,24 +29,22 @@ setup('authenticate as admin', async ({ page }) => {
     }
   }
 
-  // Pre-set auth BEFORE first navigation — AuthGuard checks cookie + localStorage on page load
-  await page.context().addCookies([{
-    name: 'access_token', value: tokens.accessToken, domain: 'localhost', path: '/', sameSite: 'Lax' as const,
-  }])
-  await page.context().addInitScript((authJson: string) => {
-    localStorage.setItem('auth-storage', authJson)
-  }, JSON.stringify({
-    state: {
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
-      user: { id: '1', username: TEST_PHONE, name: '管理员', roles: ['admin'], tenantId: 1, tenantName: '测试企业' },
-      isAuthenticated: true,
-      rememberMe: true,
-    },
-    version: 0,
-  }))
+  // Step 2: Navigate to origin first (Next.js cold start)
+  await page.goto('/', { waitUntil: 'load', timeout: 60_000 })
 
-  await page.goto('/dashboard', { waitUntil: 'networkidle', timeout: 60_000 })
-  await expect(page.locator('aside')).toBeVisible({ timeout: 20_000 })
+  // Step 3: Inject auth state
+  await injectAuth(page, tokens, {
+    id: '1', username: TEST_PHONE, name: '管理员',
+    roles: ['admin'], tenantId: 1, tenantName: '测试企业',
+  })
+
+  // Step 4: Navigate to dashboard — use 'load' not 'networkidle'
+  // (dashboard may have SSE/polling that keeps network active)
+  await page.goto('/dashboard', { waitUntil: 'load', timeout: 60_000 })
+
+  // Step 5: Wait for sidebar — with generous timeout for cold start
+  await expect(page.locator('aside')).toBeVisible({ timeout: 45_000 })
+
+  // Step 6: Save storage state
   await page.context().storageState({ path: AUTH_FILE })
 })
