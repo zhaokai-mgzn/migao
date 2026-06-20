@@ -1,0 +1,27 @@
+name: processing-manage
+description: 加工项/加工分类管理
+red_flags: []
+business_truths:
+  - 加工项支持 CRUD
+  - 加工项关联商品
+  - 含加工订单判定逻辑
+  - 加工分类支持排序
+
+primary_specs:
+  - tests/e2e/specs/catalog/processing.spec.ts
+  - backend/admin-api/src/test/java/com/migao/admin/controller/ProcessingItemControllerTest.java
+
+reviewer_asserts:
+  - API: GET /api/admin/processing-items?page=1&size=10
+    expect: items 非空 AND total >= 0
+  - API: GET /api/admin/processing-categories
+    expect: data 非空
+  - API: POST /api/admin/processing-items
+    expect: status = 200 OR status = 201
+  - 含加工判定: GET /api/admin/orders?category=含加工订单
+    expect: items 中每条 has_processing=true
+
+confidence_required: 80%
+common_pitfalls:
+  - 加工项关联商品未级联更新
+  - 含加工订单误判

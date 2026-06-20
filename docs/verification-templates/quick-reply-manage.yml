@@ -1,0 +1,22 @@
+name: quick-reply-manage
+description: 快捷回复管理
+red_flags: []
+business_truths:
+  - 快捷回复支持 CRUD
+  - 快捷回复支持分组/分类
+  - 租户隔离：不同租户快捷回复互不可见
+
+primary_specs:
+  - backend/admin-api/src/test/java/com/migao/admin/controller/QuickReplyControllerTest.java
+
+reviewer_asserts:
+  - API: GET /api/admin/quick-replies
+    expect: items 非空 AND total >= 0
+  - API: POST /api/admin/quick-replies
+    expect: status = 200 OR status = 201
+  - API: GET /api/admin/quick-replies/{id}
+    expect: data 非空
+
+confidence_required: 80%
+common_pitfalls:
+  - 跨租户快捷回复泄露

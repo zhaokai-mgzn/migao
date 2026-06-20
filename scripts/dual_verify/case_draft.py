@@ -15,14 +15,20 @@ PROJECT_ROOT = Path(os.getenv("PROJECT_ROOT", "/opt/youke")).resolve()
 TEMPLATE_DIR = Path(__file__).resolve().parent.parent.parent / "docs/verification-templates"
 
 TEMPLATES = {
-    "dashboard-jump":    {"kw": ["看板跳转","待发货数","含加工订单数","低库存数"],"min":2},
-    "order-classify":    {"kw": ["订单分类","8个分类","6个状态","含加工订单"],"min":2},
-    "product-sku-stock": {"kw": ["SKU库存","库存汇总","低库存阈值"],"min":1},
-    "customer-list":     {"kw": ["客户列表","客户详情","客户搜索"],"min":1},
-    "aftersales-flow":   {"kw": ["售后工单","售后状态","退款","转人工","工单","确认卡片","售后"],"min":1},
-    "auth-sms":          {"kw": ["短信登录","验证码登录","注册"],"min":1},
-    "employee-role":     {"kw": ["员工列表","角色权限","岗位"],"min":1},
-    "knowledge-ai":      {"kw": ["知识库文档","知识库检索","AI回答"],"min":2},
+    "dashboard-jump":       {"kw": ["看板跳转","待发货数","含加工订单数","低库存数","dashboard","数据看板","统计卡片"],"min":2},
+    "order-classify":       {"kw": ["订单分类","8个分类","6个状态","含加工订单","订单列表","订单详情"],"min":2},
+    "product-sku-stock":    {"kw": ["SKU库存","库存汇总","低库存阈值","商品列表","商品详情","商品编辑"],"min":1},
+    "customer-list":        {"kw": ["客户列表","客户详情","客户搜索","客户管理"],"min":1},
+    "aftersales-flow":      {"kw": ["售后工单","售后状态","退款","转人工","工单","确认卡片","售后","aftersale"],"min":1},
+    "auth-sms":             {"kw": ["短信登录","验证码登录","注册","登录","auth","认证"],"min":1},
+    "employee-role":        {"kw": ["员工列表","角色权限","岗位","员工管理","角色管理"],"min":1},
+    "knowledge-ai":         {"kw": ["知识库文档","知识库检索","AI回答","知识库管理","RAG"],"min":2},
+    "notification-manage":  {"kw": ["通知","消息","推送","提醒","notification","通知规则","通知模板"],"min":1},
+    "quick-reply-manage":   {"kw": ["快捷回复","quick reply","常用语","话术"],"min":1},
+    "settings-manage":      {"kw": ["设置","配置","系统设置","租户配置","AI配置","机器人配置","TenantAiConfig"],"min":1},
+    "file-upload":          {"kw": ["上传","文件","图片","OSS","存储","bucket","文件管理"],"min":1},
+    "registration-approval":{"kw": ["注册审批","审批","注册申请","租户注册","待审核","registration"],"min":1},
+    "processing-manage":    {"kw": ["加工项","加工分类","processing","加工管理"],"min":1},
 }
 
 def match_template(title, body):
