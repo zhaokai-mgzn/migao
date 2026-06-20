@@ -15,7 +15,7 @@ test.describe('商品编辑页 — 字段反显验证', () => {
     await page.goto(BASE_URL)
     await injectAuth(page, tokens)
     await page.goto(`${BASE_URL}/products/${TEST_PRODUCT_ID}/edit`)
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('load')
     await page.waitForTimeout(2000)
   })
 

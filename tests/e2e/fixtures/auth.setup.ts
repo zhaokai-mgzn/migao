@@ -46,7 +46,7 @@ setup('authenticate as admin', async ({ page }) => {
 
   // Pre-set auth BEFORE first navigation — AuthGuard checks cookie + localStorage on page load
   await page.context().addCookies([{
-    name: 'access_token', value: tokens.accessToken, domain: 'localhost', path: '/', sameSite: 'Lax' as const,
+    name: 'access_token', value: tokens.accessToken, path: '/', sameSite: 'Lax' as const,
   }])
   await page.context().addInitScript((authJson: string) => {
     localStorage.setItem('auth-storage', authJson)
