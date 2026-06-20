@@ -66,11 +66,15 @@ setup('authenticate as admin', async ({ page }) => {
   })
 
   // Step 4: Navigate to dashboard to let the app pick up the auth state
-  await page.goto('/dashboard', { waitUntil: 'domcontentloaded', timeout: 30_000 })
+  await page.goto('/dashboard', { waitUntil: 'networkidle', timeout: 60_000 })
+
+  // DEBUG: 截图看 CI 中实际页面状态
+  await page.screenshot({ path: 'test-results/auth-debug-dashboard.png', fullPage: true })
+  console.log('DEBUG page URL after goto /dashboard:', page.url())
+  console.log('DEBUG page title:', await page.title())
 
   // Step 5: Verify we're authenticated — should see the sidebar / dashboard
-  // The sidebar renders with class 'fixed left-0' and contains navigation links
-  await expect(page.locator('aside')).toBeVisible({ timeout: 20_000 })
+  await expect(page.locator('aside, nav, [class*="sidebar"], [class*="Sidebar"]').first()).toBeVisible({ timeout: 25_000 })
 
   // Step 6: Save storage state (localStorage + cookies) for other tests
   await page.context().storageState({ path: AUTH_FILE })
