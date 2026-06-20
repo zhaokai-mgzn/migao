@@ -53,6 +53,16 @@ test.describe('聊天 — 基础发送与接收', () => {
 
   test.beforeEach(async ({ page }) => {
     chatPage = new ChatPage(page)
+
+    // Mock sessions API (called on page mount)
+    await page.route('**/api/chat/sessions*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: [] }),
+      })
+    })
+
     await chatPage.goto()
     await chatPage.waitForAuth()
     await page.waitForSelector('textarea[placeholder*="输入消息"]', { timeout: 10_000 })
@@ -116,6 +126,16 @@ test.describe('聊天 — Tool Calling 渲染', () => {
 
   test.beforeEach(async ({ page }) => {
     chatPage = new ChatPage(page)
+
+    // Mock sessions API (called on page mount)
+    await page.route('**/api/chat/sessions*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: [] }),
+      })
+    })
+
     await chatPage.goto()
     await chatPage.waitForAuth()
     await page.waitForSelector('textarea[placeholder*="输入消息"]', { timeout: 10_000 })
@@ -192,6 +212,16 @@ test.describe('聊天 — 错误处理', () => {
 
   test.beforeEach(async ({ page }) => {
     chatPage = new ChatPage(page)
+
+    // Mock sessions API (called on page mount)
+    await page.route('**/api/chat/sessions*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: [] }),
+      })
+    })
+
     await chatPage.goto()
     await chatPage.waitForAuth()
     await page.waitForSelector('textarea[placeholder*="输入消息"]', { timeout: 10_000 })

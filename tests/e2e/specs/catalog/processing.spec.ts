@@ -256,7 +256,7 @@ test.describe('加工项配置', () => {
       }, { times: 1 })
 
       await page.reload()
-      await expect(page.getByText(/暂无加工项/)).toBeVisible()
+      await expect(page.getByText('暂无加工项，点击右上角「添加加工项」开始创建')).toBeVisible()
     })
   })
 })
