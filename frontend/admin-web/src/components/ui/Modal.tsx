@@ -65,6 +65,9 @@ const Modal = ({
       {/* 模态框 */}
       <div className="absolute inset-0 flex items-center justify-center p-4 overflow-y-auto">
         <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={title || '对话框'}
           className="relative bg-white rounded-lg shadow-xl w-full animate-in fade-in zoom-in-95 duration-200"
           style={{ maxWidth: widthStyle }}
           onClick={(e) => e.stopPropagation()}

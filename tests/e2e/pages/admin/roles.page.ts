@@ -18,15 +18,17 @@ export class RolesPage extends BasePage {
   }
 
   editBtn(n: number): Locator {
-    return this.roleCards.nth(n).locator('button[title="编辑"]')
+    // 编辑按钮是纯图标按钮（Pencil SVG），通过卡片内的按钮位置定位
+    return this.roleCards.nth(n).locator('button').last()
   }
 
   deleteBtn(n: number): Locator {
-    return this.roleCards.nth(n).locator('button[title="删除"]')
+    // 删除按钮是纯图标按钮（Trash2 SVG），在编辑按钮前面
+    return this.roleCards.nth(n).locator('button').first()
   }
 
-  get name() { return this.roleModal.locator('input[placeholder*="管理员"]') }
-  get code() { return this.roleModal.locator('input[placeholder*="admin"]') }
+  get name() { return this.roleModal.locator('input[placeholder*="管理员"]').or(this.roleModal.locator('input[label="角色名称"]')) }
+  get code() { return this.roleModal.locator('input[placeholder*="admin"]').or(this.roleModal.locator('input[label="角色编码"]')) }
   get description() { return this.roleModal.locator('textarea[placeholder*="角色描述"]') }
   get permissionTree() { return this.roleModal.locator('.border.border-gray-200.rounded-lg') }
 
