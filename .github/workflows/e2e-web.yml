@@ -4,8 +4,14 @@ on:
   workflow_dispatch:
   pull_request:
     paths:
-      # ── 前端变更（全部触发）────────────────────────────────
-      - 'frontend/admin-web/**'
+      # ── 前端变更（排除纯测试文件）────────────────────────
+      - 'frontend/admin-web/src/**'
+      - 'frontend/admin-web/public/**'
+      - 'frontend/admin-web/package.json'
+      - 'frontend/admin-web/package-lock.json'
+      - 'frontend/admin-web/next.config.*'
+      - 'frontend/admin-web/tsconfig.json'
+      - 'frontend/admin-web/tailwind.config.*'
 
       # ── 后端 HTTP 层变更（影响前端交互）────────────────────
       # 只监听直接影响 HTTP 接口的包，避免纯内部逻辑
