@@ -1269,7 +1269,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
      * @param limit     最大返回条数
      * @return 低库存 SKU 列表
      */
-    public List<LowStockByColorResponse> getLowStockByColor(Long tenantId, int threshold, int limit) {
-        return productMapper.findLowStockByColor(tenantId, threshold, limit);
+    public List<LowStockByColorResponse> getLowStockByColor(int threshold, int limit) {
+        return productMapper.findLowStockByColor(threshold, limit);
     }
 }

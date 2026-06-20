@@ -219,11 +219,10 @@ public class DashboardController {
     @GetMapping("/order-trend")
     public ApiResponse<List<OrderTrendPointResponse>> getOrderTrend(
             @RequestParam(defaultValue = "7") int days) {
-        Long tenantId = TenantContext.getTenantId();
         ZoneId cst = ZoneId.of("Asia/Shanghai");
         OffsetDateTime startDate = LocalDate.now(cst).minusDays(days - 1).atStartOfDay().atOffset(ZoneOffset.ofHours(8));
 
-        List<Map<String, Object>> rawData = orderMapper.selectOrderTrend(tenantId, startDate);
+        List<Map<String, Object>> rawData = orderMapper.selectOrderTrend(startDate);
 
         // 构建日期到数据的映射
         Map<String, Map<String, Object>> dataMap = new LinkedHashMap<>();
@@ -271,8 +270,7 @@ public class DashboardController {
 
     @GetMapping("/order-status")
     public ApiResponse<List<OrderStatusResponse>> getOrderStatusDistribution() {
-        Long tenantId = TenantContext.getTenantId();
-        List<Map<String, Object>> rawData = orderMapper.selectOrderStatusDistribution(tenantId);
+        List<Map<String, Object>> rawData = orderMapper.selectOrderStatusDistribution();
 
         List<OrderStatusResponse> result = rawData.stream().map(row -> {
             String status = (String) row.get("status");

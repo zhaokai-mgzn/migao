@@ -311,7 +311,7 @@ class ProductControllerTest extends BaseControllerTest {
             item.setDoorWidth("2.5m");
             item.setStock(50);
 
-            when(productService.getLowStockByColor(TEST_TENANT_ID, 100, 50))
+            when(productService.getLowStockByColor(100, 50))
                     .thenReturn(List.of(item));
 
             mockMvc.perform(get(BASE + "/low-stock-by-color"))

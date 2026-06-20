@@ -17,12 +17,11 @@ import java.util.Map;
 public interface OrderMapper extends BaseMapper<Order> {
 
     @Select("SELECT DATE(created_at) as date, COUNT(*) as orders, COALESCE(SUM(total_amount), 0) as amount " +
-            "FROM orders WHERE tenant_id = #{tenantId} AND deleted = 0 AND created_at >= #{startDate} " +
+            "FROM orders WHERE deleted = 0 AND created_at >= #{startDate} " +
             "GROUP BY DATE(created_at) ORDER BY date")
-    List<Map<String, Object>> selectOrderTrend(@Param("tenantId") Long tenantId,
-                                               @Param("startDate") OffsetDateTime startDate);
+    List<Map<String, Object>> selectOrderTrend(@Param("startDate") OffsetDateTime startDate);
 
     @Select("SELECT status, COUNT(*) as count FROM orders " +
-            "WHERE tenant_id = #{tenantId} AND deleted = 0 GROUP BY status")
-    List<Map<String, Object>> selectOrderStatusDistribution(@Param("tenantId") Long tenantId);
+            "WHERE deleted = 0 GROUP BY status")
+    List<Map<String, Object>> selectOrderStatusDistribution();
 }

@@ -75,7 +75,7 @@ class NotificationServiceTest {
         Page<Notification> page = new Page<>(1, 10);
         page.setTotal(1);
         page.setRecords(List.of(n));
-        when(notificationMapper.selectByRecipientId(any(), any(), any(), any(), any(Page.class)))
+        when(notificationMapper.selectByRecipientId(any(), any(), any(), any(Page.class)))
                 .thenReturn((com.baomidou.mybatisplus.core.metadata.IPage<Notification>) page);
 
         NotificationQueryRequest queryRequest = new NotificationQueryRequest();
@@ -83,7 +83,7 @@ class NotificationServiceTest {
         queryRequest.setSize(10L);
 
         PageResponse<NotificationDTO> result = notificationService.queryNotifications(
-                1L, "user-1", queryRequest);
+                "user-1", queryRequest);
 
         assertThat(result.getTotal()).isEqualTo(1);
         assertThat(result.getItems().get(0).getTitle()).isEqualTo("测试通知");
@@ -119,9 +119,9 @@ class NotificationServiceTest {
     @Test
     @DisplayName("getUnreadCount — 返回未读数量")
     void getUnreadCount_returnsCount() {
-        when(notificationMapper.countUnread(anyLong(), anyString())).thenReturn(3L);
+        when(notificationMapper.countUnread(anyString())).thenReturn(3L);
 
-        UnreadCountResponse result = notificationService.getUnreadCount(1L, "user-1");
+        UnreadCountResponse result = notificationService.getUnreadCount("user-1");
 
         assertThat(result.getCount()).isEqualTo(3L);
     }
