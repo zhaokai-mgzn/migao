@@ -62,7 +62,7 @@ test.describe('客户列表 ↔ 详情', () => {
   test('name/phone 一致', async () => {
     const first = firstItem(customersFixture)
     if (!first?.id) { console.log('[skip]'); return }
-    expect(first).toHaveProperty('name')
+    expect(first.name || first.wechatNickname).toBeTruthy()
     expect(first).toHaveProperty('phone')
   })
 })

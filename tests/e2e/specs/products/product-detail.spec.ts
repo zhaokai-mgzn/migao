@@ -88,7 +88,7 @@ test.describe('商品详情', () => {
   })
 
   test('应显示加工项配置', async ({ page }) => {
-    await expect(page.getByText('加工项')).toBeVisible()
+    await expect(page.getByRole('heading', { name: '加工项' }).first()).toBeVisible()
     await expect(page.getByText('韩式打褶定型')).toBeVisible()
     await expect(page.getByText('¥25.00/米')).toBeVisible()
   })

@@ -56,8 +56,8 @@ test.describe('订单发货', () => {
 
     test('应显示面包屑导航', async ({ page }) => {
       // scope to breadcrumb area to avoid matching sidebar nav links
-      const breadcrumb = page.locator('nav').first()
-      await expect(breadcrumb.getByText('首页')).toBeVisible()
+      const breadcrumb = page.locator('.text-sm.text-gray-500').filter({ hasText: /首页/ }).first()
+      await expect(breadcrumb).toBeVisible()
       await expect(breadcrumb.getByText('订单管理')).toBeVisible()
       await expect(breadcrumb.getByText('订单列表')).toBeVisible()
       await expect(breadcrumb.getByText('订单详情')).toBeVisible()

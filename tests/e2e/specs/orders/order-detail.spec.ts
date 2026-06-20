@@ -125,7 +125,7 @@ test.describe('订单详情 - 待付款状态', () => {
   test('点击关闭订单应弹出确认对话框', async ({ page }) => {
     await page.getByRole('button', { name: '关闭订单' }).click()
     const closeModal = page.locator('.fixed.inset-0')
-    await expect(closeModal.getByText('关闭订单')).toBeVisible()
+    await expect(closeModal.getByText('关闭订单').first()).toBeVisible()
     await expect(closeModal.getByText(/确定关闭当前订单/)).toBeVisible()
   })
 
