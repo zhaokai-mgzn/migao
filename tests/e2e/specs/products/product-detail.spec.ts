@@ -1,3 +1,4 @@
+import { test, expect } from '@playwright/test'
 
 /**
  * 商品详情 E2E 测试

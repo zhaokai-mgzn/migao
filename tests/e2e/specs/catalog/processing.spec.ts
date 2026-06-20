@@ -1,3 +1,4 @@
+import { test, expect } from '@playwright/test'
 
 /**
  * 加工项配置 E2E 测试

@@ -1,3 +1,4 @@
+import { test, expect } from '@playwright/test'
 /**
  * API Contract 测试 — 验证后端返回的 JSON 结构完整性
  *

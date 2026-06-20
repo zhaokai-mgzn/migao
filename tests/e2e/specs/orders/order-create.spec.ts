@@ -1,3 +1,4 @@
+import { test, expect } from '@playwright/test'
 import productsListFixture from '../../fixtures/products-list.json'
 import productsDetailFixture from '../../fixtures/products-detail.json'
 

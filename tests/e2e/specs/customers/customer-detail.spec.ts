@@ -1,3 +1,4 @@
+import { test, expect } from '@playwright/test'
 import { CustomerDetailPage } from '../../pages/customers/customer-detail.page'
 
 test.describe('客户详情页面', () => {
