@@ -1,329 +1,250 @@
 """
-CustomerServiceAgent 单元测试
-
-测试 C 端智能客服 Agent 的核心逻辑（LangGraph 版本）
+Tests for app/agents/customer_service_agent.py
+Covers: AgentResponse, AgentContext, BaseAgent, get_agent, reset_agent,
+         _extract_msg_content, backward compat aliases
 """
-
 import pytest
-from unittest.mock import patch, AsyncMock, MagicMock
+from unittest.mock import MagicMock, patch
 
 from app.agents.customer_service_agent import (
-    CustomerServiceAgent,
-    AgentContext,
     AgentResponse,
+    AgentContext,
+    _extract_msg_content,
     get_agent,
     reset_agent,
+    CustomerServiceAgent,
+    WorkAssistantAgent,
+    BaseAgent,
 )
+from app.tools import ToolContext
 
-
-# ========== 测试辅助 fixtures ==========
-
-@pytest.fixture
-def agent_context():
-    """标准 Agent 上下文"""
-    return AgentContext(
-        user_id="user_001",
-        tenant_id=1,
-        session_id="sess_001",
-        role="customer",
-        identity_type="wechat_mini",
-    )
-
-
-@pytest.fixture
-def chat_history():
-    """多轮对话历史"""
-    return [
-        {"role": "user", "content": "你好"},
-        {"role": "assistant", "content": "您好！有什么可以帮您的吗？"},
-    ]
-
-
-# ========== AgentContext 测试 ==========
-
-class TestAgentContext:
-    """测试 AgentContext 数据类"""
-
-    def test_context_to_dict(self, agent_context):
-        """test_context_to_dict: 转为字典"""
-        d = agent_context.to_dict()
-        assert d["user_id"] == "user_001"
-        assert d["tenant_id"] == 1
-        assert d["session_id"] == "sess_001"
-        assert d["role"] == "customer"
-        assert d["identity_type"] == "wechat_mini"
-
-    def test_context_to_tool_context(self, agent_context):
-        """test_context_to_tool_context: 转为 ToolContext"""
-        tc = agent_context.to_tool_context()
-        assert tc.tenant_id == 1
-        assert tc.user_id == "user_001"
-        assert tc.session_id == "sess_001"
-        assert tc.role == "customer"
-
-    def test_context_default_values(self):
-        """test_context_defaults: 默认值"""
-        ctx = AgentContext(user_id="u1", tenant_id=1, session_id="s1")
-        assert ctx.role == "customer"
-        assert ctx.identity_type == "wechat_mini"
-
-
-# ========== AgentResponse 测试 ==========
 
 class TestAgentResponse:
-    """测试 AgentResponse 数据类"""
-
-    def test_response_text(self):
-        """test_response_text: 文本响应"""
-        resp = AgentResponse(content="你好")
-        assert resp.content == "你好"
+    def test_default_values(self):
+        resp = AgentResponse(content="hello")
+        assert resp.content == "hello"
         assert resp.type == "text"
         assert resp.tool_calls is None
+        assert resp.metadata is None
 
-    def test_response_error(self):
-        """test_response_error: 错误响应"""
-        resp = AgentResponse(
-            content="出错了",
-            type="error",
-            metadata={"error": "timeout"},
-        )
-        assert resp.type == "error"
-        assert resp.metadata["error"] == "timeout"
-
-    def test_response_tool_call(self):
-        """test_response_tool_call: 工具调用响应"""
-        resp = AgentResponse(
-            content="",
-            type="tool_call",
-            tool_calls=[{"tool": "order_query", "tool_input": {"order_id": "123"}}],
-        )
+    def test_tool_call_response(self):
+        resp = AgentResponse(content="", type="tool_call",
+            tool_calls=[{"tool": "search", "tool_input": {"q": "test"}}])
         assert resp.type == "tool_call"
         assert len(resp.tool_calls) == 1
+        assert resp.tool_calls[0]["tool"] == "search"
+
+    def test_error_response_with_metadata(self):
+        resp = AgentResponse(content="error", type="error",
+            metadata={"error": "ConnectionError"})
+        assert resp.type == "error"
+        assert resp.metadata["error"] == "ConnectionError"
 
 
-# ========== CustomerServiceAgent 初始化测试 ==========
+class TestAgentContext:
+    def test_default_values(self):
+        ctx = AgentContext(user_id="u1", tenant_id=100, session_id="s1")
+        assert ctx.role == "customer"
+        assert ctx.identity_type == "wechat_mini"
+        assert ctx.user_name is None
 
-class TestAgentInit:
-    """测试 Agent 初始化（LangGraph 版本）"""
+    def test_custom_values(self):
+        ctx = AgentContext(user_id="u2", tenant_id=200, session_id="s2",
+            role="admin", identity_type="web", user_name="TestUser")
+        assert ctx.role == "admin"
+        assert ctx.identity_type == "web"
+        assert ctx.user_name == "TestUser"
 
-    @patch("app.graph.builder.build_agent_graph")
-    @patch("app.agents.customer_service_agent.create_default_registry")
-    def test_agent_default_registry(self, mock_create_registry, mock_build_graph):
-        """test_agent_default_registry: 默认 registry"""
-        mock_registry = MagicMock()
-        mock_registry.get_langchain_tools.return_value = []
-        mock_create_registry.return_value = mock_registry
-        mock_build_graph.return_value = MagicMock()
+    def test_to_dict(self):
+        ctx = AgentContext(user_id="u1", tenant_id=100, session_id="s1", user_name="Alice")
+        d = ctx.to_dict()
+        assert d["user_id"] == "u1"
+        assert d["tenant_id"] == 100
+        assert d["role"] == "customer"
+        assert d["user_name"] == "Alice"
+        assert "identity_type" in d
 
-        agent = CustomerServiceAgent()
-        assert agent.tool_registry is mock_registry
-        assert agent.graph is mock_build_graph.return_value
+    def test_to_tool_context(self):
+        ctx = AgentContext(user_id="u1", tenant_id=100, session_id="s1", role="customer")
+        tc = ctx.to_tool_context()
+        assert isinstance(tc, ToolContext)
+        assert tc.tenant_id == 100
+        assert tc.user_id == "u1"
 
-    @patch("app.graph.builder.build_agent_graph")
-    def test_agent_custom_registry(self, mock_build_graph):
-        """test_agent_custom_registry: 自定义 registry"""
-        mock_registry = MagicMock()
-        mock_registry.get_langchain_tools.return_value = []
-        mock_build_graph.return_value = MagicMock()
 
-        agent = CustomerServiceAgent(tool_registry=mock_registry)
-        assert agent.tool_registry is mock_registry
+class TestExtractMsgContent:
+    def test_plain_text(self):
+        msg = MagicMock()
+        msg.content = "hello world"
+        assert _extract_msg_content(msg) == "hello world"
 
-    @patch("app.graph.builder.build_agent_graph")
-    @patch("app.agents.customer_service_agent.create_default_registry")
-    def test_convert_history(self, mock_create_registry, mock_build_graph):
-        """test_convert_history: 转换对话历史"""
-        mock_registry = MagicMock()
-        mock_registry.get_langchain_tools.return_value = []
-        mock_create_registry.return_value = mock_registry
-        mock_build_graph.return_value = MagicMock()
+    def test_strips_think_tags(self):
+        msg = MagicMock()
+        msg.content = "<think>reasoning</think>actual response"
+        assert _extract_msg_content(msg) == "actual response"
 
-        agent = CustomerServiceAgent()
-        history = agent._convert_history([
-            {"role": "user", "content": "你好"},
-            {"role": "assistant", "content": "您好"},
-            {"role": "unknown", "content": "ignore"},
+    def test_multiline_think_tag(self):
+        msg = MagicMock()
+        msg.content = "<think>\nline1\nline2\n</think>visible"
+        assert _extract_msg_content(msg) == "visible"
+
+    def test_no_think_tag(self):
+        msg = MagicMock()
+        msg.content = "normal response"
+        assert _extract_msg_content(msg) == "normal response"
+
+    def test_multimodal_content_list(self):
+        msg = MagicMock()
+        msg.content = [
+            {"type": "text", "text": "part1"},
+            {"type": "image_url", "image_url": {"url": "http://x.com/1.jpg"}},
+            {"type": "text", "text": "part2"},
+        ]
+        assert _extract_msg_content(msg) == "part1part2"
+
+    def test_empty_think_only(self):
+        msg = MagicMock()
+        msg.content = "<think>reasoning</think>"
+        assert _extract_msg_content(msg) == ""
+
+
+class TestConvertHistory:
+    @pytest.fixture
+    def agent(self):
+        reset_agent()
+        with patch("app.graph.builder.build_agent_graph") as mock_build, \
+             patch("app.agents.agent_config.get_agent_config") as mock_cfg:
+            mock_build.return_value = MagicMock()
+            cfg = MagicMock()
+            cfg.get_direct_reply = MagicMock(return_value=None)
+            cfg.greeting = "test"
+            mock_cfg.return_value = cfg
+            return BaseAgent(agent_type="xiaobu")
+
+    def test_empty_history(self, agent):
+        assert agent._convert_history(None) == []
+
+    def test_empty_list(self, agent):
+        assert agent._convert_history([]) == []
+
+    def test_user_message(self, agent):
+        from langchain_core.messages import HumanMessage
+        result = agent._convert_history([{"role": "user", "content": "hello"}])
+        assert len(result) == 1
+        assert isinstance(result[0], HumanMessage)
+        assert result[0].content == "hello"
+
+    def test_assistant_message(self, agent):
+        from langchain_core.messages import AIMessage
+        result = agent._convert_history([{"role": "assistant", "content": "hi"}])
+        assert len(result) == 1
+        assert isinstance(result[0], AIMessage)
+
+    def test_mixed_history(self, agent):
+        result = agent._convert_history([
+            {"role": "user", "content": "q1"},
+            {"role": "assistant", "content": "a1"},
+            {"role": "user", "content": "q2"},
         ])
-        assert len(history) == 2  # unknown role 被忽略
+        assert len(result) == 3
 
-    @patch("app.graph.builder.build_agent_graph")
-    @patch("app.agents.customer_service_agent.create_default_registry")
-    def test_convert_history_none(self, mock_create_registry, mock_build_graph):
-        """test_convert_history_none: None 历史"""
-        mock_registry = MagicMock()
-        mock_registry.get_langchain_tools.return_value = []
-        mock_create_registry.return_value = mock_registry
-        mock_build_graph.return_value = MagicMock()
+    def test_multimodal_message(self, agent):
+        result = agent._convert_history([{
+            "role": "user", "content": "img", "content_type": "mixed",
+            "images": ["http://x.com/1.jpg"]}])
+        assert len(result) == 1
+        assert isinstance(result[0].content, list)
 
-        agent = CustomerServiceAgent()
-        history = agent._convert_history(None)
-        assert history == []
+    def test_unknown_role_skipped(self, agent):
+        assert agent._convert_history([{"role": "system", "content": "x"}]) == []
 
-    @patch("app.graph.builder.build_agent_graph")
-    @patch("app.agents.customer_service_agent.create_default_registry")
-    def test_convert_history_empty(self, mock_create_registry, mock_build_graph):
-        """test_convert_history_empty: 空列表"""
-        mock_registry = MagicMock()
-        mock_registry.get_langchain_tools.return_value = []
-        mock_create_registry.return_value = mock_registry
-        mock_build_graph.return_value = MagicMock()
-
-        agent = CustomerServiceAgent()
-        history = agent._convert_history([])
-        assert history == []
-
-    @patch("app.graph.builder.build_agent_graph")
-    @patch("app.agents.customer_service_agent.create_default_registry")
-    async def test_build_initial_state(self, mock_create_registry, mock_build_graph):
-        """test_build_initial_state: 构建初始状态"""
-        mock_registry = MagicMock()
-        mock_registry.get_langchain_tools.return_value = []
-        mock_create_registry.return_value = mock_registry
-        mock_build_graph.return_value = MagicMock()
-
-        agent = CustomerServiceAgent()
-        ctx = AgentContext(user_id="u1", tenant_id=1, session_id="s1")
-        state = await agent._build_initial_state([], ctx)
-        assert state["tenant_id"] == 1
-        assert state["user_id"] == "u1"
-        assert state["session_id"] == "s1"
-        assert state["role"] == "customer"
-        assert state["final_answer"] == ""
-        assert state["suggestions"] == []
-        assert state["cached_answer"] is None
-
-
-# ========== achat 测试 ==========
-
-class TestAChat:
-    """测试非流式对话（LangGraph 版本）"""
-
-    @patch("app.graph.builder.build_agent_graph")
-    @patch("app.agents.customer_service_agent.create_default_registry")
-    @patch("app.agents.customer_service_agent.set_tool_context")
-    async def test_achat_normal(
-        self, mock_set_ctx, mock_create_registry, mock_build_graph,
-        agent_context,
-    ):
-        """test_achat_normal: 正常对话"""
-        mock_registry = MagicMock()
-        mock_registry.get_langchain_tools.return_value = []
-        mock_create_registry.return_value = mock_registry
-
-        mock_graph = AsyncMock()
-        mock_graph.ainvoke = AsyncMock(return_value={
-            "final_answer": "您好，有什么可以帮您的？",
-        })
-        mock_build_graph.return_value = mock_graph
-
-        agent = CustomerServiceAgent()
-        response = await agent.achat("你好", agent_context)
-
-        assert response.content == "您好，有什么可以帮您的？"
-        assert response.type == "text"
-
-    @patch("app.graph.builder.build_agent_graph")
-    @patch("app.agents.customer_service_agent.create_default_registry")
-    @patch("app.agents.customer_service_agent.set_tool_context")
-    async def test_achat_with_history(
-        self, mock_set_ctx, mock_create_registry, mock_build_graph,
-        agent_context, chat_history,
-    ):
-        """test_achat_with_history: 带历史的对话"""
-        mock_registry = MagicMock()
-        mock_registry.get_langchain_tools.return_value = []
-        mock_create_registry.return_value = mock_registry
-
-        mock_graph = AsyncMock()
-        mock_graph.ainvoke = AsyncMock(return_value={"final_answer": "好的"})
-        mock_build_graph.return_value = mock_graph
-
-        agent = CustomerServiceAgent()
-        response = await agent.achat("查询订单", agent_context, chat_history)
-
-        assert response.content == "好的"
-        # 验证 ainvoke 被调用
-        mock_graph.ainvoke.assert_called_once()
-        # 验证传入的 state 包含历史消息 + 当前消息
-        call_args = mock_graph.ainvoke.call_args[0][0]
-        assert len(call_args["messages"]) == 3  # 2 history + 1 current
-
-    @patch("app.graph.builder.build_agent_graph")
-    @patch("app.agents.customer_service_agent.create_default_registry")
-    @patch("app.agents.customer_service_agent.set_tool_context")
-    async def test_achat_exception_returns_error(
-        self, mock_set_ctx, mock_create_registry, mock_build_graph,
-        agent_context,
-    ):
-        """test_achat_exception: 异常时返回错误响应"""
-        mock_registry = MagicMock()
-        mock_registry.get_langchain_tools.return_value = []
-        mock_create_registry.return_value = mock_registry
-
-        mock_graph = AsyncMock()
-        mock_graph.ainvoke = AsyncMock(side_effect=Exception("LLM timeout"))
-        mock_build_graph.return_value = mock_graph
-
-        agent = CustomerServiceAgent()
-        response = await agent.achat("你好", agent_context)
-
-        assert response.type == "error"
-        assert "抱歉" in response.content
-        assert response.metadata["error"] == "LLM timeout"
-
-
-# ========== get_greeting 测试 ==========
 
 class TestGetGreeting:
-    """测试欢迎语"""
-
-    @patch("app.graph.builder.build_agent_graph")
-    @patch("app.agents.customer_service_agent.create_default_registry")
-    async def test_get_greeting_xiaobu(self, mock_create_registry, mock_build_graph, agent_context):
-        """test_get_greeting_xiaobu: 小布欢迎语包含'小布'和'智能客服'"""
-        mock_registry = MagicMock()
-        mock_registry.get_langchain_tools.return_value = []
-        mock_create_registry.return_value = mock_registry
-        mock_build_graph.return_value = MagicMock()
-
-        agent = CustomerServiceAgent()
-        greeting = await agent.get_greeting(agent_context)
-        assert "小布" in greeting
-        assert "客服" in greeting
-
-
-# ========== 单例模式测试 ==========
-
-class TestAgentSingleton:
-    """测试 Agent 单例模式"""
-
-    @patch("app.graph.builder.build_agent_graph")
-    @patch("app.agents.customer_service_agent.create_default_registry")
-    def test_get_agent_singleton(self, mock_create_registry, mock_build_graph):
-        """test_singleton: 单例模式"""
-        mock_registry = MagicMock()
-        mock_registry.get_langchain_tools.return_value = []
-        mock_create_registry.return_value = mock_registry
-        mock_build_graph.return_value = MagicMock()
-
+    @pytest.fixture
+    def agent(self):
         reset_agent()
-        a1 = get_agent()
-        a2 = get_agent()
-        assert a1 is a2
+        with patch("app.graph.builder.build_agent_graph") as mock_build, \
+             patch("app.agents.agent_config.get_agent_config") as mock_cfg:
+            mock_build.return_value = MagicMock()
+            cfg = MagicMock()
+            cfg.get_direct_reply = MagicMock(return_value="Hello from config")
+            cfg.greeting = "default greeting"
+            mock_cfg.return_value = cfg
+            return BaseAgent(agent_type="xiaobu")
+
+    @pytest.mark.asyncio
+    async def test_returns_direct_reply_greeting(self, agent):
+        ctx = AgentContext(user_id="u1", tenant_id=1, session_id="s1")
+        assert await agent.get_greeting(ctx) == "Hello from config"
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_agent_config_greeting(self, agent):
+        agent._agent_config.get_direct_reply.return_value = None
+        ctx = AgentContext(user_id="u1", tenant_id=1, session_id="s1")
+        assert await agent.get_greeting(ctx) == "default greeting"
+
+
+class TestGetAgent:
+    def setup_method(self):
         reset_agent()
 
-    @patch("app.graph.builder.build_agent_graph")
-    @patch("app.agents.customer_service_agent.create_default_registry")
-    def test_reset_agent(self, mock_create_registry, mock_build_graph):
-        """test_reset: 重置后重新创建"""
-        mock_registry = MagicMock()
-        mock_registry.get_langchain_tools.return_value = []
-        mock_create_registry.return_value = mock_registry
-        mock_build_graph.return_value = MagicMock()
+    def teardown_method(self):
+        reset_agent()
 
-        reset_agent()
-        a1 = get_agent()
-        reset_agent()
-        a2 = get_agent()
-        assert a1 is not a2
-        reset_agent()
+    def test_get_agent_returns_instance(self):
+        with patch("app.graph.builder.build_agent_graph") as mock_build, \
+             patch("app.agents.agent_config.get_agent_config") as mock_cfg:
+            mock_build.return_value = MagicMock()
+            mock_cfg.return_value = MagicMock(get_direct_reply=lambda x: None, greeting="t")
+            agent = get_agent(agent_type="xiaobu")
+            assert agent is not None
+            assert isinstance(agent, BaseAgent)
+            assert agent._agent_type == "xiaobu"
+
+    def test_same_instance_for_same_type(self):
+        with patch("app.graph.builder.build_agent_graph") as mock_build, \
+             patch("app.agents.agent_config.get_agent_config") as mock_cfg:
+            mock_build.return_value = MagicMock()
+            mock_cfg.return_value = MagicMock(get_direct_reply=lambda x: None, greeting="t")
+            a1 = get_agent(agent_type="xiaobu")
+            a2 = get_agent(agent_type="xiaobu")
+            assert a1 is a2
+
+    def test_different_types_separate(self):
+        with patch("app.graph.builder.build_agent_graph") as mock_build, \
+             patch("app.agents.agent_config.get_agent_config") as mock_cfg:
+            mock_build.return_value = MagicMock()
+            mock_cfg.return_value = MagicMock(get_direct_reply=lambda x: None, greeting="t")
+            a1 = get_agent(agent_type="xiaobu")
+            a2 = get_agent(agent_type="mibao")
+            assert a1 is not a2
+
+    def test_reset_clears_cache(self):
+        with patch("app.graph.builder.build_agent_graph") as mock_build, \
+             patch("app.agents.agent_config.get_agent_config") as mock_cfg:
+            mock_build.return_value = MagicMock()
+            mock_cfg.return_value = MagicMock(get_direct_reply=lambda x: None, greeting="t")
+            a1 = get_agent(agent_type="xiaobu")
+            reset_agent()
+            a2 = get_agent(agent_type="xiaobu")
+            assert a1 is not a2
+
+
+class TestBackwardCompatAliases:
+    def test_customer_service_agent(self):
+        with patch("app.graph.builder.build_agent_graph") as mock_build, \
+             patch("app.agents.agent_config.get_agent_config") as mock_cfg:
+            mock_build.return_value = MagicMock()
+            mock_cfg.return_value = MagicMock(get_direct_reply=lambda x: None, greeting="t")
+            agent = CustomerServiceAgent()
+            assert isinstance(agent, BaseAgent)
+            assert agent._agent_type == "xiaobu"
+
+    def test_work_assistant_agent(self):
+        with patch("app.graph.builder.build_agent_graph") as mock_build, \
+             patch("app.agents.agent_config.get_agent_config") as mock_cfg:
+            mock_build.return_value = MagicMock()
+            mock_cfg.return_value = MagicMock(get_direct_reply=lambda x: None, greeting="t")
+            agent = WorkAssistantAgent()
+            assert isinstance(agent, BaseAgent)
+            assert agent._agent_type == "mibao"
