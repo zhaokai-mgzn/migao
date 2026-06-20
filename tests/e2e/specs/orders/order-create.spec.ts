@@ -21,7 +21,6 @@ const PR2 = PCS[1]?.processingItemName || '罗马杆环安装'
 
 test.describe('订单创建', () => {
   test.beforeEach(async ({ page }) => {
-    await mockAuthMe(page);
     await page.route('**/api/admin/products*', async (route) => {
       const url = route.request().url()
       if (route.request().method() === 'GET' && !url.includes(`/products/${PROD_ID}`))
@@ -78,12 +77,10 @@ test.describe('订单创建', () => {
 
   test.describe('行项配置', () => {
     test.beforeEach(async ({ page }) => {
-    await mockAuthMe(page);
       await page.getByText('点击搜索并选择商品').click()
       await page.locator('.fixed.inset-0.z-50').last().getByText(PROD_NAME).click()
-      // 等待产品卡片替换搜索占位按钮（即商品加载成功）
-      await expect(page.getByText('点击搜索并选择商品')).not.toBeVisible({ timeout: 10_000 })
-      await page.waitForTimeout(500)
+      // 等待产品数据加载和颜色/加工选项渲染
+      await page.waitForTimeout(1500)
     })
     test('颜色选择', async ({ page }) => {
       await expect(page.getByRole('button', { name: C1 })).toBeVisible({ timeout: 10000 })

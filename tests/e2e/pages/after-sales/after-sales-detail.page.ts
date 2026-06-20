@@ -57,26 +57,26 @@ export class AfterSalesDetailPage extends BasePage {
     this.actionButtons = page.locator('.flex.items-center.gap-2').filter({ has: page.getByRole('button', { name: /接受处理|拒绝|完成处理|关闭工单/ }) })
 
     // Ticket info — use .first() to avoid strict mode (left card vs right sidebar both have h2 '工单信息')
-    this.ticketInfoCard = page.locator('.bg-white.rounded-lg').filter({ hasText: /工单信息/ }).first()
+    this.ticketInfoCard = page.locator('h2').filter({ hasText: /工单信息/ }).first().locator('xpath=..')
     this.ticketType = this.ticketInfoCard.locator('p.text-sm.font-medium').first()
     this.createdAt = this.ticketInfoCard.locator('p.text-sm.font-medium').nth(1)
     this.refundAmount = this.ticketInfoCard.locator('p.text-red-600')
 
     // Description
-    this.descriptionCard = page.locator('.bg-white.rounded-lg').filter({ hasText: /售后原因/ }).first()
+    this.descriptionCard = page.locator('h2').filter({ hasText: /售后原因/ }).locator('xpath=..')
     this.descriptionText = this.descriptionCard.locator('p.whitespace-pre-wrap')
 
-    // Timeline — scope to the Card container that includes "处理时间线" heading
-    this.timelineCard = page.locator('.bg-white.rounded-lg').filter({ hasText: /处理时间线/ }).first()
+    // Timeline
+    this.timelineCard = page.locator('h2').filter({ hasText: /处理时间线/ }).locator('xpath=..')
     this.timelineItems = this.timelineCard.locator('.flex.items-start.gap-4')
 
     // Internal notes
-    this.internalNotesCard = page.locator('.bg-white.rounded-lg').filter({ hasText: /内部备注/ }).first()
+    this.internalNotesCard = page.locator('h2').filter({ hasText: /内部备注/ }).locator('xpath=..')
     this.internalNotesText = this.internalNotesCard.locator('.bg-amber-50')
 
     // Right sidebar
-    this.relatedOrderLink = page.locator('.bg-white.rounded-lg').filter({ hasText: /关联订单/ }).first().locator('button')
-    this.customerInfoCard = page.locator('.bg-white.rounded-lg').filter({ hasText: /客户信息/ }).first()
+    this.relatedOrderLink = page.locator('h2').filter({ hasText: /关联订单/ }).locator('xpath=..').locator('button')
+    this.customerInfoCard = page.locator('h2').filter({ hasText: /客户信息/ }).locator('xpath=..')
 
     // Status modal
     this.statusModal = page.locator('[role="dialog"]').filter({ hasText: /确认操作/ })

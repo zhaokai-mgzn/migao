@@ -62,9 +62,7 @@ test.describe('客户列表 ↔ 详情', () => {
   test('name/phone 一致', async () => {
     const first = firstItem(customersFixture)
     if (!first?.id) { console.log('[skip]'); return }
-    // 客户 fixture 使用 wechatNickname 作为名称字段
-    const name = first.name || first.wechatNickname
-    expect(name).toBeDefined()
+    expect(first).toHaveProperty('name')
     expect(first).toHaveProperty('phone')
   })
 })

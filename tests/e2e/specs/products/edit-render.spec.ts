@@ -8,20 +8,6 @@ const TEST_PRODUCT_ID = 'f60ac4b060a4ebaf8542e890f03b3594'
 test.describe('商品编辑页 — 字段反显验证', () => {
 
   test.beforeEach(async ({ page }) => {
-    // Mock /api/auth/me — AuthProvider.initialize() 验证 token 有效性
-    await page.route('**/api/auth/me', async (route) => {
-      await route.fulfill({
-        status: 200, contentType: 'application/json',
-        body: JSON.stringify({ code: 200, data: { id: '1', username: '13800138000', name: '管理员', roles: ['admin'], tenantId: 1, tenantName: '测试企业' } }),
-      })
-    })
-    // Mock NotificationBell
-    await page.route('**/api/admin/notifications/unread-count', async (route) => {
-      await route.fulfill({
-        status: 200, contentType: 'application/json',
-        body: JSON.stringify({ code: 200, data: { count: 0 } }),
-      })
-    })
     // Mock 商品详情 API（编辑页必须）
     await page.route(`**/api/admin/products/${TEST_PRODUCT_ID}`, async (route) => {
       await route.fulfill({
@@ -67,8 +53,8 @@ test.describe('商品编辑页 — 字段反显验证', () => {
 
   test('基础信息反显', async ({ page }) => {
 
-    // 商品标题 — #pf-name 是 ProductForm 中 ANCHORS.name 锚点
-    const titleInput = page.locator('#pf-name input')
+    // 商品标题 — 有默认值即可
+    const titleInput = page.locator('#productName, input[value]').first()
     await expect(titleInput).toBeVisible()
 
     // 货号

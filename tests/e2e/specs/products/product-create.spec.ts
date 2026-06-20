@@ -2,21 +2,6 @@ import { test, expect } from '@playwright/test'
 
 test.describe('商品创建', () => {
   test.beforeEach(async ({ page }) => {
-    // Mock /api/auth/me — AuthProvider.initialize() 会调此接口验证 token
-    // 不 mock 则网络报错 → clearAuth() → AuthGuard 重定向到 /login
-    await page.route('**/api/auth/me', async (route) => {
-      await route.fulfill({
-        status: 200, contentType: 'application/json',
-        body: JSON.stringify({ code: 200, data: { id: '1', username: '13800138000', name: '管理员', roles: ['admin'], tenantId: 1, tenantName: '测试企业' } }),
-      })
-    })
-    // Mock NotificationBell — Header 中每页挂载时调用
-    await page.route('**/api/admin/notifications/unread-count', async (route) => {
-      await route.fulfill({
-        status: 200, contentType: 'application/json',
-        body: JSON.stringify({ code: 200, data: { count: 0 } }),
-      })
-    })
     // Mock ProductForm 挂载时调用的 API
     await page.route('**/api/admin/categories*', async (route) => {
       await route.fulfill({
@@ -32,7 +17,7 @@ test.describe('商品创建', () => {
     })
 
     await page.goto('/products/new')
-    // 等待表单加载完成 — ProductForm 的 h2 渲染 "新增商品"
+    // 等待表单加载完成
     await expect(page.getByRole('heading', { name: '新增商品' })).toBeVisible({ timeout: 10_000 })
   })
 
@@ -145,15 +130,17 @@ test.describe('商品创建', () => {
 
   test.describe('售卖方式', () => {
     test('应显示售卖方式区块和添加按钮', async ({ page }) => {
-      // SkuMatrix RowSelectorSection 用 <span> 渲染标题，非 heading
-      await expect(page.getByText('售卖方式').first()).toBeVisible()
-      // 添加按钮 — scoped 到售卖方式区块（span → .. 到 header div → .. 到 RowSelectorSection root）
-      const addBtn = page.locator('span:has-text("售卖方式")').locator('..').locator('..').locator('button[title="添加"]')
+      await expect(page.getByRole('heading', { name: '售卖方式' })).toBeVisible()
+      // 添加按钮（虚线边框 Plus 图标）
+      const smSection = page.getByRole('heading', { name: '售卖方式' }).locator('..').locator('..')
+      const addBtn = smSection.locator('button[title="添加"]')
       await expect(addBtn).toBeVisible()
     })
 
     test('添加售卖方式应出现下拉选择', async ({ page }) => {
-      const addBtn = page.locator('span:has-text("售卖方式")').locator('..').locator('..').locator('button[title="添加"]')
+      // 点击售卖方式区域的添加按钮
+      const smSection = page.getByRole('heading', { name: '售卖方式' }).locator('..').locator('..')
+      const addBtn = smSection.locator('button[title="添加"]')
       await addBtn.click()
       await expect(page.locator('select').filter({ hasText: '请选择' }).first()).toBeVisible()
     })
@@ -161,12 +148,12 @@ test.describe('商品创建', () => {
 
   test.describe('规格尺寸', () => {
     test('应显示规格尺寸区块', async ({ page }) => {
-      // SkuMatrix RowSelectorSection 用 <span> 渲染标题
-      await expect(page.getByText('规格尺寸').first()).toBeVisible()
+      await expect(page.getByRole('heading', { name: '规格尺寸' })).toBeVisible()
     })
 
     test('添加规格尺寸应出现下拉', async ({ page }) => {
-      const addBtn = page.locator('span:has-text("规格尺寸")').locator('..').locator('..').locator('button[title="添加"]')
+      const dwSection = page.getByRole('heading', { name: '规格尺寸' }).locator('..').locator('..')
+      const addBtn = dwSection.locator('button[title="添加"]')
       await addBtn.click()
       await expect(page.locator('select').filter({ hasText: '请选择' }).first()).toBeVisible()
     })
@@ -200,13 +187,12 @@ test.describe('商品创建', () => {
     })
 
     test('选择"是"后应显示加工项选择器', async ({ page }) => {
-      // 找到"是否支持加工"FieldRow 内的第一个"是" radio label
-      const processingLabel = page.locator('label:has-text("是否支持加工")')
-      const fieldRow = processingLabel.locator('..')  // FieldRow 的 flex div
-      const yesRadio = fieldRow.locator('label').filter({ hasText: /^是$/ }).first()
+      // 点击"是" radio（在"是否支持加工"区域）
+      const processingSection = page.locator('text=是否支持加工').locator('..').locator('..')
+      const yesRadio = processingSection.locator('label:has-text("是")').first()
       await yesRadio.click()
-      // 验证加工项选择器容器出现（id="pf-processing" 是 ProductForm 锚点）
-      await expect(page.locator('#pf-processing')).toBeVisible()
+      // 验证加工项选择器出现
+      await expect(page.locator('text=请选择加工项').first()).toBeVisible()
     })
   })
 
@@ -236,8 +222,7 @@ test.describe('商品创建', () => {
 
   test.describe('发货方式', () => {
     test('应显示发货方式为物流发货、邮费到付', async ({ page }) => {
-      // FieldRow 用 <label> 渲染"发货方式"，非 heading
-      await expect(page.getByText('发货方式').first()).toBeVisible()
+      await expect(page.getByRole('heading', { name: '发货方式' })).toBeVisible()
       await expect(page.getByText('物流发货')).toBeVisible()
       await expect(page.getByText('邮费到付')).toBeVisible()
     })

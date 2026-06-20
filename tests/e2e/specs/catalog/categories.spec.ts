@@ -26,7 +26,6 @@ const MOCK_CATEGORIES = [
 
 test.describe('分类管理', () => {
   test.beforeEach(async ({ page }) => {
-    await mockAuthMe(page);
     // 拦截分类列表 API
     await page.route('**/api/admin/categories*', async (route) => {
       if (route.request().method() === 'GET') {

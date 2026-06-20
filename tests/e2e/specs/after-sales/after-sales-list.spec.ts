@@ -32,7 +32,6 @@ test.describe('售后工单列表页面', () => {
   let pom: AfterSalesListPage
 
   test.beforeEach(async ({ page }) => {
-    await mockAuthMe(page);
     // Mock after-sales list API with filtering
     await page.route('**/api/admin/after-sales*', (route) => {
       const url = new URL(route.request().url())

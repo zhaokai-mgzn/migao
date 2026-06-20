@@ -5,7 +5,6 @@ test.describe('客户列表页面', () => {
   let pom: CustomerListPage
 
   test.beforeEach(async ({ page }) => {
-    await mockAuthMe(page);
     pom = new CustomerListPage(page)
 
     // Mock customers list API

@@ -37,7 +37,6 @@ const MOCK_ORDER = {
 
 test.describe('订单发货', () => {
   test.beforeEach(async ({ page }) => {
-    await mockAuthMe(page);
     await page.route('**/api/admin/orders/order_ship_001', async (route) => {
       await route.fulfill({
         status: 200,
@@ -56,8 +55,8 @@ test.describe('订单发货', () => {
     })
 
     test('应显示面包屑导航', async ({ page }) => {
-      // Breadcrumb is a <div> with text-sm text-gray-500 (not <nav>)
-      const breadcrumb = page.locator('.text-sm.text-gray-500').filter({ hasText: /首页/ }).first()
+      // scope to breadcrumb area to avoid matching sidebar nav links
+      const breadcrumb = page.locator('nav').first()
       await expect(breadcrumb.getByText('首页')).toBeVisible()
       await expect(breadcrumb.getByText('订单管理')).toBeVisible()
       await expect(breadcrumb.getByText('订单列表')).toBeVisible()

@@ -38,7 +38,6 @@ const MOCK_PROCESSING_ITEMS = [
 
 test.describe('加工项配置', () => {
   test.beforeEach(async ({ page }) => {
-    await mockAuthMe(page);
     // 拦截加工项列表 API
     await page.route('**/api/admin/processing-items*', async (route) => {
       if (route.request().method() === 'GET') {
