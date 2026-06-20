@@ -9,7 +9,8 @@
 
 import { test, expect } from '@playwright/test'
 import { ChatPage } from '../../pages/chat/chat.page'
-import { injectAuth, loginViaApi } from '../../helpers/auth.helper'
+
+// Auth 由 auth-setup project 的 storageState 提供，无需 beforeEach 重复登录
 
 // ═══════════════════════════════════════════════════════════════
 // Mock SSE 流 — 模拟 AI 服务返回的不同事件类型
@@ -51,8 +52,6 @@ test.describe('聊天 — 基础发送与接收', () => {
   let chatPage: ChatPage
 
   test.beforeEach(async ({ page }) => {
-    const tokens = await loginViaApi()
-    await injectAuth(page, tokens)
     chatPage = new ChatPage(page)
     await chatPage.goto()
     await chatPage.waitForAuth()
@@ -116,8 +115,6 @@ test.describe('聊天 — Tool Calling 渲染', () => {
   let chatPage: ChatPage
 
   test.beforeEach(async ({ page }) => {
-    const tokens = await loginViaApi()
-    await injectAuth(page, tokens)
     chatPage = new ChatPage(page)
     await chatPage.goto()
     await chatPage.waitForAuth()
@@ -194,8 +191,6 @@ test.describe('聊天 — 错误处理', () => {
   let chatPage: ChatPage
 
   test.beforeEach(async ({ page }) => {
-    const tokens = await loginViaApi()
-    await injectAuth(page, tokens)
     chatPage = new ChatPage(page)
     await chatPage.goto()
     await chatPage.waitForAuth()
