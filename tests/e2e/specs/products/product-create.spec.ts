@@ -2,6 +2,12 @@ import { test, expect } from '@playwright/test'
 
 test.describe('商品创建', () => {
   test.beforeEach(async ({ page }) => {
+    // Mock /api/auth/me — AuthProvider.initialize() 验证 token
+    // 不 mock 则请求失败 → clearAuth() → 重定向到 /login
+    await page.route('**/api/auth/me', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json',
+        body: JSON.stringify({ code: 200, data: { id: '1', username: 'admin', name: '管理员', roles: ['admin'], tenantId: 1, tenantName: '测试企业' } }) })
+    })
     // Mock ProductForm 挂载时调用的 API
     await page.route('**/api/admin/categories*', async (route) => {
       await route.fulfill({

@@ -8,6 +8,11 @@ const TEST_PRODUCT_ID = 'f60ac4b060a4ebaf8542e890f03b3594'
 test.describe('商品编辑页 — 字段反显验证', () => {
 
   test.beforeEach(async ({ page }) => {
+    // Mock /api/auth/me — AuthProvider.initialize() 验证 token
+    await page.route('**/api/auth/me', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json',
+        body: JSON.stringify({ code: 200, data: { id: '1', username: 'admin', name: '管理员', roles: ['admin'], tenantId: 1, tenantName: '测试企业' } }) })
+    })
     // Mock 商品详情 API（编辑页必须）
     await page.route(`**/api/admin/products/${TEST_PRODUCT_ID}`, async (route) => {
       await route.fulfill({
