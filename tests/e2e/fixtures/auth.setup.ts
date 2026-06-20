@@ -16,7 +16,7 @@
  *       move this file to tests/e2e/specs/auth.setup.ts or adjust testDir.
  */
 import { test as setup, expect } from '@playwright/test'
-import { loginViaApi, injectAuth, type AuthTokens } from '../helpers/auth.helper'
+import { loginViaApi, type AuthTokens } from '../helpers/auth.helper'
 import * as path from 'path'
 import * as fs from 'fs'
 
