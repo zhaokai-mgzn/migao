@@ -36,13 +36,12 @@ setup('authenticate as admin', async ({ page }) => {
     fs.mkdirSync(AUTH_DIR, { recursive: true })
   }
 
-  // Step 1: Login via SMS API（CI 网络不稳时 fallback 到本地 token）
+  // Step 1: Login via SMS API
   let tokens: AuthTokens
   try {
     tokens = await loginViaApi(TEST_PHONE, TEST_SMS_CODE)
   } catch (e) {
     console.warn(`SMS login failed: ${e}. Using fallback token for mocked E2E tests.`)
-    // CI 中使用 mock token — E2E 测试已 mock API 响应，不需要真实 JWT
     tokens = {
       accessToken: 'e2e-fallback-token',
       refreshToken: 'e2e-fallback-refresh',
@@ -51,30 +50,40 @@ setup('authenticate as admin', async ({ page }) => {
     }
   }
 
-  // Step 2: Navigate to the app so we're on the correct origin
-  // Next.js dev server 首次编译较慢，用 domcontentloaded + 30s 超时
-  await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 })
+  // Step 2: Set cookies BEFORE first navigation so AuthGuard sees them on load
+  await page.context().addCookies([
+    {
+      name: 'access_token',
+      value: tokens.accessToken,
+      domain: 'localhost',
+      path: '/',
+      sameSite: 'Lax' as const,
+    },
+  ])
 
-  // Step 3: Inject auth state into the browser
-  await injectAuth(page, tokens, {
-    id: '1',
-    username: TEST_PHONE,
-    name: '管理员',
-    roles: ['admin'],
-    tenantId: 1,
-    tenantName: '测试企业',
-  })
+  // Step 3: Also pre-populate localStorage via addInitScript (runs before any page script)
+  await page.context().addInitScript((authJson: string) => {
+    localStorage.setItem('auth-storage', authJson)
+  }, JSON.stringify({
+    state: {
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      user: { id: '1', username: TEST_PHONE, name: '管理员', roles: ['admin'], tenantId: 1, tenantName: '测试企业' },
+      isAuthenticated: true,
+      rememberMe: true,
+    },
+    version: 0,
+  }))
 
-  // Step 4: Navigate to dashboard to let the app pick up the auth state
+  // Step 4: Navigate directly to dashboard (auth is pre-set before page load)
   await page.goto('/dashboard', { waitUntil: 'networkidle', timeout: 60_000 })
 
-  // DEBUG: 截图看 CI 中实际页面状态
-  await page.screenshot({ path: 'test-results/auth-debug-dashboard.png', fullPage: true })
-  console.log('DEBUG page URL after goto /dashboard:', page.url())
+  // DEBUG
+  console.log('DEBUG page URL:', page.url())
   console.log('DEBUG page title:', await page.title())
 
-  // Step 5: Verify we're authenticated — should see the sidebar / dashboard
-  await expect(page.locator('aside, nav, [class*="sidebar"], [class*="Sidebar"]').first()).toBeVisible({ timeout: 25_000 })
+  // Step 5: Verify sidebar is visible
+  await expect(page.locator('aside, nav, [class*="sidebar"], [class*="Sidebar"]').first()).toBeVisible({ timeout: 20_000 })
 
   // Step 6: Save storage state (localStorage + cookies) for other tests
   await page.context().storageState({ path: AUTH_FILE })
