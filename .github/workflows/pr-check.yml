@@ -36,6 +36,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
@@ -47,6 +49,14 @@ jobs:
       - name: Run unit tests
         working-directory: backend/admin-api
         run: ./mvnw test -q
+
+      - name: Check JaCoCo line coverage on changed files
+        id: jacoco
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch origin main
+          export CHANGED_FILES="$(git diff --name-only origin/main...HEAD)"
+          bash scripts/ci/check-jacoco-coverage.sh
 
 
   # ============ admin-web 类型检查 + 单测 ============
@@ -229,7 +239,9 @@ jobs:
                   BLOCKERS=$((BLOCKERS + 1))
                 fi
                 ;;
-              frontend/admin-web/src/app/*)
+              frontend/admin-web/src/app/*|\
+              frontend/admin-web/src/app/*/*|\
+              frontend/admin-web/src/app/*/*/*)
                 if echo "$CHANGED_FILES" | grep -qE "tests/e2e/specs/"; then
                   echo "| $file | Page (L4) | ✅ |" >> $GITHUB_STEP_SUMMARY
                 else
@@ -244,6 +256,77 @@ jobs:
                 else
                   echo "| $file | Lib/Store (L2) | ❌ BLOCKED |" >> $GITHUB_STEP_SUMMARY
                   MISSING_BLOCK="$MISSING_BLOCK\n- **$file**: 工具函数/状态管理变更必须补 L2 单元测试"
+                  BLOCKERS=$((BLOCKERS + 1))
+                fi
+                ;;
+
+              # ===== Python ai-agent-service — 补充路径 (blocking) =====
+              backend/ai-agent-service/app/utils/*.py)
+                util_name=$(basename "$file" .py)
+                if echo "$CHANGED_FILES" | grep -qE "tests/unit/test_${util_name}|tests/test_${util_name}"; then
+                  echo "| $file | Utils (L2) | ✅ |" >> $GITHUB_STEP_SUMMARY
+                else
+                  echo "| $file | Utils (L2) | ❌ BLOCKED |" >> $GITHUB_STEP_SUMMARY
+                  MISSING_BLOCK="$MISSING_BLOCK\n- **$file**: Utils 工具函数变更必须补 L2 单测"
+                  BLOCKERS=$((BLOCKERS + 1))
+                fi
+                ;;
+              backend/ai-agent-service/app/api/*.py)
+                api_name=$(basename "$file" .py)
+                if echo "$CHANGED_FILES" | grep -qE "tests/test_${api_name}|tests/e2e/real/"; then
+                  echo "| $file | API Route (L3) | ✅ |" >> $GITHUB_STEP_SUMMARY
+                else
+                  echo "| $file | API Route (L3) | ❌ BLOCKED |" >> $GITHUB_STEP_SUMMARY
+                  MISSING_BLOCK="$MISSING_BLOCK\n- **$file**: API 路由变更必须补 L3 集成测试"
+                  BLOCKERS=$((BLOCKERS + 1))
+                fi
+                ;;
+              backend/ai-agent-service/app/router/*.py)
+                if echo "$CHANGED_FILES" | grep -qE "tests/test_router_|tests/test_intent_|tests/test_skill_routing"; then
+                  echo "| $file | Router (L2) | ✅ |" >> $GITHUB_STEP_SUMMARY
+                else
+                  echo "| $file | Router (L2) | ❌ BLOCKED |" >> $GITHUB_STEP_SUMMARY
+                  MISSING_BLOCK="$MISSING_BLOCK\n- **$file**: 路由组件变更必须补 L2 单测"
+                  BLOCKERS=$((BLOCKERS + 1))
+                fi
+                ;;
+              backend/ai-agent-service/app/llm/*.py)
+                if echo "$CHANGED_FILES" | grep -qE "tests/test_llm_|tests/test_dual_agent"; then
+                  echo "| $file | LLM (L2) | ✅ |" >> $GITHUB_STEP_SUMMARY
+                else
+                  echo "| $file | LLM (L2) | ❌ BLOCKED |" >> $GITHUB_STEP_SUMMARY
+                  MISSING_BLOCK="$MISSING_BLOCK\n- **$file**: LLM 组件变更必须补 L2 单测"
+                  BLOCKERS=$((BLOCKERS + 1))
+                fi
+                ;;
+              backend/ai-agent-service/app/memory/*.py)
+                if echo "$CHANGED_FILES" | grep -qE "tests/test_memory_|tests/test_session_memory|tests/test_context"; then
+                  echo "| $file | Memory (L2) | ✅ |" >> $GITHUB_STEP_SUMMARY
+                else
+                  echo "| $file | Memory (L2) | ❌ BLOCKED |" >> $GITHUB_STEP_SUMMARY
+                  MISSING_BLOCK="$MISSING_BLOCK\n- **$file**: Memory 组件变更必须补 L2 单测"
+                  BLOCKERS=$((BLOCKERS + 1))
+                fi
+                ;;
+
+              # ===== Java admin-api — 补充路径 (blocking) =====
+              backend/admin-api/src/main/java/com/migao/admin/config/*.java)
+                cfg_name=$(basename "$file" .java)
+                if echo "$CHANGED_FILES" | grep -qE "${cfg_name}Test|${cfg_name}ConfigTest"; then
+                  echo "| $file | Config (L2) | ✅ |" >> $GITHUB_STEP_SUMMARY
+                else
+                  echo "| $file | Config (L2) | ❌ BLOCKED |" >> $GITHUB_STEP_SUMMARY
+                  MISSING_BLOCK="$MISSING_BLOCK\n- **$file**: Config 变更必须补 JUnit 配置测试"
+                  BLOCKERS=$((BLOCKERS + 1))
+                fi
+                ;;
+              backend/admin-api/src/main/java/com/migao/admin/exception/*.java)
+                exc_name=$(basename "$file" .java)
+                if echo "$CHANGED_FILES" | grep -qE "${exc_name}Test|${exc_name}HandlerTest|ExceptionHandlerTest"; then
+                  echo "| $file | Exception (L2) | ✅ |" >> $GITHUB_STEP_SUMMARY
+                else
+                  echo "| $file | Exception (L2) | ❌ BLOCKED |" >> $GITHUB_STEP_SUMMARY
+                  MISSING_BLOCK="$MISSING_BLOCK\n- **$file**: Exception 变更必须补异常处理测试"
                   BLOCKERS=$((BLOCKERS + 1))
                 fi
                 ;;
