@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+/**
  * 聊天 SSE E2E 测试
  *
  * 验证核心聊天功能：发送消息 → SSE 流式渲染 → 交互组件。
@@ -89,7 +89,7 @@ test.describe('聊天 — 基础发送与接收', () => {
   let chatPage: ChatPage
 
   test.beforeEach(async ({ page }) => {
-    await mockAuthMe(page);
+    // auth provided by storageState;
     chatPage = new ChatPage(page)
     await setupChatMocks(page)
 
@@ -151,7 +151,7 @@ test.describe('聊天 — Tool Calling 渲染', () => {
   let chatPage: ChatPage
 
   test.beforeEach(async ({ page }) => {
-    await mockAuthMe(page);
+    // auth provided by storageState;
     chatPage = new ChatPage(page)
     await setupChatMocks(page)
 
@@ -228,7 +228,7 @@ test.describe('聊天 — 错误处理', () => {
   let chatPage: ChatPage
 
   test.beforeEach(async ({ page }) => {
-    await mockAuthMe(page);
+    // auth provided by storageState;
     chatPage = new ChatPage(page)
     await setupChatMocks(page)
 

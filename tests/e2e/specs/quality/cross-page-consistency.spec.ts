@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+/**
  * 跨页面数据一致性测试 — 使用 recorded fixture 替代 live API
  *
  * 验证列表和详情中同一个实体的关键字段一致。
