@@ -26,6 +26,8 @@ on:
 
       # ── E2E 测试基础设施变更 ───────────────────────────────
       - 'tests/e2e/specs/**'
+      - 'tests/e2e/fixtures/**'
+      - 'tests/e2e/helpers/**'
       - 'tests/e2e/.auth/**'
       - 'tests/playwright.config.ts'
       - 'tests/package.json'
