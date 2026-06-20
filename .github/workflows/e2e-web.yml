@@ -70,6 +70,7 @@ jobs:
 
       # ═══════════════════════════════════════════════════════
       # Record-Replay: 从远程 dev 录制 API fixtures
+      # 失败直接中断——过期 fixture 比不跑更危险
       # ═══════════════════════════════════════════════════════
       - name: Record API fixtures
         working-directory: tests
@@ -79,7 +80,6 @@ jobs:
           E2E_ADMIN_PHONE: ${{ secrets.E2E_ADMIN_PHONE || '13800138000' }}
           E2E_SMS_CODE: ${{ secrets.E2E_SMS_CODE || '123456' }}
         run: npx tsx e2e/scripts/record-fixtures.ts
-        continue-on-error: true
 
       # ═══════════════════════════════════════════════════════
       # 运行 E2E Web 测试
