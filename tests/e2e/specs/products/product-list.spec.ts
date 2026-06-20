@@ -1,5 +1,4 @@
 import { test, expect } from '@playwright/test'
-import { loginViaApi, injectAuth } from '../../helpers/auth.helper'
 
 // ========== Mock Data ==========
 
@@ -164,20 +163,14 @@ async function mockProductApis(page: import('@playwright/test').Page) {
   })
 }
 
-async function setupAuthAndNavigate(page: import('@playwright/test').Page) {
-  await mockProductApis(page)
-  const tokens = await loginViaApi()
-  await page.goto('/products')
-  await injectAuth(page, tokens)
-  await page.goto('/products')
-  // 等待表格数据加载完成
-  await expect(page.locator('.animate-spin')).toHaveCount(0, { timeout: 10_000 })
-  await page.waitForTimeout(300)
-}
-
 test.describe('商品列表页面', () => {
   test.beforeEach(async ({ page }) => {
-    await setupAuthAndNavigate(page)
+    await mockProductApis(page)
+    await page.goto('/products')
+    // 等待表格数据加载完成
+    await expect(page.locator('.animate-spin')).toHaveCount(0, { timeout: 10_000 })
+    await expect(page.locator('table')).toBeVisible({ timeout: 10_000 })
+    await page.waitForTimeout(300)
   })
 
   // ========== 搜索 (1-10) ==========
@@ -213,7 +206,7 @@ test.describe('商品列表页面', () => {
   })
 
   test('按状态筛选', async ({ page }) => {
-    await page.locator('select').selectOption('on_sale')
+    await page.locator('select').first().selectOption('on_sale')
     await page.getByRole('button', { name: /搜索/ }).click()
     await page.waitForTimeout(500)
 
@@ -240,7 +233,7 @@ test.describe('商品列表页面', () => {
     // 填入搜索条件
     await page.fill('input[placeholder="请输入商品ID"]', 'p001')
     await page.fill('input[placeholder="请输入商品标题"]', '遮光')
-    await page.locator('select').selectOption('on_sale')
+    await page.locator('select').first().selectOption('on_sale')
 
     // 点击重置
     await page.getByRole('button', { name: /重置/ }).click()
@@ -249,7 +242,7 @@ test.describe('商品列表页面', () => {
     // 搜索条件应被清空
     await expect(page.locator('input[placeholder="请输入商品ID"]').first()).toHaveValue('')
     await expect(page.locator('input[placeholder="请输入商品标题"]')).toHaveValue('')
-    await expect(page.locator('select')).toHaveValue('')
+    await expect(page.locator('select').first()).toHaveValue('')
   })
 
   test('回车键触发搜索', async ({ page }) => {

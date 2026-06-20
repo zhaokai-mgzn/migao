@@ -39,7 +39,7 @@ const MOCK_PROCESSING_ITEMS = [
 test.describe('加工项配置', () => {
   test.beforeEach(async ({ page }) => {
     // 拦截加工项列表 API
-    await page.route('**/api/processing-items*', async (route) => {
+    await page.route('**/api/admin/processing-items*', async (route) => {
       if (route.request().method() === 'GET') {
         await route.fulfill({
           status: 200,
@@ -55,7 +55,7 @@ test.describe('加工项配置', () => {
     })
 
     // 拦截加工分类 API
-    await page.route('**/api/processing-categories*', async (route) => {
+    await page.route('**/api/admin/processing-categories*', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -187,7 +187,7 @@ test.describe('加工项配置', () => {
 
     test('编辑保存应调用更新 API', async ({ page }) => {
       let updateCalled = false
-      await page.route('**/api/processing-items/proc_001', async (route) => {
+      await page.route('**/api/admin/processing-items/proc_001', async (route) => {
         if (route.request().method() === 'PUT' || route.request().method() === 'PATCH') {
           updateCalled = true
           await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 200 }) })
@@ -216,7 +216,7 @@ test.describe('加工项配置', () => {
 
     test('确认删除应调用 API', async ({ page }) => {
       let deleteCalled = false
-      await page.route('**/api/processing-items/proc_001', async (route) => {
+      await page.route('**/api/admin/processing-items/proc_001', async (route) => {
         if (route.request().method() === 'DELETE') {
           deleteCalled = true
           await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 200 }) })
@@ -243,7 +243,7 @@ test.describe('加工项配置', () => {
   test.describe('空状态', () => {
     test('无数据时应显示空状态提示', async ({ page }) => {
       // 拦截空数据
-      await page.route('**/api/processing-items*', async (route) => {
+      await page.route('**/api/admin/processing-items*', async (route) => {
         if (route.request().method() === 'GET') {
           await route.fulfill({
             status: 200,

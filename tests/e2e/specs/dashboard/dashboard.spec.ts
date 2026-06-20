@@ -7,7 +7,7 @@ import { loginViaApi, injectAuth } from '../../helpers/auth.helper'
  */
 async function mockDashboardApis(page: import('@playwright/test').Page) {
   // GET /api/dashboard/stats
-  await page.route('**/api/dashboard/stats', async (route) => {
+  await page.route('**/api/admin/dashboard/stats', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -28,7 +28,7 @@ async function mockDashboardApis(page: import('@playwright/test').Page) {
   })
 
   // GET /api/dashboard/orders/trend?days=7 or days=30
-  await page.route('**/api/dashboard/orders/trend*', async (route) => {
+  await page.route('**/api/admin/dashboard/order-trend*', async (route) => {
     const url = new URL(route.request().url())
     const days = Number(url.searchParams.get('days')) || 7
     const data = Array.from({ length: days }, (_, i) => ({
@@ -44,7 +44,7 @@ async function mockDashboardApis(page: import('@playwright/test').Page) {
   })
 
   // GET /api/dashboard/orders/status
-  await page.route('**/api/dashboard/orders/status*', async (route) => {
+  await page.route('**/api/admin/dashboard/order-status*', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -62,7 +62,7 @@ async function mockDashboardApis(page: import('@playwright/test').Page) {
   })
 
   // GET /api/dashboard/orders/recent
-  await page.route('**/api/dashboard/orders/recent*', async (route) => {
+  await page.route('**/api/admin/dashboard/recent-orders*', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -99,7 +99,7 @@ async function mockDashboardApis(page: import('@playwright/test').Page) {
   })
 
   // GET /api/dashboard/sessions/active
-  await page.route('**/api/dashboard/sessions/active*', async (route) => {
+  await page.route('**/api/admin/dashboard/active-sessions*', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -213,7 +213,7 @@ test.describe('仪表盘页面', () => {
     // 注：代码中只有 7 和 30 两个选项，无 14 天按钮
     // 此测试改为验证点击"近30天"切换 → 数据刷新
     let trendRequestCount = 0
-    await page.route('**/api/dashboard/orders/trend*', async (route) => {
+    await page.route('**/api/admin/dashboard/order-trend*', async (route) => {
       trendRequestCount++
       const url = new URL(route.request().url())
       const days = Number(url.searchParams.get('days')) || 7
@@ -283,7 +283,7 @@ test.describe('仪表盘页面', () => {
 
   test('数据加载中展示骨架屏/加载状态', async ({ page }) => {
     // 拦截所有 dashboard API，延迟响应以观察 loading
-    await page.route('**/api/dashboard/stats', async (route) => {
+    await page.route('**/api/admin/dashboard/stats', async (route) => {
       await new Promise((r) => setTimeout(r, 5000))
       await route.fulfill({
         status: 200,

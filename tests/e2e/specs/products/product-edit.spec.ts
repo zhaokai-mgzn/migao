@@ -50,7 +50,7 @@ test.describe('商品编辑', () => {
     })
 
     // 拦截分类 API
-    await page.route('**/api/categories*', async (route) => {
+    await page.route('**/api/admin/categories*', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -62,7 +62,7 @@ test.describe('商品编辑', () => {
     })
 
     // 拦截加工项 API
-    await page.route('**/api/processing-items*', async (route) => {
+    await page.route('**/api/admin/processing-items*', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
