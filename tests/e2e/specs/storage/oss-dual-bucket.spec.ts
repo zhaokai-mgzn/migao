@@ -11,7 +11,7 @@ test.describe('OSS 双 Bucket 路由', () => {
     test.beforeEach(async ({ page }) => {
       // 进入对话页面
       await page.goto('/chat')
-      await page.waitForLoadState('networkidle')
+      await page.waitForLoadState('load')
 
       // 尝试创建新会话 — 先点击 sidebar 中的"新建对话"
       const createBtn = page.getByRole('button', { name: '新建对话' })
