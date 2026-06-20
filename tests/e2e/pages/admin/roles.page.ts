@@ -10,7 +10,7 @@ export class RolesPage extends BasePage {
     super(page)
     this.roleCards = page.locator('.grid > div').filter({ has: page.locator('h3') })
     this.createBtn = page.getByRole('button', { name: /新增角色/ }).or(page.getByText('新增角色'))
-    this.roleModal = page.locator('[role="dialog"]').filter({ hasText: /新增角色|编辑角色/ })
+    this.roleModal = page.getByRole('dialog').filter({ hasText: /新增角色|编辑角色/ })
   }
 
   async goto(): Promise<void> {

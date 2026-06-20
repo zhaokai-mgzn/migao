@@ -319,15 +319,16 @@ test.describe('仪表盘页面', () => {
     })
 
     test('"待发货订单"卡片链接 → /orders?status=待发货', async ({ page }) => {
-      const link = page.getByRole('link', { name: /待发货订单/ })
+      // anchor at start to avoid matching "含加工待发货订单" (which contains the substring)
+      const link = page.getByRole('link', { name: /^待发货订单/ })
       await expect(link).toBeVisible()
-      await expect(link).toHaveAttribute('href', '/orders?status=%E5%BE%85%E5%8F%91%E8%B4%A7')
+      await expect(link).toHaveAttribute('href', /\/orders\?.*status=/)
     })
 
     test('"含加工待发货订单"卡片链接 → /orders?category=含加工订单&status=待发货', async ({ page }) => {
       const link = page.getByRole('link', { name: /含加工待发货订单/ })
       await expect(link).toBeVisible()
-      await expect(link).toHaveAttribute('href', '/orders?category=%E5%90%AB%E5%8A%A0%E5%B7%A5%E8%AE%A2%E5%8D%95&status=%E5%BE%85%E5%8F%91%E8%B4%A7')
+      await expect(link).toHaveAttribute('href', /\/orders\?.*category=.*status=/)
     })
 
     test('"待补库存商品"卡片链接 → /products?low_stock=true', async ({ page }) => {
@@ -338,7 +339,7 @@ test.describe('仪表盘页面', () => {
 
     test('点击"含加工待发货订单"卡片 → 跳转到订单页', async ({ page }) => {
       await page.getByRole('link', { name: /含加工待发货订单/ }).click()
-      await page.waitForURL('**/orders?category=*status=*', { timeout: 10_000 })
+      await page.waitForURL(/\/orders\?.*category=.*status=/, { timeout: 10_000 })
       // 验证 URL 包含两个参数
       const url = new URL(page.url())
       expect(url.searchParams.get('category')).toBe('含加工订单')

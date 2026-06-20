@@ -79,12 +79,12 @@ test.describe('订单详情 - 待付款状态', () => {
     })
 
     await page.goto('/orders/order_001')
-    await page.waitForSelector('text=订单详情')
+    await expect(page.getByRole('heading', { name: '订单详情' })).toBeVisible({ timeout: 10_000 })
   })
 
   test('应显示页面标题和面包屑', async ({ page }) => {
     await expect(page.getByRole('heading', { name: '订单详情' })).toBeVisible()
-    await expect(page.getByText('订单列表')).toBeVisible()
+    await expect(page.getByRole('link', { name: '订单列表' }).first()).toBeVisible()
   })
 
   test('待付款应显示"待买家付款"', async ({ page }) => {
@@ -124,22 +124,25 @@ test.describe('订单详情 - 待付款状态', () => {
 
   test('点击关闭订单应弹出确认对话框', async ({ page }) => {
     await page.getByRole('button', { name: '关闭订单' }).click()
-    await expect(page.getByText('关闭订单')).toBeVisible()
-    await expect(page.getByText(/确定关闭当前订单/)).toBeVisible()
+    const closeModal = page.locator('.fixed.inset-0')
+    await expect(closeModal.getByText('关闭订单')).toBeVisible()
+    await expect(closeModal.getByText(/确定关闭当前订单/)).toBeVisible()
   })
 
   test('关闭订单对话框应显示预设原因', async ({ page }) => {
     await page.getByRole('button', { name: '关闭订单' }).click()
-    await expect(page.getByText('缺货')).toBeVisible()
-    await expect(page.getByText('过期未付款')).toBeVisible()
-    await expect(page.getByText('协商一致')).toBeVisible()
-    await expect(page.getByText('备注其它原因')).toBeVisible()
+    const closeModal = page.locator('.fixed.inset-0')
+    await expect(closeModal.getByText('缺货')).toBeVisible()
+    await expect(closeModal.getByText('过期未付款')).toBeVisible()
+    await expect(closeModal.getByText('协商一致')).toBeVisible()
+    await expect(closeModal.getByText('备注其它原因')).toBeVisible()
   })
 
   test('点击确认付款应弹出确认对话框', async ({ page }) => {
     await page.getByRole('button', { name: /确认付款/ }).click()
-    await expect(page.getByText('确认付款')).toBeVisible()
-    await expect(page.getByText(/确认已收到付款/)).toBeVisible()
+    const confirmPaymentModal = page.locator('.fixed.inset-0')
+    await expect(confirmPaymentModal.getByText('确认付款')).toBeVisible()
+    await expect(confirmPaymentModal.getByText(/确认已收到付款/)).toBeVisible()
   })
 })
 
@@ -154,7 +157,7 @@ test.describe('订单详情 - 待发货状态', () => {
       })
     })
     await page.goto('/orders/order_pending_ship')
-    await page.waitForSelector('text=订单详情')
+    await expect(page.getByRole('heading', { name: '订单详情' })).toBeVisible({ timeout: 10_000 })
   })
 
   test('待发货应显示发货按钮', async ({ page }) => {
@@ -178,7 +181,7 @@ test.describe('订单详情 - 已发货状态', () => {
     })
 
     await page.goto('/orders/order_002')
-    await page.waitForSelector('text=订单详情')
+    await expect(page.getByRole('heading', { name: '订单详情' })).toBeVisible({ timeout: 10_000 })
   })
 
   test('已发货应显示编辑物流和确认收货按钮', async ({ page }) => {
@@ -188,8 +191,9 @@ test.describe('订单详情 - 已发货状态', () => {
 
   test('点击确认收货应弹出确认对话框', async ({ page }) => {
     await page.getByRole('button', { name: /确认收货/ }).click()
-    await expect(page.getByText('确认收货')).toBeVisible()
-    await expect(page.getByText(/确认客户已收到货物/)).toBeVisible()
+    const receiveModal = page.locator('.fixed.inset-0')
+    await expect(receiveModal.getByText('确认收货')).toBeVisible()
+    await expect(receiveModal.getByText(/确认客户已收到货物/)).toBeVisible()
   })
 })
 
@@ -204,7 +208,7 @@ test.describe('订单详情 - 已完成状态', () => {
     })
 
     await page.goto('/orders/order_003')
-    await page.waitForSelector('text=订单详情')
+    await expect(page.getByRole('heading', { name: '订单详情' })).toBeVisible({ timeout: 10_000 })
   })
 
   test('已完成状态不应显示操作按钮', async ({ page }) => {
@@ -213,7 +217,7 @@ test.describe('订单详情 - 已完成状态', () => {
   })
 
   test('面包屑应可点击返回订单列表', async ({ page }) => {
-    await page.getByText('订单列表').click()
+    await page.getByRole('link', { name: '订单列表' }).first().click()
     await page.waitForURL(/\/orders/)
   })
 })

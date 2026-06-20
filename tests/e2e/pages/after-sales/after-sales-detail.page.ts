@@ -54,17 +54,17 @@ export class AfterSalesDetailPage extends BasePage {
     this.statusBadge = page.locator('span').filter({ hasText: /待处理|处理中|已完成|已拒绝|已关闭/ }).first()
     this.priorityBadge = page.locator('span').filter({ hasText: /普通|紧急|严重/ }).first()
     this.ticketNoLabel = page.locator('p.font-mono').filter({ hasText: /工单号/ })
-    this.actionButtons = page.locator('.flex.items-center.gap-2').last()
+    this.actionButtons = page.locator('.flex.items-center.gap-2').filter({ has: page.getByRole('button', { name: /接受处理|拒绝|完成处理|关闭工单/ }) })
 
-    // Ticket info
-    this.ticketInfoCard = page.locator('h2').filter({ hasText: /工单信息/ }).locator('xpath=..')
+    // Ticket info — use .first() to avoid strict mode (left card vs right sidebar both have h2 '工单信息')
+    this.ticketInfoCard = page.locator('h2').filter({ hasText: /工单信息/ }).first().locator('xpath=..')
     this.ticketType = this.ticketInfoCard.locator('p.text-sm.font-medium').first()
     this.createdAt = this.ticketInfoCard.locator('p.text-sm.font-medium').nth(1)
     this.refundAmount = this.ticketInfoCard.locator('p.text-red-600')
 
     // Description
     this.descriptionCard = page.locator('h2').filter({ hasText: /售后原因/ }).locator('xpath=..')
-    this.descriptionText = this.descriptionCard.locator('.bg-gray-50, p.whitespace-pre-wrap')
+    this.descriptionText = this.descriptionCard.locator('p.whitespace-pre-wrap')
 
     // Timeline
     this.timelineCard = page.locator('h2').filter({ hasText: /处理时间线/ }).locator('xpath=..')
@@ -75,7 +75,7 @@ export class AfterSalesDetailPage extends BasePage {
     this.internalNotesText = this.internalNotesCard.locator('.bg-amber-50')
 
     // Right sidebar
-    this.relatedOrderLink = page.locator('h2').filter({ hasText: /关联订单/ }).locator('xpath=..').locator('button, a')
+    this.relatedOrderLink = page.locator('h2').filter({ hasText: /关联订单/ }).locator('xpath=..').locator('button')
     this.customerInfoCard = page.locator('h2').filter({ hasText: /客户信息/ }).locator('xpath=..')
 
     // Status modal

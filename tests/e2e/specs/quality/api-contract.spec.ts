@@ -16,6 +16,7 @@ import employeesFixture from '../../fixtures/employees-list.json'
 import afterSalesFixture from '../../fixtures/after-sales-list.json'
 import rolesFixture from '../../fixtures/roles-list.json'
 import knowledgeFixture from '../../fixtures/knowledge-list.json'
+import productsDetailFixture from '../../fixtures/products-detail.json'
 
 // ========== 类型校验工具 ==========
 
@@ -118,8 +119,7 @@ test.describe('商品 API Contract', () => {
   test('GET /api/admin/products/:id — 详情 SKU 字段', async () => {
     const items = getItems(productsFixture)
     // 使用 products-detail fixture 获取 SKU 信息
-    const detail = await import('../../fixtures/products-detail.json').then(m => m.default)
-    const data = detail?.data
+    const data = productsDetailFixture?.data
     if (!data?.id) { console.log('[skip] 无商品详情数据'); return }
 
     assertField(data, 'id', 'string')

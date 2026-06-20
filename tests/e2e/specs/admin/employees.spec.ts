@@ -118,7 +118,8 @@ test.describe('员工管理页面', () => {
   })
 
   test('状态切换按钮存在', async () => {
-    const toggleButtons = page.locator('button[title*="禁用"], button[title*="启用"]')
+    // Toggle switch: button.rounded-full inside table td, contains the white dot span
+    const toggleButtons = page.locator('table button[type="button"]').filter({ has: page.locator('span.rounded-full') })
     expect(await toggleButtons.count()).toBeGreaterThanOrEqual(1)
   })
 

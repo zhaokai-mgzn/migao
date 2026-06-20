@@ -67,7 +67,7 @@ test.describe('加工项配置', () => {
     })
 
     await page.goto('/processing')
-    await page.waitForSelector('text=加工项配置')
+    await expect(page.getByRole('heading', { name: '加工项配置' })).toBeVisible()
   })
 
   test.describe('页面加载', () => {
@@ -87,8 +87,8 @@ test.describe('加工项配置', () => {
 
     test('应显示所有加工项数据', async ({ page }) => {
       await expect(page.getByText('韩式打褶定型')).toBeVisible()
-      await expect(page.getByText('打孔')).toBeVisible()
-      await expect(page.getByText('铅坠线')).toBeVisible()
+      await expect(page.locator('table').getByText('打孔')).toBeVisible()
+      await expect(page.locator('table').getByText('铅坠线')).toBeVisible()
     })
 
     test('应正确显示价格', async ({ page }) => {
@@ -111,9 +111,11 @@ test.describe('加工项配置', () => {
 
     test('弹窗应包含名称、价格、计价方式字段', async ({ page }) => {
       await page.getByRole('button', { name: /添加加工项/ }).click()
-      await expect(page.getByText('加工项名称')).toBeVisible()
-      await expect(page.getByText('加工项价格')).toBeVisible()
-      await expect(page.getByText('加工项计价方式')).toBeVisible()
+      // Scope to dialog to avoid strict mode with table headers
+      const dialog = page.locator('.fixed.inset-0.z-50').last()
+      await expect(dialog.getByText('加工项名称')).toBeVisible()
+      await expect(dialog.getByText('加工项价格')).toBeVisible()
+      await expect(dialog.getByText('加工项计价方式')).toBeVisible()
     })
 
     test('名称为空提交应显示错误', async ({ page }) => {
@@ -139,7 +141,7 @@ test.describe('加工项配置', () => {
       await inputs.nth(0).fill('测试加工项')
       await inputs.nth(1).fill('20.00')
       await dialog.getByRole('button', { name: '保存' }).click()
-      await expect(page.getByText('请选择计价方式')).toBeVisible()
+      await expect(page.getByText('请选择计价方式').first()).toBeVisible()
     })
 
     test('完整填写后应成功创建', async ({ page }) => {

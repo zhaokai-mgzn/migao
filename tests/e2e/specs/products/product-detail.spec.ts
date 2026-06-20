@@ -53,7 +53,7 @@ test.describe('商品详情', () => {
     })
 
     await page.goto('/products/prod_detail_001')
-    await page.waitForSelector('text=天鹅绒遮光窗帘')
+    await expect(page.getByRole('heading', { name: '天鹅绒遮光窗帘' })).toBeVisible({ timeout: 10_000 })
   })
 
   test('应显示商品名称和状态徽章', async ({ page }) => {
@@ -70,9 +70,11 @@ test.describe('商品详情', () => {
   })
 
   test('基本信息应显示分类、品牌、计价方式、单价', async ({ page }) => {
-    await expect(page.getByText('基本信息')).toBeVisible()
+    await expect(page.getByRole('heading', { name: '基本信息' })).toBeVisible()
     await expect(page.getByText('窗帘布艺')).toBeVisible()
-    await expect(page.getByText('米高')).toBeVisible()
+    // "米高" is also the app name in sidebar; scope to product info
+    const infoSection = page.getByRole('heading', { name: '基本信息' }).locator('..')
+    await expect(infoSection.getByText('米高')).toBeVisible()
     await expect(page.getByText('按米')).toBeVisible()
     await expect(page.getByText('¥168.00/米')).toBeVisible()
   })

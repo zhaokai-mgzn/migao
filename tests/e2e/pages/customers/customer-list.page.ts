@@ -42,10 +42,10 @@ export class CustomerListPage extends BasePage {
     this.pageTitle = page.locator('h1').filter({ hasText: /客户管理/ })
     this.tagManagerButton = page.getByRole('button', { name: /标签管理/ })
 
-    // Search bar
+    // Search bar — 使用 nth(0)/nth(1) 替代 first()/last() 避免选中分页下拉
     this.keywordInput = page.locator('input[placeholder*="客户名"]')
-    this.channelSelect = page.locator('select').first()
-    this.vipLevelSelect = page.locator('select').last()
+    this.channelSelect = page.locator('select').nth(0)
+    this.vipLevelSelect = page.locator('select').nth(1)
     this.searchButton = page.getByRole('button', { name: /搜索/ })
     this.resetButton = page.getByRole('button', { name: /重置/ })
 

@@ -34,7 +34,7 @@ test.describe('订单创建', () => {
       const items = PCS.map((pc: any) => ({ id: pc.processingItemId, name: pc.processingItemName, unitPrice: pc.customPrice || 0, finalPrice: pc.customPrice || 0, unit: '米', pricingMethod: 'per_meter' }))
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 200, data: items }) })
     })
-    await page.goto('/orders/new'); await page.waitForSelector('text=新增订单')
+    await page.goto('/orders/new'); await expect(page.getByRole('heading', { name: '新增订单' })).toBeVisible({ timeout: 10_000 })
   })
 
   test.describe('页面加载', () => {

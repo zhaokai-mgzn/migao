@@ -14,7 +14,7 @@ import afterSalesFixture from '../../fixtures/after-sales-list.json'
 import processingFixture from '../../fixtures/processing-list.json'
 
 function firstItem(fixture: any): any {
-  return fixture?.data?.items?.[0] || fixture?.data?.items?.[0] || null
+  return fixture?.data?.items?.[0] || null
 }
 
 test.describe('列表 ↔ 详情数据一致性', () => {

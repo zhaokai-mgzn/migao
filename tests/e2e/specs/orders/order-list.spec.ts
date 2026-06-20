@@ -444,11 +444,12 @@ test.describe('订单列表页面', () => {
       await closeBtn.click()
 
       // 应弹出关闭订单弹窗
-      await expect(page.getByText('关闭订单')).toBeVisible()
-      await expect(page.getByText('确定关闭当前订单吗？')).toBeVisible()
+      const closeModal = page.locator('.fixed.inset-0')
+      await expect(closeModal.getByRole('heading', { name: '关闭订单' })).toBeVisible()
+      await expect(closeModal.getByText('确定关闭当前订单吗？')).toBeVisible()
 
       // 关闭弹窗
-      await page.getByRole('button', { name: '取消' }).first().click()
+      await closeModal.getByRole('button', { name: '取消' }).click()
     }
   })
 
@@ -458,11 +459,12 @@ test.describe('订单列表页面', () => {
       await remarkBtn.click()
 
       // 应弹出备注弹窗
-      await expect(page.getByText('添加备注')).toBeVisible()
-      await expect(page.locator('textarea[placeholder="请输入备注内容"]')).toBeVisible()
+      const remarkModal = page.locator('.fixed.inset-0')
+      await expect(remarkModal.getByRole('heading', { name: '添加备注' })).toBeVisible()
+      await expect(remarkModal.locator('textarea[placeholder="请输入备注内容"]')).toBeVisible()
 
       // 关闭弹窗
-      await page.getByRole('button', { name: '取消' }).first().click()
+      await remarkModal.getByRole('button', { name: '取消' }).click()
     }
   })
 
@@ -491,30 +493,32 @@ test.describe('订单列表页面', () => {
     if (await closeBtn.isVisible()) {
       await closeBtn.click()
 
+      const modal = page.locator('.fixed.inset-0')
+
       // 弹窗标题
-      await expect(page.getByText('关闭订单')).toBeVisible()
+      await expect(modal.getByRole('heading', { name: '关闭订单' })).toBeVisible()
 
       // 预设原因
-      await expect(page.getByText('缺货')).toBeVisible()
-      await expect(page.getByText('过期未付款')).toBeVisible()
-      await expect(page.getByText('协商一致')).toBeVisible()
-      await expect(page.getByText('备注其它原因')).toBeVisible()
+      await expect(modal.getByText('缺货')).toBeVisible()
+      await expect(modal.getByText('过期未付款')).toBeVisible()
+      await expect(modal.getByText('协商一致')).toBeVisible()
+      await expect(modal.getByText('备注其它原因')).toBeVisible()
 
       // 默认选中 "缺货"
-      const radio = page.locator('input[type="radio"][name="close-reason"]').first()
+      const radio = modal.locator('input[type="radio"][name="close-reason"]').first()
       await expect(radio).toBeChecked()
 
       // 选择 "备注其它原因"
-      await page.getByText('备注其它原因').click()
+      await modal.getByText('备注其它原因').click()
       // 应出现 textarea
-      await expect(page.locator('textarea[placeholder="请输入关闭原因"]')).toBeVisible()
+      await expect(modal.locator('textarea[placeholder="请输入关闭原因"]')).toBeVisible()
 
       // 确定按钮应禁用（因为自定义原因为空）
-      const confirmBtn = page.locator('.fixed.inset-0').getByRole('button', { name: '确定' })
+      const confirmBtn = modal.getByRole('button', { name: '确定' })
       await expect(confirmBtn).toBeDisabled()
 
       // 输入原因后可提交
-      await page.locator('textarea[placeholder="请输入关闭原因"]').fill('客户取消')
+      await modal.locator('textarea[placeholder="请输入关闭原因"]').fill('客户取消')
       await confirmBtn.click()
       await page.waitForTimeout(500)
 
@@ -527,15 +531,17 @@ test.describe('订单列表页面', () => {
     if (await remarkBtn.isVisible()) {
       await remarkBtn.click()
 
+      const modal = page.locator('.fixed.inset-0')
+
       // 弹窗标题
-      await expect(page.getByText('添加备注')).toBeVisible()
+      await expect(modal.getByRole('heading', { name: '添加备注' })).toBeVisible()
 
       // textarea
-      const textarea = page.locator('textarea[placeholder="请输入备注内容"]')
+      const textarea = modal.locator('textarea[placeholder="请输入备注内容"]')
       await expect(textarea).toBeVisible()
 
       // 确认按钮初始禁用（内容为空）
-      const confirmBtn = page.locator('.fixed.inset-0').getByRole('button', { name: '确认' })
+      const confirmBtn = modal.getByRole('button', { name: '确认' })
       await expect(confirmBtn).toBeDisabled()
 
       // 输入备注

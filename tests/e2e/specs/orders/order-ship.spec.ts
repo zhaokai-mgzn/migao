@@ -46,7 +46,7 @@ test.describe('订单发货', () => {
     })
 
     await page.goto('/orders/order_ship_001/ship')
-    await page.waitForSelector('text=商品发货')
+    await expect(page.getByRole('heading', { name: '商品发货' })).toBeVisible({ timeout: 10_000 })
   })
 
   test.describe('页面加载', () => {
@@ -55,11 +55,13 @@ test.describe('订单发货', () => {
     })
 
     test('应显示面包屑导航', async ({ page }) => {
-      await expect(page.getByText('首页')).toBeVisible()
-      await expect(page.getByText('订单管理')).toBeVisible()
-      await expect(page.getByText('订单列表')).toBeVisible()
-      await expect(page.getByText('订单详情')).toBeVisible()
-      await expect(page.getByText('商品发货')).toBeVisible()
+      // scope to breadcrumb area to avoid matching sidebar nav links
+      const breadcrumb = page.locator('nav').first()
+      await expect(breadcrumb.getByText('首页')).toBeVisible()
+      await expect(breadcrumb.getByText('订单管理')).toBeVisible()
+      await expect(breadcrumb.getByText('订单列表')).toBeVisible()
+      await expect(breadcrumb.getByText('订单详情')).toBeVisible()
+      await expect(breadcrumb.getByText('商品发货')).toBeVisible()
     })
   })
 
@@ -108,7 +110,7 @@ test.describe('订单发货', () => {
 
     test('应选择"无需物流"隐藏物流字段', async ({ page }) => {
       // 选择"无需物流"
-      const noneRadio = page.getByText('无需物流').locator('..').locator('input[type="radio"]')
+      const noneRadio = page.getByLabel('无需物流')
       await noneRadio.click()
       // 物流公司和快递单号应隐藏
       await expect(page.locator('select')).toBeHidden()
@@ -159,7 +161,7 @@ test.describe('订单发货', () => {
       })
 
       // 选择无需物流
-      const noneRadio = page.getByText('无需物流').locator('..').locator('input[type="radio"]')
+      const noneRadio = page.getByLabel('无需物流')
       await noneRadio.click()
 
       await page.getByRole('button', { name: '确认发货' }).click()

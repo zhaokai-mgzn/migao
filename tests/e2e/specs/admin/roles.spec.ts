@@ -95,7 +95,7 @@ test.describe('角色权限管理页面', () => {
   test('新增角色按钮可打开创建弹窗', async () => {
     await page.createBtn.click()
     await expect(page.roleModal).toBeVisible()
-    await expect(page.page.getByText('新增角色')).toBeVisible()
+    await expect(page.roleModal.getByRole('heading', { name: '新增角色' })).toBeVisible()
   })
 
   test('创建弹窗包含名称、编码、描述字段', async () => {
@@ -107,7 +107,7 @@ test.describe('角色权限管理页面', () => {
 
   test('创建弹窗包含权限树', async () => {
     await page.createBtn.click()
-    await expect(page.page.getByText('权限分配')).toBeVisible()
+    await expect(page.roleModal.getByText('权限分配', { exact: true })).toBeVisible()
     const tree = page.permissionTree
     if (await tree.isVisible().catch(() => false)) {
       expect(await tree.locator('input[type="checkbox"]').count()).toBeGreaterThanOrEqual(1)

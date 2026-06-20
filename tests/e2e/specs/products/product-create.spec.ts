@@ -4,18 +4,18 @@ test.describe('商品创建', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/products/new')
     // 等待表单加载完成
-    await page.waitForSelector('text=新增商品')
+    await expect(page.getByRole('heading', { name: '新增商品' })).toBeVisible({ timeout: 10_000 })
   })
 
   test.describe('页面加载', () => {
     test('应显示新增商品标题', async ({ page }) => {
-      await expect(page.getByText('新增商品')).toBeVisible()
+      await expect(page.getByRole('heading', { name: '新增商品' })).toBeVisible()
     })
 
     test('应显示基础信息、销售信息、图文描述三个区块', async ({ page }) => {
-      await expect(page.getByText('基础信息')).toBeVisible()
-      await expect(page.getByText('销售信息')).toBeVisible()
-      await expect(page.getByText('图文描述')).toBeVisible()
+      await expect(page.getByRole('heading', { name: '基础信息' })).toBeVisible()
+      await expect(page.getByRole('heading', { name: '销售信息' })).toBeVisible()
+      await expect(page.getByRole('heading', { name: '图文描述' })).toBeVisible()
     })
 
     test('底部操作栏应包含三个按钮', async ({ page }) => {
@@ -116,15 +116,16 @@ test.describe('商品创建', () => {
 
   test.describe('售卖方式', () => {
     test('应显示售卖方式区块和添加按钮', async ({ page }) => {
-      await expect(page.getByText('售卖方式')).toBeVisible()
+      await expect(page.getByRole('heading', { name: '售卖方式' })).toBeVisible()
       // 添加按钮（虚线边框 Plus 图标）
-      const addBtn = page.locator('button[title="添加"]').first()
+      const smSection = page.getByRole('heading', { name: '售卖方式' }).locator('..').locator('..')
+      const addBtn = smSection.locator('button[title="添加"]')
       await expect(addBtn).toBeVisible()
     })
 
     test('添加售卖方式应出现下拉选择', async ({ page }) => {
       // 点击售卖方式区域的添加按钮
-      const smSection = page.locator('text=售卖方式').locator('..').locator('..')
+      const smSection = page.getByRole('heading', { name: '售卖方式' }).locator('..').locator('..')
       const addBtn = smSection.locator('button[title="添加"]')
       await addBtn.click()
       await expect(page.locator('select').filter({ hasText: '请选择' }).first()).toBeVisible()
@@ -133,11 +134,11 @@ test.describe('商品创建', () => {
 
   test.describe('规格尺寸', () => {
     test('应显示规格尺寸区块', async ({ page }) => {
-      await expect(page.getByText('规格尺寸')).toBeVisible()
+      await expect(page.getByRole('heading', { name: '规格尺寸' })).toBeVisible()
     })
 
     test('添加规格尺寸应出现下拉', async ({ page }) => {
-      const dwSection = page.locator('text=规格尺寸').locator('..').locator('..')
+      const dwSection = page.getByRole('heading', { name: '规格尺寸' }).locator('..').locator('..')
       const addBtn = dwSection.locator('button[title="添加"]')
       await addBtn.click()
       await expect(page.locator('select').filter({ hasText: '请选择' }).first()).toBeVisible()
@@ -207,7 +208,7 @@ test.describe('商品创建', () => {
 
   test.describe('发货方式', () => {
     test('应显示发货方式为物流发货、邮费到付', async ({ page }) => {
-      await expect(page.getByText('发货方式')).toBeVisible()
+      await expect(page.getByRole('heading', { name: '发货方式' })).toBeVisible()
       await expect(page.getByText('物流发货')).toBeVisible()
       await expect(page.getByText('邮费到付')).toBeVisible()
     })

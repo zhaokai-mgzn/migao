@@ -7,14 +7,14 @@ test.describe('通知中心页面', () => {
   test.beforeEach(async ({ page: p }) => {
     page = new NotificationsPage(p)
 
-    // Mock notifications API
+    // Mock notifications API — 组件期望 status 字段（非 read），且需要 channel 字段
     await p.route('**/api/admin/notifications*', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
           success: true,
-          data: { items: [{ id: 1, title: '测试通知', content: '这是一条测试通知', read: false, createdAt: '2026-06-20T10:00:00Z' }], total: 1 }
+          data: { items: [{ id: 1, title: '测试通知', content: '这是一条测试通知', status: 'sent', channel: 'internal', createdAt: '2026-06-20T10:00:00Z' }], total: 1 }
         }),
       })
     })

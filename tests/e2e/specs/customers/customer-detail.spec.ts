@@ -5,6 +5,49 @@ test.describe('客户详情页面', () => {
   let pom: CustomerDetailPage
 
   test.beforeEach(async ({ page }) => {
+    // Mock customer detail API
+    await page.route('**/api/admin/customers/1', async (route) => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            success: true,
+            data: {
+              id: 1, name: '张美丽', phone: '13800138001', channel: 'wechat_mini', vipLevel: 3,
+              tags: [{ id: 1, name: 'VIP', color: '#f59e0b' }],
+              remark: '',
+              orders: [{ id: '1', orderNo: 'ORD-20260620001', totalAmount: 168, status: 'pending', createdAt: '2026-06-20T10:00:00Z' }],
+              sessions: [{ id: '1', type: 'ai', summary: '客户咨询窗帘价格', createdAt: '2026-06-19T15:00:00Z' }],
+            }
+          }),
+        })
+      } else {
+        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: null }) })
+      }
+    })
+
+    // Mock customer tags API
+    await page.route('**/api/admin/customer-tags*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: [{ id: 1, name: 'VIP', color: '#f59e0b' }] }),
+      })
+    })
+
+    // Mock orders API (for orders tab)
+    await page.route('**/api/admin/orders*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: { items: [{ id: '1', orderNo: 'ORD-20260620001', totalAmount: 168, status: 'pending', customerName: '张美丽', createdAt: '2026-06-20T10:00:00Z' }], total: 1, page: 1, size: 20 },
+        }),
+      })
+    })
+
     pom = new CustomerDetailPage(page)
     await pom.goto('1')
     await pom.waitForLoadingComplete()
