@@ -6,6 +6,22 @@ import { test, expect } from '@playwright/test'
  * without requiring a live backend.
  */
 async function mockDashboardApis(page: import('@playwright/test').Page) {
+  // GET /api/auth/me — AuthProvider.initialize() 验证 token 有效性
+  await page.route('**/api/auth/me', async (route) => {
+    await route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ code: 200, data: { id: '1', username: '13800138000', name: '管理员', roles: ['admin'], tenantId: 1, tenantName: '测试企业' } }),
+    })
+  })
+
+  // GET /api/admin/notifications/unread-count (NotificationBell in Header)
+  await page.route('**/api/admin/notifications/unread-count', async (route) => {
+    await route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ code: 200, data: { count: 0 } }),
+    })
+  })
+
   // GET /api/dashboard/stats
   await page.route('**/api/admin/dashboard/stats', async (route) => {
     await route.fulfill({

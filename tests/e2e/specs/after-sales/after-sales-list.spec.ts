@@ -1,4 +1,3 @@
-import { test, expect } from '@playwright/test'
 import { AfterSalesListPage } from '../../pages/after-sales/after-sales-list.page'
 
 // ==================== Inline Mock Data ====================
@@ -32,6 +31,7 @@ test.describe('售后工单列表页面', () => {
   let pom: AfterSalesListPage
 
   test.beforeEach(async ({ page }) => {
+    await mockAuthMe(page);
     // Mock after-sales list API with filtering
     await page.route('**/api/admin/after-sales*', (route) => {
       const url = new URL(route.request().url())

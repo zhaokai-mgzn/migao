@@ -1,4 +1,3 @@
-import { test, expect } from '@playwright/test'
 
 // ==================== Inline Mock Data ====================
 
@@ -118,13 +117,12 @@ test.describe('员工管理页面', () => {
   })
 
   test('状态切换按钮存在', async () => {
-    // Toggle switch: button inside td, contains the white dot span
-    // Use title attribute for robustness — cells show "点击禁用" or "点击启用"
-    const toggleButtons = page.locator('button').filter({ has: page.locator('span.rounded-full.bg-white') }).filter({ hasText: '' })
+    // Toggle switch: button with title "点击禁用" or "点击启用" containing a white dot span
+    const toggleButtons = page.getByTitle(/点击禁用|点击启用/)
     const count = await toggleButtons.count()
-    // If title-based approach fails, try the original table selector
     if (count === 0) {
-      const altButtons = page.locator('table button[type="button"]').filter({ has: page.locator('span.rounded-full') })
+      // Fallback: button containing white dot span
+      const altButtons = page.locator('button[type="button"]').filter({ has: page.locator('span.rounded-full') })
       expect(await altButtons.count()).toBeGreaterThanOrEqual(1)
     } else {
       expect(count).toBeGreaterThanOrEqual(1)

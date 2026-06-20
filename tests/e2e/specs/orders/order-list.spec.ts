@@ -1,4 +1,3 @@
-import { test, expect } from '@playwright/test'
 // auth 由全局 auth-setup 项目提供
 
 // ========== Mock Data ==========
@@ -138,6 +137,17 @@ async function mockOrderApis(page: import('@playwright/test').Page) {
       filtered = filtered.filter((o) => o.processingItems && o.processingItems.length > 0)
     }
 
+    // 日期范围过滤
+    const startDate = url.searchParams.get('startDate')
+    const endDate = url.searchParams.get('endDate')
+    if (startDate) {
+      filtered = filtered.filter((o) => o.createdAt && o.createdAt >= startDate)
+    }
+    if (endDate) {
+      const endDateInclusive = endDate + 'T23:59:59Z'
+      filtered = filtered.filter((o) => o.createdAt && o.createdAt <= endDateInclusive)
+    }
+
     // keyword 模糊搜索
     const keyword = url.searchParams.get('keyword')
     if (keyword) {
@@ -203,6 +213,7 @@ async function mockOrderApis(page: import('@playwright/test').Page) {
 
 test.describe('订单列表页面', () => {
   test.beforeEach(async ({ page }) => {
+    await mockAuthMe(page);
     await mockOrderApis(page)
     await page.goto('/orders')
     // 等待表格数据加载完成（"加载中…" 消失）

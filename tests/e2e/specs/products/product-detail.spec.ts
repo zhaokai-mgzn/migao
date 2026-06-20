@@ -1,4 +1,3 @@
-import { test, expect } from '@playwright/test'
 
 /**
  * 商品详情 E2E 测试
@@ -44,6 +43,7 @@ const MOCK_PRODUCT = {
 
 test.describe('商品详情', () => {
   test.beforeEach(async ({ page }) => {
+    await mockAuthMe(page);
     await page.route('**/api/admin/products/prod_detail_001', async (route) => {
       await route.fulfill({
         status: 200,

@@ -310,8 +310,8 @@ test.describe('商品列表页面', () => {
   // ========== 排序 (11-14) ==========
 
   test('按创建时间排序', async ({ page }) => {
-    // 表头 "创建时间" 可点击排序
-    const createdAtHeader = page.getByText('创建时间').first()
+    // 表头 "创建时间" 可点击排序 — 使用 columnheader role 避免匹配搜索栏标签
+    const createdAtHeader = page.getByRole('columnheader', { name: '创建时间' })
     await createdAtHeader.click()
     await page.waitForTimeout(500)
 
@@ -320,7 +320,7 @@ test.describe('商品列表页面', () => {
   })
 
   test('按库存排序', async ({ page }) => {
-    const stockHeader = page.getByText('库存').first()
+    const stockHeader = page.getByRole('columnheader', { name: '库存' })
     await stockHeader.click()
     await page.waitForTimeout(500)
 
@@ -328,7 +328,7 @@ test.describe('商品列表页面', () => {
   })
 
   test('按销量排序', async ({ page }) => {
-    const salesHeader = page.getByText('销量').first()
+    const salesHeader = page.getByRole('columnheader', { name: '销量' })
     await salesHeader.click()
     await page.waitForTimeout(500)
 
@@ -336,7 +336,7 @@ test.describe('商品列表页面', () => {
   })
 
   test('按销售额排序', async ({ page }) => {
-    const salesAmountHeader = page.getByText('销售额').first()
+    const salesAmountHeader = page.getByRole('columnheader', { name: '销售额' })
     await salesAmountHeader.click()
     await page.waitForTimeout(500)
 

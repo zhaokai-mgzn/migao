@@ -8,8 +8,9 @@
  *
  * This setup:
  *   1. Logs in via the backend API to get tokens
- *   2. Pre-sets cookies and localStorage via addCookies / addInitScript
- *      (must happen before first navigation — AuthGuard checks on page load)
+ *   2. Pre-sets cookies and localStorage via injectAuth (page.evaluate)
+ *      on /login, then full-page navigates to /dashboard so Zustand
+ *      v5 persist rehydrates with the injected state.
  *   3. Navigates to dashboard to verify sidebar is visible
  *   4. Saves browser storage state to tests/e2e/.auth/admin.json
  *
@@ -17,7 +18,7 @@
  * CI 使用真实 SMS API 获取 token。
  */
 import { test as setup, expect } from '@playwright/test'
-import { loginViaApi, type AuthTokens } from '../helpers/auth.helper'
+import { loginViaApi, injectAuth, type AuthTokens } from '../helpers/auth.helper'
 import * as path from 'path'
 import * as fs from 'fs'
 
@@ -56,24 +57,33 @@ setup('authenticate as admin', async ({ page }) => {
     }
   }
 
-  // Pre-set auth BEFORE first navigation — AuthGuard checks cookie + localStorage on page load
-  await page.context().addCookies([{
-    name: 'access_token', value: tokens.accessToken, domain: 'localhost', path: '/', sameSite: 'Lax' as const,
-  }])
-  await page.context().addInitScript((authJson: string) => {
-    localStorage.setItem('auth-storage', authJson)
-  }, JSON.stringify({
-    state: {
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
-      user: { id: '1', username: TEST_PHONE, name: '管理员', roles: ['admin'], tenantId: 1, tenantName: '测试企业' },
-      isAuthenticated: true,
-      rememberMe: true,
-    },
-    version: 0,
-  }))
+  // 先导航到非受保护页面，建立页面上下文以便设置 localStorage
+  // 直接用 /login 避免 AuthGuard 重定向干扰
+  await page.goto('/login', { waitUntil: 'load', timeout: 30_000 })
 
-  // 用 load 而非 networkidle — SSE 会阻止 network idle
+  // 通过 injectAuth 设置 cookie + localStorage（Zustand v5 兼容）
+  await injectAuth(page, tokens, {
+    id: '1',
+    username: TEST_PHONE,
+    name: '管理员',
+    roles: ['admin'],
+    tenantId: 1,
+    tenantName: '测试企业',
+  })
+
+  // Mock /api/auth/me — AuthProvider.initialize() 会调此接口验证 token
+  // 不 mock 则网络报错 → clearAuth() → AuthGuard 重定向到 /login
+  await page.route('**/api/auth/me', async (route) => {
+    await route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({
+        code: 200,
+        data: { id: '1', username: TEST_PHONE, name: '管理员', roles: ['admin'], tenantId: 1, tenantName: '测试企业' },
+      }),
+    })
+  })
+
+  // 全页导航到仪表盘，触发 Zustand 重新水合（读取刚注入的 localStorage）
   await page.goto('/dashboard', { waitUntil: 'load', timeout: 30_000 })
   await expect(page.locator('aside')).toBeVisible({ timeout: 20_000 })
   await page.context().storageState({ path: AUTH_FILE })

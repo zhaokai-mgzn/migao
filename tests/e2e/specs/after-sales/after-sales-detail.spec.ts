@@ -1,4 +1,3 @@
-import { test, expect } from '@playwright/test'
 import { AfterSalesDetailPage } from '../../pages/after-sales/after-sales-detail.page'
 
 // ==================== Inline Mock Data ====================
@@ -34,6 +33,7 @@ test.describe('售后工单详情页面', () => {
   let pom: AfterSalesDetailPage
 
   test.beforeEach(async ({ page }) => {
+    await mockAuthMe(page);
     // Mock detail API
     await page.route('**/api/admin/after-sales/*/logs*', (route) => {
       route.fulfill({ body: JSON.stringify({ success: true, data: MOCK_TICKET_LOGS }) })

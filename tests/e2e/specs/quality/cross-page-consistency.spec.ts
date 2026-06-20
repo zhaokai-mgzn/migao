@@ -1,4 +1,3 @@
-/**
  * 跨页面数据一致性测试 — 使用 recorded fixture 替代 live API
  *
  * 验证列表和详情中同一个实体的关键字段一致。
@@ -62,7 +61,9 @@ test.describe('客户列表 ↔ 详情', () => {
   test('name/phone 一致', async () => {
     const first = firstItem(customersFixture)
     if (!first?.id) { console.log('[skip]'); return }
-    expect(first).toHaveProperty('name')
+    // 客户 fixture 使用 wechatNickname 作为名称字段
+    const name = first.name || first.wechatNickname
+    expect(name).toBeDefined()
     expect(first).toHaveProperty('phone')
   })
 })

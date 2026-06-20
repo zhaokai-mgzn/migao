@@ -1,10 +1,10 @@
-import { test, expect } from '@playwright/test'
 import { CustomerListPage } from '../../pages/customers/customer-list.page'
 
 test.describe('客户列表页面', () => {
   let pom: CustomerListPage
 
   test.beforeEach(async ({ page }) => {
+    await mockAuthMe(page);
     pom = new CustomerListPage(page)
 
     // Mock customers list API

@@ -19,13 +19,13 @@ export class RolesPage extends BasePage {
   }
 
   editBtn(n: number): Locator {
-    // 编辑按钮是纯图标按钮（Pencil SVG），通过卡片内的按钮位置定位
-    return this.roleCards.nth(n).locator('button').last()
+    // 编辑按钮是卡片内第一个 button（Pencil），有 title="编辑"
+    return this.roleCards.nth(n).locator('button[title="编辑"]')
   }
 
   deleteBtn(n: number): Locator {
-    // 删除按钮是纯图标按钮（Trash2 SVG），在编辑按钮前面
-    return this.roleCards.nth(n).locator('button').first()
+    // 删除按钮是卡片内第二个 button（Trash2），有 title="删除"
+    return this.roleCards.nth(n).locator('button[title="删除"]')
   }
 
   get name() { return this.roleModal.locator('input[placeholder*="管理员"]').or(this.roleModal.locator('input[label="角色名称"]')) }
