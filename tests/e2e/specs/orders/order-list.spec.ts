@@ -120,7 +120,7 @@ const MOCK_ORDERS = [
 
 async function mockOrderApis(page: import('@playwright/test').Page) {
   // GET /api/orders (list)
-  await page.route('**/api/orders*', async (route) => {
+  await page.route('**/api/admin/orders*', async (route) => {
     if (route.request().method() !== 'GET') return
     const url = new URL(route.request().url())
 
@@ -366,7 +366,7 @@ test.describe('订单列表页面', () => {
 
   test('分页器展示及翻页', async ({ page }) => {
     // Mock 大量订单以触发分页
-    await page.route('**/api/orders*', async (route) => {
+    await page.route('**/api/admin/orders*', async (route) => {
       if (route.request().method() !== 'GET') return
       const url = new URL(route.request().url())
       const pg = Number(url.searchParams.get('page')) || 1
