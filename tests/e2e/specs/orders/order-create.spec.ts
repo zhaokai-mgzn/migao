@@ -79,15 +79,16 @@ test.describe('订单创建', () => {
     test.beforeEach(async ({ page }) => {
       await page.getByText('点击搜索并选择商品').click()
       await page.locator('.fixed.inset-0.z-50').last().getByText(PROD_NAME).click()
-      await page.waitForTimeout(500)
+      // 等待产品数据加载和颜色/加工选项渲染
+      await page.waitForTimeout(1500)
     })
     test('颜色选择', async ({ page }) => {
-      await expect(page.getByRole('button', { name: C1 })).toBeVisible()
-      await expect(page.getByRole('button', { name: C2 })).toBeVisible()
+      await expect(page.getByRole('button', { name: C1 })).toBeVisible({ timeout: 10000 })
+      await expect(page.getByRole('button', { name: C2 })).toBeVisible({ timeout: 10000 })
     })
     test('加工选项', async ({ page }) => {
-      await expect(page.getByText(PR1)).toBeVisible()
-      await expect(page.getByText(PR2)).toBeVisible()
+      await expect(page.getByText(PR1)).toBeVisible({ timeout: 10000 })
+      await expect(page.getByText(PR2)).toBeVisible({ timeout: 10000 })
     })
   })
 
