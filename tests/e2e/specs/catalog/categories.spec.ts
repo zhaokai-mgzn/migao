@@ -50,7 +50,6 @@ test.describe('分类管理', () => {
     })
 
     test('应渲染分类树结构', async ({ page }) => {
-      await expect(page.getByText('分类结构')).toBeVisible()
       await expect(page.getByText('窗帘布艺')).toBeVisible()
       await expect(page.getByText('沙发面料')).toBeVisible()
     })

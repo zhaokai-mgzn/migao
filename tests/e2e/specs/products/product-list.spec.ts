@@ -103,6 +103,14 @@ async function mockProductApis(page: import('@playwright/test').Page) {
     if (statusParam) {
       filtered = filtered.filter((p) => p.status === statusParam)
     }
+    const createdFrom = url.searchParams.get('createdFrom')
+    if (createdFrom) {
+      filtered = filtered.filter((p) => new Date(p.createdAt) >= new Date(createdFrom))
+    }
+    const createdTo = url.searchParams.get('createdTo')
+    if (createdTo) {
+      filtered = filtered.filter((p) => new Date(p.createdAt) <= new Date(createdTo + 'T23:59:59Z'))
+    }
     const sortBy = url.searchParams.get('sortBy') || 'createdAt'
     const sortOrder = url.searchParams.get('sortOrder') || 'desc'
     filtered.sort((a, b) => {

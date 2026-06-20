@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { loginViaApi, injectAuth } from '../../helpers/auth.helper'
+// auth 由全局 auth-setup 项目提供
 
 // ========== Mock Data ==========
 
@@ -201,20 +201,13 @@ async function mockOrderApis(page: import('@playwright/test').Page) {
   })
 }
 
-async function setupAuthAndNavigate(page: import('@playwright/test').Page) {
-  await mockOrderApis(page)
-  const tokens = await loginViaApi()
-  await page.goto('/orders')
-  await injectAuth(page, tokens)
-  await page.goto('/orders')
-  // 等待表格数据加载完成（"加载中…" 消失）
-  await expect(page.getByText('加载中…')).not.toBeVisible({ timeout: 10_000 })
-  await page.waitForTimeout(300)
-}
-
 test.describe('订单列表页面', () => {
   test.beforeEach(async ({ page }) => {
-    await setupAuthAndNavigate(page)
+    await mockOrderApis(page)
+    await page.goto('/orders')
+    // 等待表格数据加载完成（"加载中…" 消失）
+    await expect(page.getByText('加载中…')).not.toBeVisible({ timeout: 10_000 })
+    await page.waitForTimeout(300)
   })
 
   // ========== 搜索 (1-9) ==========
