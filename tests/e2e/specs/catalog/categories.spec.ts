@@ -40,7 +40,7 @@ test.describe('分类管理', () => {
     })
 
     await page.goto('/categories')
-    await expect(page.getByText('分类管理')).toBeVisible()
+    await expect(page.getByRole('heading', { name: '分类管理' })).toBeVisible()
   })
 
   test.describe('页面加载', () => {
