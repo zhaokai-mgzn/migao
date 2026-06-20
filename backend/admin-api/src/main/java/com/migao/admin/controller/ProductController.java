@@ -118,9 +118,8 @@ public class ProductController {
     public ApiResponse<List<LowStockByColorResponse>> getLowStockByColor(
             @RequestParam(defaultValue = "100") int threshold,
             @RequestParam(defaultValue = "50") int limit) {
-        Long tenantId = TenantContext.getTenantId();
-        log.info("低库存查询(颜色维度): threshold={}, limit={}, tenantId={}", threshold, limit, tenantId);
-        List<LowStockByColorResponse> result = productService.getLowStockByColor(tenantId, threshold, limit);
+        log.info("低库存查询(颜色维度): threshold={}, limit={}", threshold, limit);
+        List<LowStockByColorResponse> result = productService.getLowStockByColor(threshold, limit);
         return ApiResponse.success(result);
     }
 

@@ -125,12 +125,12 @@ public class NotificationService {
      * @param queryRequest 查询请求
      * @return 分页响应
      */
-    public PageResponse<NotificationDTO> queryNotifications(Long tenantId, String recipientId,
+    public PageResponse<NotificationDTO> queryNotifications(String recipientId,
                                                              NotificationQueryRequest queryRequest) {
         Page<Notification> page = new Page<>(queryRequest.getPage(), queryRequest.getSize());
 
         IPage<Notification> resultPage = notificationMapper.selectByRecipientId(
-                tenantId, recipientId, queryRequest.getStatus(), queryRequest.getChannel(), page);
+                recipientId, queryRequest.getStatus(), queryRequest.getChannel(), page);
 
         List<NotificationDTO> dtos = resultPage.getRecords().stream()
                 .map(this::convertToDTO)
@@ -146,8 +146,8 @@ public class NotificationService {
      * @param recipientId 接收人ID
      * @return 未读数响应
      */
-    public UnreadCountResponse getUnreadCount(Long tenantId, String recipientId) {
-        Long count = notificationMapper.countUnread(tenantId, recipientId);
+    public UnreadCountResponse getUnreadCount(String recipientId) {
+        Long count = notificationMapper.countUnread(recipientId);
         return new UnreadCountResponse(count);
     }
 

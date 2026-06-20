@@ -76,7 +76,7 @@ test.describe('员工管理页面', () => {
     })
 
     await page.goto('/employees')
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('load')
   })
 
   test('页面标题正确显示', async () => {
@@ -144,7 +144,8 @@ test.describe('员工管理页面', () => {
   test('创建员工 - 未填用户名时提示错误', async () => {
     await page.getByRole('button', { name: /添加员工/ }).click()
     const modal = page.locator('[role="dialog"]')
-    await modal.getByRole('button', { name: /保存|创建|提交/ }).click()
+    // Modal 底部默认按钮是"确定"，点击后触发前端校验 toast
+    await modal.getByRole('button', { name: /确定/ }).click()
     await expect(page.locator('[data-sonner-toast]').first()).toBeVisible({ timeout: 5000 })
   })
 

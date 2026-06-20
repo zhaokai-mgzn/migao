@@ -43,7 +43,6 @@ public class NotificationController {
             @RequestParam(defaultValue = "20") long size,
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String channel) {
-        Long tenantId = TenantContext.getTenantId();
         String userId = getCurrentUserId();
         log.info("查询通知列表: userId={}, page={}, size={}, status={}, channel={}", userId, page, size, status, channel);
 
@@ -53,7 +52,7 @@ public class NotificationController {
         queryRequest.setStatus(status);
         queryRequest.setChannel(channel);
 
-        PageResponse<NotificationDTO> result = notificationService.queryNotifications(tenantId, userId, queryRequest);
+        PageResponse<NotificationDTO> result = notificationService.queryNotifications(userId, queryRequest);
         return ApiResponse.success(result);
     }
 
@@ -64,11 +63,10 @@ public class NotificationController {
      */
     @GetMapping("/unread-count")
     public ApiResponse<UnreadCountResponse> getUnreadCount() {
-        Long tenantId = TenantContext.getTenantId();
         String userId = getCurrentUserId();
         log.info("获取未读通知数: userId={}", userId);
 
-        UnreadCountResponse result = notificationService.getUnreadCount(tenantId, userId);
+        UnreadCountResponse result = notificationService.getUnreadCount(userId);
         return ApiResponse.success(result);
     }
 

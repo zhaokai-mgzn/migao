@@ -44,7 +44,7 @@ const MOCK_PRODUCT = {
 
 test.describe('商品详情', () => {
   test.beforeEach(async ({ page }) => {
-    await page.route('**/api/products/prod_detail_001', async (route) => {
+    await page.route('**/api/admin/products/prod_detail_001', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',

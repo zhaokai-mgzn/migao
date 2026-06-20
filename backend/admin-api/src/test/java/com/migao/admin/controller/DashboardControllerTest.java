@@ -124,7 +124,7 @@ class DashboardControllerTest {
         @Test
         @DisplayName("返回7天趋势数据 -> 200")
         void return7DayTrend() throws Exception {
-            when(orderMapper.selectOrderTrend(any(), any())).thenReturn(List.of());
+            when(orderMapper.selectOrderTrend(any())).thenReturn(List.of());
 
             mockMvc.perform(get("/api/admin/dashboard/order-trend"))
                     .andExpect(status().isOk())
@@ -136,7 +136,7 @@ class DashboardControllerTest {
         @Test
         @DisplayName("支持自定义天数参数 -> 200")
         void customDays() throws Exception {
-            when(orderMapper.selectOrderTrend(any(), any())).thenReturn(List.of());
+            when(orderMapper.selectOrderTrend(any())).thenReturn(List.of());
 
             mockMvc.perform(get("/api/admin/dashboard/order-trend").param("days", "30"))
                     .andExpect(status().isOk())
@@ -151,7 +151,7 @@ class DashboardControllerTest {
         @Test
         @DisplayName("返回状态分布数据 -> 200")
         void returnStatusDistribution() throws Exception {
-            when(orderMapper.selectOrderStatusDistribution(any())).thenReturn(List.of());
+            when(orderMapper.selectOrderStatusDistribution()).thenReturn(List.of());
 
             mockMvc.perform(get("/api/admin/dashboard/order-status"))
                     .andExpect(status().isOk())

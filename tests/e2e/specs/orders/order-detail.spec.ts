@@ -70,7 +70,7 @@ const MOCK_ORDER_COMPLETED = {
 
 test.describe('订单详情 - 待付款状态', () => {
   test.beforeEach(async ({ page }) => {
-    await page.route('**/api/orders/order_001', async (route) => {
+    await page.route('**/api/admin/orders/order_001', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -146,7 +146,7 @@ test.describe('订单详情 - 待付款状态', () => {
 test.describe('订单详情 - 待发货状态', () => {
   test.beforeEach(async ({ page }) => {
     const pendingShipOrder = { ...MOCK_ORDER_PENDING, id: 'order_pending_ship', status: 'pending_shipment', paidAt: '2025-01-15T11:00:00Z' }
-    await page.route('**/api/orders/order_pending_ship', async (route) => {
+    await page.route('**/api/admin/orders/order_pending_ship', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -169,7 +169,7 @@ test.describe('订单详情 - 待发货状态', () => {
 
 test.describe('订单详情 - 已发货状态', () => {
   test.beforeEach(async ({ page }) => {
-    await page.route('**/api/orders/order_002', async (route) => {
+    await page.route('**/api/admin/orders/order_002', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -195,7 +195,7 @@ test.describe('订单详情 - 已发货状态', () => {
 
 test.describe('订单详情 - 已完成状态', () => {
   test.beforeEach(async ({ page }) => {
-    await page.route('**/api/orders/order_003', async (route) => {
+    await page.route('**/api/admin/orders/order_003', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',

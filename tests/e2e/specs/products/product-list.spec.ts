@@ -83,7 +83,7 @@ const MOCK_PRODUCTS = [
 
 async function mockProductApis(page: import('@playwright/test').Page) {
   // GET /api/products (list)
-  await page.route('**/api/products*', async (route) => {
+  await page.route('**/api/admin/products*', async (route) => {
     if (route.request().method() !== 'GET') return
     const url = new URL(route.request().url())
     // Filter logic based on query params
@@ -126,7 +126,7 @@ async function mockProductApis(page: import('@playwright/test').Page) {
   })
 
   // POST /api/products/*/status (single update)
-  await page.route('**/api/products/*/status', async (route) => {
+  await page.route('**/api/admin/products/*/status', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -135,7 +135,7 @@ async function mockProductApis(page: import('@playwright/test').Page) {
   })
 
   // DELETE /api/products/*
-  await page.route('**/api/products/p*', async (route) => {
+  await page.route('**/api/admin/products/p*', async (route) => {
     if (route.request().method() === 'DELETE') {
       await route.fulfill({
         status: 200,
@@ -146,7 +146,7 @@ async function mockProductApis(page: import('@playwright/test').Page) {
   })
 
   // POST /api/products/batch/*
-  await page.route('**/api/products/batch/*', async (route) => {
+  await page.route('**/api/admin/products/batch/*', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -155,7 +155,7 @@ async function mockProductApis(page: import('@playwright/test').Page) {
   })
 
   // GET /api/products/export
-  await page.route('**/api/products/export*', async (route) => {
+  await page.route('**/api/admin/products/export*', async (route) => {
     await route.fulfill({
       status: 200,
       headers: { 'Content-Type': 'application/octet-stream' },
@@ -272,7 +272,7 @@ test.describe('商品列表页面', () => {
 
   test('搜索 API 调用验证参数传递', async ({ page }) => {
     let capturedUrl = ''
-    await page.route('**/api/products*', async (route) => {
+    await page.route('**/api/admin/products*', async (route) => {
       if (route.request().method() === 'GET') {
         capturedUrl = route.request().url()
       }
@@ -346,7 +346,7 @@ test.describe('商品列表页面', () => {
 
   test('翻页操作', async ({ page }) => {
     // Mock 更多数据以展示分页
-    await page.route('**/api/products*', async (route) => {
+    await page.route('**/api/admin/products*', async (route) => {
       if (route.request().method() !== 'GET') return
       const url = new URL(route.request().url())
       const pg = Number(url.searchParams.get('page')) || 1
@@ -386,7 +386,7 @@ test.describe('商品列表页面', () => {
 
   test('每页条数切换', async ({ page }) => {
     // Mock 大量数据
-    await page.route('**/api/products*', async (route) => {
+    await page.route('**/api/admin/products*', async (route) => {
       if (route.request().method() !== 'GET') return
       const url = new URL(route.request().url())
       const pg = Number(url.searchParams.get('page')) || 1
