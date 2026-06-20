@@ -165,7 +165,7 @@ async function mockOrderApis(page: import('@playwright/test').Page) {
   })
 
   // POST /api/orders/*/confirm-payment
-  await page.route('**/api/orders/*/confirm-payment', async (route) => {
+  await page.route('**/api/admin/orders/*/confirm-payment', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -174,7 +174,7 @@ async function mockOrderApis(page: import('@playwright/test').Page) {
   })
 
   // PATCH /api/orders/*/status
-  await page.route('**/api/orders/*/status', async (route) => {
+  await page.route('**/api/admin/orders/*/status', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -183,7 +183,7 @@ async function mockOrderApis(page: import('@playwright/test').Page) {
   })
 
   // POST /api/orders/*/close
-  await page.route('**/api/orders/*/close', async (route) => {
+  await page.route('**/api/admin/orders/*/close', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -192,7 +192,7 @@ async function mockOrderApis(page: import('@playwright/test').Page) {
   })
 
   // POST /api/orders/*/remarks
-  await page.route('**/api/orders/*/remarks', async (route) => {
+  await page.route('**/api/admin/orders/*/remarks', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',

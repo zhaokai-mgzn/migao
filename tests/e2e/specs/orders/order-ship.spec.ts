@@ -37,7 +37,7 @@ const MOCK_ORDER = {
 
 test.describe('订单发货', () => {
   test.beforeEach(async ({ page }) => {
-    await page.route('**/api/orders/order_ship_001', async (route) => {
+    await page.route('**/api/admin/orders/order_ship_001', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -129,12 +129,12 @@ test.describe('订单发货', () => {
     test('填写快递单号后应成功发货', async ({ page }) => {
       // 拦截发货 API
       let shipCalled = false
-      await page.route('**/api/orders/order_ship_001/logistics', async (route) => {
+      await page.route('**/api/admin/orders/order_ship_001/logistics', async (route) => {
         shipCalled = true
         await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 200 }) })
       })
 
-      await page.route('**/api/orders/order_ship_001/status', async (route) => {
+      await page.route('**/api/admin/orders/order_ship_001/status', async (route) => {
         await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 200 }) })
       })
 
@@ -149,12 +149,12 @@ test.describe('订单发货', () => {
 
     test('无需物流模式应直接提交成功', async ({ page }) => {
       let shipCalled = false
-      await page.route('**/api/orders/order_ship_001/logistics', async (route) => {
+      await page.route('**/api/admin/orders/order_ship_001/logistics', async (route) => {
         shipCalled = true
         await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 200 }) })
       })
 
-      await page.route('**/api/orders/order_ship_001/status', async (route) => {
+      await page.route('**/api/admin/orders/order_ship_001/status', async (route) => {
         await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 200 }) })
       })
 
