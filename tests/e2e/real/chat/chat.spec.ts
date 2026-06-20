@@ -1,11 +1,14 @@
 import { test, expect } from '@playwright/test'
 import { ChatPage } from '../../pages/chat/chat.page'
+import { SSEHelper } from '../../helpers/sse.helper'
 
 test.describe('AI 对话页面', () => {
   let page: ChatPage
+  let sse: SSEHelper
 
   test.beforeEach(async ({ page: p }) => {
     page = new ChatPage(p)
+    sse = new SSEHelper(p)
     await page.goto()
     await page.waitForLoad()
     await page.waitForAuth()
@@ -142,42 +145,40 @@ test.describe('AI 对话页面', () => {
 
   // ── SSE 事件 ──
 
-  test('发送消息后显示流式文本', async ({ page: p }) => {
+  test('发送消息后显示流式文本', async () => {
     await page.createSessionBtn.click()
-    await p.waitForTimeout(500)
+    await page.page.waitForTimeout(500)
+    await sse.startIntercept()
     await page.fillMessage('你好')
     await page.sendBtn.click()
-    // 等待 AI 回复（流式文本或 loading）
-    await p.waitForTimeout(2000)
-    // 消息气泡应该出现
-    const bubbles = p.locator('.rounded-2xl')
+    await sse.waitForStreamEnd(20_000)
+    sse.stopIntercept()
+    expect(await sse.hasTextContent()).toBeTruthy()
+    const bubbles = page.page.locator('.rounded-2xl')
     expect(await bubbles.count()).toBeGreaterThan(0)
   })
 
-  test('工具调用时显示 tool_start 指示器', async ({ page: p }) => {
-    // 发送触发工具调用的消息
+  test('工具调用时显示 tool_start 指示器', async () => {
     await page.createSessionBtn.click()
-    await p.waitForTimeout(500)
+    await page.page.waitForTimeout(500)
+    await sse.startIntercept()
     await page.fillMessage('帮我查一下最近的订单')
     await page.sendBtn.click()
-    await p.waitForTimeout(3000)
-    // 工具调用面板可能出现
-    const toolPanel = p.locator('text=/执行中|工具/')
-    // 不一定触发工具
-    expect(await toolPanel.count()).toBeGreaterThanOrEqual(0)
+    await sse.waitForStreamEnd(25_000)
+    sse.stopIntercept()
+    expect(await sse.hasToolCall('order_manage')).toBeTruthy()
   })
 
-  test('建议回复 chip 可点击', async ({ page: p }) => {
+  test('建议回复 chip 可点击', async () => {
     await page.createSessionBtn.click()
-    await p.waitForTimeout(500)
+    await page.page.waitForTimeout(500)
+    await sse.startIntercept()
     await page.fillMessage('你好')
     await page.sendBtn.click()
-    await p.waitForTimeout(5000)
-    // 建议回复
-    const suggestions = p.locator('text=推荐提问').locator('..').locator('button')
-    if (await suggestions.count() > 0) {
-      await expect(suggestions.first()).toBeVisible()
-    }
+    await sse.waitForStreamEnd(25_000)
+    sse.stopIntercept()
+    const suggestionList = await sse.getSuggestions()
+    expect(suggestionList.length).toBeGreaterThan(0)
   })
 
   // ── 卡片类型 ──
