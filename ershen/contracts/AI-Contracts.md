@@ -17,7 +17,7 @@
               │
               ├── 军师检测 merge → 评论 VERIFY_TRIGGER
               │
-              ├── Agent 跑验收 → primary+reviewer+merge
+              ├── Agent 跑验收 → LLM 独立验证（调 API + 查 DB）
               │         │
               │         ├── pass → close + verified/auto ✅
               │         │
@@ -52,7 +52,7 @@
 -->
 ```
 
-### 5. 打回日志 → BLOCK_LOG（merge.py 自动评论）
+### 5. 打回日志 → BLOCK_LOG（verify-agent 自动评论）
 
 ```html
 ## ⚠️ 验收 Blocked（第N/3次）
@@ -74,10 +74,10 @@
 | 标签 | 谁打 | 含义 | 下一步 |
 |------|------|------|--------|
 | `needs-verification` | 创建时 | 等军师出 case / Agent 开发 / Agent 修复 | Agent 抢 |
-| `block/dual-mismatch` | merge.py | 验收不一致 | Agent 优先抢 + 修复 |
-| `block/need-human` | merge.py(熔断) | 打回≥3次 | 凯总/娜总介入 |
-| `hold/auto-fail` | merge.py | 双方都失败 | 研发补充 |
-| `verified/auto` | merge.py | 验收通过 | 闭环 |
+| `block/dual-mismatch` | verify-agent | 验收不一致 | Agent 优先抢 + 修复 |
+| `block/need-human` | verify-agent(熔断) | 打回≥3次 | 凯总/娜总介入 |
+| `hold/auto-fail` | verify-agent | 双方都失败 | 研发补充 |
+| `verified/auto` | verify-agent | 验收通过 | 闭环 |
 
 ## Agent 扫描优先级
 
@@ -92,7 +92,7 @@
 - **一个 issue 走到底**，不创建子 issue
 - **所有交互带 JSON 机读块**，不靠自然语言猜
 - **军师不跑验收脚本**，只发 VERIFY_TRIGGER + 读 VERDICT_JSON
-- **Agent 跑全链路验收**，merge.py 在服务器本地执行
+- **Agent 跑全链路验收**，verify-agent 在服务器本地执行
 - **3 次打回熔断**，block_depth 从 BLOCK_LOG 评论累计
 
 ---
@@ -120,7 +120,7 @@
     +merge)
 
 ⑥ 验收 pass             verified/auto              —
-                       (merge.py close issue)
+                       (verify-agent close issue)
 
 ⑥ 验收 block            block/dual-mismatch         —
                        + needs-verification
@@ -165,7 +165,7 @@ PR merge + deploy 完成 →
       
       Agent 完成验收 →
         军师读 VERDICT_JSON:
-          pass → merge.py 已自动 close + verified/auto
+          pass → verify-agent 已自动 close + verified/auto
           block → 同 issue 重打 needs-verification
           hold → ai-verify/hold (军师挂)
 ```
@@ -178,10 +178,10 @@ PR merge + deploy 完成 →
 | `ai-verify/pending` | issue | 验收进行中 | 军师(PR merge后) |
 | `ai-verify/hold` | issue | 验收暂停(等云/缺信息) | 军师 |
 | `ai-verify/skip-deployment` | issue | 部署类等云验收 | 军师 |
-| `verified/auto` | issue | 验收通过已close | merge.py |
-| `block/dual-mismatch` | issue | 验收不一致 | merge.py |
-| `block/need-human` | issue | 熔断需人工 | merge.py |
-| `hold/auto-fail` | issue | 双方验收都失败 | merge.py |
+| `verified/auto` | issue | 验收通过已close | verify-agent |
+| `block/dual-mismatch` | issue | 验收不一致 | verify-agent |
+| `block/need-human` | issue | 熔断需人工 | verify-agent |
+| `hold/auto-fail` | issue | 双方验收都失败 | verify-agent |
 | `junshi-review/pass-with-followups` | PR | 评审通过 | 军师 |
 | `junshi-review/needs-changes` | PR | 评审需改 | 军师 |
 | `junshi-review/blocked` | PR | 评审阻塞 | 军师 |
@@ -264,8 +264,8 @@ PR merge → deploy 完成 →
 
 Agent 扫到 VERIFY_TRIGGER（无 VERDICT_JSON）→
   确认服务 alive →
-  primary.py (E2E+真实集测) → reviewer.py (独立DB+API) → merge.py (自动判定+执行)
-  merge.py 自动 close/hold/block + 贴 AI验收报告
+  claude --agent verify-agent 独立验收（调 API + 查 DB + 判定）
+  自动 close/hold/block + 贴 VERDICT_JSON 验收报告
 
 军师读报告，审计判定是否正确，用于自进化。不执行脚本。
 ```
@@ -352,7 +352,7 @@ case_draft.py 发草稿前必须通过 quality_gate：
 
 ### Reviewer 自动验证覆盖（25+ 关键词）
 
-reviewer.py 的 `infer_business_asserts` 根据业务真值关键词自动生成 DB/API 断言，覆盖所有 8 种模板：
+case_draft.py 的 `infer_assert_for_truth` 根据业务真值关键词自动生成 API 断言，覆盖所有 8 种模板：
 
 - **dashboard-jump**: 含加工待发货 / 含加工订单数 / 低库存 / 卡片数据 / 跳转URL
 - **order-classify**: 状态分类 / 分类计数 = 列表总数
@@ -376,7 +376,7 @@ reviewer.py 的 `infer_business_asserts` 根据业务真值关键词自动生成
 | 验收报告 | `VERDICT_JSON` | primary/reviewer 状态 + 置信度 + 冲突 |
 | 打回日志 | `BLOCK_LOG` | block_depth、失败 spec、冲突原因 |
 
-merge.py 自动写 `block-rate.jsonl`，每次 block 事件一行。
+verify-agent 自动写 `block-rate.jsonl`，每次 block 事件一行。
 
 ## 军师自检：跑质量报告
 
@@ -507,16 +507,14 @@ python3 scripts/dual_verify/quality_report.py --days 7
 | E2E web 全跑但只测了页面渲染 | anti-placeholder + api-contract + cross-page 质量 spec 兜底 |
 | E2E real 跑不过（LLM 不可用） | `|| true` 不阻塞，merge 时降权（confidence * 0.8） |
 | 服务未就绪盲跑 | agent-poll.sh 先 lsof 检查 3 个端口 |
-| reviewer 查错 DB/API | 直接用 issue 中的 SQL/API 断言（reviewer_asserts），不走 LLM 推断 |
-| primary.json 为空 | merge.py 返回 error，不贴报告 |
+| LLM 查错 DB/API | 双重验证：verify-agent 独立推理 + 交叉比对 |
+| VERDICT_JSON 缺失 | verify-agent 返回 error，不贴报告 |
 
 **验收完整性检查**：
 ```
-□ primary.json 存在且 status ≠ skip
-□ reviewer.json 存在且 status ≠ skip
+□ VERDICT_JSON 存在且 status ≠ skip
 □ E2E web 至少 1 个 spec 通过
 □ E2E real 至少跑了（不管结果）
-□ reviewer 断言 ≥ 1 条
 □ 以上不满足 → 军师在报告中标 ⚠️ 验收不完整
 ```
 
@@ -529,10 +527,10 @@ python3 scripts/dual_verify/quality_report.py --days 7
 | hold 积压 | hold 超过 7 天 → 军师巡检升级 |
 | 熔断误触发 | block_depth 从 BLOCK_LOG 评论累计，不会多算 |
 
-**判定规则**（merge.py judge 函数）：
+**判定规则**（verify-agent LLM 执行）：
 ```
-close: 主+复双 pass + 置信度都 ≥ 90% + 无冲突
-block: 主≠复 或 置信度差距 > 30% 或 云验收 fail
+close: LLM 独立验证通过 + 无冲突
+block: LLM 验证不一致 或 云验收 fail
 hold:  双 fail / 双 skip / 需人工复核
 熔断:  block_depth ≥ 3 → 不创建新的 BLOCK_LOG，直接 block/need-human
 ```
@@ -604,14 +602,14 @@ QA Growth Gate                    军师验收
    → 放行
 3. PR merge → deploy
 4. 军师验收:
-   → primary.py 跑 E2E → order-list.spec.ts 实际跑通 ✅
-   → reviewer.py 调 API → GET /api/admin/orders?category=含加工 → 验证了 3/3 业务真值 ✅
+   → verify-agent 跑 E2E → order-list.spec.ts 实际跑通 ✅
+   → verify-agent 调 API → GET /api/admin/orders?category=含加工 → 验证了 3/3 业务真值 ✅
    → close
 ```
 
 如果 Agent 写了测试但逻辑错（比如 mock 数据骗过了单测）：
 ```
-4. reviewer.py 独立验证 → 实际 API 返回的含加工订单数 ≠ mock 数据
+4. verify-agent 独立验证 → 实际 API 返回的含加工订单数 ≠ mock 数据
    → block + 回同 issue
 ```
 
@@ -623,6 +621,6 @@ QA Growth Gate                    军师验收
 ① Agent PR → CI 跑 QA Growth Gate + 单测 → 全绿
 ② 军师 review → merge
 ③ deploy
-④ 军师触发验收 → primary.py(真实E2E) + reviewer.py(独立验证) → merge.py
+④ 军师触发验收 → verify-agent LLM 独立验证（调 API + 查 DB）
 ⑤ close / block
 ```

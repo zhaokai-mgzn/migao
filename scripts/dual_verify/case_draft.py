@@ -373,9 +373,9 @@ def generate(issue_number, dry_run=False):
 
     draft_json = {
         "issue_id": issue_number, "template": tmpl_name,
-        "truths": truths, "truths_count": len(truths),
+        "business_truths": truths, "truths_count": len(truths),
         "auto_asserts": count_auto_asserts(tmpl) if tmpl else 0,
-        "specs": tmpl.get("primary_specs",[]) if tmpl else [],
+        "l3_specs": tmpl.get("primary_specs",[]) if tmpl else [],
         "red_flags": tmpl.get("red_flags",[]) if tmpl else [],
         "drafted_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
