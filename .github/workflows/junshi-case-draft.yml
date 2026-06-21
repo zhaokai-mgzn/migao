@@ -14,22 +14,14 @@ permissions:
 
 jobs:
   trigger:
+    if: |
+      (contains(github.event.issue.labels.*.name, 'needs-verification') ||
+       contains(github.event.issue.labels.*.name, 'needs-truths')) &&
+      !contains(github.event.issue.labels.*.name, 'ai-draft') &&
+      !contains(github.event.issue.labels.*.name, 'block/need-human') &&
+      !contains(github.event.issue.labels.*.name, 'hold/auto-fail')
     runs-on: ubuntu-latest
     steps:
-      - name: 护栏检查
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          ISSUE_NUMBER: ${{ github.event.issue.number }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          if [ "$EVENT_NAME" != "issues" ]; then
-            echo "⏭️  非 issue 事件，跳过"; exit 0
-          fi
-          # ai-draft 人机协作标签：跳过二郎神
-          HAS_AIDRAFT=$(gh issue view "$ISSUE_NUMBER" --json labels --jq '.labels[].name' | grep -c '^ai-draft$' || echo "0")
-          if [ "$HAS_AIDRAFT" -gt 0 ]; then
-            echo "⏭️  ai-draft 标签，跳过二郎神"; exit 0
-          fi
       - uses: actions/checkout@v4
 
       - name: 处理 needs-truths → needs-verification 转换
