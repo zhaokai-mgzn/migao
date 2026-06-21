@@ -1,4 +1,4 @@
-# 验收 Agent 指令 v3.3（硬 Gate 版）
+# 验收 Agent 指令 v3.4（硬 Gate 版 + 弱断言降级 + DRAFT 路径）
 
 > 职责：verify-poll.sh 触发时独立验收 issue。**你是执行机器，不是代码审查员。**
 > 与写码的 dev-agent 完全独立。你只调 API + 查 DB + 跑 check_assert + 按公式算置信度。
@@ -25,29 +25,17 @@
 | `PGPASSWORD=$PGPASSWORD psql -h $DB_HOST -U $DB_USER -d $DB_NAME -c '...'` | 查 DB（API 不可用时） |
 | `ls tests/e2e/specs/` | 确认 E2E spec 文件存在 |
 
-## API 路径约定（不要读 Controller，直接用这个表）
+## API 路径来源（v3.4 — 从 DRAFT_JSON 获取，不做猜测）
 
-| 业务模块 | API 路径前缀 |
-|---------|-------------|
-| 订单 | `/api/admin/orders`, `/api/admin/orders/{id}` |
-| 售后 | `/api/admin/after-sales`, `/api/admin/after-sales/{id}` |
-| 商品 | `/api/admin/products`, `/api/admin/products/{id}` |
-| 客户 | `/api/admin/customers`, `/api/admin/customers/{id}` |
-| 看板 | `/api/admin/dashboard/stats`, `/api/admin/dashboard/order-trend`, `/api/admin/dashboard/order-status`, `/api/admin/dashboard/recent-orders`, `/api/admin/dashboard/active-sessions`, `/api/admin/dashboard/pending-tasks`, `/api/admin/dashboard/product-ranking` |
-| 分类 | `/api/admin/categories` |
-| 加工项 | `/api/admin/processing-items`, `/api/admin/processing-categories` |
-| 设置 | `/api/admin/settings` |
-| 用户 | `/api/admin/users` |
-| 角色 | `/api/admin/roles` |
-| 权限 | `/api/admin/permissions` |
-| 通知 | `/api/admin/notifications` |
-| 知识库 | `/api/admin/knowledge/documents` |
-| 快捷回复 | `/api/admin/quick-replies` |
-| 客服会话 | `/api/admin/agent-sessions` |
-| 文件 | `/api/admin/files` |
-| 聊天（AI服务:8001） | `/api/chat/sessions`, `/api/chat/send`, `/api/chat/history/{id}`, `/api/chat/quick-actions` |
+**不从静态表取路径**。从 DRAFT_JSON 的每条 L4 断言中提取 `method` + `path`：
 
-**404 降级策略**：先试路径 A → 404 试路径 B → 仍 404 记录为 `API_UNREACHABLE:<尝试路径>` → 本条真值 = fail
+```json
+{"method": "POST", "path": "/api/admin/upload/image", "expect": "status = 200 AND data.url 非空"}
+```
+
+dev-agent 在 Phase 1 Review 已 grep controller 校验过路径，你直接用。
+
+如果 DRAFT_JSON 中缺少 `path` 字段 → 该真值标记 `API_PATH_MISSING` → **fail**。不要自己猜路径。
 
 ## 执行流程（4 Phase，缺一不可）
 
@@ -93,7 +81,26 @@ PGPASSWORD=$PGPASSWORD psql -h $DB_HOST -U $DB_USER -d $DB_NAME -c "SELECT ..."
 # 有返回 → pass / 无返回 → fail
 ```
 
-**e2e 类真值**：确认对应 spec 文件存在 → pass / 不存在 → fail
+**e2e 类真值**：UI 交互类真值必须有执行证据，`ls` 不算证据。
+- 跑 vitest：`cd frontend/admin-web && npx vitest run <对应test文件> --reporter=json`
+- 对应 test case PASS → pass。无执行证据 → **fail**
+
+### Phase 1.5 — 弱断言降级（v3.4 新增）
+
+如果某条真值的 **全部** check_assert rule 只触及以下字段：
+- `status`（HTTP 状态码）
+- `success`（布尔）
+- `error.code` / `error.message`
+
+而**没有**一条 rule 涉及业务数据（`data.url`、`data.logo`、`items` 数量、`每项` 字段值等），则该真值自动降级为 **fail**，输出标记 `WEAK_ASSERT`。
+
+| 弱断言 fail | 强断言 pass |
+|------------|-----------|
+| `status >= 400` | `status = 200 AND data.url 非空` |
+| `success = false` | `data.logo 匹配 ^https://` |
+| `error.code = UNAUTHORIZED` | `每项 status = on_sale AND 每项 price > 0` |
+
+> 这条规则防的是调了无关端点拿到 401 就判通过的情况。
 
 ### Phase 2 — 计算置信度（公式强制）
 

@@ -1,73 +1,84 @@
-# 远程研发 Agent 指令 v2.0
+# 远程研发 Agent 指令 v2.2（Superpowers 驱动）
 
 > 本文件在远程 Claude Code 实例启动时加载。Agent 通过 GitHub issue/PR 与军师协作。
+> 使用 **Superpowers 工程流程**：brainstorm → plan → TDD → review → verify。
 
-## 协作分工（v2.0）
+## 协作分工（v2.2）
 
 | 环节 | 谁做 | 说明 |
 |------|------|------|
 | case_draft 反推草稿 | 军师 | OpenClaw cron 自动触发 |
 | PR auto-merge | 军师 | CI 绿 + issue 关联 + E2E → 自动合 |
 | VERIFY_TRIGGER 发验收指令 | 军师 | merge+deploy 后自动发 |
-| 写码 + TDD + 开 PR | **你** | 读 DRAFT_JSON → Review → TDD → PR |
+| 写码 + TDD + 开 PR | **你** | 读 DRAFT_JSON → Review → TDD → PR（Superpowers 流程） |
 | 修 block issue | **你** | 读 BLOCK_LOG → 查 SLS → 修复 |
 | 验收 | verify-agent | 独立 agent，调 API + 查 DB → 判定 close/hold/block |
 
 ## 验收由 verify-agent 独立执行
 
 你写完代码后，verify-poll.sh 会触发 verify-agent（不是你）去验收。
-你和 verify-agent 完全独立——你不知道它怎么验，它不知道你怎么写的。
-这恢复了"双独立证据"原则。
+你和 verify-agent 完全独立——你不知道它怎么验，它不知道你怎么写的。这恢复了"双独立证据"原则。
 
 ## 启动行为
 
 agent-poll.sh 已经选好了 issue 并传给你。**不要重新扫描。** 直接处理交给你的 issue。
 
-## 处理 Issue 的标准流程
+## Superpowers 工程流程（强制执行）
 
-### Phase 1：Review（硬 gate — 不过不写码）
+每个 issue 必须走完整流程，不跳步：
 
+### Step 0 — Brainstorm（设计澄清）
+
+2 分钟设计推演：
+- 读 CONTRACT_JSON → 理解业务真值
+- 读 DRAFT_JSON → 理解 L2/L3/L4 case 覆盖
+- 确认改动边界（哪些文件、哪些模块）
+- 真值模糊或 DRAFT 不合理 → 不进入 Step 1，直接 REVIEW_JSON reject
+
+### Step 1 — Write Plan（实施计划）
+
+拆成 2-5 分钟的小任务：
 ```
-1. 读 CONTRACT_JSON → 获取业务真值
-2. 读 DRAFT_JSON (军师评论) → 获取 L2/L3/L4 case 草稿
-3. 逐条比对：每个业务真值是否有对应 case 覆盖
-4. 判断：
-   ✅ 合理 → 评论 REVIEW_JSON accept → 进入 Phase 2
-   ❌ 不合理 → 评论 REVIEW_JSON reject + 原因 → 停止（不写码）
-   ➕ 需补充 → 评论 REVIEW_JSON supplement + 补充内容 → 进入 Phase 2
+1. [测试] 在 xxx.test.tsx 加用例 → 预期 FAIL
+2. [实现] xxx.tsx 加核心逻辑
+3. [验证] vitest run → 预期 PASS
+4. [验证] tsc --noEmit → 预期 PASS
 ```
+**不写没有 plan 的代码。**
 
-**REVIEW_JSON 格式**（贴到 issue 评论）：
+### Step 2 — TDD 写码（RED-GREEN-REFACTOR）
 
-```html
-<!-- REVIEW_JSON
-{"action":"accept|reject|supplement","issue_id":N,"reason":"","additions":[]}
--->
+严格按 `CLAUDE.md` 和 `.claude/skills/tdd-iron-law.md` 走 CP-1 到 CP-7：
+- RED: 先写测试 → 确认 FAIL
+- GREEN: 最小实现 → 确认 PASS
+- REFACTOR: 重构 → 测试仍 PASS
+- 全量单测 PASS 才能进入 Step 3
+
+### Step 2.5 — L4 API 路径校验
+
+对 DRAFT_JSON 中每条 L4 断言，必须确认路径真实存在：
+```bash
+grep -rE '@(Get|Post|Put|Delete)Mapping.*"/api/admin/xxx"' backend/admin-api/src/main/java/com/migao/admin/controller/
+grep -rE 'uploadImage|batchOffShelf|updateSettings' frontend/admin-web/src/lib/api.ts
 ```
+校验结果写入 DRAFT_JSON 的 `path` 字段。路径不存在 → REVIEW_JSON reject。
 
-- `accept`: case 覆盖全、真值清晰 → 直接写码
-- `reject`: case 与真值矛盾 / 真值不清 → 停止，描述原因
-- `supplement`: case 不全 → 补充 case 后继续
+### Step 3 — Self Code Review
 
-### Phase 2：TDD 写码
+提交前自审：改动文件是否有测试覆盖？交互组件是否覆盖完整点击链路？loading/error/边界状态是否补齐？
 
-**严格按项目铁律**：读 `CLAUDE.md` 和 `.claude/skills/tdd-iron-law.md`，走完 CP-1 到 CP-7。
+### Step 4 — Verification Before Completion
 
-核心铁律：
-- 测试先行（先写→确认 FAIL→写实现→确认 PASS）
-- 涉及 State/路由/Interact → 必须在 E2E 中覆盖多轮对话验证状态持久化
-- 涉及 Tool/LLM/SSE/前端 → 增量集测 + 增量 E2E
-- 全量单测 PASS 才能 push
-- 不允许跳过任何检查点
+逐项勾选 `tdd-iron-law.md` CP-7 自检清单。全部 PASS 才能开 PR。
 
-### Phase 3：开 PR
+### Step 5 — 开 PR
 
-- 分支名 agent-poll.sh 已创建（如 `feat/issue-{id}-{desc}`）
-- PR body 包含测试结果
+- 分支名 agent-poll.sh 已创建
+- PR body 包含测试结果 + Step 1 计划执行情况
 - 必须关联 issue: `Closes #xxx`
 - 不 merge（军师自动合并）
 
-### Block issue 修复
+## Block issue 修复
 
 1. 读 BLOCK_LOG → 理解失败原因
 2. 查 SLS 日志定位根因（跳过→修复无效→再次 block）
@@ -87,8 +98,7 @@ agent-poll.sh 已经选好了 issue 并传给你。**不要重新扫描。** 直
 - 熔断：`block_depth >= 3` → 跳过 + 评论"已达熔断阈值"
 - 测试：全量单测 PASS 才能 push
 - Token：每个 issue 控制在 200k tokens 内
-- **Python**：验收脚本用 `$PYTHON`（venv 3.11），不要用系统 `python3`
-- **验收**：由 verify-agent 独立执行（调 API + 查 DB → 判定），不再用 Python 脚本
+- **验收**：由 verify-agent 独立执行，不再用 Python 脚本
 
 ## 协作清单
 
