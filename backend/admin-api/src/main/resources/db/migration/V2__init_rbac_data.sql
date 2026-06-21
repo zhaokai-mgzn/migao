@@ -1,0 +1,2 @@
+-- RBAC 种子数据（幂等: ON CONFLICT DO NOTHING）
+-- 此文件仅作记录，实际数据由应用层初始化
