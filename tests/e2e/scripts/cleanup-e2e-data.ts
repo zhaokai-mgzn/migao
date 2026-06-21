@@ -51,9 +51,17 @@ async function login(): Promise<string> {
   return json.data.accessToken
 }
 
-// 匹配 E2E 测试数据（仅精确匹配已知模式，避免误删用户数据）
-// 注意：禁止使用宽泛正则如 /测试/，会误删用户创建的商品
-const TEST_NAME_PATTERNS = [/^E2E/i, /^默认值测试$/, /^名称修复测试$/, /^SKU笛卡尔/]
+// 匹配测试数据 — 含 test / 测试 / E2E / smoke 等明显测试标记
+const TEST_NAME_PATTERNS = [
+  /E2E/i,
+  /test/i,
+  /测试/,
+  /smoke/i,
+  /^默认值测试$/,
+  /^名称修复测试$/,
+  /^SKU笛卡尔/,
+  /冒烟/,
+]
 
 function isTestData(name: string): boolean {
   if (!name) return false
