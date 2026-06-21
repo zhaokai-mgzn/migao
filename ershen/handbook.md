@@ -36,13 +36,12 @@
 | # | Job Name | Schedule | 职责 |
 |---|----------|----------|------|
 | 1 | `junshi-casedraft` | `*/5 * * * *` (每5min) | 扫 needs-verification issue → DRAFT_JSON |
-| 2 | `junshi-verify-trigger` | 每10min | 扫已 merge PR → VERIFY_TRIGGER |
-| 3 | `junshi-automerge` | 每10min | 扫 open PR → 四条件满足则 squash merge |
-| 4 | `junshi-stale-watch` | 每30min | 巡检 stale issue (>3天) |
-| 5 | `junshi-hold-escalate` | 每3h | 积压升级 P0/P1/P2 |
-| 6 | `junshi-daily-report` | `0 19 * * *` | 质量日报 |
-| 7 | `主干同步+PR巡检` | `*/30 * * * *` | git pull + PR 红牌识别 |
-| 8 | `junshi-coverage-weekly` | `30 10 * * 1` (每周一) | 覆盖率周报 |
+| 2 | `junshi-automerge` | 每10min | 扫 open PR → 四条件满足则 squash merge |
+| 3 | `junshi-stale-watch` | 每30min | 巡检 stale issue (>3天) |
+| 4 | `junshi-hold-escalate` | 每3h | 积压升级 P0/P1/P2 |
+| 5 | `junshi-daily-report` | `0 19 * * *` | 质量日报 |
+| 6 | `主干同步+PR巡检` | `*/30 * * * *` | git pull + PR 红牌识别 |
+| 7 | `junshi-coverage-weekly` | `30 10 * * 1` (每周一) | 覆盖率周报 |
 
 查看/管理：`openclaw cron list` · `openclaw cron run <id>` · `openclaw cron runs --id <id>`
 
@@ -58,7 +57,7 @@
 | # | Workflow | 触发 | 职责 |
 |---|----------|------|------|
 | 1 | `junshi-case-draft.yml` | issue open/label | 即时响应（不等 cron 轮询） |
-| 2 | `junshi-verify-trigger.yml` | PR merged | 即时响应 |
+| 2 | `junshi-verify-trigger.yml` | PR merged | VERIFY_TRIGGER（纯事件驱动，无需 LLM） |
 
 > 三层不冲突：OpenClaw cron 周期性兜底 + GA 事件即时响应 + crontab Agent 轮询。各自去重（已有 DRAFT_JSON / VERIFY_TRIGGER 则跳过）。
 

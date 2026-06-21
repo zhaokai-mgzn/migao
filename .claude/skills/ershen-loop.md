@@ -6,8 +6,8 @@
 ## 调度体系（三层兜底）
 
 ```
-OpenClaw cron (主) → 每5min casedraft / 每10min verify-trigger/automerge / 每日报告
-GitHub Actions (事件即时) → issue open → 立即跑 case_draft
+OpenClaw cron (主) → casedraft/automerge/stale/escalate/daily/coverage
+GitHub Actions (事件即时) → issue open → case_draft / PR merge → verify-trigger
 Linux crontab (Agent轮询) → */5 agent-poll + verify-poll
 ```
 
