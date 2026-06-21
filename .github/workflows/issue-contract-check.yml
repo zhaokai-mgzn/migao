@@ -9,8 +9,9 @@ jobs:
     name: Check CONTRACT_JSON
     runs-on: ubuntu-latest
     timeout-minutes: 2
-    # 跳过自动生成的 issue
+    # 仅在 issue 事件下运行，防止 push 事件误触发时 github.event.issue 未定义导致 crash
     if: |
+      github.event_name == 'issues' &&
       !contains(github.event.issue.title, '[E2E Web]') &&
       !contains(github.event.issue.title, '[coverage]') &&
       !contains(github.event.issue.title, '[coverage-tracking]') &&
