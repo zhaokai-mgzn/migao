@@ -198,6 +198,11 @@ if [ "${IS_BLOCKED:-0}" -gt 0 ]; then
 		        # Agent 没贴 REVIEW_JSON comment → 从日志提取 action
 		        if [ -z "$REVIEW_ACTION" ]; then
 		            REVIEW_ACTION=$(grep -oP '"action"\\s*:\\s*"\\K\\w+' /var/log/migao-agent-review.log 2>/dev/null | tail -1)
+		        # JSON 块提取失败 → 从自然语言"判定：**xxx**"解析
+		        if [ -z "$REVIEW_ACTION" ]; then
+		            REVIEW_ACTION=$(grep -oP "判定：\\*\\*\K\\w+" /var/log/migao-agent-review.log 2>/dev/null | tail -1 | tr "[:upper:]" "[:lower:]")
+		            log "⚠️ 从自然语言提取: action=$REVIEW_ACTION"
+		        fi
 		            log "⚠️ Agent 未贴 REVIEW_JSON comment，从日志提取: action=$REVIEW_ACTION"
 
 		        # 从日志提取完整 REVIEW_JSON 并贴到 GitHub
