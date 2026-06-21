@@ -43,7 +43,7 @@ if [ -n "$NEEDS_FIX" ]; then
     PR_BRANCH=$(echo "$NEEDS_FIX" | awk '{print $2}')
     ISSUE_ID=$(gh pr view "$PR_NUM" --json body --jq '.body' 2>/dev/null | grep -oP '(Closes|Fixes)\s+#\K\d+' | head -1)
     log "🔧 PR #$PR_NUM needs-changes → 修复"
-    git fetch origin "$PR_BRANCH" && git checkout "$PR_BRANCH" 2>/dev/null
+    git fetch origin -- "$PR_BRANCH" && git checkout -- "$PR_BRANCH" 2>/dev/null
     git pull origin main 2>/dev/null || true
     claude --print --agent dev-agent \
         "PR #$PR_NUM (关联 issue #$ISSUE_ID) 被标记 needs-changes。读 CI 失败原因 → 修复 → 遵守项目铁律 → push $PR_BRANCH。" \

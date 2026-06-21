@@ -53,17 +53,29 @@ stop_services() {
 log "🔍 扫描待验收..."
 
 VERIFY_ISSUE=""
-# 扫描范围：有 ai-verify/pending 标签的 + 最近更新的 needs-verification issue（OpenClaw 可能直接贴 VERIFY_TRIGGER）
 SCAN_IDS=$( {
     gh issue list --label ai-verify/pending --state open --limit 20 --json number --jq '.[].number' 2>/dev/null
     gh issue list --label ai-verify/pending --state closed --limit 20 --json number --jq '.[].number' 2>/dev/null
-    gh issue list --search "VERIFY_TRIGGER in:comments" --state open --limit 20 --json number --jq '.[].number' 2>/dev/null
 } | sort -u)
 for iid in $SCAN_IDS; do
     HAS_TRIGGER=$(gh issue view "$iid" --comments --json comments \
         --jq '[.comments[] | select(.body | contains("VERIFY_TRIGGER"))] | length' 2>/dev/null)
     HAS_VERDICT=$(gh issue view "$iid" --comments --json comments \
         --jq '[.comments[] | select(.body | contains("<!-- VERDICT_JSON"))] | length' 2>/dev/null)
+
+    # 死循环检测: >=3 条 VERDICT_JSON 且最后一条是 hold → escalate
+    if [ "${HAS_VERDICT:-0}" -ge 3 ]; then
+        LAST_DECISION=$(gh issue view "$iid" --comments --json comments \
+            --jq '[.comments[] | select(.body | contains("<!-- VERDICT_JSON"))] | last | .body' 2>/dev/null)
+        if echo "$LAST_DECISION" | grep -q '"decision".*"hold"'; then
+            log "🚨 #$iid 连续 3+ 次 HOLD → 死循环，标记 block/need-human"
+            gh issue comment "$iid" --body "## 🚨 二郎神死循环检测
+连续 3+ 次验收返回 HOLD，自动升级为 block/need-human。请人工介入。"
+            gh issue edit "$iid" --add-label "block/need-human" --remove-label "ai-verify/pending" 2>/dev/null || true
+            continue
+        fi
+    fi
+
     if [ "${HAS_TRIGGER:-0}" -gt 0 ] && [ "${HAS_VERDICT:-0}" -eq 0 ]; then
         VERIFY_ISSUE="$iid"; break
     fi
