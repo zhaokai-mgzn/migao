@@ -93,3 +93,4 @@ target/site/jacoco/
 junshi/archive.py
 .claude/settings.json
 backend/ai-agent-service/coverage.json
+youke/.qoder/
