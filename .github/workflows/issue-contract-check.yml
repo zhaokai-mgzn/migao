@@ -16,8 +16,7 @@ jobs:
       !contains(github.event.issue.title, '[coverage]') &&
       !contains(github.event.issue.title, '[coverage-tracking]') &&
       !startsWith(github.event.issue.title, 'PR Check') &&
-      github.event.issue.user.type != 'Bot' &&
-      !contains(github.event.issue.labels.*.name, 'ai-draft')
+      github.event.issue.user.type != 'Bot'
 
     steps:
       - name: Check and remind
@@ -25,6 +24,12 @@ jobs:
         with:
           script: |
             const body = context.payload.issue.body || '';
+
+            // ai-draft 标签：用户手动 draft，二郎神完全不可见，直接跳过
+            if (context.payload.issue.labels.some(l => l.name === 'ai-draft')) {
+              console.log('⏭️  ai-draft 标签 — 二郎神跳过');
+              return;
+            }
 
             const hasContract = /<!--\s*CONTRACT_JSON/.test(body);
             const hasTruths = /"business_truths"\s*:\s*\[[^\]]*[a-zA-Z一-鿿]/.test(body) ||
