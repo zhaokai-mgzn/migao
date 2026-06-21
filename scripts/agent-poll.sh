@@ -139,7 +139,7 @@ fi
 
 [[ "$ISSUE_ID" =~ ^[0-9]+$ ]] || { log "❌ 非法 ID: $ISSUE_ID"; exit 1; }
 
-ISSUE_TITLE=$(gh issue view "$ISSUE_ID" --json title --jq '.title' 2>/dev/null | sed 's/[^a-zA-Z0-9一-鿿 -]//g' | tr ' ' '-' | head -c 40)
+ISSUE_TITLE=$(gh issue view "$ISSUE_ID" --json title --jq '.title' 2>/dev/null | tr -cd '[:alnum:][:space:]-' | tr '[:space:]' '-' | tr -s '-' | head -c 40 || echo "issue")
 BRANCH="feat/issue-${ISSUE_ID}-${ISSUE_TITLE}"
 git checkout -B "$BRANCH" 2>/dev/null
 gh issue edit "$ISSUE_ID" --add-assignee "@me" 2>/dev/null || true
