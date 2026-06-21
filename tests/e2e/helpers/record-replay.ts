@@ -14,6 +14,7 @@
 import { type Page, type APIRequestContext, request as pwRequest } from '@playwright/test'
 import * as fs from 'fs'
 import * as path from 'path'
+import { withRetry } from './retry.helper'
 
 const FIXTURE_DIR = path.join(process.cwd(), 'e2e', 'fixtures')
 
@@ -30,8 +31,26 @@ export async function recordFixture(
     const reqOpts: any = { headers: options?.headers || {} }
     if (options?.body) reqOpts.data = options.body
 
-    const resp = await ctx[method === 'GET' ? 'get' : 'post'](url, reqOpts)
-    const body = await resp.json()
+    // Retry on 5xx / network errors — transient dev-server outages
+    const body = await withRetry(
+      async () => {
+        const resp = await ctx[method === 'GET' ? 'get' : 'post'](url, reqOpts)
+        if (!resp.ok()) {
+          throw new Error(
+            `recordFixture ${name} failed (${resp.status()}): ${await resp.text()}`,
+          )
+        }
+        return resp.json()
+      },
+      {
+        maxRetries: 2,
+        baseDelayMs: 2000,
+        shouldRetry: (err) => {
+          const msg = (err as Error).message || ''
+          return /5\d\d|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EPIPE/.test(msg)
+        },
+      },
+    )
 
     const filepath = path.join(FIXTURE_DIR, `${name}.json`)
     if (!fs.existsSync(FIXTURE_DIR)) fs.mkdirSync(FIXTURE_DIR, { recursive: true })

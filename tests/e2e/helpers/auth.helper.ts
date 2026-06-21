@@ -7,6 +7,7 @@
  *   - Cookie name: 'access_token'
  */
 import { type Page, type APIRequestContext, request as pwRequest } from '@playwright/test'
+import { withRetry } from './retry.helper'
 
 /** Tokens returned by the login API */
 export interface AuthTokens {
@@ -66,31 +67,46 @@ export async function loginViaApi(
     }
   }
 
-  const ctx: APIRequestContext = await pwRequest.newContext()
-  try {
-    const response = await ctx.post(`${API_BASE_URL}/api/auth/sms/login`, {
-      data: { phone, code },
-    })
+  // Retry on 5xx (transient server errors) — dev server may be briefly unavailable
+  return withRetry(
+    async () => {
+      const ctx: APIRequestContext = await pwRequest.newContext()
+      try {
+        const response = await ctx.post(`${API_BASE_URL}/api/auth/sms/login`, {
+          data: { phone, code },
+        })
 
-    if (!response.ok()) {
-      const body = await response.text()
-      throw new Error(
-        `loginViaApi failed (${response.status()}): ${body}`,
-      )
-    }
+        if (!response.ok()) {
+          const body = await response.text()
+          throw new Error(
+            `loginViaApi failed (${response.status()}): ${body}`,
+          )
+        }
 
-    const json = await response.json()
-    // Backend wraps in { code: 200, data: { accessToken, refreshToken, ... } }
-    const data = json.data ?? json
-    return {
-      accessToken: data.accessToken,
-      refreshToken: data.refreshToken,
-      expiresIn: data.expiresIn ?? 3600,
-      tokenType: data.tokenType ?? 'Bearer',
-    }
-  } finally {
-    await ctx.dispose()
-  }
+        const json = await response.json()
+        // Backend wraps in { code: 200, data: { accessToken, refreshToken, ... } }
+        const data = json.data ?? json
+        return {
+          accessToken: data.accessToken,
+          refreshToken: data.refreshToken,
+          expiresIn: data.expiresIn ?? 3600,
+          tokenType: data.tokenType ?? 'Bearer',
+        }
+      } finally {
+        await ctx.dispose()
+      }
+    },
+    {
+      maxRetries: 3,
+      baseDelayMs: 2000,
+      // Only retry on 5xx or network errors — 4xx errors are permanent
+      shouldRetry: (err) => {
+        const msg = (err as Error).message || ''
+        // 5xx, 503, 502, 504, or network errors (ECONNREFUSED, ETIMEDOUT, etc.)
+        return /5\d\d|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EPIPE/.test(msg)
+      },
+    },
+  )
 }
 
 /**
