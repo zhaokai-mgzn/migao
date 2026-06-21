@@ -1,0 +1,33 @@
+name: junshi/redraft
+
+# 二郎神体系：Agent REJECT 后自动触发军师重新 draft
+# REVIEW_JSON action=reject|supplement → 读取 agent 建议 → 重新生成 DRAFT_JSON
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  redraft:
+    if: |
+      contains(github.event.comment.body, 'REVIEW_JSON') &&
+      (contains(github.event.comment.body, '"reject"') || contains(github.event.comment.body, '"supplement"'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pyyaml
+      - name: 军师重新 draft（含 agent 反馈）
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PROJECT_ROOT: ${{ github.workspace }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          FEEDBACK_COMMENT_ID: ${{ github.event.comment.id }}
+        run: |
+          python scripts/dual_verify/case_draft.py "$ISSUE_NUMBER" --feedback-comment "$FEEDBACK_COMMENT_ID"

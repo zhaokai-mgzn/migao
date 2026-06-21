@@ -289,7 +289,62 @@ def draft_l4(truths, template):
         lines.append("")
     return "\n".join(lines)
 
-def generate(issue_number, dry_run=False):
+def _read_feedback(comment_id: int) -> dict:
+    """读取 REVIEW_JSON reject/supplement 评论，提取修正建议。
+    返回 {"reason": str, "specs": [str], "l4_hints": [str], "action": str}"""
+    p = subprocess.Popen(
+        ["gh","api",f"/repos/{os.getenv('GITHUB_REPOSITORY','zhaokai-mgzn/migao')}/issues/comments/{comment_id}"],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    out, _ = p.communicate()
+    if p.returncode != 0:
+        return {}
+    try:
+        comment = json.loads(out.decode())
+        body = comment.get("body", "")
+    except:
+        return {}
+
+    result = {}
+    # 提取 REVIEW_JSON 中的 action 和 reason
+    m = re.search(r"<!-- REVIEW_JSON\s*(.*?)\s*-->", body, re.DOTALL)
+    if m:
+        try:
+            rj = json.loads(m.group(1))
+            result["action"] = rj.get("action", "")
+            result["reason"] = rj.get("reason", "")
+        except:
+            pass
+
+    if not result.get("reason"):
+        # fallback: 从纯文本提取 reason
+        m = re.search(r'"reason"\s*:\s*"([^"]+)"', body)
+        if m:
+            result["reason"] = m.group(1)
+
+    # 从 reason 文本提取建议的 spec 路径
+    reason = result.get("reason", "")
+    result["specs"] = re.findall(
+        r'(?:tests/[\w/]+\.(?:test|spec)\.\w+|frontend/[\w/]+\.test\.\w+|backend/[\w/]+/[\w/]+\.java)',
+        reason
+    )
+
+    # 从 reason 提取 L4 方向性建议
+    l4_hints = []
+    if "DOM" in reason or "E2E" in reason:
+        l4_hints.append("E2E: DOM 元素存在性/不存在性断言")
+    if "重定向" in reason:
+        l4_hints.append("E2E: URL 重定向验证")
+    if "vitest" in reason:
+        l4_hints.append("vitest: 前端单测通过")
+    if "API" in reason:
+        api_matches = re.findall(r'(?:GET|POST|PUT|DELETE)\s+/api/[\w/\-]+', reason)
+        l4_hints.extend(f"API: {m}" for m in api_matches)
+    result["l4_hints"] = l4_hints
+
+    return result
+
+
+def generate(issue_number, dry_run=False, feedback_comment_id=None):
     p = subprocess.Popen(["gh","issue","view",str(issue_number),"--json","title,body"],
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=str(PROJECT_ROOT))
     out, err = p.communicate()
@@ -300,6 +355,25 @@ def generate(issue_number, dry_run=False):
     truths = extract_truths(body)
     tmpl_name = match_template(title, body)
     tmpl = load_template(tmpl_name) if tmpl_name else None
+
+    # ── REJECT 后重 draft：读取 agent 反馈，覆写模板 ──
+    feedback = {}
+    if feedback_comment_id:
+        feedback = _read_feedback(int(feedback_comment_id))
+        if feedback:
+            print(f"  📝 读取 Agent 反馈: action={feedback.get('action')}, "
+                  f"specs={feedback.get('specs')}, l4_hints={feedback.get('l4_hints')}",
+                  file=sys.stderr)
+            # 覆写模板 primary_specs
+            if feedback.get("specs") and tmpl:
+                tmpl = dict(tmpl)  # shallow copy
+                tmpl["primary_specs"] = feedback["specs"]
+            # 覆写 L4 reviewer_asserts
+            if feedback.get("l4_hints") and tmpl:
+                if "primary_specs" not in tmpl or tmpl.get("primary_specs") == feedback.get("specs"):
+                    pass  # specs already set above
+                tmpl = dict(tmpl)
+                tmpl["reviewer_asserts"] = [f"REJECT反馈: {h}" for h in feedback["l4_hints"]]
 
     # ── Fallback：无匹配模板 → 尝试兜底模板 unknown ──
     if not tmpl_name or not tmpl:
@@ -331,6 +405,14 @@ def generate(issue_number, dry_run=False):
         auto_section = None
 
     output = [f"## 🤖 军师反推 — Case草稿 (issue #{issue_number})"]
+    if feedback:
+        output.append("")
+        output.append(f"### 🔄 Agent REJECT 重 draft")
+        output.append(f"- **拒绝原因**: {feedback.get('reason', '未提供')[:200]}")
+        if feedback.get("specs"):
+            output.append(f"- **修正 L2 路径**: {', '.join(feedback['specs'])}")
+        if feedback.get("l4_hints"):
+            output.append(f"- **修正 L4 方向**: {', '.join(feedback['l4_hints'])}")
     if auto_section:
         output.append("")
         output.append("### 🔧 模板自动修复")
@@ -399,7 +481,9 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("issue_number", type=int)
     p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--feedback-comment", type=str, default=None,
+                   help="REVIEW_JSON comment ID to read feedback from (for re-draft)")
     args = p.parse_args()
-    print(generate(args.issue_number, args.dry_run))
+    print(generate(args.issue_number, args.dry_run, args.feedback_comment))
 
 if __name__ == "__main__": main()
