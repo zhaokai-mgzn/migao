@@ -9,39 +9,34 @@ jobs:
     name: Check CONTRACT_JSON
     runs-on: ubuntu-latest
     timeout-minutes: 2
-
     steps:
-      - name: Check and remind
+      - name: Guard and remind
         uses: actions/github-script@v7
         with:
           script: |
-            // 护栏：仅处理 issue opened 事件，跳过 push/workflow_dispatch 等误触发
             if (context.eventName !== 'issues') {
-              console.log('⏭️  非 issue 事件，跳过');
+              console.log('Skipped: not an issue event');
               return;
             }
             const issue = context.payload.issue;
             if (!issue) {
-              console.log('⏭️  无 issue 上下文，跳过');
+              console.log('Skipped: no issue payload');
               return;
             }
 
-            // 跳过特定标题（系统自动创建的 issue）
             const title = issue.title || '';
             if (title.startsWith('[E2E Web]') || title.startsWith('[coverage]') || title.startsWith('PR Check')) {
-              console.log('⏭️  系统自动 issue，跳过');
+              console.log('Skipped: system-generated issue');
               return;
             }
 
-            // 跳过 Bot 创建的 issue
             if (issue.user && issue.user.type === 'Bot') {
-              console.log('⏭️  Bot 创建的 issue，跳过');
+              console.log('Skipped: Bot created');
               return;
             }
 
-            // ai-draft 标签：人机协作，二郎神完全不可见
             if (issue.labels && issue.labels.some(l => l.name === 'ai-draft')) {
-              console.log('⏭️  ai-draft 标签 — 二郎神跳过');
+              console.log('Skipped: ai-draft label');
               return;
             }
 
@@ -55,7 +50,6 @@ jobs:
               /condition.*→.*expected/.test(body);
 
             if (hasContract || hasTruths) {
-              // 有业务真值 → 自动加入二郎神体系
               const needsLabel = !context.payload.issue.labels.some(l => l.name === 'needs-verification');
               if (needsLabel) {
                 await github.rest.issues.addLabels({
@@ -64,46 +58,14 @@ jobs:
                   issue_number: context.issue.number,
                   labels: ['needs-verification'],
                 });
-                console.log('✅ 已添加 needs-verification → 进入二郎神体系');
-              } else {
-                console.log('✅ 已有 needs-verification');
+                console.log('Added needs-verification');
               }
               return;
             }
 
             const msg = `## ⚠️ 缺少业务真值
 
-本 issue 缺少 \`CONTRACT_JSON\` 或业务真值描述。
-
-### 为什么需要
-二郎神验收体系依赖**业务真值**来生成测试 case（DRAFT_JSON）。
-缺少真值 → 军师无法反推 case → 验收 agent 无法验证 → 质量无法兜底。
-
-### 请补充
-在 issue body 末尾添加：
-
-\`\`\`html
-<!-- CONTRACT_JSON
-{
-  "business_truths": [
-    "条件A → 结果B",
-    "用户执行X → 系统返回Y",
-    "API POST /xxx 返回 201 且 data.id 非空"
-  ]
-}
--->
-\`\`\`
-
-或至少用自然语言描述：
-
-\`\`\`markdown
-## 验收标准
-- API POST /xxx 返回 200 且 data.id 非空
-- 不同租户数据互不可见
-- 无效输入返回明确错误
-\`\`\`
-
-> 🤖 真值齐全后军师会自动反推 case 草稿，研发 review 后即可开工。
+本 issue 缺少 CONTRACT_JSON 或业务真值描述。请在 issue body 末尾补充验收标准。
 
 Co-Authored-By: Claude <noreply@anthropic.com>`;
 
@@ -120,4 +82,4 @@ Co-Authored-By: Claude <noreply@anthropic.com>`;
               issue_number: context.issue.number,
               labels: ['needs-truths'],
             });
-            console.log('✅ 已提醒补充 CONTRACT_JSON');
+            console.log('Reminded for CONTRACT_JSON');
