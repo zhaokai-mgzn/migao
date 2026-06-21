@@ -161,17 +161,20 @@ if [ "${IS_BLOCKED:-0}" -gt 0 ]; then
 	        AUTO_ASSERTS=$(echo "$DRAFT" | grep -oP '"auto_asserts"\s*:\s*\K\d+' | head -1)
 	        TEMPLATE_NAME=$(echo "$DRAFT" | grep -oP '"template"\s*:\s*"\K[^"]+' | head -1)
 
-	        if [ "${TRUTHS_COUNT:-0}" -eq 0 ]; then
+	        SKIP_TEMPLATE=$(echo "$DRAFT" | grep -oP '"skip_template"\s*:\s*\K\w+' | head -1)
+	        if [ "$SKIP_TEMPLATE" = "true" ]; then
+	            log "✅ skip_template — 前端简单改动，跳过模板校验，直接 Phase 1 Review"
+	        elif [ "${TRUTHS_COUNT:-0}" -eq 0 ]; then
 	            log "❌ 业务真值为空 — bash gate reject"
 		        gh issue edit "$ISSUE_ID" --remove-assignee "@me" 2>/dev/null || true
 	            exit 0
 	        fi
-	        if [ "$TEMPLATE_NAME" = "unknown" ] || [ -z "$TEMPLATE_NAME" ]; then
+	        if [ "$SKIP_TEMPLATE" != "true" ] && { [ "$TEMPLATE_NAME" = "unknown" ] || [ -z "$TEMPLATE_NAME" ]; }; then
 	            log "❌ 未匹配模板(${TEMPLATE_NAME:-none}) — bash gate reject"
 		        gh issue edit "$ISSUE_ID" --remove-assignee "@me" 2>/dev/null || true
 	            exit 0
 	        fi
-	        if [ "${AUTO_ASSERTS:-0}" -lt "${TRUTHS_COUNT:-1}" ]; then
+	        if [ "$SKIP_TEMPLATE" != "true" ] && [ "${AUTO_ASSERTS:-0}" -lt "${TRUTHS_COUNT:-1}" ]; then
 	            log "❌ 自动断言(${AUTO_ASSERTS:-0}) < 真值(${TRUTHS_COUNT:-0}) — bash gate reject"
 		        gh issue edit "$ISSUE_ID" --remove-assignee "@me" 2>/dev/null || true
 	            exit 0

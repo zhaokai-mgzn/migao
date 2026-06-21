@@ -1,6 +1,7 @@
 name: frontend-fix
 description: 纯前端 UI 修复/Bug — 不涉及后端 API/SQL/状态机变更。E2E + vitest 为主。
 red_flags: []
+skip_template: true
 
 business_truths:
   - 前端 UI 变更不影响后端 API 契约

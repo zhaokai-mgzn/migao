@@ -534,6 +534,9 @@ def generate(issue_number, dry_run=False, feedback_comment_id=None):
         "red_flags": tmpl.get("red_flags",[]) if tmpl else [],
         "drafted_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
+    # skip_template: 前端简单改动跳过模板校验，Agent 基于 CONTRACT_JSON 直接写码
+    if tmpl and tmpl.get("skip_template"):
+        draft_json["skip_template"] = True
     if auto_section:
         draft_json["auto_patched"] = True
         draft_json["patched_template"] = tmpl_name
