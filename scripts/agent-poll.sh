@@ -200,7 +200,7 @@ if [ "${IS_BLOCKED:-0}" -gt 0 ]; then
 \`\`\`
 
 边界：不写代码、不跑测试、不建 PR。这是硬 gate。" \
-	            2>&1 | tee /tmp/migao-review-$ISSUE_ID.log | tail -10
+	            2>&1 | tee /var/log/migao-review-$ISSUE_ID.log | tail -10
 
 	        # ══ 检查 REVIEW_JSON 结果 ══
 	        REVIEW_BODY=$(gh issue view "$ISSUE_ID" --comments --json comments \
@@ -209,7 +209,7 @@ if [ "${IS_BLOCKED:-0}" -gt 0 ]; then
 
 		        # Agent 没贴 REVIEW_JSON comment → 从日志提取 action
 		        if [ -z "$REVIEW_ACTION" ]; then
-		            REVIEW_ACTION=$(grep -oP '"action"\\s*:\\s*"\\K\\w+' /tmp/migao-review-$ISSUE_ID.log 2>/dev/null | tail -1)
+		            REVIEW_ACTION=$(grep -oP '"action"\s*:\s*"\K\w+' /var/log/migao-review-$ISSUE_ID.log 2>/dev/null | tail -1)
 		        # JSON 块提取失败 → 从自然语言"判定：**xxx**"解析
 		        if [ -z "$REVIEW_ACTION" ]; then
 		            REVIEW_ACTION=reject
@@ -218,7 +218,7 @@ if [ "${IS_BLOCKED:-0}" -gt 0 ]; then
 		            log "⚠️ Agent 未贴 REVIEW_JSON comment，从日志提取: action=$REVIEW_ACTION"
 
 		        # 从日志提取完整 REVIEW_JSON 并贴到 GitHub
-		        REVIEW_JSON_BLOCK=$(grep -A2 "<!-- REVIEW_JSON" /tmp/migao-review-$ISSUE_ID.log 2>/dev/null | tail -3)
+		        REVIEW_JSON_BLOCK=$(grep -A2 "<!-- REVIEW_JSON" /var/log/migao-review-$ISSUE_ID.log 2>/dev/null | tail -3)
 		        if [ -n "$REVIEW_JSON_BLOCK" ]; then
 		            echo -e "## 🤖 研发 Agent Phase 1 Review\n\n\`\`\`\n$REVIEW_JSON_BLOCK\n\`\`\`" | gh issue comment "$ISSUE_ID" --body-file - 2>/dev/null
 		            log "✅ REVIEW_JSON 已自动贴到 issue"
