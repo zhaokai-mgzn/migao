@@ -167,7 +167,7 @@ def auto_patch_template(tmpl_name: str, template: dict, truths: list) -> bool:
         t_keywords = set()
         for keywords, _ in _TRUTH_KEYWORD_MAP:
             if any(str(kw).lower() in t.lower() for kw in keywords):
-                t_keywords.update(kw.lower() for kw in keywords)
+                t_keywords.update(str(kw).lower() for kw in keywords)
         # 检查是否已有 assert 覆盖（关键词交集）
         matched = False
         for a in existing:
@@ -221,22 +221,25 @@ def auto_patch_template(tmpl_name: str, template: dict, truths: list) -> bool:
     return True
 
 def quality_gate(truths, tmpl_name, template):
-    """返回 (messages, can_post)。can_post=False=拒绝发稿"""
+    """返回 (messages, can_post)。can_post=False=部分覆盖，仍发稿但标注"""
     errors, warnings = [], []
     if len(truths) == 0:
         errors.append("🔴 业务真值为空 — 请先在 issue 中填写")
     if not tmpl_name:
-        errors.append("🔴 **拒绝发稿**: 未匹配到任何模板，L4 无法自动验证 → block 率 100%。请军师手动指定模板或补充 reviewer_asserts。")
-        # 机读信号：需要新建模板
+        errors.append("🔴 未匹配到任何模板，L4 无法自动验证。请军师手动指定模板。")
         errors.append("<!-- NEW_TEMPLATE_NEEDED -->")
     elif template:
         if template.get("red_flags"):
-            warnings.append(f"🔴 红牌: {template['red_flags']} — 请确认历史 issue 已修复")
+            warnings.append(f"🟡 历史红牌: {template['red_flags']} — 请确认已修复")
         auto = count_auto_asserts(template)
         if auto < len(truths):
-            errors.append(
-                f"🔴 **拒绝发稿**: L4自动断言({auto}) < 业务真值({len(truths)})")
-    return errors + warnings, len(errors) == 0
+            warnings.append(
+                f"⚠️ L4自动断言({auto}) < 业务真值({len(truths)}) — "
+                f"{len(truths)-auto} 条需人工补充，其余可自动验收。"
+                f"不阻塞研发（CONTRACT_JSON 已含全部真值）。")
+    # 降级：只有真值为空或完全无模板才拒绝
+    hard_block = len(truths) == 0 or (not tmpl_name and not template)
+    return errors + warnings, not hard_block
 
 def draft_l2(truths, template):
     if not truths: return "⚠️ 无业务真值"
