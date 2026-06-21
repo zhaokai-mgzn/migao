@@ -26,10 +26,11 @@ jobs:
             const body = context.payload.issue.body || '';
 
             const hasContract = /<!--\s*CONTRACT_JSON/.test(body);
-            const hasTruths = /business_truths/i.test(body) ||
-              /业务真值/i.test(body) ||
-              /验收标准/i.test(body) ||
-              /## 问题描述/.test(body);
+            const hasTruths = /"business_truths"\s*:\s*\[[^\]]*[a-zA-Z一-鿿]/.test(body) ||
+              /##\s*业务真值/.test(body) ||
+              /##\s*验收标准\s*\n\s*[-*]\s*\S/.test(body) ||
+              /##\s*问题描述/.test(body) ||
+              /condition.*→.*expected/.test(body);
 
             if (hasContract || hasTruths) {
               // 有业务真值 → 自动加入二郎神体系
