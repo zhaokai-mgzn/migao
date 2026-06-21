@@ -108,12 +108,21 @@ export JAVA_HOME="${JAVA_HOME:-/usr/lib/jvm/java-21}"
 # ── LLM 验收 ──
 log "→ verify-agent 验收..."
 claude --print --agent verify-agent \
-    "验收 issue #$VERIFY_ISSUE。调 API + 查 DB + check_assert 管道。
-     环境: ADMIN_API=\$ADMIN_API, DB=\$DB_HOST/\$DB_NAME
-     1. 读 business_truths
-     2. 逐条 curl | check_assert
-     3. 置信度 = passed/total
-     4. gh issue comment 贴 <!-- VERDICT_JSON --> + close/hold" \
+    "验收 issue #$VERIFY_ISSUE。
+
+## 环境（已 export，直接用 shell 变量）
+- curl http://localhost:8081 调 admin-api（X-Service-Token: \$SERVICE_TOKEN）
+- psql -h \$DB_HOST -U \$DB_USER -d \$DB_NAME 查 DB（PGPASSWORD 已设）
+- check_assert: python3 /opt/youke/scripts/dual_verify/check_assert.py
+
+## 步骤
+1. gh issue view $VERIFY_ISSUE --json body,comments → 提取所有 business_truths
+2. 逐条执行：api 类 → curl | check_assert；db 类 → psql；e2e 类 → ls spec 文件
+3. 每条输出 check_assert 完整 JSON 作为 trace
+4. 置信度 = passed / total（公式强制，API_UNREACHABLE = fail）
+5. 判定：1.0=close, >=0.8=hold, <0.8=block（全部 UNREACHABLE=hold）
+6. **用 gh issue comment 贴完整报告 + <!-- VERDICT_JSON {issue_id,decision,confidence,passed_truths,total_truths,traces} -->**
+7. close/hold/block 用 gh issue close/edit" \
     2>&1 | tee /var/log/migao-verify-agent.log | tail -10
 
 # 兜底: Agent 没贴 VERDICT → 自动从日志提取

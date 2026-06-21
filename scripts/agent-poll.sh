@@ -61,11 +61,30 @@ if [ -n "$NEEDS_DRAFT" ]; then
         fi
 
         claude --print --agent dev-agent \
-            "为 issue #$NEEDS_DRAFT 生成 DRAFT_JSON。$CONTEXT
-             1. 读 issue body + CONTRACT_JSON → 提取 business_truths
-             2. 理解业务领域和变更范围
-             3. 生成 L2/L3/L4 case（前端 issue 用 skip_template=true）
-             4. 用 gh issue comment 贴完整的 <!-- DRAFT_JSON -->" \
+            "任务：为 issue #$NEEDS_DRAFT 生成 case draft。$CONTEXT
+
+## 步骤
+1. gh issue view $NEEDS_DRAFT --json body,comments → 读 CONTRACT_JSON.business_truths
+2. 理解业务领域（不靠关键词，靠理解 issue 描述）
+3. 参考 docs/verification-templates/ 目录选模板（前端 UI → frontend-fix, skip_template=true）
+4. 生成 DRAFT_JSON 并用 gh issue comment 贴到 issue
+
+## DRAFT_JSON 格式（必须严格遵守）
+\`\`\`markdown
+## 🤖 军师反推 — Case草稿 (issue #N)
+**模板**: name | **真值**: N条
+### L2 单测草稿（每条 truth 1个 case: 文件路径+方法名）
+### L3 E2E Web草稿（涉及前端才写）
+### L4 业务断言草稿（每条 truth >=1 条独特断言，不重复）
+<!-- DRAFT_JSON {issue_id,template,truths_count,auto_asserts,specs,skip_template,...} -->
+\`\`\`
+
+## 质量铁律
+- auto_asserts >= truths_count（每条 truth 至少1条自动断言）
+- L4 断言彼此不同（不是同一模板复制粘贴）
+- L2 路径指向存在的文件（不确定时标注 ⚠️）
+- 纯前端 UI 改动 → skip_template=true
+- 边界：不写代码、不跑测试、不建 PR" \
             2>&1 | tail -5
 
         gh issue edit "$NEEDS_DRAFT" --remove-label "needs-draft" 2>/dev/null || true
@@ -135,7 +154,7 @@ if [ "$SKIP" = "true" ]; then
     # ══ skip_template: 直接写码 ══
     log "⚡ skip_template → Phase 2 TDD"
     claude --print --agent dev-agent \
-        "处理 issue #$ISSUE_ID。skip_template 模式，直接 TDD 写码。读 CONTRACT_JSON → 遵守项目铁律 → push $BRANCH → 创建 PR (Closes #$ISSUE_ID)。" \
+        "处理 issue #$ISSUE_ID。skip_template=true（前端简单改动），跳过 DRAFT 中的 L2/L4 模板，直接基于 CONTRACT_JSON.business_truths TDD 写码。读 CLAUDE.md + tdd-iron-law.md → Red→Green→Refactor → push $BRANCH → 创建 PR (Closes #$ISSUE_ID, body 贴测试结果)。" \
         2>&1 | tee -a /var/log/migao-agent-coding.log | tail -10
     log "✅ 完成"
 else
@@ -158,7 +177,7 @@ else
     accept|supplement)
         log "✅ Review $REVIEW_ACTION → Phase 2 TDD"
         claude --print --agent dev-agent \
-            "处理 issue #$ISSUE_ID。REVIEW_JSON=$REVIEW_ACTION。读 CONTRACT_JSON + DRAFT_JSON → 遵守项目铁律 → push $BRANCH → 创建 PR (Closes #$ISSUE_ID)。" \
+            "处理 issue #$ISSUE_ID。REVIEW_JSON=$REVIEW_ACTION。读 CONTRACT_JSON.business_truths + DRAFT_JSON 中的 L2/L4 case → 遵守项目铁律 (CLAUDE.md + tdd-iron-law.md, CP-1~CP-7) → push $BRANCH → 创建 PR (Closes #$ISSUE_ID, body 贴 CP 清单+测试结果)。" \
             2>&1 | tee -a /var/log/migao-agent-coding.log | tail -10
         ;;
     reject)
