@@ -38,38 +38,38 @@ git reset --hard HEAD 2>/dev/null
 git clean -fd 2>/dev/null
 git pull origin main 2>&1 | tail -1
 
-# ── Step 1: 收集状态（纯机械，无判断逻辑）──
+# ── Step 1: 收集状态（只传 ID，LLM 自己读详情）──
 log "🔍 扫描..."
 
-ISSUE_STATE=$(gh issue list --label needs-verification --state open --limit 10 \
-    --json number,title,labels,assignees 2>/dev/null || echo "[]")
-PR_STATE=$(gh pr list --label "junshi-review/needs-changes" --state open --limit 5 \
-    --json number,title,headRefName,body 2>/dev/null || echo "[]")
-
-# 为候选 issue 抓取最新评论（DRAFT_JSON + REVIEW_JSON）
-COMMENTS_JSON="{}"
-for iid in $(echo "$ISSUE_STATE" | python3 -c "import sys,json; [print(i['number']) for i in json.load(sys.stdin)]" 2>/dev/null); do
-    CISSUE=$(gh issue view "$iid" --comments --json comments 2>/dev/null || echo "{}")
-    COMMENTS_JSON=$(echo "$COMMENTS_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); d['$iid']=json.loads('$CISSUE'); print(json.dumps(d))" 2>/dev/null || echo "$COMMENTS_JSON")
-done
+ISSUE_IDS=$(gh issue list --label needs-verification --state open --limit 10 \
+    --json number --jq '.[].number' 2>/dev/null | tr '\n' ' ' || echo "")
+PR_IDS=$(gh pr list --label "junshi-review/needs-changes" --state open --limit 5 \
+    --json number --jq '.[].number' 2>/dev/null | tr '\n' ' ' || echo "")
 
 # ── Step 2: LLM 调度（所有判断逻辑）──
 DECISION=$(claude --print --agent orchestrator \
-    "决定下一步动作。返回纯 JSON。
+    "决定下一步动作。返回纯 JSON。你可以用 gh issue view / gh pr view 读取详情。
 
-     ISSUE_STATE: $ISSUE_STATE
-     PR_STATE: $PR_STATE
-     COMMENTS: $COMMENTS_JSON
+     needs-verification issue IDs: $ISSUE_IDS
+     needs-changes PR IDs: $PR_IDS
 
      优先级:
-     1. fix_pr — PR 有 junshi-review/needs-changes
-     2. write_code — DRAFT_JSON.skip_template=true
+     1. fix_pr — 有 needs-changes PR，读 PR body 找关联 issue
+     2. write_code — issue 的 DRAFT_JSON 含 skip_template=true
      3. review_draft — 有 DRAFT_JSON 无 REVIEW_JSON
      4. skip" 2>/dev/null || echo '{"action":"skip"}')
 
 ACTION=$(echo "$DECISION" | python3 -c "import sys,json; print(json.load(sys.stdin).get('action','skip'))" 2>/dev/null || echo "skip")
 ISSUE_ID=$(echo "$DECISION" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('issue_id',''))" 2>/dev/null || echo "")
 PR_NUMBER=$(echo "$DECISION" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('pr_number',''))" 2>/dev/null || echo "")
+
+# 校验 ISSUE_ID 为纯数字，防 LLM 注入
+if [ -n "$ISSUE_ID" ] && ! [[ "$ISSUE_ID" =~ ^[0-9]+$ ]]; then
+    log "❌ 非法 ISSUE_ID: $ISSUE_ID"; exit 1
+fi
+if [ -n "$PR_NUMBER" ] && ! [[ "$PR_NUMBER" =~ ^[0-9]+$ ]]; then
+    log "❌ 非法 PR_NUMBER: $PR_NUMBER"; exit 1
+fi
 
 log "📋 LLM: action=$ACTION issue=$ISSUE_ID"
 
@@ -105,10 +105,10 @@ review_draft)
          5. **必须用 gh issue comment 贴下面的块**：
          <!-- REVIEW_JSON {\"action\":\"accept|reject|supplement\",\"issue_id\":$ISSUE_ID,\"reason\":\"...\"} -->
          边界：不写代码、不跑测试、不建 PR。" \
-        2>&1 | tee /var/log/migao-review-$ISSUE_ID.log | tail -10
+        2>&1 | tee /var/log/migao-review-${ISSUE_ID}.log | tail -10
 
     # LLM 读 review 输出，判定最终动作
-    REVIEW_LOG=$(cat /var/log/migao-review-$ISSUE_ID.log 2>/dev/null || echo "")
+    REVIEW_LOG=$(cat /var/log/migao-review-${ISSUE_ID}.log 2>/dev/null || echo "")
     FOLLOWUP=$(claude --print --agent orchestrator \
         "读取 Phase 1 Review 输出，判定 accept/supplement/reject。
          REVIEW_LOG: $REVIEW_LOG
