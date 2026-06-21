@@ -67,6 +67,7 @@ public class SettingsController {
         Map<String, Object> settings = new HashMap<>();
         settings.put("tenantId", tenant.getId());
         settings.put("name", tenant.getName());
+        settings.put("companyName", tenant.getName());  // 前端用 companyName
         settings.put("code", tenant.getCode());
         settings.put("industry", tenant.getIndustry());
         settings.put("status", tenant.getStatus());
@@ -89,7 +90,10 @@ public class SettingsController {
             throw BusinessException.notFound("租户");
         }
 
-        if (data.containsKey("name")) {
+        // 兼容前端 companyName / name 两种字段名
+        if (data.containsKey("companyName")) {
+            tenant.setName((String) data.get("companyName"));
+        } else if (data.containsKey("name")) {
             tenant.setName((String) data.get("name"));
         }
         if (data.containsKey("industry")) {
@@ -102,6 +106,7 @@ public class SettingsController {
         Map<String, Object> settings = new HashMap<>();
         settings.put("tenantId", tenant.getId());
         settings.put("name", tenant.getName());
+        settings.put("companyName", tenant.getName());
         settings.put("code", tenant.getCode());
         settings.put("industry", tenant.getIndustry());
         settings.put("status", tenant.getStatus());
