@@ -13,9 +13,19 @@ permissions:
 
 jobs:
   trigger:
-    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     steps:
+      - name: 护栏检查
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          MERGED: ${{ github.event.pull_request.merged }}
+        run: |
+          if [ "$EVENT_NAME" != "pull_request" ]; then
+            echo "⏭️  非 PR 事件，跳过"; exit 0
+          fi
+          if [ "$MERGED" != "true" ]; then
+            echo "⏭️  PR 未合并，跳过"; exit 0
+          fi
       - uses: actions/checkout@v4
       - name: 贴 VERIFY_TRIGGER + 打标签
         env:
