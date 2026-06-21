@@ -95,7 +95,7 @@ export default function ProductsPage() {
   const syncUrlRef = useRef(syncUrl)
   syncUrlRef.current = syncUrl  // 始终保持最新引用，避免闭包陈旧问题
 
-  const debounceTimer = useRef<ReturnType<typeof setTimeout>>(null)
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const debouncedSyncUrl = useCallback(
     (overrides: Record<string, string | number | undefined>) => {
       if (debounceTimer.current) clearTimeout(debounceTimer.current)
