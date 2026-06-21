@@ -16,7 +16,10 @@ jobs:
       !contains(github.event.issue.title, '[coverage]') &&
       !contains(github.event.issue.title, '[coverage-tracking]') &&
       !startsWith(github.event.issue.title, 'PR Check') &&
-      github.event.issue.user.type != 'Bot'
+      github.event.issue.user.type != 'Bot' &&
+      !contains(github.event.issue.labels.*.name, 'pairing') &&
+      !contains(github.event.issue.labels.*.name, 'ai-draft') &&
+      !contains(github.event.issue.labels.*.name, 'human-drive')
 
     steps:
       - name: Check and remind

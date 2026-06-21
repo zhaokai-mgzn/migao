@@ -15,7 +15,10 @@ jobs:
   trigger:
     if: |
       contains(github.event.comment.body, '<!-- REVIEW_JSON') &&
-      (contains(github.event.comment.body, '"reject"') || contains(github.event.comment.body, '"supplement"'))
+      (contains(github.event.comment.body, '"reject"') || contains(github.event.comment.body, '"supplement"')) &&
+      !contains(github.event.issue.labels.*.name, 'pairing') &&
+      !contains(github.event.issue.labels.*.name, 'ai-draft') &&
+      !contains(github.event.issue.labels.*.name, 'human-drive')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

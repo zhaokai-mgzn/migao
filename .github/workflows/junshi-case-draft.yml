@@ -15,8 +15,11 @@ permissions:
 jobs:
   trigger:
     if: |
-      contains(github.event.issue.labels.*.name, 'needs-verification') ||
-      contains(github.event.issue.labels.*.name, 'needs-truths')
+      (contains(github.event.issue.labels.*.name, 'needs-verification') ||
+       contains(github.event.issue.labels.*.name, 'needs-truths')) &&
+      !contains(github.event.issue.labels.*.name, 'pairing') &&
+      !contains(github.event.issue.labels.*.name, 'ai-draft') &&
+      !contains(github.event.issue.labels.*.name, 'human-drive')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
