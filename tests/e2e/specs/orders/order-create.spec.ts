@@ -112,32 +112,35 @@ test.describe('订单创建', () => {
 
   test.describe('实收款 (issue #673)', () => {
     test('createOrder payload 包含 actualAmount', async ({ page }) => {
-      // 拦截 /api/admin/orders POST，验证 body 包含 actualAmount
-      const createPayload = await new Promise<any>((resolve) => {
-        page.route('**/api/admin/orders', async (route) => {
-          const postData = JSON.parse(route.request().postData() || '{}')
-          await route.fulfill({
-            status: 200,
-            contentType: 'application/json',
-            body: JSON.stringify({ code: 200, data: { orderNo: 'ORD-TEST', ...postData } }),
-          })
-          resolve(postData)
+      // 拦截 /api/admin/orders POST，记录 payload 用于验证
+      let capturedPayload: any = null
+      await page.route('**/api/admin/orders', async (route) => {
+        capturedPayload = JSON.parse(route.request().postData() || '{}')
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ code: 200, data: { orderNo: 'ORD-TEST', id: 'test-id', ...capturedPayload } }),
         })
       })
+
+      // 等待页面完全加载
+      await page.waitForLoadState('networkidle')
 
       // 填写收货信息
       await page.locator('input[placeholder="请输入收货人姓名"]').fill('测试客户')
       await page.locator('input[placeholder="请输入 11 位手机号"]').fill('13900139000')
       await page.locator('input[placeholder="请输入详细收货地址"]').fill('杭州市西湖区')
 
-      // 选择商品
+      // 选择商品（带重试 — 弹窗可能延迟出现）
       await page.getByText('点击搜索并选择商品').click()
+      await page.waitForTimeout(500)
       const modal = page.locator('.fixed.inset-0.z-50').last()
+      await expect(modal).toBeVisible({ timeout: 5000 })
       await modal.getByText(PROD_NAME).first().click()
-      await page.waitForTimeout(1000)
+      await page.waitForTimeout(500)
 
-      // 验证实际金额输入框可见
-      await expect(page.getByLabel('实收款 (¥)')).toBeVisible()
+      // 验证实收款输入框可见
+      await expect(page.getByLabel('实收款 (¥)')).toBeVisible({ timeout: 5000 })
 
       // 设置实收款为 100（与 totalAmount 不同）
       await page.getByLabel('实收款 (¥)').fill('100')
@@ -145,9 +148,9 @@ test.describe('订单创建', () => {
       // 提交订单
       await page.getByRole('button', { name: '提交订单' }).click()
 
-      // 验证 payload
-      const payload = await createPayload
-      expect(payload.actualAmount).toBe(100)
+      // 验证 payload 包含 actualAmount
+      await expect.poll(() => capturedPayload).not.toBeNull({ timeout: 10000 })
+      expect(capturedPayload.actualAmount).toBe(100)
     })
   })
 })
