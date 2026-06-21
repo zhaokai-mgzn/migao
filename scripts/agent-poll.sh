@@ -98,6 +98,12 @@ pick_issue() {
 
 ISSUE_ID=$(pick_issue)
 
+# 安全检查：ISSUE_ID 必须是纯数字（来自 gh API JSON，不可能是用户文本）
+if ! echo "$ISSUE_ID" | grep -qE '^[0-9]+$'; then
+    log "⚠️ 非法 ISSUE_ID: $ISSUE_ID"
+    exit 0
+fi
+
 if [ -z "$ISSUE_ID" ]; then
     log "😴 无待处理 issue，跳过"
 else
