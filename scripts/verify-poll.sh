@@ -147,4 +147,23 @@ if [ "${HAS_VERDICT:-0}" -eq 0 ]; then
     [ -n "$VERDICT_BLOCK" ] && echo "$VERDICT_BLOCK" | gh issue comment "$VERIFY_ISSUE" --body-file - 2>/dev/null
 fi
 
+	# 机械执行 VERDICT 判定 (Agent 忘做 label/close 的兜底)
+	V=
+	D=
+	log "VERDICT decision="
+	case "" in
+	close)
+	    gh issue close "" -r completed -c "二郎神验收通过 (verified/auto)" 2>/dev/null || true
+	    gh issue edit "" --add-label "verified/auto" --remove-label "ai-verify/pending" 2>/dev/null || true
+	    log "closed + verified/auto"
+	    ;;
+	hold)
+	    gh issue edit "" --add-label "ai-verify/hold" --remove-label "ai-verify/pending" 2>/dev/null || true
+	    log "hold - ai-verify/hold"
+	    ;;
+	block)
+	    gh issue edit "" --add-label "block/dual-mismatch" --remove-label "ai-verify/pending" 2>/dev/null || true
+	    log "block - block/dual-mismatch"
+	    ;;
+	esac
 log "✅ 验收完成 #$VERIFY_ISSUE"
