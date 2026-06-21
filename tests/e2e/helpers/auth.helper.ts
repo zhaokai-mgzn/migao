@@ -97,13 +97,12 @@ export async function loginViaApi(
       }
     },
     {
-      maxRetries: 3,
-      baseDelayMs: 2000,
+      maxRetries: 5,
+      baseDelayMs: 3000,
       // Only retry on 5xx or network errors — 4xx errors are permanent
       shouldRetry: (err) => {
         const msg = (err as Error).message || ''
-        // 5xx, 503, 502, 504, or network errors (ECONNREFUSED, ETIMEDOUT, etc.)
-        return /5\d\d|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EPIPE/.test(msg)
+        return /5\d\d|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EPIPE|ECONNRESET/.test(msg)
       },
     },
   )
