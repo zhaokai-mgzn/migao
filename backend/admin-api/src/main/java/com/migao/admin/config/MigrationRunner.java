@@ -1,6 +1,7 @@
 package com.migao.admin.config;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.core.io.Resource;
@@ -11,7 +12,6 @@ import org.springframework.stereotype.Component;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -23,28 +23,37 @@ import java.util.stream.Collectors;
  * 通过 schema_migrations 表追踪执行历史。
  *
  * 所有 SQL 文件必须幂等（IF NOT EXISTS / ON CONFLICT DO NOTHING）。
+ *
+ * 使用 ObjectProvider 延迟获取 JdbcTemplate，确保在无 DataSource 的测试
+ * 上下文中（如 SecurityConfigTest）不会因缺少 Bean 而启动失败。
  */
 @Slf4j
 @Component
 public class MigrationRunner implements CommandLineRunner {
 
-    private final JdbcTemplate jdbc;
+    private final ObjectProvider<JdbcTemplate> jdbcProvider;
     private final ResourcePatternResolver resolver;
 
     @Value("${migao.migration.locations:classpath:db/migration/*.sql}")
     private String migrationPattern;
 
-    public MigrationRunner(JdbcTemplate jdbc, ResourcePatternResolver resolver) {
-        this.jdbc = jdbc;
+    public MigrationRunner(ObjectProvider<JdbcTemplate> jdbcProvider, ResourcePatternResolver resolver) {
+        this.jdbcProvider = jdbcProvider;
         this.resolver = resolver;
     }
 
     @Override
     public void run(String... args) {
+        JdbcTemplate jdbc = jdbcProvider.getIfAvailable();
+        if (jdbc == null) {
+            log.info("⏭️  DataSource 不可用，跳过 DB 迁移（测试环境正常）");
+            return;
+        }
+
         try {
-            ensureHistoryTable();
+            ensureHistoryTable(jdbc);
             Resource[] resources = resolver.getResources(migrationPattern);
-            List<String> applied = getAppliedMigrations();
+            List<String> applied = getAppliedMigrations(jdbc);
 
             for (Resource r : resources) {
                 String filename = r.getFilename();
@@ -54,7 +63,7 @@ public class MigrationRunner implements CommandLineRunner {
                 log.info("🔄 执行迁移: {}", filename);
                 String sql = readResource(r);
                 jdbc.execute(sql);
-                recordMigration(filename);
+                recordMigration(jdbc, filename);
                 log.info("✅ 迁移完成: {}", filename);
             }
         } catch (Exception e) {
@@ -63,7 +72,7 @@ public class MigrationRunner implements CommandLineRunner {
         }
     }
 
-    private void ensureHistoryTable() {
+    private void ensureHistoryTable(JdbcTemplate jdbc) {
         jdbc.execute("""
             CREATE TABLE IF NOT EXISTS schema_migrations (
                 version VARCHAR(255) PRIMARY KEY,
@@ -72,7 +81,7 @@ public class MigrationRunner implements CommandLineRunner {
         """);
     }
 
-    private List<String> getAppliedMigrations() {
+    private List<String> getAppliedMigrations(JdbcTemplate jdbc) {
         try {
             return jdbc.queryForList("SELECT version FROM schema_migrations", String.class);
         } catch (Exception e) {
@@ -89,7 +98,7 @@ public class MigrationRunner implements CommandLineRunner {
         }
     }
 
-    private void recordMigration(String filename) {
+    private void recordMigration(JdbcTemplate jdbc, String filename) {
         jdbc.update("INSERT INTO schema_migrations (version) VALUES (?)", filename);
     }
 }
