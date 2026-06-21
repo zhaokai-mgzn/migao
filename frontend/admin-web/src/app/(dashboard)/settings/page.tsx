@@ -329,8 +329,6 @@ export default function SettingsPage() {
                 <h3 className="text-base font-semibold text-gray-900 mb-4">登录日志</h3>
                 {loadingLogs ? (
                   <div className="text-sm text-gray-500">加载中...</div>
-                ) : loginLogs.length === 0 ? (
-                  <div className="text-sm text-gray-500">暂无登录记录</div>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
@@ -343,14 +341,20 @@ export default function SettingsPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {loginLogs.map((log) => (
-                          <tr key={log.id} className="border-b border-gray-100">
-                            <td className="py-2 pr-4 text-gray-900">{log.ip}</td>
-                            <td className="py-2 pr-4 text-gray-600">{log.device}</td>
-                            <td className="py-2 pr-4 text-gray-600">{log.location}</td>
-                            <td className="py-2 text-gray-600">{dayjs(log.createdAt).format('YYYY-MM-DD HH:mm')}</td>
+                        {loginLogs.length === 0 ? (
+                          <tr>
+                            <td colSpan={4} className="text-center py-4 text-sm text-gray-500">暂无登录记录</td>
                           </tr>
-                        ))}
+                        ) : (
+                          loginLogs.map((log) => (
+                            <tr key={log.id} className="border-b border-gray-100">
+                              <td className="py-2 pr-4 text-gray-900">{log.ip}</td>
+                              <td className="py-2 pr-4 text-gray-600">{log.device}</td>
+                              <td className="py-2 pr-4 text-gray-600">{log.location}</td>
+                              <td className="py-2 text-gray-600">{dayjs(log.createdAt).format('YYYY-MM-DD HH:mm')}</td>
+                            </tr>
+                          ))
+                        )}
                       </tbody>
                     </table>
                   </div>

@@ -529,7 +529,8 @@ export interface Order {
   customerPhone: string
   customerAddress?: string
   totalAmount: number          // 累计金额
-  actualAmount: number         // 实收款（累计金额 - 优惠）
+  actualAmount: number         // 实收款
+  discountAmount?: number      // 优惠金额 (issue #672)
   status: OrderStatus
   hasProcessing: boolean       // 是否含加工
   paymentDeadline?: string     // 支付截止时间（待付款状态用）
