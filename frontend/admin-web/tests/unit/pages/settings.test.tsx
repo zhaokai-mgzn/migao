@@ -11,7 +11,6 @@ vi.mock('lucide-react', () => {
     Save: stub('save'),
     Eye: stub('eye'),
     EyeOff: stub('eye-off'),
-    ArrowRight: stub('arrow-right'),
     Zap: stub('zap'),
     Package: stub('package'),
     Search: stub('search'),
@@ -141,28 +140,26 @@ describe('SettingsPage — AI tab removed (Issue #502)', () => {
     })
   })
 
-  describe('迁移提示', () => {
-    it('应该在页面顶部显示迁移提示文案', async () => {
+  describe('迁移提示已移除 (Issue #647)', () => {
+    it('不应该在页面顶部显示迁移提示文案', async () => {
       render(<SettingsPage />)
       await waitFor(() => {
         expect(screen.getByText('系统设置')).toBeInTheDocument()
       })
 
-      // 迁移提示文案
-      expect(screen.getByText(/AI 配置功能已迁移至/)).toBeInTheDocument()
-      expect(screen.getByText(/机器人设置/)).toBeInTheDocument()
+      // 迁移提示文案不应存在
+      expect(screen.queryByText(/AI 配置功能已迁移至/)).toBeNull()
+      expect(screen.queryByText(/前往配置/)).toBeNull()
     })
 
-    it('迁移提示应包含跳转到机器人设置的链接', async () => {
+    it('不应该渲染前往机器人设置的链接', async () => {
       render(<SettingsPage />)
       await waitFor(() => {
         expect(screen.getByText('系统设置')).toBeInTheDocument()
       })
 
-      // 链接文本是 "前往配置"
-      const link = screen.getByRole('link', { name: /前往配置/ })
-      expect(link).toBeInTheDocument()
-      expect(link).toHaveAttribute('href', '/chat/config')
+      // 前往配置链接不应存在
+      expect(screen.queryByRole('link', { name: /前往配置/ })).toBeNull()
     })
   })
 

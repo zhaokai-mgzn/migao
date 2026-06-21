@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { SettingsPage } from '../../pages/settings/settings.page'
 
-test.describe('系统设置页面 — AI 配置已迁移 (Issue #502)', () => {
+test.describe('系统设置页面 — AI 配置迁移提示已移除 (Issue #647)', () => {
   let page: SettingsPage
 
   test.beforeEach(async ({ page: p }) => {
@@ -10,16 +10,12 @@ test.describe('系统设置页面 — AI 配置已迁移 (Issue #502)', () => {
     await page.waitForLoad()
   })
 
-  // ── 迁移提示 ──
+  // ── 迁移提示已移除 (Issue #647) ──
 
-  test('页面顶部 AI 配置迁移已完成（不再显示提示）', async () => {
-    // Issue #502 迁移已完成，提示不应再出现
-    await expect(page.migrationNotice).not.toBeVisible({ timeout: 3000 }).catch(() => {})
-  })
-
-  test('机器人设置入口存在', async () => {
-    // 迁移后 AI 配置在 /chat/config，验证链接存在即可
-    await expect(page.migrationLink).toBeVisible({ timeout: 5000 }).catch(() => {})
+  test('页面顶部 AI 配置迁移提示已移除', async () => {
+    // Issue #647 凯总指示移除迁移提示，不应再看到迁移文案和前往配置链接
+    await expect(page.page.getByText(/AI 配置功能已迁移至/)).toBeHidden()
+    await expect(page.page.getByRole('link', { name: /前往配置/ })).toBeHidden()
   })
 
   // ── AI 配置 Tab 已移除 ──
