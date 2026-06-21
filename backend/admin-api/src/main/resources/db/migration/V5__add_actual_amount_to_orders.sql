@@ -1,1 +1,0 @@
-ALTER TABLE orders ADD COLUMN IF NOT EXISTS actual_amount DECIMAL(10,2);

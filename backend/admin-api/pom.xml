@@ -24,7 +24,6 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
         <!-- 依赖版本 -->
-        <flyway.version>11.8.2</flyway.version>
         <mybatis-plus.version>3.5.8</mybatis-plus.version>
         <jjwt.version>0.12.6</jjwt.version>
         <bouncy-castle.version>1.78</bouncy-castle.version>
@@ -83,12 +82,6 @@
             <groupId>com.github.jsqlparser</groupId>
             <artifactId>jsqlparser</artifactId>
             <version>4.9</version>
-        </dependency>
-
-        <!-- Flyway — 数据库版本迁移（10.10.0 已内置 PostgreSQL 支持） -->
-        <dependency>
-            <groupId>org.flywaydb</groupId>
-            <artifactId>flyway-core</artifactId>
         </dependency>
 
         <!-- PostgreSQL Driver -->

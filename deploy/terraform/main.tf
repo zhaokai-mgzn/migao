@@ -273,8 +273,6 @@ locals {
   admin_api_envs = merge({
     # 应用
     "SPRING_PROFILES_ACTIVE" = "prod"
-    # TODO(#363): Flyway 启动崩溃，临时禁用。修复后移除此行
-    "SPRING_FLYWAY_ENABLED"  = "false"
     # 数据库
     "RDS_HOST"     = alicloud_db_instance.postgres.connection_string
     "RDS_PORT"     = "5432"
