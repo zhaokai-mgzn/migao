@@ -106,17 +106,27 @@ confidence = passed_truths / total_truths
 - API_UNREACHABLE = fail（不是 skip）
 - DB 无结果 = fail（不是 skip）
 
+### Phase 2.5 — 负向验证（每条真值自动生成反向断言）
+
+对每条 api 类真值，额外执行一条反向断言：
+- 正面："列表返回 >= 2 条" → 反向："列表不包含 deleted 状态"
+- 正面："status=on_sale" → 反向："每项 status != off_sale AND 每项 status != deleted"
+- 正面："keyword=张 搜索" → 反向："不包含 keyword 不匹配的客户名"
+
+反向断言也走 `curl | check_assert --rule` 管道。反向失败 = 本条真值降级为 fail。
+
 ### Phase 3 — 判定
 
 | confidence | 动作 |
 |-----------|------|
 | = 1.0 | `close` |
 | >= 0.8 | `hold` + 列出失败真值 |
-| < 0.8 | `hold` |
+| < 0.8 | `block`（业务真值大面积失败，不是服务问题） |
 
 特殊情况：
 - 全部 API_UNREACHABLE → `hold`（服务可能挂了，不要 block）
 - 发现安全漏洞（未授权访问/SQL 注入） → `block`
+- 单条 API_UNREACHABLE → 该真值 = fail，不影响其他真值判定
 
 ### VERDICT_JSON 格式（必须逐条贴 check_assert 原始输出）
 
