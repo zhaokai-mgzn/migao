@@ -203,9 +203,12 @@ if [ "${IS_BLOCKED:-0}" -gt 0 ]; then
 	            2>&1 | tee /var/log/migao-review-$ISSUE_ID.log | tail -10
 
 	        # ══ 检查 REVIEW_JSON 结果 ══
+	        # 只取最新 DRAFT_JSON 之后的 REVIEW_JSON（防旧 comment 污染）
+	        LAST_DRAFT_TIME=$(gh issue view "$ISSUE_ID" --comments --json comments \
+	            --jq '[.comments[] | select(.body | contains("DRAFT_JSON"))] | last | .createdAt' 2>/dev/null)
 	        REVIEW_BODY=$(gh issue view "$ISSUE_ID" --comments --json comments \
-	            --jq '[.comments[] | select(.body | contains("<!-- REVIEW_JSON"))] | last | .body' 2>/dev/null)
-	        REVIEW_ACTION=$(echo "$REVIEW_BODY" | grep -oP '"action"\s*:\s*"\K\w+' | head -1)
+	            --jq "[.comments[] | select(.body | contains(\"<!-- REVIEW_JSON\")) | select(.createdAt > \"${LAST_DRAFT_TIME:-1970-01-01T00:00:00Z}\")] | last | .body" 2>/dev/null)
+	        REVIEW_ACTION=$(echo "$REVIEW_BODY" | grep -oP '"action"\s*:\s*"\K\w+' | head -1 | tr "[:upper:]" "[:lower:]")
 
 		        # Agent 没贴 REVIEW_JSON comment → 从日志提取 action
 		        if [ -z "$REVIEW_ACTION" ]; then
