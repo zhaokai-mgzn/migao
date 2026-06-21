@@ -1,7 +1,7 @@
-# 二郎神 (Erlang Shen) — Quality Loop Engineering v5.0
+# 二郎神 (Erlang Shen) — Quality Loop Engineering v6.0
 
 > AI First 原则：LLM 收益 > 机械操作时用 AI，机械更快更省时用 CI/脚本。
-> 2026-06-21（v5.0 — AI First 架构）。
+> 2026-06-21（v6.0 — 自愈 + 可观测性）。
 >
 > **本文档是二郎神体系的唯一主权威文档**（the single source of truth）。
 > 如有冲突，以本手册为准。
@@ -49,7 +49,7 @@ bash 做手臂（机械执行）            Agent 做手（写码+验收）
 
 | # | Job Name | Schedule | 职责 |
 |---|----------|----------|------|
-| 1 | `junshi-automerge` | 每10min | 四条件判断 → squash merge / needs-changes |
+| 1 | `junshi-automerge` | 每10min | auto-merge + **健康巡检**（Agent心跳/流水线卡点） |
 | 2 | `junshi-stale-watch` | 每30min | 巡检 stale issue (>3天无进展) |
 | 3 | `junshi-hold-escalate` | 9,12,15,18,21 | 积压 >7天 HOLD → 升级人工 |
 | 4 | `junshi-daily-report` | 19:00 | 质量日报 (quality_report.py + LLM 写人话) |
@@ -80,24 +80,29 @@ bash 做手臂（机械执行）            Agent 做手（写码+验收）
 
 ## 五、核心脚本
 
-### agent-poll.sh（研发工人，190 行）
+### agent-poll.sh（研发工人，214 行）— v6 自愈 + 可观测
 
 三信号优先级扫描 → LLM 执行：
 
 ```
-信号 0: needs-draft → dev-agent 生成 DRAFT_JSON（初始或 REJECT 重生成）
-信号 1: needs-changes PR → dev-agent 读 CI 失败原因 → 修复
-信号 2: needs-verification (unassigned, has DRAFT, reject<3)
-         ├── skip_template=true → 直接 Phase 2 TDD
-         └── 否则 → Phase 1 Review → accept/supplement → Phase 2 TDD
-                                     → reject → needs-redraft
+信号 0: needs-draft → dev-agent 生成 DRAFT_JSON
+信号 1: needs-changes PR → 修复（最多3次 → 熔断 block/need-human）
+信号 2: needs-verification → Review → TDD
+         ├── skip_template → 直接 Phase 2
+         ├── accept/supplement → Phase 2 TDD
+         └── reject → needs-redraft（≥3次 → block/need-human）
 ```
 
-关键设计：
-- **200 行纯 bash**，零正则判断，所有理解交 LLM（dev-agent）
-- DRAFT 生成时区分初始/REJECT 重生成，读 REVIEW_JSON 反馈修正
-- 熔断：同 issue REJECT ≥3 次 → `block/need-human`
-- 已有有效 DRAFT_JSON 时不重复生成（防 CI 重复打标签）
+自愈机制（v6）：
+- **ERR trap**：脚本崩溃时写 `/tmp/migao-agent-health.json`（line + exit code）
+- **gh_exec()**：所有 gh 命令错误可见，不再 `2>/dev/null || true`
+- **needs-changes 熔断**：同一 PR 3次修复失败 → `block/need-human`
+- **Phase2 TDD 熔断**：2次无 PR → `block/need-human`（中间自动释放 assignee）
+- **防旧数据污染**：per-issue 独立 review log + `<!-- DRAFT_JSON` 精确匹配
+
+可观测性（v6）：
+- 每次运行写健康指标到 `/tmp/migao-agent-health.json`
+- 军师 automerge 每10分钟巡检 Agent 心跳/流水线卡点
 
 ### verify-poll.sh（验收工人，136 行）
 
@@ -188,6 +193,19 @@ Issue 创建 (CONTRACT_JSON + business_truths)
 ```
 
 ## 十一、关键修复记录
+
+### v6.0 (2026-06-21) — 自愈 + 可观测性
+
+| 修复 | 重要性 |
+|------|--------|
+| agent-poll.sh: v6 ERR trap + gh_exec + 熔断计数器 | 🔴 |
+| agent-poll.sh: needs-changes 3次→block/need-human | 🔴 |
+| agent-poll.sh: Phase2 TDD 2次无PR→block/need-human | 🔴 |
+| agent-poll.sh: per-issue review log 防旧数据污染 | 🔴 |
+| 军师 automerge: 健康巡检（每10分钟）— issue流转/Agent心跳 | 🔴 |
+| heartbeat.sh: 机械检查 + 军师做智能检查 | 🟠 |
+| CI: 所有失败自动 needs-changes（不只是 Growth Gate） | 🟠 |
+| CI: DRAFT_JSON 精确匹配 `<!-- DRAFT_JSON` | 🟡 |
 
 ### v5.0 (2026-06-21) — AI First 重构
 
