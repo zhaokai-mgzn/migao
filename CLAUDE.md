@@ -2,12 +2,12 @@
 
 > 本文件在每次 Claude Code (cc) 启动时自动加载，定义项目规范和操作约束。
 
-## 🎯 二郎神 Quality Loop 体系
+## 🎯 Superpowers 质量体系
 
-米高项目通过二郎神体系实现 AI 全链路质量闭环。完整设计、脚本、Agent 配置已迁移至独立项目 `ershen`。
+米高项目通过 Superpowers 插件实现 AI 全链路质量闭环。核心技能：`brainstorming`（规划）→ `test-driven-development`（TDD）→ `verification-before-completion`（验证）→ `dispatching-parallel-agents`（并行派遣）。
 
 开发流程：Issue (CONTRACT_JSON) → 军师 DRAFT → Review → TDD → PR → CI Gate → AutoMerge → 验收 → Close。
-详见 [`docs/wiki/Development.md`](docs/wiki/Development.md) 和 ershen 项目。
+详见 [`docs/wiki/Development.md`](docs/wiki/Development.md)。
 
 ## 项目 Wiki
 
@@ -33,7 +33,7 @@
 
 > **⚠️ 本章是铁律中的铁律，违反即视为严重违规。AI 必须严格遵守，不得跳过任何检查点。**
 >
-> **📋 完整铁律详见 [ershen/skills/tdd-iron-law.md](https://github.com/zhaokai-mgzn/ershen/blob/main/skills/tdd-iron-law.md) — 包含 PR 合并前置条件、E2E 质量要求、违规后果。**
+> **📋 完整铁律详见 Superpowers 插件 `test-driven-development` + `verification-before-completion` 技能 — 含 PR 合并前置条件、E2E 质量要求、违规后果。**
 
 ### AI 行为约束（MVP 收工阶段强制执行）
 
@@ -241,8 +241,6 @@ cd tests && npx playwright test tests/e2e/specs/products.spec.ts
 ### 本地开发环境
 
 > **⚠️ 铁律：本地只启动米高系统 3 个组件，DB/Redis/中间件全部用云 dev。**
->
-> 详见 `ershen` 项目中的本地开发配置 — 包含启动命令、连接信息、禁止行为、测试依赖。
 
 - **本地启动**：admin-api (:8081) + ai-agent-service (:8001) + admin-web (:3001)
 - **云 dev 环境**：PostgreSQL + Redis + DashVector + DashScope + OSS 全部用云端
@@ -268,7 +266,7 @@ cd frontend/admin-web && npm run dev
 
 ### 铁律（再次强调）
 
-**所有代码变更必须遵守 `ershen/skills/tdd-iron-law.md`（二郎神独立项目），以下为摘要：**
+**所有代码变更必须遵守 Superpowers 插件 `test-driven-development` + `verification-before-completion` 规范，以下为摘要：**
 
 - **禁止**先写代码再补测试 — 必须测试先行
 - **禁止**提交未通过测试的代码到任何分支
@@ -285,7 +283,7 @@ cd frontend/admin-web && npm run dev
 - **新增数据列表页必须在 `tests/e2e/specs/quality/anti-placeholder.spec.ts` 的 `PAGES` 数组中注册**，确保关键列不会全线显示占位符 `-`
 - **新增/修改 API 返回字段必须在 `tests/e2e/specs/quality/api-contract.spec.ts` 中验证**：必填字段存在、类型正确（number/string/object）、金额字段不能是 string
 - **跨页面数据一致性**：列表页和详情页的同一字段值必须相等（`tests/e2e/specs/quality/cross-page-consistency.spec.ts`）
-- **E2E 测试命名规范**：`tests/e2e/specs/{domain}/{feature}.spec.ts`，详见 tdd-iron-law.md（ershen/skills/）
+- **E2E 测试命名规范**：`tests/e2e/specs/{domain}/{feature}.spec.ts`
 - **E2E Page Object 模式**：`tests/e2e/pages/{domain}/{page}.page.ts`，每个 Page Object 必须提供元素定位器、goto()、业务操作函数
 - **状态持久化验证**：涉及 State/路由/Interact/执行循环的变更，必须在 E2E 测试中覆盖多轮对话场景（跨 graph 调用），确保 state 在轮次间正确保持
 
@@ -545,6 +543,23 @@ cd tests/smoke && pytest
 ## 已安装插件（Plugin）
 
 以下插件已安装并启用，自动生效无需手动调用：
+
+### Superpowers（核心开发规范）
+
+本项目遵循 Superpowers 插件的质量闭环体系，session 启动时自动加载。核心技能：
+
+| 技能 | 作用 |
+|------|------|
+| `brainstorming` | 编码前自动触发规划讨论 |
+| `test-driven-development` | TDD Red→Green→Refactor 循环 |
+| `verification-before-completion` | 完成前强制验证 |
+| `subagent-driven-development` | 多 Agent 并行开发调度 |
+| `dispatching-parallel-agents` | 并行任务派遣 |
+| `executing-plans` | 按计划逐步执行 |
+| `writing-plans` | 多步骤功能计划编写 |
+| `requesting-code-review` / `receiving-code-review` | 代码审查流程 |
+| `systematic-debugging` | 调试根因分析 |
+| `finishing-a-development-branch` | 分支收尾标准化 |
 
 ### LSP 语言服务器（提供代码智能）
 

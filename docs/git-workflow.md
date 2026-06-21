@@ -17,9 +17,9 @@
 ```bash
 # 从 main 创建新分支
 BRANCH="feat/your-feature"
-PARENT_SHA=$(gh api repos/zhaokai-mgzn/youke/git/refs/heads/main --jq '.object.sha')
+PARENT_SHA=$(gh api repos/zhaokai-mgzn/migao/git/refs/heads/main --jq '.object.sha')
 
-gh api repos/zhaokai-mgzn/youke/git/refs \
+gh api repos/zhaokai-mgzn/migao/git/refs \
   -f ref="refs/heads/$BRANCH" \
   -f sha="$PARENT_SHA" \
   --jq '.ref'
@@ -38,9 +38,9 @@ git checkout -b feat/your-feature
 # 单文件修改
 BRANCH="feat/your-feature"
 FILE_PATH="backend/ai-agent-service/app/config.py"
-FILE_SHA=$(gh api "repos/zhaokai-mgzn/youke/contents/$FILE_PATH?ref=$BRANCH" --jq '.sha')
+FILE_SHA=$(gh api "repos/zhaokai-mgzn/migao/contents/$FILE_PATH?ref=$BRANCH" --jq '.sha')
 
-gh api "repos/zhaokai-mgzn/youke/contents/$FILE_PATH" \
+gh api "repos/zhaokai-mgzn/migao/contents/$FILE_PATH" \
   -X PUT \
   -f message="feat: your commit message" \
   -f content="$(cat $FILE_PATH)" \
@@ -78,7 +78,7 @@ gh pr create \
 **推荐：`gh api`（绕过 Git 协议）**
 ```bash
 PR_NUMBER=149
-gh api repos/zhaokai-mgzn/youke/pulls/$PR_NUMBER/merge \
+gh api repos/zhaokai-mgzn/migao/pulls/$PR_NUMBER/merge \
   -X PUT \
   -f merge_method="squash" \
   -f commit_title="feat: your PR title (#$PR_NUMBER)"
@@ -131,7 +131,7 @@ cat ~/.ssh/id_ed25519.pub
 # 复制输出，到 https://github.com/settings/ssh/new 添加
 
 # 3. 切换仓库到 SSH
-git remote set-url origin git@github.com:zhaokai-mgzn/youke.git
+git remote set-url origin git@github.com:zhaokai-mgzn/migao.git
 
 # 4. 测试
 ssh -T git@github.com
@@ -146,7 +146,7 @@ ssh -T git@github.com
 curl -I https://github.com
 
 # 解决
-gh api repos/zhaokai-mgzn/youke/contents/...  # 用 API 上传
+gh api repos/zhaokai-mgzn/migao/contents/...  # 用 API 上传
 ```
 
 ### 问题 2：`git pull` 冲突

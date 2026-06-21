@@ -36,7 +36,7 @@
 
 ```bash
 # 0.1 确认代码同步
-cd /Users/zhaokai/migao/youke
+cd /Users/zhaokai/workspace/migao
 git checkout main && git pull origin main
 git status  # 确认没有未提交的修改
 
@@ -65,12 +65,12 @@ fi
 
 ```bash
 # 1.1 后端编译
-cd /Users/zhaokai/migao/youke/backend/admin-api
+cd /Users/zhaokai/workspace/migao/backend/admin-api
 mvn compile -q
 if [ $? -ne 0 ]; then echo "❌ 后端编译失败，停止部署"; exit 1; fi
 
 # 1.2 前端构建（同时生成 out/ 目录用于部署）
-cd /Users/zhaokai/migao/youke/frontend/admin-web
+cd /Users/zhaokai/workspace/migao/frontend/admin-web
 npx next build
 if [ $? -ne 0 ]; then echo "❌ 前端构建失败，停止部署"; exit 1; fi
 
@@ -84,7 +84,7 @@ echo "✅ 门禁通过"
 #### 2.1 admin-api（手动）
 
 ```bash
-cd /Users/zhaokai/migao/youke/backend/admin-api
+cd /Users/zhaokai/workspace/migao/backend/admin-api
 mvn clean package -DskipTests -q
 
 # 上传 JAR
@@ -115,13 +115,13 @@ aliyun sae DeployApplication \
 
 ```bash
 # push 到 main 后 GitHub Actions 自动部署
-gh run list --repo zhaokai-mgzn/youke --workflow=deploy-ai-agent-service.yml --limit 1
+gh run list --repo zhaokai-mgzn/migao --workflow=deploy-ai-agent-service.yml --limit 1
 ```
 
 #### 2.3 admin-web（手动）
 
 ```bash
-cd /Users/zhaokai/migao/youke/frontend/admin-web
+cd /Users/zhaokai/workspace/migao/frontend/admin-web
 # out/ 已在门禁阶段生成
 ossutil cp -r out/ oss://ai-customer-service-admin-dev/ --update --force
 ```
@@ -235,7 +235,7 @@ aliyun sae RollbackApplication \
   --region cn-hangzhou --profile sae-deploy
 
 # 回滚前端（OSS 无版本管理，需要 git checkout 上一版本重新 build + upload）
-cd /Users/zhaokai/migao/youke/frontend/admin-web
+cd /Users/zhaokai/workspace/migao/frontend/admin-web
 git log --oneline -5  # 找到上一个稳定 commit
 git checkout <commit>
 npx next build && ossutil cp -r out/ oss://ai-customer-service-admin-dev/ --update --force
