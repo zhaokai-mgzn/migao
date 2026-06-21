@@ -345,8 +345,8 @@ def generate(issue_number, dry_run=False):
             kws = extract_domain_keywords(title, body)
             output.append(f"<!-- NEW_TEMPLATE_KEYWORDS {json.dumps(kws, ensure_ascii=False)} -->")
             output.append(f"**建议领域关键词**: {', '.join(kws) if kws else '无法自动提取'}")
-        output.append("**⚠️ 草稿未发布** — 自动修复失败，请军师手动检查模板。")
-        return "\n".join(output)
+        output.append("**⚠️ 草稿已发布但质量门禁未通过 — 自动修复失败，需人工补充模板或真值。")
+        # blocked drafts still get posted to avoid silent timeout
 
     output.append("")
     output.append(f"**模板**: `{tmpl_name or '无'}` | **真值**: {len(truths)}条")
