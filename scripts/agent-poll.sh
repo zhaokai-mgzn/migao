@@ -224,11 +224,8 @@ if [ "${IS_BLOCKED:-0}" -gt 0 ]; then
 	                读 CONTRACT_JSON 和 DRAFT_JSON → 遵守项目铁律 (CLAUDE.md + tdd-iron-law.md) → 推送到 $BRANCH → 创建 PR (Closes #$ISSUE_ID)。" \
 	                2>&1 | tee -a /var/log/migao-agent-coding.log | tail -10
 	        elif [ "$REVIEW_ACTION" = "supplement" ]; then
-	            log "⚠️ Review supplement — 跳过，等军师补 case"
-		        gh issue edit "$ISSUE_ID" --add-label "needs-redraft" --remove-assignee "@me" 2>/dev/null || true
-		        log "🏷️  needs-redraft 已标记，等待军师补 case"
-		        gh issue edit "$ISSUE_ID" --remove-assignee "@me" 2>/dev/null || true
-	            exit 0
+	            log "⚠️ Review supplement — 有 minor issue，但直接进入 Phase 2 写码（Agent 自行修正）"
+	            claude --print 	                --agent dev-agent 	                "处理 issue #$ISSUE_ID。REVIEW_JSON 为 supplement（case 不全但可执行）。读 CONTRACT_JSON + DRAFT_JSON + REVIEW_JSON → 遵守项目铁律 (CLAUDE.md + tdd-iron-law.md) → 推送到 $BRANCH → 创建 PR (Closes #$ISSUE_ID)。特别：L2 文件映射不准确时自行修正。" 	                2>&1 | tee -a /var/log/migao-agent-coding.log | tail -10
 	        else
 	            log "❌ Review reject — 跳过写码"
 		        gh issue edit "$ISSUE_ID" --add-label "needs-redraft" --remove-assignee "@me" 2>/dev/null || true
