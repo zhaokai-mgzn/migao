@@ -244,9 +244,11 @@ def quality_gate(truths, tmpl_name, template):
 def draft_l2(truths, template):
     if not truths: return "⚠️ 无业务真值"
     lines = []
-    # 从模板推导测试文件
+    # 从模板推导测试文件（REJECT redraft 时优先用 Agent 建议的 _l2_override）
     test_files = []
-    if template and template.get("primary_specs"):
+    if template and template.get("_l2_override"):
+        test_files = template["_l2_override"]
+    elif template and template.get("primary_specs"):
         test_files = [s.replace("tests/e2e/specs/","tests/").replace(".spec.ts",".test.ts") for s in template["primary_specs"]]
     if not test_files: test_files = ["tests/test_xxx.py (请根据涉及模块选择)"]
 
@@ -364,14 +366,19 @@ def generate(issue_number, dry_run=False, feedback_comment_id=None):
             print(f"  📝 读取 Agent 反馈: action={feedback.get('action')}, "
                   f"specs={feedback.get('specs')}, l4_hints={feedback.get('l4_hints')}",
                   file=sys.stderr)
-            # 覆写模板 primary_specs
+            # 分离 Agent 建议的 spec：E2E 路径保留给 L3，单测路径只给 L2
             if feedback.get("specs") and tmpl:
-                tmpl = dict(tmpl)  # shallow copy
-                tmpl["primary_specs"] = feedback["specs"]
+                e2e_specs = [s for s in feedback["specs"] if "e2e/specs" in s]
+                unit_specs = [s for s in feedback["specs"] if "e2e/specs" not in s]
+                tmpl = dict(tmpl)
+                # L3 保持原模板的 E2E spec，仅当 Agent 明确给出 E2E 路径时才覆写
+                if e2e_specs:
+                    tmpl["primary_specs"] = e2e_specs
+                # L2 用 Agent 建议的单测路径（存储在 _l2_override 供 draft_l2 使用）
+                if unit_specs:
+                    tmpl["_l2_override"] = unit_specs
             # 覆写 L4 reviewer_asserts
             if feedback.get("l4_hints") and tmpl:
-                if "primary_specs" not in tmpl or tmpl.get("primary_specs") == feedback.get("specs"):
-                    pass  # specs already set above
                 tmpl = dict(tmpl)
                 tmpl["reviewer_asserts"] = [f"REJECT反馈: {h}" for h in feedback["l4_hints"]]
 
