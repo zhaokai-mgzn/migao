@@ -233,7 +233,9 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
                         .map(item -> sumProcessingFee(item.getProcessingInfo()))
                         .reduce(BigDecimal.ZERO, BigDecimal::add);
                 resp.setProcessingFee(processingFee);
-                resp.setActualAmount(resp.getTotalAmount());
+                if (resp.getActualAmount() == null) {
+                    resp.setActualAmount(resp.getTotalAmount());
+                }
                 // 判断是否含加工项：复用 extractProcessingItems 解析，避免空 JSONB 对象误判
                 boolean itemHasProcessing = orderItems.stream()
                         .anyMatch(item -> !extractProcessingItems(item.getProcessingInfo()).isEmpty());
@@ -244,7 +246,9 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
                 resp.setItems(Collections.emptyList());
                 resp.setProcessingFee(BigDecimal.ZERO);
                 resp.setHasProcessing(false);
-                resp.setActualAmount(resp.getTotalAmount());
+                if (resp.getActualAmount() == null) {
+                    resp.setActualAmount(resp.getTotalAmount());
+                }
             }
         }
 
@@ -296,6 +300,8 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         order.setCustomerPhone(request.getCustomerPhone());
         order.setCustomerAddress(request.getCustomerAddress());
         order.setTotalAmount(totalAmount);
+        // 实收款：用户输入值，未输入时默认等于订单总额
+        order.setActualAmount(request.getActualAmount() != null ? request.getActualAmount() : totalAmount);
         order.setStatus("pending");
         order.setRemark(request.getRemark());
 
@@ -451,7 +457,8 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         response.setProcessingItems(aggregatedProcessing);
         response.setProcessingFee(processingFee);
         // 当前阶段：实收款 = 总金额；后续支持优惠/部分付款时再调整
-        response.setActualAmount(order.getTotalAmount());
+        // 实收款：使用存储值，老订单 fallback 到 totalAmount
+        response.setActualAmount(order.getActualAmount() != null ? order.getActualAmount() : order.getTotalAmount());
 
         // 查询物流信息
         List<OrderLogistics> logisticsList = orderLogisticsMapper.selectByOrderId(order.getId(), TenantContext.getTenantId());

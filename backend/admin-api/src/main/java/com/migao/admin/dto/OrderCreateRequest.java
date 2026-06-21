@@ -39,6 +39,11 @@ public class OrderCreateRequest {
     private String remark;
 
     /**
+     * 实收款（用户输入的实际收款金额，默认等于订单总额）
+     */
+    private BigDecimal actualAmount;
+
+    /**
      * 订单明细列表
      */
     @NotEmpty(message = "订单明细不能为空")

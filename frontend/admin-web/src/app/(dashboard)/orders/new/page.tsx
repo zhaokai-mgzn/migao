@@ -409,6 +409,7 @@ export default function NewOrderPage() {
         customerName: customerName.trim(),
         customerPhone: customerPhone.trim(),
         customerAddress: customerAddress.trim(),
+        actualAmount: Number.isNaN(Number(actualAmount)) ? totals.total : Number(actualAmount),
         remark: finalRemark || undefined,
         items,
       })
