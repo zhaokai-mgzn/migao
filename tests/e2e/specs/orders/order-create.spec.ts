@@ -69,12 +69,12 @@ test.describe('订单创建', () => {
     test('弹窗显示 fixture 商品', async ({ page }) => {
       await page.getByText('点击搜索并选择商品').click()
       const modal = page.locator('.fixed.inset-0.z-50').last()
-      await expect(modal.getByText(PROD_NAME)).toBeVisible()
+      await expect(modal.getByText(PROD_NAME).first()).toBeVisible()
     })
     test('选择商品后关闭弹窗', async ({ page }) => {
       await page.getByText('点击搜索并选择商品').click()
       const modal = page.locator('.fixed.inset-0.z-50').last()
-      await modal.getByText(PROD_NAME).click()
+      await modal.getByText(PROD_NAME).first().click()
       await expect(modal).toBeHidden()
       await expect(page.getByText(PROD_NAME).first()).toBeVisible()
     })
@@ -83,7 +83,7 @@ test.describe('订单创建', () => {
   test.describe('行项配置', () => {
     test.beforeEach(async ({ page }) => {
       await page.getByText('点击搜索并选择商品').click()
-      await page.locator('.fixed.inset-0.z-50').last().getByText(PROD_NAME).click()
+      await page.locator('.fixed.inset-0.z-50').last().getByText(PROD_NAME).first().click()
       // 等待产品数据加载和颜色/加工选项渲染
       await page.waitForTimeout(1500)
     })

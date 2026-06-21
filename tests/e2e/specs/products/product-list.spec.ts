@@ -486,7 +486,7 @@ test.describe('商品列表页面', () => {
     await page.getByRole('button', { name: '确定' }).click()
     await page.waitForTimeout(500)
 
-    await expect(page.getByText(/已下架/)).toBeVisible({ timeout: 5_000 })
+    await expect(page.getByText(/已下架/).first()).toBeVisible({ timeout: 5_000 })
   })
 
   test('批量删除操作', async ({ page }) => {

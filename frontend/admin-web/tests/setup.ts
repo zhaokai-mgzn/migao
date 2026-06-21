@@ -153,4 +153,6 @@ vi.mock('lucide-react', () => ({
   Minus: iconStub('minus'),
   Send: iconStub('send'),
   Loader2: iconStub('loader2'),
+  FileX: iconStub('file-x'),
+  Inbox: iconStub('inbox'),
 }))
