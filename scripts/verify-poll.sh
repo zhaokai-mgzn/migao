@@ -76,7 +76,21 @@ for iid in $SCAN_IDS; do
         fi
     fi
 
+    # 超时跳过: VERIFY_TRIGGER 超过 7 天无 VERDICT → 历史异常，跳过不重复验
     if [ "${HAS_TRIGGER:-0}" -gt 0 ] && [ "${HAS_VERDICT:-0}" -eq 0 ]; then
+        TRIGGER_AGE=$(gh issue view "$iid" --comments --json comments \
+            --jq '[.comments[] | select(.body | contains("VERIFY_TRIGGER"))] | first | .createdAt' 2>/dev/null)
+        if [ -n "$TRIGGER_AGE" ]; then
+            AGE_DAYS=$(( ($(date +%s) - $(date -d "$TRIGGER_AGE" +%s 2>/dev/null || echo 0)) / 86400 ))
+            if [ "${AGE_DAYS:-0}" -ge 7 ]; then
+                log "⏭️ #$iid VERIFY_TRIGGER 超过 ${AGE_DAYS} 天无 VERDICT → 历史异常，跳过"
+                gh issue edit "$iid" --remove-label "ai-verify/pending" 2>/dev/null || true
+                gh issue comment "$iid" --body "## 🤖 二郎神自动跳过
+VERIFY_TRIGGER 超过 ${AGE_DAYS} 天无 VERDICT_JSON，判定为历史异常（如 PR body typo 误触发），
+移除 ai-verify/pending 标签。如有疑问请人工复查。" 2>/dev/null || true
+                continue
+            fi
+        fi
         VERIFY_ISSUE="$iid"; break
     fi
 done
