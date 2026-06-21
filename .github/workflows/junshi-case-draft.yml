@@ -41,7 +41,7 @@ jobs:
           ISSUE_NUMBER: ${{ github.event.issue.number }}
         run: |
           VALID=$(gh issue view "$ISSUE_NUMBER" --comments --json comments \
-            --jq '[.comments[] | select(.body | contains("DRAFT_JSON") and (contains("OUTDATED") | not))] | length' 2>/dev/null || echo "0")
+            --jq '[.comments[] | select(.body | contains("<!-- DRAFT_JSON") and (contains("OUTDATED") | not))] | length' 2>/dev/null || echo "0")
           if [ "$VALID" -gt 0 ]; then
             echo "✅ 已有有效 DRAFT_JSON，跳过"
             exit 0
