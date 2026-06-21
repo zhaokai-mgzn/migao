@@ -195,6 +195,12 @@ if [ "${IS_BLOCKED:-0}" -gt 0 ]; then
 	            --jq '[.comments[] | select(.body | contains("<!-- REVIEW_JSON"))] | last | .body' 2>/dev/null)
 	        REVIEW_ACTION=$(echo "$REVIEW_BODY" | grep -oP '"action"\s*:\s*"\K\w+' | head -1)
 
+		        # Agent 没贴 REVIEW_JSON comment → 从日志提取 action
+		        if [ -z "$REVIEW_ACTION" ]; then
+		            REVIEW_ACTION=$(grep -oP '"action"\\s*:\\s*"\\K\\w+' /var/log/migao-agent-review.log 2>/dev/null | tail -1)
+		            log "⚠️ Agent 未贴 REVIEW_JSON comment，从日志提取: action=$REVIEW_ACTION"
+		        fi
+
 	        if [ "$REVIEW_ACTION" = "accept" ]; then
 	            log "✅ Review accept → Phase 2: TDD 写码"
 	            claude --print \
