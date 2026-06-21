@@ -31,3 +31,10 @@ jobs:
           FEEDBACK_COMMENT_ID: ${{ github.event.comment.id }}
         run: |
           python scripts/dual_verify/case_draft.py "$ISSUE_NUMBER" --feedback-comment "$FEEDBACK_COMMENT_ID"
+      - name: 移除 needs-redraft 标签，允许 Agent 重新抢
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          gh issue edit "$ISSUE_NUMBER" --remove-label "needs-redraft" 2>/dev/null || true
+          echo "✅ needs-redraft 已移除，Agent 可重新抢"

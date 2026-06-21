@@ -86,7 +86,7 @@ pick_issue() {
     fi
 
     # 再找普通 needs-verification（军师已出 case 的）
-    local NEW=$(gh issue list --label needs-verification --state open --limit 15 \
+    local NEW=$(gh issue list --label needs-verification --state open --limit 15 --search "-label:needs-redraft" \
         --json number,assignees --jq '.[] | select(.assignees | length == 0) | .number' 2>/dev/null | head -1)
     if [ -n "$NEW" ]; then
         local HAS_DRAFT=$(gh issue view "$NEW" --comments --json comments \
@@ -200,7 +200,7 @@ if [ "${IS_BLOCKED:-0}" -gt 0 ]; then
 		            REVIEW_ACTION=$(grep -oP '"action"\\s*:\\s*"\\K\\w+' /var/log/migao-agent-review.log 2>/dev/null | tail -1)
 		        # JSON 块提取失败 → 从自然语言"判定：**xxx**"解析
 		        if [ -z "$REVIEW_ACTION" ]; then
-		            REVIEW_ACTION=$(grep -oP "判定：\\*\\*\K\\w+" /var/log/migao-agent-review.log 2>/dev/null | tail -1 | tr "[:upper:]" "[:lower:]")
+		            REVIEW_ACTION=$(grep -oP "判定：\\*\\*\K\\w+" /var/log/migao-agent-review.log 2>/dev/null | tail -1 )
 		            log "⚠️ 从自然语言提取: action=$REVIEW_ACTION"
 		        fi
 		            log "⚠️ Agent 未贴 REVIEW_JSON comment，从日志提取: action=$REVIEW_ACTION"
@@ -222,10 +222,14 @@ if [ "${IS_BLOCKED:-0}" -gt 0 ]; then
 	                2>&1 | tee -a /var/log/migao-agent-coding.log | tail -10
 	        elif [ "$REVIEW_ACTION" = "supplement" ]; then
 	            log "⚠️ Review supplement — 跳过，等军师补 case"
+		        gh issue edit "$ISSUE_ID" --add-label "needs-redraft" --remove-assignee "@me" 2>/dev/null || true
+		        log "🏷️  needs-redraft 已标记，等待军师补 case"
 		        gh issue edit "$ISSUE_ID" --remove-assignee "@me" 2>/dev/null || true
 	            exit 0
 	        else
 	            log "❌ Review reject — 跳过写码"
+		        gh issue edit "$ISSUE_ID" --add-label "needs-redraft" --remove-assignee "@me" 2>/dev/null || true
+		        log "🏷️  needs-redraft 已标记，等待军师重新 draft"
 		        gh issue edit "$ISSUE_ID" --remove-assignee "@me" 2>/dev/null || true
 	            exit 0
 	        fi
