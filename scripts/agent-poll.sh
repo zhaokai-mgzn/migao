@@ -34,7 +34,39 @@ git clean -fd 2>/dev/null
 git pull origin main 2>&1 | tail -1
 
 # ═══════════════════════════════════════════════════════
-# 信号 1: needs-changes PR → 修复（最高优先）
+# 信号 0: needs-draft → 重新生成 DRAFT_JSON（最高优先）
+# REJECT 后 CI 隐藏了旧 DRAFT + 打了 needs-draft
+# ═══════════════════════════════════════════════════════
+NEEDS_DRAFT=$(gh issue list --label needs-draft --state open --limit 1 \
+    --json number --jq '.[0].number' 2>/dev/null)
+if [ -n "$NEEDS_DRAFT" ]; then
+    [[ "$NEEDS_DRAFT" =~ ^[0-9]+$ ]] || { log "❌ 非法 ID"; exit 1; }
+    log "📝 重新生成 DRAFT_JSON for #$NEEDS_DRAFT"
+
+    # 读 REJECT 反馈（如有）
+    FEEDBACK=$(gh issue view "$NEEDS_DRAFT" --comments --json comments \
+        --jq '[.comments[] | select(.body | contains("<!-- REVIEW_JSON") and contains("\"reject\""))] | last | .body' 2>/dev/null || echo "")
+    FEEDBACK_CTX=""
+    if [ -n "$FEEDBACK" ]; then
+        FEEDBACK_CTX="上次 REJECT 反馈: $FEEDBACK。请基于此修正。"
+    fi
+
+    claude --print --agent dev-agent \
+        "为 issue #$NEEDS_DRAFT 重新生成 DRAFT_JSON。$FEEDBACK_CTX
+         1. 读 issue body + CONTRACT_JSON → 提取 business_truths
+         2. 读 REJECT 反馈（如有）→ 理解上次被拒原因
+         3. 重新理解业务领域，生成修正后的 L2/L3/L4 case
+         4. 用 gh issue comment 贴完整的 DRAFT_JSON
+         注意：前端 issue 用 skip_template=true" \
+        2>&1 | tail -5
+
+    gh issue edit "$NEEDS_DRAFT" --remove-label "needs-draft" 2>/dev/null || true
+    log "✅ DRAFT 已重新生成"
+    exit 0
+fi
+
+# ═══════════════════════════════════════════════════════
+# 信号 1: needs-changes PR → 修复
 # ═══════════════════════════════════════════════════════
 NEEDS_FIX=$(gh pr list --label "junshi-review/needs-changes" --state open --limit 1 \
     --json number,headRefName,body --jq '.[0] | "\(.number) \(.headRefName)"' 2>/dev/null)
@@ -53,16 +85,30 @@ if [ -n "$NEEDS_FIX" ]; then
 fi
 
 # ═══════════════════════════════════════════════════════
-# 信号 2: needs-verification + 未分配 issue → 干活
+# 信号 2: 有 DRAFT_JSON + needs-redraft 次数 < 3 → 干活
 # ═══════════════════════════════════════════════════════
-ISSUE_ID=$(gh issue list --label needs-verification --state open --limit 10 \
-    --json number,assignees --jq '.[] | select(.assignees | length == 0) | .number' 2>/dev/null | head -1)
+ISSUE_ID=""
+for iid in $(gh issue list --label needs-verification --state open --limit 15 \
+    --json number,assignees --jq '.[] | select(.assignees | length == 0) | .number' 2>/dev/null); do
+    # 必须有 DRAFT_JSON（等 OpenClaw 生成完）
+    HAS_DRAFT=$(gh issue view "$iid" --comments --json comments \
+        --jq '[.comments[] | select(.body | contains("DRAFT_JSON"))] | length' 2>/dev/null)
+    if [ "${HAS_DRAFT:-0}" -eq 0 ]; then continue; fi
+    # 熔断: needs-redraft 被打了 >=3 次 → 跳过（等人工）
+    REDRAFT_COUNT=$(gh issue view "$iid" --comments --json comments \
+        --jq '[.comments[] | select(.body | contains("REVIEW_JSON") and contains("\"reject\""))] | length' 2>/dev/null)
+    if [ "${REDRAFT_COUNT:-0}" -ge 3 ]; then
+        gh issue edit "$iid" --add-label "block/need-human" --remove-label "needs-verification" 2>/dev/null || true
+        log "🛑 #$iid 已 reject $REDRAFT_COUNT 次，标记 block/need-human"
+        continue
+    fi
+    ISSUE_ID="$iid"; break
+done
 
 if [ -z "$ISSUE_ID" ]; then
     log "😴 无待处理任务"; exit 0
 fi
 
-# 校验
 [[ "$ISSUE_ID" =~ ^[0-9]+$ ]] || { log "❌ 非法 ID: $ISSUE_ID"; exit 1; }
 
 ISSUE_TITLE=$(gh issue view "$ISSUE_ID" --json title --jq '.title' 2>/dev/null | sed 's/[^a-zA-Z0-9一-鿿 -]//g' | tr ' ' '-' | head -c 40)

@@ -1,6 +1,7 @@
 name: junshi/redraft
 
-# 机械操作：Agent REJECT → 打 needs-draft 标签，等 OpenClaw Cron 1 重新 draft
+# Agent REJECT → 移除旧 DRAFT_JSON + 打 needs-draft 标签
+# agent-poll 扫描到 needs-draft 后调 dev-agent 重新生成 DRAFT（含 REJECT 反馈）
 
 on:
   issue_comment:
@@ -17,10 +18,23 @@ jobs:
       (contains(github.event.comment.body, '"reject"') || contains(github.event.comment.body, '"supplement"'))
     runs-on: ubuntu-latest
     steps:
-      - name: 打标签
+      - uses: actions/checkout@v4
+      - name: 隐藏旧 DRAFT + 打 needs-draft
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
         run: |
+          set -euo pipefail
+
+          # 1. 找最新 DRAFT_JSON 评论并隐藏（minimize）
+          DRAFT_ID=$(gh api "repos/$GITHUB_REPOSITORY/issues/$ISSUE_NUMBER/comments" \
+            --jq '[.[] | select(.body | contains("DRAFT_JSON"))] | last | .id' 2>/dev/null || echo "")
+          if [ -n "$DRAFT_ID" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$DRAFT_ID" \
+              -f body="~~OUTDATED DRAFT (replaced by re-draft)~~" 2>/dev/null || true
+            echo "✅ 旧 DRAFT_JSON comment #$DRAFT_ID 已标记过期"
+          fi
+
+          # 2. 打标签：needs-draft → agent-poll 捡起来重新生成
           gh issue edit "$ISSUE_NUMBER" --add-label "needs-draft" --remove-label "needs-redraft" 2>/dev/null || true
-          echo "✅ needs-draft — 等 OpenClaw Cron 1 重新生成 case"
+          echo "✅ needs-draft — agent-poll 将读 REJECT 反馈重新生成 DRAFT"

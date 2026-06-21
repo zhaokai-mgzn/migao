@@ -92,13 +92,13 @@ log "🧪 验收 issue #$VERIFY_ISSUE"
 ISSUE_STATE=$(gh issue view "$VERIFY_ISSUE" --json state --jq '.state' 2>/dev/null)
 [ "$ISSUE_STATE" = "CLOSED" ] && { gh issue reopen "$VERIFY_ISSUE" 2>/dev/null || true; }
 
-# 确保服务
-curl -s -o /dev/null -w '%{http_code}' http://localhost:8081 2>/dev/null | grep -q 200 || start_services
-trap "stop_services; rm -f $LOCK_FILE" EXIT
-
-# 凭据注入
+# 凭据注入（服务检查前，curl 需要 auth）
 export SERVICE_TOKEN=$(grep '^SERVICE_TOKEN=' /opt/youke/backend/admin-api/.env 2>/dev/null | cut -d= -f2)
 export PGPASSWORD=$(grep '^RDS_PASSWORD=' /opt/youke/backend/admin-api/.env 2>/dev/null | cut -d= -f2)
+
+# 确保服务
+curl -s -o /dev/null -w '%{http_code}' -H "X-Service-Token: ${SERVICE_TOKEN:-}" http://localhost:8081/api/admin/dashboard/stats 2>/dev/null | grep -q 200 || start_services
+trap "stop_services; rm -f $LOCK_FILE" EXIT
 export DB_HOST=$(grep '^RDS_HOST=' /opt/youke/backend/admin-api/.env 2>/dev/null | cut -d= -f2)
 export DB_USER=$(grep '^RDS_USER=' /opt/youke/backend/admin-api/.env 2>/dev/null | cut -d= -f2)
 export DB_NAME=$(grep '^RDS_DB=' /opt/youke/backend/admin-api/.env 2>/dev/null | cut -d= -f2)
