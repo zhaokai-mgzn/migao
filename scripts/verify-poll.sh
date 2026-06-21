@@ -53,8 +53,13 @@ stop_services() {
 log "🔍 扫描待验收..."
 
 VERIFY_ISSUE=""
-for iid in $(gh issue list --label ai-verify/pending --state open --limit 20 --json number --jq '.[].number' 2>/dev/null; \
-             gh issue list --label ai-verify/pending --state closed --limit 20 --json number --jq '.[].number' 2>/dev/null); do
+# 扫描范围：有 ai-verify/pending 标签的 + 最近更新的 needs-verification issue（OpenClaw 可能直接贴 VERIFY_TRIGGER）
+SCAN_IDS=$( {
+    gh issue list --label ai-verify/pending --state open --limit 20 --json number --jq '.[].number' 2>/dev/null
+    gh issue list --label ai-verify/pending --state closed --limit 20 --json number --jq '.[].number' 2>/dev/null
+    gh issue list --search "VERIFY_TRIGGER in:comments" --state open --limit 20 --json number --jq '.[].number' 2>/dev/null
+} | sort -u)
+for iid in $SCAN_IDS; do
     HAS_TRIGGER=$(gh issue view "$iid" --comments --json comments \
         --jq '[.comments[] | select(.body | contains("VERIFY_TRIGGER"))] | length' 2>/dev/null)
     HAS_VERDICT=$(gh issue view "$iid" --comments --json comments \
