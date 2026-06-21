@@ -44,7 +44,7 @@ if [ -n "$NEEDS_DRAFT" ] && [ "$NEEDS_DRAFT" != "null" ]; then
 
     # 已有有效 DRAFT_JSON 则跳过（CI 重复打标签的情况）
     VALID_DRAFT=$(gh issue view "$NEEDS_DRAFT" --comments --json comments \
-        --jq '[.comments[] | select(.body | contains("DRAFT_JSON") and (contains("OUTDATED") | not))] | length' 2>/dev/null)
+        --jq '[.comments[] | select(.body | contains("<!-- DRAFT_JSON") and (contains("OUTDATED") | not))] | length' 2>/dev/null)
     if [ "${VALID_DRAFT:-0}" -gt 0 ]; then
         log "⏭️  #$NEEDS_DRAFT 已有有效 DRAFT，移除冗余 needs-draft"
         gh issue edit "$NEEDS_DRAFT" --remove-label "needs-draft" 2>/dev/null || true
