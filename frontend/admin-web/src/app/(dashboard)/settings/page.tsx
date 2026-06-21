@@ -262,70 +262,99 @@ export default function SettingsPage() {
           {/* 账户安全 */}
           {activeTab === 'security' && (
             <div className="space-y-6">
-              {/* 修改密码 */}
               <div className="bg-white border border-gray-200 rounded-lg p-6">
-                <h2 className="text-lg font-semibold text-gray-900 mb-6">修改密码</h2>
-                <div className="space-y-4 max-w-md">
-                  {(['oldPassword', 'newPassword', 'confirmPassword'] as const).map((field) => {
-                    const labels = { oldPassword: '当前密码', newPassword: '新密码', confirmPassword: '确认新密码' }
-                    const key = field === 'oldPassword' ? 'old' : field === 'newPassword' ? 'new' : 'confirm'
-                    return (
-                      <div key={field}>
-                        <label className="block text-sm font-medium text-gray-700 mb-1.5">{labels[field]}</label>
-                        <div className="relative">
-                          <input
-                            type={showPasswords[key] ? 'text' : 'password'}
-                            className="w-full h-9 px-3 pr-10 rounded border border-gray-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
-                            value={passwordForm[field]}
-                            onChange={(e) => setPasswordForm({ ...passwordForm, [field]: e.target.value })}
-                            placeholder={`请输入${labels[field]}`}
-                          />
-                          <button
-                            type="button"
-                            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                            onClick={() => setShowPasswords({ ...showPasswords, [key]: !showPasswords[key] })}
-                          >
-                            {showPasswords[key] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                          </button>
-                        </div>
-                      </div>
-                    )
-                  })}
+                <h3 className="text-base font-semibold text-gray-900 mb-4">修改密码</h3>
+                <div className="space-y-4 max-w-sm">
+                  <div className="relative">
+                    <label className="block text-sm font-medium text-gray-700 mb-1.5">当前密码</label>
+                    <input
+                      type={showPasswords.old ? 'text' : 'password'}
+                      className="w-full h-9 px-3 pr-10 rounded border border-gray-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                      value={passwordForm.oldPassword}
+                      onChange={(e) => setPasswordForm({ ...passwordForm, oldPassword: e.target.value })}
+                      placeholder="请输入当前密码"
+                    />
+                    <button
+                      type="button"
+                      className="absolute right-2 top-[30px] text-gray-400 hover:text-gray-600"
+                      onClick={() => setShowPasswords({ ...showPasswords, old: !showPasswords.old })}
+                    >
+                      {showPasswords.old ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  <div className="relative">
+                    <label className="block text-sm font-medium text-gray-700 mb-1.5">新密码</label>
+                    <input
+                      type={showPasswords.new ? 'text' : 'password'}
+                      className="w-full h-9 px-3 pr-10 rounded border border-gray-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                      value={passwordForm.newPassword}
+                      onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
+                      placeholder="请输入新密码"
+                    />
+                    <button
+                      type="button"
+                      className="absolute right-2 top-[30px] text-gray-400 hover:text-gray-600"
+                      onClick={() => setShowPasswords({ ...showPasswords, new: !showPasswords.new })}
+                    >
+                      {showPasswords.new ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  <div className="relative">
+                    <label className="block text-sm font-medium text-gray-700 mb-1.5">确认新密码</label>
+                    <input
+                      type={showPasswords.confirm ? 'text' : 'password'}
+                      className="w-full h-9 px-3 pr-10 rounded border border-gray-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                      value={passwordForm.confirmPassword}
+                      onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
+                      placeholder="请输入确认新密码"
+                    />
+                    <button
+                      type="button"
+                      className="absolute right-2 top-[30px] text-gray-400 hover:text-gray-600"
+                      onClick={() => setShowPasswords({ ...showPasswords, confirm: !showPasswords.confirm })}
+                    >
+                      {showPasswords.confirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
                   <div className="pt-2">
                     <Button onClick={handleChangePassword} loading={changingPassword}>
+                      <Save className="w-4 h-4 mr-1.5" />
                       修改密码
                     </Button>
                   </div>
                 </div>
               </div>
 
-              {/* 登录日志 */}
               <div className="bg-white border border-gray-200 rounded-lg p-6">
-                <h2 className="text-lg font-semibold text-gray-900 mb-4">登录日志</h2>
-                <div className="overflow-x-auto">
-                  <table className="w-full border-collapse">
-                    <thead>
-                      <tr className="bg-gray-50 border-b border-gray-200">
-                        <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">时间</th>
-                        <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">IP 地址</th>
-                        <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">设备</th>
-                        <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">位置</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {loginLogs.map((log) => (
-                        <tr key={log.id} className="border-b border-gray-100">
-                          <td className="px-4 py-3 text-sm text-gray-700">
-                            {dayjs(log.createdAt).format('YYYY-MM-DD HH:mm')}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-600 font-mono">{log.ip}</td>
-                          <td className="px-4 py-3 text-sm text-gray-600">{log.device}</td>
-                          <td className="px-4 py-3 text-sm text-gray-600">{log.location || '-'}</td>
+                <h3 className="text-base font-semibold text-gray-900 mb-4">登录日志</h3>
+                {loadingLogs ? (
+                  <div className="text-sm text-gray-500">加载中...</div>
+                ) : loginLogs.length === 0 ? (
+                  <div className="text-sm text-gray-500">暂无登录记录</div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-gray-200">
+                          <th className="text-left py-2 pr-4 font-medium text-gray-600">IP 地址</th>
+                          <th className="text-left py-2 pr-4 font-medium text-gray-600">设备</th>
+                          <th className="text-left py-2 pr-4 font-medium text-gray-600">位置</th>
+                          <th className="text-left py-2 font-medium text-gray-600">登录时间</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody>
+                        {loginLogs.map((log) => (
+                          <tr key={log.id} className="border-b border-gray-100">
+                            <td className="py-2 pr-4 text-gray-900">{log.ip}</td>
+                            <td className="py-2 pr-4 text-gray-600">{log.device}</td>
+                            <td className="py-2 pr-4 text-gray-600">{log.location}</td>
+                            <td className="py-2 text-gray-600">{dayjs(log.createdAt).format('YYYY-MM-DD HH:mm')}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             </div>
           )}

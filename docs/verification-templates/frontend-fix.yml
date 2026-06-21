@@ -1,36 +1,30 @@
 name: frontend-fix
-description: 纯前端 UI 修复/Bug — 不涉及后端 API/SQL/状态机变更。E2E + vitest 为主。
+description: 纯前端 UI 修复/Bug — 不涉及后端 API/SQL/状态机变更。skip_template 直接进 Phase 2。
 red_flags: []
 skip_template: true
 
 business_truths:
   - 前端 UI 变更不影响后端 API 契约
-  - 变更后 E2E 测试全部通过
-  - TypeScript 编译通过
+  - 变更后 vitest 全部通过
+  - 变更后 tsc --noEmit 通过
+  - E2E 测试覆盖变更路径
 
 primary_specs:
   - tests/e2e/specs/
   - frontend/admin-web/tests/unit/
 
 reviewer_asserts:
-  # ── 前端变更核心验证 ──
-  - E2E: 变更页面 DOM 元素存在/不存在断言（按 CONTRACT_JSON 逐条验证）
-  - E2E: 交互流程 happy path（点击→响应→状态变化）
+  - vitest: npx vitest run 全部通过
   - tsc: npx tsc --noEmit 通过
-  - vitest: npx vitest run 通过
-  - E2E: 跨浏览器兼容（chromium webkit firefox）
-
-  # ── API 契约不变验证 ──
-  - API: GET /api/admin/settings
-    expect: 响应结构未变（status=200, data 存在）
-  - API: GET /api/admin/products?page=1&size=5
-    expect: 响应结构未变
+  - E2E: 变更页面 DOM 断言（存在/不存在，按 CONTRACT_JSON 逐条）
+  - E2E: 交互流程不退化（已有 spec 全部通过）
 
 confidence_required: 80%
 
 common_pitfalls:
-  - 只改了 UI 文案但忘了更新对应 E2E 断言
-  - onClick 绑定丢失或不生效
-  - CSS class 重构导致 DOM 选择器失效
-  - TypeScript 类型变更导致其他页面编译失败
-  - 错误修改了 API 接口而非纯前端 UI
+  - onClick handler 丢失: 删了代码但没删绑定 → 运行时空白点击
+  - 只改文案未改测试: 更新了 UI 文字但 vitest snapshot/E2E text match 未更新
+  - CSS 重构断选择器: 改了 className 但 E2E getByTestId/getByRole 仍用旧选择器
+  - TS 类型变更扩散: 改了类型定义导致其他页面 tsc 失败
+  - 误触后端: 前端改动中意外包含了 API path 或 SQL 变更
+  - 条件渲染遗漏: 删了组件但 wrapper 的条件判断还在

@@ -1,25 +1,15 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════════
-# 米高研发 Agent 轮询触发器（单实例版，适配 4C8G）
+# 米高研发 Agent 轮询 v5 — AI First: OpenClaw 调度，agent 纯执行
 #
-# cron 每 5 分钟执行。一次只处理一个 issue。
-# 优先抢修复 issue，其次抢新功能 issue。
-# 不直接处理 block/dual-mismatch 标签的原始 issue（那是军师的状态标记）。
-#
-# 注意：验收由 verify-poll.sh 独立执行（claude --agent verify-agent），本脚本只负责写码。
+# OpenClaw 决策 → 标签/评论 → agent-poll 读信号执行
+# agent-poll 不做任何判断，只找第一个可执行任务并干活
 # ═══════════════════════════════════════════════════════════════
-set -e
+set -euo pipefail
 
-# ── cron 环境保护（PATH 不含 /usr/local/bin，HOME 可能为空）──
 export HOME="${HOME:-/root}"
 export PATH="/usr/local/bin:/usr/bin:/bin${PATH:+:$PATH}"
 
-# venv Python 3.11（系统 python3 可能是 3.6）
-PYTHON="${WORK_DIR:-/opt/youke}/backend/ai-agent-service/.venv/bin/python3"
-[ -x "$PYTHON" ] || PYTHON="python3.11"
-[ -x "$(command -v "$PYTHON" 2>/dev/null)" ] || PYTHON="python3"
-
-# ═══════════════════════════════════════════════════════
 WORK_DIR="${WORK_DIR:-/opt/youke}"
 LOCK_FILE="/tmp/migao-agent.lock"
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"; }
@@ -27,10 +17,8 @@ log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"; }
 if [ -f "$LOCK_FILE" ]; then
     LOCK_AGE=$(($(date +%s) - $(stat -c %Y "$LOCK_FILE" 2>/dev/null || echo 0)))
     if [ "${LOCK_AGE:-0}" -gt 1800 ]; then
-        log "⚠️ 锁文件超过30分钟，强制清除"
-        rm -f "$LOCK_FILE"
+        log "⚠️ 锁超时，强制清除"; rm -f "$LOCK_FILE"
     else
-        log "⚠️ 上一个任务还在跑 (${LOCK_AGE}s)，跳过"
         exit 0
     fi
 fi
@@ -38,222 +26,165 @@ trap "rm -f $LOCK_FILE" EXIT
 touch "$LOCK_FILE"
 
 cd "$WORK_DIR"
+gh auth status 2>/dev/null || { log "❌ gh 未认证"; exit 1; }
 
-if ! gh auth status 2>/dev/null; then
-    log "❌ gh 未认证"
-    exit 1
+git checkout main 2>/dev/null
+git reset --hard HEAD 2>/dev/null
+git clean -fd 2>/dev/null
+git pull origin main 2>&1 | tail -1
+
+# ═══════════════════════════════════════════════════════
+# 信号 0: needs-draft → 生成 DRAFT_JSON（最高优先）
+# 新 issue 初始 draft + REJECT 后重新 draft 都走这里
+# ═══════════════════════════════════════════════════════
+NEEDS_DRAFT=$(gh issue list --label needs-draft --state open --limit 1 \
+    --json number --jq '.[0].number' 2>/dev/null)
+if [ -n "$NEEDS_DRAFT" ]; then
+    [[ "$NEEDS_DRAFT" =~ ^[0-9]+$ ]] || { log "❌ 非法 ID"; exit 1; }
+
+    # 已有有效 DRAFT_JSON 则跳过（CI 重复打标签的情况）
+    VALID_DRAFT=$(gh issue view "$NEEDS_DRAFT" --comments --json comments \
+        --jq '[.comments[] | select(.body | contains("DRAFT_JSON") and (contains("OUTDATED") | not))] | length' 2>/dev/null)
+    if [ "${VALID_DRAFT:-0}" -gt 0 ]; then
+        log "⏭️  #$NEEDS_DRAFT 已有有效 DRAFT，移除冗余 needs-draft"
+        gh issue edit "$NEEDS_DRAFT" --remove-label "needs-draft" 2>/dev/null || true
+    else
+        # 判断是初始 draft 还是 REJECT 重 draft
+        FEEDBACK=$(gh issue view "$NEEDS_DRAFT" --comments --json comments \
+            --jq '[.comments[] | select(.body | contains("<!-- REVIEW_JSON") and contains("\"reject\""))] | last | .body' 2>/dev/null || echo "")
+        if [ -n "$FEEDBACK" ]; then
+            log "🔄 REJECT 重 draft for #$NEEDS_DRAFT"
+            CONTEXT="这是 REJECT 后重新生成。上次被拒原因: $FEEDBACK。请基于此修正 L2/L3/L4。"
+        else
+            log "📝 初始 DRAFT for #$NEEDS_DRAFT"
+            CONTEXT="这是新 issue 的初始 case draft。读 issue → 理解业务 → 生成。"
+        fi
+
+        claude --print --agent dev-agent \
+            "任务：为 issue #$NEEDS_DRAFT 生成 case draft。$CONTEXT
+
+## 步骤
+1. gh issue view $NEEDS_DRAFT --json body,comments → 读 CONTRACT_JSON.business_truths
+2. 理解业务领域（不靠关键词，靠理解 issue 描述）
+3. 参考 docs/verification-templates/ 目录选模板（前端 UI → frontend-fix, skip_template=true）
+4. 生成 DRAFT_JSON 并用 gh issue comment 贴到 issue
+
+## DRAFT_JSON 格式（必须严格遵守）
+\`\`\`markdown
+## 🤖 军师反推 — Case草稿 (issue #N)
+**模板**: name | **真值**: N条
+### L2 单测草稿（每条 truth 1个 case: 文件路径+方法名）
+### L3 E2E Web草稿（涉及前端才写）
+### L4 业务断言草稿（每条 truth >=1 条独特断言，不重复）
+<!-- DRAFT_JSON {issue_id,template,truths_count,auto_asserts,specs,skip_template,...} -->
+\`\`\`
+
+## 质量铁律
+- auto_asserts >= truths_count（每条 truth 至少1条自动断言）
+- L4 断言彼此不同（不是同一模板复制粘贴）
+- L2 路径指向存在的文件（不确定时标注 ⚠️）
+- 纯前端 UI 改动 → skip_template=true
+- 边界：不写代码、不跑测试、不建 PR" \
+            2>&1 | tail -5
+
+        gh issue edit "$NEEDS_DRAFT" --remove-label "needs-draft" 2>/dev/null || true
+        log "✅ DRAFT 已生成"
+    fi
+    exit 0
 fi
 
-# ── 0. 最高优先：PR 被军师打回 needs-changes → 立即修复 ──
-NEEDS_CHANGE_PR=$(gh pr list --label "junshi-review/needs-changes" --state open --limit 5 \
-    --json number,headRefName,body --jq '.[] | select(.body | contains("Closes")) | "\(.number) \(.headRefName)"' 2>/dev/null | head -1)
-if [ -n "$NEEDS_CHANGE_PR" ]; then
-    PR_NUM=$(echo "$NEEDS_CHANGE_PR" | awk '{print $1}')
-    PR_BRANCH=$(echo "$NEEDS_CHANGE_PR" | awk '{print $2}')
-    PR_BODY=$(gh pr view "$PR_NUM" --json body --jq '.body' 2>/dev/null)
-    ISSUE_ID=$(echo "$PR_BODY" | grep -oP 'Closes #\K\d+' | head -1)
-
-    log "🔧 PR #$PR_NUM 被军师打回 needs-changes → 修复"
-    git reset --hard HEAD 2>/dev/null
-    git clean -fd 2>/dev/null
-    git fetch origin "$PR_BRANCH" && git checkout "$PR_BRANCH" 2>/dev/null
-    git pull origin main 2>/dev/null
-
-    claude --print \
-        --agent dev-agent \
-        "PR #$PR_NUM (关联 issue #$ISSUE_ID) 被军师标记 needs-changes。读 PR 评论 → 修复 → 遵守项目铁律 (CLAUDE.md + tdd-iron-law.md) → push 到当前分支 $PR_BRANCH。" \
+# ═══════════════════════════════════════════════════════
+# 信号 1: needs-changes PR → 修复
+# ═══════════════════════════════════════════════════════
+NEEDS_FIX=$(gh pr list --label "junshi-review/needs-changes" --state open --limit 1 \
+    --json number,headRefName,body --jq '.[0] | "\(.number) \(.headRefName)"' 2>/dev/null)
+if [ -n "$NEEDS_FIX" ]; then
+    PR_NUM=$(echo "$NEEDS_FIX" | awk '{print $1}')
+    PR_BRANCH=$(echo "$NEEDS_FIX" | awk '{print $2}')
+    ISSUE_ID=$(gh pr view "$PR_NUM" --json body --jq '.body' 2>/dev/null | grep -oP '(Closes|Fixes)\s+#\K\d+' | head -1)
+    log "🔧 PR #$PR_NUM needs-changes → 修复"
+    git fetch origin -- "$PR_BRANCH" && git checkout -- "$PR_BRANCH" 2>/dev/null
+    git pull origin main 2>/dev/null || true
+    claude --print --agent dev-agent \
+        "PR #$PR_NUM (关联 issue #$ISSUE_ID) 被标记 needs-changes。读 CI 失败原因 → 修复 → 遵守项目铁律 → push $PR_BRANCH。" \
         2>&1 | tee -a /var/log/migao-agent-coding.log | tail -10
-
     log "✅ PR #$PR_NUM 修复完成"
     exit 0
 fi
 
-# ── 抢一个 issue：优先被阻的（同 issue 内 block 后重新抢）──
-pick_issue() {
-    local BLOCKED=$(gh issue list --label "block/dual-mismatch,needs-verification" --state open --limit 10 \
-        --json number,assignees --jq '.[] | select(.assignees | length == 0) | .number' 2>/dev/null | head -1)
-    if [ -n "$BLOCKED" ]; then
-        echo "$BLOCKED"
-        return
+# ═══════════════════════════════════════════════════════
+# 信号 2: 有 DRAFT_JSON + needs-redraft 次数 < 3 → 干活
+# ═══════════════════════════════════════════════════════
+ISSUE_ID=""
+for iid in $(gh issue list --label needs-verification --state open --limit 15 \
+    --json number,assignees --jq '.[] | select(.assignees | length == 0) | .number' 2>/dev/null); do
+    # 必须有 DRAFT_JSON（等 OpenClaw 生成完）
+    HAS_DRAFT=$(gh issue view "$iid" --comments --json comments \
+        --jq '[.comments[] | select(.body | contains("DRAFT_JSON"))] | length' 2>/dev/null)
+    if [ "${HAS_DRAFT:-0}" -eq 0 ]; then continue; fi
+    # 熔断: needs-redraft 被打了 >=3 次 → 跳过（等人工）
+    REDRAFT_COUNT=$(gh issue view "$iid" --comments --json comments \
+        --jq '[.comments[] | select(.body | contains("REVIEW_JSON") and contains("\"reject\""))] | length' 2>/dev/null)
+    if [ "${REDRAFT_COUNT:-0}" -ge 3 ]; then
+        gh issue edit "$iid" --add-label "block/need-human" --remove-label "needs-verification" 2>/dev/null || true
+        log "🛑 #$iid 已 reject $REDRAFT_COUNT 次，标记 block/need-human"
+        continue
     fi
-
-    # 找模板补充类 issue（有 qa 标签的不需要 case_draft）
-    local TEMPLATE=$(gh issue list --label "needs-verification,qa" --state open --limit 10 \
-        --json number,assignees --jq '.[] | select(.assignees | length == 0) | .number' 2>/dev/null | head -1)
-    if [ -n "$TEMPLATE" ]; then
-        echo "$TEMPLATE"
-        return
-    fi
-
-    # 再找普通 needs-verification（军师已出 case 的）
-    local NEW=$(gh issue list --label needs-verification --state open --limit 15 --search "-label:needs-redraft" \
-        --json number,assignees --jq '.[] | select(.assignees | length == 0) | .number' 2>/dev/null | head -1)
-    if [ -n "$NEW" ]; then
-        local HAS_DRAFT=$(gh issue view "$NEW" --comments --json comments \
-            --jq '.comments[] | select(.body | contains("DRAFT_JSON")) | .body' 2>/dev/null | head -1)
-        if [ -n "$HAS_DRAFT" ]; then echo "$NEW"; return; fi
-        log "⏳ issue #$NEW 军师还未出 case"
-    fi
-}
-
-ISSUE_ID=$(pick_issue)
-
-# 安全检查：ISSUE_ID 必须是纯数字（来自 gh API JSON，不可能是用户文本）
-if ! echo "$ISSUE_ID" | grep -qE '^[0-9]+$'; then
-    log "⚠️ 非法 ISSUE_ID: $ISSUE_ID"
-    exit 0
-fi
+    ISSUE_ID="$iid"; break
+done
 
 if [ -z "$ISSUE_ID" ]; then
-    log "😴 无待处理 issue，跳过"
-else
+    log "😴 无待处理任务"; exit 0
+fi
 
-# ── 启动服务前先拉最新代码 ──
-log "📥 同步最新代码..."
-git reset --hard HEAD 2>/dev/null
-git clean -fd 2>/dev/null
-git checkout main 2>/dev/null
-git pull origin main 2>&1 | tail -1
+[[ "$ISSUE_ID" =~ ^[0-9]+$ ]] || { log "❌ 非法 ID: $ISSUE_ID"; exit 1; }
 
-# 创建 issue 专用分支
 ISSUE_TITLE=$(gh issue view "$ISSUE_ID" --json title --jq '.title' 2>/dev/null | sed 's/[^a-zA-Z0-9一-鿿 -]//g' | tr ' ' '-' | head -c 40)
 BRANCH="feat/issue-${ISSUE_ID}-${ISSUE_TITLE}"
 git checkout -B "$BRANCH" 2>/dev/null
-log "🌿 分支: $BRANCH"
-
-# ── 按需启动服务，任务结束后自动关闭 ──
-
-# ── 熔断检查 ──
-BLOCK_COMMENT=$(gh issue view "$ISSUE_ID" --comments --json comments \
-    --jq '.comments[] | select(.body | contains("BLOCK_LOG")) | .body' 2>/dev/null | tail -1)
-DEPTH=$(echo "$BLOCK_COMMENT" | grep -oP '"block_depth"\s*:\s*\K\d+' | head -1)
-if [ "${DEPTH:-0}" -ge 3 ]; then
-    log "🛑 issue #$ISSUE_ID block_depth=$DEPTH，已达熔断阈值"
-    gh issue edit "$ISSUE_ID" --add-label "block/need-human" 2>/dev/null || true
-    exit 0
-fi
-
-# ── 判断是新功能还是 re-fix ──
-IS_BLOCKED=$(gh issue view "$ISSUE_ID" --json labels --jq '.labels[].name' 2>/dev/null | grep -c "block/dual-mismatch" || true)
 gh issue edit "$ISSUE_ID" --add-assignee "@me" 2>/dev/null || true
+log "🌿 $BRANCH"
 
-if [ "${IS_BLOCKED:-0}" -gt 0 ]; then
-    log "🔧 被阻 issue #$ISSUE_ID (第${DEPTH:-1}次打回) → 修复"
-    claude --print \
-        --agent dev-agent \
-        "issue #$ISSUE_ID 验收被阻。读 BLOCK_LOG 评论理解失败原因 → 查 SLS 日志定位根因 → 修复代码 → 遵守项目铁律 (CLAUDE.md + tdd-iron-law.md) → 推送到当前分支 $BRANCH → 创建 PR (Closes #$ISSUE_ID)。" \
+# 检查是否 skip_template
+DRAFT=$(gh issue view "$ISSUE_ID" --comments --json comments \
+    --jq '[.comments[] | select(.body | contains("DRAFT_JSON"))] | last | .body' 2>/dev/null || echo "")
+SKIP=$(echo "$DRAFT" | grep -oP '"skip_template"\s*:\s*\K\w+' | head -1)
+
+if [ "$SKIP" = "true" ]; then
+    # ══ skip_template: 直接写码 ══
+    log "⚡ skip_template → Phase 2 TDD"
+    claude --print --agent dev-agent \
+        "处理 issue #$ISSUE_ID。skip_template=true（前端简单改动），跳过 DRAFT 中的 L2/L4 模板，直接基于 CONTRACT_JSON.business_truths TDD 写码。读 CLAUDE.md + tdd-iron-law.md → Red→Green→Refactor → push $BRANCH → 创建 PR (Closes #$ISSUE_ID, body 贴测试结果)。" \
         2>&1 | tee -a /var/log/migao-agent-coding.log | tail -10
-	else
-	    log "📝 新功能 issue #$ISSUE_ID"
-	    # 检查是否为模板补充任务（不需要 case review）
-	    IS_TEMPLATE=$(gh issue view "$ISSUE_ID" --json labels --jq '.labels[].name' 2>/dev/null | grep -c "qa" || true)
-	    if [ "${IS_TEMPLATE:-0}" -gt 0 ]; then
-	        PROMPT="处理 issue #$ISSUE_ID（模板补充任务）。读 CONTRACT_JSON → 按铁律 (CLAUDE.md) 修改模板 YAML → 推送到 $BRANCH → 创建 PR (Closes #$ISSUE_ID)。"
-	        claude --print \
-	            --agent dev-agent \
-	            "$PROMPT" \
-	            2>&1 | tee -a /var/log/migao-agent-coding.log | tail -10
-	    else
-	        # ══ Phase 0: bash 客观 gate（客观标准，不靠 LLM 自觉）══
-	        DRAFT=$(gh issue view "$ISSUE_ID" --comments --json comments \
-	            --jq '[.comments[] | select(.body | contains("DRAFT_JSON"))] | last | .body' 2>/dev/null)
-	        TRUTHS_COUNT=$(echo "$DRAFT" | grep -oP '"truths_count"\s*:\s*\K\d+' | head -1)
-	        AUTO_ASSERTS=$(echo "$DRAFT" | grep -oP '"auto_asserts"\s*:\s*\K\d+' | head -1)
-	        TEMPLATE_NAME=$(echo "$DRAFT" | grep -oP '"template"\s*:\s*"\K[^"]+' | head -1)
+    log "✅ 完成"
+else
+    # ══ 标准流程: Phase 1 Review → Phase 2 TDD ══
+    log "🔍 Phase 1 Review..."
+    claude --print --agent dev-agent \
+        "Review issue #$ISSUE_ID。只做 Review，不写代码。
+         1. 读 CONTRACT_JSON → business_truths
+         2. 读最新 DRAFT_JSON → L2/L3/L4 case
+         3. 逐条比对判定 accept/reject/supplement
+         4. **用 gh issue comment 贴 <!-- REVIEW_JSON {action,issue_id,reason} -->**
+         边界：不写代码、不跑测试、不建 PR。" \
+        2>&1 | tee /var/log/migao-review-${ISSUE_ID}.log | tail -10
 
-	        SKIP_TEMPLATE=$(echo "$DRAFT" | grep -oP '"skip_template"\s*:\s*\K\w+' | head -1)
-	        if [ "$SKIP_TEMPLATE" = "true" ]; then
-	            log "✅ skip_template — 前端简单改动，跳过模板校验，直接 Phase 1 Review"
-	        elif [ "${TRUTHS_COUNT:-0}" -eq 0 ]; then
-	            log "❌ 业务真值为空 — bash gate reject"
-		        gh issue edit "$ISSUE_ID" --remove-assignee "@me" 2>/dev/null || true
-	            exit 0
-	        fi
-	        if [ "$SKIP_TEMPLATE" != "true" ] && { [ "$TEMPLATE_NAME" = "unknown" ] || [ -z "$TEMPLATE_NAME" ]; }; then
-	            log "❌ 未匹配模板(${TEMPLATE_NAME:-none}) — bash gate reject"
-		        gh issue edit "$ISSUE_ID" --remove-assignee "@me" 2>/dev/null || true
-	            exit 0
-	        fi
-	        if [ "$SKIP_TEMPLATE" != "true" ] && [ "${AUTO_ASSERTS:-0}" -lt "${TRUTHS_COUNT:-1}" ]; then
-	            log "❌ 自动断言(${AUTO_ASSERTS:-0}) < 真值(${TRUTHS_COUNT:-0}) — bash gate reject"
-		        gh issue edit "$ISSUE_ID" --remove-assignee "@me" 2>/dev/null || true
-	            exit 0
-	        fi
-	        log "✅ bash gate pass: ${AUTO_ASSERTS:-0} asserts >= ${TRUTHS_COUNT:-0} truths, template=$TEMPLATE_NAME"
+    # 读 Review 结果（机械提取 action）
+    REVIEW_ACTION=$(grep -oP '"action"\s*:\s*"\K\w+' /var/log/migao-review-${ISSUE_ID}.log 2>/dev/null | tail -1 | tr '[:upper:]' '[:lower:]')
+    REVIEW_ACTION=${REVIEW_ACTION:-reject}
 
-	        if [ "$SKIP_TEMPLATE" = "true" ]; then
-	            log "⚡ skip_template — 跳过 Review，直接 Phase 2 TDD 写码"
-	            claude --print \
-	                --agent dev-agent \
-	                "处理 issue #$ISSUE_ID。skip_template 模式，直接 TDD 写码。读 CONTRACT_JSON → 遵守项目铁律 (CLAUDE.md + tdd-iron-law.md) → 推送到 $BRANCH → 创建 PR (Closes #$ISSUE_ID)。" \
-	                2>&1 | tee -a /var/log/migao-agent-coding.log | tail -10
-	            log "✅ skip_template Phase 2 完成"
-	        else
-	        # ══ Phase 1: LLM Review（bash gate 通过后才到 LLM）══
-	        log "🔍 Phase 1: LLM Review case 草稿..."
-	        claude --print \
-	            --agent dev-agent \
-	            "Review issue #$ISSUE_ID。只做 Review，不写代码。
-
-## 步骤
-1. 读 CONTRACT_JSON 中的 business_truths
-2. 读 DRAFT_JSON → 理解 L2/L3/L4 case
-3. 逐条比对：每条真值是否有 case 覆盖
-4. 判定 accept/reject/supplement
-5. 贴 REVIEW_JSON + 停止
-
-## REVIEW_JSON 格式
-\`\`\`
-<!-- REVIEW_JSON {\"action\":\"accept|reject|supplement\",\"issue_id\":$ISSUE_ID,\"reason\":\"...\"} -->
-\`\`\`
-
-边界：不写代码、不跑测试、不建 PR。这是硬 gate。" \
-	            2>&1 | tee /var/log/migao-review-$ISSUE_ID.log | tail -10
-
-	        # ══ 检查 REVIEW_JSON 结果 ══
-	        # 只取最新 DRAFT_JSON 之后的 REVIEW_JSON（防旧 comment 污染）
-	        LAST_DRAFT_TIME=$(gh issue view "$ISSUE_ID" --comments --json comments \
-	            --jq '[.comments[] | select(.body | contains("DRAFT_JSON"))] | last | .createdAt' 2>/dev/null)
-	        REVIEW_BODY=$(gh issue view "$ISSUE_ID" --comments --json comments \
-	            --jq "[.comments[] | select(.body | contains(\"<!-- REVIEW_JSON\")) | select(.createdAt > \"${LAST_DRAFT_TIME:-1970-01-01T00:00:00Z}\")] | last | .body" 2>/dev/null)
-	        REVIEW_ACTION=$(echo "$REVIEW_BODY" | grep -oP '"action"\s*:\s*"\K\w+' | head -1 | tr "[:upper:]" "[:lower:]")
-
-		        # Agent 没贴 REVIEW_JSON comment → 从日志提取 action
-		        if [ -z "$REVIEW_ACTION" ]; then
-		            REVIEW_ACTION=$(grep -oP '"action"\s*:\s*"\K\w+' /var/log/migao-review-$ISSUE_ID.log 2>/dev/null | tail -1)
-		        # JSON 块提取失败 → 从自然语言"判定：**xxx**"解析
-		        if [ -z "$REVIEW_ACTION" ]; then
-		            REVIEW_ACTION=reject
-		            log "⚠️ 从自然语言提取: action=$REVIEW_ACTION"
-		        fi
-		            log "⚠️ Agent 未贴 REVIEW_JSON comment，从日志提取: action=$REVIEW_ACTION"
-
-		        # 从日志提取完整 REVIEW_JSON 并贴到 GitHub
-		        REVIEW_JSON_BLOCK=$(grep -A2 "<!-- REVIEW_JSON" /var/log/migao-review-$ISSUE_ID.log 2>/dev/null | tail -3)
-		        if [ -n "$REVIEW_JSON_BLOCK" ]; then
-		            echo -e "## 🤖 研发 Agent Phase 1 Review\n\n\`\`\`\n$REVIEW_JSON_BLOCK\n\`\`\`" | gh issue comment "$ISSUE_ID" --body-file - 2>/dev/null
-		            log "✅ REVIEW_JSON 已自动贴到 issue"
-		        fi
-		        fi
-
-	        if [ "$REVIEW_ACTION" = "accept" ]; then
-	            log "✅ Review accept → Phase 2: TDD 写码"
-	            claude --print \
-	                --agent dev-agent \
-	                "处理 issue #$ISSUE_ID。REVIEW_JSON 已 accept，直接 TDD 写码。
-	                读 CONTRACT_JSON 和 DRAFT_JSON → 遵守项目铁律 (CLAUDE.md + tdd-iron-law.md) → 推送到 $BRANCH → 创建 PR (Closes #$ISSUE_ID)。" \
-	                2>&1 | tee -a /var/log/migao-agent-coding.log | tail -10
-	        elif [ "$REVIEW_ACTION" = "supplement" ]; then
-	            log "⚠️ Review supplement — 有 minor issue，但直接进入 Phase 2 写码（Agent 自行修正）"
-	            claude --print 	                --agent dev-agent 	                "处理 issue #$ISSUE_ID。REVIEW_JSON 为 supplement（case 不全但可执行）。读 CONTRACT_JSON + DRAFT_JSON + REVIEW_JSON → 遵守项目铁律 (CLAUDE.md + tdd-iron-law.md) → 推送到 $BRANCH → 创建 PR (Closes #$ISSUE_ID)。特别：L2 文件映射不准确时自行修正。" 	                2>&1 | tee -a /var/log/migao-agent-coding.log | tail -10
-	        else
-	            log "❌ Review reject — 跳过写码"
-		        gh issue edit "$ISSUE_ID" --add-label "needs-redraft" --remove-assignee "@me" 2>/dev/null || true
-		        log "🏷️  needs-redraft 已标记，等待军师重新 draft"
-		        gh issue edit "$ISSUE_ID" --remove-assignee "@me" 2>/dev/null || true
-	            exit 0
-	        fi  # end skip_template skip of Phase 1 Review
-	        fi
-	    fi
-	fi
+    case "$REVIEW_ACTION" in
+    accept|supplement)
+        log "✅ Review $REVIEW_ACTION → Phase 2 TDD"
+        claude --print --agent dev-agent \
+            "处理 issue #$ISSUE_ID。REVIEW_JSON=$REVIEW_ACTION。读 CONTRACT_JSON.business_truths + DRAFT_JSON 中的 L2/L4 case → 遵守项目铁律 (CLAUDE.md + tdd-iron-law.md, CP-1~CP-7) → push $BRANCH → 创建 PR (Closes #$ISSUE_ID, body 贴 CP 清单+测试结果)。" \
+            2>&1 | tee -a /var/log/migao-agent-coding.log | tail -10
+        ;;
+    reject)
+        log "❌ Review reject → needs-redraft"
+        gh issue edit "$ISSUE_ID" --add-label "needs-redraft" --remove-assignee "@me" 2>/dev/null || true
+        ;;
+    esac
 fi
+
+log "✅ 调度完成"

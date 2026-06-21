@@ -367,13 +367,17 @@ jobs:
           echo "BLOCKERS=$BLOCKERS" >> $GITHUB_OUTPUT
           echo "WARNINGS=$WARNINGS" >> $GITHUB_OUTPUT
 
-      # 阻塞检查：有 blocking 项时 fail job
+      # 阻塞检查：有 blocking 项时打标签 + fail job
       - name: Fail on blocking violations
         if: steps.check.outputs.BLOCKERS != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           echo "❌ QA Growth Gate 发现 ${{ steps.check.outputs.BLOCKERS }} 处缺测，阻塞合并。"
           echo "请补充对应测试，或在 .github/qa-exemptions.yml 中添加合法豁免项。"
           echo "详见 docs/testing/qa-growth-gate.md"
+          gh pr edit "$PR_NUMBER" --add-label "junshi-review/needs-changes" 2>/dev/null || true
           exit 1
 
       # PR comment — 始终发布/更新（pass/fail/warn 都更新）

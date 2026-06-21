@@ -1,6 +1,6 @@
 name: junshi/verify-trigger
 
-# 二郎神体系：PR merge → 军师评论 VERIFY_TRIGGER → Agent 跑双验收
+# 机械操作：PR merge → 找关联 issue → 贴 VERIFY_TRIGGER + ai-verify/pending + reopen
 
 on:
   pull_request:
@@ -12,12 +12,12 @@ permissions:
   pull-requests: read
 
 jobs:
-  verify-trigger:
+  trigger:
     if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: 查找关联 issue 并评论 VERIFY_TRIGGER
+      - name: 贴 VERIFY_TRIGGER + 打标签
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_BODY: ${{ github.event.pull_request.body }}
@@ -26,25 +26,13 @@ jobs:
           PR_URL: ${{ github.event.pull_request.html_url }}
           PR_SHA: ${{ github.event.pull_request.merge_commit_sha }}
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
-          REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
+          ISSUE_NUM=$(echo "$PR_BODY" | grep -oP '(Fixes|Closes|Resolves)\s+#\K\d+' | head -1 || echo "")
+          if [ -z "$ISSUE_NUM" ]; then echo "No linked issue, skip"; exit 0; fi
 
-          # 从 PR body 提取 Fixes/Closes/Resolves #xxx
-          ISSUE_NUM=$(echo "$PR_BODY" | grep -oP '(Fixes|Closes|Resolves)\s+#\d+' | head -1 | grep -oP '\d+' || echo "")
-          if [ -z "$ISSUE_NUM" ]; then
-            echo "No linked issue found in PR body, skipping verify trigger"
-            exit 0
-          fi
-
-          LABEL_JSON=$(gh issue view "$ISSUE_NUM" --json labels -q '.labels[].name' 2>/dev/null || echo "")
-          if ! echo "$LABEL_JSON" | grep -q "needs-verification"; then
-            echo "Issue #$ISSUE_NUM does not have needs-verification label, skipping"
-            exit 0
-          fi
-
-          # 生成 VERIFY_TRIGGER 评论
-          cat > /tmp/verify-comment.md << COMMENT
+          # 贴 VERIFY_TRIGGER
+          cat > /tmp/verify.md << COMMENT
           ## 🤖 军师验收触发
 
           PR [#$PR_NUMBER]($PR_URL) 已合入 \`main\`。
@@ -67,6 +55,11 @@ jobs:
           }
           -->
           COMMENT
+          gh issue comment "$ISSUE_NUM" --body-file /tmp/verify.md
 
-          gh issue comment "$ISSUE_NUM" --body-file /tmp/verify-comment.md
-          echo "VERIFY_TRIGGER posted to issue #$ISSUE_NUM"
+          # 标签 + reopen
+          gh issue edit "$ISSUE_NUM" --add-label "ai-verify/pending" 2>/dev/null || true
+          if [ "$(gh issue view "$ISSUE_NUM" --json state --jq '.state')" = "CLOSED" ]; then
+            gh issue reopen "$ISSUE_NUM" 2>/dev/null || true
+          fi
+          echo "✅ VERIFY_TRIGGER posted + ai-verify/pending"

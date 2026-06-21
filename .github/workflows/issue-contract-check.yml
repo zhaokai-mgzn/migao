@@ -9,8 +9,9 @@ jobs:
     name: Check CONTRACT_JSON
     runs-on: ubuntu-latest
     timeout-minutes: 2
-    # 跳过自动生成的 issue
+    # 仅在 issue 事件下运行，防止 push 事件误触发时 github.event.issue 未定义导致 crash
     if: |
+      github.event_name == 'issues' &&
       !contains(github.event.issue.title, '[E2E Web]') &&
       !contains(github.event.issue.title, '[coverage]') &&
       !contains(github.event.issue.title, '[coverage-tracking]') &&
@@ -25,13 +26,26 @@ jobs:
             const body = context.payload.issue.body || '';
 
             const hasContract = /<!--\s*CONTRACT_JSON/.test(body);
-            const hasTruths = /business_truths/i.test(body) ||
-              /业务真值/i.test(body) ||
-              /验收标准/i.test(body) ||
-              /## 问题描述/.test(body);
+            const hasTruths = /"business_truths"\s*:\s*\[[^\]]*[a-zA-Z一-鿿]/.test(body) ||
+              /##\s*业务真值/.test(body) ||
+              /##\s*验收标准\s*\n\s*[-*]\s*\S/.test(body) ||
+              /##\s*问题描述/.test(body) ||
+              /condition.*→.*expected/.test(body);
 
             if (hasContract || hasTruths) {
-              console.log('✅ 已有业务真值');
+              // 有业务真值 → 自动加入二郎神体系
+              const needsLabel = !context.payload.issue.labels.some(l => l.name === 'needs-verification');
+              if (needsLabel) {
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  labels: ['needs-verification'],
+                });
+                console.log('✅ 已添加 needs-verification → 进入二郎神体系');
+              } else {
+                console.log('✅ 已有 needs-verification');
+              }
               return;
             }
 

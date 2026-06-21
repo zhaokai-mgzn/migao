@@ -1,38 +1,50 @@
 name: junshi/case-draft
 
-# 二郎神体系：军师检测 needs-verification issue → 自动生成 case draft
+# 机械操作:
+# 1. needs-verification issue → 打 needs-draft 标签
+# 2. needs-truths issue 补了 CONTRACT_JSON → 转 needs-verification
 
 on:
   issues:
-    types: [opened, labeled]
-  # 手动触发修复已卡住的 issue
-  workflow_dispatch:
-    inputs:
-      issue_number:
-        description: 'Issue number to re-draft'
-        required: false
+    types: [opened, edited, labeled]
 
 permissions:
   contents: read
   issues: write
 
 jobs:
-  case-draft:
-    # 仅处理带 needs-verification 标签的 issue
+  trigger:
     if: |
-      (github.event_name == 'issues' && contains(github.event.issue.labels.*.name, 'needs-verification')) ||
-      github.event_name == 'workflow_dispatch'
+      contains(github.event.issue.labels.*.name, 'needs-verification') ||
+      contains(github.event.issue.labels.*.name, 'needs-truths')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - run: pip install pyyaml
-      - name: 军师生成 case draft
+
+      - name: 处理 needs-truths → needs-verification 转换
+        if: contains(github.event.issue.labels.*.name, 'needs-truths')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PROJECT_ROOT: ${{ github.workspace }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
         run: |
-          ISSUE="${{ github.event.inputs.issue_number || github.event.issue.number }}"
-          python scripts/dual_verify/case_draft.py "$ISSUE"
+          BODY=$(gh issue view "$ISSUE_NUMBER" --json body --jq '.body')
+          HAS_TRUTH=$(echo "$BODY" | grep -cP 'CONTRACT_JSON|business_truths|业务真值|验收标准' || echo "0")
+          if [ "$HAS_TRUTH" -gt 0 ]; then
+            gh issue edit "$ISSUE_NUMBER" --add-label "needs-verification" --remove-label "needs-truths" 2>/dev/null || true
+            echo "✅ 已补业务真值 → needs-verification，进入二郎神体系"
+          fi
+
+      - name: 打 needs-draft 标签（仅当 needs-verification 且无有效 DRAFT）
+        if: contains(github.event.issue.labels.*.name, 'needs-verification')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          VALID=$(gh issue view "$ISSUE_NUMBER" --comments --json comments \
+            --jq '[.comments[] | select(.body | contains("DRAFT_JSON") and (contains("OUTDATED") | not))] | length' 2>/dev/null || echo "0")
+          if [ "$VALID" -gt 0 ]; then
+            echo "✅ 已有有效 DRAFT_JSON，跳过"
+            exit 0
+          fi
+          gh issue edit "$ISSUE_NUMBER" --add-label "needs-draft" 2>/dev/null || true
+          echo "✅ needs-draft — 等 agent-poll 生成 case"
