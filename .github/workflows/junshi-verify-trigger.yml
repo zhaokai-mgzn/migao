@@ -32,8 +32,8 @@ jobs:
           if [ -z "$ISSUE_NUM" ]; then echo "No linked issue, skip"; exit 0; fi
 
           # 人机协作标签 → 不走二郎神验收
-          PAIRING=$(gh issue view "$ISSUE_NUM" --json labels --jq '.labels[].name' | grep -cE '^(pairing|ai-draft|human-drive)$' || echo "0")
-          if [ "$PAIRING" -gt 0 ]; then echo "✅ 人机协作 issue，跳过二郎神验收"; exit 0; fi
+          AI_DRAFT=$(gh issue view "$ISSUE_NUM" --json labels --jq '.labels[].name' | grep -c '^ai-draft$' || echo "0")
+          if [ "$AI_DRAFT" -gt 0 ]; then echo "✅ ai-draft issue，跳过二郎神验收"; exit 0; fi
 
           # 贴 VERIFY_TRIGGER
           cat > /tmp/verify.md << COMMENT
