@@ -163,9 +163,10 @@ def auto_patch_template(tmpl_name: str, template: dict, truths: list) -> bool:
     new_asserts = []
     for t in truths:
         # 提取 truth 的关键词
+        if not isinstance(t, str): continue  # 防 dict/list 注入
         t_keywords = set()
         for keywords, _ in _TRUTH_KEYWORD_MAP:
-            if any(kw.lower() in t.lower() for kw in keywords):
+            if any(str(kw).lower() in t.lower() for kw in keywords):
                 t_keywords.update(kw.lower() for kw in keywords)
         # 检查是否已有 assert 覆盖（关键词交集）
         matched = False
