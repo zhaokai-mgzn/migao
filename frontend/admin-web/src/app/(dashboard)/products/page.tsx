@@ -295,7 +295,7 @@ export default function ProductsPage() {
       if (action === 'off_shelf') {
         return {
           title: '立即下架',
-          desc: '是否确认下架？商品下架后状态变更为"仓库中"，可重新对商品进行管理上架。',
+          desc: '是否确认下架？商品下架后状态变更为"已下架"，可重新对商品进行管理上架。',
           variant: 'primary' as const,
           onSubmit: submitSingleConfirm,
           onClose: () => setSingleConfirm(null),

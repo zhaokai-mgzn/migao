@@ -1,13 +1,12 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { Building2, Shield, Save, Eye, EyeOff, ArrowRight } from 'lucide-react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { Building2, Shield, Save, Eye, EyeOff } from 'lucide-react'
 import Image from 'next/image'
-import Link from 'next/link'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Button, Badge } from '@/components/ui'
-import { settingsApi } from '@/lib/api'
+import { settingsApi, uploadApi } from '@/lib/api'
 import type { SystemSettings, ChangePasswordParams, LoginLog } from '@/types'
 import dayjs from 'dayjs'
 
@@ -38,7 +37,9 @@ export default function SettingsPage() {
     notificationEmail: '',
   })
   const [savingSettings, setSavingSettings] = useState(false)
+  const [uploadingLogo, setUploadingLogo] = useState(false)
   const [loadingSettings, setLoadingSettings] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // 密码
   const [passwordForm, setPasswordForm] = useState<ChangePasswordParams>({
@@ -90,6 +91,36 @@ export default function SettingsPage() {
     }
   }, [activeTab, loadSettings, loadLoginLogs])
 
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    // 校验文件类型
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      toast.error('仅支持 JPG、PNG、WebP 格式')
+      return
+    }
+
+    // 校验文件大小（≤5MB）
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('图片大小不能超过 5MB')
+      return
+    }
+
+    setUploadingLogo(true)
+    try {
+      const res = await uploadApi.uploadImage(file)
+      const logoUrl = res.data.data.url
+      setSettings((prev) => ({ ...prev, logo: logoUrl }))
+      toast.success('Logo 上传成功')
+    } catch {
+      toast.error('Logo 上传失败')
+    } finally {
+      setUploadingLogo(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+
   const handleSaveSettings = async () => {
     if (!settings.companyName.trim()) {
       toast.error('请输入公司名称')
@@ -130,21 +161,6 @@ export default function SettingsPage() {
         <h1 className="text-xl font-semibold text-gray-900">系统设置</h1>
         <p className="text-sm text-gray-500 mt-1">配置系统参数和账户安全</p>
 
-        {/* 迁移提示：AI 配置已迁至机器人设置 */}
-        <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-blue-700">
-              AI 配置功能已迁移至「机器人设置」
-            </span>
-          </div>
-          <Link
-            href="/chat/config"
-            className="flex items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-800 transition-colors"
-          >
-            前往配置
-            <ArrowRight className="w-4 h-4" />
-          </Link>
-        </div>
       </div>
 
       <div className="flex gap-6">
@@ -197,7 +213,21 @@ export default function SettingsPage() {
                         <Building2 className="w-8 h-8 text-gray-400" />
                       )}
                     </div>
-                    <Button variant="secondary" size="sm">上传 Logo</Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => fileInputRef.current?.click()}
+                      loading={uploadingLogo}
+                    >
+                      上传 Logo
+                    </Button>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      className="hidden"
+                      onChange={handleLogoUpload}
+                    />
                   </div>
                 </div>
 

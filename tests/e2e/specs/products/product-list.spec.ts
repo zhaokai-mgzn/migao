@@ -83,7 +83,7 @@ const MOCK_PRODUCTS = [
 async function mockProductApis(page: import('@playwright/test').Page) {
   // GET /api/products (list)
   await page.route('**/api/admin/products*', async (route) => {
-    if (route.request().method() !== 'GET') return
+    if (route.request().method() !== 'GET') { await route.fallback(); return }
     const url = new URL(route.request().url())
     // Filter logic based on query params
     let filtered = [...MOCK_PRODUCTS]

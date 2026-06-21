@@ -17,6 +17,7 @@ vi.mock('lucide-react', () => {
     Search: stub('search'),
     FileX: stub('file-x'),
     Inbox: stub('inbox'),
+    Loader2: stub('loader2'),
   }
 })
 
@@ -38,6 +39,9 @@ const mockUpdateAiConfig = vi.fn()
 const mockChangePassword = vi.fn()
 const mockGetLoginLogs = vi.fn()
 
+// Mock upload API
+const mockUploadImage = vi.fn()
+
 vi.mock('@/lib/api', () => ({
   settingsApi: {
     getSettings: (...args: any[]) => mockGetSettings(...args),
@@ -46,6 +50,9 @@ vi.mock('@/lib/api', () => ({
     updateAiConfig: (...args: any[]) => mockUpdateAiConfig(...args),
     changePassword: (...args: any[]) => mockChangePassword(...args),
     getLoginLogs: (...args: any[]) => mockGetLoginLogs(...args),
+  },
+  uploadApi: {
+    uploadImage: (...args: any[]) => mockUploadImage(...args),
   },
 }))
 
@@ -142,27 +149,23 @@ describe('SettingsPage — AI tab removed (Issue #502)', () => {
   })
 
   describe('迁移提示', () => {
-    it('应该在页面顶部显示迁移提示文案', async () => {
+    it('页面顶部不应再显示迁移提示文案 (Issue #647)', async () => {
       render(<SettingsPage />)
       await waitFor(() => {
         expect(screen.getByText('系统设置')).toBeInTheDocument()
       })
 
-      // 迁移提示文案
-      expect(screen.getByText(/AI 配置功能已迁移至/)).toBeInTheDocument()
-      expect(screen.getByText(/机器人设置/)).toBeInTheDocument()
+      expect(screen.queryByText(/AI 配置功能已迁移至/)).toBeNull()
+      expect(screen.queryByText(/机器人设置/)).toBeNull()
     })
 
-    it('迁移提示应包含跳转到机器人设置的链接', async () => {
+    it('前往配置链接已移除 (Issue #647)', async () => {
       render(<SettingsPage />)
       await waitFor(() => {
         expect(screen.getByText('系统设置')).toBeInTheDocument()
       })
 
-      // 链接文本是 "前往配置"
-      const link = screen.getByRole('link', { name: /前往配置/ })
-      expect(link).toBeInTheDocument()
-      expect(link).toHaveAttribute('href', '/chat/config')
+      expect(screen.queryByRole('link', { name: /前往配置/ })).toBeNull()
     })
   })
 
@@ -248,6 +251,69 @@ describe('SettingsPage — AI tab removed (Issue #502)', () => {
 
       await waitFor(() => {
         expect(screen.getByText('登录日志')).toBeInTheDocument()
+      })
+    })
+  })
+
+  // ================================================================
+  // Logo 上传功能 (Issue #645 — 修复 onClick handler 缺失)
+  // ================================================================
+
+  describe('Logo 上传', () => {
+    it('T1: 点击「上传 Logo」按钮应触发隐藏的 file input', async () => {
+      render(<SettingsPage />)
+      await waitFor(() => {
+        expect(screen.getByText('系统设置')).toBeInTheDocument()
+      })
+
+      const uploadBtn = screen.getByRole('button', { name: /上传 Logo/ })
+      expect(uploadBtn).toBeInTheDocument()
+
+      const fileInput = document.querySelector('input[type="file"]')
+      expect(fileInput).toBeInTheDocument()
+      expect(fileInput).toHaveAttribute('accept', expect.stringContaining('image/'))
+      expect(uploadBtn).not.toBeDisabled()
+    })
+
+    it('T2: 选择图片文件后应调用 uploadApi.uploadImage 并更新 settings.logo', async () => {
+      const fakeUrl = 'https://oss.example.com/logos/test-logo.png'
+      mockUploadImage.mockResolvedValue({
+        data: { data: { url: fakeUrl } },
+      })
+      mockUpdateSettings.mockResolvedValue({ data: { data: {} } })
+
+      render(<SettingsPage />)
+      await waitFor(() => {
+        expect(screen.getByText('系统设置')).toBeInTheDocument()
+      })
+
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
+      expect(fileInput).toBeInTheDocument()
+
+      const file = new File(['dummy-image'], 'logo.png', { type: 'image/png' })
+      const user = userEvent.setup()
+      await user.upload(fileInput, file)
+
+      await waitFor(() => {
+        expect(mockUploadImage).toHaveBeenCalledTimes(1)
+      })
+    })
+
+    it('T3: 上传失败时应 toast 报错；上传中按钮 loading', async () => {
+      mockUploadImage.mockRejectedValue(new Error('上传失败'))
+
+      render(<SettingsPage />)
+      await waitFor(() => {
+        expect(screen.getByText('系统设置')).toBeInTheDocument()
+      })
+
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
+      const file = new File(['dummy'], 'logo.png', { type: 'image/png' })
+      const user = userEvent.setup()
+      await user.upload(fileInput, file)
+
+      await waitFor(() => {
+        expect(mockUploadImage).toHaveBeenCalled()
       })
     })
   })
