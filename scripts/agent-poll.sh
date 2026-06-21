@@ -210,3 +210,5 @@ if [ "${IS_BLOCKED:-0}" -gt 0 ]; then
 	            exit 0
 	        fi
 	    fi
+	fi
+fi
