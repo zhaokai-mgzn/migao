@@ -30,8 +30,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          # 从 PR body 提取 Fixes #xxx
-          ISSUE_NUM=$(echo "$PR_BODY" | grep -oP 'Fixes\s+#\d+' | head -1 | grep -oP '\d+' || echo "")
+          # 从 PR body 提取 Fixes/Closes/Resolves #xxx
+          ISSUE_NUM=$(echo "$PR_BODY" | grep -oP '(Fixes|Closes|Resolves)\s+#\d+' | head -1 | grep -oP '\d+' || echo "")
           if [ -z "$ISSUE_NUM" ]; then
             echo "No linked issue found in PR body, skipping verify trigger"
             exit 0
