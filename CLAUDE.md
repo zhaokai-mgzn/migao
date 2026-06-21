@@ -2,19 +2,12 @@
 
 > 本文件在每次 Claude Code (cc) 启动时自动加载，定义项目规范和操作约束。
 
-## 🎯 二郎神 Quality Loop 体系 — 项目生命线（2026-06-16 凯总明确，06-19 定名）
+## 🎯 二郎神 Quality Loop 体系
 
-**所有交付（人/AI 员工/Claude Code/军师）必须遵守**：
-1. 任何功能/Bug 先开 issue（用 `.github/ISSUE_TEMPLATE/feature.md`）
-2. 业务真值用**业务语言**，不带 SQL/API
-3. 军师反推 case 草稿 → 研发 review + 改/删/补
-4. PR 合 main → 军师AI（远程服务器）触发多角色验收（case_draft → primary + reviewer → merge，5 层兜底）
-5. 主+复双一致 + 100% → 自动 close；不一致 → block 升级人工
-6. ❌ 禁止：跳过 issue / 技术性业务真值 / 拒绝 review 草稿 / 人为验收
+米高项目通过二郎神体系实现 AI 全链路质量闭环。完整设计、脚本、Agent 配置已迁移至独立项目 `ershen`。
 
-**禁止自己写业务 case 终稿**。**禁止跳过 issue 直接写代码**。
-详见 [`docs/wiki/Development.md`](docs/wiki/Development.md) "AI 验收体系" 段 + issue #450 v3.1。二郎神完整设计文档已迁移至独立项目 `ershen`。
-**二郎神 Agent 配置**：dev-agent / verify-agent / tdd-iron-law 等已迁移至独立项目 `ershen`，服务器通过 `/opt/ershen/` 加载。
+开发流程：Issue (CONTRACT_JSON) → 军师 DRAFT → Review → TDD → PR → CI Gate → AutoMerge → 验收 → Close。
+详见 [`docs/wiki/Development.md`](docs/wiki/Development.md) 和 ershen 项目。
 
 ## 项目 Wiki
 
@@ -40,7 +33,7 @@
 
 > **⚠️ 本章是铁律中的铁律，违反即视为严重违规。AI 必须严格遵守，不得跳过任何检查点。**
 >
-> **📋 完整铁律详见 [`.claude/skills/tdd-iron-law.md`](.claude/skills/tdd-iron-law.md) — 包含 PR 合并前置条件、E2E 质量要求、违规后果。**
+> **📋 完整铁律详见 [ershen/skills/tdd-iron-law.md](https://github.com/zhaokai-mgzn/ershen/blob/main/skills/tdd-iron-law.md) — 包含 PR 合并前置条件、E2E 质量要求、违规后果。**
 
 ### AI 行为约束（MVP 收工阶段强制执行）
 
@@ -249,7 +242,7 @@ cd tests && npx playwright test tests/e2e/specs/products.spec.ts
 
 > **⚠️ 铁律：本地只启动米高系统 3 个组件，DB/Redis/中间件全部用云 dev。**
 >
-> 详见 [`.claude/local-dev-config.md`](.claude/local-dev-config.md) — 包含启动命令、连接信息、禁止行为、测试依赖。
+> 详见 `ershen` 项目中的本地开发配置 — 包含启动命令、连接信息、禁止行为、测试依赖。
 
 - **本地启动**：admin-api (:8081) + ai-agent-service (:8001) + admin-web (:3001)
 - **云 dev 环境**：PostgreSQL + Redis + DashVector + DashScope + OSS 全部用云端
@@ -275,7 +268,7 @@ cd frontend/admin-web && npm run dev
 
 ### 铁律（再次强调）
 
-**所有代码变更必须遵守 `.claude/skills/tdd-iron-law.md`，以下为摘要：**
+**所有代码变更必须遵守 `ershen/skills/tdd-iron-law.md`（二郎神独立项目），以下为摘要：**
 
 - **禁止**先写代码再补测试 — 必须测试先行
 - **禁止**提交未通过测试的代码到任何分支
@@ -292,7 +285,7 @@ cd frontend/admin-web && npm run dev
 - **新增数据列表页必须在 `tests/e2e/specs/quality/anti-placeholder.spec.ts` 的 `PAGES` 数组中注册**，确保关键列不会全线显示占位符 `-`
 - **新增/修改 API 返回字段必须在 `tests/e2e/specs/quality/api-contract.spec.ts` 中验证**：必填字段存在、类型正确（number/string/object）、金额字段不能是 string
 - **跨页面数据一致性**：列表页和详情页的同一字段值必须相等（`tests/e2e/specs/quality/cross-page-consistency.spec.ts`）
-- **E2E 测试命名规范**：`tests/e2e/specs/{domain}/{feature}.spec.ts`，详见 [`tdd-iron-law.md § 5`](.claude/skills/tdd-iron-law.md)
+- **E2E 测试命名规范**：`tests/e2e/specs/{domain}/{feature}.spec.ts`，详见 tdd-iron-law.md（ershen/skills/）
 - **E2E Page Object 模式**：`tests/e2e/pages/{domain}/{page}.page.ts`，每个 Page Object 必须提供元素定位器、goto()、业务操作函数
 - **状态持久化验证**：涉及 State/路由/Interact/执行循环的变更，必须在 E2E 测试中覆盖多轮对话场景（跨 graph 调用），确保 state 在轮次间正确保持
 

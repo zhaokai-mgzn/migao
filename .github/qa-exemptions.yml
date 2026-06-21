@@ -1,9 +1,0 @@
-# QA Growth Gate 豁免配置
-# 匹配这些 pattern 的文件跳过测试覆盖检查（shell case 通配符，* ? 匹配单层）
-# 格式: - pattern: "路径/模式"
-exemptions:
-  - pattern: "backend/ai-agent-service/app/tools/aftersale_query.py"
-  - pattern: "backend/ai-agent-service/app/agents/agents/xiaobu.py"
-  - pattern: "frontend/admin-web/src/app/(dashboard)/settings/page.tsx"
-  - pattern: "frontend/admin-web/src/app/(dashboard)/products/page.tsx"
-  - pattern: "frontend/admin-web/src/app/(dashboard)/products/[id]/ProductDetail.tsx"
