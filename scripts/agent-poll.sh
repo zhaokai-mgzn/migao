@@ -43,6 +43,8 @@ log "🔍 扫描..."
 
 ISSUE_IDS=$(gh issue list --label needs-verification --state open --limit 10 \
     --json number --jq '.[].number' 2>/dev/null | tr '\n' ' ' || echo "")
+NEEDS_DRAFT_IDS=$(gh issue list --label needs-draft --state open --limit 10 \
+    --json number --jq '.[].number' 2>/dev/null | tr '\n' ' ' || echo "")
 PR_IDS=$(gh pr list --label "junshi-review/needs-changes" --state open --limit 5 \
     --json number --jq '.[].number' 2>/dev/null | tr '\n' ' ' || echo "")
 
@@ -50,14 +52,16 @@ PR_IDS=$(gh pr list --label "junshi-review/needs-changes" --state open --limit 5
 DECISION=$(claude --print --agent orchestrator \
     "决定下一步动作。返回纯 JSON。你可以用 gh issue view / gh pr view 读取详情。
 
+     needs-draft issue IDs: $NEEDS_DRAFT_IDS
      needs-verification issue IDs: $ISSUE_IDS
      needs-changes PR IDs: $PR_IDS
 
      优先级:
-     1. fix_pr — 有 needs-changes PR，读 PR body 找关联 issue
-     2. write_code — issue 的 DRAFT_JSON 含 skip_template=true
-     3. review_draft — 有 DRAFT_JSON 无 REVIEW_JSON
-     4. skip" 2>/dev/null || echo '{"action":"skip"}')
+     1. fix_pr — 有 needs-changes PR
+     2. draft_case — 有 needs-draft issue（读 issue + 评论，生成 DRAFT_JSON 贴到 issue，然后移除 needs-draft 标签）
+     3. write_code — skip_template=true
+     4. review_draft — 有 DRAFT_JSON 无 REVIEW_JSON
+     5. skip" 2>/dev/null || echo '{"action":"skip"}')
 
 ACTION=$(echo "$DECISION" | python3 -c "import sys,json; print(json.load(sys.stdin).get('action','skip'))" 2>/dev/null || echo "skip")
 ISSUE_ID=$(echo "$DECISION" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('issue_id',''))" 2>/dev/null || echo "")
@@ -85,6 +89,15 @@ fix_pr)
         "PR #$PR_NUMBER (关联 issue #$ISSUE_ID) 被标记 needs-changes。读 PR 评论和 CI 失败原因 → 修复 → 遵守项目铁律 → push $PR_BRANCH。" \
         2>&1 | tee -a /var/log/migao-agent-coding.log | tail -10
     log "✅ PR #$PR_NUMBER 修复完成"
+    ;;
+
+draft_case)
+    log "📝 生成 DRAFT_JSON for #$ISSUE_ID"
+    claude --print --agent case-draft \
+        "为 issue #$ISSUE_ID 生成 case draft。读 issue → 理解业务 → 选模板 → 生成 DRAFT_JSON → 用 gh issue comment 贴结果。" \
+        2>&1 | tail -5
+    gh issue edit "$ISSUE_ID" --remove-label "needs-draft" 2>/dev/null || true
+    log "✅ DRAFT_JSON 已生成"
     ;;
 
 review_draft)
