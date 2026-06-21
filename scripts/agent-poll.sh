@@ -181,6 +181,14 @@ if [ "${IS_BLOCKED:-0}" -gt 0 ]; then
 	        fi
 	        log "✅ bash gate pass: ${AUTO_ASSERTS:-0} asserts >= ${TRUTHS_COUNT:-0} truths, template=$TEMPLATE_NAME"
 
+	        if [ "$SKIP_TEMPLATE" = "true" ]; then
+	            log "⚡ skip_template — 跳过 Review，直接 Phase 2 TDD 写码"
+	            claude --print \
+	                --agent dev-agent \
+	                "处理 issue #$ISSUE_ID。skip_template 模式，直接 TDD 写码。读 CONTRACT_JSON → 遵守项目铁律 (CLAUDE.md + tdd-iron-law.md) → 推送到 $BRANCH → 创建 PR (Closes #$ISSUE_ID)。" \
+	                2>&1 | tee -a /var/log/migao-agent-coding.log | tail -10
+	            log "✅ skip_template Phase 2 完成"
+	        else
 	        # ══ Phase 1: LLM Review（bash gate 通过后才到 LLM）══
 	        log "🔍 Phase 1: LLM Review case 草稿..."
 	        claude --print \
@@ -244,6 +252,7 @@ if [ "${IS_BLOCKED:-0}" -gt 0 ]; then
 		        log "🏷️  needs-redraft 已标记，等待军师重新 draft"
 		        gh issue edit "$ISSUE_ID" --remove-assignee "@me" 2>/dev/null || true
 	            exit 0
+	        fi  # end skip_template skip of Phase 1 Review
 	        fi
 	    fi
 	fi
