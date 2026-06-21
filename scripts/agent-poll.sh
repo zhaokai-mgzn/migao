@@ -217,9 +217,11 @@ if [ "${IS_BLOCKED:-0}" -gt 0 ]; then
 	                2>&1 | tee -a /var/log/migao-agent-coding.log | tail -10
 	        elif [ "$REVIEW_ACTION" = "supplement" ]; then
 	            log "⚠️ Review supplement — 跳过，等军师补 case"
+		        gh issue edit "$ISSUE_ID" --remove-assignee "@me" 2>/dev/null || true
 	            exit 0
 	        else
 	            log "❌ Review reject — 跳过写码"
+		        gh issue edit "$ISSUE_ID" --remove-assignee "@me" 2>/dev/null || true
 	            exit 0
 	        fi
 	    fi
