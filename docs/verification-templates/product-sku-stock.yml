@@ -65,7 +65,6 @@ confidence_required: 90%
 common_pitfalls:
   - 商品状态枚举包含已废弃的 in_warehouse
   - 状态流转遗漏 in_warehouse 禁止规则
-  - 编辑表单仍渲染「提交并放入仓库」按钮
   - 筛选下拉仍含「仓库中」选项
   - 库存聚合按商品而非 SKU 汇总
   - 默认阈值 100 写死
