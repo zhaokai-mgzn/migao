@@ -1,12 +1,12 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Building2, Shield, Save, Eye, EyeOff } from 'lucide-react'
 import Image from 'next/image'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui'
-import { settingsApi } from '@/lib/api'
+import { settingsApi, uploadApi } from '@/lib/api'
 import type { SystemSettings, ChangePasswordParams, LoginLog } from '@/types'
 import dayjs from 'dayjs'
 
@@ -37,7 +37,9 @@ export default function SettingsPage() {
     notificationEmail: '',
   })
   const [savingSettings, setSavingSettings] = useState(false)
+  const [uploadingLogo, setUploadingLogo] = useState(false)
   const [loadingSettings, setLoadingSettings] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // 密码
   const [passwordForm, setPasswordForm] = useState<ChangePasswordParams>({
@@ -88,6 +90,30 @@ export default function SettingsPage() {
       loadLoginLogs()
     }
   }, [activeTab, loadSettings, loadLoginLogs])
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      toast.error('仅支持 JPG、PNG、WebP 格式')
+      return
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('图片大小不能超过 5MB')
+      return
+    }
+    setUploadingLogo(true)
+    try {
+      const res = await uploadApi.uploadImage(file)
+      setSettings((prev) => ({ ...prev, logo: res.data.data.url }))
+      toast.success('Logo 上传成功')
+    } catch {
+      toast.error('Logo 上传失败')
+    } finally {
+      setUploadingLogo(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
 
   const handleSaveSettings = async () => {
     if (!settings.companyName.trim()) {
@@ -181,7 +207,8 @@ export default function SettingsPage() {
                         <Building2 className="w-8 h-8 text-gray-400" />
                       )}
                     </div>
-                    <Button variant="secondary" size="sm">上传 Logo</Button>
+                    <Button variant="secondary" size="sm" onClick={() => fileInputRef.current?.click()} loading={uploadingLogo}>上传 Logo</Button>
+                    <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleLogoUpload} />
                   </div>
                 </div>
 

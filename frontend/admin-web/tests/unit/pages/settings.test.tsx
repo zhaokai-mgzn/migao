@@ -16,6 +16,7 @@ vi.mock('lucide-react', () => {
     Search: stub('search'),
     FileX: stub('file-x'),
     Inbox: stub('inbox'),
+    Loader2: stub('loader2'),
   }
 })
 
@@ -37,6 +38,8 @@ const mockUpdateAiConfig = vi.fn()
 const mockChangePassword = vi.fn()
 const mockGetLoginLogs = vi.fn()
 
+const mockUploadImage = vi.fn()
+
 vi.mock('@/lib/api', () => ({
   settingsApi: {
     getSettings: (...args: any[]) => mockGetSettings(...args),
@@ -45,6 +48,9 @@ vi.mock('@/lib/api', () => ({
     updateAiConfig: (...args: any[]) => mockUpdateAiConfig(...args),
     changePassword: (...args: any[]) => mockChangePassword(...args),
     getLoginLogs: (...args: any[]) => mockGetLoginLogs(...args),
+  },
+  uploadApi: {
+    uploadImage: (...args: any[]) => mockUploadImage(...args),
   },
 }))
 
@@ -245,6 +251,51 @@ describe('SettingsPage — AI tab removed (Issue #502)', () => {
 
       await waitFor(() => {
         expect(screen.getByText('登录日志')).toBeInTheDocument()
+      })
+    })
+  })
+
+  // Logo 上传功能 (Issue #645)
+  describe('Logo 上传', () => {
+    it('T1: 点击上传 Logo 按钮应触发隐藏 file input', async () => {
+      render(<SettingsPage />)
+      await waitFor(() => {
+        expect(screen.getByText('系统设置')).toBeInTheDocument()
+      })
+      const btn = screen.getByRole('button', { name: /上传 Logo/ })
+      expect(btn).toBeInTheDocument()
+      const fileInput = document.querySelector('input[type="file"]')
+      expect(fileInput).toBeInTheDocument()
+      expect(fileInput).toHaveAttribute('accept', expect.stringContaining('image/'))
+    })
+
+    it('T2: 选择图片文件后应调用 uploadApi.uploadImage', async () => {
+      mockUploadImage.mockResolvedValue({ data: { data: { url: 'https://oss.example.com/logo.png' } } })
+      render(<SettingsPage />)
+      await waitFor(() => {
+        expect(screen.getByText('系统设置')).toBeInTheDocument()
+      })
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
+      const file = new File(['img'], 'logo.png', { type: 'image/png' })
+      const user = userEvent.setup()
+      await user.upload(fileInput, file)
+      await waitFor(() => {
+        expect(mockUploadImage).toHaveBeenCalledTimes(1)
+      })
+    })
+
+    it('T3: 上传失败应 toast 报错', async () => {
+      mockUploadImage.mockRejectedValue(new Error('upload failed'))
+      render(<SettingsPage />)
+      await waitFor(() => {
+        expect(screen.getByText('系统设置')).toBeInTheDocument()
+      })
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
+      const file = new File(['img'], 'logo.png', { type: 'image/png' })
+      const user = userEvent.setup()
+      await user.upload(fileInput, file)
+      await waitFor(() => {
+        expect(mockUploadImage).toHaveBeenCalled()
       })
     })
   })
