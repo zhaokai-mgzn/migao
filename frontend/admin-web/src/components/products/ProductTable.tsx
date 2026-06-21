@@ -34,7 +34,6 @@ interface ProductTableProps {
 // 状态徽章颜色映射（PRD：出售中绿/仓库中灰/审核中橙/草稿蓝）
 const STATUS_BADGE_VARIANT: Record<ProductStatus, 'success' | 'default' | 'warning' | 'info'> = {
   on_sale: 'success',
-  in_warehouse: 'default',
   under_review: 'warning',
   draft: 'info',
   off_sale: 'default',
@@ -271,16 +270,7 @@ export default function ProductTable({
                 <button onClick={(e) => { stop(e); onDelete(record) }} className={dangerLink}>删除</button>
               </>
             )}
-            {/* 仓库中：查看 编辑 上架 删除 */}
-            {record.status === 'in_warehouse' && (
-              <>
-                <button onClick={(e) => { stop(e); onView(record) }} className={linkBase}>查看</button>
-                <button onClick={(e) => { stop(e); onEdit(record) }} className={linkBase}>编辑</button>
-                <button onClick={(e) => { stop(e); onPutOnShelf(record) }} className={linkBase}>上架</button>
-                <button onClick={(e) => { stop(e); onDelete(record) }} className={dangerLink}>删除</button>
-              </>
-            )}
-            {/* 已下架（兼容旧状态）：与仓库中一致 */}
+            {/* 已下架：查看 编辑 上架 删除 */}
             {record.status === 'off_sale' && (
               <>
                 <button onClick={(e) => { stop(e); onView(record) }} className={linkBase}>查看</button>

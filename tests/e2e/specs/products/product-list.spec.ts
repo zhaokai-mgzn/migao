@@ -42,7 +42,7 @@ const MOCK_PRODUCTS = [
     stock: 0,
     salesCount: 200,
     salesAmount: 60000,
-    status: 'in_warehouse',
+    status: 'off_sale',
     createdAt: '2026-05-15T08:00:00Z',
     price: 350,
     unit: '米',
@@ -220,7 +220,7 @@ test.describe('商品列表页面', () => {
 
     await expect(page.getByText('p001')).toBeVisible()
     await expect(page.getByText('p002')).toBeVisible()
-    await expect(page.getByText('p003')).not.toBeVisible() // in_warehouse
+    await expect(page.getByText('p003')).not.toBeVisible() // off_sale（已下架）
   })
 
   test('按创建日期范围搜索 — 应筛选出日期范围内的商品', async ({ page }) => {
@@ -486,7 +486,8 @@ test.describe('商品列表页面', () => {
     await page.getByRole('button', { name: '确定' }).click()
     await page.waitForTimeout(500)
 
-    await expect(page.getByText(/已下架/)).toBeVisible({ timeout: 5_000 })
+    // toast "已下架 N 个商品"（避免 strict mode: filter 中 <option>已下架</option> 不可见 + badge + toast）
+    await expect(page.getByText(/已下架 \d+ 个商品/)).toBeVisible({ timeout: 5_000 })
   })
 
   test('批量删除操作', async ({ page }) => {
@@ -531,8 +532,8 @@ test.describe('商品列表页面', () => {
     expect(page.url()).toContain('/edit')
   })
 
-  test('上架按钮（仓库中商品）', async ({ page }) => {
-    // p003 是 in_warehouse 状态，有"上架"按钮
+  test('上架按钮（已下架商品）', async ({ page }) => {
+    // p003 是 off_sale 状态，有"上架"按钮
     const onShelfBtn = page.locator('tbody button').filter({ hasText: /^上架$/ }).first()
     if (await onShelfBtn.isVisible()) {
       await onShelfBtn.click()

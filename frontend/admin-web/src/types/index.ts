@@ -77,7 +77,7 @@ export interface RefreshTokenResponse {
 export type UserInfoResponse = User
 
 // 商品状态
-export type ProductStatus = 'on_sale' | 'off_sale' | 'draft' | 'in_warehouse' | 'under_review'
+export type ProductStatus = 'on_sale' | 'off_sale' | 'draft' | 'under_review'
 
 // 计价方式
 export type PricingType = 'per_meter' | 'per_piece' | 'fixed' | 'per_area'
@@ -93,7 +93,6 @@ export const ProductStatusLabels: Record<ProductStatus, string> = {
   on_sale: '出售中',
   off_sale: '已下架',
   draft: '草稿',
-  in_warehouse: '仓库中',
   under_review: '审核中',
 }
 

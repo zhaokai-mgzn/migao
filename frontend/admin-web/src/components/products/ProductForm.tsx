@@ -321,7 +321,6 @@ export default function ProductForm({
       const labelMap: Record<ProductStatus, string> = {
         on_sale: '已上架',
         under_review: '已提交审核',
-        in_warehouse: '已放入仓库',
         draft: '已存为草稿',
         off_sale: '已下架',
       }
@@ -713,14 +712,6 @@ export default function ProductForm({
               disabled={submitting !== null && submitting !== 'draft'}
             >
               存草稿
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={() => handleSubmit('in_warehouse')}
-              loading={submitting === 'in_warehouse'}
-              disabled={submitting !== null && submitting !== 'in_warehouse'}
-            >
-              提交并放入仓库
             </Button>
             <Button
               onClick={() => handleSubmit('on_sale')}

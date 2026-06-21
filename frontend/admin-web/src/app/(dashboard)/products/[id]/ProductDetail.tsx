@@ -94,7 +94,6 @@ export default function ProductDetailPage() {
   const statusVariant: Record<ProductStatus, 'success' | 'default' | 'warning' | 'info'> = {
     on_sale: 'success',
     off_sale: 'default',
-    in_warehouse: 'default',
     under_review: 'info',
     draft: 'warning',
   }
@@ -163,7 +162,7 @@ export default function ProductDetailPage() {
         </div>
         <div className="flex items-center gap-2">
           {product.status === 'on_sale' ? (
-            <Button variant="secondary" onClick={() => handleStatusChange('in_warehouse')}>
+            <Button variant="secondary" onClick={() => handleStatusChange('off_sale')}>
               <ArrowDownCircle className="w-4 h-4 mr-1.5" />
               下架
             </Button>

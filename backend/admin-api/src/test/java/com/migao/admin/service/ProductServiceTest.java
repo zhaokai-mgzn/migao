@@ -446,17 +446,73 @@ class ProductServiceTest {
     // ======================== 商品状态变更测试 ========================
 
     @Test
-    @DisplayName("商品下架成功 - on_sale → in_warehouse")
+    @DisplayName("商品下架成功 - on_sale → off_sale")
     void updateProductStatus_OffShelf() {
         // Given: 商品当前状态为 on_sale
         when(productMapper.selectById("prod-001")).thenReturn(testProduct);
         when(productMapper.updateById(any(Product.class))).thenReturn(1);
 
-        // When: 合法流转 on_sale → in_warehouse
-        productService.updateProductStatus("prod-001", "in_warehouse", 1L);
+        // When: 合法流转 on_sale → off_sale
+        productService.updateProductStatus("prod-001", "off_sale", 1L);
 
         // Then
-        verify(productMapper).updateById(argThat((Product p) -> "in_warehouse".equals(p.getStatus())));
+        verify(productMapper).updateById(argThat((Product p) -> "off_sale".equals(p.getStatus())));
+    }
+
+    @Test
+    @DisplayName("商品重新上架成功 - off_sale → on_sale")
+    void updateProductStatus_OnShelf_FromOffSale() {
+        // Given: 商品当前状态为 off_sale
+        Product offSaleProduct = Product.builder()
+                .id("prod-002")
+                .tenantId(1L)
+                .name("已下架商品")
+                .categoryId("cat-001")
+                .basePrice(new BigDecimal("199.00"))
+                .status("off_sale")
+                .build();
+        when(productMapper.selectById("prod-002")).thenReturn(offSaleProduct);
+        when(productMapper.updateById(any(Product.class))).thenReturn(1);
+
+        // When: 合法流转 off_sale → on_sale
+        productService.updateProductStatus("prod-002", "on_sale", 1L);
+
+        // Then
+        verify(productMapper).updateById(argThat((Product p) -> "on_sale".equals(p.getStatus())));
+    }
+
+    @Test
+    @DisplayName("草稿直接上架 - draft → on_sale")
+    void updateProductStatus_DraftToOnSale() {
+        // Given: 商品当前状态为 draft
+        Product draftProduct = Product.builder()
+                .id("prod-003")
+                .tenantId(1L)
+                .name("草稿商品")
+                .categoryId("cat-001")
+                .basePrice(new BigDecimal("99.00"))
+                .status("draft")
+                .build();
+        when(productMapper.selectById("prod-003")).thenReturn(draftProduct);
+        when(productMapper.updateById(any(Product.class))).thenReturn(1);
+
+        // When: 合法流转 draft → on_sale
+        productService.updateProductStatus("prod-003", "on_sale", 1L);
+
+        // Then
+        verify(productMapper).updateById(argThat((Product p) -> "on_sale".equals(p.getStatus())));
+    }
+
+    @Test
+    @DisplayName("in_warehouse 已废弃 — 任何状态流转到 in_warehouse 均抛异常")
+    void updateProductStatus_InWarehouseIsRejected() {
+        // Given: 商品当前状态为 on_sale
+        when(productMapper.selectById("prod-001")).thenReturn(testProduct);
+
+        // When & Then: in_warehouse 已废弃，不能作为目标状态
+        assertThatThrownBy(() -> productService.updateProductStatus("prod-001", "in_warehouse", 1L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("状态流转无效");
     }
 
     @Test

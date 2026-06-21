@@ -56,7 +56,7 @@ export class ProductDetailPage extends BasePage {
     // Header
     this.backButton = page.locator('button').filter({ has: page.locator('svg') }).first()
     this.productName = page.locator('h1')
-    this.statusBadge = page.locator('span').filter({ hasText: /出售中|仓库中|草稿|审核中/ }).first()
+    this.statusBadge = page.locator('span').filter({ hasText: /出售中|已下架|草稿|审核中/ }).first()
     this.skuLabel = page.locator('span.font-mono').filter({ hasText: /SKU:/ })
     this.onShelfButton = page.getByRole('button', { name: /上架/ })
     this.offShelfButton = page.getByRole('button', { name: /下架/ })
