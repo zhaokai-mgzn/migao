@@ -192,7 +192,7 @@ if [ "${IS_BLOCKED:-0}" -gt 0 ]; then
 
 	        # ══ 检查 REVIEW_JSON 结果 ══
 	        REVIEW_BODY=$(gh issue view "$ISSUE_ID" --comments --json comments \
-	            --jq '[.comments[] | select(.body | contains("REVIEW_JSON"))] | last | .body' 2>/dev/null)
+	            --jq '[.comments[] | select(.body | contains("<!-- REVIEW_JSON"))] | last | .body' 2>/dev/null)
 	        REVIEW_ACTION=$(echo "$REVIEW_BODY" | grep -oP '"action"\s*:\s*"\K\w+' | head -1)
 
 	        if [ "$REVIEW_ACTION" = "accept" ]; then
