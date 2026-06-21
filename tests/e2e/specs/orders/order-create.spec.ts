@@ -128,6 +128,7 @@ test.describe('订单创建', () => {
       // 填写收货信息
       await page.locator('input[placeholder="请输入收货人姓名"]').fill('测试客户')
       await page.locator('input[placeholder="请输入 11 位手机号"]').fill('13900139000')
+      await page.locator('input[placeholder="请输入详细收货地址"]').fill('杭州市西湖区')
 
       // 选择商品
       await page.getByText('点击搜索并选择商品').click()

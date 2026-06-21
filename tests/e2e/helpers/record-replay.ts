@@ -43,11 +43,11 @@ export async function recordFixture(
         return resp.json()
       },
       {
-        maxRetries: 2,
-        baseDelayMs: 2000,
+        maxRetries: 5,
+        baseDelayMs: 3000,
         shouldRetry: (err) => {
           const msg = (err as Error).message || ''
-          return /5\d\d|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EPIPE/.test(msg)
+          return /5\d\d|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EPIPE|ECONNRESET/.test(msg)
         },
       },
     )
