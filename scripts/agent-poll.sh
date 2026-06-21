@@ -98,8 +98,11 @@ if [ -n "$NEEDS_FIX" ] && [ "$NEEDS_FIX" != "null null" ]; then
         log "⚠️ PR #$PR_NUM 无关联 issue，移除 needs-changes"
         gh_exec gh pr edit "$PR_NUM" --remove-label "junshi-review/needs-changes" || true
     else
-        # Fix2: 检查修复尝试次数（通过 PR 上的 needs-changes 添加/移除次数）
-        FIX_ATTEMPTS=$(gh_exec gh pr view "$PR_NUM" --json timelineItems --jq '[.timelineItems[] | select(.__typename=="LabeledEvent" and .label.name=="junshi-review/needs-changes")] | length' 2>/dev/null || echo "1")
+        # Fix2: 检查修复尝试次数（通过 PR 上 zhaokai-mgzn 发的修复日志评论数）
+        # 旧版用 timelineItems 字段 → 当前 gh 版本不支持 → 改用 comments 关键词数
+        FIX_ATTEMPTS=$(gh_exec gh pr view "$PR_NUM" --json comments --jq '[.comments[] | select(.author.login == "zhaokai-mgzn" and (.body | contains("二郎神熔断") or contains("needs-changes → 修复")))] | length' 2>/dev/null || echo "0")
+        # 至少算 1 次（当前轮 = 第 N+1 次）
+        FIX_ATTEMPTS=$((FIX_ATTEMPTS + 1))
         if [ "${FIX_ATTEMPTS:-1}" -ge 3 ]; then
             log "🛑 PR #$PR_NUM needs-changes 已达3次上限 → block/need-human"
             gh_exec gh pr comment "$PR_NUM" --body "## 🛑 二郎神熔断
