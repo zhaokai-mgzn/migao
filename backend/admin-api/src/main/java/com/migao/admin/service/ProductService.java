@@ -77,12 +77,10 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
      */
     private static final Map<String, List<String>> STATUS_TRANSITIONS = new HashMap<>();
     static {
-        STATUS_TRANSITIONS.put("draft", List.of("under_review", "in_warehouse"));
+        STATUS_TRANSITIONS.put("draft", List.of("under_review", "on_sale"));
         STATUS_TRANSITIONS.put("under_review", List.of("on_sale", "draft"));
-        STATUS_TRANSITIONS.put("on_sale", List.of("in_warehouse"));
-        STATUS_TRANSITIONS.put("in_warehouse", List.of("under_review"));
-        // 兼容旧状态
-        STATUS_TRANSITIONS.put("off_sale", List.of("on_sale", "under_review", "in_warehouse"));
+        STATUS_TRANSITIONS.put("on_sale", List.of("off_sale"));
+        STATUS_TRANSITIONS.put("off_sale", List.of("on_sale", "under_review"));
     }
 
     /**
@@ -756,7 +754,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         if (productIds == null || productIds.isEmpty()) {
             return result;
         }
-        Set<String> allowedStatuses = Set.of("off_sale", "in_warehouse");
+        Set<String> allowedStatuses = Set.of("off_sale");
 
         for (String id : productIds) {
             Product product = productMapper.selectById(id);
@@ -802,7 +800,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                 result.addError(id, "当前状态[" + currentStatus + "]不允许下架");
                 continue;
             }
-            product.setStatus("in_warehouse");
+            product.setStatus("off_sale");
             product.setEditedBy(getCurrentUsername());
             product.setEditedAt(OffsetDateTime.now());
             productMapper.updateById(product);
@@ -1138,7 +1136,6 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         return switch (status) {
             case "on_sale" -> "出售中";
             case "off_sale" -> "已下架";
-            case "in_warehouse" -> "仓库中";
             case "under_review" -> "审核中";
             case "draft" -> "草稿";
             default -> status;

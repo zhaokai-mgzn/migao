@@ -38,9 +38,8 @@ test.describe('商品创建', () => {
       await expect(page.getByRole('heading', { name: '图文描述' })).toBeVisible()
     })
 
-    test.skip('底部操作栏应包含三个按钮', async ({ page }) => {
+    test.skip('底部操作栏应包含两个按钮', async ({ page }) => {
       await expect(page.getByRole('button', { name: '存草稿' })).toBeVisible()
-      await expect(page.getByRole('button', { name: '提交并放入仓库' })).toBeVisible()
       await expect(page.getByRole('button', { name: '提交并上架' })).toBeVisible()
     })
   })

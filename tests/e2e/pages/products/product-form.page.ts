@@ -6,7 +6,7 @@ import { BasePage } from '../base.page'
  *
  * Used by both /products/new and /products/[id]/edit.
  * Sections: basic info, images, attributes, SKU matrix, processing, rich text.
- * Submit buttons: draft, in_warehouse, on_sale.
+ * Submit buttons: draft, on_sale.
  */
 export class ProductFormPage extends BasePage {
   // ─── Header ──────────────────────────────────────────────────
@@ -46,7 +46,6 @@ export class ProductFormPage extends BasePage {
   readonly submitBar: Locator
   readonly resetButtonBottom: Locator
   readonly draftButton: Locator
-  readonly warehouseButton: Locator
   readonly onSaleButton: Locator
 
   // ─── Validation errors ──────────────────────────────────────
@@ -94,7 +93,6 @@ export class ProductFormPage extends BasePage {
     this.submitBar = page.locator('.fixed.bottom-0')
     this.resetButtonBottom = this.submitBar.getByRole('button', { name: /重置/ })
     this.draftButton = this.submitBar.getByRole('button', { name: /存草稿/ })
-    this.warehouseButton = this.submitBar.getByRole('button', { name: /提交并放入仓库/ })
     this.onSaleButton = this.submitBar.getByRole('button', { name: /提交并上架|保存修改/ })
 
     // Validation

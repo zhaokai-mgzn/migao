@@ -9,11 +9,11 @@ import { productApi } from '@/lib/api'
 import { toast } from 'sonner'
 import type { Product, ProductStatus } from '@/types'
 
-// 状态选项（PRD：全部/出售中/仓库中/审核中/草稿）
+// 状态选项（PRD：全部/出售中/已下架/审核中/草稿）
 const STATUS_OPTIONS: { value: '' | ProductStatus; label: string }[] = [
   { value: '', label: '全部' },
   { value: 'on_sale', label: '出售中' },
-  { value: 'in_warehouse', label: '仓库中' },
+  { value: 'off_sale', label: '已下架' },
   { value: 'under_review', label: '审核中' },
   { value: 'draft', label: '草稿' },
 ]
@@ -181,7 +181,7 @@ export default function ProductsPage() {
         await productApi.updateProductStatus(product.id, 'on_sale')
         toast.success('已上架')
       } else if (action === 'off_shelf') {
-        await productApi.updateProductStatus(product.id, 'in_warehouse')
+        await productApi.updateProductStatus(product.id, 'off_sale')
         toast.success('已下架')
       } else if (action === 'delete') {
         await productApi.deleteProduct(product.id)
@@ -267,7 +267,7 @@ export default function ProductsPage() {
       if (batchAction === 'off_shelf') {
         return {
           title: '立即下架',
-          desc: `是否确认下架${count > 1 ? `选中的 ${count} 个商品` : ''}？商品下架后状态变更为"仓库中"，可重新对商品进行管理上架。`,
+          desc: `是否确认下架${count > 1 ? `选中的 ${count} 个商品` : ''}？商品下架后状态变更为"已下架"，可重新对商品进行管理上架。`,
           variant: 'primary' as const,
           onSubmit: submitBatch,
           onClose: () => setBatchAction(null),
