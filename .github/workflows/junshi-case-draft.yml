@@ -19,6 +19,8 @@ jobs:
       contains(github.event.issue.labels.*.name, 'needs-truths')
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       - name: 处理 needs-truths → needs-verification 转换
         if: contains(github.event.issue.labels.*.name, 'needs-truths')
         env:
