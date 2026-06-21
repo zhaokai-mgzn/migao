@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { orderApi, productApi } from '@/lib/api'
 import type { ProductProcessingItem } from '@/lib/api'
 import { resolveImageUrl } from '@/lib/utils'
+import { useOrderAmounts } from '@/hooks/useOrderAmounts'
 import { Button, Card, Input, Modal } from '@/components/ui'
 import type { Product, OrderItemFormData } from '@/types'
 
@@ -94,10 +95,6 @@ export default function NewOrderPage() {
   const [customerPhone, setCustomerPhone] = useState('')
   const [customerAddress, setCustomerAddress] = useState('')
   const [remark, setRemark] = useState('')
-
-  // ===== 实收款 =====
-  const [actualAmount, setActualAmount] = useState<string>('')
-  const [actualTouched, setActualTouched] = useState(false)
 
   // 表单错误
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -285,12 +282,14 @@ export default function NewOrderPage() {
     }
   }, [lineItems])
 
-  // 实收款联动
-  useEffect(() => {
-    if (!actualTouched) {
-      setActualAmount(totals.total.toFixed(2))
-    }
-  }, [totals.total, actualTouched])
+  // ===== 优惠金额 + 实收款 联动逻辑 =====
+  const {
+    discountAmount,
+    setDiscountAmount,
+    actualAmount,
+    setActualAmount,
+    actualTouched,
+  } = useOrderAmounts(totals.total)
 
   // ===== 校验 =====
   const validate = (): boolean => {
@@ -601,22 +600,36 @@ export default function NewOrderPage() {
                   </span>
                 </div>
 
+                {/* 优惠金额 — issue #672 */}
                 <div className="pt-3 mt-2 border-t border-gray-100">
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                    实收款 (¥)
+                    优惠金额 (¥)
                   </label>
                   <input
                     type="number"
                     min={0}
                     step={0.01}
-                    value={actualAmount}
-                    onChange={(e) => {
-                      setActualTouched(true)
-                      setActualAmount(e.target.value)
-                    }}
+                    value={discountAmount}
+                    onChange={(e) => setDiscountAmount(e.target.value)}
                     className="w-full h-9 px-3 rounded border border-gray-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                   />
-                  <p className="mt-1 text-xs text-gray-400">默认与订单金额一致，可手动调整</p>
+                  <p className="mt-1 text-xs text-gray-400">默认 0，修改后实收款自动联动</p>
+                </div>
+
+                <div className="pt-3 mt-2 border-t border-gray-100">
+                  <label htmlFor="actualAmount" className="block text-sm font-medium text-gray-700 mb-1.5">
+                    实收款 (¥)
+                  </label>
+                  <input
+                    type="number"
+                    id="actualAmount"
+                    min={0}
+                    step={0.01}
+                    value={actualAmount}
+                    onChange={(e) => setActualAmount(e.target.value)}
+                    className="w-full h-9 px-3 rounded border border-gray-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                  />
+                  <p className="mt-1 text-xs text-gray-400">默认与订单金额（扣除优惠后）一致，可手动调整</p>
                 </div>
               </dl>
             </div>

@@ -265,7 +265,7 @@ export default function OrderDetailPage() {
         title="商品信息"
         rightAction={
           <span className="text-sm text-primary-600 font-medium">
-            订单实收款：{formatAmount(order.actualAmount)}元
+            订单实收款：{formatAmount(order.actualAmount)}
           </span>
         }
       >
@@ -276,6 +276,13 @@ export default function OrderDetailPage() {
             <ProcessingTable items={order.processingItems} total={processingTotal} />
           </div>
         )}
+
+        {/* 金额汇总：订单金额 / 优惠金额 / 实收款 — issue #672 */}
+        <AmountSummary
+          totalAmount={order.totalAmount}
+          discountAmount={order.discountAmount}
+          actualAmount={order.actualAmount}
+        />
       </SectionCard>
 
       {/* 收货信息 */}
@@ -684,5 +691,40 @@ function Td({
     >
       {children}
     </td>
+  )
+}
+
+// ===== 金额汇总：订单金额 / 优惠金额 / 实收款 — issue #672 =====
+function AmountSummary({
+  totalAmount,
+  discountAmount,
+  actualAmount,
+}: {
+  totalAmount: number
+  discountAmount?: number
+  actualAmount: number
+}) {
+  const discount = discountAmount ?? 0
+  return (
+    <div className="mt-5 pt-4 border-t border-gray-100">
+      <div className="flex items-center gap-6 text-sm">
+        <div className="flex items-center gap-2">
+          <span className="text-gray-500">订单金额</span>
+          <span className="text-gray-900 font-medium">{formatAmount(totalAmount)}</span>
+        </div>
+        <div className="text-gray-300">|</div>
+        <div className="flex items-center gap-2">
+          <span className="text-gray-500">优惠金额</span>
+          <span className={discount > 0 ? 'text-green-600 font-medium' : 'text-gray-900'}>
+            {discount > 0 ? `-${formatAmount(discount)}` : formatAmount(0)}
+          </span>
+        </div>
+        <div className="text-gray-300">|</div>
+        <div className="flex items-center gap-2">
+          <span className="text-gray-500">实收款</span>
+          <span className="text-primary-600 font-semibold">{formatAmount(actualAmount)}</span>
+        </div>
+      </div>
+    </div>
   )
 }
