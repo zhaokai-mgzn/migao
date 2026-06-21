@@ -1,0 +1,72 @@
+name: junshi/verify-trigger
+
+# 二郎神体系：PR merge → 军师评论 VERIFY_TRIGGER → Agent 跑双验收
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+jobs:
+  verify-trigger:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 查找关联 issue 并评论 VERIFY_TRIGGER
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          # 从 PR body 提取 Fixes #xxx
+          ISSUE_NUM=$(echo "$PR_BODY" | grep -oP 'Fixes\s+#\d+' | head -1 | grep -oP '\d+' || echo "")
+          if [ -z "$ISSUE_NUM" ]; then
+            echo "No linked issue found in PR body, skipping verify trigger"
+            exit 0
+          fi
+
+          LABEL_JSON=$(gh issue view "$ISSUE_NUM" --json labels -q '.labels[].name' 2>/dev/null || echo "")
+          if ! echo "$LABEL_JSON" | grep -q "needs-verification"; then
+            echo "Issue #$ISSUE_NUM does not have needs-verification label, skipping"
+            exit 0
+          fi
+
+          # 生成 VERIFY_TRIGGER 评论
+          cat > /tmp/verify-comment.md << COMMENT
+          ## 🤖 军师验收触发
+
+          PR [#$PR_NUMBER]($PR_URL) 已合入 \`main\`。
+
+          | 项目 | 值 |
+          |------|-----|
+          | Issue | #$ISSUE_NUM |
+          | Commit | \`$PR_SHA\` |
+          | Author | @$PR_AUTHOR |
+
+          ---
+
+          <!-- VERIFY_TRIGGER
+          {
+            "issue_id": $ISSUE_NUM,
+            "pr_number": $PR_NUMBER,
+            "commit": "$PR_SHA",
+            "pr_author": "$PR_AUTHOR",
+            "merged_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          -->
+          COMMENT
+
+          gh issue comment "$ISSUE_NUM" --body-file /tmp/verify-comment.md
+          echo "VERIFY_TRIGGER posted to issue #$ISSUE_NUM"
