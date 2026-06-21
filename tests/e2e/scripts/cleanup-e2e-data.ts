@@ -51,16 +51,22 @@ async function login(): Promise<string> {
   return json.data.accessToken
 }
 
-// 匹配测试数据 — 含 test / 测试 / E2E / smoke 等明显测试标记
+// 匹配测试数据 — 含 test / 测试 / E2E / smoke / 新分类 / 新加工项 等明显测试标记
 const TEST_NAME_PATTERNS = [
   /E2E/i,
   /test/i,
   /测试/,
   /smoke/i,
+  /冒烟/,
   /^默认值测试$/,
   /^名称修复测试$/,
   /^SKU笛卡尔/,
-  /冒烟/,
+  /^新分类/,
+  /^新商品/,
+  /^新加工项/,
+  /^新客户/,
+  /^新标签/,
+  /^新订单/,
 ]
 
 function isTestData(name: string): boolean {
