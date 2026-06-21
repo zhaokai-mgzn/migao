@@ -30,12 +30,39 @@ agent-poll.sh 已经选好了 issue 并传给你。**不要重新扫描。** 直
 ```
 1. 读 CONTRACT_JSON → 获取业务真值
 2. 读 DRAFT_JSON (军师评论) → 获取 L2/L3/L4 case 草稿
-3. 逐条比对：每个业务真值是否有对应 case 覆盖
-4. 判断：
+3. L4 API 路径校验（新增 v2.1）→ 逐条 grep controller 确认端点真实存在
+4. 逐条比对：每个业务真值是否有对应 case 覆盖
+5. 判断：
    ✅ 合理 → 评论 REVIEW_JSON accept → 进入 Phase 2
    ❌ 不合理 → 评论 REVIEW_JSON reject + 原因 → 停止（不写码）
    ➕ 需补充 → 评论 REVIEW_JSON supplement + 补充内容 → 进入 Phase 2
 ```
+
+**L4 API 路径校验（v2.1 — accept 前强制执行）**：
+
+对 DRAFT_JSON 中每条 L4 断言涉及的 API 端点，必须确认路径真实存在：
+```bash
+# 确认 HTTP 方法 + 路径匹配（后端）
+grep -rE '@(Get|Post|Put|Delete)Mapping.*"/api/admin/xxx"' backend/admin-api/src/main/java/com/migao/admin/controller/
+
+# 确认 API 方法名存在于前端 api.ts
+grep -rE 'uploadImage|batchOffShelf|updateSettings' frontend/admin-web/src/lib/api.ts
+```
+
+校验结果直接写入 DRAFT_JSON 的每条 L4 断言：
+```json
+{
+  "id": "T1",
+  "l4_asserts": [{
+    "method": "POST",
+    "path": "/api/admin/upload/image",
+    "source": "uploadApi.uploadImage → Controller verified",
+    "expect": "status = 200 AND data.url 非空"
+  }]
+}
+```
+
+路径找不到 → 修正路径或标记 `skip`。**禁止**把未经校验的路径写入 DRAFT_JSON。
 
 **REVIEW_JSON 格式**（贴到 issue 评论）：
 
@@ -45,8 +72,8 @@ agent-poll.sh 已经选好了 issue 并传给你。**不要重新扫描。** 直
 -->
 ```
 
-- `accept`: case 覆盖全、真值清晰 → 直接写码
-- `reject`: case 与真值矛盾 / 真值不清 → 停止，描述原因
+- `accept`: case 覆盖全、真值清晰、**L4 路径已校验** → 直接写码
+- `reject`: case 与真值矛盾 / 真值不清 / L4 路径不存在 → 停止，描述原因
 - `supplement`: case 不全 → 补充 case 后继续
 
 ### Phase 2：TDD 写码
