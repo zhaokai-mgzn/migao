@@ -32,7 +32,19 @@ jobs:
               /## 问题描述/.test(body);
 
             if (hasContract || hasTruths) {
-              console.log('✅ 已有业务真值');
+              // 有业务真值 → 自动加入二郎神体系
+              const needsLabel = !context.payload.issue.labels.some(l => l.name === 'needs-verification');
+              if (needsLabel) {
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  labels: ['needs-verification'],
+                });
+                console.log('✅ 已添加 needs-verification → 进入二郎神体系');
+              } else {
+                console.log('✅ 已有 needs-verification');
+              }
               return;
             }
 
