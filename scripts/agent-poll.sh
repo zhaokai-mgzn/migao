@@ -199,6 +199,13 @@ if [ "${IS_BLOCKED:-0}" -gt 0 ]; then
 		        if [ -z "$REVIEW_ACTION" ]; then
 		            REVIEW_ACTION=$(grep -oP '"action"\\s*:\\s*"\\K\\w+' /var/log/migao-agent-review.log 2>/dev/null | tail -1)
 		            log "⚠️ Agent 未贴 REVIEW_JSON comment，从日志提取: action=$REVIEW_ACTION"
+
+		        # 从日志提取完整 REVIEW_JSON 并贴到 GitHub
+		        REVIEW_JSON_BLOCK=$(grep -A2 "<!-- REVIEW_JSON" /var/log/migao-agent-review.log 2>/dev/null | tail -3)
+		        if [ -n "$REVIEW_JSON_BLOCK" ]; then
+		            echo -e "## 🤖 研发 Agent Phase 1 Review\n\n\`\`\`\n$REVIEW_JSON_BLOCK\n\`\`\`" | gh issue comment "$ISSUE_ID" --body-file - 2>/dev/null
+		            log "✅ REVIEW_JSON 已自动贴到 issue"
+		        fi
 		        fi
 
 	        if [ "$REVIEW_ACTION" = "accept" ]; then
