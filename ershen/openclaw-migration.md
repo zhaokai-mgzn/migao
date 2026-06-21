@@ -1,185 +1,83 @@
-# 军师 OpenClaw 改造清单
+# OpenClaw 二郎神 Cron 配置参考
 
-> 二郎神体系中，军师（OpenClaw）需要改造的部分。其余保持不动。
+> 二郎神体系 v5.0 — OpenClaw 管理 7 个 cron job。提示词文件在 `/opt/junshi/prompts/`。
+> 本文档记录当前活跃 cron 的提示词，供维护参考。主权威文档为 `ershen/handbook.md`。
 
-## 改造总览
+## 活跃 Cron (7 个)
+
+### 1. junshi-automerge — 每 10 分钟
 
 ```
-┌─────────────────────────────────────────────────┐
-│              需要改造 (OpenClaw)                   │
-│                                                 │
-│  junshi-poll.sh ───→ OpenClaw 内部 cron ✅ 已迁移  │
-│  case_draft.py   ───→ OpenClaw LLM 理解           │
-│  learn.py --grow ───→ OpenClaw LLM 生长分析 ✅ 已迁移 │
-│  quality_report  ───→ OpenClaw 日报生成            │
-│  crontab 管理    ───→ OpenClaw 原生调度            │
-│                                                 │
-├─────────────────────────────────────────────────┤
-│              保持不动                              │
-│                                                 │
-│  agent-poll.sh       Agent 调度 (机械)            │
-│  primary/reviewer/merge ───→ verify-agent LLM ✅ v3.0 │
-│  pr-check.yml        QA Growth Gate (CI)         │
-│  验证模板 YAML        数据结构                    │
-│  dev-agent.md        Agent 指令                  │
-│  verify-agent.md     Agent 指令                  │
-└─────────────────────────────────────────────────┘
+你是二郎神体系的军师。判断 PR 是否可自动合并。
+
+## 第一步：有无 PR
+gh pr list --state open --json number --limit 1
+如果返回 [] → 静默退出
+
+## 第二步：逐 PR 判断
+gh pr list --state open --json number,title,labels,mergeable,statusCheckRollup,body,files --limit 20
+
+对每个 PR 检查:
+a. CI 全绿：只看实际运行过的 checks (status=COMPLETED)，全部 SUCCESS
+   忽略 status=EXPECTED 的（条件 checks 未触发，无需等待）
+b. 关联 issue：body 有 Fixes/Closes #xxx
+c. 无敏感文件：不含 .env（非 example）
+d. 前端/Controller 变更 → E2E spec 存在
+
+全通过 → gh pr merge --squash --delete-branch <N> → 评论成功
+任一不通过 → gh pr edit <N> --add-label junshi-review/needs-changes → 评论原因
+
+## 边界
+不修改代码、不改变 .github/workflows/、5min超时、失败重试1次
 ```
 
----
+### 2. junshi-stale-watch — 每 30 分钟
 
-## 改造一：junshi-poll.sh → OpenClaw 内部 cron
+巡检 `needs-verification` issue >3 天无进展。读评论区分"真 stale"和"在正常 review 周期"。真 stale → 催促评论 + 严重→升级。
 
-**现状**: 外部 crontab 每 3 分钟执行 bash 脚本  
-**目标**: OpenClaw 内部 cron 替代，LLM 理解替代 sed/grep
+### 3. junshi-hold-escalate — 每天 9/12/15/18/21
 
-### OpenClaw 需要实现的 6 个定时任务
+扫 `hold/auto-fail` 积压 >7 天。判断真阻塞 vs Agent 跑挂。分级 P0/P1/P2 → 升级人工。
 
-| # | 频率 | 任务 | OpenClaw 实现方式 |
-|---|------|------|------------------|
-| 1 | 3min | 扫新 issue → case_draft | LLM 读 issue，判断领域，选模板，生成草稿 |
-| 2 | 3min | 扫 PR → auto merge | LLM 检查 CI 状态 + issue 关联 → gh pr merge |
-| 3 | 3min | 扫 merged PR → VERIFY_TRIGGER | LLM 检测 deploy 状态 → 发触发评论 |
-| 4 | 3min | 巡检 stale (>3天) | LLM 识读 issue 状态 → 评论催促 |
-| 5 | 3min | 巡检 hold (>7天) | LLM 判断升级 → 改 label |
-| 6 | 19:00 | 质量日报 | LLM 调用 quality_report.py 并追加到日报 issue |
+### 4. junshi-daily-report — 每天 19:00
 
-### 仍调用的机械脚本
+调用 `quality_report.py --days 1` → LLM 理解数据 → 200-400 字中文日报 → 追加到日报 issue。
 
-OpenClaw 在以上任务中仍需调用这些 Python 脚本（它们保持不变）：
+### 5. junshi-pattern-reflect (L2) — 每天 2:00
+
+收集近 24h REJECT/HOLD/BLOCK → LLM 聚类分析 → 同模板≥3次自动修 YAML → 无法自动修则建 process-improvement issue。
+
+详细提示词：`/opt/junshi/prompts/pattern-reflect.txt`
+
+### 6. junshi-meta-reflect (L3) — 每周一 10:00
+
+`quality_report.py --days 7` → block率/close率/闭环时间 趋势分析 → 瓶颈定位 → 建改进计划 issue。
+
+详细提示词：`/opt/junshi/prompts/meta-reflect.txt`
+
+### 7. junshi-coverage-weekly — 每周一 10:30
+
+`coverage_weekly.py --scan --create-issues` → 全量覆盖率扫描 → 自动建 issue。
+
+## 已停用 Cron
+
+| Job | 原因 |
+|-----|------|
+| `junshi-casedraft` | CI + agent-poll 信号0 替代（事件驱动比5分钟轮询更快） |
+
+## 管理命令
 
 ```bash
-$PYTHON scripts/dual_verify/quality_report.py --days 7    # 生成日报数据
-gh issue list / gh pr list / gh issue comment ...           # GitHub 操作
+# 查看所有 cron
+openclaw cron list --url ws://127.0.0.1:15196 --token <token>
+
+# 查看运行历史
+openclaw cron runs --id <job-id>
+
+# 立即运行一次
+openclaw cron run <job-id>
+
+# 启用/停用
+openclaw cron enable <job-id>
+openclaw cron disable <job-id>
 ```
-
----
-
-## 改造二：case_draft.py 关键词匹配 → LLM 理解
-
-**现状**: 硬编码 TEMPLATES 字典 + 关键词计数匹配（只扫前 500 字符）  
-**目标**: OpenClaw LLM 直接读 issue，理解业务领域，匹配或建议模板
-
-### OpenClaw 需要做的
-
-1. 读取 issue 标题 + body
-2. 理解业务领域（LLM 推理，不需要关键词字典）
-3. 浏览 `docs/verification-templates/` 目录
-4. 判断：
-   - 匹配到已有模板 → 按模板生成 L2/L3/L4 草稿
-   - 未匹配 → 提取领域关键词 → 创建 "新建模板" issue
-   - 匹配但 asserts 不足 → 创建 "补充模板" issue
-5. 以 DRAFT_JSON 格式贴到 issue 评论
-
-### 可以删除的代码
-
-`case_draft.py` 中以下函数不再需要：
-- `match_template()` — LLM 替代
-- `extract_domain_keywords()` — LLM 替代
-- `TEMPLATES` 字典 — LLM 自己读模板目录
-- `quality_gate()` 中的关键词匹配逻辑 — LLM 自行判断
-- `auto_patch_template()` — 已禁用，可清理
-
-保留的部分（仍供 OpenClaw 调用）：
-- `extract_truths()` — 机械提取 CONTRACT_JSON
-- `count_auto_asserts()` — 机械统计
-- `load_template()` — 加载 YAML
-
----
-
-## 改造三：learn.py 生长分析 → LLM 深度分析
-
-**现状**: learn.py --grow 用正则分析 keyword gaps，创建 issue  
-**目标**: OpenClaw LLM 分析 QA 结果，深度理解模式，生成更精准的生长建议
-
-### OpenClaw 需要做的（每天一次）
-
-1. 读 `/opt/qa-results/` 最新结果
-2. 分析 reviewer.json 中 manual 断言模式
-3. 分析 primary=pass + reviewer=fail 的 mock 欺骗案例
-4. 分析 block 率趋势
-5. 创建精准的生长 issue（关键词补充、模板完善、Gate 收紧）
-
-### 可以删除的代码
-
-`learn.py` 中以下函数不再需要：
-- `scan_manual_assertions()` 
-- `find_keyword_gaps()` 
-- `detect_template_gaps()` 
-- `detect_mock_deception()` 
-- `cmd_grow()` 中的规则判断逻辑
-- `CURRENT_KEYWORD_COVERAGE` 字典
-
-保留：
-- `scan_real_cases()` — 机械扫描
-- `cmd_scan()` / `cmd_stats()` — 统计输出
-- `load_rules()` / `save_rules()` — learned_rules.json 管理
-
----
-
-## 改造四：日报 → OpenClaw 日报 Agent
-
-**现状**: junshi-poll.sh 在 19:00 调用 quality_report.py  
-**目标**: OpenClaw 定时触发，LLM 分析 quality_report.py 输出的数据，生成可读报告，追加到日报 issue
-
-### OpenClaw 需要做的
-
-1. 每天 19:00 触发
-2. 调用 `$PYTHON scripts/dual_verify/quality_report.py --days 7`
-3. LLM 阅读输出，生成可读摘要
-4. 追加到 `#日报 issue` 评论
-
----
-
-## 改造五：外部 crontab → OpenClaw 原生调度
-
-**删除这些 crontab 条目**:
-
-```
-*/3 * * * * junshi-poll.sh        # → OpenClaw 3min timer
-7 */4 * * *  learn.py --scan      # → OpenClaw 4h timer  
-7 3 * * *    learn.py --grow      # → OpenClaw daily timer
-```
-
-**保留**:
-```
-*/5 * * * *  agent-poll.sh        # Agent 调度不动
-```
-
----
-
-## 不变的部分（Agent 侧）
-
-这些完全不动，OpenClaw 不涉及：
-
-| 组件 | 原因 |
-|------|------|
-| `agent-poll.sh` | Agent 机械调度，crontab 保留 |
-| `primary.py` | 跑 E2E + pytest，纯机械 |
-| `reviewer.py` | API 调用 + expect 验证，纯机械 |
-| `merge.py` | 规则判定 close/hold/block |
-| `pr-check.yml` | CI 中检查测试文件 |
-| 验证模板 YAML | 数据结构，Agent 修改 |
-| `dev-agent.md` | Agent 指令 |
-| `verify-agent.md` | Agent 验收指令 |
-| `CLAUDE.md` | 项目铁律 |
-
----
-
-## Agent 与 OpenClaw 的接口
-
-OpenClaw 通过以下方式指挥 Agent：
-
-```
-OpenClaw 发 GitHub Comment          Agent 检测并执行
-─────────────────────────          ─────────────────
-DRAFT_JSON 评论                    agent-poll.sh 抢 issue
-VERIFY_TRIGGER 评论                 agent-poll.sh 跑验收
-补充/新建模板 issue (qa 标签)       agent-poll.sh 抢模板任务
-BLOCK_LOG 评论                     agent-poll.sh 修复 block
-```
-
-Agent 完成后，结果写入：
-- `PR body (Closes #xxx)` — OpenClaw 自动 merge
-- `VERIFY_RESULT 评论` — OpenClaw 读验收结果
-- `REVIEW_JSON 评论` — OpenClaw 了解 review 决策
