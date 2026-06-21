@@ -267,7 +267,10 @@ def draft_l3(template):
     if not template or not template.get("primary_specs"):
         return "⚠️ 未匹配模板，请手动指定 E2E spec"
     lines = []
-    for spec in template["primary_specs"]:
+    e2e_specs = [s for s in template["primary_specs"] if "e2e/specs" in s]
+    if not e2e_specs:
+        return "⚠️ 模板 primary_specs 中无 E2E spec 路径，请手动指定"
+    for spec in e2e_specs:
         lines.append(f"- `{spec}`: happy path + 错误路径 + 边界")
     if template.get("common_pitfalls"):
         lines.append(f"\n⚠️ {', '.join(template['common_pitfalls'][:3])}")
