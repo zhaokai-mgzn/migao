@@ -1,12 +1,11 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Building2, Shield, Save, Eye, EyeOff, ArrowRight } from 'lucide-react'
+import { Building2, Shield, Save, Eye, EyeOff } from 'lucide-react'
 import Image from 'next/image'
-import Link from 'next/link'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Button, Badge } from '@/components/ui'
+import { Button } from '@/components/ui'
 import { settingsApi } from '@/lib/api'
 import type { SystemSettings, ChangePasswordParams, LoginLog } from '@/types'
 import dayjs from 'dayjs'
@@ -130,21 +129,6 @@ export default function SettingsPage() {
         <h1 className="text-xl font-semibold text-gray-900">系统设置</h1>
         <p className="text-sm text-gray-500 mt-1">配置系统参数和账户安全</p>
 
-        {/* 迁移提示：AI 配置已迁至机器人设置 */}
-        <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-blue-700">
-              AI 配置功能已迁移至「机器人设置」
-            </span>
-          </div>
-          <Link
-            href="/chat/config"
-            className="flex items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-800 transition-colors"
-          >
-            前往配置
-            <ArrowRight className="w-4 h-4" />
-          </Link>
-        </div>
       </div>
 
       <div className="flex gap-6">

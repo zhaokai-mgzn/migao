@@ -4,8 +4,6 @@ import { BasePage } from '../base.page'
 export class SettingsPage extends BasePage {
   readonly basicTab: Locator
   readonly securityTab: Locator
-  readonly migrationNotice: Locator
-  readonly migrationLink: Locator
   readonly companyNameInput: Locator
   readonly logoUpload: Locator
   readonly notificationToggle: Locator
@@ -21,8 +19,6 @@ export class SettingsPage extends BasePage {
     super(page)
     this.basicTab = page.getByRole('button', { name: /基本设置/ })
     this.securityTab = page.getByRole('button', { name: /账户安全/ })
-    this.migrationNotice = page.getByText(/AI 配置功能已迁移至/)
-    this.migrationLink = page.getByRole('link', { name: /前往配置/ })
     this.companyNameInput = page.locator('input[type="text"]').first()
     this.logoUpload = page.getByRole('button', { name: /上传 Logo/ })
     this.notificationToggle = page.locator('button').filter({ has: page.locator('.w-11.h-6') }).first()
