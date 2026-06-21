@@ -380,6 +380,16 @@ jobs:
           gh pr edit "$PR_NUMBER" --add-label "junshi-review/needs-changes" 2>/dev/null || true
           exit 1
 
+      # 任何 CI 失败都打 needs-changes（覆盖 typecheck/单测/E2E，不止 Growth Gate）
+      - name: Label needs-changes on any failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          gh pr edit "$PR_NUMBER" --add-label "junshi-review/needs-changes" 2>/dev/null || true
+          echo "🔧 自动标记 needs-changes — agent-poll 将修复"
+
       # PR comment — 始终发布/更新（pass/fail/warn 都更新）
       - name: Post PR comment
         if: always()

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Plus, RotateCcw, Search, Calendar } from 'lucide-react'
 import { Button, Modal } from '@/components/ui'
@@ -89,6 +89,21 @@ export default function ProductsPage() {
       router.replace(`/products?${url.toString()}`, { scroll: false })
     },
     [productId, name, skuCode, status, createdFrom, createdTo, page, pageSize, sortField, sortOrder, lowStockOnly, router]
+  )
+
+  // ===== 防抖 syncUrl：输入框 onChange 用 300ms debounce 避免每次按键都请求 (#660) =====
+  const syncUrlRef = useRef(syncUrl)
+  syncUrlRef.current = syncUrl  // 始终保持最新引用，避免闭包陈旧问题
+
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const debouncedSyncUrl = useCallback(
+    (overrides: Record<string, string | number | undefined>) => {
+      if (debounceTimer.current) clearTimeout(debounceTimer.current)
+      debounceTimer.current = setTimeout(() => {
+        syncUrlRef.current(overrides)
+      }, 300)
+    },
+    [] // 空依赖 → 稳定引用，通过 ref 获取最新 syncUrl
   )
 
   // ===== 加载列表（只读取 URL 中已提交的查询参数） =====
@@ -328,7 +343,10 @@ export default function ProductsPage() {
             <input
               type="text"
               value={productId}
-              onChange={(e) => setProductId(e.target.value)}
+              onChange={(e) => {
+                setProductId(e.target.value)
+                debouncedSyncUrl({ productId: e.target.value || undefined, page: 1 })
+              }}
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
               placeholder="请输入商品ID"
               className="w-full h-9 px-3 rounded border border-gray-300 bg-white text-sm placeholder:text-gray-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
@@ -338,7 +356,10 @@ export default function ProductsPage() {
             <input
               type="text"
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => {
+                setName(e.target.value)
+                debouncedSyncUrl({ name: e.target.value || undefined, page: 1 })
+              }}
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
               placeholder="请输入商品标题"
               className="w-full h-9 px-3 rounded border border-gray-300 bg-white text-sm placeholder:text-gray-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
@@ -348,7 +369,10 @@ export default function ProductsPage() {
             <input
               type="text"
               value={skuCode}
-              onChange={(e) => setSkuCode(e.target.value)}
+              onChange={(e) => {
+                setSkuCode(e.target.value)
+                debouncedSyncUrl({ skuCode: e.target.value || undefined, page: 1 })
+              }}
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
               placeholder="请输入商品ID"
               className="w-full h-9 px-3 rounded border border-gray-300 bg-white text-sm placeholder:text-gray-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
@@ -362,7 +386,11 @@ export default function ProductsPage() {
             <div className="relative">
               <select
                 value={status}
-                onChange={(e) => setStatus(e.target.value as '' | ProductStatus)}
+                onChange={(e) => {
+                  const v = e.target.value as '' | ProductStatus
+                  setStatus(v)
+                  syncUrl({ status: v || undefined, page: 1 })
+                }}
                 className="w-full h-9 pl-3 pr-9 rounded border border-gray-300 bg-white text-sm appearance-none focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
               >
                 {STATUS_OPTIONS.map((opt) => (
@@ -389,7 +417,10 @@ export default function ProductsPage() {
                 <input
                   type="date"
                   value={createdFrom}
-                  onChange={(e) => setCreatedFrom(e.target.value)}
+                  onChange={(e) => {
+                    setCreatedFrom(e.target.value)
+                    syncUrl({ createdFrom: e.target.value || undefined, page: 1 })
+                  }}
                   placeholder="开始日期"
                   className="w-full h-9 pl-8 pr-3 rounded border border-gray-300 bg-white text-sm text-gray-700 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                 />
@@ -399,7 +430,10 @@ export default function ProductsPage() {
                 <input
                   type="date"
                   value={createdTo}
-                  onChange={(e) => setCreatedTo(e.target.value)}
+                  onChange={(e) => {
+                    setCreatedTo(e.target.value)
+                    syncUrl({ createdTo: e.target.value || undefined, page: 1 })
+                  }}
                   placeholder="结束日期"
                   className="w-full h-9 pl-3 pr-3 rounded border border-gray-300 bg-white text-sm text-gray-700 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                 />
