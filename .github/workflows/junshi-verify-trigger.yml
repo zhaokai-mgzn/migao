@@ -70,3 +70,12 @@ jobs:
 
           gh issue comment "$ISSUE_NUM" --body-file /tmp/verify-comment.md
           echo "VERIFY_TRIGGER posted to issue #$ISSUE_NUM"
+
+          # 标记 ai-verify/pending + reopen（PR merge auto-close 的 issue）
+          gh issue edit "$ISSUE_NUM" --add-label "ai-verify/pending" 2>/dev/null || true
+          ISSUE_STATE=$(gh issue view "$ISSUE_NUM" --json state --jq '.state' 2>/dev/null)
+          if [ "$ISSUE_STATE" = "CLOSED" ]; then
+            gh issue reopen "$ISSUE_NUM" 2>/dev/null || true
+            echo "Issue #$ISSUE_NUM reopened for verification"
+          fi
+          echo "verify pipeline: ai-verify/pending + VERIFY_TRIGGER posted"
