@@ -5,6 +5,8 @@ import productsDetailFixture from '../../fixtures/products-detail.json'
 /**
  * 订单创建 E2E 测试 — mock 数据来自 Record-Replay fixtures（真实 API 响应）。
  * 更新 fixtures: cd tests && BASE_URL=http://localhost:8080 npx tsx e2e/scripts/record-fixtures.ts
+ *
+ * issue #673: createOrder payload 加入 actualAmount — 验证前端正确传递实收款字段
  */
 
 const P = productsListFixture.data as any
@@ -105,6 +107,46 @@ test.describe('订单创建', () => {
     test('点击取消返回列表', async ({ page }) => {
       await page.getByRole('button', { name: '取消' }).click()
       await page.waitForURL(/\/orders/)
+    })
+  })
+
+  test.describe('实收款 (issue #673)', () => {
+    test('createOrder payload 包含 actualAmount', async ({ page }) => {
+      // 拦截 /api/admin/orders POST，验证 body 包含 actualAmount
+      const createPayload = await new Promise<any>((resolve) => {
+        page.route('**/api/admin/orders', async (route) => {
+          const postData = JSON.parse(route.request().postData() || '{}')
+          await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({ code: 200, data: { orderNo: 'ORD-TEST', ...postData } }),
+          })
+          resolve(postData)
+        })
+      })
+
+      // 填写收货信息
+      await page.locator('input[placeholder="请输入收货人姓名"]').fill('测试客户')
+      await page.locator('input[placeholder="请输入 11 位手机号"]').fill('13900139000')
+
+      // 选择商品
+      await page.getByText('点击搜索并选择商品').click()
+      const modal = page.locator('.fixed.inset-0.z-50').last()
+      await modal.getByText(PROD_NAME).first().click()
+      await page.waitForTimeout(1000)
+
+      // 验证实际金额输入框可见
+      await expect(page.getByLabel('实收款 (¥)')).toBeVisible()
+
+      // 设置实收款为 100（与 totalAmount 不同）
+      await page.getByLabel('实收款 (¥)').fill('100')
+
+      // 提交订单
+      await page.getByRole('button', { name: '提交订单' }).click()
+
+      // 验证 payload
+      const payload = await createPayload
+      expect(payload.actualAmount).toBe(100)
     })
   })
 })
