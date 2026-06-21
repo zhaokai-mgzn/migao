@@ -2,6 +2,10 @@
 
 > 米高项目 Quality Loop Engineering 体系。天眼看穿 mock、哮天犬独立嗅探、守门不放行。
 > 给军师（OpenClaw）的部署和执行参考。2026-06-19（v3.0 精简版）。
+>
+> **本文档是二郎神体系的唯一主权威文档**（the single source of truth）。
+> 其他文档（`AI-Contracts.md`、`ershen-loop.md`、`CLAUDE.md` QL 段等）均派生自本手册。
+> 如有冲突，以本手册为准。更新流程：改本手册 → 同步派生文档。
 
 ## 一、角色分工
 
@@ -23,25 +27,39 @@
 
 ## 三、定时任务
 
-### GitHub Actions（主调度 — 事件驱动）
+### OpenClaw 原生 cron（主调度）
 
-case_draft 和 verify_trigger 由 GitHub Actions 驱动，push 时部署，issue/PR 事件时触发：
+二郎神核心调度由 OpenClaw gateway 管理。共 11 条 cron job（+4 条非军师个人 cron）。
 
-| # | Workflow | 触发条件 | 职责 |
+**军师 7 条：**
+
+| # | Job Name | Schedule | 职责 |
 |---|----------|----------|------|
-| 1 | `junshi-case-draft.yml` | issue open / labeled `needs-verification` | 跑 `case_draft.py` → DRAFT_JSON |
-| 2 | `junshi-verify-trigger.yml` | PR closed (merged) | 找关联 issue → 评论 VERIFY_TRIGGER |
+| 1 | `junshi-casedraft` | `*/5 * * * *` | 扫 needs-verification issue → DRAFT_JSON |
+| 2 | `junshi-verify-trigger` | 每10min | 扫已 merge PR → VERIFY_TRIGGER |
+| 3 | `junshi-automerge` | 每10min | 扫 open PR → 四条件满足则 squash merge |
+| 4 | `junshi-stale-watch` | 每30min | 巡检 stale issue (>3天) |
+| 5 | `junshi-hold-escalate` | 每3h | 积压升级 P0/P1/P2 |
+| 6 | `junshi-daily-report` | `0 19 * * *` | 质量日报 |
+| 7 | `主干同步+PR巡检` | `*/30 * * * *` | git pull + PR 红牌识别 |
 
-### Linux crontab（服务器轮询）
+查看/管理：`openclaw cron list` · `openclaw cron run <id>` · `openclaw cron runs --id <id>`
+
+### Linux crontab（bash 兜底）
 
 ```
 */5 * * * * cd /opt/youke && bash scripts/agent-poll.sh >> /var/log/migao-agent.log 2>&1
 */5 * * * * cd /opt/youke && bash scripts/verify-poll.sh >> /var/log/migao-verify.log 2>&1
 ```
 
-### 历史：OpenClaw cron（已停用）
+### GitHub Actions（事件驱动补充）
 
-2026-06-19 曾迁移至 OpenClaw 原生 cron（7 条 job）。此后 OpenClaw 服务下线，军师调度改为 GitHub Actions + Linux crontab。OpenClaw cron prompt 保留在 git 历史中。
+| # | Workflow | 触发 | 职责 |
+|---|----------|------|------|
+| 1 | `junshi-case-draft.yml` | issue open/label | 即时响应（不等 cron 轮询） |
+| 2 | `junshi-verify-trigger.yml` | PR merged | 即时响应 |
+
+> 三层不冲突：OpenClaw cron 周期性兜底 + GA 事件即时响应 + crontab Agent 轮询。各自去重（已有 DRAFT_JSON / VERIFY_TRIGGER 则跳过）。
 
 
 ## 四、脚本职责
