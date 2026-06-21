@@ -198,6 +198,16 @@ API 路径用约定的 REST 路径表（verify-agent.md 中有完整映射表）
 ## 判定
 全部 check_assert all_pass → close
 部分 fail → hold（列出失败项 + check_assert 证据）
-全部 API_UNREACHABLE → hold（不 block）" 2>&1 | tail -5
+全部 API_UNREACHABLE → hold（不 block）" 2>&1 | tee -a /var/log/migao-verify-agent.log | tail -5
+
+# Agent 没贴 VERDICT_JSON → 从日志自动贴
+HAS_VERDICT=
+if [ "0" -eq 0 ]; then
+    VERDICT_BLOCK=
+    if [ -n "" ]; then
+        echo "" | gh issue comment "" --body-file - 2>/dev/null
+        log "✅ VERDICT_JSON 已从日志自动贴到 issue"
+    fi
+fi
 
 log "✅ LLM 验收完成 #$VERIFY_ISSUE"
