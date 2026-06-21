@@ -192,6 +192,7 @@ API 路径用约定的 REST 路径表（verify-agent.md 中有完整映射表）
 2. **每条 api 真值必须走 curl | check_assert 管道**（不跳过、不替代）
 3. **置信度 = passed / total**（公式强制，pass 不含待人工/手动检查）
 4. VERDICT_JSON 必须贴每条真值的 check_assert 原始 JSON 输出
+	5. 完成后必须用 gh issue comment 贴 VERDICT_JSON + gh issue close/hold
 5. 不超过 10 分钟
 
 ## 判定

@@ -157,14 +157,17 @@ if [ "${IS_BLOCKED:-0}" -gt 0 ]; then
 
 	        if [ "${TRUTHS_COUNT:-0}" -eq 0 ]; then
 	            log "❌ 业务真值为空 — bash gate reject"
+		        gh issue edit "$ISSUE_ID" --remove-assignee "@me" 2>/dev/null || true
 	            exit 0
 	        fi
 	        if [ "$TEMPLATE_NAME" = "unknown" ] || [ -z "$TEMPLATE_NAME" ]; then
 	            log "❌ 未匹配模板(${TEMPLATE_NAME:-none}) — bash gate reject"
+		        gh issue edit "$ISSUE_ID" --remove-assignee "@me" 2>/dev/null || true
 	            exit 0
 	        fi
 	        if [ "${AUTO_ASSERTS:-0}" -lt "${TRUTHS_COUNT:-1}" ]; then
 	            log "❌ 自动断言(${AUTO_ASSERTS:-0}) < 真值(${TRUTHS_COUNT:-0}) — bash gate reject"
+		        gh issue edit "$ISSUE_ID" --remove-assignee "@me" 2>/dev/null || true
 	            exit 0
 	        fi
 	        log "✅ bash gate pass: ${AUTO_ASSERTS:-0} asserts >= ${TRUTHS_COUNT:-0} truths, template=$TEMPLATE_NAME"
