@@ -35,13 +35,14 @@
 
 | # | Job Name | Schedule | 职责 |
 |---|----------|----------|------|
-| 1 | `junshi-casedraft` | `*/5 * * * *` | 扫 needs-verification issue → DRAFT_JSON |
+| 1 | `junshi-casedraft` | `*/5 * * * *` (每5min) | 扫 needs-verification issue → DRAFT_JSON |
 | 2 | `junshi-verify-trigger` | 每10min | 扫已 merge PR → VERIFY_TRIGGER |
 | 3 | `junshi-automerge` | 每10min | 扫 open PR → 四条件满足则 squash merge |
 | 4 | `junshi-stale-watch` | 每30min | 巡检 stale issue (>3天) |
 | 5 | `junshi-hold-escalate` | 每3h | 积压升级 P0/P1/P2 |
 | 6 | `junshi-daily-report` | `0 19 * * *` | 质量日报 |
 | 7 | `主干同步+PR巡检` | `*/30 * * * *` | git pull + PR 红牌识别 |
+| 8 | `junshi-coverage-weekly` | `30 10 * * 1` (每周一) | 覆盖率周报 |
 
 查看/管理：`openclaw cron list` · `openclaw cron run <id>` · `openclaw cron runs --id <id>`
 
@@ -105,7 +106,7 @@
 
 | 脚本 | 谁跑 | 做什么 | 状态 |
 |------|------|--------|------|
-| `case_draft.py` | GitHub Actions | 匹配模板 → 反推 L2/L3/L4 草稿 → quality_gate 校验 | 活跃 |
+| `case_draft.py` | OpenClaw cron + GA | 匹配模板 → 反推 L2/L3/L4 草稿 → quality_gate 校验 | 活跃 |
 | `primary.py` | — | E2E + pytest/JUnit | ❌ 已删除 |
 | `reviewer.py` | — | API 调用 + 模板 expect | ❌ 已删除 |
 | `merge.py` | — | 读 primary.json + reviewer.json | ❌ 已删除 |
@@ -139,7 +140,7 @@ PR 阶段按文件类型检查测试文件是否存在于 diff 中：
 ## 六、验证模板体系
 
 8 个模板 (`docs/verification-templates/*.yml`)，核心字段:
-- `reviewer_asserts`: API 端点 + expect 规则（reviewer.py 使用）
+- `reviewer_asserts`: API 端点 + expect 规则（verify-agent 使用）
 - `primary_specs`: E2E spec 路径（case_draft L3 使用）
 - `common_pitfalls`: 常见错误（case_draft L2 使用）
 
