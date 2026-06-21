@@ -1,13 +1,13 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Building2, Shield, Save, Eye, EyeOff, ArrowRight } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Button, Badge } from '@/components/ui'
-import { settingsApi } from '@/lib/api'
+import { settingsApi, fileApi } from '@/lib/api'
 import type { SystemSettings, ChangePasswordParams, LoginLog } from '@/types'
 import dayjs from 'dayjs'
 
@@ -39,6 +39,8 @@ export default function SettingsPage() {
   })
   const [savingSettings, setSavingSettings] = useState(false)
   const [loadingSettings, setLoadingSettings] = useState(false)
+  const [uploadingLogo, setUploadingLogo] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // 密码
   const [passwordForm, setPasswordForm] = useState<ChangePasswordParams>({
@@ -103,6 +105,40 @@ export default function SettingsPage() {
       toast.error('保存失败')
     } finally {
       setSavingSettings(false)
+    }
+  }
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    // 校验文件类型
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp']
+    if (!allowedTypes.includes(file.type)) {
+      toast.error('仅支持 JPG、PNG、WebP 格式的图片')
+      return
+    }
+
+    // 校验文件大小（最大 5MB）
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('文件大小不能超过 5MB')
+      return
+    }
+
+    setUploadingLogo(true)
+    try {
+      const res = await fileApi.uploadFile(file, 'logos')
+      const url = res.data.data.url
+      setSettings((prev) => ({ ...prev, logo: url }))
+      toast.success('Logo 上传成功')
+    } catch (error) {
+      toast.error('Logo 上传失败')
+    } finally {
+      setUploadingLogo(false)
+      // 重置 input，允许重复上传同一文件
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
     }
   }
 
@@ -190,14 +226,29 @@ export default function SettingsPage() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">Logo</label>
                   <div className="flex items-center gap-4">
-                    <div className="w-16 h-16 bg-gray-100 rounded-lg flex items-center justify-center border border-gray-200">
+                    <div className="w-16 h-16 bg-gray-100 rounded-lg flex items-center justify-center border border-gray-200 overflow-hidden">
                       {settings.logo ? (
                         <Image src={settings.logo} alt="Logo" width={64} height={64} className="w-full h-full object-cover rounded-lg" unoptimized />
                       ) : (
                         <Building2 className="w-8 h-8 text-gray-400" />
                       )}
                     </div>
-                    <Button variant="secondary" size="sm">上传 Logo</Button>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      className="hidden"
+                      onChange={handleLogoUpload}
+                    />
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => fileInputRef.current?.click()}
+                      loading={uploadingLogo}
+                      disabled={uploadingLogo}
+                    >
+                      上传 Logo
+                    </Button>
                   </div>
                 </div>
 
