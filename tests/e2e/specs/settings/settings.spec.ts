@@ -128,7 +128,7 @@ test.describe('系统设置页面 — AI 配置迁移提示已移除 (Issue #647
     await page.securityTab.click()
     await expect(page.page.getByText('登录日志')).toBeVisible()
     // 表头
-    const headers = ['时间', 'IP 地址', '设备', '位置']
+    const headers = ['IP 地址', '设备', '位置', '登录时间']
     for (const header of headers) {
       await expect(page.page.getByRole('columnheader', { name: header })).toBeVisible()
     }
