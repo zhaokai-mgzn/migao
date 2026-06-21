@@ -14,19 +14,7 @@
 
 **禁止自己写业务 case 终稿**。**禁止跳过 issue 直接写代码**。
 详见 [`docs/wiki/Development.md`](docs/wiki/Development.md) "AI 验收体系" 段 + issue #450 v3.1。二郎神完整设计文档已迁移至独立项目 `ershen`。
-**环境变量配置**：军师AI 服务地址等由项目级 `.claude/settings.json` 中的 `env` 字段统一管理，禁止硬编码到脚本中。
-
-### Claude Code 启动自检
-
-**每次 cc 启动时自动执行以下检查，未通过则阻断并提示：**
-
-1. **CLAUDE.md 最新性** — 检查项目根 `CLAUDE.md` 是否与 `.claude/settings.json` 版本号一致
-2. **tdd-iron-law.md 完整性** — 确认 `.claude/skills/tdd-iron-law.md` 包含 CP-1 ~ CP-7 + L0 + E2E 质量规范
-3. **环境变量完整性** — 校验 `env` 中必有 `PROJECT_ROOT`, `QA_RESULT_ROOT`, `CLAUDE_MD_CHECKSUM`
-4. **脚本可执行性** — `scripts/dual_verify/case_draft.py` / `check_assert.py` / `quality_report.py` 存在且可执行
-5. **E2E 目录结构** — `tests/e2e/specs/quality/` 下 api-contract + cross-page-consistency + anti-placeholder 存在
-
-自检失败 → 自动触发修复 → 再次自检。最多 2 次重试后如仍失败，向用户报告具体缺失项。
+**二郎神 Agent 配置**：dev-agent / verify-agent / tdd-iron-law 等已迁移至独立项目 `ershen`，服务器通过 `/opt/ershen/` 加载。
 
 ## 项目 Wiki
 
