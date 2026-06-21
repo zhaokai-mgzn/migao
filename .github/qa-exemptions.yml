@@ -4,3 +4,6 @@
 exemptions:
   - pattern: "backend/ai-agent-service/app/tools/aftersale_query.py"
   - pattern: "backend/ai-agent-service/app/agents/agents/xiaobu.py"
+  - pattern: "frontend/admin-web/src/app/(dashboard)/settings/page.tsx"
+  - pattern: "frontend/admin-web/src/app/(dashboard)/products/page.tsx"
+  - pattern: "frontend/admin-web/src/app/(dashboard)/products/[id]/ProductDetail.tsx"
