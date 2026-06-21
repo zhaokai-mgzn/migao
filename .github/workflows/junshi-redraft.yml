@@ -1,0 +1,26 @@
+name: junshi/redraft
+
+# 机械操作：Agent REJECT → 打 needs-draft 标签，等 OpenClaw Cron 1 重新 draft
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  trigger:
+    if: |
+      contains(github.event.comment.body, '<!-- REVIEW_JSON') &&
+      (contains(github.event.comment.body, '"reject"') || contains(github.event.comment.body, '"supplement"'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: 打标签
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          gh issue edit "$ISSUE_NUMBER" --add-label "needs-draft" --remove-label "needs-redraft" 2>/dev/null || true
+          echo "✅ needs-draft — 等 OpenClaw Cron 1 重新生成 case"
