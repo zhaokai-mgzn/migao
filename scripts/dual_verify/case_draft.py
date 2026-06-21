@@ -79,8 +79,18 @@ def extract_truths(body):
     if m:
         try:
             t = json.loads(m.group(1)).get("business_truths",[])
-            if isinstance(t, list) and len(t) > 0: return t
-            if isinstance(t, str) and t.strip(): return [t.strip()]  # 单条字符串也接受
+            if isinstance(t, list) and len(t) > 0:
+                # 统一为字符串：dict 格式转 "condition → expected"
+                result = []
+                for item in t:
+                    if isinstance(item, str):
+                        result.append(item)
+                    elif isinstance(item, dict):
+                        cond = item.get("condition", "")
+                        exp = item.get("expected", "")
+                        result.append(f"{cond} → {exp}" if cond and exp else str(item))
+                return result if result else t
+            if isinstance(t, str) and t.strip(): return [t.strip()]
         except: pass
     truths = []
     seen = set()
