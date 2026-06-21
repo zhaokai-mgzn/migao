@@ -35,6 +35,11 @@ public class Order {
 
     private BigDecimal totalAmount;
 
+    /**
+     * 实收款（用户输入的实际收款金额，默认等于 totalAmount）
+     */
+    private BigDecimal actualAmount;
+
     private String status;
 
     /**

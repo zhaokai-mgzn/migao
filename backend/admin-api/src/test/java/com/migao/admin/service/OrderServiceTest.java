@@ -692,6 +692,139 @@ class OrderServiceTest {
                 .hasMessageContaining("无效的跟进状态");
     }
 
+    // ======================== actualAmount 持久化测试 ========================
+
+    @Test
+    @DisplayName("创建订单 - actualAmount 被持久化（用户输入实收款=0）")
+    void createOrder_persistsActualAmount_zero() {
+        // given: 用户输入实收款 = 0（与 totalAmount=599 不同）
+        OrderCreateRequest.OrderItemRequest itemReq = new OrderCreateRequest.OrderItemRequest();
+        itemReq.setProductId("prod-001");
+        itemReq.setProductName("蜂巢帘");
+        itemReq.setQuantity(2);
+        itemReq.setUnitPrice(new BigDecimal("299.50"));
+        itemReq.setSubtotal(new BigDecimal("599.00"));
+
+        OrderCreateRequest request = new OrderCreateRequest();
+        request.setCustomerName("张三");
+        request.setCustomerPhone("13800138000");
+        request.setActualAmount(BigDecimal.ZERO); // 实收款 = 0
+        request.setItems(List.of(itemReq));
+
+        when(orderMapper.insert(any(Order.class))).thenAnswer(invocation -> {
+            Order o = invocation.getArgument(0);
+            // 验证 actualAmount 被传入 Order entity
+            assertThat(o.getActualAmount()).isEqualTo(BigDecimal.ZERO);
+            o.setId("order-actual-zero");
+            return 1;
+        });
+        when(orderItemMapper.insert(any(OrderItem.class))).thenReturn(1);
+
+        Order savedOrder = Order.builder()
+                .id("order-actual-zero")
+                .tenantId(1L)
+                .orderNo("ORD-20260621-0003")
+                .customerName("张三")
+                .customerPhone("13800138000")
+                .totalAmount(new BigDecimal("599.00"))
+                .actualAmount(BigDecimal.ZERO)
+                .status("pending")
+                .build();
+        when(orderMapper.selectById("order-actual-zero")).thenReturn(savedOrder);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(testOrderItem));
+        when(orderLogisticsMapper.selectByOrderId("order-actual-zero", 1L)).thenReturn(List.of());
+
+        // when
+        OrderDetailResponse result = orderService.createOrder(request, 1L);
+
+        // then: 详情返回的 actualAmount 应该是 0，不是 totalAmount
+        assertThat(result.getActualAmount()).isEqualTo(BigDecimal.ZERO);
+        assertThat(result.getTotalAmount()).isEqualTo(new BigDecimal("599.00"));
+    }
+
+    @Test
+    @DisplayName("创建订单 - actualAmount 未传时默认等于 totalAmount")
+    void createOrder_persistsActualAmount_defaultToTotal() {
+        // given: 不传 actualAmount
+        OrderCreateRequest.OrderItemRequest itemReq = new OrderCreateRequest.OrderItemRequest();
+        itemReq.setProductId("prod-001");
+        itemReq.setProductName("蜂巢帘");
+        itemReq.setQuantity(2);
+        itemReq.setUnitPrice(new BigDecimal("299.50"));
+        itemReq.setSubtotal(new BigDecimal("599.00"));
+
+        OrderCreateRequest request = new OrderCreateRequest();
+        request.setCustomerName("张三");
+        request.setCustomerPhone("13800138000");
+        // actualAmount 不设置
+        request.setItems(List.of(itemReq));
+
+        when(orderMapper.insert(any(Order.class))).thenAnswer(invocation -> {
+            Order o = invocation.getArgument(0);
+            // 验证 actualAmount 默认等于 totalAmount
+            assertThat(o.getActualAmount()).isEqualByComparingTo(new BigDecimal("599.00"));
+            o.setId("order-actual-default");
+            return 1;
+        });
+        when(orderItemMapper.insert(any(OrderItem.class))).thenReturn(1);
+
+        Order savedOrder = Order.builder()
+                .id("order-actual-default")
+                .tenantId(1L)
+                .orderNo("ORD-20260621-0004")
+                .customerName("张三")
+                .customerPhone("13800138000")
+                .totalAmount(new BigDecimal("599.00"))
+                .actualAmount(new BigDecimal("599.00"))
+                .status("pending")
+                .build();
+        when(orderMapper.selectById("order-actual-default")).thenReturn(savedOrder);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(testOrderItem));
+        when(orderLogisticsMapper.selectByOrderId("order-actual-default", 1L)).thenReturn(List.of());
+
+        // when
+        OrderDetailResponse result = orderService.createOrder(request, 1L);
+
+        // then
+        assertThat(result.getActualAmount()).isEqualByComparingTo(new BigDecimal("599.00"));
+        assertThat(result.getTotalAmount()).isEqualByComparingTo(new BigDecimal("599.00"));
+    }
+
+    @Test
+    @DisplayName("查询订单详情 - 返回存储的 actualAmount 而非 totalAmount")
+    void getOrderById_returnsStoredActualAmount() {
+        // given: 订单 actualAmount=0, totalAmount=599
+        testOrder.setActualAmount(BigDecimal.ZERO);
+        testOrder.setTotalAmount(new BigDecimal("599.00"));
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(testOrderItem));
+        when(orderLogisticsMapper.selectByOrderId("order-001", 1L)).thenReturn(List.of());
+
+        // when
+        OrderDetailResponse result = orderService.getOrderById("order-001");
+
+        // then
+        assertThat(result.getActualAmount()).isEqualTo(BigDecimal.ZERO);
+        assertThat(result.getTotalAmount()).isEqualTo(new BigDecimal("599.00"));
+    }
+
+    @Test
+    @DisplayName("查询订单详情 - actualAmount 为空时 fallback 到 totalAmount")
+    void getOrderById_actualAmountNull_fallbackToTotal() {
+        // given: 老订单没有 actualAmount
+        testOrder.setActualAmount(null);
+        testOrder.setTotalAmount(new BigDecimal("599.00"));
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(testOrderItem));
+        when(orderLogisticsMapper.selectByOrderId("order-001", 1L)).thenReturn(List.of());
+
+        // when
+        OrderDetailResponse result = orderService.getOrderById("order-001");
+
+        // then
+        assertThat(result.getActualAmount()).isEqualByComparingTo(new BigDecimal("599.00"));
+    }
+
     @Test
     @DisplayName("更新跟进状态 - 有效值成功")
     void updateFollowStatus_acceptsValidValue() {

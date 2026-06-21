@@ -568,6 +568,7 @@ export interface OrderFormData {
   customerName: string
   customerPhone: string
   customerAddress?: string
+  actualAmount?: number           // 实收款（用户输入的实际收款金额）
   remark?: string
   items: OrderItemFormData[]
 }
