@@ -15,29 +15,70 @@ PROJECT_ROOT = Path(os.getenv("PROJECT_ROOT", "/opt/youke")).resolve()
 TEMPLATE_DIR = Path(__file__).resolve().parent.parent.parent / "docs/verification-templates"
 
 TEMPLATES = {
-    "dashboard-jump":       {"kw": ["看板跳转","待发货数","含加工订单数","低库存数","dashboard","数据看板","统计卡片"],"min":2},
-    "order-classify":       {"kw": ["订单分类","8个分类","6个状态","含加工订单","订单列表","订单详情"],"min":2},
-    "product-sku-stock":    {"kw": ["SKU库存","库存汇总","低库存阈值","商品列表","商品详情","商品编辑"],"min":1},
-    "customer-list":        {"kw": ["客户列表","客户详情","客户搜索","客户管理"],"min":1},
-    "aftersales-flow":      {"kw": ["售后工单","售后状态","退款","转人工","工单","确认卡片","售后","aftersale"],"min":1},
-    "auth-sms":             {"kw": ["短信登录","验证码登录","注册","登录","auth","认证"],"min":1},
-    "employee-role":        {"kw": ["员工列表","角色权限","岗位","员工管理","角色管理"],"min":1},
-    "knowledge-ai":         {"kw": ["知识库文档","知识库检索","AI回答","知识库管理","RAG"],"min":2},
-    "notification-manage":  {"kw": ["通知","消息","推送","提醒","notification","通知规则","通知模板"],"min":1},
-    "quick-reply-manage":   {"kw": ["快捷回复","quick reply","常用语","话术"],"min":1},
-    "settings-manage":      {"kw": ["设置","配置","系统设置","租户配置","AI配置","机器人配置","TenantAiConfig"],"min":1},
-    "file-upload":          {"kw": ["上传","文件","图片","OSS","存储","bucket","文件管理"],"min":1},
-    "registration-approval":{"kw": ["注册审批","审批","注册申请","租户注册","待审核","registration"],"min":1},
-    "processing-manage":    {"kw": ["加工项","加工分类","processing","加工管理"],"min":1},
+    "dashboard-jump":       {"kw": ["看板跳转","待发货数","含加工订单数","低库存数","dashboard","数据看板","统计卡片"],"min":2, "scope": "fullstack"},
+    "order-classify":       {"kw": ["订单分类","8个分类","6个状态","含加工订单","订单列表","订单详情"],"min":2, "scope": "fullstack"},
+    "product-sku-stock":    {"kw": ["SKU库存","库存汇总","低库存阈值","商品列表","商品详情","商品编辑"],"min":1, "scope": "fullstack"},
+    "customer-list":        {"kw": ["客户列表","客户详情","客户搜索","客户管理"],"min":1, "scope": "fullstack"},
+    "aftersales-flow":      {"kw": ["售后工单","售后状态","退款","转人工","工单","确认卡片","售后","aftersale"],"min":1, "scope": "fullstack"},
+    "auth-sms":             {"kw": ["短信登录","验证码登录","注册","登录","auth","认证"],"min":1, "scope": "fullstack"},
+    "employee-role":        {"kw": ["员工列表","角色权限","岗位","员工管理","角色管理"],"min":1, "scope": "fullstack"},
+    "knowledge-ai":         {"kw": ["知识库文档","知识库检索","AI回答","知识库管理","RAG"],"min":2, "scope": "fullstack"},
+    "notification-manage":  {"kw": ["通知","消息","推送","提醒","notification","通知规则","通知模板"],"min":1, "scope": "fullstack"},
+    "quick-reply-manage":   {"kw": ["快捷回复","quick reply","常用语","话术"],"min":1, "scope": "fullstack"},
+    "settings-manage":      {"kw": ["设置","配置","系统设置","租户配置","AI配置","机器人配置","TenantAiConfig"],"min":1, "scope": "fullstack"},
+    "file-upload":          {"kw": ["上传","文件","图片","OSS","存储","bucket","文件管理"],"min":1, "scope": "fullstack"},
+    "registration-approval":{"kw": ["注册审批","审批","注册申请","租户注册","待审核","registration"],"min":1, "scope": "fullstack"},
+    "processing-manage":    {"kw": ["加工项","加工分类","processing","加工管理"],"min":1, "scope": "fullstack"},
+    "frontend-fix":         {"kw": ["前端","frontend","UI","按钮","文案","样式","页面","提示","弹窗","hover","onClick","显示","隐藏","删除","移除","布局","组件"],"min":2, "scope": "frontend"},
 }
 
-def match_template(title, body):
+def match_template(title, body, labels=None):
+    """匹配模板，scope 感知：前端 issue 优先前端模板，避免误命中后端厚重模板。"""
     text = title + " " + body[:2000]
+    is_frontend_only = _is_frontend_only(title, labels)
+
     best, best_score = None, 0
     for name, cfg in TEMPLATES.items():
         score = sum(1 for kw in cfg["kw"] if kw in text)
-        if score >= cfg["min"] and score > best_score: best, best_score = name, score
+        if score < cfg["min"]:
+            continue
+
+        # 前端 issue：前端模板得分 x2，后端模板得分减半
+        scope = cfg.get("scope", "fullstack")
+        if is_frontend_only:
+            if scope == "frontend":
+                score *= 2  # 强偏好前端模板
+            elif scope == "fullstack":
+                score = max(score // 2, 1)  # 压低后端模板
+                # 但如果命中了很多业务关键词(>=4)，仍然是合理匹配
+                if score >= 4:
+                    score = score
+
+        if score > best_score:
+            best, best_score = name, score
+
+    # 前端 issue 且无 match → 兜底 frontend-fix
+    if not best and is_frontend_only:
+        return "frontend-fix"
+
     return best
+
+
+def _is_frontend_only(title, labels=None):
+    """判断是否为纯前端 issue。"""
+    # 标签优先
+    if labels:
+        label_set = {l.lower() for l in labels}
+        if "role/frontend" in label_set and "role/fullstack" not in label_set and "role/backend" not in label_set:
+            return True
+    # 标题判断
+    if re.search(r"\[frontend\]|\[Bug\].*frontend|纯前端|前端 UI|UI 变更", title, re.IGNORECASE):
+        return True
+    if re.search(r"按钮|onClick|文案|样式|提示框|弹窗|hover|显示.*隐藏|删除.*提示", title):
+        # 这些是典型的前端 UI 操作词，且不含后端关键词
+        if not re.search(r"API|SQL|数据库|后端|admin-api|java|Controller|Service|Mapper", title, re.IGNORECASE):
+            return True
+    return False
 
 
 def extract_domain_keywords(title, body):
@@ -367,8 +408,20 @@ def generate(issue_number, dry_run=False, feedback_comment_id=None):
         return f"❌ 拉issue失败: {err.decode('utf-8','ignore')[:200]}"
     issue = json.loads(out.decode())
     title, body = issue.get("title",""), issue.get("body","")
+
+    # 获取 issue labels 用于 scope 感知
+    labels = []
+    try:
+        p2 = subprocess.Popen(["gh","issue","view",str(issue_number),"--json","labels"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=str(PROJECT_ROOT))
+        out2, _ = p2.communicate(timeout=10)
+        if p2.returncode == 0:
+            labels = [l["name"] for l in json.loads(out2.decode()).get("labels", [])]
+    except:
+        pass
+
     truths = extract_truths(body)
-    tmpl_name = match_template(title, body)
+    tmpl_name = match_template(title, body, labels)
     tmpl = load_template(tmpl_name) if tmpl_name else None
 
     # ── REJECT 后重 draft：读取 agent 反馈，覆写模板 ──
