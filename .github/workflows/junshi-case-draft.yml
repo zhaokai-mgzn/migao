@@ -15,10 +15,17 @@ jobs:
     if: contains(github.event.issue.labels.*.name, 'needs-verification')
     runs-on: ubuntu-latest
     steps:
-      - name: 打 needs-draft 标签
+      - name: 打 needs-draft 标签（仅当无有效 DRAFT）
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
         run: |
+          # 已有非 OUTDATED 的 DRAFT_JSON 则跳过
+          VALID=$(gh issue view "$ISSUE_NUMBER" --comments --json comments \
+            --jq '[.comments[] | select(.body | contains("DRAFT_JSON") and (contains("OUTDATED") | not))] | length' 2>/dev/null || echo "0")
+          if [ "$VALID" -gt 0 ]; then
+            echo "✅ 已有有效 DRAFT_JSON，跳过"
+            exit 0
+          fi
           gh issue edit "$ISSUE_NUMBER" --add-label "needs-draft" 2>/dev/null || true
-          echo "✅ needs-draft — 等 OpenClaw Cron 1 生成 case"
+          echo "✅ needs-draft — 等 agent-poll 生成 case"

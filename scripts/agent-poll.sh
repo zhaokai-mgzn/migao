@@ -34,34 +34,43 @@ git clean -fd 2>/dev/null
 git pull origin main 2>&1 | tail -1
 
 # ═══════════════════════════════════════════════════════
-# 信号 0: needs-draft → 重新生成 DRAFT_JSON（最高优先）
-# REJECT 后 CI 隐藏了旧 DRAFT + 打了 needs-draft
+# 信号 0: needs-draft → 生成 DRAFT_JSON（最高优先）
+# 新 issue 初始 draft + REJECT 后重新 draft 都走这里
 # ═══════════════════════════════════════════════════════
 NEEDS_DRAFT=$(gh issue list --label needs-draft --state open --limit 1 \
     --json number --jq '.[0].number' 2>/dev/null)
 if [ -n "$NEEDS_DRAFT" ]; then
     [[ "$NEEDS_DRAFT" =~ ^[0-9]+$ ]] || { log "❌ 非法 ID"; exit 1; }
-    log "📝 重新生成 DRAFT_JSON for #$NEEDS_DRAFT"
 
-    # 读 REJECT 反馈（如有）
-    FEEDBACK=$(gh issue view "$NEEDS_DRAFT" --comments --json comments \
-        --jq '[.comments[] | select(.body | contains("<!-- REVIEW_JSON") and contains("\"reject\""))] | last | .body' 2>/dev/null || echo "")
-    FEEDBACK_CTX=""
-    if [ -n "$FEEDBACK" ]; then
-        FEEDBACK_CTX="上次 REJECT 反馈: $FEEDBACK。请基于此修正。"
+    # 已有有效 DRAFT_JSON 则跳过（CI 重复打标签的情况）
+    VALID_DRAFT=$(gh issue view "$NEEDS_DRAFT" --comments --json comments \
+        --jq '[.comments[] | select(.body | contains("DRAFT_JSON") and (contains("OUTDATED") | not))] | length' 2>/dev/null)
+    if [ "${VALID_DRAFT:-0}" -gt 0 ]; then
+        log "⏭️  #$NEEDS_DRAFT 已有有效 DRAFT，移除冗余 needs-draft"
+        gh issue edit "$NEEDS_DRAFT" --remove-label "needs-draft" 2>/dev/null || true
+    else
+        # 判断是初始 draft 还是 REJECT 重 draft
+        FEEDBACK=$(gh issue view "$NEEDS_DRAFT" --comments --json comments \
+            --jq '[.comments[] | select(.body | contains("<!-- REVIEW_JSON") and contains("\"reject\""))] | last | .body' 2>/dev/null || echo "")
+        if [ -n "$FEEDBACK" ]; then
+            log "🔄 REJECT 重 draft for #$NEEDS_DRAFT"
+            CONTEXT="这是 REJECT 后重新生成。上次被拒原因: $FEEDBACK。请基于此修正 L2/L3/L4。"
+        else
+            log "📝 初始 DRAFT for #$NEEDS_DRAFT"
+            CONTEXT="这是新 issue 的初始 case draft。读 issue → 理解业务 → 生成。"
+        fi
+
+        claude --print --agent dev-agent \
+            "为 issue #$NEEDS_DRAFT 生成 DRAFT_JSON。$CONTEXT
+             1. 读 issue body + CONTRACT_JSON → 提取 business_truths
+             2. 理解业务领域和变更范围
+             3. 生成 L2/L3/L4 case（前端 issue 用 skip_template=true）
+             4. 用 gh issue comment 贴完整的 <!-- DRAFT_JSON -->" \
+            2>&1 | tail -5
+
+        gh issue edit "$NEEDS_DRAFT" --remove-label "needs-draft" 2>/dev/null || true
+        log "✅ DRAFT 已生成"
     fi
-
-    claude --print --agent dev-agent \
-        "为 issue #$NEEDS_DRAFT 重新生成 DRAFT_JSON。$FEEDBACK_CTX
-         1. 读 issue body + CONTRACT_JSON → 提取 business_truths
-         2. 读 REJECT 反馈（如有）→ 理解上次被拒原因
-         3. 重新理解业务领域，生成修正后的 L2/L3/L4 case
-         4. 用 gh issue comment 贴完整的 DRAFT_JSON
-         注意：前端 issue 用 skip_template=true" \
-        2>&1 | tail -5
-
-    gh issue edit "$NEEDS_DRAFT" --remove-label "needs-draft" 2>/dev/null || true
-    log "✅ DRAFT 已重新生成"
     exit 0
 fi
 
