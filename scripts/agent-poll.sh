@@ -39,8 +39,8 @@ git pull origin main 2>&1 | tail -1
 # ═══════════════════════════════════════════════════════
 NEEDS_DRAFT=$(gh issue list --label needs-draft --state open --limit 1 \
     --json number --jq '.[0].number' 2>/dev/null)
-if [ -n "$NEEDS_DRAFT" ]; then
-    [[ "$NEEDS_DRAFT" =~ ^[0-9]+$ ]] || { log "❌ 非法 ID"; exit 1; }
+if [ -n "$NEEDS_DRAFT" ] && [ "$NEEDS_DRAFT" != "null" ]; then
+    [[ "$NEEDS_DRAFT" =~ ^[0-9]+$ ]] || { log "❌ 非法 NEEDS_DRAFT: $NEEDS_DRAFT"; exit 1; }
 
     # 已有有效 DRAFT_JSON 则跳过（CI 重复打标签的情况）
     VALID_DRAFT=$(gh issue view "$NEEDS_DRAFT" --comments --json comments \
@@ -98,7 +98,7 @@ fi
 # ═══════════════════════════════════════════════════════
 NEEDS_FIX=$(gh pr list --label "junshi-review/needs-changes" --state open --limit 1 \
     --json number,headRefName,body --jq '.[0] | "\(.number) \(.headRefName)"' 2>/dev/null)
-if [ -n "$NEEDS_FIX" ]; then
+if [ -n "$NEEDS_FIX" ] && [ "$NEEDS_FIX" != "null null" ]; then
     PR_NUM=$(echo "$NEEDS_FIX" | awk '{print $1}')
     PR_BRANCH=$(echo "$NEEDS_FIX" | awk '{print $2}')
     ISSUE_ID=$(gh pr view "$PR_NUM" --json body --jq '.body' 2>/dev/null | grep -oP '(Closes|Fixes)\s+#\K\d+' | head -1)
