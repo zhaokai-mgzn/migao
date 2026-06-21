@@ -487,6 +487,57 @@ npm run e2e                              # 对云 dev 环境：BASE_URL=https://
 cd tests/smoke && pytest
 ```
 
+## 数据库迁移（MigrationRunner）
+
+> **⚠️ 新增或修改 DB 表/列时，必须同步创建迁移文件。**
+
+Flyway 已移除（与 PostgreSQL 18 不兼容），替换为自定义 `MigrationRunner`（`com.migao.admin.config.MigrationRunner`）。
+
+### 工作原理
+
+1. 应用启动时，`MigrationRunner` 扫描 `backend/admin-api/src/main/resources/db/migration/` 下所有 `V*__xxx.sql` 文件
+2. 对比 `schema_migrations` 表中已执行的记录，跳过已应用的迁移
+3. 按文件名排序，顺序执行新迁移
+4. 执行成功后自动写入 `schema_migrations` 表
+
+### 添加新迁移
+
+```bash
+# 文件命名：V{序号}__{描述}.sql
+# 例：V6__add_ship_fee_to_orders.sql
+```
+
+**迁移 SQL 必须幂等** — 一律使用 `IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS`：
+
+```sql
+-- ✅ 正确（幂等）
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS ship_fee DECIMAL(10,2);
+
+-- ❌ 错误（重复执行会报错）
+ALTER TABLE orders ADD COLUMN ship_fee DECIMAL(10,2);
+```
+
+**注意**：`V2`～`V4` 为历史数据迁移标记文件（INSERT/UPDATE），不包含 DDL，仅作记录。
+
+### 验证
+
+部署后查看 SAE 日志确认迁移状态：
+```
+🔄 执行迁移: V6__add_ship_fee_to_orders.sql
+✅ 迁移完成: V6__add_ship_fee_to_orders.sql
+```
+
+**迁移失败不会阻塞应用启动**（可能已在 DB 执行过），但会在日志输出 `❌ 迁移失败`，需人工排查。
+
+### schema_migrations 表
+
+DDL：`CREATE TABLE IF NOT EXISTS schema_migrations (version VARCHAR(255) PRIMARY KEY, applied_at TIMESTAMP WITH TIME ZONE DEFAULT NOW())`
+
+如需跳过某个迁移（已在 DB 手动执行），直接插入记录：
+```sql
+INSERT INTO schema_migrations (version) VALUES ('V6__add_ship_fee_to_orders.sql');
+```
+
 ## CI/CD 部署
 
 代码合并到 `main` 分支后，GitHub Actions 自动触发部署：
