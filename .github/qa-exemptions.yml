@@ -14,8 +14,8 @@ exemptions:
   - pattern: "frontend/admin-web/tests/*"
     reason: "测试文件自身变更不需要额外测试覆盖"
 
-  - pattern: "frontend/admin-web/src/app/(dashboard)/orders/[id]/OrderDetail.tsx"
-    reason: "存量页面字段名对齐 — 已有 order-detail E2E 覆盖，单字段修正不改变交互流程"
+  - pattern: "frontend/admin-web/src/app/*/orders/*/OrderDetail.tsx"
+    reason: "存量页面字段名对齐 — 已有 order-detail E2E 覆盖。shell case glob 中 ()[] 均为特殊字符，必须用 * 替代 Next.js 路由组 (dashboard) 和动态段 [id]"
 
   - pattern: "backend/admin-api/src/main/resources/*.yml"
     reason: "Spring Boot 配置文件变更，纯配置无 Java 逻辑，无需单测"
