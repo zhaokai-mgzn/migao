@@ -11,7 +11,7 @@ interface LogisticsInfoProps {
 }
 
 export default function LogisticsInfo({ logistics, className, onEdit }: LogisticsInfoProps) {
-  if (!logistics || (!logistics.company && !logistics.trackingNo)) {
+  if (!logistics || (!logistics.logisticsCompany && !logistics.trackingNo)) {
     return (
       <div className={className}>
         <div className="flex items-center justify-between mb-4">
@@ -54,12 +54,12 @@ export default function LogisticsInfo({ logistics, className, onEdit }: Logistic
 
       {/* 基本信息 */}
       <div className="grid grid-cols-2 gap-4 mb-4">
-        {logistics.company && (
+        {logistics.logisticsCompany && (
           <div className="flex items-start gap-2">
             <Package className="w-4 h-4 text-gray-400 mt-0.5" />
             <div>
               <p className="text-xs text-gray-500">物流公司</p>
-              <p className="text-sm font-medium text-gray-900">{logistics.company}</p>
+              <p className="text-sm font-medium text-gray-900">{logistics.logisticsCompany}</p>
             </div>
           </div>
         )}

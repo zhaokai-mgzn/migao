@@ -120,6 +120,7 @@ vi.mock('lucide-react', () => ({
   Phone: iconStub('phone'),
   Mail: iconStub('mail'),
   MapPin: iconStub('map-pin'),
+  Truck: iconStub('truck'),
   Building2: iconStub('building2'),
   Shield: iconStub('shield'),
   ShieldCheck: iconStub('shield-check'),
