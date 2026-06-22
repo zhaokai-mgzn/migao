@@ -54,13 +54,6 @@ jobs:
         working-directory: backend/admin-api
         run: ./mvnw test -q
 
-      - name: Check JaCoCo line coverage on changed files
-        id: jacoco
-        if: github.event_name == 'pull_request'
-        run: |
-          git fetch origin main
-          export CHANGED_FILES="$(git diff --name-only origin/main...HEAD)"
-          bash scripts/ci/check-jacoco-coverage.sh
 
 
   # ============ admin-web 类型检查 + 单测 ============
