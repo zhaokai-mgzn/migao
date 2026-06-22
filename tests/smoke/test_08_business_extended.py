@@ -251,7 +251,7 @@ class TestProcessingItemAPI:
 
         suffix = _ts_suffix()
         payload = {
-            "name": f"测试加工项-{suffix}",
+            "name": f"加工项-{suffix[:12]}",
             "categoryId": category_id,
             "pricingMethod": "per_meter",
             "unitPrice": 25.0,
@@ -296,7 +296,7 @@ class TestProcessingItemAPI:
 
         # 先创建一个加工项以提供可计算的 ID
         create_resp = authed_admin_client.post("/api/admin/processing-items", json={
-            "name": f"计价测试加工项-{_ts_suffix()}",
+            "name": f"计价-{_ts_suffix()[:12]}",
             "categoryId": category_id,
             "pricingMethod": "per_meter",
             "unitPrice": 10.0,
@@ -340,7 +340,7 @@ class TestProcessingItemAPI:
             pytest.skip("无可用加工分类")
 
         create_resp = authed_admin_client.post("/api/admin/processing-items", json={
-            "name": f"待删除加工项-{_ts_suffix()}",
+            "name": f"删除-{_ts_suffix()[:12]}",
             "categoryId": category_id,
             "pricingMethod": "fixed",
             "unitPrice": 1.0,

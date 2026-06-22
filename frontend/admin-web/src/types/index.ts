@@ -506,7 +506,7 @@ export interface LogisticsTrack {
 
 // 物流信息
 export interface LogisticsInfo {
-  company?: string
+  logisticsCompany?: string
   trackingNo?: string
   status?: string
   shippingMethod?: 'logistics' | 'none'  // 物流发货 / 无需物流

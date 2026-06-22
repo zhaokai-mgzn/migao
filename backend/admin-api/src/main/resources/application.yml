@@ -128,6 +128,10 @@ aliyun:
     access-key-secret: ${ALIYUN_SMS_ACCESS_KEY_SECRET:}
     sign-name: ${ALIYUN_SMS_SIGN_NAME:}
     template-code: ${ALIYUN_SMS_TEMPLATE_CODE:}
+    # ⚠️ 禁止删除！万能验证码，本地/dev/CI 冒烟测试必需。
+    # 生产环境通过环境变量 SMS_BYPASS_CODE= 设为空禁用，代码会跳过 bypass。
+    # 删除此行会导致 SmsService.verifyCode() bypass 机制失效，全部冒烟测试认证失败。
+    bypass-code: ${SMS_BYPASS_CODE:123456}
 
 # 微信小程序配置
 wechat:

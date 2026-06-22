@@ -340,7 +340,7 @@ export default function OrderDetailPage() {
           onClose={() => setShowEditLogistics(false)}
           onSubmit={handleSubmitLogistics}
           initialData={{
-            company: order.logistics?.company || '',
+            company: order.logistics?.logisticsCompany || '',
             trackingNo: order.logistics?.trackingNo || '',
             shippingMethod: order.logistics?.shippingMethod === 'none' ? 'none' : 'logistics',
           }}
