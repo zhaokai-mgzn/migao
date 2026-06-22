@@ -13,19 +13,9 @@ permissions:
 
 jobs:
   trigger:
+    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     steps:
-      - name: 护栏检查
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          MERGED: ${{ github.event.pull_request.merged }}
-        run: |
-          if [ "$EVENT_NAME" != "pull_request" ]; then
-            echo "⏭️  非 PR 事件，跳过"; exit 0
-          fi
-          if [ "$MERGED" != "true" ]; then
-            echo "⏭️  PR 未合并，跳过"; exit 0
-          fi
       - uses: actions/checkout@v4
       - name: 贴 VERIFY_TRIGGER + 打标签
         env:
@@ -40,10 +30,6 @@ jobs:
           set -euo pipefail
           ISSUE_NUM=$(echo "$PR_BODY" | grep -oP '(Fixes|Closes|Resolves)\s+#\K\d+' | head -1 || echo "")
           if [ -z "$ISSUE_NUM" ]; then echo "No linked issue, skip"; exit 0; fi
-
-          # 人机协作标签 → 不走二郎神验收
-          AI_DRAFT=$(gh issue view "$ISSUE_NUM" --json labels --jq '.labels[].name' | grep -c '^ai-draft$' || echo "0")
-          if [ "$AI_DRAFT" -gt 0 ]; then echo "✅ ai-draft issue，跳过二郎神验收"; exit 0; fi
 
           # 贴 VERIFY_TRIGGER
           cat > /tmp/verify.md << COMMENT
