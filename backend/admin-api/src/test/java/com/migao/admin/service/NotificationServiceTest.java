@@ -6,6 +6,7 @@ import com.migao.admin.dto.NotificationQueryRequest;
 import com.migao.admin.dto.PageResponse;
 import com.migao.admin.dto.UnreadCountResponse;
 import com.migao.admin.entity.Notification;
+import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.NotificationMapper;
 import com.migao.admin.mapper.NotificationTemplateMapper;
 import com.migao.admin.mapper.NotificationRuleMapper;
@@ -22,9 +23,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -124,5 +127,161 @@ class NotificationServiceTest {
         UnreadCountResponse result = notificationService.getUnreadCount("user-1");
 
         assertThat(result.getCount()).isEqualTo(3L);
+    }
+
+    // ======================== 删除通知测试 ========================
+
+    @Test
+    @DisplayName("deleteNotification — 删除通知成功")
+    void deleteNotification_Success() {
+        // given
+        Notification n = new Notification();
+        n.setId("notif-delete");
+        n.setTenantId(1L);
+        n.setRecipientId("user-1");
+        n.setStatus("read");
+
+        when(notificationMapper.selectById("notif-delete")).thenReturn(n);
+        when(notificationMapper.deleteById("notif-delete")).thenReturn(1);
+
+        // when
+        notificationService.deleteNotification(1L, "user-1", "notif-delete");
+
+        // then
+        verify(notificationMapper).deleteById("notif-delete");
+    }
+
+    @Test
+    @DisplayName("deleteNotification — 通知不存在")
+    void deleteNotification_NotFound() {
+        // given
+        when(notificationMapper.selectById("nonexistent")).thenReturn(null);
+
+        // when & then
+        assertThatThrownBy(() -> notificationService.deleteNotification(1L, "user-1", "nonexistent"))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> {
+                    BusinessException bex = (BusinessException) ex;
+                    assertThat(bex.getCode()).isEqualTo("NOT_FOUND");
+                });
+    }
+
+    @Test
+    @DisplayName("deleteNotification — 跨租户操作被拒绝")
+    void deleteNotification_CrossTenantRejected() {
+        // given: 通知属于租户 2，但请求是租户 1
+        Notification n = new Notification();
+        n.setId("notif-cross");
+        n.setTenantId(2L);
+        n.setRecipientId("user-1");
+
+        when(notificationMapper.selectById("notif-cross")).thenReturn(n);
+
+        // when & then
+        assertThatThrownBy(() -> notificationService.deleteNotification(1L, "user-1", "notif-cross"))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> {
+                    BusinessException bex = (BusinessException) ex;
+                    assertThat(bex.getCode()).isEqualTo("PERMISSION_DENIED");
+                });
+    }
+
+    @Test
+    @DisplayName("deleteNotification — 非本人通知不可删除")
+    void deleteNotification_WrongRecipient() {
+        // given: 通知的接收人是 user-2，但请求是 user-1
+        Notification n = new Notification();
+        n.setId("notif-other");
+        n.setTenantId(1L);
+        n.setRecipientId("user-2");
+
+        when(notificationMapper.selectById("notif-other")).thenReturn(n);
+
+        // when & then
+        assertThatThrownBy(() -> notificationService.deleteNotification(1L, "user-1", "notif-other"))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> {
+                    BusinessException bex = (BusinessException) ex;
+                    assertThat(bex.getCode()).isEqualTo("PERMISSION_DENIED");
+                });
+    }
+
+    // ======================== 通过模板创建通知测试 ========================
+
+    @Test
+    @DisplayName("createFromTemplate — 模板存在，创建通知并替换变量")
+    void createFromTemplate_Success() {
+        // given
+        com.migao.admin.entity.NotificationTemplate template =
+                new com.migao.admin.entity.NotificationTemplate();
+        template.setId("tpl-001");
+        template.setName("order_notify");
+        template.setChannel("internal");
+        template.setTemplateContent("订单{{orderId}}金额为{{amount}}元");
+        template.setStatus("active");
+
+        when(notificationTemplateMapper.selectOne(any(LambdaQueryWrapper.class)))
+                .thenReturn(template);
+        when(notificationMapper.insert(any(Notification.class))).thenReturn(1);
+
+        java.util.Map<String, String> vars = java.util.Map.of("orderId", "ORD-001", "amount", "299.00");
+
+        // when
+        NotificationDTO result = notificationService.createFromTemplate(1L, "order_notify", "user-1", "employee", vars);
+
+        // then
+        assertThat(result).isNotNull();
+        verify(notificationMapper).insert(any(Notification.class));
+    }
+
+    @Test
+    @DisplayName("createFromTemplate — 模板不存在返回 null")
+    void createFromTemplate_TemplateNotFound() {
+        // given
+        when(notificationTemplateMapper.selectOne(any(LambdaQueryWrapper.class)))
+                .thenReturn(null);
+
+        // when
+        NotificationDTO result = notificationService.createFromTemplate(1L, "nonexistent", "user-1", "employee", null);
+
+        // then
+        assertThat(result).isNull();
+        verify(notificationMapper, never()).insert(any(Notification.class));
+    }
+
+    // ======================== markAsRead 错误情况测试 ========================
+
+    @Test
+    @DisplayName("markAsRead — 通知不存在")
+    void markAsRead_NotFound() {
+        // given
+        when(notificationMapper.selectById("nonexistent")).thenReturn(null);
+
+        // when & then
+        assertThatThrownBy(() -> notificationService.markAsRead(1L, "user-1", "nonexistent"))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> {
+                    BusinessException bex = (BusinessException) ex;
+                    assertThat(bex.getCode()).isEqualTo("NOT_FOUND");
+                });
+    }
+
+    @Test
+    @DisplayName("markAsRead — 跨租户操作被拒绝")
+    void markAsRead_CrossTenant() {
+        // given
+        Notification n = new Notification();
+        n.setId("notif-1");
+        n.setTenantId(2L);
+        n.setRecipientId("user-1");
+        when(notificationMapper.selectById("notif-1")).thenReturn(n);
+
+        // when & then
+        assertThatThrownBy(() -> notificationService.markAsRead(1L, "user-1", "notif-1"))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> {
+                    BusinessException bex = (BusinessException) ex;
+                    assertThat(bex.getCode()).isEqualTo("PERMISSION_DENIED");
+                });
     }
 }

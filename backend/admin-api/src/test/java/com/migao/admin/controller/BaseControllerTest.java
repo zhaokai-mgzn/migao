@@ -86,6 +86,7 @@ public abstract class BaseControllerTest {
                 List.of(new SimpleGrantedAuthority("ROLE_admin"))
         );
         Authentication auth = mock(Authentication.class);
+        when(auth.isAuthenticated()).thenReturn(true);
         when(auth.getPrincipal()).thenReturn(user);
         SecurityContextHolder.getContext().setAuthentication(auth);
     }
@@ -100,6 +101,7 @@ public abstract class BaseControllerTest {
                 List.of(new SimpleGrantedAuthority("ROLE_operator"))
         );
         Authentication auth = mock(Authentication.class);
+        when(auth.isAuthenticated()).thenReturn(true);
         when(auth.getPrincipal()).thenReturn(user);
         SecurityContextHolder.getContext().setAuthentication(auth);
     }

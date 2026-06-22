@@ -316,4 +316,151 @@ class CustomerServiceTest {
                     assertThat(bex.getCode()).isEqualTo("NOT_FOUND");
                 });
     }
+
+    // ======================== 创建客户档案测试 ========================
+
+    @Test
+    @DisplayName("创建客户档案 - 成功，设置默认值")
+    void createCustomer_Success() {
+        // given
+        CustomerProfile newProfile = CustomerProfile.builder()
+                .tenantId(1L)
+                .wechatNickname("新客户")
+                .phone("13900139000")
+                .sourceChannel("wechat_mini")
+                .build();
+
+        when(customerProfileMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null);
+        when(customerProfileMapper.insert(any(CustomerProfile.class))).thenAnswer(invocation -> {
+            CustomerProfile p = invocation.getArgument(0);
+            p.setId("cust-new");
+            return 1;
+        });
+
+        // when
+        CustomerProfile result = customerService.createCustomer(newProfile);
+
+        // then
+        assertThat(result).isNotNull();
+        assertThat(result.getId()).isEqualTo("cust-new");
+        assertThat(result.getVipLevel()).isEqualTo("normal");
+        assertThat(result.getCustomerStatus()).isEqualTo("active");
+        assertThat(result.getLifecycleStage()).isEqualTo("new");
+        assertThat(result.getTotalOrders()).isEqualTo(0);
+        assertThat(result.getTotalConsumption()).isEqualByComparingTo(java.math.BigDecimal.ZERO);
+        verify(customerProfileMapper).insert(any(CustomerProfile.class));
+    }
+
+    @Test
+    @DisplayName("创建客户档案 - 手机号重复")
+    void createCustomer_DuplicatePhone() {
+        // given
+        CustomerProfile newProfile = CustomerProfile.builder()
+                .tenantId(1L)
+                .phone("13800138000")
+                .wechatNickname("新客户")
+                .build();
+
+        when(customerProfileMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(testProfile);
+
+        // when & then
+        assertThatThrownBy(() -> customerService.createCustomer(newProfile))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("该手机号已存在客户档案");
+    }
+
+    // ======================== 从会话创建客户测试 ========================
+
+    @Test
+    @DisplayName("从会话创建客户 - 新客户，自动创建")
+    void createFromSession_NewCustomer() {
+        // given: openid 不存在
+        when(customerProfileMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null);
+        when(customerProfileMapper.insert(any(CustomerProfile.class))).thenAnswer(invocation -> {
+            CustomerProfile p = invocation.getArgument(0);
+            p.setId("cust-session-new");
+            return 1;
+        });
+
+        // when
+        CustomerProfile result = customerService.createFromSession(1L, "openid_new", "新客户昵称", "wechat_mini");
+
+        // then
+        assertThat(result).isNotNull();
+        assertThat(result.getWechatOpenid()).isEqualTo("openid_new");
+        assertThat(result.getWechatNickname()).isEqualTo("新客户昵称");
+        assertThat(result.getSourceChannel()).isEqualTo("wechat_mini");
+        assertThat(result.getVipLevel()).isEqualTo("normal");
+        verify(customerProfileMapper).insert(any(CustomerProfile.class));
+    }
+
+    @Test
+    @DisplayName("从会话创建客户 - 已存在，更新最后活跃时间")
+    void createFromSession_ExistingCustomer() {
+        // given: openid 已存在
+        when(customerProfileMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(testProfile);
+        when(customerProfileMapper.updateById(any(CustomerProfile.class))).thenReturn(1);
+
+        // when
+        CustomerProfile result = customerService.createFromSession(1L, "openid_123", null, null);
+
+        // then
+        assertThat(result).isNotNull();
+        assertThat(result.getId()).isEqualTo("cust-001");
+        verify(customerProfileMapper).updateById(any(CustomerProfile.class));
+        verify(customerProfileMapper, never()).insert(any(CustomerProfile.class));
+    }
+
+    // ======================== 从订单创建客户测试 ========================
+
+    @Test
+    @DisplayName("从订单创建客户 - 新客户，自动建档")
+    void createFromOrder_NewCustomer() {
+        // given: 手机号不存在
+        when(customerProfileMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null);
+        when(customerProfileMapper.insert(any(CustomerProfile.class))).thenAnswer(invocation -> {
+            CustomerProfile p = invocation.getArgument(0);
+            p.setId("cust-order-new");
+            return 1;
+        });
+
+        // when
+        CustomerProfile result = customerService.createFromOrder(1L, "李四", "13600136000", "浙江省杭州市");
+
+        // then
+        assertThat(result).isNotNull();
+        assertThat(result.getPhone()).isEqualTo("13600136000");
+        assertThat(result.getSourceChannel()).isEqualTo("order");
+        assertThat(result.getTotalOrders()).isEqualTo(1);
+        assertThat(result.getAgentNotes()).contains("首单收货地址：");
+        verify(customerProfileMapper).insert(any(CustomerProfile.class));
+    }
+
+    @Test
+    @DisplayName("从订单创建客户 - 手机号为空，跳过建档")
+    void createFromOrder_EmptyPhone() {
+        // when: 手机号为空
+        CustomerProfile result = customerService.createFromOrder(1L, "王五", "", "地址");
+
+        // then
+        assertThat(result).isNull();
+        verify(customerProfileMapper, never()).insert(any(CustomerProfile.class));
+        verify(customerProfileMapper, never()).selectOne(any(LambdaQueryWrapper.class));
+    }
+
+    @Test
+    @DisplayName("从订单创建客户 - 手机号已存在，刷新活跃时间")
+    void createFromOrder_ExistingCustomer() {
+        // given: 手机号已存在
+        when(customerProfileMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(testProfile);
+        when(customerProfileMapper.updateById(any(CustomerProfile.class))).thenReturn(1);
+
+        // when
+        CustomerProfile result = customerService.createFromOrder(1L, null, "13800138000", null);
+
+        // then
+        assertThat(result).isNotNull();
+        verify(customerProfileMapper).updateById(any(CustomerProfile.class));
+        verify(customerProfileMapper, never()).insert(any(CustomerProfile.class));
+    }
 }

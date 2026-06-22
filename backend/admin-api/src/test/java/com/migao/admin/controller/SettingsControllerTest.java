@@ -154,6 +154,49 @@ class SettingsControllerTest {
                             .content(objectMapper.writeValueAsString(body)))
                     .andExpect(status().isNotFound());
         }
+
+        @Test
+        @DisplayName("通过 companyName 更新名称 -> 200")
+        void updateCompanyName_returnsUpdated() throws Exception {
+            Tenant tenant = new Tenant();
+            tenant.setId(1L);
+            tenant.setName("旧名称");
+            tenant.setCode("test");
+            tenant.setIndustry("布艺");
+            when(tenantMapper.selectById(1L)).thenReturn(tenant);
+            when(tenantMapper.updateById(any(Tenant.class))).thenReturn(1);
+
+            Map<String, Object> body = Map.of("companyName", "新公司名");
+
+            mockMvc.perform(put("/api/admin/settings")
+                            .contentType("application/json")
+                            .content(objectMapper.writeValueAsString(body)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.success").value(true))
+                    .andExpect(jsonPath("$.data.name").value("新公司名"))
+                    .andExpect(jsonPath("$.data.companyName").value("新公司名"));
+        }
+
+        @Test
+        @DisplayName("更新行业 -> 200")
+        void updateIndustry_returnsUpdated() throws Exception {
+            Tenant tenant = new Tenant();
+            tenant.setId(1L);
+            tenant.setName("测试租户");
+            tenant.setCode("test");
+            tenant.setIndustry("旧行业");
+            when(tenantMapper.selectById(1L)).thenReturn(tenant);
+            when(tenantMapper.updateById(any(Tenant.class))).thenReturn(1);
+
+            Map<String, Object> body = Map.of("industry", "皮革");
+
+            mockMvc.perform(put("/api/admin/settings")
+                            .contentType("application/json")
+                            .content(objectMapper.writeValueAsString(body)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.success").value(true))
+                    .andExpect(jsonPath("$.data.industry").value("皮革"));
+        }
     }
 
     @Nested
@@ -185,6 +228,80 @@ class SettingsControllerTest {
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.success").value(true))
                     .andExpect(jsonPath("$.data.tenantId").value(1));
+        }
+    }
+
+    @Nested
+    @DisplayName("PUT /api/admin/tenant/ai-config")
+    class UpdateAiConfig {
+
+        @Test
+        @DisplayName("配置不存在，插入新配置 -> 200")
+        void configNotExists_insertsNew() throws Exception {
+            when(tenantAiConfigMapper.selectOne(any())).thenReturn(null);
+            when(tenantAiConfigMapper.insert(any(TenantAiConfig.class))).thenReturn(1);
+
+            TenantAiConfig body = TenantAiConfig.builder()
+                    .botName("小布")
+                    .greetingTemplate("你好，欢迎光临")
+                    .build();
+
+            mockMvc.perform(put("/api/admin/tenant/ai-config")
+                            .contentType("application/json")
+                            .content(objectMapper.writeValueAsString(body)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.success").value(true))
+                    .andExpect(jsonPath("$.data.botName").value("小布"));
+        }
+
+        @Test
+        @DisplayName("配置已存在，更新字段 -> 200")
+        void configExists_updates() throws Exception {
+            TenantAiConfig existing = TenantAiConfig.builder()
+                    .id("cfg-1")
+                    .tenantId(1L)
+                    .botName("旧名称")
+                    .greetingTemplate("旧问候")
+                    .build();
+            when(tenantAiConfigMapper.selectOne(any())).thenReturn(existing);
+            when(tenantAiConfigMapper.updateById(any(TenantAiConfig.class))).thenReturn(1);
+
+            TenantAiConfig body = TenantAiConfig.builder()
+                    .botName("新小布")
+                    .greetingTemplate("新问候语")
+                    .afterHoursMode("offline_reply")
+                    .build();
+
+            mockMvc.perform(put("/api/admin/tenant/ai-config")
+                            .contentType("application/json")
+                            .content(objectMapper.writeValueAsString(body)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.success").value(true))
+                    .andExpect(jsonPath("$.data.botName").value("新小布"));
+        }
+
+        @Test
+        @DisplayName("更新布尔和整数字段 -> 200")
+        void updateBooleanAndIntegerFields() throws Exception {
+            TenantAiConfig existing = TenantAiConfig.builder()
+                    .id("cfg-2")
+                    .tenantId(1L)
+                    .emotionHandoff(false)
+                    .aiFallbackThreshold(3)
+                    .build();
+            when(tenantAiConfigMapper.selectOne(any())).thenReturn(existing);
+            when(tenantAiConfigMapper.updateById(any(TenantAiConfig.class))).thenReturn(1);
+
+            TenantAiConfig body = TenantAiConfig.builder()
+                    .emotionHandoff(true)
+                    .aiFallbackThreshold(5)
+                    .build();
+
+            mockMvc.perform(put("/api/admin/tenant/ai-config")
+                            .contentType("application/json")
+                            .content(objectMapper.writeValueAsString(body)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.success").value(true));
         }
     }
 
@@ -248,6 +365,22 @@ class SettingsControllerTest {
                     .andExpect(status().is(422))
                     .andExpect(jsonPath("$.success").value(false));
         }
+
+        @Test
+        @DisplayName("用户不存在 -> 404")
+        void userNotFound_throws404() throws Exception {
+            setAuthenticatedUser();
+
+            when(userMapper.selectById("user-1")).thenReturn(null);
+
+            Map<String, String> body = Map.of("oldPassword", "old", "newPassword", "new");
+
+            mockMvc.perform(put("/api/admin/settings/password")
+                            .contentType("application/json")
+                            .content(objectMapper.writeValueAsString(body)))
+                    .andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.success").value(false));
+        }
     }
 
     @Nested
@@ -269,6 +402,26 @@ class SettingsControllerTest {
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.success").value(true))
                     .andExpect(jsonPath("$.data.items").isArray());
+        }
+
+        @Test
+        @DisplayName("指定页码和每页大小 -> 200")
+        void paginatedLoginLogs() throws Exception {
+            PageResponse<AuditLog> pageResponse = new PageResponse<>();
+            pageResponse.setItems(List.of());
+            pageResponse.setTotal(50L);
+            pageResponse.setPage(2L);
+            pageResponse.setSize(20L);
+            when(auditLogService.getAuditLogPage(eq(2L), eq(20L), any(), any(), any(), any(), any(), any()))
+                    .thenReturn(pageResponse);
+
+            mockMvc.perform(get("/api/admin/settings/login-logs")
+                            .param("page", "2")
+                            .param("size", "20"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.success").value(true))
+                    .andExpect(jsonPath("$.data.page").value(2))
+                    .andExpect(jsonPath("$.data.size").value(20));
         }
     }
 
