@@ -1,0 +1,18 @@
+# QA Growth Gate 豁免列表
+# 格式: pattern: "glob"
+# 匹配的文件在 QA gate 扫描时跳过测试覆盖检查
+#
+# 豁免原则：
+# - 纯文案修正 / 字段名对齐 / 类型定义修正（不改变交互逻辑）
+# - 已有其他测试覆盖的存量页面微调
+# - CI/配置/文档变更不在此列表（QA gate 不扫描这些路径）
+
+exemptions:
+  - pattern: "frontend/admin-web/src/types/*"
+    reason: "类型定义变更不包含运行时逻辑，由 tsc 编译检查保障"
+
+  - pattern: "frontend/admin-web/tests/*"
+    reason: "测试文件自身变更不需要额外测试覆盖"
+
+  - pattern: "frontend/admin-web/src/app/(dashboard)/orders/[id]/OrderDetail.tsx"
+    reason: "存量页面字段名对齐 — 已有 order-detail E2E 覆盖，单字段修正不改变交互流程"
