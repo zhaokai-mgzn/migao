@@ -20,10 +20,18 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [ "$EVENT_NAME" != "issue_comment" ]; then
             echo "⏭️  非 issue_comment 事件，跳过"; exit 0
+          fi
+          # 仅处理 REJECT/SUPPLEMENT 的 REVIEW_JSON 评论，避免死循环
+          if ! echo "$COMMENT_BODY" | grep -q '<!-- REVIEW_JSON'; then
+            echo "⏭️  非 REVIEW_JSON 评论，跳过"; exit 0
+          fi
+          if ! echo "$COMMENT_BODY" | grep -qE '"reject"|"supplement"'; then
+            echo "⏭️  非 reject/supplement，跳过"; exit 0
           fi
           HAS_AIDRAFT=$(gh issue view "$ISSUE_NUMBER" --json labels --jq '.labels[].name' | grep -c '^ai-draft$' || echo "0")
           if [ "$HAS_AIDRAFT" -gt 0 ]; then
