@@ -52,7 +52,7 @@ jobs:
         working-directory: ${{ env.WORKING_DIR }}
         run: npx vitest run
 
-      - name: Lint: forbid generateStaticParams [{id: "_"}]
+      - name: 'Lint: forbid generateStaticParams [{id: "_"}]'
         working-directory: ${{ env.WORKING_DIR }}
         run: |
           if grep -rn 'return \[{ *id: *"_" *}\]' src/app --include='*.tsx'; then
