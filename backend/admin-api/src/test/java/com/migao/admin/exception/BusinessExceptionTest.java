@@ -24,6 +24,8 @@ class BusinessExceptionTest {
         RuntimeException cause = new RuntimeException("root");
         BusinessException ex = new BusinessException("E003", "w", cause);
         assertEquals(cause, ex.getCause());
+        assertEquals(400, ex.getHttpStatus());
+        assertEquals("w", ex.getMessage());
     }
 
     @Test
@@ -38,6 +40,7 @@ class BusinessExceptionTest {
         BusinessException ex = BusinessException.notFound("Product");
         assertEquals("NOT_FOUND", ex.getCode());
         assertEquals(404, ex.getHttpStatus());
+        assertEquals("Product不存在", ex.getMessage());
     }
 
     @Test
@@ -52,11 +55,14 @@ class BusinessExceptionTest {
         BusinessException ex = BusinessException.permissionDenied();
         assertEquals("PERMISSION_DENIED", ex.getCode());
         assertEquals(403, ex.getHttpStatus());
+        assertEquals("权限不足", ex.getMessage());
     }
 
     @Test
     void tenantInvalid_has401() {
         BusinessException ex = BusinessException.tenantInvalid();
         assertEquals("TENANT_INVALID", ex.getCode());
+        assertEquals(401, ex.getHttpStatus());
+        assertEquals("租户无效", ex.getMessage());
     }
 }

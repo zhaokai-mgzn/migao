@@ -557,4 +557,90 @@ class ProductServiceTest {
 
         assertThat(result).isEmpty();
     }
+
+    // ═══════════════════════════════════════════════════════════
+    // 批量操作测试
+    // ═══════════════════════════════════════════════════════════
+
+    @Test
+    @DisplayName("批量上架 - off_sale 状态可上架")
+    void batchOnShelf_AllSuccess() {
+        Product offSaleProduct = Product.builder()
+                .id("prod-off")
+                .tenantId(1L)
+                .name("已下架商品")
+                .status("off_sale")
+                .build();
+        when(productMapper.selectById("prod-off")).thenReturn(offSaleProduct);
+        when(productMapper.updateById(any(Product.class))).thenReturn(1);
+
+        BatchOperationResult result = productService.batchOnShelf(List.of("prod-off"), 1L);
+
+        assertThat(result.getSuccess()).isEqualTo(1);
+        assertThat(result.getFailed()).isEqualTo(0);
+        verify(productMapper).updateById(argThat((Product p) -> "on_sale".equals(p.getStatus())));
+    }
+
+    @Test
+    @DisplayName("批量上架 - 空列表直接返回")
+    void batchOnShelf_EmptyList() {
+        BatchOperationResult result = productService.batchOnShelf(List.of(), 1L);
+
+        assertThat(result.getSuccess()).isEqualTo(0);
+        assertThat(result.getFailed()).isEqualTo(0);
+    }
+
+    @Test
+    @DisplayName("批量上架 - on_sale 状态不允许再上架")
+    void batchOnShelf_InvalidStatus() {
+        when(productMapper.selectById("prod-001")).thenReturn(testProduct);
+
+        BatchOperationResult result = productService.batchOnShelf(List.of("prod-001"), 1L);
+
+        assertThat(result.getFailed()).isEqualTo(1);
+        assertThat(result.getErrors().get(0).getMessage()).contains("不允许上架");
+    }
+
+    @Test
+    @DisplayName("批量下架 - on_sale 状态可下架")
+    void batchOffShelf_AllSuccess() {
+        when(productMapper.selectById("prod-001")).thenReturn(testProduct);
+        when(productMapper.updateById(any(Product.class))).thenReturn(1);
+
+        BatchOperationResult result = productService.batchOffShelf(List.of("prod-001"), 1L);
+
+        assertThat(result.getSuccess()).isEqualTo(1);
+        assertThat(result.getFailed()).isEqualTo(0);
+        verify(productMapper).updateById(argThat((Product p) -> "off_sale".equals(p.getStatus())));
+    }
+
+    @Test
+    @DisplayName("批量删除 - draft 状态可删除")
+    void batchDelete_DraftAllowed() {
+        Product draftProduct = Product.builder()
+                .id("prod-draft")
+                .tenantId(1L)
+                .status("draft")
+                .build();
+        when(productMapper.selectById("prod-draft")).thenReturn(draftProduct);
+        when(productMapper.deleteById("prod-draft")).thenReturn(1);
+
+        BatchOperationResult result = productService.batchDelete(List.of("prod-draft"), 1L);
+
+        assertThat(result.getSuccess()).isEqualTo(1);
+        assertThat(result.getFailed()).isEqualTo(0);
+        verify(productMapper).deleteById("prod-draft");
+    }
+
+    @Test
+    @DisplayName("批量删除 - on_sale 状态不可删除")
+    void batchDelete_OnSaleNotAllowed() {
+        when(productMapper.selectById("prod-001")).thenReturn(testProduct);
+
+        BatchOperationResult result = productService.batchDelete(List.of("prod-001"), 1L);
+
+        assertThat(result.getFailed()).isEqualTo(1);
+        assertThat(result.getErrors().get(0).getMessage()).contains("不允许删除");
+        verify(productMapper, never()).deleteById(anyString());
+    }
 }

@@ -214,4 +214,66 @@ class AuthServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .hasMessage("用户不存在");
     }
+
+    // ======================== 登出测试 ========================
+
+    @Test
+    @DisplayName("登出 - 成功，Token 加入黑名单并清除 Cookie")
+    void logout_Success() {
+        // Given: 请求包含有效的 Cookie Token
+        jakarta.servlet.http.HttpServletRequest request = mock(jakarta.servlet.http.HttpServletRequest.class);
+        HttpServletResponse response = mock(HttpServletResponse.class);
+
+        jakarta.servlet.http.Cookie tokenCookie = new jakarta.servlet.http.Cookie("access_token", "valid-token");
+        when(request.getCookies()).thenReturn(new jakarta.servlet.http.Cookie[]{tokenCookie});
+
+        io.jsonwebtoken.Claims mockClaims = mock(io.jsonwebtoken.Claims.class);
+        when(mockClaims.getId()).thenReturn("jti-logout");
+        when(mockClaims.getExpiration()).thenReturn(new java.util.Date(System.currentTimeMillis() + 600000));
+        when(jwtTokenProvider.getClaimsFromToken("valid-token")).thenReturn(mockClaims);
+
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+
+        // When: 登出
+        authService.logout(request, response);
+
+        // Then: Token 被加入黑名单
+        verify(valueOperations).set(eq("token:blacklist:jti-logout"), eq("1"), any(java.time.Duration.class));
+    }
+
+    @Test
+    @DisplayName("登出 - 无 Token 时仅清除 Cookie")
+    void logout_NoToken() {
+        // Given: 请求无 Cookie 无 Authorization header
+        jakarta.servlet.http.HttpServletRequest request = mock(jakarta.servlet.http.HttpServletRequest.class);
+        HttpServletResponse response = mock(HttpServletResponse.class);
+
+        when(request.getCookies()).thenReturn(null);
+        when(request.getHeader("Authorization")).thenReturn(null);
+
+        // When: 登出（不应抛异常）
+        authService.logout(request, response);
+
+        // Then: 未尝试操作 Redis
+        verify(redisTemplate, never()).opsForValue();
+    }
+
+    // ======================== 微信公众号 OAuth 占位实现测试 ========================
+
+    @Test
+    @DisplayName("微信 H5 授权 URL 构建 - 抛出未实现异常")
+    void buildWechatH5AuthorizeUrl_NotImplemented() {
+        assertThatThrownBy(() -> authService.buildWechatH5AuthorizeUrl("tenant123", "https://example.com/callback"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("尚未实现");
+    }
+
+    @Test
+    @DisplayName("微信 H5 OAuth 回调 - 抛出未实现异常")
+    void handleWechatH5Callback_NotImplemented() {
+        HttpServletResponse response = mock(HttpServletResponse.class);
+        assertThatThrownBy(() -> authService.handleWechatH5Callback("auth-code", "state-123", response))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("尚未实现");
+    }
 }
