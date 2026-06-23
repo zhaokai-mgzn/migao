@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
+import dayjs from 'dayjs'
 import LogisticsInfo from '@/components/orders/LogisticsInfo'
 
 describe('LogisticsInfo — #686 logisticsCompany 字段名修复', () => {
@@ -106,7 +107,9 @@ describe('LogisticsInfo — #686 logisticsCompany 字段名修复', () => {
 
     render(<LogisticsInfo logistics={logistics} />)
 
-    expect(screen.getByText('2025-06-20 18:30:00')).toBeInTheDocument()
+    // component uses dayjs(track.time).format('YYYY-MM-DD HH:mm:ss'), compute dynamically
+    const expected = dayjs('2025-06-20T10:30:00Z').format('YYYY-MM-DD HH:mm:ss')
+    expect(screen.getByText(expected)).toBeInTheDocument()
   })
 
   it('does not render tracks section when tracks is empty array', () => {

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import dayjs from 'dayjs'
 import OrderTimeline from '@/components/orders/OrderTimeline'
 import type { StatusHistory } from '@/types'
 
@@ -51,8 +52,9 @@ describe('OrderTimeline', () => {
         { status: 'pending_payment', time: '2025-06-01T10:00:00Z' },
       ]
       render(<OrderTimeline currentStatus="pending_shipment" statusHistory={history} />)
-      // Should show formatted time for the step with history
-      expect(screen.getByText('06-01 18:00')).toBeInTheDocument()
+      // Should show formatted time for the step with history (component uses MM-DD HH:mm)
+      const expected = dayjs('2025-06-01T10:00:00Z').format('MM-DD HH:mm')
+      expect(screen.getByText(expected)).toBeInTheDocument()
     })
 
     it('does not show time on steps without history', () => {
@@ -61,7 +63,8 @@ describe('OrderTimeline', () => {
       ]
       render(<OrderTimeline currentStatus="pending_shipment" statusHistory={history} />)
       // Only one history item, so only one time display
-      const timeElements = screen.getAllByText('06-01 18:00')
+      const expected = dayjs('2025-06-01T10:00:00Z').format('MM-DD HH:mm')
+      const timeElements = screen.getAllByText(expected)
       expect(timeElements.length).toBe(1)
     })
   })
@@ -83,8 +86,9 @@ describe('OrderTimeline', () => {
         { status: 'closed', time: '2025-06-02T14:30:00Z' },
       ]
       render(<OrderTimeline currentStatus="closed" statusHistory={history} />)
-      // dayjs formats UTC+8: 2025-06-02T14:30:00Z → 2025-06-02 22:30
-      expect(screen.getByText('2025-06-02 22:30')).toBeInTheDocument()
+      // component formats closed time as YYYY-MM-DD HH:mm, computed dynamically for timezone safety
+      const expected = dayjs('2025-06-02T14:30:00Z').format('YYYY-MM-DD HH:mm')
+      expect(screen.getByText(expected)).toBeInTheDocument()
     })
 
     it('does not show check icons when closed', () => {

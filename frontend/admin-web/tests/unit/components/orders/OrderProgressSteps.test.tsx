@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import dayjs from 'dayjs'
 import OrderProgressSteps from '@/components/orders/OrderProgressSteps'
 
 describe('OrderProgressSteps', () => {
@@ -83,53 +84,70 @@ describe('OrderProgressSteps', () => {
   })
 
   describe('time display', () => {
+    // Use dayjs to compute expected values dynamically, matching the component's fmt()
+    // This avoids timezone-dependent failures between local (UTC+8) and CI (UTC).
+    function fmt(time: string): string {
+      return dayjs(time).format('YYYY-MM-DD HH:mm')
+    }
+
     it('shows paidAt time on step 1 and step 2 when status is pending_shipment', () => {
+      const paidAt = '2025-06-15T08:30:00Z'
       render(
         <OrderProgressSteps
           status="pending_shipment"
-          paidAt="2025-06-15T08:30:00Z"
+          paidAt={paidAt}
         />
       )
       // Both step 1 (completed) and step 2 (current) use paidAt, so time appears twice
-      const times = screen.getAllByText('2025-06-15 16:30')
+      const expected = fmt(paidAt)
+      const times = screen.getAllByText(expected)
       expect(times.length).toBe(2)
     })
 
     it('shows shippedAt time on step 3 when provided and status is shipped', () => {
+      const paidAt = '2025-06-15T08:30:00Z'
+      const shippedAt = '2025-06-16T10:00:00Z'
       render(
         <OrderProgressSteps
           status="shipped"
-          paidAt="2025-06-15T08:30:00Z"
-          shippedAt="2025-06-16T10:00:00Z"
+          paidAt={paidAt}
+          shippedAt={shippedAt}
         />
       )
       // step 3 time is unique (shippedAt), step 1-2 both use paidAt
-      expect(screen.getByText('2025-06-16 18:00')).toBeInTheDocument()
+      expect(screen.getByText(fmt(shippedAt))).toBeInTheDocument()
+      // paidAt also appears on step 1-2
+      expect(screen.getAllByText(fmt(paidAt)).length).toBe(2)
     })
 
     it('shows receivedAt time on step 4 when status is completed', () => {
+      const paidAt = '2025-06-15T08:30:00Z'
+      const shippedAt = '2025-06-16T10:00:00Z'
+      const receivedAt = '2025-06-18T14:00:00Z'
       render(
         <OrderProgressSteps
           status="completed"
-          paidAt="2025-06-15T08:30:00Z"
-          shippedAt="2025-06-16T10:00:00Z"
-          receivedAt="2025-06-18T14:00:00Z"
+          paidAt={paidAt}
+          shippedAt={shippedAt}
+          receivedAt={receivedAt}
         />
       )
       // step 4 time is unique (receivedAt)
-      expect(screen.getByText('2025-06-18 22:00')).toBeInTheDocument()
+      expect(screen.getByText(fmt(receivedAt))).toBeInTheDocument()
     })
 
     it('shows time only for current step when status is pending_payment', () => {
+      const paidAt = '2025-06-15T08:30:00Z'
       render(
         <OrderProgressSteps
           status="pending_payment"
-          paidAt="2025-06-15T08:30:00Z"
+          paidAt={paidAt}
         />
       )
       // Step 1 is current → time shown. Steps 2-4 are upcoming → no time shown.
       // Only step 1 shows the time since step 2 is upcoming (not current/completed)
-      const times = screen.getAllByText('2025-06-15 16:30')
+      const expected = fmt(paidAt)
+      const times = screen.getAllByText(expected)
       expect(times.length).toBe(1)
     })
 
