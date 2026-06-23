@@ -52,11 +52,13 @@ jobs:
         working-directory: ${{ env.WORKING_DIR }}
         run: npx vitest run
 
-      - name: 'Lint: forbid generateStaticParams [{id: "_"}]'
+      - name: 'Lint: forbid generateStaticParams return [] (breaks static export)'
         working-directory: ${{ env.WORKING_DIR }}
         run: |
-          if grep -rn 'return \[{ *id: *"_" *}\]' src/app --include='*.tsx'; then
-            echo "❌ 禁止 generateStaticParams 返回 [{id: '_'}]，必须 return []"
+          # return [] causes Next.js "missing generateStaticParams()" error with output:export
+          if grep -rn 'return \[\]' src/app --include='*.tsx' | grep -v '// return \[\]'; then
+            echo "❌ generateStaticParams return [] 在 output:export 下会报错"
+            echo "   必须 return [{ id: \"_\" }] 生成至少一个占位页"
             echo "   详见 #701 P0 OSS NoSuchKey 回潮根因"
             exit 1
           fi
