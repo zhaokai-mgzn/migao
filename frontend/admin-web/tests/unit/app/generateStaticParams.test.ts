@@ -50,20 +50,22 @@ const ROUTES = [
 
 describe('generateStaticParams', () => {
   it.each(ROUTES)(
-    '$name: generateStaticParams() returns [] (not [{id: "_"}])',
+    '$name: generateStaticParams() returns [{id: "_"}] (not empty array)',
     async ({ path }) => {
       const mod = await import(path)
       const result = await mod.generateStaticParams()
-      expect(result).toEqual([])
+      // return [] 会让 Next.js output:export 报 "missing generateStaticParams()"
+      expect(result).toEqual([{ id: '_' }])
     }
   )
 
   it.each(ROUTES)(
-    '$name: generateStaticParams() does NOT return [{id: "_"}]',
+    '$name: generateStaticParams() does NOT return empty array',
     async ({ path }) => {
       const mod = await import(path)
       const result = await mod.generateStaticParams()
-      expect(result).not.toEqual([{ id: '_' }])
+      // 空数组在 output:export 下会导致编译失败
+      expect(result).not.toEqual([])
     }
   )
 
