@@ -55,11 +55,19 @@ jobs:
       - name: 'Lint: forbid generateStaticParams return [] (breaks static export)'
         working-directory: ${{ env.WORKING_DIR }}
         run: |
-          # return [] causes Next.js "missing generateStaticParams()" error with output:export
-          if grep -rn 'return \[\]' src/app --include='*.tsx' | grep -v '// return \[\]'; then
-            echo "❌ generateStaticParams return [] 在 output:export 下会报错"
+          # 检查 generateStaticParams 函数体内是否 return []（而非 return [{id: "_"}]）
+          # 用 awk 匹配 "generateStaticParams" 后接下来的 "return []" 模式
+          BAD_COUNT=0
+          for f in $(grep -rl 'generateStaticParams' src/app --include='*.tsx'); do
+            # 在 generateStaticParams 函数体内检查 return []
+            if awk '/generateStaticParams/,/^  }$/' "$f" | grep -q 'return \[\]'; then
+              echo "❌ $f: generateStaticParams 内 return []，必须 return [{ id: \"_\" }]"
+              BAD_COUNT=$((BAD_COUNT + 1))
+            fi
+          done
+          if [ "$BAD_COUNT" -gt 0 ]; then
+            echo "❌ $BAD_COUNT 个文件的 generateStaticParams return [] 在 output:export 下会报错"
             echo "   必须 return [{ id: \"_\" }] 生成至少一个占位页"
-            echo "   详见 #701 P0 OSS NoSuchKey 回潮根因"
             exit 1
           fi
           echo "✅ generateStaticParams 配置正确"
