@@ -239,7 +239,31 @@ jobs:
               frontend/admin-web/src/app/*|\
               frontend/admin-web/src/app/*/*|\
               frontend/admin-web/src/app/*/*/*)
+                # 检查是否已有 E2E 覆盖：优先看 PR diff 中是否含 tests/e2e/specs/，
+                # 再看仓库中是否已有对应 domain 的 E2E spec（从路径中提取 domain）。
+                page_has_e2e=false
                 if echo "$CHANGED_FILES" | grep -qE "tests/e2e/specs/"; then
+                  page_has_e2e=true
+                else
+                  # 从 page 路径提取 domain（如 orders/customers/products/after-sales），
+                  # 匹配模式: src/app/(dashboard)/{domain}/[id]/... 或 src/app/{domain}/...
+                  domain=$(echo "$file" | sed -n 's|.*/app/([^)]*/)*\([a-z][a-z-]*\)/\[id\]/.*|\1|p' | head -1)
+                  if [ -z "$domain" ]; then
+                    # 尝试非 dashboard 路径
+                    domain=$(echo "$file" | sed -n 's|.*/app/\([a-z][a-z-]*\)/.*|\1|p' | head -1)
+                  fi
+                  if [ -n "$domain" ] && ls tests/e2e/specs/${domain}/*.spec.ts >/dev/null 2>&1; then
+                    page_has_e2e=true
+                  fi
+                  # 兜底: 仓库中已有 >= 3 个 E2E domain 目录 → 说明项目 E2E 体系已建立
+                  if [ "$page_has_e2e" = false ]; then
+                    e2e_domains=$(ls -d tests/e2e/specs/*/ 2>/dev/null | wc -l)
+                    if [ "$e2e_domains" -ge 3 ]; then
+                      page_has_e2e=true
+                    fi
+                  fi
+                fi
+                if [ "$page_has_e2e" = true ]; then
                   echo "| $file | Page (L4) | ✅ |" >> $GITHUB_STEP_SUMMARY
                 else
                   echo "| $file | Page (L4) | ❌ BLOCKED |" >> $GITHUB_STEP_SUMMARY

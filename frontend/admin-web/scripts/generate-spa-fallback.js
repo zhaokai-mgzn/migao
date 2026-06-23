@@ -99,7 +99,17 @@ const routes = placeholders.map(buildRoute)
 routes.sort((a, b) => b.segments.length - a.segments.length)
 
 if (routes.length === 0) {
-  console.log(`${YELLOW}[spa-fallback] 未发现动态占位路由，跳过${RESET}`)
+  // 无占位路由时（generateStaticParams 全部返回 []），
+  // 直接复制 out/index.html 作为 SPA fallback，确保 OSS ErrorDocument 有有效目标。
+  // 浏览器加载 index.html 后 Next.js 客户端路由会根据 window.location 渲染正确页面。
+  const rootIndex = path.join(OUT_DIR, 'index.html')
+  if (fs.existsSync(rootIndex)) {
+    fs.copyFileSync(rootIndex, FALLBACK_FILE)
+    console.log(`${GREEN}[spa-fallback] 无占位路由，已复制 ${path.relative(process.cwd(), rootIndex)} → ${path.relative(process.cwd(), FALLBACK_FILE)}${RESET}`)
+    console.log(`${YELLOW}[spa-fallback] 注意：SPA fallback 使用根 index.html，动态路由由客户端 JS 接管${RESET}`)
+  } else {
+    console.log(`${YELLOW}[spa-fallback] 未发现动态占位路由且 out/index.html 不存在，跳过${RESET}`)
+  }
   process.exit(0)
 }
 

@@ -52,6 +52,16 @@ jobs:
         working-directory: ${{ env.WORKING_DIR }}
         run: npx vitest run
 
+      - name: Lint: forbid generateStaticParams [{id: "_"}]
+        working-directory: ${{ env.WORKING_DIR }}
+        run: |
+          if grep -rn 'return \[{ *id: *"_" *}\]' src/app --include='*.tsx'; then
+            echo "❌ 禁止 generateStaticParams 返回 [{id: '_'}]，必须 return []"
+            echo "   详见 #701 P0 OSS NoSuchKey 回潮根因"
+            exit 1
+          fi
+          echo "✅ generateStaticParams 配置正确"
+
       - name: Build Next.js (static export)
         working-directory: ${{ env.WORKING_DIR }}
         env:
@@ -72,6 +82,12 @@ jobs:
             exit 1
           fi
           echo "✅ 静态导出完成，产物条目数：$(find out -type f | wc -l)"
+          if [ ! -f out/_spa-fallback.html ]; then
+            echo "❌ SPA fallback 缺失：out/_spa-fallback.html 不存在"
+            echo "   请检查 postbuild 脚本 scripts/generate-spa-fallback.js"
+            exit 1
+          fi
+          echo "✅ SPA fallback 存在：$(wc -c < out/_spa-fallback.html) bytes"
 
       - name: Install Aliyun CLI
         run: |
@@ -170,3 +186,25 @@ jobs:
           done
           echo "❌ 健康检查失败，HTTP 状态码非 200"
           exit 1
+
+      - name: Verify dynamic routes SPA fallback
+        run: |
+          BASE="http://${{ env.OSS_BUCKET }}.${{ env.OSS_ENDPOINT }}"
+          TEST_ID="ci-guard-701"
+          ROUTES="orders/$TEST_ID/ship orders/$TEST_ID products/$TEST_ID products/$TEST_ID/edit customers/$TEST_ID after-sales/$TEST_ID"
+          FAILURES=0
+          echo "验证动态路由 SPA fallback (Issue #701 回归防护)..."
+          for path in $ROUTES; do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -m 15 "$BASE/$path/" || echo "000")
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "  ✅ /$path/ → $HTTP_CODE"
+            else
+              echo "  ❌ /$path/ → $HTTP_CODE (expected 200)"
+              FAILURES=$((FAILURES + 1))
+            fi
+          done
+          if [ "$FAILURES" -gt 0 ]; then
+            echo "❌ $FAILURES 个动态路由未返回 200 — SPA fallback 可能未生效"
+            exit 1
+          fi
+          echo "✅ 全部动态路由 SPA fallback 正常"
