@@ -144,3 +144,43 @@ jobs:
           aliyun cdn RefreshObjectCaches --ObjectPath "https://merchant.migaozn.com/" --ObjectType Directory
           aliyun cdn RefreshObjectCaches --ObjectPath "https://migaozn.com/" --ObjectType Directory
           echo "✅ CDN 缓存刷新已提交"
+
+      - name: Post-deploy smoke test
+        run: |
+          echo "部署后冒烟测试..."
+          FAILS=0
+
+          # 1. 登录页可达
+          HTTP=$(curl -s -o /dev/null -w "%{http_code}" -m 10 http://115.29.222.118:3001/login/)
+          if [ "$HTTP" = "200" ] || [ "$HTTP" = "308" ]; then
+            echo "  ✅ 登录页 HTTP $HTTP"
+          else
+            echo "  ❌ 登录页 HTTP $HTTP (expected 200/308)"
+            FAILS=$((FAILS + 1))
+          fi
+
+          # 2. 动态路由可达（不依赖 OSS fallback）
+          for route in /orders/ /products/ /customers/ /dashboard/ /after-sales/; do
+            HTTP=$(curl -s -o /dev/null -w "%{http_code}" -m 10 "http://115.29.222.118:3001${route}")
+            if [ "$HTTP" = "200" ] || [ "$HTTP" = "308" ]; then
+              echo "  ✅ ${route} HTTP $HTTP"
+            else
+              echo "  ❌ ${route} HTTP $HTTP (expected 200/308)"
+              FAILS=$((FAILS + 1))
+            fi
+          done
+
+          # 3. 发货页（曾经 OSS NoSuchKey）
+          HTTP=$(curl -s -o /dev/null -w "%{http_code}" -m 10 http://115.29.222.118:3001/orders/test/ship/)
+          if [ "$HTTP" = "200" ] || [ "$HTTP" = "308" ]; then
+            echo "  ✅ 发货页 HTTP $HTTP"
+          else
+            echo "  ❌ 发货页 HTTP $HTTP (expected 200/308)"
+            FAILS=$((FAILS + 1))
+          fi
+
+          if [ "$FAILS" -gt 0 ]; then
+            echo "❌ $FAILS 项冒烟测试失败"
+            exit 1
+          fi
+          echo "✅ 全部冒烟测试通过"
