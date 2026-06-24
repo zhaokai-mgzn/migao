@@ -24,7 +24,7 @@ ENV NODE_ENV=production
 # 构建（不再需要 output:export）
 RUN npm run build
 
-ENV PORT=80
-EXPOSE 80
 
-CMD ["npx", "next", "start", "-p", "80"]
+EXPOSE 3001
+
+CMD ["npx", "next", "start", "-p", "3001"]
