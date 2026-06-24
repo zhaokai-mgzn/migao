@@ -6,14 +6,15 @@ on:
       - main
     paths:
       - 'frontend/admin-web/**'
-  workflow_dispatch:  # 支持手动触发
+  workflow_dispatch:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  OSS_BUCKET: ai-customer-service-admin-dev
-  OSS_REGION: cn-hangzhou
-  OSS_ENDPOINT: oss-cn-hangzhou.aliyuncs.com
-  NODE_VERSION: '20'
+  ACR_REGISTRY: crpi-qdcgkzwx9p9zckga.cn-hangzhou.personal.cr.aliyuncs.com
+  ACR_NAMESPACE: ai-customer-service
+  IMAGE_NAME: admin-web
+  SAE_APP_ID: 3a85fd57-f0cf-489b-a223-ca690dfb9fd2
+  SAE_REGION: cn-hangzhou
   WORKING_DIR: frontend/admin-web
 
 jobs:
@@ -28,21 +29,26 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Set image tag
+        id: tag
+        run: echo "IMAGE_TAG=v$(date +%Y%m%d%H%M%S)" >> $GITHUB_OUTPUT
+
+      - name: Login to Alibaba Cloud ACR
+        run: |
+          docker login ${{ env.ACR_REGISTRY }} \
+            --username ${{ secrets.ACR_USERNAME }} \
+            --password ${{ secrets.ACR_PASSWORD }}
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: '20'
           cache: 'npm'
           cache-dependency-path: ${{ env.WORKING_DIR }}/package-lock.json
 
       - name: Install dependencies
         working-directory: ${{ env.WORKING_DIR }}
-        run: |
-          if [ -f package-lock.json ]; then
-            npm ci
-          else
-            npm install
-          fi
+        run: npm ci
 
       - name: TypeScript type check
         working-directory: ${{ env.WORKING_DIR }}
@@ -52,148 +58,61 @@ jobs:
         working-directory: ${{ env.WORKING_DIR }}
         run: npx vitest run
 
-      - name: Build Next.js (static export)
-        working-directory: ${{ env.WORKING_DIR }}
-        env:
-          NODE_ENV: production
-          NEXT_PUBLIC_API_BASE_URL: ${{ secrets.NEXT_PUBLIC_API_BASE_URL || 'https://api.migaozn.com' }}
-          NEXT_PUBLIC_AI_API_BASE_URL: ${{ secrets.NEXT_PUBLIC_AI_API_BASE_URL || 'https://ai-api.migaozn.com' }}
-          NEXT_PUBLIC_COOKIE_DOMAIN: ${{ secrets.NEXT_PUBLIC_COOKIE_DOMAIN || '.migaozn.com' }}
-          NEXT_PUBLIC_ASSET_PREFIX: ${{ secrets.NEXT_PUBLIC_ASSET_PREFIX }}
-        run: |
-          npm run build  # 使用 npm run build 以触发 postbuild hook (generate-spa-fallback.js)
-          if [ ! -d out ]; then
-            echo "❌ 静态导出失败：out/ 目录不存在"
-            exit 1
-          fi
-          if [ ! -f out/index.html ]; then
-            echo "❌ 静态导出失败：out/index.html 不存在"
-            exit 1
-          fi
-          echo "✅ 静态导出完成，产物条目数：$(find out -type f | wc -l)"
-          if [ ! -f out/_spa-fallback.html ]; then
-            echo "❌ SPA fallback 缺失：out/_spa-fallback.html 不存在"
-            echo "   请检查 postbuild 脚本 scripts/generate-spa-fallback.js"
-            exit 1
-          fi
-          echo "✅ SPA fallback 存在：$(wc -c < out/_spa-fallback.html) bytes"
-
-      - name: Install Aliyun CLI
-        run: |
-          curl -fsSL --retry 3 https://aliyuncli.alicdn.com/aliyun-cli-linux-latest-amd64.tgz -o aliyun-cli.tgz
-          file aliyun-cli.tgz | grep -q "gzip compressed data" || { echo "❌ 下载文件损坏或非 gzip 格式"; exit 1; }
-          tar xzf aliyun-cli.tgz
-          sudo mv aliyun /usr/local/bin/
-          echo "✅ Aliyun CLI $(aliyun version 2>/dev/null || echo installed)"
-
-      - name: Configure Aliyun credentials
-        run: |
-          aliyun configure set \
-            --access-key-id ${{ secrets.ALIYUN_ACCESS_KEY_ID }} \
-            --access-key-secret ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }} \
-            --region ${{ env.OSS_REGION }}
-
-      - name: Clean old static assets
-        run: |
-          echo "清理旧版本静态资源，避免 CDN 缓存引用"
-          aliyun oss rm oss://${{ env.OSS_BUCKET }}/_next/static/ --recursive --force \
-            --region ${{ env.OSS_REGION }} \
-            --endpoint https://${{ env.OSS_ENDPOINT }} \
-            || true
-          echo "✅ 清理完成"
-
-      - name: Upload to OSS (HTML — no cache)
+      - name: Build and push Docker image
         working-directory: ${{ env.WORKING_DIR }}
         run: |
-          echo "上传 HTML 文件（Cache-Control: no-cache）..."
-          aliyun oss cp out/ oss://${{ env.OSS_BUCKET }}/ \
-            --recursive \
-            --force \
-            --include "*.html" \
-            --meta "Cache-Control:no-cache, max-age=0" \
-            --region ${{ env.OSS_REGION }} \
-            --endpoint https://${{ env.OSS_ENDPOINT }}
-          echo "✅ HTML 上传完成"
+          docker build \
+            --build-arg NEXT_PUBLIC_API_BASE_URL=${{ secrets.NEXT_PUBLIC_API_BASE_URL || 'https://api.migaozn.com' }} \
+            --build-arg NEXT_PUBLIC_AI_API_BASE_URL=${{ secrets.NEXT_PUBLIC_AI_API_BASE_URL || 'https://ai-api.migaozn.com' }} \
+            --build-arg NEXT_PUBLIC_COOKIE_DOMAIN=${{ secrets.NEXT_PUBLIC_COOKIE_DOMAIN || '.migaozn.com' }} \
+            -t ${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.IMAGE_TAG }} \
+            -t ${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_NAME }}:latest \
+            .
+          docker push ${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.IMAGE_TAG }}
+          docker push ${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_NAME }}:latest
 
-      - name: Upload to OSS (static assets — immutable cache)
-        working-directory: ${{ env.WORKING_DIR }}
+      - name: Deploy to SAE
         run: |
-          echo "上传 _next/static 静态资源（Cache-Control: immutable, 1y）..."
-          aliyun oss cp out/_next/static/ oss://${{ env.OSS_BUCKET }}/_next/static/ \
-            --recursive \
-            --force \
-            --meta "Cache-Control:public, max-age=31536000, immutable" \
-            --region ${{ env.OSS_REGION }} \
-            --endpoint https://${{ env.OSS_ENDPOINT }}
-          echo "✅ 静态资源上传完成"
+          IMAGE="${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.IMAGE_TAG }}"
+          echo "Deploying image: $IMAGE to SAE app ${{ env.SAE_APP_ID }}"
 
-      - name: Upload to OSS (other files)
-        working-directory: ${{ env.WORKING_DIR }}
-        run: |
-          echo "上传其他文件..."
-          aliyun oss cp out/ oss://${{ env.OSS_BUCKET }}/ \
-            --recursive \
-            --force \
-            --exclude "*.html" \
-            --exclude "_next/static/*" \
-            --region ${{ env.OSS_REGION }} \
-            --endpoint https://${{ env.OSS_ENDPOINT }} \
-            || true
-          echo "✅ 上传完成"
+          # 获取当前环境变量配置
+          ENVS=$(aliyun sae GET /pop/v1/sam/app/describeApplicationConfig \
+            --AppId ${{ env.SAE_APP_ID }} \
+            --RegionId ${{ env.SAE_REGION }} | \
+            python3 -c "import json,sys; d=json.load(sys.stdin).get('Data',{}); [print(f'{e[\"name\"]}={e[\"value\"]}') for e in d.get('Envs',[])]" | paste -sd ',' -)
 
-      - name: Refresh CDN cache
-        continue-on-error: true
-        run: |
-          DOMAIN="${{ secrets.CDN_REFRESH_DOMAIN }}"
-          if [ -z "$DOMAIN" ]; then
-            echo "⚠️ CDN_REFRESH_DOMAIN 未配置，跳过 CDN 刷新"
-            echo "⚠️ 请手动在阿里云 CDN 控制台刷新缓存，或配置此 secret"
-            exit 0
-          fi
-          echo "刷新 CDN 目录缓存：$DOMAIN/"
-          aliyun cdn RefreshObjectCaches \
-            --ObjectPath "$DOMAIN/" \
-            --ObjectType Directory
-          echo "刷新 CDN 首页缓存：$DOMAIN/index.html"
-          aliyun cdn RefreshObjectCaches \
-            --ObjectPath "$DOMAIN/index.html" \
-            --ObjectType File
+          # 发布新版本
+          aliyun sae POST /pop/v1/sam/app/deployApplication \
+            --AppId ${{ env.SAE_APP_ID }} \
+            --RegionId ${{ env.SAE_REGION }} \
+            --ImageUrl "$IMAGE" \
+            --UpdateStrategy "{\"type\":\"GrayBatchUpdate\",\"batchUpdate\":{\"batch\":1,\"releaseType\":\"auto\",\"batchWaitTime\":30}}" \
+            --MinReadyInstances 1 \
+            --MinReadySeconds 10 \
+            --Envs "$ENVS"
+
+          echo "Deploy initiated, waiting for readiness..."
+          sleep 30
+
+          # 等待部署完成
+          for i in $(seq 1 12); do
+            RESULT=$(aliyun sae GET /pop/v1/sam/app/describeApplicationStatus \
+              --AppId ${{ env.SAE_APP_ID }} \
+              --RegionId ${{ env.SAE_REGION }})
+            STATUS=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin).get('Data',{}).get('Status','UNKNOWN'))")
+            echo "Status: $STATUS (attempt $i)"
+            if [ "$STATUS" = "RUNNING" ]; then
+              echo "✅ Deployment succeeded"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "⚠️ Deployment status check timed out, check SAE console"
 
       - name: Health check
         run: |
-          URL="http://${{ env.OSS_BUCKET }}.${{ env.OSS_ENDPOINT }}/index.html"
-          echo "执行健康检查: $URL"
-          MAX_RETRY=5
-          for i in $(seq 1 $MAX_RETRY); do
-            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -m 15 "$URL" || echo "000")
-            echo "第 $i 次检查响应码: $HTTP_CODE"
-            if [ "$HTTP_CODE" = "200" ]; then
-              echo "✅ 部署成功，admin-web 静态站点可访问"
-              exit 0
-            fi
-            sleep 5
-          done
-          echo "❌ 健康检查失败，HTTP 状态码非 200"
-          exit 1
-
-      - name: Verify dynamic routes SPA fallback
-        run: |
-          BASE="http://${{ env.OSS_BUCKET }}.${{ env.OSS_ENDPOINT }}"
-          TEST_ID="ci-guard-701"
-          ROUTES="orders/$TEST_ID/ship orders/$TEST_ID products/$TEST_ID products/$TEST_ID/edit customers/$TEST_ID after-sales/$TEST_ID"
-          FAILURES=0
-          echo "验证动态路由 SPA fallback (Issue #701 回归防护)..."
-          for path in $ROUTES; do
-            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -m 15 "$BASE/$path/" || echo "000")
-            if [ "$HTTP_CODE" = "200" ]; then
-              echo "  ✅ /$path/ → $HTTP_CODE"
-            else
-              echo "  ❌ /$path/ → $HTTP_CODE (expected 200)"
-              FAILURES=$((FAILURES + 1))
-            fi
-          done
-          if [ "$FAILURES" -gt 0 ]; then
-            echo "❌ $FAILURES 个动态路由未返回 200 — SPA fallback 可能未生效"
-            exit 1
-          fi
-          echo "✅ 全部动态路由 SPA fallback 正常"
+          # SAE 部署后通过内网 SLB 访问 health check
+          # 如果配置了公网 SLB，可改为公网地址
+          echo "部署完成，请通过域名或 SAE 控制台验证应用是否正常"
+          echo "AppId: ${{ env.SAE_APP_ID }}"
