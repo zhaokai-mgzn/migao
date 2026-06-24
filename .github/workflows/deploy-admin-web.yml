@@ -91,33 +91,28 @@ jobs:
           IMAGE="${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.IMAGE_TAG }}"
           echo "Deploying image: $IMAGE to SAE app ${{ env.SAE_APP_ID }}"
 
-          # 获取当前环境变量配置
-          ENVS=$(aliyun sae GET /pop/v1/sam/app/describeApplicationConfig \
-            --AppId ${{ env.SAE_APP_ID }} \
-            --RegionId ${{ env.SAE_REGION }} | \
-            python3 -c "import json,sys; d=json.load(sys.stdin).get('Data',{}); [print(f'{e[\"name\"]}={e[\"value\"]}') for e in d.get('Envs',[])]" | paste -sd ',' -)
-
-          # 发布新版本
           aliyun sae POST /pop/v1/sam/app/deployApplication \
             --AppId ${{ env.SAE_APP_ID }} \
             --RegionId ${{ env.SAE_REGION }} \
             --ImageUrl "$IMAGE" \
-            --UpdateStrategy "{\"type\":\"GrayBatchUpdate\",\"batchUpdate\":{\"batch\":1,\"releaseType\":\"auto\",\"batchWaitTime\":30}}" \
+            --InternetSlbId lb-bp1s3ij4ezjy071758lq4 \
+            --Internet true \
+            --Port 80 \
             --MinReadyInstances 1 \
-            --MinReadySeconds 10 \
-            --Envs "$ENVS"
+            --Replicas 1 \
+            --Envs '[{"name":"PORT","value":"80"}]'
 
           echo "Deploy initiated, waiting for readiness..."
           sleep 30
 
           # 等待部署完成
           for i in $(seq 1 12); do
-            RESULT=$(aliyun sae GET /pop/v1/sam/app/describeApplicationStatus \
+            STATUS=$(aliyun sae GET /pop/v1/sam/app/describeApplicationStatus \
               --AppId ${{ env.SAE_APP_ID }} \
-              --RegionId ${{ env.SAE_REGION }})
-            STATUS=$(echo "$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin).get('Data',{}).get('Status','UNKNOWN'))")
+              --RegionId ${{ env.SAE_REGION }} | \
+              python3 -c "import json,sys; print(json.load(sys.stdin).get('Data',{}).get('SubStatus','UNKNOWN'))")
             echo "Status: $STATUS (attempt $i)"
-            if [ "$STATUS" = "RUNNING" ]; then
+            if [ "$STATUS" = "NORMAL" ]; then
               echo "✅ Deployment succeeded"
               exit 0
             fi
@@ -127,7 +122,12 @@ jobs:
 
       - name: Health check
         run: |
-          # SAE 部署后通过内网 SLB 访问 health check
-          # 如果配置了公网 SLB，可改为公网地址
-          echo "部署完成，请通过域名或 SAE 控制台验证应用是否正常"
-          echo "AppId: ${{ env.SAE_APP_ID }}"
+          # 通过 SLB 公网地址验证应用可访问性
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -m 10 http://8.136.139.170/)
+          echo "SLB health check: HTTP $HTTP_CODE"
+          # 401 (auth required) 或 200 均表示应用正常运行
+          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "401" ]; then
+            echo "✅ admin-web 应用正常运行"
+          else
+            echo "⚠️ 应用返回 HTTP $HTTP_CODE，请检查 SAE 控制台"
+          fi
