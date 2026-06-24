@@ -95,7 +95,7 @@ jobs:
 
       - name: Deploy to SAE
         run: |
-          IMAGE="ghcr.io/zhaokai-mgzn/migao/admin-web:${{ steps.tag.outputs.IMAGE_TAG }}"
+          IMAGE="${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.IMAGE_TAG }}"
           echo "Deploying image: $IMAGE to SAE app ${{ env.SAE_APP_ID }}"
 
           aliyun sae POST /pop/v1/sam/app/deployApplication \
