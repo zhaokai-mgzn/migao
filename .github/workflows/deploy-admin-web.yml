@@ -61,13 +61,20 @@ jobs:
       - name: Build and push Docker image
         working-directory: ${{ env.WORKING_DIR }}
         run: |
+          # Push to ACR (for backup) + ghcr.io (for SAE deployment)
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
           docker build \
             --build-arg NEXT_PUBLIC_API_BASE_URL=${{ secrets.NEXT_PUBLIC_API_BASE_URL || 'https://api.migaozn.com' }} \
             --build-arg NEXT_PUBLIC_AI_API_BASE_URL=${{ secrets.NEXT_PUBLIC_AI_API_BASE_URL || 'https://ai-api.migaozn.com' }} \
             --build-arg NEXT_PUBLIC_COOKIE_DOMAIN=${{ secrets.NEXT_PUBLIC_COOKIE_DOMAIN || '.migaozn.com' }} \
+            -t ghcr.io/zhaokai-mgzn/migao/admin-web:${{ steps.tag.outputs.IMAGE_TAG }} \
+            -t ghcr.io/zhaokai-mgzn/migao/admin-web:latest \
             -t ${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.IMAGE_TAG }} \
             -t ${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_NAME }}:latest \
             .
+          docker push ghcr.io/zhaokai-mgzn/migao/admin-web:${{ steps.tag.outputs.IMAGE_TAG }}
+          docker push ghcr.io/zhaokai-mgzn/migao/admin-web:latest
           docker push ${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.IMAGE_TAG }}
           docker push ${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_NAME }}:latest
 
@@ -88,7 +95,7 @@ jobs:
 
       - name: Deploy to SAE
         run: |
-          IMAGE="${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.IMAGE_TAG }}"
+          IMAGE="ghcr.io/zhaokai-mgzn/migao/admin-web:${{ steps.tag.outputs.IMAGE_TAG }}"
           echo "Deploying image: $IMAGE to SAE app ${{ env.SAE_APP_ID }}"
 
           aliyun sae POST /pop/v1/sam/app/deployApplication \
