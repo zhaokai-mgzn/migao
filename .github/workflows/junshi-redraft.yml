@@ -1,4 +1,5 @@
 # junshi/redraft.yml — Agent REJECT → 隐藏旧 DRAFT + 打 needs-draft
+# 机械操作: 不依赖 LLM
 
 name: junshi/redraft
 
@@ -12,35 +13,21 @@ permissions:
 
 jobs:
   trigger:
+    if: |
+      contains(github.event.comment.body, '<!-- REVIEW_JSON') &&
+      (contains(github.event.comment.body, '"reject"') || contains(github.event.comment.body, '"supplement"')) &&
+      !contains(github.event.issue.labels.*.name, 'ai-draft')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: 护栏检查
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          ISSUE_NUMBER: ${{ github.event.issue.number }}
-          COMMENT_BODY: ${{ github.event.comment.body }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          if [ "$EVENT_NAME" != "issue_comment" ]; then
-            echo "⏭️  非 issue_comment 事件，跳过"; exit 0
-          fi
-          if ! echo "$COMMENT_BODY" | grep -q '<!-- REVIEW_JSON'; then
-            echo "⏭️  非 REVIEW_JSON 评论，跳过"; exit 0
-          fi
-          if ! echo "$COMMENT_BODY" | grep -qE '"reject"|"supplement"'; then
-            echo "⏭️  非 reject/supplement，跳过"; exit 0
-          fi
-          HAS_AIDRAFT=$(gh issue view "$ISSUE_NUMBER" --json labels --jq '.labels[].name' | grep -c '^ai-draft$' || echo "0")
-          if [ "$HAS_AIDRAFT" -gt 0 ]; then
-            echo "⏭️  ai-draft 标签，跳过二郎神"; exit 0
-          fi
       - name: 隐藏旧 DRAFT + 打 needs-draft
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
         run: |
           set -euo pipefail
+
+          # 1. 找最新 DRAFT_JSON 评论并标记为过期
           DRAFT_ID=$(gh api "repos/$GITHUB_REPOSITORY/issues/$ISSUE_NUMBER/comments" \
             --jq '[.[] | select(.body | contains("DRAFT_JSON"))] | last | .id' 2>/dev/null || echo "")
           if [ -n "$DRAFT_ID" ]; then
@@ -48,5 +35,7 @@ jobs:
               -f body="~~OUTDATED DRAFT (replaced by re-draft)~~" 2>/dev/null || true
             echo "✅ 旧 DRAFT_JSON comment #$DRAFT_ID 已标记过期"
           fi
+
+          # 2. 打标签 → agent-poll 捡起来重新生成
           gh issue edit "$ISSUE_NUMBER" --add-label "needs-draft" --remove-label "needs-redraft" 2>/dev/null || true
           echo "✅ needs-draft — agent-poll 将读 REJECT 反馈重新生成 DRAFT"
