@@ -95,12 +95,12 @@ jobs:
             --AppId ${{ env.SAE_APP_ID }} \
             --RegionId ${{ env.SAE_REGION }} \
             --ImageUrl "$IMAGE" \
-            --InternetSlbId lb-bp1s3ij4ezjy071758lq4 \
+            --InternetSlbId lb-bp1hj04ouz5odz16iavw6 \
             --Internet true \
-            --Port 80 \
+            --Port 3001 \
             --MinReadyInstances 1 \
             --Replicas 1 \
-            --Envs '[{"name":"PORT","value":"80"}]'
+            --Envs '[{"name":"PORT","value":"3001"}]'
 
           echo "Deploy initiated, waiting for readiness..."
           sleep 30
@@ -122,7 +122,7 @@ jobs:
 
       - name: Health check
         run: |
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -m 10 http://8.136.139.170/)
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -m 10 http://120.26.136.144/login/)
           echo "SLB health check: HTTP $HTTP_CODE"
           if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "401" ]; then
             echo "✅ admin-web 应用正常运行"
