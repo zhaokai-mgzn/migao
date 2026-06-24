@@ -95,7 +95,7 @@ jobs:
             --AppId ${{ env.SAE_APP_ID }} \
             --RegionId ${{ env.SAE_REGION }} \
             --ImageUrl "$IMAGE" \
-            --InternetSlbId lb-bp1hj04ouz5odz16iavw6 \
+            --InternetSlbId lb-bp1qhc5hmslx9ksar2fir \
             --Internet true \
             --Port 3001 \
             --MinReadyInstances 1 \
@@ -122,7 +122,7 @@ jobs:
 
       - name: Health check
         run: |
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -m 10 http://120.26.136.144/login/)
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -m 10 http://47.96.105.7:3001/login/)
           echo "SLB health check: HTTP $HTTP_CODE"
           if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "401" ]; then
             echo "✅ admin-web 应用正常运行"
