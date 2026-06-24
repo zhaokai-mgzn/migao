@@ -122,12 +122,18 @@ jobs:
 
       - name: Health check
         run: |
-          # 通过 SLB 公网地址验证应用可访问性
           HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -m 10 http://8.136.139.170/)
           echo "SLB health check: HTTP $HTTP_CODE"
-          # 401 (auth required) 或 200 均表示应用正常运行
           if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "401" ]; then
             echo "✅ admin-web 应用正常运行"
           else
             echo "⚠️ 应用返回 HTTP $HTTP_CODE，请检查 SAE 控制台"
           fi
+
+      - name: Refresh CDN cache
+        continue-on-error: true
+        run: |
+          echo "刷新 CDN 缓存..."
+          aliyun cdn RefreshObjectCaches --ObjectPath "https://merchant.migaozn.com/" --ObjectType Directory
+          aliyun cdn RefreshObjectCaches --ObjectPath "https://migaozn.com/" --ObjectType Directory
+          echo "✅ CDN 缓存刷新已提交"
