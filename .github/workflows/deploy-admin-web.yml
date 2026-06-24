@@ -81,10 +81,10 @@ jobs:
 
       - name: Configure Aliyun credentials
         env:
-          ALIBABA_CLOUD_ACCESS_KEY_ID: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
-          ALIBABA_CLOUD_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
+          AK: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
+          SK: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
         run: |
-          aliyun configure set --mode AK --region ${{ env.SAE_REGION }}
+          aliyun configure set --access-key-id "$AK" --access-key-secret "$SK" --region ${{ env.SAE_REGION }}
 
       - name: Deploy to SAE
         run: |
