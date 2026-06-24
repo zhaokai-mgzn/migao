@@ -13,7 +13,7 @@ env:
   ACR_REGISTRY: crpi-qdcgkzwx9p9zckga.cn-hangzhou.personal.cr.aliyuncs.com
   ACR_NAMESPACE: ai-customer-service
   IMAGE_NAME: admin-web
-  SAE_APP_ID: 3a85fd57-f0cf-489b-a223-ca690dfb9fd2
+  SAE_APP_ID: 607b5233-9e24-4abe-9d75-a59b133b186f
   SAE_REGION: cn-hangzhou
   WORKING_DIR: frontend/admin-web
 
@@ -102,7 +102,7 @@ jobs:
             --AppId ${{ env.SAE_APP_ID }} \
             --RegionId ${{ env.SAE_REGION }} \
             --ImageUrl "$IMAGE" \
-            --InternetSlbId lb-bp1qhc5hmslx9ksar2fir \
+            --InternetSlbId lb-bp1vv0e4mzro1034ywuqq \
             --Internet true \
             --Port 3001 \
             --MinReadyInstances 1 \
@@ -129,7 +129,7 @@ jobs:
 
       - name: Health check
         run: |
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -m 10 http://47.96.105.7:3001/login/)
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -m 10 http://115.29.222.118:3001/login/)
           echo "SLB health check: HTTP $HTTP_CODE"
           if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "401" ]; then
             echo "✅ admin-web 应用正常运行"
