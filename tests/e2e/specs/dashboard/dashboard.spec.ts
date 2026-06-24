@@ -157,7 +157,9 @@ test.describe('仪表盘页面', () => {
   })
 
   test('页面标题展示"数据看板"', async ({ page }) => {
-    await expect(page.getByText('数据看板')).toBeVisible()
+    // getByRole('heading') 精确匹配 h1，避免 strict mode violation —
+    // Header 面包屑也渲染"数据看板"（<span>），getByText 会匹配到两个元素
+    await expect(page.getByRole('heading', { name: '数据看板' })).toBeVisible()
   })
 
   test('日期显示格式正确 — 数据更新时间', async ({ page }) => {
