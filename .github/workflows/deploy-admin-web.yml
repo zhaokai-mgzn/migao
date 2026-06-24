@@ -80,11 +80,11 @@ jobs:
           echo "✅ Aliyun CLI $(aliyun version 2>/dev/null || echo installed)"
 
       - name: Configure Aliyun credentials
+        env:
+          ALIBABA_CLOUD_ACCESS_KEY_ID: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
+          ALIBABA_CLOUD_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
         run: |
-          aliyun configure set \
-            --access-key-id ${{ secrets.ALIYUN_ACCESS_KEY_ID }} \
-            --access-key-secret ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }} \
-            --region ${{ env.SAE_REGION }}
+          aliyun configure set --mode AK --region ${{ env.SAE_REGION }}
 
       - name: Deploy to SAE
         run: |
