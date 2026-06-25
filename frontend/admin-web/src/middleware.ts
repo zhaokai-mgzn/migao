@@ -71,12 +71,10 @@ export function middleware(request: NextRequest) {
     const hostname = getHostname(host)
     const { pathname } = request.nextUrl
 
-    const response = handleRequest(hostname, pathname, request)
-    response.headers.set('X-Middleware', hostname)
-    return response
+    return handleRequest(hostname, pathname, request)
   } catch (e) {
     console.error('middleware error:', e)
-    return NextResponse.next()
+    return new NextResponse('Internal Server Error', { status: 500 })
   }
 }
 
@@ -133,4 +131,3 @@ function handleRequest(hostname: string, pathname: string, request: NextRequest)
 export const config = {
   matcher: '/:path*',
 }
-// trigger deploy
