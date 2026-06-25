@@ -85,7 +85,6 @@ jobs:
             --MinReadyInstances 1 \
             --Replicas 1 \
             --Envs '[{"name":"PORT","value":"3001"}]'
-            --Envs '[{"name":"PORT","value":"3001"}]'
 
       - name: Verify
         run: |
