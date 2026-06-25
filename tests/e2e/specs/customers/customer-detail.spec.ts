@@ -55,15 +55,9 @@ test.describe('客户详情页面', () => {
 
   test('客户信息卡片正确显示基本信息', async () => {
     // 客户详情页面使用 hardcoded 数据，infoCard 应可见
-    const card = pom.infoCard
-    if (await card.isVisible().catch(() => false)) {
-      await expect(card).toBeVisible()
-    }
+    await expect(pom.infoCard).toBeVisible({ timeout: 5000 });
     // 至少有客户名称展示
-    const anyName = pom.page.locator('h2').first()
-    if (await anyName.isVisible().catch(() => false)) {
-      await expect(anyName).toBeVisible()
-    }
+    await expect(pom.page.locator('h2').first()).toBeVisible({ timeout: 5000 });
   })
 
   test('VIP 星级正确显示', async () => {
@@ -96,17 +90,15 @@ test.describe('客户详情页面', () => {
 
   test('标签可被移除', async () => {
     const tags = pom.currentTags
-    if (await tags.count() > 0) {
-      // 验证标签有实际文本内容
-      const firstTagText = await tags.first().textContent()
-      expect(firstTagText).toBeTruthy()
-      await tags.first().hover()
-      const removeBtn = tags.first().locator('button')
-      if (await removeBtn.isVisible()) {
-        await removeBtn.click()
-        await pom.expectSuccessToast(/已移除标签/)
-      }
-    }
+    await expect(tags.first()).toBeVisible({ timeout: 5000 });
+    // 验证标签有实际文本内容
+    const firstTagText = await tags.first().textContent()
+    expect(firstTagText).toBeTruthy()
+    await tags.first().hover()
+    const removeBtn = tags.first().locator('button')
+    await expect(removeBtn).toBeVisible({ timeout: 5000 });
+    await removeBtn.click()
+    await pom.expectSuccessToast(/已移除标签/)
   })
 
   test('备注文本框可编辑并保存', async () => {
@@ -122,7 +114,7 @@ test.describe('客户详情页面', () => {
   test('会话历史 Tab 可切换并显示数据', async () => {
     await pom.sessionsTab.click()
     const items = pom.sessionItems
-    expect(await items.count()).toBeGreaterThanOrEqual(0)
+    expect(await items.count()).toBeGreaterThan(0)
   })
 
   test('跟进记录 Tab 可切换并显示占位文案', async () => {
@@ -132,29 +124,23 @@ test.describe('客户详情页面', () => {
 
   test('返回按钮可返回客户列表', async () => {
     // 返回按钮可见即可；直接导航进入时无 browser history，router.back() 行为不可预测
-    if (await pom.backButton.isVisible().catch(() => false)) {
-      await expect(pom.backButton).toBeVisible()
-    }
+    await expect(pom.backButton).toBeVisible({ timeout: 5000 });
   })
 
   test('订单卡片显示订单号和金额', async () => {
-    const orderNo = pom.page.locator('text=/ORD\\d+/')
-    if (await orderNo.count() > 0) {
-      await expect(orderNo.first()).toBeVisible()
-      // 验证订单号格式 ORD + 数字
-      const text = await orderNo.first().textContent()
-      expect(text).toMatch(/ORD\d+/)
-    }
+    await expect(pom.page.locator('text=/ORD\\d+/').first()).toBeVisible({ timeout: 5000 });
+    // 验证订单号格式 ORD + 数字
+    const text = await pom.page.locator('text=/ORD\\d+/').first().textContent()
+    expect(text).toMatch(/ORD\d+/)
   })
 
   test('会话卡片显示消息摘要和类型标签', async () => {
     await pom.sessionsTab.click()
     const badges = pom.page.locator('text=/AI 对话|人工客服/')
-    expect(await badges.count()).toBeGreaterThanOrEqual(0)
+    expect(await badges.count()).toBeGreaterThan(0)
   })
 
   test('渠道来源 Badge 正确显示', async () => {
-    const badge = pom.page.locator('text=/微信小程序|公众号|Web|订单/').first()
-    if (await badge.isVisible().catch(() => false)) await expect(badge).toBeVisible()
+    await expect(pom.page.locator('text=/微信小程序|公众号|Web|订单/').first()).toBeVisible({ timeout: 5000 });
   })
 })

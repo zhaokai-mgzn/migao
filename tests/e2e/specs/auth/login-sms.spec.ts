@@ -80,9 +80,10 @@ test.describe('登录页面 - 短信验证码登录', () => {
     await page.phoneInput.fill('13800138000')
     await page.codeInput.fill('123456')
     await page.smsSubmitButton.click()
-    // 应该发起 API 请求（可能成功或失败）
-    // 检查是否出现 loading 状态或错误提示
-    await page.page.waitForTimeout(500)
+    // 应该发起 API 请求，验证有 toast 响应或错误横幅出现
+    const toast = page.page.locator('[data-sonner-toast]')
+    const errorBanner = page.page.locator('.bg-red-50.border-red-100 p')
+    await expect(toast.or(errorBanner).first()).toBeVisible({ timeout: 10000 })
   })
 
   test('登录失败时显示错误横幅', async () => {

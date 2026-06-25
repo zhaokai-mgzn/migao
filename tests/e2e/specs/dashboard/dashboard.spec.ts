@@ -204,7 +204,7 @@ test.describe('仪表盘页面', () => {
     const svgChart = page.locator('svg').first()
     await expect(svgChart).toBeVisible()
     const hasChart = (await svgChart.locator('polyline, path, line').count()) > 0
-    expect(hasChart || true).toBe(true)
+    expect(hasChart).toBe(true)
   })
 
   test('趋势图默认 7 天选中', async ({ page }) => {

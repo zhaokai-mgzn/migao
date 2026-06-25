@@ -415,13 +415,12 @@ test.describe('商品列表页面', () => {
     const sizeSelect = page.locator('select').filter({ hasText: '' }).last()
     // Pagination 的 pageSize select 在分页区域
     const paginationSelect = page.locator('.flex.items-center.justify-between select')
-    if (await paginationSelect.isVisible()) {
-      await paginationSelect.selectOption('20')
-      await page.waitForTimeout(500)
+    await expect(paginationSelect).toBeVisible({ timeout: 5000 });
+    await paginationSelect.selectOption('20')
+    await page.waitForTimeout(500)
 
-      // 验证 URL 更新
-      expect(page.url()).toContain('size=20')
-    }
+    // 验证 URL 更新
+    expect(page.url()).toContain('size=20')
   })
 
   // ========== 多选 (17-18) ==========
@@ -534,25 +533,21 @@ test.describe('商品列表页面', () => {
 
   test('上架按钮（已下架商品）', async ({ page }) => {
     // p003 是 off_sale 状态，有"上架"按钮
-    const onShelfBtn = page.locator('tbody button').filter({ hasText: /^上架$/ }).first()
-    if (await onShelfBtn.isVisible()) {
-      await onShelfBtn.click()
+    await expect(page.locator('tbody button').filter({ hasText: /^上架$/ }).first()).toBeVisible({ timeout: 5000 });
+    await page.locator('tbody button').filter({ hasText: /^上架$/ }).first().click()
 
-      // 弹出确认
-      await expect(page.getByText('立即上架')).toBeVisible()
-      await page.getByRole('button', { name: '取消' }).click()
-    }
+    // 弹出确认
+    await expect(page.getByText('立即上架')).toBeVisible()
+    await page.getByRole('button', { name: '取消' }).click()
   })
 
   test('下架按钮（出售中商品）', async ({ page }) => {
     // on_sale 商品有"下架"按钮
-    const offShelfBtn = page.locator('tbody button').filter({ hasText: /^下架$/ }).first()
-    if (await offShelfBtn.isVisible()) {
-      await offShelfBtn.click()
+    await expect(page.locator('tbody button').filter({ hasText: /^下架$/ }).first()).toBeVisible({ timeout: 5000 });
+    await page.locator('tbody button').filter({ hasText: /^下架$/ }).first().click()
 
-      await expect(page.getByText('立即下架')).toBeVisible()
-      await page.getByRole('button', { name: '取消' }).click()
-    }
+    await expect(page.getByText('立即下架')).toBeVisible()
+    await page.getByRole('button', { name: '取消' }).click()
   })
 
   test('删除按钮弹出确认', async ({ page }) => {

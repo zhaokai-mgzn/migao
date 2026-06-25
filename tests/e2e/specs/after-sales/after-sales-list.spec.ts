@@ -142,11 +142,9 @@ test.describe('售后工单列表页面', () => {
   })
 
   test('表格行点击跳转到工单详情', async () => {
-    const firstRow = pom.tableRows.first()
-    if (await firstRow.isVisible()) {
-      await firstRow.click()
-      await expect(pom.page).toHaveURL(/\/after-sales\/.+/)
-    }
+    await expect(pom.tableRows.first()).toBeVisible({ timeout: 5000 });
+    await pom.tableRows.first().click()
+    await expect(pom.page).toHaveURL(/\/after-sales\/.+/)
   })
 
   test('重置按钮清空搜索条件', async () => {

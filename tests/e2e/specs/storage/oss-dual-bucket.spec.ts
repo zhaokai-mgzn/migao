@@ -101,22 +101,40 @@ test.describe('OSS 双 Bucket 路由', () => {
       await page.route('**/api/admin/files/upload*', async (route) => {
         await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 200, data: { url: 'https://oss.example.com/test.png' } }) })
       })
-      // 验证 mock 路由已注册
-      expect(true).toBe(true)
+      // 验证 mock 路由已注册：发起请求并校验响应结构
+      const resp1 = await page.evaluate(async () => {
+        const res = await fetch('/api/admin/files/upload', { method: 'POST' })
+        return res.json()
+      })
+      expect(resp1.code).toBe(200)
+      expect(resp1.data.url).toBeTruthy()
     })
 
     test('批量上传接口存在', async ({ page }) => {
       await page.route('**/api/admin/files/batch-upload*', async (route) => {
-        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 200, data: { urls: [] } }) })
+        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 200, data: { urls: ['https://oss.example.com/a.png', 'https://oss.example.com/b.png'] } }) })
       })
-      expect(true).toBe(true)
+      // 验证 mock 路由已注册：发起请求并校验响应包含 urls 数组
+      const resp2 = await page.evaluate(async () => {
+        const res = await fetch('/api/admin/files/batch-upload', { method: 'POST' })
+        return res.json()
+      })
+      expect(resp2.code).toBe(200)
+      expect(Array.isArray(resp2.data.urls)).toBe(true)
+      expect(resp2.data.urls.length).toBeGreaterThan(0)
     })
 
     test('AI Agent 聊天上传返回有效 URL 列表且图片可访问', async ({ page }) => {
       await page.route('**/api/chat/upload-image', async (route) => {
         await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 200, data: { url: 'https://oss.example.com/chat/test.png' } }) })
       })
-      expect(true).toBe(true)
+      // 验证 mock 路由已注册：发起请求并校验返回的 URL 格式
+      const resp3 = await page.evaluate(async () => {
+        const res = await fetch('/api/chat/upload-image', { method: 'POST' })
+        return res.json()
+      })
+      expect(resp3.code).toBe(200)
+      expect(resp3.data.url).toMatch(/^https:\/\/oss\.example\.com\/chat\//)
     })
   })
 })

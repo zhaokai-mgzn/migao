@@ -88,7 +88,7 @@ test.describe('通知中心页面', () => {
     await page.waitForLoadingComplete()
     // 渠道标签：站内信、短信、微信、邮件
     const channelBadges = page.page.locator('text=/站内信|短信|微信|邮件/')
-    expect(await channelBadges.count()).toBeGreaterThanOrEqual(0)
+    expect(await channelBadges.count()).toBeGreaterThan(0)
   })
 
   test('全部标记已读按钮可点击', async () => {
@@ -127,7 +127,7 @@ test.describe('通知中心页面', () => {
     await page.waitForLoadingComplete()
     // 相对时间格式：刚刚、x分钟前、x小时前、x天前
     const timeElements = page.page.locator('text=/刚刚|\\d+分钟前|\\d+小时前|\\d+天前/')
-    expect(await timeElements.count()).toBeGreaterThanOrEqual(0)
+    expect(await timeElements.count()).toBeGreaterThan(0)
   })
 
   test('空状态正确显示', async () => {
@@ -144,7 +144,7 @@ test.describe('通知中心页面', () => {
     await page.waitForLoadingComplete()
     // 未读通知有 bg-blue-50/30 类名和蓝色圆点
     const blueDots = page.page.locator('.bg-blue-500.rounded-full')
-    expect(await blueDots.count()).toBeGreaterThanOrEqual(0)
+    expect(await blueDots.count()).toBeGreaterThan(0)
   })
 
   test('删除确认弹窗包含通知标题', async () => {

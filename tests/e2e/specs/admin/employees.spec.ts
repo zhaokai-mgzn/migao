@@ -166,19 +166,14 @@ test.describe('员工管理页面', () => {
   })
 
   test('分页组件正确显示', async () => {
-    const pagination = page.locator('text=/共.*条/').first()
-    if (await pagination.isVisible().catch(() => false)) {
-      await expect(pagination).toBeVisible()
-    }
+    await expect(page.locator('text=/共.*条/').first()).toBeVisible({ timeout: 5000 });
   })
 
   test('重置按钮清空搜索条件', async () => {
     const searchInput = page.locator('input[placeholder*="搜索"]')
     await searchInput.fill('测试')
-    const resetBtn = page.getByRole('button', { name: /重置/ })
-    if (await resetBtn.isVisible().catch(() => false)) {
-      await resetBtn.click()
-      await expect(searchInput).toHaveValue('')
-    }
+    await expect(page.getByRole('button', { name: /重置/ })).toBeVisible({ timeout: 5000 });
+    await page.getByRole('button', { name: /重置/ }).click()
+    await expect(searchInput).toHaveValue('')
   })
 })

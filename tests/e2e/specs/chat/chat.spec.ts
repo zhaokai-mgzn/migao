@@ -251,7 +251,7 @@ test.describe('聊天 — 错误处理', () => {
     const errorBubbles = page.locator('.bg-red-50, .text-red-500, [class*="error"]')
     const toastError = page.locator('[data-sonner-toast]').filter({ hasText: /不可用|错误|失败|稍后/ })
     const hasError = (await errorBubbles.count()) > 0 || (await toastError.count()) > 0
-    expect(hasError || true).toBe(true) // 至少页面不崩溃
+    expect(hasError).toBe(true) // 至少页面不崩溃
   })
 
   test.skip('网络断开时发送消息应有反馈', async ({ page }) => {

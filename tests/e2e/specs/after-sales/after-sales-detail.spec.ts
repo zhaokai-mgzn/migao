@@ -123,7 +123,7 @@ test.describe('售后工单详情页面', () => {
 
   test('相关图片可显示（如有）', async () => {
     const images = pom.page.locator('img[alt*="图片"]')
-    expect(await images.count()).toBeGreaterThanOrEqual(0)
+    expect(await images.count()).toBeGreaterThan(0)
   })
 
   test('客户信息卡片正确显示', async () => {

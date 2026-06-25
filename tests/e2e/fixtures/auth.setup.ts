@@ -27,8 +27,21 @@ const AUTH_FILE = path.join(AUTH_DIR, 'admin.json')
 const TEST_PHONE = process.env.E2E_ADMIN_PHONE || '13800138000'
 const TEST_SMS_CODE = process.env.E2E_SMS_CODE || '123456'
 
-setup('authenticate as admin', async ({ page }) => {
+setup('authenticate as admin', async ({ page, baseURL }) => {
   setup.setTimeout(120_000)
+
+  // 从 baseURL 提取域名，与应用的 COOKIE_DOMAIN 对齐
+  let cookieDomain = 'localhost'
+  if (baseURL) {
+    const hostname = new URL(baseURL).hostname
+    cookieDomain = hostname.endsWith('.migaozn.com') || hostname === 'migaozn.com'
+      ? '.migaozn.com'
+      : hostname
+    // 如果是 IP 地址，cookie 不需要 domain 前缀
+    if (/^\d+\.\d+\.\d+\.\d+$/.test(cookieDomain)) {
+      cookieDomain = cookieDomain
+    }
+  }
 
   if (!fs.existsSync(AUTH_DIR)) {
     fs.mkdirSync(AUTH_DIR, { recursive: true })
@@ -56,9 +69,9 @@ setup('authenticate as admin', async ({ page }) => {
     }
   }
 
-  // Pre-set auth BEFORE first navigation — AuthGuard checks cookie + localStorage on page load
+  // Pre-set auth BEFORE first navigation
   await page.context().addCookies([{
-    name: 'access_token', value: tokens.accessToken, domain: 'localhost', path: '/', sameSite: 'Lax' as const,
+    name: 'access_token', value: tokens.accessToken, domain: cookieDomain, path: '/', sameSite: 'Lax' as const,
   }])
   await page.context().addInitScript((authJson: string) => {
     localStorage.setItem('auth-storage', authJson)

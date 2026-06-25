@@ -17,9 +17,9 @@ function firstItem(fixture: any): any {
   return fixture?.data?.items?.[0] || null
 }
 
-test.describe('列表 ↔ 详情数据一致性', () => {
+test.describe('列表 JSON 字段完整性', () => {
 
-  test('订单列表金额 = 订单详情金额', async () => {
+  test('订单列表项含 totalAmount (number)', async () => {
     // 列表中的金额需要与详情一致（使用列表 fixture 中的金额即可）
     const order = firstItem(ordersFixture)
     if (!order?.id) { console.log('[skip] 无订单 fixture'); return }
@@ -27,7 +27,7 @@ test.describe('列表 ↔ 详情数据一致性', () => {
     expect(typeof order.totalAmount).toBe('number')
   })
 
-  test('商品列表价格 = 商品详情价格', async () => {
+  test('商品列表项含 price (number)', async () => {
     const product = firstItem(productsFixture)
     if (!product?.id) { console.log('[skip] 无商品 fixture'); return }
     expect(product.price).toBeDefined()
@@ -59,7 +59,7 @@ test.describe('表格 ↔ 接口数据一致性', () => {
 })
 
 test.describe('客户列表 ↔ 详情', () => {
-  test('name/phone 一致', async () => {
+  test('name 或 wechatNickname 存在 + phone 字段存在', async () => {
     const first = firstItem(customersFixture)
     if (!first?.id) { console.log('[skip]'); return }
     expect(first.name || first.wechatNickname).toBeTruthy()
@@ -68,7 +68,7 @@ test.describe('客户列表 ↔ 详情', () => {
 })
 
 test.describe('售后列表 ↔ 详情', () => {
-  test('ticketNo/status 一致', async () => {
+  test('ticketNo 和 status 字段存在', async () => {
     const first = firstItem(afterSalesFixture)
     if (!first?.id) { console.log('[skip]'); return }
     expect(first.ticketNo).toBeDefined()
@@ -77,7 +77,7 @@ test.describe('售后列表 ↔ 详情', () => {
 })
 
 test.describe('加工项列表 ↔ 详情', () => {
-  test('name/unitPrice 一致', async () => {
+  test('name 和 unitPrice 字段存在', async () => {
     const first = firstItem(processingFixture)
     if (!first?.id) { console.log('[skip]'); return }
     expect(first.name).toBeDefined()

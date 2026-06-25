@@ -35,9 +35,17 @@ test.describe('企业入驻注册页面', () => {
 
   test('步骤一发送验证码后开始倒计时', async ({ page }) => {
     await page.locator('#reg-phone').fill('13800138000')
-    await page.getByRole('button', { name: /获取验证码/ }).click()
-    // 倒计时或 API 错误
-    await page.waitForTimeout(500)
+    const sendBtn = page.getByRole('button', { name: /获取验证码|重新发送/ })
+    await sendBtn.click()
+    // 按钮文字应变更为倒计时（如"重新发送(59s)"），或出现 error toast
+    const toast = page.locator('[data-sonner-toast]')
+    const btnText = await sendBtn.textContent()
+    if (btnText?.includes('获取验证码')) {
+      // 按钮未变 → 应有 error toast
+      await expect(toast.first()).toBeVisible({ timeout: 5000 })
+    } else {
+      await expect(sendBtn).toContainText(/重新发送/)
+    }
   })
 
   test('步骤一手机号为空时下一步提示错误', async ({ page }) => {
@@ -148,39 +156,24 @@ test.describe('企业入驻注册页面', () => {
     await page.locator('#contactName').fill('张三')
     await page.getByRole('button', { name: /提交申请/ }).click()
 
-    // 等待提交完成
-    await page.waitForTimeout(2000)
-
-    // 步骤三可能显示（如果 API 成功）或显示错误 toast
+    // 等待成功页面或错误 toast 出现
     const successPage = page.getByText('申请已提交')
     const toast = page.locator('[data-sonner-toast]')
-    const hasSuccess = await successPage.isVisible().catch(() => false)
-    const hasToast = await toast.isVisible().catch(() => false)
-    if (hasSuccess) {
-      await expect(successPage).toBeVisible()
-    } else if (hasToast) {
-      // 验证 toast 有实际消息内容
-      const toastText = await toast.textContent()
-      expect(toastText).toBeTruthy()
-    }
+    await expect(successPage.or(toast).first()).toBeVisible({ timeout: 10000 })
   })
 
   test('成功页面显示能力卡片', async ({ page }) => {
-    // 假设提交成功
     await page.locator('#reg-phone').fill('13800138000')
     await page.locator('#reg-code').fill('123456')
     await page.getByRole('button', { name: /下一步/ }).click()
     await page.locator('#companyName').fill('测试企业')
     await page.locator('#contactName').fill('张三')
     await page.getByRole('button', { name: /提交申请/ }).click()
-    await page.waitForTimeout(2000)
 
-    // 如果成功进入步骤三
-    if (await page.getByText('申请已提交').isVisible().catch(() => false)) {
-      await expect(page.getByText(/米宝.*智能工作助手/)).toBeVisible()
-      await expect(page.getByText(/小布.*智能客服/)).toBeVisible()
-      await expect(page.getByText(/全功能管理后台/)).toBeVisible()
-    }
+    await expect(page.getByText('申请已提交')).toBeVisible({ timeout: 10000 })
+    await expect(page.getByText(/米宝.*智能工作助手/)).toBeVisible()
+    await expect(page.getByText(/小布.*智能客服/)).toBeVisible()
+    await expect(page.getByText(/全功能管理后台/)).toBeVisible()
   })
 
   test('成功页面"返回登录"链接可见', async ({ page }) => {
@@ -190,12 +183,10 @@ test.describe('企业入驻注册页面', () => {
     await page.locator('#companyName').fill('测试企业')
     await page.locator('#contactName').fill('张三')
     await page.getByRole('button', { name: /提交申请/ }).click()
-    await page.waitForTimeout(2000)
 
-    if (await page.getByText('申请已提交').isVisible().catch(() => false)) {
-      const backLink = page.getByRole('link', { name: /返回登录/ })
-      await expect(backLink).toBeVisible()
-    }
+    await expect(page.getByText('申请已提交')).toBeVisible({ timeout: 10000 })
+    const backLink = page.getByRole('link', { name: /返回登录/ })
+    await expect(backLink).toBeVisible()
   })
 
   test('底部"返回登录"链接始终可见', async ({ page }) => {
