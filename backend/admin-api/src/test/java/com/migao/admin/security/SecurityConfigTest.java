@@ -211,6 +211,8 @@ class SecurityConfigTest {
     private com.migao.admin.mapper.UserRoleMapper userRoleMapper;
     @MockBean
     private com.migao.admin.mapper.TenantApplicationMapper tenantApplicationMapper;
+    @MockBean
+    private com.migao.admin.mapper.PlatformAdminMapper platformAdminMapper;
 
     // ======================== 公开端点测试 ========================
 
