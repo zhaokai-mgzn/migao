@@ -131,6 +131,6 @@ function handleRequest(hostname: string, pathname: string, request: NextRequest)
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|images|fonts).)*'],
+  matcher: '/:path*',
 }
 // trigger deploy
