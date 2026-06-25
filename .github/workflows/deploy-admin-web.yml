@@ -184,9 +184,8 @@ jobs:
             exit 1
           fi
 
-          # 8. API 契约验证 — 订单字段类型正确
+          # 8. API 契约验证 — 所有核心 API 字段类型
           echo "验证 API 契约..."
-          ORDERS=$(curl -s -m 10 http://115.29.222.118:3001/login/ 2>/dev/null)
           API="https://api.migaozn.com"
           TOKEN=$(curl -s -X POST "$API/api/auth/sms/login" \
             -H 'Content-Type: application/json' \
@@ -196,29 +195,129 @@ jobs:
           if [ -z "$TOKEN" ]; then
             echo "  ⚠️ 无法获取 token，跳过 API 契约验证"
           else
-            # 验证订单列表项包含必填字段
-            ORDER_DATA=$(curl -s -m 10 "$API/api/admin/orders?page=1&size=1" -H "Authorization: Bearer $TOKEN" 2>/dev/null)
-            ORDER_ITEM=$(echo "$ORDER_DATA" | python3 -c "
-import json,sys
-data = json.load(sys.stdin).get('data',{}).get('items',[])
+            python3 -c "
+import json, sys, urllib.request
+
+API = '$API'
+TOKEN = '$TOKEN'
+fail = 0
+
+def get(path):
+    req = urllib.request.Request(f'{API}{path}')
+    req.add_header('Authorization', f'Bearer {TOKEN}')
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return json.loads(r.read())
+    except Exception as e:
+        print(f'  ❌ {path}: {e}')
+        return None
+
+def check(obj, path, expected_type):
+    global fail
+    keys = path.split('.')
+    cur = obj
+    for k in keys:
+        if cur is None or (isinstance(cur, dict) and k not in cur):
+            print(f'  ❌ {path}: 字段不存在')
+            fail += 1
+            return
+        cur = cur[k] if isinstance(cur, dict) else None
+    actual = type(cur).__name__
+    if expected_type == 'number':
+        ok = isinstance(cur, (int, float))
+    elif expected_type == 'array':
+        ok = isinstance(cur, list)
+    elif expected_type == 'string_or_number':
+        ok = isinstance(cur, (str, int, float))
+    else:
+        ok = isinstance(cur, str) if expected_type == 'string' else True
+    marker = '✅' if ok else '❌'
+    if not ok: fail += 1
+    print(f'  {marker} {path}: {actual}')
+
+# 1. 订单列表
+print('订单列表:')
+data = get('/api/admin/orders?page=1&size=1')
 if data:
-    item = data[0]
-    # 必填字段：id, orderNo, customerName, totalAmount(number), status, items
-    checks = []
-    checks.append(('id', isinstance(item.get('id'), str)))
-    checks.append(('orderNo', isinstance(item.get('orderNo'), str)))
-    checks.append(('customerName', isinstance(item.get('customerName'), str)))
-    checks.append(('totalAmount', isinstance(item.get('totalAmount'), (int, float))))
-    checks.append(('status', isinstance(item.get('status'), str)))
-    checks.append(('items', isinstance(item.get('items'), list)))
-    for name, ok in checks:
-        print(f'{\"✅\" if ok else \"❌\"} {name}: {\"PASS\" if ok else \"MISSING/WRONG_TYPE\"}')
-    if not all(c[1] for c in checks):
-        sys.exit(1)
-" 2>/dev/null)
-            echo "$ORDER_ITEM"
+    items = data.get('data',{}).get('items',[])
+    if items:
+        o = items[0]
+        check(o, 'id', 'string')
+        check(o, 'orderNo', 'string')
+        check(o, 'customerName', 'string')
+        check(o, 'totalAmount', 'number')
+        check(o, 'status', 'string')
+        check(o, 'items', 'array')
+    else:
+        print('  ⚠️ 无数据，跳过')
+
+# 2. 商品列表
+print('商品列表:')
+data = get('/api/admin/products?page=1&size=1')
+if data:
+    items = data.get('data',{}).get('items',[])
+    if items:
+        p = items[0]
+        check(p, 'id', 'string')
+        check(p, 'name', 'string')
+        check(p, 'status', 'string')
+        check(p, 'price', 'number')
+    else:
+        print('  ⚠️ 无数据，跳过')
+
+# 3. 客户列表
+print('客户列表:')
+data = get('/api/admin/customers?page=1&size=1')
+if data:
+    items = data.get('data',{}).get('items',[])
+    if items:
+        c = items[0]
+        check(c, 'id', 'string_or_number')
+        has_id = c.get('phone') or c.get('name') or c.get('wechatNickname')
+        if not has_id:
+            print('  ❌ phone/name/wechatNickname 全为空')
+            fail += 1
+        else:
+            print('  ✅ phone/name/wechatNickname: 至少一项存在')
+    else:
+        print('  ⚠️ 无数据，跳过')
+
+# 4. 售后列表
+print('售后列表:')
+data = get('/api/admin/after-sales?page=1&size=1')
+if data:
+    items = data.get('data',{}).get('items',[])
+    if items:
+        a = items[0]
+        check(a, 'id', 'string')
+        check(a, 'ticketNo', 'string')
+        check(a, 'status', 'string')
+    else:
+        print('  ⚠️ 无数据，跳过')
+
+# 5. 金额字段 number 类型
+print('金额类型:')
+data = get('/api/admin/orders?page=1&size=3')
+if data:
+    for o in data.get('data',{}).get('items',[])[:3]:
+        if o.get('totalAmount') is not None and not isinstance(o.get('totalAmount'), (int, float)):
+            print(f'  ❌ totalAmount 不是 number: {type(o.get(\"totalAmount\")).__name__}')
+            fail += 1
+        for item in (o.get('items') or []):
+            for f in ('unitPrice','amount','subtotal'):
+                v = item.get(f)
+                if v is not None and not isinstance(v, (int, float)):
+                    print(f'  ❌ {f} 不是 number: {type(v).__name__}')
+                    fail += 1
+    print('  ✅ 金额字段类型正确')
+
+if fail:
+    print(f'❌ {fail} 项 API 契约验证失败')
+    sys.exit(1)
+else:
+    print('✅ API 契约验证通过')
+"
             if [ $? -ne 0 ]; then
-              echo "  ❌ API 契约验证失败"
               FAILS=$((FAILS + 1))
             fi
           fi
