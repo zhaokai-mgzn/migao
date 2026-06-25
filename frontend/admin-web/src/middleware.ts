@@ -70,6 +70,14 @@ export function middleware(request: NextRequest) {
   const hostname = getHostname(host)
   const { pathname } = request.nextUrl
 
+  // Diagnostic: add header to verify middleware is running
+  const response = handleRequest(hostname, pathname, request)
+  response.headers.set('X-Middleware', hostname)
+  return response
+}
+
+function handleRequest(hostname: string, pathname: string, request: NextRequest): NextResponse {
+
   // Local dev: skip all domain checks
   if (hostname === 'localhost' || hostname === '127.0.0.1') {
     return NextResponse.next()
