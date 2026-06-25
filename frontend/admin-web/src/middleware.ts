@@ -95,6 +95,10 @@ function handleRequest(hostname: string, pathname: string, request: NextRequest)
 
   // ── merchant.migaozn.com ─────────────────────────────────────
   if (hostname === 'merchant.migaozn.com') {
+    // 根路径 → 登录页（auth guard 会在登录后跳转到 dashboard）
+    if (pathname === '/') {
+      return NextResponse.redirect(new URL('/login', request.url))
+    }
     if (startsWithAny(pathname, SUPER_ADMIN_PREFIXES)) {
       return new NextResponse(null, { status: 404 })
     }
