@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Menu, X } from 'lucide-react'
@@ -17,6 +17,16 @@ const navItems = [
 export default function CorporateNav() {
   const pathname = usePathname()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [scrolled, setScrolled] = useState(false)
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setScrolled(window.scrollY > 10)
+    }
+    handleScroll()
+    window.addEventListener('scroll', handleScroll, { passive: true })
+    return () => window.removeEventListener('scroll', handleScroll)
+  }, [])
 
   const isActive = (href: string) => {
     if (href === '/') return pathname === '/'
@@ -24,7 +34,14 @@ export default function CorporateNav() {
   }
 
   return (
-    <header className="sticky top-0 z-50 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80 border-b border-gray-100">
+    <header
+      className={cn(
+        'sticky top-0 z-50 transition-all duration-300',
+        scrolled
+          ? 'bg-white/95 backdrop-blur-md shadow-sm border-b border-gray-200/60'
+          : 'bg-white/80 backdrop-blur-sm border-b border-transparent'
+      )}
+    >
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
           {/* Logo */}

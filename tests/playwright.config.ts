@@ -67,7 +67,7 @@ export default defineConfig({
       use: {
         ...devices['Desktop Chrome'],
         channel: 'chrome',
-        baseURL: process.env.E2E_REAL_BASE_URL || 'https://admin.migaozn.com',
+        baseURL: process.env.E2E_REAL_BASE_URL || 'https://merchant.migaozn.com',
         storageState: './e2e/.auth/admin.json',
       },
       dependencies: ['auth-setup'],

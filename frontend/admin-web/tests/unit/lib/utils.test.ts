@@ -38,8 +38,8 @@ describe('resolveImageUrl', () => {
   })
 
   // ── 核心场景：错误域名 → 提取 path 用 OSS 域名重建 ──
-  it('normalizes CDN domain (admin.migaozn.com) to OSS domain', () => {
-    expect(resolveImageUrl('https://admin.migaozn.com/products/2026/06/01/abc.jpg'))
+  it('normalizes CDN domain (merchant.migaozn.com) to OSS domain', () => {
+    expect(resolveImageUrl('https://merchant.migaozn.com/products/2026/06/01/abc.jpg'))
       .toBe(`${OSS_DOMAIN}/products/2026/06/01/abc.jpg`)
   })
 
@@ -54,7 +54,7 @@ describe('resolveImageUrl', () => {
   })
 
   it('preserves query string when normalizing', () => {
-    expect(resolveImageUrl('https://admin.migaozn.com/products/abc.jpg?x-oss-process=resize'))
+    expect(resolveImageUrl('https://merchant.migaozn.com/products/abc.jpg?x-oss-process=resize'))
       .toBe(`${OSS_DOMAIN}/products/abc.jpg?x-oss-process=resize`)
   })
 

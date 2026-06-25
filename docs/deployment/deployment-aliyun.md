@@ -236,7 +236,7 @@ variable "internal_service_secret" {
 variable "cors_allowed_origins" {
   description = "CORS 允许的前端域名"
   type        = string
-  default     = "https://admin.migaozn.com"
+  default     = "https://merchant.migaozn.com"
 }
 
 variable "cookie_domain" {
@@ -646,7 +646,7 @@ dashvector_endpoint = "https://your-instance.dashvector.cn-hangzhou.aliyuncs.com
 internal_service_secret = "your-internal-service-secret"
 
 # CORS 允许的前端域名（逗号分隔）
-cors_allowed_origins = "https://admin.migaozn.com"
+cors_allowed_origins = "https://merchant.migaozn.com"
 
 # HttpOnly Cookie 域名
 cookie_domain = ".migaozn.com"
@@ -817,7 +817,7 @@ ossutil cp -r out/ oss://ai-customer-service-admin-dev/ --update
 ./deploy/scripts/clean-oss-dir-markers.sh ai-customer-service-admin-dev cn-hangzhou oss-bucket-put-object
 
 # 5. CDN 刷新缓存（可选，更新后执行）
-aliyun cdn RefreshObjectCaches --ObjectPath "https://admin.migaozn.com/" --ObjectType Directory
+aliyun cdn RefreshObjectCaches --ObjectPath "https://merchant.migaozn.com/" --ObjectType Directory
 ```
 
 **OSS 静态网站托管配置说明**（`deploy/oss-website.xml`）：
@@ -848,18 +848,18 @@ aliyun cdn RefreshObjectCaches --ObjectPath "https://admin.migaozn.com/" --Objec
 
 **CDN 配置说明**：
 
-1. 在阿里云 CDN 控制台添加加速域名（如 `admin.migaozn.com`）。
+1. 在阿里云 CDN 控制台添加加速域名（如 `merchant.migaozn.com`）。
 2. **源站类型选择 OSS 域名，且填写「静态网站托管域名」**
    `ai-customer-service-admin-dev.oss-website-cn-hangzhou.aliyuncs.com`，
    而非 OSS REST 域名。只有这样 SubDir 路由 + ErrorDocument 才会经 CDN 透传到
-   `https://admin.migaozn.com/dashboard/` 等自定义域名 URL。
+   `https://merchant.migaozn.com/dashboard/` 等自定义域名 URL。
 3. 配置 HTTPS 证书。
 4. 启用压缩（Gzip/Brotli）。
 5. 自定义错误页（可选）：CDN 配置 404 → `/404.html`。
 
 **关于直接通过 OSS bucket-cname 自定义域名访问**：
 
-- `aliyun oss bucket-cname` 将 `admin.migaozn.com` 直接绑定到 bucket REST endpoint，
+- `aliyun oss bucket-cname` 将 `merchant.migaozn.com` 直接绑定到 bucket REST endpoint，
   此模式下 OSS 静态网站托管功能（SubDir、ErrorDocument）不会生效，
   访问 `/dashboard/` 等子路径将返回 `NoSuchKey 404`。
 - 生产环境必须经过 CDN（或 Aliyun ESA），由 CDN 回源到 website endpoint，

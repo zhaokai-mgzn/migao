@@ -885,7 +885,7 @@ function sendMessage(sessionId, content) {
 ### 13.2 PC 端 H5
 
 - 部署到 admin-api 的静态资源目录或独立 OSS
-- URL：`https://admin.migaozn.com`
+- URL：`https://merchant.migaozn.com`
 - 通过微信扫码登录，无需独立认证服务
 
 ---

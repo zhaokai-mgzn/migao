@@ -69,6 +69,29 @@ setup('authenticate as admin', async ({ page, baseURL }) => {
     }
   }
 
+  // 拦截 /api/auth/me — fixture 模式下无后端，返回 mock 用户信息
+  // 防止 AuthProvider.initialize() 中 fetchUserInfo() 失败清空认证状态
+  await page.route('**/api/auth/me', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        data: {
+          user: {
+            id: '1',
+            username: TEST_PHONE,
+            nickname: '管理员',
+            tenantId: 1,
+            tenantName: '测试企业',
+            roles: ['admin'],
+            status: 'active',
+          },
+        },
+      }),
+    })
+  })
+
   // Pre-set auth BEFORE first navigation
   await page.context().addCookies([{
     name: 'access_token', value: tokens.accessToken, domain: cookieDomain, path: '/', sameSite: 'Lax' as const,

@@ -369,7 +369,7 @@ cat > cors-rule.json <<EOF
 {
   "CORSRule": [
     {
-      "AllowedOrigin": ["https://admin.migaozn.com"],
+      "AllowedOrigin": ["https://merchant.migaozn.com"],
       "AllowedMethod": ["GET"],
       "AllowedHeader": ["*"],
       "MaxAgeSeconds": 3600

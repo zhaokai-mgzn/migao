@@ -129,7 +129,9 @@ describe('ServicesPage', () => {
 
   it('should render product icons in colored containers', () => {
     render(<ServicesPage />)
-    expect(screen.getByTestId('icon-sparkles')).toBeInTheDocument()
+    // Sparkles appears in both the product icon and the badge, use getAllByTestId
+    const sparklesIcons = screen.getAllByTestId('icon-sparkles')
+    expect(sparklesIcons.length).toBeGreaterThanOrEqual(2)
     expect(screen.getByTestId('icon-message-square')).toBeInTheDocument()
     expect(screen.getByTestId('icon-layout-dashboard')).toBeInTheDocument()
     // Smartphone appears twice (product icon + feature icon), use getAllByTestId
@@ -147,22 +149,33 @@ describe('ServicesPage', () => {
     expect(screen.getByTestId('icon-messages-square')).toBeInTheDocument()
   })
 
-  // ── Alternate background rows ──
+  // ── Section structure ──
 
-  it('should have alternating background colors on product cards', () => {
+  it('should have core AI products as featured large cards', () => {
     const { container } = render(<ServicesPage />)
-    const cards = container.querySelectorAll('.rounded-2xl')
-    expect(cards.length).toBe(5)
-    expect(cards[0].className).toContain('bg-white')
-    expect(cards[1].className).toContain('bg-gray-50')
+    // Core AI products use rounded-3xl for featured styling
+    const coreCards = container.querySelectorAll('.rounded-3xl')
+    expect(coreCards.length).toBe(2)
+  })
+
+  it('should have supporting products as grid cards', () => {
+    const { container } = render(<ServicesPage />)
+    // Supporting products use rounded-2xl with white backgrounds
+    const supportingCards = container.querySelectorAll('.rounded-2xl')
+    expect(supportingCards.length).toBeGreaterThanOrEqual(3)
+    // All supporting cards should have white background
+    for (const card of supportingCards) {
+      expect(card.className).toContain('bg-white')
+    }
   })
 
   // ── Feature cards count ──
 
   it('should have feature grids for each product', () => {
     const { container } = render(<ServicesPage />)
+    // 2 core product feature grids + 1 supporting products grid = 3 total
     const featureCards = container.querySelectorAll('.grid')
-    expect(featureCards.length).toBe(5)
+    expect(featureCards.length).toBe(3)
   })
 
   it('should render multiple feature items across all products', () => {

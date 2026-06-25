@@ -1124,7 +1124,8 @@ INSERT INTO tenants (id, name, code, industry, status)
 INSERT INTO roles (id, tenant_id, name, code, description, status) VALUES
   ('role_admin', 1, '管理员', 'admin', '租户管理权限', 'active'),
   ('role_operator', 1, '运营', 'operator', '商品与订单运营', 'active'),
-  ('role_customer_service', 1, '客服', 'customer_service', '客服工作台权限', 'active')
+  ('role_customer_service', 1, '客服', 'customer_service', '客服工作台权限', 'active'),
+  ('role_super_admin', 1, '超级管理员', 'super_admin', '平台级超管权限', 'active')
   ON CONFLICT DO NOTHING;
 
 -- ================================================================

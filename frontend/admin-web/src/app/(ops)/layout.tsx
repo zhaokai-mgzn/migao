@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import CorporateNav from '@/components/corporate/CorporateNav'
-import PlatformSidebar from '@/components/platform/PlatformSidebar'
+import OpsSidebar from '@/components/ops/OpsSidebar'
 import { useAuthStore } from '@/store/auth'
 
 export default function PlatformLayout({
@@ -25,7 +25,7 @@ export default function PlatformLayout({
     }
 
     // 非管理员 → 跳转登录页
-    const isAdmin = user.roles?.includes('admin')
+    const isAdmin = user.roles?.includes('super_admin')
     if (!isAdmin) {
       router.replace('/login')
       return
@@ -52,7 +52,7 @@ export default function PlatformLayout({
       <CorporateNav />
 
       {/* 侧边栏 */}
-      <PlatformSidebar />
+      <OpsSidebar />
 
       {/* 主内容区域 —— 右侧自适应 */}
       <main className="ml-60 pt-16 min-h-screen">

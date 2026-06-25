@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { ClipboardCheck, LayoutDashboard } from 'lucide-react'
+import { Building2, ClipboardCheck, LayoutDashboard, Settings } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import Logo from '@/components/ui/Logo'
 
@@ -18,12 +18,11 @@ const menuItems = [
     icon: LayoutDashboard,
     badge: '即将上线',
   },
-  // 未来扩展预留：
-  // { name: '租户管理', href: '/tenants', icon: Building2 },
-  // { name: '平台设置', href: '/platform-settings', icon: Settings },
+  { name: '租户管理', href: '/tenants', icon: Building2 },
+  { name: '平台设置', href: '/platform-settings', icon: Settings },
 ]
 
-export default function PlatformSidebar() {
+export default function OpsSidebar() {
   const pathname = usePathname()
 
   const isActive = (href: string) => {
@@ -37,11 +36,8 @@ export default function PlatformSidebar() {
         <div className="flex items-center gap-2.5">
           <Logo size="small" />
           <div>
-            <h2 className="text-sm font-semibold text-gray-900 leading-tight">
-              米高
-            </h2>
-            <p className="text-xs text-gray-500 leading-tight">
-              平台管理
+            <p className="text-sm font-semibold text-gray-900 leading-tight">
+              米高 Ops
             </p>
           </div>
         </div>

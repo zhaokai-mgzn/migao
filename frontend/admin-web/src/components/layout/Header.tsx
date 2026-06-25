@@ -1,10 +1,11 @@
 'use client'
 
 import { useRouter, usePathname } from 'next/navigation'
-import { 
-  User, 
-  LogOut, 
-  ChevronDown 
+import {
+  User,
+  LogOut,
+  ChevronDown,
+  Settings,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { cn } from '@/lib/utils'
@@ -146,6 +147,17 @@ export default function Header({ title, breadcrumbs }: HeaderProps) {
                 {user?.email || user?.username || ''}
               </p>
             </div>
+            {user?.roles?.includes('super_admin') && (
+              <a
+                href="https://ops.migaozn.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                <Settings className="w-4 h-4" />
+                平台管理
+              </a>
+            )}
             <button
               onClick={handleLogout}
               className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"

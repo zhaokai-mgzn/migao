@@ -30,7 +30,7 @@ jobs:
         env:
           CI: 'true'
           E2E_REAL_ENABLED: 'true'
-          ADMIN_API_BASE_URL: ${{ secrets.E2E_ADMIN_API_URL || 'https://admin-api.migaozn.com' }}
+          ADMIN_API_BASE_URL: ${{ secrets.E2E_ADMIN_API_URL || 'https://api.migaozn.com' }}
           AI_AGENT_URL: ${{ secrets.AI_AGENT_SERVICE_URL }}
           SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN }}
         run: |

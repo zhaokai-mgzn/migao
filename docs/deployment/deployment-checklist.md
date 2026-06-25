@@ -8,7 +8,7 @@
 
 1. **SAE环境变量指向已释放实例** - RDS/Redis 实例更换后，SAE Envs 中的 HOST/USER/PASSWORD 未同步更新，导致连接池报认证失败，Pod 反复重启，API 返回 503
 2. **SAE部署不带 --Envs 参数** - 环境变量被清空，服务启动失败（SAE 没有独立的环境变量更新API，必须 DeployApplication 时全量重发）
-3. **CORS白名单不含前端实际域名** - 域名从 admin.migaozn.com 迁移到 merchant.migaozn.com 后，后端 CORS 白名单没有同步更新，Axios 将 CORS 错误包装为 "Network Error"
+3. **CORS白名单不含前端实际域名** - 使用 merchant.migaozn.com 域名后，后端 CORS 白名单没有同步更新，Axios 将 CORS 错误包装为 "Network Error"
 4. **OSS 签名 URL 过期** - 复用旧的 PackageUrl，SAE wget 下载失败（exit 8），部署超时
 5. **JDK 版本不匹配** - 本地用 JDK 21 编译，SAE 运行环境配了 JDK 17，运行时崩溃
 6. **Spring Bean 同名冲突** - 多个配置类注册同名 Bean，导致 SAE 部署后启动 BeanCreationException
@@ -222,7 +222,7 @@ curl -s -w "\nHTTP %{http_code}\n" https://ai-api.migaozn.com/health
 | aliyun profile | sae-deploy（SAE操作）/ oss-bucket-put-object（OSS签名）|
 | JDK 版本 | Open JDK 21 |
 | COOKIE_DOMAIN | .migaozn.com（前导点，所有子域名共享） |
-| CORS 白名单 | https://admin.migaozn.com,https://merchant.migaozn.com,http://localhost:3000 |
+| CORS 白名单 | https://merchant.migaozn.com,http://localhost:3000 |
 
 ## 五、紧急回滚方案
 

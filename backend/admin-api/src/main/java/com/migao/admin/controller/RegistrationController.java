@@ -118,7 +118,7 @@ public class RegistrationController {
         }
 
         // 检查是否拥有管理员角色
-        if (!securityUser.getRoles().contains("admin")) {
+        if (!securityUser.getRoles().contains("super_admin")) {
             throw BusinessException.permissionDenied();
         }
 

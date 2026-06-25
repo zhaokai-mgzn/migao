@@ -22,6 +22,8 @@ vi.mock('lucide-react', () => {
     FileText: stub('file-text'),
     Search: stub('search'),
     Rocket: stub('rocket'),
+    ArrowRight: stub('arrow-right'),
+    Check: stub('check'),
   }
 })
 

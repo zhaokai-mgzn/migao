@@ -93,6 +93,7 @@ public class UserService implements UserDetailsService {
      */
     public List<String> getRolePermissions(String roleCode) {
         return switch (roleCode) {
+            case "super_admin" -> List.of("*");
             case "admin" -> List.of("*");
             case "agent" -> List.of(
                     "chat:read", "chat:write",

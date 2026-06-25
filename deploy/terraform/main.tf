@@ -77,7 +77,7 @@ variable "internal_service_secret" {
 variable "cors_allowed_origins" {
   description = "CORS 允许的前端域名（逗号分隔）"
   type        = string
-  default     = "https://merchant.migaozn.com,https://admin.migaozn.com"
+  default     = "https://merchant.migaozn.com,https://ops.migaozn.com"
 }
 
 variable "cookie_domain" {
@@ -351,7 +351,7 @@ locals {
     "OSS_PERMANENT_BUCKET" = alicloud_oss_bucket.permanent.bucket
     "OSS_TEMPORARY_BUCKET" = alicloud_oss_bucket.temporary.bucket
     # 图片 URL 重写：CDN 域名 → OSS 公网域名（DashScope Vision API 需要公网可访问的 URL）
-    "IMAGE_URL_REWRITE_FROM" = "https://admin.migaozn.com"
+    "IMAGE_URL_REWRITE_FROM" = "https://merchant.migaozn.com"
     "IMAGE_URL_REWRITE_TO"   = "https://${local.oss_domain}"
   })
 }

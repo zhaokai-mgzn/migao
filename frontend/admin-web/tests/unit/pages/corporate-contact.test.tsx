@@ -9,6 +9,9 @@ vi.mock('lucide-react', () => {
     Phone: stub('phone'),
     Mail: stub('mail'),
     Clock: stub('clock'),
+    Send: stub('send'),
+    CheckCircle: stub('check-circle'),
+    Building2: stub('building2'),
   }
 })
 
@@ -53,10 +56,11 @@ describe('CorporateContactPage', () => {
 
   it('renders form fields', () => {
     render(<ContactPage />)
-    expect(screen.getByLabelText('姓名')).toBeInTheDocument()
-    expect(screen.getByLabelText('电话')).toBeInTheDocument()
-    expect(screen.getByLabelText('邮箱')).toBeInTheDocument()
-    expect(screen.getByLabelText('留言内容')).toBeInTheDocument()
+    // Labels now include asterisk (*) as required field indicator
+    expect(screen.getByLabelText(/姓名/)).toBeInTheDocument()
+    expect(screen.getByLabelText(/电话/)).toBeInTheDocument()
+    expect(screen.getByLabelText(/邮箱/)).toBeInTheDocument()
+    expect(screen.getByLabelText(/留言内容/)).toBeInTheDocument()
   })
 
   it('renders submit button', () => {
@@ -64,8 +68,19 @@ describe('CorporateContactPage', () => {
     expect(screen.getByText('提交留言')).toBeInTheDocument()
   })
 
-  it('renders map placeholder section', () => {
+  it('renders company info card instead of map placeholder', () => {
     render(<ContactPage />)
-    expect(screen.getByText('地图加载区域')).toBeInTheDocument()
+    // Company info card replaces the old map placeholder
+    expect(screen.getByText('距地铁5号线创景路站步行10分钟')).toBeInTheDocument()
+    expect(screen.getByText('周一至周五')).toBeInTheDocument()
+    // Phone link should be present in the info card
+    const phoneLinks = screen.getAllByText('400-888-8888')
+    // Appears in both contact info section and company info card bottom bar
+    expect(phoneLinks.length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('should not render old map placeholder', () => {
+    render(<ContactPage />)
+    expect(screen.queryByText('地图加载区域')).not.toBeInTheDocument()
   })
 })

@@ -9,6 +9,8 @@ vi.mock('lucide-react', () => {
     Heart: stub('heart'),
     Sprout: stub('sprout'),
     Lock: stub('lock'),
+    Target: stub('target'),
+    Eye: stub('eye'),
   }
 })
 
@@ -56,10 +58,12 @@ describe('CorporateAboutPage', () => {
 
   it('renders timeline entries', () => {
     render(<AboutPage />)
-    expect(screen.getByText('项目启动')).toBeInTheDocument()
-    expect(screen.getByText('核心引擎开发')).toBeInTheDocument()
-    expect(screen.getByText('平台上线')).toBeInTheDocument()
-    expect(screen.getByText('多渠道接入')).toBeInTheDocument()
-    expect(screen.getByText('能力进化')).toBeInTheDocument()
+    // Timeline renders twice (desktop alternating + mobile single-sided),
+    // so text appears twice in the DOM
+    expect(screen.getAllByText('项目启动').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText('核心引擎开发').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText('平台上线').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText('多渠道接入').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText('能力进化').length).toBeGreaterThanOrEqual(1)
   })
 })

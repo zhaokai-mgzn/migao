@@ -1,4 +1,11 @@
-import { Lightbulb, Heart, Sprout, Lock } from 'lucide-react'
+import type { Metadata } from 'next'
+import { Lightbulb, Heart, Sprout, Lock, Target, Eye } from 'lucide-react'
+
+export const metadata: Metadata = {
+  title: '关于米高 — AI双助手重新定义企业电商管理',
+  description:
+    '米高致力于为企业提供从内部运营到客户服务的一站式智能解决方案，以米宝+小布双助手模式构建行业标杆。',
+}
 
 const values = [
   {
@@ -54,22 +61,34 @@ const timeline = [
 export default function AboutPage() {
   return (
     <>
-      {/* Page Header */}
-      <section className="bg-gradient-to-br from-blue-600 to-blue-800 text-white py-16 sm:py-20">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 text-center">
-          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">
+      {/* Page Header with dot pattern */}
+      <section className="relative bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800 text-white py-16 sm:py-20 overflow-hidden">
+        {/* Subtle dot pattern background */}
+        <div
+          className="absolute inset-0 opacity-10"
+          style={{
+            backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.8) 1px, transparent 1px)',
+            backgroundSize: '24px 24px',
+          }}
+        />
+        {/* Gradient blobs */}
+        <div className="absolute -top-24 -right-24 w-80 h-80 bg-blue-400/15 rounded-full blur-3xl" />
+        <div className="absolute -bottom-24 -left-24 w-64 h-64 bg-indigo-400/15 rounded-full blur-3xl" />
+
+        <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 text-center">
+          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight">
             关于米高
           </h1>
-          <p className="mt-4 text-lg text-blue-100 max-w-2xl mx-auto">
+          <p className="mt-4 text-lg sm:text-xl text-blue-100/90 max-w-2xl mx-auto leading-relaxed">
             以AI双助手重新定义企业电商管理，让智能运营触手可及
           </p>
         </div>
       </section>
 
       {/* Company Intro */}
-      <section className="py-20 sm:py-24 bg-white">
+      <section className="py-20 sm:py-28 bg-white">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="max-w-3xl mx-auto space-y-6 text-gray-600 leading-relaxed">
+          <div className="max-w-3xl mx-auto space-y-6 text-gray-600 leading-relaxed text-base sm:text-lg">
             <p>
               米高是词元通达旗下的AI智能电商管理平台，致力于为企业提供从内部运营到客户服务的一站式智能解决方案。
             </p>
@@ -87,17 +106,26 @@ export default function AboutPage() {
       </section>
 
       {/* Mission & Vision */}
-      <section className="py-20 sm:py-24 bg-gray-50">
+      <section className="py-20 sm:py-28 bg-slate-50">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-10 max-w-4xl mx-auto">
-            <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
-              <h2 className="text-xl font-bold text-gray-900 mb-4">我们的使命</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+            {/* Mission */}
+            <div className="group relative bg-gradient-to-br from-white to-blue-50/30 p-8 rounded-2xl shadow-sm border border-gray-100 hover:border-blue-200 hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
+              <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center mb-5 shadow-sm shadow-blue-200">
+                <Target className="w-6 h-6 text-white" />
+              </div>
+              <h2 className="text-xl font-bold text-gray-900 mb-3">我们的使命</h2>
               <p className="text-gray-600 leading-relaxed">
                 让每一家企业都能拥有自己的AI助手团队，用智能技术消除管理能力差距，帮助中小商家也能提供大品牌级别的运营效率和客户体验。
               </p>
             </div>
-            <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
-              <h2 className="text-xl font-bold text-gray-900 mb-4">我们的愿景</h2>
+
+            {/* Vision */}
+            <div className="group relative bg-gradient-to-br from-white to-indigo-50/30 p-8 rounded-2xl shadow-sm border border-gray-100 hover:border-indigo-200 hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
+              <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-xl flex items-center justify-center mb-5 shadow-sm shadow-indigo-200">
+                <Eye className="w-6 h-6 text-white" />
+              </div>
+              <h2 className="text-xl font-bold text-gray-900 mb-3">我们的愿景</h2>
               <p className="text-gray-600 leading-relaxed">
                 成为企业电商领域领先的AI智能管理服务商，以「米宝+小布」双助手模式构建行业标杆，推动千万商家的数字化转型与服务升级。
               </p>
@@ -107,21 +135,26 @@ export default function AboutPage() {
       </section>
 
       {/* Core Values */}
-      <section className="py-20 sm:py-24 bg-white">
+      <section className="py-20 sm:py-28 bg-white">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 text-center mb-12">
-            核心价值观
-          </h2>
+          <div className="text-center mb-16">
+            <span className="text-sm font-semibold text-blue-600 uppercase tracking-wider">
+              核心价值观
+            </span>
+            <h2 className="mt-3 text-3xl sm:text-4xl font-bold text-gray-900">
+              驱动我们前行的信念
+            </h2>
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 max-w-5xl mx-auto">
             {values.map((item) => (
-              <div key={item.title} className="text-center p-6">
-                <div className="w-14 h-14 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4">
+              <div key={item.title} className="group text-center p-6 rounded-2xl hover:bg-slate-50 transition-colors duration-300">
+                <div className="w-16 h-16 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl flex items-center justify-center mx-auto mb-5 group-hover:from-blue-100 group-hover:to-indigo-100 group-hover:scale-110 transition-all duration-300">
                   <item.icon className="w-7 h-7 text-blue-600" />
                 </div>
-                <h3 className="text-base font-semibold text-gray-900 mb-2">
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">
                   {item.title}
                 </h3>
-                <p className="text-sm text-gray-600 leading-relaxed">
+                <p className="text-sm text-gray-500 leading-relaxed">
                   {item.description}
                 </p>
               </div>
@@ -131,29 +164,74 @@ export default function AboutPage() {
       </section>
 
       {/* Timeline */}
-      <section className="py-20 sm:py-24 bg-gray-50">
+      <section className="py-20 sm:py-28 bg-slate-50">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 text-center mb-12">
-            发展历程
-          </h2>
-          <div className="max-w-2xl mx-auto">
-            <div className="relative">
-              {/* Vertical line */}
-              <div className="absolute left-[18px] top-2 bottom-2 w-0.5 bg-blue-200" />
+          <div className="text-center mb-16">
+            <span className="text-sm font-semibold text-blue-600 uppercase tracking-wider">
+              发展历程
+            </span>
+            <h2 className="mt-3 text-3xl sm:text-4xl font-bold text-gray-900">
+              脚踏实地，步步为营
+            </h2>
+          </div>
+
+          {/* Desktop: Alternating timeline */}
+          <div className="hidden md:block relative max-w-4xl mx-auto">
+            {/* Center vertical line */}
+            <div className="absolute left-1/2 top-0 bottom-0 w-px bg-gradient-to-b from-transparent via-blue-300 to-transparent -translate-x-px" />
+
+            <div className="space-y-12">
+              {timeline.map((item, index) => {
+                const isLeft = index % 2 === 0
+                return (
+                  <div
+                    key={item.period}
+                    className={`relative flex items-center ${isLeft ? '' : 'flex-row-reverse'}`}
+                  >
+                    {/* Content card */}
+                    <div className={`w-[calc(50%-2rem)] ${isLeft ? 'pr-8 text-right' : 'pl-8 text-left'}`}>
+                      <div className="group bg-white p-6 rounded-2xl border border-gray-100 hover:border-blue-200 hover:shadow-lg transition-all duration-300 inline-block w-full">
+                        <span className="inline-block px-3 py-1 rounded-full bg-blue-50 text-xs font-bold text-blue-600 mb-2">
+                          {item.period}
+                        </span>
+                        <h3 className="text-lg font-semibold text-gray-900 mb-1">
+                          {item.title}
+                        </h3>
+                        <p className="text-sm text-gray-500 leading-relaxed">
+                          {item.description}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Center dot */}
+                    <div className="absolute left-1/2 -translate-x-1/2 w-4 h-4 bg-blue-600 rounded-full border-4 border-blue-100 ring-4 ring-white z-10" />
+
+                    {/* Spacer for the other side */}
+                    <div className="w-[calc(50%-2rem)]" />
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Mobile: Single-sided timeline */}
+          <div className="md:hidden max-w-md mx-auto">
+            <div className="relative pl-10">
+              <div className="absolute left-4 top-1 bottom-1 w-0.5 bg-gradient-to-b from-blue-200 via-blue-400 to-blue-200" />
               <div className="space-y-10">
                 {timeline.map((item) => (
-                  <div key={item.period} className="relative flex gap-6">
-                    <div className="w-9 h-9 bg-blue-600 rounded-full flex items-center justify-center shrink-0 z-10">
-                      <div className="w-3 h-3 bg-white rounded-full" />
+                  <div key={item.period} className="relative">
+                    <div className="absolute -left-10 w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center z-10 ring-4 ring-slate-50">
+                      <div className="w-2.5 h-2.5 bg-white rounded-full" />
                     </div>
-                    <div className="pt-1">
+                    <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm">
                       <span className="text-sm font-semibold text-blue-600">
                         {item.period}
                       </span>
-                      <h3 className="text-lg font-semibold text-gray-900 mt-1">
+                      <h3 className="text-base font-semibold text-gray-900 mt-1">
                         {item.title}
                       </h3>
-                      <p className="text-sm text-gray-600 mt-1">
+                      <p className="text-sm text-gray-500 mt-1">
                         {item.description}
                       </p>
                     </div>
