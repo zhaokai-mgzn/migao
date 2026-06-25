@@ -160,8 +160,9 @@ describe('ServicesPage', () => {
 
   it('should have supporting products as grid cards', () => {
     const { container } = render(<ServicesPage />)
-    // Supporting products use rounded-2xl with white backgrounds
-    const supportingCards = container.querySelectorAll('.rounded-2xl')
+    // Supporting product cards have both rounded-2xl and bg-white classes,
+    // while icon containers have rounded-2xl but no bg-white
+    const supportingCards = container.querySelectorAll('[class*="rounded-2xl"][class*="bg-white"]')
     expect(supportingCards.length).toBeGreaterThanOrEqual(3)
     // All supporting cards should have white background
     for (const card of supportingCards) {

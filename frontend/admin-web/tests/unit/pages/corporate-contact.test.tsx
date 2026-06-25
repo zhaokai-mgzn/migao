@@ -35,16 +35,18 @@ describe('CorporateContactPage', () => {
 
   it('renders contact items', () => {
     render(<ContactPage />)
-    expect(screen.getByText('公司地址')).toBeInTheDocument()
+    // '公司地址' and '工作时间' appear in both contact info and the new info card
+    expect(screen.getAllByText('公司地址').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText('工作时间').length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText('联系电话')).toBeInTheDocument()
     expect(screen.getByText('电子邮箱')).toBeInTheDocument()
-    expect(screen.getByText('工作时间')).toBeInTheDocument()
   })
 
   it('renders contact values', () => {
     render(<ContactPage />)
-    expect(screen.getByText('浙江省杭州市余杭区文一西路000号')).toBeInTheDocument()
-    expect(screen.getByText('400-888-8888')).toBeInTheDocument()
+    // Address appears in both contact info and company info card
+    expect(screen.getAllByText('浙江省杭州市余杭区文一西路000号').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText('400-888-8888').length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText('contact@migao-ai.com')).toBeInTheDocument()
     expect(screen.getByText('周一至周五 9:00-18:00')).toBeInTheDocument()
   })

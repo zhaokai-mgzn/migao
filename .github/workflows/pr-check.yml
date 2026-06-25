@@ -83,13 +83,13 @@ jobs:
         working-directory: frontend/admin-web
         run: npx vitest run
 
-  # ============ E2E Web — 前端变更必过门禁 ============
-  # 验证真实业务流程（登录、订单、商品、发货），不依赖云部署。
-  # 前端代码 PR 本地启动 → 直连 dev admin-api → SMS bypass 码登录。
-  e2e-web-smoke:
-    name: E2E Web smoke
+  # ============ E2E 质量门禁 — fixture 模式，不依赖后端 ============
+  # 只跑纯数据验证：API 契约、反占位符、跨页一致性。
+  # 业务流程测试和真实后端验证由 post-deploy smoke 负责。
+  e2e-quality-gate:
+    name: E2E quality gate
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 5
     if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v4
@@ -99,40 +99,23 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install frontend deps
-        working-directory: frontend/admin-web
-        run: npm ci
-
       - name: Install test deps
         working-directory: tests
         run: npm ci
 
-      - name: Install Playwright
+      - name: Run quality specs (fixture-only)
         working-directory: tests
-        run: npx playwright install chromium --with-deps
-
-      - name: Run critical E2E flows (fixture-based, no live backend)
-        working-directory: tests
-        env:
-          BASE_URL: http://localhost:3001
-          E2E_MOCK_AUTH: 'true'
-          CI: 'true'
         run: |
-          # 用 committed fixtures 代替实时 API → 不依赖后端部署状态
-          # 验证: 登录流程、订单列表、商品列表、发货、API 契约、反占位符
-          npx playwright test --project=chromium --reporter=list --retries=1 \
-            e2e/specs/orders/order-ship.spec.ts \
-            e2e/specs/orders/order-list.spec.ts \
-            e2e/specs/products/product-list.spec.ts \
+          npx playwright test --reporter=list --retries=1 \
             e2e/specs/quality/api-contract.spec.ts \
-            e2e/specs/quality/anti-placeholder.spec.ts
+            e2e/specs/quality/anti-placeholder.spec.ts \
+            e2e/specs/quality/cross-page-consistency.spec.ts
 
       - name: Notify on failure
         if: failure()
         run: |
-          echo "::error::E2E 门禁失败"
-          echo "::error::如果是 API 契约变更，请更新 fixtures: cd tests && npx tsx e2e/scripts/record-fixtures.ts"
-          echo "::error::本地复现: cd tests && npx playwright test --project=chromium"
+          echo "::error::数据质量门禁失败"
+          echo "::error::API 契约变更? cd tests && npx tsx e2e/scripts/record-fixtures.ts"
 
   # ============ QA Growth Gate — 事前测试覆盖门禁（block 模式）============
   qa-growth-gate:
