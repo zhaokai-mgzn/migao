@@ -66,14 +66,18 @@ function startsWithAny(pathname: string, prefixes: string[]): boolean {
 // ── Middleware ───────────────────────────────────────────────────
 
 export function middleware(request: NextRequest) {
-  const host = request.headers.get('host') || ''
-  const hostname = getHostname(host)
-  const { pathname } = request.nextUrl
+  try {
+    const host = request.headers.get('host') || ''
+    const hostname = getHostname(host)
+    const { pathname } = request.nextUrl
 
-  // Diagnostic: add header to verify middleware is running
-  const response = handleRequest(hostname, pathname, request)
-  response.headers.set('X-Middleware', hostname)
-  return response
+    const response = handleRequest(hostname, pathname, request)
+    response.headers.set('X-Middleware', hostname)
+    return response
+  } catch (e) {
+    console.error('middleware error:', e)
+    return NextResponse.next()
+  }
 }
 
 function handleRequest(hostname: string, pathname: string, request: NextRequest): NextResponse {
