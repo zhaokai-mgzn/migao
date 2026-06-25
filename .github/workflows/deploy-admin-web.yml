@@ -1,3 +1,4 @@
+# force re-parse
 name: Build and Deploy admin-web
 
 on:
@@ -354,3 +355,4 @@ else:
             exit 1
           fi
           echo "✅ 全部冒烟测试通过"
+
