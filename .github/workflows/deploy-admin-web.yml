@@ -1,4 +1,3 @@
-# force re-parse
 name: Build and Deploy admin-web
 
 on:
