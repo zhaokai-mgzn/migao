@@ -1,0 +1,12 @@
+name: Test Web Deploy
+
+on:
+  push:
+    paths:
+      - 'frontend/admin-web/**'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "workflow works"
