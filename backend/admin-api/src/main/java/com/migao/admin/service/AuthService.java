@@ -4,10 +4,12 @@ import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.LoginRequest;
 import com.migao.admin.dto.LoginResponse;
 import com.migao.admin.dto.UserInfoResponse;
+import com.migao.admin.entity.PlatformAdmin;
 import com.migao.admin.entity.Tenant;
 import com.migao.admin.entity.User;
 import com.migao.admin.entity.UserIdentity;
 import com.migao.admin.exception.BusinessException;
+import com.migao.admin.mapper.PlatformAdminMapper;
 import com.migao.admin.mapper.TenantMapper;
 import com.migao.admin.mapper.UserIdentityMapper;
 import com.migao.admin.mapper.UserMapper;
@@ -52,6 +54,7 @@ public class AuthService {
     private final UserMapper userMapper;
     private final UserIdentityMapper userIdentityMapper;
     private final TenantMapper tenantMapper;
+    private final PlatformAdminMapper platformAdminMapper;
 
     /**
      * Redis Token 黑名单 key 前缀
@@ -134,26 +137,73 @@ public class AuthService {
             throw BusinessException.authFailed("短信验证码错误或已过期");
         }
 
-        // 2. 根据手机号查找用户（跨租户查询，使用 @InterceptorIgnore 绕过多租户拦截器）
+        // 2. 先查平台管理员表（platform_admins，无租户归属）
+        PlatformAdmin platformAdmin = platformAdminMapper.selectOne(
+            new LambdaQueryWrapper<PlatformAdmin>()
+                .eq(PlatformAdmin::getPhone, phone)
+        );
+        if (platformAdmin != null) {
+            if (!"active".equals(platformAdmin.getStatus())) {
+                log.warn("平台管理员短信登录失败，状态异常: phone={}, status={}", phone, platformAdmin.getStatus());
+                throw BusinessException.authFailed("账号状态异常");
+            }
+
+            // 签发平台管理员 JWT（无 tenantId，roles 仅含 super_admin）
+            List<String> roles = List.of("super_admin");
+            String accessToken = jwtTokenProvider.generateAccessToken(
+                    platformAdmin.getId(),
+                    null,  // 无租户
+                    platformAdmin.getPhone(),
+                    roles
+            );
+            String refreshToken = jwtTokenProvider.generateRefreshToken(
+                    platformAdmin.getId(),
+                    null   // 无租户
+            );
+
+            setTokenCookie(response, accessToken, (int) jwtTokenProvider.getAccessTokenExpiration());
+
+            // 更新最后登录时间
+            platformAdmin.setLastLoginAt(OffsetDateTime.now());
+            platformAdminMapper.updateById(platformAdmin);
+
+            log.info("平台管理员登录成功: phone={}", phone);
+            return LoginResponse.builder()
+                    .user(LoginResponse.UserInfo.builder()
+                            .id(platformAdmin.getId())
+                            .nickname(platformAdmin.getNickname())
+                            .role("super_admin")
+                            .identityType("sms")
+                            .roles(roles)
+                            .tenantId(null)
+                            .tenantName("米高平台管理")
+                            .build())
+                    .accessToken(accessToken)
+                    .refreshToken(refreshToken)
+                    .expiresIn(jwtTokenProvider.getAccessTokenExpiration())
+                    .build();
+        }
+
+        // 3. 根据手机号查找租户用户（跨租户查询，使用 @InterceptorIgnore 绕过多租户拦截器）
         User user = userMapper.selectAdminByPhoneIgnoreTenant(phone);
         if (user == null) {
             log.warn("短信登录失败，用户不存在或不是管理员: phone={}", phone);
             throw BusinessException.authFailed("该手机号未注册或无管理员权限");
         }
 
-        // 3. 校验用户状态
+        // 4. 校验用户状态
         if (!"active".equals(user.getStatus())) {
             log.warn("短信登录失败，用户状态异常: phone={}, status={}", phone, user.getStatus());
             throw BusinessException.authFailed("用户状态异常");
         }
 
-        // 4. 设置租户上下文
+        // 5. 设置租户上下文
         TenantContext.setTenantId(user.getTenantId());
 
-        // 5. 获取用户角色
+        // 6. 获取用户角色
         List<String> roles = userService.getUserRoles(user);
 
-        // 6. 签发 JWT Token
+        // 7. 签发 JWT Token
         String accessToken = jwtTokenProvider.generateAccessToken(
                 user.getId(),
                 user.getTenantId(),
@@ -166,13 +216,13 @@ public class AuthService {
                 user.getTenantId()
         );
 
-        // 7. 设置 HttpOnly Cookie
+        // 8. 设置 HttpOnly Cookie
         setTokenCookie(response, accessToken, (int) jwtTokenProvider.getAccessTokenExpiration());
 
-        // 8. 查询租户名称
+        // 9. 查询租户名称
         String tenantName = getTenantName(user.getTenantId());
 
-        // 9. 构建响应
+        // 10. 构建响应
         return LoginResponse.builder()
                 .user(LoginResponse.UserInfo.builder()
                         .id(user.getId())
@@ -377,6 +427,12 @@ public class AuthService {
         // 从 Token 中提取用户信息
         String userId = jwtTokenProvider.getUserIdFromToken(refreshToken);
 
+        // 先查平台管理员表，再查租户用户表
+        PlatformAdmin platformAdmin = platformAdminMapper.selectById(userId);
+        if (platformAdmin != null) {
+            return refreshPlatformAdminToken(platformAdmin, jti, claims, response);
+        }
+
         // 查询用户
         User user = userService.getUserById(userId);
         if (user == null) {
@@ -486,7 +542,35 @@ public class AuthService {
             throw BusinessException.authFailed("无法获取用户信息");
         }
 
-        // 查询用户详细信息
+        // 平台管理员 — 从 platform_admins 表查询
+        if (securityUser.getRoles() != null && securityUser.getRoles().contains("super_admin")) {
+            PlatformAdmin platformAdmin = platformAdminMapper.selectById(securityUser.getUserId());
+            if (platformAdmin == null) {
+                throw BusinessException.authFailed("平台管理员不存在");
+            }
+            if (!"active".equals(platformAdmin.getStatus())) {
+                throw BusinessException.authFailed("账号状态异常");
+            }
+            List<String> permissions = List.of("*");
+            List<UserInfoResponse.MenuItem> menus = buildPlatformAdminMenus();
+
+            return UserInfoResponse.builder()
+                    .user(UserInfoResponse.UserInfo.builder()
+                            .id(platformAdmin.getId())
+                            .username(platformAdmin.getPhone())
+                            .nickname(platformAdmin.getNickname())
+                            .avatar(platformAdmin.getAvatar())
+                            .tenantId(null)
+                            .tenantName("米高平台管理")
+                            .status(platformAdmin.getStatus())
+                            .build())
+                    .roles(securityUser.getRoles())
+                    .permissions(permissions)
+                    .menus(menus)
+                    .build();
+        }
+
+        // 商户管理员 — 从 users 表查询
         User user = userService.getUserById(securityUser.getUserId());
         if (user == null) {
             throw BusinessException.authFailed("用户不存在");
@@ -514,6 +598,50 @@ public class AuthService {
                 .roles(securityUser.getRoles())
                 .permissions(permissions)
                 .menus(menus)
+                .build();
+    }
+
+    // ======================== 平台管理员 Token 刷新 ========================
+
+    /**
+     * 平台管理员 Token 刷新
+     */
+    private LoginResponse refreshPlatformAdminToken(PlatformAdmin platformAdmin, String jti,
+                                                     Claims claims, HttpServletResponse response) {
+        if (!"active".equals(platformAdmin.getStatus())) {
+            throw BusinessException.authFailed("账号状态异常");
+        }
+
+        List<String> roles = List.of("super_admin");
+
+        String newAccessToken = jwtTokenProvider.generateAccessToken(
+                platformAdmin.getId(), null, platformAdmin.getPhone(), roles);
+        String newRefreshToken = jwtTokenProvider.generateRefreshToken(
+                platformAdmin.getId(), null);
+
+        // 吊销旧 Refresh Token
+        if (jti != null) {
+            long ttl = claims.getExpiration().getTime() - System.currentTimeMillis();
+            if (ttl > 0) {
+                blacklistToken(jti, ttl);
+            }
+        }
+
+        setTokenCookie(response, newAccessToken, (int) jwtTokenProvider.getAccessTokenExpiration());
+
+        return LoginResponse.builder()
+                .user(LoginResponse.UserInfo.builder()
+                        .id(platformAdmin.getId())
+                        .nickname(platformAdmin.getNickname())
+                        .role("super_admin")
+                        .identityType("account")
+                        .roles(roles)
+                        .tenantId(null)
+                        .tenantName("米高平台管理")
+                        .build())
+                .accessToken(newAccessToken)
+                .refreshToken(newRefreshToken)
+                .expiresIn(jwtTokenProvider.getAccessTokenExpiration())
                 .build();
     }
 
@@ -646,6 +774,24 @@ public class AuthService {
     }
 
     // ======================== 菜单构建 ========================
+
+    /**
+     * 平台管理员菜单
+     */
+    private List<UserInfoResponse.MenuItem> buildPlatformAdminMenus() {
+        List<UserInfoResponse.MenuItem> menus = new java.util.ArrayList<>();
+
+        menus.add(UserInfoResponse.MenuItem.builder()
+                .key("registrations").name("入驻审批").icon("ClipboardCheck").path("/registrations").build());
+        menus.add(UserInfoResponse.MenuItem.builder()
+                .key("platform-dashboard").name("平台概览").icon("LayoutDashboard").path("/platform-dashboard").build());
+        menus.add(UserInfoResponse.MenuItem.builder()
+                .key("tenants").name("租户管理").icon("Building2").path("/tenants").build());
+        menus.add(UserInfoResponse.MenuItem.builder()
+                .key("platform-settings").name("平台设置").icon("Settings").path("/platform-settings").build());
+
+        return menus;
+    }
 
     /**
      * 根据权限构建菜单列表

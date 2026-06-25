@@ -5,10 +5,13 @@ import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
 import com.baomidou.mybatisplus.extension.plugins.handler.TenantLineHandler;
 import com.baomidou.mybatisplus.extension.plugins.inner.PaginationInnerInterceptor;
 import com.baomidou.mybatisplus.extension.plugins.inner.TenantLineInnerInterceptor;
+import com.migao.admin.security.SecurityUser;
 import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.expression.LongValue;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.util.Arrays;
 import java.util.List;
@@ -25,7 +28,8 @@ public class MybatisPlusConfig {
      */
     private static final List<String> IGNORE_TENANT_TABLES = Arrays.asList(
             "tenants",
-            "tenant_applications"
+            "tenant_applications",
+            "platform_admins"
     );
 
     /**
@@ -58,6 +62,14 @@ public class MybatisPlusConfig {
             public Expression getTenantId() {
                 Long tenantId = TenantContext.getTenantId();
                 if (tenantId == null) {
+                    // 平台管理员（super_admin）不注入租户过滤条件
+                    Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+                    if (auth != null && auth.getPrincipal() instanceof SecurityUser) {
+                        SecurityUser user = (SecurityUser) auth.getPrincipal();
+                        if (user.getRoles() != null && user.getRoles().contains("super_admin")) {
+                            return null; // 跳过租户过滤
+                        }
+                    }
                     throw new RuntimeException("Tenant context not initialized - possible unauthenticated access");
                 }
                 return new LongValue(tenantId);

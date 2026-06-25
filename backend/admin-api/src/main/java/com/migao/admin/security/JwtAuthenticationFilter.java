@@ -85,9 +85,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     @SuppressWarnings("unchecked")
                     List<String> roles = claims.get(JwtTokenProvider.CLAIM_ROLES, List.class);
 
-                    // 设置租户上下文（始终设置，确保 MyBatis Plus 租户拦截器不抛异常）
+                    // 设置租户上下文
                     if (tenantId != null) {
                         TenantContext.setTenantId(tenantId);
+                    } else if (roles != null && roles.contains("super_admin")) {
+                        // 平台管理员无租户，跳过租户上下文设置
+                        // MybatisPlusConfig 会识别 super_admin role 并跳过租户过滤
+                        log.debug("平台管理员认证，跳过租户上下文设置: userId={}", userId);
                     } else {
                         log.warn("JWT 中未包含 tenantId，使用默认租户ID=1");
                         TenantContext.setTenantId(1L);

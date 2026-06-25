@@ -50,6 +50,20 @@ CREATE TABLE IF NOT EXISTS users (
     deleted INTEGER DEFAULT 0
 );
 
+-- 平台管理员表：超管账号，平台级，无租户归属
+CREATE TABLE IF NOT EXISTS platform_admins (
+    id VARCHAR(64) PRIMARY KEY,
+    phone VARCHAR(32) UNIQUE NOT NULL,
+    password_hash VARCHAR(255),
+    nickname VARCHAR(128),
+    status VARCHAR(32) DEFAULT 'active',
+    last_login_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+COMMENT ON TABLE platform_admins IS '平台管理员（超管），平台级账号，无租户归属';
+
 -- 角色表：RBAC 角色定义
 CREATE TABLE IF NOT EXISTS roles (
     id VARCHAR(64) PRIMARY KEY,
@@ -776,6 +790,10 @@ CREATE INDEX IF NOT EXISTS idx_users_phone ON users(phone);
 CREATE INDEX IF NOT EXISTS idx_users_status ON users(status);
 CREATE INDEX IF NOT EXISTS idx_users_deleted ON users(deleted);
 
+-- platform_admins
+CREATE INDEX IF NOT EXISTS idx_platform_admins_phone ON platform_admins(phone);
+CREATE INDEX IF NOT EXISTS idx_platform_admins_status ON platform_admins(status);
+
 -- roles
 CREATE INDEX IF NOT EXISTS idx_roles_tenant ON roles(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_roles_code ON roles(code);
@@ -1127,6 +1145,12 @@ INSERT INTO roles (id, tenant_id, name, code, description, status) VALUES
   ('role_customer_service', 1, '客服', 'customer_service', '客服工作台权限', 'active'),
   ('role_super_admin', 1, '超级管理员', 'super_admin', '平台级超管权限', 'active')
   ON CONFLICT DO NOTHING;
+
+-- 默认平台管理员（密码: admin123，BCrypt 加密）
+-- 实际使用时请修改密码或通过 SMS 登录
+INSERT INTO platform_admins (id, phone, password_hash, nickname, status) VALUES
+  ('platform-admin-001', '13800000000', '$2a$10$N/A_REPLACE_WITH_REAL_BCRYPT', '超级管理员', 'active')
+ON CONFLICT (id) DO NOTHING;
 
 -- ================================================================
 -- END OF SCHEMA

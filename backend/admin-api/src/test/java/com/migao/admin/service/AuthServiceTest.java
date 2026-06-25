@@ -3,6 +3,7 @@ package com.migao.admin.service;
 import com.migao.admin.dto.LoginRequest;
 import com.migao.admin.dto.LoginResponse;
 import com.migao.admin.entity.User;
+import com.migao.admin.mapper.PlatformAdminMapper;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.security.JwtTokenProvider;
 import jakarta.servlet.http.HttpServletResponse;
@@ -50,6 +51,9 @@ class AuthServiceTest {
 
     @Mock
     private ValueOperations<String, String> valueOperations;
+
+    @Mock
+    private PlatformAdminMapper platformAdminMapper;
 
     private User testUser;
     private LoginRequest loginRequest;

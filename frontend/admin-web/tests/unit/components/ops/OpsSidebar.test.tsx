@@ -75,7 +75,7 @@ describe('OpsSidebar', () => {
     render(<OpsSidebar />)
     expect(screen.getByTestId('icon-clipboard-check')).toBeInTheDocument()
     expect(screen.getByTestId('icon-layout-dashboard')).toBeInTheDocument()
-    expect(screen.getByTestId('icon-building-2')).toBeInTheDocument()
+    expect(screen.getByTestId('icon-building2')).toBeInTheDocument()
     expect(screen.getByTestId('icon-settings')).toBeInTheDocument()
   })
 

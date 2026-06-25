@@ -130,6 +130,8 @@ jobs:
       - name: Deploy to SAE
         env:
           JWT_PRIVATE_KEY_PEM: ${{ secrets.JWT_PRIVATE_KEY }}
+          PLATFORM_ADMIN_PHONE: ${{ vars.PLATFORM_ADMIN_PHONE }}
+          PLATFORM_ADMIN_NICKNAME: ${{ vars.PLATFORM_ADMIN_NICKNAME }}
         run: |
           # 获取当前完整环境变量（全量重发，避免清空已有配置）
           # 写入临时文件，规避特殊字符（@、!、$、&）在 shell 命令行中的解析问题
@@ -183,6 +185,14 @@ jobs:
           if public_key:
               upsert_env(envs, 'jwt.public-key-pem', public_key)
               print('✅ 已注入 jwt.public-key-pem')
+
+          # 注入平台管理员配置
+          platform_admin_phone = os.environ.get('PLATFORM_ADMIN_PHONE', '').strip()
+          platform_admin_nickname = os.environ.get('PLATFORM_ADMIN_NICKNAME', '平台管理员').strip()
+          if platform_admin_phone:
+              upsert_env(envs, 'PLATFORM_ADMIN_PHONE', platform_admin_phone)
+              upsert_env(envs, 'PLATFORM_ADMIN_NICKNAME', platform_admin_nickname)
+              print(f'✅ 已注入 PLATFORM_ADMIN_PHONE={platform_admin_phone[:3]}***')
 
           envs_compact = json.dumps(envs, ensure_ascii=False, separators=(',', ':'))
 
