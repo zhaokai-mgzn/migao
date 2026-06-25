@@ -75,14 +75,16 @@ jobs:
           sudo mv /tmp/aliyun /usr/local/bin/
           aliyun configure set --access-key-id "$AK" --access-key-secret "$SK" --region ${{ env.SAE_REGION }}
           IMG="${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}"
-          aliyun sae DeployApplication \
+          aliyun sae POST /pop/v1/sam/app/deployApplication \
             --AppId ${{ env.SAE_APP_ID }} \
+            --RegionId ${{ env.SAE_REGION }} \
             --ImageUrl "$IMG" \
             --InternetSlbId lb-bp1vv0e4mzro1034ywuqq \
             --Internet true \
             --Port 3001 \
             --MinReadyInstances 1 \
             --Replicas 1 \
+            --Envs '[{"name":"PORT","value":"3001"}]'
             --Envs '[{"name":"PORT","value":"3001"}]'
 
       - name: Verify
@@ -91,10 +93,13 @@ jobs:
           curl -sf -m 10 http://115.29.222.118:3001/login/ -o /dev/null && echo "OK" || echo "WARN"
 
       - name: CDN refresh
+        env:
+          AK: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
+          SK: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
         run: |
           curl -fsSL https://aliyuncli.alicdn.com/aliyun-cli-linux-latest-amd64.tgz -o /tmp/aliyun.tgz
           tar xzf /tmp/aliyun.tgz -C /tmp
           sudo mv /tmp/aliyun /usr/local/bin/
-          aliyun configure set --access-key-id "${{ secrets.ALIYUN_ACCESS_KEY_ID }}" --access-key-secret "${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}" --region ${{ env.SAE_REGION }}
+          aliyun configure set --access-key-id "$AK" --access-key-secret "$SK" --region ${{ env.SAE_REGION }}
           aliyun cdn RefreshObjectCaches --ObjectPath "https://merchant.migaozn.com/" --ObjectType Directory
           aliyun cdn RefreshObjectCaches --ObjectPath "https://migaozn.com/" --ObjectType Directory
