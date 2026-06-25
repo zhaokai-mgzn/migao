@@ -83,6 +83,10 @@ jobs:
         working-directory: frontend/admin-web
         run: npx vitest run
 
+      - name: Security audit (deps)
+        working-directory: frontend/admin-web
+        run: npm audit --production --audit-level=high
+
   # ============ E2E 质量门禁 — fixture 模式，不依赖后端 ============
   # 只跑纯数据验证：API 契约、反占位符、跨页一致性。
   # 业务流程测试和真实后端验证由 post-deploy smoke 负责。

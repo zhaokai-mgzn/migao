@@ -129,12 +129,13 @@ jobs:
 
       - name: Health check
         run: |
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -m 10 http://115.29.222.118:3001/login/)
-          echo "SLB health check: HTTP $HTTP_CODE"
-          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "401" ]; then
-            echo "✅ admin-web 应用正常运行"
+          RESULT=$(curl -s -o /dev/null -w "http=%{http_code} time=%{time_total}s size=%{size_download}" -m 10 http://115.29.222.118:3001/login/)
+          echo "SLB health: $RESULT"
+          HTTP_CODE=$(echo "$RESULT" | grep -o 'http=[0-9]*' | cut -d= -f2)
+          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "308" ]; then
+            echo "✅ admin-web 运行正常"
           else
-            echo "⚠️ 应用返回 HTTP $HTTP_CODE，请检查 SAE 控制台"
+            echo "⚠️ HTTP $HTTP_CODE"
           fi
 
       - name: Refresh CDN cache
@@ -150,32 +151,58 @@ jobs:
           echo "部署后冒烟测试..."
           FAILS=0
 
-          # 1. 登录页可达
-          HTTP=$(curl -s -o /dev/null -w "%{http_code}" -m 10 http://115.29.222.118:3001/login/)
+          # 1. 登录页可达 + 延迟
+          RESULT=$(curl -s -o /dev/null -w "%{http_code} %{time_total}" -m 10 http://115.29.222.118:3001/login/)
+          HTTP=$(echo "$RESULT" | awk '{print $1}')
+          TIME=$(echo "$RESULT" | awk '{print $2}')
           if [ "$HTTP" = "200" ] || [ "$HTTP" = "308" ]; then
-            echo "  ✅ 登录页 HTTP $HTTP"
+            echo "  ✅ 登录页 HTTP $HTTP (${TIME}s)"
           else
             echo "  ❌ 登录页 HTTP $HTTP (expected 200/308)"
             FAILS=$((FAILS + 1))
           fi
 
-          # 2. 动态路由可达（不依赖 OSS fallback）
+          # 2. 动态路由可达 + 延迟追踪
+          TOTAL_TIME=0
+          SLOWEST=0
           for route in /orders/ /products/ /customers/ /dashboard/ /after-sales/; do
-            HTTP=$(curl -s -o /dev/null -w "%{http_code}" -m 10 "http://115.29.222.118:3001${route}")
+            RESULT=$(curl -s -o /dev/null -w "%{http_code} %{time_total}" -m 10 "http://115.29.222.118:3001${route}")
+            HTTP=$(echo "$RESULT" | awk '{print $1}')
+            TIME=$(echo "$RESULT" | awk '{print $2}')
+            TOTAL_TIME=$(echo "$TOTAL_TIME + $TIME" | bc)
+            if (( $(echo "$TIME > $SLOWEST" | bc -l) )); then SLOWEST=$TIME; fi
             if [ "$HTTP" = "200" ] || [ "$HTTP" = "308" ]; then
-              echo "  ✅ ${route} HTTP $HTTP"
+              echo "  ✅ ${route} HTTP $HTTP (${TIME}s)"
             else
               echo "  ❌ ${route} HTTP $HTTP (expected 200/308)"
               FAILS=$((FAILS + 1))
             fi
           done
+          echo "  📊 5 路由总耗时: ${TOTAL_TIME}s, 最慢: ${SLOWEST}s"
+          BAD_LATENCY=$(echo "$SLOWEST > 5.0" | bc -l)
+          if [ "$BAD_LATENCY" -eq 1 ]; then
+            echo "  ⚠️ 最慢路由超过 5 秒，可能存在性能退化"
+          fi
 
-          # 3. 发货页（曾经 OSS NoSuchKey）
-          HTTP=$(curl -s -o /dev/null -w "%{http_code}" -m 10 http://115.29.222.118:3001/orders/test/ship/)
+          # 3. 发货页（曾经 OSS NoSuchKey）+ 延迟
+          RESULT=$(curl -s -o /dev/null -w "%{http_code} %{time_total}" -m 10 http://115.29.222.118:3001/orders/test/ship/)
+          HTTP=$(echo "$RESULT" | awk '{print $1}')
+          TIME=$(echo "$RESULT" | awk '{print $2}')
           if [ "$HTTP" = "200" ] || [ "$HTTP" = "308" ]; then
-            echo "  ✅ 发货页 HTTP $HTTP"
+            echo "  ✅ 发货页 HTTP $HTTP (${TIME}s)"
           else
             echo "  ❌ 发货页 HTTP $HTTP (expected 200/308)"
+            FAILS=$((FAILS + 1))
+          fi
+
+          # 4. 首页可用
+          RESULT=$(curl -s -o /dev/null -w "%{http_code} %{time_total}" -m 10 http://115.29.222.118:3001/)
+          HTTP=$(echo "$RESULT" | awk '{print $1}')
+          TIME=$(echo "$RESULT" | awk '{print $2}')
+          if [ "$HTTP" = "200" ] || [ "$HTTP" = "308" ]; then
+            echo "  ✅ 首页 HTTP $HTTP (${TIME}s)"
+          else
+            echo "  ❌ 首页 HTTP $HTTP"
             FAILS=$((FAILS + 1))
           fi
 

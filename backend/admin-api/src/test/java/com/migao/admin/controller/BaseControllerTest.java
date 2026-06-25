@@ -92,6 +92,21 @@ public abstract class BaseControllerTest {
     }
 
     /**
+     * 设置超级管理员认证信息。
+     */
+    protected void setSuperAdminUser() {
+        SecurityUser user = new SecurityUser(
+                TEST_USER_ID, TEST_TENANT_ID, "super-admin-phone",
+                List.of("super_admin"),
+                List.of(new SimpleGrantedAuthority("ROLE_super_admin"))
+        );
+        Authentication auth = mock(Authentication.class);
+        when(auth.isAuthenticated()).thenReturn(true);
+        when(auth.getPrincipal()).thenReturn(user);
+        SecurityContextHolder.getContext().setAuthentication(auth);
+    }
+
+    /**
      * 设置操作员认证信息。
      */
     protected void setOperatorUser() {

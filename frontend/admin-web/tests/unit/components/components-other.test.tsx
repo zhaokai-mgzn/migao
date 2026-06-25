@@ -5,8 +5,8 @@ describe('components — #572 #573', () => {
     try { const m = await import('@/components/corporate/CorporateNav'); expect(m.default||m).toBeDefined() }
     catch(e) { expect(String(e)).toBeDefined() }
   })
-  it('PlatformSidebar can be loaded', async () => {
-    try { const m = await import('@/components/platform/PlatformSidebar'); expect(m.default||m).toBeDefined() }
+  it('OpsSidebar can be loaded', async () => {
+    try { const m = await import('@/components/ops/OpsSidebar'); expect(m.default||m).toBeDefined() }
     catch(e) { expect(String(e)).toBeDefined() }
   })
   it('ChatConfig page can be loaded', async () => {

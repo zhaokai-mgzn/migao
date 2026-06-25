@@ -51,6 +51,7 @@ class RegistrationControllerTest extends BaseControllerTest {
     @BeforeEach
     void setUp() {
         super.baseSetUp();
+        setSuperAdminUser(); // 覆盖为 super_admin，匹配 checkSuperAdminPermission() 新逻辑
         mockMvc = buildMockMvc(registrationController);
     }
 

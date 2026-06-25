@@ -67,7 +67,7 @@ vi.mock('lucide-react', () => {
   }
 })
 
-import RegistrationsPage from '@/app/(platform)/registrations/page'
+import RegistrationsPage from '@/app/(ops)/registrations/page'
 
 describe('RegistrationsPage', () => {
   beforeEach(() => {
