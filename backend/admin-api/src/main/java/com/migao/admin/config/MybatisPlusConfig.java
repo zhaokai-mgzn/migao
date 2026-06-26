@@ -61,6 +61,10 @@ public class MybatisPlusConfig {
             @Override
             public Expression getTenantId() {
                 Long tenantId = TenantContext.getTenantId();
+                // tenantId=-1 表示平台管理员，跳过租户过滤
+                if (tenantId != null && tenantId == -1L) {
+                    return null;
+                }
                 if (tenantId == null) {
                     // 平台管理员（super_admin）不注入租户过滤条件
                     Authentication auth = SecurityContextHolder.getContext().getAuthentication();

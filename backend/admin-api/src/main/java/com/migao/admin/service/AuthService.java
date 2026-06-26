@@ -148,17 +148,17 @@ public class AuthService {
                 throw BusinessException.authFailed("账号状态异常");
             }
 
-            // 签发平台管理员 JWT（tenantId=1 兜底兼容旧 JWT filter，getCurrentUser 按 role 分流）
+            // 平台管理员 JWT，tenantId=-1 表示无租户归属
             List<String> roles = List.of("super_admin");
             String accessToken = jwtTokenProvider.generateAccessToken(
                     platformAdmin.getId(),
-                    1L,
+                    -1L,
                     platformAdmin.getPhone(),
                     roles
             );
             String refreshToken = jwtTokenProvider.generateRefreshToken(
                     platformAdmin.getId(),
-                    1L
+                    -1L
             );
 
             setTokenCookie(response, accessToken, (int) jwtTokenProvider.getAccessTokenExpiration());
@@ -615,9 +615,9 @@ public class AuthService {
         List<String> roles = List.of("super_admin");
 
         String newAccessToken = jwtTokenProvider.generateAccessToken(
-                platformAdmin.getId(), 1L, platformAdmin.getPhone(), roles);
+                platformAdmin.getId(), -1L, platformAdmin.getPhone(), roles);
         String newRefreshToken = jwtTokenProvider.generateRefreshToken(
-                platformAdmin.getId(), 1L);
+                platformAdmin.getId(), -1L);
 
         // 吊销旧 Refresh Token
         if (jti != null) {
@@ -654,7 +654,7 @@ public class AuthService {
      * @return 租户名称，不存在则返回 null
      */
     private String getTenantName(Long tenantId) {
-        if (tenantId == null) {
+        if (tenantId == null || tenantId == -1L) {
             return null;
         }
         try {
