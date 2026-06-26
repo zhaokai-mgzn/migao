@@ -148,17 +148,17 @@ public class AuthService {
                 throw BusinessException.authFailed("账号状态异常");
             }
 
-            // 签发平台管理员 JWT（无 tenantId，roles 仅含 super_admin）
+            // 签发平台管理员 JWT（tenantId=1 兜底兼容旧 JWT filter，getCurrentUser 按 role 分流）
             List<String> roles = List.of("super_admin");
             String accessToken = jwtTokenProvider.generateAccessToken(
                     platformAdmin.getId(),
-                    null,  // 无租户
+                    1L,
                     platformAdmin.getPhone(),
                     roles
             );
             String refreshToken = jwtTokenProvider.generateRefreshToken(
                     platformAdmin.getId(),
-                    null   // 无租户
+                    1L
             );
 
             setTokenCookie(response, accessToken, (int) jwtTokenProvider.getAccessTokenExpiration());
@@ -615,9 +615,9 @@ public class AuthService {
         List<String> roles = List.of("super_admin");
 
         String newAccessToken = jwtTokenProvider.generateAccessToken(
-                platformAdmin.getId(), null, platformAdmin.getPhone(), roles);
+                platformAdmin.getId(), 1L, platformAdmin.getPhone(), roles);
         String newRefreshToken = jwtTokenProvider.generateRefreshToken(
-                platformAdmin.getId(), null);
+                platformAdmin.getId(), 1L);
 
         // 吊销旧 Refresh Token
         if (jti != null) {
