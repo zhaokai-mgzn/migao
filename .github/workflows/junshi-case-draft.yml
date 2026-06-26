@@ -3,6 +3,7 @@ name: junshi/case-draft
 # 机械操作:
 # 1. needs-verification issue → 打 needs-draft 标签
 # 2. needs-truths issue 补了 CONTRACT_JSON → 转 needs-verification
+# 3. process-improvement issue 缺 ai-draft → 自动补 ai-draft 标签 (issue #729)
 
 on:
   issues:
@@ -16,7 +17,8 @@ jobs:
   trigger:
     if: |
       (contains(github.event.issue.labels.*.name, 'needs-verification') ||
-       contains(github.event.issue.labels.*.name, 'needs-truths')) &&
+       contains(github.event.issue.labels.*.name, 'needs-truths') ||
+       contains(github.event.issue.labels.*.name, 'process-improvement')) &&
       !contains(github.event.issue.labels.*.name, 'ai-draft') &&
       !contains(github.event.issue.labels.*.name, 'block/need-human') &&
       !contains(github.event.issue.labels.*.name, 'hold/auto-fail')
@@ -51,3 +53,14 @@ jobs:
           fi
           gh issue edit "$ISSUE_NUMBER" --add-label "needs-draft" 2>/dev/null || true
           echo "✅ needs-draft — 等 agent-poll 生成 case"
+
+      - name: 补 ai-draft 标签（process-improvement 缺标 guard）
+        if: |
+          contains(github.event.issue.labels.*.name, 'process-improvement') &&
+          !contains(github.event.issue.labels.*.name, 'ai-draft')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          gh issue edit "$ISSUE_NUMBER" --add-label "ai-draft" 2>/dev/null || true
+          echo "✅ ai-draft guard: process-improvement issue 已自动补 ai-draft 标签"
