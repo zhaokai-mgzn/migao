@@ -191,7 +191,7 @@ jobs:
               # ===== Python ai-agent-service (blocking — 测试文件必须存在，deploy 流水线执行) =====
               backend/ai-agent-service/app/tools/*.py)
                 tool_name=$(basename "$file" .py)
-                if echo "$CHANGED_FILES" | grep -qE "tests/test_tools_|tests/test_${tool_name}|tests/e2e/real/"; then
+                if echo "$CHANGED_FILES" | grep -qE "tests/unit/test_tools_|tests/test_tools_|tests/unit/test_${tool_name}|tests/test_${tool_name}|tests/e2e/real/"; then
                   echo "| $file | Tool (L2+L3) | ✅ |" >> $GITHUB_STEP_SUMMARY
                 else
                   echo "| $file | Tool (L2+L3) | ❌ BLOCKED |" >> $GITHUB_STEP_SUMMARY
@@ -200,7 +200,7 @@ jobs:
                 fi
                 ;;
               backend/ai-agent-service/app/graph/*.py)
-                if echo "$CHANGED_FILES" | grep -qE "tests/test_graph_|tests/test_skill_"; then
+                if echo "$CHANGED_FILES" | grep -qE "tests/unit/test_graph_|tests/test_graph_|tests/unit/test_skill_|tests/test_skill_"; then
                   echo "| $file | Graph/Skill (L2) | ✅ |" >> $GITHUB_STEP_SUMMARY
                 else
                   echo "| $file | Graph/Skill (L2) | ❌ BLOCKED |" >> $GITHUB_STEP_SUMMARY
@@ -209,7 +209,7 @@ jobs:
                 fi
                 ;;
               backend/ai-agent-service/app/agents/*.py)
-                if echo "$CHANGED_FILES" | grep -qE "tests/test_agent_|tests/test_intent_"; then
+                if echo "$CHANGED_FILES" | grep -qE "tests/unit/test_agent_|tests/test_agent_|tests/unit/test_intent_|tests/test_intent_"; then
                   echo "| $file | Agent (L2) | ✅ |" >> $GITHUB_STEP_SUMMARY
                 else
                   echo "| $file | Agent (L2) | ❌ BLOCKED |" >> $GITHUB_STEP_SUMMARY
@@ -337,7 +337,7 @@ jobs:
                 ;;
               backend/ai-agent-service/app/api/*.py)
                 api_name=$(basename "$file" .py)
-                if echo "$CHANGED_FILES" | grep -qE "tests/test_${api_name}|tests/e2e/real/"; then
+                if echo "$CHANGED_FILES" | grep -qE "tests/unit/test_${api_name}|tests/test_${api_name}|tests/e2e/real/"; then
                   echo "| $file | API Route (L3) | ✅ |" >> $GITHUB_STEP_SUMMARY
                 else
                   echo "| $file | API Route (L3) | ❌ BLOCKED |" >> $GITHUB_STEP_SUMMARY
@@ -346,7 +346,7 @@ jobs:
                 fi
                 ;;
               backend/ai-agent-service/app/router/*.py)
-                if echo "$CHANGED_FILES" | grep -qE "tests/test_router_|tests/test_intent_|tests/test_skill_routing"; then
+                if echo "$CHANGED_FILES" | grep -qE "tests/unit/test_router_|tests/test_router_|tests/unit/test_intent_|tests/test_intent_|tests/unit/test_skill_routing|tests/test_skill_routing"; then
                   echo "| $file | Router (L2) | ✅ |" >> $GITHUB_STEP_SUMMARY
                 else
                   echo "| $file | Router (L2) | ❌ BLOCKED |" >> $GITHUB_STEP_SUMMARY
@@ -355,7 +355,7 @@ jobs:
                 fi
                 ;;
               backend/ai-agent-service/app/llm/*.py)
-                if echo "$CHANGED_FILES" | grep -qE "tests/test_llm_|tests/test_dual_agent"; then
+                if echo "$CHANGED_FILES" | grep -qE "tests/unit/test_llm_|tests/test_llm_|tests/unit/test_dual_agent|tests/test_dual_agent"; then
                   echo "| $file | LLM (L2) | ✅ |" >> $GITHUB_STEP_SUMMARY
                 else
                   echo "| $file | LLM (L2) | ❌ BLOCKED |" >> $GITHUB_STEP_SUMMARY
@@ -364,7 +364,7 @@ jobs:
                 fi
                 ;;
               backend/ai-agent-service/app/memory/*.py)
-                if echo "$CHANGED_FILES" | grep -qE "tests/test_memory_|tests/test_session_memory|tests/test_context"; then
+                if echo "$CHANGED_FILES" | grep -qE "tests/unit/test_memory_|tests/test_memory_|tests/unit/test_session_memory|tests/test_session_memory|tests/unit/test_context|tests/test_context"; then
                   echo "| $file | Memory (L2) | ✅ |" >> $GITHUB_STEP_SUMMARY
                 else
                   echo "| $file | Memory (L2) | ❌ BLOCKED |" >> $GITHUB_STEP_SUMMARY
