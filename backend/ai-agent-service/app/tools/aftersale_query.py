@@ -129,8 +129,8 @@ class AftersaleQueryTool(BaseTool):
         status: Optional[str],
     ) -> ToolResult:
         """查询售后工单列表"""
-        # Gap-4 安全加固: 必须有 customer_id 才能查询
-        if not str(context.user_id).strip():
+        # Gap-4 安全加固: customer 角色必须有 customer_id 才能查询
+        if context.role == "customer" and not str(context.user_id).strip():
             return ToolResult(
                 success=False,
                 error="缺少用户标识",

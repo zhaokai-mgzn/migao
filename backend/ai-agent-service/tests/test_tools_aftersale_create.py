@@ -432,3 +432,34 @@ class TestAftersaleQueryCustomerIsolation:
         error_text = (result.error or "") + (result.message or "")
         assert "customer" in error_text.lower() or "用户" in error_text
         mock_client.get.assert_not_called()
+
+    @patch("app.tools.aftersale_query.get_admin_api_client")
+    async def test_aftersale_query_admin_empty_user_id_not_rejected(self, mock_get_client):
+        """admin 角色 user_id 为空 → 不应被拒绝，应正常发起 API 调用"""
+        from app.tools.base import ToolContext
+        from app.tools.aftersale_query import AftersaleQueryTool
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value={
+            "success": True,
+            "data": {"items": [], "total": 0},
+        })
+        mock_get_client.return_value = mock_client
+
+        admin_no_user_context = ToolContext(
+            tenant_id=1,
+            user_id="",
+            session_id="sess_test",
+            role="admin",
+        )
+
+        tool = AftersaleQueryTool()
+        result = await tool.execute(
+            context=admin_no_user_context,
+            action="list",
+        )
+
+        assert result.success is True, (
+            f"admin 角色即使 user_id 为空也不应被拒绝: error={result.error}, message={result.message}"
+        )
+        mock_client.get.assert_called_once()
