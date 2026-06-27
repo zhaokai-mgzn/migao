@@ -316,3 +316,119 @@ class TestAftersaleQueryCustomerIsolation:
 
         assert result.success is True
         assert "ticket-001" in str(result.data)
+
+    @patch("app.tools.aftersale_query.get_admin_api_client")
+    async def test_aftersale_query_includes_both_tenant_id_header_and_customer_id_param(self, mock_get_client, sample_tool_context):
+        """customer角色查售后工单 → 验证 HTTP 请求同时携带 X-Tenant-Id header 和 customerId query param"""
+        from app.tools.aftersale_query import AftersaleQueryTool
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value={
+            "success": True,
+            "data": {"items": [], "total": 0},
+        })
+        mock_get_client.return_value = mock_client
+
+        tool = AftersaleQueryTool()
+        result = await tool.execute(
+            context=sample_tool_context,
+            action="list",
+        )
+
+        assert result.success is True
+        call_kwargs = mock_client.get.call_args[1]
+        assert call_kwargs.get("tenant_id") == sample_tool_context.tenant_id, (
+            f"售后查询请求必须包含X-Tenant-Id header(tenant_id kwarg): {call_kwargs}"
+        )
+        params = call_kwargs.get("params", {})
+        assert str(params.get("customerId")) == str(sample_tool_context.user_id), (
+            f"customer角色查询售后工单必须传customerId参数，当前params: {params}"
+        )
+
+    @patch("app.tools.aftersale_query.get_admin_api_client")
+    async def test_aftersale_query_response_filters_by_tenant_id(self, mock_get_client, sample_tool_context):
+        """API 返回含跨租户工单 → 验证 tenant_id 不匹配的记录被过滤"""
+        from app.tools.aftersale_query import AftersaleQueryTool
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value={
+            "success": True,
+            "data": {
+                "items": [
+                    {"id": "t1", "ticketNo": "AS-001", "customerId": sample_tool_context.user_id, "tenantId": 1, "status": "pending"},
+                    {"id": "t2", "ticketNo": "AS-002", "customerId": sample_tool_context.user_id, "tenantId": 999, "status": "pending"},
+                ],
+                "total": 2,
+            },
+        })
+        mock_get_client.return_value = mock_client
+
+        tool = AftersaleQueryTool()
+        result = await tool.execute(
+            context=sample_tool_context,
+            action="list",
+        )
+
+        assert result.success is True
+        items = result.data.get("items", [])
+        assert len(items) == 1, f"跨租户工单应被过滤，期望1条，实际{len(items)}条"
+        assert items[0]["id"] == "t1"
+
+    @patch("app.tools.aftersale_query.get_admin_api_client")
+    async def test_aftersale_query_detail_filters_by_tenant_id(self, mock_get_client, sample_tool_context):
+        """售后工单详情 → 验证 tenant_id 不匹配时拒绝"""
+        from app.tools.aftersale_query import AftersaleQueryTool
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value={
+            "success": True,
+            "data": {
+                "id": "ticket-001",
+                "ticketNo": "AS-001",
+                "customerId": sample_tool_context.user_id,
+                "tenantId": 999,
+                "status": "pending",
+            },
+        })
+        mock_get_client.return_value = mock_client
+
+        tool = AftersaleQueryTool()
+        result = await tool.execute(
+            context=sample_tool_context,
+            action="detail",
+            ticket_id="ticket-001",
+        )
+
+        assert result.success is False, f"跨租户工单详情应拒绝访问"
+        error_text = (result.error or "") + (result.message or "")
+        assert "租户" in error_text or "tenant" in error_text.lower(), (
+            f"错误信息应说明租户不匹配: error={result.error}, message={result.message}"
+        )
+
+    @patch("app.tools.aftersale_query.get_admin_api_client")
+    async def test_aftersale_query_missing_customer_id_rejected(self, mock_get_client, sample_tool_context):
+        """customer 角色但 context.user_id 为空 → 验证拒绝执行，不发起 API 调用"""
+        from app.tools.base import ToolContext
+        from app.tools.aftersale_query import AftersaleQueryTool
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock()
+        mock_get_client.return_value = mock_client
+
+        no_user_context = ToolContext(
+            tenant_id=1,
+            user_id="",
+            session_id="sess_test",
+            role="customer",
+        )
+
+        tool = AftersaleQueryTool()
+        result = await tool.execute(
+            context=no_user_context,
+            action="list",
+        )
+
+        assert result.success is False
+        error_text = (result.error or "") + (result.message or "")
+        assert "customer" in error_text.lower() or "用户" in error_text
+        mock_client.get.assert_not_called()

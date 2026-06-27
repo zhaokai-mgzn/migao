@@ -222,3 +222,84 @@ class TestOrderQueryCustomerIsolation:
 
         assert result.success is True
         assert result.data["total"] == 1
+
+    @patch("app.tools.order_query.get_admin_api_client")
+    async def test_order_query_includes_both_tenant_id_header_and_customer_id_param(self, mock_get_client, sample_tool_context):
+        """customer角色查订单 → 验证 HTTP 请求同时携带 X-Tenant-Id header 和 customerId query param"""
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value={
+            "success": True,
+            "data": {"items": [], "total": 0},
+        })
+        mock_get_client.return_value = mock_client
+
+        tool = OrderQueryTool()
+        result = await tool.execute(
+            context=sample_tool_context,
+            action="list",
+        )
+
+        assert result.success is True
+        call_kwargs = mock_client.get.call_args[1]
+        assert call_kwargs.get("tenant_id") == sample_tool_context.tenant_id, (
+            f"请求必须包含X-Tenant-Id header(tenant_id kwarg): {call_kwargs}"
+        )
+        params = call_kwargs.get("params", {})
+        assert str(params.get("customerId")) == str(sample_tool_context.user_id), (
+            f"customer角色查询订单必须传customerId参数，当前params: {params}"
+        )
+
+    @patch("app.tools.order_query.get_admin_api_client")
+    async def test_order_query_response_filters_by_tenant_id(self, mock_get_client, admin_tool_context):
+        """API 返回含跨租户记录 → 验证 tenant_id 不匹配的记录被过滤"""
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value={
+            "success": True,
+            "data": {
+                "items": [
+                    {"id": "ord-1", "orderNo": "O1", "tenantId": 1, "customerId": "a", "customerName": "A", "customerPhone": "138", "totalAmount": 100, "status": "pending", "createdAt": ""},
+                    {"id": "ord-2", "orderNo": "O2", "tenantId": 999, "customerId": "b", "customerName": "B", "customerPhone": "139", "totalAmount": 200, "status": "confirmed", "createdAt": ""},
+                ],
+                "total": 2,
+            },
+        })
+        mock_get_client.return_value = mock_client
+
+        tool = OrderQueryTool()
+        result = await tool.execute(
+            context=admin_tool_context,
+            action="list",
+        )
+
+        assert result.success is True
+        assert result.data["total"] == 1
+        orders = result.data.get("orders", [])
+        assert len(orders) == 1
+        assert orders[0]["order_no"] == "O1"
+
+    @patch("app.tools.order_query.get_admin_api_client")
+    async def test_order_query_missing_customer_id_rejected(self, mock_get_client, sample_tool_context):
+        """customer 角色但 context.user_id 为空 → 验证拒绝执行，不发起 API 调用"""
+        from app.tools.base import ToolContext
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock()
+        mock_get_client.return_value = mock_client
+
+        no_user_context = ToolContext(
+            tenant_id=1,
+            user_id="",
+            session_id="sess_test",
+            role="customer",
+        )
+
+        tool = OrderQueryTool()
+        result = await tool.execute(
+            context=no_user_context,
+            action="list",
+        )
+
+        assert result.success is False
+        error_text = (result.error or "") + (result.message or "")
+        assert "customer" in error_text.lower() or "用户" in error_text
+        mock_client.get.assert_not_called()
