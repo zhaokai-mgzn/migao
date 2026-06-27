@@ -3,8 +3,10 @@ AI 智能客服系统 - 订单创建 Tool
 
 创建新订单，调用 admin-api 的 POST /api/admin/orders 接口。
 
-安全（#518）:
-- 客户创建订单前必须通过手机号 SMS 验证码验证身份
+安全（#518 + #733）:
+- 客户创建订单前必须通过 admin-api 短信验证码 API 验证身份
+- SMS verify 成功 → 用 API 返回的 verifiedPhone 创建订单
+- SMS verify 失败 → 不创建订单 + 返回明确错误提示
 - 管理员/客服帮客户下单无需 SMS 验证
 """
 from __future__ import annotations
@@ -18,7 +20,7 @@ from app.utils.http_client import get_admin_api_client
 from app.utils.redis_client import RedisClient
 
 
-# SMS 验证码 Redis key 前缀
+# SMS 验证码 Redis key 前缀（_store_sms_code 仍使用本地 Redis 存储）
 _OTP_KEY_PREFIX = "sms:otp:"
 _OTP_TTL_SECONDS = 300  # 5分钟有效期
 _OTP_VALID_PATTERN = re.compile(r"^\d{4,6}$")  # 4-6位数字验证码
@@ -33,8 +35,10 @@ class OrderCreateTool(BaseTool):
     - 客服帮客户下单
     - 客户通过聊天直接创建订单
 
-    安全规则（#518）:
-    - customer 角色：必须提供 sms_code，且通过手机号验证
+    安全规则（#518 + #733）:
+    - customer 角色：必须提供 sms_code，通过 admin-api POST /api/auth/sms/verify 验证
+    - 验证成功 → 使用 API 返回的 verifiedPhone 创建订单
+    - 验证失败 → 不创建订单 + 返回明确 error + suggestion
     - admin/agent/tenant_admin 角色：无需 SMS 验证（帮客户下单）
     """
 
@@ -156,39 +160,54 @@ class OrderCreateTool(BaseTool):
         return f"{_OTP_KEY_PREFIX}{tenant_id}:{phone}"
 
     @staticmethod
-    async def _verify_sms_code(phone: str, code: str, tenant_id: int) -> bool:
-        """验证短信验证码
+    async def _call_sms_verify_api(phone: str, code: str) -> Optional[str]:
+        """调用 admin-api 短信验证码校验 API（#733）
 
-        从 Redis 读取已存储的验证码并比对。
-        验证成功后删除验证码（一次性使用）。
+        通过 HTTP 调用 admin-api 的 POST /api/auth/sms/verify 进行验证码校验，
+        而非本地 Redis 比对。
 
         Args:
             phone: 客户手机号
             code: 用户输入的验证码
-            tenant_id: 租户ID
 
         Returns:
-            bool: 验证是否通过
+            Optional[str]: 验证成功返回 verifiedPhone，失败返回 None
         """
         if not _OTP_VALID_PATTERN.match(code or ""):
-            return False
+            return None
 
         try:
-            redis_client = RedisClient()
-            key = OrderCreateTool._otp_key(phone, tenant_id)
-            stored_code = await redis_client.get(key)
+            client = get_admin_api_client()
+            response = await client.post(
+                "/api/auth/sms/verify",
+                json_data={"phone": phone, "code": code},
+            )
 
-            if stored_code and stored_code.strip() == code.strip():
-                # 验证成功后删除，防止重复使用
-                await redis_client.delete(key)
-                logger.info(f"[sms_verify] Code verified: phone={phone[:3]}****{phone[-4:]}, tenant={tenant_id}")
-                return True
+            if response.get("success") and response.get("data"):
+                verified_phone = response["data"].get("verifiedPhone")
+                if verified_phone:
+                    logger.info(
+                        f"[sms_verify] API verify OK: "
+                        f"phone={phone[:3]}****{phone[-4:]}"
+                    )
+                    return verified_phone
 
-            logger.warning(f"[sms_verify] Code mismatch: phone={phone[:3]}****{phone[-4:]}, tenant={tenant_id}")
-            return False
+            # API returned success=false or missing data
+            error_info = (response.get("error") or {}) if isinstance(response, dict) else {}
+            error_msg = error_info.get("message", "验证码校验失败")
+            logger.warning(
+                f"[sms_verify] API verify failed: "
+                f"phone={phone[:3]}****{phone[-4:]}, "
+                f"error={error_msg}"
+            )
+            return None
+
         except Exception as e:
-            logger.error(f"[sms_verify] Redis error: {type(e).__name__}: {e}")
-            return False
+            logger.error(
+                f"[sms_verify] API call error: {type(e).__name__}: {e}"
+            )
+            # 网络/超时异常 → 不 fallback，直接返回 None
+            return None
 
     @staticmethod
     async def _store_sms_code(phone: str, code: str, tenant_id: int) -> bool:
@@ -280,7 +299,7 @@ class OrderCreateTool(BaseTool):
                 suggestion="请提供至少一件商品的信息（名称、数量、单价）",
             )
 
-        # Gap-1 安全加固: SMS 验证码校验（仅 customer 角色需要）
+        # Gap-1 安全加固: SMS 验证码校验（仅 customer 角色需要）— #733: 调用 admin-api SMS verify API
         if self._needs_sms_verification(context):
             if not sms_code:
                 return ToolResult(
@@ -296,18 +315,21 @@ class OrderCreateTool(BaseTool):
                     message="短信验证码为4-6位数字，请检查后重新输入",
                     suggestion="请输入您收到的4-6位数字验证码",
                 )
-            verified = await self._verify_sms_code(
+            # #733: 调用 admin-api SMS verify API（非本地 Redis 校验）
+            verified_phone = await self._call_sms_verify_api(
                 phone=customer_phone,
                 code=sms_code,
-                tenant_id=context.tenant_id,
             )
-            if not verified:
+            if not verified_phone:
                 return ToolResult(
                     success=False,
                     error="验证码错误或已过期",
                     message="短信验证码错误或已过期，请重新获取验证码",
                     suggestion="请重新请求发送短信验证码，并在5分钟内完成验证",
                 )
+            # #733: 使用 admin-api SMS verify API 返回的 verifiedPhone
+            # 而非用户原始输入，防止手机号被篡改
+            customer_phone = verified_phone
 
         # 校验每个商品项
         for i, item in enumerate(items):
