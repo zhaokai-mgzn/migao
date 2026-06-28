@@ -205,9 +205,13 @@ export const useAuthStore = create<AuthState>()(
             user: data,
             isAuthenticated: true,
           })
-        } catch (error) {
-          // 获取失败则清除登录状态
-          get().clearAuth()
+        } catch (error: any) {
+          // 仅认证错误（401/403）时清除登录状态
+          // 网络异常不应导致用户登出（如 E2E fixture 模式无后端、临时网络抖动）
+          const status = error?.response?.status
+          if (status === 401 || status === 403) {
+            get().clearAuth()
+          }
           throw error
         }
       },

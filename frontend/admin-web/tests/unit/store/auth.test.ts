@@ -349,7 +349,7 @@ describe('useAuthStore (Zustand auth store)', () => {
       expect(useAuthStore.getState().isAuthenticated).toBe(true)
     })
 
-    it('should clear auth and throw on failure', async () => {
+    it('should clear auth and throw on 401', async () => {
       act(() => {
         useAuthStore.setState({
           accessToken: 'token',
@@ -357,7 +357,10 @@ describe('useAuthStore (Zustand auth store)', () => {
         })
       })
 
-      mockGetUserInfo.mockRejectedValue(new Error('Unauthorized'))
+      // Simulate axios 401 error (has response.status)
+      const authError = new Error('Unauthorized') as any
+      authError.response = { status: 401 }
+      mockGetUserInfo.mockRejectedValue(authError)
 
       await act(async () => {
         try {
@@ -369,6 +372,56 @@ describe('useAuthStore (Zustand auth store)', () => {
 
       expect(useAuthStore.getState().accessToken).toBeNull()
       expect(useAuthStore.getState().isAuthenticated).toBe(false)
+    })
+
+    it('should clear auth and throw on 403', async () => {
+      act(() => {
+        useAuthStore.setState({
+          accessToken: 'token',
+          isAuthenticated: true,
+        })
+      })
+
+      const authError = new Error('Forbidden') as any
+      authError.response = { status: 403 }
+      mockGetUserInfo.mockRejectedValue(authError)
+
+      await act(async () => {
+        try {
+          await useAuthStore.getState().fetchUserInfo()
+        } catch {
+          // expected
+        }
+      })
+
+      expect(useAuthStore.getState().accessToken).toBeNull()
+      expect(useAuthStore.getState().isAuthenticated).toBe(false)
+    })
+
+    it('should NOT clear auth on network error (ECONNREFUSED)', async () => {
+      act(() => {
+        useAuthStore.setState({
+          user: { id: '1', username: 'admin' } as any,
+          accessToken: 'token',
+          isAuthenticated: true,
+        })
+      })
+
+      // Network error: no response property (e.g. ECONNREFUSED, ETIMEDOUT)
+      mockGetUserInfo.mockRejectedValue(new Error('connect ECONNREFUSED 127.0.0.1:8080'))
+
+      await act(async () => {
+        try {
+          await useAuthStore.getState().fetchUserInfo()
+        } catch {
+          // expected
+        }
+      })
+
+      // Auth state must be preserved on network error
+      expect(useAuthStore.getState().accessToken).toBe('token')
+      expect(useAuthStore.getState().isAuthenticated).toBe(true)
+      expect(useAuthStore.getState().user).toBeDefined()
     })
   })
 
