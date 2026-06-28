@@ -22,7 +22,7 @@ import xml.etree.ElementTree as ET
 from datetime import datetime
 from pathlib import Path
 
-REPO_ROOT = Path("/opt/youke")
+REPO_ROOT = Path("/opt/migao")
 THRESHOLD = 60  # 行覆盖率阈值
 REPORT_DIR = Path("/opt/qa-results/_archive/qa-growth")
 
