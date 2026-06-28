@@ -114,6 +114,8 @@ jobs:
 
       - name: Run quality specs (fixture-only)
         working-directory: tests
+        env:
+          E2E_MOCK_AUTH: 'true'
         run: |
           npx playwright test --reporter=list --retries=1 \
             e2e/specs/quality/api-contract.spec.ts \
