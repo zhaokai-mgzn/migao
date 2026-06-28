@@ -129,6 +129,15 @@ class AftersaleQueryTool(BaseTool):
         status: Optional[str],
     ) -> ToolResult:
         """查询售后工单列表"""
+        # Gap-4 安全加固: customer 角色必须有 customer_id 才能查询
+        if context.role == "customer" and not str(context.user_id).strip():
+            return ToolResult(
+                success=False,
+                error="缺少用户标识",
+                message="无法查询售后工单：缺少用户身份信息",
+                suggestion="请重新登录后再试",
+            )
+
         # Gap-4 安全加固: customer 查询必须带 customer_id 做双重隔离
         params: Dict[str, Any] = {
             "page": page,
@@ -158,10 +167,20 @@ class AftersaleQueryTool(BaseTool):
         items = data.get("items", [])
         total = data.get("total", 0)
 
-        # Gap-4 安全加固: 防御性校验 — 过滤不属于当前客户的工单
+        # Gap-4 安全加固: 防御性校验 — tenant_id + customer_id 双重过滤
         verified_items = []
         filtered_count = 0
         for item in items:
+            # 校验 tenant_id
+            resp_tenant_id = item.get("tenantId") or item.get("tenant_id")
+            if resp_tenant_id is not None and str(resp_tenant_id) != str(context.tenant_id):
+                logger.error(
+                    f"Tenant data integrity violation in aftersale_query: "
+                    f"response tenant_id={resp_tenant_id}, expected={context.tenant_id}"
+                )
+                filtered_count += 1
+                continue
+            # 校验 customer_id
             resp_customer_id = (
                 item.get("customerId")
                 or item.get("customer_id")
@@ -177,8 +196,8 @@ class AftersaleQueryTool(BaseTool):
             verified_items.append(item)
         if filtered_count > 0:
             logger.warning(
-                f"Aftersale query filtered {filtered_count} records due to customer_id mismatch, "
-                f"user={context.user_id}"
+                f"Aftersale query filtered {filtered_count} records due to isolation mismatch, "
+                f"tenant={context.tenant_id}, user={context.user_id}"
             )
             total = max(0, total - filtered_count)
 
@@ -224,6 +243,21 @@ class AftersaleQueryTool(BaseTool):
             )
 
         data = response.get("data", {})
+
+        # Gap-4 安全加固: 校验工单详情 tenant_id + customer_id 双重隔离
+        resp_tenant_id = data.get("tenantId") or data.get("tenant_id")
+        if resp_tenant_id is not None and str(resp_tenant_id) != str(context.tenant_id):
+            logger.error(
+                f"Tenant data integrity violation in aftersale_query detail: "
+                f"ticket_id={ticket_id}, response tenant_id={resp_tenant_id}, "
+                f"expected={context.tenant_id}"
+            )
+            return ToolResult(
+                success=False,
+                error="租户不匹配",
+                message="该工单不属于当前租户，无法查看",
+                suggestion="请确认您登录的租户是否正确",
+            )
 
         # Gap-4 安全加固: 校验工单详情属于当前客户
         resp_customer_id = (

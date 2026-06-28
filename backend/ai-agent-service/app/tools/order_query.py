@@ -242,6 +242,15 @@ class OrderQueryTool(BaseTool):
         page_size: int,
     ) -> ToolResult:
         """执行订单列表查询"""
+        # Gap-4 安全加固: customer 角色必须有 customer_id 才能查询
+        if context.role == "customer" and not str(context.user_id).strip():
+            return ToolResult(
+                success=False,
+                error="缺少用户标识",
+                message="无法查询订单：缺少用户身份信息",
+                suggestion="请重新登录后再试",
+            )
+
         # 查询开始日志
         if customer_phone:
             logger.info(f"[order-query] Querying by phone: {LogSanitizer.mask_phone(customer_phone)} | tenant={context.tenant_id}")
