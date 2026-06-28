@@ -29,7 +29,7 @@ class AftersaleQueryTool(BaseTool):
         "【安全】只能查询当前客户自己的工单。"
         "【标注】READONLY — 纯查询，无需确认"
     )
-    allowed_roles = ["customer"]
+    allowed_roles = ["customer", "admin", "agent", "tenant_admin"]
 
     read_only = True
     destructive = False
@@ -93,7 +93,7 @@ class AftersaleQueryTool(BaseTool):
                 success=False,
                 error="权限不足",
                 message="您没有权限查询售后工单",
-                suggestion="售后查询功能仅供客户使用",
+                suggestion="您没有权限查询售后工单，请联系管理员",
             )
 
         if action not in ("list", "detail"):
@@ -139,11 +139,13 @@ class AftersaleQueryTool(BaseTool):
             )
 
         # Gap-4 安全加固: customer 查询必须带 customer_id 做双重隔离
+        # admin/agent 不过滤 customer_id，可查看所有工单
         params: Dict[str, Any] = {
             "page": page,
             "size": size,
-            "customerId": str(context.user_id),  # 强制 customer_id 过滤
         }
+        if context.role == "customer" and context.user_id:
+            params["customerId"] = str(context.user_id)
         if status:
             params["status"] = status
 
