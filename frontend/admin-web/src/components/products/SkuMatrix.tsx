@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { Button, Select } from '@/components/ui'
 import type { ProductColor, ProductSku, SellingMethod } from '@/types'
 import { SellingMethodLabels } from '@/types'
+import { rebuildSkus } from '@/lib/sku-utils'
 
 interface SkuMatrixProps {
   value: {
@@ -65,53 +66,6 @@ const PRESET_COLORS: { name: string; hex: string }[] = [
 ]
 
 type BatchScope = 'all' | 'color' | 'method' | 'width'
-
-// ========== 矩阵重建（保持原有逻辑） ==========
-function rebuildSkus(
-  cs: ProductColor[],
-  sms: SellingMethod[],
-  dws: string[],
-  existing: ProductSku[]
-): ProductSku[] {
-  // 过滤接口中未选中的空占位值，避免生成无效 SKU
-  const validSms = sms.filter((m) => !!m)
-  const validDws = dws.filter((w) => !!w)
-  const result: ProductSku[] = []
-  for (const color of cs) {
-    for (const method of validSms) {
-      for (const width of validDws) {
-        // 兼容旧格式'门幅2.8米'和新格式'2.8米'
-        const matchWidth = (db: string, opt: string) =>
-          db === opt || db.replace(/^门幅/, '') === opt
-        const found = existing.find(
-          (s) => {
-            // 优先 colorId 匹配（旧数据），兜底 colorName 匹配（新数据 colorId 可能为 null）
-            const idMatch = s.colorId != null && s.colorId === color.id
-            const nameMatch = s.colorName === color.colorName
-            return (idMatch || (s.colorId == null && nameMatch)) &&
-              s.sellingMethod === method &&
-              matchWidth(s.doorWidth || '', width)
-          }
-        )
-        if (found) {
-          result.push({ ...found, colorName: color.colorName })
-        } else {
-          result.push({
-            id: -(Date.now() + Math.random()),
-            colorId: color.id,
-            colorName: color.colorName,
-            sellingMethod: method,
-            doorWidth: width,
-            price: 0,
-            stock: 0,
-            status: 'active',
-          })
-        }
-      }
-    }
-  }
-  return result
-}
 
 export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
   const { colors, sellingMethods, doorWidths, skus } = value

@@ -314,6 +314,130 @@ describe('request (Axios instance)', () => {
       request.defaults.adapter = originalAdapter
     })
   })
+
+  describe('response interceptor - concurrent 401 (processQueue)', () => {
+    it('should queue concurrent 401 requests and retry all after single token refresh', async () => {
+      const mockClearAuth = vi.fn()
+      const mockRefreshAccessToken = vi.fn().mockResolvedValue('new-token-shared')
+
+      mockGetState.mockReturnValue({
+        accessToken: 'expired-token',
+        refreshToken: 'refresh-token',
+        clearAuth: mockClearAuth,
+        refreshAccessToken: mockRefreshAccessToken,
+      })
+
+      let callCount = 0
+      const mockAdapter = vi.fn().mockImplementation((config: InternalAxiosRequestConfig) => {
+        callCount++
+        if (callCount <= 2) {
+          // First two calls: both 401
+          return Promise.reject(createAxiosError(401, { message: 'Unauthorized' }, config))
+        }
+        // Retries after refresh: 3rd and 4th calls succeed
+        return Promise.resolve({
+          status: 200,
+          data: { code: 200, data: { result: `ok-${callCount}` } },
+          headers: {},
+          config,
+          statusText: 'OK',
+        })
+      })
+
+      const originalAdapter = request.defaults.adapter
+      request.defaults.adapter = mockAdapter
+
+      // Two concurrent requests — both get 401 at the same time
+      const [r1, r2] = await Promise.all([
+        request.get('/api/endpoint-a'),
+        request.get('/api/endpoint-b'),
+      ])
+
+      // Both should succeed after the shared token refresh
+      expect(r1.data.code).toBe(200)
+      expect(r2.data.code).toBe(200)
+
+      // Token refresh should only be called ONCE (not once per request)
+      expect(mockRefreshAccessToken).toHaveBeenCalledTimes(1)
+
+      request.defaults.adapter = originalAdapter
+    })
+
+    it('should reject all queued requests when token refresh fails', async () => {
+      const mockClearAuth = vi.fn()
+      const mockRefreshAccessToken = vi.fn().mockResolvedValue(null) // refresh fails
+
+      mockGetState.mockReturnValue({
+        accessToken: 'expired-token',
+        refreshToken: 'refresh-token',
+        clearAuth: mockClearAuth,
+        refreshAccessToken: mockRefreshAccessToken,
+      })
+
+      let callCount = 0
+      const mockAdapter = vi.fn().mockImplementation((config: InternalAxiosRequestConfig) => {
+        callCount++
+        if (callCount <= 2) {
+          return Promise.reject(createAxiosError(401, { message: 'Unauthorized' }, config))
+        }
+        return Promise.resolve({
+          status: 200,
+          data: { code: 200 },
+          headers: {},
+          config,
+          statusText: 'OK',
+        })
+      })
+
+      const originalAdapter = request.defaults.adapter
+      request.defaults.adapter = mockAdapter
+
+      // Two concurrent requests — refresh fails, both should reject
+      const results = await Promise.allSettled([
+        request.get('/api/endpoint-a'),
+        request.get('/api/endpoint-b'),
+      ])
+
+      expect(results[0].status).toBe('rejected')
+      expect(results[1].status).toBe('rejected')
+
+      // Each failed queue entry triggers clearAuth via processQueue → toast
+      // The main refresh path also calls toast. We just verify refresh was called once.
+      expect(mockRefreshAccessToken).toHaveBeenCalledTimes(1)
+
+      request.defaults.adapter = originalAdapter
+    })
+  })
+
+  describe('response interceptor - other HTTP errors', () => {
+    it('should use backend error message for non-standard status codes', async () => {
+      const mockAdapter = vi.fn().mockRejectedValue(
+        createAxiosError(422, { message: '商品名称已存在' })
+      )
+
+      const originalAdapter = request.defaults.adapter
+      request.defaults.adapter = mockAdapter
+
+      await expect(request.post('/api/products')).rejects.toBeDefined()
+      expect(toast.error).toHaveBeenCalledWith('商品名称已存在')
+
+      request.defaults.adapter = originalAdapter
+    })
+
+    it('should fall back to status code message for non-standard errors without message', async () => {
+      const mockAdapter = vi.fn().mockRejectedValue(
+        createAxiosError(429, {})
+      )
+
+      const originalAdapter = request.defaults.adapter
+      request.defaults.adapter = mockAdapter
+
+      await expect(request.get('/api/data')).rejects.toBeDefined()
+      expect(toast.error).toHaveBeenCalledWith('请求失败 (429)')
+
+      request.defaults.adapter = originalAdapter
+    })
+  })
 })
 
 // Helper to create AxiosError-like objects
