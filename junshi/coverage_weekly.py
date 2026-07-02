@@ -653,23 +653,265 @@ def archive_report(summary: dict, scan_results: list, issues_created: list, dry_
     return archive_dir
 
 
+def build_batch_issue_list(labels=None, limit=100):
+    """构建 gh issue list 命令参数（纯函数，不执行）。
+
+    Args:
+        labels: 要过滤的 label 列表，默认 ['qa-todo', 'coverage-gap']
+        limit: 最大返回数，默认 100
+
+    Returns:
+        list of str: gh CLI 命令参数列表
+    """
+    if labels is None:
+        labels = ["qa-todo", "coverage-gap"]
+
+    label_filter = ",".join(labels)
+    return [
+        "gh", "issue", "list",
+        "--repo", "zhaokai-mgzn/migao",
+        "--label", label_filter,
+        "--state", "open",
+        "--limit", str(limit),
+        "--json", "number,title,createdAt,labels,url",
+    ]
+
+
+def fetch_batch_issues(cmd):
+    """执行 gh issue list 命令并返回解析后的 issue 列表。
+
+    Args:
+        cmd: build_batch_issue_list 返回的命令参数列表
+
+    Returns:
+        list of dict: [{number, title, createdAt, labels, url}, ...]
+    """
+    try:
+        proc = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+            timeout=30,
+        )
+        if proc.returncode != 0:
+            log("gh issue list failed: {}".format(proc.stderr))
+            return []
+        return json.loads(proc.stdout)
+    except Exception as e:
+        log("fetch_batch_issues error: {}".format(e))
+        return []
+
+
+def filter_stale_issues(issues, days=7, reference_date=None):
+    """过滤出超过 days 天未处理的 stale issue。
+
+    Args:
+        issues: gh issue list 返回的 issue 列表
+        days: 天数阈值，默认 7 天
+        reference_date: 参考日期 (ISO format str)，默认当前 UTC 时间
+
+    Returns:
+        list of dict: stale issue 列表
+    """
+    from datetime import datetime, timedelta
+
+    # Python 3.6 兼容：手动解析 ISO8601
+    def _parse_iso(ts):
+        """解析 ISO8601 时间戳（兼容 Python 3.6 无 fromisoformat）。"""
+        # 去掉末尾 Z 或时区后缀
+        ts_clean = ts.replace("Z", "+00:00")
+        # 尝试 strptime with timezone
+        for fmt in ("%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%S+00:00"):
+            try:
+                return datetime.strptime(ts_clean, fmt)
+            except ValueError:
+                continue
+        # fallback: 去掉时区信息
+        ts_no_tz = ts_clean.rsplit("+", 1)[0].rsplit("-", 1)[0]
+        if ts_no_tz.endswith("T"):
+            ts_no_tz = ts_no_tz[:-1]
+        return datetime.strptime(ts_no_tz, "%Y-%m-%dT%H:%M:%S")
+
+    if reference_date:
+        ref_dt = _parse_iso(reference_date)
+    else:
+        ref_dt = datetime.utcnow()
+
+    cutoff = ref_dt - timedelta(days=days)
+
+    stale = []
+    for issue in issues:
+        created_str = issue.get("createdAt")
+        if not created_str:
+            # 保守处理：缺少日期视为 stale
+            stale.append(issue)
+            continue
+        try:
+            created_dt = _parse_iso(created_str)
+            if created_dt < cutoff:
+                stale.append(issue)
+        except (ValueError, AttributeError, KeyError):
+            # 日期解析失败，保守处理
+            stale.append(issue)
+
+    return stale
+
+
+def batch_label_issues(issues, add_label, comment_body=None, dry_run=True):
+    """批量给 issue 打标签并可选添加评论。
+
+    Args:
+        issues: issue 列表
+        add_label: 要添加的 label
+        comment_body: 可选，评论内容
+        dry_run: True = 只打印不操作
+
+    Returns:
+        list of dict: [{number, url, status}, ...]
+    """
+    results = []
+    total = len(issues)
+    for i, issue in enumerate(issues):
+        num = issue["number"]
+        title = issue.get("title", "")[:80]
+        url = issue.get("url", "")
+
+        if dry_run:
+            log("[DRY-RUN] [{}/{}] #{:<6} → +{}  {}".format(
+                i + 1, total, num, add_label, title))
+            results.append({
+                "number": num, "url": url,
+                "status": "dry_run", "label": add_label,
+            })
+            continue
+
+        try:
+            proc = subprocess.run(
+                ["gh", "issue", "edit", str(num),
+                 "--add-label", add_label],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True,
+                timeout=30,
+            )
+            if proc.returncode != 0:
+                log("  ❌ #{:<6} label failed: {}".format(num, proc.stderr.strip()))
+                results.append({
+                    "number": num, "url": url,
+                    "status": "error", "error": proc.stderr.strip(),
+                })
+                continue
+
+            if comment_body:
+                comment_proc = subprocess.run(
+                    ["gh", "issue", "comment", str(num),
+                     "--body", comment_body],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    universal_newlines=True,
+                    timeout=30,
+                )
+                if comment_proc.returncode != 0:
+                    log("  ⚠️ #{:<6} comment failed: {}".format(
+                        num, comment_proc.stderr.strip()))
+
+            log("[{}/{}] ✅ #{:<6} → +{} {}".format(
+                i + 1, total, num, add_label, title))
+            results.append({
+                "number": num, "url": url,
+                "status": "ok", "label": add_label,
+            })
+        except Exception as e:
+            log("  ❌ #{:<6} exception: {}".format(num, e))
+            results.append({
+                "number": num, "url": url,
+                "status": "error", "error": str(e),
+            })
+
+    return results
+
+
+def run_batch_skip(dry_run=True, stale_days=7):
+    """批量标记 stale coverage 子任务为 low-priority/auto-skip。
+
+    Args:
+        dry_run: True = 只列出不操作
+        stale_days: 超过此天数的 issue 视为 stale
+
+    Returns:
+        dict: {total_checked, stale_count, results, dry_run}
+    """
+    log("🔍 批量 skip 模式：扫描 qa-todo + coverage-gap issue（>{} 天）".format(stale_days))
+
+    cmd = build_batch_issue_list(labels=["qa-todo", "coverage-gap"], limit=100)
+    issues = fetch_batch_issues(cmd)
+    log("  共 {} 个 open issue（qa-todo + coverage-gap）".format(len(issues)))
+
+    stale = filter_stale_issues(issues, days=stale_days)
+    log("  其中 {} 个超过 {} 天未处理".format(len(stale), stale_days))
+
+    if not stale:
+        log("  ✅ 无 stale issue，跳过")
+        return {"total_checked": len(issues), "stale_count": 0, "results": [], "dry_run": dry_run}
+
+    log("  开始批量标记 low-priority/auto-skip...")
+    comment = (
+        "🤖 军师批量标记 · 二郎神日报 #850 行动项 #3\n\n"
+        "本 issue 创建超过 {} 天未有人处理，自动标记为 `low-priority/auto-skip`。\n"
+        "如需恢复，请移除 `low-priority/auto-skip` 标签并添加 `qa-todo`。".format(stale_days)
+    )
+    results = batch_label_issues(
+        stale, add_label="low-priority/auto-skip",
+        comment_body=comment, dry_run=dry_run,
+    )
+
+    ok_count = sum(1 for r in results if r["status"] in ("ok", "dry_run"))
+    err_count = sum(1 for r in results if r["status"] == "error")
+    log("  完成: {} OK, {} error".format(ok_count, err_count))
+
+    return {
+        "total_checked": len(issues),
+        "stale_count": len(stale),
+        "results": results,
+        "dry_run": dry_run,
+    }
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--scan", action="store_true", required=True)
+    parser.add_argument("--scan", action="store_true", help="扫描覆盖率报告")
     parser.add_argument("--run-tests", action="store_true", help="先跑测试生成报告")
     parser.add_argument("--create-issues", action="store_true", help="建 issue")
     parser.add_argument("--dry-run", action="store_true", help="不实际建 issue，不归档")
+    parser.add_argument("--batch-skip", action="store_true",
+                        help="批量标记 stale coverage 子任务为 low-priority/auto-skip")
+    parser.add_argument("--stale-days", type=int, default=7,
+                        help="batch-skip 的天数阈值（默认 7）")
     args = parser.parse_args()
 
-    log(f"🚀 覆盖率周扫开始（threshold={THRESHOLD}%, "
-        f"create_issues={args.create_issues}, dry_run={args.dry_run}）")
+    # 至少需要一个操作模式
+    if not args.scan and not args.batch_skip:
+        parser.error("至少需要 --scan 或 --batch-skip 之一")
+
+    # --batch-skip 模式：独立于覆盖率扫描，只做批量标记
+    if args.batch_skip:
+        result = run_batch_skip(dry_run=args.dry_run, stale_days=args.stale_days)
+        print("\n===JSON_RESULT_BEGIN===")
+        print(json.dumps(result, ensure_ascii=False))
+        print("===JSON_RESULT_END===")
+        return
+
+    log("🚀 覆盖率周扫开始（threshold={}%, "
+        "create_issues={}, dry_run={}）".format(
+            THRESHOLD, args.create_issues, args.dry_run))
 
     scan_results = []
     for name, mod in MODULES.items():
         scan_results.append(run_module_scan(name, mod, run_tests=args.run_tests))
 
     summary = build_summary(scan_results)
-    log(f"\n📊 汇总: {summary}")
+    log("\n📊 汇总: {}".format(summary))
 
     issues_created = []
     if args.create_issues:
