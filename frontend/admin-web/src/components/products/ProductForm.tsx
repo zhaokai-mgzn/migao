@@ -10,6 +10,7 @@ import SkuMatrix from './SkuMatrix'
 import ProductAttributes from './ProductAttributes'
 import RichTextEditor from './RichTextEditor'
 import { categoryApi, processingItemApi } from '@/lib/api'
+import { validateProductForm, derivePrice } from '@/lib/product-utils'
 import type {
   ProductFormData,
   ProductStatus,
@@ -226,68 +227,7 @@ export default function ProductForm({
   }
 
   const validate = (targetStatus: ProductStatus): boolean => {
-    const errs: Record<string, string> = {}
-    const isDraft = targetStatus === 'draft'
-
-    if (!form.name.trim()) errs.name = '请输入商品标题'
-    else if (form.name.length > TITLE_MAX)
-      errs.name = `标题不超过 ${TITLE_MAX} 字`
-
-    if (!isDraft) {
-      if (!form.skuCode || !form.skuCode.trim()) errs.skuCode = '请输入货号'
-      else if (form.skuCode.length > 30) errs.skuCode = '货号不超过 30 字'
-
-      if (!form.unit) errs.unit = '请选择计价单位'
-      if (!form.categoryId) errs.categoryId = '请选择商品分类'
-      if (!form.images || form.images.length === 0)
-        errs.images = '请至少上传 1 张商品主图'
-
-      if (!form.colors || form.colors.length === 0)
-        errs.colors = '请至少添加 1 种颜色'
-      else {
-        const incomplete = form.colors.find(
-          (c) => !c.colorName || !c.colorName.trim()
-        )
-        if (incomplete) errs.colors = '颜色必须填写名称'
-      }
-      if (!form.sellingMethods || form.sellingMethods.filter(Boolean).length === 0)
-        errs.sellingMethods = '请至少添加 1 种售卖方式'
-      if (!form.doorWidths || form.doorWidths.filter(Boolean).length === 0)
-        errs.doorWidths = '请至少添加 1 种规格尺寸'
-
-      if (
-        form.colors &&
-        form.colors.length > 0 &&
-        form.sellingMethods &&
-        form.sellingMethods.filter(Boolean).length > 0 &&
-        form.doorWidths &&
-        form.doorWidths.filter(Boolean).length > 0
-      ) {
-        const totalCells =
-          form.colors.length *
-          form.sellingMethods.filter(Boolean).length *
-          form.doorWidths.filter(Boolean).length
-        const list = form.skus || []
-        const filled = list.filter(
-          (s) => Number(s.price) > 0 && Number(s.stock) >= 0
-        )
-        const allValid =
-          list.length >= totalCells &&
-          list.every((s) => Number(s.price) > 0 && Number(s.stock) >= 0)
-        if (!allValid || filled.length < totalCells)
-          errs.skus = '请完整填写所有 SKU 的价格与库存'
-      }
-
-      if (form.supportsProcessing) {
-        const cfg = form.processingItemConfigs || []
-        if (
-          cfg.length === 0 ||
-          cfg.some((c) => !c.processingItemId || c.customPrice < 0)
-        )
-          errs.processingItemConfigs = '请至少配置 1 项加工项并填写价格'
-      }
-    }
-
+    const errs = validateProductForm(form, targetStatus)
     setErrors(errs)
     if (Object.keys(errs).length > 0) {
       scrollToFirstError(Object.keys(errs))
@@ -296,13 +236,6 @@ export default function ProductForm({
   }
 
   // ========== 提交 ==========
-
-  const derivePrice = (skus: ProductSku[] = []): number => {
-    if (skus.length === 0) return form.price
-    const positive = skus.map((s) => Number(s.price)).filter((p) => p > 0)
-    if (positive.length === 0) return form.price
-    return Math.min(...positive)
-  }
 
   const handleSubmit = async (targetStatus: ProductStatus) => {
     if (!validate(targetStatus)) return
@@ -314,7 +247,7 @@ export default function ProductForm({
         // 过滤未选中的空占位值，保证后端拿到干净数据
         sellingMethods: (form.sellingMethods || []).filter(Boolean),
         doorWidths: (form.doorWidths || []).filter(Boolean),
-        price: derivePrice(form.skus),
+        price: derivePrice(form.skus || [], form.price),
         status: targetStatus,
       }
       await onSubmit(payload, targetStatus)

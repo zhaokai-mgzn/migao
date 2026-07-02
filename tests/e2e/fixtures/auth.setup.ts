@@ -71,6 +71,7 @@ setup('authenticate as admin', async ({ page, baseURL }) => {
 
   // 拦截 /api/auth/me — fixture 模式下无后端，返回 mock 用户信息
   // 防止 AuthProvider.initialize() 中 fetchUserInfo() 失败清空认证状态
+  // 格式对齐 auth.ts:202 — const { data } = response.data，data 直接是 User 对象
   await page.route('**/api/auth/me', async (route) => {
     await route.fulfill({
       status: 200,
@@ -78,15 +79,12 @@ setup('authenticate as admin', async ({ page, baseURL }) => {
       body: JSON.stringify({
         success: true,
         data: {
-          user: {
-            id: '1',
-            username: TEST_PHONE,
-            nickname: '管理员',
-            tenantId: 1,
-            tenantName: '测试企业',
-            roles: ['admin'],
-            status: 'active',
-          },
+          id: '1',
+          username: TEST_PHONE,
+          name: '管理员',
+          roles: ['admin'],
+          tenantId: 1,
+          tenantName: '测试企业',
         },
       }),
     })
@@ -110,7 +108,8 @@ setup('authenticate as admin', async ({ page, baseURL }) => {
   }))
 
   // 用 load 而非 networkidle — SSE 会阻止 network idle
-  await page.goto('/dashboard', { waitUntil: 'load', timeout: 30_000 })
+  // 注意：/dashboard 是路由组 (dashboard) 的布局，无独立 page.tsx，需导航到子页面
+  await page.goto('/products', { waitUntil: 'load', timeout: 30_000 })
   await expect(page.locator('aside')).toBeVisible({ timeout: 20_000 })
   await page.context().storageState({ path: AUTH_FILE })
 })

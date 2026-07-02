@@ -19,3 +19,9 @@ exemptions:
 
   - pattern: "backend/admin-api/src/main/resources/*.yml"
     reason: "Spring Boot 配置文件变更，纯配置无 Java 逻辑，无需单测"
+
+  - pattern: "frontend/admin-web/src/components/products/SkuMatrix.tsx"
+    reason: "重构：rebuildSkus 提取到 lib/sku-utils.ts（13 tests），组件内仅保留 import 调用"
+
+  - pattern: "frontend/admin-web/src/components/products/ProductForm.tsx"
+    reason: "重构：validate/derivePrice 提取到 lib/product-utils.ts（27 tests），组件内仅保留委托调用"

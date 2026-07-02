@@ -1,4 +1,5 @@
 import request from './request'
+import { buildProductPayload, buildLogisticsPayload, buildCloseOrderPayload } from './data-adapter'
 import type { 
   ApiResponse, 
   PageResponse, 
@@ -101,25 +102,11 @@ export const productApi = {
   getProduct: (id: string) => 
     request.get<ApiResponse<Product>>(`/api/admin/products/${id}`),
   
-  createProduct: (data: ProductFormData) => {
-    const { price, images, ...rest } = data
-    return request.post<ApiResponse<Product>>('/api/admin/products', {
-      ...rest,
-      basePrice: price,
-      mainImage: images?.[0] || null,
-      images,
-    })
-  },
+  createProduct: (data: ProductFormData) =>
+    request.post<ApiResponse<Product>>('/api/admin/products', buildProductPayload(data)),
   
-  updateProduct: (id: string, data: ProductFormData) => {
-    const { price, images, ...rest } = data
-    return request.put<ApiResponse<Product>>(`/api/admin/products/${id}`, {
-      ...rest,
-      basePrice: price,
-      mainImage: images?.[0] || null,
-      images,
-    })
-  },
+  updateProduct: (id: string, data: ProductFormData) =>
+    request.put<ApiResponse<Product>>(`/api/admin/products/${id}`, buildProductPayload(data)),
   
   deleteProduct: (id: string) => 
     request.delete<ApiResponse<void>>(`/api/admin/products/${id}`),
@@ -274,16 +261,11 @@ export const orderApi = {
   // 更新物流信息（发货）
   // 后端实际只接收 { logisticsCompany, trackingNo }。
   updateLogistics: (id: string, data: LogisticsFormData) =>
-    request.put<ApiResponse<void>>(`/api/admin/orders/${id}/logistics`, {
-      logisticsCompany: data.company,
-      trackingNo: data.trackingNo,
-    }),
+    request.put<ApiResponse<void>>(`/api/admin/orders/${id}/logistics`, buildLogisticsPayload(data)),
 
   // 关闭订单 → 后端实际为取消订单接口（无 body）
   closeOrder: (id: string, data?: CloseOrderParams) =>
-    request.put<ApiResponse<void>>(`/api/admin/orders/${id}/cancel`, {
-      closeReason: data?.reason || '',
-    }),
+    request.put<ApiResponse<void>>(`/api/admin/orders/${id}/cancel`, buildCloseOrderPayload(data)),
 
   // 确认付款
   confirmPayment: (id: string) =>

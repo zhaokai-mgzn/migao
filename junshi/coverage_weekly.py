@@ -541,7 +541,7 @@ def create_issues(scan_results: list, dry_run: bool = True) -> list:
         else:
             top_title = f"[coverage-tracking] {r['module']} 覆盖率 {line_pct}% < {THRESHOLD}%（{len(groups)} 个子 issue）"
         top_body = build_top_summary_issue(r["module"], module_summary, len(groups))
-        top_labels = ["coverage-gap", "coverage-tracking", "qa-growth"]  # 09:15: 移除 needs-verification
+        top_labels = ["coverage-gap", "coverage-tracking", "qa-growth", "ai-draft"]  # 09:15: 移除 needs-verification
         top_url = None
 
         if dry_run:
@@ -555,7 +555,7 @@ def create_issues(scan_results: list, dry_run: bool = True) -> list:
         for feature, feature_files in groups.items():
             sub_title = f"[coverage] {r['module']}/{feature} 覆盖率补全（{len(feature_files)} 个文件）"
             sub_body = build_issue_body(r["module"], feature, feature_files, module_summary)
-            sub_labels = ["qa-todo", "coverage-gap", "qa-growth"]  # 09:15: 移除 needs-verification
+            sub_labels = ["qa-todo", "coverage-gap", "qa-growth", "ai-draft"]  # 09:15: 移除 needs-verification
 
             if dry_run:
                 log(f"[{r['module']}] [DRY-RUN] 子 issue: {sub_title}")
