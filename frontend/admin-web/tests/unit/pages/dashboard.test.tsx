@@ -273,4 +273,80 @@ describe('DashboardPage', () => {
       expect(refreshIcon).toBeInTheDocument()
     })
   })
+
+  // ── #942: 趋势图 SVG 布局修复 ──
+
+  // 辅助函数：找到带 viewBox 的趋势图 SVG（MiniSparkline/MiniBarChart 的迷你 SVG 无 viewBox）
+  function findTrendSvg(): SVGElement | null {
+    const svgs = document.querySelectorAll('svg')
+    for (const svg of svgs) {
+      if (svg.getAttribute('viewBox')) return svg as unknown as SVGElement
+    }
+    return null
+  }
+
+  it('#942: 趋势图 SVG viewBox 高度应 > 200（为日期标签留空间）', async () => {
+    render(<DashboardPage />)
+    await waitFor(() => {
+      const svg = findTrendSvg()
+      expect(svg).toBeTruthy()
+      const viewBox = svg!.getAttribute('viewBox')!
+      const parts = viewBox.split(/\s+/)
+      const h = Number(parts[3])
+      expect(h).toBeGreaterThan(200)
+    })
+  })
+
+  it('#942: 趋势图 SVG 应包含 polyline + circle 数据点', async () => {
+    render(<DashboardPage />)
+    await waitFor(() => {
+      const svg = findTrendSvg()
+      expect(svg).toBeTruthy()
+      const polylines = svg!.querySelectorAll('polyline')
+      const circles = svg!.querySelectorAll('circle')
+      expect(polylines.length).toBeGreaterThan(0)
+      expect(circles.length).toBeGreaterThan(0)
+    })
+  })
+
+  it('#942: 趋势图 SVG 应渲染日期标签 (MM-DD)', async () => {
+    render(<DashboardPage />)
+    await waitFor(() => {
+      const svg = findTrendSvg()
+      expect(svg).toBeTruthy()
+      const texts = svg!.querySelectorAll('text')
+      expect(texts.length).toBeGreaterThan(0)
+      const datePattern = /\d{2}-\d{2}/
+      const hasDateLabel = Array.from(texts).some(t => datePattern.test(t.textContent || ''))
+      expect(hasDateLabel).toBe(true)
+    })
+  })
+
+  it('#942: 数据全 0 时应正常渲染趋势图而非报错', async () => {
+    mockGetOrderTrend.mockResolvedValue({
+      data: { data: [
+        { date: '2026-06-11', orders: 0, amount: 0 },
+        { date: '2026-06-10', orders: 0, amount: 0 },
+      ] },
+    })
+    render(<DashboardPage />)
+    await waitFor(() => {
+      const svg = findTrendSvg()
+      expect(svg).toBeTruthy()
+      const polylines = svg!.querySelectorAll('polyline')
+      expect(polylines.length).toBeGreaterThan(0)
+    })
+  })
+
+  it('#942: 销售额趋势图 SVG viewBox 高度也应 > 200', async () => {
+    render(<DashboardPage />)
+    await waitFor(() => {
+      // 第二个带 viewBox 的 SVG 是销售额趋势图
+      const svgs = Array.from(document.querySelectorAll('svg')).filter(s => s.getAttribute('viewBox'))
+      expect(svgs.length).toBeGreaterThanOrEqual(2)
+      const viewBox = svgs[1].getAttribute('viewBox')!
+      const h = Number(viewBox.split(/\s+/)[3])
+      expect(h).toBeGreaterThan(200)
+    })
+  })
 })
