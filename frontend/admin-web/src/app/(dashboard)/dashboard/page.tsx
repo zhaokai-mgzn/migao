@@ -268,6 +268,14 @@ export default function DashboardPage() {
                 const step = Math.ceil(trendData.length / 7)
                 return (
                   <svg width="100%" height="100%" viewBox={`0 0 ${chartW} ${CHART_H}`} preserveAspectRatio="xMidYMid meet">
+                    {/* #942: 水平参考线 */}
+                    {[0, 0.25, 0.5, 0.75, 1].map(frac => {
+                      const yVal = Math.max(...values) * frac
+                      return (
+                        <line key={frac} x1="0" y1={toY(yVal)} x2={chartW} y2={toY(yVal)}
+                          stroke="#f0f0f0" strokeDasharray="3 3" />
+                      )
+                    })}
                     <polyline fill="none" stroke="#3B82F6" strokeWidth="2"
                       points={trendData.map((d, i) => `${i * 40 + 20},${toY(d.orders || 0)}`).join(' ')} />
                     {trendData.map((d, i) => (
@@ -296,15 +304,30 @@ export default function DashboardPage() {
               (() => {
                 const values = trendData.map(d => d.totalAmount || d.orders * 23.8 || 0)
                 const chartW = Math.max(trendData.length * 40, 300)
-                const CHART_H = 200, PAD_TOP = 12, PAD_BOTTOM = 12
+                const CHART_H = 200, PAD_TOP = 12, PAD_BOTTOM = 28
                 const toY = makeYScale(values, CHART_H, PAD_TOP, PAD_BOTTOM)
+                const step = Math.ceil(trendData.length / 7)
                 return (
                   <svg width="100%" height="100%" viewBox={`0 0 ${chartW} ${CHART_H}`} preserveAspectRatio="xMidYMid meet">
                     <defs><linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#3B82F6" stopOpacity="0.3" /><stop offset="100%" stopColor="#3B82F6" stopOpacity="0" /></linearGradient></defs>
+                    {/* #942: 水平参考线 */}
+                    {[0, 0.25, 0.5, 0.75, 1].map(frac => {
+                      const yVal = Math.max(...values) * frac
+                      return (
+                        <line key={frac} x1="0" y1={toY(yVal)} x2={chartW} y2={toY(yVal)}
+                          stroke="#f0f0f0" strokeDasharray="3 3" />
+                      )
+                    })}
                     <path fill="url(#areaGrad)"
                       d={`M 20 ${CHART_H - PAD_BOTTOM} ${trendData.map((d, i) => `L ${i * 40 + 20} ${toY(d.totalAmount || d.orders * 23.8 || 0)}`).join(' ')} L ${(trendData.length - 1) * 40 + 20} ${CHART_H - PAD_BOTTOM} Z`} />
                     <polyline fill="none" stroke="#3B82F6" strokeWidth="2"
                       points={trendData.map((d, i) => `${i * 40 + 20},${toY(d.totalAmount || d.orders * 23.8 || 0)}`).join(' ')} />
+                    {/* #942: X 轴日期标签 */}
+                    {trendData.filter((_, i) => i % step === 0).map((d, i) => (
+                      <text key={i} x={i * 40 * step + 20} y={CHART_H - 8} textAnchor="middle" fontSize="10" fill="#9CA3AF">
+                        {d.date?.slice(5)}
+                      </text>
+                    ))}
                   </svg>
                 )
               })()
