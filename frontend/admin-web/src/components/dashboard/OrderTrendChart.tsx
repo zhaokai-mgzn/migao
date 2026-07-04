@@ -54,20 +54,27 @@ export default function OrderTrendChart({ data, loading, onRangeChange }: OrderT
         <div className="h-[260px] flex items-center justify-center">
           <div className="animate-spin w-6 h-6 border-2 border-primary-500 border-t-transparent rounded-full" />
         </div>
+      ) : data.length === 0 ? (
+        <div className="h-[260px] flex items-center justify-center text-gray-400 text-sm">
+          暂无数据
+        </div>
       ) : (
         <ResponsiveContainer width="100%" height={260}>
-          <LineChart data={data} margin={{ top: 5, right: 5, left: -10, bottom: 5 }}>
+          <LineChart data={data} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
             <XAxis
               dataKey="date"
               tick={{ fontSize: 12, fill: '#8c8c8c' }}
               tickLine={false}
               axisLine={{ stroke: '#e8e8e8' }}
+              tickFormatter={(v: string) => v?.slice(5)}
             />
             <YAxis
               tick={{ fontSize: 12, fill: '#8c8c8c' }}
               tickLine={false}
               axisLine={false}
+              domain={[0, 'auto']}
+              allowDecimals={false}
             />
             <Tooltip
               contentStyle={{

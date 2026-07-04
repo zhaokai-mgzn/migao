@@ -3,11 +3,22 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 // Mock recharts to avoid jsdom dimension issues
+// Capture props on XAxis/YAxis/LineChart for assertions
 vi.mock('recharts', () => ({
-  LineChart: ({ children }: any) => <div data-testid="line-chart">{children}</div>,
+  LineChart: ({ children, margin }: any) => (
+    <div data-testid="line-chart" data-margin={JSON.stringify(margin)}>{children}</div>
+  ),
   Line: () => <div data-testid="line" />,
-  XAxis: () => <div data-testid="x-axis" />,
-  YAxis: () => <div data-testid="y-axis" />,
+  XAxis: (props: any) => (
+    <div data-testid="x-axis" data-tickformatter={props.tickFormatter ? 'present' : 'absent'} />
+  ),
+  YAxis: (props: any) => (
+    <div
+      data-testid="y-axis"
+      data-domain={JSON.stringify(props.domain)}
+      data-allowdecimals={String(props.allowDecimals ?? true)}
+    />
+  ),
   CartesianGrid: () => <div data-testid="cartesian-grid" />,
   Tooltip: () => <div data-testid="tooltip" />,
   ResponsiveContainer: ({ children }: any) => (
@@ -83,9 +94,49 @@ describe('OrderTrendChart', () => {
     expect(onRangeChange).toHaveBeenNthCalledWith(2, 7)
   })
 
-  it('renders chart even with empty data array', () => {
-    render(<OrderTrendChart data={[]} />)
-    expect(screen.getByTestId('responsive-container')).toBeInTheDocument()
+  // #942: A5 — empty data should show 暂无数据, not empty chart
+  it('shows 暂无数据 when data is empty and not loading', () => {
+    render(<OrderTrendChart data={[]} loading={false} />)
+    expect(screen.getByText('暂无数据')).toBeInTheDocument()
+    expect(screen.queryByTestId('responsive-container')).not.toBeInTheDocument()
+  })
+
+  // #942: A5 — loading spinner still shown even with empty data
+  it('shows loading spinner even with empty data when loading=true', () => {
+    render(<OrderTrendChart data={[]} loading={true} />)
+    expect(document.querySelector('.animate-spin')).toBeInTheDocument()
+    expect(screen.queryByText('暂无数据')).not.toBeInTheDocument()
+  })
+
+  // #942: A4 — YAxis should have domain prop to prevent zero-data chart collapse
+  it('YAxis has domain prop to prevent zero-data compression', () => {
+    render(<OrderTrendChart data={mockData} />)
+    const yAxis = screen.getByTestId('y-axis')
+    const domain = JSON.parse(yAxis.getAttribute('data-domain') || 'null')
+    expect(domain).toBeDefined()
+    expect(Array.isArray(domain)).toBe(true)
+  })
+
+  // #942: A4 — YAxis should have allowDecimals=false for order counts
+  it('YAxis has allowDecimals=false for integer order counts', () => {
+    render(<OrderTrendChart data={mockData} />)
+    const yAxis = screen.getByTestId('y-axis')
+    expect(yAxis.getAttribute('data-allowdecimals')).toBe('false')
+  })
+
+  // #942: L4-006 — margin.left should not be negative
+  it('chart margin.left is not negative', () => {
+    render(<OrderTrendChart data={mockData} />)
+    const chart = screen.getByTestId('line-chart')
+    const margin = JSON.parse(chart.getAttribute('data-margin') || '{}')
+    expect(margin.left).toBeGreaterThanOrEqual(0)
+  })
+
+  // #942: L4-007 — XAxis should have tickFormatter for MM-DD display
+  it('XAxis has tickFormatter for date MM-DD format', () => {
+    render(<OrderTrendChart data={mockData} />)
+    const xAxis = screen.getByTestId('x-axis')
+    expect(xAxis.getAttribute('data-tickformatter')).toBe('present')
   })
 
   it('renders all recharts sub-components', () => {

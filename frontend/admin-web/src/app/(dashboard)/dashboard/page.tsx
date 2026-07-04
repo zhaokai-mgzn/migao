@@ -268,7 +268,7 @@ export default function DashboardPage() {
                 const toY = makeYScale(trendData.map(d => d.orders || 0), CHART_H, PAD_TOP, PAD_BOTTOM)
                 const step = Math.ceil(trendData.length / 7)
                 return (
-                  <svg width="100%" height="100%" viewBox={`0 0 ${chartW} ${CHART_H}`} preserveAspectRatio="none">
+                  <svg width="100%" height="100%" viewBox={`0 0 ${chartW} ${CHART_H}`} preserveAspectRatio="xMidYMid meet">
                     <polyline fill="none" stroke="#3B82F6" strokeWidth="2"
                       points={trendData.map((d, i) => `${i * 40 + 20},${toY(d.orders || 0)}`).join(' ')} />
                     {trendData.map((d, i) => (
@@ -300,7 +300,7 @@ export default function DashboardPage() {
                 const PAD_TOP = 15, PAD_BOTTOM = 10
                 const toY = makeYScale(trendData.map(d => d.totalAmount || d.orders * 23.8 || 0), CHART_H, PAD_TOP, PAD_BOTTOM)
                 return (
-                  <svg width="100%" height="100%" viewBox={`0 0 ${chartW} ${CHART_H}`} preserveAspectRatio="none">
+                  <svg width="100%" height="100%" viewBox={`0 0 ${chartW} ${CHART_H}`} preserveAspectRatio="xMidYMid meet">
                     <defs><linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#3B82F6" stopOpacity="0.3" /><stop offset="100%" stopColor="#3B82F6" stopOpacity="0" /></linearGradient></defs>
                     <path fill="url(#areaGrad)"
                       d={`M 20 ${CHART_H - PAD_BOTTOM} ${trendData.map((d, i) => `L ${i * 40 + 20} ${toY(d.totalAmount || d.orders * 23.8 || 0)}`).join(' ')} L ${(trendData.length - 1) * 40 + 20} ${CHART_H - PAD_BOTTOM} Z`} />
