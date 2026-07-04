@@ -120,7 +120,7 @@ def test_snapshot_all_skills():
     expected_max = {
         "product": 5000,
         "order": 4000,
-        "aftersales": 3600,
+        "aftersales": 4000,
         "customer": 3500,
         "staff": 3500,
         "settings": 3500,

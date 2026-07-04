@@ -97,6 +97,7 @@ class TestBuildGraph:
             state = {
                 "route_decision": {"action": "full_agent"},
                 "intent_result": {"intent": intent},
+                "agent_type": "mibao",  # mibao uses _KNOWLEDGE_FALLBACK
             }
             result = route_by_intent(state)
             assert result == expected_skill, f"Intent '{intent}' routed to '{result}', expected '{expected_skill}'"

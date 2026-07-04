@@ -41,7 +41,7 @@ class TestInventoryAdjust:
         mock_get_client.return_value = mock_client
         result = await tool.execute(
             context=admin_tool_context, action="adjust",
-            product_id="prod-1", adjustment=50)
+            product_id="prod-1", adjustment=50, reason="adjust test")
         assert result.success is True
         # 验证 PUT body 包含 name
         call_args = mock_client.put.call_args
