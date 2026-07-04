@@ -6,6 +6,24 @@ class TestProductManageTool:
         from app.tools.product_manage import ProductManageTool
         assert ProductManageTool is not None
 
+    def test_update_product_fields(self):
+        """_update_product 包含完整的 12 字段处理（对抗性审查修复 #937）"""
+        from app.tools.product_manage import ProductManageTool
+        tool = ProductManageTool()
+        # 验证 tool 定义包含所有字段参数
+        import inspect
+        sig = inspect.signature(tool.execute)
+        params = list(sig.parameters.keys())
+        assert "colors" in params
+        assert "selling_methods" in params
+        assert "door_widths" in params
+        assert "brand" in params
+        assert "images" in params
+        assert "specifications" in params
+        assert "skus" in params
+        assert "sku_code" in params
+        assert "pricing_type" in params
+
 class TestCustomerManageTool:
     def test_class_exists(self):
         from app.tools.customer_manage import CustomerManageTool

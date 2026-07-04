@@ -130,9 +130,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             log.warn("JWT Token 已过期: {}", e.getMessage());
             filterChain.doFilter(request, response);
         } catch (Exception e) {
-            // 认证基础设施故障（如 Redis 不可达导致黑名单检查失败）
-            // 不阻塞请求但记录完整异常以便排查；SecurityContext 未设置，下游鉴权仍生效
-            log.error("JWT 认证异常（请求继续未认证状态）: {}", e.getMessage(), e);
+            // ⚠️ 静默失败风险：此 catch 捕获所有非 Redis 的认证异常（JWT 解析失败、NPE、类加载异常等），
+            // 仅记录日志后放行请求。SecurityContext 未设置，下游鉴权会以 401/403 拒绝，但异常根因可能
+            // 被淹没在大量 WARN/ERROR 日志中。如果此处误吞了关键基础设施故障（如配置错误、依赖缺失），
+            // 会导致所有请求静默降级为匿名访问，而不会以 500 快速暴露问题。
+            // 排查时优先搜索 "JWT 认证异常" 关键词，确认是否出现高频/非预期异常。
+            log.error("JWT 认证异常（请求继续未认证状态，存在静默降级风险）: {}", e.getMessage(), e);
             filterChain.doFilter(request, response);
         } finally {
             // 确保在请求处理完成后清理租户上下文，防止线程复用导致数据泄漏

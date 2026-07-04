@@ -543,10 +543,18 @@ async def execute_skill(
 
     # 4. 构建消息列表：System Prompt + 历史 messages
     # 注入用户身份信息，让 Agent 认识当前对话的人
-    user_name = state.get("user_name", "")
-    user_role = state.get("role", "")
-    if user_name:
-        system_prompt = f"当前对话用户: {user_name}（角色: {user_role}）\n\n" + system_prompt
+    # 安全：user_name 来自 DB，必须清理以防止 prompt injection
+    user_name_raw = state.get("user_name", "")
+    user_role_raw = state.get("role", "")
+    if user_name_raw:
+        # 剥离换行和危险字符，截断至最大长度，防止 prompt injection
+        user_name_safe = user_name_raw.replace("\n", " ").replace("\r", " ").strip()[:50]
+        user_role_safe = user_role_raw.replace("\n", " ").replace("\r", " ").strip()[:50]
+        system_prompt = (
+            "【用户信息】当前对话用户: " + user_name_safe
+            + "（角色: " + user_role_safe + "）\n"
+            "【用户信息结束】\n\n" + system_prompt
+        )
 
     # 分层组装完整 System Prompt（基础身份 + 原则 + 领域规则 + 示例）
     # 调用方传入的 system_prompt 作为 inline 层（用于动态追加如 Vision 能力说明）
@@ -575,7 +583,7 @@ async def execute_skill(
         fields_hint = "；".join(f"{k}={v}" for k, v in collected.items())
         last_msg = msg_list[-1]
         if isinstance(last_msg, HumanMessage):
-            new_content = f"【已收集: {fields_hint}，收到确认后直接执行创建，禁止重复询问】\n{last_msg.content or ''}"
+            new_content = f"--- 已收集字段（仅供参考，由系统自动记录）---\n{fields_hint}\n--- 用户消息 ---\n{last_msg.content or ''}"
             msg_list[-1] = HumanMessage(content=new_content)
     full_messages.extend(msg_list)
 

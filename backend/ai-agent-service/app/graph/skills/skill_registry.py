@@ -152,6 +152,19 @@ class SkillRegistry:
 
         返回的字典可直接替代 nodes.py 中的 _INTENT_TO_ROUTE 硬编码映射。
 
+        **B-side / C-side 耦合设计（两层间接路由）：**
+
+        全局 intent→route_key 映射仅从 B 端（mibao）Skill 构建。
+        C 端（xiaobu）Skill 不参与此全局映射，转而使用 builder.py 中
+        每个 agent 独立的 ``skill_route_map``，将 B 端的 route_key 重映射
+        到 C 端对应的 Skill 节点。
+
+        两层间接路由意味着：
+        1. B 端 Skill 变更（新增/删除 intent）会影响 xiaobu 的路由。
+        2. C 端 intent 通过 B 端 route_key 名称进行映射 ——
+           route_key 是两端共享的约定名称，不是内部实现标识。
+        3. **修改 B 端 intent 时，必须验证 xiaobu 路由仍然正常。**
+
         Args:
             persona: 按 persona 过滤 Skill（None 表示不过滤，返回全部）。
                      默认 "mibao"，避免 C 端 skill 的意图覆盖 B 端映射。

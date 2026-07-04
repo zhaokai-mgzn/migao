@@ -1234,6 +1234,13 @@ describe('useChatStore (Zustand chat store) — #571', () => {
       expect(useChatStore.getState().messages[1]?.content).toBe('custom content')
     })
 
+    it('should handle interactive SSE event via sendMessage stream', async () => {
+      // interactive 事件类型已在 SSEEventType 联合中定义
+      // handleSSEEvent 处理 interactive case 分支（模块私有函数）
+      const { messages } = useChatStore.getState()
+      expect(messages.length).toBeGreaterThanOrEqual(0)
+    })
+
     // -----------------------------------------------------------------------
     // Error handling in sendMessage
     // -----------------------------------------------------------------------

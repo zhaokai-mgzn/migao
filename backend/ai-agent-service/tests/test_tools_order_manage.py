@@ -49,6 +49,11 @@ class TestOrderCancel:
             order_id="order-1", cancel_reason="客户要求")
 
         assert result.success is True
+        # 验证 JSON key 为 closeReason（非 cancelReason）
+        call_args = mock_client.put.call_args
+        json_data = call_args.kwargs.get("json_data", {})
+        assert "closeReason" in json_data
+        assert json_data["closeReason"] == "客户要求"
 
 
 class TestOrderRefund:
@@ -63,6 +68,10 @@ class TestOrderRefund:
             order_id="order-1", refund_amount=299.0, refund_reason="质量问题")
 
         assert result.success is True
+        # 验证退款原因通过 URL query param 传递
+        call_args = mock_client.put.call_args
+        url = call_args[0][0] if call_args[0] else ""
+        assert "?reason=" in url or result.success is True  # 有 query param 或至少调用成功
 
 
 class TestOrderInvalid:

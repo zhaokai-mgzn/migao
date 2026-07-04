@@ -10,7 +10,7 @@ from app.graph.skills.skill_config import SkillConfig
 
 # 系统配置 Skill 可用的 Tool 列表
 # category_manage 归属 product_skill，不在 settings 域
-SETTINGS_TOOLS = ["settings_manage", "notification_manage", "quick_reply_manage"]
+SETTINGS_TOOLS = ["validate_input", "settings_manage", "notification_manage", "quick_reply_manage"]
 
 # 系统配置 Skill 专用 System Prompt
 SETTINGS_SYSTEM_PROMPT = """当前对话聚焦在系统设置、AI 配置、站内通知、快捷回复模板等管理事务，但不要自我设限也不要拒绝其他领域问题。

@@ -326,7 +326,7 @@ class OrderManageTool(BaseTool):
 
         json_data: Dict[str, Any] = {}
         if cancel_reason:
-            json_data["cancelReason"] = cancel_reason
+            json_data["closeReason"] = cancel_reason
 
         response = await client.put(
             f"/api/admin/orders/{actual_id}/cancel",
@@ -418,8 +418,13 @@ class OrderManageTool(BaseTool):
             json_data["refund_amount"] = refund_amount
         if refund_reason:
             json_data["refund_reason"] = refund_reason
+        # Build URL with refund_reason as query param for Java controller compatibility
+        url = f"/api/admin/orders/{order_id}/refund"
+        if refund_reason:
+            from urllib.parse import urlencode
+            url += "?" + urlencode({"reason": refund_reason})
         response = await client.put(
-            f"/api/admin/orders/{order_id}/refund",
+            url,
             json_data=json_data if json_data else None,
             tenant_id=context.tenant_id,
             user_id=context.user_id,

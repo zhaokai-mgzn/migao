@@ -81,7 +81,7 @@ services:
       DASHVECTOR_API_KEY: ${DASHVECTOR_API_KEY:-}
       DASHVECTOR_ENDPOINT: ${DASHVECTOR_ENDPOINT:-}
     ports:
-      - "8000:8000"
+      - "8001:8000"
     depends_on:
       postgres:
         condition: service_healthy

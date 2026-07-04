@@ -39,9 +39,6 @@ public class ServiceTokenFilter extends OncePerRequestFilter {
     private static final String SERVICE_ROLE = "ROLE_SERVICE";
     private static final String SERVICE_USERNAME = "internal-service";
 
-    // 默认租户ID（当请求头未提供时使用）
-    private static final Long DEFAULT_TENANT_ID = 1L;
-
     @Override
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
@@ -90,6 +87,12 @@ public class ServiceTokenFilter extends OncePerRequestFilter {
                     log.warn("Service Token 验证失败");
                 }
             }
+        } catch (IllegalArgumentException e) {
+            log.warn("Service Token 认证参数错误: {}", e.getMessage());
+            response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+            response.setContentType("application/json;charset=UTF-8");
+            response.getWriter().write("{\"code\":400,\"message\":\"" + e.getMessage() + "\"}");
+            return;
         } catch (Exception e) {
             log.error("Service Token 认证失败: {}", e.getMessage());
         }
@@ -105,17 +108,18 @@ public class ServiceTokenFilter extends OncePerRequestFilter {
     }
 
     /**
-     * 解析租户ID，解析失败或为空时返回默认值
+     * 解析租户ID，缺失或无效时抛出 IllegalArgumentException。
+     * 内部服务调用必须显式传递租户ID，防止跨租户数据访问。
      */
     private Long parseTenantId(String tenantIdStr) {
-        if (StringUtils.hasText(tenantIdStr)) {
-            try {
-                return Long.valueOf(tenantIdStr.trim());
-            } catch (NumberFormatException e) {
-                log.warn("X-Tenant-Id 解析失败: '{}', 使用默认值 {}", tenantIdStr, DEFAULT_TENANT_ID);
-            }
+        if (!StringUtils.hasText(tenantIdStr)) {
+            throw new IllegalArgumentException("X-Tenant-Id 请求头缺失或为空，内部服务调用必须提供租户ID");
         }
-        return DEFAULT_TENANT_ID;
+        try {
+            return Long.valueOf(tenantIdStr.trim());
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("X-Tenant-Id 格式无效: '" + tenantIdStr + "'，必须为数字");
+        }
     }
 
     /**

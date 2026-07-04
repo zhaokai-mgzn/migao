@@ -152,19 +152,19 @@ class OrderControllerTest extends BaseControllerTest {
         @Test
         @DisplayName("退款成功 -> 200")
         void refund() throws Exception {
-            doNothing().when(orderService).refundOrder(ORDER_ID);
+            doNothing().when(orderService).refundOrder(eq(ORDER_ID), isNull());
 
             mockMvc.perform(put(BASE + "/" + ORDER_ID + "/refund"))
                     .andExpect(status().isOk());
 
-            verify(orderService).refundOrder(ORDER_ID);
+            verify(orderService).refundOrder(eq(ORDER_ID), isNull());
         }
 
         @Test
         @DisplayName("非可退款状态退款 -> 400")
         void refundInvalidStatus() throws Exception {
             doThrow(new BusinessException("INVALID_STATUS", "当前状态不允许退款", 400))
-                    .when(orderService).refundOrder(ORDER_ID);
+                    .when(orderService).refundOrder(eq(ORDER_ID), isNull());
 
             mockMvc.perform(put(BASE + "/" + ORDER_ID + "/refund"))
                     .andExpect(status().isBadRequest());

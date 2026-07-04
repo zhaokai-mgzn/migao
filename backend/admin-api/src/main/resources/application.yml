@@ -110,7 +110,7 @@ service:
     # Service Token 请求头名称
     header: X-Service-Token
     # Service Secret（用于验证服务间调用）
-    secret: ${SERVICE_TOKEN_SECRET:}
+    secret: ${SERVICE_TOKEN_SECRET:${SERVICE_TOKEN:}}
 
 # 阿里云 OSS 配置
 aliyun:

@@ -1,4 +1,5 @@
 package com.migao.admin.security;
+// 对抗性审查修复 #937：异常日志级别提升
 
 import com.migao.admin.config.TenantContext;
 import io.jsonwebtoken.Claims;
@@ -445,4 +446,5 @@ class JwtAuthenticationFilterTest {
         verify(filterChain).doFilter(request, response);
         verifyNoInteractions(jwtTokenProvider);
     }
+
 }

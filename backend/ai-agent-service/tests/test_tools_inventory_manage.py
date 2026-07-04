@@ -31,6 +31,23 @@ class TestInventoryQuery:
 
 class TestInventoryAdjust:
     @patch("app.tools.inventory_manage.get_admin_api_client")
+    async def test_adjust_includes_name_in_put(self, mock_get_client, tool, admin_tool_context):
+        """库存调整 PUT 请求包含 name 字段（避免 Java @NotBlank 校验失败）"""
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value={
+            "success": True, "data": {"name": "窗帘-欧式", "stock": 100}
+        })
+        mock_client.put = AsyncMock(return_value={"success": True})
+        mock_get_client.return_value = mock_client
+        result = await tool.execute(
+            context=admin_tool_context, action="adjust",
+            product_id="prod-1", adjustment=50)
+        assert result.success is True
+        # 验证 PUT body 包含 name
+        call_args = mock_client.put.call_args
+        assert "name" in call_args.kwargs.get("json_data", {})
+
+    @patch("app.tools.inventory_manage.get_admin_api_client")
     async def test_adjust(self, mock_get_client, tool, admin_tool_context):
         mock_client = AsyncMock()
         # adjust 先 get 查库存，再 put 调整

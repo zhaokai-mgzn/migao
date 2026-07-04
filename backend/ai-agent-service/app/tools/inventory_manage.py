@@ -276,7 +276,9 @@ class InventoryManageTool(BaseTool):
                 message="无法获取当前库存信息",
             )
         
-        current_stock = query_response.get("data", {}).get("stock", 0)
+        product_data = query_response.get("data", {})
+        current_stock = product_data.get("stock", 0)
+        product_name = product_data.get("name", "")
         new_stock = current_stock + adjustment
         
         if new_stock < 0:
@@ -289,7 +291,7 @@ class InventoryManageTool(BaseTool):
         # 更新库存
         response = await client.put(
             f"/api/admin/products/{product_id}",
-            json_data={"stock": new_stock},
+            json_data={"name": product_name, "stock": new_stock},
             tenant_id=context.tenant_id,
             user_id=context.user_id,
         )

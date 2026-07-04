@@ -113,9 +113,18 @@ class ValidateInputTool(BaseTool):
                 message="请提供要校验的参数",
             )
 
-        rules = _VALIDATION_RULES.get(target_tool, {}).get(target_action)
+        tool_rules = _VALIDATION_RULES.get(target_tool)
+        if tool_rules is None:
+            # 未知工具 → 拒绝校验，防止绕过
+            return ToolResult(
+                success=False,
+                error="未知的工具",
+                message=f"未知的工具或操作: {target_tool}/{target_action}，无法进行输入校验。请联系管理员确认工具是否已注册。",
+            )
+
+        rules = tool_rules.get(target_action)
         if not rules:
-            # 无校验规则 → 跳过（不是所有工具都有规则）
+            # 工具已注册但该操作无校验规则 → 跳过（不是所有操作都有规则）
             return ToolResult(
                 success=True,
                 data={"validated": True, "skipped": True},

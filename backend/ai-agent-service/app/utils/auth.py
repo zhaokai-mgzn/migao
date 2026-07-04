@@ -6,6 +6,7 @@ AI 智能客服系统 - 认证中间件模块
 2. JWT 用户身份验证：用于 C 端用户调用聊天 API
 """
 
+import secrets
 from typing import Optional, Dict, Any
 from enum import Enum
 import jwt
@@ -86,13 +87,13 @@ async def verify_service_token(
     # 与配置中的 SERVICE_TOKEN 比对
     # 注意：生产环境应该使用更安全的验证方式（如 HMAC 签名）
     expected_token = settings.SERVICE_TOKEN
-    
+
     if not expected_token:
         logger.warning("SERVICE_TOKEN not configured, skipping validation")
         return True
-    
-    if x_service_token != expected_token:
-        logger.warning(f"Service token authentication failed: invalid token provided (token_prefix={x_service_token[:8]}...)")
+
+    if not secrets.compare_digest(x_service_token, expected_token):
+        logger.warning("Service token authentication failed: invalid token provided")
         raise HTTPException(
             status_code=401,
             detail={

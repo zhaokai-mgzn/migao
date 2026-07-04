@@ -298,23 +298,26 @@ def _infer_stage(state: AgentState, intent_type: str = "") -> str:
 # 特殊意图 → direct_reply（不属于任何 skill，直接回复）
 _DIRECT_REPLY_INTENTS = {"greeting", "farewell", "capabilities"}
 
-# RAG 禁用期间知识库意图 fallback 到 general
+# RAG 禁用期间知识库意图 fallback 到 general（仅 mibao，其 knowledge skill 已禁用）
 _KNOWLEDGE_FALLBACK = {"knowledge_faq": "general", "knowledge_manage": "general"}
 
 
-def _get_intent_to_route() -> dict[str, str]:
+def _get_intent_to_route(agent_type: str = "") -> dict[str, str]:
     """意图→路由key映射。从 skill_registry 动态构建,避免硬编码不同步。"""
     from app.graph.skills.skill_registry import get_skill_registry
     intent_map = get_skill_registry().get_intent_to_route_map()
     for intent in _DIRECT_REPLY_INTENTS:
         intent_map[intent] = "direct_reply"
     intent_map["general"] = "general"
-    intent_map.update(_KNOWLEDGE_FALLBACK)
+    # knowledge fallback 仅对 mibao 生效（其 knowledge skill 已禁用）；
+    # xiaobu 的 customer_knowledge_skill 保留知识库路由
+    if agent_type == "mibao":
+        intent_map.update(_KNOWLEDGE_FALLBACK)
     return intent_map
 
 
-# 懒加载缓存
-_INTENT_TO_ROUTE: dict[str, str] | None = None
+# 懒加载缓存（按 agent_type 分桶，因为不同 agent 的 fallback 不同）
+_INTENT_TO_ROUTE: dict[str, dict[str, str]] = {}
 
 
 def _last_human_has_image(messages: list) -> bool:
@@ -420,6 +423,7 @@ def route_by_intent(state: AgentState) -> str:
             state["pending_interact_skill"] = ""
 
     global _INTENT_TO_ROUTE
-    if _INTENT_TO_ROUTE is None:
-        _INTENT_TO_ROUTE = _get_intent_to_route()
-    return _INTENT_TO_ROUTE.get(intent, "general")
+    agent_type = state.get("agent_type", "")
+    if agent_type not in _INTENT_TO_ROUTE:
+        _INTENT_TO_ROUTE[agent_type] = _get_intent_to_route(agent_type)
+    return _INTENT_TO_ROUTE[agent_type].get(intent, "general")

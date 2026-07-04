@@ -596,7 +596,7 @@ class OrderServiceTest {
         when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(testOrderItem));
 
         // when
-        orderService.refundOrder("order-001");
+        orderService.refundOrder("order-001", null);
 
         // then
         verify(orderMapper).updateById(argThat((Order o) ->
@@ -611,7 +611,7 @@ class OrderServiceTest {
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
 
         // when & then
-        assertThatThrownBy(() -> orderService.refundOrder("order-001"))
+        assertThatThrownBy(() -> orderService.refundOrder("order-001", null))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("不允许退款");
     }

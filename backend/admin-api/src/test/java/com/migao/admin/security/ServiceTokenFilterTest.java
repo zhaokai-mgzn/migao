@@ -5,6 +5,7 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import java.io.PrintWriter;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -84,43 +85,48 @@ class ServiceTokenFilterTest {
     }
 
     @Test
-    @DisplayName("有效 Service Token — 无 X-Tenant-Id 时使用默认租户ID=1")
+    @DisplayName("有效 Service Token — 无 X-Tenant-Id 时返回 400")
     void validToken_NoTenantIdHeader_UsesDefaultTenantId() throws ServletException, IOException {
         when(request.getHeader(HEADER_NAME)).thenReturn(SECRET);
         when(request.getHeader("X-Tenant-Id")).thenReturn(null);
+        PrintWriter writer = mock(PrintWriter.class);
+        when(response.getWriter()).thenReturn(writer);
 
         filter.doFilterInternal(request, response, filterChain);
 
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        assertThat(auth).isNotNull();
-        SecurityUser user = (SecurityUser) auth.getPrincipal();
-        assertThat(user.getTenantId()).isEqualTo(1L);
+        verify(response).setStatus(HttpServletResponse.SC_BAD_REQUEST);
+        verify(filterChain, never()).doFilter(request, response);
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
     }
 
     @Test
-    @DisplayName("有效 Service Token — X-Tenant-Id 为空字符串时使用默认值")
+    @DisplayName("有效 Service Token — X-Tenant-Id 为空字符串时返回 400")
     void validToken_EmptyTenantIdHeader_UsesDefault() throws ServletException, IOException {
         when(request.getHeader(HEADER_NAME)).thenReturn(SECRET);
         when(request.getHeader("X-Tenant-Id")).thenReturn("");
+        PrintWriter writer = mock(PrintWriter.class);
+        when(response.getWriter()).thenReturn(writer);
 
         filter.doFilterInternal(request, response, filterChain);
 
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        SecurityUser user = (SecurityUser) auth.getPrincipal();
-        assertThat(user.getTenantId()).isEqualTo(1L);
+        verify(response).setStatus(HttpServletResponse.SC_BAD_REQUEST);
+        verify(filterChain, never()).doFilter(request, response);
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
     }
 
     @Test
-    @DisplayName("有效 Service Token — X-Tenant-Id 为非数字时使用默认值")
+    @DisplayName("有效 Service Token — X-Tenant-Id 为非数字时返回 400")
     void validToken_NonNumericTenantId_UsesDefault() throws ServletException, IOException {
         when(request.getHeader(HEADER_NAME)).thenReturn(SECRET);
         when(request.getHeader("X-Tenant-Id")).thenReturn("not-a-number");
+        PrintWriter writer = mock(PrintWriter.class);
+        when(response.getWriter()).thenReturn(writer);
 
         filter.doFilterInternal(request, response, filterChain);
 
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        SecurityUser user = (SecurityUser) auth.getPrincipal();
-        assertThat(user.getTenantId()).isEqualTo(1L);
+        verify(response).setStatus(HttpServletResponse.SC_BAD_REQUEST);
+        verify(filterChain, never()).doFilter(request, response);
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
     }
 
     // ======================== 无效 / 缺失 Token 场景 ========================

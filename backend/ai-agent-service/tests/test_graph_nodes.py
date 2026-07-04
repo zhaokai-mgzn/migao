@@ -361,12 +361,31 @@ class TestRouteByIntent:
         assert route_by_intent(state) == "product"
 
     def test_knowledge_faq(self):
-        """knowledge_faq 路由到 general（知识库已禁用，fallback 到 general）"""
+        """knowledge_faq 路由到 general（mibao 知识库已禁用，fallback 到 general）"""
+        state = _make_state(
+            route_decision={"action": "full_agent"},
+            intent_result={"intent": "knowledge_faq"},
+            agent_type="mibao",
+        )
+        assert route_by_intent(state) == "general"
+
+    def test_knowledge_faq_non_mibao(self):
+        """knowledge_faq 非 mibao 时走 skill_registry 原始路由（xiaobu 保留知识库）"""
+        state = _make_state(
+            route_decision={"action": "full_agent"},
+            intent_result={"intent": "knowledge_faq"},
+            agent_type="xiaobu",
+        )
+        # xiaobu 不应用 _KNOWLEDGE_FALLBACK，走原始路由
+        assert route_by_intent(state) != "general"
+
+    def test_knowledge_faq_default_agent_type(self):
+        """knowledge_faq 默认 agent_type="" 不应用 fallback"""
         state = _make_state(
             route_decision={"action": "full_agent"},
             intent_result={"intent": "knowledge_faq"},
         )
-        assert route_by_intent(state) == "general"
+        assert route_by_intent(state) != "general"
 
     def test_after_sales(self):
         """after_sales 路由到 aftersales"""

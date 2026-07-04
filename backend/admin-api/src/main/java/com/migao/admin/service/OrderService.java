@@ -709,7 +709,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      * 仅允许已确认/生产中/已发货/已完成状态的订单退款，恢复库存和销量
      */
     @Transactional(rollbackFor = Exception.class)
-    public void refundOrder(String id) {
+    public void refundOrder(String id, String refundReason) {
         Order order = orderMapper.selectById(id);
         if (order == null) {
             throw BusinessException.notFound("订单");
@@ -722,14 +722,14 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
 
         String previousStatus = order.getStatus();
         order.setStatus("cancelled");
-        order.setCloseReason("退款");
+        order.setCloseReason(refundReason != null && !refundReason.isBlank() ? refundReason : "退款");
         orderMapper.updateById(order);
 
         // 已确认及以上的订单被退款时，恢复库存和销量
         if (!"pending".equals(previousStatus)) {
             restoreStockAndDecreaseSales(id);
         }
-        log.info("退款成功: id={}, previousStatus={}", id, previousStatus);
+        log.info("退款成功: id={}, previousStatus={}, refundReason={}", id, previousStatus, refundReason);
     }
 
     /**

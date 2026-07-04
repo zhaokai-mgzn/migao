@@ -21,6 +21,7 @@ import { useState } from 'react'
 import type { ChatMessage, ChatCard } from '@/types'
 
 import ToolResultCard from './ToolResultCard'
+import InteractiveMessage from './InteractiveMessage'
 
 export default function MessageList() {
   const { messages, isLoadingMessages, currentSessionId } =
@@ -134,6 +135,16 @@ function MessageBubble({ message }: { message: ChatMessage }) {
             {message.cards.map((card, index) => (
               <CardRenderer key={index} card={card} />
             ))}
+          </div>
+        )}
+
+        {/* 交互式组件 */}
+        {isAI && message.interactive && !message.isStreaming && (
+          <div className="mt-2 w-full">
+            <InteractiveMessage
+              interactive={message.interactive}
+              disabled={message.isStreaming}
+            />
           </div>
         )}
 

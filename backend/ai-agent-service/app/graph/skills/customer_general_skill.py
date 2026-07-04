@@ -14,7 +14,6 @@ CUSTOMER_GENERAL_TOOLS = [
     "product_detail",
     "order_query",
     "logistics_track",
-    "knowledge_search",
 ]
 
 # 客服通用 Skill 专用 System Prompt
@@ -23,8 +22,8 @@ CUSTOMER_GENERAL_SYSTEM_PROMPT = """你是"小布"，米高窗帘的智能客服
 核心原则：
 1. 准确性优先：不确定时告知顾客"我帮您查一下"
 2. 事实性数据（价格、库存、订单状态、物流信息）：必须通过工具查询，绝不编造
-3. 通用家纺知识（面料、风格、测量、保养）：优先查询知识库，知识库无结果时可基于专业知识回答，需注明为通用建议
-4. 本店特有信息（售后政策、加工定价、促销活动）：必须通过知识库或工具查询
+3. 通用家纺知识（面料、风格、测量、保养）：可基于专业知识回答，需注明为通用建议
+4. 本店特有信息（售后政策、加工定价、促销活动）：建议引导顾客联系人工客服确认
 5. 工具调用失败时给出友好提示，不暴露技术错误细节
 6. 所有写操作（修改订单、取消订单、管理商品、调整库存等）均不可执行
 
@@ -33,8 +32,6 @@ CUSTOMER_GENERAL_SYSTEM_PROMPT = """你是"小布"，米高窗帘的智能客服
 - 商品详情/价格/规格 → product_detail
 - 订单状态查询 → order_query
 - 物流追踪 → logistics_track
-- 面料知识/保养/安装/售后政策 → knowledge_search
-
 售后场景处理：
 - 耐心倾听顾客诉求，表达理解和歉意
 - 收集问题描述（订单号、问题类型、图片等）
@@ -63,7 +60,7 @@ CUSTOMER_GENERAL_SKILL_CONFIG = SkillConfig(
     domain="general",
     display_name="客服通用兜底",
     tool_names=CUSTOMER_GENERAL_TOOLS,
-    route_keys=["general", "aftersales", "customer", "staff", "settings", "data"],
+    route_keys=["general", "customer", "staff", "settings", "data"],
     intents=["general", "after_sales", "complaint", "customer_manage", "customer_query",
              "employee_manage", "staff_manage", "role_manage", "permission_manage",
              "system_settings", "ai_config", "notification", "quick_reply",

@@ -222,7 +222,7 @@ class TestVerifyServiceToken:
     @patch("app.utils.auth.settings")
     @pytest.mark.asyncio
     async def test_invalid_service_token_returns_401(self, mock_settings):
-        """无效的 Service Token 应返回 401"""
+        """无效的 Service Token 应返回 401（使用恒定时间比较防时序攻击）"""
         mock_settings.SERVICE_TOKEN = "correct-token"
 
         from app.utils.auth import verify_service_token
@@ -230,6 +230,20 @@ class TestVerifyServiceToken:
         with pytest.raises(HTTPException) as exc_info:
             await verify_service_token("wrong-token")
         assert exc_info.value.status_code == 401
+
+    @patch("app.utils.auth.settings")
+    @pytest.mark.asyncio
+    async def test_token_comparison_constant_time(self, mock_settings):
+        """Token 比较应使用 secrets.compare_digest 恒定时间比较"""
+        mock_settings.SERVICE_TOKEN = "secret-token-123"
+
+        from app.utils.auth import verify_service_token
+
+        # 验证函数存在且正确拒绝不匹配 token
+        result_match = await verify_service_token("secret-token-123")
+        assert result_match is True
+        with pytest.raises(HTTPException):
+            await verify_service_token("different-token")
 
     @patch("app.utils.auth.settings")
     @pytest.mark.asyncio

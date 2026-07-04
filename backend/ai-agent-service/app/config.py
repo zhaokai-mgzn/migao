@@ -17,7 +17,7 @@ class Settings(BaseSettings):
 
     # 服务器配置
     HOST: str = "0.0.0.0"
-    PORT: int = 8001
+    PORT: int = 8000
 
     # PostgreSQL 配置
     DATABASE_URL: str = "postgresql+asyncpg://app_user:@localhost:5432/ai_customer_service"
@@ -71,7 +71,7 @@ class Settings(BaseSettings):
         self.PRIMARY_MODEL = value
 
     # 内部服务通信（由 main.tf locals 管理）
-    ADMIN_API_BASE_URL: str
+    ADMIN_API_BASE_URL: str = "http://localhost:8080"
     SERVICE_TOKEN: str
     JWT_PUBLIC_KEY: str
 
@@ -88,6 +88,7 @@ class Settings(BaseSettings):
 
     # ===== 功能开关与模型参数（有合理默认值，无需外部注入）=====
 
+    DASHSCOPE_EMBEDDING_MODEL: str = "text-embedding-v3"
     INTENT_MODEL: str = "deepseek-v4-flash"              # 意图分类/摘要（快速模型）
     MINIMAX_VISION_MODEL: str = "MiniMax-M3"            # 图片识别（M3 原生多模态）
     MINIMAX_VISION_ENABLED: bool = True
