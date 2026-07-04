@@ -149,7 +149,13 @@ class AfterSalesManageTool(BaseTool):
             elif action == "detail":
                 return await self._get_detail(context, ticket_id)
             elif action == "create":
-                return await self._create_ticket(context, order_id, ticket_type, reason, description)
+                # 对抗编程：从 kwargs 提取被 LLM 传入但之前被丢弃的字段
+                return await self._create_ticket(
+                    context, order_id, ticket_type, reason, description,
+                    images=kwargs.get("images"),
+                    priority=kwargs.get("priority"),
+                    refund_amount=kwargs.get("refund_amount"),
+                )
             elif action == "update_status":
                 return await self._update_status(context, ticket_id, status, reason)
             else:
@@ -267,6 +273,9 @@ class AfterSalesManageTool(BaseTool):
         ticket_type: Optional[str],
         reason: Optional[str],
         description: Optional[str],
+        images: Optional[list] = None,
+        priority: Optional[str] = None,
+        refund_amount: Optional[float] = None,
     ) -> ToolResult:
         """创建售后工单"""
         if not order_id:
@@ -297,13 +306,19 @@ class AfterSalesManageTool(BaseTool):
                 message="创建售后工单时必须提供原因说明(reason)",
             )
 
+        # 对抗编程：reason → description 字段映射 + 透传所有可选字段
         json_data: Dict[str, Any] = {
             "orderId": order_id,
             "ticketType": ticket_type,
-            "reason": reason,
+            "description": description if description else reason,  # Java API 用 description
+            "source": "agent",
         }
-        if description:
-            json_data["description"] = description
+        if images:
+            json_data["images"] = images
+        if priority:
+            json_data["priority"] = priority
+        if refund_amount is not None:
+            json_data["refundAmount"] = refund_amount
 
         client = get_admin_api_client()
         response = await client.post(

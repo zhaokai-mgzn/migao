@@ -215,14 +215,16 @@ class AftersaleCreateTool(BaseTool):
             )
 
         try:
+            # 对抗编程：Java API 的 description 字段 = reason(简要) + description(详细)
+            desc_text = reason
+            if description:
+                desc_text = f"{reason} — {description}"
             json_data: Dict[str, Any] = {
                 "orderId": order_id,
                 "ticketType": ticket_type,
-                "description": reason,
+                "description": desc_text,
                 "source": "customer",
             }
-            if description:
-                json_data["description"] = description
             if images:
                 json_data["images"] = images
             if priority:

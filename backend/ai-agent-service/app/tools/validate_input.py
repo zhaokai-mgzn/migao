@@ -53,6 +53,10 @@ _VALIDATION_RULES: Dict[str, Dict[str, Any]] = {
             "ticket_type": {"type": str, "min_len": 1, "label": "工单类型(refund/exchange/repair/complaint/other)"},
             "order_id": {"type": str, "min_len": 1, "label": "关联订单ID"},
             "reason": {"type": str, "min_len": 1, "label": "原因说明"},
+            "description": {"type": str, "label": "详细描述"},
+            "images": {"type": list, "label": "凭证图片URL列表"},
+            "priority": {"type": str, "label": "优先级(normal/urgent/critical)"},
+            "refund_amount": {"type": (int, float), "min": 0, "label": "退款金额"},
         },
     },
     "employee_manage": {
