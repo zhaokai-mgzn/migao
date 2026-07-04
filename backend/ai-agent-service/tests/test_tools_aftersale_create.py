@@ -63,6 +63,11 @@ class TestAftersaleCreateSuccess:
         )
 
         assert result.success is True
+        # 验证 API 请求体使用 "description" 键（非 "reason"）
+        call_args = mock_client.post.call_args
+        json_data = call_args.kwargs.get("json_data", {})
+        assert "description" in json_data
+        assert json_data["description"] == "商品与描述不符"
         assert "as-cust-001" in str(result.data)
 
         # 验证先调了订单查询（get）再创建（post）

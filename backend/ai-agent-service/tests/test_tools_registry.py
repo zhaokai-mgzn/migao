@@ -53,7 +53,7 @@ class TestRegistryGetAll:
         assert len(tools) >= 2
         names = {t.name for t in tools}
         assert "validate_input" in names
-        assert "interact" in names
+        assert "interact" in names  # InteractTool 已重新启用（对抗性审查修复）
 
 
 class TestRegistryExecute:
