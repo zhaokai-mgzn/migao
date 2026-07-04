@@ -931,19 +931,14 @@ async def execute_skill(
     # 跨轮 skill 持久化
     creation_skills = {"product", "order", "aftersales"}
     if skill_name in creation_skills:
-        # 检查是否已完成创建/取消（清除 pending_skill）
-        created_or_cancelled = False
-        for m in new_messages:
-            if hasattr(m, 'tool_calls') and m.tool_calls:
-                for tc in m.tool_calls:
-                    args = tc.get("args", {})
-                    if tc.get("name") in ("product_manage", "order_create", "after_sales_manage") and args.get("action") in (None, "create"):
-                        created_or_cancelled = True
-        if any(kw in final_content for kw in ["已取消","取消","算了","不创建了"]):
-            created_or_cancelled = True
+        # 成功完成: LLM 明确说创建/下单成功
+        success_markers = ("创建成功", "已创建", "下单成功", "工单已创建", "售后工单")
+        has_succeeded = any(kw in final_content for kw in success_markers)
+        # 用户取消: LLM 识别到取消意图
+        has_cancelled = any(kw in final_content for kw in ("已取消", "取消", "算了", "不创建了"))
 
-        if created_or_cancelled:
-            # 创建完成或用户取消 → 清除 pending_skill，释放路由锁
+        if has_succeeded or has_cancelled:
+            # 流程结束 → 清除 pending_skill，释放路由锁
             try:
                 from app.memory.session_memory import SessionMemory
                 sm = SessionMemory()
@@ -951,14 +946,15 @@ async def execute_skill(
             except Exception:
                 pass
         else:
-            # 仍在创建流程中 → 保持 pending_skill，不依赖关键词匹配
+            # 仍在创建流程中 → 始终保持 pending_skill
+            # 注: route_by_intent 的 escape hatch (msg>10字符) 仍然允许用户主动切换话题
             result["pending_interact_skill"] = skill_name
             try:
                 from app.memory.session_memory import SessionMemory
                 sm = SessionMemory()
                 await sm.set_pending_skill(session_id, skill_name)
             except Exception:
-                pass  # 持久化失败不影响本轮响应
+                pass
 
     # ── 跨轮字段记忆：LLM 从对话中提取所有已讨论字段 ──
     if session_id and final_content and skill_name in creation_skills:
@@ -966,18 +962,12 @@ async def execute_skill(
         sm = SessionMemory()
         fields = await sm.get_collected_fields(session_id)
 
-        # 检测创建成功/取消 → 清除记忆
-        created_or_cancelled = False
-        for m in new_messages:
-            if hasattr(m, 'tool_calls') and m.tool_calls:
-                for tc in m.tool_calls:
-                    args = tc.get("args", {})
-                    if tc.get("name") in ("product_manage", "order_create", "after_sales_manage") and args.get("action") in (None, "create"):
-                        created_or_cancelled = True
-        if any(kw in final_content for kw in ["已取消","取消","算了","不创建了"]):
-            created_or_cancelled = True
+        # 创建成功或取消 → 清除字段记忆
+        success_markers = ("创建成功", "已创建", "下单成功", "工单已创建", "售后工单")
+        has_succeeded = any(kw in final_content for kw in success_markers)
+        has_cancelled = any(kw in final_content for kw in ("已取消", "取消", "算了", "不创建了"))
 
-        if created_or_cancelled:
+        if has_succeeded or has_cancelled:
             await sm.clear_collected_fields(session_id)
         else:
             # LLM 从本轮对话中提取新增字段（轻量任务，显式关思考）
