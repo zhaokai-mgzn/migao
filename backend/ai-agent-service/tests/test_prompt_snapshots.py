@@ -133,3 +133,10 @@ def test_snapshot_all_skills():
             f"{skill}: prompt 长度 {len(prompt)} > 上限 {expected_max[skill]}。"
             f"检查是否重复拼接了内容。"
         )
+        # 90% 预警：接近上限时输出 WARNING，便于提前发现膨胀趋势
+        if len(prompt) > max_len * 0.9:
+            import warnings
+            warnings.warn(
+                f"⚠️  {skill}: prompt 长度 {len(prompt)}/{max_len} "
+                f"({len(prompt)*100//max_len}%) — 接近上限，新内容需精简"
+            )
