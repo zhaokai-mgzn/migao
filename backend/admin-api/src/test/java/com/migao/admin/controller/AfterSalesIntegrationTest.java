@@ -104,7 +104,7 @@ class AfterSalesIntegrationTest {
         AfterSalesDetailResponse response = buildTicketDetail("ticket-001", "AS20250425001", "pending");
         response.setRefundAmount(new BigDecimal("1500.00"));
 
-        when(afterSalesTicketService.createTicket(any(AfterSalesCreateRequest.class), eq(1L)))
+        when(afterSalesTicketService.createTicket(any(AfterSalesCreateRequest.class), eq(1L), anyString()))
                 .thenReturn(response);
 
         // When & Then
@@ -119,7 +119,7 @@ class AfterSalesIntegrationTest {
                 .andExpect(jsonPath("$.data.ticketType").value("return"))
                 .andExpect(jsonPath("$.data.customerName").value("张三"));
 
-        verify(afterSalesTicketService).createTicket(any(AfterSalesCreateRequest.class), eq(1L));
+        verify(afterSalesTicketService).createTicket(any(AfterSalesCreateRequest.class), eq(1L), anyString());
     }
 
     // ======================== 查询工单列表 ========================

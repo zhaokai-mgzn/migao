@@ -160,7 +160,7 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
      * @return 工单详情响应
      */
     @Transactional(rollbackFor = Exception.class)
-    public AfterSalesDetailResponse createTicket(AfterSalesCreateRequest request, Long tenantId) {
+    public AfterSalesDetailResponse createTicket(AfterSalesCreateRequest request, Long tenantId, String operator) {
         // 校验关联订单是否存在
         Order order = orderMapper.selectById(request.getOrderId());
         if (order == null) {
@@ -188,7 +188,21 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
 
         afterSalesTicketMapper.insert(ticket);
 
-        log.info("创建售后工单成功: id={}, ticketNo={}, orderId={}", ticket.getId(), ticket.getTicketNo(), request.getOrderId());
+        // 写入创建时间线记录
+        TicketTimeline createdTimeline = new TicketTimeline();
+        createdTimeline.setTicketId(ticket.getId());
+        createdTimeline.setTenantId(tenantId);
+        createdTimeline.setAction("created");
+        createdTimeline.setActorType("agent");
+        createdTimeline.setActorId(operator);
+        Map<String, Object> createdContent = new HashMap<>();
+        createdContent.put("remark", "工单创建");
+        createdTimeline.setContent(createdContent);
+        createdTimeline.setCreatedAt(ticket.getCreatedAt());
+        ticketTimelineMapper.insert(createdTimeline);
+
+        log.info("创建售后工单成功: id={}, ticketNo={}, orderId={}, operator={}",
+            ticket.getId(), ticket.getTicketNo(), request.getOrderId(), operator);
 
         return getTicketById(ticket.getId());
     }
@@ -225,9 +239,18 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
 
         ticket.setStatus(newStatus);
 
-        // 保存 internalNotes（前端/米宝传来的备注写入 internal_notes）
+        // 追加备注到 internal_notes（不覆盖历史评论）
         if (StringUtils.hasText(request.getRemark())) {
-            ticket.setInternalNotes(request.getRemark());
+            String timestamp = OffsetDateTime.now()
+                .format(DateTimeFormatter.ofPattern("MM-dd HH:mm"));
+            String newNote = String.format("[%s] %s → %s: %s",
+                timestamp, currentStatus, newStatus, request.getRemark());
+            String existing = ticket.getInternalNotes();
+            if (StringUtils.hasText(existing)) {
+                ticket.setInternalNotes(existing + "\n" + newNote);
+            } else {
+                ticket.setInternalNotes(newNote);
+            }
         }
 
         // 如果是关闭或拒绝，记录关闭时间和原因
@@ -376,8 +399,13 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
                 Map<String, Object> content = tl.getContent() instanceof Map
                     ? (Map<String, Object>) tl.getContent() : null;
                 if (content != null) {
-                    item.setStatus(String.valueOf(content.getOrDefault("to", "")));
+                    String toStatus = String.valueOf(content.getOrDefault("to", ""));
+                    // "created" 动作没有 to 状态，默认 pending
+                    item.setStatus(toStatus.isEmpty() ? "pending" : toStatus);
                     item.setRemark(String.valueOf(content.getOrDefault("remark", "")));
+                }
+                if (tl.getActorId() != null) {
+                    item.setOperator(tl.getActorId());
                 }
                 if (tl.getCreatedAt() != null) {
                     item.setTime(tl.getCreatedAt().toString());
@@ -385,7 +413,7 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
                 history.add(item);
             }
         } else {
-            // 兜底：ticket_timeline 无数据时，生成简单的创建记录
+            // 兜底：ticket_timeline 无数据时（仅历史数据），生成简单记录
             if (ticket.getCreatedAt() != null) {
                 AfterSalesDetailResponse.StatusHistoryItem created =
                     new AfterSalesDetailResponse.StatusHistoryItem();

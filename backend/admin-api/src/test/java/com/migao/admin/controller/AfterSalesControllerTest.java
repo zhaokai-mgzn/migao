@@ -167,7 +167,7 @@ class AfterSalesControllerTest extends BaseControllerTest {
         void createExchange() throws Exception {
             AfterSalesDetailResponse d = buildTicket(TICKET_ID, "pending", "exchange");
 
-            when(afterSalesTicketService.createTicket(any(AfterSalesCreateRequest.class), eq(TEST_TENANT_ID)))
+            when(afterSalesTicketService.createTicket(any(AfterSalesCreateRequest.class), eq(TEST_TENANT_ID), anyString()))
                     .thenReturn(d);
 
             String body = """
@@ -230,14 +230,14 @@ class AfterSalesControllerTest extends BaseControllerTest {
         @Test
         @DisplayName("创建工单携带租户 ID")
         void createPassesTenantId() throws Exception {
-            when(afterSalesTicketService.createTicket(any(AfterSalesCreateRequest.class), eq(TEST_TENANT_ID)))
+            when(afterSalesTicketService.createTicket(any(AfterSalesCreateRequest.class), eq(TEST_TENANT_ID), anyString()))
                     .thenReturn(buildTicket(TICKET_ID, "pending", "return"));
 
             String body = "{\"orderId\":\"order-001\",\"ticketType\":\"return\",\"description\":\"test\"}";
 
             mockMvc.perform(post(BASE).contentType(MediaType.APPLICATION_JSON).content(body));
 
-            verify(afterSalesTicketService).createTicket(any(AfterSalesCreateRequest.class), eq(TEST_TENANT_ID));
+            verify(afterSalesTicketService).createTicket(any(AfterSalesCreateRequest.class), eq(TEST_TENANT_ID), anyString());
         }
 
         @Test

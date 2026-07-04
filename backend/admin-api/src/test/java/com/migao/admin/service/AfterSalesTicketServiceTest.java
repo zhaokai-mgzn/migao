@@ -224,7 +224,7 @@ class AfterSalesTicketServiceTest {
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
 
         // when
-        AfterSalesDetailResponse result = afterSalesTicketService.createTicket(request, 1L);
+        AfterSalesDetailResponse result = afterSalesTicketService.createTicket(request, 1L, "test-user");
 
         // then
         assertThat(result).isNotNull();
@@ -245,7 +245,7 @@ class AfterSalesTicketServiceTest {
         when(orderMapper.selectById("nonexistent-order")).thenReturn(null);
 
         // when & then
-        assertThatThrownBy(() -> afterSalesTicketService.createTicket(request, 1L))
+        assertThatThrownBy(() -> afterSalesTicketService.createTicket(request, 1L, "test-user"))
                 .isInstanceOf(BusinessException.class)
                 .hasMessage("关联订单不存在");
     }
@@ -426,8 +426,9 @@ class AfterSalesTicketServiceTest {
         // when
         afterSalesTicketService.updateTicketStatus("ticket-test-001", request);
 
-        // then: internalNotes应被设置
-        assertThat(testTicket.getInternalNotes()).isEqualTo("已分配给客服张三处理");
+        // then: internalNotes应包含 time/status/remark（追加格式）
+        assertThat(testTicket.getInternalNotes()).contains("已分配给客服张三处理");
+        assertThat(testTicket.getInternalNotes()).contains("pending → processing");
         assertThat(testTicket.getStatus()).isEqualTo("processing");
         verify(afterSalesTicketMapper).updateById(testTicket);
         // 验证timeline被写入

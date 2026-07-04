@@ -2,10 +2,13 @@ package com.migao.admin.controller;
 
 import com.migao.admin.dto.*;
 import com.migao.admin.config.TenantContext;
+import com.migao.admin.security.SecurityUser;
 import com.migao.admin.service.AfterSalesTicketService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 /**
@@ -65,8 +68,22 @@ public class AfterSalesController {
     public ApiResponse<AfterSalesDetailResponse> createTicket(@Valid @RequestBody AfterSalesCreateRequest request) {
         log.info("创建售后工单: orderId={}, ticketType={}", request.getOrderId(), request.getTicketType());
         Long tenantId = TenantContext.getTenantId();
-        AfterSalesDetailResponse ticket = afterSalesTicketService.createTicket(request, tenantId);
+        String operator = getCurrentOperator();
+        AfterSalesDetailResponse ticket = afterSalesTicketService.createTicket(request, tenantId, operator);
         return ApiResponse.success(ticket);
+    }
+
+    /** 从 SecurityContext 提取当前操作人信息 */
+    private String getCurrentOperator() {
+        try {
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            if (auth != null && auth.getPrincipal() instanceof SecurityUser securityUser) {
+                return securityUser.getUsername();
+            }
+        } catch (Exception ignored) {
+            // 非 Web 上下文或无认证信息时降级
+        }
+        return "系统";
     }
 
     /**
