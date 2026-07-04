@@ -167,6 +167,29 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
             throw BusinessException.validationError("关联订单不存在");
         }
 
+        // 防重复：检查该订单是否已有活跃工单
+        List<AfterSalesTicket> activeTickets = afterSalesTicketMapper.selectList(
+            new LambdaQueryWrapper<AfterSalesTicket>()
+                .eq(AfterSalesTicket::getOrderId, request.getOrderId())
+                .in(AfterSalesTicket::getStatus, "pending", "processing")
+        );
+        if (!activeTickets.isEmpty()) {
+            boolean hasSameType = activeTickets.stream()
+                .anyMatch(t -> request.getTicketType().equals(t.getTicketType()));
+            if (hasSameType) {
+                throw BusinessException.validationError(
+                    String.format("该订单已有 %s 类型的活跃工单（%s），请先处理后再创建",
+                        request.getTicketType(),
+                        activeTickets.get(0).getTicketNo()));
+            }
+            // 不同类型 → 记录警告但不阻止
+            log.warn("订单 {} 已有活跃工单 {}（类型={}），新建不同类型工单（{}）",
+                request.getOrderId(),
+                activeTickets.get(0).getTicketNo(),
+                activeTickets.get(0).getTicketType(),
+                request.getTicketType());
+        }
+
         // 创建工单实体
         AfterSalesTicket ticket = new AfterSalesTicket();
         ticket.setTenantId(tenantId);

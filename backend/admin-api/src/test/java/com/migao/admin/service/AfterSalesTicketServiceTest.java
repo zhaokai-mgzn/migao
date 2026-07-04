@@ -198,6 +198,8 @@ class AfterSalesTicketServiceTest {
         request.setImages(List.of("https://example.com/evidence.jpg"));
 
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        // 该订单无活跃工单 → 允许创建
+        when(afterSalesTicketMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
         when(afterSalesTicketMapper.insert(any(AfterSalesTicket.class))).thenAnswer(invocation -> {
             AfterSalesTicket t = invocation.getArgument(0);
             t.setId("ticket-new");
@@ -248,6 +250,54 @@ class AfterSalesTicketServiceTest {
         assertThatThrownBy(() -> afterSalesTicketService.createTicket(request, 1L, "test-user"))
                 .isInstanceOf(BusinessException.class)
                 .hasMessage("关联订单不存在");
+    }
+
+    @Test
+    @DisplayName("创建工单被拒 — 同类型活跃工单已存在")
+    void createTicket_DuplicateSameType() {
+        AfterSalesCreateRequest request = new AfterSalesCreateRequest();
+        request.setOrderId("order-001");
+        request.setTicketType("return");
+        request.setDescription("又一个退货");
+
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        // 该订单已有 pending 状态的 return 工单
+        when(afterSalesTicketMapper.selectList(any(LambdaQueryWrapper.class)))
+            .thenReturn(List.of(testTicket));
+
+        assertThatThrownBy(() -> afterSalesTicketService.createTicket(request, 1L, "test-user"))
+            .isInstanceOf(BusinessException.class)
+            .hasMessageContaining("已有")
+            .hasMessageContaining("return");
+    }
+
+    @Test
+    @DisplayName("创建工单允许 — 不同类型活跃工单（警告不阻止）")
+    void createTicket_DifferentTypeAllowed() {
+        AfterSalesCreateRequest request = new AfterSalesCreateRequest();
+        request.setOrderId("order-001");
+        request.setTicketType("complaint");
+        request.setDescription("投诉问题");
+
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        // 已有 return 工单，新建 complaint → 允许
+        when(afterSalesTicketMapper.selectList(any(LambdaQueryWrapper.class)))
+            .thenReturn(List.of(testTicket));
+        when(afterSalesTicketMapper.insert(any(AfterSalesTicket.class))).thenAnswer(inv -> {
+            AfterSalesTicket t = inv.getArgument(0);
+            t.setId("ticket-complaint");
+            return 1;
+        });
+        when(afterSalesTicketMapper.selectById("ticket-complaint"))
+            .thenReturn(AfterSalesTicket.builder().id("ticket-complaint").tenantId(1L)
+                .ticketNo("AS-test").orderId("order-001").customerId("张三")
+                .ticketType("complaint").status("pending").description("投诉问题")
+                .priority("normal").source("agent")
+                .createdAt(OffsetDateTime.now()).updatedAt(OffsetDateTime.now()).build());
+
+        AfterSalesDetailResponse result = afterSalesTicketService.createTicket(request, 1L, "test-user");
+        assertThat(result).isNotNull();
+        assertThat(result.getTicketType()).isEqualTo("complaint");
     }
 
     // ======================== 更新工单状态测试 ========================
