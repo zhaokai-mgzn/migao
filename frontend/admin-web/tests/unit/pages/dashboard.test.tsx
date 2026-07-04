@@ -197,6 +197,28 @@ describe('DashboardPage', () => {
     })
   })
 
+  it('SVG viewBox height should be ≥ 230 for date label space (A1 fix)', async () => {
+    const { container } = render(<DashboardPage />)
+    await waitFor(() => {
+      const trendSvg = container.querySelector('svg[viewBox]')
+      expect(trendSvg).toBeTruthy()
+      const viewBox = trendSvg!.getAttribute('viewBox') || ''
+      const parts = viewBox.split(' ')
+      const height = parseInt(parts[3] || '0', 10)
+      expect(height).toBeGreaterThanOrEqual(230)
+    })
+  })
+
+  it('SVG should not use preserveAspectRatio="none" (A3 fix)', async () => {
+    const { container } = render(<DashboardPage />)
+    await waitFor(() => {
+      const trendSvg = container.querySelector('svg[viewBox]')
+      expect(trendSvg).toBeTruthy()
+      const preserveAspectRatio = trendSvg!.getAttribute('preserveAspectRatio')
+      expect(preserveAspectRatio).not.toBe('none')
+    })
+  })
+
   // ── 近期订单 ──
 
   it('should render recent orders table', async () => {
