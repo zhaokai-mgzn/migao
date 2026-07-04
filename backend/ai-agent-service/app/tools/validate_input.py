@@ -15,7 +15,7 @@ from app.tools.base import BaseTool, ToolContext, ToolResult
 _VALIDATION_RULES: Dict[str, Dict[str, Any]] = {
     "product_manage": {
         "create": {
-            "required": ["name", "price"],
+            "required": ["name", "price", "category_id"],
             "name": {"type": str, "min_len": 1, "label": "商品名称"},
             "price": {"type": (int, float), "min": 0, "label": "价格"},
             "stock_quantity": {"type": int, "min": 0, "label": "库存数量"},
