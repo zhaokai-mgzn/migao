@@ -44,6 +44,22 @@ def _normalize_number(val):
         except (ValueError, TypeError): return val
     return val
 
+
+def _auto_generate_sku_code(name: str) -> str:
+    """LLM 没传货号时自动生成，对抗编程——不依赖 LLM 记得传 sku_code
+
+    策略：
+    1. 提取名称中的英文/数字（如 "YUUR 2699" → "YUUR2699"）
+    2. 都没有 → 用名称 MD5 前 8 位
+    """
+    import re, hashlib
+    # 提取名称中的英文和数字
+    alnum = ''.join(re.findall(r'[A-Za-z0-9]', name))
+    if len(alnum) >= 3:
+        return alnum[:12].upper()
+    # 拼音首字母需要第三方库，这里用 MD5 兜底
+    return hashlib.md5(name.encode()).hexdigest()[:8].upper()
+
 async def _resolve_category_id(category_id, context):
     """从分类树按名称匹配解析为真实UUID。不信任LLM直接传的值（可能被截断/编造）。"""
     if not category_id: return category_id
@@ -503,6 +519,11 @@ class ProductManageTool(BaseTool):
             json_data["skus"] = skus
         if sku_code:
             json_data["skuCode"] = sku_code
+        elif name:
+            # 对抗编程：LLM 没传货号时自动生成，不依赖 prompt 约束
+            auto_code = _auto_generate_sku_code(name)
+            json_data["skuCode"] = auto_code
+            logger.info(f"[product_manage] Auto-generated sku_code: {auto_code} for product: {name}")
         if specifications:
             if isinstance(specifications, dict):
                 json_data["specifications"] = {str(k): str(v) for k, v in specifications.items()}
