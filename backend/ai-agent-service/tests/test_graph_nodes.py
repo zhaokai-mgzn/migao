@@ -25,6 +25,7 @@ from app.graph.nodes import (
     suggestions_node,
     check_cache_hit,
     route_by_intent,
+    _infer_stage,
 )
 
 import app.cache.semantic_cache  # noqa - trigger module load
@@ -41,9 +42,11 @@ def _make_state(**overrides):
         "user_id": 100,
         "session_id": "sess_001",
         "role": "customer",
+        "user_name": "",
         "intent_result": None,
         "route_decision": None,
         "entities": {},
+        "recent_entities": [],
         "intent_chain": [],
         "stage": "initial",
         "cached_answer": None,
@@ -300,6 +303,155 @@ class TestSuggestionsNode:
             state = _make_state(final_answer="回答", intent_result={"intent": "general"})
             result = await suggestions_node(state)
         assert result["suggestions"] == []
+
+    # ── #947: 用户画像 + 实体传递给 FollowUpGenerator ──
+
+    @patch("app.suggestions.follow_up.FollowUpSuggestionGenerator")
+    async def test_suggestions_passes_user_profile(self, MockGenerator):
+        """#947: suggestions_node 传递 user_role, user_name, entities 给 generator"""
+        mock_gen = MagicMock()
+        mock_gen.generate = AsyncMock(return_value=["建议1", "建议2"])
+        MockGenerator.return_value = mock_gen
+
+        state = _make_state(
+            final_answer="这是订单 ORD001 的详情，请查收。",
+            intent_result={"intent": "order_query"},
+            role="admin",
+            user_name="张三",
+            recent_entities=[
+                {"type": "order_nos", "value": "ORD001", "label": "ORD001"},
+            ],
+        )
+        result = await suggestions_node(state)
+        assert result["suggestions"] == ["建议1", "建议2"]
+
+        # 验证 generate() 被调用且传入了用户画像参数
+        call_kwargs = mock_gen.generate.call_args.kwargs
+        assert call_kwargs["user_role"] == "admin"
+        assert call_kwargs["user_name"] == "张三"
+        assert call_kwargs["entities"] is not None
+        assert len(call_kwargs["entities"]) == 1
+        assert call_kwargs["entities"][0]["value"] == "ORD001"
+
+    @patch("app.suggestions.follow_up.FollowUpSuggestionGenerator")
+    async def test_suggestions_entities_fallback_from_dict(self, MockGenerator):
+        """#947: recent_entities 为空时 fallback 到 entities dict 展开"""
+        mock_gen = MagicMock()
+        mock_gen.generate = AsyncMock(return_value=["建议"])
+        MockGenerator.return_value = mock_gen
+
+        state = _make_state(
+            final_answer="订单查询结果",
+            intent_result={"intent": "order_query"},
+            recent_entities=[],  # 空
+            entities={"order_nos": ["ORD001", "ORD002"], "customer_names": ["张三"]},
+        )
+        result = await suggestions_node(state)
+        assert result["suggestions"] == ["建议"]
+
+        # 验证 entities 被展开为列表格式
+        call_kwargs = mock_gen.generate.call_args.kwargs
+        assert call_kwargs["entities"] is not None
+        entity_values = [e["value"] for e in call_kwargs["entities"]]
+        assert "ORD001" in entity_values
+        assert "ORD002" in entity_values
+        assert "张三" in entity_values
+
+    @patch("app.suggestions.follow_up.FollowUpSuggestionGenerator")
+    async def test_suggestions_entities_none_when_no_data(self, MockGenerator):
+        """#947: 无实体时 entities 传 None"""
+        mock_gen = MagicMock()
+        mock_gen.generate = AsyncMock(return_value=["建议"])
+        MockGenerator.return_value = mock_gen
+
+        state = _make_state(
+            final_answer="好的",
+            intent_result={"intent": "general"},
+            recent_entities=[],
+            entities={},
+        )
+        result = await suggestions_node(state)
+        assert result["suggestions"] == ["建议"]
+
+        call_kwargs = mock_gen.generate.call_args.kwargs
+        assert call_kwargs["entities"] is None
+
+
+# ========== _infer_stage 测试 ==========
+
+class TestInferStage:
+    """#947: _infer_stage 对话阶段推断 — 验证 action 从 route_decision 读取"""
+
+    def test_pending_interact_skill_confirming(self):
+        """有 pending_interact_skill 时返回 confirming"""
+        state = _make_state(pending_interact_skill="order")
+        assert _infer_stage(state) == "confirming"
+
+    def test_direct_reply_greeting_initial(self):
+        """action=direct_reply + greeting → initial"""
+        state = _make_state(
+            route_decision={"action": "direct_reply"},
+        )
+        assert _infer_stage(state, "greeting") == "initial"
+
+    def test_direct_reply_farewell_completed(self):
+        """action=direct_reply + farewell → completed"""
+        state = _make_state(
+            route_decision={"action": "direct_reply"},
+        )
+        assert _infer_stage(state, "farewell") == "completed"
+
+    def test_direct_reply_other_initial(self):
+        """action=direct_reply + 其他意图 → initial"""
+        state = _make_state(
+            route_decision={"action": "direct_reply"},
+        )
+        assert _infer_stage(state, "capabilities") == "initial"
+
+    def test_final_answer_long_querying(self):
+        """final_answer > 30 字符 → querying"""
+        state = _make_state(
+            final_answer="这是关于订单 ORD001 的详细查询结果，包含物流信息和商品详情。" * 2,
+        )
+        assert _infer_stage(state, "order_query") == "querying"
+
+    def test_final_answer_short_defaults_to_stage(self):
+        """final_answer ≤ 30 字符 → 返回 state.stage 或 initial"""
+        state = _make_state(
+            final_answer="好的",
+            stage="querying",
+        )
+        assert _infer_stage(state, "general") == "querying"
+
+    def test_default_to_initial_when_no_stage(self):
+        """无特殊条件 → 回退到 initial"""
+        state = _make_state()
+        assert _infer_stage(state) == "initial"
+
+    # ── Bug 修复验证：action 必须从 route_decision 读取 ──
+
+    def test_action_from_route_decision_not_intent_result(self):
+        """#947 Bug 修复: _infer_stage 从 route_decision 读 action，而非 intent_result"""
+        # 模拟旧 bug: intent_result 里有 action=direct_reply，
+        # 但 route_decision 里没有（或 action 是 full_agent）
+        state = _make_state(
+            route_decision={"action": "full_agent"},
+            intent_result={"action": "direct_reply", "intent": "order_query"},
+            final_answer=""  # 无长回复
+        )
+        # 修复后：读 route_decision.action = "full_agent"，不应返回 initial
+        # 旧代码会误读 intent_result.action = "direct_reply" 返回 "initial"
+        result = _infer_stage(state, "order_query")
+        assert result != "initial", (
+            f"BUG 复现: _infer_stage 错误地从 intent_result 读取 action，"
+            f"返回了 {result}。应返回 {state.get('stage', 'initial')}"
+        )
+
+    def test_no_route_decision_defaults(self):
+        """route_decision 为 None 时不崩溃"""
+        state = _make_state(route_decision=None)
+        result = _infer_stage(state, "general")
+        assert result in ("initial", "querying", "confirming", "processing", "completed")
 
 
 # ========== check_cache_hit 条件函数测试 ==========
