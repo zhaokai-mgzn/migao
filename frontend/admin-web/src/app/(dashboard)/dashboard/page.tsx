@@ -58,40 +58,6 @@ function MiniBarChart({ data, color, width = 80, height = 28 }: { data: number[]
 }
 
 // ═══════════════════════════════════════════════════════
-// 趋势图 Y 轴缩放辅助函数（修复 #942）
-// ═══════════════════════════════════════════════════════
-
-const CHART_H = 200      // chart data area height
-const PAD_TOP = 12       // top padding inside viewBox
-const PAD_BOTTOM = 40    // bottom padding for date labels (was 28, bumped to 40 for #942)
-const VIEWBOX_H = CHART_H + PAD_TOP + PAD_BOTTOM // 252
-
-/**
- * Build a Y-scale mapper with 15% padding above the max value.
- * When all values are zero, pads to a minimum range so data isn't
- * pressed against the bottom.
- */
-function makeYScale(values: number[]) {
-  const max = Math.max(...values, 0)
-  const range = max || 1
-  const pad = Math.max(range * 0.15, 0.5)
-  const yMin = 0
-  const yMax = max + pad
-  const yRange = yMax - yMin || 1
-
-  // Map a data value to SVG y coordinate in [PAD_TOP, PAD_TOP + CHART_H]
-  const yToSvg = (v: number) => PAD_TOP + CHART_H - ((v - yMin) / yRange) * CHART_H
-
-  return { yToSvg }
-}
-
-/** Horizontal guide-line levels */
-function guideLines(yMax: number) {
-  const steps = 4
-  return Array.from({ length: steps + 1 }, (_, i) => (yMax / steps) * i)
-}
-
-// ═══════════════════════════════════════════════════════
 // 子组件
 // ═══════════════════════════════════════════════════════
 
@@ -282,35 +248,18 @@ export default function DashboardPage() {
           </div>
           <div className="h-48">
             {trendData.length > 0 ? (
-              (() => {
-                const orders = trendData.map((d) => d.orders || 0)
-                const { yToSvg } = makeYScale(orders)
-                const svgW = Math.max(trendData.length * 40, 300)
-                const levels = guideLines(Math.max(...orders, 0) * 1.15 || 1)
-                return (
-                  <svg width="100%" height="100%" viewBox={`0 0 ${svgW} ${VIEWBOX_H}`} preserveAspectRatio="xMidYMid meet">
-                    {/* horizontal guide lines */}
-                    {levels.map((lv) => (
-                      <line key={lv} x1={0} y1={yToSvg(lv)} x2={svgW} y2={yToSvg(lv)}
-                        stroke="#f0f0f0" strokeDasharray="3 3" />
-                    ))}
-                    {/* data line */}
-                    <polyline fill="none" stroke="#3B82F6" strokeWidth="2"
-                      points={trendData.map((d, i) => `${i * 40 + 20},${yToSvg(d.orders || 0)}`).join(' ')} />
-                    {/* data dots */}
-                    {trendData.map((d, i) => (
-                      <circle key={i} cx={i * 40 + 20} cy={yToSvg(d.orders || 0)} r="3" fill="#3B82F6" />
-                    ))}
-                    {/* date labels — positioned above the bottom padding */}
-                    {trendData.filter((_, i) => i % Math.ceil(trendData.length / 7) === 0).map((d, i) => (
-                      <text key={i} x={i * 40 * Math.ceil(trendData.length / 7) + 20}
-                        y={CHART_H + PAD_TOP + 20} textAnchor="middle" fontSize="10" fill="#9CA3AF">
-                        {d.date?.slice(5)}
-                      </text>
-                    ))}
-                  </svg>
-                )
-              })()
+              <svg width="100%" height="100%" viewBox={`0 0 ${Math.max(trendData.length * 40, 300)} 240`}>
+                <polyline fill="none" stroke="#3B82F6" strokeWidth="2"
+                  points={trendData.map((d, i) => `${i * 40 + 20},${200 - (d.orders || 0) / Math.max(...trendData.map(t => t.orders || 1), 1) * 175}`).join(' ')} />
+                {trendData.map((d, i) => (
+                  <circle key={i} cx={i * 40 + 20} cy={200 - (d.orders || 0) / Math.max(...trendData.map(t => t.orders || 1), 1) * 175} r="3" fill="#3B82F6" />
+                ))}
+                {trendData.filter((_, i) => i % Math.ceil(trendData.length / 7) === 0).map((d, i) => (
+                  <text key={i} x={i * 40 * Math.ceil(trendData.length / 7) + 20} y="225" textAnchor="middle" fontSize="10" fill="#9CA3AF">
+                    {d.date?.slice(5)}
+                  </text>
+                ))}
+              </svg>
             ) : <div className="h-full flex items-center justify-center text-gray-400 text-sm">暂无数据</div>}
           </div>
         </div>
@@ -323,28 +272,13 @@ export default function DashboardPage() {
           </div>
           <div className="h-48">
             {trendData.length > 0 ? (
-              (() => {
-                const amounts = trendData.map((d) => (d.totalAmount || d.orders * 23.8) || 0)
-                const { yToSvg } = makeYScale(amounts)
-                const svgW = Math.max(trendData.length * 40, 300)
-                const levels = guideLines(Math.max(...amounts, 0) * 1.15 || 1)
-                return (
-                  <svg width="100%" height="100%" viewBox={`0 0 ${svgW} ${VIEWBOX_H}`} preserveAspectRatio="xMidYMid meet">
-                    <defs><linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#3B82F6" stopOpacity="0.3" /><stop offset="100%" stopColor="#3B82F6" stopOpacity="0" /></linearGradient></defs>
-                    {/* horizontal guide lines */}
-                    {levels.map((lv) => (
-                      <line key={lv} x1={0} y1={yToSvg(lv)} x2={svgW} y2={yToSvg(lv)}
-                        stroke="#f0f0f0" strokeDasharray="3 3" />
-                    ))}
-                    {/* area fill */}
-                    <path fill="url(#areaGrad)"
-                      d={`M 20 ${PAD_TOP + CHART_H} ${trendData.map((d, i) => `L ${i * 40 + 20} ${yToSvg((d.totalAmount || d.orders * 23.8) || 0)}`).join(' ')} L ${(trendData.length - 1) * 40 + 20} ${PAD_TOP + CHART_H} Z`} />
-                    {/* data line */}
-                    <polyline fill="none" stroke="#3B82F6" strokeWidth="2"
-                      points={trendData.map((d, i) => `${i * 40 + 20},${yToSvg((d.totalAmount || d.orders * 23.8) || 0)}`).join(' ')} />
-                  </svg>
-                )
-              })()
+              <svg width="100%" height="100%" viewBox={`0 0 ${Math.max(trendData.length * 40, 300)} 240`}>
+                <defs><linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#3B82F6" stopOpacity="0.3" /><stop offset="100%" stopColor="#3B82F6" stopOpacity="0" /></linearGradient></defs>
+                <path fill="url(#areaGrad)"
+                  d={`M 20 200 ${trendData.map((d, i) => `L ${i * 40 + 20} ${200 - ((d.totalAmount || d.orders * 23.8) || 0) / Math.max(...trendData.map(t => (t.totalAmount || t.orders * 23.8) || 1), 1) * 175}`).join(' ')} L ${(trendData.length - 1) * 40 + 20} 200 Z`} />
+                <polyline fill="none" stroke="#3B82F6" strokeWidth="2"
+                  points={trendData.map((d, i) => `${i * 40 + 20},${200 - ((d.totalAmount || d.orders * 23.8) || 0) / Math.max(...trendData.map(t => (t.totalAmount || t.orders * 23.8) || 1), 1) * 175}`).join(' ')} />
+              </svg>
             ) : <div className="h-full flex items-center justify-center text-gray-400 text-sm">暂无数据</div>}
           </div>
         </div>

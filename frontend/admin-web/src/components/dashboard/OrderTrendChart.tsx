@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState } from 'react'
 import {
   LineChart,
   Line,
@@ -20,12 +20,6 @@ interface OrderTrendChartProps {
   onRangeChange?: (days: number) => void
 }
 
-/** Check whether all data values (orders) are zero or empty */
-function isAllZeroData(data: OrderTrendPoint[]): boolean {
-  if (data.length === 0) return true
-  return data.every((d) => (d.orders ?? 0) === 0)
-}
-
 export default function OrderTrendChart({ data, loading, onRangeChange }: OrderTrendChartProps) {
   const [range, setRange] = useState<7 | 30>(7)
 
@@ -33,8 +27,6 @@ export default function OrderTrendChart({ data, loading, onRangeChange }: OrderT
     setRange(days)
     onRangeChange?.(days)
   }
-
-  const empty = useMemo(() => isAllZeroData(data), [data])
 
   return (
     <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
@@ -62,7 +54,7 @@ export default function OrderTrendChart({ data, loading, onRangeChange }: OrderT
         <div className="h-[260px] flex items-center justify-center">
           <div className="animate-spin w-6 h-6 border-2 border-primary-500 border-t-transparent rounded-full" />
         </div>
-      ) : empty ? (
+      ) : data.length === 0 ? (
         <div className="h-[260px] flex items-center justify-center text-gray-400 text-sm">
           暂无数据
         </div>
@@ -75,12 +67,14 @@ export default function OrderTrendChart({ data, loading, onRangeChange }: OrderT
               tick={{ fontSize: 12, fill: '#8c8c8c' }}
               tickLine={false}
               axisLine={{ stroke: '#e8e8e8' }}
+              tickFormatter={(v: string) => v?.slice(5)}
             />
             <YAxis
-              domain={[0, 'auto']}
               tick={{ fontSize: 12, fill: '#8c8c8c' }}
               tickLine={false}
               axisLine={false}
+              domain={[0, 'auto']}
+              allowDecimals={false}
             />
             <Tooltip
               contentStyle={{
