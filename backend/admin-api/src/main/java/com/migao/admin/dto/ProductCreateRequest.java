@@ -65,9 +65,10 @@ public class ProductCreateRequest {
     private String knowledgeBaseId;
 
     /**
-     * 状态：on_sale（上架）、off_sale（下架）
+     * 状态：on_sale（上架）、off_sale（下架）、draft（草稿）
+     * AI 渠道创建默认 draft，避免未确认即上架；前端/Excel 导入由调用方控制
      */
-    private String status = "off_sale";
+    private String status = "draft";
 
     /**
      * 库存数量，默认 0

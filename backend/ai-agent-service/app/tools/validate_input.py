@@ -21,6 +21,8 @@ _VALIDATION_RULES: Dict[str, Dict[str, Any]] = {
             "stock_quantity": {"type": int, "min": 0, "label": "库存数量"},
             "category_id": {"type": str, "label": "分类ID"},
             "description": {"type": str, "label": "描述"},
+            "processing_item_ids": {"type": list, "label": "加工项ID列表"},
+            "status": {"type": str, "label": "商品状态(on_sale/off_sale)"},
         },
         "update": {
             "required": ["product_id"],
@@ -194,6 +196,25 @@ class ValidateInputTool(BaseTool):
             pid = params.get("product_id") or params.get("id")
             if not pid:
                 issues.append("缺少 product_id（更新操作必须指定商品ID）")
+
+        # 4. 加工项ID格式检查（对抗编程：防止LLM传序号代替真实UUID）
+        pids = params.get("processing_item_ids")
+        if pids and isinstance(pids, list):
+            for pid in pids:
+                pid_str = str(pid).strip()
+                # 纯数字 → 拒绝，引导LLM使用真实UUID
+                if pid_str.isdigit():
+                    issues.append(
+                        f"加工项ID \"{pid_str}\" 是序号而非真实ID。"
+                        f"请使用 processing_item_query 返回的真实ID（如 pi_xxxxxxxxxxxxxxxx），"
+                        f"不要使用行号/序号。"
+                    )
+                # 看起来像编造的短ID（如 "pi_punch_001"）— 警告但不阻止
+                elif len(pid_str) < 20 and not pid_str.isdigit():
+                    issues.append(
+                        f"加工项ID \"{pid_str}\" 疑似编造（长度不足20字符）。"
+                        f"请确认这是 processing_item_query 返回的真实ID，而非自创的占位符。"
+                    )
 
         if issues:
             return ToolResult(

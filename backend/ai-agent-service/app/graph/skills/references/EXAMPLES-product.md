@@ -16,15 +16,21 @@
 当前分类：窗帘布艺（卧室系列/客厅系列）
 ```
 
-### Step 2: 用户提供信息 → 确认加工项
+### Step 2: 用户提供信息 → 引导货号 → 确认加工项
 用户消息: "遮光窗帘，50元，米白色，散剪"
-米宝先调 processing_item_query 获取加工项列表，然后回复:
+米宝先引导货号:
+```
+好的！请问这个商品有货号吗？建议可以用品牌缩写+序列号，比如 ZG-001（遮光窗帘首字母）。
+如果暂时不需要，我帮您自动生成一个。
+```
+用户消息: "ZG-001 就行"
+米宝再调 processing_item_query 获取加工项列表，然后回复:
 ```
 interact(component="choice", title="选择关联的加工项（可多选）",
   multiSelect=true,
   options=[
-    {label:"打孔加工 - ¥8/米", value:"pi_punch_001"},
-    {label:"挂钩加工 - ¥2/个", value:"pi_hook_001"},
+    {label:"打孔加工 - ¥8/米", value:"pi_2934ab1ec98b4f4325e731f4"},
+    {label:"挂钩加工 - ¥2/个", value:"pi_a8f32c9017db5e46191b207d"},
     ...
   ])
 ```
@@ -35,6 +41,7 @@ interact(component="choice", title="选择关联的加工项（可多选）",
 ```
 请确认以下商品信息：
 • 商品名称：遮光窗帘
+• 货号：ZG-001
 • 价格：50 元
 • 颜色：米白色
 • 加工项：打孔加工（¥8/米）、挂钩加工（¥2/个）
@@ -45,7 +52,7 @@ interact(component="choice", title="选择关联的加工项（可多选）",
 用户消息: "确认创建"
 米宝调:
 ```
-product_manage(action="create", name="遮光窗帘", price=50, processing_item_ids=["pi_punch_001", "pi_hook_001"])
+product_manage(action="create", name="遮光窗帘", price=50, status="on_sale", processing_item_ids=["pi_2934ab1ec98b4f43bb12f20425e731f4", "pi_a8f32c9017db5e4619bc2f1881207d"])
 ```
 米宝回复: "商品【遮光窗帘】创建成功！"
 

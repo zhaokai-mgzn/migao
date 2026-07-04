@@ -99,9 +99,12 @@ async def _resolve_processing_item_ids(ids, context) -> list:
     """解析加工项 ID：将 LLM 可能传的名称/UUID 前缀转为真实 UUID。
 
     加工项名称如"罗马杆环安装"会被解析为 "pi_xxxxx"。
+    序号如 "1" "4" "7" 会被解析为列表中对应位置的记录（1-based）。
+
+    返回 (resolved, unresolved) 元组 — 让调用方知道哪些 ID 未解析。
     """
     if not ids:
-        return ids
+        return ids, []
     ids = _normalize_array(ids)
     try:
         from app.utils.http_client import get_admin_api_client
@@ -116,38 +119,57 @@ async def _resolve_processing_item_ids(ids, context) -> list:
             items = data.get("items", []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
 
         resolved = []
+        unresolved = []
         for pid in ids:
             pid_str = str(pid).strip()
             found = None
-            for item in items:
-                if not isinstance(item, dict):
-                    continue
-                # 精确 UUID 匹配
-                if item.get("id") == pid_str:
-                    found = item["id"]
-                    break
-                # 名称匹配
-                if item.get("name") == pid_str:
-                    found = item["id"]
-                    break
-                # UUID 前缀匹配（LLM 可能截断）
-                if len(pid_str) >= 8 and item.get("id", "").startswith(pid_str[:16]):
-                    found = item["id"]
-                    break
+
+            # 1. 纯数字 → 按列表位置匹配（1-based 序号）
+            if pid_str.isdigit():
+                idx = int(pid_str) - 1  # 用户看到的 1-based 序号
+                if 0 <= idx < len(items) and isinstance(items[idx], dict):
+                    found = items[idx].get("id")
+                    if found:
+                        logger.info(
+                            f"[product_manage] Resolved row number {pid_str} → "
+                            f"{items[idx].get('name', '?')} ({found[:20]}...)"
+                        )
+
+            # 2. 精确 UUID 匹配
+            if not found:
+                for item in items:
+                    if not isinstance(item, dict):
+                        continue
+                    if item.get("id") == pid_str:
+                        found = item["id"]
+                        break
+                    # 名称匹配
+                    if item.get("name") == pid_str:
+                        found = item["id"]
+                        break
+                    # UUID 前缀匹配（LLM 可能截断）
+                    if len(pid_str) >= 8 and item.get("id", "").startswith(pid_str[:16]):
+                        found = item["id"]
+                        break
+
             if found:
                 resolved.append(found)
             else:
-                logger.warning(f"[product_manage] Could not resolve processing_item_id: {pid_str}")
-                # 如果看起来像 UUID，仍然使用（可能是正确的）
+                logger.warning(f"[product_manage] Could not resolve processing_item_id: {pid_str!r}")
+                unresolved.append(pid_str)
+                # 如果看起来像 UUID，仍然尝试使用（可能是正确的但不在此 tenant 的列表中）
                 if len(pid_str) >= 20:
                     resolved.append(pid_str)
+                    unresolved.remove(pid_str)
 
         if resolved:
             logger.info(f"[product_manage] Resolved processing_item_ids: {ids} → {resolved}")
-        return resolved
+        if unresolved:
+            logger.warning(f"[product_manage] UNRESOLVED processing_item_ids: {unresolved}")
+        return resolved, unresolved
     except Exception as e:
         logger.warning(f"[product_manage] Processing item resolution failed: {e}")
-        return ids
+        return ids, []
 
 VALID_PRODUCT_STATUSES = {"on_sale", "off_sale"}
 
@@ -226,6 +248,11 @@ class ProductManageTool(BaseTool):
             "sku_code": {
                 "type": "string",
                 "description": "商品货号/SKU编码",
+            },
+            "status": {
+                "type": "string",
+                "enum": ["on_sale", "off_sale"],
+                "description": "商品状态。create 时传入控制初始状态，默认 on_sale。toggle_status 时必填",
             },
             "colors": {
                 "type": "array",
@@ -434,8 +461,14 @@ class ProductManageTool(BaseTool):
             json_data["description"] = description
         if stock_quantity is not None:
             json_data["stock"] = int(stock_quantity)
+        processing_warnings = []
         if processing_item_ids:
-            processing_item_ids = await _resolve_processing_item_ids(processing_item_ids, context)
+            processing_item_ids, unresolved_ids = await _resolve_processing_item_ids(processing_item_ids, context)
+            if unresolved_ids:
+                processing_warnings.append(
+                    f"以下加工项ID无法解析: {unresolved_ids}。"
+                    f"请使用 processing_item_query 查询真实ID后重试"
+                )
         if processing_item_ids:
             if processing_item_configs:
                 json_data["processingItemConfigs"] = processing_item_configs
@@ -486,7 +519,15 @@ class ProductManageTool(BaseTool):
         elif category_id:
             # 默认计价方式：窗帘布艺 → per_meter
             json_data["pricingType"] = "per_meter"
-        
+        if status:
+            if status not in VALID_PRODUCT_STATUSES:
+                return ToolResult(
+                    success=False,
+                    error=f"无效的商品状态: {status}",
+                    message=f"请提供有效的状态值：{', '.join(VALID_PRODUCT_STATUSES)}",
+                )
+            json_data["status"] = status
+
         logger.info(f"[product_manage] Creating product with json_data keys={list(json_data.keys())} name={name}")
         logger.info(f"[product_manage] Creating product keys={list(json_data.keys())} name={name}")
         client = get_admin_api_client()
@@ -496,7 +537,7 @@ class ProductManageTool(BaseTool):
             tenant_id=context.tenant_id,
             user_id=context.user_id,
         )
-        
+
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "创建失败")
             error_code = response.get("error", {}).get("code", "")
@@ -511,19 +552,24 @@ class ProductManageTool(BaseTool):
                 message=f"创建商品失败：{error_msg}",
                 suggestion=suggestion,
             )
-        
+
         product_data = response.get("data", {})
         product_id = product_data.get("id")
-        
+
         logger.info(
             f"Product created: id={product_id}, name={name}, "
             f"tenant={context.tenant_id}, user={context.user_id}"
         )
-        
+
+        # 后创建验证：如果传了 processing_item_ids，确认是否已关联
+        success_message = f"商品【{name}】创建成功"
+        if processing_warnings:
+            success_message += "\n\n⚠️ 警告：" + "\n".join(processing_warnings)
+
         return ToolResult(
             success=True,
             data={"product_id": product_id, "name": name},
-            message=f"商品【{name}】创建成功",
+            message=success_message,
         )
     
     async def _update_product(
@@ -588,8 +634,14 @@ class ProductManageTool(BaseTool):
             json_data["description"] = description
         if stock_quantity is not None:
             json_data["stock"] = int(stock_quantity)
+        update_warnings = []
         if processing_item_ids:
-            processing_item_ids = await _resolve_processing_item_ids(processing_item_ids, context)
+            processing_item_ids, unresolved_ids = await _resolve_processing_item_ids(processing_item_ids, context)
+            if unresolved_ids:
+                update_warnings.append(
+                    f"以下加工项ID无法解析: {unresolved_ids}。"
+                    f"请使用 processing_item_query 查询真实ID后重试"
+                )
         if processing_item_ids:
             if processing_item_configs:
                 json_data["processingItemConfigs"] = processing_item_configs
