@@ -253,7 +253,7 @@ export default function DashboardPage() {
               const chartMax = rawMax === 0 ? 10 : rawMax * 1.1
               const toY = (v: number) => 200 - (v / chartMax) * 175
               return (
-                <svg width="100%" height="100%" viewBox={`0 0 ${Math.max(trendData.length * 40, 300)} 240`}>
+                <svg width="100%" height="100%" viewBox={`0 0 ${Math.max(trendData.length * 40, 300)} 240`} overflow="visible">
                   <polyline fill="none" stroke="#3B82F6" strokeWidth="2"
                     points={trendData.map((d, i) => `${i * 40 + 20},${toY(d.orders || 0)}`).join(' ')} />
                   {trendData.map((d, i) => (
@@ -283,7 +283,7 @@ export default function DashboardPage() {
               const chartMax = rawMax === 0 ? 10 : rawMax * 1.1
               const toY = (v: number) => 200 - (v / chartMax) * 175
               return (
-                <svg width="100%" height="100%" viewBox={`0 0 ${Math.max(trendData.length * 40, 300)} 240`}>
+                <svg width="100%" height="100%" viewBox={`0 0 ${Math.max(trendData.length * 40, 300)} 240`} overflow="visible">
                   <defs><linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#3B82F6" stopOpacity="0.3" /><stop offset="100%" stopColor="#3B82F6" stopOpacity="0" /></linearGradient></defs>
                   <path fill="url(#areaGrad)"
                     d={`M 20 200 ${trendData.map((d, i) => `L ${i * 40 + 20} ${toY(salesValues[i])}`).join(' ')} L ${(trendData.length - 1) * 40 + 20} 200 Z`} />
