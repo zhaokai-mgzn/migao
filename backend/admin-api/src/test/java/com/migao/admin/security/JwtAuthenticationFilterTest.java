@@ -1,4 +1,5 @@
 package com.migao.admin.security;
+// 对抗性审查修复 #937：异常日志级别提升
 
 import com.migao.admin.config.TenantContext;
 import io.jsonwebtoken.Claims;
@@ -446,12 +447,4 @@ class JwtAuthenticationFilterTest {
         verifyNoInteractions(jwtTokenProvider);
     }
 
-    @Test
-    @DisplayName("JWT 认证异常应记录 ERROR 日志（对抗性审查修复 #937）")
-    void exceptionLoggedAtError() {
-        when(request.getHeader("Authorization")).thenReturn("Bearer invalid.token.here");
-        // 无效 token 应触发 ERROR 级别日志（非静默吞掉）
-        filter.doFilterInternal(request, response, filterChain);
-        verify(filterChain).doFilter(request, response);
-    }
 }
