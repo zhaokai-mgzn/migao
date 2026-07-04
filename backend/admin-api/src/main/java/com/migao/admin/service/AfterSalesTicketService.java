@@ -23,7 +23,6 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 /**
@@ -39,11 +38,6 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
     private final OrderMapper orderMapper;
     private final TicketTimelineMapper ticketTimelineMapper;
     private final ObjectMapper objectMapper;
-
-    /**
-     * 工单号序列号（线程安全）
-     */
-    private static final AtomicInteger TICKET_SEQ = new AtomicInteger(0);
 
     /**
      * 合法的状态流转定义
@@ -265,13 +259,33 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
     }
 
     /**
-     * 生成工单号
-     * 格式: AS-yyyyMMdd-XXXX（线程安全）
+     * 生成工单号（防重启重复）
+     * 格式: AS-yyyyMMdd-XXXX，从 DB 查询当天最大序号 +1
      */
     private String generateTicketNo() {
         String datePart = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
-        int seq = TICKET_SEQ.incrementAndGet() % 10000;
-        return String.format("AS-%s-%04d", datePart, seq);
+        String prefix = "AS-" + datePart + "-";
+
+        // 从 DB 查当天最大工单号，防止重启后 AtomicInteger 归零导致重复
+        int nextSeq = 1;
+        try {
+            AfterSalesTicket latest = afterSalesTicketMapper.selectOne(
+                new LambdaQueryWrapper<AfterSalesTicket>()
+                    .likeRight(AfterSalesTicket::getTicketNo, prefix)
+                    .orderByDesc(AfterSalesTicket::getTicketNo)
+                    .last("LIMIT 1")
+            );
+            if (latest != null && latest.getTicketNo() != null) {
+                String[] parts = latest.getTicketNo().split("-");
+                if (parts.length == 3) {
+                    nextSeq = Integer.parseInt(parts[2]) + 1;
+                }
+            }
+        } catch (Exception e) {
+            log.warn("查询最新工单号失败，使用默认序号: {}", e.getMessage());
+        }
+
+        return String.format("AS-%s-%04d", datePart, nextSeq % 10000);
     }
 
     /**
