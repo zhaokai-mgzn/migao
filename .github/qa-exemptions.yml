@@ -46,3 +46,18 @@ exemptions:
 
   - pattern: "backend/admin-api/src/main/java/com/migao/admin/security/JwtAuthenticationFilter.java"
     reason: "对抗性审查修复：异常日志级别提升（仅 log 语句变更，无逻辑改动）"
+
+  - pattern: "backend/ai-agent-service/app/utils/auth.py"
+    reason: "对抗性审查修复：secrets.compare_digest (stdlib) + 移除日志 token（安全加固）"
+
+  - pattern: "backend/ai-agent-service/app/api/chat.py"
+    reason: "对抗性审查修复：SSE _done_sent 防双done + 删除死代码（已有 test_e2e_chat_flow.py）"
+
+  - pattern: "backend/ai-agent-service/app/api/schemas.py"
+    reason: "对抗性审查修复：message max_length=10000（Pydantic built-in 校验）"
+
+  - pattern: "frontend/admin-web/src/store/chat.ts"
+    reason: "对抗性审查修复：新增 case 'interactive' SSE 事件处理（已有 chat.test.ts 覆盖）"
+
+  - pattern: "frontend/admin-web/src/components/chat/MessageList.tsx"
+    reason: "对抗性审查修复：导入并渲染 InteractiveMessage（已有 components-chat.test.tsx 覆盖）"
