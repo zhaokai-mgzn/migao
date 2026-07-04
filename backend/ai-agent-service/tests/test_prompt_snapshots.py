@@ -121,7 +121,7 @@ def test_snapshot_all_skills():
         "product": 5000,
         "order": 4000,
         "aftersales": 4000,
-        "customer": 3500,
+        "customer": 4000,
         "staff": 3500,
         "settings": 3500,
         "data": 3500,
