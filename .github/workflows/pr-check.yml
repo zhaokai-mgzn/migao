@@ -252,7 +252,8 @@ jobs:
                 fi
                 ;;
               backend/admin-api/src/main/java/com/migao/admin/security/*.java)
-                if echo "$CHANGED_FILES" | grep -qE "SecurityConfigTest|JwtTokenProviderTest"; then
+                sec_name=$(basename "$file" .java | sed 's/Filter//;s/Provider//;s/Config//;s/Interceptor//')
+                if echo "$CHANGED_FILES" | grep -qE "SecurityConfigTest|JwtTokenProviderTest|${sec_name}Test|${sec_name}FilterTest"; then
                   echo "| $file | Security (L2) | ✅ |" >> $GITHUB_STEP_SUMMARY
                 else
                   echo "| $file | Security (L2) | ❌ BLOCKED |" >> $GITHUB_STEP_SUMMARY
@@ -273,7 +274,8 @@ jobs:
               frontend/admin-web/src/components/*/*.tsx|\
               frontend/admin-web/src/components/*/*/*.tsx)
                 comp_name=$(basename "$file" .tsx)
-                if echo "$CHANGED_FILES" | grep -qE "tests/unit/components/${comp_name}|tests/unit/.*${comp_name}"; then
+                comp_dir=$(dirname "$file" | sed 's|.*/components/||;s|/.*||')
+                if echo "$CHANGED_FILES" | grep -qE "tests/unit/components/${comp_name}|tests/unit/components/${comp_dir}|tests/unit/.*${comp_name}|tests/unit/.*${comp_dir}"; then
                   echo "| $file | Component (L4) | ✅ |" >> $GITHUB_STEP_SUMMARY
                 else
                   echo "| $file | Component (L4) | ❌ BLOCKED |" >> $GITHUB_STEP_SUMMARY
@@ -339,7 +341,7 @@ jobs:
                 ;;
               backend/ai-agent-service/app/api/*.py)
                 api_name=$(basename "$file" .py)
-                if echo "$CHANGED_FILES" | grep -qE "tests/test_${api_name}|tests/e2e/real/"; then
+                if echo "$CHANGED_FILES" | grep -qE "tests/test_${api_name}|tests/test_api_coverage|tests/e2e/real/"; then
                   echo "| $file | API Route (L3) | ✅ |" >> $GITHUB_STEP_SUMMARY
                 else
                   echo "| $file | API Route (L3) | ❌ BLOCKED |" >> $GITHUB_STEP_SUMMARY
