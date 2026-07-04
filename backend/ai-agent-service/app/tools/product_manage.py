@@ -94,6 +94,61 @@ async def _resolve_category_id(category_id, context):
         logger.warning(f"[product_manage] Category resolution failed: {e}")
     return None
 
+
+async def _resolve_processing_item_ids(ids, context) -> list:
+    """解析加工项 ID：将 LLM 可能传的名称/UUID 前缀转为真实 UUID。
+
+    加工项名称如"罗马杆环安装"会被解析为 "pi_xxxxx"。
+    """
+    if not ids:
+        return ids
+    ids = _normalize_array(ids)
+    try:
+        from app.utils.http_client import get_admin_api_client
+        client = get_admin_api_client()
+        resp = await client.get("/api/admin/processing-items",
+            params={"page": 1, "size": 200},
+            tenant_id=context.tenant_id,
+            user_id=context.user_id)
+        items = []
+        if isinstance(resp, dict):
+            data = resp.get("data", resp)
+            items = data.get("items", []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
+
+        resolved = []
+        for pid in ids:
+            pid_str = str(pid).strip()
+            found = None
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                # 精确 UUID 匹配
+                if item.get("id") == pid_str:
+                    found = item["id"]
+                    break
+                # 名称匹配
+                if item.get("name") == pid_str:
+                    found = item["id"]
+                    break
+                # UUID 前缀匹配（LLM 可能截断）
+                if len(pid_str) >= 8 and item.get("id", "").startswith(pid_str[:16]):
+                    found = item["id"]
+                    break
+            if found:
+                resolved.append(found)
+            else:
+                logger.warning(f"[product_manage] Could not resolve processing_item_id: {pid_str}")
+                # 如果看起来像 UUID，仍然使用（可能是正确的）
+                if len(pid_str) >= 20:
+                    resolved.append(pid_str)
+
+        if resolved:
+            logger.info(f"[product_manage] Resolved processing_item_ids: {ids} → {resolved}")
+        return resolved
+    except Exception as e:
+        logger.warning(f"[product_manage] Processing item resolution failed: {e}")
+        return ids
+
 VALID_PRODUCT_STATUSES = {"on_sale", "off_sale"}
 
 
@@ -380,7 +435,8 @@ class ProductManageTool(BaseTool):
         if stock_quantity is not None:
             json_data["stock"] = int(stock_quantity)
         if processing_item_ids:
-            processing_item_ids = _normalize_array(processing_item_ids)
+            processing_item_ids = await _resolve_processing_item_ids(processing_item_ids, context)
+        if processing_item_ids:
             if processing_item_configs:
                 json_data["processingItemConfigs"] = processing_item_configs
             elif processing_item_ids:
@@ -533,7 +589,8 @@ class ProductManageTool(BaseTool):
         if stock_quantity is not None:
             json_data["stock"] = int(stock_quantity)
         if processing_item_ids:
-            processing_item_ids = _normalize_array(processing_item_ids)
+            processing_item_ids = await _resolve_processing_item_ids(processing_item_ids, context)
+        if processing_item_ids:
             if processing_item_configs:
                 json_data["processingItemConfigs"] = processing_item_configs
             elif processing_item_ids:
