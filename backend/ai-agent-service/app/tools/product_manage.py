@@ -281,7 +281,7 @@ class ProductManageTool(BaseTool):
                 return await self._update_product(
                     context, product_id, name, category_id, price, description, stock_quantity,
                     processing_item_ids, brand, images, detail_images, specifications, unit,
-                    colors, sku_code, pricing_type
+                    colors, pricing_type, selling_methods, door_widths, sku_code, skus, processing_item_configs
                 )
             elif action == "toggle_status":
                 return await self._toggle_status(context, product_id, status)
@@ -488,20 +488,68 @@ class ProductManageTool(BaseTool):
                 message="更新商品时必须提供商品 ID（product_id）",
             )
         
+        # AI 友好：自动规范化 LLM 可能传错的参数（与 _create_product 保持一致）
+        category_id = await _resolve_category_id(category_id, context) if category_id else None
+        price = _normalize_number(price)
+        stock_quantity = _normalize_number(stock_quantity)
+        colors = _normalize_array(colors) if colors is not None else None
+        selling_methods = _normalize_array(selling_methods) if selling_methods is not None else None
+
         json_data: Dict[str, Any] = {}
         if name:
             json_data["name"] = name
         if category_id:
             json_data["categoryId"] = category_id
         if price is not None:
-            json_data["basePrice"] = float(price)  # admin-api 直接用元
+            json_data["basePrice"] = float(price)
         if description:
             json_data["description"] = description
         if stock_quantity is not None:
-            json_data["stock"] = stock_quantity
-        if processing_item_ids is not None:
-            json_data["processingItemConfigs"] = [{"processingItemId": pid} for pid in processing_item_ids]
-        
+            json_data["stock"] = int(stock_quantity)
+        if processing_item_ids:
+            processing_item_ids = _normalize_array(processing_item_ids)
+            if processing_item_configs:
+                json_data["processingItemConfigs"] = processing_item_configs
+            elif processing_item_ids:
+                json_data["processingItemConfigs"] = [{"processingItemId": pid} for pid in processing_item_ids]
+        if brand:
+            json_data["brand"] = brand
+        if images:
+            json_data["images"] = list(images)
+        if detail_images:
+            json_data["detailImages"] = list(detail_images)
+        if colors:
+            normalized = []
+            for c in colors:
+                if isinstance(c, str):
+                    normalized.append({"colorName": c})
+                elif isinstance(c, dict):
+                    nc = {"colorName": c.get("colorName", c.get("name", ""))}
+                    if c.get("id") is not None: nc["id"] = c["id"]
+                    if c.get("remark") is not None: nc["remark"] = c["remark"]
+                    if c.get("mainColorHex") is not None: nc["mainColorHex"] = c["mainColorHex"]
+                    normalized.append(nc)
+            if normalized:
+                json_data["colors"] = normalized
+        if selling_methods:
+            json_data["sellingMethods"] = [_SELLING_TRANSLATE.get(m, m) for m in selling_methods]
+        if door_widths:
+            json_data["doorWidths"] = _split_str(door_widths) if isinstance(door_widths, str) else list(door_widths)
+        if skus:
+            json_data["skus"] = skus
+        if sku_code:
+            json_data["skuCode"] = sku_code
+        if specifications:
+            if isinstance(specifications, dict):
+                json_data["specifications"] = {str(k): str(v) for k, v in specifications.items()}
+            elif isinstance(specifications, str):
+                parts = [p.strip() for p in specifications.split(",") if p.strip()]
+                json_data["specifications"] = {p: p for p in parts}
+        if unit:
+            json_data["unit"] = unit
+        if pricing_type:
+            json_data["pricingType"] = pricing_type
+
         if not json_data:
             return ToolResult(
                 success=False,

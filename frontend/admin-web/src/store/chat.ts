@@ -523,6 +523,28 @@ function handleSSEEvent(
         }
         break
 
+      case 'interactive':
+        if (parsedData.type && parsedData.component) {
+          set(state => ({
+            messages: state.messages.map(msg =>
+              msg.id === aiMsgId
+                ? {
+                    ...msg,
+                    interactive: {
+                      type: parsedData.type,
+                      component: parsedData.component,
+                      title: parsedData.title || '',
+                      options: parsedData.options,
+                      fields: parsedData.fields,
+                      formFields: parsedData.formFields,
+                    },
+                  }
+                : msg
+            ),
+          }))
+        }
+        break
+
       default:
         // 未知事件类型，尝试作为文本处理
         if (parsedData.content || parsedData.delta) {

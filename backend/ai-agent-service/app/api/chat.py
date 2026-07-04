@@ -257,7 +257,8 @@ async def _agent_stream_to_sse(
     """
     full_response = []
     tool_calls_info = []
-    
+    _done_sent = False
+
     try:
         # 发送加载状态
         yield SSEEvent.loading("正在思考...")
@@ -442,23 +443,18 @@ async def _agent_stream_to_sse(
                 logger.debug(f"[chat/send] Memory extraction scheduling skipped: {mem_err}")
 
         # 发送完成事件（始终发送，即使 save_message 失败或超时）
+        _done_sent = True
         yield SSEEvent.done(session_id, message_id)
-            
+
     except Exception as e:
         tb = traceback.format_exc()
         logger.error(f"[chat/send] Agent stream error: {tb}")
         yield SSEEvent.error(f"处理失败: {type(e).__name__}: {str(e)}")
     finally:
-        # 确保始终发送 done 事件，避免客户端无限等待
-        yield SSEEvent.done(session_id, None)
+        # 仅在尚未发送 done 时补发，避免客户端收到重复 done 事件
+        if not _done_sent:
+            yield SSEEvent.done(session_id, None)
         logger.debug(f"[chat/send] SSE stream ended | session={session_id}")
-
-
-async def _heartbeat_generator():
-    """心跳生成器，每 15 秒发送一次心跳"""
-    while True:
-        await asyncio.sleep(15)
-        yield SSEEvent.heartbeat()
 
 
 # ============ API 路由 ============
@@ -1107,39 +1103,6 @@ async def get_history(
         "session_id": session_id,
         "messages": formatted_messages,
     })
-
-
-@router.post("/suggestion-feedback")
-async def suggestion_feedback(
-    body: dict,
-    current_user: UserIdentity = Depends(get_current_user),
-):
-    """
-    记录建议反馈（点击），用于后续训练数据分析
-
-    ⚠️ 数据安全：日志包含用户建议文本（已脱敏手机号/邮箱），
-    应配置日志访问权限和保留策略。
-
-    Body:
-        session_id: str - 会话 ID
-        suggestion: str - 被点击的建议文本
-        message_id: str (optional) - 关联的消息 ID
-    """
-    import json as _json
-    from app.utils.log_sanitizer import LogSanitizer
-    logger.info(
-        "[suggestion:feedback]",
-        _json.dumps({
-            "session_id": body.get("session_id", ""),
-            "tenant_id": current_user.tenant_id,
-            "user_id": current_user.user_id,
-            "suggestion": LogSanitizer.mask_text(body.get("suggestion", "")),
-            "clicked": True,
-            "message_id": body.get("message_id", ""),
-            "source": "click",
-        }, ensure_ascii=False),
-    )
-    return {"ok": True}
 
 
 @router.post("/suggestion-feedback")

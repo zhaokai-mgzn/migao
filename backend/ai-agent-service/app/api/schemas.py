@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 class ChatSendRequest(BaseModel):
     """发送消息请求"""
     session_id: Optional[str] = Field(None, description="会话 ID，不传则创建新会话")
-    message: str = Field(..., description="用户消息内容")
+    message: str = Field(..., max_length=10000, description="用户消息内容")
     images: Optional[List[str]] = Field(None, description="图片URL列表")
     ignored_suggestions: Optional[List[str]] = Field(
         None, description="用户忽略的上一轮建议列表（用于日志分析）"

@@ -441,8 +441,8 @@ def create_default_registry() -> ToolRegistry:
     registry.register(QuickReplyManageTool())
     registry.register(CategoryManageTool())
     registry.register(ProcessingItemManageTool())
-    # interact 工具保留但不再注册：P&E 模式走纯文本交互
-    # registry.register(InteractTool())
+    # interact 工具重新启用：支持交互式组件（interactive component support）
+    registry.register(InteractTool())
     registry.register(ValidateInputTool())
 
     logger.info(f"Default registry created with {len(registry)} tools")

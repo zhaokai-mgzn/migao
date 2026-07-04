@@ -2,6 +2,24 @@
 知识 Skill 节点
 
 处理知识库检索相关操作（面料知识、保养方法、安装指南、售后政策等）。
+
+============================================================================
+⚠️  RAG DISABLED — 0 ACTIVE TOOLS
+
+The tools bound to this skill (knowledge_search, knowledge_manage) are
+commented out in app/graph/tools/registry.py because the RAG knowledge-base
+infrastructure is not yet deployed.
+
+As a result, this skill currently has ZERO active tools. The skill definition
+and its system prompt are kept as a placeholder so that re-enabling RAG only
+requires uncommenting the tool registrations in registry.py — no changes
+needed in this file.
+
+When RAG is re-enabled:
+  1. Uncomment knowledge_search and knowledge_manage in registry.py.
+  2. Verify the DashVector collection and embedding pipeline are ready.
+  3. Run the knowledge skill integration tests.
+============================================================================
 """
 
 from app.graph.state import AgentState

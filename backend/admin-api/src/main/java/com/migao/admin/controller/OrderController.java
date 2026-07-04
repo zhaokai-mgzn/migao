@@ -6,6 +6,7 @@ import com.migao.admin.entity.OrderLogistics;
 import com.migao.admin.service.OrderLogisticsService;
 import com.migao.admin.service.OrderService;
 import jakarta.validation.Valid;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
@@ -172,9 +173,17 @@ public class OrderController {
      * PUT /api/admin/orders/{id}/refund
      */
     @PutMapping("/{id:[0-9a-fA-F-]+}/refund")
-    public ApiResponse<Void> refundOrder(@PathVariable String id) {
-        log.info("退款: orderId={}", id);
-        orderService.refundOrder(id);
+    public ApiResponse<Void> refundOrder(@PathVariable String id,
+                                         @RequestBody(required = false) Map<String, Object> body) {
+        String refundReason = null;
+        if (body != null && body.containsKey("refund_reason")) {
+            Object reason = body.get("refund_reason");
+            if (reason != null && !reason.toString().isBlank()) {
+                refundReason = reason.toString().trim();
+            }
+        }
+        log.info("退款: orderId={}, refundReason={}", id, refundReason);
+        orderService.refundOrder(id, refundReason);
         return ApiResponse.success();
     }
 

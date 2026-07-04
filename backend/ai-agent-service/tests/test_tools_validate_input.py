@@ -20,15 +20,15 @@ class TestValidateInputSuccess:
         assert result.data["validated"] is True
 
     async def test_no_rules_skip(self, tool, admin_tool_context):
-        """无规则的操作返回 skipped"""
+        """未知工具/操作返回失败（防止绕过校验）"""
         result = await tool.execute(
             context=admin_tool_context,
             target_tool="unknown_tool",
             target_action="unknown_action",
             params={"foo": "bar"},
         )
-        assert result.success is True
-        assert result.data.get("skipped") is True
+        assert result.success is False
+        assert "未知" in result.message or "无法" in result.message
 
     async def test_update_has_product_id(self, tool, admin_tool_context):
         """update 带 product_id 通过校验"""

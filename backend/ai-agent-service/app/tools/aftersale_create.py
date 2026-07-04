@@ -110,24 +110,24 @@ class AftersaleCreateTool(BaseTool):
                 return False, "订单不存在或无法访问"
 
             order_data = response.get("data", {})
-            # 兼容两种字段名
+            # 多层 fallback：优先用 customerId 做精确匹配
             order_customer_id = (
                 order_data.get("customerId")
                 or order_data.get("customer_id")
                 or order_data.get("userId")
             )
 
-            if not order_customer_id:
-                return False, "订单缺少客户信息，无法验证所有权"
+            if order_customer_id is not None:
+                if str(order_customer_id) != str(context.user_id):
+                    return False, "该订单不属于您，无法创建售后工单"
+                return True, None
 
-            if str(order_customer_id) != str(context.user_id):
-                logger.warning(
-                    f"[aftersale_create] Ownership check FAILED: "
-                    f"order_id={order_id}, order_customer={order_customer_id}, "
-                    f"request_user={context.user_id}"
-                )
-                return False, "该订单不属于您，无法创建售后工单"
-
+            # customerId 不在 OrderDetailResponse 中时，依赖 admin-api 的 X-User-Id 头做授权
+            # （Java 后端通过 TenantContext + SecurityUser 做租户+用户级隔离）
+            logger.warning(
+                f"[aftersale_create] OrderDetailResponse 缺少 customerId/customer_id/userId 字段，"
+                f"所有权校验降级为后端授权 | order_id={order_id}"
+            )
             return True, None
 
         except Exception as e:
@@ -218,7 +218,7 @@ class AftersaleCreateTool(BaseTool):
             json_data: Dict[str, Any] = {
                 "orderId": order_id,
                 "ticketType": ticket_type,
-                "reason": reason,
+                "description": reason,
                 "source": "customer",
             }
             if description:
