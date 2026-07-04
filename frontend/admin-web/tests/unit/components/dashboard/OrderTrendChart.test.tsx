@@ -2,12 +2,20 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
+// Capture YAxis props for assertion
+let lastYAxisProps: Record<string, any> = {}
+
 // Mock recharts to avoid jsdom dimension issues
 vi.mock('recharts', () => ({
-  LineChart: ({ children }: any) => <div data-testid="line-chart">{children}</div>,
+  LineChart: ({ children, margin }: any) => (
+    <div data-testid="line-chart" data-margin-left={margin?.left}>{children}</div>
+  ),
   Line: () => <div data-testid="line" />,
   XAxis: () => <div data-testid="x-axis" />,
-  YAxis: () => <div data-testid="y-axis" />,
+  YAxis: (props: any) => {
+    lastYAxisProps = props
+    return <div data-testid="y-axis" data-domain={JSON.stringify(props.domain)} />
+  },
   CartesianGrid: () => <div data-testid="cartesian-grid" />,
   Tooltip: () => <div data-testid="tooltip" />,
   ResponsiveContainer: ({ children }: any) => (
@@ -83,9 +91,9 @@ describe('OrderTrendChart', () => {
     expect(onRangeChange).toHaveBeenNthCalledWith(2, 7)
   })
 
-  it('renders chart even with empty data array', () => {
+  it('shows empty state when data array is empty', () => {
     render(<OrderTrendChart data={[]} />)
-    expect(screen.getByTestId('responsive-container')).toBeInTheDocument()
+    expect(screen.getByText(/暂无数据/i)).toBeInTheDocument()
   })
 
   it('renders all recharts sub-components', () => {
@@ -98,5 +106,40 @@ describe('OrderTrendChart', () => {
     expect(screen.getByTestId('legend')).toBeInTheDocument()
     // Two Line components (orders + sessions)
     expect(screen.getAllByTestId('line').length).toBe(2)
+  })
+
+  // ── Bug #942 fix: YAxis domain / margin / empty state ──
+
+  it('YAxis should have domain=[0, auto] to prevent data flattening', () => {
+    render(<OrderTrendChart data={mockData} />)
+    const yAxis = screen.getByTestId('y-axis')
+    const domain = JSON.parse(yAxis.getAttribute('data-domain') || 'null')
+    expect(domain).not.toBeNull()
+    // domain[0] should be 0, domain[1] should be 'auto' for proper scaling
+    expect(domain[0]).toBe(0)
+    expect(domain[1]).toBe('auto')
+  })
+
+  it('should not have negative margin.left that clips Y-axis labels', () => {
+    render(<OrderTrendChart data={mockData} />)
+    const chart = screen.getByTestId('line-chart')
+    const marginLeft = parseInt(chart.getAttribute('data-margin-left') || '0', 10)
+    expect(marginLeft).toBeGreaterThanOrEqual(0)
+  })
+
+  it('should show empty state when all data values are zero', () => {
+    const allZeroData = [
+      { date: '06-15', orders: 0 },
+      { date: '06-16', orders: 0 },
+      { date: '06-17', orders: 0 },
+    ]
+    render(<OrderTrendChart data={allZeroData} />)
+    // Should render empty hint text
+    expect(screen.getByText(/暂无数据/i)).toBeInTheDocument()
+  })
+
+  it('should not show empty state when data has non-zero values', () => {
+    render(<OrderTrendChart data={mockData} />)
+    expect(screen.queryByText(/暂无数据/i)).not.toBeInTheDocument()
   })
 })

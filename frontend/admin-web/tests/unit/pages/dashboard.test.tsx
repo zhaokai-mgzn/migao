@@ -197,6 +197,60 @@ describe('DashboardPage', () => {
     })
   })
 
+  // ── Bug #942: SVG 趋势图布局修复 ──
+
+  it('SVG trend chart should NOT use preserveAspectRatio="none"', async () => {
+    render(<DashboardPage />)
+    await waitFor(() => {
+      const svgs = document.querySelectorAll('svg[viewBox]')
+      // Must have at least one SVG with viewBox (trend charts)
+      expect(svgs.length).toBeGreaterThanOrEqual(1)
+      svgs.forEach((svg) => {
+        const ar = svg.getAttribute('preserveAspectRatio')
+        expect(ar).not.toBe('none')
+      })
+    })
+  })
+
+  it('SVG trend chart viewBox height should accommodate date labels', async () => {
+    render(<DashboardPage />)
+    await waitFor(() => {
+      const svgs = document.querySelectorAll('svg[viewBox]')
+      expect(svgs.length).toBeGreaterThanOrEqual(1)
+      svgs.forEach((svg) => {
+        const vb = svg.getAttribute('viewBox')
+        expect(vb).toBeTruthy()
+        const parts = vb!.split(/\s+/)
+        const h = parseInt(parts[3], 10)
+        // viewBox height should be > 200 to leave room for date labels + padding
+        expect(h).toBeGreaterThanOrEqual(220)
+      })
+    })
+  })
+
+  it('SVG chart date labels y-position should have bottom padding (not at edge)', async () => {
+    render(<DashboardPage />)
+    await waitFor(() => {
+      const dateTexts = document.querySelectorAll('svg[viewBox] text')
+      // Must have date labels rendered
+      expect(dateTexts.length).toBeGreaterThanOrEqual(1)
+      dateTexts.forEach((text) => {
+        const y = parseFloat(text.getAttribute('y') || '0')
+        const svg = text.closest('svg')
+        const vb = svg?.getAttribute('viewBox')
+        if (vb) {
+          const vbH = parseInt(vb.split(/\s+/)[3], 10)
+          // Date labels should not be at the very bottom (need padding)
+          // bottomGap = vbH - y should be >= 15px for proper padding
+          const bottomGap = vbH - y
+          expect(bottomGap).toBeGreaterThanOrEqual(15)
+          // And not at the very top either
+          expect(y).toBeGreaterThan(vbH * 0.5)
+        }
+      })
+    })
+  })
+
   // ── 近期订单 ──
 
   it('should render recent orders table', async () => {
