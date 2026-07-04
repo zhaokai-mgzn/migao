@@ -28,6 +28,7 @@ class AgentState(TypedDict):
 
     # 上下文追踪
     entities: dict                   # 提取的关键实体
+    recent_entities: list[dict]      # 本轮对话涉及的实体 [{type, value, label}, ...]
     intent_chain: list[str]          # 意图变化序列
     stage: str                       # 对话阶段 (initial/querying/confirming/processing/completed)
 

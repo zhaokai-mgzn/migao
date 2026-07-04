@@ -217,7 +217,7 @@ async def direct_reply_node(state: AgentState) -> dict:
 
 
 async def suggestions_node(state: AgentState) -> dict:
-    """生成后续问题建议"""
+    """生成后续问题建议（Stage + 用户画像 + 实体感知）"""
     # 优化: P&E 等待用户输入时跳过建议（ask/confirm 步骤已有引导文案）
     pending_skill = state.get("pending_interact_skill", "")
     if pending_skill:
@@ -231,6 +231,28 @@ async def suggestions_node(state: AgentState) -> dict:
 
     # 推断对话阶段
     stage = _infer_stage(state, intent_type)
+
+    # 提取用户画像信息
+    user_role = state.get("role", "")
+    user_name = state.get("user_name", "") or ""
+
+    # 提取本轮实体（从 recent_entities list，fallback 到 entities dict）
+    entities = state.get("recent_entities", [])
+    if not entities:
+        # fallback: 从 entities dict 构建实体列表
+        # 注意展开 list 值（如 {"order_nos": ["ORD001","ORD002"]} → 每个元素一个实体）
+        entities_dict = state.get("entities", {})
+        if entities_dict:
+            for k, v_list in entities_dict.items():
+                if not v_list:
+                    continue
+                items = v_list if isinstance(v_list, list) else [v_list]
+                for item in items:
+                    entities.append({
+                        "type": k,
+                        "value": str(item),
+                        "label": str(item)[:30],
+                    })
 
     # 找到用户原始消息
     user_msg = ""
@@ -251,6 +273,9 @@ async def suggestions_node(state: AgentState) -> dict:
                 session_id=state.get("session_id", ""),
                 tenant_id=state.get("tenant_id", 0),
                 user_id=state.get("user_id", 0),
+                user_role=user_role,
+                user_name=user_name,
+                entities=entities if entities else None,
             ),
             timeout=15.0,
         )
@@ -274,8 +299,9 @@ def _infer_stage(state: AgentState, intent_type: str = "") -> str:
         return "confirming"
 
     # 直接回复意图（问候/再见/能力说明）
-    intent_result = state.get("intent_result") or {}
-    action = intent_result.get("action", "")
+    # 注意: action 在 route_decision 中，不在 intent_result 中
+    route_decision = state.get("route_decision") or {}
+    action = route_decision.get("action", "")
     if action == "direct_reply":
         if intent_type == "greeting":
             return "initial"
