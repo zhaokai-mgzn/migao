@@ -63,7 +63,7 @@ class TestRegistryExecute:
         result = await registry.execute_tool(
             "validate_input", ctx,
             target_tool="product_manage", target_action="create",
-            params={"name": "test", "price": 1})
+            params={"name": "test", "price": 1, "category_id": "cat-test"})
         assert result.success is True
 
     async def test_execute_nonexistent(self, registry, ctx):
