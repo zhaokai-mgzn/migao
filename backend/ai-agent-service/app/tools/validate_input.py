@@ -32,8 +32,10 @@ _VALIDATION_RULES: Dict[str, Dict[str, Any]] = {
     "order_create": {
         "required": ["customer_name", "customer_phone", "items"],
         "customer_name": {"type": str, "min_len": 1, "label": "客户姓名"},
-        "customer_phone": {"type": str, "min_len": 1, "label": "客户电话"},
+        "customer_phone": {"type": str, "min_len": 1, "label": "客户电话（11位手机号）"},
         "items": {"type": list, "min_len": 1, "label": "商品明细"},
+        "customer_address": {"type": str, "label": "收货地址"},
+        "remark": {"type": str, "label": "备注"},
     },
     "order_manage": {
         "cancel": {
@@ -197,7 +199,18 @@ class ValidateInputTool(BaseTool):
             if not pid:
                 issues.append("缺少 product_id（更新操作必须指定商品ID）")
 
-        # 4. 加工项ID格式检查（对抗编程：防止LLM传序号代替真实UUID）
+        # 4. 手机号格式检查（对抗编程：order_create 中防止 LLM 编造号码）
+        if target_tool == "order_create":
+            phone = params.get("customer_phone")
+            if phone and isinstance(phone, str):
+                phone = phone.strip()
+                if not (len(phone) == 11 and phone.startswith("1") and phone.isdigit()):
+                    issues.append(
+                        f"手机号 \"{phone}\" 格式不正确。"
+                        f"请输入 11 位中国大陆手机号（1 开头）。"
+                    )
+
+        # 5. 加工项ID格式检查（对抗编程：防止LLM传序号代替真实UUID）
         pids = params.get("processing_item_ids")
         if pids and isinstance(pids, list):
             for pid in pids:

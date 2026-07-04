@@ -22,6 +22,7 @@ from app.utils.redis_client import RedisClient
 _OTP_KEY_PREFIX = "sms:otp:"
 _OTP_TTL_SECONDS = 300  # 5分钟有效期
 _OTP_VALID_PATTERN = re.compile(r"^\d{4,6}$")  # 4-6位数字验证码
+_PHONE_PATTERN = re.compile(r"^1[3-9]\d{9}$")  # 中国大陆手机号
 
 
 class OrderCreateTool(BaseTool):
@@ -272,6 +273,15 @@ class OrderCreateTool(BaseTool):
                 suggestion="请提供客户的联系电话",
             )
 
+        # 对抗编程：校验手机号格式，防止 LLM 编造号码
+        if not _PHONE_PATTERN.match(customer_phone.strip()):
+            return ToolResult(
+                success=False,
+                error="手机号格式无效",
+                message=f"手机号 {customer_phone} 格式不正确，请输入 11 位中国大陆手机号",
+                suggestion="请确认客户手机号是否正确",
+            )
+
         if not items or not isinstance(items, list):
             return ToolResult(
                 success=False,
@@ -328,14 +338,25 @@ class OrderCreateTool(BaseTool):
 
         try:
             # 构建请求体（admin-api 使用 camelCase）
+            # 对抗编程：透传 LLM 提供的所有字段，避免静默丢弃 productId/width/height/processingInfo
             items_payload = []
             for item in items:
-                items_payload.append({
+                entry: Dict[str, Any] = {
                     "productName": item["product_name"],
                     "quantity": int(item["quantity"]),
                     "unitPrice": float(item["unit_price"]),
                     "subtotal": float(item["subtotal"]),
-                })
+                }
+                # 透传可选字段 — 不信任 LLM 一定传，但传了就不能丢
+                for py_key, java_key in [
+                    ("product_id", "productId"),
+                    ("width", "width"),
+                    ("height", "height"),
+                    ("processing_info", "processingInfo"),
+                ]:
+                    if item.get(py_key) is not None:
+                        entry[java_key] = item[py_key]
+                items_payload.append(entry)
 
             json_data: Dict[str, Any] = {
                 "customerName": customer_name,
