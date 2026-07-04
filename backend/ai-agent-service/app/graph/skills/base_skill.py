@@ -472,6 +472,88 @@ async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -
     return result_str, result_dict
 
 
+async def _self_correct_retry(
+    tool,
+    tool_args: dict,
+    tool_context,
+    skill_name: str,
+    result_dict: dict,
+    session: str,
+    tenant: int,
+    state: dict,
+) -> tuple[str, dict] | None:
+    """自修复重试：工具失败且有 suggestion 时，让 LLM 修正参数后重试。
+
+    这是 Error-Self-Correct Skill 的核心——不依赖 LLM 在多轮对话中
+    自己发现和修复，而是在工具层直接做一次自动修正。
+
+    Returns:
+        (result_str, result_dict) 如果重试成功；None 如果不需重试或重试失败。
+    """
+    suggestion = result_dict.get("suggestion", "")
+    if not suggestion:
+        return None
+
+    error_msg = result_dict.get("message", result_dict.get("error", "执行失败"))
+    logger.info(
+        f"[{skill_name}][self-correct] Tool {tool.name} failed, attempting auto-correct | "
+        f"error={error_msg[:80]} | session={session}"
+    )
+
+    # 构建修正提示 — 只给关键信息，不引入全量上下文
+    correction_prompt = (
+        f"工具 `{tool.name}` 调用失败。\n"
+        f"错误：{error_msg}\n"
+        f"修复建议：{suggestion}\n\n"
+        f"原始参数：{json.dumps(tool_args, ensure_ascii=False)}\n\n"
+        f"请根据修复建议，输出修正后的 JSON 参数（只输出 JSON，不要其他文字）。"
+    )
+
+    try:
+        from app.llm import LLMFactory
+
+        # 用 suggestion_llm 做修正（轻量、低延迟）
+        llm = LLMFactory.create_suggestion_llm()
+        # 覆盖 temperature 以获得更确定性的输出
+        if hasattr(llm, "temperature"):
+            llm.temperature = 0.1
+
+        response = await llm.ainvoke([HumanMessage(content=correction_prompt)])
+        corrected_text = (response.content if hasattr(response, "content") else str(response)).strip()
+
+        # 提取 JSON
+        import re as _re
+        json_match = _re.search(r'\{[^{}]*\}', corrected_text, _re.DOTALL)
+        if not json_match:
+            logger.warning(f"[{skill_name}][self-correct] LLM response not valid JSON: {corrected_text[:100]}")
+            return None
+
+        corrected_args = json.loads(json_match.group(0))
+        logger.info(
+            f"[{skill_name}][self-correct] Corrected args: "
+            f"{json.dumps(corrected_args, ensure_ascii=False)[:200]}"
+        )
+
+        # 用修正后的参数重新执行
+        corrected_result_str, corrected_result_dict = await _execute_tool_safe(
+            tool, corrected_args, tool_context, state,
+        )
+
+        if corrected_result_dict.get("success"):
+            logger.info(f"[{skill_name}][self-correct] ✅ Auto-correct succeeded")
+            return corrected_result_str, corrected_result_dict
+        else:
+            logger.warning(
+                f"[{skill_name}][self-correct] ❌ Auto-correct still failed: "
+                f"{corrected_result_dict.get('message', corrected_result_dict.get('error', 'unknown'))[:80]}"
+            )
+            return None
+
+    except Exception as e:
+        logger.error(f"[{skill_name}][self-correct] Exception: {type(e).__name__}: {e}")
+        return None
+
+
 async def execute_skill(
     state: AgentState,
     skill_name: str,
@@ -867,6 +949,15 @@ async def execute_skill(
                         result_str, result_dict = await _execute_tool_safe(
                             tool_instance, tool_args, tool_context, state,
                         )
+                        # Error-Self-Correct: 工具失败且有 suggestion 时自动修正重试
+                        if not result_dict.get("success") and result_dict.get("suggestion"):
+                            corrected = await _self_correct_retry(
+                                tool_instance, tool_args, tool_context,
+                                skill_name, result_dict,
+                                session_id, tenant_id, state,
+                            )
+                            if corrected:
+                                result_str, result_dict = corrected
                     else:
                         result_str = json.dumps({
                             "success": False, "error": "tool_not_found",
