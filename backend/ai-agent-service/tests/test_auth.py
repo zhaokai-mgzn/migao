@@ -238,7 +238,6 @@ class TestVerifyServiceToken:
         mock_settings.SERVICE_TOKEN = "secret-token-123"
 
         from app.utils.auth import verify_service_token
-        import inspect
 
         # 验证函数存在且正确拒绝不匹配 token
         result_match = await verify_service_token("secret-token-123")
