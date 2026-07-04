@@ -3,9 +3,11 @@ package com.migao.admin.service;
 import com.migao.admin.dto.*;
 import com.migao.admin.entity.AfterSalesTicket;
 import com.migao.admin.entity.Order;
+import com.migao.admin.entity.TicketTimeline;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.AfterSalesTicketMapper;
 import com.migao.admin.mapper.OrderMapper;
+import com.migao.admin.mapper.TicketTimelineMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -35,6 +37,7 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
 
     private final AfterSalesTicketMapper afterSalesTicketMapper;
     private final OrderMapper orderMapper;
+    private final TicketTimelineMapper ticketTimelineMapper;
     private final ObjectMapper objectMapper;
 
     /**
@@ -133,7 +136,15 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
      * @return 工单详情响应
      */
     public AfterSalesDetailResponse getTicketById(String id) {
+        // 先按 UUID 查
         AfterSalesTicket ticket = afterSalesTicketMapper.selectById(id);
+        // UUID 没找到，尝试按 ticket_no 查询（兼容米宝用 ticket_no 调用 detail 接口）
+        if (ticket == null) {
+            ticket = afterSalesTicketMapper.selectOne(
+                new LambdaQueryWrapper<AfterSalesTicket>()
+                    .eq(AfterSalesTicket::getTicketNo, id)
+            );
+        }
         if (ticket == null) {
             throw BusinessException.notFound("售后工单");
         }
@@ -220,6 +231,11 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
 
         ticket.setStatus(newStatus);
 
+        // 保存 internalNotes（前端/米宝传来的备注写入 internal_notes）
+        if (StringUtils.hasText(request.getRemark())) {
+            ticket.setInternalNotes(request.getRemark());
+        }
+
         // 如果是关闭或拒绝，记录关闭时间和原因
         if ("closed".equals(newStatus) || "rejected".equals(newStatus)) {
             ticket.setClosedAt(OffsetDateTime.now());
@@ -230,7 +246,21 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
 
         afterSalesTicketMapper.updateById(ticket);
 
-        log.info("更新工单状态成功: id={}, {} -> {}", id, currentStatus, newStatus);
+        // 写入时间线记录（每次状态变更都记录）
+        TicketTimeline timeline = new TicketTimeline();
+        timeline.setTicketId(id);
+        timeline.setTenantId(ticket.getTenantId());
+        timeline.setAction("status_change");
+        Map<String, Object> content = new HashMap<>();
+        content.put("from", currentStatus);
+        content.put("to", newStatus);
+        content.put("remark", StringUtils.hasText(request.getRemark()) ? request.getRemark() : "");
+        timeline.setContent(content);
+        timeline.setCreatedAt(OffsetDateTime.now());
+        ticketTimelineMapper.insert(timeline);
+
+        log.info("更新工单状态成功: id={}, {} -> {}, remark={}", id, currentStatus, newStatus,
+                StringUtils.hasText(request.getRemark()) ? request.getRemark() : "(无)");
     }
 
     /**
@@ -318,28 +348,38 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
             response.setCustomerPhone(order.getCustomerPhone());
         }
 
-        // 构建状态历史（基于当前状态生成简单历史）
+        // 构建状态历史：优先从 ticket_timeline 表读取真实记录
         List<AfterSalesDetailResponse.StatusHistoryItem> history = new ArrayList<>();
 
-        // 创建时间作为第一条历史
-        if (ticket.getCreatedAt() != null) {
-            AfterSalesDetailResponse.StatusHistoryItem created = new AfterSalesDetailResponse.StatusHistoryItem();
-            created.setStatus("pending");
-            created.setTime(ticket.getCreatedAt().toString());
-            created.setOperator("系统");
-            created.setRemark("工单创建");
-            history.add(created);
-        }
-
-        // 如果状态已经变更，添加当前状态记录
-        if (!"pending".equals(ticket.getStatus()) && ticket.getUpdatedAt() != null) {
-            AfterSalesDetailResponse.StatusHistoryItem current = new AfterSalesDetailResponse.StatusHistoryItem();
-            current.setStatus(ticket.getStatus());
-            current.setTime(ticket.getUpdatedAt().toString());
-            if ("closed".equals(ticket.getStatus()) || "rejected".equals(ticket.getStatus())) {
-                current.setRemark(ticket.getCloseReason());
+        List<TicketTimeline> timelines = ticketTimelineMapper.selectByTicketId(
+            ticket.getId(), ticket.getTenantId());
+        if (timelines != null && !timelines.isEmpty()) {
+            for (TicketTimeline tl : timelines) {
+                AfterSalesDetailResponse.StatusHistoryItem item =
+                    new AfterSalesDetailResponse.StatusHistoryItem();
+                @SuppressWarnings("unchecked")
+                Map<String, Object> content = tl.getContent() instanceof Map
+                    ? (Map<String, Object>) tl.getContent() : null;
+                if (content != null) {
+                    item.setStatus(String.valueOf(content.getOrDefault("to", "")));
+                    item.setRemark(String.valueOf(content.getOrDefault("remark", "")));
+                }
+                if (tl.getCreatedAt() != null) {
+                    item.setTime(tl.getCreatedAt().toString());
+                }
+                history.add(item);
             }
-            history.add(current);
+        } else {
+            // 兜底：ticket_timeline 无数据时，生成简单的创建记录
+            if (ticket.getCreatedAt() != null) {
+                AfterSalesDetailResponse.StatusHistoryItem created =
+                    new AfterSalesDetailResponse.StatusHistoryItem();
+                created.setStatus("pending");
+                created.setTime(ticket.getCreatedAt().toString());
+                created.setOperator("系统");
+                created.setRemark("工单创建");
+                history.add(created);
+            }
         }
 
         response.setStatusHistory(history);

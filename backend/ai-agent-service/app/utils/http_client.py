@@ -159,6 +159,14 @@ class AdminApiClient:
                 json=json_data,
                 headers=request_headers,
             )
+            # 4xx = 客户端/业务错误（404/422/400等），不是服务故障，不应触发熔断
+            if 400 <= response.status_code < 500:
+                result: Dict[str, Any] = response.json()
+                return {
+                    "success": False,
+                    "error": result.get("error", {}),
+                    "data": None,
+                }
             response.raise_for_status()
             result: Dict[str, Any] = response.json()
 

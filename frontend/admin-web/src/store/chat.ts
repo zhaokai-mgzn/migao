@@ -37,6 +37,20 @@ interface ChatState {
 
 const getToken = () => useAuthStore.getState().accessToken || ''
 
+// 跨模式持久化：浮窗模式和全屏模式共享同一个 session ID
+const PERSISTED_SESSION_KEY = 'mibao_current_session_id'
+
+const persistSessionId = (id: string | null) => {
+  try {
+    if (id) localStorage.setItem(PERSISTED_SESSION_KEY, id)
+    else localStorage.removeItem(PERSISTED_SESSION_KEY)
+  } catch { /* ignore */ }
+}
+
+const restoreSessionId = (): string | null => {
+  try { return localStorage.getItem(PERSISTED_SESSION_KEY) } catch { return null }
+}
+
 /** 检查当前会话是否有未完成的工具调用 */
 function hasPendingTools(messages: ChatMessage[]): boolean {
   return messages.some(
@@ -139,19 +153,13 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         created_at: sessionData.created_at || new Date().toISOString(),
         updated_at: sessionData.updated_at || new Date().toISOString(),
       }
-      // 后端会自动关闭该用户其他 active 会话，前端同步调整本地状态
+      // 支持多会话并存，不再自动关闭其他活跃会话
       set(state => ({
-        sessions: [
-          newSession,
-          ...state.sessions.map(s =>
-            s.status === 'active' && s.session_id !== newSession.session_id
-              ? { ...s, status: 'closed' as const }
-              : s
-          ),
-        ],
+        sessions: [newSession, ...state.sessions],
         currentSessionId: newSession.session_id,
         messages: [],
       }))
+      persistSessionId(newSession.session_id)
     } catch (error) {
       console.error('创建会话失败:', error)
       toast.error('创建会话失败，请稍后重试')
@@ -168,7 +176,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       return
     }
 
-    set({ currentSessionId: id, messages: [], isLoadingMessages: true })
+    set({ currentSessionId: id, messages: [], isLoadingMessages: true }); persistSessionId(id)
 
     try {
       const data = await chatApi.getHistory(id, getToken())
@@ -227,6 +235,22 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     } catch (error) {
       console.error('重新打开会话失败:', error)
       toast.error('重新打开会话失败')
+    }
+  },
+
+  // 校验会话是否仍然活跃（浮窗/全屏模式切换时使用）
+  validateSessionStatus: async (id: string): Promise<'active' | 'closed' | 'not_found'> => {
+    try {
+      // 先检查本地 sessions 列表
+      const local = get().sessions.find(s => s.session_id === id)
+      if (local) return local.status === 'active' ? 'active' : 'closed'
+      // 不在本地列表中，刷新列表再查
+      await get().fetchSessions()
+      const refreshed = get().sessions.find(s => s.session_id === id)
+      if (refreshed) return refreshed.status === 'active' ? 'active' : 'closed'
+      return 'not_found'
+    } catch {
+      return 'not_found'
     }
   },
 
@@ -479,6 +503,9 @@ function handleSSEEvent(
             !!newSessionId &&
             newSessionId !== state.currentSessionId &&
             !hasPendingTools(state.messages)
+          if (shouldRotate) {
+            persistSessionId(newSessionId)
+          }
           return {
             isStreaming: false,
             ...(shouldRotate ? { currentSessionId: newSessionId } : {}),

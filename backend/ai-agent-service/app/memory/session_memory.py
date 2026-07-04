@@ -909,3 +909,49 @@ class SessionMemory:
                 await db.rollback()
                 logger.error(f"[session-memory] Cleanup failed error={e}")
                 raise
+
+    async def close_idle_sessions(self, idle_minutes: int = 30) -> int:
+        """
+        自动关闭空闲超过指定分钟数的活跃会话。
+
+        关闭条件：status='active' 且最后一条消息距现在超过 idle_minutes 分钟。
+        无消息的会话以 created_at 作为判定基准。
+
+        Returns:
+            int: 关闭的会话数量
+        """
+        async with await self._get_session() as db:
+            try:
+                from sqlalchemy import text
+                from datetime import timedelta
+                cutoff = self._now() - timedelta(minutes=idle_minutes)
+
+                # 使用子查询找出最后消息时间超过阈值的活跃会话
+                sql = text("""
+                    UPDATE sessions
+                    SET status = 'closed',
+                        ended_at = COALESCE(ended_at, :now),
+                        updated_at = :now
+                    WHERE status = 'active'
+                      AND COALESCE(
+                        (SELECT MAX(created_at) FROM session_messages
+                         WHERE session_id = sessions.id),
+                        created_at
+                      ) < :cutoff
+                """)
+                result = await db.execute(sql, {
+                    "now": self._now(),
+                    "cutoff": cutoff,
+                })
+                await db.commit()
+                count = result.rowcount or 0
+                if count > 0:
+                    logger.info(
+                        f"[session-memory] Auto-closed {count} idle sessions "
+                        f"(idle > {idle_minutes}min)"
+                    )
+                return count
+            except Exception as e:
+                await db.rollback()
+                logger.warning(f"[session-memory] close_idle_sessions failed: {e}")
+                return 0

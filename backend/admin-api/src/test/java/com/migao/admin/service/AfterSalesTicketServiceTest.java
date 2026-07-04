@@ -6,6 +6,8 @@ import com.migao.admin.entity.Order;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.AfterSalesTicketMapper;
 import com.migao.admin.mapper.OrderMapper;
+import com.migao.admin.mapper.TicketTimelineMapper;
+import com.migao.admin.entity.TicketTimeline;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -39,6 +41,9 @@ class AfterSalesTicketServiceTest {
 
     @Mock
     private OrderMapper orderMapper;
+
+    @Mock
+    private TicketTimelineMapper ticketTimelineMapper;
 
     @Mock
     private ObjectMapper objectMapper;
@@ -387,4 +392,63 @@ class AfterSalesTicketServiceTest {
                     assertThat(bex.getCode()).isEqualTo("NOT_FOUND");
                 });
     }
+
+    // ========== Bug修复测试 ==========
+
+    @Test
+    @DisplayName("getTicketById — 按ticket_no查询 (兼容米宝用ticket_no调用detail)")
+    void getTicketById_ByTicketNo() {
+        // given: UUID查询返回null, 但ticket_no查询找到记录
+        when(afterSalesTicketMapper.selectById("AS-20260704-0001")).thenReturn(null);
+        when(afterSalesTicketMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(testTicket);
+        when(orderMapper.selectById(anyString())).thenReturn(testOrder);
+
+        // when
+        AfterSalesDetailResponse result = afterSalesTicketService.getTicketById("AS-20260704-0001");
+
+        // then: 应通过ticket_no成功找到工单
+        assertThat(result).isNotNull();
+        assertThat(result.getTicketNo()).isEqualTo("AS-20250425-0001");
+        verify(afterSalesTicketMapper).selectById("AS-20260704-0001");
+        verify(afterSalesTicketMapper).selectOne(any(LambdaQueryWrapper.class));
+    }
+
+    @Test
+    @DisplayName("updateTicketStatus — 保存remark到internalNotes")
+    void updateTicketStatus_SavesInternalNotes() {
+        // given
+        when(afterSalesTicketMapper.selectById("ticket-test-001")).thenReturn(testTicket);
+
+        AfterSalesStatusUpdateRequest request = new AfterSalesStatusUpdateRequest();
+        request.setStatus("processing");
+        request.setRemark("已分配给客服张三处理");
+
+        // when
+        afterSalesTicketService.updateTicketStatus("ticket-test-001", request);
+
+        // then: internalNotes应被设置
+        assertThat(testTicket.getInternalNotes()).isEqualTo("已分配给客服张三处理");
+        assertThat(testTicket.getStatus()).isEqualTo("processing");
+        verify(afterSalesTicketMapper).updateById(testTicket);
+        // 验证timeline被写入
+        verify(ticketTimelineMapper).insert(any(TicketTimeline.class));
+    }
+
+    @Test
+    @DisplayName("updateTicketStatus — pending→processing时timeline记录from/to")
+    void updateTicketStatus_WritesTimelineOnStatusChange() {
+        // given
+        when(afterSalesTicketMapper.selectById("ticket-test-001")).thenReturn(testTicket);
+
+        AfterSalesStatusUpdateRequest request = new AfterSalesStatusUpdateRequest();
+        request.setStatus("processing");
+        request.setRemark("开始处理");
+
+        // when
+        afterSalesTicketService.updateTicketStatus("ticket-test-001", request);
+
+        // then: timeline应包含 from=pending, to=processing, remark
+        verify(ticketTimelineMapper).insert(org.mockito.ArgumentMatchers.<TicketTimeline>any());
+    }
+
 }

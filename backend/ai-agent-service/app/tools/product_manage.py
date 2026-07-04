@@ -79,10 +79,20 @@ async def _resolve_category_id(category_id, context):
                     if isinstance(child, dict) and child.get("id","").startswith(category_id[:16]):
                         logger.info(f"[product_manage] Resolved truncated UUID {category_id[:20]}... → {child['id']}")
                         return child["id"]
-        logger.warning(f"[product_manage] Could not resolve category_id: {category_id}")
+
+        # 全部匹配失败 → 返回 None，由调用方决定如何处理
+        available_names = []
+        for c in cat_list:
+            if isinstance(c, dict):
+                available_names.append(f"{c.get('name', '?')} (id={c.get('id', '?')[:8]}...)")
+        logger.warning(
+            f"[product_manage] Could not resolve category_id: {category_id}. "
+            f"Available categories: {available_names[:5]}"
+        )
+        return None
     except Exception as e:
         logger.warning(f"[product_manage] Category resolution failed: {e}")
-    return category_id
+    return None
 
 VALID_PRODUCT_STATUSES = {"on_sale", "off_sale"}
 
@@ -345,7 +355,16 @@ class ProductManageTool(BaseTool):
             )
         
         # AI 友好：自动规范化 LLM 可能传错的参数
+        original_category_id = category_id
         category_id = await _resolve_category_id(category_id, context) if category_id else None
+        # 如果 LLM 传了 category_id 但解析失败，立即返回错误引导 LLM 重新查询分类树
+        if original_category_id and not category_id:
+            return ToolResult(
+                success=False,
+                error=f"分类ID无效: {original_category_id}",
+                message=f"无法找到匹配的分类（ID: {original_category_id}），请使用 category_manage tree 查询正确的分类ID",
+                suggestion="请先调用 category_manage(action='tree') 获取分类树，然后用正确的分类ID重试",
+            )
         price = _normalize_number(price)
         stock_quantity = _normalize_number(stock_quantity)
         colors = _normalize_array(colors) if colors is not None else None
@@ -424,10 +443,17 @@ class ProductManageTool(BaseTool):
         
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "创建失败")
+            error_code = response.get("error", {}).get("code", "")
+            suggestion = ""
+            if "分类" in error_msg or "CATEGORY" in str(error_code).upper():
+                suggestion = "请使用 category_manage(action='tree') 获取分类树，确认正确的分类ID后重试"
+            elif "VALIDATION" in str(error_code).upper():
+                suggestion = "参数校验失败，请检查必填字段是否完整，确认后重试"
             return ToolResult(
                 success=False,
                 error=error_msg,
                 message=f"创建商品失败：{error_msg}",
+                suggestion=suggestion,
             )
         
         product_data = response.get("data", {})

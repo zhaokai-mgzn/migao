@@ -463,3 +463,33 @@ class TestSessionMemoryHelpers:
         """不带 db_session 初始化"""
         mem = SessionMemory()
         assert mem._db is None
+
+
+class TestCloseIdleSessions:
+    """自动关闭空闲会话"
+
+    async def test_close_idle_sessions_closes_stale(self, memory, mock_db):
+        """关闭最后消息超过阈值的活跃会话"
+        from datetime import datetime, timedelta
+        mock_db.execute.return_value.rowcount = 2
+
+        count = await memory.close_idle_sessions(idle_minutes=30)
+
+        assert count == 2  # 2个空闲会话被关闭
+        mock_db.execute.assert_called_once()
+
+    async def test_close_idle_sessions_none_idle(self, memory, mock_db):
+        """没有空闲会话时返回0"
+        mock_db.execute.return_value.rowcount = 0
+
+        count = await memory.close_idle_sessions(idle_minutes=30)
+
+        assert count == 0
+
+    async def test_close_idle_sessions_handles_error(self, memory, mock_db):
+        """数据库错误时返回0，不抛异常"
+        mock_db.execute.side_effect = Exception('DB error')
+
+        count = await memory.close_idle_sessions(idle_minutes=30)
+
+        assert count == 0  # 降级返回0
