@@ -343,6 +343,21 @@ describe('InteractiveMessage', () => {
     )
     expect(container.firstChild).toBeNull()
   })
+
+  it('renders confirm component with fields', () => {
+    // 对抗性审查修复 #937：InteractiveMessage 支持 confirm 类型
+    const interactive = {
+      component: 'confirm' as const,
+      title: '确认退款',
+      fields: [
+        { label: '订单号', value: 'ORD-001' },
+        { label: '金额', value: '¥299' },
+      ],
+    }
+    render(<InteractiveMessage interactive={interactive} />)
+    expect(screen.getByText('确认退款')).toBeInTheDocument()
+    expect(screen.getByText('ORD-001')).toBeInTheDocument()
+  })
 })
 
 // ═══════════════════════════════════════════════════

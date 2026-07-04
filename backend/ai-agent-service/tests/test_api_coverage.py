@@ -254,3 +254,38 @@ class TestInternalModels:
         req = KnowledgeSyncRequest(tenant_id=1, type="full_sync")
         assert req.tenant_id == 1
         assert req.type == "full_sync"
+
+
+# ═══════════════════════════════════════
+# 对抗性审查修复 #937 — chat.py / schemas.py
+# ═══════════════════════════════════════
+
+class TestChatSSEDoneFix:
+    def test_sse_done_event_structure(self):
+        """SSE done 事件包含 session_id 和 message_id"""
+        from app.api.sse import SSEEvent
+        event = SSEEvent.done("sess_001", "msg_001")
+        assert "event: done" in event
+        assert "sess_001" in event
+        assert "msg_001" in event
+
+    def test_sse_interactive_event(self):
+        """SSE interactive 事件发送 choice/confirm/form 组件"""
+        from app.api.sse import SSEEvent
+        event = SSEEvent.interactive("choice", {"title": "test"})
+        assert "event: interactive" in event
+        assert "choice" in event
+
+
+class TestSchemasMaxLength:
+    def test_message_max_length(self):
+        """ChatSendRequest.message 有 max_length=10000 约束"""
+        from app.api.schemas import ChatSendRequest
+        from pydantic import ValidationError
+        import pytest
+        # 验证 schema 定义包含 max_length
+        field = ChatSendRequest.model_fields["message"]
+        assert field.metadata is not None
+        # 超长消息应被拒绝
+        with pytest.raises(ValidationError):
+            ChatSendRequest(message="x" * 10001)
