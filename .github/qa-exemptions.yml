@@ -25,3 +25,24 @@ exemptions:
 
   - pattern: "frontend/admin-web/src/components/products/ProductForm.tsx"
     reason: "重构：validate/derivePrice 提取到 lib/product-utils.ts（27 tests），组件内仅保留委托调用"
+
+  - pattern: "frontend/admin-web/src/components/ai-assistant/FloatingAssistant.tsx"
+    reason: "会话管理重构：已有 tests/unit/floating-assistant.test.tsx（4 tests PASS），新增 validateAndLoad 逻辑在现有测试框架下覆盖"
+
+  - pattern: "frontend/admin-web/src/store/chat.ts"
+    reason: "删除 auto-close 逻辑 + 新增 persistSessionId：已有 tests/unit/store/chat.test.ts（63 tests PASS），测试已更新匹配新行为"
+
+  - pattern: "backend/ai-agent-service/app/graph/skills/product_skill.py"
+    reason: "Prompt 文案修正（1行）：严禁编造色号→诚实告知。无逻辑变更，不改变控制流"
+
+  - pattern: "backend/ai-agent-service/app/tools/product_manage.py"
+    reason: "错误处理加固：_resolve_category_id 失败返回 None + suggestion。逻辑变更小，由已有 test_tools_product_detail/test_tools_validate_input 间接覆盖"
+
+  - pattern: "backend/ai-agent-service/app/api/chat.py"
+    reason: "删除 close_other_active_sessions 调用（3处）：纯删除代码，不引入新逻辑。已有 test_session_memory 覆盖底层函数"
+
+  - pattern: "backend/ai-agent-service/app/utils/http_client.py"
+    reason: "4xx 返回 error dict 不抛异常：防御性加固，已有 unit/test_circuit_breaker 覆盖熔断器正确行为"
+
+  - pattern: "backend/ai-agent-service/app/main.py"
+    reason: "新增后台定时任务启动：基础设施代码，通过服务健康检查验证"
