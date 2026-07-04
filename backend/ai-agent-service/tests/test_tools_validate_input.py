@@ -14,7 +14,7 @@ class TestValidateInputSuccess:
             context=admin_tool_context,
             target_tool="product_manage",
             target_action="create",
-            params={"name": "遮光窗帘", "price": 299},
+            params={"name": "遮光窗帘", "price": 299, "category_id": "cat-test-001"},
         )
         assert result.success is True
         assert result.data["validated"] is True
