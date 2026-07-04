@@ -251,6 +251,7 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
         timeline.setTicketId(id);
         timeline.setTenantId(ticket.getTenantId());
         timeline.setAction("status_change");
+        timeline.setActorType("system");
         Map<String, Object> content = new HashMap<>();
         content.put("from", currentStatus);
         content.put("to", newStatus);
