@@ -197,6 +197,61 @@ describe('DashboardPage', () => {
     })
   })
 
+  it('SVG viewBox height should be ≥ 230 for date label space (A1 fix)', async () => {
+    const { container } = render(<DashboardPage />)
+    await waitFor(() => {
+      const trendSvg = container.querySelector('svg[viewBox]')
+      expect(trendSvg).toBeTruthy()
+      const viewBox = trendSvg!.getAttribute('viewBox') || ''
+      const parts = viewBox.split(' ')
+      const height = parseInt(parts[3] || '0', 10)
+      expect(height).toBeGreaterThanOrEqual(230)
+    })
+  })
+
+  it('SVG should not use preserveAspectRatio="none" (A3 fix)', async () => {
+    const { container } = render(<DashboardPage />)
+    await waitFor(() => {
+      const trendSvg = container.querySelector('svg[viewBox]')
+      expect(trendSvg).toBeTruthy()
+      const preserveAspectRatio = trendSvg!.getAttribute('preserveAspectRatio')
+      expect(preserveAspectRatio).not.toBe('none')
+    })
+  })
+
+  it('date labels should exist with proper y-coordinate above data baseline', async () => {
+    render(<DashboardPage />)
+    await waitFor(() => {
+      const textElements = document.querySelectorAll('svg text')
+      const dateLabels = Array.from(textElements).filter(
+        (el) => el.textContent?.match(/^\d{2}-\d{2}$/)
+      )
+      expect(dateLabels.length).toBeGreaterThan(0)
+      for (const label of dateLabels) {
+        const y = parseFloat(label.getAttribute('y') || '0')
+        expect(y).toBeGreaterThan(210)
+        expect(y).toBeLessThan(240)
+      }
+    })
+  })
+
+  it('data circles should be positioned above date labels', async () => {
+    render(<DashboardPage />)
+    await waitFor(() => {
+      const circles = document.querySelectorAll('svg circle')
+      const textElements = document.querySelectorAll('svg text')
+      const dateLabels = Array.from(textElements).filter(
+        (el) => el.textContent?.match(/^\d{2}-\d{2}$/)
+      )
+      expect(circles.length).toBeGreaterThan(0)
+      const maxLabelY = Math.max(...dateLabels.map((el) => parseFloat(el.getAttribute('y') || '0')))
+      for (const circle of circles) {
+        const cy = parseFloat(circle.getAttribute('cy') || '0')
+        expect(cy).toBeLessThan(maxLabelY)
+      }
+    })
+  })
+
   // ── 近期订单 ──
 
   it('should render recent orders table', async () => {

@@ -83,9 +83,21 @@ describe('OrderTrendChart', () => {
     expect(onRangeChange).toHaveBeenNthCalledWith(2, 7)
   })
 
-  it('renders chart even with empty data array', () => {
-    render(<OrderTrendChart data={[]} />)
+  it('shows "暂无数据" when data is empty and not loading (A5 fix)', () => {
+    render(<OrderTrendChart data={[]} loading={false} />)
+    expect(screen.getByText('暂无数据')).toBeInTheDocument()
+  })
+
+  it('does NOT render chart container when data is empty and not loading (A5 fix)', () => {
+    render(<OrderTrendChart data={[]} loading={false} />)
+    expect(screen.queryByTestId('responsive-container')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('line-chart')).not.toBeInTheDocument()
+  })
+
+  it('renders chart when data is non-empty', () => {
+    render(<OrderTrendChart data={mockData} />)
     expect(screen.getByTestId('responsive-container')).toBeInTheDocument()
+    expect(screen.getByTestId('line-chart')).toBeInTheDocument()
   })
 
   it('renders all recharts sub-components', () => {
