@@ -64,6 +64,24 @@ _VALIDATION_RULES: Dict[str, Dict[str, Any]] = {
 _MANAGE_UPDATE_REQUIRED = ["product_id"]
 
 
+def _format_param_value(val: Any, max_items: int = 20) -> str:
+    """格式化参数值用于回显摘要，数组截断避免 token 爆炸"""
+    if isinstance(val, list):
+        if len(val) == 0:
+            return "`[]` (空)"
+        items = [str(v) for v in val[:max_items]]
+        suffix = f" ... (+{len(val) - max_items})" if len(val) > max_items else ""
+        return f"`[{', '.join(items)}{suffix}]` ({len(val)} 项)"
+    if isinstance(val, dict):
+        keys = list(val.keys())[:10]
+        return f"`{{{', '.join(keys)}}}`"
+    if isinstance(val, str):
+        return f"`{val}`"
+    if val is None:
+        return "`(空)`"
+    return f"`{val}`"
+
+
 class ValidateInputTool(BaseTool):
     """前置校验工具
 
@@ -186,8 +204,24 @@ class ValidateInputTool(BaseTool):
             )
 
         logger.info(f"[validate_input] {target_tool}.{target_action} passed validation")
+
+        # 校验通过后回显完整参数摘要，让 LLM 在调用前自我检查是否遗漏
+        summary_lines = ["## ✅ 校验通过 — 即将发送的参数", ""]
+        summary_lines.append("| 参数 | 值 |")
+        summary_lines.append("|------|-----|")
+        for key, val in params.items():
+            if key == "action":
+                continue
+            display = _format_param_value(val)
+            summary_lines.append(f"| {key} | {display} |")
+        summary_lines.append("")
+        summary_lines.append("> ⚠️ 请逐项核对以上参数是否与你向用户确认的内容一致。")
+        summary_lines.append("> 如有遗漏（如少了某个售卖方式/颜色/门幅），请立即修正参数后重新校验。")
+        summary_lines.append("> 确认无误后，立即调用 product_manage(action='create', ...) 执行。")
+        summary = "\n".join(summary_lines)
+
         return ToolResult(
             success=True,
-            data={"validated": True},
-            message="参数校验通过，可以执行操作",
+            data={"validated": True, "params": params},
+            message=summary,
         )
