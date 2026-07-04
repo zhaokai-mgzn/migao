@@ -481,7 +481,7 @@ describe('useChatStore (Zustand chat store) — #571', () => {
       expect(state.messages).toEqual([])
     })
 
-    it('should mark other active sessions as closed', async () => {
+    it('should NOT auto-close other active sessions (multi-session support)', async () => {
       mockCreateSession.mockResolvedValue({
         data: { id: 'new-s2' },
       })
@@ -500,7 +500,8 @@ describe('useChatStore (Zustand chat store) — #571', () => {
       })
 
       const sessions = useChatStore.getState().sessions
-      expect(sessions.find(s => s.session_id === 's-active')?.status).toBe('closed')
+      // 新行为：其他活跃会话保持 active，不再自动关闭
+      expect(sessions.find(s => s.session_id === 's-active')?.status).toBe('active')
       expect(sessions.find(s => s.session_id === 's-closed')?.status).toBe('closed')
     })
 

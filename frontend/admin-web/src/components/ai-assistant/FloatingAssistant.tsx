@@ -6,6 +6,7 @@ import { X, Minus, Send, Loader2, Plus, Maximize2, Bot, User, Copy, Check } from
 import { MibaoLogo } from '@/components/icons/MibaoLogo'
 import { cn } from '@/lib/utils'
 import { chatApi } from '@/lib/api'
+import { useChatStore } from '@/store/chat'
 import { useAuthStore } from '@/store/auth'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -22,7 +23,7 @@ interface AssistantMessage {
 }
 
 // ========== 常量 ==========
-const STORAGE_KEY_SESSION = 'ai_assistant_session_id'
+const STORAGE_KEY_SESSION = 'mibao_current_session_id'  // 与 useChatStore 共享
 const STORAGE_KEY_TIMESTAMP = 'ai_assistant_last_active'
 const SESSION_TIMEOUT_MS = 30 * 60 * 1000 // 30 分钟
 
@@ -102,14 +103,15 @@ export default function FloatingAssistant() {
   }, [messages, scrollToBottom])
 
   // 面板打开时：恢复会话历史 + 聚焦输入框
-  // - 有持久化 sessionId → 直接加载历史
+  // - 有持久化 sessionId → 校验状态后加载
   // - 无持久化 sessionId → 从 AI 服务拉取最新活跃会话
   useEffect(() => {
     if (isOpen) {
       setTimeout(() => inputRef.current?.focus(), 300)
 
       if (sessionId && historyLoadedRef.current !== sessionId) {
-        loadHistory(sessionId)
+        // 先校验会话是否仍活跃
+        validateAndLoad(sessionId)
         latestSessionFetchedRef.current = false
       } else if (!sessionId && !latestSessionFetchedRef.current) {
         // 没有本地会话，去 AI 服务找最新活跃会话
@@ -122,6 +124,38 @@ export default function FloatingAssistant() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen])
+
+  // 校验会话状态后再加载历史
+  const validateAndLoad = async (sid: string) => {
+    try {
+      const token = getToken()
+      if (!token) return
+      const data = await chatApi.getSessions(token)
+      const items: any[] = data?.data?.items || data?.data?.sessions || data?.sessions || []
+      const session = items.find((s: any) => (s.id || s.session_id) === sid)
+      if (session && session.status === 'active') {
+        loadHistory(sid)
+      } else {
+        // 会话已关闭或不存在，尝试找最新活跃会话
+        const activeSession = items.find((s: any) => s.status === 'active')
+        if (activeSession) {
+          const activeId = activeSession.id || activeSession.session_id
+          setSessionId(activeId)
+          persistSession(activeId)
+          loadHistory(activeId)
+        } else {
+          // 无活跃会话，显示欢迎页
+          setSessionId(null)
+          persistSession(null)
+          setMessages([])
+          historyLoadedRef.current = null
+        }
+      }
+    } catch (err) {
+      // 校验失败降级为直接加载（网络问题等）
+      loadHistory(sid)
+    }
+  }
 
   // 从 AI 服务拉取最新活跃会话，有则加载历史，无则保持欢迎页
   const fetchLatestActiveSession = async () => {
@@ -193,14 +227,28 @@ export default function FloatingAssistant() {
     return newId
   }
 
-  // 新建对话
-  const handleNewChat = () => {
+  // 新建对话 — 调用 API 创建后端会话
+  const handleNewChat = async () => {
     if (isStreaming) return
-    setSessionId(null)
-    setMessages([])
-    persistSession(null)
-    historyLoadedRef.current = null
-    historyLoadingSessionRef.current = null
+    try {
+      const token = getToken()
+      const data = await chatApi.createSession(token)
+      const newId = data?.data?.id || data?.data?.session_id || data?.id || data?.session_id
+      if (newId) {
+        setSessionId(newId)
+        persistSession(newId)
+        setMessages([])
+        historyLoadedRef.current = newId
+        historyLoadingSessionRef.current = null
+      }
+    } catch (err) {
+      console.error('创建新会话失败:', err)
+      // fallback: 清空本地状态
+      setSessionId(null)
+      setMessages([])
+      persistSession(null)
+      historyLoadedRef.current = null
+    }
     setTimeout(() => inputRef.current?.focus(), 100)
   }
 

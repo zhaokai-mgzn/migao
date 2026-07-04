@@ -233,3 +233,58 @@ class TestDecorator:
 
         assert hasattr(my_func, "__circuit_breaker__")
         assert isinstance(my_func.__circuit_breaker__, CircuitBreaker)
+
+class TestCircuitBreaker4xxExclusion:
+    """4xx HTTP status codes are handled at http_client layer, not at circuit breaker"""
+
+    async def test_excluded_exceptions_skip_failure_count(self):
+        """excluded_exceptions 类型的异常不计入 failure（用于排除业务异常）"""
+        class BusinessValidationError(Exception):
+            pass
+
+        breaker = CircuitBreaker(
+            name="test_exclude",
+            failure_threshold=1,
+            excluded_exceptions=(BusinessValidationError,)
+        )
+
+        async def raise_business_error():
+            raise BusinessValidationError("业务校验失败")
+
+        # 被排除的异常不计入 failure
+        for _ in range(3):
+            try:
+                await breaker.call(raise_business_error)
+            except BusinessValidationError:
+                pass
+        assert breaker.failure_count == 0
+        assert breaker.state == CircuitBreakerState.CLOSED
+
+    async def test_non_excluded_exception_still_counted(self):
+        """未被排除的异常正常计入 failure"""
+        class BusinessValidationError(Exception):
+            pass
+
+        breaker = CircuitBreaker(
+            name="test_mixed",
+            failure_threshold=1,
+            excluded_exceptions=(BusinessValidationError,)
+        )
+
+        async def raise_runtime_error():
+            raise RuntimeError("真正的系统错误")
+
+        try:
+            await breaker.call(raise_runtime_error)
+        except RuntimeError:
+            pass
+        assert breaker.failure_count == 1
+
+    async def test_excluded_exceptions_is_tuple(self):
+        """excluded_exceptions 接受 Tuple[Type[BaseException]]"""
+        breaker = CircuitBreaker(
+            name="test_tuple",
+            failure_threshold=1,
+            excluded_exceptions=(ValueError, TypeError)
+        )
+        assert breaker.excluded_exceptions == (ValueError, TypeError)
