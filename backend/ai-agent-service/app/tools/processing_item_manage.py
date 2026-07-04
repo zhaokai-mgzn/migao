@@ -138,7 +138,7 @@ class ProcessingItemManageTool(BaseTool):
             if action == "create_item":
                 return await self._create_item(context, name, category_id, price, description, unit)
             elif action == "update_item":
-                return await self._update_item(context, item_id, name, category_id, price, description)
+                return await self._update_item(context, item_id, name, category_id, price, description, unit)
             elif action == "delete_item":
                 return await self._delete_item(context, item_id)
             elif action == "toggle_item_status":
@@ -244,6 +244,7 @@ class ProcessingItemManageTool(BaseTool):
         category_id: Optional[str],
         price: Optional[float],
         description: Optional[str],
+        unit: Optional[str] = None,
     ) -> ToolResult:
         """更新加工项"""
         if not item_id:
@@ -262,6 +263,8 @@ class ProcessingItemManageTool(BaseTool):
             json_data["price"] = price
         if description:
             json_data["description"] = description
+        if unit:
+            json_data["unit"] = unit
 
         if not json_data:
             return ToolResult(

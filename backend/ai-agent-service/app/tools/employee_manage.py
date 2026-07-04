@@ -148,7 +148,7 @@ class EmployeeManageTool(BaseTool):
             elif action == "create":
                 return await self._create_user(context, phone, password, name, role_ids)
             elif action == "update":
-                return await self._update_user(context, user_id, name, phone, password, avatar, role)
+                return await self._update_user(context, user_id, name, phone, password, avatar, role, role_ids)
             elif action == "delete":
                 return await self._delete_user(context, user_id)
             elif action == "reset_password":
@@ -346,6 +346,7 @@ class EmployeeManageTool(BaseTool):
         password: Optional[str],
         avatar: Optional[str],
         role: Optional[str],
+        role_ids: Optional[List[str]] = None,
     ) -> ToolResult:
         """更新员工信息"""
         if not user_id:
@@ -364,7 +365,9 @@ class EmployeeManageTool(BaseTool):
             json_data["password"] = password
         if avatar:
             json_data["avatar"] = avatar
-        if role:
+        if role_ids:
+            json_data["roleIds"] = role_ids
+        elif role:
             json_data["role"] = role
 
         if not json_data:

@@ -288,10 +288,13 @@ class InventoryManageTool(BaseTool):
                 message=f"当前库存 {current_stock}，无法减少 {abs(adjustment)}",
             )
         
-        # 更新库存
+        # 更新库存（对抗编程：透传 reason，防止丢失调整原因）
+        update_payload: dict = {"name": product_name, "stock": new_stock}
+        if reason:
+            update_payload["reason"] = reason
         response = await client.put(
             f"/api/admin/products/{product_id}",
-            json_data={"name": product_name, "stock": new_stock},
+            json_data=update_payload,
             tenant_id=context.tenant_id,
             user_id=context.user_id,
         )
