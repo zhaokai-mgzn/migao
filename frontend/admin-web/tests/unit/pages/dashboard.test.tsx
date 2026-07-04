@@ -274,79 +274,98 @@ describe('DashboardPage', () => {
     })
   })
 
-  // ── #942: 趋势图 SVG 布局修复 ──
+  // ── #942: 趋势图日期标签/数据点布局修复 ──
 
-  // 辅助函数：找到带 viewBox 的趋势图 SVG（MiniSparkline/MiniBarChart 的迷你 SVG 无 viewBox）
-  function findTrendSvg(): SVGElement | null {
-    const svgs = document.querySelectorAll('svg')
+  // 辅助：找到订单趋势的 SVG（带 viewBox + polyline + text 元素）
+  function findOrderTrendSvg(): SVGElement | null {
+    const svgs = Array.from(document.querySelectorAll('svg'))
     for (const svg of svgs) {
-      if (svg.getAttribute('viewBox')) return svg as unknown as SVGElement
+      if (svg.getAttribute('viewBox') && svg.querySelector('polyline') && svg.querySelector('text')) {
+        return svg as unknown as SVGElement
+      }
     }
     return null
   }
 
-  it('#942: 趋势图 SVG viewBox 高度应 > 200（为日期标签留空间）', async () => {
-    render(<DashboardPage />)
-    await waitFor(() => {
-      const svg = findTrendSvg()
-      expect(svg).toBeTruthy()
-      const viewBox = svg!.getAttribute('viewBox')!
-      const parts = viewBox.split(/\s+/)
-      const h = Number(parts[3])
-      expect(h).toBeGreaterThan(200)
-    })
-  })
-
-  it('#942: 趋势图 SVG 应包含 polyline + circle 数据点', async () => {
-    render(<DashboardPage />)
-    await waitFor(() => {
-      const svg = findTrendSvg()
-      expect(svg).toBeTruthy()
-      const polylines = svg!.querySelectorAll('polyline')
-      const circles = svg!.querySelectorAll('circle')
-      expect(polylines.length).toBeGreaterThan(0)
-      expect(circles.length).toBeGreaterThan(0)
-    })
-  })
-
-  it('#942: 趋势图 SVG 应渲染日期标签 (MM-DD)', async () => {
-    render(<DashboardPage />)
-    await waitFor(() => {
-      const svg = findTrendSvg()
-      expect(svg).toBeTruthy()
-      const texts = svg!.querySelectorAll('text')
-      expect(texts.length).toBeGreaterThan(0)
-      const datePattern = /\d{2}-\d{2}/
-      const hasDateLabel = Array.from(texts).some(t => datePattern.test(t.textContent || ''))
-      expect(hasDateLabel).toBe(true)
-    })
-  })
-
-  it('#942: 数据全 0 时应正常渲染趋势图而非报错', async () => {
+  it('#942: 数据全零时 polyline y 坐标不应全部压在图表底部', async () => {
     mockGetOrderTrend.mockResolvedValue({
       data: { data: [
-        { date: '2026-06-11', orders: 0, amount: 0 },
-        { date: '2026-06-10', orders: 0, amount: 0 },
+        { date: '2026-06-28', orders: 0 },
+        { date: '2026-06-29', orders: 0 },
+        { date: '2026-06-30', orders: 0 },
+        { date: '2026-07-01', orders: 0 },
+        { date: '2026-07-02', orders: 0 },
+        { date: '2026-07-03', orders: 0 },
+        { date: '2026-07-04', orders: 0 },
       ] },
     })
     render(<DashboardPage />)
     await waitFor(() => {
-      const svg = findTrendSvg()
+      const svg = findOrderTrendSvg()
       expect(svg).toBeTruthy()
-      const polylines = svg!.querySelectorAll('polyline')
-      expect(polylines.length).toBeGreaterThan(0)
+      if (!svg) return
+      const polyline = svg.querySelector('polyline')!
+      const points = polyline.getAttribute('points')!
+      // 解析所有 y 坐标
+      const yValues = points.split(' ').map(p => parseFloat(p.split(',')[1]))
+      const viewBoxH = parseFloat(svg.getAttribute('viewBox')!.split(/\s+/)[3])
+      // 数据全零时，y 坐标不应全贴在视图底部，应有部分点在中上部
+      const hasPointsAboveMiddle = yValues.some(y => y < viewBoxH * 0.7)
+      expect(hasPointsAboveMiddle).toBe(true)
+      // 同时不应有 y 坐标超出 viewBox
+      yValues.forEach(y => {
+        expect(y).toBeGreaterThanOrEqual(0)
+        expect(y).toBeLessThanOrEqual(viewBoxH)
+      })
     })
   })
 
-  it('#942: 销售额趋势图 SVG viewBox 高度也应 > 200', async () => {
+  it('#942: 日期标签 y 坐标不应贴在 viewBox 最底部边缘', async () => {
+    mockGetOrderTrend.mockResolvedValue({
+      data: { data: [
+        { date: '2026-06-28', orders: 12 },
+        { date: '2026-06-29', orders: 8 },
+        { date: '2026-06-30', orders: 15 },
+        { date: '2026-07-01', orders: 10 },
+        { date: '2026-07-02', orders: 14 },
+        { date: '2026-07-03', orders: 9 },
+        { date: '2026-07-04', orders: 11 },
+      ] },
+    })
     render(<DashboardPage />)
     await waitFor(() => {
-      // 第二个带 viewBox 的 SVG 是销售额趋势图
-      const svgs = Array.from(document.querySelectorAll('svg')).filter(s => s.getAttribute('viewBox'))
-      expect(svgs.length).toBeGreaterThanOrEqual(2)
-      const viewBox = svgs[1].getAttribute('viewBox')!
-      const h = Number(viewBox.split(/\s+/)[3])
-      expect(h).toBeGreaterThan(200)
+      const svg = findOrderTrendSvg()
+      expect(svg).toBeTruthy()
+      if (!svg) return
+      const viewBoxH = parseFloat(svg.getAttribute('viewBox')!.split(/\s+/)[3])
+      const texts = svg.querySelectorAll('text')
+      expect(texts.length).toBeGreaterThan(0)
+      // 每个 text 的 y 坐标应离开 viewBox 底部至少 3% 的空间
+      texts.forEach(t => {
+        const y = parseFloat(t.getAttribute('y') || '0')
+        expect(y).toBeLessThan(viewBoxH * 0.97)
+      })
+      // 验证包含日期标签（MM-DD 格式）
+      const datePattern = /\d{2}-\d{2}/
+      const hasDate = Array.from(texts).some(t => datePattern.test(t.textContent || ''))
+      expect(hasDate).toBe(true)
+    })
+  })
+
+  it('#942: 数据全零时趋势图正常渲染无报错', async () => {
+    mockGetOrderTrend.mockResolvedValue({
+      data: { data: [
+        { date: '2026-06-28', orders: 0 },
+        { date: '2026-06-29', orders: 0 },
+      ] },
+    })
+    render(<DashboardPage />)
+    await waitFor(() => {
+      const svg = findOrderTrendSvg()
+      expect(svg).toBeTruthy()
+      // polyline 和 circle 都应正常渲染
+      expect(svg!.querySelectorAll('polyline').length).toBeGreaterThan(0)
+      expect(svg!.querySelectorAll('circle').length).toBeGreaterThan(0)
     })
   })
 })

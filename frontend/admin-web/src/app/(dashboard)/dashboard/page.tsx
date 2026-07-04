@@ -28,17 +28,16 @@ function now(): string {
 }
 
 // ═══════════════════════════════════════════════════════
-// 迷你趋势图（SVG）
+// Y 轴坐标计算器 — 带 15% padding，yMin 不 clamp 确保零值数据有呼吸空间
 // ═══════════════════════════════════════════════════════
 
-// Y 轴坐标计算器 — 带 10% padding，防止数据点被压扁
 function makeYScale(values: number[], chartH: number, padTop: number, padBottom: number) {
   const plotH = chartH - padTop - padBottom
   const dMax = Math.max(...values, 0)
   const dMin = Math.min(...values, 0)
   const dRange = dMax - dMin || 10
-  const pad = dRange * 0.1
-  const yMin = Math.max(0, dMin - pad)
+  const pad = dRange * 0.15
+  const yMin = dMin - pad
   const yMax = dMax + pad
   const yRange = yMax - yMin || 1
   return (v: number) => padTop + plotH * (1 - (v - yMin) / yRange)
@@ -262,10 +261,10 @@ export default function DashboardPage() {
           <div className="h-48">
             {trendData.length > 0 ? (
               (() => {
+                const values = trendData.map(d => d.orders || 0)
                 const chartW = Math.max(trendData.length * 40, 300)
-                const CHART_H = 240
-                const PAD_TOP = 15, PAD_BOTTOM = 35
-                const toY = makeYScale(trendData.map(d => d.orders || 0), CHART_H, PAD_TOP, PAD_BOTTOM)
+                const CHART_H = 200, PAD_TOP = 12, PAD_BOTTOM = 28
+                const toY = makeYScale(values, CHART_H, PAD_TOP, PAD_BOTTOM)
                 const step = Math.ceil(trendData.length / 7)
                 return (
                   <svg width="100%" height="100%" viewBox={`0 0 ${chartW} ${CHART_H}`} preserveAspectRatio="xMidYMid meet">
@@ -275,7 +274,7 @@ export default function DashboardPage() {
                       <circle key={i} cx={i * 40 + 20} cy={toY(d.orders || 0)} r="3" fill="#3B82F6" />
                     ))}
                     {trendData.filter((_, i) => i % step === 0).map((d, i) => (
-                      <text key={i} x={i * 40 * step + 20} y={CHART_H - 5} textAnchor="middle" fontSize="11" fill="#6B7280">
+                      <text key={i} x={i * 40 * step + 20} y={CHART_H - 8} textAnchor="middle" fontSize="10" fill="#9CA3AF">
                         {d.date?.slice(5)}
                       </text>
                     ))}
@@ -295,10 +294,10 @@ export default function DashboardPage() {
           <div className="h-48">
             {trendData.length > 0 ? (
               (() => {
+                const values = trendData.map(d => d.totalAmount || d.orders * 23.8 || 0)
                 const chartW = Math.max(trendData.length * 40, 300)
-                const CHART_H = 240
-                const PAD_TOP = 15, PAD_BOTTOM = 10
-                const toY = makeYScale(trendData.map(d => d.totalAmount || d.orders * 23.8 || 0), CHART_H, PAD_TOP, PAD_BOTTOM)
+                const CHART_H = 200, PAD_TOP = 12, PAD_BOTTOM = 12
+                const toY = makeYScale(values, CHART_H, PAD_TOP, PAD_BOTTOM)
                 return (
                   <svg width="100%" height="100%" viewBox={`0 0 ${chartW} ${CHART_H}`} preserveAspectRatio="xMidYMid meet">
                     <defs><linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#3B82F6" stopOpacity="0.3" /><stop offset="100%" stopColor="#3B82F6" stopOpacity="0" /></linearGradient></defs>
