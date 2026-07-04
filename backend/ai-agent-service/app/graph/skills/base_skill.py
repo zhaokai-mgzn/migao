@@ -931,17 +931,28 @@ async def execute_skill(
     # 跨轮 skill 持久化
     creation_skills = {"product", "order", "aftersales"}
     if skill_name in creation_skills:
-        still_in_flow = any(kw in final_content for kw in [
-            "确认创建","确认下单","确认","请选择","请提供","请输入","核对","修改即可",
-            "汇总","创建","直接描述","帮你创建","帮你查","帮您创建","帮您查",
-        ])
-        has_active_tool_calls = any(
-            hasattr(m, 'tool_calls') and m.tool_calls
-            for m in new_messages if hasattr(m, 'tool_calls')
-        )
-        if still_in_flow or has_active_tool_calls:
+        # 检查是否已完成创建/取消（清除 pending_skill）
+        created_or_cancelled = False
+        for m in new_messages:
+            if hasattr(m, 'tool_calls') and m.tool_calls:
+                for tc in m.tool_calls:
+                    args = tc.get("args", {})
+                    if tc.get("name") in ("product_manage", "order_create", "after_sales_manage") and args.get("action") in (None, "create"):
+                        created_or_cancelled = True
+        if any(kw in final_content for kw in ["已取消","取消","算了","不创建了"]):
+            created_or_cancelled = True
+
+        if created_or_cancelled:
+            # 创建完成或用户取消 → 清除 pending_skill，释放路由锁
+            try:
+                from app.memory.session_memory import SessionMemory
+                sm = SessionMemory()
+                await sm.set_pending_skill(session_id, None)
+            except Exception:
+                pass
+        else:
+            # 仍在创建流程中 → 保持 pending_skill，不依赖关键词匹配
             result["pending_interact_skill"] = skill_name
-            # 持久化到 SessionMemory，确保跨轮路由正确
             try:
                 from app.memory.session_memory import SessionMemory
                 sm = SessionMemory()
@@ -968,11 +979,6 @@ async def execute_skill(
 
         if created_or_cancelled:
             await sm.clear_collected_fields(session_id)
-            # 同时清除 pending_skill，释放路由锁
-            try:
-                await sm.set_pending_skill(session_id, None)
-            except Exception:
-                pass
         else:
             # LLM 从本轮对话中提取新增字段（轻量任务，显式关思考）
             try:
