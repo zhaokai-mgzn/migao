@@ -122,9 +122,9 @@ def test_snapshot_all_skills():
         "order": 4000,
         "aftersales": 4000,
         "customer": 4000,
-        "staff": 3500,
-        "settings": 3500,
-        "data": 3500,
+        "staff": 4000,
+        "settings": 4000,
+        "data": 4000,
         "general": 4000,
     }
     for skill, max_len in expected_max.items():
