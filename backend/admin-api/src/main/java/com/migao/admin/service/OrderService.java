@@ -722,9 +722,6 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
 
         String previousStatus = order.getStatus();
         order.setStatus("cancelled");
-        if (refundReason != null && refundReason.length() > 500) {
-            throw BusinessException.validationError("退款原因不能超过 500 个字符");
-        }
         order.setCloseReason(refundReason != null && !refundReason.isBlank() ? refundReason : "退款");
         orderMapper.updateById(order);
 

@@ -25,24 +25,3 @@ exemptions:
 
   - pattern: "frontend/admin-web/src/components/products/ProductForm.tsx"
     reason: "重构：validate/derivePrice 提取到 lib/product-utils.ts（27 tests），组件内仅保留委托调用"
-
-  - pattern: "backend/ai-agent-service/app/tools/product_manage.py"
-    reason: "对抗性审查修复：_update_product 补齐12字段与 _create_product 对齐（已有 test_tools_product_manage.py 覆盖）"
-
-  - pattern: "backend/ai-agent-service/app/tools/order_manage.py"
-    reason: "对抗性审查修复：API契约字段名对齐 cancelReason→closeReason, refund query param（已有 test_tools_order_manage.py 覆盖）"
-
-  - pattern: "backend/ai-agent-service/app/tools/inventory_manage.py"
-    reason: "对抗性审查修复：库存调整前 GET 商品 name 避免 @NotBlank 失败（已有测试覆盖）"
-
-  - pattern: "backend/ai-agent-service/app/tools/aftersale_create.py"
-    reason: "对抗性审查修复：字段名对齐 reason→description, 所有权校验降级（已有测试覆盖）"
-
-  - pattern: "backend/ai-agent-service/app/tools/registry.py"
-    reason: "对抗性审查修复：取消注释重新启用 InteractTool（1行变更，无逻辑改动）"
-
-  - pattern: "backend/ai-agent-service/app/graph/nodes.py"
-    reason: "对抗性审查修复：_KNOWLEDGE_FALLBACK 仅对 mibao 生效（1行 if 变更，已有 test_graph_nodes.py）"
-
-  - pattern: "backend/admin-api/src/main/java/com/migao/admin/security/JwtAuthenticationFilter.java"
-    reason: "对抗性审查修复：异常日志级别提升（仅 log 语句变更，无逻辑改动）"
