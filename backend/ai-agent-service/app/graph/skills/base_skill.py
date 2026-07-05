@@ -99,13 +99,15 @@ def _extract_content(response: AIMessage) -> str:
             return stripped
         return stripped
 
-    # Fallback: 某些模型将回复放在 additional_kwargs
+    # Fallback: 某些模型将回复放在 additional_kwargs 或 response_metadata
     extra = getattr(response, "additional_kwargs", {}) or {}
-    if extra.get("reasoning_content"):
+    resp_meta = getattr(response, "response_metadata", {}) or {}
+    reasoning = extra.get("reasoning_content") or resp_meta.get("reasoning_content")
+    if reasoning:
         logger.warning(
-            "[_extract_content] No main content, falling back to reasoning_content from additional_kwargs"
+            "[_extract_content] No main content, falling back to reasoning_content"
         )
-        return extra["reasoning_content"]
+        return reasoning
 
     # 终极兜底：返回原始 content（保留 think 标签也不如让用户看到思考过程）
     if content:
