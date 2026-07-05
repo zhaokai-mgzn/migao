@@ -1007,6 +1007,10 @@ async def execute_skill(
 
                 # 执行每个 tool_call — 统一经 _execute_tool_safe
                 interact_called = False
+                # 检查本轮是否已有 form/confirm 组件（有则 auto-interact 不抢跑）
+                has_own_interact = any(
+                    tc["name"] == "interact" for tc in response.tool_calls
+                )
                 for tool_call in response.tool_calls:
                     tool_name = tool_call["name"]
                     tool_args = tool_call["args"]
@@ -1040,7 +1044,10 @@ async def execute_skill(
                     )
 
                     # ── Auto-Interact: 加工项查询后自动渲染 choice 组件 ──
-                    if tool_name == "processing_item_query" and result_dict.get("success"):
+                    # 条件：LLM 本轮没有自己弹 form/confirm（避免抢跑）
+                    if (tool_name == "processing_item_query"
+                            and result_dict.get("success")
+                            and not has_own_interact):
                         auto_interact = _build_processing_item_choice(result_dict)
                         if auto_interact:
                             from app.tools.registry import get_tool_registry as _get_tools
