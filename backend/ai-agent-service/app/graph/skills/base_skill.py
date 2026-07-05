@@ -20,7 +20,8 @@ import json
 import re
 import time
 import traceback
-from typing import List, Any, Optional
+from dataclasses import dataclass, field
+from typing import Callable, Awaitable, List, Any, Optional
 
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import AIMessage, ToolMessage, SystemMessage, HumanMessage
@@ -470,6 +471,205 @@ def _build_processing_item_choice(result_dict: dict, page: int = 0) -> dict | No
     }
 
 
+# ═══════════════════════════════════════════════════════════════
+# Tool Execution Pipeline（NEW）
+# ═══════════════════════════════════════════════════════════════
+
+
+@dataclass
+class PipelineContext:
+    """单次 tool_call 流经管道的可变上下文。
+
+    跨 tool_call 共享的字段（new_messages, tracker）由调用方注入为引用；
+    每次 tool_call 开始前，调用方更新 tool_call / tool_instance 并清空 result_* 字段。
+    """
+
+    # ── 输入（每次 tool_call 前由调用方设置）──
+    tool_call: dict = field(default_factory=dict)     # {"name", "args", "id"}
+    tool_instance: Optional[Any] = None                # ToolInterface | None
+    skill_name: str = ""
+    session_id: str = ""
+    tenant_id: int = 0
+    state: dict = field(default_factory=dict)          # AgentState
+    tool_context: Any = None                           # ToolContext
+    has_own_interact: bool = False                     # 本轮 LLM 是否自己调了 interact
+
+    # ── 共享可变状态（同一个 iteration 内所有 tool_call 共用同一个引用）──
+    new_messages: list = field(default_factory=list)   # ToolMessage 收集器
+    interact_called: bool = False                      # 本轮是否触发了 interact
+    tracker: Optional[Any] = None                      # ConversationTracker
+
+    # ── 输出（Execute 阶段填充）──
+    result_str: str = ""
+    result_dict: dict = field(default_factory=dict)
+
+
+# Hook 签名：async def hook(ctx: PipelineContext) -> bool | None
+#   PostHook 返回 True → 立即停止处理剩余 tool_call 并 break 外层 iteration
+#   PostHook 返回 None/False → 继续下一个 hook
+Hook = Callable[[PipelineContext], Awaitable[bool | None]]
+
+
+class ToolExecutionPipeline:
+    """单 tool_call 执行管道：PreHooks → Execute → PostHooks.
+
+    PreHooks  : 同步准备（日志、解析、校验）— 所有 hook 按注册顺序执行。
+    Execute   : _execute_tool_safe + _self_correct_retry — 内置不变。
+    PostHooks : 后处理（追加消息、auto-interact、实体提取、interact 终止判断）。
+                返回 True 的 hook 导致 run() 返回 True（外层 break）。
+    """
+
+    def __init__(self):
+        self._pre: list[Hook] = []
+        self._post: list[Hook] = []
+
+    def add_pre(self, hook: Hook) -> "ToolExecutionPipeline":
+        self._pre.append(hook)
+        return self
+
+    def add_post(self, hook: Hook) -> "ToolExecutionPipeline":
+        self._post.append(hook)
+        return self
+
+    async def run(self, ctx: PipelineContext) -> bool:
+        """执行管道。返回 True 表示外层应 break 迭代循环。"""
+
+        # ── PreHooks ──
+        for hook in self._pre:
+            await hook(ctx)
+
+        # ── Execute ──
+        if ctx.tool_instance is None:
+            # 去静默失败：registry 查找失败在 ResolveTool PreHook 中已打 ERROR
+            ctx.result_str = json.dumps({
+                "success": False, "error": "tool_not_found",
+                "message": f"工具 {ctx.tool_call['name']} 不可用",
+            }, ensure_ascii=False)
+            ctx.result_dict = {"success": False}
+        else:
+            ctx.result_str, ctx.result_dict = await _execute_tool_safe(
+                ctx.tool_instance, ctx.tool_call["args"], ctx.tool_context, ctx.state,
+            )
+            # Self-correct retry（保持现有逻辑不变）
+            if not ctx.result_dict.get("success") and ctx.result_dict.get("suggestion"):
+                corrected = await _self_correct_retry(
+                    ctx.tool_instance, ctx.tool_call["args"], ctx.tool_context,
+                    ctx.skill_name, ctx.result_dict,
+                    ctx.session_id, ctx.tenant_id, ctx.state,
+                )
+                if corrected:
+                    ctx.result_str, ctx.result_dict = corrected
+
+        # ── PostHooks ──
+        for hook in self._post:
+            signal = await hook(ctx)
+            if signal is True:
+                return True
+
+        return False
+
+
+# ── PreHooks ──
+
+async def log_tool_call_pre_hook(ctx: PipelineContext) -> None:
+    """PreHook: 记录 tool_call 日志（原 line ~1019）"""
+    logger.info(
+        f"[{ctx.skill_name}][DIAG] Tool call: {ctx.tool_call['name']} "
+        f"| args={ctx.tool_call['args']}"
+    )
+
+
+def make_resolve_tool_hook(skill_registry):
+    """工厂函数：注入 registry 引用，使 hook 内自行查找 tool。
+
+    去静默失败：找不到时打 ERROR（原 line 261 只打 WARNING）。
+    ctx.tool_instance 置为 None 后，Execute 阶段走 OnError 路径。
+    """
+    async def hook(ctx: PipelineContext) -> None:
+        ctx.tool_instance = skill_registry.get_tool(ctx.tool_call["name"])
+        if ctx.tool_instance is None:
+            logger.error(
+                f"[{ctx.skill_name}] Tool '{ctx.tool_call['name']}' NOT FOUND "
+                f"in skill_registry | session={ctx.session_id} tenant={ctx.tenant_id}"
+            )
+    return hook
+
+
+# ── PostHooks ──
+
+async def append_tool_message_post_hook(ctx: PipelineContext) -> None:
+    """PostHook: 将 tool 执行结果追加到 new_messages（原 line ~1042-1044）"""
+    ctx.new_messages.append(
+        ToolMessage(
+            content=ctx.result_str,
+            tool_call_id=ctx.tool_call["id"],
+            name=ctx.tool_call["name"],
+        )
+    )
+
+
+async def entity_extraction_post_hook(ctx: PipelineContext) -> None:
+    """PostHook: 从 tool 结果提取实体（原 line ~1074-1076）"""
+    if ctx.session_id and ctx.tracker:
+        ctx.tracker.extract_entities_from_tool_result(
+            ctx.session_id, ctx.tool_call["name"], ctx.result_dict,
+        )
+
+
+async def interact_break_post_hook(ctx: PipelineContext) -> bool:
+    """PostHook: interact 成功时标记终止（原 line ~1078-1082）
+
+    Returns True → pipeline.run() 返回 True → 外层 break。
+    """
+    if ctx.tool_call["name"] == "interact" and ctx.result_dict.get("success"):
+        logger.info(f"[{ctx.skill_name}] interact done, break loop")
+        ctx.interact_called = True
+        return True
+    return None
+
+
+def make_auto_interact_post_hook():
+    """工厂函数：创建 auto-interact PostHook（加工项查询后自动渲染 choice 组件）
+
+    原在 tool execution loop 中的内联代码（~25 行），现迁移为声明式 PostHook。
+    条件：LLM 本轮没有自己弹 form/confirm（避免抢跑）。
+    """
+    async def hook(ctx: PipelineContext) -> bool | None:
+        if (ctx.tool_call["name"] == "processing_item_query"
+                and ctx.result_dict.get("success")
+                and not ctx.has_own_interact):
+            auto_interact = _build_processing_item_choice(ctx.result_dict)
+            if auto_interact:
+                from app.tools.registry import get_tool_registry as _get_tools
+                interact_tool = _get_tools().get_tool("interact")
+                if interact_tool is None:
+                    logger.error(
+                        f"[{ctx.skill_name}] Auto-interact FAILED: "
+                        f"interact tool not found in registry! "
+                        f"Processing items will NOT be rendered. | session={ctx.session_id}"
+                    )
+                else:
+                    interact_str, interact_dict = await _execute_tool_safe(
+                        interact_tool, auto_interact, ctx.tool_context, ctx.state,
+                    )
+                    # 用虚拟 tool_call_id 将 interact 结果注入消息流
+                    ctx.new_messages.append(
+                        ToolMessage(
+                            content=interact_str,
+                            tool_call_id=f"{ctx.tool_call['id']}_auto",
+                            name="interact",
+                        )
+                    )
+                    ctx.interact_called = True
+                    logger.info(
+                        f"[{ctx.skill_name}] Auto-interact: rendered "
+                        f"{len(auto_interact.get('options',[]))} "
+                        f"processing items as choice component | session={ctx.session_id}"
+                    )
+        return None
+    return hook
+
+
 async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -> tuple:
     """统一 Tool 执行入口 — normalize + cache + execute + error handling.
 
@@ -655,6 +855,19 @@ async def execute_skill(
     skill_registry = create_skill_registry(tool_names)
     langchain_tools = skill_registry.get_langchain_tools()
 
+    # 2.5 构建 Tool Execution Pipeline（NEW）
+    tenant_id = int(state.get("tenant_id", 0) or 0)
+
+    pipeline = (
+        ToolExecutionPipeline()
+        .add_pre(log_tool_call_pre_hook)
+        .add_pre(make_resolve_tool_hook(skill_registry))
+        .add_post(append_tool_message_post_hook)
+        .add_post(make_auto_interact_post_hook())
+        .add_post(entity_extraction_post_hook)
+        .add_post(interact_break_post_hook)
+    )
+
     # 3. 创建 LLM 并绑定 Tools
     #    计算 text_length 以供路由判定（启用 LLM_ENABLE_MODEL_ROUTING 后生效）
     messages = state["messages"]
@@ -745,7 +958,16 @@ async def execute_skill(
     final_content = ""
     new_messages: List[Any] = []
     iteration = 0
-    interact_called = False  # 跟踪本轮是否调用了 interact
+    # NEW: Create shared PipelineContext (mutable state shared across tool_calls)
+    ctx = PipelineContext(
+        skill_name=skill_name,
+        session_id=session_id,
+        tenant_id=tenant_id,
+        state=state,
+        tool_context=tool_context,
+        new_messages=new_messages,
+        tracker=tracker,
+    )
 
     # 5.a 多模态分支：Vision LLM 仅做图片识别，结果传递给主模型做 Tool Calling
     #     Vision LLM 不支持 Tool Calling，仅负责理解图片内容。
@@ -885,6 +1107,7 @@ async def execute_skill(
                     if len(trimmed) < len(new_messages):
                         logger.info(f"[{skill_name}][CTX] Trimmed {len(new_messages) - len(trimmed)} old messages")
                         new_messages = trimmed
+                        ctx.new_messages = new_messages  # NEW: keep ctx in sync
 
                 # 策略 2：首轮开 thinking（规划工具调用），后续轮关闭（仅格式化结果）
                 # 节省 5-8s/轮，质量无损（实测：8.0s → 2.7s）
@@ -1005,83 +1228,21 @@ async def execute_skill(
                         f"[{skill_name}] Extracted text before tool_calls | len={len(text_before_tools)}"
                     )
 
-                # 执行每个 tool_call — 统一经 _execute_tool_safe
-                interact_called = False
-                # 检查本轮是否已有 form/confirm 组件（有则 auto-interact 不抢跑）
-                has_own_interact = any(
+                # 执行每个 tool_call — 统一经 ToolExecutionPipeline（NEW）
+                ctx.has_own_interact = any(
                     tc["name"] == "interact" for tc in response.tool_calls
                 )
                 for tool_call in response.tool_calls:
-                    tool_name = tool_call["name"]
-                    tool_args = tool_call["args"]
-                    tool_call_id = tool_call["id"]
+                    ctx.tool_call = tool_call
+                    ctx.tool_instance = None
+                    ctx.result_str = ""
+                    ctx.result_dict = {}
 
-                    logger.info(f"[{skill_name}][DIAG] Tool call: {tool_name} | args={tool_args}")
-
-                    tool_instance = skill_registry.get_tool(tool_name)
-                    if tool_instance:
-                        result_str, result_dict = await _execute_tool_safe(
-                            tool_instance, tool_args, tool_context, state,
-                        )
-                        # Error-Self-Correct: 工具失败且有 suggestion 时自动修正重试
-                        if not result_dict.get("success") and result_dict.get("suggestion"):
-                            corrected = await _self_correct_retry(
-                                tool_instance, tool_args, tool_context,
-                                skill_name, result_dict,
-                                session_id, tenant_id, state,
-                            )
-                            if corrected:
-                                result_str, result_dict = corrected
-                    else:
-                        result_str = json.dumps({
-                            "success": False, "error": "tool_not_found",
-                            "message": f"工具 {tool_name} 不可用",
-                        }, ensure_ascii=False)
-                        result_dict = {"success": False}
-
-                    new_messages.append(
-                        ToolMessage(content=result_str, tool_call_id=tool_call_id, name=tool_name)
-                    )
-
-                    # ── Auto-Interact: 加工项查询后自动渲染 choice 组件 ──
-                    # 条件：LLM 本轮没有自己弹 form/confirm（避免抢跑）
-                    if (tool_name == "processing_item_query"
-                            and result_dict.get("success")
-                            and not has_own_interact):
-                        auto_interact = _build_processing_item_choice(result_dict)
-                        if auto_interact:
-                            from app.tools.registry import get_tool_registry as _get_tools
-                            interact_tool = _get_tools().get_tool("interact")
-                            if interact_tool:
-                                interact_str, interact_dict = await _execute_tool_safe(
-                                    interact_tool, auto_interact, tool_context, state,
-                                )
-                                # 用虚拟 tool_call_id 将 interact 结果注入消息流
-                                new_messages.append(
-                                    ToolMessage(
-                                        content=interact_str,
-                                        tool_call_id=f"{tool_call_id}_auto",
-                                        name="interact",
-                                    )
-                                )
-                                interact_called = True
-                                logger.info(
-                                    f"[{skill_name}] Auto-interact: rendered {len(auto_interact.get('options',[]))} "
-                                    f"processing items as choice component | session={session_id}"
-                                )
-                    # ── End Auto-Interact ──
-
-                    # 从 Tool 结果提取实体
-                    if session_id:
-                        tracker.extract_entities_from_tool_result(session_id, tool_name, result_dict)
-
-                    # interact 成功后停止迭代
-                    if tool_name == "interact" and result_dict.get("success"):
-                        logger.info(f"[{skill_name}] interact done, break loop")
-                        interact_called = True
+                    should_break = await pipeline.run(ctx)
+                    if should_break:
                         break
 
-                if interact_called:
+                if ctx.interact_called:
                     break
             else:
                 # 达到最大迭代次数，取最后一条 AI 消息内容
