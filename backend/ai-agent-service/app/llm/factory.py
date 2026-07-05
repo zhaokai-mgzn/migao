@@ -63,10 +63,14 @@ class LLMFactory:
         return ChatOpenAI(**kwargs)
 
     @staticmethod
-    def create_vision_llm(model_override: Optional[str] = None) -> ChatOpenAI:
-        """创建视觉多模态 LLM 实例（独立视觉模型配置）"""
+    def create_vision_llm(model_override: Optional[str] = None, enable_thinking: bool = True) -> ChatOpenAI:
+        """创建视觉多模态 LLM 实例（独立视觉模型配置）
+
+        enable_thinking=True: 开启深度推理，更准确识别色号、材质、风格等细节。
+        延迟增加 5-8s，但对商品创建场景质量提升显著。
+        """
         model = model_override or settings.VISION_MODEL
-        return ChatOpenAI(
+        kwargs: dict = dict(
             model=model,
             api_key=settings.VISION_API_KEY,
             base_url=settings.VISION_BASE_URL,
@@ -75,6 +79,9 @@ class LLMFactory:
             max_completion_tokens=16384,
             request_timeout=60,
         )
+        if enable_thinking:
+            kwargs["extra_body"] = {"thinking": {"type": "enabled"}}
+        return ChatOpenAI(**kwargs)
 
     @staticmethod
     def create_intent_llm() -> ChatOpenAI:
