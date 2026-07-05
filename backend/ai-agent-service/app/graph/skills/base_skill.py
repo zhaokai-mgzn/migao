@@ -124,12 +124,17 @@ def _extract_content(response: AIMessage) -> str:
 # - order_query/logistics_track：仅首轮需要思考（决定调什么工具），后续轮关闭
 # DeepSeek V4 thinking 模式：首轮开启深度思考（规划工具调用 + 图片属性推理），
 # 后续轮关闭（策略2 llm_no_thinking 自动接管，仅做结果格式化）。
-# 意图列表：复杂推理场景（产品创建、售后处理、订单管理、数据报表）
+# 意图列表：订单/商品/售后三大核心业务域的管理操作
 _THINKING_INTENTS = frozenset({
-    "product_inquiry",   # 创建商品——需深度推理图片属性
-    "after_sales",       # 售后处理——需推理退款/换货逻辑
-    "order_query",       # 订单查询——需关联上下文
-    "dashboard",         # 数据报表——需多维度分析
+    # ── 订单域 ──
+    "order_query",        # 订单查询——多条件筛选+关联上下文
+    "order_create",       # 订单创建——多SKU+加工项+价格计算
+    # ── 商品域 ──
+    "product_inquiry",    # 商品创建——图片属性推理+分类+加工项
+    # ── 售后域 ──
+    "after_sales",        # 售后处理——退款/换货/维修逻辑
+    "after_sales_create", # 售后创建——问题归类+解决方案推荐
+    "complaint",          # 投诉处理——情绪安抚+升级判断
 })
 
 
