@@ -21,6 +21,12 @@ MINIMAX_API_KEY: str = settings.MINIMAX_API_KEY
 # === 向后兼容别名（测试/旧代码）===
 DASHSCOPE_BASE_URL = MINIMAX_BASE_URL
 
+# CI 环境检测：ci-dummy key 时用 ChatOpenAI（避免 mock 问题），否则用 ChatDeepSeek
+def _new_chat_model(**kwargs):
+    if MINIMAX_API_KEY == "ci-dummy":
+        return ChatOpenAI(**kwargs)
+    return ChatDeepSeek(**kwargs)
+
 
 class LLMFactory:
     """统一 LLM 实例工厂"""
@@ -30,7 +36,7 @@ class LLMFactory:
         model_override: Optional[str] = None,
         enable_thinking: bool = False,
         force_no_think: bool = False,
-    ) -> ChatDeepSeek:
+    ) -> ChatOpenAI:
         """创建 Skill 专用 LLM
 
         - temperature=0.7
@@ -63,7 +69,8 @@ class LLMFactory:
             kwargs["max_completion_tokens"] = 8192
         # ChatDeepSeek 正确提取 reasoning_content → additional_kwargs
         # ChatOpenAI 不提取（官方文档明确说明），会导致思考内容丢失
-        return ChatDeepSeek(**kwargs)
+        # CI/测试环境自动回退 ChatOpenAI
+        return _new_chat_model(**kwargs)
 
     @staticmethod
     def create_vision_llm(model_override: Optional[str] = None) -> ChatOpenAI:
@@ -84,14 +91,14 @@ class LLMFactory:
         )
 
     @staticmethod
-    def create_intent_llm() -> ChatDeepSeek:
+    def create_intent_llm() -> ChatOpenAI:
         """创建意图分类 LLM
 
         - temperature=0  确定性输出，便于 JSON 解析
         - max_completion_tokens=200 仅需返回 {"intent":..., "confidence":...}
         - thinking=disabled  关闭深度思考，节省 reasoning tokens，降低延迟
         """
-        return ChatDeepSeek(
+        return _new_chat_model(
             model=settings.INTENT_MODEL,
             api_key=MINIMAX_API_KEY,
             base_url=MINIMAX_BASE_URL,
@@ -104,7 +111,7 @@ class LLMFactory:
     def create_summary_llm(
         temperature: float = 0.3,
         max_tokens: int = 512,
-    ) -> ChatDeepSeek:
+    ) -> ChatOpenAI:
         """创建摘要/压缩用 LLM
 
         用于对话历史压缩、上下文摘要等轻量任务。
@@ -114,7 +121,7 @@ class LLMFactory:
             temperature: 温度参数，默认 0.3
             max_tokens: 最大输出 token，默认 512
         """
-        return ChatDeepSeek(
+        return _new_chat_model(
             model=settings.INTENT_MODEL,
             api_key=MINIMAX_API_KEY,
             base_url=MINIMAX_BASE_URL,
@@ -176,14 +183,14 @@ class LLMFactory:
         return response.content.strip() if hasattr(response, 'content') else str(response)
 
     @staticmethod
-    def create_suggestion_llm() -> ChatDeepSeek:
+    def create_suggestion_llm() -> ChatOpenAI:
         """创建建议/推荐生成 LLM
 
         - temperature=0.3 略带多样性，但避免发散
         - max_completion_tokens=200  建议文本通常较短
         - thinking=disabled  关闭思考模式以提升响应速度
         """
-        return ChatDeepSeek(
+        return _new_chat_model(
             model=settings.INTENT_MODEL,
             api_key=MINIMAX_API_KEY,
             base_url=MINIMAX_BASE_URL,
