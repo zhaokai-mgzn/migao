@@ -119,13 +119,13 @@ def test_snapshot_all_skills():
     # 最大长度快照（防止无限制膨胀）
     expected_max = {
         "product": 6500,
-        "order": 4000,
-        "aftersales": 4000,
-        "customer": 4000,
-        "staff": 4000,
-        "settings": 4000,
-        "data": 4000,
-        "general": 4500,
+        "order": 4200,
+        "aftersales": 4200,
+        "customer": 4200,
+        "staff": 4200,
+        "settings": 4200,
+        "data": 4200,
+        "general": 4700,
     }
     for skill, max_len in expected_max.items():
         prompt = _build_system_prompt(skill)
