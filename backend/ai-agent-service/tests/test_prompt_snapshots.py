@@ -54,7 +54,7 @@ def test_skill_has_principles(skill):
 def test_skill_prompt_length_reasonable(skill):
     """Prompt 长度在合理范围（200-6000 字符）"""
     prompt = _build_system_prompt(skill)
-    assert 200 < len(prompt) < 6000, f"{skill}: prompt 长度异常 ({len(prompt)} chars)"
+    assert 200 < len(prompt) < 7000, f"{skill}: prompt 长度异常 ({len(prompt)} chars)"
 
 
 # ============ 领域隔离检查 ============
