@@ -170,15 +170,11 @@ def _convert_history_to_agent_format(messages: List[Dict[str, Any]]) -> List[Dic
 
 
 def _validate_image_url(url: str) -> bool:
-    """校验图片 URL 格式（必须是 https:// 或 /api/files 开头；DEBUG 模式允许 http://）"""
+    """校验图片 URL 格式（必须是 https:// 或 /api/files 开头）"""
     if not url or not isinstance(url, str):
         return False
     url = url.strip()
-    if url.startswith("https://") or url.startswith("/api/files"):
-        return True
-    if settings.DEBUG and url.startswith("http://"):
-        return True
-    return False
+    return url.startswith("https://") or url.startswith("/api/files")
 
 
 def _rewrite_image_url(url: str) -> str:
