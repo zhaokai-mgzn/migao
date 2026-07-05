@@ -1,0 +1,166 @@
+{
+    "name": "deepseek-v4-pro@general_fc",
+    "dataset_name": "general_fc",
+    "dataset_pretty_name": "General-FunctionCalling",
+    "dataset_description": "\n## Overview\n\nGeneral-FunctionCalling is a customizable benchmark for evaluating function calling (tool use) capabilities of language models. It tests both the decision to call tools and the accuracy of generated function calls.\n\n## Task Description\n\n- **Task Type**: Function Calling / Tool Use Evaluation\n- **Input**: Messages with available tool definitions\n- **Output**: Function calls with valid arguments\n- **Flexibility**: Supports custom datasets via local files\n\n## Key Features\n\n- Evaluates function calling decision accuracy\n- Schema validation for function arguments\n- Comprehensive metrics (F1, precision, recall)\n- Custom dataset support via local file loading\n- JSON schema-based argument validation\n\n## Evaluation Notes\n\n- Default configuration uses **0-shot** evaluation\n- Metrics: **tool_call_f1**, **schema_accuracy**, count metrics\n- Aggregation: **F1** score\n- Validates function calls against JSON schema\n- See [User Guide](https://evalscope.readthedocs.io/en/latest/advanced_guides/custom_dataset/llm.html#fc) for dataset format\n",
+    "model_name": "deepseek-v4-pro",
+    "score": 1.0,
+    "metrics": [
+        {
+            "name": "tool_call_f1",
+            "num": 4,
+            "score": 1.0,
+            "macro_score": 1.0,
+            "categories": [
+                {
+                    "name": [
+                        "default"
+                    ],
+                    "num": 4,
+                    "score": 1.0,
+                    "macro_score": 1.0,
+                    "subsets": [
+                        {
+                            "name": "test",
+                            "score": 1.0,
+                            "num": 4,
+                            "is_aggregate": false
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "count_finish_reason_tool_call",
+            "num": 4,
+            "score": 3.0,
+            "macro_score": 3.0,
+            "categories": [
+                {
+                    "name": [
+                        "default"
+                    ],
+                    "num": 4,
+                    "score": 3.0,
+                    "macro_score": 3.0,
+                    "subsets": [
+                        {
+                            "name": "test",
+                            "score": 3.0,
+                            "num": 4,
+                            "is_aggregate": false
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "count_successful_tool_call",
+            "num": 4,
+            "score": 0.0,
+            "macro_score": 0.0,
+            "categories": [
+                {
+                    "name": [
+                        "default"
+                    ],
+                    "num": 4,
+                    "score": 0.0,
+                    "macro_score": 0.0,
+                    "subsets": [
+                        {
+                            "name": "test",
+                            "score": 0.0,
+                            "num": 4,
+                            "is_aggregate": false
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "schema_accuracy",
+            "num": 4,
+            "score": 0.0,
+            "macro_score": 0.0,
+            "categories": [
+                {
+                    "name": [
+                        "default"
+                    ],
+                    "num": 4,
+                    "score": 0.0,
+                    "macro_score": 0.0,
+                    "subsets": [
+                        {
+                            "name": "test",
+                            "score": 0.0,
+                            "num": 4,
+                            "is_aggregate": false
+                        }
+                    ]
+                }
+            ]
+        }
+    ],
+    "analysis": "N/A",
+    "perf_metrics": {
+        "summary": {
+            "n_samples": 4,
+            "latency": {
+                "mean": 3.655363,
+                "std": 1.298947,
+                "min": 1.863955,
+                "25%": 3.208798,
+                "50%": 3.926461,
+                "75%": 4.373026,
+                "90%": 4.691955,
+                "99%": 4.883312,
+                "max": 4.904574
+            },
+            "throughput": {
+                "avg_output_tps": 48.01,
+                "avg_req_ps": 0.2736
+            },
+            "usage": {
+                "input_tokens": {
+                    "mean": 355.0,
+                    "std": 88.592701,
+                    "min": 274.0,
+                    "25%": 304.75,
+                    "50%": 333.5,
+                    "75%": 383.75,
+                    "90%": 440.9,
+                    "99%": 475.19,
+                    "max": 479.0
+                },
+                "output_tokens": {
+                    "mean": 175.5,
+                    "std": 103.377947,
+                    "min": 95.0,
+                    "25%": 117.5,
+                    "50%": 140.5,
+                    "75%": 198.5,
+                    "90%": 275.0,
+                    "99%": 320.9,
+                    "max": 326.0
+                },
+                "total_tokens": {
+                    "mean": 530.5,
+                    "std": 189.445683,
+                    "min": 399.0,
+                    "25%": 407.25,
+                    "50%": 459.0,
+                    "75%": 582.25,
+                    "90%": 715.9,
+                    "99%": 796.09,
+                    "max": 805.0
+                },
+                "total_input_tokens": 1420,
+                "total_output_tokens": 702,
+                "total_tokens_count": 2122
+            }
+        }
+    },
+    "num": 4
+}

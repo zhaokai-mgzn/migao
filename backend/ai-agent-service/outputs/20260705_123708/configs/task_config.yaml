@@ -1,0 +1,135 @@
+agent_config: null
+analysis_report: false
+api_url: https://api.deepseek.com
+chat_template: null
+collect_perf: true
+dataset_args:
+  general_fc:
+    aggregation: f1
+    data_statistics: null
+    dataset_id: /tmp/mibao_eval/text/fc
+    default_subset: default
+    description: '
+
+      ## Overview
+
+
+      General-FunctionCalling is a customizable benchmark for evaluating function
+      calling (tool use) capabilities of language models. It tests both the decision
+      to call tools and the accuracy of generated function calls.
+
+
+      ## Task Description
+
+
+      - **Task Type**: Function Calling / Tool Use Evaluation
+
+      - **Input**: Messages with available tool definitions
+
+      - **Output**: Function calls with valid arguments
+
+      - **Flexibility**: Supports custom datasets via local files
+
+
+      ## Key Features
+
+
+      - Evaluates function calling decision accuracy
+
+      - Schema validation for function arguments
+
+      - Comprehensive metrics (F1, precision, recall)
+
+      - Custom dataset support via local file loading
+
+      - JSON schema-based argument validation
+
+
+      ## Evaluation Notes
+
+
+      - Default configuration uses **0-shot** evaluation
+
+      - Metrics: **tool_call_f1**, **schema_accuracy**, count metrics
+
+      - Aggregation: **F1** score
+
+      - Validates function calls against JSON schema
+
+      - See [User Guide](https://evalscope.readthedocs.io/en/latest/advanced_guides/custom_dataset/llm.html#fc)
+      for dataset format
+
+      '
+    eval_split: test
+    extra_params: {}
+    few_shot_num: 0
+    few_shot_prompt_template: null
+    few_shot_random: false
+    filters: null
+    force_redownload: false
+    max_image_bytes: null
+    metric_list:
+    - count_finish_reason_tool_call
+    - count_successful_tool_call
+    - schema_accuracy
+    - tool_call_f1
+    name: general_fc
+    output_types:
+    - generation
+    paper_url: null
+    pretty_name: General-FunctionCalling
+    prompt_template: null
+    query_template: null
+    review_timeout: null
+    sample_example: null
+    sandbox_config: {}
+    shuffle: false
+    shuffle_choices: false
+    subset_list:
+    - test
+    system_prompt: null
+    tags:
+    - FunctionCalling
+    - Custom
+    - Agent
+    train_split: null
+dataset_dir: /Users/zhaokai/.cache/modelscope/hub/datasets
+dataset_hub: modelscope
+datasets:
+- general_fc
+debug: false
+enable_progress_tracker: false
+eval_backend: Native
+eval_batch_size: 1
+eval_config: null
+eval_type: openai_api
+evalscope_version: 1.8.1
+generation_config:
+  batch_size: 1
+  temperature: 0.0
+ignore_errors: false
+judge_model_args: {}
+judge_strategy: auto
+judge_worker_num: null
+limit: 4
+model: deepseek-v4-pro
+model_args: {}
+model_id: deepseek-v4-pro
+model_task: text_generation
+no_timestamp: false
+repeats: 1
+rerun_review: false
+sandbox:
+  default_config: {}
+  enabled: false
+  engine: docker
+  manager_config: {}
+  pool_size: null
+sandbox_manager_config: {}
+sandbox_type: docker
+seed: 42
+stream: null
+timeout: null
+use_cache: null
+use_sandbox: false
+work_dir: ./outputs/20260705_123708
