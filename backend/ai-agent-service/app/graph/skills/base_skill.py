@@ -440,7 +440,7 @@ def _build_processing_item_choice(result_dict: dict, page: int = 0) -> dict | No
             label += f" {price_str}"
         options.append({
             "label": label,
-            "value": item.get("id", ""),
+            "value": f"{item.get('id', '')}|{item.get('name', '')}",
             "description": item.get("category_name", ""),
         })
 

@@ -138,6 +138,9 @@ async def _resolve_processing_item_ids(ids, context) -> list:
         unresolved = []
         for pid in ids:
             pid_str = str(pid).strip()
+            # 兼容 auto-interact 格式: "pi_1234|加工项名" → 提取 UUID 部分
+            if "|" in pid_str:
+                pid_str = pid_str.split("|")[0].strip()
             found = None
 
             # 1. 纯数字 → 按列表位置匹配（1-based 序号）
