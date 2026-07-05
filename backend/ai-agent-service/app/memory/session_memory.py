@@ -725,6 +725,31 @@ class SessionMemory:
             logger.warning(f"[session-memory] clear_collected_fields failed: {e}")
             return False
 
+    # ── Auto-Interact 防重复 flag ──
+
+    def _auto_interact_key(self, session_id: str) -> str:
+        return f"auto_interact:{session_id}"
+
+    async def get_auto_interact_flag(self, session_id: str) -> bool:
+        """检查 auto-interact 是否已在本 session 触发过（防死循环）"""
+        try:
+            r = await self._get_redis()
+            val = await r.get(self._auto_interact_key(session_id))
+            return val == "1"
+        except Exception as e:
+            logger.debug(f"[session-memory] get_auto_interact_flag failed: {e}")
+            return False
+
+    async def set_auto_interact_flag(self, session_id: str) -> bool:
+        """标记 auto-interact 已触发，TTL 30 分钟"""
+        try:
+            r = await self._get_redis()
+            await r.setex(self._auto_interact_key(session_id), 1800, "1")
+            return True
+        except Exception as e:
+            logger.debug(f"[session-memory] set_auto_interact_flag failed: {e}")
+            return False
+
     # ── Plan State 持久化（Plan-and-Execute 模式）──
 
     async def set_plan_state(self, session_id: str, plan_json: str) -> bool:

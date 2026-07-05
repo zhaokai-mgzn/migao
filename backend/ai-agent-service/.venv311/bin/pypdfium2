@@ -1,0 +1,6 @@
+#!/Users/zhaokai/workspace/migao/backend/ai-agent-service/.venv311/bin/python3.11
+import sys
+from pypdfium2_cli.__main__ import cli_main
+if __name__ == '__main__':
+    sys.argv[0] = sys.argv[0].removesuffix('.exe')
+    sys.exit(cli_main())

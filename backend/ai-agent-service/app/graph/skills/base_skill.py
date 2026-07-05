@@ -638,6 +638,18 @@ def make_auto_interact_post_hook():
         if (ctx.tool_call["name"] == "processing_item_query"
                 and ctx.result_dict.get("success")
                 and not ctx.has_own_interact):
+            # 防止死循环：同一 session 内 auto-interact 只触发一次
+            # （用户选完加工项后 LLM 不应再重查 processing_item_query）
+            if ctx.session_id:
+                from app.memory.session_memory import SessionMemory
+                already_fired = await SessionMemory().get_auto_interact_flag(ctx.session_id)
+                if already_fired:
+                    logger.info(
+                        f"[{ctx.skill_name}] Auto-interact skipped: already fired "
+                        f"for session={ctx.session_id}"
+                    )
+                    return None
+
             auto_interact = _build_processing_item_choice(ctx.result_dict)
             if auto_interact:
                 from app.tools.registry import get_tool_registry as _get_tools
@@ -666,6 +678,9 @@ def make_auto_interact_post_hook():
                         f"{len(auto_interact.get('options',[]))} "
                         f"processing items as choice component | session={ctx.session_id}"
                     )
+                    # 设 flag：防止后续轮次重复触发
+                    if ctx.session_id:
+                        await SessionMemory().set_auto_interact_flag(ctx.session_id)
         return None
     return hook
 
