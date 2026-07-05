@@ -458,7 +458,7 @@ def route_by_intent(state: AgentState) -> str:
                 logger.info(
                     f"[route_by_intent] Escape hatch: domain switch detected "
                     f"from '{pending_skill}' to '{skill_domain}' "
-                    f"(keyword matched in '{last_msg[:30]}') | session={session_id}"
+                    f"(keyword matched, msg_len={len(last_msg)}) | session={session_id}"
                 )
                 state["pending_interact_skill"] = ""
                 # 不清除 pending_skill in DB，让下一轮还有机会恢复

@@ -1502,11 +1502,13 @@ async def execute_skill(
     # 跨轮 skill 持久化
     creation_skills = {"product", "order", "aftersales"}
     if skill_name in creation_skills:
-        # 成功完成: LLM 明确说创建/下单成功
+        # 成功完成: LLM 明确说创建/下单成功（过去时/完成时标记）
         success_markers = ("创建成功", "已创建", "下单成功", "工单已创建", "售后工单")
         has_succeeded = any(kw in final_content for kw in success_markers)
-        # 用户取消: LLM 识别到取消意图
-        has_cancelled = any(kw in final_content for kw in ("已取消", "取消", "算了", "不创建了"))
+        # 用户取消: 必须是确认取消的陈述句，而非 LLM 提及"取消"选项
+        # 反例: "想取消请回复'取消'" — 这是提供选项，不是真的取消了
+        cancel_markers = ("已取消", "已取消创建", "好的，已取消", "不创建了", "算了不买了")
+        has_cancelled = any(kw in final_content for kw in cancel_markers)
 
         if has_succeeded or has_cancelled:
             # 流程结束 → 清除 pending_skill，释放路由锁
@@ -1514,18 +1516,28 @@ async def execute_skill(
                 from app.memory.session_memory import SessionMemory
                 sm = SessionMemory()
                 await sm.set_pending_skill(session_id, None)
-            except Exception:
-                pass
+                logger.info(
+                    f"[{skill_name}] Flow complete, pending_skill cleared"
+                    f" | trigger={'success' if has_succeeded else 'cancel'}"
+                    f" session={session_id}"
+                )
+            except Exception as e:
+                logger.warning(
+                    f"[{skill_name}] Failed to clear pending_skill on flow end"
+                    f" | session={session_id} error={e}"
+                )
         else:
             # 仍在创建流程中 → 始终保持 pending_skill
-            # 注: route_by_intent 的 escape hatch (msg>10字符) 仍然允许用户主动切换话题
             result["pending_interact_skill"] = skill_name
             try:
                 from app.memory.session_memory import SessionMemory
                 sm = SessionMemory()
                 await sm.set_pending_skill(session_id, skill_name)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(
+                    f"[{skill_name}] Failed to persist pending_skill"
+                    f" | session={session_id} error={e}"
+                )
 
     # ── 跨轮字段记忆：LLM 从对话中提取所有已讨论字段 ──
     if session_id and final_content and skill_name in creation_skills:
