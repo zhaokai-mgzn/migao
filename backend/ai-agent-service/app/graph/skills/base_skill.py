@@ -1352,7 +1352,7 @@ async def execute_skill(
                         f"[{skill_name}][DIAG] LLM call completed | iter={iteration + 1} "
                         f"has_tool_calls={bool(response.tool_calls)} "
                         f"content_len={len(response.content or '')} "
-                        f"reasoning_len={len(getattr(response, 'additional_kwargs', {}).get('reasoning_content', '') or '')} "
+                        f"reasoning_len={len(getattr(response, 'additional_kwargs', {}).get('reasoning_content', '') or getattr(response, 'response_metadata', {}).get('reasoning_content', '') or '')} "
                         f"msg_count={len(full_messages) + len(new_messages)}{token_info}"
                         f" | type={type(response).__name__} session={session_id}"
                     )

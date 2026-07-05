@@ -56,7 +56,8 @@ class LLMFactory:
         if force_no_think:
             kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
         elif enable_thinking:
-            kwargs["extra_body"] = {"thinking": {"type": "adaptive"}}
+            # DeepSeek V4 只支持 "enabled"/"disabled"，不支持 "adaptive"
+            kwargs["extra_body"] = {"thinking": {"type": "enabled"}}
         return ChatOpenAI(**kwargs)
 
     @staticmethod
