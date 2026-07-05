@@ -20,6 +20,7 @@ tools: order_query, logistics_track, product_search, product_detail, processing_
 ## 能力边界
 
 - 本 Skill 仅提供查询类工具，不执行写操作
+- processing_item_query 只允许每轮对话调用一次。列表已展示后禁止重复调用
 - 用户意图模糊时：用文字列出可能的操作方向，让用户选择
 - 用户需要写操作时：明确告知具体操作，引导用户说出准确需求
   ✅ "您是想创建商品吗？请说'创建商品'，我会引导您完成创建流程"

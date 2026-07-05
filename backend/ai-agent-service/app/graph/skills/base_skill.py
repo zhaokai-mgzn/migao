@@ -503,6 +503,13 @@ class PipelineContext:
     result_str: str = ""
     result_dict: dict = field(default_factory=dict)
 
+    # ── 阻断机制 (PreHook 可设置以短路 Execute 阶段) ──
+    blocked: bool = False
+    blocked_result: tuple | None = None  # (result_str, result_dict), set by PreHook
+
+    # ── 内部标记（Execute 阶段写入，PostHook 读取）──
+    _tool_message_appended: bool = False  # ToolMessage 已在 Execute 阶段追加，PostHook 跳过
+
 
 # Hook 签名：async def hook(ctx: PipelineContext) -> bool | None
 #   PostHook 返回 True → 立即停止处理剩余 tool_call 并 break 外层 iteration
@@ -539,7 +546,10 @@ class ToolExecutionPipeline:
             await hook(ctx)
 
         # ── Execute ──
-        if ctx.tool_instance is None:
+        if ctx.blocked:
+            # PreHook 已设置阻断结果, 跳过实际工具执行
+            ctx.result_str, ctx.result_dict = ctx.blocked_result
+        elif ctx.tool_instance is None:
             ctx.result_str = json.dumps({
                 "success": False, "error": "tool_not_found",
                 "message": f"工具 {ctx.tool_call['name']} 不可用",
@@ -549,7 +559,7 @@ class ToolExecutionPipeline:
             ctx.result_str, ctx.result_dict = await _execute_tool_safe(
                 ctx.tool_instance, ctx.tool_call["args"], ctx.tool_context, ctx.state,
             )
-            # Self-correct retry（保持现有逻辑不变）
+            # Self-correct retry
             if not ctx.result_dict.get("success") and ctx.result_dict.get("suggestion"):
                 corrected = await _self_correct_retry(
                     ctx.tool_instance, ctx.tool_call["args"], ctx.tool_context,
@@ -558,6 +568,18 @@ class ToolExecutionPipeline:
                 )
                 if corrected:
                     ctx.result_str, ctx.result_dict = corrected
+
+        # 追加 ToolMessage — 统一在 Execute 阶段处理。
+        # self-correct 成功后 ctx.result_str 已是修正值，ToolMessage 自然反映最终状态。
+        # 设置 _tool_message_appended 标记，PostHook 不再重复追加。
+        ctx.new_messages.append(
+            ToolMessage(
+                content=ctx.result_str,
+                tool_call_id=ctx.tool_call["id"],
+                name=ctx.tool_call["name"],
+            )
+        )
+        ctx._tool_message_appended = True
 
         # ── PostHooks ──
         for hook in self._post:
@@ -594,10 +616,65 @@ def make_resolve_tool_hook(skill_registry):
     return hook
 
 
+# ── Duplicate Tool Call Blocker ──
+
+def make_block_duplicate_tool_hook():
+    """工厂函数: 创建重复工具调用阻断 PreHook
+
+    当 auto_interact_flag 已设置时, 阻止 processing_item_query 再次执行。
+    不阻止则不产生效果 (返回 None)。
+    此 hook 在 Execute 阶段之前运行, 防止 LLM 陷入 tool-call 循环。
+    """
+    async def hook(ctx: PipelineContext) -> None:
+        if ctx.tool_call.get("name") != "processing_item_query":
+            return
+        if not ctx.session_id:
+            return
+
+        from app.memory.session_memory import SessionMemory
+        already_fired = await SessionMemory().get_auto_interact_flag(ctx.session_id)
+        if not already_fired:
+            return
+
+        logger.warning(
+            f"[{ctx.skill_name}] BLOCKED duplicate processing_item_query | "
+            f"session={ctx.session_id} — auto-interact flag already set, "
+            f"forcing tool to return stop signal"
+        )
+        ctx.blocked = True
+        ctx.blocked_result = (
+            json.dumps({
+                "success": False,
+                "error": "duplicate_call_blocked",
+                "message": (
+                    "加工项选择列表已在本轮对话展示, 请不要再重复查询。"
+                    "请基于已展示的加工项列表引导用户选择, 或询问用户还需要什么帮助。"
+                ),
+                "suggestion": (
+                    "请使用已展示的列表中的加工项。"
+                    "如果用户已选择, 直接使用选择的加工项继续流程。"
+                    "不要再调用 processing_item_query。"
+                ),
+            }, ensure_ascii=False),
+            {
+                "success": False,
+                "error": "duplicate_call_blocked",
+                "message": "加工项选择列表已在本轮展示, 禁止重复查询。",
+            },
+        )
+    return hook
+
+
 # ── PostHooks ──
 
 async def append_tool_message_post_hook(ctx: PipelineContext) -> None:
-    """PostHook: 将 tool 执行结果追加到 new_messages（原 line ~1042-1044）"""
+    """PostHook: 将 tool 执行结果追加到 new_messages
+
+    注意：若 Execute 阶段已追加 ToolMessage（_tool_message_appended=True），
+    则跳过本 hook，避免追加重复/孤儿消息。
+    """
+    if getattr(ctx, '_tool_message_appended', False):
+        return
     ctx.new_messages.append(
         ToolMessage(
             content=ctx.result_str,
@@ -872,7 +949,6 @@ async def execute_skill(
     """
     raw_messages = state["messages"]
     session_id = state.get("session_id", "")
-    is_multimodal = has_images(raw_messages)
 
     # 1. 构建并注入 ToolContext
     tool_context = build_tool_context(state)
@@ -888,6 +964,7 @@ async def execute_skill(
     pipeline = (
         ToolExecutionPipeline()
         .add_pre(log_tool_call_pre_hook)
+        .add_pre(make_block_duplicate_tool_hook())     # 阻断重复 tool_call (在 resolve 之前)
         .add_pre(make_resolve_tool_hook(skill_registry))
         .add_post(append_tool_message_post_hook)
         .add_post(make_auto_interact_post_hook())
@@ -1104,6 +1181,16 @@ async def execute_skill(
             # 创建"无思考"变体（迭代 2+ 轮使用）
             llm_no_thinking = None
 
+            # P3修复: 图片消息时第一轮隐藏加工项查询（分类可在基本信息阶段收集）
+            # 基于 tool_names 而非 skill_name，同时覆盖 product 和 general 等 Skill
+            if "processing_item_query" in tool_names:
+                langchain_tools = [t for t in langchain_tools if t.name != "processing_item_query"]
+                logger.info(
+                    f"[{skill_name}] Multimodal: hiding processing_item_query, "
+                    f"{len(langchain_tools)} tools remain | "
+                    f"tenant={state['tenant_id']} session={session_id}"
+                )
+
             if langchain_tools:
                 llm_with_tools = llm.bind_tools(langchain_tools)
             else:
@@ -1117,12 +1204,6 @@ async def execute_skill(
 
     # 5.b Tool Calling 循环（纯文本 Skill 或 图片理解后的主模型处理）
     if not is_multimodal or (is_multimodal and vision_analysis):
-        # P3修复: 图片消息时第一轮隐藏加工项（分类可在基本信息阶段收集）
-        if is_multimodal and skill_name == "product" and langchain_tools:
-            langchain_tools = [t for t in langchain_tools if t.name != "processing_item_query"]
-            if langchain_tools:
-                llm_with_tools = llm.bind_tools(langchain_tools)
-                logger.info(f"[{skill_name}] Multimodal: hiding processing_item_query, {len(langchain_tools)} tools remain")
 
         # 检测取消信号
 
@@ -1288,7 +1369,22 @@ async def execute_skill(
                 ctx.has_own_interact = any(
                     tc["name"] == "interact" for tc in response.tool_calls
                 )
+                # 同工具重复调用检测 (防止 LLM 陷入 tool-call 循环)
+                tool_call_counts: dict[str, int] = {}
                 for tool_call in response.tool_calls:
+                    tool_name = tool_call["name"]
+                    tool_call_counts[tool_name] = tool_call_counts.get(tool_name, 0) + 1
+                    if tool_call_counts[tool_name] >= 3:
+                        logger.warning(
+                            f"[{skill_name}] SAME_TOOL_LOOP: {tool_name} called "
+                            f"{tool_call_counts[tool_name]} times in single iteration | "
+                            f"session={session_id} — forcing break"
+                        )
+                        if not final_content:
+                            final_content = "请从上方的选项中选择,或告诉我其他需求。"
+                        ctx.interact_called = True
+                        break
+
                     ctx.tool_call = tool_call
                     ctx.tool_instance = None
                     ctx.result_str = ""
