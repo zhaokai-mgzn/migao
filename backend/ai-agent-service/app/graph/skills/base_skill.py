@@ -1102,18 +1102,17 @@ async def execute_skill(
                 f"tenant={state['tenant_id']} session={session_id}"
             )
 
-            # 图片后强制确认：注入指令防止跳过信息收集直接进阶段2
-            if skill_name == "product":
-                full_messages.append(
-                    SystemMessage(content=(
-                        "🔴【图片分析完成】先跟用户确认识别结果（名称/颜色/系列等），"
-                        "收集缺失信息。不要直接调用 category_manage 或 processing_item_query。"
-                        "用户确认信息后再进入分类和加工项选择。"
-                    ))
-                )
-
     # 5.b Tool Calling 循环（纯文本 Skill 或 图片理解后的主模型处理）
     if not is_multimodal or (is_multimodal and vision_analysis):
+        # P3修复: 图片消息时，第一轮暂时隐藏加工项/分类工具，让LLM先确认基本信息
+        if is_multimodal and skill_name == "product" and langchain_tools:
+            _delayed_tools = ["processing_item_query", "category_manage"]
+            _saved_tools = [t for t in langchain_tools if t.name not in _delayed_tools]
+            if _saved_tools:
+                langchain_tools = _saved_tools
+                llm_with_tools = llm.bind_tools(langchain_tools) if langchain_tools else llm
+                logger.info(f"[{skill_name}] Multimodal: hiding {_delayed_tools} for 1st iteration")
+
         # 检测取消信号：用户说"算了""取消""不创建了"→跳过流程
         last_user_msg = ""
         for m in reversed(raw_messages):
