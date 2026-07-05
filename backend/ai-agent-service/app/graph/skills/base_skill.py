@@ -632,9 +632,11 @@ def make_resolve_tool_hook(skill_registry):
 def make_block_duplicate_tool_hook():
     """工厂函数: 创建重复工具调用阻断 PreHook
 
-    当 auto_interact_flag 已设置时, 阻止 processing_item_query 再次执行。
-    不阻止则不产生效果 (返回 None)。
-    此 hook 在 Execute 阶段之前运行, 防止 LLM 陷入 tool-call 循环。
+    仅在 auto_interact_flag 已设置 AND args 无实质变化时阻断。
+    放行场景: 翻页(page>1)、分类过滤(category_id)、关键词搜索(keyword)。
+    拦截场景: 同一 session 内用相同默认参数重复查询(LLM 死循环)。
+
+    同轮死循环由 tool_call_counts >= 3 检测兜底。
     """
     async def hook(ctx: PipelineContext) -> None:
         if ctx.tool_call.get("name") != "processing_item_query":
@@ -647,10 +649,22 @@ def make_block_duplicate_tool_hook():
         if not already_fired:
             return
 
+        # 放行：翻页/分类过滤/关键词搜索（有实质参数变化）
+        args = ctx.tool_call.get("args", {})
+        has_page = args.get("page", 1) > 1
+        has_filter = bool(args.get("category_id") or args.get("keyword") or args.get("status"))
+        if has_page or has_filter:
+            logger.info(
+                f"[{ctx.skill_name}] Allowing processing_item_query retry: "
+                f"page={args.get('page')} category_id={args.get('category_id')} "
+                f"keyword={args.get('keyword')} | session={ctx.session_id}"
+            )
+            return
+
         logger.warning(
             f"[{ctx.skill_name}] BLOCKED duplicate processing_item_query | "
             f"session={ctx.session_id} — auto-interact flag already set, "
-            f"forcing tool to return stop signal"
+            f"no new filter/page args, forcing tool to return stop signal"
         )
         ctx.blocked = True
         ctx.blocked_result = (
@@ -658,19 +672,17 @@ def make_block_duplicate_tool_hook():
                 "success": False,
                 "error": "duplicate_call_blocked",
                 "message": (
-                    "加工项选择列表已在本轮对话展示, 请不要再重复查询。"
-                    "请基于已展示的加工项列表引导用户选择, 或询问用户还需要什么帮助。"
+                    "加工项选择列表已展示。请基于已展示的列表引导用户选择。"
+                    "如需翻页或按分类筛选，请明确指定 page/category_id 参数。"
                 ),
                 "suggestion": (
-                    "请使用已展示的列表中的加工项。"
-                    "如果用户已选择, 直接使用选择的加工项继续流程。"
-                    "不要再调用 processing_item_query。"
+                    "请使用已展示列表中的加工项。如需更多选项，请指定翻页(page>1)或分类(category_id)。"
                 ),
             }, ensure_ascii=False),
             {
                 "success": False,
                 "error": "duplicate_call_blocked",
-                "message": "加工项选择列表已在本轮展示, 禁止重复查询。",
+                "message": "加工项选择列表已展示，请引导用户选择或指定翻页/筛选条件。",
             },
         )
     return hook
