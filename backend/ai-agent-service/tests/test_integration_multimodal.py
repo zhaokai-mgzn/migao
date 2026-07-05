@@ -528,7 +528,7 @@ class TestAgentAwareSuggestionsIntegration:
             assert has_b2b, f"米宝管理意图 [{intent}] 建议缺少 B 端关键词: {suggestions}"
 
     async def test_generator_returns_mibao_suggestions_by_default(self):
-        """默认 agent_type 返回米宝建议（stage-aware: 默认 stage=initial，预期 querying fallback）"""
+        """默认 agent_type 返回米宝建议（stage-aware: generate() 默认 stage=initial）"""
         from app.suggestions.follow_up import FollowUpSuggestionGenerator
         with patch("app.suggestions.follow_up.settings") as mock_settings:
             mock_settings.INTENT_MODEL = "qwen3.6-flash"
@@ -539,15 +539,13 @@ class TestAgentAwareSuggestionsIntegration:
                 query="查看订单", answer="这是订单列表",
                 intent_type="order_query",
             )
-            # 短回答走预设，默认 stage=initial fallback 到 querying
             assert isinstance(result, list)
             assert len(result) == 3
-            # 验证返回的是 order_query 的 querying 阶段建议
-            expected = gen._get_preset("order_query", "mibao", "querying")
+            expected = gen._get_preset("order_query", "mibao", "initial")
             assert result == expected
 
     async def test_generator_returns_xiaobu_suggestions(self):
-        """agent_type=xiaobu 返回小布建议（stage-aware）"""
+        """agent_type=xiaobu 返回小布建议（stage-aware: generate() 默认 stage=initial）"""
         from app.suggestions.follow_up import FollowUpSuggestionGenerator
         with patch("app.suggestions.follow_up.settings") as mock_settings:
             mock_settings.INTENT_MODEL = "qwen3.6-flash"
@@ -560,7 +558,7 @@ class TestAgentAwareSuggestionsIntegration:
             )
             assert isinstance(result, list)
             assert len(result) == 3
-            expected = gen._get_preset("order_query", "xiaobu", "querying")
+            expected = gen._get_preset("order_query", "xiaobu", "initial")
             assert result == expected
 
     async def test_suggestions_node_passes_agent_type(self):
