@@ -812,6 +812,78 @@ class SessionMemory:
                 logger.warning(f"[session-memory] clear_plan_state failed: {e}")
                 return False
 
+    # ── Vision Analysis Cache ──
+
+    async def set_vision_analysis(self, session_id: str, analysis: str) -> bool:
+        """缓存最近一次 Vision 图片分析结果，用于跨轮追问。
+
+        存入 sessions.metadata.vision_analysis，
+        下次上传新图片时自动覆盖。
+        """
+        async with await self._get_session() as db:
+            try:
+                from sqlalchemy import text
+                safe = analysis[:3000]  # 截断，避免膨胀 metadata
+                sql = text("""
+                    UPDATE sessions
+                    SET metadata = jsonb_set(
+                        COALESCE(metadata, '{}'::jsonb),
+                        '{vision_analysis}',
+                        :vision_analysis::jsonb
+                    ),
+                    updated_at = :now
+                    WHERE id = :session_id
+                """)
+                await db.execute(sql, {
+                    "session_id": session_id,
+                    "vision_analysis": json.dumps(safe, ensure_ascii=False),
+                    "now": self._now(),
+                })
+                await db.commit()
+                logger.debug(
+                    f"[session-memory] Vision analysis cached | session={session_id} len={len(safe)}"
+                )
+                return True
+            except Exception as e:
+                await db.rollback()
+                logger.warning(f"[session-memory] set_vision_analysis failed: {e}")
+                return False
+
+    async def get_vision_analysis(self, session_id: str) -> str:
+        """获取缓存的 Vision 图片分析结果。"""
+        async with await self._get_session() as db:
+            try:
+                from sqlalchemy import text
+                sql = text("""
+                    SELECT COALESCE(metadata->>'vision_analysis', '') FROM sessions
+                    WHERE id = :session_id
+                """)
+                result = await db.execute(sql, {"session_id": session_id})
+                row = result.fetchone()
+                return (row[0] or "") if row else ""
+            except Exception as e:
+                logger.warning(f"[session-memory] get_vision_analysis failed: {e}")
+                return ""
+
+    async def clear_vision_analysis(self, session_id: str) -> bool:
+        """清除 Vision 分析缓存（新图片上传时调用）。"""
+        async with await self._get_session() as db:
+            try:
+                from sqlalchemy import text
+                sql = text("""
+                    UPDATE sessions
+                    SET metadata = COALESCE(metadata, '{}'::jsonb) - 'vision_analysis',
+                        updated_at = :now
+                    WHERE id = :session_id
+                """)
+                await db.execute(sql, {"session_id": session_id, "now": self._now()})
+                await db.commit()
+                return True
+            except Exception as e:
+                await db.rollback()
+                logger.warning(f"[session-memory] clear_vision_analysis failed: {e}")
+                return False
+
     async def get_last_message_time(self, session_id: str) -> Optional[datetime]:
         """
         获取会话最后一条消息的创建时间，用于空闲超时判断。

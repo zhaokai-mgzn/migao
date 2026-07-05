@@ -176,8 +176,12 @@ class BaseAgent:
                     pending_skill = plan_skill
             if not pending_skill:
                 pending_skill = await mem.get_pending_skill(context.session_id) or ""
-        except Exception:
-            pass
+        except Exception as e:
+            # 区分"无值"和"加载失败"——后者是异常，需感知
+            logger.warning(
+                f"[_build_initial_state] Failed to load pending_skill from session memory"
+                f" | session={context.session_id} error={e}"
+            )
 
         return {
             "messages": messages,

@@ -104,6 +104,7 @@ async def intent_router_node(state: AgentState) -> dict:
     节省 LLM 调用且防止短文本（如"1"、"确认"）被误分类。
     """
     pending_skill = state.get("pending_interact_skill", "")
+    session_id = state.get("session_id", "")
     if pending_skill:
         # 意图重写：P&E 进行中，直接用 plan 的 skill 覆盖意图
         # 映射 pending_skill → 对应的 intent，让 route_by_intent 正确路由
@@ -120,6 +121,7 @@ async def intent_router_node(state: AgentState) -> dict:
         synthetic_intent = _SKILL_TO_INTENT.get(pending_skill, "general")
         logger.info(
             f"[intent_router] Intent rewrite: pending_skill={pending_skill} → intent={synthetic_intent}"
+            f" | session={session_id}"
         )
         return {
             "intent_result": {
@@ -399,6 +401,7 @@ def route_by_intent(state: AgentState) -> str:
     优先回到原 skill，除非用户明确表达了不同的高置信度意图。
     """
     pending_skill = state.get("pending_interact_skill", "")
+    session_id = state.get("session_id", "")
     route = state.get("route_decision") or {}
     action = route.get("action", "full_agent")
 
@@ -407,15 +410,17 @@ def route_by_intent(state: AgentState) -> str:
         if _last_human_has_image(state.get("messages", [])):
             logger.warning(
                 f"[route_by_intent] Multimodal message detected with action=direct_reply; "
-                f"redirecting to 'general' for vision processing | tenant={state.get('tenant_id')}"
+                f"redirecting to 'general' for vision processing | tenant={state.get('tenant_id')} session={session_id}"
             )
             return "general"
         # 如果有 pending skill，不执行 direct_reply，继续走 skill 流程
         if pending_skill:
             logger.info(
                 f"[route_by_intent] Pending interact skill '{pending_skill}' overrides direct_reply"
+                f" | session={session_id}"
             )
             return pending_skill
+        logger.info(f"[route_by_intent] Direct reply, no pending skill | session={session_id}")
         return "direct_reply"
 
     intent = (state.get("intent_result") or {}).get("intent", "general")
@@ -437,16 +442,21 @@ def route_by_intent(state: AgentState) -> str:
         if is_short_interact:
             logger.info(
                 f"[route_by_intent] Session continuity: staying in '{pending_skill}' "
-                f"(intent={intent}, msg_len={len(last_msg or '')})"
+                f"(intent={intent}, msg_len={len(last_msg or '')}) | session={session_id}"
             )
             return pending_skill
         else:
             logger.info(
                 f"[route_by_intent] Escape hatch: user message length={len(last_msg)} "
-                f"suggests topic switch, routing to intent '{intent}'"
+                f"suggests topic switch, routing to intent '{intent}' | session={session_id}"
             )
             # 清除 pending_skill 避免后续轮次继续锁死
             state["pending_interact_skill"] = ""
+
+    logger.info(
+        f"[route_by_intent] Routing to '{intent}' "
+        f"(pending_skill={pending_skill or 'none'}, action={action}) | session={session_id}"
+    )
 
     global _INTENT_TO_ROUTE
     agent_type = state.get("agent_type", "")

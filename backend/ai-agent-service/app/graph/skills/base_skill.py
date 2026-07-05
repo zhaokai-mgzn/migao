@@ -122,9 +122,15 @@ def _extract_content(response: AIMessage) -> str:
 # - 需要规划多步骤操作（创建工单、管理人员）
 # - product_inquiry 不需要：直接回答产品信息，不调工具
 # - order_query/logistics_track：仅首轮需要思考（决定调什么工具），后续轮关闭
-# DeepSeek thinking 模式与 LangChain 工具调用存在兼容问题，默认关闭。
-# 如需为特定意图开启，在此添加意图名称。
-_THINKING_INTENTS = frozenset()
+# DeepSeek V4 thinking 模式：首轮开启深度思考（规划工具调用 + 图片属性推理），
+# 后续轮关闭（策略2 llm_no_thinking 自动接管，仅做结果格式化）。
+# 意图列表：复杂推理场景（产品创建、售后处理、订单管理、数据报表）
+_THINKING_INTENTS = frozenset({
+    "product_inquiry",   # 创建商品——需深度推理图片属性
+    "after_sales",       # 售后处理——需推理退款/换货逻辑
+    "order_query",       # 订单查询——需关联上下文
+    "dashboard",         # 数据报表——需多维度分析
+})
 
 
 def get_skill_llm(
@@ -996,11 +1002,17 @@ async def execute_skill(
     llm_model_name = getattr(llm, "model_name", None) or getattr(llm, "model", "")
 
     # 策略 2：创建"无思考"变体，用于迭代 2+ 轮（工具结果格式化不需要深度推理）
-    # 仅当首轮开了 thinking 且需要工具调用时才创建，避免浪费
+    # 仅当需要工具调用时创建，避免浪费。首轮用 thinking，后续用 no_thinking 省 5-8s。
     llm_no_thinking = None
-    if not is_multimodal and intent_name in _THINKING_INTENTS and langchain_tools:
-        # 懒加载：首轮执行后若需迭代再创建
-        pass  # 在循环中按需创建
+    if langchain_tools:
+        from app.llm import LLMFactory
+        llm_no_thinking = LLMFactory.create_skill_llm(
+            force_no_think=True,
+        )
+        llm_no_thinking_model = getattr(llm_no_thinking, "model_name", None) or getattr(llm_no_thinking, "model", "")
+        logger.info(
+            f"[{skill_name}] No-think LLM ready for iterations 2+ | model={llm_no_thinking_model}"
+        )
 
     # 多模态请求不绑定 Tools（视觉模型不支持 Tool Calling）
     if is_multimodal:
@@ -1038,6 +1050,26 @@ async def execute_skill(
             "2. 根据用户的提问，结合图片内容给出准确回答\n"
             "3. 如果图片中包含可操作的信息（如商品名称、订单号等），可以主动建议使用相关工具处理\n\n"
             + system_prompt
+        )
+
+    # 跨轮 Vision 分析缓存：文本追问（如"图片里什么颜色"）时，注入上次 Vision 分析
+    cached_vision = ""
+    if not is_multimodal and session_id:
+        try:
+            cached_vision = await SessionMemory().get_vision_analysis(session_id)
+        except Exception:
+            pass
+    if cached_vision:
+        system_prompt = (
+            "⚠️ 用户本轮没有上传新图片，但上一轮上传过图片。以下是之前图片的分析结果，请基于它回答用户问题：\n"
+            f"--- 上次图片分析 ---\n"
+            f"{cached_vision}\n"
+            f"--- 分析结束 ---\n\n"
+            + system_prompt
+        )
+        logger.info(
+            f"[{skill_name}] Injected cached vision analysis | "
+            f"analysis_len={len(cached_vision)} session={session_id}"
         )
 
     # 注入跨轮记忆：已收集字段追加到最后一条用户消息（LLM 不可能忽略）
@@ -1079,6 +1111,12 @@ async def execute_skill(
     #     然后回退到主模型 + bind_tools 的标准 Tool Calling 循环。
     vision_analysis = ""  # 提前声明，供下游条件判断使用
     if is_multimodal:
+        # 新图片上传 → 清除旧缓存，避免旧分析干扰
+        if session_id:
+            try:
+                await SessionMemory().clear_vision_analysis(session_id)
+            except Exception:
+                pass
         max_vision_attempts = 2
         for vision_attempt in range(max_vision_attempts):
             try:
@@ -1113,6 +1151,15 @@ async def execute_skill(
                 # 避免文本 LLM 看到 Assistant 已"回复"了图片分析，造成语义冲突
                 logger.info(
                     f"[{skill_name}] Vision LLM completed | analysis_len={len(vision_analysis)}"
+                )
+                # DEBUG: 记录 Vision 分析摘要（最多 300 字符），用于排查识别质量问题
+                # 安全：脱敏常见 PII 模式（手机号/邮箱/身份证），Vision 分析通常不包含这些但防御性处理
+                vision_preview = vision_analysis[:300] + ("..." if len(vision_analysis) > 300 else "")
+                import re as _re
+                vision_preview = _re.sub(r'\b1[3-9]\d{9}\b', '[PHONE_REDACTED]', vision_preview)
+                vision_preview = _re.sub(r'\b[\w.-]+@[\w.-]+\.\w+\b', '[EMAIL_REDACTED]', vision_preview)
+                logger.info(
+                    f"[{skill_name}][DIAG] Vision analysis preview: {vision_preview}"
                 )
 
                 # 空响应重试（最后一次不再重试）
@@ -1152,6 +1199,13 @@ async def execute_skill(
                 f"请严格基于以上分析结果和用户的原始问题，使用可用工具完成操作。"
                 f"不要编造图片中没有的信息。"
             )
+
+            # 持久化 Vision 分析，供后续轮次追问（如"图片里的颜色是什么"）复用
+            if session_id:
+                try:
+                    await SessionMemory().set_vision_analysis(session_id, vision_analysis)
+                except Exception:
+                    pass
 
             # 清理历史消息中的 image_url，替换为纯文本（主模型不支持多模态 content list）
             messages = _sanitize_messages_for_text_path(list(messages))
@@ -1246,23 +1300,9 @@ async def execute_skill(
                         new_messages = trimmed
                         ctx.new_messages = new_messages  # NEW: keep ctx in sync
 
-                # 策略 2：首轮开 thinking（规划工具调用），后续轮关闭（仅格式化结果）
+                # 策略 2：首轮用默认 LLM，后续轮用 no-thinking 变体（仅格式化结果）
                 # 节省 5-8s/轮，质量无损（实测：8.0s → 2.7s）
-                if iteration > 0 and intent_name in _THINKING_INTENTS:
-                    if llm_no_thinking is None:
-                        llm_no_thinking = get_skill_llm(
-                            intent=intent_name,
-                            tool_count=len(langchain_tools),
-                            text_length=text_length,
-                            messages=messages,
-                            enable_thinking=False,  # 显式关闭
-                        )
-                        if langchain_tools:
-                            llm_no_thinking = llm_no_thinking.bind_tools(langchain_tools)
-                        logger.debug(
-                            f"[{skill_name}][DIAG] Created no-thinking LLM for iter {iteration + 1}+"
-                        )
-                    # 切换到无思考变体
+                if iteration > 0 and llm_no_thinking is not None:
                     current_llm = llm_no_thinking
                 else:
                     current_llm = llm_with_tools
