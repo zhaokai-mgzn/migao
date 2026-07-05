@@ -1264,13 +1264,16 @@ async def execute_skill(
             "amounts": extracted.amounts,
         }
 
-    # 7. 兜底：如果所有迭代后仍无内容，记录警告并生成友好提示
+    # 7. 兜底：如果所有迭代后仍无内容，根据上下文生成友好提示
     if not final_content:
-        final_content = "抱歉，我遇到了一些问题，请重新描述您的需求，我会继续帮您处理。"
+        if ctx.interact_called:
+            final_content = "请查看并选择以下选项："
+        else:
+            final_content = "抱歉，我遇到了一些问题，请重新描述您的需求，我会继续帮您处理。"
         logger.warning(
             f"[{skill_name}] Empty final_content after all iterations | "
             f"tenant={state['tenant_id']} session={session_id} "
-            f"iterations={min(iteration + 1, max_iterations) if 'iteration' in dir() else 0} "
+            f"interact_called={ctx.interact_called} "
             f"new_messages_count={len(new_messages)}"
         )
 

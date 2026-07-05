@@ -211,12 +211,13 @@ class InteractTool(BaseTool):
                     error="choice 组件需要至少一个 option",
                     message="选项列表不能为空",
                 )
-            # 限制选项数量防止 UI 溢出
-            if len(options) > 8:
+            # 限制选项数量防止 UI 溢出（auto-interact 生成的上限更高）
+            MAX_OPTIONS = 50
+            if len(options) > MAX_OPTIONS:
                 logger.warning(
-                    f"[interact] Too many options ({len(options)}), truncating to 8"
+                    f"[interact] Too many options ({len(options)}), truncating to {MAX_OPTIONS}"
                 )
-                options = options[:8]
+                options = options[:MAX_OPTIONS]
 
             interactive_data = {
                 "component": "choice",
