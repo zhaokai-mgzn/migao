@@ -1132,22 +1132,25 @@ async def execute_skill(
 
     # Vision 缓存注入到用户消息（必须在 SystemMessage 之前，确保 LLM 视为用户上下文）
     if cached_vision and msg_list:
-        last_msg = msg_list[-1]
-        if isinstance(last_msg, HumanMessage):
-            new_content = (
-                f"[系统提示] 你上一轮已经完成了对用户图片的识别分析，结果如下。"
-                f"这是你自己的推理产物，请直接基于它回答用户问题：\n"
-                f"--- 图片分析 ---\n"
-                f"{cached_vision}\n"
-                f"--- 分析结束 ---\n"
-                f"--- 用户消息 ---\n"
-                f"{last_msg.content or ''}"
-            )
-            msg_list[-1] = HumanMessage(content=new_content)
-            logger.info(
-                f"[{skill_name}] Injected cached vision into user message | "
-                f"analysis_len={len(cached_vision)} session={session_id}"
-            )
+        # 找到最后一条 HumanMessage（不能取 msg_list[-1]，最后一条可能是 AIMessage）
+        for i in range(len(msg_list) - 1, -1, -1):
+            if isinstance(msg_list[i], HumanMessage):
+                last_user = msg_list[i]
+                new_content = (
+                    f"[系统提示] 你上一轮已经完成了对用户图片的识别分析，结果如下。"
+                    f"这是你自己的推理产物，请直接基于它回答用户问题：\n"
+                    f"--- 图片分析 ---\n"
+                    f"{cached_vision}\n"
+                    f"--- 分析结束 ---\n"
+                    f"--- 用户消息 ---\n"
+                    f"{last_user.content or ''}"
+                )
+                msg_list[i] = HumanMessage(content=new_content)
+                logger.info(
+                    f"[{skill_name}] Injected cached vision into user message | "
+                    f"analysis_len={len(cached_vision)} session={session_id}"
+                )
+                break
 
     if collected and msg_list:
         fields_hint = "；".join(f"{k}={v}" for k, v in collected.items())
