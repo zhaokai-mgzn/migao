@@ -1111,24 +1111,23 @@ async def execute_skill(
                 last_user_msg = _extract_content(m)
                 break
         cancel_keywords = ["算了", "取消", "不创建了", "不买了", "不要了", "不用了"]
+        cancelled = False
         if any(kw in last_user_msg for kw in cancel_keywords):
             logger.info(f"[{skill_name}] Cancel detected, skipping execution | session={session_id}")
             final_content = "好的，已取消。有什么其他需要帮您的吗？"
-            new_messages.clear()  # 清空消息，不展示之前的 tool calls
-            # 清除 pending_skill
+            new_messages.clear()
+            cancelled = True
             if session_id:
                 try:
                     from app.memory.session_memory import SessionMemory
                     await SessionMemory().clear_pending_skill(session_id)
                 except Exception:
                     pass
-            # 跳过整个循环
-            pass  # fall through to return path below
 
         # 如果多模态分支已经设置了 final_content（Vision 失败），跳过循环
         elif is_multimodal and not vision_analysis:
             pass  # 已在上面设置了 final_content = 错误提示
-        else:
+        elif not cancelled:
             for iteration in range(max_iterations):
                 logger.info(
                     f"[{skill_name}] Iteration {iteration + 1}/{max_iterations} | "
