@@ -271,7 +271,7 @@ class ProductManageTool(BaseTool):
             "status": {
                 "type": "string",
                 "enum": ["on_sale", "off_sale"],
-                "description": "商品状态。create 时传入控制初始状态，默认 on_sale。toggle_status 时必填",
+                "description": "商品状态。create 时传入控制初始状态，默认 on_sale；toggle_status 时必填",
             },
             "colors": {
                 "type": "array",
@@ -313,11 +313,6 @@ class ProductManageTool(BaseTool):
                 "type": "array",
                 "items": {"type": "object"},
                 "description": "SKU数组。系统根据颜色×售卖方式×门幅自动生成，不需要手动传",
-            },
-            "status": {
-                "type": "string",
-                "enum": ["on_sale", "off_sale"],
-                "description": "目标状态。toggle_status 时必填",
             },
         },
         "required": ["action"],
@@ -386,7 +381,7 @@ class ProductManageTool(BaseTool):
                 return await self._create_product(
                     context, name, category_id, price, description, stock_quantity,
                     processing_item_ids, brand, images, detail_images,
-                    specifications, unit, colors, selling_methods, door_widths, sku_code, skus, processing_item_configs, pricing_type
+                    specifications, unit, colors, selling_methods, door_widths, sku_code, skus, processing_item_configs, pricing_type, status
                 )
             elif action == "update":
                 return await self._update_product(
@@ -434,6 +429,7 @@ class ProductManageTool(BaseTool):
         skus: Optional[list] = None,
         processing_item_configs: Optional[list] = None,
         pricing_type: Optional[str] = None,
+        status: Optional[str] = None,
     ) -> ToolResult:
         """创建商品
         
