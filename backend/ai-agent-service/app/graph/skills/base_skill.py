@@ -1404,11 +1404,15 @@ async def execute_skill(
                             token_info = f" tokens_in={usage[0]} tokens_out={usage[1]}"
                     except Exception:
                         pass
+                    # 诊断：dump additional_kwargs 和 response_metadata 的全部 key（排查 reasoning_content 位置）
+                    ak_keys = list(getattr(response, 'additional_kwargs', {}) or {}).keys()
+                    rm_keys = list(getattr(response, 'response_metadata', {}) or {}).keys()
                     logger.info(
                         f"[{skill_name}][DIAG] LLM call completed | iter={iteration + 1} "
                         f"has_tool_calls={bool(response.tool_calls)} "
                         f"content_len={len(response.content or '')} "
                         f"reasoning_len={len(getattr(response, 'additional_kwargs', {}).get('reasoning_content', '') or getattr(response, 'response_metadata', {}).get('reasoning_content', '') or '')} "
+                        f"additional_kwargs_keys={ak_keys} response_metadata_keys={rm_keys} "
                         f"msg_count={len(full_messages) + len(new_messages)}{token_info}"
                         f" | type={type(response).__name__} session={session_id}"
                     )
