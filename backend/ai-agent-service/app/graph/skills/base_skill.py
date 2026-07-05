@@ -595,6 +595,29 @@ def make_resolve_tool_hook(skill_registry):
     return hook
 
 
+def make_block_duplicate_query_hook(session_id: str):
+    """PreHook: 如果 auto-interact 已触发，拦截 processing_item_query 重复调用。
+
+    将 tool_call 替换为 no-op，阻止 LLM 重复查询加工项。
+    """
+    async def hook(ctx: PipelineContext) -> None:
+        if ctx.tool_call["name"] != "processing_item_query":
+            return
+        if not session_id:
+            return
+        from app.memory.session_memory import SessionMemory
+        already_fired = await SessionMemory().get_auto_interact_flag(session_id)
+        if already_fired:
+            logger.info(
+                f"[{ctx.skill_name}] BLOCKED duplicate processing_item_query "
+                f"(auto-interact already fired) | session={session_id}"
+            )
+            # 替换为 no-op：让 Execute 阶段返回虚拟成功结果
+            ctx.tool_call = {**ctx.tool_call, "name": "__noop_processing_item_query"}
+            ctx.tool_instance = None  # 强制走 OnError → 返回 fake success
+    return hook
+
+
 # ── PostHooks ──
 
 async def append_tool_message_post_hook(ctx: PipelineContext) -> None:
@@ -877,6 +900,7 @@ async def execute_skill(
         ToolExecutionPipeline()
         .add_pre(log_tool_call_pre_hook)
         .add_pre(make_resolve_tool_hook(skill_registry))
+        .add_pre(make_block_duplicate_query_hook(session_id))
         .add_post(append_tool_message_post_hook)
         .add_post(make_auto_interact_post_hook())
         .add_post(entity_extraction_post_hook)
@@ -950,6 +974,22 @@ async def execute_skill(
             "3. 如果图片中包含可操作的信息（如商品名称、订单号等），可以主动建议使用相关工具处理\n\n"
             + system_prompt
         )
+
+    # 注入 auto-interact 上下文：上一轮已弹加工项选择 → 本轮应进入汇总确认
+    if session_id and skill_name == "product":
+        from app.memory.session_memory import SessionMemory
+        auto_fired = await SessionMemory().get_auto_interact_flag(session_id)
+        if auto_fired:
+            system_prompt = (
+                "🔴【系统指令-最高优先级】上一轮已展示加工项多选组件，用户本轮回复即为选择结果。"
+                "你现在必须："
+                "1. 将用户回复中的加工项名称列表作为已选择的加工项"
+                "2. 立即展示全部字段汇总（名称/价格/货号/分类/颜色/售卖方式/门幅/加工项）"
+                "3. 调用 validate_input 校验"
+                "4. 调用 interact(component=\"confirm\") 让用户确认"
+                "❌ 禁止查询加工项详情！❌ 禁止调用 processing_item_query！"
+                "❌ 禁止输出查询结果！立即推进到汇总确认！\n\n" + system_prompt
+            )
 
     # 注入跨轮记忆：已收集字段追加到最后一条用户消息（LLM 不可能忽略）
     collected = {}
