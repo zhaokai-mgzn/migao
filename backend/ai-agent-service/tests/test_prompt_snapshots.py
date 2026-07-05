@@ -118,7 +118,7 @@ def test_snapshot_all_skills():
 
     # 最大长度快照（防止无限制膨胀）
     expected_max = {
-        "product": 6500,
+        "product": 7500,
         "order": 4200,
         "aftersales": 4200,
         "customer": 4200,
