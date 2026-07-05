@@ -55,9 +55,11 @@ class LLMFactory:
         )
         if force_no_think:
             kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
+            # 不思考时 2048 足够（仅格式化工具结果）
         elif enable_thinking:
-            # DeepSeek V4 只支持 "enabled"/"disabled"，不支持 "adaptive"
             kwargs["extra_body"] = {"thinking": {"type": "enabled"}}
+            # DeepSeek V4 thinking 模式下思考+回复共享 token 预算，需增大
+            kwargs["max_completion_tokens"] = 8192
         return ChatOpenAI(**kwargs)
 
     @staticmethod
