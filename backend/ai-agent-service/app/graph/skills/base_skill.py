@@ -482,6 +482,40 @@ def _build_processing_item_choice(result_dict: dict, page: int = 0) -> dict | No
     }
 
 
+def _build_category_choice(result_dict: dict) -> dict | None:
+    """从 category_manage(action=tree) 结果自动构造 interact(component='choice')
+
+    将树形分类扁平化为单选列表。用户选择后 LLM 直接拿到 category_id (UUID)。
+    """
+    data = result_dict.get("data", {})
+    tree = data.get("tree", [])
+    if not tree:
+        return None
+
+    def _flatten(nodes, depth=0):
+        items = []
+        for node in nodes:
+            if isinstance(node, dict):
+                prefix = "  " * depth + ("├ " if depth > 0 else "")
+                items.append({
+                    "label": f"{prefix}{node.get('name', '?')}",
+                    "value": node.get("id", ""),
+                    "description": node.get("description", "") or f"分类ID: {node.get('id', '')[:12]}...",
+                })
+                children = node.get("children", [])
+                if children:
+                    items.extend(_flatten(children, depth + 1))
+        return items
+
+    options = _flatten(tree)
+    return {
+        "component": "choice",
+        "title": f"选择商品分类（共{len(options)}个）",
+        "options": options,
+        "multiSelect": False,
+    }
+
+
 # ═══════════════════════════════════════════════════════════════
 # Tool Execution Pipeline（NEW）
 # ═══════════════════════════════════════════════════════════════
@@ -728,28 +762,36 @@ async def interact_break_post_hook(ctx: PipelineContext) -> bool:
 
 
 def make_auto_interact_post_hook():
-    """工厂函数：创建 auto-interact PostHook（加工项查询后自动渲染 choice 组件）
+    """工厂函数：创建 auto-interact PostHook
 
-    原在 tool execution loop 中的内联代码（~25 行），现迁移为声明式 PostHook。
+    加工项查询 / 分类树查询后，自动渲染 choice 组件。
     条件：LLM 本轮没有自己弹 form/confirm（避免抢跑）。
     """
     async def hook(ctx: PipelineContext) -> bool | None:
-        if (ctx.tool_call["name"] == "processing_item_query"
-                and ctx.result_dict.get("success")
-                and not ctx.has_own_interact):
+        tool_name = ctx.tool_call["name"]
+        is_processing = tool_name == "processing_item_query"
+        is_category_tree = (
+            tool_name == "category_manage"
+            and ctx.tool_call.get("args", {}).get("action") == "tree"
+        )
+
+        if (is_processing or is_category_tree) and ctx.result_dict.get("success") and not ctx.has_own_interact:
             # 防止死循环：同一 session 内 auto-interact 只触发一次
-            # （用户选完加工项后 LLM 不应再重查 processing_item_query）
             if ctx.session_id:
                 from app.memory.session_memory import SessionMemory
                 already_fired = await SessionMemory().get_auto_interact_flag(ctx.session_id)
-                if already_fired:
+                if already_fired and is_processing:
+                    # 分类树允许重复展示（用户可能需要在不同阶段查看分类）
                     logger.info(
                         f"[{ctx.skill_name}] Auto-interact skipped: already fired "
                         f"for session={ctx.session_id}"
                     )
                     return None
 
-            auto_interact = _build_processing_item_choice(ctx.result_dict)
+            if is_processing:
+                auto_interact = _build_processing_item_choice(ctx.result_dict)
+            else:
+                auto_interact = _build_category_choice(ctx.result_dict)
             if auto_interact:
                 from app.tools.registry import get_tool_registry as _get_tools
                 interact_tool = _get_tools().get_tool("interact")
