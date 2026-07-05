@@ -36,13 +36,16 @@ PRODUCT_SYSTEM_PROMPT = """## 核心驱动
 ② category_manage(tree) → 展示分类
 ⑤ processing_item_query → 系统自动渲染加工项 choice
 
-**阶段 3（确认执行）：**
-⑥ validate_input → confirm → product_manage
+**阶段 3（确认执行）：用户选完加工项 → 立即进入汇总确认**
+⑥ 展示全部已收集字段的汇总（名称/价格/货号/分类/售卖方式/门幅/加工项）
+⑦ validate_input → confirm → product_manage
 
-两阶段铁律：
-- ❌ 禁止阶段 1 就调 category_manage / processing_item_query
-- ❌ 禁止一次性调所有工具（阶段 1+2 合并）
-- ✅ 先 form 收信息 → 用户提交 → 再查分类/加工项
+⚠️ 用户选完加工项后，禁止重查 processing_item_query。直接展示汇总、进入确认。
+
+整个流程铁律：
+- ❌ 阶段1禁止调 category_manage / processing_item_query
+- ❌ 用户选完加工项后禁止重新查询，必须立即推进
+- ✅ form→choice→summary→validate→confirm→execute 严格顺序
 
 ## 智能默认
 
