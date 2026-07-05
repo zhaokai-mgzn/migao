@@ -400,6 +400,76 @@ def _extract_intent_name(state: AgentState) -> str:
     return ""
 
 
+PAGE_SIZE = 10  # 加工项 choice 每页展示数量
+
+
+def _build_processing_item_choice(result_dict: dict, page: int = 0) -> dict | None:
+    """从 processing_item_query 结果自动构造 interact(component='choice')
+
+    支持分页：每页 PAGE_SIZE 个选项，末尾加翻页按钮。
+    前端点击翻页按钮后，LLM 会在下一轮收到翻页请求并重新调用 processing_item_query，
+    本函数再次被触发时根据 page 参数展示对应页。
+
+    Args:
+        result_dict: processing_item_query 的 result_dict
+        page: 当前页码（0-based），0 = 由 data.page 决定
+
+    Returns:
+        interact tool args dict，或 None（无数据时）
+    """
+    data = result_dict.get("data", {})
+    items = data.get("items", [])
+    total = data.get("total", len(items))
+    total_pages = data.get("total_pages", max((total + PAGE_SIZE - 1) // PAGE_SIZE, 1))
+
+    if not items:
+        return None
+
+    current_page = page if page > 0 else (data.get("page", 1) - 1)
+    start = current_page * PAGE_SIZE
+    page_items = items[start:start + PAGE_SIZE]
+
+    options = []
+    for idx, item in enumerate(page_items, start=start + 1):
+        price = item.get("unit_price")
+        unit = item.get("unit", "")
+        price_str = f"¥{price}/{unit}" if price else ""
+        label = f"{idx}. {item.get('name', '?')}"
+        if price_str:
+            label += f" {price_str}"
+        options.append({
+            "label": label,
+            "value": item.get("id", ""),
+            "description": item.get("category_name", ""),
+        })
+
+    # 翻页按钮
+    has_next = (current_page + 1) < total_pages
+    has_prev = current_page > 0
+
+    if has_next:
+        options.append({
+            "label": f"下一页 → (第{current_page + 2}页，共{total}个)",
+            "value": f"__page_{current_page + 2}__",
+            "description": "翻到下一页",
+        })
+    if has_prev:
+        options.append({
+            "label": f"← 上一页 (第{current_page}页)",
+            "value": f"__page_{current_page}__",
+            "description": "翻回上一页",
+        })
+
+    page_info = f"（{current_page + 1}/{total_pages}页，共{total}个）"
+
+    return {
+        "component": "choice",
+        "title": f"选择加工项（可多选）{page_info}",
+        "options": options,
+        "multiSelect": True,
+    }
+
+
 async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -> tuple:
     """统一 Tool 执行入口 — normalize + cache + execute + error handling.
 
@@ -968,6 +1038,30 @@ async def execute_skill(
                     new_messages.append(
                         ToolMessage(content=result_str, tool_call_id=tool_call_id, name=tool_name)
                     )
+
+                    # ── Auto-Interact: 加工项查询后自动渲染 choice 组件 ──
+                    if tool_name == "processing_item_query" and result_dict.get("success"):
+                        auto_interact = _build_processing_item_choice(result_dict)
+                        if auto_interact:
+                            interact_tool = skill_registry.get_tool("interact")
+                            if interact_tool:
+                                interact_str, interact_dict = await _execute_tool_safe(
+                                    interact_tool, auto_interact, tool_context, state,
+                                )
+                                # 用虚拟 tool_call_id 将 interact 结果注入消息流
+                                new_messages.append(
+                                    ToolMessage(
+                                        content=interact_str,
+                                        tool_call_id=f"{tool_call_id}_auto",
+                                        name="interact",
+                                    )
+                                )
+                                interact_called = True
+                                logger.info(
+                                    f"[{skill_name}] Auto-interact: rendered {len(auto_interact.get('options',[]))} "
+                                    f"processing items as choice component | session={session_id}"
+                                )
+                    # ── End Auto-Interact ──
 
                     # 从 Tool 结果提取实体
                     if session_id:
