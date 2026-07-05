@@ -28,7 +28,7 @@ PRODUCT_SYSTEM_PROMPT = """## 创建商品需要的字段
 | name | 是 | 用户提供 |
 | price | 是 | 用户提供 |
 | sku_code | 是 | 引导用户（色号/品牌/拼音首字母/自动生成） |
-| category_id | 是 | category_manage(tree)，在基本信息阶段收集 |
+| category_id | 是 | 用户提供的分类名直接匹配 category_manage(tree) 结果；用户未提供时才引导选择 |
 | selling_methods | 是 | 用户提供或默认["散剪","整卷"] |
 | door_widths | 是 | 用户提供或默认["2.8米"] |
 | colors | 是 | 用户提供或图片识别 |
