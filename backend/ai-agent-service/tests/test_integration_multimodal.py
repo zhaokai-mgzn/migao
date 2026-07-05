@@ -472,14 +472,18 @@ class TestAgentAwareSuggestionsIntegration:
     """Agent 感知建议集成测试：验证米宝和小布返回不同建议"""
 
     def test_mibao_presets_differ_from_xiaobu(self):
-        """米宝和小布对同一意图的预设建议不同"""
+        """米宝和小布对同一意图的预设建议不同（stage-aware: 比较 initial 阶段）"""
         from app.suggestions.follow_up import (
             MIBAO_PRESET_SUGGESTIONS, XIAOBU_PRESET_SUGGESTIONS,
         )
-        # greeting 意图
-        assert MIBAO_PRESET_SUGGESTIONS["greeting"] != XIAOBU_PRESET_SUGGESTIONS["greeting"]
-        # order_query 意图
-        assert MIBAO_PRESET_SUGGESTIONS["order_query"] != XIAOBU_PRESET_SUGGESTIONS["order_query"]
+        # greeting 意图 (initial stage)
+        mibao_greeting = MIBAO_PRESET_SUGGESTIONS["greeting"].get("initial", [])
+        xiaobu_greeting = XIAOBU_PRESET_SUGGESTIONS["greeting"].get("initial", [])
+        assert mibao_greeting != xiaobu_greeting
+        # order_query 意图 (initial stage)
+        mibao_order = MIBAO_PRESET_SUGGESTIONS["order_query"].get("initial", [])
+        xiaobu_order = XIAOBU_PRESET_SUGGESTIONS["order_query"].get("initial", [])
+        assert mibao_order != xiaobu_order
 
     def test_mibao_has_all_27_intents(self):
         """米宝预设覆盖所有 27 个意图"""
@@ -490,17 +494,20 @@ class TestAgentAwareSuggestionsIntegration:
                 f"米宝缺少意图 {intent.value} 的预设"
 
     def test_mibao_no_consumer_phrases(self):
-        """米宝预设不包含 C 端消费者文案"""
+        """米宝预设不包含 C 端消费者文案（stage-aware: 检查所有 stage）"""
         from app.suggestions.follow_up import MIBAO_PRESET_SUGGESTIONS
         consumer_phrases = ["浏览热门商品", "咨询窗帘定制", "联系人工客服", "浏览商品"]
-        for intent, suggestions in MIBAO_PRESET_SUGGESTIONS.items():
-            for s in suggestions:
-                for phrase in consumer_phrases:
-                    assert phrase not in s, \
-                        f"米宝预设 [{intent}] 包含 C 端文案: '{s}'"
+        for intent, stage_suggestions in MIBAO_PRESET_SUGGESTIONS.items():
+            if not isinstance(stage_suggestions, dict):
+                continue
+            for stage, suggestions in stage_suggestions.items():
+                for s in suggestions:
+                    for phrase in consumer_phrases:
+                        assert phrase not in s, \
+                            f"米宝预设 [{intent}][{stage}] 包含 C 端文案: '{s}'"
 
     def test_mibao_management_intents_have_b2b_suggestions(self):
-        """米宝管理类意图的建议包含 B 端操作关键词"""
+        """米宝管理类意图的建议包含 B 端操作关键词（stage-aware: 取 querying stage）"""
         from app.suggestions.follow_up import MIBAO_PRESET_SUGGESTIONS
         b2b_intents = [
             "customer_manage", "employee_manage", "category_manage",
@@ -508,7 +515,11 @@ class TestAgentAwareSuggestionsIntegration:
             "role_manage", "permission_manage",
         ]
         for intent in b2b_intents:
-            suggestions = MIBAO_PRESET_SUGGESTIONS.get(intent, [])
+            stage_suggestions = MIBAO_PRESET_SUGGESTIONS.get(intent, {})
+            if not isinstance(stage_suggestions, dict) or not stage_suggestions:
+                continue
+            # 取 querying stage，fallback 到 initial
+            suggestions = stage_suggestions.get("querying") or stage_suggestions.get("initial", [])
             assert len(suggestions) >= 2, f"米宝管理意图 {intent} 建议不足 2 个"
             all_text = " ".join(suggestions)
             # B 端建议应包含管理类动词
@@ -517,10 +528,8 @@ class TestAgentAwareSuggestionsIntegration:
             assert has_b2b, f"米宝管理意图 [{intent}] 建议缺少 B 端关键词: {suggestions}"
 
     async def test_generator_returns_mibao_suggestions_by_default(self):
-        """默认 agent_type 返回米宝建议"""
-        from app.suggestions.follow_up import (
-            FollowUpSuggestionGenerator, MIBAO_PRESET_SUGGESTIONS,
-        )
+        """默认 agent_type 返回米宝建议（stage-aware: 默认 stage=initial，预期 querying fallback）"""
+        from app.suggestions.follow_up import FollowUpSuggestionGenerator
         with patch("app.suggestions.follow_up.settings") as mock_settings:
             mock_settings.INTENT_MODEL = "qwen3.6-flash"
             gen = FollowUpSuggestionGenerator()
@@ -530,13 +539,16 @@ class TestAgentAwareSuggestionsIntegration:
                 query="查看订单", answer="这是订单列表",
                 intent_type="order_query",
             )
-            assert result == MIBAO_PRESET_SUGGESTIONS["order_query"]
+            # 短回答走预设，默认 stage=initial fallback 到 querying
+            assert isinstance(result, list)
+            assert len(result) == 3
+            # 验证返回的是 order_query 的 querying 阶段建议
+            expected = gen._get_preset("order_query", "mibao", "querying")
+            assert result == expected
 
     async def test_generator_returns_xiaobu_suggestions(self):
-        """agent_type=xiaobu 返回小布建议"""
-        from app.suggestions.follow_up import (
-            FollowUpSuggestionGenerator, XIAOBU_PRESET_SUGGESTIONS,
-        )
+        """agent_type=xiaobu 返回小布建议（stage-aware）"""
+        from app.suggestions.follow_up import FollowUpSuggestionGenerator
         with patch("app.suggestions.follow_up.settings") as mock_settings:
             mock_settings.INTENT_MODEL = "qwen3.6-flash"
             gen = FollowUpSuggestionGenerator()
@@ -546,7 +558,10 @@ class TestAgentAwareSuggestionsIntegration:
                 query="查看订单", answer="这是订单列表",
                 intent_type="order_query", agent_type="xiaobu",
             )
-            assert result == XIAOBU_PRESET_SUGGESTIONS["order_query"]
+            assert isinstance(result, list)
+            assert len(result) == 3
+            expected = gen._get_preset("order_query", "xiaobu", "querying")
+            assert result == expected
 
     async def test_suggestions_node_passes_agent_type(self):
         """suggestions_node 将 state 中的 agent_type 传给 generator"""
