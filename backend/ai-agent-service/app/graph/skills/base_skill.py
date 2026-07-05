@@ -1102,6 +1102,16 @@ async def execute_skill(
                 f"tenant={state['tenant_id']} session={session_id}"
             )
 
+            # 图片后强制确认：注入指令防止跳过信息收集直接进阶段2
+            if skill_name == "product":
+                full_messages.append(
+                    SystemMessage(content=(
+                        "🔴【图片分析完成】先跟用户确认识别结果（名称/颜色/系列等），"
+                        "收集缺失信息。不要直接调用 category_manage 或 processing_item_query。"
+                        "用户确认信息后再进入分类和加工项选择。"
+                    ))
+                )
+
     # 5.b Tool Calling 循环（纯文本 Skill 或 图片理解后的主模型处理）
     if not is_multimodal or (is_multimodal and vision_analysis):
         # 检测取消信号：用户说"算了""取消""不创建了"→跳过流程
