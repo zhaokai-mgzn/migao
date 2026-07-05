@@ -139,7 +139,7 @@ class TestAgentAwareGeneration:
             intent_type="order_query",
             agent_type="mibao",
         )
-        expected = generator._get_preset("order_query", "mibao", "querying")
+        expected = generator._get_preset("order_query", "mibao", "initial")
         assert result == expected
 
     @pytest.mark.asyncio
@@ -151,7 +151,7 @@ class TestAgentAwareGeneration:
             intent_type="order_query",
             agent_type="xiaobu",
         )
-        expected = generator._get_preset("order_query", "xiaobu", "querying")
+        expected = generator._get_preset("order_query", "xiaobu", "initial")
         assert result == expected
 
     @pytest.mark.asyncio
@@ -188,7 +188,7 @@ class TestAgentAwareGeneration:
         result = await generator.generate(
             query="test", answer="test", intent_type="greeting",
         )
-        expected = generator._get_preset("greeting", "mibao", "querying")
+        expected = generator._get_preset("greeting", "mibao", "initial")
         assert result == expected
 
     @pytest.mark.asyncio
@@ -295,7 +295,7 @@ class TestFollowUpSuggestionGenerator:
             agent_type="xiaobu",
         )
         # 虽有实体但无 API Key，仍返回预设（querying stage）
-        expected = generator._get_preset("logistics_track", "xiaobu", "querying")
+        expected = generator._get_preset("logistics_track", "xiaobu", "initial")
         assert result == expected
 
     @pytest.mark.asyncio
@@ -349,7 +349,7 @@ class TestFollowUpSuggestionGenerator:
                 intent_type="logistics_track",
                 agent_type="xiaobu",
             )
-            expected = gen._get_preset("logistics_track", "xiaobu", "querying")
+            expected = gen._get_preset("logistics_track", "xiaobu", "initial")
             assert result == expected
 
     @pytest.mark.asyncio
@@ -369,7 +369,7 @@ class TestFollowUpSuggestionGenerator:
                 intent_type="product_inquiry",
                 agent_type="xiaobu",
             )
-            expected = generator._get_preset("product_inquiry", "xiaobu", "querying")
+            expected = generator._get_preset("product_inquiry", "xiaobu", "initial")
             assert result == expected
 
 
