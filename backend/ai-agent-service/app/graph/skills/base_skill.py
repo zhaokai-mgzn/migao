@@ -772,28 +772,23 @@ def make_auto_interact_post_hook():
     async def hook(ctx: PipelineContext) -> bool | None:
         tool_name = ctx.tool_call["name"]
         is_processing = tool_name == "processing_item_query"
-        is_category_tree = (
-            tool_name == "category_manage"
-            and ctx.tool_call.get("args", {}).get("action") == "tree"
-        )
 
-        if (is_processing or is_category_tree) and ctx.result_dict.get("success") and not ctx.has_own_interact:
+        # 仅 processing_item_query 触发 auto-interact
+        # category_manage(tree) 只返回数据，由 LLM 决定是否调 interact 展示选择器
+        # 这样可以避免 LLM 仅需查分类ID匹配用户输入时被强制弹选择器
+        if is_processing and ctx.result_dict.get("success") and not ctx.has_own_interact:
             # 防止死循环：同一 session 内 auto-interact 只触发一次
             if ctx.session_id:
                 from app.memory.session_memory import SessionMemory
                 already_fired = await SessionMemory().get_auto_interact_flag(ctx.session_id)
-                if already_fired and is_processing:
-                    # 分类树允许重复展示（用户可能需要在不同阶段查看分类）
+                if already_fired:
                     logger.info(
                         f"[{ctx.skill_name}] Auto-interact skipped: already fired "
                         f"for session={ctx.session_id}"
                     )
                     return None
 
-            if is_processing:
-                auto_interact = _build_processing_item_choice(ctx.result_dict)
-            else:
-                auto_interact = _build_category_choice(ctx.result_dict)
+            auto_interact = _build_processing_item_choice(ctx.result_dict)
             if auto_interact:
                 from app.tools.registry import get_tool_registry as _get_tools
                 interact_tool = _get_tools().get_tool("interact")
