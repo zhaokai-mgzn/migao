@@ -29,9 +29,10 @@ PRODUCT_SYSTEM_PROMPT = """## 创建商品需要的字段
 | price | 是 | 用户提供 |
 | sku_code | 是 | 引导用户（色号/品牌/拼音首字母/自动生成） |
 | category_id | 是 | category_manage(tree) |
-| selling_methods | 否 | 默认["散剪","整卷"] |
+| selling_methods | 是 | 用户提供或默认["散剪","整卷"] |
 | door_widths | 是 | 用户提供或默认["2.8米"] |
 | colors | 是 | 用户提供或图片识别 |
+| 以上三个字段决定 SKU 笛卡尔积 |
 | processing_item_ids | 否 | processing_item_query（系统自动渲染选择组件） |
 | unit | 否 | 窗帘默认"米" |
 | pricing_type | 否 | 窗帘默认"per_meter" |
