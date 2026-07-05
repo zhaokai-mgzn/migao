@@ -51,9 +51,14 @@ function ChoiceCard({ interactive, disabled }: Props) {
 
   const submitChoice = () => {
     if (selected.size === 0) return
-    const values = Array.from(selected).join('、')
+    // 发送 label (value) 格式，确保 LLM 能理解用户的选择
+    // 示例: "家居窗帘 (ID: 071c042283b62e3a4e000b178242632d)"
+    const selectedText = options
+      .filter(opt => selected.has(opt.value))
+      .map(opt => opt.label || opt.value)
+      .join('、')
     setSubmitted(true)
-    sendMessage(values)
+    sendMessage(selectedText)
   }
 
   return (
