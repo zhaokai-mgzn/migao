@@ -1110,27 +1110,15 @@ async def execute_skill(
         )
 
     # 跨轮 Vision 分析缓存：文本追问（如"图片里什么颜色"）时，注入上次 Vision 分析
+    # 注入跨轮 Vision 分析缓存：追加到最后一条用户消息（和 collected_fields 同策略）
+    # 不能注入为 SystemMessage——LLM 会当作外部信息选择性忽略。
+    # 注入到用户消息中意味着"这是你之前已经完成的推理"，LLM 无法否认。
     cached_vision = ""
     if not is_multimodal and session_id:
         try:
             cached_vision = await SessionMemory().get_vision_analysis(session_id)
         except Exception:
             pass
-    if cached_vision:
-        system_prompt = (
-            "🔴 以下是你上一轮对用户上传图片的识别分析结果（由视觉模型生成后交给你使用）。"
-            "这是你已经完成的推理产物，不是外部信息。请直接基于它回答用户问题，"
-            "不要说你\"无法看到图片\"或\"之前的信息是编造的\"——那些是你的真实分析结果。"
-            "如果用户追问图片细节，就直接引用以下分析内容回答：\n"
-            f"--- 你的图片分析 ---\n"
-            f"{cached_vision}\n"
-            f"--- 分析结束 ---\n\n"
-            + system_prompt
-        )
-        logger.info(
-            f"[{skill_name}] Injected cached vision analysis | "
-            f"analysis_len={len(cached_vision)} session={session_id}"
-        )
 
     # 注入跨轮记忆：已收集字段追加到最后一条用户消息（LLM 不可能忽略）
     collected = {}
@@ -1138,8 +1126,29 @@ async def execute_skill(
         from app.memory.session_memory import SessionMemory
         collected = await SessionMemory().get_collected_fields(session_id)
 
-    full_messages: List[Any] = [SystemMessage(content=system_prompt)]
+    # 构建消息列表（先不做 SystemMessage）
+    full_messages: List[Any] = []
     msg_list = list(messages)
+
+    # Vision 缓存注入到用户消息（必须在 SystemMessage 之前，确保 LLM 视为用户上下文）
+    if cached_vision and msg_list:
+        last_msg = msg_list[-1]
+        if isinstance(last_msg, HumanMessage):
+            new_content = (
+                f"[系统提示] 你上一轮已经完成了对用户图片的识别分析，结果如下。"
+                f"这是你自己的推理产物，请直接基于它回答用户问题：\n"
+                f"--- 图片分析 ---\n"
+                f"{cached_vision}\n"
+                f"--- 分析结束 ---\n"
+                f"--- 用户消息 ---\n"
+                f"{last_msg.content or ''}"
+            )
+            msg_list[-1] = HumanMessage(content=new_content)
+            logger.info(
+                f"[{skill_name}] Injected cached vision into user message | "
+                f"analysis_len={len(cached_vision)} session={session_id}"
+            )
+
     if collected and msg_list:
         fields_hint = "；".join(f"{k}={v}" for k, v in collected.items())
         last_msg = msg_list[-1]
@@ -1147,6 +1156,9 @@ async def execute_skill(
             new_content = f"--- 已收集字段（仅供参考，由系统自动记录）---\n{fields_hint}\n--- 用户消息 ---\n{last_msg.content or ''}"
             msg_list[-1] = HumanMessage(content=new_content)
     full_messages.extend(msg_list)
+
+    # System Prompt 必须在最后组装（用户消息注入后）
+    full_messages.insert(0, SystemMessage(content=system_prompt))
 
     # 5. Tool Calling 循环
     tracker = get_tracker()
