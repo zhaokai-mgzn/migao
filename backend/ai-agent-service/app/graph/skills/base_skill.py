@@ -1405,8 +1405,16 @@ async def execute_skill(
                     except Exception:
                         pass
                     # 诊断：dump additional_kwargs 和 response_metadata 的全部 key（排查 reasoning_content 位置）
-                    ak_keys = list(getattr(response, 'additional_kwargs', {}) or {}).keys()
-                    rm_keys = list(getattr(response, 'response_metadata', {}) or {}).keys()
+                    try:
+                        ak = getattr(response, 'additional_kwargs', {}) or {}
+                        ak_keys = list(ak.keys()) if isinstance(ak, dict) else type(ak).__name__
+                    except Exception:
+                        ak_keys = "error"
+                    try:
+                        rm = getattr(response, 'response_metadata', {}) or {}
+                        rm_keys = list(rm.keys()) if isinstance(rm, dict) else type(rm).__name__
+                    except Exception:
+                        rm_keys = "error"
                     logger.info(
                         f"[{skill_name}][DIAG] LLM call completed | iter={iteration + 1} "
                         f"has_tool_calls={bool(response.tool_calls)} "
