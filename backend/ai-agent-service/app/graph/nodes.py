@@ -434,32 +434,42 @@ def route_by_intent(state: AgentState) -> str:
     intent = (state.get("intent_result") or {}).get("intent", "general")
 
     if pending_skill:
-        # 会话连续性：用户回应了交互组件（form/choice/confirm）
-        # 铁律：pending skill 存在时必须回到原 skill，不允许任何意图覆盖
-        # 原因：用户点击交互组件发送的值（如 UUID、简短确认文本）可能被意图分类器误判，
-        # 导致对话跳到无关 skill 而中断创建/管理流程
+        # 会话连续性：pending skill 存在时必须回到原 skill。
+        # 原因：用户点击交互组件发送的值（如 UUID、简短确认文本）可能被意图分类器误判。
         #
-        # 例外（escape hatch）：用户输入长度 > 10 字符且不为纯数字/UUID，
-        # 视为明确的话题切换意图，允许路由到新 skill
-        last_msg = _get_last_human_text(state.get("messages", []))
-        is_short_interact = (
-            not last_msg
-            or len(last_msg) <= 10
-            or last_msg.replace("-", "").replace("_", "").isalnum()  # UUID/纯数字
-        )
-        if is_short_interact:
+        # 例外（escape hatch）：用户输入包含明确话题切换信号时允许切换。
+        # 注意：不能用字符数判断——中文确认消息（如"好的，确认创建，克重选中"）轻松超过10字。
+        # 仅当消息包含其他领域的显式触发词时才允许逃逸。
+        last_msg = _get_last_human_text(state.get("messages", [])) or ""
+        _SKILL_DOMAIN_KEYWORDS = {
+            "order": {"查订单", "物流", "发货", "订单"},
+            "aftersales": {"售后", "退货", "退款", "换货", "投诉"},
+            "product": {"查商品", "搜商品", "创建商品", "商品管理"},
+            "customer": {"客户", "会员"},
+            "staff": {"员工", "角色", "权限"},
+            "settings": {"设置", "配置", "通知", "快捷回复"},
+        }
+        # 如果用户消息包含非当前 skill 领域的关键词，允许切换
+        current_domain_keywords = _SKILL_DOMAIN_KEYWORDS.get(pending_skill, set())
+        for skill_domain, keywords in _SKILL_DOMAIN_KEYWORDS.items():
+            if skill_domain == pending_skill:
+                continue
+            if any(kw in last_msg for kw in keywords):
+                logger.info(
+                    f"[route_by_intent] Escape hatch: domain switch detected "
+                    f"from '{pending_skill}' to '{skill_domain}' "
+                    f"(keyword matched in '{last_msg[:30]}') | session={session_id}"
+                )
+                state["pending_interact_skill"] = ""
+                # 不清除 pending_skill in DB，让下一轮还有机会恢复
+                break
+        else:
+            # 无话题切换信号 → 坚守原 skill
             logger.info(
                 f"[route_by_intent] Session continuity: staying in '{pending_skill}' "
-                f"(intent={intent}, msg_len={len(last_msg or '')}) | session={session_id}"
+                f"(intent={intent}, msg_len={len(last_msg)}) | session={session_id}"
             )
             return pending_skill
-        else:
-            logger.info(
-                f"[route_by_intent] Escape hatch: user message length={len(last_msg)} "
-                f"suggests topic switch, routing to intent '{intent}' | session={session_id}"
-            )
-            # 清除 pending_skill 避免后续轮次继续锁死
-            state["pending_interact_skill"] = ""
 
     logger.info(
         f"[route_by_intent] Routing to '{intent}' "
