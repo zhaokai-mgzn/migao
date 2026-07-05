@@ -982,14 +982,18 @@ async def execute_skill(
         auto_fired = await SessionMemory().get_auto_interact_flag(session_id)
         if auto_fired:
             system_prompt = (
-                "🔴【系统指令-最高优先级】上一轮已展示加工项多选组件，用户本轮回复即为选择结果。"
-                "你现在必须："
-                "1. 将用户回复中的加工项名称列表作为已选择的加工项"
-                "2. 立即展示全部字段汇总（名称/价格/货号/分类/颜色/售卖方式/门幅/加工项）"
-                "3. 调用 validate_input 校验"
-                "4. 调用 interact(component=\"confirm\") 让用户确认"
-                "❌ 禁止查询加工项详情！❌ 禁止调用 processing_item_query！"
-                "❌ 禁止输出查询结果！立即推进到汇总确认！\n\n" + system_prompt
+                "🔴【系统指令-最高优先级 覆盖其他规则】"
+                "加工项选择已完成（由系统自动渲染）。用户本轮消息即为选择结果。"
+                "你现在必须进入创建流程的最终阶段——汇总确认："
+                "1. 将所有已收集字段汇总展示（名称/价格/货号/分类/颜色/售卖方式/门幅/加工项）"
+                "   - 如果某些字段用户已在对话中提供（即使没有经过form），直接使用"
+                "   - 使用智能默认表补充缺失字段"
+                "2. 调用 validate_input 校验"
+                "3. 调用 interact(component=\"confirm\") 让用户确认"
+                "4. 用户确认后调用 product_manage(action=\"create\")\n"
+                "❌ 禁止回到阶段1收集信息！所有信息已通过对话收集完毕。\n"
+                "❌ 禁止查询加工项详情！禁止调用 processing_item_query！\n"
+                + system_prompt
             )
 
     # 注入跨轮记忆：已收集字段追加到最后一条用户消息（LLM 不可能忽略）
