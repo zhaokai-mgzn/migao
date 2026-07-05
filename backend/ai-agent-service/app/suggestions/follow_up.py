@@ -196,7 +196,7 @@ MIBAO_PRESET_SUGGESTIONS: dict[str, dict[str, list[str]]] = {
     },
     "data_report": {
         "initial":   ["查看订单统计", "查看销售趋势", "查看客户分析"],
-        "querying":  ["选择报表维度", "设置时间范围", "对比历史数据"],
+        "querying":  ["查看报表维度明细", "对比历史数据分析", "调整时间范围查看趋势"],
         "confirming": ["生成报表", "导出Excel", "定时发送报表"],
         "processing": ["查看报表生成进度", "预览报表内容", "调整报表参数"],
         "completed":  ["查看报表列表", "查看已发送报表", "新建自定义报表"],

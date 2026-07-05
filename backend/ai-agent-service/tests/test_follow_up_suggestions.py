@@ -168,11 +168,12 @@ class TestAgentAwareGeneration:
 
     @pytest.mark.asyncio
     async def test_mibao_unknown_intent_uses_mibao_default(self, generator):
-        """米宝未知意图返回米宝默认建议"""
+        """米宝未知意图 fallback 到 general 的 stage-aware 建议"""
         result = await generator.generate(
             query="test", answer="test", intent_type="unknown", agent_type="mibao",
         )
-        assert result == MIBAO_DEFAULT_SUGGESTIONS
+        expected = generator._get_preset("general", "mibao", "initial")
+        assert result == expected
 
     @pytest.mark.asyncio
     async def test_xiaobu_unknown_intent_uses_xiaobu_default(self, generator):

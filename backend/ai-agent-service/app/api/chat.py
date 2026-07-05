@@ -1143,8 +1143,9 @@ async def suggestion_feedback(
 # ──────────────── 建议文本 → 意图推断（关键词匹配） ────────────────
 
 _SUGGESTION_INTENT_KEYWORDS: list[tuple[str, str]] = [
-    ("订单", "order_query"),
-    ("发货", "order_query"),
+    # 更具体的词在前，避免被通用词吞掉
+    ("看板", "dashboard"),       # 在看板数据中先于"数据"匹配
+    ("报表", "data_report"),     # 在数据报表中先于"数据"匹配
     ("物流", "logistics_track"),
     ("快递", "logistics_track"),
     ("签收", "logistics_track"),
@@ -1152,6 +1153,8 @@ _SUGGESTION_INTENT_KEYWORDS: list[tuple[str, str]] = [
     ("退款", "after_sales"),
     ("工单", "after_sales"),
     ("投诉", "complaint"),
+    ("订单", "order_query"),
+    ("发货", "order_query"),
     ("商品", "product_inquiry"),
     ("产品", "product_inquiry"),
     ("库存", "product_inquiry"),
@@ -1162,19 +1165,17 @@ _SUGGESTION_INTENT_KEYWORDS: list[tuple[str, str]] = [
     ("角色", "role_manage"),
     ("权限", "permission_manage"),
     ("经营", "dashboard"),
-    ("数据", "statistics"),
     ("统计", "statistics"),
-    ("报表", "data_report"),
-    ("看板", "dashboard"),
+    ("数据", "statistics"),
     ("通知", "notification"),
     ("消息", "notification"),
     ("知识", "knowledge_faq"),
     ("FAQ", "knowledge_faq"),
     ("快捷", "quick_reply"),
     ("会话", "session_manage"),
+    ("模型", "ai_config"),       # 在模型设置中先于"设置"匹配
+    ("AI", "ai_config"),         # 在AI设置中先于"设置"匹配
     ("设置", "system_settings"),
-    ("AI", "ai_config"),
-    ("模型", "ai_config"),
 ]
 
 

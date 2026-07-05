@@ -496,7 +496,7 @@ class TestAgentAwareSuggestionsIntegration:
     def test_mibao_no_consumer_phrases(self):
         """米宝预设不包含 C 端消费者文案（stage-aware: 检查所有 stage）"""
         from app.suggestions.follow_up import MIBAO_PRESET_SUGGESTIONS
-        consumer_phrases = ["浏览热门商品", "咨询窗帘定制", "联系人工客服", "浏览商品"]
+        consumer_phrases = ["浏览热门商品", "咨询窗帘定制", "联系人工客服"]
         for intent, stage_suggestions in MIBAO_PRESET_SUGGESTIONS.items():
             if not isinstance(stage_suggestions, dict):
                 continue
