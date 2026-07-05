@@ -1258,11 +1258,19 @@ async def execute_skill(
             )
 
             # 持久化 Vision 分析，供后续轮次追问（如"图片里的颜色是什么"）复用
-            if session_id:
+            if session_id and vision_analysis:
                 try:
-                    await SessionMemory().set_vision_analysis(session_id, vision_analysis)
-                except Exception:
-                    pass
+                    ok = await SessionMemory().set_vision_analysis(session_id, vision_analysis)
+                    if not ok:
+                        logger.warning(
+                            f"[{skill_name}] set_vision_analysis returned False | "
+                            f"session={session_id} len={len(vision_analysis)}"
+                        )
+                except Exception as e:
+                    logger.error(
+                        f"[{skill_name}] set_vision_analysis failed | "
+                        f"session={session_id} error={type(e).__name__}: {e}"
+                    )
 
             # 清理历史消息中的 image_url，替换为纯文本（主模型不支持多模态 content list）
             messages = _sanitize_messages_for_text_path(list(messages))
