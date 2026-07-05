@@ -1145,6 +1145,7 @@ async def suggestion_feedback(
 _SUGGESTION_INTENT_KEYWORDS: list[tuple[str, str]] = [
     # 更具体的词在前，避免被通用词吞掉
     ("看板", "dashboard"),       # 在看板数据中先于"数据"匹配
+    ("统计", "statistics"),      # 在统计报表中先于"报表"匹配
     ("报表", "data_report"),     # 在数据报表中先于"数据"匹配
     ("物流", "logistics_track"),
     ("快递", "logistics_track"),
