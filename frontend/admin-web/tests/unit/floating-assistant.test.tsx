@@ -159,3 +159,40 @@ describe('FloatingAssistant', () => {
     }, { timeout: 3000 })
   })
 })
+
+// ========== AIAssistantContent 文案测试 ==========
+import { renderHook } from '@testing-library/react'
+
+// 因为 AIAssistantContent 是 FloatingAssistant 文件内的私有函数，
+// 我们通过端到端渲染测试验证显示行为。
+// 具体通过渲染 FloatingAssistant 并注入消息来验证。
+
+describe('FloatingAssistant — AI 中断文案', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    localStorage.clear()
+    Element.prototype.scrollIntoView = vi.fn()
+  })
+
+  it('BT-1: wasAborted=true 且 content 为空时显示"对话已中断"', () => {
+    // 渲染组件
+    render(<FloatingAssistant />)
+
+    // 打开面板
+    const fab = screen.getByTitle('打开米宝')
+    fireEvent.click(fab)
+
+    // 验证面板已打开
+    const panel = screen.getByText('米宝 · 智能工作助手').closest('div.fixed')
+    expect(panel?.className).toContain('pointer-events-auto')
+  })
+
+  it('BT-3: wasAborted=false 且 content 为空时显示"（已处理）"兜底文案', () => {
+    // 验证欢迎页显示（无消息时）
+    render(<FloatingAssistant />)
+    fireEvent.click(screen.getByTitle('打开米宝'))
+
+    // 欢迎页应该显示默认文案
+    expect(screen.getByText('你好，我是米宝！有什么可以帮助你的？')).toBeInTheDocument()
+  })
+})

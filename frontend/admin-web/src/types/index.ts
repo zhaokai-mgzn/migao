@@ -1004,7 +1004,7 @@ export interface ChatMessage {
   isStreaming?: boolean
   suggestions?: string[]  // 后续问题建议列表
   interactive?: InteractiveComponent  // 交互式组件
-  wasAborted?: boolean  // 用户是否主动中断了流式输出
+  wasAborted?: boolean  // 是否被用户主动中断（用于区分"已处理"与"对话已中断"）
 }
 
 // SSE 事件类型

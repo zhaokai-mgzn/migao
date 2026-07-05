@@ -391,12 +391,13 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       }))
     } finally {
       // 标记 AI 消息流式结束
+      const aborted = abortController.signal.aborted
       set(state => ({
         isStreaming: false,
         abortController: null,
         messages: state.messages.map(msg =>
           msg.id === aiMsgId
-            ? { ...msg, isStreaming: false }
+            ? { ...msg, isStreaming: false, wasAborted: aborted }
             : msg
         ),
       }))

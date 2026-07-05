@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { X, Minus, Send, Loader2, Plus, Maximize2, Bot, User, Copy, Check } from 'lucide-react'
+import { X, Minus, Send, Loader2, Plus, Maximize2, Bot, User, Copy, Check, StopCircle } from 'lucide-react'
 import { MibaoLogo } from '@/components/icons/MibaoLogo'
 import { cn } from '@/lib/utils'
 import { chatApi } from '@/lib/api'
@@ -20,7 +20,7 @@ interface AssistantMessage {
   createdAt: string
   isStreaming?: boolean
   suggestions?: string[]
-  wasAborted?: boolean  // 用户是否主动中断了流式输出
+  wasAborted?: boolean  // 是否被用户主动中断生成
 }
 
 // ========== 常量 ==========
@@ -473,11 +473,13 @@ export default function FloatingAssistant() {
         )
       )
     } finally {
+      const abortedBySignal = abortController.signal.aborted
       setIsStreaming(false)
       abortRef.current = null
       setMessages((prev) =>
         prev.map((msg) =>
-          msg.id === aiMsgId ? { ...msg, isStreaming: false } : msg
+          // 保留 catch 块已设置的 wasAborted，或被 signal.aborted 覆盖
+          msg.id === aiMsgId ? { ...msg, isStreaming: false, wasAborted: msg.wasAborted || abortedBySignal } : msg
         )
       )
     }
@@ -584,18 +586,28 @@ export default function FloatingAssistant() {
               disabled={isStreaming}
               className="flex-1 px-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400/20 disabled:opacity-50 placeholder:text-gray-400 transition-colors"
             />
-            <button
-              onClick={() => handleSend()}
-              disabled={!input.trim() || isStreaming}
-              className={cn(
-                'p-2 rounded-xl transition-colors flex-shrink-0',
-                input.trim() && !isStreaming
-                  ? 'bg-primary-600 text-white hover:bg-primary-700'
-                  : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-              )}
-            >
-              <Send className="w-4 h-4" />
-            </button>
+            {isStreaming ? (
+              <button
+                onClick={() => abortRef.current?.abort()}
+                className="p-2 rounded-xl bg-red-500 text-white hover:bg-red-600 transition-colors flex-shrink-0"
+                title="停止生成"
+              >
+                <StopCircle className="w-4 h-4" />
+              </button>
+            ) : (
+              <button
+                onClick={() => handleSend()}
+                disabled={!input.trim()}
+                className={cn(
+                  'p-2 rounded-xl transition-colors flex-shrink-0',
+                  input.trim()
+                    ? 'bg-primary-600 text-white hover:bg-primary-700'
+                    : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                )}
+              >
+                <Send className="w-4 h-4" />
+              </button>
+            )}
           </div>
         </div>
       </div>
