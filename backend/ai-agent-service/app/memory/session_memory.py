@@ -766,7 +766,7 @@ class SessionMemory:
                     SET metadata = jsonb_set(
                         COALESCE(metadata, '{}'::jsonb),
                         '{plan_state}',
-                        :plan_json ::jsonb
+                        CAST(:plan_json AS jsonb)
                     )
                     WHERE id = :session_id
                 """)
@@ -833,7 +833,7 @@ class SessionMemory:
                     SET metadata = jsonb_set(
                         COALESCE(metadata, '{}'::jsonb),
                         '{vision_analysis}',
-                        :vision_analysis::jsonb
+                        CAST(:vision_analysis AS jsonb)
                     ),
                     updated_at = :now
                     WHERE id = :session_id
