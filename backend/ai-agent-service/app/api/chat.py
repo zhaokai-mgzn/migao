@@ -1094,7 +1094,7 @@ async def suggestion_feedback(
     current_user: UserIdentity = Depends(get_current_user),
 ):
     """
-    记录建议反馈（点击），用于后续训练数据分析
+    记录建议反馈（点击），用于后续训练数据分析 + 用户偏好学习
 
     ⚠️ 数据安全：日志包含用户建议文本（已脱敏手机号/邮箱），
     应配置日志访问权限和保留策略。
@@ -1106,19 +1106,86 @@ async def suggestion_feedback(
     """
     import json as _json
     from app.utils.log_sanitizer import LogSanitizer
+
+    suggestion_text = body.get("suggestion", "")
+
     logger.info(
         "[suggestion:feedback]",
         _json.dumps({
             "session_id": body.get("session_id", ""),
             "tenant_id": current_user.tenant_id,
             "user_id": current_user.user_id,
-            "suggestion": LogSanitizer.mask_text(body.get("suggestion", "")),
+            "suggestion": LogSanitizer.mask_text(suggestion_text),
             "clicked": True,
             "message_id": body.get("message_id", ""),
             "source": "click",
         }, ensure_ascii=False),
     )
+
+    # 写入用户偏好表（用于个性化推荐）
+    try:
+        intent_type = _infer_intent_from_text(suggestion_text)
+        if intent_type:
+            from app.suggestions.preference_tracker import PreferenceTracker
+            tracker = PreferenceTracker()
+            await tracker.record_click(
+                tenant_id=current_user.tenant_id,
+                user_id=int(current_user.user_id) if current_user.user_id else 0,
+                intent_type=intent_type,
+                suggestion_text=suggestion_text,
+            )
+    except Exception as e:
+        logger.warning(f"[suggestion:feedback] failed to record preference: {e}")
+
     return {"ok": True}
+
+
+# ──────────────── 建议文本 → 意图推断（关键词匹配） ────────────────
+
+_SUGGESTION_INTENT_KEYWORDS: list[tuple[str, str]] = [
+    ("订单", "order_query"),
+    ("发货", "order_query"),
+    ("物流", "logistics_track"),
+    ("快递", "logistics_track"),
+    ("签收", "logistics_track"),
+    ("售后", "after_sales"),
+    ("退款", "after_sales"),
+    ("工单", "after_sales"),
+    ("投诉", "complaint"),
+    ("商品", "product_inquiry"),
+    ("产品", "product_inquiry"),
+    ("库存", "product_inquiry"),
+    ("分类", "category_manage"),
+    ("加工", "processing_manage"),
+    ("客户", "customer_manage"),
+    ("员工", "employee_manage"),
+    ("角色", "role_manage"),
+    ("权限", "permission_manage"),
+    ("经营", "dashboard"),
+    ("数据", "statistics"),
+    ("统计", "statistics"),
+    ("报表", "data_report"),
+    ("看板", "dashboard"),
+    ("通知", "notification"),
+    ("消息", "notification"),
+    ("知识", "knowledge_faq"),
+    ("FAQ", "knowledge_faq"),
+    ("快捷", "quick_reply"),
+    ("会话", "session_manage"),
+    ("设置", "system_settings"),
+    ("AI", "ai_config"),
+    ("模型", "ai_config"),
+]
+
+
+def _infer_intent_from_text(text: str) -> str:
+    """从建议文本推断意图类型（简单关键词匹配）"""
+    if not text:
+        return ""
+    for keyword, intent in _SUGGESTION_INTENT_KEYWORDS:
+        if keyword in text:
+            return intent
+    return "general"
 
 
 @router.get("/quick-actions")

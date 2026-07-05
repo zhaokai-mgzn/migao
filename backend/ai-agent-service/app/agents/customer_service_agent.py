@@ -190,6 +190,7 @@ class BaseAgent:
             "intent_result": None,
             "route_decision": None,
             "entities": {},
+            "recent_entities": [],
             "intent_chain": [],
             "stage": "initial",
             "cached_answer": None,

@@ -289,3 +289,119 @@ class TestSchemasMaxLength:
         # 超长消息应被拒绝
         with pytest.raises(ValidationError):
             ChatSendRequest(message="x" * 10001)
+
+
+# ═══════════════════════════════════════
+# #947 — chat.py: _infer_intent_from_text 关键词推断
+# ═══════════════════════════════════════
+
+class TestInferIntentFromText:
+    """建议文本 → 意图类型推断（关键词匹配）"""
+
+    def test_order_keyword(self):
+        from app.api.chat import _infer_intent_from_text
+        assert _infer_intent_from_text("查看订单") == "order_query"
+        assert _infer_intent_from_text("查询发货状态") == "order_query"
+
+    def test_logistics_keyword(self):
+        from app.api.chat import _infer_intent_from_text
+        assert _infer_intent_from_text("物流到哪了") == "logistics_track"
+        assert _infer_intent_from_text("快递单号查一下") == "logistics_track"
+        assert _infer_intent_from_text("签收了吗") == "logistics_track"
+
+    def test_after_sales_keyword(self):
+        from app.api.chat import _infer_intent_from_text
+        assert _infer_intent_from_text("申请售后") == "after_sales"
+        assert _infer_intent_from_text("我要退款") == "after_sales"
+        assert _infer_intent_from_text("工单处理") == "after_sales"
+
+    def test_complaint_keyword(self):
+        from app.api.chat import _infer_intent_from_text
+        assert _infer_intent_from_text("我要投诉") == "complaint"
+
+    def test_product_inquiry_keyword(self):
+        from app.api.chat import _infer_intent_from_text
+        assert _infer_intent_from_text("有什么商品") == "product_inquiry"
+        assert _infer_intent_from_text("查一下产品") == "product_inquiry"
+        assert _infer_intent_from_text("库存有多少") == "product_inquiry"
+
+    def test_category_manage_keyword(self):
+        from app.api.chat import _infer_intent_from_text
+        assert _infer_intent_from_text("分类管理") == "category_manage"
+
+    def test_processing_manage_keyword(self):
+        from app.api.chat import _infer_intent_from_text
+        assert _infer_intent_from_text("加工管理") == "processing_manage"
+
+    def test_customer_manage_keyword(self):
+        from app.api.chat import _infer_intent_from_text
+        assert _infer_intent_from_text("客户管理") == "customer_manage"
+
+    def test_employee_manage_keyword(self):
+        from app.api.chat import _infer_intent_from_text
+        assert _infer_intent_from_text("员工管理") == "employee_manage"
+
+    def test_role_manage_keyword(self):
+        from app.api.chat import _infer_intent_from_text
+        assert _infer_intent_from_text("角色管理") == "role_manage"
+
+    def test_permission_manage_keyword(self):
+        from app.api.chat import _infer_intent_from_text
+        assert _infer_intent_from_text("权限管理") == "permission_manage"
+
+    def test_dashboard_keyword(self):
+        from app.api.chat import _infer_intent_from_text
+        assert _infer_intent_from_text("经营看板") == "dashboard"
+        assert _infer_intent_from_text("看板数据") == "dashboard"
+
+    def test_statistics_keyword(self):
+        from app.api.chat import _infer_intent_from_text
+        assert _infer_intent_from_text("数据统计") == "statistics"
+        assert _infer_intent_from_text("统计报表") == "statistics"
+
+    def test_data_report_keyword(self):
+        from app.api.chat import _infer_intent_from_text
+        assert _infer_intent_from_text("数据报表") == "data_report"
+
+    def test_notification_keyword(self):
+        from app.api.chat import _infer_intent_from_text
+        assert _infer_intent_from_text("通知管理") == "notification"
+        assert _infer_intent_from_text("消息中心") == "notification"
+
+    def test_knowledge_faq_keyword(self):
+        from app.api.chat import _infer_intent_from_text
+        assert _infer_intent_from_text("知识问答") == "knowledge_faq"
+        assert _infer_intent_from_text("FAQ查询") == "knowledge_faq"
+
+    def test_quick_reply_keyword(self):
+        from app.api.chat import _infer_intent_from_text
+        assert _infer_intent_from_text("快捷回复") == "quick_reply"
+
+    def test_session_manage_keyword(self):
+        from app.api.chat import _infer_intent_from_text
+        assert _infer_intent_from_text("会话管理") == "session_manage"
+
+    def test_system_settings_keyword(self):
+        from app.api.chat import _infer_intent_from_text
+        assert _infer_intent_from_text("系统设置") == "system_settings"
+
+    def test_ai_config_keyword(self):
+        from app.api.chat import _infer_intent_from_text
+        assert _infer_intent_from_text("AI配置") == "ai_config"
+        assert _infer_intent_from_text("模型设置") == "ai_config"
+
+    def test_empty_text_returns_empty(self):
+        from app.api.chat import _infer_intent_from_text
+        assert _infer_intent_from_text("") == ""
+        assert _infer_intent_from_text(None) == ""
+
+    def test_no_keyword_falls_to_general(self):
+        from app.api.chat import _infer_intent_from_text
+        assert _infer_intent_from_text("你好呀") == "general"
+        assert _infer_intent_from_text("abc123") == "general"
+
+    def test_first_keyword_wins(self):
+        """多个关键词时返回第一个匹配的意图"""
+        from app.api.chat import _infer_intent_from_text
+        # "订单" 在 "数据" 之前 → order_query
+        assert _infer_intent_from_text("查看订单数据") == "order_query"
