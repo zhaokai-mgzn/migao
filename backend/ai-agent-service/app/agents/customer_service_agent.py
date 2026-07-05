@@ -175,9 +175,15 @@ class BaseAgent:
                 if plan_skill:
                     pending_skill = plan_skill
             if not pending_skill:
-                pending_skill = await mem.get_pending_skill(context.session_id) or ""
+                raw = await mem.get_pending_skill(context.session_id)
+                pending_skill = raw or ""
+                # DIAG: 记录读取结果，排查"写入成功但读到空"问题
+                logger.info(
+                    f"[_build_initial_state] Loaded pending_skill from DB"
+                    f" | session={context.session_id}"
+                    f" raw={raw!r} pending_skill={pending_skill!r}"
+                )
         except Exception as e:
-            # 区分"无值"和"加载失败"——后者是异常，需感知
             logger.warning(
                 f"[_build_initial_state] Failed to load pending_skill from session memory"
                 f" | session={context.session_id} error={e}"
