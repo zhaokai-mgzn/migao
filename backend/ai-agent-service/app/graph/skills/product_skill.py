@@ -30,7 +30,7 @@ PRODUCT_SYSTEM_PROMPT = """## 创建商品需要的字段
 | sku_code | 是 | 引导用户（色号/品牌/拼音首字母/自动生成） |
 | category_id | 是 | category_manage(tree) |
 | selling_methods | 否 | 默认["散剪","整卷"] |
-| door_widths | 否 | 默认["2.8米"] |
+| door_widths | 是 | 用户提供或默认["2.8米"] |
 | colors | 否 | 用户提供或图片识别 |
 | processing_item_ids | 否 | processing_item_query（系统自动渲染选择组件） |
 | unit | 否 | 窗帘默认"米" |

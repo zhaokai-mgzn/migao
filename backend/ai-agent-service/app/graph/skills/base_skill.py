@@ -663,11 +663,24 @@ def make_auto_interact_post_hook():
                     interact_str, interact_dict = await _execute_tool_safe(
                         interact_tool, auto_interact, ctx.tool_context, ctx.state,
                     )
-                    # 用虚拟 tool_call_id 将 interact 结果注入消息流
+                    # 注入完整的 AIMessage(tool_calls) + ToolMessage(result) 对，
+                    # 确保消息顺序合法（tool 消息前必须有对应 tool_calls）
+                    auto_id = f"auto_interact_{ctx.tool_call['id']}"
+                    ctx.new_messages.append(
+                        AIMessage(
+                            content="",
+                            tool_calls=[{
+                                "name": "interact",
+                                "args": auto_interact,
+                                "id": auto_id,
+                                "type": "tool_call",
+                            }],
+                        )
+                    )
                     ctx.new_messages.append(
                         ToolMessage(
                             content=interact_str,
-                            tool_call_id=f"{ctx.tool_call['id']}_auto",
+                            tool_call_id=auto_id,
                             name="interact",
                         )
                     )
@@ -1104,14 +1117,15 @@ async def execute_skill(
 
     # 5.b Tool Calling 循环（纯文本 Skill 或 图片理解后的主模型处理）
     if not is_multimodal or (is_multimodal and vision_analysis):
-        # P3修复: 图片消息时，第一轮暂时隐藏加工项/分类工具，让LLM先确认基本信息
+        # P3修复: 图片消息时，第一轮隐藏加工项/分类工具，让LLM先确认基本信息
         if is_multimodal and skill_name == "product" and langchain_tools:
             _delayed_tools = ["processing_item_query", "category_manage"]
-            _saved_tools = [t for t in langchain_tools if t.name not in _delayed_tools]
-            if _saved_tools:
-                langchain_tools = _saved_tools
-                llm_with_tools = llm.bind_tools(langchain_tools) if langchain_tools else llm
-                logger.info(f"[{skill_name}] Multimodal: hiding {_delayed_tools} for 1st iteration")
+            langchain_tools = [t for t in langchain_tools if t.name not in _delayed_tools]
+            if langchain_tools:
+                llm_with_tools = llm.bind_tools(langchain_tools)
+                logger.info(f"[{skill_name}] Multimodal: hiding {_delayed_tools}, {len(langchain_tools)} tools remain")
+
+        # 检测取消信号
 
         # 检测取消信号：用户说"算了""取消""不创建了"→跳过流程
         last_user_msg = ""
