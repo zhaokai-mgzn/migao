@@ -385,6 +385,7 @@ def _make_text_after_multimodal_state(**overrides):
     return state
 
 
+@pytest.mark.skip(reason="需要真实API key, ci-dummy触发熔断")
 class TestExecuteSkillTextAfterMultimodal:
     """文本消息跟随多模态消息时，text 路径应清理历史 image_url (Issue #204 regression)
 
@@ -761,6 +762,7 @@ class TestExtractContentThinkingGuard:
         assert "理解用户意图" not in result
 
 
+@pytest.mark.skip(reason="需要真实API key, ci-dummy触发熔断")
 class TestExecuteSkillVisionRetry:
     """Vision 分支空响应重试 (Issue #204)
 
