@@ -1043,7 +1043,8 @@ async def execute_skill(
                     if tool_name == "processing_item_query" and result_dict.get("success"):
                         auto_interact = _build_processing_item_choice(result_dict)
                         if auto_interact:
-                            interact_tool = skill_registry.get_tool("interact")
+                            from app.tools.registry import get_tool_registry as _get_tools
+                            interact_tool = _get_tools().get_tool("interact")
                             if interact_tool:
                                 interact_str, interact_dict = await _execute_tool_safe(
                                     interact_tool, auto_interact, tool_context, state,
