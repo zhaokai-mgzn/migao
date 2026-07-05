@@ -101,7 +101,16 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     const { abortController } = get()
     if (abortController) {
       abortController.abort()
-      set({ isStreaming: false, abortController: null })
+      // 标记最后一条正在流式输出的 assistant 消息为被用户中断
+      set(state => ({
+        isStreaming: false,
+        abortController: null,
+        messages: state.messages.map(msg =>
+          msg.role === 'assistant' && msg.isStreaming
+            ? { ...msg, wasAborted: true, isStreaming: false }
+            : msg
+        ),
+      }))
     }
   },
 
@@ -382,12 +391,13 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       }))
     } finally {
       // 标记 AI 消息流式结束
+      const aborted = abortController.signal.aborted
       set(state => ({
         isStreaming: false,
         abortController: null,
         messages: state.messages.map(msg =>
           msg.id === aiMsgId
-            ? { ...msg, isStreaming: false }
+            ? { ...msg, isStreaming: false, wasAborted: aborted }
             : msg
         ),
       }))

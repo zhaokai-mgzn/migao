@@ -312,6 +312,38 @@ describe('useChatStore (Zustand chat store) — #571', () => {
         })
       }).not.toThrow()
     })
+
+    it('should mark the last streaming assistant message as wasAborted', () => {
+      const mockAbort = vi.fn()
+      const controller = { abort: mockAbort } as unknown as AbortController
+
+      const streamingMsg: ChatMessage = {
+        id: 'ai-1',
+        role: 'assistant',
+        content: '',
+        isStreaming: true,
+      }
+
+      act(() => {
+        useChatStore.setState({
+          isStreaming: true,
+          abortController: controller,
+          messages: [
+            { id: 'u1', role: 'user', content: 'hello' },
+            streamingMsg,
+          ],
+        })
+      })
+
+      act(() => {
+        useChatStore.getState().stopStreaming()
+      })
+
+      const messages = useChatStore.getState().messages
+      const abortedMsg = messages.find((m) => m.id === 'ai-1')
+      expect(abortedMsg?.wasAborted).toBe(true)
+      expect(abortedMsg?.isStreaming).toBe(false)
+    })
   })
 
   // =========================================================================
@@ -1245,18 +1277,60 @@ describe('useChatStore (Zustand chat store) — #571', () => {
     // -----------------------------------------------------------------------
     // Error handling in sendMessage
     // -----------------------------------------------------------------------
-    it('should handle AbortError gracefully', async () => {
+    it('should handle AbortError gracefully and set wasAborted on AI message', async () => {
+      // 让 fetch 阻塞（模拟流式传输中），然后通过 stopStreaming 真正 abort
+      let rejectFetch!: (err: Error) => void
+      global.fetch = vi.fn().mockReturnValue(new Promise((_resolve, reject) => {
+        rejectFetch = reject
+      }))
+
+      // 启动 sendMessage（不 await，因为它会阻塞在 fetch 上）
+      const sendPromise = act(async () => {
+        await useChatStore.getState().sendMessage('test')
+      })
+
+      // 模拟用户点击"停止生成"：调用 stopStreaming 真正 abort controller
+      act(() => {
+        useChatStore.getState().stopStreaming()
+      })
+
+      // 此时 abortController.signal.aborted 已为 true，手动 reject fetch
       const abortError = new Error('aborted')
       abortError.name = 'AbortError'
+      rejectFetch(abortError)
 
-      global.fetch = vi.fn().mockRejectedValue(abortError)
+      await sendPromise
+
+      // streaming 应已停止
+      expect(useChatStore.getState().isStreaming).toBe(false)
+
+      // AI message 应有 wasAborted=true
+      const msgs = useChatStore.getState().messages
+      expect(msgs.length).toBeGreaterThanOrEqual(2)
+      const aiMsg = msgs[msgs.length - 1]
+      expect(aiMsg.role).toBe('assistant')
+      expect(aiMsg.wasAborted).toBe(true)
+    })
+
+    it('should NOT set wasAborted when stream completes normally', async () => {
+      const mockRead = vi.fn()
+        .mockResolvedValueOnce({ done: false, value: new TextEncoder().encode('event: done\ndata: {}\n\n') })
+        .mockResolvedValueOnce({ done: true, value: undefined })
+
+      const mockReader = { read: mockRead, cancel: vi.fn(), releaseLock: vi.fn() }
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        body: { getReader: () => mockReader },
+      })
 
       await act(async () => {
         await useChatStore.getState().sendMessage('test')
       })
 
-      // AbortError should be caught and ignored (no error toast, streaming stops in finally)
-      expect(useChatStore.getState().isStreaming).toBe(false)
+      const aiMsg = useChatStore.getState().messages[1]
+      expect(aiMsg.role).toBe('assistant')
+      expect(aiMsg.wasAborted).toBeFalsy()
     })
 
     it('should handle 409 SESSION_CLOSED error — auto create new session', async () => {

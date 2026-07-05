@@ -224,6 +224,62 @@ describe('MessageList', () => {
     expect(screen.getByText('查看订单')).toBeInTheDocument()
     expect(screen.getByText('查询物流')).toBeInTheDocument()
   })
+
+  it('shows 对话已中断 when assistant message was aborted with empty content', () => {
+    mockUseChatStore.mockReturnValue(
+      makeDefaultChatState({
+        currentSessionId: 's1',
+        messages: [
+          {
+            id: '1',
+            role: 'user',
+            content: '查询订单',
+            created_at: '2025-01-01T10:00:00Z',
+          },
+          {
+            id: '2',
+            role: 'assistant',
+            content: '',
+            isStreaming: false,
+            wasAborted: true,
+            created_at: '2025-01-01T10:00:01Z',
+          },
+        ],
+      })
+    )
+    render(<MessageList />)
+
+    expect(screen.getByText('对话已中断')).toBeInTheDocument()
+    expect(screen.queryByText('（已处理）')).not.toBeInTheDocument()
+  })
+
+  it('shows （已处理） when assistant has empty content without abort', () => {
+    mockUseChatStore.mockReturnValue(
+      makeDefaultChatState({
+        currentSessionId: 's1',
+        messages: [
+          {
+            id: '1',
+            role: 'user',
+            content: '查询订单',
+            created_at: '2025-01-01T10:00:00Z',
+          },
+          {
+            id: '2',
+            role: 'assistant',
+            content: '',
+            isStreaming: false,
+            wasAborted: false,
+            created_at: '2025-01-01T10:00:01Z',
+          },
+        ],
+      })
+    )
+    render(<MessageList />)
+
+    expect(screen.getByText('（已处理）')).toBeInTheDocument()
+    expect(screen.queryByText('对话已中断')).not.toBeInTheDocument()
+  })
 })
 
 // ═══════════════════════════════════════════════════
