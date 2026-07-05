@@ -1122,7 +1122,7 @@ async def execute_skill(
             langchain_tools = [t for t in langchain_tools if t.name != "processing_item_query"]
             if langchain_tools:
                 llm_with_tools = llm.bind_tools(langchain_tools)
-                logger.info(f"[{skill_name}] Multimodal: hiding {_delayed_tools}, {len(langchain_tools)} tools remain")
+                logger.info(f"[{skill_name}] Multimodal: hiding processing_item_query, {len(langchain_tools)} tools remain")
 
         # 检测取消信号
 
