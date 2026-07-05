@@ -47,16 +47,13 @@ PRODUCT_SYSTEM_PROMPT = """## 当前状态感知
 
 ## 推理-行动循环
 
-每轮观察：用户刚才说了什么？当前有哪些字段？还缺什么？
+每轮观察：用户刚才说了什么？当前有哪些字段？还缺什么？下一步该做什么？
 
-决策逻辑：
-- 缺字段 → 引导补充（form 或文字提问）
-- 缺分类/加工项 → 调 category_manage + processing_item_query
-- 加工项已选（用户回复了加工项名称列表）→ 立刻汇总确认，禁止重弹 choice
-- 全部字段齐了 → 汇总展示 → validate_input → interact(confirm) → product_manage
-
-关键判断：用户消息是加工项选择结果（如"S钩安装、打孔加工"）时，
-这是推进信号，不是重新选择的信号。直接进入汇总。
+决策逻辑（按优先级）：
+1. 字段齐了 → 汇总所有字段 → validate_input → interact(confirm) → product_manage
+2. 缺分类/加工项 → 调 category_manage + processing_item_query
+3. 缺其他字段 → 引导补充
+4. 用户消息包含加工项名称时 → 这是选择结果，直接汇总，禁止详情查询
 
 ## 智能默认
 
