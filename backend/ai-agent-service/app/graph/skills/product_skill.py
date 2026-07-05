@@ -15,9 +15,11 @@ PRODUCT_TOOLS = [
     "product_detail",
     "product_manage",
     "inventory_manage",
-    "processing_item_query",
+    "processing_item_query",  # 查询加工项列表（创建商品时选择用）
     "category_manage",
-    "processing_item_manage",
+    # 注意：processing_item_manage 不在此列表
+    # 创建商品时只需 processing_item_query，系统自动渲染选择组件
+    # processing_item_manage 是加工项 CRUD，属于 settings 领域
     "validate_input",  # 写操作前置校验
 ]
 
