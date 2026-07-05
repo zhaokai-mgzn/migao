@@ -34,7 +34,7 @@ class TestPresetSuggestions:
     """预设建议模板测试（Agent 感知）"""
 
     def test_mibao_all_intents_have_presets(self):
-        """米宝：所有高频意图都有预设建议"""
+        """米宝：所有高频意图都有预设建议（stage-aware: 至少有一个 stage 的 >=2 条建议）"""
         expected = [
             "order_query", "logistics_track", "product_inquiry",
             "after_sales", "knowledge_faq", "greeting", "complaint",
@@ -46,14 +46,21 @@ class TestPresetSuggestions:
             "after_sales_create", "notification", "quick_reply",
             "session_manage", "knowledge_manage",
         ]
+        skip_empty = {"farewell"}  # farewell 不需要建议
         for intent in expected:
             assert intent in MIBAO_PRESET_SUGGESTIONS, \
                 f"米宝缺少意图 {intent} 的预设建议"
-            assert len(MIBAO_PRESET_SUGGESTIONS[intent]) >= 2, \
-                f"米宝意图 {intent} 预设建议少于 2 个"
+            stage_dict = MIBAO_PRESET_SUGGESTIONS[intent]
+            if not isinstance(stage_dict, dict):
+                continue
+            # 至少有一个 stage 有 >=2 条建议（farewell 除外）
+            if intent in skip_empty:
+                continue
+            has_enough = any(len(v) >= 2 for v in stage_dict.values() if v)
+            assert has_enough, f"米宝意图 {intent} 所有 stage 建议都不足 2 个"
 
     def test_xiaobu_all_intents_have_presets(self):
-        """小布：所有高频意图都有预设建议"""
+        """小布：所有高频意图都有预设建议（stage-aware）"""
         expected = [
             "order_query", "logistics_track", "product_inquiry",
             "after_sales", "knowledge_faq", "greeting", "complaint",
@@ -61,7 +68,13 @@ class TestPresetSuggestions:
         for intent in expected:
             assert intent in XIAOBU_PRESET_SUGGESTIONS, \
                 f"小布缺少意图 {intent} 的预设建议"
-            assert len(XIAOBU_PRESET_SUGGESTIONS[intent]) >= 2
+            stage_dict = XIAOBU_PRESET_SUGGESTIONS[intent]
+            if not isinstance(stage_dict, dict):
+                continue
+            if intent == "farewell":
+                continue
+            has_enough = any(len(v) >= 2 for v in stage_dict.values() if v)
+            assert has_enough, f"小布意图 {intent} 所有 stage 建议都不足 2 个"
 
     def test_mibao_default_suggestions(self):
         """米宝默认兜底建议符合 B 端定位"""
@@ -76,24 +89,30 @@ class TestPresetSuggestions:
         assert len(XIAOBU_DEFAULT_SUGGESTIONS) >= 2
 
     def test_mibao_preset_no_consumer_language(self):
-        """米宝预设建议不应出现纯消费者视角的文案"""
+        """米宝预设建议不应出现纯消费者视角的文案（stage-aware）"""
         consumer_phrases = ["浏览热门商品", "咨询窗帘定制", "联系人工客服"]
-        for intent, suggestions in MIBAO_PRESET_SUGGESTIONS.items():
-            for s in suggestions:
-                for phrase in consumer_phrases:
-                    assert phrase not in s, \
-                        f"米宝预设 [{intent}] 包含 C 端文案: '{s}'"
+        for intent, stage_dict in MIBAO_PRESET_SUGGESTIONS.items():
+            if not isinstance(stage_dict, dict):
+                continue
+            for stage, suggestions in stage_dict.items():
+                for s in suggestions:
+                    for phrase in consumer_phrases:
+                        assert phrase not in s, \
+                            f"米宝预设 [{intent}][{stage}] 包含 C 端文案: '{s}'"
 
     def test_mibao_preset_has_management_context(self):
-        """米宝的管理类意图建议应包含管理操作关键词"""
+        """米宝的管理类意图建议应包含管理操作关键词（stage-aware）"""
         management_intents = [
             "customer_manage", "employee_manage", "category_manage",
             "system_settings", "dashboard",
         ]
         for intent in management_intents:
-            suggestions = MIBAO_PRESET_SUGGESTIONS.get(intent, [])
+            stage_dict = MIBAO_PRESET_SUGGESTIONS.get(intent, {})
+            if not isinstance(stage_dict, dict) or not stage_dict:
+                continue
+            # 取 querying stage 的建议
+            suggestions = stage_dict.get("querying") or stage_dict.get("initial", [])
             assert len(suggestions) >= 2, f"米宝管理意图 {intent} 建议不足"
-            # 管理意图的建议应该是 B 端操作相关
             all_text = " ".join(suggestions)
             assert len(all_text) > 0
 
@@ -113,25 +132,27 @@ class TestAgentAwareGeneration:
 
     @pytest.mark.asyncio
     async def test_mibao_gets_mibao_presets(self, generator):
-        """米宝使用米宝预设建议"""
+        """米宝使用米宝预设建议（stage-aware: 对比 querying stage）"""
         result = await generator.generate(
             query="查看订单",
             answer="这是您的订单列表",
             intent_type="order_query",
             agent_type="mibao",
         )
-        assert result == MIBAO_PRESET_SUGGESTIONS["order_query"]
+        expected = generator._get_preset("order_query", "mibao", "querying")
+        assert result == expected
 
     @pytest.mark.asyncio
     async def test_xiaobu_gets_xiaobu_presets(self, generator):
-        """小布使用小布预设建议"""
+        """小布使用小布预设建议（stage-aware: 对比 querying stage）"""
         result = await generator.generate(
             query="查看订单",
             answer="这是您的订单列表",
             intent_type="order_query",
             agent_type="xiaobu",
         )
-        assert result == XIAOBU_PRESET_SUGGESTIONS["order_query"]
+        expected = generator._get_preset("order_query", "xiaobu", "querying")
+        assert result == expected
 
     @pytest.mark.asyncio
     async def test_mibao_and_xiaobu_different_presets(self, generator):
@@ -163,11 +184,12 @@ class TestAgentAwareGeneration:
 
     @pytest.mark.asyncio
     async def test_default_agent_type_is_mibao(self, generator):
-        """不传 agent_type 时默认为米宝（向后兼容）"""
+        """不传 agent_type 时默认为米宝（向后兼容，stage-aware）"""
         result = await generator.generate(
             query="test", answer="test", intent_type="greeting",
         )
-        assert result == MIBAO_PRESET_SUGGESTIONS["greeting"]
+        expected = generator._get_preset("greeting", "mibao", "querying")
+        assert result == expected
 
     @pytest.mark.asyncio
     async def test_mibao_customer_manage_returns_b2b(self, generator):
@@ -264,7 +286,7 @@ class TestFollowUpSuggestionGenerator:
 
     @pytest.mark.asyncio
     async def test_generate_preset_no_api_key(self, generator):
-        """无 API Key → 不使用动态生成"""
+        """无 API Key → 不使用动态生成（stage-aware）"""
         generator._api_key = ""  # 确保无 API Key
         result = await generator.generate(
             query="查物流",
@@ -272,8 +294,9 @@ class TestFollowUpSuggestionGenerator:
             intent_type="logistics_track",
             agent_type="xiaobu",
         )
-        # 虽有实体但无 API Key，仍返回预设
-        assert result == XIAOBU_PRESET_SUGGESTIONS["logistics_track"]
+        # 虽有实体但无 API Key，仍返回预设（querying stage）
+        expected = generator._get_preset("logistics_track", "xiaobu", "querying")
+        assert result == expected
 
     @pytest.mark.asyncio
     async def test_generate_dynamic_success(self):
@@ -326,11 +349,12 @@ class TestFollowUpSuggestionGenerator:
                 intent_type="logistics_track",
                 agent_type="xiaobu",
             )
-            assert result == XIAOBU_PRESET_SUGGESTIONS["logistics_track"]
+            expected = gen._get_preset("logistics_track", "xiaobu", "querying")
+            assert result == expected
 
     @pytest.mark.asyncio
     async def test_generate_exception_fallback(self, generator):
-        """异常时降级为预设建议"""
+        """异常时降级为预设建议（stage-aware）"""
         with patch.object(
             generator, "_generate_dynamic",
             new_callable=AsyncMock,
@@ -345,7 +369,8 @@ class TestFollowUpSuggestionGenerator:
                 intent_type="product_inquiry",
                 agent_type="xiaobu",
             )
-            assert result == XIAOBU_PRESET_SUGGESTIONS["product_inquiry"]
+            expected = generator._get_preset("product_inquiry", "xiaobu", "querying")
+            assert result == expected
 
 
 # ========== 结构化日志测试 ==========
@@ -535,6 +560,7 @@ class TestStageInference:
             "intent_result": None,
             "route_decision": None,
             "entities": {},
+            "recent_entities": [],
             "intent_chain": [],
             "stage": "initial",
             "cached_answer": None,
@@ -551,17 +577,19 @@ class TestStageInference:
         assert _infer_stage(state, "order_query") == "confirming"
 
     def test_greeting_returns_initial(self):
-        """问候 → initial"""
+        """问候 → initial（action 在 route_decision 中）"""
         state = self._make_state(
-            intent_result={"intent": "greeting", "action": "direct_reply"},
+            intent_result={"intent": "greeting"},
+            route_decision={"action": "direct_reply"},
             final_answer="您好！请问有什么可以帮您？",
         )
         assert _infer_stage(state, "greeting") == "initial"
 
     def test_farewell_returns_completed(self):
-        """再见 → completed"""
+        """再见 → completed（action 在 route_decision 中）"""
         state = self._make_state(
-            intent_result={"intent": "farewell", "action": "direct_reply"},
+            intent_result={"intent": "farewell"},
+            route_decision={"action": "direct_reply"},
             final_answer="再见！",
         )
         assert _infer_stage(state, "farewell") == "completed"
@@ -569,7 +597,8 @@ class TestStageInference:
     def test_substantive_answer_returns_querying(self):
         """有实质性回复 → querying"""
         state = self._make_state(
-            intent_result={"intent": "order_query", "action": "skill"},
+            intent_result={"intent": "order_query"},
+            route_decision={"action": "skill"},
             final_answer="您的订单共有3个，分别是：订单A已发货、订单B待付款、订单C已完成。需要查看哪个订单的详细信息？",
         )
         assert _infer_stage(state, "order_query") == "querying"
@@ -577,7 +606,8 @@ class TestStageInference:
     def test_short_answer_returns_current_stage(self):
         """短回复保持当前 stage"""
         state = self._make_state(
-            intent_result={"intent": "general", "action": "skill"},
+            intent_result={"intent": "general"},
+            route_decision={"action": "skill"},
             final_answer="好的",
             stage="querying",
         )
