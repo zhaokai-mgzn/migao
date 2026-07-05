@@ -66,7 +66,7 @@ class LLMFactory:
     def create_vision_llm(model_override: Optional[str] = None) -> ChatOpenAI:
         """创建视觉多模态 LLM 实例（独立视觉模型配置）
 
-        MiniMax-M3 暂不支持 thinking 参数（API 会直接拒绝），保持默认。
+        MiniMax-M3 使用 adaptive thinking（自适应推理），深挖色号/材质/风格。
         """
         model = model_override or settings.VISION_MODEL
         return ChatOpenAI(
@@ -77,6 +77,7 @@ class LLMFactory:
             streaming=True,
             max_completion_tokens=16384,
             request_timeout=60,
+            extra_body={"thinking": {"type": "adaptive"}},
         )
 
     @staticmethod
