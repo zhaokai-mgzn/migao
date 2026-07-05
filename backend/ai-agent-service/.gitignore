@@ -7,3 +7,4 @@ __pycache__/
 venv/
 .ruff_cache/
 logs/
+.venv311/
