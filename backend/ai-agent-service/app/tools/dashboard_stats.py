@@ -137,6 +137,8 @@ class DashboardStatsTool(BaseTool):
             tenant_id=context.tenant_id,
             user_id=context.user_id,
         )
+        if not isinstance(response, dict):
+            response = {"data": response} if isinstance(response, list) else {}
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "查询失败")
@@ -169,6 +171,10 @@ class DashboardStatsTool(BaseTool):
             tenant_id=context.tenant_id,
             user_id=context.user_id,
         )
+        # 防御：admin-api 可能返回 list 而非 dict
+        if not isinstance(response, dict):
+            logger.warning(f"[dashboard-stats] _order_trend unexpected response type: {type(response).__name__}")
+            response = {"data": response} if isinstance(response, list) else {}
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "查询失败")
@@ -199,6 +205,8 @@ class DashboardStatsTool(BaseTool):
             tenant_id=context.tenant_id,
             user_id=context.user_id,
         )
+        if not isinstance(response, dict):
+            response = {"data": response} if isinstance(response, list) else {}
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "查询失败")
@@ -237,6 +245,8 @@ class DashboardStatsTool(BaseTool):
             tenant_id=context.tenant_id,
             user_id=context.user_id,
         )
+        if not isinstance(response, dict):
+            response = {"data": response} if isinstance(response, list) else {}
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "查询失败")
@@ -269,6 +279,8 @@ class DashboardStatsTool(BaseTool):
             tenant_id=context.tenant_id,
             user_id=context.user_id,
         )
+        if not isinstance(response, dict):
+            response = {"data": response} if isinstance(response, list) else {}
 
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "查询失败")
