@@ -603,11 +603,15 @@ class SessionMemory:
 
         Args:
             session_id: 会话 ID
-            skill_name: 当前 skill 名称
+            skill_name: 当前 skill 名称；传 None 或空字符串则清除
 
         Returns:
             bool: 是否成功
         """
+        # skill_name 为 None 或空时清除，防止 f'"None"' 被写入 JSON
+        if not skill_name:
+            return await self.clear_pending_skill(session_id)
+
         async with await self._get_session() as db:
             try:
                 from sqlalchemy import text
