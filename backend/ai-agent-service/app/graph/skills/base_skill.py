@@ -595,22 +595,23 @@ def make_resolve_tool_hook(skill_registry):
     return hook
 
 
-def make_block_duplicate_query_hook(session_id: str):
+def make_block_duplicate_query_hook():
     """PreHook: 如果 auto-interact 已触发，拦截 processing_item_query 重复调用。
 
-    将 tool_call 替换为 no-op，阻止 LLM 重复查询加工项。
+    使用 ctx.session_id 而非闭包捕获（避免 pipeline 组装时 session_id 为空）。
     """
     async def hook(ctx: PipelineContext) -> None:
         if ctx.tool_call["name"] != "processing_item_query":
             return
-        if not session_id:
+        sid = ctx.session_id
+        if not sid:
             return
         from app.memory.session_memory import SessionMemory
-        already_fired = await SessionMemory().get_auto_interact_flag(session_id)
+        already_fired = await SessionMemory().get_auto_interact_flag(sid)
         if already_fired:
             logger.info(
                 f"[{ctx.skill_name}] BLOCKED duplicate processing_item_query "
-                f"(auto-interact already fired) | session={session_id}"
+                f"(auto-interact already fired) | session={sid}"
             )
             # 替换为 no-op：让 Execute 阶段返回虚拟成功结果
             ctx.tool_call = {**ctx.tool_call, "name": "__noop_processing_item_query"}
@@ -900,7 +901,7 @@ async def execute_skill(
         ToolExecutionPipeline()
         .add_pre(log_tool_call_pre_hook)
         .add_pre(make_resolve_tool_hook(skill_registry))
-        .add_pre(make_block_duplicate_query_hook(session_id))
+        .add_pre(make_block_duplicate_query_hook())
         .add_post(append_tool_message_post_hook)
         .add_post(make_auto_interact_post_hook())
         .add_post(entity_extraction_post_hook)
