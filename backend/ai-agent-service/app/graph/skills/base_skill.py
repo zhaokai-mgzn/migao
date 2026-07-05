@@ -1104,8 +1104,29 @@ async def execute_skill(
 
     # 5.b Tool Calling 循环（纯文本 Skill 或 图片理解后的主模型处理）
     if not is_multimodal or (is_multimodal and vision_analysis):
+        # 检测取消信号：用户说"算了""取消""不创建了"→跳过流程
+        last_user_msg = ""
+        for m in reversed(raw_messages):
+            if isinstance(m, HumanMessage):
+                last_user_msg = _extract_content(m)
+                break
+        cancel_keywords = ["算了", "取消", "不创建了", "不买了", "不要了", "不用了"]
+        if any(kw in last_user_msg for kw in cancel_keywords):
+            logger.info(f"[{skill_name}] Cancel detected, skipping execution | session={session_id}")
+            final_content = "好的，已取消。有什么其他需要帮您的吗？"
+            new_messages.clear()  # 清空消息，不展示之前的 tool calls
+            # 清除 pending_skill
+            if session_id:
+                try:
+                    from app.memory.session_memory import SessionMemory
+                    await SessionMemory().clear_pending_skill(session_id)
+                except Exception:
+                    pass
+            # 跳过整个循环
+            pass  # fall through to return path below
+
         # 如果多模态分支已经设置了 final_content（Vision 失败），跳过循环
-        if is_multimodal and not vision_analysis:
+        elif is_multimodal and not vision_analysis:
             pass  # 已在上面设置了 final_content = 错误提示
         else:
             for iteration in range(max_iterations):

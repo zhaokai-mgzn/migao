@@ -31,6 +31,9 @@ def _extract_text(content: Union[str, list, None]) -> str:
 
 # 关键词 → 意图映射表
 KEYWORD_MAP: dict[IntentType, list[str]] = {
+    # 数据分析必须在订单前（防"订单趋势"被"订单"吞掉）
+    IntentType.DASHBOARD: ["看板", "趋势", "经营", "今日数据", "本周数据", "本月数据"],
+    IntentType.STATISTICS: ["统计", "数据报表"],
     IntentType.ORDER_CREATE: ["创建订单", "新建订单", "下单", "开个单", "录单", "确认创建订单"],
     IntentType.ORDER_QUERY: ["订单", "我的订单", "订单状态", "查订单", "待发货"],
     IntentType.LOGISTICS_TRACK: ["物流", "快递", "到哪了"],
