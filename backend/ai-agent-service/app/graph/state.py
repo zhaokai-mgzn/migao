@@ -39,3 +39,6 @@ class AgentState(TypedDict):
     final_answer: str                # 最终回答文本
     skill_used: str                  # 使用的 Skill 名称
     suggestions: list[str]           # 后续问题建议
+
+    # 跨轮状态持久化
+    pending_interact_skill: str      # 跨轮锁定的 Skill（如 product/order），防止 LLM 分类器误判跳走
