@@ -1117,10 +1117,9 @@ async def execute_skill(
 
     # 5.b Tool Calling 循环（纯文本 Skill 或 图片理解后的主模型处理）
     if not is_multimodal or (is_multimodal and vision_analysis):
-        # P3修复: 图片消息时，第一轮隐藏加工项/分类工具，让LLM先确认基本信息
+        # P3修复: 图片消息时第一轮隐藏加工项（分类可在基本信息阶段收集）
         if is_multimodal and skill_name == "product" and langchain_tools:
-            _delayed_tools = ["processing_item_query", "category_manage"]
-            langchain_tools = [t for t in langchain_tools if t.name not in _delayed_tools]
+            langchain_tools = [t for t in langchain_tools if t.name != "processing_item_query"]
             if langchain_tools:
                 llm_with_tools = llm.bind_tools(langchain_tools)
                 logger.info(f"[{skill_name}] Multimodal: hiding {_delayed_tools}, {len(langchain_tools)} tools remain")
