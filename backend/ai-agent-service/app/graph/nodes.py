@@ -164,6 +164,14 @@ async def intent_router_node(state: AgentState) -> dict:
         user_message, chat_history, agent_intents=agent_intents
     )
 
+    session_id = state.get("session_id", "")
+    logger.info(
+        f"[intent_router] LLM classified | intent={route_decision.intent_result.intent.value}"
+        f" confidence={route_decision.intent_result.confidence:.2f}"
+        f" action={route_decision.action}"
+        f" | session={session_id}"
+    )
+
     return {
         "intent_result": {
             "intent": route_decision.intent_result.intent.value,

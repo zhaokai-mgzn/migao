@@ -1014,6 +1014,7 @@ async def execute_skill(
         llm_no_thinking = LLMFactory.create_skill_llm(
             force_no_think=True,
         )
+        llm_no_thinking = llm_no_thinking.bind_tools(langchain_tools)
         llm_no_thinking_model = getattr(llm_no_thinking, "model_name", None) or getattr(llm_no_thinking, "model", "")
         logger.info(
             f"[{skill_name}] No-think LLM ready for iterations 2+ | model={llm_no_thinking_model}"
@@ -1237,9 +1238,6 @@ async def execute_skill(
             )
             llm_model_name = getattr(llm, "model_name", None) or getattr(llm, "model", "")
 
-            # 创建"无思考"变体（迭代 2+ 轮使用）
-            llm_no_thinking = None
-
             # P3修复: 图片消息时第一轮隐藏加工项查询（分类可在基本信息阶段收集）
             # 基于 tool_names 而非 skill_name，同时覆盖 product 和 general 等 Skill
             if "processing_item_query" in tool_names:
@@ -1254,6 +1252,12 @@ async def execute_skill(
                 llm_with_tools = llm.bind_tools(langchain_tools)
             else:
                 llm_with_tools = llm
+
+            # 重建 no-thinking 变体（工具集可能已修改，需重新绑定）
+            llm_no_thinking = None
+            if langchain_tools:
+                llm_no_thinking = LLMFactory.create_skill_llm(force_no_think=True)
+                llm_no_thinking = llm_no_thinking.bind_tools(langchain_tools)
 
             logger.info(
                 f"[{skill_name}] Multimodal→Text fallback | "
@@ -1309,6 +1313,11 @@ async def execute_skill(
                 # 节省 5-8s/轮，质量无损（实测：8.0s → 2.7s）
                 if iteration > 0 and llm_no_thinking is not None:
                     current_llm = llm_no_thinking
+                    if iteration == 1:
+                        logger.info(
+                            f"[{skill_name}] Switching to no-thinking LLM for iteration 2+"
+                            f" | session={session_id}"
+                        )
                 else:
                     current_llm = llm_with_tools
 
@@ -1331,13 +1340,21 @@ async def execute_skill(
                     response: AIMessage = await call_with_retry(
                         lambda: llm_breaker.call(_llm_invoke)
                     )
+                    # 提取 token 用量（失败不影响主流程）
+                    token_info = ""
+                    try:
+                        usage = _extract_usage(response)
+                        if usage:
+                            token_info = f" tokens_in={usage[0]} tokens_out={usage[1]}"
+                    except Exception:
+                        pass
                     logger.info(
                         f"[{skill_name}][DIAG] LLM call completed | iter={iteration + 1} "
                         f"has_tool_calls={bool(response.tool_calls)} "
                         f"content_len={len(response.content or '')} "
                         f"reasoning_len={len(getattr(response, 'additional_kwargs', {}).get('reasoning_content', '') or '')} "
-                        f"msg_count={len(full_messages) + len(new_messages)}"
-                        f"type={type(response).__name__}"
+                        f"msg_count={len(full_messages) + len(new_messages)}{token_info}"
+                        f" | type={type(response).__name__} session={session_id}"
                     )
                     # 成本追踪（失败不阻塞主流程）
                     _track_llm_cost(

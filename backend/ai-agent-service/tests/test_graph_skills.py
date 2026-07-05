@@ -212,12 +212,13 @@ class TestExecuteSkill:
         assert "messages" in result
         assert "entities" in result
 
+    @patch("app.graph.skills.base_skill.LLMFactory")
     @patch("app.graph.skills.base_skill.get_tracker")
     @patch("app.graph.skills.base_skill.get_skill_llm")
     @patch("app.graph.skills.base_skill.create_skill_registry")
     @patch("app.graph.skills.base_skill.set_tool_context")
     async def test_execute_skill_with_tool_call(
-        self, mock_set_ctx, mock_create_reg, mock_get_llm, mock_get_tracker
+        self, mock_set_ctx, mock_create_reg, mock_get_llm, mock_get_tracker, mock_llm_factory
     ):
         """LLM 返回 tool_call 后再返回文本"""
         # Mock registry
@@ -230,7 +231,8 @@ class TestExecuteSkill:
         mock_tool.execute = AsyncMock(return_value=mock_tool_result)
 
         mock_registry = MagicMock()
-        mock_registry.get_langchain_tools.return_value = [MagicMock()]
+        mock_langchain_tool = {"name": "test_tool", "description": "test tool", "parameters": {"type": "object", "properties": {}}}
+        mock_registry.get_langchain_tools.return_value = [mock_langchain_tool]
         mock_registry.get_tool.return_value = mock_tool
         mock_create_reg.return_value = mock_registry
 
@@ -250,6 +252,12 @@ class TestExecuteSkill:
         mock_llm.bind_tools.return_value = mock_llm
         mock_llm.ainvoke = AsyncMock(side_effect=[tool_call_response, final_response])
         mock_get_llm.return_value = mock_llm
+
+        # llm_no_thinking 创建（新增逻辑，需 mock）
+        mock_no_think_llm = MagicMock()
+        mock_no_think_llm.bind_tools.return_value = mock_no_think_llm
+        mock_no_think_llm.ainvoke = AsyncMock(return_value=final_response)
+        mock_llm_factory.create_skill_llm.return_value = mock_no_think_llm
 
         # Mock tracker
         mock_tracker = MagicMock()
