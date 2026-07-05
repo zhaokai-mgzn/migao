@@ -312,6 +312,38 @@ describe('useChatStore (Zustand chat store) — #571', () => {
         })
       }).not.toThrow()
     })
+
+    it('should mark the last streaming assistant message as wasAborted', () => {
+      const mockAbort = vi.fn()
+      const controller = { abort: mockAbort } as unknown as AbortController
+
+      const streamingMsg: ChatMessage = {
+        id: 'ai-1',
+        role: 'assistant',
+        content: '',
+        isStreaming: true,
+      }
+
+      act(() => {
+        useChatStore.setState({
+          isStreaming: true,
+          abortController: controller,
+          messages: [
+            { id: 'u1', role: 'user', content: 'hello' },
+            streamingMsg,
+          ],
+        })
+      })
+
+      act(() => {
+        useChatStore.getState().stopStreaming()
+      })
+
+      const messages = useChatStore.getState().messages
+      const abortedMsg = messages.find((m) => m.id === 'ai-1')
+      expect(abortedMsg?.wasAborted).toBe(true)
+      expect(abortedMsg?.isStreaming).toBe(false)
+    })
   })
 
   // =========================================================================

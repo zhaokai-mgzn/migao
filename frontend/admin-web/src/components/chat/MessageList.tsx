@@ -248,6 +248,12 @@ function AIMessageContent({ message }: { message: ChatMessage }) {
   ).trim()
 
   if (!cleanContent && !message.isStreaming) {
+    // 区分用户主动中断 vs AI 真正返回空内容
+    if (message.wasAborted) {
+      return (
+        <p className="text-sm text-gray-400 italic">对话已中断</p>
+      )
+    }
     return (
       <p className="text-sm text-gray-400 italic">（已处理）</p>
     )

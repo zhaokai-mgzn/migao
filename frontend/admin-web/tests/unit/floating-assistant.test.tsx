@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, act } from '@testing-library/react'
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react'
 
 // Mock dependencies
 const mockPush = vi.fn()
@@ -27,18 +27,22 @@ vi.mock('next/navigation', () => ({
 
 vi.mock('@/lib/api', () => ({
   chatApi: {
+    AI_SERVICE_URL: 'http://localhost:8001',
     createSession: vi.fn(),
+    getSessions: vi.fn().mockResolvedValue({ data: { sessions: [] } }),
     getHistory: vi.fn().mockResolvedValue([]),
     sendMessage: vi.fn(),
     uploadChatImages: vi.fn(),
   },
 }))
 
-vi.mock('@/store/auth', () => ({
-  useAuthStore: () => ({
-    accessToken: 'test-token',
-  }),
-}))
+vi.mock('@/store/auth', () => {
+  const storeState = { accessToken: 'test-token', user: null, tenantId: 1 }
+  const fn = () => storeState
+  return {
+    useAuthStore: Object.assign(fn, { getState: () => storeState }),
+  }
+})
 
 vi.mock('@/components/icons/MibaoLogo', () => ({
   MibaoLogo: ({ size }: { size: number }) => <span data-testid="mibao-logo" data-size={size}>🤖</span>,
@@ -121,5 +125,37 @@ describe('FloatingAssistant', () => {
     // FAB 应恢复为"打开米宝"（因为面板已收起）
     expect(screen.getByTitle('打开米宝')).toBeInTheDocument()
     expect(screen.queryByTitle('关闭米宝')).not.toBeInTheDocument()
+  })
+
+  it('abort 后显示"对话已中断"而非"（已处理）"', async () => {
+    const { chatApi } = await import('@/lib/api')
+    ;(chatApi.createSession as any).mockResolvedValue({ data: { id: 's1' } })
+
+    // Mock fetch to reject with AbortError（模拟用户点击停止）
+    // 使用 name='AbortError' 的 Error 对象兼容 jsdom 测试环境
+    const abortErr = new Error('The user aborted a request.')
+    abortErr.name = 'AbortError'
+    global.fetch = vi.fn().mockRejectedValue(abortErr)
+
+    render(<FloatingAssistant />)
+
+    // 打开面板
+    fireEvent.click(screen.getByTitle('打开米宝'))
+
+    // 输入消息并发送
+    const input = screen.getByPlaceholderText('输入消息...')
+    fireEvent.change(input, { target: { value: '测试中断消息' } })
+    fireEvent.keyDown(input, { key: 'Enter', shiftKey: false })
+
+    // 等待异步 abort 处理完成
+    await waitFor(() => {
+      // 已处理文案不应出现
+      expect(screen.queryByText('（已处理）')).not.toBeInTheDocument()
+    }, { timeout: 3000 })
+
+    // 中断文案应该出现
+    await waitFor(() => {
+      expect(screen.getByText('对话已中断')).toBeInTheDocument()
+    }, { timeout: 3000 })
   })
 })

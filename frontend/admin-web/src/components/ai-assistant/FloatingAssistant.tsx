@@ -20,6 +20,7 @@ interface AssistantMessage {
   createdAt: string
   isStreaming?: boolean
   suggestions?: string[]
+  wasAborted?: boolean  // 用户是否主动中断了流式输出
 }
 
 // ========== 常量 ==========
@@ -441,7 +442,28 @@ export default function FloatingAssistant() {
 
       await processSSEStream(response, aiMsgId)
     } catch (err: unknown) {
-      if (err instanceof DOMException && err.name === 'AbortError') return
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        // 用户主动中断：标记 wasAborted，不覆盖内容
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === aiMsgId
+              ? { ...msg, wasAborted: true }
+              : msg
+          )
+        )
+        return
+      }
+      // 兼容非 DOMException 的 AbortError（如测试环境）
+      if (!(err instanceof DOMException) && (err as any)?.name === 'AbortError') {
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === aiMsgId
+              ? { ...msg, wasAborted: true }
+              : msg
+          )
+        )
+        return
+      }
       const errorMsg = err instanceof Error ? err.message : '发送失败'
       setMessages((prev) =>
         prev.map((msg) =>
@@ -731,6 +753,10 @@ function AIAssistantContent({ msg }: { msg: AssistantMessage }) {
   ).trim()
 
   if (!cleanContent && !msg.isStreaming) {
+    // 区分用户主动中断 vs AI 真正返回空内容
+    if (msg.wasAborted) {
+      return <p className="text-sm text-gray-400 italic">对话已中断</p>
+    }
     return <p className="text-sm text-gray-400 italic">（已处理）</p>
   }
 
