@@ -41,13 +41,10 @@ class OrderCreateTool(BaseTool):
 
     name = "order_create"
     description = (
-        "【触发】用户说'创建订单''下单''帮我订''买XX'且有客户信息时调用。"
-        "【前置】必填: customer_name + customer_phone + items(至少一项)。"
-        "客户(customer)还需: sms_code(短信验证码)。"
-        "缺信息时先收集，不要直接调。"
-        "收集流程: 问客户信息→发送验证码→问商品明细→算金额→展示汇总→用户确认→调用。"
-        "【反例】用户只说了商品没提客户信息时不要调，先问。修改已有订单用 order_manage。"
-        "【标注】WRITE|NON_IDEMPOTENT — 先确认再执行"
+        "创建新订单。用户说'创建订单''下单'时直接调用，不要先调product_search查商品。"
+        "商品明细接受用户口头提供的信息（product_name/quantity/unit_price），无需验证。"
+        "必填: customer_name + customer_phone + items(至少一项product_name+quantity+unit_price)。"
+        "缺必填字段时引导用户补充后再调用。修改已有订单用 order_manage。WRITE"
     )
     allowed_roles = ["admin", "agent", "tenant_admin", "customer"]
 

@@ -31,7 +31,10 @@ class ProcessingItemQueryTool(BaseTool):
 
     name = "processing_item_query"
     description = (
-        "【触发】用户问'加工项''有哪些加工''加工费''加工价格''打孔''挂钩''褶皱'时调用。【前置】支持按 keyword/category_id/status 筛选。用户只需列表时传 keyword 或空参数。【反例】创建/修改/删除加工项用 processing_item_manage，不要用本工具。【标注】READONLY"
+        "查询店铺加工项目录。用于创建流程阶段2（用户已确认名称/价格等基本信息后）。"
+        "支持按 keyword/category_id/status 筛选。"
+        "用户只需列表时传空参数。"
+        "创建/修改/删除加工项用 processing_item_manage。READONLY"
     )
 
     parameters = {
