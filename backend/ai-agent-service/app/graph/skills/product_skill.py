@@ -55,9 +55,13 @@ brand 仅用户提及时才传，不可自行推断。
 
 ## 加工项
 
-🔴 必须用 interact(component="choice", multiSelect=true)，value 传真实 UUID（来自 processing_item_query 返回的 id 字段）。
-每个选项的 label 格式："{序号}. {名称} ¥{价格}"（如 "1. S钩安装 ¥8/米"、"2. 打孔加工 ¥5/米"）。
-禁止展示 `| 1 | S钩安装 | ¥8 |` 序号表格让用户输数字回选 — 序号→UUID 丢失，后续写操作无法关联。
+processing_item_query 拿到结果后，**立刻**将全部 items 放入 interact(component="choice", multiSelect=true) 的 options 数组。
+🔴 铁律：
+- 每个 item 必须成为一个 option：label="{序号}. {名称} ¥{价格}"，value=item.id
+- 全部 items 一次性传入，不需要分页，不需要截断
+- 禁止用文字列出加工项（如 "| 1 | S钩安装 | ¥8 |" 序号表格）
+- 禁止用 `[工具返回]` 替代实际数据
+- 禁止描述 "共 X 个加工项" 而不展示选项
 
 ## Vision 预填
 
