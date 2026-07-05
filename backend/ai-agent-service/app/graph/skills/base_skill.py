@@ -540,7 +540,6 @@ class ToolExecutionPipeline:
 
         # ── Execute ──
         if ctx.tool_instance is None:
-            # 去静默失败：registry 查找失败在 ResolveTool PreHook 中已打 ERROR
             ctx.result_str = json.dumps({
                 "success": False, "error": "tool_not_found",
                 "message": f"工具 {ctx.tool_call['name']} 不可用",
@@ -592,30 +591,6 @@ def make_resolve_tool_hook(skill_registry):
                 f"[{ctx.skill_name}] Tool '{ctx.tool_call['name']}' NOT FOUND "
                 f"in skill_registry | session={ctx.session_id} tenant={ctx.tenant_id}"
             )
-    return hook
-
-
-def make_block_duplicate_query_hook():
-    """PreHook: 如果 auto-interact 已触发，拦截 processing_item_query 重复调用。
-
-    使用 ctx.session_id 而非闭包捕获（避免 pipeline 组装时 session_id 为空）。
-    """
-    async def hook(ctx: PipelineContext) -> None:
-        if ctx.tool_call["name"] != "processing_item_query":
-            return
-        sid = ctx.session_id
-        if not sid:
-            return
-        from app.memory.session_memory import SessionMemory
-        already_fired = await SessionMemory().get_auto_interact_flag(sid)
-        if already_fired:
-            logger.info(
-                f"[{ctx.skill_name}] BLOCKED duplicate processing_item_query "
-                f"(auto-interact already fired) | session={sid}"
-            )
-            # 替换为 no-op：让 Execute 阶段返回虚拟成功结果
-            ctx.tool_call = {**ctx.tool_call, "name": "__noop_processing_item_query"}
-            ctx.tool_instance = None  # 强制走 OnError → 返回 fake success
     return hook
 
 
@@ -901,7 +876,6 @@ async def execute_skill(
         ToolExecutionPipeline()
         .add_pre(log_tool_call_pre_hook)
         .add_pre(make_resolve_tool_hook(skill_registry))
-        .add_pre(make_block_duplicate_query_hook())
         .add_post(append_tool_message_post_hook)
         .add_post(make_auto_interact_post_hook())
         .add_post(entity_extraction_post_hook)
@@ -975,26 +949,6 @@ async def execute_skill(
             "3. 如果图片中包含可操作的信息（如商品名称、订单号等），可以主动建议使用相关工具处理\n\n"
             + system_prompt
         )
-
-    # 注入 auto-interact 上下文：上一轮已弹加工项选择 → 本轮应进入汇总确认
-    if session_id and skill_name == "product":
-        from app.memory.session_memory import SessionMemory
-        auto_fired = await SessionMemory().get_auto_interact_flag(session_id)
-        if auto_fired:
-            system_prompt = (
-                "🔴【系统指令-最高优先级 覆盖其他规则】"
-                "加工项选择已完成（由系统自动渲染）。用户本轮消息即为选择结果。"
-                "你现在必须进入创建流程的最终阶段——汇总确认："
-                "1. 将所有已收集字段汇总展示（名称/价格/货号/分类/颜色/售卖方式/门幅/加工项）"
-                "   - 如果某些字段用户已在对话中提供（即使没有经过form），直接使用"
-                "   - 使用智能默认表补充缺失字段"
-                "2. 调用 validate_input 校验"
-                "3. 调用 interact(component=\"confirm\") 让用户确认"
-                "4. 用户确认后调用 product_manage(action=\"create\")\n"
-                "❌ 禁止回到阶段1收集信息！所有信息已通过对话收集完毕。\n"
-                "❌ 禁止查询加工项详情！禁止调用 processing_item_query！\n"
-                + system_prompt
-            )
 
     # 注入跨轮记忆：已收集字段追加到最后一条用户消息（LLM 不可能忽略）
     collected = {}
