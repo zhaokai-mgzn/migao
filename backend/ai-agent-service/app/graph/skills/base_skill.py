@@ -1131,10 +1131,18 @@ async def execute_skill(
     msg_list = list(messages)
 
     # Vision 缓存注入到用户消息（必须在 SystemMessage 之前，确保 LLM 视为用户上下文）
+    logger.info(
+        f"[{skill_name}] Vision inject check | "
+        f"cached_vision_len={len(cached_vision)} msg_list_len={len(msg_list)} "
+        f"has_human={any(isinstance(m, HumanMessage) for m in msg_list)} "
+        f"session={session_id}"
+    )
     if cached_vision and msg_list:
         # 找到最后一条 HumanMessage（不能取 msg_list[-1]，最后一条可能是 AIMessage）
+        found = False
         for i in range(len(msg_list) - 1, -1, -1):
             if isinstance(msg_list[i], HumanMessage):
+                found = True
                 last_user = msg_list[i]
                 new_content = (
                     f"[系统提示] 你上一轮已经完成了对用户图片的识别分析，结果如下。"
@@ -1151,6 +1159,15 @@ async def execute_skill(
                     f"analysis_len={len(cached_vision)} session={session_id}"
                 )
                 break
+        if not found:
+            logger.warning(
+                f"[{skill_name}] Vision inject: no HumanMessage found in msg_list | "
+                f"msg_list_len={len(msg_list)} session={session_id}"
+            )
+    elif not cached_vision:
+        logger.debug(  # changed to debug - this is expected when no vision cache exists
+            f"[{skill_name}] Vision inject skipped: cached_vision empty | session={session_id}"
+        )
 
     if collected and msg_list:
         fields_hint = "；".join(f"{k}={v}" for k, v in collected.items())
