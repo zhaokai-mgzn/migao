@@ -1116,7 +1116,8 @@ async def execute_skill(
     cached_vision = ""
     if not is_multimodal and session_id:
         try:
-            cached_vision = await SessionMemory().get_vision_analysis(session_id)
+            from app.memory.session_memory import SessionMemory as _SM
+            cached_vision = await _SM().get_vision_analysis(session_id)
         except Exception as e:
             logger.warning(
                 f"[{skill_name}] get_vision_analysis exception | "
