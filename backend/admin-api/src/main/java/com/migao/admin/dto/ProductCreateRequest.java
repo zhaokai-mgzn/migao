@@ -1,5 +1,6 @@
 package com.migao.admin.dto;
 
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import lombok.Data;
 
@@ -42,6 +43,7 @@ public class ProductCreateRequest {
     /**
      * 基础价格（草稿状态允许为空，Service 层根据 status 校验）
      */
+    @DecimalMin(value = "0", inclusive = true, message = "商品价格不能为负数")
     private BigDecimal basePrice;
 
     /**
