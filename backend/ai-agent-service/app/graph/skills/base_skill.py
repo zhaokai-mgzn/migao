@@ -1117,8 +1117,11 @@ async def execute_skill(
     if not is_multimodal and session_id:
         try:
             cached_vision = await SessionMemory().get_vision_analysis(session_id)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(
+                f"[{skill_name}] get_vision_analysis exception | "
+                f"session={session_id} error={type(e).__name__}: {e}"
+            )
 
     # 注入跨轮记忆：已收集字段追加到最后一条用户消息（LLM 不可能忽略）
     collected = {}
