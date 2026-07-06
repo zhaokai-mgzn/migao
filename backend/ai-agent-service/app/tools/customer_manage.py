@@ -206,10 +206,13 @@ class CustomerManageTool(BaseTool):
 
         customers = []
         for record in records:
+            raw_phone = record.get("phone") or ""
+            # 脱敏：列表接口对手机号中间4位打码，防止批量泄露
+            masked_phone = (raw_phone[:3] + "****" + raw_phone[7:]) if len(raw_phone) >= 11 else raw_phone
             customers.append({
                 "id": record.get("id"),
                 "name": record.get("name"),
-                "phone": record.get("phone"),
+                "phone": masked_phone,
                 "source_channel": record.get("sourceChannel"),
                 "vip_level": record.get("vipLevel"),
                 "tags": record.get("tags", []),
