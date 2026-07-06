@@ -859,12 +859,17 @@ class SessionMemory:
             try:
                 from sqlalchemy import text
                 sql = text("""
-                    SELECT COALESCE(metadata->>'vision_analysis', '') FROM sessions
+                    SELECT COALESCE(metadata->>'vision_analysis', '') as va FROM sessions
                     WHERE id = :session_id
                 """)
                 result = await db.execute(sql, {"session_id": session_id})
                 row = result.fetchone()
-                return (row[0] or "") if row else ""
+                va = (row[0] or "") if row else ""
+                logger.debug(
+                    f"[session-memory] get_vision_analysis | "
+                    f"session={session_id} len={len(va)} found={row is not None}"
+                )
+                return va
             except Exception as e:
                 logger.warning(f"[session-memory] get_vision_analysis failed: {e}")
                 return ""
