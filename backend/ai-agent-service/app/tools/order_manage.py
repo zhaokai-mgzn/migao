@@ -39,6 +39,7 @@ class OrderManageTool(BaseTool):
     )
     
     # admin、agent、tenant_admin 可使用
+    required_permissions = ["order:list"]
     allowed_roles = ["admin", "agent", "tenant_admin"]
 
     read_only = False

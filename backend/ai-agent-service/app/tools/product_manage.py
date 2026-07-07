@@ -210,6 +210,7 @@ class ProductManageTool(BaseTool):
     )
     
     # admin、agent、tenant_admin 可使用
+    required_permissions = ["product:create"]
     allowed_roles = ["admin", "agent", "tenant_admin"]
 
     read_only = False

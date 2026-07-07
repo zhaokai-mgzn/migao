@@ -41,6 +41,7 @@ class AfterSalesManageTool(BaseTool):
         "可选: refund_amount, priority, images。仅查工单用 list/detail action。WRITE"
     )
 
+    required_permissions = ["order:refund"]
     allowed_roles = ["admin", "agent", "tenant_admin"]
 
     read_only = False
