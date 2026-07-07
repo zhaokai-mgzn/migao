@@ -209,7 +209,8 @@ class ProductManageTool(BaseTool):
         "【触发】创建/修改/上下架商品。create 必填 name+price，收集→确认→执行。update 需 product_id。toggle_status 需 product_id+status。【标注】WRITE|DESTRUCTIVE"
     )
     
-    # admin、agent、tenant_admin 可使用    allowed_roles = ["admin", "agent", "tenant_admin"]
+    # admin、agent、tenant_admin 可使用
+    allowed_roles = ["admin", "agent", "tenant_admin"]
 
     read_only = False
     destructive = True   # 可删除商品、上下架
