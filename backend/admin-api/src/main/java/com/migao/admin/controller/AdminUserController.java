@@ -168,6 +168,7 @@ public class AdminUserController {
      */
     @PutMapping("/{id}")
     public ApiResponse<User> updateUser(@PathVariable String id, @RequestBody Map<String, Object> body) {
+        requireAdmin();
         String name = (String) body.get("name");
         String avatar = (String) body.get("avatar");
         String role = (String) body.get("role");

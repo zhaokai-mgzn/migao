@@ -7,10 +7,7 @@ vi.mock('lucide-react', () => {
   const stub = (name: string) => (props: any) => <span data-testid={`icon-${name}`} {...props} />
   return {
     Building2: stub('building2'),
-    Shield: stub('shield'),
     Save: stub('save'),
-    Eye: stub('eye'),
-    EyeOff: stub('eye-off'),
     Zap: stub('zap'),
     Package: stub('package'),
     Search: stub('search'),
@@ -113,21 +110,21 @@ describe('SettingsPage — AI tab removed (Issue #502)', () => {
   // ================================================================
 
   describe('Tab 结构 — 不应出现 AI 配置', () => {
-    it('应该只有 基本设置 和 账户安全 两个 tab', async () => {
+    it('应该只显示基本设置内容，无 tab 导航', async () => {
       render(<SettingsPage />)
       await waitFor(() => {
-        expect(screen.getByText('系统设置')).toBeInTheDocument()
+        expect(screen.getByText('企业基础信息')).toBeInTheDocument()
       })
 
-      // 确认基本设置和账户安全两个 tab 存在
-      expect(screen.getByRole('button', { name: /基本设置/ })).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: /账户安全/ })).toBeInTheDocument()
+      // 确认没有 tab 导航按钮（账户安全已隐藏）
+      expect(screen.queryByRole('button', { name: /账户安全/ })).toBeNull()
+      expect(screen.queryByRole('button', { name: /基本设置/ })).toBeNull()
     })
 
     it('不应该渲染 AI 配置 tab 按钮', async () => {
       render(<SettingsPage />)
       await waitFor(() => {
-        expect(screen.getByText('系统设置')).toBeInTheDocument()
+        expect(screen.getByText('企业基础信息')).toBeInTheDocument()
       })
 
       // AI 配置 tab 不应该存在
@@ -137,7 +134,7 @@ describe('SettingsPage — AI tab removed (Issue #502)', () => {
     it('不应该渲染 AI 助手名称输入框', async () => {
       render(<SettingsPage />)
       await waitFor(() => {
-        expect(screen.getByText('系统设置')).toBeInTheDocument()
+        expect(screen.getByText('企业基础信息')).toBeInTheDocument()
       })
 
       // Bot name input placeholder "小布" 不应该存在
@@ -149,7 +146,7 @@ describe('SettingsPage — AI tab removed (Issue #502)', () => {
     it('不应该在页面顶部显示迁移提示文案', async () => {
       render(<SettingsPage />)
       await waitFor(() => {
-        expect(screen.getByText('系统设置')).toBeInTheDocument()
+        expect(screen.getByText('企业基础信息')).toBeInTheDocument()
       })
 
       // 迁移提示文案不应存在
@@ -160,7 +157,7 @@ describe('SettingsPage — AI tab removed (Issue #502)', () => {
     it('不应该渲染前往机器人设置的链接', async () => {
       render(<SettingsPage />)
       await waitFor(() => {
-        expect(screen.getByText('系统设置')).toBeInTheDocument()
+        expect(screen.getByText('企业基础信息')).toBeInTheDocument()
       })
 
       // 前往配置链接不应存在
@@ -182,11 +179,11 @@ describe('SettingsPage — AI tab removed (Issue #502)', () => {
     })
   })
 
-  describe('基本设置 Tab — 功能保留', () => {
-    it('应该正常渲染基本设置 tab 内容', async () => {
+  describe('基本设置 — 功能保留', () => {
+    it('应该正常渲染基本设置内容', async () => {
       render(<SettingsPage />)
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /基本设置/ })).toBeInTheDocument()
+        expect(screen.getByText('企业基础信息')).toBeInTheDocument()
       })
     })
 
@@ -203,53 +200,6 @@ describe('SettingsPage — AI tab removed (Issue #502)', () => {
       render(<SettingsPage />)
       await waitFor(() => {
         expect(screen.getByRole('button', { name: /保存设置/ })).toBeInTheDocument()
-      })
-    })
-  })
-
-  describe('账户安全 Tab — 功能保留', () => {
-    it('应该正常渲染账户安全 tab 按钮', async () => {
-      render(<SettingsPage />)
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: /账户安全/ })).toBeInTheDocument()
-      })
-    })
-
-    it('切换到账户安全后应该显示修改密码区域', async () => {
-      const user = userEvent.setup()
-      render(<SettingsPage />)
-      const securityBtn = await screen.findByRole('button', { name: /账户安全/ })
-
-      await user.click(securityBtn)
-
-      await waitFor(() => {
-        expect(screen.getByRole('heading', { name: '修改密码' })).toBeInTheDocument()
-      })
-    })
-
-    it('修改密码区域应该有三个密码输入框', async () => {
-      const user = userEvent.setup()
-      render(<SettingsPage />)
-      const securityBtn = await screen.findByRole('button', { name: /账户安全/ })
-
-      await user.click(securityBtn)
-
-      await waitFor(() => {
-        expect(screen.getByPlaceholderText('请输入当前密码')).toBeInTheDocument()
-        expect(screen.getByPlaceholderText('请输入新密码')).toBeInTheDocument()
-        expect(screen.getByPlaceholderText('请输入确认新密码')).toBeInTheDocument()
-      })
-    })
-
-    it('登录日志表格应显示', async () => {
-      const user = userEvent.setup()
-      render(<SettingsPage />)
-      const securityBtn = await screen.findByRole('button', { name: /账户安全/ })
-
-      await user.click(securityBtn)
-
-      await waitFor(() => {
-        expect(screen.getByText('登录日志')).toBeInTheDocument()
       })
     })
   })

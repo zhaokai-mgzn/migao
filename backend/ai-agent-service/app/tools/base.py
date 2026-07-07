@@ -19,6 +19,7 @@ class ToolContext(BaseModel):
     user_id: str = Field(..., description="用户 ID")
     session_id: Optional[str] = Field(None, description="会话 ID")
     role: str = Field("customer", description="用户角色: customer/admin/agent")
+    permissions: list[str] = Field(default_factory=list, description="细粒度权限码列表")
     
     class Config:
         arbitrary_types_allowed = True
@@ -80,6 +81,7 @@ class BaseTool(ABC):
     # 权限控制
     require_auth: bool = True
     allowed_roles: list[str] = ["customer", "admin", "agent", "tenant_admin"]
+    required_permissions: list[str] = []  # 细粒度权限码（空列表 = 不限制）
     
     def __init__(self):
         """初始化 Tool"""
@@ -103,17 +105,34 @@ class BaseTool(ABC):
     
     def check_permission(self, context: ToolContext) -> bool:
         """检查权限
-        
+
+        两层检查：
+        1. 角色检查：context.role 必须在 allowed_roles 中
+        2. 细粒度权限检查（如果设置了 required_permissions）：
+           context.permissions 必须包含至少一个 required_permissions 中的权限码
+
         Args:
             context: Tool 执行上下文
-            
+
         Returns:
             bool: 是否有权限执行
         """
         if not self.require_auth:
             return True
-        
-        return context.role in self.allowed_roles
+
+        # 角色检查（现有逻辑）
+        if context.role not in self.allowed_roles:
+            return False
+
+        # 细粒度权限检查（新增）
+        if self.required_permissions:
+            # admin 通配符：permissions 中包含 "*" 表示全权限
+            if "*" in context.permissions:
+                return True
+            if not any(p in context.permissions for p in self.required_permissions):
+                return False
+
+        return True
     
     def get_schema(self) -> Dict[str, Any]:
         """获取 LangChain/OpenAI 兼容的 function schema

@@ -36,6 +36,7 @@ class UserIdentity(BaseModel):
     tenant_id: int
     identity_type: str  # wechat_mini / wechat_h5 / account / agent_wechat_mini
     role: UserRole
+    permissions: list[str] = []  # 细粒度权限码列表
     external_id: Optional[str] = None  # 第三方平台用户 ID（如微信 openid）
     exp: Optional[int] = None  # Token 过期时间
     
@@ -287,12 +288,26 @@ async def get_current_user(
                 role = "customer"
         
         external_id = payload.get("externalId") or payload.get("external_id")
-        
+
+        # 提取细粒度权限码
+        permissions_raw = payload.get("permissions") or payload.get("perm") or []
+        permissions: list[str] = []
+        if isinstance(permissions_raw, list):
+            permissions = [p for p in permissions_raw if isinstance(p, str)]
+        elif isinstance(permissions_raw, str):
+            import json
+            try:
+                permissions = json.loads(permissions_raw)
+                permissions = [p for p in permissions if isinstance(p, str)]
+            except (json.JSONDecodeError, TypeError):
+                permissions = []
+
         user = UserIdentity(
             user_id=user_id,
             tenant_id=tenant_id,
             identity_type=identity_type,
             role=role,
+            permissions=permissions,
             external_id=external_id,
             exp=payload.get("exp")
         )

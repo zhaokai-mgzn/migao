@@ -84,17 +84,22 @@ public class PermissionService {
             case "admin" -> List.of("*");
             case "operator" -> List.of(
                     "dashboard:view",
-                    "product:manage",
-                    "knowledge:manage"
+                    "order:list", "order:detail", "order:refund",
+                    "product:list", "product:create", "product:category",
+                    "processing:manage",
+                    "customer:view",
+                    "finance:view",
+                    "agent:session", "agent:quickreply",
+                    "employee:list",
+                    "system:manage"
             );
             case "product_manager" -> List.of(
                     "dashboard:view",
-                    "product:manage",
+                    "product:list", "product:create", "product:category",
                     "processing:manage"
             );
             case "knowledge_editor" -> List.of(
-                    "dashboard:view",
-                    "knowledge:manage"
+                    "dashboard:view"
             );
             default -> List.of();
         };

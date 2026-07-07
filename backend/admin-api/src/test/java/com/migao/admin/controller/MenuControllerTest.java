@@ -42,11 +42,11 @@ class MenuControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data").isArray())
-                .andExpect(jsonPath("$.data.length()").value(6));
+                .andExpect(jsonPath("$.data.length()").value(8));
     }
 
     @Test
-    @DisplayName("菜单树包含预期的顶级节点: dashboard, orders, products, agent, employees, settings")
+    @DisplayName("菜单树包含预期的顶级节点: dashboard, orders, products, agent, employees, customers, finance, settings")
     void topLevelKeys() throws Exception {
         mockMvc.perform(get("/api/admin/menus"))
                 .andExpect(status().isOk())
@@ -55,6 +55,8 @@ class MenuControllerTest {
                 .andExpect(jsonPath("$.data[?(@.code=='products')]").exists())
                 .andExpect(jsonPath("$.data[?(@.code=='agent')]").exists())
                 .andExpect(jsonPath("$.data[?(@.code=='employees')]").exists())
+                .andExpect(jsonPath("$.data[?(@.code=='customers')]").exists())
+                .andExpect(jsonPath("$.data[?(@.code=='finance')]").exists())
                 .andExpect(jsonPath("$.data[?(@.code=='settings')]").exists());
     }
 

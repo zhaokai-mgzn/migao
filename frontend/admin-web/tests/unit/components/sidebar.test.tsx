@@ -38,7 +38,7 @@ describe('Sidebar', () => {
     vi.clearAllMocks()
     mockUsePathname.mockReturnValue('/dashboard')
     mockUseAuthStore.mockReturnValue({
-      user: { id: '1', username: 'admin', name: '管理员' },
+      user: { id: '1', username: 'admin', name: '管理员', permissions: ['*'], roles: ['admin'] },
     })
   })
 
@@ -160,5 +160,71 @@ describe('Sidebar', () => {
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
     expect(screen.getAllByText('客户管理').length).toBe(1)
     expect(screen.getAllByText('机器人设置').length).toBe(1)
+  })
+
+  // ── 权限过滤 ──
+
+  describe('Permission-based menu filtering', () => {
+    it('should show all menu items for admin user with * permission', () => {
+      mockUseAuthStore.mockReturnValue({
+        user: { id: '1', username: 'admin', name: '管理员', permissions: ['*'], roles: ['admin'] },
+      })
+      render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
+      expect(screen.getByText('工作台')).toBeInTheDocument()
+      expect(screen.getByText('商品列表')).toBeInTheDocument()
+      expect(screen.getByText('订单列表')).toBeInTheDocument()
+      expect(screen.getByText('客户管理')).toBeInTheDocument()
+      expect(screen.getByText('财务对账')).toBeInTheDocument()
+      expect(screen.getByText('员工管理')).toBeInTheDocument()
+      expect(screen.getByText('企业基础信息')).toBeInTheDocument()
+    })
+
+    it('should filter out items user has no permission for', () => {
+      mockUseAuthStore.mockReturnValue({
+        user: { id: '2', username: 'operator', name: '运营', permissions: ['dashboard:view', 'order:list', 'product:list'], roles: ['operator'] },
+      })
+      render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
+      // 有权限的
+      expect(screen.getByText('工作台')).toBeInTheDocument()
+      expect(screen.getByText('商品列表')).toBeInTheDocument()
+      expect(screen.getByText('订单列表')).toBeInTheDocument()
+      // 无权限的
+      expect(screen.queryByText('商品分类管理')).not.toBeInTheDocument()
+      expect(screen.queryByText('加工项管理')).not.toBeInTheDocument()
+      expect(screen.queryByText('售后工单')).not.toBeInTheDocument()
+      expect(screen.queryByText('客户管理')).not.toBeInTheDocument()
+      expect(screen.queryByText('财务对账')).not.toBeInTheDocument()
+      expect(screen.queryByText('员工管理')).not.toBeInTheDocument()
+      expect(screen.queryByText('企业基础信息')).not.toBeInTheDocument()
+      expect(screen.queryByText('机器人设置')).not.toBeInTheDocument()
+    })
+
+    it('should show only dashboard when user has no permissions', () => {
+      mockUseAuthStore.mockReturnValue({
+        user: { id: '3', username: 'newbie', name: '新人', permissions: [], roles: [] },
+      })
+      render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
+      expect(screen.getByText('工作台')).toBeInTheDocument()
+      // 分组标题应该都不在
+      expect(screen.queryByText('商品管理')).not.toBeInTheDocument()
+      expect(screen.queryByText('订单管理')).not.toBeInTheDocument()
+      // 独立菜单项也不在
+      expect(screen.queryByText('客户管理')).not.toBeInTheDocument()
+      expect(screen.queryByText('员工管理')).not.toBeInTheDocument()
+    })
+
+    it('should hide entire group when all children are filtered out', () => {
+      mockUseAuthStore.mockReturnValue({
+        user: { id: '4', username: 'partial', name: '部分权限', permissions: ['dashboard:view', 'order:list'], roles: [] },
+      })
+      render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
+      // 订单管理 group should show (has order:list)
+      expect(screen.getByText('订单管理')).toBeInTheDocument()
+      expect(screen.getByText('订单列表')).toBeInTheDocument()
+      // 但售后工单不应该出现
+      expect(screen.queryByText('售后工单')).not.toBeInTheDocument()
+      // 商品管理 group should be completely hidden
+      expect(screen.queryByText('商品管理')).not.toBeInTheDocument()
+    })
   })
 })

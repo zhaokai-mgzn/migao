@@ -794,37 +794,74 @@ public class AuthService {
     }
 
     /**
-     * 根据权限构建菜单列表
+     * 根据权限构建菜单列表（匹配前端侧边栏结构）
      */
     private List<UserInfoResponse.MenuItem> buildMenusByPermissions(List<String> permissions) {
-        boolean isAllPermission = permissions.contains("*");
+        boolean isAll = permissions.contains("*");
 
         List<UserInfoResponse.MenuItem> menus = new java.util.ArrayList<>();
 
-        // 仪表板（所有角色可见）
-        menus.add(UserInfoResponse.MenuItem.builder()
-                .key("dashboard").name("数据概览").icon("LayoutDashboard").path("/dashboard").build());
+        // 工作台（所有人可见）
+        menus.add(menuItem("dashboard", "工作台", "LayoutDashboard", "/dashboard"));
 
-        if (isAllPermission || permissions.contains("product:manage")) {
-            menus.add(UserInfoResponse.MenuItem.builder()
-                    .key("products").name("商品管理").icon("Package").path("/products").build());
+        // 商品管理分组
+        List<UserInfoResponse.MenuItem> productChildren = new java.util.ArrayList<>();
+        if (isAll || permissions.contains("product:list")) {
+            productChildren.add(menuItem("products", "商品列表", "Package", "/products"));
+        }
+        if (isAll || permissions.contains("product:category")) {
+            productChildren.add(menuItem("categories", "商品分类管理", "FolderTree", "/categories"));
+        }
+        if (isAll || permissions.contains("processing:manage")) {
+            productChildren.add(menuItem("processing", "加工项管理", "Scissors", "/processing"));
+        }
+        if (!productChildren.isEmpty()) {
+            menus.add(menuGroup("product-center", "商品管理", "Store", productChildren));
         }
 
-        if (isAllPermission || permissions.contains("processing:manage")) {
-            menus.add(UserInfoResponse.MenuItem.builder()
-                    .key("processing").name("加工管理").icon("Wrench").path("/processing").build());
+        // 订单管理分组
+        List<UserInfoResponse.MenuItem> tradeChildren = new java.util.ArrayList<>();
+        if (isAll || permissions.contains("order:list")) {
+            tradeChildren.add(menuItem("orders", "订单列表", "ClipboardList", "/orders"));
+        }
+        if (isAll || permissions.contains("order:refund")) {
+            tradeChildren.add(menuItem("after-sales", "售后工单", "ShieldCheck", "/after-sales"));
+        }
+        if (!tradeChildren.isEmpty()) {
+            menus.add(menuGroup("trade-center", "订单管理", "ShoppingCart", tradeChildren));
         }
 
-        if (isAllPermission || permissions.contains("knowledge:manage")) {
-            menus.add(UserInfoResponse.MenuItem.builder()
-                    .key("knowledge").name("知识库").icon("BookOpen").path("/knowledge").build());
+        // 独立菜单项
+        if (isAll || permissions.contains("customer:view")) {
+            menus.add(menuItem("customers", "客户管理", "UserCircle", "/customers"));
         }
-
-        if (isAllPermission || permissions.contains("system:manage")) {
-            menus.add(UserInfoResponse.MenuItem.builder()
-                    .key("settings").name("系统设置").icon("Settings").path("/settings").build());
+        if (isAll || permissions.contains("finance:view")) {
+            menus.add(menuItem("finance", "财务对账", "Calculator", "/finance"));
+        }
+        if (isAll || permissions.contains("agent:session")) {
+            menus.add(menuItem("chat", "米宝 · 在线对话", "MessageSquare", "/chat"));
+        }
+        if (isAll || permissions.contains("agent:quickreply")) {
+            menus.add(menuItem("chat-config", "机器人设置", "Zap", "/chat/config"));
+        }
+        if (isAll || permissions.contains("employee:list")) {
+            menus.add(menuItem("employees", "员工管理", "Users", "/employees"));
+        }
+        if (isAll || permissions.contains("system:manage")) {
+            menus.add(menuItem("settings", "企业基础信息", "Building2", "/settings"));
         }
 
         return menus;
+    }
+
+    private UserInfoResponse.MenuItem menuItem(String key, String name, String icon, String path) {
+        return UserInfoResponse.MenuItem.builder()
+                .key(key).name(name).icon(icon).path(path).build();
+    }
+
+    private UserInfoResponse.MenuItem menuGroup(String key, String name, String icon,
+                                                 List<UserInfoResponse.MenuItem> children) {
+        return UserInfoResponse.MenuItem.builder()
+                .key(key).name(name).icon(icon).children(children).build();
     }
 }
