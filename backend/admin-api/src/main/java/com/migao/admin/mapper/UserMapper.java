@@ -14,9 +14,10 @@ import org.apache.ibatis.annotations.Select;
 public interface UserMapper extends BaseMapper<User> {
 
     /**
-     * 跨租户根据手机号查询管理员用户（用于 SMS 登录，绕过多租户拦截器）
+     * 跨租户根据手机号查询用户（用于 SMS 登录，绕过多租户拦截器）
+     * 所有角色均可登录，RBAC 权限过滤在登录后通过 getUserPermissions() 生效
      */
     @InterceptorIgnore(tenantLine = "true")
-    @Select("SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, session_ttl, status, created_at, updated_at, deleted FROM users WHERE phone = #{phone} AND deleted = 0 AND role IN ('admin') ORDER BY updated_at DESC LIMIT 1")
-    User selectAdminByPhoneIgnoreTenant(@Param("phone") String phone);
+    @Select("SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, session_ttl, status, created_at, updated_at, deleted FROM users WHERE phone = #{phone} AND deleted = 0 AND status = 'active' ORDER BY updated_at DESC LIMIT 1")
+    User selectByPhoneIgnoreTenant(@Param("phone") String phone);
 }

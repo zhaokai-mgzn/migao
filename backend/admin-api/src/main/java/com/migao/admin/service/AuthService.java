@@ -185,10 +185,10 @@ public class AuthService {
         }
 
         // 3. 根据手机号查找租户用户（跨租户查询，使用 @InterceptorIgnore 绕过多租户拦截器）
-        User user = userMapper.selectAdminByPhoneIgnoreTenant(phone);
+        User user = userMapper.selectByPhoneIgnoreTenant(phone);
         if (user == null) {
-            log.warn("短信登录失败，用户不存在或不是管理员: phone={}", phone);
-            throw BusinessException.authFailed("该手机号未注册或无管理员权限");
+            log.warn("短信登录失败，用户不存在或已禁用: phone={}", phone);
+            throw BusinessException.authFailed("该手机号未注册");
         }
 
         // 4. 校验用户状态
