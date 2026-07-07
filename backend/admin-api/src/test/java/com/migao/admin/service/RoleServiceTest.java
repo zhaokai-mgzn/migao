@@ -377,4 +377,188 @@ class RoleServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("未拥有该角色");
     }
+
+    // ======================== getUserPermissions 测试 ========================
+
+    @Test
+    @DisplayName("getUserPermissions: admin 角色用户返回 *")
+    void getUserPermissions_AdminReturnsWildcard() {
+        // given
+        when(userRoleMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(List.of(UserRole.builder().id("ur-1").roleId("role-admin").userId("u1").tenantId(1L).deleted(0).build()));
+        Role adminRole = Role.builder().id("role-admin").code("admin").tenantId(1L).deleted(0).build();
+        when(roleMapper.selectBatchIds(List.of("role-admin"))).thenReturn(List.of(adminRole));
+
+        // when
+        List<String> result = roleService.getUserPermissions("u1");
+
+        // then
+        assertThat(result).containsExactly("*");
+    }
+
+    @Test
+    @DisplayName("getUserPermissions: operator 角色获得全部常用权限")
+    void getUserPermissions_OperatorGetsAllCommonPermissions() {
+        // given
+        when(userRoleMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(List.of(UserRole.builder().id("ur-1").roleId("role-op").userId("u2").tenantId(1L).deleted(0).build()));
+        Role opRole = Role.builder().id("role-op").code("operator").tenantId(1L).deleted(0).build();
+        when(roleMapper.selectBatchIds(List.of("role-op"))).thenReturn(List.of(opRole));
+        // userMapper query for User.permissions merge
+        User user = new User();
+        user.setId("u2");
+        user.setPermissions(null);
+        when(userMapper.selectById("u2")).thenReturn(user);
+
+        // when
+        List<String> result = roleService.getUserPermissions("u2");
+
+        // then: 13 个权限码
+        assertThat(result).contains(
+                "dashboard:view",
+                "order:list", "order:detail", "order:refund",
+                "product:list", "product:create", "product:category",
+                "processing:manage",
+                "customer:view", "finance:view",
+                "agent:session", "agent:quickreply",
+                "employee:list", "system:manage"
+        );
+    }
+
+    @Test
+    @DisplayName("getUserPermissions: product_manager 只获得商品和加工权限")
+    void getUserPermissions_ProductManagerSubset() {
+        // given
+        when(userRoleMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(List.of(UserRole.builder().id("ur-1").roleId("role-pm").userId("u3").tenantId(1L).deleted(0).build()));
+        Role pmRole = Role.builder().id("role-pm").code("product_manager").tenantId(1L).deleted(0).build();
+        when(roleMapper.selectBatchIds(List.of("role-pm"))).thenReturn(List.of(pmRole));
+        User user = new User();
+        user.setId("u3");
+        user.setPermissions(null);
+        when(userMapper.selectById("u3")).thenReturn(user);
+
+        // when
+        List<String> result = roleService.getUserPermissions("u3");
+
+        // then
+        assertThat(result).contains("dashboard:view", "product:list", "product:create", "product:category", "processing:manage");
+        assertThat(result).doesNotContain("order:list", "customer:view", "employee:list");
+    }
+
+    @Test
+    @DisplayName("getUserPermissions: knowledge_editor 获得 dashboard + product:list")
+    void getUserPermissions_KnowledgeEditorMinimal() {
+        // given
+        when(userRoleMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(List.of(UserRole.builder().id("ur-1").roleId("role-ke").userId("u4").tenantId(1L).deleted(0).build()));
+        Role keRole = Role.builder().id("role-ke").code("knowledge_editor").tenantId(1L).deleted(0).build();
+        when(roleMapper.selectBatchIds(List.of("role-ke"))).thenReturn(List.of(keRole));
+        User user = new User();
+        user.setId("u4");
+        user.setPermissions(null);
+        when(userMapper.selectById("u4")).thenReturn(user);
+
+        // when
+        List<String> result = roleService.getUserPermissions("u4");
+
+        // then
+        assertThat(result).contains("dashboard:view", "product:list");
+        assertThat(result).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("getUserPermissions: admin 有 User.permissions 时仍返回 *")
+    void getUserPermissions_AdminWithUserPermissionsStillReturnsWildcard() {
+        // given: admin 角色的用户，User.permissions 字段有旧数据
+        when(userRoleMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(List.of(UserRole.builder().id("ur-1").roleId("role-admin").userId("u5").tenantId(1L).deleted(0).build()));
+        Role adminRole = Role.builder().id("role-admin").code("admin").tenantId(1L).deleted(0).build();
+        when(roleMapper.selectBatchIds(List.of("role-admin"))).thenReturn(List.of(adminRole));
+        // 关键：admin 用户即使有 User.permissions，也返回 *
+        // 此测试验证 Bug Fix — admin 不应因 User.permissions 而降级
+
+        // when
+        List<String> result = roleService.getUserPermissions("u5");
+
+        // then: 必须返回 *，不能返回受限权限
+        assertThat(result).containsExactly("*");
+    }
+
+    @Test
+    @DisplayName("getUserPermissions: 无 user_roles 时从 User.role 字段获取")
+    void getUserPermissions_NoUserRoles_FallbackToUserRoleField() {
+        // given
+        when(userRoleMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+        User user = new User();
+        user.setId("u6");
+        user.setRole("product_manager");
+        user.setPermissions(null);
+        when(userMapper.selectById("u6")).thenReturn(user);
+
+        // when
+        List<String> result = roleService.getUserPermissions("u6");
+
+        // then
+        assertThat(result).contains("dashboard:view", "product:list", "processing:manage");
+        assertThat(result).doesNotContain("order:list", "employee:list");
+    }
+
+    @Test
+    @DisplayName("getUserPermissions: User.permissions 与角色权限合并")
+    void getUserPermissions_MergeUserPermissionsWithRolePermissions() {
+        // given: operator 角色 + 额外的 User.permissions
+        when(userRoleMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(List.of(UserRole.builder().id("ur-1").roleId("role-op").userId("u7").tenantId(1L).deleted(0).build()));
+        Role opRole = Role.builder().id("role-op").code("operator").tenantId(1L).deleted(0).build();
+        when(roleMapper.selectBatchIds(List.of("role-op"))).thenReturn(List.of(opRole));
+        User user = new User();
+        user.setId("u7");
+        // 用户被额外分配了 permissions
+        user.setPermissions("[\"knowledge:manage\",\"report:view\"]");
+        when(userMapper.selectById("u7")).thenReturn(user);
+
+        // when
+        List<String> result = roleService.getUserPermissions("u7");
+
+        // then: operator 的所有权限 + 用户个人权限
+        assertThat(result).contains("dashboard:view", "order:list", "product:list");
+        assertThat(result).contains("knowledge:manage", "report:view"); // 来自 User.permissions
+    }
+
+    @Test
+    @DisplayName("getUserPermissions: admin User.role 字段返回 *")
+    void getUserPermissions_AdminUserRoleFieldReturnsWildcard() {
+        // given: user_roles 为空，但 User.role 是 admin
+        when(userRoleMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+        User user = new User();
+        user.setId("u8");
+        user.setRole("admin");
+        user.setPermissions("[\"product:list\"]"); // 旧数据
+        when(userMapper.selectById("u8")).thenReturn(user);
+
+        // when
+        List<String> result = roleService.getUserPermissions("u8");
+
+        // then: admin 必须返回 *，忽略 User.permissions
+        assertThat(result).containsExactly("*");
+    }
+
+    @Test
+    @DisplayName("getUserPermissions: 无角色无 User.role 返回空")
+    void getUserPermissions_NoRolesEmpty() {
+        // given
+        when(userRoleMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+        User user = new User();
+        user.setId("u9");
+        user.setRole(null);
+        user.setPermissions(null);
+        when(userMapper.selectById("u9")).thenReturn(user);
+
+        // when
+        List<String> result = roleService.getUserPermissions("u9");
+
+        // then
+        assertThat(result).isEmpty();
+    }
 }

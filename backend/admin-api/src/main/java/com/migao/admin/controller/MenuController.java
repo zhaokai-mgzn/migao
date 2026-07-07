@@ -36,6 +36,8 @@ public class MenuController {
         MenuNode e1 = new MenuNode("employee:list", "员工列表");
         MenuNode e2 = new MenuNode("employee:create", "新增员工");
         MenuNode s1 = new MenuNode("system:manage", "租户设置");
+        MenuNode c1 = new MenuNode("customer:view", "客户管理");
+        MenuNode f1 = new MenuNode("finance:view", "财务对账");
 
         return List.of(
             new MenuNode("dashboard", "工作台", List.of(d1)),
@@ -43,6 +45,8 @@ public class MenuController {
             new MenuNode("products", "商品管理", List.of(p1, p2, p3, p4)),
             new MenuNode("agent", "客服工作台", List.of(a1, a2)),
             new MenuNode("employees", "员工管理", List.of(e1, e2)),
+            new MenuNode("customers", "客户管理", List.of(c1)),
+            new MenuNode("finance", "财务对账", List.of(f1)),
             new MenuNode("settings", "系统设置", List.of(s1))
         );
     }

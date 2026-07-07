@@ -63,6 +63,7 @@ interface MenuItem {
   icon: string
   path: string
   adminOnly?: boolean
+  permissionCode?: string
 }
 
 interface MenuGroup {
@@ -89,9 +90,9 @@ const menuGroups: MenuGroup[] = [
     name: '商品管理',
     icon: 'Store',
     children: [
-      { key: 'products', name: '商品列表', icon: 'Package', path: '/products' },
-      { key: 'categories', name: '商品分类管理', icon: 'FolderTree', path: '/categories' },
-      { key: 'processing', name: '加工项管理', icon: 'Scissors', path: '/processing' },
+      { key: 'products', name: '商品列表', icon: 'Package', path: '/products', permissionCode: 'product:list' },
+      { key: 'categories', name: '商品分类管理', icon: 'FolderTree', path: '/categories', permissionCode: 'product:category' },
+      { key: 'processing', name: '加工项管理', icon: 'Scissors', path: '/processing', permissionCode: 'processing:manage' },
     ],
   },
   {
@@ -99,19 +100,20 @@ const menuGroups: MenuGroup[] = [
     name: '订单管理',
     icon: 'ShoppingCart',
     children: [
-      { key: 'orders', name: '订单列表', icon: 'ClipboardList', path: '/orders' },
-      { key: 'after-sales', name: '售后工单', icon: 'ShieldCheck', path: '/after-sales' },
+      { key: 'orders', name: '订单列表', icon: 'ClipboardList', path: '/orders', permissionCode: 'order:list' },
+      { key: 'after-sales', name: '售后工单', icon: 'ShieldCheck', path: '/after-sales', permissionCode: 'order:refund' },
     ],
   },
 ]
 
 // 一级独立菜单项（无子级，直接跳转，排在分组后面）
 const standaloneItems: MenuItem[] = [
-  { key: 'customers', name: '客户管理', icon: 'UserCircle', path: '/customers' },
-  { key: 'finance', name: '财务对账', icon: 'Calculator', path: '/finance' },
-  { key: 'chat-config', name: '机器人设置', icon: 'Zap', path: '/chat/config' },
-  { key: 'employees', name: '员工管理', icon: 'Users', path: '/employees' },
-  { key: 'settings', name: '企业基础信息', icon: 'Building2', path: '/settings' },
+  { key: 'customers', name: '客户管理', icon: 'UserCircle', path: '/customers', permissionCode: 'customer:view' },
+  { key: 'finance', name: '财务对账', icon: 'Calculator', path: '/finance', permissionCode: 'finance:view' },
+  { key: 'chat', name: '米宝 · 在线对话', icon: 'MessageSquare', path: '/chat', permissionCode: 'agent:session' },
+  { key: 'chat-config', name: '机器人设置', icon: 'Zap', path: '/chat/config', permissionCode: 'agent:quickreply' },
+  { key: 'employees', name: '员工管理', icon: 'Users', path: '/employees', permissionCode: 'employee:list' },
+  { key: 'settings', name: '企业基础信息', icon: 'Building2', path: '/settings', permissionCode: 'system:manage' },
 ]
 
 export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
@@ -128,12 +130,20 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
   }
 
   // 权限过滤
-  const isAdmin = user?.roles?.includes('admin')
+  const permissions = user?.permissions || []
+  const hasAllPermissions = permissions.includes('*')
 
-  const filterChildren = (children: MenuItem[]) =>
-    children.filter(item => {
-      if (item.adminOnly) return isAdmin
-      return true
+  const hasPermission = (code?: string) => {
+    if (!code) return true              // 无权限码 = 所有人可见
+    if (hasAllPermissions) return true   // admin (*) 通配符
+    return permissions.includes(code)
+  }
+
+  const filterItems = (items: MenuItem[]) =>
+    items.filter(item => {
+      // adminOnly 保留作为额外防线
+      if (item.adminOnly && !user?.roles?.includes('admin')) return false
+      return hasPermission(item.permissionCode)
     })
 
   const isActive = (path: string) => {
@@ -172,7 +182,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
         {/* 一级菜单项（无子级，直接跳转） */}
         <div className="space-y-0.5 mb-4">
-          {topLevelItems.map((item) => {
+          {filterItems(topLevelItems).map((item) => {
             const Icon = iconMap[item.icon] || LayoutDashboard
             const active = isActive(item.path)
             return (
@@ -198,7 +208,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
         {/* 带子级的菜单组 */}
         {collapsed && <div className="mx-2 mb-3 border-t border-slate-700" />}
         {menuGroups.map((group) => {
-          const filteredChildren = filterChildren(group.children)
+          const filteredChildren = filterItems(group.children)
           if (filteredChildren.length === 0) return null
 
           const GroupIcon = iconMap[group.icon] || LayoutDashboard
@@ -261,7 +271,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
         {/* 一级独立菜单项 */}
         {collapsed && <div className="mx-2 mb-3 border-t border-slate-700" />}
         <div className="space-y-0.5">
-          {standaloneItems.map((item) => {
+          {filterItems(standaloneItems).map((item) => {
             const Icon = iconMap[item.icon] || LayoutDashboard
             const active = isActive(item.path)
             return (

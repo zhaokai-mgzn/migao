@@ -36,6 +36,7 @@ export interface User {
   avatar?: string
   roles?: string[]
   permissions?: string[]
+  menus?: MenuItem[]
   tenantId?: number
   tenantName?: string
 }

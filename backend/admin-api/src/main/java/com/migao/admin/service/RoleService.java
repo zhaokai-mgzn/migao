@@ -12,6 +12,8 @@ import com.migao.admin.mapper.UserMapper;
 import com.migao.admin.mapper.UserRoleMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -111,17 +113,22 @@ public class RoleService {
             case "admin" -> List.of("*");
             case "operator" -> List.of(
                     "dashboard:view",
-                    "product:manage",
-                    "knowledge:manage"
+                    "order:list", "order:detail", "order:refund",
+                    "product:list", "product:create", "product:category",
+                    "processing:manage",
+                    "customer:view",
+                    "finance:view",
+                    "agent:session", "agent:quickreply",
+                    "employee:list",
+                    "system:manage"
             );
             case "product_manager" -> List.of(
                     "dashboard:view",
-                    "product:manage",
+                    "product:list", "product:create", "product:category",
                     "processing:manage"
             );
             case "knowledge_editor" -> List.of(
-                    "dashboard:view",
-                    "knowledge:manage"
+                    "dashboard:view"
             );
             default -> List.of();
         };
@@ -150,29 +157,88 @@ public class RoleService {
             User user = userMapper.selectById(userId);
             if (user != null && StringUtils.hasText(user.getRole())) {
                 if ("admin".equals(user.getRole())) {
-                    return List.of("*");
+                    return List.of("*");  // admin 始终拥有全部权限
                 }
-                return getPermissionsByRoleCode(user.getRole()).stream()
-                        .map(Permission::getCode)
-                        .collect(Collectors.toList());
+                Set<String> permSet = new HashSet<>(getPermissionCodesForRole(user.getRole()));
+                mergeUserPermissions(user, permSet);
+                return new ArrayList<>(permSet);
+            }
+            if (user != null) {
+                Set<String> permSet = new HashSet<>();
+                mergeUserPermissions(user, permSet);
+                return new ArrayList<>(permSet);
             }
             return List.of();
         }
 
-        Set<String> permissionSet = new HashSet<>();
-
+        // 检查是否为 admin 角色——admin 始终拥有全部权限
         for (Role role : roles) {
             if ("admin".equals(role.getCode())) {
                 return List.of("*");
             }
-            List<Permission> permissions = getPermissionsByRoleCode(role.getCode());
-            for (Permission permission : permissions) {
-                permissionSet.add(permission.getCode());
-            }
+        }
+
+        // 非 admin 角色：合并角色权限 + 用户个人权限
+        Set<String> permissionSet = new HashSet<>();
+        for (Role role : roles) {
+            permissionSet.addAll(getPermissionCodesForRole(role.getCode()));
+        }
+
+        // 合并 User.permissions 字段（细粒度菜单权限）
+        User user = userMapper.selectById(userId);
+        if (user != null) {
+            mergeUserPermissions(user, permissionSet);
         }
 
         return new ArrayList<>(permissionSet);
     }
+
+    /**
+     * 根据角色代码获取权限码列表（直接返回字符串，不依赖 DB 查询）
+     */
+    private List<String> getPermissionCodesForRole(String roleCode) {
+        return switch (roleCode) {
+            case "admin" -> List.of("*");
+            case "operator" -> List.of(
+                    "dashboard:view",
+                    "order:list", "order:detail", "order:refund",
+                    "product:list", "product:create", "product:category",
+                    "processing:manage",
+                    "customer:view",
+                    "finance:view",
+                    "agent:session", "agent:quickreply",
+                    "employee:list",
+                    "system:manage"
+            );
+            case "product_manager" -> List.of(
+                    "dashboard:view",
+                    "product:list", "product:create", "product:category",
+                    "processing:manage"
+            );
+            case "knowledge_editor" -> List.of(
+                    "dashboard:view",
+                    "product:list"
+            );
+            default -> List.of();
+        };
+    }
+
+    /**
+     * 合并 User.permissions 字段（JSON 数组）到权限集合
+     */
+    private void mergeUserPermissions(User user, Set<String> permissionSet) {
+        if (user.getPermissions() != null && !user.getPermissions().isEmpty()) {
+            try {
+                List<String> userPerms = OBJECT_MAPPER.readValue(
+                        user.getPermissions(), new TypeReference<List<String>>() {});
+                permissionSet.addAll(userPerms);
+            } catch (Exception e) {
+                log.warn("解析用户 {} 权限 JSON 失败: {}", user.getId(), e.getMessage());
+            }
+        }
+    }
+
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     /**
      * 检查用户是否拥有指定权限
