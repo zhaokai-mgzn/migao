@@ -31,9 +31,7 @@ class DashboardStatsTool(BaseTool):
     name = "dashboard_stats"
     description = (
         "【触发】用户说'今天生意''经营看板''数据概览''订单趋势''状态分布''最近X条订单''活跃会话''看看数据'时，优先用本工具而非 order_query。【何时用】任何看板/趋势/分布/概览类查询。【何时不用】查某个具体订单（用 order_query）、查客服会话详情（用 session_manage）。【前置】action: overview(今日概览)/order_trend(趋势,需days)/order_status(状态分布)/recent_orders(最近,需limit)/active_sessions(活跃,需limit)。days默认7,limit默认5。【标注】READONLY — 经营分析专用，不查具体记录"
-    )
-    required_permissions = ["dashboard:view"]
-    allowed_roles = ["admin", "agent", "tenant_admin"]
+    )    allowed_roles = ["admin", "agent", "tenant_admin"]
 
     parameters = {
         "type": "object",

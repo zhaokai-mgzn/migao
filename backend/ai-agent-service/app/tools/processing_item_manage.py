@@ -36,10 +36,7 @@ class ProcessingItemManageTool(BaseTool):
     name = "processing_item_manage"
     description = (
         "【触发】写加工：用户说'新增加工项''修改加工''删除加工''加工分类管理''算加工价格'时调用。【前置】list_categories(查分类树,安全)。create/update/delete 需确认。【何时不用】仅查看加工项列表用 processing_item_query，不要混淆。【标注】WRITE|DESTRUCTIVE — list_categories安全,增删改需确认"
-    )
-
-    required_permissions = ["processing:manage"]
-    allowed_roles = ["admin", "tenant_admin"]
+    )    allowed_roles = ["admin", "tenant_admin"]
 
     read_only = False
     destructive = True   # 可删除加工项/分类

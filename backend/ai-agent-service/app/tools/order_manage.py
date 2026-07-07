@@ -38,9 +38,7 @@ class OrderManageTool(BaseTool):
         "【触发】用户说'取消订单''退款''修改订单''标记发货''更新物流''确认支付'时调用。【前置】需要 action + order_id。cancel/refund 是破坏性操作，必须二次确认。【反例】仅查看订单用 order_query。创建新订单用 order_create。【标注】WRITE|DESTRUCTIVE — 取消/退款前必须二次确认"
     )
     
-    # admin、agent、tenant_admin 可使用
-    required_permissions = ["order:list"]
-    allowed_roles = ["admin", "agent", "tenant_admin"]
+    # admin、agent、tenant_admin 可使用    allowed_roles = ["admin", "agent", "tenant_admin"]
 
     read_only = False
     destructive = True   # 可取消/退款订单
