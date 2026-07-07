@@ -200,15 +200,17 @@ public class AuthService {
         // 5. 设置租户上下文
         TenantContext.setTenantId(user.getTenantId());
 
-        // 6. 获取用户角色
+        // 6. 获取用户角色和权限
         List<String> roles = userService.getUserRoles(user);
+        List<String> permissions = roleService.getUserPermissions(user.getId());
 
-        // 7. 签发 JWT Token
+        // 7. 签发 JWT Token（含细粒度权限）
         String accessToken = jwtTokenProvider.generateAccessToken(
                 user.getId(),
                 user.getTenantId(),
                 user.getPhone(),
-                roles
+                roles,
+                permissions
         );
 
         String refreshToken = jwtTokenProvider.generateRefreshToken(
@@ -443,15 +445,17 @@ public class AuthService {
             throw BusinessException.authFailed("用户状态异常");
         }
 
-        // 获取用户角色
+        // 获取用户角色和权限
         List<String> roles = userService.getUserRoles(user);
+        List<String> permissions = roleService.getUserPermissions(user.getId());
 
-        // 签发新的 Token
+        // 签发新的 Token（含细粒度权限）
         String newAccessToken = jwtTokenProvider.generateAccessToken(
                 user.getId(),
                 user.getTenantId(),
                 user.getPhone(),
-                roles
+                roles,
+                permissions
         );
 
         String newRefreshToken = jwtTokenProvider.generateRefreshToken(

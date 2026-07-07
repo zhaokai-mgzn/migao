@@ -120,8 +120,9 @@ class AuthServiceTest {
         when(jwtTokenProvider.getUserIdFromToken(refreshToken)).thenReturn("user-001");
         when(userService.getUserById("user-001")).thenReturn(testUser);
         when(userService.getUserRoles(testUser)).thenReturn(List.of("admin"));
+        when(roleService.getUserPermissions("user-001")).thenReturn(List.of("*"));
 
-        when(jwtTokenProvider.generateAccessToken(eq("user-001"), eq(1L), eq("13800138000"), anyList()))
+        when(jwtTokenProvider.generateAccessToken(eq("user-001"), eq(1L), eq("13800138000"), anyList(), anyList()))
                 .thenReturn("new-access-token");
         when(jwtTokenProvider.generateRefreshToken("user-001", 1L))
                 .thenReturn("new-refresh-token");

@@ -75,6 +75,7 @@ public class JwtTokenProvider {
     public static final String CLAIM_TENANT_ID = "tenantId";
     public static final String CLAIM_USERNAME = "username";
     public static final String CLAIM_ROLES = "roles";
+    public static final String CLAIM_PERMISSIONS = "permissions";
     public static final String CLAIM_TOKEN_TYPE = "tokenType";
     public static final String TOKEN_TYPE_ACCESS = "access";
     public static final String TOKEN_TYPE_REFRESH = "refresh";
@@ -211,6 +212,13 @@ public class JwtTokenProvider {
      * @return JWT Token
      */
     public String generateAccessToken(String userId, Long tenantId, String username, List<String> roles) {
+        return generateAccessToken(userId, tenantId, username, roles, List.of());
+    }
+
+    /**
+     * 签发 Access Token（含细粒度权限）
+     */
+    public String generateAccessToken(String userId, Long tenantId, String username, List<String> roles, List<String> permissions) {
         Instant now = Instant.now();
         Instant expiration = now.plusSeconds(accessTokenExpiration);
 
@@ -220,6 +228,7 @@ public class JwtTokenProvider {
                 .claim(CLAIM_TENANT_ID, tenantId)
                 .claim(CLAIM_USERNAME, username)
                 .claim(CLAIM_ROLES, roles)
+                .claim(CLAIM_PERMISSIONS, permissions)
                 .claim(CLAIM_TOKEN_TYPE, TOKEN_TYPE_ACCESS)
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(expiration))
