@@ -43,6 +43,17 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: ⚡ Fast Gate — Critical Tests
+        working-directory: backend/ai-agent-service
+        run: |
+          pip install -r requirements.txt -q
+          python -m pytest \
+            tests/test_intent_router.py \
+            tests/test_preference_tracker.py \
+            tests/test_tools_base.py \
+            -v --tb=short -q \
+            -m "not integration"
+
       - name: Run unit tests
         working-directory: backend/ai-agent-service
         env:
