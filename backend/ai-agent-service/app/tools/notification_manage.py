@@ -55,7 +55,8 @@ class NotificationManageTool(BaseTool):
     name = "notification_manage"
     description = (
         "【触发】用户问'通知''消息''未读''有没有通知''发送通知''标记已读'时调用。【前置】list/unread_count 可查询。mark_read 需要通知ID。create 需要标题+内容+接收人。【反例】快捷回复模板管理用 quick_reply_manage。系统配置用 settings_manage。【标注】WRITE(create/delete) — 发送/删除通知需确认"
-    )    allowed_roles = ["admin", "agent", "tenant_admin"]
+    )
+    allowed_roles = ["admin", "agent", "tenant_admin"]
 
     read_only = False
     destructive = False  # 通知的删除非破坏性（可重新发送）

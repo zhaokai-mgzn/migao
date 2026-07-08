@@ -30,7 +30,8 @@ class CategoryManageTool(BaseTool):
     name = "category_manage"
     description = (
         "【触发】查分类树/新建/删除分类。action=tree 返回每个分类的 id（长字符串如 88b6c50fbc...），这个 id 直接用作 product_manage 的 category_id 参数。tree 是只读安全的。【标注】tree=READONLY, create/delete=DESTRUCTIVE"
-    )    allowed_roles = ["admin", "tenant_admin"]
+    )
+    allowed_roles = ["admin", "tenant_admin"]
 
     read_only = False
     destructive = True   # 可删除分类及子分类

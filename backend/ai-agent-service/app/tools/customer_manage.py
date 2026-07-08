@@ -31,7 +31,8 @@ class CustomerManageTool(BaseTool):
     name = "customer_manage"
     description = (
         "【触发】用户问'客户''顾客''VIP''客户档案''客户标签''给XX打标签''查XX电话'时调用。【前置】支持 action: list/detail/update/add_tag/remove_tag/list_tags/create_tag/update_tag/delete_tag。list 可按 keyword 搜索。detail 需要 customer_id。写操作需确认。【反例】查客户的历史订单用 order_query(customer_phone=XX)，不要用本工具。【标注】WRITE(update/add_tag/remove_tag) — 删除标签/合并客户需二次确认"
-    )    allowed_roles = ["admin", "agent", "tenant_admin"]
+    )
+    allowed_roles = ["admin", "agent", "tenant_admin"]
 
     read_only = False
     destructive = True   # 可删除客户/标签
