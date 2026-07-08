@@ -374,3 +374,80 @@ class TestIntentConfig:
         decision = RouteDecision(intent_result=intent_result, action="full_agent")
         assert decision.direct_reply is None
         assert decision.tool_hint is None
+
+
+# ========== intent_router_node pending_skill 死锁防护 ==========
+
+
+class TestIntentRouterPendingSkill:
+    """pending_skill 存在时的意图路由行为
+
+    修复背景：pending_skill 存在时，intent_router_node 完全跳过 LLM 分类，
+    导致用户被锁死在单一 skill 中无法切换话题。
+    修复后：短消息(≤5字)保留快捷路由，长消息恢复 LLM 分类。
+    """
+
+    def _make_state(self, pending_skill: str, user_message: str):
+        """构造 AgentState，含 pending_skill 和一条用户消息"""
+        from langchain_core.messages import HumanMessage
+        return {
+            "messages": [HumanMessage(content=user_message)],
+            "agent_type": "mibao",
+            "tenant_id": 1,
+            "user_id": 1,
+            "session_id": "test_session",
+            "role": "admin",
+            "pending_interact_skill": pending_skill,
+            "intent_result": None,
+            "route_decision": None,
+        }
+
+    @pytest.mark.asyncio
+    async def test_pending_skill_short_msg_skips_llm(self):
+        """pending_skill='order' + 短消息("查啊") → 跳过 LLM，直接返回合成 intent"""
+        from app.graph.nodes import intent_router_node
+        state = self._make_state("order", "查啊")
+
+        result = await intent_router_node(state)
+
+        assert result["intent_result"]["intent"] == "order_query"
+        assert result["intent_result"]["source"] == "plan_rewrite"
+        assert result["route_decision"]["action"] == "full_agent"
+
+    @pytest.mark.asyncio
+    async def test_pending_skill_long_msg_runs_llm(self):
+        """pending_skill='order' + 长消息("你怎么这么傻了，帮我查商品") → 走 LLM 分类，允许 topic switch"""
+        from app.graph.nodes import intent_router_node
+        state = self._make_state("order", "你怎么这么傻了，帮我查商品")
+
+        # 即使有 pending_skill，long message 应该走 LLM
+        # source 不应该是 "plan_rewrite"（locked shortcut）
+        result = await intent_router_node(state)
+
+        # 应该走 LLM 分类（source 不会是 plan_rewrite）
+        assert result["intent_result"].get("source") != "plan_rewrite", (
+            f"Long message should NOT be locked by pending_skill! "
+            f"Got source={result['intent_result'].get('source')}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_no_pending_skill_runs_llm(self):
+        """无 pending_skill → 正常 LLM 分类"""
+        from app.graph.nodes import intent_router_node
+        state = self._make_state("", "帮我查一下今天的订单")
+
+        result = await intent_router_node(state)
+
+        assert result["intent_result"]["intent"] is not None
+        assert result["intent_result"]["confidence"] > 0
+        # source 应该来自 LLM 或规则，不是 plan_rewrite
+        assert result["intent_result"]["source"] != "plan_rewrite"
+
+    @pytest.mark.asyncio
+    async def test_pending_skill_exactly_five_chars_skips_llm(self):
+        """pending_skill + 5字消息(边界) → 跳过 LLM"""
+        from app.graph.nodes import intent_router_node
+        state = self._make_state("order", "继续查订单")  # exactly 5 chars
+
+        result = await intent_router_node(state)
+        assert result["intent_result"]["source"] == "plan_rewrite"
