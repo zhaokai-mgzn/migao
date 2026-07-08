@@ -100,37 +100,55 @@ def _get_agent_intents(agent_type: str) -> list[str]:
 async def intent_router_node(state: AgentState) -> dict:
     """执行意图路由
 
-    P&E Plan 存在时跳过意图分类，直接返回合成结果（意图重写），
-    节省 LLM 调用且防止短文本（如"1"、"确认"）被误分类。
+    pending_skill 存在时：
+    - 短消息（≤5 字，如"查啊""确认""1"）：跳过 LLM，直接路由到 pending skill
+    - 长消息：仍走 LLM 分类，让 LLM 有机会检测 topic switch
+    防止用户被锁死在单一 skill 中无法退出。
     """
     pending_skill = state.get("pending_interact_skill", "")
     session_id = state.get("session_id", "")
     if pending_skill:
-        # 意图重写：P&E 进行中，直接用 plan 的 skill 覆盖意图
-        # 映射 pending_skill → 对应的 intent，让 route_by_intent 正确路由
-        _SKILL_TO_INTENT = {
-            "product": "product_inquiry",
-            "order": "order_query",
-            "aftersales": "after_sales",
-            "customer": "customer_query",
-            "staff": "employee_manage",
-            "settings": "system_settings",
-            "data": "dashboard",
-            "general": "general",
-        }
-        synthetic_intent = _SKILL_TO_INTENT.get(pending_skill, "general")
+        # 检查最后一条用户消息长度
+        messages = state.get("messages", [])
+        last_user_msg = ""
+        for m in reversed(messages):
+            if hasattr(m, 'type') and m.type == 'human':
+                last_user_msg = m.content if hasattr(m, 'content') else str(m)
+                break
+        msg_len = len(last_user_msg.strip()) if last_user_msg else 0
+
+        # 短消息：沿用 pending_skill 快捷路由（节省 LLM 调用，防止误分类）
+        if msg_len <= 5:
+            _SKILL_TO_INTENT = {
+                "product": "product_inquiry",
+                "order": "order_query",
+                "aftersales": "after_sales",
+                "customer": "customer_query",
+                "staff": "employee_manage",
+                "settings": "system_settings",
+                "data": "dashboard",
+                "general": "general",
+            }
+            synthetic_intent = _SKILL_TO_INTENT.get(pending_skill, "general")
+            logger.info(
+                f"[intent_router] Intent rewrite (short msg): pending_skill={pending_skill}"
+                f" → intent={synthetic_intent} | msg_len={msg_len} | session={session_id}"
+            )
+            return {
+                "intent_result": {
+                    "intent": synthetic_intent,
+                    "confidence": 0.99,
+                    "source": "plan_rewrite",
+                },
+                "route_decision": {"action": "full_agent"},
+            }
+
+        # 长消息：走 LLM 分类，允许 topic switch
         logger.info(
-            f"[intent_router] Intent rewrite: pending_skill={pending_skill} → intent={synthetic_intent}"
-            f" | session={session_id}"
+            f"[intent_router] Long msg with pending_skill, running LLM classification"
+            f" | pending_skill={pending_skill} msg_len={msg_len} session={session_id}"
         )
-        return {
-            "intent_result": {
-                "intent": synthetic_intent,
-                "confidence": 0.99,
-                "source": "plan_rewrite",
-            },
-            "route_decision": {"action": "full_agent"},
-        }
+        # 继续走下面的 LLM 分类流程
 
     from app.router.intent_router import IntentRouter
 
