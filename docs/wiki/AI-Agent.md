@@ -14,36 +14,49 @@ LangGraph 状态图驱动双 Agent：Plan → Execute → Verify。
 ```
 app/
 ├── agents/      # 双Agent定义 + System Prompt
-├── graph/       # LangGraph StateGraph
-│   └── skills/  # Skill节点 + references/(SKILL + EXAMPLES).md
-├── tools/       # 23业务工具
-├── router/      # 意图分类 (LLM + 规则)
+├── graph/       # LangGraph StateGraph (builder, nodes, state, plan_executor)
+│   └── skills/  # 19 Skill节点 + references/(SKILL + EXAMPLES).md
+├── tools/       # 30+ 业务工具
+├── router/      # 意图分类 (L1关键词 + L2 LLM)
 ├── rag/         # BM25 + DashVector + Reranker
 ├── llm/         # LLM工厂/模型路由/成本追踪
 ├── api/         # SSE流式聊天 + 内部API
 ├── cache/       # 语义缓存
-├── memory/      # 会话记忆
+├── memory/      # 会话记忆 (session + user)
+├── core/        # 熔断器 + 降级策略
+├── context/     # 请求上下文追踪
+├── suggestions/ # 主动建议 (follow_up + preference_tracker)
 └── middleware/  # 请求拦截/日志
 ```
 
 ## 意图路由流程
 
 ```
-用户消息 → analyze_intent → dispatch_skill → execute_tools → generate_response
+用户消息 → L1关键词匹配 → L2 LLM分类 → dispatch_skill → execute_tools → generate_response
                 ↑                    ↓
                 └── 追问澄清 ←────────┘
 ```
 
-## 23 Tools
+## 30+ Tools
 
 | 域 | Tools |
 |----|-------|
-| 商品 | product_search, product_detail, product_create, product_update, product_delete |
-| 订单 | order_search, order_detail, order_create, order_update_status, order_ship |
-| 售后 | aftersale_create, aftersale_search, aftersale_update |
+| 商品 | product_search, product_detail, product_manage, category_manage |
+| 订单 | order_search, order_detail, order_create, order_manage, logistics_track |
+| 售后 | aftersale_create, aftersale_query, after_sales_manage |
+| 加工 | processing_item_query, processing_item_manage, processing_items |
+| 库存 | inventory_manage |
+| 客户 | customer_manage |
 | 知识 | knowledge_search, knowledge_upload, knowledge_delete |
-| 客户 | customer_profile, customer_search, customer_tag_update |
-| 系统 | dashboard_stats, system_config, human_handoff, image_analyze |
+| 数据 | dashboard_stats |
+| 会话 | session_manage |
+| 通知 | notification_manage |
+| 人工 | human_handoff, quick_reply_manage |
+| 交互 | interact (confirm卡片/form/choice) |
+| 员工 | employee_manage |
+| 角色 | role_manage |
+| 设置 | settings_manage |
+| 校验 | validate_input |
 
 ## Skill 规范
 

@@ -601,7 +601,7 @@ Content-Type: application/json
 
 ## 5.5 知识库管理 API (admin-api)
 
-> 完整 RAG 技术方案详见 [自建 RAG 知识库技术方案](./rag-architecture.md)。
+> 完整 RAG 技术方案详见 [自建 RAG 知识库技术方案](../architecture/rag-architecture.md)。
 
 ### 5.5.1 创建/上传文档
 
@@ -809,7 +809,7 @@ Content-Type: application/json
 
 ## 6. 客服员工工作台 API (admin-api)
 
-> 完整交互协议（含 WebSocket）详见 [客服员工工作台产品设计](./agent-workspace-design.md#10-API-设计)。
+> 完整交互协议（含 WebSocket）详见 [客服员工工作台产品设计](../design/agent-workspace-design.md#10-API-设计)。
 
 ### 6.1 客服员工认证
 

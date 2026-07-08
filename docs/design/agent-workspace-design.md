@@ -802,7 +802,7 @@ AI 对话中 → 用户触发转人工
 用户端消息流:
 
 AI 阶段:
-用户消息 → API Gateway → ai-agent-service → Hermes Agent → AI 回复 → SSE 返回用户
+用户消息 → API Gateway → ai-agent-service → LangGraph Agent → AI 回复 → SSE 返回用户
 
 转人工后:
 用户消息 → API Gateway → admin-api → WebSocket → 客服员工小程序/H5

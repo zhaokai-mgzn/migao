@@ -1,6 +1,10 @@
 # AI 智能客服系统 - 完整架构设计文档
 
-> 版本：v8.0  
+> **⚠️ 历史参考文档** — 本文档为 v8.0 时期的设计记录（2026-04-12），部分内容已过时。
+> **当前实现使用 LangGraph StateGraph**（非 Hermes Agent），模型为 **DeepSeek V4 Pro**（非 qwen-turbo/plus）。
+> **最新架构概览见**: [`docs/wiki/AI-Agent.md`](../wiki/AI-Agent.md) · [`docs/wiki/Architecture.md`](../wiki/Architecture.md)
+
+> 版本：v8.0 (历史版本)  
 > 日期：2026-04-12  
 > 状态：2 服务架构 + 租户自定义 AI 配置 + 公众号 OAuth + 自建 RAG（DashVector）+ 客服员工工作台
 
@@ -458,7 +462,7 @@ CREATE TABLE tenant_ai_configs (
 
 ### 5.1.2 客服工作台数据表
 
-客服员工工作台（Agent Workspace）相关的 4 张核心表：`agent_employees`、`agent_sessions`、`agent_messages`、`quick_reply_templates`，完整 schema 和字段说明详见 [客服员工工作台产品设计](./agent-workspace-design.md#9-数据模型)。
+客服员工工作台（Agent Workspace）相关的 4 张核心表：`agent_employees`、`agent_sessions`、`agent_messages`、`quick_reply_templates`，完整 schema 和字段说明详见 [客服员工工作台产品设计](../design/agent-workspace-design.md#9-数据模型)。
 
 **核心流程**：
 ```
@@ -646,7 +650,7 @@ data: {"session_id": "sess_abc123"}
 
 ### 8.3 Terraform 基础设施
 
-详见 [阿里云部署方案](./deployment-aliyun.md)
+详见 [阿里云部署方案](../deployment/deployment-aliyun.md)
 
 核心资源：
 - VPC + 安全组

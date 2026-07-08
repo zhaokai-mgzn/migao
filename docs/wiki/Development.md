@@ -81,7 +81,6 @@ Commit: `feat(frontend): 描述` / `fix(backend): 描述` / `test:` / `refactor:
 - ❌ 军师写业务 case 终稿
 
 ### 参考
-- 模板库：`docs/verification-templates/`
-- 使用手册：`docs/verification-handbook.md`
-- 研发流程：`docs/case-review-workflow.md`
+- 军师验证流水线：`.github/workflows/junshi-*.yml`（case-draft / redraft / verify-trigger）
+- 研发流程：TDD → PR → CI Gate → 军师双验收 → AutoMerge → Close
 - 详情见 issue #450 v3.1

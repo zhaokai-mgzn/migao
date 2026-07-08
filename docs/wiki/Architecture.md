@@ -4,7 +4,7 @@
 
 ```
 小程序(SSE) + 管理后台(REST)
-    → Admin API(:8081, Java)  ←→  AI Agent(:8000, Python)
+    → Admin API(:8080, Java)  ←→  AI Agent(:8000, Python/LangGraph)
     → PostgreSQL(39表,RLS) + Redis + DashVector + DeepSeek/MiniMax
 ```
 
@@ -27,10 +27,10 @@
 
 **系统**: notifications, notification_templates, system_configs, login_logs, audit_logs
 
-## AI 对话流
+## AI 对话流 (LangGraph StateGraph)
 
 ```
-消息 → 意图分类 → Skill选择 → Plan(Tool列表) → Execute(调用) → Verify(检查)
+消息 → 意图分类(L1关键词+L2 LLM) → Skill选择 → Plan(Tool列表) → Execute(调用) → Verify(检查)
 → 追问澄清? → 回到Execute : → Response(含confirm卡片/form)
 → SSE流式推送
 ```

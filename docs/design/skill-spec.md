@@ -1,8 +1,10 @@
-# Hermes Tool 规范
+# Tool 设计规范 (历史参考)
 
-> 版本：v8.0（Review 修订版 + CRM 客户管理 Tool）  
-> 日期：2026-04-12  
-> 变更：从自定义 Skill 框架全面改写为 Hermes Agent Tool 规范（function calling 标准）
+> **⚠️ 历史文档** — 本文档为 v8.0 时期的 Hermes Tool 规范，API 示例基于 `packages/hermes_tools/`（该目录已不存在）。
+> **当前 Tool/Skill 设计标准见**: [`docs/wiki/agent-design-standard.md`](../wiki/agent-design-standard.md) — 基于 LangGraph + Tool Schema 驱动行为。
+
+> 版本：v8.0（已归档）  
+> 日期：2026-04-12
 
 ---
 

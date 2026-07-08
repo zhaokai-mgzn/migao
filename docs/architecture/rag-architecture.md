@@ -1,4 +1,7 @@
-# 自建 RAG 知识库技术方案
+# 自建 RAG 知识库技术方案 (历史参考)
+
+> **⚠️ 历史参考文档** — v8.0 时期设计，RAG 核心架构仍然适用，但代码示例中的 Hermes Agent 引用已过时。
+> **当前 RAG 实现见**: [`docs/wiki/AI-Agent.md`](../wiki/AI-Agent.md) § RAG Pipeline
 
 > 版本：v8.0
 > 日期：2026-04-12
