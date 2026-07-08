@@ -1130,7 +1130,7 @@ async def suggestion_feedback(
             tracker = PreferenceTracker()
             await tracker.record_click(
                 tenant_id=current_user.tenant_id,
-                user_id=int(current_user.user_id) if current_user.user_id else 0,
+                user_id=str(current_user.user_id) if current_user.user_id else "",
                 intent_type=intent_type,
                 suggestion_text=suggestion_text,
             )

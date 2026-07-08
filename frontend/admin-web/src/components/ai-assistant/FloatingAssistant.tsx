@@ -437,6 +437,23 @@ export default function FloatingAssistant() {
       })
 
       if (!response.ok) {
+        // 409: 会话已关闭 → 自动创建新会话后重试
+        if (response.status === 409) {
+          try {
+            const errData = await response.json()
+            const errCode = errData?.detail?.error?.code || errData?.error?.code || ''
+            if (errCode === 'SESSION_CLOSED') {
+              // 关闭旧会话，创建新会话，移除当前 AI 消息并重试
+              setMessages((prev) => prev.filter((m) => m.id !== aiMsgId))
+              setIsStreaming(false)
+              persistSession(null)
+              setInput(text)
+              return
+            }
+          } catch {
+            // 解析失败走通用错误
+          }
+        }
         throw new Error(`请求失败: ${response.status}`)
       }
 

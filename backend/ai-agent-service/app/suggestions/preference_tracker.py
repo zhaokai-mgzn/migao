@@ -69,7 +69,7 @@ class PreferenceTracker:
     async def record_click(
         self,
         tenant_id: int,
-        user_id: int,
+        user_id: str,
         intent_type: str,
         suggestion_text: str = "",
     ) -> None:
@@ -77,11 +77,17 @@ class PreferenceTracker:
 
         Args:
             tenant_id: 租户 ID
-            user_id: 用户 ID
+            user_id: 用户 ID（字符串，兼容 VARCHAR 类型）
             intent_type: 当前对话的意图类型
             suggestion_text: 被点击的建议文本（仅用于日志）
         """
         if not tenant_id or not user_id:
+            return
+        # user_id 可能是非数字字符串（如 user_admin_001），DB 列是 BIGINT
+        # 无法转换时静默跳过，不阻塞主流程
+        try:
+            user_id_int = int(user_id)
+        except (ValueError, TypeError):
             return
 
         db = await self._get_session()
@@ -97,7 +103,7 @@ class PreferenceTracker:
             """)
             await db.execute(sql, {
                 "tenant_id": tenant_id,
-                "user_id": user_id,
+                "user_id": user_id_int,
                 "intent_type": intent_type,
             })
             await db.commit()
@@ -115,7 +121,7 @@ class PreferenceTracker:
     async def get_top_intents(
         self,
         tenant_id: int,
-        user_id: int,
+        user_id: str,
         limit: int = 5,
     ) -> list[dict]:
         """获取用户 TOP N 偏好意图
@@ -124,6 +130,10 @@ class PreferenceTracker:
             [{"intent_type": "order_query", "click_count": 12, "label": "订单查询"}, ...]
         """
         if not tenant_id or not user_id:
+            return []
+        try:
+            user_id_int = int(user_id)
+        except (ValueError, TypeError):
             return []
 
         db = await self._get_session()
@@ -137,7 +147,7 @@ class PreferenceTracker:
             """)
             result = await db.execute(sql, {
                 "tenant_id": tenant_id,
-                "user_id": user_id,
+                "user_id": user_id_int,
                 "limit": limit,
             })
             rows = result.fetchall()
@@ -159,7 +169,7 @@ class PreferenceTracker:
     async def get_user_stats(
         self,
         tenant_id: int,
-        user_id: int,
+        user_id: str,
     ) -> dict:
         """获取用户偏好统计摘要
 
@@ -167,6 +177,10 @@ class PreferenceTracker:
             {"total_clicks": 42, "top_intents": [...], "distinct_intents": 5}
         """
         if not tenant_id or not user_id:
+            return {"total_clicks": 0, "top_intents": [], "distinct_intents": 0}
+        try:
+            user_id_int = int(user_id)
+        except (ValueError, TypeError):
             return {"total_clicks": 0, "top_intents": [], "distinct_intents": 0}
 
         db = await self._get_session()
@@ -180,10 +194,10 @@ class PreferenceTracker:
             """)
             result = await db.execute(sql, {
                 "tenant_id": tenant_id,
-                "user_id": user_id,
+                "user_id": user_id_int,
             })
             row = result.fetchone()
-            top_intents = await self.get_top_intents(tenant_id, user_id, limit=5)
+            top_intents = await self.get_top_intents(tenant_id, str(user_id_int), limit=5)
             return {
                 "total_clicks": row[0] if row else 0,
                 "distinct_intents": row[1] if row else 0,
