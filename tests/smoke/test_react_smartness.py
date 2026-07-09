@@ -9,9 +9,9 @@ ReAct 聪明度多轮对话测试
 import json
 import os
 import re
+import subprocess
 import sys
 import time
-import httpx
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -51,100 +51,87 @@ class ScenarioResult:
     passed: bool = False
     notes: list = field(default_factory=list)
 
-def create_session(client: httpx.Client) -> str:
+def _curl(method: str, path: str, body: dict = None) -> dict:
+    """Use curl subprocess to avoid httpx Unicode issues in CI."""
+    url = f"{AI_AGENT_URL}{path}"
+    cmd = ["curl", "-s", "-X", method, url,
+           "-H", f"X-Service-Token: {SERVICE_TOKEN}",
+           "-H", "Content-Type: application/json; charset=utf-8"]
+    if body:
+        cmd += ["-d", json.dumps(body, ensure_ascii=False)]
+    result = subprocess.run(cmd, capture_output=True, timeout=120)
+    raw = result.stdout
     try:
-        resp = client.post(
-            f"{AI_AGENT_URL}/api/chat/sessions",
-            content=json.dumps({"client_type": "web"}).encode("utf-8"),
-            headers={
-                "X-Service-Token": SERVICE_TOKEN,
-                "Content-Type": "application/json; charset=utf-8",
-            },
-        )
-        raw = resp.content
-        try:
-            data = json.loads(raw)
-        except json.JSONDecodeError:
-            # Server returned non-JSON - sanitize for ASCII output
-            safe = raw.decode("utf-8", errors="replace")[:200]
-            raise RuntimeError(f"Non-JSON response: HTTP {resp.status_code}: {safe}")
-        if not data.get("success"):
-            raise RuntimeError(f"Session failed: HTTP {resp.status_code} err={data.get('detail', 'unknown')}")
-        return data["data"]["session_id"]
-    except RuntimeError:
-        raise
-    except Exception as e:
-        raise RuntimeError(f"Session creation error: {type(e).__name__}") from e
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        raise RuntimeError(f"curl failed: HTTP {result.returncode}: {raw[:200]}")
 
-def send_message(client: httpx.Client, session_id: str, message: str) -> TurnResult:
-    """发送消息并解析 SSE 流，提取 tool_calls"""
+def create_session() -> str:
+    data = _curl("POST", "/api/chat/sessions", {"client_type": "web"})
+    if not data.get("success"):
+        raise RuntimeError(f"Session failed: {data}")
+    return data["data"]["session_id"]
+
+def send_message(session_id: str, message: str) -> TurnResult:
     start = time.time()
     result = TurnResult(turn=0, message=message)
-
     try:
-        with client.stream(
-            "POST",
-            f"{AI_AGENT_URL}/api/chat/messages",
-            content=json.dumps({"session_id": session_id, "message": message}, ensure_ascii=False).encode("utf-8"),
-            headers={
-                "X-Service-Token": SERVICE_TOKEN,
-                "Content-Type": "application/json; charset=utf-8",
-            },
-            timeout=120.0,
-        ) as response:
-            current_event = None
-            for raw_line in response.iter_lines():
-                line = raw_line.decode("utf-8") if isinstance(raw_line, bytes) else raw_line
+        url = f"{AI_AGENT_URL}/api/chat/messages"
+        cmd = ["curl", "-s", "-N", "-X", "POST", url,
+               "-H", f"X-Service-Token: {SERVICE_TOKEN}",
+               "-H", "Content-Type: application/json; charset=utf-8",
+               "-d", json.dumps({"session_id": session_id, "message": message}, ensure_ascii=False)]
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+        current_event = None
+        buffer = b""
+        while True:
+            chunk = proc.stdout.read(1)
+            if not chunk:
+                break
+            buffer += chunk
+            if chunk == b"\n":
+                line = buffer.decode("utf-8", errors="replace").strip()
+                buffer = b""
                 if line.startswith("event: "):
-                    current_event = line[7:].strip()
+                    current_event = line[7:]
                 elif line.startswith("data: "):
-                    data_str = line[6:]
                     try:
-                        data = json.loads(data_str)
+                        data = json.loads(line[6:])
                     except json.JSONDecodeError:
                         continue
-
                     result.sse_events.append({"event": current_event, "data": data})
-
                     if current_event == "message":
                         msg_type = data.get("type", "")
                         if msg_type == "tool_call":
-                            result.tool_calls.append({
-                                "tool": data.get("tool", ""),
-                                "args": data.get("args", {}),
-                            })
+                            result.tool_calls.append({"tool": data.get("tool", ""), "args": data.get("args", {})})
                         elif msg_type == "text":
                             result.final_text += data.get("content", "")
-                    elif current_event == "done":
-                        pass
+        proc.wait(timeout=120)
     except Exception as e:
-        result.error = str(e)
-
+        result.error = f"{type(e).__name__}: {str(e)[:100]}"
     result.latency_ms = (time.time() - start) * 1000
     return result
 
 def run_scenario(name: str, messages: list[str]) -> ScenarioResult:
     """运行一组多轮对话场景"""
     result = ScenarioResult(name=name)
-    client = httpx.Client(timeout=120.0, follow_redirects=True)
-    client.headers["Accept-Charset"] = "utf-8"
-
     try:
-        sid = create_session(client)
+        sid = create_session()
         print(f"\n{'='*60}")
         print(f"[TEST] {name}")
         print(f"{'='*60}")
 
         for i, msg in enumerate(messages, 1):
-            print(f"\n[轮 {i}] >> {msg}")
-            turn = send_message(client, sid, msg)
+            print(f"\n[Turn {i}] >> {msg}")
+            turn = send_message(sid, msg)
             turn.turn = i
             result.turns.append(turn)
 
             tools_str = ", ".join(
                 f"{tc['tool']}({json.dumps(tc['args'], ensure_ascii=False)[:80]})"
                 for tc in turn.tool_calls
-            ) if turn.tool_calls else "无"
+            ) if turn.tool_calls else "none"
             print(f"        [TOOLS] {tools_str}")
 
             if turn.final_text:
@@ -159,8 +146,6 @@ def run_scenario(name: str, messages: list[str]) -> ScenarioResult:
     except Exception as e:
         result.notes.append(f"Scenario error: {e}")
         print(f"   [FAIL] Scenario failed: {e}")
-    finally:
-        client.close()
 
     return result
 
