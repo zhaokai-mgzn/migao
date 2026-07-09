@@ -42,11 +42,13 @@ class ScenarioResult:
 def create_session(client: httpx.Client) -> str:
     resp = client.post(
         f"{AI_AGENT_URL}/api/chat/sessions",
-        json={"client_type": "web"},
-        headers={"X-Service-Token": SERVICE_TOKEN, "Content-Type": "application/json; charset=utf-8"},
+        content=json.dumps({"client_type": "web"}, ensure_ascii=False).encode("utf-8"),
+        headers={
+            "X-Service-Token": SERVICE_TOKEN,
+            "Content-Type": "application/json; charset=utf-8",
+        },
     )
-    resp.encoding = "utf-8"
-    data = resp.json()
+    data = json.loads(resp.content.decode("utf-8"))
     if not data.get("success"):
         raise RuntimeError(f"创建Session失败: {data}")
     return data["data"]["session_id"]
@@ -60,12 +62,16 @@ def send_message(client: httpx.Client, session_id: str, message: str) -> TurnRes
         with client.stream(
             "POST",
             f"{AI_AGENT_URL}/api/chat/messages",
-            json={"session_id": session_id, "message": message},
-            headers={"X-Service-Token": SERVICE_TOKEN, "Content-Type": "application/json"},
+            content=json.dumps({"session_id": session_id, "message": message}, ensure_ascii=False).encode("utf-8"),
+            headers={
+                "X-Service-Token": SERVICE_TOKEN,
+                "Content-Type": "application/json; charset=utf-8",
+            },
             timeout=120.0,
         ) as response:
             current_event = None
-            for line in response.iter_lines():
+            for raw_line in response.iter_lines():
+                line = raw_line.decode("utf-8") if isinstance(raw_line, bytes) else raw_line
                 if line.startswith("event: "):
                     current_event = line[7:].strip()
                 elif line.startswith("data: "):
