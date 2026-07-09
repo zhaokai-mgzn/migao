@@ -48,7 +48,6 @@ def create_session(client: httpx.Client) -> str:
             "Content-Type": "application/json; charset=utf-8",
         },
     )
-    print(f"  [DEBUG] Session HTTP {resp.status_code}: {resp.content[:200]}")
     data = json.loads(resp.content.decode("utf-8"))
     if not data.get("success"):
         raise RuntimeError(f"创建Session失败: {data}")
