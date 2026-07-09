@@ -991,6 +991,43 @@ async def _self_correct_retry(
         return None
 
 
+async def _smart_fallback(
+    skill_name: str,
+    messages: list,
+    new_messages: list,
+    session_id: str,
+) -> str:
+    """智能兜底回复 — 让 LLM 根据已有上下文生成自然优雅的降级回复。
+
+    在所有异常路径（超时、错误、空回复、达到最大迭代次数）中调用，
+    避免硬编码的"抱歉，系统异常"类生硬文案。
+    """
+    try:
+        from app.llm import LLMFactory
+        from langchain_core.messages import HumanMessage
+
+        prompt = (
+            "请基于以上对话内容和工具执行结果，生成一个自然、有帮助的回复。\n\n"
+            "要求：\n"
+            "1. 如果工具有返回数据 → 基于已有数据回答，诚实说明哪些信息未能获取\n"
+            "2. 如果工具全部失败 → 礼貌告知当前遇到问题，建议通过页面操作或稍后重试\n"
+            "3. 不要道歉过度，不要暴露技术细节（如超时/异常/循环等术语）\n"
+            "4. 语气与之前对话保持一致"
+        )
+        all_msgs = list(messages) + list(new_messages) + [HumanMessage(content=prompt)]
+        response = await LLMFactory.invoke_text_safe(all_msgs, force_no_think=True)
+        if response and len(response.strip()) >= 10:
+            logger.info(
+                f"[{skill_name}][smart-fallback] Generated graceful reply | "
+                f"len={len(response)} session={session_id}"
+            )
+            return response.strip()
+    except Exception as e:
+        logger.warning(f"[{skill_name}][smart-fallback] LLM fallback failed: {e}")
+
+    return "抱歉，我暂时无法完成这个请求，请您稍后重试或通过页面直接操作。"
+
+
 async def execute_skill(
     state: AgentState,
     skill_name: str,
@@ -1490,11 +1527,11 @@ async def execute_skill(
                         f"[{skill_name}][SLS] LLM call TIMEOUT after 60s | "
                         f"iteration={iteration + 1} tenant={state['tenant_id']} session={session_id}"
                     )
-                    # 检查是否已熔断，熔断后用超友好的提示
-                    if get_breaker(LLM_BREAKER).is_open():
-                        final_content = LLM_FALLBACK_MESSAGE
-                    else:
-                        final_content = "抱歉，AI 响应超时，请稍后重试。"
+                    logger.warning(
+                        f"[{skill_name}][SLS] LLM call TIMEOUT | "
+                        f"iteration={iteration + 1} tenant={state['tenant_id']} session={session_id}"
+                    )
+                    final_content = await _smart_fallback(skill_name, raw_messages, new_messages, session_id)
                     break
                 except Exception as e:
                     tb = traceback.format_exc()
@@ -1503,11 +1540,7 @@ async def execute_skill(
                         f"tenant={state['tenant_id']} session={session_id} "
                         f"error={type(e).__name__}: {e} | traceback={tb[:500]}"
                     )
-                    # 连续失败达到阈值后熔断器已进入 OPEN，错误提示更友好
-                    if get_breaker(LLM_BREAKER).is_open():
-                        final_content = LLM_FALLBACK_MESSAGE
-                    else:
-                        final_content = "抱歉，AI 响应异常，请稍后重试。"
+                    final_content = await _smart_fallback(skill_name, raw_messages, new_messages, session_id)
                     break
                 new_messages.append(response)
 
@@ -1518,12 +1551,11 @@ async def execute_skill(
                     if new_text:
                         final_content = new_text
                     elif not final_content:
-                        # LLM 返回空、且前面也没有文本 → 兜底提示
-                        final_content = "抱歉，我遇到了一些问题，请重新描述您的需求。"
                         logger.warning(
                             f"[{skill_name}] LLM returned empty final reply | "
                             f"raw_content_len={len(response.content or '')}"
                         )
+                        final_content = await _smart_fallback(skill_name, raw_messages, new_messages, session_id)
                     else:
                         # LLM 返回空但前面已有文本（如 tool 前的文本）→ 保留之前的内容
                         logger.info(
@@ -1534,11 +1566,11 @@ async def execute_skill(
 
                 # 有 tool_calls 但 LLM 可能在同一个消息中先输出了文本
                 # 提取该文本作为 final_content，确保 interact 等场景下有文本展示
+                # 工具调用前的文本只是 LLM 推理过程，不是最终回复，不暴露给用户
                 text_before_tools = _extract_content(response)
-                if text_before_tools and not final_content:
-                    final_content = text_before_tools
+                if text_before_tools:
                     logger.info(
-                        f"[{skill_name}] Extracted text before tool_calls | len={len(text_before_tools)}"
+                        f"[{skill_name}] Reasoning before tool_calls (not shown to user) | len={len(text_before_tools)}"
                     )
 
                 # 执行每个 tool_call — 统一经 ToolExecutionPipeline（NEW）
@@ -1558,12 +1590,11 @@ async def execute_skill(
                         logger.warning(
                             f"[{skill_name}] SAME_TOOL_LOOP: {tool_name} called "
                             f"{tool_call_counts[loop_key]} times with identical args | "
-                            f"session={session_id} — forcing break"
+                            f"session={session_id} — skipping duplicate, LLM will respond naturally"
                         )
-                        if not final_content:
-                            final_content = "请从上方的选项中选择,或告诉我其他需求。"
-                        ctx.interact_called = True
-                        break
+                        # 跳过重复调用但不强制中断：前 2 次已拿到 tool 结果，
+                        # LLM 在下轮 iteration 可以基于已有数据生成自然回复
+                        continue
 
                     ctx.tool_call = tool_call
                     ctx.tool_instance = None
@@ -1577,12 +1608,14 @@ async def execute_skill(
                 if ctx.interact_called:
                     break
             else:
-                # 达到最大迭代次数，取最后一条 AI 消息内容
+                # 达到最大迭代次数 → 智能兜底
                 if new_messages:
                     last_ai = [m for m in new_messages if isinstance(m, AIMessage)]
                     if last_ai:
                         extracted = _extract_content(last_ai[-1])
-                        final_content = extracted or "抱歉，处理超时，请稍后重试。"
+                        final_content = extracted or await _smart_fallback(skill_name, raw_messages, new_messages, session_id)
+                if not final_content:
+                    final_content = await _smart_fallback(skill_name, raw_messages, new_messages, session_id)
 
     # 6. 更新实体
     entities = {}
@@ -1596,12 +1629,12 @@ async def execute_skill(
             "amounts": extracted.amounts,
         }
 
-    # 7. 兜底：如果所有迭代后仍无内容，根据上下文生成友好提示
+    # 7. 兜底：如果所有迭代后仍无内容，用 LLM 智能生成
     if not final_content:
         if ctx.interact_called:
             final_content = "请查看并选择以下选项："
         else:
-            final_content = "抱歉，我遇到了一些问题，请重新描述您的需求，我会继续帮您处理。"
+            final_content = await _smart_fallback(skill_name, raw_messages, new_messages, session_id)
         logger.warning(
             f"[{skill_name}] Empty final_content after all iterations | "
             f"tenant={state['tenant_id']} session={session_id} "
