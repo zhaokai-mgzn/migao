@@ -1222,10 +1222,10 @@ async def get_quick_actions(
             "prompt": "查看今日经营数据",
         },
         {
-            "id": "customer_manage",
-            "name": "客户管理",
-            "icon": "users",
-            "prompt": "查看客户列表",
+            "id": "after_sales",
+            "name": "售后管理",
+            "icon": "headphones",
+            "prompt": "查看售后工单",
         },
     ]
     
