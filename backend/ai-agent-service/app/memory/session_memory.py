@@ -525,6 +525,13 @@ class SessionMemory:
                 })
                 await db.commit()
                 affected = result.rowcount or 0
+
+                # 清理 Redis 关联数据（collected_fields 跨轮字段记忆）
+                try:
+                    await self.clear_collected_fields(session_id)
+                except Exception:
+                    pass  # Redis 清理失败不影响主流程
+
                 logger.info(
                     f"[session-memory] Session closed | session_id={session_id} affected={affected}"
                 )

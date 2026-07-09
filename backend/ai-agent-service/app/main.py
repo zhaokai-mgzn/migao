@@ -27,18 +27,24 @@ from app.utils.database import init_db, close_db
 from app.utils.redis_client import init_redis, close_redis
 
 # 会话空闲自动关闭配置
-SESSION_AUTO_CLOSE_MINUTES = 30     # 空闲超时分钟数
+SESSION_AUTO_CLOSE_MINUTES = 240    # 空闲超时分钟数（4 小时）
 SESSION_CLEANUP_INTERVAL = 300      # 后台扫描间隔（秒）
+SESSION_RETENTION_DAYS = 90         # 已关闭会话保留天数
 
 
 async def _session_auto_close_loop():
-    """后台循环：定期扫描并关闭空闲超过阈值的活跃会话"""
-    from app.memory.session_memory import SessionMemoryManager
+    """后台循环：定期扫描并关闭空闲会话 + 每日清理过期已关闭会话"""
+    from datetime import datetime
+    from app.memory.session_memory import SessionMemory
 
-    session_memory = SessionMemoryManager()
+    session_memory = SessionMemory()
+    last_cleanup_date = None
+
     while True:
         try:
             await asyncio.sleep(SESSION_CLEANUP_INTERVAL)
+
+            # 1. 关闭空闲会话
             count = await session_memory.close_idle_sessions(
                 idle_minutes=SESSION_AUTO_CLOSE_MINUTES
             )
@@ -47,6 +53,20 @@ async def _session_auto_close_loop():
                     f"[auto-close] Background task closed {count} idle sessions "
                     f"(idle > {SESSION_AUTO_CLOSE_MINUTES}min)"
                 )
+
+            # 2. 每天清理一次过期已关闭会话
+            today = datetime.utcnow().date()
+            if last_cleanup_date != today:
+                deleted = await session_memory.cleanup_closed_sessions(
+                    older_than_days=SESSION_RETENTION_DAYS
+                )
+                if deleted > 0:
+                    logger.info(
+                        f"[auto-cleanup] Removed {deleted} expired closed sessions "
+                        f"(older than {SESSION_RETENTION_DAYS}d)"
+                    )
+                last_cleanup_date = today
+
         except asyncio.CancelledError:
             raise
         except Exception as e:

@@ -13,7 +13,7 @@ import json
 import time
 import traceback
 from typing import AsyncGenerator, Optional, List, Dict, Any, Union
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -37,8 +37,9 @@ from app.utils.auth import get_current_user, UserIdentity
 
 router = APIRouter()
 
-# 会话空闲超时：超过该时间未收到新消息，下一次 send 时自动关闭旧会话并新建
-SESSION_IDLE_TIMEOUT_MINUTES = 30
+# 会话空闲超时：由后台任务 _session_auto_close_loop 统一处理（main.py）
+# send 路径不再做超时检测和会话轮换，仅拒绝已 closed 会话（409）
+SESSION_IDLE_TIMEOUT_MINUTES = 240
 
 
 # ============ 辅助函数 ============
@@ -567,37 +568,8 @@ async def send_message(
                     }
                 }
             )
-        # 方案 B：空闲超时自动关闭旧会话并新建
-        try:
-            last_msg_time = await session_memory.get_last_message_time(session_id)
-            if last_msg_time is not None:
-                now = datetime.now(timezone.utc)  # aware datetime，与 DB 返回一致
-                if (now - last_msg_time) > timedelta(minutes=SESSION_IDLE_TIMEOUT_MINUTES):
-                    logger.info(
-                        f"[chat/send] Session idle timeout, rotating | session={session_id} "
-                        f"last_msg={last_msg_time} threshold={SESSION_IDLE_TIMEOUT_MINUTES}min"
-                    )
-                    try:
-                        await session_memory.close_session(session_id)
-                    except Exception as close_err:
-                        logger.warning(
-                            f"[chat/send] close_session failed during rotation | "
-                            f"session={session_id} error={close_err}"
-                        )
-                    # 新建会话承接本次发送（不再强制关闭其他活跃会话）
-                    session_id = await session_memory.create_session(
-                        tenant_id=tenant_id,
-                        customer_id=user_id,
-                        title=None,
-                    )
-                    # 方案 B：旧会话已因超时关闭，新会话承接
-        except HTTPException:
-            raise
-        except Exception as idle_err:
-            logger.warning(
-                f"[chat/send] Idle-timeout check failed (non-fatal) | "
-                f"session={session_id} error={idle_err}"
-            )
+        # 空闲超时统一由后台任务 _session_auto_close_loop 处理，
+        # send 路径不做会话轮换，避免 session_id 突变导致前端状态不一致
     
     async def event_stream():
         try:

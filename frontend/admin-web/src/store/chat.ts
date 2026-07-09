@@ -264,8 +264,15 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   },
 
   sendMessage: async (content: string, images?: string[]) => {
-    const { currentSessionId, isStreaming, messages } = get()
+    const { currentSessionId, isStreaming, messages, sessions } = get()
     if (!currentSessionId || isStreaming || !content.trim()) return
+
+    // 拒绝向已关闭会话发送消息
+    const currentSession = sessions.find(s => s.session_id === currentSessionId)
+    if (currentSession?.status === 'closed') {
+      toast.error('会话已结束，请创建新对话')
+      return
+    }
 
     const abortController = new AbortController()
 
@@ -363,22 +370,16 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       const isSessionClosed = error?.isSessionClosed === true || error?.status === 409
 
       if (isSessionClosed) {
-        // 会话已被后端关闭（空闲超时或其他原因），自动创建新会话
+        // 会话已被后端关闭，提示用户手动创建新对话
         set(state => ({
           isStreaming: false,
           messages: state.messages.map(msg =>
             msg.id === aiMsgId
-              ? { ...msg, content: '会话已过期，正在为您创建新会话...', isStreaming: false }
+              ? { ...msg, content: '会话已结束，请点击"新建对话"开始新会话。', isStreaming: false }
               : msg
           ),
         }))
-        // 自动创建新会话并准备重试
-        try {
-          await get().createSession()
-          toast.info('已创建新会话，请重新发送消息')
-        } catch (e) {
-          toast.error('会话已过期，请手动创建新对话')
-        }
+        toast.error('会话已结束，请创建新对话')
         return
       }
 
