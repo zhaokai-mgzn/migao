@@ -51,12 +51,20 @@ class ScenarioResult:
     passed: bool = False
     notes: list = field(default_factory=list)
 
+# Write token to file to avoid shell encoding issues
+_TOKEN_FILE = "/tmp/smoke_token"
+with open(_TOKEN_FILE, "w", encoding="utf-8") as f:
+    f.write(SERVICE_TOKEN)
+
 def _curl(method: str, path: str, body: dict = None) -> dict:
-    """Use curl subprocess to avoid httpx Unicode issues in CI."""
     url = f"{AI_AGENT_URL}{path}"
-    cmd = ["curl", "-s", "-X", method, url,
-           "-H", f"X-Service-Token: {SERVICE_TOKEN}",
+    cmd = ["curl", "-s", "--connect-timeout", "10", "--max-time", "120",
+           "-X", method, url,
+           "-H", f"@/tmp/smoke_token_header",
            "-H", "Content-Type: application/json; charset=utf-8"]
+    # Write header file each time (curl doesn't support -H with @ inline)
+    with open("/tmp/smoke_token_header", "w", encoding="utf-8") as f:
+        f.write(f"X-Service-Token: {SERVICE_TOKEN}")
     if body:
         cmd += ["-d", json.dumps(body, ensure_ascii=False)]
     result = subprocess.run(cmd, capture_output=True, timeout=120)
@@ -64,7 +72,7 @@ def _curl(method: str, path: str, body: dict = None) -> dict:
     try:
         return json.loads(raw)
     except json.JSONDecodeError:
-        raise RuntimeError(f"curl failed: HTTP {result.returncode}: {raw[:200]}")
+        raise RuntimeError(f"curl failed: exit={result.returncode} stderr={result.stderr[:200]} raw={raw[:200]}")
 
 def create_session() -> str:
     data = _curl("POST", "/api/chat/sessions", {"client_type": "web"})
@@ -77,11 +85,16 @@ def send_message(session_id: str, message: str) -> TurnResult:
     result = TurnResult(turn=0, message=message)
     try:
         url = f"{AI_AGENT_URL}/api/chat/messages"
-        cmd = ["curl", "-s", "-N", "-X", "POST", url,
-               "-H", f"X-Service-Token: {SERVICE_TOKEN}",
-               "-H", "Content-Type: application/json; charset=utf-8",
-               "-d", json.dumps({"session_id": session_id, "message": message}, ensure_ascii=False)]
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        with open("/tmp/smoke_token_header", "w", encoding="utf-8") as f:
+            f.write(f"X-Service-Token: {SERVICE_TOKEN}")
+        body = json.dumps({"session_id": session_id, "message": message}, ensure_ascii=False)
+        proc = subprocess.Popen(
+            ["curl", "-s", "-N", "--connect-timeout", "10", "--max-time", "120",
+             "-X", "POST", url,
+             "-H", "@/tmp/smoke_token_header",
+             "-H", "Content-Type: application/json; charset=utf-8",
+             "-d", body],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
         current_event = None
         buffer = b""
