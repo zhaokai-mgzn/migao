@@ -354,12 +354,6 @@ async def _agent_stream_to_sse(
                                     if component_type in ("choice", "confirm", "form"):
                                         yield SSEEvent.interactive(component_type, data)
 
-                    elif response.type == "suggestions":
-                        # 后续问题建议（来自 LangGraph suggestions_node）
-                        sugs = response.metadata.get("suggestions", []) if response.metadata else []
-                        if sugs:
-                            yield SSEEvent.suggestions(sugs)
-
                     elif response.type == "error":
                         # 错误（携带 traceback 诊断信息）
                         error_msg = response.content or "处理失败"

@@ -34,7 +34,6 @@ def build_agent_graph(agent_type: str = "xiaobu"):
     from app.graph.nodes import (
         intent_router_node,
         direct_reply_node,
-        suggestions_node,
         route_by_intent,
     )
 
@@ -56,7 +55,6 @@ def build_agent_graph(agent_type: str = "xiaobu"):
     # ── 1. 注册共用辅助节点 ──
     graph.add_node("intent_router", intent_router_node)
     graph.add_node("direct_reply", direct_reply_node)
-    graph.add_node("suggest_node", suggestions_node)
 
     # ── 2. 从配置动态注册 Skill 节点 ──
     # 收集所有 Skill 名称（业务 Skill + 兜底 Skill）
@@ -104,11 +102,9 @@ def build_agent_graph(agent_type: str = "xiaobu"):
         skill_route_map,
     )
 
-    # 所有 Skill 节点 → 建议生成 → 结束
+    # 所有 Skill 节点 → 结束（后续建议由 LLM 在回复中自然生成）
     for skill_node_name in skill_node_names:
-        graph.add_edge(skill_node_name, "suggest_node")
-
-    graph.add_edge("suggest_node", END)
+        graph.add_edge(skill_node_name, END)
 
     return graph.compile()
 
