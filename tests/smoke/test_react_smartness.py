@@ -26,12 +26,13 @@ if not SERVICE_TOKEN:
     print("   Set SMOKE_SERVICE_TOKEN env var and re-run")
     exit(1)
 
-# Verify token is ASCII-safe
+# GitHub Secrets may contain non-ASCII chars — encode to Latin-1 for HTTP headers
 try:
     SERVICE_TOKEN.encode("ascii")
 except UnicodeEncodeError:
-    print(f"[WARN] SERVICE_TOKEN contains non-ASCII chars, length={len(SERVICE_TOKEN)}")
-    SERVICE_TOKEN = SERVICE_TOKEN.encode("utf-8").decode("ascii", errors="replace")
+    print(f"[WARN] SERVICE_TOKEN has non-ASCII chars (len={len(SERVICE_TOKEN)}), using Latin-1")
+    # httpx headers need Latin-1 compatible strings
+    SERVICE_TOKEN = SERVICE_TOKEN.encode("utf-8").decode("latin-1", errors="replace")
 
 @dataclass
 class TurnResult:
