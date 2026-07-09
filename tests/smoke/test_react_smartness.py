@@ -118,12 +118,17 @@ def send_message(session_id: str, message: str) -> TurnResult:
                     except json.JSONDecodeError:
                         continue
                     result.sse_events.append({"event": current_event, "data": data})
+                    # Debug: log all non-text event types
                     if current_event == "message":
                         msg_type = data.get("type", "")
+                        if msg_type not in ("text", ""):
+                            print(f"        [SSE] event={current_event} type={msg_type} keys={list(data.keys())}")
                         if msg_type == "tool_call":
                             result.tool_calls.append({"tool": data.get("tool", ""), "args": data.get("args", {})})
                         elif msg_type == "text":
                             result.final_text += data.get("content", "")
+                    elif current_event and current_event != "done":
+                        print(f"        [SSE] non-message event: {current_event}")
         proc.wait(timeout=120)
     except Exception as e:
         result.error = f"{type(e).__name__}: {str(e)[:100]}"
@@ -169,6 +174,8 @@ def run_scenario(name: str, messages: list[str]) -> ScenarioResult:
 # ─── 6 组测试场景 ───
 
 SCENARIOS = {
+    # TEMP: just test one scenario for debugging
+}
     "场景1-深链推理": [
         "上周五来的那个新客户，买遮光窗帘那个，她的订单到哪了？",
         "哦不对，她好像还没下单，只是在咨询阶段。那她问了哪些产品？",
@@ -270,3 +277,10 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+SCENARIOS = {
+    "场景2-多实体并行": [
+        "帮我把待付款超过3天的、待发货的、还有最近7天已完成的订单都列出来",
+        "待发货的只看包含窗帘的",
+    ],
+}
