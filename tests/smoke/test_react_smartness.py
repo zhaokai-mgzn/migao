@@ -9,10 +9,14 @@ ReAct 聪明度多轮对话测试
 import json
 import os
 import re
+import sys
 import time
 import httpx
 from dataclasses import dataclass, field
 from typing import Optional
+
+# Force UTF-8 everywhere - CI runners often default to ASCII
+sys.stdout.reconfigure(encoding="utf-8", errors="replace") if hasattr(sys.stdout, "reconfigure") else None
 
 AI_AGENT_URL = os.getenv("AI_AGENT_URL", "https://ai-api.migaozn.com")
 SERVICE_TOKEN = os.getenv("SERVICE_TOKEN", os.getenv("SMOKE_SERVICE_TOKEN", ""))
@@ -21,6 +25,13 @@ if not SERVICE_TOKEN:
     print("[WARN]  SERVICE_TOKEN not set")
     print("   Set SMOKE_SERVICE_TOKEN env var and re-run")
     exit(1)
+
+# Verify token is ASCII-safe
+try:
+    SERVICE_TOKEN.encode("ascii")
+except UnicodeEncodeError:
+    print(f"[WARN] SERVICE_TOKEN contains non-ASCII chars, length={len(SERVICE_TOKEN)}")
+    SERVICE_TOKEN = SERVICE_TOKEN.encode("utf-8").decode("ascii", errors="replace")
 
 @dataclass
 class TurnResult:
