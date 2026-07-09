@@ -1,0 +1,23 @@
+name: ReAct Smartness Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  smartness-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: pip install httpx
+
+      - name: Run ReAct Smartness Test
+        env:
+          AI_AGENT_URL: https://ai-api.migaozn.com
+          SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN }}
+        run: python tests/smoke/test_react_smartness.py
