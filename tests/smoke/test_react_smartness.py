@@ -81,7 +81,7 @@ def create_session() -> str:
         raise RuntimeError(f"Session failed: {json.dumps(data, ensure_ascii=True)[:200]}")
     # Handle both response envelope formats
     session_data = data.get("data", data)
-    sid = session_data.get("session_id", "")
+    sid = session_data.get("id", session_data.get("session_id", ""))
     if not sid:
         raise RuntimeError(f"No session_id in response: {json.dumps(data, ensure_ascii=True)[:200]}")
     return sid
