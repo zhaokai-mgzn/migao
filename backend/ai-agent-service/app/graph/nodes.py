@@ -245,76 +245,11 @@ async def direct_reply_node(state: AgentState) -> dict:
 
 
 async def suggestions_node(state: AgentState) -> dict:
-    """生成后续问题建议（Stage + 用户画像 + 实体感知）"""
-    # 优化: P&E 等待用户输入时跳过建议（ask/confirm 步骤已有引导文案）
-    pending_skill = state.get("pending_interact_skill", "")
-    if pending_skill:
-        return {"suggestions": []}
+    """后续建议已由 LLM 在回复中自然生成，不再单独调用建议模型。
 
-    from app.suggestions.follow_up import FollowUpSuggestionGenerator
-
-    generator = FollowUpSuggestionGenerator()
-    intent_type = (state.get("intent_result") or {}).get("intent", "general")
-    agent_type = state.get("agent_type", "mibao")
-
-    # 推断对话阶段
-    stage = _infer_stage(state, intent_type)
-
-    # 提取用户画像信息
-    user_role = state.get("role", "")
-    user_name = state.get("user_name", "") or ""
-
-    # 提取本轮实体（从 recent_entities list，fallback 到 entities dict）
-    entities = state.get("recent_entities", [])
-    if not entities:
-        # fallback: 从 entities dict 构建实体列表
-        # 注意展开 list 值（如 {"order_nos": ["ORD001","ORD002"]} → 每个元素一个实体）
-        entities_dict = state.get("entities", {})
-        if entities_dict:
-            for k, v_list in entities_dict.items():
-                if not v_list:
-                    continue
-                items = v_list if isinstance(v_list, list) else [v_list]
-                for item in items:
-                    entities.append({
-                        "type": k,
-                        "value": str(item),
-                        "label": str(item)[:30],
-                    })
-
-    # 找到用户原始消息
-    user_msg = ""
-    for msg in reversed(state["messages"]):
-        if isinstance(msg, HumanMessage):
-            user_msg = _extract_text_from_content(msg.content)
-            break
-
-    try:
-        suggestions = await asyncio.wait_for(
-            generator.generate(
-                query=user_msg,
-                answer=state.get("final_answer", ""),
-                intent_type=intent_type,
-                agent_type=agent_type,
-                chat_history=state.get("messages", []),
-                stage=stage,
-                session_id=state.get("session_id", ""),
-                tenant_id=state.get("tenant_id", 0),
-                user_id=state.get("user_id", 0),
-                user_role=user_role,
-                user_name=user_name,
-                entities=entities if entities else None,
-            ),
-            timeout=15.0,
-        )
-        # 更新 state 中的 stage
-        return {"suggestions": suggestions, "stage": stage}
-    except asyncio.TimeoutError:
-        logger.debug("Suggestions generation timed out, using empty list")
-        return {"suggestions": [], "stage": stage}
-    except Exception as e:
-        logger.warning(f"Suggestions generation failed: {e}")
-        return {"suggestions": [], "stage": stage}
+    保留节点占位以避免 graph 结构变更，始终返回空列表。
+    """
+    return {"suggestions": []}
 
 
 def _infer_stage(state: AgentState, intent_type: str = "") -> str:
