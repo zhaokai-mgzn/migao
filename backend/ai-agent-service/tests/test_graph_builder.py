@@ -44,7 +44,6 @@ class TestBuildGraph:
         # 配置驱动的节点名称：{skill_name}_skill
         expected = {
             "intent_router", "direct_reply",
-            "suggest_node",
             "order_skill", "product_skill",
             "aftersales_skill", "customer_skill", "staff_skill",
             "settings_skill", "data_skill", "general_skill",
@@ -59,7 +58,6 @@ class TestBuildGraph:
         nodes = set(graph.get_graph().nodes.keys())
         expected = {
             "intent_router", "direct_reply",
-            "suggest_node",
             "customer_order_skill", "customer_product_skill",
             "customer_knowledge_skill", "customer_general_skill",
         }
@@ -75,7 +73,6 @@ class TestBuildGraph:
         # 辅助节点始终存在
         assert "intent_router" in nodes
         assert "direct_reply" in nodes
-        assert "suggest_node" in nodes
 
     def test_intent_to_skill_mapping_complete(self):
         """route_by_intent 的意图→Skill 映射完整"""
@@ -128,12 +125,12 @@ class TestGraphImports:
         from app.graph.nodes import (
             intent_router_node,
             direct_reply_node,
-            suggestions_node, route_by_intent,
+            route_by_intent,
         )
         assert all([
             intent_router_node,
             direct_reply_node,
-            suggestions_node, route_by_intent,
+            route_by_intent,
         ])
 
     def test_state_import(self):

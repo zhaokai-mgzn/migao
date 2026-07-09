@@ -561,59 +561,38 @@ class TestAgentAwareSuggestionsIntegration:
             expected = gen._get_preset("order_query", "xiaobu", "initial")
             assert result == expected
 
-    async def test_suggestions_node_passes_agent_type(self):
-        """suggestions_node 将 state 中的 agent_type 传给 generator"""
+    async def test_suggestions_node_always_returns_empty(self):
+        """suggestions_node 已废弃，始终返回空列表（后续建议由 LLM 行内生成）"""
         from app.graph.nodes import suggestions_node
         from langchain_core.messages import HumanMessage
 
-        captured_kwargs = {}
+        state = {
+            "messages": [HumanMessage(content="测试消息")],
+            "tenant_id": 1,
+            "user_id": "user_001",
+            "session_id": "sess_001",
+            "role": "admin",
+            "agent_type": "mibao",
+            "intent_result": {"intent": "order_query"},
+            "final_answer": "这是回答",
+        }
+        result = await suggestions_node(state)
+        assert result == {"suggestions": []}
 
-        async def _mock_generate(query, answer, intent_type, agent_type="mibao", chat_history=None, **_):
-            captured_kwargs["agent_type"] = agent_type
-            return ["建议1", "建议2"]
-
-        mock_gen = MagicMock()
-        mock_gen.generate = _mock_generate
-
-        with patch("app.suggestions.follow_up.FollowUpSuggestionGenerator", return_value=mock_gen):
-            state = {
-                "messages": [HumanMessage(content="测试消息")],
-                "tenant_id": 1,
-                "user_id": "user_001",
-                "session_id": "sess_001",
-                "role": "admin",
-                "agent_type": "mibao",
-                "intent_result": {"intent": "order_query"},
-                "final_answer": "这是回答",
-            }
-            result = await suggestions_node(state)
-            assert captured_kwargs["agent_type"] == "mibao"
-            assert result["suggestions"] == ["建议1", "建议2"]
-
-    async def test_suggestions_node_xiaobu_passes_xiaobu(self):
-        """suggestions_node 对 xiaobu agent 传递 agent_type=xiaobu"""
+    async def test_suggestions_node_returns_empty_for_all_agents(self):
+        """suggestions_node 对所有 agent 类型均返回空列表"""
         from app.graph.nodes import suggestions_node
         from langchain_core.messages import HumanMessage
 
-        captured_kwargs = {}
-
-        async def _mock_generate(query, answer, intent_type, agent_type="mibao", chat_history=None, **_):
-            captured_kwargs["agent_type"] = agent_type
-            return ["s1", "s2"]
-
-        mock_gen = MagicMock()
-        mock_gen.generate = _mock_generate
-
-        with patch("app.suggestions.follow_up.FollowUpSuggestionGenerator", return_value=mock_gen):
-            state = {
-                "messages": [HumanMessage(content="你好")],
-                "tenant_id": 1,
-                "user_id": "user_001",
-                "session_id": "sess_001",
-                "role": "customer",
-                "agent_type": "xiaobu",
-                "intent_result": {"intent": "greeting"},
-                "final_answer": "您好！",
-            }
-            result = await suggestions_node(state)
-            assert captured_kwargs["agent_type"] == "xiaobu"
+        state = {
+            "messages": [HumanMessage(content="你好")],
+            "tenant_id": 1,
+            "user_id": "user_001",
+            "session_id": "sess_001",
+            "role": "customer",
+            "agent_type": "xiaobu",
+            "intent_result": {"intent": "greeting"},
+            "final_answer": "您好！",
+        }
+        result = await suggestions_node(state)
+        assert result == {"suggestions": []}
