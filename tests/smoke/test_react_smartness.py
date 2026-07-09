@@ -43,7 +43,7 @@ def send_message(sid, msg):
         body = json.dumps({"session_id": sid, "message": msg}, ensure_ascii=False)
         raw = subprocess.run(
             ["curl", "-s", "-N", "--max-time", "120", "-X", "POST",
-             f"{AI_AGENT_URL}/api/chat/messages",
+             f"{AI_AGENT_URL}/api/chat/send",
              "-H", f"@{_TOKEN_HDR}", "-H", "Content-Type: application/json", "-d", body],
             capture_output=True, timeout=120).stdout.decode("utf-8", errors="replace")
 
