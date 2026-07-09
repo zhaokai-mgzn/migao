@@ -40,18 +40,29 @@ class ScenarioResult:
     notes: list = field(default_factory=list)
 
 def create_session(client: httpx.Client) -> str:
-    resp = client.post(
-        f"{AI_AGENT_URL}/api/chat/sessions",
-        content=json.dumps({"client_type": "web"}, ensure_ascii=False).encode("utf-8"),
-        headers={
-            "X-Service-Token": SERVICE_TOKEN,
-            "Content-Type": "application/json; charset=utf-8",
-        },
-    )
-    data = json.loads(resp.content.decode("utf-8"))
-    if not data.get("success"):
-        raise RuntimeError(f"Session creation failed: {json.dumps(data, ensure_ascii=True)}")
-    return data["data"]["session_id"]
+    try:
+        resp = client.post(
+            f"{AI_AGENT_URL}/api/chat/sessions",
+            content=json.dumps({"client_type": "web"}).encode("utf-8"),
+            headers={
+                "X-Service-Token": SERVICE_TOKEN,
+                "Content-Type": "application/json; charset=utf-8",
+            },
+        )
+        raw = resp.content
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            # Server returned non-JSON - sanitize for ASCII output
+            safe = raw.decode("utf-8", errors="replace")[:200]
+            raise RuntimeError(f"Non-JSON response: HTTP {resp.status_code}: {safe}")
+        if not data.get("success"):
+            raise RuntimeError(f"Session failed: HTTP {resp.status_code} err={data.get('detail', 'unknown')}")
+        return data["data"]["session_id"]
+    except RuntimeError:
+        raise
+    except Exception as e:
+        raise RuntimeError(f"Session creation error: {type(e).__name__}") from e
 
 def send_message(client: httpx.Client, session_id: str, message: str) -> TurnResult:
     """发送消息并解析 SSE 流，提取 tool_calls"""
