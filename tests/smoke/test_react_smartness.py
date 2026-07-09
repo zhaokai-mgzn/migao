@@ -81,7 +81,7 @@ def create_session() -> str:
         raise RuntimeError(f"Session failed: {json.dumps(data, ensure_ascii=True)[:200]}")
     # Handle both response envelope formats
     session_data = data.get("data", data)
-    sid = session_data.get("id", session_data.get("session_id", ""))
+    sid = session_data.get("session_id", "")
     if not sid:
         raise RuntimeError(f"No session_id in response: {json.dumps(data, ensure_ascii=True)[:200]}")
     return sid
@@ -92,44 +92,36 @@ def send_message(session_id: str, message: str) -> TurnResult:
     try:
         url = f"{AI_AGENT_URL}/api/chat/messages"
         body = json.dumps({"session_id": session_id, "message": message}, ensure_ascii=False)
-        proc = subprocess.Popen(
+        result_proc = subprocess.run(
             ["curl", "-s", "-N", "--connect-timeout", "10", "--max-time", "120",
              "-X", "POST", url,
              "-H", "@/tmp/smoke_token_header",
              "-H", "Content-Type: application/json; charset=utf-8",
              "-d", body],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            capture_output=True, timeout=120)
 
+        raw = result_proc.stdout.decode("utf-8", errors="replace")
         current_event = None
-        buffer = b""
-        while True:
-            chunk = proc.stdout.read(1)
-            if not chunk:
-                break
-            buffer += chunk
-            if chunk == b"\n":
-                line = buffer.decode("utf-8", errors="replace").strip()
-                buffer = b""
-                if line.startswith("event: "):
-                    current_event = line[7:]
-                elif line.startswith("data: "):
-                    try:
-                        data = json.loads(line[6:])
-                    except json.JSONDecodeError:
-                        continue
-                    result.sse_events.append({"event": current_event, "data": data})
-                    # Debug: log all non-text event types
-                    if current_event == "message":
-                        msg_type = data.get("type", "")
-                        if msg_type not in ("text", ""):
-                            print(f"        [SSE] event={current_event} type={msg_type} keys={list(data.keys())}")
-                        if msg_type == "tool_call":
-                            result.tool_calls.append({"tool": data.get("tool", ""), "args": data.get("args", {})})
-                        elif msg_type == "text":
-                            result.final_text += data.get("content", "")
-                    elif current_event and current_event != "done":
-                        print(f"        [SSE] non-message event: {current_event}")
-        proc.wait(timeout=120)
+        for line in raw.split("\n"):
+            line = line.strip()
+            if line.startswith("event: "):
+                current_event = line[7:]
+            elif line.startswith("data: ") and current_event:
+                try:
+                    data = json.loads(line[6:])
+                except json.JSONDecodeError:
+                    continue
+                result.sse_events.append({"event": current_event, "data": data})
+                if current_event == "message":
+                    msg_type = data.get("type", "")
+                    if msg_type == "tool_call":
+                        result.tool_calls.append({"tool": data.get("tool", ""), "args": data.get("args", {})})
+                    elif msg_type == "text":
+                        result.final_text += data.get("content", "")
+        if not result.tool_calls:
+            print(f"        [DEBUG] No tool calls. SSE events: {[(e['event'], e['data'].get('type','')) for e in result.sse_events]}")
+            if len(raw) < 500:
+                print(f"        [DEBUG] Raw: {raw}")
     except Exception as e:
         result.error = f"{type(e).__name__}: {str(e)[:100]}"
     result.latency_ms = (time.time() - start) * 1000
@@ -174,8 +166,6 @@ def run_scenario(name: str, messages: list[str]) -> ScenarioResult:
 # ─── 6 组测试场景 ───
 
 SCENARIOS = {
-    # TEMP: just test one scenario for debugging
-}
     "场景1-深链推理": [
         "上周五来的那个新客户，买遮光窗帘那个，她的订单到哪了？",
         "哦不对，她好像还没下单，只是在咨询阶段。那她问了哪些产品？",
@@ -277,10 +267,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-SCENARIOS = {
-    "场景2-多实体并行": [
-        "帮我把待付款超过3天的、待发货的、还有最近7天已完成的订单都列出来",
-        "待发货的只看包含窗帘的",
-    ],
-}
