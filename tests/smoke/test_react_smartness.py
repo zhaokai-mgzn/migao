@@ -54,13 +54,10 @@ def send_message(sid, msg):
             elif s.startswith("data: ") and ev:
                 try: d = json.loads(s[6:])
                 except: continue
-                if ev == "message":
-                    t = d.get("type","")
-                    if t == "tool_call": r.tool_calls.append({"tool": d.get("tool",""), "args": d.get("args",{})})
-                    elif t == "text": r.final_text += d.get("content","")
-        # DEBUG: dump first 300 chars of raw SSE for first turn only
-        if not r.tool_calls and not r.final_text:
-            r.error = f"Empty response. Raw SSE ({len(raw)}b): {raw[:300]}"
+                if ev == "tool_call":
+                    r.tool_calls.append({"tool": d.get("tool", d.get("name","")), "args": d.get("args", d.get("input",{}))})
+                elif ev in ("text", "loading"):
+                    r.final_text += d.get("content","")
     except Exception as e:
         r.error = f"{type(e).__name__}: {str(e)[:100]}"
     r.latency_ms = (time.time() - t0) * 1000
