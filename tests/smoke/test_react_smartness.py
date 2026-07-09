@@ -51,10 +51,11 @@ class ScenarioResult:
     passed: bool = False
     notes: list = field(default_factory=list)
 
-# Write token to file to avoid shell encoding issues
-_TOKEN_FILE = "/tmp/smoke_token"
-with open(_TOKEN_FILE, "w", encoding="utf-8") as f:
-    f.write(SERVICE_TOKEN)
+# Write token to file to avoid shell encoding issues (mode 0o600 for security)
+import stat
+_TOKEN_HEADER_FILE = "/tmp/smoke_token_header"
+with open(os.open(_TOKEN_HEADER_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w", encoding="utf-8") as f:
+    f.write(f"X-Service-Token: {SERVICE_TOKEN}")
 
 def _curl(method: str, path: str, body: dict = None) -> dict:
     url = f"{AI_AGENT_URL}{path}"
@@ -77,16 +78,19 @@ def _curl(method: str, path: str, body: dict = None) -> dict:
 def create_session() -> str:
     data = _curl("POST", "/api/chat/sessions", {"client_type": "web"})
     if not data.get("success"):
-        raise RuntimeError(f"Session failed: {data}")
-    return data["data"]["session_id"]
+        raise RuntimeError(f"Session failed: {json.dumps(data, ensure_ascii=True)[:200]}")
+    # Handle both response envelope formats
+    session_data = data.get("data", data)
+    sid = session_data.get("session_id", "")
+    if not sid:
+        raise RuntimeError(f"No session_id in response: {json.dumps(data, ensure_ascii=True)[:200]}")
+    return sid
 
 def send_message(session_id: str, message: str) -> TurnResult:
     start = time.time()
     result = TurnResult(turn=0, message=message)
     try:
         url = f"{AI_AGENT_URL}/api/chat/messages"
-        with open("/tmp/smoke_token_header", "w", encoding="utf-8") as f:
-            f.write(f"X-Service-Token: {SERVICE_TOKEN}")
         body = json.dumps({"session_id": session_id, "message": message}, ensure_ascii=False)
         proc = subprocess.Popen(
             ["curl", "-s", "-N", "--connect-timeout", "10", "--max-time", "120",
