@@ -43,9 +43,12 @@ def create_session(client: httpx.Client) -> str:
     resp = client.post(
         f"{AI_AGENT_URL}/api/chat/sessions",
         json={"client_type": "web"},
-        headers={"X-Service-Token": SERVICE_TOKEN, "Content-Type": "application/json"},
+        headers={"X-Service-Token": SERVICE_TOKEN, "Content-Type": "application/json; charset=utf-8"},
     )
+    resp.encoding = "utf-8"
     data = resp.json()
+    if not data.get("success"):
+        raise RuntimeError(f"创建Session失败: {data}")
     return data["data"]["session_id"]
 
 def send_message(client: httpx.Client, session_id: str, message: str) -> TurnResult:
@@ -95,6 +98,7 @@ def run_scenario(name: str, messages: list[str]) -> ScenarioResult:
     """运行一组多轮对话场景"""
     result = ScenarioResult(name=name)
     client = httpx.Client(timeout=120.0, follow_redirects=True)
+    client.headers["Accept-Charset"] = "utf-8"
 
     try:
         sid = create_session(client)
@@ -214,23 +218,24 @@ def main():
         total_latency += latency
         errors += errs
 
-        status = "✅" if errs == 0 else "⚠️"
-        print(f"\n{status} {name}: {turns}轮 {tools}次tool调用 均{latency/turns:.0f}ms/轮" + (f" {errs}错误" if errs else ""))
+        avg_lat = f"{latency/turns:.0f}" if turns > 0 else "N/A"
+        status = "✅" if errs == 0 and turns > 0 else "⚠️"
+        print(f"\n{status} {name}: {turns}轮 {tools}次tool调用 均{avg_lat}ms/轮" + (f" {errs}错误" if errs else ""))
 
         if r.notes:
             for note in r.notes:
                 print(f"   📝 {note}")
 
     print(f"\n{'─'*60}")
-    print(f"总计: {total_turns}轮 {total_tools}次tool调用 均{total_latency/total_turns:.0f}ms/轮 {errors}错误")
-
-    # 智能度评分
-    if total_tools > 0:
+    if total_turns > 0:
+        print(f"总计: {total_turns}轮 {total_tools}次tool调用 均{total_latency/total_turns:.0f}ms/轮 {errors}错误")
         tools_per_turn = total_tools / total_turns
         print(f"\n🧠 智能度指标:")
-        print(f"   工具调用密度: {tools_per_turn:.1f} 次/轮 (高=LLM在主动查数据)")
+        print(f"   工具调用密度: {tools_per_turn:.1f} 次/轮")
         print(f"   平均延迟: {total_latency/total_turns:.0f}ms/轮")
         print(f"   错误率: {errors}/{total_turns} = {errors/total_turns*100:.1f}%")
+    else:
+        print(f"总计: 0轮 (所有场景均失败)")
 
 if __name__ == "__main__":
     main()
