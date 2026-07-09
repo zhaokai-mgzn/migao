@@ -418,423 +418,6 @@ def _extract_intent_name(state: AgentState) -> str:
 PAGE_SIZE = 10  # 加工项 choice 每页展示数量
 
 
-def _build_processing_item_choice(result_dict: dict, page: int = 0) -> dict | None:
-    """从 processing_item_query 结果自动构造 interact(component='choice')
-
-    支持分页：每页 PAGE_SIZE 个选项，末尾加翻页按钮。
-    前端点击翻页按钮后，LLM 会在下一轮收到翻页请求并重新调用 processing_item_query，
-    本函数再次被触发时根据 page 参数展示对应页。
-
-    Args:
-        result_dict: processing_item_query 的 result_dict
-        page: 当前页码（0-based），0 = 由 data.page 决定
-
-    Returns:
-        interact tool args dict，或 None（无数据时）
-    """
-    data = result_dict.get("data", {})
-    items = data.get("items", [])
-    total = data.get("total", len(items))
-    total_pages = data.get("total_pages", max((total + PAGE_SIZE - 1) // PAGE_SIZE, 1))
-
-    if not items:
-        return None
-
-    current_page = page if page > 0 else (data.get("page", 1) - 1)
-    start = current_page * PAGE_SIZE
-    page_items = items[start:start + PAGE_SIZE]
-
-    options = []
-    for idx, item in enumerate(page_items, start=start + 1):
-        price = item.get("unit_price")
-        unit = item.get("unit", "")
-        price_str = f"¥{price}/{unit}" if price else ""
-        label = f"{idx}. {item.get('name', '?')}"
-        if price_str:
-            label += f" {price_str}"
-        options.append({
-            "label": label,
-            "value": item.get("id", ""),
-            "description": item.get("category_name", ""),
-        })
-
-    # 翻页按钮
-    has_next = (current_page + 1) < total_pages
-    has_prev = current_page > 0
-
-    if has_next:
-        options.append({
-            "label": f"下一页 → (第{current_page + 2}页，共{total}个)",
-            "value": f"__page_{current_page + 2}__",
-            "description": "翻到下一页",
-        })
-    if has_prev:
-        options.append({
-            "label": f"← 上一页 (第{current_page}页)",
-            "value": f"__page_{current_page}__",
-            "description": "翻回上一页",
-        })
-
-    page_info = f"（{current_page + 1}/{total_pages}页，共{total}个）"
-
-    return {
-        "component": "choice",
-        "title": f"选择加工项（可多选）{page_info}",
-        "options": options,
-        "multiSelect": True,
-    }
-
-
-def _build_category_choice(result_dict: dict) -> dict | None:
-    """从 category_manage(action=tree) 结果自动构造 interact(component='choice')
-
-    将树形分类扁平化为单选列表。用户选择后 LLM 直接拿到 category_id (UUID)。
-    """
-    data = result_dict.get("data", {})
-    tree = data.get("tree", [])
-    if not tree:
-        return None
-
-    def _flatten(nodes, depth=0):
-        items = []
-        for node in nodes:
-            if isinstance(node, dict):
-                prefix = "  " * depth + ("├ " if depth > 0 else "")
-                items.append({
-                    "label": f"{prefix}{node.get('name', '?')}",
-                    "value": node.get("id", ""),
-                    "description": node.get("description", "") or f"分类ID: {node.get('id', '')[:12]}...",
-                })
-                children = node.get("children", [])
-                if children:
-                    items.extend(_flatten(children, depth + 1))
-        return items
-
-    options = _flatten(tree)
-    return {
-        "component": "choice",
-        "title": f"选择商品分类（共{len(options)}个）",
-        "options": options,
-        "multiSelect": False,
-    }
-
-
-# ═══════════════════════════════════════════════════════════════
-# Tool Execution Pipeline（NEW）
-# ═══════════════════════════════════════════════════════════════
-
-
-@dataclass
-class PipelineContext:
-    """单次 tool_call 流经管道的可变上下文。
-
-    跨 tool_call 共享的字段（new_messages, tracker）由调用方注入为引用；
-    每次 tool_call 开始前，调用方更新 tool_call / tool_instance 并清空 result_* 字段。
-    """
-
-    # ── 输入（每次 tool_call 前由调用方设置）──
-    tool_call: dict = field(default_factory=dict)     # {"name", "args", "id"}
-    tool_instance: Optional[Any] = None                # ToolInterface | None
-    skill_name: str = ""
-    session_id: str = ""
-    tenant_id: int = 0
-    state: dict = field(default_factory=dict)          # AgentState
-    tool_context: Any = None                           # ToolContext
-    has_own_interact: bool = False                     # 本轮 LLM 是否自己调了 interact
-
-    # ── 共享可变状态（同一个 iteration 内所有 tool_call 共用同一个引用）──
-    new_messages: list = field(default_factory=list)   # ToolMessage 收集器
-    interact_called: bool = False                      # 本轮是否触发了 interact
-    tracker: Optional[Any] = None                      # ConversationTracker
-
-    # ── 输出（Execute 阶段填充）──
-    result_str: str = ""
-    result_dict: dict = field(default_factory=dict)
-
-    # ── 阻断机制 (PreHook 可设置以短路 Execute 阶段) ──
-    blocked: bool = False
-    blocked_result: tuple | None = None  # (result_str, result_dict), set by PreHook
-
-    # ── 内部标记（Execute 阶段写入，PostHook 读取）──
-    _tool_message_appended: bool = False  # ToolMessage 已在 Execute 阶段追加，PostHook 跳过
-
-
-# Hook 签名：async def hook(ctx: PipelineContext) -> bool | None
-#   PostHook 返回 True → 立即停止处理剩余 tool_call 并 break 外层 iteration
-#   PostHook 返回 None/False → 继续下一个 hook
-Hook = Callable[[PipelineContext], Awaitable[bool | None]]
-
-
-class ToolExecutionPipeline:
-    """单 tool_call 执行管道：PreHooks → Execute → PostHooks.
-
-    PreHooks  : 同步准备（日志、解析、校验）— 所有 hook 按注册顺序执行。
-    Execute   : _execute_tool_safe + _self_correct_retry — 内置不变。
-    PostHooks : 后处理（追加消息、auto-interact、实体提取、interact 终止判断）。
-                返回 True 的 hook 导致 run() 返回 True（外层 break）。
-    """
-
-    def __init__(self):
-        self._pre: list[Hook] = []
-        self._post: list[Hook] = []
-
-    def add_pre(self, hook: Hook) -> "ToolExecutionPipeline":
-        self._pre.append(hook)
-        return self
-
-    def add_post(self, hook: Hook) -> "ToolExecutionPipeline":
-        self._post.append(hook)
-        return self
-
-    async def run(self, ctx: PipelineContext) -> bool:
-        """执行管道。返回 True 表示外层应 break 迭代循环。"""
-
-        # ── PreHooks ──
-        for hook in self._pre:
-            await hook(ctx)
-
-        # ── Execute ──
-        if ctx.blocked:
-            # PreHook 已设置阻断结果, 跳过实际工具执行
-            ctx.result_str, ctx.result_dict = ctx.blocked_result
-        elif ctx.tool_instance is None:
-            ctx.result_str = json.dumps({
-                "success": False, "error": "tool_not_found",
-                "message": f"工具 {ctx.tool_call['name']} 不可用",
-            }, ensure_ascii=False)
-            ctx.result_dict = {"success": False}
-        else:
-            ctx.result_str, ctx.result_dict = await _execute_tool_safe(
-                ctx.tool_instance, ctx.tool_call["args"], ctx.tool_context, ctx.state,
-            )
-            # Self-correct retry
-            if not ctx.result_dict.get("success") and ctx.result_dict.get("suggestion"):
-                corrected = await _self_correct_retry(
-                    ctx.tool_instance, ctx.tool_call["args"], ctx.tool_context,
-                    ctx.skill_name, ctx.result_dict,
-                    ctx.session_id, ctx.tenant_id, ctx.state,
-                )
-                if corrected:
-                    ctx.result_str, ctx.result_dict = corrected
-
-        # 追加 ToolMessage — 统一在 Execute 阶段处理。
-        # self-correct 成功后 ctx.result_str 已是修正值，ToolMessage 自然反映最终状态。
-        # 设置 _tool_message_appended 标记，PostHook 不再重复追加。
-        ctx.new_messages.append(
-            ToolMessage(
-                content=ctx.result_str,
-                tool_call_id=ctx.tool_call["id"],
-                name=ctx.tool_call["name"],
-            )
-        )
-        ctx._tool_message_appended = True
-
-        # ── PostHooks ──
-        for hook in self._post:
-            signal = await hook(ctx)
-            if signal is True:
-                return True
-
-        return False
-
-
-# ── PreHooks ──
-
-async def log_tool_call_pre_hook(ctx: PipelineContext) -> None:
-    """PreHook: 记录 tool_call 日志（原 line ~1019）"""
-    logger.info(
-        f"[{ctx.skill_name}][DIAG] Tool call: {ctx.tool_call['name']} "
-        f"| args={ctx.tool_call['args']}"
-    )
-
-
-def make_resolve_tool_hook(skill_registry):
-    """工厂函数：注入 registry 引用，使 hook 内自行查找 tool。
-
-    去静默失败：找不到时打 ERROR（原 line 261 只打 WARNING）。
-    ctx.tool_instance 置为 None 后，Execute 阶段走 OnError 路径。
-    """
-    async def hook(ctx: PipelineContext) -> None:
-        ctx.tool_instance = skill_registry.get_tool(ctx.tool_call["name"])
-        if ctx.tool_instance is None:
-            logger.error(
-                f"[{ctx.skill_name}] Tool '{ctx.tool_call['name']}' NOT FOUND "
-                f"in skill_registry | session={ctx.session_id} tenant={ctx.tenant_id}"
-            )
-    return hook
-
-
-# ── Duplicate Tool Call Blocker ──
-
-def make_block_duplicate_tool_hook():
-    """工厂函数: 创建重复工具调用阻断 PreHook
-
-    仅在 auto_interact_flag 已设置 AND args 无实质变化时阻断。
-    放行场景: 翻页(page>1)、分类过滤(category_id)、关键词搜索(keyword)。
-    拦截场景: 同一 session 内用相同默认参数重复查询(LLM 死循环)。
-
-    同轮死循环由 tool_call_counts >= 3 检测兜底。
-    """
-    async def hook(ctx: PipelineContext) -> None:
-        if ctx.tool_call.get("name") != "processing_item_query":
-            return
-        if not ctx.session_id:
-            return
-
-        from app.memory.session_memory import SessionMemory
-        already_fired = await SessionMemory().get_auto_interact_flag(ctx.session_id)
-        if not already_fired:
-            return
-
-        # 放行：翻页/分类过滤/关键词搜索（有实质参数变化）
-        args = ctx.tool_call.get("args", {})
-        has_page = args.get("page", 1) > 1
-        has_filter = bool(args.get("category_id") or args.get("keyword") or args.get("status"))
-        if has_page or has_filter:
-            logger.info(
-                f"[{ctx.skill_name}] Allowing processing_item_query retry: "
-                f"page={args.get('page')} category_id={args.get('category_id')} "
-                f"keyword={args.get('keyword')} | session={ctx.session_id}"
-            )
-            return
-
-        logger.warning(
-            f"[{ctx.skill_name}] BLOCKED duplicate processing_item_query | "
-            f"session={ctx.session_id} — auto-interact flag already set, "
-            f"no new filter/page args, forcing tool to return stop signal"
-        )
-        ctx.blocked = True
-        ctx.blocked_result = (
-            json.dumps({
-                "success": False,
-                "error": "duplicate_call_blocked",
-                "message": (
-                    "加工项选择列表已展示。请基于已展示的列表引导用户选择。"
-                    "如需翻页或按分类筛选，请明确指定 page/category_id 参数。"
-                ),
-                "suggestion": (
-                    "请使用已展示列表中的加工项。如需更多选项，请指定翻页(page>1)或分类(category_id)。"
-                ),
-            }, ensure_ascii=False),
-            {
-                "success": False,
-                "error": "duplicate_call_blocked",
-                "message": "加工项选择列表已展示，请引导用户选择或指定翻页/筛选条件。",
-            },
-        )
-    return hook
-
-
-# ── PostHooks ──
-
-async def append_tool_message_post_hook(ctx: PipelineContext) -> None:
-    """PostHook: 将 tool 执行结果追加到 new_messages
-
-    注意：若 Execute 阶段已追加 ToolMessage（_tool_message_appended=True），
-    则跳过本 hook，避免追加重复/孤儿消息。
-    """
-    if getattr(ctx, '_tool_message_appended', False):
-        return
-    ctx.new_messages.append(
-        ToolMessage(
-            content=ctx.result_str,
-            tool_call_id=ctx.tool_call["id"],
-            name=ctx.tool_call["name"],
-        )
-    )
-
-
-async def entity_extraction_post_hook(ctx: PipelineContext) -> None:
-    """PostHook: 从 tool 结果提取实体（原 line ~1074-1076）"""
-    if ctx.session_id and ctx.tracker:
-        ctx.tracker.extract_entities_from_tool_result(
-            ctx.session_id, ctx.tool_call["name"], ctx.result_dict,
-        )
-
-
-async def interact_break_post_hook(ctx: PipelineContext) -> bool:
-    """PostHook: interact 成功时标记终止（原 line ~1078-1082）
-
-    Returns True → pipeline.run() 返回 True → 外层 break。
-    """
-    if ctx.tool_call["name"] == "interact" and ctx.result_dict.get("success"):
-        logger.info(f"[{ctx.skill_name}] interact done, break loop")
-        ctx.interact_called = True
-        return True
-    return None
-
-
-def make_auto_interact_post_hook():
-    """工厂函数：创建 auto-interact PostHook
-
-    加工项查询 / 分类树查询后，自动渲染 choice 组件。
-    条件：LLM 本轮没有自己弹 form/confirm（避免抢跑）。
-    """
-    async def hook(ctx: PipelineContext) -> bool | None:
-        tool_name = ctx.tool_call["name"]
-        is_processing = tool_name == "processing_item_query"
-
-        # 仅 processing_item_query 触发 auto-interact
-        # category_manage(tree) 只返回数据，由 LLM 决定是否调 interact 展示选择器
-        # 这样可以避免 LLM 仅需查分类ID匹配用户输入时被强制弹选择器
-        if is_processing and ctx.result_dict.get("success") and not ctx.has_own_interact:
-            # 防止死循环：同一 session 内 auto-interact 只触发一次
-            if ctx.session_id:
-                from app.memory.session_memory import SessionMemory
-                already_fired = await SessionMemory().get_auto_interact_flag(ctx.session_id)
-                if already_fired:
-                    logger.info(
-                        f"[{ctx.skill_name}] Auto-interact skipped: already fired "
-                        f"for session={ctx.session_id}"
-                    )
-                    return None
-
-            auto_interact = _build_processing_item_choice(ctx.result_dict)
-            if auto_interact:
-                from app.tools.registry import get_tool_registry as _get_tools
-                interact_tool = _get_tools().get_tool("interact")
-                if interact_tool is None:
-                    logger.error(
-                        f"[{ctx.skill_name}] Auto-interact FAILED: "
-                        f"interact tool not found in registry! "
-                        f"Processing items will NOT be rendered. | session={ctx.session_id}"
-                    )
-                else:
-                    interact_str, interact_dict = await _execute_tool_safe(
-                        interact_tool, auto_interact, ctx.tool_context, ctx.state,
-                    )
-                    # 注入完整的 AIMessage(tool_calls) + ToolMessage(result) 对，
-                    # 确保消息顺序合法（tool 消息前必须有对应 tool_calls）
-                    auto_id = f"auto_interact_{ctx.tool_call['id']}"
-                    ctx.new_messages.append(
-                        AIMessage(
-                            content="",
-                            tool_calls=[{
-                                "name": "interact",
-                                "args": auto_interact,
-                                "id": auto_id,
-                                "type": "tool_call",
-                            }],
-                        )
-                    )
-                    ctx.new_messages.append(
-                        ToolMessage(
-                            content=interact_str,
-                            tool_call_id=auto_id,
-                            name="interact",
-                        )
-                    )
-                    ctx.interact_called = True
-                    logger.info(
-                        f"[{ctx.skill_name}] Auto-interact: rendered "
-                        f"{len(auto_interact.get('options',[]))} "
-                        f"processing items as choice component | session={ctx.session_id}"
-                    )
-                    # 设 flag：防止后续轮次重复触发
-                    if ctx.session_id:
-                        await SessionMemory().set_auto_interact_flag(ctx.session_id)
-        return None
-    return hook
 
 
 async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -> tuple:
@@ -991,125 +574,46 @@ async def _self_correct_retry(
         return None
 
 
-async def _smart_fallback(
-    skill_name: str,
-    messages: list,
-    new_messages: list,
-    session_id: str,
-) -> str:
-    """智能兜底回复 — 让 LLM 根据已有上下文生成自然优雅的降级回复。
-
-    在所有异常路径（超时、错误、空回复、达到最大迭代次数）中调用，
-    避免硬编码的"抱歉，系统异常"类生硬文案。
-    """
-    try:
-        from app.llm import LLMFactory
-        from langchain_core.messages import HumanMessage
-
-        prompt = (
-            "请基于以上对话内容和工具执行结果，生成一个自然、有帮助的回复。\n\n"
-            "要求：\n"
-            "1. 如果工具有返回数据 → 基于已有数据回答，诚实说明哪些信息未能获取\n"
-            "2. 如果工具全部失败 → 礼貌告知当前遇到问题，建议通过页面操作或稍后重试\n"
-            "3. 不要道歉过度，不要暴露技术细节（如超时/异常/循环等术语）\n"
-            "4. 语气与之前对话保持一致"
-        )
-        all_msgs = list(messages) + list(new_messages) + [HumanMessage(content=prompt)]
-        response = await LLMFactory.invoke_text_safe(all_msgs, force_no_think=True)
-        if response and len(response.strip()) >= 10:
-            logger.info(
-                f"[{skill_name}][smart-fallback] Generated graceful reply | "
-                f"len={len(response)} session={session_id}"
-            )
-            return response.strip()
-    except Exception as e:
-        logger.warning(f"[{skill_name}][smart-fallback] LLM fallback failed: {e}")
-
-    return "抱歉，我暂时无法完成这个请求，请您稍后重试或通过页面直接操作。"
-
-
 async def execute_skill(
     state: AgentState,
     skill_name: str,
     tool_names: List[str],
     system_prompt: str,
-    max_iterations: int = 5,
+    max_iterations: int = 8,
 ) -> dict:
-    """通用 Skill 执行逻辑
+    """ReAct 循环：LLM 自主推理 → Tool 调用 → 观察结果 → 继续推理。
 
-    Args:
-        state: 当前图状态
-        skill_name: Skill 名称（用于日志和 state 更新）
-        tool_names: 该 Skill 可用的 Tool 名称列表
-        system_prompt: 该 Skill 的专用 System Prompt
-        max_iterations: 最大 Tool Calling 迭代次数
-
-    Returns:
-        dict: 需要更新的 state 字段
+    移除了 Pipeline/Hook/Guard 体系，把控制权还给 LLM。
+    安全规则在 System Prompt + Tool 层，不在代码层。
     """
     raw_messages = state["messages"]
     session_id = state.get("session_id", "")
-
-    # 1. 构建并注入 ToolContext
-    tool_context = build_tool_context(state)
-    set_tool_context(tool_context)
-
-    # 2. 创建 Skill 的 Tool Registry 子集
-    skill_registry = create_skill_registry(tool_names)
-    langchain_tools = skill_registry.get_langchain_tools()
-
-    # 2.5 构建 Tool Execution Pipeline（NEW）
     tenant_id = int(state.get("tenant_id", 0) or 0)
 
-    pipeline = (
-        ToolExecutionPipeline()
-        .add_pre(log_tool_call_pre_hook)
-        .add_pre(make_block_duplicate_tool_hook())     # 阻断重复 tool_call (在 resolve 之前)
-        .add_pre(make_resolve_tool_hook(skill_registry))
-        .add_post(append_tool_message_post_hook)
-        .add_post(make_auto_interact_post_hook())
-        .add_post(entity_extraction_post_hook)
-        .add_post(interact_break_post_hook)
-    )
+    # ── 1. 上下文 & 工具准备 ──
+    tool_context = build_tool_context(state)
+    set_tool_context(tool_context)
+    skill_registry = create_skill_registry(tool_names)
+    langchain_tools = skill_registry.get_langchain_tools()
+    intent_name = _extract_intent_name(state)
 
-    # 3. 创建 LLM 并绑定 Tools
-    #    计算 text_length 以供路由判定（启用 LLM_ENABLE_MODEL_ROUTING 后生效）
+    # ── 2. 消息准备 ──
     messages = state["messages"]
     is_multimodal = has_images(messages)
-
-    # 文本路径：清理历史消息中的 image_url 内容块
-    # has_images() 只查最后一条 HumanMessage，但历史消息中可能仍有 image_url，
-    # 纯文本模型无法处理这类内容 → BadRequestError "Unexpected item type in content"
     if not is_multimodal:
         messages = _sanitize_messages_for_text_path(messages)
     text_length = sum(len(getattr(m, "content", "") or "") for m in messages) + len(system_prompt)
-    # 从 intent_result 中提取 intent 名，用于 router 简单意图路由
-    intent_name = _extract_intent_name(state)
 
-    llm = get_skill_llm(
-        intent=intent_name,
-        tool_count=len(langchain_tools),
-        text_length=text_length,
-        messages=messages,
-    )
-    # 记录实际使用的模型名，用于成本追踪
+    # ── 3. LLM 准备 ──
+    llm = get_skill_llm(intent=intent_name, tool_count=len(langchain_tools), text_length=text_length, messages=messages)
     llm_model_name = getattr(llm, "model_name", None) or getattr(llm, "model", "")
 
-    # 策略 2：创建"无思考"变体，用于迭代 2+ 轮（工具结果格式化不需要深度推理）
-    # 仅当需要工具调用时创建，避免浪费。首轮用 thinking，后续用 no_thinking 省 5-8s。
     llm_no_thinking = None
     if langchain_tools:
         from app.llm import LLMFactory
-        llm_no_thinking = LLMFactory.create_skill_llm(
-            force_no_think=True,
-        )
+        llm_no_thinking = LLMFactory.create_skill_llm(force_no_think=True)
         llm_no_thinking = llm_no_thinking.bind_tools(langchain_tools)
-        llm_no_thinking_model = getattr(llm_no_thinking, "model_name", None) or getattr(llm_no_thinking, "model", "")
-        logger.info(
-            f"[{skill_name}] No-think LLM ready for iterations 2+ | model={llm_no_thinking_model}"
-        )
 
-    # 多模态请求不绑定 Tools（视觉模型不支持 Tool Calling）
     if is_multimodal:
         llm_with_tools = llm
     elif langchain_tools:
@@ -1117,13 +621,10 @@ async def execute_skill(
     else:
         llm_with_tools = llm
 
-    # 4. 构建消息列表：System Prompt + 历史 messages
-    # 注入用户身份信息，让 Agent 认识当前对话的人
-    # 安全：user_name 来自 DB，必须清理以防止 prompt injection
+    # ── 4. System Prompt 组装 ──
     user_name_raw = state.get("user_name", "")
     user_role_raw = state.get("role", "")
     if user_name_raw:
-        # 剥离换行和危险字符，截断至最大长度，防止 prompt injection
         user_name_safe = user_name_raw.replace("\n", " ").replace("\r", " ").strip()[:50]
         user_role_safe = user_role_raw.replace("\n", " ").replace("\r", " ").strip()[:50]
         system_prompt = (
@@ -1131,602 +632,272 @@ async def execute_skill(
             + "（角色: " + user_role_safe + "）\n"
             "【用户信息结束】\n\n" + system_prompt
         )
-
-    # 分层组装完整 System Prompt（基础身份 + 原则 + 领域规则 + 示例）
-    # 调用方传入的 system_prompt 作为 inline 层（用于动态追加如 Vision 能力说明）
     system_prompt = _build_system_prompt(skill_name, inline_prompt=system_prompt)
 
-    # 如果消息中包含图片，注入图片理解能力说明
     if is_multimodal:
         system_prompt = (
             "【图片理解能力已启用】您可以识别和分析用户上传的图片内容。\n"
             "当用户上传图片时，请：\n"
-            "1. 仔细观察图片内容，识别其中的关键信息（如商品、文字、数据等）\n"
+            "1. 仔细观察图片内容，识别其中的关键信息\n"
             "2. 根据用户的提问，结合图片内容给出准确回答\n"
-            "3. 如果图片中包含可操作的信息（如商品名称、订单号等），可以主动建议使用相关工具处理\n\n"
+            "3. 如果图片中包含可操作的信息，可以主动建议使用相关工具处理\n\n"
             + system_prompt
         )
 
-    # 跨轮 Vision 分析缓存：文本追问（如"图片里什么颜色"）时，注入上次 Vision 分析
-    # 注入跨轮 Vision 分析缓存：追加到最后一条用户消息（和 collected_fields 同策略）
-    # 不能注入为 SystemMessage——LLM 会当作外部信息选择性忽略。
-    # 注入到用户消息中意味着"这是你之前已经完成的推理"，LLM 无法否认。
+    # ── 5. 跨轮上下文注入 ──
     cached_vision = ""
     if not is_multimodal and session_id:
         try:
             from app.memory.session_memory import SessionMemory as _SM
             cached_vision = await _SM().get_vision_analysis(session_id)
         except Exception as e:
-            logger.warning(
-                f"[{skill_name}] get_vision_analysis exception | "
-                f"session={session_id} error={type(e).__name__}: {e}"
-            )
+            logger.warning(f"[{skill_name}] get_vision_analysis failed | session={session_id} error={e}")
 
-    # 注入跨轮记忆：已收集字段追加到最后一条用户消息（LLM 不可能忽略）
     collected = {}
     if session_id:
         from app.memory.session_memory import SessionMemory
         collected = await SessionMemory().get_collected_fields(session_id)
 
-    # 构建消息列表（先不做 SystemMessage）
     full_messages: List[Any] = []
     msg_list = list(messages)
 
-    # Vision 缓存注入到用户消息（必须在 SystemMessage 之前，确保 LLM 视为用户上下文）
-    logger.info(
-        f"[{skill_name}] Vision inject check | "
-        f"cached_vision_len={len(cached_vision)} msg_list_len={len(msg_list)} "
-        f"has_human={any(isinstance(m, HumanMessage) for m in msg_list)} "
-        f"session={session_id}"
-    )
     if cached_vision and msg_list:
-        # 找到最后一条 HumanMessage（不能取 msg_list[-1]，最后一条可能是 AIMessage）
-        found = False
         for i in range(len(msg_list) - 1, -1, -1):
             if isinstance(msg_list[i], HumanMessage):
-                found = True
-                last_user = msg_list[i]
-                new_content = (
+                msg_list[i] = HumanMessage(content=(
                     f"[系统提示] 你上一轮已经完成了对用户图片的识别分析，结果如下。"
                     f"这是你自己的推理产物，请直接基于它回答用户问题：\n"
-                    f"--- 图片分析 ---\n"
-                    f"{cached_vision}\n"
-                    f"--- 分析结束 ---\n"
-                    f"--- 用户消息 ---\n"
-                    f"{last_user.content or ''}"
-                )
-                msg_list[i] = HumanMessage(content=new_content)
-                logger.info(
-                    f"[{skill_name}] Injected cached vision into user message | "
-                    f"analysis_len={len(cached_vision)} session={session_id}"
-                )
+                    f"--- 图片分析 ---\n{cached_vision}\n--- 分析结束 ---\n"
+                    f"--- 用户消息 ---\n{msg_list[i].content or ''}"
+                ))
                 break
-        if not found:
-            logger.warning(
-                f"[{skill_name}] Vision inject: no HumanMessage found in msg_list | "
-                f"msg_list_len={len(msg_list)} session={session_id}"
-            )
-    elif not cached_vision:
-        logger.debug(  # changed to debug - this is expected when no vision cache exists
-            f"[{skill_name}] Vision inject skipped: cached_vision empty | session={session_id}"
-        )
 
     if collected and msg_list:
         fields_hint = "；".join(f"{k}={v}" for k, v in collected.items())
         last_msg = msg_list[-1]
         if isinstance(last_msg, HumanMessage):
-            new_content = f"--- 已收集字段（仅供参考，由系统自动记录）---\n{fields_hint}\n--- 用户消息 ---\n{last_msg.content or ''}"
-            msg_list[-1] = HumanMessage(content=new_content)
+            msg_list[-1] = HumanMessage(content=(
+                f"--- 已收集字段（仅供参考）---\n{fields_hint}\n"
+                f"--- 用户消息 ---\n{last_msg.content or ''}"
+            ))
     full_messages.extend(msg_list)
-
-    # System Prompt 必须在最后组装（用户消息注入后）
     full_messages.insert(0, SystemMessage(content=system_prompt))
 
-    # 5. Tool Calling 循环
-    tracker = get_tracker()
-    session_id = state.get("session_id", "")
-    final_content = ""
+    # ── 6. Vision 分支 ──
     new_messages: List[Any] = []
-    iteration = 0
-    # NEW: Create shared PipelineContext (mutable state shared across tool_calls)
-    ctx = PipelineContext(
-        skill_name=skill_name,
-        session_id=session_id,
-        tenant_id=tenant_id,
-        state=state,
-        tool_context=tool_context,
-        new_messages=new_messages,
-        tracker=tracker,
-    )
+    final_content = ""
+    vision_analysis = ""
 
-    # 5.a 多模态分支：Vision LLM 仅做图片识别，结果传递给主模型做 Tool Calling
-    #     Vision LLM 不支持 Tool Calling，仅负责理解图片内容。
-    #     图片理解完成后，清理多模态消息中的 image_url、注入图片分析上下文，
-    #     然后回退到主模型 + bind_tools 的标准 Tool Calling 循环。
-    vision_analysis = ""  # 提前声明，供下游条件判断使用
     if is_multimodal:
-        # 新图片上传 → 清除旧缓存，避免旧分析干扰
         if session_id:
             try:
                 await SessionMemory().clear_vision_analysis(session_id)
             except Exception:
-                logger.debug(
-                    f"[{skill_name}] clear_vision_analysis failed (non-critical) | "
-                    f"session={session_id}"
-                )
-        max_vision_attempts = 2
-        for vision_attempt in range(max_vision_attempts):
+                logger.debug(f"[{skill_name}] clear_vision_analysis failed (non-critical) | session={session_id}")
+
+        for vision_attempt in range(2):
             try:
-                logger.info(
-                    f"[{skill_name}][DIAG] Vision LLM call starting | "
-                    f"model={llm_model_name} msg_count={len(full_messages)} "
-                    f"attempt={vision_attempt + 1}/{max_vision_attempts} "
-                    f"tenant={state['tenant_id']} session={session_id}"
-                )
+                logger.info(f"[{skill_name}][DIAG] Vision LLM calling | attempt={vision_attempt+1}/2 session={session_id}")
                 llm_breaker = get_breaker(LLM_BREAKER)
 
                 async def _vision_invoke():
-                    return await asyncio.wait_for(
-                        llm.ainvoke(full_messages),
-                        timeout=60.0,
-                    )
+                    return await asyncio.wait_for(llm.ainvoke(full_messages), timeout=60.0)
 
-                response: AIMessage = await call_with_retry(
-                    lambda: llm_breaker.call(_vision_invoke)
-                )
-                _track_llm_cost(
-                    response,
-                    model=llm_model_name,
-                    tenant_id=state.get("tenant_id"),
-                    session_id=session_id,
-                )
-
+                response: AIMessage = await call_with_retry(lambda: llm_breaker.call(_vision_invoke))
+                _track_llm_cost(response, model=llm_model_name, tenant_id=state.get("tenant_id"), session_id=session_id)
                 vision_analysis = _extract_content(response) or (
                     response.content if isinstance(response.content, str) else str(response.content)
                 )
-                # Vision LLM 的 AIMessage 不加入对话历史（分析结果通过 vision_context SystemMessage 注入）
-                # 避免文本 LLM 看到 Assistant 已"回复"了图片分析，造成语义冲突
-                logger.info(
-                    f"[{skill_name}] Vision LLM completed | analysis_len={len(vision_analysis)}"
-                )
-                # DEBUG: 记录 Vision 分析摘要（最多 300 字符），用于排查识别质量问题
-                # 安全：脱敏常见 PII 模式（手机号/邮箱/身份证），Vision 分析通常不包含这些但防御性处理
-                vision_preview = vision_analysis[:300] + ("..." if len(vision_analysis) > 300 else "")
-                import re as _re
-                vision_preview = _re.sub(r'\b1[3-9]\d{9}\b', '[PHONE_REDACTED]', vision_preview)
-                vision_preview = _re.sub(r'\b[\w.-]+@[\w.-]+\.\w+\b', '[EMAIL_REDACTED]', vision_preview)
-                logger.info(
-                    f"[{skill_name}][DIAG] Vision analysis preview: {vision_preview}"
-                )
-
-                # 空响应重试（最后一次不再重试）
-                if not vision_analysis and vision_attempt < max_vision_attempts - 1:
-                    logger.warning(
-                        f"[{skill_name}] Vision LLM returned empty content, "
-                        f"retrying ({vision_attempt + 1}/{max_vision_attempts}) | "
-                        f"tenant={state['tenant_id']} session={session_id}"
-                    )
+                logger.info(f"[{skill_name}] Vision completed | len={len(vision_analysis)}")
+                if not vision_analysis and vision_attempt < 1:
+                    logger.warning(f"[{skill_name}] Vision returned empty, retrying | session={session_id}")
                     continue
                 break
             except CircuitBreakerOpenError:
-                logger.error(
-                    f"[{skill_name}][SLS] Vision LLM circuit_breaker_open | "
-                    f"tenant={state['tenant_id']} session={session_id}"
-                )
+                logger.error(f"[{skill_name}][SLS] Vision circuit_breaker_open | session={session_id}")
                 vision_analysis = ""
                 break
             except Exception as e:
-                logger.error(f"[{skill_name}] Vision LLM call failed: {e}")
+                logger.error(f"[{skill_name}] Vision failed: {e} | session={session_id}")
                 vision_analysis = ""
                 break
 
         if not vision_analysis:
-            # Vision LLM 完全失败：返回友好提示，不进入 Tool Calling
-            logger.error(
-                f"[{skill_name}] Vision LLM failed, no analysis available | "
-                f"tenant={state['tenant_id']} session={session_id}"
-            )
             final_content = "抱歉，图片分析暂时无法完成，请用文字描述您的需求，我会帮您处理。"
         else:
-            # Vision 成功 → 图片理解结果注入上下文，切换到主模型 + Tool Calling
             vision_context = (
-                f"[图片分析结果]\n"
-                f"用户上传了图片，以下是图片中识别到的信息：\n"
-                f"{vision_analysis}\n"
-                f"请严格基于以上分析结果和用户的原始问题，使用可用工具完成操作。"
-                f"不要编造图片中没有的信息。"
+                f"[图片分析结果]\n用户上传了图片，以下是图片中识别到的信息：\n{vision_analysis}\n"
+                f"请严格基于以上分析结果和用户的原始问题，使用可用工具完成操作。不要编造图片中没有的信息。"
             )
-
-            # 持久化 Vision 分析，供后续轮次追问（如"图片里的颜色是什么"）复用
             if session_id and vision_analysis:
                 try:
-                    ok = await SessionMemory().set_vision_analysis(session_id, vision_analysis)
-                    if not ok:
-                        logger.warning(
-                            f"[{skill_name}] set_vision_analysis returned False | "
-                            f"session={session_id} len={len(vision_analysis)}"
-                        )
+                    await SessionMemory().set_vision_analysis(session_id, vision_analysis)
                 except Exception as e:
-                    logger.error(
-                        f"[{skill_name}] set_vision_analysis failed | "
-                        f"session={session_id} error={type(e).__name__}: {e}"
-                    )
+                    logger.error(f"[{skill_name}] set_vision_analysis failed | session={session_id} error={e}")
 
-            # 清理历史消息中的 image_url，替换为纯文本（主模型不支持多模态 content list）
             messages = _sanitize_messages_for_text_path(list(messages))
-
-            # 重建消息列表，注入图片分析上下文
             system_msg = SystemMessage(content=system_prompt)
             full_messages = [system_msg] + messages
             full_messages.append(SystemMessage(content=vision_context))
 
-            # 重新计算 text_length（含 vision_context），确保模型路由准确
-            text_length = (
-                sum(len(getattr(m, "content", "") or "") for m in messages)
-                + len(system_prompt)
-                + len(vision_context)
-            )
-
-            # 重建文本 LLM 并绑定 Tools
-            llm = get_skill_llm(
-                intent=intent_name,
-                tool_count=len(langchain_tools),
-                text_length=text_length,
-                messages=messages,
-                enable_thinking=True,  # 开启思考：图片理解后的操作需要推理
-            )
+            text_length = sum(len(getattr(m, "content", "") or "") for m in messages) + len(system_prompt) + len(vision_context)
+            llm = get_skill_llm(intent=intent_name, tool_count=len(langchain_tools), text_length=text_length, messages=messages, enable_thinking=True)
             llm_model_name = getattr(llm, "model_name", None) or getattr(llm, "model", "")
 
-            # P3修复: 图片消息时第一轮隐藏加工项查询（分类可在基本信息阶段收集）
-            # 基于 tool_names 而非 skill_name，同时覆盖 product 和 general 等 Skill
             if "processing_item_query" in tool_names:
                 langchain_tools = [t for t in langchain_tools if t.name != "processing_item_query"]
-                logger.info(
-                    f"[{skill_name}] Multimodal: hiding processing_item_query, "
-                    f"{len(langchain_tools)} tools remain | "
-                    f"tenant={state['tenant_id']} session={session_id}"
-                )
+                logger.info(f"[{skill_name}] Multimodal: hiding processing_item_query | {len(langchain_tools)} tools remain")
 
             if langchain_tools:
                 llm_with_tools = llm.bind_tools(langchain_tools)
             else:
                 llm_with_tools = llm
 
-            # 重建 no-thinking 变体（工具集可能已修改，需重新绑定）
             llm_no_thinking = None
             if langchain_tools:
                 llm_no_thinking = LLMFactory.create_skill_llm(force_no_think=True)
                 llm_no_thinking = llm_no_thinking.bind_tools(langchain_tools)
 
-            logger.info(
-                f"[{skill_name}] Multimodal→Text fallback | "
-                f"text_model={llm_model_name} tools={len(langchain_tools)} "
-                f"tenant={state['tenant_id']} session={session_id}"
-            )
-
-    # 5.b Tool Calling 循环（纯文本 Skill 或 图片理解后的主模型处理）
+    # ── 7. ReAct 循环 ──
     if not is_multimodal or (is_multimodal and vision_analysis):
-
-        # 检测取消信号
-
-        # 检测取消信号：用户说"算了""取消""不创建了"→跳过流程
+        # 取消检测
         last_user_msg = ""
         for m in reversed(raw_messages):
             if isinstance(m, HumanMessage):
                 last_user_msg = _extract_content(m)
                 break
         cancel_keywords = ["算了", "取消", "不创建了", "不买了", "不要了", "不用了"]
-        cancelled = False
         if any(kw in last_user_msg for kw in cancel_keywords):
-            logger.info(f"[{skill_name}] Cancel detected, skipping execution | session={session_id}")
+            logger.info(f"[{skill_name}] Cancel detected | session={session_id}")
             final_content = "好的，已取消。有什么其他需要帮您的吗？"
             new_messages.clear()
-            cancelled = True
             if session_id:
                 try:
-                    from app.memory.session_memory import SessionMemory
                     await SessionMemory().clear_pending_skill(session_id)
                 except Exception:
                     pass
-
-        # 如果多模态分支已经设置了 final_content（Vision 失败），跳过循环
-        elif is_multimodal and not vision_analysis:
-            pass  # 已在上面设置了 final_content = 错误提示
-        elif not cancelled:
+        else:
+            tracker = get_tracker()
             for iteration in range(max_iterations):
-                logger.info(
-                    f"[{skill_name}] Iteration {iteration + 1}/{max_iterations} | "
-                    f"tenant={state['tenant_id']} session={session_id}"
-                )
+                logger.info(f"[{skill_name}] Iteration {iteration+1}/{max_iterations} | session={session_id}")
 
-                # Context 管理: 迭代 4+ 轮后裁剪最旧的 tool 结果，防止溢出
-                if iteration >= 4 and len(new_messages) > 6:
-                    keep_recent = 6  # 保留最近 3 轮 (tool+assistant)
-                    trimmed = new_messages[-keep_recent:]
-                    if len(trimmed) < len(new_messages):
-                        logger.info(f"[{skill_name}][CTX] Trimmed {len(new_messages) - len(trimmed)} old messages")
-                        new_messages = trimmed
-                        ctx.new_messages = new_messages  # NEW: keep ctx in sync
+                # 迭代 2+ 用 no-thinking 省延迟
+                current_llm = llm_no_thinking if (iteration > 0 and llm_no_thinking is not None) else llm_with_tools
 
-                # 策略 2：首轮用默认 LLM，后续轮用 no-thinking 变体（仅格式化结果）
-                # 节省 5-8s/轮，质量无损（实测：8.0s → 2.7s）
-                if iteration > 0 and llm_no_thinking is not None:
-                    current_llm = llm_no_thinking
-                    if iteration == 1:
-                        logger.info(
-                            f"[{skill_name}] Switching to no-thinking LLM for iteration 2+"
-                            f" | session={session_id}"
-                        )
-                else:
-                    current_llm = llm_with_tools
-
-                # 调用 LLM（带超时 + 熔断保护）
+                # ── LLM 调用（超时 + 熔断保护）──
                 try:
-                    logger.info(
-                        f"[{skill_name}][DIAG] LLM call starting | "
-                        f"iteration={iteration + 1} msg_count={len(full_messages) + len(new_messages)} "
-                        f"tenant={state['tenant_id']} session={session_id}"
-                    )
+                    logger.info(f"[{skill_name}][DIAG] LLM calling | iter={iteration+1} msgs={len(full_messages)+len(new_messages)} session={session_id}")
                     llm_breaker = get_breaker(LLM_BREAKER)
 
                     async def _llm_invoke():
-                        return await asyncio.wait_for(
-                            current_llm.ainvoke(full_messages + new_messages),
-                            timeout=60.0,
-                        )
+                        return await asyncio.wait_for(current_llm.ainvoke(full_messages + new_messages), timeout=60.0)
 
-                    # retry 包在 breaker 外层：对整个含熔断的调用进行可重试判定
-                    response: AIMessage = await call_with_retry(
-                        lambda: llm_breaker.call(_llm_invoke)
-                    )
-                    # 提取 token 用量（失败不影响主流程）
-                    token_info = ""
-                    try:
-                        usage = _extract_usage(response)
-                        if usage:
-                            token_info = f" tokens_in={usage[0]} tokens_out={usage[1]}"
-                    except Exception:
-                        pass
-                    # 诊断：dump additional_kwargs 和 response_metadata 的全部 key（排查 reasoning_content 位置）
-                    try:
-                        ak = getattr(response, 'additional_kwargs', {}) or {}
-                        ak_keys = list(ak.keys()) if isinstance(ak, dict) else type(ak).__name__
-                    except Exception:
-                        ak_keys = "error"
-                    try:
-                        rm = getattr(response, 'response_metadata', {}) or {}
-                        rm_keys = list(rm.keys()) if isinstance(rm, dict) else type(rm).__name__
-                    except Exception:
-                        rm_keys = "error"
+                    response: AIMessage = await call_with_retry(lambda: llm_breaker.call(_llm_invoke))
+                    _track_llm_cost(response, model=llm_model_name, tenant_id=state.get("tenant_id"), session_id=session_id)
                     logger.info(
-                        f"[{skill_name}][DIAG] LLM call completed | iter={iteration + 1} "
-                        f"has_tool_calls={bool(response.tool_calls)} "
-                        f"content_len={len(response.content or '')} "
-                        f"reasoning_len={len(getattr(response, 'additional_kwargs', {}).get('reasoning_content', '') or getattr(response, 'response_metadata', {}).get('reasoning_content', '') or '')} "
-                        f"additional_kwargs_keys={ak_keys} response_metadata_keys={rm_keys} "
-                        f"msg_count={len(full_messages) + len(new_messages)}{token_info}"
-                        f" | type={type(response).__name__} session={session_id}"
-                    )
-                    # 成本追踪（失败不阻塞主流程）
-                    _track_llm_cost(
-                        response,
-                        model=llm_model_name,
-                        tenant_id=state.get("tenant_id"),
-                        session_id=session_id,
+                        f"[{skill_name}][DIAG] LLM done | iter={iteration+1} "
+                        f"has_tools={bool(response.tool_calls)} content_len={len(response.content or '')} "
+                        f"session={session_id}"
                     )
                 except CircuitBreakerOpenError:
-                    # LLM 熔断器处于 OPEN：返回友好提示，不再冲击 LLM
-                    logger.error(
-                        f"[{skill_name}][SLS] LLM circuit_breaker_open | "
-                        f"tenant={state['tenant_id']} session={session_id}"
-                    )
-                    final_content = LLM_FALLBACK_MESSAGE
+                    logger.error(f"[{skill_name}][SLS] LLM circuit_breaker_open | session={session_id}")
+                    final_content = "抱歉，AI 服务暂时不可用，请稍后重试。"
                     break
                 except asyncio.TimeoutError:
-                    logger.error(
-                        f"[{skill_name}][SLS] LLM call TIMEOUT after 60s | "
-                        f"iteration={iteration + 1} tenant={state['tenant_id']} session={session_id}"
-                    )
-                    logger.warning(
-                        f"[{skill_name}][SLS] LLM call TIMEOUT | "
-                        f"iteration={iteration + 1} tenant={state['tenant_id']} session={session_id}"
-                    )
-                    final_content = await _smart_fallback(skill_name, raw_messages, new_messages, session_id)
+                    logger.error(f"[{skill_name}][SLS] LLM timeout | iter={iteration+1} session={session_id}")
+                    final_content = "抱歉，响应超时，请换个方式描述您的需求。"
                     break
                 except Exception as e:
-                    tb = traceback.format_exc()
-                    logger.error(
-                        f"[{skill_name}][SLS] LLM call FAILED | "
-                        f"tenant={state['tenant_id']} session={session_id} "
-                        f"error={type(e).__name__}: {e} | traceback={tb[:500]}"
-                    )
-                    final_content = await _smart_fallback(skill_name, raw_messages, new_messages, session_id)
+                    logger.error(f"[{skill_name}][SLS] LLM failed | session={session_id} error={type(e).__name__}: {e}")
+                    final_content = "抱歉，我遇到了一些问题，请稍后重试。"
                     break
+
                 new_messages.append(response)
 
-                # 检查是否有 tool_calls
+                # ── 无 tool_calls → LLM 已完成回复 ──
                 if not response.tool_calls:
-                    # 没有 tool_calls，LLM 返回了最终回复
                     new_text = _extract_content(response)
                     if new_text:
                         final_content = new_text
                     elif not final_content:
-                        logger.warning(
-                            f"[{skill_name}] LLM returned empty final reply | "
-                            f"raw_content_len={len(response.content or '')}"
-                        )
-                        final_content = await _smart_fallback(skill_name, raw_messages, new_messages, session_id)
-                    else:
-                        # LLM 返回空但前面已有文本（如 tool 前的文本）→ 保留之前的内容
-                        logger.info(
-                            f"[{skill_name}] LLM returned empty reply, keeping previous text | "
-                            f"previous_len={len(final_content)}"
-                        )
+                        final_content = "抱歉，我暂时无法生成回复，请换个方式描述您的需求。"
                     break
 
-                # 有 tool_calls 但 LLM 可能在同一个消息中先输出了文本
-                # 提取该文本作为 final_content，确保 interact 等场景下有文本展示
-                # 工具调用前的文本只是 LLM 推理过程，不是最终回复，不暴露给用户
-                text_before_tools = _extract_content(response)
-                if text_before_tools:
-                    logger.info(
-                        f"[{skill_name}] Reasoning before tool_calls (not shown to user) | len={len(text_before_tools)}"
-                    )
-
-                # 执行每个 tool_call — 统一经 ToolExecutionPipeline（NEW）
-                ctx.has_own_interact = any(
-                    tc["name"] == "interact" for tc in response.tool_calls
-                )
-                # 同工具重复调用检测 (防止 LLM 陷入 tool-call 循环)
-                # 用完整 args 做 key：只有完全相同的参数组合才算重复，不同参数的是合法批量调用
-                tool_call_counts: dict[str, int] = {}
+                # ── 执行 Tool 调用 ──
                 for tool_call in response.tool_calls:
                     tool_name = tool_call["name"]
                     args = tool_call.get("args", {})
-                    # 用排序后的 args JSON 作为 key，确保任何参数差异都能区分
-                    loop_key = f"{tool_name}:{json.dumps(args, sort_keys=True, ensure_ascii=False)}"
-                    tool_call_counts[loop_key] = tool_call_counts.get(loop_key, 0) + 1
-                    if tool_call_counts[loop_key] >= 3:
-                        logger.warning(
-                            f"[{skill_name}] SAME_TOOL_LOOP: {tool_name} called "
-                            f"{tool_call_counts[loop_key]} times with identical args | "
-                            f"session={session_id} — skipping duplicate, LLM will respond naturally"
-                        )
-                        # 跳过重复调用但不强制中断：前 2 次已拿到 tool 结果，
-                        # LLM 在下轮 iteration 可以基于已有数据生成自然回复
+                    tool = skill_registry.get_tool(tool_name)
+
+                    if tool is None:
+                        logger.warning(f"[{skill_name}] Tool not found: {tool_name} | session={session_id}")
+                        new_messages.append(ToolMessage(
+                            content=json.dumps({"success": False, "error": "tool_not_found", "message": f"工具 {tool_name} 不可用"}, ensure_ascii=False),
+                            tool_call_id=tool_call["id"], name=tool_name,
+                        ))
                         continue
 
-                    ctx.tool_call = tool_call
-                    ctx.tool_instance = None
-                    ctx.result_str = ""
-                    ctx.result_dict = {}
+                    # 执行
+                    result_str, result_dict = await _execute_tool_safe(tool, args, tool_context, state)
 
-                    should_break = await pipeline.run(ctx)
-                    if should_break:
-                        break
+                    # 自愈重试
+                    if not result_dict.get("success") and result_dict.get("suggestion"):
+                        corrected = await _self_correct_retry(tool, args, tool_context, skill_name, result_dict, session_id, tenant_id, state)
+                        if corrected:
+                            result_str, result_dict = corrected
 
-                if ctx.interact_called:
-                    break
+                    new_messages.append(ToolMessage(content=result_str, tool_call_id=tool_call["id"], name=tool_name))
+
+                    # 实体提取
+                    try:
+                        tracker.extract(tool_name, result_dict)
+                    except Exception:
+                        pass
+
+                    # interact 成功后更新 pending_skill
+                    if tool_name == "interact" and result_dict.get("success"):
+                        from app.memory.session_memory import SessionMemory as _SM2
+                        try:
+                            await _SM2().set_pending_skill(session_id, skill_name)
+                        except Exception:
+                            pass
             else:
-                # 达到最大迭代次数 → 智能兜底
+                # 达到 max_iterations
                 if new_messages:
                     last_ai = [m for m in new_messages if isinstance(m, AIMessage)]
                     if last_ai:
-                        extracted = _extract_content(last_ai[-1])
-                        final_content = extracted or await _smart_fallback(skill_name, raw_messages, new_messages, session_id)
+                        final_content = _extract_content(last_ai[-1]) or "抱歉，处理超时，请稍后重试。"
                 if not final_content:
-                    final_content = await _smart_fallback(skill_name, raw_messages, new_messages, session_id)
+                    final_content = "抱歉，处理超时，请换个方式描述您的需求。"
 
-    # 6. 更新实体
+    # ── 8. 实体追踪 ──
     entities = {}
     if session_id:
-        extracted = tracker.get_entities(session_id)
-        entities = {
-            "order_nos": extracted.order_nos,
-            "phone_numbers": extracted.phone_numbers,
-            "product_names": extracted.product_names,
-            "product_ids": extracted.product_ids,
-            "amounts": extracted.amounts,
-        }
+        extracted = get_tracker().get_entities(session_id)
+        entities = {"order_nos": extracted.order_nos, "phone_numbers": extracted.phone_numbers, "product_names": extracted.product_names, "product_ids": extracted.product_ids, "amounts": extracted.amounts}
 
-    # 7. 兜底：如果所有迭代后仍无内容，用 LLM 智能生成
-    if not final_content:
-        if ctx.interact_called:
-            final_content = "请查看并选择以下选项："
-        else:
-            final_content = await _smart_fallback(skill_name, raw_messages, new_messages, session_id)
-        logger.warning(
-            f"[{skill_name}] Empty final_content after all iterations | "
-            f"tenant={state['tenant_id']} session={session_id} "
-            f"interact_called={ctx.interact_called} "
-            f"new_messages_count={len(new_messages)}"
-        )
+    # ── 9. 返回值 ──
+    result: dict[str, Any] = {"messages": new_messages, "final_answer": final_content, "skill_used": skill_name, "entities": entities}
 
-    # 8. 返回 state 更新
-    result: dict[str, Any] = {
-        "messages": new_messages,
-        "final_answer": final_content,
-        "skill_used": skill_name,
-        "entities": entities,
-    }
-
-    # 跨轮 skill 持久化
+    # ── 10. 跨轮持久化 ──
     creation_skills = {"product", "order", "aftersales"}
     if skill_name in creation_skills:
-        # 成功完成: LLM 明确说创建/下单成功（过去时/完成时标记）
         success_markers = ("创建成功", "已创建", "下单成功", "工单已创建", "售后工单")
-        has_succeeded = any(kw in final_content for kw in success_markers)
-        # 用户取消: 必须是确认取消的陈述句，而非 LLM 提及"取消"选项
-        # 反例: "想取消请回复'取消'" — 这是提供选项，不是真的取消了
         cancel_markers = ("已取消", "已取消创建", "好的，已取消", "不创建了", "算了不买了")
+        has_succeeded = any(kw in final_content for kw in success_markers)
         has_cancelled = any(kw in final_content for kw in cancel_markers)
 
         if has_succeeded or has_cancelled:
-            # 流程结束 → 清除 pending_skill，释放路由锁
             try:
-                from app.memory.session_memory import SessionMemory
-                sm = SessionMemory()
-                await sm.set_pending_skill(session_id, None)
-                logger.info(
-                    f"[{skill_name}] Flow complete, pending_skill cleared"
-                    f" | trigger={'success' if has_succeeded else 'cancel'}"
-                    f" session={session_id}"
-                )
+                await SessionMemory().set_pending_skill(session_id, None)
+                logger.info(f"[{skill_name}] Flow complete, pending_skill cleared | session={session_id}")
             except Exception as e:
-                logger.warning(
-                    f"[{skill_name}] Failed to clear pending_skill on flow end"
-                    f" | session={session_id} error={e}"
-                )
+                logger.warning(f"[{skill_name}] Failed to clear pending_skill | session={session_id} error={e}")
         else:
-            # 仍在创建流程中 → 始终保持 pending_skill
             result["pending_interact_skill"] = skill_name
             try:
-                from app.memory.session_memory import SessionMemory
-                sm = SessionMemory()
-                await sm.set_pending_skill(session_id, skill_name)
+                await SessionMemory().set_pending_skill(session_id, skill_name)
             except Exception as e:
-                logger.warning(
-                    f"[{skill_name}] Failed to persist pending_skill"
-                    f" | session={session_id} error={e}"
-                )
-
-    # ── 跨轮字段记忆：LLM 从对话中提取所有已讨论字段 ──
-    if session_id and final_content and skill_name in creation_skills:
-        from app.memory.session_memory import SessionMemory
-        sm = SessionMemory()
-        fields = await sm.get_collected_fields(session_id)
-
-        # 创建成功或取消 → 清除字段记忆
-        success_markers = ("创建成功", "已创建", "下单成功", "工单已创建", "售后工单")
-        has_succeeded = any(kw in final_content for kw in success_markers)
-        has_cancelled = any(kw in final_content for kw in ("已取消", "取消", "算了", "不创建了"))
-
-        if has_succeeded or has_cancelled:
-            await sm.clear_collected_fields(session_id)
-        else:
-            # LLM 从本轮对话中提取新增字段（轻量任务，显式关思考）
-            try:
-                extract_prompt = (
-                    f"从以下对话中提取已讨论的商品/订单/工单字段，返回纯JSON:\n"
-                    f"AI回复: {final_content[:500]}\n"
-                    f"已有字段: {json.dumps(fields, ensure_ascii=False)}\n\n"
-                    f"只输出JSON，不要输出其他内容。未讨论的字段不要编造。"
-                )
-                raw = await LLMFactory.invoke_text_safe([
-                    SystemMessage(content="你是字段提取器。只输出JSON。"),
-                    HumanMessage(content=extract_prompt),
-                ], force_no_think=True)
-                start = raw.find("{"); end = raw.rfind("}")
-                if start >= 0 and end > start:
-                    new_fields = json.loads(raw[start:end + 1])
-                    fields.update({k: v for k, v in new_fields.items() if v})
-                if fields:
-                    await sm.set_collected_fields(session_id, fields)
-                    logger.debug(f"[{skill_name}] Collected {len(fields)} fields | session={session_id}")
-            except Exception as e:
-                logger.warning(
-                    f"[{skill_name}] Field memory extraction failed (non-critical) | "
-                    f"error={e} session={session_id}"
-                )
+                logger.warning(f"[{skill_name}] Failed to persist pending_skill | session={session_id} error={e}")
 
     return result
