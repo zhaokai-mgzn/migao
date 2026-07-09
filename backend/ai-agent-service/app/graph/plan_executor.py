@@ -716,8 +716,8 @@ async def _classify_user_action(
             result = json.loads(raw[start:end + 1])
             logger.info(f"[pe] classify: {result.get('action')} | session={session_id}")
             return {"action": result.get("action", "modify"), "payload": result.get("payload", {})}
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"[pe] classify_user_action failed: {e} | session={session_id}")
     return {"action": "modify"}
 
 
@@ -1042,7 +1042,7 @@ async def execute_plan(
             if "cancel" in user_intent:
                 await _clear_plan(session_id)
                 return {"final_answer": "好的，已取消。", "messages": [AIMessage(content="好的，已取消。")], "skill_used": skill_name}
-            if "confirm" in user_intent and len(plan.steps) >= 3 and plan.steps[-1].type == "execute":
+            if "confirm" in user_intent and len(plan.steps) >= 2 and plan.steps[-1].type == "execute":
                 plan.current_step = len(plan.steps) - 1
                 current = plan.current()
                 logger.info(f"[pe] Ask→Execute (LLM confirmed) | step {plan.current_step + 1}")

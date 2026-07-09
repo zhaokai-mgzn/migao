@@ -1692,7 +1692,10 @@ async def execute_skill(
                 if fields:
                     await sm.set_collected_fields(session_id, fields)
                     logger.debug(f"[{skill_name}] Collected {len(fields)} fields | session={session_id}")
-            except Exception:
-                pass  # 非关键路径，静默失败
+            except Exception as e:
+                logger.warning(
+                    f"[{skill_name}] Field memory extraction failed (non-critical) | "
+                    f"error={e} session={session_id}"
+                )
 
     return result
