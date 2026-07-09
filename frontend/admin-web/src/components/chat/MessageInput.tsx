@@ -1,7 +1,7 @@
 'use client'
 
-import { useRef, useEffect, useState } from 'react'
-import { Send, Loader2, StopCircle, ImagePlus, X } from 'lucide-react'
+import { useRef, useEffect, useState, useMemo } from 'react'
+import { Send, Loader2, StopCircle, ImagePlus, X, Plus } from 'lucide-react'
 import NextImage from 'next/image'
 import { cn } from '@/lib/utils'
 import { useChatStore } from '@/store/chat'
@@ -21,13 +21,24 @@ const MAX_FILE_SIZE = 5 * 1024 * 1024 // 5MB
 const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
 
 export default function MessageInput() {
-  const { currentSessionId, isStreaming, sendMessage, stopStreaming } =
+  const { currentSessionId, sessions, isStreaming, sendMessage, stopStreaming, createSession } =
     useChatStore()
   const [input, setInput] = useState('')
   const [images, setImages] = useState<PendingImage[]>([])
   const [isUploading, setIsUploading] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // 当前会话状态：closed 时禁用输入
+  const currentSession = useMemo(
+    () => sessions.find(s => s.session_id === currentSessionId),
+    [sessions, currentSessionId]
+  )
+  const isSessionClosed = currentSession?.status === 'closed'
+
+  const handleNewSession = () => {
+    createSession()
+  }
 
   // 自动调整高度
   useEffect(() => {
@@ -103,6 +114,10 @@ export default function MessageInput() {
 
   const handleSend = () => {
     if ((!input.trim() && images.length === 0) || isStreaming || isUploading || !currentSessionId) return
+    if (isSessionClosed) {
+      toast.error('会话已结束，请创建新对话')
+      return
+    }
     const imageUrls = images.length > 0 ? images.map((img) => img.url) : undefined
     sendMessage(input || ' ', imageUrls)
     setInput('')
@@ -167,14 +182,14 @@ export default function MessageInput() {
           {/* 图片上传按钮 */}
           <button
             onClick={() => fileInputRef.current?.click()}
-            disabled={isStreaming || isUploading || images.length >= MAX_IMAGES}
+            disabled={isSessionClosed || isStreaming || isUploading || images.length >= MAX_IMAGES}
             className={cn(
               'p-1.5 rounded-lg transition-colors flex-shrink-0',
-              images.length >= MAX_IMAGES
+              isSessionClosed || images.length >= MAX_IMAGES
                 ? 'text-gray-300 cursor-not-allowed'
                 : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
             )}
-            title={images.length >= MAX_IMAGES ? `最多 ${MAX_IMAGES} 张图片` : '添加图片'}
+            title={isSessionClosed ? '会话已结束' : images.length >= MAX_IMAGES ? `最多 ${MAX_IMAGES} 张图片` : '添加图片'}
           >
             {isUploading ? (
               <Loader2 className="w-5 h-5 animate-spin" />
@@ -191,38 +206,62 @@ export default function MessageInput() {
             onChange={handleFileSelect}
           />
 
-          <textarea
-            ref={textareaRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="输入消息... (Enter 发送, Shift+Enter 换行)"
-            disabled={isStreaming}
-            rows={1}
-            className="flex-1 bg-transparent border-0 resize-none max-h-32 px-1 py-1.5 text-sm focus:outline-none focus:ring-0 disabled:opacity-50 placeholder:text-gray-400"
-          />
-
-          {isStreaming ? (
-            <button
-              onClick={stopStreaming}
-              className="p-2 rounded-xl bg-red-500 text-white hover:bg-red-600 transition-colors flex-shrink-0"
-              title="停止生成"
-            >
-              <StopCircle className="w-5 h-5" />
-            </button>
+          {isSessionClosed ? (
+            <>
+              <textarea
+                ref={textareaRef}
+                value=""
+                readOnly
+                disabled
+                placeholder="会话已结束，请创建新对话"
+                rows={1}
+                className="flex-1 bg-transparent border-0 resize-none max-h-32 px-1 py-1.5 text-sm focus:outline-none focus:ring-0 disabled:opacity-50 placeholder:text-gray-400"
+              />
+              <button
+                onClick={handleNewSession}
+                className="p-2 rounded-xl bg-primary-600 text-white hover:bg-primary-700 transition-colors flex-shrink-0 text-sm font-medium whitespace-nowrap"
+              >
+                <Plus className="w-4 h-4 inline mr-1" />
+                新建对话
+              </button>
+            </>
           ) : (
-            <button
-              onClick={handleSend}
-              disabled={!canSend}
-              className={cn(
-                'p-2 rounded-xl transition-colors flex-shrink-0',
-                canSend
-                  ? 'bg-primary-600 text-white hover:bg-primary-700'
-                  : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+            <>
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="输入消息... (Enter 发送, Shift+Enter 换行)"
+                disabled={isStreaming}
+                rows={1}
+                className="flex-1 bg-transparent border-0 resize-none max-h-32 px-1 py-1.5 text-sm focus:outline-none focus:ring-0 disabled:opacity-50 placeholder:text-gray-400"
+              />
+
+              {isStreaming ? (
+                <button
+                  onClick={stopStreaming}
+                  className="p-2 rounded-xl bg-red-500 text-white hover:bg-red-600 transition-colors flex-shrink-0"
+                  title="停止生成"
+                >
+                  <StopCircle className="w-5 h-5" />
+                </button>
+              ) : (
+                <button
+                  onClick={handleSend}
+                  disabled={!canSend}
+                  className={cn(
+                    'p-2 rounded-xl transition-colors flex-shrink-0',
+                    canSend
+                      ? 'bg-primary-600 text-white hover:bg-primary-700'
+                      : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                  )}
+                  title="发送"
+                >
+                  <Send className="w-5 h-5" />
+                </button>
               )}
-            >
-              <Send className="w-5 h-5" />
-            </button>
+            </>
           )}
         </div>
         <p className="text-[10px] text-gray-400 mt-1.5 text-center">

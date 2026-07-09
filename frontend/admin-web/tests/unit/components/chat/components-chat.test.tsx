@@ -68,6 +68,15 @@ vi.mock('@/store/chat', () => {
   }
 })
 
+vi.mock('sonner', () => ({
+  toast: {
+    error: vi.fn(),
+    success: vi.fn(),
+    warning: vi.fn(),
+    info: vi.fn(),
+  },
+}))
+
 // Mock global fetch for suggestion-feedback POST (fire-and-forget)
 const mockFetch = vi.fn().mockResolvedValue({ ok: true })
 
@@ -525,6 +534,75 @@ describe('MessageInput', () => {
     render(<MessageInput />)
     const textarea = screen.getByPlaceholderText(/输入消息/)
     expect(textarea).toBeInTheDocument()
+  })
+
+  // ── 会话关闭态测试 (#会话生命周期) ──
+
+  it('disables input and shows closed placeholder when session is closed', () => {
+    mockUseChatStore.mockReturnValue(
+      makeDefaultChatState({
+        currentSessionId: 's1',
+        sessions: [
+          { session_id: 's1', title: '旧对话', status: 'closed', updated_at: '2025-01-01' },
+        ],
+      })
+    )
+
+    render(<MessageInput />)
+
+    // textarea 应该被禁用
+    const textarea = screen.getByPlaceholderText('会话已结束，请创建新对话')
+    expect(textarea).toBeDisabled()
+
+    // 不应该渲染发送按钮
+    expect(screen.queryByTitle('发送')).not.toBeInTheDocument()
+  })
+
+  it('shows "新建对话" button when session is closed', () => {
+    const createSession = vi.fn()
+    mockUseChatStore.mockReturnValue(
+      makeDefaultChatState({
+        currentSessionId: 's1',
+        sessions: [
+          { session_id: 's1', title: '旧对话', status: 'closed', updated_at: '2025-01-01' },
+        ],
+        createSession,
+      })
+    )
+
+    render(<MessageInput />)
+
+    const newBtn = screen.getByText('新建对话')
+    expect(newBtn).toBeInTheDocument()
+
+    fireEvent.click(newBtn)
+    expect(createSession).toHaveBeenCalled()
+  })
+
+  it('has no send mechanism when session is closed (disabled textarea, no send button)', () => {
+    const sendMessage = vi.fn()
+    mockUseChatStore.mockReturnValue(
+      makeDefaultChatState({
+        currentSessionId: 's1',
+        sessions: [
+          { session_id: 's1', title: '旧对话', status: 'closed', updated_at: '2025-01-01' },
+        ],
+        sendMessage,
+      })
+    )
+
+    render(<MessageInput />)
+
+    // textarea 是 disabled + readOnly，用户无法输入
+    const textarea = screen.getByPlaceholderText('会话已结束，请创建新对话')
+    expect(textarea).toBeDisabled()
+    expect(textarea).toHaveAttribute('readonly')
+
+    // 没有发送按钮
+    expect(screen.queryByTitle('发送')).not.toBeInTheDocument()
+
+    // 唯一可操作的是"新建对话"
+    expect(screen.getByText('新建对话')).toBeInTheDocument()
   })
 })
 

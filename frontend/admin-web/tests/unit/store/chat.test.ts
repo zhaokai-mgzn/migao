@@ -855,6 +855,25 @@ describe('useChatStore (Zustand chat store) — #571', () => {
       expect(useChatStore.getState().isStreaming).toBe(false)
     })
 
+    it('should reject sending when current session is closed', async () => {
+      act(() => {
+        useChatStore.setState({
+          currentSessionId: 'cs1',
+          sessions: [
+            { session_id: 'cs1', title: '旧对话', status: 'closed', created_at: '', updated_at: '' },
+          ],
+        })
+      })
+
+      await act(async () => {
+        await useChatStore.getState().sendMessage('hello')
+      })
+
+      // 不应发起 fetch 请求，直接拒绝
+      expect(useChatStore.getState().isStreaming).toBe(false)
+      expect(toast.error).toHaveBeenCalledWith('会话已结束，请创建新对话')
+    })
+
     // -----------------------------------------------------------------------
     // Successful streaming — basic flow
     // -----------------------------------------------------------------------
@@ -1333,12 +1352,7 @@ describe('useChatStore (Zustand chat store) — #571', () => {
       expect(aiMsg.wasAborted).toBeFalsy()
     })
 
-    it('should handle 409 SESSION_CLOSED error — auto create new session', async () => {
-      mockCreateSession.mockResolvedValue({
-        data: { id: 'auto-new-session' },
-      })
-      mockGetSessions.mockResolvedValue({ data: { items: [] } })
-
+    it('should handle 409 SESSION_CLOSED error — show toast, no auto-create', async () => {
       global.fetch = vi.fn().mockRejectedValue({
         status: 409,
         message: 'Session closed',
@@ -1349,13 +1363,17 @@ describe('useChatStore (Zustand chat store) — #571', () => {
         await useChatStore.getState().sendMessage('test')
       })
 
-      expect(mockCreateSession).toHaveBeenCalled()
-      expect(toast.info).toHaveBeenCalledWith('已创建新会话，请重新发送消息')
+      // 不再自动创建新会话
+      expect(mockCreateSession).not.toHaveBeenCalled()
+      // 应该提示用户手动创建
+      expect(toast.error).toHaveBeenCalledWith('会话已结束，请创建新对话')
 
-      // After 409: createSession() clears messages → finally maps empty array → messages is []
-      // currentSessionId is updated by createSession
+      // AI 消息应显示提示文本
+      const msgs = useChatStore.getState().messages
+      const aiMsg = msgs[msgs.length - 1]
+      expect(aiMsg.role).toBe('assistant')
+      expect(aiMsg.content).toContain('会话已结束')
       expect(useChatStore.getState().isStreaming).toBe(false)
-      expect(useChatStore.getState().currentSessionId).toBe('auto-new-session')
     })
 
     it('should handle non-ok HTTP response (not 409)', async () => {
