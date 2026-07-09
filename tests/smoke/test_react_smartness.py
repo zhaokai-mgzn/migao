@@ -18,8 +18,8 @@ AI_AGENT_URL = os.getenv("AI_AGENT_URL", "https://ai-api.migaozn.com")
 SERVICE_TOKEN = os.getenv("SERVICE_TOKEN", os.getenv("SMOKE_SERVICE_TOKEN", ""))
 
 if not SERVICE_TOKEN:
-    print("[WARN]  SERVICE_TOKEN not set. Set SMOKE_SERVICE_TOKEN env var.")
-    print("   Run: export SMOKE_SERVICE_TOKEN=$(gh secret list | grep SMOKE)")
+    print("[WARN]  SERVICE_TOKEN not set")
+    print("   Set SMOKE_SERVICE_TOKEN env var and re-run")
     exit(1)
 
 @dataclass
@@ -50,7 +50,7 @@ def create_session(client: httpx.Client) -> str:
     )
     data = json.loads(resp.content.decode("utf-8"))
     if not data.get("success"):
-        raise RuntimeError(f"创建Session失败: {data}")
+        raise RuntimeError(f"Session creation failed: {json.dumps(data, ensure_ascii=True)}")
     return data["data"]["session_id"]
 
 def send_message(client: httpx.Client, session_id: str, message: str) -> TurnResult:
@@ -130,12 +130,12 @@ def run_scenario(name: str, messages: list[str]) -> ScenarioResult:
 
             if turn.error:
                 print(f"        [FAIL] {turn.error}")
-                result.notes.append(f"轮{i}错误: {turn.error}")
+                result.notes.append(f"Turn {i} error: {turn.error}")
 
             print(f"        [LAT]  {turn.latency_ms:.0f}ms")
     except Exception as e:
-        result.notes.append(f"场景异常: {e}")
-        print(f"   [FAIL] 场景失败: {e}")
+        result.notes.append(f"Scenario error: {e}")
+        print(f"   [FAIL] Scenario failed: {e}")
     finally:
         client.close()
 
@@ -194,10 +194,10 @@ SCENARIOS = {
 }
 
 def main():
-    print("=== ReAct 聪明度测试")
-    print(f"   目标: {AI_AGENT_URL}")
-    print(f"   场景数: {len(SCENARIOS)}")
-    print(f"   总轮数: {sum(len(v) for v in SCENARIOS.values())}")
+    print("=== ReAct Smartness Test")
+    print(f"   Target: {AI_AGENT_URL}")
+    print(f"   Scenarios: {len(SCENARIOS)}")
+    print(f"   Total turns: {sum(len(v) for v in SCENARIOS.values())}")
 
     results = {}
     for name, messages in SCENARIOS.items():
@@ -205,7 +205,7 @@ def main():
 
     # ─── 汇总报告 ───
     print(f"\n\n{'='*60}")
-    print("=== 测试汇总")
+    print("=== Test Summary")
     print(f"{'='*60}")
 
     total_turns = 0
@@ -234,14 +234,14 @@ def main():
 
     print(f"\n{'─'*60}")
     if total_turns > 0:
-        print(f"总计: {total_turns}轮 {total_tools}次tool调用 均{total_latency/total_turns:.0f}ms/轮 {errors}错误")
+        print(f"Total: {total_turns} turns, {total_tools} tool calls, avg {total_latency/total_turns:.0f}ms/turn, {errors} errors")
         tools_per_turn = total_tools / total_turns
-        print(f"\n[SCORE] 智能度指标:")
-        print(f"   工具调用密度: {tools_per_turn:.1f} 次/轮")
-        print(f"   平均延迟: {total_latency/total_turns:.0f}ms/轮")
-        print(f"   错误率: {errors}/{total_turns} = {errors/total_turns*100:.1f}%")
+        print(f"\n[SCORE] Smartness Metrics:")
+        print(f"   Tool call density: {tools_per_turn:.1f}/turn")
+        print(f"   Avg latency: {total_latency/total_turns:.0f}ms/turn")
+        print(f"   Error rate: {errors}/{total_turns} = {errors/total_turns*100:.1f}%")
     else:
-        print(f"总计: 0轮 (所有场景均失败)")
+        print(f"Total: 0 turns (all scenarios failed)")
 
 if __name__ == "__main__":
     main()

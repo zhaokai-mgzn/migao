@@ -21,4 +21,6 @@ jobs:
           AI_AGENT_URL: https://ai-api.migaozn.com
           SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN }}
           PYTHONIOENCODING: utf-8
+          LANG: en_US.UTF-8
+          LC_ALL: en_US.UTF-8
         run: python tests/smoke/test_react_smartness.py
