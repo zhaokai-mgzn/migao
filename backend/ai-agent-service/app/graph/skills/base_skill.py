@@ -330,7 +330,8 @@ def _read_cached(path: str) -> str:
             _PROMPT_CACHE[path] = f.read().strip()
     except FileNotFoundError:
         _PROMPT_CACHE[path] = ""
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Failed to load prompt file '{path}': {e}")
         _PROMPT_CACHE[path] = ""
     return _PROMPT_CACHE[path]
 
@@ -1212,7 +1213,10 @@ async def execute_skill(
             try:
                 await SessionMemory().clear_vision_analysis(session_id)
             except Exception:
-                pass
+                logger.debug(
+                    f"[{skill_name}] clear_vision_analysis failed (non-critical) | "
+                    f"session={session_id}"
+                )
         max_vision_attempts = 2
         for vision_attempt in range(max_vision_attempts):
             try:
