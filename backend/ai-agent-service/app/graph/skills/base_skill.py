@@ -1542,14 +1542,20 @@ async def execute_skill(
                     tc["name"] == "interact" for tc in response.tool_calls
                 )
                 # 同工具重复调用检测 (防止 LLM 陷入 tool-call 循环)
+                # 用 tool_name + 关键区分参数(action/status)作为 key，避免误杀合法批量查询
                 tool_call_counts: dict[str, int] = {}
                 for tool_call in response.tool_calls:
                     tool_name = tool_call["name"]
-                    tool_call_counts[tool_name] = tool_call_counts.get(tool_name, 0) + 1
-                    if tool_call_counts[tool_name] >= 3:
+                    args = tool_call.get("args", {})
+                    # 提取区分参数：action 和 status 是最常见的区分维度
+                    action = args.get("action", "")
+                    status = args.get("status", "")
+                    loop_key = f"{tool_name}:{action}:{status}"
+                    tool_call_counts[loop_key] = tool_call_counts.get(loop_key, 0) + 1
+                    if tool_call_counts[loop_key] >= 3:
                         logger.warning(
                             f"[{skill_name}] SAME_TOOL_LOOP: {tool_name} called "
-                            f"{tool_call_counts[tool_name]} times in single iteration | "
+                            f"{tool_call_counts[loop_key]} times with same args (action={action}, status={status}) | "
                             f"session={session_id} — forcing break"
                         )
                         if not final_content:
