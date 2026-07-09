@@ -823,38 +823,31 @@ async def execute_skill(
                         final_content = "抱歉，我暂时无法生成回复，请换个方式描述您的需求。"
                     break
 
-                # ── 执行 Tool 调用 ──
-                for tool_call in response.tool_calls:
+                # ── 执行 Tool 调用（并发）──
+                async def _run_one_tool(tool_call: dict):
+                    """执行单个 tool，返回 (tool_call, result_str, result_dict)。"""
                     tool_name = tool_call["name"]
                     args = tool_call.get("args", {})
                     tool = skill_registry.get_tool(tool_name)
-
                     if tool is None:
                         logger.warning(f"[{skill_name}] Tool not found: {tool_name} | session={session_id}")
-                        new_messages.append(ToolMessage(
-                            content=json.dumps({"success": False, "error": "tool_not_found", "message": f"工具 {tool_name} 不可用"}, ensure_ascii=False),
-                            tool_call_id=tool_call["id"], name=tool_name,
-                        ))
-                        continue
-
-                    # 执行
+                        return tool_call, json.dumps({"success": False, "error": "tool_not_found", "message": f"工具 {tool_name} 不可用"}, ensure_ascii=False), {"success": False}
                     result_str, result_dict = await _execute_tool_safe(tool, args, tool_context, state)
-
-                    # 自愈重试
                     if not result_dict.get("success") and result_dict.get("suggestion"):
                         corrected = await _self_correct_retry(tool, args, tool_context, skill_name, result_dict, session_id, tenant_id, state)
                         if corrected:
                             result_str, result_dict = corrected
+                    return tool_call, result_str, result_dict
 
+                tool_results = await asyncio.gather(*[_run_one_tool(tc) for tc in response.tool_calls])
+
+                for tool_call, result_str, result_dict in tool_results:
+                    tool_name = tool_call["name"]
                     new_messages.append(ToolMessage(content=result_str, tool_call_id=tool_call["id"], name=tool_name))
-
-                    # 实体提取
                     try:
                         tracker.extract(tool_name, result_dict)
                     except Exception:
                         pass
-
-                    # interact 成功后更新 pending_skill
                     if tool_name == "interact" and result_dict.get("success"):
                         from app.memory.session_memory import SessionMemory as _SM2
                         try:
