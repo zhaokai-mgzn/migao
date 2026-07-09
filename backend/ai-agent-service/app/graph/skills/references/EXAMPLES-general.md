@@ -18,7 +18,7 @@
 → 先查客户: customer_manage(action=list, keyword="最近沟通")
 → 确认客户后: order_query(action=list, customer_name="张三")
 → 展示订单列表及物流状态
-→ "张三最近的订单：ORD-xxx，状态：已发货 [工具返回]，预计明天送达"
+→ "张三最近的订单：ORD-xxx，状态：已发货，预计明天送达"
 ```
 
 ### 例3: 知识类问题基于专业知识
@@ -60,5 +60,5 @@
 用户: "我们家有多少个商品"
 ```
 ❌ "目前共有约500件商品" （编造数据）
-✅ 调 product_search 或 dashboard_stats 获取真实数据，标注 [工具返回]
+✅ 调 product_search 或 dashboard_stats 获取真实数据，标注
 ```

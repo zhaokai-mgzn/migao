@@ -71,7 +71,7 @@
     formFields=[
       {key:"name", label:"商品名称", value:"雪尼尔遮光窗帘"},
       {key:"price", label:"单价(元)", required:true, placeholder:"请输入价格"},
-      {key:"colors", label:"颜色", value:"3610-28 奶茶色、5112-03 灰色 [图片识别]"},
+      {key:"colors", label:"颜色", value:"3610-28 奶茶色、5112-03 灰色"},
       {key:"sku_code", label:"货号", value:"XNE3610"}  // 色号 3610 + 雪尼尔首字母
     ]
   )

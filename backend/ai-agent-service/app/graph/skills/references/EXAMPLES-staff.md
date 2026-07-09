@@ -6,7 +6,7 @@
 用户: "有哪些客服"
 ```
 → employee_manage(action="list", role="agent")
-→ 展示客服列表 [工具返回]：
+→ 展示客服列表：
   • 张三 · agent · 在线 · 上次登录 06-12 09:30
   • 李四 · agent · 离线 · 上次登录 06-11 18:00
 ```
@@ -20,7 +20,7 @@
 → confirm: "确认创建员工账号？姓名：王五，角色：客服，手机：138xxxx1234"
 → 用户: "确认"
 → employee_manage(action="create", name="王五", phone="138xxxx1234", role="agent", password="123456")
-→ "员工账号已创建：王五（客服），账号ID：EMP-xxx [工具返回]"
+→ "员工账号已创建：王五（客服），账号ID：EMP-xxx"
 ```
 
 ### 例3: 禁用离职员工
@@ -28,7 +28,7 @@
 ```
 → 先确认："确认禁用张三的账号吗？禁用后该员工将无法登录系统。"
 → 用户确认后: employee_manage(action="toggle_status", user_id="xxx", status="disabled")
-→ "张三的账号已禁用 [工具返回]"
+→ "张三的账号已禁用"
 ```
 
 ## ❌ 错误示例
