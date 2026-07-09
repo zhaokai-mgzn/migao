@@ -18,7 +18,7 @@ AI_AGENT_URL = os.getenv("AI_AGENT_URL", "https://ai-api.migaozn.com")
 SERVICE_TOKEN = os.getenv("SERVICE_TOKEN", os.getenv("SMOKE_SERVICE_TOKEN", ""))
 
 if not SERVICE_TOKEN:
-    print("⚠️  SERVICE_TOKEN not set. Set SMOKE_SERVICE_TOKEN env var.")
+    print("[WARN]  SERVICE_TOKEN not set. Set SMOKE_SERVICE_TOKEN env var.")
     print("   Run: export SMOKE_SERVICE_TOKEN=$(gh secret list | grep SMOKE)")
     exit(1)
 
@@ -109,11 +109,11 @@ def run_scenario(name: str, messages: list[str]) -> ScenarioResult:
     try:
         sid = create_session(client)
         print(f"\n{'='*60}")
-        print(f"🧪 {name}")
+        print(f"[TEST] {name}")
         print(f"{'='*60}")
 
         for i, msg in enumerate(messages, 1):
-            print(f"\n[轮 {i}] 💬 {msg}")
+            print(f"\n[轮 {i}] >> {msg}")
             turn = send_message(client, sid, msg)
             turn.turn = i
             result.turns.append(turn)
@@ -122,20 +122,20 @@ def run_scenario(name: str, messages: list[str]) -> ScenarioResult:
                 f"{tc['tool']}({json.dumps(tc['args'], ensure_ascii=False)[:80]})"
                 for tc in turn.tool_calls
             ) if turn.tool_calls else "无"
-            print(f"        🔧 {tools_str}")
+            print(f"        [TOOLS] {tools_str}")
 
             if turn.final_text:
                 preview = turn.final_text[:200].replace("\n", " ")
-                print(f"        📝 {preview}...")
+                print(f"        [TEXT] {preview}...")
 
             if turn.error:
-                print(f"        ❌ {turn.error}")
+                print(f"        [FAIL] {turn.error}")
                 result.notes.append(f"轮{i}错误: {turn.error}")
 
-            print(f"        ⏱️  {turn.latency_ms:.0f}ms")
+            print(f"        [LAT]  {turn.latency_ms:.0f}ms")
     except Exception as e:
         result.notes.append(f"场景异常: {e}")
-        print(f"   ❌ 场景失败: {e}")
+        print(f"   [FAIL] 场景失败: {e}")
     finally:
         client.close()
 
@@ -194,7 +194,7 @@ SCENARIOS = {
 }
 
 def main():
-    print("🚀 ReAct 聪明度测试")
+    print("=== ReAct 聪明度测试")
     print(f"   目标: {AI_AGENT_URL}")
     print(f"   场景数: {len(SCENARIOS)}")
     print(f"   总轮数: {sum(len(v) for v in SCENARIOS.values())}")
@@ -205,7 +205,7 @@ def main():
 
     # ─── 汇总报告 ───
     print(f"\n\n{'='*60}")
-    print("📊 测试汇总")
+    print("=== 测试汇总")
     print(f"{'='*60}")
 
     total_turns = 0
@@ -225,18 +225,18 @@ def main():
         errors += errs
 
         avg_lat = f"{latency/turns:.0f}" if turns > 0 else "N/A"
-        status = "✅" if errs == 0 and turns > 0 else "⚠️"
+        status = "[PASS]" if errs == 0 and turns > 0 else "[WARN]"
         print(f"\n{status} {name}: {turns}轮 {tools}次tool调用 均{avg_lat}ms/轮" + (f" {errs}错误" if errs else ""))
 
         if r.notes:
             for note in r.notes:
-                print(f"   📝 {note}")
+                print(f"   [TEXT] {note}")
 
     print(f"\n{'─'*60}")
     if total_turns > 0:
         print(f"总计: {total_turns}轮 {total_tools}次tool调用 均{total_latency/total_turns:.0f}ms/轮 {errors}错误")
         tools_per_turn = total_tools / total_turns
-        print(f"\n🧠 智能度指标:")
+        print(f"\n[SCORE] 智能度指标:")
         print(f"   工具调用密度: {tools_per_turn:.1f} 次/轮")
         print(f"   平均延迟: {total_latency/total_turns:.0f}ms/轮")
         print(f"   错误率: {errors}/{total_turns} = {errors/total_turns*100:.1f}%")
