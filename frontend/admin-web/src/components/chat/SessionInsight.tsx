@@ -55,7 +55,7 @@ function getCardMeta(card: ChatCard): CardMeta | null {
           const no = String(item.orderNo || item.order_no || '')
           if (no) {
             orderNos.push(no)
-            entities.push({ type: 'order', value: no, label: no, followUp: `查看订单 ${no}` })
+            entities.push({ type: 'order', value: no, label: `订单 ${no}`, followUp: `查看订单 ${no}` })
           }
         }
         return {
@@ -90,7 +90,7 @@ function getCardMeta(card: ChatCard): CardMeta | null {
         title: orderNo,
         subtitle,
         detail: null,
-        entities: [{ type: 'order', value: orderNo, label: orderNo, followUp: `查看订单 ${orderNo}` }],
+        entities: [{ type: 'order', value: orderNo, label: `订单 ${orderNo}`, followUp: `查看订单 ${orderNo}` }],
       }
     }
 
@@ -104,7 +104,7 @@ function getCardMeta(card: ChatCard): CardMeta | null {
         const name = String(p.name || '')
         if (name) {
           names.push(name)
-          entities.push({ type: 'product', value: name, label: name, followUp: `查看 ${name} 详情` })
+          entities.push({ type: 'product', value: name, label: `商品 ${name}`, followUp: `查看 ${name} 详情` })
         }
       }
       return {
@@ -226,15 +226,15 @@ function extractEntities(msg: ChatMessage): SessionEntity[] {
     const input = tc.input || {}
     const orderId = input.order_id || input.order_no || input.orderId
     if (orderId && typeof orderId === 'string') {
-      entities.push({ type: 'order', value: orderId, label: orderId, followUp: `查看订单 ${orderId}` })
+      entities.push({ type: 'order', value: orderId, label: `订单 ${orderId}`, followUp: `查看订单 ${orderId}` })
     }
     const trackingNo = input.tracking_no || input.trackingNo
     if (trackingNo && typeof trackingNo === 'string') {
-      entities.push({ type: 'logistics', value: trackingNo, label: trackingNo, followUp: `查询物流 ${trackingNo}` })
+      entities.push({ type: 'logistics', value: trackingNo, label: `物流 ${trackingNo}`, followUp: `查询物流 ${trackingNo}` })
     }
     const productName = input.product_name || input.productName || input.name
     if (productName && typeof productName === 'string' && !orderId) {
-      entities.push({ type: 'product', value: productName, label: productName, followUp: `查看 ${productName} 详情` })
+      entities.push({ type: 'product', value: productName, label: `商品 ${productName}`, followUp: `查看 ${productName} 详情` })
     }
   }
 
@@ -357,6 +357,11 @@ export default function SessionInsight() {
               {sessionStatus === 'active' ? '进行中' : '已结束'}
             </span>
           </div>
+          {currentSessionId && (
+            <p className="mt-2 text-[10px] text-gray-400 font-mono truncate" title={currentSessionId}>
+              ID: {currentSessionId.slice(0, 18)}…
+            </p>
+          )}
         </div>
 
         {/* 查询结果 — 丰富卡片 */}
