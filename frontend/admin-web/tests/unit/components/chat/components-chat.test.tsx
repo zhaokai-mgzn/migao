@@ -945,9 +945,11 @@ describe('SessionInsight', () => {
 
     render(<SessionInsight />)
 
-    expect(screen.getByText('SF1234567890')).toBeInTheDocument()
+    expect(screen.getAllByText(/SF1234567890/).length).toBeGreaterThanOrEqual(1)
 
-    fireEvent.click(screen.getByText('SF1234567890'))
+    // 点击便签板中的物流标签
+    const tag = screen.getByTitle('点击追问：查询物流 SF1234567890')
+    fireEvent.click(tag)
     expect(sendMessage).toHaveBeenCalledWith('查询物流 SF1234567890')
   })
 
