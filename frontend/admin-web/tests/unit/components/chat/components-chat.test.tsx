@@ -885,12 +885,12 @@ describe('SessionInsight', () => {
 
     render(<SessionInsight />)
 
-    // 便签板展示了订单实体
+    // 便签板展示了订单实体（带类型前缀）
     expect(screen.getByText('便签板')).toBeInTheDocument()
-    expect(screen.getByText('ORD-001')).toBeInTheDocument()
+    expect(screen.getByText('订单 ORD-001')).toBeInTheDocument()
 
     // 点击标签应发送追问
-    fireEvent.click(screen.getByText('ORD-001'))
+    fireEvent.click(screen.getByText('订单 ORD-001'))
     expect(sendMessage).toHaveBeenCalledWith('查看订单 ORD-001')
   })
 
@@ -916,10 +916,10 @@ describe('SessionInsight', () => {
 
     render(<SessionInsight />)
 
-    expect(screen.getByText('遮光窗帘')).toBeInTheDocument()
-    expect(screen.getByText('透光纱帘')).toBeInTheDocument()
+    expect(screen.getByText('商品 遮光窗帘')).toBeInTheDocument()
+    expect(screen.getByText('商品 透光纱帘')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByText('遮光窗帘'))
+    fireEvent.click(screen.getByText('商品 遮光窗帘'))
     expect(sendMessage).toHaveBeenCalledWith('查看 遮光窗帘 详情')
   })
 
