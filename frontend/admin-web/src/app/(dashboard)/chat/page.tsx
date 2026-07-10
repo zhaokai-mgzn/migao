@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation'
 import { useChatStore } from '@/store/chat'
 import SessionList from '@/components/chat/SessionList'
 import ChatArea from '@/components/chat/ChatArea'
-import CustomerPanel from '@/components/chat/CustomerPanel'
+import SessionInsight from '@/components/chat/SessionInsight'
 
 /** 监听 URL 中的 session_id 并选中对应会话；独立子组件以满足 Suspense 边界 */
 function SessionFromQuery() {
@@ -44,8 +44,8 @@ export default function ChatPage() {
       {/* 中间：聊天区域 (弹性宽度) */}
       <ChatArea />
 
-      {/* 右侧：客户信息面板 (280px, 可收起) */}
-      <CustomerPanel />
+      {/* 右侧：会话洞察面板 (280px, 可收起) */}
+      <SessionInsight />
     </div>
   )
 }
