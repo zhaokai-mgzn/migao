@@ -254,9 +254,7 @@ export default function SessionInsight() {
   const messageCount = currentSession?.message_count ?? messages.length
   const sessionStatus = currentSession?.status || 'active'
 
-  if (!currentSessionId) return null
-
-  // 计算会话时长
+  // 计算会话时长（必须在 early return 之前，hooks 规则）
   const duration = useMemo(() => {
     if (!currentSession?.created_at) return null
     const start = new Date(currentSession.created_at).getTime()
@@ -270,6 +268,8 @@ export default function SessionInsight() {
     const remainMins = mins % 60
     return remainMins > 0 ? `${hours} 小时 ${remainMins} 分钟` : `${hours} 小时`
   }, [currentSession?.created_at, currentSession?.updated_at])
+
+  if (!currentSessionId) return null
 
   if (collapsed) {
     return (
