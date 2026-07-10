@@ -201,4 +201,6 @@ vi.mock('lucide-react', () => ({
   ArrowUpCircle: iconStub('arrow-up-circle'),
   ArrowDownCircle: iconStub('arrow-down-circle'),
   AlertCircle: iconStub('alert-circle'),
+  Pin: iconStub('pin'),
+  Hash: iconStub('hash'),
 }))
