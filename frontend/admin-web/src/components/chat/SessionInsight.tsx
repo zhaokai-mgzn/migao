@@ -1,7 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
-import { useCallback } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import {
   PanelRightClose,
   PanelRightOpen,
@@ -11,7 +10,6 @@ import {
   BookOpen,
   MessageSquare,
   Clock,
-  Inbox,
   Pin,
   Hash,
 } from 'lucide-react'
@@ -28,108 +26,227 @@ interface SessionEntity {
   followUp: string
 }
 
-/** 从单条消息的 tool_calls 和 cards 中提取实体 */
+// ─── 卡片展示元信息 ──────────────────────────────────
+
+interface CardMeta {
+  icon: React.ReactNode
+  typeLabel: string
+  colorClass: string
+  title: string           // 主标识（订单号/商品名/物流单号）
+  subtitle: string | null  // 副信息（状态/金额/客户等）
+  detail: string | null    // 额外细节
+  entities: SessionEntity[] // 从该卡片提取的实体
+}
+
+/** 从卡片数据提取展示元信息 */
+function getCardMeta(card: ChatCard): CardMeta | null {
+  const data = card.data || {}
+
+  switch (card.type) {
+    // ─── 订单（单笔 or 列表）───
+    case 'order': {
+      // 列表格式: { items: [...] }
+      const items = data.items as Array<Record<string, unknown>> | undefined
+      if (items && items.length > 0) {
+        const total = data.total as number | undefined
+        const entities: SessionEntity[] = []
+        const orderNos: string[] = []
+        for (const item of items.slice(0, 5)) {
+          const no = String(item.orderNo || item.order_no || '')
+          if (no) {
+            orderNos.push(no)
+            entities.push({ type: 'order', value: no, label: no, followUp: `查看订单 ${no}` })
+          }
+        }
+        return {
+          icon: <ShoppingBag className="w-4 h-4 text-blue-500 flex-shrink-0" />,
+          typeLabel: '订单',
+          colorClass: 'border-l-blue-400',
+          title: `订单列表 (${total || items.length} 条)`,
+          subtitle: orderNos.slice(0, 5).join(' · ') + (orderNos.length > 5 ? ' ...' : '') || null,
+          detail: null,
+          entities,
+        }
+      }
+
+      // 单笔格式: { order: {...} } 或扁平 { orderNo, ... }
+      const order = (data.order || data) as Record<string, unknown>
+      const orderNo = String(order.orderNo || order.order_no || '')
+      if (!orderNo) return null
+      const status = order.status || order.orderStatus
+      const amount = order.totalAmount || order.amount
+      const customer = order.customerName || order.customer_name
+
+      const parts: string[] = []
+      if (status) parts.push(statusLabel(String(status)))
+      if (amount != null) parts.push(`¥${Number(amount).toFixed(2)}`)
+      if (customer) parts.push(String(customer))
+      const subtitle = parts.join(' · ') || null
+
+      return {
+        icon: <ShoppingBag className="w-4 h-4 text-blue-500 flex-shrink-0" />,
+        typeLabel: '订单',
+        colorClass: 'border-l-blue-400',
+        title: orderNo,
+        subtitle,
+        detail: null,
+        entities: [{ type: 'order', value: orderNo, label: orderNo, followUp: `查看订单 ${orderNo}` }],
+      }
+    }
+
+    // ─── 商品列表 ───
+    case 'product_list': {
+      const products = data.products as Array<Record<string, unknown>> | undefined
+      if (!products || products.length === 0) return null
+      const entities: SessionEntity[] = []
+      const names: string[] = []
+      for (const p of products) {
+        const name = String(p.name || '')
+        if (name) {
+          names.push(name)
+          entities.push({ type: 'product', value: name, label: name, followUp: `查看 ${name} 详情` })
+        }
+      }
+      return {
+        icon: <Package className="w-4 h-4 text-amber-500 flex-shrink-0" />,
+        typeLabel: '商品',
+        colorClass: 'border-l-amber-400',
+        title: `${products.length} 件商品`,
+        subtitle: names.join(' · ') || null,
+        detail: null,
+        entities,
+      }
+    }
+
+    // ─── 商品详情 ───
+    case 'product_detail': {
+      const product = (data.product || data) as Record<string, unknown>
+      const name = String(product.name || '')
+      if (!name) return null
+      const price = product.price
+      const unit = product.unit
+      const parts: string[] = []
+      if (price != null) parts.push(`¥${price}${unit ? `/${unit}` : ''}`)
+      const spec = product.specifications as Record<string, string> | undefined
+      if (spec) {
+        parts.push(Object.values(spec).join(' · '))
+      }
+      return {
+        icon: <Package className="w-4 h-4 text-amber-500 flex-shrink-0" />,
+        typeLabel: '商品',
+        colorClass: 'border-l-amber-400',
+        title: name,
+        subtitle: parts.join(' · ') || null,
+        detail: product.description as string || null,
+        entities: [{ type: 'product', value: name, label: name, followUp: `查看 ${name} 详情` }],
+      }
+    }
+
+    // ─── 物流 ───
+    case 'logistics': {
+      const tn = String(data.tracking_no || data.trackingNo || '')
+      if (!tn) return null
+      const company = String(data.company || '')
+      const status = data.status || data.logisticsStatus
+      return {
+        icon: <Truck className="w-4 h-4 text-green-500 flex-shrink-0" />,
+        typeLabel: '物流',
+        colorClass: 'border-l-green-400',
+        title: tn,
+        subtitle: [company, status ? statusLabel(String(status)) : null].filter(Boolean).join(' · ') || null,
+        detail: null,
+        entities: [{ type: 'logistics', value: tn, label: tn, followUp: `查询物流 ${tn}` }],
+      }
+    }
+
+    // ─── 知识库 ───
+    case 'knowledge': {
+      const title = String(data.title || '')
+      if (!title) return null
+      return {
+        icon: <BookOpen className="w-4 h-4 text-purple-500 flex-shrink-0" />,
+        typeLabel: '知识',
+        colorClass: 'border-l-purple-400',
+        title,
+        subtitle: null,
+        detail: data.content ? String(data.content).slice(0, 80) : null,
+        entities: [],
+      }
+    }
+
+    default:
+      return null
+  }
+}
+
+function statusLabel(s: string): string {
+  const map: Record<string, string> = {
+    pending: '待确认', confirmed: '已确认', producing: '生产中',
+    shipped: '已发货', completed: '已完成', cancelled: '已取消',
+    paid: '已付款', refunding: '退款中', refunded: '已退款',
+    transporting: '运输中', delivered: '已签收',
+    waiting: '待处理', active: '进行中', closed: '已结束',
+  }
+  return map[s] || s
+}
+
+/** 卡片去重 key */
+function cardKey(card: ChatCard): string {
+  const data = card.data || {}
+  switch (card.type) {
+    case 'order': {
+      // 列表格式用 items 去重
+      if (data.items) return `order-list-${data.total || JSON.stringify(data.items)}`
+      const order = (data.order || data) as Record<string, unknown>
+      return `order-${order.orderNo || order.order_no || JSON.stringify(data)}`
+    }
+    case 'product_list': {
+      const products = data.products as Array<{ name?: string }> | undefined
+      return `product_list-${products?.map(p => p.name).join(',') || JSON.stringify(data)}`
+    }
+    case 'logistics': {
+      return `logistics-${data.tracking_no || data.trackingNo || JSON.stringify(data)}`
+    }
+    case 'product_detail': {
+      const product = (data.product || data) as { name?: string }
+      return `product_detail-${product?.name || JSON.stringify(data)}`
+    }
+    case 'knowledge':
+      return `knowledge-${data.title || JSON.stringify(data)}`
+    default:
+      return `${card.type}-${JSON.stringify(data)}`
+  }
+}
+
+/** 从单条消息中提取实体（tool_calls + cards） */
 function extractEntities(msg: ChatMessage): SessionEntity[] {
   const entities: SessionEntity[] = []
 
-  // 从 tool_call input 提取
   for (const tc of msg.tool_calls || []) {
     const input = tc.input || {}
-    // 订单查询工具 → 订单实体
     const orderId = input.order_id || input.order_no || input.orderId
     if (orderId && typeof orderId === 'string') {
-      entities.push({
-        type: 'order',
-        value: orderId,
-        label: orderId,
-        followUp: `查看订单 ${orderId}`,
-      })
+      entities.push({ type: 'order', value: orderId, label: orderId, followUp: `查看订单 ${orderId}` })
     }
-    // 物流查询工具 → 物流实体
     const trackingNo = input.tracking_no || input.trackingNo
     if (trackingNo && typeof trackingNo === 'string') {
-      entities.push({
-        type: 'logistics',
-        value: trackingNo,
-        label: trackingNo,
-        followUp: `查询物流 ${trackingNo}`,
-      })
+      entities.push({ type: 'logistics', value: trackingNo, label: trackingNo, followUp: `查询物流 ${trackingNo}` })
     }
-    // 商品详情工具 → 商品实体
     const productName = input.product_name || input.productName || input.name
     if (productName && typeof productName === 'string' && !orderId) {
-      entities.push({
-        type: 'product',
-        value: productName,
-        label: productName,
-        followUp: `查看 ${productName} 详情`,
-      })
+      entities.push({ type: 'product', value: productName, label: productName, followUp: `查看 ${productName} 详情` })
     }
   }
 
-  // 从 card data 提取
   for (const card of msg.cards || []) {
-    const data = card.data || {}
-    switch (card.type) {
-      case 'order': {
-        const order = data.order as Record<string, unknown> | undefined
-        if (order?.orderNo) {
-          entities.push({
-            type: 'order',
-            value: String(order.orderNo),
-            label: String(order.orderNo),
-            followUp: `查看订单 ${order.orderNo}`,
-          })
-        }
-        break
-      }
-      case 'product_list': {
-        const products = data.products as Array<{ name?: string }> | undefined
-        if (products) {
-          for (const p of products) {
-            if (p.name) {
-              entities.push({
-                type: 'product',
-                value: p.name,
-                label: p.name,
-                followUp: `查看 ${p.name} 详情`,
-              })
-            }
-          }
-        }
-        break
-      }
-      case 'product_detail': {
-        const product = data.product as { name?: string } | undefined
-        if (product?.name) {
-          entities.push({
-            type: 'product',
-            value: product.name,
-            label: product.name,
-            followUp: `查看 ${product.name} 详情`,
-          })
-        }
-        break
-      }
-      case 'logistics': {
-        const tn = data.tracking_no as string | undefined
-        if (tn) {
-          entities.push({
-            type: 'logistics',
-            value: tn,
-            label: tn,
-            followUp: `查询物流 ${tn}`,
-          })
-        }
-        break
-      }
-    }
+    const meta = getCardMeta(card)
+    if (meta) entities.push(...meta.entities)
   }
 
   return entities
 }
 
-/** 实体去重：同 type + value 只保留一个 */
+/** 实体去重 */
 function dedupEntities(all: SessionEntity[]): SessionEntity[] {
   const seen = new Set<string>()
   return all.filter(e => {
@@ -140,73 +257,7 @@ function dedupEntities(all: SessionEntity[]): SessionEntity[] {
   })
 }
 
-/** 卡片去重 key */
-function cardKey(card: ChatCard): string {
-  const data = card.data || {}
-  switch (card.type) {
-    case 'order': {
-      const order = data.order as Record<string, unknown> | undefined
-      return `order-${order?.orderNo || JSON.stringify(data)}`
-    }
-    case 'product_list': {
-      const products = data.products as Array<{ name?: string }> | undefined
-      return `product_list-${products?.map(p => p.name).join(',') || JSON.stringify(data)}`
-    }
-    case 'logistics': {
-      const tn = data.tracking_no as string | undefined
-      return `logistics-${tn || JSON.stringify(data)}`
-    }
-    case 'product_detail': {
-      const product = data.product as { name?: string } | undefined
-      return `product_detail-${product?.name || JSON.stringify(data)}`
-    }
-    case 'knowledge': {
-      return `knowledge-${data.title || JSON.stringify(data)}`
-    }
-    default:
-      return `${card.type}-${JSON.stringify(data)}`
-  }
-}
-
-/** 从卡片中提取一行摘要文本 */
-function cardSummary(card: ChatCard): string {
-  const data = card.data || {}
-  switch (card.type) {
-    case 'order': {
-      const order = data.order as Record<string, unknown> | undefined
-      return `订单 ${order?.orderNo || '—'}`
-    }
-    case 'product_list': {
-      const products = data.products as Array<{ name?: string }> | undefined
-      return products?.map(p => p.name).join('、') || '商品列表'
-    }
-    case 'logistics': {
-      return `${data.company || '物流'} ${data.tracking_no || ''}`.trim()
-    }
-    case 'product_detail': {
-      const product = data.product as { name?: string } | undefined
-      return product?.name || '商品详情'
-    }
-    case 'knowledge': {
-      return (data.title as string) || '知识库'
-    }
-    default:
-      return card.type
-  }
-}
-
-/** 卡片图标 */
-function CardIcon({ type }: { type: string }) {
-  const cls = 'w-4 h-4 flex-shrink-0'
-  switch (type) {
-    case 'order': return <ShoppingBag className={cn(cls, 'text-blue-500')} />
-    case 'product_list':
-    case 'product_detail': return <Package className={cn(cls, 'text-amber-500')} />
-    case 'logistics': return <Truck className={cn(cls, 'text-green-500')} />
-    case 'knowledge': return <BookOpen className={cn(cls, 'text-purple-500')} />
-    default: return <Inbox className={cn(cls, 'text-gray-400')} />
-  }
-}
+// ═══════════════════════════════════════════════════
 
 export default function SessionInsight() {
   const [collapsed, setCollapsed] = useState(false)
@@ -217,25 +268,23 @@ export default function SessionInsight() {
     [sessions, currentSessionId],
   )
 
-  // 从所有消息中提取卡片，按时间倒序去重
-  const cards = useMemo(() => {
-    const all: ChatCard[] = []
-    // 从最新消息往前遍历
+  // 卡片去重 + 元信息提取
+  const cardMetas = useMemo(() => {
+    const all: CardMeta[] = []
+    const seenKeys = new Set<string>()
     for (let i = messages.length - 1; i >= 0; i--) {
-      const msgCards = messages[i]?.cards
-      if (msgCards) all.push(...msgCards)
+      for (const card of messages[i]?.cards || []) {
+        const k = cardKey(card)
+        if (seenKeys.has(k)) continue
+        seenKeys.add(k)
+        const meta = getCardMeta(card)
+        if (meta) all.push(meta)
+      }
     }
-    // 去重：同 key 只保留第一个（最新）
-    const seen = new Set<string>()
-    return all.filter(c => {
-      const k = cardKey(c)
-      if (seen.has(k)) return false
-      seen.add(k)
-      return true
-    })
+    return all
   }, [messages])
 
-  // 从所有消息中提取实体，去重
+  // 实体提取 + 去重
   const entities = useMemo(() => {
     const all: SessionEntity[] = []
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -245,22 +294,17 @@ export default function SessionInsight() {
   }, [messages])
 
   const handleEntityClick = useCallback(
-    (followUp: string) => {
-      sendMessage(followUp)
-    },
+    (followUp: string) => { sendMessage(followUp) },
     [sendMessage],
   )
 
   const messageCount = currentSession?.message_count ?? messages.length
   const sessionStatus = currentSession?.status || 'active'
 
-  // 计算会话时长（必须在 early return 之前，hooks 规则）
   const duration = useMemo(() => {
     if (!currentSession?.created_at) return null
     const start = new Date(currentSession.created_at).getTime()
-    const end = currentSession.updated_at
-      ? new Date(currentSession.updated_at).getTime()
-      : Date.now()
+    const end = currentSession.updated_at ? new Date(currentSession.updated_at).getTime() : Date.now()
     const mins = Math.round((end - start) / 60000)
     if (mins < 1) return '刚刚'
     if (mins < 60) return `${mins} 分钟`
@@ -286,82 +330,81 @@ export default function SessionInsight() {
   }
 
   return (
-    <div className="w-[280px] flex-shrink-0 border-l border-gray-200 bg-white flex flex-col h-full overflow-hidden">
+    <div className="w-[300px] flex-shrink-0 border-l border-gray-200 bg-white flex flex-col h-full overflow-hidden">
       {/* 头部 */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
         <h3 className="text-sm font-semibold text-gray-800">会话洞察</h3>
-        <button
-          onClick={() => setCollapsed(true)}
-          className="p-1 rounded hover:bg-gray-100 transition-colors"
-          title="收起"
-        >
+        <button onClick={() => setCollapsed(true)} className="p-1 rounded hover:bg-gray-100 transition-colors" title="收起">
           <PanelRightClose className="w-4 h-4 text-gray-400" />
         </button>
       </div>
 
-      {/* 内容区 */}
       <div className="flex-1 overflow-y-auto">
         {/* 会话统计 */}
         <div className="px-4 py-3 border-b border-gray-100">
-          <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
-            会话统计
-          </h4>
+          <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">会话统计</h4>
           <div className="grid grid-cols-2 gap-2">
-            <StatBadge
-              icon={<MessageSquare className="w-3.5 h-3.5" />}
-              label="消息"
-              value={String(messageCount)}
-            />
-            {duration && (
-              <StatBadge
-                icon={<Clock className="w-3.5 h-3.5" />}
-                label="历时"
-                value={duration}
-              />
-            )}
+            <StatBadge icon={<MessageSquare className="w-3.5 h-3.5" />} label="消息" value={String(messageCount)} />
+            {duration && <StatBadge icon={<Clock className="w-3.5 h-3.5" />} label="历时" value={duration} />}
           </div>
           <div className="mt-2">
-            <span
-              className={cn(
-                'inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium',
-                sessionStatus === 'active'
-                  ? 'bg-green-50 text-green-700 border border-green-200'
-                  : 'bg-gray-50 text-gray-500 border border-gray-200',
-              )}
-            >
+            <span className={cn(
+              'inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium',
+              sessionStatus === 'active'
+                ? 'bg-green-50 text-green-700 border border-green-200'
+                : 'bg-gray-50 text-gray-500 border border-gray-200',
+            )}>
               {sessionStatus === 'active' ? '进行中' : '已结束'}
             </span>
           </div>
         </div>
 
-        {/* 查询结果 */}
-        <div className="px-4 py-3">
-          <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
-            查询结果
-          </h4>
+        {/* 查询结果 — 丰富卡片 */}
+        <div className="px-3 py-3">
+          <h4 className="px-1 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">查询结果</h4>
 
-          {cards.length === 0 ? (
-            <div className="text-xs text-gray-400 text-center py-6 bg-gray-50 rounded-lg">
+          {cardMetas.length === 0 ? (
+            <div className="text-xs text-gray-400 text-center py-8 bg-gray-50 rounded-lg leading-relaxed">
               暂无查询结果
               <br />
-              <span className="text-[11px]">发送消息后这里会展示</span>
+              <span className="text-[11px]">发送消息查询订单、商品或物流</span>
               <br />
-              <span className="text-[11px]">AI 查到的商品和订单</span>
+              <span className="text-[11px]">结果会实时展示在这里</span>
             </div>
           ) : (
-            <div className="space-y-1.5">
-              {cards.map((card, idx) => (
+            <div className="space-y-2">
+              {cardMetas.map((meta, idx) => (
                 <div
-                  key={`${card.type}-${idx}`}
-                  className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors cursor-default"
+                  key={`${meta.typeLabel}-${idx}`}
+                  className={cn(
+                    'bg-white border border-gray-200 rounded-lg p-2.5 border-l-[3px]',
+                    meta.colorClass,
+                  )}
                 >
-                  <CardIcon type={card.type} />
-                  <span className="text-xs text-gray-700 truncate flex-1">
-                    {cardSummary(card)}
-                  </span>
-                  <span className="text-[10px] text-gray-400 flex-shrink-0">
-                    {cardTypeLabel(card.type)}
-                  </span>
+                  {/* 标题行 */}
+                  <div className="flex items-center gap-2">
+                    {meta.icon}
+                    <span className="text-xs font-semibold text-gray-800 truncate flex-1">
+                      {meta.title}
+                    </span>
+                    <span className="text-[10px] text-gray-400 flex-shrink-0">
+                      {meta.typeLabel}
+                    </span>
+                  </div>
+
+                  {/* 副信息行 */}
+                  {meta.subtitle && (
+                    <div className="mt-1.5 ml-6 text-[11px] text-gray-500 leading-relaxed break-all">
+                      {meta.subtitle}
+                    </div>
+                  )}
+
+                  {/* 详情行 */}
+                  {meta.detail && (
+                    <div className="mt-1 ml-6 text-[11px] text-gray-400 leading-relaxed line-clamp-2">
+                      {meta.detail}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -369,14 +412,14 @@ export default function SessionInsight() {
         </div>
 
         {/* 便签板 */}
-        <div className="px-4 py-3 border-t border-gray-100">
-          <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1">
+        <div className="px-3 py-3 border-t border-gray-100">
+          <h4 className="px-1 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1">
             <Pin className="w-3 h-3" />
             便签板
           </h4>
 
           {entities.length === 0 ? (
-            <div className="text-xs text-gray-400 text-center py-4 bg-gray-50 rounded-lg">
+            <div className="text-xs text-gray-400 text-center py-4 bg-gray-50 rounded-lg leading-relaxed">
               暂无便签
               <br />
               <span className="text-[11px]">查询订单或商品后</span>
@@ -419,15 +462,4 @@ function StatBadge({ icon, label, value }: { icon: React.ReactNode; label: strin
       </div>
     </div>
   )
-}
-
-function cardTypeLabel(type: string): string {
-  switch (type) {
-    case 'order': return '订单'
-    case 'product_list': return '商品'
-    case 'logistics': return '物流'
-    case 'product_detail': return '详情'
-    case 'knowledge': return '知识'
-    default: return type
-  }
 }

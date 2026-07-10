@@ -224,10 +224,12 @@ def _should_send_card(tool_name: str, result: Dict[str, Any]) -> bool:
         data = result.get("data", {})
         return data.get("tracking_number") is not None
     
-    # 订单查询有结果时发送卡片
+    # 订单查询有结果时发送卡片（支持单订单和列表两种格式）
     if tool_name == "order_query":
         data = result.get("data", {})
-        return data.get("order") is not None
+        return data.get("order") is not None or (
+            isinstance(data.get("items"), list) and len(data["items"]) > 0
+        )
     
     return False
 
