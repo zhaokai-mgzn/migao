@@ -454,6 +454,162 @@ async def _agent_stream_to_sse(
         logger.debug(f"[chat/send] SSE stream ended | session={session_id}")
 
 
+# ============ 分页协议 ============
+
+async def _handle_page_request(
+    request: ChatSendRequest,
+    tenant_id: int,
+    user_id: str,
+    current_user,
+):
+    """
+    处理 __PAGE__ 翻页请求：解析工具名+参数，直接调用工具，绕过 LLM。
+
+    消息格式：__PAGE__|tool_name|params_json
+    例：__PAGE__|processing_item_query|{"keyword":"窗帘","page":2,"size":10}
+    """
+    session_memory = SessionMemory()
+    tool_registry = get_tool_registry()
+
+    session_id = request.session_id
+    if not session_id:
+        session_id = await session_memory.create_session(
+            tenant_id=tenant_id, customer_id=user_id, title=None,
+        )
+    else:
+        session = await session_memory.get_session(session_id)
+        if not session or session.get("status") == "closed":
+            session_id = await session_memory.create_session(
+                tenant_id=tenant_id, customer_id=user_id, title=None,
+            )
+
+    # 解析 __PAGE__ 消息
+    try:
+        _, tool_name, params_str = request.message.split("|", 2)
+        params = json.loads(params_str)
+    except (ValueError, json.JSONDecodeError) as e:
+        logger.warning(f"[page] Bad __PAGE__ message: {request.message[:100]}, error={e}")
+
+        async def _bad_page_stream():
+            yield SSEEvent.error("翻页请求格式错误，请重试")
+            yield SSEEvent.done(session_id, None)
+        return StreamingResponse(
+            _bad_page_stream(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
+        )
+
+    logger.info(
+        f"[page] Direct tool call | tool={tool_name} params={params} "
+        f"session={session_id} tenant={tenant_id}"
+    )
+
+    async def _page_stream():
+        try:
+            # 保存用户的翻页消息
+            await session_memory.save_message(
+                session_id=session_id, role="user",
+                content=f"查看第{params.get('page', '?')}页", tenant_id=tenant_id,
+            )
+
+            yield SSEEvent.loading("正在查询...")
+
+            # 构建 ToolContext
+            tool_context = ToolContext(
+                tenant_id=tenant_id, user_id=user_id, session_id=session_id,
+                role=current_user.role if current_user.role in ("admin", "agent", "tenant_admin") else "customer",
+            )
+
+            # 直接执行工具
+            result = await tool_registry.execute_tool(tool_name, tool_context, **params)
+
+            if result.success:
+                tool_data = result.data or {}
+                yield SSEEvent.tool_call(tool_name, params)
+                yield SSEEvent.tool_result(tool_name, {
+                    "success": True, "data": tool_data, "message": result.message,
+                })
+
+                # 检查并发送卡片
+                card_type = _detect_card_type(tool_name, {"data": tool_data})
+                if card_type and _should_send_card(tool_name, {"success": True, "data": tool_data}):
+                    yield SSEEvent.card(card_type, tool_data)
+
+                # 构建新一页的选项列表，触发交互组件
+                page = params.get("page", 1)
+                size = params.get("size", 10)
+                items = tool_data.get("items") or tool_data.get("records") or []
+                total = tool_data.get("total", len(items))
+                total_pages = max(1, (total + size - 1) // size) if size else 1
+
+                # 将前一页的其它查询参数保留
+                prev_params = {k: v for k, v in params.items() if k not in ("page",)}
+                next_params_str = json.dumps({**prev_params, "page": page, "size": size}, ensure_ascii=False)
+
+                if items:
+                    options = []
+                    for item in items:
+                        name = item.get("name", "")
+                        price = item.get("unit_price") or item.get("unitPrice") or ""
+                        unit = item.get("unit", "")
+                        desc_parts = []
+                        if price:
+                            desc_parts.append(f"¥{price}")
+                        if unit:
+                            desc_parts.append(f"/{unit}")
+                        desc = " ".join(desc_parts) if desc_parts else None
+                        options.append({
+                            "label": str(name),
+                            "value": str(name),
+                            "description": desc,
+                        })
+
+                    # 更新 page_meta 参数指向当前页（供前端再次翻页）
+                    next_page_meta = {
+                        "current": page,
+                        "total": total_pages,
+                        "totalCount": total,
+                        "tool": tool_name,
+                        "params": next_params_str,
+                    }
+
+                    yield SSEEvent.interactive("choice", {
+                        "component": "choice",
+                        "title": f"{result.message} (第{page}/{total_pages}页)",
+                        "options": options,
+                        "pageMeta": next_page_meta,
+                    })
+
+            else:
+                yield SSEEvent.error(result.message or "查询失败")
+
+        except Exception as e:
+            logger.error(f"[page] Tool execution failed: {e}", exc_info=True)
+            yield SSEEvent.error(f"翻页查询失败: {str(e)}")
+
+        # 保存 assistant 响应
+        try:
+            await asyncio.wait_for(
+                session_memory.save_message(
+                    session_id=session_id, role="assistant",
+                    content=f"已展示第{params.get('page', '?')}页结果",
+                    tenant_id=tenant_id,
+                ),
+                timeout=10.0,
+            )
+        except Exception:
+            pass
+
+        yield SSEEvent.done(session_id, None)
+        logger.debug(f"[page] SSE stream ended | session={session_id}")
+
+    return StreamingResponse(
+        _page_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
+    )
+
+
 # ============ API 路由 ============
 
 @router.post("/send")
@@ -477,7 +633,11 @@ async def send_message(
     """
     tenant_id = current_user.tenant_id
     user_id = current_user.user_id
-    
+
+    # ── __PAGE__ 分页协议：绕过 LLM 直接调工具，杜绝翻页幻觉 ──
+    if request.message.startswith("__PAGE__|"):
+        return await _handle_page_request(request, tenant_id, user_id, current_user)
+
     logger.info(
         f"[chat/send] Message received | tenant={tenant_id} user={user_id} session={request.session_id or 'new'} msg_len={len(request.message)}"
     )

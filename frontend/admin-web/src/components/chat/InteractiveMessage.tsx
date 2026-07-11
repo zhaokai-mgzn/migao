@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
-import { Check, X, ChevronRight } from 'lucide-react'
+import { Check, X, ChevronRight, ChevronLeft } from 'lucide-react'
 import type { InteractiveComponent, InteractiveOption, InteractiveFormField } from '@/types'
 import { useChatStore } from '@/store/chat'
 
@@ -139,6 +139,14 @@ function ChoiceCard({ interactive, disabled }: Props) {
             <ChevronRight className="w-3 h-3" />
           </button>
         </div>
+      )}
+
+      {/* 分页控件 */}
+      {interactive.pageMeta && !submitted && (
+        <PageControls
+          pageMeta={interactive.pageMeta}
+          disabled={disabled}
+        />
       )}
     </div>
   )
@@ -278,6 +286,69 @@ function FormCard({ interactive, disabled }: Props) {
           </button>
         </div>
       )}
+    </div>
+  )
+}
+
+/**
+ * 分页控件 — 在 choice 组件底部显示翻页按钮
+ * 点击时发送 __PAGE__ 协议消息绕过 LLM 直接调工具
+ */
+function PageControls({
+  pageMeta,
+  disabled: isDisabled,
+}: {
+  pageMeta: NonNullable<InteractiveComponent['pageMeta']>
+  disabled?: boolean
+}) {
+  const { sendMessage } = useChatStore()
+  const { current, total, totalCount, tool, params } = pageMeta
+
+  const goPage = (page: number) => {
+    if (isDisabled || page < 1 || page > total) return
+    let queryParams: Record<string, unknown>
+    try {
+      queryParams = JSON.parse(params)
+    } catch {
+      return
+    }
+    queryParams.page = page
+    sendMessage('__PAGE__|' + tool + '|' + JSON.stringify(queryParams))
+  }
+
+  return (
+    <div className="px-3 py-2 border-t border-gray-100 flex items-center justify-between">
+      <span className="text-[10px] text-gray-400">
+        第 {current}/{total} 页，共 {totalCount} 条
+      </span>
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => goPage(current - 1)}
+          disabled={isDisabled || current <= 1}
+          className={cn(
+            'flex items-center gap-0.5 px-2 py-1 rounded text-[11px] font-medium transition-colors',
+            current <= 1
+              ? 'bg-gray-50 text-gray-300 cursor-not-allowed'
+              : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
+          )}
+        >
+          <ChevronLeft className="w-3 h-3" />
+          上一页
+        </button>
+        <button
+          onClick={() => goPage(current + 1)}
+          disabled={isDisabled || current >= total}
+          className={cn(
+            'flex items-center gap-0.5 px-2 py-1 rounded text-[11px] font-medium transition-colors',
+            current >= total
+              ? 'bg-gray-50 text-gray-300 cursor-not-allowed'
+              : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
+          )}
+        >
+          下一页
+          <ChevronRight className="w-3 h-3" />
+        </button>
+      </div>
     </div>
   )
 }

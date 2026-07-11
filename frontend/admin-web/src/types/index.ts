@@ -989,6 +989,14 @@ export interface InteractiveComponent {
   // form 组件
   formFields?: InteractiveFormField[]
   submitLabel?: string
+  // 分页元数据（choice 组件可选）
+  pageMeta?: {
+    current: number
+    total: number
+    totalCount: number
+    tool: string
+    params: string  // JSON string
+  }
 }
 
 // 聊天消息

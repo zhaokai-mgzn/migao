@@ -150,6 +150,18 @@ class InteractTool(BaseTool):
                 "description": "form 组件提交按钮文字（默认：提交）",
                 "default": "提交",
             },
+            "pageMeta": {
+                "type": "object",
+                "description": "choice 组件分页元数据（可选）。提供时前端渲染分页按钮。包含 current（当前页）、total（总页数）、totalCount（总条数）、tool（查询工具名）、params（查询参数 JSON 字符串）。用户点击翻页后自动调用工具获取对应页数据，无需 LLM 参与。",
+                "properties": {
+                    "current": {"type": "integer", "description": "当前页码"},
+                    "total": {"type": "integer", "description": "总页数"},
+                    "totalCount": {"type": "integer", "description": "总条数"},
+                    "tool": {"type": "string", "description": "查询工具名（如 processing_item_query）"},
+                    "params": {"type": "string", "description": "查询参数的 JSON 字符串（如 {\"keyword\":\"窗帘\",\"page\":1,\"size\":10}）"},
+                },
+                "required": ["current", "total", "totalCount", "tool", "params"],
+            },
         },
         "required": ["component", "title"],
     }
