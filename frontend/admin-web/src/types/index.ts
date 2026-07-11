@@ -167,6 +167,8 @@ export interface ProductListParams extends PageParams {
   createdFrom?: string
   // 创建时间截止 (yyyy-MM-dd)
   createdTo?: string
+  // 库存低于此值的筛选（#1200 低库存跳转过滤）
+  stockBelow?: number
   // 排序字段
   sortBy?: 'stock' | 'salesCount' | 'salesAmount' | 'createdAt'
   // 排序方向
