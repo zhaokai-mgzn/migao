@@ -855,13 +855,8 @@ async def execute_skill(
                         except Exception:
                             pass
             else:
-                # 达到 max_iterations
-                if new_messages:
-                    last_ai = [m for m in new_messages if isinstance(m, AIMessage)]
-                    if last_ai:
-                        final_content = _extract_content(last_ai[-1]) or "抱歉，处理超时，请稍后重试。"
-                if not final_content:
-                    final_content = "抱歉，处理超时，请换个方式描述您的需求。"
+                # 达到 max_iterations — 不暴露 LLM 的半截思考，用友好兜底
+                final_content = "抱歉，处理步骤较多，请稍后重试或换个简单的方式描述需求。"
 
     # ── 8. 实体追踪 ──
     entities = {}
