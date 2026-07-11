@@ -18,6 +18,7 @@ const mockOrder = {
   hasProcessing: false,
   createdAt: '2026-06-15T10:00:00Z',
   updatedAt: '2026-06-15T10:00:00Z',
+  remark: '[2026-07-10 15:30] hello',
   items: [
     {
       id: 'item-1',
@@ -85,5 +86,15 @@ describe('OrderTable', () => {
     render(<OrderTable {...defaultProps} />)
     const checkboxes = screen.getAllByRole('checkbox')
     expect(checkboxes.length).toBeGreaterThan(0)
+  })
+
+  it("remark column content", () => {
+    render(<OrderTable {...defaultProps} />)
+    expect(screen.getByText(/hello/)).toBeTruthy()
+  })
+  it("remark column dash when empty", () => {
+    const o = { ...mockOrder, remark: undefined }
+    render(<OrderTable {...defaultProps} orders={[o]} />)
+    expect(screen.getAllByText("-").length).toBeGreaterThan(0)
   })
 })

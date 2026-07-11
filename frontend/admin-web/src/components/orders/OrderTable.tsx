@@ -5,6 +5,7 @@ import dayjs from 'dayjs'
 import { cn } from '@/lib/utils'
 import type { Order } from '@/types'
 import { OrderStatusLabels, normalizeOrderStatus } from '@/types'
+import RemarkPopover from './RemarkPopover'
 
 export interface OrderTableProps {
   orders: Order[]
@@ -282,23 +283,15 @@ export default function OrderTable({
 
                   {/* 备注预览 */}
                   <td className="px-4 py-4 min-w-[100px] max-w-[160px]">
-                    {order.remark ? (
-                      <span className="relative group inline-block max-w-full">
-                        <span className="text-xs text-gray-500 truncate block cursor-default">
-                          💬 {order.remark.length > 20 ? order.remark.slice(0, 20) + '…' : order.remark}
-                        </span>
-                        {order.remark.length > 20 && (
-                          <span className="absolute bottom-full left-0 mb-1 hidden group-hover:block z-30
-                            bg-gray-900 text-white text-xs px-2.5 py-1.5 rounded-lg shadow-lg
-                            max-w-[280px] whitespace-pre-wrap break-words leading-relaxed
-                            pointer-events-none">
-                            {order.remark}
-                          </span>
+                    <RemarkPopover remark={order.remark}>
+                      <span className="text-xs text-gray-500 truncate block hover:text-primary-600 transition-colors">
+                        {order.remark ? (
+                          <>💬 {order.remark.replace(/\[.*?\]\s*/g, '').slice(0, 20)}{order.remark.replace(/\[.*?\]\s*/g, '').length > 20 ? '…' : ''}</>
+                        ) : (
+                          '-'
                         )}
                       </span>
-                    ) : (
-                      <span className="text-xs text-gray-300">-</span>
-                    )}
+                    </RemarkPopover>
                   </td>
 
                   {/* 操作 */}

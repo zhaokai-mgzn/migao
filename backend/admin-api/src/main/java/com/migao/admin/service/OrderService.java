@@ -787,7 +787,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
                 .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
         String remarkEntry = "[" + timestamp + "] " + content;
         String existing = order.getRemark() != null ? order.getRemark() : "";
-        order.setRemark(existing.isEmpty() ? remarkEntry : existing + "\n" + remarkEntry);
+        order.setRemark(existing.isEmpty() ? remarkEntry : remarkEntry + "\n" + existing);
         orderMapper.updateById(order);
         log.info("添加订单备注成功: id={}", id);
     }
