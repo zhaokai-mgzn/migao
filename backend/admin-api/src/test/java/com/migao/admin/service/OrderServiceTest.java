@@ -619,8 +619,8 @@ class OrderServiceTest {
     // ======================== 添加备注测试 ========================
 
     @Test
-    @DisplayName("添加备注 - 追加带时间戳的备注")
-    void addRemark_appendsWithTimestamp() {
+    @DisplayName("添加备注 - 新备注前插带时间戳")
+    void addRemark_prependsWithTimestamp() {
         // given
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
         when(orderMapper.updateById(any(Order.class))).thenReturn(1);
@@ -638,8 +638,8 @@ class OrderServiceTest {
     }
 
     @Test
-    @DisplayName("添加备注 - 已有备注时换行追加")
-    void addRemark_appendsToExistingRemark() {
+    @DisplayName("添加备注 - 已有备注时新备注前插（最新在前）")
+    void addRemark_prependsToExistingRemark() {
         // given
         testOrder.setRemark("[2026-06-01 10:00] 旧备注");
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
@@ -648,9 +648,41 @@ class OrderServiceTest {
         // when
         orderService.addRemark("order-001", "新备注");
 
-        // then
-        verify(orderMapper).updateById(argThat((Order o) ->
-                o.getRemark() != null && o.getRemark().contains("\n") && o.getRemark().contains("新备注")));
+        // then: 新备注应该在前（prepend），旧备注在后
+        verify(orderMapper).updateById(argThat((Order o) -> {
+            String remark = o.getRemark();
+            if (remark == null) return false;
+            int newRemarkPos = remark.indexOf("新备注");
+            int oldRemarkPos = remark.indexOf("旧备注");
+            return remark.contains("\n")
+                    && newRemarkPos >= 0
+                    && oldRemarkPos >= 0
+                    && newRemarkPos < oldRemarkPos; // 新备注在前
+        }));
+    }
+
+    @Test
+    @DisplayName("添加备注 - 多条已有备注时最新备注仍然在前")
+    void addRemark_prependsWhenMultipleExisting() {
+        // given: 已有两条旧备注（按时间倒序模拟）
+        testOrder.setRemark("[2026-06-03 14:00] 第二次备注\n[2026-06-01 10:00] 第一次备注");
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderMapper.updateById(any(Order.class))).thenReturn(1);
+
+        // when
+        orderService.addRemark("order-001", "第三次备注");
+
+        // then: 最新备注（第三次）应该在最前面
+        verify(orderMapper).updateById(argThat((Order o) -> {
+            String remark = o.getRemark();
+            if (remark == null) return false;
+            int thirdPos = remark.indexOf("第三次备注");
+            int secondPos = remark.indexOf("第二次备注");
+            int firstPos = remark.indexOf("第一次备注");
+            return thirdPos >= 0 && secondPos >= 0 && firstPos >= 0
+                    && thirdPos < secondPos
+                    && secondPos < firstPos; // 第三次 < 第二次 < 第一次
+        }));
     }
 
     @Test
