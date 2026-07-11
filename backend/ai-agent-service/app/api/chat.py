@@ -228,13 +228,14 @@ def _should_send_card(tool_name: str, result: Dict[str, Any]) -> bool:
     if tool_name == "order_query":
         data = result.get("data", {})
         has_order = data.get("order") is not None
-        items = data.get("items")
-        has_items = isinstance(items, list) and len(items) > 0
-        should_send = has_order or has_items
+        orders = data.get("orders")  # action=list 返回 orders 数组
+        items = data.get("items")    # 兼容旧格式
+        order_list = orders if isinstance(orders, list) else (items if isinstance(items, list) else [])
+        has_list = len(order_list) > 0
+        should_send = has_order or has_list
         logger.info(
-            f"[chat/card] order_query check | has_order={has_order} has_items={has_items} "
-            f"items_count={len(items) if has_items else 0} should_send={should_send} "
-            f"data_type={type(data).__name__} data_keys={list(data.keys()) if isinstance(data, dict) else 'N/A'}"
+            f"[chat/card] order_query check | has_order={has_order} orders_count={len(order_list)} "
+            f"should_send={should_send} data_keys={list(data.keys()) if isinstance(data, dict) else 'N/A'}"
         )
         return should_send
 
