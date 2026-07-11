@@ -358,8 +358,8 @@ export default function SessionInsight() {
             </span>
           </div>
           {currentSessionId && (
-            <p className="mt-2 text-[10px] text-gray-400 font-mono truncate" title={currentSessionId}>
-              ID: {currentSessionId.slice(0, 18)}…
+            <p className="mt-2 text-[10px] text-gray-400 font-mono break-all leading-relaxed">
+              会话标识: {currentSessionId}
             </p>
           )}
         </div>
