@@ -86,7 +86,7 @@ const menuGroups: MenuGroup[] = [
     icon: 'LayoutDashboard',
     children: [
       { key: 'dashboard', name: '经营看板', icon: 'BarChart3', path: '/dashboard' },
-      { key: 'chat', name: '米宝 · 在线对话', icon: 'MessageSquare', path: '/chat', permissionCode: 'agent:session' },
+      { key: 'chat', name: '米宝 · 智能助手', icon: 'MessageSquare', path: '/chat', permissionCode: 'agent:session' },
     ],
   },
   {
