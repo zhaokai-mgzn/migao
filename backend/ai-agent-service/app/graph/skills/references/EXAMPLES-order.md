@@ -33,25 +33,20 @@
 → 继续流程
 ```
 
-### 例4: 确认收货（完成订单）
-用户: "ORD-001 的货收到了，帮我完成这个订单"
+### 例4: 确认收货
+用户: "ORD-001 货到了，帮我完成"
 ```
-→ order_query(order_no="ORD-001") → 当前状态: shipped
-→ confirm: "确认将订单 ORD-001 标记为已完成（确认收货）？"
-→ 用户: "确认"
-→ order_manage(action=update_status, order_id="ORD-001", status="completed")
-→ ✅ "订单 ORD-001 已确认收货，交易完成"
+→ order_query(order_no="ORD-001") → shipped
+→ confirm → order_manage(update_status, completed)
+→ ✅ "订单 ORD-001 已确认收货"
 ```
-规则：只有 shipped 状态才能 completed；先查状态再操作。
 
-### 例5: 完成订单被拒（状态不符合）
+### 例5: 状态不符被拒
 用户: "把 ORD-002 完成"
 ```
-→ order_query(order_no="ORD-002") → 当前状态: confirmed（待发货）
-→ "订单 ORD-002 当前状态为「待发货」，需先发货后才能确认收货。
-   要我先帮您发货吗？"
+→ order_query → confirmed（非 shipped）
+→ "需先发货后才能确认收货"
 ```
-规则：状态不符合前置条件时，告知用户并引导下一步。
 
 ## ❌ 错误示例
 

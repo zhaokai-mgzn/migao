@@ -47,13 +47,13 @@ function getCardMeta(card: ChatCard): CardMeta | null {
   switch (card.type) {
     // ─── 订单（单笔 or 列表）───
     case 'order': {
-      // 列表格式: { items: [...] }
-      const items = data.items as Array<Record<string, unknown>> | undefined
-      if (items && items.length > 0) {
+      // 列表格式: { orders: [...] }（order_query action=list）或 { items: [...] }（兼容）
+      const orders = (data.orders || data.items) as Array<Record<string, unknown>> | undefined
+      if (orders && orders.length > 0) {
         const total = data.total as number | undefined
         const entities: SessionEntity[] = []
         const orderNos: string[] = []
-        for (const item of items.slice(0, 5)) {
+        for (const item of orders.slice(0, 5)) {
           const no = String(item.orderNo || item.order_no || '')
           if (no) {
             orderNos.push(no)
@@ -64,7 +64,7 @@ function getCardMeta(card: ChatCard): CardMeta | null {
           icon: <ShoppingBag className="w-4 h-4 text-blue-500 flex-shrink-0" />,
           typeLabel: '订单',
           colorClass: 'border-l-blue-400',
-          title: `订单列表 (${total || items.length} 条)`,
+          title: `订单列表 (${total || orders.length} 条)`,
           subtitle: orderNos.slice(0, 5).join(' · ') + (orderNos.length > 5 ? ' ...' : '') || null,
           detail: null,
           entities,
