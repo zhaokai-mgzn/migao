@@ -318,12 +318,54 @@ test.describe('商品列表页面', () => {
     expect(page.url()).toContain('sortBy=createdAt')
   })
 
-  test('按库存排序', async ({ page }) => {
+  test('按库存排序 - 升序', async ({ page }) => {
     const stockHeader = page.getByText('库存').first()
+
+    // 第一次点击 → 升序 (asc)
     await stockHeader.click()
     await page.waitForTimeout(500)
-
     expect(page.url()).toContain('sortBy=stock')
+    expect(page.url()).toContain('sortOrder=asc')
+
+    // 验证库存列值严格非递减
+    const stockCells = page.locator('tbody tr td').filter({ hasText: /^\d+$/ })
+    const stockValues = await stockCells.allTextContents()
+    const numericValues = stockValues
+      .map(t => parseInt(t.trim(), 10))
+      .filter(n => !isNaN(n))
+    expect(numericValues.length).toBeGreaterThanOrEqual(2)
+    for (let i = 1; i < numericValues.length; i++) {
+      expect(numericValues[i],
+        `库存升序失败: 索引 ${i} 的值 ${numericValues[i]} < 索引 ${i - 1} 的值 ${numericValues[i - 1]}`
+      ).toBeGreaterThanOrEqual(numericValues[i - 1])
+    }
+  })
+
+  test('按库存排序 - 降序后切换', async ({ page }) => {
+    const stockHeader = page.getByText('库存').first()
+
+    // 第一次点击 → 升序
+    await stockHeader.click()
+    await page.waitForTimeout(300)
+
+    // 第二次点击 → 降序
+    await stockHeader.click()
+    await page.waitForTimeout(500)
+    expect(page.url()).toContain('sortBy=stock')
+    expect(page.url()).toContain('sortOrder=desc')
+
+    // 验证库存列值严格非递增
+    const stockCells = page.locator('tbody tr td').filter({ hasText: /^\d+$/ })
+    const stockValues = await stockCells.allTextContents()
+    const numericValues = stockValues
+      .map(t => parseInt(t.trim(), 10))
+      .filter(n => !isNaN(n))
+    expect(numericValues.length).toBeGreaterThanOrEqual(2)
+    for (let i = 1; i < numericValues.length; i++) {
+      expect(numericValues[i],
+        `库存降序失败: 索引 ${i} 的值 ${numericValues[i]} > 索引 ${i - 1} 的值 ${numericValues[i - 1]}`
+      ).toBeLessThanOrEqual(numericValues[i - 1])
+    }
   })
 
   test('按销量排序', async ({ page }) => {
