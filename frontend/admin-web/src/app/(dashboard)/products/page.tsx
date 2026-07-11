@@ -50,6 +50,10 @@ export default function ProductsPage() {
   const [sortOrder, setSortOrder] = useState<ProductSortOrder>(
     (lowStockOnly ? 'asc' : (searchParams.get('sortOrder') as ProductSortOrder)) || 'desc'
   )
+  // #1201: 追踪是否为用户主动排序（vs 默认 createdAt desc）
+  const [activeSort, setActiveSort] = useState<boolean>(
+    !!searchParams.get('sortBy') || lowStockOnly
+  )
 
   // ===== 数据 =====
   const [products, setProducts] = useState<Product[]>([])
@@ -153,6 +157,7 @@ export default function ProductsPage() {
     setPage(1)
     setSortField('createdAt')
     setSortOrder('desc')
+    setActiveSort(false)
     setSelectedIds([])
     router.replace('/products', { scroll: false })
   }
@@ -169,14 +174,26 @@ export default function ProductsPage() {
   }
 
   // ===== 排序 =====
+  // #1201: 三态切换：asc → desc → 取消排序（回到默认 createdAt desc）
   const handleSortChange = (field: ProductSortField) => {
-    let nextOrder: ProductSortOrder = 'desc'
-    if (sortField === field) {
-      nextOrder = sortOrder === 'desc' ? 'asc' : 'desc'
+    if (!activeSort || sortField !== field) {
+      // 新列 或 从默认状态 → 升序
+      setSortField(field)
+      setSortOrder('asc')
+      setActiveSort(true)
+      syncUrl({ sortBy: field, sortOrder: 'asc' })
+    } else if (sortOrder === 'asc') {
+      // 升序 → 降序
+      setSortField(field)
+      setSortOrder('desc')
+      syncUrl({ sortBy: field, sortOrder: 'desc' })
+    } else {
+      // 降序 → 取消排序（回到默认 createdAt desc）
+      setSortField('createdAt')
+      setSortOrder('desc')
+      setActiveSort(false)
+      syncUrl({ sortBy: undefined, sortOrder: undefined })
     }
-    setSortField(field)
-    setSortOrder(nextOrder)
-    syncUrl({ sortBy: field, sortOrder: nextOrder })
   }
 
   // ===== 单条操作（触发确认弹窗） =====
