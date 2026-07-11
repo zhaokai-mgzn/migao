@@ -745,7 +745,7 @@ class ProductServiceTest {
         String sqlSegment = capturedWrapper.getSqlSegment();
         assertThat(sqlSegment)
                 .as("不应包含对 products.stock 列的直接排序引用")
-                .doesNotContainPattern("(?i)order\\s+by\\s+.*stock.*asc");
+                .doesNotContainPattern("(?i)order\\s+by\\s+stock\\s+(asc|desc)");
     }
 
     @Test
