@@ -143,7 +143,12 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         if (StringUtils.hasText(query.getSortBy())) {
             boolean isAsc = "asc".equalsIgnoreCase(query.getSortOrder());
             switch (query.getSortBy()) {
-                case "stock" -> wrapper.orderBy(true, isAsc, Product::getStock);
+                case "stock" -> {
+                    // #1201: products.stock 常为 0（默认值），与前端展示值（SKU 汇总 sum）不同源。
+                    // ORDER BY products.stock 无实际排序效果 → 改用 SKU 汇总子查询排序。
+                    String direction = isAsc ? "ASC" : "DESC";
+                    wrapper.last("ORDER BY (SELECT COALESCE(SUM(ps.stock), 0) FROM product_skus ps WHERE ps.product_id = products.id) " + direction);
+                }
                 case "sales_count", "salesCount" -> wrapper.orderBy(true, isAsc, Product::getSalesCount);
                 case "sales_amount", "salesAmount" -> wrapper.orderBy(true, isAsc, Product::getSalesAmount);
                 case "created_at", "createdAt" -> wrapper.orderBy(true, isAsc, Product::getCreatedAt);

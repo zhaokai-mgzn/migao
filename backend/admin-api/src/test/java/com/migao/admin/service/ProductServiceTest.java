@@ -643,4 +643,131 @@ class ProductServiceTest {
         assertThat(result.getErrors().get(0).getMessage()).contains("不允许删除");
         verify(productMapper, never()).deleteById(anyString());
     }
+
+    // ═══════════════════════════════════════════════════════════
+    // #1201 库存排序修复: ORDER BY 改用 SKU 汇总子查询
+    // ═══════════════════════════════════════════════════════════
+
+    @Test
+    @DisplayName("#1201: sortBy=stock ASC → wrapper.last() 使用 SKU 汇总子查询排序")
+    void getProducts_SortByStockAsc_UsesSkuSumSubquery() {
+        // Given
+        ProductQueryRequest query = new ProductQueryRequest();
+        query.setSortBy("stock");
+        query.setSortOrder("asc");
+        query.setPage(1L);
+        query.setSize(20L);
+
+        Page<Product> mockPage = new Page<>(1, 20);
+        mockPage.setRecords(List.of(testProduct));
+        mockPage.setTotal(1);
+
+        ArgumentCaptor<LambdaQueryWrapper<Product>> wrapperCaptor =
+                ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        when(productMapper.selectPage(any(Page.class), wrapperCaptor.capture()))
+                .thenReturn(mockPage);
+        when(categoryMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(List.of(testCategory));
+
+        // When
+        productService.getProducts(query, 1L);
+
+        // Then: 验证 wrapper.last() 包含 SKU 汇总子查询并指定 ASC
+        LambdaQueryWrapper<Product> capturedWrapper = wrapperCaptor.getValue();
+        String customSql = capturedWrapper.getCustomSqlSegment();
+        assertThat(customSql)
+                .as("wrapper.last() 应包含 SKU 汇总子查询排序")
+                .contains("COALESCE(SUM(ps.stock)");
+        assertThat(customSql)
+                .as("sortOrder=asc 时子查询应为 ASC")
+                .contains("ASC");
+    }
+
+    @Test
+    @DisplayName("#1201: sortBy=stock DESC → wrapper.last() 使用 SKU 汇总子查询排序")
+    void getProducts_SortByStockDesc_UsesSkuSumSubquery() {
+        // Given
+        ProductQueryRequest query = new ProductQueryRequest();
+        query.setSortBy("stock");
+        query.setSortOrder("desc");
+        query.setPage(1L);
+        query.setSize(20L);
+
+        Page<Product> mockPage = new Page<>(1, 20);
+        mockPage.setRecords(List.of(testProduct));
+        mockPage.setTotal(1);
+
+        ArgumentCaptor<LambdaQueryWrapper<Product>> wrapperCaptor =
+                ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        when(productMapper.selectPage(any(Page.class), wrapperCaptor.capture()))
+                .thenReturn(mockPage);
+        when(categoryMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(List.of(testCategory));
+
+        // When
+        productService.getProducts(query, 1L);
+
+        // Then
+        LambdaQueryWrapper<Product> capturedWrapper = wrapperCaptor.getValue();
+        String customSql = capturedWrapper.getCustomSqlSegment();
+        assertThat(customSql)
+                .as("wrapper.last() 应包含 SKU 汇总子查询排序")
+                .contains("COALESCE(SUM(ps.stock)");
+        assertThat(customSql)
+                .as("sortOrder=desc 时子查询应为 DESC")
+                .contains("DESC");
+    }
+
+    @Test
+    @DisplayName("#1201: sortBy=stock 时排序键是 SKU 汇总值而非 products.stock")
+    void getProducts_SortByStock_DoesNotUseProductStockColumn() {
+        // Given
+        ProductQueryRequest query = new ProductQueryRequest();
+        query.setSortBy("stock");
+        query.setSortOrder("asc");
+
+        Page<Product> mockPage = new Page<>(1, 20);
+        mockPage.setRecords(List.of(testProduct));
+        mockPage.setTotal(1);
+
+        ArgumentCaptor<LambdaQueryWrapper<Product>> wrapperCaptor =
+                ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        when(productMapper.selectPage(any(Page.class), wrapperCaptor.capture()))
+                .thenReturn(mockPage);
+        when(categoryMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(List.of(testCategory));
+
+        // When
+        productService.getProducts(query, 1L);
+
+        // Then: 不应使用 product.stock 列做排序（这是 Bug 的根因）
+        LambdaQueryWrapper<Product> capturedWrapper = wrapperCaptor.getValue();
+        String sqlSegment = capturedWrapper.getSqlSegment();
+        // 确认 SQL 片段中不含对 products.stock 列的直接 ORDER BY
+        assertThat(sqlSegment)
+                .as("不应包含对 products.stock 列的直接排序引用")
+                .doesNotContainPattern("(?i)order\\s+by\\s+stock\\s+(asc|desc)");
+    }
+
+    @Test
+    @DisplayName("#1201: sortBy 未指定时默认按 createdAt 降序")
+    void getProducts_DefaultSort_ByCreatedAtDesc() {
+        // Given
+        ProductQueryRequest query = new ProductQueryRequest();
+        query.setPage(1L);
+        query.setSize(20L);
+
+        Page<Product> mockPage = new Page<>(1, 20);
+        mockPage.setRecords(List.of(testProduct));
+        mockPage.setTotal(1);
+
+        when(productMapper.selectPage(any(Page.class), any(LambdaQueryWrapper.class)))
+                .thenReturn(mockPage);
+
+        // When
+        productService.getProducts(query, 1L);
+
+        // Then: 默认排序应正常工作
+        verify(productMapper).selectPage(any(Page.class), any(LambdaQueryWrapper.class));
+    }
 }
