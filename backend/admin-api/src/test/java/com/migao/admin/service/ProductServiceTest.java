@@ -770,4 +770,64 @@ class ProductServiceTest {
         // Then: 默认排序应正常工作
         verify(productMapper).selectPage(any(Page.class), any(LambdaQueryWrapper.class));
     }
+
+    // ═══════════════════════════════════════════════════════════
+    // #1200 stockBelow 筛选修复: WHERE 改用 SKU 汇总子查询
+    // ═══════════════════════════════════════════════════════════
+
+    @Test
+    @DisplayName("#1200: stockBelow 筛选使用 SKU 汇总子查询而非 products.stock")
+    void getProducts_StockBelowFilter_UsesSkuSumSubquery() {
+        // Given
+        ProductQueryRequest query = new ProductQueryRequest();
+        query.setStockBelow(100);
+        query.setPage(1L);
+        query.setSize(20L);
+
+        Page<Product> mockPage = new Page<>(1, 20);
+        mockPage.setRecords(List.of(testProduct));
+        mockPage.setTotal(1);
+
+        ArgumentCaptor<LambdaQueryWrapper<Product>> wrapperCaptor =
+                ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        when(productMapper.selectPage(any(Page.class), wrapperCaptor.capture()))
+                .thenReturn(mockPage);
+        when(categoryMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(List.of(testCategory));
+
+        // When
+        productService.getProducts(query, 1L);
+
+        // Then: 验证 wrapper 条件中包含 SKU 汇总子查询
+        LambdaQueryWrapper<Product> capturedWrapper = wrapperCaptor.getValue();
+        String sqlSegment = capturedWrapper.getSqlSegment();
+        assertThat(sqlSegment)
+                .as("stockBelow 筛选应使用 SKU 汇总子查询")
+                .contains("COALESCE(SUM(ps.stock)");
+        assertThat(sqlSegment)
+                .as("不应包含对 products.stock 列的直接筛选引用")
+                .doesNotContainPattern("(?i)stock\\s*<\\s*\\{0\\}");
+    }
+
+    @Test
+    @DisplayName("#1200: stockBelow 未传时不附加筛选条件")
+    void getProducts_NoStockBelow_NoFilterApplied() {
+        // Given
+        ProductQueryRequest query = new ProductQueryRequest();
+        query.setPage(1L);
+        query.setSize(20L);
+
+        Page<Product> mockPage = new Page<>(1, 20);
+        mockPage.setRecords(List.of(testProduct));
+        mockPage.setTotal(1);
+
+        when(productMapper.selectPage(any(Page.class), any(LambdaQueryWrapper.class)))
+                .thenReturn(mockPage);
+
+        // When
+        productService.getProducts(query, 1L);
+
+        // Then: 不应包含 stockBelow 筛选
+        verify(productMapper).selectPage(any(Page.class), any(LambdaQueryWrapper.class));
+    }
 }
