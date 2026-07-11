@@ -71,6 +71,18 @@ describe('OrderTable', () => {
     expect(names.length).toBeGreaterThanOrEqual(1)
   })
 
+  it('采购明细分隔符应为 : 而非 /', () => {
+    render(<OrderTable {...defaultProps} />)
+    // 采购明细列在 min-w-[280px] 的 td 中，取该列文本验证分隔符
+    const detailCells = document.querySelectorAll('td.min-w-\\[280px\\]')
+    expect(detailCells.length).toBeGreaterThan(0)
+    const cellText = detailCells[0].textContent || ''
+    // 产品名后应紧跟 ' : 数字' 模式（如 窗帘 : 99元）
+    expect(cellText).toMatch(/窗帘\s*:\s*\d/)
+    // 不应出现 ' / 数字' 模式（在采购明细列上下文中）
+    expect(cellText).not.toMatch(/窗帘\s*\/\s*\d/)
+  })
+
   it('空列表显示"暂无数据"', () => {
     render(<OrderTable {...defaultProps} orders={[]} />)
     expect(screen.getByText('暂无数据')).toBeTruthy()
