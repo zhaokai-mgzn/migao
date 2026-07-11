@@ -233,7 +233,8 @@ def _should_send_card(tool_name: str, result: Dict[str, Any]) -> bool:
         should_send = has_order or has_items
         logger.info(
             f"[chat/card] order_query check | has_order={has_order} has_items={has_items} "
-            f"items_count={len(items) if has_items else 0} should_send={should_send}"
+            f"items_count={len(items) if has_items else 0} should_send={should_send} "
+            f"data_type={type(data).__name__} data_keys={list(data.keys()) if isinstance(data, dict) else 'N/A'}"
         )
         return should_send
 
