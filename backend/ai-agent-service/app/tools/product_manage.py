@@ -305,6 +305,18 @@ class ProductManageTool(BaseTool):
                 "items": {"type": "string"},
                 "description": "加工项ID数组。先调 processing_item_query 获取可用列表让用户选，收集选中的ID后传入",
             },
+            "processing_item_configs": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string", "description": "加工项ID"},
+                        "price": {"type": "number", "description": "加工项单价（从 processing_item_query 返回的 unit_price 获取）"},
+                        "unit": {"type": "string", "description": "加工项单位（从 processing_item_query 返回的 unit 获取，如'个''米'）"},
+                    },
+                },
+                "description": "加工项配置数组。每个元素含 id（加工项ID）、price（单价，默认从 processing_item_query 的 unit_price 取值）、unit（单位）。创建商品时必须传入，用户未指定价格时使用系统默认单价",
+            },
             "specifications": {
                 "type": "object",
                 "description": "规格对象。可含 weight(克重) material(材质) craft(工艺) style(风格) pattern(图案) function(功能)",

@@ -20,10 +20,10 @@ tools: product_search, product_detail, product_manage, inventory_manage, process
 ## 规则
 
 - 商品数据不编造，颜色/SKU 完整列出禁止"等X种"
-- **分类/加工项必须用工具返回的真实数据**，禁止编造假 ID（如 cat_curtain_001）
-- **加工项会自动展示为选择组件**。分类树需 LLM 显式调 interact(choice) 展示选择器。用户点击后 LLM 直接收到对应的 ID。无需让用户手动输入
-- 创建流程：按需执行。① 如用户未提供分类 → category_manage(tree) + interact(choice) 渲染选择器；如需要加工项 → processing_item_query（自动弹出选择组件）② 用户选择分类和加工项 ③ 如用户未提供货号 → 引导 ④ 汇总确认 → validate_input → product_manage(action=create,status="on_sale")。禁止只汇总不执行
-- processing_item_query 只允许每轮对话调用一次。加工项选择组件已展示后禁止再次调用，直接等待用户选择即可
+- **分类/加工项必须用工具返回的真实数据**，禁止编造假 ID
+- 创建流程：① 收集基本信息后，**主动调 processing_item_query 询问是否需要加工项**（展示带序号的选择列表）② 分类选择：category_manage(tree) + interact(choice) ③ 货号引导 ④ 汇总确认 → validate_input → product_manage(create)。禁止只汇总不执行
+- **加工项选择规则**：processing_item_query 返回后，调用 interact(component="choice") 展示选项，**multiSelect 必须为 false**（系统渲染序号列表）。用户每次点击一个加工项发送到对话后，LLM 继续展示剩余选项直到用户说"不需要了"。一产品可多次选择，勿用 multiSelect
+- processing_item_query 只允许每轮对话调用一次
 - **货号(sku_code)**：用户直接提供时直接使用；未提供时引导。图片有色号→提取；有品牌→缩写；都没有→拼音首字母
 - 图片识别结果直接预填表单，不要让用户重复输入
 

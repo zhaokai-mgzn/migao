@@ -35,7 +35,7 @@ PRODUCT_SYSTEM_PROMPT = """## 创建商品需要的字段
 | door_widths | 是 | 用户提供或默认["2.8米"] |
 | colors | 是 | 用户提供或图片识别 |
 | 以上三个字段决定 SKU 笛卡尔积 |
-| processing_item_ids | 否 | 用户明确说不需要时跳过；需要时调 processing_item_query（系统自动渲染选择组件） |
+| processing_item_ids | 否 | **必须主动询问**。收集基本信息后立即调 processing_item_query 展示加工项选择器。用户点击序号选择，可多次选择。仅用户明确说"不需要"时跳过 |
 | unit | 否 | 窗帘默认"米" |
 | pricing_type | 否 | 窗帘默认"per_meter" |
 | specifications | 否 | 窗帘默认见下方 |
@@ -63,6 +63,9 @@ brand 仅用户提及时才传，不可自行推断。
 ## 加工项
 
 加工项选择由系统自动渲染。调用 processing_item_query 即可。
+创建商品时，选中的加工项需通过 processing_item_configs 传入价格：
+`[{id: "pi_xxx", price: unit_price, unit: "米"}, ...]`
+price 默认取 processing_item_query 返回的 unit_price，用户未指定时使用默认价。
 
 ## Vision 预填
 
