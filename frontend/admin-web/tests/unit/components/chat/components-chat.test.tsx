@@ -163,16 +163,37 @@ describe('MessageList', () => {
     expect(screen.getByText('加载消息中...')).toBeInTheDocument()
   })
 
-  it('shows empty state when no messages', () => {
+  it('shows empty state when no messages (returning user with sessions)', () => {
     mockUseChatStore.mockReturnValue(
       makeDefaultChatState({
         currentSessionId: 's1',
+        sessions: [
+          { session_id: 's1', title: '旧对话', status: 'active', updated_at: '2025-01-01', created_at: '2025-01-01' },
+        ],
         messages: [],
         isLoadingMessages: false,
       })
     )
     render(<MessageList />)
     expect(screen.getByText('发送消息开始对话')).toBeInTheDocument()
+  })
+
+  it('shows welcome panel for first-time visitors (no sessions, no messages)', () => {
+    mockUseChatStore.mockReturnValue(
+      makeDefaultChatState({
+        currentSessionId: 's1',
+        sessions: [],
+        messages: [],
+        isLoadingMessages: false,
+      })
+    )
+    render(<MessageList />)
+
+    // 欢迎面板展示
+    expect(screen.getByText('欢迎使用米宝')).toBeInTheDocument()
+    expect(screen.getByText('查看待处理订单')).toBeInTheDocument()
+    expect(screen.getByText('今日经营数据')).toBeInTheDocument()
+    expect(screen.getByText('查看加工项列表')).toBeInTheDocument()
   })
 
   it('renders user and assistant messages', () => {

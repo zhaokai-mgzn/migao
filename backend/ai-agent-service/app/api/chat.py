@@ -456,6 +456,22 @@ async def _agent_stream_to_sse(
 
 # ============ 分页协议 ============
 
+# __PAGE__ 协议白名单：仅允许只读查询工具，防止任意工具执行
+_PAGE_WHITELIST = frozenset({
+    "processing_item_query",
+    "processing_items",
+    "order_query",
+    "product_search",
+    "product_detail",
+    "product_manage",       # 仅 list 操作
+    "logistics_track",
+    "aftersale_query",
+    "customer_manage",      # 仅 list 操作
+    "employee_manage",      # 仅 list 操作
+    "knowledge_faq",
+    "dashboard_stats",
+})
+
 async def _handle_page_request(
     request: ChatSendRequest,
     tenant_id: int,
@@ -471,6 +487,7 @@ async def _handle_page_request(
     session_memory = SessionMemory()
     tool_registry = get_tool_registry()
 
+    # ── 安全校验：与 send_message 保持一致的 session 验证 ──
     session_id = request.session_id
     if not session_id:
         session_id = await session_memory.create_session(
@@ -478,10 +495,20 @@ async def _handle_page_request(
         )
     else:
         session = await session_memory.get_session(session_id)
-        if not session or session.get("status") == "closed":
-            session_id = await session_memory.create_session(
-                tenant_id=tenant_id, customer_id=user_id, title=None,
+        if not session:
+            raise HTTPException(
+                status_code=404,
+                detail=make_response(False, error_code="SESSION_NOT_FOUND", error_message="会话不存在"),
             )
+        if session.get("tenant_id") != tenant_id:
+            raise HTTPException(status_code=403, detail=make_response(
+                False, error_code="PERMISSION_DENIED", error_message="无权访问该会话"))
+        if session.get("customer_id") != user_id:
+            raise HTTPException(status_code=403, detail=make_response(
+                False, error_code="PERMISSION_DENIED", error_message="无权访问该会话"))
+        if session.get("status") == "closed":
+            raise HTTPException(status_code=409, detail={
+                "success": False, "error": {"code": "SESSION_CLOSED", "message": "该会话已结束，请创建新对话"}})
 
     # 解析 __PAGE__ 消息
     try:
@@ -495,6 +522,18 @@ async def _handle_page_request(
             yield SSEEvent.done(session_id, None)
         return StreamingResponse(
             _bad_page_stream(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
+        )
+
+    # 白名单校验：仅允许分页查询工具
+    if tool_name not in _PAGE_WHITELIST:
+        logger.warning(f"[page] Blocked non-whitelisted tool: {tool_name}")
+        async def _blocked_stream():
+            yield SSEEvent.error("不支持该操作的分页查询")
+            yield SSEEvent.done(session_id, None)
+        return StreamingResponse(
+            _blocked_stream(),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
         )
@@ -585,7 +624,7 @@ async def _handle_page_request(
 
         except Exception as e:
             logger.error(f"[page] Tool execution failed: {e}", exc_info=True)
-            yield SSEEvent.error(f"翻页查询失败: {str(e)}")
+            yield SSEEvent.error("翻页查询失败，请稍后重试")
 
         # 保存 assistant 响应
         try:

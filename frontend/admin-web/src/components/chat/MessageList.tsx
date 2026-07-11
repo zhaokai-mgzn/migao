@@ -22,9 +22,10 @@ import type { ChatMessage, ChatCard } from '@/types'
 
 import ToolResultCard from './ToolResultCard'
 import InteractiveMessage from './InteractiveMessage'
+import WelcomePanel from './WelcomePanel'
 
 export default function MessageList() {
-  const { messages, isLoadingMessages, currentSessionId } =
+  const { messages, isLoadingMessages, currentSessionId, sessions } =
     useChatStore()
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -58,6 +59,10 @@ export default function MessageList() {
   }
 
   if (messages.length === 0) {
+    // 首次访问无历史会话 → 新手引导欢迎面板
+    if (sessions.length === 0 && !isLoadingMessages) {
+      return <WelcomePanel />
+    }
     return (
       <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
         <Bot className="w-16 h-16 mb-4 text-gray-200" />
