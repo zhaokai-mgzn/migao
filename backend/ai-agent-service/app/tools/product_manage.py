@@ -310,12 +310,11 @@ class ProductManageTool(BaseTool):
                 "items": {
                     "type": "object",
                     "properties": {
-                        "id": {"type": "string", "description": "加工项ID"},
-                        "price": {"type": "number", "description": "加工项单价（从 processing_item_query 返回的 unit_price 获取）"},
-                        "unit": {"type": "string", "description": "加工项单位（从 processing_item_query 返回的 unit 获取，如'个''米'）"},
+                        "processingItemId": {"type": "string", "description": "加工项ID（从 processing_item_query 返回的 id 字段取值）"},
+                        "customPrice": {"type": "number", "description": "自定义价格（默认取 processing_item_query 的 unit_price）"},
                     },
                 },
-                "description": "加工项配置数组。每个元素含 id（加工项ID）、price（单价，默认从 processing_item_query 的 unit_price 取值）、unit（单位）。创建商品时必须传入，用户未指定价格时使用系统默认单价",
+                "description": "加工项配置数组。每个元素含 processingItemId 和可选的 customPrice。创建/更新商品时传入，价格默认取加工项原始单价",
             },
             "specifications": {
                 "type": "object",
@@ -498,7 +497,17 @@ class ProductManageTool(BaseTool):
                 )
         if processing_item_ids:
             if processing_item_configs:
-                json_data["processingItemConfigs"] = processing_item_configs
+                # 规范化字段名：LLM 可能传 id/price → admin-api 期望 processingItemId/customPrice
+                normalized = []
+                for cfg in processing_item_configs:
+                    if not isinstance(cfg, dict):
+                        continue
+                    nc = {"processingItemId": cfg.get("processingItemId") or cfg.get("id")}
+                    price = cfg.get("customPrice") or cfg.get("price")
+                    if price is not None:
+                        nc["customPrice"] = price
+                    normalized.append(nc)
+                json_data["processingItemConfigs"] = normalized
             elif processing_item_ids:
                 json_data["processingItemConfigs"] = [{"processingItemId": pid} for pid in processing_item_ids]
         if brand:
@@ -676,7 +685,17 @@ class ProductManageTool(BaseTool):
                 )
         if processing_item_ids:
             if processing_item_configs:
-                json_data["processingItemConfigs"] = processing_item_configs
+                # 规范化字段名：LLM 可能传 id/price → admin-api 期望 processingItemId/customPrice
+                normalized = []
+                for cfg in processing_item_configs:
+                    if not isinstance(cfg, dict):
+                        continue
+                    nc = {"processingItemId": cfg.get("processingItemId") or cfg.get("id")}
+                    price = cfg.get("customPrice") or cfg.get("price")
+                    if price is not None:
+                        nc["customPrice"] = price
+                    normalized.append(nc)
+                json_data["processingItemConfigs"] = normalized
             elif processing_item_ids:
                 json_data["processingItemConfigs"] = [{"processingItemId": pid} for pid in processing_item_ids]
         if brand:
