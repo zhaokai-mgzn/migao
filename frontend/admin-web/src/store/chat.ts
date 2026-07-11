@@ -575,7 +575,6 @@ function handleSSEEvent(
                       options: parsedData.options,
                       fields: parsedData.fields,
                       formFields: parsedData.formFields,
-                      multiSelect: parsedData.multiSelect || false,
                       submitLabel: parsedData.submitLabel,
                     },
                   }

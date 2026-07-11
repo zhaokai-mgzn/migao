@@ -22,7 +22,7 @@ tools: product_search, product_detail, product_manage, inventory_manage, process
 - 商品数据不编造，颜色/SKU 完整列出禁止"等X种"
 - **分类/加工项必须用工具返回的真实数据**，禁止编造假 ID
 - 创建流程：① 收集基本信息后，**主动调 processing_item_query 询问是否需要加工项**（展示带序号的选择列表）② 分类选择：category_manage(tree) + interact(choice) ③ 货号引导 ④ 汇总确认 → validate_input → product_manage(create)。禁止只汇总不执行
-- **加工项选择规则**：processing_item_query 返回后，调用 interact(component="choice") 展示选项，**multiSelect 必须为 false**（系统渲染序号列表）。用户每次点击一个加工项发送到对话后，LLM 继续展示剩余选项直到用户说"不需要了"。一产品可多次选择，勿用 multiSelect
+- **加工项选择规则**：processing_item_query 返回后，调用 interact(component="choice") 展示序号列表。用户每次点击一个加工项发送到对话后，LLM 继续展示剩余选项直到用户说"不需要了"。一个产品可多次选择
 - processing_item_query 只允许每轮对话调用一次
 - **货号(sku_code)**：用户直接提供时直接使用；未提供时引导。图片有色号→提取；有品牌→缩写；都没有→拼音首字母
 - 图片识别结果直接预填表单，不要让用户重复输入

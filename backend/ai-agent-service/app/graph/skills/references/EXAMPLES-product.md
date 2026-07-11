@@ -27,14 +27,15 @@
 用户回填 form: name="遮光窗帘", price=50, selling_methods=["散剪","整卷"], door_widths=["2.8米"], sku_code="ZG-001"
 → interact(
     component="choice",
-    title="选择加工项（可多选）",
-    multiSelect=true,
+    title="请选择加工项",
     options=[
       {label:"1. 打孔加工 ¥8/米", value:"pi_a1b2c3d4e5f6g7h8"},
       {label:"2. S钩安装 ¥5/米", value:"pi_i9j0k1l2m3n4o5p6"},
       {label:"3. 韩式褶加工 ¥12/米", value:"pi_q7r8s9t0u1v2w3x4"}
     ]
   )
+→ 用户点击序号 1 → 发送 "1. 打孔加工 ¥8/米"
+→ 继续展示剩余选项让用户可再加加工项
 ```
 
 ### 轮次 3 — 汇总确认

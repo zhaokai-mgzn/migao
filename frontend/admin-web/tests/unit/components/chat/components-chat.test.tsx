@@ -384,9 +384,8 @@ describe('InteractiveMessage', () => {
     expect(screen.getByText('沙发布')).toBeInTheDocument()
   })
 
-  it('sends label (not value) when single choice is submitted', () => {
-    // 回归测试 #989: ChoiceCard submitChoice 发送 opt.label 而非 opt.value (hash ID)
-    // 根因: InteractiveMessage.tsx:54 曾发送 option.value (hash ID) → LLM 无法理解 → 死循环
+  it('sends label (not value) on click', () => {
+    // 回归测试 #989: clickOption 发送 opt.label 而非 opt.value (hash ID)
     const sendMessage = vi.fn()
     mockUseChatStore.mockReturnValue(
       makeDefaultChatState({ sendMessage }),
@@ -402,17 +401,15 @@ describe('InteractiveMessage', () => {
     }
     render(<InteractiveMessage interactive={interactive} />)
 
-    // Click the first option
+    // 点击选项直接发送 label，无确认按钮
     fireEvent.click(screen.getByText('家居窗帘'))
-    // Click confirm
-    fireEvent.click(screen.getByText('确认'))
 
     // 必须发送可读 label，不能发送 hash ID
     expect(sendMessage).toHaveBeenCalledWith('家居窗帘')
     expect(sendMessage).not.toHaveBeenCalledWith('071c042283b62e3a4e000b178242632d')
   })
 
-  it('sends labels joined for multi-select choice', () => {
+  it('sends label directly on click (single-select, no confirm button)', () => {
     const sendMessage = vi.fn()
     mockUseChatStore.mockReturnValue(
       makeDefaultChatState({ sendMessage }),
@@ -420,8 +417,7 @@ describe('InteractiveMessage', () => {
 
     const interactive = {
       component: 'choice' as const,
-      title: '请选择多个分类',
-      multiSelect: true,
+      title: '请选择分类',
       options: [
         { label: '窗帘', value: 'id-001' },
         { label: '沙发布', value: 'id-002' },
@@ -430,14 +426,10 @@ describe('InteractiveMessage', () => {
     }
     render(<InteractiveMessage interactive={interactive} />)
 
-    // Select first and third options
+    // 点击直接发送，无需确认按钮
     fireEvent.click(screen.getByText('窗帘'))
-    fireEvent.click(screen.getByText('卷帘'))
-    // Click confirm
-    fireEvent.click(screen.getByText(/确认选择/))
 
-    // 发送的文本应包含所有选中项的 label，用 、 连接
-    expect(sendMessage).toHaveBeenCalledWith('窗帘、卷帘')
+    expect(sendMessage).toHaveBeenCalledWith('窗帘')
   })
 
   it('renders confirm card with fields and buttons', () => {

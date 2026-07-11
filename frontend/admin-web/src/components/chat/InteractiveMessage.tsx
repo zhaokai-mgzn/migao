@@ -29,36 +29,14 @@ export default function InteractiveMessage({ interactive, disabled }: Props) {
  */
 function ChoiceCard({ interactive, disabled }: Props) {
   const { sendMessage } = useChatStore()
-  const [selected, setSelected] = useState<Set<string>>(new Set())
   const [submitted, setSubmitted] = useState(false)
 
   const options = Array.isArray(interactive.options) ? interactive.options : []
-  const multi = interactive.multiSelect || false
 
-  const toggleOption = (value: string) => {
+  const clickOption = (opt: InteractiveOption) => {
     if (submitted || disabled) return
-    if (multi) {
-      setSelected(prev => {
-        const next = new Set(prev)
-        if (next.has(value)) next.delete(value)
-        else next.add(value)
-        return next
-      })
-    } else {
-      setSelected(new Set([value]))
-    }
-  }
-
-  const submitChoice = () => {
-    if (selected.size === 0) return
-    // 发送 label (value) 格式，确保 LLM 能理解用户的选择
-    // 示例: "家居窗帘 (ID: 071c042283b62e3a4e000b178242632d)"
-    const selectedText = options
-      .filter(opt => selected.has(opt.value))
-      .map(opt => opt.label || opt.value)
-      .join('、')
     setSubmitted(true)
-    sendMessage(selectedText)
+    sendMessage(opt.label || opt.value)
   }
 
   return (
@@ -66,80 +44,34 @@ function ChoiceCard({ interactive, disabled }: Props) {
       {/* 标题 */}
       <div className="px-3 py-2 bg-primary-50 border-b border-primary-100">
         <p className="text-xs font-medium text-primary-700">{interactive.title}</p>
-        {multi && (
-          <p className="text-[10px] text-primary-400 mt-0.5">可多选，选择后点击下方按钮确认</p>
-        )}
       </div>
 
-      {/* 选项列表 */}
+      {/* 选项列表 — 点击直接发送 */}
       <div className="p-2 space-y-1">
-        {options.map((opt: InteractiveOption, idx: number) => {
-          const isSelected = selected.has(opt.value)
-          return (
-            <button
-              key={opt.value}
-              onClick={() => toggleOption(opt.value)}
-              disabled={submitted || disabled}
-              className={cn(
-                'w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-sm transition-colors',
-                isSelected
-                  ? 'bg-primary-100 border border-primary-300 text-primary-800'
-                  : 'bg-gray-50 border border-gray-100 text-gray-700 hover:bg-gray-100',
-                (submitted || disabled) && 'opacity-60 cursor-not-allowed'
-              )}
-            >
-              {/* 多选显示复选框，单选显示右侧勾号 */}
-              {multi && (
-                <span className={cn(
-                  'w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors',
-                  isSelected ? 'bg-primary-600 border-primary-600 text-white' : 'border-gray-300'
-                )}>
-                  {isSelected && <Check className="w-3 h-3" />}
-                </span>
-              )}
-              {/* 序号标记：用户可通过回复数字选择 */}
-              <span className="w-5 h-5 rounded-full bg-gray-200 text-gray-500 text-[10px] font-semibold flex items-center justify-center flex-shrink-0">
-                {idx + 1}
-              </span>
-              <span className="flex-1">
-                <span className="font-medium">{opt.label}</span>
-                {opt.description && (
-                  <span className="ml-1.5 text-xs text-gray-400">{opt.description}</span>
-                )}
-              </span>
-              {!multi && isSelected && <Check className="w-4 h-4 text-primary-600 flex-shrink-0" />}
-            </button>
-          )
-        })}
-      </div>
-
-      {/* 确认按钮 — 始终显示，显示选中状态提示 */}
-      {!submitted && (
-        <div className="px-3 py-2 border-t border-gray-100 flex items-center justify-between">
-          <span className="text-xs text-gray-400">
-            {selected.size > 0
-              ? multi
-                ? `已选 ${selected.size} 项`
-                : '已选择'
-              : multi
-                ? '请选择一项或多项'
-                : '请点击选择一个选项'}
-          </span>
+        {options.map((opt: InteractiveOption, idx: number) => (
           <button
-            onClick={submitChoice}
-            disabled={selected.size === 0}
+            key={opt.value}
+            onClick={() => clickOption(opt)}
+            disabled={submitted || disabled}
             className={cn(
-              'flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
-              selected.size > 0
-                ? 'bg-primary-600 text-white hover:bg-primary-700'
-                : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+              'w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-sm transition-colors',
+              'bg-gray-50 border border-gray-100 text-gray-700 hover:bg-gray-100',
+              (submitted || disabled) && 'opacity-60 cursor-not-allowed',
             )}
           >
-            {multi && selected.size > 0 ? `确认选择 (${selected.size})` : '确认'}
-            <ChevronRight className="w-3 h-3" />
+            <span className="w-5 h-5 rounded-full bg-gray-200 text-gray-500 text-[10px] font-semibold flex items-center justify-center flex-shrink-0">
+              {idx + 1}
+            </span>
+            <span className="flex-1">
+              <span className="font-medium">{opt.label}</span>
+              {opt.description && (
+                <span className="ml-1.5 text-xs text-gray-400">{opt.description}</span>
+              )}
+            </span>
+            <ChevronRight className="w-4 h-4 text-gray-300 flex-shrink-0" />
           </button>
-        </div>
-      )}
+        ))}
+      </div>
 
       {/* 分页控件 */}
       {interactive.pageMeta && !submitted && (

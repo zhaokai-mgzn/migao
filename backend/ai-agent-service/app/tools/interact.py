@@ -5,7 +5,7 @@ AI 智能客服系统 - 交互式组件 Tool
 让用户在对话中通过点击选择代替文本输入，提升复杂场景的交互体验。
 
 组件类型：
-- choice:  单选/多选卡片，用户点击选项即可回复
+- choice:  序号单选卡片，用户点击选项发送对应 label。不支持多选，多选通过多次点击实现
 - confirm: 确认卡片，展示待确认信息 + 确认/取消按钮
 - form:    内联表单，一次性收集多个信息字段，用户填写后提交
 """
@@ -93,11 +93,6 @@ class InteractTool(BaseTool):
                     "required": ["label", "value"],
                 },
             },
-            "multiSelect": {
-                "type": "boolean",
-                "description": "choice 组件是否支持多选（默认 false）",
-                "default": False,
-            },
             "fields": {
                 "type": "array",
                 "description": "confirm 组件的展示字段列表（component=confirm 时必填）",
@@ -172,7 +167,6 @@ class InteractTool(BaseTool):
         component: str,
         title: str,
         options: Optional[List[Dict[str, str]]] = None,
-        multiSelect: bool = False,
         fields: Optional[List[Dict[str, str]]] = None,
         confirmLabel: str = "确认",
         cancelLabel: str = "取消",
@@ -190,8 +184,7 @@ class InteractTool(BaseTool):
             context: Tool 执行上下文
             component: 组件类型
             title: 组件标题
-            options: 选项列表（choice 组件）
-            multiSelect: 是否多选（choice 组件）
+            options: 选项列表（choice 组件，序号单选）
             fields: 展示字段（confirm 组件）
             confirmLabel: 确认按钮文字
             cancelLabel: 取消按钮文字
@@ -235,7 +228,6 @@ class InteractTool(BaseTool):
                 "component": "choice",
                 "title": title,
                 "options": options,
-                "multiSelect": multiSelect,
             }
 
         elif component == "confirm":

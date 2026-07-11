@@ -979,7 +979,6 @@ export interface InteractiveComponent {
   title: string
   // choice 组件
   options?: InteractiveOption[]
-  multiSelect?: boolean
   // confirm 组件
   fields?: InteractiveField[]
   confirmLabel?: string
