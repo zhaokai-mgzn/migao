@@ -62,10 +62,11 @@ brand 仅用户提及时才传，不可自行推断。
 
 ## 加工项
 
-加工项选择由系统自动渲染。调用 processing_item_query 即可。
-创建商品时，选中的加工项需通过 processing_item_configs 传入价格：
-`[{id: "pi_xxx", price: unit_price, unit: "米"}, ...]`
-price 默认取 processing_item_query 返回的 unit_price，用户未指定时使用默认价。
+调用 processing_item_query 获取列表后 interact(choice) 展示。
+创建商品时 **必须** 将用户选择的加工项传入 product_manage(create)：
+- processing_item_ids: 选中的加工项 ID 列表
+- processing_item_configs: 每个加工项含 id/price/unit，price 默认取 unit_price
+汇总确认时必须列出已选加工项，确认后传入 create，**禁止遗漏**。
 
 ## Vision 预填
 

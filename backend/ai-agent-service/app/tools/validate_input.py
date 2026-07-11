@@ -214,7 +214,7 @@ class ValidateInputTool(BaseTool):
                         f"请输入 11 位中国大陆手机号（1 开头）。"
                     )
 
-        # 5. 加工项ID格式检查（对抗编程：防止LLM传序号代替真实UUID）
+        # 5. 加工项ID格式检查
         pids = params.get("processing_item_ids")
         if pids and isinstance(pids, list):
             for pid in pids:
@@ -255,6 +255,11 @@ class ValidateInputTool(BaseTool):
         summary_lines.append("")
         summary_lines.append("> ⚠️ 请逐项核对以上参数是否与你向用户确认的内容一致。")
         summary_lines.append("> 如有遗漏（如少了某个售卖方式/颜色/门幅），请立即修正参数后重新校验。")
+        # product_manage.create 加工项遗漏提醒
+        if target_tool == "product_manage" and target_action == "create":
+            pids = params.get("processing_item_ids")
+            if not pids:
+                summary_lines.append("> ⚠️ 未传入 processing_item_ids，如用户已选加工项请务必添加")
         summary_lines.append("> 确认无误后，立即调用 product_manage(action='create', ...) 执行。")
         summary = "\n".join(summary_lines)
 
