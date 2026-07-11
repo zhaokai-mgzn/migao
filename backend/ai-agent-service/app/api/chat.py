@@ -227,10 +227,16 @@ def _should_send_card(tool_name: str, result: Dict[str, Any]) -> bool:
     # 订单查询有结果时发送卡片（支持单订单和列表两种格式）
     if tool_name == "order_query":
         data = result.get("data", {})
-        return data.get("order") is not None or (
-            isinstance(data.get("items"), list) and len(data["items"]) > 0
+        has_order = data.get("order") is not None
+        items = data.get("items")
+        has_items = isinstance(items, list) and len(items) > 0
+        should_send = has_order or has_items
+        logger.info(
+            f"[chat/card] order_query check | has_order={has_order} has_items={has_items} "
+            f"items_count={len(items) if has_items else 0} should_send={should_send}"
         )
-    
+        return should_send
+
     return False
 
 
@@ -348,6 +354,10 @@ async def _agent_stream_to_sse(
                                 if _should_send_card(tool_name, result_dict):
                                     card_type = _detect_card_type(tool_name, result_dict)
                                     if card_type:
+                                        logger.info(
+                                            f"[chat/card] Sending card | tool={tool_name} "
+                                            f"type={card_type} data_keys={list(result_dict.get('data', {}).keys())}"
+                                        )
                                         yield SSEEvent.card(card_type, result_dict.get("data", {}))
 
                                 # 检查是否来自 interact 工具 → 发送交互式组件事件
