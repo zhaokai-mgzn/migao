@@ -1,709 +1,91 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
-import { X, Minus, Send, Loader2, Plus, Maximize2, Bot, User, Copy, Check, StopCircle, ImagePlus } from 'lucide-react'
-import NextImage from 'next/image'
+import { useState, useEffect } from 'react'
+import { X, Minus, Bot } from 'lucide-react'
 import { MibaoLogo } from '@/components/icons/MibaoLogo'
 import { cn } from '@/lib/utils'
-import { chatApi } from '@/lib/api'
 import { useChatStore } from '@/store/chat'
-import { useAuthStore } from '@/store/auth'
-import { toast } from 'sonner'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
-import dayjs from 'dayjs'
+import SessionList from '@/components/chat/SessionList'
+import ChatArea from '@/components/chat/ChatArea'
+import SessionInsight from '@/components/chat/SessionInsight'
 
-// ========== 类型定义 ==========
-interface AssistantMessage {
-  id: string
-  role: 'user' | 'assistant'
-  content: string
-  createdAt: string
-  isStreaming?: boolean
-  suggestions?: string[]
-  wasAborted?: boolean  // 是否被用户主动中断生成
-}
-
-// ========== 常量 ==========
-const STORAGE_KEY_SESSION = 'mibao_current_session_id'  // 与 useChatStore 共享
-const STORAGE_KEY_TIMESTAMP = 'ai_assistant_last_active'
-const SESSION_TIMEOUT_MS = 30 * 60 * 1000 // 30 分钟
-
-// ========== 工具函数 ==========
-const generateId = () =>
-  Math.random().toString(36).substring(2, 15) + Date.now().toString(36)
-
-/** 从 localStorage 读取持久化的 sessionId（含超时检测） */
-const loadPersistedSession = (): string | null => {
-  try {
-    const sid = localStorage.getItem(STORAGE_KEY_SESSION)
-    if (!sid) return null
-    const lastActive = localStorage.getItem(STORAGE_KEY_TIMESTAMP)
-    if (lastActive) {
-      const elapsed = Date.now() - Number(lastActive)
-      if (elapsed > SESSION_TIMEOUT_MS) {
-        // 会话超时，清除
-        localStorage.removeItem(STORAGE_KEY_SESSION)
-        localStorage.removeItem(STORAGE_KEY_TIMESTAMP)
-        return null
-      }
-    }
-    return sid
-  } catch (e) {
-    return null
-  }
-}
-
-/** 持久化 sessionId 到 localStorage */
-const persistSession = (sid: string | null) => {
-  try {
-    if (sid) {
-      localStorage.setItem(STORAGE_KEY_SESSION, sid)
-      localStorage.setItem(STORAGE_KEY_TIMESTAMP, String(Date.now()))
-    } else {
-      localStorage.removeItem(STORAGE_KEY_SESSION)
-      localStorage.removeItem(STORAGE_KEY_TIMESTAMP)
-    }
-  } catch (e) {
-    // 忽略 localStorage 不可用的情况
-  }
-}
-
-/** 更新最后活跃时间 */
-const touchSession = () => {
-  try {
-    localStorage.setItem(STORAGE_KEY_TIMESTAMP, String(Date.now()))
-  } catch (e) {
-    // ignore
-  }
-}
-
-// ========== 主组件 ==========
 export default function FloatingAssistant() {
-  const router = useRouter()
   const [isOpen, setIsOpen] = useState(false)
-  const [messages, setMessages] = useState<AssistantMessage[]>([])
-  const [input, setInput] = useState('')
-  const [isStreaming, setIsStreaming] = useState(false)
-  const [sessionId, setSessionId] = useState<string | null>(() => loadPersistedSession())
-  const [isLoadingHistory, setIsLoadingHistory] = useState(false)
-  const historyLoadedRef = useRef<string | null>(null)
-  const historyLoadingSessionRef = useRef<string | null>(null)
+  const [minimized, setMinimized] = useState(false)
+  const { fetchSessions } = useChatStore()
 
-  const messagesEndRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const abortRef = useRef<AbortController | null>(null)
-  const latestSessionFetchedRef = useRef(false)
-
-  // 图片上传
-  const [images, setImages] = useState<Array<{ url: string; name: string; localPreview?: string }>>([])
-  const [isUploading, setIsUploading] = useState(false)
-
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || [])
-    if (fileInputRef.current) fileInputRef.current.value = ''
-    if (files.length === 0) return
-    if (images.length + files.length > 3) { toast.error('最多上传 3 张图片'); return }
-
-    setIsUploading(true)
-    try {
-      const token = getToken()
-      const result = await chatApi.uploadChatImages(files, token)
-      if (result.success && result.data?.files) {
-        const newImages = result.data.files.map((f: any, i: number) => ({
-          url: f.url, name: f.name,
-          localPreview: URL.createObjectURL(files[i]),
-        }))
-        setImages(prev => [...prev, ...newImages].slice(0, 3))
-      }
-    } catch { toast.error('图片上传失败') }
-    finally { setIsUploading(false) }
-  }
-
-  const removeImage = (index: number) => {
-    setImages(prev => {
-      const removed = prev[index]
-      if (removed.localPreview) URL.revokeObjectURL(removed.localPreview)
-      return prev.filter((_, i) => i !== index)
-    })
-  }
-
-  // 清理 blob URLs
+  // 首次打开时加载会话列表
   useEffect(() => {
-    return () => { images.forEach(img => { if (img.localPreview) URL.revokeObjectURL(img.localPreview) }) }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+    if (isOpen) fetchSessions()
+  }, [isOpen, fetchSessions])
 
-  // 自动滚动到底部
-  const scrollToBottom = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [])
-
-  useEffect(() => {
-    scrollToBottom()
-  }, [messages, scrollToBottom])
-
-  // 面板打开时：恢复会话历史 + 聚焦输入框
-  // - 有持久化 sessionId → 校验状态后加载
-  // - 无持久化 sessionId → 从 AI 服务拉取最新活跃会话
-  useEffect(() => {
+  const togglePanel = () => {
     if (isOpen) {
-      setTimeout(() => inputRef.current?.focus(), 300)
-
-      if (sessionId && historyLoadedRef.current !== sessionId) {
-        // 先校验会话是否仍活跃
-        validateAndLoad(sessionId)
-        latestSessionFetchedRef.current = false
-      } else if (!sessionId && !latestSessionFetchedRef.current) {
-        // 没有本地会话，去 AI 服务找最新活跃会话
-        latestSessionFetchedRef.current = true
-        fetchLatestActiveSession()
-      }
+      setIsOpen(false)
+      setMinimized(false)
     } else {
-      // 面板关闭时重置标记，下次打开重新拉取
-      latestSessionFetchedRef.current = false
+      setIsOpen(true)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen])
-
-  // 校验会话状态后再加载历史
-  const validateAndLoad = async (sid: string) => {
-    try {
-      const token = getToken()
-      if (!token) return
-      const data = await chatApi.getSessions(token)
-      const items: any[] = data?.data?.items || data?.data?.sessions || data?.sessions || []
-      const session = items.find((s: any) => (s.id || s.session_id) === sid)
-      if (session && session.status === 'active') {
-        loadHistory(sid)
-      } else {
-        // 会话已关闭或不存在，尝试找最新活跃会话
-        const activeSession = items.find((s: any) => s.status === 'active')
-        if (activeSession) {
-          const activeId = activeSession.id || activeSession.session_id
-          setSessionId(activeId)
-          persistSession(activeId)
-          loadHistory(activeId)
-        } else {
-          // 无活跃会话，显示欢迎页
-          setSessionId(null)
-          persistSession(null)
-          setMessages([])
-          historyLoadedRef.current = null
-        }
-      }
-    } catch (err) {
-      // 校验失败降级为直接加载（网络问题等）
-      loadHistory(sid)
-    }
-  }
-
-  // 从 AI 服务拉取最新活跃会话，有则加载历史，无则保持欢迎页
-  const fetchLatestActiveSession = async () => {
-    try {
-      const token = getToken()
-      if (!token) return
-      const data = await chatApi.getSessions(token)
-      const items: any[] = data?.data?.items || data?.data?.sessions || data?.sessions || []
-      const activeSession = items.find((s: any) => s.status === 'active')
-      if (activeSession) {
-        const sid = activeSession.id || activeSession.session_id
-        setSessionId(sid)
-        persistSession(sid)
-        loadHistory(sid)
-      }
-    } catch (err) {
-      console.error('拉取最新活跃会话失败:', err)
-    }
-  }
-
-  // 加载会话历史消息
-  const loadHistory = async (sid: string) => {
-    historyLoadingSessionRef.current = sid
-    setIsLoadingHistory(true)
-    try {
-      const token = getToken()
-      const data = await chatApi.getHistory(sid, token)
-      const rawMessages = data?.data?.messages || data?.messages || []
-      const history: AssistantMessage[] = rawMessages.map((msg: any) => ({
-        id: msg.id || generateId(),
-        role: msg.role as 'user' | 'assistant',
-        content: msg.content || '',
-        createdAt: msg.created_at || new Date().toISOString(),
-      }))
-      if (historyLoadingSessionRef.current === sid) {
-        setMessages(history)
-        historyLoadedRef.current = sid
-      }
-    } catch (err) {
-      console.error('加载会话历史失败:', err)
-      // 如果加载失败（如会话已被删除），清除持久化并重置
-      if (historyLoadingSessionRef.current === sid) {
-        setSessionId(null)
-        persistSession(null)
-        historyLoadedRef.current = null
-      }
-    } finally {
-      if (historyLoadingSessionRef.current === sid) {
-        setIsLoadingHistory(false)
-      }
-    }
-  }
-
-  // 获取 token
-  const getToken = () => useAuthStore.getState().accessToken || ''
-
-  // 确保有 session（lazy creation）
-  const ensureSession = async (): Promise<string> => {
-    if (sessionId) {
-      touchSession()
-      return sessionId
-    }
-    const token = getToken()
-    const data = await chatApi.createSession(token)
-    const newId = data?.data?.id || data?.data?.session_id || data?.id || data?.session_id
-    setSessionId(newId)
-    persistSession(newId)
-    historyLoadedRef.current = newId
-    return newId
-  }
-
-  // 新建对话 — 调用 API 创建后端会话
-  const handleNewChat = async () => {
-    if (isStreaming) return
-    try {
-      const token = getToken()
-      const data = await chatApi.createSession(token)
-      const newId = data?.data?.id || data?.data?.session_id || data?.id || data?.session_id
-      if (newId) {
-        setSessionId(newId)
-        persistSession(newId)
-        setMessages([])
-        historyLoadedRef.current = newId
-        historyLoadingSessionRef.current = null
-      }
-    } catch (err) {
-      console.error('创建新会话失败:', err)
-      // fallback: 清空本地状态
-      setSessionId(null)
-      setMessages([])
-      persistSession(null)
-      historyLoadedRef.current = null
-    }
-    setTimeout(() => inputRef.current?.focus(), 100)
-  }
-
-  // 解析 SSE 流
-  const processSSEStream = async (
-    response: Response,
-    aiMsgId: string
-  ) => {
-    if (!response.body) return
-
-    const reader = response.body.getReader()
-    const decoder = new TextDecoder()
-    let buffer = ''
-    let currentEventType = ''
-    let hasReceivedText = false
-    let inactivityTimer: ReturnType<typeof setTimeout> | null = null
-
-    const resetInactivityTimer = () => {
-      if (inactivityTimer) clearTimeout(inactivityTimer)
-      // 收到文本后，如果 15 秒无新数据则自动结束流
-      if (hasReceivedText) {
-        inactivityTimer = setTimeout(() => {
-          try { reader.cancel() } catch (e) { console.error("FloatingAssistant.tsx", e); }
-        }, 15000)
-      }
-    }
-
-    try {
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        resetInactivityTimer()
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() || ''
-
-        for (const line of lines) {
-          const trimmed = line.trim()
-          if (!trimmed) {
-            currentEventType = ''
-            continue
-          }
-
-          if (trimmed.startsWith('event:')) {
-            currentEventType = trimmed.slice(6).trim()
-            continue
-          }
-
-          if (trimmed.startsWith('data:')) {
-            const dataStr = trimmed.slice(5).trim()
-            if (!dataStr) continue
-
-            try {
-              const data = JSON.parse(dataStr)
-
-              if (currentEventType === 'loading') {
-                // loading 事件：仅作为状态指示，不追加到消息内容
-                // 前端通过 isStreaming + 空 content 显示加载动画
-                continue
-              } else if (currentEventType === 'text' || currentEventType === 'delta') {
-                hasReceivedText = true
-                const delta = data.content || data.delta || ''
-                setMessages((prev) =>
-                  prev.map((msg) =>
-                    msg.id === aiMsgId
-                      ? { ...msg, content: msg.content + delta }
-                      : msg
-                  )
-                )
-              } else if (currentEventType === 'suggestions') {
-                const questions = data.questions || []
-                if (questions.length > 0) {
-                  setMessages((prev) =>
-                    prev.map((msg) =>
-                      msg.id === aiMsgId
-                        ? { ...msg, suggestions: questions }
-                        : msg
-                    )
-                  )
-                }
-              } else if (currentEventType === 'done') {
-                // 流结束
-              } else if (currentEventType === 'error') {
-                setMessages((prev) =>
-                  prev.map((msg) =>
-                    msg.id === aiMsgId
-                      ? {
-                          ...msg,
-                          content: `错误: ${data.message || '未知错误'}`,
-                          isStreaming: false,
-                        }
-                      : msg
-                  )
-                )
-              } else if (currentEventType === 'message') {
-                if (data.type === 'text' || data.content) {
-                  const delta = data.content || data.delta || ''
-                  setMessages((prev) =>
-                    prev.map((msg) =>
-                      msg.id === aiMsgId
-                        ? { ...msg, content: msg.content + delta }
-                        : msg
-                    )
-                  )
-                }
-              } else if (data.content || data.delta) {
-                // 兜底：未知事件类型但有内容
-                const delta = data.content || data.delta || ''
-                setMessages((prev) =>
-                  prev.map((msg) =>
-                    msg.id === aiMsgId
-                      ? { ...msg, content: msg.content + delta }
-                      : msg
-                  )
-                )
-              }
-            } catch (e) {
-              // 非 JSON，直接追加
-              if (dataStr.trim()) {
-                setMessages((prev) =>
-                  prev.map((msg) =>
-                    msg.id === aiMsgId
-                      ? { ...msg, content: msg.content + dataStr }
-                      : msg
-                  )
-                )
-              }
-            }
-          }
-        }
-      }
-    } finally {
-      if (inactivityTimer) clearTimeout(inactivityTimer)
-      reader.releaseLock()
-    }
-  }
-
-  // 发送消息
-  const handleSend = async (directText?: string) => {
-    const text = (directText ?? input).trim()
-    if ((!text && images.length === 0) || isStreaming) return
-
-    setInput('')
-    const imageUrls = images.length > 0 ? images.map(img => img.url) : undefined
-    // 清理图片
-    images.forEach(img => { if (img.localPreview) URL.revokeObjectURL(img.localPreview) })
-    setImages([])
-
-    const userMsg: AssistantMessage = {
-      id: generateId(),
-      role: 'user',
-      content: text || ' ',
-      createdAt: new Date().toISOString(),
-    }
-
-    const aiMsgId = generateId()
-    const aiMsg: AssistantMessage = {
-      id: aiMsgId,
-      role: 'assistant',
-      content: '',
-      createdAt: new Date().toISOString(),
-      isStreaming: true,
-    }
-
-    setMessages((prev) => [...prev, userMsg, aiMsg])
-    setIsStreaming(true)
-
-    const abortController = new AbortController()
-    abortRef.current = abortController
-
-    try {
-      const sid = await ensureSession()
-      touchSession()
-      const token = getToken()
-      const AI_SERVICE_URL = chatApi.AI_SERVICE_URL
-
-      const response = await fetch(`${AI_SERVICE_URL}/api/chat/send`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          session_id: sid,
-          message: text || ' ',
-          ...(imageUrls ? { images: imageUrls } : {}),
-        }),
-        signal: abortController.signal,
-      })
-
-      if (!response.ok) {
-        // 409: 会话已关闭 → 自动创建新会话后重试
-        if (response.status === 409) {
-          try {
-            const errData = await response.json()
-            const errCode = errData?.detail?.error?.code || errData?.error?.code || ''
-            if (errCode === 'SESSION_CLOSED') {
-              // 关闭旧会话，创建新会话，移除当前 AI 消息并重试
-              setMessages((prev) => prev.filter((m) => m.id !== aiMsgId))
-              setIsStreaming(false)
-              persistSession(null)
-              setInput(text)
-              return
-            }
-          } catch {
-            // 解析失败走通用错误
-          }
-        }
-        throw new Error(`请求失败: ${response.status}`)
-      }
-
-      await processSSEStream(response, aiMsgId)
-    } catch (err: unknown) {
-      if (err instanceof DOMException && err.name === 'AbortError') {
-        // 用户主动中断：标记 wasAborted，不覆盖内容
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === aiMsgId
-              ? { ...msg, wasAborted: true }
-              : msg
-          )
-        )
-        return
-      }
-      // 兼容非 DOMException 的 AbortError（如测试环境）
-      if (!(err instanceof DOMException) && (err as any)?.name === 'AbortError') {
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === aiMsgId
-              ? { ...msg, wasAborted: true }
-              : msg
-          )
-        )
-        return
-      }
-      const errorMsg = err instanceof Error ? err.message : '发送失败'
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === aiMsgId
-            ? { ...msg, content: `错误: ${errorMsg}`, isStreaming: false }
-            : msg
-        )
-      )
-    } finally {
-      const abortedBySignal = abortController.signal.aborted
-      setIsStreaming(false)
-      abortRef.current = null
-      setMessages((prev) =>
-        prev.map((msg) =>
-          // 保留 catch 块已设置的 wasAborted，或被 signal.aborted 覆盖
-          msg.id === aiMsgId ? { ...msg, isStreaming: false, wasAborted: msg.wasAborted || abortedBySignal } : msg
-        )
-      )
-    }
-  }
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      handleSend()
-    }
-  }
-
-  const togglePanel = () => setIsOpen((prev) => !prev)
-
-  // 跳转到完整工作台，并尽量携带当前会话
-  const handleOpenWorkspace = () => {
-    const target = sessionId
-      ? `/chat/?session_id=${encodeURIComponent(sessionId)}`
-      : '/chat/'
-    setIsOpen(false) // 收起悬浮面板，避免在全屏工作台页面上重复显示
-    router.push(target)
   }
 
   return (
     <>
       {/* 聊天面板 */}
-      <div
-        className={cn(
-          'fixed bottom-24 right-6 z-50 w-[400px] h-[560px] flex flex-col',
-          'bg-white rounded-2xl shadow-2xl border border-gray-200',
-          'transition-all duration-300 ease-in-out origin-bottom-right',
-          isOpen
-            ? 'opacity-100 scale-100 translate-y-0 pointer-events-auto'
-            : 'opacity-0 scale-95 translate-y-4 pointer-events-none'
-        )}
-      >
-        {/* 头部 */}
-        <div className="flex items-center justify-between h-12 px-4 border-b border-gray-100 bg-gradient-to-r from-primary-600 to-primary-500 rounded-t-2xl">
-          <div className="flex items-center gap-2">
-            <MibaoLogo size={22} className="flex-shrink-0" />
-            <span className="text-sm font-semibold text-white">米宝 · 智能工作助手</span>
-          </div>
-          <div className="flex items-center gap-1">
+      {isOpen && (
+        <div
+          className={cn(
+            'fixed inset-4 z-50 flex flex-col',
+            'bg-white rounded-2xl shadow-2xl border border-gray-200',
+            'transition-all duration-300 ease-in-out',
+            minimized
+              ? 'bottom-4 left-1/2 -translate-x-1/2 w-72 h-12'
+              : 'inset-4',
+          )}
+        >
+          {/* 头部 */}
+          {minimized ? (
             <button
-              onClick={handleNewChat}
-              disabled={isStreaming}
-              className="p-1 rounded-md hover:bg-white/20 transition-colors disabled:opacity-50"
-              title="新对话"
+              onClick={() => setMinimized(false)}
+              className="flex items-center gap-2 h-12 px-4 bg-gradient-to-r from-primary-600 to-primary-500 rounded-2xl w-full hover:from-primary-700 hover:to-primary-600 transition-colors"
             >
-              <Plus className="w-4 h-4 text-white" />
+              <MibaoLogo size={20} className="flex-shrink-0" />
+              <span className="text-sm font-semibold text-white">米宝 · 智能助手</span>
             </button>
-            <button
-              onClick={handleOpenWorkspace}
-              className="p-1 rounded-md hover:bg-white/20 transition-colors"
-              title="打开工作台"
-              aria-label="打开工作台"
-            >
-              <Maximize2 className="w-4 h-4 text-white" />
-            </button>
-            <button
-              onClick={togglePanel}
-              className="p-1 rounded-md hover:bg-white/20 transition-colors"
-              title="最小化"
-            >
-              <Minus className="w-4 h-4 text-white" />
-            </button>
-          </div>
-        </div>
-
-        {/* 消息区域 */}
-        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
-          {isLoadingHistory ? (
-            <div className="flex items-center justify-center h-full">
-              <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
-            </div>
-          ) : messages.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2">
-              <MibaoLogo size={48} className="opacity-60" />
-              <p className="text-sm">你好，我是米宝！有什么可以帮助你的？</p>
-            </div>
-          ) : null}
-
-          {messages.map((msg) => (
-            <AssistantMessageBubble
-              key={msg.id}
-              msg={msg}
-              isStreaming={isStreaming}
-              onSend={handleSend}
-            />
-          ))}
-          <div ref={messagesEndRef} />
-        </div>
-
-        {/* 输入区域 */}
-        <div className="px-4 py-3 border-t border-gray-100">
-          {/* 图片预览 */}
-          {images.length > 0 && (
-            <div className="flex gap-2 mb-2">
-              {images.map((img, idx) => (
-                <div key={idx} className="relative group w-14 h-14 rounded-lg overflow-hidden border border-gray-200 bg-gray-50 flex-shrink-0">
-                  <NextImage src={img.localPreview || img.url} alt={img.name} width={56} height={56} className="w-full h-full object-cover" unoptimized />
-                  <button onClick={() => removeImage(idx)} className="absolute -top-0 -right-0 w-4 h-4 bg-black/60 text-white rounded-bl-md flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                    <X className="w-2.5 h-2.5" />
-                  </button>
-                </div>
-              ))}
-              {isUploading && (
-                <div className="w-14 h-14 rounded-lg border border-dashed border-gray-300 bg-gray-50 flex items-center justify-center">
-                  <Loader2 className="w-4 h-4 text-gray-400 animate-spin" />
-                </div>
-              )}
+          ) : (
+            <div className="flex items-center justify-between h-12 px-4 border-b border-gray-100 bg-gradient-to-r from-primary-600 to-primary-500 rounded-t-2xl flex-shrink-0">
+              <div className="flex items-center gap-2">
+                <MibaoLogo size={22} className="flex-shrink-0" />
+                <span className="text-sm font-semibold text-white">米宝 · 智能助手</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setMinimized(true)}
+                  className="p-1 rounded-md hover:bg-white/20 transition-colors"
+                  title="最小化"
+                >
+                  <Minus className="w-4 h-4 text-white" />
+                </button>
+                <button
+                  onClick={() => setIsOpen(false)}
+                  className="p-1 rounded-md hover:bg-white/20 transition-colors"
+                  title="关闭"
+                >
+                  <X className="w-4 h-4 text-white" />
+                </button>
+              </div>
             </div>
           )}
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isStreaming || isUploading || images.length >= 3}
-              className={cn(
-                'p-2 rounded-lg transition-colors flex-shrink-0',
-                images.length >= 3 ? 'text-gray-300 cursor-not-allowed' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100',
-              )}
-              title={images.length >= 3 ? '最多 3 张图片' : '添加图片'}
-            >
-              {isUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImagePlus className="w-4 h-4" />}
-            </button>
-            <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/gif,image/webp" multiple className="hidden" onChange={handleImageUpload} />
-            <input
-              ref={inputRef}
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="输入消息..."
-              disabled={isStreaming}
-              className="flex-1 px-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400/20 disabled:opacity-50 placeholder:text-gray-400 transition-colors"
-            />
-            {isStreaming ? (
-              <button
-                onClick={() => abortRef.current?.abort()}
-                className="p-2 rounded-xl bg-red-500 text-white hover:bg-red-600 transition-colors flex-shrink-0"
-                title="停止生成"
-              >
-                <StopCircle className="w-4 h-4" />
-              </button>
-            ) : (
-              <button
-                onClick={() => handleSend()}
-                disabled={!input.trim() && images.length === 0}
-                className={cn(
-                  'p-2 rounded-xl transition-colors flex-shrink-0',
-                  (input.trim() || images.length > 0)
-                    ? 'bg-primary-600 text-white hover:bg-primary-700'
-                    : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                )}
-              >
-                <Send className="w-4 h-4" />
-              </button>
-            )}
-          </div>
+
+          {/* 聊天内容 — 复用全屏会话模式布局 */}
+          {!minimized && (
+            <div className="flex-1 flex rounded-b-2xl overflow-hidden">
+              <SessionList />
+              <ChatArea />
+              <SessionInsight />
+            </div>
+          )}
         </div>
-      </div>
+      )}
 
       {/* FAB 悬浮按钮 */}
       <button
@@ -714,187 +96,16 @@ export default function FloatingAssistant() {
           'bg-primary-600 text-white shadow-lg',
           'hover:bg-primary-700 hover:shadow-xl hover:scale-110',
           'active:scale-95',
-          'transition-all duration-200 ease-in-out'
+          'transition-all duration-200 ease-in-out',
         )}
         title={isOpen ? '关闭米宝' : '打开米宝'}
       >
-        <div
-          className={cn(
-            'transition-transform duration-300',
-            isOpen ? 'rotate-0' : 'rotate-0'
-          )}
-        >
-          {isOpen ? <X className="w-6 h-6" /> : <MibaoLogo size={32} />}
-        </div>
+        {isOpen ? (
+          <X className="w-6 h-6" />
+        ) : (
+          <Bot className="w-6 h-6" />
+        )}
       </button>
     </>
-  )
-}
-
-// ========== 消息气泡组件（与会话页面 MessageList 样式一致） ==========
-
-function AssistantMessageBubble({
-  msg,
-  isStreaming,
-  onSend,
-}: {
-  msg: AssistantMessage
-  isStreaming: boolean
-  onSend: (text: string) => void
-}) {
-  const isUser = msg.role === 'user'
-  const isAI = msg.role === 'assistant'
-  const isStreamingEmpty = msg.isStreaming && !msg.content
-
-  return (
-    <div className={cn('flex gap-2', isUser ? 'justify-end' : 'justify-start')}>
-      {/* AI 头像 */}
-      {isAI && (
-        <div className="w-7 h-7 rounded-full bg-primary-100 flex items-center justify-center flex-shrink-0 mt-0.5">
-          <Bot className="w-4 h-4 text-primary-600" />
-        </div>
-      )}
-
-      <div className={cn('flex flex-col max-w-[80%]', isUser ? 'items-end' : 'items-start')}>
-        {/* 消息气泡 */}
-        <div
-          className={cn(
-            'rounded-2xl px-3 py-2 text-sm leading-relaxed',
-            isUser
-              ? 'bg-primary-600 text-white rounded-br-md'
-              : 'bg-white border border-gray-200 text-gray-800 rounded-bl-md shadow-sm'
-          )}
-        >
-          {isAI ? (
-            <AIAssistantContent msg={msg} />
-          ) : (
-            <p className="whitespace-pre-wrap break-words">{msg.content}</p>
-          )}
-        </div>
-
-        {/* 推荐提问 */}
-        {isAI && msg.suggestions && msg.suggestions.length > 0 && !msg.isStreaming && (
-          <div className="mt-2 w-full">
-            <p className="text-xs text-gray-500 mb-1 font-medium px-1">推荐提问：</p>
-            <div className="space-y-1">
-              {msg.suggestions.map((q, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => {
-                    // 埋点：记录建议被点击
-                    const token = useAuthStore.getState().accessToken || ''
-                    const AI_SERVICE_URL = chatApi.AI_SERVICE_URL
-                    fetch(`${AI_SERVICE_URL}/api/chat/suggestion-feedback`, {
-                      method: 'POST',
-                      headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}`,
-                      },
-                      body: JSON.stringify({
-                        session_id: '',
-                        suggestion: q,
-                        message_id: msg.id,
-                      }),
-                    }).catch(() => { /* fire-and-forget */ })
-                    onSend(q)
-                  }}
-                  disabled={isStreaming}
-                  className="block w-full text-left px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-primary-50 to-primary-100 border border-primary-200 hover:from-primary-100 hover:to-primary-200 transition-colors text-xs text-primary-700 break-words line-clamp-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {q}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* 时间戳 */}
-        {msg.createdAt && (
-          <span className="text-[10px] text-gray-400 mt-1 px-1">
-            {dayjs(msg.createdAt).format('HH:mm')}
-          </span>
-        )}
-      </div>
-
-      {/* 用户头像 */}
-      {isUser && (
-        <div className="w-7 h-7 rounded-full bg-gray-200 flex items-center justify-center flex-shrink-0 mt-0.5">
-          <User className="w-4 h-4 text-gray-600" />
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ========== AI 消息内容渲染（Markdown + 加载状态 + 复制按钮） ==========
-
-function AIAssistantContent({ msg }: { msg: AssistantMessage }) {
-  const [copied, setCopied] = useState(false)
-  const isStreamingEmpty = msg.isStreaming && !msg.content
-
-  if (isStreamingEmpty) {
-    return (
-      <div className="flex items-center gap-1.5 py-0.5">
-        <span
-          className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce"
-          style={{ animationDelay: '0ms' }}
-        />
-        <span
-          className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce"
-          style={{ animationDelay: '150ms' }}
-        />
-        <span
-          className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce"
-          style={{ animationDelay: '300ms' }}
-        />
-      </div>
-    )
-  }
-
-  // 清理 AI 回复中的 tool_call 伪代码块
-  const cleanContent = (msg.content || '').replace(
-    /```tool_call[\s\S]*?```/g,
-    ''
-  ).trim()
-
-  if (!cleanContent && !msg.isStreaming) {
-    // 区分用户主动中断 vs AI 真正返回空内容
-    if (msg.wasAborted) {
-      return <p className="text-sm text-gray-400 italic">对话已中断</p>
-    }
-    return <p className="text-sm text-gray-400 italic">（已处理）</p>
-  }
-
-  const handleCopy = async () => {
-    await navigator.clipboard.writeText(cleanContent).catch((e) => console.error('Clipboard write failed:', e))
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
-
-  return (
-    <div className="group relative">
-      <div className="prose prose-sm max-w-none text-gray-800 [&_p]:my-1 [&_ul]:my-1 [&_ol]:my-1 [&_pre]:my-2 [&_code]:text-xs [&_code]:bg-gray-100 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_table]:text-xs [&_table]:border-collapse [&_th]:border [&_th]:border-gray-300 [&_th]:bg-gray-100 [&_th]:px-2 [&_th]:py-1 [&_td]:border [&_td]:border-gray-300 [&_td]:px-2 [&_td]:py-1">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-          {cleanContent}
-        </ReactMarkdown>
-        {msg.isStreaming && (
-          <span className="inline-block w-1.5 h-4 bg-primary-600 animate-pulse ml-0.5 align-text-bottom" />
-        )}
-      </div>
-      {/* 复制按钮 */}
-      {!msg.isStreaming && (
-        <button
-          onClick={handleCopy}
-          className="absolute top-0 right-0 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600"
-          title="复制回复内容"
-        >
-          {copied ? (
-            <Check className="w-3.5 h-3.5 text-green-500" />
-          ) : (
-            <Copy className="w-3.5 h-3.5" />
-          )}
-        </button>
-      )}
-    </div>
   )
 }
