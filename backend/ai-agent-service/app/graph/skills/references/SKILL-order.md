@@ -23,6 +23,15 @@ constraints:
   - 写操作前必须调 validate_input 校验
   - 创建/修改订单展示汇总确认后再执行
   - 禁止编造订单号、金额等字段
+  - 写操作前先 order_query 确认当前状态符合前置条件
+  - 「完成订单」= 确认收货 → order_manage(update_status, completed)，前提 shipped
+state_machine:
+  pending: 待付款 → confirmed
+  confirmed: 待发货 → processing 或 cancelled
+  processing: 生产中 → shipped
+  shipped: 已发货 → completed（确认收货触发）
+  completed: 已完成（终态）
+  cancelled: 已取消（终态，仅可从 pending/confirmed 转入）
 ---
 
 # Order Skill
