@@ -44,7 +44,7 @@ class TestSkillConfig:
         )
         assert config.name == "test"
         assert config.tool_names == ["tool_a", "tool_b"]
-        assert config.max_iterations == 5  # default
+        assert config.max_iterations == 8  # default
 
     def test_get_prompt_exact_match(self):
         config = SkillConfig(
