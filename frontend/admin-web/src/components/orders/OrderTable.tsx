@@ -143,7 +143,7 @@ export default function OrderTable({
             <th className="px-4 py-3 font-medium">
               <div className="flex flex-col">
                 <span>采购明细</span>
-                <span className="text-xs font-normal text-gray-400">(名称/单价×数量+加工费)</span>
+                <span className="text-xs font-normal text-gray-400">(名称:单价×数量+加工费)</span>
               </div>
             </th>
             <th className="px-4 py-3 font-medium text-right whitespace-nowrap">累计金额(元)</th>
@@ -216,7 +216,7 @@ export default function OrderTable({
                     )}
                   </td>
 
-                  {/* 采购明细（名称 / 规格 / 单价 / 数量 / 加工费） */}
+                  {/* 采购明细（名称 : 规格 : 单价 : 数量 : 加工费） */}
                   <td className="px-4 py-4 min-w-[280px]">
                     <div className="space-y-1.5">
                       {order.items?.map((item) => {
@@ -225,7 +225,7 @@ export default function OrderTable({
                         return (
                           <div key={item.id} className="text-gray-700 leading-tight text-xs">
                             <span>{item.productName || item.productCode || '-'}</span>
-                            {' / '}
+                            {': '}
                             <span className="font-mono">{formatNumber(item.unitPrice)}</span>元
                             {' × '}<span className="font-mono">{formatNumber(item.quantity)}</span>米
                             {' = '}<span className="font-mono">{formatNumber(getItemAmount(item))}</span>元

@@ -51,7 +51,7 @@ const EMPTY_SEARCH: SearchState = {
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
-    <label className="text-sm text-gray-600 whitespace-nowrap shrink-0 w-20 text-right">
+    <label className="text-sm text-gray-600 whitespace-nowrap shrink-0 text-right min-w-[4.5em]">
       {children}
     </label>
   )
@@ -393,34 +393,6 @@ export default function OrdersPage() {
 
       {/* 查询区域 */}
       <div className="bg-white rounded-lg border border-gray-200 p-5">
-        {/* 快捷时间选择 */}
-        <div className="flex items-center gap-2 mb-4">
-          <span className="text-xs text-gray-400 mr-1">快捷：</span>
-          {(['today', '7days', '30days'] as const).map((preset) => {
-            const label = preset === 'today' ? '今天' : preset === '7days' ? '近7天' : '近30天'
-            const isActive = (() => {
-              const today = dayjs().format('YYYY-MM-DD')
-              if (preset === 'today') return startDate === today && endDate === today
-              if (preset === '7days') return startDate === dayjs().subtract(6, 'day').format('YYYY-MM-DD') && endDate === today
-              return startDate === dayjs().subtract(29, 'day').format('YYYY-MM-DD') && endDate === today
-            })()
-            return (
-              <button
-                key={preset}
-                type="button"
-                onClick={() => handleDateQuickSelect(preset)}
-                className={`h-7 px-3 rounded-full text-xs font-medium border transition-colors ${
-                  isActive
-                    ? 'bg-primary-50 border-primary-300 text-primary-700'
-                    : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300 hover:text-gray-700'
-                }`}
-              >
-                {label}
-              </button>
-            )
-          })}
-        </div>
-
         <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_1.5fr] gap-x-6 gap-y-4 mb-4">
           {/* 订单ID */}
           <div className="flex items-center gap-2">
