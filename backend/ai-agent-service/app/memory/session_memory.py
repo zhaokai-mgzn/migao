@@ -123,7 +123,35 @@ class SessionMemory:
                 logger.warning(f"[session-memory] Transaction rolled back | session_id={session_id} error={e}")
                 logger.error(f"[session-memory] Operation failed | session_id={session_id} error={type(e).__name__}: {e}", exc_info=True)
                 raise
-    
+
+    async def update_session_title(self, session_id: str, title: str) -> bool:
+        """更新会话标题（存储在 metadata JSON 中）"""
+        async with await self._get_session() as db:
+            try:
+                from sqlalchemy import text
+                import json as _json
+                sql = text("""
+                    UPDATE sessions
+                    SET metadata = jsonb_set(
+                        COALESCE(metadata, '{}'::jsonb),
+                        '{title}',
+                        CAST(:title_json AS jsonb)
+                    ),
+                    updated_at = :now
+                    WHERE id = :session_id
+                """)
+                await db.execute(sql, {
+                    "session_id": session_id,
+                    "title_json": _json.dumps(title),
+                    "now": self._now(),
+                })
+                await db.commit()
+                return True
+            except Exception as e:
+                await db.rollback()
+                logger.warning(f"[session-memory] update_session_title failed: {e}")
+                return False
+
     async def save_message(
         self, 
         session_id: str, 

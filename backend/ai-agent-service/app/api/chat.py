@@ -92,6 +92,39 @@ async def _get_user_nickname(tenant_id: int, user_id: str) -> Optional[str]:
     return None
 
 
+async def _generate_title_async(
+    session_id: str,
+    user_message: str,
+    assistant_reply: str,
+) -> None:
+    """fire-and-forget：用 LLM 根据首轮对话生成会话标题"""
+    try:
+        from app.memory.session_memory import SessionMemory
+        sm = SessionMemory()
+        session = await sm.get_session(session_id)
+        if not session:
+            return
+        # 仅处理自动生成的默认标题
+        title = (session.get("metadata", {}) or {}).get("title", "")
+        if not title.startswith("会话 20"):
+            return  # 已被手动设置过
+
+        from app.llm.factory import LLMFactory
+        llm = LLMFactory.create_summary_llm()
+        prompt = (
+            f"根据以下对话生成一个简短的会话标题（不超过10个字），只返回标题文本：\n"
+            f"用户：{user_message[:100]}\n"
+            f"助手：{assistant_reply[:200]}"
+        )
+        resp = await llm.ainvoke(prompt)
+        new_title = (resp.content or "").strip().replace('"', '').replace("'", "")[:20]
+        if new_title and new_title != title:
+            await sm.update_session_title(session_id, new_title)
+            logger.info(f"[chat/send] Title generated | session={session_id} title={new_title}")
+    except Exception as e:
+        logger.debug(f"[chat/send] Title generation failed (non-fatal): {e}")
+
+
 async def _extract_memories_async(
     tenant_id: int,
     user_id: str,
@@ -453,6 +486,17 @@ async def _agent_stream_to_sse(
                 )
             except Exception as mem_err:
                 logger.debug(f"[chat/send] Memory extraction scheduling skipped: {mem_err}")
+            # 自动生成会话标题（首条回复后）
+            try:
+                asyncio.create_task(
+                    _generate_title_async(
+                        session_id=session_id,
+                        user_message=user_msg_text,
+                        assistant_reply=assistant_content[:200],
+                    )
+                )
+            except Exception as title_err:
+                logger.debug(f"[chat/send] Title generation scheduling skipped: {title_err}")
 
         # 发送完成事件（始终发送，即使 save_message 失败或超时）
         _done_sent = True
