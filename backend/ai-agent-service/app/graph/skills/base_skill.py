@@ -132,7 +132,7 @@ _THINKING_INTENTS = frozenset({
     "order_query",        # 订单查询——多条件筛选+关联上下文
     "order_create",       # 订单创建——多SKU+加工项+价格计算
     # ── 商品域 ──
-    # "product_inquiry",    # 暂时关闭——thinking 模式下模型把推理混入回复
+    "product_inquiry",    # 商品创建——图片属性推理+分类+加工项
     # ── 售后域 ──
     "after_sales",        # 售后处理——退款/换货/维修逻辑
     "after_sales_create", # 售后创建——问题归类+解决方案推荐
