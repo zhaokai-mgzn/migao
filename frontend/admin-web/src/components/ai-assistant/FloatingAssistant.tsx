@@ -2,12 +2,14 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { X, Minus, Send, Loader2, Plus, Maximize2, Bot, User, Copy, Check, StopCircle } from 'lucide-react'
+import { X, Minus, Send, Loader2, Plus, Maximize2, Bot, User, Copy, Check, StopCircle, ImagePlus } from 'lucide-react'
+import NextImage from 'next/image'
 import { MibaoLogo } from '@/components/icons/MibaoLogo'
 import { cn } from '@/lib/utils'
 import { chatApi } from '@/lib/api'
 import { useChatStore } from '@/store/chat'
 import { useAuthStore } from '@/store/auth'
+import { toast } from 'sonner'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import dayjs from 'dayjs'
@@ -91,8 +93,47 @@ export default function FloatingAssistant() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const abortRef = useRef<AbortController | null>(null)
-  const latestSessionFetchedRef = useRef(false)  // 标记是否已尝试拉取最新会话
+  const latestSessionFetchedRef = useRef(false)
+
+  // 图片上传
+  const [images, setImages] = useState<Array<{ url: string; name: string; localPreview?: string }>>([])
+  const [isUploading, setIsUploading] = useState(false)
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || [])
+    if (fileInputRef.current) fileInputRef.current.value = ''
+    if (files.length === 0) return
+    if (images.length + files.length > 3) { toast.error('最多上传 3 张图片'); return }
+
+    setIsUploading(true)
+    try {
+      const token = getToken()
+      const result = await chatApi.uploadChatImages(files, token)
+      if (result.success && result.data?.files) {
+        const newImages = result.data.files.map((f: any, i: number) => ({
+          url: f.url, name: f.name,
+          localPreview: URL.createObjectURL(files[i]),
+        }))
+        setImages(prev => [...prev, ...newImages].slice(0, 3))
+      }
+    } catch { toast.error('图片上传失败') }
+    finally { setIsUploading(false) }
+  }
+
+  const removeImage = (index: number) => {
+    setImages(prev => {
+      const removed = prev[index]
+      if (removed.localPreview) URL.revokeObjectURL(removed.localPreview)
+      return prev.filter((_, i) => i !== index)
+    })
+  }
+
+  // 清理 blob URLs
+  useEffect(() => {
+    return () => { images.forEach(img => { if (img.localPreview) URL.revokeObjectURL(img.localPreview) }) }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // 自动滚动到底部
   const scrollToBottom = useCallback(() => {
@@ -391,14 +432,18 @@ export default function FloatingAssistant() {
   // 发送消息
   const handleSend = async (directText?: string) => {
     const text = (directText ?? input).trim()
-    if (!text || isStreaming) return
+    if ((!text && images.length === 0) || isStreaming) return
 
     setInput('')
+    const imageUrls = images.length > 0 ? images.map(img => img.url) : undefined
+    // 清理图片
+    images.forEach(img => { if (img.localPreview) URL.revokeObjectURL(img.localPreview) })
+    setImages([])
 
     const userMsg: AssistantMessage = {
       id: generateId(),
       role: 'user',
-      content: text,
+      content: text || ' ',
       createdAt: new Date().toISOString(),
     }
 
@@ -431,7 +476,8 @@ export default function FloatingAssistant() {
         },
         body: JSON.stringify({
           session_id: sid,
-          message: text,
+          message: text || ' ',
+          ...(imageUrls ? { images: imageUrls } : {}),
         }),
         signal: abortController.signal,
       })
@@ -592,7 +638,37 @@ export default function FloatingAssistant() {
 
         {/* 输入区域 */}
         <div className="px-4 py-3 border-t border-gray-100">
+          {/* 图片预览 */}
+          {images.length > 0 && (
+            <div className="flex gap-2 mb-2">
+              {images.map((img, idx) => (
+                <div key={idx} className="relative group w-14 h-14 rounded-lg overflow-hidden border border-gray-200 bg-gray-50 flex-shrink-0">
+                  <NextImage src={img.localPreview || img.url} alt={img.name} width={56} height={56} className="w-full h-full object-cover" unoptimized />
+                  <button onClick={() => removeImage(idx)} className="absolute -top-0 -right-0 w-4 h-4 bg-black/60 text-white rounded-bl-md flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    <X className="w-2.5 h-2.5" />
+                  </button>
+                </div>
+              ))}
+              {isUploading && (
+                <div className="w-14 h-14 rounded-lg border border-dashed border-gray-300 bg-gray-50 flex items-center justify-center">
+                  <Loader2 className="w-4 h-4 text-gray-400 animate-spin" />
+                </div>
+              )}
+            </div>
+          )}
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isStreaming || isUploading || images.length >= 3}
+              className={cn(
+                'p-2 rounded-lg transition-colors flex-shrink-0',
+                images.length >= 3 ? 'text-gray-300 cursor-not-allowed' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100',
+              )}
+              title={images.length >= 3 ? '最多 3 张图片' : '添加图片'}
+            >
+              {isUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImagePlus className="w-4 h-4" />}
+            </button>
+            <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/gif,image/webp" multiple className="hidden" onChange={handleImageUpload} />
             <input
               ref={inputRef}
               type="text"
@@ -614,10 +690,10 @@ export default function FloatingAssistant() {
             ) : (
               <button
                 onClick={() => handleSend()}
-                disabled={!input.trim()}
+                disabled={!input.trim() && images.length === 0}
                 className={cn(
                   'p-2 rounded-xl transition-colors flex-shrink-0',
-                  input.trim()
+                  (input.trim() || images.length > 0)
                     ? 'bg-primary-600 text-white hover:bg-primary-700'
                     : 'bg-gray-200 text-gray-400 cursor-not-allowed'
                 )}

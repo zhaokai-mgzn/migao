@@ -327,10 +327,13 @@ async def _agent_stream_to_sse(
                     response = payload
 
                     if response.type == "text":
-                        # 文本回复
+                        # 文本回复（实时剥离 <think> 块，避免思考内容泄漏到前端）
                         if response.content:
-                            full_response.append(response.content)
-                            yield SSEEvent.text(response.content)
+                            import re as _re
+                            clean = _re.sub(r"<think>[\s\S]*?</think>", "", response.content)
+                            if clean:
+                                full_response.append(clean)
+                                yield SSEEvent.text(clean)
 
                     elif response.type == "tool_call":
                         # Tool 调用通知（AgentExecutor 内部已处理执行）
