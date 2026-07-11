@@ -78,13 +78,17 @@ interface SidebarProps {
   onToggle: () => void
 }
 
-// 一级菜单项（无子级，直接跳转）
-const topLevelItems: MenuItem[] = [
-  { key: 'dashboard', name: '工作台', icon: 'LayoutDashboard', path: '/dashboard' },
-]
-
 // 带子级的菜单组
 const menuGroups: MenuGroup[] = [
+  {
+    key: 'workspace',
+    name: '工作台',
+    icon: 'LayoutDashboard',
+    children: [
+      { key: 'dashboard', name: '经营看板', icon: 'BarChart3', path: '/dashboard' },
+      { key: 'chat', name: '米宝 · 在线对话', icon: 'MessageSquare', path: '/chat', permissionCode: 'agent:session' },
+    ],
+  },
   {
     key: 'product-center',
     name: '商品管理',
@@ -110,7 +114,6 @@ const menuGroups: MenuGroup[] = [
 const standaloneItems: MenuItem[] = [
   { key: 'customers', name: '客户管理', icon: 'UserCircle', path: '/customers', permissionCode: 'customer:view' },
   { key: 'finance', name: '财务对账', icon: 'Calculator', path: '/finance', permissionCode: 'finance:view' },
-  { key: 'chat', name: '米宝 · 在线对话', icon: 'MessageSquare', path: '/chat', permissionCode: 'agent:session' },
   { key: 'chat-config', name: '机器人设置', icon: 'Zap', path: '/chat/config', permissionCode: 'agent:quickreply' },
   { key: 'employees', name: '员工管理', icon: 'Users', path: '/employees', permissionCode: 'employee:list' },
   { key: 'settings', name: '企业基础信息', icon: 'Building2', path: '/settings', permissionCode: 'system:manage' },
@@ -179,31 +182,6 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
       {/* 导航菜单 */}
       <nav className="flex-1 py-2 px-2 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 7rem)' }}>
-
-        {/* 一级菜单项（无子级，直接跳转） */}
-        <div className="space-y-0.5 mb-4">
-          {filterItems(topLevelItems).map((item) => {
-            const Icon = iconMap[item.icon] || LayoutDashboard
-            const active = isActive(item.path)
-            return (
-              <Link
-                key={item.key}
-                href={item.path}
-                className={cn(
-                  'flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors',
-                  active
-                    ? 'bg-primary-600 text-white'
-                    : 'text-slate-300 hover:bg-slate-800 hover:text-white',
-                  collapsed && 'justify-center px-2'
-                )}
-                title={collapsed ? item.name : undefined}
-              >
-                <Icon className="w-5 h-5 flex-shrink-0" />
-                {!collapsed && <span className="whitespace-nowrap">{item.name}</span>}
-              </Link>
-            )
-          })}
-        </div>
 
         {/* 带子级的菜单组 */}
         {collapsed && <div className="mx-2 mb-3 border-t border-slate-700" />}
