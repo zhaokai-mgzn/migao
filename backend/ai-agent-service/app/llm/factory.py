@@ -65,8 +65,8 @@ class LLMFactory:
             # 不思考时 2048 足够（仅格式化工具结果）
         elif enable_thinking:
             kwargs["extra_body"] = {"thinking": {"type": "enabled"}}
-            # DeepSeek V4 thinking 模式下思考+回复共享 token 预算，需增大
-            kwargs["max_completion_tokens"] = 8192
+            # DeepSeek V4 Pro 最大输出 384K，thinking 模式拉到上限
+            kwargs["max_completion_tokens"] = 384000
         # ChatDeepSeek 正确提取 reasoning_content → additional_kwargs
         # ChatOpenAI 不提取（官方文档明确说明），会导致思考内容丢失
         # CI/测试环境自动回退 ChatOpenAI
