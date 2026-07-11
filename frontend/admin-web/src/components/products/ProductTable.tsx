@@ -201,9 +201,16 @@ export default function ProductTable({
       sortable: true,
       render: (record) => {
         const stock = record.stock ?? 0
-        const isLow = stock < 100
+        // #1200: 库存 ≤ 阈值时飘红，库存 = 0 加粗；优先使用商品级预警阈值，默认 5
+        const threshold = record.stockWarningThreshold ?? 5
+        const isLow = stock <= threshold
+        const isZero = stock === 0
         return (
-          <span className={cn('text-sm font-medium', isLow ? 'text-red-600' : 'text-gray-700')}>
+          <span className={cn(
+            'text-sm font-medium',
+            isLow ? 'text-red-600' : 'text-gray-700',
+            isZero && 'font-bold'
+          )}>
             {formatNumber(stock)}
           </span>
         )
