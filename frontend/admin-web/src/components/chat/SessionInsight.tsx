@@ -12,6 +12,8 @@ import {
   Clock,
   Pin,
   Hash,
+  Copy,
+  Check,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useChatStore } from '@/store/chat'
@@ -261,7 +263,15 @@ function dedupEntities(all: SessionEntity[]): SessionEntity[] {
 
 export default function SessionInsight() {
   const [collapsed, setCollapsed] = useState(false)
+  const [sessionIdCopied, setSessionIdCopied] = useState(false)
   const { currentSessionId, sessions, messages, sendMessage } = useChatStore()
+
+  const copySessionId = () => {
+    if (!currentSessionId) return
+    navigator.clipboard.writeText(currentSessionId).catch(() => {})
+    setSessionIdCopied(true)
+    setTimeout(() => setSessionIdCopied(false), 2000)
+  }
 
   const currentSession = useMemo(
     () => sessions.find(s => s.session_id === currentSessionId),
@@ -358,9 +368,22 @@ export default function SessionInsight() {
             </span>
           </div>
           {currentSessionId && (
-            <p className="mt-2 text-[10px] text-gray-400 font-mono break-all leading-relaxed">
-              会话标识: {currentSessionId}
-            </p>
+            <div className="mt-2 flex items-start gap-1">
+              <p className="text-[10px] text-gray-400 font-mono break-all leading-relaxed flex-1">
+                会话标识: {currentSessionId}
+              </p>
+              <button
+                onClick={copySessionId}
+                className="flex-shrink-0 p-0.5 rounded hover:bg-gray-100 transition-colors text-gray-400 hover:text-gray-600"
+                title="复制会话标识"
+              >
+                {sessionIdCopied ? (
+                  <Check className="w-3 h-3 text-green-500" />
+                ) : (
+                  <Copy className="w-3 h-3" />
+                )}
+              </button>
+            </div>
           )}
         </div>
 
