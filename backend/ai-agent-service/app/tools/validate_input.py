@@ -226,12 +226,7 @@ class ValidateInputTool(BaseTool):
                         f"请使用 processing_item_query 返回的真实ID（如 pi_xxxxxxxxxxxxxxxx），"
                         f"不要使用行号/序号。"
                     )
-                # 看起来像编造的短ID（如 "pi_punch_001"）— 警告但不阻止
-                elif len(pid_str) < 20 and not pid_str.isdigit():
-                    issues.append(
-                        f"加工项ID \"{pid_str}\" 疑似编造（长度不足20字符）。"
-                        f"请确认这是 processing_item_query 返回的真实ID，而非自创的占位符。"
-                    )
+                # 非数字非 UUID 格式的 ID — 宽松通过（processing_item_query 返回的 ID 格式多样）
 
         if issues:
             return ToolResult(
