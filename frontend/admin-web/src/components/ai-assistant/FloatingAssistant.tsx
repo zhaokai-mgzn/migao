@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { X, Minus, Bot } from 'lucide-react'
+import { X, Bot } from 'lucide-react'
 import { MibaoLogo } from '@/components/icons/MibaoLogo'
 import { cn } from '@/lib/utils'
 import { useChatStore } from '@/store/chat'
@@ -11,7 +11,6 @@ import SessionInsight from '@/components/chat/SessionInsight'
 
 export default function FloatingAssistant() {
   const [isOpen, setIsOpen] = useState(false)
-  const [minimized, setMinimized] = useState(false)
   const { fetchSessions } = useChatStore()
 
   // 首次打开时加载会话列表
@@ -19,71 +18,34 @@ export default function FloatingAssistant() {
     if (isOpen) fetchSessions()
   }, [isOpen, fetchSessions])
 
-  const togglePanel = () => {
-    if (isOpen) {
-      setIsOpen(false)
-      setMinimized(false)
-    } else {
-      setIsOpen(true)
-    }
-  }
+  const togglePanel = () => setIsOpen(!isOpen)
 
   return (
     <>
       {/* 聊天面板 */}
       {isOpen && (
-        <div
-          className={cn(
-            'fixed inset-4 z-50 flex flex-col',
-            'bg-white rounded-2xl shadow-2xl border border-gray-200',
-            'transition-all duration-300 ease-in-out',
-            minimized
-              ? 'bottom-4 left-1/2 -translate-x-1/2 w-72 h-12'
-              : 'inset-4',
-          )}
-        >
+        <div className="fixed inset-4 z-50 flex flex-col bg-white rounded-2xl shadow-2xl border border-gray-200">
           {/* 头部 */}
-          {minimized ? (
-            <button
-              onClick={() => setMinimized(false)}
-              className="flex items-center gap-2 h-12 px-4 bg-gradient-to-r from-primary-600 to-primary-500 rounded-2xl w-full hover:from-primary-700 hover:to-primary-600 transition-colors"
-            >
-              <MibaoLogo size={20} className="flex-shrink-0" />
+          <div className="flex items-center justify-between h-12 px-4 border-b border-gray-100 bg-gradient-to-r from-primary-600 to-primary-500 rounded-t-2xl flex-shrink-0">
+            <div className="flex items-center gap-2">
+              <MibaoLogo size={22} className="flex-shrink-0" />
               <span className="text-sm font-semibold text-white">米宝 · 智能助手</span>
-            </button>
-          ) : (
-            <div className="flex items-center justify-between h-12 px-4 border-b border-gray-100 bg-gradient-to-r from-primary-600 to-primary-500 rounded-t-2xl flex-shrink-0">
-              <div className="flex items-center gap-2">
-                <MibaoLogo size={22} className="flex-shrink-0" />
-                <span className="text-sm font-semibold text-white">米宝 · 智能助手</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => setMinimized(true)}
-                  className="p-1 rounded-md hover:bg-white/20 transition-colors"
-                  title="最小化"
-                >
-                  <Minus className="w-4 h-4 text-white" />
-                </button>
-                <button
-                  onClick={() => setIsOpen(false)}
-                  className="p-1 rounded-md hover:bg-white/20 transition-colors"
-                  title="关闭"
-                >
-                  <X className="w-4 h-4 text-white" />
-                </button>
-              </div>
             </div>
-          )}
+            <button
+              onClick={() => setIsOpen(false)}
+              className="p-1 rounded-md hover:bg-white/20 transition-colors"
+              title="关闭"
+            >
+              <X className="w-4 h-4 text-white" />
+            </button>
+          </div>
 
           {/* 聊天内容 — 复用全屏会话模式布局 */}
-          {!minimized && (
-            <div className="flex-1 flex rounded-b-2xl overflow-hidden">
-              <SessionList />
-              <ChatArea />
-              <SessionInsight />
-            </div>
-          )}
+          <div className="flex-1 flex rounded-b-2xl overflow-hidden">
+            <SessionList />
+            <ChatArea />
+            <SessionInsight />
+          </div>
         </div>
       )}
 

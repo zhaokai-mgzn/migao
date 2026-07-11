@@ -82,29 +82,6 @@ describe('FloatingAssistant', () => {
     expect(screen.queryByText('米宝 · 智能助手')).not.toBeInTheDocument()
   })
 
-  it('点击最小化按钮后只显示标题栏', () => {
-    render(<FloatingAssistant />)
-
-    fireEvent.click(screen.getByTitle('打开米宝'))
-    fireEvent.click(screen.getByTitle('最小化'))
-
-    // 标题栏仍在，但内容区隐藏
-    expect(screen.getByText('米宝 · 智能助手')).toBeInTheDocument()
-    expect(screen.queryByTestId('session-list')).not.toBeInTheDocument()
-  })
-
-  it('最小化后点击标题栏可还原', () => {
-    render(<FloatingAssistant />)
-
-    fireEvent.click(screen.getByTitle('打开米宝'))
-    fireEvent.click(screen.getByTitle('最小化'))
-
-    // 点击最小化后的标题栏还原
-    fireEvent.click(screen.getByText('米宝 · 智能助手'))
-
-    expect(screen.getByTestId('session-list')).toBeInTheDocument()
-  })
-
   it('打开面板时自动加载会话列表', () => {
     render(<FloatingAssistant />)
 
