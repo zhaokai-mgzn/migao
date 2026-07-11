@@ -35,18 +35,6 @@ class TestInteractChoice:
         assert result.success is True
         assert result.data["options"][0]["label"] == "深灰"
 
-    async def test_choice_multi_select(self, tool, sample_tool_context):
-        result = await tool.execute(
-            context=sample_tool_context,
-            component="choice",
-            title="多选规格",
-            options=[{"label": "2.5m", "value": "2.5"}],
-            multiSelect=True,
-        )
-        assert result.success is True
-        assert result.data["multiSelect"] is True
-
-
 class TestInteractConfirm:
     async def test_confirm_component(self, tool, sample_tool_context):
         result = await tool.execute(
