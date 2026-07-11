@@ -44,7 +44,7 @@ class SkillConfig:
     intents: List[str] = field(default_factory=list)
     system_prompts: Dict[str, str] = field(default_factory=dict)
     default_persona: str = "default"
-    max_iterations: int = 5
+    max_iterations: int = 8
 
     def get_prompt(self, persona: str) -> str:
         """获取指定人格的 System Prompt
@@ -90,7 +90,7 @@ def create_skill_config(
     xiaobu_prompt: str = "",
     extra_prompts: Optional[Dict[str, str]] = None,
     default_persona: str = "mibao",
-    max_iterations: int = 5,
+    max_iterations: int = 8,
 ) -> SkillConfig:
     """便捷工厂函数，快速创建 SkillConfig
 
