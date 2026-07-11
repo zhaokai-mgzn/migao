@@ -781,8 +781,8 @@ async def execute_skill(
             for iteration in range(max_iterations):
                 logger.info(f"[{skill_name}] Iteration {iteration+1}/{max_iterations} | session={session_id}")
 
-                # 前 3 轮保持 thinking（批量规划），后续 no-thinking 省延迟
-                current_llm = llm_with_tools if iteration <= 2 else (llm_no_thinking or llm_with_tools)
+                # 全轮保持 thinking — LLM 更大胆批量调工具，效率优先
+                current_llm = llm_with_tools
 
                 # ── LLM 调用（超时 + 熔断保护）──
                 try:
