@@ -72,7 +72,7 @@ describe('Sidebar', () => {
 
   it('should render navigation links with correct paths', () => {
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    expect(screen.getByText('工作台').closest('a')).toHaveAttribute('href', '/dashboard')
+    expect(screen.getByText('经营看板').closest('a')).toHaveAttribute('href', '/dashboard')
     expect(screen.getByText('商品列表').closest('a')).toHaveAttribute('href', '/products')
     expect(screen.getByText('订单列表').closest('a')).toHaveAttribute('href', '/orders')
     expect(screen.getByText('机器人设置').closest('a')).toHaveAttribute('href', '/chat/config')
@@ -112,7 +112,7 @@ describe('Sidebar', () => {
   it('should highlight active menu item for /dashboard', () => {
     mockUsePathname.mockReturnValue('/dashboard')
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    const link = screen.getByText('工作台').closest('a')!
+    const link = screen.getByText('经营看板').closest('a')!
     expect(getActiveClass(link)).toContain('bg-primary-600')
   })
 
@@ -140,7 +140,7 @@ describe('Sidebar', () => {
   it('should highlight for root path as dashboard', () => {
     mockUsePathname.mockReturnValue('/')
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    const link = screen.getByText('工作台').closest('a')!
+    const link = screen.getByText('经营看板').closest('a')!
     expect(getActiveClass(link)).toContain('bg-primary-600')
   })
 
