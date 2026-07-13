@@ -442,7 +442,7 @@ export default function ProductForm({
           </FieldRow>
 
           {/* 拍下减库存 */}
-          <FieldRow label="拍下减库存" required>
+          <FieldRow label="拍下减库存" required alignTop>
             <RadioGroup<StockDeductionMode>
               value={form.stockDeductionMode || 'on_place'}
               onChange={(v) => updateField('stockDeductionMode', v)}
