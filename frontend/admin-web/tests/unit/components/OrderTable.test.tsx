@@ -99,6 +99,33 @@ describe('OrderTable', () => {
     expect(checkboxes.length).toBeGreaterThan(0)
   })
 
+  // #1290: 订单ID 行顶格 — 左侧无 padding
+  it('订单ID 列 data cell 应为 pl-0（顶格）', () => {
+    render(<OrderTable {...defaultProps} />)
+    const orderIdCell = screen.getByText('ORD-001').closest('td')
+    expect(orderIdCell).toBeTruthy()
+    expect(orderIdCell!.className).toMatch(/\bpl-0\b/)
+    expect(orderIdCell!.className).not.toMatch(/\bpx-4\b/)
+  })
+
+  // #1290: 商品货号行顶格 — 左侧无 padding
+  it('采购商品列 data cell 应为 pl-0（顶格）', () => {
+    render(<OrderTable {...defaultProps} />)
+    const skuCell = screen.getByText(/货号/).closest('td')
+    expect(skuCell).toBeTruthy()
+    expect(skuCell!.className).toMatch(/\bpl-0\b/)
+    expect(skuCell!.className).not.toMatch(/\bpx-4\b/)
+  })
+
+  // #1290: 订单ID 列 header 也应顶格，保证 header/data 对齐
+  it('订单ID 列 header 应为 pl-0（顶格）', () => {
+    render(<OrderTable {...defaultProps} />)
+    const headerCell = screen.getByText('订单ID').closest('th')
+    expect(headerCell).toBeTruthy()
+    expect(headerCell!.className).toMatch(/\bpl-0\b/)
+    expect(headerCell!.className).not.toMatch(/\bpx-4\b/)
+  })
+
   it('有备注时显示备注预览文本（去除时间戳前缀）', () => {
     const orderWithRemark = {
       ...mockOrder,

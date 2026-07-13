@@ -139,8 +139,8 @@ export default function OrderTable({
                 className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
               />
             </th>
-            <th className="px-4 py-3 font-medium whitespace-nowrap">订单ID</th>
-            <th className="px-4 py-3 font-medium whitespace-nowrap">采购商品</th>
+            <th className="pl-0 pr-4 py-3 font-medium whitespace-nowrap">订单ID</th>
+            <th className="pl-0 pr-4 py-3 font-medium whitespace-nowrap">采购商品</th>
             <th className="px-4 py-3 font-medium">
               <div className="flex flex-col">
                 <span>采购明细</span>
@@ -197,12 +197,12 @@ export default function OrderTable({
                   </td>
 
                   {/* 订单ID */}
-                  <td className="px-4 py-4 font-mono text-gray-800 whitespace-nowrap">
+                  <td className="pl-0 pr-4 py-4 font-mono text-gray-800 whitespace-nowrap">
                     {order.orderNo || order.id}
                   </td>
 
                   {/* 采购商品（取第一项展示：名称 + 货号） */}
-                  <td className="px-4 py-4 min-w-[160px]">
+                  <td className="pl-0 pr-4 py-4 min-w-[160px]">
                     {firstItem ? (
                       <div className="space-y-1">
                         <div className="text-gray-900 font-medium leading-tight">
