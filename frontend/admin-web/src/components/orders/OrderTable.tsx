@@ -7,6 +7,23 @@ import type { Order } from '@/types'
 import { OrderStatusLabels, normalizeOrderStatus } from '@/types'
 import RemarkPopover from './RemarkPopover'
 
+/**
+ * #1289: 获取备注列触发器的预览文本。
+ * 优先使用 order.remark（旧字符串），否则从 order.remarks[] 取最新一条的 content。
+ */
+function getRemarkPreview(order: Order): string {
+  if (order.remark) {
+    return order.remark.replace(/^\[[\d\-:\s]+\]\s*/gm, '')
+  }
+  if (order.remarks && order.remarks.length > 0) {
+    const sorted = [...order.remarks].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    )
+    return sorted[0].content
+  }
+  return ''
+}
+
 export interface OrderTableProps {
   orders: Order[]
   loading: boolean
@@ -281,12 +298,12 @@ export default function OrderTable({
                     {OrderStatusLabels[normalizeOrderStatus(order.status as string)]}
                   </td>
 
-                  {/* 备注预览 */}
+                  {/* 备注预览 — #1289: 同时检查 remark 字符串和 remarks[] 数组 */}
                   <td className="px-4 py-4 min-w-[100px] max-w-[160px]">
-                    <RemarkPopover remark={order.remark}>
-                      {order.remark ? (
+                    <RemarkPopover remark={order.remark} remarks={order.remarks}>
+                      {order.remark || (order.remarks && order.remarks.length > 0) ? (
                         <span className="text-xs text-gray-500 truncate block">
-                          💬 {order.remark.replace(/^\[[\d\-:\s]+\]\s*/gm, '')}
+                          💬 {getRemarkPreview(order)}
                         </span>
                       ) : (
                         <span className="text-xs text-gray-300">-</span>
