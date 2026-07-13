@@ -179,47 +179,7 @@ export default function ProductDetailPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left: Images */}
-        <div className="lg:col-span-1">
-          <div className="bg-gray-50 rounded-lg p-4">
-            <h3 className="text-sm font-semibold text-gray-700 mb-3">商品图片</h3>
-            {allImages.length > 0 ? (
-              <div className="space-y-3">
-                {/* Main image */}
-                {product.images?.[0] && (
-                  <div
-                    className="w-full aspect-square rounded-lg overflow-hidden bg-white cursor-pointer"
-                    onClick={() => setPreviewImg(product.images[0])}
-                  >
-                    <Image src={resolveImageUrl(product.images[0])} alt={product.name} width={400} height={400} className="w-full h-full object-cover" unoptimized />
-                  </div>
-                )}
-                {/* Detail images grid */}
-                {(product.detailImages?.length ?? 0) > 0 && (
-                  <div className="grid grid-cols-3 gap-2">
-                    {product.detailImages!.map((url, i) => (
-                      <div
-                        key={i}
-                        className="aspect-square rounded-md overflow-hidden bg-white cursor-pointer"
-                        onClick={() => setPreviewImg(url)}
-                      >
-                        <Image src={resolveImageUrl(url)} alt={`详情图 ${i + 1}`} width={200} height={200} className="w-full h-full object-cover" unoptimized />
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="w-full aspect-square rounded-lg bg-gray-200 flex items-center justify-center text-gray-400">
-                暂无图片
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Right: Info */}
-        <div className="lg:col-span-2 space-y-6">
+      <div className="flex flex-col gap-6">
           {/* Basic info */}
           <div className="bg-gray-50 rounded-lg p-4">
             <h3 className="text-sm font-semibold text-gray-700 mb-3">基本信息</h3>
@@ -266,7 +226,7 @@ export default function ProductDetailPage() {
               )}
               {product.skuCode && (
                 <div>
-                  <dt className="text-xs text-gray-500">SKU编码</dt>
+                  <dt className="text-xs text-gray-500">货号</dt>
                   <dd className="text-sm text-gray-900 mt-0.5 font-mono">{product.skuCode}</dd>
                 </div>
               )}
@@ -324,10 +284,10 @@ export default function ProductDetailPage() {
             </div>
           )}
 
-          {/* SKU 规格 */}
+          {/* 销售信息（SKU） */}
           {skus.length > 0 && (
             <div className="bg-gray-50 rounded-lg p-4">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">SKU 规格</h3>
+              <h3 className="text-sm font-semibold text-gray-700 mb-3">销售信息</h3>
               <div className="overflow-x-auto rounded-md border border-gray-200 bg-white">
                 <table className="min-w-full text-sm">
                   <thead className="bg-gray-50 text-gray-600">
@@ -335,7 +295,7 @@ export default function ProductDetailPage() {
                       <th className="px-3 py-2 text-left font-medium">颜色</th>
                       <th className="px-3 py-2 text-left font-medium">售卖方式</th>
                       <th className="px-3 py-2 text-left font-medium">门幅</th>
-                      <th className="px-3 py-2 text-left font-medium">SKU编码</th>
+                      <th className="px-3 py-2 text-left font-medium">货号</th>
                       <th className="px-3 py-2 text-right font-medium">库存</th>
                       <th className="px-3 py-2 text-right font-medium">价格</th>
                     </tr>
@@ -413,7 +373,42 @@ export default function ProductDetailPage() {
               )}
             </div>
           )}
-        </div>
+
+          {/* 商品图片 */}
+          <div className="bg-gray-50 rounded-lg p-4">
+            <h3 className="text-sm font-semibold text-gray-700 mb-3">商品图片</h3>
+            {allImages.length > 0 ? (
+              <div className="space-y-3">
+                {/* Main image */}
+                {product.images?.[0] && (
+                  <div
+                    className="w-full max-w-sm aspect-square rounded-lg overflow-hidden bg-white cursor-pointer"
+                    onClick={() => setPreviewImg(product.images[0])}
+                  >
+                    <Image src={resolveImageUrl(product.images[0])} alt={product.name} width={400} height={400} className="w-full h-full object-cover" unoptimized />
+                  </div>
+                )}
+                {/* Detail images grid */}
+                {(product.detailImages?.length ?? 0) > 0 && (
+                  <div className="grid grid-cols-3 gap-2">
+                    {product.detailImages!.map((url, i) => (
+                      <div
+                        key={i}
+                        className="aspect-square rounded-md overflow-hidden bg-white cursor-pointer"
+                        onClick={() => setPreviewImg(url)}
+                      >
+                        <Image src={resolveImageUrl(url)} alt={`详情图 ${i + 1}`} width={200} height={200} className="w-full h-full object-cover" unoptimized />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="w-full aspect-square rounded-lg bg-gray-200 flex items-center justify-center text-gray-400">
+                暂无图片
+              </div>
+            )}
+          </div>
       </div>
 
       {/* Image preview */}
