@@ -125,4 +125,25 @@ describe('OrderTable', () => {
     expect(headerCell!.className).toMatch(/\bpl-0\b/)
     expect(headerCell!.className).not.toMatch(/\bpx-4\b/)
   })
+
+  it('有备注时显示备注预览文本（去除时间戳前缀）', () => {
+    const orderWithRemark = {
+      ...mockOrder,
+      remark: '[2026-07-01 10:00] 客户催单',
+    }
+    render(<OrderTable {...defaultProps} orders={[orderWithRemark]} />)
+    // 应该显示去除时间戳前缀后的内容
+    expect(screen.getByText(/客户催单/)).toBeTruthy()
+    // 不应直接显示原始时间戳
+    expect(screen.queryByText(/2026-07-01 10:00/)).toBeNull()
+  })
+
+  it('无备注时显示 - 占位符', () => {
+    const orderNoRemark = {
+      ...mockOrder,
+      remark: undefined,
+    }
+    render(<OrderTable {...defaultProps} orders={[orderNoRemark]} />)
+    expect(screen.getByText('-')).toBeTruthy()
+  })
 })
