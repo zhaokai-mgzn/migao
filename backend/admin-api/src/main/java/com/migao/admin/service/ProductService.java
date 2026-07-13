@@ -120,9 +120,9 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             wrapper.eq(Product::getStatus, query.getStatus());
         }
 
-        // 低库存筛选（#1200: 使用 SKU 汇总子查询，与前端展示值和排序同源）
+        // 低库存筛选（#1291: 使用 SKU 级 EXISTS 子查询，与看板卡片口径一致）
         if (query.getStockBelow() != null) {
-            wrapper.apply("(SELECT COALESCE(SUM(ps.stock), 0) FROM product_skus ps WHERE ps.product_id = products.id) < {0}", query.getStockBelow());
+            wrapper.apply("EXISTS (SELECT 1 FROM product_skus ps WHERE ps.product_id = products.id AND ps.stock >= 0 AND ps.stock <= {0})", query.getStockBelow());
         }
 
         // 时间范围筛选（createdFrom/createdTo 优先于 startDate/endDate）
