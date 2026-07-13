@@ -410,7 +410,25 @@ describe('request (Axios instance)', () => {
   })
 
   describe('response interceptor - other HTTP errors', () => {
-    it('should use backend error message for non-standard status codes', async () => {
+    it('should extract error message from data.error.message (backend standard format)', async () => {
+      // Backend returns: {success: false, error: {code: "VALIDATION_ERROR", message: "分类ID不能为空"}}
+      const mockAdapter = vi.fn().mockRejectedValue(
+        createAxiosError(422, {
+          success: false,
+          error: { code: 'VALIDATION_ERROR', message: '分类ID不能为空' },
+        })
+      )
+
+      const originalAdapter = request.defaults.adapter
+      request.defaults.adapter = mockAdapter
+
+      await expect(request.post('/api/products')).rejects.toBeDefined()
+      expect(toast.error).toHaveBeenCalledWith('分类ID不能为空')
+
+      request.defaults.adapter = originalAdapter
+    })
+
+    it('should fall back to data.message when data.error.message is absent', async () => {
       const mockAdapter = vi.fn().mockRejectedValue(
         createAxiosError(422, { message: '商品名称已存在' })
       )
@@ -424,7 +442,7 @@ describe('request (Axios instance)', () => {
       request.defaults.adapter = originalAdapter
     })
 
-    it('should fall back to status code message for non-standard errors without message', async () => {
+    it('should fall back to status code message when no message field exists', async () => {
       const mockAdapter = vi.fn().mockRejectedValue(
         createAxiosError(429, {})
       )

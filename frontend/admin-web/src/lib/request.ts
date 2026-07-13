@@ -134,7 +134,7 @@ request.interceptors.response.use(
           toast.error('服务器内部错误')
           break
         default:
-          toast.error(data?.message || `请求失败 (${status})`)
+          toast.error(data?.error?.message || data?.message || `请求失败 (${status})`)
       }
     } else if (error.request) {
       toast.error('网络连接失败，请检查网络设置')
