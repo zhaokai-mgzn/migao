@@ -444,7 +444,7 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
                 <button
                   type="button"
                   onClick={() => handleRemoveColor(idx)}
-                  className="shrink-0 w-9 h-9 inline-flex items-center justify-center rounded text-gray-400 hover:text-red-500 hover:bg-red-50"
+                  className="relative z-40 shrink-0 w-9 h-9 inline-flex items-center justify-center rounded text-gray-400 hover:text-red-500 hover:bg-red-50"
                   title="删除"
                 >
                   <Trash2 className="w-4 h-4" />
@@ -501,7 +501,7 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
             <button
               type="button"
               onClick={() => handleRemoveSellingMethod(idx)}
-              className="w-9 h-9 inline-flex items-center justify-center rounded text-gray-400 hover:text-red-500 hover:bg-red-50"
+              className="relative z-40 w-9 h-9 inline-flex items-center justify-center rounded text-gray-400 hover:text-red-500 hover:bg-red-50"
               title="删除"
             >
               <Trash2 className="w-4 h-4" />
@@ -534,7 +534,7 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
             <button
               type="button"
               onClick={() => handleRemoveDoorWidth(idx)}
-              className="w-9 h-9 inline-flex items-center justify-center rounded text-gray-400 hover:text-red-500 hover:bg-red-50"
+              className="relative z-40 w-9 h-9 inline-flex items-center justify-center rounded text-gray-400 hover:text-red-500 hover:bg-red-50"
               title="删除"
             >
               <Trash2 className="w-4 h-4" />
