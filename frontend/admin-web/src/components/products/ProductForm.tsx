@@ -723,7 +723,7 @@ function RadioGroup<T extends string | number | boolean>({
   options: RadioOption<T>[]
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-5">
+    <div className="flex flex-wrap items-center gap-5 pt-2">
       {options.map((opt) => {
         const active = opt.value === value
         return (
