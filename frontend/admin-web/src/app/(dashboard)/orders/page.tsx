@@ -252,20 +252,6 @@ export default function OrdersPage() {
     setSearch(EMPTY_SEARCH)
   }
 
-  const handleDateQuickSelect = (preset: 'today' | '7days' | '30days') => {
-    const today = dayjs().format('YYYY-MM-DD')
-    if (preset === 'today') {
-      setStartDate(today)
-      setEndDate(today)
-    } else if (preset === '7days') {
-      setStartDate(dayjs().subtract(6, 'day').format('YYYY-MM-DD'))
-      setEndDate(today)
-    } else {
-      setStartDate(dayjs().subtract(29, 'day').format('YYYY-MM-DD'))
-      setEndDate(today)
-    }
-  }
-
   const handleTabChange = (tab: OrderStatusTab) => {
     setActiveTab(tab)
     setExtraStatusFilter(null) // 手动切 tab 时清除叠加状态过滤
