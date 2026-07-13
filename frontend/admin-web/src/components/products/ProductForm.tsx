@@ -442,7 +442,7 @@ export default function ProductForm({
           </FieldRow>
 
           {/* 拍下减库存 */}
-          <FieldRow label="拍下减库存" required>
+          <FieldRow label="拍下减库存" required alignTop>
             <RadioGroup<StockDeductionMode>
               value={form.stockDeductionMode || 'on_place'}
               onChange={(v) => updateField('stockDeductionMode', v)}
@@ -723,7 +723,7 @@ function RadioGroup<T extends string | number | boolean>({
   options: RadioOption<T>[]
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-5">
+    <div className="flex flex-wrap items-center gap-5 pt-2">
       {options.map((opt) => {
         const active = opt.value === value
         return (
