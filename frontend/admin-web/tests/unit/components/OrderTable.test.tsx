@@ -146,4 +146,21 @@ describe('OrderTable', () => {
     render(<OrderTable {...defaultProps} orders={[orderNoRemark]} />)
     expect(screen.getByText('-')).toBeTruthy()
   })
+
+  // #1289: 订单有 remarks[] 数组但 remark 字符串为空时，触发显示最新备注预览
+  it('#1289: remarks 数组有数据但 remark 为空时，应显示最新备注预览', () => {
+    const orderWithRemarksArray = {
+      ...mockOrder,
+      remark: undefined,
+      remarks: [
+        { id: '1', content: '最新备注内容', createdAt: '2026-07-13T10:00:00Z', operator: '张三' },
+        { id: '2', content: '旧备注', createdAt: '2026-07-10T09:00:00Z' },
+      ],
+    }
+    render(<OrderTable {...defaultProps} orders={[orderWithRemarksArray]} />)
+    // 应显示最新备注的预览内容（按 createdAt 降序取第一条）
+    expect(screen.getByText(/最新备注内容/)).toBeTruthy()
+    // 备注列不应显示 - 占位符
+    expect(screen.queryByText('-')).toBeNull()
+  })
 })
