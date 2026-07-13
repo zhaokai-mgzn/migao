@@ -39,7 +39,7 @@ public interface ProductMapper extends BaseMapper<Product> {
             "FROM product_skus ps " +
             "JOIN products p ON ps.product_id = p.id AND p.deleted = 0 " +
             "LEFT JOIN product_colors pc ON ps.color_id = pc.id " +
-            "WHERE ps.stock < #{threshold} AND ps.stock >= 0 " +
+            "WHERE ps.stock <= #{threshold} AND ps.stock >= 0 " +
             "ORDER BY ps.stock ASC, p.name ASC " +
             "LIMIT #{limit}")
     List<LowStockByColorResponse> findLowStockByColor(@Param("threshold") int threshold, @Param("limit") int limit);

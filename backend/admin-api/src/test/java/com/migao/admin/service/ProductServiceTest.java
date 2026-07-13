@@ -772,12 +772,13 @@ class ProductServiceTest {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // #1200 stockBelow 筛选修复: WHERE 改用 SKU 汇总子查询
+    // #1291 stockBelow 筛选修复: WHERE 改用 SKU 级 EXISTS 子查询
+    // 根因: COALESCE(SUM(ps.stock)) 按 product 聚合，与看板 SKU 维度口径不一致
     // ═══════════════════════════════════════════════════════════
 
     @Test
-    @DisplayName("#1200: stockBelow 筛选使用 SKU 汇总子查询而非 products.stock")
-    void getProducts_StockBelowFilter_UsesSkuSumSubquery() {
+    @DisplayName("#1291: stockBelow 筛选使用 SKU 级 EXISTS 子查询（非 product SUM）")
+    void getProducts_StockBelowFilter_UsesSkuExistsSubquery() {
         // Given
         ProductQueryRequest query = new ProductQueryRequest();
         query.setStockBelow(100);
@@ -798,15 +799,21 @@ class ProductServiceTest {
         // When
         productService.getProducts(query, 1L);
 
-        // Then: 验证 wrapper 条件中包含 SKU 汇总子查询
+        // Then: 验证 wrapper 条件中使用 SKU 级 EXISTS（非 SUM 聚合）
         LambdaQueryWrapper<Product> capturedWrapper = wrapperCaptor.getValue();
         String sqlSegment = capturedWrapper.getSqlSegment();
         assertThat(sqlSegment)
-                .as("stockBelow 筛选应使用 SKU 汇总子查询")
-                .contains("COALESCE(SUM(ps.stock)");
+                .as("stockBelow 筛选应使用 SKU 级 EXISTS 子查询")
+                .contains("EXISTS (SELECT 1 FROM product_skus");
         assertThat(sqlSegment)
-                .as("不应包含对 products.stock 列的直接筛选引用")
-                .doesNotContainPattern("(?i)stock\\s*<\\s*\\{0\\}");
+                .as("stockBelow 筛选应使用 <= 操作符（与 Dashboard stats 口径一致，兼容 MyBatis-Plus 占位符重写）")
+                .containsPattern("ps\\.stock <= ");
+        assertThat(sqlSegment)
+                .as("stockBelow 筛选不应使用 product 级 SUM 聚合（那会导致口径不一致）")
+                .doesNotContain("COALESCE(SUM(ps.stock)");
+        assertThat(sqlSegment)
+                .as("不应包含对 products.stock 列的直接 < 筛选（旧口径，应为 SKU 级 EXISTS）")
+                .doesNotContainPattern("(?i)stock\\s*<\\s*(\\{|#)");
     }
 
     @Test

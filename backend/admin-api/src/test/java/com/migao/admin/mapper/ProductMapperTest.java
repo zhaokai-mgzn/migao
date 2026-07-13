@@ -46,6 +46,14 @@ class ProductMapperTest {
         // 应该包含 JOIN 条件
         assertThat(sql).contains("JOIN products p ON ps.product_id = p.id");
         assertThat(sql).contains("p.deleted = 0");
+
+        // #1291: 应使用 <= 而非 < 操作符（与 Dashboard stats 口径一致）
+        assertThat(sql)
+                .as("low-stock-by-color 应使用 <= 操作符（含边界值，与 Dashboard stats 一致）")
+                .contains("ps.stock <= #{threshold}");
+        assertThat(sql)
+                .as("不应使用 < 操作符（排除边界值 stock=threshold）")
+                .doesNotContain("ps.stock < #{threshold}");
     }
 
     @Test
