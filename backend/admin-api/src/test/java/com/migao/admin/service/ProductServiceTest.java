@@ -770,4 +770,70 @@ class ProductServiceTest {
         // Then: 默认排序应正常工作
         verify(productMapper).selectPage(any(Page.class), any(LambdaQueryWrapper.class));
     }
+    // ═══════════════════════════════════════════════════════════
+    // #1291 stockBelow 筛选修复: WHERE 改用 SKU 级 EXISTS 子查询
+    // 根因: COALESCE(SUM(ps.stock)) 按 product 聚合，与看板 SKU 维度口径不一致
+    // ═══════════════════════════════════════════════════════════
+
+    @Test
+    @DisplayName("#1291: stockBelow 筛选使用 SKU 级 EXISTS 子查询（非 product SUM）")
+    void getProducts_StockBelowFilter_UsesSkuExistsSubquery() {
+        // Given
+        ProductQueryRequest query = new ProductQueryRequest();
+        query.setStockBelow(100);
+        query.setPage(1L);
+        query.setSize(20L);
+
+        Page<Product> mockPage = new Page<>(1, 20);
+        mockPage.setRecords(List.of(testProduct));
+        mockPage.setTotal(1);
+
+        ArgumentCaptor<LambdaQueryWrapper<Product>> wrapperCaptor =
+                ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        when(productMapper.selectPage(any(Page.class), wrapperCaptor.capture()))
+                .thenReturn(mockPage);
+        when(categoryMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(List.of(testCategory));
+
+        // When
+        productService.getProducts(query, 1L);
+
+        // Then: 验证 wrapper 条件中使用 SKU 级 EXISTS（非 SUM 聚合）
+        LambdaQueryWrapper<Product> capturedWrapper = wrapperCaptor.getValue();
+        String sqlSegment = capturedWrapper.getSqlSegment();
+        assertThat(sqlSegment)
+                .as("stockBelow 筛选应使用 SKU 级 EXISTS 子查询")
+                .contains("EXISTS (SELECT 1 FROM product_skus");
+        assertThat(sqlSegment)
+                .as("stockBelow 筛选应使用 <= 操作符（与 Dashboard stats 口径一致，兼容 MyBatis-Plus 占位符重写）")
+                .containsPattern("ps\\.stock <= ");
+        assertThat(sqlSegment)
+                .as("stockBelow 筛选不应使用 product 级 SUM 聚合（那会导致口径不一致）")
+                .doesNotContain("COALESCE(SUM(ps.stock)");
+        assertThat(sqlSegment)
+                .as("不应包含对 products.stock 列的直接 < 筛选（旧口径，应为 SKU 级 EXISTS）")
+                .doesNotContainPattern("(?i)stock\\s*<\\s*(\\{|#)");
+    }
+
+    @Test
+    @DisplayName("#1200: stockBelow 未传时不附加筛选条件")
+    void getProducts_NoStockBelow_NoFilterApplied() {
+        // Given
+        ProductQueryRequest query = new ProductQueryRequest();
+        query.setPage(1L);
+        query.setSize(20L);
+
+        Page<Product> mockPage = new Page<>(1, 20);
+        mockPage.setRecords(List.of(testProduct));
+        mockPage.setTotal(1);
+
+        when(productMapper.selectPage(any(Page.class), any(LambdaQueryWrapper.class)))
+                .thenReturn(mockPage);
+
+        // When
+        productService.getProducts(query, 1L);
+
+        // Then: 不应包含 stockBelow 筛选
+        verify(productMapper).selectPage(any(Page.class), any(LambdaQueryWrapper.class));
+    }
 }

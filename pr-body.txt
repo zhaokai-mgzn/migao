@@ -1,0 +1,25 @@
+Closes #1199
+
+## 变更摘要
+
+### 改动点
+
+1. **采购明细分隔符 `/` → `:`** — OrderTable.tsx 中列头副标题、注释、item 渲染分隔符全部更新
+2. **移除顶部快捷按钮** — page.tsx 中删除"快捷：今天/近7天/近30天"整块区域（handleDateQuickSelect 工具函数保留供复用）
+3. **筛选区顶格** — page.tsx 中 FieldLabel 宽度从固定 `w-20` 改为自适应 `min-w-[4.5em]`
+
+### 测试
+
+- 新增单测: OrderTable.test.tsx 验证采购明细分隔符 `:` 替代 `/`
+- 前端全量单测: vitest run — 83 files, 1182 PASS, 1 skipped
+- 类型检查: tsc --noEmit EXIT: 0
+
+### 边界确认
+
+- 不动筛选功能本身（6 个查询条件保留）
+- 不动后端接口
+- 不动其他页面的快捷按钮
+- 不动 OrderDetail.tsx（规格尺寸列不在采购明细范围内）
+- 仅改前端展示 + 样式
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)

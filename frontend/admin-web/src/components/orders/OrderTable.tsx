@@ -5,6 +5,24 @@ import dayjs from 'dayjs'
 import { cn } from '@/lib/utils'
 import type { Order } from '@/types'
 import { OrderStatusLabels, normalizeOrderStatus } from '@/types'
+import RemarkPopover from './RemarkPopover'
+
+/**
+ * #1289: 获取备注列触发器的预览文本。
+ * 优先使用 order.remark（旧字符串），否则从 order.remarks[] 取最新一条的 content。
+ */
+function getRemarkPreview(order: Order): string {
+  if (order.remark) {
+    return order.remark.replace(/^\[[\d\-:\s]+\]\s*/gm, '')
+  }
+  if (order.remarks && order.remarks.length > 0) {
+    const sorted = [...order.remarks].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    )
+    return sorted[0].content
+  }
+  return ''
+}
 
 export interface OrderTableProps {
   orders: Order[]
@@ -138,12 +156,12 @@ export default function OrderTable({
                 className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
               />
             </th>
-            <th className="px-4 py-3 font-medium whitespace-nowrap">订单ID</th>
-            <th className="px-4 py-3 font-medium whitespace-nowrap">采购商品</th>
+            <th className="pl-0 pr-4 py-3 font-medium whitespace-nowrap">订单ID</th>
+            <th className="pl-0 pr-4 py-3 font-medium whitespace-nowrap">采购商品</th>
             <th className="px-4 py-3 font-medium">
               <div className="flex flex-col">
                 <span>采购明细</span>
-                <span className="text-xs font-normal text-gray-400">(名称/单价×数量+加工费)</span>
+                <span className="text-xs font-normal text-gray-400">(名称:单价×数量+加工费)</span>
               </div>
             </th>
             <th className="px-4 py-3 font-medium text-right whitespace-nowrap">累计金额(元)</th>
@@ -196,12 +214,12 @@ export default function OrderTable({
                   </td>
 
                   {/* 订单ID */}
-                  <td className="px-4 py-4 font-mono text-gray-800 whitespace-nowrap">
+                  <td className="pl-0 pr-4 py-4 font-mono text-gray-800 whitespace-nowrap">
                     {order.orderNo || order.id}
                   </td>
 
                   {/* 采购商品（取第一项展示：名称 + 货号） */}
-                  <td className="px-4 py-4 min-w-[160px]">
+                  <td className="pl-0 pr-4 py-4 min-w-[160px]">
                     {firstItem ? (
                       <div className="space-y-1">
                         <div className="text-gray-900 font-medium leading-tight">
@@ -216,7 +234,7 @@ export default function OrderTable({
                     )}
                   </td>
 
-                  {/* 采购明细（名称 / 规格 / 单价 / 数量 / 加工费） */}
+                  {/* 采购明细（名称 : 规格 : 单价 : 数量 : 加工费） */}
                   <td className="px-4 py-4 min-w-[280px]">
                     <div className="space-y-1.5">
                       {order.items?.map((item) => {
@@ -225,7 +243,7 @@ export default function OrderTable({
                         return (
                           <div key={item.id} className="text-gray-700 leading-tight text-xs">
                             <span>{item.productName || item.productCode || '-'}</span>
-                            {' / '}
+                            {': '}
                             <span className="font-mono">{formatNumber(item.unitPrice)}</span>元
                             {' × '}<span className="font-mono">{formatNumber(item.quantity)}</span>米
                             {' = '}<span className="font-mono">{formatNumber(getItemAmount(item))}</span>元
@@ -280,25 +298,17 @@ export default function OrderTable({
                     {OrderStatusLabels[normalizeOrderStatus(order.status as string)]}
                   </td>
 
-                  {/* 备注预览 */}
+                  {/* 备注预览 — #1289: 同时检查 remark 字符串和 remarks[] 数组 */}
                   <td className="px-4 py-4 min-w-[100px] max-w-[160px]">
-                    {order.remark ? (
-                      <span className="relative group inline-block max-w-full">
-                        <span className="text-xs text-gray-500 truncate block cursor-default">
-                          💬 {order.remark.length > 20 ? order.remark.slice(0, 20) + '…' : order.remark}
+                    <RemarkPopover remark={order.remark} remarks={order.remarks}>
+                      {order.remark || (order.remarks && order.remarks.length > 0) ? (
+                        <span className="text-xs text-gray-500 truncate block">
+                          💬 {getRemarkPreview(order)}
                         </span>
-                        {order.remark.length > 20 && (
-                          <span className="absolute bottom-full left-0 mb-1 hidden group-hover:block z-30
-                            bg-gray-900 text-white text-xs px-2.5 py-1.5 rounded-lg shadow-lg
-                            max-w-[280px] whitespace-pre-wrap break-words leading-relaxed
-                            pointer-events-none">
-                            {order.remark}
-                          </span>
-                        )}
-                      </span>
-                    ) : (
-                      <span className="text-xs text-gray-300">-</span>
-                    )}
+                      ) : (
+                        <span className="text-xs text-gray-300">-</span>
+                      )}
+                    </RemarkPopover>
                   </td>
 
                   {/* 操作 */}

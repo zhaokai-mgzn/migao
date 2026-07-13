@@ -71,6 +71,18 @@ describe('OrderTable', () => {
     expect(names.length).toBeGreaterThanOrEqual(1)
   })
 
+  it('采购明细分隔符应为 : 而非 /', () => {
+    render(<OrderTable {...defaultProps} />)
+    // 采购明细列在 min-w-[280px] 的 td 中，取该列文本验证分隔符
+    const detailCells = document.querySelectorAll('td.min-w-\\[280px\\]')
+    expect(detailCells.length).toBeGreaterThan(0)
+    const cellText = detailCells[0].textContent || ''
+    // 产品名后应紧跟 ' : 数字' 模式（如 窗帘 : 99元）
+    expect(cellText).toMatch(/窗帘\s*:\s*\d/)
+    // 不应出现 ' / 数字' 模式（在采购明细列上下文中）
+    expect(cellText).not.toMatch(/窗帘\s*\/\s*\d/)
+  })
+
   it('空列表显示"暂无数据"', () => {
     render(<OrderTable {...defaultProps} orders={[]} />)
     expect(screen.getByText('暂无数据')).toBeTruthy()
@@ -85,5 +97,70 @@ describe('OrderTable', () => {
     render(<OrderTable {...defaultProps} />)
     const checkboxes = screen.getAllByRole('checkbox')
     expect(checkboxes.length).toBeGreaterThan(0)
+  })
+
+  // #1290: 订单ID 行顶格 — 左侧无 padding
+  it('订单ID 列 data cell 应为 pl-0（顶格）', () => {
+    render(<OrderTable {...defaultProps} />)
+    const orderIdCell = screen.getByText('ORD-001').closest('td')
+    expect(orderIdCell).toBeTruthy()
+    expect(orderIdCell!.className).toMatch(/\bpl-0\b/)
+    expect(orderIdCell!.className).not.toMatch(/\bpx-4\b/)
+  })
+
+  // #1290: 商品货号行顶格 — 左侧无 padding
+  it('采购商品列 data cell 应为 pl-0（顶格）', () => {
+    render(<OrderTable {...defaultProps} />)
+    const skuCell = screen.getByText(/货号/).closest('td')
+    expect(skuCell).toBeTruthy()
+    expect(skuCell!.className).toMatch(/\bpl-0\b/)
+    expect(skuCell!.className).not.toMatch(/\bpx-4\b/)
+  })
+
+  // #1290: 订单ID 列 header 也应顶格，保证 header/data 对齐
+  it('订单ID 列 header 应为 pl-0（顶格）', () => {
+    render(<OrderTable {...defaultProps} />)
+    const headerCell = screen.getByText('订单ID').closest('th')
+    expect(headerCell).toBeTruthy()
+    expect(headerCell!.className).toMatch(/\bpl-0\b/)
+    expect(headerCell!.className).not.toMatch(/\bpx-4\b/)
+  })
+
+  it('有备注时显示备注预览文本（去除时间戳前缀）', () => {
+    const orderWithRemark = {
+      ...mockOrder,
+      remark: '[2026-07-01 10:00] 客户催单',
+    }
+    render(<OrderTable {...defaultProps} orders={[orderWithRemark]} />)
+    // 应该显示去除时间戳前缀后的内容
+    expect(screen.getByText(/客户催单/)).toBeTruthy()
+    // 不应直接显示原始时间戳
+    expect(screen.queryByText(/2026-07-01 10:00/)).toBeNull()
+  })
+
+  it('无备注时显示 - 占位符', () => {
+    const orderNoRemark = {
+      ...mockOrder,
+      remark: undefined,
+    }
+    render(<OrderTable {...defaultProps} orders={[orderNoRemark]} />)
+    expect(screen.getByText('-')).toBeTruthy()
+  })
+
+  // #1289: 订单有 remarks[] 数组但 remark 字符串为空时，触发显示最新备注预览
+  it('#1289: remarks 数组有数据但 remark 为空时，应显示最新备注预览', () => {
+    const orderWithRemarksArray = {
+      ...mockOrder,
+      remark: undefined,
+      remarks: [
+        { id: '1', content: '最新备注内容', createdAt: '2026-07-13T10:00:00Z', operator: '张三' },
+        { id: '2', content: '旧备注', createdAt: '2026-07-10T09:00:00Z' },
+      ],
+    }
+    render(<OrderTable {...defaultProps} orders={[orderWithRemarksArray]} />)
+    // 应显示最新备注的预览内容（按 createdAt 降序取第一条）
+    expect(screen.getByText(/最新备注内容/)).toBeTruthy()
+    // 备注列不应显示 - 占位符
+    expect(screen.queryByText('-')).toBeNull()
   })
 })

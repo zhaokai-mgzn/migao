@@ -1,6 +1,7 @@
 /**
  * ProductTable 组件测试
  * 覆盖：#646 移除 in_warehouse — 状态徽章映射无仓库中、操作按钮正确
+ *       #1200 库存飘红阈值
  */
 import { render, screen } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
@@ -88,7 +89,6 @@ describe('ProductTable (#646 — 移除 in_warehouse)', () => {
     }
 
     it('不显示「仓库中」', () => {
-      // 四种状态都不应该渲染「仓库中」
       const products: Product[] = [
         { ...baseProduct, id: 'p1', status: 'on_sale' },
         { ...baseProduct, id: 'p2', status: 'off_sale' },
@@ -123,7 +123,6 @@ describe('ProductTable (#646 — 移除 in_warehouse)', () => {
       const product = { ...baseProduct, status: 'under_review' as const }
       render(<ProductTable {...defaultProps} products={[product]} />)
       expect(screen.getByText('查看')).toBeTruthy()
-      // 审核中无编辑/上下架/删除按钮
       expect(screen.queryByText('编辑')).toBeNull()
       expect(screen.queryByText('上架')).toBeNull()
       expect(screen.queryByText('下架')).toBeNull()
@@ -156,6 +155,49 @@ describe('ProductTable (#646 — 移除 in_warehouse)', () => {
       expect(ProductStatusLabels.off_sale).toBe('已下架')
       expect(ProductStatusLabels.draft).toBe('草稿')
       expect(ProductStatusLabels.under_review).toBe('审核中')
+    })
+  })
+
+  describe('#1200 — 库存飘红阈值', () => {
+    it('stock < stockWarningThreshold → 红色', () => {
+      const product = { ...baseProduct, stock: 3, stockWarningThreshold: 5 }
+      render(<ProductTable {...defaultProps} products={[product]} />)
+      const cells = screen.getAllByText('3')
+      const stockCell = cells.find(
+        (el) => el.className && el.className.includes('text-red')
+      )
+      expect(stockCell).toBeTruthy()
+    })
+
+    it('stock >= stockWarningThreshold → 默认色', () => {
+      const product = { ...baseProduct, stock: 10, stockWarningThreshold: 5 }
+      render(<ProductTable {...defaultProps} products={[product]} />)
+      const cells = screen.getAllByText('10')
+      const stockCell = cells.find(
+        (el) => el.className && el.className.includes('text-red')
+      )
+      expect(stockCell).toBeFalsy()
+    })
+
+    it('未配置 stockWarningThreshold → 默认阈值5，stock=3 → 红色', () => {
+      const product = { ...baseProduct, stock: 3 }
+      delete (product as any).stockWarningThreshold
+      render(<ProductTable {...defaultProps} products={[product]} />)
+      const cells = screen.getAllByText('3')
+      const stockCell = cells.find(
+        (el) => el.className && el.className.includes('text-red')
+      )
+      expect(stockCell).toBeTruthy()
+    })
+
+    it('stock = 0 → 红色加粗', () => {
+      const product = { ...baseProduct, stock: 0, stockWarningThreshold: 5 }
+      render(<ProductTable {...defaultProps} products={[product]} />)
+      const cells = screen.getAllByText('0')
+      const stockCell = cells.find(
+        (el) => el.className && el.className.includes('text-red') && el.className.includes('font-bold')
+      )
+      expect(stockCell).toBeTruthy()
     })
   })
 })

@@ -181,10 +181,28 @@ describe('ProductDetailPage', () => {
     })
   })
 
-  it('should render SKU table', async () => {
+  it('should render SKU table with 销售信息 title', async () => {
     render(<ProductDetailPage />)
     await waitFor(() => {
-      expect(screen.getByText('SKU 规格')).toBeInTheDocument()
+      expect(screen.getByText('销售信息')).toBeInTheDocument()
+    })
+  })
+
+  it('should render 货号 in basic info', async () => {
+    render(<ProductDetailPage />)
+    await waitFor(() => {
+      const all = screen.getAllByText('货号')
+      expect(all.length).toBeGreaterThanOrEqual(1)
+      expect(screen.getByText('SKU-2699-001')).toBeInTheDocument()
+    })
+  })
+
+  it('should have description above images', async () => {
+    render(<ProductDetailPage />)
+    await waitFor(() => {
+      const d = screen.getByText('商品描述')
+      const i = screen.getByText('商品图片')
+      expect(d.compareDocumentPosition(i) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     })
   })
 

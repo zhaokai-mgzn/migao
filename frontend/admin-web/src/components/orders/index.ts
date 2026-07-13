@@ -1,4 +1,5 @@
 export { default as OrderTable } from './OrderTable'
+export { default as RemarkPopover } from './RemarkPopover'
 export { default as OrderStatusBadge } from './OrderStatusBadge'
 export { default as OrderTimeline } from './OrderTimeline'
 export { default as OrderProgressSteps } from './OrderProgressSteps'

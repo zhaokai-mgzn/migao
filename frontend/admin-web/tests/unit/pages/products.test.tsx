@@ -328,4 +328,33 @@ describe('ProductsPage', () => {
       )
     })
   })
+
+  // ═══════════════════════════════════════════════════════════
+  // Issue #1200: low_stock=true → stockBelow=100 传给 API
+  // ═══════════════════════════════════════════════════════════
+
+  it('should pass stockBelow=100 to API when low_stock=true (#1200)', async () => {
+    const sp = getSearchParams()
+    sp.set('low_stock', 'true')
+
+    render(<ProductsPage />)
+    await waitFor(() => {
+      expect(mockGetProducts).toHaveBeenCalledWith(
+        expect.objectContaining({
+          stockBelow: 100,
+          sortBy: 'stock',
+          sortOrder: 'asc',
+        })
+      )
+    })
+  })
+
+  it('should NOT pass stockBelow when low_stock is not true (#1200)', async () => {
+    render(<ProductsPage />)
+    await waitFor(() => {
+      const callArgs = mockGetProducts.mock.calls[0]?.[0]
+      expect(callArgs).toBeDefined()
+      expect(callArgs.stockBelow).toBeUndefined()
+    })
+  })
 })

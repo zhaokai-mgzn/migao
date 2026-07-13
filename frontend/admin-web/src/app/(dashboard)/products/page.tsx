@@ -123,6 +123,8 @@ export default function ProductsPage() {
         status: (searchParams.get('status') as ProductStatus) || undefined,
         createdFrom: searchParams.get('createdFrom') || undefined,
         createdTo: searchParams.get('createdTo') || undefined,
+        // #1200: low_stock=true → 仅查询库存低于阈值的商品（与 Dashboard 卡片阈值 100 一致）
+        stockBelow: lowStockOnly ? 100 : undefined,
         sortBy: sortField,
         sortOrder,
       })
