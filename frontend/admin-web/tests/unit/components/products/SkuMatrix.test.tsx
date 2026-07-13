@@ -252,6 +252,7 @@ describe('SkuMatrix (#563)', () => {
       />
     )
     const deleteBtns = screen.getAllByTitle('删除')
+    // 颜色 + 售卖方式 + 规格尺寸 = 3 个删除按钮
     expect(deleteBtns).toHaveLength(3)
     deleteBtns.forEach((btn) => {
       expect(btn.className).toContain('z-40')

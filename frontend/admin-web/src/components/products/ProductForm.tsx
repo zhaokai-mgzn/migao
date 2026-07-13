@@ -261,10 +261,10 @@ export default function ProductForm({
       router.push('/products')
     } catch (error) {
       console.error(`保存商品失败 (${targetStatus}):`, error)
-      if (error instanceof Error) {
+      // Axios 错误已在 request.ts 响应拦截器中统一弹 toast，
+      // 此处仅对非 Axios 错误（如 JS 异常）做兜底提示，避免重复弹框
+      if (error instanceof Error && !(error as any).isAxiosError) {
         toast.error(error.message || '保存失败，请重试')
-      } else {
-        toast.error('保存失败，请重试')
       }
     } finally {
       setSubmitting(null)
