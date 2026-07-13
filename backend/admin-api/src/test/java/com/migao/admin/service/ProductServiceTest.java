@@ -806,14 +806,14 @@ class ProductServiceTest {
                 .as("stockBelow 筛选应使用 SKU 级 EXISTS 子查询")
                 .contains("EXISTS (SELECT 1 FROM product_skus");
         assertThat(sqlSegment)
-                .as("stockBelow 筛选应使用 <= 操作符（与 Dashboard stats 口径一致）")
-                .contains("ps.stock <= {0}");
+                .as("stockBelow 筛选应使用 <= 操作符（与 Dashboard stats 口径一致，兼容 MyBatis-Plus 占位符重写）")
+                .containsPattern("ps\\.stock <= ");
         assertThat(sqlSegment)
                 .as("stockBelow 筛选不应使用 product 级 SUM 聚合（那会导致口径不一致）")
                 .doesNotContain("COALESCE(SUM(ps.stock)");
         assertThat(sqlSegment)
-                .as("不应包含对 products.stock 列的直接筛选引用")
-                .doesNotContainPattern("(?i)stock\\s*<\\s*\\{0\\}");
+                .as("不应包含对 products.stock 列的直接 < 筛选（旧口径，应为 SKU 级 EXISTS）")
+                .doesNotContainPattern("(?i)stock\\s*<\\s*(\\{|#)");
     }
 
     @Test
