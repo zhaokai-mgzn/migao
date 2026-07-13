@@ -80,7 +80,7 @@ test.describe('商品详情', () => {
   })
 
   test('应显示 SKU 规格表格', async ({ page }) => {
-    await expect(page.getByText('SKU 规格')).toBeVisible()
+    await expect(page.getByText('销售信息')).toBeVisible()
     // 验证表格中包含颜色名
     const table = page.locator('table').last()
     await expect(table.getByText('灰色')).toBeVisible()
