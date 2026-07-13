@@ -255,7 +255,7 @@ class ValidateInputTool(BaseTool):
             pids = params.get("processing_item_ids")
             if not pids:
                 summary_lines.append("> ⚠️ 未传入 processing_item_ids，如用户已选加工项请务必添加")
-        summary_lines.append("> 确认无误后，立即调用 product_manage(action='create', ...) 执行。")
+        summary_lines.append(f"> 确认无误后，立即调用 {target_tool}(action='{target_action}', ...) 执行。")
         summary = "\n".join(summary_lines)
 
         return ToolResult(
