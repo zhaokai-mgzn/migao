@@ -770,7 +770,6 @@ class ProductServiceTest {
         // Then: 默认排序应正常工作
         verify(productMapper).selectPage(any(Page.class), any(LambdaQueryWrapper.class));
     }
-
     // ═══════════════════════════════════════════════════════════
     // #1291 stockBelow 筛选修复: WHERE 改用 SKU 级 EXISTS 子查询
     // 根因: COALESCE(SUM(ps.stock)) 按 product 聚合，与看板 SKU 维度口径不一致
