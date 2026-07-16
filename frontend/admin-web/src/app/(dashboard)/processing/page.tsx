@@ -352,7 +352,7 @@ export default function ProcessingPage() {
                       {getPricingMethodLabel(item.pricingMethod || '')}
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-3 whitespace-nowrap">
                         <button
                           onClick={() => handlePricePreview(item)}
                           className={`p-1 rounded transition-colors ${
@@ -364,13 +364,13 @@ export default function ProcessingPage() {
                         </button>
                         <button
                           onClick={() => openEdit(item)}
-                          className="text-sm text-gray-700 hover:text-primary-600 transition-colors"
+                          className="text-sm text-primary-600 hover:text-primary-700 hover:underline transition-colors"
                         >
                           编辑
                         </button>
                         <button
                           onClick={() => requestDelete(item.id)}
-                          className="text-sm text-gray-700 hover:text-red-600 transition-colors"
+                          className="text-sm text-red-500 hover:text-red-600 hover:underline transition-colors"
                         >
                           删除
                         </button>

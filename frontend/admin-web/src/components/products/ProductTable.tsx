@@ -267,7 +267,7 @@ export default function ProductTable({
         const linkBase = 'text-primary-600 hover:text-primary-700 hover:underline transition-colors'
         const dangerLink = 'text-red-500 hover:text-red-600 hover:underline transition-colors'
         return (
-          <div className="flex items-center gap-3 text-sm">
+          <div className="flex items-center gap-3 text-sm whitespace-nowrap">
             {/* 出售中：查看 编辑 下架 删除 */}
             {record.status === 'on_sale' && (
               <>

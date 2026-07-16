@@ -290,7 +290,7 @@ export default function AfterSalesPage() {
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">优先级</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">创建时间</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">更新时间</th>
-                <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -351,13 +351,13 @@ export default function AfterSalesPage() {
                     <td className="px-4 py-3 text-sm text-gray-500">
                       {ticket.updatedAt ? dayjs(ticket.updatedAt).format('YYYY-MM-DD HH:mm') : '-'}
                     </td>
-                    <td className="px-4 py-3 text-right">
+                    <td className="px-4 py-3 text-left">
                       <button
                         onClick={(e) => {
                           e.stopPropagation()
                           router.push(`/after-sales/${ticket.id}`)
                         }}
-                        className="text-primary-600 hover:text-primary-700 text-sm font-medium"
+                        className="text-primary-600 hover:text-primary-700 hover:underline transition-colors text-sm"
                       >
                         查看
                       </button>

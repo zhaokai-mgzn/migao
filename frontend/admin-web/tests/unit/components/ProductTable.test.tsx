@@ -158,6 +158,32 @@ describe('ProductTable (#646 — 移除 in_warehouse)', () => {
     })
   })
 
+  describe('#1400 — 操作按钮横排 + whitespace-nowrap', () => {
+    it('操作按钮容器应有 flex items-center gap-3 whitespace-nowrap', () => {
+      render(<ProductTable {...defaultProps} />)
+      const viewBtn = screen.getByText('查看')
+      const actionContainer = viewBtn.closest('div.flex')
+      expect(actionContainer).toBeTruthy()
+      expect(actionContainer!.className).toMatch(/\bflex\b/)
+      expect(actionContainer!.className).toMatch(/\bitems-center\b/)
+      expect(actionContainer!.className).toMatch(/\bgap-3\b/)
+      expect(actionContainer!.className).toMatch(/\bwhitespace-nowrap\b/)
+    })
+
+    it('操作按钮应有 text-primary-600 hover:underline 样式（匹配 ActionLink）', () => {
+      render(<ProductTable {...defaultProps} />)
+      const viewBtn = screen.getByText('查看')
+      expect(viewBtn.className).toMatch(/\btext-primary-600\b/)
+      expect(viewBtn.className).toMatch(/\bhover:underline\b/)
+    })
+
+    it('删除按钮应有 text-red-500 危险样式', () => {
+      render(<ProductTable {...defaultProps} />)
+      const deleteBtn = screen.getByText('删除')
+      expect(deleteBtn.className).toMatch(/\btext-red-500\b/)
+    })
+  })
+
   describe('#1200 — 库存飘红阈值', () => {
     it('stock < stockWarningThreshold → 红色', () => {
       const product = { ...baseProduct, stock: 3, stockWarningThreshold: 5 }
