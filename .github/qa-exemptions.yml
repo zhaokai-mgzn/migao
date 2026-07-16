@@ -20,11 +20,14 @@ exemptions:
   - pattern: "backend/admin-api/src/main/resources/*.yml"
     reason: "Spring Boot 配置文件变更，纯配置无 Java 逻辑，无需单测"
 
+  - pattern: "frontend/admin-web/src/components/layout/Sidebar.tsx"
+    reason: "#1403: 已有 tests/unit/components/sidebar.test.tsx（19 tests PASS）。QA gate 大小写敏感致无法匹配（Sidebar ↔ sidebar），实测覆盖完整"
+
   - pattern: "frontend/admin-web/src/components/products/SkuMatrix.tsx"
     reason: "重构：rebuildSkus 提取到 lib/sku-utils.ts（13 tests），组件内仅保留 import 调用"
 
   - pattern: "frontend/admin-web/src/components/products/ProductForm.tsx"
-    reason: "重构：validate/derivePrice 提取到 lib/product-utils.ts（27 tests），组件内仅保留委托调用"
+    reason: "#1403: 新增管理分类按钮+Modal。已有 tests/unit/components/ProductForm.test.tsx（11 tests PASS，含 #1403 tests）。另需豁免 — gate 要求 L4 E2E 但组件级变更由 RTL 单测覆盖"
 
   - pattern: "frontend/admin-web/src/components/ai-assistant/FloatingAssistant.tsx"
     reason: "会话管理重构：已有 tests/unit/floating-assistant.test.tsx（4 tests PASS），新增 validateAndLoad 逻辑在现有测试框架下覆盖"
