@@ -150,12 +150,8 @@ export default function DashboardPage() {
         const resp = await request.get('/api/admin/dashboard/processing-shipment-count')
         setProcessingShipment(resp.data?.data ?? 0)
       } catch (e) { console.error("page.tsx", e); }
-      // 待补库存 = 低库存 SKU 数（按颜色规格维度，库存 ≤ 100）
-      try {
-        const resp = await request.get('/api/admin/products/low-stock-by-color', { params: { threshold: 100, limit: 200 } })
-        const items = resp?.data?.data
-        setLowStockCount(Array.isArray(items) ? items.length : 0)
-      } catch (e) { console.error("page.tsx", e); }
+      // #1396: 待补库存口径统一 — 使用 stats.lowStockItems（后端 countLowStockSkus 排除已删除+已下架）
+      setLowStockCount(s.lowStockItems ?? 0)
       setUpdateTime(now())
     } catch (error) {
       console.error('Dashboard load:', error)

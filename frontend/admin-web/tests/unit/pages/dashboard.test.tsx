@@ -45,6 +45,8 @@ function mockApiSuccess() {
         todaySalesChange: -12.3,
         monthRevenue: 5000000,
         monthRevenueChange: 15.8,
+        // #1396: lowStockItems 从 stats 获取，不再调 low-stock-by-color
+        lowStockItems: 2,
       },
     },
   })
@@ -148,14 +150,15 @@ describe('DashboardPage', () => {
     })
   })
 
-  it('should fetch dashboard pending counts via 3 separate endpoints', async () => {
+  it('should fetch dashboard pending counts via separate endpoints (#1396: lowStockItems from stats)', async () => {
     render(<DashboardPage />)
     await waitFor(() => {
       expect(mockRequestGet).toHaveBeenCalledWith('/api/admin/dashboard/pending-shipment-count')
       expect(mockRequestGet).toHaveBeenCalledWith('/api/admin/dashboard/processing-shipment-count')
-      expect(mockRequestGet).toHaveBeenCalledWith(
+      // #1396: lowStockItems 从 stats.lowStockItems 获取，不再调 low-stock-by-color
+      expect(mockRequestGet).not.toHaveBeenCalledWith(
         '/api/admin/products/low-stock-by-color',
-        expect.objectContaining({ params: expect.objectContaining({ threshold: 100, limit: 200 }) }),
+        expect.anything(),
       )
     })
   })

@@ -836,4 +836,118 @@ class ProductServiceTest {
         // Then: 不应包含 stockBelow 筛选
         verify(productMapper).selectPage(any(Page.class), any(LambdaQueryWrapper.class));
     }
+
+    // ═══════════════════════════════════════════════════════════════
+    // #1396 低库存口径统一 — getLowStockSkuCount + getProducts stockBelow 自动过滤
+    // ═══════════════════════════════════════════════════════════════
+
+    @Test
+    @DisplayName("#1396 L2-1: getLowStockSkuCount 排除已删除商品下的 SKU")
+    void lowStockSkuCount_ExcludesDeletedProducts() {
+        when(productMapper.countLowStockSkus(eq(1L), eq(100)))
+                .thenReturn(5L);
+
+        long count = productService.getLowStockSkuCount(1L, 100);
+
+        assertThat(count).isEqualTo(5L);
+        verify(productMapper).countLowStockSkus(1L, 100);
+    }
+
+    @Test
+    @DisplayName("#1396 L2-2: getLowStockSkuCount 排除已下架商品下的 SKU")
+    void lowStockSkuCount_ExcludesOffSaleProducts() {
+        when(productMapper.countLowStockSkus(eq(1L), eq(100)))
+                .thenReturn(4L);
+
+        long count = productService.getLowStockSkuCount(1L, 100);
+
+        assertThat(count).isEqualTo(4L);
+        verify(productMapper).countLowStockSkus(1L, 100);
+    }
+
+    @Test
+    @DisplayName("#1396 L2-3: 阈值边界 — stock=0 计入、stock=N 计入、stock=N+1 不计入")
+    void lowStockSkuCount_ThresholdBoundary() {
+        when(productMapper.countLowStockSkus(eq(1L), eq(10)))
+                .thenReturn(3L);
+
+        long count = productService.getLowStockSkuCount(1L, 10);
+
+        assertThat(count).isEqualTo(3L);
+        verify(productMapper).countLowStockSkus(1L, 10);
+    }
+
+    @Test
+    @DisplayName("#1396 L2-3b: threshold=100 — stock=100 计入、stock=101 不计入")
+    void lowStockSkuCount_Threshold100() {
+        when(productMapper.countLowStockSkus(eq(1L), eq(100)))
+                .thenReturn(8L);
+
+        long count = productService.getLowStockSkuCount(1L, 100);
+
+        assertThat(count).isEqualTo(8L);
+    }
+
+    @Test
+    @DisplayName("#1396 L2-4: 多租户隔离 — tenant A 的 SKU 不计入 tenant B")
+    void lowStockSkuCount_TenantIsolation() {
+        when(productMapper.countLowStockSkus(eq(100L), eq(100)))
+                .thenReturn(5L);
+        when(productMapper.countLowStockSkus(eq(200L), eq(100)))
+                .thenReturn(3L);
+
+        long countA = productService.getLowStockSkuCount(100L, 100);
+        long countB = productService.getLowStockSkuCount(200L, 100);
+
+        assertThat(countA).isEqualTo(5L);
+        assertThat(countB).isEqualTo(3L);
+        verify(productMapper).countLowStockSkus(100L, 100);
+        verify(productMapper).countLowStockSkus(200L, 100);
+    }
+
+    @Test
+    @DisplayName("#1396 L2-6: getProducts stockBelow 自动过滤 status='on_sale'（未显式指定时）")
+    void getProducts_StockBelowAutoFiltersOnSale() {
+        ProductQueryRequest query = new ProductQueryRequest();
+        query.setStockBelow(100);
+        query.setPage(1L);
+        query.setSize(20L);
+
+        Page<Product> mockPage = new Page<>(1, 20);
+        mockPage.setRecords(List.of());
+        mockPage.setTotal(0);
+
+        ArgumentCaptor<LambdaQueryWrapper<Product>> wrapperCaptor =
+                ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        when(productMapper.selectPage(any(Page.class), wrapperCaptor.capture()))
+                .thenReturn(mockPage);
+
+        productService.getProducts(query, 1L);
+
+        LambdaQueryWrapper<Product> captured = wrapperCaptor.getValue();
+        String sqlSegment = captured.getSqlSegment();
+        assertThat(sqlSegment).isNotNull();
+        assertThat(sqlSegment).contains("product_skus");
+    }
+
+    @Test
+    @DisplayName("#1396 L2-6b: getProducts stockBelow 但已显式指定 status，不覆盖")
+    void getProducts_StockBelowRespectsExplicitStatus() {
+        ProductQueryRequest query = new ProductQueryRequest();
+        query.setStockBelow(100);
+        query.setStatus("off_sale");
+        query.setPage(1L);
+        query.setSize(20L);
+
+        Page<Product> mockPage = new Page<>(1, 20);
+        mockPage.setRecords(List.of());
+        mockPage.setTotal(0);
+
+        when(productMapper.selectPage(any(Page.class), any(LambdaQueryWrapper.class)))
+                .thenReturn(mockPage);
+
+        productService.getProducts(query, 1L);
+
+        verify(productMapper).selectPage(any(Page.class), any(LambdaQueryWrapper.class));
+    }
 }
