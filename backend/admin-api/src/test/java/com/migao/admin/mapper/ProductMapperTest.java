@@ -47,6 +47,11 @@ class ProductMapperTest {
         assertThat(sql).contains("JOIN products p ON ps.product_id = p.id");
         assertThat(sql).contains("p.deleted = 0");
 
+        // #1396: 应包含 p.status = 'on_sale' 过滤（排除已下架商品下的 SKU）
+        assertThat(sql)
+                .as("#1396 findLowStockByColor 应过滤 status='on_sale'，排除已下架商品")
+                .contains("p.status = 'on_sale'");
+
         // #1291: 应使用 <= 而非 < 操作符（与 Dashboard stats 口径一致）
         assertThat(sql)
                 .as("low-stock-by-color 应使用 <= 操作符（含边界值，与 Dashboard stats 一致）")
@@ -72,6 +77,52 @@ class ProductMapperTest {
                 }
             }
         }
+    }
+
+    @Test
+    @DisplayName("#1396 countLowStockSkus — SQL 含 on_sale + deleted 过滤，含显式 tenantId")
+    void countLowStockSkus_onSaleAndDeletedFilter() throws Exception {
+        Method method = ProductMapper.class.getMethod(
+                "countLowStockSkus", Long.class, int.class);
+
+        Select select = method.getAnnotation(Select.class);
+        assertThat(select).isNotNull();
+        String sql = String.join(" ", select.value());
+
+        // JOIN products 过滤已删除 + 已下架
+        assertThat(sql).contains("JOIN products p ON ps.product_id = p.id");
+        assertThat(sql)
+                .as("应过滤 p.deleted = 0 排除已删除商品")
+                .contains("p.deleted = 0");
+        assertThat(sql)
+                .as("应过滤 p.status = 'on_sale' 排除已下架商品")
+                .contains("p.status = 'on_sale'");
+
+        // 显式 tenantId 参数（不走拦截器，直接传参）
+        assertThat(sql)
+                .as("应包含显式 tenantId（SQL 直接使用 #{tenantId}，不走拦截器）")
+                .contains("ps.tenant_id = #{tenantId}");
+
+        // 阈值过滤
+        assertThat(sql)
+                .as("应使用 ps.stock <= #{threshold} 操作符")
+                .contains("ps.stock <= #{threshold}");
+        assertThat(sql)
+                .as("应包含 ps.stock >= 0 确保非负库存")
+                .contains("ps.stock >= 0");
+
+        // 验证参数
+        Parameter[] params = method.getParameters();
+        assertThat(params).hasSize(2);
+        assertThat(params[0].getType()).isEqualTo(Long.class);
+        Param tenantParam = params[0].getAnnotation(Param.class);
+        assertThat(tenantParam).isNotNull();
+        assertThat(tenantParam.value()).isEqualTo("tenantId");
+
+        assertThat(params[1].getType()).isEqualTo(int.class);
+        Param thresholdParam = params[1].getAnnotation(Param.class);
+        assertThat(thresholdParam).isNotNull();
+        assertThat(thresholdParam.value()).isEqualTo("threshold");
     }
 
     @Test
