@@ -94,7 +94,6 @@ const menuGroups: MenuGroup[] = [
     icon: 'Store',
     children: [
       { key: 'products', name: '商品列表', icon: 'Package', path: '/products', permissionCode: 'product:list' },
-      { key: 'categories', name: '商品分类管理', icon: 'FolderTree', path: '/categories', permissionCode: 'product:category' },
       { key: 'processing', name: '加工项管理', icon: 'Scissors', path: '/processing', permissionCode: 'processing:manage' },
     ],
   },

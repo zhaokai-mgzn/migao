@@ -2,13 +2,15 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, Trash2, RotateCcw } from 'lucide-react'
+import { Plus, Trash2, RotateCcw, Settings2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button, Input, Select } from '@/components/ui'
+import { Button, Input, Select, Modal, Loading } from '@/components/ui'
 import ImageUploader from './ImageUploader'
 import SkuMatrix from './SkuMatrix'
 import ProductAttributes from './ProductAttributes'
 import RichTextEditor from './RichTextEditor'
+import CategoryTree from './CategoryTree'
+import CategoryDialog from './CategoryDialog'
 import { categoryApi, processingItemApi } from '@/lib/api'
 import { validateProductForm, derivePrice } from '@/lib/product-utils'
 import type {
@@ -21,6 +23,7 @@ import type {
   SellingMethod,
   StockDeductionMode,
   ProductProcessingItemConfig,
+  CategoryFormData,
 } from '@/types'
 
 interface ProductFormProps {
@@ -103,6 +106,15 @@ export default function ProductForm({
   const [errors, setErrors] = useState<Record<string, string>>({})
   const formRef = useRef<HTMLDivElement>(null)
   const isEdit = !!initialData
+
+  // #1403: 管理分类弹窗状态
+  const [catModalOpen, setCatModalOpen] = useState(false)
+  const [catModalLoading, setCatModalLoading] = useState(false)
+  const [editingCategory, setEditingCategory] = useState<Category | null>(null)
+  const [catDialogOpen, setCatDialogOpen] = useState(false)
+  const [presetParent, setPresetParent] = useState<Category | null>(null)
+  const [catDeleteTarget, setCatDeleteTarget] = useState<Category | null>(null)
+  const [catDeleting, setCatDeleting] = useState(false)
 
   const [form, setForm] = useState<ProductFormData>({
     ...DEFAULT_FORM,
@@ -280,6 +292,70 @@ export default function ProductForm({
     toast.info('表单已重置')
   }
 
+  // ========== 管理分类弹窗 (#1403) ==========
+
+  const openCatModal = async () => {
+    setCatModalOpen(true)
+    setCatModalLoading(true)
+    try {
+      const res = await categoryApi.getCategories()
+      setCategories(res.data.data || [])
+    } catch (e) {
+      // Error handled by API layer
+    } finally {
+      setCatModalLoading(false)
+    }
+  }
+
+  const handleCatAdd = () => {
+    setEditingCategory(null)
+    setPresetParent(null)
+    setCatDialogOpen(true)
+  }
+
+  const handleCatAddChild = (parent: Category) => {
+    setEditingCategory(null)
+    setPresetParent(parent)
+    setCatDialogOpen(true)
+  }
+
+  const handleCatEdit = (category: Category) => {
+    setEditingCategory(category)
+    setPresetParent(null)
+    setCatDialogOpen(true)
+  }
+
+  const handleCatSubmit = async (data: CategoryFormData) => {
+    if (editingCategory) {
+      await categoryApi.updateCategory(editingCategory.id, data)
+      toast.success('分类已更新')
+    } else {
+      await categoryApi.createCategory({
+        ...data,
+        parentId: presetParent ? presetParent.id : data.parentId,
+      })
+      toast.success('分类已创建')
+    }
+    const res = await categoryApi.getCategories()
+    setCategories(res.data.data || [])
+  }
+
+  const handleCatDelete = async () => {
+    if (!catDeleteTarget) return
+    setCatDeleting(true)
+    try {
+      await categoryApi.deleteCategory(catDeleteTarget.id)
+      toast.success('分类已删除')
+      setCatDeleteTarget(null)
+      const res = await categoryApi.getCategories()
+      setCategories(res.data.data || [])
+    } catch (e) {
+      // Error handled by API layer
+    } finally {
+      setCatDeleting(false)
+    }
+  }
+
   // ========== 总库存 ==========
 
   const totalStock = useMemo(() => {
@@ -335,14 +411,25 @@ export default function ProductForm({
         <div className="space-y-5">
           {/* 商品分类 */}
           <FieldRow label="商品分类" required>
-            <div id={ANCHORS.categoryId} className="max-w-md">
-              <Select
-                options={categoryOptions}
-                placeholder="请选择"
-                value={form.categoryId}
-                onChange={(e) => updateField('categoryId', e.target.value)}
-                error={errors.categoryId}
-              />
+            <div className="flex items-center gap-2">
+              <div id={ANCHORS.categoryId} className="max-w-md flex-1">
+                <Select
+                  options={categoryOptions}
+                  placeholder="请选择"
+                  value={form.categoryId}
+                  onChange={(e) => updateField('categoryId', e.target.value)}
+                  error={errors.categoryId}
+                />
+              </div>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={openCatModal}
+              >
+                <Settings2 className="w-3.5 h-3.5 mr-1" />
+                管理分类
+              </Button>
             </div>
           </FieldRow>
 
@@ -656,6 +743,83 @@ export default function ProductForm({
           </div>
         </div>
       </div>
+
+      {/* ============ 管理分类弹窗 (#1403) ============ */}
+      <Modal
+        open={catModalOpen}
+        onClose={() => setCatModalOpen(false)}
+        title="分类管理"
+        width={640}
+        footer={
+          <Button variant="secondary" onClick={() => setCatModalOpen(false)}>
+            关闭
+          </Button>
+        }
+      >
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-gray-500">管理商品分类，最多支持二级分类</p>
+            <Button onClick={handleCatAdd} size="sm">
+              <Plus className="w-4 h-4 mr-1" />
+              添加分类
+            </Button>
+          </div>
+          <div className="bg-gray-50 rounded-lg border border-gray-200 p-4 max-h-96 overflow-y-auto">
+            {catModalLoading ? (
+              <div className="py-12">
+                <Loading text="加载中..." />
+              </div>
+            ) : categories.length === 0 ? (
+              <div className="py-12 text-center text-sm text-gray-500">
+                暂无分类，点击"添加分类"创建第一个分类
+              </div>
+            ) : (
+              <CategoryTree
+                categories={categories}
+                onEdit={handleCatEdit}
+                onDelete={setCatDeleteTarget}
+                onAddChild={handleCatAddChild}
+              />
+            )}
+          </div>
+        </div>
+      </Modal>
+
+      {/* 添加/编辑分类子弹窗 */}
+      <CategoryDialog
+        open={catDialogOpen}
+        onClose={() => setCatDialogOpen(false)}
+        onSubmit={handleCatSubmit}
+        category={editingCategory}
+        categories={categories}
+        presetParentId={presetParent?.id}
+      />
+
+      {/* 删除确认 */}
+      <Modal
+        open={!!catDeleteTarget}
+        onClose={() => setCatDeleteTarget(null)}
+        title="确认删除"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setCatDeleteTarget(null)} disabled={catDeleting}>
+              取消
+            </Button>
+            <Button variant="danger" onClick={handleCatDelete} loading={catDeleting}>
+              确认删除
+            </Button>
+          </>
+        }
+      >
+        <p className="text-gray-600">
+          确定要删除分类 <span className="font-medium text-gray-900">{catDeleteTarget?.name}</span> 吗？
+          {catDeleteTarget?.children && catDeleteTarget.children.length > 0 && (
+            <span className="block mt-2 text-amber-600">
+              该分类下还有 {catDeleteTarget.children.length} 个子分类，删除后子分类也将被移除。
+            </span>
+          )}
+        </p>
+      </Modal>
     </div>
   )
 }
