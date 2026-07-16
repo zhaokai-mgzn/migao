@@ -300,17 +300,17 @@ export default function EmployeesPage() {
       title: '操作',
       width: '140px',
       render: (record) => (
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 whitespace-nowrap">
           <button
             onClick={(e) => { e.stopPropagation(); handleEdit(record) }}
-            className="text-primary-600 hover:text-primary-700 text-sm flex items-center gap-1"
+            className="text-primary-600 hover:text-primary-700 hover:underline transition-colors text-sm flex items-center gap-1"
           >
             <Pencil className="w-3.5 h-3.5" />
             编辑
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); setDeleteTarget(record) }}
-            className="text-red-600 hover:text-red-700 text-sm flex items-center gap-1"
+            className="text-red-500 hover:text-red-600 hover:underline transition-colors text-sm flex items-center gap-1"
           >
             <Trash2 className="w-3.5 h-3.5" />
             删除
