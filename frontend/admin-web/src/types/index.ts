@@ -769,6 +769,10 @@ export interface DashboardStats {
   totalProducts: number
   totalOrders: number
   totalTickets: number
+  // 待处理区 3 卡片 (#387, #1396)
+  pendingShipOrders: number
+  processingPendingOrders: number
+  lowStockItems: number
 }
 
 // 商品销量排行
