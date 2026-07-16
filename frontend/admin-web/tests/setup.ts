@@ -161,6 +161,7 @@ vi.mock('lucide-react', () => ({
   CheckCheck: iconStub('check-check'),
   // #563: components/products 覆盖率补全需要的图标
   GripVertical: iconStub('grip-vertical'),
+  GripHorizontal: iconStub('grip-horizontal'),
   Upload: iconStub('upload'),
   ImageIcon: iconStub('image-icon'),
   Bold: iconStub('bold'),
