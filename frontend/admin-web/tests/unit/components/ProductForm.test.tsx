@@ -141,3 +141,30 @@ describe('ProductForm (#646 — 移除 in_warehouse)', () => {
     expect(screen.getByText('编辑商品')).toBeTruthy()
   })
 })
+
+describe('ProductForm (#1403 — 管理分类入口)', () => {
+  const mockOnSubmit = vi.fn().mockResolvedValue(undefined)
+
+  it('「商品分类」选择框旁应存在「管理分类」按钮', () => {
+    render(<ProductForm onSubmit={mockOnSubmit} />)
+
+    // 分类选择器的 label 存在
+    const categoryLabels = screen.getAllByText('商品分类')
+    expect(categoryLabels.length).toBeGreaterThanOrEqual(1)
+
+    // 「管理分类」按钮应存在于选择框旁
+    expect(screen.getByText('管理分类')).toBeTruthy()
+  })
+
+  it('点击「管理分类」按钮应打开分类管理弹窗', async () => {
+    const { default: userEvent } = await import('@testing-library/user-event')
+    const ue = userEvent.setup()
+    render(<ProductForm onSubmit={mockOnSubmit} />)
+
+    const btn = screen.getByText('管理分类')
+    await ue.click(btn)
+
+    // 弹窗标题「分类管理」应出现
+    expect(screen.getByText('添加分类')).toBeTruthy()
+  })
+})

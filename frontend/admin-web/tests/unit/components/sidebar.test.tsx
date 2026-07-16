@@ -58,7 +58,8 @@ describe('Sidebar', () => {
     expect(screen.getByText('订单管理')).toBeInTheDocument()
     // 子菜单项
     expect(screen.getByText('商品列表')).toBeInTheDocument()
-    expect(screen.getByText('商品分类管理')).toBeInTheDocument()
+    // #1403: 商品分类管理已移出侧边栏，入口内嵌到新增商品页
+    expect(screen.queryByText('商品分类管理')).not.toBeInTheDocument()
     expect(screen.getByText('加工项管理')).toBeInTheDocument()
     expect(screen.getByText('订单列表')).toBeInTheDocument()
     expect(screen.getByText('售后工单')).toBeInTheDocument()
@@ -172,6 +173,8 @@ describe('Sidebar', () => {
       render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
       expect(screen.getByText('工作台')).toBeInTheDocument()
       expect(screen.getByText('商品列表')).toBeInTheDocument()
+      // #1403: 商品分类管理已移出侧边栏
+      expect(screen.queryByText('商品分类管理')).not.toBeInTheDocument()
       expect(screen.getByText('订单列表')).toBeInTheDocument()
       expect(screen.getByText('客户管理')).toBeInTheDocument()
       expect(screen.getByText('财务对账')).toBeInTheDocument()
@@ -211,6 +214,15 @@ describe('Sidebar', () => {
       // 独立菜单项也不在
       expect(screen.queryByText('客户管理')).not.toBeInTheDocument()
       expect(screen.queryByText('员工管理')).not.toBeInTheDocument()
+    })
+
+    // #1403: 商品分类管理移出侧边栏
+    it('should NOT show 商品分类管理 even for admin user (#1403)', () => {
+      mockUseAuthStore.mockReturnValue({
+        user: { id: '1', username: 'admin', name: '管理员', permissions: ['*'], roles: ['admin'] },
+      })
+      render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
+      expect(screen.queryByText('商品分类管理')).not.toBeInTheDocument()
     })
 
     it('should hide entire group when all children are filtered out', () => {
