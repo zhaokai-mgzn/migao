@@ -120,8 +120,12 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             wrapper.eq(Product::getStatus, query.getStatus());
         }
 
-        // 低库存筛选（#1291: 使用 SKU 级 EXISTS 子查询，与看板卡片口径一致）
+        // 低库存筛选（#1291→#1396: 使用 SKU 级 EXISTS 子查询，口径统一 — 仅 on_sale 商品）
         if (query.getStockBelow() != null) {
+            // 未显式指定 status 时，自动过滤 on_sale（排除已下架/已关闭商品）
+            if (!StringUtils.hasText(query.getStatus())) {
+                wrapper.eq(Product::getStatus, "on_sale");
+            }
             wrapper.apply("EXISTS (SELECT 1 FROM product_skus ps WHERE ps.product_id = products.id AND ps.stock >= 0 AND ps.stock <= {0})", query.getStockBelow());
         }
 
@@ -1273,5 +1277,18 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
      */
     public List<LowStockByColorResponse> getLowStockByColor(int threshold, int limit) {
         return productMapper.findLowStockByColor(threshold, limit);
+    }
+
+    /**
+     * 统计待补库存 SKU 数（排除已删除 + 已下架商品下的 SKU）
+     * #1396: 口径统一 — 三个入口（Dashboard 卡片、low-stock-by-color API、商品列表 stockBelow）
+     *         使用相同的过滤条件：p.deleted=0 AND p.status='on_sale'
+     *
+     * @param tenantId  租户 ID
+     * @param threshold 库存阈值（SKU stock ≤ threshold 视为低库存）
+     * @return 低库存 SKU 总数
+     */
+    public long getLowStockSkuCount(Long tenantId, int threshold) {
+        return productMapper.countLowStockSkus(tenantId, threshold);
     }
 }

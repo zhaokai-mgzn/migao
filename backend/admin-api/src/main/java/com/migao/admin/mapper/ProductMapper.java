@@ -31,16 +31,28 @@ public interface ProductMapper extends BaseMapper<Product> {
 
     /**
      * 按颜色+规格维度查询低库存 SKU（JOIN product_skus + products + product_colors）
+     * #1396: 增加 p.status = 'on_sale' 过滤，排除已下架商品下的 SKU
      */
     @Select("SELECT ps.id AS skuId, ps.product_id AS productId, p.name AS productName, " +
             "COALESCE(ps.sku_code, p.sku_code) AS skuCode, " +
             "ps.color_id AS colorId, COALESCE(ps.color_name, pc.color_name) AS colorName, " +
             "ps.door_width AS doorWidth, ps.stock AS stock, ps.price AS price " +
             "FROM product_skus ps " +
-            "JOIN products p ON ps.product_id = p.id AND p.deleted = 0 " +
+            "JOIN products p ON ps.product_id = p.id AND p.deleted = 0 AND p.status = 'on_sale' " +
             "LEFT JOIN product_colors pc ON ps.color_id = pc.id " +
             "WHERE ps.stock <= #{threshold} AND ps.stock >= 0 " +
             "ORDER BY ps.stock ASC, p.name ASC " +
             "LIMIT #{limit}")
     List<LowStockByColorResponse> findLowStockByColor(@Param("threshold") int threshold, @Param("limit") int limit);
+
+    /**
+     * 统计待补库存 SKU 数（排除已删除 + 已下架商品下的 SKU）
+     * #1396: 口径统一 — 与 findLowStockByColor 使用相同的过滤条件
+     */
+    @Select("SELECT COUNT(*) FROM product_skus ps " +
+            "JOIN products p ON ps.product_id = p.id " +
+            "WHERE p.deleted = 0 AND p.status = 'on_sale' " +
+            "AND ps.tenant_id = #{tenantId} " +
+            "AND ps.stock >= 0 AND ps.stock <= #{threshold}")
+    long countLowStockSkus(@Param("tenantId") Long tenantId, @Param("threshold") int threshold);
 }

@@ -5,6 +5,7 @@ import com.migao.admin.config.GlobalExceptionHandler;
 import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.entity.*;
 import com.migao.admin.mapper.*;
+import com.migao.admin.service.ProductService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -65,6 +66,9 @@ class DashboardControllerTest {
     @Mock
     private ProductSkuMapper productSkuMapper;
 
+    @Mock
+    private ProductService productService;
+
     @InjectMocks
     private DashboardController dashboardController;
 
@@ -103,7 +107,8 @@ class DashboardControllerTest {
             when(sessionMapper.selectCount(any())).thenReturn(3L, 2L);
             // #387: 待处理区 3 卡片
             when(orderItemMapper.selectList(any())).thenReturn(List.of());
-            when(productSkuMapper.selectCount(any())).thenReturn(8L);
+            // #1396: 待补库存改用 ProductService 统一口径（排除已删除+已下架商品下的 SKU）
+            when(productService.getLowStockSkuCount(eq(1L), eq(100))).thenReturn(8L);
 
             // when & then
             mockMvc.perform(get("/api/admin/dashboard/stats"))

@@ -4,6 +4,7 @@ import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.entity.*;
 import com.migao.admin.mapper.*;
+import com.migao.admin.service.ProductService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.Builder;
 import lombok.Data;
@@ -40,6 +41,7 @@ public class DashboardController {
     private final OrderItemMapper orderItemMapper;
     private final SessionMessageMapper sessionMessageMapper;
     private final ProductSkuMapper productSkuMapper;
+    private final ProductService productService;
 
     /**
      * 获取 Dashboard 统计数据
@@ -187,10 +189,8 @@ public class DashboardController {
         }
 
         // 待补库存商品：SKU 库存 ≤ 100（按颜色规格维度）
-        long lowStockItems = productSkuMapper.selectCount(
-                new LambdaQueryWrapper<ProductSku>()
-                        .eq(ProductSku::getTenantId, tenantId)
-                        .le(ProductSku::getStock, 100));
+        // #1396: 口径统一 — 使用 ProductService 统一方法，排除已删除 + 已下架商品下的 SKU
+        long lowStockItems = productService.getLowStockSkuCount(tenantId, 100);
 
         DashboardStatsResponse stats = DashboardStatsResponse.builder()
                 .todayOrders(todayOrders)
