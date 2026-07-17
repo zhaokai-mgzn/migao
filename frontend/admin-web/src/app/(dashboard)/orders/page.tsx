@@ -378,7 +378,7 @@ export default function OrdersPage() {
       </div>
 
       {/* 查询区域 */}
-      <div className="bg-white rounded-lg border border-gray-200 p-5">
+      <div className="bg-white rounded-lg border border-gray-200 p-5" data-testid="search-area">
         <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_1.5fr] gap-x-6 gap-y-4 mb-4">
           {/* 订单ID */}
           <div className="flex items-center gap-2">

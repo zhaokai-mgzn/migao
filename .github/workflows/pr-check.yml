@@ -275,7 +275,9 @@ jobs:
               frontend/admin-web/src/components/*/*/*.tsx)
                 comp_name=$(basename "$file" .tsx)
                 comp_dir=$(dirname "$file" | sed 's|.*/components/||;s|/.*||')
-                if echo "$CHANGED_FILES" | grep -qE "tests/unit/components/${comp_name}|tests/unit/components/${comp_dir}|tests/unit/.*${comp_name}|tests/unit/.*${comp_dir}"; then
+                # PascalCase → kebab-case for matching test files (e.g. SearchBar → search-bar)
+                comp_name_kebab=$(echo "$comp_name" | sed -E 's/([A-Z])/-\L\1/g' | sed 's/^-//')
+                if echo "$CHANGED_FILES" | grep -qE "tests/unit/components/${comp_name}|tests/unit/components/${comp_dir}|tests/unit/components/${comp_name_kebab}|tests/unit/.*${comp_name}|tests/unit/.*${comp_dir}|tests/unit/.*${comp_name_kebab}"; then
                   echo "| $file | Component (L4) | ✅ |" >> $GITHUB_STEP_SUMMARY
                 else
                   echo "| $file | Component (L4) | ❌ BLOCKED |" >> $GITHUB_STEP_SUMMARY

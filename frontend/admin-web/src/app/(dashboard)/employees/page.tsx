@@ -335,7 +335,7 @@ export default function EmployeesPage() {
       </div>
 
       {/* 搜索筛选栏 */}
-      <div className="bg-gray-50 p-4 rounded-lg mb-4">
+      <div className="bg-gray-50 p-4 rounded-lg mb-4" data-testid="search-area">
         <div className="flex flex-wrap items-end gap-4">
           <div className="min-w-[200px]">
             <Input

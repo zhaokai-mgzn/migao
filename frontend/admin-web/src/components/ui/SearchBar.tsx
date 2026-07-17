@@ -42,7 +42,7 @@ const SearchBar = ({ fields, onSearch, onReset, loading, className }: SearchBarP
   }
 
   return (
-    <div className={cn('bg-gray-50 p-4 rounded-lg', className)}>
+    <div className={cn('bg-gray-50 p-4 rounded-lg', className)} data-testid="search-area">
       <div className="flex flex-wrap items-end gap-4">
         {fields.map((field) => (
           <div key={field.key} className="min-w-[200px]">

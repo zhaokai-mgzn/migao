@@ -355,7 +355,7 @@ export default function ProductsPage() {
       </div>
 
       {/* 搜索区 */}
-      <div className="bg-white rounded-lg border border-gray-200 p-5">
+      <div className="bg-white rounded-lg border border-gray-200 p-5" data-testid="search-area">
         {/* 第一行：商品ID / 商品标题 / 商品货号 */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-x-8 gap-y-4">
           <FormField label="商品ID">
