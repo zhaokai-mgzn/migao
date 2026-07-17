@@ -3,9 +3,10 @@
 import { ArrowDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Order } from '@/types'
-import { OrderStatusLabels, normalizeOrderStatus } from '@/types'
+import { normalizeOrderStatus } from '@/types'
 import RemarkPopover from './RemarkPopover'
 import DateTimeCell from '@/components/common/DateTimeCell'
+import OrderStatusBadge from './OrderStatusBadge'
 
 /**
  * #1289: 获取备注列触发器的预览文本。
@@ -153,7 +154,7 @@ export default function OrderTable({
             </th>
             <th className="pl-0 pr-4 py-3 font-medium whitespace-nowrap">订单ID</th>
             <th className="pl-0 pr-4 py-3 font-medium whitespace-nowrap">采购商品</th>
-            <th className="px-4 py-3 font-medium">
+            <th className="px-4 py-3 font-medium whitespace-nowrap">
               <div className="flex flex-col">
                 <span>采购明细</span>
                 <span className="text-xs font-normal text-gray-400">(名称:单价×数量+加工费)</span>
@@ -289,8 +290,8 @@ export default function OrderTable({
                   </td>
 
                   {/* 状态 */}
-                  <td className="px-4 py-4 whitespace-nowrap text-gray-700">
-                    {OrderStatusLabels[normalizeOrderStatus(order.status as string)]}
+                  <td className="px-4 py-4 whitespace-nowrap">
+                    <OrderStatusBadge status={normalizeOrderStatus(order.status as string)} />
                   </td>
 
                   {/* 备注预览 — #1289: 同时检查 remark 字符串和 remarks[] 数组 */}

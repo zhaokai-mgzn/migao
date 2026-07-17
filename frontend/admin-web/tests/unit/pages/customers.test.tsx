@@ -1,3 +1,4 @@
+import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -86,7 +87,8 @@ vi.mock('@/components/ui', async (importOriginal) => {
       ) : null
     ),
     Button: ({ children, onClick, ...props }: any) => <button onClick={onClick} {...props}>{children}</button>,
-    Badge: ({ children, variant }: any) => <span data-variant={variant}>{children}</span>,
+    StatusBadge: ({ label, color, dot, className, onClick }: any) => React.createElement('span', { onClick, className, title: label }, dot ? React.createElement('span', { className: 'w-1.5 h-1.5 rounded-full' }) : null, label),
+  Badge: ({ children, variant }: any) => <span data-variant={variant}>{children}</span>,
     SearchBar: ({ fields, onSearch, onReset }: any) => (
       <div data-testid="search-bar">
         {fields.map((f: any) => <span key={f.key}>{f.label}</span>)}

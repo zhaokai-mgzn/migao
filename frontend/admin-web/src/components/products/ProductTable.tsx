@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Table, Badge, Pagination } from '@/components/ui'
+import { Table, Badge, StatusBadge, Pagination } from '@/components/ui'
 import type { TableColumn } from '@/components/ui'
 import Image from 'next/image'
 import { cn, resolveImageUrl } from '@/lib/utils'
@@ -32,12 +32,12 @@ interface ProductTableProps {
   onDelete: (product: Product) => void
 }
 
-// 状态徽章颜色映射（PRD：出售中绿/仓库中灰/审核中橙/草稿蓝）
-const STATUS_BADGE_VARIANT: Record<ProductStatus, 'success' | 'default' | 'warning' | 'info'> = {
-  on_sale: 'success',
-  under_review: 'warning',
-  draft: 'info',
-  off_sale: 'default',
+// 状态底色框颜色映射（A2: 出售中=绿/已下架=灰/审核中=橙/草稿=蓝）
+const STATUS_BADGE_COLORS: Record<ProductStatus, string> = {
+  on_sale: 'bg-green-50 text-green-700 border-green-200',
+  under_review: 'bg-amber-50 text-amber-700 border-amber-200',
+  draft: 'bg-blue-50 text-blue-700 border-blue-200',
+  off_sale: 'bg-gray-50 text-gray-700 border-gray-200',
 }
 
 // 数字千分位
@@ -242,9 +242,10 @@ export default function ProductTable({
       width: '80px',
       align: 'left',
       render: (record) => (
-        <Badge variant={STATUS_BADGE_VARIANT[record.status]}>
-          {ProductStatusLabels[record.status] || record.status}
-        </Badge>
+        <StatusBadge
+          label={ProductStatusLabels[record.status] || record.status}
+          color={STATUS_BADGE_COLORS[record.status]}
+        />
       ),
     },
     {

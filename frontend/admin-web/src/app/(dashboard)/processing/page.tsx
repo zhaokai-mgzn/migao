@@ -310,16 +310,16 @@ export default function ProcessingPage() {
         <table className="w-full border-collapse">
           <thead>
             <tr className="border-b border-gray-200 bg-gray-50/60">
-              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900 w-[30%]">
+              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900 w-[30%] whitespace-nowrap">
                 加工项名称
               </th>
-              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900 w-[20%]">
+              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900 w-[20%] whitespace-nowrap">
                 加工项价格
               </th>
-              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900 w-[25%]">
+              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900 w-[25%] whitespace-nowrap">
                 加工项计价方式
               </th>
-              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900 w-[25%]">
+              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900 w-[25%] whitespace-nowrap">
                 操作
               </th>
             </tr>

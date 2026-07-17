@@ -24,7 +24,6 @@ interface TableProps<T> {
   sortOrder?: 'asc' | 'desc'
   onSort?: (field: string) => void
   emptyText?: string
-  /** 表格最小宽度（px），用于配合外层 overflow-x-auto 实现窄屏横向滚动 */
   minWidth?: number
 }
 
@@ -71,8 +70,10 @@ function Table<T extends Record<string, any>>({
             {columns.map((column) => (
               <th
                 key={column.key}
+                title={column.title}
                 className={cn(
                   'px-4 py-3 text-left text-sm font-semibold text-gray-600',
+                  'whitespace-nowrap',
                   column.align === 'center' && 'text-center',
                   column.align === 'right' && 'text-right',
                   column.sortable && 'cursor-pointer select-none hover:bg-gray-100'
@@ -80,10 +81,10 @@ function Table<T extends Record<string, any>>({
                 style={{ width: column.width }}
                 onClick={() => column.sortable && onSort?.(column.key)}
               >
-                <div className={cn('flex items-center gap-1', column.align === 'center' && 'justify-center', column.align === 'right' && 'justify-end')}>
-                  {column.title}
+                <div className={cn('flex items-center gap-1 min-w-0', column.align === 'center' && 'justify-center', column.align === 'right' && 'justify-end')}>
+                  <span className="whitespace-nowrap truncate" title={column.title}>{column.title}</span>
                   {column.sortable && (
-                    <span className="flex flex-col">
+                    <span className="flex flex-col flex-shrink-0">
                       <ChevronUp className={cn('w-3 h-3 -mb-1', sortField === column.key && sortOrder === 'asc' ? 'text-primary-600' : 'text-gray-300')} />
                       <ChevronDown className={cn('w-3 h-3', sortField === column.key && sortOrder === 'desc' ? 'text-primary-600' : 'text-gray-300')} />
                     </span>
