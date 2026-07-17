@@ -9,6 +9,7 @@ import type { Registration, RegistrationStatus } from '@/types'
 import { RegistrationStatusLabels, RegistrationStatusColors } from '@/types'
 import dayjs from 'dayjs'
 import { cn, resolveImageUrl } from '@/lib/utils'
+import DateTimeCell from '@/components/common/DateTimeCell'
 
 // 状态 Tab 配置
 const statusTabs: { key: RegistrationStatus | ''; label: string }[] = [
@@ -205,7 +206,7 @@ export default function RegistrationsPage() {
                       </Badge>
                     </td>
                     <td className="px-4 py-3 text-gray-500">
-                      {item.createdAt ? dayjs(item.createdAt).format('YYYY-MM-DD HH:mm') : '-'}
+                      <DateTimeCell value={item.createdAt} />
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">

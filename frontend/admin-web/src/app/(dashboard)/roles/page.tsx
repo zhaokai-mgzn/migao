@@ -6,7 +6,7 @@ import { toast } from 'sonner'
 import { roleApi, permissionApi } from '@/lib/api'
 import { Button, Input, Modal, Badge } from '@/components/ui'
 import type { Role, Permission } from '@/types'
-import dayjs from 'dayjs'
+import DateTimeCell from '@/components/common/DateTimeCell'
 
 // 按资源分组权限
 function groupPermissionsByResource(permissions: Permission[]): Record<string, Permission[]> {
@@ -243,7 +243,7 @@ export default function RolesPage() {
                 <span>
                   <Badge variant="info">{role.permissions?.length || 0} 个权限</Badge>
                 </span>
-                <span>{role.createdAt ? dayjs(role.createdAt).format('YYYY-MM-DD') : '-'}</span>
+                <DateTimeCell value={role.createdAt} />
               </div>
             </div>
           ))}
