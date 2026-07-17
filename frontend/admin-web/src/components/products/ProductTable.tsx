@@ -6,6 +6,7 @@ import type { TableColumn } from '@/components/ui'
 import Image from 'next/image'
 import { cn, resolveImageUrl } from '@/lib/utils'
 import type { Product, ProductStatus } from '@/types'
+import DateTimeCell from '@/components/common/DateTimeCell'
 import { ProductStatusLabels } from '@/types'
 
 export type ProductSortField = 'stock' | 'salesCount' | 'salesAmount' | 'createdAt'
@@ -37,15 +38,6 @@ const STATUS_BADGE_VARIANT: Record<ProductStatus, 'success' | 'default' | 'warni
   under_review: 'warning',
   draft: 'info',
   off_sale: 'default',
-}
-
-// 格式化时间为 yyyy-MM-dd HH:mm
-function formatDateTime(input?: string): string {
-  if (!input) return '-'
-  const date = new Date(input)
-  if (Number.isNaN(date.getTime())) return input
-  const pad = (n: number) => n.toString().padStart(2, '0')
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
 // 数字千分位
@@ -242,9 +234,7 @@ export default function ProductTable({
       width: '150px',
       align: 'left',
       sortable: true,
-      render: (record) => (
-        <span className="text-gray-600 text-sm">{formatDateTime(record.createdAt)}</span>
-      ),
+      render: (record) => <DateTimeCell value={record.createdAt} />,
     },
     {
       key: 'status',
