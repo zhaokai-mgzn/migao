@@ -9,7 +9,7 @@ import { Button, Input, Select, Modal, Table, Pagination, Badge } from '@/compon
 import type { TableColumn } from '@/components/ui'
 import type { Employee, EmployeeStatus, Role } from '@/types'
 import { TreeCheckbox, type TreeNode } from '@/components/ui/TreeCheckbox'
-import dayjs from 'dayjs'
+import DateTimeCell from '@/components/common/DateTimeCell'
 
 // 预定义岗位列表（可下拉选择，也支持手输）
 const PRESET_POSITIONS = ['管理员', '客服', '运营', '销售', '财务']
@@ -293,7 +293,7 @@ export default function EmployeesPage() {
       key: 'createdAt',
       title: '创建时间',
       width: '180px',
-      render: (record) => record.createdAt ? dayjs(record.createdAt).format('YYYY-MM-DD HH:mm') : '-',
+      render: (record) => <DateTimeCell value={record.createdAt} />,
     },
     {
       key: 'actions',

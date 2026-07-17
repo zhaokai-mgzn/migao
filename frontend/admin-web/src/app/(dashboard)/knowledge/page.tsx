@@ -7,7 +7,7 @@ import { knowledgeApi } from '@/lib/api'
 import { Table, Pagination, Modal, Button, Badge, SearchBar } from '@/components/ui'
 import type { TableColumn } from '@/components/ui'
 import type { KnowledgeDocument, KnowledgeDocumentUploadForm, KnowledgeSearchResult } from '@/types'
-import dayjs from 'dayjs'
+import DateTimeCell from '@/components/common/DateTimeCell'
 
 export default function KnowledgePage() {
   const [documents, setDocuments] = useState<KnowledgeDocument[]>([])
@@ -341,7 +341,7 @@ export default function KnowledgePage() {
       key: 'uploadedAt',
       title: '更新时间',
       width: '160px',
-      render: (record) => dayjs(record.uploadedAt).format('YYYY-MM-DD HH:mm'),
+      render: (record) => <DateTimeCell value={record.uploadedAt} />,
     },
     {
       key: 'status',

@@ -20,8 +20,8 @@ import {
   AfterSalesTypeLabels,
   AfterSalesPriorityLabels,
 } from '@/types'
-import dayjs from 'dayjs'
 import { cn } from '@/lib/utils'
+import DateTimeCell from '@/components/common/DateTimeCell'
 
 // 状态 Tab 配置
 const statusTabs: { key: AfterSalesStatus | ''; label: string }[] = [
@@ -346,10 +346,10 @@ export default function AfterSalesPage() {
                       )}
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-500">
-                      {ticket.createdAt ? dayjs(ticket.createdAt).format('YYYY-MM-DD HH:mm') : '-'}
+                      <DateTimeCell value={ticket.createdAt} />
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-500">
-                      {ticket.updatedAt ? dayjs(ticket.updatedAt).format('YYYY-MM-DD HH:mm') : '-'}
+                      <DateTimeCell value={ticket.updatedAt} />
                     </td>
                     <td className="px-4 py-3 text-left">
                       <button
