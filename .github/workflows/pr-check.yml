@@ -79,6 +79,10 @@ jobs:
         working-directory: frontend/admin-web
         run: npx tsc --noEmit
 
+      - name: ESLint
+        working-directory: frontend/admin-web
+        run: npm run lint
+
       - name: Run unit tests
         working-directory: frontend/admin-web
         run: npx vitest run
