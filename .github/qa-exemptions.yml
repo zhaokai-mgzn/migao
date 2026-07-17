@@ -49,3 +49,9 @@ exemptions:
 
   - pattern: "backend/ai-agent-service/app/main.py"
     reason: "新增后台定时任务启动：基础设施代码，通过服务健康检查验证"
+
+  - pattern: "frontend/admin-web/src/components/orders/OrderTable.tsx"
+    reason: "#1399: 仅将 dayjs.format() 替换为 DateTimeCell 组件调用，无交互逻辑变更。DateTimeCell 已有 10 tests 覆盖"
+
+  - pattern: "frontend/admin-web/src/components/products/ProductTable.tsx"
+    reason: "#1399: 仅将 formatDateTime() 替换为 DateTimeCell 组件调用，无交互逻辑变更。DateTimeCell 已有 10 tests 覆盖"
