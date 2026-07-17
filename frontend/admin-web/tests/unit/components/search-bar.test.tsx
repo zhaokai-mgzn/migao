@@ -120,4 +120,10 @@ describe('SearchBar Component', () => {
       expect.objectContaining({ status: 'active' })
     )
   })
+
+  it('should have data-testid="search-area" on root container', () => {
+    const { container } = render(<SearchBar fields={fields} onSearch={vi.fn()} />)
+    const searchArea = container.querySelector('[data-testid="search-area"]')
+    expect(searchArea).toBeInTheDocument()
+  })
 })

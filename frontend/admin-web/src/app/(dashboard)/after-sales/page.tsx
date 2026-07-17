@@ -237,7 +237,7 @@ export default function AfterSalesPage() {
       </div>
 
       {/* 搜索筛选栏 */}
-      <div className="bg-white border-x border-gray-200 p-4">
+      <div className="bg-white border-x border-gray-200 p-4" data-testid="search-area">
         <div className="flex flex-wrap items-end gap-3">
           <div className="min-w-[240px]">
             <Input
