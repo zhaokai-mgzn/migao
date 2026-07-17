@@ -4,6 +4,7 @@
  * 业务真值 D1：所有表单页搜索/筛选区左侧对齐（与订单页一致）
  * 验证各列表页搜索容器 className 不含水平居中类
  */
+import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 
@@ -61,6 +62,7 @@ vi.mock('@/components/ui', () => ({
       ))}
     </div>
   ),
+  StatusBadge: ({ label, color, dot, className, onClick }: any) => React.createElement('span', { onClick, className, title: label }, dot ? React.createElement('span', { className: 'w-1.5 h-1.5 rounded-full' }) : null, label),
   Badge: ({ children, ...props }: any) => <span {...props}>{children}</span>,
   SearchBar: ({ fields, onSearch, onReset, loading, className }: any) => (
     <div data-testid="search-area" className={className} role="search">
