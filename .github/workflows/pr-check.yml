@@ -277,7 +277,24 @@ jobs:
                 comp_dir=$(dirname "$file" | sed 's|.*/components/||;s|/.*||')
                 # PascalCase → kebab-case for matching test files (e.g. SearchBar → search-bar)
                 comp_name_kebab=$(echo "$comp_name" | sed -E 's/([A-Z])/-\L\1/g' | sed 's/^-//')
+                HAS_COMP_TEST=false
+                # 优先检查 diff 中是否有测试文件
                 if echo "$CHANGED_FILES" | grep -qE "tests/unit/components/${comp_name}|tests/unit/components/${comp_dir}|tests/unit/components/${comp_name_kebab}|tests/unit/.*${comp_name}|tests/unit/.*${comp_dir}|tests/unit/.*${comp_name_kebab}"; then
+                  HAS_COMP_TEST=true
+                else
+                  # 回退检查：测试文件是否已存在于仓库（非本次 diff 但已存在于 main）
+                  for test_path in \
+                    "frontend/admin-web/tests/unit/components/${comp_name}.test.tsx" \
+                    "frontend/admin-web/tests/unit/components/${comp_name}.test.ts" \
+                    "frontend/admin-web/tests/unit/components/${comp_name_kebab}.test.tsx" \
+                    "frontend/admin-web/tests/unit/components/${comp_dir}/${comp_name}.test.tsx"; do
+                    if [ -f "$test_path" ]; then
+                      HAS_COMP_TEST=true
+                      break
+                    fi
+                  done
+                fi
+                if [ "$HAS_COMP_TEST" = true ]; then
                   echo "| $file | Component (L4) | ✅ |" >> $GITHUB_STEP_SUMMARY
                 else
                   echo "| $file | Component (L4) | ❌ BLOCKED |" >> $GITHUB_STEP_SUMMARY
