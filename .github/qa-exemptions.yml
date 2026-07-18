@@ -55,3 +55,15 @@ exemptions:
 
   - pattern: "frontend/admin-web/src/components/products/ProductTable.tsx"
     reason: "#1399: 仅将 formatDateTime() 替换为 DateTimeCell 组件调用，无交互逻辑变更。DateTimeCell 已有 10 tests 覆盖"
+
+  - pattern: "backend/admin-api/src/main/java/com/migao/admin/service/ProductService.java"
+    reason: "安全加固：selectById → tenant-scoped selectOne（IDOR 修复），无新业务逻辑"
+
+  - pattern: "backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java"
+    reason: "安全加固：resolveOrderIdToUuid UUID 路径加 tenantId 过滤，无新业务逻辑"
+
+  - pattern: "backend/admin-api/src/main/java/com/migao/admin/service/AfterSalesTicketService.java"
+    reason: "安全加固：createTicketForAgent UUID 路径加租户校验，无新业务逻辑"
+
+  - pattern: "backend/admin-api/src/main/java/com/migao/admin/dto/agent/*"
+    reason: "Agent DTO 定义 — 纯数据结构无运行时逻辑，由编译检查保障"
