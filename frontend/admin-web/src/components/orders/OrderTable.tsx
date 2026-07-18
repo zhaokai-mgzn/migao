@@ -1,12 +1,11 @@
 'use client'
 
 import { ArrowDown } from 'lucide-react'
+import dayjs from 'dayjs'
 import { cn } from '@/lib/utils'
 import type { Order } from '@/types'
-import { normalizeOrderStatus } from '@/types'
+import { OrderStatusLabels, normalizeOrderStatus } from '@/types'
 import RemarkPopover from './RemarkPopover'
-import DateTimeCell from '@/components/common/DateTimeCell'
-import OrderStatusBadge from './OrderStatusBadge'
 
 /**
  * #1289: 获取备注列触发器的预览文本。
@@ -51,6 +50,11 @@ function getItemAmount(item: { amount?: number; subtotal?: number; unitPrice?: n
   const unit = typeof item.unitPrice === 'number' ? item.unitPrice : 0
   const qty = typeof item.quantity === 'number' ? item.quantity : 0
   return unit * qty
+}
+
+function formatTime(value?: string): string {
+  if (!value) return '-'
+  return dayjs(value).format('YYYY-MM-DD HH:mm')
 }
 
 function ActionLink({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
@@ -141,7 +145,7 @@ export default function OrderTable({
       <table className="w-full text-sm">
         <thead>
           <tr className="bg-gray-50 text-gray-600 text-left">
-            <th className="px-4 py-3 font-medium w-10">
+            <th className="pl-2 pr-3 py-3 font-medium w-10">
               <input
                 type="checkbox"
                 checked={allSelected}
@@ -154,7 +158,7 @@ export default function OrderTable({
             </th>
             <th className="pl-0 pr-4 py-3 font-medium whitespace-nowrap">订单ID</th>
             <th className="pl-0 pr-4 py-3 font-medium whitespace-nowrap">采购商品</th>
-            <th className="px-4 py-3 font-medium whitespace-nowrap">
+            <th className="px-4 py-3 font-medium">
               <div className="flex flex-col">
                 <span>采购明细</span>
                 <span className="text-xs font-normal text-gray-400">(名称:单价×数量+加工费)</span>
@@ -199,7 +203,7 @@ export default function OrderTable({
                     checked ? 'bg-primary-50/40' : 'hover:bg-gray-50'
                   )}
                 >
-                  <td className="px-4 py-4">
+                  <td className="pl-2 pr-3 py-4">
                     <input
                       type="checkbox"
                       checked={checked}
@@ -285,13 +289,13 @@ export default function OrderTable({
                   </td>
 
                   {/* 下单时间 */}
-                  <td className="px-4 py-4">
-                    <DateTimeCell value={order.createdAt} />
+                  <td className="px-4 py-4 text-gray-600 whitespace-nowrap font-mono">
+                    {formatTime(order.createdAt)}
                   </td>
 
                   {/* 状态 */}
-                  <td className="px-4 py-4 whitespace-nowrap">
-                    <OrderStatusBadge status={normalizeOrderStatus(order.status as string)} />
+                  <td className="px-4 py-4 whitespace-nowrap text-gray-700">
+                    {OrderStatusLabels[normalizeOrderStatus(order.status as string)]}
                   </td>
 
                   {/* 备注预览 — #1289: 同时检查 remark 字符串和 remarks[] 数组 */}
@@ -308,7 +312,7 @@ export default function OrderTable({
                   </td>
 
                   {/* 操作 */}
-                  <td className="px-4 py-4">{renderActions(order)}</td>
+                  <td className="pl-2 pr-3 py-4">{renderActions(order)}</td>
                 </tr>
               )
             })

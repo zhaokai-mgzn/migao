@@ -1279,6 +1279,373 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         return productMapper.findLowStockByColor(threshold, limit);
     }
 
+    // ======================== Agent BFF 方法 ========================
+
+    /**
+     * Agent 专用创建商品。
+     * 自动填充默认值、解析分类/加工项 ID（支持名称/UUID/序号）。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public ProductResponse createProductForAgent(com.migao.admin.dto.agent.AgentProductCreateRequest request,
+                                                  Long tenantId) {
+        ProductCreateRequest createReq = new ProductCreateRequest();
+
+        // name: 手动校验
+        if (!StringUtils.hasText(request.getName())) {
+            throw BusinessException.validationError("商品名称不能为空");
+        }
+        createReq.setName(request.getName());
+
+        // categoryId: 解析（名称/UUID/前缀 → UUID）
+        if (StringUtils.hasText(request.getCategoryId())) {
+            String resolved = resolveCategoryId(request.getCategoryId(), tenantId);
+            if (resolved == null) {
+                throw new BusinessException("CATEGORY_NOT_FOUND",
+                        "无法找到匹配的分类：" + request.getCategoryId(),
+                        422);
+            }
+            createReq.setCategoryId(resolved);
+        }
+
+        // 价格/库存/描述/品牌 直接透传
+        createReq.setBasePrice(request.getBasePrice());
+        createReq.setStock(request.getStock() != null ? request.getStock() : 0);
+        createReq.setDescription(request.getDescription());
+        createReq.setBrand(request.getBrand());
+
+        // 货号: 空则自动生成
+        if (StringUtils.hasText(request.getSkuCode())) {
+            createReq.setSkuCode(request.getSkuCode());
+        }
+        // 不设 skuCode — createProduct 会在 saveColorsAndSkus 中自动生成
+
+        // unit / pricingType: 智能默认
+        createReq.setUnit(StringUtils.hasText(request.getUnit()) ? request.getUnit() : "米");
+        createReq.setPricingType(StringUtils.hasText(request.getPricingType())
+                ? request.getPricingType() : "per_meter");
+
+        // status: 默认 draft
+        createReq.setStatus(StringUtils.hasText(request.getStatus()) ? request.getStatus() : "draft");
+        // 图片
+        if (request.getImages() != null) createReq.setImages(request.getImages());
+        if (request.getDetailImages() != null) createReq.setDetailImages(request.getDetailImages());
+
+        // 颜色: 字符串 → ProductColorInput
+        if (request.getColors() != null && !request.getColors().isEmpty()) {
+            List<ProductColorInput> colorInputs = request.getColors().stream()
+                    .map(c -> {
+                        ProductColorInput ci = new ProductColorInput();
+                        ci.setColorName(c);
+                        return ci;
+                    })
+                    .collect(Collectors.toList());
+            createReq.setColors(colorInputs);
+        }
+
+        // 售卖方式: "散剪"/"整卷" → bulk_cut/full_roll
+        if (request.getSellingMethods() != null) {
+            createReq.setSellingMethods(request.getSellingMethods().stream()
+                    .map(this::translateSellingMethod)
+                    .collect(Collectors.toList()));
+        }
+
+        // 门幅 直接透传
+        if (request.getDoorWidths() != null) createReq.setDoorWidths(request.getDoorWidths());
+
+        // 规格
+        if (request.getSpecifications() != null) createReq.setSpecifications(request.getSpecifications());
+
+        // 加工项: 解析 ID → ProcessingItemConfigInput
+        if (request.getProcessingItemIds() != null && !request.getProcessingItemIds().isEmpty()) {
+            List<String> resolved = resolveProcessingItemIds(request.getProcessingItemIds(), tenantId);
+            if (!resolved.isEmpty()) {
+                createReq.setProcessingItemConfigs(resolved.stream()
+                        .map(id -> {
+                            ProcessingItemConfigInput cfg = new ProcessingItemConfigInput();
+                            cfg.setProcessingItemId(id);
+                            return cfg;
+                        })
+                        .collect(Collectors.toList()));
+            }
+        } else if (request.getProcessingItemConfigs() != null) {
+            // 带自定义价格的加工项配置
+            List<ProcessingItemConfigInput> configs = new ArrayList<>();
+            for (var cfg : request.getProcessingItemConfigs()) {
+                if (!StringUtils.hasText(cfg.getProcessingItemId())) continue;
+                String resolved = resolveProcessingItemId(cfg.getProcessingItemId(), tenantId);
+                if (resolved != null) {
+                    ProcessingItemConfigInput input = new ProcessingItemConfigInput();
+                    input.setProcessingItemId(resolved);
+                    input.setCustomPrice(cfg.getCustomPrice());
+                    configs.add(input);
+                }
+            }
+            if (!configs.isEmpty()) createReq.setProcessingItemConfigs(configs);
+        }
+
+        return createProduct(createReq, tenantId);
+    }
+
+    /**
+     * Agent 专用部分更新商品。
+     * null 字段 = 不修改。数组字段 (colors/sellingMethods/doorWidths) 传了才触发 SKU 重建。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public ProductResponse updateProductForAgent(String id,
+                                                   com.migao.admin.dto.agent.AgentProductUpdateRequest request,
+                                                   Long tenantId) {
+        Product product = productMapper.selectById(id);
+        if (product == null) {
+            throw BusinessException.notFound("商品");
+        }
+
+        ProductUpdateRequest updateReq = new ProductUpdateRequest();
+        boolean hasUpdate = false;
+
+        // name: null = 不修改，传了就更新
+        if (request.getName() != null) {
+            updateReq.setName(request.getName());
+            hasUpdate = true;
+        } else {
+            updateReq.setName(product.getName()); // 保持原名（满足 @NotBlank）
+        }
+
+        // categoryId: 解析后更新
+        if (request.getCategoryId() != null) {
+            String resolved = resolveCategoryId(request.getCategoryId(), tenantId);
+            if (resolved == null) {
+                throw new BusinessException("CATEGORY_NOT_FOUND",
+                        "无法找到匹配的分类：" + request.getCategoryId(), 422);
+            }
+            updateReq.setCategoryId(resolved);
+            hasUpdate = true;
+        }
+
+        if (request.getBasePrice() != null) { updateReq.setBasePrice(request.getBasePrice()); hasUpdate = true; }
+        if (request.getSkuCode() != null) { updateReq.setSkuCode(request.getSkuCode()); hasUpdate = true; }
+        if (request.getDescription() != null) { updateReq.setDescription(request.getDescription()); hasUpdate = true; }
+        if (request.getBrand() != null) { updateReq.setBrand(request.getBrand()); hasUpdate = true; }
+        if (request.getUnit() != null) { updateReq.setUnit(request.getUnit()); hasUpdate = true; }
+        if (request.getPricingType() != null) { updateReq.setPricingType(request.getPricingType()); hasUpdate = true; }
+        if (request.getStock() != null) { updateReq.setStock(request.getStock()); hasUpdate = true; }
+        if (request.getImages() != null) { updateReq.setImages(request.getImages()); hasUpdate = true; }
+        if (request.getDetailImages() != null) { updateReq.setDetailImages(request.getDetailImages()); hasUpdate = true; }
+        if (request.getSpecifications() != null) { updateReq.setSpecifications(request.getSpecifications()); hasUpdate = true; }
+        if (request.getStockDeductionMode() != null) { /* 不支持通过 update 修改，忽略 */ }
+
+        // 颜色/售卖方式/门幅: 传了才处理（会触发 SKU 重建）
+        if (request.getColors() != null) {
+            updateReq.setColors(request.getColors().stream().map(c -> {
+                ProductColorInput ci = new ProductColorInput();
+                ci.setColorName(c);
+                return ci;
+            }).collect(Collectors.toList()));
+            hasUpdate = true;
+        }
+        if (request.getSellingMethods() != null) {
+            updateReq.setSellingMethods(request.getSellingMethods().stream()
+                    .map(this::translateSellingMethod).collect(Collectors.toList()));
+            hasUpdate = true;
+        }
+        if (request.getDoorWidths() != null) { updateReq.setDoorWidths(request.getDoorWidths()); hasUpdate = true; }
+
+        // 不传 processingItemConfigs，保留现有关联
+        updateReq.setProcessingItemConfigs(null);
+
+        if (!hasUpdate) {
+            return getProductById(id, tenantId);
+        }
+
+        return updateProduct(id, updateReq, tenantId);
+    }
+
+    /**
+     * Agent 专用加工项增删。
+     * add: 仅插入不存在的；remove: 仅删除存在的（幂等）。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public java.util.List<ProductProcessingItemResponse> updateProductProcessingItems(
+            String productId, com.migao.admin.dto.agent.AgentProcessingItemActionRequest request, Long tenantId) {
+
+        Product product = productMapper.selectById(productId);
+        if (product == null) {
+            throw BusinessException.notFound("商品");
+        }
+
+        String action = request.getAction();
+        if (!"add".equals(action) && !"remove".equals(action)) {
+            throw BusinessException.validationError("action 必须为 add 或 remove");
+        }
+
+        List<String> resolvedIds = resolveProcessingItemIds(request.getItemIds(), tenantId);
+        List<String> warnings = new ArrayList<>();
+
+        if ("add".equals(action)) {
+            // 查询已有加工项，去重
+            List<ProductProcessingItem> existing = productProcessingItemMapper.selectList(
+                    new LambdaQueryWrapper<ProductProcessingItem>()
+                            .eq(ProductProcessingItem::getProductId, productId)
+                            .eq(ProductProcessingItem::getTenantId, tenantId));
+            java.util.Set<String> existingIds = existing.stream()
+                    .map(ProductProcessingItem::getProcessingItemId)
+                    .collect(Collectors.toSet());
+
+            int sortOrder = existing.size();
+            for (String resolvedId : resolvedIds) {
+                if (existingIds.contains(resolvedId)) {
+                    // 通过加工项名称生成更友好的警告
+                    ProcessingItem item = processingItemMapper.selectById(resolvedId);
+                    String name = item != null ? item.getName() : resolvedId;
+                    warnings.add("加工项'" + name + "'已存在，已跳过");
+                    continue;
+                }
+                ProductProcessingItem entity = new ProductProcessingItem();
+                entity.setTenantId(tenantId);
+                entity.setProductId(productId);
+                entity.setProcessingItemId(resolvedId);
+                entity.setSortOrder(sortOrder++);
+                productProcessingItemMapper.insert(entity);
+            }
+        } else {
+            // remove
+            for (String resolvedId : resolvedIds) {
+                int deleted = productProcessingItemMapper.delete(
+                        new LambdaQueryWrapper<ProductProcessingItem>()
+                                .eq(ProductProcessingItem::getProductId, productId)
+                                .eq(ProductProcessingItem::getProcessingItemId, resolvedId)
+                                .eq(ProductProcessingItem::getTenantId, tenantId));
+                if (deleted == 0) {
+                    warnings.add("加工项'" + resolvedId + "'不存在或已删除，已跳过");
+                }
+            }
+        }
+
+        log.info("Agent 加工项 {} 完成: productId={}, action={}, count={}, warnings={}",
+                action, productId, resolvedIds.size(), warnings.size());
+
+        return getProductProcessingItems(productId, tenantId);
+    }
+
+    // ======================== ID 解析辅助方法 ========================
+
+    /**
+     * 解析分类 ID：支持 UUID / 名称 / UUID 前缀。
+     *
+     * @return 真实 UUID，未找到返回 null
+     */
+    String resolveCategoryId(String raw, Long tenantId) {
+        if (!StringUtils.hasText(raw)) return null;
+
+        java.util.List<Category> cats = categoryMapper.selectList(
+                new LambdaQueryWrapper<Category>().eq(Category::getTenantId, tenantId));
+
+        // 1. 精确 UUID 匹配
+        for (Category c : cats) {
+            if (raw.equals(c.getId())) return c.getId();
+        }
+
+        // 2. 名称匹配
+        for (Category c : cats) {
+            if (raw.equals(c.getName())) return c.getId();
+        }
+
+        // 3. UUID 前缀匹配（LLM 可能截断 UUID）
+        if (raw.length() >= 8) {
+            for (Category c : cats) {
+                if (c.getId() != null
+                        && c.getId().startsWith(raw.substring(0, Math.min(16, raw.length())))) {
+                    return c.getId();
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * 解析单个加工项 ID：支持 UUID / 名称 / 序号 / UUID 前缀。
+     */
+    String resolveProcessingItemId(String raw, Long tenantId) {
+        List<String> resolved = resolveProcessingItemIds(java.util.Collections.singletonList(raw), tenantId);
+        return resolved.isEmpty() ? null : resolved.get(0);
+    }
+
+    /**
+     * 批量解析加工项 ID：支持 UUID / 名称 / 序号（1-based）/ UUID 前缀。
+     */
+    List<String> resolveProcessingItemIds(List<String> rawIds, Long tenantId) {
+        if (rawIds == null || rawIds.isEmpty()) return java.util.Collections.emptyList();
+
+        java.util.List<ProcessingItem> allItems = processingItemMapper.selectList(
+                new LambdaQueryWrapper<ProcessingItem>()
+                        .eq(ProcessingItem::getTenantId, tenantId)
+                        .eq(ProcessingItem::getStatus, "active")
+                        .orderByAsc(ProcessingItem::getSortOrder));
+
+        List<String> resolved = new ArrayList<>();
+        for (String raw : rawIds) {
+            if (!StringUtils.hasText(raw)) continue;
+            String s = raw.trim();
+
+            // 兼容 "pi_xxx|加工项名" 格式
+            if (s.contains("|")) s = s.substring(0, s.indexOf("|")).trim();
+
+            String found = null;
+
+            // 1. 纯数字 → 按列表位置匹配（1-based 序号）
+            if (s.matches("\\d+")) {
+                int idx = Integer.parseInt(s) - 1;
+                if (idx >= 0 && idx < allItems.size()) {
+                    found = allItems.get(idx).getId();
+                }
+            }
+
+            // 2. 精确 UUID / 名称 / 前缀 匹配
+            if (found == null) {
+                for (ProcessingItem item : allItems) {
+                    if (s.equals(item.getId()) || s.equals(item.getName())) {
+                        found = item.getId();
+                        break;
+                    }
+                }
+            }
+
+            // 3. UUID 前缀匹配
+            if (found == null && s.length() >= 8) {
+                String prefix = s.substring(0, Math.min(16, s.length()));
+                for (ProcessingItem item : allItems) {
+                    if (item.getId() != null && item.getId().startsWith(prefix)) {
+                        found = item.getId();
+                        break;
+                    }
+                }
+            }
+
+            if (found != null) {
+                resolved.add(found);
+            } else {
+                log.warn("[Agent] 无法解析加工项ID: {}", raw);
+            }
+        }
+
+        return resolved;
+    }
+
+    /**
+     * 售卖方式中文 → 英文
+     */
+    private String translateSellingMethod(String raw) {
+        if (raw == null) return null;
+        return switch (raw.trim()) {
+            case "散剪" -> "bulk_cut";
+            case "整卷" -> "full_roll";
+            case "按片" -> "per_piece";
+            case "定高" -> "fixed_height";
+            case "买通" -> "buy_through";
+            default -> raw; // 已经是英文则直接透传
+        };
+    }
+
     /**
      * 统计待补库存 SKU 数（排除已删除 + 已下架商品下的 SKU）
      * #1396: 口径统一 — 三个入口（Dashboard 卡片、low-stock-by-color API、商品列表 stockBelow）

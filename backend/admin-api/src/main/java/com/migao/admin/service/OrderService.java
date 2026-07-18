@@ -2,6 +2,9 @@ package com.migao.admin.service;
 
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.*;
+import com.migao.admin.dto.agent.AgentOrderCreateRequest;
+import com.migao.admin.dto.agent.AgentOrderResolveResponse;
+import com.migao.admin.dto.agent.AgentOrderUpdateRequest;
 import com.migao.admin.entity.Order;
 import com.migao.admin.entity.OrderItem;
 import com.migao.admin.entity.OrderLogistics;
@@ -924,6 +927,181 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
                 }
             }
         }
+        return null;
+    }
+
+    // ======================== Agent BFF 方法 ========================
+
+    /**
+     * Agent 专用创建订单。
+     * subtotal 服务端按 quantity × unitPrice 强制重算。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public OrderDetailResponse createOrderForAgent(AgentOrderCreateRequest request, Long tenantId) {
+
+        if (!StringUtils.hasText(request.getCustomerName())) {
+            throw BusinessException.validationError("客户姓名不能为空");
+        }
+        if (!StringUtils.hasText(request.getCustomerPhone())) {
+            throw BusinessException.validationError("客户电话不能为空");
+        }
+        // 手机号格式校验
+        String phone = request.getCustomerPhone().trim();
+        if (!phone.matches("^1[3-9]\\d{9}$")) {
+            throw BusinessException.validationError("手机号格式不正确，请输入11位中国大陆手机号");
+        }
+
+        if (request.getItems() == null || request.getItems().isEmpty()) {
+            throw BusinessException.validationError("商品明细不能为空");
+        }
+
+        OrderCreateRequest createReq = new OrderCreateRequest();
+        createReq.setCustomerName(request.getCustomerName());
+        createReq.setCustomerPhone(phone);
+        createReq.setCustomerAddress(request.getCustomerAddress());
+        createReq.setRemark(request.getRemark());
+
+        List<OrderCreateRequest.OrderItemRequest> itemReqs = new ArrayList<>();
+        for (var item : request.getItems()) {
+            OrderCreateRequest.OrderItemRequest itemReq = new OrderCreateRequest.OrderItemRequest();
+            itemReq.setProductName(item.getProductName());
+            itemReq.setProductId(item.getProductId());
+            itemReq.setQuantity(item.getQuantity());
+            itemReq.setUnitPrice(item.getUnitPrice());
+            // subtotal 服务端强制重算（对抗 LLM 编造）
+            if (item.getQuantity() != null && item.getUnitPrice() != null) {
+                itemReq.setSubtotal(item.getUnitPrice().multiply(BigDecimal.valueOf(item.getQuantity())));
+            } else if (item.getSubtotal() != null) {
+                itemReq.setSubtotal(item.getSubtotal());
+            }
+            itemReq.setWidth(item.getWidth());
+            itemReq.setHeight(item.getHeight());
+            itemReq.setProcessingInfo(item.getProcessingInfo());
+            itemReqs.add(itemReq);
+        }
+        createReq.setItems(itemReqs);
+
+        return createOrder(createReq, tenantId);
+    }
+
+    /**
+     * Agent 专用统一订单更新。
+     * ID 可传 UUID 或订单号（ORD-xxx），服务端自动解析。
+     * 通过 action 字段路由到具体的操作方法。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public Object updateOrderForAgent(String rawId, AgentOrderUpdateRequest request, Long tenantId) {
+        // 解析订单 ID
+        String resolvedId = resolveOrderIdToUuid(rawId, tenantId);
+        if (resolvedId == null) {
+            throw new BusinessException("ORDER_NOT_FOUND",
+                    "无法找到订单：" + rawId + "。请使用 order_query 查询正确的订单号后重试。", 404);
+        }
+
+        String action = request.getAction();
+        if (!StringUtils.hasText(action)) {
+            throw BusinessException.validationError("action 不能为空");
+        }
+
+        return switch (action) {
+            case "update_status" -> {
+                if (!StringUtils.hasText(request.getStatus())) {
+                    throw BusinessException.validationError("status 不能为空");
+                }
+                updateOrderStatus(resolvedId, request.getStatus());
+                yield getOrderById(resolvedId);
+            }
+            case "confirm_payment" -> {
+                confirmPayment(resolvedId);
+                yield getOrderById(resolvedId);
+            }
+            case "cancel" -> {
+                cancelOrder(resolvedId, request.getCancelReason());
+                yield getOrderById(resolvedId);
+            }
+            case "refund" -> {
+                refundOrder(resolvedId, request.getRefundReason());
+                yield getOrderById(resolvedId);
+            }
+            default -> throw BusinessException.validationError(
+                    "不支持的操作类型: " + action + "，可选: update_status/confirm_payment/cancel/refund");
+        };
+    }
+
+    /**
+     * 通过订单号/UUID/关键词解析订单 UUID。
+     * GET /api/admin/agent/orders/resolve?keyword=xxx 的核心逻辑。
+     */
+    public AgentOrderResolveResponse resolveOrderId(String keyword, Long tenantId) {
+        if (!StringUtils.hasText(keyword)) {
+            throw BusinessException.validationError("keyword 不能为空");
+        }
+
+        String resolvedId = resolveOrderIdToUuid(keyword, tenantId);
+        if (resolvedId == null) {
+            throw new BusinessException("ORDER_NOT_FOUND",
+                    "未找到匹配的订单：" + keyword + "。请检查订单号是否正确。", 404);
+        }
+
+        Order order = orderMapper.selectById(resolvedId);
+        if (order == null) {
+            throw BusinessException.notFound("订单");
+        }
+
+        int itemCount = 0;
+        Long count = orderItemMapper.selectCount(
+                new LambdaQueryWrapper<OrderItem>().eq(OrderItem::getOrderId, resolvedId));
+        if (count != null) itemCount = count.intValue();
+
+        return AgentOrderResolveResponse.builder()
+                .id(order.getId())
+                .orderNo(order.getOrderNo())
+                .customerName(order.getCustomerName())
+                .status(order.getStatus())
+                .totalAmount(order.getActualAmount() != null ? order.getActualAmount() : order.getTotalAmount())
+                .itemCount(itemCount)
+                .build();
+    }
+
+    /**
+     * 订单 ID 解析：UUID 精确匹配 → 订单号匹配 → UUID 前缀匹配。
+     *
+     * @return 解析出的 UUID，未找到返回 null
+     */
+    private String resolveOrderIdToUuid(String raw, Long tenantId) {
+        if (!StringUtils.hasText(raw)) return null;
+
+        // 1. UUID 精确匹配
+        Order order = orderMapper.selectById(raw);
+        if (order != null) return order.getId();
+
+        // 2. 按订单号搜索
+        List<Order> byOrderNo = orderMapper.selectList(
+                new LambdaQueryWrapper<Order>()
+                        .eq(Order::getTenantId, tenantId)
+                        .eq(Order::getOrderNo, raw));
+        if (!byOrderNo.isEmpty()) return byOrderNo.get(0).getId();
+
+        // 3. 按关键词搜索（订单号模糊/手机号/姓名）
+        List<Order> byKeyword = orderMapper.selectList(
+                new LambdaQueryWrapper<Order>()
+                        .eq(Order::getTenantId, tenantId)
+                        .and(w -> w.like(Order::getOrderNo, raw)
+                                .or().like(Order::getCustomerPhone, raw)
+                                .or().like(Order::getCustomerName, raw))
+                        .last("LIMIT 1"));
+        if (!byKeyword.isEmpty()) return byKeyword.get(0).getId();
+
+        // 4. UUID 前缀匹配
+        if (raw.length() >= 8) {
+            List<Order> byPrefix = orderMapper.selectList(
+                    new LambdaQueryWrapper<Order>()
+                            .eq(Order::getTenantId, tenantId)
+                            .likeRight(Order::getId, raw.substring(0, Math.min(16, raw.length())))
+                            .last("LIMIT 1"));
+            if (!byPrefix.isEmpty()) return byPrefix.get(0).getId();
+        }
+
         return null;
     }
 }
