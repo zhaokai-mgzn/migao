@@ -1471,13 +1471,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
      */
     @Transactional(rollbackFor = Exception.class)
     public java.util.List<ProductProcessingItemResponse> updateProductProcessingItems(
-            String rawId, com.migao.admin.dto.agent.AgentProcessingItemActionRequest request, Long tenantId) {
-
-        // 先解析 product ID：支持 UUID / 名称 / 序号
-        String productId = resolveProductId(rawId, tenantId);
-        if (productId == null) {
-            throw BusinessException.notFound("商品（" + rawId + "）");
-        }
+            String productId, com.migao.admin.dto.agent.AgentProcessingItemActionRequest request, Long tenantId) {
 
         Product product = productMapper.selectOne(
                 new LambdaQueryWrapper<Product>()
@@ -1542,48 +1536,6 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
     }
 
     // ======================== ID 解析辅助方法 ========================
-
-    /**
-     * 解析商品 ID：支持 UUID / 商品名称 / UUID 前缀 / 序号。
-     */
-    String resolveProductId(String raw, Long tenantId) {
-        if (!StringUtils.hasText(raw)) return null;
-
-        // 1. UUID 前缀匹配（LLM 可能传 UUID 前缀）
-        if (raw.length() >= 8) {
-            Product p = productMapper.selectOne(new LambdaQueryWrapper<Product>()
-                    .eq(Product::getTenantId, tenantId)
-                    .likeRight(Product::getId, raw.substring(0, Math.min(16, raw.length()))));
-            if (p != null) return p.getId();
-        }
-
-        // 2. 精确商品名称匹配
-        Product p = productMapper.selectOne(new LambdaQueryWrapper<Product>()
-                .eq(Product::getTenantId, tenantId)
-                .eq(Product::getName, raw));
-        if (p != null) return p.getId();
-
-        // 3. 完整 UUID 匹配
-        p = productMapper.selectOne(new LambdaQueryWrapper<Product>()
-                .eq(Product::getId, raw)
-                .eq(Product::getTenantId, tenantId));
-        if (p != null) return p.getId();
-
-        // 4. 序号匹配（1-based，按创建时间排序）
-        if (raw.matches("\\d+")) {
-            int idx = Integer.parseInt(raw) - 1;
-            if (idx >= 0) {
-                var page = productMapper.selectPage(
-                        new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(idx + 1, 1),
-                        new LambdaQueryWrapper<Product>()
-                                .eq(Product::getTenantId, tenantId)
-                                .orderByAsc(Product::getCreatedAt));
-                if (page.getRecords().size() > idx) return page.getRecords().get(idx).getId();
-            }
-        }
-
-        return null;
-    }
 
     /**
      * 解析分类 ID：支持 UUID / 名称 / UUID 前缀。
