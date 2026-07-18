@@ -87,22 +87,23 @@ class AgentContextManager:
         cache = self._get_or_create(session_id)
         lines = []
 
-        # 1. 已知实体 — 直接给 UUID，不啰嗦
+        # 1. 已知实体 — 放在最前面，格式强调，LLM 第一眼就看到
         entities = cache.get("entities", {})
         if entities:
-            lines.append("## 已知实体（直接复用 ID，禁止重新查询）")
+            header = "🔴 以下 ID 在之前的对话中已获取，直接复用，禁止重新查询："
+            lines.append(header)
             for entity_type, items in entities.items():
                 if not items:
                     continue
-                label = {"product_ids": "商品", "order_nos": "订单",
-                         "customer_ids": "客户", "processing_item_ids": "加工项"}\
+                label = {"product_ids": "商品 UUID", "order_nos": "订单 UUID",
+                         "customer_ids": "客户 UUID", "processing_item_ids": "加工项 UUID"}\
                         .get(entity_type, entity_type)
                 item_strs = []
                 for item in items[:3]:
-                    eid = (item.get("id") or item.get("no") or "")[:20]
+                    eid = (item.get("id") or item.get("no") or "")
                     name = item.get("name", "")
-                    item_strs.append(f"{name}={eid}")
-                lines.append(f"{label}: {' | '.join(item_strs)}")
+                    item_strs.append(f"  {label} → {name} = {eid}")
+                lines.append("\n".join(item_strs))
 
         # 2. Vision/图片识别结果
         vision = cache.get("vision_fields", {})

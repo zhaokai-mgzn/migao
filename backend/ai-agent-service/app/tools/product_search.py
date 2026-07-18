@@ -200,7 +200,7 @@ class ProductSearchTool(BaseTool):
                     "size": size,
                     "total_pages": (total + size - 1) // size,
                 },
-                message=f"找到 {total} 件相关商品",            )
+                message=f"找到 {total} 件相关商品: {names_str}",            )
             
         except Exception as e:
             logger.error(f"[product-search] Search failed | tenant={context.tenant_id} error={type(e).__name__}: {e}", exc_info=True)
