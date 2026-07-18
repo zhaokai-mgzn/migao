@@ -36,8 +36,11 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ApiResponse<Void>> handleBusinessException(BusinessException e) {
-        log.warn("业务异常: [{}] {}", e.getCode(), e.getMessage());
+        log.warn("业务异常: [{}] {} suggestion={}", e.getCode(), e.getMessage(), e.getSuggestion());
         ApiResponse<Void> response = ApiResponse.error(e.getCode(), e.getMessage());
+        if (e.getSuggestion() != null) {
+            response.setSuggestion(e.getSuggestion());
+        }
         return ResponseEntity.status(e.getHttpStatus()).body(response);
     }
 
