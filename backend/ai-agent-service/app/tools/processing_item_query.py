@@ -134,9 +134,7 @@ class ProcessingItemQueryTool(BaseTool):
                 return ToolResult(
                     success=True,
                     data={"item": item},
-                    message=f"已找到加工项「{item_name}」",
-                    summary=f"加工项详情: {item_name}, {price_text}".rstrip(", "),
-                )
+                    message=f"已找到加工项「{item_name}」",                )
 
             # 列表查询
             params: Dict[str, Any] = {"page": page, "size": size}
@@ -192,9 +190,7 @@ class ProcessingItemQueryTool(BaseTool):
                         f"暂无与「{keyword}」匹配的加工项"
                         if keyword
                         else "暂无加工项数据"
-                    ),
-                    summary=empty_summary,
-                )
+                    ),                )
 
             # 构建摘要：取前3个加工项，附带序号以便 LLM 后续传参
             top_items = []
@@ -228,9 +224,7 @@ class ProcessingItemQueryTool(BaseTool):
                     "total_pages": total_pages,
                     "pageMeta": page_meta,  # 透传给 interact(choice)
                 },
-                message=f"共找到 {total} 个加工项" + (f"，当前第{page}页" if total_pages > 1 else ""),
-                summary=f"找到{total}个加工项: {names_str}",
-            )
+                message=f"共找到 {total} 个加工项" + (f"，当前第{page}页" if total_pages > 1 else ""),            )
 
         except Exception as e:
             logger.error(

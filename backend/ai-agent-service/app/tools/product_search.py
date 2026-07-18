@@ -179,9 +179,7 @@ class ProductSearchTool(BaseTool):
                 return ToolResult(
                     success=True,
                     data={"products": [], "total": 0, "page": page, "size": size},
-                    message=f"抱歉，没有找到与'{keyword}'相关的商品，换个关键词试试？",
-                    summary=f"未找到与'{keyword}'相关的商品",
-                )
+                    message=f"抱歉，没有找到与'{keyword}'相关的商品，换个关键词试试？",                )
 
             # 构建摘要：取前3个商品名 + ID 前缀，LLM 写操作时直接用 UUID
             top_items = []
@@ -202,9 +200,7 @@ class ProductSearchTool(BaseTool):
                     "size": size,
                     "total_pages": (total + size - 1) // size,
                 },
-                message=f"找到 {total} 件相关商品",
-                summary=f"找到{total}件商品: {names_str}",
-            )
+                message=f"找到 {total} 件相关商品",            )
             
         except Exception as e:
             logger.error(f"[product-search] Search failed | tenant={context.tenant_id} error={type(e).__name__}: {e}", exc_info=True)

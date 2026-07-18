@@ -700,11 +700,6 @@ async def execute_skill(
         except Exception as e:
             logger.warning(f"[{skill_name}] get_vision_analysis failed | session={session_id} error={e}")
 
-    collected = {}
-    if session_id:
-        from app.memory.session_memory import SessionMemory
-        collected = await SessionMemory().get_collected_fields(session_id)
-
     full_messages: List[Any] = []
     msg_list = list(messages)
 
@@ -719,14 +714,6 @@ async def execute_skill(
                 ))
                 break
 
-    if collected and msg_list:
-        fields_hint = "；".join(f"{k}={v}" for k, v in collected.items())
-        last_msg = msg_list[-1]
-        if isinstance(last_msg, HumanMessage):
-            msg_list[-1] = HumanMessage(content=(
-                f"--- 已收集字段（仅供参考）---\n{fields_hint}\n"
-                f"--- 用户消息 ---\n{last_msg.content or ''}"
-            ))
     full_messages.extend(msg_list)
     # ── 5.5 跨 Skill 上下文注入 + 记录当前 skill ──
     ctx_text = ""
@@ -734,6 +721,7 @@ async def execute_skill(
         try:
             from app.memory.context_manager import get_context_manager
             ctx_mgr = get_context_manager()
+            await ctx_mgr.load(session_id)  # Redis 恢复
             ctx_mgr.set_last_skill(session_id, skill_name)
             ctx_text = ctx_mgr.build_context(session_id, skill_name)
             if ctx_text:
@@ -907,7 +895,9 @@ async def execute_skill(
                     if session_id and result_dict.get("success"):
                         try:
                             from app.memory.context_manager import get_context_manager
-                            get_context_manager().record_tool_result(session_id, tool_name, result_dict)
+                            mgr = get_context_manager()
+                            mgr.record_tool_result(session_id, tool_name, result_dict)
+                            await mgr.save(session_id)  # Redis 持久化
                         except Exception:
                             pass
                     new_messages.append(ToolMessage(content=result_str, tool_call_id=tool_call["id"], name=tool_name))

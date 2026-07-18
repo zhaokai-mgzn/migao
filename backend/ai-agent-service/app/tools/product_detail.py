@@ -130,9 +130,7 @@ class ProductDetailTool(BaseTool):
             return ToolResult(
                 success=True,
                 data=product,
-                message=f"已获取商品【{product.get('name')}】的详细信息",
-                summary=f"商品详情: {product.get('name')}, {price_text}",
-            )
+                message=f"已获取商品【{product.get('name')}】的详细信息",            )
             
         except Exception as e:
             logger.error(f"Product detail error: {e}", exc_info=True)

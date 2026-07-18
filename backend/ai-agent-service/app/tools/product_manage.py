@@ -292,62 +292,6 @@ class ProductManageTool(BaseTool):
             message="商品信息已更新",
         )
 
-    # ── Agent BFF: PROCESSING ITEMS (add/remove) ──
-
-    async def _manage_processing_items(self, context, product_id, processing_item_action,
-                                        processing_item_ids) -> ToolResult:
-        if not product_id:
-            return ToolResult(success=False, error="缺少商品 ID", message="请提供商品 ID")
-        if processing_item_action not in ("add", "remove"):
-            return ToolResult(
-                success=False, error="无效的加工项操作",
-                message="processing_item_action 必须为 add 或 remove",
-            )
-        if not processing_item_ids:
-            return ToolResult(success=False, error="缺少加工项 ID", message="请提供加工项 ID 列表")
-
-        # ── ID 自动解析：LLM 传名称/序号/UUID 都接受 ──
-        from app.utils.id_resolver import resolve_product_id, resolve_processing_item_ids
-        client = get_admin_api_client()
-        resolved_product_id = await resolve_product_id(product_id, context.tenant_id, client)
-        if not resolved_product_id:
-            return ToolResult(
-                success=False, error="商品不存在",
-                message=f"找不到商品「{product_id}」，请确认商品名称或 ID 是否正确",
-            )
-        resolved_item_ids = await resolve_processing_item_ids(processing_item_ids, context.tenant_id, client)
-        if not resolved_item_ids:
-            return ToolResult(
-                success=False, error="加工项不存在",
-                message=f"找不到指定的加工项，请检查加工项名称或 ID",
-            )
-
-        logger.info(
-            f"[product_manage] Agent processing items: {processing_item_action} "
-            f"raw_product={product_id}→{resolved_product_id} "
-            f"raw_items={processing_item_ids}→{resolved_item_ids} "
-            f"| tenant={context.tenant_id}"
-        )
-        response = await client.patch(
-            f"/api/admin/agent/products/{resolved_product_id}/processing-items",
-            json_data={"action": processing_item_action, "itemIds": resolved_item_ids},
-            tenant_id=context.tenant_id, user_id=context.user_id)
-
-        if not response.get("success"):
-            error_info = response.get("error", {})
-            error_msg = error_info.get("message", "操作失败") if isinstance(error_info, dict) else str(error_info)
-            suggestion = "请先用 product_detail 查出商品的 32 位 UUID，再传入正确的 product_id 重试"
-            return ToolResult(success=False, error=error_msg, message=f"加工项操作失败：{error_msg}", suggestion=suggestion)
-
-        items = response.get("data", [])
-        warnings = response.get("warnings", [])
-        action_text = "添加" if processing_item_action == "add" else "删除"
-        msg = f"加工项已{action_text}，当前共 {len(items) if isinstance(items, list) else 0} 个加工项"
-        if warnings:
-            msg += "\n\n⚠️ 提示：" + "\n".join(warnings)
-
-        return ToolResult(success=True, data={"processing_items": items}, message=msg)
-
     # ── TOGGLE STATUS (原端点，无变化) ──
 
     async def _toggle_status(self, context, product_id, status) -> ToolResult:
