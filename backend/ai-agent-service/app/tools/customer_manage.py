@@ -48,7 +48,7 @@ class CustomerManageTool(BaseTool):
             },
             "customer_id": {
                 "type": "string",
-                "description": "客户 ID（detail/update/add_tag/remove_tag 时必填）",
+                "description": "客户 32 位 UUID。detail/update/add_tag/remove_tag 时必填。必须先通过 customer_manage(list) 查出真实 UUID，禁止传手机号或姓名",
             },
             "page": {
                 "type": "integer",

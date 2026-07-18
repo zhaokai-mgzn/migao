@@ -60,7 +60,7 @@ class AfterSalesManageTool(BaseTool):
             },
             "order_id": {
                 "type": "string",
-                "description": "关联订单 ID(create 时必填)",
+                "description": "订单 ID 或订单号（ORD-xxx）。支持 UUID / 订单号，服务端自动解析。create 时必填",
             },
             "ticket_type": {
                 "type": "string",

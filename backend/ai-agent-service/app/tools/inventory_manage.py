@@ -48,7 +48,7 @@ class InventoryManageTool(BaseTool):
             },
             "product_id": {
                 "type": "string",
-                "description": "商品 ID（query/adjust 时必填）",
+                "description": "商品 32 位 UUID。必须先通过 product_detail 或 product_search 查出真实 UUID 再传入，禁止传商品名称或序号",
             },
             "adjustment": {
                 "type": "integer",
