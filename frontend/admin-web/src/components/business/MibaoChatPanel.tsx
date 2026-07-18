@@ -29,7 +29,7 @@ export default function MibaoChatPanel({ children, className }: MibaoChatPanelPr
       data-testid="chat-panel-resize-container"
       style={containerStyle}
       className={cn(
-        'relative flex flex-col rounded-lg overflow-hidden border border-gray-200',
+        'relative flex flex-col overflow-hidden',
         className
       )}
     >

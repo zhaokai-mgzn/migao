@@ -33,7 +33,7 @@ export default function ChatPage() {
   }, [fetchSessions])
 
   return (
-    <MibaoChatPanel className="flex">
+    <MibaoChatPanel>
       <Suspense fallback={null}>
         <SessionFromQuery />
       </Suspense>
