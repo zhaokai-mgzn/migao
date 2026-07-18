@@ -765,7 +765,9 @@ class TestExecuteSkillVisionRetry:
 
     当 Vision LLM 返回空内容时，应自动重试 1 次（共 2 次调用），
     而非直接触发兜底 "暂时无法生成回复"。
-    """    @patch("app.graph.skills.base_skill.get_breaker")
+    """
+
+    @patch("app.graph.skills.base_skill.get_breaker")
     @patch("app.graph.skills.base_skill.get_tracker")
     @patch("app.graph.skills.base_skill.get_skill_llm")
     @patch("app.graph.skills.base_skill.create_skill_registry")
@@ -894,7 +896,9 @@ class TestExecuteSkillVisionRetry:
 
 
 class TestExecuteSkillVisionToTextFixes:
-    """验证 Vision→text 回退路径的三个修复 (Code Review #207 补充测试)"""    @patch("app.graph.skills.base_skill.get_breaker")
+    """验证 Vision→text 回退路径的三个修复 (Code Review #207 补充测试)"""
+
+    @patch("app.graph.skills.base_skill.get_breaker")
     @patch("app.graph.skills.base_skill.get_tracker")
     @patch("app.graph.skills.base_skill.get_skill_llm")
     @patch("app.graph.skills.base_skill.create_skill_registry")

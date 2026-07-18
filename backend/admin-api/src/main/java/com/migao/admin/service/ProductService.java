@@ -1543,7 +1543,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
      *
      * @return 真实 UUID，未找到返回 null
      */
-    String resolveProductId(String raw, Long tenantId) {
+    public String resolveProductId(String raw, Long tenantId) {
         if (!StringUtils.hasText(raw)) return null;
         String s = raw.trim();
 
