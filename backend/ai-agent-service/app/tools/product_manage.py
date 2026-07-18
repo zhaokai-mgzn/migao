@@ -42,7 +42,7 @@ class ProductManageTool(BaseTool):
             },
             "product_id": {
                 "type": "string",
-                "description": "商品ID。update / toggle_status / manage_processing_items 时必填",
+                "description": "商品UUID（必填且必须传 32 位 UUID）。create 不需要。其他 action 必须先通过 product_query 查出真实 UUID 再传入，禁止传商品名称",
             },
             "name": {"type": "string", "description": "商品名称。create 时必填"},
             "category_id": {
@@ -316,7 +316,8 @@ class ProductManageTool(BaseTool):
         if not response.get("success"):
             error_info = response.get("error", {})
             error_msg = error_info.get("message", "操作失败") if isinstance(error_info, dict) else str(error_info)
-            return ToolResult(success=False, error=error_msg, message=f"加工项操作失败：{error_msg}")
+            suggestion = "请先用 product_detail 查出商品的 32 位 UUID，再传入正确的 product_id 重试"
+            return ToolResult(success=False, error=error_msg, message=f"加工项操作失败：{error_msg}", suggestion=suggestion)
 
         items = response.get("data", [])
         warnings = response.get("warnings", [])
