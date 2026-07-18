@@ -116,6 +116,8 @@ function handleRequest(hostname: string, pathname: string, request: NextRequest)
     if (startsWithAny(pathname, DASHBOARD_PREFIXES)) {
       const merchantUrl = new URL(request.url)
       merchantUrl.hostname = 'merchant.migaozn.com'
+      merchantUrl.port = '' // 去掉内部端口号，由 CDN/SLB 处理
+      merchantUrl.protocol = 'https' // 强制 HTTPS
       return NextResponse.redirect(merchantUrl)
     }
 

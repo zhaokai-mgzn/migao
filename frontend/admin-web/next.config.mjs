@@ -9,6 +9,9 @@ const nextConfig = {
 
   // 生产环境可通过 NEXT_PUBLIC_ASSET_PREFIX 配置 CDN 前缀
   assetPrefix: process.env.NEXT_PUBLIC_ASSET_PREFIX || undefined,
+
+  // 信任 SLB/CDN 代理的 Host header（避免重定向 URL 带内部端口号 :3001）
+  trustHost: true,
 }
 
 export default nextConfig
