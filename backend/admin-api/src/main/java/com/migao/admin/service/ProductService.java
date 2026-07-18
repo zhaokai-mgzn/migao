@@ -1538,6 +1538,55 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
     // ======================== ID 解析辅助方法 ========================
 
     /**
+     * 解析商品 ID：支持 UUID / 商品名称 / UUID 前缀 / 序号（1-based）。
+     * 匹配优先级：UUID 完整匹配 → UUID 前缀 → 名称精确匹配 → 序号 → 名称模糊匹配。
+     *
+     * @return 真实 UUID，未找到返回 null
+     */
+    String resolveProductId(String raw, Long tenantId) {
+        if (!StringUtils.hasText(raw)) return null;
+        String s = raw.trim();
+
+        java.util.List<Product> all = productMapper.selectList(
+                new LambdaQueryWrapper<Product>()
+                        .eq(Product::getTenantId, tenantId)
+                        .orderByAsc(Product::getCreatedAt));
+
+        // 1. 精确 UUID
+        for (Product p : all) {
+            if (s.equals(p.getId())) return p.getId();
+        }
+
+        // 2. UUID 前缀（LLM 可能截断 UUID）
+        if (s.length() >= 8) {
+            for (Product p : all) {
+                if (p.getId() != null && p.getId().startsWith(s.substring(0, Math.min(16, s.length())))) {
+                    return p.getId();
+                }
+            }
+        }
+
+        // 3. 精确名称
+        for (Product p : all) {
+            if (s.equals(p.getName())) return p.getId();
+        }
+
+        // 4. 序号（1-based，按创建时间排序）
+        if (s.matches("\\d+")) {
+            int idx = Integer.parseInt(s) - 1;
+            if (idx >= 0 && idx < all.size())
+                return all.get(idx).getId();
+        }
+
+        // 5. 名称模糊匹配（包含关键字）
+        for (Product p : all) {
+            if (p.getName() != null && p.getName().contains(s)) return p.getId();
+        }
+
+        return null;
+    }
+
+    /**
      * 解析分类 ID：支持 UUID / 名称 / UUID 前缀。
      *
      * @return 真实 UUID，未找到返回 null

@@ -37,9 +37,18 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ApiResponse<Void>> handleBusinessException(BusinessException e) {
         log.warn("业务异常: [{}] {} suggestion={}", e.getCode(), e.getMessage(), e.getSuggestion());
+        // 根据错误类型自动生成 LLM 友好的 suggestion
+        String suggestion = e.getSuggestion();
+        if (suggestion == null) {
+            suggestion = switch (e.getCode()) {
+                case "NOT_FOUND" -> "请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 UUID 后重试";
+                case "VALIDATION_ERROR" -> "请检查必填字段是否完整，字段格式是否正确";
+                default -> null;
+            };
+        }
         ApiResponse<Void> response = ApiResponse.error(e.getCode(), e.getMessage());
-        if (e.getSuggestion() != null) {
-            response.setSuggestion(e.getSuggestion());
+        if (suggestion != null) {
+            response.setSuggestion(suggestion);
         }
         return ResponseEntity.status(e.getHttpStatus()).body(response);
     }

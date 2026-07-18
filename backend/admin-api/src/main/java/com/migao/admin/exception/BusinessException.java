@@ -90,6 +90,11 @@ public class BusinessException extends RuntimeException {
         return new BusinessException("NOT_FOUND", resource + "不存在", 404);
     }
 
+    /** 资源不存在（含 LLM 修复建议） */
+    public static BusinessException notFound(String resource, String suggestion) {
+        return new BusinessException("NOT_FOUND", resource + "不存在", 404, suggestion);
+    }
+
     /**
      * 认证失败
      */

@@ -57,8 +57,13 @@ public class AgentProductController {
                                                        @RequestBody AgentProductUpdateRequest request) {
         Long tenantId = TenantContext.getTenantId();
         log.info("[Agent] 更新商品: id={}, tenantId={}", id, tenantId);
+        String resolvedId = productService.resolveProductId(id, tenantId);
+        if (resolvedId == null) {
+            throw BusinessException.notFound("商品",
+                    "未找到商品「" + id + "」，请先用 product_search 查出正确 ID 后重试");
+        }
         try {
-            ProductResponse result = productService.updateProductForAgent(id, request, tenantId);
+            ProductResponse result = productService.updateProductForAgent(resolvedId, request, tenantId);
             return ApiResponse.success(result);
         } catch (Exception e) {
             log.warn("[Agent] 更新商品失败: id={}, error={}", id, e.getMessage());
@@ -79,9 +84,14 @@ public class AgentProductController {
         log.info("[Agent] 加工项 {}: productId={}, count={}, tenantId={}",
                 request.getAction(), id,
                 request.getItemIds() != null ? request.getItemIds().size() : 0, tenantId);
+        String resolvedId = productService.resolveProductId(id, tenantId);
+        if (resolvedId == null) {
+            throw BusinessException.notFound("商品",
+                    "未找到商品「" + id + "」，请先用 product_search 查出正确 ID 后重试");
+        }
         try {
             List<ProductProcessingItemResponse> result =
-                    productService.updateProductProcessingItems(id, request, tenantId);
+                    productService.updateProductProcessingItems(resolvedId, request, tenantId);
             return ApiResponse.success(result);
         } catch (Exception e) {
             log.warn("[Agent] 加工项操作失败: productId={}, error={}", id, e.getMessage());
