@@ -79,7 +79,7 @@ jobs:
             --AppId ${{ env.SAE_APP_ID }} \
             --RegionId ${{ env.SAE_REGION }} \
             --ImageUrl "$IMG" \
-            --InternetSlbId lb-bp1vv0e4mzro1034ywuqq \
+            --InternetSlbId lb-bp13ac78fwkoj41m9isz0 \
             --Internet true \
             --Port 3001 \
             --MinReadyInstances 1 \
@@ -89,7 +89,7 @@ jobs:
       - name: Verify
         run: |
           sleep 30
-          curl -sf -m 10 http://115.29.222.118:3001/login/ -o /dev/null && echo "OK" || echo "WARN"
+          curl -sf -m 10 http://121.43.246.9/login/ -H "Host: migaozn.com" -o /dev/null && echo "OK" || echo "WARN"
 
       - name: CDN refresh
         env:
