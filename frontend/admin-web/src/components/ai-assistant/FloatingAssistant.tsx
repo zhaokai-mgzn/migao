@@ -25,7 +25,7 @@ export default function FloatingAssistant() {
       {/* 可拖拽调整高度的米宝聊天面板 — 右侧浮动 */}
       {isOpen && (
         <div className="fixed inset-4 z-50">
-          <MibaoChatPanel className="h-full bg-white shadow-2xl rounded-2xl border border-gray-200">
+          <MibaoChatPanel defaultHeight="calc(100vh - 5.5rem)" className="bg-white shadow-2xl rounded-2xl border border-gray-200">
             <div className="flex flex-col flex-1 min-h-0">
               {/* 头部 */}
               <div className="flex items-center justify-between h-12 px-4 bg-gradient-to-r from-primary-600 to-primary-500 rounded-t-2xl flex-shrink-0">
@@ -53,25 +53,23 @@ export default function FloatingAssistant() {
         </div>
       )}
 
-      {/* FAB 悬浮按钮 */}
-      <button
-        onClick={togglePanel}
-        className={cn(
-          'fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full',
-          'flex items-center justify-center',
-          'bg-primary-600 text-white shadow-lg',
-          'hover:bg-primary-700 hover:shadow-xl hover:scale-110',
-          'active:scale-95',
-          'transition-all duration-200 ease-in-out',
-        )}
-        title={isOpen ? '关闭米宝' : '打开米宝'}
-      >
-        {isOpen ? (
-          <X className="w-6 h-6" />
-        ) : (
+      {/* FAB 悬浮按钮 — 面板打开时隐藏 */}
+      {!isOpen && (
+        <button
+          onClick={togglePanel}
+          className={cn(
+            'fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full',
+            'flex items-center justify-center',
+            'bg-primary-600 text-white shadow-lg',
+            'hover:bg-primary-700 hover:shadow-xl hover:scale-110',
+            'active:scale-95',
+            'transition-all duration-200 ease-in-out',
+          )}
+          title="打开米宝"
+        >
           <Bot className="w-6 h-6" />
-        )}
-      </button>
+        </button>
+      )}
     </>
   )
 }

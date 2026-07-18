@@ -12,12 +12,13 @@ const MAX_HEIGHT_RATIO = 0.9
 interface MibaoChatPanelProps {
   children: React.ReactNode
   className?: string
+  defaultHeight?: string
 }
 
-export default function MibaoChatPanel({ children, className }: MibaoChatPanelProps) {
+export default function MibaoChatPanel({ children, className, defaultHeight }: MibaoChatPanelProps) {
   const { containerStyle, handleProps } = useResizableHeight({
     storageKey: STORAGE_KEY,
-    defaultHeight: DEFAULT_HEIGHT,
+    defaultHeight: defaultHeight || DEFAULT_HEIGHT,
     minHeight: MIN_HEIGHT,
     maxHeight: typeof window !== 'undefined'
       ? Math.round(window.innerHeight * MAX_HEIGHT_RATIO)
