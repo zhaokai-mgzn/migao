@@ -424,6 +424,42 @@ def _extract_intent_name(state: AgentState) -> str:
 PAGE_SIZE = 10  # 加工项 choice 每页展示数量
 
 
+async def _auto_resolve_ids(tool, tool_args: dict, state: dict) -> dict:
+    """自动解析 _ids 参数：LLM 传加工项名称/序号时自动转为 UUID。
+
+    只处理以 _ids 结尾的 list 参数（如 processing_item_ids、item_ids）。
+    不做单值 _id 的解析——那些走 admin-api 的 resolveProductId。
+    """
+    from app.utils.id_resolver import resolve_processing_item_ids
+    from app.utils.http_client import get_admin_api_client
+
+    resolved = dict(tool_args)
+    tenant_id = int(state.get("tenant_id", 0) or 0)
+    if not tenant_id:
+        return resolved
+
+    for key, value in tool_args.items():
+        if not key.endswith("_ids") or not isinstance(value, list):
+            continue
+        if not value:
+            continue
+        uuid_count = sum(1 for v in value if isinstance(v, str) and len(v) >= 32 and v.count('-') >= 4)
+        if uuid_count == len(value):
+            continue
+
+        try:
+            client = get_admin_api_client()
+            resolved_ids = await resolve_processing_item_ids(value, tenant_id, client)
+            if resolved_ids:
+                resolved[key] = resolved_ids
+                logger.info(
+                    f"[auto-resolve] {tool.name}.{key}: {len(value)} raw->{len(resolved_ids)} UUIDs "
+                    f"| raw={value[:3]} resolved={[r[:8]+'...' for r in resolved_ids[:3]]}"
+                )
+        except Exception as e:
+            logger.warning(f"[auto-resolve] {tool.name}.{key} failed: {e}")
+
+    return resolved
 
 
 async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -> tuple:
@@ -441,6 +477,9 @@ async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -
             logger.info(f"[tool-exec] Flattened nested data for {tool.name}: keys={list(nested.keys())[:8]}")
             tool_args = {**nested, **{k: v for k, v in tool_args.items() if k != "data"}}
     tool_args = LangChainToolAdapter._normalize_args(tool, tool_args)
+
+    # 1.5. 自动解析 _ids 参数：LLM 传加工项名称/序号时自动转 UUID
+    tool_args = await _auto_resolve_ids(tool, tool_args, state)
 
     session_id = state.get("session_id", "")
     tenant_id = str(state.get("tenant_id", ""))
