@@ -1071,8 +1071,11 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     private String resolveOrderIdToUuid(String raw, Long tenantId) {
         if (!StringUtils.hasText(raw)) return null;
 
-        // 1. UUID 精确匹配
-        Order order = orderMapper.selectById(raw);
+        // 1. UUID 精确匹配（租户隔离）
+        Order order = orderMapper.selectOne(
+                new LambdaQueryWrapper<Order>()
+                        .eq(Order::getId, raw)
+                        .eq(Order::getTenantId, tenantId));
         if (order != null) return order.getId();
 
         // 2. 按订单号搜索

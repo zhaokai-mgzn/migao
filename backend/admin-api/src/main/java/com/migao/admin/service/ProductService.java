@@ -1397,7 +1397,10 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
     public ProductResponse updateProductForAgent(String id,
                                                    com.migao.admin.dto.agent.AgentProductUpdateRequest request,
                                                    Long tenantId) {
-        Product product = productMapper.selectById(id);
+        Product product = productMapper.selectOne(
+                new LambdaQueryWrapper<Product>()
+                        .eq(Product::getId, id)
+                        .eq(Product::getTenantId, tenantId));
         if (product == null) {
             throw BusinessException.notFound("商品");
         }

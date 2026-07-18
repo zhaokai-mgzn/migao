@@ -499,6 +499,16 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
                         "无法找到订单：" + resolvedOrderId + "。请确认订单号正确后重试。", 404);
             }
             resolvedOrderId = orders.get(0).getId();
+        } else if (StringUtils.hasText(resolvedOrderId)) {
+            // UUID 格式 → 验证订单属于当前租户
+            com.migao.admin.entity.Order order = orderMapper.selectOne(
+                    new LambdaQueryWrapper<com.migao.admin.entity.Order>()
+                            .eq(com.migao.admin.entity.Order::getId, resolvedOrderId)
+                            .eq(com.migao.admin.entity.Order::getTenantId, tenantId));
+            if (order == null) {
+                throw new BusinessException("ORDER_NOT_FOUND",
+                        "无法找到订单：" + resolvedOrderId + "。请确认订单号正确后重试。", 404);
+            }
         }
 
         AfterSalesCreateRequest createReq = new AfterSalesCreateRequest();
