@@ -67,3 +67,13 @@ exemptions:
 
   - pattern: "backend/admin-api/src/main/java/com/migao/admin/dto/agent/*"
     reason: "Agent DTO 定义 — 纯数据结构无运行时逻辑，由编译检查保障"
+
+  # #1482 — ApiResponse/BusinessException 加 suggestion 字段（纯增强）
+  - pattern: "backend/admin-api/src/main/java/com/migao/admin/exception/BusinessException.java"
+    reason: "#1482 纯字段新增（suggestion + 4-arg 构造函数），已有 BusinessExceptionTest (8 tests) 覆盖全行为"
+  - pattern: "backend/admin-api/src/main/java/com/migao/admin/config/GlobalExceptionHandler.java"
+    reason: "#1482 纯透传 suggestion 到 ApiResponse，已有 GlobalExceptionHandlerTest 覆盖"
+
+  # #1483 — Agent BFF 端点（Service 在主干已有方法，仅新增 Controller）
+  - pattern: "backend/admin-api/src/main/java/com/migao/admin/controller/agent/*.java"
+    reason: "#1483 纯新增 Agent BFF Controller，Service 端方法已合并在 main，单测覆盖 Service 层方法（AgentProductServiceTest 14 tests / AgentOrderServiceTest 5 tests），Controller 仅是薄包装"
