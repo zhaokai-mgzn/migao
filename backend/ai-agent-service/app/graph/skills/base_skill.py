@@ -638,6 +638,7 @@ async def execute_skill(
     tenant_id = int(state.get("tenant_id", 0) or 0)
 
     # ── 1. 上下文 & 工具准备 ──
+    from app.memory.session_memory import SessionMemory  # noqa: F811 — 函数内多处使用
     tool_context = build_tool_context(state)
     set_tool_context(tool_context)
     skill_registry = create_skill_registry(tool_names)
@@ -695,8 +696,7 @@ async def execute_skill(
     cached_vision = ""
     if not is_multimodal and session_id:
         try:
-            from app.memory.session_memory import SessionMemory as _SM
-            cached_vision = await _SM().get_vision_analysis(session_id)
+            cached_vision = await SessionMemory().get_vision_analysis(session_id)
         except Exception as e:
             logger.warning(f"[{skill_name}] get_vision_analysis failed | session={session_id} error={e}")
 
@@ -906,9 +906,8 @@ async def execute_skill(
                     except Exception:
                         pass
                     if tool_name == "interact" and result_dict.get("success"):
-                        from app.memory.session_memory import SessionMemory as _SM2
                         try:
-                            await _SM2().set_pending_skill(session_id, skill_name)
+                            await SessionMemory().set_pending_skill(session_id, skill_name)
                         except Exception:
                             pass
             else:
