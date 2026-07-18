@@ -24,11 +24,11 @@ export default function FloatingAssistant() {
     <>
       {/* 可拖拽调整高度的米宝聊天面板 — 右侧浮动 */}
       {isOpen && (
-        <div className="fixed right-4 top-4 bottom-20 z-50 w-[440px] max-w-[calc(100vw-2rem)]">
-          <MibaoChatPanel className="h-full bg-white shadow-2xl">
+        <div className="fixed inset-4 z-50">
+          <MibaoChatPanel className="h-full bg-white shadow-2xl rounded-2xl border border-gray-200">
             <div className="flex flex-col flex-1 min-h-0">
               {/* 头部 */}
-              <div className="flex items-center justify-between h-12 px-4 border-b border-gray-100 bg-gradient-to-r from-primary-600 to-primary-500 flex-shrink-0">
+              <div className="flex items-center justify-between h-12 px-4 bg-gradient-to-r from-primary-600 to-primary-500 rounded-t-2xl flex-shrink-0">
                 <div className="flex items-center gap-2">
                   <span className="text-lg flex-shrink-0">🤖</span>
                   <span className="text-sm font-semibold text-white">米宝 · 智能助手</span>
@@ -43,7 +43,7 @@ export default function FloatingAssistant() {
               </div>
 
               {/* 聊天内容 — 复用全屏会话模式布局 */}
-              <div className="flex-1 flex min-h-0 overflow-hidden">
+              <div className="flex-1 flex min-h-0 overflow-hidden rounded-b-2xl">
                 <SessionList />
                 <ChatArea />
                 <SessionInsight />
