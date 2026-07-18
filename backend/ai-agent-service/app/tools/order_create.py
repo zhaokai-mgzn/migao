@@ -373,7 +373,7 @@ class OrderCreateTool(BaseTool):
 
             client = get_admin_api_client()
             response = await client.post(
-                "/api/admin/orders",
+                "/api/admin/agent/orders",
                 json_data=json_data,
                 tenant_id=context.tenant_id,
                 user_id=context.user_id,
