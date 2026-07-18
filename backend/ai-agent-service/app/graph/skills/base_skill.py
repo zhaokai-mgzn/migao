@@ -728,7 +728,20 @@ async def execute_skill(
                 f"--- 用户消息 ---\n{last_msg.content or ''}"
             ))
     full_messages.extend(msg_list)
-    full_messages.insert(0, SystemMessage(content=system_prompt))
+    # ── 5.5 跨 Skill 上下文注入 + 记录当前 skill ──
+    ctx_text = ""
+    if session_id:
+        try:
+            from app.memory.context_manager import get_context_manager
+            ctx_mgr = get_context_manager()
+            ctx_mgr.set_last_skill(session_id, skill_name)
+            ctx_text = ctx_mgr.build_context(session_id, skill_name)
+            if ctx_text:
+                logger.info(f"[{skill_name}] Injected cross-skill context: {len(ctx_text)} chars | session={session_id}")
+        except Exception as e:
+            logger.warning(f"[{skill_name}] Context manager failed: {e} | session={session_id}")
+
+    full_messages.insert(0, SystemMessage(content=system_prompt + ("\n\n" + ctx_text if ctx_text else "")))
 
     # ── 6. Vision 分支 ──
     new_messages: List[Any] = []
@@ -890,6 +903,13 @@ async def execute_skill(
 
                 for tool_call, result_str, result_dict in tool_results:
                     tool_name = tool_call["name"]
+                    # 记录 tool 结果到 ContextManager，跨 skill 共享
+                    if session_id and result_dict.get("success"):
+                        try:
+                            from app.memory.context_manager import get_context_manager
+                            get_context_manager().record_tool_result(session_id, tool_name, result_dict)
+                        except Exception:
+                            pass
                     new_messages.append(ToolMessage(content=result_str, tool_call_id=tool_call["id"], name=tool_name))
                     try:
                         tracker.extract(tool_name, result_dict)
