@@ -1002,8 +1002,11 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
      * 5. 按 sort_order 升序排序
      */
     public List<ProductProcessingItemResponse> getProductProcessingItems(String productId, Long tenantId) {
-        // 校验商品存在且属于当前租户
-        Product product = productMapper.selectById(productId);
+        // 校验商品存在且属于当前租户（租户隔离）
+        Product product = productMapper.selectOne(
+                new LambdaQueryWrapper<Product>()
+                        .eq(Product::getId, productId)
+                        .eq(Product::getTenantId, tenantId));
         if (product == null) {
             throw BusinessException.notFound("商品");
         }
@@ -1467,7 +1470,10 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
     public java.util.List<ProductProcessingItemResponse> updateProductProcessingItems(
             String productId, com.migao.admin.dto.agent.AgentProcessingItemActionRequest request, Long tenantId) {
 
-        Product product = productMapper.selectById(productId);
+        Product product = productMapper.selectOne(
+                new LambdaQueryWrapper<Product>()
+                        .eq(Product::getId, productId)
+                        .eq(Product::getTenantId, tenantId));
         if (product == null) {
             throw BusinessException.notFound("商品");
         }
@@ -1580,7 +1586,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                 new LambdaQueryWrapper<ProcessingItem>()
                         .eq(ProcessingItem::getTenantId, tenantId)
                         .eq(ProcessingItem::getStatus, "active")
-                        .orderByAsc(ProcessingItem::getSortOrder));
+                        .orderByAsc(ProcessingItem::getCreatedAt));
 
         List<String> resolved = new ArrayList<>();
         for (String raw : rawIds) {
