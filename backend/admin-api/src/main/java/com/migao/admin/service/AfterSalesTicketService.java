@@ -474,4 +474,55 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
             return null;
         }
     }
+
+    // ======================== Agent BFF 方法 ========================
+
+    /**
+     * Agent 专用创建售后工单。
+     * orderId 可传 UUID 或订单号（ORD-xxx），服务端自动解析。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public AfterSalesDetailResponse createTicketForAgent(
+            com.migao.admin.dto.agent.AgentAfterSalesCreateRequest request,
+            Long tenantId, String operator) {
+
+        // 解析 orderId（支持 ORD-xxx → UUID）
+        String resolvedOrderId = request.getOrderId();
+        if (StringUtils.hasText(resolvedOrderId) && !resolvedOrderId.matches("^[0-9a-fA-F-]{20,}$")) {
+            // 非 UUID 格式 → 按订单号搜索
+            List<com.migao.admin.entity.Order> orders = orderMapper.selectList(
+                    new LambdaQueryWrapper<com.migao.admin.entity.Order>()
+                            .eq(com.migao.admin.entity.Order::getTenantId, tenantId)
+                            .eq(com.migao.admin.entity.Order::getOrderNo, resolvedOrderId));
+            if (orders.isEmpty()) {
+                throw new BusinessException("ORDER_NOT_FOUND",
+                        "无法找到订单：" + resolvedOrderId + "。请确认订单号正确后重试。", 404);
+            }
+            resolvedOrderId = orders.get(0).getId();
+        } else if (StringUtils.hasText(resolvedOrderId)) {
+            // UUID 格式 → 验证订单属于当前租户
+            com.migao.admin.entity.Order order = orderMapper.selectOne(
+                    new LambdaQueryWrapper<com.migao.admin.entity.Order>()
+                            .eq(com.migao.admin.entity.Order::getId, resolvedOrderId)
+                            .eq(com.migao.admin.entity.Order::getTenantId, tenantId));
+            if (order == null) {
+                throw new BusinessException("ORDER_NOT_FOUND",
+                        "无法找到订单：" + resolvedOrderId + "。请确认订单号正确后重试。", 404);
+            }
+        }
+
+        AfterSalesCreateRequest createReq = new AfterSalesCreateRequest();
+        createReq.setOrderId(resolvedOrderId);
+        createReq.setTicketType(request.getTicketType());
+        createReq.setDescription(
+                StringUtils.hasText(request.getDescription())
+                        ? request.getDescription()
+                        : request.getReason());
+        createReq.setImages(request.getImages());
+        createReq.setPriority(
+                StringUtils.hasText(request.getPriority()) ? request.getPriority() : "normal");
+        createReq.setRefundAmount(request.getRefundAmount());
+
+        return createTicket(createReq, tenantId, operator);
+    }
 }

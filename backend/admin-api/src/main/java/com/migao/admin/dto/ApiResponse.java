@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.Data;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -39,6 +40,19 @@ public class ApiResponse<T> {
      * 时间戳
      */
     private Long timestamp;
+
+    /**
+     * LLM 友好的修复建议（Agent 端点使用）。
+     * 当 success=false 时，告诉 LLM 如何引导用户修复问题。
+     */
+    private String suggestion;
+
+    /**
+     * 非阻塞警告列表（Agent 端点使用）。
+     * 例如：["加工项'打孔'已存在，已跳过"]
+     */
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    private List<String> warnings;
 
     /**
      * 私有构造方法，使用工厂方法创建实例
@@ -105,6 +119,24 @@ public class ApiResponse<T> {
      */
     public static <T> ApiResponse<T> error(String code, String message) {
         return error(code, message, null);
+    }
+
+    /**
+     * 创建含 suggestion 的错误响应（Agent 端点使用）
+     */
+    public static <T> ApiResponse<T> errorWithSuggestion(String code, String message, String suggestion) {
+        ApiResponse<T> r = error(code, message, (List<ErrorDetail>) null);
+        r.setSuggestion(suggestion);
+        return r;
+    }
+
+    /**
+     * 创建成功响应（含 warnings，Agent 端点使用）
+     */
+    public static <T> ApiResponse<T> success(T data, List<String> warnings) {
+        ApiResponse<T> r = success(data);
+        r.setWarnings(warnings);
+        return r;
     }
 
     /**

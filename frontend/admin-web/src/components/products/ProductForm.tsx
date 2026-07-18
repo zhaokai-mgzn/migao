@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Plus, Trash2, RotateCcw, Settings2 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -116,6 +116,19 @@ export default function ProductForm({
   const [catDeleteTarget, setCatDeleteTarget] = useState<Category | null>(null)
   const [catDeleting, setCatDeleting] = useState(false)
 
+  // ---- 离开确认：脏状态追踪 ----
+  const [dirty, setDirty] = useState(false)
+  const dirtyRef = useRef(false)
+  const [showLeaveModal, setShowLeaveModal] = useState(false)
+  const pendingNavRef = useRef<string | null>(null)
+  const [draftSaving, setDraftSaving] = useState(false)
+  const bypassGuardRef = useRef(false)
+
+  const markClean = useCallback(() => {
+    dirtyRef.current = false
+    setDirty(false)
+  }, [])
+
   const [form, setForm] = useState<ProductFormData>({
     ...DEFAULT_FORM,
     ...initialData,
@@ -150,6 +163,8 @@ export default function ProductForm({
     value: ProductFormData[K]
   ) => {
     setForm((prev) => ({ ...prev, [key]: value }))
+    dirtyRef.current = true
+    setDirty(true)
     if (errors[key]) {
       setErrors((prev) => {
         const next = { ...prev }
@@ -161,6 +176,8 @@ export default function ProductForm({
 
   const updateMany = (patch: Partial<ProductFormData>) => {
     setForm((prev) => ({ ...prev, ...patch }))
+    dirtyRef.current = true
+    setDirty(true)
     if (Object.keys(patch).some((k) => errors[k])) {
       setErrors((prev) => {
         const next = { ...prev }
@@ -270,6 +287,8 @@ export default function ProductForm({
         off_sale: '已下架',
       }
       toast.success(labelMap[targetStatus])
+      bypassGuardRef.current = true
+      markClean()
       router.push('/products')
     } catch (error) {
       console.error(`保存商品失败 (${targetStatus}):`, error)
@@ -289,7 +308,67 @@ export default function ProductForm({
     if (!confirm('确定要重置当前表单吗？已填写的内容将被清空。')) return
     setForm({ ...DEFAULT_FORM, ...(initialData || {}) })
     setErrors({})
+    markClean()
     toast.info('表单已重置')
+  }
+
+  // ---- 离开确认：拦截导航 ----
+
+  useEffect(() => {
+    if (!dirty) return
+
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+
+    window.history.pushState({ __leave_block: true }, '', window.location.href)
+    const onPopState = () => {
+      if (bypassGuardRef.current) { bypassGuardRef.current = false; return }
+      window.history.pushState({ __leave_block: true }, '', window.location.href)
+      pendingNavRef.current = '__back__'
+      setShowLeaveModal(true)
+    }
+    window.addEventListener('popstate', onPopState)
+
+    const onClick = (e: MouseEvent) => {
+      if (bypassGuardRef.current) { bypassGuardRef.current = false; return }
+      const el = (e.target as HTMLElement).closest('a')
+      if (!el) return
+      const href = el.getAttribute('href')
+      if (!href) return
+      if (href.startsWith('http') || href.startsWith('#') || href.startsWith('javascript:') || href.startsWith('mailto:') || href.startsWith('tel:')) return
+      const current = window.location.pathname + window.location.search
+      if (href === current || href === window.location.pathname) return
+      e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation()
+      pendingNavRef.current = href
+      setShowLeaveModal(true)
+    }
+    document.addEventListener('click', onClick, true)
+
+    return () => {
+      window.removeEventListener('beforeunload', onBeforeUnload)
+      window.removeEventListener('popstate', onPopState)
+      document.removeEventListener('click', onClick, true)
+    }
+  }, [dirty])
+
+  const handleLeaveWithoutSaving = () => {
+    bypassGuardRef.current = true
+    markClean()
+    setShowLeaveModal(false)
+    const target = pendingNavRef.current
+    pendingNavRef.current = null
+    if (target === '__back__') window.history.back()
+    else if (target) router.push(target)
+  }
+
+  const handleSaveDraftAndLeave = async () => {
+    setDraftSaving(true)
+    try { await handleSubmit('draft') }
+    catch { /* stay on page */ }
+    finally { setDraftSaving(false); setShowLeaveModal(false) }
   }
 
   // ========== 管理分类弹窗 (#1403) ==========
@@ -744,6 +823,28 @@ export default function ProductForm({
         </div>
       </div>
 
+
+      {/* ========== 离开确认弹窗 ========== */}
+      <Modal
+        open={showLeaveModal}
+        onClose={() => setShowLeaveModal(false)}
+        title="确认离开"
+        maskClosable={false}
+        footer={
+          <>
+            <Button variant="secondary" onClick={handleLeaveWithoutSaving}>
+              直接退出
+            </Button>
+            <Button onClick={handleSaveDraftAndLeave} loading={draftSaving} disabled={draftSaving}>
+              存草稿
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-gray-600">
+          当前表单内容尚未保存，离开后将丢失已填写的内容。
+        </p>
+      </Modal>
       {/* ============ 管理分类弹窗 (#1403) ============ */}
       <Modal
         open={catModalOpen}
@@ -918,6 +1019,7 @@ function RadioGroup<T extends string | number | boolean>({
           </label>
         )
       })}
+
     </div>
   )
 }
