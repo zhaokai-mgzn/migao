@@ -306,11 +306,31 @@ class ProductManageTool(BaseTool):
         if not processing_item_ids:
             return ToolResult(success=False, error="缺少加工项 ID", message="请提供加工项 ID 列表")
 
-        logger.info(f"[product_manage] Agent processing items: {processing_item_action} on {product_id}")
+        # ── ID 自动解析：LLM 传名称/序号/UUID 都接受 ──
+        from app.utils.id_resolver import resolve_product_id, resolve_processing_item_ids
         client = get_admin_api_client()
+        resolved_product_id = await resolve_product_id(product_id, context.tenant_id, client)
+        if not resolved_product_id:
+            return ToolResult(
+                success=False, error="商品不存在",
+                message=f"找不到商品「{product_id}」，请确认商品名称或 ID 是否正确",
+            )
+        resolved_item_ids = await resolve_processing_item_ids(processing_item_ids, context.tenant_id, client)
+        if not resolved_item_ids:
+            return ToolResult(
+                success=False, error="加工项不存在",
+                message=f"找不到指定的加工项，请检查加工项名称或 ID",
+            )
+
+        logger.info(
+            f"[product_manage] Agent processing items: {processing_item_action} "
+            f"raw_product={product_id}→{resolved_product_id} "
+            f"raw_items={processing_item_ids}→{resolved_item_ids} "
+            f"| tenant={context.tenant_id}"
+        )
         response = await client.patch(
-            f"/api/admin/agent/products/{product_id}/processing-items",
-            json_data={"action": processing_item_action, "itemIds": processing_item_ids},
+            f"/api/admin/agent/products/{resolved_product_id}/processing-items",
+            json_data={"action": processing_item_action, "itemIds": resolved_item_ids},
             tenant_id=context.tenant_id, user_id=context.user_id)
 
         if not response.get("success"):
