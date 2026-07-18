@@ -195,11 +195,15 @@ class ProcessingItemQueryTool(BaseTool):
                     summary=empty_summary,
                 )
 
-            # 构建摘要：取前3个加工项名
-            top_names = [i["name"] for i in items[:3] if i.get("name")]
-            names_str = "、".join(top_names)
+            # 构建摘要：取前3个加工项，附带序号以便 LLM 后续传参
+            top_items = []
+            for idx, i in enumerate(items[:3]):
+                name = i.get("name", "")
+                pid = i.get("id", "")
+                top_items.append(f"{idx+1}.{name}({pid[:8]}...)")
+            names_str = "、".join(top_items)
             if len(items) > 3:
-                names_str += "等"
+                names_str += f" 等{len(items)}项"
 
             return ToolResult(
                 success=True,

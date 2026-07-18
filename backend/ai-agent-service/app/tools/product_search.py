@@ -183,11 +183,15 @@ class ProductSearchTool(BaseTool):
                     summary=f"未找到与'{keyword}'相关的商品",
                 )
 
-            # 构建摘要：取前3个商品名
-            top_names = [p["name"] for p in products[:3] if p.get("name")]
-            names_str = "、".join(top_names)
+            # 构建摘要：取前3个商品名 + ID 前缀，LLM 写操作时直接用 UUID
+            top_items = []
+            for p in products[:3]:
+                name = p.get("name", "")
+                pid = p.get("id", "")
+                top_items.append(f"{name}({pid[:8]}...)")
+            names_str = "、".join(top_items)
             if len(products) > 3:
-                names_str += "等"
+                names_str += f" 等{len(products)}件"
 
             return ToolResult(
                 success=True,
