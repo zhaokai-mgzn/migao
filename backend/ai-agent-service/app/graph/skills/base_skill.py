@@ -83,6 +83,7 @@ def _extract_content(response: AIMessage) -> str:
         content = "".join(text_parts)
     # 防御：非字符串类型强制转换
     if not isinstance(content, str):
+        logger.warning(f"[_extract_content] Non-string content detected: type={type(content).__name__}, str={str(content)[:200]}")
         content = str(content)
 
     stripped = _strip_think_tags(content)

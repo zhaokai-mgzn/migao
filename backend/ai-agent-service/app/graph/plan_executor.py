@@ -161,6 +161,7 @@ async def _fetch_smart_defaults(
         return {}
 
     try:
+        logger.info(f"[pe] tool.execute({tool.name}) keyword={category_name}")
         result = await tool.execute(ctx, keyword=category_name, size=10)
         if not result.success or not result.data:
             return {}
@@ -426,6 +427,7 @@ async def _fetch_order_smart_defaults(
         return {}
     try:
         params = {"product_id": product_id} if product_id else {"keyword": product_name}
+        logger.info(f"[pe] tool.execute({tool.name}) params={json.dumps(params, ensure_ascii=False, default=str)[:300]}")
         result = await tool.execute(ctx, **params)
         if not result.success or not result.data:
             return {}
@@ -1069,6 +1071,7 @@ async def execute_plan(
 
             if tool:
                 try:
+                    logger.info(f"[pe] Query {current.execute_tool} | params={json.dumps(current.query_params, ensure_ascii=False, default=str)[:400]}")
                     result = await tool.execute(ctx, **current.query_params)
                     query_data = json.dumps(
                         result.data if result.success else {"error": result.message},
