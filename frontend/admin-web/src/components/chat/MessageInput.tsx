@@ -40,6 +40,15 @@ export default function MessageInput() {
     createSession()
   }
 
+  // AI 回复结束后自动聚焦输入框
+  const prevStreamingRef = useRef(isStreaming)
+  useEffect(() => {
+    if (prevStreamingRef.current && !isStreaming && !isSessionClosed) {
+      textareaRef.current?.focus()
+    }
+    prevStreamingRef.current = isStreaming
+  }, [isStreaming, isSessionClosed])
+
   // 自动调整高度
   useEffect(() => {
     if (textareaRef.current) {
@@ -130,6 +139,8 @@ export default function MessageInput() {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto'
     }
+    // 发送后自动聚焦输入框，保持连续对话体验
+    textareaRef.current?.focus()
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
