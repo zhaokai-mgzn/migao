@@ -56,6 +56,6 @@ public class AgentAfterSalesController {
         } catch (Exception ignored) {
             // 非 Web 上下文或无认证信息时降级
         }
-        return "系统";
+        throw new org.springframework.security.access.AccessDeniedException("未认证的用户无法创建售后工单");
     }
 }
