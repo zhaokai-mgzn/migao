@@ -13,7 +13,7 @@ from app.tools.base import BaseTool, ToolContext, ToolResult
 from app.utils.http_client import get_admin_api_client
 
 
-VALID_ACTIONS = {"create", "update", "toggle_status", "manage_processing_items"}
+VALID_ACTIONS = {"create", "update", "toggle_status"}  # manage_processing_items 已拆分为独立 tool: product_processing_item_manage
 VALID_PRODUCT_STATUSES = {"on_sale", "off_sale"}
 
 
@@ -22,8 +22,10 @@ class ProductManageTool(BaseTool):
 
     name = "product_manage"
     description = (
-        "【触发】创建/修改/上下架商品。create 必填 name+price，收集→确认→执行。update 需 product_id。"
-        "toggle_status 需 product_id+status。manage_processing_items 用于增删加工项。"
+        "【触发】创建/修改/上下架商品。create 必填 name+price，收集→确认→执行。"
+        "update 需 product_id（支持名称/序号/UUID，服务端自动解析），只传要改的字段。"
+        "toggle_status 需 product_id+status(on_sale/off_sale)。"
+        "【反例】增删商品加工项用 product_processing_item_manage，不要用本工具。"
         "【标注】WRITE|DESTRUCTIVE"
     )
 
@@ -159,9 +161,7 @@ class ProductManageTool(BaseTool):
                     door_widths, sku_code)
             elif action == "toggle_status":
                 return await self._toggle_status(context, product_id, status)
-            elif action == "manage_processing_items":
-                return await self._manage_processing_items(
-                    context, product_id, processing_item_action, processing_item_ids)
+            # manage_processing_items 已拆分为独立 tool: product_processing_item_manage
             else:
                 return ToolResult(success=False, error=f"未知操作: {action}")
 

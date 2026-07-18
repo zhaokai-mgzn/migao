@@ -409,6 +409,7 @@ def create_default_registry() -> ToolRegistry:
     from app.tools.quick_reply_manage import QuickReplyManageTool
     from app.tools.category_manage import CategoryManageTool
     from app.tools.processing_item_manage import ProcessingItemManageTool
+    from app.tools.product_processing_item_manage import ProductProcessingItemManageTool
     from app.tools.interact import InteractTool  # noqa: F401 保留以备将来使用
     from app.tools.validate_input import ValidateInputTool
 
@@ -441,6 +442,7 @@ def create_default_registry() -> ToolRegistry:
     registry.register(QuickReplyManageTool())
     registry.register(CategoryManageTool())
     registry.register(ProcessingItemManageTool())
+    registry.register(ProductProcessingItemManageTool())
     # interact 工具重新启用：支持交互式组件（interactive component support）
     registry.register(InteractTool())
     registry.register(ValidateInputTool())
