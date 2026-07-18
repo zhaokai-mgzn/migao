@@ -41,10 +41,12 @@ class OrderCreateTool(BaseTool):
 
     name = "order_create"
     description = (
-        "创建新订单。用户说'创建订单''下单'时直接调用，不要先调product_search查商品。"
-        "商品明细接受用户口头提供的信息（product_name/quantity/unit_price），无需验证。"
-        "必填: customer_name + customer_phone + items(至少一项product_name+quantity+unit_price)。"
-        "缺必填字段时引导用户补充后再调用。修改已有订单用 order_manage。WRITE"
+        "【触发】用户说'创建订单''下单''帮我订XX商品'时调用。"
+        "【前置】如果用户指定了商品名，必须先调 product_detail 查看 SKU 列表。"
+        "商品有多个 SKU（颜色×售卖方式×门幅）时必须让用户选择规格后再传 item。"
+        "单 SKU 商品直接用那一条的 price/colorName/sellingMethod/doorWidth。"
+        "必填: customer_name + customer_phone + items(至少 product_name+quantity+unit_price)。"
+        "【反例】不要跳过 SKU 选择直接下单。修改已有订单用 order_manage。WRITE"
     )
     allowed_roles = ["admin", "agent", "tenant_admin", "customer"]
 

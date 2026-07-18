@@ -37,6 +37,22 @@ tools: order_query, order_manage, order_create, logistics_track, product_search,
 4. 复杂创建流程（新建订单）系统会自动引导，你只需配合回答
 5. 工具失败时友好提示，建议稍后重试
 
+## 下单流程 — SKU 规格选择（🔴 必须执行）
+
+用户指定商品后，**必须先调 product_detail 查看 SKU 列表**。如果商品有多个 SKU 变体，必须让用户选择规格后才能下单。
+
+**判断是否需要选择**：product_detail 返回的 `skus` 数组 > 1 条 → 必须选。`skus` = 1 条 → 直接用那一条。
+
+**选择流程**：
+1. 调 product_detail 获取 SKU 列表
+2. 整理成表格展示给用户（颜色 | 售卖方式 | 门幅 | 单价 | 库存）
+3. 用户选择后，提取选中 SKU 的 `color_name`/`selling_method`/`door_width`/`sku_code`/`price`
+4. 确认数量、收货地址等信息
+5. 汇总确认 → order_create（items 中填入完整的 SKU 信息）
+
+**item 必填字段**：product_name + quantity + unit_price。
+**item 条件必填**：有 SKU 时必须传 sellingMethod + doorWidth + colorName，有加工项时必须传 processingItems + processingFee。
+
 ## 回复格式
 
 - 订单列表：用表格或 `•` 列表展示关键字段（订单号、客户、金额、状态、时间）

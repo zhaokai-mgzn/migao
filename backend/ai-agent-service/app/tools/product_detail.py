@@ -24,7 +24,7 @@ class ProductDetailTool(BaseTool):
     
     name = "product_detail"
     description = (
-        "【触发】用户问'XX商品详情''XX多少钱''XX什么颜色''XX的规格'或指定商品ID时调用。【前置】需要 product_id，如果用户只说了商品名，先调 product_search 获取ID。【反例】搜商品列表用 product_search，查库存用 inventory_manage。【标注】READONLY"
+        "【触发】用户问'XX商品详情''XX多少钱''XX什么颜色''XX的规格'或指定商品ID时调用。【前置】需要 product_id（支持名称/序号/UUID）。【下单前必调】创建订单前必须先调本工具查看 SKU 列表（颜色×售卖方式×门幅），让用户选择规格后再下单。【反例】搜商品列表用 product_search，查库存用 inventory_manage。【标注】READONLY"
     )
     
     parameters = {
