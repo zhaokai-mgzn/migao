@@ -930,6 +930,37 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         return null;
     }
 
+    /**
+     * 更新订单物流信息（从 Controller 逻辑提取，供 Agent 端点复用）。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void updateOrderLogistics(String orderId, String logisticsCompany, String trackingNo, Long tenantId) {
+        Order order = orderMapper.selectById(orderId);
+        if (order == null) {
+            throw BusinessException.notFound("订单");
+        }
+        String orderStatus = order.getStatus();
+        if (!"shipped".equals(orderStatus) && !"confirmed".equals(orderStatus)
+                && !"producing".equals(orderStatus)) {
+            throw BusinessException.validationError(
+                    "仅已确认/生产中/已发货状态可更新物流，当前状态: " + orderStatus);
+        }
+        java.util.List<OrderLogistics> existing = orderLogisticsMapper.selectList(
+                new LambdaQueryWrapper<OrderLogistics>().eq(OrderLogistics::getOrderId, orderId));
+        if (!existing.isEmpty()) {
+            OrderLogistics logistics = existing.get(0);
+            if (logisticsCompany != null) logistics.setLogisticsCompany(logisticsCompany);
+            if (trackingNo != null) logistics.setTrackingNo(trackingNo);
+            orderLogisticsMapper.updateById(logistics);
+        } else {
+            OrderLogistics logistics = OrderLogistics.builder()
+                    .tenantId(tenantId).orderId(orderId)
+                    .logisticsCompany(logisticsCompany).trackingNo(trackingNo)
+                    .status("in_transit").build();
+            orderLogisticsMapper.insert(logistics);
+        }
+    }
+
     // ======================== Agent BFF 方法 ========================
 
     /**
@@ -995,7 +1026,8 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         String resolvedId = resolveOrderIdToUuid(rawId, tenantId);
         if (resolvedId == null) {
             throw new BusinessException("ORDER_NOT_FOUND",
-                    "无法找到订单：" + rawId + "。请使用 order_query 查询正确的订单号后重试。", 404);
+                    "无法找到订单：" + rawId + "。请使用 order_query 查询正确的订单号后重试。", 404,
+                    "请使用 order_query 按客户姓名/手机号/订单号搜索确认正确的订单标识");
         }
 
         String action = request.getAction();
@@ -1011,6 +1043,16 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
                 updateOrderStatus(resolvedId, request.getStatus());
                 yield getOrderById(resolvedId);
             }
+            case "update_logistics" -> {
+                if (!StringUtils.hasText(request.getLogisticsCompany())
+                        || !StringUtils.hasText(request.getTrackingNumber())) {
+                    throw BusinessException.validationError("logisticsCompany 和 trackingNumber 不能为空");
+                }
+                // 委托给 OrderController.updateLogistics 的逻辑
+                updateOrderLogistics(resolvedId, request.getLogisticsCompany(),
+                        request.getTrackingNumber(), tenantId);
+                yield getOrderById(resolvedId);
+            }
             case "confirm_payment" -> {
                 confirmPayment(resolvedId);
                 yield getOrderById(resolvedId);
@@ -1020,11 +1062,18 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
                 yield getOrderById(resolvedId);
             }
             case "refund" -> {
-                refundOrder(resolvedId, request.getRefundReason());
+                // 将 refundAmount 写入备注（Order 表无 refundAmount 字段）
+                String reason = request.getRefundReason();
+                if (request.getRefundAmount() != null) {
+                    String amountNote = "退款金额: ¥" + request.getRefundAmount();
+                    reason = reason != null ? reason + "（" + amountNote + "）" : amountNote;
+                }
+                refundOrder(resolvedId, reason);
                 yield getOrderById(resolvedId);
             }
             default -> throw BusinessException.validationError(
-                    "不支持的操作类型: " + action + "，可选: update_status/confirm_payment/cancel/refund");
+                    "不支持的操作类型: " + action
+                    + "，可选: update_status/update_logistics/confirm_payment/cancel/refund");
         };
     }
 
@@ -1092,6 +1141,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
                         .and(w -> w.like(Order::getOrderNo, raw)
                                 .or().like(Order::getCustomerPhone, raw)
                                 .or().like(Order::getCustomerName, raw))
+                        .orderByDesc(Order::getCreatedAt)
                         .last("LIMIT 1"));
         if (!byKeyword.isEmpty()) return byKeyword.get(0).getId();
 

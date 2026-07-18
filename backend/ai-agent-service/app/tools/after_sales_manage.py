@@ -324,7 +324,7 @@ class AfterSalesManageTool(BaseTool):
 
         client = get_admin_api_client()
         response = await client.post(
-            "/api/admin/after-sales",
+            "/api/admin/agent/after-sales",
             json_data=json_data,
             tenant_id=context.tenant_id,
             user_id=context.user_id,

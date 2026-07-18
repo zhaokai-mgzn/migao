@@ -488,7 +488,8 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
 
         // 解析 orderId（支持 ORD-xxx → UUID）
         String resolvedOrderId = request.getOrderId();
-        if (StringUtils.hasText(resolvedOrderId) && !resolvedOrderId.matches("^[0-9a-fA-F-]{20,}$")) {
+        if (StringUtils.hasText(resolvedOrderId)
+                && !resolvedOrderId.matches("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")) {
             // 非 UUID 格式 → 按订单号搜索
             List<com.migao.admin.entity.Order> orders = orderMapper.selectList(
                     new LambdaQueryWrapper<com.migao.admin.entity.Order>()

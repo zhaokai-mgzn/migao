@@ -1305,7 +1305,8 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             if (resolved == null) {
                 throw new BusinessException("CATEGORY_NOT_FOUND",
                         "无法找到匹配的分类：" + request.getCategoryId(),
-                        422);
+                        422,
+                        "请使用 category_manage(action='tree') 获取分类树，确认正确的分类名称或ID后重试");
             }
             createReq.setCategoryId(resolved);
         }
@@ -1391,7 +1392,8 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
 
     /**
      * Agent 专用部分更新商品。
-     * null 字段 = 不修改。数组字段 (colors/sellingMethods/doorWidths) 传了才触发 SKU 重建。
+     * 直接操作 entity，不经过 ProductUpdateRequest + BeanUtils.copyProperties（防止 null 覆盖）。
+     * null/empty 字段 = 不修改。数组字段传了才触发 SKU 重建。
      */
     @Transactional(rollbackFor = Exception.class)
     public ProductResponse updateProductForAgent(String id,
@@ -1405,64 +1407,127 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             throw BusinessException.notFound("商品");
         }
 
-        ProductUpdateRequest updateReq = new ProductUpdateRequest();
         boolean hasUpdate = false;
 
-        // name: null = 不修改，传了就更新
-        if (request.getName() != null) {
-            updateReq.setName(request.getName());
+        // 标量字段：null/empty = 不修改
+        if (StringUtils.hasText(request.getName())) { product.setName(request.getName()); hasUpdate = true; }
+        if (StringUtils.hasText(request.getSkuCode())) { product.setSkuCode(request.getSkuCode()); hasUpdate = true; }
+        if (StringUtils.hasText(request.getDescription())) { product.setDescription(request.getDescription()); hasUpdate = true; }
+        if (StringUtils.hasText(request.getUnit())) { product.setUnit(request.getUnit()); hasUpdate = true; }
+        if (StringUtils.hasText(request.getPricingType())) { product.setPricingType(request.getPricingType()); hasUpdate = true; }
+        if (StringUtils.hasText(request.getBrand())) {
             hasUpdate = true;
-        } else {
-            updateReq.setName(product.getName()); // 保持原名（满足 @NotBlank）
+            // brand 走 product_attributes 表，统一在下方处理
         }
-
-        // categoryId: 解析后更新
+        if (request.getBasePrice() != null) { product.setBasePrice(request.getBasePrice()); hasUpdate = true; }
+        if (request.getStock() != null) { product.setStock(request.getStock()); hasUpdate = true; }
+        if (request.getImages() != null) { product.setImages(request.getImages()); hasUpdate = true; }
+        if (request.getDetailImages() != null) { product.setDetailImages(request.getDetailImages()); hasUpdate = true; }
         if (request.getCategoryId() != null) {
             String resolved = resolveCategoryId(request.getCategoryId(), tenantId);
             if (resolved == null) {
                 throw new BusinessException("CATEGORY_NOT_FOUND",
                         "无法找到匹配的分类：" + request.getCategoryId(), 422);
             }
-            updateReq.setCategoryId(resolved);
+            product.setCategoryId(resolved);
             hasUpdate = true;
         }
 
-        if (request.getBasePrice() != null) { updateReq.setBasePrice(request.getBasePrice()); hasUpdate = true; }
-        if (request.getSkuCode() != null) { updateReq.setSkuCode(request.getSkuCode()); hasUpdate = true; }
-        if (request.getDescription() != null) { updateReq.setDescription(request.getDescription()); hasUpdate = true; }
-        if (request.getBrand() != null) { updateReq.setBrand(request.getBrand()); hasUpdate = true; }
-        if (request.getUnit() != null) { updateReq.setUnit(request.getUnit()); hasUpdate = true; }
-        if (request.getPricingType() != null) { updateReq.setPricingType(request.getPricingType()); hasUpdate = true; }
-        if (request.getStock() != null) { updateReq.setStock(request.getStock()); hasUpdate = true; }
-        if (request.getImages() != null) { updateReq.setImages(request.getImages()); hasUpdate = true; }
-        if (request.getDetailImages() != null) { updateReq.setDetailImages(request.getDetailImages()); hasUpdate = true; }
-        if (request.getSpecifications() != null) { updateReq.setSpecifications(request.getSpecifications()); hasUpdate = true; }
-        if (request.getStockDeductionMode() != null) { /* 不支持通过 update 修改，忽略 */ }
+        // 保存基本字段
+        if (hasUpdate) {
+            product.setEditedBy(getCurrentUsername());
+            product.setEditedAt(OffsetDateTime.now());
+            productMapper.updateById(product);
+        }
 
-        // 颜色/售卖方式/门幅: 传了才处理（会触发 SKU 重建）
-        if (request.getColors() != null) {
-            updateReq.setColors(request.getColors().stream().map(c -> {
-                ProductColorInput ci = new ProductColorInput();
-                ci.setColorName(c);
-                return ci;
-            }).collect(Collectors.toList()));
+        // brand + specifications: 仅在显式传入时更新（先删后插）
+        if (request.getBrand() != null || request.getSpecifications() != null) {
+            saveProductAttributes(product.getId(), tenantId,
+                    request.getBrand(), request.getSpecifications());
             hasUpdate = true;
         }
-        if (request.getSellingMethods() != null) {
-            updateReq.setSellingMethods(request.getSellingMethods().stream()
-                    .map(this::translateSellingMethod).collect(Collectors.toList()));
+
+        // 颜色/售卖方式/门幅: 传了才重建 SKU（null = 跳过，非空列表才触发）
+        if (request.getColors() != null && !request.getColors().isEmpty()) {
+            rebuildColorsAndSkus(product, tenantId,
+                    request.getColors(), request.getSellingMethods(),
+                    request.getDoorWidths(), null);
+            hasUpdate = true;
+        } else if ((request.getSellingMethods() != null && !request.getSellingMethods().isEmpty())
+                || (request.getDoorWidths() != null && !request.getDoorWidths().isEmpty())) {
+            rebuildColorsAndSkus(product, tenantId,
+                    request.getColors(), request.getSellingMethods(),
+                    request.getDoorWidths(), null);
             hasUpdate = true;
         }
-        if (request.getDoorWidths() != null) { updateReq.setDoorWidths(request.getDoorWidths()); hasUpdate = true; }
 
         // 不传 processingItemConfigs，保留现有关联
-        updateReq.setProcessingItemConfigs(null);
 
         if (!hasUpdate) {
             return getProductById(id, tenantId);
         }
 
-        return updateProduct(id, updateReq, tenantId);
+        log.info("Agent 更新商品完成: id={}, fields updated", id);
+        return getProductById(id, tenantId);
+    }
+
+    /**
+     * Agent 专用：重建颜色 + SKU（先读后删再插）。
+     * 仅在 Agent 显式传入颜色/售卖方式/门幅时调用。
+     * 如果 Agent 只传了售卖方式/门幅而未传颜色，保留已有颜色。
+     */
+    private void rebuildColorsAndSkus(Product product, Long tenantId,
+                                       List<String> colors,
+                                       List<String> sellingMethods,
+                                       List<String> doorWidths,
+                                       List<ProductSkuInput> skuInputs) {
+        String productId = product.getId();
+
+        // 删除前保存已有颜色（如果 Agent 未传新颜色）
+        List<ProductColor> oldColors = null;
+        if (colors == null) {
+            oldColors = productColorMapper.selectList(
+                    new LambdaQueryWrapper<ProductColor>()
+                            .eq(ProductColor::getProductId, productId)
+                            .orderByAsc(ProductColor::getSortOrder));
+        }
+
+        // 先删后建
+        productSkuMapper.delete(new LambdaQueryWrapper<ProductSku>()
+                .eq(ProductSku::getProductId, productId));
+        productColorMapper.delete(new LambdaQueryWrapper<ProductColor>()
+                .eq(ProductColor::getProductId, productId));
+
+        // 构建颜色输入
+        List<ProductColorInput> colorInputs;
+        if (colors != null) {
+            colorInputs = colors.stream().map(c -> {
+                ProductColorInput ci = new ProductColorInput();
+                ci.setColorName(c);
+                return ci;
+            }).collect(Collectors.toList());
+        } else if (oldColors != null && !oldColors.isEmpty()) {
+            colorInputs = oldColors.stream().map(c -> {
+                ProductColorInput ci = new ProductColorInput();
+                ci.setColorName(c.getColorName());
+                ci.setMainColorHex(c.getMainColorHex());
+                ci.setColorImageUrl(c.getColorImageUrl());
+                ci.setRemark(c.getRemark());
+                ci.setSortOrder(c.getSortOrder());
+                return ci;
+            }).collect(Collectors.toList());
+        } else {
+            colorInputs = null;
+        }
+
+        // 翻译售卖方式
+        List<String> translatedMethods = sellingMethods != null
+                ? sellingMethods.stream().map(this::translateSellingMethod).collect(Collectors.toList())
+                : null;
+
+        saveColorsAndSkus(productId, product.getSkuCode(), tenantId,
+                colorInputs, translatedMethods, doorWidths,
+                product.getBasePrice(), product.getStock(), skuInputs);
     }
 
     /**

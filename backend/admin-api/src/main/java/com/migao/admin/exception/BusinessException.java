@@ -20,6 +20,12 @@ public class BusinessException extends RuntimeException {
     private final int httpStatus;
 
     /**
+     * LLM 友好的修复建议（Agent 端点使用）
+     */
+    @Getter
+    private String suggestion;
+
+    /**
      * 构造业务异常
      *
      * @param code       错误码
@@ -32,16 +38,22 @@ public class BusinessException extends RuntimeException {
     }
 
     /**
-     * 构造业务异常
-     *
-     * @param code       错误码
-     * @param message    错误消息
-     * @param httpStatus HTTP 状态码
+     * 构造业务异常（含 suggestion）
      */
     public BusinessException(String code, String message, int httpStatus) {
         super(message);
         this.code = code;
         this.httpStatus = httpStatus;
+    }
+
+    /**
+     * 构造业务异常（含 suggestion + HTTP 状态码）
+     */
+    public BusinessException(String code, String message, int httpStatus, String suggestion) {
+        super(message);
+        this.code = code;
+        this.httpStatus = httpStatus;
+        this.suggestion = suggestion;
     }
 
     /**
