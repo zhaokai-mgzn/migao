@@ -26,7 +26,7 @@ export default function FloatingAssistant() {
       {isOpen && (
         <div className="fixed right-4 top-4 bottom-20 z-50 w-[440px] max-w-[calc(100vw-2rem)]">
           <MibaoChatPanel className="h-full bg-white shadow-2xl">
-            <div className="flex flex-col h-full min-h-0">
+            <div className="flex flex-col flex-1 min-h-0">
               {/* 头部 */}
               <div className="flex items-center justify-between h-12 px-4 border-b border-gray-100 bg-gradient-to-r from-primary-600 to-primary-500 flex-shrink-0">
                 <div className="flex items-center gap-2">
