@@ -68,8 +68,8 @@ describe('FloatingAssistant', () => {
     expect(screen.getByTestId('session-list')).toBeInTheDocument()
     expect(screen.getByTestId('chat-area')).toBeInTheDocument()
     expect(screen.getByTestId('session-insight')).toBeInTheDocument()
-    // FAB 变为关闭图标
-    expect(screen.getByTitle('关闭米宝')).toBeInTheDocument()
+    // FAB 在面板打开时隐藏
+    expect(screen.queryByTitle('打开米宝')).not.toBeInTheDocument()
   })
 
   it('点击关闭按钮收起面板', () => {
