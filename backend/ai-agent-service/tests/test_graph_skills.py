@@ -539,11 +539,7 @@ class TestExecuteSkillTextAfterMultimodal:
             if isinstance(msg, HumanMessage) and isinstance(msg.content, str):
                 if msg.content == "[图片]":
                     found_placeholder = True
-        assert found_placeholder, "纯图片历史消息应转为 '[图片]' 占位符"
-
-    @patch("app.graph.plan_executor._load_plan", return_value=None)
-    @patch("app.graph.plan_executor.should_use_plan_execute", return_value=False)
-    @patch("app.graph.skills.base_skill.get_breaker")
+        assert found_placeholder, "纯图片历史消息应转为 '[图片]' 占位符"    @patch("app.graph.skills.base_skill.get_breaker")
     @patch("app.graph.skills.base_skill.get_tracker")
     @patch("app.graph.skills.base_skill.get_skill_llm")
     @patch("app.graph.skills.base_skill.create_skill_registry")
@@ -769,11 +765,7 @@ class TestExecuteSkillVisionRetry:
 
     当 Vision LLM 返回空内容时，应自动重试 1 次（共 2 次调用），
     而非直接触发兜底 "暂时无法生成回复"。
-    """
-
-    @patch("app.graph.plan_executor._load_plan", return_value=None)
-    @patch("app.graph.plan_executor.should_use_plan_execute", return_value=False)
-    @patch("app.graph.skills.base_skill.get_breaker")
+    """    @patch("app.graph.skills.base_skill.get_breaker")
     @patch("app.graph.skills.base_skill.get_tracker")
     @patch("app.graph.skills.base_skill.get_skill_llm")
     @patch("app.graph.skills.base_skill.create_skill_registry")
@@ -843,11 +835,7 @@ class TestExecuteSkillVisionRetry:
         assert result["final_answer"] == "根据图片分析，这是一款 HOME YUUR 色卡系列，请问需要创建商品吗？"
         # Vision LLM 调用 2 次，文本 LLM 调用 1 次
         assert mock_vision_llm.ainvoke.call_count == 2
-        assert mock_text_llm.ainvoke.call_count == 1
-
-    @patch("app.graph.plan_executor._load_plan", return_value=None)
-    @patch("app.graph.plan_executor.should_use_plan_execute", return_value=False)
-    @patch("app.graph.skills.base_skill.get_breaker")
+        assert mock_text_llm.ainvoke.call_count == 1    @patch("app.graph.skills.base_skill.get_breaker")
     @patch("app.graph.skills.base_skill.get_tracker")
     @patch("app.graph.skills.base_skill.get_skill_llm")
     @patch("app.graph.skills.base_skill.create_skill_registry")
@@ -906,11 +894,7 @@ class TestExecuteSkillVisionRetry:
 
 
 class TestExecuteSkillVisionToTextFixes:
-    """验证 Vision→text 回退路径的三个修复 (Code Review #207 补充测试)"""
-
-    @patch("app.graph.plan_executor._load_plan", return_value=None)
-    @patch("app.graph.plan_executor.should_use_plan_execute", return_value=False)
-    @patch("app.graph.skills.base_skill.get_breaker")
+    """验证 Vision→text 回退路径的三个修复 (Code Review #207 补充测试)"""    @patch("app.graph.skills.base_skill.get_breaker")
     @patch("app.graph.skills.base_skill.get_tracker")
     @patch("app.graph.skills.base_skill.get_skill_llm")
     @patch("app.graph.skills.base_skill.create_skill_registry")
@@ -971,11 +955,7 @@ class TestExecuteSkillVisionToTextFixes:
         )
         assert not vision_in_history, (
             "Vision LLM AIMessage 不应出现在返回的 messages 中"
-        )
-
-    @patch("app.graph.plan_executor._load_plan", return_value=None)
-    @patch("app.graph.plan_executor.should_use_plan_execute", return_value=False)
-    @patch("app.graph.skills.base_skill.get_breaker")
+        )    @patch("app.graph.skills.base_skill.get_breaker")
     @patch("app.graph.skills.base_skill.get_tracker")
     @patch("app.graph.skills.base_skill.get_skill_llm")
     @patch("app.graph.skills.base_skill.create_skill_registry")
@@ -1036,11 +1016,7 @@ class TestExecuteSkillVisionToTextFixes:
                 )
                 assert not has_image, (
                     f"文本 LLM 收到的消息不应含 image_url: {msg.content}"
-                )
-
-    @patch("app.graph.plan_executor._load_plan", return_value=None)
-    @patch("app.graph.plan_executor.should_use_plan_execute", return_value=False)
-    @patch("app.graph.skills.base_skill.get_breaker")
+                )    @patch("app.graph.skills.base_skill.get_breaker")
     @patch("app.graph.skills.base_skill.get_tracker")
     @patch("app.graph.skills.base_skill.get_skill_llm")
     @patch("app.graph.skills.base_skill.create_skill_registry")
