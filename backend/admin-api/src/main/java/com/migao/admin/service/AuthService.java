@@ -428,6 +428,14 @@ public class AuthService {
 
         // 从 Token 中提取用户信息
         String userId = jwtTokenProvider.getUserIdFromToken(refreshToken);
+        // refresh 端点是公开的，JWT 过滤器不会设置 TenantContext，
+        // 需从 refreshToken claims 中手动提取 tenantId 后注入上下文
+        Object tidObj = claims.get(JwtTokenProvider.CLAIM_TENANT_ID);
+        if (tidObj != null) {
+            Long tid = tidObj instanceof Number ? ((Number) tidObj).longValue()
+                    : Long.valueOf(tidObj.toString());
+            TenantContext.setTenantId(tid);
+        }
 
         // 先查平台管理员表，再查租户用户表
         PlatformAdmin platformAdmin = platformAdminMapper.selectById(userId);
