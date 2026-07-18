@@ -11,6 +11,7 @@ AI 智能客服系统 - 加工项查询 Tool
 - processing_item_query：查询「店铺加工项目录」，支持按名称、分类、状态搜索
 """
 
+import json
 from typing import Any, Dict, List, Optional
 from loguru import logger
 
@@ -205,6 +206,18 @@ class ProcessingItemQueryTool(BaseTool):
             if len(items) > 3:
                 names_str += f" 等{len(items)}项"
 
+            total_pages = (total + size - 1) // size if size else 1
+            # 构造 pageMeta：LLM 调用 interact(choice) 时直接透传，前端自动翻页
+            page_meta = None
+            if total > len(items):
+                page_meta = {
+                    "current": page,
+                    "total": total_pages,
+                    "totalCount": total,
+                    "tool": "processing_item_query",
+                    "params": json.dumps({"keyword": keyword or "", "page": page, "size": size}, ensure_ascii=False),
+                }
+
             return ToolResult(
                 success=True,
                 data={
@@ -212,9 +225,10 @@ class ProcessingItemQueryTool(BaseTool):
                     "total": total,
                     "page": page,
                     "size": size,
-                    "total_pages": (total + size - 1) // size if size else 1,
+                    "total_pages": total_pages,
+                    "pageMeta": page_meta,  # 透传给 interact(choice)
                 },
-                message=f"共找到 {total} 个加工项",
+                message=f"共找到 {total} 个加工项" + (f"，当前第{page}页" if total_pages > 1 else ""),
                 summary=f"找到{total}个加工项: {names_str}",
             )
 
