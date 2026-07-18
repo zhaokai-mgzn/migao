@@ -263,7 +263,7 @@ export default function AfterSalesPage() {
               ]}
             />
           </div>
-          <div className="flex items-center gap-2 ml-auto">
+          <div className="flex items-center gap-2">
             <Button variant="secondary" onClick={handleReset} disabled={loading}>
               <RotateCcw className="w-4 h-4 mr-1" />
               重置

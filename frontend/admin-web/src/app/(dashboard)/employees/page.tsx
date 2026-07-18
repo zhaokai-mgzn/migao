@@ -369,7 +369,7 @@ export default function EmployeesPage() {
               onChange={(e) => setRoleFilter(e.target.value)}
             />
           </div>
-          <div className="flex items-center gap-2 ml-auto">
+          <div className="flex items-center gap-2">
             <Button variant="secondary" size="sm" onClick={handleReset}>
               重置
             </Button>

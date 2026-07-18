@@ -769,6 +769,7 @@ export interface DashboardStats {
   totalProducts: number
   totalOrders: number
   totalTickets: number
+  lowStockItems: number
 }
 
 // 商品销量排行

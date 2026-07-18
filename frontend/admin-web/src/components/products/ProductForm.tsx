@@ -1,10 +1,10 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Plus, Trash2, RotateCcw } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button, Input, Select } from '@/components/ui'
+import { Button, Input, Select, Modal } from '@/components/ui'
 import ImageUploader from './ImageUploader'
 import SkuMatrix from './SkuMatrix'
 import ProductAttributes from './ProductAttributes'
@@ -104,6 +104,19 @@ export default function ProductForm({
   const formRef = useRef<HTMLDivElement>(null)
   const isEdit = !!initialData
 
+  // ---- 离开确认：脏状态追踪 ----
+  const [dirty, setDirty] = useState(false)
+  const dirtyRef = useRef(false)
+  const [showLeaveModal, setShowLeaveModal] = useState(false)
+  const pendingNavRef = useRef<string | null>(null)
+  const [draftSaving, setDraftSaving] = useState(false)
+  const bypassGuardRef = useRef(false)
+
+  const markClean = useCallback(() => {
+    dirtyRef.current = false
+    setDirty(false)
+  }, [])
+
   const [form, setForm] = useState<ProductFormData>({
     ...DEFAULT_FORM,
     ...initialData,
@@ -138,6 +151,8 @@ export default function ProductForm({
     value: ProductFormData[K]
   ) => {
     setForm((prev) => ({ ...prev, [key]: value }))
+    dirtyRef.current = true
+    setDirty(true)
     if (errors[key]) {
       setErrors((prev) => {
         const next = { ...prev }
@@ -149,6 +164,8 @@ export default function ProductForm({
 
   const updateMany = (patch: Partial<ProductFormData>) => {
     setForm((prev) => ({ ...prev, ...patch }))
+    dirtyRef.current = true
+    setDirty(true)
     if (Object.keys(patch).some((k) => errors[k])) {
       setErrors((prev) => {
         const next = { ...prev }
@@ -258,6 +275,8 @@ export default function ProductForm({
         off_sale: '已下架',
       }
       toast.success(labelMap[targetStatus])
+      bypassGuardRef.current = true
+      markClean()
       router.push('/products')
     } catch (error) {
       console.error(`保存商品失败 (${targetStatus}):`, error)
@@ -277,7 +296,101 @@ export default function ProductForm({
     if (!confirm('确定要重置当前表单吗？已填写的内容将被清空。')) return
     setForm({ ...DEFAULT_FORM, ...(initialData || {}) })
     setErrors({})
+    markClean()
     toast.info('表单已重置')
+  }
+
+  // ---- 离开确认：拦截导航 ----
+
+  useEffect(() => {
+    if (!dirty) return
+
+    // 1. beforeunload — 浏览器关闭/刷新/面包屑 <a> 点击
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+
+    // 2. popstate — 浏览器前进/后退（SPA）
+    window.history.pushState({ __leave_block: true }, '', window.location.href)
+    const onPopState = () => {
+      if (bypassGuardRef.current) {
+        bypassGuardRef.current = false
+        return
+      }
+      // 拦截后退，先把状态推回去
+      window.history.pushState({ __leave_block: true }, '', window.location.href)
+      pendingNavRef.current = '__back__'
+      setShowLeaveModal(true)
+    }
+    window.addEventListener('popstate', onPopState)
+
+    // 3. 点击拦截 — 侧边栏 Link（SPA）等
+    const onClick = (e: MouseEvent) => {
+      if (bypassGuardRef.current) {
+        bypassGuardRef.current = false
+        return
+      }
+      const el = (e.target as HTMLElement).closest('a')
+      if (!el) return
+      const href = el.getAttribute('href')
+      if (!href) return
+      // 跳过外部链接、锚点、JS 链接、同页内跳转
+      if (
+        href.startsWith('http') ||
+        href.startsWith('#') ||
+        href.startsWith('javascript:') ||
+        href.startsWith('mailto:') ||
+        href.startsWith('tel:')
+      )
+        return
+      // 同页面（含 search）不拦截
+      const current = window.location.pathname + window.location.search
+      if (href === current || href === window.location.pathname) return
+
+      e.preventDefault()
+      e.stopPropagation()
+      e.stopImmediatePropagation()
+      pendingNavRef.current = href
+      setShowLeaveModal(true)
+    }
+    document.addEventListener('click', onClick, true)
+
+    return () => {
+      window.removeEventListener('beforeunload', onBeforeUnload)
+      window.removeEventListener('popstate', onPopState)
+      document.removeEventListener('click', onClick, true)
+    }
+  }, [dirty])
+
+  // ---- 离开确认：弹窗操作 ----
+
+  const handleLeaveWithoutSaving = () => {
+    bypassGuardRef.current = true
+    markClean()
+    setShowLeaveModal(false)
+    const target = pendingNavRef.current
+    pendingNavRef.current = null
+    if (target === '__back__') {
+      window.history.back()
+    } else if (target) {
+      router.push(target)
+    }
+  }
+
+  const handleSaveDraftAndLeave = async () => {
+    setDraftSaving(true)
+    try {
+      // 复用已有存草稿逻辑；校验失败会提前 return，不会导航
+      await handleSubmit('draft')
+      // 成功时 handleSubmit 已执行 markClean + router.push('/products')
+    } catch {
+      // 如果 handleSubmit 抛出非 Axios 异常，留在当前页
+    } finally {
+      setDraftSaving(false)
+      setShowLeaveModal(false)
+    }
   }
 
   // ========== 总库存 ==========
@@ -656,6 +769,32 @@ export default function ProductForm({
           </div>
         </div>
       </div>
+
+      {/* ========== 离开确认弹窗 ========== */}
+      <Modal
+        open={showLeaveModal}
+        onClose={() => setShowLeaveModal(false)}
+        title="确认离开"
+        maskClosable={false}
+        footer={
+          <>
+            <Button variant="secondary" onClick={handleLeaveWithoutSaving}>
+              直接退出
+            </Button>
+            <Button
+              onClick={handleSaveDraftAndLeave}
+              loading={draftSaving}
+              disabled={draftSaving}
+            >
+              存草稿
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-gray-600">
+          当前表单内容尚未保存，离开后将丢失已填写的内容。
+        </p>
+      </Modal>
     </div>
   )
 }

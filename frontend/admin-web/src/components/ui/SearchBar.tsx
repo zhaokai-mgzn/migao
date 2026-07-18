@@ -66,7 +66,7 @@ const SearchBar = ({ fields, onSearch, onReset, loading, className }: SearchBarP
           </div>
         ))}
 
-        <div className="flex items-center gap-2 ml-auto">
+        <div className="flex items-center gap-2">
           <Button
             variant="secondary"
             onClick={handleReset}

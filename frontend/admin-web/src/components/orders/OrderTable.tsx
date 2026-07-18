@@ -145,7 +145,7 @@ export default function OrderTable({
       <table className="w-full text-sm">
         <thead>
           <tr className="bg-gray-50 text-gray-600 text-left">
-            <th className="px-4 py-3 font-medium w-10">
+            <th className="pl-2 pr-3 py-3 font-medium w-10">
               <input
                 type="checkbox"
                 checked={allSelected}
@@ -203,7 +203,7 @@ export default function OrderTable({
                     checked ? 'bg-primary-50/40' : 'hover:bg-gray-50'
                   )}
                 >
-                  <td className="px-4 py-4">
+                  <td className="pl-2 pr-3 py-4">
                     <input
                       type="checkbox"
                       checked={checked}
@@ -312,7 +312,7 @@ export default function OrderTable({
                   </td>
 
                   {/* 操作 */}
-                  <td className="px-4 py-4">{renderActions(order)}</td>
+                  <td className="pl-2 pr-3 py-4">{renderActions(order)}</td>
                 </tr>
               )
             })

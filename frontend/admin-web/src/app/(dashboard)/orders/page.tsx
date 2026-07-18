@@ -456,7 +456,7 @@ export default function OrdersPage() {
             </select>
           </div>
           {/* 按钮 */}
-          <div className="flex items-center gap-2 justify-end">
+          <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={handleSearch}

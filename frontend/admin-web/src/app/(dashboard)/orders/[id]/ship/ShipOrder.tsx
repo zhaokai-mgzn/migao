@@ -353,8 +353,8 @@ function ProductTable({ groups }: { groups: ProductGroup[] }) {
       <table className="w-full text-sm">
         <thead className="bg-gray-50 text-gray-600">
           <tr>
-            <Th>商品</Th>
-            <Th>商品货号</Th>
+            <Th className="pl-0">商品</Th>
+            <Th className="pl-0">商品货号</Th>
             <Th>颜色</Th>
             <Th>规格尺寸</Th>
             <Th align="right">单价(元/米)</Th>
@@ -370,12 +370,12 @@ function ProductTable({ groups }: { groups: ProductGroup[] }) {
                 {rowIdx === 0 && (
                   <td
                     rowSpan={group.rows.length}
-                    className="px-3 py-3 align-top border-r border-gray-100 font-medium text-gray-900"
+                    className="pl-0 pr-3 py-3 align-top border-r border-gray-100 font-medium text-gray-900"
                   >
                     {group.productName}
                   </td>
                 )}
-                <Td>{row.productCode || '-'}</Td>
+                <Td className="pl-0">{row.productCode || '-'}</Td>
                 <Td>{row.color || '-'}</Td>
                 <Td>{row.specification || '-'}</Td>
                 <Td align="right" className="text-red-500 font-medium">
@@ -453,9 +453,11 @@ function ProcessingTable({
 function Th({
   children,
   align = 'left',
+  className,
 }: {
   children: React.ReactNode
   align?: 'left' | 'right' | 'center'
+  className?: string
 }) {
   return (
     <th
@@ -463,7 +465,8 @@ function Th({
         'px-3 py-2.5 text-xs font-semibold text-gray-600 whitespace-nowrap',
         align === 'right' && 'text-right',
         align === 'center' && 'text-center',
-        align === 'left' && 'text-left'
+        align === 'left' && 'text-left',
+        className
       )}
     >
       {children}

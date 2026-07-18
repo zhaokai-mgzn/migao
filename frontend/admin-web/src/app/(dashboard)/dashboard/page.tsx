@@ -131,6 +131,8 @@ export default function DashboardPage() {
       ])
       const s = statsRes.data.data
       setStats(s)
+      // #1396: 使用 stats 端点的 lowStockItems，避免冗余 API 调用 + 200 上限
+      setLowStockCount(s.lowStockItems ?? 0)
       setTrendData(trendRes.data.data)
       setRecentOrders(ordersRes.data.data || [])
 
@@ -149,12 +151,6 @@ export default function DashboardPage() {
       try {
         const resp = await request.get('/api/admin/dashboard/processing-shipment-count')
         setProcessingShipment(resp.data?.data ?? 0)
-      } catch (e) { console.error("page.tsx", e); }
-      // 待补库存 = 低库存 SKU 数（按颜色规格维度，库存 ≤ 100）
-      try {
-        const resp = await request.get('/api/admin/products/low-stock-by-color', { params: { threshold: 100, limit: 200 } })
-        const items = resp?.data?.data
-        setLowStockCount(Array.isArray(items) ? items.length : 0)
       } catch (e) { console.error("page.tsx", e); }
       setUpdateTime(now())
     } catch (error) {
