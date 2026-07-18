@@ -97,7 +97,8 @@ class LangChainToolAdapter:
         LLM 在 tool calling 时可能将 array/object 参数序列化为 JSON 字符串
         （如 options='[{"label":"A","value":"a"}]'），自动解析为正确的 Python 类型。
 
-        这样所有 Tool 都能受益，不需要每个 Tool 单独处理此问题。
+        反向修复：LLM 也可能传 list 给 string 字段（如 name=["a","b"]），
+        取第一个元素转为字符串，防止后续 .strip() 报 AttributeError。
         """
         props = tool.parameters.get("properties", {})
         if not props:
@@ -106,10 +107,22 @@ class LangChainToolAdapter:
         normalized = dict(kwargs)
         for field_name, field_schema in props.items():
             expected_type = field_schema.get("type", "")
+            value = normalized.get(field_name)
+            if value is None:
+                continue
+
+            # 反向修复：list → string（取第一个元素）
+            if expected_type == "string" and isinstance(value, list):
+                normalized[field_name] = str(value[0]) if value else ""
+                logger.warning(
+                    f"[langchain-adapter] Fixed '{field_name}' for {tool.name}: "
+                    f"list → string '{normalized[field_name]}'"
+                )
+                continue
+
             if expected_type not in ("array", "object"):
                 continue
-            value = normalized.get(field_name)
-            if value is None or not isinstance(value, str):
+            if not isinstance(value, str):
                 continue  # 已经是正确类型或不需处理
             try:
                 parsed = json.loads(value)
