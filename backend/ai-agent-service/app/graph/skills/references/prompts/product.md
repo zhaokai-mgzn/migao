@@ -26,7 +26,8 @@ tools: product_search, product_detail, product_manage, inventory_manage, process
 - processing_item_query 只允许每轮对话调用一次
 - **货号(sku_code)**：用户直接提供时直接使用；未提供时引导。图片有色号→提取；有品牌→缩写；都没有→拼音首字母
 - 图片识别结果直接预填表单，不要让用户重复输入
-- **🔴 所有写操作必须先解析 ID**：product_manage(update/toggle_status/manage_processing_items) 必须先用 product_detail 或 product_search 查出商品真实 UUID，再用 UUID 调用。**禁止传商品名称、序号或任何非 32 位 UUID 的值作为 product_id**。加工项 ID 同理，必须从 processing_item_query 返回的真实列表中提取
+- **🔴 所有写操作必须先解析 ID**：product_manage(update/toggle_status) 必须先用 product_detail 或 product_search 查出商品真实 UUID，再用 UUID 调用。加工项 ID 必须从 processing_item_query 返回的真实列表中提取
+- **🔴 加工项操作必须执行**：用户说"添加/加上/关联 XX 加工项"时，**查到加工项后必须立即调用 product_processing_item_manage 执行**，禁止只查询不执行。用户说"删掉/移除 XX 加工项"同理。这是写操作，查完就做，不要只展示列表就停住
 
 ## 商品基础属性（必须主动收集，AI 主导不要等用户指挥）
 

@@ -20,10 +20,10 @@ class ProductProcessingItemManageTool(BaseTool):
 
     name = "product_processing_item_manage"
     description = (
-        "【触发】用户说'给商品添加加工项''去掉XX的加工项''关联加工项''加个打孔'时调用。"
-        "【前置】需要 product_id（支持商品名称/序号/UUID，服务端自动解析）+ action(add/remove) + item_ids（支持名称/序号/UUID）。"
-        "【反例】仅查询商品加工项用 product_detail。管理加工项本身（创建/修改/删除）用 processing_item_manage。"
-        "【标注】WRITE — add/remove 都是写操作"
+        "【触发】用户说'添加加工项''加上XX''关联XX''去掉XX加工项''移除XX'时**立即调用**。"
+        "【前置】product_id 支持名称/序号/UUID 自动解析，item_ids 同样支持。无需先查 processing_item_query——直接传名称即可。"
+        "【反例】禁止只调 processing_item_query 展示列表后停住。查到就立即执行。"
+        "【标注】WRITE"
     )
     allowed_roles = ["admin", "tenant_admin"]
 

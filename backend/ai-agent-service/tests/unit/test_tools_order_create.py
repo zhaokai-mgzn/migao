@@ -53,19 +53,6 @@ class TestOrderCreateSuccess:
         mock_client.post.assert_called_once()
 
 
-class TestOrderCreateValidation:
-    """参数校验"""
-
-    @pytest.mark.skip(reason="Tool delegates validation to admin-api, no client-side check for customer_name")
-    async def test_missing_customer_name_returns_error(self, admin_tool_context):
-        tool = OrderCreateTool()
-        result = await tool.execute(
-            context=admin_tool_context,
-            customer_phone="13800000001",
-            items=[{"product_name": "商品A", "quantity": 1, "unit_price": 100, "subtotal": 100}],
-        )
-        assert result.success is False
-
 
 class TestOrderCreateError:
     """错误处理"""

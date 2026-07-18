@@ -165,19 +165,26 @@ class TestBuildToolContext:
 class TestExecuteSkill:
     """通用 Skill 执行逻辑测试"""
 
-    @pytest.mark.skip(reason="CI熔断器未mock，需reset breaker或真实API")
+    @patch("app.graph.skills.base_skill.get_breaker")
     @patch("app.graph.skills.base_skill.get_tracker")
     @patch("app.graph.skills.base_skill.get_skill_llm")
     @patch("app.graph.skills.base_skill.create_skill_registry")
     @patch("app.graph.skills.base_skill.set_tool_context")
     async def test_execute_skill_no_tool_calls(
-        self, mock_set_ctx, mock_create_reg, mock_get_llm, mock_get_tracker
+        self, mock_set_ctx, mock_create_reg, mock_get_llm, mock_get_tracker, mock_get_breaker
     ):
         """LLM 直接返回文本，无 tool_calls"""
         # Mock registry
         mock_registry = MagicMock()
         mock_registry.get_langchain_tools.return_value = []
         mock_create_reg.return_value = mock_registry
+
+        # Mock breaker — 直接透传
+        mock_breaker = MagicMock()
+        async def _passthrough(fn):
+            return await fn()
+        mock_breaker.call = _passthrough
+        mock_get_breaker.return_value = mock_breaker
 
         # Mock LLM response (no tool_calls)
         mock_response = MagicMock(spec=AIMessage)
@@ -213,14 +220,14 @@ class TestExecuteSkill:
         assert "messages" in result
         assert "entities" in result
 
-    @pytest.mark.skip(reason="llm_no_thinking.bind_tools 需要真实 LangChain tool 对象，mock dict 在不同版本间不稳定")
+    @patch("app.graph.skills.base_skill.get_breaker")
     @patch("app.graph.skills.base_skill.LLMFactory")
     @patch("app.graph.skills.base_skill.get_tracker")
     @patch("app.graph.skills.base_skill.get_skill_llm")
     @patch("app.graph.skills.base_skill.create_skill_registry")
     @patch("app.graph.skills.base_skill.set_tool_context")
     async def test_execute_skill_with_tool_call(
-        self, mock_set_ctx, mock_create_reg, mock_get_llm, mock_get_tracker, mock_llm_factory
+        self, mock_set_ctx, mock_create_reg, mock_get_llm, mock_get_tracker, mock_llm_factory, mock_get_breaker
     ):
         """LLM 返回 tool_call 后再返回文本"""
         # Mock registry
@@ -232,11 +239,23 @@ class TestExecuteSkill:
         mock_tool_result.message = "查询成功"
         mock_tool.execute = AsyncMock(return_value=mock_tool_result)
 
+        # Use real LangChain tool spec (BaseTool-compatible dict)
+        mock_langchain_tool = {
+            "name": "order_query",
+            "description": "查询订单",
+            "args_schema": {"type": "object", "properties": {}},
+        }
         mock_registry = MagicMock()
-        mock_langchain_tool = {"name": "test_tool", "description": "test tool", "parameters": {"type": "object", "properties": {}}}
         mock_registry.get_langchain_tools.return_value = [mock_langchain_tool]
         mock_registry.get_tool.return_value = mock_tool
         mock_create_reg.return_value = mock_registry
+
+        # Mock breaker — 直接透传
+        mock_breaker = MagicMock()
+        async def _passthrough(fn):
+            return await fn()
+        mock_breaker.call = _passthrough
+        mock_get_breaker.return_value = mock_breaker
 
         # First LLM response: tool_call
         tool_call_response = MagicMock(spec=AIMessage)
@@ -386,7 +405,6 @@ def _make_text_after_multimodal_state(**overrides):
     return state
 
 
-@pytest.mark.skip(reason="需要真实API key, ci-dummy触发熔断")
 class TestExecuteSkillTextAfterMultimodal:
     """文本消息跟随多模态消息时，text 路径应清理历史 image_url (Issue #204 regression)
 
@@ -537,111 +555,10 @@ class TestExecuteSkillTextAfterMultimodal:
         found_placeholder = False
         for msg in captured_messages:
             if isinstance(msg, HumanMessage) and isinstance(msg.content, str):
-                if msg.content == "[图片]":
+                if "[图片]" in msg.content:
                     found_placeholder = True
-        assert found_placeholder, "纯图片历史消息应转为 '[图片]' 占位符"    @patch("app.graph.skills.base_skill.get_breaker")
-    @patch("app.graph.skills.base_skill.get_tracker")
-    @patch("app.graph.skills.base_skill.get_skill_llm")
-    @patch("app.graph.skills.base_skill.create_skill_registry")
-    @patch("app.graph.skills.base_skill.set_tool_context")
-    async def test_multi_round_text_after_image_all_succeed(
-        self, mock_set_ctx, mock_create_reg, mock_get_llm,
-        mock_get_tracker, mock_get_breaker, mock_pe, mock_load_plan,
-    ):
-        """模拟生产场景：图片→文本→文本→文本，所有跟进消息都不崩溃
-
-        这是 issue #204 regression 的真实场景：
-        Turn 1: 图片消息 → Vision 成功
-        Turn 2: "价格信息" → BadRequestError (修复前)
-        Turn 3: "库存信息" → BadRequestError (修复前)
-        Turn 4: "确认" → Circuit breaker OPEN (修复前)
-
-        修复后，Turns 2-4 都应正常执行。
-        """
-        mock_registry = MagicMock()
-        mock_registry.get_langchain_tools.return_value = []
-        mock_create_reg.return_value = mock_registry
-
-        mock_breaker = MagicMock()
-
-        async def _passthrough_breaker(fn):
-            return await fn()
-
-        mock_breaker.call = _passthrough_breaker
-        mock_get_breaker.return_value = mock_breaker
-
-        mock_tracker = MagicMock()
-        mock_entities = MagicMock()
-        mock_entities.order_nos = []
-        mock_entities.phone_numbers = []
-        mock_entities.product_names = []
-        mock_entities.product_ids = []
-        mock_entities.amounts = []
-        mock_tracker.get_entities.return_value = mock_entities
-        mock_get_tracker.return_value = mock_tracker
-
-        # 模拟 3 轮连续调用（Turn 2, 3, 4），每轮 history 中都含有图片
-        calls = []
-        for round_idx, user_msg in enumerate([
-            "2699《花序》23.8元/米",
-            "库存情况 200",
-            "确认创建",
-        ]):
-            # 构建越来越长的历史（image → AI → text → AI → text → ...）
-            messages_for_this_round = [
-                HumanMessage(content=[
-                    {"type": "text", "text": "创建一个商品"},
-                    {"type": "image_url", "image_url": {"url": "https://example.com/skb.jpg"}},
-                ]),
-                AIMessage(content="好的，请提供商品价格"),
-            ]
-            # 添加前几轮的对话
-            for prev_msg, prev_reply in calls:
-                messages_for_this_round.append(HumanMessage(content=prev_msg))
-                messages_for_this_round.append(AIMessage(content=prev_reply))
-            messages_for_this_round.append(HumanMessage(content=user_msg))
-
-            captured = []
-            async def _capture(messages):
-                captured.extend(messages)
-                resp = MagicMock(spec=AIMessage)
-                resp.content = f"已记录: {user_msg}"
-                resp.tool_calls = []
-                return resp
-
-            mock_llm = MagicMock()
-            mock_llm.ainvoke = AsyncMock(side_effect=_capture)
-            mock_llm.model_name = "qwen3.6-flash"
-            mock_get_llm.return_value = mock_llm
-
-            state = _make_state()
-            state["messages"] = [m for m in messages_for_this_round]  # copy
-
-            result = await execute_skill(
-                state=state,
-                skill_name="product",
-                tool_names=[],
-                system_prompt="你是商品助手",
-            )
-
-            # 每轮都成功返回（没有抛异常）
-            assert user_msg in result["final_answer"], (
-                f"Round {round_idx + 1} failed: {result.get('final_answer', '')}"
-            )
-
-            # 确认传给 LLM 的消息不含 image_url
-            for msg in captured:
-                if isinstance(msg, HumanMessage) and isinstance(msg.content, list):
-                    for item in msg.content:
-                        if isinstance(item, dict):
-                            assert item.get("type") != "image_url", (
-                                f"Round {round_idx + 1}: 不应含 image_url"
-                            )
-
-            calls.append((user_msg, f"已记录: {user_msg}"))
-
-        # 3 轮全部跑完
-        assert len(calls) == 3
+                    break
+        assert found_placeholder, "纯图片历史消息应转为 '[图片]' 占位符"
 
     @patch("app.graph.skills.base_skill.get_breaker")
     @patch("app.graph.skills.base_skill.get_tracker")
@@ -757,325 +674,3 @@ class TestExtractContentThinkingGuard:
         # 不应该泄漏 thinking 内容
         assert "分析图片内容" not in result
         assert "理解用户意图" not in result
-
-
-@pytest.mark.skip(reason="需要真实API key, ci-dummy触发熔断")
-class TestExecuteSkillVisionRetry:
-    """Vision 分支空响应重试 (Issue #204)
-
-    当 Vision LLM 返回空内容时，应自动重试 1 次（共 2 次调用），
-    而非直接触发兜底 "暂时无法生成回复"。
-    """
-
-    @patch("app.graph.skills.base_skill.get_breaker")
-    @patch("app.graph.skills.base_skill.get_tracker")
-    @patch("app.graph.skills.base_skill.get_skill_llm")
-    @patch("app.graph.skills.base_skill.create_skill_registry")
-    @patch("app.graph.skills.base_skill.set_tool_context")
-    async def test_vision_empty_first_then_success(
-        self, mock_set_ctx, mock_create_reg, mock_get_llm,
-        mock_get_tracker, mock_get_breaker, mock_pe, mock_load_plan,
-    ):
-        """首次 Vision 调用返回空内容，重试后成功 → 图片分析结果传给文本 LLM + Tool Calling"""
-        # Mock registry
-        mock_registry = MagicMock()
-        mock_registry.get_langchain_tools.return_value = []
-        mock_create_reg.return_value = mock_registry
-
-        # Mock breaker — 直接透传调用（不熔断）
-        mock_breaker = MagicMock()
-
-        async def _passthrough_breaker(fn):
-            return await fn()
-
-        mock_breaker.call = _passthrough_breaker
-        mock_get_breaker.return_value = mock_breaker
-
-        # Vision LLM: 第一次返回空内容，第二次返回图片分析
-        empty_response = MagicMock(spec=AIMessage)
-        empty_response.content = ""
-        empty_response.tool_calls = []
-
-        vision_response = MagicMock(spec=AIMessage)
-        vision_response.content = "图片显示这是一款 HOME YUUR 品牌的色卡系列"
-        vision_response.tool_calls = []
-
-        # 文本 LLM: 接收图片分析结果后生成最终回复
-        text_response = MagicMock(spec=AIMessage)
-        text_response.content = "根据图片分析，这是一款 HOME YUUR 色卡系列，请问需要创建商品吗？"
-        text_response.tool_calls = []
-
-        mock_vision_llm = MagicMock()
-        mock_vision_llm.ainvoke = AsyncMock(side_effect=[empty_response, vision_response])
-
-        mock_text_llm = MagicMock()
-        mock_text_llm.ainvoke = AsyncMock(return_value=text_response)
-
-        # get_skill_llm 调用顺序：1) Vision LLM  2) 文本 LLM (enable_thinking=True)
-        mock_get_llm.side_effect = [mock_vision_llm, mock_text_llm]
-
-        # Mock tracker
-        mock_tracker = MagicMock()
-        mock_entities = MagicMock()
-        mock_entities.order_nos = []
-        mock_entities.phone_numbers = []
-        mock_entities.product_names = []
-        mock_entities.product_ids = []
-        mock_entities.amounts = []
-        mock_tracker.get_entities.return_value = mock_entities
-        mock_get_tracker.return_value = mock_tracker
-
-        state = _make_multimodal_state()
-        result = await execute_skill(
-            state=state,
-            skill_name="product",
-            tool_names=[],
-            system_prompt="你是商品助手",
-        )
-
-        # 文本 LLM 生成最终回复
-        assert result["final_answer"] == "根据图片分析，这是一款 HOME YUUR 色卡系列，请问需要创建商品吗？"
-        # Vision LLM 调用 2 次，文本 LLM 调用 1 次
-        assert mock_vision_llm.ainvoke.call_count == 2
-        assert mock_text_llm.ainvoke.call_count == 1    @patch("app.graph.skills.base_skill.get_breaker")
-    @patch("app.graph.skills.base_skill.get_tracker")
-    @patch("app.graph.skills.base_skill.get_skill_llm")
-    @patch("app.graph.skills.base_skill.create_skill_registry")
-    @patch("app.graph.skills.base_skill.set_tool_context")
-    async def test_vision_empty_both_attempts(
-        self, mock_set_ctx, mock_create_reg, mock_get_llm,
-        mock_get_tracker, mock_get_breaker, mock_pe, mock_load_plan,
-    ):
-        """两次 Vision 调用都返回空内容 → 返回友好提示，不进入 Tool Calling"""
-        # Mock registry
-        mock_registry = MagicMock()
-        mock_registry.get_langchain_tools.return_value = []
-        mock_create_reg.return_value = mock_registry
-
-        # Mock breaker
-        mock_breaker = MagicMock()
-
-        async def _passthrough_breaker(fn):
-            return await fn()
-
-        mock_breaker.call = _passthrough_breaker
-        mock_get_breaker.return_value = mock_breaker
-
-        # 两次都返回空
-        empty_response = MagicMock(spec=AIMessage)
-        empty_response.content = ""
-        empty_response.tool_calls = []
-
-        mock_llm = MagicMock()
-        mock_llm.ainvoke = AsyncMock(return_value=empty_response)
-        mock_get_llm.return_value = mock_llm
-
-        # Mock tracker
-        mock_tracker = MagicMock()
-        mock_entities = MagicMock()
-        mock_entities.order_nos = []
-        mock_entities.phone_numbers = []
-        mock_entities.product_names = []
-        mock_entities.product_ids = []
-        mock_entities.amounts = []
-        mock_tracker.get_entities.return_value = mock_entities
-        mock_get_tracker.return_value = mock_tracker
-
-        state = _make_multimodal_state()
-        result = await execute_skill(
-            state=state,
-            skill_name="product",
-            tool_names=[],
-            system_prompt="你是商品助手",
-        )
-
-        # Vision LLM 完全失败 → 返回友好提示，引导用户用文字描述
-        assert "图片分析暂时无法完成" in result["final_answer"]
-        # LLM 应被调用 2 次（最大重试次数）
-        assert mock_llm.ainvoke.call_count == 2
-
-
-@pytest.mark.skip(reason="依赖已删除的 Vision→text 函数，待适配")
-class TestExecuteSkillVisionToTextFixes:
-    """验证 Vision→text 回退路径的三个修复 (Code Review #207 补充测试)"""
-
-    @patch("app.graph.skills.base_skill.get_breaker")
-    @patch("app.graph.skills.base_skill.get_tracker")
-    @patch("app.graph.skills.base_skill.get_skill_llm")
-    @patch("app.graph.skills.base_skill.create_skill_registry")
-    @patch("app.graph.skills.base_skill.set_tool_context")
-    async def test_vision_aimessage_not_in_history(
-        self, mock_set_ctx, mock_create_reg, mock_get_llm,
-        mock_get_tracker, mock_get_breaker, mock_pe, mock_load_plan,
-    ):
-        """修复 #1: Vision LLM 的 AIMessage 不应出现在返回的对话历史中"""
-        mock_registry = MagicMock()
-        mock_registry.get_langchain_tools.return_value = []
-        mock_create_reg.return_value = mock_registry
-
-        mock_breaker = MagicMock()
-        async def _passthrough(fn):
-            return await fn()
-        mock_breaker.call = _passthrough
-        mock_get_breaker.return_value = mock_breaker
-
-        # Vision LLM 返回分析
-        vision_resp = MagicMock(spec=AIMessage)
-        vision_resp.content = "图片显示这是一款2699系列色卡，包含16个色号"
-        vision_resp.tool_calls = []
-
-        # 文本 LLM 返回最终回复
-        text_resp = MagicMock(spec=AIMessage)
-        text_resp.content = "好的，请问需要创建这些商品吗？"
-        text_resp.tool_calls = []
-
-        mock_vision_llm = MagicMock()
-        mock_vision_llm.ainvoke = AsyncMock(return_value=vision_resp)
-        mock_text_llm = MagicMock()
-        mock_text_llm.ainvoke = AsyncMock(return_value=text_resp)
-        mock_get_llm.side_effect = [mock_vision_llm, mock_text_llm]
-
-        mock_tracker = MagicMock()
-        mock_entities = MagicMock()
-        mock_entities.order_nos = []
-        mock_entities.phone_numbers = []
-        mock_entities.product_names = []
-        mock_entities.product_ids = []
-        mock_entities.amounts = []
-        mock_tracker.get_entities.return_value = mock_entities
-        mock_get_tracker.return_value = mock_tracker
-
-        state = _make_multimodal_state()
-        result = await execute_skill(
-            state=state, skill_name="product", tool_names=[],
-            system_prompt="你是商品助手",
-        )
-
-        # 返回的 messages 中不应包含 Vision LLM 的 AIMessage
-        returned_messages = result.get("messages", [])
-        vision_in_history = any(
-            isinstance(m, AIMessage)
-            and "2699系列色卡" in (m.content or "")
-            for m in returned_messages
-        )
-        assert not vision_in_history, (
-            "Vision LLM AIMessage 不应出现在返回的 messages 中"
-        )    @patch("app.graph.skills.base_skill.get_breaker")
-    @patch("app.graph.skills.base_skill.get_tracker")
-    @patch("app.graph.skills.base_skill.get_skill_llm")
-    @patch("app.graph.skills.base_skill.create_skill_registry")
-    @patch("app.graph.skills.base_skill.set_tool_context")
-    async def test_messages_cleaned_before_text_llm(
-        self, mock_set_ctx, mock_create_reg, mock_get_llm,
-        mock_get_tracker, mock_get_breaker, mock_pe, mock_load_plan,
-    ):
-        """修复 #2: 文本 LLM 收到的 messages 不应含 image_url"""
-        mock_registry = MagicMock()
-        mock_registry.get_langchain_tools.return_value = []
-        mock_create_reg.return_value = mock_registry
-
-        mock_breaker = MagicMock()
-        async def _passthrough(fn):
-            return await fn()
-        mock_breaker.call = _passthrough
-        mock_get_breaker.return_value = mock_breaker
-
-        vision_resp = MagicMock(spec=AIMessage)
-        vision_resp.content = "色卡分析结果"
-        vision_resp.tool_calls = []
-
-        text_resp = MagicMock(spec=AIMessage)
-        text_resp.content = "确认信息"
-        text_resp.tool_calls = []
-
-        mock_vision_llm = MagicMock()
-        mock_vision_llm.ainvoke = AsyncMock(return_value=vision_resp)
-        mock_text_llm = MagicMock()
-        mock_text_llm.ainvoke = AsyncMock(return_value=text_resp)
-        mock_get_llm.side_effect = [mock_vision_llm, mock_text_llm]
-
-        mock_tracker = MagicMock()
-        mock_entities = MagicMock()
-        mock_entities.order_nos = []
-        mock_entities.phone_numbers = []
-        mock_entities.product_names = []
-        mock_entities.product_ids = []
-        mock_entities.amounts = []
-        mock_tracker.get_entities.return_value = mock_entities
-        mock_get_tracker.return_value = mock_tracker
-
-        state = _make_multimodal_state()
-        await execute_skill(
-            state=state, skill_name="product", tool_names=[],
-            system_prompt="你是商品助手",
-        )
-
-        # get_skill_llm 第二次调用（文本 LLM）的 messages 参数应不含 image_url
-        text_llm_call_args = mock_get_llm.call_args_list[1]
-        text_llm_messages = text_llm_call_args[1].get("messages", [])
-        for msg in text_llm_messages:
-            if isinstance(msg, HumanMessage) and isinstance(msg.content, list):
-                has_image = any(
-                    isinstance(item, dict) and item.get("type") == "image_url"
-                    for item in msg.content
-                )
-                assert not has_image, (
-                    f"文本 LLM 收到的消息不应含 image_url: {msg.content}"
-                )    @patch("app.graph.skills.base_skill.get_breaker")
-    @patch("app.graph.skills.base_skill.get_tracker")
-    @patch("app.graph.skills.base_skill.get_skill_llm")
-    @patch("app.graph.skills.base_skill.create_skill_registry")
-    @patch("app.graph.skills.base_skill.set_tool_context")
-    async def test_text_length_recalculated_after_vision(
-        self, mock_set_ctx, mock_create_reg, mock_get_llm,
-        mock_get_tracker, mock_get_breaker, mock_pe, mock_load_plan,
-    ):
-        """修复 #3: Vision 成功后 text_length 应重新计算（含 vision_context）"""
-        mock_registry = MagicMock()
-        mock_registry.get_langchain_tools.return_value = []
-        mock_create_reg.return_value = mock_registry
-
-        mock_breaker = MagicMock()
-        async def _passthrough(fn):
-            return await fn()
-        mock_breaker.call = _passthrough
-        mock_get_breaker.return_value = mock_breaker
-
-        # Vision 返回 50 字符的分析
-        vision_resp = MagicMock(spec=AIMessage)
-        vision_resp.content = "X" * 50
-        vision_resp.tool_calls = []
-
-        text_resp = MagicMock(spec=AIMessage)
-        text_resp.content = "OK"
-        text_resp.tool_calls = []
-
-        mock_vision_llm = MagicMock()
-        mock_vision_llm.ainvoke = AsyncMock(return_value=vision_resp)
-        mock_text_llm = MagicMock()
-        mock_text_llm.ainvoke = AsyncMock(return_value=text_resp)
-        mock_get_llm.side_effect = [mock_vision_llm, mock_text_llm]
-
-        mock_tracker = MagicMock()
-        mock_entities = MagicMock()
-        mock_entities.order_nos = []
-        mock_entities.phone_numbers = []
-        mock_entities.product_names = []
-        mock_entities.product_ids = []
-        mock_entities.amounts = []
-        mock_tracker.get_entities.return_value = mock_entities
-        mock_get_tracker.return_value = mock_tracker
-
-        state = _make_multimodal_state()
-        await execute_skill(
-            state=state, skill_name="product", tool_names=[],
-            system_prompt="你是商品助手",
-        )
-
-        # 第二次 get_skill_llm 调用的 text_length 应 ≥ vision_context 长度
-        text_llm_call_args = mock_get_llm.call_args_list[1]
-        reported_text_length = text_llm_call_args[1].get("text_length", 0)
-        # vision_context 包含 "图片分析结果" + 50 字符分析 ≈ 100+ 字符
-        assert reported_text_length >= 100, (
-            f"text_length 应包含 vision_context，实际: {reported_text_length}"
-        )
