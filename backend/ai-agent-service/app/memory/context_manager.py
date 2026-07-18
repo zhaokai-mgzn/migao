@@ -141,6 +141,56 @@ class AgentContextManager:
             context = context[:self.MAX_CONTEXT_LENGTH]
         return context
 
+    # ── 对话摘要（压缩长上下文）──
+
+    async def compress_conversation(
+        self, session_id: str, messages: list, max_recent: int = 12
+    ) -> str:
+        """压缩长对话：保留最近 N 条消息，更早的生成结构化摘要。
+
+        参考 Claude Code 的滚动摘要机制：
+        - 最近 12 条消息完整保留
+        - 更早的总结成要点列表（用户意图、已完成操作、当前状态）
+
+        Returns:
+            压缩后的摘要文本，追加在 system prompt 末尾
+        """
+        if len(messages) <= max_recent:
+            return ""
+
+        old_msgs = messages[:-max_recent]
+
+        # 从旧消息中提取关键信息
+        entities = self._cache.get(session_id, {}).get("entities", {})
+        vision = self._cache.get(session_id, {}).get("vision_fields", {})
+
+        lines = ["## 对话历史摘要（早期消息已压缩）"]
+
+        # 用户意图轨迹
+        user_msgs = [m for m in old_msgs if hasattr(m, 'type') and m.type == 'human']
+        if user_msgs:
+            intents = []
+            for m in user_msgs[-5:]:
+                content = getattr(m, 'content', '') or ''
+                if len(content) > 60:
+                    content = content[:60] + "..."
+                intents.append(content)
+            lines.append("用户意图: " + " → ".join(intents))
+
+        # 已完成的实体操作
+        if entities:
+            for etype, items in entities.items():
+                label = {"product_ids": "查过商品", "order_nos": "查过订单",
+                         "customer_ids": "查过客户"}.get(etype, etype)
+                names = [f"{i.get('name','')}({i.get('id','')[:8]}...)" for i in items[:3]]
+                lines.append(f"{label}: {', '.join(names)}")
+
+        # Vision 结果
+        if vision and vision.get("name"):
+            lines.append(f"图片商品: {vision['name']}")
+
+        return "\n".join(lines)
+
     # ── Redis 持久化 ──
 
     async def save(self, session_id: str) -> None:

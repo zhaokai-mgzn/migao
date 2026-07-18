@@ -715,8 +715,9 @@ async def execute_skill(
                 break
 
     full_messages.extend(msg_list)
-    # ── 5.5 跨 Skill 上下文注入 + 记录当前 skill ──
+    # ── 5.5 跨 Skill 上下文注入 + 对话压缩 + 记录当前 skill ──
     ctx_text = ""
+    compression_text = ""
     if session_id:
         try:
             from app.memory.context_manager import get_context_manager
@@ -724,12 +725,23 @@ async def execute_skill(
             await ctx_mgr.load(session_id)  # Redis 恢复
             ctx_mgr.set_last_skill(session_id, skill_name)
             ctx_text = ctx_mgr.build_context(session_id, skill_name)
+            # 对话压缩：超过 20 条消息时只保留最近 12 条，其余生成摘要
+            if len(msg_list) > 20:
+                compression_text = await ctx_mgr.compress_conversation(session_id, msg_list, max_recent=12)
+                if compression_text:
+                    logger.info(f"[{skill_name}] Compressed conversation: {len(msg_list)}→12 msgs | session={session_id}")
+                    msg_list = msg_list[-12:]  # 只保留最近 12 条
             if ctx_text:
                 logger.info(f"[{skill_name}] Injected cross-skill context: {len(ctx_text)} chars | session={session_id}")
         except Exception as e:
             logger.warning(f"[{skill_name}] Context manager failed: {e} | session={session_id}")
 
-    full_messages.insert(0, SystemMessage(content=system_prompt + ("\n\n" + ctx_text if ctx_text else "")))
+    full_msg_parts = [system_prompt]
+    if compression_text:
+        full_msg_parts.append("\n" + compression_text)
+    if ctx_text:
+        full_msg_parts.append("\n" + ctx_text)
+    full_messages.insert(0, SystemMessage(content="\n\n".join(full_msg_parts)))
 
     # ── 6. Vision 分支 ──
     new_messages: List[Any] = []
