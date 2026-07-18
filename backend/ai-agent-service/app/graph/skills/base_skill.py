@@ -58,6 +58,8 @@ def get_tracker() -> ConversationTracker:
 
 def _strip_think_tags(text: str) -> str:
     """移除 <think>...</think> 标签及其内容"""
+    if not isinstance(text, str):
+        text = str(text)
     if not text:
         return text
     # 移除 <think>...</think> 块（含跨行）
@@ -79,6 +81,9 @@ def _extract_content(response: AIMessage) -> str:
         # 多模态返回：提取文本部分
         text_parts = [c.get("text", "") for c in content if isinstance(c, dict) and c.get("type") == "text"]
         content = "".join(text_parts)
+    # 防御：非字符串类型强制转换
+    if not isinstance(content, str):
+        content = str(content)
 
     stripped = _strip_think_tags(content)
 
