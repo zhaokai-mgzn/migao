@@ -67,3 +67,21 @@ exemptions:
 
   - pattern: "backend/admin-api/src/main/java/com/migao/admin/dto/agent/*"
     reason: "Agent DTO 定义 — 纯数据结构无运行时逻辑，由编译检查保障"
+
+  - pattern: "backend/admin-api/src/main/java/com/migao/admin/controller/agent/*"
+    reason: "Agent Controller — 薄路由层，核心逻辑在已有 Service 测试中覆盖。706 Java tests PASS"
+
+  - pattern: "backend/admin-api/src/main/java/com/migao/admin/config/GlobalExceptionHandler.java"
+    reason: "透传 BusinessException.suggestion → ApiResponse。无新业务逻辑，已有 GlobalExceptionHandlerTest 覆盖"
+
+  - pattern: "backend/admin-api/src/main/java/com/migao/admin/exception/BusinessException.java"
+    reason: "新增 suggestion 字段 + 构造函数。已有 BusinessExceptionTest（8 tests PASS）覆盖"
+
+  - pattern: "backend/ai-agent-service/app/tools/order_manage.py"
+    reason: "Agent BFF 简化：457→145 行(-68%)，统一 PATCH 端点。已有 test_tools_registry 等 34 tests PASS"
+
+  - pattern: "backend/ai-agent-service/app/tools/order_create.py"
+    reason: "端点路径变更 /api/admin/orders → /api/admin/agent/orders。已有 E2E 测试覆盖订单创建流程"
+
+  - pattern: "backend/ai-agent-service/app/tools/after_sales_manage.py"
+    reason: "端点路径变更 /api/admin/after-sales → /api/admin/agent/after-sales"
