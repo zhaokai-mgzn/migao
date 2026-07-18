@@ -37,7 +37,7 @@ class OrderManageTool(BaseTool):
             "action": {
                 "type": "string",
                 "enum": ["update_status", "update_logistics", "cancel", "confirm_payment", "refund"],
-                "description": "操作类型",
+                "description": "操作类型。update_status(改状态)/update_logistics(发货填运单)/cancel(取消)/confirm_payment(确认支付)/refund(退款)",
             },
             "order_id": {
                 "type": "string",
@@ -76,10 +76,15 @@ class OrderManageTool(BaseTool):
             return ToolResult(
                 success=False, error=f"无效的操作类型: {action}",
                 message=f"不支持的操作类型，可选：{', '.join(VALID_ACTIONS)}",
+                suggestion=f"请从 {', '.join(sorted(VALID_ACTIONS))} 中选择一个",
             )
 
         if not order_id:
-            return ToolResult(success=False, error="缺少订单 ID", message="请提供订单 ID 或订单号")
+            return ToolResult(
+                success=False, error="缺少订单 ID",
+                message="请提供订单 ID 或订单号（ORD-xxx）",
+                suggestion="请先从订单列表或查询结果中获取订单号，格式如 ORD-20260718-0001",
+            )
 
         try:
             return await self._execute_action(context, action, order_id, status,
@@ -126,7 +131,11 @@ class OrderManageTool(BaseTool):
         if not response.get("success"):
             error_info = response.get("error", {})
             error_msg = error_info.get("message", "操作失败") if isinstance(error_info, dict) else str(error_info)
-            return ToolResult(success=False, error=error_msg, message=f"订单操作失败：{error_msg}")
+            return ToolResult(
+                success=False, error=error_msg,
+                message=f"订单操作失败：{error_msg}",
+                suggestion="请确认订单号/UUID 正确，或刷新订单列表获取最新的订单信息",
+            )
 
         order_data = response.get("data", {})
         action_labels = {

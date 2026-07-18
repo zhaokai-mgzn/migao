@@ -102,7 +102,7 @@ class OrderCreateTool(BaseTool):
                         },
                         "product_id": {
                             "type": "string",
-                            "description": "商品ID（可选，有则传）",
+                            "description": "商品 32 位 UUID（可选）。当用户明确指定商品时传入。不传时服务端通过 product_name 自动匹配",
                         },
                         "width": {
                             "type": "number",
