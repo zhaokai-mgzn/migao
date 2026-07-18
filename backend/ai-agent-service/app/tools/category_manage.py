@@ -105,7 +105,7 @@ class CategoryManageTool(BaseTool):
                 )
 
         except Exception as e:
-            logger.error(f"[category-manage] Failed: action={action}, error={type(e).__name__}: {e}")
+            logger.error(f"[category-manage] Failed: action={action}, error={type(e).__name__}: {e}", exc_info=True)
             return ToolResult(
                 success=False,
                 error="tool_execution_failed",

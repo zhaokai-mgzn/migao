@@ -163,7 +163,7 @@ class OrderQueryTool(BaseTool):
                 page_size=page_size,
             )
         except Exception as e:
-            logger.error(f"[order-query] Query failed | tenant={context.tenant_id} error={type(e).__name__}: {e}")
+            logger.error(f"[order-query] Query failed | tenant={context.tenant_id} error={type(e).__name__}: {e}", exc_info=True)
             return ToolResult(
                 success=False,
                 error="tool_execution_failed",

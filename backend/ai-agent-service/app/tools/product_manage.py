@@ -166,7 +166,7 @@ class ProductManageTool(BaseTool):
                 return ToolResult(success=False, error=f"未知操作: {action}")
 
         except Exception as e:
-            logger.error(f"Product manage error: action={action}, error={e}")
+            logger.error(f"Product manage error: action={action}, error={e}", exc_info=True)
             return ToolResult(
                 success=False, error="tool_execution_failed",
                 message="商品操作失败，请稍后重试",

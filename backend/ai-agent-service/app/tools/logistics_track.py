@@ -249,7 +249,7 @@ class LogisticsTrackTool(BaseTool):
             )
             
         except Exception as e:
-            logger.error(f"[logistics] Track by order error: {e}")
+            logger.error(f"[logistics] Track by order error: {e}", exc_info=True)
             raise
     
     async def _track_by_number(

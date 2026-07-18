@@ -461,11 +461,14 @@ async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -
         )
         logger.info(f"[tool-exec] {tool_name} done success={result.success}")
     except asyncio.TimeoutError:
-        logger.error(f"[tool-exec] {tool_name} TIMEOUT 30s")
+        logger.error(f"[tool-exec] {tool_name} TIMEOUT 30s | args={json.dumps(tool_args, ensure_ascii=False, default=str)[:300]}")
         err = json.dumps({"success": False, "error": "timeout", "message": "工具执行超时"}, ensure_ascii=False)
         return err, {"success": False, "error": "timeout"}
     except Exception as e:
-        logger.error(f"[tool-exec] {tool_name} ERROR: {e}", exc_info=True)
+        logger.error(
+            f"[tool-exec] {tool_name} ERROR: {e} | args={json.dumps(tool_args, ensure_ascii=False, default=str)[:500]}",
+            exc_info=True,
+        )
         err = json.dumps({"success": False, "error": "tool_execution_failed",
                           "message": f"工具 {tool_name} 执行失败，请检查参数格式后重试"},
                          ensure_ascii=False)

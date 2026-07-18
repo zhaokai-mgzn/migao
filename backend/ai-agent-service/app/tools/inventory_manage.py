@@ -130,7 +130,7 @@ class InventoryManageTool(BaseTool):
                 )
                 
         except Exception as e:
-            logger.error(f"Inventory manage error: action={action}, product_id={product_id}, error={e}")
+            logger.error(f"Inventory manage error: action={action}, product_id={product_id}, error={e}", exc_info=True)
             return ToolResult(
                 success=False,
                 error="tool_execution_failed",

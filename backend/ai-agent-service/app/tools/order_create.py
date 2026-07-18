@@ -185,7 +185,7 @@ class OrderCreateTool(BaseTool):
             logger.warning(f"[sms_verify] Code mismatch: phone={phone[:3]}****{phone[-4:]}, tenant={tenant_id}")
             return False
         except Exception as e:
-            logger.error(f"[sms_verify] Redis error: {type(e).__name__}: {e}")
+            logger.error(f"[sms_verify] Redis error: {type(e).__name__}: {e}", exc_info=True)
             return False
 
     @staticmethod
@@ -209,7 +209,7 @@ class OrderCreateTool(BaseTool):
             logger.info(f"[sms_store] Code stored: phone={phone[:3]}****{phone[-4:]}, tenant={tenant_id}")
             return True
         except Exception as e:
-            logger.error(f"[sms_store] Redis error: {type(e).__name__}: {e}")
+            logger.error(f"[sms_store] Redis error: {type(e).__name__}: {e}", exc_info=True)
             return False
 
     def _needs_sms_verification(self, context: ToolContext) -> bool:

@@ -167,7 +167,7 @@ class NotificationManageTool(BaseTool):
                 )
 
         except Exception as e:
-            logger.error(f"Notification manage error: action={action}, error={e}")
+            logger.error(f"Notification manage error: action={action}, error={e}", exc_info=True)
             return ToolResult(
                 success=False,
                 error="tool_execution_failed",

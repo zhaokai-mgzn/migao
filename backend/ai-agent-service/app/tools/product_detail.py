@@ -135,7 +135,7 @@ class ProductDetailTool(BaseTool):
             )
             
         except Exception as e:
-            logger.error(f"Product detail error: {e}")
+            logger.error(f"Product detail error: {e}", exc_info=True)
             return ToolResult(
                 success=False,
                 error="tool_execution_failed",

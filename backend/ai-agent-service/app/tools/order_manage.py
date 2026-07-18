@@ -90,7 +90,7 @@ class OrderManageTool(BaseTool):
             return await self._execute_action(context, action, order_id, status,
                 logistics_company, tracking_number, cancel_reason, refund_amount, refund_reason)
         except Exception as e:
-            logger.error(f"Order manage error: action={action}, order_id={order_id}, error={e}")
+            logger.error(f"Order manage error: action={action}, order_id={order_id}, error={e}", exc_info=True)
             return ToolResult(
                 success=False, error="tool_execution_failed",
                 message="订单操作失败，请稍后重试",

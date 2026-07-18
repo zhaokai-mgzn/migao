@@ -154,7 +154,7 @@ class CustomerManageTool(BaseTool):
                 )
 
         except Exception as e:
-            logger.error(f"[customer-manage] Error: action={action}, error={type(e).__name__}: {e}")
+            logger.error(f"[customer-manage] Error: action={action}, error={type(e).__name__}: {e}", exc_info=True)
             return ToolResult(
                 success=False,
                 error="tool_execution_failed",
