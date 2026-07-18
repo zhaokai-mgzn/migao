@@ -12,6 +12,15 @@ const nextConfig = {
 
   // 信任 SLB/CDN 代理的 Host header（避免重定向 URL 带内部端口号 :3001）
   trustHost: true,
+
+  // 限制可接受的 Host 域名，防止 Host Header 注入
+  hosts: [
+    'migaozn.com',
+    'www.migaozn.com',
+    'merchant.migaozn.com',
+    'admin.migaozn.com',
+    'ops.migaozn.com',
+  ],
 }
 
 export default nextConfig
