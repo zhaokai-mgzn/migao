@@ -1566,10 +1566,16 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         if (org.springframework.util.StringUtils.hasText(doorWidth))
             w.eq(ProductSku::getDoorWidth, doorWidth);
 
-        ProductSku sku = productSkuMapper.selectOne(w);
-        if (sku == null) {
+        // 多结果时取第一个匹配并给提示（常见于不填门幅时同名颜色+散剪有多个门幅）
+        java.util.List<ProductSku> candidates = productSkuMapper.selectList(w.last("LIMIT 2"));
+        if (candidates.isEmpty()) {
             throw BusinessException.notFound("SKU",
                     "未找到匹配的 SKU。请用 product_detail 查看可用 SKU 后重试");
+        }
+        ProductSku sku = candidates.get(0);
+        if (candidates.size() > 1) {
+            log.warn("SKU调价匹配到多个({})候选，取第一个: product={}, color={}, method={}",
+                    candidates.size(), productId, color, sellingMethod);
         }
         sku.setPrice(price);
         productSkuMapper.updateById(sku);
