@@ -131,7 +131,7 @@ export default function DashboardPage() {
       ])
       const s = statsRes.data.data
       setStats(s)
-      setTrendData(trendRes.data.data)
+      setTrendData(Array.isArray(trendRes.data.data) ? trendRes.data.data : [])
       setRecentOrders(ordersRes.data.data || [])
 
       // 商品排行
@@ -262,7 +262,15 @@ export default function DashboardPage() {
                   ))}
                 </svg>
               )
-            })() : <div className="h-full flex items-center justify-center text-gray-400 text-sm">暂无数据</div>}
+            })() : (
+              <div className="h-full flex flex-col items-center justify-center">
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-50 flex items-center justify-center mb-3">
+                  <TrendingUp className="w-6 h-6 text-blue-300" />
+                </div>
+                <p className="text-sm font-medium text-gray-400">暂无订单数据</p>
+                <p className="text-xs text-gray-300 mt-1">创建订单后，趋势图将在此展示</p>
+              </div>
+            )}
           </div>
         </div>
 
@@ -287,7 +295,15 @@ export default function DashboardPage() {
                     points={trendData.map((d, i) => `${i * 40 + 20},${toY(salesValues[i])}`).join(' ')} />
                 </svg>
               )
-            })() : <div className="h-full flex items-center justify-center text-gray-400 text-sm">暂无数据</div>}
+            })() : (
+              <div className="h-full flex flex-col items-center justify-center">
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-50 to-green-50 flex items-center justify-center mb-3">
+                  <DollarSign className="w-6 h-6 text-emerald-300" />
+                </div>
+                <p className="text-sm font-medium text-gray-400">暂无销售额数据</p>
+                <p className="text-xs text-gray-300 mt-1">产生订单后，销售趋势将在此展示</p>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -314,7 +330,12 @@ export default function DashboardPage() {
               ))}
             </tbody>
           </table>
-          {!loading && recentOrders.length === 0 && <p className="text-center text-gray-400 py-4 text-sm">暂无订单</p>}
+          {!loading && recentOrders.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-8">
+              <ClipboardList className="w-8 h-8 text-gray-200 mb-2" />
+              <p className="text-sm text-gray-400">暂无近期订单</p>
+            </div>
+          )}
         </div>
 
         {/* 商品销量排行 */}
@@ -326,7 +347,10 @@ export default function DashboardPage() {
           {loading ? (
             <div className="space-y-2">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-8 bg-gray-100 rounded animate-pulse" />)}</div>
           ) : ranking.length === 0 ? (
-            <p className="text-center text-gray-400 py-4 text-sm">暂无数据</p>
+            <div className="flex flex-col items-center justify-center py-8">
+              <Package className="w-8 h-8 text-gray-200 mb-2" />
+              <p className="text-sm text-gray-400">暂无排行数据</p>
+            </div>
           ) : (
             <table className="w-full text-xs">
               <thead><tr className="text-gray-500 border-b"><th className="text-left py-2 font-medium w-8">#</th><th className="text-left py-2 font-medium">商品</th><th className="text-right py-2 font-medium">成交量</th><th className="text-right py-2 font-medium">日涨</th></tr></thead>

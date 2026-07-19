@@ -105,15 +105,11 @@ describeOrSkip('LLM 业务裁判', () => {
   })
 
   // TODO: 客户列表有前端渲染 bug（mock 数据格式触发加载失败），修好后取消 skip
-  test.skip('客户列表 — 核心信息完整', async ({ page }) => {
+  test('客户列表 — 核心信息完整', async ({ page }) => {
     const apiCalls = startApiCapture(page)
     await mockApi(page, '**/api/admin/customers*', customersFixture)
-    await mockApi(page, '**/api/admin/customer-tags*', ok({ items: [], total: 0, page: 1, size: 10 }))
+    await mockApi(page, '**/api/admin/customer-tags*', ok([]))
     await mockApi(page, '**/api/admin/customer-segments*', ok({ items: [], total: 0 }))
-
-    // 捕获 JS 错误排查根因
-    const jsErrors: string[] = []
-    page.on('pageerror', err => jsErrors.push(err.message))
 
     await page.goto('/customers')
     await page.waitForTimeout(3000)
@@ -289,8 +285,18 @@ describeOrSkip('LLM 业务裁判', () => {
   })
 
   // TODO: 仪表盘有前端 bug（trendData.map is not a function），修好后取消 skip
-  test.skip('仪表盘 — 页面可访问', async ({ page }) => {
+  test('仪表盘 — 页面可访问', async ({ page }) => {
     const apiCalls = startApiCapture(page)
+    // Dashboard 特定 API — 需要数组格式防 .map 崩溃
+    await mockApi(page, '**/api/admin/dashboard/order-trend*', ok([
+      { date: '2024-01-01', orders: 5 }, { date: '2024-01-02', orders: 8 },
+    ]))
+    await mockApi(page, '**/api/admin/dashboard/recent-orders*', ok([]))
+    await mockApi(page, '**/api/admin/dashboard/stats*', ok({ todayOrders: 12, todayRevenue: 35800, totalProducts: 156 }))
+    await mockApi(page, '**/api/admin/dashboard/product-ranking*', ok([]))
+    await mockApi(page, '**/api/admin/dashboard/pending-shipment-count*', ok(0))
+    await mockApi(page, '**/api/admin/dashboard/processing-shipment-count*', ok(0))
+    await mockApi(page, '**/api/admin/dashboard/order-status*', ok([]))
     await page.goto('/dashboard')
     await page.waitForTimeout(3000)
     const evidence = await captureEvidence(page)
@@ -307,9 +313,11 @@ describeOrSkip('LLM 业务裁判', () => {
   // 更多页面
   // ═════════════════════════════════════════════════════════════
 
-  test.skip('员工列表 — 页面可访问', async ({ page }) => {
+  test('员工列表 — 页面可访问', async ({ page }) => {
     const apiCalls = startApiCapture(page)
-    await mockApi(page, '**/api/admin/users*', ok({ items: [{ id: '1', username: 'admin', name: '管理员', phone: '13800138000', roles: ['admin'], status: 'active' }], total: 1, page: 1, size: 10 }))
+    await mockApi(page, '**/api/admin/users*', ok({ items: [{ id: '1', username: 'admin', name: '管理员', phone: '13800138000', roles: [{ code: 'admin', name: '管理员' }], status: 'active' }], total: 1, page: 1, size: 10 }))
+    await mockApi(page, '**/api/admin/roles*', ok([{ id: '1', code: 'admin', name: '管理员' }]))
+    await mockApi(page, '**/api/admin/menus*', ok([]))
     await page.goto('/employees')
     await page.waitForTimeout(3000)
     const evidence = await captureEvidence(page)
@@ -322,9 +330,10 @@ describeOrSkip('LLM 业务裁判', () => {
     expect(result.passed, `\n📋 ${result.summary}\n${details}`).toBe(true)
   })
 
-  test.skip('角色管理 — 页面可访问', async ({ page }) => {
+  test('角色管理 — 页面可访问', async ({ page }) => {
     const apiCalls = startApiCapture(page)
-    await mockApi(page, '**/api/admin/roles*', ok({ items: [{ id: '1', name: '管理员', description: '系统管理员', userCount: 1 }], total: 1 }))
+    await mockApi(page, '**/api/admin/roles/all*', ok([{ id: '1', code: 'admin', name: '管理员', description: '系统管理员' }]))
+    await mockApi(page, '**/api/admin/permissions*', ok([]))
     await page.goto('/roles')
     await page.waitForTimeout(3000)
     const evidence = await captureEvidence(page)
