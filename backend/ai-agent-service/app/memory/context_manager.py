@@ -50,8 +50,10 @@ class AgentContextManager:
     }
 
     def __init__(self):
-        # 内存缓存（同 session 内共享）
+        # 内存缓存：key = user_id（跨 session 共享）
         self._cache: Dict[str, OrderedDict] = {}
+        # user_id → session_id 映射，用于找回最近 session 的数据
+        self._user_session_map: Dict[str, str] = {}
 
     # ── 写入 ──
 

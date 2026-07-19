@@ -683,11 +683,8 @@ async def execute_skill(
     if len(raw_messages) > SESSION_LENGTH_HINT and not session_truncated:
         hint = (
             f"\n\n---\n"
-            f"💡 当前对话已持续 {len(raw_messages)} 轮，上下文较长可能导致：\n"
-            f"  • 响应速度变慢\n"
-            f"  • 对早期对话内容的记忆减弱\n"
-            f"建议点击右上角「新建会话」开始新对话，我会更专注、更快速地处理新事务。\n"
-            f"上一轮的操作结果（如查到的商品、订单等）我会自动记住，不会丢失。"
+            f"💡 当前对话已持续 {len(raw_messages)} 轮，上下文较长可能导致响应变慢、对早期内容记忆减弱。\n"
+            f"建议点击右上角「新建会话」开始新对话，处理效率更高。"
         )
         if isinstance(raw_messages[-1], HumanMessage):
             raw_messages[-1] = HumanMessage(
