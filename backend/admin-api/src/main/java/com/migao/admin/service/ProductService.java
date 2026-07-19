@@ -209,6 +209,9 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         response.setTotalStock(totalStock);
         response.setStock(totalStock);
 
+        // 加载加工项列表
+        response.setProcessingItems(getProductProcessingItems(id, tenantId));
+
         // 查询关联颜色列表
         List<ProductColor> colorEntities = productColorMapper.selectList(
                 new LambdaQueryWrapper<ProductColor>()

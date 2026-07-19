@@ -142,6 +142,11 @@ public class ProductResponse {
     private List<ProductSkuResponse> skus;
 
     /**
+     * 加工项列表（详情接口返回）
+     */
+    private List<ProductProcessingItemResponse> processingItems;
+
+    /**
      * 品牌
      */
     private String brand;
