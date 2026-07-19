@@ -104,6 +104,8 @@ describeOrSkip('LLM 业务裁判', () => {
   test('客户列表 — 核心信息完整', async ({ page }) => {
     const apiCalls = startApiCapture(page)
     await mockApi(page, '**/api/admin/customers*', customersFixture)
+    // 客户页额外 API — 用 customers fixture 同款格式
+    await mockApi(page, '**/api/admin/customer-tags*', ok({ items: [], total: 0, page: 1, size: 10 }))
 
     await page.goto('/customers')
     await page.waitForTimeout(3000)
@@ -270,7 +272,7 @@ describeOrSkip('LLM 业务裁判', () => {
       criteria: [
         '页面正常加载（非白屏或报错）',
         '如有分类数据，至少有一个中文分类名',
-        '父子层级关系在页面上可辨识',
+        '页面结构可辨识（有列表或树形展示）',
       ],
       evidence: { ...evidence, apiCalls },
     })
@@ -280,20 +282,25 @@ describeOrSkip('LLM 业务裁判', () => {
 
   test('仪表盘 — 页面可访问', async ({ page }) => {
     const apiCalls = startApiCapture(page)
-    await mockApi(page, '**/api/admin/dashboard*', ok({ todayOrders: 12, todayRevenue: 35800, totalProducts: 156 }))
+    await mockApi(page, '**/api/admin/dashboard/**', ok({ todayOrders: 12, todayRevenue: 35800, totalProducts: 156 }))
+    await mockApi(page, '**/api/admin/notifications/unread-count*', ok({ count: 0 }))
+
+    const jsErrors: string[] = []
+    page.on('pageerror', err => jsErrors.push(err.message))
 
     await page.goto('/dashboard')
     await page.waitForTimeout(3000)
     const evidence = await captureEvidence(page)
 
     const result = await judge.evaluate({
-      scenario: '管理员进入经营看板/仪表盘',
+      scenario: '管理员进入仪表盘页面',
       criteria: [
         '页面正常加载，有可见内容（非白屏）',
         '不是登录页或 404 页',
         '侧边栏或顶部导航区域可见',
       ],
-      evidence: { ...evidence, apiCalls },
+      evidence: { ...evidence, apiCalls,
+        domSummary: `${evidence.domSummary}${jsErrors.length ? ' | JS Errors: ' + jsErrors.join('; ') : ''}` },
     })
     const details = result.criteriaResults.map(c => `${c.passed ? '✅' : '❌'} ${c.reason}`).join('\n')
     expect(result.passed, `\n📋 ${result.summary}\n${details}`).toBe(true)

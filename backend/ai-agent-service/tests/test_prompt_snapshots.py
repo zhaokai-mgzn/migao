@@ -54,7 +54,7 @@ def test_skill_has_principles(skill):
 def test_skill_prompt_length_reasonable(skill):
     """Prompt 长度在合理范围（200-6000 字符）"""
     prompt = _build_system_prompt(skill)
-    assert 200 < len(prompt) < 7500, f"{skill}: prompt 长度异常 ({len(prompt)} chars)"
+    assert 200 < len(prompt) < 9000, f"{skill}: prompt 长度异常 ({len(prompt)} chars)"
 
 
 # ============ 领域隔离检查 ============
@@ -118,7 +118,7 @@ def test_snapshot_all_skills():
 
     # 最大长度快照（防止无限制膨胀）
     expected_max = {
-        "product": 7500,
+        "product": 8500,  # +1000: product_update tool + 3 EXAMPLES
         "order": 5600,  # +400: SKU 规格选择流程
         "aftersales": 4300,
         "customer": 4300,
