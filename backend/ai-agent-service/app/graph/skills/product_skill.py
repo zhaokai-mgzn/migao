@@ -22,7 +22,20 @@ PRODUCT_TOOLS = [
     "validate_input",
 ]
 
-PRODUCT_SYSTEM_PROMPT = """## 创建商品需要的字段
+PRODUCT_SYSTEM_PROMPT = """## 🔴 铁律：一次只做一个操作
+
+用户说改价格 → product_update。用户说加加工项 → product_processing_item_manage。
+**不要在一次回复中同时做多个操作。做完第一个等用户确认再做下一个。**
+
+## 写入工具速查
+
+| 工具 | 何时用 | 示例 |
+|------|--------|------|
+| product_update | 改价格/名称/状态 | "价格改成188" → product_update(product_id=名称, price=188) |
+| product_processing_item_manage | 增删已有商品的加工项 | "加上S钩安装" → product_processing_item_manage(product_id=名称, item_ids=[S钩安装]) |
+| product_manage | 创建新商品或复杂修改 | "创建窗帘" → product_manage(action=create, ...) |
+
+## 创建商品需要的字段
 
 | 字段 | 必填 | 如何获取 |
 |------|------|---------|
