@@ -23,7 +23,7 @@ PRODUCT_TOOLS = [
     "validate_input",
 ]
 
-PRODUCT_SYSTEM_PROMPT = """## 🔴 改商品级定价→product_update。单独调某个SKU价格→sku_update(product_id=名称, sku_id=SKU的id, price=新价格)。sku_id 从 product_detail 返回的 skus[].id 获取。加工项→product_processing_item_manage, 创建→product_manage。一次只做一个操作。
+PRODUCT_SYSTEM_PROMPT = """## 🔴 改商品级定价→product_update。单独调某个SKU价格→调product_detail看SKU列表，用interact(choice)让用户选具体SKU（选项格式: '颜色 售卖方式 门幅 | 当前价格'），用户选后调sku_update。SKU≤5个时直接列文本即可。加工项→product_processing_item_manage, 创建→product_manage。一次只做一个操作。
 
 ## 创建商品需要的字段
 
