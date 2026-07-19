@@ -144,7 +144,14 @@ async def resolve_processing_item_ids(
             if 0 <= idx < len(all_items):
                 found = all_items[idx].get("id")
 
-        # 4. 名称匹配（精确 > 前缀）
+        # 4. ID 精确匹配（_auto_resolve_ids 可能已解析为短 ID）
+        if not found:
+            for item in all_items:
+                if item.get("id") == raw:
+                    found = item["id"]
+                    break
+
+        # 5. 名称匹配（精确 > 前缀）
         if not found:
             for item in all_items:
                 if item.get("name") == raw:
@@ -152,7 +159,7 @@ async def resolve_processing_item_ids(
                     break
 
         if not found:
-            # 5. 名称包含匹配
+            # 6. 名称包含匹配
             for item in all_items:
                 if raw in (item.get("name") or ""):
                     found = item["id"]

@@ -280,7 +280,7 @@ class TestBuildContext:
         ctx = mgr.build_context("sess_1", "product")
         assert "遮光帘" in ctx
         assert "uuid-1" in ctx
-        assert "已知实体" in ctx
+        assert "直接复用" in ctx
 
     def test_skill_switch_hint(self):
         from app.memory.context_manager import AgentContextManager
