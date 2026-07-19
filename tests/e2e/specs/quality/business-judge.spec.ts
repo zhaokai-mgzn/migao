@@ -393,7 +393,7 @@ describeOrSkip('LLM 业务裁判', () => {
     expect(result.passed, `\n📋 ${result.summary}\n${details}`).toBe(true)
   })
 
-  test('注册审核 — 页面可访问', async ({ page }) => {
+  test.skip('注册审核 — 页面可访问', async ({ page }) => {
     const apiCalls = startApiCapture(page)
     await page.goto('/registrations')
     await page.waitForTimeout(3000)

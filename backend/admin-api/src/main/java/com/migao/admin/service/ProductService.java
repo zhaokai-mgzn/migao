@@ -209,8 +209,13 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         response.setTotalStock(totalStock);
         response.setStock(totalStock);
 
-        // 加载加工项列表
-        response.setProcessingItems(getProductProcessingItems(id, tenantId));
+        // 加载加工项列表（非关键，失败不阻塞详情查询）
+        try {
+            response.setProcessingItems(getProductProcessingItems(id, tenantId));
+        } catch (Exception e) {
+            log.warn("加载加工项列表失败: productId={}, error={}", id, e.getMessage());
+            response.setProcessingItems(new ArrayList<>());
+        }
 
         // 查询关联颜色列表
         List<ProductColor> colorEntities = productColorMapper.selectList(
