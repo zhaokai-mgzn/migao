@@ -1560,16 +1560,23 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                         .eq(ProductSku::getId, skuIdOrDesc)
                         .eq(ProductSku::getProductId, productId)
                         .eq(ProductSku::getTenantId, tenantId));
-        // 如果 ID 没匹配到，尝试按描述匹配
+        // 如果 ID 没匹配到，尝试按描述匹配（顺序无关）
         if (sku == null) {
             String[] parts = skuIdOrDesc.trim().split("\\s+");
-            LambdaQueryWrapper<ProductSku> w = new LambdaQueryWrapper<ProductSku>()
-                    .eq(ProductSku::getProductId, productId)
-                    .eq(ProductSku::getTenantId, tenantId);
-            if (parts.length >= 1) w.eq(ProductSku::getColorName, parts[0]);
-            if (parts.length >= 2) w.eq(ProductSku::getSellingMethod, parts[1]);
-            if (parts.length >= 3) w.eq(ProductSku::getDoorWidth, parts[2]);
-            sku = productSkuMapper.selectOne(w);
+            // 先查全量 SKU，再逐个字段模糊匹配
+            java.util.List<ProductSku> candidates = productSkuMapper.selectList(
+                    new LambdaQueryWrapper<ProductSku>()
+                            .eq(ProductSku::getProductId, productId)
+                            .eq(ProductSku::getTenantId, tenantId));
+            for (ProductSku s : candidates) {
+                int matched = 0;
+                for (String part : parts) {
+                    if (part.equals(s.getColorName())) matched++;
+                    else if (part.equals(s.getSellingMethod())) matched++;
+                    else if (part.equals(s.getDoorWidth())) matched++;
+                }
+                if (matched >= parts.length) { sku = s; break; }
+            }
         }
         if (sku == null) {
             throw BusinessException.notFound("SKU（" + skuIdOrDesc + "）",
