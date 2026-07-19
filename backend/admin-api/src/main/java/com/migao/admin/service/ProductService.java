@@ -1552,20 +1552,32 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
      * @return 真实 UUID，未找到返回 null
      */
     /**
-     * 更新单个 SKU 的价格。
+     * 更新单个 SKU 的价格。skuIdOrDesc 可以是 SKU UUID，也可以是 "颜色 售卖方式 门幅" 描述。
      */
-    public void updateSkuPrice(String productId, String skuId, java.math.BigDecimal price, Long tenantId) {
+    public void updateSkuPrice(String productId, String skuIdOrDesc, java.math.BigDecimal price, Long tenantId) {
         ProductSku sku = productSkuMapper.selectOne(
                 new LambdaQueryWrapper<ProductSku>()
-                        .eq(ProductSku::getId, skuId)
+                        .eq(ProductSku::getId, skuIdOrDesc)
                         .eq(ProductSku::getProductId, productId)
                         .eq(ProductSku::getTenantId, tenantId));
+        // 如果 ID 没匹配到，尝试按描述匹配
         if (sku == null) {
-            throw BusinessException.notFound("SKU");
+            String[] parts = skuIdOrDesc.trim().split("\\s+");
+            LambdaQueryWrapper<ProductSku> w = new LambdaQueryWrapper<ProductSku>()
+                    .eq(ProductSku::getProductId, productId)
+                    .eq(ProductSku::getTenantId, tenantId);
+            if (parts.length >= 1) w.eq(ProductSku::getColorName, parts[0]);
+            if (parts.length >= 2) w.eq(ProductSku::getSellingMethod, parts[1]);
+            if (parts.length >= 3) w.eq(ProductSku::getDoorWidth, parts[2]);
+            sku = productSkuMapper.selectOne(w);
+        }
+        if (sku == null) {
+            throw BusinessException.notFound("SKU（" + skuIdOrDesc + "）",
+                    "请先用 product_detail 查看 SKU 列表，确认正确的 SKU 信息后重试");
         }
         sku.setPrice(price);
         productSkuMapper.updateById(sku);
-        log.info("SKU价格已更新: productId={}, skuId={}, price={}", productId, skuId, price);
+        log.info("SKU价格已更新: productId={}, skuIdOrDesc={}, price={}", productId, skuIdOrDesc, price);
     }
 
     public String resolveProductId(String raw, Long tenantId) {

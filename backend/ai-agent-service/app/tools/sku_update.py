@@ -31,7 +31,7 @@ class SkuUpdateTool(BaseTool):
             },
             "sku_id": {
                 "type": "string",
-                "description": "SKU ID。从 product_detail 返回的 skus 数组中获取",
+                "description": "SKU 标识。支持 SKU UUID，也支持'颜色 售卖方式 门幅'格式（如'白色 散剪 2.8米'），服务端自动匹配",
             },
             "price": {"type": "number", "description": "新价格（元）"},
         },
