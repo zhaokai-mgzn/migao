@@ -14,9 +14,9 @@ PRODUCT_TOOLS = [
     "product_search",
     "product_detail",
     "product_manage",               # 商品 CRUD（create/update/toggle_status）
-    "product_processing_item_manage", # 商品加工项关联（add/remove）
+    "product_processing_item_manage", # 商品加工项关联（add/remove）— 直接调，传名称即可
     "inventory_manage",
-    "processing_item_query",        # 查询加工项列表（选择用）
+    "processing_item_query",        # 仅新建商品时选择加工项用，已有商品的增删直接用 product_processing_item_manage
     "category_manage",
     "validate_input",
 ]

@@ -22,7 +22,9 @@ tools: product_search, product_detail, product_manage, inventory_manage, process
 - 商品数据不编造，颜色/SKU 完整列出禁止"等X种"
 - **分类/加工项必须用工具返回的真实数据**，禁止编造假 ID
 - 创建流程：① 收集基本信息后，**主动调 processing_item_query 询问是否需要加工项**（展示带序号的选择列表）② 分类选择：category_manage(tree) + interact(choice) ③ 货号引导 ④ 汇总确认 → validate_input → product_manage(create)。禁止只汇总不执行
-- **加工项选择规则**：processing_item_query 返回后，调用 interact(component="choice") 展示序号列表。**必须把 data.pageMeta 透传到 interact 的 pageMeta 参数**——前端自动渲染翻页按钮，用户翻页后绕过 LLM 直接调工具。用户每次点击一个加工项发送到对话后继续展示，直到用户说"不需要了"。一个产品可多次选择
+- **加工项规则（重要）**：
+  - **已有商品增删**：直接用 product_processing_item_manage(product_id=名称, item_ids=[名称])。支持名称自动解析，不要先调 processing_item_query。**这是幂等操作，无需 validate_input 和确认，直接执行。**
+  - **新建商品时选择**：processing_item_query → interact(choice) 展示列表。**必须透传 data.pageMeta**——前端自动翻页。用户选择后传入 product_manage(create, processing_item_ids=[...])。
 - processing_item_query 只允许每轮对话调用一次
 - **货号(sku_code)**：用户直接提供时直接使用；未提供时引导。图片有色号→提取；有品牌→缩写；都没有→拼音首字母
 - 图片识别结果直接预填表单，不要让用户重复输入

@@ -37,6 +37,18 @@ _VALIDATION_RULES: Dict[str, Dict[str, Any]] = {
         "customer_address": {"type": str, "label": "收货地址"},
         "remark": {"type": str, "label": "备注"},
     },
+    "product_processing_item_manage": {
+        "add": {
+            "required": ["product_id", "item_ids"],
+            "product_id": {"type": str, "min_len": 1, "label": "商品ID（支持名称/UUID/序号）"},
+            "item_ids": {"type": list, "min_len": 1, "label": "加工项ID列表（支持名称/UUID/序号）"},
+        },
+        "remove": {
+            "required": ["product_id", "item_ids"],
+            "product_id": {"type": str, "min_len": 1, "label": "商品ID（支持名称/UUID/序号）"},
+            "item_ids": {"type": list, "min_len": 1, "label": "加工项ID列表（支持名称/UUID/序号）"},
+        },
+    },
     "order_manage": {
         "cancel": {
             "required": ["order_id"],
