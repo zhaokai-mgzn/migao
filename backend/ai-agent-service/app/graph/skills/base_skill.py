@@ -666,10 +666,21 @@ async def execute_skill(
             raw_messages[-1] = HumanMessage(content=content[:MAX_USER_INPUT_LEN] + "...")
             logger.warning(f"[{skill_name}] Input truncated: {len(content)}→{MAX_USER_INPUT_LEN} | session={session_id}")
 
-    # 超过消息数上限时裁剪
+    # 超过消息数上限时裁剪 + 友善提醒
+    session_truncated = False
     if len(raw_messages) > MAX_CONVERSATION_MSGS:
         raw_messages = list(raw_messages[-MAX_CONVERSATION_MSGS:])
+        session_truncated = True
         logger.warning(f"[{skill_name}] History truncated: {len(state.get('messages',[]))}→{MAX_CONVERSATION_MSGS} msgs | session={session_id}")
+
+    # 接近上限时提醒：20 条后每次对话追加提示
+    SESSION_LENGTH_HINT = 20
+    if len(raw_messages) > SESSION_LENGTH_HINT and not session_truncated:
+        hint = f"\n\n💡 当前对话已持续 {len(raw_messages)} 轮。如果需要处理新的事务，建议点击「新建会话」开始新对话，我会更专注。"
+        if isinstance(raw_messages[-1], HumanMessage):
+            raw_messages[-1] = HumanMessage(
+                content=(getattr(raw_messages[-1], 'content', '') or '') + hint
+            )
 
     # ── 1. 上下文 & 工具准备 ──
     from app.memory.session_memory import SessionMemory  # noqa: F811 — 函数内多处使用
