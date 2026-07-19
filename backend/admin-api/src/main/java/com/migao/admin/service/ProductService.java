@@ -1551,6 +1551,23 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
      *
      * @return 真实 UUID，未找到返回 null
      */
+    /**
+     * 更新单个 SKU 的价格。
+     */
+    public void updateSkuPrice(String productId, String skuId, java.math.BigDecimal price, Long tenantId) {
+        ProductSku sku = productSkuMapper.selectOne(
+                new LambdaQueryWrapper<ProductSku>()
+                        .eq(ProductSku::getId, skuId)
+                        .eq(ProductSku::getProductId, productId)
+                        .eq(ProductSku::getTenantId, tenantId));
+        if (sku == null) {
+            throw BusinessException.notFound("SKU");
+        }
+        sku.setPrice(price);
+        productSkuMapper.updateById(sku);
+        log.info("SKU价格已更新: productId={}, skuId={}, price={}", productId, skuId, price);
+    }
+
     public String resolveProductId(String raw, Long tenantId) {
         if (!StringUtils.hasText(raw)) return null;
         String s = raw.trim();

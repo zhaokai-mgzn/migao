@@ -411,6 +411,7 @@ def create_default_registry() -> ToolRegistry:
     from app.tools.processing_item_manage import ProcessingItemManageTool
     from app.tools.product_processing_item_manage import ProductProcessingItemManageTool
     from app.tools.product_update import ProductUpdateTool
+    from app.tools.sku_update import SkuUpdateTool
     from app.tools.interact import InteractTool  # noqa: F401 保留以备将来使用
     from app.tools.validate_input import ValidateInputTool
 
@@ -445,6 +446,7 @@ def create_default_registry() -> ToolRegistry:
     registry.register(ProcessingItemManageTool())
     registry.register(ProductProcessingItemManageTool())
     registry.register(ProductUpdateTool())
+    registry.register(SkuUpdateTool())
     # interact 工具重新启用：支持交互式组件（interactive component support）
     registry.register(InteractTool())
     registry.register(ValidateInputTool())

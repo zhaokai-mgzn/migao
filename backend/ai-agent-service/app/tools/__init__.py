@@ -57,6 +57,7 @@ from app.tools.category_manage import CategoryManageTool
 from app.tools.processing_item_manage import ProcessingItemManageTool
 from app.tools.product_processing_item_manage import ProductProcessingItemManageTool
 from app.tools.product_update import ProductUpdateTool
+from app.tools.sku_update import SkuUpdateTool
 from app.tools.interact import InteractTool
 
 __all__ = [

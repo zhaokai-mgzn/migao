@@ -13,7 +13,8 @@ from app.graph.skills.skill_config import SkillConfig
 PRODUCT_TOOLS = [
     "product_search",
     "product_detail",
-    "product_update",               # 快速更新（改价格/名称）— 传什么改什么
+    "product_update",               # 商品级统一定价
+    "sku_update",                  # 单独 SKU 调价
     "product_manage",               # 商品 CRUD（create/update/toggle_status）
     "product_processing_item_manage", # 商品加工项关联（add/remove）— 直接调，传名称即可
     "inventory_manage",

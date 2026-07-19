@@ -14,6 +14,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Agent 专用商品管理控制器。
@@ -68,6 +69,35 @@ public class AgentProductController {
             return ApiResponse.success(result);
         } catch (Exception e) {
             log.warn("[Agent] 更新商品失败: id={}, error={}", id, e.getMessage());
+            throw e;
+        }
+    }
+
+    /**
+     * Agent 专用 SKU 价格更新。
+     * PATCH /api/admin/agent/products/{productId}/skus/{skuId}
+     */
+    @PatchMapping("/{productId}/skus/{skuId}")
+    public ApiResponse<ProductResponse> updateSkuPrice(
+            @PathVariable String productId,
+            @PathVariable String skuId,
+            @RequestBody Map<String, Object> body) {
+        Long tenantId = TenantContext.getTenantId();
+        Object priceObj = body.get("price");
+        if (priceObj == null) {
+            throw BusinessException.validationError("缺少 price 字段");
+        }
+        java.math.BigDecimal price = new java.math.BigDecimal(priceObj.toString());
+        log.info("[Agent] 更新SKU价格: productId={}, skuId={}, price={}, tenantId={}",
+                productId, skuId, price, tenantId);
+        try {
+            productService.updateSkuPrice(productId, skuId, price, tenantId);
+            ProductResponse result = productService.getProductById(
+                    productService.resolveProductId(productId, tenantId), tenantId);
+            return ApiResponse.success(result);
+        } catch (Exception e) {
+            log.warn("[Agent] SKU价格更新失败: productId={}, skuId={}, error={}",
+                    productId, skuId, e.getMessage());
             throw e;
         }
     }
