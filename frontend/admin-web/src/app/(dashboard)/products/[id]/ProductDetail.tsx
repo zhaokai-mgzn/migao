@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Edit, ArrowUpCircle, ArrowDownCircle } from 'lucide-react'
 import Image from 'next/image'
@@ -111,22 +111,21 @@ export default function ProductDetailPage() {
   const [loading, setLoading] = useState(true)
   const [previewImg, setPreviewImg] = useState<string | null>(null)
 
-  useEffect(() => {
+  const loadProduct = useCallback(async () => {
     if (!productId) return
-    const loadProduct = async () => {
-      setLoading(true)
-      try {
-        const res = await productApi.getProduct(productId)
-        setProduct(res.data.data)
-      } catch (e) {
-        toast.error('加载商品失败')
-        router.push('/products')
-      } finally {
-        setLoading(false)
-      }
+    setLoading(true)
+    try {
+      const res = await productApi.getProduct(productId)
+      setProduct(res.data.data)
+    } catch (e) {
+      toast.error('加载商品失败')
+      router.push('/products')
+    } finally {
+      setLoading(false)
     }
-    loadProduct()
   }, [productId, router])
+
+  useEffect(() => { loadProduct() }, [loadProduct])
 
   const handleStatusChange = async (newStatus: ProductStatus) => {
     if (!product) return
