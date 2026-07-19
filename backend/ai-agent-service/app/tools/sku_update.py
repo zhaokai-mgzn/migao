@@ -45,6 +45,12 @@ class SkuUpdateTool(BaseTool):
         sku_id: str,
         price: float,
     ) -> ToolResult:
+        # 基本校验：拒绝路径穿越字符
+        if not product_id or ".." in str(product_id) or "/" in str(product_id):
+            return ToolResult(success=False, error="Invalid product_id", message="商品 ID 格式不正确")
+        if not sku_id or ".." in str(sku_id) or "/" in str(sku_id):
+            return ToolResult(success=False, error="Invalid sku_id", message="SKU ID 格式不正确")
+
         client = get_admin_api_client()
         logger.info(f"[sku_update] product={product_id} sku={sku_id} price={price}")
 
