@@ -22,18 +22,7 @@ PRODUCT_TOOLS = [
     "validate_input",
 ]
 
-PRODUCT_SYSTEM_PROMPT = """## 🔴 铁律：一次只做一个操作
-
-用户说改价格 → product_update。用户说加加工项 → product_processing_item_manage。
-**不要在一次回复中同时做多个操作。做完第一个等用户确认再做下一个。**
-
-## 写入工具速查
-
-| 工具 | 何时用 | 示例 |
-|------|--------|------|
-| product_update | 改价格/名称/状态 | "价格改成188" → product_update(product_id=名称, price=188) |
-| product_processing_item_manage | 增删已有商品的加工项 | "加上S钩安装" → product_processing_item_manage(product_id=名称, item_ids=[S钩安装]) |
-| product_manage | 创建新商品或复杂修改 | "创建窗帘" → product_manage(action=create, ...) |
+PRODUCT_SYSTEM_PROMPT = """## 🔴 改价/改名→product_update, 加工项→product_processing_item_manage, 创建→product_manage。一次只做一个操作。
 
 ## 创建商品需要的字段
 
@@ -69,7 +58,7 @@ PRODUCT_SYSTEM_PROMPT = """## 🔴 铁律：一次只做一个操作
 | specifications | 见下 | 用户未提规格时默认填入；用户明确表示不需要规格时不填入 |
 
 specifications 默认值：{"克重":"200-300g","材质":"涤纶","功能":"遮光","工艺":"色织","风格":"现代简约","图案":"纯色"}。
-可选维度 — 克重(100g以下/100-200g/200-300g/300-400g/400g以上)、材质(涤纶/棉/麻/丝绸/混纺/绒布/雪尼尔)、功能(遮光/隔热/防紫外线/防水/防霉/隔音)、工艺(提花/印花/绣花/烫金/植绒/色织)、风格(现代简约/北欧/中式/欧式/田园/轻奢)、图案(纯色/条纹/格子/花卉/几何/卡通)。brand 仅用户提及时才传，不可自行推断。
+brand 仅用户提及时才传，不可自行推断。
 
 ## 加工项
 

@@ -75,8 +75,8 @@ describeOrSkip('LLM 业务裁判', () => {
       ],
       evidence: { ...evidence, apiCalls },
     })
-    for (const c of result.criteriaResults) console.log(`   ${c.passed ? '✅' : '❌'} ${c.reason}`)
-    expect(result.passed).toBe(true)
+    const details = result.criteriaResults.map(c => `${c.passed ? '✅' : '❌'} ${c.reason}`).join('\n')
+    expect(result.passed, `\n📋 ${result.summary}\n${details}`).toBe(true)
   })
 
   test('订单列表 — 核心信息完整', async ({ page }) => {
@@ -97,8 +97,8 @@ describeOrSkip('LLM 业务裁判', () => {
       ],
       evidence: { ...evidence, apiCalls },
     })
-    for (const c of result.criteriaResults) console.log(`   ${c.passed ? '✅' : '❌'} ${c.reason}`)
-    expect(result.passed).toBe(true)
+    const details = result.criteriaResults.map(c => `${c.passed ? '✅' : '❌'} ${c.reason}`).join('\n')
+    expect(result.passed, `\n📋 ${result.summary}\n${details}`).toBe(true)
   })
 
   test('客户列表 — 核心信息完整', async ({ page }) => {
@@ -119,8 +119,8 @@ describeOrSkip('LLM 业务裁判', () => {
       ],
       evidence: { ...evidence, apiCalls },
     })
-    for (const c of result.criteriaResults) console.log(`   ${c.passed ? '✅' : '❌'} ${c.reason}`)
-    expect(result.passed).toBe(true)
+    const details = result.criteriaResults.map(c => `${c.passed ? '✅' : '❌'} ${c.reason}`).join('\n')
+    expect(result.passed, `\n📋 ${result.summary}\n${details}`).toBe(true)
   })
 
   test('售后列表 — 核心信息完整', async ({ page }) => {
@@ -140,8 +140,8 @@ describeOrSkip('LLM 业务裁判', () => {
       ],
       evidence: { ...evidence, apiCalls },
     })
-    for (const c of result.criteriaResults) console.log(`   ${c.passed ? '✅' : '❌'} ${c.reason}`)
-    expect(result.passed).toBe(true)
+    const details = result.criteriaResults.map(c => `${c.passed ? '✅' : '❌'} ${c.reason}`).join('\n')
+    expect(result.passed, `\n📋 ${result.summary}\n${details}`).toBe(true)
   })
 
   // ═════════════════════════════════════════════════════════════
@@ -166,8 +166,8 @@ describeOrSkip('LLM 业务裁判', () => {
       ],
       evidence: { ...evidence, apiCalls },
     })
-    for (const c of result.criteriaResults) console.log(`   ${c.passed ? '✅' : '❌'} ${c.reason}`)
-    expect(result.passed).toBe(true)
+    const details = result.criteriaResults.map(c => `${c.passed ? '✅' : '❌'} ${c.reason}`).join('\n')
+    expect(result.passed, `\n📋 ${result.summary}\n${details}`).toBe(true)
   })
 
   test('新增商品 — 表单结构合理', async ({ page }) => {
@@ -189,8 +189,8 @@ describeOrSkip('LLM 业务裁判', () => {
       ],
       evidence: { ...evidence, apiCalls },
     })
-    for (const c of result.criteriaResults) console.log(`   ${c.passed ? '✅' : '❌'} ${c.reason}`)
-    expect(result.passed).toBe(true)
+    const details = result.criteriaResults.map(c => `${c.passed ? '✅' : '❌'} ${c.reason}`).join('\n')
+    expect(result.passed, `\n📋 ${result.summary}\n${details}`).toBe(true)
   })
 
   // ═════════════════════════════════════════════════════════════
@@ -225,8 +225,8 @@ describeOrSkip('LLM 业务裁判', () => {
       ],
       evidence: { ...evidence, apiCalls },
     })
-    for (const c of result.criteriaResults) console.log(`   ${c.passed ? '✅' : '❌'} ${c.reason}`)
-    expect(result.passed).toBe(true)
+    const details = result.criteriaResults.map(c => `${c.passed ? '✅' : '❌'} ${c.reason}`).join('\n')
+    expect(result.passed, `\n📋 ${result.summary}\n${details}`).toBe(true)
   })
 
   test('订单详情 — 关键字段齐全', async ({ page }) => {
@@ -249,8 +249,8 @@ describeOrSkip('LLM 业务裁判', () => {
       ],
       evidence: { ...evidence, apiCalls },
     })
-    for (const c of result.criteriaResults) console.log(`   ${c.passed ? '✅' : '❌'} ${c.reason}`)
-    expect(result.passed).toBe(true)
+    const details = result.criteriaResults.map(c => `${c.passed ? '✅' : '❌'} ${c.reason}`).join('\n')
+    expect(result.passed, `\n📋 ${result.summary}\n${details}`).toBe(true)
   })
 
   // ═════════════════════════════════════════════════════════════
@@ -274,8 +274,8 @@ describeOrSkip('LLM 业务裁判', () => {
       ],
       evidence: { ...evidence, apiCalls },
     })
-    for (const c of result.criteriaResults) console.log(`   ${c.passed ? '✅' : '❌'} ${c.reason}`)
-    expect(result.passed).toBe(true)
+    const details = result.criteriaResults.map(c => `${c.passed ? '✅' : '❌'} ${c.reason}`).join('\n')
+    expect(result.passed, `\n📋 ${result.summary}\n${details}`).toBe(true)
   })
 
   test('仪表盘 — 页面可访问', async ({ page }) => {
@@ -295,7 +295,7 @@ describeOrSkip('LLM 业务裁判', () => {
       ],
       evidence: { ...evidence, apiCalls },
     })
-    for (const c of result.criteriaResults) console.log(`   ${c.passed ? '✅' : '❌'} ${c.reason}`)
-    expect(result.passed).toBe(true)
+    const details = result.criteriaResults.map(c => `${c.passed ? '✅' : '❌'} ${c.reason}`).join('\n')
+    expect(result.passed, `\n📋 ${result.summary}\n${details}`).toBe(true)
   })
 })
