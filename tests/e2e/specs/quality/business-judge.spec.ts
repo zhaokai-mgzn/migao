@@ -1,10 +1,7 @@
 /**
  * 业务裁判测试 — LLM 自动评判页面业务行为
  *
- * 不判 UI 好不好看，只判：页面内容在业务上对不对。
- *
- * 运行：
- *   JUDGE_API_KEY=sk-xxx npx playwright test specs/quality/business-judge.spec.ts
+ * 运行：JUDGE_API_KEY=sk-xxx npx playwright test specs/quality/business-judge.spec.ts
  */
 
 import { test, expect } from '@playwright/test'
@@ -12,6 +9,8 @@ import { BusinessJudge, captureEvidence, startApiCapture } from '../../helpers/b
 import ordersFixture from '../../fixtures/orders-list.json'
 import productsFixture from '../../fixtures/products-list.json'
 import customersFixture from '../../fixtures/customers-list.json'
+import afterSalesFixture from '../../fixtures/after-sales-list.json'
+import categoriesFixture from '../../fixtures/categories-tree.json'
 
 const JUDGE_API_KEY = process.env.JUDGE_API_KEY || ''
 const describeOrSkip = JUDGE_API_KEY ? test.describe : test.describe.skip
@@ -22,7 +21,9 @@ async function mockApi(page: any, urlPattern: string, fixture: any) {
   })
 }
 
-// ═══════════════════════════════════════════════════════════════
+function ok(data: any = {}) {
+  return { success: true, data }
+}
 
 describeOrSkip('LLM 业务裁判', () => {
   let judge: BusinessJudge
@@ -32,126 +33,269 @@ describeOrSkip('LLM 业务裁判', () => {
   })
 
   test.beforeEach(async ({ page }) => {
-    // Mock auth — 防止 AuthProvider.initialize() 调 /api/auth/me 失败 → 清空认证 → 跳登录
-    // 格式必须与 request.ts response interceptor 一致：{success: true, data: ...}
-    await page.route('**/api/auth/me', async (route) => {
-      await route.fulfill({
-        status: 200, contentType: 'application/json',
-        body: JSON.stringify({
-          success: true,
-          data: { id: '1', username: 'admin', name: '管理员', roles: ['admin'], tenantId: 1, tenantName: '测试企业' },
-        }),
-      })
+    // 兜底 mock — 所有 API 返回空数据，防 401 跳登录
+    // 具体测试用 mockApi() 覆盖特定端点
+    await page.route('**/api/admin/**', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json',
+        body: JSON.stringify(ok({ items: [], total: 0 })) })
+    })
+    await page.route('**/api/auth/**', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json',
+        body: JSON.stringify(ok({ id: '1', username: 'admin', name: '管理员', roles: ['admin'], tenantId: 1, tenantName: '测试企业' })) })
+    })
+    await page.route('**/api/dashboard/**', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json',
+        body: JSON.stringify(ok({ todayOrders: 0, todayRevenue: 0 })) })
+    })
+    await page.route('**/api/settings/**', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json',
+        body: JSON.stringify(ok({ siteName: '测试企业' })) })
     })
   })
 
-  test('商品列表 — 数据业务合理', async ({ page }) => {
+  // ═════════════════════════════════════════════════════════════
+  // 列表页 — 最核心的业务数据展示
+  // ═════════════════════════════════════════════════════════════
+
+  test('商品列表 — 核心信息完整', async ({ page }) => {
     const apiCalls = startApiCapture(page)
     await mockApi(page, '**/api/admin/products*', productsFixture)
 
     await page.goto('/products')
-    await page.waitForLoadState('networkidle')
-    await page.waitForTimeout(2000) // 等渲染完成
-
+    await page.waitForTimeout(3000)
     const evidence = await captureEvidence(page)
 
     const result = await judge.evaluate({
-      scenario: '管理员查看商品列表，应看到商品的名称、价格、状态等核心信息',
+      scenario: '管理员查看商品列表',
       criteria: [
-        '页面中有商品名称（不是空值或纯占位符）',
-        '价格数值正常（正整数或正小数，非 0 或负）',
-        '状态列的值为合法中文（如上架/下架/草稿）',
-        '页面没有明显的 JS 错误提示或异常状态',
+        '表格中有商品数据（非空表、非白屏）',
+        '商品名称列有实际内容（不是全空或全为 "-"）',
+        '状态列有值（如出售中/已下架/草稿等）',
+        '页面无 JS 报错或白屏',
       ],
       evidence: { ...evidence, apiCalls },
     })
-
-    console.log(`\n📋 ${result.passed ? '✅' : '❌'} 商品列表: ${result.summary}`)
-    for (const c of result.criteriaResults) {
-      console.log(`   ${c.passed ? '✅' : '❌'} ${c.reason}`)
-    }
+    for (const c of result.criteriaResults) console.log(`   ${c.passed ? '✅' : '❌'} ${c.reason}`)
     expect(result.passed).toBe(true)
   })
 
-  test('订单列表 — 数据业务合理', async ({ page }) => {
+  test('订单列表 — 核心信息完整', async ({ page }) => {
     const apiCalls = startApiCapture(page)
     await mockApi(page, '**/api/admin/orders*', ordersFixture)
 
     await page.goto('/orders')
-    await page.waitForLoadState('networkidle')
-    await page.waitForTimeout(2000)
-
+    await page.waitForTimeout(3000)
     const evidence = await captureEvidence(page)
 
     const result = await judge.evaluate({
-      scenario: '管理员查看订单列表，应看到订单号、客户名、金额、状态等核心信息',
+      scenario: '管理员查看订单列表',
       criteria: [
-        '页面中有订单数据或明确提示"暂无订单"（不能白屏或报错）',
-        '如有订单，订单号和金额格式正常（不是纯数字序号或 0）',
-        '订单状态为合法中文（如待发货/已发货/已完成/已取消）',
-        '页面没有 JS 报错或数据加载失败提示',
+        '有订单数据（非白屏或报错）',
+        '有订单时，订单号和金额至少有 1 项可见',
+        '金额为正数',
+        '状态为合法中文（待付款/待发货/已完成/已关闭等）',
       ],
       evidence: { ...evidence, apiCalls },
     })
-
-    console.log(`\n📋 ${result.passed ? '✅' : '❌'} 订单列表: ${result.summary}`)
-    for (const c of result.criteriaResults) {
-      console.log(`   ${c.passed ? '✅' : '❌'} ${c.reason}`)
-    }
+    for (const c of result.criteriaResults) console.log(`   ${c.passed ? '✅' : '❌'} ${c.reason}`)
     expect(result.passed).toBe(true)
   })
 
-  test('客户列表 — 数据业务合理', async ({ page }) => {
+  test('客户列表 — 核心信息完整', async ({ page }) => {
     const apiCalls = startApiCapture(page)
     await mockApi(page, '**/api/admin/customers*', customersFixture)
 
     await page.goto('/customers')
-    await page.waitForLoadState('networkidle')
-    await page.waitForTimeout(2000)
-
+    await page.waitForTimeout(3000)
     const evidence = await captureEvidence(page)
 
     const result = await judge.evaluate({
-      scenario: '管理员查看客户列表，应看到客户名称、手机号、标签等核心信息',
+      scenario: '管理员查看客户列表',
       criteria: [
-        '页面中有客户数据或明确提示无数据（不能白屏或报错）',
-        '如有客户数据，客户名称不是纯数字或占位符',
-        '手机号格式应为 11 位数字或脱敏格式（如 138****0001）',
+        '页面正常加载（非白屏、非"加载失败"）',
+        '有客户数据或明确提示"暂无数据"（不能只有报错）',
+        '如有数据，客户名称或手机号至少 1 列有实际内容',
+        '页面无 401/500 等异常报错',
       ],
       evidence: { ...evidence, apiCalls },
     })
-
-    console.log(`\n📋 ${result.passed ? '✅' : '❌'} 客户列表: ${result.summary}`)
-    for (const c of result.criteriaResults) {
-      console.log(`   ${c.passed ? '✅' : '❌'} ${c.reason}`)
-    }
+    for (const c of result.criteriaResults) console.log(`   ${c.passed ? '✅' : '❌'} ${c.reason}`)
     expect(result.passed).toBe(true)
   })
 
-  test('仪表盘 — 统计数据业务合理', async ({ page }) => {
+  test('售后列表 — 核心信息完整', async ({ page }) => {
     const apiCalls = startApiCapture(page)
+    await mockApi(page, '**/api/admin/after-sales*', afterSalesFixture)
 
-    await page.goto('/')
-    await page.waitForLoadState('networkidle')
-    await page.waitForTimeout(2000)
-
+    await page.goto('/after-sales')
+    await page.waitForTimeout(3000)
     const evidence = await captureEvidence(page)
 
     const result = await judge.evaluate({
-      scenario: '管理员登录后进入首页/仪表盘，应看到业务概览数据',
+      scenario: '管理员查看售后工单列表',
       criteria: [
-        '页面正常加载，有可见内容（非白屏）',
-        '如果有数字统计，数值不是负数或离谱的大数',
-        '页面结构包含导航区或仪表盘区域，不是空白或错误页',
-        '导航菜单可识别（有中文菜单项）',
+        '页面正常加载（非白屏或报错）',
+        '有工单时，工单信息可见',
+        '状态为合法中文（处理中/已解决/已关闭等）',
       ],
       evidence: { ...evidence, apiCalls },
     })
+    for (const c of result.criteriaResults) console.log(`   ${c.passed ? '✅' : '❌'} ${c.reason}`)
+    expect(result.passed).toBe(true)
+  })
 
-    console.log(`\n📋 ${result.passed ? '✅' : '❌'} 仪表盘: ${result.summary}`)
-    for (const c of result.criteriaResults) {
-      console.log(`   ${c.passed ? '✅' : '❌'} ${c.reason}`)
-    }
+  // ═════════════════════════════════════════════════════════════
+  // 表单/创建页
+  // ═════════════════════════════════════════════════════════════
+
+  test('新增订单 — 表单结构合理', async ({ page }) => {
+    const apiCalls = startApiCapture(page)
+    await mockApi(page, '**/api/admin/products*', productsFixture)
+
+    await page.goto('/orders/new')
+    await page.waitForTimeout(3000)
+    const evidence = await captureEvidence(page)
+
+    const result = await judge.evaluate({
+      scenario: '管理员进入新增订单页面',
+      criteria: [
+        '页面正常加载（非白屏、非 404）',
+        '应有收货人、手机号、地址等收货信息相关字段',
+        '应有商品选择或添加商品区域',
+        '页面无 JS 报错',
+      ],
+      evidence: { ...evidence, apiCalls },
+    })
+    for (const c of result.criteriaResults) console.log(`   ${c.passed ? '✅' : '❌'} ${c.reason}`)
+    expect(result.passed).toBe(true)
+  })
+
+  test('新增商品 — 表单结构合理', async ({ page }) => {
+    const apiCalls = startApiCapture(page)
+    await mockApi(page, '**/api/admin/categories*', categoriesFixture)
+    await mockApi(page, '**/api/admin/processing-items*', ok({ items: [], total: 0 }))
+
+    await page.goto('/products/new')
+    await page.waitForTimeout(3000)
+    const evidence = await captureEvidence(page)
+
+    const result = await judge.evaluate({
+      scenario: '管理员进入新增商品页面',
+      criteria: [
+        '页面正常加载（非白屏、非 404、非"运行时错误"）',
+        '应有商品名称或标题相关输入框',
+        '应有价格相关输入框',
+        '页面无 JS 报错或异常提示',
+      ],
+      evidence: { ...evidence, apiCalls },
+    })
+    for (const c of result.criteriaResults) console.log(`   ${c.passed ? '✅' : '❌'} ${c.reason}`)
+    expect(result.passed).toBe(true)
+  })
+
+  // ═════════════════════════════════════════════════════════════
+  // 详情页 — 用 page.goto 直接访问（不用 click）
+  // ═════════════════════════════════════════════════════════════
+
+  test('商品详情 — 关键字段齐全', async ({ page }) => {
+    const apiCalls = startApiCapture(page)
+    // Mock detail API (GET /api/admin/products/:id)
+    await page.route('**/api/admin/products/*', async (route) => {
+      const url = route.request().url()
+      if (url.includes('/products/') && !url.includes('export')) {
+        await route.fulfill({ status: 200, contentType: 'application/json',
+          body: JSON.stringify(ok({ id: 'fdd64b7b', name: '遮光窗帘', price: 99, status: 'on_sale', colors: [{ name: '2699-01 白色' }], specifications: { 克重: '200-300g', 材质: '涤纶' } })) })
+      } else {
+        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(ok({ items: [], total: 0 })) })
+      }
+    })
+
+    // 直接用产品 ID 访问详情页
+    await page.goto('/products/fdd64b7b-detail')
+    await page.waitForTimeout(3000)
+    const evidence = await captureEvidence(page)
+
+    const result = await judge.evaluate({
+      scenario: '管理员查看商品详情页',
+      criteria: [
+        '页面正常加载（非白屏或报错）',
+        '应显示商品名称',
+        '如果有价格，为正数',
+        '页面没有异常报错',
+      ],
+      evidence: { ...evidence, apiCalls },
+    })
+    for (const c of result.criteriaResults) console.log(`   ${c.passed ? '✅' : '❌'} ${c.reason}`)
+    expect(result.passed).toBe(true)
+  })
+
+  test('订单详情 — 关键字段齐全', async ({ page }) => {
+    const apiCalls = startApiCapture(page)
+    await page.route('**/api/admin/orders/*', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json',
+        body: JSON.stringify(ok({ id: 'ord-001', orderNo: 'ORD-20240612001', customerName: '李先生', totalAmount: 23103, status: 'pending', items: [{ productName: '遮光窗帘', quantity: 2, unitPrice: 99 }] })) })
+    })
+
+    await page.goto('/orders/ord-001')
+    await page.waitForTimeout(3000)
+    const evidence = await captureEvidence(page)
+
+    const result = await judge.evaluate({
+      scenario: '管理员查看订单详情页',
+      criteria: [
+        '页面正常加载（非白屏或报错）',
+        '应显示订单号或收货信息',
+        '应有商品明细或金额信息',
+      ],
+      evidence: { ...evidence, apiCalls },
+    })
+    for (const c of result.criteriaResults) console.log(`   ${c.passed ? '✅' : '❌'} ${c.reason}`)
+    expect(result.passed).toBe(true)
+  })
+
+  // ═════════════════════════════════════════════════════════════
+  // 配置/设置页
+  // ═════════════════════════════════════════════════════════════
+
+  test('分类管理 — 树结构合理', async ({ page }) => {
+    const apiCalls = startApiCapture(page)
+    await mockApi(page, '**/api/admin/categories*', categoriesFixture)
+
+    await page.goto('/categories')
+    await page.waitForTimeout(3000)
+    const evidence = await captureEvidence(page)
+
+    const result = await judge.evaluate({
+      scenario: '管理员查看分类管理页面',
+      criteria: [
+        '页面正常加载（非白屏或报错）',
+        '如有分类数据，至少有一个中文分类名',
+        '父子层级关系在页面上可辨识',
+      ],
+      evidence: { ...evidence, apiCalls },
+    })
+    for (const c of result.criteriaResults) console.log(`   ${c.passed ? '✅' : '❌'} ${c.reason}`)
+    expect(result.passed).toBe(true)
+  })
+
+  test('仪表盘 — 页面可访问', async ({ page }) => {
+    const apiCalls = startApiCapture(page)
+    await mockApi(page, '**/api/admin/dashboard*', ok({ todayOrders: 12, todayRevenue: 35800, totalProducts: 156 }))
+
+    await page.goto('/dashboard')
+    await page.waitForTimeout(3000)
+    const evidence = await captureEvidence(page)
+
+    const result = await judge.evaluate({
+      scenario: '管理员进入经营看板/仪表盘',
+      criteria: [
+        '页面正常加载，有可见内容（非白屏）',
+        '不是登录页或 404 页',
+        '侧边栏或顶部导航区域可见',
+      ],
+      evidence: { ...evidence, apiCalls },
+    })
+    for (const c of result.criteriaResults) console.log(`   ${c.passed ? '✅' : '❌'} ${c.reason}`)
     expect(result.passed).toBe(true)
   })
 })

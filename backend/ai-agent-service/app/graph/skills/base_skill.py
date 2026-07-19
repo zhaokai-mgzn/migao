@@ -637,6 +637,40 @@ async def execute_skill(
     session_id = state.get("session_id", "")
     tenant_id = int(state.get("tenant_id", 0) or 0)
 
+    # ── 0. 防御层：输入/输出限制 ──
+    MAX_USER_INPUT_LEN = 2000   # 单条用户消息最大字符数
+    MAX_CONVERSATION_MSGS = 50  # 对话历史最大消息数
+    # 速率限制：同 session 120 秒内最多 180 条消息（1.5条/秒）
+    _RATE_WINDOW = 120
+    _RATE_LIMIT = 180
+    if session_id:
+        now = time.time()
+        key = f"rate:{session_id}"
+        if not hasattr(execute_skill, '_rate_map'):
+            execute_skill._rate_map = {}
+        rm = execute_skill._rate_map
+        if key not in rm:
+            rm[key] = []
+        rm[key] = [t for t in rm[key] if now - t < _RATE_WINDOW]
+        if len(rm[key]) >= _RATE_LIMIT:
+            logger.warning(f"[{skill_name}] RATE LIMITED: {len(rm[key])} msgs in {_RATE_WINDOW}s | session={session_id}")
+            return {"messages": [], "final_answer": "请求过于频繁，请稍后再试。", "skill_used": skill_name}
+        rm[key].append(now)
+        if len(rm) > 200:  # 清理过期 session
+            rm.pop(next(iter(rm)))
+
+    # 截断超长输入
+    if raw_messages and isinstance(raw_messages[-1], HumanMessage):
+        content = getattr(raw_messages[-1], "content", "") or ""
+        if isinstance(content, str) and len(content) > MAX_USER_INPUT_LEN:
+            raw_messages[-1] = HumanMessage(content=content[:MAX_USER_INPUT_LEN] + "...")
+            logger.warning(f"[{skill_name}] Input truncated: {len(content)}→{MAX_USER_INPUT_LEN} | session={session_id}")
+
+    # 超过消息数上限时裁剪
+    if len(raw_messages) > MAX_CONVERSATION_MSGS:
+        raw_messages = list(raw_messages[-MAX_CONVERSATION_MSGS:])
+        logger.warning(f"[{skill_name}] History truncated: {len(state.get('messages',[]))}→{MAX_CONVERSATION_MSGS} msgs | session={session_id}")
+
     # ── 1. 上下文 & 工具准备 ──
     from app.memory.session_memory import SessionMemory  # noqa: F811 — 函数内多处使用
     tool_context = build_tool_context(state)

@@ -110,7 +110,8 @@ ${evidence}
         model: this.config.model,
         messages: [{ role: 'user', content: prompt }],
         temperature: 0,
-        max_tokens: 1000,
+        max_tokens: 2000,
+        response_format: { type: 'json_object' },
       }),
     })
     const data = await resp.json() as any
