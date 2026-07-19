@@ -101,10 +101,12 @@ def check_expectation(result: dict, expectation: str) -> tuple[bool, str]:
     """检查一条 expectation 是否满足"""
     exp_lower = expectation.lower()
 
-    # 检查 tool 名称
+    # 检查 tool 名称（支持 OR 逻辑：A or B）
+    or_parts = [p.strip() for p in exp_lower.split(" or ")]
     for tool_name in result.get("__all_tool_names", []):
-        if tool_name in exp_lower:
-            return True, f"tool '{tool_name}' matched"
+        for part in or_parts:
+            if tool_name in part:
+                return True, f"tool '{tool_name}' matched"
 
     # 检查 success
     if "success=true" in exp_lower or "success=true" in exp_lower:

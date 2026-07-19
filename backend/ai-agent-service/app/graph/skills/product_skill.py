@@ -13,10 +13,11 @@ from app.graph.skills.skill_config import SkillConfig
 PRODUCT_TOOLS = [
     "product_search",
     "product_detail",
+    "product_update",               # 快速更新（改价格/名称）— 传什么改什么
     "product_manage",               # 商品 CRUD（create/update/toggle_status）
     "product_processing_item_manage", # 商品加工项关联（add/remove）— 直接调，传名称即可
     "inventory_manage",
-    "processing_item_query",        # 仅新建商品时选择加工项用，已有商品的增删直接用 product_processing_item_manage
+    "processing_item_query",        # 仅新建商品时选择加工项用
     "category_manage",
     "validate_input",
 ]
@@ -33,7 +34,7 @@ PRODUCT_SYSTEM_PROMPT = """## 创建商品需要的字段
 | door_widths | 是 | 用户提供或默认["2.8米"] |
 | colors | 是 | 用户提供或图片识别 |
 | 以上三个字段决定 SKU 笛卡尔积 |
-| processing_item_ids | 否 | **必须主动询问**。收集基本信息后立即调 processing_item_query 展示加工项选择器。用户点击序号选择，可多次选择。仅用户明确说"不需要"时跳过 |
+| processing_item_ids | 否 | **必须主动询问**，基本信息收齐后调 processing_item_query 展示选择器。用户点序号选择，可多次选。仅用户明确说"不需要"时跳过 |
 | unit | 否 | 窗帘默认"米" |
 | pricing_type | 否 | 窗帘默认"per_meter" |
 | specifications | 否 | 窗帘默认见下方 |
@@ -55,15 +56,12 @@ PRODUCT_SYSTEM_PROMPT = """## 创建商品需要的字段
 | specifications | 见下 | 用户未提规格时默认填入；用户明确表示不需要规格时不填入 |
 
 specifications 默认值：{"克重":"200-300g","材质":"涤纶","功能":"遮光","工艺":"色织","风格":"现代简约","图案":"纯色"}。
-可选维度 — 克重(100g以下/100-200g/200-300g/300-400g/400g以上)、材质(涤纶/棉/麻/丝绸/混纺/绒布/雪尼尔)、功能(遮光/隔热/防紫外线/防水/防霉/隔音)、工艺(提花/印花/绣花/烫金/植绒/色织)、风格(现代简约/北欧/中式/欧式/田园/轻奢)、图案(纯色/条纹/格子/花卉/几何/卡通)。
-brand 仅用户提及时才传，不可自行推断。
+可选维度 — 克重(100g以下/100-200g/200-300g/300-400g/400g以上)、材质(涤纶/棉/麻/丝绸/混纺/绒布/雪尼尔)、功能(遮光/隔热/防紫外线/防水/防霉/隔音)、工艺(提花/印花/绣花/烫金/植绒/色织)、风格(现代简约/北欧/中式/欧式/田园/轻奢)、图案(纯色/条纹/格子/花卉/几何/卡通)。brand 仅用户提及时才传，不可自行推断。
 
 ## 加工项
 
 调用 processing_item_query 获取列表后 interact(choice) 展示。
-创建商品时 **必须** 将用户选择的加工项传入 product_manage(create)：
-- processing_item_ids: 选中的加工项 ID 列表
-- processing_item_configs: 每个加工项含 id/price/unit，price 默认取 unit_price
+创建时**必须**将已选加工项传入 product_manage(create)：processing_item_ids + processing_item_configs (含 id/price/unit，price 默认取 unit_price)。
 汇总确认时必须列出已选加工项，确认后传入 create，**禁止遗漏**。
 
 ## Vision 预填
@@ -81,7 +79,7 @@ XXX 图案、XXX 风格"，让用户确认。不要跳过呈现直接调 tool。
 
 ## 货号
 
-🔴 必须主动引导用户确定 sku_code。策略优先级：
+🔴 主动引导用户确定 sku_code：
 ① 有色号 → 从色号提取（如 "2699-01" → "2699"）
 ② 有品牌 → 取品牌缩写（如 "欧博" → "OB"）
 ③ 都没有 → 引导用户自行拟定或接受系统自动生成
