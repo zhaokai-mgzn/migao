@@ -74,30 +74,35 @@ public class AgentProductController {
     }
 
     /**
-     * Agent 专用 SKU 价格更新。
-     * PATCH /api/admin/agent/products/{productId}/skus/{skuId}
+     * Agent 专用 SKU 价格更新。按颜色/售卖方式/门幅精确匹配。
+     * PATCH /api/admin/agent/products/{productId}/skus/price
      */
-    @PatchMapping("/{productId}/skus/{skuId}")
+    @PatchMapping("/{productId}/skus/price")
     public ApiResponse<ProductResponse> updateSkuPrice(
             @PathVariable String productId,
-            @PathVariable String skuId,
             @RequestBody Map<String, Object> body) {
         Long tenantId = TenantContext.getTenantId();
+        String color = (String) body.getOrDefault("color", "");
+        String sellingMethod = (String) body.getOrDefault("selling_method", "");
+        String doorWidth = (String) body.getOrDefault("door_width", "");
         Object priceObj = body.get("price");
         if (priceObj == null) {
             throw BusinessException.validationError("缺少 price 字段");
         }
         java.math.BigDecimal price = new java.math.BigDecimal(priceObj.toString());
-        log.info("[Agent] 更新SKU价格: productId={}, skuId={}, price={}, tenantId={}",
-                productId, skuId, price, tenantId);
+        log.info("[Agent] SKU调价: product={}, color={}, method={}, width={}, price={}",
+                productId, color, sellingMethod, doorWidth, price);
         try {
-            productService.updateSkuPrice(productId, skuId, price, tenantId);
-            ProductResponse result = productService.getProductById(
-                    productService.resolveProductId(productId, tenantId), tenantId);
+            String resolvedId = productService.resolveProductId(productId, tenantId);
+            if (resolvedId == null) {
+                throw BusinessException.notFound("商品（" + productId + "）",
+                        "请先用 product_search 查出正确 ID");
+            }
+            productService.updateSkuPrice(resolvedId, color, sellingMethod, doorWidth, price, tenantId);
+            ProductResponse result = productService.getProductById(resolvedId, tenantId);
             return ApiResponse.success(result);
         } catch (Exception e) {
-            log.warn("[Agent] SKU价格更新失败: productId={}, skuId={}, error={}",
-                    productId, skuId, e.getMessage());
+            log.warn("[Agent] SKU调价失败: product={}, error={}", productId, e.getMessage());
             throw e;
         }
     }

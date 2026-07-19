@@ -1552,39 +1552,29 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
      * @return 真实 UUID，未找到返回 null
      */
     /**
-     * 更新单个 SKU 的价格。skuIdOrDesc 可以是 SKU UUID，也可以是 "颜色 售卖方式 门幅" 描述。
+     * 更新单个 SKU 的价格。按颜色/售卖方式/门幅匹配。
      */
-    public void updateSkuPrice(String productId, String skuIdOrDesc, java.math.BigDecimal price, Long tenantId) {
-        ProductSku sku = productSkuMapper.selectOne(
-                new LambdaQueryWrapper<ProductSku>()
-                        .eq(ProductSku::getId, skuIdOrDesc)
-                        .eq(ProductSku::getProductId, productId)
-                        .eq(ProductSku::getTenantId, tenantId));
-        // 如果 ID 没匹配到，尝试按描述匹配（顺序无关）
+    public void updateSkuPrice(String productId, String color, String sellingMethod,
+                                String doorWidth, java.math.BigDecimal price, Long tenantId) {
+        LambdaQueryWrapper<ProductSku> w = new LambdaQueryWrapper<ProductSku>()
+                .eq(ProductSku::getProductId, productId)
+                .eq(ProductSku::getTenantId, tenantId);
+        if (org.springframework.util.StringUtils.hasText(color))
+            w.eq(ProductSku::getColorName, color);
+        if (org.springframework.util.StringUtils.hasText(sellingMethod))
+            w.eq(ProductSku::getSellingMethod, sellingMethod);
+        if (org.springframework.util.StringUtils.hasText(doorWidth))
+            w.eq(ProductSku::getDoorWidth, doorWidth);
+
+        ProductSku sku = productSkuMapper.selectOne(w);
         if (sku == null) {
-            String[] parts = skuIdOrDesc.trim().split("\\s+");
-            // 先查全量 SKU，再逐个字段模糊匹配
-            java.util.List<ProductSku> candidates = productSkuMapper.selectList(
-                    new LambdaQueryWrapper<ProductSku>()
-                            .eq(ProductSku::getProductId, productId)
-                            .eq(ProductSku::getTenantId, tenantId));
-            for (ProductSku s : candidates) {
-                int matched = 0;
-                for (String part : parts) {
-                    if (part.equals(s.getColorName())) matched++;
-                    else if (part.equals(s.getSellingMethod())) matched++;
-                    else if (part.equals(s.getDoorWidth())) matched++;
-                }
-                if (matched >= parts.length) { sku = s; break; }
-            }
-        }
-        if (sku == null) {
-            throw BusinessException.notFound("SKU（" + skuIdOrDesc + "）",
-                    "请先用 product_detail 查看 SKU 列表，确认正确的 SKU 信息后重试");
+            throw BusinessException.notFound("SKU",
+                    "未找到匹配的 SKU。请用 product_detail 查看可用 SKU 后重试");
         }
         sku.setPrice(price);
         productSkuMapper.updateById(sku);
-        log.info("SKU价格已更新: productId={}, skuIdOrDesc={}, price={}", productId, skuIdOrDesc, price);
+        log.info("SKU价格已更新: product={}, color={}, method={}, width={}, price={}",
+                productId, color, sellingMethod, doorWidth, price);
     }
 
     public String resolveProductId(String raw, Long tenantId) {
