@@ -14,8 +14,9 @@ class ProductUpdateTool(BaseTool):
     description = (
         "【触发】用户说'改价格''改名称''价格改成XX''改名'时**直接调用**，无需 validate_input。"
         "只传要改的字段，其他字段保持不变。product_id 支持名称/序号/UUID。"
-        "【反例】增删加工项用 product_processing_item_manage，不要用本工具。"
-        "【标注】WRITE"
+        "【注意】改的是商品统一定价，影响所有 SKU。单独调某个 SKU 价格请引导去商品管理页。"
+        "【反例】增删加工项用 product_processing_item_manage，单独 SKU 调价本工具不支持。"
+        "【标注】WRITE|IDEMPOTENT"
     )
     allowed_roles = ["admin", "tenant_admin"]
     read_only = False

@@ -22,7 +22,7 @@ PRODUCT_TOOLS = [
     "validate_input",
 ]
 
-PRODUCT_SYSTEM_PROMPT = """## 🔴 改价/改名→product_update, 加工项→product_processing_item_manage, 创建→product_manage。一次只做一个操作。
+PRODUCT_SYSTEM_PROMPT = """## 🔴 改价/改名→product_update(商品级统一定价), 单独SKU调价→引导去商品管理页。加工项→product_processing_item_manage, 创建→product_manage。一次只做一个操作。
 
 ## 创建商品需要的字段
 
