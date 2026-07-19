@@ -129,10 +129,19 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         created_at: s.created_at || new Date().toISOString(),
         updated_at: s.updated_at || s.created_at || new Date().toISOString(),
       }))
-      set({ sessions, error: null })
+      // 如果当前有选中会话但服务端列表里没有（刚新建的），补到最前面
+      const currentId = get().currentSessionId
+      let finalSessions = sessions
+      if (currentId && !sessions.find(s => s.session_id === currentId)) {
+        const currentSession = get().sessions.find(s => s.session_id === currentId)
+        if (currentSession) {
+          finalSessions = [currentSession, ...sessions]
+        }
+      }
+
+      set({ sessions: finalSessions, error: null })
 
       // 如果没有选中会话且无未完成交互，自动选中第一个
-      // 如果当前有 active 会话但列表里没包含（刚被关闭），保持现状不自动切换
       if (!get().currentSessionId && sessions.length > 0 && !hasPendingTools(get().messages)) {
         get().selectSession(sessions[0].session_id)
       }
@@ -185,10 +194,13 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       return
     }
 
+    const requestId = generateId() // 请求去重标记
     set({ currentSessionId: id, messages: [], isLoadingMessages: true }); persistSessionId(id)
 
     try {
       const data = await chatApi.getHistory(id, getToken())
+      // 请求返回时确认未切到其他 session
+      if (get().currentSessionId !== id) return
       const rawMessages = data?.data?.messages || data?.messages || []
       const messages: ChatMessage[] = rawMessages.map((msg: any) => ({
         id: msg.id || generateId(),
