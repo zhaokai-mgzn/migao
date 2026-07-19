@@ -295,7 +295,7 @@ describe('DashboardPage', () => {
     mockGetProductRanking.mockResolvedValue({ data: { data: [] } })
     render(<DashboardPage />)
     await waitFor(() => {
-      expect(screen.getByText('暂无数据')).toBeInTheDocument()
+      expect(screen.getByText('暂无排行数据')).toBeInTheDocument()
     })
   })
 
@@ -319,8 +319,8 @@ describe('DashboardPage', () => {
     mockGetOrderTrend.mockResolvedValue({ data: { data: [] } })
     render(<DashboardPage />)
     await waitFor(() => {
-      const emptyNodes = screen.getAllByText('暂无数据')
-      expect(emptyNodes.length).toBeGreaterThanOrEqual(2)
+      expect(screen.getByText('暂无订单数据')).toBeInTheDocument()
+      expect(screen.getByText('暂无销售额数据')).toBeInTheDocument()
     })
   })
 
