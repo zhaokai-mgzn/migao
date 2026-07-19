@@ -21,6 +21,42 @@ BYPASS_CODE = os.environ.get("BYPASS_CODE", "123456")
 
 import httpx
 
+# ── 数据隔离：保存/恢复商品状态 ──
+
+_saved_states: dict = {}  # {product_id: {"price": ...}}
+
+
+async def snapshot_product(token: str, product_keyword: str) -> str | None:
+    """保存商品当前状态，返回 product_id"""
+    async with httpx.AsyncClient() as c:
+        h = {"Authorization": f"Bearer {token}"}
+        r = await c.get(f"{ADMIN_API}/api/admin/products", headers=h,
+                        params={"keyword": product_keyword, "page": 1, "size": 1})
+        items = r.json().get("data", {}).get("items", [])
+        if not items:
+            return None
+        p = items[0]
+        pid = p["id"]
+        price = p.get("price") or p.get("basePrice")
+        _saved_states[pid] = {"price": price, "name": p.get("name", "")}
+        return pid
+
+
+async def restore_product(token: str, product_id: str):
+    """恢复商品到保存的状态"""
+    if product_id not in _saved_states:
+        return
+    saved = _saved_states[product_id]
+    async with httpx.AsyncClient() as c:
+        h = {"Authorization": f"Bearer {token}"}
+        price = saved.get("price")
+        if price is not None:
+            await c.patch(f"{ADMIN_API}/api/admin/agent/products/{product_id}",
+                         headers=h, json={"price": price})
+
+
+# ── Auth ──
+
 async def login() -> str:
     """获取测试 token"""
     async with httpx.AsyncClient() as c:
@@ -219,6 +255,11 @@ async def run_suite(cases, label: str):
         icon = {Difficulty.SMOKE: "🟢", Difficulty.NORMAL: "🔵",
                 Difficulty.EDGE: "🟡", Difficulty.ADVERSARIAL: "🔴"}.get(case.difficulty, "⚪")
 
+        # 数据隔离：修改类用例前后保存/恢复状态
+        snapshot_pid = None
+        if any(t in case.tags for t in ["id_reuse", "update", "full_lifecycle"]):
+            snapshot_pid = await snapshot_product(token, "遮光窗帘") or await snapshot_product(token, "2699")
+
         try:
             r = await run_case(case, token, session_id)
             results.append(r)
@@ -237,6 +278,9 @@ async def run_suite(cases, label: str):
                 print(f"     ⚠️  last_error: {str(r['last_error'])[:100]}")
         except Exception as e:
             print(f"  {icon} ❌ {case.id}: EXCEPTION: {e}")
+        finally:
+            if snapshot_pid:
+                await restore_product(token, snapshot_pid)
 
         await asyncio.sleep(1)  # rate limit
 

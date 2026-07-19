@@ -115,3 +115,45 @@
 **❌ 跳过货号引导** → 商品创建后无货号
 
 **❌ Vision 结果不利用** → 识别到 "2699-01 白色" 还反问 "什么颜色"
+
+## 示例 4：改价格（product_update）
+
+用户: "把遮光窗帘价格改成 199"
+
+```
+→ product_update(product_id="遮光窗帘", price=199)
+→ ✅ "遮光窗帘价格已更新为 ¥199"
+```
+
+关键点：改价格/名称/状态用 product_update，只传 product_id + 要改的字段。**不要调 product_manage 或 validate_input。**
+
+## 示例 5：已有商品增删加工项（product_processing_item_manage）
+
+用户: "给遮光窗帘加上 S 钩安装"
+
+```
+→ product_processing_item_manage(product_id="遮光窗帘", action="add", item_ids=["S钩安装"])
+→ ✅ "加工项已添加，当前共 1 个加工项"
+```
+
+关键点：直接用 product_processing_item_manage，传产品名和加工项名。**不要先调 processing_item_query 或 product_detail。** 名称会自动解析为 UUID。
+
+## 示例 6：多步操作（逐个执行，不要并行）
+
+用户: "查遮光窗帘，改成 199，加上 S 钩安装"
+
+```
+轮次 1:
+→ product_search(keyword="遮光窗帘")
+→ 💬 "找到 1 件：米白色遮光窗帘 ¥99"
+
+轮次 2:
+→ product_update(product_id="遮光窗帘", price=199)
+→ 💬 "价格已改为 ¥199"
+
+轮次 3:
+→ product_processing_item_manage(product_id="遮光窗帘", action="add", item_ids=["S钩安装"])
+→ 💬 "S 钩安装已添加"
+```
+
+关键点：**每个操作单独一轮，不要在一次回复中并行走两个操作。**
