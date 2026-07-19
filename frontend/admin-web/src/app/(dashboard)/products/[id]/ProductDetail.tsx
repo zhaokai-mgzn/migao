@@ -6,8 +6,66 @@ import { ArrowLeft, Edit, ArrowUpCircle, ArrowDownCircle } from 'lucide-react'
 import Image from 'next/image'
 import { Button, Badge, Loading } from '@/components/ui'
 import { productApi } from '@/lib/api'
+import request from '@/lib/request'
 import { useRouteId } from '@/lib/use-route-id'
 import { resolveImageUrl } from '@/lib/utils'
+
+/** 行内编辑 SKU 价格 */
+function SkuPriceCell({ productId, sku, onUpdated }: {
+  productId: string; sku: any; onUpdated: () => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [value, setValue] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  const startEdit = () => {
+    setValue(sku.price?.toString() || '')
+    setEditing(true)
+  }
+
+  const save = async () => {
+    const num = parseFloat(value)
+    if (isNaN(num) || num < 0) { toast.error('请输入有效价格'); return }
+    setLoading(true)
+    try {
+      await request.patch(`/api/admin/agent/products/${productId}/skus/${sku.id}`, { price: num })
+      toast.success(`SKU 价格已更新`)
+      setEditing(false)
+      onUpdated()
+    } catch (e: any) {
+      toast.error(e?.response?.data?.error?.message || '更新失败')
+    } finally { setLoading(false) }
+  }
+
+  if (editing) {
+    return (
+      <div className="flex items-center gap-1 justify-end">
+        <input
+          autoFocus
+          type="number"
+          step="0.01"
+          className="w-20 h-7 px-1.5 text-xs border border-blue-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-400 text-right"
+          value={value}
+          onChange={e => setValue(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') setEditing(false) }}
+          onBlur={() => setEditing(false)}
+          disabled={loading}
+        />
+      </div>
+    )
+  }
+
+  const price = typeof sku.price === 'number' ? sku.price : null
+  return (
+    <button
+      onClick={startEdit}
+      className="hover:bg-blue-50 px-1.5 py-0.5 rounded transition-colors cursor-pointer"
+      title="点击编辑价格"
+    >
+      {price != null ? `¥${price.toFixed(2)}` : '-'}
+    </button>
+  )
+}
 import { toast } from 'sonner'
 import type { Product, ProductStatus, ProductSku } from '@/types'
 import { ProductStatusLabels, PricingTypeLabels, SellingMethodLabels } from '@/types'
@@ -311,7 +369,11 @@ export default function ProductDetailPage() {
                         <td className="px-3 py-2 font-mono text-xs">{sku.skuCode || '-'}</td>
                         <td className="px-3 py-2 text-right tabular-nums">{sku.stock ?? '-'}</td>
                         <td className="px-3 py-2 text-right tabular-nums">
-                          {typeof sku.price === 'number' ? `¥${sku.price.toFixed(2)}` : '-'}
+                          <SkuPriceCell
+                            productId={product.id}
+                            sku={sku}
+                            onUpdated={loadProduct}
+                          />
                         </td>
                       </tr>
                     ))}
