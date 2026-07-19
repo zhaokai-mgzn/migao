@@ -671,12 +671,24 @@ async def execute_skill(
     if len(raw_messages) > MAX_CONVERSATION_MSGS:
         raw_messages = list(raw_messages[-MAX_CONVERSATION_MSGS:])
         session_truncated = True
+        truncation_msg = (
+            f"⚠️ 对话已达 {len(state.get('messages',[]))} 轮，历史记录已自动裁剪。"
+            f"早期对话内容无法再被引用。建议新建会话以获得最佳体验。"
+        )
+        raw_messages.insert(0, SystemMessage(content=truncation_msg))
         logger.warning(f"[{skill_name}] History truncated: {len(state.get('messages',[]))}→{MAX_CONVERSATION_MSGS} msgs | session={session_id}")
 
     # 接近上限时提醒：20 条后每次对话追加提示
     SESSION_LENGTH_HINT = 20
     if len(raw_messages) > SESSION_LENGTH_HINT and not session_truncated:
-        hint = f"\n\n💡 当前对话已持续 {len(raw_messages)} 轮。如果需要处理新的事务，建议点击「新建会话」开始新对话，我会更专注。"
+        hint = (
+            f"\n\n---\n"
+            f"💡 当前对话已持续 {len(raw_messages)} 轮，上下文较长可能导致：\n"
+            f"  • 响应速度变慢\n"
+            f"  • 对早期对话内容的记忆减弱\n"
+            f"建议点击右上角「新建会话」开始新对话，我会更专注、更快速地处理新事务。\n"
+            f"上一轮的操作结果（如查到的商品、订单等）我会自动记住，不会丢失。"
+        )
         if isinstance(raw_messages[-1], HumanMessage):
             raw_messages[-1] = HumanMessage(
                 content=(getattr(raw_messages[-1], 'content', '') or '') + hint
