@@ -32,7 +32,11 @@ function now(): string {
 // ═══════════════════════════════════════════════════════
 
 function MiniSparkline({ data, color, width = 80, height = 28 }: { data: number[]; color: string; width?: number; height?: number }) {
-  if (!data.length) return <div className="h-7 w-20" />
+  if (!data.length) return (
+    <svg width={width} height={height} className="flex-shrink-0">
+      <line x1="0" y1={height / 2} x2={width} y2={height / 2} stroke="#E5E7EB" strokeWidth="1" strokeDasharray="3 3" />
+    </svg>
+  )
   const max = Math.max(...data, 1)
   const min = Math.min(...data, 0)
   const range = max - min || 1
@@ -44,8 +48,32 @@ function MiniSparkline({ data, color, width = 80, height = 28 }: { data: number[
   )
 }
 
+function ChartSkeleton({ bars = 7, heights }: { bars?: number; heights?: number[] }) {
+  const h = heights || [35, 55, 28, 62, 42, 50, 38]
+  return (
+    <div className="h-full flex flex-col justify-end relative">
+      <svg className="absolute inset-0 w-full h-full" viewBox="0 0 400 200" preserveAspectRatio="none">
+        <line x1="40" y1="10" x2="40" y2="170" stroke="#F3F4F6" strokeWidth="1" />
+        <line x1="40" y1="170" x2="380" y2="170" stroke="#F3F4F6" strokeWidth="1" />
+        {[30, 65, 100, 135].map((y, i) => (
+          <line key={i} x1="40" y1={y} x2="380" y2={y} stroke="#F3F4F6" strokeWidth="1" strokeDasharray="4 4" />
+        ))}
+      </svg>
+      <div className="relative z-10 flex items-end gap-2 px-[10%] pb-5">
+        {h.slice(0, bars).map((pct, i) => (
+          <div key={i} className="flex-1 bg-gray-100 rounded-sm animate-pulse" style={{ height: `${Math.min(pct, 85)}%` }} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function MiniBarChart({ data, color, width = 80, height = 28 }: { data: number[]; color: string; width?: number; height?: number }) {
-  if (!data.length) return <div className="h-7 w-20" />
+  if (!data.length) return (
+    <svg width={width} height={height} className="flex-shrink-0">
+      <line x1="0" y1={height / 2} x2={width} y2={height / 2} stroke="#E5E7EB" strokeWidth="1" strokeDasharray="3 3" />
+    </svg>
+  )
   const barW = Math.max(2, width / data.length - 2)
   const max = Math.max(...data, 1)
   return (
@@ -99,7 +127,7 @@ function PendingCard({ title, count, icon, color }: { title: string; count: numb
       <span className={cn('p-2 rounded-lg', PENDING_COLORS[color] || 'bg-gray-50')}>{icon}</span>
       <div className="flex-1">
         <p className="text-xs text-gray-500">{title}</p>
-        <p className="text-xl font-bold text-gray-900">{fmtNum(count)}<ArrowUp className="w-3 h-3 text-red-500 inline ml-1" /></p>
+        <p className="text-xl font-bold text-gray-900">{fmtNum(count)}</p>
       </div>
     </div>
   )
@@ -119,7 +147,7 @@ export default function DashboardPage() {
   const [processingShipment, setProcessingShipment] = useState(0)
   const [lowStockCount, setLowStockCount] = useState(0)
   const [trendDays, setTrendDays] = useState(7)
-  const [updateTime, setUpdateTime] = useState(now())
+  const [updateTime, setUpdateTime] = useState('--')
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -243,7 +271,9 @@ export default function DashboardPage() {
             </div>
           </div>
           <div className="h-48">
-            {trendData.length > 0 ? (() => {
+            {loading ? (
+              <ChartSkeleton bars={7} />
+            ) : trendData.length > 0 ? (() => {
               const rawMax = Math.max(...trendData.map(t => t.orders || 0), 0)
               // Y-axis: 10% headroom; when all data is 0, use sensible default to avoid flatlining
               const chartMax = rawMax === 0 ? 10 : rawMax * 1.1
@@ -263,12 +293,25 @@ export default function DashboardPage() {
                 </svg>
               )
             })() : (
-              <div className="h-full flex flex-col items-center justify-center">
-                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-50 flex items-center justify-center mb-3">
-                  <TrendingUp className="w-6 h-6 text-blue-300" />
+              <div className="h-full flex flex-col items-center justify-center relative">
+                {/* Placeholder chart grid */}
+                <svg className="absolute inset-0 w-full h-full" viewBox="0 0 400 200" preserveAspectRatio="none">
+                  <line x1="40" y1="10" x2="40" y2="170" stroke="#F3F4F6" strokeWidth="1" />
+                  <line x1="40" y1="170" x2="380" y2="170" stroke="#F3F4F6" strokeWidth="1" />
+                  {[30, 65, 100, 135].map((y, i) => (
+                    <line key={i} x1="40" y1={y} x2="380" y2={y} stroke="#F3F4F6" strokeWidth="1" strokeDasharray="4 4" />
+                  ))}
+                </svg>
+                <div className="relative z-10 flex flex-col items-center">
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-50 flex items-center justify-center mb-3">
+                    <TrendingUp className="w-6 h-6 text-blue-400" />
+                  </div>
+                  <p className="text-sm font-medium text-gray-500">暂无订单数据</p>
+                  <p className="text-xs text-gray-400 mt-1 mb-4">创建订单后，趋势图将在此展示</p>
+                  <Link href="/orders/new" className="inline-flex items-center gap-1.5 text-xs font-medium text-white bg-blue-500 hover:bg-blue-600 px-3.5 py-2 rounded-lg transition-colors shadow-sm">
+                    创建订单 <ArrowRight className="w-3 h-3" />
+                  </Link>
                 </div>
-                <p className="text-sm font-medium text-gray-400">暂无订单数据</p>
-                <p className="text-xs text-gray-300 mt-1">创建订单后，趋势图将在此展示</p>
               </div>
             )}
           </div>
@@ -278,10 +321,12 @@ export default function DashboardPage() {
         <div className="bg-white rounded-xl border border-gray-100 p-5">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-semibold text-gray-800">销售额数据</h3>
-            <span className="text-xs text-gray-400">数据更新时间：{updateTime.slice(11, 19)}</span>
+            <span className="text-xs text-gray-400">数据更新时间：{updateTime === '--' ? updateTime : updateTime.slice(11, 19)}</span>
           </div>
           <div className="h-48">
-            {trendData.length > 0 ? (() => {
+            {loading ? (
+              <ChartSkeleton bars={7} heights={[45, 32, 58, 25, 52, 38, 48]} />
+            ) : trendData.length > 0 ? (() => {
               const salesValues = trendData.map(d => (d.totalAmount || d.orders * 23.8) || 0)
               const rawMax = Math.max(...salesValues, 0)
               const chartMax = rawMax === 0 ? 10 : rawMax * 1.1
@@ -290,18 +335,31 @@ export default function DashboardPage() {
                 <svg width="100%" height="100%" viewBox={`0 0 ${Math.max(trendData.length * 40, 300)} 240`} overflow="visible">
                   <defs><linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#3B82F6" stopOpacity="0.3" /><stop offset="100%" stopColor="#3B82F6" stopOpacity="0" /></linearGradient></defs>
                   <path fill="url(#areaGrad)"
-                    d={`M 20 200 ${trendData.map((d, i) => `L ${i * 40 + 20} ${toY(salesValues[i])}`).join(' ')} L ${(trendData.length - 1) * 40 + 20} 200 Z`} />
+                    d={`M 20 200 ${trendData.map((_, i) => `L ${i * 40 + 20} ${toY(salesValues[i])}`).join(' ')} L ${(trendData.length - 1) * 40 + 20} 200 Z`} />
                   <polyline fill="none" stroke="#3B82F6" strokeWidth="2"
-                    points={trendData.map((d, i) => `${i * 40 + 20},${toY(salesValues[i])}`).join(' ')} />
+                    points={trendData.map((_, i) => `${i * 40 + 20},${toY(salesValues[i])}`).join(' ')} />
                 </svg>
               )
             })() : (
-              <div className="h-full flex flex-col items-center justify-center">
-                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-50 to-green-50 flex items-center justify-center mb-3">
-                  <DollarSign className="w-6 h-6 text-emerald-300" />
+              <div className="h-full flex flex-col items-center justify-center relative">
+                {/* Placeholder chart grid */}
+                <svg className="absolute inset-0 w-full h-full" viewBox="0 0 400 200" preserveAspectRatio="none">
+                  <line x1="40" y1="10" x2="40" y2="170" stroke="#F3F4F6" strokeWidth="1" />
+                  <line x1="40" y1="170" x2="380" y2="170" stroke="#F3F4F6" strokeWidth="1" />
+                  {[30, 65, 100, 135].map((y, i) => (
+                    <line key={i} x1="40" y1={y} x2="380" y2={y} stroke="#F3F4F6" strokeWidth="1" strokeDasharray="4 4" />
+                  ))}
+                </svg>
+                <div className="relative z-10 flex flex-col items-center">
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-50 to-green-50 flex items-center justify-center mb-3">
+                    <DollarSign className="w-6 h-6 text-emerald-400" />
+                  </div>
+                  <p className="text-sm font-medium text-gray-500">暂无销售额数据</p>
+                  <p className="text-xs text-gray-400 mt-1 mb-4">产生订单后，销售趋势将在此展示</p>
+                  <Link href="/orders/new" className="inline-flex items-center gap-1.5 text-xs font-medium text-white bg-emerald-500 hover:bg-emerald-600 px-3.5 py-2 rounded-lg transition-colors shadow-sm">
+                    创建订单 <ArrowRight className="w-3 h-3" />
+                  </Link>
                 </div>
-                <p className="text-sm font-medium text-gray-400">暂无销售额数据</p>
-                <p className="text-xs text-gray-300 mt-1">产生订单后，销售趋势将在此展示</p>
               </div>
             )}
           </div>
@@ -319,21 +377,36 @@ export default function DashboardPage() {
           <table className="w-full text-xs">
             <thead><tr className="text-gray-500 border-b"><th className="text-left py-2 font-medium">订单号</th><th className="text-left py-2 font-medium">客户</th><th className="text-right py-2 font-medium">金额</th><th className="text-right py-2 font-medium">状态</th><th className="text-right py-2 font-medium">时间</th></tr></thead>
             <tbody>
-              {recentOrders.slice(0, 5).map(o => (
-                <tr key={o.id} className="border-b border-gray-50 hover:bg-gray-50">
-                  <td className="py-2"><a href={`/orders/${o.id}`} className="text-blue-600 font-mono text-[11px] hover:underline">{o.orderNo?.slice(0, 16)}</a></td>
-                  <td className="py-2 text-gray-700">{o.customerName}</td>
-                  <td className="py-2 text-right text-gray-900 font-mono">{fmtCurrency(o.totalAmount)}</td>
-                  <td className="py-2 text-right"><StatusBadge status={o.status as string} /></td>
-                  <td className="py-2 text-right text-gray-400 text-[11px]">{o.createdAt?.slice(5, 16)?.replace('T', ' ')}</td>
-                </tr>
-              ))}
+              {loading ? (
+                Array.from({ length: 5 }).map((_, i) => (
+                  <tr key={i} className="border-b border-gray-50">
+                    <td className="py-2"><div className="h-4 bg-gray-100 rounded animate-pulse w-20" /></td>
+                    <td className="py-2"><div className="h-4 bg-gray-100 rounded animate-pulse w-14" /></td>
+                    <td className="py-2 text-right"><div className="h-4 bg-gray-100 rounded animate-pulse w-12 ml-auto" /></td>
+                    <td className="py-2 text-right"><div className="h-4 bg-gray-100 rounded animate-pulse w-14 ml-auto" /></td>
+                    <td className="py-2 text-right"><div className="h-4 bg-gray-100 rounded animate-pulse w-16 ml-auto" /></td>
+                  </tr>
+                ))
+              ) : (
+                recentOrders.slice(0, 5).map(o => (
+                  <tr key={o.id} className="border-b border-gray-50 hover:bg-gray-50">
+                    <td className="py-2"><a href={`/orders/${o.id}`} className="text-blue-600 font-mono text-[11px] hover:underline">{o.orderNo?.slice(0, 16)}</a></td>
+                    <td className="py-2 text-gray-700">{o.customerName}</td>
+                    <td className="py-2 text-right text-gray-900 font-mono">{fmtCurrency(o.totalAmount)}</td>
+                    <td className="py-2 text-right"><StatusBadge status={o.status as string} /></td>
+                    <td className="py-2 text-right text-gray-400 text-[11px]">{o.createdAt?.slice(5, 16)?.replace('T', ' ')}</td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
           {!loading && recentOrders.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-8">
-              <ClipboardList className="w-8 h-8 text-gray-200 mb-2" />
-              <p className="text-sm text-gray-400">暂无近期订单</p>
+            <div className="flex flex-col items-center justify-center py-10">
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-50 to-indigo-50 flex items-center justify-center mb-3">
+                <ClipboardList className="w-5 h-5 text-blue-400" />
+              </div>
+              <p className="text-sm font-medium text-gray-500">暂无近期订单</p>
+              <p className="text-xs text-gray-400 mt-1">新订单将在此展示</p>
             </div>
           )}
         </div>
@@ -347,9 +420,12 @@ export default function DashboardPage() {
           {loading ? (
             <div className="space-y-2">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-8 bg-gray-100 rounded animate-pulse" />)}</div>
           ) : ranking.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-8">
-              <Package className="w-8 h-8 text-gray-200 mb-2" />
-              <p className="text-sm text-gray-400">暂无排行数据</p>
+            <div className="flex flex-col items-center justify-center py-10">
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-50 to-orange-50 flex items-center justify-center mb-3">
+                <Package className="w-5 h-5 text-amber-400" />
+              </div>
+              <p className="text-sm font-medium text-gray-500">暂无排行数据</p>
+              <p className="text-xs text-gray-400 mt-1">产生订单后，销量排行将在此展示</p>
             </div>
           ) : (
             <table className="w-full text-xs">

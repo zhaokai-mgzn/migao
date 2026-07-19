@@ -93,12 +93,12 @@ jobs:
         continue-on-error: true
 
   # ============ E2E 质量门禁 — fixture 模式，不依赖后端 ============
-  # 只跑纯数据验证：API 契约、反占位符、跨页一致性。
+  # 数据质量校验 + 核心页面冒烟（dashboard）。
   # 业务流程测试和真实后端验证由 post-deploy smoke 负责。
   e2e-quality-gate:
     name: E2E quality gate
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 6
     if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v4
@@ -124,12 +124,13 @@ jobs:
           npx playwright test --reporter=list --retries=1 \
             e2e/specs/quality/api-contract.spec.ts \
             e2e/specs/quality/anti-placeholder.spec.ts \
-            e2e/specs/quality/cross-page-consistency.spec.ts
+            e2e/specs/quality/cross-page-consistency.spec.ts \
+            e2e/specs/dashboard/dashboard.spec.ts
 
       - name: Notify on failure
         if: failure()
         run: |
-          echo "::error::数据质量门禁失败"
+          echo "::error::E2E 质量门禁失败 — 数据校验或 dashboard 冒烟不通过"
           echo "::error::API 契约变更? cd tests && npx tsx e2e/scripts/record-fixtures.ts"
 
   # ============ QA Growth Gate — 事前测试覆盖门禁（block 模式）============
