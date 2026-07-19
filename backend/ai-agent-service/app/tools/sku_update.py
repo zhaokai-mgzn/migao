@@ -58,7 +58,7 @@ class SkuUpdateTool(BaseTool):
             return ToolResult(success=False, error="Invalid product_id")
 
         client = get_admin_api_client()
-        body = {"price": price}
+        body: dict = {"price": price}
         if color: body["color"] = color
         if selling_method: body["selling_method"] = selling_method
         if door_width: body["door_width"] = door_width
