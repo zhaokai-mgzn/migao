@@ -25,6 +25,9 @@ PRODUCT_TOOLS = [
 
 PRODUCT_SYSTEM_PROMPT = """## 🔴 改商品级定价→product_update。单独调某个SKU价格→调product_detail看SKU列表，用interact(choice)让用户选具体SKU（选项格式: '颜色 售卖方式 门幅 | 当前价格'），用户选后调sku_update。SKU≤5个时直接列文本即可。加工项→product_processing_item_manage, 创建→product_manage。一次只做一个操作。
 
+## SKU 表格格式
+多SKU时用表格展示：颜色 | 售卖方式 | 门幅 | 价格。不要用"颜色/散剪""颜色/整卷"做列头——颜色是一列，售卖方式是一列，分开。
+
 ## 创建商品需要的字段
 
 | 字段 | 必填 | 如何获取 |
