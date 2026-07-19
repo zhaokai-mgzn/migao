@@ -203,9 +203,6 @@ async def run_suite(cases, label: str):
         print(f"❌ 登录失败: {e}")
         return []
 
-    session_id = await get_or_create_session(token)
-    print(f"✅ 会话: {session_id[:20]}...")
-
     results = []
     passed_count = 0
     total_score = 0.0
@@ -213,6 +210,9 @@ async def run_suite(cases, label: str):
     for i, case in enumerate(cases):
         if case.skip_reason:
             continue
+
+        # 每个用例用独立 session，避免前序用例污染上下文
+        session_id = await get_or_create_session(token, prefer_new=True)
 
         icon = {Difficulty.SMOKE: "🟢", Difficulty.NORMAL: "🔵",
                 Difficulty.EDGE: "🟡", Difficulty.ADVERSARIAL: "🔴"}.get(case.difficulty, "⚪")

@@ -1,0 +1,23 @@
+{
+  "success": true,
+  "data": {
+    "todayOrders": 0,
+    "todayOrdersChange": 0.0,
+    "todaySales": 0,
+    "todaySalesChange": 0.0,
+    "totalCustomers": 0,
+    "newCustomersToday": 0,
+    "activeSessions": 69,
+    "aiSessionRate": 100.0,
+    "monthRevenue": 0,
+    "monthRevenueChange": -100.0,
+    "totalProducts": 11,
+    "totalOrders": 4,
+    "totalTickets": 7,
+    "pendingShipOrders": 0,
+    "processingPendingOrders": 0,
+    "lowStockItems": 161
+  },
+  "requestId": "req_ae58d15f0cfc410c",
+  "timestamp": 1784420223
+}

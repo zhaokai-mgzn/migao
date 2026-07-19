@@ -311,10 +311,11 @@ MULTI_TURN_CASES = [
         difficulty=Difficulty.SMOKE,
         user_inputs=[
             "搜索窗帘",                             # 1. 搜索
-            "看看第一个的详情",                      # 2. 详情（用序号）
-            "价格改成 188",                         # 3. 更新价格（用上下文中的 ID）
-            "给它加上打孔加工",                      # 4. 加工项（用上下文中的 ID）
-            "再看看这个商品的详情确认一下",          # 5. 验证（用上下文中的 ID）
+            "看看第一个的详情",                      # 2. 详情
+            "价格改成 188",                         # 3. 触发确认
+            "确认",                                 # 4. 确认执行更新
+            "给它加上S钩安装",                      # 5. 加工项（直接执行）
+            "再看看这个商品的详情确认一下",          # 6. 验证
         ],
         expectations=[
             "product_search",
@@ -325,7 +326,7 @@ MULTI_TURN_CASES = [
         ],
         data_checks=[
             "第3轮 product_id 来自第2轮结果",
-            "第4轮 product_id 来自第2轮结果",
+            "第5轮 product_id 来自第2轮结果",
             "全程未重新 product_search 查同一个商品",
         ],
         tags=["multi_turn", "single_skill", "full_lifecycle", "id_reuse", "smoke"],

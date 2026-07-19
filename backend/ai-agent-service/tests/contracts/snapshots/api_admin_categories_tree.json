@@ -1,0 +1,51 @@
+{
+  "success": true,
+  "data": [
+    {
+      "id": "3e24d5a112ead9195994d1d7efb2641c",
+      "name": "卧室系列",
+      "level": 1,
+      "sortOrder": 0,
+      "status": "active",
+      "children": [
+        {
+          "id": "071c042283b62e3a4e000b178242632d",
+          "name": "家居窗帘",
+          "parentId": "3e24d5a112ead9195994d1d7efb2641c",
+          "level": 2,
+          "sortOrder": 0,
+          "status": "active",
+          "children": [],
+          "createdAt": "2026-06-14 14:05:16",
+          "updatedAt": "2026-06-14 14:05:16"
+        }
+      ],
+      "createdAt": "2026-06-06 16:46:45",
+      "updatedAt": "2026-06-06 16:46:45"
+    },
+    {
+      "id": "88b6c50fbc2695fd0fca51705e957d17",
+      "name": "窗帘布艺",
+      "level": 1,
+      "sortOrder": 0,
+      "status": "active",
+      "children": [
+        {
+          "id": "6c57dcb2b5e34fd8b0d0a3c1adaa0228",
+          "name": "办公室窗帘",
+          "parentId": "88b6c50fbc2695fd0fca51705e957d17",
+          "level": 2,
+          "sortOrder": 0,
+          "status": "active",
+          "children": [],
+          "createdAt": "2026-06-21 17:48:45",
+          "updatedAt": "2026-06-21 17:48:45"
+        }
+      ],
+      "createdAt": "2026-06-06 20:05:43",
+      "updatedAt": "2026-06-06 20:05:43"
+    }
+  ],
+  "requestId": "req_902a319abc884d7e",
+  "timestamp": 1784420223
+}

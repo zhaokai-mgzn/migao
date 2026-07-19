@@ -1,0 +1,189 @@
+{
+  "success": true,
+  "data": {
+    "total": 4,
+    "page": 1,
+    "size": 5,
+    "items": [
+      {
+        "id": "449a0b2a668227997279f4f4cbe77eaf",
+        "orderNo": "20260622495822122",
+        "customerName": "smoke-customer-9a7c7658",
+        "customerPhone": "13882140953",
+        "totalAmount": 23.8,
+        "actualAmount": 23.8,
+        "processingFee": 0,
+        "hasProcessing": false,
+        "status": "cancelled",
+        "remark": "smoke-test-9a7c7658",
+        "closeReason": "修改订单金额，从23.80调整为20.00",
+        "createdAt": "2026-06-22T23:09:13.312036+08:00",
+        "updatedAt": "2026-06-22T23:09:13.31206+08:00",
+        "items": [
+          {
+            "productId": "44a3729ad8ce5507f510e9229f1382db",
+            "productName": "2611 家居系统",
+            "productCode": "2611",
+            "quantity": 1,
+            "unitPrice": 23.8,
+            "amount": 23.8,
+            "subtotal": 23.8
+          }
+        ]
+      },
+      {
+        "id": "c20bf823510b61a202d8a2d98acf7af7",
+        "orderNo": "20260621555000260",
+        "customerName": "赵凯",
+        "customerPhone": "13456000919",
+        "totalAmount": 14554.6,
+        "actualAmount": 14554.6,
+        "processingFee": 9.0,
+        "hasProcessing": true,
+        "status": "completed",
+        "remark": "测试的\n实收款：¥0.00（订单总额 ¥14554.60）",
+        "createdAt": "2026-06-21T17:50:10.781049+08:00",
+        "updatedAt": "2026-06-21T17:50:10.781119+08:00",
+        "items": [
+          {
+            "productId": "44a3729ad8ce5507f510e9229f1382db",
+            "productName": "2611 家居系统",
+            "productCode": "2611",
+            "quantity": 112,
+            "unitPrice": 23.8,
+            "amount": 2665.6,
+            "subtotal": 2674.6,
+            "processingInfo": {
+              "skuId": 2068631954098823200,
+              "colorId": 2068631953989771300,
+              "skuCode": "2611-01-ZJ-32",
+              "colorName": "米白",
+              "doorWidth": "3.2米",
+              "processingFee": 9,
+              "sellingMethod": "full_roll",
+              "processingItems": [
+                {
+                  "id": "proc_item_shape_normal",
+                  "name": "普通定型",
+                  "unit": "米",
+                  "quantity": 1,
+                  "subtotal": 6,
+                  "unitPrice": 6,
+                  "pricingMethod": "per_meter"
+                },
+                {
+                  "id": "proc_item_hook_roman",
+                  "name": "罗马杆环安装",
+                  "unit": "个",
+                  "quantity": 1,
+                  "subtotal": 3,
+                  "unitPrice": 3,
+                  "pricingMethod": "per_piece"
+                }
+              ]
+            }
+          },
+          {
+            "productId": "6820e8b42bbba71d40168975ed61dd77",
+            "productName": "今天试试看",
+            "productCode": "8827",
+            "quantity": 120,
+            "unitPrice": 99.0,
+            "amount": 11880.0,
+            "subtotal": 11880.0,
+            "processingInfo": {
+              "skuId": 2066420769695019000,
+              "colorId": 2066420769602744300,
+              "colorName": "红色",
+              "doorWidth": "2.8米",
+              "processingFee": 0,
+              "sellingMethod": "bulk_cut",
+              "processingItems": []
+            }
+          }
+        ]
+      },
+      {
+        "id": "f732fefc4a799ed40c1c9e9593c0ffc7",
+        "orderNo": "20260619376915624",
+        "customerName": "李建明",
+        "customerPhone": "13867129034",
+        "totalAmount": 340.0,
+        "actualAmount": 340.0,
+        "processingFee": 0,
+        "hasProcessing": false,
+        "status": "completed",
+        "remark": "婚房全屋窗帘，分批安装",
+        "createdAt": "2026-06-19T11:25:47.023052+08:00",
+        "updatedAt": "2026-06-19T11:25:47.023074+08:00",
+        "items": [
+          {
+            "productId": "e6cd5b404c49bb08f52ec854bc557b25",
+            "productName": "2699系列",
+            "quantity": 5,
+            "unitPrice": 68.0,
+            "amount": 340.0,
+            "subtotal": 440.0,
+            "processingInfo": {
+              "items": [
+                {
+                  "name": "高温定型",
+                  "price": 12.0,
+                  "amount": 60.0
+                },
+                {
+                  "name": "四爪钩",
+                  "price": 2.0,
+                  "amount": 40.0
+                }
+              ],
+              "totalProcessingFee": 100.0
+            }
+          }
+        ]
+      },
+      {
+        "id": "331c7252a09a97d74e2e06c6041075a1",
+        "orderNo": "20260619204200907",
+        "customerName": "张美华",
+        "customerPhone": "13957168235",
+        "totalAmount": 384.0,
+        "actualAmount": 384.0,
+        "processingFee": 0,
+        "hasProcessing": false,
+        "status": "shipped",
+        "remark": "主卧+次卧窗帘，走顺丰\n[2026-07-08 17:15] 不错  有进步",
+        "createdAt": "2026-06-19T11:25:46.855233+08:00",
+        "updatedAt": "2026-06-19T11:25:46.855278+08:00",
+        "items": [
+          {
+            "productId": "1f5ee03db221b40eac0089e97f74f466",
+            "productName": "CL-2024系列",
+            "productCode": "CL-2024",
+            "quantity": 3,
+            "unitPrice": 128.0,
+            "amount": 384.0,
+            "subtotal": 480.0,
+            "processingInfo": {
+              "items": [
+                {
+                  "name": "韩式褶皱",
+                  "price": 20.0,
+                  "amount": 60.0
+                },
+                {
+                  "name": "高温定型",
+                  "price": 12.0,
+                  "amount": 36.0
+                }
+              ],
+              "totalProcessingFee": 96.0
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "requestId": "req_054e4a00758f45b4",
+  "timestamp": 1784420223
+}
