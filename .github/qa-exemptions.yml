@@ -91,3 +91,7 @@ exemptions:
     reason: "#1720 新增麦克风按钮交互，增量小，已有测试覆盖基础组件"
   - pattern: "frontend/admin-web/src/lib/api.ts"
     reason: "#1720 新增 transcribeAudio 方法，纯 fetch 封装无业务逻辑"
+
+  # WebM→opus 格式映射修复
+  - pattern: "backend/ai-agent-service/tests/test_asr.py"
+    reason: "二郎神生成测试，需更新 webm→opus 断言以匹配修复"

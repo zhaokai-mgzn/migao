@@ -11,13 +11,13 @@ class TestGetAudioFormat:
     def test_webm_from_content_type(self):
         from app.api.asr import _get_audio_format
         fmt, sr = _get_audio_format("recording.webm", "audio/webm")
-        assert fmt == "webm"
+        assert fmt == "opus"
         assert sr == 16000
 
     def test_webm_from_filename(self):
         from app.api.asr import _get_audio_format
         fmt, sr = _get_audio_format("recording.webm", None)
-        assert fmt == "webm"
+        assert fmt == "opus"
         assert sr == 16000
 
     def test_wav_from_content_type(self):
