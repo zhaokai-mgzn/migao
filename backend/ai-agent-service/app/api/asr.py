@@ -9,6 +9,7 @@ POST /api/chat/transcribe
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Optional
 
@@ -33,6 +34,29 @@ SUPPORTED_MIME_TYPES = {
 
 MAX_AUDIO_SIZE = 10 * 1024 * 1024  # 10 MB
 MAX_AUDIO_DURATION_S = 60          # 最长 60 秒
+
+
+def _validate_audio_format(content_type: Optional[str]) -> None:
+    """校验音频 MIME 类型是否在支持列表中"""
+    if not content_type:
+        raise ValueError("无法识别音频格式，请检查文件类型")
+    if content_type not in SUPPORTED_MIME_TYPES:
+        raise ValueError(
+            f"不支持的音频格式: {content_type}，"
+            f"支持: {', '.join(sorted(SUPPORTED_MIME_TYPES))}"
+        )
+
+
+def _estimate_duration_ms(size_bytes: int, audio_format: str) -> int:
+    """根据格式估算音频时长（毫秒）
+
+    - WAV PCM: bytes / (sample_rate * 2bytes/sample * 1channel) * 1000
+    - WebM/MP3 有损压缩: 按 128kbps 估算
+    """
+    if audio_format == "wav":
+        return round(size_bytes / (16000 * 2) * 1000)
+    # WebM/MP3 有损压缩，按较高码率 128kbps 估算
+    return round(size_bytes / (128 * 1024 / 8) * 1000)
 
 
 class TranscribeResponse(BaseModel):
@@ -83,9 +107,9 @@ async def _transcribe_audio(
     if language_hints is None:
         language_hints = [settings.ASR_LANGUAGE_HINTS]
 
-    api_key = settings.ASR_API_KEY or settings.PRIMARY_API_KEY
+    api_key = settings.ASR_API_KEY
     if not api_key:
-        raise ValueError("ASR_API_KEY 未配置")
+        raise ValueError("ASR_API_KEY 未配置，请在环境变量中设置 ASR_API_KEY")
 
     callback = _CollectorCallback()
 
@@ -98,13 +122,19 @@ async def _transcribe_audio(
         api_key=api_key,
     )
 
-    try:
-        recognition.start()
-        recognition.send_audio_frame(audio_data)
-        recognition.stop()
-    except Exception as e:
-        logger.error(f"ASR 识别失败: {e}", exc_info=True)
-        raise RuntimeError("语音识别服务暂时不可用，请稍后重试") from e
+    # DashScope Recognition 是同步阻塞调用，放到线程池避免阻塞事件循环
+    loop = asyncio.get_running_loop()
+
+    def _call_sync():
+        try:
+            recognition.start()
+            recognition.send_audio_frame(audio_data)
+            recognition.stop()
+        except Exception as e:
+            logger.error(f"ASR 识别失败: {e}", exc_info=True)
+            raise RuntimeError("语音识别服务暂时不可用，请稍后重试") from e
+
+    await loop.run_in_executor(None, _call_sync)
 
     text = callback.full_text
     if not text:
@@ -158,6 +188,10 @@ async def transcribe_audio(
     if len(audio_data) == 0:
         raise ValueError("音频文件为空")
 
+    # 校验音频格式（防止上传不支持的格式）
+    if audio.content_type:
+        _validate_audio_format(audio.content_type)
+
     # 推断格式
     audio_format, sample_rate = _get_audio_format(
         audio.filename or "", audio.content_type
@@ -196,11 +230,11 @@ async def transcribe_audio(
         logger.error(f"ASR failed for tenant {current_user.tenant_id}: {e}")
         raise
 
-    # 估算音频时长（WAV: 字节 / (采样率 * 2字节/采样 * 1声道)）
-    duration_ms = len(audio_data) / (sample_rate * 2) * 1000
+    # 估算音频时长
+    duration_ms = _estimate_duration_ms(len(audio_data), audio_format)
 
     return TranscribeResponse(
         text=text,
         language=language_hints[0],
-        duration_ms=round(duration_ms),
+        duration_ms=duration_ms,
     )

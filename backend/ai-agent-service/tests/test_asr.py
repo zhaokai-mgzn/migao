@@ -115,3 +115,64 @@ class TestSupportedMimeTypes:
     def test_mp3_supported(self):
         from app.api.asr import SUPPORTED_MIME_TYPES
         assert "audio/mpeg" in SUPPORTED_MIME_TYPES
+
+
+class TestValidateAudioFormat:
+    """音频格式校验 — 使用 SUPPORTED_MIME_TYPES"""
+
+    def test_valid_webm_passes(self):
+        from app.api.asr import _validate_audio_format
+        _validate_audio_format("audio/webm")
+
+    def test_valid_wav_passes(self):
+        from app.api.asr import _validate_audio_format
+        _validate_audio_format("audio/wav")
+
+    def test_valid_mp3_content_type_passes(self):
+        from app.api.asr import _validate_audio_format
+        _validate_audio_format("audio/mpeg")
+
+    def test_unsupported_format_raises(self):
+        from app.api.asr import _validate_audio_format
+        with pytest.raises(ValueError, match="不支持的音频格式"):
+            _validate_audio_format("application/zip")
+
+    def test_none_content_type_raises(self):
+        from app.api.asr import _validate_audio_format
+        with pytest.raises(ValueError, match="无法识别音频格式"):
+            _validate_audio_format(None)
+
+
+class TestTranscribeAudioApiKey:
+    """API Key 配置：不应回退到 PRIMARY_API_KEY（DeepSeek）"""
+
+    def test_raises_when_asr_api_key_not_set(self):
+        from app.api.asr import _transcribe_audio
+        with patch("app.api.asr.settings") as mock_settings:
+            mock_settings.ASR_API_KEY = ""
+            mock_settings.ASR_MODEL = "paraformer-realtime-8k-v2"
+            mock_settings.ASR_LANGUAGE_HINTS = "zh"
+            with pytest.raises(ValueError, match="ASR_API_KEY 未配置"):
+                import asyncio
+                asyncio.run(_transcribe_audio(b"fake", "wav"))
+
+
+class TestDurationCalculation:
+    """响应中 duration_ms：WebM/MP3 不应使用 WAV 公式"""
+
+    def test_wav_duration(self):
+        from app.api.asr import _estimate_duration_ms
+        # WAV: 16000 samples/s * 2 bytes * 1s = 32000 bytes
+        duration = _estimate_duration_ms(32000, "wav")
+        assert duration == 1000  # 1 second
+
+    def test_webm_duration(self):
+        from app.api.asr import _estimate_duration_ms
+        # WebM ~128kbps: 128*1024/8 = 16384 bytes/s
+        duration = _estimate_duration_ms(16384, "webm")
+        assert duration == 1000  # 1 second
+
+    def test_mp3_duration(self):
+        from app.api.asr import _estimate_duration_ms
+        duration = _estimate_duration_ms(16384, "mp3")
+        assert duration == 1000  # 1 second
