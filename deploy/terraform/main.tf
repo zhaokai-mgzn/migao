@@ -139,17 +139,16 @@ variable "deepseek_api_key" {
   sensitive   = true
 }
 
-variable "minimax_api_key" {
-  description = "MiniMax API Key (视觉模型)"
-  type        = string
-  sensitive   = true
-}
-
 variable "asr_api_key" {
   description = "百炼 DashScope ASR 语音识别 API Key"
   type        = string
   sensitive   = true
 }
+
+variable "minimax_api_key" {
+  description = "MiniMax API Key (视觉模型)"
+  type        = string
+  sensitive   = true
 }
 
 variable "logistics_appcode" {
