@@ -61,6 +61,8 @@ jobs:
           PRIMARY_BASE_URL: https://api.deepseek.com
           PRIMARY_MODEL: deepseek-v4-pro
           PRIMARY_FAST_MODEL: deepseek-v4-flash
+          ASR_API_KEY: ${{ secrets.ASR_API_KEY || 'ci-dummy' }}
+          ASR_MODEL: paraformer-realtime-8k-v2
           VISION_API_KEY: ${{ secrets.MINIMAX_API_KEY || 'ci-dummy' }}
           VISION_BASE_URL: https://api.minimaxi.com/v1
           VISION_MODEL: MiniMax-M3
@@ -190,7 +192,7 @@ jobs:
     needs: build-and-deploy
     uses: ./.github/workflows/smoke-test.yml
     with:
-      admin_api_url: 'http://121.43.246.9'
+      admin_api_url: 'https://api.migaozn.com'
       ai_agent_url: 'https://ai-api.migaozn.com'
     secrets:
       SMOKE_ADMIN_PASSWORD: ${{ secrets.SMOKE_ADMIN_PASSWORD }}

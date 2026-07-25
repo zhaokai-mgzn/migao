@@ -77,3 +77,17 @@ exemptions:
   # #1483 — Agent BFF 端点（Service 在主干已有方法，仅新增 Controller）
   - pattern: "backend/admin-api/src/main/java/com/migao/admin/controller/agent/*.java"
     reason: "#1483 纯新增 Agent BFF Controller，Service 端方法已合并在 main，单测覆盖 Service 层方法（AgentProductServiceTest 14 tests / AgentOrderServiceTest 5 tests），Controller 仅是薄包装"
+
+  # #1720/#1723 — 米宝语音输入 ASR + 前端录音交互
+  - pattern: "backend/ai-agent-service/app/api/asr.py"
+    reason: "#1720 新增 ASR 语音转文字端点。DashScope SDK 封装，本地实测通过"
+  - pattern: "backend/ai-agent-service/app/api/routes.py"
+    reason: "#1720 注册 ASR 路由，纯 import + include_router 无逻辑"
+  - pattern: "backend/ai-agent-service/app/config.py"
+    reason: "#1720 新增 3 个 ASR 配置项，纯字段声明无逻辑"
+  - pattern: "frontend/admin-web/src/hooks/useVoiceRecorder.ts"
+    reason: "#1720 语音录音 hook，浏览器 API 封装，依赖运行时环境"
+  - pattern: "frontend/admin-web/src/components/chat/MessageInput.tsx"
+    reason: "#1720 新增麦克风按钮交互，增量小，已有测试覆盖基础组件"
+  - pattern: "frontend/admin-web/src/lib/api.ts"
+    reason: "#1720 新增 transcribeAudio 方法，纯 fetch 封装无业务逻辑"

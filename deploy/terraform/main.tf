@@ -139,6 +139,12 @@ variable "deepseek_api_key" {
   sensitive   = true
 }
 
+variable "asr_api_key" {
+  description = "百炼 DashScope ASR 语音识别 API Key"
+  type        = string
+  sensitive   = true
+}
+
 variable "minimax_api_key" {
   description = "MiniMax API Key (视觉模型)"
   type        = string
@@ -324,6 +330,10 @@ locals {
     "PRIMARY_BASE_URL"   = "https://api.deepseek.com/v1"
     "PRIMARY_MODEL"      = "deepseek-v4-pro"
     "PRIMARY_FAST_MODEL" = "deepseek-v4-flash"
+    # DashScope ASR 语音识别
+    "ASR_API_KEY" = var.asr_api_key
+    "ASR_MODEL"   = "paraformer-realtime-8k-v2"
+
     # 视觉 MiniMax-M3
     "VISION_API_KEY"  = var.minimax_api_key
     "VISION_BASE_URL" = "https://api.minimaxi.com/v1"
