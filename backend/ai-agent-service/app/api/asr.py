@@ -137,7 +137,7 @@ def _get_audio_format(filename: str, content_type: Optional[str]) -> tuple[str, 
     return "wav", 16000
 
 
-@router.post("/api/chat/transcribe", response_model=TranscribeResponse)
+@router.post("/chat/transcribe", response_model=TranscribeResponse)
 async def transcribe_audio(
     audio: UploadFile = File(..., description="音频文件（WAV/WebM/MP3）"),
     language: Optional[str] = None,
