@@ -47,3 +47,4 @@ pytest-mock==3.14.0
 
 # ASR 语音识别
 dashscope>=1.26.0
+
