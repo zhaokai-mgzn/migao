@@ -88,6 +88,11 @@ class Settings(BaseSettings):
 
     # ===== 功能开关与模型参数（有合理默认值，无需外部注入）=====
 
+    # 语音识别（ASR）— 百炼 DashScope
+    ASR_API_KEY: str = ""                                  # ASR API Key（默认复用 PRIMARY_API_KEY）
+    ASR_MODEL: str = "paraformer-realtime-8k-v2"          # 实时语音识别模型（免费 36,000s）
+    ASR_LANGUAGE_HINTS: str = "zh"                         # 默认语言/方言
+
     DASHSCOPE_EMBEDDING_MODEL: str = "text-embedding-v3"
     INTENT_MODEL: str = "deepseek-v4-flash"              # 意图分类/摘要（快速模型）
     MINIMAX_VISION_MODEL: str = "MiniMax-M3"            # 图片识别（M3 原生多模态）

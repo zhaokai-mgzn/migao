@@ -89,7 +89,7 @@ jobs:
       - name: Verify
         run: |
           sleep 30
-          curl -sf -m 10 http://121.43.246.9/login/ -H "Host: migaozn.com" -o /dev/null && echo "OK" || echo "WARN"
+          curl -sf -m 10 https://api.migaozn.com/login/ -o /dev/null && echo "OK" || echo "WARN"
 
       - name: CDN refresh
         env:

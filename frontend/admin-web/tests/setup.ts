@@ -182,6 +182,7 @@ vi.mock('lucide-react', () => ({
   Copy: iconStub('copy'),
   StopCircle: iconStub('stop-circle'),
   ImagePlus: iconStub('image-plus'),
+  Mic: iconStub('mic'),
   PanelRightClose: iconStub('panel-right-close'),
   PanelRightOpen: iconStub('panel-right-open'),
   ShoppingBag: iconStub('shopping-bag'),
