@@ -163,6 +163,18 @@ async def transcribe_audio(
         audio.filename or "", audio.content_type
     )
 
+    # 校验音频时长：根据格式估算，防止绕过前端 60s 限制
+    if audio_format == "wav":
+        # WAV PCM: 字节 / (采样率 * 2字节/sample * 1声道)
+        estimated_s = len(audio_data) / (sample_rate * 2)
+    else:
+        # WebM/MP3 有损压缩，按较高码率 128kbps 估算
+        estimated_s = len(audio_data) / (128 * 1024 / 8)
+    if estimated_s > MAX_AUDIO_DURATION_S + 5:  # 5s 容差
+        raise ValueError(
+            f"音频时长约 {int(estimated_s)}s，超过上限 {MAX_AUDIO_DURATION_S}s"
+        )
+
     # 语言提示
     language_hints = [language] if language else [settings.ASR_LANGUAGE_HINTS]
 
