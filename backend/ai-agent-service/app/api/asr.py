@@ -79,7 +79,7 @@ def _convert_to_wav(audio_data: bytes, source_format: str) -> bytes:
             tmp_in.flush()
             tmp_in_path = tmp_in.name
 
-        tmp_out_path = tempfile.mktemp(suffix=".wav")
+        tmp_out_path = tempfile.NamedTemporaryFile(suffix=".wav", delete=False).name
         try:
             subprocess.run(
                 ["ffmpeg", "-y", "-i", tmp_in_path,
@@ -97,7 +97,7 @@ def _convert_to_wav(audio_data: bytes, source_format: str) -> bytes:
             tmp_in.flush()
             tmp_in_path = tmp_in.name
 
-        tmp_out_path = tempfile.mktemp(suffix=".wav")
+        tmp_out_path = tempfile.NamedTemporaryFile(suffix=".wav", delete=False).name
         try:
             subprocess.run(
                 ["ffmpeg", "-y", "-i", tmp_in_path,
