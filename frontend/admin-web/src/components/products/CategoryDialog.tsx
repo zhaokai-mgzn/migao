@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Button, Input, Select, Modal } from '@/components/ui'
+import { Button, Input, Modal } from '@/components/ui'
 import type { Category, CategoryFormData } from '@/types'
 
 interface CategoryDialogProps {
@@ -13,25 +13,12 @@ interface CategoryDialogProps {
   presetParentId?: string
 }
 
-// Flatten category tree for parent selection
-function flattenCategories(categories: Category[], level = 0): { value: string; label: string }[] {
-  const result: { value: string; label: string }[] = []
-  for (const cat of categories) {
-    const prefix = '\u00A0\u00A0'.repeat(level)
-    result.push({ value: cat.id, label: `${prefix}${level > 0 ? '└ ' : ''}${cat.name}` })
-    if (cat.children && cat.children.length > 0) {
-      result.push(...flattenCategories(cat.children, level + 1))
-    }
-  }
-  return result
-}
-
 export default function CategoryDialog({
   open,
   onClose,
   onSubmit,
   category,
-  categories,
+  categories: _categories,
   presetParentId,
 }: CategoryDialogProps) {
   const [form, setForm] = useState<CategoryFormData>({
@@ -82,14 +69,6 @@ export default function CategoryDialog({
     }
   }
 
-  // 仅一级分类可作为父级（限制最多二级分类）
-  const parentOptions = [
-    { value: '', label: '无（顶级分类）' },
-    ...categories
-      .filter((c) => c.id !== category?.id)
-      .map((c) => ({ value: c.id, label: c.name })),
-  ]
-
   return (
     <Modal
       open={open}
@@ -114,13 +93,6 @@ export default function CategoryDialog({
           value={form.name}
           onChange={(e) => setForm({ ...form, name: e.target.value })}
           error={errors.name}
-        />
-
-        <Select
-          label="父级分类"
-          options={parentOptions}
-          value={form.parentId || ''}
-          onChange={(e) => setForm({ ...form, parentId: e.target.value })}
         />
 
         <Input

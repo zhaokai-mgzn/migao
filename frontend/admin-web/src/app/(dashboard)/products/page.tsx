@@ -462,7 +462,7 @@ export default function ProductsPage() {
           <div className="flex items-center gap-3">
             <Button onClick={handleSearch}>
               <Search className="w-4 h-4 mr-1.5" />
-              搜索
+              查询
             </Button>
             <Button variant="secondary" onClick={handleReset}>
               <RotateCcw className="w-4 h-4 mr-1.5" />

@@ -270,7 +270,7 @@ export default function AfterSalesPage() {
             </Button>
             <Button onClick={handleSearch} loading={loading}>
               <Search className="w-4 h-4 mr-1" />
-              搜索
+              查询
             </Button>
           </div>
         </div>

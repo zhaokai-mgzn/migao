@@ -66,14 +66,14 @@ describe('SearchBar Component', () => {
 
   it('should render search and reset buttons', () => {
     render(<SearchBar fields={fields} onSearch={vi.fn()} onReset={vi.fn()} />)
-    expect(screen.getByText('搜索')).toBeInTheDocument()
+    expect(screen.getByText('查询')).toBeInTheDocument()
     expect(screen.getByText('重置')).toBeInTheDocument()
   })
 
   it('should call onSearch when search button is clicked', async () => {
     const onSearch = vi.fn()
     render(<SearchBar fields={fields} onSearch={onSearch} />)
-    await user.click(screen.getByText('搜索'))
+    await user.click(screen.getByText('查询'))
     expect(onSearch).toHaveBeenCalledWith({})
   })
 
@@ -82,7 +82,7 @@ describe('SearchBar Component', () => {
     render(<SearchBar fields={fields} onSearch={onSearch} />)
     const input = screen.getByLabelText('关键词')
     await user.type(input, '窗帘')
-    await user.click(screen.getByText('搜索'))
+    await user.click(screen.getByText('查询'))
     expect(onSearch).toHaveBeenCalledWith(
       expect.objectContaining({ keyword: '窗帘' })
     )
@@ -115,7 +115,7 @@ describe('SearchBar Component', () => {
     render(<SearchBar fields={fields} onSearch={onSearch} />)
     const select = screen.getByLabelText('状态')
     await user.selectOptions(select, 'active')
-    await user.click(screen.getByText('搜索'))
+    await user.click(screen.getByText('查询'))
     expect(onSearch).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'active' })
     )

@@ -103,8 +103,7 @@ vi.mock('lucide-react', () => {
   const stub = (name: string) => (props: any) => <span data-testid={`icon-${name}`} {...props} />
   return {
     Plus: stub('plus'),
-    Pencil: stub('pencil'),
-    Trash2: stub('trash2'),
+    Search: stub('search'),
   }
 })
 
@@ -136,7 +135,7 @@ describe('EmployeesPage', () => {
 
   it('renders add employee button', () => {
     render(<EmployeesPage />)
-    expect(screen.getByText('添加员工')).toBeInTheDocument()
+    expect(screen.getByText('新增员工')).toBeInTheDocument()
   })
 
   it('renders search filter labels', () => {
@@ -148,7 +147,7 @@ describe('EmployeesPage', () => {
 
   it('renders search and reset buttons', () => {
     render(<EmployeesPage />)
-    expect(screen.getByText('搜索')).toBeInTheDocument()
+    expect(screen.getByText('查询')).toBeInTheDocument()
     expect(screen.getByText('重置')).toBeInTheDocument()
   })
 
