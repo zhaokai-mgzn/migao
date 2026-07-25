@@ -115,11 +115,11 @@ async def _transcribe_audio(
 
 def _get_audio_format(filename: str, content_type: Optional[str]) -> tuple[str, int]:
     """从文件名和 Content-Type 推断音频格式和采样率"""
-    # WebM 格式（浏览器 MediaRecorder 默认）
+    # WebM 格式（浏览器 MediaRecorder 默认，Opus 编码 → DashScope 用 opus）
     if content_type and "webm" in content_type:
-        return "webm", 16000
+        return "opus", 16000
     if filename and filename.lower().endswith(".webm"):
-        return "webm", 16000
+        return "opus", 16000
 
     # WAV 格式
     if content_type and "wav" in content_type:
