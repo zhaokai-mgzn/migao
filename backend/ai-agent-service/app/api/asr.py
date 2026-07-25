@@ -10,6 +10,9 @@ POST /api/chat/transcribe
 from __future__ import annotations
 
 import logging
+import subprocess
+import tempfile
+from pathlib import Path
 from typing import Optional
 
 from dashscope.audio.asr.recognition import Recognition, RecognitionCallback
@@ -63,6 +66,53 @@ class _CollectorCallback(RecognitionCallback):
         return self.sentences[-1]
 
 
+def _convert_to_wav(audio_data: bytes, source_format: str) -> bytes:
+    """用 ffmpeg 将任意音频格式转为 16kHz mono WAV（PCM）
+
+    DashScope Recognition 只支持原始 PCM/WAV 或裸编码流（opus/aac），
+    不支持 WebM/MP4 等容器格式，因此需要先转码。
+    """
+    if source_format == "wav":
+        # 确保采样率和声道正确
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_in:
+            tmp_in.write(audio_data)
+            tmp_in.flush()
+            tmp_in_path = tmp_in.name
+
+        tmp_out_path = tempfile.NamedTemporaryFile(suffix=".wav", delete=False).name
+        try:
+            subprocess.run(
+                ["ffmpeg", "-y", "-i", tmp_in_path,
+                 "-ar", "16000", "-ac", "1", "-f", "wav", tmp_out_path],
+                capture_output=True, check=True, timeout=10,
+            )
+            return Path(tmp_out_path).read_bytes()
+        finally:
+            Path(tmp_in_path).unlink(missing_ok=True)
+            Path(tmp_out_path).unlink(missing_ok=True)
+    else:
+        # WebM/MP3/opus → 统一转 WAV
+        with tempfile.NamedTemporaryFile(suffix=f".{source_format}", delete=False) as tmp_in:
+            tmp_in.write(audio_data)
+            tmp_in.flush()
+            tmp_in_path = tmp_in.name
+
+        tmp_out_path = tempfile.NamedTemporaryFile(suffix=".wav", delete=False).name
+        try:
+            subprocess.run(
+                ["ffmpeg", "-y", "-i", tmp_in_path,
+                 "-ar", "16000", "-ac", "1", "-f", "wav", tmp_out_path],
+                capture_output=True, check=True, timeout=10,
+            )
+            return Path(tmp_out_path).read_bytes()
+        except subprocess.CalledProcessError as e:
+            logger.error(f"ffmpeg 转码失败: {e.stderr.decode()[:200]}")
+            raise RuntimeError("音频格式转换失败") from e
+        finally:
+            Path(tmp_in_path).unlink(missing_ok=True)
+            Path(tmp_out_path).unlink(missing_ok=True)
+
+
 async def _transcribe_audio(
     audio_data: bytes,
     format: str,
@@ -89,10 +139,13 @@ async def _transcribe_audio(
 
     callback = _CollectorCallback()
 
+    # 统一转为 16kHz mono WAV，兼容浏览器 WebM/MP4 容器格式
+    wav_data = _convert_to_wav(audio_data, format)
+
     recognition = Recognition(
         model=settings.ASR_MODEL,
-        format=format,
-        sample_rate=sample_rate,
+        format="wav",
+        sample_rate=16000,
         language_hints=language_hints,
         callback=callback,
         api_key=api_key,
@@ -100,7 +153,7 @@ async def _transcribe_audio(
 
     try:
         recognition.start()
-        recognition.send_audio_frame(audio_data)
+        recognition.send_audio_frame(wav_data)
         recognition.stop()
     except Exception as e:
         logger.error(f"ASR 识别失败: {e}", exc_info=True)
