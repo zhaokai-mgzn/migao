@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { X, Bot } from 'lucide-react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { X, Bot, Maximize2, Minimize2, Minus, Expand } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useChatStore } from '@/store/chat'
 import SessionList from '@/components/chat/SessionList'
@@ -9,37 +9,182 @@ import ChatArea from '@/components/chat/ChatArea'
 import SessionInsight from '@/components/chat/SessionInsight'
 import MibaoChatPanel from '@/components/business/MibaoChatPanel'
 
+// 最小化浮窗尺寸
+const MINIMIZED_WIDTH = 360
+const MINIMIZED_HEIGHT = 480
+const STORAGE_KEY_MINIMIZED_POS = 'mibao_minimized_pos'
+
+/** 读取 localStorage 中的浮窗位置 */
+function readStoredPos(): { x: number; y: number } | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_MINIMIZED_POS)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (typeof parsed.x === 'number' && typeof parsed.y === 'number') {
+      return parsed
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
 export default function FloatingAssistant() {
   const [isOpen, setIsOpen] = useState(false)
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  const [isMinimized, setIsMinimized] = useState(false)
   const { fetchSessions } = useChatStore()
+
+  // 最小化浮窗位置
+  const [floatPos, setFloatPos] = useState<{ x: number; y: number }>(() => {
+    if (typeof window === 'undefined') return { x: 16, y: 16 }
+    return readStoredPos() || {
+      x: window.innerWidth - MINIMIZED_WIDTH - 16,
+      y: window.innerHeight - MINIMIZED_HEIGHT - 80,
+    }
+  })
+  const [isDraggingFloat, setIsDraggingFloat] = useState(false)
+  const dragOffset = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
 
   // 首次打开时加载会话列表
   useEffect(() => {
     if (isOpen) fetchSessions()
   }, [isOpen, fetchSessions])
 
-  const togglePanel = () => setIsOpen(!isOpen)
+  // 最小化浮窗拖拽
+  const handleFloatMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    setIsDraggingFloat(true)
+    dragOffset.current = {
+      x: e.clientX - floatPos.x,
+      y: e.clientY - floatPos.y,
+    }
+  }, [floatPos])
+
+  useEffect(() => {
+    if (!isDraggingFloat) return
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const newX = Math.max(0, Math.min(window.innerWidth - MINIMIZED_WIDTH, e.clientX - dragOffset.current.x))
+      const newY = Math.max(0, Math.min(window.innerHeight - MINIMIZED_HEIGHT, e.clientY - dragOffset.current.y))
+      setFloatPos({ x: newX, y: newY })
+    }
+
+    const handleMouseUp = () => {
+      setIsDraggingFloat(false)
+      // 持久化位置
+      try {
+        setFloatPos(pos => {
+          localStorage.setItem(STORAGE_KEY_MINIMIZED_POS, JSON.stringify(pos))
+          return pos
+        })
+      } catch { /* ignore */ }
+    }
+
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [isDraggingFloat])
+
+  const togglePanel = () => {
+    if (isMinimized) {
+      // 从最小化恢复
+      setIsMinimized(false)
+    } else {
+      setIsOpen(!isOpen)
+      setIsFullscreen(false)
+      setIsMinimized(false)
+    }
+  }
+
+  const handleClose = () => {
+    setIsOpen(false)
+    setIsFullscreen(false)
+    setIsMinimized(false)
+  }
+
+  const handleFullscreenToggle = () => {
+    setIsFullscreen(!isFullscreen)
+    // 全屏时自动取消最小化
+    if (isMinimized) setIsMinimized(false)
+  }
+
+  const handleMinimize = () => {
+    setIsMinimized(true)
+    setIsFullscreen(false)
+  }
+
+  const handleRestoreFromMinimized = () => {
+    setIsMinimized(false)
+  }
+
+  // 面板容器的 className
+  const panelClassName = cn(
+    'fixed z-50',
+    isFullscreen
+      ? 'inset-0'  // 全屏
+      : isOpen
+        ? 'inset-4' // 正常浮动
+        : ''
+  )
 
   return (
     <>
-      {/* 可拖拽调整高度的米宝聊天面板 — 右侧浮动 */}
-      {isOpen && (
-        <div className="fixed inset-4 z-50">
-          <MibaoChatPanel defaultHeight="calc(100vh - 5.5rem)" className="bg-white shadow-2xl rounded-2xl border border-gray-200">
+      {/* ===== 正常/全屏 面板 ===== */}
+      {isOpen && !isMinimized && (
+        <div className={panelClassName}>
+          <MibaoChatPanel
+            defaultHeight={isFullscreen ? '100vh' : 'calc(100vh - 5.5rem)'}
+            className={cn(
+              'bg-white shadow-2xl rounded-2xl border border-gray-200',
+              isFullscreen && 'rounded-none border-0'
+            )}
+          >
             <div className="flex flex-col flex-1 min-h-0">
               {/* 头部 */}
-              <div className="flex items-center justify-between h-12 px-4 bg-gradient-to-r from-primary-600 to-primary-500 rounded-t-2xl flex-shrink-0">
+              <div
+                className={cn(
+                  'flex items-center justify-between h-12 px-4 bg-gradient-to-r from-primary-600 to-primary-500 flex-shrink-0',
+                  isFullscreen ? '' : 'rounded-t-2xl'
+                )}
+              >
                 <div className="flex items-center gap-2">
                   <span className="text-lg flex-shrink-0">🤖</span>
                   <span className="text-sm font-semibold text-white">米宝 · 智能助手</span>
                 </div>
-                <button
-                  onClick={() => setIsOpen(false)}
-                  className="p-1 rounded-md hover:bg-white/20 transition-colors"
-                  title="关闭"
-                >
-                  <X className="w-4 h-4 text-white" />
-                </button>
+                <div className="flex items-center gap-1">
+                  {/* 全屏/退出全屏 */}
+                  <button
+                    onClick={handleFullscreenToggle}
+                    className="p-1.5 rounded-md hover:bg-white/20 transition-colors"
+                    title={isFullscreen ? '退出全屏' : '全屏'}
+                  >
+                    {isFullscreen ? (
+                      <Minimize2 className="w-4 h-4 text-white" />
+                    ) : (
+                      <Maximize2 className="w-4 h-4 text-white" />
+                    )}
+                  </button>
+                  {/* 收起（最小化） */}
+                  <button
+                    onClick={handleMinimize}
+                    className="p-1.5 rounded-md hover:bg-white/20 transition-colors"
+                    title="收起"
+                  >
+                    <Minus className="w-4 h-4 text-white" />
+                  </button>
+                  {/* 关闭 */}
+                  <button
+                    onClick={handleClose}
+                    className="p-1.5 rounded-md hover:bg-white/20 transition-colors"
+                    title="关闭"
+                  >
+                    <X className="w-4 h-4 text-white" />
+                  </button>
+                </div>
               </div>
 
               {/* 聊天内容 — 复用全屏会话模式布局 */}
@@ -53,7 +198,54 @@ export default function FloatingAssistant() {
         </div>
       )}
 
-      {/* FAB 悬浮按钮 — 面板打开时隐藏 */}
+      {/* ===== 最小化浮窗 ===== */}
+      {isOpen && isMinimized && (
+        <div
+          className="fixed z-50 bg-white shadow-2xl rounded-xl border border-gray-200 overflow-hidden flex flex-col"
+          style={{
+            left: floatPos.x,
+            top: floatPos.y,
+            width: MINIMIZED_WIDTH,
+            height: MINIMIZED_HEIGHT,
+          }}
+        >
+          {/* 浮窗头部（可拖拽） */}
+          <div
+            className="flex items-center justify-between h-10 px-3 bg-gradient-to-r from-primary-600 to-primary-500 flex-shrink-0 cursor-move select-none"
+            onMouseDown={handleFloatMouseDown}
+          >
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm">🤖</span>
+              <span className="text-xs font-semibold text-white">米宝</span>
+            </div>
+            <div className="flex items-center gap-1">
+              {/* 恢复 */}
+              <button
+                onClick={handleRestoreFromMinimized}
+                className="p-1 rounded hover:bg-white/20 transition-colors"
+                title="展开"
+              >
+                <Expand className="w-3.5 h-3.5 text-white" />
+              </button>
+              {/* 关闭 */}
+              <button
+                onClick={handleClose}
+                className="p-1 rounded hover:bg-white/20 transition-colors"
+                title="关闭"
+              >
+                <X className="w-3.5 h-3.5 text-white" />
+              </button>
+            </div>
+          </div>
+
+          {/* 浮窗聊天内容 */}
+          <div className="flex-1 flex min-h-0 overflow-hidden">
+            <ChatArea />
+          </div>
+        </div>
+      )}
+
+      {/* ===== FAB 悬浮按钮 — 面板关闭时显示 ===== */}
       {!isOpen && (
         <button
           onClick={togglePanel}

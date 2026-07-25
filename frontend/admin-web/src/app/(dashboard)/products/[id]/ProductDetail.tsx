@@ -306,7 +306,9 @@ export default function ProductDetailPage() {
               {product.editedBy && (
                 <div>
                   <dt className="text-xs text-gray-500">最后编辑人</dt>
-                  <dd className="text-sm text-gray-900 mt-0.5">{product.editedBy}</dd>
+                  <dd className="text-sm text-gray-900 mt-0.5">
+                    {product.editedBy === 'internal-service' ? '米宝机器人' : product.editedBy}
+                  </dd>
                 </div>
               )}
               {product.editedAt && (

@@ -318,7 +318,7 @@ describe('ProductsPage', () => {
     })
 
     // 搜索按钮点击仍应立即触发查询（非 debounce）
-    const searchButton = screen.getByText('搜索')
+    const searchButton = screen.getByText('查询')
     await user.click(searchButton)
 
     // handleSearch → syncUrl({ page: 1 }) 被立即调用

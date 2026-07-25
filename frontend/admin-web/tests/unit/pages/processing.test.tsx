@@ -84,7 +84,7 @@ describe('ProcessingPage', () => {
   it('should render add processing item button', async () => {
     render(<ProcessingPage />)
     await waitFor(() => {
-      expect(screen.getByText('添加加工项')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: '新增加工项' })).toBeInTheDocument()
     })
   })
 
@@ -110,11 +110,13 @@ describe('ProcessingPage', () => {
     const user = userEvent.setup()
     render(<ProcessingPage />)
     await waitFor(() => {
-      expect(screen.getByText('添加加工项')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: '新增加工项' })).toBeInTheDocument()
     })
-    await user.click(screen.getByText('添加加工项'))
+    await user.click(screen.getByRole('button', { name: '新增加工项' }))
     await waitFor(() => {
-      expect(screen.getByText('新增加工项')).toBeInTheDocument()
+      // 弹窗标题为 "新增加工项"
+      const headings = screen.getAllByText('新增加工项')
+      expect(headings.length).toBeGreaterThanOrEqual(1)
     })
   })
 

@@ -80,7 +80,7 @@ const SearchBar = ({ fields, onSearch, onReset, loading, className }: SearchBarP
             loading={loading}
           >
             <Search className="w-4 h-4 mr-1" />
-            搜索
+            查询
           </Button>
         </div>
       </div>

@@ -62,7 +62,7 @@ describe('CategoryDialog (#563)', () => {
     expect(screen.getByPlaceholderText('请输入分类名称')).toBeTruthy()
   })
 
-  it('渲染父级分类选择器', () => {
+  it('不渲染父级分类选择器（已移除）', () => {
     render(
       <CategoryDialog
         open={true}
@@ -71,7 +71,7 @@ describe('CategoryDialog (#563)', () => {
         categories={mockCategories}
       />
     )
-    expect(screen.getByText('父级分类')).toBeTruthy()
+    expect(screen.queryByText('父级分类')).toBeFalsy()
   })
 
   it('渲染排序输入框', () => {
@@ -144,7 +144,7 @@ describe('CategoryDialog (#563)', () => {
     expect(onClose).toHaveBeenCalled()
   })
 
-  it('存在预设 parentId 时回填父级分类', () => {
+  it('预设 parentId 时分类名称输入框正常渲染', () => {
     render(
       <CategoryDialog
         open={true}
@@ -154,7 +154,9 @@ describe('CategoryDialog (#563)', () => {
         presetParentId="c1"
       />
     )
-    // 分类名称输入框应存在（父级通过 select 回填，不直接显示文本）
+    // 分类名称输入框应存在（parentId 通过 form state 传递，不在 UI 显示）
     expect(screen.getByPlaceholderText('请输入分类名称')).toBeTruthy()
+    // 父级分类字段已移除，不应在 UI 中显示
+    expect(screen.queryByText('父级分类')).toBeFalsy()
   })
 })

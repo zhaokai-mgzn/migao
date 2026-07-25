@@ -161,7 +161,7 @@ describe('AfterSalesPage', () => {
   it('should render reset and search buttons', () => {
     render(<AfterSalesPage />)
     expect(screen.getByText('重置')).toBeInTheDocument()
-    expect(screen.getByText('搜索')).toBeInTheDocument()
+    expect(screen.getByText('查询')).toBeInTheDocument()
   })
 
   it('should show empty state when no tickets', async () => {

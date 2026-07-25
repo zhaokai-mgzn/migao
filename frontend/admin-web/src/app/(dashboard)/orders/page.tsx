@@ -3,8 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
-import dayjs from 'dayjs'
-import { RefreshCw } from 'lucide-react'
+import { Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { orderApi } from '@/lib/api'
 import { OrderTable, CloseOrderModal, RemarkModal } from '@/components/orders'
@@ -463,6 +462,7 @@ export default function OrdersPage() {
               disabled={loading}
               className="h-9 px-5 rounded bg-primary-600 text-white text-sm font-medium hover:bg-primary-700 active:bg-primary-800 disabled:opacity-50 transition-colors"
             >
+              <Search className="w-4 h-4 mr-1.5" />
               查询
             </button>
             <button
@@ -476,14 +476,6 @@ export default function OrdersPage() {
                 <path d="M3 3v5h5" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
               重置
-            </button>
-            <button
-              type="button"
-              onClick={() => loadOrders(1)}
-              className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-              title="刷新"
-            >
-              <RefreshCw className="w-4 h-4" />
             </button>
           </div>
         </div>

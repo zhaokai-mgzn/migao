@@ -1,11 +1,11 @@
 'use client'
 
 import { useEffect, useState, useCallback, Fragment } from 'react'
-import { Plus, Calculator } from 'lucide-react'
+import { Plus } from 'lucide-react'
 import { toast } from 'sonner'
 import { processingItemApi, processingCategoryApi, categoryApi } from '@/lib/api'
 import { Modal, Button } from '@/components/ui'
-import type { ProcessingItem, ProcessingCategory, PricingMethod, Category, ProcessingCalculateParams } from '@/types'
+import type { ProcessingItem, ProcessingCategory, PricingMethod, Category } from '@/types'
 
 // 扁平化分类树为 checkbox 选项
 function flattenCategories(
@@ -94,11 +94,6 @@ export default function ProcessingPage() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
 
-  // 价格预览
-  const [previewId, setPreviewId] = useState<string | null>(null)
-  const [previewData, setPreviewData] = useState<any>(null)
-  const [previewLoading, setPreviewLoading] = useState(false)
-
   // 加载数据
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -131,7 +126,6 @@ export default function ProcessingPage() {
     setEditingId(null)
     setForm(EMPTY_FORM)
     setErrors({})
-    setPreviewId(null)
     setFormOpen(true)
   }
 
@@ -148,7 +142,6 @@ export default function ProcessingPage() {
       applicableProductCategories: item.applicableProductCategories || [],
     })
     setErrors({})
-    setPreviewId(null)
     setFormOpen(true)
   }
 
@@ -256,38 +249,6 @@ export default function ProcessingPage() {
     return opt?.label || method
   }
 
-  // 价格预览
-  const handlePricePreview = async (item: ProcessingItem) => {
-    if (previewId === item.id) {
-      setPreviewId(null)
-      setPreviewData(null)
-      return
-    }
-    setPreviewId(item.id)
-    setPreviewLoading(true)
-    try {
-      const params: ProcessingCalculateParams = {
-        processingItemId: item.id,
-        quantity: 1,
-      }
-      switch (item.pricingMethod) {
-        case 'per_meter':
-          params.quantity = 3
-          break
-        case 'per_area':
-          params.dimensions = { width: 1, height: 1 }
-          break
-      }
-      const resp = await processingItemApi.calculatePrice(params)
-      setPreviewData(resp.data || resp)
-    } catch (err) {
-      console.error('Price preview failed:', err)
-      setPreviewData(null)
-    } finally {
-      setPreviewLoading(false)
-    }
-  }
-
   return (
     <div className="p-6">
       {/* 页面标题 */}
@@ -301,7 +262,7 @@ export default function ProcessingPage() {
       <div className="flex items-center justify-end gap-3 mb-4">
         <Button onClick={openCreate}>
           <Plus className="w-4 h-4 mr-1.5" />
-          添加加工项
+          新增加工项
         </Button>
       </div>
 
@@ -337,7 +298,7 @@ export default function ProcessingPage() {
             ) : items.length === 0 ? (
               <tr>
                 <td colSpan={4} className="px-4 py-12 text-center text-sm text-gray-400">
-                  暂无加工项，点击右上角「添加加工项」开始创建
+                  暂无加工项，点击右上角「新增加工项」开始创建
                 </td>
               </tr>
             ) : (
@@ -354,15 +315,6 @@ export default function ProcessingPage() {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3 whitespace-nowrap">
                         <button
-                          onClick={() => handlePricePreview(item)}
-                          className={`p-1 rounded transition-colors ${
-                            previewId === item.id ? 'text-blue-600 bg-blue-50' : 'text-gray-400 hover:text-blue-600'
-                          }`}
-                          title="价格预览"
-                        >
-                          <Calculator className="w-4 h-4" />
-                        </button>
-                        <button
                           onClick={() => openEdit(item)}
                           className="text-sm text-primary-600 hover:text-primary-700 hover:underline transition-colors"
                         >
@@ -377,47 +329,6 @@ export default function ProcessingPage() {
                       </div>
                     </td>
                   </tr>
-                  {previewId === item.id && (
-                    <tr className="bg-blue-50/50">
-                      <td colSpan={4} className="px-6 py-3">
-                        {previewLoading ? (
-                          <div className="text-sm text-gray-500">计算中...</div>
-                        ) : previewData ? (
-                          <div className="flex items-center gap-6 text-sm">
-                            <div>
-                              <span className="text-gray-500">预览数量: </span>
-                              <span className="font-medium">
-                                {previewData.quantity}
-                                {previewData.pricingMethod === 'per_meter'
-                                  ? '米'
-                                  : previewData.pricingMethod === 'per_area'
-                                    ? 'm²'
-                                    : '件'}
-                              </span>
-                            </div>
-                            <div>
-                              <span className="text-gray-500">单价: </span>
-                              <span className="font-medium">¥{previewData.unitPrice}</span>
-                            </div>
-                            <div>
-                              <span className="text-gray-500">总价: </span>
-                              <span className="font-bold text-blue-600 text-base">
-                                ¥{previewData.totalPrice}
-                              </span>
-                            </div>
-                            {previewData.processingDays && (
-                              <div>
-                                <span className="text-gray-500">加工周期: </span>
-                                <span className="font-medium">{previewData.processingDays}天</span>
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="text-sm text-red-500">价格计算失败</div>
-                        )}
-                      </td>
-                    </tr>
-                  )}
                 </Fragment>
               ))
             )}

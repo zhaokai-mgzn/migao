@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { Plus, Pencil, Trash2 } from 'lucide-react'
+import { Plus, Search } from 'lucide-react'
 import { toast } from 'sonner'
 import { employeeApi, roleApi } from '@/lib/api'
 import request from '@/lib/request'
@@ -303,16 +303,14 @@ export default function EmployeesPage() {
         <div className="flex items-center gap-3 whitespace-nowrap">
           <button
             onClick={(e) => { e.stopPropagation(); handleEdit(record) }}
-            className="text-primary-600 hover:text-primary-700 hover:underline transition-colors text-sm flex items-center gap-1"
+            className="text-primary-600 hover:text-primary-700 hover:underline transition-colors text-sm"
           >
-            <Pencil className="w-3.5 h-3.5" />
             编辑
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); setDeleteTarget(record) }}
-            className="text-red-500 hover:text-red-600 hover:underline transition-colors text-sm flex items-center gap-1"
+            className="text-red-500 hover:text-red-600 hover:underline transition-colors text-sm"
           >
-            <Trash2 className="w-3.5 h-3.5" />
             删除
           </button>
         </div>
@@ -330,7 +328,7 @@ export default function EmployeesPage() {
         </div>
         <Button onClick={handleAdd}>
           <Plus className="w-4 h-4 mr-1.5" />
-          添加员工
+          新增员工
         </Button>
       </div>
 
@@ -374,7 +372,8 @@ export default function EmployeesPage() {
               重置
             </Button>
             <Button size="sm" onClick={handleSearch}>
-              搜索
+              <Search className="w-4 h-4 mr-1.5" />
+              查询
             </Button>
           </div>
         </div>
@@ -415,13 +414,6 @@ export default function EmployeesPage() {
         }
       >
         <div className="space-y-4">
-          <Input
-            label="用户名"
-            placeholder="请输入用户名"
-            value={formData.username}
-            onChange={(e) => setFormData(prev => ({ ...prev, username: e.target.value }))}
-            disabled={!!editingEmployee}
-          />
           <Input
             label="姓名 *"
             placeholder="请输入姓名"

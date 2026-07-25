@@ -1,10 +1,11 @@
 'use client'
 
 import { ArrowDown } from 'lucide-react'
-import dayjs from 'dayjs'
 import { cn } from '@/lib/utils'
 import type { Order } from '@/types'
-import { OrderStatusLabels, normalizeOrderStatus } from '@/types'
+import { normalizeOrderStatus } from '@/types'
+import DateTimeCell from '@/components/common/DateTimeCell'
+import OrderStatusBadge from './OrderStatusBadge'
 import RemarkPopover from './RemarkPopover'
 
 /**
@@ -50,11 +51,6 @@ function getItemAmount(item: { amount?: number; subtotal?: number; unitPrice?: n
   const unit = typeof item.unitPrice === 'number' ? item.unitPrice : 0
   const qty = typeof item.quantity === 'number' ? item.quantity : 0
   return unit * qty
-}
-
-function formatTime(value?: string): string {
-  if (!value) return '-'
-  return dayjs(value).format('YYYY-MM-DD HH:mm')
 }
 
 function ActionLink({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
@@ -289,13 +285,13 @@ export default function OrderTable({
                   </td>
 
                   {/* 下单时间 */}
-                  <td className="px-4 py-4 text-gray-600 whitespace-nowrap font-mono">
-                    {formatTime(order.createdAt)}
+                  <td className="px-4 py-4 whitespace-nowrap">
+                    <DateTimeCell value={order.createdAt} />
                   </td>
 
                   {/* 状态 */}
-                  <td className="px-4 py-4 whitespace-nowrap text-gray-700">
-                    {OrderStatusLabels[normalizeOrderStatus(order.status as string)]}
+                  <td className="px-4 py-4 whitespace-nowrap">
+                    <OrderStatusBadge status={normalizeOrderStatus(order.status as string)} />
                   </td>
 
                   {/* 备注预览 — #1289: 同时检查 remark 字符串和 remarks[] 数组 */}
