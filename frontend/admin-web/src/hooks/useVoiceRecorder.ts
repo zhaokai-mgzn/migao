@@ -30,6 +30,7 @@ export function useVoiceRecorder(
   const streamRef = useRef<MediaStream | null>(null)
   const chunksRef = useRef<Blob[]>([])
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const autoStopRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const startTimeRef = useRef<number>(0)
 
   const cleanup = useCallback(() => {
@@ -37,6 +38,11 @@ export function useVoiceRecorder(
     if (timerRef.current) {
       clearInterval(timerRef.current)
       timerRef.current = null
+    }
+    // 清除自动停止定时器
+    if (autoStopRef.current) {
+      clearTimeout(autoStopRef.current)
+      autoStopRef.current = null
     }
     // 释放麦克风
     if (streamRef.current) {
@@ -113,7 +119,7 @@ export function useVoiceRecorder(
       }, 200)
 
       // 最长录音 60 秒自动停止
-      setTimeout(() => {
+      autoStopRef.current = setTimeout(() => {
         if (mediaRecorderRef.current?.state === 'recording') {
           mediaRecorderRef.current.stop()
         }
