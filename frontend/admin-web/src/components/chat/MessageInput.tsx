@@ -1,12 +1,13 @@
 'use client'
 
 import { useRef, useEffect, useState, useMemo } from 'react'
-import { Send, Loader2, StopCircle, ImagePlus, X, Plus } from 'lucide-react'
+import { Send, Loader2, StopCircle, ImagePlus, X, Plus, Mic } from 'lucide-react'
 import NextImage from 'next/image'
 import { cn } from '@/lib/utils'
 import { useChatStore } from '@/store/chat'
 import { chatApi } from '@/lib/api'
 import { useAuthStore } from '@/store/auth'
+import { useVoiceRecorder } from '@/hooks/useVoiceRecorder'
 import { toast } from 'sonner'
 
 interface PendingImage {
@@ -150,7 +151,15 @@ export default function MessageInput() {
     }
   }
 
-  const canSend = (input.trim() || images.length > 0) && !isUploading
+  // 语音输入
+  const handleTranscribed = (text: string) => {
+    setInput((prev) => (prev ? prev + text : text))
+    // 自动聚焦输入框以便用户编辑
+    textareaRef.current?.focus()
+  }
+  const voice = useVoiceRecorder(handleTranscribed)
+
+  const canSend = (input.trim() || images.length > 0) && !isUploading && voice.state !== 'transcribing'
 
   if (!currentSessionId) return null
 
@@ -190,6 +199,51 @@ export default function MessageInput() {
         )}
 
         <div className="relative flex items-end gap-2 bg-gray-50 border border-gray-200 rounded-2xl px-3 py-2 focus-within:border-primary-400 focus-within:ring-1 focus-within:ring-primary-400/20 transition-colors">
+          {/* 语音输入按钮 */}
+          <button
+            onClick={
+              voice.state === 'recording'
+                ? voice.stopRecording
+                : voice.state === 'transcribing'
+                  ? undefined
+                  : voice.startRecording
+            }
+            onContextMenu={(e) => {
+              if (voice.state === 'recording') {
+                e.preventDefault()
+                voice.cancelRecording()
+              }
+            }}
+            disabled={
+              isSessionClosed ||
+              isStreaming ||
+              voice.state === 'transcribing'
+            }
+            className={cn(
+              'p-1.5 rounded-lg transition-all flex-shrink-0',
+              isSessionClosed || voice.state === 'transcribing'
+                ? 'text-gray-300 cursor-not-allowed'
+                : voice.state === 'recording'
+                  ? 'text-red-500 bg-red-50 animate-pulse shadow-sm shadow-red-200/50'
+                  : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+            )}
+            title={
+              voice.state === 'recording'
+                ? '点击停止录音（右键取消）'
+                : voice.state === 'transcribing'
+                  ? '转写中...'
+                  : '语音输入'
+            }
+          >
+            {voice.state === 'transcribing' ? (
+              <Loader2 className="w-5 h-5 animate-spin" />
+            ) : voice.state === 'recording' ? (
+              <Mic className="w-5 h-5" />
+            ) : (
+              <Mic className="w-5 h-5" />
+            )}
+          </button>
+
           {/* 图片上传按钮 */}
           <button
             onClick={() => fileInputRef.current?.click()}
@@ -242,11 +296,28 @@ export default function MessageInput() {
                 ref={textareaRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="输入消息... (Enter 发送, Shift+Enter 换行)"
-                disabled={isStreaming}
+                onKeyDown={(e) => {
+                  // Escape 取消录音
+                  if (e.key === 'Escape' && voice.state === 'recording') {
+                    e.preventDefault()
+                    voice.cancelRecording()
+                    return
+                  }
+                  handleKeyDown(e)
+                }}
+                placeholder={
+                  voice.state === 'recording'
+                    ? `🎙️ 正在录音... ${voice.duration}s（点击麦克风停止 / Esc 取消）`
+                    : voice.state === 'transcribing'
+                      ? '转写中...'
+                      : '输入消息... (Enter 发送, Shift+Enter 换行)'
+                }
+                disabled={isStreaming || voice.state === 'transcribing'}
                 rows={1}
-                className="flex-1 bg-transparent border-0 resize-none max-h-32 px-1 py-1.5 text-sm focus:outline-none focus:ring-0 disabled:opacity-50 placeholder:text-gray-400"
+                className={cn(
+                  'flex-1 bg-transparent border-0 resize-none max-h-32 px-1 py-1.5 text-sm focus:outline-none focus:ring-0 disabled:opacity-50 placeholder:text-gray-400',
+                  voice.state === 'recording' && 'placeholder:text-red-400'
+                )}
               />
 
               {isStreaming ? (

@@ -473,6 +473,25 @@ export const chatApi = {
     return res.json() as Promise<{ success: boolean; data: { files: { id: string; url: string; name: string; size: number }[] } }>
   },
 
+  /** 语音转文字 */
+  transcribeAudio: async (audioBlob: Blob, token: string, language?: string) => {
+    const formData = new FormData()
+    formData.append('audio', audioBlob, 'recording.webm')
+    const params = language ? `?language=${encodeURIComponent(language)}` : ''
+    const res = await fetch(`${AI_SERVICE_URL}/api/chat/transcribe${params}`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+      body: formData,
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      throw new Error(err.detail || `语音识别失败: ${res.status}`)
+    }
+    return res.json() as Promise<{ text: string; language: string; duration_ms: number }>
+  },
+
   /** AI 服务基地址 */
   AI_SERVICE_URL,
 }
