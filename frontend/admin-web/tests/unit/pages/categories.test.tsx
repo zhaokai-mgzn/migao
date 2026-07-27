@@ -144,7 +144,10 @@ describe('CategoriesPage', () => {
     mockGetCategories.mockResolvedValue({ data: { data: [] } })
     render(<CategoriesPage />)
     await waitFor(() => {
-      expect(screen.getByText('管理商品分类，支持对分类进行新增、编辑、删除和排序')).toBeInTheDocument()
+      // 空数据时 header subtitle + 空状态都显示统一文案
+      const descElements = screen.getAllByText('管理商品分类，支持对分类进行新增、编辑、删除和排序')
+      expect(descElements.length).toBe(2) // header + empty state
+      expect(screen.queryByTestId('category-tree')).not.toBeInTheDocument()
     })
   })
 
