@@ -10,7 +10,7 @@ export class EmployeesPage extends BasePage {
 
   constructor(page: Page) {
     super(page)
-    this.searchInput = page.locator('input[placeholder="姓名、用户名"]')
+    this.searchInput = page.locator('input[placeholder="输入姓名或手机号搜索"]')
     this.statusSelect = page.locator('select').first()
     this.table = page.locator('table')
     this.createBtn = page.getByRole('button', { name: /新增员工/ })
@@ -37,8 +37,6 @@ export class EmployeesPage extends BasePage {
     return this.page.locator('tbody tr').nth(n).getByRole('button', { name: /删除/ })
   }
 
-  get username() { return this.employeeModal.locator('input[placeholder="请输入用户名"]') }
-  get password() { return this.employeeModal.locator('input[type="password"]') }
   get name() { return this.employeeModal.locator('input[placeholder="请输入姓名"]') }
   get phone() { return this.employeeModal.locator('input[placeholder="请输入手机号"]') }
   get email() { return this.employeeModal.locator('input[placeholder="请输入邮箱"]') }
