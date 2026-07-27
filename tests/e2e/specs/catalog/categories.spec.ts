@@ -46,7 +46,7 @@ test.describe('分类管理', () => {
   test.describe('页面加载', () => {
     test('应显示页面标题和描述', async ({ page }) => {
       await expect(page.getByRole('heading', { name: '分类管理' })).toBeVisible()
-      await expect(page.getByText('管理商品分类，最多支持二级分类')).toBeVisible()
+      await expect(page.getByText('管理商品分类，支持对分类进行新增、编辑、删除和排序')).toBeVisible()
     })
 
     test('应渲染分类树结构', async ({ page }) => {
@@ -121,7 +121,7 @@ test.describe('分类管理', () => {
 
     test('对话框应包含排序字段', async ({ page }) => {
       await page.getByRole('button', { name: '添加分类', exact: true }).click()
-      await expect(page.getByText('排序')).toBeVisible()
+      await expect(page.getByText('排序', { exact: true })).toBeVisible()
     })
   })
 
