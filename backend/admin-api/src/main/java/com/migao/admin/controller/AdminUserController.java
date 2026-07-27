@@ -95,7 +95,7 @@ public class AdminUserController {
      * 创建用户
      *
      * POST /api/admin/users
-     * Body: { "username": "xxx", "password": "xxx", "name": "xxx", "phone": "xxx", "roleIds": [] }
+     * Body: { "phone": "xxx", "password": "xxx", "name": "xxx", "roleIds": [] }
      */
     @PostMapping
     public ApiResponse<User> createUser(@RequestBody Map<String, Object> body) {
