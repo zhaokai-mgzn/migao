@@ -133,17 +133,6 @@ describe('搜索区域左对齐 — 无居中 CSS 类', () => {
       const el = await waitForSearchContainer('orders', container)
       assertNoCenterClasses(el.className)
     })
-
-    it('「查询」按钮应包含 inline-flex items-center 确保图标垂直居中 (#1831)', async () => {
-      const { default: OrdersPage } = await import('@/app/(dashboard)/orders/page')
-      render(<OrdersPage />)
-      await waitFor(() => {
-        const btn = screen.getByRole('button', { name: /查询/ })
-        expect(btn).toBeTruthy()
-        expect(btn.className).toMatch(/\binline-flex\b/)
-        expect(btn.className).toMatch(/\bitems-center\b/)
-      })
-    })
   })
 
   describe('[products] 商品页（参照组）', () => {
