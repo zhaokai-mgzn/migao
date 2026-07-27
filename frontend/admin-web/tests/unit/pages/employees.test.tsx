@@ -127,8 +127,8 @@ describe('EmployeesPage', () => {
       data: {
         data: {
           items: [
-            { id: 1, username: 'zhangsan', name: '张三', phone: '13800001111', position: '客服', permissions: ['products:view'], status: 'active', createdAt: '2026-06-01T10:00:00' },
-            { id: 2, username: 'lisi', name: '李四', phone: '13800002222', position: '管理员', permissions: [], status: 'disabled', createdAt: '2026-06-02T10:00:00' },
+            { id: 1, name: '张三', phone: '13800001111', position: '客服', permissions: ['products:view'], status: 'active', createdAt: '2026-06-01T10:00:00' },
+            { id: 2, name: '李四', phone: '13800002222', position: '管理员', permissions: [], status: 'disabled', createdAt: '2026-06-02T10:00:00' },
           ],
           total: 2,
         },

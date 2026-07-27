@@ -3,11 +3,11 @@ import { test, expect } from '@playwright/test'
 // ==================== Inline Mock Data ====================
 
 const MOCK_EMPLOYEES = [
-  { id: 1, username: 'admin', name: '系统管理员', phone: '13800138000', position: '管理员', status: 'active', permissions: ['*'], createdAt: '2026-06-01 10:00' },
-  { id: 2, username: 'zhangmei', name: '张美华', phone: '13957168235', position: '客服', status: 'active', permissions: ['orders:view', 'customers:view'], createdAt: '2026-06-02 14:00' },
-  { id: 3, username: 'lixiao', name: '李晓明', phone: '13712345678', position: '运营', status: 'disabled', permissions: ['products:view', 'products:edit'], createdAt: '2026-06-03 09:00' },
-  { id: 4, username: 'wangfang', name: '王芳', phone: '13687654321', position: '销售', status: 'active', permissions: ['orders:view', 'orders:create'], createdAt: '2026-06-04 16:00' },
-  { id: 5, username: 'chenwei', name: '陈伟', phone: '13511112222', position: '财务', status: 'active', permissions: [], createdAt: '2026-06-05 11:00' },
+  { id: 1, name: '系统管理员', phone: '13800138000', position: '管理员', status: 'active', permissions: ['*'], createdAt: '2026-06-01 10:00' },
+  { id: 2, name: '张美华', phone: '13957168235', position: '客服', status: 'active', permissions: ['orders:view', 'customers:view'], createdAt: '2026-06-02 14:00' },
+  { id: 3, name: '李晓明', phone: '13712345678', position: '运营', status: 'disabled', permissions: ['products:view', 'products:edit'], createdAt: '2026-06-03 09:00' },
+  { id: 4, name: '王芳', phone: '13687654321', position: '销售', status: 'active', permissions: ['orders:view', 'orders:create'], createdAt: '2026-06-04 16:00' },
+  { id: 5, name: '陈伟', phone: '13511112222', position: '财务', status: 'active', permissions: [], createdAt: '2026-06-05 11:00' },
 ]
 
 const MOCK_MENUS = [

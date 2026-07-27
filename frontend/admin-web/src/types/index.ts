@@ -1131,7 +1131,6 @@ export interface RoleFormData {
 // 员工
 export interface Employee {
   id: number
-  username: string
   name: string
   phone?: string
   email?: string
