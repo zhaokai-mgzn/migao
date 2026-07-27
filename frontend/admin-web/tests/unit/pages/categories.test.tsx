@@ -119,7 +119,7 @@ describe('CategoriesPage', () => {
     await waitFor(() => {
       expect(screen.getByText('分类管理')).toBeInTheDocument()
     })
-    expect(screen.getByText('管理商品分类，最多支持二级分类')).toBeInTheDocument()
+    expect(screen.getByText('管理商品分类，支持对分类进行新增、编辑、删除和排序')).toBeInTheDocument()
   })
 
   it('should render add category button', async () => {
@@ -144,7 +144,7 @@ describe('CategoriesPage', () => {
     mockGetCategories.mockResolvedValue({ data: { data: [] } })
     render(<CategoriesPage />)
     await waitFor(() => {
-      expect(screen.getByText(/暂无分类/)).toBeInTheDocument()
+      expect(screen.getByText('管理商品分类，支持对分类进行新增、编辑、删除和排序')).toBeInTheDocument()
     })
   })
 
