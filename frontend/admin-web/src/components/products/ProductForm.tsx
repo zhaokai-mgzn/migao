@@ -872,7 +872,7 @@ export default function ProductForm({
               </div>
             ) : categories.length === 0 ? (
               <div className="py-12 text-center text-sm text-gray-500">
-                暂无分类，点击 &ldquo;添加分类&rdquo; 创建第一个分类
+                管理商品分类，支持对分类进行新增、编辑、删除和排序
               </div>
             ) : (
               <CategoryTree

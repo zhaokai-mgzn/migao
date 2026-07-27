@@ -133,7 +133,7 @@ export default function CategoryTree({
   if (categories.length === 0) {
     return (
       <div className="py-8 text-center text-sm text-gray-500">
-        暂无分类数据
+        管理商品分类，支持对分类进行新增、编辑、删除和排序
       </div>
     )
   }
