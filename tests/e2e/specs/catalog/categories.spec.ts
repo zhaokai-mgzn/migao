@@ -114,9 +114,9 @@ test.describe('分类管理', () => {
       await expect(dialog).toBeHidden()
     })
 
-    test('对话框应包含父级分类选择', async ({ page }) => {
+    test('对话框应包含分类名称输入', async ({ page }) => {
       await page.getByRole('button', { name: '添加分类', exact: true }).click()
-      await expect(page.getByText('父级分类')).toBeVisible()
+      await expect(page.getByText('分类名称')).toBeVisible()
     })
 
     test('对话框应包含排序字段', async ({ page }) => {
