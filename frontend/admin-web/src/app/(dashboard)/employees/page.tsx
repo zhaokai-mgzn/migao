@@ -40,7 +40,6 @@ export default function EmployeesPage() {
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null)
   const [formLoading, setFormLoading] = useState(false)
   const [formData, setFormData] = useState({
-    username: '',
     name: '',
     phone: '',
     position: '',
@@ -126,7 +125,7 @@ export default function EmployeesPage() {
   // 打开新增对话框
   const handleAdd = () => {
     setEditingEmployee(null)
-    setFormData({ username: '', name: '', phone: '', position: '', permissions: [] })
+    setFormData({ name: '', phone: '', position: '', permissions: [] })
     setFormOpen(true)
   }
 
@@ -134,7 +133,6 @@ export default function EmployeesPage() {
   const handleEdit = (employee: Employee) => {
     setEditingEmployee(employee)
     setFormData({
-      username: employee.username,
       name: employee.name,
       phone: employee.phone || '',
       position: employee.position || '',
@@ -145,7 +143,6 @@ export default function EmployeesPage() {
 
   // 提交表单
   const handleSubmit = async () => {
-    if (!formData.username.trim()) { toast.error('请输入用户名'); return }
     if (!formData.name.trim()) { toast.error('请输入姓名'); return }
     if (!formData.phone.trim()) { toast.error('请输入手机号'); return }
     if (!formData.position.trim()) { toast.error('请选择岗位'); return }
@@ -162,7 +159,6 @@ export default function EmployeesPage() {
         toast.success('编辑成功')
       } else {
         await employeeApi.createEmployee({
-          username: formData.username,
           name: formData.name,
           phone: formData.phone,
           position: formData.position,

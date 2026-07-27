@@ -101,10 +101,12 @@ test.describe('员工管理页面', () => {
     await expect(page.getByText(/新增员工/)).toBeVisible()
   })
 
-  test('创建弹窗包含用户名、姓名、手机号、岗位字段', async () => {
+  test('创建弹窗包含姓名、手机号、岗位字段，不含用户名字段', async () => {
     await page.getByRole('button', { name: /添加员工/ }).click()
     const modal = page.locator('[role="dialog"]')
-    await expect(modal.locator('input[placeholder*="用户名"]')).toBeVisible()
+    // 用户名字段已删除（#1830），应不存在
+    await expect(modal.locator('input[placeholder*="用户名"]')).not.toBeVisible()
+    // 必填字段：姓名、手机号、岗位
     await expect(modal.locator('input[placeholder*="姓名"]')).toBeVisible()
     await expect(modal.locator('input[placeholder*="手机号"]')).toBeVisible()
     await expect(modal.locator('input[placeholder*="岗位"]')).toBeVisible()
@@ -150,12 +152,14 @@ test.describe('员工管理页面', () => {
     }
   })
 
-  test('创建员工 - 未填用户名时提示错误', async () => {
+  test('创建员工 - 必填字段为空时提示第一个校验错误（姓名）', async () => {
     await page.getByRole('button', { name: /添加员工/ }).click()
     const modal = page.locator('[role="dialog"]')
-    // Modal 底部默认按钮是"确定"，点击后触发前端校验 toast
+    // 不填任何字段直接点创建 — 应触发姓名校验，而非用户名校验（#1830）
     await modal.getByRole('button', { name: /创建|保存/ }).click()
     await expect(page.locator('[data-sonner-toast]').first()).toBeVisible({ timeout: 5000 })
+    // 不应出现「请输入用户名」错误
+    await expect(page.getByText(/请输入用户名/)).not.toBeVisible()
   })
 
   test('员工状态 Badge 正确显示', async () => {

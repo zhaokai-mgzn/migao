@@ -1152,7 +1152,6 @@ export interface EmployeeListParams extends PageParams {
 
 // 员工表单数据
 export interface EmployeeFormData {
-  username: string
   name: string
   phone: string
   position: string
