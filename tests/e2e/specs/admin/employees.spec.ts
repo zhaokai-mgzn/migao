@@ -96,13 +96,13 @@ test.describe('员工管理页面', () => {
   })
 
   test('添加员工按钮可打开创建弹窗', async () => {
-    await page.getByRole('button', { name: /添加员工/ }).click()
+    await page.getByRole('button', { name: /新增员工/ }).click()
     await expect(page.locator('[role="dialog"]')).toBeVisible()
-    await expect(page.getByText(/新增员工/)).toBeVisible()
+    await expect(page.locator('[role="dialog"]').getByRole('heading', { name: /新增员工/ })).toBeVisible()
   })
 
   test('创建弹窗包含姓名、手机号、岗位字段，不含用户名字段', async () => {
-    await page.getByRole('button', { name: /添加员工/ }).click()
+    await page.getByRole('button', { name: /新增员工/ }).click()
     const modal = page.locator('[role="dialog"]')
     // 用户名字段已删除（#1830），应不存在
     await expect(modal.locator('input[placeholder*="用户名"]')).not.toBeVisible()
@@ -153,7 +153,7 @@ test.describe('员工管理页面', () => {
   })
 
   test('创建员工 - 必填字段为空时提示第一个校验错误（姓名）', async () => {
-    await page.getByRole('button', { name: /添加员工/ }).click()
+    await page.getByRole('button', { name: /新增员工/ }).click()
     const modal = page.locator('[role="dialog"]')
     // 不填任何字段直接点创建 — 应触发姓名校验，而非用户名校验（#1830）
     await modal.getByRole('button', { name: /创建|保存/ }).click()
