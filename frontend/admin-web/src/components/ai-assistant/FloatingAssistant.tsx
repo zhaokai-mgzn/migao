@@ -120,30 +120,35 @@ export default function FloatingAssistant() {
     setIsMinimized(false)
   }
 
-  // 面板容器的 className — 正常浮动为右下角紧凑窗口（尺寸由 MibaoChatPanel 控制）
-  const panelClassName = cn(
-    'fixed z-50',
-    isFullscreen
-      ? 'inset-0'  // 全屏
-      : isOpen
-        ? 'right-4 bottom-4' // 右下角定位，不占满视口
-        : ''
-  )
-
   return (
     <>
       {/* ===== 正常/全屏 面板 ===== */}
       {isOpen && !isMinimized && (
-        <div className={panelClassName}>
-          <MibaoChatPanel
-            defaultHeight={isFullscreen ? '100vh' : 'min(620px, calc(100vh - 3rem))'}
-            defaultWidth={isFullscreen ? '100%' : '420px'}
-            className={cn(
-              'bg-white shadow-2xl rounded-2xl border border-gray-200',
-              isFullscreen && 'rounded-none border-0'
-            )}
-          >
-            <div className="flex flex-col flex-1 min-h-0">
+        <>
+          {/* 遮罩 — 居中模态时显示，点击关闭（z-50 覆盖侧边栏，模态完整） */}
+          {!isFullscreen && (
+            <div
+              className="fixed inset-0 z-50 bg-black/40"
+              onClick={handleClose}
+              data-testid="float-assistant-overlay"
+            />
+          )}
+
+          {/* 居中大窗 / 全屏容器 */}
+          <div className={cn(
+            'fixed z-[60]',
+            isFullscreen ? 'inset-0' : 'inset-0 flex items-center justify-center pointer-events-none'
+          )}>
+            <div className={cn(isFullscreen ? 'h-full w-full' : 'pointer-events-auto')}>
+              <MibaoChatPanel
+                defaultHeight={isFullscreen ? '100vh' : 'min(720px, calc(100vh - 3rem))'}
+                defaultWidth={isFullscreen ? '100%' : 'min(920px, calc(100vw - 3rem))'}
+                className={cn(
+                  'bg-white shadow-2xl rounded-2xl border border-gray-200',
+                  isFullscreen && 'rounded-none border-0'
+                )}
+              >
+                <div className="flex flex-col flex-1 min-h-0">
               {/* 头部 */}
               <div
                 className={cn(
@@ -187,14 +192,16 @@ export default function FloatingAssistant() {
                 </div>
               </div>
 
-              {/* 聊天内容 — 正常浮动为单栏（聚焦聊天，避免窄窗两栏挤压）；全屏才显示会话列表 */}
+              {/* 聊天内容 — 居中大窗两栏（会话列表 + 聊天区） */}
               <div className="flex-1 flex min-h-0 overflow-hidden rounded-b-2xl">
-                {isFullscreen && <SessionList />}
+                <SessionList />
                 <ChatArea />
               </div>
             </div>
           </MibaoChatPanel>
-        </div>
+            </div>
+          </div>
+        </>
       )}
 
       {/* ===== 最小化浮窗 ===== */}
