@@ -194,6 +194,29 @@ describe('useResizableHeight', () => {
     expect(document.body.style.userSelect).not.toBe('none')
   })
 
+  it('topHandleProps drags up to increase height (inverse of bottom handle)', () => {
+    let capturedMoveHandler: ((e: MouseEvent) => void) | null = null
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    vi.spyOn(document, 'addEventListener').mockImplementation((event: string, handler: any) => {
+      if (event === 'mousemove') capturedMoveHandler = handler as (e: MouseEvent) => void
+    })
+    const { result } = renderHook(() =>
+      useResizableHeight({ storageKey: STORAGE_KEY, defaultHeight: '70vh', minHeight: 300, maxHeight: 1000 })
+    )
+    const fakeEvent = {
+      clientY: 500,
+      currentTarget: { parentElement: { getBoundingClientRect: () => ({ height: 600 }) } },
+      preventDefault: vi.fn(),
+    } as unknown as React.MouseEvent
+    act(() => { result.current.topHandleProps.onMouseDown(fakeEvent) })
+    // 顶部手柄：向上拖（clientY 减小）→ 高度增大（与底部手柄相反）
+    act(() => { capturedMoveHandler!({ clientY: 400 } as MouseEvent) })
+    expect(result.current.containerStyle.height).toBe('700px')
+    // 向下拖 → 从初始高度缩小（600 - 100 = 500）
+    act(() => { capturedMoveHandler!({ clientY: 600 } as MouseEvent) })
+    expect(result.current.containerStyle.height).toBe('500px')
+  })
+
   it('defaults maxHeight to window.innerHeight when not provided', () => {
     let capturedMoveHandler: ((e: MouseEvent) => void) | null = null
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

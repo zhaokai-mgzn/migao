@@ -143,6 +143,7 @@ export default function FloatingAssistant() {
               <MibaoChatPanel
                 defaultHeight={isFullscreen ? '100vh' : 'min(720px, calc(100vh - 3rem))'}
                 defaultWidth={isFullscreen ? '100%' : 'min(920px, calc(100vw - 3rem))'}
+                showTopHandle={!isFullscreen}
                 className={cn(
                   'bg-white shadow-2xl rounded-2xl border border-gray-200',
                   isFullscreen && 'rounded-none border-0'
