@@ -56,21 +56,28 @@ describe('FloatingAssistant', () => {
     expect(screen.queryByText('米宝 · 智能助手')).not.toBeInTheDocument()
   })
 
-  it('点击 FAB 打开面板，正常态单栏聊天，全屏才显示会话列表', () => {
+  it('点击 FAB 打开面板，居中大窗两栏布局', () => {
     render(<FloatingAssistant />)
 
     fireEvent.click(screen.getByTitle('打开米宝'))
 
     // 面板标题可见
     expect(screen.getByText('米宝 · 智能助手')).toBeInTheDocument()
-    // 正常浮动：单栏（仅聊天区，聚焦对话，避免窄窗两栏挤压）
-    expect(screen.getByTestId('chat-area')).toBeInTheDocument()
-    expect(screen.queryByTestId('session-list')).not.toBeInTheDocument()
-    // 全屏后显示会话列表（两栏）
-    fireEvent.click(screen.getByTitle('全屏'))
+    // 居中大窗：会话列表 + 聊天区两栏
     expect(screen.getByTestId('session-list')).toBeInTheDocument()
+    expect(screen.getByTestId('chat-area')).toBeInTheDocument()
     // FAB 在面板打开时隐藏
     expect(screen.queryByTitle('打开米宝')).not.toBeInTheDocument()
+  })
+
+  it('点击居中遮罩关闭面板', () => {
+    render(<FloatingAssistant />)
+
+    fireEvent.click(screen.getByTitle('打开米宝'))
+    expect(screen.getByText('米宝 · 智能助手')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByTestId('float-assistant-overlay'))
+    expect(screen.queryByText('米宝 · 智能助手')).not.toBeInTheDocument()
   })
 
   it('点击关闭按钮收起面板', () => {
