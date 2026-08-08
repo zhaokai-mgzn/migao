@@ -706,7 +706,7 @@ describe('CustomerPanel', () => {
 
 describe('SessionInsight', () => {
   it('returns null when no session is selected', () => {
-    const { container } = render(<SessionInsight />)
+    const { container } = render(<SessionInsight isOpen onClose={vi.fn()} />)
     expect(container.firstChild).toBeNull()
   })
 
@@ -731,7 +731,7 @@ describe('SessionInsight', () => {
       })
     )
 
-    render(<SessionInsight />)
+    render(<SessionInsight isOpen onClose={vi.fn()} />)
 
     // 会话统计存在
     expect(screen.getByText('会话洞察')).toBeInTheDocument()
@@ -781,7 +781,7 @@ describe('SessionInsight', () => {
       })
     )
 
-    render(<SessionInsight />)
+    render(<SessionInsight isOpen onClose={vi.fn()} />)
 
     // 卡片摘要 — 允许卡片区和便签板各自展示
     expect(screen.getAllByText(/ORD-001/).length).toBeGreaterThanOrEqual(1)
@@ -811,7 +811,7 @@ describe('SessionInsight', () => {
       })
     )
 
-    render(<SessionInsight />)
+    render(<SessionInsight isOpen onClose={vi.fn()} />)
 
     // 空状态提示
     expect(screen.getByText(/暂无查询结果/)).toBeInTheDocument()
@@ -845,14 +845,14 @@ describe('SessionInsight', () => {
       })
     )
 
-    render(<SessionInsight />)
+    render(<SessionInsight isOpen onClose={vi.fn()} />)
 
     // ORD-001 在卡片摘要中出现 1 次（去重），加上便签板实体提取 1 次，共 2 次
     const occurrences = screen.getAllByText(/ORD-001/)
     expect(occurrences).toHaveLength(2)
   })
 
-  it('can collapse and expand', () => {
+  it('drawer opens when isOpen=true and hides when isOpen=false', () => {
     mockUseChatStore.mockReturnValue(
       makeDefaultChatState({
         currentSessionId: 's1',
@@ -866,12 +866,15 @@ describe('SessionInsight', () => {
       })
     )
 
-    render(<SessionInsight />)
+    const { rerender } = render(<SessionInsight isOpen onClose={vi.fn()} />)
+    // 展开：抽屉可见 + 遮罩存在
+    expect(screen.getByTestId('session-insight-drawer')).toHaveClass('translate-x-0')
+    expect(screen.getByTestId('session-insight-overlay')).toBeInTheDocument()
 
-    // 点击收起
-    fireEvent.click(screen.getByTitle('收起'))
-    // 展开按钮出现
-    expect(screen.getByTitle('展开会话洞察')).toBeInTheDocument()
+    // 收起：抽屉移出 + 遮罩消失
+    rerender(<SessionInsight isOpen={false} onClose={vi.fn()} />)
+    expect(screen.getByTestId('session-insight-drawer')).toHaveClass('translate-x-full')
+    expect(screen.queryByTestId('session-insight-overlay')).not.toBeInTheDocument()
   })
 
   // ── 便签板（P1 实体提取 + 点击追问）──
@@ -896,7 +899,7 @@ describe('SessionInsight', () => {
       })
     )
 
-    render(<SessionInsight />)
+    render(<SessionInsight isOpen onClose={vi.fn()} />)
 
     // 便签板展示了订单实体（带类型前缀）
     expect(screen.getByText('便签板')).toBeInTheDocument()
@@ -927,7 +930,7 @@ describe('SessionInsight', () => {
       })
     )
 
-    render(<SessionInsight />)
+    render(<SessionInsight isOpen onClose={vi.fn()} />)
 
     expect(screen.getByText('商品 遮光窗帘')).toBeInTheDocument()
     expect(screen.getByText('商品 透光纱帘')).toBeInTheDocument()
@@ -956,7 +959,7 @@ describe('SessionInsight', () => {
       })
     )
 
-    render(<SessionInsight />)
+    render(<SessionInsight isOpen onClose={vi.fn()} />)
 
     expect(screen.getAllByText(/SF1234567890/).length).toBeGreaterThanOrEqual(1)
 
@@ -983,7 +986,7 @@ describe('SessionInsight', () => {
       })
     )
 
-    render(<SessionInsight />)
+    render(<SessionInsight isOpen onClose={vi.fn()} />)
 
     // ORD-001 在 tool_call 和 card 中各出现一次，实体去重后便签板只展示 1 个标签
     // 加上卡片摘要区的 1 次，共 2 次
@@ -1004,7 +1007,7 @@ describe('SessionInsight', () => {
       })
     )
 
-    render(<SessionInsight />)
+    render(<SessionInsight isOpen onClose={vi.fn()} />)
 
     // 便签板为空
     expect(screen.getByText(/暂无便签/)).toBeInTheDocument()

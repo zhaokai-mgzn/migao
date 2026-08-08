@@ -44,7 +44,7 @@ export default function QuickActions() {
               key={action.id}
               onClick={() => handleClick(action.prompt)}
               disabled={isStreaming}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-50 hover:bg-primary-50 border border-gray-200 hover:border-primary-300 rounded-full text-xs text-gray-600 hover:text-primary-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-primary-50 border border-gray-200 hover:border-primary-200 rounded-full text-xs text-gray-600 hover:text-primary-600 transition-all shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {iconMap[action.icon] || <Sparkles className="w-3.5 h-3.5" />}
               {action.name}

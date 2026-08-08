@@ -198,7 +198,7 @@ export default function MessageInput() {
           </div>
         )}
 
-        <div className="relative flex items-end gap-2 bg-gray-50 border border-gray-200 rounded-2xl px-3 py-2 focus-within:border-primary-400 focus-within:ring-1 focus-within:ring-primary-400/20 transition-colors">
+        <div className="relative flex items-end gap-2 bg-white border border-gray-200 rounded-2xl px-3 py-2 shadow-sm focus-within:border-primary-300 focus-within:ring-2 focus-within:ring-primary-400/15 transition-all">
           {/* 语音输入按钮 */}
           <button
             onClick={
@@ -224,8 +224,8 @@ export default function MessageInput() {
               isSessionClosed || voice.state === 'transcribing'
                 ? 'text-gray-300 cursor-not-allowed'
                 : voice.state === 'recording'
-                  ? 'text-red-500 bg-red-50 animate-pulse shadow-sm shadow-red-200/50'
-                  : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+                  ? 'text-red-500 bg-red-50 shadow-[0_0_0_2px_rgba(239,68,68,0.2)]'
+                  : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'
             )}
             title={
               voice.state === 'recording'
@@ -252,7 +252,7 @@ export default function MessageInput() {
               'p-1.5 rounded-lg transition-colors flex-shrink-0',
               isSessionClosed || images.length >= MAX_IMAGES
                 ? 'text-gray-300 cursor-not-allowed'
-                : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+                : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'
             )}
             title={isSessionClosed ? '会话已结束' : images.length >= MAX_IMAGES ? `最多 ${MAX_IMAGES} 张图片` : '添加图片'}
           >
@@ -333,10 +333,10 @@ export default function MessageInput() {
                   onClick={handleSend}
                   disabled={!canSend}
                   className={cn(
-                    'p-2 rounded-xl transition-colors flex-shrink-0',
+                    'p-2 rounded-xl transition-all flex-shrink-0',
                     canSend
-                      ? 'bg-primary-600 text-white hover:bg-primary-700'
-                      : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                      ? 'bg-gradient-to-br from-primary-500 to-primary-600 text-white hover:from-primary-600 hover:to-primary-700 shadow-sm hover:shadow-md active:scale-95'
+                      : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                   )}
                   title="发送"
                 >
@@ -346,7 +346,7 @@ export default function MessageInput() {
             </>
           )}
         </div>
-        <p className="text-[10px] text-gray-400 mt-1.5 text-center">
+        <p className="text-[10px] text-gray-400/60 mt-1.5 text-center">
           AI 生成内容仅供参考
         </p>
       </div>

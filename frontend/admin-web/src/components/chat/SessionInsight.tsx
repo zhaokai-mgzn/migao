@@ -2,8 +2,7 @@
 
 import { useState, useMemo, useCallback } from 'react'
 import {
-  PanelRightClose,
-  PanelRightOpen,
+  X,
   Package,
   ShoppingBag,
   Truck,
@@ -261,8 +260,14 @@ function dedupEntities(all: SessionEntity[]): SessionEntity[] {
 
 // ═══════════════════════════════════════════════════
 
-export default function SessionInsight() {
-  const [collapsed, setCollapsed] = useState(false)
+interface SessionInsightProps {
+  /** 抽屉是否展开（默认收起） */
+  isOpen?: boolean
+  /** 关闭抽屉回调 */
+  onClose?: () => void
+}
+
+export default function SessionInsight({ isOpen = false, onClose }: SessionInsightProps = {}) {
   const [sessionIdCopied, setSessionIdCopied] = useState(false)
   const { currentSessionId, sessions, messages, sendMessage } = useChatStore()
 
@@ -325,27 +330,32 @@ export default function SessionInsight() {
 
   if (!currentSessionId) return null
 
-  if (collapsed) {
-    return (
-      <div className="flex-shrink-0 border-l border-gray-200 bg-white">
-        <button
-          onClick={() => setCollapsed(false)}
-          className="p-3 hover:bg-gray-50 transition-colors"
-          title="展开会话洞察"
-        >
-          <PanelRightOpen className="w-4 h-4 text-gray-500" />
-        </button>
-      </div>
-    )
-  }
-
   return (
-    <div className="w-[300px] flex-shrink-0 border-l border-gray-200 bg-white flex flex-col h-full overflow-hidden">
+    <>
+      {/* 遮罩 — 仅展开时显示，点击关闭 */}
+      {isOpen && (
+        <div
+          data-testid="session-insight-overlay"
+          className="absolute inset-0 bg-black/20"
+          onClick={onClose}
+        />
+      )}
+
+      {/* 抽屉容器 — 从右侧滑入 */}
+      <div
+        data-testid="session-insight-drawer"
+        className={cn(
+          'absolute top-0 right-0 h-full w-[340px] bg-white shadow-2xl border-l border-gray-200 flex flex-col overflow-hidden',
+          'transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]',
+          isOpen ? 'translate-x-0 visible' : 'translate-x-full invisible'
+        )}
+        aria-hidden={!isOpen}
+      >
       {/* 头部 */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
         <h3 className="text-sm font-semibold text-gray-800">会话洞察</h3>
-        <button onClick={() => setCollapsed(true)} className="p-1 rounded hover:bg-gray-100 transition-colors" title="收起">
-          <PanelRightClose className="w-4 h-4 text-gray-400" />
+        <button onClick={onClose} className="p-1 rounded hover:bg-gray-100 transition-colors" title="关闭洞察">
+          <X className="w-4 h-4 text-gray-400" />
         </button>
       </div>
 
@@ -476,7 +486,8 @@ export default function SessionInsight() {
           )}
         </div>
       </div>
-    </div>
+      </div>
+    </>
   )
 }
 
