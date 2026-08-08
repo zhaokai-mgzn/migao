@@ -105,7 +105,7 @@ export default function MessageList() {
 
   return (
     <div ref={containerRef} className="flex-1 overflow-y-auto px-4 py-4">
-      <div className="w-full space-y-4">
+      <div className="w-full max-w-3xl mx-auto space-y-4">
         {groupedMessages.map((group, gi) => (
           <div key={gi} className="space-y-4">
             {group.date && <TimeDivider date={group.date} />}
