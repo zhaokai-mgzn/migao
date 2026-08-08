@@ -18,6 +18,14 @@ interface UseResizableHeightReturn {
     'aria-label': string
     'aria-orientation': 'horizontal'
   }
+  /** 顶部手柄（向上拖 = 增大高度，与底部手柄方向相反） */
+  topHandleProps: {
+    onMouseDown: (e: React.MouseEvent) => void
+    role: 'separator'
+    tabIndex: 0
+    'aria-label': string
+    'aria-orientation': 'horizontal'
+  }
   isDragging: boolean
   resetHeight: () => void
 }
@@ -74,7 +82,7 @@ export function useResizableHeight({
   }, [isDragging])
 
   const handleMouseDown = useCallback(
-    (e: React.MouseEvent) => {
+    (e: React.MouseEvent, direction: 'bottom' | 'top' = 'bottom') => {
       e.preventDefault()
       const container = e.currentTarget.parentElement
       if (!container) return
@@ -88,7 +96,10 @@ export function useResizableHeight({
         if (!dragRef.current) return
         const { startY: sY, startHeight: sH, maxHeight: mH } = dragRef.current
         const deltaY = moveEvent.clientY - sY
-        const newHeight = Math.min(mH, Math.max(minHeight, sH + deltaY))
+        // 底部手柄：向下拖增大；顶部手柄：向上拖增大（方向相反）
+        const newHeight = direction === 'top'
+          ? Math.min(mH, Math.max(minHeight, sH - deltaY))
+          : Math.min(mH, Math.max(minHeight, sH + deltaY))
         setStoredHeight(Math.round(newHeight))
       }
 
@@ -123,12 +134,20 @@ export function useResizableHeight({
   }
 
   const handleProps = {
-    onMouseDown: handleMouseDown,
+    onMouseDown: (e: React.MouseEvent) => handleMouseDown(e, 'bottom'),
     role: 'separator' as const,
     tabIndex: 0 as const,
     'aria-label': '拖拽调整高度',
     'aria-orientation': 'horizontal' as const,
   }
 
-  return { containerStyle, handleProps, isDragging, resetHeight }
+  const topHandleProps = {
+    onMouseDown: (e: React.MouseEvent) => handleMouseDown(e, 'top'),
+    role: 'separator' as const,
+    tabIndex: 0 as const,
+    'aria-label': '拖拽调整高度（顶部）',
+    'aria-orientation': 'horizontal' as const,
+  }
+
+  return { containerStyle, handleProps, topHandleProps, isDragging, resetHeight }
 }

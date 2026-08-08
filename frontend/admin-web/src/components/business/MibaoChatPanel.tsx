@@ -19,6 +19,8 @@ interface MibaoChatPanelProps {
   className?: string
   defaultHeight?: string
   defaultWidth?: string
+  /** 是否显示顶部拖拽手柄（拖顶部边缘调整高度） */
+  showTopHandle?: boolean
 }
 
 export default function MibaoChatPanel({
@@ -26,8 +28,13 @@ export default function MibaoChatPanel({
   className,
   defaultHeight,
   defaultWidth,
+  showTopHandle,
 }: MibaoChatPanelProps) {
-  const { containerStyle: heightStyle, handleProps: heightHandleProps } = useResizableHeight({
+  const {
+    containerStyle: heightStyle,
+    handleProps: heightHandleProps,
+    topHandleProps,
+  } = useResizableHeight({
     storageKey: HEIGHT_STORAGE_KEY,
     defaultHeight: defaultHeight || DEFAULT_HEIGHT,
     minHeight: MIN_HEIGHT,
@@ -63,6 +70,18 @@ export default function MibaoChatPanel({
       >
         {children}
       </div>
+
+      {/* 拖拽手柄 — 顶部（垂直缩放，向上拖增大高度），默认透明、hover 时轻提示 */}
+      {showTopHandle && (
+        <div
+          data-testid="chat-panel-resize-handle-top"
+          className="absolute top-0 left-0 right-0 h-2 flex items-center justify-center bg-transparent hover:bg-gray-100/70 transition-colors select-none group z-10"
+          style={{ cursor: 'ns-resize' }}
+          {...topHandleProps}
+        >
+          <GripHorizontal className="w-5 h-3 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+        </div>
+      )}
 
       {/* 拖拽手柄 — 底部（垂直缩放），默认透明、hover 时轻提示 */}
       <div
