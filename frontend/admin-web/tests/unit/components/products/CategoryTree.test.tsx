@@ -27,9 +27,9 @@ const mockCategories: Category[] = [
 ]
 
 describe('CategoryTree (#563)', () => {
-  it('空列表显示"暂无分类数据"', () => {
+  it('空列表显示统一占位文案', () => {
     render(<CategoryTree categories={[]} />)
-    expect(screen.getByText('暂无分类数据')).toBeTruthy()
+    expect(screen.getByText('管理商品分类，支持对分类进行新增、编辑、删除和排序')).toBeTruthy()
   })
 
   it('渲染分类名称', () => {

@@ -91,7 +91,7 @@ export default function CategoriesPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-xl font-bold text-gray-900">分类管理</h1>
-          <p className="text-sm text-gray-500 mt-1">管理商品分类，最多支持二级分类</p>
+          <p className="text-sm text-gray-500 mt-1">管理商品分类，支持对分类进行新增、编辑、删除和排序</p>
         </div>
         <Button onClick={handleAdd}>
           <Plus className="w-4 h-4 mr-1.5" />
@@ -107,7 +107,7 @@ export default function CategoriesPage() {
           </div>
         ) : categories.length === 0 ? (
           <div className="py-12 text-center text-sm text-gray-500">
-            暂无分类，点击&ldquo;添加分类&rdquo;创建第一个分类
+            管理商品分类，支持对分类进行新增、编辑、删除和排序
           </div>
         ) : (
           <CategoryTree

@@ -1131,7 +1131,6 @@ export interface RoleFormData {
 // 员工
 export interface Employee {
   id: number
-  username: string
   name: string
   phone?: string
   email?: string
@@ -1152,7 +1151,6 @@ export interface EmployeeListParams extends PageParams {
 
 // 员工表单数据
 export interface EmployeeFormData {
-  username: string
   name: string
   phone: string
   position: string

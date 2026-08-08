@@ -221,6 +221,23 @@ describe('OrdersPage', () => {
     expect(screen.getByText('查询')).toBeInTheDocument()
   })
 
+  it('查询和重置按钮都应使用 inline-flex items-center 保证图标与文字垂直居中对齐 (#1831)', () => {
+    render(<OrdersPage />)
+    const searchBtn = screen.getByText('查询').closest('button')
+    const resetBtn = screen.getByText('重置').closest('button')
+
+    expect(searchBtn).toBeTruthy()
+    expect(resetBtn).toBeTruthy()
+
+    // 查询按钮：必须包含 inline-flex 和 items-center（修复 #1831）
+    expect(searchBtn!.className).toMatch(/\binline-flex\b/)
+    expect(searchBtn!.className).toMatch(/\bitems-center\b/)
+
+    // 重置按钮：已是 inline-flex items-center（参照基准）
+    expect(resetBtn!.className).toMatch(/\binline-flex\b/)
+    expect(resetBtn!.className).toMatch(/\bitems-center\b/)
+  })
+
   it('should display customer names in order list', async () => {
     render(<OrdersPage />)
     await waitFor(() => {

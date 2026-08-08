@@ -460,9 +460,9 @@ export default function OrdersPage() {
               type="button"
               onClick={handleSearch}
               disabled={loading}
-              className="h-9 px-5 rounded bg-primary-600 text-white text-sm font-medium hover:bg-primary-700 active:bg-primary-800 disabled:opacity-50 transition-colors"
+              className="h-9 px-5 rounded bg-primary-600 text-white text-sm font-medium hover:bg-primary-700 active:bg-primary-800 disabled:opacity-50 transition-colors inline-flex items-center gap-1.5"
             >
-              <Search className="w-4 h-4 mr-1.5" />
+              <Search className="w-4 h-4" />
               查询
             </button>
             <button
