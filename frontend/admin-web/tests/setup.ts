@@ -170,6 +170,7 @@ vi.mock('lucide-react', () => ({
   ArrowDown: iconStub('arrow-down'),
   TrendingUp: iconStub('trending-up'),
   Maximize2: iconStub('maximize2'),
+  Minimize2: iconStub('minimize2'),
   Minus: iconStub('minus'),
   Send: iconStub('send'),
   Loader2: iconStub('loader2'),

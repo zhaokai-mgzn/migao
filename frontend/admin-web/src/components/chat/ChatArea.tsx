@@ -23,37 +23,39 @@ function ChatHeader({
   if (!currentSessionId) return null
 
   return (
-    <div className="flex-shrink-0 h-14 flex items-center justify-between px-5 bg-white border-b border-gray-100">
-      <div className="flex items-center gap-2.5 min-w-0">
-        <h2 className="text-sm font-semibold text-gray-800 truncate">
-          {session?.title || '新对话'}
-        </h2>
-        {session?.status === 'closed' ? (
-          <span className="inline-flex items-center px-1.5 py-px rounded text-[10px] font-medium bg-gray-100 text-gray-500 flex-shrink-0">
-            已结束
-          </span>
-        ) : (
-          <span className="inline-flex items-center px-1.5 py-px rounded text-[10px] font-medium bg-green-50 text-green-600 flex-shrink-0">
-            进行中
-          </span>
-        )}
-      </div>
-
-      <div className="flex items-center gap-1 flex-shrink-0">
-        <button
-          onClick={onInsightToggle}
-          className={cn(
-            'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
-            insightOpen
-              ? 'bg-primary-50 text-primary-600'
-              : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+    <div className="flex-shrink-0 h-14 bg-white border-b border-gray-100">
+      <div className="h-full w-full max-w-3xl mx-auto px-5 flex items-center justify-between">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <h2 className="text-sm font-semibold text-gray-800 truncate">
+            {session?.title || '新对话'}
+          </h2>
+          {session?.status === 'closed' ? (
+            <span className="inline-flex items-center px-1.5 py-px rounded text-[10px] font-medium bg-gray-100 text-gray-500 flex-shrink-0">
+              已结束
+            </span>
+          ) : (
+            <span className="inline-flex items-center px-1.5 py-px rounded text-[10px] font-medium bg-green-50 text-green-600 flex-shrink-0">
+              进行中
+            </span>
           )}
-          data-testid="insight-toggle-btn"
-          title={insightOpen ? '收起洞察' : '打开会话洞察'}
-        >
-          <PanelRightOpen className="w-3.5 h-3.5" />
-          洞察
-        </button>
+        </div>
+
+        <div className="flex items-center gap-1 flex-shrink-0">
+          <button
+            onClick={onInsightToggle}
+            className={cn(
+              'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
+              insightOpen
+                ? 'bg-primary-50 text-primary-600'
+                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+            )}
+            data-testid="insight-toggle-btn"
+            title={insightOpen ? '收起洞察' : '打开会话洞察'}
+          >
+            <PanelRightOpen className="w-3.5 h-3.5" />
+            洞察
+          </button>
+        </div>
       </div>
     </div>
   )

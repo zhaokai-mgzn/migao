@@ -120,13 +120,13 @@ export default function FloatingAssistant() {
     setIsMinimized(false)
   }
 
-  // 面板容器的 className
+  // 面板容器的 className — 正常浮动为右下角紧凑窗口（尺寸由 MibaoChatPanel 控制）
   const panelClassName = cn(
     'fixed z-50',
     isFullscreen
       ? 'inset-0'  // 全屏
       : isOpen
-        ? 'inset-4' // 正常浮动
+        ? 'right-4 bottom-4' // 右下角定位，不占满视口
         : ''
   )
 
@@ -136,7 +136,8 @@ export default function FloatingAssistant() {
       {isOpen && !isMinimized && (
         <div className={panelClassName}>
           <MibaoChatPanel
-            defaultHeight={isFullscreen ? '100vh' : 'calc(100vh - 5.5rem)'}
+            defaultHeight={isFullscreen ? '100vh' : 'min(620px, calc(100vh - 3rem))'}
+            defaultWidth={isFullscreen ? '100%' : '420px'}
             className={cn(
               'bg-white shadow-2xl rounded-2xl border border-gray-200',
               isFullscreen && 'rounded-none border-0'
@@ -186,9 +187,9 @@ export default function FloatingAssistant() {
                 </div>
               </div>
 
-              {/* 聊天内容 — 复用全屏会话模式布局（SessionInsight 已在 ChatArea 内部作为抽屉） */}
+              {/* 聊天内容 — 正常浮动为单栏（聚焦聊天，避免窄窗两栏挤压）；全屏才显示会话列表 */}
               <div className="flex-1 flex min-h-0 overflow-hidden rounded-b-2xl">
-                <SessionList />
+                {isFullscreen && <SessionList />}
                 <ChatArea />
               </div>
             </div>
