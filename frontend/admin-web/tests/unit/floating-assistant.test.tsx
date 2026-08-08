@@ -39,7 +39,6 @@ vi.mock('@/store/chat', () => {
 // Mock chat components
 vi.mock('@/components/chat/SessionList', () => ({ default: () => <div data-testid="session-list">SessionList</div> }))
 vi.mock('@/components/chat/ChatArea', () => ({ default: () => <div data-testid="chat-area">ChatArea</div> }))
-vi.mock('@/components/chat/SessionInsight', () => ({ default: () => <div data-testid="session-insight">SessionInsight</div> }))
 
 import FloatingAssistant from '@/components/ai-assistant/FloatingAssistant'
 
@@ -57,17 +56,16 @@ describe('FloatingAssistant', () => {
     expect(screen.queryByText('米宝 · 智能助手')).not.toBeInTheDocument()
   })
 
-  it('点击 FAB 打开面板，显示三栏布局', () => {
+  it('点击 FAB 打开面板，显示两栏布局', () => {
     render(<FloatingAssistant />)
 
     fireEvent.click(screen.getByTitle('打开米宝'))
 
     // 面板标题可见
     expect(screen.getByText('米宝 · 智能助手')).toBeInTheDocument()
-    // 三栏布局可见
+    // 两栏布局可见（SessionInsight 已在 ChatArea 内部作为抽屉）
     expect(screen.getByTestId('session-list')).toBeInTheDocument()
     expect(screen.getByTestId('chat-area')).toBeInTheDocument()
-    expect(screen.getByTestId('session-insight')).toBeInTheDocument()
     // FAB 在面板打开时隐藏
     expect(screen.queryByTitle('打开米宝')).not.toBeInTheDocument()
   })

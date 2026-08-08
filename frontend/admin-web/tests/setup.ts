@@ -2,6 +2,24 @@ import '@testing-library/jest-dom'
 import { vi, afterEach } from 'vitest'
 import { cleanup } from '@testing-library/react'
 
+// Node 26 的 experimental localStorage 需 --localstorage-file flag，jsdom 下不可用。
+// 提供最小 localStorage stub，保证直接调用 localStorage 的测试（含 store persist）可用。
+if (typeof globalThis.localStorage === 'undefined') {
+  const storageMap = new Map<string, string>()
+  const storage: Storage = {
+    get length() { return storageMap.size },
+    clear: () => storageMap.clear(),
+    getItem: (key: string) => (storageMap.has(key) ? storageMap.get(key)! : null),
+    key: (index: number) => Array.from(storageMap.keys())[index] ?? null,
+    removeItem: (key: string) => { storageMap.delete(key) },
+    setItem: (key: string, value: string) => { storageMap.set(key, value) },
+  }
+  Object.defineProperty(globalThis, 'localStorage', { value: storage, writable: true, configurable: true })
+  if (typeof window !== 'undefined') {
+    Object.defineProperty(window, 'localStorage', { value: storage, writable: true, configurable: true })
+  }
+}
+
 // 每个测试后自动清理 DOM
 afterEach(() => {
   cleanup()

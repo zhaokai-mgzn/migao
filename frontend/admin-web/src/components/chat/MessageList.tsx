@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef, useCallback, useMemo } from 'react'
 import {
   Bot,
   User,
@@ -33,6 +33,35 @@ export default function MessageList() {
   // 自动滚动到底部
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
+
+  // 时间分组（钉钉风格）：相邻消息时间差 > 5 分钟即插入时间分隔线
+  // 必须在任何条件 return 之前计算，避免 hook 数量变化
+  const groupedMessages = useMemo(() => {
+    const groups: { date: string | null; messages: ChatMessage[] }[] = []
+    for (const msg of messages) {
+      const msgDate = msg.created_at || null
+      const last = groups[groups.length - 1]
+
+      // 无时间戳的消息归入现有组末尾（不新开组）
+      if (!msgDate) {
+        if (last) {
+          last.messages.push(msg)
+        } else {
+          groups.push({ date: null, messages: [msg] })
+        }
+        continue
+      }
+
+      const needsNewGroup =
+        !last || !last.date || dayjs(msgDate).diff(dayjs(last.date), 'minute') > 5
+      if (needsNewGroup) {
+        groups.push({ date: msgDate, messages: [msg] })
+      } else {
+        last.messages.push(msg)
+      }
+    }
+    return groups
   }, [messages])
 
   if (!currentSessionId) {
@@ -77,11 +106,33 @@ export default function MessageList() {
   return (
     <div ref={containerRef} className="flex-1 overflow-y-auto px-4 py-4">
       <div className="w-full space-y-4">
-        {messages.map((message) => (
-          <MessageBubble key={message.id} message={message} />
+        {groupedMessages.map((group, gi) => (
+          <div key={gi} className="space-y-4">
+            {group.date && <TimeDivider date={group.date} />}
+            {group.messages.map((message) => (
+              <MessageBubble key={message.id} message={message} />
+            ))}
+          </div>
         ))}
         <div ref={messagesEndRef} />
       </div>
+    </div>
+  )
+}
+
+/** 时间分隔线 — 相邻消息间隔超过 5 分钟时插入 */
+function TimeDivider({ date }: { date: string }) {
+  const d = dayjs(date)
+  const isToday = dayjs().isSame(d, 'day')
+  const label = isToday
+    ? `今天 ${d.format('HH:mm')}`
+    : d.format('YYYY年M月D日 HH:mm')
+
+  return (
+    <div className="flex items-center justify-center py-1">
+      <span className="text-[11px] text-gray-400 bg-gray-100/80 px-3 py-0.5 rounded-full">
+        {label}
+      </span>
     </div>
   )
 }
@@ -102,21 +153,21 @@ function MessageBubble({ message }: { message: ChatMessage }) {
 
   return (
     <div className={cn('flex gap-3', isUser ? 'justify-end' : 'justify-start')}>
-      {/* AI 头像 */}
+      {/* AI 头像 — 品牌渐变圆底 */}
       {isAI && (
-        <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center flex-shrink-0 mt-0.5">
-          <Bot className="w-5 h-5 text-primary-600" />
+        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center flex-shrink-0 mt-0.5 shadow-sm">
+          <Bot className="w-4 h-4 text-white" />
         </div>
       )}
 
       <div className={cn('flex flex-col max-w-[70%]', isUser ? 'items-end' : 'items-start')}>
-        {/* 消息气泡 */}
+        {/* 消息气泡 — 用户品牌渐变右对齐，AI 白底柔和边框左对齐 */}
         <div
           className={cn(
             'rounded-2xl px-4 py-2.5',
             isUser
-              ? 'bg-primary-600 text-white rounded-br-md'
-              : 'bg-white border border-gray-200 text-gray-800 rounded-bl-md shadow-sm'
+              ? 'bg-gradient-to-br from-primary-500 to-primary-600 text-white rounded-tr-md shadow-sm'
+              : 'bg-white border border-gray-100 text-gray-800 rounded-tl-md shadow-[0_1px_2px_rgba(0,0,0,0.04)]'
           )}
         >
           {isAI ? (
@@ -181,7 +232,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
                     const { sendMessage } = useChatStore.getState()
                     sendMessage(suggestion)
                   }}
-                  className="block w-full text-left px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-primary-50 to-primary-100 border border-primary-200 hover:from-primary-100 hover:to-primary-200 transition-colors text-xs text-primary-700 break-words line-clamp-2"
+                  className="block w-full text-left px-2.5 py-1.5 rounded-lg border border-dashed border-gray-300 hover:border-primary-300 hover:bg-primary-50/50 transition-colors text-xs text-gray-600 hover:text-primary-700 break-words line-clamp-2"
                 >
                   {suggestion}
                 </button>
@@ -192,16 +243,16 @@ function MessageBubble({ message }: { message: ChatMessage }) {
 
         {/* 时间戳 */}
         {message.created_at && (
-          <span className="text-[10px] text-gray-400 mt-1 px-1">
+          <span className="text-[10px] text-gray-400/70 mt-1 px-1">
             {dayjs(message.created_at).format('HH:mm')}
           </span>
         )}
       </div>
 
-      {/* 用户头像 */}
+      {/* 用户头像 — 中性灰底 */}
       {isUser && (
-        <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center flex-shrink-0 mt-0.5">
-          <User className="w-5 h-5 text-gray-600" />
+        <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+          <User className="w-4 h-4 text-gray-500" />
         </div>
       )}
     </div>
@@ -287,7 +338,7 @@ function AIMessageContent({ message }: { message: ChatMessage }) {
       {!message.isStreaming && (
         <button
           onClick={handleCopy}
-          className="absolute top-0 right-0 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600"
+          className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-md bg-white/90 border border-gray-100 shadow-sm text-gray-400 hover:text-gray-600 hover:bg-white"
           title="复制回复内容"
         >
           {copied ? (

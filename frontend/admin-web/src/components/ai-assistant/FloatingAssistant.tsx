@@ -6,7 +6,6 @@ import { cn } from '@/lib/utils'
 import { useChatStore } from '@/store/chat'
 import SessionList from '@/components/chat/SessionList'
 import ChatArea from '@/components/chat/ChatArea'
-import SessionInsight from '@/components/chat/SessionInsight'
 import MibaoChatPanel from '@/components/business/MibaoChatPanel'
 
 // 最小化浮窗尺寸
@@ -187,11 +186,10 @@ export default function FloatingAssistant() {
                 </div>
               </div>
 
-              {/* 聊天内容 — 复用全屏会话模式布局 */}
+              {/* 聊天内容 — 复用全屏会话模式布局（SessionInsight 已在 ChatArea 内部作为抽屉） */}
               <div className="flex-1 flex min-h-0 overflow-hidden rounded-b-2xl">
                 <SessionList />
                 <ChatArea />
-                <SessionInsight />
               </div>
             </div>
           </MibaoChatPanel>

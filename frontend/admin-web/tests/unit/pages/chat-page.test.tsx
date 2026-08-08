@@ -38,11 +38,12 @@ import ChatPage from '@/app/(dashboard)/chat/page'
 describe('ChatPage', () => {
   beforeEach(() => { vi.clearAllMocks(); localStorage.clear(); Element.prototype.scrollIntoView = vi.fn() })
 
-  it('renders three-column layout', () => {
+  it('renders two-column layout (session list + chat area)', () => {
     render(<ChatPage />)
     expect(screen.getByTestId('session-list')).toBeInTheDocument()
     expect(screen.getByTestId('chat-area')).toBeInTheDocument()
-    expect(screen.getByTestId('session-insight')).toBeInTheDocument()
+    // SessionInsight 已改为 ChatArea 内部抽屉，不再作为页面第三栏直接渲染
+    expect(screen.queryByTestId('session-insight')).not.toBeInTheDocument()
   })
 
   it('renders resize handle from MibaoChatPanel', () => {

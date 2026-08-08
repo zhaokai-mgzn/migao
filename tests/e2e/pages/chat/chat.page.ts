@@ -12,10 +12,14 @@ export class ChatPage extends BasePage {
   readonly imageUploadBtn: Locator
   readonly customerPanel: Locator
   readonly quickActions: Locator
+  // 洞察抽屉（SessionInsight 抽屉化后）
+  readonly insightDrawer: Locator
+  readonly insightToggleBtn: Locator
+  readonly insightOverlay: Locator
 
   constructor(page: Page) {
     super(page)
-    this.sessionList = page.locator('.w-60.bg-white.border-r')
+    this.sessionList = page.locator('.w-64.bg-white.border-r')
     this.createSessionBtn = page.getByRole('button', { name: /新建对话/ })
     this.sessionSearchInput = page.locator('input[placeholder="搜索会话..."]')
     this.messageList = page.locator('.flex-1.overflow-y-auto').first()
@@ -26,6 +30,9 @@ export class ChatPage extends BasePage {
     this.imageUploadBtn = page.locator('button').filter({ has: page.locator('svg.lucide-image-plus') })
     this.customerPanel = page.locator('.w-\\[280px\\]')
     this.quickActions = page.locator('text=快捷操作').first()
+    this.insightDrawer = page.locator('[data-testid="session-insight-drawer"]')
+    this.insightToggleBtn = page.locator('[data-testid="insight-toggle-btn"]')
+    this.insightOverlay = page.locator('[data-testid="session-insight-overlay"]')
   }
 
   async goto(): Promise<void> {

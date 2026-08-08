@@ -5,7 +5,6 @@ import { useSearchParams } from 'next/navigation'
 import { useChatStore } from '@/store/chat'
 import SessionList from '@/components/chat/SessionList'
 import ChatArea from '@/components/chat/ChatArea'
-import SessionInsight from '@/components/chat/SessionInsight'
 import MibaoChatPanel from '@/components/business/MibaoChatPanel'
 
 /** 监听 URL 中的 session_id 并选中对应会话 */
@@ -37,9 +36,9 @@ export default function ChatPage() {
       <Suspense fallback={null}>
         <SessionFromQuery />
       </Suspense>
+      {/* 左中两栏布局 — SessionInsight 已在 ChatArea 内部作为抽屉 */}
       <SessionList />
       <ChatArea />
-      <SessionInsight />
     </MibaoChatPanel>
   )
 }

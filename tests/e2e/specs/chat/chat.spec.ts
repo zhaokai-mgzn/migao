@@ -125,8 +125,8 @@ test.describe('聊天 — 基础发送与接收', () => {
       await chatPage.messageInput.fill('你好')
       await chatPage.sendBtn.click()
 
-      // 等待 AI 回复气泡出现
-      await expect(page.locator('.bg-white.border.border-gray-200').first()).toBeVisible({ timeout: 10_000 })
+      // 等待 AI 回复气泡出现（AI 气泡样式：白底 + gray-100 边框）
+      await expect(page.locator('.bg-white.border.border-gray-100').first()).toBeVisible({ timeout: 10_000 })
     })
 
     test('发送消息后输入框应清空', async ({ page }) => {
@@ -266,5 +266,38 @@ test.describe('聊天 — 错误处理', () => {
     // 输入框不应清空（发送失败）
     const inputValue = await chatPage.messageInput.inputValue()
     expect(inputValue.length).toBeGreaterThan(0)
+  })
+})
+
+test.describe('聊天 — 洞察抽屉', () => {
+  let chatPage: ChatPage
+
+  test.beforeEach(async ({ page }) => {
+    chatPage = new ChatPage(page)
+    await setupChatMocks(page)
+
+    await chatPage.goto()
+    await chatPage.waitForAuth()
+    await expect(chatPage.messageInput).toBeVisible({ timeout: 10_000 })
+  })
+
+  test('默认状态下洞察抽屉收起', async () => {
+    await expect(chatPage.insightDrawer).toBeHidden()
+    await expect(chatPage.insightOverlay).not.toBeVisible()
+  })
+
+  test('点击洞察按钮展开抽屉', async ({ page }) => {
+    await chatPage.insightToggleBtn.click()
+    await expect(chatPage.insightDrawer).toBeVisible()
+    await expect(page.getByText('会话洞察')).toBeVisible()
+  })
+
+  test('点击遮罩关闭抽屉', async ({ page }) => {
+    await chatPage.insightToggleBtn.click()
+    await expect(chatPage.insightDrawer).toBeVisible()
+
+    await chatPage.insightOverlay.click({ position: { x: 10, y: 10 } })
+    await expect(chatPage.insightDrawer).toBeHidden()
+    await expect(chatPage.insightOverlay).not.toBeVisible()
   })
 })

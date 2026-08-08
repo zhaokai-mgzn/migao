@@ -67,7 +67,7 @@ export default function SessionList() {
 
 
   return (
-    <div className="w-60 bg-white border-r border-gray-200 flex flex-col h-full flex-shrink-0">
+    <div className="w-64 bg-white border-r border-gray-200 flex flex-col h-full flex-shrink-0">
       {/* 新建会话 */}
       <div className="p-3 border-b border-gray-100">
         <button
@@ -192,12 +192,16 @@ function SessionItem({
     <div
       onClick={onSelect}
       className={cn(
-        'group relative mx-1.5 mb-0.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors',
+        'group relative mx-1 mb-0.5 px-3 py-2 rounded-lg cursor-pointer transition-colors',
         isActive
-          ? 'bg-primary-50 border border-primary-200'
-          : 'hover:bg-gray-50'
+          ? 'bg-primary-50/80 border border-primary-200/60'
+          : 'hover:bg-gray-50/80'
       )}
     >
+      {/* 选中态左侧色条（钉钉风格） */}
+      {isActive && (
+        <div className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-primary-500" />
+      )}
       <div className="flex items-start gap-2.5">
         {/* 状态指示器 */}
         <div className="mt-1.5 flex-shrink-0">

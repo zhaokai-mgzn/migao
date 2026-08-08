@@ -64,24 +64,24 @@ export default function MibaoChatPanel({
         {children}
       </div>
 
-      {/* 拖拽手柄 — 底部（垂直缩放） */}
+      {/* 拖拽手柄 — 底部（垂直缩放），默认透明、hover 时轻提示 */}
       <div
         data-testid="chat-panel-resize-handle"
-        className="h-2 flex-shrink-0 flex items-center justify-center bg-gray-100 hover:bg-blue-100 border-t border-gray-200 transition-colors select-none"
+        className="h-2 flex-shrink-0 flex items-center justify-center bg-transparent hover:bg-gray-100/70 transition-colors select-none group"
         style={{ cursor: 'ns-resize' }}
         {...heightHandleProps}
       >
-        <GripHorizontal className="w-5 h-3 text-gray-400" />
+        <GripHorizontal className="w-5 h-3 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" />
       </div>
 
-      {/* 拖拽手柄 — 右侧（水平缩放） */}
+      {/* 拖拽手柄 — 右侧（水平缩放），默认透明、hover 时轻提示 */}
       <div
         data-testid="chat-panel-resize-handle-horizontal"
-        className="absolute top-0 right-0 bottom-2 w-2 flex items-center justify-center bg-gray-100 hover:bg-blue-100 border-l border-gray-200 transition-colors select-none"
+        className="absolute top-0 right-0 bottom-2 w-2 flex items-center justify-center bg-transparent hover:bg-gray-100/70 transition-colors select-none group"
         style={{ cursor: 'ew-resize' }}
         {...widthHandleProps}
       >
-        <GripVertical className="w-3 h-5 text-gray-400" />
+        <GripVertical className="w-3 h-5 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" />
       </div>
     </div>
   )
