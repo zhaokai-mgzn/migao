@@ -469,6 +469,33 @@ async def _auto_resolve_ids(tool, tool_args: dict, state: dict) -> dict:
     return resolved
 
 
+# 明确确认的短词（用户点击 confirm 卡片后回传的 confirmValue 或口头确认）
+_CONFIRM_EXACT = {
+    "确认", "确定", "好的", "可以", "同意", "确认无误", "是", "行", "没问题",
+    "ok", "yes", "confirm", "confirmed", "确认操作", "确定操作",
+}
+_CONFIRM_SUBSTR = ("确认", "确定", "同意", "confirm")
+
+
+def _is_explicit_confirmation(text: str) -> bool:
+    """判断用户消息是否为对写操作的明确确认。
+
+    用于破坏性写操作（destructive=True）的代码层兜底：只有当前轮用户消息
+    读起来像确认时才允许执行，否则拦截并要求 LLM 先展示确认卡片。
+    防的是提示注入（RAG 文档/模型幻觉）诱导 LLM 直接调用不可逆写工具——
+    注入内容存在于 SystemMessage/ToolMessage，而非用户消息本身，故此检查有效。
+    """
+    t = (text or "").strip()
+    if not t:
+        return False
+    if t.lower() in _CONFIRM_EXACT:
+        return True
+    # 含确认词且长度较短（confirm 卡片回传的 confirmValue，如"确认取消订单123"）
+    if len(t) <= 24 and any(k in t for k in _CONFIRM_SUBSTR):
+        return True
+    return False
+
+
 async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -> tuple:
     """统一 Tool 执行入口 — normalize + cache + execute + error handling.
 
@@ -494,15 +521,18 @@ async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -
     cache_key = f"{tenant_id}:{tool_name}:{json.dumps(tool_args, sort_keys=True, default=str)}"
 
     # 2. 缓存检查（带 asyncio.Lock 防止并发竞态）
+    # ⚠️ 仅缓存只读工具：写操作（read_only=False）绝不允许缓存，
+    # 否则 60s 内重复的非幂等写（如重复下单/售后）会被静默吞掉。
     if not hasattr(_execute_tool_safe, '_cache'):
         _execute_tool_safe._cache = {}
         _execute_tool_safe._cache_lock = asyncio.Lock()
-    async with _execute_tool_safe._cache_lock:
-        if cache_key in _execute_tool_safe._cache:
-            cached = _execute_tool_safe._cache[cache_key]
-            if time.time() - cached["ts"] < 60:
-                logger.info(f"[tool-cache] Hit {tool_name}")
-                return cached["result"], cached["dict"]
+    if tool.read_only:
+        async with _execute_tool_safe._cache_lock:
+            if cache_key in _execute_tool_safe._cache:
+                cached = _execute_tool_safe._cache[cache_key]
+                if time.time() - cached["ts"] < 60:
+                    logger.info(f"[tool-cache] Hit {tool_name}")
+                    return cached["result"], cached["dict"]
 
     # 3. 执行 + 超时
     try:
@@ -536,8 +566,8 @@ async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -
     }
     result_str = json.dumps(result_dict, ensure_ascii=False, default=str)
 
-    # 5. 缓存（带锁）
-    if result.success:
+    # 5. 缓存（带锁）— 仅只读工具
+    if result.success and tool.read_only:
         async with _execute_tool_safe._cache_lock:
             _execute_tool_safe._cache[cache_key] = {"result": result_str, "dict": result_dict, "ts": time.time()}
             if len(_execute_tool_safe._cache) > 100:
@@ -958,6 +988,20 @@ async def execute_skill(
                     if tool is None:
                         logger.warning(f"[{skill_name}] Tool not found: {tool_name} | session={session_id}")
                         return tool_call, json.dumps({"success": False, "error": "tool_not_found", "message": f"工具 {tool_name} 不可用"}, ensure_ascii=False), {"success": False}
+                    # 破坏性写操作：必须经用户明确确认（代码层兜底，防提示注入触发不可逆操作）
+                    if getattr(tool, "destructive", False) and not _is_explicit_confirmation(last_user_msg):
+                        logger.warning(
+                            f"[{skill_name}] 拦截未确认的破坏性操作 {tool_name} | session={session_id} "
+                            f"last_msg={last_user_msg[:30]!r}"
+                        )
+                        msg = (
+                            f"工具 {tool_name} 是破坏性操作（不可逆），必须先向用户展示确认卡片并取得明确确认。"
+                            f"请调用 interact（component=confirm）展示操作预览，等用户点击确认后再执行。"
+                        )
+                        return tool_call, json.dumps(
+                            {"success": False, "error": "confirmation_required", "message": msg},
+                            ensure_ascii=False,
+                        ), {"success": False, "error": "confirmation_required"}
                     result_str, result_dict = await _execute_tool_safe(tool, args, tool_context, state)
                     if not result_dict.get("success") and result_dict.get("suggestion"):
                         corrected = await _self_correct_retry(tool, args, tool_context, skill_name, result_dict, session_id, tenant_id, state)
