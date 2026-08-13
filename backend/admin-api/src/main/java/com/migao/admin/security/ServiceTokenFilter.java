@@ -17,6 +17,8 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.List;
 
 /**
@@ -135,9 +137,10 @@ public class ServiceTokenFilter extends OncePerRequestFilter {
             return false;
         }
 
-        // 简单的字符串比较验证
-        // 生产环境建议使用更安全的验证方式，如 HMAC 签名
-        return serviceTokenSecret.equals(token);
+        // 恒时比较（MessageDigest.isEqual），防止时序侧信道泄露 token 长度/前缀
+        return MessageDigest.isEqual(
+                serviceTokenSecret.getBytes(StandardCharsets.UTF_8),
+                token.getBytes(StandardCharsets.UTF_8));
     }
 
     @Override

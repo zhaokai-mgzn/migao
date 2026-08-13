@@ -11,8 +11,11 @@ import com.migao.admin.mapper.OrderLogisticsMapper;
 import com.migao.admin.mapper.OrderMapper;
 import com.migao.admin.mapper.ProductMapper;
 import com.migao.admin.mapper.ProductSkuMapper;
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -63,6 +66,12 @@ class OrderServiceTest {
     @BeforeEach
     void setUp() {
         TenantContext.setTenantId(1L);
+
+        // 初始化 MyBatis-Plus 实体 lambda 缓存，使 LambdaUpdateWrapper 的 Order::getId 等方法引用可解析
+        MybatisConfiguration conf = new MybatisConfiguration();
+        MapperBuilderAssistant assistant = new MapperBuilderAssistant(conf, "");
+        TableInfoHelper.initTableInfo(assistant, Order.class);
+        TableInfoHelper.initTableInfo(assistant, OrderItem.class);
 
         testOrder = Order.builder()
                 .id("order-001")
@@ -321,31 +330,33 @@ class OrderServiceTest {
     // ======================== 更新订单状态测试 ========================
 
     @Test
-    @DisplayName("更新订单状态 - pending -> confirmed 成功")
+    @DisplayName("更新订单状态 - pending -> confirmed 触发扣减库存（委托 confirmPayment）")
     void updateOrderStatus_PendingToConfirmed() {
         // given
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
-        when(orderMapper.updateById(any(Order.class))).thenReturn(1);
+        when(orderMapper.update(any(), any())).thenReturn(1);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(testOrderItem));
 
         // when
         orderService.updateOrderStatus("order-001", "confirmed");
 
-        // then
-        verify(orderMapper).updateById(argThat((Order o) -> "confirmed".equals(o.getStatus())));
+        // then: 委托 confirmPayment → 扣减库存/增加销量（此前此路径会跳过副作用）
+        verify(productMapper).increaseSales(eq("prod-001"), eq(2), any(BigDecimal.class));
     }
 
     @Test
-    @DisplayName("更新订单状态 - pending -> cancelled 成功")
+    @DisplayName("更新订单状态 - pending -> cancelled 委托取消，无库存恢复")
     void updateOrderStatus_PendingToCancelled() {
         // given
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
-        when(orderMapper.updateById(any(Order.class))).thenReturn(1);
+        when(orderMapper.update(any(), any())).thenReturn(1);
 
         // when
         orderService.updateOrderStatus("order-001", "cancelled");
 
-        // then
-        verify(orderMapper).updateById(argThat((Order o) -> "cancelled".equals(o.getStatus())));
+        // then: pending 取消不恢复库存
+        verify(orderMapper).update(any(), any());
+        verify(productMapper, never()).decreaseSales(anyString(), anyInt(), any(BigDecimal.class));
     }
 
     @Test
@@ -497,24 +508,22 @@ class OrderServiceTest {
     void confirmPayment_deductsStockAndIncreasesSales() {
         // given
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
-        when(orderMapper.updateById(any(Order.class))).thenReturn(1);
+        when(orderMapper.update(any(), any())).thenReturn(1);
         when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(testOrderItem));
 
         // when
         orderService.confirmPayment("order-001");
 
-        // then
-        verify(orderMapper).updateById(argThat((Order o) -> "confirmed".equals(o.getStatus())));
-        // 商品级：increaseSales 被调用
+        // then: 原子流转 + 商品级 increaseSales
+        verify(orderMapper).update(any(), any());
         verify(productMapper).increaseSales(eq("prod-001"), eq(2), any(BigDecimal.class));
     }
 
     @Test
-    @DisplayName("确认支付 - 非 pending 状态拒绝")
+    @DisplayName("确认支付 - 非 pending 状态拒绝（原子流转返回 0 行）")
     void confirmPayment_rejectsNonPendingStatus() {
-        // given
-        testOrder.setStatus("confirmed");
-        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        // given: 原子条件更新（WHERE status=pending）未命中，返回 0
+        when(orderMapper.update(any(), any())).thenReturn(0);
 
         // when & then
         assertThatThrownBy(() -> orderService.confirmPayment("order-001"))
@@ -530,15 +539,14 @@ class OrderServiceTest {
         // given
         testOrder.setStatus("confirmed");
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
-        when(orderMapper.updateById(any(Order.class))).thenReturn(1);
+        when(orderMapper.update(any(), any())).thenReturn(1);
         when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(testOrderItem));
 
         // when
         orderService.cancelOrder("order-001", "缺货");
 
-        // then
-        verify(orderMapper).updateById(argThat((Order o) ->
-                "cancelled".equals(o.getStatus()) && "缺货".equals(o.getCloseReason())));
+        // then: 原子流转 + 恢复库存
+        verify(orderMapper).update(any(), any());
         verify(productMapper).decreaseSales(eq("prod-001"), eq(2), any(BigDecimal.class));
     }
 
@@ -547,14 +555,13 @@ class OrderServiceTest {
     void cancelOrder_noStockRestore_pendingOrder() {
         // given
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
-        when(orderMapper.updateById(any(Order.class))).thenReturn(1);
+        when(orderMapper.update(any(), any())).thenReturn(1);
 
         // when
         orderService.cancelOrder("order-001", null);
 
-        // then
-        verify(orderMapper).updateById(argThat((Order o) -> "cancelled".equals(o.getStatus())));
-        // pending 订单取消不应调用库存恢复
+        // then: pending 订单取消不应调用库存恢复
+        verify(orderMapper).update(any(), any());
         verify(productMapper, never()).decreaseSales(anyString(), anyInt(), any(BigDecimal.class));
     }
 
@@ -592,15 +599,14 @@ class OrderServiceTest {
         // given
         testOrder.setStatus("confirmed");
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
-        when(orderMapper.updateById(any(Order.class))).thenReturn(1);
+        when(orderMapper.update(any(), any())).thenReturn(1);
         when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(testOrderItem));
 
         // when
         orderService.refundOrder("order-001", null);
 
-        // then
-        verify(orderMapper).updateById(argThat((Order o) ->
-                "cancelled".equals(o.getStatus()) && "退款".equals(o.getCloseReason())));
+        // then: 原子流转 + 恢复库存
+        verify(orderMapper).update(any(), any());
         verify(productMapper).decreaseSales(eq("prod-001"), eq(2), any(BigDecimal.class));
     }
 

@@ -18,6 +18,7 @@ import com.migao.admin.mapper.ProductMapper;
 import com.migao.admin.mapper.ProductSkuMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.RequiredArgsConstructor;
@@ -369,10 +370,38 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
                     String.format("订单状态不允许从 [%s] 变更为 [%s]", currentStatus, status));
         }
 
-        order.setStatus(status);
-        orderMapper.updateById(order);
+        // 统一走带库存/销量副作用的路径，避免与 confirmPayment/cancelOrder 逻辑不一致
+        if ("confirmed".equals(status)) {
+            confirmPayment(id);
+        } else if ("cancelled".equals(status)) {
+            cancelOrder(id, null);
+        } else {
+            // producing/shipped/completed：无库存副作用，原子状态流转
+            int rows = transitionStatusAtomic(id, currentStatus, status, null);
+            if (rows == 0) {
+                throw BusinessException.validationError("订单状态已并发变更，请刷新后重试");
+            }
+        }
 
         log.info("更新订单状态成功: id={}, {} -> {}", id, currentStatus, status);
+    }
+
+    /**
+     * 原子状态流转：仅当订单当前状态为 expectedStatus 时更新为 newStatus。
+     * 用条件 UPDATE（WHERE id=? AND status=expected）替代 select→check→update，
+     * 防止并发下重复扣减/恢复库存（TOCTOU）。
+     *
+     * @return 受影响行数（0 表示订单不存在或状态已并发变更）
+     */
+    private int transitionStatusAtomic(String id, String expectedStatus, String newStatus, String closeReason) {
+        LambdaUpdateWrapper<Order> wrapper = new LambdaUpdateWrapper<>();
+        wrapper.eq(Order::getId, id)
+                .eq(Order::getStatus, expectedStatus)
+                .set(Order::getStatus, newStatus);
+        if (closeReason != null && !closeReason.isBlank()) {
+            wrapper.set(Order::getCloseReason, closeReason);
+        }
+        return orderMapper.update(null, wrapper);
     }
 
     /**
@@ -657,15 +686,11 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      */
     @Transactional(rollbackFor = Exception.class)
     public void confirmPayment(String id) {
-        Order order = orderMapper.selectById(id);
-        if (order == null) {
-            throw BusinessException.notFound("订单");
+        // 原子状态流转：仅 pending → confirmed，防止并发重复扣减库存
+        int rows = transitionStatusAtomic(id, "pending", "confirmed", null);
+        if (rows == 0) {
+            throw BusinessException.validationError("只有待确认状态的订单可以确认支付，订单状态可能已变更");
         }
-        if (!"pending".equals(order.getStatus())) {
-            throw BusinessException.validationError("只有待确认状态的订单可以确认支付");
-        }
-        order.setStatus("confirmed");
-        orderMapper.updateById(order);
 
         // 扣减库存 + 增加销量
         deductStockAndIncreaseSales(id);
@@ -685,22 +710,22 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         if (order == null) {
             throw BusinessException.notFound("订单");
         }
+        String previousStatus = order.getStatus();
         Set<String> cancellableStatuses = Set.of("pending", "confirmed", "producing");
-        if (!cancellableStatuses.contains(order.getStatus())) {
+        if (!cancellableStatuses.contains(previousStatus)) {
             throw BusinessException.validationError("当前状态不允许取消");
         }
-
-        String previousStatus = order.getStatus();
-        order.setStatus("cancelled");
-        if (closeReason != null && !closeReason.isBlank()) {
-            if (closeReason.length() > 500) {
-                throw BusinessException.validationError("关闭原因不能超过 500 个字符");
-            }
-            order.setCloseReason(closeReason);
+        if (closeReason != null && !closeReason.isBlank() && closeReason.length() > 500) {
+            throw BusinessException.validationError("关闭原因不能超过 500 个字符");
         }
-        orderMapper.updateById(order);
 
-        // 已确认的订单被取消时，恢复库存和销量
+        // 原子状态流转（以读取到的 previousStatus 为条件，防止并发重复恢复库存）
+        int rows = transitionStatusAtomic(id, previousStatus, "cancelled", closeReason);
+        if (rows == 0) {
+            throw BusinessException.validationError("订单状态已并发变更，请刷新后重试");
+        }
+
+        // 已确认/生产中的订单被取消时，恢复库存和销量
         if ("confirmed".equals(previousStatus) || "producing".equals(previousStatus)) {
             restoreStockAndDecreaseSales(id);
         }
@@ -717,16 +742,19 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         if (order == null) {
             throw BusinessException.notFound("订单");
         }
+        String previousStatus = order.getStatus();
         Set<String> refundableStatuses = Set.of("confirmed", "producing", "shipped", "completed");
-        if (!refundableStatuses.contains(order.getStatus())) {
+        if (!refundableStatuses.contains(previousStatus)) {
             throw BusinessException.validationError(
-                    "当前状态[" + order.getStatus() + "]不允许退款，仅已确认/生产中/已发货/已完成可退款");
+                    "当前状态[" + previousStatus + "]不允许退款，仅已确认/生产中/已发货/已完成可退款");
         }
 
-        String previousStatus = order.getStatus();
-        order.setStatus("cancelled");
-        order.setCloseReason(refundReason != null && !refundReason.isBlank() ? refundReason : "退款");
-        orderMapper.updateById(order);
+        String reason = refundReason != null && !refundReason.isBlank() ? refundReason : "退款";
+        // 原子状态流转（防止并发重复恢复库存）
+        int rows = transitionStatusAtomic(id, previousStatus, "cancelled", reason);
+        if (rows == 0) {
+            throw BusinessException.validationError("订单状态已并发变更，请刷新后重试");
+        }
 
         // 已确认及以上的订单被退款时，恢复库存和销量
         if (!"pending".equals(previousStatus)) {
