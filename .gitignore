@@ -94,3 +94,11 @@ junshi/archive.py
 .claude/settings.json
 backend/ai-agent-service/coverage.json
 youke/.qoder/
+
+# Skills CLI（npx skills add）— 本地工具脚手架，非项目内容
+.agents/
+.qoder/
+skills-lock.json
+# npx skills 生成的 symlink（非项目自有技能）；项目自有技能需在下方 whitelist
+.claude/skills/*
+!.claude/skills/tdd-iron-law.md

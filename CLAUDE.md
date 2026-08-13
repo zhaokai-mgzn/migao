@@ -2,9 +2,9 @@
 
 > 本文件在每次 Claude Code (cc) 启动时自动加载，定义项目规范和操作约束。
 
-## 🎯 Superpowers 质量体系
+## 🎯 工程技能质量体系
 
-米高项目通过 Superpowers 插件实现 AI 全链路质量闭环。核心技能：`brainstorming`（规划）→ `test-driven-development`（TDD）→ `verification-before-completion`（验证）→ `dispatching-parallel-agents`（并行派遣）。
+米高项目通过 Matt Pocock skills 插件实现 AI 全链路质量闭环（已等价替换原 Superpowers，后者本机从未实际安装）。核心技能：`grill-me`（规划对齐）→ `tdd`（测试驱动）→ `diagnosing-bugs`（诊断）→ `code-review`（审查）。
 
 开发流程：Issue (CONTRACT_JSON) → 军师 DRAFT → Review → TDD → PR → CI Gate → AutoMerge → 验收 → Close。
 详见 [`docs/wiki/Development.md`](docs/wiki/Development.md)。
@@ -16,7 +16,7 @@
 
 ## GitHub 操作规范
 
-**所有 Issue、PR、分支、Label、CI/CD 操作必须遵循 `github-ops` skill 规范。**
+**所有 Issue、PR、分支、Label、CI/CD 操作必须遵循本节 GitHub 操作规范。**
 
 核心铁律：
 - **禁止直接 push 到 `main`**，必须走 PR
@@ -27,13 +27,13 @@
 - 测试失败自动创建 Issue → 自动修复
 - 互不阻塞的任务**并行**派遣
 
-操作前执行 `/github-ops` 加载完整规范。
+操作前遵循本节完整规范。
 
 ## 研发范式：AI-TDD（AI 强制测试驱动开发）
 
 > **⚠️ 本章是铁律中的铁律，违反即视为严重违规。AI 必须严格遵守，不得跳过任何检查点。**
 >
-> **📋 完整铁律详见 Superpowers 插件 `test-driven-development` + `verification-before-completion` 技能 — 含 PR 合并前置条件、E2E 质量要求、违规后果。**
+> **📋 完整铁律详见 Matt Pocock `tdd` + `diagnosing-bugs` 技能 — 含 PR 合并前置条件、E2E 质量要求、违规后果。**
 
 ### AI 行为约束（MVP 收工阶段强制执行）
 
@@ -266,7 +266,7 @@ cd frontend/admin-web && npm run dev
 
 ### 铁律（再次强调）
 
-**所有代码变更必须遵守 Superpowers 插件 `test-driven-development` + `verification-before-completion` 规范，以下为摘要：**
+**所有代码变更必须遵守 Matt Pocock `tdd` + `diagnosing-bugs` 规范（等价替换原 Superpowers），以下为摘要：**
 
 - **禁止**先写代码再补测试 — 必须测试先行
 - **禁止**提交未通过测试的代码到任何分支
@@ -554,89 +554,39 @@ INSERT INTO schema_migrations (version) VALUES ('V6__add_ship_fee_to_orders.sql'
 
 以下 skill 已纳入项目规范，对应场景必须调用：
 
-### 开发框架（写代码时自动遵循）
-
-| Skill | 触发场景 |
-|-------|---------|
-| `/next-best-practices` | 编写或修改 Next.js 前端代码（admin-web） |
-| `/springboot-tdd` | 编写或修改 Java Spring Boot 后端（admin-api） |
-| `/fastapi-templates` | 编写或修改 Python FastAPI 服务（ai-agent-service） |
-
 ### 质量保障（每次代码变更必须遵循）
 
 | Skill | 触发场景 |
 |-------|---------|
-| `/systematic-debugging` | 遇到任何 Bug、测试失败、异常行为时，修复前必须先诊断根因 |
-| `/verification-before-completion` | **声称任务完成前，必须完成 AI-TDD CP-1 ~ CP-7 全部检查点，逐项勾选自检清单并确认输出** |
-| `/security-review` | 涉及认证、用户输入、密钥、API 端点、支付等敏感功能时 |
-| `/code-review-excellence` | PR Review 时，按规范审查代码质量 |
-| `/5-whys-root-cause-analysis` | 生产事故分析、反复出现的问题、用户说"找根因""排查问题"时 |
-
-### 阿里云运维（操作云资源时使用）
-
-| Skill | 触发场景 |
-|-------|---------|
-| `/aliyun-cli-manage` | 通用阿里云 CLI 操作（凭证、Region、API 发现） |
-| `/aliyun-oss-ossutil` | OSS 对象存储操作（前端部署、文件上传） |
-| `/aliyun-sls-log-query` | SLS 日志查询与故障排查 |
-| `/aliyun-dns-cli` | DNS 记录管理（域名解析、CNAME 配置） |
-| `/aliyun-cdn-manage` | CDN 缓存刷新、证书更新、域名管理 |
-| `/aliyun-dashvector-search` | DashVector 向量检索（RAG 知识库操作） |
+| `/diagnosing-bugs` | 遇到任何 Bug、测试失败、异常行为时，修复前必须先诊断根因（等价原 `/systematic-debugging` + `/5-whys-root-cause-analysis`）|
+| `/tdd` | **声称任务完成前，必须完成 AI-TDD CP-1 ~ CP-7 全部检查点，逐项勾选自检清单并确认输出**（等价原 `/verification-before-completion`）|
+| `/code-review` | PR Review 时，按规范审查代码质量（等价原 `/code-review-excellence`）|
 
 ### 项目流程
 
 | Skill | 触发场景 |
 |-------|---------|
-| `/github-ops` | 所有 GitHub 操作（Issue、PR、分支、Label、CI/CD） |
-| `/triage` | Issue 分类、优先级评估、准备开发任务 |
-| `/writing-plans` | 多步骤功能实现前的计划编写 |
+| `/triage` | Issue 分类、优先级评估、准备开发任务（Matt Pocock `triage`）|
+| `/to-spec` + `/to-tickets` | 多步骤功能实现前的计划编写与工单拆分（等价原 `/writing-plans`）|
 
 ## 已安装插件（Plugin）
 
-以下插件已安装并启用，自动生效无需手动调用：
+以下为当前实际安装并启用的插件（非必需插件不在此声明）：
 
-### Superpowers（核心开发规范）
+### Matt Pocock skills（核心工程技能）
 
-本项目遵循 Superpowers 插件的质量闭环体系，session 启动时自动加载。核心技能：
+本项目通过 Matt Pocock skills 插件（`mattpocock-skills@mattpocock`，已安装）实现质量闭环。原 Superpowers 插件本机从未安装，已等价替换。技能映射：
 
-| 技能 | 作用 |
-|------|------|
-| `brainstorming` | 编码前自动触发规划讨论 |
-| `test-driven-development` | TDD Red→Green→Refactor 循环 |
-| `verification-before-completion` | 完成前强制验证 |
-| `subagent-driven-development` | 多 Agent 并行开发调度 |
-| `dispatching-parallel-agents` | 并行任务派遣 |
-| `executing-plans` | 按计划逐步执行 |
-| `writing-plans` | 多步骤功能计划编写 |
-| `requesting-code-review` / `receiving-code-review` | 代码审查流程 |
-| `systematic-debugging` | 调试根因分析 |
-| `finishing-a-development-branch` | 分支收尾标准化 |
+| Matt Pocock 技能 | 作用 | 等价原 Superpowers |
+|------|------|------|
+| `tdd` | TDD Red→Green→Refactor 循环 | `test-driven-development` |
+| `diagnosing-bugs` | 调试根因分析 | `systematic-debugging` / `5-whys-root-cause-analysis` |
+| `code-review` | 代码审查（双轴：规范 + 规格）| `requesting-code-review` / `receiving-code-review` |
+| `grill-me` / `grill-with-docs` | 编码前规划对齐 | `brainstorming` |
+| `to-spec` / `to-tickets` | 计划/规格/工单拆分 | `writing-plans` |
+| `implement` | 按计划逐步实现 | `executing-plans` |
+| `wayfinder` | 大块工作拆分与并行调度 | `dispatching-parallel-agents` / `subagent-driven-development` |
+| `handoff` | 分支收尾与交接 | `finishing-a-development-branch` |
+| `triage` | Issue 分类与优先级评估 | `triage` |
 
-### LSP 语言服务器（提供代码智能）
-
-| 插件 | 覆盖模块 | 能力 |
-|------|---------|------|
-| `typescript-lsp` | admin-web (Next.js/TS) | 类型检查、跳转定义、引用查找、错误诊断 |
-| `jdtls-lsp` | admin-api (Java/Spring Boot) | 代码补全、重构辅助、类型推导 |
-| `pyright-lsp` | ai-agent-service (Python/FastAPI) | 类型检查、LangChain 类型推导 |
-
-### 安全与质量（自动运行）
-
-| 插件 | 作用 |
-|------|------|
-| `security-guidance` | 三层安全防线：① 写代码时即时模式警告 ② 回合结束 diff 安全审查 ③ git commit 时跨文件漏洞追踪 |
-| `code-review` | `/code-review` — 4 个并行 Agent 自动 Review PR（CLAUDE.md 合规 + Bug 扫描 + Git 历史分析） |
-
-### 基础设施与测试
-
-| 插件 | 作用 |
-|------|------|
-| `terraform` | Terraform IaC 智能辅助（HCL 补全、plan 分析、drift 检测） |
-| `playwright` | 浏览器自动化 MCP，用于 admin-web 前端调试和 E2E 测试 |
-
-### 开发效率
-
-| 插件 | 作用 |
-|------|------|
-| `commit-commands` | `/commit` — 自动生成符合规范的 commit message 并提交 |
-| `claude-md-management` | `/revise-claude-md` — 会话结束后自动更新 CLAUDE.md 捕获学习要点 |
+> 说明：`verification-before-completion`（完成前自检）无独立等价技能，其验证职责已并入 `tdd` 的验证环节 + 本文档 CP-7 自检清单。项目自有规则（CP-1~CP-7、QA Growth Gate、业务真值反模式、GitHub 操作规范）不受影响，继续生效。
