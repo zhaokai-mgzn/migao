@@ -93,6 +93,7 @@ jobs:
         run: |
           IMAGE_FULL=${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.IMAGE_TAG }}
           docker buildx build \
+            --provenance=false \
             --build-arg PIP_INDEX_URL=https://pypi.org/simple/ \
             --cache-from type=gha \
             --cache-to type=gha,mode=max \
