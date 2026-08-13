@@ -40,6 +40,11 @@ jobs:
           if [ -z "$ISSUE_NUM" ]; then echo "No linked issue, skip"; exit 0; fi
           AI_DRAFT=$(gh issue view "$ISSUE_NUM" --json labels --jq '.labels[].name' | grep -c '^ai-draft$' || echo "0")
           if [ "$AI_DRAFT" -gt 0 ]; then echo "✅ ai-draft issue，跳过二郎神验收"; exit 0; fi
+          ISSUE_LABELS=$(gh issue view "$ISSUE_NUM" --json labels --jq '.labels[].name')
+          if echo "$ISSUE_LABELS" | grep -qE '^type/(infra|chore|docs|meta|refactor)$'; then
+            echo "⏭️  工程类 issue（type/infra|chore|docs|meta|refactor），无业务真值，跳过军师验收 reopen"
+            exit 0
+          fi
           cat > /tmp/verify.md << COMMENT
           ## 🤖 军师验收触发
           PR [#$PR_NUMBER]($PR_URL) 已合入 \`main\`。
