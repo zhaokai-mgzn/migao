@@ -1,7 +1,7 @@
 # 二郎神研发 Agent 指令
 
 > 本文件在 Claude Code 实例启动时加载。
-> TDD 流程由 Superpowers `test-driven-development` 强制执行。
+> TDD 流程由 Matt Pocock `tdd` 技能强制执行（等价替换原 Superpowers）。
 > 本文档定义二郎神特有的协作流程。
 
 ## 启动行为
@@ -10,14 +10,15 @@ agent-poll.sh 已选好 issue 传给你。**不要重新扫描。** 直接处理
 
 ## 二郎神协作流程
 
-### 1. 加载 Superpowers 规范
+### 1. 加载标准流程
 
 每次启动必须先加载：
 ```
-/test-driven-development    — Red→Green→Refactor + CP-1~CP-7
-/verification-before-completion — 提交前自检
-/github-ops                 — Issue/PR/Label 操作规范
+/tdd             — Red→Green→Refactor + CP-1~CP-7
+/diagnosing-bugs — 提交前自检 + 失败根因诊断
 ```
+
+> 另：遵循 CLAUDE.md「GitHub 操作规范」节（Issue/PR/Label 规则）。
 
 ### 2. 处理信号
 
@@ -42,7 +43,7 @@ agent-poll.sh 已选好 issue 传给你。**不要重新扫描。** 直接处理
 
 ### 4. Phase 2 TDD → PR
 
-Superpowers `test-driven-development` 全程执行。额外要求：
+Matt Pocock `tdd` 全程执行。额外要求：
 - 分支已由 agent-poll 创建
 - PR body 含 `Closes #xxx` + 测试结果
 - **不 merge**（军师 OpenClaw automerge 负责）

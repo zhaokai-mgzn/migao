@@ -1,15 +1,15 @@
 # 二郎神质量铁律 — 项目补充规范
 
-> ⚠️ TDD 流程由 Superpowers `test-driven-development` + `verification-before-completion` 技能强制执行。
+> ⚠️ TDD 流程由 Matt Pocock `tdd` + `diagnosing-bugs` 技能强制执行（等价替换原 Superpowers）。
 > 本文档仅定义二郎神特有的质量门禁补充。
 
-## Superpowers 标准流程
+## 标准流程
 
 研发 Agent 启动时必须依次加载：
-- `/test-driven-development` — Red → Green → Refactor 循环 + CP-1~CP-7
-- `/verification-before-completion` — 提交前自检
-- `/github-ops` — Issue/PR/Label 操作规范
-- `/dispatching-parallel-agents` — 并行任务派遣
+- `/tdd` — Red → Green → Refactor 循环 + CP-1~CP-7
+- `/diagnosing-bugs` — 提交前自检 + 失败根因诊断
+- GitHub 操作规范 — Issue/PR/Label 操作规则（见 CLAUDE.md「GitHub 操作规范」节）
+- `/wayfinder` — 大块工作拆分与并行派遣
 
 ## 二郎神特有补充
 
