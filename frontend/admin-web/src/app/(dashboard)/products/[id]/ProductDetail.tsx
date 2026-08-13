@@ -9,6 +9,7 @@ import { productApi } from '@/lib/api'
 import request from '@/lib/request'
 import { useRouteId } from '@/lib/use-route-id'
 import { resolveImageUrl } from '@/lib/utils'
+import { sanitizeHtml } from '@/lib/sanitize-html'
 
 /** 行内编辑 SKU 价格 */
 function SkuPriceCell({ productId, sku, onUpdated }: {
@@ -90,17 +91,6 @@ const STOCK_DEDUCTION_LABELS: Record<string, string> = {
   on_place: '拍下减库存',
   on_payment: '付款减库存',
   on_pay: '付款减库存',
-}
-
-/** 基础 HTML 消毒：移除 script 标签和事件处理器，防 XSS */
-function sanitizeHtml(html: string): string {
-  return html
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-    .replace(/<script\b[^>]*\/>/gi, '')
-    .replace(/\son\w+\s*=\s*"[^"]*"/gi, '')
-    .replace(/\son\w+\s*=\s*'[^']*'/gi, '')
-    .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '')
-    .replace(/javascript\s*:/gi, '')
 }
 
 export default function ProductDetailPage() {
