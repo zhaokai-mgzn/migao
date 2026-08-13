@@ -2,8 +2,7 @@ name: Mini-App CI
 
 on:
   pull_request:
-    paths:
-      - 'frontend/mini-app/**'
+    branches: [main]
   push:
     branches:
       - main
