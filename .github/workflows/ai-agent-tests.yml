@@ -1,0 +1,56 @@
+name: AI Agent Service Unit Tests
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  # ============ ai-agent-service 单测全量（匹配分支保护 required check）============
+  # job name 必须精确为 "ai-agent-service unit tests"，否则分支保护的
+  # required_status_checks 无法识别，PR 会一直 BLOCKED。
+  ai-agent-service-test:
+    name: ai-agent-service unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/ai-agent-service/requirements.txt
+
+      - name: Install dependencies
+        working-directory: backend/ai-agent-service
+        run: pip install -r requirements.txt -q
+
+      - name: Run unit tests
+        working-directory: backend/ai-agent-service
+        env:
+          # LLM / 视觉 / 向量库占位：单测 mock 外部依赖，ci-dummy 兜底避免 secrets 依赖
+          PRIMARY_API_KEY: ${{ secrets.DEEPSEEK_API_KEY || 'ci-dummy' }}
+          PRIMARY_BASE_URL: https://api.deepseek.com
+          PRIMARY_MODEL: deepseek-v4-pro
+          VISION_API_KEY: ${{ secrets.MINIMAX_API_KEY || 'ci-dummy' }}
+          VISION_BASE_URL: https://api.minimaxi.com/v1
+          VISION_MODEL: MiniMax-M3
+          ASR_API_KEY: ${{ secrets.ASR_API_KEY || 'ci-dummy' }}
+          ASR_MODEL: paraformer-realtime-8k-v2
+          DASHVECTOR_API_KEY: ci-dummy
+          DASHVECTOR_ENDPOINT: https://ci-dummy.dashvector.cn-hangzhou.aliyuncs.com
+          DASHVECTOR_COLLECTION: ci
+          # 其余无默认值字段由 tests/conftest.py setdefault 兜底
+        run: |
+          python -m pytest tests/ -v --tb=short -q \
+            --ignore=tests/test_post_deploy_verify.py \
+            --ignore=tests/manual_test_pe_flow.py \
+            -m "not integration"
