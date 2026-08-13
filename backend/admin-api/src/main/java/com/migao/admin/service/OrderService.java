@@ -37,6 +37,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.Collectors;
 
 /**
@@ -412,10 +413,12 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      */
     private String generateOrderNo() {
         String datePart = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
-        // 9位随机数：取 nanoTime 尾9位取绝对值，确保非负
-        long raw = System.nanoTime() % 1_000_000_000L;
-        long suffix = raw < 0 ? -raw : raw;
-        return String.format("%s%09d", datePart, suffix);
+        // 9 位后缀 = 5 位随机数 + 4 位原子序列。
+        // 原实现取 nanoTime 尾 9 位：每秒回绕一次、跨实例易碰撞。
+        // 改用随机 + 原子计数器，降低碰撞概率并启用原先闲置的 ORDER_SEQ。
+        int randomPart = ThreadLocalRandom.current().nextInt(100_000);   // 0..99999
+        int seqPart = ORDER_SEQ.incrementAndGet() % 10_000;             // 0..9999，防随机碰撞
+        return String.format("%s%05d%04d", datePart, randomPart, seqPart);
     }
 
     /**

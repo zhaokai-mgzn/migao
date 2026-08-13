@@ -22,6 +22,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -488,6 +489,19 @@ class OrderServiceTest {
 
         // then
         verify(orderMapper).insert(argThat((Order o) -> o.getOrderNo() != null && o.getOrderNo().matches("\\d{17}")));
+    }
+
+    @Test
+    @DisplayName("生成订单号 - 连续两次不同（原子序列保证）")
+    void generateOrderNo_Uniqueness() {
+        // when: 直接调用私有 generateOrderNo 两次
+        String no1 = (String) ReflectionTestUtils.invokeMethod(orderService, "generateOrderNo");
+        String no2 = (String) ReflectionTestUtils.invokeMethod(orderService, "generateOrderNo");
+
+        // then: 均为 17 位且互不相同
+        assertThat(no1).matches("\\d{17}");
+        assertThat(no2).matches("\\d{17}");
+        assertThat(no1).isNotEqualTo(no2);
     }
 
     // ======================== 确认支付（库存扣减）测试 ========================

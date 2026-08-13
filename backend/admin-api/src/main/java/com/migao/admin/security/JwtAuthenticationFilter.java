@@ -88,12 +88,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     // 设置租户上下文（tenantId=-1 表示平台管理员，无租户归属）
                     if (tenantId != null && tenantId != -1L) {
                         TenantContext.setTenantId(tenantId);
-                    } else if (tenantId != null && tenantId == -1L || (roles != null && roles.contains("super_admin"))) {
-                        // 平台管理员，跳过租户上下文
+                    } else if ((tenantId != null && tenantId == -1L) || (roles != null && roles.contains("super_admin"))) {
+                        // 平台管理员（tenantId=-1）或 super_admin 角色，跳过租户上下文
                         log.debug("平台管理员认证，跳过租户上下文设置: userId={}", userId);
                     } else {
-                        log.warn("JWT 中未包含 tenantId，使用默认租户ID=1");
-                        TenantContext.setTenantId(1L);
+                        // 缺少 tenantId 的 token 视为无效，拒绝认证（fail-closed），
+                        // 而非默认落到租户 1（可能导致跨租户数据泄露）
+                        log.warn("JWT 缺少 tenantId，拒绝认证: userId={}", userId);
+                        filterChain.doFilter(request, response);
+                        return;
                     }
 
                     // 构建权限列表
