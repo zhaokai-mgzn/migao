@@ -17,7 +17,7 @@ from app.graph.skills.product_skill import PRODUCT_TOOLS, PRODUCT_SKILL_CONFIG
 from app.graph.skills.knowledge_skill import KNOWLEDGE_TOOLS, KNOWLEDGE_SKILL_CONFIG
 from app.graph.skills.aftersales_skill import AFTERSALES_TOOLS, AFTERSALES_SKILL_CONFIG
 from app.graph.skills.general_agent import GENERAL_TOOLS, GENERAL_SKILL_CONFIG
-from app.graph.skills.base_skill import build_tool_context, execute_skill, _extract_content
+from app.graph.skills.base_skill import build_tool_context, execute_skill, _extract_content, get_skill_llm
 from app.graph.skills.skill_registry import SkillRegistry
 from app.tools.base import ToolContext
 
@@ -302,7 +302,117 @@ class TestExecuteSkill:
         assert result["final_answer"] == "您的订单已找到"
         assert result["skill_used"] == "order"
         assert result["entities"]["order_nos"] == ["123"]
+        # 策略2：首轮用 thinking LLM，迭代 2+ 轮改用 llm_no_thinking 关闭思考
+        mock_no_think_llm.ainvoke.assert_called_once()
+        # 首轮 thinking LLM 只被调用一次（第二次 tool_call 后由 no_thinking 接管）
+        assert mock_llm.ainvoke.await_count == 1
 
+    @patch("app.graph.skills.base_skill.get_breaker")
+    @patch("app.graph.skills.base_skill.LLMFactory")
+    @patch("app.graph.skills.base_skill.get_tracker")
+    @patch("app.graph.skills.base_skill.get_skill_llm")
+    @patch("app.graph.skills.base_skill.create_skill_registry")
+    @patch("app.graph.skills.base_skill.set_tool_context")
+    async def test_multi_turn_intent_keeps_thinking(
+        self, mock_set_ctx, mock_create_reg, mock_get_llm, mock_get_tracker, mock_llm_factory, mock_get_breaker
+    ):
+        """方案1：多步推理意图（order_create）迭代 2+ 轮仍保留 thinking，不切换 no_thinking"""
+        # Mock registry
+        mock_tool = MagicMock()
+        mock_tool_result = MagicMock()
+        mock_tool_result.success = True
+        mock_tool_result.data = {"order": {"id": "123"}}
+        mock_tool_result.error = None
+        mock_tool_result.message = "查询成功"
+        mock_tool.execute = AsyncMock(return_value=mock_tool_result)
+
+        mock_langchain_tool = {
+            "name": "order_query",
+            "description": "查询订单",
+            "args_schema": {"type": "object", "properties": {}},
+        }
+        mock_registry = MagicMock()
+        mock_registry.get_langchain_tools.return_value = [mock_langchain_tool]
+        mock_registry.get_tool.return_value = mock_tool
+        mock_create_reg.return_value = mock_registry
+
+        # Mock breaker — 直接透传
+        mock_breaker = MagicMock()
+        async def _passthrough(fn):
+            return await fn()
+        mock_breaker.call = _passthrough
+        mock_get_breaker.return_value = mock_breaker
+
+        # First LLM response: tool_call
+        tool_call_response = MagicMock(spec=AIMessage)
+        tool_call_response.content = ""
+        tool_call_response.tool_calls = [
+            {"name": "order_query", "args": {"order_id": "123"}, "id": "tc_1"}
+        ]
+
+        # Second LLM response: final text
+        final_response = MagicMock(spec=AIMessage)
+        final_response.content = "订单创建方案已规划"
+        final_response.tool_calls = []
+
+        mock_llm = MagicMock()
+        mock_llm.bind_tools.return_value = mock_llm
+        mock_llm.ainvoke = AsyncMock(side_effect=[tool_call_response, final_response])
+        mock_get_llm.return_value = mock_llm
+
+        mock_no_think_llm = MagicMock()
+        mock_no_think_llm.bind_tools.return_value = mock_no_think_llm
+        mock_no_think_llm.ainvoke = AsyncMock(return_value=final_response)
+        mock_llm_factory.create_skill_llm.return_value = mock_no_think_llm
+
+        # Mock tracker
+        mock_tracker = MagicMock()
+        mock_entities = MagicMock()
+        mock_entities.order_nos = []
+        mock_entities.phone_numbers = []
+        mock_entities.product_names = []
+        mock_entities.product_ids = []
+        mock_entities.amounts = []
+        mock_tracker.get_entities.return_value = mock_entities
+        mock_get_tracker.return_value = mock_tracker
+
+        state = _make_state(intent_result={"intent": "order_create"})
+        result = await execute_skill(
+            state=state,
+            skill_name="order",
+            tool_names=["order_create"],
+            system_prompt="你是订单助手",
+        )
+
+        assert result["final_answer"] == "订单创建方案已规划"
+        # 方案1：多步推理意图（order_create）迭代 2+ 轮仍保留 thinking
+        # 首轮 + 第 2 轮都用 thinking LLM，故 ainvoke 被调用 2 次
+        assert mock_llm.ainvoke.await_count == 2
+        # no_thinking LLM 虽被创建，但不用于迭代
+        mock_no_think_llm.ainvoke.assert_not_called()
+
+
+
+# ========== get_skill_llm thinking 判定测试 ==========
+
+class TestGetSkillLlmThinking:
+    """深度思考（thinking）开关按意图判定，只读检索不应开启以降低首轮延迟"""
+
+    @patch("app.graph.skills.base_skill.LLMFactory")
+    def test_product_inquiry_disables_thinking(self, mock_factory):
+        """product_inquiry 是只读检索，不应开启深度思考"""
+        mock_factory.create_skill_llm.return_value = MagicMock()
+        get_skill_llm(intent="product_inquiry", tool_count=2)
+        kwargs = mock_factory.create_skill_llm.call_args.kwargs
+        assert kwargs.get("enable_thinking") is False
+
+    @patch("app.graph.skills.base_skill.LLMFactory")
+    def test_order_create_enables_thinking(self, mock_factory):
+        """order_create 需多步规划，应开启深度思考"""
+        mock_factory.create_skill_llm.return_value = MagicMock()
+        get_skill_llm(intent="order_create", tool_count=3)
+        kwargs = mock_factory.create_skill_llm.call_args.kwargs
+        assert kwargs.get("enable_thinking") is True
 
 
 # ========== Skill 节点生成测试 ==========

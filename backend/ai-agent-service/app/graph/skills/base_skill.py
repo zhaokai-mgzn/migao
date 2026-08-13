@@ -128,20 +128,27 @@ def _extract_content(response: AIMessage) -> str:
 # 需要深度思考的意图（仅保留真正需要多步推理的场景）
 # - 涉及复杂业务逻辑判断（售后政策、投诉处理）
 # - 需要规划多步骤操作（创建工单、管理人员）
-# - product_inquiry 不需要：直接回答产品信息，不调工具
-# - order_query/logistics_track：仅首轮需要思考（决定调什么工具），后续轮关闭
-# DeepSeek V4 thinking 模式：首轮开启深度思考（规划工具调用 + 图片属性推理），
-# 后续轮关闭（策略2 llm_no_thinking 自动接管，仅做结果格式化）。
-# 意图列表：订单/商品/售后三大核心业务域的管理操作
+# - product_inquiry 不需要：商品咨询/价格查询是只读检索，直接调 search/detail 即可，无需深度思考
+# DeepSeek V4 thinking 模式：首轮开启深度思考（规划工具调用 + 图片属性推理）
+# 意图列表：订单/售后两大核心业务域的管理/推理操作
 _THINKING_INTENTS = frozenset({
     # ── 订单域 ──
-    "order_query",        # 订单查询——多条件筛选+关联上下文
+    "order_query",        # 订单查询——多条件筛选+关联上下文（仅首轮思考）
     "order_create",       # 订单创建——多SKU+加工项+价格计算
-    # ── 商品域 ──
-    "product_inquiry",    # 商品创建——图片属性推理+分类+加工项
     # ── 售后域 ──
     "after_sales",        # 售后处理——退款/换货/维修逻辑
     "after_sales_create", # 售后创建——问题归类+解决方案推荐
+    "complaint",          # 投诉处理——情绪安抚+升级判断
+})
+
+# 多步串行推理意图（_THINKING_INTENTS 的子集）：
+# 这些意图的工具结果可能驱动新一轮规划（如「订单查不到 → 换方式重查」），
+# 迭代 2+ 轮仍需深度思考，避免提前停止或漏调工具。
+# 单步检索意图（order_query 等）仅首轮思考（决定调什么工具），后续轮关闭以节省延迟。
+_MULTI_TURN_THINKING_INTENTS = frozenset({
+    "order_create",       # 订单创建——多SKU+加工项+价格计算，常需多步
+    "after_sales",        # 售后处理——退款/换货/维修逻辑，工具结果驱动下一步
+    "after_sales_create", # 售后创建——问题归类+方案推荐，可能多步
     "complaint",          # 投诉处理——情绪安抚+升级判断
 })
 
@@ -577,8 +584,6 @@ async def _self_correct_retry(
     )
 
     try:
-        from app.llm import LLMFactory
-
         # 用 suggestion_llm 做修正（轻量、低延迟）
         llm = LLMFactory.create_suggestion_llm()
         # 覆盖 temperature 以获得更确定性的输出
@@ -712,8 +717,8 @@ async def execute_skill(
 
     llm_no_thinking = None
     if langchain_tools:
-        from app.llm import LLMFactory
-        llm_no_thinking = LLMFactory.create_skill_llm(force_no_think=True)
+        # 与首轮 llm 使用同一模型，仅关闭思考（避免路由选型不一致）
+        llm_no_thinking = LLMFactory.create_skill_llm(model_override=llm_model_name, force_no_think=True)
         llm_no_thinking = llm_no_thinking.bind_tools(langchain_tools)
 
     if is_multimodal:
@@ -869,7 +874,7 @@ async def execute_skill(
 
             llm_no_thinking = None
             if langchain_tools:
-                llm_no_thinking = LLMFactory.create_skill_llm(force_no_think=True)
+                llm_no_thinking = LLMFactory.create_skill_llm(model_override=llm_model_name, force_no_think=True)
                 llm_no_thinking = llm_no_thinking.bind_tools(langchain_tools)
 
     # ── 7. ReAct 循环 ──
@@ -895,8 +900,15 @@ async def execute_skill(
             for iteration in range(max_iterations):
                 logger.info(f"[{skill_name}] Iteration {iteration+1}/{max_iterations} | session={session_id}")
 
-                # 全轮保持 thinking — LLM 更大胆批量调工具，效率优先
-                current_llm = llm_with_tools
+                # 首轮保持 thinking（规划工具调用）
+                # 迭代 2+ 轮：多步推理意图保留 thinking（工具结果可能驱动新一轮规划），
+                # 单步检索意图关闭 thinking 以节省 5-8s/轮（仍保留工具绑定，支持多步工具调用）
+                if iteration == 0:
+                    current_llm = llm_with_tools
+                elif intent_name in _MULTI_TURN_THINKING_INTENTS:
+                    current_llm = llm_with_tools
+                else:
+                    current_llm = llm_no_thinking or llm_with_tools
 
                 # ── LLM 调用（超时 + 熔断保护）──
                 try:
