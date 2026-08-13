@@ -49,9 +49,10 @@ async def execute_tool(
     例如：admin-api 需要 AI 服务执行某个 Tool 获取结果。
     """
     registry = get_tool_registry()
-    
+    tool = registry.get_tool(request.tool_name)
+
     # 检查 Tool 是否存在
-    if not registry.has_tool(request.tool_name):
+    if tool is None:
         raise HTTPException(
             status_code=404,
             detail={
@@ -62,7 +63,22 @@ async def execute_tool(
                 }
             }
         )
-    
+
+    # 安全加固：内部反向调用仅允许只读工具。写操作必须走用户侧对话流程
+    # （LLM 决策 + interact confirm 卡片），防止 SERVICE_TOKEN 泄露后被用于
+    # 对任意租户执行破坏性写操作。
+    if not getattr(tool, "read_only", True):
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "success": False,
+                "error": {
+                    "code": "WRITE_TOOL_FORBIDDEN",
+                    "message": f"Tool '{request.tool_name}' 是写操作，禁止通过内部接口执行",
+                }
+            }
+        )
+
     # 构建上下文
     context = ToolContext(
         tenant_id=request.tenant_id,

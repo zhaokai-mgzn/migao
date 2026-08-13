@@ -90,8 +90,20 @@ async def verify_service_token(
     expected_token = settings.SERVICE_TOKEN
 
     if not expected_token:
-        logger.warning("SERVICE_TOKEN not configured, skipping validation")
-        return True
+        # fail-closed：未配置 SERVICE_TOKEN 时拒绝所有内部调用，而非静默放行。
+        # 生产环境由 Settings.validate_production_secrets 强制非空，此分支仅在
+        # DEBUG/误配时可达，必须以 503 暴露配置错误而非敞开内部 API。
+        logger.error("SERVICE_TOKEN not configured — rejecting internal service call (fail-closed)")
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "success": False,
+                "error": {
+                    "code": "CONFIG_ERROR",
+                    "message": "SERVICE_TOKEN not configured"
+                }
+            }
+        )
 
     if not secrets.compare_digest(x_service_token, expected_token):
         logger.warning("Service token authentication failed: invalid token provided")
