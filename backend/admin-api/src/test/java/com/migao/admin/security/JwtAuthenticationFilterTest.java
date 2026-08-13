@@ -141,6 +141,35 @@ class JwtAuthenticationFilterTest {
         assertThat(user.getRoles()).contains("admin");
     }
 
+    // ======================== 缺少 tenantId 的 fail-closed ========================
+
+    @Test
+    @DisplayName("JWT 缺少 tenantId — 拒绝认证（不默认落到租户 1）")
+    void jwtWithoutTenantId_RejectsAuthentication() throws ServletException, IOException {
+        Cookie[] cookies = {new Cookie("access_token", "notenant.jwt.token")};
+        when(request.getCookies()).thenReturn(cookies);
+
+        when(jwtTokenProvider.validateToken("notenant.jwt.token")).thenReturn(true);
+        when(jwtTokenProvider.isAccessToken("notenant.jwt.token")).thenReturn(true);
+
+        // tenantId 为 null、角色非 super_admin 的 claims
+        Claims noTenantClaims = mock(Claims.class);
+        when(noTenantClaims.getId()).thenReturn("jti-no-tenant");
+        when(noTenantClaims.get(JwtTokenProvider.CLAIM_USER_ID, String.class)).thenReturn("user-001");
+        when(noTenantClaims.get(JwtTokenProvider.CLAIM_TENANT_ID)).thenReturn(null);
+        when(noTenantClaims.get(JwtTokenProvider.CLAIM_USERNAME, String.class)).thenReturn("testuser");
+        when(noTenantClaims.get(JwtTokenProvider.CLAIM_ROLES, List.class)).thenReturn(List.of("admin"));
+        when(jwtTokenProvider.getClaimsFromToken("notenant.jwt.token")).thenReturn(noTenantClaims);
+        when(redisTemplate.hasKey("token:blacklist:jti-no-tenant")).thenReturn(false);
+
+        filter.doFilterInternal(request, response, filterChain);
+
+        verify(filterChain).doFilter(request, response);
+        // 认证未设置，且租户上下文未被默认设置为 1
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+        assertThat(TenantContext.getTenantId()).isNull();
+    }
+
     // ======================== Authorization Header 提取 JWT ========================
 
     @Test
