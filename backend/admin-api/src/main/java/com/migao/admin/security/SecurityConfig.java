@@ -132,6 +132,11 @@ public class SecurityConfig {
                                 // 本地文件静态资源（无需认证）
                                 "/api/files/static/**"
                         ).permitAll()
+                        // 管理后台接口：仅 admin / super_admin 角色 + 内部服务（ROLE_SERVICE）可访问。
+                        // 修复垂直越权：此前仅要求 authenticated()，任意已登录角色（含 customer/agent）
+                        // 均可直接访问管理后台接口。
+                        .requestMatchers("/api/admin/**")
+                        .hasAnyRole("ADMIN", "SUPER_ADMIN", "SERVICE")
                         // 其他路径需要认证（包括 /api/super-admin/** 超管接口，由业务层校验超管角色）
                         .anyRequest().authenticated()
                 )
@@ -156,6 +161,13 @@ public class SecurityConfig {
                             response.setContentType("application/json;charset=UTF-8");
                             response.getWriter().write(
                                     "{\"success\":false,\"error\":{\"code\":\"UNAUTHORIZED\",\"message\":\"未认证，请先登录\"}}");
+                        })
+                        // 已认证但角色不足时返回统一的 403 JSON（与 401 结构一致）
+                        .accessDeniedHandler((request, response, accessDeniedException) -> {
+                            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                            response.setContentType("application/json;charset=UTF-8");
+                            response.getWriter().write(
+                                    "{\"success\":false,\"error\":{\"code\":\"FORBIDDEN\",\"message\":\"权限不足，禁止访问\"}}");
                         })
                 );
 

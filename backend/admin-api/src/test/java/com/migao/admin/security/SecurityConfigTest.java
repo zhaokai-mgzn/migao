@@ -6,6 +6,7 @@ import com.migao.admin.controller.AuthController;
 import com.migao.admin.controller.ProductController;
 import com.migao.admin.dto.LoginRequest;
 import com.migao.admin.dto.LoginResponse;
+import com.migao.admin.dto.PageResponse;
 import com.migao.admin.service.AuthService;
 import com.migao.admin.service.ProductService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -27,6 +28,7 @@ import java.util.List;
 
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -274,6 +276,56 @@ class SecurityConfigTest {
         mockMvc.perform(get("/api/auth/me")
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isUnauthorized());
+    }
+
+    // ======================== 垂直越权防护测试 ========================
+    // 修复背景：此前 /api/admin/** 仅要求 authenticated()，任意已登录角色
+    // （含 customer/agent）均可访问管理后台接口，构成垂直越权。
+
+    @Test
+    @DisplayName("越权防护 - customer 角色访问 /api/admin/** 返回 403")
+    void authorization_customerRole_cannotAccessAdminEndpoint() throws Exception {
+        mockMvc.perform(get("/api/admin/products")
+                        .with(user("customer-1").roles("CUSTOMER")))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("越权防护 - agent 角色访问 /api/admin/** 返回 403")
+    void authorization_agentRole_cannotAccessAdminEndpoint() throws Exception {
+        mockMvc.perform(get("/api/admin/products")
+                        .with(user("agent-1").roles("AGENT")))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("越权防护 - admin 角色可访问 /api/admin/**")
+    void authorization_adminRole_canAccessAdminEndpoint() throws Exception {
+        when(productService.getProducts(any(), nullable(Long.class))).thenReturn(new PageResponse<>());
+
+        mockMvc.perform(get("/api/admin/products")
+                        .with(user("admin-1").roles("ADMIN")))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("越权防护 - super_admin 角色可访问 /api/admin/**")
+    void authorization_superAdminRole_canAccessAdminEndpoint() throws Exception {
+        when(productService.getProducts(any(), nullable(Long.class))).thenReturn(new PageResponse<>());
+
+        mockMvc.perform(get("/api/admin/products")
+                        .with(user("sa-1").roles("SUPER_ADMIN")))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("越权防护 - 内部服务 ROLE_SERVICE 可访问 /api/admin/**")
+    void authorization_serviceRole_canAccessAdminEndpoint() throws Exception {
+        when(productService.getProducts(any(), nullable(Long.class))).thenReturn(new PageResponse<>());
+
+        mockMvc.perform(get("/api/admin/products")
+                        .with(user("svc-1").roles("SERVICE")))
+                .andExpect(status().isOk());
     }
 
     // ======================== CORS 测试 ========================
