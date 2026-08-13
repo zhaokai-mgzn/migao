@@ -42,9 +42,13 @@ dist/
 # Python runtime
 venv/
 .venv/
+.venv311/
 __pycache__/
 *.pyc
 .ruff_cache/
+
+# AI 评测/实验输出
+backend/ai-agent-service/outputs/
 
 # Test outputs
 .pytest_cache/
