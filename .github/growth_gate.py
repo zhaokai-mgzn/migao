@@ -237,6 +237,43 @@ def coverage_gate_from_report(report_path, coverage_type, source_roots, threshol
     return coverage_gate(pct, threshold)
 
 
+# ── G4: 弱断言检测（防"凑数测试"过门禁）──
+
+_WEAK_PATTERNS = [
+    re.compile(r"assert\s+\w+\s+is\s+not\s+None"),
+    re.compile(r"assert\s+\w+\s+is\s+None"),
+    re.compile(r"assert\s+True\b"),
+    re.compile(r"assert\s+False\b"),
+    re.compile(r"assertTrue\s*\(\s*true\s*,"),
+    re.compile(r"assertFalse\s*\(\s*false\s*,"),
+    re.compile(r"expect\s*\(\s*true\s*\)\s*\.toBe\s*\(\s*true\s*\)"),
+    re.compile(r"expect\s*\(\s*false\s*\)\s*\.toBe\s*\(\s*false\s*\)"),
+    re.compile(r"^\s*pass\s*$"),
+]
+
+
+def find_weak_asserts(test_file):
+    """扫描测试文件的弱断言（不触业务数据的存在性/恒真断言 + 空 pass）。
+
+    返回 [{line_no, line, reason}]。弱断言无法证明功能正确，属「凑数」。
+    """
+    weak = []
+    try:
+        text = Path(test_file).read_text(encoding="utf-8")
+    except OSError:
+        return weak
+    for no, line in enumerate(text.split("\n"), 1):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        for pat in _WEAK_PATTERNS:
+            if pat.search(stripped):
+                weak.append({"line_no": no, "line": stripped,
+                             "reason": "弱断言（不触业务数据）"})
+                break
+    return weak
+
+
 # ── 加载 + CLI ──
 
 def _load_yaml(path):
@@ -340,7 +377,23 @@ def main(argv=None):
                         default="jacoco")
     parser.add_argument("--exit-on-block", action="store_true",
                         help="有 blocker 时退出码 1（本地/CLI 用）；默认退出码 0（CI 由 JSON 判定，崩溃才非零）")
+    parser.add_argument("--check-weak", action="store_true",
+                        help="扫描 --files 指定测试文件的弱断言（凑数断言），有则退出 1")
     args = parser.parse_args(argv)
+
+    if args.check_weak:
+        if not args.files:
+            print("⚠️ --check-weak 需配合 --files 指定测试文件")
+            return 1
+        total = 0
+        for tf in args.files:
+            weak = find_weak_asserts(tf)
+            print(f"📄 {tf}: {len(weak)} 处弱断言")
+            for w in weak:
+                print(f"  L{w['line_no']}: {w['line']}")
+            total += len(weak)
+        print(f"\n合计 {len(args.files)} 个测试文件，{total} 处弱断言")
+        return 1 if total > 0 else 0
 
     tech_path = args.tech_stack or _find_tech_stack()
     ex_path = args.exemptions or _find_exemptions()

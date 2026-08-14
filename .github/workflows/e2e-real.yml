@@ -2,6 +2,9 @@ name: E2E Real (AI Agent 能力测试)
 
 on:
   workflow_dispatch:
+  schedule:
+    # 每天 00:00 CST（UTC+8）= UTC 16:00，低峰期跑真实 LLM 能力回归
+    - cron: '0 16 * * *'
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
