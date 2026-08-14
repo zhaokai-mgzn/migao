@@ -169,6 +169,18 @@ jobs:
           echo "BLOCKERS=$BLOCKERS" >> "$GITHUB_OUTPUT"
           echo "WARNINGS=$WARNINGS" >> "$GITHUB_OUTPUT"
 
+      # 弱断言检测：新增测试文件不得用凑数断言（is not None / assert True / 空 pass）
+      # 只扫「新增」测试文件，存量测试的弱断言不阻塞（历史遗留，避免误伤）
+      - name: Check weak asserts in new tests
+        run: |
+          NEW_TESTS=$(git diff --diff-filter=A --name-only origin/main...HEAD | grep -E '\.(py|java|ts|tsx)$' | grep -iE 'test|spec' || true)
+          if [ -z "$NEW_TESTS" ]; then
+            echo "✅ 无新增测试文件，跳过弱断言检查"
+            exit 0
+          fi
+          echo "🔍 扫描新增测试文件的弱断言"
+          python3 .github/growth_gate.py --check-weak --files $NEW_TESTS
+
       # 阻塞检查：有 blocking 项时打标签 + fail job
       - name: Fail on blocking violations
         if: steps.check.outputs.BLOCKERS != '0'
