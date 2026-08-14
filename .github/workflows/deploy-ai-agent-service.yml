@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - 'backend/ai-agent-service/**'
+      - '!backend/ai-agent-service/tests/**'
   workflow_dispatch:  # 支持手动触发
 
 env:
