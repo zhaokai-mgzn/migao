@@ -112,6 +112,22 @@ def admin_search_orders(keyword):
     return data.get("data", {}).get("items", []) if data.get("success") else []
 
 
+# ═══ 写操作多步确认 ═══
+
+def confirm_and_execute(sess: Session, confirm_msg: str, exec_tool: str, max_extra: int = 2):
+    """写操作多步确认：发确认消息 → 若未直接执行写工具，再发"确认"直到执行。
+
+    写操作铁律：validate_input → interact(confirm 卡片) → 用户确认 → 写工具执行。
+    e2e 里"用户点确认卡片"等价于再发一条"确认"。返回最终一轮 SSE 事件。
+    """
+    ev = sess.send(confirm_msg)
+    for _ in range(max_extra):
+        if exec_tool in sse_tools(ev):
+            return ev
+        ev = sess.send("确认")
+    return ev
+
+
 # ═══ Fixtures ═══
 
 @pytest.fixture
