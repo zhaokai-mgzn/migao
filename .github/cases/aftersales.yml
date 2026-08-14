@@ -1,0 +1,171 @@
+# cases/aftersales.yml — 售后域用例（并源转换）
+# 来源：eval C002/M008 + verification 3.1~3.4 → 5 条
+#
+# ★ 双通道注意（aftersales-flow.yml 真值已记录）：
+#   管理端用例走 Agent 工具 after_sales_manage / aftersale_create；
+#   模板 reviewer_asserts 走 admin-api 表单接口。ticketType 枚举跨层不一致
+#   （Agent 工具无 return），expectations 必须标注通道。
+
+schema: "case-contract/1.0"
+domain: aftersales
+
+cases:
+  - id: AS-001
+    legacy_id: "3.1"
+    title: "售后工单列表"
+    domains:
+      - aftersales
+    tier: smoke
+    tags:
+      - query
+      - smoke
+    truths_ref:
+      - aftersales-flow.status-enums
+      - aftersales-flow.list-filter
+    user_inputs:
+      - "看看售后工单"
+    expectations:
+      - tool: after_sales_manage
+        args:
+          action: list
+    data_checks:
+      - "工单列表含 ticketNo/状态"
+    skip_reason: ""
+    merge_log: "verification 3.1 独有"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_after_sales_basic.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: AS-002
+    legacy_id: "3.2"
+    title: "售后工单详情"
+    domains:
+      - aftersales
+    tier: normal
+    tags:
+      - query
+      - detail
+    truths_ref:
+      - aftersales-flow.detail-history
+    user_inputs:
+      - "看一下 AS-20260701-0001 工单详情"
+    expectations:
+      - tool: after_sales_manage
+        args:
+          action: detail
+    data_checks:
+      - "statusHistory 按时间正序，首条 status=pending"
+    skip_reason: ""
+    merge_log: "verification 3.2 独有"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_after_sales_basic.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: AS-003
+    legacy_id: C002
+    title: "查订单 → 创建退款工单（跨域复用 order_id）"
+    domains:
+      - aftersales
+      - order
+    tier: normal
+    tags:
+      - cross_skill
+      - context_share
+      - create
+    truths_ref:
+      - aftersales-flow.create-order-required
+      - aftersales-flow.dup-guard
+      - aftersales-flow.ticket-format
+    user_inputs:
+      - "查订单 ORD-20260701-0001"
+      - "这个订单客户要退货，创建售后工单"
+    expectations:
+      - tool: order_query
+      - tool: aftersale_create
+        args:
+          order_id: "复用上轮 UUID"
+    data_checks:
+      - "success=true"
+      - "工单号匹配 ^AS-\\d{8}-\\d{4}$"
+    skip_reason: ""
+    merge_log: "eval C002 + verification 3.3（同义，取 eval 的跨域版）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_aftersale_create.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: AS-004
+    legacy_id: "3.4"
+    title: "更新工单状态 - 关闭"
+    domains:
+      - aftersales
+    tier: normal
+    tags:
+      - update
+      - status
+    truths_ref:
+      - aftersales-flow.flow
+      - aftersales-flow.update-guard
+    user_inputs:
+      - "AS-20260701-0001 工单已处理完，关闭"
+    expectations:
+      - tool: after_sales_manage
+        args:
+          action: update_status
+          status: closed
+    data_checks:
+      - "success=true"
+      - "closedAt/closeReason 写入"
+    skip_reason: ""
+    merge_log: "verification 3.4 独有"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_after_sales_basic.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: AS-005
+    legacy_id: M008
+    title: "售后处理全流程 - 查单→确认问题→建工单→跟踪"
+    domains:
+      - aftersales
+      - order
+    tier: normal
+    tags:
+      - multi_turn
+      - cross_skill
+      - real_scenario
+    truths_ref:
+      - aftersales-flow.status-enums
+      - aftersales-flow.timeline
+      - aftersales-flow.create-order-required
+    user_inputs:
+      - "客户张三说窗帘颜色不对，帮我查下他的订单"
+      - "最近一个订单 ORD-20260701-0001"
+      - "客户要退货，创建售后工单"
+      - "原因：颜色与图片不符，退款"
+      - "这工单现在什么状态了"
+    expectations:
+      - tool: order_query
+      - tool: aftersale_create
+      - tool: aftersale_query
+    data_checks:
+      - "aftersale_create 的 order_id 来自第2步查询结果"
+      - "售后工单包含正确的退款原因"
+    skip_reason: ""
+    merge_log: "eval M008 独有（售后全旅程）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_mibao_advanced_multiturn.py"
+      ci:
+        - agent-eval.yml
+      verifies: []

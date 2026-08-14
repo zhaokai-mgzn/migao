@@ -1,4 +1,5 @@
 """NotificationManageTool 单元测试 — 通知管理"""
+# case_ids: ST-004, ST-005
 import pytest
 from unittest.mock import AsyncMock, patch
 from app.tools.notification_manage import NotificationManageTool

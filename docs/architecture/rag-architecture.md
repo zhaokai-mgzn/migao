@@ -42,7 +42,7 @@
 |------|------|------|------|
 | **向量数据库** | 阿里云 DashVector | 托管服务、按量付费、与百炼生态集成好 | ~¥50/月 |
 | **Embedding 模型** | text-embedding-v3（百炼） | 中文效果好、支持多粒度、成本低 | ¥0.002/次 |
-| **重排序模型** | bge-reranker-large（本地部署） | 提升 Top-K 精度 10-15% | SAE 0.5C1G |
+| **重排序模型** | bge-reranker-large（本地部署） | 提升 Top-K 精度 10-15% | SWAS 容器 |
 | **分块策略** | 自定义 FabricChunker | 针对布艺行业文档结构优化 | 代码实现 |
 | **BM25 检索** | Elasticsearch（可选）或 PostgreSQL tsvector | 关键词匹配补充 | 已有 RDS PG |
 
@@ -1785,11 +1785,11 @@ EMBEDDING_RATE_LIMIT=10  # 每秒最大调用数
 ### 8.3 重排序模型部署
 
 ```bash
-# 方案一：本地部署（SAE Python 应用）
+# 方案一：本地部署（SWAS 容器，历史为 SAE Python 应用）
 # 依赖：FlagEmbedding
 pip install FlagEmbedding
 
-# SAE 资源配置
+# 资源配置（SWAS 容器）
 CPU: 0.5C
 Memory: 1G
 # 模型首次加载约 30 秒，后续推理 < 50ms/条
@@ -1821,7 +1821,7 @@ ALTER TABLE rag_chunks ADD COLUMN search_vector tsvector
 |------|------|--------|------|
 | **DashVector** | 标准版（按量） | ~¥50/月 | 向量存储 + 检索，按调用量计费 |
 | **Embedding 调用** | text-embedding-v3 | ~¥30/月 | 约 15,000 次调用/月（¥0.002/次） |
-| **Reranker** | SAE 0.5C1G | ~¥20/月 | 本地部署 bge-reranker-large |
+| **Reranker** | SWAS 容器 | ~¥20/月 | 本地部署 bge-reranker-large |
 | **PostgreSQL 全文检索** | 已有 RDS 实例 | ¥0（增量） | 利用现有 RDS，无额外成本 |
 | **合计** | | **~¥100/月** | 远低于百炼知识库付费方案 |
 

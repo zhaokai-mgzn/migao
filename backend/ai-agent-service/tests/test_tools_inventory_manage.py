@@ -1,4 +1,5 @@
 """InventoryManageTool 单元测试 — 库存查询/调整/低库存告警"""
+# case_ids: PR-004, PR-005, PR-006
 import pytest
 from unittest.mock import AsyncMock, patch
 from app.tools.inventory_manage import InventoryManageTool

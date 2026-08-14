@@ -19,6 +19,7 @@ Mock 策略：
 - 直接测试 WorkAssistantAgent.achat 多轮交互
 - 使用 soft assertion 收集所有失败，统一报告
 """
+# case_ids: CH-005, CH-006, CU-005, PR-010
 
 import json
 import logging

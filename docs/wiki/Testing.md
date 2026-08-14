@@ -24,6 +24,26 @@
 | E2E 浏览器 | Playwright | `tests/e2e/specs/{domain}/` | 核心交互路径 |
 | E2E 冒烟 | pytest + httpx | `tests/smoke/` | 核心 API 100% |
 
+## 行为用例单一源（Case Contract，2026-08-14 起）
+
+行为用例只存一份：`.github/cases/<domain>.yml`（80 条 × 12 域，block style，`truths_ref` 引用真值 ID）。以下均为**生成物，禁止手改**：
+- `tests/agent_eval/eval_cases.py`（CI 跑）
+- `docs/testing/mibao-verification-cases.md`（人读）
+
+重新生成：`cd .github && python3 render_cases.py`；引用校验：`python3 truths.py check --templates templates --cases cases`（fail-closed，挂在 pr-check 的 case-truth-check job）。
+
+**tier → CI 频率**：
+
+| tier | 数量 | 频率 | workflow |
+|------|------|------|----------|
+| smoke | 9 | 每次 PR（100% 通过才合并）+ 每日 01:30 | pr-check `agent-eval-smoke` + agent-eval |
+| normal | 45 | 每日 01:30 全量 | agent-eval（smoke→full） |
+| adversarial | 26 | 每周六 03:00（只追踪不阻塞） | agent-eval-adversarial |
+
+**G5 追溯铁律**：新增/修改测试文件头部必须声明 `# case_ids: OR-001, OR-002`（对应 `.github/cases/` 中的用例 ID），否则 qa-growth-gate block。存量测试未声明 → warn。
+
+---
+
 ## E2E 测试结构 (tests/e2e/)
 
 ```

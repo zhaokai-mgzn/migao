@@ -111,7 +111,7 @@ aliyun oss lifecycle-get oss://ai-customer-service-chat-dev
 | 配置项 | 值 | 说明 |
 |--------|-----|------|
 | **Bucket 名称** | `ai-customer-service-admin-dev` | 全局唯一 |
-| **地域** | 华东1（杭州） | 与 SAE 同地域 |
+| **地域** | 华东1（杭州） | 与 SWAS 实例同地域 |
 | **存储类型** | 标准存储 | 适合频繁访问 |
 | **读写权限** | 公共读 | 前端需要访问 |
 | **版本控制** | 关闭 | 节省成本 |
@@ -313,7 +313,7 @@ terraform output > ../production-oss-output.txt
 - [ ] 永久 Bucket 静态网站托管配置正确
 - [ ] 临时 Bucket 生命周期规则生效（7 天自动删除）
 - [ ] Bucket ACL 设置为 `public-read`
-- [ ] Bucket 地域为 `cn-hangzhou`（与 SAE 同地域）
+- [ ] Bucket 地域为 `cn-hangzhou`（与 SWAS 实例同地域）
 - [ ] 记录 Bucket 域名到部署文档
 
 ---
@@ -410,7 +410,7 @@ aliyun oss cors --method put oss://ai-customer-service-admin-dev \
 
 Bucket 创建完成后，继续：
 
-1. ✅ **配置 SAE 环境变量**（Terraform 自动注入）
+1. ✅ **配置应用环境变量**（SWAS `/opt/migao-deploy/.env.admin-api`；历史为 SAE 环境变量/Terraform 注入）
 2. ⏳ **修改 admin-api 代码**（OssService 支持多 Bucket）
 3. ⏳ **修改 ai-agent-service 代码**（upload.py 路由）
 4. ⏳ **更新前端配置**（NEXT_PUBLIC_OSS_DOMAIN）

@@ -1,0 +1,28 @@
+name: id-resolve
+description: 实体 ID 解析规则（名称/序号/UUID/UUID 前缀 → ID）— 米宝跨轮引用实体的核心能力
+red_flags: []
+
+business_truths:
+  - [id-resolve.uuid-exact] UUID 精确匹配直接命中，不发查询请求
+  - [id-resolve.uuid-prefix] UUID 前缀（8 位不带横线或 12 位 hex）先按前缀查询，无结果 fallback 到 keyword 搜索
+  - [id-resolve.index] 数字序号 N → 取第 N 项（索引 N-1，分页 page=N）；序号 0 无匹配，fallback 名称搜索
+  - [id-resolve.name] 名称解析：精确匹配优先，其次模糊匹配；无匹配返回 None
+  - [id-resolve.tenant] 解析查询必须携带当前租户 tenant_id（跨租户不可见）
+  - [id-resolve.no-fabricate] 解析失败不得编造 ID；必须使用工具返回的真实 ID（references/base/principles.md）
+
+primary_specs:
+  - backend/ai-agent-service/tests/test_id_resolver.py
+
+reviewer_asserts:
+  - pytest: tests/test_id_resolver.py -k "uuid_exact or uuid_prefix or number_index or exact_name or fuzzy_name"
+    expect: 全部通过（含 fallback 分支与 tenant_id 传递）
+
+confidence_required: 100%
+
+common_pitfalls:
+  - 用「名称近似」硬编 UUID（必须走 resolve 流程）
+  - 序号与名称混用导致取错实体（序号 0 语义 = 无匹配）
+  - 解析请求不带 tenant_id（跨租户泄露）
+  - 前缀查询失败后不做 keyword fallback（漏掉模糊场景）
+
+# ⚠️ 缺口: 多候选名称歧义处理（多个相似名称时的选择规则）未确认

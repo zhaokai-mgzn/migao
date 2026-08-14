@@ -1,4 +1,5 @@
 """after_sales_manage + customer_manage tool 基础测试"""
+# case_ids: AS-001, AS-002, AS-004
 import pytest
 
 

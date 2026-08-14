@@ -10,14 +10,9 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  SAE_APP_ID: d6a22f49-0c01-48fc-8d0a-7254284a6a16
-  SAE_REGION: cn-hangzhou
-  OSS_BUCKET: ai-customer-service-admin-dev
-  OSS_OBJECT_KEY: deploy/admin-api.jar
-  OSS_ENDPOINT: oss-cn-hangzhou.aliyuncs.com
-  # 健康检查直接命中 SAE Internet SLB IP（HTTP:80 → TargetPort 8080）+ Host header
-  HEALTH_CHECK_URL: https://api.migaozn.com
-  HEALTH_CHECK_PATH: /actuator/health
+  # 部署目标：SWAS 轻量应用服务器（2026-08-14 起替代 SAE）
+  SWAS_INSTANCE_ID: b23c69e599524b1da719734f72e6a0e3
+  SWAS_REGION: cn-hangzhou
 
 jobs:
   build-and-deploy:
@@ -56,217 +51,38 @@ jobs:
           echo "✅ 构建成功：$JAR_FILE"
           echo "JAR_FILE=backend/admin-api/$JAR_FILE" >> $GITHUB_ENV
 
-      - name: Install Aliyun CLI
-        run: |
-          curl -fsSL --retry 3 https://aliyuncli.alicdn.com/aliyun-cli-linux-latest-amd64.tgz -o aliyun-cli.tgz
-          # 验证下载文件是有效的 gzip 压缩包
-          file aliyun-cli.tgz | grep -q "gzip compressed data" || { echo "❌ 下载文件损坏或非 gzip 格式"; exit 1; }
-          tar xzf aliyun-cli.tgz
-          sudo mv aliyun /usr/local/bin/
-          echo "✅ Aliyun CLI $(aliyun version 2>/dev/null || echo installed)"
-
-      - name: Configure Aliyun credentials
-        run: |
-          aliyun configure set \
-            --access-key-id ${{ secrets.ALIYUN_ACCESS_KEY_ID }} \
-            --access-key-secret ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }} \
-            --region ${{ env.SAE_REGION }}
-
-      - name: Upload JAR to OSS
-        run: |
-          echo "上传 JAR 到 OSS：oss://${{ env.OSS_BUCKET }}/${{ env.OSS_OBJECT_KEY }}"
-          aliyun oss cp "$JAR_FILE" "oss://${{ env.OSS_BUCKET }}/${{ env.OSS_OBJECT_KEY }}" \
-            --force \
-            --region ${{ env.SAE_REGION }}
-          echo "✅ JAR 上传完成"
-
-      - name: Sign OSS PackageUrl
-        id: sign
-        run: |
-          # SAE DeployApplication 必须使用新签名 URL，旧签名会过期
-          # aliyun oss sign 输出多行，最后一行是 "0.000xxx(s) elapsed"，URL 为以 http(s):// 开头的那一行
-          SIGN_OUTPUT=$(aliyun oss sign "oss://${{ env.OSS_BUCKET }}/${{ env.OSS_OBJECT_KEY }}" \
-            --timeout 86400 \
-            --region ${{ env.SAE_REGION }} \
-            --endpoint ${{ env.OSS_ENDPOINT }})
-          SIGNED_URL=$(echo "$SIGN_OUTPUT" | grep -E '^https?://' | head -n 1)
-          if [ -z "$SIGNED_URL" ]; then
-            echo "❌ OSS 签名失败，完整输出："
-            echo "$SIGN_OUTPUT"
-            exit 1
-          fi
-          echo "✅ 已签名 OSS URL（长度：${#SIGNED_URL}）"
-          # 通过文件传递 URL（含特殊字符），避免在日志中打印
-          echo "$SIGNED_URL" > /tmp/signed_url.txt
-          echo "SIGNED_URL_FILE=/tmp/signed_url.txt" >> $GITHUB_ENV
-
-      - name: Wait for previous SAE change to finish
-        run: |
-          echo "检查是否有进行中的变更..."
-          MAX_WAIT=120
-          START_TIME=$(date +%s)
-          while true; do
-            RESULT=$(aliyun sae DescribeApplicationStatus --AppId ${{ env.SAE_APP_ID }})
-            RUNNING=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('Data',{}).get('LastChangeOrderRunning',''))" 2>/dev/null || echo "unknown")
-
-            if [ "$RUNNING" = "false" ] || [ "$RUNNING" = "False" ]; then
-              echo "✅ 没有进行中的变更，开始部署"
-              break
-            fi
-
-            CURRENT_TIME=$(date +%s)
-            ELAPSED=$((CURRENT_TIME - START_TIME))
-            if [ $ELAPSED -gt $MAX_WAIT ]; then
-              echo "❌ 等待超时（${MAX_WAIT}s），仍有变更在进行"
-              exit 1
-            fi
-
-            echo "⏳ 有变更在进行中，等待... ($ELAPSED/${MAX_WAIT}s)"
-            sleep 10
-          done
-
-      - name: Deploy to SAE
+      - name: Deploy to SWAS
         env:
-          JWT_PRIVATE_KEY_PEM: ${{ secrets.JWT_PRIVATE_KEY }}
-          PLATFORM_ADMIN_PHONE: ${{ vars.PLATFORM_ADMIN_PHONE }}
-          PLATFORM_ADMIN_NICKNAME: ${{ vars.PLATFORM_ADMIN_NICKNAME }}
+          AK: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
+          SK: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
         run: |
-          # 获取当前完整环境变量（全量重发，避免清空已有配置）
-          # 写入临时文件，规避特殊字符（@、!、$、&）在 shell 命令行中的解析问题
-          ENVS_FILE=/tmp/sae_envs.json
-          aliyun sae DescribeApplicationConfig \
-            --AppId ${{ env.SAE_APP_ID }} \
-            | jq -r '.Data.Envs // "[]"' \
-            | jq -c '.' > "$ENVS_FILE"
-
-          if [ ! -s "$ENVS_FILE" ]; then
-            echo "❌ 获取 SAE 环境变量失败"
-            exit 1
-          fi
-
-          echo "✅ 已获取 SAE 环境变量（条目数：$(jq 'length' "$ENVS_FILE")）"
-
-          # 读取公钥内容
-          PUBLIC_KEY_PEM=$(cat backend/admin-api/src/main/resources/rsa/public.pem)
-          export PUBLIC_KEY_PEM
-
-          # 使用 Python subprocess 直接 execvp 调用 aliyun CLI
-          # 参数以 list 传入，完全绕过 shell 解析，避免特殊字符（OSS URL 中的 &、密码中的 @!$）被截断或误解析
-          python3 <<'PYEOF'
-          import json, os, subprocess, sys
-
-          with open('/tmp/sae_envs.json', 'r', encoding='utf-8') as f:
-              envs_raw = f.read().strip()
-          with open(os.environ['SIGNED_URL_FILE'], 'r', encoding='utf-8') as f:
-              signed_url = f.read().strip()
-
-          # 校验 envs 是合法 JSON 数组
-          envs = json.loads(envs_raw)
-          if not isinstance(envs, list):
-              print(f'❌ Envs 必须是数组，实际类型：{type(envs).__name__}', file=sys.stderr)
-              sys.exit(1)
-
-          # 注入 RSA 密钥对（环境变量优先级高于 classpath 文件）
-          private_key = os.environ.get('JWT_PRIVATE_KEY_PEM', '').strip()
-          public_key = os.environ.get('PUBLIC_KEY_PEM', '').strip()
-
-          def upsert_env(envs_list, name, value):
-              for e in envs_list:
-                  if e.get('name') == name or e.get('Key') == name:
-                      e['value'] = value
-                      return
-              envs_list.append({'name': name, 'value': value})
-
-          if private_key:
-              upsert_env(envs, 'jwt.private-key-pem', private_key)
-              print('✅ 已注入 jwt.private-key-pem')
-          if public_key:
-              upsert_env(envs, 'jwt.public-key-pem', public_key)
-              print('✅ 已注入 jwt.public-key-pem')
-
-          # 注入平台管理员配置
-          platform_admin_phone = os.environ.get('PLATFORM_ADMIN_PHONE', '').strip()
-          platform_admin_nickname = os.environ.get('PLATFORM_ADMIN_NICKNAME', '平台管理员').strip()
-          if platform_admin_phone:
-              upsert_env(envs, 'PLATFORM_ADMIN_PHONE', platform_admin_phone)
-              upsert_env(envs, 'PLATFORM_ADMIN_NICKNAME', platform_admin_nickname)
-              print(f'✅ 已注入 PLATFORM_ADMIN_PHONE={platform_admin_phone[:3]}***')
-
-          # 修复 CORS：移除废弃的 admin.migaozn.com，添加 ops.migaozn.com
-          cors_env = next((e for e in envs if e.get('name') == 'CORS_ALLOWED_ORIGINS'), None)
-          if cors_env:
-              origins = [o.strip() for o in cors_env.get('value', '').split(',') if o.strip()]
-              origins = [o for o in origins if 'admin.migaozn.com' not in o]
-              if 'https://ops.migaozn.com' not in origins:
-                  origins.append('https://ops.migaozn.com')
-              cors_env['value'] = ','.join(origins)
-              print(f'✅ CORS 已修复：移除 admin，添加 ops')
-
-          envs_compact = json.dumps(envs, ensure_ascii=False, separators=(',', ':'))
-
-          if not signed_url.startswith('http'):
-              print(f'❌ SIGNED_URL 不是合法 HTTP URL：{signed_url[:80]}', file=sys.stderr)
-              sys.exit(1)
-
-          cmd = [
-              'aliyun', 'sae', 'DeployApplication',
-              '--AppId', os.environ['SAE_APP_ID'],
-              '--PackageUrl', signed_url,
-              '--PackageType', 'FatJar',
-              '--Envs', envs_compact,
-          ]
-          print(f'📤 调用 aliyun sae DeployApplication（envs 条目数：{len(envs)}，PackageUrl 长度：{len(signed_url)}）')
-          result = subprocess.run(cmd, capture_output=True, text=True)
-          if result.stdout:
-              print('STDOUT:', result.stdout)
-          if result.returncode != 0:
-              print('STDERR:', result.stderr, file=sys.stderr)
-              sys.exit(result.returncode)
-          if result.stderr:
-              print('STDERR:', result.stderr)
-          PYEOF
-
-          echo "✅ 部署已触发，PackageType=FatJar"
-
-      - name: Verify deployment
-        run: |
-          echo "等待 SAE 变更完成..."
-          MAX_WAIT=300
-          START_TIME=$(date +%s)
-          while true; do
-            RESULT=$(aliyun sae DescribeApplicationStatus --AppId ${{ env.SAE_APP_ID }})
-            RUNNING=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('Data',{}).get('LastChangeOrderRunning',''))" 2>/dev/null || echo "unknown")
-
-            if [ "$RUNNING" = "false" ] || [ "$RUNNING" = "False" ]; then
-              echo "✅ 变更已完成"
-              break
-            fi
-
-            CURRENT_TIME=$(date +%s)
-            ELAPSED=$((CURRENT_TIME - START_TIME))
-            if [ $ELAPSED -gt $MAX_WAIT ]; then
-              echo "⚠️ 变更仍在进行，继续做健康检查..."
-              break
-            fi
-
-            echo "⏳ 等待变更完成... ($ELAPSED/${MAX_WAIT}s)"
-            sleep 15
+          curl -fsSL https://aliyuncli.alicdn.com/aliyun-cli-linux-latest-amd64.tgz -o /tmp/aliyun.tgz
+          tar xzf /tmp/aliyun.tgz -C /tmp
+          sudo mv /tmp/aliyun /usr/local/bin/
+          aliyun configure set --access-key-id "$AK" --access-key-secret "$SK" --region ${{ env.SWAS_REGION }}
+          # 触发 SWAS 云助手执行 deploy.sh(拉源码 -> 构建 -> compose 启动 -> 健康检查)
+          aliyun plugin install --names aliyun-cli-swas-open >/dev/null 2>&1 || true
+          INVOKE=$(aliyun swas-open RunCommand \
+            --InstanceId ${{ env.SWAS_INSTANCE_ID }} \
+            --Name migao-ci-deploy \
+            --Type RunShellScript \
+            --Timeout 1800 \
+            --RegionId ${{ env.SWAS_REGION }} \
+            --CommandContent "bash /opt/migao-deploy/deploy.sh" 2>&1)
+          INVOKE_ID=$(echo "$INVOKE" | python3 -c "import sys,json;print(json.load(sys.stdin).get('InvokeId',''))")
+          echo "deploy invokeId=$INVOKE_ID"
+          if [ -z "$INVOKE_ID" ]; then echo "FAILED: no InvokeId"; echo "$INVOKE"; exit 1; fi
+          for i in $(seq 1 90); do
+            RES=$(aliyun swas-open DescribeInvocationResult \
+              --InstanceId ${{ env.SWAS_INSTANCE_ID }} \
+              --InvokeId "$INVOKE_ID" \
+              --RegionId ${{ env.SWAS_REGION }})
+            STATUS=$(echo "$RES" | python3 -c "import sys,json;d=json.load(sys.stdin);v=d.get('InvocationResult') or d;print(v.get('InvocationStatus') or v.get('Status') or '')")
+            echo "  deploy status: $STATUS"
+            if [ "$STATUS" = "Success" ]; then echo "SWAS 部署成功"; break; fi
+            if [ "$STATUS" = "Failed" ]; then echo "FAILED: SWAS 部署失败"; echo "$RES" | head -c 1500; exit 1; fi
+            sleep 20
           done
-
-          sleep 30
-          TARGET_URL="${HEALTH_CHECK_URL}${HEALTH_CHECK_PATH}"
-          echo "执行健康检查：${TARGET_URL}"
-          HTTP_CODE=$(curl -s -o /tmp/health.txt -w "%{http_code}" -m 15 \
-            "${TARGET_URL}" || echo "000")
-          echo "健康检查响应码: $HTTP_CODE"
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "❌ 健康检查失败，响应内容："
-            cat /tmp/health.txt 2>/dev/null || true
-            exit 1
-          fi
-          echo "✅ 部署成功，服务健康"
-          cat /tmp/health.txt | head -c 500 && echo
-
   smoke-test:
     name: Post-Deploy Smoke Test
     needs: build-and-deploy

@@ -4,6 +4,7 @@ ID 自动解析器单元测试
 覆盖 id_resolver.py 所有解析路径：
 - UUID 精确匹配、UUID 前缀、序号、名称匹配、pipe 格式
 """
+# case_ids: PP-003, PP-004, PR-003, PR-009
 
 import pytest
 from unittest.mock import AsyncMock

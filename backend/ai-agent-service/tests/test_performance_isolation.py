@@ -16,6 +16,7 @@
 9. 快速租户切换无泄露
 10. 混合租户读写操作隔离
 """
+# case_ids: DF-001, DF-002, DF-003, DF-005, DF-011
 
 import asyncio
 import json

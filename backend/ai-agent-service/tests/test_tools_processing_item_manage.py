@@ -1,4 +1,5 @@
 """ProcessingItemManageTool 单元测试 — 加工项/加工分类管理"""
+# case_ids: PP-002, PP-003, PP-004
 import pytest
 from unittest.mock import AsyncMock, patch
 from app.tools.processing_item_manage import ProcessingItemManageTool

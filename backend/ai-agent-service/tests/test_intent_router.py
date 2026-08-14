@@ -6,6 +6,7 @@
 - L2 小模型意图分类（mock）
 - L3 路由决策逻辑
 """
+# case_ids: CH-003
 
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock

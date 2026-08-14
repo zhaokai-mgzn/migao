@@ -6,6 +6,7 @@
 2. Tools 层：product_search / product_detail / logistics_track 的响应数据 tenant_id 验证
 3. 错误处理层：registry.py 的敏感信息隐藏
 """
+# case_ids: DF-006, DF-007, DF-009
 
 import json
 import pytest

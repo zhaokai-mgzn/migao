@@ -98,6 +98,27 @@ def find_existing_tests(rule, test_names, repo_root):
     return existing
 
 
+def resolve_test_paths(rule, test_names, repo_root):
+    """把规则的测试模板展开为磁盘上真实存在的测试文件路径（G5 追溯链用）。
+
+    与 find_existing_tests 同基准逻辑，但返回真实路径而非模板名。
+    """
+    cwd = rule.get("cwd") or "."
+    base = repo_root if cwd in (".", "") else os.path.join(repo_root, cwd)
+    paths = []
+    for tn in test_names:
+        if rule["language"] == "java":
+            if tn.endswith(".java"):
+                hits = _glob.glob(os.path.join(base, tn), recursive=True)
+            else:
+                hits = _glob.glob(os.path.join(base, f"**/{tn}.java"), recursive=True)
+        else:
+            hits = [c for c in (os.path.join(base, tn), os.path.join(repo_root, tn))
+                    if os.path.exists(c)]
+        paths.extend(hits)
+    return paths
+
+
 # ── 分类 ──
 
 def is_auto_pass(file_path):
@@ -154,6 +175,131 @@ def summarize(results):
     blockers = [r for r in results if r["kind"] == "block"]
     warnings = [r for r in results if r["kind"] == "warn"]
     return blockers, warnings
+
+
+# ── G5: 用例追溯链（测试文件 ↔ 行为用例 case-contract）──
+
+CASE_IDS_RE = re.compile(r"case_ids\s*[:=]\s*\[?([^\]\n]*)\]?")
+
+
+def extract_case_ids(test_file):
+    """测试文件头部声明的用例 ID（`# case_ids: OR-001, OR-002` / `// case_ids=[...]`）。"""
+    ids = []
+    try:
+        text = Path(test_file).read_text(encoding="utf-8")
+    except OSError:
+        return ids
+    for line in text.split("\n")[:50]:
+        m = CASE_IDS_RE.search(line)
+        if m:
+            for tok in m.group(1).split(","):
+                tok = tok.strip().strip("'\"")
+                if tok:
+                    ids.append(tok)
+    return ids
+
+
+def load_case_index(cases_dir):
+    """cases/*.yml → {case_id: {tier, file}}。目录缺失/解析失败 → ({}, err)。"""
+    if not cases_dir or not os.path.isdir(cases_dir):
+        return {}, f"用例库目录不存在: {cases_dir}"
+    try:
+        here = os.path.dirname(os.path.abspath(__file__))
+        for d in (here, os.path.join(here, "..", "junshi")):
+            if d not in sys.path:
+                sys.path.insert(0, d)
+        from yaml_light import load_file
+        index = {}
+        for fn in sorted(os.listdir(cases_dir)):
+            if not fn.endswith(".yml"):
+                continue
+            data = load_file(os.path.join(cases_dir, fn))
+            for c in data.get("cases") or []:
+                cid = c.get("id", "")
+                if cid:
+                    index[cid] = {"tier": c.get("tier", "normal"), "file": fn}
+        return index, None
+    except Exception as e:
+        return {}, f"用例库解析失败 {cases_dir}: {e}"
+
+
+TEST_FILE_EXTS = (".py", ".java", ".ts", ".tsx")
+
+
+def _is_test_file(file_path):
+    """路径是否为测试文件。
+
+    判定：扩展名必须是代码文件（.py/.java/.ts/.tsx），文件名含 test/spec；
+    conftest（pytest 夹具，非用例）与 runner/生成数据文件（local_runner/eval_cases 等）不算。
+    """
+    base = file_path.split("/")[-1]
+    if not base.endswith(TEST_FILE_EXTS):
+        return False
+    if base in ("conftest.py", "conftest.ts"):
+        return False
+    return re.search(r"(test|spec)", base, re.I) is not None
+
+
+def case_trace_check(rules, files, repo_root, cases_dir, base="origin/main"):
+    """G5：对 PR 涉及的测试文件做「测试 ↔ 行为用例」追溯。
+
+    规则：
+    - 测试文件声明 case_ids → 每个 ID 必须存在于用例库，否则 block
+    - 新增（本 PR added）测试未声明 → block「新增测试未关联行为用例」
+    - 修改（本 PR changed）测试未声明 → block「修改测试未声明 case_ids」
+    - 存量测试未声明 → warn（历史遗留，不阻塞，鼓励补关联）
+    返回 (blocks, warns, report)。
+    """
+    blocks, warns, report = [], [], []
+    if not cases_dir:
+        return blocks, warns, [{"level": "info", "msg": "未提供 --check-cases，跳过 G5 用例追溯"}]
+    if not os.path.isdir(cases_dir):
+        warns.append({"file": cases_dir, "kind": "warn", "module": "Case Contract",
+                      "reason": "用例库目录不存在，G5 用例追溯未启用（项目接入 case-contract 后自动生效）"})
+        return blocks, warns, report
+    case_index, err = load_case_index(cases_dir)
+    if err:
+        blocks.append({"file": cases_dir, "kind": "block", "module": "Case Contract",
+                       "reason": f"G5 无法加载用例库: {err}"})
+        return blocks, warns, report
+
+    added = {os.path.normpath(os.path.join(repo_root, a)) for a in get_added_files(base)}
+    changed = {os.path.normpath(os.path.join(repo_root, a)) for a in files}
+
+    traced = set()
+    for f in files:
+        if _is_test_file(f):
+            p = os.path.normpath(os.path.join(repo_root, f))
+            if os.path.exists(p):
+                traced.add(p)
+            continue
+        if is_auto_pass(f):
+            continue
+        rule = match_rule(f, rules)
+        if rule is None:
+            continue
+        for p in resolve_test_paths(rule, expand_test_names(rule, f), repo_root):
+            traced.add(os.path.normpath(p))
+
+    for p in sorted(traced):
+        declared = extract_case_ids(p)
+        if declared:
+            unknown = [c for c in declared if c not in case_index]
+            if unknown:
+                blocks.append({"file": p, "kind": "block", "module": "Case Contract",
+                               "reason": f"测试声明了不存在的用例 ID: {', '.join(unknown)}"})
+            else:
+                report.append({"file": p, "level": "pass", "case_ids": declared})
+        elif p in added:
+            blocks.append({"file": p, "kind": "block", "module": "Case Contract",
+                           "reason": "新增测试未声明 case_ids（头部加 # case_ids: <用例ID>，见 design/16-case-contract.md §五 G5）"})
+        elif p in changed:
+            blocks.append({"file": p, "kind": "block", "module": "Case Contract",
+                           "reason": "修改的测试未声明 case_ids（头部加 # case_ids: <用例ID>）"})
+        else:
+            warns.append({"file": p, "kind": "warn", "module": "Case Contract",
+                          "reason": "存量测试未声明 case_ids（建议关联行为用例）"})
+    return blocks, warns, report
 
 
 # ── G2: 覆盖率%门禁（解析三种报告 + 新鲜度 + 阈值）──
@@ -332,6 +478,24 @@ def get_changed_files(base="origin/main"):
         return []
 
 
+def get_added_files(base="origin/main"):
+    """git diff --diff-filter=A → 本 PR 新增文件（G5 用）。"""
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--diff-filter=A", "--name-only", f"{base}...HEAD"],
+            capture_output=True, text=True, timeout=15,
+        )
+        if result.returncode != 0:
+            result = subprocess.run(
+                ["git", "diff", "--diff-filter=A", "--name-only", base, "HEAD"],
+                capture_output=True, text=True, timeout=15,
+            )
+        return [f.strip() for f in result.stdout.split("\n") if f.strip()]
+    except Exception as e:
+        print(f"⚠️ git diff --diff-filter=A 失败: {e}", file=sys.stderr)
+        return []
+
+
 def _render_markdown(results, blockers, warnings):
     lines = ["| 文件 | 模块 | 状态 |", "|------|------|------|"]
     for r in results:
@@ -339,10 +503,15 @@ def _render_markdown(results, blockers, warnings):
         if kind == "pass":
             lines.append(f"| {r['file']} | {r['module']} | ✅ |")
         elif kind == "block":
-            req = ", ".join(r.get("required_tests", []) or [])
-            lines.append(f"| {r['file']} | {r['module']} | ❌ BLOCKED（缺 {req}） |")
+            if r.get("reason"):
+                lines.append(f"| {r['file']} | {r['module']} | ❌ BLOCKED（{r['reason']}） |")
+            else:
+                req = ", ".join(r.get("required_tests", []) or [])
+                lines.append(f"| {r['file']} | {r['module']} | ❌ BLOCKED（缺 {req}） |")
         elif kind == "exempt":
             lines.append(f"| {r['file']} | {r['module']} | 🔓 豁免 |")
+        elif kind == "warn":
+            lines.append(f"| {r['file']} | {r['module']} | ⚠️ {r.get('reason', '警告')} |")
         elif kind == "auto_pass":
             lines.append(f"| {r['file']} | {r['module']} | ✅ 自动通过 |")
         else:
@@ -351,8 +520,11 @@ def _render_markdown(results, blockers, warnings):
     if blockers:
         md += f"\n\n## ❌ {len(blockers)} 处缺测阻塞合并"
         for b in blockers:
-            req = ", ".join(b.get("required_tests", []) or [])
-            md += f"\n- **{b['file']}** → 补 {req}"
+            if b.get("reason"):
+                md += f"\n- **{b['file']}** → {b['reason']}"
+            else:
+                req = ", ".join(b.get("required_tests", []) or [])
+                md += f"\n- **{b['file']}** → 补 {req}"
     elif warnings:
         md += f"\n\n## ⚠️ {len(warnings)} 处警告（非阻塞）"
     else:
@@ -379,6 +551,8 @@ def main(argv=None):
                         help="有 blocker 时退出码 1（本地/CLI 用）；默认退出码 0（CI 由 JSON 判定，崩溃才非零）")
     parser.add_argument("--check-weak", action="store_true",
                         help="扫描 --files 指定测试文件的弱断言（凑数断言），有则退出 1")
+    parser.add_argument("--check-cases",
+                        help="用例库目录（cases/*.yml）——启用 G5 用例追溯链：测试文件 ↔ 行为用例")
     args = parser.parse_args(argv)
 
     if args.check_weak:
@@ -419,6 +593,14 @@ def main(argv=None):
     results = [classify_file(f, rules, exemptions, args.repo_root) for f in files]
     blockers, warnings = summarize(results)
 
+    # G5: 用例追溯链（测试文件 ↔ 行为用例；--check-cases 启用）
+    case_blocks, case_warns, case_report = [], [], []
+    if args.check_cases:
+        case_blocks, case_warns, case_report = case_trace_check(
+            rules, files, args.repo_root, args.check_cases, args.base)
+        blockers.extend(case_blocks)
+        warnings.extend(case_warns)
+
     md = _render_markdown(results, blockers, warnings)
     print(md)
 
@@ -437,6 +619,11 @@ def main(argv=None):
             "blockers": blockers,
             "warnings": warnings,
             "results": results,
+            "case_trace": {
+                "blockers": len(case_blocks),
+                "warnings": len(case_warns),
+                "report": case_report,
+            },
         }
         with open(args.json_file, "w") as f:
             json.dump(payload, f, ensure_ascii=False, indent=2)

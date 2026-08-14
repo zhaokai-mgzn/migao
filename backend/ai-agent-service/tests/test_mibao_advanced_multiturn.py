@@ -15,6 +15,7 @@ Mock 策略：
 - 使用 soft assertion 收集所有失败，统一报告
 - 每个场景验证 thinking mode 配置和清除逻辑
 """
+# case_ids: AS-005, CH-002, OR-006, PR-011, PR-012
 
 import json
 import logging

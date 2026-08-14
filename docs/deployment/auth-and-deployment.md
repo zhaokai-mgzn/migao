@@ -10,7 +10,7 @@
 
 ### 1.1 服务职责
 
-认证功能已合并到 admin-api（Java Spring Boot 3），统一部署到单个 SAE 应用：
+认证功能已合并到 admin-api（Java Spring Boot 3），与其余业务统一部署（2026-08-14 起为 SWAS 容器，此前为 SAE）：
 
 ```
 admin-api/ (Java Spring Boot 3)
@@ -262,7 +262,7 @@ Redis 计数器实现：
 
 ## 5. 部署配置要点
 
-> 详细的 SAE 环境变量、Terraform 配置等参见 [deployment-aliyun.md](./deployment-aliyun.md)
+> 部署相关以 [`docs/wiki/Deployment.md`](../wiki/Deployment.md) 为准；环境变量等历史细节见 [deployment-aliyun.md](./deployment-aliyun.md)（SAE 时代，历史参考）
 
 ### 5.1 API Gateway 路由关键规则
 

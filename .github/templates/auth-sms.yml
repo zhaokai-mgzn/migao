@@ -1,0 +1,43 @@
+name: auth-sms
+description: 短信登录/注册类需求
+red_flags: [375]
+
+business_truths:
+  - [auth-sms.code-rule] 短信验证码 6 位数字，Redis 存储 TTL 300 秒（5 分钟），校验通过即删除（一次性使用）
+  - [auth-sms.send-limit] 发送验证码 POST /api/auth/sms/send，60 秒防刷 + 每手机号每日上限 10 次
+  - [auth-sms.bypass] dev/CI 可注入 sms.bypass-code（默认空=禁用），测试常见万能码 123456
+  - [auth-sms.login-order] 短信登录 POST /api/auth/sms/login：先查 platform_admins（super_admin，tenantId=-1），再跨租户按手机号查 users（active 用户，不限 admin 角色，取 updated_at DESC LIMIT 1）
+  - [auth-sms.login-response] 短信登录成功返回 LoginResponse：accessToken/refreshToken/expiresIn/user（user 含 id/nickname/avatar/role/identityType/roles/tenantId/tenantName，无 name、无 phone 字段）
+  - [auth-sms.password-disabled] 密码登录 POST /api/auth/admin/login 已禁用（#375）：接口仍存在但抛 AUTH_FAILED(401)
+  - [auth-sms.register-fields] 注册接口 POST /api/auth/register 为企业入驻申请：必填 companyName/contactName/phone/smsCode，无 password 字段，返回 {applicationId, status:"pending", message}，不返回 token
+  - [auth-sms.error-codes] 验证码错误/过期：登录侧返回 401(AUTH_FAILED)，注册侧返回 422(VALIDATION_ERROR)
+
+primary_specs:
+  - tests/e2e/specs/auth/login-sms.spec.ts
+  - tests/e2e/specs/auth/register.spec.ts
+  - backend/admin-api/src/test/java/com/migao/admin/controller/AuthIntegrationTest.java
+
+reviewer_asserts:
+  - API: POST /api/auth/sms/send
+    expect: HTTP 200 且 response.success=true
+  - API: POST /api/auth/sms/send（60 秒内重复）
+    expect: HTTP 400，message 含"发送过于频繁"
+  - API: POST /api/auth/sms/login
+    expect: HTTP 200，response.data.accessToken 非空 AND response.data.refreshToken 非空 AND response.data.user 含 id/nickname/role/roles/tenantId
+  - API: POST /api/auth/sms/login（错误/过期验证码）
+    expect: HTTP 401，response.error.code=AUTH_FAILED
+  - API: POST /api/auth/admin/login
+    expect: HTTP 401，response.error.code=AUTH_FAILED，message 含"密码登录已禁用"
+  - API: POST /api/auth/register
+    expect: HTTP 200，response.data.status="pending" AND response.data.applicationId 非空（不返回 token）
+  - API: POST /api/auth/register（同手机号已有 pending 或 approved）
+    expect: HTTP 422，response.error.code=VALIDATION_ERROR
+
+confidence_required: 100%
+
+common_pitfalls:
+  - 验证码未失效（应校验通过即删除，一次性使用）
+  - 密码登录入口没禁用（应返回 401 而非放行）
+  - token 字段名写错（是 accessToken 不是 token；user 无 name/phone）
+  - 把注册写成"手机号+密码"，实际是"企业入驻申请"（companyName/contactName/phone/smsCode，无密码）
+  - 忘记 60 秒防刷与每日 10 次上限

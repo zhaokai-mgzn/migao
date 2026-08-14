@@ -1,4 +1,5 @@
 """EmployeeManageTool 单元测试 — 员工 CRUD"""
+# case_ids: HR-001, HR-002, HR-003
 import pytest
 from unittest.mock import AsyncMock, patch
 from app.tools.employee_manage import EmployeeManageTool

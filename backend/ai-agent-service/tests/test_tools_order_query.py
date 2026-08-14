@@ -1,6 +1,7 @@
 """
 订单查询 Tool 测试 — 验证 processingInfo 销售信息提取 + 安全隔离
 """
+# case_ids: OR-001, OR-002, OR-003, OR-004
 import pytest
 from unittest.mock import patch, AsyncMock
 from app.tools.order_query import OrderQueryTool

@@ -6,6 +6,7 @@
 修复后：destructive=True 的工具执行前，当前轮用户消息必须是明确确认，
 否则拦截并引导 LLM 先展示确认卡片。核心判断抽为 _is_explicit_confirmation。
 """
+# case_ids: DF-008
 from app.graph.skills.base_skill import _is_explicit_confirmation
 
 

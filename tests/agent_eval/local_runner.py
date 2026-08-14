@@ -9,6 +9,7 @@ Mibao Agent 本地评测 — 直接调 localhost chat API，采集 SSE 事件
 
 import sys, os, json, time, asyncio, re
 from pathlib import Path
+from pathlib import Path
 
 # CI stdout 可能默认 ascii 编码，强制 UTF-8（防中文/emoji 触发 UnicodeEncodeError）
 for _stream in (sys.stdout, sys.stderr):
@@ -19,7 +20,7 @@ for _stream in (sys.stdout, sys.stderr):
             pass
 
 sys.path.insert(0, os.path.dirname(__file__))
-from eval_cases import ALL_CASES, get_smoke_cases, get_adversarial_cases, get_active_cases, Difficulty
+from eval_cases import ALL_CASES, EvalCase, Skill, Difficulty
 
 # Config
 ADMIN_API = os.environ.get("ADMIN_API_URL", "http://localhost:8080")
@@ -180,6 +181,12 @@ def check_expectation(result: dict, expectation: str) -> tuple[bool, str]:
     """检查一条 expectation 是否满足"""
     exp_lower = expectation.lower()
 
+    # 检查 direct_reply（路由动作：直接回复、未调工具且有文本输出）
+    if "direct_reply" in exp_lower:
+        if not result.get("tool_calls") and result.get("final_text"):
+            return True, "direct reply without tool call"
+        return False, "expected direct_reply (no tool) but got tool calls"
+
     # 检查 tool 名称（支持 OR 逻辑：A or B）
     or_parts = [p.strip() for p in exp_lower.split(" or ")]
     for tool_name in result.get("__all_tool_names", []):
@@ -336,25 +343,70 @@ async def run_suite(cases, label: str):
 
     return results
 
+
+def load_cases_from_yaml(cases_dir: str) -> list:
+    """从 cases/*.yml 加载用例（case-contract 单一源，替代 eval_cases.py 手写清单）。
+
+    cases_dir 相对仓根（CI 形态: .github/cases）；yaml_light + render_cases 在 .github/ 下。
+    """
+    repo_root = Path(__file__).resolve().parents[2]
+    sys.path.insert(0, str(repo_root / ".github"))
+    from render_cases import exp_to_str, load_case_dicts
+
+    cases = []
+    for c in load_case_dicts(cases_dir):
+        cases.append(EvalCase(
+            id=c.get("id", ""),
+            legacy_id=c.get("legacy_id", ""),
+            title=c.get("title", ""),
+            skill=Skill.GENERAL,  # 域信息由 _domain 携带，runner 不消费 skill
+            difficulty=Difficulty(c.get("tier", "normal")),
+            user_inputs=c.get("user_inputs") or [],
+            expectations=[exp_to_str(e) for e in (c.get("expectations") or [])],
+            data_checks=c.get("data_checks") or [],
+            skip_reason=c.get("skip_reason", ""),
+            tags=c.get("tags") or [],
+        ))
+    return cases
+
+
 async def main():
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("suite", choices=["smoke", "full", "adversarial", "case"], nargs="?", default="smoke")
-    parser.add_argument("--case-id", help="单条用例 ID")
+    parser.add_argument("--case-id", help="单条用例 ID（支持新 ID 与 legacy_id，如 OR-002 或 O002）")
+    parser.add_argument("--cases", help="用例库目录（cases/*.yml）——提供时直接读 YAML（单一源）")
     args = parser.parse_args()
 
+    if args.cases:
+        cases = load_cases_from_yaml(args.cases)
+        print(f"📚 用例源: {args.cases}（{len(cases)} 条，YAML 单一源）")
+    else:
+        cases = ALL_CASES
+        print(f"📚 用例源: eval_cases.py（生成物，{len(cases)} 条）")
+
+    def smoke_cases():
+        return [c for c in cases if c.difficulty == Difficulty.SMOKE and not c.skip_reason]
+
+    def adversarial_cases():
+        return [c for c in cases if c.difficulty == Difficulty.ADVERSARIAL and not c.skip_reason]
+
+    def active_cases():
+        return [c for c in cases if not c.skip_reason]
+
     if args.suite == "case":
-        case = next((c for c in ALL_CASES if c.id == args.case_id), None)
+        case = next((c for c in cases
+                     if c.id == args.case_id or getattr(c, "legacy_id", "") == args.case_id), None)
         if not case:
             print(f"用例 {args.case_id} 不存在")
             return
         results = await run_suite([case], f"单条 {args.case_id}")
     elif args.suite == "smoke":
-        results = await run_suite(get_smoke_cases(), "冒烟")
+        results = await run_suite(smoke_cases(), "冒烟")
     elif args.suite == "adversarial":
-        results = await run_suite(get_adversarial_cases(), "对抗")
+        results = await run_suite(adversarial_cases(), "对抗")
     elif args.suite == "full":
-        results = await run_suite(get_active_cases(), "全量")
+        results = await run_suite(active_cases(), "全量")
 
     # CI 判定：有未通过用例 → exit 1
     failed = [r for r in results if r.get("score", 0) < 1.0]

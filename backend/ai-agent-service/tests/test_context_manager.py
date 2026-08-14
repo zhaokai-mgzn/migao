@@ -4,6 +4,7 @@ AgentContextManager 单元测试
 覆盖 context_manager.py 所有核心路径：
 - 单例模式、缓存 CRUD、实体提取、上下文构建、对话压缩
 """
+# case_ids: DF-004, DF-012, DF-013, DF-015
 
 import pytest
 from collections import OrderedDict

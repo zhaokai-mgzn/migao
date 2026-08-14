@@ -51,9 +51,9 @@ grep -A 5 "lifecycle_rule" deploy/terraform/main.tf | grep -q "chat/" || {
 }
 echo "  ✓ 生命周期规则已配置（chat/ 目录）"
 
-# 4. 检查 SAE 环境变量注入
+# 4. 检查 OSS 环境变量注入（历史 SAE 时代；2026-08-14 起为 SWAS .env.admin-api）
 echo ""
-echo "✓ 检查 SAE 环境变量注入..."
+echo "✓ 检查 OSS 环境变量注入（main.tf）..."
 grep -q "OSS_PERMANENT_BUCKET" deploy/terraform/main.tf || {
     echo "✗ 缺少 OSS_PERMANENT_BUCKET 环境变量"
     exit 1
@@ -62,7 +62,7 @@ grep -q "OSS_TEMPORARY_BUCKET" deploy/terraform/main.tf || {
     echo "✗ 缺少 OSS_TEMPORARY_BUCKET 环境变量"
     exit 1
 }
-echo "  ✓ SAE 环境变量已配置"
+echo "  ✓ OSS 环境变量已配置"
 
 # 5. 检查 output 定义
 echo ""

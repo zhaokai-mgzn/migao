@@ -29,7 +29,7 @@
 
 ## 数据库迁移
 
-**迁移失败不阻塞启动** — `MigrationRunner` 会将错误记入日志但不阻止应用启动（可能已在 DB 手动执行过）。查看 SAE 日志确认：
+**迁移失败不阻塞启动** — `MigrationRunner` 会将错误记入日志但不阻止应用启动（可能已在 DB 手动执行过）。查看 SWAS 容器日志确认（服务器上 `cd /opt/migao-deploy && docker compose logs admin-api`）：
 ```
 ✅ 迁移完成: V9__xxx.sql
 ❌ 迁移失败: V9__xxx.sql  (手动检查是否已执行)
@@ -62,12 +62,18 @@
 - 增加 `timeout` 配置
 - 检查 ai-agent-service 日志确认 SSE 流正常推送
 
-## SAE 部署
+## SWAS 部署
 
 **健康检查失败**
 - 检查 `/actuator/health` (admin-api) 或 `/health` (ai-agent) 可访问
-- 确认 DB/Redis 连接在 SAE 安全组白名单内
-- 查看 SLS 日志排查启动异常
+- 确认 RDS/Tair 白名单包含 SWAS 实例公网 IP（数据层走公网）
+- 服务器上 `docker compose logs --tail=50 <service>` 排查启动异常
+- 部署脚本健康检查在 `/tmp/hc_<name>.txt` 留最后响应
+
+**容器反复重启**
+- `docker compose ps` 看 restart 计数；`docker logs <container>` 看退出原因
+- 常见：RDS/Redis 连接失败（改 `.env.admin-api` / `.env.ai-agent` 后 `docker compose up -d` 重载）
+- RESP3 握手失败 → 确认 `RedisProtocolConfig`（强制 RESP2）已编译进镜像
 
 ---
 详见: [部署检查清单](../deployment/deployment-checklist.md) · [SLS 日志查询 Skill](../../.claude/skills/aliyun-sls-log-query.md)

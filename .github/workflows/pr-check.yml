@@ -163,6 +163,7 @@ jobs:
             --files $CHANGED_FILES \
             --tech-stack .github/tech-stack.yml \
             --exemptions .github/qa-exemptions.yml \
+            --check-cases .github/cases \
             --json --json-file growth-gate-result.json
           BLOCKERS=$(python3 -c "import json;print(json.load(open('growth-gate-result.json')).get('blocker_count',0))")
           WARNINGS=$(python3 -c "import json;print(json.load(open('growth-gate-result.json')).get('warning_count',0))")
@@ -268,6 +269,55 @@ jobs:
               });
             }
 
+  # ============ Case Contract — 用例↔真值引用校验（fail-closed）============
+  case-truth-check:
+    name: Case Contract (truths_ref)
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify case truths_ref resolve
+        run: |
+          # 用例库引用真值 ID 校验：引用不存在的真值 → 阻塞合并（fail-closed）
+          # 文件随二郎神 seed 部署：templates/ + cases/ + truths.py（本仓库在 .github/ 下）
+          if [ -f .github/truths.py ] && [ -d .github/templates ] && [ -d .github/cases ]; then
+            python3 .github/truths.py check --templates .github/templates --cases .github/cases
+          elif [ -f junshi/truths.py ] && [ -d templates ] && [ -d cases ]; then
+            python3 junshi/truths.py check --templates templates --cases cases
+          elif [ -d .github/cases ] || [ -d cases ]; then
+            echo "::error:: 存在用例库（cases/）但缺 templates/truths.py — 请同步二郎神 seed"
+            exit 1
+          else
+            echo "ℹ️ 无用例库（cases/），跳过 case-contract 校验"
+          fi
+
+  # ============ Agent Eval smoke — 每次 PR 跑 smoke tier 用例（case-contract §六：100% 通过才合并）============
+  agent-eval-smoke:
+    name: Agent Eval (smoke tier)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install deps
+        run: pip install httpx
+
+      - name: Run smoke eval (真实 LLM + 多轮业务流)
+        env:
+          AI_API_URL: https://ai-api.migaozn.com
+          ADMIN_API_URL: https://api.migaozn.com
+          SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN }}
+          PYTHONUTF8: "1"
+          PYTHONIOENCODING: utf-8
+        run: python tests/agent_eval/local_runner.py smoke --cases .github/cases
+
   # ============ 任何 CI 失败都打 needs-changes（独立 job，覆盖全部检查）============
   # G3 fix: 原打标在 qa-growth-gate job 内，无法捕获 admin-api-test/admin-web-test/e2e 失败
   label-needs-changes:
@@ -281,6 +331,8 @@ jobs:
       - admin-web-test
       - e2e-quality-gate
       - qa-growth-gate
+      - case-truth-check
+      - agent-eval-smoke
     steps:
       - name: Add junshi-review/needs-changes
         env:
@@ -307,6 +359,8 @@ jobs:
       - admin-web-test
       - e2e-quality-gate
       - qa-growth-gate
+      - case-truth-check
+      - agent-eval-smoke
     steps:
       - name: Remove junshi-review/needs-changes
         env:

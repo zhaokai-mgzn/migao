@@ -1,0 +1,121 @@
+# cases/data.yml — 看板/数据域用例（并源转换）
+# 来源：verification 7.1~7.4 → 4 条（7.4 属坐席会话监控，domains 标注）
+
+schema: "case-contract/1.0"
+domain: data
+
+cases:
+  - id: DA-001
+    legacy_id: "7.1"
+    title: "经营概览"
+    domains:
+      - data
+    tier: normal
+    tags:
+      - dashboard
+      - query
+    truths_ref:
+      - dashboard-jump.overview
+    user_inputs:
+      - "今天生意怎么样"
+    expectations:
+      - tool: dashboard_stats
+        args:
+          action: overview
+    data_checks:
+      - "订单数/销售额来自真实数据"
+    skip_reason: ""
+    merge_log: "verification 7.1 独有"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_base.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: DA-002
+    legacy_id: "7.2"
+    title: "订单趋势"
+    domains:
+      - data
+    tier: normal
+    tags:
+      - dashboard
+      - query
+    truths_ref:
+      - dashboard-jump.order-trend
+    user_inputs:
+      - "最近7天订单趋势"
+    expectations:
+      - tool: dashboard_stats
+        args:
+          action: order_trend
+          days: 7
+    data_checks:
+      - "返回趋势数据（不编造趋势，基于工具返回解读）"
+    skip_reason: ""
+    merge_log: "verification 7.2 独有"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_base.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: DA-003
+    legacy_id: "7.3"
+    title: "最近订单"
+    domains:
+      - data
+    tier: normal
+    tags:
+      - dashboard
+      - query
+    truths_ref:
+      - dashboard-jump.recent-orders
+    user_inputs:
+      - "最近5条订单"
+    expectations:
+      - tool: dashboard_stats
+        args:
+          action: recent_orders
+          limit: 5
+    data_checks:
+      - "返回 <= 5 条订单"
+    skip_reason: ""
+    merge_log: "verification 7.3 独有"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_base.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: DA-004
+    legacy_id: "7.4"
+    title: "客服会话监控"
+    domains:
+      - data
+      - notification
+    tier: normal
+    tags:
+      - monitor
+      - query
+    truths_ref:
+      - agent-notification.monitor
+    user_inputs:
+      - "客服会话情况"
+    expectations:
+      - tool: session_manage
+        args:
+          action: monitor
+    data_checks:
+      - "在线员工数/活跃/排队数来自真实数据"
+    skip_reason: ""
+    merge_log: "verification 7.4 独有"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_session_manage.py"
+      ci:
+        - agent-eval.yml
+      verifies: []

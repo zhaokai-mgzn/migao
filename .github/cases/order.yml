@@ -1,0 +1,371 @@
+# cases/order.yml — 订单域用例（并源转换示范）
+#
+# 标准：ershen/design/16-case-contract.md（schema v1.0 草案）
+# 来源：eval_cases.py 的 O001~O005 + M005/M006/M007(订单段) + C002(订单段)
+#       mibao-verification-cases.md 的 1.1~1.8
+# 并源结果：14 个源用例 → 10 条，合并 4 条、verification 独有 4 条获新 ID
+#
+# ★ 格式铁律：只用 block style（与 yaml_light 兼容），禁止 flow style。
+#   yaml_light 不支持 [a, b] / {k: v}，会被解析成字符串，静默破坏结构。
+#
+# ★ truths_ref 引用 templates/*.yml 的真值 ID（真值 ID 化已完成，125 条全部带 [模板名.短名] 前缀）。
+#   校验：python3 ershen/engine/junshi/truths.py check --templates ershen/seed/migao/templates --cases ershen/seed/migao/cases
+
+schema: "case-contract/1.0"
+domain: order
+
+cases:
+  # ── 只读查询 ──
+  - id: OR-001
+    legacy_id: O001
+    # 同义合并: verification 1.1
+    title: "订单列表查询"
+    domains:
+      - order
+    tier: smoke
+    tags:
+      - query
+      - smoke
+    truths_ref:
+      - order.states
+    user_inputs:
+      - "查看最近的订单"
+    expectations:
+      - tool: order_query
+        args:
+          action: list
+    data_checks:
+      - "data.orders.length >= 0"
+    skip_reason: ""
+    merge_log: "eval O001 + verification 1.1（同义，取 eval 版）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_order_query.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: OR-002
+    legacy_id: O002
+    # 同义合并: verification 1.2
+    title: "订单查询 - 按状态筛选"
+    domains:
+      - order
+    tier: normal
+    tags:
+      - query
+      - filter
+    truths_ref:
+      - order.states
+      - order.flow
+    user_inputs:
+      - "查看待发货的订单"
+    expectations:
+      - tool: order_query
+        args:
+          action: list
+          status: confirmed
+    data_checks:
+      - "data.orders.length >= 0"
+    skip_reason: ""
+    merge_log: "eval O002 + verification 1.2（同义）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_order_query.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: OR-003
+    legacy_id: "1.3"
+    # verification 独有，首次获得 ID
+    title: "订单统计"
+    domains:
+      - order
+    tier: normal
+    tags:
+      - query
+      - statistics
+    truths_ref:
+      - order.statistics
+    user_inputs:
+      - "订单统计数据"
+    expectations:
+      - tool: order_query
+        args:
+          action: statistics
+    data_checks:
+      - "各状态汇总非空"
+    skip_reason: ""
+    merge_log: "verification 1.3 独有"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_order_query.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: OR-004
+    legacy_id: "1.4"
+    title: "订单跟进统计"
+    domains:
+      - order
+    tier: normal
+    tags:
+      - query
+      - statistics
+    truths_ref:
+      - order.follow-status-stats
+    user_inputs:
+      - "订单跟进情况"
+    expectations:
+      - tool: order_query
+        args:
+          action: follow_status_stats
+    data_checks:
+      - "data 非空"
+    skip_reason: ""
+    merge_log: "verification 1.4 独有"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_order_query.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: OR-005
+    legacy_id: "1.5"
+    # M007 第 7 轮沾边，保留独立用例
+    title: "物流追踪"
+    domains:
+      - order
+    tier: normal
+    tags:
+      - query
+      - logistics
+    truths_ref:
+      - order.logistics
+    user_inputs:
+      - "查 ORD-20260701-0001 的物流"
+    expectations:
+      - tool: logistics_track
+        args:
+          order_id: "ORD-20260701-0001"
+    data_checks:
+      - "快递公司/运单号/轨迹非空"
+    skip_reason: ""
+    merge_log: "verification 1.5 独有（M007 中物流只是旅程一环，不合并）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_logistics_track.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  # ── 状态机（合并为一条全流转用例）──
+  - id: OR-006
+    legacy_id: M006
+    # 同义合并: 1.6 + 1.7 的状态更新段 + O004
+    title: "订单状态机全流转 - 查询→确认支付→生产→发货→完成"
+    domains:
+      - order
+    tier: normal
+    tags:
+      - multi_turn
+      - order_lifecycle
+      - status_flow
+    truths_ref:
+      - order.states
+      - order.flow
+      - order.pay-side-effects
+      - order.cancel-side-effects
+      - order.refund-side-effects
+    user_inputs:
+      - "查一下 ORD-20260701-0001 的状态"
+      - "确认支付，标记为生产中"
+      - "发货，物流顺丰 SF1234567890"
+      - "客户确认收货了，标记完成"
+    expectations:
+      - tool: order_query
+        args:
+          action: detail
+      - tool: order_manage
+        args:
+          action: confirm_payment
+      - tool: order_manage
+        args:
+          action: update_status
+          status: processing
+      - tool: order_manage
+        args:
+          action: update_logistics
+          company: 顺丰
+      - tool: order_manage
+        args:
+          action: update_status
+          status: completed
+    data_checks:
+      - "状态流转: pending → processing → shipped → completed"
+      - "每步操作前先确认当前状态"
+    skip_reason: ""
+    merge_log: "eval M006 吸收 verification 1.6（单步 update_status）、1.7 的状态更新段，并吸收 eval O004（标记已发货）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_mibao_advanced_multiturn.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: OR-007
+    legacy_id: O005
+    # 同义合并: 1.7（取消 + 二次确认）
+    title: "取消订单 - 传订单号 ORD-xxx"
+    domains:
+      - order
+    tier: adversarial
+    tags:
+      - id_resolve
+      - adversarial
+      - destructive
+    truths_ref:
+      - order.states
+      - order.flow
+      - order.pay-side-effects
+      - order.cancel-side-effects
+      - order.refund-side-effects
+      - order.no-format
+    user_inputs:
+      - "取消订单 ORD-20260701-0001，原因是客户不要了"
+    expectations:
+      - tool: order_manage
+        args:
+          action: cancel
+          order_id: "ORD-20260701-0001"
+    data_checks:
+      - "success=true"
+      - "confirm 卡片先于写操作（destructive 约定，真值在 ai-chat.tool-classes）"
+    skip_reason: ""
+    merge_log: "eval O005 + verification 1.7（同义，取 eval 的 ORD-xxx 格式版）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_order_manage.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  # ── 创建订单（两条流程 + 一条简化）──
+  - id: OR-008
+    legacy_id: O003
+    title: "创建订单 - 先查商品 SKU 再下单"
+    domains:
+      - order
+      - product
+    tier: normal
+    tags:
+      - create
+      - sku_select
+      - full_flow
+    truths_ref:
+      - order.states
+      - order.create-flow
+      - product-sku-stock.aggregate
+    user_inputs:
+      - "帮我下个订单，客户张三，手机13800138000"
+      - "要遮光窗帘，2件"
+      - "选白色的，散剪，2.8米门幅"
+      - "确认下单"
+    expectations:
+      - tool: product_detail
+        args:
+          product_id: 遮光窗帘
+      - tool: order_create
+        args:
+          items:
+            - sellingMethod: bulk_cut
+              doorWidth: "2.8米"
+    data_checks:
+      - "data.order_id.length > 0"
+    skip_reason: ""
+    merge_log: "eval O003 独有（SKU 先查流程）；verification 1.8 的简化版见 OR-010"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_mibao_scenarios.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: OR-009
+    legacy_id: M005
+    title: "下单全流程 - 选品→选SKU→确认数量→下单"
+    domains:
+      - order
+      - product
+    tier: normal
+    tags:
+      - multi_turn
+      - order_create
+      - sku_select
+      - full_flow
+    truths_ref:
+      - order.states
+      - order.create-flow
+      - product-sku-stock.aggregate
+    user_inputs:
+      - "我要给张三下单，手机13800138000"
+      - "要遮光窗帘"
+      - "选白色的，散剪，2.8米门幅"
+      - "数量 3 件"
+      - "确认下单"
+    expectations:
+      - tool: product_detail
+      - tool: interact
+        args:
+          component: sku_table
+      - tool: order_create
+        args:
+          items:
+            - sellingMethod: bulk_cut
+              doorWidth: "2.8米"
+              colorName: 白色
+    data_checks:
+      - "order_create items[0].sellingMethod = bulk_cut"
+      - "order_create items[0].doorWidth = 2.8米"
+      - "order_create items[0].colorName 包含 '白色'"
+    skip_reason: ""
+    merge_log: "eval M005 独有（多轮引导细节），与 OR-008 互补不合并"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_mibao_scenarios.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: OR-010
+    legacy_id: "1.8"
+    title: "创建订单 - 汇总确认简化流程"
+    domains:
+      - order
+    tier: smoke
+    tags:
+      - create
+      - confirm
+    truths_ref:
+      - order.states
+      - order.create-flow
+    user_inputs:
+      - "创建订单：张三 13812345678，杭州西湖区文三路1号，米白色遮光窗帘 2件"
+      - "选1"
+      - "确认"
+    expectations:
+      - tool: validate_input
+      - tool: order_create
+    data_checks:
+      - "返回订单号"
+    skip_reason: ""
+    merge_log: "verification 1.8 独有（smoke 简化版，与 OR-008/OR-009 的细粒度版互补）；2026-08-14 按 EXAMPLES-order.md 例2 校准为多轮（完整收货信息→选1→确认），单轮直下单与设计澄清流程不符"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_order_manage.py"
+      ci:
+        - agent-eval.yml
+      verifies: []

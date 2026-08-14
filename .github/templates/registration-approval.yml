@@ -1,0 +1,38 @@
+name: registration-approval
+description: 租户注册审批
+red_flags: []
+
+business_truths:
+  - [registration-approval.submit] 提交入驻申请 POST /api/auth/register（公开，需短信验证码）：必填 companyName/contactName/phone/smsCode，成功后 status="pending"（待审核）
+  - [registration-approval.dup-guard] 重复提交：同手机号已有 pending 申请 → 422；已有 approved 记录 → 422
+  - [registration-approval.super-admin-prefix] 审批为平台超管（super_admin 角色）接口，前缀 /api/super-admin/registrations，非 /api/admin
+  - [registration-approval.approve-side-effects] 审批通过 PUT /api/super-admin/registrations/{id}/approve：校验 status=pending，创建租户(status=active) + 企业管理员用户(role=admin, 随机12位初始密码) + 初始化默认角色(admin/operator/customer_service)与 5 个默认权限，申请置 approved
+  - [registration-approval.reject] 驳回 PUT /api/super-admin/registrations/{id}/reject：body 需 rejectReason，申请置 rejected
+  - [registration-approval.reapprove-guard] 重复审批（非 pending 状态）→ 422
+  - [registration-approval.status-enums] 申请状态枚举：pending / approved / rejected
+
+primary_specs:
+  - tests/e2e/specs/auth/register.spec.ts
+  - tests/e2e/specs/platform/registrations.spec.ts
+
+reviewer_asserts:
+  - API: POST /api/auth/register
+    expect: HTTP 200，response.data.status="pending" AND response.data.applicationId 非空
+  - API: GET /api/super-admin/registrations?status=pending
+    expect: 需 super_admin；HTTP 200，data.items 每条 status="pending"
+  - API: PUT /api/super-admin/registrations/{id}/approve
+    expect: HTTP 200；psql 校验 tenants 新增 status=active 行、users 新增 admin 用户
+  - API: PUT /api/super-admin/registrations/{id}/reject
+    expect: HTTP 200（body 含 rejectReason）；psql 校验该申请 status=rejected
+  - API: GET /api/super-admin/registrations（普通租户 admin 调用）
+    expect: HTTP 403（非 super_admin）
+  - psql: SELECT status FROM tenant_applications WHERE id=:id
+    expect: approve 后=approved，reject 后=rejected
+
+confidence_required: 80%
+
+common_pitfalls:
+  - 重复注册未提示（pending 与 approved 两种都要校验）
+  - 审批后租户未创建（approve 副作用：租户+admin 用户+默认角色权限）
+  - 用错路径/方法（应为 PUT /api/super-admin/registrations/{id}/approve，非 POST /api/admin/...）
+  - status 用中文"待审核"（实际为 pending）

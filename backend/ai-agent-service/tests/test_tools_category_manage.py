@@ -1,4 +1,5 @@
 """CategoryManageTool 单元测试 — 分类树/CRUD"""
+# case_ids: CT-001, CT-002, CT-003
 import pytest
 from unittest.mock import AsyncMock, patch
 from app.tools.category_manage import CategoryManageTool

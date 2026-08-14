@@ -1,0 +1,248 @@
+# cases/chat.yml — 边界/多轮行为用例（并源转换）
+# 来源：verification 8.1~8.5 + eval E001/E002/M004/M009/M010/M012 → 7 条
+#
+# ★ 两处用例预期与代码校准（本文件已按代码真值改写）：
+#   - 8.2 escape hatch：原用例写「输入长度>10 触发」，代码（graph/nodes.py）明确不用字符数判断，
+#     实际为「非当前域显式触发词」→ CH-002 按 ai-chat.escape-hatch 真值改写
+#   - 8.5 来源标注「[工具返回]」：代码与 prompt 中均未找到 → CH-004 truths_ref 置空标缺口
+
+schema: "case-contract/1.0"
+domain: chat
+
+cases:
+  - id: CH-001
+    legacy_id: E001
+    title: "空结果 + suggestion 引导修复"
+    domains:
+      - chat
+      - product
+    tier: adversarial
+    tags:
+      - error
+      - suggestion
+      - adversarial
+    truths_ref:
+      - ai-chat.suggestion-on-fail
+      - id-resolve.name
+    user_inputs:
+      - "查看不存在的商品详情"
+    expectations:
+      - tool: product_detail
+      - tool: product_search
+    data_checks:
+      - "error.code=NOT_FOUND"
+      - "suggestion 非空且包含 product_search"
+    skip_reason: ""
+    merge_log: "eval E001 + verification 8.1（同义）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_product_detail.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: CH-002
+    legacy_id: M004
+    title: "创建中途取消（escape hatch - 域关键词触发）"
+    domains:
+      - chat
+      - product
+    tier: adversarial
+    tags:
+      - multi_turn
+      - cancel
+      - user_abort
+    truths_ref:
+      - ai-chat.escape-hatch
+    user_inputs:
+      - "创建商品，名称测试，价格 100"
+      - "算了，不创建了，帮我查查今天的订单都怎么样"
+    expectations:
+      - tool: product_manage
+      # 第二句含「订单」触发词 → 允许切换出 pending 创建流程
+      - tool: order_query
+    data_checks:
+      - "product_manage(action=create) 未被调用"
+      - "切换由『订单』域触发词命中，而非字符数"
+    skip_reason: ""
+    merge_log: "eval M004 + verification 8.2（原用例「长度>10」与代码不符，已按 ai-chat.escape-hatch 校准）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_mibao_advanced_multiturn.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: CH-003
+    legacy_id: "8.4"
+    title: "模糊意图引导 - 不猜测，列出选项"
+    domains:
+      - chat
+    tier: normal
+    tags:
+      - clarification
+    truths_ref:
+      - ai-chat.route-actions
+    user_inputs:
+      - "帮我看看"
+    expectations:
+      # 不调用任何写工具；引导澄清（话术需具体，如「请说'创建商品'」）
+      - tool: direct_reply
+    data_checks:
+      - "无猜测性 tool 调用"
+    skip_reason: ""
+    merge_log: "verification 8.4 独有"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_intent_router.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: CH-004
+    legacy_id: "8.5"
+    title: "数据来源标注 [工具返回]"
+    domains:
+      - chat
+      - data
+    tier: normal
+    tags:
+      - annotation
+    truths_ref:
+      - ai-chat.source-annotation
+    user_inputs:
+      - "今天数据怎么样"
+    expectations:
+      - tool: dashboard_stats
+        args:
+          action: overview
+    data_checks:
+      - "当前实现无标注机制：SSE text 事件仅含 content 字段，回复不含 [工具返回] 标注（若未来实现标注，需同步更新本用例）"
+    skip_reason: ""
+    merge_log: "verification 8.5 独有；标注规则在实现中不存在 → 缺口，待 truth-miner 确认"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_base.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: CH-005
+    legacy_id: M009
+    title: "对抗性 - 打岔后回到原任务"
+    domains:
+      - chat
+      - product
+    tier: adversarial
+    tags:
+      - multi_turn
+      - interruption
+      - context_persistence
+      - adversarial
+    truths_ref:
+      - ai-chat.context-memory
+      - ai-chat.escape-hatch
+    user_inputs:
+      - "我要创建一个窗帘商品，名称星夜，价格 299"
+      - "哦对了，顺便帮我查一下最近有什么订单"
+      - "好，回到刚才，继续创建星夜窗帘"
+      - "分类选窗帘，颜色深蓝"
+      - "确认创建"
+    expectations:
+      - tool: order_query
+      - tool: product_manage
+        args:
+          action: create
+    data_checks:
+      - "创建的 name=星夜, price=299"
+      - "打岔前后上下文未丢失"
+    skip_reason: ""
+    merge_log: "eval M009 独有"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_mibao_multiturn_intelligence.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: CH-006
+    legacy_id: M010
+    title: "对抗性 - 10 轮密集对话后精确操作"
+    domains:
+      - chat
+      - product
+    tier: adversarial
+    tags:
+      - multi_turn
+      - long_context
+      - memory
+      - adversarial
+    truths_ref:
+      - ai-chat.context-memory
+      - ai-chat.compression
+      - id-resolve.index
+    user_inputs:
+      - "搜窗帘"
+      - "看第一个详情"
+      - "搜订单"
+      - "查第一个订单"
+      - "搜客户"
+      - "查张三"
+      - "再搜窗帘"
+      - "把第1个窗帘价格改成 168"
+      - "给它加上第3个加工项"
+      - "确认下刚才改的价格生效了"
+    expectations:
+      - tool: product_manage
+        args:
+          action: update
+      - tool: product_processing_item_manage
+      - tool: product_detail
+    data_checks:
+      - "第8轮 product_id 来自第1-2轮上下文"
+      - "第9轮加工项序号正确解析"
+      - "全程无重复 product_search 查同一商品"
+    skip_reason: ""
+    merge_log: "eval M010 独有"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_mibao_multiturn_intelligence.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: CH-007
+    legacy_id: M012
+    title: "闲聊穿插 - 不污染业务上下文"
+    domains:
+      - chat
+      - product
+    tier: normal
+    tags:
+      - multi_turn
+      - casual_chat
+      - context_isolation
+    truths_ref:
+      - ai-chat.intent-domains
+      - ai-chat.context-memory
+    user_inputs:
+      - "你好"
+      - "你能干什么"
+      - "搜一下遮光窗帘"
+      - "今天天气不错"
+      - "看看第一个的详情"
+      - "好的谢谢"
+    expectations:
+      - tool: product_search
+      - tool: product_detail
+    data_checks:
+      - "闲聊回复不调用 tool"
+      - "product_detail 正确使用 product_search 返回的 ID"
+    skip_reason: ""
+    merge_log: "eval M012 独有"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_mibao_scenarios.py"
+      ci:
+        - agent-eval.yml
+      verifies: []

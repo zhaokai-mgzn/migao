@@ -3,6 +3,7 @@
 
 覆盖 ProcessingItemQueryTool.execute() 的列表查询、关键词搜索、详情查询、错误处理。
 """
+# case_ids: PP-001
 
 import pytest
 from unittest.mock import patch, AsyncMock

@@ -1,4 +1,5 @@
 """SessionManageTool 单元测试 — 会话管理（列表/监控/详情/分配/结束）"""
+# case_ids: DA-004
 import pytest
 from unittest.mock import AsyncMock, patch
 from app.tools.session_manage import SessionManageTool

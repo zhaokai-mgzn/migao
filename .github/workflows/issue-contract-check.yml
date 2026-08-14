@@ -18,6 +18,8 @@ jobs:
       github.event.issue.user.type != 'Bot'
 
     steps:
+      - uses: actions/checkout@v4
+
       - name: Check and remind
         uses: actions/github-script@v7
         with:
@@ -115,3 +117,31 @@ jobs:
               labels: ['needs-truths'],
             });
             console.log('✅ 已提醒补充 CONTRACT_JSON');
+
+      - name: Validate cases references (case-contract)
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          # CONTRACT_JSON 声明了 cases → 每个 ID 必须在用例库中存在（否则 issue 级校验红）
+          CASES=$(python3 -c "
+          import os, re
+          body = os.environ.get('ISSUE_BODY', '')
+          m = re.search(r'\"cases\"\s*:\s*\[([^\]]*)\]', body)
+          ids = [t.strip().strip(chr(34) + chr(39)) for t in m.group(1).split(',') if t.strip()] if m else []
+          print(' '.join(ids))
+          ")
+          if [ -z "$CASES" ]; then
+            echo "ℹ️ 未声明 cases，跳过用例引用校验"
+            exit 0
+          fi
+          FAILED=0
+          for id in $CASES; do
+            if ! python3 .github/truths.py case "$id" --cases .github/cases; then
+              FAILED=1
+            fi
+          done
+          if [ "$FAILED" = "1" ]; then
+            echo "::error:: CONTRACT_JSON 声明了不存在的用例 ID，请从 .github/cases/ 选择或修正"
+            exit 1
+          fi
+          echo "✅ cases 引用全部有效"

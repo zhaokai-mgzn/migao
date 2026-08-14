@@ -1,0 +1,161 @@
+# cases/customer.yml — 客户域用例（并源转换）
+# 来源：eval M011 + verification 4.1~4.4 → 5 条
+
+schema: "case-contract/1.0"
+domain: customer
+
+cases:
+  - id: CU-001
+    legacy_id: "4.1"
+    title: "客户列表"
+    domains:
+      - customer
+    tier: smoke
+    tags:
+      - query
+      - smoke
+    truths_ref:
+      - customer-list.search-fields
+      - customer-list.sort-page
+    user_inputs:
+      - "查客户列表"
+    expectations:
+      - tool: customer_manage
+        args:
+          action: list
+    data_checks:
+      - "返回客户列表（手机号脱敏：前3位+****+后4位）"
+    skip_reason: ""
+    merge_log: "verification 4.1 独有（M011 的客户查询只是旅程一环，不合并）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_base.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: CU-002
+    legacy_id: "4.2"
+    title: "客户详情 - 档案统计"
+    domains:
+      - customer
+    tier: normal
+    tags:
+      - query
+      - detail
+    truths_ref:
+      - customer-list.detail-shape
+      - customer-list.detail-joins
+    user_inputs:
+      - "看张三的客户档案"
+    expectations:
+      - tool: customer_manage
+        args:
+          action: detail
+    data_checks:
+      - "profile.totalOrders / totalConsumption 为数值"
+      - "orders.length <= 10 AND sessions.length <= 10"
+    skip_reason: ""
+    merge_log: "verification 4.2 独有"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_base.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: CU-003
+    legacy_id: "4.3"
+    title: "给客户打标签（TODO 空实现）"
+    domains:
+      - customer
+    tier: normal
+    tags:
+      - tag
+      - write
+    truths_ref:
+      - customer-list.tag-todo
+    user_inputs:
+      - "给张三加VIP标签"
+    expectations:
+      - tool: customer_manage
+        args:
+          action: add_tag
+    data_checks:
+      - "接口恒返回 success 但不落库（TODO 空实现，无副作用）"
+    skip_reason: ""
+    merge_log: "verification 4.3 独有；断言按 customer-list.tag-todo 真值写「无副作用」，防止验收误判"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_base.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: CU-004
+    legacy_id: "4.4"
+    title: "更新客户资料（部分更新）"
+    domains:
+      - customer
+    tier: normal
+    tags:
+      - update
+    truths_ref:
+      - customer-list.partial-update
+    user_inputs:
+      - "张三手机号改成 13900001111"
+    expectations:
+      - tool: customer_manage
+        args:
+          action: update
+    data_checks:
+      - "仅 phone 被更新，未传字段保持原值"
+    skip_reason: ""
+    merge_log: "verification 4.4 独有"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_base.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: CU-005
+    legacy_id: M011
+    title: "对抗性 - 模糊名称渐进澄清（老王→王建国→订单→发货）"
+    domains:
+      - customer
+      - order
+    tier: adversarial
+    tags:
+      - fuzzy_input
+      - progressive_clarification
+      - adversarial
+    truths_ref:
+      - id-resolve.name
+      - customer-list.search-fields
+      - order.states
+    user_inputs:
+      - "帮我处理下老王的订单"
+      - "就是王建国"
+      - "他那个窗帘订单"
+      - "对，发货吧"
+    expectations:
+      - tool: customer_manage
+        args:
+          action: query
+      - tool: order_query
+      - tool: order_manage
+        args:
+          action: update_logistics
+    data_checks:
+      - "customer_id 从 customer_manage 查询获得"
+      - "order_id 从 order_query 获得"
+      - "发货操作使用正确的 order_id"
+    skip_reason: ""
+    merge_log: "eval M011 独有（模糊澄清 + 客户搜索真值）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_mibao_multiturn_intelligence.py"
+      ci:
+        - agent-eval.yml
+      verifies: []

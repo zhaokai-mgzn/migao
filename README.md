@@ -11,7 +11,7 @@
 - **多租户 SaaS** — 5 层隔离（JWT → MyBatis 拦截器 → PostgreSQL RLS → DashVector → 字段脱敏）
 - **完整业务后台** — 商品、订单、CRM、人工坐席、数据看板等 12+ 管理模块
 - **微信小程序** — Taro 跨端框架，SSE 流式对话，原生体验
-- **阿里云全栈部署** — Terraform IaC + SAE + RDS + OSS + CDN，GitHub Actions CI/CD
+- **阿里云全栈部署** — SWAS 轻量应用服务器（源码构建 + docker compose）+ RDS + Redis(Tair) + OSS，GitHub Actions CI/CD
 
 ## 🏗️ 系统架构
 
@@ -62,7 +62,7 @@ graph TB
 | **向量数据库** | DashVector（阿里云） | — |
 | **大语言模型** | DeepSeek V4 Pro (主) + MiniMax M3 (视觉) | V4-Pro / V4-Flash / M3 |
 | **认证** | RS256 JWT (BouncyCastle) + 微信小程序登录 + 短信验证码 | — |
-| **部署** | 阿里云 SAE + RDS + Redis + OSS + CDN + Terraform + GitHub Actions | — |
+| **部署** | 阿里云 SWAS + RDS + Redis(Tair) + OSS + GitHub Actions | — |
 
 ## 📦 功能概览
 
@@ -145,8 +145,9 @@ migao/
 │       └── package.json
 │
 ├── deploy/
+│   ├── swas/deploy.sh          # SWAS 服务器部署脚本（CI 云助手触发，源码构建 + compose）
 │   ├── docker-compose.yml      # 本地开发（PostgreSQL + Redis + 双后端）
-│   ├── terraform/              # 阿里云 IaC（VPC、RDS、SAE、OSS…）
+│   ├── terraform/              # 阿里云 IaC（历史遗留：SAE 已弃用）
 │   └── oss-*.xml               # OSS 静态托管配置
 │
 ├── docs/
@@ -271,9 +272,9 @@ cd tests/smoke && pytest
 
 | 工作流 | 触发路径 | 构建方式 | 部署目标 |
 |--------|---------|---------|---------|
-| `deploy-admin-api` | `backend/admin-api/**` | Maven → FatJar → OSS | SAE (FatJar) |
-| `deploy-ai-agent-service` | `backend/ai-agent-service/**` | Docker → ACR | SAE (镜像) |
-| `deploy-admin-web` | `frontend/admin-web/**` | Next.js 静态导出 | OSS + CDN |
+| `deploy-admin-api` | `backend/admin-api/**` | Maven 单测 + 构建 | SWAS `deploy.sh`（云助手触发） |
+| `deploy-ai-agent-service` | `backend/ai-agent-service/**` | Fast Gate + 全量单测 | SWAS `deploy.sh`（云助手触发） |
+| `deploy-frontend` | `frontend/admin-web/**` | tsc + vitest | SWAS `deploy.sh`（云助手触发） |
 
 ### 快速部署示例
 
@@ -295,8 +296,8 @@ gh pr merge --squash --delete-branch
 每个工作流都支持在 GitHub Actions 页面手动触发（`workflow_dispatch`）。
 
 ### 详细部署文档
-- [阿里云部署指南](docs/deployment/deployment-aliyun.md) — Terraform + SAE + RDS 完整配置 + **CI/CD 流水线详解**
-- [部署检查清单](docs/deployment/deployment-checklist.md) — 17 个历史踩坑记录
+- [阿里云部署指南](docs/deployment/deployment-aliyun.md) — Terraform + SAE 时代的历史配置（**SAE 已弃用**，当前部署以 `deploy/swas/deploy.sh` + `docs/wiki/Deployment.md` 为准）
+- [部署检查清单](docs/deployment/deployment-checklist.md) — 历史踩坑记录（含 SAE 时代经验，可参考）
 - [认证与部署](docs/deployment/auth-and-deployment.md) — JWT、OAuth、API 网关路由
 
 ## 📖 项目文档

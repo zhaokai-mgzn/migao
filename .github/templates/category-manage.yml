@@ -1,0 +1,26 @@
+name: category-manage
+description: 商品分类管理（分类树/创建/删除）
+red_flags: []
+
+business_truths:
+  - [category-manage.tree] category_manage(action=tree) → data.tree 树形分类结构
+  - [category-manage.create] create 必填 name；支持 parent 父分类；缺 name 报错
+  - [category-manage.delete] delete 必填 category_id
+  - [category-manage.roles] customer 角色无权 create（写操作仅 admin 角色）
+
+  - [category-manage.delete-destructive] 删除分类为 DESTRUCTIVE 工具（destructive=True，可删分类及子分类），无 confirm 不得执行（confirm guard 强制）
+primary_specs:
+  - backend/ai-agent-service/tests/test_tools_category_manage.py
+  - tests/e2e/specs/catalog/categories.spec.ts
+
+reviewer_asserts:
+  - pytest: tests/test_tools_category_manage.py
+    expect: 全部通过（tree 树形 / create 校验 / delete / 角色权限）
+
+confidence_required: 90%
+
+common_pitfalls:
+  - create 缺 name 未拦截（@NotBlank 类校验缺失）
+  - customer 角色越权创建分类
+  - 删除分类无 confirm（破坏性操作确认见 ai-chat.confirm-required）
+

@@ -3,6 +3,7 @@
 
 测试 ProductSearchTool.execute() 的各种场景
 """
+# case_ids: PR-001, PR-002, PR-007, PR-009
 
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock

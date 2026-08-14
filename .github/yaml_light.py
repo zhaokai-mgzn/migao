@@ -29,6 +29,17 @@ def _parse_scalar(s):
     return s
 
 
+def _is_inline_map_key(rest):
+    """判断 '- rest' 是否为内联映射 '- key: value'。
+
+    仅当冒号前的 key 是单 token（无空白）时视为映射；
+    否则是「含冒号的标量字符串」（如真值文本 '返回 {applicationId, status:"pending"}'），
+    必须保持为字符串，避免被误拆成 dict。
+    """
+    k0 = rest.partition(':')[0].strip()
+    return bool(k0) and not any(ch.isspace() for ch in k0)
+
+
 def load(text):
     rows = []
     for line in text.split('\n'):
@@ -99,7 +110,7 @@ def load(text):
                     result.append(parse_node(rows[pos][0]))
                 else:
                     result.append(None)
-            elif ':' in rest:
+            elif ':' in rest and rest[0] not in ('"', "'") and _is_inline_map_key(rest):
                 pos += 1  # 消费 '- key: value'
                 item = {}
                 k, _, v = rest.partition(':')

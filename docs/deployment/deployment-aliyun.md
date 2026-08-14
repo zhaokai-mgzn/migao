@@ -1,8 +1,10 @@
-# 阿里云部署方案
+# 阿里云部署方案（历史文档）
+
+> ⚠️ **2026-08-14 起本方案已过时**：生产计算层已从 SAE/OSS+CDN 迁移到 **SWAS 轻量应用服务器**（单机 nginx + 3 应用容器，源码构建 + docker compose）。当前部署事实以 [`docs/wiki/Deployment.md`](../wiki/Deployment.md) 和 `deploy/swas/deploy.sh` 为准；本文仅保留作历史参考（RDS/Tair/OSS/DashVector 等数据层配置仍有效）。
 
 > 版本：v9.0（DashVector 向量数据库 + 百炼 LLM/Embedding API + 管理前端 OSS 静态托管）
 > 日期：2026-05-03
-> 状态：2 个后端服务（admin-api + ai-agent-service），管理前端 OSS+CDN 静态托管，仅接入微信小程序
+> 状态：历史 — SAE 部署已弃用（2026-08-14 迁移 SWAS）
 
 ---
 

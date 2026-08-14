@@ -1,4 +1,5 @@
 """QuickReplyManageTool 单元测试 — 快捷回复 CRUD"""
+# case_ids: ST-006, ST-007
 import pytest
 from unittest.mock import AsyncMock, patch
 from app.tools.quick_reply_manage import QuickReplyManageTool
