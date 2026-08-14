@@ -1,0 +1,45 @@
+name: knowledge-ai
+description: 知识库/AI 相关需求
+red_flags: []
+
+business_truths:
+  - [knowledge-ai.doc-schema] 知识库文档元数据存表 knowledge_documents，主键 id 为 UUID 字符串；字段含 tenant_id/title/doc_type/category/file_type/file_url/content/product_id/embedding_status/chunk_count/dashvector_collection/is_active/deleted(@TableLogic 逻辑删除)
+  - [knowledge-ai.doc-api] 文档管理为 admin-api REST 接口，基路径 /api/admin/knowledge：GET /documents(分页)、POST /documents(上传)、DELETE /documents/{id}(删除)、POST /documents/{id}/embed(重嵌)、POST /test-search(测试搜索)；Controller 直接操作 Mapper，无 Service 层
+  - [knowledge-ai.upload-metadata] 上传仅落元数据：name→title、type→doc_type、description→category，embedding_status 恒为 "pending"、is_active=true、chunk_count=0；file 不落盘(file_url 未实现，TODO)，不触发异步嵌入(TODO)
+  - [knowledge-ai.upload-no-validate] 上传不校验 name/type 非空(无 @NotBlank/@NotNull)，缺失时以 null 落库
+  - [knowledge-ai.embed-no-state] embedding_status 无状态机：仅上传/重嵌写入 "pending"，代码中无 completed/failed 流转(异步嵌入未实现)
+  - [knowledge-ai.tenant-isolation] 租户隔离：列表/测试搜索按 TenantContext.getTenantId() 做 eq 过滤；删除/重嵌先按 id 查询，文档不存在或 tenant_id 不匹配均抛 NOT_FOUND(HTTP 404)
+  - [knowledge-ai.test-search-like] 测试搜索为 MySQL LIKE 文本匹配(非向量 RAG)：tenant_id=? AND is_active=true AND title LIKE ? OR content LIKE ?，固定 LIMIT 10；请求体 topK 字段被忽略；返回 {"results": [文档]}
+  - [knowledge-ai.ai-disconnected] AI 客服当前未接入知识库：knowledge_search / knowledge_manage 两个 Tool 在 registry.py 中被注释禁用(RAG 未部署)，知识 Skill 为占位、0 个激活工具
+  - [knowledge-ai.sse-no-citation] AI 客服 SSE 不含任何"引用/来源"字段：事件仅 loading/heartbeat/text/tool_call/tool_result/card/interactive/suggestions/error/done，text 事件 data 仅 {"content"}
+  - [knowledge-ai.sync-internal] 知识库向量同步走 ai-agent-service 内部接口 POST /api/internal/knowledge/sync(Service Token 认证)，同步类型 document_created/document_updated/document_deleted/product_updated/full_sync；RAG pipeline 未部署时返回 success=false + RAG_DISABLED
+  - [knowledge-ai.readonly-tools] 内部反向工具执行 POST /api/internal/tools/execute 仅允许只读工具，写工具返回 403 WRITE_TOOL_FORBIDDEN
+
+reviewer_asserts:
+  - API: GET /api/admin/knowledge/documents
+    expect: HTTP 200，body.success==true 且 data.items 为数组，每条含 id/title/docType/category/embeddingStatus/isActive
+  - API: POST /api/admin/knowledge/documents (multipart/form-data: name+type)
+    expect: HTTP 200，data.id 非空且 embeddingStatus=="pending"、isActive==true、chunkCount==0
+  - API: DELETE /api/admin/knowledge/documents/{id}
+    expect: 存在且本租户→HTTP 200 后 GET 不再返回该 id(逻辑删除)；跨租户 id→HTTP 404，body.error.code=="NOT_FOUND"
+  - API: POST /api/admin/knowledge/documents/{id}/embed
+    expect: HTTP 200，embeddingStatus 被重置为 "pending"
+  - API: POST /api/admin/knowledge/test-search (body {"query":"关键词"})
+    expect: HTTP 200，body.data.results 为数组，每条含 id/title/content(无 doc_id/snippet 字段)
+  - API: POST /api/chat/send (SSE)
+    expect: 事件流含 loading 与 text 事件，text 的 data.content 非空；响应中不存在 citation/references/sources 字段
+
+common_pitfalls:
+  - test-search 用 MySQL LIKE 而非向量检索；title 与 content 用 .or() 拼接未加括号，AND 优先级高于 OR，使 content LIKE 脱离 tenant_id/is_active 过滤，存在跨租户数据泄漏风险
+  - 断言 /api/knowledge/search 或 doc_id/snippet 字段会失败：真实路径是 /api/admin/knowledge/test-search，字段是 id/title/content
+  - 断言 SSE 有"引用"字段会失败：RAG 未启用，无任何 citation/reference 字段
+  - 上传接口 name/type 无服务端非空校验，缺失会以 null 落库
+  - embedding_status 永远停在 "pending"，不能据此断言"嵌入完成"
+  - knowledge_search/knowledge_manage 工具被注释禁用，/api/internal/tools 列表中不含这两个工具
+
+primary_specs:
+  - tests/e2e/pages/knowledge/knowledge.page.ts
+  - backend/ai-agent-service/tests/test_customer_knowledge_simplified.py
+
+confidence_required: 100%
+

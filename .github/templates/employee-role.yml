@@ -1,0 +1,43 @@
+name: employee-role
+description: 员工/角色权限类需求
+red_flags: [384, 385]
+
+business_truths:
+  - [employee-role.users-endpoint] 员工列表端点 GET /api/admin/users（非 /employees），分页 page/size，筛选 keyword/status/role；items 每条含 id/username/name/phone/email/role/position/status/roles/permissions（无 tenant_id、无 password）
+  - [employee-role.position-fallback] 岗位 position 为空时回退到 role 值（createUser 与 toEmployeeMap 均如此）
+  - [employee-role.permissions] permissions 为 User.permissions 个人菜单权限 JSON 数组；"全权限折叠为全部权限"是前端渲染逻辑，后端不折叠、不返回 "*"
+  - [employee-role.admin-role-star] admin 角色后端计算权限为 ["*"]（全部权限）；operator/product_manager/knowledge_editor 有硬编码权限码映射
+  - [employee-role.write-require-admin] 员工增删改（POST/PUT/DELETE /api/admin/users/*）需当前用户为 admin 角色（requireAdmin）
+  - [employee-role.api-auth] /api/admin/** 由 Spring Security 限定 hasAnyRole(ADMIN, SUPER_ADMIN, SERVICE)，普通 customer/agent 无法访问；@RequirePermission 注解为预留、当前未被使用
+  - [employee-role.tenant-isolation] 租户隔离：MyBatis TenantLineInnerInterceptor 按 JWT tenantId 自动注入 tenant_id 过滤（tenants/tenant_applications/platform_admins 豁免；super_admin 即 tenantId=-1 跳过过滤）
+  - [employee-role.role-crud] 角色 CRUD：GET/POST /api/admin/roles、GET /api/admin/roles/all、GET/PUT/DELETE /api/admin/roles/{id}；删除角色前校验无用户使用，否则 422
+
+primary_specs:
+  - tests/e2e/specs/admin/employees.spec.ts
+  - tests/e2e/specs/admin/roles.spec.ts
+  - backend/admin-api/src/test/java/com/migao/admin/controller/AdminUserControllerTest.java
+
+reviewer_asserts:
+  - API: GET /api/admin/users?page=1&size=10
+    expect: HTTP 200，data.items 每条含 phone/position/roles/permissions 字段
+  - API: GET /api/admin/users
+    expect: items 中 position 为空时其值等于 role
+  - API: POST /api/admin/users
+    expect: 需 admin 角色；成功 HTTP 200 返回新用户且 passwordHash 为 null
+  - API: PUT /api/admin/users/{id}/status
+    expect: status=disabled 禁用、status=active 启用；非 admin 调用返回 403
+  - API: GET /api/admin/roles?page=1&size=100
+    expect: HTTP 200，data.items 每条含 code/name/tenantId
+  - API: DELETE /api/admin/roles/{id}（有用户使用时）
+    expect: HTTP 422，error.code=VALIDATION_ERROR，message 含"无法删除"
+  - psql: SELECT id, tenant_id FROM users WHERE phone=:phone
+    expect: 同手机号可跨租户存在多条（SMS 登录取 updated_at DESC LIMIT 1）
+
+confidence_required: 90%
+
+common_pitfalls:
+  - 用错端点（/api/admin/employees 不存在，应为 /api/admin/users）
+  - 断言响应含 tenant_id（实际无该字段；租户隔离靠 JWT 上下文而非 query 参数）
+  - 把"全部权限"折叠当后端行为（实际是前端渲染）
+  - 岗位列显示 "-" 而非回退 role 值
+  - 跨租户数据泄露（漏掉 TenantLineInnerInterceptor 或 tenantId=-1 豁免）

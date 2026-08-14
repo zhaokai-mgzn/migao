@@ -20,6 +20,15 @@ assignees: []
 2. 
 3. 
 
+## 关联行为用例（选填 — case-contract）
+<!--
+声明「哪些用例定义了这个 issue 的 done」：填用例 ID（见 .github/cases/，如 OR-002 / PR-003）。
+军师 DRAFT 会按这些用例生成验收方案，verify-agent 逐用例打分。
+不填 → 军师从同域用例里选（行为覆盖可能不精确）。
+-->
+- [ ] OR-002
+- [ ] 
+
 ## 涉及范围
 - [ ] 后端 admin-api（Java）
 - [ ] 后端 ai-agent-service（Python）
@@ -49,9 +58,10 @@ assignees: []
 
 <!-- CONTRACT_JSON
 {
-  "schema_version": "1.0",
+  "schema_version": "1.1",
   "type": "feature",
   "business_truths": [],
+  "cases": [],
   "affected_modules": [],
   "red_flags": [],
   "exclusions": []

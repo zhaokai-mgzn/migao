@@ -1,0 +1,68 @@
+name: agent-notification
+description: 坐席通知域（客服会话 + 快捷回复 + 通知管理）
+red_flags: []
+business_truths:
+  - [agent-notification.quick-reply-crud] 快捷回复（quick_reply_templates）提供 CRUD：GET 分页列表、GET categories、POST 创建、PUT /{id} 更新、DELETE /{id} 删除；删除为逻辑删除（@TableLogic）
+  - [agent-notification.quick-reply-category] 快捷回复支持 category 分组；分类接口按 tenant_id 隔离（DISTINCT category, deleted=0）
+  - [agent-notification.quick-reply-validate] 快捷回复创建校验 category/title/content 必填（@NotBlank），缺失返回 HTTP 422 + error.code=VALIDATION_ERROR；isPublic 默认 true，usageCount 默认 0，列表按 usageCount 倒序
+  - [agent-notification.quick-reply-isolation-gap] 快捷回复租户隔离不完整：列表/分类按 tenant_id 过滤，但 PUT /{id} 与 DELETE /{id} 仅按 id 查询、不校验 tenant_id（存在跨租户改/删）
+  - [agent-notification.notification-status] 通知（notifications）状态声明 pending/sent/failed/read，但代码创建时硬编码 status="sent"，实际仅产生 sent/read 两种状态
+  - [agent-notification.notification-filter] 通知列表与未读数只按 recipient_id（当前用户）过滤、不按 tenant_id；markAsRead/delete 才校验 tenantId+recipientId（非本人或跨租户返回 403 PERMISSION_DENIED）
+  - [agent-notification.notification-no-api] 通知规则/模板无管理 API：NotificationRule/NotificationTemplate 无 Controller，仅 NotificationService 内部 triggerByEvent/createFromTemplate 使用
+  - [agent-notification.template-vars] 通知模板变量用 {{key}} 替换，仅在 createFromTemplate/triggerByEvent 内部生效；POST /api/admin/notifications 的 variables 字段被忽略
+  - [agent-notification.session-status] 客服会话（agent_sessions）状态值 waiting/active/ended/transferred（实体注释误写 closed）；实际流转仅产生 waiting→active、waiting/active→ended，transferred 无产生入口
+  - [agent-notification.session-assign] 会话分配仅 waiting 可执行；目标员工必须非 offline 且其 active 会话数 < maxConcurrent（默认 5）；成功后 status=active、写 startedAt 并插入 system 消息
+  - [agent-notification.session-end] 会话结束仅 active/waiting 可执行；成功后 status=ended、写 endedAt 并插入 system 消息
+  - [agent-notification.session-isolation] 会话租户隔离：列表按 tenant_id 过滤；详情/分配/结束跨租户返回 404 NOT_FOUND（非 403）
+  - [agent-notification.monitor] 监控面板：在线员工=status in (online,busy)，含 active/waiting 会话数与今日会话数（今日0点+8时区起）
+
+primary_specs:
+  - backend/admin-api/src/test/java/com/migao/admin/controller/QuickReplyControllerTest.java
+  - backend/admin-api/src/test/java/com/migao/admin/controller/NotificationControllerTest.java
+  - backend/admin-api/src/test/java/com/migao/admin/controller/AgentSessionControllerTest.java
+  - tests/e2e/specs/settings/notifications.spec.ts
+
+reviewer_asserts:
+  - API: GET /api/admin/quick-replies?page=1&size=20
+    expect: HTTP 200 且 $.success=true 且 $.data.total>=0 且 $.data.items 为数组
+  - API: GET /api/admin/quick-replies/categories
+    expect: HTTP 200 且 $.data 为数组（元素为 category 字符串）
+  - API: POST /api/admin/quick-replies
+    expect: 带 category/title/content 时 HTTP 200 且 $.data.id 非空；空 body 时 HTTP 422 且 $.error.code=VALIDATION_ERROR
+  - API: PUT /api/admin/quick-replies/{id}
+    expect: HTTP 200 且 $.data.id={id}
+  - API: DELETE /api/admin/quick-replies/{id}
+    expect: HTTP 200；psql 校验 quick_reply_templates.deleted=1（逻辑删除非物理删除）
+  - API: GET /api/admin/notifications?page=1&size=20
+    expect: HTTP 200 且 $.success=true 且 $.data.total>=0 且 $.data.items 为数组
+  - API: GET /api/admin/notifications/unread-count
+    expect: HTTP 200 且 $.data.count>=0
+  - API: POST /api/admin/notifications
+    expect: 带 recipientId/recipientType/title/content 时 HTTP 200 且 $.data.status=sent；缺 recipientId 时 HTTP 422 且 $.error.code=VALIDATION_ERROR
+  - API: PUT /api/admin/notifications/{id}/read
+    expect: 本人通知 HTTP 200；psql notifications.status='read' 且 read_at 非空
+  - API: PUT /api/admin/notifications/read-all
+    expect: HTTP 200；psql 该 recipient 下 status!='read' 记录数为 0
+  - API: DELETE /api/admin/notifications/{id}
+    expect: 本人通知 HTTP 200；非本人/跨租户 HTTP 403 且 $.error.code=PERMISSION_DENIED
+  - API: GET /api/admin/agent-sessions?page=1&size=20
+    expect: HTTP 200 且 $.data.total>=0 且 $.data.items 为数组
+  - API: GET /api/admin/agent-sessions/monitor
+    expect: HTTP 200 且 $.data.onlineEmployeeCount>=0
+  - API: GET /api/admin/agent-sessions/{id}
+    expect: HTTP 200 且 $.data.messages 为数组；跨租户 HTTP 404
+  - API: POST /api/admin/agent-sessions/{id}/assign
+    expect: waiting 会话 HTTP 200 且 psql agent_sessions.status='active'；非 waiting HTTP 422
+  - API: POST /api/admin/agent-sessions/{id}/end
+    expect: active/waiting 会话 HTTP 200 且 psql status='ended' 且 ended_at 非空；ended 会话 HTTP 422
+
+common_pitfalls:
+  - 快捷回复与通知均无 GET /{id} 详情端点，勿断言不存在接口
+  - 快捷回复 PUT/DELETE 无租户校验，跨租户可改/删（真实安全缺口）
+  - 通知列表/未读数不按 tenant_id 过滤，租户隔离仅依赖 recipientId 全局唯一
+  - 通知规则/模板无 HTTP 管理端点，无法通过 API 创建/编辑规则
+  - 通知创建即 sent，无 pending/failed 中间态；POST 的 variables 参数不生效
+  - agent_sessions 实体注释状态写 "closed"，代码实际用 "ended"，以代码为准
+  - 会话跨租户访问返回 404 而非 403，勿误判为权限校验缺失
+
+confidence_required: 100%

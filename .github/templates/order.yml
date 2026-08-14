@@ -1,0 +1,39 @@
+name: order
+description: 订单域（状态机 + 副作用 + 含加工筛选 + 原子流转）
+
+business_truths:
+  - [order.states] 6 状态：pending(待确认) / confirmed(已确认) / producing(生产中) / shipped(已发货) / completed(已完成) / cancelled(已取消)
+  - [order.flow] 状态流转：pending→{confirmed,cancelled}；confirmed→{producing,shipped,cancelled}；producing→{shipped,cancelled}；shipped→{completed}；completed/cancelled 为终态
+  - [order.pay-side-effects] 确认支付(pending→confirmed)：扣减库存 + 增加销量（原子，防并发重复扣减）
+  - [order.cancel-side-effects] 取消订单(pending/confirmed/producing→cancelled)：confirmed/producing 取消时恢复库存 + 减少销量
+  - [order.refund-side-effects] 退款：仅 confirmed/producing/shipped/completed 可退款，恢复库存和销量
+  - [order.has-processing] 含加工筛选 = hasProcessing 参数（true=只含加工，false=不含，null=不过滤）
+  - [order.cancel-reason-limit] 关闭原因 ≤ 500 字符
+  - [order.flow-guard] 非法状态流转 → 报错拒绝（不允许跳级，如 pending 直接到 shipped）
+
+  - [order.statistics] order_query(action=statistics)：订单统计汇总，不接收其他参数（适用「订单统计数据」「各状态订单汇总」场景）
+  - [order.follow-status-stats] order_query(action=follow_status_stats)：订单跟进状态统计，不接收其他参数
+  - [order.logistics] logistics_track 按 order_id 或 tracking_number 查询物流轨迹；用户只说「查物流」未给单号时先询问，不得空查（READONLY）
+  # ⚠️ 缺口: 订单号生成规则（ORD-yyyyMMdd-XXXX 仅来自用例示例，生成代码未确认；解析侧见 order.no-format）
+  - [order.no-format] 订单号以 ORD- 前缀标识；服务端接口支持 ORD-xxx 与 UUID 双格式自动解析（AgentOrderController / AfterSalesTicketService）
+  - [order.create-flow] 创建订单前置：必须先调 product_detail 查 SKU；多 SKU 必须让用户选规格（颜色/售卖方式/门幅），单 SKU 直接用；禁止跳过 SKU 选择直接下单（order_create.py）
+reviewer_asserts:
+  - API: POST /api/admin/orders/{id}/confirm-payment（pending 订单）
+    expect: data.status = confirmed AND 库存扣减 AND 销量增加
+  - DB: 确认支付后查库存
+    expect: 对应 SKU 库存减少该订单数量
+  - API: POST /api/admin/orders/{id}/cancel（confirmed 订单）
+    expect: data.status = cancelled AND 库存恢复 AND 销量减少
+  - API: POST /api/admin/orders/{id}/confirm-payment（shipped 订单，非法流转）
+    expect: 返回错误（只有 pending 可确认支付）
+  - API: GET /api/admin/orders?hasProcessing=true
+    expect: items 每条 hasProcessing = true
+
+common_pitfalls:
+  - 状态流转跳级（pending 直接 shipped，未过 confirmed/producing）
+  - 确认支付未扣库存 / 取消未恢复库存（副作用缺失）
+  - 并发重复扣减库存（未用原子流转）
+  - 已取消/已完成订单仍可流转
+  - 退款未恢复库存和销量
+
+confidence_required: 100%

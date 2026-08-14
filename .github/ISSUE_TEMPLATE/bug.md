@@ -38,9 +38,10 @@ assignees: []
 
 <!-- CONTRACT_JSON
 {
-  "schema_version": "1.0",
+  "schema_version": "1.1",
   "type": "bug",
   "business_truths": [],
+  "cases": [],
   "repro_steps": [],
   "failing_test": { "file": "", "scenario": "", "expected_fail": "" },
   "affected_modules": []

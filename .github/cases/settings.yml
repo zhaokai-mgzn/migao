@@ -1,0 +1,203 @@
+# cases/settings.yml — 设置/通知域用例（并源转换）
+# 来源：verification 6.1~6.7 → 7 条（6.4~6.7 属通知域，domains 标注双域）
+
+schema: "case-contract/1.0"
+domain: settings
+
+cases:
+  - id: ST-001
+    legacy_id: "6.1"
+    title: "系统设置 - 读取"
+    domains:
+      - settings
+    tier: normal
+    tags:
+      - query
+    truths_ref:
+      - settings-manage.read-write
+      - settings-manage.secret-hidden
+    user_inputs:
+      - "查看系统设置"
+    expectations:
+      - tool: settings_manage
+        args:
+          action: get_settings
+    data_checks:
+      - "返回商户名/行业"
+      - "响应不含 accessKeyId/accessKeySecret/apiKey/secret"
+    skip_reason: ""
+    merge_log: "verification 6.1 独有"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_settings_manage.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: ST-002
+    legacy_id: "6.2"
+    title: "AI 配置 - 读取"
+    domains:
+      - settings
+    tier: normal
+    tags:
+      - query
+      - ai_config
+    truths_ref:
+      - settings-manage.ai-config
+    user_inputs:
+      - "AI客服配置是什么"
+    expectations:
+      - tool: settings_manage
+        args:
+          action: get_ai_config
+    data_checks:
+      - "data.botName 非空"
+    skip_reason: ""
+    merge_log: "verification 6.2 独有"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_settings_manage.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: ST-003
+    legacy_id: "6.3"
+    title: "修改密码"
+    domains:
+      - settings
+    tier: adversarial
+    tags:
+      - write
+      - password
+    truths_ref:
+      - settings-manage.change-password
+    user_inputs:
+      - "改密码，旧密码xxx 新密码yyy"
+    expectations:
+      - tool: settings_manage
+        args:
+          action: change_password
+    data_checks:
+      - "确认后修改成功"
+    skip_reason: ""
+    merge_log: "verification 6.3 独有；change_password 真值待 truth-miner 补挖"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_settings_manage.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: ST-004
+    legacy_id: "6.4"
+    title: "通知列表"
+    domains:
+      - settings
+      - notification
+    tier: normal
+    tags:
+      - query
+    truths_ref:
+      - agent-notification.notification-filter
+    user_inputs:
+      - "看看通知"
+    expectations:
+      - tool: notification_manage
+        args:
+          action: list
+    data_checks:
+      - "返回列表/未读数"
+    skip_reason: ""
+    merge_log: "verification 6.4 独有"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_notification_manage.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: ST-005
+    legacy_id: "6.5"
+    title: "通知标记已读"
+    domains:
+      - settings
+      - notification
+    tier: normal
+    tags:
+      - write
+    truths_ref:
+      - agent-notification.notification-status
+    user_inputs:
+      - "把新订单通知标为已读"
+    expectations:
+      - tool: notification_manage
+        args:
+          action: mark_read
+    data_checks:
+      - "status 变为 read"
+    skip_reason: ""
+    merge_log: "verification 6.5 独有"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_notification_manage.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: ST-006
+    legacy_id: "6.6"
+    title: "快捷回复列表"
+    domains:
+      - settings
+      - notification
+    tier: normal
+    tags:
+      - query
+    truths_ref:
+      - agent-notification.quick-reply-crud
+    user_inputs:
+      - "看看快捷回复模板"
+    expectations:
+      - tool: quick_reply_manage
+        args:
+          action: list
+    data_checks:
+      - "返回模板列表（按 usageCount 倒序）"
+    skip_reason: ""
+    merge_log: "verification 6.6 独有"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_quick_reply_manage.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: ST-007
+    legacy_id: "6.7"
+    title: "创建快捷回复"
+    domains:
+      - settings
+      - notification
+    tier: normal
+    tags:
+      - create
+    truths_ref:
+      - agent-notification.quick-reply-validate
+    user_inputs:
+      - "新建'欢迎语'快捷回复：您好，欢迎咨询词元通达！"
+    expectations:
+      - tool: quick_reply_manage
+        args:
+          action: create
+    data_checks:
+      - "category/title/content 必填校验通过后创建成功"
+    skip_reason: ""
+    merge_log: "verification 6.7 独有"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_quick_reply_manage.py"
+      ci:
+        - agent-eval.yml
+      verifies: []

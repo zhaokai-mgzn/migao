@@ -1,0 +1,35 @@
+name: defense
+description: 防御性边界（迭代上限/熔断/压缩/安全）— 对抗性用例 D 系列的真值域
+red_flags: []
+
+business_truths:
+  - [defense.max-iterations] Tool Calling 最大迭代次数 max_iterations 默认 8（skill_config 字段默认值；docstring「默认 5」为过时注释）
+  - [defense.breaker-threshold] 熔断器默认连续 3 次失败开路（failure_threshold=3），恢复超时 30s，半开探测 1 次（half_open_max_calls=1）
+  - [defense.breaker-no-retry] 熔断开路时重试策略不重试：CircuitBreakerOpenError 立即向上传播（llm/retry_policy.py）
+  - [defense.destructive-confirm] destructive 工具必须先弹 confirm 卡片（见 ai-chat.confirm-required）
+  - [defense.tenant-jwt] 租户 ID 始终取自 JWT，LLM 无法修改（见 ai-chat.permission-layers）
+
+  - [defense.injection] 注入防护：SQL 层 MyBatis 参数化（mapper XML 无 ${} 字符串拼接）；前端富文本字段（商品描述）渲染前过 sanitizeHtml 消毒（lib/sanitize-html.ts），普通字段走 React 转义
+  - [defense.output-limit] 回复长度受 LLM 输出 token 上限约束：LLMFactory max_tokens 默认 512（max_completion_tokens），无独立字数限制
+  - [defense.rate-limit] 消息速率限制未实现：redis_client.py 仅有 "ratelimit:" key 前缀，无消费点（D004 的 rate_limit 预期无对应实现）
+  - [defense.redis-degrade] Redis 不可用时优雅降级：context_manager save/load 捕获异常仅告警，上下文回退进程内缓存，不阻塞请求
+  - [defense.jwt] AI 服务侧 JWT 校验：RS256 公钥验签 + audience=migao 手动校验；过期 → 401 TOKEN_EXPIRED；签名无效 → 401（app/utils/auth.py）
+  - [defense.input-limit] 输入长度无统一服务端校验：商品等 DTO 无 @Size（仅加工项 DTO 有）；超长输入依赖 LLM token 窗口截断，无独立拒绝机制
+primary_specs:
+  - backend/ai-agent-service/tests/test_destructive_tool_confirm_guard.py
+  - backend/ai-agent-service/tests/test_performance_isolation.py
+  - backend/ai-agent-service/tests/test_rls_application.py
+
+reviewer_asserts:
+  - pytest: tests/test_destructive_tool_confirm_guard.py
+    expect: 全部通过（destructive 工具无 confirm 不得执行）
+
+confidence_required: 100%
+
+common_pitfalls:
+  - max_iterations 注释与实际默认值漂移（注释写 5、代码 8——已确认为过时注释）
+  - 熔断阈值与用例预期不符（用例 D011 写「5 次」，代码默认 3 次——用例需校准）
+  - 压缩阈值与用例预期不符（用例 D004/L001 写「20 条」，代码 max_recent=12——用例需校准）
+  - 开环后重试放大流量（retry_policy 必须先查 breaker 状态）
+
+# ⚠️ 缺口: 无（原缺口已由 defense.output-limit 真值覆盖）

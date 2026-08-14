@@ -1,0 +1,95 @@
+# cases/category.yml — 分类管理域用例（并源转换）
+# 来源：verification 2.10~2.12 → 3 条（模板 category-manage.yml 为本轮新建）
+
+schema: "case-contract/1.0"
+domain: category
+
+cases:
+  - id: CT-001
+    legacy_id: "2.10"
+    title: "分类树"
+    domains:
+      - category
+    tier: normal
+    tags:
+      - query
+      - tree
+    truths_ref:
+      - category-manage.tree
+    user_inputs:
+      - "看看商品分类"
+    expectations:
+      - tool: category_manage
+        args:
+          action: tree
+    data_checks:
+      - "返回树形分类（data.tree）"
+    skip_reason: ""
+    merge_log: "verification 2.10 独有"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_category_manage.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: CT-002
+    legacy_id: "2.11"
+    title: "创建分类"
+    domains:
+      - category
+    tier: normal
+    tags:
+      - create
+    truths_ref:
+      - category-manage.create
+    user_inputs:
+      - "在窗帘布艺下新建'轻奢系列'分类"
+    expectations:
+      - tool: category_manage
+        args:
+          action: create
+    data_checks:
+      - "name 必填校验通过后创建成功（含 parent 父分类）"
+    skip_reason: ""
+    merge_log: "verification 2.11 独有"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_category_manage.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: CT-003
+    legacy_id: "2.12"
+    title: "删除分类 - 二次确认 + 风险提示"
+    domains:
+      - category
+    tier: adversarial
+    tags:
+      - delete
+      - destructive
+      - confirm
+    truths_ref:
+      - category-manage.delete
+      - category-manage.delete-destructive
+      - ai-chat.confirm-required
+    user_inputs:
+      - "删除'轻奢系列'分类"
+    expectations:
+      - tool: interact
+        args:
+          component: confirm
+      - tool: category_manage
+        args:
+          action: delete
+    data_checks:
+      - "二次确认 + 风险提示后才执行删除"
+    skip_reason: ""
+    merge_log: "verification 2.12 独有（二次确认行为在测试中未确认，见 category-manage.yml 缺口注释）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_category_manage.py"
+      ci:
+        - agent-eval.yml
+      verifies: []

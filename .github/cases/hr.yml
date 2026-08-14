@@ -1,0 +1,149 @@
+# cases/hr.yml — 人事/角色域用例（并源转换）
+# 来源：verification 5.1~5.5 → 5 条（eval 无 HR 域，全部首次获得 ID）
+
+schema: "case-contract/1.0"
+domain: hr
+
+cases:
+  - id: HR-001
+    legacy_id: "5.1"
+    title: "员工列表"
+    domains:
+      - hr
+    tier: smoke
+    tags:
+      - query
+      - smoke
+    truths_ref:
+      - employee-role.users-endpoint
+      - employee-role.position-fallback
+    user_inputs:
+      - "有哪些员工"
+    expectations:
+      - tool: employee_manage
+        args:
+          action: list
+    data_checks:
+      - "返回姓名/角色/状态"
+      - "position 为空时回退 role 值"
+    skip_reason: ""
+    merge_log: "verification 5.1 独有"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_employee_manage.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: HR-002
+    legacy_id: "5.2"
+    title: "创建员工 - 开账号"
+    domains:
+      - hr
+    tier: normal
+    tags:
+      - create
+    truths_ref:
+      - employee-role.write-require-admin
+    user_inputs:
+      - "新客服王五 13812345678，开账号"
+    expectations:
+      - tool: employee_manage
+        args:
+          action: create
+    data_checks:
+      - "收集确认后创建成功"
+    skip_reason: ""
+    merge_log: "verification 5.2 独有"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_employee_manage.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: HR-003
+    legacy_id: "5.3"
+    title: "禁用员工账号"
+    domains:
+      - hr
+    tier: normal
+    tags:
+      - status
+      - destructive
+    truths_ref:
+      - employee-role.write-require-admin
+    user_inputs:
+      - "王五离职了，停用账号"
+    expectations:
+      - tool: employee_manage
+        args:
+          action: toggle_status
+          status: disabled
+    data_checks:
+      - "二次确认后停用"
+    skip_reason: ""
+    merge_log: "verification 5.3 独有"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_employee_manage.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: HR-004
+    legacy_id: "5.4"
+    title: "角色列表"
+    domains:
+      - hr
+    tier: smoke
+    tags:
+      - query
+      - smoke
+    truths_ref:
+      - employee-role.role-crud
+    user_inputs:
+      - "系统有哪些角色"
+    expectations:
+      - tool: role_manage
+        args:
+          action: list
+    data_checks:
+      - "返回角色列表"
+    skip_reason: ""
+    merge_log: "verification 5.4 独有"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_role_manage.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: HR-005
+    legacy_id: "5.5"
+    title: "创建角色 - 分配权限"
+    domains:
+      - hr
+    tier: normal
+    tags:
+      - create
+      - permission
+    truths_ref:
+      - employee-role.role-crud
+      - employee-role.permissions
+    user_inputs:
+      - "新建'库管'角色，给商品和库存权限"
+    expectations:
+      - tool: role_manage
+        args:
+          action: create
+    data_checks:
+      - "确认后创建成功，permissions 含商品/库存权限码"
+    skip_reason: ""
+    merge_log: "verification 5.5 独有"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_role_manage.py"
+      ci:
+        - agent-eval.yml
+      verifies: []

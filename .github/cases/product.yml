@@ -1,0 +1,411 @@
+# cases/product.yml — 商品/库存/创建流程用例（并源转换）
+#
+# 标准：ershen/design/16-case-contract.md（schema v1.0）
+# 来源：eval P001~P007 + M001/M002/M003 + verification 2.1~2.9
+# 并源结果：18 个源用例 → 12 条（1:1 合并 3 对，M 系列并入创建流程组）
+# 校验：python3 ershen/engine/junshi/truths.py check --templates ershen/seed/migao/templates --cases ershen/seed/migao/cases
+
+schema: "case-contract/1.0"
+domain: product
+
+cases:
+  - id: PR-001
+    legacy_id: P001
+    title: "商品搜索 - 关键词模糊匹配"
+    domains:
+      - product
+    tier: smoke
+    tags:
+      - search
+      - smoke
+    truths_ref:
+      - product-sku-stock.status-flow
+    user_inputs:
+      - "搜索遮光窗帘"
+    expectations:
+      - tool: product_search
+        args:
+          keyword: 遮光窗帘
+    data_checks:
+      - "data.products.length > 0"
+    skip_reason: ""
+    merge_log: "eval P001 + verification 2.1（同义，取 eval 版）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_product_search.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: PR-002
+    legacy_id: "2.2"
+    title: "商品搜索 - 按库存状态筛选"
+    domains:
+      - product
+    tier: normal
+    tags:
+      - search
+      - filter
+    truths_ref:
+      - product-sku-stock.low-stock
+    user_inputs:
+      - "有哪些缺货的商品"
+    expectations:
+      - tool: product_search
+        args:
+          stock_status: out_of_stock
+    data_checks:
+      - "data.products.length >= 0"
+    skip_reason: ""
+    merge_log: "verification 2.2 独有"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_product_search.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: PR-003
+    legacy_id: P002
+    title: "商品详情 - 通过名称查询（ID 解析）"
+    domains:
+      - product
+    tier: smoke
+    tags:
+      - detail
+      - id_resolve
+      - smoke
+    truths_ref:
+      - id-resolve.name
+      - id-resolve.no-fabricate
+      - product-sku-stock.aggregate
+    user_inputs:
+      - "查看遮光窗帘的详细信息"
+    expectations:
+      - tool: product_detail
+        args:
+          product_id: 遮光窗帘
+    data_checks:
+      - "data.name.length > 0"
+      - "data.skus.length > 0"
+    skip_reason: ""
+    merge_log: "eval P002 + verification 2.3（同义）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_product_detail.py"
+        - "backend/ai-agent-service/tests/test_id_resolver.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: PR-004
+    legacy_id: "2.4"
+    title: "查库存"
+    domains:
+      - product
+    tier: normal
+    tags:
+      - inventory
+      - query
+    truths_ref:
+      - product-sku-stock.aggregate
+      - product-sku-stock.realtime
+    user_inputs:
+      - "遮光窗帘还有多少库存"
+    expectations:
+      - tool: inventory_manage
+        args:
+          action: query
+    data_checks:
+      - "库存数量 = SUM(SKU 库存)"
+    skip_reason: ""
+    merge_log: "verification 2.4 独有"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_inventory_manage.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: PR-005
+    legacy_id: "2.5"
+    title: "调整库存 - 出库"
+    domains:
+      - product
+    tier: normal
+    tags:
+      - inventory
+      - write
+    truths_ref:
+      - product-sku-stock.realtime
+    user_inputs:
+      - "遮光窗帘出库10件，备注样品寄出"
+    expectations:
+      - tool: inventory_manage
+        args:
+          action: adjust
+    data_checks:
+      - "返回新库存数量"
+    skip_reason: ""
+    merge_log: "verification 2.5 独有（adjust 详细真值未确认，见映射表 5.1）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_inventory_manage.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: PR-006
+    legacy_id: "2.6"
+    title: "低库存预警"
+    domains:
+      - product
+    tier: normal
+    tags:
+      - inventory
+      - alert
+    truths_ref:
+      - product-sku-stock.low-stock
+    user_inputs:
+      - "看看哪些商品库存不足"
+    expectations:
+      - tool: inventory_manage
+        args:
+          action: low_stock_alert
+    data_checks:
+      - "每项库存 <= 100"
+    skip_reason: ""
+    merge_log: "verification 2.6 独有"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_inventory_manage.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: PR-007
+    legacy_id: "2.7"
+    title: "商品上架（状态流转）"
+    domains:
+      - product
+    tier: normal
+    tags:
+      - status
+      - write
+    truths_ref:
+      - product-sku-stock.status-flow
+    user_inputs:
+      - "把遮光窗帘上架"
+    expectations:
+      - tool: product_manage
+        args:
+          action: toggle_status
+          status: on_sale
+    data_checks:
+      - "success=true"
+    skip_reason: ""
+    merge_log: "verification 2.7 独有"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_product_search.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: PR-008
+    legacy_id: P003
+    title: "创建商品 - 完整流程"
+    domains:
+      - product
+    tier: normal
+    tags:
+      - create
+      - full_flow
+    truths_ref:
+      - product-sku-stock.create-flow
+      - product-sku-stock.create-confirm
+    user_inputs:
+      - "创建一个窗帘，名称测试窗帘A，价格168，分类选窗帘"
+      - "颜色选白色和灰色"
+      - "货号用 TEST-CURTAIN-A"
+      - "确认创建"
+    expectations:
+      - tool: product_manage
+        args:
+          action: create
+      - tool: validate_input
+      - tool: interact
+        args:
+          component: choice
+    data_checks:
+      - "data.product_id.length > 0"
+    skip_reason: ""
+    merge_log: "eval P003 + verification 2.9（同义，取 eval 版）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_mibao_scenarios.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: PR-009
+    legacy_id: P007
+    title: "商品更新 - 名称解析 ID"
+    domains:
+      - product
+    tier: adversarial
+    tags:
+      - id_resolve
+      - update
+    truths_ref:
+      - id-resolve.name
+      - id-resolve.no-fabricate
+    user_inputs:
+      - "把遮光窗帘的价格改成 199"
+    expectations:
+      - tool: product_manage
+        args:
+          action: update
+          product_id: 遮光窗帘
+    data_checks:
+      - "success=true"
+    skip_reason: ""
+    merge_log: "eval P007 + verification 2.8（同义，取 eval 的 ID 解析版）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_product_search.py"
+        - "backend/ai-agent-service/tests/test_id_resolver.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: PR-010
+    legacy_id: M001
+    title: "商品全生命周期 - 搜索→查看→修改→关联加工项→验证"
+    domains:
+      - product
+    tier: smoke
+    tags:
+      - multi_turn
+      - single_skill
+      - full_lifecycle
+      - id_reuse
+      - smoke
+    truths_ref:
+      - id-resolve.index
+      - id-resolve.no-fabricate
+      - product-sku-stock.status-flow
+    user_inputs:
+      - "搜索窗帘"
+      - "看看第一个的详情"
+      - "把价格改成 199，确认修改"
+      - "给它加上S钩安装"
+      - "再看看这个商品的详情确认一下"
+    expectations:
+      - tool: product_search
+      - tool: product_detail
+        args:
+          product_id: "1"
+      - tool: product_manage
+        args:
+          action: update
+      - tool: product_processing_item_manage
+        args:
+          action: add
+      - tool: product_detail
+    data_checks:
+      - "第3轮 product_id 来自第2轮结果"
+      - "第4轮 product_id 来自第2轮结果"
+      - "全程未重新 product_search 查同一个商品"
+    skip_reason: ""
+    merge_log: "eval M001 独有（多轮 ID 复用，覆盖 2.3+2.8 的多轮形态）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_mibao_multiturn_intelligence.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: PR-011
+    legacy_id: M002
+    title: "创建商品完整引导流程 - AI 主导收集信息"
+    domains:
+      - product
+    tier: normal
+    tags:
+      - multi_turn
+      - guided_flow
+      - full_create
+      - processing_item
+    truths_ref:
+      - product-sku-stock.create-flow
+      - product-sku-stock.create-confirm
+      - ai-chat.validate-input
+    user_inputs:
+      - "我要创建一个新商品"
+      - "名称叫夏日清风窗帘，价格 168"
+      - "分类选窗帘"
+      - "颜色有米白和浅灰"
+      - "货号用 SUMMER-BREEZE"
+      - "需要打孔和韩式折边这两个加工项"
+      - "确认创建，没问题"
+    expectations:
+      - tool: interact
+        args:
+          component: choice
+      - tool: processing_item_query
+      - tool: validate_input
+      - tool: product_manage
+        args:
+          action: create
+    data_checks:
+      - "最终创建成功，返回 product_id"
+      - "创建的加工项数量 = 2"
+      - "全程 AI 主动引导，不等待用户逐项输入"
+    skip_reason: ""
+    merge_log: "eval M002 吸收 verification 8.3（缺信息补全 = validate_input 引导）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_mibao_advanced_multiturn.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: PR-012
+    legacy_id: M003
+    title: "商品创建中途修改 - 用户纠偏"
+    domains:
+      - product
+    tier: normal
+    tags:
+      - multi_turn
+      - correction
+      - mid_flow_change
+    truths_ref:
+      - product-sku-stock.create-flow
+      - ai-chat.validate-input
+    user_inputs:
+      - "创建商品，名称测试窗帘，价格 100"
+      - "分类选窗帘"
+      - "等等，价格改成 200"
+      - "颜色白色，货号 TEST-001"
+      - "不需要加工项"
+      - "确认创建"
+    expectations:
+      - tool: product_manage
+        args:
+          action: create
+          price: 200
+      - tool: processing_item_query
+      - tool: validate_input
+    data_checks:
+      - "最终 price=200（不是 100）"
+      - "无加工项关联"
+    skip_reason: ""
+    merge_log: "eval M003 独有（中途纠偏）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_mibao_advanced_multiturn.py"
+      ci:
+        - agent-eval.yml
+      verifies: []

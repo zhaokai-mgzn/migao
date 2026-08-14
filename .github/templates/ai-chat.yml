@@ -1,0 +1,37 @@
+name: ai-chat
+description: AI 客服对话域（意图路由 + 工具调用 + 双 Agent + confirm + SSE）
+
+business_truths:
+  - [ai-chat.intent-domains] 意图分 9 领域分组：common(问候/告别/能力/通用) / order / product / crm / hr / settings / analytics / knowledge
+  - [ai-chat.intent-tool-map] 意图→工具映射：order_query→order_query、product_inquiry→product_search/detail、complaint→human_handoff、dashboard→dashboard_stats 等（INTENT_TOOL_MAP）
+  - [ai-chat.route-actions] 路由 action 4 类：direct_reply（直接答）/ route_with_hint（带工具提示）/ full_agent（全 Agent）/ human_handoff（转人工）
+  - [ai-chat.tool-classes] 工具分类：read_only（纯查询，无需确认）/ destructive（不可逆删除，必须弹 confirm 卡片）/ idempotent（可安全重试）
+  - [ai-chat.confirm-required] 写操作（read_only=False）必须先弹 confirm 卡片，用户确认后才执行
+  - [ai-chat.suggestion-on-fail] 工具失败必须返回 suggestion 字段（告诉 LLM 如何引导用户修复）
+  - [ai-chat.permission-layers] 权限两层：角色检查（allowed_roles）+ 细粒度权限（required_permissions）
+  - [ai-chat.context-memory] 多轮对话保持上下文（session 记忆，跨 graph 调用 state 不丢）
+
+  - [ai-chat.escape-hatch] pending skill 会话连续性：存在 pending skill 时默认回到原 skill；仅当用户消息包含非当前域的显式触发词（查订单/物流/发货/订单/售后/退货/退款/换货/投诉/查商品/搜商品/创建商品/商品管理/客户/会员/员工/角色/权限/设置/配置/通知/快捷回复）才允许切换。不用字符数判断（中文确认消息可超 10 字，nodes.py 注释明确此点）
+  - [ai-chat.validate-input] 写操作缺必填信息时 validate_input 校验并引导补全，禁止猜值
+  - [ai-chat.compression] 长对话压缩：默认保留最近 12 条消息（max_recent=12），更早消息生成结构化摘要（base_skill → context_manager.compress_conversation）
+  - [ai-chat.source-annotation] 当前实现无「[工具返回]」来源标注机制：SSE text 事件 data 仅 {"content"}，回复不标注数据来源（用例 8.5 的期望与实现脱节）
+reviewer_asserts:
+  - API: POST /api/ai/chat {"message":"查我的订单"}
+    expect: 路由到订单域工具 AND 返回订单相关数据
+  - API: POST /api/ai/chat {"message":"你好"}
+    expect: 返回问候回复（greeting 意图，direct_reply）
+  - API: POST /api/ai/chat {"message":"删除商品"}（destructive 工具场景）
+    expect: 返回 confirm 卡片（不直接执行删除）
+  - 工具调用失败场景
+    expect: 返回 suggestion 字段非空 AND 提示用户如何修复
+  - 多轮：第 1 轮问"查我的订单"，第 2 轮问"第 3 个呢"
+    expect: 保持订单查询上下文（state 在轮次间保持）
+
+common_pitfalls:
+  - 写操作未弹 confirm 就执行（破坏性操作越权）
+  - 工具失败未返回 suggestion（LLM 不知道如何修复）
+  - 意图误路由（订单查询误判为商品咨询、投诉误判为普通售后）
+  - 多轮对话丢失上下文（第 2 轮忘记第 1 轮的话题）
+  - 越权调用：customer 角色调用 admin 工具未拦截
+
+confidence_required: 100%

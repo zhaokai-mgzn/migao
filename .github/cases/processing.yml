@@ -1,0 +1,132 @@
+# cases/processing.yml — 加工项域用例（并源转换）
+# 来源：eval P004~P006 + verification 2.13/2.14 → 4 条
+
+schema: "case-contract/1.0"
+domain: processing
+
+cases:
+  - id: PP-001
+    legacy_id: P004
+    title: "加工项选择 - 分页翻页"
+    domains:
+      - processing
+    tier: normal
+    tags:
+      - processing_item
+      - pagination
+    truths_ref:
+      - processing-manage.crud
+      - processing-manage.category-sort
+    user_inputs:
+      - "给遮光窗帘添加加工项"
+      - "选第1个和第3个"
+    expectations:
+      - tool: product_processing_item_manage
+        args:
+          action: add
+      - tool: processing_item_query
+    data_checks:
+      - "data.pageMeta != null"
+    skip_reason: ""
+    merge_log: "eval P004 + verification 2.13（查询部分同义）+ 2.14 的查询段"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_processing_item_query.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: PP-002
+    legacy_id: "2.14"
+    title: "加工项分类列表"
+    domains:
+      - processing
+    tier: normal
+    tags:
+      - processing_item
+      - category
+    truths_ref:
+      - processing-manage.category-sort
+      - processing-manage.crud
+    user_inputs:
+      - "基础加工分类下有哪些"
+    expectations:
+      - tool: processing_item_manage
+        args:
+          action: list_categories
+    data_checks:
+      - "返回分类列表"
+    skip_reason: ""
+    merge_log: "verification 2.14 独有"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_processing_item_manage.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: PP-003
+    legacy_id: P005
+    title: "加工项 - 传名称自动解析 UUID"
+    domains:
+      - processing
+    tier: adversarial
+    tags:
+      - id_resolve
+      - adversarial
+    truths_ref:
+      - id-resolve.name
+      - id-resolve.no-fabricate
+    user_inputs:
+      - "给遮光窗帘添加打孔加工"
+    expectations:
+      - tool: product_processing_item_manage
+        args:
+          action: add
+          item_ids:
+            - 打孔
+    data_checks:
+      - "success=true"
+    skip_reason: ""
+    merge_log: "eval P005 独有（名称 ID 解析）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_processing_item_manage.py"
+        - "backend/ai-agent-service/tests/test_id_resolver.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: PP-004
+    legacy_id: P006
+    title: "加工项 - 传序号自动解析 UUID"
+    domains:
+      - processing
+    tier: adversarial
+    tags:
+      - id_resolve
+      - adversarial
+      - sequence
+    truths_ref:
+      - id-resolve.index
+    user_inputs:
+      - "给遮光窗帘添加第1、3、5个加工项"
+    expectations:
+      - tool: product_processing_item_manage
+        args:
+          action: add
+          item_ids:
+            - 1
+            - 3
+            - 5
+    data_checks:
+      - "success=true"
+    skip_reason: ""
+    merge_log: "eval P006 独有（序号 ID 解析）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_processing_item_manage.py"
+        - "backend/ai-agent-service/tests/test_id_resolver.py"
+      ci:
+        - agent-eval.yml
+      verifies: []

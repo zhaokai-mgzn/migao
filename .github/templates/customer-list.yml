@@ -1,0 +1,61 @@
+name: customer-list
+description: 客户列表/详情类需求（含客户标签管理）
+red_flags: []
+
+business_truths:
+  - [customer-list.search-fields] 客户列表 GET /api/admin/customers 支持 keyword 搜索，仅对微信昵称(wechatNickname)或手机号(phone)做 LIKE 子串匹配，不存在"姓名/name"字段
+  - [customer-list.filters] 客户列表支持 sourceChannel、vipLevel 精确(=)筛选，多条件为 AND 关系
+  - [customer-list.sort-page] 客户列表按 createdAt 倒序排序；分页 page 默认1、size 默认10，单页上限500
+  - [customer-list.detail-shape] 客户详情 GET /api/admin/customers/{id} 返回 data={id, profile, tags, orders, sessions} 四部分；profile 含 totalOrders/totalConsumption 统计字段与 RFM 分(rScore/fScore/mScore/rfmTotalScore)
+  - [customer-list.detail-joins] 详情 orders 按 customer_phone=profile.phone 关联最近10条(createdAt 倒序)；sessions 按 customer_id 关联最近10条；不存在客户返回 404
+  - [customer-list.enums] 客户档案状态枚举：vipLevel ∈ normal/vip1/vip2/vip3；customerStatus ∈ active/silent/churn_warning/churned；lifecycleStage ∈ new/growing/mature/declining/churned；gender ∈ male/female/unknown
+  - [customer-list.no-create-api] 无 POST /api/admin/customers 创建接口；建档由 createFromSession / createFromOrder 触发，首次下单自动建档 totalOrders=1、sourceChannel=order
+  - [customer-list.partial-update] 客户档案更新(PUT)为部分更新：仅更新请求体中的非空字段，未传字段保持不变；不存在的 id 返回 404
+  - [customer-list.physical-delete] 删除客户(DELETE)为物理删除(removeById)，删除后再次 GET 返回 404
+  - [customer-list.phone-unique] 手机号唯一性：createCustomer 按 phone+tenantId 查重，重复抛 422 "该手机号已存在客户档案"
+  - [customer-list.tenant-isolation] 租户隔离由 MyBatis-Plus TenantLineInnerInterceptor 在 SQL 层自动注入 tenant_id 列（忽略 tenants/tenant_applications/platform_admins），不同租户看不到彼此客户/标签/订单/会话；tenantId=-1 或 super_admin 跳过过滤
+  - [customer-list.tags] 客户标签：GET /api/admin/customer-tags 返回租户下全部标签(createdAt 倒序)；创建标签按 name+tenantId 查重，tagType 默认 manual、hitCount 默认 0
+  - [customer-list.tag-todo] 给客户添加/移除标签接口(POST/DELETE /api/admin/customers/{customerId}/tags/{tagId})为 TODO 空实现：恒返回 success 但不落库、无副作用
+  - [customer-list.api-auth] 接口权限：/api/admin/** 仅 ADMIN/SUPER_ADMIN/SERVICE 角色可访问，未认证 401、权限不足 403
+  - [customer-list.ai-masking] AI 工具 customer_manage 的 list 对手机号脱敏(前3位+****+后4位)且 name 恒为 null；admin-api 原始列表接口返回明文手机号
+
+primary_specs:
+  - tests/e2e/specs/customers/customer-list.spec.ts
+  - tests/e2e/specs/customers/customer-detail.spec.ts
+  - backend/admin-api/src/test/java/com/migao/admin/controller/CustomerControllerTest.java
+
+reviewer_asserts:
+  - API: GET /api/admin/customers?keyword=<已存在手机号>
+    expect: success=true 且 items 中每条 phone 或 wechatNickname 包含该关键词(子串匹配)
+  - API: GET /api/admin/customers?sourceChannel=wechat_mini
+    expect: success=true 且 items 每条 sourceChannel == "wechat_mini"
+  - API: GET /api/admin/customers?vipLevel=vip1
+    expect: success=true 且 items 每条 vipLevel == "vip1"
+  - API: GET /api/admin/customers?page=1&size=1
+    expect: success=true 且 data.size==1、items.length<=1，items 按 createdAt 倒序
+  - API: GET /api/admin/customers/{存在id}
+    expect: success=true 且 data 含 profile/tags/orders/sessions 四键；data.profile.totalOrders 与 data.profile.totalConsumption 为数值；orders.length<=10 且 sessions.length<=10
+  - API: GET /api/admin/customers/{不存在id}
+    expect: success=false 且 error.code=="NOT_FOUND"、HTTP 404
+  - API: PUT /api/admin/customers/{id}（body 仅含 phone）
+    expect: success=true 且仅 phone 被更新，未传字段(如 vipLevel/wechatNickname)保持原值
+  - API: DELETE /api/admin/customers/{id}
+    expect: success=true 且随后 GET 该 id 返回 404（物理删除）
+  - API: POST /api/admin/customer-tags（body 含已存在 name）
+    expect: success=false 且 error.code=="VALIDATION_ERROR"、HTTP 422
+  - API: POST /api/admin/customers/{cid}/tags/{tagId}
+    expect: success=true 但该标签关联不落库（TODO 空实现，无副作用）
+  - API: GET /api/admin/customers?page=1&size=100（使用租户A token）
+    expect: 所有 items.tenantId == 租户A 的 tenantId（跨租户泄露检查，SQL 层 tenant_id 注入保证）
+
+confidence_required: 90%
+
+common_pitfalls:
+  - 用 data.orderCount / data.totalSpent 断言详情统计——实际字段在 data.profile.totalOrders / data.profile.totalConsumption
+  - 用 snake_case tenant_id 断言列表项租户——Jackson 输出 camelCase tenantId
+  - 把 keyword 搜索当成"姓名"搜索——代码只 LIKE 微信昵称与手机号，无 name 字段
+  - 详情返回的 tags 是租户下全部标签库，不是该客户已绑定标签
+  - 详情 orders 按 phone 关联，同手机号跨客户可能串单
+  - 添加/移除客户标签接口恒返回成功但不落库，勿断言标签真的生效
+  - admin-api 列表返回明文手机号，脱敏只发生在 AI 工具(customer_manage)层
+

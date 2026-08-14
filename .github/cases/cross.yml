@@ -1,0 +1,120 @@
+# cases/cross.yml — 跨 Skill 上下文共享用例（并源转换）
+# 来源：eval C001/C003/M007 → 3 条
+
+schema: "case-contract/1.0"
+domain: cross
+
+cases:
+  - id: CR-001
+    legacy_id: C001
+    title: "查商品 → 下单（跨 Skill 复用 UUID）"
+    domains:
+      - product
+      - order
+    tier: normal
+    tags:
+      - cross_skill
+      - context_share
+    truths_ref:
+      - id-resolve.no-fabricate
+      - ai-chat.context-memory
+    user_inputs:
+      - "查一下遮光窗帘"
+      - "用这个商品给张三下单，2件"
+    expectations:
+      - tool: product_detail
+        args:
+          product_id: 遮光窗帘
+      - tool: order_create
+    data_checks:
+      - "order_create items 包含遮光窗帘的 UUID（复用上轮，不重查）"
+      - "Context 注入包含 product_ids"
+    skip_reason: ""
+    merge_log: "eval C001 独有"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_mibao_scenarios.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: CR-002
+    legacy_id: C003
+    title: "对抗性 - 3 个 Skill 连续切换"
+    domains:
+      - product
+      - customer
+      - order
+    tier: adversarial
+    tags:
+      - cross_skill
+      - multi_round
+      - adversarial
+    truths_ref:
+      - ai-chat.context-memory
+      - id-resolve.no-fabricate
+    user_inputs:
+      - "搜遮光窗帘"
+      - "查张三这个客户"
+      - "给张三下个遮光窗帘的订单"
+    expectations:
+      - tool: product_search
+      - tool: customer_manage
+      - tool: order_create
+    data_checks:
+      - "order_create 复用前两轮的 product_id 和 customer_id"
+      - "success=true"
+    skip_reason: ""
+    merge_log: "eval C003 独有"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_mibao_scenarios.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: CR-003
+    legacy_id: M007
+    title: "真实场景全旅程 - 咨询→查商品→下单→查物流"
+    domains:
+      - product
+      - order
+      - chat
+    tier: normal
+    tags:
+      - multi_turn
+      - real_scenario
+      - cross_skill
+      - full_journey
+    truths_ref:
+      - ai-chat.context-memory
+      - ai-chat.intent-domains
+      - order.states
+      - order.logistics
+      - id-resolve.index
+    user_inputs:
+      - "你好，我想买窗帘"
+      - "有什么遮光好的推荐吗"
+      - "看看第一个的详情"
+      - "就这个，帮我下单，客户张三 13800138000，2件"
+      - "白色的，散剪，2.8米门幅"
+      - "确认下单"
+      - "订单怎么样了，发货了吗"
+      - "好的谢谢"
+    expectations:
+      - tool: product_search
+      - tool: product_detail
+      - tool: order_create
+      - tool: order_query
+    data_checks:
+      - "第4步 product_id 来自第2-3步上下文"
+      - "订单创建成功并包含 SKU 信息"
+      - "第7步自动找到刚创建的订单"
+    skip_reason: ""
+    merge_log: "eval M007 独有（物流查询是旅程一环，独立用例见 OR-005）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_mibao_scenarios.py"
+      ci:
+        - agent-eval.yml
+      verifies: []

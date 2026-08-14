@@ -1,0 +1,64 @@
+name: aftersales-flow
+description: 售后流程类需求（售后工单创建/列表/详情/状态流转）
+red_flags: []
+
+business_truths:
+  - [aftersales-flow.status-enums] 售后状态枚举为英文：pending(待处理) / processing(处理中) / resolved(已解决) / rejected(已拒绝) / closed(已关闭)，无「已完成」状态
+  - [aftersales-flow.flow] 状态流转：pending → processing|rejected；processing → resolved|closed；resolved/rejected/closed 为终态不可再流转
+  - [aftersales-flow.list-filter] 售后列表 GET /api/admin/after-sales 支持 status/ticketType/keyword 筛选，按 createdAt 倒序
+  - [aftersales-flow.detail-history] 售后详情返回 statusHistory（非 timeline），按 created_at 正序，首条为 created 记录其 status 回退为 pending
+  - [aftersales-flow.create-order-required] 创建工单必须关联已存在订单(orderId)，订单不存在 → 422「关联订单不存在」
+  - [aftersales-flow.dup-guard] 同订单同类型且状态为 pending/processing 的活跃工单已存在 → 422 拒绝；不同类型仅 log.warn 不阻止
+  - [aftersales-flow.ticket-format] 工单号 ticketNo 格式 AS-yyyyMMdd-XXXX，取当天 DB 最大序号+1（防重启重复）
+  - [aftersales-flow.create-defaults] 新建工单初始 status=pending、source=agent、priority 默认 normal（请求中的 source 字段被忽略，恒为 agent）
+  - [aftersales-flow.update-guard] 状态更新：非法状态或非法流转 → 422；closed/rejected 时写 closedAt + closeReason；有 remark 时追加到 internal_notes
+  - [aftersales-flow.timeline] 每次创建/状态变更写 ticket_timeline（created 记录 actorType=agent；status_change 记录 actorType=system）
+  - [aftersales-flow.tenant-isolation] 租户隔离：MyBatis-Plus TenantLineInnerInterceptor 自动注入 tenant_id 过滤，仅租户内数据可见；跨租户详情 → 404
+  - [aftersales-flow.customer-gap] 客户侧隔离缺口：Java 后端无 customer_id 过滤，customerId 字段实际存客户姓名 order.getCustomerName()；customer 隔离仅 ai-agent-service 客户端侧过滤
+  - [aftersales-flow.handoff] 转人工：human_handoff 工具创建 complaint 类型工单 + 系统通知管理员(recipientRole=admin)，通知失败不阻塞；但工具未传 orderId 且用 reason 字段，与 Java @NotBlank(orderId/description) 冲突（缺口）
+  - [aftersales-flow.type-enums] 售后类型：管理端表单校验 return|exchange|repair|refund|complaint|other；Agent 工具枚举 refund/exchange/repair/complaint/other（无 return），跨层枚举不一致
+  - [aftersales-flow.agent-create] Agent 专用创建 POST /api/admin/agent/after-sales 的 orderId 可传 UUID 或订单号(ORD-xxx)，服务端自动解析并校验订单属于当前租户
+
+primary_specs:
+  - tests/e2e/specs/after-sales/after-sales-list.spec.ts
+  - tests/e2e/specs/after-sales/after-sales-detail.spec.ts
+  - backend/admin-api/src/test/java/com/migao/admin/controller/AfterSalesControllerTest.java
+
+reviewer_asserts:
+  - API: GET /api/admin/after-sales
+    expect: data.items 每条 status IN (pending,processing,resolved,rejected,closed) AND 按 createdAt 倒序
+  - API: GET /api/admin/after-sales?status=pending
+    expect: data.items 每条 status = pending
+  - API: GET /api/admin/after-sales?status=processing
+    expect: data.items 每条 status = processing
+  - API: GET /api/admin/after-sales?status=resolved
+    expect: data.items 每条 status = resolved
+  - API: GET /api/admin/after-sales?status=rejected
+    expect: data.items 每条 status = rejected
+  - API: GET /api/admin/after-sales?status=closed
+    expect: data.items 每条 status = closed
+  - API: GET /api/admin/after-sales/{id}
+    expect: data.status IN (pending,processing,resolved,rejected,closed) AND data.orderNo 非空 AND data.statusHistory 按时间正序 AND data.statusHistory[0].status = pending
+  - API: PUT /api/admin/after-sales/{id}/status
+    expect: 非法流转（如 resolved/rejected/closed 再变更、pending 直接到 closed/resolved）返回 422；body.status 非法值返回 422
+  - API: POST /api/admin/after-sales
+    expect: orderId 不存在 → 422「关联订单不存在」；成功 → data.ticketNo 匹配 ^AS-\d{8}-\d{4}$ AND data.status = pending AND data.source = agent
+  - "租户隔离: GET /api/admin/after-sales/{id}(跨租户 tenant) → expect 404「售后工单不存在」，非 403"
+  - "状态分布一致性: 各 status 筛选列表的 total 与对应 tab 计数一致"
+  - "PSQL: SELECT status FROM after_sales_tickets WHERE ticket_no = '{ticketNo}' → 状态值 ∈ (pending,processing,resolved,rejected,closed)"
+  - "PSQL: SELECT tenant_id FROM after_sales_tickets WHERE ticket_no = '{ticketNo}' → 等于创建时租户ID"
+  - "PSQL: SELECT COUNT(*) FROM ticket_timeline WHERE ticket_id = '{id}' ORDER BY created_at ASC → 首条 action = created"
+
+common_pitfalls:
+  - 把中文状态值（待处理/已完成等）当枚举值传给 API，实际枚举是英文 pending/processing/resolved/rejected/closed
+  - 状态机非法流转（resolved/rejected/closed 再变更、pending 直接到 closed/resolved）会被 422 拒绝
+  - 详情响应字段是 statusHistory 而非 timeline；created 记录无 to 状态需回退为 pending
+  - 后端无 customer_id 隔离，customerId 字段存的是客户姓名而非 ID，勿据此做身份过滤断言
+  - source 恒为 agent，请求体里的 source 字段不生效
+  - 跨租户详情返回 404（NOT_FOUND）而非 403
+  - human_handoff 转人工工具未传 orderId/description，走表单 API 会触发 @NotBlank 校验失败
+  - ticketType 枚举跨层不一致（Java 表单含 return+refund，Agent 工具仅 refund 无 return）
+  - 创建前弹确认卡片是 Agent 层 prompt 约定，后端不强制，无法用 curl 验证
+
+confidence_required: 100%
+
