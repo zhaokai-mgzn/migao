@@ -94,6 +94,47 @@ def _get_agent_intents(agent_type: str) -> list[str]:
     return intents
 
 
+# ────────────────────── 跨轮实体提示 ──────────────────────
+
+_ENTITY_LABELS = {
+    "product_ids": "商品",
+    "order_nos": "订单",
+    "customer_ids": "客户",
+    "processing_item_ids": "加工项",
+}
+
+
+async def _build_entity_hint(session_id: str) -> str:
+    """从 context_manager 读跨轮实体，构建给意图分类器的指代提示。
+
+    让分类器在判断"那个订单/这个商品"时知道具体指代对象，减少误分类。
+    最多取每类前 2 个，控制长度。
+    """
+    if not session_id:
+        return ""
+    try:
+        from app.memory.context_manager import get_context_manager
+        ctx_mgr = get_context_manager()
+        await ctx_mgr.load(session_id)
+        entities = ctx_mgr.get_entities(session_id)
+    except Exception as e:
+        logger.debug(f"[entity-hint] load failed: {e}")
+        return ""
+    parts = []
+    for etype, items in entities.items():
+        if not isinstance(items, list):
+            continue
+        for item in items[:2]:
+            if not isinstance(item, dict):
+                continue
+            name = item.get("name") or item.get("order_no") or item.get("no") or ""
+            eid = (item.get("no") or item.get("id") or "")[:20]
+            parts.append(f"{_ENTITY_LABELS.get(etype, etype)}「{name}」({eid})")
+    if not parts:
+        return ""
+    return "[上下文实体] 之前对话已涉及：" + "、".join(parts)
+
+
 # ────────────────────── 辅助节点 ──────────────────────
 
 
@@ -177,6 +218,11 @@ async def intent_router_node(state: AgentState) -> dict:
 
     # Agent 感知：获取该 Agent 可处理的意图子集
     agent_intents = _get_agent_intents(agent_type)
+
+    # 注入跨轮实体：让分类器指代消解（"那个订单"→ORD12345），减少误分类
+    entity_hint = await _build_entity_hint(session_id)
+    if entity_hint:
+        user_message = f"{entity_hint}\n用户消息：{user_message}"
 
     route_decision = await router.route(
         user_message, chat_history, agent_intents=agent_intents

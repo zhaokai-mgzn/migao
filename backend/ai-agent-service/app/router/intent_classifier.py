@@ -146,6 +146,12 @@ def _build_classifier_prompt(agent_intents: list[str] | None = None) -> str:
 - 优先区分'查询/读'与'管理/写'：只是问记录则归为查询类，出现创建/修改/删除/启用停用/上下架/调价等动作词则归为管理类
 {disambig_section}
 
+判断示例（边界参考）：
+- "ORD123 到哪了" → logistics_track（问物流进度，非订单记录）
+- "查我昨天的订单" → order_query（问订单记录）
+- "这个窗帘多少钱" → product_inquiry（问商品价格）
+- "把商品分类改个名" → category_manage（含"改"，管理写操作）
+
 注意：
 - confidence 取值 0.0~1.0，表示你对分类结果的确信程度
 - 如果用户消息含糊不清或可能属于多个意图，降低 confidence

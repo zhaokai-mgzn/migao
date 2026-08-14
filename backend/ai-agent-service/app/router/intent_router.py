@@ -15,6 +15,17 @@ from app.router.intent_config import (
 from app.router.rule_matcher import RuleMatcher
 from app.router.intent_classifier import IntentClassifier
 
+# 低置信度阈值：低于此值时，具体业务意图会被重写为 general 兜底澄清（不硬猜 skill）
+LOW_CONFIDENCE_THRESHOLD = 0.55
+
+# 这些意图不参与低置信度重写：general 本身已是兜底，greeting/farewell/capabilities 有独立逻辑
+_CLARIFY_EXEMPT_INTENTS = (
+    IntentType.GREETING,
+    IntentType.FAREWELL,
+    IntentType.CAPABILITIES,
+    IntentType.GENERAL,
+)
+
 
 class IntentRouter:
     """
@@ -89,6 +100,25 @@ class IntentRouter:
                     action="direct_reply",
                     direct_reply=None,  # 由 direct_reply_node 填充
                 )
+
+        # 极低置信度（LLM 自己都不确定）且是具体业务意图 → 重写为 general 兜底澄清。
+        # 猜错一个 skill 比让用户澄清更伤信任；general skill 拥有全工具集 + 澄清引导 prompt。
+        if (
+            confidence < LOW_CONFIDENCE_THRESHOLD
+            and intent not in _CLARIFY_EXEMPT_INTENTS
+        ):
+            logger.info(
+                f"[IntentRouter] Low confidence ({confidence:.2f}) on '{intent.value}', "
+                f"rewriting to general for clarification"
+            )
+            return RouteDecision(
+                intent_result=IntentResult(
+                    intent=IntentType.GENERAL,
+                    confidence=confidence,
+                    source="low_confidence",
+                ),
+                action="full_agent",
+            )
 
         # 高置信度 → 带 tool 提示路由
         if confidence >= 0.7:
