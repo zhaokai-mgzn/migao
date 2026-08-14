@@ -206,7 +206,7 @@ class AgentContextManager:
     # ── Redis 持久化 ──
 
     async def save(self, session_id: str) -> None:
-        """持久化到 Redis，跨 SAE 实例共享"""
+        """持久化到 Redis（Tair），跨实例共享"""
         try:
             from app.utils.redis_client import get_redis
             redis = get_redis()

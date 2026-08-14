@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     # Redis 配置
     REDIS_URL: str = "redis://localhost:6379/0"
 
-    # ===== 必须由 SAE / .env 注入（无默认值，漏配即报错）=====
+    # ===== 必须由 SWAS 容器环境 / .env 注入（无默认值，漏配即报错）=====
 
     # 主 LLM（OpenAI 兼容接口，支持 DeepSeek/MiniMax/Qwen 等）
     PRIMARY_API_KEY: str = ""

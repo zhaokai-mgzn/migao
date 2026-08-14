@@ -1,60 +1,70 @@
 # 部署
 
+> **2026-08-14 起生产计算层已从 SAE 迁移到 SWAS 轻量应用服务器**。本页为当前事实；SAE 时代的详细踩坑见 `docs/deployment/deployment-aliyun.md`（历史）。
+
 ## CI/CD
 
-合并 main 自动触发：
+合并 main 自动触发（路径过滤 + 可手动 dispatch）：
 
-| 变更路径 | 工作流 | 目标 |
-|---------|--------|------|
-| backend/admin-api/** | deploy-admin-api | SAE (FatJar) |
-| backend/ai-agent-service/** | deploy-ai-agent-service | SAE (Docker) |
-| frontend/admin-web/** | deploy-admin-web | OSS + CDN |
+| 变更路径 | 工作流 | 部署方式 |
+|---------|--------|---------|
+| backend/admin-api/** | deploy-admin-api | 云助手触发 SWAS `deploy.sh`（源码构建 + compose） |
+| backend/ai-agent-service/** | deploy-ai-agent-service | 同上 |
+| frontend/admin-web/** | deploy-frontend | 同上 |
+
+三个工作流统一：CI 测试/构建 → `aliyun swas-open RunCommand` 在 SWAS 实例跑 `/opt/migao-deploy/deploy.sh` → post-deploy 冒烟（smoke-test.yml）。
+
+## 生产拓扑（SWAS 单机 4 容器）
+
+| 容器 | 端口 | 职责 |
+|------|------|------|
+| nginx | 80/443 | TLS 终结（Let's Encrypt），域名分流 |
+| admin-api | 8080 | Java 管理后端 |
+| ai-agent | 8000 | Python AI 服务 |
+| admin-web | 3001 | Next.js 管理后台 |
+
+域名分流（nginx）：
+- `api.migaozn.com` → admin-api:8080
+- `ai-api.migaozn.com` → ai-agent:8000
+- `admin.migaozn.com` / `migaozn.com` / `www` / `merchant` / `ops` → admin-web:3001
 
 ## 阿里云服务
 
 | 服务 | 用途 |
 |------|------|
-| SAE | 托管 admin-api + ai-agent-service |
+| SWAS 轻量应用服务器 | 托管全部 4 个容器（nginx + 3 应用） |
 | RDS PostgreSQL 15 | 主库 (RLS) |
-| Redis 7 | 会话/缓存 |
+| Redis (Tair 公网代理) | 会话/缓存（admin-api 强制 RESP2） |
 | DashVector | 向量库 (RAG) |
 | DeepSeek / MiniMax | LLM推理 |
 | OSS | 静态资源/文件上传 |
-| CDN | 前端加速 |
-| ACR | 容器镜像 |
-| SLS | 日志 |
-| API Gateway | 统一入口 |
+| ACR | 容器镜像（历史遗留，线上已不消费） |
 
 ## 关键环境变量
 
-**admin-api**: DB_URL, REDIS_URL, JWT_PRIVATE_KEY, JWT_PUBLIC_KEY, SERVICE_TOKEN
+**admin-api**: RDS_HOST/USER/PASSWORD, REDIS_HOST/PASSWORD, JWT_PRIVATE_KEY, JWT_PUBLIC_KEY, SERVICE_TOKEN_SECRET
 
-**ai-agent-service**: PRIMARY_API_KEY, DASHVECTOR_API_KEY, DASHVECTOR_ENDPOINT, DB_URL, REDIS_URL, OSS_*
+**ai-agent-service**: PRIMARY_API_KEY, DASHVECTOR_API_KEY/ENDPOINT, DATABASE_URL, REDIS_URL, OSS_*, SERVICE_TOKEN
 
-**admin-web**: NEXT_PUBLIC_API_URL, NEXT_PUBLIC_AI_URL
+**admin-web**: PORT（构建时 NEXT_PUBLIC_API_BASE_URL / NEXT_PUBLIC_AI_API_BASE_URL / NEXT_PUBLIC_COOKIE_DOMAIN）
 
-## Terraform
-
-管理: VPC, RDS, Redis, SAE, OSS, CDN, DashVector, SLS
+## 服务器手动部署
 
 ```bash
-cd deploy/terraform
-terraform plan && terraform apply
+# 在 SWAS 服务器上（/opt/migao-deploy/）：
+bash deploy.sh
+# 即：拉 main 源码 → RESP2 补丁 → docker compose up -d --build → 健康检查
+
+# 查看状态/日志
+docker compose ps
+docker compose logs -f admin-api
+
+# 健康检查
+curl -s http://127.0.0.1:8080/actuator/health   # admin-api
+curl -s http://127.0.0.1:8000/health            # ai-agent
+curl -sI http://127.0.0.1:3001/                 # admin-web
 ```
 
-## 手动部署
+## Terraform（历史遗留）
 
-```bash
-# admin-api
-cd backend/admin-api && ./mvnw clean package -DskipTests
-# 上传 target/*.jar 到 SAE
-
-# ai-agent-service
-cd backend/ai-agent-service
-docker build -t registry.cn-hangzhou.aliyuncs.com/migao/ai-agent:latest .
-docker push registry.cn-hangzhou.aliyuncs.com/migao/ai-agent:latest
-
-# admin-web
-cd frontend/admin-web && npm run build
-# 上传 out/ 到 OSS，刷新 CDN
-```
+`deploy/terraform/` 中的 SAE 资源已弃用；RDS/OSS 等资源若仍由 Terraform 管理需单独确认。当前生产部署不依赖 Terraform。

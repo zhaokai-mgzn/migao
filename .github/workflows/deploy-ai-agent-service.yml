@@ -11,11 +11,13 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # 部署目标：SWAS 轻量应用服务器（2026-08-14 起替代 SAE）
+  SWAS_INSTANCE_ID: b23c69e599524b1da719734f72e6a0e3
+  SWAS_REGION: cn-hangzhou
+  # ACR 镜像构建为历史遗留（SWAS 服务器自己源码构建，线上不消费该镜像）
   ACR_REGISTRY: crpi-qdcgkzwx9p9zckga.cn-hangzhou.personal.cr.aliyuncs.com
   ACR_NAMESPACE: ai-customer-service
   IMAGE_NAME: ai-agent-service
-  SAE_APP_ID: 01c0759f-4a81-494f-9947-0113d38b86c2
-  SAE_REGION: cn-hangzhou
 
 jobs:
   build-and-deploy:
@@ -100,14 +102,6 @@ jobs:
             --cache-to type=gha,mode=max \
             -t $IMAGE_FULL --push .
           echo "IMAGE_FULL=$IMAGE_FULL" >> $GITHUB_ENV
-
-      - name: Install Aliyun CLI
-        run: |
-          curl -fsSL --retry 3 https://aliyuncli.alicdn.com/aliyun-cli-linux-latest-amd64.tgz -o aliyun-cli.tgz
-          file aliyun-cli.tgz | grep -q "gzip compressed data" || { echo "❌ 下载文件损坏或非 gzip 格式"; exit 1; }
-          tar xzf aliyun-cli.tgz
-          sudo mv aliyun /usr/local/bin/
-          echo "✅ Aliyun CLI $(aliyun version 2>/dev/null || echo installed)"
 
       - name: Deploy to SWAS
         env:

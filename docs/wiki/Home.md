@@ -23,7 +23,7 @@
 | Vector | DashVector |
 | LLM | DeepSeek V4 Pro (主) + DeepSeek V4 Flash (意图) + MiniMax M3 (视觉) |
 | Auth | RS256 JWT + 微信登录 + 短信验证码 |
-| Deploy | SAE + RDS + OSS + CDN + Terraform + GitHub Actions |
+| Deploy | SWAS 轻量应用服务器（docker compose）+ RDS + Redis(Tair) + OSS + GitHub Actions |
 
 ## 目录
 

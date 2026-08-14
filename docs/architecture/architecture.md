@@ -61,7 +61,7 @@
 ┌──────▼──────────────┐  ┌─────▼─────────────────┐  ┌───▼──────────────┐
 │ 管理后端（Java）     │  │ AI Agent 服务（Python）│  │ 管理前端（SSR）   │
 │ Spring Boot 3       │  │ FastAPI + Hermes Agent│  │ Next.js          │
-│                     │  │                       │  │ (SAE)            │
+│                     │  │                       │  │ (SWAS)           │
 │ - 认证（小程序+     │  │ - C 端 Agent（客服）   │  │                  │
 │   公众号+账号）      │  │ - 管理端 Agent（分析）  │  │                  │
 │ - 商品/订单/租户 CRUD│  │ - Tool Registry       │  │                  │
@@ -90,9 +90,9 @@
 
 | 服务 | 技术栈 | 职责 | 部署 |
 |------|--------|------|------|
-| **admin-api** | Java/Spring Boot 3 | 认证 + 管理业务 + 租户 AI 配置 | SAE 独立部署 |
-| **ai-agent-service** | Python/FastAPI + Hermes Agent | AI 对话引擎（C 端 + 管理端共用）| SAE 独立部署 |
-| **admin-frontend** | Next.js (SSR) | 管理后台前端 | SAE 独立部署 |
+| **admin-api** | Java/Spring Boot 3 | 认证 + 管理业务 + 租户 AI 配置 | SWAS 容器（8080） |
+| **ai-agent-service** | Python/FastAPI + Hermes Agent | AI 对话引擎（C 端 + 管理端共用）| SWAS 容器（8000） |
+| **admin-frontend** | Next.js (SSR) | 管理后台前端 | SWAS 容器（3001） |
 | **wechat-mini** | 微信小程序 | 客服对话前端 | 微信开发者工具上传 |
 
 **为什么合并 ai-chat-service 和 ai-admin-service？**
@@ -596,7 +596,7 @@ data: {"session_id": "sess_abc123"}
 │                      阿里云环境                              │
 │                                                              │
 │  ┌─────────────────────┐          ┌─────────────────────┐  │
-│  │  客服前端 (微信小程序)│          │ 管理前端 (SSR/SAE)   │  │
+│  │  客服前端 (微信小程序)│          │ 管理前端 (SSR/SWAS)  │  │
 │  │  + 公众号 H5 (测试)  │          └─────────┬───────────┘  │
 │  └─────────┬───────────┘                    │               │
 │            │                                │               │
@@ -607,7 +607,7 @@ data: {"session_id": "sess_abc123"}
 │       │                  │                  │              │
 │  ┌────▼──────────┐  ┌───▼────────────┐  ┌──▼──────────┐  │
 │  │ 管理后端       │  │ AI Agent 服务  │  │ 管理前端    │  │
-│  │ (Java SAE)    │  │ (Python SAE)   │  │ (SSR SAE)   │  │
+│  │ (Java SWAS)  │  │ (Python SWAS) │  │ (SSR SWAS)  │  │
 │  │               │  │                │  │             │  │
 │  │ - 认证        │  │ - Hermes Agent │  │             │  │
 │  │ - 管理业务    │  │ - C 端/管理端  │  │             │  │
@@ -635,7 +635,7 @@ data: {"session_id": "sess_abc123"}
 
 | 产品 | 用途 | 规格（开发环境）| 月成本预估 |
 |------|------|----------------|-----------|
-| **SAE** | 应用托管（2 个后端服务 + 1 个前端 SSR）| 按量付费 | ~170 元 |
+| **SWAS** | 应用托管（nginx + 3 应用容器，2026-08-14 起替代 SAE）| 单实例 | ~50-100 元 |
 | **RDS PostgreSQL** | 业务数据库 | pg.n2.small.1 (1C2G, 20GB) | ~100 元 |
 | **Redis** | 缓存/会话/code 防重放 | redis.master.small.default (1G) | ~50 元 |
 | **OSS** | 静态资源存储（管理前端构建产物备用）| 按量 | ~5 元 |
@@ -654,8 +654,8 @@ data: {"session_id": "sess_abc123"}
 
 核心资源：
 - VPC + 安全组
-- RDS PostgreSQL + Redis
-- 2 个 SAE 应用（admin-api 含认证 + ai-agent-service 含 Hermes Agent）
+- RDS PostgreSQL + Redis（Tair）
+- SWAS 实例（2026-08-14 起托管 nginx + 3 应用容器；此前为 2 个 SAE 应用）
 - ACR 镜像仓库
 - OSS Bucket
 
@@ -687,12 +687,12 @@ docker push registry.cn-hangzhou.aliyuncs.com/youke/ai-agent-service:latest
 # 管理前端
 cd web/admin
 npm run build
-# SSR 部署到 SAE，无需 OSS
+# 2026-08-14 起：SWAS 上 docker compose 源码构建运行（此前为 SAE SSR）
 ```
 
 ### 8.6 环境变量配置
 
-**SAE 应用环境变量**：
+**应用环境变量**（SWAS 上为 `.env.admin-api` / `.env.ai-agent`，由 `env_file` 注入容器；历史 SAE 时代为 SAE 应用环境变量）：
 
 | 变量名 | 说明 | 示例值 |
 |--------|------|--------|
@@ -763,6 +763,6 @@ npm run build
 | **数据库** | PostgreSQL 14 |
 | **缓存** | Redis 7 |
 | **LLM** | 阿里云百炼 DashScope |
-| **部署** | Docker / 阿里云 SAE |
+| **部署** | Docker / 阿里云 SWAS（2026-08-14 起替代 SAE） |
 | **IaC** | Terraform |
 | **CI/CD** | 阿里云云效 |

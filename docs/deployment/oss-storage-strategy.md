@@ -121,10 +121,12 @@ resource "alicloud_oss_bucket" "temporary" {
 }
 ```
 
-### 3.4 SAE 环境变量注入
+### 3.4 环境变量注入（SWAS）
+
+> 2026-08-14 起环境变量在 SWAS 的 `/opt/migao-deploy/.env.admin-api` / `.env.ai-agent` 中配置；以下 Terraform `app_envs` 为 SAE 时代历史写法。
 
 ```hcl
-# admin-api 环境变量
+# admin-api 环境变量（历史 Terraform/SAE 形态）
 app_envs {
   name  = "OSS_PERMANENT_BUCKET"
   value = alicloud_oss_bucket.permanent.bucket
@@ -231,8 +233,8 @@ terraform plan -var="permanent_bucket_name=ai-customer-service-admin-dev" \
 # 2. 应用变更（会创建第二个 Bucket）
 terraform apply
 
-# 3. 更新 SAE 环境变量（自动注入）
-# Terraform 会自动更新 SAE 应用的 app_envs
+# 3. 更新环境变量（SWAS 上改 /opt/migao-deploy/.env.admin-api；历史为 SAE 环境变量自动注入）
+# Terraform 不再管理生产应用环境变量
 
 # 4. 重新部署服务
 gh workflow run deploy-admin-api.yml
@@ -347,7 +349,7 @@ aliyun oss lifecycle-get oss://ai-customer-service-chat-dev
 - [ ] 永久 Bucket 创建成功
 - [ ] 临时 Bucket 创建成功
 - [ ] 生命周期规则生效
-- [ ] SAE 环境变量更新
+- [ ] 环境变量更新（SWAS `.env.*`；历史为 SAE 环境变量）
 - [ ] admin-api 重新部署
 - [ ] ai-agent-service 重新部署
 - [ ] 商品图片上传测试通过
@@ -370,11 +372,11 @@ aliyun oss lifecycle-get oss://ai-customer-service-chat-dev
 ### 10.2 日志查询
 
 ```bash
-# 查询 admin-api 日志
-aliyun sae GetApplicationLog --AppId <admin-api-app-id> --Lines 100
+# 查询 admin-api 日志（SWAS 服务器上）
+cd /opt/migao-deploy && docker compose logs --tail=100 admin-api
 
 # 查询 ai-agent-service 日志
-aliyun sae GetApplicationLog --AppId <ai-agent-app-id> --Lines 100
+cd /opt/migao-deploy && docker compose logs --tail=100 ai-agent
 ```
 
 ---

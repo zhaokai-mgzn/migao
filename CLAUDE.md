@@ -400,7 +400,7 @@ cd tests && BASE_URL=http://localhost:3001 npx playwright test specs/chat/chat.s
 | 数据库 | PostgreSQL 15 + Redis 7 |
 | 向量库 | DashVector |
 | LLM | DeepSeek V4 Pro (主) + MiniMax M3 (视觉) |
-| 部署 | 阿里云 SAE + RDS + OSS + CDN + Terraform + GitHub Actions |
+| 部署 | 阿里云 SWAS 轻量应用服务器（源码构建 + docker compose）+ RDS + Redis(Tair) + OSS + GitHub Actions |
 
 ## 目录结构
 
@@ -413,7 +413,9 @@ migao/
 │   ├── admin-web/          # Next.js 管理后台
 │   └── mini-app/           # Taro 微信小程序
 ├── deploy/
-│   └── terraform/          # 阿里云 IaC
+│   ├── swas/deploy.sh      # SWAS 服务器部署脚本（CI 通过云助手触发）
+│   ├── docker-compose.yml  # 本地开发 compose（生产为 SWAS 上另一份 compose）
+│   └── terraform/          # 阿里云 IaC（历史遗留：SAE 已弃用，RDS/OSS 配置仍可参考）
 ├── docs/
 │   ├── deployment/         # 部署文档
 │   ├── architecture/       # 架构文档
@@ -521,7 +523,7 @@ ALTER TABLE orders ADD COLUMN ship_fee DECIMAL(10,2);
 
 ### 验证
 
-部署后查看 SAE 日志确认迁移状态：
+部署后查看 SWAS 容器日志确认迁移状态（服务器上 `cd /opt/migao-deploy && docker compose logs admin-api`）：
 ```
 🔄 执行迁移: V6__add_ship_fee_to_orders.sql
 ✅ 迁移完成: V6__add_ship_fee_to_orders.sql
@@ -540,15 +542,45 @@ INSERT INTO schema_migrations (version) VALUES ('V6__add_ship_fee_to_orders.sql'
 
 ## CI/CD 部署
 
-代码合并到 `main` 分支后，GitHub Actions 自动触发部署：
+代码合并到 `main` 分支后，GitHub Actions 自动触发部署（2026-08-14 起部署目标为 SWAS 轻量应用服务器）：
 
-| 变更路径 | 工作流 | 部署目标 |
+| 变更路径 | 工作流 | 部署方式 |
 |---------|--------|---------|
-| `backend/admin-api/**` | deploy-admin-api | SAE (FatJar) |
-| `backend/ai-agent-service/**` | deploy-ai-agent-service | SAE (Docker) |
-| `frontend/admin-web/**` | deploy-admin-web | OSS + CDN |
+| `backend/admin-api/**` | deploy-admin-api | 云助手触发 SWAS `deploy.sh`（源码构建 + compose） |
+| `backend/ai-agent-service/**` | deploy-ai-agent-service | 同上（Fast Gate + 全量单测 → 云助手触发） |
+| `frontend/admin-web/**` | deploy-frontend | tsc + vitest → 云助手触发 `deploy.sh` |
 
-详细 CI/CD 文档：[deployment-aliyun.md § 10](docs/deployment/deployment-aliyun.md)
+三个工作流统一执行：CI 测试/构建 → `aliyun swas-open RunCommand` 在 SWAS 实例上跑 `bash /opt/migao-deploy/deploy.sh`（拉 main 源码 → RESP2 补丁 → `docker compose up -d --build` → 健康检查）→ post-deploy 冒烟（smoke-test.yml，对 api.migaozn.com / ai-api.migaozn.com）。
+
+生产拓扑：单台 SWAS 上 nginx(80/443) + admin-api(8080) + ai-agent(8000) + admin-web(3001)；数据层不变（RDS PostgreSQL + Tair Redis + OSS）。
+
+详细 CI/CD 文档：[deployment-aliyun.md](docs/deployment/deployment-aliyun.md)（SAE 章节为历史遗留，当前部署以 `deploy/swas/deploy.sh` 为准）
+
+## Case Contract — 行为用例单一源（二郎神用例契约）
+
+> 2026-08-14 起生效：行为用例只存一份 `.github/cases/<domain>.yml`（80 条 × 12 域），其余全部为生成物。
+
+**铁律**：
+- 用例文件只用 **block style**（`- item` 逐行），禁止 flow style（`yaml_light` 不支持）
+- 用例通过 `truths_ref` **引用**真值 ID（`templates/<domain>.yml` 内 `[<模板>.<短名>] ` 前缀），禁止复制真值文本
+- `eval_cases.py` 与 `docs/testing/mibao-verification-cases.md` 是 `render_cases.py` 的**生成物**，禁止手改（改 `.github/cases/*.yml` 后重渲染）
+
+**闭环六环节**：
+1. **Issue**：CONTRACT_JSON 声明 `cases: ["OR-002"]`（哪些用例定义 done）→ `issue-contract-check.yml` 校验 ID 存在
+2. **DRAFT**：军师按 issue 声明的用例生成验收方案 → `junshi-case-draft.yml` 校验 DRAFT 引用 cases
+3. **TDD Red**：dev-agent 先跑 issue 引用的用例（`local_runner.py case --case-id <ID> --cases .github/cases`）确认 FAIL
+4. **Gate G5**：新增/修改测试文件头部必须声明 `# case_ids: <ID>` → 否则 pr-check 的 qa-growth-gate block
+5. **verify**：verify-agent 逐用例验收输出 `VERDICT_JSON.case_results`
+6. **grow**：失败用例回写 common_pitfalls + 生成对抗用例（进行中）
+
+**tier → CI 频率**：smoke 9 条（每次 PR `agent-eval-smoke` 100% 通过才合并 + 每日 01:30）/ normal 45 条（每日全量）/ adversarial 26 条（每周六 03:00，只追踪不阻塞）。
+
+**校验命令**：
+```bash
+cd .github && python3 truths.py check --templates templates --cases cases   # 引用完整性（fail-closed）
+python3 render_cases.py                                                     # 重新生成两个生成物
+cd tests/agent_eval && python local_runner.py smoke --cases ../../.github/cases
+```
 
 ## Skill 使用规范
 

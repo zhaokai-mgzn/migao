@@ -10,14 +10,9 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  SAE_APP_ID: d6a22f49-0c01-48fc-8d0a-7254284a6a16
-  SAE_REGION: cn-hangzhou
-  OSS_BUCKET: ai-customer-service-admin-dev
-  OSS_OBJECT_KEY: deploy/admin-api.jar
-  OSS_ENDPOINT: oss-cn-hangzhou.aliyuncs.com
-  # 健康检查直接命中 SAE Internet SLB IP（HTTP:80 → TargetPort 8080）+ Host header
-  HEALTH_CHECK_URL: https://api.migaozn.com
-  HEALTH_CHECK_PATH: /actuator/health
+  # 部署目标：SWAS 轻量应用服务器（2026-08-14 起替代 SAE）
+  SWAS_INSTANCE_ID: b23c69e599524b1da719734f72e6a0e3
+  SWAS_REGION: cn-hangzhou
 
 jobs:
   build-and-deploy:
@@ -56,22 +51,6 @@ jobs:
           echo "✅ 构建成功：$JAR_FILE"
           echo "JAR_FILE=backend/admin-api/$JAR_FILE" >> $GITHUB_ENV
 
-      - name: Install Aliyun CLI
-        run: |
-          curl -fsSL --retry 3 https://aliyuncli.alicdn.com/aliyun-cli-linux-latest-amd64.tgz -o aliyun-cli.tgz
-          # 验证下载文件是有效的 gzip 压缩包
-          file aliyun-cli.tgz | grep -q "gzip compressed data" || { echo "❌ 下载文件损坏或非 gzip 格式"; exit 1; }
-          tar xzf aliyun-cli.tgz
-          sudo mv aliyun /usr/local/bin/
-          echo "✅ Aliyun CLI $(aliyun version 2>/dev/null || echo installed)"
-
-      - name: Configure Aliyun credentials
-        run: |
-          aliyun configure set \
-            --access-key-id ${{ secrets.ALIYUN_ACCESS_KEY_ID }} \
-            --access-key-secret ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }} \
-            --region ${{ env.SAE_REGION }}
-
       - name: Deploy to SWAS
         env:
           AK: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
@@ -80,24 +59,24 @@ jobs:
           curl -fsSL https://aliyuncli.alicdn.com/aliyun-cli-linux-latest-amd64.tgz -o /tmp/aliyun.tgz
           tar xzf /tmp/aliyun.tgz -C /tmp
           sudo mv /tmp/aliyun /usr/local/bin/
-          aliyun configure set --access-key-id "$AK" --access-key-secret "$SK" --region cn-hangzhou
+          aliyun configure set --access-key-id "$AK" --access-key-secret "$SK" --region ${{ env.SWAS_REGION }}
           # 触发 SWAS 云助手执行 deploy.sh(拉源码 -> 构建 -> compose 启动 -> 健康检查)
           aliyun plugin install --names aliyun-cli-swas-open >/dev/null 2>&1 || true
           INVOKE=$(aliyun swas-open RunCommand \
-            --InstanceId b23c69e599524b1da719734f72e6a0e3 \
+            --InstanceId ${{ env.SWAS_INSTANCE_ID }} \
             --Name migao-ci-deploy \
             --Type RunShellScript \
             --Timeout 1800 \
-            --RegionId cn-hangzhou \
+            --RegionId ${{ env.SWAS_REGION }} \
             --CommandContent "bash /opt/migao-deploy/deploy.sh" 2>&1)
           INVOKE_ID=$(echo "$INVOKE" | python3 -c "import sys,json;print(json.load(sys.stdin).get('InvokeId',''))")
           echo "deploy invokeId=$INVOKE_ID"
           if [ -z "$INVOKE_ID" ]; then echo "FAILED: no InvokeId"; echo "$INVOKE"; exit 1; fi
           for i in $(seq 1 90); do
             RES=$(aliyun swas-open DescribeInvocationResult \
-              --InstanceId b23c69e599524b1da719734f72e6a0e3 \
+              --InstanceId ${{ env.SWAS_INSTANCE_ID }} \
               --InvokeId "$INVOKE_ID" \
-              --RegionId cn-hangzhou)
+              --RegionId ${{ env.SWAS_REGION }})
             STATUS=$(echo "$RES" | python3 -c "import sys,json;d=json.load(sys.stdin);v=d.get('InvocationResult') or d;print(v.get('InvocationStatus') or v.get('Status') or '')")
             echo "  deploy status: $STATUS"
             if [ "$STATUS" = "Success" ]; then echo "SWAS 部署成功"; break; fi

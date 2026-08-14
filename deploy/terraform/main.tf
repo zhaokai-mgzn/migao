@@ -1,5 +1,8 @@
 # ==================== 阿里云基础设施即代码配置 ====================
 # 多租户 SaaS AI 智能客服系统 - 阿里云部署
+# ⚠️ 2026-08-14 起生产计算层已迁 SWAS（部署不再经过 Terraform）：
+#    本文件中 SAE 命名空间/应用资源（alicloud_sae_*）已弃用，请勿再 apply 变更；
+#    RDS / Redis(Tair) / OSS 等数据层资源仍可参考或由 Terraform 管理。
 # 使用前请确保：
 # 1. 已安装 Terraform: brew install terraform (macOS)
 # 2. 已配置阿里云 AccessKey: export ALICLOUD_ACCESS_KEY=xxx && export ALICLOUD_SECRET_KEY=xxx

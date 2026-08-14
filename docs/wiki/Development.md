@@ -83,4 +83,5 @@ Commit: `feat(frontend): 描述` / `fix(backend): 描述` / `test:` / `refactor:
 ### 参考
 - 军师验证流水线：`.github/workflows/junshi-*.yml`（case-draft / redraft / verify-trigger）
 - 研发流程：TDD → PR → CI Gate → 军师双验收 → AutoMerge → Close
-- 详情见 issue #450 v3.1
+- 行为用例单一源（case-contract）：`.github/cases/*.yml` — issue 的 CONTRACT_JSON 声明 `cases: ["OR-002"]`；TDD Red 阶段先跑引用的用例确认 FAIL；新增/修改测试文件头部声明 `# case_ids:`（G5 门禁）
+- 详情见 issue #450 v3.1 + [Testing](Testing.md)

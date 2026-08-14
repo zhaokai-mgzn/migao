@@ -8,11 +8,13 @@ on:
   workflow_dispatch:
 
 env:
+  # 部署目标：SWAS 轻量应用服务器（2026-08-14 起替代 SAE）
+  SWAS_INSTANCE_ID: b23c69e599524b1da719734f72e6a0e3
+  SWAS_REGION: cn-hangzhou
+  # ACR/GHCR 镜像推送为历史遗留（SWAS 服务器自己源码构建，线上不消费镜像）
   ACR_REGISTRY: crpi-qdcgkzwx9p9zckga.cn-hangzhou.personal.cr.aliyuncs.com
   ACR_NAMESPACE: ai-customer-service
   IMAGE_NAME: admin-web
-  SAE_APP_ID: 607b5233-9e24-4abe-9d75-a59b133b186f
-  SAE_REGION: cn-hangzhou
 
 jobs:
   deploy:

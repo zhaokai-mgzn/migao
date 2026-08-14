@@ -1,6 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // 标准 Next.js SSR 模式，托管于 SAE (next start)
+  // 标准 Next.js SSR 模式，托管于 SWAS 容器 (next start)
   // 动态路由由服务端渲染直接处理，不再需要 generateStaticParams + SPA fallback
 
   images: {

@@ -277,13 +277,13 @@ onSSEMessage((data) => {
 
 | 当前方案 | 优化建议 | 原因 |
 |---------|---------|------|
-| Next.js SSG (OSS 部署) | Next.js SSR 部署到 SAE | 支持 SSR 渲染、更好的 SEO、动态内容 |
+| Next.js SSG (OSS 部署) | Next.js SSR 部署到 SWAS 容器 | 支持 SSR 渲染、更好的 SEO、动态内容 |
 | 纯 OSS 静态托管 | OSS + 函数计算（SSR） | 保持低成本，同时支持 SSR |
 | 无状态管理 | 考虑使用 Vercel / Netlify 部署前端 | 更简单的前端部署流程 |
 
 **推荐方案（已确认）**：
 - 客服对话页：SPA（纯前端，OSS + CDN），无需 SSR
-- 管理后台：SSR（Next.js 部署到 SAE），支持服务端权限校验和动态内容
+- 管理后台：SSR（Next.js，SWAS 容器 `next start`），支持服务端权限校验和动态内容
 
 ### 4.2 数据库 Schema 补充
 
