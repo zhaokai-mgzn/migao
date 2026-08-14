@@ -263,10 +263,10 @@ cases:
     user_inputs:
       - "把遮光窗帘的价格改成 199"
     expectations:
-      - tool: product_manage
+      - tool: product_update
         args:
-          action: update
           product_id: 遮光窗帘
+          price: "199"
     data_checks:
       - "success=true"
     skip_reason: ""
@@ -306,9 +306,9 @@ cases:
       - tool: product_detail
         args:
           product_id: "1"
-      - tool: product_manage
+      - tool: product_update
         args:
-          action: update
+          price: "199"
       - tool: product_processing_item_manage
         args:
           action: add

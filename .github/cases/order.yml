@@ -353,14 +353,16 @@ cases:
       - order.states
       - order.create-flow
     user_inputs:
-      - "创建订单：张三 13812345678，窗帘2件"
+      - "创建订单：张三 13812345678，杭州西湖区文三路1号，米白色遮光窗帘 2件"
+      - "选1"
+      - "确认"
     expectations:
       - tool: validate_input
       - tool: order_create
     data_checks:
       - "返回订单号"
     skip_reason: ""
-    merge_log: "verification 1.8 独有（smoke 简化版，与 OR-008/OR-009 的细粒度版互补）"
+    merge_log: "verification 1.8 独有（smoke 简化版，与 OR-008/OR-009 的细粒度版互补）；2026-08-14 按 EXAMPLES-order.md 例2 校准为多轮（完整收货信息→选1→确认），单轮直下单与设计澄清流程不符"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_order_manage.py"

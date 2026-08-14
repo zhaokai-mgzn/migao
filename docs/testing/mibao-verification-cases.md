@@ -688,13 +688,15 @@
 
 ### OR-010. 创建订单 - 汇总确认简化流程 🟢
 ```
-你: 创建订单：张三 13812345678，窗帘2件
+你: 创建订单：张三 13812345678，杭州西湖区文三路1号，米白色遮光窗帘 2件
+你: 选1
+你: 确认
 期望: validate_input
 期望: order_create
 数据: 返回订单号
 ```
 真值: order.states, order.create-flow
-溯源: verification 1.8 独有（smoke 简化版，与 OR-008/OR-009 的细粒度版互补） ｜ tags: create, confirm
+溯源: verification 1.8 独有（smoke 简化版，与 OR-008/OR-009 的细粒度版互补）；2026-08-14 按 EXAMPLES-order.md 例2 校准为多轮（完整收货信息→选1→确认），单轮直下单与设计澄清流程不符 ｜ tags: create, confirm
 
 ## 加工项域（4 case）
 
@@ -819,7 +821,7 @@
 ### PR-009. 商品更新 - 名称解析 ID 🔴
 ```
 你: 把遮光窗帘的价格改成 199
-期望: product_manage(action=update, product_id=遮光窗帘)
+期望: product_update(product_id=遮光窗帘, price=199)
 数据: success=true
 ```
 真值: id-resolve.name, id-resolve.no-fabricate
@@ -834,7 +836,7 @@
 你: 再看看这个商品的详情确认一下
 期望: product_search
 期望: product_detail(product_id=1)
-期望: product_manage(action=update)
+期望: product_update(price=199)
 期望: product_processing_item_manage(action=add)
 期望: product_detail
 数据: 第3轮 product_id 来自第2轮结果
