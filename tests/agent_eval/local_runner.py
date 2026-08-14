@@ -18,6 +18,14 @@ ADMIN_API = os.environ.get("ADMIN_API_URL", "http://localhost:8080")
 AI_API = os.environ.get("AI_API_URL", "http://localhost:8001")
 PHONE = os.environ.get("TEST_PHONE", "13800138000")
 BYPASS_CODE = os.environ.get("BYPASS_CODE", "123456")
+# CI 模式：SERVICE_TOKEN 存在时，chat/send 无 auth（DEBUG 默认用户），admin-api 用 X-Service-Token
+SERVICE_TOKEN = os.environ.get("SERVICE_TOKEN", "")
+ADMIN_HEADERS = {"X-Service-Token": SERVICE_TOKEN, "X-Tenant-Id": "1"} if SERVICE_TOKEN else {}
+
+
+def _admin_headers(token: str) -> dict:
+    """admin-api 认证 header：CI 模式用 X-Service-Token，本地用 Bearer"""
+    return ADMIN_HEADERS if SERVICE_TOKEN else ({"Authorization": f"Bearer {token}"} if token else {})
 
 import httpx
 
@@ -29,7 +37,7 @@ _saved_states: dict = {}  # {product_id: {"price": ...}}
 async def snapshot_product(token: str, product_keyword: str) -> str | None:
     """保存商品当前状态，返回 product_id"""
     async with httpx.AsyncClient() as c:
-        h = {"Authorization": f"Bearer {token}"}
+        h = _admin_headers(token)
         r = await c.get(f"{ADMIN_API}/api/admin/products", headers=h,
                         params={"keyword": product_keyword, "page": 1, "size": 1})
         items = r.json().get("data", {}).get("items", [])
@@ -48,7 +56,7 @@ async def restore_product(token: str, product_id: str):
         return
     saved = _saved_states[product_id]
     async with httpx.AsyncClient() as c:
-        h = {"Authorization": f"Bearer {token}"}
+        h = _admin_headers(token)
         price = saved.get("price")
         if price is not None:
             await c.patch(f"{ADMIN_API}/api/admin/agent/products/{product_id}",
@@ -58,7 +66,9 @@ async def restore_product(token: str, product_id: str):
 # ── Auth ──
 
 async def login() -> str:
-    """获取测试 token"""
+    """获取测试 token（CI 模式直接返回空字符串，走 SERVICE_TOKEN 无 auth）"""
+    if SERVICE_TOKEN:
+        return ""
     async with httpx.AsyncClient() as c:
         r = await c.post(f"{ADMIN_API}/api/auth/sms/login",
                          json={"phone": PHONE, "code": BYPASS_CODE}, timeout=10)
@@ -67,7 +77,7 @@ async def login() -> str:
 async def get_or_create_session(token: str, prefer_new: bool = True) -> str:
     """获取或创建会话"""
     async with httpx.AsyncClient() as c:
-        h = {"Authorization": f"Bearer {token}"}
+        h = {"Authorization": f"Bearer {token}"} if token else {}
         if prefer_new:
             r = await c.post(f"{AI_API}/api/chat/sessions", headers=h, json={}, timeout=10)
             return r.json()["data"]["id"]
@@ -81,7 +91,7 @@ async def get_or_create_session(token: str, prefer_new: bool = True) -> str:
 async def send_message(token: str, session_id: str, message: str) -> dict:
     """发送消息并收集 SSE 事件"""
     async with httpx.AsyncClient(timeout=120) as c:
-        h = {"Authorization": f"Bearer {token}"}
+        h = {"Authorization": f"Bearer {token}"} if token else {}
 
         result = {
             "user_message": message,
@@ -305,13 +315,20 @@ async def main():
         if not case:
             print(f"用例 {args.case_id} 不存在")
             return
-        await run_suite([case], f"单条 {args.case_id}")
+        results = await run_suite([case], f"单条 {args.case_id}")
     elif args.suite == "smoke":
-        await run_suite(get_smoke_cases(), "冒烟")
+        results = await run_suite(get_smoke_cases(), "冒烟")
     elif args.suite == "adversarial":
-        await run_suite(get_adversarial_cases(), "对抗")
+        results = await run_suite(get_adversarial_cases(), "对抗")
     elif args.suite == "full":
-        await run_suite(get_active_cases(), "全量")
+        results = await run_suite(get_active_cases(), "全量")
+
+    # CI 判定：有未通过用例 → exit 1
+    failed = [r for r in results if r.get("score", 0) < 1.0]
+    if failed:
+        print(f"\n❌ {len(failed)}/{len(results)} 个用例未通过")
+        sys.exit(1)
+    print("\n✅ 全部用例通过")
 
 if __name__ == "__main__":
     asyncio.run(main())

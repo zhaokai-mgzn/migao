@@ -1,0 +1,46 @@
+name: Agent Eval (米宝能力评测)
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 每天 01:30 CST（UTC+8）= UTC 17:30，低峰期跑米宝冒烟评测
+    - cron: '30 17 * * *'
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  agent-eval:
+    name: Mibao Agent Eval (smoke)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install deps
+        run: pip install httpx
+
+      - name: Run smoke eval (真实 LLM + 多轮业务流)
+        env:
+          AI_API_URL: https://ai-api.migaozn.com
+          ADMIN_API_URL: https://api.migaozn.com
+          SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN }}
+        run: python tests/agent_eval/local_runner.py smoke
+
+      - name: Create Issue on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `[Agent Eval] 米宝冒烟评测失败 — ${new Date().toISOString().slice(0, 10)}`,
+              body: `米宝能力冒烟评测失败（真实 LLM + 多轮业务流）。\n\n查看详情：${runUrl}`,
+              labels: ['bug', 'role/qa'],
+            })
