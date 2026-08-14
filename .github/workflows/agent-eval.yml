@@ -31,7 +31,16 @@ jobs:
           SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN }}
           PYTHONUTF8: "1"
           PYTHONIOENCODING: utf-8
-        run: python tests/agent_eval/local_runner.py smoke
+        run: python tests/agent_eval/local_runner.py smoke --cases .github/cases
+
+      - name: Run full eval (smoke + normal + adversarial, 真实 LLM)
+        env:
+          AI_API_URL: https://ai-api.migaozn.com
+          ADMIN_API_URL: https://api.migaozn.com
+          SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN }}
+          PYTHONUTF8: "1"
+          PYTHONIOENCODING: utf-8
+        run: python tests/agent_eval/local_runner.py full --cases .github/cases
 
       - name: Create Issue on failure
         if: failure()
