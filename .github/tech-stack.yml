@@ -1,0 +1,148 @@
+# tech-stack.yml — migao 结构配置（第一个客户示例）
+# 二郎神引擎通过本文件了解目标项目的技术栈，实现「换客户换技术栈不改代码」。
+
+version: 1
+
+# ── 服务拓扑（dashboard / patrol 的端口与健康检查）──
+services:
+  - name: admin-api
+    kind: java-maven
+    source_root: backend/admin-api
+    port: 8081
+    health_path: /actuator/health
+    deploy_workflow: deploy-admin-api.yml
+  - name: admin-web
+    kind: node-vitest
+    source_root: frontend/admin-web
+    port: 3001
+    health_path: /
+    deploy_workflow: deploy-admin-web.yml
+  - name: ai-agent-service
+    kind: python-pytest
+    source_root: backend/ai-agent-service
+    port: 8001
+    health_path: /health
+    deploy_workflow: deploy-ai-agent-service.yml
+
+# ── 测试命令 + 覆盖率（diff_to_test / coverage_weekly 消费）──
+# coverage_scope: unit=仅单元/组件测试 | full=含集成/E2E（产品原则 #5：口径必须一致）
+test_commands:
+  python:
+    run_cmd: 'python3 -m pytest {tests} -v --tb=short -q'
+    cwd: backend/ai-agent-service
+    coverage_type: coverage
+    coverage_path: .coverage
+    coverage_cmd: 'cd backend/ai-agent-service && .venv/bin/pytest tests/ --cov=app --cov-report=json:coverage.json -q'
+    coverage_scope: full
+  java:
+    run_cmd: './mvnw test -Dtest={tests} -pl . -q'
+    cwd: backend/admin-api
+    coverage_type: jacoco
+    coverage_path: target/site/jacoco/jacoco.xml
+    coverage_cmd: 'cd backend/admin-api && ./mvnw test jacoco:report -q'
+    coverage_scope: unit
+  typescript:
+    run_cmd: 'npx vitest run {tests} --reporter=verbose'
+    cwd: frontend/admin-web
+    coverage_type: vitest
+    coverage_path: coverage/coverage-summary.json
+    coverage_cmd: 'cd frontend/admin-web && npm run test:coverage -- --silent'
+    coverage_scope: unit
+
+# ── 模块拓扑：文件 → 测试映射（diff_to_test 消费）──
+# {1}/{2} 对应 pattern 正则的捕获组；不含占位符的字符串为固定值。
+modules:
+  - service: ai-agent-service
+    language: python
+    patterns:
+      - pattern: 'backend/ai-agent-service/app/tools/(.+)\.py'
+        tests:
+          - 'tests/test_tools_{1}.py'
+          - 'tests/test_{1}.py'
+      - pattern: 'backend/ai-agent-service/app/graph/(.+)\.py'
+        tests:
+          - 'tests/test_graph_{1}.py'
+          - 'tests/test_skill_{1}.py'
+      - pattern: 'backend/ai-agent-service/app/agents/(.+)\.py'
+        tests:
+          - 'tests/test_agent_{1}.py'
+          - 'tests/test_intent_{1}.py'
+      - pattern: 'backend/ai-agent-service/app/utils/(.+)\.py'
+        tests:
+          - 'tests/test_utils_{1}.py'
+          - 'tests/test_{1}.py'
+      - pattern: 'backend/ai-agent-service/app/router/(.+)\.py'
+        tests:
+          - 'tests/test_{1}.py'
+          - 'tests/test_intent_router.py'
+      - pattern: 'backend/ai-agent-service/app/memory/(.+)\.py'
+        tests:
+          - 'tests/test_{1}.py'
+          - 'tests/test_context_manager.py'
+      - pattern: 'backend/ai-agent-service/app/api/(.+)\.py'
+        tests:
+          - 'tests/test_{1}.py'
+          - 'tests/test_api_coverage.py'
+      - pattern: 'backend/ai-agent-service/app/llm/(.+)\.py'
+        tests:
+          - 'tests/test_llm_{1}.py'
+          - 'tests/test_{1}.py'
+      - pattern: 'backend/ai-agent-service/app/(.+)\.py'
+        tests:
+          - 'tests/test_{1}.py'
+  - service: admin-api
+    language: java
+    java_package: 'com/migao/admin'
+    patterns:
+      - pattern: 'backend/admin-api/src/main/java/.*/controller/(\w+)\.java'
+        tests:
+          - '**/test/**/{1}Test.java'
+          - '**/test/**/{1}ControllerTest.java'
+      - pattern: 'backend/admin-api/src/main/java/.*/service/(\w+)\.java'
+        tests:
+          - '{1}Test'
+      - pattern: 'backend/admin-api/src/main/java/.*/mapper/(\w+)\.java'
+        tests:
+          - '{1}Test'
+      - pattern: 'backend/admin-api/src/main/java/.*/security/(\w+)\.java'
+        tests:
+          - 'SecurityConfigTest'
+          - 'JwtTokenProviderTest'
+  - service: admin-web
+    language: typescript
+    patterns:
+      - pattern: 'frontend/admin-web/src/components/(.+/)?(\w+)\.tsx'
+        tests:
+          - 'tests/unit/components/{2}.test.ts'
+      - pattern: 'frontend/admin-web/src/app/(.+/)?(\w+)\.tsx'
+        tests:
+          - 'tests/e2e/specs/'
+      - pattern: 'frontend/admin-web/src/(lib|store)/(.+)\.ts'
+        tests:
+          - 'tests/unit/{1}/{2}.test.ts'
+
+# ── 响应信封（check_assert 消费）──
+envelope:
+  payload_path: data
+  list_paths:
+    - data.items
+    - items
+    - data
+  success_field: success
+  error_field_prefix: error
+
+# ── 认证 / DB / 运行时（verify-poll 消费）──
+auth:
+  token_env: SERVICE_TOKEN
+  header: X-Service-Token
+database:
+  type: postgresql
+  host_env: RDS_HOST
+  user_env: RDS_USER
+  name_env: RDS_DB
+  password_env: RDS_PASSWORD
+java_home: /usr/lib/jvm/java-21
+env_prefixes:
+  - RDS_
+  - REDIS_
+  - DATABASE_

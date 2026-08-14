@@ -78,6 +78,15 @@ class AgentContextManager:
         cache = self._get_or_create(session_id)
         cache["last_skill"] = skill_name
 
+    def get_entities(self, session_id: str) -> Dict:
+        """获取会话已记录的实体（跨轮复用），供意图分类器等消费。
+
+        返回 {entity_type: [{id/name/...}, ...]}，无实体时返回空 dict。
+        调用前需先 await load(session_id) 从 Redis 恢复跨实例数据。
+        """
+        cache = self._get_or_create(session_id)
+        return cache.get("entities", {})
+
     # ── 读取 ──
 
     def build_context(self, session_id: str, current_skill: str) -> str:

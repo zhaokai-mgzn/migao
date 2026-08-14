@@ -226,6 +226,14 @@ class TestIntentClassifier:
         assert result.intent == IntentType.GENERAL
         assert result.source == "default"
 
+    def test_classifier_prompt_contains_few_shot(self, classifier):
+        """分类器 prompt 应包含边界 few-shot 示例，帮助区分易混意图"""
+        from app.router.intent_classifier import _build_classifier_prompt
+        prompt = _build_classifier_prompt(None)
+        assert "判断示例" in prompt
+        assert "logistics_track" in prompt
+        assert "order_query" in prompt
+
     def test_parse_response_confidence_clamped(self, classifier):
         """置信度钳位 [0, 1]"""
         result = classifier._parse_response('{"intent": "greeting", "confidence": 1.5}')
@@ -291,6 +299,24 @@ class TestIntentRouter:
             intent=IntentType.GENERAL, confidence=0.5, source="classifier"
         )
         decision = router._make_decision(intent_result)
+        assert decision.action == "full_agent"
+
+    def test_make_decision_very_low_confidence_rewrites_to_general(self, router):
+        """极低置信度(<0.55) 的具体业务意图 → 重写为 general 兜底澄清，不硬猜 skill"""
+        intent_result = IntentResult(
+            intent=IntentType.ORDER_QUERY, confidence=0.4, source="classifier"
+        )
+        decision = router._make_decision(intent_result)
+        assert decision.intent_result.intent == IntentType.GENERAL
+        assert decision.action == "full_agent"
+
+    def test_make_decision_medium_confidence_keeps_intent(self, router):
+        """中等置信度(0.55~0.7) 具体意图 → 保持原 intent（full_agent，LLM 全权处理）"""
+        intent_result = IntentResult(
+            intent=IntentType.ORDER_QUERY, confidence=0.6, source="classifier"
+        )
+        decision = router._make_decision(intent_result)
+        assert decision.intent_result.intent == IntentType.ORDER_QUERY
         assert decision.action == "full_agent"
 
     def test_make_decision_complaint_with_hint(self, router):
@@ -451,3 +477,32 @@ class TestIntentRouterPendingSkill:
 
         result = await intent_router_node(state)
         assert result["intent_result"]["source"] == "plan_rewrite"
+
+
+class TestEntityHint:
+    """跨轮实体提示：让意图分类器指代消解（"那个订单"→ORD12345）"""
+
+    @pytest.mark.asyncio
+    async def test_build_entity_hint_reads_cached_entities(self):
+        from app.graph.nodes import _build_entity_hint
+        fake = MagicMock()
+        fake.load = AsyncMock()
+        fake.get_entities = MagicMock(return_value={
+            "order_nos": [{"no": "ORD12345", "id": "uuid-1", "name": "遮光窗帘"}],
+            "customer_ids": [{"id": "uuid-2", "name": "张三"}],
+        })
+        with patch("app.memory.context_manager.get_context_manager", return_value=fake):
+            hint = await _build_entity_hint("sess-1")
+        assert "[上下文实体]" in hint
+        assert "ORD12345" in hint
+        assert "张三" in hint
+
+    @pytest.mark.asyncio
+    async def test_build_entity_hint_empty_without_entities(self):
+        from app.graph.nodes import _build_entity_hint
+        fake = MagicMock()
+        fake.load = AsyncMock()
+        fake.get_entities = MagicMock(return_value={})
+        with patch("app.memory.context_manager.get_context_manager", return_value=fake):
+            hint = await _build_entity_hint("sess-empty")
+        assert hint == ""
