@@ -28,6 +28,31 @@ PHONE = os.environ.get("TEST_PHONE", "13800138000")
 BYPASS_CODE = os.environ.get("BYPASS_CODE", "123456")
 # CI 模式：SERVICE_TOKEN 存在时，chat/send 无 auth（DEBUG 默认用户），admin-api 用 X-Service-Token
 SERVICE_TOKEN = os.environ.get("SERVICE_TOKEN", "")
+
+
+def _validate_service_token(token: str) -> str | None:
+    """校验 SERVICE_TOKEN 是否纯 ASCII（HTTP header 值必须是 ASCII）。
+
+    返回 None 表示合法；否则返回人类可读的错误说明。
+    """
+    if not token:
+        return None
+    try:
+        token.encode("ascii")
+        return None
+    except UnicodeEncodeError:
+        bad = "".join(c for c in token if ord(c) > 127)
+        return (
+            f"SERVICE_TOKEN 含非 ASCII 字符（{bad[:10]}），HTTP 请求头必须纯 ASCII。"
+            "请检查 GitHub Secrets 的 SMOKE_SERVICE_TOKEN 值：去掉中文/空格/换行，或换成有效的服务 token。"
+        )
+
+
+_token_err = _validate_service_token(SERVICE_TOKEN)
+if _token_err:
+    print(f"❌ {_token_err}", file=sys.stderr)
+    sys.exit(1)
+
 ADMIN_HEADERS = {"X-Service-Token": SERVICE_TOKEN, "X-Tenant-Id": "1"} if SERVICE_TOKEN else {}
 
 
