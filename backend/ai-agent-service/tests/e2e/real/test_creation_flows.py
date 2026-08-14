@@ -9,7 +9,8 @@
 import time
 import pytest
 from tests.e2e.real.conftest import (
-    Session, admin_get, admin_search_products, sse_text, sse_tools, sse_results
+    Session, admin_get, admin_search_products, sse_text, sse_tools, sse_results,
+    confirm_and_execute,
 )
 
 TS = int(time.time()) % 100000
@@ -35,12 +36,9 @@ class TestProductCreation:
         # MiniMax-M3 更谨慎：可能先查分类树解析ID，不要求立即含商品名
         assert len(text2) > 10 or len(sse_tools(ev)) > 0, f"R2 应有响应: {text2[:200]}"
 
-        # R3: 确认创建
-        ev = sess.send("确认创建")
-        assert "product_manage" in sse_tools(ev), f"R3 应调 product_manage: {sse_tools(ev)}"
-        assert "创建成功" in sse_text(ev) or any(
-            r.get("success") for r in sse_results(ev) if isinstance(r, dict)
-        ), f"R3 应创建成功: {sse_text(ev)[:200]}"
+        # R3: 确认创建（写操作铁律：validate_input → confirm 卡片 → 执行）
+        ev = confirm_and_execute(sess, "确认创建", "product_manage")
+        assert "product_manage" in sse_tools(ev), f"应执行 product_manage: {sse_tools(ev)}"
 
         # admin-api 验证
         time.sleep(1)
@@ -60,7 +58,7 @@ class TestProductCreation:
         # LLM 需先查分类树
         sess.send("创建窗帘商品")
         sess.send(f"{name} 50元 窗帘布艺分类")
-        ev = sess.send("确认创建")
+        ev = confirm_and_execute(sess, "确认创建", "product_manage")
         assert "product_manage" in sse_tools(ev) or len(sse_text(ev)) > 10, f"应调 product_manage: {sse_tools(ev)}"
 
         time.sleep(1)
@@ -73,7 +71,7 @@ class TestProductCreation:
         name = f"E2E修正_{TS+2}"
         sess.send("创建窗帘商品")
         sess.send(f"{name} 99元 白色 窗帘布艺分类")
-        ev = sess.send("价格改成76，确认创建")
+        ev = confirm_and_execute(sess, "价格改成76，确认创建", "product_manage")
         assert "product_manage" in sse_tools(ev) or len(sse_text(ev)) > 10, f"应调 product_manage: {sse_tools(ev)}"
 
         time.sleep(1)
@@ -88,9 +86,11 @@ class TestOrderCreation:
     """订单创建 — 全字段验证"""
 
     def test_create_order_multi_items(self, sess):
-        """多商品订单创建"""
+        """多商品订单创建 — 先查 SKU 选规格，再确认下单"""
         sess.send("帮我查一下有哪些窗帘商品")
-        ev = sess.send(f"创建订单 E2E订单_{TS} 13800001111，第一个窗帘 2件 99元，确认创建")
+        sess.send(f"创建订单 E2E订单_{TS} 13800001111，第一个窗帘 2件 99元")
+        sess.send("散剪 2.8米门幅")
+        ev = confirm_and_execute(sess, "确认下单", "order_create")
         tools = sse_tools(ev)
         assert "order_create" in tools or "order_manage" in tools, f"应调order_create: {tools}"
 

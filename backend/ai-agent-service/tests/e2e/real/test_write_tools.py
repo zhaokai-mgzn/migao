@@ -9,7 +9,8 @@
 import time
 import pytest
 from tests.e2e.real.conftest import (
-    Session, admin_get, admin_search_products, admin_search_orders, sse_text, sse_tools, sse_results
+    Session, admin_get, admin_search_products, admin_search_orders, sse_text, sse_tools, sse_results,
+    confirm_and_execute,
 )
 
 TS = int(time.time()) % 100000
@@ -25,7 +26,8 @@ class TestOrderWrite:
         # R1: 搜商品
         sess.send("帮我查一下有哪些窗帘商品")
         # R2: 创建（直接用商品名，LLM 在上一轮已拿到数据）
-        ev = sess.send(f"创建订单 {name_hint} 13800001111，第一个窗帘 1件 99元，确认创建")
+        sess.send(f"创建订单 {name_hint} 13800001111，第一个窗帘 1件 99元")
+        ev = confirm_and_execute(sess, "确认创建", "order_create")
         assert "order_create" in sse_tools(ev) or "order_manage" in sse_tools(ev), (
             f"应触发订单创建: {sse_tools(ev)}"
         )
@@ -47,8 +49,8 @@ class TestProductWrite:
         assert len(sse_tools(ev)) > 0, f"R1应调工具"
         # R2: 提供信息（含分类名，LLM负责解析为ID）
         ev = sess.send(f"{name} 66元 白色 窗帘布艺分类 散剪")
-        # R3: 确认创建
-        ev = sess.send("确认创建")
+        # R3: 确认创建（写操作铁律：validate_input → confirm → 执行）
+        ev = confirm_and_execute(sess, "确认创建", "product_manage")
         assert "product_manage" in sse_tools(ev), f"tools: {sse_tools(ev)}"
 
         time.sleep(1)
@@ -80,9 +82,9 @@ class TestProductWrite:
         old_price = float(target.get("price") or 0)  # admin-api 返回元
         new_price = round(old_price + 1, 1)  # +1 元
 
-        sess.send(f"把 {target['name']} 的价格改成 {new_price}，立即执行")
+        sess.send(f"把 {target['name']} 的价格改成 {new_price}")
         # 给 LLM 两轮：先确认目标商品，再执行修改
-        ev = sess.send("确认修改，立即执行")
+        ev = confirm_and_execute(sess, "确认修改，立即执行", "product_manage")
         assert "product_manage" in sse_tools(ev), f"tools: {sse_tools(ev)}"
 
         time.sleep(1)
@@ -100,7 +102,7 @@ class TestProductWrite:
         target_action = "下架" if old_status == "on_sale" else "上架"
 
         sess.send(f"把 {target['name']} {target_action}")
-        ev = sess.send("确认")
+        ev = confirm_and_execute(sess, "确认", "product_manage")
         assert "product_manage" in sse_tools(ev), f"tools: {sse_tools(ev)}"
 
         time.sleep(1)
@@ -144,7 +146,7 @@ class TestCategoryWrite:
         # 创建
         sess.send("看看商品分类")
         sess.send(f"在窗帘布艺下新建 {name} 分类")
-        ev = sess.send("确认创建")
+        ev = confirm_and_execute(sess, "确认创建", "category_manage")
         assert "category_manage" in sse_tools(ev), f"create tools: {sse_tools(ev)}"
 
         # admin-api 验证创建
@@ -157,7 +159,7 @@ class TestCategoryWrite:
             # 删除刚创建的
             cat_id = found[0]["id"]
             sess.send(f"删除 {name} 这个分类")
-            ev = sess.send("确认删除")
+            ev = confirm_and_execute(sess, "确认删除", "category_manage")
             assert "category_manage" in sse_tools(ev), f"delete tools: {sse_tools(ev)}"
             time.sleep(1)
             # 验证已删除
