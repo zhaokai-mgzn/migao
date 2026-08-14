@@ -1,4 +1,5 @@
 """SettingsManageTool 单元测试 — 系统设置/AI配置/密码修改"""
+# case_ids: ST-001, ST-002, ST-003
 import pytest
 from unittest.mock import AsyncMock, patch
 from app.tools.settings_manage import SettingsManageTool

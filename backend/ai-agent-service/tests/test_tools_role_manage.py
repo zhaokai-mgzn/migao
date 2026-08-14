@@ -1,4 +1,5 @@
 """RoleManageTool 单元测试 — 角色/权限管理"""
+# case_ids: HR-004, HR-005
 import pytest
 from unittest.mock import AsyncMock, patch
 from app.tools.role_manage import RoleManageTool

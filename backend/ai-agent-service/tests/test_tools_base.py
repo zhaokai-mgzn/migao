@@ -1,4 +1,5 @@
 """BaseTool / ToolContext / ToolResult 单元测试"""
+# case_ids: CH-004, CU-001, CU-002, CU-003, CU-004, DA-001, DA-002, DA-003
 import pytest
 from app.tools.base import BaseTool, ToolContext, ToolResult
 

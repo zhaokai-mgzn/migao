@@ -6,6 +6,7 @@
 2. JWT tenant_id 正确解析为 UserIdentity
 3. 跨租户 session 访问被拒绝（send_message 中 session.tenant_id ≠ user.tenant_id → 403）
 """
+# case_ids: DF-010
 
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock

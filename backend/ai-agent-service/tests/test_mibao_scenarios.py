@@ -8,6 +8,7 @@
   .venv/bin/python tests/test_mibao_scenarios.py
   TEST_TOKEN=xxx .venv/bin/python tests/test_mibao_scenarios.py  # 用已有token
 """
+# case_ids: CH-007, CR-001, CR-002, CR-003, OR-008, OR-009, PR-008
 
 import asyncio, json, os, re, sys, time
 from pathlib import Path

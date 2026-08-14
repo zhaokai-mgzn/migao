@@ -3,6 +3,7 @@
 
 业务真值 #2: 客户可以创建售后工单→必须关联已有订单号，只能创建自己的工单
 """
+# case_ids: AS-003
 import pytest
 from unittest.mock import patch, AsyncMock
 

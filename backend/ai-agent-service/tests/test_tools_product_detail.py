@@ -3,6 +3,7 @@
 
 测试 ProductDetailTool.execute() 的各种场景
 """
+# case_ids: CH-001, PR-003
 
 import pytest
 from unittest.mock import patch, AsyncMock

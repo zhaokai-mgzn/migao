@@ -3,6 +3,7 @@ AI 智能客服系统 - JWT 认证模块测试
 
 测试 auth.py 中的 JWT Token 解析和用户身份提取逻辑
 """
+# case_ids: DF-014
 
 import time
 import jwt

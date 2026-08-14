@@ -1,4 +1,5 @@
 """OrderManageTool 单元测试 — Agent BFF PATCH 端点"""
+# case_ids: OR-007, OR-010
 import pytest
 from unittest.mock import AsyncMock, patch
 from app.tools.order_manage import OrderManageTool
