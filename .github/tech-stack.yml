@@ -71,6 +71,22 @@ modules:
         tests:
           - 'tests/test_utils_{1}.py'
           - 'tests/test_{1}.py'
+      - pattern: 'backend/ai-agent-service/app/router/(.+)\.py'
+        tests:
+          - 'tests/test_{1}.py'
+          - 'tests/test_intent_router.py'
+      - pattern: 'backend/ai-agent-service/app/memory/(.+)\.py'
+        tests:
+          - 'tests/test_{1}.py'
+          - 'tests/test_context_manager.py'
+      - pattern: 'backend/ai-agent-service/app/api/(.+)\.py'
+        tests:
+          - 'tests/test_{1}.py'
+          - 'tests/test_api_coverage.py'
+      - pattern: 'backend/ai-agent-service/app/llm/(.+)\.py'
+        tests:
+          - 'tests/test_llm_{1}.py'
+          - 'tests/test_{1}.py'
       - pattern: 'backend/ai-agent-service/app/(.+)\.py'
         tests:
           - 'tests/test_{1}.py'
