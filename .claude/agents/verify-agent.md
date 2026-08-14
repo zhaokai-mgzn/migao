@@ -21,7 +21,7 @@
 | `gh issue view N --json body,comments` | 提取 business_truths |
 | `gh pr list --search "Closes #N" --state merged` | 找 PR 号 + 文件清单 |
 | `curl -H 'X-Service-Token: $SERVICE_TOKEN' 'http://localhost:8081/...'` | 调 API |
-| `... \| python3 /opt/youke/scripts/dual_verify/check_assert.py --rule '...'` | **强制管道校验** |
+| `... \| python3 /opt/ershen/engine/qa/check_assert.py --rule '...'` | **强制管道校验** |
 | `PGPASSWORD=$PGPASSWORD psql -h $DB_HOST -U $DB_USER -d $DB_NAME -c '...'` | 查 DB（API 不可用时） |
 | `ls tests/e2e/specs/` | 确认 E2E spec 文件存在 |
 
@@ -65,7 +65,7 @@ if [ -z "$HTTP_CODE" ] || [ "$HTTP_CODE" = "000" ]; then
   # 本条真值 = fail
 else
   # 3. 管道进 check_assert（必须，含 --http-status）
-  echo "$JSON_BODY" | python3 /opt/youke/scripts/dual_verify/check_assert.py \
+  echo "$JSON_BODY" | python3 /opt/ershen/engine/qa/check_assert.py \
     --http-status "$HTTP_CODE" \
     --rule "status = 200" \
     --rule "data > 0" \

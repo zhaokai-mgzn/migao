@@ -1,0 +1,31 @@
+name: Bash Syntax Check
+
+on:
+  push:
+    paths:
+      - 'scripts/*.sh'
+  pull_request:
+    paths:
+      - 'scripts/*.sh'
+
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check bash syntax
+        run: |
+          errors=0
+          for f in scripts/*.sh; do
+            if bash -n "$f" 2>/dev/null; then
+              echo "✅ $f"
+            else
+              echo "❌ $f SYNTAX ERROR"
+              bash -n "$f"
+              errors=$((errors+1))
+            fi
+          done
+          if [ $errors -gt 0 ]; then
+            echo "::error::$errors bash script(s) have syntax errors"
+            exit 1
+          fi
