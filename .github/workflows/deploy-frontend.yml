@@ -65,7 +65,7 @@ jobs:
           docker push $IMG:$TAG
           docker push $IMG:latest
 
-      - name: Deploy SAE
+      - name: Deploy to SWAS
         env:
           AK: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
           SK: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
@@ -73,32 +73,27 @@ jobs:
           curl -fsSL https://aliyuncli.alicdn.com/aliyun-cli-linux-latest-amd64.tgz -o /tmp/aliyun.tgz
           tar xzf /tmp/aliyun.tgz -C /tmp
           sudo mv /tmp/aliyun /usr/local/bin/
-          aliyun configure set --access-key-id "$AK" --access-key-secret "$SK" --region ${{ env.SAE_REGION }}
-          IMG="${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}"
-          aliyun sae POST /pop/v1/sam/app/deployApplication \
-            --AppId ${{ env.SAE_APP_ID }} \
-            --RegionId ${{ env.SAE_REGION }} \
-            --ImageUrl "$IMG" \
-            --InternetSlbId lb-bp13ac78fwkoj41m9isz0 \
-            --Internet true \
-            --Port 3001 \
-            --MinReadyInstances 1 \
-            --Replicas 1 \
-            --Envs '[{"name":"PORT","value":"3001"}]'
-
-      - name: Verify
-        run: |
-          sleep 30
-          curl -sf -m 10 https://api.migaozn.com/login/ -o /dev/null && echo "OK" || echo "WARN"
-
-      - name: CDN refresh
-        env:
-          AK: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
-          SK: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
-        run: |
-          curl -fsSL https://aliyuncli.alicdn.com/aliyun-cli-linux-latest-amd64.tgz -o /tmp/aliyun.tgz
-          tar xzf /tmp/aliyun.tgz -C /tmp
-          sudo mv /tmp/aliyun /usr/local/bin/
-          aliyun configure set --access-key-id "$AK" --access-key-secret "$SK" --region ${{ env.SAE_REGION }}
-          aliyun cdn RefreshObjectCaches --ObjectPath "https://merchant.migaozn.com/" --ObjectType Directory
-          aliyun cdn RefreshObjectCaches --ObjectPath "https://migaozn.com/" --ObjectType Directory
+          aliyun configure set --access-key-id "$AK" --access-key-secret "$SK" --region cn-hangzhou
+          # 触发 SWAS 云助手执行 deploy.sh(拉源码 -> 构建 -> compose 启动 -> 健康检查)
+          aliyun plugin install --names aliyun-cli-swas-open >/dev/null 2>&1 || true
+          INVOKE=$(aliyun swas-open RunCommand \
+            --InstanceId b23c69e599524b1da719734f72e6a0e3 \
+            --Name migao-ci-deploy \
+            --Type RunShellScript \
+            --Timeout 1800 \
+            --RegionId cn-hangzhou \
+            --CommandContent "bash /opt/migao-deploy/deploy.sh" 2>&1)
+          INVOKE_ID=$(echo "$INVOKE" | python3 -c "import sys,json;print(json.load(sys.stdin).get('InvokeId',''))")
+          echo "deploy invokeId=$INVOKE_ID"
+          if [ -z "$INVOKE_ID" ]; then echo "FAILED: no InvokeId"; echo "$INVOKE"; exit 1; fi
+          for i in $(seq 1 90); do
+            RES=$(aliyun swas-open DescribeInvocationResult \
+              --InstanceId b23c69e599524b1da719734f72e6a0e3 \
+              --InvokeId "$INVOKE_ID" \
+              --RegionId cn-hangzhou)
+            STATUS=$(echo "$RES" | python3 -c "import sys,json;d=json.load(sys.stdin);v=d.get('InvocationResult') or d;print(v.get('InvocationStatus') or v.get('Status') or '')")
+            echo "  deploy status: $STATUS"
+            if [ "$STATUS" = "Success" ]; then echo "SWAS 部署成功"; break; fi
+            if [ "$STATUS" = "Failed" ]; then echo "FAILED: SWAS 部署失败"; echo "$RES" | head -c 1500; exit 1; fi
+            sleep 20
+          done
