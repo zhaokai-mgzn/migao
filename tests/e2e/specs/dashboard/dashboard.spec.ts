@@ -381,9 +381,11 @@ test.describe('仪表盘空数据状态', () => {
     await expect(page.getByRole('link', { name: /创建订单/ })).toHaveCount(2)
   })
 
-  test('空状态趋势图有占位网格线 SVG', async ({ page }) => {
-    const dashedLines = page.locator('svg line[stroke-dasharray]')
-    expect(await dashedLines.count()).toBeGreaterThanOrEqual(4)
+  test('空状态趋势图不渲染占位虚线网格 (#2434)', async ({ page }) => {
+    // 占位虚线网格的唯一标记：svg[preserveAspectRatio="none"]
+    // （MiniSparkline/MiniBarChart 在空数据时仍会渲染一条 strokeDasharray 虚线，不能用 line[stroke-dasharray] 断言）
+    const placeholderGrids = page.locator('svg[preserveAspectRatio="none"]')
+    expect(await placeholderGrids.count()).toBe(0)
   })
 
   test('近期订单空状态 — 文字 + 图标', async ({ page }) => {
