@@ -10,6 +10,14 @@ Mibao Agent 本地评测 — 直接调 localhost chat API，采集 SSE 事件
 import sys, os, json, time, asyncio, re
 from pathlib import Path
 
+# CI stdout 可能默认 ascii 编码，强制 UTF-8（防中文/emoji 触发 UnicodeEncodeError）
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        try:
+            _stream.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
+
 sys.path.insert(0, os.path.dirname(__file__))
 from eval_cases import ALL_CASES, get_smoke_cases, get_adversarial_cases, get_active_cases, Difficulty
 
