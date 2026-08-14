@@ -35,7 +35,7 @@ PRODUCT_SYSTEM_PROMPT = """## 🔴 改商品级定价→product_update。单独�
 | name | 是 | 用户提供 |
 | price | 是 | 用户提供 |
 | sku_code | 是 | 用户直接提供时直接使用；未提供时引导（色号/品牌/拼音首字母/自动生成） |
-| category_id | 是 | 用户提供时直接匹配 tree 结果取 ID；未提供时调 interact(choice) 渲染分类选择器 |
+| category_id | 是 | 用户提供分类名时**当轮立即**调 category_manage 查分类树匹配 ID，不要留到"确认创建"阶段；未提供时调 interact(choice) 渲染分类选择器 |
 | selling_methods | 是 | 用户提供或默认["散剪","整卷"] |
 | door_widths | 是 | 用户提供或默认["2.8米"] |
 | colors | 是 | 用户提供或图片识别 |
