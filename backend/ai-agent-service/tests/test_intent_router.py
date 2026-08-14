@@ -49,6 +49,12 @@ class TestRuleMatcher:
         assert result is not None
         assert result.intent == IntentType.ORDER_QUERY
 
+    def test_order_statistics_matches_order_query(self, matcher):
+        """'订单统计数据' → ORDER_QUERY，不被 statistics 的'统计'关键词吞掉"""
+        result = matcher.match("订单统计数据")
+        assert result is not None
+        assert result.intent == IntentType.ORDER_QUERY
+
     def test_keyword_match_product_inquiry(self, matcher):
         """关键词匹配：商品咨询"""
         result = matcher.match("这个商品多少钱")

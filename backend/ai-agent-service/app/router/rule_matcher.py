@@ -113,6 +113,16 @@ class RuleMatcher:
                 matched_keywords=farewell_matched,
             )
 
+        # --- 优先匹配「订单统计/订单数据」→ order_query（订单域统计） ---
+        # 否则会被下方 STATISTICS 的"统计"关键词抢先匹配，误路由到经营看板。
+        if "订单" in msg_lower and ("统计" in msg_lower or "数据" in msg_lower):
+            return IntentResult(
+                intent=IntentType.ORDER_QUERY,
+                confidence=0.95,
+                source="rule",
+                matched_keywords=["订单统计"],
+            )
+
         for intent, keywords in KEYWORD_MAP.items():
             # capabilities 和 farewell 已在上面处理
             if intent in (IntentType.CAPABILITIES, IntentType.FAREWELL):
