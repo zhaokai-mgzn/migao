@@ -293,16 +293,8 @@ export default function DashboardPage() {
                 </svg>
               )
             })() : (
-              <div className="h-full flex flex-col items-center justify-center relative">
-                {/* Placeholder chart grid */}
-                <svg className="absolute inset-0 w-full h-full" viewBox="0 0 400 200" preserveAspectRatio="none">
-                  <line x1="40" y1="10" x2="40" y2="170" stroke="#F3F4F6" strokeWidth="1" />
-                  <line x1="40" y1="170" x2="380" y2="170" stroke="#F3F4F6" strokeWidth="1" />
-                  {[30, 65, 100, 135].map((y, i) => (
-                    <line key={i} x1="40" y1={y} x2="380" y2={y} stroke="#F3F4F6" strokeWidth="1" strokeDasharray="4 4" />
-                  ))}
-                </svg>
-                <div className="relative z-10 flex flex-col items-center">
+              <div className="h-full flex flex-col items-center justify-center">
+                <div className="flex flex-col items-center">
                   <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-50 flex items-center justify-center mb-3">
                     <TrendingUp className="w-6 h-6 text-blue-400" />
                   </div>
@@ -341,16 +333,8 @@ export default function DashboardPage() {
                 </svg>
               )
             })() : (
-              <div className="h-full flex flex-col items-center justify-center relative">
-                {/* Placeholder chart grid */}
-                <svg className="absolute inset-0 w-full h-full" viewBox="0 0 400 200" preserveAspectRatio="none">
-                  <line x1="40" y1="10" x2="40" y2="170" stroke="#F3F4F6" strokeWidth="1" />
-                  <line x1="40" y1="170" x2="380" y2="170" stroke="#F3F4F6" strokeWidth="1" />
-                  {[30, 65, 100, 135].map((y, i) => (
-                    <line key={i} x1="40" y1={y} x2="380" y2={y} stroke="#F3F4F6" strokeWidth="1" strokeDasharray="4 4" />
-                  ))}
-                </svg>
-                <div className="relative z-10 flex flex-col items-center">
+              <div className="h-full flex flex-col items-center justify-center">
+                <div className="flex flex-col items-center">
                   <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-50 to-green-50 flex items-center justify-center mb-3">
                     <DollarSign className="w-6 h-6 text-emerald-400" />
                   </div>

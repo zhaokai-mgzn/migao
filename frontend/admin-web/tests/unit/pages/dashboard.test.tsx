@@ -324,6 +324,79 @@ describe('DashboardPage', () => {
     })
   })
 
+  // ── #2434: 空数据趋势图不渲染占位虚线网格 ──
+
+  function mockEmptyTrend() {
+    mockGetOrderTrend.mockResolvedValue({ data: { data: [] } })
+  }
+
+  it('空数据时订单趋势图区域不渲染占位虚线网格 (#2434)', async () => {
+    mockEmptyTrend()
+    const { container } = render(<DashboardPage />)
+    await waitFor(() => {
+      expect(screen.getByText('暂无订单数据')).toBeInTheDocument()
+    })
+    // 占位虚线网格的唯一标记：svg[preserveAspectRatio="none"]（空态 loading=false，无 ChartSkeleton）
+    const orderCard = screen.getByText('订单趋势').closest('.bg-white')!
+    expect(orderCard.querySelectorAll('svg[preserveAspectRatio="none"]').length).toBe(0)
+    expect(container.querySelectorAll('svg[preserveAspectRatio="none"]').length).toBe(0)
+  })
+
+  it('空数据时销售额趋势图区域不渲染占位虚线网格 (#2434)', async () => {
+    mockEmptyTrend()
+    const { container } = render(<DashboardPage />)
+    await waitFor(() => {
+      expect(screen.getByText('暂无销售额数据')).toBeInTheDocument()
+    })
+    const salesCard = screen.getByText('销售额数据').closest('.bg-white')!
+    expect(salesCard.querySelectorAll('svg[preserveAspectRatio="none"]').length).toBe(0)
+    expect(container.querySelectorAll('svg[preserveAspectRatio="none"]').length).toBe(0)
+  })
+
+  it('空状态保留图标+标题+描述+创建订单CTA (#2434)', async () => {
+    mockEmptyTrend()
+    render(<DashboardPage />)
+    await waitFor(() => {
+      expect(screen.getByText('暂无订单数据')).toBeInTheDocument()
+      expect(screen.getByText('创建订单后，趋势图将在此展示')).toBeInTheDocument()
+      expect(screen.getByText('暂无销售额数据')).toBeInTheDocument()
+      expect(screen.getByText('产生订单后，销售趋势将在此展示')).toBeInTheDocument()
+    })
+    const ctas = screen.getAllByText('创建订单')
+    expect(ctas).toHaveLength(2)
+    for (const cta of ctas) {
+      expect(cta.closest('a')).toHaveAttribute('href', '/orders/new')
+    }
+    // 图标保留：TrendingUp/DollarSign 在页面出现多次（经营数据卡片/标题也复用），
+    // 这里断言空状态容器内仍保留对应图标
+    const orderEmpty = screen.getByText('暂无订单数据').closest('.h-full')!
+    const salesEmpty = screen.getByText('暂无销售额数据').closest('.h-full')!
+    expect(orderEmpty.querySelector('[data-testid="icon-trending-up"]')).toBeTruthy()
+    expect(salesEmpty.querySelector('[data-testid="icon-dollar-sign"]')).toBeTruthy()
+  })
+
+  it('有数据时订单趋势渲染折线图、销售额渲染面积图 (#2434)', async () => {
+    // beforeEach 的 mockApiSuccess 已含 2 个趋势点
+    const { container } = render(<DashboardPage />)
+    await waitFor(() => {
+      expect(screen.getByText('订单趋势')).toBeInTheDocument()
+    })
+    const orderCard = screen.getByText('订单趋势').closest('.bg-white')!
+    const salesCard = screen.getByText('销售额数据').closest('.bg-white')!
+    expect(orderCard.querySelector('svg polyline')).toBeTruthy()
+    expect(salesCard.querySelector('svg path')).toBeTruthy()
+    expect(salesCard.querySelector('svg linearGradient')).toBeTruthy()
+    // 有数据时不渲染占位虚线网格
+    expect(container.querySelectorAll('svg[preserveAspectRatio="none"]').length).toBe(0)
+  })
+
+  it('加载中渲染 ChartSkeleton 骨架屏 (#2434)', () => {
+    // 初始 loading=true，图表区域渲染 ChartSkeleton（骨架网格 + animate-pulse 柱条）
+    const { container } = render(<DashboardPage />)
+    expect(container.querySelectorAll('svg[preserveAspectRatio="none"]').length).toBeGreaterThan(0)
+    expect(container.querySelectorAll('.animate-pulse').length).toBeGreaterThan(0)
+  })
+
   it('should have refresh button', async () => {
     render(<DashboardPage />)
     await waitFor(() => {
