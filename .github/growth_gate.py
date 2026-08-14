@@ -223,14 +223,21 @@ def load_case_index(cases_dir):
         return {}, f"用例库解析失败 {cases_dir}: {e}"
 
 
+TEST_FILE_EXTS = (".py", ".java", ".ts", ".tsx")
+
+
 def _is_test_file(file_path):
-    """路径是否为测试文件（tests/ 目录 或 名称含 test/spec）。"""
-    segs = file_path.split("/")
-    if any(s.startswith("test") for s in segs):
-        return True
-    base = segs[-1]
-    return re.search(r"(test|spec)", base, re.I) is not None and \
-        base.endswith((".py", ".java", ".ts", ".tsx"))
+    """路径是否为测试文件。
+
+    判定：扩展名必须是代码文件（.py/.java/.ts/.tsx），文件名含 test/spec；
+    conftest（pytest 夹具，非用例）与 runner/生成数据文件（local_runner/eval_cases 等）不算。
+    """
+    base = file_path.split("/")[-1]
+    if not base.endswith(TEST_FILE_EXTS):
+        return False
+    if base in ("conftest.py", "conftest.ts"):
+        return False
+    return re.search(r"(test|spec)", base, re.I) is not None
 
 
 def case_trace_check(rules, files, repo_root, cases_dir, base="origin/main"):
