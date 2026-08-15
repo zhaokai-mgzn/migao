@@ -138,14 +138,18 @@ jobs:
             echo "ℹ️ 未声明 cases，跳过用例引用校验"
             exit 0
           fi
-          FAILED=0
+          # issue 创建时用例库可能还不含「本 PR 新登记的 case」（新 case 与修复同批落地），
+          # 因此 issue 级只做告警、不做硬失败；case 是否存在由 PR 级的 case-truth-check
+          # 与 QA Growth Gate(G5) 在合并前兜底校验。
+          MISSING=0
           for id in $CASES; do
             if ! python3 .github/truths.py case "$id" --cases .github/cases; then
-              FAILED=1
+              echo "⚠️ 用例 $id 未在 main 用例库中找到（可能是本 PR 新登记的 case）"
+              MISSING=1
             fi
           done
-          if [ "$FAILED" = "1" ]; then
-            echo "::error:: CONTRACT_JSON 声明了不存在的用例 ID，请从 .github/cases/ 选择或修正"
-            exit 1
+          if [ "$MISSING" = "1" ]; then
+            echo "::warning:: 部分用例 ID 尚未在 main 用例库中。若为新增 case，请确保同一 PR 已在 .github/cases/ 登记；合并前由 case-truth-check + QA Growth Gate(G5) 兜底校验。"
+          else
+            echo "✅ cases 引用全部有效"
           fi
-          echo "✅ cases 引用全部有效"
