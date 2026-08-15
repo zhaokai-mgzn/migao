@@ -45,6 +45,10 @@ jobs:
             echo "⏭️  工程类 issue（type/infra|chore|docs|meta|refactor），无业务真值，跳过军师验收 reopen"
             exit 0
           fi
+          if echo "$ISSUE_LABELS" | grep -qE '^(needs-truths|needs-draft)$'; then
+            echo "⏭️  issue 缺业务真值（needs-truths/needs-draft），无真值可验收，跳过 reopen + ai-verify/pending"
+            exit 0
+          fi
           cat > /tmp/verify.md << COMMENT
           ## 🤖 军师验收触发
           PR [#$PR_NUMBER]($PR_URL) 已合入 \`main\`。
