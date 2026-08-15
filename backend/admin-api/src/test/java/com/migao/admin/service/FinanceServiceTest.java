@@ -1,4 +1,5 @@
 package com.migao.admin.service;
+// case_ids: FN-001, FN-002, FN-003
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;

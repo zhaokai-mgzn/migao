@@ -545,6 +545,35 @@
 真值: defense.jwt-alg-consistency, defense.jwt
 溯源: 2026-08-15 新增：米宝新建会话 TOKEN_INVALID 线上 bug 根因（admin-api RSA 密钥加载失败时静默降级 HS256，ai-agent 仅接受 RS256） ｜ tags: defense, security, jwt_alg, session_create
 
+## finance（3 case）
+
+### FN-001. 资金流水查询与登记 🔵
+```
+你: 登记一笔线下收款
+期望: finance_api(action=create_transaction, type=income)
+数据: 流水号 FIN- 前缀，type=income，amount>0，status=success
+```
+真值: finance.txn-types, finance.auto-record, finance.txn-no
+溯源: 财务对账模块新增 ｜ tags: finance, query
+
+### FN-002. 收支汇总 🔵
+```
+你: 本月收入退款净额
+期望: finance_api(action=get_summary)
+数据: netIncome = totalIncome - totalRefund
+```
+真值: finance.summary
+溯源: 财务对账模块新增 ｜ tags: finance, summary
+
+### FN-003. 应收对账 🔵
+```
+你: 哪些订单没对平
+期望: finance_api(action=get_reconciliation)
+数据: 每条 difference = receivedAmount - receivableAmount
+```
+真值: finance.reconcile
+溯源: 财务对账模块新增 ｜ tags: finance, reconcile
+
 ## 人事域（5 case）
 
 ### HR-001. 员工列表 🟢
@@ -964,8 +993,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：81（活跃 79，跳过 2）
-- tier 分布：smoke 9 / normal 45 / adversarial 27
+- 用例总数：84（活跃 82，跳过 2）
+- tier 分布：smoke 9 / normal 48 / adversarial 27
 - 售后域：5
 - 分类域：3
 - 对话边界域：7
@@ -973,6 +1002,7 @@
 - 客户域：5
 - 数据域：4
 - 防御域：16
+- finance：3
 - 人事域：5
 - 订单域：10
 - 加工项域：4
