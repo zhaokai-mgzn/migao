@@ -23,14 +23,28 @@ echo "✅ Aliyun CLI $(aliyun version 2>/dev/null || echo installed)"
 aliyun configure set --access-key-id "$AK" --access-key-secret "$SK" --region "$REGION"
 aliyun plugin install --names aliyun-cli-swas-open >/dev/null 2>&1 || true
 
-# aliyun CLI 新版要求 kebab-case API 名（run-command），旧版用 CamelCase（RunCommand）。
-# latest tarball 是移动目标（2026-08-14 晚更新后 CamelCase 报 "not a valid api"），双兼容。
+# aliyun CLI 新版 swas-open 要求 kebab-case（run-command --instance-id），旧版用 CamelCase
+# （RunCommand --InstanceId）。latest tarball 是移动目标（2026-08-14 晚起逐步收紧命名），双兼容：
+# 先试 kebab action+flags；遇 "not a valid api"/"unknown flag" 回退 Camel action+flags。
 run_cmd() {
   local k=$1 c=$2; shift 2
+  local camel_args=() arg
+  for arg in "$@"; do
+    case "$arg" in
+      --instance-id)      camel_args+=(--InstanceId) ;;
+      --region-id)        camel_args+=(--RegionId) ;;
+      --name)             camel_args+=(--Name) ;;
+      --type)             camel_args+=(--Type) ;;
+      --timeout)          camel_args+=(--Timeout) ;;
+      --command-content)  camel_args+=(--CommandContent) ;;
+      --invoke-id)        camel_args+=(--InvokeId) ;;
+      *)                 camel_args+=("$arg") ;;
+    esac
+  done
   local out
   out=$(aliyun swas-open "$k" "$@" 2>&1) && { echo "$out"; return 0; }
-  if echo "$out" | grep -q "not a valid api"; then
-    out=$(aliyun swas-open "$c" "$@" 2>&1) && { echo "$out"; return 0; }
+  if echo "$out" | grep -qE "not a valid api|unknown flag"; then
+    out=$(aliyun swas-open "$c" "${camel_args[@]}" 2>&1) && { echo "$out"; return 0; }
   fi
   echo "$out" >&2
   return 1
@@ -41,12 +55,12 @@ echo "== 触发 SWAS 云助手执行 deploy.sh（拉源码 → flock → 构建 
 INVOKE_ID=""
 for attempt in 1 2 3; do
   if ! INVOKE=$(run_cmd run-command RunCommand \
-      --InstanceId "$INSTANCE_ID" \
-      --Name migao-ci-deploy \
-      --Type RunShellScript \
-      --Timeout 3600 \
-      --RegionId "$REGION" \
-      --CommandContent "bash /opt/migao-deploy/deploy.sh" 2>&1); then
+      --instance-id "$INSTANCE_ID" \
+      --name migao-ci-deploy \
+      --type RunShellScript \
+      --timeout 3600 \
+      --region-id "$REGION" \
+      --command-content "bash /opt/migao-deploy/deploy.sh" 2>&1); then
     echo "  ⚠️ RunCommand 调用失败(第 $attempt 次):"; echo "$INVOKE" | head -c 800; echo;
     [ "$attempt" -lt 3 ] && { echo "  10s 后重试"; sleep 10; continue; }
     echo "❌ RunCommand 三次均失败"; exit 1; fi
@@ -61,9 +75,9 @@ echo "deploy invokeId=$INVOKE_ID"
 SUCCESS=0
 for i in $(seq 1 180); do
   RES=$(run_cmd describe-invocation-result DescribeInvocationResult \
-    --InstanceId "$INSTANCE_ID" \
-    --InvokeId "$INVOKE_ID" \
-    --RegionId "$REGION" 2>&1) || {
+    --instance-id "$INSTANCE_ID" \
+    --invoke-id "$INVOKE_ID" \
+    --region-id "$REGION" 2>&1) || {
       echo "  ⚠️ DescribeInvocationResult 异常(第 $i 次)，20s 后重试"; sleep 20; continue; }
   STATUS=$(echo "$RES" | python3 -c "import sys,json;d=json.load(sys.stdin);v=d.get('InvocationResult') or d;print(v.get('InvocationStatus') or v.get('Status') or '')" 2>/dev/null || echo "")
   echo "  deploy status: ${STATUS:-?} (poll $i)"
