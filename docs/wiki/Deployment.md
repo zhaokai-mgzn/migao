@@ -26,7 +26,9 @@
 域名分流（nginx）：
 - `api.migaozn.com` → admin-api:8080
 - `ai-api.migaozn.com` → ai-agent:8000
-- `admin.migaozn.com` / `migaozn.com` / `www` / `merchant` / `ops` → admin-web:3001
+- `migaozn.com` / `www.migaozn.com` / `merchant.migaozn.com` / `ops.migaozn.com` → admin-web:3001
+
+> 注：nginx `server_name` 里还列了 `admin.migaozn.com`，但该域名**无 DNS 解析**，实际前端入口是上面 4 个域名。
 
 ## 阿里云服务
 
