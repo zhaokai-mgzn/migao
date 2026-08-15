@@ -67,6 +67,11 @@ import type {
   NotificationQueryParams,
   CreateNotificationRequest,
   UnreadCountResponse,
+  FinanceTransaction,
+  FinanceTransactionListParams,
+  FinanceTransactionFormData,
+  FinanceSummary,
+  ReceivableReconciliationItem,
 } from '@/types'
 import { FrontendToBackendStatus } from '@/types'
 
@@ -781,6 +786,25 @@ export const quickReplyApi = {
     request.get<ApiResponse<string[]>>('/api/admin/quick-replies/categories'),
 }
 
+// 财务对账 API
+export const financeApi = {
+  // 收支汇总
+  getSummary: (params?: { startDate?: string; endDate?: string }) =>
+    request.get<ApiResponse<FinanceSummary>>('/api/admin/finance/summary', { params }),
+
+  // 资金流水（分页）
+  getTransactions: (params?: FinanceTransactionListParams) =>
+    request.get<ApiResponse<PageResponse<FinanceTransaction>>>('/api/admin/finance/transactions', { params }),
+
+  // 手动登记收支
+  createTransaction: (data: FinanceTransactionFormData) =>
+    request.post<ApiResponse<FinanceTransaction>>('/api/admin/finance/transactions', data),
+
+  // 应收对账（订单维度）
+  getReconciliation: (params?: { page?: number; size?: number; startDate?: string; endDate?: string; keyword?: string }) =>
+    request.get<ApiResponse<PageResponse<ReceivableReconciliationItem>>>('/api/admin/finance/reconciliation', { params }),
+}
+
 const api = {
   auth: authApi,
   product: productApi,
@@ -803,6 +827,7 @@ const api = {
   notification: notificationApi,
   agentSession: agentSessionApi,
   quickReply: quickReplyApi,
+  finance: financeApi,
 }
 
 export default api

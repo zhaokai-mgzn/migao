@@ -8,9 +8,11 @@ import com.migao.admin.dto.agent.AgentOrderUpdateRequest;
 import com.migao.admin.entity.Order;
 import com.migao.admin.entity.OrderItem;
 import com.migao.admin.entity.OrderLogistics;
+import com.migao.admin.entity.FinanceTransaction;
 import com.migao.admin.entity.Product;
 import com.migao.admin.entity.ProductSku;
 import com.migao.admin.exception.BusinessException;
+import com.migao.admin.mapper.FinanceTransactionMapper;
 import com.migao.admin.mapper.OrderItemMapper;
 import com.migao.admin.mapper.OrderLogisticsMapper;
 import com.migao.admin.mapper.OrderMapper;
@@ -56,6 +58,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     private final CustomerService customerService;
     private final ProductMapper productMapper;
     private final ProductSkuMapper productSkuMapper;
+    private final FinanceTransactionMapper financeTransactionMapper;
     private final ObjectMapper objectMapper;
 
     /**
@@ -697,6 +700,10 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
 
         // 扣减库存 + 增加销量
         deductStockAndIncreaseSales(id);
+
+        // 登记资金流水（收款）——失败不影响订单主流程
+        Order order = orderMapper.selectById(id);
+        recordFinanceTransaction(order, "income", "订单确认收款");
         log.info("确认支付成功: id={}", id);
     }
 
@@ -763,6 +770,9 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         if (!"pending".equals(previousStatus)) {
             restoreStockAndDecreaseSales(id);
         }
+
+        // 登记资金流水（退款）——失败不影响订单主流程
+        recordFinanceTransaction(order, "refund", "订单退款: " + reason);
         log.info("退款成功: id={}, previousStatus={}, refundReason={}", id, previousStatus, refundReason);
     }
 
@@ -824,6 +834,68 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         order.setRemark(existing.isEmpty() ? remarkEntry : existing + "\n" + remarkEntry);
         orderMapper.updateById(order);
         log.info("添加订单备注成功: id={}", id);
+    }
+
+    // ==================== 财务流水登记 ====================
+
+    /**
+     * 登记一笔订单关联的资金流水（收款/退款）。
+     * 失败仅告警，不影响订单主流程（对账流水为辅助数据）。
+     */
+    private void recordFinanceTransaction(Order order, String type, String remark) {
+        try {
+            if (order == null) {
+                return;
+            }
+            BigDecimal amount = order.getActualAmount() != null ? order.getActualAmount() : order.getTotalAmount();
+            if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
+                return;
+            }
+            FinanceTransaction txn = FinanceTransaction.builder()
+                    .tenantId(order.getTenantId())
+                    .transactionNo(generateFinanceTransactionNo(order.getTenantId()))
+                    .orderId(order.getId())
+                    .orderNo(order.getOrderNo())
+                    .type(type)
+                    .amount(amount)
+                    .status("success")
+                    .operator("系统")
+                    .occurredAt(OffsetDateTime.now())
+                    .remark(remark)
+                    .build();
+            financeTransactionMapper.insert(txn);
+            log.info("登记资金流水: transactionNo={}, type={}, amount={}, orderNo={}",
+                    txn.getTransactionNo(), type, amount, order.getOrderNo());
+        } catch (Exception e) {
+            log.warn("登记资金流水失败（不影响订单主流程）: orderNo={}, type={}, error={}",
+                    order != null ? order.getOrderNo() : null, type, e.getMessage());
+        }
+    }
+
+    /**
+     * 生成资金流水号（防重启重复）：FIN-yyyyMMdd-XXXX，从 DB 查当天最大序号 +1
+     */
+    private String generateFinanceTransactionNo(Long tenantId) {
+        String datePart = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+        String prefix = "FIN-" + datePart + "-";
+        int nextSeq = 1;
+        try {
+            FinanceTransaction latest = financeTransactionMapper.selectOne(
+                    new LambdaQueryWrapper<FinanceTransaction>()
+                            .eq(FinanceTransaction::getTenantId, tenantId)
+                            .likeRight(FinanceTransaction::getTransactionNo, prefix)
+                            .orderByDesc(FinanceTransaction::getTransactionNo)
+                            .last("LIMIT 1"));
+            if (latest != null && latest.getTransactionNo() != null) {
+                String[] parts = latest.getTransactionNo().split("-");
+                if (parts.length == 3) {
+                    nextSeq = Integer.parseInt(parts[2]) + 1;
+                }
+            }
+        } catch (Exception e) {
+            log.warn("查询最新流水号失败，使用默认序号: {}", e.getMessage());
+        }
+        return String.format("FIN-%s-%04d", datePart, nextSeq % 10000);
     }
 
     // ==================== 库存与销量管理 ====================

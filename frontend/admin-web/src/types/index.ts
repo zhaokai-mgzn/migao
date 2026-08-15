@@ -1323,3 +1323,111 @@ export interface UploadedFile {
   type: string
   createdAt?: string
 }
+
+// ========== 财务对账相关类型 ==========
+
+// 资金流水收支类型
+export type FinanceTransactionType = 'income' | 'refund'
+
+export const FinanceTransactionTypeLabels: Record<FinanceTransactionType, string> = {
+  income: '收款',
+  refund: '退款',
+}
+
+// 支付方式
+export type FinancePaymentMethod = 'wechat' | 'alipay' | 'bank_transfer' | 'cash' | 'other'
+
+export const FinancePaymentMethodLabels: Record<FinancePaymentMethod, string> = {
+  wechat: '微信',
+  alipay: '支付宝',
+  bank_transfer: '银行转账',
+  cash: '现金',
+  other: '其他',
+}
+
+// 流水状态
+export type FinanceTransactionStatus = 'pending' | 'success' | 'failed'
+
+export const FinanceTransactionStatusLabels: Record<FinanceTransactionStatus, string> = {
+  pending: '待处理',
+  success: '成功',
+  failed: '失败',
+}
+
+// 资金流水
+export interface FinanceTransaction {
+  id: string
+  transactionNo: string
+  orderId?: string
+  orderNo?: string
+  type: FinanceTransactionType
+  amount: number
+  paymentMethod?: FinancePaymentMethod
+  status: FinanceTransactionStatus
+  operator?: string
+  occurredAt?: string
+  remark?: string
+  createdAt?: string
+}
+
+// 资金流水查询参数
+export interface FinanceTransactionListParams extends PageParams {
+  type?: FinanceTransactionType | ''
+  paymentMethod?: FinancePaymentMethod | ''
+  status?: FinanceTransactionStatus | ''
+  startDate?: string
+  endDate?: string
+  keyword?: string
+}
+
+// 登记收支表单
+export interface FinanceTransactionFormData {
+  type: FinanceTransactionType
+  amount: number
+  paymentMethod?: FinancePaymentMethod
+  orderId?: string
+  occurredAt?: string
+  remark?: string
+}
+
+// 收支汇总
+export interface FinanceMethodSummary {
+  paymentMethod: string
+  income: number
+  refund: number
+  net: number
+}
+
+export interface FinanceDailySummary {
+  date: string
+  income: number
+  refund: number
+  net: number
+}
+
+export interface FinanceSummary {
+  startDate?: string
+  endDate?: string
+  totalIncome: number
+  totalRefund: number
+  netIncome: number
+  incomeCount: number
+  refundCount: number
+  pendingReceivable: number
+  byPaymentMethod: FinanceMethodSummary[]
+  dailyTrend: FinanceDailySummary[]
+}
+
+// 应收对账
+export interface ReceivableReconciliationItem {
+  orderId: string
+  orderNo: string
+  customerName?: string
+  customerPhone?: string
+  status: string
+  receivableAmount: number
+  receivedAmount: number
+  refundAmount: number
+  difference: number
+  createdAt?: string
+}
