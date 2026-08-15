@@ -41,12 +41,15 @@ run_cmd() {
       *)                 camel_args+=("$arg") ;;
     esac
   done
-  local out
-  out=$(aliyun swas-open "$k" "$@" 2>&1) && { echo "$out"; return 0; }
-  if echo "$out" | grep -qE "not a valid api|unknown flag"; then
-    out=$(aliyun swas-open "$c" "${camel_args[@]}" 2>&1) && { echo "$out"; return 0; }
+  local out1 out2
+  out1=$(aliyun swas-open "$k" "$@" 2>&1) && { echo "$out1"; return 0; }
+  if echo "$out1" | grep -qE "not a valid api|unknown flag"; then
+    out2=$(aliyun swas-open "$c" "${camel_args[@]}" 2>&1) && { echo "$out2"; return 0; }
+    out1="$out1
+-- 回退 CamelCase 也失败 --
+$out2"
   fi
-  echo "$out" >&2
+  echo "$out1" >&2
   return 1
 }
 
@@ -61,7 +64,12 @@ for attempt in 1 2 3; do
       --timeout 3600 \
       --region-id "$REGION" \
       --command-content "bash /opt/migao-deploy/deploy.sh" 2>&1); then
-    echo "  ⚠️ RunCommand 调用失败(第 $attempt 次):"; echo "$INVOKE" | head -c 800; echo;
+    echo "  ⚠️ RunCommand 调用失败(第 $attempt 次):"; echo "$INVOKE" | head -c 1200; echo;
+    if [ "$attempt" -eq 1 ]; then
+      echo "  --- swas-open 可用 API 列表（诊断） ---"
+      aliyun help swas-open 2>&1 | head -40 || true
+      echo "  --------------------------------------"
+    fi
     [ "$attempt" -lt 3 ] && { echo "  10s 后重试"; sleep 10; continue; }
     echo "❌ RunCommand 三次均失败"; exit 1; fi
   INVOKE_ID=$(echo "$INVOKE" | python3 -c "import sys,json;print(json.load(sys.stdin).get('InvokeId',''))" 2>/dev/null || echo "")
