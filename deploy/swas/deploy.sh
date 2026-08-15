@@ -38,8 +38,17 @@ if [ -f .env.registry ]; then
   fi
 fi
 export IMAGE_TAG="$TAG"
-docker compose pull
-docker compose up -d
+# 逐服务拉取：某个镜像尚未推送（首次接入）时跳过该服务，其余照常滚动更新
+UP_SERVICES="nginx"
+for svc in admin-api ai-agent admin-web; do
+  if docker compose pull "$svc" >/dev/null 2>&1; then
+    UP_SERVICES="$UP_SERVICES $svc"
+  else
+    echo "  ⚠️ $svc 镜像拉取失败（可能尚未推送 :$TAG），跳过该服务"
+  fi
+done
+# shellcheck disable=SC2086
+docker compose up -d $UP_SERVICES
 
 echo "== 3. 健康检查 =="
 for spec in "8080 admin-api /actuator/health" "8000 ai-agent /health" "3001 admin-web /"; do
