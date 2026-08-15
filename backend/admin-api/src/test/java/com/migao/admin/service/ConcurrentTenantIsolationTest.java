@@ -47,6 +47,9 @@ class ConcurrentTenantIsolationTest {
     @Mock
     private OrderMapper orderMapper;
 
+    @Mock
+    private com.migao.admin.mapper.FinanceTransactionMapper financeTransactionMapper;
+
     @InjectMocks
     private ProductService productService;
 

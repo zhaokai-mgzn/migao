@@ -40,6 +40,7 @@ class AgentOrderServiceTest {
     @Mock(lenient = true) private com.migao.admin.mapper.ProductMapper productMapper;
     @Mock(lenient = true) private com.migao.admin.mapper.ProductSkuMapper productSkuMapper;
     @Mock(lenient = true) private com.fasterxml.jackson.databind.ObjectMapper objectMapper;
+    @Mock(lenient = true) private FinanceTransactionMapper financeTransactionMapper;
 
     private Order testOrder;
 

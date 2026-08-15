@@ -101,6 +101,9 @@ class TenantIsolationTest {
     @Mock
     private com.migao.admin.mapper.ProductColorMapper productColorMapper;
 
+    @Mock
+    private com.migao.admin.mapper.FinanceTransactionMapper financeTransactionMapper;
+
     @InjectMocks
     private ProductService productService;
 
