@@ -8,6 +8,7 @@ business_truths:
   - [frontend-fix.vitest] 变更后 vitest 全部通过
   - [frontend-fix.tsc] 变更后 tsc --noEmit 通过
   - [frontend-fix.e2e] E2E 测试覆盖变更路径
+  - [frontend-fix.layout] 涉及尺寸/长宽比/对齐/间距/溢出的 UI 变更，E2E 必须有几何断言（boundingBox/getComputedStyle），仅「元素存在/不存在」不算覆盖
 
 primary_specs:
   - tests/e2e/specs/
@@ -18,6 +19,7 @@ reviewer_asserts:
   - tsc: npx tsc --noEmit 通过
   - E2E: 变更页面 DOM 断言（存在/不存在，按 CONTRACT_JSON 逐条）
   - E2E: 交互流程不退化（已有 spec 全部通过）
+  - E2E: 尺寸/长宽比/对齐/溢出变更 → 有 boundingBox/getComputedStyle 几何断言（如米宝最小化浮窗 560×480 横向）
 
 confidence_required: 80%
 
