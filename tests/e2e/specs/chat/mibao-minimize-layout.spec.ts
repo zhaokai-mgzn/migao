@@ -1,10 +1,10 @@
 /**
  * E2E — 米宝最小化浮窗布局断言
  *
- * 业务真值（frontend-fix.layout）：米宝点击「收起」后，最小化浮窗应为横向 560×480，
- * 长宽比约 1.17（与居中大窗 920×720 的横向方向一致），而非窄竖条。
+ * 业务真值（frontend-fix.layout）：米宝点击「收起」后，最小化浮窗应为竖版聊天浮窗
+ * 400×600（比例约 0.667），参照主流 AI 助手/客服聊天浮窗（Intercom/Zendesk/Crisp）。
  *
- * 曾 bug：最小化浮窗 360×480（竖向 3:4），因无几何断言而漏网（#2485）。
+ * 曾 bug：360×480（偏小）→ 560×480（横向，方向错误）均不符合主流竖版聊天窗。
  */
 import { test, expect } from '@playwright/test'
 import { assertSize, assertAspectRatio } from '../../pages/layout'
@@ -28,7 +28,7 @@ async function mockChatApis(page: import('@playwright/test').Page): Promise<void
 }
 
 test.describe('米宝最小化浮窗布局', () => {
-  test('点击收起后浮窗为横向 560×480，长宽比约 1.17', async ({ page }) => {
+  test('点击收起后浮窗为竖版 400×600，长宽比约 0.667', async ({ page }) => {
     await mockChatApis(page)
     await page.goto('/products', { waitUntil: 'load' })
 
@@ -43,7 +43,7 @@ test.describe('米宝最小化浮窗布局', () => {
     const minimized = page.locator('div.fixed').filter({ has: page.getByTitle('展开') })
     await expect(minimized).toBeVisible()
 
-    await assertSize(minimized, { width: 560, height: 480 })
-    await assertAspectRatio(minimized, 560 / 480, 0.05)
+    await assertSize(minimized, { width: 400, height: 600 })
+    await assertAspectRatio(minimized, 400 / 600, 0.05)
   })
 })
