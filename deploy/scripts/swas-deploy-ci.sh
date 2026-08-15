@@ -23,20 +23,33 @@ echo "✅ Aliyun CLI $(aliyun version 2>/dev/null || echo installed)"
 aliyun configure set --access-key-id "$AK" --access-key-secret "$SK" --region "$REGION"
 aliyun plugin install --names aliyun-cli-swas-open >/dev/null 2>&1 || true
 
+# aliyun CLI 新版要求 kebab-case API 名（run-command），旧版用 CamelCase（RunCommand）。
+# latest tarball 是移动目标（2026-08-14 晚更新后 CamelCase 报 "not a valid api"），双兼容。
+run_cmd() {
+  local k=$1 c=$2; shift 2
+  local out
+  out=$(aliyun swas-open "$k" "$@" 2>&1) && { echo "$out"; return 0; }
+  if echo "$out" | grep -q "not a valid api"; then
+    out=$(aliyun swas-open "$c" "$@" 2>&1) && { echo "$out"; return 0; }
+  fi
+  echo "$out" >&2
+  return 1
+}
+
 echo "== 触发 SWAS 云助手执行 deploy.sh（拉源码 → flock → 构建 → 健康检查）=="
-# RunCommand 可能被阿里云 API 限流（并发触发时 Throttling → CLI exit 2），重试 3 次
+# RunCommand 可能被阿里云 API 限流（并发触发时 Throttling），重试 3 次
 INVOKE_ID=""
 for attempt in 1 2 3; do
-  INVOKE=$(aliyun swas-open RunCommand \
-    --InstanceId "$INSTANCE_ID" \
-    --Name migao-ci-deploy \
-    --Type RunShellScript \
-    --Timeout 3600 \
-    --RegionId "$REGION" \
-    --CommandContent "bash /opt/migao-deploy/deploy.sh" 2>&1) || {
-      echo "  ⚠️ RunCommand 调用失败(第 $attempt 次):"; echo "$INVOKE" | head -c 800; echo;
-      [ "$attempt" -lt 3 ] && { echo "  10s 后重试"; sleep 10; continue; }
-      echo "❌ RunCommand 三次均失败"; exit 1; }
+  if ! INVOKE=$(run_cmd run-command RunCommand \
+      --InstanceId "$INSTANCE_ID" \
+      --Name migao-ci-deploy \
+      --Type RunShellScript \
+      --Timeout 3600 \
+      --RegionId "$REGION" \
+      --CommandContent "bash /opt/migao-deploy/deploy.sh" 2>&1); then
+    echo "  ⚠️ RunCommand 调用失败(第 $attempt 次):"; echo "$INVOKE" | head -c 800; echo;
+    [ "$attempt" -lt 3 ] && { echo "  10s 后重试"; sleep 10; continue; }
+    echo "❌ RunCommand 三次均失败"; exit 1; fi
   INVOKE_ID=$(echo "$INVOKE" | python3 -c "import sys,json;print(json.load(sys.stdin).get('InvokeId',''))" 2>/dev/null || echo "")
   [ -n "$INVOKE_ID" ] && break
   echo "  ⚠️ 未获得 InvokeId(第 $attempt 次):"; echo "$INVOKE" | head -c 800; echo;
@@ -47,7 +60,7 @@ echo "deploy invokeId=$INVOKE_ID"
 
 SUCCESS=0
 for i in $(seq 1 180); do
-  RES=$(aliyun swas-open DescribeInvocationResult \
+  RES=$(run_cmd describe-invocation-result DescribeInvocationResult \
     --InstanceId "$INSTANCE_ID" \
     --InvokeId "$INVOKE_ID" \
     --RegionId "$REGION" 2>&1) || {
