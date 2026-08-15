@@ -22,7 +22,7 @@
 
 | 服务 | 目标 | 技术 |
 |------|------|------|
-| admin-api | SWAS 单实例（docker compose 源码构建） | Java 21, 容器端口 8080 |
+| admin-api | SWAS 单实例（拉 CI 预构建镜像） | Java 21, 容器端口 8080 |
 | ai-agent-service | SWAS 单实例（同上） | Python 3.11, 容器端口 8000 |
 | admin-web | SWAS 单实例（同上） | Next.js, 容器端口 3001 |
 | nginx | SWAS 同机 | 80/443 TLS 终结 + 域名分流 |

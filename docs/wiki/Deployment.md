@@ -8,7 +8,7 @@
 
 | 变更路径 | 工作流 | 部署方式 |
 |---------|--------|---------|
-| backend/admin-api/** | deploy-admin-api | 云助手触发 SWAS `deploy.sh`（源码构建 + compose） |
+| backend/admin-api/** | deploy-admin-api | 云助手触发 SWAS `deploy.sh`（拉 CI 预构建镜像 + up） |
 | backend/ai-agent-service/** | deploy-ai-agent-service | 同上 |
 | frontend/admin-web/** | deploy-frontend | 同上 |
 
