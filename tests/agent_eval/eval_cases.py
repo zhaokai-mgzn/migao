@@ -627,6 +627,20 @@ _CASE_DF_015 = EvalCase(
     tags=['compression', 'long_conversation'],
 )
 
+# ── DF-016 [ADVERSARIAL] JWT 签名算法一致性 - admin-api 静默 HS256 降级导致米宝新建会话 TOKEN_INVALID（源: cases/defense.yml）──
+_CASE_DF_016 = EvalCase(
+    id='DF-016',
+    legacy_id='',
+    title='JWT 签名算法一致性 - admin-api 静默 HS256 降级导致米宝新建会话 TOKEN_INVALID',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.ADVERSARIAL,
+    user_inputs=['米宝新建会话（POST /api/chat/sessions，Authorization 携带 admin-api 签发的 accessToken）'],
+    expectations=['direct_reply'],
+    data_checks=['admin-api 签发的 JWT alg 必须为 RS256；RSA 密钥缺失/加载失败时 JwtTokenProvider.init 必须抛 IllegalStateException（fail-fast），禁止静默回退 HS256', 'ai-agent 拒绝非 RS256 token（TOKEN_INVALID: The specified alg value is not allowed）只应作为对侧故障信号，正常登录链路不得触发'],
+    skip_reason='后端签名契约由 Java 单测验证（JwtTokenProviderTest），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['defense', 'security', 'jwt_alg', 'session_create'],
+)
+
 # ── HR-001 [SMOKE] 员工列表（源: cases/hr.yml）──
 _CASE_HR_001 = EvalCase(
     id='HR-001',
@@ -1019,18 +1033,18 @@ _CASE_PR_009 = EvalCase(
     tags=['id_resolve', 'update'],
 )
 
-# ── PR-010 [SMOKE] 商品全生命周期 - 搜索→查看→修改→关联加工项→验证（源: cases/product.yml）──
+# ── PR-010 [NORMAL] 商品全生命周期 - 搜索→查看→修改→关联加工项→验证（源: cases/product.yml）──
 _CASE_PR_010 = EvalCase(
     id='PR-010',
     legacy_id='M001',
     title='商品全生命周期 - 搜索→查看→修改→关联加工项→验证',
     skill=Skill.PRODUCT,
-    difficulty=Difficulty.SMOKE,
-    user_inputs=['搜索窗帘', '看看第一个的详情', '把价格改成 199，确认修改', '给它加上S钩安装', '再看看这个商品的详情确认一下'],
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['搜索窗帘', '看看第一个的详情', '把价格改成 199', '给它加上S钩安装', '再看看这个商品的详情确认一下'],
     expectations=['product_search', 'product_detail(product_id=1)', 'product_update(price=199)', 'product_processing_item_manage(action=add)', 'product_detail'],
     data_checks=['第3轮 product_id 来自第2轮结果', '第4轮 product_id 来自第2轮结果', '全程未重新 product_search 查同一个商品'],
     skip_reason='',
-    tags=['multi_turn', 'single_skill', 'full_lifecycle', 'id_reuse', 'smoke'],
+    tags=['multi_turn', 'single_skill', 'full_lifecycle', 'id_reuse'],
 )
 
 # ── PR-011 [NORMAL] 创建商品完整引导流程 - AI 主导收集信息（源: cases/product.yml）──
@@ -1202,6 +1216,7 @@ ALL_CASES = (
     _CASE_DF_013,
     _CASE_DF_014,
     _CASE_DF_015,
+    _CASE_DF_016,
     _CASE_HR_001,
     _CASE_HR_002,
     _CASE_HR_003,

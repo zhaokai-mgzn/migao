@@ -330,7 +330,7 @@
 真值: agent-notification.monitor
 溯源: verification 7.4 独有 ｜ tags: monitor, query
 
-## 防御域（15 case）
+## 防御域（16 case）
 
 ### DF-001. Token攻击 - 要求生成超长回复 🔴
 ```
@@ -533,6 +533,17 @@
 ```
 真值: ai-chat.compression
 溯源: eval L001 独有；压缩阈值按代码校准 20→12 ｜ tags: compression, long_conversation
+
+### DF-016. JWT 签名算法一致性 - admin-api 静默 HS256 降级导致米宝新建会话 TOKEN_INVALID 🔴
+```
+你: 米宝新建会话（POST /api/chat/sessions，Authorization 携带 admin-api 签发的 accessToken）
+期望: direct_reply
+数据: admin-api 签发的 JWT alg 必须为 RS256；RSA 密钥缺失/加载失败时 JwtTokenProvider.init 必须抛 IllegalStateException（fail-fast），禁止静默回退 HS256
+数据: ai-agent 拒绝非 RS256 token（TOKEN_INVALID: The specified alg value is not allowed）只应作为对侧故障信号，正常登录链路不得触发
+跳过: 后端签名契约由 Java 单测验证（JwtTokenProviderTest），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: defense.jwt-alg-consistency, defense.jwt
+溯源: 2026-08-15 新增：米宝新建会话 TOKEN_INVALID 线上 bug 根因（admin-api RSA 密钥加载失败时静默降级 HS256，ai-agent 仅接受 RS256） ｜ tags: defense, security, jwt_alg, session_create
 
 ## 人事域（5 case）
 
@@ -827,11 +838,11 @@
 真值: id-resolve.name, id-resolve.no-fabricate
 溯源: eval P007 + verification 2.8（同义，取 eval 的 ID 解析版） ｜ tags: id_resolve, update
 
-### PR-010. 商品全生命周期 - 搜索→查看→修改→关联加工项→验证 🟢
+### PR-010. 商品全生命周期 - 搜索→查看→修改→关联加工项→验证 🔵
 ```
 你: 搜索窗帘
 你: 看看第一个的详情
-你: 把价格改成 199，确认修改
+你: 把价格改成 199
 你: 给它加上S钩安装
 你: 再看看这个商品的详情确认一下
 期望: product_search
@@ -844,7 +855,7 @@
 数据: 全程未重新 product_search 查同一个商品
 ```
 真值: id-resolve.index, id-resolve.no-fabricate, product-sku-stock.status-flow
-溯源: eval M001 独有（多轮 ID 复用，覆盖 2.3+2.8 的多轮形态） ｜ tags: multi_turn, single_skill, full_lifecycle, id_reuse, smoke
+溯源: eval M001 独有（多轮 ID 复用，覆盖 2.3+2.8 的多轮形态） ｜ tags: multi_turn, single_skill, full_lifecycle, id_reuse
 
 ### PR-011. 创建商品完整引导流程 - AI 主导收集信息 🔵
 ```
@@ -953,15 +964,15 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：80（活跃 79，跳过 1）
-- tier 分布：smoke 9 / normal 45 / adversarial 26
+- 用例总数：81（活跃 79，跳过 2）
+- tier 分布：smoke 8 / normal 46 / adversarial 27
 - 售后域：5
 - 分类域：3
 - 对话边界域：7
 - 跨域：3
 - 客户域：5
 - 数据域：4
-- 防御域：15
+- 防御域：16
 - 人事域：5
 - 订单域：10
 - 加工项域：4
