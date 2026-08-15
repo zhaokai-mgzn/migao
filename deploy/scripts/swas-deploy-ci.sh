@@ -28,21 +28,22 @@ aliyun plugin install --names aliyun-cli-swas-open >/dev/null 2>&1 || true
 # 先试 kebab action+flags；遇 "not a valid api"/"unknown flag" 回退 Camel action+flags。
 run_cmd() {
   local k=$1 c=$2; shift 2
-  local camel_args=() arg
+  local kebab_args=() camel_args=() arg
   for arg in "$@"; do
     case "$arg" in
-      --instance-id)      camel_args+=(--InstanceId) ;;
+      --instance-id)      kebab_args+=(--instance-id);      camel_args+=(--InstanceId) ;;
+      # 新版 CLI 无 --region-id 子命令参数（RegionId 由 configure/全局 --region 自动注入）
       --region-id)        camel_args+=(--RegionId) ;;
-      --name)             camel_args+=(--Name) ;;
-      --type)             camel_args+=(--Type) ;;
-      --timeout)          camel_args+=(--Timeout) ;;
-      --command-content)  camel_args+=(--CommandContent) ;;
-      --invoke-id)        camel_args+=(--InvokeId) ;;
-      *)                 camel_args+=("$arg") ;;
+      --name)             kebab_args+=(--name);             camel_args+=(--Name) ;;
+      --type)             kebab_args+=(--type);             camel_args+=(--Type) ;;
+      --timeout)          kebab_args+=(--timeout);          camel_args+=(--Timeout) ;;
+      --command-content)  kebab_args+=(--command-content);  camel_args+=(--CommandContent) ;;
+      --invoke-id)        kebab_args+=(--invoke-id);        camel_args+=(--InvokeId) ;;
+      *)                 kebab_args+=("$arg");             camel_args+=("$arg") ;;
     esac
   done
   local out1 out2
-  out1=$(aliyun swas-open "$k" "$@" 2>&1) && { echo "$out1"; return 0; }
+  out1=$(aliyun swas-open "$k" "${kebab_args[@]}" 2>&1) && { echo "$out1"; return 0; }
   if echo "$out1" | grep -qE "not a valid api|unknown flag"; then
     out2=$(aliyun swas-open "$c" "${camel_args[@]}" 2>&1) && { echo "$out2"; return 0; }
     out1="$out1
@@ -66,9 +67,9 @@ for attempt in 1 2 3; do
       --command-content "bash /opt/migao-deploy/deploy.sh" 2>&1); then
     echo "  ⚠️ RunCommand 调用失败(第 $attempt 次):"; echo "$INVOKE" | head -c 1200; echo;
     if [ "$attempt" -eq 1 ]; then
-      echo "  --- swas-open 可用 API 列表（诊断） ---"
-      aliyun help swas-open 2>&1 | head -40 || true
-      echo "  --------------------------------------"
+      echo "  --- run-command 用法（诊断） ---"
+      aliyun help swas-open run-command 2>&1 | head -40 || true
+      echo "  --------------------------------"
     fi
     [ "$attempt" -lt 3 ] && { echo "  10s 后重试"; sleep 10; continue; }
     echo "❌ RunCommand 三次均失败"; exit 1; fi
