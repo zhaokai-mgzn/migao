@@ -8,9 +8,9 @@ import SessionList from '@/components/chat/SessionList'
 import ChatArea from '@/components/chat/ChatArea'
 import MibaoChatPanel from '@/components/business/MibaoChatPanel'
 
-// 最小化浮窗尺寸（与居中大窗 920×720 的横向比例保持一致，避免竖向窄条）
-const MINIMIZED_WIDTH = 560
-const MINIMIZED_HEIGHT = 480
+// 最小化浮窗尺寸 — 参照主流 AI 助手/客服聊天浮窗（Intercom/Zendesk/Crisp 等）的竖版比例：宽约 400、高约 600
+const MINIMIZED_WIDTH = 400
+const MINIMIZED_HEIGHT = 600
 const STORAGE_KEY_MINIMIZED_POS = 'mibao_minimized_pos'
 
 /** 读取 localStorage 中的浮窗位置 */
