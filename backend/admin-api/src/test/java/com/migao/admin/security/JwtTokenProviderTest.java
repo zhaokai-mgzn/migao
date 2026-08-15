@@ -1,9 +1,10 @@
 package com.migao.admin.security;
 
+// case_ids=[DF-016]
+
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.JwtException;
-import io.jsonwebtoken.security.Keys;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -14,8 +15,8 @@ import org.springframework.core.io.Resource;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.test.util.ReflectionTestUtils;
 
-import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.Date;
 import java.util.List;
 
@@ -37,23 +38,28 @@ class JwtTokenProviderTest {
     private Resource mockResource;
 
     private JwtTokenProvider jwtTokenProvider;
-    private static final SecretKey FIXED_KEY = Keys.hmacShaKeyFor(
-            "my-test-secret-key-for-jwt-token-testing-12345678!!".getBytes(StandardCharsets.UTF_8));
 
     @BeforeEach
-    void setUp() {
-        // RSA 密钥文件不存在 → 回退到 HMAC
-        when(resourceLoader.getResource(anyString())).thenReturn(mockResource);
-        when(mockResource.exists()).thenReturn(false);
+    void setUp() throws Exception {
+        // 从 classpath 加载真实 RSA 密钥对（与生产 classpath:rsa/private.pem 一致）
+        String privateKeyPem = readResource("/rsa/private.pem");
+        String publicKeyPem = readResource("/rsa/public.pem");
 
         jwtTokenProvider = new JwtTokenProvider(resourceLoader);
         // 手动设置 @Value 字段（无 Spring 容器时不会自动注入）
+        ReflectionTestUtils.setField(jwtTokenProvider, "privateKeyPem", privateKeyPem);
+        ReflectionTestUtils.setField(jwtTokenProvider, "publicKeyPem", publicKeyPem);
         ReflectionTestUtils.setField(jwtTokenProvider, "accessTokenExpiration", 7200L);
         ReflectionTestUtils.setField(jwtTokenProvider, "refreshTokenExpiration", 604800L);
         jwtTokenProvider.init();
-        // 替换随机密钥为固定密钥，确保测试可复现
-        ReflectionTestUtils.setField(jwtTokenProvider, "hmacKey", FIXED_KEY);
-        ReflectionTestUtils.setField(jwtTokenProvider, "useRsa", false);
+    }
+
+    /** 读取 classpath 资源为字符串 */
+    private String readResource(String path) throws Exception {
+        try (var in = getClass().getResourceAsStream(path)) {
+            assertThat(in).as("classpath 资源应存在: %s", path).isNotNull();
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        }
     }
 
     // ======================== Token 生成测试 ========================
@@ -301,5 +307,35 @@ class JwtTokenProviderTest {
     void getExpiration_ReturnsConfiguredValues() {
         assertThat(jwtTokenProvider.getAccessTokenExpiration()).isEqualTo(7200L);
         assertThat(jwtTokenProvider.getRefreshTokenExpiration()).isEqualTo(604800L);
+    }
+
+    // ======================== 签名算法一致性测试 ========================
+
+    @Test
+    @DisplayName("生成 Access Token — 签名算法必须为 RS256（与 ai-agent-service 校验契约一致）")
+    void generateAccessToken_UsesRS256Algorithm() {
+        String token = jwtTokenProvider.generateAccessToken("user-001", 1L, "test", List.of());
+
+        // 解码 JWT header 断言 alg=RS256，而非 HS256
+        String headerJson = new String(
+                Base64.getUrlDecoder().decode(token.split("\\.")[0]), StandardCharsets.UTF_8);
+
+        assertThat(headerJson).contains("\"alg\":\"RS256\"");
+    }
+
+    @Test
+    @DisplayName("RSA 密钥缺失时 init 必须 fail-fast，禁止静默回退 HS256")
+    void init_WhenRsaKeysMissing_ThrowsInsteadOfSilentHmacFallback() {
+        // 模拟生产环境 RSA 密钥加载失败（资源不存在）
+        when(resourceLoader.getResource(anyString())).thenReturn(mockResource);
+        when(mockResource.exists()).thenReturn(false);
+
+        JwtTokenProvider provider = new JwtTokenProvider(resourceLoader);
+        ReflectionTestUtils.setField(provider, "privateKeyPath", "classpath:rsa/private.pem");
+        ReflectionTestUtils.setField(provider, "publicKeyPath", "classpath:rsa/public.pem");
+
+        assertThatThrownBy(() -> provider.init())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("RS256");
     }
 }
