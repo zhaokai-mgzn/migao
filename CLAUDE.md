@@ -400,7 +400,7 @@ cd tests && BASE_URL=http://localhost:3001 npx playwright test specs/chat/chat.s
 | 数据库 | PostgreSQL 15 + Redis 7 |
 | 向量库 | DashVector |
 | LLM | DeepSeek V4 Pro (主) + MiniMax M3 (视觉) |
-| 部署 | 阿里云 SWAS 轻量应用服务器（源码构建 + docker compose）+ RDS + Redis(Tair) + OSS + GitHub Actions |
+| 部署 | 阿里云 SWAS 轻量应用服务器（CI 构建镜像 + 服务器 pull）+ RDS + Redis(Tair) + OSS + GitHub Actions |
 
 ## 目录结构
 
@@ -546,11 +546,11 @@ INSERT INTO schema_migrations (version) VALUES ('V6__add_ship_fee_to_orders.sql'
 
 | 变更路径 | 工作流 | 部署方式 |
 |---------|--------|---------|
-| `backend/admin-api/**` | deploy-admin-api | 云助手触发 SWAS `deploy.sh`（源码构建 + compose） |
+| `backend/admin-api/**` | deploy-admin-api | 云助手触发 SWAS `deploy.sh`（拉 CI 预构建镜像 + up） |
 | `backend/ai-agent-service/**` | deploy-ai-agent-service | 同上（Fast Gate + 全量单测 → 云助手触发） |
 | `frontend/admin-web/**` | deploy-frontend | tsc + vitest → 云助手触发 `deploy.sh` |
 
-三个工作流统一执行：CI 测试/构建 → `aliyun swas-open RunCommand` 在 SWAS 实例上跑 `bash /opt/migao-deploy/deploy.sh`（拉 main 源码 → RESP2 补丁 → `docker compose up -d --build` → 健康检查）→ post-deploy 冒烟（smoke-test.yml，对 api.migaozn.com / ai-api.migaozn.com）。
+三个工作流统一执行：CI 测试 → 构建镜像推 ACR → `aliyun swas-open RunCommand` 在 SWAS 实例上跑 `bash /opt/migao-deploy/deploy.sh`（先自愈式同步最新 deploy.sh → 拉取镜像 → `docker compose up -d` → restart nginx → 健康检查）→ post-deploy 冒烟（smoke-test.yml，对 api.migaozn.com / ai-api.migaozn.com）。
 
 生产拓扑：单台 SWAS 上 nginx(80/443) + admin-api(8080) + ai-agent(8000) + admin-web(3001)；数据层不变（RDS PostgreSQL + Tair Redis + OSS）。
 

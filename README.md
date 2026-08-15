@@ -11,7 +11,7 @@
 - **多租户 SaaS** — 5 层隔离（JWT → MyBatis 拦截器 → PostgreSQL RLS → DashVector → 字段脱敏）
 - **完整业务后台** — 商品、订单、CRM、人工坐席、数据看板等 12+ 管理模块
 - **微信小程序** — Taro 跨端框架，SSE 流式对话，原生体验
-- **阿里云全栈部署** — SWAS 轻量应用服务器（源码构建 + docker compose）+ RDS + Redis(Tair) + OSS，GitHub Actions CI/CD
+- **阿里云全栈部署** — SWAS 轻量应用服务器（CI 构建镜像 + 服务器 pull）+ RDS + Redis(Tair) + OSS，GitHub Actions CI/CD
 
 ## 🏗️ 系统架构
 
@@ -145,7 +145,7 @@ migao/
 │       └── package.json
 │
 ├── deploy/
-│   ├── swas/deploy.sh          # SWAS 服务器部署脚本（CI 云助手触发，源码构建 + compose）
+│   ├── swas/deploy.sh          # SWAS 服务器部署脚本（CI 云助手触发，拉 CI 镜像）
 │   ├── docker-compose.yml      # 本地开发（PostgreSQL + Redis + 双后端）
 │   ├── terraform/              # 阿里云 IaC（历史遗留：SAE 已弃用）
 │   └── oss-*.xml               # OSS 静态托管配置
