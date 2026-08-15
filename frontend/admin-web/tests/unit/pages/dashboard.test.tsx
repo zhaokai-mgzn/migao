@@ -383,9 +383,13 @@ describe('DashboardPage', () => {
     })
     const orderCard = screen.getByText('订单趋势').closest('.bg-white')!
     const salesCard = screen.getByText('销售额数据').closest('.bg-white')!
-    expect(orderCard.querySelector('svg polyline')).toBeTruthy()
-    expect(salesCard.querySelector('svg path')).toBeTruthy()
-    expect(salesCard.querySelector('svg linearGradient')).toBeTruthy()
+    // 图表 SVG 在数据加载后异步挂载：waitFor 等 SVG 到位，避免竞态 flaky
+    // （曾致 deploy-frontend 单测偶发失败：expected null to be truthy）
+    await waitFor(() => {
+      expect(orderCard.querySelector('svg polyline')).toBeTruthy()
+      expect(salesCard.querySelector('svg path')).toBeTruthy()
+      expect(salesCard.querySelector('svg linearGradient')).toBeTruthy()
+    })
     // 有数据时不渲染占位虚线网格
     expect(container.querySelectorAll('svg[preserveAspectRatio="none"]').length).toBe(0)
   })
