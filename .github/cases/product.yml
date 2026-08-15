@@ -284,12 +284,13 @@ cases:
     title: "商品全生命周期 - 搜索→查看→修改→关联加工项→验证"
     domains:
       - product
-    tier: normal
+    tier: smoke
     tags:
       - multi_turn
       - single_skill
       - full_lifecycle
       - id_reuse
+      - smoke
     truths_ref:
       - id-resolve.index
       - id-resolve.no-fabricate
@@ -297,7 +298,7 @@ cases:
     user_inputs:
       - "搜索窗帘"
       - "看看第一个的详情"
-      - "把价格改成 199"
+      - "把价格改成 198"
       - "给它加上S钩安装"
       - "再看看这个商品的详情确认一下"
     expectations:
@@ -307,7 +308,7 @@ cases:
           product_id: "1"
       - tool: product_update
         args:
-          price: "199"
+          price: "198"
       - tool: product_processing_item_manage
         args:
           action: add

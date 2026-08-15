@@ -305,10 +305,15 @@ async def run_suite(cases, label: str):
         icon = {Difficulty.SMOKE: "🟢", Difficulty.NORMAL: "🔵",
                 Difficulty.EDGE: "🟡", Difficulty.ADVERSARIAL: "🔴"}.get(case.difficulty, "⚪")
 
-        # 数据隔离：修改类用例前后保存/恢复状态
-        snapshot_pid = None
+        # 数据隔离：修改类用例前后保存/恢复状态。
+        # 覆盖两类被改的商品：PR-009 改「遮光窗帘」（米白色遮光窗帘），PR-010 改「2699 系列雪尼尔窗帘」。
+        # 之前只快照「遮光窗帘」命中错商品，导致 PR-010 改价后未被恢复。
+        snapshot_pids = []
         if any(t in case.tags for t in ["id_reuse", "update", "full_lifecycle"]):
-            snapshot_pid = await snapshot_product(token, "遮光窗帘") or await snapshot_product(token, "2699")
+            for kw in ("2699", "遮光窗帘"):
+                pid = await snapshot_product(token, kw)
+                if pid and pid not in snapshot_pids:
+                    snapshot_pids.append(pid)
 
         try:
             r = await run_case(case, token, session_id)
@@ -329,8 +334,8 @@ async def run_suite(cases, label: str):
         except Exception as e:
             print(f"  {icon} ❌ {case.id}: EXCEPTION: {e}")
         finally:
-            if snapshot_pid:
-                await restore_product(token, snapshot_pid)
+            for pid in snapshot_pids:
+                await restore_product(token, pid)
 
         await asyncio.sleep(1)  # rate limit
 
