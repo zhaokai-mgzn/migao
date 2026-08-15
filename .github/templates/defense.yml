@@ -14,6 +14,7 @@ business_truths:
   - [defense.rate-limit] 消息速率限制未实现：redis_client.py 仅有 "ratelimit:" key 前缀，无消费点（D004 的 rate_limit 预期无对应实现）
   - [defense.redis-degrade] Redis 不可用时优雅降级：context_manager save/load 捕获异常仅告警，上下文回退进程内缓存，不阻塞请求
   - [defense.jwt] AI 服务侧 JWT 校验：RS256 公钥验签 + audience=migao 手动校验；过期 → 401 TOKEN_EXPIRED；签名无效 → 401（app/utils/auth.py）
+  - [defense.jwt-alg-consistency] JWT 签名算法一致性：admin-api 只签发 RS256（RSA）token，禁止静默回退 HS256；RSA 密钥缺失/加载失败时 fail-fast 抛 IllegalStateException（JwtTokenProvider.init）。ai-agent-service 只接受 RS256（app/utils/auth.py verify_jwt_token algorithms=["RS256"]），非 RS256 token 被拒绝为 TOKEN_INVALID「The specified alg value is not allowed」
   - [defense.input-limit] 输入长度无统一服务端校验：商品等 DTO 无 @Size（仅加工项 DTO 有）；超长输入依赖 LLM token 窗口截断，无独立拒绝机制
 primary_specs:
   - backend/ai-agent-service/tests/test_destructive_tool_confirm_guard.py
