@@ -32,8 +32,8 @@ run_cmd() {
   for arg in "$@"; do
     case "$arg" in
       --instance-id)      kebab_args+=(--instance-id);      camel_args+=(--InstanceId) ;;
-      # 新版 CLI 无 --region-id 子命令参数（RegionId 由 configure/全局 --region 自动注入）
-      --region-id)        camel_args+=(--RegionId) ;;
+      # 新版 CLI 的 region 参数名为 --biz-region-id（旧版 --RegionId）
+      --region-id)        kebab_args+=(--biz-region-id);    camel_args+=(--RegionId) ;;
       --name)             kebab_args+=(--name);             camel_args+=(--Name) ;;
       --type)             kebab_args+=(--type);             camel_args+=(--Type) ;;
       --timeout)          kebab_args+=(--timeout);          camel_args+=(--Timeout) ;;
@@ -87,7 +87,13 @@ for i in $(seq 1 180); do
     --instance-id "$INSTANCE_ID" \
     --invoke-id "$INVOKE_ID" \
     --region-id "$REGION" 2>&1) || {
-      echo "  ⚠️ DescribeInvocationResult 异常(第 $i 次)，20s 后重试"; sleep 20; continue; }
+      echo "  ⚠️ DescribeInvocationResult 异常(第 $i 次)："; echo "$RES" | head -c 600; echo;
+      if [ "$i" -eq 1 ]; then
+        echo "  --- describe-invocation-result 用法（诊断） ---"
+        aliyun help swas-open describe-invocation-result 2>&1 | head -20 || true
+        echo "  ---------------------------------------------"
+      fi
+      sleep 20; continue; }
   STATUS=$(echo "$RES" | python3 -c "import sys,json;d=json.load(sys.stdin);v=d.get('InvocationResult') or d;print(v.get('InvocationStatus') or v.get('Status') or '')" 2>/dev/null || echo "")
   echo "  deploy status: ${STATUS:-?} (poll $i)"
   if [ "$STATUS" = "Success" ]; then echo "✅ SWAS 部署成功"; SUCCESS=1; break; fi
