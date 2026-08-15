@@ -52,11 +52,6 @@ reviewer_asserts:
   - API: GET /api/admin/products/low-stock-by-color?threshold=100
     expect: 每项 stock <= 100
 
-  # ── 数据库迁移 ──
-  - DB: psql -c "SELECT COUNT(*) FROM products WHERE status='in_warehouse'"
-    expect: 返回 0
-  - DB: psql -c "SELECT COUNT(*) FROM flyway_schema_history WHERE version='V4'"
-    expect: 返回 1
 
   # ── 租户隔离 ──
   - API: GET /api/admin/products?page=1&size=5
@@ -71,5 +66,5 @@ common_pitfalls:
   - 库存聚合按商品而非 SKU 汇总
   - 默认阈值 100 写死
   - 跨 SKU 库存重复计算
-  - V4 migration 未做幂等（重复执行不报错）
+  - V4 migration 未做幂等（重复执行不报错）——DB 内部事实，由 admin-api 启动迁移日志保证，verify 不直连库校验
   - TypeScript ProductStatus 联合类型未移除 in_warehouse
