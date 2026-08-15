@@ -1,10 +1,24 @@
 #!/bin/bash
 # migao 部署脚本: 在 SWAS 上从源码构建并重启 3 个应用 (CI 通过云助手触发)
+#
+# 并发安全（2026-08-14 线上事故修复）：三个 deploy-*.yml 可能同时触发，
+# 单机无法并行 docker 构建（OOM/构建互踩导致 admin-web 下线），用 flock 串行化。
+LOCK=/tmp/migao-deploy.lock
+exec 9>"$LOCK"
+if ! flock -n 9; then
+  echo "== 检测到另一个部署正在进行，等待其完成 =="
+  flock 9
+  echo "== 获得部署锁，继续 =="
+else
+  echo "== 获得部署锁（无竞争） =="
+fi
+trap 'flock -u 9' EXIT
+
 set -e
 cd /opt/migao-deploy
 
 echo "== 1. 获取最新源码 (codeload) =="
-curl -fsSL -o src.tar.gz https://codeload.github.com/zhaokai-mgzn/migao/tar.gz/refs/heads/main
+curl -fsSL --retry 3 --retry-delay 5 -o src.tar.gz https://codeload.github.com/zhaokai-mgzn/migao/tar.gz/refs/heads/main
 rm -rf src && mkdir -p src && tar xzf src.tar.gz -C src --strip-components=1
 
 echo "== 2. 应用 RESP2 补丁 (Tair 公网代理不支持 RESP3) =="
