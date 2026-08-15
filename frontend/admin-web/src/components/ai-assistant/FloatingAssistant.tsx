@@ -8,8 +8,8 @@ import SessionList from '@/components/chat/SessionList'
 import ChatArea from '@/components/chat/ChatArea'
 import MibaoChatPanel from '@/components/business/MibaoChatPanel'
 
-// 最小化浮窗尺寸
-const MINIMIZED_WIDTH = 360
+// 最小化浮窗尺寸（与居中大窗 920×720 的横向比例保持一致，避免竖向窄条）
+const MINIMIZED_WIDTH = 560
 const MINIMIZED_HEIGHT = 480
 const STORAGE_KEY_MINIMIZED_POS = 'mibao_minimized_pos'
 
