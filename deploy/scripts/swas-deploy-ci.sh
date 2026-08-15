@@ -1,17 +1,20 @@
 #!/bin/bash
 # CI → SWAS 部署通道（被 deploy-admin-api / deploy-ai-agent-service / deploy-frontend 三个 workflow 调用）
-# 用法: swas-deploy-ci.sh <INSTANCE_ID> <REGION> <ACCESS_KEY_ID> <ACCESS_KEY_SECRET>
+# 用法: swas-deploy-ci.sh <INSTANCE_ID> <REGION> <ACCESS_KEY_ID> <ACCESS_KEY_SECRET> [ACR_USERNAME] [ACR_PASSWORD]
 #
 # 2026-08-14 线上事故修复：
 # - 下载加 --retry + gzip 校验（曾因瞬时下载损坏 tar exit 2）
 # - 轮询窗口 90→180 次（60min）：服务器端 deploy.sh 带 flock 串行化，并发触发会排队
 # - 轮询超时/CLI 异常均显式报错退出（此前超时静默 exit 0）
+# - 传入 ACR 凭据时写服务器 .env.registry，deploy.sh 据此 docker login（快速部署拉镜像用）
 set -euo pipefail
 
 INSTANCE_ID=$1
 REGION=$2
 AK=$3
 SK=$4
+ACR_USERNAME=${5:-}
+ACR_PASSWORD=${6:-}
 
 echo "== 安装 Aliyun CLI =="
 curl -fsSL --retry 3 --retry-delay 3 https://aliyuncli.alicdn.com/aliyun-cli-linux-latest-amd64.tgz -o /tmp/aliyun.tgz
@@ -57,7 +60,12 @@ $out2"
 echo "== 触发 SWAS 云助手执行 deploy.sh（拉源码 → flock → 构建 → 健康检查）=="
 # 自愈式同步：每次先从 repo 拉取最新 deploy.sh 再执行（服务器不再维护手工副本）。
 # 注意走 codeload.github.com（服务器可达）；raw.githubusercontent.com 在杭州机房超时（curl 56 errno 110）。
-BOOTSTRAP='rm -rf /tmp/migao-src && mkdir -p /tmp/migao-src && curl -fsSL --retry 3 https://codeload.github.com/zhaokai-mgzn/migao/tar.gz/refs/heads/main -o /tmp/migao-src.tar.gz && tar xzf /tmp/migao-src.tar.gz -C /tmp/migao-src --strip-components=1 && cp /tmp/migao-src/deploy/swas/deploy.sh /opt/migao-deploy/deploy.sh && bash /opt/migao-deploy/deploy.sh'
+# 可选：写入 ACR 凭据到 .env.registry（deploy.sh 检测到即 docker login）。
+REGISTRY_SETUP=""
+if [ -n "$ACR_USERNAME" ] && [ -n "$ACR_PASSWORD" ]; then
+  REGISTRY_SETUP="printf 'ACR_USERNAME=%s\nACR_PASSWORD=%s\n' \"$ACR_USERNAME\" \"$ACR_PASSWORD\" > /opt/migao-deploy/.env.registry && "
+fi
+BOOTSTRAP="${REGISTRY_SETUP}rm -rf /tmp/migao-src && mkdir -p /tmp/migao-src && curl -fsSL --retry 3 https://codeload.github.com/zhaokai-mgzn/migao/tar.gz/refs/heads/main -o /tmp/migao-src.tar.gz && tar xzf /tmp/migao-src.tar.gz -C /tmp/migao-src --strip-components=1 && cp /tmp/migao-src/deploy/swas/deploy.sh /opt/migao-deploy/deploy.sh && bash /opt/migao-deploy/deploy.sh"
 # RunCommand 可能被阿里云 API 限流（并发触发时 Throttling），重试 3 次
 INVOKE_ID=""
 for attempt in 1 2 3; do
