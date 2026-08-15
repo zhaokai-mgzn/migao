@@ -284,13 +284,12 @@ cases:
     title: "商品全生命周期 - 搜索→查看→修改→关联加工项→验证"
     domains:
       - product
-    tier: smoke
+    tier: normal
     tags:
       - multi_turn
       - single_skill
       - full_lifecycle
       - id_reuse
-      - smoke
     truths_ref:
       - id-resolve.index
       - id-resolve.no-fabricate
