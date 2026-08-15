@@ -65,8 +65,16 @@ for attempt in 1 2 3; do
       --timeout 3600 \
       --region-id "$REGION" \
       --command-content "bash /opt/migao-deploy/deploy.sh" 2>&1); then
-    echo "  ⚠️ RunCommand 调用失败(第 $attempt 次):"; echo "$INVOKE" | head -c 1200; echo;
-    if [ "$attempt" -eq 1 ]; then
+    echo "  ⚠️ RunCommand 调用失败(第 $attempt 次):"; echo "$INVOKE" | head -c 1500; echo;
+    if echo "$INVOKE" | grep -q "NoPermission\|not authorized\|StatusCode: 403"; then
+      echo "  ─────────────────────────────────────────────────────"
+      echo "  🔑 RAM 权限缺失：CI 使用的 AccessKey 子账号没有 swas-open:RunCommand 权限。"
+      echo "  请在阿里云 RAM 控制台为该子账号授权：AliyunSWASOpenFullAccess"
+      echo "  （或自定义策略 Action=swas-open:RunCommand, swas-open:DescribeInvocationResult,"
+      echo "    Resource=实例 b23c69e599524b1da719734f72e6a0e3）。授权后重跑本工作流即可。"
+      echo "  ─────────────────────────────────────────────────────"
+    fi
+    if [ "$attempt" -eq 1 ] && ! echo "$INVOKE" | grep -q "NoPermission\|not authorized"; then
       echo "  --- run-command 用法（诊断） ---"
       aliyun help swas-open run-command 2>&1 | head -40 || true
       echo "  --------------------------------"
