@@ -55,8 +55,9 @@ $out2"
 }
 
 echo "== 触发 SWAS 云助手执行 deploy.sh（拉源码 → flock → 构建 → 健康检查）=="
-# 自愈式同步：每次先从 repo 拉取最新 deploy.sh 再执行（服务器不再维护手工副本）
-BOOTSTRAP='curl -fsSL --retry 3 https://raw.githubusercontent.com/zhaokai-mgzn/migao/main/deploy/swas/deploy.sh -o /opt/migao-deploy/deploy.sh && bash /opt/migao-deploy/deploy.sh'
+# 自愈式同步：每次先从 repo 拉取最新 deploy.sh 再执行（服务器不再维护手工副本）。
+# 注意走 codeload.github.com（服务器可达）；raw.githubusercontent.com 在杭州机房超时（curl 56 errno 110）。
+BOOTSTRAP='rm -rf /tmp/migao-src && mkdir -p /tmp/migao-src && curl -fsSL --retry 3 https://codeload.github.com/zhaokai-mgzn/migao/tar.gz/refs/heads/main -o /tmp/migao-src.tar.gz && tar xzf /tmp/migao-src.tar.gz -C /tmp/migao-src --strip-components=1 && cp /tmp/migao-src/deploy/swas/deploy.sh /opt/migao-deploy/deploy.sh && bash /opt/migao-deploy/deploy.sh'
 # RunCommand 可能被阿里云 API 限流（并发触发时 Throttling），重试 3 次
 INVOKE_ID=""
 for attempt in 1 2 3; do
