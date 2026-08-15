@@ -5,7 +5,9 @@ import com.migao.admin.dto.*;
 import com.migao.admin.entity.Order;
 import com.migao.admin.entity.OrderItem;
 import com.migao.admin.entity.OrderLogistics;
+import com.migao.admin.entity.FinanceTransaction;
 import com.migao.admin.exception.BusinessException;
+import com.migao.admin.mapper.FinanceTransactionMapper;
 import com.migao.admin.mapper.OrderItemMapper;
 import com.migao.admin.mapper.OrderLogisticsMapper;
 import com.migao.admin.mapper.OrderMapper;
@@ -57,6 +59,9 @@ class OrderServiceTest {
 
     @Mock
     private ProductSkuMapper productSkuMapper;
+
+    @Mock
+    private FinanceTransactionMapper financeTransactionMapper;
 
     @Mock
     private ObjectMapper objectMapper;
@@ -528,9 +533,10 @@ class OrderServiceTest {
         // when
         orderService.confirmPayment("order-001");
 
-        // then: 原子流转 + 商品级 increaseSales
+        // then: 原子流转 + 商品级 increaseSales + 自动登记收款流水
         verify(orderMapper).update(any(), any());
         verify(productMapper).increaseSales(eq("prod-001"), eq(2), any(BigDecimal.class));
+        verify(financeTransactionMapper).insert(any(FinanceTransaction.class));
     }
 
     @Test
@@ -619,9 +625,10 @@ class OrderServiceTest {
         // when
         orderService.refundOrder("order-001", null);
 
-        // then: 原子流转 + 恢复库存
+        // then: 原子流转 + 恢复库存 + 自动登记退款流水
         verify(orderMapper).update(any(), any());
         verify(productMapper).decreaseSales(eq("prod-001"), eq(2), any(BigDecimal.class));
+        verify(financeTransactionMapper).insert(any(FinanceTransaction.class));
     }
 
     @Test
