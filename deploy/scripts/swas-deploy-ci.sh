@@ -55,6 +55,8 @@ $out2"
 }
 
 echo "== 触发 SWAS 云助手执行 deploy.sh（拉源码 → flock → 构建 → 健康检查）=="
+# 自愈式同步：每次先从 repo 拉取最新 deploy.sh 再执行（服务器不再维护手工副本）
+BOOTSTRAP='curl -fsSL --retry 3 https://raw.githubusercontent.com/zhaokai-mgzn/migao/main/deploy/swas/deploy.sh -o /opt/migao-deploy/deploy.sh && bash /opt/migao-deploy/deploy.sh'
 # RunCommand 可能被阿里云 API 限流（并发触发时 Throttling），重试 3 次
 INVOKE_ID=""
 for attempt in 1 2 3; do
@@ -64,7 +66,7 @@ for attempt in 1 2 3; do
       --type RunShellScript \
       --timeout 3600 \
       --region-id "$REGION" \
-      --command-content "bash /opt/migao-deploy/deploy.sh" 2>&1); then
+      --command-content "$BOOTSTRAP" 2>&1); then
     echo "  ⚠️ RunCommand 调用失败(第 $attempt 次):"; echo "$INVOKE" | head -c 1500; echo;
     if echo "$INVOKE" | grep -q "NoPermission\|not authorized\|StatusCode: 403"; then
       echo "  ─────────────────────────────────────────────────────"
