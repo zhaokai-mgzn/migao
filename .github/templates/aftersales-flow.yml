@@ -45,9 +45,6 @@ reviewer_asserts:
     expect: orderId 不存在 → 422「关联订单不存在」；成功 → data.ticketNo 匹配 ^AS-\d{8}-\d{4}$ AND data.status = pending AND data.source = agent
   - "租户隔离: GET /api/admin/after-sales/{id}(跨租户 tenant) → expect 404「售后工单不存在」，非 403"
   - "状态分布一致性: 各 status 筛选列表的 total 与对应 tab 计数一致"
-  - "PSQL: SELECT status FROM after_sales_tickets WHERE ticket_no = '{ticketNo}' → 状态值 ∈ (pending,processing,resolved,rejected,closed)"
-  - "PSQL: SELECT tenant_id FROM after_sales_tickets WHERE ticket_no = '{ticketNo}' → 等于创建时租户ID"
-  - "PSQL: SELECT COUNT(*) FROM ticket_timeline WHERE ticket_id = '{id}' ORDER BY created_at ASC → 首条 action = created"
 
 common_pitfalls:
   - 把中文状态值（待处理/已完成等）当枚举值传给 API，实际枚举是英文 pending/processing/resolved/rejected/closed

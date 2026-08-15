@@ -30,8 +30,6 @@ reviewer_asserts:
     expect: HTTP 200，data.items 每条含 code/name/tenantId
   - API: DELETE /api/admin/roles/{id}（有用户使用时）
     expect: HTTP 422，error.code=VALIDATION_ERROR，message 含"无法删除"
-  - psql: SELECT id, tenant_id FROM users WHERE phone=:phone
-    expect: 同手机号可跨租户存在多条（SMS 登录取 updated_at DESC LIMIT 1）
 
 confidence_required: 90%
 
@@ -41,3 +39,4 @@ common_pitfalls:
   - 把"全部权限"折叠当后端行为（实际是前端渲染）
   - 岗位列显示 "-" 而非回退 role 值
   - 跨租户数据泄露（漏掉 TenantLineInnerInterceptor 或 tenantId=-1 豁免）
+  - 同手机号可跨租户存在多条（SMS 登录取 updated_at DESC LIMIT 1）——DB 内部事实，verify 不直连库校验

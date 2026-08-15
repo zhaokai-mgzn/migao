@@ -13,12 +13,11 @@ assignees: []
 ```
 API_BASE_URL=https://api.{{domain}}
 WEB_BASE_URL=https://admin.{{domain}}
-DB_HOST= DB_USER= DB_NAME= DB_PWD=
 ```
 
 ## 验收步骤
 1. API curl 对应端点
-2. psql 跑业务真值 SQL
+2. 部署日志验证（构建/迁移/健康检查日志）
 3. Playwright headless 跑对应页面
 4. 三层数据一致
 

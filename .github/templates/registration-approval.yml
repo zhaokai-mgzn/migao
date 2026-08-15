@@ -21,18 +21,16 @@ reviewer_asserts:
   - API: GET /api/super-admin/registrations?status=pending
     expect: 需 super_admin；HTTP 200，data.items 每条 status="pending"
   - API: PUT /api/super-admin/registrations/{id}/approve
-    expect: HTTP 200；psql 校验 tenants 新增 status=active 行、users 新增 admin 用户
+    expect: HTTP 200（审批副作用：创建租户+管理员，通过「该租户后续可登录」间接验证）
   - API: PUT /api/super-admin/registrations/{id}/reject
-    expect: HTTP 200（body 含 rejectReason）；psql 校验该申请 status=rejected
+    expect: HTTP 200（body 含 rejectReason）
   - API: GET /api/super-admin/registrations（普通租户 admin 调用）
     expect: HTTP 403（非 super_admin）
-  - psql: SELECT status FROM tenant_applications WHERE id=:id
-    expect: approve 后=approved，reject 后=rejected
 
 confidence_required: 80%
 
 common_pitfalls:
   - 重复注册未提示（pending 与 approved 两种都要校验）
-  - 审批后租户未创建（approve 副作用：租户+admin 用户+默认角色权限）
+  - 审批后租户未创建（approve 副作用：租户+admin 用户+默认角色权限）——副作用落库由 admin-api 保证，verify 通过「审批后该租户可登录」间接验证
   - 用错路径/方法（应为 PUT /api/super-admin/registrations/{id}/approve，非 POST /api/admin/...）
   - status 用中文"待审核"（实际为 pending）

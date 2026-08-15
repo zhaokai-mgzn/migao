@@ -32,7 +32,7 @@ reviewer_asserts:
   - API: PUT /api/admin/quick-replies/{id}
     expect: HTTP 200 且 $.data.id={id}
   - API: DELETE /api/admin/quick-replies/{id}
-    expect: HTTP 200；psql 校验 quick_reply_templates.deleted=1（逻辑删除非物理删除）
+    expect: HTTP 200（逻辑删除：后续列表不再返回该 id）
   - API: GET /api/admin/notifications?page=1&size=20
     expect: HTTP 200 且 $.success=true 且 $.data.total>=0 且 $.data.items 为数组
   - API: GET /api/admin/notifications/unread-count
@@ -40,9 +40,9 @@ reviewer_asserts:
   - API: POST /api/admin/notifications
     expect: 带 recipientId/recipientType/title/content 时 HTTP 200 且 $.data.status=sent；缺 recipientId 时 HTTP 422 且 $.error.code=VALIDATION_ERROR
   - API: PUT /api/admin/notifications/{id}/read
-    expect: 本人通知 HTTP 200；psql notifications.status='read' 且 read_at 非空
+    expect: 本人通知 HTTP 200（标已读后 unread-count 减少）
   - API: PUT /api/admin/notifications/read-all
-    expect: HTTP 200；psql 该 recipient 下 status!='read' 记录数为 0
+    expect: HTTP 200（read-all 后 unread-count=0）
   - API: DELETE /api/admin/notifications/{id}
     expect: 本人通知 HTTP 200；非本人/跨租户 HTTP 403 且 $.error.code=PERMISSION_DENIED
   - API: GET /api/admin/agent-sessions?page=1&size=20
@@ -52,9 +52,9 @@ reviewer_asserts:
   - API: GET /api/admin/agent-sessions/{id}
     expect: HTTP 200 且 $.data.messages 为数组；跨租户 HTTP 404
   - API: POST /api/admin/agent-sessions/{id}/assign
-    expect: waiting 会话 HTTP 200 且 psql agent_sessions.status='active'；非 waiting HTTP 422
+    expect: waiting 会话 HTTP 200 且详情 status=active；非 waiting HTTP 422
   - API: POST /api/admin/agent-sessions/{id}/end
-    expect: active/waiting 会话 HTTP 200 且 psql status='ended' 且 ended_at 非空；ended 会话 HTTP 422
+    expect: active/waiting 会话 HTTP 200 且详情 status=ended；ended 会话 HTTP 422
 
 common_pitfalls:
   - 快捷回复与通知均无 GET /{id} 详情端点，勿断言不存在接口

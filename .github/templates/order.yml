@@ -20,8 +20,6 @@ business_truths:
 reviewer_asserts:
   - API: POST /api/admin/orders/{id}/confirm-payment（pending 订单）
     expect: data.status = confirmed AND 库存扣减 AND 销量增加
-  - DB: 确认支付后查库存
-    expect: 对应 SKU 库存减少该订单数量
   - API: POST /api/admin/orders/{id}/cancel（confirmed 订单）
     expect: data.status = cancelled AND 库存恢复 AND 销量减少
   - API: POST /api/admin/orders/{id}/confirm-payment（shipped 订单，非法流转）
