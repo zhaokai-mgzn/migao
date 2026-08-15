@@ -496,3 +496,33 @@ cases:
       ci:
         - agent-eval.yml
       verifies: []
+
+  - id: DF-016
+    legacy_id: ""
+    title: "JWT 签名算法一致性 - admin-api 静默 HS256 降级导致米宝新建会话 TOKEN_INVALID"
+    domains:
+      - chat
+    tier: adversarial
+    tags:
+      - defense
+      - security
+      - jwt_alg
+      - session_create
+    truths_ref:
+      - defense.jwt-alg-consistency
+      - defense.jwt
+    user_inputs:
+      - "米宝新建会话（POST /api/chat/sessions，Authorization 携带 admin-api 签发的 accessToken）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "admin-api 签发的 JWT alg 必须为 RS256；RSA 密钥缺失/加载失败时 JwtTokenProvider.init 必须抛 IllegalStateException（fail-fast），禁止静默回退 HS256"
+      - "ai-agent 拒绝非 RS256 token（TOKEN_INVALID: The specified alg value is not allowed）只应作为对侧故障信号，正常登录链路不得触发"
+    skip_reason: "后端签名契约由 Java 单测验证（JwtTokenProviderTest），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-08-15 新增：米宝新建会话 TOKEN_INVALID 线上 bug 根因（admin-api RSA 密钥加载失败时静默降级 HS256，ai-agent 仅接受 RS256）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/security/JwtTokenProviderTest.java"
+      ci:
+        - deploy-admin-api.yml
+      verifies: []

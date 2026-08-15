@@ -73,6 +73,8 @@ logs/
 
 # JWT 私钥（仅本地开发用，生产通过环境变量注入）
 **/rsa/private.pem
+# 例外：测试专用 RSA 私钥（非敏感，仅 CI 单测用，与生产密钥无关）
+!backend/admin-api/src/test/resources/rsa/private.pem
 
 # IntelliJ IDEA
 *.iml

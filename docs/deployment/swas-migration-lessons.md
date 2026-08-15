@@ -96,3 +96,24 @@
 3. 服务健康以**真实入口域名 + 外部 curl** 为准，容器端口/直连只能作辅助。
 4. 改动涉及密钥/权限时，**从报错里挖出精确主体**（子账号 UID、错误 Code/Message），再让人授权，别猜。
 5. `latest` 类「移动目标」（CLI、镜像 tag）要么锁版本，要么双兼容 + 完整报错日志。
+
+## 五、JWT 认证与密钥管理坑（2026-08-15）
+
+### 1. RSA 私钥被 gitignore → 镜像无 key → 静默降级 HS256 →「alg not allowed」
+
+- 现象：米宝「新建会话」（`POST /api/chat/sessions`）返回 `401 TOKEN_INVALID: The specified alg value is not allowed`。
+- 根因：`backend/admin-api/src/main/resources/rsa/private.pem` 被 `.gitignore`（`**/rsa/private.pem`）排除、**从未进仓库**，因此也没进 Docker 镜像。admin-api 生产容器里没有 RSA 私钥，`JwtTokenProvider.init()` 静默回退 HS256（每次启动随机密钥）→ 签出 `alg=HS256` 的 token；而 ai-agent-service 的 `verify_jwt_token` 写死 `algorithms=["RS256"]` → 拒绝为 TOKEN_INVALID。
+- 修复（PR 走二郎神闭环）：`JwtTokenProvider` 改为 **RS256-only + fail-fast**（密钥缺失抛 `IllegalStateException`，不再静默降级），并让私钥/公钥**各自独立加载**（`JWT_PRIVATE_KEY_PEM` 单独即可生效，公钥走 classpath）。
+- 规避/必做：生产 `.env.admin-api` 必须注入 `JWT_PRIVATE_KEY_PEM`（PEM 内容，与 ai-agent 的 `JWT_PUBLIC_KEY` 是同一对；本地 gitignored 的 `rsa/private.pem` 即匹配的私钥）。**没配私钥就合入部署 → fail-fast 会让 admin-api 启动即崩**（比「聊天坏」更糟）。
+
+### 2. CI 缺 private.pem → 单测全红（fail-fast 把历史隐患暴露出来）
+
+- 现象：改完 fail-fast 后，`admin-api unit tests` 在 CI 全红，本地却全绿。
+- 根因：`SecurityConfigTest` 等 `@SpringBootTest` 会实例化真实 `JwtTokenProvider` bean，走 `classpath:rsa/private.pem` 加载；CI 干净 checkout 里没有这个 gitignored 文件 → `init()` fail-fast 抛异常 → 上下文初始化失败；`JwtTokenProviderTest.readResource("/rsa/private.pem")` 也读不到。
+- 规避：提交**测试专用** RSA 密钥对到 `src/test/resources/rsa/{private,public}.pem`（非敏感），并在 `.gitignore` 加例外 `!backend/admin-api/src/test/resources/rsa/private.pem`。测试专用密钥对不参与生产签名，安全无碍。
+
+### 3. 本地开发环境要能连上「云 dev RDS」
+
+- 现象：本地起 admin-api 报 `CannotGetJdbcConnectionException ... SocketTimeoutException`，MigrationRunner 迁移失败；ai-agent 同样 `Failed to initialize database connection`。`curl` 健康检查 HTTP 000 / 502。
+- 根因：云 dev RDS（`pgm-*-pub.pg.rds.aliyuncs.com:5432`）对当前机器公网出口 IP 未放行（`nc -z` 5432 超时；Redis 6379 正常）。
+- 规避：把本机公网出口 IP 加进 RDS 安全组白名单（或走 VPN 到 VPC）。改 IP 后**重启服务**，DB 相关流程（登录/建会话）才可用。

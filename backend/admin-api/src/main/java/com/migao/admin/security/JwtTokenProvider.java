@@ -5,7 +5,6 @@ import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
-import io.jsonwebtoken.security.Keys;
 import jakarta.annotation.PostConstruct;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -14,11 +13,9 @@ import org.springframework.core.io.Resource;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.stereotype.Component;
 
-import javax.crypto.SecretKey;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
-import java.security.Key;
 import java.security.KeyFactory;
 import java.security.PrivateKey;
 import java.security.PublicKey;
@@ -32,8 +29,8 @@ import java.util.stream.Collectors;
 
 /**
  * JWT Token 提供者
- * 支持 RS256 (RSA) 和 HS256 (HMAC-SHA256) 两种算法
- * 优先使用 RS256，如果密钥文件不存在则回退到 HS256
+ * 仅支持 RS256 (RSA) 签名——与 ai-agent-service 的验签契约（algorithms=["RS256"]）对齐。
+ * RSA 密钥缺失/加载失败时 fail-fast 抛出 IllegalStateException，禁止静默回退 HS256。
  */
 @Slf4j
 @Component
@@ -67,8 +64,6 @@ public class JwtTokenProvider {
 
     private PrivateKey rsaPrivateKey;
     private PublicKey rsaPublicKey;
-    private SecretKey hmacKey;
-    private boolean useRsa = false;
 
     // JWT Claims 常量
     public static final String CLAIM_USER_ID = "userId";
@@ -86,56 +81,88 @@ public class JwtTokenProvider {
 
     @PostConstruct
     public void init() {
-        try {
-            // 尝试加载 RSA 密钥
-            loadRsaKeys();
-            useRsa = (rsaPrivateKey != null && rsaPublicKey != null);
-            if (useRsa) {
-                log.info("JWT 使用 RS256 (RSA) 算法");
-            } else {
-                log.warn("RSA 密钥加载失败，回退到 HS256 (HMAC-SHA256) 算法");
-                initHmacKey();
-            }
-        } catch (Exception e) {
-            log.error("加载 RSA 密钥失败，回退到 HS256 算法: {}", e.getMessage());
-            initHmacKey();
+        loadRsaKeys();
+        if (rsaPrivateKey == null || rsaPublicKey == null) {
+            // fail-fast：禁止静默回退 HS256。
+            // ai-agent-service 只接受 RS256（verify_jwt_token algorithms=["RS256"]），
+            // 若此处降级会签发 alg=HS256 的 token，导致米宝新建会话等链路报
+            // TOKEN_INVALID「The specified alg value is not allowed」。
+            throw new IllegalStateException(
+                    "JWT RSA 密钥加载失败，无法启用 RS256 签名。请配置 "
+                    + "JWT_PRIVATE_KEY/JWT_PUBLIC_KEY（classpath:/file: 资源路径）或 "
+                    + "JWT_PRIVATE_KEY_PEM/JWT_PUBLIC_KEY_PEM（PEM 内容）。");
         }
+        log.info("JWT 使用 RS256 (RSA) 算法");
     }
 
     /**
      * 加载 RSA 密钥
-     * 优先级: 环境变量 PEM 内容 > classpath 文件
+     * 私钥/公钥各自独立加载，优先级：PEM 内容 > 资源路径（classpath:/file:）
      */
     private void loadRsaKeys() {
-        try {
-            // 优先从环境变量加载 PEM 内容（生产环境推荐方式）
-            if (privateKeyPem != null && !privateKeyPem.isEmpty()
-                    && publicKeyPem != null && !publicKeyPem.isEmpty()) {
+        // 私钥
+        if (privateKeyPem != null && !privateKeyPem.isEmpty()) {
+            try {
                 rsaPrivateKey = loadPrivateKey(privateKeyPem);
+            } catch (Exception e) {
+                log.warn("从 PEM 内容加载 RSA 私钥失败: {}", e.getMessage());
+            }
+        }
+        if (rsaPrivateKey == null && privateKeyPath != null) {
+            rsaPrivateKey = loadPrivateKeyFromResource(privateKeyPath);
+        }
+
+        // 公钥
+        if (publicKeyPem != null && !publicKeyPem.isEmpty()) {
+            try {
                 rsaPublicKey = loadPublicKey(publicKeyPem);
-                log.info("RSA 密钥已从环境变量 PEM 内容加载");
-                return;
+            } catch (Exception e) {
+                log.warn("从 PEM 内容加载 RSA 公钥失败: {}", e.getMessage());
             }
+        }
+        if (rsaPublicKey == null && publicKeyPath != null) {
+            rsaPublicKey = loadPublicKeyFromResource(publicKeyPath);
+        }
 
-            // 回退到 classpath 文件加载（仅用于本地开发）
-            Resource privateResource = resourceLoader.getResource(privateKeyPath);
-            if (privateResource.exists()) {
-                String privateKeyContent = readKeyContent(privateResource);
-                if (privateKeyContent != null && !privateKeyContent.isEmpty()) {
-                    rsaPrivateKey = loadPrivateKey(privateKeyContent);
-                }
-            }
+        if (rsaPrivateKey != null && rsaPublicKey != null) {
+            log.info("RSA 密钥加载成功（RS256）");
+        }
+    }
 
-            Resource publicResource = resourceLoader.getResource(publicKeyPath);
-            if (publicResource.exists()) {
-                String publicKeyContent = readKeyContent(publicResource);
-                if (publicKeyContent != null && !publicKeyContent.isEmpty()) {
-                    rsaPublicKey = loadPublicKey(publicKeyContent);
+    /**
+     * 从资源路径（classpath:/file:）加载 RSA 私钥
+     */
+    private PrivateKey loadPrivateKeyFromResource(String location) {
+        try {
+            Resource resource = resourceLoader.getResource(location);
+            if (resource.exists()) {
+                String content = readKeyContent(resource);
+                if (content != null && !content.isEmpty()) {
+                    return loadPrivateKey(content);
                 }
             }
         } catch (Exception e) {
-            log.warn("RSA 密钥加载失败: {}", e.getMessage());
+            log.warn("从资源路径加载 RSA 私钥失败 {}: {}", location, e.getMessage());
         }
+        return null;
+    }
+
+    /**
+     * 从资源路径（classpath:/file:）加载 RSA 公钥
+     */
+    private PublicKey loadPublicKeyFromResource(String location) {
+        try {
+            Resource resource = resourceLoader.getResource(location);
+            if (resource.exists()) {
+                String content = readKeyContent(resource);
+                if (content != null && !content.isEmpty()) {
+                    return loadPublicKey(content);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("从资源路径加载 RSA 公钥失败 {}: {}", location, e.getMessage());
+        }
+        return null;
     }
 
     /**
@@ -179,27 +206,10 @@ public class JwtTokenProvider {
     }
 
     /**
-     * 初始化 HMAC 密钥
+     * 获取签名私钥
      */
-    private void initHmacKey() {
-        // 生成随机密钥或使用固定密钥（生产环境应使用配置）
-        String secret = UUID.randomUUID().toString() + UUID.randomUUID().toString();
-        hmacKey = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
-        log.info("JWT 使用 HS256 (HMAC-SHA256) 算法，已生成随机密钥");
-    }
-
-    /**
-     * 获取签名密钥
-     */
-    private Key getSigningKey() {
-        return useRsa ? rsaPrivateKey : hmacKey;
-    }
-
-    /**
-     * 获取验证密钥
-     */
-    private Key getValidationKey() {
-        return useRsa ? rsaPublicKey : hmacKey;
+    private PrivateKey getSigningKey() {
+        return rsaPrivateKey;
     }
 
     /**
@@ -274,20 +284,11 @@ public class JwtTokenProvider {
      */
     public Claims validateAndParseToken(String token) {
         try {
-            var parserBuilder = Jwts.parser();
-            if (useRsa) {
-                return parserBuilder
-                        .verifyWith(rsaPublicKey)
-                        .build()
-                        .parseSignedClaims(token)
-                        .getPayload();
-            } else {
-                return parserBuilder
-                        .verifyWith(hmacKey)
-                        .build()
-                        .parseSignedClaims(token)
-                        .getPayload();
-            }
+            return Jwts.parser()
+                    .verifyWith(rsaPublicKey)
+                    .build()
+                    .parseSignedClaims(token)
+                    .getPayload();
         } catch (ExpiredJwtException e) {
             log.warn("JWT Token 已过期");
             throw e;
@@ -295,18 +296,6 @@ public class JwtTokenProvider {
             log.warn("JWT Token 验证失败: {}", e.getMessage());
             throw e;
         }
-    }
-
-    /**
-     * 获取用于解析器的验证密钥
-     */
-    private SecretKey getValidationKeyForParser() {
-        if (useRsa) {
-            // RSA 使用公钥验证，但 JJWT 的 verifyWith 需要 SecretKey
-            // 所以我们使用 parser 的 setSigningKey 方法
-            return null;
-        }
-        return hmacKey;
     }
 
     /**
