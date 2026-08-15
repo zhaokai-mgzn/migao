@@ -71,6 +71,8 @@ jobs:
         env:
           AK: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
           SK: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
+          ACR_U: ${{ secrets.ACR_USERNAME }}
+          ACR_P: ${{ secrets.ACR_PASSWORD }}
         run: |
           bash deploy/scripts/swas-deploy-ci.sh \
-            ${{ env.SWAS_INSTANCE_ID }} ${{ env.SWAS_REGION }} "$AK" "$SK"
+            ${{ env.SWAS_INSTANCE_ID }} ${{ env.SWAS_REGION }} "$AK" "$SK" "$ACR_U" "$ACR_P"
