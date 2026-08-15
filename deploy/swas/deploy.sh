@@ -49,6 +49,8 @@ for svc in admin-api ai-agent admin-web; do
 done
 # shellcheck disable=SC2086
 docker compose up -d --no-deps $UP_SERVICES
+# 容器重建后 IP 可能变化，nginx 启动时缓存旧上游 IP → reload/restart 否则 502
+docker compose restart nginx
 
 echo "== 3. 健康检查 =="
 for spec in "8080 admin-api /actuator/health" "8000 ai-agent /health" "3001 admin-web /"; do
