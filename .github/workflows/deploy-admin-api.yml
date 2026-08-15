@@ -13,6 +13,10 @@ env:
   # 部署目标：SWAS 轻量应用服务器（2026-08-14 起替代 SAE）
   SWAS_INSTANCE_ID: b23c69e599524b1da719734f72e6a0e3
   SWAS_REGION: cn-hangzhou
+  # 快速部署：CI 构建镜像 → ACR → 服务器 pull（不再源码构建）
+  ACR_REGISTRY: crpi-qdcgkzwx9p9zckga.cn-hangzhou.personal.cr.aliyuncs.com
+  ACR_NAMESPACE: ai-customer-service
+  IMAGE_NAME: admin-api
 
 jobs:
   build-and-deploy:
@@ -26,6 +30,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Set image tag
+        id: tag
+        run: echo "IMAGE_TAG=v$(date +%Y%m%d%H%M%S)" >> $GITHUB_OUTPUT
+
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
@@ -37,19 +45,17 @@ jobs:
         working-directory: backend/admin-api
         run: ./mvnw test -q
 
-      - name: Build admin-api with Maven
+      - name: Build and push Docker image
         working-directory: backend/admin-api
         run: |
-          ./mvnw clean package -DskipTests
-          # 定位产物 JAR（兼容版本号变更）
-          JAR_FILE=$(ls target/admin-api-*.jar | grep -v sources | grep -v javadoc | head -n 1)
-          if [ -z "$JAR_FILE" ]; then
-            echo "❌ 未找到构建产物 JAR"
-            ls -la target/
-            exit 1
-          fi
-          echo "✅ 构建成功：$JAR_FILE"
-          echo "JAR_FILE=backend/admin-api/$JAR_FILE" >> $GITHUB_ENV
+          IMG=${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_NAME }}
+          echo "${{ secrets.ACR_PASSWORD }}" | docker login ${{ env.ACR_REGISTRY }} -u ${{ secrets.ACR_USERNAME }} --password-stdin
+          docker build \
+            -t $IMG:${{ steps.tag.outputs.IMAGE_TAG }} \
+            -t $IMG:latest \
+            .
+          docker push $IMG:${{ steps.tag.outputs.IMAGE_TAG }}
+          docker push $IMG:latest
 
       - name: Deploy to SWAS
         env:
