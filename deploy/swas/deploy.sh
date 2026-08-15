@@ -48,7 +48,7 @@ for svc in admin-api ai-agent admin-web; do
   fi
 done
 # shellcheck disable=SC2086
-docker compose up -d $UP_SERVICES
+docker compose up -d --no-deps $UP_SERVICES
 
 echo "== 3. 健康检查 =="
 for spec in "8080 admin-api /actuator/health" "8000 ai-agent /health" "3001 admin-web /"; do
