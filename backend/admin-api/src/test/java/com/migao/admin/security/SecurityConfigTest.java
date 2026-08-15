@@ -1,4 +1,5 @@
 package com.migao.admin.security;
+// case_ids: DF-007
 
 import com.aliyun.oss.OSS;
 import com.migao.admin.config.GlobalExceptionHandler;
@@ -215,6 +216,11 @@ class SecurityConfigTest {
     private com.migao.admin.mapper.TenantApplicationMapper tenantApplicationMapper;
     @MockBean
     private com.migao.admin.mapper.PlatformAdminMapper platformAdminMapper;
+    @MockBean
+    private com.migao.admin.mapper.FinanceTransactionMapper financeTransactionMapper;
+
+    @MockBean
+    private com.migao.admin.service.FinanceService financeService;
 
     // ======================== 公开端点测试 ========================
 

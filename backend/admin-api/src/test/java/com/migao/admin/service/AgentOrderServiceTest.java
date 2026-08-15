@@ -1,4 +1,5 @@
 package com.migao.admin.service;
+// case_ids: OR-008
 
 import com.migao.admin.dto.*;
 import com.migao.admin.dto.agent.*;
@@ -40,6 +41,7 @@ class AgentOrderServiceTest {
     @Mock(lenient = true) private com.migao.admin.mapper.ProductMapper productMapper;
     @Mock(lenient = true) private com.migao.admin.mapper.ProductSkuMapper productSkuMapper;
     @Mock(lenient = true) private com.fasterxml.jackson.databind.ObjectMapper objectMapper;
+    @Mock(lenient = true) private FinanceTransactionMapper financeTransactionMapper;
 
     private Order testOrder;
 

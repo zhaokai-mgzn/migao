@@ -1,4 +1,5 @@
 package com.migao.admin.service;
+// case_ids: DF-009
 
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.entity.Product;
@@ -46,6 +47,9 @@ class ConcurrentTenantIsolationTest {
 
     @Mock
     private OrderMapper orderMapper;
+
+    @Mock
+    private com.migao.admin.mapper.FinanceTransactionMapper financeTransactionMapper;
 
     @InjectMocks
     private ProductService productService;

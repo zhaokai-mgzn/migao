@@ -1,0 +1,24 @@
+name: finance
+description: 财务对账域（资金流水 + 收支汇总 + 应收对账）
+
+business_truths:
+  - [finance.txn-types] 资金流水类型：income(收款)/refund(退款)，金额必须为正数（<=0 拒绝）
+  - [finance.auto-record] 订单确认支付(pending→confirmed)自动登记 income 流水；退款自动登记 refund 流水；登记失败不影响订单主流程（try-catch 降级）
+  - [finance.txn-no] 流水号格式 FIN-yyyyMMdd-XXXX（DB 查当天最大序号+1，防重启重复）
+  - [finance.summary] 收支汇总：净收入=收入-退款；按支付方式/按日聚合；待收款=订单应收(totalAmount)>实收(actualAmount)的差额累计（仅 confirmed/producing/shipped/completed 订单）
+  - [finance.reconcile] 应收对账口径：差额=实收(actualAmount)-应收(totalAmount)；>0 多收 / <0 少收 / =0 已对平
+
+reviewer_asserts:
+  - API: POST /api/admin/finance/transactions {type:income, amount:88}
+    expect: 返回 transactionNo 以 FIN- 开头，type=income，amount=88，status=success
+  - API: GET /api/admin/finance/summary
+    expect: netIncome = totalIncome - totalRefund
+  - API: GET /api/admin/finance/reconciliation
+    expect: 每条 difference = receivedAmount - receivableAmount
+
+common_pitfalls:
+  - 金额 <= 0 仍入库
+  - 登记流水失败阻塞订单主流程
+  - 差额口径错误（实收-应收 与 应收-实收 混用）
+
+confidence_required: 100%

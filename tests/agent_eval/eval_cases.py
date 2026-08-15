@@ -641,6 +641,48 @@ _CASE_DF_016 = EvalCase(
     tags=['defense', 'security', 'jwt_alg', 'session_create'],
 )
 
+# ── FN-001 [NORMAL] 资金流水查询与登记（源: cases/finance.yml）──
+_CASE_FN_001 = EvalCase(
+    id='FN-001',
+    legacy_id='',
+    title='资金流水查询与登记',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['登记一笔线下收款'],
+    expectations=['finance_api(action=create_transaction, type=income)'],
+    data_checks=['流水号 FIN- 前缀，type=income，amount>0，status=success'],
+    skip_reason='',
+    tags=['finance', 'query'],
+)
+
+# ── FN-002 [NORMAL] 收支汇总（源: cases/finance.yml）──
+_CASE_FN_002 = EvalCase(
+    id='FN-002',
+    legacy_id='',
+    title='收支汇总',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['本月收入退款净额'],
+    expectations=['finance_api(action=get_summary)'],
+    data_checks=['netIncome = totalIncome - totalRefund'],
+    skip_reason='',
+    tags=['finance', 'summary'],
+)
+
+# ── FN-003 [NORMAL] 应收对账（源: cases/finance.yml）──
+_CASE_FN_003 = EvalCase(
+    id='FN-003',
+    legacy_id='',
+    title='应收对账',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['哪些订单没对平'],
+    expectations=['finance_api(action=get_reconciliation)'],
+    data_checks=['每条 difference = receivedAmount - receivableAmount'],
+    skip_reason='',
+    tags=['finance', 'reconcile'],
+)
+
 # ── HR-001 [SMOKE] 员工列表（源: cases/hr.yml）──
 _CASE_HR_001 = EvalCase(
     id='HR-001',
@@ -1217,6 +1259,9 @@ ALL_CASES = (
     _CASE_DF_014,
     _CASE_DF_015,
     _CASE_DF_016,
+    _CASE_FN_001,
+    _CASE_FN_002,
+    _CASE_FN_003,
     _CASE_HR_001,
     _CASE_HR_002,
     _CASE_HR_003,

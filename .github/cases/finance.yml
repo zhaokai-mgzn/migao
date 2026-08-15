@@ -1,0 +1,95 @@
+# cases/finance.yml — 财务对账域用例（B 端管理后台）
+#
+# 标准：ershen/design/16-case-contract.md（schema v1.0 草案）
+# ★ 格式铁律：只用 block style（与 yaml_light 兼容），禁止 flow style。
+
+schema: "case-contract/1.0"
+domain: finance
+
+cases:
+  - id: FN-001
+    title: "资金流水查询与登记"
+    domains:
+      - finance
+    tier: normal
+    tags:
+      - finance
+      - query
+    truths_ref:
+      - finance.txn-types
+      - finance.auto-record
+      - finance.txn-no
+    user_inputs:
+      - "登记一笔线下收款"
+    expectations:
+      - tool: finance_api
+        args:
+          action: create_transaction
+          type: income
+    data_checks:
+      - "流水号 FIN- 前缀，type=income，amount>0，status=success"
+    skip_reason: ""
+    merge_log: "财务对账模块新增"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/FinanceServiceTest.java"
+        - "frontend/admin-web/tests/unit/pages/finance.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: FN-002
+    title: "收支汇总"
+    domains:
+      - finance
+    tier: normal
+    tags:
+      - finance
+      - summary
+    truths_ref:
+      - finance.summary
+    user_inputs:
+      - "本月收入退款净额"
+    expectations:
+      - tool: finance_api
+        args:
+          action: get_summary
+    data_checks:
+      - "netIncome = totalIncome - totalRefund"
+    skip_reason: ""
+    merge_log: "财务对账模块新增"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/FinanceServiceTest.java"
+        - "frontend/admin-web/tests/unit/pages/finance.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: FN-003
+    title: "应收对账"
+    domains:
+      - finance
+    tier: normal
+    tags:
+      - finance
+      - reconcile
+    truths_ref:
+      - finance.reconcile
+    user_inputs:
+      - "哪些订单没对平"
+    expectations:
+      - tool: finance_api
+        args:
+          action: get_reconciliation
+    data_checks:
+      - "每条 difference = receivedAmount - receivableAmount"
+    skip_reason: ""
+    merge_log: "财务对账模块新增"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/FinanceServiceTest.java"
+        - "frontend/admin-web/tests/unit/pages/finance.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
