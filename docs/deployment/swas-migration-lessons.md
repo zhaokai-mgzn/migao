@@ -89,6 +89,12 @@
 - 根因：`waitFor` 只等标题文本，没等 recharts SVG 异步挂载。
 - 规避：**waitFor 包裹最终断言**（polyline/path/linearGradient 全就位）。
 
+### 16. agent-eval 写操作用例污染生产 + 幂等写变 no-op → flaky
+- 现象：`Agent Eval (smoke tier)` 随机失败，flaky 点是 `PR-010` 的「把价格改成 199」偶尔不调 `product_update`。
+- 根因：agent-eval 跑在**生产**（`ai-api.migaozn.com` / `api.migaozn.com`），而 `PR-010` 是**写操作用例**（`product_update(price=199)` + `product_processing_item_manage(add)`）。测试商品「2699 系列雪尼尔窗帘」种子统一定价就是 ¥199，所以「改成 199」是**幂等 no-op**；LLM 正确识别「已经是 ¥199，无需修改」而跳过 `product_update`，用例却硬性期望它被调用 → 随机 fail。
+- 关键：**这是用例/环境坑，不是 LLM bug**——LLM 跳过 no-op 是正确行为。
+- 规避：① 合并门禁（smoke）只放**只读用例**（`PR-010` 已降级 normal）；② 写操作用例必须**数据隔离**（专用测试租户 + 每次重置），否则既污染生产数据、幂等写又会变 no-op；③ 写用例期望要容忍「已是目标值」的 no-op 分支。
+
 ## 四、操作纪律（全程教训）
 
 1. **永远走 PR 合 main**，不要 `git push` 直推 main（即使能推）。
