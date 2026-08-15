@@ -838,16 +838,16 @@
 真值: id-resolve.name, id-resolve.no-fabricate
 溯源: eval P007 + verification 2.8（同义，取 eval 的 ID 解析版） ｜ tags: id_resolve, update
 
-### PR-010. 商品全生命周期 - 搜索→查看→修改→关联加工项→验证 🔵
+### PR-010. 商品全生命周期 - 搜索→查看→修改→关联加工项→验证 🟢
 ```
 你: 搜索窗帘
 你: 看看第一个的详情
-你: 把价格改成 199
+你: 把价格改成 198
 你: 给它加上S钩安装
 你: 再看看这个商品的详情确认一下
 期望: product_search
 期望: product_detail(product_id=1)
-期望: product_update(price=199)
+期望: product_update(price=198)
 期望: product_processing_item_manage(action=add)
 期望: product_detail
 数据: 第3轮 product_id 来自第2轮结果
@@ -855,7 +855,7 @@
 数据: 全程未重新 product_search 查同一个商品
 ```
 真值: id-resolve.index, id-resolve.no-fabricate, product-sku-stock.status-flow
-溯源: eval M001 独有（多轮 ID 复用，覆盖 2.3+2.8 的多轮形态） ｜ tags: multi_turn, single_skill, full_lifecycle, id_reuse
+溯源: eval M001 独有（多轮 ID 复用，覆盖 2.3+2.8 的多轮形态） ｜ tags: multi_turn, single_skill, full_lifecycle, id_reuse, smoke
 
 ### PR-011. 创建商品完整引导流程 - AI 主导收集信息 🔵
 ```
@@ -965,7 +965,7 @@
 ## 覆盖统计（生成）
 
 - 用例总数：81（活跃 79，跳过 2）
-- tier 分布：smoke 8 / normal 46 / adversarial 27
+- tier 分布：smoke 9 / normal 45 / adversarial 27
 - 售后域：5
 - 分类域：3
 - 对话边界域：7

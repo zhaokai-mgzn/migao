@@ -1033,18 +1033,18 @@ _CASE_PR_009 = EvalCase(
     tags=['id_resolve', 'update'],
 )
 
-# ── PR-010 [NORMAL] 商品全生命周期 - 搜索→查看→修改→关联加工项→验证（源: cases/product.yml）──
+# ── PR-010 [SMOKE] 商品全生命周期 - 搜索→查看→修改→关联加工项→验证（源: cases/product.yml）──
 _CASE_PR_010 = EvalCase(
     id='PR-010',
     legacy_id='M001',
     title='商品全生命周期 - 搜索→查看→修改→关联加工项→验证',
     skill=Skill.PRODUCT,
-    difficulty=Difficulty.NORMAL,
-    user_inputs=['搜索窗帘', '看看第一个的详情', '把价格改成 199', '给它加上S钩安装', '再看看这个商品的详情确认一下'],
-    expectations=['product_search', 'product_detail(product_id=1)', 'product_update(price=199)', 'product_processing_item_manage(action=add)', 'product_detail'],
+    difficulty=Difficulty.SMOKE,
+    user_inputs=['搜索窗帘', '看看第一个的详情', '把价格改成 198', '给它加上S钩安装', '再看看这个商品的详情确认一下'],
+    expectations=['product_search', 'product_detail(product_id=1)', 'product_update(price=198)', 'product_processing_item_manage(action=add)', 'product_detail'],
     data_checks=['第3轮 product_id 来自第2轮结果', '第4轮 product_id 来自第2轮结果', '全程未重新 product_search 查同一个商品'],
     skip_reason='',
-    tags=['multi_turn', 'single_skill', 'full_lifecycle', 'id_reuse'],
+    tags=['multi_turn', 'single_skill', 'full_lifecycle', 'id_reuse', 'smoke'],
 )
 
 # ── PR-011 [NORMAL] 创建商品完整引导流程 - AI 主导收集信息（源: cases/product.yml）──
