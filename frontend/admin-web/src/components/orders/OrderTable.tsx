@@ -226,13 +226,14 @@ export default function OrderTable({
                         </div>
                       </div>
                     ) : (
-                      <span className="text-gray-400">-</span>
+                      <span className="text-gray-400">暂无数据</span>
                     )}
                   </td>
 
                   {/* 采购明细（名称 : 规格 : 单价 : 数量 : 加工费） */}
                   <td className="px-4 py-4 min-w-[280px]">
-                    <div className="space-y-1.5">
+                    {order.items?.length || order.processingItems?.length ? (
+                      <div className="space-y-1.5">
                       {order.items?.map((item) => {
                         const pi = (item as any).processingInfo
                         const fee = pi?.totalAmount || pi?.totalFee || 0
@@ -260,7 +261,10 @@ export default function OrderTable({
                           {' = '}<span className="font-mono">{formatNumber(proc.amount)}</span>元
                         </div>
                       ))}
-                    </div>
+                      </div>
+                    ) : (
+                      <span className="text-gray-400">暂无数据</span>
+                    )}
                   </td>
 
                   {/* 累计金额 */}

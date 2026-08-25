@@ -1,3 +1,4 @@
+// case_ids: UI-002
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 
@@ -136,6 +137,26 @@ describe('RecentOrders', () => {
   it('renders status badge for 已关闭 (closed)', () => {
     render(<RecentOrders orders={mockOrders} />)
     expect(screen.getByText('已关闭')).toBeInTheDocument()
+  })
+
+  // --- Status chips (semantic tones) ---
+  it('renders status as semantic chips — closed uses neutral, not Badge default', () => {
+    render(<RecentOrders orders={mockOrders} />)
+    const closedChip = screen.getByText('已关闭')
+    expect(closedChip.className).toContain('bg-neutral-100')
+    expect(closedChip.className).not.toContain('bg-gray-50')
+  })
+
+  it('renders status as semantic chips — completed uses emerald success', () => {
+    render(<RecentOrders orders={mockOrders} />)
+    const completedChip = screen.getByText('已完成')
+    expect(completedChip.className).toContain('bg-emerald-50')
+  })
+
+  it('renders status as semantic chips — pending_payment uses amber warning', () => {
+    render(<RecentOrders orders={mockOrders} />)
+    const pendingChip = screen.getByText('待付款')
+    expect(pendingChip.className).toContain('bg-amber-50')
   })
 
   // --- Time formatting ---

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+// case_ids: UI-002
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import OrderStatusBadge from '@/components/orders/OrderStatusBadge'
@@ -36,25 +37,41 @@ describe('OrderStatusBadge Component', () => {
     expect(dot?.className).toContain('h-1.5')
   })
 
-  it('renders pending_payment with amber styles', () => {
+  it('renders pending_payment with amber (warning) styles', () => {
     render(<OrderStatusBadge status="pending_payment" />)
     const badge = screen.getByText('待付款')
     expect(badge.className).toContain('bg-amber-50')
-    expect(badge.className).toContain('text-amber-700')
   })
 
-  it('renders shipped with indigo styles', () => {
+  it('renders shipped with primary (info) chip, not legacy indigo', () => {
     render(<OrderStatusBadge status="shipped" />)
     const badge = screen.getByText('已发货')
-    expect(badge.className).toContain('bg-indigo-50')
-    expect(badge.className).toContain('text-indigo-700')
+    expect(badge.className).toContain('bg-primary-50')
+    expect(badge.className).not.toContain('bg-indigo-50')
+    expect(badge.className).not.toContain('text-indigo-')
   })
 
-  it('renders completed with green styles', () => {
+  it('renders closed with neutral chip, not legacy gray', () => {
+    render(<OrderStatusBadge status="closed" />)
+    const badge = screen.getByText('已关闭')
+    expect(badge.className).toContain('bg-neutral-100')
+    expect(badge.className).not.toContain('bg-gray-50')
+  })
+
+  it('renders completed with emerald (success) chip', () => {
     render(<OrderStatusBadge status="completed" />)
     const badge = screen.getByText('已完成')
-    expect(badge.className).toContain('bg-green-50')
-    expect(badge.className).toContain('text-green-700')
+    expect(badge.className).toContain('bg-emerald-50')
+  })
+
+  it('never renders legacy blue/indigo/green/gray color classes', () => {
+    render(<OrderStatusBadge status="pending_shipment" />)
+    const badge = screen.getByText('待发货')
+    expect(badge.className).not.toContain('bg-blue-')
+    expect(badge.className).not.toContain('bg-indigo-')
+    expect(badge.className).not.toContain('text-indigo-')
+    expect(badge.className).not.toContain('bg-green-')
+    expect(badge.className).not.toContain('bg-gray-')
   })
 
   it('calls onClick when clicked', () => {

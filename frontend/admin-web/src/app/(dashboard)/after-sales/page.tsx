@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Plus, Search, RotateCcw, FileText, ExternalLink } from 'lucide-react'
 import { toast } from 'sonner'
 import { afterSalesApi, orderApi } from '@/lib/api'
-import { Pagination, Modal, Button, Input, Select, Badge } from '@/components/ui'
+import { Pagination, Modal, Button, Input, Select, Badge, StatusBadge } from '@/components/ui'
 import type {
   AfterSalesTicket,
   AfterSalesStatus,
@@ -15,13 +15,12 @@ import type {
   Order,
 } from '@/types'
 import {
-  AfterSalesStatusLabels,
-  AfterSalesStatusColors,
   AfterSalesTypeLabels,
   AfterSalesPriorityLabels,
 } from '@/types'
 import { cn } from '@/lib/utils'
 import DateTimeCell from '@/components/common/DateTimeCell'
+import { afterSalesStatusChipFor, chipToneClasses } from '@/lib/status-chip'
 
 // 状态 Tab 配置
 const statusTabs: { key: AfterSalesStatus | ''; label: string }[] = [
@@ -179,18 +178,6 @@ export default function AfterSalesPage() {
     setNewPriority('normal')
   }
 
-  // 状态 Badge 变体映射
-  const getStatusVariant = (status: AfterSalesStatus) => {
-    const map: Record<string, 'success' | 'warning' | 'error' | 'default' | 'info'> = {
-      pending: 'warning',
-      processing: 'info',
-      resolved: 'success',
-      rejected: 'error',
-      closed: 'default',
-    }
-    return map[status] || 'default'
-  }
-
   // 售后类型 Badge
   const getTypeVariant = (type: AfterSalesType) => {
     const map: Record<string, 'success' | 'warning' | 'error' | 'default' | 'info'> = {
@@ -332,9 +319,10 @@ export default function AfterSalesPage() {
                       </Badge>
                     </td>
                     <td className="px-4 py-3">
-                      <Badge variant={getStatusVariant(ticket.status)}>
-                        {AfterSalesStatusLabels[ticket.status] || ticket.status}
-                      </Badge>
+                      {(() => {
+                        const chip = afterSalesStatusChipFor(ticket.status)
+                        return <StatusBadge label={chip.label} color={chipToneClasses[chip.tone]} />
+                      })()}
                     </td>
                     <td className="px-4 py-3">
                       {ticket.priority ? (
