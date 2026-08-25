@@ -6,6 +6,7 @@
   2. admin-api 直接查询确认数据变更已持久化
   3. 必要时恢复数据（cleanup）
 """
+# case_ids: PR-008, PR-009, PR-011, PR-012, OR-008, OR-010
 import time
 import pytest
 from tests.e2e.real.conftest import (
@@ -23,10 +24,11 @@ class TestOrderWrite:
     def test_order_create_with_processing_info(self, sess):
         """创建订单 → admin-api 验证订单已持久化"""
         name_hint = f"E2E订单_{TS}"
-        # R1: 搜商品
-        sess.send("帮我查一下有哪些窗帘商品")
-        # R2: 创建（直接用商品名，LLM 在上一轮已拿到数据）
-        sess.send(f"创建订单 {name_hint} 13800001111，第一个窗帘 1件 99元")
+        # R1: 搜商品（明确商品名，避免"第一个窗帘"模糊指代导致 LLM 确认卡顿）
+        sess.send("帮我查一下米白色遮光窗帘")
+        # R2: 创建（单价由 LLM 从商品详情获取；多 SKU 商品需选售卖方式）
+        sess.send(f"创建订单 {name_hint} 13800001111，米白色遮光窗帘 1件")
+        sess.send("选1")  # 多 SKU 商品先选售卖方式（散剪/整卷）
         ev = confirm_and_execute(sess, "确认创建", "order_create")
         assert "order_create" in sse_tools(ev) or "order_manage" in sse_tools(ev), (
             f"应触发订单创建: {sse_tools(ev)}"
@@ -84,8 +86,10 @@ class TestProductWrite:
 
         sess.send(f"把 {target['name']} 的价格改成 {new_price}")
         # 给 LLM 两轮：先确认目标商品，再执行修改
+        # 工具选择：product_manage(update) 或专用 product_update 均能完成改价（业务结果由下方 admin-api 校验）
         ev = confirm_and_execute(sess, "确认修改，立即执行", "product_manage")
-        assert "product_manage" in sse_tools(ev), f"tools: {sse_tools(ev)}"
+        assert ("product_manage" in sse_tools(ev)
+                or "product_update" in sse_tools(ev)), f"tools: {sse_tools(ev)}"
 
         time.sleep(1)
         detail = admin_get(f"/api/admin/products/{target['id']}")

@@ -3,6 +3,7 @@
 
 每个测试: 对话 → LLM → tool → 双端验证 (SSE 内容 + admin-api 数据一致)
 """
+# case_ids: PR-001, PR-003, OR-001, CU-001, HR-001, HR-004, AS-001, CR-001, PP-001
 import pytest
 from tests.e2e.real.conftest import (
     Session, admin_get, admin_search_products, sse_text, sse_tools, sse_results
@@ -266,7 +267,10 @@ class TestQueryTools:
     def test_processing_item_manage_list(self, sess):
         """加工项管理列表 → 验证含加工项分类"""
         ev = sess.send("加工项分类有哪些")
-        assert "processing_item_manage" in sse_tools(ev), f"tools: {sse_tools(ev)}"
+        # 查询类：LLM 可选专用查询工具 processing_item_query（只读，支持分类筛选）
+        # 或管理工具 processing_item_manage（list_categories）——两者都能完成业务目标
+        assert ("processing_item_manage" in sse_tools(ev)
+                or "processing_item_query" in sse_tools(ev)), f"tools: {sse_tools(ev)}"
         text = sse_text(ev)
 
         pi = admin_get("/api/admin/processing-items", {"page": 1, "size": 10})
