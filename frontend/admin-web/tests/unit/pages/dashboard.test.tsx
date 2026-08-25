@@ -1,3 +1,4 @@
+// case_ids: UI-002
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 
@@ -296,6 +297,39 @@ describe('DashboardPage', () => {
     render(<DashboardPage />)
     await waitFor(() => {
       expect(screen.getByText('暂无排行数据')).toBeInTheDocument()
+    })
+  })
+
+  // ── #2537 密度治理：表头「日涨」不截断 + 订单趋势 x 轴降采样 ──
+
+  it('商品销量排行表头「日涨」列 whitespace-nowrap 不截断', async () => {
+    render(<DashboardPage />)
+    await waitFor(() => {
+      const th = screen.getByText('日涨')
+      expect(th.tagName).toBe('TH')
+      expect(th.className).toContain('whitespace-nowrap')
+    })
+  })
+
+  it('订单趋势 30 天数据 x 轴刻度自动降采样（标签数 ≤ 7，不密集重叠）', async () => {
+    mockGetOrderTrend.mockResolvedValue({
+      data: {
+        data: Array.from({ length: 30 }, (_, i) => ({
+          date: `2026-06-${String(30 - i).padStart(2, '0')}`,
+          orders: i + 1,
+        })),
+      },
+    })
+    const { container } = render(<DashboardPage />)
+    await waitFor(() => {
+      expect(screen.getByText('订单趋势')).toBeInTheDocument()
+    })
+    await waitFor(() => {
+      const dateLabels = Array.from(container.querySelectorAll('svg text')).filter(
+        (el) => el.textContent?.match(/^\d{2}-\d{2}$/)
+      )
+      expect(dateLabels.length).toBeGreaterThan(0)
+      expect(dateLabels.length).toBeLessThanOrEqual(7)
     })
   })
 
