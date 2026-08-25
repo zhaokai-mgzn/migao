@@ -2,22 +2,13 @@
 
 import Link from 'next/link'
 import { ArrowRight } from 'lucide-react'
-import Badge from '@/components/ui/Badge'
-import type { Order, OrderStatus } from '@/types'
-import { OrderStatusLabels } from '@/types'
+import StatusBadge from '@/components/ui/StatusBadge'
+import type { Order } from '@/types'
+import { chipToneClasses, orderStatusChipFor } from '@/lib/status-chip'
 
 interface RecentOrdersProps {
   orders: Order[]
   loading?: boolean
-}
-
-const statusVariantMap: Record<OrderStatus, 'warning' | 'info' | 'default' | 'success' | 'error'> = {
-  pending_payment: 'warning',
-  pending_shipment: 'info',
-  shipped: 'info',
-  completed: 'success',
-  closed: 'default',
-  refund: 'error',
 }
 
 function formatAmount(amount: number): string {
@@ -65,27 +56,28 @@ export default function RecentOrders({ orders, loading }: RecentOrdersProps) {
               </tr>
             </thead>
             <tbody>
-              {orders.map((order) => (
-                <tr key={order.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/50">
-                  <td className="py-2.5 px-2">
-                    <Link href={`/orders/${order.id}`} className="text-primary-600 hover:underline font-mono text-xs">
-                      {order.orderNo}
-                    </Link>
-                  </td>
-                  <td className="py-2.5 px-2 text-gray-700">{order.customerName}</td>
-                  <td className="py-2.5 px-2 text-right font-medium text-gray-900 tabular-nums">
-                    {formatAmount(order.totalAmount)}
-                  </td>
-                  <td className="py-2.5 px-2 text-center">
-                    <Badge variant={statusVariantMap[order.status]}>
-                      {OrderStatusLabels[order.status]}
-                    </Badge>
-                  </td>
-                  <td className="py-2.5 px-2 text-right text-gray-400 text-xs tabular-nums">
-                    {formatTime(order.createdAt)}
-                  </td>
-                </tr>
-              ))}
+              {orders.map((order) => {
+                const chip = orderStatusChipFor(order.status)
+                return (
+                  <tr key={order.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/50">
+                    <td className="py-2.5 px-2">
+                      <Link href={`/orders/${order.id}`} className="text-primary-600 hover:underline font-mono text-xs">
+                        {order.orderNo}
+                      </Link>
+                    </td>
+                    <td className="py-2.5 px-2 text-gray-700">{order.customerName}</td>
+                    <td className="py-2.5 px-2 text-right font-medium text-gray-900 tabular-nums">
+                      {formatAmount(order.totalAmount)}
+                    </td>
+                    <td className="py-2.5 px-2 text-center">
+                      <StatusBadge label={chip.label} color={chipToneClasses[chip.tone]} />
+                    </td>
+                    <td className="py-2.5 px-2 text-right text-gray-400 text-xs tabular-nums">
+                      {formatTime(order.createdAt)}
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
