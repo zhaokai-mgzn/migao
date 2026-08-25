@@ -1,0 +1,18 @@
+schema: "page-spec/1.0"
+name: dashboard
+domain: data
+path: /dashboard
+tier: smoke
+truths_ref:
+  - dashboard-ui.tokens
+  - dashboard-ui.insight-bar
+  - dashboard-ui.no-truncate
+  - dashboard-ui.axis-sampling
+  - dashboard-ui.status-chips
+  - dashboard-ui.no-overflow
+required_texts:
+  - 数据看板
+  - 今日经营速览
+  - 订单环比
+  - 含加工占比
+  - 低库存预警

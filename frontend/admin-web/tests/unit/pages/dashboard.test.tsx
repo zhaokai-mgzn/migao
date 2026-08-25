@@ -1,5 +1,9 @@
+// case_ids: DA-005
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import path from 'node:path'
 
 // Mock request (for /api/admin/orders/statistics)
 const mockRequestGet = vi.fn()
@@ -407,5 +411,43 @@ describe('DashboardPage', () => {
       const refreshIcon = screen.getByTestId('icon-refresh-cw')
       expect(refreshIcon).toBeInTheDocument()
     })
+  })
+
+  // ── #2532 织物质感改版：米宝「今日经营速览」洞察条 ──
+
+  it('should render 米宝「今日经营速览」洞察条（订单环比/含加工占比/低库存预警）', async () => {
+    render(<DashboardPage />)
+    await waitFor(() => {
+      expect(screen.getByText('今日经营速览')).toBeInTheDocument()
+      expect(screen.getByText(/订单环比/)).toBeInTheDocument()
+      expect(screen.getByText(/含加工占比/)).toBeInTheDocument()
+      expect(screen.getByText(/低库存预警/)).toBeInTheDocument()
+    })
+  })
+
+  it('should render dashboard root with warm neutral background', async () => {
+    const { container } = render(<DashboardPage />)
+    await waitFor(() => {
+      expect(screen.getByText('数据看板')).toBeInTheDocument()
+    })
+    const root = container.firstElementChild as HTMLElement
+    expect(root.className).toMatch(/bg-neutral-50|bg-\[#faf7f2\]/)
+  })
+})
+
+// ── #2532 织物质感改版：设计 token 治理（tailwind.config.ts）──
+
+describe('Dashboard design tokens (#2532)', () => {
+  const adminWebRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../')
+  const tailwindSource = readFileSync(path.join(adminWebRoot, 'tailwind.config.ts'), 'utf-8')
+
+  it('tailwind.config.ts 定义主色靛蓝 #48618f / 点缀陶土 #c06a3e / 米白 #faf7f2', () => {
+    expect(tailwindSource).toContain('#48618f')
+    expect(tailwindSource).toContain('#c06a3e')
+    expect(tailwindSource).toContain('#faf7f2')
+  })
+
+  it('tailwind.config.ts 不再包含默认蓝 #3b82f6', () => {
+    expect(tailwindSource).not.toContain('#3b82f6')
   })
 })

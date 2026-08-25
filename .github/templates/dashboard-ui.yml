@@ -1,0 +1,26 @@
+name: dashboard-ui
+description: 经营看板「织物质感」改版（样板页，#2532）
+red_flags: [2532]
+
+business_truths:
+  - [dashboard-ui.tokens] 页面底色=暖米白 #faf7f2；主色=靛蓝 #48618f；点缀=陶土 #c06a3e（替换默认蓝）
+  - [dashboard-ui.insight-bar] 经营看板顶部含米宝「今日经营速览」洞察条（订单环比/含加工占比/低库存预警）
+  - [dashboard-ui.no-truncate] 商品销量排行表头「日涨」列在 1440×900 与 1280×800 均无截断
+  - [dashboard-ui.axis-sampling] 订单趋势图 x 轴刻度在 1280 宽度下降采样，不密集重叠
+  - [dashboard-ui.status-chips] 订单/售后状态用语义色 chips；空态显示「暂无数据」，禁止整列 '-' 占位
+  - [dashboard-ui.no-overflow] 页面在 1440×900 与 1280×800 两视口无截断/溢出
+
+primary_specs:
+  - tests/e2e/specs/dashboard/dashboard.spec.ts
+  - frontend/admin-web/tests/unit/pages/dashboard.test.tsx
+  - frontend/admin-web/tests/unit/lib/status-chip.test.ts
+  - frontend/admin-web/tests/unit/lib/axis-sampling.test.ts
+
+confidence_required: 100%
+
+common_pitfalls:
+  - 默认蓝 #3b82f6 / blue 系残留（token 未全量替换）
+  - x 轴刻度在 1280 宽度下密集重叠（未降采样）
+  - 表头「日涨」列被 CSS 截断（缺 whitespace-nowrap）
+  - 空态整列 '-' 占位或 [object Object]/NaN
+  - 洞察条缺失或不在页面顶部（米宝 AI 洞察未一等公民）

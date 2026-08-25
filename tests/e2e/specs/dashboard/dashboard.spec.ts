@@ -1,3 +1,4 @@
+// case_ids: DA-005
 import { test, expect } from '@playwright/test'
 // auth 由全局 auth-setup 项目提供
 
@@ -403,4 +404,91 @@ test.describe('仪表盘空数据状态', () => {
     await expect(page.getByText('今日销售额')).toBeVisible()
     await expect(page.getByText('本月销售额')).toBeVisible()
   })
+})
+
+// #2532 织物质感改版：米宝洞察条 + 语义色 chips + 多视口数据可读性
+test.describe('经营看板织物质感改版 (#2532)', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.route('**/api/auth/me', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { id: '1', username: 'admin', name: '管理员', roles: ['admin'], tenantId: 1 } }) })
+    })
+    await page.route('**/api/auth/refresh', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { accessToken: 'e2e-refreshed', refreshToken: 'e2e-refresh' } }) })
+    })
+    await page.route('**/api/admin/dashboard/pending-shipment-count', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 200, data: 20 }) })
+    })
+    await page.route('**/api/admin/dashboard/processing-shipment-count', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 200, data: 5 }) })
+    })
+    await page.route('**/api/admin/products/low-stock-by-color*', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 200, data: [] }) })
+    })
+    await mockDashboardApis(page)
+    await page.goto('/dashboard')
+    await expect(page.getByRole('heading', { name: '数据看板' })).toBeVisible({ timeout: 20_000 })
+    await expect(page.locator('.animate-pulse')).toHaveCount(0, { timeout: 10_000 })
+  })
+
+  test('米宝「今日经营速览」洞察条必现：订单环比/含加工占比/低库存预警', async ({ page }) => {
+    await expect(page.getByTestId('mibao-insight-bar')).toBeVisible()
+    await expect(page.getByText('今日经营速览')).toBeVisible()
+    await expect(page.getByText('订单环比')).toBeVisible()
+    await expect(page.getByText('含加工占比')).toBeVisible()
+    await expect(page.getByText('低库存预警')).toBeVisible()
+  })
+
+  test('订单状态语义色 chips，无 "-" 整列占位 / [object Object] / NaN', async ({ page }) => {
+    await expect(page.getByText('近期订单')).toBeVisible()
+    await expect(page.getByText('已完成').first()).toBeVisible()
+    // 页面不出现整列 '-' 占位、[object Object]、NaN
+    const dashCellCount = await page.locator('td, th').evaluateAll(
+      (cells) => cells.filter((c) => (c.textContent || '').trim() === '-').length,
+    )
+    expect(dashCellCount).toBe(0)
+    const bodyText = await page.locator('body').innerText()
+    expect(bodyText).not.toContain('[object Object]')
+    expect(bodyText).not.toContain('NaN')
+  })
+
+  for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 800 }]) {
+    test(`多视口 ${viewport.width}×${viewport.height}：无横向溢出 + 表头「日涨」无截断`, async ({ page }) => {
+      await page.setViewportSize(viewport)
+      await page.goto('/dashboard')
+      await expect(page.getByRole('heading', { name: '数据看板' })).toBeVisible({ timeout: 20_000 })
+      await expect(page.locator('.animate-pulse')).toHaveCount(0, { timeout: 10_000 })
+
+      // 页面无横向溢出
+      const hasOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)
+      expect(hasOverflow).toBe(false)
+
+      // 商品销量排行表头「日涨」无截断
+      const dayHeader = page.getByRole('columnheader', { name: '日涨' })
+      await expect(dayHeader).toBeVisible()
+      const truncated = await dayHeader.evaluate((el) => el.scrollWidth > el.clientWidth)
+      expect(truncated).toBe(false)
+    })
+
+    test(`多视口 ${viewport.width}×${viewport.height}：订单趋势 x 轴刻度降采样不密集`, async ({ page }) => {
+      await page.setViewportSize(viewport)
+      await page.goto('/dashboard')
+      await expect(page.getByRole('heading', { name: '数据看板' })).toBeVisible({ timeout: 20_000 })
+      await expect(page.locator('.animate-pulse')).toHaveCount(0, { timeout: 10_000 })
+
+      // 切到近30天，触发密集刻度降采样
+      const btn30 = page.getByRole('button', { name: '近30天' })
+      const respPromise = page.waitForResponse(
+        (resp) => resp.url().includes('/dashboard/order-trend') && resp.url().includes('days=30'),
+        { timeout: 10_000 },
+      )
+      await btn30.click()
+      await respPromise
+      await expect(page.locator('.animate-pulse')).toHaveCount(0, { timeout: 10_000 })
+
+      // 采样后的日期刻度数量 ≤ 7（不密集重叠）
+      const tickCount = await page.locator('svg text').filter({ hasText: /^\d{2}-\d{2}$/ }).count()
+      expect(tickCount).toBeGreaterThan(0)
+      expect(tickCount).toBeLessThanOrEqual(7)
+    })
+  }
 })
