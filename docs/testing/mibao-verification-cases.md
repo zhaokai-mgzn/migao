@@ -62,6 +62,78 @@
 真值: aftersales-flow.status-enums, aftersales-flow.timeline, aftersales-flow.create-order-required
 溯源: eval M008 独有（售后全旅程） ｜ tags: multi_turn, cross_skill, real_scenario
 
+## agents（6 case）
+
+### AG-001. AgentResponse/AgentContext 数据结构 + _extract_msg_content think 剥离 🔵
+```
+你: ai-agent-service 构造 AgentResponse / AgentContext 并从 AIMessage 提取文本
+期望: direct_reply
+数据: AgentResponse 默认 type=text、tool_calls=None、metadata=None；type 枚举 text/tool_call/tool_result/suggestions/error
+数据: _extract_msg_content 移除 <think>...</think>（含多行），content 为 list 时仅拼接 type==text 的 text 块
+数据: AgentContext.to_dict 返回 6 字段；to_tool_context 透传 tenant_id/user_id/session_id/role
+跳过: dataclass/纯函数由 pytest 单测验证（tests/test_customer_service_agent.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: ai-chat.agent-response, ai-chat.extract-msg-content, ai-chat.agent-context
+溯源: 2026-08-25 新增：ai-agent-service agents-customer_service_agent 覆盖率补全（issue #2429） ｜ tags: agents, data_contract, message_extraction
+
+### AG-002. BaseAgent 组装与对话历史转换（__init__ 双分支 + 多模态 history） 🔵
+```
+你: ai-agent-service 初始化 BaseAgent 并转换多模态对话历史
+期望: direct_reply
+数据: __init__ 调 get_agent_config+build_agent_graph；tool_registry=None→create_default_registry()，非 None→用传入实例
+数据: _convert_history user 普通→HumanMessage；mixed+images→多模态 content list；assistant→AIMessage；其他 role 忽略
+跳过: 组装/纯函数由 pytest 单测验证（tests/test_customer_service_agent.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: ai-chat.base-agent-init, ai-chat.convert-history
+溯源: 2026-08-25 新增：ai-agent-service agents-customer_service_agent 覆盖率补全（issue #2429） ｜ tags: agents, history, multimodal
+
+### AG-003. _build_initial_state plan 优先 + 18 键 state 透传 🔵
+```
+你: ai-agent-service 构建 LangGraph 初始 state（含 plan state 恢复）
+期望: direct_reply
+数据: plan state 存在 skill_name 非空→pending_interact_skill=skill_name；否则读 get_pending_skill
+数据: SessionMemory 异常→warning 且 pending_interact_skill=''，不向上抛
+数据: 返回完整 18 键 state dict（messages/agent_type/tenant_id/user_id/user_name/session_id/role/.../pending_interact_skill）
+跳过: 异步状态构造由 pytest 单测验证（tests/test_customer_service_agent.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: ai-chat.initial-state-plan, ai-chat.initial-state-18keys
+溯源: 2026-08-25 新增：ai-agent-service agents-customer_service_agent 覆盖率补全（issue #2429） ｜ tags: agents, state, plan_routing
+
+### AG-004. achat 非流式对话 - final_answer 返回 + 异常友好兜底 🔵
+```
+你: ai-agent-service 非流式对话（graph.ainvoke 返回 final_answer / 抛异常）
+期望: direct_reply
+数据: graph.ainvoke 返回 final_answer→AgentResponse(type=text, content=final_answer)
+数据: 抛异常→AgentResponse(type=error, content 含'稍后重试')
+跳过: 异步对话由 pytest 单测验证（tests/test_customer_service_agent.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: ai-chat.achat
+溯源: 2026-08-25 新增：ai-agent-service agents-customer_service_agent 覆盖率补全（issue #2429） ｜ tags: agents, chat, error_fallback
+
+### AG-005. astream_chat 流式事件序列 - tool_call/tool_result/text/suggestions/error 🔵
+```
+你: ai-agent-service 流式对话（graph.astream 节点级更新）
+期望: direct_reply
+数据: AIMessage.tool_calls 先 yield tool_calls 前文本，再逐条 yield type=tool_call
+数据: ToolMessage 经 json.loads 解析（失败降级 {data: str(content)}），图执行完统一 yield type=tool_result
+数据: final_answer 有新内容→yield type=text；suggestions 非空→yield type=suggestions；异常→yield type=error（含异常类名）
+跳过: 异步流式对话由 pytest 单测验证（tests/test_customer_service_agent.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: ai-chat.astream-tool-calls, ai-chat.astream-tool-result, ai-chat.astream-text-suggestion
+溯源: 2026-08-25 新增：ai-agent-service agents-customer_service_agent 覆盖率补全（issue #2429） ｜ tags: agents, streaming, tool_result
+
+### AG-006. get_greeting/get_agent 单例/reset_agent/兼容别名 🔵
+```
+你: ai-agent-service 获取欢迎语 / 单例 Agent / 重置 / 兼容别名
+期望: direct_reply
+数据: get_greeting 优先 get_direct_reply('greeting') 回退 config.greeting
+数据: get_agent 同 agent_type 二次调用返回同一实例，不同 agent_type 返回不同实例；reset_agent 后重建并调 reset_agent_intents_cache
+数据: CustomerServiceAgent→xiaobu / WorkAssistantAgent→mibao 别名映射
+跳过: 工厂/单例/别名由 pytest 单测验证（tests/test_customer_service_agent.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: ai-chat.agent-factory
+溯源: 2026-08-25 新增：ai-agent-service agents-customer_service_agent 覆盖率补全（issue #2429） ｜ tags: agents, factory, alias
+
 ## 分类域（3 case）
 
 ### CT-001. 分类树 🔵
@@ -1018,9 +1090,10 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：86（活跃 82，跳过 4）
-- tier 分布：smoke 9 / normal 50 / adversarial 27
+- 用例总数：92（活跃 82，跳过 10）
+- tier 分布：smoke 9 / normal 56 / adversarial 27
 - 售后域：5
+- agents：6
 - 分类域：3
 - 对话边界域：7
 - 跨域：3

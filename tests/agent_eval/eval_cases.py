@@ -109,6 +109,90 @@ _CASE_AS_005 = EvalCase(
     tags=['multi_turn', 'cross_skill', 'real_scenario'],
 )
 
+# ── AG-001 [NORMAL] AgentResponse/AgentContext 数据结构 + _extract_msg_content think 剥离（源: cases/agents.yml）──
+_CASE_AG_001 = EvalCase(
+    id='AG-001',
+    legacy_id='',
+    title='AgentResponse/AgentContext 数据结构 + _extract_msg_content think 剥离',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 构造 AgentResponse / AgentContext 并从 AIMessage 提取文本'],
+    expectations=['direct_reply'],
+    data_checks=['AgentResponse 默认 type=text、tool_calls=None、metadata=None；type 枚举 text/tool_call/tool_result/suggestions/error', '_extract_msg_content 移除 <think>...</think>（含多行），content 为 list 时仅拼接 type==text 的 text 块', 'AgentContext.to_dict 返回 6 字段；to_tool_context 透传 tenant_id/user_id/session_id/role'],
+    skip_reason='dataclass/纯函数由 pytest 单测验证（tests/test_customer_service_agent.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['agents', 'data_contract', 'message_extraction'],
+)
+
+# ── AG-002 [NORMAL] BaseAgent 组装与对话历史转换（__init__ 双分支 + 多模态 history）（源: cases/agents.yml）──
+_CASE_AG_002 = EvalCase(
+    id='AG-002',
+    legacy_id='',
+    title='BaseAgent 组装与对话历史转换（__init__ 双分支 + 多模态 history）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 初始化 BaseAgent 并转换多模态对话历史'],
+    expectations=['direct_reply'],
+    data_checks=['__init__ 调 get_agent_config+build_agent_graph；tool_registry=None→create_default_registry()，非 None→用传入实例', '_convert_history user 普通→HumanMessage；mixed+images→多模态 content list；assistant→AIMessage；其他 role 忽略'],
+    skip_reason='组装/纯函数由 pytest 单测验证（tests/test_customer_service_agent.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['agents', 'history', 'multimodal'],
+)
+
+# ── AG-003 [NORMAL] _build_initial_state plan 优先 + 18 键 state 透传（源: cases/agents.yml）──
+_CASE_AG_003 = EvalCase(
+    id='AG-003',
+    legacy_id='',
+    title='_build_initial_state plan 优先 + 18 键 state 透传',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 构建 LangGraph 初始 state（含 plan state 恢复）'],
+    expectations=['direct_reply'],
+    data_checks=['plan state 存在 skill_name 非空→pending_interact_skill=skill_name；否则读 get_pending_skill', "SessionMemory 异常→warning 且 pending_interact_skill=''，不向上抛", '返回完整 18 键 state dict（messages/agent_type/tenant_id/user_id/user_name/session_id/role/.../pending_interact_skill）'],
+    skip_reason='异步状态构造由 pytest 单测验证（tests/test_customer_service_agent.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['agents', 'state', 'plan_routing'],
+)
+
+# ── AG-004 [NORMAL] achat 非流式对话 - final_answer 返回 + 异常友好兜底（源: cases/agents.yml）──
+_CASE_AG_004 = EvalCase(
+    id='AG-004',
+    legacy_id='',
+    title='achat 非流式对话 - final_answer 返回 + 异常友好兜底',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 非流式对话（graph.ainvoke 返回 final_answer / 抛异常）'],
+    expectations=['direct_reply'],
+    data_checks=['graph.ainvoke 返回 final_answer→AgentResponse(type=text, content=final_answer)', "抛异常→AgentResponse(type=error, content 含'稍后重试')"],
+    skip_reason='异步对话由 pytest 单测验证（tests/test_customer_service_agent.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['agents', 'chat', 'error_fallback'],
+)
+
+# ── AG-005 [NORMAL] astream_chat 流式事件序列 - tool_call/tool_result/text/suggestions/error（源: cases/agents.yml）──
+_CASE_AG_005 = EvalCase(
+    id='AG-005',
+    legacy_id='',
+    title='astream_chat 流式事件序列 - tool_call/tool_result/text/suggestions/error',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 流式对话（graph.astream 节点级更新）'],
+    expectations=['direct_reply'],
+    data_checks=['AIMessage.tool_calls 先 yield tool_calls 前文本，再逐条 yield type=tool_call', 'ToolMessage 经 json.loads 解析（失败降级 {data: str(content)}），图执行完统一 yield type=tool_result', 'final_answer 有新内容→yield type=text；suggestions 非空→yield type=suggestions；异常→yield type=error（含异常类名）'],
+    skip_reason='异步流式对话由 pytest 单测验证（tests/test_customer_service_agent.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['agents', 'streaming', 'tool_result'],
+)
+
+# ── AG-006 [NORMAL] get_greeting/get_agent 单例/reset_agent/兼容别名（源: cases/agents.yml）──
+_CASE_AG_006 = EvalCase(
+    id='AG-006',
+    legacy_id='',
+    title='get_greeting/get_agent 单例/reset_agent/兼容别名',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 获取欢迎语 / 单例 Agent / 重置 / 兼容别名'],
+    expectations=['direct_reply'],
+    data_checks=["get_greeting 优先 get_direct_reply('greeting') 回退 config.greeting", 'get_agent 同 agent_type 二次调用返回同一实例，不同 agent_type 返回不同实例；reset_agent 后重建并调 reset_agent_intents_cache', 'CustomerServiceAgent→xiaobu / WorkAssistantAgent→mibao 别名映射'],
+    skip_reason='工厂/单例/别名由 pytest 单测验证（tests/test_customer_service_agent.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['agents', 'factory', 'alias'],
+)
+
 # ── CT-001 [NORMAL] 分类树（源: cases/category.yml）──
 _CASE_CT_001 = EvalCase(
     id='CT-001',
@@ -1249,6 +1333,12 @@ ALL_CASES = (
     _CASE_AS_003,
     _CASE_AS_004,
     _CASE_AS_005,
+    _CASE_AG_001,
+    _CASE_AG_002,
+    _CASE_AG_003,
+    _CASE_AG_004,
+    _CASE_AG_005,
+    _CASE_AG_006,
     _CASE_CT_001,
     _CASE_CT_002,
     _CASE_CT_003,
