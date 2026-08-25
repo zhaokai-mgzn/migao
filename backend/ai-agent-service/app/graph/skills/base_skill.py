@@ -496,6 +496,26 @@ def _is_explicit_confirmation(text: str) -> bool:
     return False
 
 
+def _requires_confirmation(tool, tool_args: dict, last_user_msg: str) -> bool:
+    """判断本次 tool 调用是否需要用户明确确认。
+
+    规则：
+    - 非 destructive 工具 → 永不要求确认
+    - destructive 工具 + action ∈ tool.read_only_actions（纯只读，如 list/detail/tree）
+      → 免确认；否则与 _is_explicit_confirmation 一致，须用户明确确认。
+    修复背景：customer/employee/role/category 等 destructive 工具含删除能力，
+    但 list/detail 等 action 是只读查询，此前一律强制确认导致只读查询被
+    confirmation_required 拦截（E2E Real 持续失败）。
+    """
+    if not getattr(tool, "destructive", False):
+        return False
+    action = str(tool_args.get("action") or tool_args.get("operation") or tool_args.get("op") or "")
+    read_only_actions = getattr(tool, "read_only_actions", frozenset()) or frozenset()
+    if action and action in read_only_actions:
+        return False
+    return not _is_explicit_confirmation(last_user_msg)
+
+
 async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -> tuple:
     """统一 Tool 执行入口 — normalize + cache + execute + error handling.
 
@@ -989,7 +1009,8 @@ async def execute_skill(
                         logger.warning(f"[{skill_name}] Tool not found: {tool_name} | session={session_id}")
                         return tool_call, json.dumps({"success": False, "error": "tool_not_found", "message": f"工具 {tool_name} 不可用"}, ensure_ascii=False), {"success": False}
                     # 破坏性写操作：必须经用户明确确认（代码层兜底，防提示注入触发不可逆操作）
-                    if getattr(tool, "destructive", False) and not _is_explicit_confirmation(last_user_msg):
+                    # 豁免：action ∈ tool.read_only_actions 的纯只读调用（list/detail/tree 等）
+                    if _requires_confirmation(tool, args, last_user_msg):
                         logger.warning(
                             f"[{skill_name}] 拦截未确认的破坏性操作 {tool_name} | session={session_id} "
                             f"last_msg={last_user_msg[:30]!r}"

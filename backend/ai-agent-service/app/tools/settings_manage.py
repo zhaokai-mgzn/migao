@@ -41,6 +41,7 @@ class SettingsManageTool(BaseTool):
 
     read_only = False
     destructive = True   # 可修改关键系统配置/AI配置/密码
+    read_only_actions = {"get_settings", "get_ai_config", "login_logs"}  # 只读 action 免确认拦截
     idempotent = False   # 配置修改非幂等
 
     parameters = {

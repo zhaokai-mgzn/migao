@@ -35,6 +35,7 @@ class CategoryManageTool(BaseTool):
 
     read_only = False
     destructive = True   # 可删除分类及子分类
+    read_only_actions = {"tree"}  # 只读 action 免确认拦截
     idempotent = False   # 创建/删除非幂等
 
     parameters = {
