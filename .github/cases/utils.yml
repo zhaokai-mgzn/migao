@@ -1,0 +1,66 @@
+# cases/utils.yml — 跨切面工具用例（utils 覆盖率分组，issue #2430）
+# 来源：issue #2430 coverage-gap 反推，2 条（field_mapper / database）
+# 均为纯函数/依赖注入单测契约，不进入 agent-eval 冒烟（skip_reason 显式标注）。
+
+schema: "case-contract/1.0"
+domain: utils
+
+cases:
+  - id: UT-001
+    legacy_id: ""
+    title: "跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值"
+    domains:
+      - utils
+    tier: normal
+    tags:
+      - utils
+      - field_mapping
+      - data_contract
+    truths_ref:
+      - utils.field-map
+      - utils.field-map-accessors
+    user_inputs:
+      - "admin-api 返回商品 {basePrice, mainImage, categoryId}，ai-agent-service 转 snake_case 后消费"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "java_to_python 把 basePrice→price / mainImage→main_image / categoryId→category_id，未知字段原样保留"
+      - "python_to_java 反向还原，自定义 mapping 生效"
+      - "get_price 兼容 price/basePrice（含 price=0 的 `or` 链语义）；get_main_image 兼容 mainImage/main_image/images[0]；get_category_id 兼容 categoryId/category_id"
+    skip_reason: "纯函数字段映射由 pytest 单测验证（tests/test_utils_field_mapper.py），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-08-25 新增：ai-agent-service utils 覆盖率补全（issue #2430）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_utils_field_mapper.py"
+      ci:
+        - ai-agent-tests.yml
+      verifies: []
+
+  - id: UT-002
+    legacy_id: ""
+    title: "数据库会话生命周期 - commit/rollback/close 与连接探活"
+    domains:
+      - utils
+    tier: normal
+    tags:
+      - utils
+      - database
+      - session_lifecycle
+    truths_ref:
+      - utils.db-session
+      - utils.db-lifecycle
+    user_inputs:
+      - "ai-agent-service 依赖注入获取 db session 执行查询"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "get_db_session 正常路径 commit、异常路径 rollback 后向上抛、finally close"
+      - "init_db SELECT 1 探活失败向上 raise；close_db dispose 连接池"
+    skip_reason: "DB 会话生命周期由 pytest 单测验证（tests/test_utils_database.py），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-08-25 新增：ai-agent-service utils 覆盖率补全（issue #2430）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_utils_database.py"
+      ci:
+        - ai-agent-tests.yml
+      verifies: []

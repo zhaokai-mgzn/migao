@@ -1,0 +1,27 @@
+name: utils
+description: ai-agent-service 跨切面工具（字段映射 / 数据库会话）— utils 覆盖率分组的真值域
+red_flags: []
+
+business_truths:
+  - [utils.field-map] FieldMapper 双向字段映射（admin-api Java camelCase ↔ ai-agent-service Python snake_case）：basePrice↔price、mainImage↔main_image、categoryId↔category_id、createdAt↔created_at、updatedAt↔updated_at、tenantId↔tenant_id、userId↔user_id、orderId↔order_id、orderNo↔order_no、customerId↔customer_id、productId↔product_id；不在映射表中的字段原样保留
+  - [utils.field-map-accessors] FieldMapper 兼容取值：get_price 用 `or` 链（price 为 0/None 时回退 basePrice）；get_main_image 优先 mainImage 回退 main_image 再回退 images[0]；get_category_id 优先 categoryId 回退 category_id
+  - [utils.db-session] get_db_session（SQLAlchemy async 依赖注入）：yield 后正常 commit；异常 rollback 后向上抛；finally close
+  - [utils.db-lifecycle] init_db 用 SELECT 1 探活，失败向上 raise；close_db 调用 engine.dispose 释放连接池；DEBUG 开关决定 NullPool/QueuePool
+
+primary_specs:
+  - backend/ai-agent-service/tests/test_utils_database.py
+  - backend/ai-agent-service/tests/test_utils_field_mapper.py
+
+reviewer_asserts:
+  - pytest: tests/test_utils_field_mapper.py
+    expect: 全部通过（双向映射 + 兼容取值 + 未知字段原样保留）
+  - pytest: tests/test_utils_database.py
+    expect: 全部通过（commit/rollback/close + SELECT 1 探活 + dispose）
+
+confidence_required: 100%
+
+common_pitfalls:
+  - get_price 用 `or` 链导致 price=0 被误判为缺失（回退 basePrice）——测试需覆盖 price=0 分支
+  - get_db_session 异常路径必须先 rollback 再向上抛，finally close 不得吞异常
+
+# ⚠️ 缺口: 无
