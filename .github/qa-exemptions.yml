@@ -53,6 +53,12 @@ exemptions:
   - pattern: "frontend/admin-web/src/components/orders/OrderTable.tsx"
     reason: "#1399: 仅将 dayjs.format() 替换为 DateTimeCell 组件调用，无交互逻辑变更。DateTimeCell 已有 10 tests 覆盖"
 
+  - pattern: "frontend/admin-web/src/components/orders/OrderStatusBadge.tsx"
+    reason: "#2539: 状态 chips 重构。已有 tests/unit/components/OrderStatusBadge.test.tsx（含六状态语义色 chips 断言）覆盖"
+
+  - pattern: "frontend/admin-web/src/components/dashboard/RecentOrders.tsx"
+    reason: "#2539: 状态 chips 重构。已有 tests/unit/components/dashboard/RecentOrders.test.tsx（含语义色 chips 断言）覆盖"
+
   - pattern: "frontend/admin-web/src/components/products/ProductTable.tsx"
     reason: "#1399: 仅将 formatDateTime() 替换为 DateTimeCell 组件调用，无交互逻辑变更。DateTimeCell 已有 10 tests 覆盖"
 
