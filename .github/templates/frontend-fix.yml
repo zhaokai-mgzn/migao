@@ -10,6 +10,8 @@ business_truths:
   - [frontend-fix.e2e] E2E 测试覆盖变更路径
   - [frontend-fix.layout] 涉及尺寸/长宽比/对齐/间距/溢出的 UI 变更，E2E 必须有几何断言（boundingBox/getComputedStyle），仅「元素存在/不存在」不算覆盖
   - [frontend-fix.ui-token] 织物质感设计 token：primary.500=#48618f（靛蓝主色）、accent.500=#c06a3e（陶土点缀）、neutral.50=#faf7f2（暖中性米白底）；primary/accent/neutral 三组各为完整 50-900 阶；src/ 下 .tsx/.ts 不再出现默认蓝 #3b82f6 十六进制字面量
+  - [frontend-fix.status-chip] 订单/售后状态用语义色 chips 表达：订单六状态（pending_payment→warning、pending_shipment/shipped→info、completed→success、closed→neutral、refund→error）、售后五状态（pending→warning、processing→info、resolved→success、rejected→error、closed→neutral），统一走 @/lib/status-chip 的 orderStatusChip/afterSalesStatusChip + chipToneClasses 渲染；组件内不再硬编码 bg-blue-50/bg-indigo-50/bg-green-50/bg-gray-50 旧色；未知/空状态回退 neutral 且 label 恒为「暂无数据」
+  - [frontend-fix.empty-state] 数据空态显示「暂无数据」，禁止整列 '-' 占位：OrderTable 采购明细列（items 为空）与采购商品列（无 firstItem）渲染「暂无数据」而非裸 '-'，整页无整列 '-' 占位
 
 primary_specs:
   - tests/e2e/specs/

@@ -38,6 +38,39 @@ cases:
         - pr-check.yml
       verifies: []
 
+  - id: UI-002
+    legacy_id: ""
+    title: "订单/售后状态语义色 chips + 数据空态「暂无数据」治理"
+    domains:
+      - ui
+      - frontend
+    tier: normal
+    tags:
+      - ui
+      - status-chip
+      - empty-state
+    truths_ref:
+      - frontend-fix.status-chip
+      - frontend-fix.empty-state
+    user_inputs:
+      - "订单/售后状态用语义色 chips 表达，数据空态显示暂无数据"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "OrderStatusBadge shipped 含 bg-primary-50 且不含 bg-indigo-50"
+      - "OrderStatusBadge closed 含 bg-neutral-100 且不含 bg-gray-50"
+      - "OrderTable 采购明细列 items=[] 与采购商品列无 firstItem 渲染「暂无数据」"
+    skip_reason: "纯前端 UI chips/空态由 vitest 单测验证（status-chip/OrderStatusBadge/OrderTable/RecentOrders/after-sales），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-08-25 新增：经营看板织物质感重设计子任务 D（issue #2539）"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/lib/status-chip.test.ts"
+        - "frontend/admin-web/tests/unit/components/OrderStatusBadge.test.tsx"
+        - "frontend/admin-web/tests/unit/components/OrderTable.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
+
   - id: UI-003
     legacy_id: ""
     title: "米宝「今日经营速览」洞察条 - 订单环比/含加工占比/低库存预警"

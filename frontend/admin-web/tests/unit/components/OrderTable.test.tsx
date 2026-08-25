@@ -2,6 +2,7 @@
  * OrderTable 组件测试
  * 覆盖：基本渲染、采购商品列、采购明细列、空状态、加载状态
  */
+// case_ids: UI-002
 import { render, screen } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
 import OrderTable from '@/components/orders/OrderTable'
@@ -145,6 +146,21 @@ describe('OrderTable', () => {
     }
     render(<OrderTable {...defaultProps} orders={[orderNoRemark]} />)
     expect(screen.getByText('-')).toBeTruthy()
+  })
+
+  // #2539: 采购明细列 items 为空与采购商品列无 firstItem 时渲染「暂无数据」，整表无裸 '-' 占位
+  it('采购明细列 items 为空与采购商品列无 firstItem 时渲染「暂无数据」，无裸 - 占位', () => {
+    const emptyItemsOrder = {
+      ...mockOrder,
+      items: [],
+      processingItems: [],
+      remark: '有备注',
+      customerAddress: '测试地址',
+    }
+    render(<OrderTable {...defaultProps} orders={[emptyItemsOrder]} />)
+    const emptyLabels = screen.getAllByText('暂无数据')
+    expect(emptyLabels.length).toBeGreaterThanOrEqual(2)
+    expect(screen.queryByText('-')).toBeNull()
   })
 
   // #1289: 订单有 remarks[] 数组但 remark 字符串为空时，触发显示最新备注预览
