@@ -9,6 +9,7 @@ business_truths:
   - [frontend-fix.tsc] 变更后 tsc --noEmit 通过
   - [frontend-fix.e2e] E2E 测试覆盖变更路径
   - [frontend-fix.layout] 涉及尺寸/长宽比/对齐/间距/溢出的 UI 变更，E2E 必须有几何断言（boundingBox/getComputedStyle），仅「元素存在/不存在」不算覆盖
+  - [frontend-fix.ui-token] 织物质感设计 token：primary.500=#48618f（靛蓝主色）、accent.500=#c06a3e（陶土点缀）、neutral.50=#faf7f2（暖中性米白底）；primary/accent/neutral 三组各为完整 50-900 阶；src/ 下 .tsx/.ts 不再出现默认蓝 #3b82f6 十六进制字面量
 
 primary_specs:
   - tests/e2e/specs/
