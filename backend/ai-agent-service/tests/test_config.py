@@ -11,6 +11,9 @@ from app.config import Settings
 def _make_settings(**overrides):
     """构造 Settings，注入全部必填字段，缺省给合法值。"""
     base = dict(
+        DEBUG=False,
+        HOST="0.0.0.0",
+        PORT=8000,
         SERVICE_TOKEN="svc-token",
         JWT_PUBLIC_KEY="jwt-key",
         LOGISTICS_API_URL="https://wuliu.example.com",

@@ -48,7 +48,7 @@ class TestExtractMemoriesFromTurn:
 
     @pytest.mark.asyncio
     async def test_short_turn_skips_without_llm(self):
-        with patch("app.memory.extractor.LLMFactory") as mock_factory:
+        with patch("app.llm.LLMFactory") as mock_factory:
             result = await extract_memories_from_turn(
                 user_message="你好",
                 assistant_reply="您好",
@@ -65,7 +65,7 @@ class TestExtractMemoriesFromTurn:
         mock_llm.ainvoke = AsyncMock(return_value=mock_response)
 
         with patch(
-            "app.memory.extractor.LLMFactory.create_suggestion_llm",
+            "app.llm.LLMFactory.create_suggestion_llm",
             return_value=mock_llm,
         ):
             result = await extract_memories_from_turn(
@@ -87,7 +87,7 @@ class TestExtractMemoriesFromTurn:
         mock_llm.ainvoke = AsyncMock(return_value=mock_response)
 
         with patch(
-            "app.memory.extractor.LLMFactory.create_suggestion_llm",
+            "app.llm.LLMFactory.create_suggestion_llm",
             return_value=mock_llm,
         ):
             result = await extract_memories_from_turn(
@@ -104,7 +104,7 @@ class TestExtractMemoriesFromTurn:
         mock_llm.ainvoke = AsyncMock(side_effect=RuntimeError("llm down"))
 
         with patch(
-            "app.memory.extractor.LLMFactory.create_suggestion_llm",
+            "app.llm.LLMFactory.create_suggestion_llm",
             return_value=mock_llm,
         ):
             result = await extract_memories_from_turn(

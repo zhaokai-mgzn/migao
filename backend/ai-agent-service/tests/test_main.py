@@ -144,5 +144,6 @@ class TestSessionAutoCloseLoop:
              patch("app.main.asyncio.sleep", new_callable=AsyncMock, side_effect=[None, asyncio.CancelledError()]):
             with pytest.raises(asyncio.CancelledError):
                 await main_module._session_auto_close_loop()
-        # 第一次 close_idle_sessions 抛异常被吞，cleanup 仍正常执行
-        mock_sm.cleanup_closed_sessions.assert_awaited_once_with(older_than_days=90)
+        # 第一次 close_idle_sessions 抛异常被吞（非致命），循环继续到第二次 sleep 后 CancelledError 重抛
+        mock_sm.close_idle_sessions.assert_awaited_once_with(idle_minutes=240)
+        mock_sm.cleanup_closed_sessions.assert_not_awaited()

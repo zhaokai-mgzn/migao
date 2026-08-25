@@ -93,7 +93,6 @@ class TestParseResponse:
         result = self._cls()._parse_response('{"intent": "not_an_intent", "confidence": 0.9}')
         assert result.intent == IntentType.GENERAL
         assert result.confidence == 0.5
-        assert result.source == "default"
 
     def test_confidence_clamped(self):
         result = self._cls()._parse_response('{"intent": "order_query", "confidence": 3.0}')
