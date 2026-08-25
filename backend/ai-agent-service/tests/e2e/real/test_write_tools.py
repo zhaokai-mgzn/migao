@@ -71,7 +71,7 @@ class TestProductWrite:
             f"价格应在 66±5% 元范围内。创建 66 元，实际 price={price}（折算 {price_in_yuan} 元）"
         )
 
-    @pytest.mark.flaky(reruns=2, reruns_delay=5)  # 真实 LLM 偶发整轮不调工具（tools: []），加重试容错
+    @pytest.mark.flaky(reruns=3, reruns_delay=5)  # 真实 LLM 偶发只查详情不执行改价（tools: ['product_detail']），重试容错
     def test_product_update_price(self, sess):
         """更新价格 → admin-api 验证新价格 + 库存不受影响"""
         items = admin_search_products("窗帘")
@@ -85,10 +85,11 @@ class TestProductWrite:
         old_price = float(target.get("price") or 0)  # admin-api 返回元
         new_price = round(old_price + 1, 1)  # +1 元
 
-        sess.send(f"把 {target['name']} 的价格改成 {new_price}")
+        # 明确商品名（避免"窗帘"搜索第一个商品名不稳定）+ 强调用系统工具执行
+        sess.send(f"用系统工具把商品「{target['name']}」的价格改成 {new_price}")
         # 给 LLM 两轮：先确认目标商品，再执行修改
         # 工具选择：product_manage(update) 或专用 product_update 均能完成改价（业务结果由下方 admin-api 校验）
-        ev = confirm_and_execute(sess, "确认修改，立即执行", "product_manage")
+        ev = confirm_and_execute(sess, "确认修改，立即用系统工具执行", "product_manage")
         assert ("product_manage" in sse_tools(ev)
                 or "product_update" in sse_tools(ev)), f"tools: {sse_tools(ev)}"
 
