@@ -1310,6 +1310,52 @@
 真值: agent-notification.quick-reply-validate
 溯源: verification 6.7 独有 ｜ tags: create
 
+## token-refresh（4 case）
+
+### TR-001. refresh-success — 401 自动刷新并重放原请求 🔵
+```
+你: admin-web 业务请求收到 401，TokenRefreshManager 自动刷新并重放
+期望: direct_reply
+数据: refreshAccessToken() 被调用一次；原请求 headers.Authorization 更新为 Bearer <newToken>
+数据: 原请求 _retry=true；通过注入的 axiosInstance 重放原请求并返回其结果
+跳过: 依赖注入 mock 的单元测试验证（frontend/admin-web/tests/unit/lib/token-refresh-manager.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: token-refresh.refresh-success
+溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, retry
+
+### TR-002. single-flight — 并发 401 仅触发一次刷新并共享结果 🔵
+```
+你: 多个请求同时收到 401，TokenRefreshManager 单飞刷新
+期望: direct_reply
+数据: refreshAccessToken() 仅调用一次；刷新中后续请求入 failedQueue 挂起
+数据: 刷新成功后队列请求以同一新 token resolve，且刷新结束后 isRefreshing=false、queueLength=0
+跳过: 依赖注入 mock 的单元测试验证（frontend/admin-web/tests/unit/lib/token-refresh-manager.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: token-refresh.single-flight
+溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, concurrency, single_flight
+
+### TR-003. refresh-failed — 刷新失败清除凭证并跳登录页 🔵
+```
+你: 刷新接口失败或返回 null，TokenRefreshManager 登出
+期望: direct_reply
+数据: refreshAccessToken 返回 null 或抛异常 → 全部挂起请求 reject、clearAuth() 被调用
+数据: window.location.href 置为 /login；原请求 Promise.reject（null 分支带 'Token refresh failed'，异常分支透传原错误）
+跳过: 依赖注入 mock 的单元测试验证（frontend/admin-web/tests/unit/lib/token-refresh-manager.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: token-refresh.refresh-failed
+溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, logout
+
+### TR-004. no-loop — 刷新/登录请求自身 401 不触发刷新（防死循环） 🔵
+```
+你: 刷新或登录请求自身收到 401，TokenRefreshManager 直接拒绝
+期望: direct_reply
+数据: URL 含 /api/auth/refresh 或 /api/auth/admin/login → reject('Authentication failed')
+数据: refreshAccessToken 不被调用；clearAuth() 被调用、window.location.href 置为 /login
+跳过: 依赖注入 mock 的单元测试验证（frontend/admin-web/tests/unit/lib/token-refresh-manager.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: token-refresh.no-loop
+溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
+
 ## utils（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -1339,8 +1385,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：113（活跃 82，跳过 31）
-- tier 分布：smoke 9 / normal 77 / adversarial 27
+- 用例总数：117（活跃 82，跳过 35）
+- tier 分布：smoke 9 / normal 81 / adversarial 27
 - 售后域：5
 - agents：6
 - api：9
@@ -1358,5 +1404,6 @@
 - 商品域：12
 - registry：1
 - 设置域：7
+- token-refresh：4
 - utils：2
 
