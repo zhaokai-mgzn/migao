@@ -89,10 +89,10 @@ class TestOrderCreation:
     """订单创建 — 全字段验证"""
 
     def test_create_order_multi_items(self, sess):
-        """多商品订单创建 — 先查 SKU 选规格，再确认下单"""
-        sess.send("帮我查一下有哪些窗帘商品")
-        sess.send(f"创建订单 E2E订单_{TS} 13800001111，第一个窗帘 2件 99元")
-        sess.send("散剪 2.8米门幅")
+        """多商品订单创建 — 明确商品名 + 选售卖方式（对齐 OR-010 流程）"""
+        sess.send("帮我查一下窗帘商品")
+        sess.send("创建订单 E2E订单_%d 13800001111，米白色遮光窗帘 1件、2699 系列雪尼尔窗帘 1件" % TS)
+        sess.send("选1")  # 多 SKU 商品需先选售卖方式（散剪/整卷）
         ev = confirm_and_execute(sess, "确认下单", "order_create")
         tools = sse_tools(ev)
         assert "order_create" in tools or "order_manage" in tools, f"应调order_create: {tools}"

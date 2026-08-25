@@ -48,8 +48,10 @@ class ProductUpdateTool(BaseTool):
         status: Optional[str] = None,
     ) -> ToolResult:
         # Build only the fields that were actually provided
+        # ⚠️ 请求体字段名必须与 admin-api AgentProductUpdateRequest 对齐：basePrice（非 price）。
+        # Jackson 忽略未知字段，传 price 会被静默丢弃 → 价格更新无效（E2E Real 暴露）。
         json_data: Dict[str, Any] = {}
-        if price is not None: json_data["price"] = price
+        if price is not None: json_data["basePrice"] = price
         if name: json_data["name"] = name
         if description: json_data["description"] = description
         if status: json_data["status"] = status
