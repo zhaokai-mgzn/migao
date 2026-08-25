@@ -71,8 +71,7 @@ class TestMatch:
 
     def test_long_greeting_skipped(self):
         # 长消息含问候词，不识别为 greeting（无其他关键词 → None）
-        result = self._match("你好呀，今天天气不错，很高兴见到你")
-        assert result is None
+        assert self._match("你好呀，今天天气不错，很高兴见到你") is None
 
     def test_regex_order_number(self):
         result = self._match("ORD1234567890123")

@@ -77,7 +77,7 @@ class TestLifespan:
             with patch("app.main.init_db", new_callable=AsyncMock, side_effect=RuntimeError("db down")):
                 with pytest.raises(RuntimeError):
                     async with main_module.lifespan(None):
-                        pass
+                        pass  # no-op：init_db 失败即 raise，lifespan 体不执行
 
     @pytest.mark.asyncio
     async def test_debug_init_failure_swallowed(self):
@@ -91,7 +91,7 @@ class TestLifespan:
             s.APP_NAME = "x"
             s.APP_VERSION = "1"
             async with main_module.lifespan(None):
-                pass
+                pass  # no-op：DEBUG 吞掉 init_db 异常后进入 lifespan 体
 
     @pytest.mark.asyncio
     async def test_shutdown_closes_redis_and_db(self):
@@ -107,7 +107,7 @@ class TestLifespan:
             s.APP_NAME = "x"
             s.APP_VERSION = "1"
             async with main_module.lifespan(None):
-                pass
+                pass  # no-op：关闭逻辑（close_redis/close_db）在退出时执行
         mock_close_redis.assert_awaited_once()
         mock_close_db.assert_awaited_once()
 
