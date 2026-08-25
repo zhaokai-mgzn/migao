@@ -9,6 +9,7 @@ import { cn, formatFullDateTime } from '@/lib/utils'
 import { sampleTickIndices } from '@/lib/axis-sampling'
 import type { DashboardStats, OrderTrendPoint, Order, ProductRanking } from '@/types'
 import { normalizeOrderStatus, OrderStatusLabels } from '@/types'
+import TodayOverviewBar from '@/components/dashboard/TodayOverviewBar'
 
 // ═══════════════════════════════════════════════════════
 // 格式化
@@ -231,6 +232,14 @@ export default function DashboardPage() {
           <RefreshCw className={cn('w-4 h-4', loading && 'animate-spin')} />
         </button>
       </div>
+
+      {/* 米宝「今日经营速览」洞察条 — AI 洞察一等公民，置于页面顶部 */}
+      <TodayOverviewBar
+        orderChange={stats?.todayOrdersChange ?? 0}
+        processingCount={processingShipment}
+        pendingCount={pendingShipment}
+        lowStockCount={lowStockCount}
+      />
 
       {/* ① 待处理任务 */}
       <div className="mb-5">

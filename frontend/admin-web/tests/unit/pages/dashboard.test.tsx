@@ -1,4 +1,4 @@
-// case_ids: UI-002
+// case_ids: UI-003, UI-004
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 
@@ -114,6 +114,34 @@ describe('DashboardPage', () => {
     await waitFor(() => {
       const elements = screen.getAllByText(/数据更新时间：/)
       expect(elements.length).toBeGreaterThanOrEqual(1)
+    })
+  })
+
+  // ── 米宝「今日经营速览」洞察条 ──
+
+  it('洞察条置于经营看板顶部，渲染「订单环比 / 含加工占比 / 低库存预警」三个区块', async () => {
+    render(<DashboardPage />)
+    await waitFor(() => {
+      expect(screen.getByText(/今日经营速览/)).toBeInTheDocument()
+      expect(screen.getByText('订单环比')).toBeInTheDocument()
+      expect(screen.getByText('含加工占比')).toBeInTheDocument()
+      expect(screen.getByText('低库存预警')).toBeInTheDocument()
+    })
+    // 顶部定位：洞察条先于「待处理」区块
+    const bar = screen.getByTestId('today-overview-bar')
+    const pending = screen.getByText('待处理')
+    expect(bar.compareDocumentPosition(pending) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('洞察条三数值来自 API 返回值（无硬编码假数据）', async () => {
+    render(<DashboardPage />)
+    await waitFor(() => {
+      // 订单环比 = stats.todayOrdersChange = 25.5
+      expect(screen.getByText('+25.5%')).toBeInTheDocument()
+      // 含加工占比 = processing 3 / pending 8 = 37.5% → 38%
+      expect(screen.getByText('38%')).toBeInTheDocument()
+      // 低库存预警 = stats.lowStockItems = 2
+      expect(screen.getByText('2 款')).toBeInTheDocument()
     })
   })
 

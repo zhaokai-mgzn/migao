@@ -1,4 +1,4 @@
-// case_ids: UI-002
+// case_ids: UI-004
 import { describe, it, expect } from 'vitest'
 import { sampleTickIndices } from '@/lib/axis-sampling'
 
