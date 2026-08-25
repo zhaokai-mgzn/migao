@@ -1,0 +1,66 @@
+name: misc
+description: ai-agent-service misc-part2 覆盖率分组真值域（记忆提取 / 意图分类 / 后续建议 / 配置 / LLM 工厂 / 应用入口 / 规则匹配）
+
+business_truths:
+  - [misc.parse-extraction-result] _parse_extraction_result：纯 JSON 数组直接 json.loads 返回；带说明文字时 re 提取 [...] 再解析；非 JSON/非 list → 返回 []
+  - [misc.extract-short-turn] extract_memories_from_turn：user_message<4 且 assistant_reply<20 → 直接返回 []（问候/感谢不提取，不调 LLM）
+  - [misc.extract-llm-flow] extract_memories_from_turn：prompt 截断 500 字符；LLMFactory.create_suggestion_llm().ainvoke；解析后逐条补 context（'session=... | user: 前100字符'，已有 context 不覆盖）；LLM 异常 → warning 返回 []
+  - [misc.extract-and-save] extract_and_save：无记忆返回 0；有记忆调 UserMemoryManager().batch_upsert 并返回保存条数；batch_upsert 异常 → error 返回 0
+  - [misc.classifier-extract-text] _extract_text：None→''、str 原样、list 仅拼接 type=='text' 的 text 块（空格 join）、其他类型 str(content)
+  - [misc.classifier-build-prompt] _build_classifier_prompt：agent_intents=None 用全部意图；给定列表时确保 general 兜底追加；未知意图 desc 回退 intent 名；消歧规则只展示当前意图相关
+  - [misc.classifier-classify] classify：懒加载 create_intent_llm；chat_history 取最近 8 条拼上下文；成本追踪 usage_metadata 优先、response_metadata.token_usage/usage 兜底，失败仅 warning 不影响主流程
+  - [misc.classifier-parse-response] _parse_response：空 content→default general(0.5)；剥离 ```json 代码块；直接 json.loads；兜底 re 提取第一个 {...}；intent 非法→general；confidence 夹取 [0,1]；解析异常→default
+  - [misc.classifier-fallback] classify 整体异常 → 回退 IntentResult(general, 0.5, source='default', matched_keywords=[])
+  - [misc.followup-presets] 预设数据：MIBAO_PRESET_SUGGESTIONS/XIAOBU_PRESET_SUGGESTIONS 覆盖高频意图且每意图多 stage；MIBAO/XIAOBU_DEFAULT_SUGGESTIONS 各 3 条兜底；farewell 空 dict 表示不推荐
+  - [misc.followup-get-preset] _get_preset：agent_type 选米宝/小布预设与兜底；未知 intent → general；farewell（空 dict）→ []；stage fallback 链 stage→querying→initial→第一个非空 stage→defaults
+  - [misc.followup-should-dynamic] _should_use_dynamic：无 API key→False；answer<20→False；含订单/商品/客户等实体关键词→True；answer>100→True；否则 _has_specific_entities 正则检测（订单号/物流单/商品/价格/日期）
+  - [misc.followup-parse-sanitize] _parse_suggestions_from_response：JSON 数组（全 str）→前 3 条；带文本 re 提取 [...]→前 3 条；失败→None；_sanitize_prompt_value 花括号→全角/换行制表→空格/截断 max_len
+  - [misc.followup-generate] generate：动态命中→截断 3 条 strategy=dynamic；动态失败/超时/异常→fallback preset；_log_generation 经 LogSanitizer.mask_text 脱敏后记日志
+  - [misc.followup-generate-dynamic] _generate_dynamic：xiaobu/mibao 选 prompt 与角色；mibao 角色白名单 ROLE_LABELS（未知/空角色→'员工'防注入）；user/preference/entity/历史上下文经 _sanitize_prompt_value 清洗注入；httpx.TimeoutException→None
+  - [misc.config-defaults] Settings 默认值：APP_NAME/APP_VERSION/DEBUG/API_PREFIX/HOST/PORT/DATABASE_URL/REDIS_URL 及 LLM 路由/成本/重试参数（LLM_MODEL_PRIMARY/FAST、INTENT_MODEL、budget、retry）默认值正确
+  - [misc.config-compat] 向后兼容属性：MINIMAX_API_KEY/BASE_URL/MODEL 取 PRIMARY_* 优先 VISION_* 兜底；DASHSCOPE_* property+setter 读写 PRIMARY/VISION 字段（测试 monkeypatch 需要）
+  - [misc.config-validate-secrets] validate_production_secrets：非 DEBUG 且缺 JWT_PUBLIC_KEY/SERVICE_TOKEN → ValueError 提示生产必须设置；DEBUG=true 绕过；两者齐全通过
+  - [misc.factory-new-chat-model] _new_chat_model：MINIMAX_API_KEY=='ci-dummy' → ChatOpenAI，否则 ChatDeepSeek（CI 环境回退）
+  - [misc.factory-skill-llm] create_skill_llm：temperature=0.7/streaming=True/max_completion_tokens=2048/request_timeout=60；force_no_think→thinking disabled；enable_thinking→thinking enabled 且 max_completion_tokens=384000
+  - [misc.factory-variants] create_vision_llm 用 VISION_MODEL/VISION_API_KEY/VISION_BASE_URL + extra_body thinking adaptive；create_intent_llm temperature=0 + thinking disabled；create_summary_llm 默认 temperature=0.3/max_tokens=512；create_suggestion_llm temperature=0.3/max_completion_tokens=200
+  - [misc.factory-invoke-text-safe] invoke_text_safe：清洗多模态 content list 仅保留 text；SystemMessage/HumanMessage/AIMessage 分别重建（Human 空文本→'[图片]'）；返回 response.content.strip()
+  - [misc.main-create-app] create_app：setup_logging(debug)；FastAPI title/version；CORS 从 CORS_ALLOWED_ORIGINS 拆分去空白，DEBUG 时追加 localhost:3000/3001/5173 开发源；注册 api_router 前缀 API_PREFIX；/health 返回 status=healthy+service+version
+  - [misc.main-lifespan] lifespan：启动 init_db/init_redis（非 DEBUG 异常 re-raise，DEBUG 仅 log）；启动 _session_auto_close_loop 后台任务；关闭时 cancel 任务 + close_redis + close_db（异常仅 log 不阻断）
+  - [misc.main-auto-close-loop] _session_auto_close_loop：每 SESSION_CLEANUP_INTERVAL(300s) 扫描 close_idle_sessions(idle_minutes=240)；每天 cleanup_closed_sessions(older_than_days=90)；CancelledError re-raise、其他异常 warning 非致命
+  - [misc.rule-extract-text] _extract_text：None→''/str 原样/list 仅拼 type=='text'/其他 str(content)；match 空文本/空白→None
+  - [misc.rule-match-priority] 关键词匹配优先级：capabilities 长短语→farewell→订单统计/订单数据(order_query)→遍历 KEYWORD_MAP；greeting 仅 ≤10 字符才高置信度(1.0)，长消息含问候词跳过
+  - [misc.rule-regex] 关键词命中 confidence=0.95 source='rule' matched_keywords；REGEX_RULES 命中 0.9 source='rule'（ORD-* 订单号、创建商品正则排除订单/工单/售后）；均未命中返回 None
+
+primary_specs:
+  - backend/ai-agent-service/tests/test_memory_extractor.py
+  - backend/ai-agent-service/tests/test_intent_classifier.py
+  - backend/ai-agent-service/tests/test_follow_up_suggestions.py
+  - backend/ai-agent-service/tests/test_config.py
+  - backend/ai-agent-service/tests/test_llm_factory.py
+  - backend/ai-agent-service/tests/test_main.py
+  - backend/ai-agent-service/tests/test_rule_matcher.py
+
+reviewer_asserts:
+  - pytest: tests/test_memory_extractor.py
+    expect: 全部通过（解析直返/内嵌提取/非法返回 []；短对话跳过；保存成功/异常返回 0）
+  - pytest: tests/test_intent_classifier.py
+    expect: 全部通过（_extract_text 多模态拼接；prompt 构建 general 兜底；_parse_response 各类回退 general 0.5）
+  - pytest: tests/test_follow_up_suggestions.py
+    expect: 全部通过（preset fallback 链、动态生成截断/超时回退、sanitize 防注入）
+  - pytest: tests/test_config.py
+    expect: 全部通过（默认值、MINIMAX_*/DASHSCOPE_* fallback、validate_production_secrets）
+  - pytest: tests/test_llm_factory.py
+    expect: 全部通过（ci-dummy→ChatOpenAI、各实例参数、invoke_text_safe 清洗）
+  - pytest: tests/test_main.py
+    expect: 全部通过（create_app /health、lifespan 非 DEBUG raise、auto-close-loop）
+  - pytest: tests/test_rule_matcher.py
+    expect: 全部通过（capabilities/farewell 优先、订单统计→order_query、greeting ≤10 字、正则）
+
+confidence_required: 100%
+
+common_pitfalls:
+  - 记忆提取短对话（问候/感谢）误调 LLM（应直接返回 []）
+  - 意图分类响应解析未剥离 markdown 代码块导致解析失败
+  - 后续建议动态生成未清洗花括号/换行导致 str.format 崩溃或 prompt 注入
+  - create_skill_llm 的 force_no_think 与 enable_thinking 语义混淆（disabled vs enabled）
+  - 规则匹配"订单统计"被 statistics 关键词抢占（应优先 order_query）
