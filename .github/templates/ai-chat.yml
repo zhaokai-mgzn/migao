@@ -15,6 +15,19 @@ business_truths:
   - [ai-chat.validate-input] 写操作缺必填信息时 validate_input 校验并引导补全，禁止猜值
   - [ai-chat.compression] 长对话压缩：默认保留最近 12 条消息（max_recent=12），更早消息生成结构化摘要（base_skill → context_manager.compress_conversation）
   - [ai-chat.source-annotation] 当前实现无「[工具返回]」来源标注机制：SSE text 事件 data 仅 {"content"}，回复不标注数据来源（用例 8.5 的期望与实现脱节）
+
+  - [ai-chat.agent-response] AgentResponse dataclass：content 必填；type 默认 "text"（枚举 text/tool_call/tool_result/suggestions/error）；tool_calls/metadata 默认 None
+  - [ai-chat.extract-msg-content] _extract_msg_content：content 为 list 时仅拼接 type=="text" 的 text 块；re.sub(r"<think>[\s\S]*?</think>", "", content).strip() 移除 think 块（含多行 think）
+  - [ai-chat.agent-context] AgentContext.to_dict 返回 6 字段（user_id/tenant_id/session_id/role/identity_type/user_name）；to_tool_context 透传 tenant_id/user_id/session_id/role 构造 ToolContext
+  - [ai-chat.base-agent-init] BaseAgent.__init__：get_agent_config(agent_type)+build_agent_graph(agent_type) 组装 config/graph；tool_registry=None→create_default_registry()，非 None→用传入实例（覆盖 else 分支）
+  - [ai-chat.convert-history] _convert_history：user 普通→HumanMessage(content)；content_type=="mixed" 且 images 非空→多模态 content list（text + 逐图 image_url）；assistant→AIMessage；其他 role 忽略
+  - [ai-chat.initial-state-plan] _build_initial_state：plan state 最高优先（get_plan_state→json.loads→skill_name 非空即作 pending_skill），否则读 get_pending_skill；SessionMemory 异常→warning 且 pending_skill=""（不向上抛）
+  - [ai-chat.initial-state-18keys] _build_initial_state 返回完整 18 键 state dict：pending_interact_skill 透传 pending_skill，agent_type/tenant_id/user_id/user_name/session_id/role 来自 self/context
+  - [ai-chat.achat] achat 非流式：_convert_history+HumanMessage+set_tool_context+_build_initial_state+graph.ainvoke 后返回 AgentResponse(content=final_answer, type="text")；异常→type="error" 友好兜底（content 含"稍后重试或联系人工客服"）
+  - [ai-chat.astream-tool-calls] astream_chat 工具调用：AIMessage.tool_calls 先流式 tool_calls 前文本（_extract_msg_content 提取，text_streamed 锁防重复），再逐条 yield type="tool_call"
+  - [ai-chat.astream-tool-result] astream_chat 工具结果：ToolMessage→json.loads 解析（JSONDecodeError/TypeError 降级 {"data": str(content)}），积压 tool_results_queue，图执行完毕统一 yield type="tool_result"
+  - [ai-chat.astream-text-suggestion] astream_chat 文本/建议/异常：final_answer 有新内容且 != 已流式文本→yield type="text"；suggestions 非空→yield type="suggestions"；异常→traceback 记录后 yield type="error"（content 含 type(e).__name__）
+  - [ai-chat.agent-factory] get_greeting/get_agent/reset_agent/兼容别名：get_greeting 优先 get_direct_reply("greeting") 回退 config.greeting；get_agent 按 agent_type 单例缓存；reset_agent 清空缓存并调 reset_agent_intents_cache（ImportError/AttributeError 忽略）；CustomerServiceAgent/WorkAssistantAgent 别名映射 xiaobu/mibao
 reviewer_asserts:
   - API: POST /api/ai/chat {"message":"查我的订单"}
     expect: 路由到订单域工具 AND 返回订单相关数据
