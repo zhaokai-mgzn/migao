@@ -1,11 +1,12 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { ClipboardList, DollarSign, TrendingUp, Package, Settings, ArrowRight, RefreshCw, ArrowUp, ArrowDown } from 'lucide-react'
 import request from '@/lib/request'
 import { dashboardApi } from '@/lib/api'
 import { cn, formatFullDateTime } from '@/lib/utils'
+import { sampleTickIndices } from '@/lib/axis-sampling'
 import type { DashboardStats, OrderTrendPoint, Order, ProductRanking } from '@/types'
 import { normalizeOrderStatus, OrderStatusLabels } from '@/types'
 import TodayOverviewBar from '@/components/dashboard/TodayOverviewBar'
@@ -134,6 +135,26 @@ function PendingCard({ title, count, icon, color }: { title: string; count: numb
   )
 }
 
+// 图表容器宽度测量（响应式 x 轴降采样：1280 宽度下减少刻度避免重叠）
+function useChartWidth<T extends HTMLElement>() {
+  const ref = useRef<T | null>(null)
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const measure = () => setWidth(el.getBoundingClientRect().width || 0)
+    measure()
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(measure)
+      ro.observe(el)
+      return () => ro.disconnect()
+    }
+    window.addEventListener('resize', measure)
+    return () => window.removeEventListener('resize', measure)
+  }, [])
+  return { ref, width }
+}
+
 // ═══════════════════════════════════════════════════════
 // 主页面
 // ═══════════════════════════════════════════════════════
@@ -149,6 +170,8 @@ export default function DashboardPage() {
   const [lowStockCount, setLowStockCount] = useState(0)
   const [trendDays, setTrendDays] = useState(7)
   const [updateTime, setUpdateTime] = useState('--')
+
+  const orderTrendRef = useChartWidth<HTMLDivElement>()
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -193,6 +216,9 @@ export default function DashboardPage() {
 
   // 从 trend 数据提取迷你图
   const sparkline = trendData.map(d => d.orders || 0).slice(-14)
+
+  // 订单趋势 x 轴刻度降采样（响应式，1280 宽度下避免密集重叠）
+  const orderTickIndices = sampleTickIndices(trendData.length, { width: orderTrendRef.width, maxTicks: 7, minGap: 60 })
 
   return (
     <div className="p-6">
@@ -279,7 +305,7 @@ export default function DashboardPage() {
               ))}
             </div>
           </div>
-          <div className="h-48">
+          <div className="h-48" ref={orderTrendRef.ref}>
             {loading ? (
               <ChartSkeleton bars={7} />
             ) : trendData.length > 0 ? (() => {
@@ -294,11 +320,15 @@ export default function DashboardPage() {
                   {trendData.map((d, i) => (
                     <circle key={i} cx={i * 40 + 20} cy={toY(d.orders || 0)} r="3" fill="#48618f" />
                   ))}
-                  {trendData.filter((_, i) => i % Math.ceil(trendData.length / 7) === 0).map((d, i) => (
-                    <text key={i} x={i * 40 * Math.ceil(trendData.length / 7) + 20} y="225" textAnchor="middle" fontSize="10" fill="#9CA3AF">
-                      {d.date?.slice(5)}
-                    </text>
-                  ))}
+                  {orderTickIndices.map((idx) => {
+                    const d = trendData[idx]
+                    const x = idx * 40 + 20
+                    return (
+                      <text key={idx} x={x} y="225" textAnchor="middle" fontSize="10" fill="#9CA3AF">
+                        {d.date?.slice(5)}
+                      </text>
+                    )
+                  })}
                 </svg>
               )
             })() : (
@@ -368,7 +398,7 @@ export default function DashboardPage() {
             <a href="/orders" className="text-xs text-primary-600 hover:underline flex items-center gap-1">查看全部 <ArrowRight className="w-3 h-3" /></a>
           </div>
           <table className="w-full text-xs">
-            <thead><tr className="text-gray-500 border-b"><th className="text-left py-2 font-medium">订单号</th><th className="text-left py-2 font-medium">客户</th><th className="text-right py-2 font-medium">金额</th><th className="text-right py-2 font-medium">状态</th><th className="text-right py-2 font-medium">时间</th></tr></thead>
+            <thead><tr className="text-gray-500 border-b"><th className="text-left py-2 font-medium whitespace-nowrap">订单号</th><th className="text-left py-2 font-medium whitespace-nowrap">客户</th><th className="text-right py-2 font-medium whitespace-nowrap">金额</th><th className="text-right py-2 font-medium whitespace-nowrap">状态</th><th className="text-right py-2 font-medium whitespace-nowrap">时间</th></tr></thead>
             <tbody>
               {loading ? (
                 Array.from({ length: 5 }).map((_, i) => (
@@ -385,9 +415,9 @@ export default function DashboardPage() {
                   <tr key={o.id} className="border-b border-gray-50 hover:bg-gray-50">
                     <td className="py-2"><a href={`/orders/${o.id}`} className="text-blue-600 font-mono text-[11px] hover:underline">{o.orderNo?.slice(0, 16)}</a></td>
                     <td className="py-2 text-gray-700">{o.customerName}</td>
-                    <td className="py-2 text-right text-gray-900 font-mono">{fmtCurrency(o.totalAmount)}</td>
+                    <td className="py-2 text-right text-gray-900 font-mono whitespace-nowrap">{fmtCurrency(o.totalAmount)}</td>
                     <td className="py-2 text-right"><StatusBadge status={o.status as string} /></td>
-                    <td className="py-2 text-right text-gray-400 text-[11px]">{o.createdAt?.slice(5, 16)?.replace('T', ' ')}</td>
+                    <td className="py-2 text-right text-gray-400 text-[11px] whitespace-nowrap">{o.createdAt?.slice(5, 16)?.replace('T', ' ')}</td>
                   </tr>
                 ))
               )}
@@ -422,14 +452,14 @@ export default function DashboardPage() {
             </div>
           ) : (
             <table className="w-full text-xs">
-              <thead><tr className="text-gray-500 border-b"><th className="text-left py-2 font-medium w-8">#</th><th className="text-left py-2 font-medium">商品</th><th className="text-right py-2 font-medium">成交量</th><th className="text-right py-2 font-medium">日涨</th></tr></thead>
+              <thead><tr className="text-gray-500 border-b"><th className="text-left py-2 font-medium w-8 whitespace-nowrap">#</th><th className="text-left py-2 font-medium whitespace-nowrap">商品</th><th className="text-right py-2 font-medium whitespace-nowrap">成交量</th><th className="text-right py-2 font-medium whitespace-nowrap">日涨</th></tr></thead>
               <tbody>
                 {ranking.slice(0, 10).map(r => (
                   <tr key={r.productId} className="border-b border-gray-50 hover:bg-gray-50">
                     <td className="py-2 text-gray-400">{r.rank}</td>
                     <td className="py-2 text-gray-700 truncate max-w-[160px]" title={r.productName}>{r.productName}</td>
-                    <td className="py-2 text-right font-mono text-gray-900">{r.qtyDisplay}</td>
-                    <td className={cn('py-2 text-right', r.dailyChange > 0 ? 'text-red-500' : 'text-green-500')}>
+                    <td className="py-2 text-right font-mono text-gray-900 whitespace-nowrap">{r.qtyDisplay}</td>
+                    <td className={cn('py-2 text-right whitespace-nowrap', r.dailyChange > 0 ? 'text-red-500' : 'text-green-500')}>
                       {r.dailyChange > 0 ? '▲' : '▼'} {Math.abs(r.dailyChange)}%
                     </td>
                   </tr>
