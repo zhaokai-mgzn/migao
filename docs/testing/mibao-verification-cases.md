@@ -134,6 +134,114 @@
 真值: ai-chat.agent-factory
 溯源: 2026-08-25 新增：ai-agent-service agents-customer_service_agent 覆盖率补全（issue #2429） ｜ tags: agents, factory, alias
 
+## api（9 case）
+
+### API-001. chat 会话生命周期 - 租户隔离 + 用户所有权 + 幂等/重开 🔵
+```
+你: ai-agent-service 处理会话 create/list/close/reopen/delete/history 端点
+期望: direct_reply
+数据: close/reopen/delete/history 对不存在会话返回 404 SESSION_NOT_FOUND
+数据: 跨租户或非所有者访问返回 403 PERMISSION_DENIED
+数据: close 幂等（已 closed 仍 success 且不调 close_session）；reopen 仅 closed→active
+跳过: 会话端点由 pytest 单测验证（tests/test_chat.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: api.session-lifecycle, api.session-validation, api.format-datetime
+溯源: 2026-08-25 新增：ai-agent-service api 覆盖率补全（issue #2428） ｜ tags: api, session_lifecycle, tenant_isolation
+
+### API-002. chat 卡片判定 + 历史转换（think 剥离 / 多模态 metadata） 🔵
+```
+你: ai-agent-service 判定工具结果是否发卡片，并转换多模态对话历史
+期望: direct_reply
+数据: _should_send_card 仅 success 且对应字段非空（products/product/tracking_number/order/orders/items）才 True
+数据: _detect_card_type 映射 product_search→product_list 等四类
+数据: _convert_history_to_agent_format 剥离 assistant <think>、透传 content_type、metadata 含 images 时过滤非法 URL
+跳过: 纯函数由 pytest 单测验证（tests/test_chat.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: api.card-detection, api.convert-history
+溯源: 2026-08-25 新增：ai-agent-service api 覆盖率补全（issue #2428） ｜ tags: api, card, history, multimodal
+
+### API-003. chat __PAGE__ 分页协议 - 白名单直调 + 格式/工具守卫 🔵
+```
+你: ai-agent-service 处理 __PAGE__|tool|params_json 翻页消息
+期望: direct_reply
+数据: 白名单工具（order_query 等）直接执行并返回 tool_call/tool_result
+数据: 非白名单工具 → SSE error '不支持该操作的分页查询'
+数据: split/json 解析失败 → SSE error '翻页请求格式错误'
+跳过: 分页协议由 pytest 单测验证（tests/test_chat.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: api.page-protocol
+溯源: 2026-08-25 新增：ai-agent-service api 覆盖率补全（issue #2428） ｜ tags: api, page_protocol, guard
+
+### API-004. chat 图片校验 + 多模态消息构造 🔵
+```
+你: ai-agent-service 校验 send 消息携带的图片 URL 列表
+期望: direct_reply
+数据: >3 张 → SSE error；URL 非 https:// 或 /api/files 开头 → SSE error
+数据: images 存在时 content_type=mixed 并逐图构造 image_url（_rewrite_image_url CDN→OSS）
+跳过: 图片校验由 pytest 单测验证（tests/test_chat.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: api.image-validation
+溯源: 2026-08-25 新增：ai-agent-service api 覆盖率补全（issue #2428） ｜ tags: api, image_guard, multimodal
+
+### API-005. chat Agent 流→SSE 序列 + 意图/昵称助手 🔵
+```
+你: ai-agent-service 将 Agent 流式输出转换为 SSE，并处理建议反馈/用户昵称
+期望: direct_reply
+数据: loading→text/tool_call/tool_result/card/interactive→done 序列；空文本降级兜底文案
+数据: suggestion-feedback 返回 {ok:true}；_infer_intent_from_text 关键词按具体词优先匹配，空/无匹配返回 ''/general
+数据: _get_user_nickname Redis 命中直返、未命中查 DB、异常静默返回 None
+跳过: SSE 流/助手函数由 pytest 单测验证（tests/test_chat.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: api.agent-stream-sse, api.suggestion-intent, api.user-nickname
+溯源: 2026-08-25 新增：ai-agent-service api 覆盖率补全（issue #2428） ｜ tags: api, sse_stream, suggestion
+
+### API-006. sse.SSEEvent 帧格式 + SSEStreamBuilder 链式/迭代 🔵
+```
+你: ai-agent-service 构建 SSE 事件帧
+期望: direct_reply
+数据: 10 种事件统一 'event: <type>\\ndata: <json>\\n\\n'，heartbeat 为 ': heartbeat\\n\\n'
+数据: error 无 code 时 data 仅含 message；interactive payload 含 type + 展开 data
+数据: SSEStreamBuilder 链式 add_*、build() 拼接、__iter__ 迭代
+跳过: SSE 帧格式由 pytest 单测验证（tests/test_sse.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: api.sse-frame, api.sse-error-interactive
+溯源: 2026-08-25 新增：ai-agent-service api 覆盖率补全（issue #2428） ｜ tags: api, sse_format
+
+### API-007. internal.execute_tool 守卫 - 只读白名单 + 错误码 🔵
+```
+你: admin-api 经 Service Token 调用内部 /tools/execute
+期望: direct_reply
+数据: 工具不存在 404 TOOL_NOT_FOUND；非 read_only 工具 403 WRITE_TOOL_FORBIDDEN
+数据: 只读工具成功返回 {success,data,error,message}；执行异常 500 INTERNAL_ERROR
+跳过: 内部接口守卫由 pytest 单测验证（tests/test_internal.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: api.tool-execute-guard
+溯源: 2026-08-25 新增：ai-agent-service api 覆盖率补全（issue #2428） ｜ tags: api, internal, tool_guard
+
+### API-008. internal.trigger_knowledge_sync - 参数校验 + RAG 降级 🔵
+```
+你: admin-api 触发知识库同步（document_created/updated/deleted/product_updated/full_sync）
+期望: direct_reply
+数据: RAG 未部署(ImportError)→success=false RAG_DISABLED
+数据: document_created 缺 content 400 MISSING_CONTENT；document_updated/deleted 缺 resource_id 400 MISSING_RESOURCE_ID
+数据: 未知 type 忽略；异常 500 SYNC_ERROR
+跳过: 知识同步由 pytest 单测验证（tests/test_internal.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: api.knowledge-sync
+溯源: 2026-08-25 新增：ai-agent-service api 覆盖率补全（issue #2428） ｜ tags: api, internal, knowledge_sync
+
+### API-009. upload.upload_chat_image 校验 + 嗅探 + 代理转发 🔵
+```
+你: ai-agent-service 上传聊天图片并代理转发到 admin-api
+期望: direct_reply
+数据: >3 张 400 TOO_MANY_FILES、空文件 400 NO_FILE；MIME/扩展名白名单拒绝；>5MB 400 FILE_TOO_LARGE
+数据: magic number 嗅探与声明类型不符 400 FILE_CONTENT_MISMATCH
+数据: 按 tenant_id 隔离目录 chat/{tenant_id} 转发；HTTPStatusError→502 UPLOAD_PROXY_ERROR、RequestError→502 UPLOAD_SERVICE_UNAVAILABLE
+跳过: 上传校验/代理由 pytest 单测验证（tests/test_upload.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: api.upload-validation, api.upload-validation, api.upload-magic-proxy, api.upload-magic-proxy
+溯源: 2026-08-25 新增：ai-agent-service api 覆盖率补全（issue #2428） ｜ tags: api, upload, file_guard
+
 ## 分类域（3 case）
 
 ### CT-001. 分类树 🔵
@@ -1090,10 +1198,11 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：92（活跃 82，跳过 10）
-- tier 分布：smoke 9 / normal 56 / adversarial 27
+- 用例总数：101（活跃 82，跳过 19）
+- tier 分布：smoke 9 / normal 65 / adversarial 27
 - 售后域：5
 - agents：6
+- api：9
 - 分类域：3
 - 对话边界域：7
 - 跨域：3

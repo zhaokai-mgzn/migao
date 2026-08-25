@@ -193,6 +193,132 @@ _CASE_AG_006 = EvalCase(
     tags=['agents', 'factory', 'alias'],
 )
 
+# ── API-001 [NORMAL] chat 会话生命周期 - 租户隔离 + 用户所有权 + 幂等/重开（源: cases/api.yml）──
+_CASE_API_001 = EvalCase(
+    id='API-001',
+    legacy_id='',
+    title='chat 会话生命周期 - 租户隔离 + 用户所有权 + 幂等/重开',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 处理会话 create/list/close/reopen/delete/history 端点'],
+    expectations=['direct_reply'],
+    data_checks=['close/reopen/delete/history 对不存在会话返回 404 SESSION_NOT_FOUND', '跨租户或非所有者访问返回 403 PERMISSION_DENIED', 'close 幂等（已 closed 仍 success 且不调 close_session）；reopen 仅 closed→active'],
+    skip_reason='会话端点由 pytest 单测验证（tests/test_chat.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['api', 'session_lifecycle', 'tenant_isolation'],
+)
+
+# ── API-002 [NORMAL] chat 卡片判定 + 历史转换（think 剥离 / 多模态 metadata）（源: cases/api.yml）──
+_CASE_API_002 = EvalCase(
+    id='API-002',
+    legacy_id='',
+    title='chat 卡片判定 + 历史转换（think 剥离 / 多模态 metadata）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 判定工具结果是否发卡片，并转换多模态对话历史'],
+    expectations=['direct_reply'],
+    data_checks=['_should_send_card 仅 success 且对应字段非空（products/product/tracking_number/order/orders/items）才 True', '_detect_card_type 映射 product_search→product_list 等四类', '_convert_history_to_agent_format 剥离 assistant <think>、透传 content_type、metadata 含 images 时过滤非法 URL'],
+    skip_reason='纯函数由 pytest 单测验证（tests/test_chat.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['api', 'card', 'history', 'multimodal'],
+)
+
+# ── API-003 [NORMAL] chat __PAGE__ 分页协议 - 白名单直调 + 格式/工具守卫（源: cases/api.yml）──
+_CASE_API_003 = EvalCase(
+    id='API-003',
+    legacy_id='',
+    title='chat __PAGE__ 分页协议 - 白名单直调 + 格式/工具守卫',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 处理 __PAGE__|tool|params_json 翻页消息'],
+    expectations=['direct_reply'],
+    data_checks=['白名单工具（order_query 等）直接执行并返回 tool_call/tool_result', "非白名单工具 → SSE error '不支持该操作的分页查询'", "split/json 解析失败 → SSE error '翻页请求格式错误'"],
+    skip_reason='分页协议由 pytest 单测验证（tests/test_chat.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['api', 'page_protocol', 'guard'],
+)
+
+# ── API-004 [NORMAL] chat 图片校验 + 多模态消息构造（源: cases/api.yml）──
+_CASE_API_004 = EvalCase(
+    id='API-004',
+    legacy_id='',
+    title='chat 图片校验 + 多模态消息构造',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 校验 send 消息携带的图片 URL 列表'],
+    expectations=['direct_reply'],
+    data_checks=['>3 张 → SSE error；URL 非 https:// 或 /api/files 开头 → SSE error', 'images 存在时 content_type=mixed 并逐图构造 image_url（_rewrite_image_url CDN→OSS）'],
+    skip_reason='图片校验由 pytest 单测验证（tests/test_chat.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['api', 'image_guard', 'multimodal'],
+)
+
+# ── API-005 [NORMAL] chat Agent 流→SSE 序列 + 意图/昵称助手（源: cases/api.yml）──
+_CASE_API_005 = EvalCase(
+    id='API-005',
+    legacy_id='',
+    title='chat Agent 流→SSE 序列 + 意图/昵称助手',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 将 Agent 流式输出转换为 SSE，并处理建议反馈/用户昵称'],
+    expectations=['direct_reply'],
+    data_checks=['loading→text/tool_call/tool_result/card/interactive→done 序列；空文本降级兜底文案', "suggestion-feedback 返回 {ok:true}；_infer_intent_from_text 关键词按具体词优先匹配，空/无匹配返回 ''/general", '_get_user_nickname Redis 命中直返、未命中查 DB、异常静默返回 None'],
+    skip_reason='SSE 流/助手函数由 pytest 单测验证（tests/test_chat.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['api', 'sse_stream', 'suggestion'],
+)
+
+# ── API-006 [NORMAL] sse.SSEEvent 帧格式 + SSEStreamBuilder 链式/迭代（源: cases/api.yml）──
+_CASE_API_006 = EvalCase(
+    id='API-006',
+    legacy_id='',
+    title='sse.SSEEvent 帧格式 + SSEStreamBuilder 链式/迭代',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 构建 SSE 事件帧'],
+    expectations=['direct_reply'],
+    data_checks=["10 种事件统一 'event: <type>\\\\ndata: <json>\\\\n\\\\n'，heartbeat 为 ': heartbeat\\\\n\\\\n'", 'error 无 code 时 data 仅含 message；interactive payload 含 type + 展开 data', 'SSEStreamBuilder 链式 add_*、build() 拼接、__iter__ 迭代'],
+    skip_reason='SSE 帧格式由 pytest 单测验证（tests/test_sse.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['api', 'sse_format'],
+)
+
+# ── API-007 [NORMAL] internal.execute_tool 守卫 - 只读白名单 + 错误码（源: cases/api.yml）──
+_CASE_API_007 = EvalCase(
+    id='API-007',
+    legacy_id='',
+    title='internal.execute_tool 守卫 - 只读白名单 + 错误码',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['admin-api 经 Service Token 调用内部 /tools/execute'],
+    expectations=['direct_reply'],
+    data_checks=['工具不存在 404 TOOL_NOT_FOUND；非 read_only 工具 403 WRITE_TOOL_FORBIDDEN', '只读工具成功返回 {success,data,error,message}；执行异常 500 INTERNAL_ERROR'],
+    skip_reason='内部接口守卫由 pytest 单测验证（tests/test_internal.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['api', 'internal', 'tool_guard'],
+)
+
+# ── API-008 [NORMAL] internal.trigger_knowledge_sync - 参数校验 + RAG 降级（源: cases/api.yml）──
+_CASE_API_008 = EvalCase(
+    id='API-008',
+    legacy_id='',
+    title='internal.trigger_knowledge_sync - 参数校验 + RAG 降级',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['admin-api 触发知识库同步（document_created/updated/deleted/product_updated/full_sync）'],
+    expectations=['direct_reply'],
+    data_checks=['RAG 未部署(ImportError)→success=false RAG_DISABLED', 'document_created 缺 content 400 MISSING_CONTENT；document_updated/deleted 缺 resource_id 400 MISSING_RESOURCE_ID', '未知 type 忽略；异常 500 SYNC_ERROR'],
+    skip_reason='知识同步由 pytest 单测验证（tests/test_internal.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['api', 'internal', 'knowledge_sync'],
+)
+
+# ── API-009 [NORMAL] upload.upload_chat_image 校验 + 嗅探 + 代理转发（源: cases/api.yml）──
+_CASE_API_009 = EvalCase(
+    id='API-009',
+    legacy_id='',
+    title='upload.upload_chat_image 校验 + 嗅探 + 代理转发',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 上传聊天图片并代理转发到 admin-api'],
+    expectations=['direct_reply'],
+    data_checks=['>3 张 400 TOO_MANY_FILES、空文件 400 NO_FILE；MIME/扩展名白名单拒绝；>5MB 400 FILE_TOO_LARGE', 'magic number 嗅探与声明类型不符 400 FILE_CONTENT_MISMATCH', '按 tenant_id 隔离目录 chat/{tenant_id} 转发；HTTPStatusError→502 UPLOAD_PROXY_ERROR、RequestError→502 UPLOAD_SERVICE_UNAVAILABLE'],
+    skip_reason='上传校验/代理由 pytest 单测验证（tests/test_upload.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['api', 'upload', 'file_guard'],
+)
+
 # ── CT-001 [NORMAL] 分类树（源: cases/category.yml）──
 _CASE_CT_001 = EvalCase(
     id='CT-001',
@@ -1339,6 +1465,15 @@ ALL_CASES = (
     _CASE_AG_004,
     _CASE_AG_005,
     _CASE_AG_006,
+    _CASE_API_001,
+    _CASE_API_002,
+    _CASE_API_003,
+    _CASE_API_004,
+    _CASE_API_005,
+    _CASE_API_006,
+    _CASE_API_007,
+    _CASE_API_008,
+    _CASE_API_009,
     _CASE_CT_001,
     _CASE_CT_002,
     _CASE_CT_003,

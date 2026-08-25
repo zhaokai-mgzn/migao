@@ -1,0 +1,45 @@
+name: api
+description: ai-agent-service HTTP API 层（SSE / 聊天 / 内部接口 / 图片上传）— api 覆盖率分组的真值域
+red_flags: []
+
+business_truths:
+  - [api.sse-frame] sse.SSEEvent 统一输出 "event: <type>\ndata: <json>\n\n"（json.dumps ensure_ascii=False）：text/tool_call/tool_result/card/done/error/heartbeat/suggestions/interactive/loading 共 10 种；heartbeat 为注释帧 ": heartbeat\n\n"（无 data 行，保活 ALB）
+  - [api.sse-error-interactive] sse.SSEEvent.error：data 仅 {"message"}，code 非空才追加 {"code"}；interactive：payload={"type": component_type, **data}；SSEStreamBuilder.add_* 链式追加并 build() 拼接，支持迭代协议
+  - [api.page-protocol] chat.send_message 的 __PAGE__|tool|params_json 协议绕过 LLM 直调工具；_PAGE_WHITELIST 12 个只读查询工具白名单外一律拒绝（"不支持该操作的分页查询"）；split/json 解析失败拒绝（"翻页请求格式错误"）
+  - [api.session-validation] chat.send_message 会话校验：不存在 404 SESSION_NOT_FOUND；tenant_id 不符 403 PERMISSION_DENIED；customer_id 不符 403 PERMISSION_DENIED；status=closed 409 SESSION_CLOSED
+  - [api.image-validation] chat.send_message 图片校验：>3 张 SSE error（"单条消息最多支持 3 张图片"）；URL 非 https:// 或 /api/files 开头 SSE error；images 存在时 content_type=mixed 并逐图构造 image_url 多模态消息（_rewrite_image_url CDN→OSS）
+  - [api.convert-history] chat._convert_history_to_agent_format：assistant 消息剥离 <think>...</think>；content_type!=text 透传；metadata（dict 或 JSON 字符串）含 images 时经 _validate_image_url+_rewrite_image_url 过滤重写
+  - [api.card-detection] chat._should_send_card/_detect_card_type：result.success 才评估；product_search(products 非空)→product_list、product_detail(product 非空)→product_detail、logistics_track(tracking_number 非空)→logistics、order_query(order/orders/items 非空)→order
+  - [api.agent-stream-sse] chat._agent_stream_to_sse：loading→text/tool_call/tool_result/card/interactive→done 序列；15s 心跳；180s 整体超时→error("响应超时")；assistant 空文本降级兜底文案；done 始终发送（finally 补发防重复）；tool_result 触发 interact→interactive 组件
+  - [api.session-lifecycle] chat.sessions 生命周期：create/list/close/reopen/delete 全部校验租户隔离+用户所有权（404/403）；close 幂等（已 closed 仍 success 且不删消息）；reopen 仅 closed→active，非 closed 返回"会话已是活跃状态"
+  - [api.format-datetime] chat._format_datetime：datetime 带 tzinfo 转 UTC 去 tzinfo 后 isoformat()+"Z"；字符串移除 "+00:00Z"/"+00:00" 双重后缀
+  - [api.suggestion-intent] chat.suggestion-feedback/_infer_intent_from_text：关键词表按"更具体词在前"顺序匹配（看板→dashboard、订单→order_query…）；空文本返回""、无匹配返回"general"；写偏好失败仅 warning；返回 {"ok": true}
+  - [api.user-nickname] chat._get_user_nickname：Redis key nickname:{tenant}:{user}（TTL 3600s）命中直返；未命中查 DB 后写缓存；全程异常静默返回 None（昵称非必需）
+  - [api.tool-execute-guard] internal.execute_tool：verify_service_token 认证；工具不存在 404 TOOL_NOT_FOUND；非 read_only 工具 403 WRITE_TOOL_FORBIDDEN（防 SERVICE_TOKEN 泄露执行写操作）；成功返回 {success,data,error,message}，异常 500 INTERNAL_ERROR
+  - [api.knowledge-sync] internal.trigger_knowledge_sync：RAG 未部署(ImportError)→success=false RAG_DISABLED；document_created 缺 content 400 MISSING_CONTENT；document_updated/deleted 缺 resource_id 400 MISSING_RESOURCE_ID；未知 type 忽略；异常 500 SYNC_ERROR
+  - [api.upload-validation] upload.upload_chat_image：>3 张 400 TOO_MANY_FILES、空文件 400 NO_FILE；MIME 白名单(INVALID_FILE_TYPE)+扩展名白名单(INVALID_FILE_EXTENSION)；单张>5MB 400 FILE_TOO_LARGE
+  - [api.upload-magic-proxy] upload.upload_chat_image：文件头 magic number 嗅探(JPEG/PNG/GIF/BMP/WebP)与声明类型不符 400 FILE_CONTENT_MISMATCH；按 tenant_id 隔离目录 chat/{tenant_id} 代理转发 admin-api；HTTPStatusError→502 UPLOAD_PROXY_ERROR、RequestError→502 UPLOAD_SERVICE_UNAVAILABLE
+
+primary_specs:
+  - backend/ai-agent-service/tests/test_chat.py
+  - backend/ai-agent-service/tests/test_sse.py
+  - backend/ai-agent-service/tests/test_internal.py
+  - backend/ai-agent-service/tests/test_upload.py
+
+reviewer_asserts:
+  - pytest: tests/test_sse.py
+    expect: 全部通过（10 种事件帧格式 + builder 链式/迭代）
+  - pytest: tests/test_chat.py
+    expect: 全部通过（卡片判定/历史转换/会话生命周期/__PAGE__ 守卫/SSE 流）
+  - pytest: tests/test_internal.py
+    expect: 全部通过（工具执行守卫 + 知识库同步参数校验/RAG 降级）
+  - pytest: tests/test_upload.py
+    expect: 全部通过（图片校验 + magic 嗅探 + admin-api 代理转发）
+
+confidence_required: 100%
+
+common_pitfalls:
+  - heartbeat 帧误加 data 行（应为纯注释帧，前端据此与 error/data 帧区分）
+  - __PAGE__ 协议白名单漏加写工具（绕过 LLM 直接执行破坏性操作）
+  - 会话生命周期漏校验用户所有权（跨用户越权访问会话历史）
+  - 图片 magic number 与声明 MIME 不一致仍放行（绕过类型白名单）
