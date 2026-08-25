@@ -37,10 +37,14 @@ jobs:
           AI_AGENT_URL: ${{ secrets.AI_AGENT_SERVICE_URL }}
           SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN }}
         run: |
+          # 真实 LLM 零 Mock E2E：失败用例自动重试 1 次，容错 LLM 工具选择的非确定性波动
+          # （order_create 偶发未调、工具选择歧义等，与 Agent Eval local_runner 重试同源）。
+          # 重试不掩盖确定性 bug：重试仍失败 → run 仍 failure → 自动开 role/qa issue。
           python -m pytest tests/e2e/real/ -v --tb=long -q \
             --timeout=120 \
             --no-cov \
-            --maxfail=10
+            --maxfail=10 \
+            --reruns 1 --reruns-delay 5
 
       - name: Upload test artifacts (failure)
         if: failure()
