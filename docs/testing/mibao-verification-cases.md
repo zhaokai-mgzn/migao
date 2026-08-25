@@ -989,12 +989,37 @@
 真值: agent-notification.quick-reply-validate
 溯源: verification 6.7 独有 ｜ tags: create
 
+## utils（2 case）
+
+### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
+```
+你: admin-api 返回商品 {basePrice, mainImage, categoryId}，ai-agent-service 转 snake_case 后消费
+期望: direct_reply
+数据: java_to_python 把 basePrice→price / mainImage→main_image / categoryId→category_id，未知字段原样保留
+数据: python_to_java 反向还原，自定义 mapping 生效
+数据: get_price 兼容 price/basePrice（含 price=0 的 `or` 链语义）；get_main_image 兼容 mainImage/main_image/images[0]；get_category_id 兼容 categoryId/category_id
+跳过: 纯函数字段映射由 pytest 单测验证（tests/test_utils_field_mapper.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: utils.field-map, utils.field-map-accessors
+溯源: 2026-08-25 新增：ai-agent-service utils 覆盖率补全（issue #2430） ｜ tags: utils, field_mapping, data_contract
+
+### UT-002. 数据库会话生命周期 - commit/rollback/close 与连接探活 🔵
+```
+你: ai-agent-service 依赖注入获取 db session 执行查询
+期望: direct_reply
+数据: get_db_session 正常路径 commit、异常路径 rollback 后向上抛、finally close
+数据: init_db SELECT 1 探活失败向上 raise；close_db dispose 连接池
+跳过: DB 会话生命周期由 pytest 单测验证（tests/test_utils_database.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: utils.db-session, utils.db-lifecycle
+溯源: 2026-08-25 新增：ai-agent-service utils 覆盖率补全（issue #2430） ｜ tags: utils, database, session_lifecycle
+
 ---
 
 ## 覆盖统计（生成）
 
-- 用例总数：84（活跃 82，跳过 2）
-- tier 分布：smoke 9 / normal 48 / adversarial 27
+- 用例总数：86（活跃 82，跳过 4）
+- tier 分布：smoke 9 / normal 50 / adversarial 27
 - 售后域：5
 - 分类域：3
 - 对话边界域：7
@@ -1008,4 +1033,5 @@
 - 加工项域：4
 - 商品域：12
 - 设置域：7
+- utils：2
 
