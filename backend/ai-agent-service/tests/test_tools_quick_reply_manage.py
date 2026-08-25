@@ -122,3 +122,61 @@ class TestQuickReplyPermission:
 
         assert result.success is False
         assert "权限" in result.error or "权限" in result.message
+
+
+class TestQuickReplyCreateValidation:
+    """创建快捷回复必填校验"""
+
+    async def test_missing_title(self, tool, admin_tool_context):
+        result = await tool.execute(context=admin_tool_context, action="create", category="c", content="x")
+        assert result.success is False
+        assert "缺少模板标题" in result.error
+
+    async def test_missing_category(self, tool, admin_tool_context):
+        result = await tool.execute(context=admin_tool_context, action="create", title="t", content="x")
+        assert result.success is False
+        assert "缺少模板分类" in result.error
+
+    async def test_missing_content(self, tool, admin_tool_context):
+        result = await tool.execute(context=admin_tool_context, action="create", title="t", category="c")
+        assert result.success is False
+        assert "缺少模板内容" in result.error
+
+
+class TestQuickReplyUpdateValidation:
+    """更新快捷回复校验"""
+
+    async def test_update_missing_reply_id(self, tool, admin_tool_context):
+        result = await tool.execute(context=admin_tool_context, action="update", title="t")
+        assert result.success is False
+        assert "缺少模板 ID" in result.error
+
+    async def test_update_no_fields(self, tool, admin_tool_context):
+        result = await tool.execute(context=admin_tool_context, action="update", reply_id="r1")
+        assert result.success is False
+        assert "缺少更新内容" in result.error
+
+
+class TestQuickReplyDeleteValidation:
+    async def test_delete_missing_reply_id(self, tool, admin_tool_context):
+        result = await tool.execute(context=admin_tool_context, action="delete")
+        assert result.success is False
+        assert "缺少模板 ID" in result.error
+
+
+class TestQuickReplyCategories:
+    @patch("app.tools.quick_reply_manage.get_admin_api_client")
+    async def test_categories(self, mock_get_client, tool, admin_tool_context):
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value={"success": True, "data": ["greeting", "after_sales"]})
+        mock_get_client.return_value = mock_client
+        result = await tool.execute(context=admin_tool_context, action="categories")
+        assert result.success is True
+        assert result.data["categories"] == ["greeting", "after_sales"]
+
+
+class TestQuickReplyInvalidAction:
+    async def test_invalid_action(self, tool, admin_tool_context):
+        result = await tool.execute(context=admin_tool_context, action="invalid")
+        assert result.success is False
+        assert "无效的操作类型" in result.error

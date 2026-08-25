@@ -239,3 +239,118 @@ class TestLogisticsTrackStatusText:
         from app.tools.logistics_track import STATUS_TEXT_MAP
 
         assert STATUS_TEXT_MAP.get("custom_status", "未知") == "未知"
+
+
+class TestLogisticsTrackInferStatus:
+    """物流查询 - _infer_status_from_traces 关键词推断"""
+
+    def test_empty_traces_fallback(self, tool):
+        assert tool._infer_status_from_traces([]) == "in_transit"
+
+    def test_keyword_delivered(self, tool):
+        assert tool._infer_status_from_traces([{"content": "快件已签收"}]) == "delivered"
+
+    def test_keyword_out_for_delivery(self, tool):
+        assert tool._infer_status_from_traces([{"content": "正在派送"}]) == "out_for_delivery"
+
+    def test_keyword_picked(self, tool):
+        assert tool._infer_status_from_traces([{"content": "已揽收"}]) == "picked"
+
+    def test_keyword_returned(self, tool):
+        assert tool._infer_status_from_traces([{"content": "快件已退回"}]) == "returned"
+
+    def test_keyword_exception(self, tool):
+        assert tool._infer_status_from_traces([{"content": "问题件"}]) == "exception"
+
+    def test_keyword_in_transit(self, tool):
+        assert tool._infer_status_from_traces([{"content": "快件发往转运中心"}]) == "in_transit"
+
+    def test_latest_three_only(self, tool):
+        traces = [
+            {"content": "已签收"},
+            {"content": "正在派送"},
+            {"content": "无关键词轨迹"},
+        ]
+        # 最新一条（索引 0）命中签收
+        assert tool._infer_status_from_traces(traces) == "delivered"
+
+    def test_no_match_fallback(self, tool):
+        assert tool._infer_status_from_traces([{"content": "已收取快件"}]) == "in_transit"
+
+
+class TestLogisticsTrackCompanyCode:
+    """物流查询 - _get_company_code 编码转换"""
+
+    def test_ascii_code_uppercase(self, tool):
+        assert tool._get_company_code("sf") == "SF"
+
+    def test_chinese_name_mapping(self, tool):
+        assert tool._get_company_code("顺丰速运") == "SFEXPRESS"
+        assert tool._get_company_code("中通快递") == "ZTO"
+        assert tool._get_company_code("韵达") == "YUNDA"
+
+    def test_unknown_company_none(self, tool):
+        assert tool._get_company_code("未知快递") is None
+
+
+class TestLogisticsTrackTransform:
+    """物流查询 - _transform_api_response 标准格式转换"""
+
+    def test_transform_with_api_type_and_traces(self, tool):
+        api_result = {
+            "status": "0",
+            "result": {
+                "type": "SFEXPRESS",
+                "number": "SF123",
+                "list": [
+                    {"time": "2026-01-01", "context": "已签收"},
+                    {"time": "2025-12-31", "status": "发往杭州"},
+                ],
+            },
+        }
+        data = tool._transform_api_response(api_result, "SF123", "顺丰速运", "order-1")
+        assert data["company"] == "顺丰速运"
+        assert data["tracking_number"] == "SF123"
+        assert data["status"] == "delivered"
+        assert data["status_text"] == "已签收"
+        assert len(data["traces"]) == 2
+        assert data["traces"][1]["content"] == "发往杭州"
+
+    def test_transform_company_fallback(self, tool):
+        api_result = {"status": "0", "result": {"list": []}}
+        data = tool._transform_api_response(api_result, "SF123", "中通快递", None)
+        assert data["company"] == "中通快递"
+
+
+class TestLogisticsTrackOrderEdge:
+    """物流查询 - _track_by_order 隔离/分支"""
+
+    @patch("app.tools.logistics_track.get_admin_api_client")
+    async def test_uuid_direct_branch(self, mock_get_client, tool, admin_tool_context):
+        """UUID 订单号跳过 keyword 搜索，直接查详情"""
+        mock_client = AsyncMock()
+        async def mock_get(url, **kwargs):
+            return {"success": True, "data": {
+                "logistics": {"trackingNo": "SF1", "company": "顺丰速运"}}}
+        mock_client.get = mock_get
+        mock_get_client.return_value = mock_client
+
+        uuid = "12345678-1234-1234-1234-123456789012"
+        result = await tool._track_by_order(admin_tool_context, uuid)
+        # 直接走详情 → trackingNo → _track_by_number → mock 降级成功
+        assert result.success is True
+
+    @patch("app.tools.logistics_track.get_admin_api_client")
+    async def test_tenant_mismatch_rejected(self, mock_get_client, tool, admin_tool_context):
+        """响应 tenant_id 与上下文不一致 → 订单不存在（数据完整性）"""
+        mock_client = AsyncMock()
+        async def mock_get(url, **kwargs):
+            if kwargs.get("params", {}).get("keyword"):
+                return {"success": True, "data": {"records": [{"id": "uuid-x"}]}}
+            return {"success": True, "data": {"tenantId": 999, "logistics": {"trackingNo": "SF1"}}}
+        mock_client.get = mock_get
+        mock_get_client.return_value = mock_client
+
+        result = await tool._track_by_order(admin_tool_context, "ORD-1")
+        assert result.success is False
+        assert "订单不存在" in result.error
