@@ -6,6 +6,7 @@
   2. admin-api 查询确认商品/订单存在
   3. 逐字段验证（名称/价格/状态/颜色等）
 """
+# case_ids: PR-008, PR-011, PR-012, OR-008, AS-003
 import time
 import pytest
 from tests.e2e.real.conftest import (
