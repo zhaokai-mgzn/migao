@@ -98,3 +98,6 @@ exemptions:
 
   - pattern: "backend/admin-api/src/main/java/com/migao/admin/controller/AdminUserController.java"
     reason: "#1830: JavaDoc 注释更新（移除 username 示例），纯文档无逻辑变更。已有 AdminUserControllerTest 覆盖"
+
+  - pattern: "frontend/admin-web/src/components/dashboard/TodayOverviewBar.tsx"
+    reason: "#2538: 已有 tests/unit/components/dashboard/TodayOverviewBar.test.tsx（14 tests PASS）。gate 规则模板 {2}.test.ts 未含子目录 dashboard 且 .ts 扩展名与实际 .tsx 不符"
