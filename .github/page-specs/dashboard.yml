@@ -1,0 +1,14 @@
+schema: "page-spec/1.0"
+name: dashboard
+domain: ui
+path: /dashboard
+tier: normal
+truths_ref:
+  - frontend-fix.dashboard-no-truncate
+  - frontend-fix.axis-sampling
+  - frontend-fix.dashboard-no-overflow
+required_texts:
+  - 数据看板
+  - 商品销量排行
+  - 订单趋势
+  - 日涨
