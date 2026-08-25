@@ -1,0 +1,111 @@
+{
+  "blocker_count": 1,
+  "warning_count": 0,
+  "blockers": [
+    {
+      "file": "/Users/guangzhen.zk/ai native/migao-loop/backend/ai-agent-service/tests/test_follow_up_suggestions.py",
+      "kind": "block",
+      "module": "Case Contract",
+      "reason": "修改的测试未声明 case_ids（头部加 # case_ids: <用例ID>）"
+    }
+  ],
+  "warnings": [],
+  "results": [
+    {
+      "file": ".github/cases/misc.yml",
+      "kind": "unmatched",
+      "module": "—"
+    },
+    {
+      "file": ".github/templates/misc.yml",
+      "kind": "unmatched",
+      "module": "—"
+    },
+    {
+      "file": "backend/ai-agent-service/tests/test_config.py",
+      "kind": "auto_pass",
+      "module": "Test/Doc/Config"
+    },
+    {
+      "file": "backend/ai-agent-service/tests/test_follow_up_suggestions.py",
+      "kind": "auto_pass",
+      "module": "Test/Doc/Config"
+    },
+    {
+      "file": "backend/ai-agent-service/tests/test_intent_classifier.py",
+      "kind": "auto_pass",
+      "module": "Test/Doc/Config"
+    },
+    {
+      "file": "backend/ai-agent-service/tests/test_llm_factory.py",
+      "kind": "auto_pass",
+      "module": "Test/Doc/Config"
+    },
+    {
+      "file": "backend/ai-agent-service/tests/test_main.py",
+      "kind": "auto_pass",
+      "module": "Test/Doc/Config"
+    },
+    {
+      "file": "backend/ai-agent-service/tests/test_memory_extractor.py",
+      "kind": "auto_pass",
+      "module": "Test/Doc/Config"
+    },
+    {
+      "file": "backend/ai-agent-service/tests/test_rule_matcher.py",
+      "kind": "auto_pass",
+      "module": "Test/Doc/Config"
+    }
+  ],
+  "case_trace": {
+    "blockers": 1,
+    "warnings": 0,
+    "report": [
+      {
+        "file": "/Users/guangzhen.zk/ai native/migao-loop/backend/ai-agent-service/tests/test_config.py",
+        "level": "pass",
+        "case_ids": [
+          "MC-007"
+        ]
+      },
+      {
+        "file": "/Users/guangzhen.zk/ai native/migao-loop/backend/ai-agent-service/tests/test_intent_classifier.py",
+        "level": "pass",
+        "case_ids": [
+          "MC-003",
+          "MC-004"
+        ]
+      },
+      {
+        "file": "/Users/guangzhen.zk/ai native/migao-loop/backend/ai-agent-service/tests/test_llm_factory.py",
+        "level": "pass",
+        "case_ids": [
+          "MC-008"
+        ]
+      },
+      {
+        "file": "/Users/guangzhen.zk/ai native/migao-loop/backend/ai-agent-service/tests/test_main.py",
+        "level": "pass",
+        "case_ids": [
+          "MC-009"
+        ]
+      },
+      {
+        "file": "/Users/guangzhen.zk/ai native/migao-loop/backend/ai-agent-service/tests/test_memory_extractor.py",
+        "level": "pass",
+        "case_ids": [
+          "MC-001",
+          "MC-002"
+        ]
+      },
+      {
+        "file": "/Users/guangzhen.zk/ai native/migao-loop/backend/ai-agent-service/tests/test_rule_matcher.py",
+        "level": "pass",
+        "case_ids": [
+          "MC-010",
+          "MC-011"
+        ]
+      }
+    ]
+  }
+}
