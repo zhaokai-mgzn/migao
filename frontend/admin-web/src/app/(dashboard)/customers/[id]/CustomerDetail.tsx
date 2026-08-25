@@ -11,7 +11,7 @@ import { CustomerChannelLabels } from '@/types'
 import dayjs from 'dayjs'
 
 const TAG_COLORS = [
-  '#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6',
+  '#48618f', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6',
   '#EC4899', '#06B6D4', '#F97316', '#14B8A6', '#6366F1',
 ]
 
@@ -36,7 +36,7 @@ export default function CustomerDetailPage() {
       await new Promise((resolve) => setTimeout(resolve, 500))
       const mockTags: CustomerTag[] = [
         { id: 't1', name: 'VIP客户', color: '#EF4444' },
-        { id: 't2', name: '窗帘定制', color: '#3B82F6' },
+        { id: 't2', name: '窗帘定制', color: '#48618f' },
         { id: 't3', name: '需要跟进', color: '#F59E0B' },
         { id: 't4', name: '售后中', color: '#8B5CF6' },
         { id: 't5', name: '新客户', color: '#10B981' },

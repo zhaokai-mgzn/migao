@@ -109,8 +109,8 @@ function BizStatCard({ title, value, change, icon, sparkline, chartType }: {
           )}
         </div>
         {sparkline && (chartType === 'bar'
-          ? <MiniBarChart data={sparkline} color="#3B82F6" />
-          : <MiniSparkline data={sparkline} color="#3B82F6" />
+          ? <MiniBarChart data={sparkline} color="#48618f" />
+          : <MiniSparkline data={sparkline} color="#48618f" />
         )}
       </div>
     </div>
@@ -280,10 +280,10 @@ export default function DashboardPage() {
               const toY = (v: number) => 200 - (v / chartMax) * 175
               return (
                 <svg width="100%" height="100%" viewBox={`0 0 ${Math.max(trendData.length * 40, 300)} 240`} overflow="visible">
-                  <polyline fill="none" stroke="#3B82F6" strokeWidth="2"
+                  <polyline fill="none" stroke="#48618f" strokeWidth="2"
                     points={trendData.map((d, i) => `${i * 40 + 20},${toY(d.orders || 0)}`).join(' ')} />
                   {trendData.map((d, i) => (
-                    <circle key={i} cx={i * 40 + 20} cy={toY(d.orders || 0)} r="3" fill="#3B82F6" />
+                    <circle key={i} cx={i * 40 + 20} cy={toY(d.orders || 0)} r="3" fill="#48618f" />
                   ))}
                   {trendData.filter((_, i) => i % Math.ceil(trendData.length / 7) === 0).map((d, i) => (
                     <text key={i} x={i * 40 * Math.ceil(trendData.length / 7) + 20} y="225" textAnchor="middle" fontSize="10" fill="#9CA3AF">
@@ -325,10 +325,10 @@ export default function DashboardPage() {
               const toY = (v: number) => 200 - (v / chartMax) * 175
               return (
                 <svg width="100%" height="100%" viewBox={`0 0 ${Math.max(trendData.length * 40, 300)} 240`} overflow="visible">
-                  <defs><linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#3B82F6" stopOpacity="0.3" /><stop offset="100%" stopColor="#3B82F6" stopOpacity="0" /></linearGradient></defs>
+                  <defs><linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#48618f" stopOpacity="0.3" /><stop offset="100%" stopColor="#48618f" stopOpacity="0" /></linearGradient></defs>
                   <path fill="url(#areaGrad)"
                     d={`M 20 200 ${trendData.map((_, i) => `L ${i * 40 + 20} ${toY(salesValues[i])}`).join(' ')} L ${(trendData.length - 1) * 40 + 20} 200 Z`} />
-                  <polyline fill="none" stroke="#3B82F6" strokeWidth="2"
+                  <polyline fill="none" stroke="#48618f" strokeWidth="2"
                     points={trendData.map((_, i) => `${i * 40 + 20},${toY(salesValues[i])}`).join(' ')} />
                 </svg>
               )
