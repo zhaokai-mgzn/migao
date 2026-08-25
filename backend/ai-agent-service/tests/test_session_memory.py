@@ -4,6 +4,7 @@
 测试 SessionMemory 的核心方法：create_session, save_message, get_history, 
 get_session, delete_session 等
 """
+# case_ids: CH-005, CH-006, DA-004
 
 import pytest
 import json
@@ -16,15 +17,20 @@ from app.memory.session_memory import SessionMemory
 class MockDBResult:
     """模拟数据库查询结果"""
     
-    def __init__(self, rows=None, single_row=None):
+    def __init__(self, rows=None, single_row=None, scalar_val=None, rowcount=0):
         self._rows = rows or []
         self._single_row = single_row
+        self._scalar_val = scalar_val
+        self.rowcount = rowcount
     
     def fetchall(self):
         return self._rows
     
     def fetchone(self):
         return self._single_row
+
+    def scalar(self):
+        return self._scalar_val
 
 
 @pytest.fixture
@@ -493,3 +499,179 @@ class TestCloseIdleSessions:
         count = await memory.close_idle_sessions(idle_minutes=30)
 
         assert count == 0  # 降级返回0
+
+
+class TestGetHistoryByTokens:
+    """按 token 预算加载历史消息"""
+
+    async def test_returns_messages_and_compression_flag(self, memory, mock_db):
+        rows = [
+            ("msg_1", "s1", "user", "text", f"hello{i}", {}, 10, "2026-01-01", 10)
+            for i in range(5)
+        ]
+        mock_db.execute.side_effect = [MockDBResult(rows=rows), MockDBResult(scalar_val=8)]
+
+        messages, needs_compression = await memory.get_history_by_tokens(
+            "s1", max_tokens=1000
+        )
+
+        assert len(messages) == 5
+        assert messages[0]["content"] == "hello0"
+        assert messages[0]["token_count"] == 10
+        assert needs_compression is True  # 总消息 8 > 返回 5 且返回 > min_messages(4)
+
+    async def test_no_compression_when_all_returned(self, memory, mock_db):
+        rows = [
+            ("msg_1", "s1", "user", "text", "hello", {}, 10, "2026-01-01", 10),
+        ]
+        mock_db.execute.side_effect = [MockDBResult(rows=rows), MockDBResult(scalar_val=1)]
+
+        messages, needs_compression = await memory.get_history_by_tokens("s1")
+
+        assert needs_compression is False
+
+    async def test_error_falls_back_to_get_history(self, memory, mock_db):
+        mock_db.execute.side_effect = Exception("DB down")
+
+        messages, needs_compression = await memory.get_history_by_tokens("s1")
+
+        assert needs_compression is True
+
+
+class TestPendingSkill:
+    """pending_interact_skill 持久化"""
+
+    async def test_set_pending_skill(self, memory, mock_db):
+        assert await memory.set_pending_skill("s1", "product") is True
+        mock_db.commit.assert_called_once()
+
+    async def test_set_pending_skill_empty_clears(self, memory, mock_db):
+        result = await memory.set_pending_skill("s1", "")
+        assert result is True
+        mock_db.commit.assert_called_once()
+
+    async def test_get_pending_skill(self, memory, mock_db):
+        mock_db.execute.return_value = MockDBResult(single_row=("product",))
+        assert await memory.get_pending_skill("s1") == "product"
+
+    async def test_get_pending_skill_none(self, memory, mock_db):
+        mock_db.execute.return_value = MockDBResult(single_row=None)
+        assert await memory.get_pending_skill("s1") == ""
+
+    async def test_clear_pending_skill(self, memory, mock_db):
+        assert await memory.clear_pending_skill("s1") is True
+        mock_db.commit.assert_called_once()
+
+
+class TestPlanState:
+    """P&E Plan 状态持久化"""
+
+    async def test_set_plan_state(self, memory, mock_db):
+        assert await memory.set_plan_state("s1", '{"steps": []}') is True
+        mock_db.commit.assert_called_once()
+
+    async def test_get_plan_state(self, memory, mock_db):
+        mock_db.execute.return_value = MockDBResult(single_row=('{"steps": []}',))
+        assert await memory.get_plan_state("s1") == '{"steps": []}'
+
+    async def test_get_plan_state_empty(self, memory, mock_db):
+        mock_db.execute.return_value = MockDBResult(single_row=None)
+        assert await memory.get_plan_state("s1") is None
+
+    async def test_clear_plan_state(self, memory, mock_db):
+        assert await memory.clear_plan_state("s1") is True
+        mock_db.commit.assert_called_once()
+
+
+class TestVisionAnalysis:
+    """Vision 分析缓存"""
+
+    async def test_set_truncates_to_3000(self, memory, mock_db):
+        result = await memory.set_vision_analysis("s1", "长" * 4000)
+        assert result is True
+
+    async def test_get_vision_analysis(self, memory, mock_db):
+        mock_db.execute.return_value = MockDBResult(single_row=("分析结果",))
+        assert await memory.get_vision_analysis("s1") == "分析结果"
+
+    async def test_get_vision_analysis_empty(self, memory, mock_db):
+        mock_db.execute.return_value = MockDBResult(single_row=None)
+        assert await memory.get_vision_analysis("s1") == ""
+
+    async def test_clear_vision_analysis(self, memory, mock_db):
+        assert await memory.clear_vision_analysis("s1") is True
+
+
+class TestCollectedFields:
+    """跨轮字段记忆（Redis）"""
+
+    async def test_get_returns_parsed_json(self, memory):
+        r = AsyncMock()
+        r.get = AsyncMock(return_value='{"city": "杭州"}')
+        memory._get_redis = AsyncMock(return_value=r)
+
+        assert await memory.get_collected_fields("s1") == {"city": "杭州"}
+
+    async def test_get_empty_session_returns_empty(self, memory):
+        assert await memory.get_collected_fields("") == {}
+
+    async def test_set_returns_true(self, memory):
+        r = AsyncMock()
+        r.set = AsyncMock(return_value=True)
+        memory._get_redis = AsyncMock(return_value=r)
+
+        assert await memory.set_collected_fields("s1", {"city": "杭州"}) is True
+
+    async def test_set_empty_returns_false(self, memory):
+        assert await memory.set_collected_fields("s1", {}) is False
+
+    async def test_clear_returns_true(self, memory):
+        r = AsyncMock()
+        r.delete = AsyncMock(return_value=1)
+        memory._get_redis = AsyncMock(return_value=r)
+
+        assert await memory.clear_collected_fields("s1") is True
+
+
+class TestAutoInteractFlag:
+    """Auto-Interact 防重复 flag"""
+
+    async def test_get_flag_true(self, memory):
+        r = AsyncMock()
+        r.get = AsyncMock(return_value="1")
+        memory._get_redis = AsyncMock(return_value=r)
+
+        assert await memory.get_auto_interact_flag("s1") is True
+
+    async def test_get_flag_false(self, memory):
+        r = AsyncMock()
+        r.get = AsyncMock(return_value=None)
+        memory._get_redis = AsyncMock(return_value=r)
+
+        assert await memory.get_auto_interact_flag("s1") is False
+
+    async def test_set_flag(self, memory):
+        r = AsyncMock()
+        r.setex = AsyncMock(return_value=True)
+        memory._get_redis = AsyncMock(return_value=r)
+
+        assert await memory.set_auto_interact_flag("s1") is True
+
+
+class TestGetLastMessageTime:
+    async def test_returns_time(self, memory, mock_db):
+        from datetime import datetime
+        t = datetime(2026, 1, 1)
+        mock_db.execute.return_value = MockDBResult(single_row=(t,))
+        assert await memory.get_last_message_time("s1") == t
+
+    async def test_no_message_returns_none(self, memory, mock_db):
+        mock_db.execute.return_value = MockDBResult(single_row=None)
+        assert await memory.get_last_message_time("s1") is None
+
+
+class TestCleanupClosedSessions:
+    async def test_cleanup_returns_count(self, memory, mock_db):
+        mock_db.execute.return_value.rowcount = 3
+        count = await memory.cleanup_closed_sessions(older_than_days=90)
+        assert count == 3
