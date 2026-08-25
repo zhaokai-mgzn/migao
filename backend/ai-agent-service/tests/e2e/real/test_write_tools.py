@@ -71,6 +71,7 @@ class TestProductWrite:
             f"价格应在 66±5% 元范围内。创建 66 元，实际 price={price}（折算 {price_in_yuan} 元）"
         )
 
+    @pytest.mark.flaky(reruns=2, reruns_delay=5)  # 真实 LLM 偶发整轮不调工具（tools: []），加重试容错
     def test_product_update_price(self, sess):
         """更新价格 → admin-api 验证新价格 + 库存不受影响"""
         items = admin_search_products("窗帘")
