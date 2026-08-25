@@ -108,3 +108,6 @@ skills-lock.json
 # npx skills 生成的 symlink（非项目自有技能）；项目自有技能需在下方 whitelist
 .claude/skills/*
 !.claude/skills/tdd-iron-law.md
+
+# QA Growth Gate 本地生成物
+growth-gate-result.json

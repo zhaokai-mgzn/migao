@@ -963,6 +963,160 @@ _CASE_HR_005 = EvalCase(
     tags=['create', 'permission'],
 )
 
+# ── MC-001 [NORMAL] 记忆提取解析 - 纯 JSON/内嵌数组/非法输入（源: cases/misc.yml）──
+_CASE_MC_001 = EvalCase(
+    id='MC-001',
+    legacy_id='',
+    title='记忆提取解析 - 纯 JSON/内嵌数组/非法输入',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 从 LLM 响应解析记忆列表，并跳过问候/感谢等短对话'],
+    expectations=['direct_reply'],
+    data_checks=['_parse_extraction_result 纯 JSON 数组直接 json.loads 返回；带说明文字时 re 提取 [...] 再解析；非 JSON/非 list → 返回 []', 'extract_memories_from_turn 在 user_message<4 且 assistant_reply<20 时直接返回 [] 且不调 LLM'],
+    skip_reason='纯函数由 pytest 单测验证（tests/test_memory_extractor.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['memory', 'extractor', 'parse'],
+)
+
+# ── MC-002 [NORMAL] 记忆提取与保存 - LLM 流程 + 落库计数（源: cases/misc.yml）──
+_CASE_MC_002 = EvalCase(
+    id='MC-002',
+    legacy_id='',
+    title='记忆提取与保存 - LLM 流程 + 落库计数',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 调轻量模型提取记忆并写入 user_memories'],
+    expectations=['direct_reply'],
+    data_checks=['extract_memories_from_turn prompt 截断 500 字符；LLM ainvoke 后逐条补 context（已有 context 不覆盖）；LLM 异常 → warning 返回 []', 'extract_and_save 无记忆返回 0；有记忆 batch_upsert 返回保存条数；batch_upsert 异常 → error 返回 0'],
+    skip_reason='依赖注入 mock 的 async 方法由 pytest 单测验证（tests/test_memory_extractor.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['memory', 'extractor', 'save'],
+)
+
+# ── MC-003 [NORMAL] 意图分类 - 文本提取 + 分类器 Prompt 构建（源: cases/misc.yml）──
+_CASE_MC_003 = EvalCase(
+    id='MC-003',
+    legacy_id='',
+    title='意图分类 - 文本提取 + 分类器 Prompt 构建',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 从消息提取文本并动态构建意图分类 Prompt'],
+    expectations=['direct_reply'],
+    data_checks=["_extract_text None→''、str 原样、list 仅拼接 type=='text' 的 text 块（空格 join）、其他类型 str(content)", '_build_classifier_prompt agent_intents=None 用全部意图；给定列表确保 general 兜底追加；未知意图 desc 回退 intent 名；消歧规则只展示当前意图相关'],
+    skip_reason='纯函数由 pytest 单测验证（tests/test_intent_classifier.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['intent', 'classifier', 'prompt'],
+)
+
+# ── MC-004 [NORMAL] 意图分类 - 响应解析 + 异常兜底（源: cases/misc.yml）──
+_CASE_MC_004 = EvalCase(
+    id='MC-004',
+    legacy_id='',
+    title='意图分类 - 响应解析 + 异常兜底',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 解析分类模型响应并在异常时回退 general'],
+    expectations=['direct_reply'],
+    data_checks=['_parse_response 空 content→general(0.5)；剥离 ```json；直接 loads；兜底 re 提取第一个 {...}；intent 非法→general；confidence 夹取 [0,1]；解析异常→default', 'classify 正常返回 source=classifier；成本追踪 usage_metadata 优先、response_metadata 兜底；整体异常 → general(0.5, source=default, matched_keywords=[])'],
+    skip_reason='依赖注入 mock 的 async 方法由 pytest 单测验证（tests/test_intent_classifier.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['intent', 'classifier', 'fallback'],
+)
+
+# ── MC-005 [NORMAL] 后续建议 - 预设模板与 stage fallback（源: cases/misc.yml）──
+_CASE_MC_005 = EvalCase(
+    id='MC-005',
+    legacy_id='',
+    title='后续建议 - 预设模板与 stage fallback',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 按 agent_type/intent/stage 返回预设后续建议'],
+    expectations=['direct_reply'],
+    data_checks=['MIBAO/XIAOBU 预设覆盖高频意图且每意图多 stage；farewell 空 dict 表示不推荐', '_get_preset agent_type 选米宝/小布预设与兜底；未知 intent → general；farewell → []；stage fallback 链 stage→querying→initial→第一个非空 stage→defaults'],
+    skip_reason='纯函数由 pytest 单测验证（tests/test_follow_up_suggestions.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['suggestions', 'preset', 'fallback'],
+)
+
+# ── MC-006 [NORMAL] 后续建议 - 动态生成/清洗/兜底（源: cases/misc.yml）──
+_CASE_MC_006 = EvalCase(
+    id='MC-006',
+    legacy_id='',
+    title='后续建议 - 动态生成/清洗/兜底',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 动态生成后续建议并在失败时回退预设'],
+    expectations=['direct_reply'],
+    data_checks=['_should_use_dynamic 无 API key→False、answer<20→False、实体关键词→True、answer>100→True、否则 _has_specific_entities 正则检测', '_parse_suggestions_from_response JSON 数组（全 str）→前 3 条；带文本 re 提取→前 3 条；失败→None；_sanitize_prompt_value 花括号→全角/换行制表→空格/截断', "generate 动态命中→截断 3 条 strategy=dynamic；动态失败/超时/异常→fallback preset；_generate_dynamic 角色白名单（未知/空→'员工'）；httpx.TimeoutException→None"],
+    skip_reason='依赖注入 mock 的 async 方法由 pytest 单测验证（tests/test_follow_up_suggestions.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['suggestions', 'dynamic', 'sanitize'],
+)
+
+# ── MC-007 [NORMAL] 配置 - 默认值/向后兼容/生产密钥校验（源: cases/misc.yml）──
+_CASE_MC_007 = EvalCase(
+    id='MC-007',
+    legacy_id='',
+    title='配置 - 默认值/向后兼容/生产密钥校验',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 读取 Settings 配置并校验生产密钥'],
+    expectations=['direct_reply'],
+    data_checks=['Settings 默认值（APP_NAME/APP_VERSION/DEBUG/API_PREFIX/HOST/PORT 及 LLM 路由/成本/重试参数）正确', 'MINIMAX_API_KEY/BASE_URL/MODEL 取 PRIMARY_* 优先 VISION_* 兜底；DASHSCOPE_* property+setter 读写 PRIMARY/VISION 字段', 'validate_production_secrets 非 DEBUG 且缺 JWT_PUBLIC_KEY/SERVICE_TOKEN → ValueError；DEBUG=true 绕过；齐全通过'],
+    skip_reason='配置/纯函数由 pytest 单测验证（tests/test_config.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['config', 'settings', 'validation'],
+)
+
+# ── MC-008 [NORMAL] LLM 工厂 - 实例参数与多模态清洗（源: cases/misc.yml）──
+_CASE_MC_008 = EvalCase(
+    id='MC-008',
+    legacy_id='',
+    title='LLM 工厂 - 实例参数与多模态清洗',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 通过 LLMFactory 创建各 LLM 实例并清洗多模态内容'],
+    expectations=['direct_reply'],
+    data_checks=["_new_chat_model MINIMAX_API_KEY=='ci-dummy' → ChatOpenAI，否则 ChatDeepSeek", 'create_skill_llm temperature=0.7/streaming/max_completion_tokens=2048/request_timeout=60；force_no_think→disabled；enable_thinking→enabled+384000', "create_vision_llm/intent/summary/suggestion 参数正确；invoke_text_safe 清洗 image_url 仅保留 text，Human 空文本→'[图片]'，返回 response.content.strip()"],
+    skip_reason='工厂/纯函数由 pytest 单测验证（tests/test_llm_factory.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['llm', 'factory', 'multimodal'],
+)
+
+# ── MC-009 [NORMAL] 应用入口 - create_app/健康检查/生命周期（源: cases/misc.yml）──
+_CASE_MC_009 = EvalCase(
+    id='MC-009',
+    legacy_id='',
+    title='应用入口 - create_app/健康检查/生命周期',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 创建 FastAPI 应用并管理启动/关闭生命周期'],
+    expectations=['direct_reply'],
+    data_checks=['create_app 返回 FastAPI，/health 返回 status=healthy+service+version；CORS 白名单 + DEBUG 追加开发源；api_router 挂 API_PREFIX', 'lifespan 启动 init_db/init_redis（非 DEBUG 异常 re-raise，DEBUG 仅 log）；后台 _session_auto_close_loop；关闭 cancel + close_redis + close_db', '_session_auto_close_loop 每 300s 扫描 close_idle_sessions(240min)，每天 cleanup_closed_sessions(90d)；CancelledError re-raise'],
+    skip_reason='依赖注入 mock 由 pytest 单测验证（tests/test_main.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['app', 'main', 'lifespan'],
+)
+
+# ── MC-010 [NORMAL] 规则匹配 - 文本提取与关键词优先级（源: cases/misc.yml）──
+_CASE_MC_010 = EvalCase(
+    id='MC-010',
+    legacy_id='',
+    title='规则匹配 - 文本提取与关键词优先级',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 用关键词规则快速匹配意图'],
+    expectations=['direct_reply'],
+    data_checks=["_extract_text None→''/str 原样/list 仅拼 type=='text'/其他 str(content)；match 空文本/空白→None", '关键词优先级 capabilities 长短语→farewell→订单统计/订单数据(order_query)→KEYWORD_MAP；greeting 仅 ≤10 字符才 1.0，长消息含问候词跳过'],
+    skip_reason='纯函数由 pytest 单测验证（tests/test_rule_matcher.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['rule_matcher', 'intent', 'priority'],
+)
+
+# ── MC-011 [NORMAL] 规则匹配 - 正则规则与未命中（源: cases/misc.yml）──
+_CASE_MC_011 = EvalCase(
+    id='MC-011',
+    legacy_id='',
+    title='规则匹配 - 正则规则与未命中',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 用正则规则识别订单号/商品创建'],
+    expectations=['direct_reply'],
+    data_checks=["关键词命中 confidence=0.95 source='rule' matched_keywords；REGEX_RULES 命中 0.9 source='rule'（ORD-* 订单号、创建商品正则排除订单/工单/售后）", '均未命中返回 None'],
+    skip_reason='纯函数由 pytest 单测验证（tests/test_rule_matcher.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['rule_matcher', 'regex', 'fallback'],
+)
+
 # ── OR-001 [SMOKE] 订单列表查询（源: cases/order.yml）──
 _CASE_OR_001 = EvalCase(
     id='OR-001',
@@ -1534,6 +1688,17 @@ ALL_CASES = (
     _CASE_HR_003,
     _CASE_HR_004,
     _CASE_HR_005,
+    _CASE_MC_001,
+    _CASE_MC_002,
+    _CASE_MC_003,
+    _CASE_MC_004,
+    _CASE_MC_005,
+    _CASE_MC_006,
+    _CASE_MC_007,
+    _CASE_MC_008,
+    _CASE_MC_009,
+    _CASE_MC_010,
+    _CASE_MC_011,
     _CASE_OR_001,
     _CASE_OR_002,
     _CASE_OR_003,

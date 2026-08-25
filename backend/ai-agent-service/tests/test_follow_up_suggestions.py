@@ -1,3 +1,4 @@
+# case_ids: MC-005, MC-006
 """
 后续问题建议 (Follow-up Suggestions) 单元测试
 
@@ -24,6 +25,8 @@ from app.suggestions.follow_up import (
     XIAOBU_DYNAMIC_PROMPT,
     _has_specific_entities,
     _parse_suggestions_from_response,
+    _sanitize_prompt_value,
+    _safe_format,
 )
 from app.graph.nodes import _infer_stage
 
@@ -618,3 +621,129 @@ class TestStageInference:
         """无意图信息默认 initial"""
         state = self._make_state(final_answer="")
         assert _infer_stage(state) == "initial"
+
+
+# ========== Prompt 清洗与安全格式化测试 ==========
+
+class TestSanitizePrompt:
+    def test_braces_to_fullwidth(self):
+        assert _sanitize_prompt_value("a{b}c") == "a｛b｝c"
+
+    def test_newline_tab_to_space(self):
+        assert _sanitize_prompt_value("a\nb\tc") == "a b c"
+
+    def test_truncate_max_len(self):
+        assert _sanitize_prompt_value("x" * 300, max_len=10) == "x" * 10
+
+    def test_empty_value(self):
+        assert _sanitize_prompt_value("") == ""
+        assert _sanitize_prompt_value(None) == ""
+
+    def test_safe_format_cleans_then_formats(self):
+        result = _safe_format("你好{name}", name="a{b}c\nd")
+        assert result == "你好a｛b｝c d"
+
+
+# ========== 动态生成判定测试 ==========
+
+class TestShouldUseDynamic:
+    def _gen(self, api_key="test-key"):
+        with patch("app.suggestions.follow_up.settings") as s:
+            s.INTENT_MODEL = "im"
+            gen = FollowUpSuggestionGenerator()
+        gen._api_key = api_key
+        return gen
+
+    def test_no_api_key_returns_false(self):
+        gen = self._gen(api_key="")
+        assert gen._should_use_dynamic("订单号 ORD123 已发货", "order_query") is False
+
+    def test_short_answer_returns_false(self):
+        gen = self._gen()
+        assert gen._should_use_dynamic("你好", "greeting") is False
+
+    def test_entity_keyword_returns_true(self):
+        gen = self._gen()
+        assert gen._should_use_dynamic("您的订单已发货，物流单号SF123456", "logistics_track") is True
+
+    def test_long_answer_returns_true(self):
+        gen = self._gen()
+        assert gen._should_use_dynamic("x" * 101, "general") is True
+
+    def test_specific_entities_fallback(self):
+        gen = self._gen()
+        # 无实体关键词、长度 > 20，但含价格实体 → _has_specific_entities 兜底
+        assert gen._should_use_dynamic("¥299 这是足够长的回复内容用于触发实体检测分支", "general") is True
+
+
+# ========== 预设建议获取测试 ==========
+
+class TestGetPreset:
+    def _gen(self):
+        with patch("app.suggestions.follow_up.settings") as s:
+            s.INTENT_MODEL = "im"
+            return FollowUpSuggestionGenerator()
+
+    def test_farewell_returns_empty(self):
+        gen = self._gen()
+        assert gen._get_preset("farewell", "mibao") == []
+
+    def test_stage_fallback_to_querying(self):
+        gen = self._gen()
+        assert gen._get_preset("order_query", "mibao", "nonexistent") == \
+            MIBAO_PRESET_SUGGESTIONS["order_query"]["querying"]
+
+    def test_first_non_empty_stage_fallback(self):
+        gen = self._gen()
+        custom = {"weird_intent": {"later_stage": ["只有这个"]}}
+        with patch("app.suggestions.follow_up.MIBAO_PRESET_SUGGESTIONS", custom):
+            result = gen._get_preset("weird_intent", "mibao", "initial")
+        assert result == ["只有这个"]
+
+
+# ========== 动态生成细节测试 ==========
+
+class TestGenerateDynamic:
+    def _gen(self):
+        with patch("app.suggestions.follow_up.settings") as s:
+            s.INTENT_MODEL = "im"
+            return FollowUpSuggestionGenerator()
+
+    def _mock_llm(self):
+        mock_response = MagicMock()
+        mock_response.content = '["建议1", "建议2"]'
+        mock_response.usage_metadata = {}
+        mock_response.response_metadata = {}
+        mock_llm = MagicMock()
+        mock_llm.ainvoke = AsyncMock(return_value=mock_response)
+        return mock_llm
+
+    @pytest.mark.asyncio
+    async def test_mibao_unknown_role_whitelisted_to_employee(self):
+        gen = self._gen()
+        gen._llm = self._mock_llm()
+        await gen._generate_dynamic(
+            query="查询", answer="这是足够长的回复内容包含订单号ORD123", agent_type="mibao",
+            user_role="hacker",
+        )
+        prompt = gen._llm.ainvoke.call_args[0][0][0].content
+        assert "角色：员工" in prompt
+        assert "hacker" not in prompt
+
+    @pytest.mark.asyncio
+    async def test_xiaobu_role_is_consumer(self):
+        gen = self._gen()
+        gen._llm = self._mock_llm()
+        await gen._generate_dynamic(query="查询", answer="这是足够长的回复内容", agent_type="xiaobu")
+        prompt = gen._llm.ainvoke.call_args[0][0][0].content
+        assert "消费者" in prompt
+
+    @pytest.mark.asyncio
+    async def test_timeout_returns_none(self):
+        import httpx
+        gen = self._gen()
+        mock_llm = MagicMock()
+        mock_llm.ainvoke = AsyncMock(side_effect=httpx.TimeoutException("timeout"))
+        gen._llm = mock_llm
+        result = await gen._generate_dynamic(query="查询", answer="这是足够长的回复内容", agent_type="mibao")
+        assert result is None
