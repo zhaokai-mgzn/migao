@@ -1,0 +1,38 @@
+# cases/registry.yml — 工具注册器域用例（ToolRegistry 契约，issue #2426）
+# 来源：issue #2426 coverage-gap 反推（registry.py 的 L2 真值）。
+# 为单元测试契约（注册/查询/执行审计，依赖注入 mock），不进入 agent-eval 冒烟（skip_reason 显式标注）。
+
+schema: "case-contract/1.0"
+domain: tools
+
+cases:
+  - id: RG-001
+    legacy_id: ""
+    title: "ToolRegistry 注册/查询/执行审计"
+    domains:
+      - tools
+      - chat
+    tier: normal
+    tags:
+      - registry
+      - tool_execute
+      - audit
+    truths_ref:
+      - ai-chat.tool-classes
+      - ai-chat.permission-layers
+    user_inputs:
+      - "ai-agent-service 注册工具并执行（含权限拒绝、写操作审计、异常泛化）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "register 重复名覆盖并 warning；unregister/get_tool/get_all_tools/get_tool_names/has_tool/clear 语义正确"
+      - "get_tools_description 空注册器返回「暂无可用工具」；get_tool_registry 单例 + reset_tool_registry 重置"
+      - "execute_tool 工具不存在→未知工具、权限不足→Permission denied、写操作（not read_only）记 [AUDIT] 日志且参数脱敏（仅记类型不记值）、执行异常→泛化 tool_execution_failed"
+    skip_reason: "注册器/执行审计由 pytest 单测验证（tests/test_tools_registry.py），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-08-25 新增：ai-agent-service tools-mixed-part2 覆盖率补全（issue #2426）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_registry.py"
+      ci:
+        - ai-agent-tests.yml
+      verifies: []

@@ -239,7 +239,7 @@
 数据: 按 tenant_id 隔离目录 chat/{tenant_id} 转发；HTTPStatusError→502 UPLOAD_PROXY_ERROR、RequestError→502 UPLOAD_SERVICE_UNAVAILABLE
 跳过: 上传校验/代理由 pytest 单测验证（tests/test_upload.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
-真值: api.upload-validation, api.upload-validation, api.upload-magic-proxy, api.upload-magic-proxy
+真值: api.upload-validation, api.upload-magic-proxy
 溯源: 2026-08-25 新增：ai-agent-service api 覆盖率补全（issue #2428） ｜ tags: api, upload, file_guard
 
 ## 分类域（3 case）
@@ -1103,6 +1103,20 @@
 真值: product-sku-stock.create-flow, ai-chat.validate-input
 溯源: eval M003 独有（中途纠偏） ｜ tags: multi_turn, correction, mid_flow_change
 
+## registry（1 case）
+
+### RG-001. ToolRegistry 注册/查询/执行审计 🔵
+```
+你: ai-agent-service 注册工具并执行（含权限拒绝、写操作审计、异常泛化）
+期望: direct_reply
+数据: register 重复名覆盖并 warning；unregister/get_tool/get_all_tools/get_tool_names/has_tool/clear 语义正确
+数据: get_tools_description 空注册器返回「暂无可用工具」；get_tool_registry 单例 + reset_tool_registry 重置
+数据: execute_tool 工具不存在→未知工具、权限不足→Permission denied、写操作（not read_only）记 [AUDIT] 日志且参数脱敏（仅记类型不记值）、执行异常→泛化 tool_execution_failed
+跳过: 注册器/执行审计由 pytest 单测验证（tests/test_tools_registry.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: ai-chat.tool-classes, ai-chat.permission-layers
+溯源: 2026-08-25 新增：ai-agent-service tools-mixed-part2 覆盖率补全（issue #2426） ｜ tags: registry, tool_execute, audit
+
 ## 设置域（7 case）
 
 ### ST-001. 系统设置 - 读取 🔵
@@ -1198,8 +1212,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：101（活跃 82，跳过 19）
-- tier 分布：smoke 9 / normal 65 / adversarial 27
+- 用例总数：102（活跃 82，跳过 20）
+- tier 分布：smoke 9 / normal 66 / adversarial 27
 - 售后域：5
 - agents：6
 - api：9
@@ -1214,6 +1228,7 @@
 - 订单域：10
 - 加工项域：4
 - 商品域：12
+- registry：1
 - 设置域：7
 - utils：2
 
