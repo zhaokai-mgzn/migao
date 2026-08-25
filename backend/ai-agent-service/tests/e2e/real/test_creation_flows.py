@@ -48,7 +48,8 @@ class TestProductCreation:
 
         # 逐字段验证
         assert name in p.get("name", ""), f"名称: {p.get('name')} != {name}"
-        actual_price = (p.get("price") or 0) / 100
+        # admin-api price 单位是"元"（product_manage 参数即"价格（元）"，示例 23.8），无需 /100
+        actual_price = p.get("price") or 0
         assert abs(actual_price - price) < 0.11, f"价格: {actual_price} != {price}"
         assert p.get("status") in ("on_sale", "off_sale", "draft"), f"状态非法: {p.get('status')}"
 
@@ -77,7 +78,8 @@ class TestProductCreation:
         time.sleep(1)
         items = admin_search_products(name)
         if items:
-            actual_price = (items[0].get("price") or 0) / 100
+            # admin-api price 单位是"元"，直接与预期比较
+            actual_price = items[0].get("price") or 0
             assert abs(actual_price - 76) < 1, f"修正后价格应为76: 实际{actual_price}"
 
 

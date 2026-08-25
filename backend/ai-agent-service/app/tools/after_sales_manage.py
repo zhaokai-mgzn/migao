@@ -44,6 +44,7 @@ class AfterSalesManageTool(BaseTool):
 
     read_only = False
     destructive = True   # 可关闭/拒绝工单（不可逆）
+    read_only_actions = {"list", "detail"}  # 只读 action 免确认拦截
     idempotent = False   # 创建/状态变更非幂等
 
     parameters = {

@@ -36,6 +36,7 @@ class CustomerManageTool(BaseTool):
 
     read_only = False
     destructive = True   # 可删除客户/标签
+    read_only_actions = {"list", "detail", "list_tags"}  # 只读 action 免确认拦截
     idempotent = False   # 创建/删除非幂等
 
     parameters = {

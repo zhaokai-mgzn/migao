@@ -41,6 +41,7 @@ class ProcessingItemManageTool(BaseTool):
 
     read_only = False
     destructive = True   # 可删除加工项/分类
+    read_only_actions = {"list_categories", "calculate_price"}  # 只读/纯计算 action 免确认拦截
     idempotent = False   # 创建/删除非幂等
 
     parameters = {

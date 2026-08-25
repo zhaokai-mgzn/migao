@@ -78,6 +78,12 @@ class BaseTool(ABC):
     destructive: bool = False
     idempotent: bool = True
 
+    # read_only_actions: destructive 工具中纯只读的 action 集合（如 list/detail/tree）。
+    # 这些 action 不修改数据，执行时豁免确认拦截（确认守卫只针对写/破坏性 action）。
+    # 空集 = 该工具所有 action 都是写/破坏性操作，一律需确认。
+    # 契约：必须是 VALID_ACTIONS 的子集（见 test_destructive_tool_confirm_guard.py）。
+    read_only_actions: frozenset = frozenset()
+
     # 权限控制
     require_auth: bool = True
     allowed_roles: list[str] = ["customer", "admin", "agent", "tenant_admin"]

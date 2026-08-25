@@ -38,6 +38,7 @@ class RoleManageTool(BaseTool):
 
     read_only = False
     destructive = True   # 可删除角色、修改权限
+    read_only_actions = {"list", "all", "detail", "list_permissions"}  # 只读 action 免确认拦截
     idempotent = False   # 创建/删除非幂等
 
     parameters = {
