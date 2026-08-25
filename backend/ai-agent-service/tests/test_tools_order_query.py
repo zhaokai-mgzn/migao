@@ -304,3 +304,167 @@ class TestOrderQueryCustomerIsolation:
         error_text = (result.error or "") + (result.message or "")
         assert "customer" in error_text.lower() or "用户" in error_text
         mock_client.get.assert_not_called()
+
+
+class TestOrderQueryListParams:
+    """list action 的别名兼容、action 标准化与 camelCase 参数映射"""
+
+    @patch("app.tools.order_query.get_admin_api_client")
+    async def test_order_id_alias_and_camel_case_params(self, mock_get_client, admin_tool_context):
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value={"success": True, "data": {"items": [], "total": 0}})
+        mock_get_client.return_value = mock_client
+
+        tool = OrderQueryTool()
+        result = await tool.execute(
+            context=admin_tool_context,
+            action="LIST",
+            order_id="ORD-123",
+            customer_phone="13800138000",
+            status="confirmed",
+            date_from="2026-06-01",
+            date_to="2026-06-30",
+        )
+
+        assert result.success is True
+        params = mock_client.get.call_args[1]["params"]
+        assert params["orderNo"] == "ORD-123"
+        assert params["customerPhone"] == "13800138000"
+        assert params["status"] == "confirmed"
+        assert params["dateFrom"] == "2026-06-01"
+        assert params["dateTo"] == "2026-06-30"
+
+    @patch("app.tools.order_query.get_admin_api_client")
+    async def test_page_size_coerced_to_int(self, mock_get_client, admin_tool_context):
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value={"success": True, "data": {"items": [], "total": 0}})
+        mock_get_client.return_value = mock_client
+
+        tool = OrderQueryTool()
+        result = await tool.execute(context=admin_tool_context, action="list", page="3", page_size="25")
+        assert result.success is True
+        params = mock_client.get.call_args[1]["params"]
+        assert params["page"] == 3
+        assert params["size"] == 25
+
+    async def test_invalid_action(self, admin_tool_context):
+        tool = OrderQueryTool()
+        result = await tool.execute(context=admin_tool_context, action="export")
+        assert result.success is False
+        assert "无效的操作类型" in result.error
+
+    async def test_guest_role_denied(self):
+        tool = OrderQueryTool()
+        guest = ToolContext(tenant_id=1, user_id="g1", session_id="s", role="guest")
+        result = await tool.execute(context=guest, action="list")
+        assert result.success is False
+        assert "权限" in result.error
+
+    @patch("app.tools.order_query.get_admin_api_client")
+    async def test_list_failure_passthrough(self, mock_get_client, admin_tool_context):
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value={"success": False, "error": {"message": "服务不可用"}})
+        mock_get_client.return_value = mock_client
+
+        tool = OrderQueryTool()
+        result = await tool.execute(context=admin_tool_context, action="list")
+        assert result.success is False
+        assert result.error == "服务不可用"
+
+    @patch("app.tools.order_query.get_admin_api_client")
+    async def test_execute_exception_generic(self, mock_get_client, admin_tool_context):
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(side_effect=RuntimeError("boom"))
+        mock_get_client.return_value = mock_client
+
+        tool = OrderQueryTool()
+        result = await tool.execute(context=admin_tool_context, action="list")
+        assert result.success is False
+        assert result.error == "tool_execution_failed"
+
+
+class TestOrderQueryStatistics:
+    """statistics / follow_status_stats 摘要构建"""
+
+    @patch("app.tools.order_query.get_admin_api_client")
+    async def test_statistics_summary(self, mock_get_client, admin_tool_context):
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value={
+            "success": True,
+            "data": {"todayOrderCount": 3, "todaySalesAmount": 500.0},
+        })
+        mock_get_client.return_value = mock_client
+
+        tool = OrderQueryTool()
+        result = await tool.execute(context=admin_tool_context, action="statistics")
+        assert result.success is True
+        assert "3单" in result.summary
+        assert "500.0元" in result.summary
+        assert mock_client.get.call_args[0][0] == "/api/admin/orders/statistics"
+
+    @patch("app.tools.order_query.get_admin_api_client")
+    async def test_statistics_fallback_na(self, mock_get_client, admin_tool_context):
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value={"success": True, "data": {}})
+        mock_get_client.return_value = mock_client
+
+        tool = OrderQueryTool()
+        result = await tool.execute(context=admin_tool_context, action="statistics")
+        assert result.success is True
+        assert "N/A" in result.summary
+
+    @patch("app.tools.order_query.get_admin_api_client")
+    async def test_follow_status_stats_summary(self, mock_get_client, admin_tool_context):
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value={
+            "success": True,
+            "data": {"pending": 1, "processing": 2, "totalCount": 3},
+        })
+        mock_get_client.return_value = mock_client
+
+        tool = OrderQueryTool()
+        result = await tool.execute(context=admin_tool_context, action="follow_status_stats")
+        assert result.success is True
+        assert "pending:1" in result.summary
+        assert mock_client.get.call_args[0][0] == "/api/admin/orders/follow-status/stats"
+
+
+class TestFormatOrdersExtras:
+    """_format_orders 的金额兜底与状态中文映射"""
+
+    def test_amount_fallback_from_unit_price_quantity(self):
+        tool = OrderQueryTool()
+        record = {
+            "id": "ord-1",
+            "orderNo": "O1",
+            "status": "pending",
+            "items": [{"productName": "窗帘", "unitPrice": 10.0, "quantity": 3}],
+        }
+        result = tool._format_orders([record])
+        assert result[0]["items"][0]["amount"] == 30.0
+
+    def test_amount_fallback_invalid_values_to_zero(self):
+        tool = OrderQueryTool()
+        record = {
+            "id": "ord-1",
+            "orderNo": "O1",
+            "status": "pending",
+            "items": [{"productName": "窗帘", "unitPrice": "abc", "quantity": 3}],
+        }
+        result = tool._format_orders([record])
+        assert result[0]["items"][0]["amount"] == 0
+
+    def test_status_text_mapping(self):
+        tool = OrderQueryTool()
+        expected = {
+            "pending": "待付款",
+            "confirmed": "已确认（待发货）",
+            "processing": "生产中",
+            "shipped": "已发货",
+            "completed": "已完成",
+            "cancelled": "已取消",
+        }
+        for status, text in expected.items():
+            record = {"id": "o", "orderNo": "O1", "status": status, "items": []}
+            result = tool._format_orders([record])
+            assert result[0]["status_text"] == text
