@@ -120,3 +120,77 @@ exemptions:
 
   - pattern: "backend/ai-agent-service/app/context/*"
     reason: "会话管理重构：app/context/tracker.py 整模块删除（生产零调用，P1 删 Redis 持久化 + P3 删 compress_history 后成死代码），无需为已删文件补测试"
+
+  # ── 前端 UI 重设计（#2548）：已有 .tsx 测试但 gate 模板 {2}.test.ts 未匹配子目录/扩展名 ──
+  - pattern: "frontend/admin-web/src/components/chat/*"
+    reason: "#2548: 已有 tests/unit/components/chat/ 下 .tsx 测试（ChatArea/MessageList 等）。gate 模板 tests/unit/components/{2}.test.ts 未含子目录 chat 且扩展名 .ts≠.tsx"
+
+  - pattern: "frontend/admin-web/src/components/corporate/*"
+    reason: "#2548: 已有 tests/unit/components/corporate/CorporateNav.test.tsx。gate 模板未含子目录 corporate 且 .ts≠.tsx"
+
+  - pattern: "frontend/admin-web/src/components/dashboard/*"
+    reason: "#2548: 已有 tests/unit/components/dashboard/ 下 .tsx 测试（ActiveSessions/OrderTrendChart 等）。gate 模板未含子目录 dashboard 且 .ts≠.tsx"
+
+  - pattern: "frontend/admin-web/src/components/layout/*"
+    reason: "#2548: 已有 tests/unit/components/layout/ 下 .tsx 测试（Header/NotificationBell）。gate 模板未含子目录 layout 且 .ts≠.tsx"
+
+  - pattern: "frontend/admin-web/src/components/ops/*"
+    reason: "#2548: 已有 tests/unit/components/ops/OpsSidebar.test.tsx。gate 模板未含子目录 ops 且 .ts≠.tsx"
+
+  - pattern: "frontend/admin-web/src/components/orders/*"
+    reason: "#2548: 已有 tests/unit/components/orders/ 下 .tsx 测试（CloseOrderModal/OrderItemList/OrderProgressSteps/OrderTimeline/RemarkModal/RemarkPopover）。gate 模板未含子目录 orders 且 .ts≠.tsx"
+
+  - pattern: "frontend/admin-web/src/components/products/*"
+    reason: "#2548: 已有 tests/unit/components/products/ 下 .tsx 测试（CategoryTree/ImageUploader/ProductAttributes/RichTextEditor）。gate 模板未含子目录 products 且 .ts≠.tsx"
+
+  - pattern: "frontend/admin-web/src/components/{MibaoChatPanel,DateTimeCell,LogisticsInfo,Button,Input,Modal,Select,Table,TreeCheckbox}.tsx"
+    reason: "#2548: 已有 tests/unit/components/ 下同名 .tsx 测试。gate 模板要求 .test.ts（扩展名不符 .tsx）"
+
+  - pattern: "frontend/admin-web/src/components/business/MibaoChatPanel.tsx"
+    reason: "#2548: 已有 tests/unit/components/MibaoChatPanel.test.tsx。gate 模板未含子目录 business 且 .ts≠.tsx"
+
+  - pattern: "frontend/admin-web/src/components/common/DateTimeCell.tsx"
+    reason: "#2548: 已有 tests/unit/components/DateTimeCell.test.tsx。gate 模板未含子目录 common 且 .ts≠.tsx"
+
+  - pattern: "frontend/admin-web/src/components/ui/Button.tsx"
+    reason: "#2548: 已有 tests/unit/components/Button.test.tsx。gate 模板 .test.ts 扩展名不符 .tsx"
+
+  - pattern: "frontend/admin-web/src/components/ui/Input.tsx"
+    reason: "#2548: 已有 tests/unit/components/Input.test.tsx。gate 模板 .test.ts 扩展名不符 .tsx"
+
+  - pattern: "frontend/admin-web/src/components/ui/Modal.tsx"
+    reason: "#2548: 已有 tests/unit/components/Modal.test.tsx。gate 模板 .test.ts 扩展名不符 .tsx"
+
+  - pattern: "frontend/admin-web/src/components/ui/Select.tsx"
+    reason: "#2548: 已有 tests/unit/components/Select.test.tsx。gate 模板 .test.ts 扩展名不符 .tsx"
+
+  - pattern: "frontend/admin-web/src/components/ui/Table.tsx"
+    reason: "#2548: 已有 tests/unit/components/Table.test.tsx。gate 模板 .test.ts 扩展名不符 .tsx"
+
+  - pattern: "frontend/admin-web/src/components/ui/TreeCheckbox.tsx"
+    reason: "#2548: 已有 tests/unit/components/TreeCheckbox.test.tsx。gate 模板 .test.ts 扩展名不符 .tsx"
+
+  # ── #2548 通用 UI 组件：由页面级测试间接覆盖，无需独立单测 ──
+  - pattern: "frontend/admin-web/src/components/ui/Badge.tsx"
+    reason: "#2548: 通用展示组件，由页面级测试 dashboard.test.tsx 间接覆盖，纯 UI 无独立业务逻辑"
+
+  - pattern: "frontend/admin-web/src/components/ui/Card.tsx"
+    reason: "#2548: 通用展示组件，由页面级测试 dashboard.test.tsx 间接覆盖，纯 UI 无独立业务逻辑"
+
+  - pattern: "frontend/admin-web/src/components/ui/EmptyState.tsx"
+    reason: "#2548: 通用展示组件，由页面级测试 products.test.tsx 间接覆盖，纯 UI 无独立业务逻辑"
+
+  - pattern: "frontend/admin-web/src/components/ui/Loading.tsx"
+    reason: "#2548: 通用展示组件，由页面级测试 edit-product.test.tsx 间接覆盖，纯 UI 无独立业务逻辑"
+
+  - pattern: "frontend/admin-web/src/components/ui/Pagination.tsx"
+    reason: "#2548: 通用交互组件，由页面级测试 orders.test.tsx 间接覆盖"
+
+  - pattern: "frontend/admin-web/src/components/ui/SearchBar.tsx"
+    reason: "#2548: 通用交互组件，由页面级测试 customers.test.tsx 间接覆盖"
+
+  - pattern: "frontend/admin-web/src/components/ui/FileUpload.tsx"
+    reason: "#2548: 浏览器文件上传 API 封装（FileReader/FormData），依赖运行时环境，同 useVoiceRecorder 豁免先例"
+
+  - pattern: "frontend/admin-web/src/components/providers/AuthProvider.tsx"
+    reason: "#2548: React Context 包装组件（AuthProvider），仅提供 auth 上下文无 UI 逻辑，由使用方测试间接覆盖"
