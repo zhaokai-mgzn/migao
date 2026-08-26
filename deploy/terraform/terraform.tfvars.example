@@ -11,11 +11,8 @@ environment  = "dev"
 
 # ---- 密钥与凭证（以下均需填写）----
 
-# DeepSeek API Key
+# DeepSeek API Key（主模型 + 视觉模型共用）
 deepseek_api_key = "sk-your-deepseek-api-key"
-
-# MiniMax API Key
-minimax_api_key = "sk-your-minimax-api-key"
 
 # 阿里云物流查询 API AppCode
 logistics_appcode = "your-logistics-appcode"

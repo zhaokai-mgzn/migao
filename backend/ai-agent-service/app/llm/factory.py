@@ -74,9 +74,10 @@ class LLMFactory:
 
     @staticmethod
     def create_vision_llm(model_override: Optional[str] = None) -> ChatOpenAI:
-        """创建视觉多模态 LLM 实例（独立视觉模型配置）
+        """创建视觉多模态 LLM 实例（图片识别）
 
-        MiniMax-M3 使用 adaptive thinking（自适应推理），深挖色号/材质/风格。
+        DeepSeek vision（deepseek-v4-flash-vision-exp）为 OpenAI 兼容接口，
+        与主模型共用 DeepSeek API key（推理/视觉同 key）。
         """
         model = model_override or settings.VISION_MODEL
         return ChatOpenAI(
@@ -87,7 +88,6 @@ class LLMFactory:
             streaming=True,
             max_completion_tokens=16384,
             request_timeout=60,
-            extra_body={"thinking": {"type": "adaptive"}},
         )
 
     @staticmethod

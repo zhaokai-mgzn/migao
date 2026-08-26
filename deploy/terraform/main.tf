@@ -148,11 +148,6 @@ variable "asr_api_key" {
   sensitive   = true
 }
 
-variable "minimax_api_key" {
-  description = "MiniMax API Key (视觉模型)"
-  type        = string
-  sensitive   = true
-}
 
 variable "logistics_appcode" {
   description = "阿里云物流查询 API AppCode"
@@ -337,10 +332,10 @@ locals {
     "ASR_API_KEY" = var.asr_api_key
     "ASR_MODEL"   = "paraformer-realtime-8k-v2"
 
-    # 视觉 MiniMax-M3
-    "VISION_API_KEY"  = var.minimax_api_key
-    "VISION_BASE_URL" = "https://api.minimaxi.com/v1"
-    "VISION_MODEL"    = "MiniMax-M3"
+    # 视觉 DeepSeek vision（与主模型同 key）
+    "VISION_API_KEY"  = var.deepseek_api_key
+    "VISION_BASE_URL" = "https://api.deepseek.com/v1"
+    "VISION_MODEL"    = "deepseek-v4-flash-vision-exp"
     "DASHSCOPE_EMBEDDING_MODEL" = "text-embedding-v3"
     # DashVector
     "DASHVECTOR_API_KEY"    = var.dashvector_api_key

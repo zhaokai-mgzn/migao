@@ -155,11 +155,15 @@ class TestSelectModel:
         assert select_model(intent="greeting", force_model=MODEL_FLASH) == MODEL_FLASH
 
     def test_model_constants_aligned(self):
-        """模型常量对齐检查（双模型路由: Primary + Fast）"""
-        assert MODEL_MAX == "MiniMax-M3"
-        assert MODEL_PLUS == "MiniMax-M3"
-        assert MODEL_LITE == "MiniMax-M2.7-highspeed"
-        assert MODEL_FLASH == "MiniMax-M2.7-highspeed"
+        """模型常量对齐检查（双模型路由: Primary + Fast，DeepSeek 栈）"""
+        from app.config import settings as _s
+        assert MODEL_MAX == _s.LLM_MODEL_PRIMARY
+        assert MODEL_PLUS == _s.LLM_MODEL_PRIMARY
+        assert MODEL_LITE == _s.LLM_MODEL_FAST
+        assert MODEL_FLASH == _s.LLM_MODEL_FAST
+        # 主/快模型为 DeepSeek 模型（不再有 MiniMax-M3/M2.7 残留）
+        assert _s.LLM_MODEL_PRIMARY.startswith("deepseek")
+        assert _s.LLM_MODEL_FAST.startswith("deepseek")
 
     def test_routing_threshold_boundary(self, routing_on):
         """阈值边界: tool_count=2 走 plus, text_length=8000 走 plus"""
@@ -211,8 +215,8 @@ class TestCostTracker:
         )
         assert record is not None
         assert isinstance(record, CostRecord)
-        # 轻量模型 (MODEL_LITE) 定价: input=0.30, output=1.20, 1M tokens 各算 1 单位
-        assert record.cost_cny == pytest.approx(0.30 + 1.20, rel=1e-6)
+        # 轻量模型 (MODEL_LITE=deepseek-v4-flash) 定价: input=1.00, output=4.00, 1M tokens 各算 1 单位
+        assert record.cost_cny == pytest.approx(1.00 + 4.00, rel=1e-6)
 
     def test_track_call_disabled_returns_none(self, monkeypatch):
         """LLM_COST_TRACKING_ENABLED=False 时 track_call 返回 None 且不计入"""
@@ -223,18 +227,18 @@ class TestCostTracker:
         assert tracker.total_cost == 0.0
 
     def test_calc_cost_cny_for_each_model(self, fresh_tracker):
-        """每个模型的定价计算正确"""
-        # 轻量模型: input=0.30, output=1.20 元/百万
+        """每个模型的定价计算正确（DeepSeek 定价）"""
+        # 轻量模型 deepseek-v4-flash: input=1.00, output=4.00 元/百万
         r = fresh_tracker.track_call(model=MODEL_FLASH, input_tokens=2_000_000, output_tokens=1_000_000)
-        assert r.cost_cny == pytest.approx(0.30 * 2 + 1.20 * 1, rel=1e-6)
+        assert r.cost_cny == pytest.approx(1.00 * 2 + 4.00 * 1, rel=1e-6)
 
-        # 平衡模型: input=4.00, output=12.00
-        r2 = fresh_tracker.track_call(model="qwen3.6-plus", input_tokens=500_000, output_tokens=500_000)
-        assert r2.cost_cny == pytest.approx(4.00 * 0.5 + 12.00 * 0.5, rel=1e-6)
+        # 主模型 deepseek-v4-pro: input=4.00, output=16.00
+        r2 = fresh_tracker.track_call(model=MODEL_PLUS, input_tokens=500_000, output_tokens=500_000)
+        assert r2.cost_cny == pytest.approx(4.00 * 0.5 + 16.00 * 0.5, rel=1e-6)
 
-        # 旗舰模型: input=20.00, output=60.00
+        # 未知模型回退主模型定价
         r3 = fresh_tracker.track_call(model="qwen3.7-max", input_tokens=100_000, output_tokens=100_000)
-        assert r3.cost_cny == pytest.approx(20.00 * 0.1 + 60.00 * 0.1, rel=1e-6)
+        assert r3.cost_cny == pytest.approx(4.00 * 0.1 + 16.00 * 0.1, rel=1e-6)
 
     def test_unknown_model_falls_back_to_plus_pricing(self, fresh_tracker):
         """未知模型按 plus 兜底"""
@@ -246,8 +250,8 @@ class TestCostTracker:
         """多次调用累计 total_cost"""
         fresh_tracker.track_call(model=MODEL_LITE, input_tokens=1_000_000, output_tokens=0)
         fresh_tracker.track_call(model=MODEL_LITE, input_tokens=1_000_000, output_tokens=0)
-        # 轻量模型 (MODEL_LITE): 0.30 * 2 = 0.60
-        assert fresh_tracker.total_cost == pytest.approx(0.60, rel=1e-6)
+        # 轻量模型 (MODEL_LITE=deepseek-v4-flash): 1.00 * 2 = 2.00
+        assert fresh_tracker.total_cost == pytest.approx(2.00, rel=1e-6)
 
     def test_check_budget_triggers_warning(self, fresh_tracker, monkeypatch, caplog):
         """超预算时 logger.warning 被触发（仅首次）"""
@@ -315,8 +319,8 @@ class TestCostTracker:
         assert hasattr(fresh_tracker._lock, "release")
 
     def test_model_pricing_table_completeness(self):
-        """关键模型必须存在于 MODEL_PRICING"""
-        for m in (MODEL_FLASH, MODEL_LITE, "qwen3.6-plus", "qwen3.7-max"):
+        """关键模型必须存在于 MODEL_PRICING（DeepSeek 栈）"""
+        for m in (MODEL_FLASH, MODEL_LITE, MODEL_PLUS, MODEL_MAX):
             assert m in MODEL_PRICING
             assert "input" in MODEL_PRICING[m]
             assert "output" in MODEL_PRICING[m]
@@ -514,7 +518,8 @@ class TestLLMFactory:
         assert llm.model_name == "qwen3.7-max"
         assert llm.temperature == 0.7
         assert llm.streaming is True
-        assert llm.max_tokens == 2048
+        # ChatDeepSeek 下 max_completion_tokens 落入 model_kwargs
+        assert llm.model_kwargs["max_completion_tokens"] == 2048
         assert float(llm.request_timeout) == 60.0
         # 默认关闭深度思考（客服场景优先响应速度）
         assert llm.extra_body is None
@@ -524,7 +529,7 @@ class TestLLMFactory:
         """开启深度思考时 extra_body 正确设置"""
         monkeypatch.setattr(settings, "DASHSCOPE_MODEL", "qwen3.7-max")
         llm = LLMFactory.create_skill_llm(enable_thinking=True)
-        assert llm.extra_body == {"enable_thinking": True}
+        assert llm.extra_body == {"thinking": {"type": "enabled"}}
 
     def test_create_skill_llm_with_model_override(self, monkeypatch):
         monkeypatch.setattr(settings, "DASHSCOPE_MODEL", "qwen3.7-max")
@@ -550,7 +555,7 @@ class TestLLMFactory:
         llm = LLMFactory.create_intent_llm()
         assert llm.model_name == MODEL_LITE
         assert llm.temperature == 0
-        assert llm.max_tokens == 200
+        assert llm.model_kwargs["max_completion_tokens"] == 200
         assert llm.openai_api_base == DASHSCOPE_BASE_URL
         # intent 不需要 streaming
         assert llm.streaming is False
@@ -560,7 +565,7 @@ class TestLLMFactory:
         llm = LLMFactory.create_suggestion_llm()
         assert llm.model_name == MODEL_LITE
         assert llm.temperature == 0.3
-        assert llm.max_tokens == 200
+        assert llm.model_kwargs["max_completion_tokens"] == 200
         assert llm.openai_api_base == DASHSCOPE_BASE_URL
 
 

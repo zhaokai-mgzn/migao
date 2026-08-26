@@ -54,14 +54,14 @@ def routing_off(monkeypatch):
 @pytest.fixture
 def vision_enabled(monkeypatch):
     """启用视觉路由"""
-    monkeypatch.setattr(settings, "MINIMAX_VISION_ENABLED", True)
-    monkeypatch.setattr(settings, "MINIMAX_VISION_MODEL", "MiniMax-M2.7-highspeed")
+    monkeypatch.setattr(settings, "VISION_ENABLED", True)
+    monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-v4-flash-vision-exp")
 
 
 @pytest.fixture
 def vision_disabled(monkeypatch):
     """禁用视觉路由"""
-    monkeypatch.setattr(settings, "MINIMAX_VISION_ENABLED", False)
+    monkeypatch.setattr(settings, "VISION_ENABLED", False)
 
 
 # =============================================================================
@@ -83,10 +83,10 @@ class TestVisionRoutingNoModelNameCheck:
 
     def test_select_model_returns_non_vl_vision_model(self, routing_on, monkeypatch):
         """MINIMAX_VISION_ENABLED=True 时，has_vision=True 可返回非 vl 后缀的视觉模型"""
-        monkeypatch.setattr(settings, "MINIMAX_VISION_ENABLED", True)
-        monkeypatch.setattr(settings, "MINIMAX_VISION_MODEL", "MiniMax-M3")
+        monkeypatch.setattr(settings, "VISION_ENABLED", True)
+        monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-v4-flash-vision-exp")
         model = select_model(has_vision=True)
-        assert model == "MiniMax-M3"
+        assert model == "deepseek-v4-flash-vision-exp"
 
     def test_base_skill_uses_vision_enabled_not_model_name(self, routing_on, monkeypatch):
         """base_skill 应通过 vision_detected + MINIMAX_VISION_ENABLED 路由，
@@ -94,8 +94,8 @@ class TestVisionRoutingNoModelNameCheck:
         from app.graph.skills.base_skill import get_skill_llm
         from langchain_core.messages import HumanMessage
 
-        monkeypatch.setattr(settings, "MINIMAX_VISION_ENABLED", True)
-        monkeypatch.setattr(settings, "MINIMAX_VISION_MODEL", "MiniMax-M3")
+        monkeypatch.setattr(settings, "VISION_ENABLED", True)
+        monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-v4-flash-vision-exp")
 
         # 构造含图片的消息
         msg = HumanMessage(
@@ -112,8 +112,8 @@ class TestVisionRoutingNoModelNameCheck:
             tool_count=0,
             text_length=100,
         )
-        # MiniMax-M3 原生多模态，无需显式关 thinking
-        assert llm.model_name == "MiniMax-M3"
+        # DeepSeek vision 原生多模态，无需显式关 thinking
+        assert llm.model_name == "deepseek-v4-flash-vision-exp"
 
 
 # =============================================================================
@@ -212,11 +212,11 @@ class TestCreateVisionLLM:
 
     def test_create_vision_llm_default(self, monkeypatch):
         """默认视觉模型（VISION_MODEL）"""
-        monkeypatch.setattr(settings, "VISION_MODEL", "MiniMax-M2.7-highspeed")
+        monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-v4-flash-vision-exp")
         monkeypatch.setattr(settings, "VISION_API_KEY", "test-vision-key")
         monkeypatch.setattr(settings, "VISION_BASE_URL", "https://vision.example.com/v1")
         llm = LLMFactory.create_vision_llm()
-        assert llm.model_name == "MiniMax-M2.7-highspeed"
+        assert llm.model_name == "deepseek-v4-flash-vision-exp"
         assert llm.temperature == 0.7
         assert llm.streaming is True
         assert llm.max_tokens == 16384
@@ -225,17 +225,17 @@ class TestCreateVisionLLM:
 
     def test_create_vision_llm_override(self, monkeypatch):
         """model_override 显式覆盖默认模型"""
-        monkeypatch.setattr(settings, "VISION_MODEL", "MiniMax-M2.7-highspeed")
-        llm = LLMFactory.create_vision_llm(model_override="MiniMax-M3")
-        assert llm.model_name == "MiniMax-M3"
+        monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-v4-flash-vision-exp")
+        llm = LLMFactory.create_vision_llm(model_override="deepseek-v4-flash-vision-exp")
+        assert llm.model_name == "deepseek-v4-flash-vision-exp"
 
     def test_create_vision_llm_no_thinking(self, monkeypatch):
-        """视觉 LLM 使用独立 VISION_* 配置（MiniMax-M3 原生多模态，无需显式关 thinking）"""
-        monkeypatch.setattr(settings, "VISION_MODEL", "MiniMax-M2.7-highspeed")
+        """视觉 LLM 使用独立 VISION_* 配置（DeepSeek vision 原生多模态）"""
+        monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-v4-flash-vision-exp")
         monkeypatch.setattr(settings, "VISION_API_KEY", "test-key")
         monkeypatch.setattr(settings, "VISION_BASE_URL", "https://vision.example.com/v1")
         llm = LLMFactory.create_vision_llm()
-        assert llm.model_name == "MiniMax-M2.7-highspeed"
+        assert llm.model_name == "deepseek-v4-flash-vision-exp"
         assert llm.openai_api_base == "https://vision.example.com/v1"
 
 
@@ -246,21 +246,21 @@ class TestSelectModelWithVision:
     """select_model 视觉路由测试"""
 
     def test_select_model_with_vision(self, routing_on, vision_enabled, monkeypatch):
-        """has_vision=True 且启用视觉，返回 MINIMAX_VISION_MODEL"""
-        monkeypatch.setattr(settings, "MINIMAX_VISION_MODEL", "MiniMax-M2.7-highspeed")
-        assert select_model(has_vision=True) == "MiniMax-M2.7-highspeed"
+        """has_vision=True 且启用视觉，返回 VISION_MODEL"""
+        monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-v4-flash-vision-exp")
+        assert select_model(has_vision=True) == "deepseek-v4-flash-vision-exp"
 
-        monkeypatch.setattr(settings, "MINIMAX_VISION_MODEL", "MiniMax-M3")
-        assert select_model(has_vision=True) == "MiniMax-M3"
+        monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-v4-pro")
+        assert select_model(has_vision=True) == "deepseek-v4-pro"
 
     def test_select_model_with_vision_overrides_intent(self, routing_on, vision_enabled, monkeypatch):
         """has_vision=True 优先级高于简单意图"""
-        monkeypatch.setattr(settings, "MINIMAX_VISION_MODEL", "MiniMax-M2.7-highspeed")
+        monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-v4-flash-vision-exp")
         # 即便是 greeting 简单意图，含图片也走视觉模型
-        assert select_model(intent="greeting", has_vision=True) == "MiniMax-M2.7-highspeed"
+        assert select_model(intent="greeting", has_vision=True) == "deepseek-v4-flash-vision-exp"
 
     def test_select_model_vision_disabled(self, routing_on, vision_disabled):
-        """MINIMAX_VISION_ENABLED=False 时即使 has_vision=True 也走正常路由"""
+        """VISION_ENABLED=False 时即使 has_vision=True 也走正常路由"""
         # 场景 → 主模型
         assert select_model(has_vision=True) == MODEL_PRIMARY
         # 简单意图 → 快速模型
@@ -274,8 +274,9 @@ class TestSelectModelWithVision:
         assert select_model(has_vision=True) == default
 
     def test_select_model_vision_default_is_flash(self):
-        """视觉模型默认配置与 settings 一致"""
-        assert settings.MINIMAX_VISION_MODEL == "MiniMax-M3"
+        """视觉模型默认配置与 settings 一致（DeepSeek vision）"""
+        assert settings.VISION_MODEL == "deepseek-v4-flash-vision-exp"
+        assert settings.MINIMAX_VISION_MODEL == settings.VISION_MODEL  # 兼容别名
 
 
 # =============================================================================
@@ -315,25 +316,25 @@ class TestVisionModelPricing:
 # 5. Vision LLM 独立配置验证
 # =============================================================================
 class TestVisionLLMConfig:
-    """create_vision_llm 使用独立 VISION_* 配置（MiniMax-M3 原生多模态）"""
+    """create_vision_llm 使用独立 VISION_* 配置（DeepSeek vision）"""
 
     def test_create_vision_llm_uses_vision_config(self, monkeypatch):
         """create_vision_llm 使用 VISION_API_KEY/BASE_URL/MODEL，非 PRIMARY 配置"""
         monkeypatch.setattr(settings, "VISION_API_KEY", "sk-vision-key")
         monkeypatch.setattr(settings, "VISION_BASE_URL", "https://vision.example.com/v1")
-        monkeypatch.setattr(settings, "VISION_MODEL", "MiniMax-M3")
+        monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-v4-flash-vision-exp")
 
         llm = LLMFactory.create_vision_llm()
-        assert llm.model_name == "MiniMax-M3"
+        assert llm.model_name == "deepseek-v4-flash-vision-exp"
         assert llm.openai_api_base == "https://vision.example.com/v1"
 
     def test_create_vision_llm_with_model_override(self, monkeypatch):
         """model_override 时使用独立视觉配置"""
         monkeypatch.setattr(settings, "VISION_API_KEY", "sk-vision-key")
         monkeypatch.setattr(settings, "VISION_BASE_URL", "https://vision.example.com/v1")
-        llm = LLMFactory.create_vision_llm(model_override="MiniMax-M3")
+        llm = LLMFactory.create_vision_llm(model_override="deepseek-v4-flash-vision-exp")
 
-        assert llm.model_name == "MiniMax-M3"
+        assert llm.model_name == "deepseek-v4-flash-vision-exp"
         assert llm.openai_api_base == "https://vision.example.com/v1"
 
 

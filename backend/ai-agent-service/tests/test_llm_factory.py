@@ -78,7 +78,8 @@ class TestCreateVariants:
         assert kwargs["model"] == "vm"
         assert kwargs["api_key"] == "vk"
         assert kwargs["base_url"] == "vb"
-        assert kwargs["extra_body"] == {"thinking": {"type": "adaptive"}}
+        # DeepSeek vision（OpenAI 兼容）不传 MiniMax 专属 thinking extra_body
+        assert "extra_body" not in kwargs
         assert kwargs["max_completion_tokens"] == 16384
 
     def test_create_intent_llm(self):

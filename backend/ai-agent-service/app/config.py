@@ -32,10 +32,27 @@ class Settings(BaseSettings):
     PRIMARY_BASE_URL: str = ""
     PRIMARY_MODEL: str = ""
 
-    # 视觉多模态 LLM（独立配置，可不同于主模型）
+    # 视觉多模态 LLM（图片识别）—— DeepSeek vision（2026-08 起替换 MiniMax M3）
+    # 与主模型共用 DeepSeek API key（推理/视觉同 key）
     VISION_API_KEY: str = ""
-    VISION_BASE_URL: str = ""
-    VISION_MODEL: str = "MiniMax-M3"
+    VISION_BASE_URL: str = "https://api.deepseek.com/v1"
+    VISION_MODEL: str = "deepseek-v4-flash-vision-exp"
+    VISION_ENABLED: bool = True
+
+    # === 向后兼容：旧 MINIMAX_VISION_* 命名（已替换为 DeepSeek vision，别名回源）===
+    @property
+    def MINIMAX_VISION_MODEL(self) -> str:
+        return self.VISION_MODEL
+    @MINIMAX_VISION_MODEL.setter
+    def MINIMAX_VISION_MODEL(self, value: str):
+        self.VISION_MODEL = value
+
+    @property
+    def MINIMAX_VISION_ENABLED(self) -> bool:
+        return self.VISION_ENABLED
+    @MINIMAX_VISION_ENABLED.setter
+    def MINIMAX_VISION_ENABLED(self, value: bool):
+        self.VISION_ENABLED = value
 
     # === 向后兼容：旧 MINIMAX_* 配置作为 fallback ===
     @property
@@ -95,11 +112,9 @@ class Settings(BaseSettings):
 
     DASHSCOPE_EMBEDDING_MODEL: str = "text-embedding-v3"
     INTENT_MODEL: str = "deepseek-v4-flash"              # 意图分类/摘要（快速模型）
-    MINIMAX_VISION_MODEL: str = "MiniMax-M3"            # 图片识别（M3 原生多模态）
-    MINIMAX_VISION_ENABLED: bool = True
 
     # LLM 模型路由常量 — 所有模型名统一在 config.py 管理
-    LLM_MODEL_PRIMARY: str = "deepseek-v4-pro"           # 复杂推理 / 多工具 / 视觉 / 默认
+    LLM_MODEL_PRIMARY: str = "deepseek-v4-pro"           # 复杂推理 / 多工具 / 默认
     LLM_MODEL_FAST: str = "deepseek-v4-flash"            # 轻量快速（意图路由、分类、摘要）
 
     LLM_ENABLE_MODEL_ROUTING: bool = True
