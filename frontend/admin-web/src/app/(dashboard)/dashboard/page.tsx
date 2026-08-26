@@ -8,8 +8,8 @@ import { dashboardApi } from '@/lib/api'
 import { cn, formatFullDateTime } from '@/lib/utils'
 import { sampleTickIndices } from '@/lib/axis-sampling'
 import type { DashboardStats, OrderTrendPoint, Order, ProductRanking } from '@/types'
-import { normalizeOrderStatus, OrderStatusLabels } from '@/types'
 import TodayOverviewBar from '@/components/dashboard/TodayOverviewBar'
+import RecentOrders from '@/components/dashboard/RecentOrders'
 
 // ═══════════════════════════════════════════════════════
 // 格式化
@@ -36,7 +36,7 @@ function now(): string {
 function MiniSparkline({ data, color, width = 80, height = 28 }: { data: number[]; color: string; width?: number; height?: number }) {
   if (!data.length) return (
     <svg width={width} height={height} className="flex-shrink-0">
-      <line x1="0" y1={height / 2} x2={width} y2={height / 2} stroke="#E5E7EB" strokeWidth="1" strokeDasharray="3 3" />
+      <line x1="0" y1={height / 2} x2={width} y2={height / 2} stroke="#e6dfd3" strokeWidth="1" strokeDasharray="3 3" />
     </svg>
   )
   const max = Math.max(...data, 1)
@@ -55,15 +55,15 @@ function ChartSkeleton({ bars = 7, heights }: { bars?: number; heights?: number[
   return (
     <div className="h-full flex flex-col justify-end relative">
       <svg className="absolute inset-0 w-full h-full" viewBox="0 0 400 200" preserveAspectRatio="none">
-        <line x1="40" y1="10" x2="40" y2="170" stroke="#F3F4F6" strokeWidth="1" />
-        <line x1="40" y1="170" x2="380" y2="170" stroke="#F3F4F6" strokeWidth="1" />
+        <line x1="40" y1="10" x2="40" y2="170" stroke="#f2ede5" strokeWidth="1" />
+        <line x1="40" y1="170" x2="380" y2="170" stroke="#f2ede5" strokeWidth="1" />
         {[30, 65, 100, 135].map((y, i) => (
-          <line key={i} x1="40" y1={y} x2="380" y2={y} stroke="#F3F4F6" strokeWidth="1" strokeDasharray="4 4" />
+          <line key={i} x1="40" y1={y} x2="380" y2={y} stroke="#f2ede5" strokeWidth="1" strokeDasharray="4 4" />
         ))}
       </svg>
       <div className="relative z-10 flex items-end gap-2 px-[10%] pb-5">
         {h.slice(0, bars).map((pct, i) => (
-          <div key={i} className="flex-1 bg-gray-100 rounded-sm animate-pulse" style={{ height: `${Math.min(pct, 85)}%` }} />
+          <div key={i} className="flex-1 bg-neutral-100 rounded-sm animate-pulse" style={{ height: `${Math.min(pct, 85)}%` }} />
         ))}
       </div>
     </div>
@@ -73,7 +73,7 @@ function ChartSkeleton({ bars = 7, heights }: { bars?: number; heights?: number[
 function MiniBarChart({ data, color, width = 80, height = 28 }: { data: number[]; color: string; width?: number; height?: number }) {
   if (!data.length) return (
     <svg width={width} height={height} className="flex-shrink-0">
-      <line x1="0" y1={height / 2} x2={width} y2={height / 2} stroke="#E5E7EB" strokeWidth="1" strokeDasharray="3 3" />
+      <line x1="0" y1={height / 2} x2={width} y2={height / 2} stroke="#e6dfd3" strokeWidth="1" strokeDasharray="3 3" />
     </svg>
   )
   const barW = Math.max(2, width / data.length - 2)
@@ -98,13 +98,13 @@ function BizStatCard({ title, value, change, icon, sparkline, chartType }: {
     <div className="bg-white rounded-xl border border-gray-100 p-5 hover:shadow-md transition-shadow">
       <div className="flex items-start justify-between mb-3">
         <span className="text-sm text-gray-500">{title}</span>
-        <span className="p-1.5 rounded-lg bg-gray-50">{icon}</span>
+        <span className="p-1.5 rounded-lg bg-neutral-100">{icon}</span>
       </div>
       <div className="flex items-end justify-between">
         <div>
           <p className="text-2xl font-bold text-gray-900">{value}</p>
           {change && (
-            <p className={cn('text-xs mt-1 flex items-center gap-0.5', change.up ? 'text-red-500' : 'text-green-500')}>
+            <p className={cn('text-xs mt-1 flex items-center gap-0.5', change.up ? 'text-accent-600' : 'text-emerald-600')}>
               {change.up ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />}
               较昨天 {change.val}
             </p>
@@ -120,7 +120,7 @@ function BizStatCard({ title, value, change, icon, sparkline, chartType }: {
 }
 
 const PENDING_COLORS: Record<string, string> = {
-  blue: 'bg-blue-50', purple: 'bg-purple-50', red: 'bg-red-50', amber: 'bg-amber-50', green: 'bg-green-50',
+  blue: 'bg-primary-50', purple: 'bg-accent-50', red: 'bg-red-50', amber: 'bg-amber-50', green: 'bg-emerald-50',
 }
 
 function PendingCard({ title, count, icon, color }: { title: string; count: number; icon: React.ReactNode; color: string }) {
@@ -247,8 +247,8 @@ export default function DashboardPage() {
           <Package className="w-4 h-4 text-amber-500" />待处理
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <Link href="/orders?status=待发货"><PendingCard title="待发货订单" count={pendingShipment} icon={<Package className="w-4 h-4 text-blue-600" />} color="blue" /></Link>
-          <Link href="/orders?category=含加工订单&status=待发货"><PendingCard title="含加工待发货订单" count={processingShipment} icon={<Settings className="w-4 h-4 text-purple-600" />} color="purple" /></Link>
+          <Link href="/orders?status=待发货"><PendingCard title="待发货订单" count={pendingShipment} icon={<Package className="w-4 h-4 text-primary-600" />} color="blue" /></Link>
+          <Link href="/orders?category=含加工订单&status=待发货"><PendingCard title="含加工待发货订单" count={processingShipment} icon={<Settings className="w-4 h-4 text-accent-600" />} color="purple" /></Link>
           <Link href="/products?low_stock=true"><PendingCard title="待补库存商品" count={lowStockCount} icon={<Package className="w-4 h-4 text-red-600" />} color="red" /></Link>
         </div>
       </div>
@@ -267,7 +267,7 @@ export default function DashboardPage() {
                 title="今日订单数"
                 value={stats?.todayOrders?.toLocaleString() || '0'}
                 change={{ val: `${stats?.todayOrdersChange || 0}`, up: (stats?.todayOrdersChange || 0) > 0 }}
-                icon={<ClipboardList className="w-4 h-4 text-blue-600" />}
+                icon={<ClipboardList className="w-4 h-4 text-primary-600" />}
                 sparkline={sparkline}
                 chartType="line"
               />
@@ -275,7 +275,7 @@ export default function DashboardPage() {
                 title="今日销售额"
                 value={fmtCurrency(stats?.todaySales || 0)}
                 change={{ val: `${stats?.todaySalesChange || 0}`, up: (stats?.todaySalesChange || 0) > 0 }}
-                icon={<DollarSign className="w-4 h-4 text-green-600" />}
+                icon={<DollarSign className="w-4 h-4 text-emerald-600" />}
                 sparkline={sparkline.map(v => v * 23.8)}
                 chartType="bar"
               />
@@ -283,7 +283,7 @@ export default function DashboardPage() {
                 title="本月销售额"
                 value={fmtCurrency(stats?.monthRevenue || 0)}
                 change={{ val: `${stats?.monthRevenueChange || 0}% 较上月`, up: (stats?.monthRevenueChange || 0) > 0 }}
-                icon={<DollarSign className="w-4 h-4 text-orange-600" />}
+                icon={<DollarSign className="w-4 h-4 text-accent-600" />}
               />
             </>
           )}
@@ -324,7 +324,7 @@ export default function DashboardPage() {
                     const d = trendData[idx]
                     const x = idx * 40 + 20
                     return (
-                      <text key={idx} x={x} y="225" textAnchor="middle" fontSize="10" fill="#9CA3AF">
+                      <text key={idx} x={x} y="225" textAnchor="middle" fontSize="10" fill="#b8aa94">
                         {d.date?.slice(5)}
                       </text>
                     )
@@ -334,12 +334,12 @@ export default function DashboardPage() {
             })() : (
               <div className="h-full flex flex-col items-center justify-center">
                 <div className="flex flex-col items-center">
-                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-50 flex items-center justify-center mb-3">
-                    <TrendingUp className="w-6 h-6 text-blue-400" />
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary-50 to-accent-50 flex items-center justify-center mb-3">
+                    <TrendingUp className="w-6 h-6 text-primary-400" />
                   </div>
                   <p className="text-sm font-medium text-gray-500">暂无订单数据</p>
                   <p className="text-xs text-gray-400 mt-1 mb-4">创建订单后，趋势图将在此展示</p>
-                  <Link href="/orders/new" className="inline-flex items-center gap-1.5 text-xs font-medium text-white bg-blue-500 hover:bg-blue-600 px-3.5 py-2 rounded-lg transition-colors shadow-sm">
+                  <Link href="/orders/new" className="inline-flex items-center gap-1.5 text-xs font-medium text-white bg-primary-500 hover:bg-primary-600 px-3.5 py-2 rounded-lg transition-colors shadow-sm">
                     创建订单 <ArrowRight className="w-3 h-3" />
                   </Link>
                 </div>
@@ -374,7 +374,7 @@ export default function DashboardPage() {
             })() : (
               <div className="h-full flex flex-col items-center justify-center">
                 <div className="flex flex-col items-center">
-                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-50 to-green-50 flex items-center justify-center mb-3">
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-50 to-neutral-50 flex items-center justify-center mb-3">
                     <DollarSign className="w-6 h-6 text-emerald-400" />
                   </div>
                   <p className="text-sm font-medium text-gray-500">暂无销售额数据</p>
@@ -391,48 +391,14 @@ export default function DashboardPage() {
 
       {/* ④ 列表 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* 近期订单 */}
-        <div className="bg-white rounded-xl border border-gray-100 p-5">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-gray-800">近期订单</h3>
-            <a href="/orders" className="text-xs text-primary-600 hover:underline flex items-center gap-1">查看全部 <ArrowRight className="w-3 h-3" /></a>
-          </div>
-          <table className="w-full text-xs">
-            <thead><tr className="text-gray-500 border-b"><th className="text-left py-2 font-medium whitespace-nowrap">订单号</th><th className="text-left py-2 font-medium whitespace-nowrap">客户</th><th className="text-right py-2 font-medium whitespace-nowrap">金额</th><th className="text-right py-2 font-medium whitespace-nowrap">状态</th><th className="text-right py-2 font-medium whitespace-nowrap">时间</th></tr></thead>
-            <tbody>
-              {loading ? (
-                Array.from({ length: 5 }).map((_, i) => (
-                  <tr key={i} className="border-b border-gray-50">
-                    <td className="py-2"><div className="h-4 bg-gray-100 rounded animate-pulse w-20" /></td>
-                    <td className="py-2"><div className="h-4 bg-gray-100 rounded animate-pulse w-14" /></td>
-                    <td className="py-2 text-right"><div className="h-4 bg-gray-100 rounded animate-pulse w-12 ml-auto" /></td>
-                    <td className="py-2 text-right"><div className="h-4 bg-gray-100 rounded animate-pulse w-14 ml-auto" /></td>
-                    <td className="py-2 text-right"><div className="h-4 bg-gray-100 rounded animate-pulse w-16 ml-auto" /></td>
-                  </tr>
-                ))
-              ) : (
-                recentOrders.slice(0, 5).map(o => (
-                  <tr key={o.id} className="border-b border-gray-50 hover:bg-gray-50">
-                    <td className="py-2"><a href={`/orders/${o.id}`} className="text-blue-600 font-mono text-[11px] hover:underline">{o.orderNo?.slice(0, 16)}</a></td>
-                    <td className="py-2 text-gray-700">{o.customerName}</td>
-                    <td className="py-2 text-right text-gray-900 font-mono whitespace-nowrap">{fmtCurrency(o.totalAmount)}</td>
-                    <td className="py-2 text-right"><StatusBadge status={o.status as string} /></td>
-                    <td className="py-2 text-right text-gray-400 text-[11px] whitespace-nowrap">{o.createdAt?.slice(5, 16)?.replace('T', ' ')}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-          {!loading && recentOrders.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-10">
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-50 to-indigo-50 flex items-center justify-center mb-3">
-                <ClipboardList className="w-5 h-5 text-blue-400" />
-              </div>
-              <p className="text-sm font-medium text-gray-500">暂无近期订单</p>
-              <p className="text-xs text-gray-400 mt-1">新订单将在此展示</p>
-            </div>
-          )}
-        </div>
+        {/* 近期订单 — #2544: 复用 RecentOrders 组件（语义色 chips + 空态治理），
+            替换页内旧内联 StatusBadge（bg-amber-100 无描边旧徽章） */}
+        <RecentOrders
+          orders={recentOrders}
+          loading={loading}
+          emptyText="暂无近期订单"
+          emptyHint="新订单将在此展示"
+        />
 
         {/* 商品销量排行 */}
         <div className="bg-white rounded-xl border border-gray-100 p-5">
@@ -444,8 +410,8 @@ export default function DashboardPage() {
             <div className="space-y-2">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-8 bg-gray-100 rounded animate-pulse" />)}</div>
           ) : ranking.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-10">
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-50 to-orange-50 flex items-center justify-center mb-3">
-                <Package className="w-5 h-5 text-amber-400" />
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-accent-50 to-neutral-50 flex items-center justify-center mb-3">
+                <Package className="w-5 h-5 text-accent-400" />
               </div>
               <p className="text-sm font-medium text-gray-500">暂无排行数据</p>
               <p className="text-xs text-gray-400 mt-1">产生订单后，销量排行将在此展示</p>
@@ -459,7 +425,7 @@ export default function DashboardPage() {
                     <td className="py-2 text-gray-400">{r.rank}</td>
                     <td className="py-2 text-gray-700 truncate max-w-[160px]" title={r.productName}>{r.productName}</td>
                     <td className="py-2 text-right font-mono text-gray-900 whitespace-nowrap">{r.qtyDisplay}</td>
-                    <td className={cn('py-2 text-right whitespace-nowrap', r.dailyChange > 0 ? 'text-red-500' : 'text-green-500')}>
+                    <td className={cn('py-2 text-right whitespace-nowrap', r.dailyChange > 0 ? 'text-accent-600' : 'text-emerald-600')}>
                       {r.dailyChange > 0 ? '▲' : '▼'} {Math.abs(r.dailyChange)}%
                     </td>
                   </tr>
@@ -470,23 +436,5 @@ export default function DashboardPage() {
         </div>
       </div>
     </div>
-  )
-}
-
-// ========== 订单状态徽章（中文） ==========
-
-function StatusBadge({ status }: { status: string }) {
-  const s = normalizeOrderStatus(status)
-  const label = OrderStatusLabels[s]
-  const colorClass =
-    s === 'completed' ? 'bg-green-100 text-green-700' :
-    s === 'pending_shipment' || s === 'shipped' ? 'bg-blue-100 text-blue-700' :
-    s === 'pending_payment' ? 'bg-amber-100 text-amber-700' :
-    s === 'closed' ? 'bg-gray-100 text-gray-500' :
-    'bg-gray-100 text-gray-600'
-  return (
-    <span className={cn('inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium', colorClass)}>
-      {label}
-    </span>
   )
 }

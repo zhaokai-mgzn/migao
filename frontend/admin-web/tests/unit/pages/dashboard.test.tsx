@@ -470,4 +470,66 @@ describe('DashboardPage', () => {
       expect(refreshIcon).toBeInTheDocument()
     })
   })
+
+  // ── 线上修复：织物质感 token 全面生效（#2544）──
+
+  it('近期订单状态渲染为语义色 chips（新样式，非旧 bg-amber-100 内联徽章）', async () => {
+    render(<DashboardPage />)
+    await waitFor(() => {
+      expect(screen.getByText('张三')).toBeInTheDocument()
+    })
+    // mock 状态：confirmed → 未知 → neutral「暂无数据」；shipped → info「已发货」
+    const shipped = screen.getByText('已发货')
+    expect(shipped.className).toContain('bg-primary-50')
+    expect(shipped.className).toContain('border')
+    // 旧内联 StatusBadge（rounded-full、bg-blue-100/bg-amber-100）不应再出现于看板近期订单
+    expect(shipped.className).not.toContain('rounded-full')
+    expect(shipped.className).not.toContain('bg-blue-100')
+    expect(shipped.className).not.toContain('bg-amber-100')
+  })
+
+  it('看板页图标无默认蓝/紫/橙残留（text-blue/purple/orange-*）', async () => {
+    const { container } = render(<DashboardPage />)
+    await waitFor(() => {
+      expect(screen.getByText('本月销售额')).toBeInTheDocument()
+    })
+    const icons = Array.from(container.querySelectorAll('[data-testid^="icon-"]'))
+    expect(icons.length).toBeGreaterThan(0)
+    for (const icon of icons) {
+      const cls = icon.getAttribute('class') || ''
+      expect(cls).not.toMatch(/text-(blue|purple|orange)-/)
+    }
+  })
+
+  it('经营数据/待处理图标使用织物质感 token 色', async () => {
+    render(<DashboardPage />)
+    await waitFor(() => {
+      expect(screen.getByText('今日订单数')).toBeInTheDocument()
+    })
+    // 待发货订单图标 → primary-600（原 blue-600）
+    const pendingCard = screen.getByText('待发货订单').closest('a')!
+    const pendingIcon = pendingCard.querySelector('[data-testid="icon-package"]')!
+    expect(pendingIcon.getAttribute('class')).toContain('text-primary-600')
+    // 含加工待发货图标 → accent-600（原 purple-600）
+    const processCard = screen.getByText('含加工待发货订单').closest('a')!
+    const processIcon = processCard.querySelector('[data-testid="icon-settings"]')!
+    expect(processIcon.getAttribute('class')).toContain('text-accent-600')
+    // 今日订单数图标 → primary-600（原 blue-600）
+    const orderCard = screen.getByText('今日订单数').closest('.bg-white')!
+    const orderIcon = orderCard.querySelector('[data-testid="icon-clipboard-list"]')!
+    expect(orderIcon.getAttribute('class')).toContain('text-primary-600')
+    // 本月销售额图标 → accent-600（原 orange-600）
+    const monthCard = screen.getByText('本月销售额').closest('.bg-white')!
+    const monthIcon = monthCard.querySelector('[data-testid="icon-dollar-sign"]')!
+    expect(monthIcon.getAttribute('class')).toContain('text-accent-600')
+  })
+
+  it('近期订单空态显示「暂无近期订单」（RecentOrders emptyText prop）', async () => {
+    mockGetRecentOrders.mockResolvedValue({ data: { data: [] } })
+    render(<DashboardPage />)
+    await waitFor(() => {
+      expect(screen.getByText('暂无近期订单')).toBeInTheDocument()
+    })
+  })
 })
+
