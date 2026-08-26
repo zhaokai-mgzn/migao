@@ -167,11 +167,14 @@ class RuleMatcher:
             # 多意图：按关键词特异性裁决——最长命中关键词的意图胜出。
             # 例："创建订单" → ORDER_CREATE("创建订单"4字) 胜过 ORDER_QUERY("订单"2字)；
             # "给订单X创建退款工单" → 各意图最长词均为 2 字（订单/退款）→ 打平 → None（L2）。
+            # 注意：regex 命中不计长度（"regex:<pattern>" 字符串远长于真实关键词，
+            # 会让正则意图虚假胜出，如 "ORD123 要退款" 被 ORD 正则抢走）。
             best_len = -1
             best_intent: Optional[IntentResult] = None
             tie = False
             for intent, result in matched_intents.items():
-                max_len = max((len(kw) for kw in result.matched_keywords), default=0)
+                real_keywords = [kw for kw in result.matched_keywords if not kw.startswith("regex:")]
+                max_len = max((len(kw) for kw in real_keywords), default=0)
                 if max_len > best_len:
                     best_len = max_len
                     best_intent = result

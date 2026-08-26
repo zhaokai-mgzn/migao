@@ -122,3 +122,9 @@ class TestMatch:
         result = self._match("查一下待发货订单")
         assert result is not None
         assert result.intent == IntentType.ORDER_QUERY
+
+    def test_mixed_regex_and_keyword_prefers_keyword_intent(self):
+        # regex 命中不计长度：ORD 单号 + "退款" → 售后意图胜出（售后 skill 持有 order_query）
+        result = self._match("ORD1234567890123 要退款")
+        assert result is not None
+        assert result.intent == IntentType.AFTER_SALES
