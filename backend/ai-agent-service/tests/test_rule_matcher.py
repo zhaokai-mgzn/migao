@@ -1,4 +1,4 @@
-# case_ids: MC-010, MC-011
+# case_ids: MC-010, MC-011, AS-003, AS-004, AS-005
 """规则匹配器单元测试（app/router/rule_matcher.py）
 
 覆盖：_extract_text / RuleMatcher.match 关键词优先级 / 正则规则 / 未命中。
@@ -92,3 +92,33 @@ class TestMatch:
 
     def test_no_match_returns_none(self):
         assert self._match("随便说点什么") is None
+
+    def test_ambiguous_order_and_aftersales_returns_none(self):
+        # 跨域消息：订单实体 + 售后动作 → 多意图冲突，L1 不硬猜，交给 L2 带上下文分类
+        # （修复生产回归：售后工单创建被"订单"关键词抢占路由）
+        assert self._match("给订单20260826708690102创建退款售后工单") is None
+
+    def test_ambiguous_product_and_aftersales_returns_none(self):
+        # 售后补信息消息含"商品"实体 + "退款"动作 → 同样不硬猜
+        assert self._match("客户手机号13800138000，要退款，商品有瑕疵") is None
+
+    def test_ambiguous_order_entity_and_return_action_returns_none(self):
+        # 指代上下文："这个订单…退货…建售后工单"
+        assert self._match("这个订单的客户要退货，帮他建个售后工单") is None
+
+    def test_single_aftersales_keyword_still_matches(self):
+        # 纯售后意图（单意图）仍走 L1 快速通道
+        result = self._match("看看售后工单")
+        assert result is not None
+        assert result.intent == IntentType.AFTER_SALES
+
+    def test_single_order_keyword_still_matches(self):
+        result = self._match("查一下订单")
+        assert result is not None
+        assert result.intent == IntentType.ORDER_QUERY
+
+    def test_single_intent_multi_keywords_same_intent_still_matches(self):
+        # 同意图多关键词（订单 + 待发货）不算冲突
+        result = self._match("查一下待发货订单")
+        assert result is not None
+        assert result.intent == IntentType.ORDER_QUERY

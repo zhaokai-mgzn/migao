@@ -9,6 +9,7 @@
 
 改动 references/ 下的 Prompt 文件后运行此测试即可发现意外变更。
 """
+# case_ids: MC-003, MC-010
 
 import pytest
 
@@ -118,13 +119,13 @@ def test_snapshot_all_skills():
 
     # 最大长度快照（防止无限制膨胀）
     expected_max = {
-        "product": 8500,  # +1000: product_update tool + 3 EXAMPLES
-        "order": 5600,  # +400: SKU 规格选择流程
-        "aftersales": 4300,
-        "customer": 4300,
-        "staff": 4300,
-        "settings": 4300,
-        "data": 4300,
+        "product": 8900,  # +400: validate_input 中止铁律（共享规则增长）
+        "order": 5900,  # +300: validate_input 中止铁律（共享规则增长）
+        "aftersales": 4500,
+        "customer": 4500,
+        "staff": 4500,
+        "settings": 4500,
+        "data": 4500,
         "general": 4800,
     }
     for skill, max_len in expected_max.items():

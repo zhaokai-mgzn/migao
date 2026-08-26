@@ -59,6 +59,14 @@ _VALIDATION_RULES: Dict[str, Dict[str, Any]] = {
             "order_id": {"type": str, "min_len": 1, "label": "订单ID或订单号"},
         },
     },
+    "inventory_manage": {
+        "adjust": {
+            "required": ["product_id", "adjustment", "reason"],
+            "product_id": {"type": str, "min_len": 1, "label": "商品ID"},
+            "adjustment": {"type": int, "label": "调整数量（正数增加，负数减少，不能为0）"},
+            "reason": {"type": str, "min_len": 1, "label": "调整原因"},
+        },
+    },
     "after_sales_manage": {
         "create": {
             "required": ["ticket_type", "order_id", "reason"],

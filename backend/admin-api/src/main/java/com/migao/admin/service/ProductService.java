@@ -1474,6 +1474,93 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
     }
 
     /**
+     * Agent 专用库存调整（生产回归修复：杜绝"假成功"）。
+     *
+     * 背景：updateProduct 对 stock 的处理依赖 SKU 重建条件（colors/skus 等字段非空），
+     * 单独传 stock 时被静默忽略但接口仍返回 success —— 米宝曾报"库存已调整"而库表未变。
+     * 本方法直接对现有 SKU 分配增减量并写库，语义与商品列表的总库存（SKU 汇总）一致。
+     *
+     * 分配规则（确定性）：
+     * - 增加：在 SKU 间均匀分配，余数给第一个 SKU；
+     * - 减少：从库存最大的 SKU 优先扣减（单 SKU 扣到 0 为止），总量不足时抛 INSUFFICIENT_STOCK。
+     *
+     * @param productId  商品 ID（UUID；名称需调用方先 resolveProductId）
+     * @param adjustment 调整量（正=增加，负=减少，0 报参数错误）
+     * @param reason     调整原因（仅日志记录）
+     * @param tenantId   租户 ID
+     * @return 更新后的商品详情（stock 为 SKU 汇总，供调用方读回校验）
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public ProductResponse adjustStockForAgent(String productId, Integer adjustment, String reason, Long tenantId) {
+        Product product = productMapper.selectOne(
+                new LambdaQueryWrapper<Product>()
+                        .eq(Product::getId, productId)
+                        .eq(Product::getTenantId, tenantId));
+        if (product == null) {
+            throw BusinessException.notFound("商品");
+        }
+        if (adjustment == null || adjustment == 0) {
+            throw BusinessException.validationError("调整量 adjustment 不能为空或 0");
+        }
+
+        List<ProductSku> skus = productSkuMapper.selectList(
+                new LambdaQueryWrapper<ProductSku>().eq(ProductSku::getProductId, productId));
+        if (skus == null || skus.isEmpty()) {
+            throw BusinessException.validationError("商品没有 SKU，无法调整库存，请先在商品详情维护 SKU");
+        }
+
+        int total = skus.stream().mapToInt(s -> s.getStock() != null ? s.getStock() : 0).sum();
+        long newTotalLong = (long) total + adjustment;
+        if (newTotalLong < 0) {
+            throw new BusinessException("INSUFFICIENT_STOCK",
+                    "库存不足：当前总库存 " + total + "，无法减少 " + Math.abs(adjustment), 422);
+        }
+        int newTotal = (int) newTotalLong;
+
+        if (adjustment > 0) {
+            // 均匀分配，余数给第一个 SKU
+            int base = adjustment / skus.size();
+            int remainder = adjustment % skus.size();
+            for (int i = 0; i < skus.size(); i++) {
+                ProductSku sku = skus.get(i);
+                int add = base + (i == 0 ? remainder : 0);
+                sku.setStock((sku.getStock() != null ? sku.getStock() : 0) + add);
+            }
+        } else {
+            // 从库存最大的 SKU 优先扣减
+            int toReduce = Math.abs(adjustment);
+            List<ProductSku> sorted = new ArrayList<>(skus);
+            sorted.sort((x, y) -> Integer.compare(
+                    y.getStock() != null ? y.getStock() : 0,
+                    x.getStock() != null ? x.getStock() : 0));
+            for (ProductSku sku : sorted) {
+                if (toReduce <= 0) {
+                    break;
+                }
+                int current = sku.getStock() != null ? sku.getStock() : 0;
+                int take = Math.min(current, toReduce);
+                sku.setStock(current - take);
+                toReduce -= take;
+            }
+            if (toReduce > 0) {
+                throw new BusinessException("INSUFFICIENT_STOCK",
+                        "库存不足：当前总库存 " + total + "，无法减少 " + Math.abs(adjustment), 422);
+            }
+        }
+
+        for (ProductSku sku : skus) {
+            productSkuMapper.updateById(sku);
+        }
+        // 商品级 stock 仅作冗余展示，同步为 SKU 汇总值
+        product.setStock(newTotal);
+        productMapper.updateById(product);
+
+        log.info("[Agent] 库存调整: product={}, adjustment={}, reason={}, total={}->{}, tenant={}",
+                productId, adjustment, reason, total, newTotal, tenantId);
+        return getProductById(productId, tenantId);
+    }
+
+    /**
      * Agent 专用加工项增删。
      * add: 仅插入不存在的；remove: 仅删除存在的（幂等）。
      */

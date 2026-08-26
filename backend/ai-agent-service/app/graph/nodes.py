@@ -215,13 +215,13 @@ async def intent_router_node(state: AgentState) -> dict:
     # Agent 感知：获取该 Agent 可处理的意图子集
     agent_intents = _get_agent_intents(agent_type)
 
-    # 注入跨轮实体：让分类器指代消解（"那个订单"→ORD12345），减少误分类
+    # 注入跨轮实体：让分类器指代消解（"那个订单"→ORD12345），减少误分类。
+    # entity_hint 作为独立参数传给 router，仅注入 L2 分类器；
+    # L1 规则匹配只看原始用户消息（防止 hint 中的领域词污染关键词匹配）。
     entity_hint = await _build_entity_hint(session_id)
-    if entity_hint:
-        user_message = f"{entity_hint}\n用户消息：{user_message}"
 
     route_decision = await router.route(
-        user_message, chat_history, agent_intents=agent_intents
+        user_message, chat_history, agent_intents=agent_intents, entity_hint=entity_hint
     )
 
     session_id = state.get("session_id", "")

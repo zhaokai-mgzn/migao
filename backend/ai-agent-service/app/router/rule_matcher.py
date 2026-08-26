@@ -123,41 +123,63 @@ class RuleMatcher:
                 matched_keywords=["订单统计"],
             )
 
+        # 收集所有命中的意图，而不是第一个命中即返回。
+        # 跨域消息（如"给订单X创建退款工单"同时含"订单"+"退款"）存在多个候选意图时，
+        # L1 不看对话历史硬猜会抢错路由（生产回归：售后工单创建被"订单/商品"抢占），
+        # 此时返回 None 降级 L2 分类器（带 chat_history + agent_intents）裁决。
+        matched_intents: dict[IntentType, IntentResult] = {}
+
         for intent, keywords in KEYWORD_MAP.items():
             # capabilities 和 farewell 已在上面处理
             if intent in (IntentType.CAPABILITIES, IntentType.FAREWELL):
                 continue
 
             matched = [kw for kw in keywords if kw.lower() in msg_lower]
-            if matched:
-                # Greeting 意图：消息非常短且完全匹配时才高置信度
-                if intent == IntentType.GREETING:
-                    # 仅当消息较短时（≤10字符）才视为纯问候
-                    if len(msg_lower) <= 10:
-                        return IntentResult(
-                            intent=intent,
-                            confidence=1.0,
-                            source="rule",
-                            matched_keywords=matched,
-                        )
-                    # 较长消息中包含问候词，不单独识别为 greeting
-                    continue
-                
-                return IntentResult(
-                    intent=intent,
-                    confidence=0.95,
-                    source="rule",
-                    matched_keywords=matched,
-                )
+            if not matched:
+                continue
+            # Greeting 意图：消息非常短且完全匹配时才视为纯问候
+            if intent == IntentType.GREETING and len(msg_lower) > 10:
+                continue
+            confidence = 1.0 if intent == IntentType.GREETING else 0.95
+            matched_intents[intent] = IntentResult(
+                intent=intent,
+                confidence=confidence,
+                source="rule",
+                matched_keywords=matched,
+            )
 
-        # 2. 正则规则匹配
+        # 2. 正则规则匹配（同样收集，不抢先返回）
         for pattern, intent in REGEX_RULES:
             if pattern.search(text):
-                return IntentResult(
-                    intent=intent,
-                    confidence=0.9,
-                    source="rule",
-                    matched_keywords=[f"regex:{pattern.pattern}"],
-                )
+                # 正则命中与关键词命中属于同一意图时保留关键词结果（信息更丰富）
+                if intent not in matched_intents:
+                    matched_intents[intent] = IntentResult(
+                        intent=intent,
+                        confidence=0.9,
+                        source="rule",
+                        matched_keywords=[f"regex:{pattern.pattern}"],
+                    )
 
+        if len(matched_intents) == 1:
+            return next(iter(matched_intents.values()))
+
+        if len(matched_intents) > 1:
+            # 多意图：按关键词特异性裁决——最长命中关键词的意图胜出。
+            # 例："创建订单" → ORDER_CREATE("创建订单"4字) 胜过 ORDER_QUERY("订单"2字)；
+            # "给订单X创建退款工单" → 各意图最长词均为 2 字（订单/退款）→ 打平 → None（L2）。
+            best_len = -1
+            best_intent: Optional[IntentResult] = None
+            tie = False
+            for intent, result in matched_intents.items():
+                max_len = max((len(kw) for kw in result.matched_keywords), default=0)
+                if max_len > best_len:
+                    best_len = max_len
+                    best_intent = result
+                    tie = False
+                elif max_len == best_len:
+                    tie = True
+            if best_intent is not None and not tie:
+                return best_intent
+
+        # 0 个命中 → None；多意图且特异性打平 → None（歧义交给 L2）
         return None

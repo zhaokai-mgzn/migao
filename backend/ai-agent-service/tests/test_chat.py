@@ -432,6 +432,39 @@ class TestPageRequest:
         body = await self._collect(resp)
         assert "不支持该操作的分页查询" in body
 
+    @patch("app.api.chat.get_tool_registry")
+    @patch("app.api.chat.SessionMemory")
+    @pytest.mark.asyncio
+    async def test_page_happy_path_executes_tool(self, MockSM, mock_registry):
+        """__PAGE__ happy path：白名单工具真实执行成功 → tool_call/tool_result 事件。
+
+        回归生产 bug：chat.py 使用 ToolContext 但从未 import（NameError），
+        导致所有翻页请求报"翻页查询失败"（本地复现 traceback 确认）。
+        """
+        from app.api.chat import _handle_page_request
+        from app.tools.base import ToolResult
+
+        MockSM.return_value = _memory(get_session=_session())
+        reg = MagicMock()
+        reg.execute_tool = AsyncMock(return_value=ToolResult(
+            success=True,
+            data={"items": [{"name": "打孔加工", "unit_price": 9.0, "unit": "米"}],
+                  "total": 33, "page": 2, "size": 3},
+            message="查询成功",
+        ))
+        mock_registry.return_value = reg
+
+        req = ChatSendRequest(
+            session_id="sess_1",
+            message='__PAGE__|processing_item_query|{"page":2,"size":3}',
+        )
+        resp = await _handle_page_request(req, tenant_id=1, user_id="user_1", current_user=_user())
+        body = await self._collect(resp)
+        assert "翻页查询失败" not in body
+        assert "tool_call" in body
+        assert "tool_result" in body
+        reg.execute_tool.assert_awaited_once()
+
 
 # ═══════════════════════════════════════════════
 # SSE 流生成器
