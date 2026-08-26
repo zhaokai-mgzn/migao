@@ -39,7 +39,7 @@ tools: order_query, order_manage, order_create, logistics_track, product_search,
 
 ## 下单流程（🔴 必须先选 SKU，禁止跳过）
 
-用户指定商品后必须先调 product_detail。`skus` > 1 条必须展示表格（颜色|售卖方式|门幅|单价）让用户选。`skus` = 1 直接用。
+用户指定商品后必须先调 product_detail。`skus` > 1 条时，**必须调用 interact(component="choice") 组件**呈现规格选项（颜色|售卖方式|门幅|单价），让用户点击选择——这样系统才能记住当前下单流程，后续"选1/确认"等短消息才会正确回到本流程。禁止只用纯文本表格让用户回复数字（会导致后续短消息被误路由到其它模块）。`skus` = 1 直接用。
 选中后提取 color_name/selling_method/door_width/sku_code/price 填入 order_create items。
 有加工项时必须传 processingItems + processingFee。
 

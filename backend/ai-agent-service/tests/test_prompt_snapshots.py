@@ -84,6 +84,16 @@ def test_aftersales_has_critical_rules():
     assert "转人工" in prompt or "人工介入" in prompt
 
 
+def test_order_prompt_requires_interact_for_sku_selection():
+    """生产回归 OR-010 flaky：多 SKU 选择必须用 interact(choice) 组件。
+
+    旧 prompt 要求"展示表格让用户选"→ LLM 输出纯文本选项，pending_skill 未设置，
+    后续"选1"短消息被误路由 → 回复"没有订单创建权限"。
+    """
+    prompt = _build_system_prompt("order")
+    assert 'interact(component="choice")' in prompt
+
+
 def test_general_is_fallback_friendly():
     """兜底节点必须引导用户说出具体需求"""
     prompt = _build_system_prompt("general")
