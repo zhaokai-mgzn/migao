@@ -10,6 +10,7 @@
 - 单元测试：Mock 所有依赖，验证纯函数/单组件
 - 集成测试：走真实 API 层 + graph 执行，仅 Mock LLM 调用和 DB
 """
+# case_ids: AG-002, MC-005
 
 import json
 import time

@@ -17,6 +17,7 @@
   每轮对话手动维护 chat_history，模拟真实多轮场景。
   Mock 层：LLM (ChatOpenAI)、AdminApiClient、SemanticCache、Suggestions。
 """
+# case_ids: CH-005, CH-006, CH-007
 
 import json
 import time

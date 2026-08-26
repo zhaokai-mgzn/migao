@@ -1,4 +1,5 @@
 """Tests for misc-part1 — coverage gap issue #576"""
+# case_ids: MC-003, MC-004, MC-008
 import pytest
 from unittest.mock import MagicMock
 

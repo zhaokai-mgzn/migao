@@ -16,6 +16,7 @@ AI Agent Service - 业务验证综合测试
 - 使用 mock 替代 Admin API、DashScope LLM 等外部依赖
 - 参考 tests/test_e2e_chat_flow.py 与 tests/conftest.py 的现有模式
 """
+# case_ids: CH-005, CH-006, API-001
 
 import json
 import time

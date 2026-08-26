@@ -11,6 +11,7 @@
 - intent_router_node 处理多模态 HumanMessage 正确提取文本
 - _extract_text_from_content() helper 函数正确性
 """
+# case_ids: AG-002, MC-004
 
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
