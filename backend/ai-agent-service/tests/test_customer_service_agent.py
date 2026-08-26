@@ -339,7 +339,8 @@ class TestBuildInitialState:
         assert state["pending_interact_skill"] == ""
 
     @pytest.mark.asyncio
-    async def test_returns_18_keys(self):
+    async def test_returns_13_keys(self):
+        """P3 精简后 _build_initial_state 返回 13 个键（原 18，死字段已移除）"""
         agent = _bare_agent()
         with patch("app.memory.session_memory.SessionMemory") as mock_sm:
             mem = mock_sm.return_value
@@ -348,7 +349,7 @@ class TestBuildInitialState:
             state = await agent._build_initial_state(
                 [HumanMessage(content="hi")], self._ctx()
             )
-        assert len(state) == 18
+        assert len(state) == 13
         assert state["messages"][0].content == "hi"
         assert state["agent_type"] == "xiaobu"
         assert state["tenant_id"] == 1
@@ -356,6 +357,10 @@ class TestBuildInitialState:
         assert state["user_name"] == "小布"
         assert state["session_id"] == "s1"
         assert state["role"] == "customer"
+        # 死字段已移除
+        assert "entities" not in state
+        assert "recent_entities" not in state
+        assert "cached_answer" not in state
 
 
 class TestAchat:

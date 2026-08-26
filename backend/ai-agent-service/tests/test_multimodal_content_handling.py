@@ -9,11 +9,9 @@
 - RuleMatcher.match() 接收 list content 不崩溃
 - IntentClassifier.classify() 接收 list message 不崩溃
 - intent_router_node 处理多模态 HumanMessage 正确提取文本
-- cache_check_node / cache_store_node / suggestions_node 处理 list content 不崩溃
 - _extract_text_from_content() helper 函数正确性
 """
 
-import sys
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
 from langchain_core.messages import HumanMessage, AIMessage
@@ -180,9 +178,6 @@ class TestIntentClassifierMultimodal:
 
 # ========== Graph Nodes 多模态输入测试 ==========
 
-import app.cache.semantic_cache  # noqa - trigger module load
-_sc_module = sys.modules['app.cache.semantic_cache']
-
 
 class TestNodesMultimodal:
     """Graph 节点处理多模态 content 时不应崩溃"""
@@ -249,74 +244,6 @@ class TestNodesMultimodal:
         for entry in chat_history_arg:
             assert isinstance(entry["content"], str), \
                 f"Chat history content should be str, got {type(entry['content'])}"
-
-    async def test_cache_check_node_with_multimodal(self):
-        """cache_check_node 处理多模态消息不崩溃"""
-        from app.graph.nodes import cache_check_node
-
-        mock_cache = AsyncMock()
-        mock_cache.lookup = AsyncMock(return_value=None)
-        mock_settings = MagicMock()
-        mock_settings.SEMANTIC_CACHE_ENABLED = True
-
-        content = _make_multimodal_content("查一下这个")
-        with patch("app.config.settings", mock_settings), \
-             patch.object(_sc_module, "semantic_cache", mock_cache):
-            state = _make_state(messages=[HumanMessage(content=content)])
-            result = await cache_check_node(state)
-
-        # 传给 semantic_cache.lookup 的 query 应该是 str
-        if mock_cache.lookup.called:
-            call_kwargs = mock_cache.lookup.call_args[1]
-            assert isinstance(call_kwargs["query"], str), \
-                f"Expected str query, got {type(call_kwargs['query'])}"
-
-    async def test_cache_store_node_with_multimodal(self):
-        """cache_store_node 处理多模态消息不崩溃"""
-        from app.graph.nodes import cache_store_node
-
-        mock_cache = AsyncMock()
-        mock_cache.store = AsyncMock()
-        mock_settings = MagicMock()
-        mock_settings.SEMANTIC_CACHE_ENABLED = True
-
-        content = _make_multimodal_content("看看这个")
-        with patch("app.config.settings", mock_settings), \
-             patch.object(_sc_module, "semantic_cache", mock_cache):
-            state = _make_state(
-                messages=[HumanMessage(content=content)],
-                final_answer="这是一个窗帘",
-                intent_result={"intent": "product_inquiry"},
-            )
-            result = await cache_store_node(state)
-
-        assert result == {}
-        if mock_cache.store.called:
-            call_kwargs = mock_cache.store.call_args[1]
-            assert isinstance(call_kwargs["query"], str), \
-                f"Expected str query, got {type(call_kwargs['query'])}"
-
-    @patch("app.suggestions.follow_up.FollowUpSuggestionGenerator")
-    async def test_suggestions_node_with_multimodal(self, MockGenerator):
-        """suggestions_node 处理多模态消息不崩溃"""
-        from app.graph.nodes import suggestions_node
-
-        mock_gen = MagicMock()
-        mock_gen.generate = AsyncMock(return_value=["查看更多", "了解价格"])
-        MockGenerator.return_value = mock_gen
-
-        content = _make_multimodal_content("这个多少钱")
-        state = _make_state(
-            messages=[HumanMessage(content=content)],
-            final_answer="这是窗帘",
-            intent_result={"intent": "product_inquiry"},
-        )
-        result = await suggestions_node(state)
-
-        # 传给 generator.generate 的 query 应该是 str
-        call_kwargs = mock_gen.generate.call_args[1]
-        assert isinstance(call_kwargs["query"], str), \
-            f"Expected str query, got {type(call_kwargs['query'])}"
 
 
 # ========== 图片 URL 重写测试 ==========

@@ -166,6 +166,69 @@ def _format_datetime(dt: Any) -> str:
     return s
 
 
+async def _guard_session(
+    session_memory: SessionMemory,
+    session_id: str,
+    *,
+    tenant_id: int,
+    user_id: str,
+    action: str = "访问",
+) -> dict:
+    """会话守卫（会话管理重构 P2）：统一 404/403 校验。
+
+    替代原先散落在 close/reopen/delete/history 各端点的重复校验：
+    - 会话不存在 → 404 SESSION_NOT_FOUND
+    - 跨租户 / 跨用户 → 403 PERMISSION_DENIED
+
+    Returns:
+        session dict；校验失败抛 HTTPException（错误格式统一 make_response）。
+    """
+    session = await session_memory.get_session(session_id)
+    if not session:
+        raise HTTPException(
+            status_code=404,
+            detail=make_response(False, error_code="SESSION_NOT_FOUND", error_message="会话不存在"),
+        )
+    if session.get("tenant_id") != tenant_id:
+        logger.warning(
+            f"[chat/guard] Cross-tenant {action} attempt: user_tenant={tenant_id}, "
+            f"session_tenant={session.get('tenant_id')}, session_id={session_id}, "
+            f"user_id={user_id}"
+        )
+        raise HTTPException(
+            status_code=403,
+            detail=make_response(False, error_code="PERMISSION_DENIED", error_message=f"无权{action}该会话"),
+        )
+    if session.get("customer_id") != user_id:
+        logger.warning(
+            f"[chat/guard] Unauthorized {action} attempt: user_id={user_id}, "
+            f"session_owner={session.get('customer_id')}, session_id={session_id}, "
+            f"tenant_id={tenant_id}"
+        )
+        raise HTTPException(
+            status_code=403,
+            detail=make_response(False, error_code="PERMISSION_DENIED", error_message=f"无权{action}该会话"),
+        )
+    return session
+
+
+def _raise_session_error(code: str, message: str) -> None:
+    """把 send_gate 的 (code, message) 转为统一 make_response 格式的 HTTPException。
+
+    状态码映射：SESSION_NOT_FOUND→404, PERMISSION_DENIED→403, SESSION_CLOSED→409。
+    """
+    status_map = {
+        "SESSION_NOT_FOUND": 404,
+        "PERMISSION_DENIED": 403,
+        "SESSION_CLOSED": 409,
+    }
+    status_code = status_map.get(code, 400)
+    raise HTTPException(
+        status_code=status_code,
+        detail=make_response(False, error_code=code, error_message=message),
+    )
+
+
 def _convert_history_to_agent_format(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """将数据库消息格式转换为 Agent 所需的格式（支持多模态）
 
@@ -297,7 +360,7 @@ async def _agent_stream_to_sse(
     3. Tool 调用由 LangGraph Skill 节点内部处理
     4. 根据 Tool 结果发送卡片事件
     5. 保存消息到数据库
-    6. 后续问题建议由图内 suggestions_node 生成
+    6. 后续问题建议由 LLM 在回复中自然生成
     """
     full_response = []
     tool_calls_info = []
@@ -465,8 +528,7 @@ async def _agent_stream_to_sse(
                 exc_info=True,
             )
 
-        # suggestions 已在 LangGraph 图内的 suggestions_node 生成并通过流传递
-        # 无需在此额外生成
+        # suggestions 由 LLM 在回复中自然生成，无需在此额外生成
 
         # 异步提取用户记忆（fire-and-forget，不阻塞 SSE 流）
         # user_message 提取自 message 参数（可能为 str 或 list）
@@ -546,28 +608,20 @@ async def _handle_page_request(
     session_memory = SessionMemory()
     tool_registry = get_tool_registry()
 
-    # ── 安全校验：与 send_message 保持一致的 session 验证 ──
+    # ── 安全校验：与 send_message 共用统一守卫（存在/租户/用户/closed + 刷新 last_activity）──
+    from app.memory.session_service import SessionService
+    session_service = SessionService(session_memory)
     session_id = request.session_id
     if not session_id:
         session_id = await session_memory.create_session(
             tenant_id=tenant_id, customer_id=user_id, title=None,
         )
     else:
-        session = await session_memory.get_session(session_id)
-        if not session:
-            raise HTTPException(
-                status_code=404,
-                detail=make_response(False, error_code="SESSION_NOT_FOUND", error_message="会话不存在"),
-            )
-        if session.get("tenant_id") != tenant_id:
-            raise HTTPException(status_code=403, detail=make_response(
-                False, error_code="PERMISSION_DENIED", error_message="无权访问该会话"))
-        if session.get("customer_id") != user_id:
-            raise HTTPException(status_code=403, detail=make_response(
-                False, error_code="PERMISSION_DENIED", error_message="无权访问该会话"))
-        if session.get("status") == "closed":
-            raise HTTPException(status_code=409, detail={
-                "success": False, "error": {"code": "SESSION_CLOSED", "message": "该会话已结束，请创建新对话"}})
+        _session, _gate_error = await session_service.send_gate(
+            session_id, tenant_id=tenant_id, user_id=user_id,
+        )
+        if _gate_error:
+            _raise_session_error(*_gate_error)
 
     # 解析 __PAGE__ 消息
     try:
@@ -774,7 +828,9 @@ async def send_message(
 
     agent = get_agent(tool_registry, agent_type=agent_type)
     
-    # 1. 创建或获取 session
+    # 1. 创建或获取 session（统一守卫：存在/租户/用户/closed + 刷新 last_activity）
+    from app.memory.session_service import SessionService
+    session_service = SessionService(session_memory)
     session_id = request.session_id
     if not session_id:
         # 创建新会话。不再强制关闭其他活跃会话，支持多会话并存
@@ -784,50 +840,13 @@ async def send_message(
             title=None,  # 自动生成标题
         )
     else:
-        # 验证会话存在且属于当前用户
-        session = await session_memory.get_session(session_id)
-        if not session:
-            raise HTTPException(
-                status_code=404,
-                detail=make_response(False, error_code="SESSION_NOT_FOUND", error_message="会话不存在")
-            )
-        # 先验证租户隔离
-        if session.get("tenant_id") != tenant_id:
-            logger.warning(
-                f"Cross-tenant session access attempt: user_tenant={tenant_id}, "
-                f"session_tenant={session.get('tenant_id')}, session_id={session_id}, "
-                f"user_id={user_id}"
-            )
-            raise HTTPException(
-                status_code=403,
-                detail=make_response(False, error_code="PERMISSION_DENIED", error_message="无权访问该会话")
-            )
-        # 再验证用户所有权
-        if session.get("customer_id") != user_id:
-            logger.warning(
-                f"Unauthorized session access attempt: user_id={user_id}, "
-                f"session_owner={session.get('customer_id')}, session_id={session_id}, "
-                f"tenant_id={tenant_id}"
-            )
-            raise HTTPException(
-                status_code=403,
-                detail=make_response(False, error_code="PERMISSION_DENIED", error_message="无权访问该会话")
-            )
-        # 拒绝在已关闭会话上发送消息
-        if session.get("status") == "closed":
-            logger.info(
-                f"[chat/send] Reject send on closed session | session={session_id} user={user_id}"
-            )
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "success": False,
-                    "error": {
-                        "code": "SESSION_CLOSED",
-                        "message": "该会话已结束，请创建新对话",
-                    }
-                }
-            )
+        _session, _gate_error = await session_service.send_gate(
+            session_id,
+            tenant_id=tenant_id,
+            user_id=user_id,
+        )
+        if _gate_error:
+            _raise_session_error(*_gate_error)
         # 空闲超时统一由后台任务 _session_auto_close_loop 处理，
         # send 路径不做会话轮换，避免 session_id 突变导致前端状态不一致
     
@@ -875,12 +894,11 @@ async def send_message(
                 session_id, max_tokens=MAX_CONTEXT_TOKENS
             )
 
-            # 4a. 如果历史超限，压缩早期消息为摘要
+            # 4a. 如果历史超限，压缩早期消息为摘要（经 ContextBuilder，摘要回写工作状态）
             if needs_compression:
                 try:
-                    from app.context.tracker import ConversationTracker
-                    tracker = ConversationTracker()
-                    history_messages = await tracker.compress_history(
+                    from app.memory.context_builder import ContextBuilder
+                    history_messages = await ContextBuilder().compress_history(
                         history_messages,
                         session_id=session_id,
                         max_turns=10,
@@ -1037,52 +1055,11 @@ async def close_session_endpoint(
     - PUT close: 仅将 status 置为 closed，保留历史消息。
     """
     session_memory = SessionMemory()
-
-    session = await session_memory.get_session(session_id)
-    if not session:
-        raise HTTPException(
-            status_code=404,
-            detail={
-                "success": False,
-                "error": {
-                    "code": "SESSION_NOT_FOUND",
-                    "message": "会话不存在",
-                }
-            },
-        )
-
-    if session.get("tenant_id") != current_user.tenant_id:
-        logger.warning(
-            f"Cross-tenant session close attempt: user_tenant={current_user.tenant_id}, "
-            f"session_tenant={session.get('tenant_id')}, session_id={session_id}, "
-            f"user_id={current_user.user_id}"
-        )
-        raise HTTPException(
-            status_code=403,
-            detail={
-                "success": False,
-                "error": {
-                    "code": "PERMISSION_DENIED",
-                    "message": "无权关闭该会话",
-                }
-            },
-        )
-    if session.get("customer_id") != current_user.user_id:
-        logger.warning(
-            f"Unauthorized session close attempt: user_id={current_user.user_id}, "
-            f"session_owner={session.get('customer_id')}, session_id={session_id}, "
-            f"tenant_id={current_user.tenant_id}"
-        )
-        raise HTTPException(
-            status_code=403,
-            detail={
-                "success": False,
-                "error": {
-                    "code": "PERMISSION_DENIED",
-                    "message": "无权关闭该会话",
-                }
-            },
-        )
+    session = await _guard_session(
+        session_memory, session_id,
+        tenant_id=current_user.tenant_id, user_id=current_user.user_id,
+        action="关闭",
+    )
 
     # 幂等语义：已 closed 仍返回成功
     if session.get("status") == "closed":
@@ -1093,7 +1070,8 @@ async def close_session_endpoint(
             "message": "会话已处于关闭状态",
         })
 
-    await session_memory.close_session(session_id)
+    from app.memory.session_service import SessionService
+    await SessionService(session_memory).close(session_id)
     logger.info(
         f"Session closed via API: session_id={session_id}, user_id={current_user.user_id}, "
         f"tenant_id={current_user.tenant_id}"
@@ -1116,21 +1094,16 @@ async def reopen_session_endpoint(
     仅会话所有者可操作。
     """
     session_memory = SessionMemory()
-    session = await session_memory.get_session(session_id)
-    if not session:
-        raise HTTPException(
-            status_code=404,
-            detail={"success": False, "error": {"code": "SESSION_NOT_FOUND", "message": "会话不存在"}},
-        )
-    if session.get("tenant_id") != current_user.tenant_id or session.get("customer_id") != current_user.user_id:
-        raise HTTPException(
-            status_code=403,
-            detail={"success": False, "error": {"code": "PERMISSION_DENIED", "message": "无权操作该会话"}},
-        )
+    session = await _guard_session(
+        session_memory, session_id,
+        tenant_id=current_user.tenant_id, user_id=current_user.user_id,
+        action="操作",
+    )
     if session.get("status") != "closed":
         return make_response(True, data={"session_id": session_id, "status": session.get("status"), "message": "会话已是活跃状态"})
 
-    await session_memory.reopen_session(session_id)
+    from app.memory.session_service import SessionService
+    await SessionService(session_memory).reopen(session_id)
     logger.info(f"Session reopened: session_id={session_id}, user_id={current_user.user_id}")
     return make_response(True, data={"session_id": session_id, "status": "active", "message": "会话已重新打开"})
 
@@ -1151,57 +1124,16 @@ async def delete_session(
     """
     session_memory = SessionMemory()
     
-    # 验证会话存在且属于当前用户
-    session = await session_memory.get_session(session_id)
-    if not session:
-        raise HTTPException(
-            status_code=404,
-            detail={
-                "success": False,
-                "error": {
-                    "code": "SESSION_NOT_FOUND",
-                    "message": "会话不存在",
-                }
-            }
-        )
+    # 统一会话守卫：存在 + 租户/用户所有权（404/403）
+    await _guard_session(
+        session_memory, session_id,
+        tenant_id=current_user.tenant_id, user_id=current_user.user_id,
+        action="删除",
+    )
     
-    # 先验证租户隔离
-    if session.get("tenant_id") != current_user.tenant_id:
-        logger.warning(
-            f"Cross-tenant session delete attempt: user_tenant={current_user.tenant_id}, "
-            f"session_tenant={session.get('tenant_id')}, session_id={session_id}, "
-            f"user_id={current_user.user_id}"
-        )
-        raise HTTPException(
-            status_code=403,
-            detail={
-                "success": False,
-                "error": {
-                    "code": "PERMISSION_DENIED",
-                    "message": "无权删除该会话",
-                }
-            }
-        )
-    # 再验证用户所有权
-    if session.get("customer_id") != current_user.user_id:
-        logger.warning(
-            f"Unauthorized session delete attempt: user_id={current_user.user_id}, "
-            f"session_owner={session.get('customer_id')}, session_id={session_id}, "
-            f"tenant_id={current_user.tenant_id}"
-        )
-        raise HTTPException(
-            status_code=403,
-            detail={
-                "success": False,
-                "error": {
-                    "code": "PERMISSION_DENIED",
-                    "message": "无权删除该会话",
-                }
-            }
-        )
-    
-    # 删除会话
-    await session_memory.delete_session(session_id)
+    # 删除会话（经 SessionService，终态 purged 语义）
+    from app.memory.session_service import SessionService
+    await SessionService(session_memory).delete(session_id)
     logger.info(f"Session deleted: session_id={session_id}, user_id={current_user.user_id}, tenant_id={current_user.tenant_id}")
     
     return make_response(True, data={
@@ -1228,56 +1160,14 @@ async def get_history(
     """
     session_memory = SessionMemory()
     logger.debug(f"[chat/history] Fetching | tenant={current_user.tenant_id} user={current_user.user_id} session={session_id}")
-    
-    # 验证会话存在且属于当前用户
-    session = await session_memory.get_session(session_id)
-    if not session:
-        raise HTTPException(
-            status_code=404,
-            detail={
-                "success": False,
-                "error": {
-                    "code": "SESSION_NOT_FOUND",
-                    "message": "会话不存在",
-                }
-            }
-        )
-    
-    # 先验证租户隔离
-    if session.get("tenant_id") != current_user.tenant_id:
-        logger.warning(
-            f"Cross-tenant history access attempt: user_tenant={current_user.tenant_id}, "
-            f"session_tenant={session.get('tenant_id')}, session_id={session_id}, "
-            f"user_id={current_user.user_id}"
-        )
-        raise HTTPException(
-            status_code=403,
-            detail={
-                "success": False,
-                "error": {
-                    "code": "PERMISSION_DENIED",
-                    "message": "无权访问该会话",
-                }
-            }
-        )
-    # 再验证用户所有权
-    if session.get("customer_id") != current_user.user_id:
-        logger.warning(
-            f"Unauthorized history access attempt: user_id={current_user.user_id}, "
-            f"session_owner={session.get('customer_id')}, session_id={session_id}, "
-            f"tenant_id={current_user.tenant_id}"
-        )
-        raise HTTPException(
-            status_code=403,
-            detail={
-                "success": False,
-                "error": {
-                    "code": "PERMISSION_DENIED",
-                    "message": "无权访问该会话",
-                }
-            }
-        )
-    
+
+    # 统一会话守卫：存在 + 租户/用户所有权（404/403）
+    await _guard_session(
+        session_memory, session_id,
+        tenant_id=current_user.tenant_id, user_id=current_user.user_id,
+        action="访问",
+    )
+
     # 获取历史消息
     messages = await session_memory.get_history(session_id, limit=limit)
     
@@ -1452,6 +1342,12 @@ async def get_quick_actions(
             "name": "售后管理",
             "icon": "headphones",
             "prompt": "查看售后工单",
+        },
+        {
+            "id": "customer_manage",
+            "name": "客户管理",
+            "icon": "users",
+            "prompt": "查看客户列表",
         },
     ]
     

@@ -56,12 +56,6 @@ class TestCallWithRetry:
         result = await call_with_retry(fn, max_retries=3, base_delay=0.001)
         assert result == "recovered" and count[0] == 3
 
-class TestConversationStage:
-    def test_enum_values(self):
-        from app.context.tracker import ConversationStage
-        assert len(list(ConversationStage)) >= 4
-        assert ConversationStage.INITIAL.value == "initial"
-
 class TestCostTrackerFunctions:
     def test_calc_cost(self):
         from app.llm.cost_tracker import _calc_cost_cny

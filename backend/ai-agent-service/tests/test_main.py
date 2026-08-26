@@ -113,37 +113,37 @@ class TestLifespan:
 
 
 class TestSessionAutoCloseLoop:
-    def _mock_session_memory(self, idle_side_effect=None):
-        mock_sm = MagicMock()
-        mock_sm.close_idle_sessions = AsyncMock(side_effect=idle_side_effect or [0])
-        mock_sm.cleanup_closed_sessions = AsyncMock(return_value=0)
-        return mock_sm
+    def _mock_session_service(self, idle_side_effect=None):
+        mock_svc = MagicMock()
+        mock_svc.expire_idle = AsyncMock(side_effect=idle_side_effect or [0])
+        mock_svc.purge = AsyncMock(return_value=0)
+        return mock_svc
 
     @pytest.mark.asyncio
     async def test_cancelled_error_reraises(self):
-        mock_sm = self._mock_session_memory()
-        with patch("app.memory.session_memory.SessionMemory", return_value=mock_sm), \
+        mock_svc = self._mock_session_service()
+        with patch("app.memory.session_service.SessionService", return_value=mock_svc), \
              patch("app.main.asyncio.sleep", new_callable=AsyncMock, side_effect=asyncio.CancelledError()):
             with pytest.raises(asyncio.CancelledError):
                 await main_module._session_auto_close_loop()
 
     @pytest.mark.asyncio
     async def test_scans_idle_sessions_and_daily_cleanup(self):
-        mock_sm = self._mock_session_memory()
-        with patch("app.memory.session_memory.SessionMemory", return_value=mock_sm), \
+        mock_svc = self._mock_session_service()
+        with patch("app.memory.session_service.SessionService", return_value=mock_svc), \
              patch("app.main.asyncio.sleep", new_callable=AsyncMock, side_effect=[None, asyncio.CancelledError()]):
             with pytest.raises(asyncio.CancelledError):
                 await main_module._session_auto_close_loop()
-        mock_sm.close_idle_sessions.assert_awaited_once_with(idle_minutes=240)
-        mock_sm.cleanup_closed_sessions.assert_awaited_once_with(older_than_days=90)
+        mock_svc.expire_idle.assert_awaited_once_with(idle_minutes=240)
+        mock_svc.purge.assert_awaited_once_with(older_than_days=90)
 
     @pytest.mark.asyncio
     async def test_nonfatal_exception_continues_loop(self):
-        mock_sm = self._mock_session_memory(idle_side_effect=RuntimeError("scan error"))
-        with patch("app.memory.session_memory.SessionMemory", return_value=mock_sm), \
+        mock_svc = self._mock_session_service(idle_side_effect=RuntimeError("scan error"))
+        with patch("app.memory.session_service.SessionService", return_value=mock_svc), \
              patch("app.main.asyncio.sleep", new_callable=AsyncMock, side_effect=[None, asyncio.CancelledError()]):
             with pytest.raises(asyncio.CancelledError):
                 await main_module._session_auto_close_loop()
-        # 第一次 close_idle_sessions 抛异常被吞（非致命），循环继续到第二次 sleep 后 CancelledError 重抛
-        mock_sm.close_idle_sessions.assert_awaited_once_with(idle_minutes=240)
-        mock_sm.cleanup_closed_sessions.assert_not_awaited()
+        # 第一次 expire_idle 抛异常被吞（非致命），循环继续到第二次 sleep 后 CancelledError 重抛
+        mock_svc.expire_idle.assert_awaited_once_with(idle_minutes=240)
+        mock_svc.purge.assert_not_awaited()

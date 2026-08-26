@@ -33,19 +33,19 @@ SESSION_RETENTION_DAYS = 90         # 已关闭会话保留天数
 
 
 async def _session_auto_close_loop():
-    """后台循环：定期扫描并关闭空闲会话 + 每日清理过期已关闭会话"""
+    """后台循环：定期扫描并关闭空闲会话 + 每日清理过期已关闭会话（经 SessionService）"""
     from datetime import datetime
-    from app.memory.session_memory import SessionMemory
+    from app.memory.session_service import SessionService
 
-    session_memory = SessionMemory()
+    session_service = SessionService()
     last_cleanup_date = None
 
     while True:
         try:
             await asyncio.sleep(SESSION_CLEANUP_INTERVAL)
 
-            # 1. 关闭空闲会话
-            count = await session_memory.close_idle_sessions(
+            # 1. 关闭空闲会话（active → closed/expired 语义由状态机约束）
+            count = await session_service.expire_idle(
                 idle_minutes=SESSION_AUTO_CLOSE_MINUTES
             )
             if count > 0:
@@ -57,7 +57,7 @@ async def _session_auto_close_loop():
             # 2. 每天清理一次过期已关闭会话
             today = datetime.utcnow().date()
             if last_cleanup_date != today:
-                deleted = await session_memory.cleanup_closed_sessions(
+                deleted = await session_service.purge(
                     older_than_days=SESSION_RETENTION_DAYS
                 )
                 if deleted > 0:

@@ -269,13 +269,6 @@ class _InMemorySessionStore:
                 cnt += 1
         return cnt
 
-    async def get_last_message_time(self, session_id):
-        msgs = [m for m in self.messages if m["session_id"] == session_id]
-        if not msgs:
-            return None
-        msgs.sort(key=lambda m: m["created_at"])
-        return msgs[-1]["created_at"]
-
 
 _store = _InMemorySessionStore()
 

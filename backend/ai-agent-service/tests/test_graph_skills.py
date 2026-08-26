@@ -7,6 +7,7 @@ LangGraph Skill 节点测试
 - ToolContext 从 state 正确构建
 - base_skill 的 execute_skill 逻辑
 """
+# case_ids: AG-004
 
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
@@ -166,12 +167,11 @@ class TestExecuteSkill:
     """通用 Skill 执行逻辑测试"""
 
     @patch("app.graph.skills.base_skill.get_breaker")
-    @patch("app.graph.skills.base_skill.get_tracker")
     @patch("app.graph.skills.base_skill.get_skill_llm")
     @patch("app.graph.skills.base_skill.create_skill_registry")
     @patch("app.graph.skills.base_skill.set_tool_context")
     async def test_execute_skill_no_tool_calls(
-        self, mock_set_ctx, mock_create_reg, mock_get_llm, mock_get_tracker, mock_get_breaker
+        self, mock_set_ctx, mock_create_reg, mock_get_llm, mock_get_breaker
     ):
         """LLM 直接返回文本，无 tool_calls"""
         # Mock registry
@@ -196,16 +196,6 @@ class TestExecuteSkill:
         mock_llm.ainvoke = AsyncMock(return_value=mock_response)
         mock_get_llm.return_value = mock_llm
 
-        # Mock tracker
-        mock_tracker = MagicMock()
-        mock_entities = MagicMock()
-        mock_entities.order_nos = []
-        mock_entities.phone_numbers = []
-        mock_entities.product_names = []
-        mock_entities.product_ids = []
-        mock_entities.amounts = []
-        mock_tracker.get_entities.return_value = mock_entities
-        mock_get_tracker.return_value = mock_tracker
 
         state = _make_state()
         result = await execute_skill(
@@ -218,16 +208,16 @@ class TestExecuteSkill:
         assert result["final_answer"] == "这是回复"
         assert result["skill_used"] == "test"
         assert "messages" in result
-        assert "entities" in result
+        # P3：entities 死字段已移除
+        assert "entities" not in result
 
     @patch("app.graph.skills.base_skill.get_breaker")
     @patch("app.graph.skills.base_skill.LLMFactory")
-    @patch("app.graph.skills.base_skill.get_tracker")
     @patch("app.graph.skills.base_skill.get_skill_llm")
     @patch("app.graph.skills.base_skill.create_skill_registry")
     @patch("app.graph.skills.base_skill.set_tool_context")
     async def test_execute_skill_with_tool_call(
-        self, mock_set_ctx, mock_create_reg, mock_get_llm, mock_get_tracker, mock_llm_factory, mock_get_breaker
+        self, mock_set_ctx, mock_create_reg, mock_get_llm, mock_llm_factory, mock_get_breaker
     ):
         """LLM 返回 tool_call 后再返回文本"""
         # Mock registry
@@ -280,16 +270,6 @@ class TestExecuteSkill:
         mock_no_think_llm.ainvoke = AsyncMock(return_value=final_response)
         mock_llm_factory.create_skill_llm.return_value = mock_no_think_llm
 
-        # Mock tracker
-        mock_tracker = MagicMock()
-        mock_entities = MagicMock()
-        mock_entities.order_nos = ["123"]
-        mock_entities.phone_numbers = []
-        mock_entities.product_names = []
-        mock_entities.product_ids = []
-        mock_entities.amounts = []
-        mock_tracker.get_entities.return_value = mock_entities
-        mock_get_tracker.return_value = mock_tracker
 
         state = _make_state()
         result = await execute_skill(
@@ -301,7 +281,8 @@ class TestExecuteSkill:
 
         assert result["final_answer"] == "您的订单已找到"
         assert result["skill_used"] == "order"
-        assert result["entities"]["order_nos"] == ["123"]
+        # P3：entities 死字段已移除
+        assert "entities" not in result
         # 策略2：首轮用 thinking LLM，迭代 2+ 轮改用 llm_no_thinking 关闭思考
         mock_no_think_llm.ainvoke.assert_called_once()
         # 首轮 thinking LLM 只被调用一次（第二次 tool_call 后由 no_thinking 接管）
@@ -309,12 +290,11 @@ class TestExecuteSkill:
 
     @patch("app.graph.skills.base_skill.get_breaker")
     @patch("app.graph.skills.base_skill.LLMFactory")
-    @patch("app.graph.skills.base_skill.get_tracker")
     @patch("app.graph.skills.base_skill.get_skill_llm")
     @patch("app.graph.skills.base_skill.create_skill_registry")
     @patch("app.graph.skills.base_skill.set_tool_context")
     async def test_multi_turn_intent_keeps_thinking(
-        self, mock_set_ctx, mock_create_reg, mock_get_llm, mock_get_tracker, mock_llm_factory, mock_get_breaker
+        self, mock_set_ctx, mock_create_reg, mock_get_llm, mock_llm_factory, mock_get_breaker
     ):
         """方案1：多步推理意图（order_create）迭代 2+ 轮仍保留 thinking，不切换 no_thinking"""
         # Mock registry
@@ -365,16 +345,6 @@ class TestExecuteSkill:
         mock_no_think_llm.ainvoke = AsyncMock(return_value=final_response)
         mock_llm_factory.create_skill_llm.return_value = mock_no_think_llm
 
-        # Mock tracker
-        mock_tracker = MagicMock()
-        mock_entities = MagicMock()
-        mock_entities.order_nos = []
-        mock_entities.phone_numbers = []
-        mock_entities.product_names = []
-        mock_entities.product_ids = []
-        mock_entities.amounts = []
-        mock_tracker.get_entities.return_value = mock_entities
-        mock_get_tracker.return_value = mock_tracker
 
         state = _make_state(intent_result={"intent": "order_create"})
         result = await execute_skill(
@@ -523,13 +493,12 @@ class TestExecuteSkillTextAfterMultimodal:
     """
 
     @patch("app.graph.skills.base_skill.get_breaker")
-    @patch("app.graph.skills.base_skill.get_tracker")
     @patch("app.graph.skills.base_skill.get_skill_llm")
     @patch("app.graph.skills.base_skill.create_skill_registry")
     @patch("app.graph.skills.base_skill.set_tool_context")
     async def test_text_path_strips_history_image_url(
         self, mock_set_ctx, mock_create_reg, mock_get_llm,
-        mock_get_tracker, mock_get_breaker,
+        mock_get_breaker,
     ):
         """文本路径应将历史消息中的 image_url 转为纯文本，避免 BadRequestError"""
         # Mock registry
@@ -562,16 +531,6 @@ class TestExecuteSkillTextAfterMultimodal:
         mock_llm.model_name = "qwen3.6-flash"
         mock_get_llm.return_value = mock_llm
 
-        # Mock tracker
-        mock_tracker = MagicMock()
-        mock_entities = MagicMock()
-        mock_entities.order_nos = []
-        mock_entities.phone_numbers = []
-        mock_entities.product_names = []
-        mock_entities.product_ids = []
-        mock_entities.amounts = []
-        mock_tracker.get_entities.return_value = mock_entities
-        mock_get_tracker.return_value = mock_tracker
 
         state = _make_text_after_multimodal_state()
         result = await execute_skill(
@@ -595,13 +554,12 @@ class TestExecuteSkillTextAfterMultimodal:
                         )
 
     @patch("app.graph.skills.base_skill.get_breaker")
-    @patch("app.graph.skills.base_skill.get_tracker")
     @patch("app.graph.skills.base_skill.get_skill_llm")
     @patch("app.graph.skills.base_skill.create_skill_registry")
     @patch("app.graph.skills.base_skill.set_tool_context")
     async def test_text_path_preserves_standalone_image_as_placeholder(
         self, mock_set_ctx, mock_create_reg, mock_get_llm,
-        mock_get_tracker, mock_get_breaker,
+        mock_get_breaker,
     ):
         """纯图片无文字的历史消息转为占位符 '[图片]'"""
         mock_registry = MagicMock()
@@ -630,15 +588,6 @@ class TestExecuteSkillTextAfterMultimodal:
         mock_llm.model_name = "qwen3.6-flash"
         mock_get_llm.return_value = mock_llm
 
-        mock_tracker = MagicMock()
-        mock_entities = MagicMock()
-        mock_entities.order_nos = []
-        mock_entities.phone_numbers = []
-        mock_entities.product_names = []
-        mock_entities.product_ids = []
-        mock_entities.amounts = []
-        mock_tracker.get_entities.return_value = mock_entities
-        mock_get_tracker.return_value = mock_tracker
 
         # 构造：第一条是纯图片无文字
         state = _make_state()
@@ -671,13 +620,12 @@ class TestExecuteSkillTextAfterMultimodal:
         assert found_placeholder, "纯图片历史消息应转为 '[图片]' 占位符"
 
     @patch("app.graph.skills.base_skill.get_breaker")
-    @patch("app.graph.skills.base_skill.get_tracker")
     @patch("app.graph.skills.base_skill.get_skill_llm")
     @patch("app.graph.skills.base_skill.create_skill_registry")
     @patch("app.graph.skills.base_skill.set_tool_context")
     async def test_pure_text_conversation_unchanged(
         self, mock_set_ctx, mock_create_reg, mock_get_llm,
-        mock_get_tracker, mock_get_breaker,
+        mock_get_breaker,
     ):
         """回归测试：纯文本对话完全不受 sanitize 影响"""
         mock_registry = MagicMock()
@@ -705,15 +653,6 @@ class TestExecuteSkillTextAfterMultimodal:
         mock_llm.model_name = "qwen3.6-flash"
         mock_get_llm.return_value = mock_llm
 
-        mock_tracker = MagicMock()
-        mock_entities = MagicMock()
-        mock_entities.order_nos = []
-        mock_entities.phone_numbers = []
-        mock_entities.product_names = []
-        mock_entities.product_ids = []
-        mock_entities.amounts = []
-        mock_tracker.get_entities.return_value = mock_entities
-        mock_get_tracker.return_value = mock_tracker
 
         # 纯文本多轮对话
         state = _make_state()

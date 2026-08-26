@@ -1,7 +1,9 @@
 """
 Tests for BaseAgent state initialization — coverage for issue #947
-Verifies recent_entities / user_role / user_name fields in initial state.
+Verifies user_role / user_name fields in initial state.
 """
+# case_ids: CH-005
+
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 import json
@@ -31,22 +33,18 @@ class TestBaseAgentState:
     def agent(self):
         return CustomerServiceAgent()
 
-    async def test_initial_state_has_recent_entities(self, agent, mock_context):
-        """#947: _build_initial_state 必须包含 recent_entities 字段"""
+    async def test_initial_state_has_no_dead_entities_fields(self, agent, mock_context):
+        """P3：recent_entities 死字段已移除"""
         from langchain_core.messages import HumanMessage
 
         state = await agent._build_initial_state(
             [HumanMessage(content="hello")], mock_context
         )
-        assert "recent_entities" in state, (
-            "recent_entities 字段缺失，suggestions_node 依赖此字段"
-        )
-        assert state["recent_entities"] == [], (
-            "recent_entities 初始值应为空列表"
-        )
+        assert "recent_entities" not in state
+        assert "cached_answer" not in state
 
     async def test_initial_state_all_required_fields(self, agent, mock_context):
-        """验证 _build_initial_state 包含所有必需字段（回归保护）"""
+        """验证 _build_initial_state 包含所有必需字段（回归保护，P3 已删死字段）"""
         from langchain_core.messages import HumanMessage
 
         state = await agent._build_initial_state(
@@ -56,8 +54,7 @@ class TestBaseAgentState:
         required_fields = [
             "messages", "agent_type", "tenant_id", "user_id", "user_name",
             "session_id", "role", "intent_result", "route_decision",
-            "entities", "recent_entities", "intent_chain", "stage",
-            "cached_answer", "final_answer", "skill_used", "suggestions",
+            "final_answer", "skill_used", "suggestions",
             "pending_interact_skill",
         ]
         for field in required_fields:

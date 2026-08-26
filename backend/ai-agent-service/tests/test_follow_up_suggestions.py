@@ -9,7 +9,6 @@
 - Agent 感知：不同 Agent 返回不同建议
 - 结构化日志输出
 - Prompt 反冗余规则
-- 对话阶段推断
 """
 
 import pytest
@@ -28,7 +27,6 @@ from app.suggestions.follow_up import (
     _sanitize_prompt_value,
     _safe_format,
 )
-from app.graph.nodes import _infer_stage
 
 
 # ========== 预设建议模板测试 ==========
@@ -544,83 +542,6 @@ class TestPromptAntiRedundancy:
         """小布 prompt 保留了领域约束"""
         assert "商品咨询" in XIAOBU_DYNAMIC_PROMPT
         assert "订单查询" in XIAOBU_DYNAMIC_PROMPT
-
-
-# ========== 对话阶段推断测试 ==========
-
-class TestStageInference:
-    """_infer_stage 对话阶段推断测试"""
-
-    def _make_state(self, **kwargs):
-        """构造最小 AgentState 用于测试"""
-        defaults = {
-            "messages": [],
-            "agent_type": "mibao",
-            "tenant_id": 1,
-            "user_id": 100,
-            "user_name": None,
-            "session_id": "test",
-            "role": "admin",
-            "intent_result": None,
-            "route_decision": None,
-            "entities": {},
-            "recent_entities": [],
-            "intent_chain": [],
-            "stage": "initial",
-            "cached_answer": None,
-            "final_answer": "",
-            "skill_used": "",
-            "suggestions": [],
-        }
-        defaults.update(kwargs)
-        return defaults
-
-    def test_pending_interact_skill_returns_confirming(self):
-        """P&E 等待用户输入 → confirming"""
-        state = self._make_state(pending_interact_skill="order")
-        assert _infer_stage(state, "order_query") == "confirming"
-
-    def test_greeting_returns_initial(self):
-        """问候 → initial（action 在 route_decision 中）"""
-        state = self._make_state(
-            intent_result={"intent": "greeting"},
-            route_decision={"action": "direct_reply"},
-            final_answer="您好！请问有什么可以帮您？",
-        )
-        assert _infer_stage(state, "greeting") == "initial"
-
-    def test_farewell_returns_completed(self):
-        """再见 → completed（action 在 route_decision 中）"""
-        state = self._make_state(
-            intent_result={"intent": "farewell"},
-            route_decision={"action": "direct_reply"},
-            final_answer="再见！",
-        )
-        assert _infer_stage(state, "farewell") == "completed"
-
-    def test_substantive_answer_returns_querying(self):
-        """有实质性回复 → querying"""
-        state = self._make_state(
-            intent_result={"intent": "order_query"},
-            route_decision={"action": "skill"},
-            final_answer="您的订单共有3个，分别是：订单A已发货、订单B待付款、订单C已完成。需要查看哪个订单的详细信息？",
-        )
-        assert _infer_stage(state, "order_query") == "querying"
-
-    def test_short_answer_returns_current_stage(self):
-        """短回复保持当前 stage"""
-        state = self._make_state(
-            intent_result={"intent": "general"},
-            route_decision={"action": "skill"},
-            final_answer="好的",
-            stage="querying",
-        )
-        assert _infer_stage(state, "general") == "querying"
-
-    def test_no_intent_defaults_to_initial(self):
-        """无意图信息默认 initial"""
-        state = self._make_state(final_answer="")
-        assert _infer_stage(state) == "initial"
 
 
 # ========== Prompt 清洗与安全格式化测试 ==========

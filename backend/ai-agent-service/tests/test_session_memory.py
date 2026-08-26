@@ -320,13 +320,16 @@ class TestCloseSession:
     """关闭会话"""
 
     async def test_close_session_success(self, memory, mock_db):
-        """成功关闭活跃会话"""
+        """成功关闭活跃会话，并清理会话工作状态"""
         mock_db.execute.return_value.rowcount = 1
-
-        result = await memory.close_session(session_id="sess_001")
+        mock_store = AsyncMock()
+        mock_store.clear = AsyncMock(return_value=True)
+        with patch("app.memory.session_memory.SessionStateStore", return_value=mock_store):
+            result = await memory.close_session(session_id="sess_001")
 
         assert result is True
         mock_db.commit.assert_called_once()
+        mock_store.clear.assert_called_once_with("sess_001")
 
     async def test_close_session_already_closed(self, memory, mock_db):
         """关闭已关闭的会话 — rowcount=0 不影响"""
@@ -475,18 +478,28 @@ class TestCloseIdleSessions:
     """自动关闭空闲会话"""
 
     async def test_close_idle_sessions_closes_stale(self, memory, mock_db):
-        """关闭最后消息超过阈值的活跃会话"""
+        """关闭空闲会话，并清理其工作状态（决策②）"""
         from datetime import datetime, timedelta
-        mock_db.execute.return_value.rowcount = 2
+        # 第一次 execute 是 SELECT idle ids；第二次是 UPDATE
+        select_result = MockDBResult(rows=[("s1",), ("s2",)])
+        update_result = MockDBResult(rowcount=2)
+        mock_db.execute.side_effect = [select_result, update_result]
+        mock_store = AsyncMock()
+        mock_store.clear = AsyncMock(return_value=True)
 
-        count = await memory.close_idle_sessions(idle_minutes=30)
+        with patch("app.memory.session_memory.SessionStateStore", return_value=mock_store):
+            count = await memory.close_idle_sessions(idle_minutes=30)
 
-        assert count == 2  # 2个空闲会话被关闭
-        mock_db.execute.assert_called_once()
+        assert count == 2
+        assert mock_db.execute.call_count == 2
+        # 清理了两个会话的工作状态
+        assert mock_store.clear.call_count == 2
 
     async def test_close_idle_sessions_none_idle(self, memory, mock_db):
         """没有空闲会话时返回0"""
-        mock_db.execute.return_value.rowcount = 0
+        select_result = MockDBResult(rows=[])
+        update_result = MockDBResult(rowcount=0)
+        mock_db.execute.side_effect = [select_result, update_result]
 
         count = await memory.close_idle_sessions(idle_minutes=30)
 
@@ -539,36 +552,70 @@ class TestGetHistoryByTokens:
 
 
 class TestPendingSkill:
-    """pending_interact_skill 持久化"""
+    """pending_interact_skill 持久化（会话管理重构 P1：经 SessionStateStore）"""
 
     async def test_set_pending_skill(self, memory, mock_db):
-        assert await memory.set_pending_skill("s1", "product") is True
-        mock_db.commit.assert_called_once()
+        """写入经 SessionStateStore，commit 一次"""
+        mock_store = AsyncMock()
+        mock_store.load = AsyncMock(return_value={})
+        mock_store.commit = AsyncMock(return_value=True)
+        with patch("app.memory.session_memory.SessionStateStore", return_value=mock_store):
+            assert await memory.set_pending_skill("s1", "product") is True
+        mock_store.commit.assert_called_once()
+        state = mock_store.commit.call_args[0][1]
+        assert state["pending_skill"] == "product"
 
     async def test_set_pending_skill_empty_clears(self, memory, mock_db):
-        result = await memory.set_pending_skill("s1", "")
-        assert result is True
-        mock_db.commit.assert_called_once()
+        """空值清除，且清 metadata 存量避免双写漂移"""
+        mock_store = AsyncMock()
+        mock_store.load = AsyncMock(return_value={"pending_skill": "product", "entities": {}})
+        mock_store.commit = AsyncMock(return_value=True)
+        with patch("app.memory.session_memory.SessionStateStore", return_value=mock_store):
+            assert await memory.set_pending_skill("s1", "") is True
+        state = mock_store.commit.call_args[0][1]
+        assert "pending_skill" not in state
+        assert state["entities"] == {}
+        # 存量 metadata 也需清除
+        assert mock_db.commit.call_count >= 1
 
-    async def test_get_pending_skill(self, memory, mock_db):
-        mock_db.execute.return_value = MockDBResult(single_row=("product",))
-        assert await memory.get_pending_skill("s1") == "product"
+    async def test_get_pending_skill_from_store(self, memory, mock_db):
+        """优先从 SessionStateStore 读取"""
+        mock_store = AsyncMock()
+        mock_store.load = AsyncMock(return_value={"pending_skill": "product"})
+        with patch("app.memory.session_memory.SessionStateStore", return_value=mock_store):
+            assert await memory.get_pending_skill("s1") == "product"
+        mock_store.load.assert_called_once_with("s1")
+
+    async def test_get_pending_skill_store_empty_falls_back_to_metadata(self, memory, mock_db):
+        """store 无数据时回退读存量 metadata（迁移兼容）"""
+        mock_store = AsyncMock()
+        mock_store.load = AsyncMock(return_value=None)
+        with patch("app.memory.session_memory.SessionStateStore", return_value=mock_store):
+            mock_db.execute.return_value = MockDBResult(single_row=("order",))
+            assert await memory.get_pending_skill("s1") == "order"
 
     async def test_get_pending_skill_none(self, memory, mock_db):
-        mock_db.execute.return_value = MockDBResult(single_row=None)
-        assert await memory.get_pending_skill("s1") == ""
+        """两路都无 → 空字符串"""
+        mock_store = AsyncMock()
+        mock_store.load = AsyncMock(return_value=None)
+        with patch("app.memory.session_memory.SessionStateStore", return_value=mock_store):
+            mock_db.execute.return_value = MockDBResult(single_row=None)
+            assert await memory.get_pending_skill("s1") == ""
 
     async def test_clear_pending_skill(self, memory, mock_db):
-        assert await memory.clear_pending_skill("s1") is True
-        mock_db.commit.assert_called_once()
+        """清除 store 字段 + metadata 存量"""
+        mock_store = AsyncMock()
+        mock_store.load = AsyncMock(return_value={"pending_skill": "product"})
+        mock_store.commit = AsyncMock(return_value=True)
+        with patch("app.memory.session_memory.SessionStateStore", return_value=mock_store):
+            assert await memory.clear_pending_skill("s1") is True
+        state = mock_store.commit.call_args[0][1]
+        assert "pending_skill" not in state
+        assert mock_db.commit.call_count >= 1
 
 
 class TestPlanState:
-    """P&E Plan 状态持久化"""
-
-    async def test_set_plan_state(self, memory, mock_db):
-        assert await memory.set_plan_state("s1", '{"steps": []}') is True
-        mock_db.commit.assert_called_once()
+    """P&E Plan 状态持久化（仅保留读取路径，写路径已删除）"""
 
     async def test_get_plan_state(self, memory, mock_db):
         mock_db.execute.return_value = MockDBResult(single_row=('{"steps": []}',))
@@ -578,96 +625,54 @@ class TestPlanState:
         mock_db.execute.return_value = MockDBResult(single_row=None)
         assert await memory.get_plan_state("s1") is None
 
-    async def test_clear_plan_state(self, memory, mock_db):
-        assert await memory.clear_plan_state("s1") is True
-        mock_db.commit.assert_called_once()
-
 
 class TestVisionAnalysis:
-    """Vision 分析缓存"""
+    """Vision 分析缓存（会话管理重构 P1：经 SessionStateStore）"""
 
     async def test_set_truncates_to_3000(self, memory, mock_db):
-        result = await memory.set_vision_analysis("s1", "长" * 4000)
+        """写入 store，超长截断 3000"""
+        mock_store = AsyncMock()
+        mock_store.load = AsyncMock(return_value={})
+        mock_store.commit = AsyncMock(return_value=True)
+        with patch("app.memory.session_memory.SessionStateStore", return_value=mock_store):
+            result = await memory.set_vision_analysis("s1", "长" * 4000)
         assert result is True
+        state = mock_store.commit.call_args[0][1]
+        assert len(state["vision_analysis"]) == 3000
 
-    async def test_get_vision_analysis(self, memory, mock_db):
-        mock_db.execute.return_value = MockDBResult(single_row=("分析结果",))
-        assert await memory.get_vision_analysis("s1") == "分析结果"
+    async def test_get_vision_analysis_from_store(self, memory, mock_db):
+        """优先从 store 读取"""
+        mock_store = AsyncMock()
+        mock_store.load = AsyncMock(return_value={"vision_analysis": "分析结果"})
+        with patch("app.memory.session_memory.SessionStateStore", return_value=mock_store):
+            assert await memory.get_vision_analysis("s1") == "分析结果"
+
+    async def test_get_vision_analysis_store_empty_falls_back(self, memory, mock_db):
+        """store 无数据时回退读 metadata 存量"""
+        mock_store = AsyncMock()
+        mock_store.load = AsyncMock(return_value=None)
+        with patch("app.memory.session_memory.SessionStateStore", return_value=mock_store):
+            mock_db.execute.return_value = MockDBResult(single_row=("分析结果",))
+            assert await memory.get_vision_analysis("s1") == "分析结果"
 
     async def test_get_vision_analysis_empty(self, memory, mock_db):
-        mock_db.execute.return_value = MockDBResult(single_row=None)
-        assert await memory.get_vision_analysis("s1") == ""
+        """两路都无 → 空字符串"""
+        mock_store = AsyncMock()
+        mock_store.load = AsyncMock(return_value=None)
+        with patch("app.memory.session_memory.SessionStateStore", return_value=mock_store):
+            mock_db.execute.return_value = MockDBResult(single_row=None)
+            assert await memory.get_vision_analysis("s1") == ""
 
     async def test_clear_vision_analysis(self, memory, mock_db):
-        assert await memory.clear_vision_analysis("s1") is True
-
-
-class TestCollectedFields:
-    """跨轮字段记忆（Redis）"""
-
-    async def test_get_returns_parsed_json(self, memory):
-        r = AsyncMock()
-        r.get = AsyncMock(return_value='{"city": "杭州"}')
-        memory._get_redis = AsyncMock(return_value=r)
-
-        assert await memory.get_collected_fields("s1") == {"city": "杭州"}
-
-    async def test_get_empty_session_returns_empty(self, memory):
-        assert await memory.get_collected_fields("") == {}
-
-    async def test_set_returns_true(self, memory):
-        r = AsyncMock()
-        r.set = AsyncMock(return_value=True)
-        memory._get_redis = AsyncMock(return_value=r)
-
-        assert await memory.set_collected_fields("s1", {"city": "杭州"}) is True
-
-    async def test_set_empty_returns_false(self, memory):
-        assert await memory.set_collected_fields("s1", {}) is False
-
-    async def test_clear_returns_true(self, memory):
-        r = AsyncMock()
-        r.delete = AsyncMock(return_value=1)
-        memory._get_redis = AsyncMock(return_value=r)
-
-        assert await memory.clear_collected_fields("s1") is True
-
-
-class TestAutoInteractFlag:
-    """Auto-Interact 防重复 flag"""
-
-    async def test_get_flag_true(self, memory):
-        r = AsyncMock()
-        r.get = AsyncMock(return_value="1")
-        memory._get_redis = AsyncMock(return_value=r)
-
-        assert await memory.get_auto_interact_flag("s1") is True
-
-    async def test_get_flag_false(self, memory):
-        r = AsyncMock()
-        r.get = AsyncMock(return_value=None)
-        memory._get_redis = AsyncMock(return_value=r)
-
-        assert await memory.get_auto_interact_flag("s1") is False
-
-    async def test_set_flag(self, memory):
-        r = AsyncMock()
-        r.setex = AsyncMock(return_value=True)
-        memory._get_redis = AsyncMock(return_value=r)
-
-        assert await memory.set_auto_interact_flag("s1") is True
-
-
-class TestGetLastMessageTime:
-    async def test_returns_time(self, memory, mock_db):
-        from datetime import datetime
-        t = datetime(2026, 1, 1)
-        mock_db.execute.return_value = MockDBResult(single_row=(t,))
-        assert await memory.get_last_message_time("s1") == t
-
-    async def test_no_message_returns_none(self, memory, mock_db):
-        mock_db.execute.return_value = MockDBResult(single_row=None)
-        assert await memory.get_last_message_time("s1") is None
+        """清除 store 字段 + metadata 存量"""
+        mock_store = AsyncMock()
+        mock_store.load = AsyncMock(return_value={"vision_analysis": "x"})
+        mock_store.commit = AsyncMock(return_value=True)
+        with patch("app.memory.session_memory.SessionStateStore", return_value=mock_store):
+            assert await memory.clear_vision_analysis("s1") is True
+        state = mock_store.commit.call_args[0][1]
+        assert "vision_analysis" not in state
+        assert mock_db.commit.call_count >= 1
 
 
 class TestCleanupClosedSessions:
