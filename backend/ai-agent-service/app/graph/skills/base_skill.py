@@ -54,15 +54,19 @@ def _strip_think_tags(text: str) -> str:
     return cleaned if cleaned else text
 
 
-# 强取消短语：无论上下文如何都视为"放弃当前流程"
-_STRONG_CANCEL_PHRASES = ("算了", "不创建了", "不买了", "不要了", "不用了", "取消创建", "取消操作")
+# 无条件强取消短语：几乎总是指"放弃当前流程"（与第三方行为无关）
+_STRONG_CANCEL_PHRASES = ("算了", "不创建了", "取消创建", "取消操作")
+
+# 语境化取消短语：可能是第三方行为（"客户不要了/不买了"是订单取消的原因而非放弃流程），
+# 带业务领域语境标记时不算流程取消。
+_CONTEXT_CANCEL_PHRASES = ("不要了", "不买了", "不用了")
 
 # "取消"单独出现时歧义大：可能是实体名的一部分（如商品名"回归测试取消Z03"），
 # 也可能是业务动作（"帮我取消订单X"应交由领域工具处理）。
 # 以下语境的"取消"不作为流程取消指令。
 _CANCEL_AMBIGUOUS_MARKERS = (
     "创建", "新建", "添加", "上架", "名称", "货号", "价格", "库存", "商品",
-    "订单", "工单", "售后", "退款",
+    "订单", "工单", "售后", "退款", "客户", "用户",
 )
 
 
@@ -75,8 +79,10 @@ def _is_cancel_message(text: str) -> bool:
     2. "帮我取消订单X" → 业务动作被吞，订单实际未取消（未调 order_manage）。
 
     规则：
-    - 强取消短语（算了/不创建了/取消创建…）→ 直接视为取消；
-    - 含"取消"且带创建/业务领域语境标记 → 不是流程取消（交给领域工具）；
+    - 无条件强取消（算了/不创建了/取消创建…）→ 直接视为取消；
+    - 语境化短语（不要了/不买了/不用了）：带业务领域标记（订单/客户/商品…）→
+      是第三方行为描述，不算流程取消（交领域工具）；
+    - 含"取消"且带创建/业务领域语境标记 → 不是流程取消；
     - 含"取消"的短消息（≤20 字，确认卡片语境）→ 视为取消；
     - 其它 → 不是取消。
     """
@@ -85,9 +91,13 @@ def _is_cancel_message(text: str) -> bool:
     text = str(text).strip()
     if any(kw in text for kw in _STRONG_CANCEL_PHRASES):
         return True
+    has_domain_marker = any(marker in text for marker in _CANCEL_AMBIGUOUS_MARKERS)
+    if any(kw in text for kw in _CONTEXT_CANCEL_PHRASES):
+        # "客户不要了"是订单取消原因；"不要了"裸消息是放弃流程
+        return not has_domain_marker
     if "取消" not in text:
         return False
-    if any(marker in text for marker in _CANCEL_AMBIGUOUS_MARKERS):
+    if has_domain_marker:
         return False
     if len(text) > 20:
         return False
