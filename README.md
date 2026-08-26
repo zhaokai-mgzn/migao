@@ -1,7 +1,7 @@
 # AI 智能客服系统（AIKF）
 
 > 面向通用行业的多租户 AI 智能客服 SaaS 平台，以布艺窗帘行业为示例场景。  
-> 基于大语言模型（DeepSeek V4 Pro + MiniMax M3）+ RAG 知识库 + 23 个业务工具，覆盖售前咨询到售后服务全链路。
+> 基于大语言模型（DeepSeek V4 Pro + DeepSeek V4 Flash Vision）+ RAG 知识库 + 23 个业务工具，覆盖售前咨询到售后服务全链路。
 
 ## ✨ 核心亮点
 
@@ -60,7 +60,7 @@ graph TB
 | **前端 — 微信小程序** | Taro + React + TypeScript + Sass | 3.6.40 / React 18 |
 | **数据库** | PostgreSQL + Redis | PG 15 / Redis 7 |
 | **向量数据库** | DashVector（阿里云） | — |
-| **大语言模型** | DeepSeek V4 Pro (主) + MiniMax M3 (视觉) | V4-Pro / V4-Flash / M3 |
+| **大语言模型** | DeepSeek V4 Pro (主) + DeepSeek V4 Flash Vision (视觉) | V4-Pro / V4-Flash / V4-Flash-Vision |
 | **认证** | RS256 JWT (BouncyCastle) + 微信小程序登录 + 短信验证码 | — |
 | **部署** | 阿里云 SWAS + RDS + Redis(Tair) + OSS + GitHub Actions | — |
 

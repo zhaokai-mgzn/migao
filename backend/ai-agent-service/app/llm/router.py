@@ -15,9 +15,9 @@ from app.config import settings
 
 
 # ---- 模型路由常量已收敛到 settings（app/config.py），禁止在此硬编码 ----
-#     settings.LLM_MODEL_PRIMARY — MiniMax-M3 复杂推理 / 多工具协同 / 默认
-#     settings.LLM_MODEL_FAST    — MiniMax-M2.7-highspeed 轻量快速
-#     settings.MINIMAX_VISION_MODEL — 视觉模型
+#     settings.LLM_MODEL_PRIMARY — deepseek-v4-pro 复杂推理 / 多工具协同 / 默认
+#     settings.LLM_MODEL_FAST    — deepseek-v4-flash 轻量快速
+#     settings.VISION_MODEL      — 视觉模型（deepseek-v4-flash-vision-exp）
 
 # ---- 路由判定阈值 ----
 _SIMPLE_INTENTS = {"greeting", "farewell", "capabilities"}
@@ -58,7 +58,7 @@ def select_model(
     判定优先级：
         1. LLM_ENABLE_MODEL_ROUTING=False → 默认模型（关闭路由）
         2. force_model 显式覆盖
-        3. has_vision=True 且启用视觉 → MINIMAX_VISION_MODEL
+        3. has_vision=True 且启用视觉 → VISION_MODEL
         4. 简单意图（greeting/farewell/capabilities）→ fast
         5. 工具数 >= 3 或文本长度 > 8000 → primary
         6. 其他 → primary
@@ -71,7 +71,7 @@ def select_model(
         has_vision: 是否包含图片内容，需要路由到视觉模型
 
     Returns:
-        模型名（MiniMax 可识别的 model 字段）
+        模型名（DeepSeek 可识别的 model 字段）
     """
     # 1. 路由开关关闭时直接走默认模型
     if not settings.LLM_ENABLE_MODEL_ROUTING:
@@ -82,8 +82,8 @@ def select_model(
         return force_model
 
     # 3. 多模态视觉请求优先路由到视觉模型
-    if has_vision and settings.MINIMAX_VISION_ENABLED:
-        return settings.MINIMAX_VISION_MODEL
+    if has_vision and settings.VISION_ENABLED:
+        return settings.VISION_MODEL
 
     # 4. 简单意图 → fast
     if intent and intent.lower() in _SIMPLE_INTENTS:

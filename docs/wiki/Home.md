@@ -1,6 +1,6 @@
 # AIKF — AI 智能客服系统
 
-面向布艺行业的多租户 AI 智能客服 SaaS。LangGraph StateGraph + DeepSeek V4 Pro + MiniMax M3 + RAG + 30+ Tools，覆盖售前→售后全链路。
+面向布艺行业的多租户 AI 智能客服 SaaS。LangGraph StateGraph + DeepSeek V4 Pro + DeepSeek V4 Flash Vision + RAG + 30+ Tools，覆盖售前→售后全链路。
 
 ## 架构
 
@@ -8,7 +8,7 @@
 客户端: 微信小程序(SSE) + 管理后台(REST)
      → API 网关
      → Admin API(:8080, Java 21/Spring Boot 3.3) + AI Agent(:8000, Python 3.11/FastAPI/LangGraph)
-     → PostgreSQL 15(RLS) + Redis 7 + DashVector + DeepSeek V4 Pro / MiniMax M3
+     → PostgreSQL 15(RLS) + Redis 7 + DashVector + DeepSeek V4 Pro / DeepSeek V4 Flash Vision
 ```
 
 ## 技术栈
@@ -21,7 +21,7 @@
 | Mini App | Taro 3.6.40 / React 18 / Sass |
 | DB | PostgreSQL 15 + Redis 7 |
 | Vector | DashVector |
-| LLM | DeepSeek V4 Pro (主) + DeepSeek V4 Flash (意图) + MiniMax M3 (视觉) |
+| LLM | DeepSeek V4 Pro (主) + DeepSeek V4 Flash (意图) + DeepSeek V4 Flash Vision (视觉) |
 | Auth | RS256 JWT + 微信登录 + 短信验证码 |
 | Deploy | SWAS 轻量应用服务器（docker compose）+ RDS + Redis(Tair) + OSS + GitHub Actions |
 

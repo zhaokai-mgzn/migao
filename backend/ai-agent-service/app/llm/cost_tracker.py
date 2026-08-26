@@ -27,8 +27,8 @@ logger = logging.getLogger(__name__)
 # 模型名统一使用 settings 常量，下线模型只需改 config.py
 from app.config import settings
 MODEL_PRICING: dict[str, dict[str, float]] = {
-    settings.LLM_MODEL_FAST:    {"input": 1.00, "output": 4.00},       # M2.7-highspeed
-    settings.LLM_MODEL_PRIMARY: {"input": 4.00, "output": 16.00},      # MiniMax-M3
+    settings.LLM_MODEL_FAST:    {"input": 1.00, "output": 4.00},       # deepseek-v4-flash
+    settings.LLM_MODEL_PRIMARY: {"input": 4.00, "output": 16.00},      # deepseek-v4-pro
 }
 
 

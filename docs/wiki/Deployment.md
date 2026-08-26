@@ -38,7 +38,7 @@
 | RDS PostgreSQL 15 | 主库 (RLS) |
 | Redis (Tair 公网代理) | 会话/缓存（admin-api 强制 RESP2） |
 | DashVector | 向量库 (RAG) |
-| DeepSeek / MiniMax | LLM推理 |
+| DeepSeek | LLM推理/视觉 |
 | OSS | 静态资源/文件上传 |
 | ACR | 容器镜像（历史遗留，线上已不消费） |
 

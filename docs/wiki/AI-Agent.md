@@ -80,5 +80,5 @@ Tool 铁律：写前校验 → 失败给 suggestion → 写前弹 confirm → �
 |------|------|------|
 | 意图分类 | deepseek-v4-flash | 低延迟 |
 | 对话生成 | deepseek-v4-pro | 高质量 |
-| 图片识别 | MiniMax-M3 | 多模态 |
+| 图片识别 | deepseek-v4-flash-vision-exp | 多模态 |
 | 工具调用 | deepseek-v4-pro | 复杂推理 |
