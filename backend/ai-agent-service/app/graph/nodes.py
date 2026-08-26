@@ -4,10 +4,6 @@
 包含 StateGraph 中除 Skill 节点以外的辅助节点：
 - intent_router_node: 意图路由
 - direct_reply_node: 直接回复（greeting 等）
-- suggestions_node: 后续问题建议
-- cache_check_node: 语义缓存检查
-- cache_store_node: 缓存写入
-- check_cache_hit: 缓存命中判断
 - route_by_intent: 意图→Skill 路由
 - _get_last_human_text: 提取最后一条用户消息文本
 """
@@ -288,43 +284,6 @@ async def direct_reply_node(state: AgentState) -> dict:
         "final_answer": reply,
         "skill_used": "direct_reply",
     }
-
-
-async def suggestions_node(state: AgentState) -> dict:
-    """后续建议已由 LLM 在回复中自然生成，不再单独调用建议模型。
-
-    保留节点占位以避免 graph 结构变更，始终返回空列表。
-    """
-    return {"suggestions": []}
-
-
-def _infer_stage(state: AgentState, intent_type: str = "") -> str:
-    """根据本轮对话状态推断对话阶段
-
-    用于建议生成时感知对话进展，输出更贴合上下文的后续问题。
-    """
-    # P&E 等待用户输入 → confirming
-    if state.get("pending_interact_skill"):
-        return "confirming"
-
-    # 直接回复意图（问候/再见/能力说明）
-    # 注意: action 在 route_decision 中，不在 intent_result 中
-    route_decision = state.get("route_decision") or {}
-    action = route_decision.get("action", "")
-    if action == "direct_reply":
-        if intent_type == "greeting":
-            return "initial"
-        if intent_type == "farewell":
-            return "completed"
-        return "initial"
-
-    # AI 已给出实质性回复 → querying（用户已获得信息，可深入）
-    final_answer = state.get("final_answer", "")
-    if len(final_answer) > 30:
-        return "querying"
-
-    # 其他情况保持当前 stage 或默认为 initial
-    return state.get("stage", "initial")
 
 
 # ────────────────────── 条件边路由函数（同步）──────────────────────

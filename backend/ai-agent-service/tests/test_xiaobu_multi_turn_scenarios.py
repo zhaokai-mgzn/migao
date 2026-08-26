@@ -17,6 +17,7 @@
   每轮对话手动维护 chat_history，模拟真实多轮场景。
   Mock 层：LLM (ChatOpenAI)、AdminApiClient、SemanticCache、Suggestions。
 """
+# case_ids: CH-005, CH-006, CH-007
 
 import json
 import time
@@ -281,7 +282,6 @@ def _build_mock_patches():
         ),
         "skill_llm": patch("app.graph.skills.base_skill.get_skill_llm"),
         "admin_api": patch("app.utils.http_client.AdminApiClient._get_client"),
-        "tracker": patch("app.graph.skills.base_skill.get_tracker"),
         "classifier": patch("app.router.intent_classifier.IntentClassifier.classify"),
     }
 
@@ -448,7 +448,6 @@ class TestXiaobuMultiTurnScenarios:
 
         with patch("app.graph.skills.base_skill.get_skill_llm") as mock_llm_factory, \
              patch("app.utils.http_client.AdminApiClient._get_client") as mock_client, \
-             patch("app.graph.skills.base_skill.get_tracker") as mock_tracker, \
              patch("app.config.settings") as mock_settings, \
              patch("app.router.intent_classifier.IntentClassifier.classify") as mock_classify, \
              patch("app.tools.logistics_track.settings") as mock_log_settings:
@@ -468,12 +467,6 @@ class TestXiaobuMultiTurnScenarios:
             mock_http.get = AsyncMock(side_effect=mock_admin_get)
             mock_client.return_value = mock_http
 
-            mock_tracker_inst = MagicMock()
-            mock_tracker_inst.extract_entities_from_tool_result = MagicMock()
-            mock_tracker_inst.get_entities = MagicMock(return_value=MagicMock(
-                order_nos=[], phone_numbers=[], product_names=[], product_ids=[], amounts=[],
-            ))
-            mock_tracker.return_value = mock_tracker_inst
             mock_classify.return_value = IntentResult(
                 intent=IntentType.GENERAL, confidence=0.5, source="classifier",
             )
@@ -554,7 +547,6 @@ class TestXiaobuMultiTurnScenarios:
 
         with patch("app.graph.skills.base_skill.get_skill_llm") as mock_llm_factory, \
              patch("app.utils.http_client.AdminApiClient._get_client") as mock_client, \
-             patch("app.graph.skills.base_skill.get_tracker") as mock_tracker, \
              patch("app.config.settings") as mock_settings, \
              patch("app.router.intent_classifier.IntentClassifier.classify") as mock_classify:
 
@@ -570,12 +562,6 @@ class TestXiaobuMultiTurnScenarios:
             mock_http = AsyncMock()
             mock_client.return_value = mock_http
 
-            mock_tracker_inst = MagicMock()
-            mock_tracker_inst.extract_entities_from_tool_result = MagicMock()
-            mock_tracker_inst.get_entities = MagicMock(return_value=MagicMock(
-                order_nos=[], phone_numbers=[], product_names=[], product_ids=[], amounts=[],
-            ))
-            mock_tracker.return_value = mock_tracker_inst
             mock_classify.return_value = IntentResult(
                 intent=IntentType.COMPLAINT, confidence=0.85, source="classifier",
             )
@@ -653,7 +639,6 @@ class TestXiaobuMultiTurnScenarios:
 
         with patch("app.graph.skills.base_skill.get_skill_llm") as mock_llm_factory, \
              patch("app.utils.http_client.AdminApiClient._get_client") as mock_client, \
-             patch("app.graph.skills.base_skill.get_tracker") as mock_tracker, \
              patch("app.config.settings") as mock_settings, \
              patch("app.router.intent_classifier.IntentClassifier.classify") as mock_classify:
 
@@ -673,12 +658,6 @@ class TestXiaobuMultiTurnScenarios:
             ))
             mock_client.return_value = mock_http
 
-            mock_tracker_inst = MagicMock()
-            mock_tracker_inst.extract_entities_from_tool_result = MagicMock()
-            mock_tracker_inst.get_entities = MagicMock(return_value=MagicMock(
-                order_nos=[], phone_numbers=[], product_names=[], product_ids=[], amounts=[],
-            ))
-            mock_tracker.return_value = mock_tracker_inst
             # 模糊意图 → L2 分类置信度低
             mock_classify.return_value = IntentResult(
                 intent=IntentType.GENERAL, confidence=0.4, source="classifier",
@@ -766,7 +745,6 @@ class TestXiaobuMultiTurnScenarios:
 
         with patch("app.graph.skills.base_skill.get_skill_llm") as mock_llm_factory, \
              patch("app.utils.http_client.AdminApiClient._get_client") as mock_client, \
-             patch("app.graph.skills.base_skill.get_tracker") as mock_tracker, \
              patch("app.config.settings") as mock_settings, \
              patch("app.router.intent_classifier.IntentClassifier.classify") as mock_classify:
 
@@ -786,12 +764,6 @@ class TestXiaobuMultiTurnScenarios:
             )
             mock_client.return_value = mock_http
 
-            mock_tracker_inst = MagicMock()
-            mock_tracker_inst.extract_entities_from_tool_result = MagicMock()
-            mock_tracker_inst.get_entities = MagicMock(return_value=MagicMock(
-                order_nos=[], phone_numbers=[], product_names=[], product_ids=[], amounts=[],
-            ))
-            mock_tracker.return_value = mock_tracker_inst
             mock_classify.return_value = IntentResult(
                 intent=IntentType.PRODUCT_INQUIRY, confidence=0.85, source="classifier",
             )

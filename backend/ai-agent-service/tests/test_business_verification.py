@@ -16,6 +16,7 @@ AI Agent Service - 业务验证综合测试
 - 使用 mock 替代 Admin API、DashScope LLM 等外部依赖
 - 参考 tests/test_e2e_chat_flow.py 与 tests/conftest.py 的现有模式
 """
+# case_ids: CH-005, CH-006, API-001
 
 import json
 import time
@@ -268,13 +269,6 @@ class _InMemorySessionStore:
                 s["status"] = "closed"
                 cnt += 1
         return cnt
-
-    async def get_last_message_time(self, session_id):
-        msgs = [m for m in self.messages if m["session_id"] == session_id]
-        if not msgs:
-            return None
-        msgs.sort(key=lambda m: m["created_at"])
-        return msgs[-1]["created_at"]
 
 
 _store = _InMemorySessionStore()

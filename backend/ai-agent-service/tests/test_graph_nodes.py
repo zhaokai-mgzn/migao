@@ -3,7 +3,6 @@
 覆盖：
 - _extract_text_from_content：str / None / list / 非文本兜底
 - _get_last_human_text / _last_human_has_image：多模态检测
-- _infer_stage：pending/问候/告别/长回复 阶段推断
 - direct_reply_node：greeting/farewell/capabilities 兜底
 - intent_router_node：pending_skill 短消息合成意图快捷路由
 - route_by_intent：direct_reply + 多模态重定向 general、escape hatch 切换、会话连续性
@@ -17,7 +16,6 @@ from langchain_core.messages import AIMessage, HumanMessage
 from app.graph.nodes import (
     _extract_text_from_content,
     _get_last_human_text,
-    _infer_stage,
     _last_human_has_image,
     direct_reply_node,
     intent_router_node,
@@ -76,28 +74,6 @@ class TestLastHumanHasImage:
 
     def test_no_human(self):
         assert _last_human_has_image([AIMessage(content="a")]) is False
-
-
-class TestInferStage:
-    def test_pending_interact_confirming(self):
-        state = {"pending_interact_skill": "product"}
-        assert _infer_stage(state, "product_inquiry") == "confirming"
-
-    def test_direct_reply_greeting_initial(self):
-        state = {"route_decision": {"action": "direct_reply"}}
-        assert _infer_stage(state, "greeting") == "initial"
-
-    def test_direct_reply_farewell_completed(self):
-        state = {"route_decision": {"action": "direct_reply"}}
-        assert _infer_stage(state, "farewell") == "completed"
-
-    def test_long_answer_querying(self):
-        state = {"route_decision": {"action": "full_agent"}, "final_answer": "很长的回答" * 10}
-        assert _infer_stage(state, "order_query") == "querying"
-
-    def test_default_initial(self):
-        state = {"route_decision": {"action": "full_agent"}, "final_answer": "短"}
-        assert _infer_stage(state, "order_query") == "initial"
 
 
 class TestDirectReplyNode:

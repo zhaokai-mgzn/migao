@@ -4,12 +4,13 @@
 通过真实 HTTP 层（httpx.AsyncClient + ASGITransport）验证：
 1. 多模态消息发送 → graph 执行不崩溃 → SSE 正常返回（PR #163）
 2. CDN URL 在多模态消息中被重写为 OSS URL（PR #167）
-3. suggestions_node 根据 agent_type 返回不同建议（PR #169）
+3. 多模态消息与 FollowUpSuggestionGenerator 交互
 
 与单元测试的区别：
 - 单元测试：Mock 所有依赖，验证纯函数/单组件
 - 集成测试：走真实 API 层 + graph 执行，仅 Mock LLM 调用和 DB
 """
+# case_ids: AG-002, MC-005
 
 import json
 import time
@@ -560,39 +561,3 @@ class TestAgentAwareSuggestionsIntegration:
             assert len(result) == 3
             expected = gen._get_preset("order_query", "xiaobu", "initial")
             assert result == expected
-
-    async def test_suggestions_node_always_returns_empty(self):
-        """suggestions_node 已废弃，始终返回空列表（后续建议由 LLM 行内生成）"""
-        from app.graph.nodes import suggestions_node
-        from langchain_core.messages import HumanMessage
-
-        state = {
-            "messages": [HumanMessage(content="测试消息")],
-            "tenant_id": 1,
-            "user_id": "user_001",
-            "session_id": "sess_001",
-            "role": "admin",
-            "agent_type": "mibao",
-            "intent_result": {"intent": "order_query"},
-            "final_answer": "这是回答",
-        }
-        result = await suggestions_node(state)
-        assert result == {"suggestions": []}
-
-    async def test_suggestions_node_returns_empty_for_all_agents(self):
-        """suggestions_node 对所有 agent 类型均返回空列表"""
-        from app.graph.nodes import suggestions_node
-        from langchain_core.messages import HumanMessage
-
-        state = {
-            "messages": [HumanMessage(content="你好")],
-            "tenant_id": 1,
-            "user_id": "user_001",
-            "session_id": "sess_001",
-            "role": "customer",
-            "agent_type": "xiaobu",
-            "intent_result": {"intent": "greeting"},
-            "final_answer": "您好！",
-        }
-        result = await suggestions_node(state)
-        assert result == {"suggestions": []}

@@ -1,4 +1,5 @@
 """Tests for misc-part1 — coverage gap issue #576"""
+# case_ids: MC-003, MC-004, MC-008
 import pytest
 from unittest.mock import MagicMock
 
@@ -55,12 +56,6 @@ class TestCallWithRetry:
             return "recovered"
         result = await call_with_retry(fn, max_retries=3, base_delay=0.001)
         assert result == "recovered" and count[0] == 3
-
-class TestConversationStage:
-    def test_enum_values(self):
-        from app.context.tracker import ConversationStage
-        assert len(list(ConversationStage)) >= 4
-        assert ConversationStage.INITIAL.value == "initial"
 
 class TestCostTrackerFunctions:
     def test_calc_cost(self):

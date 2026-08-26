@@ -7,6 +7,7 @@ AI 对话完整链路 E2E 测试
 3. 会话管理全流程（创建→列表→删除→历史）
 4. 多轮对话与记忆
 """
+# case_ids: CH-001, CH-002, CH-003
 
 import json
 import time
@@ -190,13 +191,6 @@ class InMemorySessionStore:
                 s["status"] = "closed"
                 count += 1
         return count
-
-    async def get_last_message_time(self, session_id):
-        msgs = [m for m in self.messages if m["session_id"] == session_id]
-        if msgs:
-            msgs.sort(key=lambda m: m["created_at"])
-            return msgs[-1]["created_at"]
-        return None
 
 
 # 全局 store 实例（每次 fixture 重置）

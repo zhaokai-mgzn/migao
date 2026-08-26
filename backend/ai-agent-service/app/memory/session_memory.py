@@ -11,6 +11,7 @@ from typing import Optional, List, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from loguru import logger
 
+from app.memory.session_state_store import SessionStateStore
 
 
 class SessionMemory:
@@ -526,7 +527,32 @@ class SessionMemory:
         """
         session = await self.get_session(session_id)
         return session is not None
-    
+
+    async def touch_activity(self, session_id: str) -> bool:
+        """刷新会话最后活动时间（last_activity_at），供 send 守卫调用。
+
+        空闲判定基于 last_activity_at，替代"最后消息时间 or created_at 回退"。
+        """
+        async with await self._get_session() as db:
+            try:
+                from sqlalchemy import text
+                sql = text("""
+                    UPDATE sessions
+                    SET last_activity_at = :now,
+                        updated_at = :now
+                    WHERE id = :session_id
+                """)
+                await db.execute(sql, {
+                    "session_id": session_id,
+                    "now": self._now(),
+                })
+                await db.commit()
+                return True
+            except Exception as e:
+                await db.rollback()
+                logger.debug(f"[session-memory] touch_activity failed | session={session_id} error={e}")
+                return False
+
     async def close_session(self, session_id: str) -> bool:
         """
         关闭会话：将 status 置为 'closed'，并记录 ended_at；不删除任何消息。
@@ -554,11 +580,11 @@ class SessionMemory:
                 await db.commit()
                 affected = result.rowcount or 0
 
-                # 清理 Redis 关联数据（collected_fields 跨轮字段记忆）
+                # 会话工作状态随关闭清理（会话管理重构 P1：SessionStateStore）
                 try:
-                    await self.clear_collected_fields(session_id)
+                    await SessionStateStore().clear(session_id)
                 except Exception:
-                    pass  # Redis 清理失败不影响主流程
+                    pass  # 清理失败不影响主流程
 
                 logger.info(
                     f"[session-memory] Session closed | session_id={session_id} affected={affected}"
@@ -631,7 +657,7 @@ class SessionMemory:
                 return 0
 
     async def set_pending_skill(self, session_id: str, skill_name: str) -> bool:
-        """持久化 pending_interact_skill 到 session metadata
+        """持久化 pending_interact_skill（会话管理重构 P1：经 SessionStateStore）
 
         用于跨 graph 调用维持交互连续性。
         用户回应交互组件后，下一轮路由时加载此值跳过 L1/L2 分类。
@@ -647,35 +673,42 @@ class SessionMemory:
         if not skill_name:
             return await self.clear_pending_skill(session_id)
 
+        try:
+            store = SessionStateStore()
+            existing = await store.load(session_id) or {}
+            existing["pending_skill"] = skill_name
+            ok = await store.commit(session_id, existing)
+            if ok:
+                # 迁移兼容：清除 metadata 存量，避免双写漂移
+                try:
+                    await self._remove_metadata_key(session_id, "pending_skill")
+                except Exception:
+                    pass
+            return ok
+        except Exception as e:
+            logger.warning(f"[session-memory] set_pending_skill failed: {e}")
+            return False
+
+    async def _remove_metadata_key(self, session_id: str, key: str) -> bool:
+        """从 sessions.metadata 移除单个键（迁移期清理存量）"""
         async with await self._get_session() as db:
             try:
                 from sqlalchemy import text
                 sql = text("""
                     UPDATE sessions
-                    SET metadata = jsonb_set(
-                        COALESCE(metadata, '{}'::jsonb),
-                        '{pending_skill}',
-                        :skill_json
-                    )
+                    SET metadata = COALESCE(metadata, '{}'::jsonb) - :key
                     WHERE id = :session_id
                 """)
-                await db.execute(sql, {
-                    "session_id": session_id,
-                    "skill_json": f'"{skill_name}"',
-                })
+                await db.execute(sql, {"session_id": session_id, "key": key})
                 await db.commit()
-                logger.debug(
-                    f"[session-memory] Pending skill set | "
-                    f"session={session_id} skill={skill_name}"
-                )
                 return True
             except Exception as e:
                 await db.rollback()
-                logger.warning(f"[session-memory] set_pending_skill failed: {e}")
+                logger.warning(f"[session-memory] _remove_metadata_key failed: {e}")
                 return False
 
     async def get_pending_skill(self, session_id: str) -> str:
-        """读取 pending_interact_skill
+        """读取 pending_interact_skill（store 优先，回退 metadata 存量）
 
         Args:
             session_id: 会话 ID
@@ -683,6 +716,15 @@ class SessionMemory:
         Returns:
             str: skill 名称，无则空字符串
         """
+        try:
+            store = SessionStateStore()
+            state = await store.load(session_id)
+            if state and state.get("pending_skill"):
+                return state["pending_skill"]
+        except Exception as e:
+            logger.warning(f"[session-memory] get_pending_skill store failed: {e}")
+
+        # 迁移兼容：回退读取 metadata 存量
         async with await self._get_session() as db:
             try:
                 from sqlalchemy import text
@@ -699,123 +741,24 @@ class SessionMemory:
                 return ""
 
     async def clear_pending_skill(self, session_id: str) -> bool:
-        """清除 pending_interact_skill"""
-        async with await self._get_session() as db:
-            try:
-                from sqlalchemy import text
-                sql = text("""
-                    UPDATE sessions
-                    SET metadata = COALESCE(metadata, '{}'::jsonb) - 'pending_skill'
-                    WHERE id = :session_id
-                """)
-                await db.execute(sql, {"session_id": session_id})
-                await db.commit()
-                return True
-            except Exception as e:
-                await db.rollback()
-                logger.warning(f"[session-memory] clear_pending_skill failed: {e}")
-                return False
-
-    # ── 跨轮字段记忆（Redis, 7天 TTL）──
-
-    _FIELD_TTL = 7 * 86400
-
-    def _field_key(self, session_id: str) -> str:
-        return f"collected_fields:{session_id}"
-
-    async def _get_redis(self):
-        from app.utils.redis_client import redis_pool
-        import redis.asyncio as aioredis
-        return aioredis.Redis(connection_pool=redis_pool)
-
-    async def get_collected_fields(self, session_id: str) -> dict:
-        if not session_id:
-            return {}
+        """清除 pending_interact_skill（store + metadata 存量）"""
         try:
-            r = await self._get_redis()
-            raw = await r.get(self._field_key(session_id))
-            if raw:
-                return json.loads(raw)
+            store = SessionStateStore()
+            existing = await store.load(session_id)
+            if existing:
+                existing.pop("pending_skill", None)
+                await store.commit(session_id, existing)
+            else:
+                await store.commit(session_id, {})
         except Exception as e:
-            logger.warning(f"[session-memory] get_collected_fields failed: {e}")
-        return {}
-
-    async def set_collected_fields(self, session_id: str, fields: dict) -> bool:
-        if not session_id or not fields:
-            return False
+            logger.warning(f"[session-memory] clear_pending_skill store failed: {e}")
+        # 迁移兼容：清除 metadata 存量
         try:
-            r = await self._get_redis()
-            await r.set(self._field_key(session_id),
-                       json.dumps(fields, ensure_ascii=False),
-                       ex=self._FIELD_TTL)
+            return await self._remove_metadata_key(session_id, "pending_skill")
+        except Exception:
             return True
-        except Exception as e:
-            logger.warning(f"[session-memory] set_collected_fields failed: {e}")
-            return False
 
-    async def clear_collected_fields(self, session_id: str) -> bool:
-        if not session_id:
-            return False
-        try:
-            r = await self._get_redis()
-            await r.delete(self._field_key(session_id))
-            return True
-        except Exception as e:
-            logger.warning(f"[session-memory] clear_collected_fields failed: {e}")
-            return False
-
-    # ── Auto-Interact 防重复 flag ──
-
-    def _auto_interact_key(self, session_id: str) -> str:
-        return f"auto_interact:{session_id}"
-
-    async def get_auto_interact_flag(self, session_id: str) -> bool:
-        """检查 auto-interact 是否已在本 session 触发过（防死循环）"""
-        try:
-            r = await self._get_redis()
-            val = await r.get(self._auto_interact_key(session_id))
-            return val == "1"
-        except Exception as e:
-            logger.debug(f"[session-memory] get_auto_interact_flag failed: {e}")
-            return False
-
-    async def set_auto_interact_flag(self, session_id: str) -> bool:
-        """标记 auto-interact 已触发，TTL 30 分钟"""
-        try:
-            r = await self._get_redis()
-            await r.setex(self._auto_interact_key(session_id), 1800, "1")
-            return True
-        except Exception as e:
-            logger.debug(f"[session-memory] set_auto_interact_flag failed: {e}")
-            return False
-
-    # ── Plan State 持久化（Plan-and-Execute 模式）──
-
-    async def set_plan_state(self, session_id: str, plan_json: str) -> bool:
-        """持久化 P&E Plan 状态到 session metadata"""
-        async with await self._get_session() as db:
-            try:
-                from sqlalchemy import text
-                sql = text("""
-                    UPDATE sessions
-                    SET metadata = jsonb_set(
-                        COALESCE(metadata, '{}'::jsonb),
-                        '{plan_state}',
-                        CAST(:plan_json AS jsonb)
-                    )
-                    WHERE id = :session_id
-                """)
-                await db.execute(sql, {
-                    "session_id": session_id,
-                    "plan_json": plan_json,
-                })
-                await db.commit()
-                logger.debug(f"[session-memory] Plan state set | session={session_id}")
-                return True
-            except Exception as e:
-                await db.rollback()
-                logger.warning(f"[session-memory] set_plan_state failed: {e}")
-                return False
+    # ── Plan State 读取（Plan-and-Execute 模式，仅保留读取路径）──
 
     async def get_plan_state(self, session_id: str) -> Optional[str]:
         """读取 P&E Plan 状态"""
@@ -833,63 +776,40 @@ class SessionMemory:
                 logger.warning(f"[session-memory] get_plan_state failed: {e}")
                 return None
 
-    async def clear_plan_state(self, session_id: str) -> bool:
-        """清除 P&E Plan 状态"""
-        async with await self._get_session() as db:
-            try:
-                from sqlalchemy import text
-                sql = text("""
-                    UPDATE sessions
-                    SET metadata = COALESCE(metadata, '{}'::jsonb) - 'plan_state'
-                    WHERE id = :session_id
-                """)
-                await db.execute(sql, {"session_id": session_id})
-                await db.commit()
-                return True
-            except Exception as e:
-                await db.rollback()
-                logger.warning(f"[session-memory] clear_plan_state failed: {e}")
-                return False
-
-    # ── Vision Analysis Cache ──
+    # ── Vision Analysis Cache（会话管理重构 P1：经 SessionStateStore）──
 
     async def set_vision_analysis(self, session_id: str, analysis: str) -> bool:
         """缓存最近一次 Vision 图片分析结果，用于跨轮追问。
 
-        存入 sessions.metadata.vision_analysis，
+        存入 SessionStateStore（vision_analysis 字段），
         下次上传新图片时自动覆盖。
         """
-        async with await self._get_session() as db:
-            try:
-                from sqlalchemy import text
-                safe = analysis[:3000]  # 截断，避免膨胀 metadata
-                sql = text("""
-                    UPDATE sessions
-                    SET metadata = jsonb_set(
-                        COALESCE(metadata, '{}'::jsonb),
-                        '{vision_analysis}',
-                        CAST(:vision_analysis AS jsonb)
-                    ),
-                    updated_at = :now
-                    WHERE id = :session_id
-                """)
-                await db.execute(sql, {
-                    "session_id": session_id,
-                    "vision_analysis": json.dumps(safe, ensure_ascii=False),
-                    "now": self._now(),
-                })
-                await db.commit()
-                logger.debug(
-                    f"[session-memory] Vision analysis cached | session={session_id} len={len(safe)}"
-                )
-                return True
-            except Exception as e:
-                await db.rollback()
-                logger.warning(f"[session-memory] set_vision_analysis failed: {e}")
-                return False
+        try:
+            store = SessionStateStore()
+            existing = await store.load(session_id) or {}
+            existing["vision_analysis"] = analysis[:3000]  # 截断，避免膨胀
+            ok = await store.commit(session_id, existing)
+            if ok:
+                # 迁移兼容：清除 metadata 存量
+                try:
+                    await self._remove_metadata_key(session_id, "vision_analysis")
+                except Exception:
+                    pass
+            return ok
+        except Exception as e:
+            logger.warning(f"[session-memory] set_vision_analysis failed: {e}")
+            return False
 
     async def get_vision_analysis(self, session_id: str) -> str:
-        """获取缓存的 Vision 图片分析结果。"""
+        """获取缓存的 Vision 图片分析结果（store 优先，回退 metadata 存量）。"""
+        try:
+            store = SessionStateStore()
+            state = await store.load(session_id)
+            if state and state.get("vision_analysis"):
+                return state["vision_analysis"]
+        except Exception as e:
+            logger.warning(f"[session-memory] get_vision_analysis store failed: {e}")
+
         async with await self._get_session() as db:
             try:
                 from sqlalchemy import text
@@ -900,10 +820,6 @@ class SessionMemory:
                 result = await db.execute(sql, {"session_id": session_id})
                 row = result.fetchone()
                 va = (row[0] or "") if row else ""
-                logger.debug(
-                    f"[session-memory] get_vision_analysis | "
-                    f"session={session_id} len={len(va)} found={row is not None}"
-                )
                 return va
             except Exception as e:
                 logger.warning(f"[session-memory] get_vision_analysis failed: {e}")
@@ -911,51 +827,21 @@ class SessionMemory:
 
     async def clear_vision_analysis(self, session_id: str) -> bool:
         """清除 Vision 分析缓存（新图片上传时调用）。"""
-        async with await self._get_session() as db:
-            try:
-                from sqlalchemy import text
-                sql = text("""
-                    UPDATE sessions
-                    SET metadata = COALESCE(metadata, '{}'::jsonb) - 'vision_analysis',
-                        updated_at = :now
-                    WHERE id = :session_id
-                """)
-                await db.execute(sql, {"session_id": session_id, "now": self._now()})
-                await db.commit()
-                return True
-            except Exception as e:
-                await db.rollback()
-                logger.warning(f"[session-memory] clear_vision_analysis failed: {e}")
-                return False
-
-    async def get_last_message_time(self, session_id: str) -> Optional[datetime]:
-        """
-        获取会话最后一条消息的创建时间，用于空闲超时判断。
-
-        Args:
-            session_id: 会话 ID
-
-        Returns:
-            Optional[datetime]: 最后消息时间；若无消息则返回 None
-        """
-        async with await self._get_session() as db:
-            try:
-                from sqlalchemy import text
-                sql = text("""
-                    SELECT created_at FROM session_messages
-                    WHERE session_id = :session_id
-                    ORDER BY created_at DESC
-                    LIMIT 1
-                """)
-                result = await db.execute(sql, {"session_id": session_id})
-                row = result.fetchone()
-                return row[0] if row else None
-            except Exception as e:
-                logger.error(
-                    f"[session-memory] Get last message time failed | session_id={session_id} error={type(e).__name__}: {e}",
-                    exc_info=True,
-                )
-                return None
+        try:
+            store = SessionStateStore()
+            existing = await store.load(session_id)
+            if existing:
+                existing.pop("vision_analysis", None)
+                await store.commit(session_id, existing)
+            else:
+                await store.commit(session_id, {})
+        except Exception as e:
+            logger.warning(f"[session-memory] clear_vision_analysis store failed: {e}")
+        # 迁移兼容：清除 metadata 存量
+        try:
+            return await self._remove_metadata_key(session_id, "vision_analysis")
+        except Exception:
+            return True
 
     async def delete_session(self, session_id: str) -> bool:
         """
@@ -1055,8 +941,9 @@ class SessionMemory:
         """
         自动关闭空闲超过指定分钟数的活跃会话。
 
-        关闭条件：status='active' 且最后一条消息距现在超过 idle_minutes 分钟。
-        无消息的会话以 created_at 作为判定基准。
+        关闭条件：status='active' 且 last_activity_at 距现在超过 idle_minutes 分钟
+        （last_activity_at 由 send 守卫刷新，V13 迁移回填存量）。
+        关闭时同步清理会话工作状态（SessionStateStore），与手动 close 语义一致。
 
         Returns:
             int: 关闭的会话数量
@@ -1067,18 +954,23 @@ class SessionMemory:
                 from datetime import timedelta
                 cutoff = self._now() - timedelta(minutes=idle_minutes)
 
-                # 使用子查询找出最后消息时间超过阈值的活跃会话
+                # 先取回将被关闭的 session_id（用于清理工作状态）
+                select_sql = text("""
+                    SELECT id FROM sessions
+                    WHERE status = 'active'
+                      AND COALESCE(last_activity_at, created_at) < :cutoff
+                """)
+                rows = await db.execute(select_sql, {"cutoff": cutoff})
+                idle_ids = [r[0] for r in rows.fetchall()]
+
+                # 基于 last_activity_at 判定空闲（替代最后消息时间 or created_at 回退）
                 sql = text("""
                     UPDATE sessions
                     SET status = 'closed',
                         ended_at = COALESCE(ended_at, :now),
                         updated_at = :now
                     WHERE status = 'active'
-                      AND COALESCE(
-                        (SELECT MAX(created_at) FROM session_messages
-                         WHERE session_id = sessions.id),
-                        created_at
-                      ) < :cutoff
+                      AND COALESCE(last_activity_at, created_at) < :cutoff
                 """)
                 result = await db.execute(sql, {
                     "now": self._now(),
@@ -1086,6 +978,14 @@ class SessionMemory:
                 })
                 await db.commit()
                 count = result.rowcount or 0
+
+                # 清理工作状态（决策②：close 后工作状态从空开始）
+                for sid in idle_ids:
+                    try:
+                        await SessionStateStore().clear(sid)
+                    except Exception:
+                        pass  # 清理失败不影响主流程
+
                 if count > 0:
                     logger.info(
                         f"[session-memory] Auto-closed {count} idle sessions "

@@ -31,7 +31,6 @@ from app.config import settings
 from app.graph.state import AgentState
 from app.tools.base import ToolContext
 from app.tools.registry import ToolRegistry, set_tool_context, get_tool_context
-from app.context.tracker import ConversationTracker
 from app.core import (
     CircuitBreakerOpenError,
     LLM_FALLBACK_MESSAGE,
@@ -42,18 +41,6 @@ from app.llm import LLMFactory, select_model, has_images, call_with_retry, cost_
 
 # LLM 熔断器名
 LLM_BREAKER = "llm_minimax"
-
-
-# 全局 ConversationTracker 实例（进程内共享）
-_tracker: Optional[ConversationTracker] = None
-
-
-def get_tracker() -> ConversationTracker:
-    """获取全局 ConversationTracker 实例"""
-    global _tracker
-    if _tracker is None:
-        _tracker = ConversationTracker()
-    return _tracker
 
 
 def _strip_think_tags(text: str) -> str:
@@ -946,7 +933,6 @@ async def execute_skill(
                 except Exception:
                     pass
         else:
-            tracker = get_tracker()
             for iteration in range(max_iterations):
                 logger.info(f"[{skill_name}] Iteration {iteration+1}/{max_iterations} | session={session_id}")
 
@@ -1044,10 +1030,6 @@ async def execute_skill(
                         except Exception:
                             pass
                     new_messages.append(ToolMessage(content=result_str, tool_call_id=tool_call["id"], name=tool_name))
-                    try:
-                        tracker.extract(tool_name, result_dict)
-                    except Exception:
-                        pass
                     if tool_name == "interact" and result_dict.get("success"):
                         try:
                             await SessionMemory().set_pending_skill(session_id, skill_name)
@@ -1057,14 +1039,8 @@ async def execute_skill(
                 # 达到 max_iterations — 不暴露 LLM 的半截思考，用友好兜底
                 final_content = "抱歉，处理步骤较多，请稍后重试或换个简单的方式描述需求。"
 
-    # ── 8. 实体追踪 ──
-    entities = {}
-    if session_id:
-        extracted = get_tracker().get_entities(session_id)
-        entities = {"order_nos": extracted.order_nos, "phone_numbers": extracted.phone_numbers, "product_names": extracted.product_names, "product_ids": extracted.product_ids, "amounts": extracted.amounts}
-
     # ── 9. 返回值 ──
-    result: dict[str, Any] = {"messages": new_messages, "final_answer": final_content, "skill_used": skill_name, "entities": entities}
+    result: dict[str, Any] = {"messages": new_messages, "final_answer": final_content, "skill_used": skill_name}
 
     # ── 10. 跨轮持久化 ──
     creation_skills = {"product", "order", "aftersales"}

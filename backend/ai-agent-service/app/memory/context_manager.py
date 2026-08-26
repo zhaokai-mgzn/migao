@@ -13,6 +13,8 @@ from typing import Dict, Optional
 from collections import OrderedDict
 from loguru import logger
 
+from app.memory.session_state_store import SessionStateStore
+
 _ = _time  # suppress unused import warning, used in _summarize_result via __import__
 
 
@@ -203,31 +205,33 @@ class AgentContextManager:
 
         return "\n".join(lines)
 
-    # ── Redis 持久化 ──
+    # ── 持久化（经 SessionStateStore，会话管理重构 P1）──
+    #
+    # 跨轮工作状态统一存于 PG session_states 表（SessionStateStore 深模块）。
+    # save/load 采用合并语义：先读已有状态，再并入本模块维护的字段
+    # （entities / tool_results / last_skill / vision_fields），不覆盖其它字段
+    # （如 pending_skill，未来也可能入同一状态）。
 
     async def save(self, session_id: str) -> None:
-        """持久化到 Redis（Tair），跨实例共享"""
+        """持久化当前缓存到 SessionStateStore（合并语义）"""
         try:
-            from app.utils.redis_client import get_redis
-            redis = get_redis()
-            if redis and session_id in self._cache:
-                key = f"ctx:{session_id}"
-                await redis.set(key, json.dumps(self._cache[session_id], ensure_ascii=False, default=str), ex=3600)
+            store = SessionStateStore()
+            existing = await store.load(session_id) or {}
+            if session_id in self._cache:
+                existing.update(self._cache[session_id])
+            await store.commit(session_id, existing)
         except Exception as e:
-            logger.warning(f"[ctx-mgr] Redis save failed: {e}")
+            logger.warning(f"[ctx-mgr] save failed: {e}")
 
     async def load(self, session_id: str) -> None:
-        """从 Redis 恢复"""
+        """从 SessionStateStore 恢复缓存（不覆盖已存在的内存状态）"""
         try:
-            from app.utils.redis_client import get_redis
-            redis = get_redis()
-            if redis:
-                key = f"ctx:{session_id}"
-                data = await redis.get(key)
-                if data:
-                    self._cache[session_id] = json.loads(data)
+            store = SessionStateStore()
+            data = await store.load(session_id)
+            if data and session_id not in self._cache:
+                self._cache[session_id] = OrderedDict(data)
         except Exception as e:
-            logger.warning(f"[ctx-mgr] Redis load failed: {e}")
+            logger.warning(f"[ctx-mgr] load failed: {e}")
 
     # ── 内部 ──
 
