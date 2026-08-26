@@ -4,7 +4,8 @@
 
 :root {
   --foreground-rgb: 0, 0, 0;
-  --background-start-rgb: 245, 245, 245;
+  /* #2544: 织物质感底色迁移 —— 米白 #faf7f2（替换旧平灰 #f5f5f5） */
+  --background-start-rgb: 250, 247, 242;
   --background-end-rgb: 255, 255, 255;
 }
 

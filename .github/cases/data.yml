@@ -119,3 +119,46 @@ cases:
       ci:
         - agent-eval.yml
       verifies: []
+  - id: DA-005
+    legacy_id: ""
+    title: "经营看板织物质感改版（样板页）"
+    domains:
+      - data
+    tier: normal
+    tags:
+      - dashboard
+      - ui-redesign
+      - visual
+    truths_ref:
+      - dashboard-ui.tokens
+      - dashboard-ui.insight-bar
+      - dashboard-ui.no-truncate
+      - dashboard-ui.axis-sampling
+      - dashboard-ui.status-chips
+      - dashboard-ui.no-overflow
+    user_inputs:
+      - "经营看板页面按织物质感方向重设计"
+    expectations:
+      - page: /dashboard
+        required_texts:
+          - 数据看板
+          - 今日经营速览
+          - 订单环比
+          - 含加工占比
+          - 低库存预警
+    data_checks:
+      - "token：主色靛蓝/点缀陶土/米白底，无默认蓝"
+      - "商品销量排行表头「日涨」在 1440/1280 两视口无截断"
+      - "订单趋势 x 轴刻度在 1280 宽度下降采样不重叠"
+      - "订单/售后状态语义色 chips；空态「暂无数据」无 '-' 占位"
+    skip_reason: "UI 页面改版：由 vitest 单测 + Playwright 多视口 E2E + 二郎神页面验收（page_accept）验证，不进入 agent-eval 冒烟"
+    merge_log: "2026-08-25 新增：#2532 经营看板织物质感改版（样板页）"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/pages/dashboard.test.tsx"
+        - "frontend/admin-web/tests/unit/lib/status-chip.test.ts"
+        - "frontend/admin-web/tests/unit/lib/axis-sampling.test.ts"
+        - "tests/e2e/specs/dashboard/dashboard.spec.ts"
+      ci:
+        - pr-check.yml
+      verifies: []

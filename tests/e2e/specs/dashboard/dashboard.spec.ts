@@ -1,3 +1,4 @@
+// case_ids: DA-005
 import { test, expect } from '@playwright/test'
 // auth 由全局 auth-setup 项目提供
 
@@ -384,6 +385,8 @@ test.describe('仪表盘空数据状态', () => {
   test('空状态趋势图不渲染占位虚线网格 (#2434)', async ({ page }) => {
     // 占位虚线网格的唯一标记：svg[preserveAspectRatio="none"]
     // （MiniSparkline/MiniBarChart 在空数据时仍会渲染一条 strokeDasharray 虚线，不能用 line[stroke-dasharray] 断言）
+    // 先等空态文案出现（loading 结束、骨架屏移除），避免与加载态竞态
+    await expect(page.getByText('暂无订单数据')).toBeVisible()
     const placeholderGrids = page.locator('svg[preserveAspectRatio="none"]')
     expect(await placeholderGrids.count()).toBe(0)
   })

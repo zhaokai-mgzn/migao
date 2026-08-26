@@ -10,6 +10,10 @@ const config: Config = {
     './src/pages/**/*.{js,ts,jsx,tsx,mdx}',
     './src/components/**/*.{js,ts,jsx,tsx,mdx}',
     './src/app/**/*.{js,ts,jsx,tsx,mdx}',
+    // #2544: 必须包含 src/lib —— status-chip.ts 等 lib 内的语义色类
+    // 若不扫描，bg-emerald-50/text-emerald-700/border-emerald-200 等仅在 lib
+    // 出现的类会被 purge，导致「已完成」等 chips 在生产无样式渲染。
+    './src/lib/**/*.{js,ts,jsx,tsx,mdx}',
   ],
   theme: {
     extend: {

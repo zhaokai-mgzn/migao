@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { ArrowRight } from 'lucide-react'
+import { ArrowRight, ClipboardList } from 'lucide-react'
 import StatusBadge from '@/components/ui/StatusBadge'
 import type { Order } from '@/types'
 import { chipToneClasses, orderStatusChipFor } from '@/lib/status-chip'
@@ -9,6 +9,10 @@ import { chipToneClasses, orderStatusChipFor } from '@/lib/status-chip'
 interface RecentOrdersProps {
   orders: Order[]
   loading?: boolean
+  /** 空态主文案（默认「暂无订单数据」）。 */
+  emptyText?: string
+  /** 空态辅助说明（默认无）。 */
+  emptyHint?: string
 }
 
 function formatAmount(amount: number): string {
@@ -21,7 +25,7 @@ function formatTime(dateStr?: string): string {
   return `${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`
 }
 
-export default function RecentOrders({ orders, loading }: RecentOrdersProps) {
+export default function RecentOrders({ orders, loading, emptyText = '暂无订单数据', emptyHint }: RecentOrdersProps) {
   return (
     <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
       <div className="flex items-center justify-between mb-4">
@@ -40,8 +44,12 @@ export default function RecentOrders({ orders, loading }: RecentOrdersProps) {
           <div className="animate-spin w-6 h-6 border-2 border-primary-500 border-t-transparent rounded-full" />
         </div>
       ) : orders.length === 0 ? (
-        <div className="h-40 flex items-center justify-center text-sm text-gray-400">
-          暂无订单数据
+        <div className="flex flex-col items-center justify-center py-10">
+          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary-50 to-accent-50 flex items-center justify-center mb-3">
+            <ClipboardList className="w-5 h-5 text-primary-400" />
+          </div>
+          <p className="text-sm font-medium text-gray-500">{emptyText}</p>
+          {emptyHint && <p className="text-xs text-gray-400 mt-1">{emptyHint}</p>}
         </div>
       ) : (
         <div className="overflow-x-auto">

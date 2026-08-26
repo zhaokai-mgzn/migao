@@ -172,4 +172,16 @@ describe('RecentOrders', () => {
     // ORDER-003 has no createdAt
     expect(screen.getByText('--')).toBeInTheDocument()
   })
+
+  // --- Empty state customization (#2544) ---
+  it('supports custom emptyText via prop', () => {
+    render(<RecentOrders orders={[]} emptyText="暂无近期订单" />)
+    expect(screen.getByText('暂无近期订单')).toBeInTheDocument()
+    expect(screen.queryByText('暂无订单数据')).not.toBeInTheDocument()
+  })
+
+  it('supports custom emptyHint via prop', () => {
+    render(<RecentOrders orders={[]} emptyText="暂无近期订单" emptyHint="新订单将在此展示" />)
+    expect(screen.getByText('新订单将在此展示')).toBeInTheDocument()
+  })
 })
