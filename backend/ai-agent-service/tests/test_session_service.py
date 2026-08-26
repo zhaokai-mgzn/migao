@@ -102,7 +102,8 @@ class TestSendGate:
 
         result, error = await s.send_gate("s1", tenant_id=1, user_id="u1")
         assert result == session
-        assert error is None
+        assert result["session_id"] == "s1"
+        assert not error  # 无错误
         mem.touch_activity.assert_awaited_once_with("s1")
 
     async def test_send_gate_missing_session(self, service):
@@ -110,8 +111,8 @@ class TestSendGate:
         s, mem = service
         mem.get_session = AsyncMock(return_value=None)
         result, error = await s.send_gate("s1", tenant_id=1, user_id="u1")
-        assert result is None
         assert error == ("SESSION_NOT_FOUND", "会话不存在")
+        assert not result  # 会话不存在 → 无会话对象
 
     async def test_send_gate_cross_tenant(self, service):
         """跨租户 → PERMISSION_DENIED"""
@@ -138,5 +139,7 @@ class TestSendGate:
         """无 session_id 时由调用方负责创建，gate 返回 (None, None) 表示需新建"""
         s, mem = service
         result, error = await s.send_gate("", tenant_id=1, user_id="u1")
-        assert result is None
-        assert error is None
+        assert (result, error) == (None, None)
+        # 空 session_id 直接短路，不触碰 DB
+        assert not mem.get_session.called
+        assert not mem.touch_activity.called
