@@ -87,6 +87,9 @@ exemptions:
   # #1720/#1723 — 米宝语音输入 ASR + 前端录音交互
   - pattern: "backend/ai-agent-service/app/api/asr.py"
     reason: "#1720 新增 ASR 语音转文字端点。DashScope SDK 封装，本地实测通过"
+  - pattern: "backend/ai-agent-service/app/llm/router.py"
+    reason: "#2546: select_model 路由逻辑已由 tests/test_llm_pipeline.py TestSelectModel + tests/test_vision_integration.py TestSelectModelWithVision 覆盖（gate 模板要求独立 test_llm_router.py 不存在）"
+
   - pattern: "backend/ai-agent-service/app/api/routes.py"
     reason: "#1720 注册 ASR 路由，纯 import + include_router 无逻辑"
   - pattern: "backend/ai-agent-service/app/config.py"

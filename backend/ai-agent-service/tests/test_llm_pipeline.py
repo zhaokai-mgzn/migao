@@ -1,3 +1,4 @@
+# case_ids: MC-008
 """
 单元测试: LLM 管道 (app/llm/*)
 
