@@ -1,3 +1,4 @@
+// case_ids: DA-005
 import { test, expect } from '@playwright/test'
 // auth 由全局 auth-setup 项目提供
 

@@ -627,6 +627,20 @@ _CASE_DA_004 = EvalCase(
     tags=['monitor', 'query'],
 )
 
+# ── DA-005 [NORMAL] 经营看板织物质感改版（样板页）（源: cases/data.yml）──
+_CASE_DA_005 = EvalCase(
+    id='DA-005',
+    legacy_id='',
+    title='经营看板织物质感改版（样板页）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['经营看板页面按织物质感方向重设计'],
+    expectations=[''],
+    data_checks=['token：主色靛蓝/点缀陶土/米白底，无默认蓝', '商品销量排行表头「日涨」在 1440/1280 两视口无截断', '订单趋势 x 轴刻度在 1280 宽度下降采样不重叠', "订单/售后状态语义色 chips；空态「暂无数据」无 '-' 占位"],
+    skip_reason='UI 页面改版：由 vitest 单测 + Playwright 多视口 E2E + 二郎神页面验收（page_accept）验证，不进入 agent-eval 冒烟',
+    tags=['dashboard', 'ui-redesign', 'visual'],
+)
+
 # ── DF-001 [ADVERSARIAL] Token攻击 - 要求生成超长回复（源: cases/defense.yml）──
 _CASE_DF_001 = EvalCase(
     id='DF-001',
@@ -1593,6 +1607,62 @@ _CASE_ST_007 = EvalCase(
     tags=['create'],
 )
 
+# ── UI-001 [NORMAL] 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理（源: cases/ui.yml）──
+_CASE_UI_001 = EvalCase(
+    id='UI-001',
+    legacy_id='',
+    title='织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['经营看板织物质感重设计子任务 A：建立设计 token 体系'],
+    expectations=['direct_reply'],
+    data_checks=["tailwind.config.ts theme.extend.colors.primary[500] = '#48618f'", "tailwind.config.ts theme.extend.colors.accent[500] = '#c06a3e'", "tailwind.config.ts theme.extend.colors.neutral[50] = '#faf7f2'", "frontend/admin-web/src/**/*.{ts,tsx} 扫描 '#3b82f6'（大小写不敏感）计数 = 0"],
+    skip_reason='纯前端设计 token 由 vitest 单测验证（tests/unit/tailwind.config.test.ts），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ui', 'token', 'tailwind'],
+)
+
+# ── UI-002 [NORMAL] 订单/售后状态语义色 chips + 数据空态「暂无数据」治理（源: cases/ui.yml）──
+_CASE_UI_002 = EvalCase(
+    id='UI-002',
+    legacy_id='',
+    title='订单/售后状态语义色 chips + 数据空态「暂无数据」治理',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['订单/售后状态用语义色 chips 表达，数据空态显示暂无数据'],
+    expectations=['direct_reply'],
+    data_checks=['OrderStatusBadge shipped 含 bg-primary-50 且不含 bg-indigo-50', 'OrderStatusBadge closed 含 bg-neutral-100 且不含 bg-gray-50', 'OrderTable 采购明细列 items=[] 与采购商品列无 firstItem 渲染「暂无数据」'],
+    skip_reason='纯前端 UI chips/空态由 vitest 单测验证（status-chip/OrderStatusBadge/OrderTable/RecentOrders/after-sales），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ui', 'status-chip', 'empty-state'],
+)
+
+# ── UI-003 [NORMAL] 米宝「今日经营速览」洞察条 - 订单环比/含加工占比/低库存预警（源: cases/ui.yml）──
+_CASE_UI_003 = EvalCase(
+    id='UI-003',
+    legacy_id='',
+    title='米宝「今日经营速览」洞察条 - 订单环比/含加工占比/低库存预警',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['经营看板织物质感重设计子任务 C：米宝「今日经营速览」洞察条置于页面顶部'],
+    expectations=['direct_reply'],
+    data_checks=['frontend/admin-web/src/components/dashboard/TodayOverviewBar.tsx 渲染订单环比/含加工占比/低库存预警三个区块', '含加工占比 = processingCount / pendingCount，pendingCount<=0 时渲染 0% 而非 NaN/Infinity/undefined', '订单环比/低库存预警数值来自 props（由页面 API 返回值派生），组件内无硬编码固定数值', '洞察条置于经营看板顶部（先于待处理区块渲染）'],
+    skip_reason='纯前端组件由 vitest 单测验证（TodayOverviewBar.test.tsx + dashboard.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ui', 'dashboard', 'insight', 'token'],
+)
+
+# ── UI-004 [NORMAL] 经营看板密度治理 - 商品销量排行表头不截断 + 订单趋势 x 轴降采样（源: cases/ui.yml）──
+_CASE_UI_004 = EvalCase(
+    id='UI-004',
+    legacy_id='',
+    title='经营看板密度治理 - 商品销量排行表头不截断 + 订单趋势 x 轴降采样',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['经营看板织物质感重设计子任务 B：dashboard 密度修复（表格/图表多视口）'],
+    expectations=['direct_reply'],
+    data_checks=['商品销量排行表头「日涨」列渲染 whitespace-nowrap，1440×900 与 1280×800 两视口无截断', '订单趋势图 x 轴刻度按 sampleTickIndices 降采样，1280 宽度下标签数 ≤ 7 且不密集重叠', 'dashboard 页面在 1440×900 与 1280×800 两视口无水平/垂直截断或溢出'],
+    skip_reason='纯前端密度/布局治理由 vitest 单测验证（axis-sampling.test.ts + dashboard.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ui', 'dashboard', 'density', 'axis-sampling'],
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -1664,6 +1734,7 @@ ALL_CASES = (
     _CASE_DA_002,
     _CASE_DA_003,
     _CASE_DA_004,
+    _CASE_DA_005,
     _CASE_DF_001,
     _CASE_DF_002,
     _CASE_DF_003,
@@ -1733,6 +1804,10 @@ ALL_CASES = (
     _CASE_ST_005,
     _CASE_ST_006,
     _CASE_ST_007,
+    _CASE_UI_001,
+    _CASE_UI_002,
+    _CASE_UI_003,
+    _CASE_UI_004,
     _CASE_UT_001,
     _CASE_UT_002,
 )

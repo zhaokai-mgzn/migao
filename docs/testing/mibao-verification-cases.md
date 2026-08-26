@@ -472,7 +472,7 @@
 真值: id-resolve.name, customer-list.search-fields, order.states
 溯源: eval M011 独有（模糊澄清 + 客户搜索真值） ｜ tags: fuzzy_input, progressive_clarification, adversarial
 
-## 数据域（4 case）
+## 数据域（5 case）
 
 ### DA-001. 经营概览 🔵
 ```
@@ -509,6 +509,19 @@
 ```
 真值: agent-notification.monitor
 溯源: verification 7.4 独有 ｜ tags: monitor, query
+
+### DA-005. 经营看板织物质感改版（样板页） 🔵
+```
+你: 经营看板页面按织物质感方向重设计
+期望: 
+数据: token：主色靛蓝/点缀陶土/米白底，无默认蓝
+数据: 商品销量排行表头「日涨」在 1440/1280 两视口无截断
+数据: 订单趋势 x 轴刻度在 1280 宽度下降采样不重叠
+数据: 订单/售后状态语义色 chips；空态「暂无数据」无 '-' 占位
+跳过: UI 页面改版：由 vitest 单测 + Playwright 多视口 E2E + 二郎神页面验收（page_accept）验证，不进入 agent-eval 冒烟
+```
+真值: dashboard-ui.tokens, dashboard-ui.insight-bar, dashboard-ui.no-truncate, dashboard-ui.axis-sampling, dashboard-ui.status-chips, dashboard-ui.no-overflow
+溯源: 2026-08-25 新增：#2532 经营看板织物质感改版（样板页） ｜ tags: dashboard, ui-redesign, visual
 
 ## 防御域（16 case）
 
@@ -1310,6 +1323,58 @@
 真值: agent-notification.quick-reply-validate
 溯源: verification 6.7 独有 ｜ tags: create
 
+## ui（4 case）
+
+### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
+```
+你: 经营看板织物质感重设计子任务 A：建立设计 token 体系
+期望: direct_reply
+数据: tailwind.config.ts theme.extend.colors.primary[500] = '#48618f'
+数据: tailwind.config.ts theme.extend.colors.accent[500] = '#c06a3e'
+数据: tailwind.config.ts theme.extend.colors.neutral[50] = '#faf7f2'
+数据: frontend/admin-web/src/**/*.{ts,tsx} 扫描 '#3b82f6'（大小写不敏感）计数 = 0
+跳过: 纯前端设计 token 由 vitest 单测验证（tests/unit/tailwind.config.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.ui-token
+溯源: 2026-08-25 新增：经营看板织物质感重设计子任务 A（issue #2534） ｜ tags: ui, token, tailwind
+
+### UI-002. 订单/售后状态语义色 chips + 数据空态「暂无数据」治理 🔵
+```
+你: 订单/售后状态用语义色 chips 表达，数据空态显示暂无数据
+期望: direct_reply
+数据: OrderStatusBadge shipped 含 bg-primary-50 且不含 bg-indigo-50
+数据: OrderStatusBadge closed 含 bg-neutral-100 且不含 bg-gray-50
+数据: OrderTable 采购明细列 items=[] 与采购商品列无 firstItem 渲染「暂无数据」
+跳过: 纯前端 UI chips/空态由 vitest 单测验证（status-chip/OrderStatusBadge/OrderTable/RecentOrders/after-sales），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.status-chip, frontend-fix.empty-state
+溯源: 2026-08-25 新增：经营看板织物质感重设计子任务 D（issue #2539） ｜ tags: ui, status-chip, empty-state
+
+### UI-003. 米宝「今日经营速览」洞察条 - 订单环比/含加工占比/低库存预警 🔵
+```
+你: 经营看板织物质感重设计子任务 C：米宝「今日经营速览」洞察条置于页面顶部
+期望: direct_reply
+数据: frontend/admin-web/src/components/dashboard/TodayOverviewBar.tsx 渲染订单环比/含加工占比/低库存预警三个区块
+数据: 含加工占比 = processingCount / pendingCount，pendingCount<=0 时渲染 0% 而非 NaN/Infinity/undefined
+数据: 订单环比/低库存预警数值来自 props（由页面 API 返回值派生），组件内无硬编码固定数值
+数据: 洞察条置于经营看板顶部（先于待处理区块渲染）
+跳过: 纯前端组件由 vitest 单测验证（TodayOverviewBar.test.tsx + dashboard.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: dashboard-jump.overview, dashboard-jump.processing-shipment, dashboard-jump.low-stock, dashboard-jump.real-data
+溯源: 2026-08-25 新增：经营看板织物质感重设计子任务 C（issue #2538） ｜ tags: ui, dashboard, insight, token
+
+### UI-004. 经营看板密度治理 - 商品销量排行表头不截断 + 订单趋势 x 轴降采样 🔵
+```
+你: 经营看板织物质感重设计子任务 B：dashboard 密度修复（表格/图表多视口）
+期望: direct_reply
+数据: 商品销量排行表头「日涨」列渲染 whitespace-nowrap，1440×900 与 1280×800 两视口无截断
+数据: 订单趋势图 x 轴刻度按 sampleTickIndices 降采样，1280 宽度下标签数 ≤ 7 且不密集重叠
+数据: dashboard 页面在 1440×900 与 1280×800 两视口无水平/垂直截断或溢出
+跳过: 纯前端密度/布局治理由 vitest 单测验证（axis-sampling.test.ts + dashboard.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.dashboard-no-truncate, frontend-fix.axis-sampling, frontend-fix.dashboard-no-overflow
+溯源: 2026-08-25 新增：经营看板织物质感重设计子任务 B（issue #2537） ｜ tags: ui, dashboard, density, axis-sampling
+
 ## utils（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -1339,8 +1404,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：113（活跃 82，跳过 31）
-- tier 分布：smoke 9 / normal 77 / adversarial 27
+- 用例总数：118（活跃 82，跳过 36）
+- tier 分布：smoke 9 / normal 82 / adversarial 27
 - 售后域：5
 - agents：6
 - api：9
@@ -1348,7 +1413,7 @@
 - 对话边界域：7
 - 跨域：3
 - 客户域：5
-- 数据域：4
+- 数据域：5
 - 防御域：16
 - finance：3
 - 人事域：5
@@ -1358,5 +1423,6 @@
 - 商品域：12
 - registry：1
 - 设置域：7
+- ui：4
 - utils：2
 
