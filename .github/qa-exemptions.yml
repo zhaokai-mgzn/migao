@@ -113,3 +113,10 @@ exemptions:
 
   - pattern: "frontend/admin-web/src/components/dashboard/RecentOrders.tsx"
     reason: "#2544: 已有 tests/unit/components/dashboard/RecentOrders.test.tsx（20 tests PASS，含语义色 chips/空态/emptyText）。gate 规则模板 {2}.test.ts 未含子目录 dashboard 且 .ts 扩展名与实际 .tsx 不符（同 TodayOverviewBar #2538 豁免）"
+
+  # ── 会话管理重构（refactor/ai-agent）──
+  - pattern: "backend/ai-agent-service/app/agents/customer_service_agent.py"
+    reason: "会话管理重构：已有 tests/test_customer_service_agent.py（45+ tests）覆盖 _build_initial_state/achat/astream_chat。gate 模板要求 test_agent_customer_service_agent.py 命名不符"
+
+  - pattern: "backend/ai-agent-service/app/context/*"
+    reason: "会话管理重构：app/context/tracker.py 整模块删除（生产零调用，P1 删 Redis 持久化 + P3 删 compress_history 后成死代码），无需为已删文件补测试"
