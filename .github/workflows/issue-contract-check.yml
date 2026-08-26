@@ -138,18 +138,117 @@ jobs:
             echo "ℹ️ 未声明 cases，跳过用例引用校验"
             exit 0
           fi
-          # issue 创建时用例库可能还不含「本 PR 新登记的 case」（新 case 与修复同批落地），
-          # 因此 issue 级只做告警、不做硬失败；case 是否存在由 PR 级的 case-truth-check
-          # 与 QA Growth Gate(G5) 在合并前兜底校验。
-          MISSING=0
+          FAILED=0
           for id in $CASES; do
             if ! python3 .github/truths.py case "$id" --cases .github/cases; then
-              echo "⚠️ 用例 $id 未在 main 用例库中找到（可能是本 PR 新登记的 case）"
-              MISSING=1
+              FAILED=1
             fi
           done
-          if [ "$MISSING" = "1" ]; then
-            echo "::warning:: 部分用例 ID 尚未在 main 用例库中。若为新增 case，请确保同一 PR 已在 .github/cases/ 登记；合并前由 case-truth-check + QA Growth Gate(G5) 兜底校验。"
-          else
-            echo "✅ cases 引用全部有效"
+          if [ "$FAILED" = "1" ]; then
+            echo "::error:: CONTRACT_JSON 声明了不存在的用例 ID，请从 .github/cases/ 选择或修正"
+            exit 1
           fi
+          echo "✅ cases 引用全部有效"
+
+      - name: Validate page_cases references (visual)
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          PCASES=$(python3 -c "
+          import os, re
+          body = os.environ.get('ISSUE_BODY', '')
+          m = re.search(r'\"page_cases\"\s*:\s*\[([^\]]*)\]', body)
+          ids = [t.strip().strip(chr(34) + chr(39)) for t in m.group(1).split(',') if t.strip()] if m else []
+          print(' '.join(ids))
+          ")
+          if [ -z "$PCASES" ]; then
+            echo "ℹ️ 未声明 page_cases，跳过页面用例引用校验"
+            exit 0
+          fi
+          FAILED=0
+          for id in $PCASES; do
+            if ! python3 .github/truths.py page-case "$id" --cases .github/cases; then
+              FAILED=1
+            fi
+          done
+          if [ "$FAILED" = "1" ]; then
+            echo "::error:: CONTRACT_JSON 声明了不存在的页面用例 ID，请从 .github/cases/ 的 page_cases 选择或修正"
+            exit 1
+          fi
+          echo "✅ page_cases 引用全部有效"
+
+      - name: Validate truths_ref references
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          # CONTRACT_JSON 声明 truths_ref → 每个真值 ID 必须在模板库存在（agent 用 truth_query 按 ID 查）
+          REFS=$(python3 -c "
+          import os, re
+          body = os.environ.get('ISSUE_BODY', '')
+          m = re.search(r'\"truths_ref\"\s*:\s*\[([^\]]*)\]', body, re.S)
+          ids = [t.strip().strip(chr(34) + chr(39)) for t in m.group(1).split(',') if t.strip()] if m else []
+          print(' '.join(ids))
+          ")
+          if [ -z "$REFS" ]; then
+            echo "ℹ️ 未声明 truths_ref，跳过真值引用校验"
+            exit 0
+          fi
+          FAILED=0
+          for id in $REFS; do
+            if ! python3 .github/truths.py query "$id" --templates .github/templates; then
+              FAILED=1
+            fi
+          done
+          if [ "$FAILED" = "1" ]; then
+            echo "::error:: CONTRACT_JSON 声明了不存在的真值 ID，请从 .github/templates/ 选择（真值 ID 见 docs/truths.html）"
+            exit 1
+          fi
+          echo "✅ truths_ref 引用全部有效"
+
+      - name: Validate truth count (task granularity)
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          # 任务粒度标准（design/21）：1 ≤ truths ≤ 5；>5 → needs-split 提示拆解
+          COUNT=$(python3 -c "
+          import os, re
+          body = os.environ.get('ISSUE_BODY', '')
+          m = re.search(r'\"business_truths\"\s*:\s*\[([^\]]*)\]', body, re.S)
+          if not m:
+              print(0)
+          else:
+              # 按引号包裹的字符串计数（真值条目）
+              print(len(re.findall(r'\"[^\"]*[一-鿿a-zA-Z][^\"]*\"', m.group(1))))
+          ")
+          if [ "${COUNT:-0}" -gt 5 ]; then
+            echo "::warning:: CONTRACT_JSON 声明 ${COUNT} 条真值，超过任务粒度上界 5（design/21）"
+            echo "NEEDS_SPLIT=1" >> "$GITHUB_ENV"
+          fi
+
+      - name: Label needs-split and remind (over-granular)
+        if: env.NEEDS_SPLIT == '1'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: context.issue.number, labels: ['needs-split'],
+            })
+            const body = `## ✂️ 任务粒度超界，建议拆解
+
+            本 issue 的 CONTRACT_JSON 声明了超过 5 条业务真值，超过二郎神任务粒度上界（design/21）。
+
+            ### 为什么
+            大任务在闭环里会卡死：单会话预算 30min + verify 逐条判真值 + Review 单次判定，
+            真值越多越难一次性 accept，最终 DRAFT↔Review 死循环。
+
+            ### 请拆解
+            按「依赖序 / 领域 / 验收」拆成子任务（父 issue 保留追踪，子任务各走闭环）：
+            - 基础层（token/配置/契约）→ 组件层 → 页面层
+            - 每条子任务 1~5 条真值，单领域单目标，每条真值一条机器断言
+
+            > 规范详见 design/21-task-granularity.md | 🤖二郎神`
+            await github.rest.issues.createComment({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: context.issue.number, body,
+            })
