@@ -1663,6 +1663,20 @@ _CASE_UI_004 = EvalCase(
     tags=['ui', 'dashboard', 'density', 'axis-sampling'],
 )
 
+# ── UI-005 [NORMAL] 经营看板趋势图横坐标铺满 + 米宝对话/全局壳层织物质感全面重设计（源: cases/ui.yml）──
+_CASE_UI_005 = EvalCase(
+    id='UI-005',
+    legacy_id='',
+    title='经营看板趋势图横坐标铺满 + 米宝对话/全局壳层织物质感全面重设计',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['经营看板订单/销售额趋势图横坐标铺满，并对全部 web 功能与米宝对话做织物质感全面重设计'],
+    expectations=['direct_reply'],
+    data_checks=['订单趋势折线 polyline 横向铺满卡片宽度（起点<60px、终点>视口宽-30px，覆盖≥85%）', '销售额趋势渲染面积 path + linearGradient + 水平网格 + y 轴刻度', '全站 src/**/*.{ts,tsx} 无默认蓝 #3b82f6、无 text-blue|purple|orange 图标残留', '米宝对话气泡/输入/会话列表/悬浮助手使用织物质感 token'],
+    skip_reason='纯前端 UI 由 vitest 单测验证（dashboard.test.tsx + chat 组件测试），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ui', 'dashboard', 'chart', 'token', 'chat'],
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -1808,6 +1822,7 @@ ALL_CASES = (
     _CASE_UI_002,
     _CASE_UI_003,
     _CASE_UI_004,
+    _CASE_UI_005,
     _CASE_UT_001,
     _CASE_UT_002,
 )
