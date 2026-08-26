@@ -9,6 +9,7 @@
 
 改动 references/ 下的 Prompt 文件后运行此测试即可发现意外变更。
 """
+# case_ids: MC-003, MC-010
 
 import pytest
 
@@ -83,6 +84,16 @@ def test_aftersales_has_critical_rules():
     assert "转人工" in prompt or "人工介入" in prompt
 
 
+def test_order_prompt_requires_interact_for_sku_selection():
+    """生产回归 OR-010 flaky：多 SKU 选择必须用 interact(choice) 组件。
+
+    旧 prompt 要求"展示表格让用户选"→ LLM 输出纯文本选项，pending_skill 未设置，
+    后续"选1"短消息被误路由 → 回复"没有订单创建权限"。
+    """
+    prompt = _build_system_prompt("order")
+    assert 'interact(component="choice")' in prompt
+
+
 def test_general_is_fallback_friendly():
     """兜底节点必须引导用户说出具体需求"""
     prompt = _build_system_prompt("general")
@@ -118,13 +129,13 @@ def test_snapshot_all_skills():
 
     # 最大长度快照（防止无限制膨胀）
     expected_max = {
-        "product": 8500,  # +1000: product_update tool + 3 EXAMPLES
-        "order": 5600,  # +400: SKU 规格选择流程
-        "aftersales": 4300,
-        "customer": 4300,
-        "staff": 4300,
-        "settings": 4300,
-        "data": 4300,
+        "product": 8900,  # +400: validate_input 中止铁律（共享规则增长）
+        "order": 5900,  # +300: validate_input 中止铁律（共享规则增长）
+        "aftersales": 4500,
+        "customer": 4500,
+        "staff": 4500,
+        "settings": 4500,
+        "data": 4500,
         "general": 4800,
     }
     for skill, max_len in expected_max.items():

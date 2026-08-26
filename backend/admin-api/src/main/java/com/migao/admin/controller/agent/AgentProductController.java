@@ -74,6 +74,44 @@ public class AgentProductController {
     }
 
     /**
+     * Agent 专用库存调整（生产回归修复：杜绝"假成功"）。
+     * PATCH /api/admin/agent/products/{id}/stock
+     * body: {"adjustment": +30, "reason": "盘点"}（adjustment 正=增加 负=减少）
+     * 返回更新后的商品详情，data.stock 为 SKU 汇总值，供 agent 读回校验。
+     */
+    @PatchMapping("/{id}/stock")
+    public ApiResponse<ProductResponse> adjustStock(
+            @PathVariable String id,
+            @RequestBody Map<String, Object> body) {
+        Long tenantId = TenantContext.getTenantId();
+        Object adjObj = body.get("adjustment");
+        if (adjObj == null) {
+            throw BusinessException.validationError("缺少 adjustment 字段（正=增加，负=减少）");
+        }
+        Integer adjustment;
+        try {
+            adjustment = Integer.valueOf(adjObj.toString());
+        } catch (NumberFormatException e) {
+            throw BusinessException.validationError("adjustment 必须为整数");
+        }
+        String reason = (String) body.getOrDefault("reason", "");
+        String resolvedId = productService.resolveProductId(id, tenantId);
+        if (resolvedId == null) {
+            throw BusinessException.notFound("商品",
+                    "未找到商品「" + id + "」，请先用 product_search 查出正确 ID 后重试");
+        }
+        log.info("[Agent] 库存调整: product={}, adjustment={}, reason={}, tenantId={}",
+                id, adjustment, reason, tenantId);
+        try {
+            ProductResponse result = productService.adjustStockForAgent(resolvedId, adjustment, reason, tenantId);
+            return ApiResponse.success(result);
+        } catch (Exception e) {
+            log.warn("[Agent] 库存调整失败: product={}, adjustment={}, error={}", id, adjustment, e.getMessage());
+            throw e;
+        }
+    }
+
+    /**
      * Agent 专用 SKU 价格更新。按颜色/售卖方式/门幅精确匹配。
      * PATCH /api/admin/agent/products/{productId}/skus/price
      */

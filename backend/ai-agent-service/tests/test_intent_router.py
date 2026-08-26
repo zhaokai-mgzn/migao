@@ -368,6 +368,36 @@ class TestIntentRouter:
             assert decision.intent_result.source == "classifier"
             assert decision.intent_result.intent == IntentType.PRODUCT_INQUIRY
 
+    @pytest.mark.asyncio
+    async def test_route_entity_hint_not_visible_to_l1(self, router):
+        """实体提示仅注入 L2，不污染 L1 关键词匹配。
+
+        生产回归：context 实体标签（如"加工项"）被拼进 user_message 后交给 L1，
+        导致"先帮我查一下售后工单"被 L1 按 hint 中的"加工项"误路由到 product。
+        """
+        hint = "[上下文实体] 之前对话已涉及：加工项「叭叭叭」"
+        decision = await router.route("先帮我查一下售后工单", entity_hint=hint)
+        # L1 只看原始用户消息 → 命中"售后" → AFTER_SALES
+        assert decision.intent_result.source == "rule"
+        assert decision.intent_result.intent == IntentType.AFTER_SALES
+
+    @pytest.mark.asyncio
+    async def test_route_entity_hint_passed_to_classifier(self, router):
+        """L1 未命中时，classifier 收到含实体提示的完整消息"""
+        hint = "[上下文实体] 之前对话已涉及：订单「ORD123」"
+        captured = {}
+
+        async def fake_classify(message, chat_history=None, agent_intents=None):
+            captured["message"] = message
+            return IntentResult(
+                intent=IntentType.AFTER_SALES, confidence=0.85, source="classifier",
+            )
+
+        with patch.object(router.intent_classifier, "classify", new=fake_classify):
+            await router.route("这个订单要退货", entity_hint=hint)
+        assert "ORD123" in captured["message"]
+        assert "这个订单要退货" in captured["message"]
+
 
 # ========== IntentConfig 数据结构测试 ==========
 

@@ -33,6 +33,7 @@ from app.agents.customer_service_agent import (
     get_agent,
 )
 from app.tools import ToolRegistry, get_tool_registry
+from app.tools.base import ToolContext  # __PAGE__ 分页直调工具时构造执行上下文
 from app.utils.auth import get_current_user, UserIdentity
 
 router = APIRouter()

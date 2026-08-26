@@ -1,5 +1,7 @@
 package com.migao.admin.service;
 
+// case_ids=[PR-005]
+
 import com.migao.admin.dto.*;
 import com.migao.admin.dto.agent.*;
 import com.migao.admin.entity.*;
@@ -226,6 +228,105 @@ class AgentProductServiceTest {
             List<String> r = productService.resolveProcessingItemIds(
                     List.of("pi-001", "S钩", "2"), 1L);
             assertThat(r).containsExactly("pi-001", "pi-002", "pi-002");
+        }
+    }
+
+    @Nested @DisplayName("Agent 库存调整（生产回归：假成功修复）")
+    class StockAdjust {
+
+        private ProductSku sku(long id, int stock) {
+            ProductSku s = new ProductSku();
+            s.setId(id);
+            s.setProductId("prod-001");
+            s.setTenantId(1L);
+            s.setColorName("米白");
+            s.setSellingMethod("bulk_cut");
+            s.setDoorWidth("2.8米");
+            s.setStock(stock);
+            return s;
+        }
+
+        private void stubProductAndSkus(List<ProductSku> skus) {
+            when(productMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(testProduct);
+            when(productMapper.selectById("prod-001")).thenReturn(testProduct);
+            when(productColorMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+            // 第一次 selectList = adjust 加载 SKU；第二次 = getProductById 的 getTotalStock 读回
+            when(productSkuMapper.selectList(any(LambdaQueryWrapper.class)))
+                    .thenReturn(new java.util.ArrayList<>(skus), new java.util.ArrayList<>(skus));
+            when(productSkuMapper.updateById(any(ProductSku.class))).thenReturn(1);
+            when(productMapper.updateById(any(Product.class))).thenReturn(1);
+            when(productProcessingItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+            when(productAttributeMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+        }
+
+        @Test @DisplayName("增加库存 — 均匀分配 + 余数给第一个 SKU")
+        void increaseDistributesEvenly() {
+            ProductSku a = sku(1L, 30);
+            ProductSku b = sku(2L, 20);
+            stubProductAndSkus(List.of(a, b));
+
+            ProductResponse r = productService.adjustStockForAgent("prod-001", 3, "盘点", 1L);
+
+            // 独立手工算例：+3 在 [30,20] 上均匀分配 → [32,21]，总和 53
+            assertThat(a.getStock()).isEqualTo(32);
+            assertThat(b.getStock()).isEqualTo(21);
+            assertThat(r.getStock()).isEqualTo(53);
+        }
+
+        @Test @DisplayName("增加库存 — 整除时平均分配")
+        void increaseEvenSplit() {
+            ProductSku a = sku(1L, 30);
+            ProductSku b = sku(2L, 20);
+            stubProductAndSkus(List.of(a, b));
+
+            ProductResponse r = productService.adjustStockForAgent("prod-001", 10, "进货", 1L);
+
+            assertThat(a.getStock()).isEqualTo(35);
+            assertThat(b.getStock()).isEqualTo(25);
+            assertThat(r.getStock()).isEqualTo(60);
+        }
+
+        @Test @DisplayName("减少库存 — 从库存最大的 SKU 优先扣减")
+        void decreaseGreedyFromLargest() {
+            ProductSku a = sku(1L, 30);
+            ProductSku b = sku(2L, 20);
+            stubProductAndSkus(List.of(a, b));
+
+            ProductResponse r = productService.adjustStockForAgent("prod-001", -25, "报损", 1L);
+
+            // -25：最大 30 的 SKU 先扣 → [5, 20]，总和 25
+            assertThat(a.getStock()).isEqualTo(5);
+            assertThat(b.getStock()).isEqualTo(20);
+            assertThat(r.getStock()).isEqualTo(25);
+        }
+
+        @Test @DisplayName("减少超出总量 — 抛库存不足且不写库")
+        void decreaseInsufficientThrows() {
+            ProductSku a = sku(1L, 30);
+            ProductSku b = sku(2L, 20);
+            stubProductAndSkus(List.of(a, b));
+
+            assertThatThrownBy(() -> productService.adjustStockForAgent("prod-001", -60, "报损", 1L))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("库存不足");
+            verify(productSkuMapper, never()).updateById(any(ProductSku.class));
+        }
+
+        @Test @DisplayName("无 SKU — 明确报错而非静默成功")
+        void noSkusThrows() {
+            stubProductAndSkus(List.of());
+
+            assertThatThrownBy(() -> productService.adjustStockForAgent("prod-001", 10, "进货", 1L))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("SKU");
+        }
+
+        @Test @DisplayName("商品不存在 — notFound")
+        void productNotFound() {
+            when(productMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null);
+
+            assertThatThrownBy(() -> productService.adjustStockForAgent("prod-x", 10, "进货", 1L))
+                    .isInstanceOf(BusinessException.class);
         }
     }
 }
