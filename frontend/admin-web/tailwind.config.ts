@@ -54,6 +54,35 @@ const config: Config = {
           800: '#484036',
           900: '#312c26',
         },
+        // 图表语义色：经营看板折线/面积图专用，与「织物质感」主色系同源
+        chart: {
+          order: '#48618f',    // 靛蓝 — 订单量
+          sales: '#c06a3e',    // 陶土 — 销售额
+          session: '#5f8f6f',  // 亚麻绿 — 会话量
+          gold: '#b8933d',     // 织金 — 毛利/排行
+        },
+      },
+      fontFamily: {
+        sans: [
+          '-apple-system',
+          'BlinkMacSystemFont',
+          '"SF Pro SC"',
+          '"SF Pro Text"',
+          '"PingFang SC"',
+          '"Hiragino Sans GB"',
+          '"Microsoft YaHei"',
+          '"Helvetica Neue"',
+          'Helvetica',
+          'Arial',
+          'sans-serif',
+        ],
+      },
+      boxShadow: {
+        // 软分层阴影（替代生硬边框），色相取自暖中性阴影 rgba(36,31,24,…)
+        card: '0 1px 2px rgba(36,31,24,.04), 0 4px 16px rgba(36,31,24,.06)',
+        'card-hover': '0 2px 6px rgba(36,31,24,.06), 0 8px 24px rgba(36,31,24,.10)',
+        modal: '0 12px 40px rgba(36,31,24,.16)',
+        float: '0 8px 30px rgba(36,31,24,.14)',
       },
     },
   },

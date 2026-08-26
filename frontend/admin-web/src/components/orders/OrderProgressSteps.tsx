@@ -87,7 +87,7 @@ export default function OrderProgressSteps({
                   <div
                     className={cn(
                       'absolute top-1/2 right-1/2 h-0.5 w-1/2 -translate-y-1/2 transition-colors',
-                      leftActive ? 'bg-primary-500' : 'bg-gray-200'
+                      leftActive ? 'bg-primary-500' : 'bg-neutral-200'
                     )}
                   />
                 )}
@@ -97,7 +97,7 @@ export default function OrderProgressSteps({
                   <div
                     className={cn(
                       'absolute top-1/2 left-1/2 h-0.5 w-1/2 -translate-y-1/2 transition-colors',
-                      rightActive ? 'bg-primary-500' : 'bg-gray-200'
+                      rightActive ? 'bg-primary-500' : 'bg-neutral-200'
                     )}
                   />
                 )}
@@ -108,7 +108,7 @@ export default function OrderProgressSteps({
                     'relative z-10 flex items-center justify-center w-9 h-9 rounded-full border-2 text-sm font-medium shrink-0 transition-colors',
                     state === 'completed' && 'bg-primary-500 border-primary-500 text-white',
                     state === 'current' && 'bg-primary-500 border-primary-500 text-white ring-4 ring-primary-100',
-                    state === 'upcoming' && 'bg-white border-gray-300 text-gray-400'
+                    state === 'upcoming' && 'bg-white border-neutral-300 text-neutral-400'
                   )}
                 >
                   {state === 'completed' ? (
@@ -124,13 +124,13 @@ export default function OrderProgressSteps({
                 <div
                   className={cn(
                     'text-sm font-medium',
-                    state === 'completed' || state === 'current' ? 'text-gray-900' : 'text-gray-400'
+                    state === 'completed' || state === 'current' ? 'text-neutral-900' : 'text-neutral-400'
                   )}
                 >
                   {step.label}
                 </div>
                 {step.time && (state === 'completed' || state === 'current') && (
-                  <div className="text-xs text-gray-500 mt-1 whitespace-nowrap">{step.time}</div>
+                  <div className="text-xs text-neutral-500 mt-1 whitespace-nowrap">{step.time}</div>
                 )}
               </div>
             </div>

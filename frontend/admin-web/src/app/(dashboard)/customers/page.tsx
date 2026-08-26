@@ -142,7 +142,7 @@ export default function CustomersPage() {
 
   // 获取渠道 Badge
   const getChannelBadge = (channel: CustomerChannel | undefined | null) => {
-    if (!channel) return <span className="text-xs text-gray-400">-</span>
+    if (!channel) return <span className="text-xs text-neutral-400">-</span>
     const variantMap: Record<CustomerChannel, 'success' | 'info' | 'default' | 'warning'> = {
       wechat_mini: 'success',
       wechat_mp: 'info',
@@ -155,7 +155,7 @@ export default function CustomersPage() {
 
   // VIP 星级显示
   const renderVipLevel = (level: number) => {
-    if (level === 0) return <span className="text-xs text-gray-400">普通</span>
+    if (level === 0) return <span className="text-xs text-neutral-400">普通</span>
     return (
       <div className="flex items-center gap-0.5">
         {Array.from({ length: Math.min(level, 5) }).map((_, i) => (
@@ -167,7 +167,7 @@ export default function CustomersPage() {
 
   // 头像：优先头像图片 > 姓名首字 > 手机号末2位 > 默认 #
   const renderAvatar = (customer: Customer) => {
-    const colors = ['bg-blue-500', 'bg-green-500', 'bg-purple-500', 'bg-amber-500', 'bg-rose-500']
+    const colors = ['bg-primary-500', 'bg-green-500', 'bg-purple-500', 'bg-amber-500', 'bg-rose-500']
     const colorIdx = (String(customer.id || '0')).charCodeAt(0) % colors.length
     const avatarSrc = customer.avatarUrl || customer.avatar
     if (avatarSrc) {
@@ -244,8 +244,8 @@ export default function CustomersPage() {
         const sub = record.nickname || (record.wechatNickname && record.wechatNickname !== displayName ? record.wechatNickname : '')
         return (
           <div>
-            <div className="font-medium text-gray-900">{displayName}</div>
-            {sub && <div className="text-xs text-gray-500">{sub}</div>}
+            <div className="font-medium text-neutral-900">{displayName}</div>
+            {sub && <div className="text-xs text-neutral-500">{sub}</div>}
           </div>
         )
       },
@@ -254,7 +254,7 @@ export default function CustomersPage() {
       key: 'phone',
       title: '手机号',
       width: '130px',
-      render: (record) => <span className="text-gray-600">{record.phone || '-'}</span>,
+      render: (record) => <span className="text-neutral-600">{record.phone || '-'}</span>,
     },
     {
       key: 'channel',
@@ -276,7 +276,7 @@ export default function CustomersPage() {
         const tagList = getTags(record)
         return (
           <div className="flex flex-wrap gap-1">
-            {tagList.length === 0 && <span className="text-xs text-gray-400">-</span>}
+            {tagList.length === 0 && <span className="text-xs text-neutral-400">-</span>}
             {tagList.map((tag) => (
               <span
                 key={tag.id}
@@ -333,8 +333,8 @@ export default function CustomersPage() {
       {/* 页面标题 */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-xl font-semibold text-gray-900">客户管理</h1>
-          <p className="text-sm text-gray-500 mt-1">管理客户信息、标签和互动记录</p>
+          <h1 className="text-xl font-semibold text-neutral-900">客户管理</h1>
+          <p className="text-sm text-neutral-500 mt-1">管理客户信息、标签和互动记录</p>
         </div>
         <Button variant="secondary" onClick={openTagManager}>
           <Tags className="w-4 h-4 mr-1.5" />
@@ -346,7 +346,7 @@ export default function CustomersPage() {
       <SearchBar fields={searchFields} onSearch={handleSearch} onReset={handleReset} loading={loading} className="mb-4" />
 
       {/* 数据表格 */}
-      <div className="bg-white rounded-lg border border-gray-200">
+      <div className="bg-white rounded-lg border border-neutral-200">
         <Table
           columns={columns}
           dataSource={customers}
@@ -369,25 +369,25 @@ export default function CustomersPage() {
           {/* 创建/编辑标签表单 */}
           <div className="flex items-end gap-3">
             <div className="flex-1">
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              <label className="block text-sm font-medium text-neutral-700 mb-1.5">
                 {editingTag ? '编辑标签' : '新建标签'}
               </label>
               <input
                 type="text"
-                className="w-full h-9 px-3 rounded border border-gray-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                 placeholder="标签名称"
                 value={tagForm.name}
                 onChange={(e) => setTagForm({ ...tagForm, name: e.target.value })}
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">颜色</label>
+              <label className="block text-sm font-medium text-neutral-700 mb-1.5">颜色</label>
               <div className="flex gap-1.5">
                 {TAG_COLORS.slice(0, 6).map((color) => (
                   <button
                     key={color}
                     className={`w-7 h-7 rounded-full border-2 transition-all ${
-                      tagForm.color === color ? 'border-gray-900 scale-110' : 'border-transparent'
+                      tagForm.color === color ? 'border-neutral-900 scale-110' : 'border-transparent'
                     }`}
                     style={{ backgroundColor: color }}
                     onClick={() => setTagForm({ ...tagForm, color })}
@@ -406,30 +406,30 @@ export default function CustomersPage() {
           </div>
 
           {/* 标签列表 */}
-          <div className="border-t border-gray-200 pt-4">
-            <h4 className="text-sm font-medium text-gray-700 mb-3">已有标签</h4>
+          <div className="border-t border-neutral-200 pt-4">
+            <h4 className="text-sm font-medium text-neutral-700 mb-3">已有标签</h4>
             {tags.length === 0 ? (
-              <p className="text-sm text-gray-500 text-center py-4">暂无标签</p>
+              <p className="text-sm text-neutral-500 text-center py-4">暂无标签</p>
             ) : (
               <div className="space-y-2">
                 {tags.map((tag) => (
-                  <div key={tag.id} className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-gray-50">
+                  <div key={tag.id} className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-neutral-50">
                     <div className="flex items-center gap-2">
                       <span className="w-4 h-4 rounded-full" style={{ backgroundColor: tag.color }} />
-                      <span className="text-sm font-medium text-gray-900">{tag.name}</span>
+                      <span className="text-sm font-medium text-neutral-900">{tag.name}</span>
                       {tag.customerCount !== undefined && (
-                        <span className="text-xs text-gray-400">({tag.customerCount})</span>
+                        <span className="text-xs text-neutral-400">({tag.customerCount})</span>
                       )}
                     </div>
                     <div className="flex items-center gap-1">
                       <button
-                        className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
+                        className="p-1 text-neutral-400 hover:text-primary-600 transition-colors"
                         onClick={() => { setEditingTag(tag); setTagForm({ name: tag.name, color: tag.color }) }}
                       >
                         <span className="text-xs">编辑</span>
                       </button>
                       <button
-                        className="p-1 text-gray-400 hover:text-red-600 transition-colors"
+                        className="p-1 text-neutral-400 hover:text-red-600 transition-colors"
                         onClick={() => handleDeleteTag(tag)}
                       >
                         <X className="w-4 h-4" />

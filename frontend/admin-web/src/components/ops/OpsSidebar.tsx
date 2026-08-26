@@ -30,13 +30,13 @@ export default function OpsSidebar() {
   }
 
   return (
-    <aside className="fixed left-0 top-16 bottom-0 w-60 bg-white border-r border-gray-200 z-40 flex flex-col">
+    <aside className="fixed left-0 top-16 bottom-0 w-60 bg-white border-r border-neutral-200 z-40 flex flex-col">
       {/* Logo / 标题区域 */}
-      <div className="px-5 py-5 border-b border-gray-100">
+      <div className="px-5 py-5 border-b border-neutral-100">
         <div className="flex items-center gap-2.5">
           <Logo size="small" />
           <div>
-            <p className="text-sm font-semibold text-gray-900 leading-tight">
+            <p className="text-sm font-semibold text-neutral-900 leading-tight">
               米高 Ops
             </p>
           </div>
@@ -57,13 +57,13 @@ export default function OpsSidebar() {
                 'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors group',
                 active
                   ? 'bg-blue-50 text-blue-700'
-                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                  : 'text-neutral-600 hover:text-neutral-900 hover:bg-neutral-50'
               )}
             >
               <Icon
                 className={cn(
                   'w-5 h-5 shrink-0 transition-colors',
-                  active ? 'text-blue-600' : 'text-gray-400 group-hover:text-gray-600'
+                  active ? 'text-primary-600' : 'text-neutral-400 group-hover:text-neutral-600'
                 )}
               />
               <span className="flex-1">{item.name}</span>
@@ -78,8 +78,8 @@ export default function OpsSidebar() {
       </nav>
 
       {/* 底部信息 */}
-      <div className="px-5 py-4 border-t border-gray-100">
-        <p className="text-xs text-gray-400">超级管理员专属</p>
+      <div className="px-5 py-4 border-t border-neutral-100">
+        <p className="text-xs text-neutral-400">超级管理员专属</p>
       </div>
     </aside>
   )

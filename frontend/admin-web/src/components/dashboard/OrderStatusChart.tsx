@@ -19,10 +19,10 @@ export default function OrderStatusChart({ data, loading }: OrderStatusChartProp
   const total = data.reduce((sum, item) => sum + item.count, 0)
 
   return (
-    <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+    <div className="bg-white rounded-xl border border-neutral-100 shadow-sm p-5">
       <div className="flex items-center justify-between mb-5">
-        <h3 className="text-sm font-semibold text-gray-900">订单状态分布</h3>
-        <span className="text-xs text-gray-400">共 {total} 单</span>
+        <h3 className="text-sm font-semibold text-neutral-900">订单状态分布</h3>
+        <span className="text-xs text-neutral-400">共 {total} 单</span>
       </div>
 
       {loading ? (

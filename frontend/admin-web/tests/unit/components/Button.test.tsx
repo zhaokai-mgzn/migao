@@ -20,7 +20,8 @@ describe('Button Component', () => {
     render(<Button variant="secondary">Secondary</Button>)
     const btn = screen.getByText('Secondary')
     expect(btn.className).toContain('bg-white')
-    expect(btn.className).toContain('border-gray-300')
+    // 织物质感 token 化：gray-300 → neutral-300（边框语义不变）
+    expect(btn.className).toContain('border-neutral-300')
   })
 
   it('applies danger variant styles', () => {

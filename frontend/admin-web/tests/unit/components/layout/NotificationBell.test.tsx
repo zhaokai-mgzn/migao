@@ -241,7 +241,8 @@ describe('NotificationBell', () => {
     const bell = screen.getByTestId('icon-bell').closest('button')!
     await user.click(bell)
     await waitFor(() => {
-      const dot = document.querySelector('.bg-blue-500')
+      // 织物质感 token 化：默认蓝 → 靛蓝主色（未读圆点语义不变）
+      const dot = document.querySelector('.bg-primary-500')
       expect(dot).toBeInTheDocument()
     })
   })

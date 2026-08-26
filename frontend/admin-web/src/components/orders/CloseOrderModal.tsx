@@ -70,13 +70,13 @@ export default function CloseOrderModal({ open, onClose, onConfirm, loading }: C
           onClick={(e) => e.stopPropagation()}
         >
           {/* 标题 */}
-          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-            <h3 className="text-lg font-semibold text-gray-900">关闭订单</h3>
+          <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-200">
+            <h3 className="text-lg font-semibold text-neutral-900">关闭订单</h3>
             <button
               type="button"
               onClick={onClose}
               disabled={loading}
-              className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors disabled:opacity-50"
+              className="p-1 text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 rounded transition-colors disabled:opacity-50"
             >
               <X className="w-5 h-5" />
             </button>
@@ -86,19 +86,19 @@ export default function CloseOrderModal({ open, onClose, onConfirm, loading }: C
           <div className="px-6 pt-5">
             <div className="flex items-start gap-2 mb-5">
               <AlertTriangle className="w-5 h-5 text-amber-500 mt-0.5 flex-shrink-0" />
-              <p className="text-sm text-gray-700 leading-relaxed">
+              <p className="text-sm text-neutral-700 leading-relaxed">
                 确定关闭当前订单吗？关闭订单不可恢复。
               </p>
             </div>
 
             {/* 关闭原因 */}
             <div className="mb-2">
-              <div className="text-sm text-gray-700 mb-3">关闭原因</div>
+              <div className="text-sm text-neutral-700 mb-3">关闭原因</div>
               <div className="space-y-2.5">
                 {PRESET_REASONS.map((reason) => (
                   <label
                     key={reason}
-                    className="flex items-center gap-2 cursor-pointer text-sm text-gray-700"
+                    className="flex items-center gap-2 cursor-pointer text-sm text-neutral-700"
                   >
                     <input
                       type="radio"
@@ -106,13 +106,13 @@ export default function CloseOrderModal({ open, onClose, onConfirm, loading }: C
                       value={reason}
                       checked={selected === reason}
                       onChange={() => setSelected(reason)}
-                      className="w-4 h-4 border-gray-300 text-primary-600 focus:ring-primary-500"
+                      className="w-4 h-4 border-neutral-300 text-primary-600 focus:ring-primary-500"
                     />
                     {reason}
                   </label>
                 ))}
                 <label
-                  className="flex items-center gap-2 cursor-pointer text-sm text-gray-700"
+                  className="flex items-center gap-2 cursor-pointer text-sm text-neutral-700"
                 >
                   <input
                     type="radio"
@@ -120,7 +120,7 @@ export default function CloseOrderModal({ open, onClose, onConfirm, loading }: C
                     value={OTHER_KEY}
                     checked={isOther}
                     onChange={() => setSelected(OTHER_KEY)}
-                    className="w-4 h-4 border-gray-300 text-primary-600 focus:ring-primary-500"
+                    className="w-4 h-4 border-neutral-300 text-primary-600 focus:ring-primary-500"
                   />
                   {OTHER_KEY}
                 </label>
@@ -131,7 +131,7 @@ export default function CloseOrderModal({ open, onClose, onConfirm, loading }: C
                     rows={3}
                     placeholder="请输入关闭原因"
                     className={cn(
-                      'mt-2 w-full px-3 py-2 text-sm rounded border border-gray-300 bg-white',
+                      'mt-2 w-full px-3 py-2 text-sm rounded border border-neutral-300 bg-white',
                       'focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15',
                       'resize-none'
                     )}
@@ -142,7 +142,7 @@ export default function CloseOrderModal({ open, onClose, onConfirm, loading }: C
           </div>
 
           {/* 底部 */}
-          <div className="flex items-center justify-end gap-3 px-6 py-4 mt-2 border-t border-gray-200">
+          <div className="flex items-center justify-end gap-3 px-6 py-4 mt-2 border-t border-neutral-200">
             <Button variant="secondary" onClick={onClose} disabled={loading}>
               取消
             </Button>

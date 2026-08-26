@@ -49,8 +49,8 @@ export default function DashboardLayout({
         <Header />
 
         {/* 页面内容 */}
-        <main className="flex-1 p-6">
-          <div className="bg-white rounded-lg shadow-card min-h-[calc(100vh-120px)]">
+        <main className="flex-1 p-4 sm:p-6">
+          <div className="min-h-[calc(100vh-120px)] rounded-2xl border border-neutral-200/80 bg-white shadow-card">
             {children}
           </div>
         </main>

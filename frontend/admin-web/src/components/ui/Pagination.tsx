@@ -50,10 +50,10 @@ const Pagination = ({
   }
 
   return (
-    <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200">
+    <div className="flex items-center justify-between px-4 py-3 border-t border-neutral-200">
       {/* 左侧：总数信息 */}
       {showTotal && (
-        <div className="text-sm text-gray-600">
+        <div className="text-sm text-neutral-600">
           共 <span className="font-medium">{total}</span> 条记录
           {total > 0 && (
             <span className="ml-1">
@@ -68,11 +68,11 @@ const Pagination = ({
         {/* 每页条数选择 */}
         {showSizeChanger && onPageSizeChange && (
           <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-600">每页</span>
+            <span className="text-sm text-neutral-600">每页</span>
             <select
               value={pageSize}
               onChange={(e) => onPageSizeChange(Number(e.target.value))}
-              className="h-8 px-2 text-sm border border-gray-300 rounded focus:outline-none focus:border-primary-500"
+              className="h-8 px-2 text-sm border border-neutral-300 rounded focus:outline-none focus:border-primary-500"
             >
               {pageSizeOptions.map((size) => (
                 <option key={size} value={size}>
@@ -80,7 +80,7 @@ const Pagination = ({
                 </option>
               ))}
             </select>
-            <span className="text-sm text-gray-600">条</span>
+            <span className="text-sm text-neutral-600">条</span>
           </div>
         )}
 
@@ -92,8 +92,8 @@ const Pagination = ({
             className={cn(
               'p-1.5 rounded border transition-colors',
               current <= 1
-                ? 'border-gray-200 text-gray-300 cursor-not-allowed'
-                : 'border-gray-300 text-gray-600 hover:bg-gray-50 hover:border-gray-400'
+                ? 'border-neutral-200 text-neutral-300 cursor-not-allowed'
+                : 'border-neutral-300 text-neutral-600 hover:bg-neutral-50 hover:border-neutral-400'
             )}
           >
             <ChevronLeft className="w-4 h-4" />
@@ -109,8 +109,8 @@ const Pagination = ({
                 page === current
                   ? 'bg-primary-600 text-white border-primary-600'
                   : page === '...'
-                  ? 'border-transparent text-gray-400 cursor-default'
-                  : 'border-gray-300 text-gray-600 hover:bg-gray-50 hover:border-gray-400'
+                  ? 'border-transparent text-neutral-400 cursor-default'
+                  : 'border-neutral-300 text-neutral-600 hover:bg-neutral-50 hover:border-neutral-400'
               )}
             >
               {page}
@@ -123,8 +123,8 @@ const Pagination = ({
             className={cn(
               'p-1.5 rounded border transition-colors',
               current >= totalPages
-                ? 'border-gray-200 text-gray-300 cursor-not-allowed'
-                : 'border-gray-300 text-gray-600 hover:bg-gray-50 hover:border-gray-400'
+                ? 'border-neutral-200 text-neutral-300 cursor-not-allowed'
+                : 'border-neutral-300 text-neutral-600 hover:bg-neutral-50 hover:border-neutral-400'
             )}
           >
             <ChevronRight className="w-4 h-4" />

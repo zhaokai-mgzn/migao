@@ -345,24 +345,24 @@ export default function SessionInsight({ isOpen = false, onClose }: SessionInsig
       <div
         data-testid="session-insight-drawer"
         className={cn(
-          'absolute top-0 right-0 h-full w-[340px] bg-white shadow-2xl border-l border-gray-200 flex flex-col overflow-hidden',
+          'absolute top-0 right-0 h-full w-[340px] bg-white shadow-2xl border-l border-neutral-200 flex flex-col overflow-hidden',
           'transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]',
           isOpen ? 'translate-x-0 visible' : 'translate-x-full invisible'
         )}
         aria-hidden={!isOpen}
       >
       {/* 头部 */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-        <h3 className="text-sm font-semibold text-gray-800">会话洞察</h3>
-        <button onClick={onClose} className="p-1 rounded hover:bg-gray-100 transition-colors" title="关闭洞察">
-          <X className="w-4 h-4 text-gray-400" />
+      <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-100">
+        <h3 className="text-sm font-semibold text-neutral-800">会话洞察</h3>
+        <button onClick={onClose} className="p-1 rounded hover:bg-neutral-100 transition-colors" title="关闭洞察">
+          <X className="w-4 h-4 text-neutral-400" />
         </button>
       </div>
 
       <div className="flex-1 overflow-y-auto">
         {/* 会话统计 */}
-        <div className="px-4 py-3 border-b border-gray-100">
-          <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">会话统计</h4>
+        <div className="px-4 py-3 border-b border-neutral-100">
+          <h4 className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-2">会话统计</h4>
           <div className="grid grid-cols-2 gap-2">
             <StatBadge icon={<MessageSquare className="w-3.5 h-3.5" />} label="消息" value={String(messageCount)} />
             {duration && <StatBadge icon={<Clock className="w-3.5 h-3.5" />} label="历时" value={duration} />}
@@ -372,19 +372,19 @@ export default function SessionInsight({ isOpen = false, onClose }: SessionInsig
               'inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium',
               sessionStatus === 'active'
                 ? 'bg-green-50 text-green-700 border border-green-200'
-                : 'bg-gray-50 text-gray-500 border border-gray-200',
+                : 'bg-neutral-50 text-neutral-500 border border-neutral-200',
             )}>
               {sessionStatus === 'active' ? '进行中' : '已结束'}
             </span>
           </div>
           {currentSessionId && (
             <div className="mt-2 flex items-start gap-1">
-              <p className="text-[10px] text-gray-400 font-mono break-all leading-relaxed flex-1">
+              <p className="text-[10px] text-neutral-400 font-mono break-all leading-relaxed flex-1">
                 会话标识: {currentSessionId}
               </p>
               <button
                 onClick={copySessionId}
-                className="flex-shrink-0 p-0.5 rounded hover:bg-gray-100 transition-colors text-gray-400 hover:text-gray-600"
+                className="flex-shrink-0 p-0.5 rounded hover:bg-neutral-100 transition-colors text-neutral-400 hover:text-neutral-600"
                 title="复制会话标识"
               >
                 {sessionIdCopied ? (
@@ -399,10 +399,10 @@ export default function SessionInsight({ isOpen = false, onClose }: SessionInsig
 
         {/* 查询结果 — 丰富卡片 */}
         <div className="px-3 py-3">
-          <h4 className="px-1 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">查询结果</h4>
+          <h4 className="px-1 text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-2">查询结果</h4>
 
           {cardMetas.length === 0 ? (
-            <div className="text-xs text-gray-400 text-center py-8 bg-gray-50 rounded-lg leading-relaxed">
+            <div className="text-xs text-neutral-400 text-center py-8 bg-neutral-50 rounded-lg leading-relaxed">
               暂无查询结果
               <br />
               <span className="text-[11px]">发送消息查询订单、商品或物流</span>
@@ -415,31 +415,31 @@ export default function SessionInsight({ isOpen = false, onClose }: SessionInsig
                 <div
                   key={`${meta.typeLabel}-${idx}`}
                   className={cn(
-                    'bg-white border border-gray-200 rounded-lg p-2.5 border-l-[3px]',
+                    'bg-white border border-neutral-200 rounded-lg p-2.5 border-l-[3px]',
                     meta.colorClass,
                   )}
                 >
                   {/* 标题行 */}
                   <div className="flex items-center gap-2">
                     {meta.icon}
-                    <span className="text-xs font-semibold text-gray-800 truncate flex-1">
+                    <span className="text-xs font-semibold text-neutral-800 truncate flex-1">
                       {meta.title}
                     </span>
-                    <span className="text-[10px] text-gray-400 flex-shrink-0">
+                    <span className="text-[10px] text-neutral-400 flex-shrink-0">
                       {meta.typeLabel}
                     </span>
                   </div>
 
                   {/* 副信息行 */}
                   {meta.subtitle && (
-                    <div className="mt-1.5 ml-6 text-[11px] text-gray-500 leading-relaxed break-all">
+                    <div className="mt-1.5 ml-6 text-[11px] text-neutral-500 leading-relaxed break-all">
                       {meta.subtitle}
                     </div>
                   )}
 
                   {/* 详情行 */}
                   {meta.detail && (
-                    <div className="mt-1 ml-6 text-[11px] text-gray-400 leading-relaxed line-clamp-2">
+                    <div className="mt-1 ml-6 text-[11px] text-neutral-400 leading-relaxed line-clamp-2">
                       {meta.detail}
                     </div>
                   )}
@@ -450,14 +450,14 @@ export default function SessionInsight({ isOpen = false, onClose }: SessionInsig
         </div>
 
         {/* 便签板 */}
-        <div className="px-3 py-3 border-t border-gray-100">
-          <h4 className="px-1 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1">
+        <div className="px-3 py-3 border-t border-neutral-100">
+          <h4 className="px-1 text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-2 flex items-center gap-1">
             <Pin className="w-3 h-3" />
             便签板
           </h4>
 
           {entities.length === 0 ? (
-            <div className="text-xs text-gray-400 text-center py-4 bg-gray-50 rounded-lg leading-relaxed">
+            <div className="text-xs text-neutral-400 text-center py-4 bg-neutral-50 rounded-lg leading-relaxed">
               暂无便签
               <br />
               <span className="text-[11px]">查询订单或商品后</span>
@@ -493,11 +493,11 @@ export default function SessionInsight({ isOpen = false, onClose }: SessionInsig
 
 function StatBadge({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
-    <div className="bg-gray-50 rounded-lg p-2.5 flex items-center gap-2">
+    <div className="bg-neutral-50 rounded-lg p-2.5 flex items-center gap-2">
       <span className="text-primary-500">{icon}</span>
       <div>
-        <p className="text-base font-semibold text-gray-800 leading-tight">{value}</p>
-        <p className="text-[10px] text-gray-500">{label}</p>
+        <p className="text-base font-semibold text-neutral-800 leading-tight">{value}</p>
+        <p className="text-[10px] text-neutral-500">{label}</p>
       </div>
     </div>
   )

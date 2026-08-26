@@ -90,8 +90,8 @@ export default function CategoriesPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">分类管理</h1>
-          <p className="text-sm text-gray-500 mt-1">管理商品分类，支持对分类进行新增、编辑、删除和排序</p>
+          <h1 className="text-xl font-bold text-neutral-900">分类管理</h1>
+          <p className="text-sm text-neutral-500 mt-1">管理商品分类，支持对分类进行新增、编辑、删除和排序</p>
         </div>
         <Button onClick={handleAdd}>
           <Plus className="w-4 h-4 mr-1.5" />
@@ -100,13 +100,13 @@ export default function CategoriesPage() {
       </div>
 
       {/* Category tree — 全宽，简洁模式 */}
-      <div className="bg-white rounded-lg border border-gray-200 p-5">
+      <div className="bg-white rounded-lg border border-neutral-200 p-5">
         {loading ? (
           <div className="py-12">
             <Loading text="加载中..." />
           </div>
         ) : categories.length === 0 ? (
-          <div className="py-12 text-center text-sm text-gray-500">
+          <div className="py-12 text-center text-sm text-neutral-500">
             管理商品分类，支持对分类进行新增、编辑、删除和排序
           </div>
         ) : (
@@ -145,8 +145,8 @@ export default function CategoriesPage() {
           </>
         }
       >
-        <p className="text-gray-600">
-          确定要删除分类 <span className="font-medium text-gray-900">{deleteTarget?.name}</span> 吗？
+        <p className="text-neutral-600">
+          确定要删除分类 <span className="font-medium text-neutral-900">{deleteTarget?.name}</span> 吗？
           {deleteTarget?.children && deleteTarget.children.length > 0 && (
             <span className="block mt-2 text-amber-600">
               该分类下还有 {deleteTarget.children.length} 个子分类，删除后子分类也将被移除。

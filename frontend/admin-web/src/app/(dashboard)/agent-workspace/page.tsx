@@ -19,12 +19,12 @@ interface FeatureCardProps {
 
 function FeatureCard({ icon: Icon, iconColor, iconBg, title, description }: FeatureCardProps) {
   return (
-    <div className="bg-white rounded-xl border border-gray-100 p-6 shadow-sm hover:shadow-md transition-shadow">
+    <div className="bg-white rounded-xl border border-neutral-100 p-6 shadow-sm hover:shadow-md transition-shadow">
       <div className={`w-12 h-12 ${iconBg} rounded-lg flex items-center justify-center mb-4`}>
         <Icon className={`w-6 h-6 ${iconColor}`} />
       </div>
-      <h3 className="text-base font-semibold text-gray-900 mb-2">{title}</h3>
-      <p className="text-sm text-gray-500 leading-relaxed">{description}</p>
+      <h3 className="text-base font-semibold text-neutral-900 mb-2">{title}</h3>
+      <p className="text-sm text-neutral-500 leading-relaxed">{description}</p>
     </div>
   )
 }
@@ -32,7 +32,7 @@ function FeatureCard({ icon: Icon, iconColor, iconBg, title, description }: Feat
 const features: FeatureCardProps[] = [
   {
     icon: MessageSquare,
-    iconColor: 'text-blue-600',
+    iconColor: 'text-primary-600',
     iconBg: 'bg-blue-50',
     title: '实时对话工作台',
     description: '客服人员在线接待C端消费者的实时对话',
@@ -66,10 +66,10 @@ export default function AgentWorkspacePage() {
       {/* 顶部标题区 */}
       <div className="text-center mb-10 pt-8">
         <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-50 rounded-full mb-5">
-          <Clock className="w-8 h-8 text-blue-600" />
+          <Clock className="w-8 h-8 text-primary-600" />
         </div>
-        <h1 className="text-2xl font-bold text-gray-900 mb-2">客服工作台</h1>
-        <p className="text-base text-gray-500">该功能正在开发中，敬请期待</p>
+        <h1 className="text-2xl font-bold text-neutral-900 mb-2">客服工作台</h1>
+        <p className="text-base text-neutral-500">该功能正在开发中，敬请期待</p>
       </div>
 
       {/* 功能预告卡片 */}
@@ -80,7 +80,7 @@ export default function AgentWorkspacePage() {
       </div>
 
       {/* 底部提示 */}
-      <p className="text-center text-sm text-gray-400">
+      <p className="text-center text-sm text-neutral-400">
         功能即将上线，届时将在此处为您提供完整的客服工作台体验
       </p>
     </div>

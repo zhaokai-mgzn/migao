@@ -68,18 +68,18 @@ const Modal = ({
           role="dialog"
           aria-modal="true"
           aria-label={title || '对话框'}
-          className="relative bg-white rounded-lg shadow-xl w-full animate-in fade-in zoom-in-95 duration-200"
+          className="relative bg-white rounded-2xl shadow-modal w-full animate-in fade-in zoom-in-95 duration-200"
           style={{ maxWidth: widthStyle }}
           onClick={(e) => e.stopPropagation()}
         >
           {/* 头部 */}
           {title && (
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-200">
+              <h3 className="text-lg font-semibold text-neutral-900">{title}</h3>
               {closable && (
                 <button
                   onClick={onClose}
-                  className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
+                  className="p-1 text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 rounded transition-colors"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -92,11 +92,11 @@ const Modal = ({
 
           {/* 底部 */}
           {footer !== undefined ? (
-            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200">
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-neutral-200">
               {footer}
             </div>
           ) : (
-            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200">
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-neutral-200">
               <Button variant="secondary" onClick={onClose}>
                 取消
               </Button>
