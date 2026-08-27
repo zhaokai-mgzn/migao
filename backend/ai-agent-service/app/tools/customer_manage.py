@@ -212,7 +212,13 @@ class CustomerManageTool(BaseTool):
             masked_phone = (raw_phone[:3] + "****" + raw_phone[7:]) if len(raw_phone) >= 11 else raw_phone
             customers.append({
                 "id": record.get("id"),
-                "name": record.get("name"),
+                # 生产回归修复：admin-api 客户数据无 name 字段（存 wechatNickname/nickname），
+                # 旧实现只读 name → 米宝显示"姓名字段都为空"。逐级回退。
+                "name": record.get("name")
+                        or record.get("wechatNickname")
+                        or record.get("nickname")
+                        or record.get("realName")
+                        or "",
                 "phone": masked_phone,
                 "source_channel": record.get("sourceChannel"),
                 "vip_level": record.get("vipLevel"),
@@ -265,10 +271,13 @@ class CustomerManageTool(BaseTool):
         data = response.get("data", {})
         logger.info(f"[customer-manage] Detail customer_id={customer_id} | tenant={context.tenant_id}")
 
+        # 姓名展示回退（生产回归：admin-api 详情同样无 name 字段）
+        display_name = (data.get("name") or data.get("wechatNickname")
+                        or data.get("nickname") or data.get("realName") or "")
         return ToolResult(
             success=True,
             data=data,
-            message=f"客户【{data.get('name', '')}】的详细信息",
+            message=f"客户【{display_name}】的详细信息",
         )
 
     async def _update_customer(

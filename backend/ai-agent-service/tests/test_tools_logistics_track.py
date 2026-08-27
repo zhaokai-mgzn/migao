@@ -58,8 +58,8 @@ class TestLogisticsTrackByOrder:
         # 两次 HTTP 调用：① 列表搜索 ② 详情查询，需返回不同格式
         async def mock_get(url, **kwargs):
             if "/api/admin/orders" == url and kwargs.get("params", {}).get("keyword"):
-                # 列表搜索：返回 records 数组
-                return {"success": True, "data": {"records": [{"id": "order_001"}]}}
+                # 列表搜索：admin-api 实际返回 items 数组（生产回归：旧实现读 records 永远空）
+                return {"success": True, "data": {"items": [{"id": "order_001"}]}}
             # 详情查询
             return sample_order_with_logistics
         mock_client.get = mock_get
@@ -74,6 +74,24 @@ class TestLogisticsTrackByOrder:
         assert result.data["tracking_number"] == "SF1234567890"
         assert result.data["company"] == "顺丰速运"
         assert "顺丰速运" in result.message
+
+    @patch("app.tools.logistics_track.get_admin_api_client")
+    async def test_logistics_track_by_order_legacy_records_shape(
+        self, mock_get_client, tool, sample_tool_context, sample_order_with_logistics
+    ):
+        """兼容旧 records 数组格式（历史契约，防止回归）"""
+        mock_client = AsyncMock()
+
+        async def mock_get(url, **kwargs):
+            if "/api/admin/orders" == url and kwargs.get("params", {}).get("keyword"):
+                return {"success": True, "data": {"records": [{"id": "order_001"}]}}
+            return sample_order_with_logistics
+        mock_client.get = mock_get
+        mock_get_client.return_value = mock_client
+
+        result = await tool.execute(context=sample_tool_context, order_id="order_001")
+        assert result.success is True
+        assert result.data["tracking_number"] == "SF1234567890"
 
     @patch("app.tools.logistics_track.get_admin_api_client")
     async def test_logistics_track_order_not_found(

@@ -182,7 +182,9 @@ class LogisticsTrackTool(BaseTool):
                     user_id=context.user_id,
                 )
                 search_data = search_response.get("data", {})
-                records = search_data.get("records", [])
+                # 生产回归修复：admin-api 列表接口实际返回 items（旧实现读 records 永远为空，
+                # 导致按订单号查物流恒定"订单不存在"）。兼容两种字段名。
+                records = search_data.get("items") or search_data.get("records") or []
                 if not records:
                     return ToolResult(
                         success=False,

@@ -118,6 +118,29 @@ class TestCustomerList:
         assert "找到 2 个客户" in result.message
 
     @patch("app.tools.customer_manage.get_admin_api_client")
+    async def test_list_name_fallback_wechat_nickname(self, mock_get_client, tool, admin_tool_context, mock_client):
+        """生产回归：admin-api 客户列表无 name 字段（返回 wechatNickname），
+        米宝曾显示"姓名字段都为空"。必须回退到 wechatNickname/nickname。"""
+        mock_client.get = AsyncMock(return_value={
+            "success": True,
+            "data": {
+                "items": [
+                    {"id": "c1", "phone": "13800138000", "wechatNickname": "张三"},
+                    {"id": "c2", "phone": "13900000000", "name": "李四"},
+                    {"id": "c3", "phone": "13700000000", "nickname": "王五"},
+                ],
+                "total": 3,
+            },
+        })
+        mock_get_client.return_value = mock_client
+
+        result = await tool.execute(context=admin_tool_context, action="list")
+        customers = result.data["customers"]
+        assert customers[0]["name"] == "张三"
+        assert customers[1]["name"] == "李四"
+        assert customers[2]["name"] == "王五"
+
+    @patch("app.tools.customer_manage.get_admin_api_client")
     async def test_list_empty_message(self, mock_get_client, tool, admin_tool_context, mock_client):
         mock_client.get = AsyncMock(return_value={"success": True, "data": {"items": [], "total": 0}})
         mock_get_client.return_value = mock_client
