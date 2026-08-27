@@ -9,6 +9,8 @@
  *
  * 这些转换如果出错，数据会静默损坏——后端收到错误值或前端展示错误状态。
  */
+// case_ids: OR-003, OR-004, OR-005
+
 import { describe, it, expect } from 'vitest'
 import {
   FrontendToBackendStatus,

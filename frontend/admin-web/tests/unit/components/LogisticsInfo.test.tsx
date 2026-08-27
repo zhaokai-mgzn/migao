@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+// case_ids: OR-007, OR-008
+
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import dayjs from 'dayjs'

@@ -4,6 +4,8 @@
  * - expectTypeOf 为运行时类型断言：字段缺失时测试在运行期失败（红）
  * - 对象字面量测试由 tsc --noEmit 兜底（tsc 阶段红）
  */
+// case_ids: OR-001, OR-002
+
 import { describe, it, expect, expectTypeOf } from 'vitest'
 import type { Order } from '@/types'
 import { BackendToFrontendStatus } from '@/types'

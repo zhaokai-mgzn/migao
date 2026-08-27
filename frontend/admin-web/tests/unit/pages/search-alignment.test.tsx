@@ -4,6 +4,8 @@
  * 业务真值 D1：所有表单页搜索/筛选区左侧对齐（与订单页一致）
  * 验证各列表页搜索容器 className 不含水平居中类
  */
+// case_ids: CH-005, CH-006, CH-007
+
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'

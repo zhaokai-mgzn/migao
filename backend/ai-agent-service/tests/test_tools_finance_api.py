@@ -6,6 +6,8 @@
 - FN-002 本月收入退款净额 → finance_api(action=get_summary)
 - FN-003 哪些订单没对平 → finance_api(action=get_reconciliation)
 """
+# case_ids: FN-001, FN-002, FN-003
+
 import pytest
 from unittest.mock import patch, AsyncMock
 

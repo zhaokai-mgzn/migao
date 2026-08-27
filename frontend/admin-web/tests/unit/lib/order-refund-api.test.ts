@@ -4,6 +4,8 @@
  * 后端端点：PUT /api/admin/orders/{id}/refund
  * body 支持 refund_reason（已存在），并将新增 refund_amount（目标契约）。
  */
+// case_ids: OR-001, OR-002
+
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const mockPut = vi.fn()

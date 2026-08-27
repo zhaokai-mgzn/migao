@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+// case_ids: UI-001, UI-002
+
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import Button from '@/components/ui/Button'
