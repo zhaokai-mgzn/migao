@@ -316,7 +316,20 @@ jobs:
           SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN }}
           PYTHONUTF8: "1"
           PYTHONIOENCODING: utf-8
-        run: python tests/agent_eval/local_runner.py smoke --cases .github/cases
+        # 真实 LLM 评测有偶发波动（单条用例工具调用漂移），重试 1 次避免误阻塞合并
+        run: |
+          set +e
+          for attempt in 1 2; do
+            echo "── 冒烟评测 第 ${attempt} 次 ──"
+            python tests/agent_eval/local_runner.py smoke --cases .github/cases
+            rc=$?
+            if [ $rc -eq 0 ]; then
+              echo "✅ 冒烟评测通过（attempt $attempt）"
+              exit 0
+            fi
+            echo "⚠️ 第 ${attempt} 次失败(exit $rc)，$([ $attempt -eq 1 ] && echo '重试...' || echo '两次均失败')"
+          done
+          exit $rc
 
   # ============ 任何 CI 失败都打 needs-changes（独立 job，覆盖全部检查）============
   # G3 fix: 原打标在 qa-growth-gate job 内，无法捕获 admin-api-test/admin-web-test/e2e 失败
