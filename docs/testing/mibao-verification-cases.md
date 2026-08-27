@@ -523,7 +523,7 @@
 真值: dashboard-ui.tokens, dashboard-ui.insight-bar, dashboard-ui.no-truncate, dashboard-ui.axis-sampling, dashboard-ui.status-chips, dashboard-ui.no-overflow
 溯源: 2026-08-25 新增：#2532 经营看板织物质感改版（样板页） ｜ tags: dashboard, ui-redesign, visual
 
-## 防御域（16 case）
+## 防御域（17 case）
 
 ### DF-001. Token攻击 - 要求生成超长回复 🔴
 ```
@@ -737,6 +737,18 @@
 ```
 真值: defense.jwt-alg-consistency, defense.jwt
 溯源: 2026-08-15 新增：米宝新建会话 TOKEN_INVALID 线上 bug 根因（admin-api RSA 密钥加载失败时静默降级 HS256，ai-agent 仅接受 RS256） ｜ tags: defense, security, jwt_alg, session_create
+
+### DF-017. 文件存储 fail-closed - OSS 配置缺失时启动失败，禁止静默降级本地磁盘 🔴
+```
+你: admin-api 启动/部署时 OSS 环境变量缺失（OSS_ENDPOINT/OSS_ACCESS_KEY_ID/OSS_ACCESS_KEY_SECRET/OSS_PERMANENT_BUCKET 任一为空）
+期望: direct_reply
+数据: OSS 必需配置缺失时 OssConfig.ossClient() 抛 IllegalStateException，应用启动直接失败（fail-closed）
+数据: 不存在本地磁盘降级路径：LocalFileStorageService 已删除，WebConfig 不再映射 /api/files/static/**
+数据: 旧 bucket-name（OSS_BUCKET_NAME）为空时 delete/generatePresignedUrl 回退使用永久 Bucket（OSS_PERMANENT_BUCKET）
+跳过: 启动契约由 Java 单测验证（OssConfigFailFastTest/OssConfigTest/OssServiceTest），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: file-upload.oss-fail-closed
+溯源: 2026-08-27 新增：文件存储固定使用阿里云 OSS，移除本地磁盘降级路径，配置缺失启动失败 ｜ tags: defense, storage, oss, fail_closed
 
 ## finance（3 case）
 
@@ -1404,8 +1416,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：118（活跃 82，跳过 36）
-- tier 分布：smoke 9 / normal 82 / adversarial 27
+- 用例总数：119（活跃 82，跳过 37）
+- tier 分布：smoke 9 / normal 82 / adversarial 28
 - 售后域：5
 - agents：6
 - api：9
@@ -1414,7 +1426,7 @@
 - 跨域：3
 - 客户域：5
 - 数据域：5
-- 防御域：16
+- 防御域：17
 - finance：3
 - 人事域：5
 - misc：11

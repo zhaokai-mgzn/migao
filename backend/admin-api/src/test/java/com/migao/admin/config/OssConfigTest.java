@@ -1,5 +1,7 @@
 package com.migao.admin.config;
 
+// case_ids: DF-017
+
 import com.aliyun.oss.OSS;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -126,6 +128,7 @@ class OssConfigTest {
             cfg.setAccessKeyId("LTAI5tTestKey");
             cfg.setAccessKeySecret("test-secret");
             cfg.setBucketName("test-bucket");
+            cfg.setPermanentBucketName("test-permanent-bucket");
 
             OSS client = cfg.ossClient();
 
@@ -139,6 +142,7 @@ class OssConfigTest {
             cfg.setEndpoint("oss-cn-beijing.aliyuncs.com");
             cfg.setAccessKeyId("LTAI5tBKey");
             cfg.setAccessKeySecret("b-secret");
+            cfg.setPermanentBucketName("test-permanent-bucket");
 
             OSS client = cfg.ossClient();
 
@@ -146,16 +150,31 @@ class OssConfigTest {
         }
 
         @Test
-        @DisplayName("不设置双 Bucket 属性时也能创建 Client")
-        void shouldCreateClientWithoutDualBucketConfig() {
+        @DisplayName("不设置临时 Bucket 属性时也能创建 Client")
+        void shouldCreateClientWithoutTemporaryBucketConfig() {
             OssConfig cfg = new OssConfig();
             cfg.setEndpoint("oss-cn-shanghai.aliyuncs.com");
             cfg.setAccessKeyId("LTAI5tKey");
             cfg.setAccessKeySecret("secret");
+            cfg.setPermanentBucketName("test-permanent-bucket");
 
             OSS client = cfg.ossClient();
 
             assertThat(client).isNotNull();
+        }
+
+        @Test
+        @DisplayName("OSS 必需配置缺失时应抛 IllegalStateException（fail-closed）")
+        void ossClient_missingRequiredConfig_shouldThrowIllegalStateException() {
+            OssConfig cfg = new OssConfig();
+            cfg.setEndpoint("oss-cn-hangzhou.aliyuncs.com");
+            cfg.setAccessKeyId("LTAI5tKey");
+            cfg.setAccessKeySecret("secret");
+            // 永久 Bucket 未配置 → 启动必须失败，禁止降级本地磁盘
+
+            assertThatThrownBy(cfg::ossClient)
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("OSS_PERMANENT_BUCKET");
         }
     }
 
@@ -179,12 +198,11 @@ class OssConfigTest {
     }
 
     @Test
-    @DisplayName("@Bean 方法应有 @ConditionalOnProperty 注解")
-    void ossClientMethod_shouldHaveConditionalAnnotation() throws NoSuchMethodException {
+    @DisplayName("ossClient() 方法不应有 @ConditionalOnProperty 注解（OSS 是唯一存储后端，无降级）")
+    void ossClientMethod_shouldNotHaveConditionalAnnotation() throws NoSuchMethodException {
         var method = OssConfig.class.getMethod("ossClient");
         var annotation = method.getAnnotation(
                 org.springframework.boot.autoconfigure.condition.ConditionalOnProperty.class);
-        assertThat(annotation).isNotNull();
-        assertThat(annotation.name()).contains("aliyun.oss.endpoint");
+        assertThat(annotation).isNull();
     }
 }

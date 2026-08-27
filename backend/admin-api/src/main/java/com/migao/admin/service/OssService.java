@@ -8,8 +8,6 @@ import com.aliyun.oss.model.CannedAccessControlList;
 import com.aliyun.oss.model.ObjectMetadata;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
@@ -25,13 +23,13 @@ import java.util.UUID;
 
 /**
  * 阿里云 OSS 文件存储服务实现
- * 当 aliyun.oss.endpoint 环境变量存在时使用此实现（优先级高于 LocalFileStorageService）
+ *
+ * <p>唯一的 {@link FileStorageService} 实现，无本地磁盘降级路径：
+ * OSS 配置缺失时应用在启动阶段即失败（见 {@code OssConfig.validateOssConfig}）。
  */
 @Slf4j
 @Service
-@Primary
 @RequiredArgsConstructor
-@ConditionalOnProperty(name = "aliyun.oss.endpoint")
 public class OssService implements FileStorageService {
 
     private final OSS ossClient;
@@ -136,7 +134,7 @@ public class OssService implements FileStorageService {
         }
 
         try {
-            ossClient.deleteObject(ossConfig.getBucketName(), objectKey);
+            ossClient.deleteObject(effectiveBucketName(), objectKey);
             log.info("删除文件成功: objectKey={}", objectKey);
         } catch (Exception e) {
             log.error("删除文件失败: objectKey={}, error={}", objectKey, e.getMessage(), e);
@@ -148,7 +146,7 @@ public class OssService implements FileStorageService {
      */
     public String generatePresignedUrl(String objectKey, int expirationMinutes) {
         Date expiration = new Date(System.currentTimeMillis() + (long) expirationMinutes * 60 * 1000);
-        URL url = ossClient.generatePresignedUrl(ossConfig.getBucketName(), objectKey, expiration);
+        URL url = ossClient.generatePresignedUrl(effectiveBucketName(), objectKey, expiration);
         return url.toString();
     }
 
@@ -251,6 +249,15 @@ public class OssService implements FileStorageService {
         return String.format("https://%s.%s/%s", ossConfig.getBucketName(), ossConfig.getEndpoint(), objectKey);
     }
 
+    /**
+     * 有效 Bucket 名：优先旧配置 bucketName（OSS_BUCKET_NAME），
+     * 为空时回退到永久 Bucket（OSS_PERMANENT_BUCKET）。
+     */
+    private String effectiveBucketName() {
+        String bucket = ossConfig.getBucketName();
+        return StringUtils.hasText(bucket) ? bucket : ossConfig.getPermanentBucketName();
+    }
+
     private String extractObjectKey(String imageUrl) {
         String urlPrefix = ossConfig.getUrlPrefix();
         if (StringUtils.hasText(urlPrefix) && imageUrl.startsWith(urlPrefix)) {
@@ -261,7 +268,7 @@ public class OssService implements FileStorageService {
             return key;
         }
 
-        String ossHost = String.format("%s.%s/", ossConfig.getBucketName(), ossConfig.getEndpoint());
+        String ossHost = String.format("%s.%s/", effectiveBucketName(), ossConfig.getEndpoint());
         int hostIndex = imageUrl.indexOf(ossHost);
         if (hostIndex >= 0) {
             return imageUrl.substring(hostIndex + ossHost.length());

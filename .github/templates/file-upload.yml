@@ -7,6 +7,7 @@ business_truths:
   - [file-upload.type-check] 文件类型校验：拒绝非图片文件
   - [file-upload.size-limit] 文件大小限制
   - [file-upload.dual-bucket] 双 Bucket：永久存储 vs 临时存储
+  - [file-upload.oss-fail-closed] 文件存储仅支持 OSS：OSS 配置缺失时启动失败（fail-closed），禁止降级本地磁盘
 
 primary_specs:
   - tests/e2e/specs/storage/oss-dual-bucket.spec.ts

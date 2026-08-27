@@ -28,7 +28,7 @@ public interface FileStorageService {
     /**
      * 获取存储类型标识
      *
-     * @return 存储类型名称（如 "oss" 或 "local"）
+     * @return 存储类型名称（固定为 "oss"，文件存储仅支持阿里云 OSS）
      */
     String getStorageType();
 }

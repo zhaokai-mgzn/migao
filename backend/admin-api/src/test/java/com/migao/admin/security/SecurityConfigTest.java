@@ -91,8 +91,9 @@ class SecurityConfigTest {
     @MockBean
     private com.migao.admin.service.OrderLogisticsService orderLogisticsService;
 
-    // 注意：FileStorageService 是接口，LocalFileStorageService 已默认启用，
-    // OSS Client — 防止 OssConfig 尝试创建真实连接（CI 环境无凭证）
+    // OSS Client — 防止 OssConfig 尝试创建真实连接（CI 环境无凭证）；
+    // 同时替换掉 ossClient() @Bean，其 fail-closed 校验（OSS 配置缺失即启动失败）
+    // 在测试上下文中不执行。
     @MockBean
     private OSS ossClient;
 
@@ -100,9 +101,8 @@ class SecurityConfigTest {
     @MockBean
     private com.migao.admin.mapper.UserMemoryMapper userMemoryMapper;
 
-    // OssService 带有 @ConditionalOnBean 在测试环境下不会被加载，
-    // 因此不需要 @MockBean FileStorageService / OssService，
-    // 避免由于多个实现导致 NoUniqueBeanDefinitionException。
+    // OssService 是唯一的 FileStorageService 实现（本地磁盘降级已移除），
+    // 注入 mock 的 OSS 客户端即可满足其构造依赖。
 
     @MockBean
     private com.migao.admin.service.PermissionService permissionService;

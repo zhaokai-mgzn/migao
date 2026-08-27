@@ -16,7 +16,7 @@ import java.util.Map;
 /**
  * 文件上传控制器
  * 提供文件上传、删除接口
- * 自动使用 OSS 或本地存储（通过 FileStorageService 接口注入）
+ * 文件存储固定使用阿里云 OSS（无本地磁盘降级）
  */
 @Slf4j
 @RestController

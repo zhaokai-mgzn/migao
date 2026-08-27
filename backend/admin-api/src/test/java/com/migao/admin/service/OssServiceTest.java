@@ -1,5 +1,7 @@
 package com.migao.admin.service;
 
+// case_ids: DF-017
+
 import com.migao.admin.config.OssConfig;
 import com.migao.admin.dto.UploadedFileInfo;
 import com.aliyun.oss.OSS;
@@ -199,5 +201,39 @@ class OssServiceTest {
         assertThat(ossService.selectBucket("avatars/456")).isEqualTo(PERMANENT_BUCKET);
         assertThat(ossService.selectBucket("documents/789")).isEqualTo(PERMANENT_BUCKET);
         assertThat(ossService.selectBucket("other")).isEqualTo(PERMANENT_BUCKET);
+    }
+
+    // ==================== 旧 bucket-name 缺省回退测试 ====================
+
+    @Test
+    @DisplayName("delete — 旧 bucketName 为空时应回退到永久 Bucket 删除对象")
+    void delete_withoutLegacyBucket_shouldFallbackToPermanentBucket() {
+        // Given：生产配置只有 OSS_PERMANENT_BUCKET，旧 OSS_BUCKET_NAME 为空
+        when(ossConfig.getBucketName()).thenReturn("");
+        String url = "https://ai-customer-service-admin-dev.oss-cn-hangzhou-internal.aliyuncs.com/chat/1/2026/07/04/abc.png";
+
+        // When
+        ossService.delete(url);
+
+        // Then
+        verify(ossClient).deleteObject(eq(PERMANENT_BUCKET), eq("chat/1/2026/07/04/abc.png"));
+    }
+
+    @Test
+    @DisplayName("generatePresignedUrl — 旧 bucketName 为空时应回退到永久 Bucket 签名")
+    void presign_withoutLegacyBucket_shouldFallbackToPermanentBucket() throws Exception {
+        // Given
+        when(ossConfig.getBucketName()).thenReturn("");
+        when(ossClient.generatePresignedUrl(
+                eq(PERMANENT_BUCKET), eq("products/2026/07/13/x.png"), any(java.util.Date.class)))
+                .thenReturn(new java.net.URL("https://signed.example.com/x.png?expires=1"));
+
+        // When
+        String url = ossService.generatePresignedUrl("products/2026/07/13/x.png", 60);
+
+        // Then
+        assertThat(url).contains("signed.example.com");
+        verify(ossClient).generatePresignedUrl(
+                eq(PERMANENT_BUCKET), eq("products/2026/07/13/x.png"), any(java.util.Date.class));
     }
 }

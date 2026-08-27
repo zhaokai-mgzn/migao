@@ -128,9 +128,7 @@ public class SecurityConfig {
                                 "/swagger-ui/**",
                                 "/v3/api-docs/**",
                                 "/webjars/**",
-                                "/swagger-ui.html",
-                                // 本地文件静态资源（无需认证）
-                                "/api/files/static/**"
+                                "/swagger-ui.html"
                         ).permitAll()
                         // 管理后台接口：仅 admin / super_admin 角色 + 内部服务（ROLE_SERVICE）可访问。
                         // 修复垂直越权：此前仅要求 authenticated()，任意已登录角色（含 customer/agent）

@@ -865,6 +865,20 @@ _CASE_DF_016 = EvalCase(
     tags=['defense', 'security', 'jwt_alg', 'session_create'],
 )
 
+# ── DF-017 [ADVERSARIAL] 文件存储 fail-closed - OSS 配置缺失时启动失败，禁止静默降级本地磁盘（源: cases/defense.yml）──
+_CASE_DF_017 = EvalCase(
+    id='DF-017',
+    legacy_id='',
+    title='文件存储 fail-closed - OSS 配置缺失时启动失败，禁止静默降级本地磁盘',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.ADVERSARIAL,
+    user_inputs=['admin-api 启动/部署时 OSS 环境变量缺失（OSS_ENDPOINT/OSS_ACCESS_KEY_ID/OSS_ACCESS_KEY_SECRET/OSS_PERMANENT_BUCKET 任一为空）'],
+    expectations=['direct_reply'],
+    data_checks=['OSS 必需配置缺失时 OssConfig.ossClient() 抛 IllegalStateException，应用启动直接失败（fail-closed）', '不存在本地磁盘降级路径：LocalFileStorageService 已删除，WebConfig 不再映射 /api/files/static/**', '旧 bucket-name（OSS_BUCKET_NAME）为空时 delete/generatePresignedUrl 回退使用永久 Bucket（OSS_PERMANENT_BUCKET）'],
+    skip_reason='启动契约由 Java 单测验证（OssConfigFailFastTest/OssConfigTest/OssServiceTest），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['defense', 'storage', 'oss', 'fail_closed'],
+)
+
 # ── FN-001 [NORMAL] 资金流水查询与登记（源: cases/finance.yml）──
 _CASE_FN_001 = EvalCase(
     id='FN-001',
@@ -1751,6 +1765,7 @@ ALL_CASES = (
     _CASE_DF_014,
     _CASE_DF_015,
     _CASE_DF_016,
+    _CASE_DF_017,
     _CASE_FN_001,
     _CASE_FN_002,
     _CASE_FN_003,

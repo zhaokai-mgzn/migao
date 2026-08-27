@@ -8,6 +8,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 /**
  * Web 配置类
  * CORS 由 SecurityConfig 统一管理，此处仅处理静态资源映射
+ * （文件存储固定使用阿里云 OSS，不提供本地磁盘静态资源服务）
  */
 @Configuration
 public class WebConfig {
@@ -21,9 +22,6 @@ public class WebConfig {
                         .addResourceLocations("classpath:/META-INF/resources/webjars/swagger-ui/");
                 registry.addResourceHandler("/webjars/**")
                         .addResourceLocations("classpath:/META-INF/resources/webjars/");
-                // 本地文件上传静态资源服务
-                registry.addResourceHandler("/api/files/static/**")
-                        .addResourceLocations("file:uploads/");
             }
         };
     }

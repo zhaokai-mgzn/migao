@@ -1,5 +1,7 @@
 package com.migao.admin.controller;
 
+// case_ids: DF-017
+
 import com.migao.admin.config.GlobalExceptionHandler;
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.*;
@@ -313,12 +315,12 @@ class BusinessFlowIntegrationTest {
     // ======================== 文件上传 ========================
 
     @Test
-    @DisplayName("文件上传到本地存储 - 单文件上传")
-    void testFileUploadToLocalStorage() throws Exception {
+    @DisplayName("文件上传到 OSS - 单文件上传")
+    void testFileUploadToOss() throws Exception {
         // Given
         UploadedFileInfo fileInfo = UploadedFileInfo.builder()
                 .id("file-001")
-                .url("/api/files/static/images/test.jpg")
+                .url("https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/test.jpg")
                 .name("test.jpg")
                 .size(1024L)
                 .type("image/jpeg")
@@ -326,7 +328,7 @@ class BusinessFlowIntegrationTest {
                 .build();
 
         when(fileStorageService.upload(any(), eq("images"))).thenReturn(fileInfo);
-        when(fileStorageService.getStorageType()).thenReturn("local");
+        when(fileStorageService.getStorageType()).thenReturn("oss");
 
         MockMultipartFile mockFile = new MockMultipartFile(
                 "file",
@@ -342,7 +344,8 @@ class BusinessFlowIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.id").value("file-001"))
-                .andExpect(jsonPath("$.data.url").value("/api/files/static/images/test.jpg"))
+                .andExpect(jsonPath("$.data.url")
+                        .value("https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/test.jpg"))
                 .andExpect(jsonPath("$.data.name").value("test.jpg"))
                 .andExpect(jsonPath("$.data.size").value(1024))
                 .andExpect(jsonPath("$.data.type").value("image/jpeg"));

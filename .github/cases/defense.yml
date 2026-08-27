@@ -526,3 +526,35 @@ cases:
       ci:
         - deploy-admin-api.yml
       verifies: []
+
+  - id: DF-017
+    legacy_id: ""
+    title: "文件存储 fail-closed - OSS 配置缺失时启动失败，禁止静默降级本地磁盘"
+    domains:
+      - api
+    tier: adversarial
+    tags:
+      - defense
+      - storage
+      - oss
+      - fail_closed
+    truths_ref:
+      - file-upload.oss-fail-closed
+    user_inputs:
+      - "admin-api 启动/部署时 OSS 环境变量缺失（OSS_ENDPOINT/OSS_ACCESS_KEY_ID/OSS_ACCESS_KEY_SECRET/OSS_PERMANENT_BUCKET 任一为空）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "OSS 必需配置缺失时 OssConfig.ossClient() 抛 IllegalStateException，应用启动直接失败（fail-closed）"
+      - "不存在本地磁盘降级路径：LocalFileStorageService 已删除，WebConfig 不再映射 /api/files/static/**"
+      - "旧 bucket-name（OSS_BUCKET_NAME）为空时 delete/generatePresignedUrl 回退使用永久 Bucket（OSS_PERMANENT_BUCKET）"
+    skip_reason: "启动契约由 Java 单测验证（OssConfigFailFastTest/OssConfigTest/OssServiceTest），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-08-27 新增：文件存储固定使用阿里云 OSS，移除本地磁盘降级路径，配置缺失启动失败"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/config/OssConfigFailFastTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/config/OssConfigTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OssServiceTest.java"
+      ci:
+        - deploy-admin-api.yml
+      verifies: []
