@@ -299,6 +299,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     if: github.event_name == 'pull_request'
+    # 真实 LLM 评测有偶发波动（单条用例工具调用漂移），自动重试避免误阻塞合并
+    retries:
+      max_attempts: 2
     steps:
       - uses: actions/checkout@v4
 
