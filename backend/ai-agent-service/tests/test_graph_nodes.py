@@ -160,6 +160,80 @@ class TestIntentRouterNode:
         assert result["intent_result"]["intent"] == "greeting"
         assert result["route_decision"]["action"] == "direct_reply"
 
+    @pytest.mark.asyncio
+    async def test_pure_confirm_with_validated_input_routes_deterministically(self):
+        """生产回归：纯确认 + 已校验参数 → 确定性路由回校验所在 skill。
+
+        修复前：LLM 汇总不调 interact → pending_skill 未设置 → "确认"被 L2
+        分类器瞎猜（order_create/general）→ 创建流程断裂（本地实测 0/7 成功）。
+        """
+        mock_store = MagicMock()
+        mock_store.load = AsyncMock(return_value={
+            "pending_validated_input": {
+                "target_tool": "product_manage",
+                "target_action": "create",
+                "params": {"name": "遮光窗帘"},
+            }
+        })
+        mock_cfg = MagicMock()
+        mock_cfg.tool_names = ["product_search", "product_manage"]
+        mock_cfg.route_keys = ["product"]
+        mock_registry = MagicMock()
+        mock_registry.get_all.return_value = [mock_cfg]
+
+        state = {
+            "session_id": "s1",
+            "agent_type": "mibao",
+            "messages": [HumanMessage(content="确认")],
+        }
+        with patch("app.memory.session_state_store.SessionStateStore", return_value=mock_store), \
+             patch("app.graph.skills.skill_registry.get_skill_registry", return_value=mock_registry):
+            result = await intent_router_node(state)
+        assert result["intent_result"]["intent"] == "product_inquiry"
+        assert result["intent_result"]["confidence"] == 0.99
+        assert result["intent_result"]["source"] == "validated_confirm"
+
+    @pytest.mark.asyncio
+    async def test_modified_confirm_with_validated_input_still_runs_llm(self):
+        """带修改意图的确认（"确认，但价格改成88"）不触发确定性路由，走 LLM"""
+        mock_store = MagicMock()
+        mock_store.load = AsyncMock(return_value={
+            "pending_validated_input": {
+                "target_tool": "product_manage",
+                "target_action": "create",
+                "params": {"name": "遮光窗帘"},
+            }
+        })
+        mock_cfg = MagicMock()
+        mock_cfg.tool_names = ["product_manage"]
+        mock_cfg.route_keys = ["product"]
+        mock_registry = MagicMock()
+        mock_registry.get_all.return_value = [mock_cfg]
+
+        mock_route_decision = MagicMock()
+        mock_route_decision.intent_result.intent.value = "product_inquiry"
+        mock_route_decision.intent_result.confidence = 0.9
+        mock_route_decision.intent_result.source = "llm"
+        mock_route_decision.action = "full_agent"
+        mock_route_decision.direct_reply = None
+        mock_route_decision.tool_hint = None
+        mock_router = MagicMock()
+        mock_router.route = AsyncMock(return_value=mock_route_decision)
+
+        state = {
+            "session_id": "s1",
+            "agent_type": "mibao",
+            "messages": [HumanMessage(content="确认，但价格改成88")],
+        }
+        with patch("app.memory.session_state_store.SessionStateStore", return_value=mock_store), \
+             patch("app.graph.skills.skill_registry.get_skill_registry", return_value=mock_registry), \
+             patch("app.router.intent_router.IntentRouter", return_value=mock_router), \
+             patch("app.graph.nodes._get_agent_intents", return_value=[]), \
+             patch("app.graph.nodes._build_entity_hint", new=AsyncMock(return_value="")):
+            result = await intent_router_node(state)
+        # 走 LLM：source 不是 validated_confirm
+        assert result["intent_result"]["source"] != "validated_confirm"
+
 
 class TestRouteByIntent:
     def test_direct_reply_no_pending(self):

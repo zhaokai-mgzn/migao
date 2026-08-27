@@ -166,6 +166,322 @@ class TestBuildToolContext:
 class TestExecuteSkill:
     """通用 Skill 执行逻辑测试"""
 
+    @patch("app.graph.skills.base_skill.SessionStateStore")
+    @patch("app.graph.skills.base_skill.get_breaker")
+    @patch("app.graph.skills.base_skill.get_skill_llm")
+    @patch("app.graph.skills.base_skill.create_skill_registry")
+    @patch("app.graph.skills.base_skill.set_tool_context")
+    async def test_execute_skill_injects_pending_validated_input(
+        self, mock_set_ctx, mock_create_reg, mock_get_llm, mock_get_breaker, mock_store_cls
+    ):
+        """生产回归：上一轮 validate_input 通过的参数必须注入执行轮 system prompt，
+        让 LLM 原样复用（防参数二次组装走样）。"""
+        # Mock store：返回 pending_validated_input（target_tool 在当前 skill 工具集内）
+        mock_store = MagicMock()
+        mock_store.load = AsyncMock(return_value={
+            "pending_validated_input": {
+                "target_tool": "product_manage",
+                "target_action": "create",
+                "params": {"name": "遮光窗帘", "price": 299, "category_id": "cat-001"},
+            }
+        })
+        mock_store.commit = AsyncMock(return_value=True)
+        mock_store_cls.return_value = mock_store
+
+        mock_registry = MagicMock()
+        mock_registry.get_langchain_tools.return_value = []
+        mock_create_reg.return_value = mock_registry
+
+        mock_breaker = MagicMock()
+        async def _passthrough(fn):
+            return await fn()
+        mock_breaker.call = _passthrough
+        mock_get_breaker.return_value = mock_breaker
+
+        mock_response = MagicMock(spec=AIMessage)
+        mock_response.content = "这是回复"
+        mock_response.tool_calls = []
+        mock_llm = MagicMock()
+        mock_llm.bind_tools.return_value = mock_llm
+        mock_llm.ainvoke = AsyncMock(return_value=mock_response)
+        mock_get_llm.return_value = mock_llm
+
+        state = _make_state()
+        await execute_skill(
+            state=state,
+            skill_name="product",
+            tool_names=["product_manage"],
+            system_prompt="你是商品助手",
+        )
+
+        # system prompt（messages[0]）必须注入已校验参数与铁律
+        sent_messages = mock_llm.ainvoke.call_args.args[0]
+        sys_content = sent_messages[0].content
+        assert "已校验参数" in sys_content
+        assert "product_manage" in sys_content
+        assert "cat-001" in sys_content
+        assert "不得重新组装" in sys_content or "禁止重新组装" in sys_content
+
+    @patch("app.graph.skills.base_skill.SessionStateStore")
+    @patch("app.graph.skills.base_skill.get_breaker")
+    @patch("app.graph.skills.base_skill.get_skill_llm")
+    @patch("app.graph.skills.base_skill.create_skill_registry")
+    @patch("app.graph.skills.base_skill.set_tool_context")
+    async def test_execute_skill_no_injection_when_target_tool_not_in_skill(
+        self, mock_set_ctx, mock_create_reg, mock_get_llm, mock_get_breaker, mock_store_cls
+    ):
+        """target_tool 不属于当前 skill 工具集 → 不注入（跨域无泄漏）"""
+        mock_store = MagicMock()
+        mock_store.load = AsyncMock(return_value={
+            "pending_validated_input": {
+                "target_tool": "order_create",
+                "target_action": "create",
+                "params": {"customer_name": "张三"},
+            }
+        })
+        mock_store.commit = AsyncMock(return_value=True)
+        mock_store_cls.return_value = mock_store
+
+        mock_registry = MagicMock()
+        mock_registry.get_langchain_tools.return_value = []
+        mock_create_reg.return_value = mock_registry
+
+        mock_breaker = MagicMock()
+        async def _passthrough(fn):
+            return await fn()
+        mock_breaker.call = _passthrough
+        mock_get_breaker.return_value = mock_breaker
+
+        mock_response = MagicMock(spec=AIMessage)
+        mock_response.content = "这是回复"
+        mock_response.tool_calls = []
+        mock_llm = MagicMock()
+        mock_llm.bind_tools.return_value = mock_llm
+        mock_llm.ainvoke = AsyncMock(return_value=mock_response)
+        mock_get_llm.return_value = mock_llm
+
+        state = _make_state()
+        await execute_skill(
+            state=state,
+            skill_name="product",
+            tool_names=["product_manage"],
+            system_prompt="你是商品助手",
+        )
+        sent_messages = mock_llm.ainvoke.call_args.args[0]
+        assert "已校验参数" not in sent_messages[0].content
+
+    @patch("app.graph.skills.base_skill.SessionStateStore")
+    @patch("app.graph.skills.base_skill.get_breaker")
+    @patch("app.graph.skills.base_skill.get_skill_llm")
+    @patch("app.graph.skills.base_skill.create_skill_registry")
+    @patch("app.graph.skills.base_skill.set_tool_context")
+    async def test_execute_skill_direct_executes_validated_params_on_pure_confirm(
+        self, mock_set_ctx, mock_create_reg, mock_get_llm, mock_get_breaker, mock_store_cls
+    ):
+        """生产回归：纯确认消息 + 已校验参数 → 跳过 LLM 直接执行目标工具。
+
+        修复前：LLM 在"确认"轮经常只调 validate_input 不调执行工具，或空转，
+        导致多轮创建流程卡死（4 次仅 1 次创建成功）。
+        """
+        mock_store = MagicMock()
+        mock_store.load = AsyncMock(return_value={
+            "pending_validated_input": {
+                "target_tool": "product_manage",
+                "target_action": "create",
+                "params": {"name": "遮光窗帘", "price": 299, "category_id": "cat-001"},
+            }
+        })
+        mock_store.commit = AsyncMock(return_value=True)
+        mock_store_cls.return_value = mock_store
+
+        # 目标工具 stub：执行返回成功
+        mock_tool = MagicMock()
+        mock_tool.name = "product_manage"
+        mock_tool.read_only = False
+        mock_tool.check_permission = MagicMock(return_value=True)
+        from app.tools.base import ToolResult
+        mock_tool.execute = AsyncMock(return_value=ToolResult(
+            success=True,
+            data={"product_id": "p1", "name": "遮光窗帘"},
+            message="商品【遮光窗帘】创建成功",
+        ))
+
+        mock_registry = MagicMock()
+        mock_registry.get_langchain_tools.return_value = []
+        mock_registry.get_tool.return_value = mock_tool
+        mock_create_reg.return_value = mock_registry
+
+        mock_breaker = MagicMock()
+        async def _passthrough(fn):
+            return await fn()
+        mock_breaker.call = _passthrough
+        mock_get_breaker.return_value = mock_breaker
+
+        # LLM 不应被调用；若被调用返回兜底文本（断言会失败）
+        mock_response = MagicMock(spec=AIMessage)
+        mock_response.content = "LLM 不应被调用"
+        mock_response.tool_calls = []
+        mock_llm = MagicMock()
+        mock_llm.bind_tools.return_value = mock_llm
+        mock_llm.ainvoke = AsyncMock(return_value=mock_response)
+        mock_get_llm.return_value = mock_llm
+
+        state = _make_state(messages=[HumanMessage(content="确认")])
+        result = await execute_skill(
+            state=state,
+            skill_name="product",
+            tool_names=["product_manage"],
+            system_prompt="你是商品助手",
+        )
+
+        # 工具被执行且参数原样
+        mock_tool.execute.assert_awaited_once()
+        executed_args = mock_tool.execute.call_args.kwargs
+        assert executed_args == {"name": "遮光窗帘", "price": 299, "category_id": "cat-001"}
+        # LLM 未被调用
+        mock_llm.ainvoke.assert_not_awaited()
+        assert "创建成功" in result["final_answer"]
+        assert result["skill_used"] == "product"
+
+    @patch("app.graph.skills.base_skill.SessionStateStore")
+    @patch("app.graph.skills.base_skill.get_breaker")
+    @patch("app.graph.skills.base_skill.get_skill_llm")
+    @patch("app.graph.skills.base_skill.create_skill_registry")
+    @patch("app.graph.skills.base_skill.set_tool_context")
+    async def test_execute_skill_no_direct_exec_on_modified_confirm(
+        self, mock_set_ctx, mock_create_reg, mock_get_llm, mock_get_breaker, mock_store_cls
+    ):
+        """带修改意图的确认（如"确认，但价格改成88"）不走直接执行，仍走 LLM。"""
+        mock_store = MagicMock()
+        mock_store.load = AsyncMock(return_value={
+            "pending_validated_input": {
+                "target_tool": "product_manage",
+                "target_action": "create",
+                "params": {"name": "遮光窗帘", "price": 299, "category_id": "cat-001"},
+            }
+        })
+        mock_store.commit = AsyncMock(return_value=True)
+        mock_store_cls.return_value = mock_store
+
+        mock_registry = MagicMock()
+        mock_registry.get_langchain_tools.return_value = []
+        mock_create_reg.return_value = mock_registry
+
+        mock_breaker = MagicMock()
+        async def _passthrough(fn):
+            return await fn()
+        mock_breaker.call = _passthrough
+        mock_get_breaker.return_value = mock_breaker
+
+        mock_response = MagicMock(spec=AIMessage)
+        mock_response.content = "好的，我按新价格重新校验"
+        mock_response.tool_calls = []
+        mock_llm = MagicMock()
+        mock_llm.bind_tools.return_value = mock_llm
+        mock_llm.ainvoke = AsyncMock(return_value=mock_response)
+        mock_get_llm.return_value = mock_llm
+
+        state = _make_state(messages=[HumanMessage(content="确认，但价格改成88")])
+        result = await execute_skill(
+            state=state,
+            skill_name="product",
+            tool_names=["product_manage"],
+            system_prompt="你是商品助手",
+        )
+        # 走 LLM 路径：LLM 被调用
+        mock_llm.ainvoke.assert_awaited()
+
+    @patch("app.graph.skills.base_skill.SessionStateStore")
+    @patch("app.graph.skills.base_skill.get_breaker")
+    @patch("app.graph.skills.base_skill.LLMFactory")
+    @patch("app.graph.skills.base_skill.get_skill_llm")
+    @patch("app.graph.skills.base_skill.create_skill_registry")
+    @patch("app.graph.skills.base_skill.set_tool_context")
+    async def test_execute_skill_persists_validated_params_for_next_round(
+        self, mock_set_ctx, mock_create_reg, mock_get_llm, mock_llm_factory, mock_get_breaker, mock_store_cls
+    ):
+        """生产回归：本轮 validate_input 成功的参数在循环结束后与 pending_skill
+        合并持久化（单次 commit），供下一轮注入/直接执行。
+
+        修复前：validate_input 工具内直接 commit，与 ContextManager.save 并发
+        read-modify-write → pending_validated_input 被覆盖丢失（实测 0/7 稳定）。
+        """
+        from app.tools.base import ToolResult
+
+        mock_store = MagicMock()
+        mock_store.load = AsyncMock(return_value={})
+        mock_store.commit = AsyncMock(return_value=True)
+        mock_store_cls.return_value = mock_store
+
+        # 第一个 LLM 响应：调 validate_input
+        validate_call = AIMessage(content="")
+        validate_call.tool_calls = [{
+            "name": "validate_input",
+            "args": {
+                "target_tool": "product_manage",
+                "target_action": "create",
+                "params": {"name": "遮光窗帘", "price": 299, "category_id": "cat-001"},
+            },
+            "id": "tc_1",
+        }]
+        final_response = MagicMock(spec=AIMessage)
+        final_response.content = "校验通过，请回复确认。"
+        final_response.tool_calls = []
+
+        mock_tool = MagicMock()
+        mock_tool.name = "validate_input"
+        mock_tool.read_only = False
+        mock_tool.destructive = False
+        mock_tool.read_only_actions = set()
+        mock_tool.execute = AsyncMock(return_value=ToolResult(
+            success=True,
+            data={"validated": True, "params": {"name": "遮光窗帘", "price": 299, "category_id": "cat-001"}},
+            message="校验通过",
+        ))
+
+        mock_registry = MagicMock()
+        mock_registry.get_langchain_tools.return_value = [{
+            "name": "validate_input",
+            "description": "校验",
+            "args_schema": {"type": "object", "properties": {}},
+        }]
+        mock_registry.get_tool.return_value = mock_tool
+        mock_create_reg.return_value = mock_registry
+
+        mock_breaker = MagicMock()
+        async def _passthrough(fn):
+            return await fn()
+        mock_breaker.call = _passthrough
+        mock_get_breaker.return_value = mock_breaker
+
+        mock_llm = MagicMock()
+        mock_llm.bind_tools.return_value = mock_llm
+        mock_llm.ainvoke = AsyncMock(side_effect=[validate_call, final_response])
+        mock_get_llm.return_value = mock_llm
+
+        # llm_no_thinking（工具路径必建）
+        mock_no_think_llm = MagicMock()
+        mock_no_think_llm.bind_tools.return_value = mock_no_think_llm
+        mock_no_think_llm.ainvoke = AsyncMock(return_value=final_response)
+        mock_llm_factory.create_skill_llm.return_value = mock_no_think_llm
+
+        state = _make_state()
+        result = await execute_skill(
+            state=state,
+            skill_name="product",
+            tool_names=["product_manage", "validate_input"],
+            system_prompt="你是商品助手",
+        )
+        assert result["final_answer"] == "校验通过，请回复确认。"
+
+        # 循环结束后与 pending_skill 合并持久化（单次 commit 含两个键）
+        commits = [c for c in mock_store.commit.call_args_list if c.args]
+        merged = commits[-1].args[1]
+        assert merged["pending_skill"] == "product"
+        saved = merged["pending_validated_input"]
+        assert saved["target_tool"] == "product_manage"
+        assert saved["params"] == {"name": "遮光窗帘", "price": 299, "category_id": "cat-001"}
+
     @patch("app.graph.skills.base_skill.get_breaker")
     @patch("app.graph.skills.base_skill.get_skill_llm")
     @patch("app.graph.skills.base_skill.create_skill_registry")
