@@ -113,6 +113,19 @@ def test_general_is_fallback_friendly():
     assert "创建商品" in prompt or "写操作" in prompt  # 必须有写操作引导
 
 
+def test_cross_domain_write_no_permission_blame():
+    """生产回归（sess_9cfeb2c8b3df4a8f）：跨域写操作失败禁止甩锅"权限/工具缺失"。
+
+    商品创建确认轮被误路由到订单技能时，LLM 曾声称"没有可用的创建商品执行工具/
+    联系管理员开通权限"——错误归因误导用户。共享原则必须规定：模块不符时如实
+    说明并引导用户重新表达意图，而非归因权限。
+    """
+    for skill in ("order", "product", "general"):
+        prompt = _build_system_prompt(skill)
+        assert "不得甩锅权限" in prompt, f"{skill}: 缺少跨域失败归因规则"
+        assert "重新表达" in prompt or "重新说出" in prompt, f"{skill}: 规则未要求引导用户重新表达意图"
+
+
 # ============ Prompt 增量快照 ============
 
 def test_snapshot_all_skills():
@@ -143,7 +156,7 @@ def test_snapshot_all_skills():
     # 最大长度快照（防止无限制膨胀）
     expected_max = {
         "product": 9500,  # +1000: 中止铁律+确认语义唯一化+参数一致铁律（EXAMPLES 反例）
-        "order": 5900,  # +300: validate_input 中止铁律（共享规则增长）
+        "order": 6200,  # +600: 中止铁律+跨域归因铁律（共享原则增长）
         "aftersales": 4500,
         "customer": 4500,
         "staff": 4500,
