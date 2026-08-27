@@ -2,7 +2,14 @@
 
 > 版本：v1.0  
 > 日期：2026-06-04  
-> 状态：设计完成，待实施
+> 状态：设计完成，未实施（已于 2026-08-27 正式废弃）
+
+> ⚠️ **2026-08-27：本方案正式废弃。** 临时 Bucket
+> `ai-customer-service-chat-dev` 创建后从未启用（0 对象），已删除；
+> 旧 Bucket `mgzn-admin` 已删除（历史图片已迁移至 `ai-customer-service-admin-dev`，
+> 部署 jar 属过期产物直接丢弃）。当前为**单 Bucket**：
+> `OSS_TEMPORARY_BUCKET` 不设置，聊天图片与商品图片共用永久 Bucket。
+> 本文仅作历史设计参考。
 
 ---
 

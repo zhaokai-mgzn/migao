@@ -4,6 +4,14 @@
 > 日期：2026-06-04  
 > 状态：新增
 
+> ⚠️ **2026-08-27 更新：双 Bucket 方案已废弃。** 临时 Bucket
+> `ai-customer-service-chat-dev`（从未使用，0 对象）与旧 Bucket `mgzn-admin`
+> 已删除。当前杭州 OSS 仅保留 `ai-customer-service-admin-dev` 一个 Bucket，
+> 聊天图片与商品图片共用（`OSS_TEMPORARY_BUCKET` 不设置）。
+> 本文中关于临时 Bucket 的章节仅作历史参考，请勿再创建。
+> 另见 [`oss-storage-strategy.md`](oss-storage-strategy.md) 与
+> [PR #2562](https://github.com/zhaokai-mgzn/migao/pull/2562)。
+
 ---
 
 ## 1. 概述

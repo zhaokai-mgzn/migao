@@ -124,16 +124,13 @@ variable "permanent_bucket_name" {
   default     = "ai-customer-service-admin-dev"
 }
 
+# 临时存储 Bucket（ai-customer-service-chat-dev）已于 2026-08-27 删除：
+# 双 Bucket 方案未启用（OSS_TEMPORARY_BUCKET 始终为空），聊天图片与商品图片
+# 共用永久 Bucket。历史临时 Bucket 变量保留为空值，防止旧 tfvars 报错。
 variable "temporary_bucket_name" {
-  description = "临时存储 Bucket 名称（聊天图片等临时数据）"
+  description = "临时存储 Bucket 名称（已废弃：临时 Bucket 已删除，聊天图片共用永久 Bucket）"
   type        = string
-  default     = "ai-customer-service-chat-dev"
-}
-
-variable "chat_image_retention_days" {
-  description = "聊天图片保留天数（临时存储自动过期策略）"
-  type        = number
-  default     = 7
+  default     = ""
 }
 
 variable "deepseek_api_key" {
@@ -263,10 +260,8 @@ locals {
   redis_connection_domain = "r-bp162hozkjd55e18rb.redis.rds.aliyuncs.com"
   redis_port              = "6379"
   # OSS 域名唯一真相源 — 所有服务、CI/CD、前端均引用此值
-  # 永久存储（管理前端、商品图片等）
+  # 永久存储（管理前端、商品图片、聊天图片；临时 Bucket 已于 2026-08-27 删除）
   oss_domain              = "${alicloud_oss_bucket.permanent.bucket}.oss-cn-hangzhou.aliyuncs.com"
-  # 临时存储（聊天图片等）
-  oss_temporary_domain    = "${alicloud_oss_bucket.temporary.bucket}.oss-cn-hangzhou.aliyuncs.com"
 }
 
 # ==================== SAE 环境变量（唯一真相源）====================
@@ -302,9 +297,9 @@ locals {
     "OSS_ENDPOINT"          = "oss-cn-hangzhou-internal.aliyuncs.com"
     "OSS_ACCESS_KEY_ID"     = var.oss_access_key_id
     "OSS_ACCESS_KEY_SECRET" = var.oss_access_key_secret
-    # 双 Bucket 存储策略
+    # 双 Bucket 策略已废弃（临时 Bucket 已于 2026-08-27 删除）：
+    # 聊天图片与商品图片共用永久 Bucket，OSS_TEMPORARY_BUCKET 不设置
     "OSS_PERMANENT_BUCKET"  = alicloud_oss_bucket.permanent.bucket
-    "OSS_TEMPORARY_BUCKET"  = alicloud_oss_bucket.temporary.bucket
     # 向后兼容：OSS_BUCKET_NAME 指向永久 Bucket
     "OSS_BUCKET_NAME"       = alicloud_oss_bucket.permanent.bucket
     # 直接使用 OSS 域名（CDN admin.migaozn.com 未正确配置 CNAME）
@@ -352,12 +347,11 @@ locals {
     "SSE_TIMEOUT"          = "300"
     "SSE_PING_INTERVAL"    = "30"
     "CORS_ALLOWED_ORIGINS" = var.cors_allowed_origins
-    # OSS 双 Bucket 存储策略
+    # OSS 单 Bucket 存储（临时 Bucket 已于 2026-08-27 删除）
     "OSS_ENDPOINT"         = "oss-cn-hangzhou-internal.aliyuncs.com"
     "OSS_ACCESS_KEY_ID"    = var.oss_access_key_id
     "OSS_ACCESS_KEY_SECRET" = var.oss_access_key_secret
     "OSS_PERMANENT_BUCKET" = alicloud_oss_bucket.permanent.bucket
-    "OSS_TEMPORARY_BUCKET" = alicloud_oss_bucket.temporary.bucket
     # 图片 URL 重写：CDN 域名 → OSS 公网域名（DashScope Vision API 需要公网可访问的 URL）
     "IMAGE_URL_REWRITE_FROM" = "https://merchant.migaozn.com"
     "IMAGE_URL_REWRITE_TO"   = "https://${local.oss_domain}"
@@ -538,31 +532,8 @@ resource "alicloud_oss_bucket_acl" "permanent" {
   acl    = "public-read"
 }
 
-# 临时存储 Bucket（聊天图片等临时数据，自动过期删除）
-resource "alicloud_oss_bucket" "temporary" {
-  bucket = var.temporary_bucket_name
-
-  # 生命周期规则：chat/ 目录下的文件 {chat_image_retention_days} 天后自动删除
-  lifecycle_rule {
-    id      = "auto-delete-chat-images"
-    prefix  = "chat/"
-    enabled = true
-
-    expiration {
-      days = var.chat_image_retention_days
-    }
-  }
-
-  tags = {
-    Environment = var.environment
-    Type        = "temporary-storage"
-  }
-}
-
-resource "alicloud_oss_bucket_acl" "temporary" {
-  bucket = alicloud_oss_bucket.temporary.bucket
-  acl    = "private"
-}
+# 临时存储 Bucket 已于 2026-08-27 删除（双 Bucket 方案从未启用，0 对象），
+# 聊天图片与商品图片共用永久 Bucket，不再声明临时 Bucket 资源。
 
 # ==================== 输出 ====================
 
@@ -587,13 +558,8 @@ output "admin_api_app_id" {
 }
 
 output "oss_permanent_bucket_domain" {
-  description = "OSS 永久存储 Bucket 域名（管理前端、商品图片等）"
+  description = "OSS 永久存储 Bucket 域名（管理前端、商品图片、聊天图片）"
   value       = local.oss_domain
-}
-
-output "oss_temporary_bucket_domain" {
-  description = "OSS 临时存储 Bucket 域名（聊天图片等）"
-  value       = local.oss_temporary_domain
 }
 
 output "acr_namespace" {
