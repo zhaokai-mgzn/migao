@@ -61,13 +61,13 @@ export default function RemarkModal({ open, onClose, onConfirm, loading }: Remar
           onClick={(e) => e.stopPropagation()}
         >
           {/* 标题 */}
-          <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-200">
-            <h3 className="text-lg font-semibold text-neutral-900">添加备注</h3>
+          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+            <h3 className="text-lg font-semibold text-gray-900">添加备注</h3>
             <button
               type="button"
               onClick={onClose}
               disabled={loading}
-              className="p-1 text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 rounded transition-colors disabled:opacity-50"
+              className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors disabled:opacity-50"
             >
               <X className="w-5 h-5" />
             </button>
@@ -81,7 +81,7 @@ export default function RemarkModal({ open, onClose, onConfirm, loading }: Remar
               rows={4}
               placeholder="请输入备注内容"
               className={cn(
-                'w-full px-3 py-2 text-sm rounded border border-neutral-300 bg-white',
+                'w-full px-3 py-2 text-sm rounded border border-gray-300 bg-white',
                 'focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15',
                 'resize-none'
               )}
@@ -89,7 +89,7 @@ export default function RemarkModal({ open, onClose, onConfirm, loading }: Remar
           </div>
 
           {/* 底部 */}
-          <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-neutral-200">
+          <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200">
             <Button variant="secondary" onClick={onClose} disabled={loading}>
               取消
             </Button>

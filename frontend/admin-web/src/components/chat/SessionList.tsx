@@ -67,12 +67,12 @@ export default function SessionList() {
 
 
   return (
-    <div className="w-64 bg-white border-r border-neutral-200/80 flex flex-col h-full flex-shrink-0">
+    <div className="w-64 bg-white border-r border-gray-200 flex flex-col h-full flex-shrink-0">
       {/* 新建会话 */}
-      <div className="p-3 border-b border-neutral-100">
+      <div className="p-3 border-b border-gray-100">
         <button
           onClick={() => createSession()}
-          className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-gradient-to-r from-primary-600 to-primary-500 text-white rounded-lg hover:from-primary-700 hover:to-primary-600 transition-all text-sm font-medium shadow-sm"
+          className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors text-sm font-medium"
         >
           <Plus className="w-4 h-4" />
           新建对话
@@ -80,20 +80,20 @@ export default function SessionList() {
       </div>
 
       {/* 搜索 */}
-      <div className="px-3 py-2 border-b border-neutral-100">
+      <div className="px-3 py-2 border-b border-gray-100">
         <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-neutral-400" />
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
           <input
             type="text"
             value={searchKeyword}
             onChange={(e) => setSearchKeyword(e.target.value)}
             placeholder="搜索会话..."
-            className="w-full h-8 pl-8 pr-8 text-xs bg-neutral-50 border border-neutral-200 rounded-lg focus:outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400/20"
+            className="w-full h-8 pl-8 pr-8 text-xs bg-gray-50 border border-gray-200 rounded-md focus:outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400/20"
           />
           {searchKeyword && (
             <button
               onClick={() => setSearchKeyword('')}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -102,14 +102,14 @@ export default function SessionList() {
       </div>
 
       {/* Tab 切换：活跃 / 已关闭 */}
-      <div className="flex border-b border-neutral-100">
+      <div className="flex border-b border-gray-100">
         <button
           onClick={() => setActiveTab('active')}
           className={cn(
             'flex-1 py-2 text-xs font-medium transition-colors border-b-2',
             activeTab === 'active'
               ? 'text-primary-600 border-primary-600'
-              : 'text-neutral-400 border-transparent hover:text-neutral-600'
+              : 'text-gray-400 border-transparent hover:text-gray-600'
           )}
         >
           活跃 ({activeCount})
@@ -120,7 +120,7 @@ export default function SessionList() {
             'flex-1 py-2 text-xs font-medium transition-colors border-b-2',
             activeTab === 'closed'
               ? 'text-primary-600 border-primary-600'
-              : 'text-neutral-400 border-transparent hover:text-neutral-600'
+              : 'text-gray-400 border-transparent hover:text-gray-600'
           )}
         >
           已关闭 ({closedCount})
@@ -134,7 +134,7 @@ export default function SessionList() {
             <div className="w-5 h-5 border-2 border-primary-600 border-t-transparent rounded-full animate-spin" />
           </div>
         ) : filteredSessions.length === 0 ? (
-          <div className="text-center py-8 text-neutral-400 text-xs">
+          <div className="text-center py-8 text-gray-400 text-xs">
             {searchKeyword ? '没有匹配的会话' : activeTab === 'active' ? '暂无活跃会话' : '暂无已关闭会话'}
           </div>
         ) : (
@@ -195,7 +195,7 @@ function SessionItem({
         'group relative mx-1 mb-0.5 px-3 py-2 rounded-lg cursor-pointer transition-colors',
         isActive
           ? 'bg-primary-50/80 border border-primary-200/60'
-          : 'hover:bg-neutral-50/80'
+          : 'hover:bg-gray-50/80'
       )}
     >
       {/* 选中态左侧色条（钉钉风格） */}
@@ -208,7 +208,7 @@ function SessionItem({
           <div
             className={cn(
               'w-2 h-2 rounded-full',
-              session.status === 'active' ? 'bg-emerald-500' : 'bg-neutral-300'
+              session.status === 'active' ? 'bg-green-500' : 'bg-gray-300'
             )}
           />
         </div>
@@ -220,15 +220,15 @@ function SessionItem({
               className={cn(
                 'text-sm font-medium truncate',
                 session.status === 'closed'
-                  ? 'text-neutral-400'
+                  ? 'text-gray-400'
                   : isActive
                     ? 'text-primary-700'
-                    : 'text-neutral-800'
+                    : 'text-gray-800'
               )}
             >
               {session.title || '新对话'}
             </span>
-            <span className="text-[10px] text-neutral-400 flex-shrink-0">
+            <span className="text-[10px] text-gray-400 flex-shrink-0">
               {formatTime(session.updated_at || session.created_at)}
             </span>
           </div>
@@ -236,14 +236,14 @@ function SessionItem({
           {/* 状态标签 + 最后消息预览 */}
           <div className="flex items-center gap-1.5 mt-0.5">
             {session.status === 'closed' && (
-              <span className="inline-flex items-center px-1.5 py-px rounded text-[10px] font-medium bg-neutral-100 text-neutral-500 flex-shrink-0">
+              <span className="inline-flex items-center px-1.5 py-px rounded text-[10px] font-medium bg-gray-100 text-gray-500 flex-shrink-0">
                 已结束
               </span>
             )}
             <p
               className={cn(
                 'text-xs truncate',
-                session.status === 'closed' ? 'text-neutral-400' : 'text-neutral-500'
+                session.status === 'closed' ? 'text-gray-400' : 'text-gray-500'
               )}
             >
               {session.last_message || '暂无消息'}
@@ -271,17 +271,17 @@ function SessionItem({
               showContextMenu
                 ? 'opacity-100'
                 : 'opacity-0 group-hover:opacity-100',
-              'hover:bg-neutral-200'
+              'hover:bg-gray-200'
             )}
           >
-            <MoreHorizontal className="w-3.5 h-3.5 text-neutral-400" />
+            <MoreHorizontal className="w-3.5 h-3.5 text-gray-400" />
           </button>
         )}
       </div>
 
       {/* 右键菜单 */}
       {showContextMenu && (
-        <div className="absolute right-2 top-full mt-1 z-20 bg-white border border-neutral-200 rounded-lg shadow-lg py-1 min-w-[120px]">
+        <div className="absolute right-2 top-full mt-1 z-20 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[120px]">
           <button
             onClick={onCloseSession}
             className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 transition-colors"

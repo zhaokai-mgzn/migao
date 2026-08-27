@@ -363,7 +363,7 @@ export type OrderStatus = 'pending_payment' | 'pending_shipment' | 'shipped' | '
 export type BackendOrderStatus =
   | 'pending'
   | 'confirmed'
-  | 'processing'
+  | 'producing'
   | 'shipped'
   | 'completed'
   | 'cancelled'
@@ -371,7 +371,7 @@ export type BackendOrderStatus =
 // 前端到后端状态映射（用于API请求时的status参数）
 export const FrontendToBackendStatus: Record<OrderStatus, BackendOrderStatus> = {
   pending_payment: 'pending',
-  pending_shipment: 'confirmed', // confirmed 和 processing 都算待发货
+  pending_shipment: 'confirmed', // confirmed 和 producing 都算待发货
   shipped: 'shipped',
   completed: 'completed',
   closed: 'cancelled',
@@ -382,7 +382,7 @@ export const FrontendToBackendStatus: Record<OrderStatus, BackendOrderStatus> = 
 export const BackendToFrontendStatus: Record<BackendOrderStatus, OrderStatus> = {
   pending: 'pending_payment',
   confirmed: 'pending_shipment',
-  processing: 'pending_shipment', // processing 也归入待发货
+  producing: 'pending_shipment', // producing 也归入待发货
   shipped: 'shipped',
   completed: 'completed',
   cancelled: 'closed',
@@ -534,6 +534,8 @@ export interface Order {
   totalAmount: number          // 累计金额
   actualAmount: number         // 实收款
   discountAmount?: number      // 优惠金额 (issue #672)
+  refundAmount?: number        // 已退款金额（>0 表示订单已退款；退款不再改变订单状态）
+  refundAt?: string            // 退款时间
   status: OrderStatus
   hasProcessing: boolean       // 是否含加工
   paymentDeadline?: string     // 支付截止时间（待付款状态用）
@@ -698,6 +700,30 @@ export interface CustomerListParams extends PageParams {
 
 // 客户详情（含订单和会话）
 export interface CustomerDetail extends Customer {
+  orders?: CustomerOrder[]
+  sessions?: CustomerSession[]
+}
+
+// 后端客户详情响应（原始结构：profile 为 CustomerProfile 实体）
+export interface CustomerDetailResponse {
+  id?: string
+  profile?: {
+    id?: string
+    wechatNickname?: string
+    name?: string
+    phone?: string
+    avatarUrl?: string
+    sourceChannel?: string
+    vipLevel?: string | null
+    agentNotes?: string
+    tags?: unknown
+    lastActiveAt?: string
+    registeredAt?: string
+    createdAt?: string
+    totalOrders?: number
+    totalConsumption?: number
+  }
+  tags?: CustomerTag[]
   orders?: CustomerOrder[]
   sessions?: CustomerSession[]
 }

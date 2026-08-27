@@ -44,6 +44,11 @@ public class OrderCreateRequest {
     private BigDecimal actualAmount;
 
     /**
+     * 优惠金额（默认 0；应收 totalAmount - 优惠 discountAmount 应等于实收 actualAmount）
+     */
+    private BigDecimal discountAmount;
+
+    /**
      * 订单明细列表
      */
     @NotEmpty(message = "订单明细不能为空")

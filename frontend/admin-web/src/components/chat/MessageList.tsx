@@ -66,12 +66,10 @@ export default function MessageList() {
 
   if (!currentSessionId) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center text-neutral-400">
-        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-primary-50 to-primary-100 shadow-sm">
-          <Bot className="h-8 w-8 text-primary-400" />
-        </div>
-        <p className="text-lg font-medium text-neutral-500">选择或创建一个对话</p>
-        <p className="mt-2 text-sm text-neutral-400">
+      <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
+        <Bot className="w-16 h-16 mb-4 text-gray-200" />
+        <p className="text-lg font-medium text-gray-400">选择或创建一个对话</p>
+        <p className="text-sm mt-2 text-gray-300">
           从左侧列表选择已有会话，或点击「新建对话」创建新会话
         </p>
       </div>
@@ -83,7 +81,7 @@ export default function MessageList() {
       <div className="flex-1 flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
           <div className="w-6 h-6 border-2 border-primary-600 border-t-transparent rounded-full animate-spin" />
-          <span className="text-sm text-neutral-400">加载消息中...</span>
+          <span className="text-sm text-gray-400">加载消息中...</span>
         </div>
       </div>
     )
@@ -95,12 +93,10 @@ export default function MessageList() {
       return <WelcomePanel />
     }
     return (
-      <div className="flex-1 flex flex-col items-center justify-center text-neutral-400">
-        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-primary-50 to-primary-100 shadow-sm">
-          <Bot className="h-8 w-8 text-primary-400" />
-        </div>
-        <p className="text-lg font-medium text-neutral-500">发送消息开始对话</p>
-        <p className="mt-2 text-sm text-neutral-400">
+      <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
+        <Bot className="w-16 h-16 mb-4 text-gray-200" />
+        <p className="text-lg font-medium text-gray-400">发送消息开始对话</p>
+        <p className="text-sm mt-2 text-gray-300">
           AI 助手将帮助您解答问题
         </p>
       </div>
@@ -134,7 +130,7 @@ function TimeDivider({ date }: { date: string }) {
 
   return (
     <div className="flex items-center justify-center py-1">
-      <span className="rounded-full border border-neutral-200/70 bg-white/80 px-3 py-0.5 text-[11px] text-neutral-400 shadow-sm">
+      <span className="text-[11px] text-gray-400 bg-gray-100/80 px-3 py-0.5 rounded-full">
         {label}
       </span>
     </div>
@@ -145,7 +141,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
   if (message.role === 'system') {
     return (
       <div className="flex justify-center">
-        <span className="rounded-full bg-neutral-200/60 px-3 py-1 text-xs text-neutral-500">
+        <span className="text-xs text-gray-400 bg-gray-100 px-3 py-1 rounded-full">
           {message.content}
         </span>
       </div>
@@ -159,19 +155,19 @@ function MessageBubble({ message }: { message: ChatMessage }) {
     <div className={cn('flex gap-3', isUser ? 'justify-end' : 'justify-start')}>
       {/* AI 头像 — 品牌渐变圆底 */}
       {isAI && (
-        <div className="mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary-400 to-primary-600 shadow-sm">
-          <Bot className="h-4 w-4 text-white" />
+        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center flex-shrink-0 mt-0.5 shadow-sm">
+          <Bot className="w-4 h-4 text-white" />
         </div>
       )}
 
       <div className={cn('flex flex-col max-w-[70%]', isUser ? 'items-end' : 'items-start')}>
-        {/* 消息气泡 — 用户品牌渐变右对齐，AI 白底柔和描边左对齐 */}
+        {/* 消息气泡 — 用户品牌渐变右对齐，AI 白底柔和边框左对齐 */}
         <div
           className={cn(
             'rounded-2xl px-4 py-2.5',
             isUser
               ? 'bg-gradient-to-br from-primary-500 to-primary-600 text-white rounded-tr-md shadow-sm'
-              : 'bg-white border border-neutral-200/70 text-neutral-800 rounded-tl-md shadow-[0_1px_2px_rgba(36,31,24,.04),0_2px_8px_rgba(36,31,24,.06)]'
+              : 'bg-white border border-gray-100 text-gray-800 rounded-tl-md shadow-[0_1px_2px_rgba(0,0,0,0.04)]'
           )}
         >
           {isAI ? (
@@ -211,7 +207,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
         {/* 回复建议 */}
         {isAI && message.suggestions && message.suggestions.length > 0 && !message.isStreaming && (
           <div className="mt-3 w-full">
-            <p className="mb-1.5 px-1 text-xs font-medium text-neutral-500">推荐提问：</p>
+            <p className="text-xs text-gray-500 mb-1.5 px-1 font-medium">推荐提问：</p>
             <div className="space-y-1">
               {message.suggestions.map((suggestion, index) => (
                 <button
@@ -236,7 +232,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
                     const { sendMessage } = useChatStore.getState()
                     sendMessage(suggestion)
                   }}
-                  className="block w-full text-left px-2.5 py-1.5 rounded-lg border border-dashed border-neutral-300 hover:border-primary-300 hover:bg-primary-50/50 transition-colors text-xs text-neutral-600 hover:text-primary-700 break-words line-clamp-2"
+                  className="block w-full text-left px-2.5 py-1.5 rounded-lg border border-dashed border-gray-300 hover:border-primary-300 hover:bg-primary-50/50 transition-colors text-xs text-gray-600 hover:text-primary-700 break-words line-clamp-2"
                 >
                   {suggestion}
                 </button>
@@ -247,16 +243,16 @@ function MessageBubble({ message }: { message: ChatMessage }) {
 
         {/* 时间戳 */}
         {message.created_at && (
-          <span className="text-[10px] text-neutral-400/70 mt-1 px-1">
+          <span className="text-[10px] text-gray-400/70 mt-1 px-1">
             {dayjs(message.created_at).format('HH:mm')}
           </span>
         )}
       </div>
 
-      {/* 用户头像 — 中性暖底 */}
+      {/* 用户头像 — 中性灰底 */}
       {isUser && (
-        <div className="mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-neutral-200/80">
-          <User className="h-4 w-4 text-neutral-500" />
+        <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+          <User className="w-4 h-4 text-gray-500" />
         </div>
       )}
     </div>
@@ -275,7 +271,7 @@ function AIMessageContent({ message }: { message: ChatMessage }) {
 
   if (isStreamingEmpty && hasRunning) {
     return (
-      <div className="flex items-center gap-2 text-neutral-500 text-sm">
+      <div className="flex items-center gap-2 text-gray-500 text-sm">
         <Loader2 className="w-4 h-4 animate-spin" />
         <span>正在处理您的请求...</span>
       </div>
@@ -286,15 +282,15 @@ function AIMessageContent({ message }: { message: ChatMessage }) {
     return (
       <div className="flex items-center gap-1.5 py-1">
         <span
-          className="w-2 h-2 bg-primary-400 rounded-full animate-bounce"
+          className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
           style={{ animationDelay: '0ms' }}
         />
         <span
-          className="w-2 h-2 bg-primary-400 rounded-full animate-bounce"
+          className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
           style={{ animationDelay: '150ms' }}
         />
         <span
-          className="w-2 h-2 bg-primary-400 rounded-full animate-bounce"
+          className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
           style={{ animationDelay: '300ms' }}
         />
       </div>
@@ -311,11 +307,11 @@ function AIMessageContent({ message }: { message: ChatMessage }) {
     // 用户主动中断 → 显示"对话已中断"
     if (message.wasAborted) {
       return (
-        <p className="text-sm text-neutral-400 italic">对话已中断</p>
+        <p className="text-sm text-gray-400 italic">对话已中断</p>
       )
     }
     return (
-      <p className="text-sm text-neutral-400 italic">（已处理）</p>
+      <p className="text-sm text-gray-400 italic">（已处理）</p>
     )
   }
 
@@ -327,7 +323,7 @@ function AIMessageContent({ message }: { message: ChatMessage }) {
 
   return (
     <div className="group relative">
-      <div className="prose prose-sm max-w-none text-neutral-800 [&_p]:my-1 [&_ul]:my-1 [&_ol]:my-1 [&_pre]:my-2 [&_code]:text-xs [&_code]:bg-neutral-100 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_table]:text-xs [&_table]:border-collapse [&_th]:border [&_th]:border-neutral-300 [&_th]:bg-neutral-100 [&_th]:px-2 [&_th]:py-1 [&_td]:border [&_td]:border-neutral-300 [&_td]:px-2 [&_td]:py-1">
+      <div className="prose prose-sm max-w-none text-gray-800 [&_p]:my-1 [&_ul]:my-1 [&_ol]:my-1 [&_pre]:my-2 [&_code]:text-xs [&_code]:bg-gray-100 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_table]:text-xs [&_table]:border-collapse [&_th]:border [&_th]:border-gray-300 [&_th]:bg-gray-100 [&_th]:px-2 [&_th]:py-1 [&_td]:border [&_td]:border-gray-300 [&_td]:px-2 [&_td]:py-1">
         <ReactMarkdown remarkPlugins={[remarkGfm]}>
           {cleanContent}
         </ReactMarkdown>
@@ -342,7 +338,7 @@ function AIMessageContent({ message }: { message: ChatMessage }) {
       {!message.isStreaming && (
         <button
           onClick={handleCopy}
-          className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-md bg-white/90 border border-neutral-200 shadow-sm text-neutral-400 hover:text-neutral-600 hover:bg-white"
+          className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-md bg-white/90 border border-gray-100 shadow-sm text-gray-400 hover:text-gray-600 hover:bg-white"
           title="复制回复内容"
         >
           {copied ? (
@@ -430,7 +426,7 @@ function ToolProgressIndicator({ message }: { message: ChatMessage }) {
   // 还在执行中
   if (runningCount > 0) {
     return (
-      <div className="mt-2 flex items-center gap-1.5 text-xs text-neutral-400">
+      <div className="mt-2 flex items-center gap-1.5 text-xs text-gray-400">
         <Loader2 className="w-3 h-3 animate-spin" />
         <span>正在处理您的请求...</span>
       </div>

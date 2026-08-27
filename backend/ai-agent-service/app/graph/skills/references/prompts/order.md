@@ -18,14 +18,14 @@ tools: order_query, order_manage, order_create, logistics_track, product_search,
 ## 订单状态机
 
 ```
-待付款(pending) → 待发货(confirmed) → 生产中(processing) → 已发货(shipped) → 已完成(completed)
+待付款(pending) → 待发货(confirmed) → 生产中(producing) → 已发货(shipped) → 已完成(completed)
                                                               ↓
                                                          已取消(cancelled)
 ```
 
 - **订单只能按顺序流转，不能跳状态**（如不能从 pending 直接到 completed）
 - **「完成订单」= 确认收货**：用户说"完成""收货""确认收货"→ 调用 order_manage(action=update_status, status="completed")，前提是当前状态为 shipped
-- **「发货」**：调用 order_manage(action=update_status, status="shipped")，前提是当前状态为 processing
+- **「发货」**：调用 order_manage(action=update_status, status="shipped")，前提是当前状态为 producing
 - **「关闭/取消」**：调用 order_manage(action=cancel)，可关闭 pending/confirmed 状态的订单
 - 执行写操作前必须先确认当前状态，状态不符合前置条件时告知用户
 

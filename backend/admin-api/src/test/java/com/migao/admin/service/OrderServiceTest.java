@@ -7,6 +7,7 @@ import com.migao.admin.entity.Order;
 import com.migao.admin.entity.OrderItem;
 import com.migao.admin.entity.OrderLogistics;
 import com.migao.admin.entity.FinanceTransaction;
+import com.migao.admin.entity.ProductSku;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.FinanceTransactionMapper;
 import com.migao.admin.mapper.OrderItemMapper;
@@ -31,7 +32,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
+import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -540,18 +543,6 @@ class OrderServiceTest {
         verify(financeTransactionMapper).insert(any(FinanceTransaction.class));
     }
 
-    @Test
-    @DisplayName("确认支付 - 非 pending 状态拒绝（原子流转返回 0 行）")
-    void confirmPayment_rejectsNonPendingStatus() {
-        // given: 原子条件更新（WHERE status=pending）未命中，返回 0
-        when(orderMapper.update(any(), any())).thenReturn(0);
-
-        // when & then
-        assertThatThrownBy(() -> orderService.confirmPayment("order-001"))
-                .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("只有待确认状态");
-    }
-
     // ======================== 取消订单（库存恢复）测试 ========================
 
     @Test
@@ -612,23 +603,117 @@ class OrderServiceTest {
                 .hasMessageContaining("当前状态不允许取消");
     }
 
-    // ======================== 退款（库存恢复）测试 ========================
+    // ======================== 退款（新语义：财务叠加，不改状态）测试 ========================
 
     @Test
-    @DisplayName("退款 confirmed 订单 - 恢复库存并设置 closeReason=退款")
-    void refundOrder_restoresStockAndDecreasesSales() {
+    @DisplayName("部分退款 - 保持原状态，落 refundAmount/refundAt，登记退款流水，不恢复库存")
+    void refundOrder_partialRefund_keepsStatusAndRecordsAmount() {
+        // given
+        testOrder.setStatus("confirmed");
+        testOrder.setActualAmount(new BigDecimal("599.00"));
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderMapper.updateById(any(Order.class))).thenReturn(1);
+
+        // when
+        orderService.refundOrder("order-001", new BigDecimal("100.00"), "部分退款");
+
+        // then: 状态保持 confirmed，不再硬改为 cancelled
+        assertThat(testOrder.getStatus()).isEqualTo("confirmed");
+        assertThat(testOrder.getRefundAmount()).isEqualByComparingTo("100.00");
+        assertThat(testOrder.getRefundAt()).isNotNull();
+        // 不触发状态流转（不调用 orderMapper.update），也不恢复库存
+        verify(orderMapper, never()).update(any(), any());
+        verify(productMapper, never()).decreaseSales(anyString(), anyInt(), any(BigDecimal.class));
+        // 登记退款流水（金额=本次退款额）
+        verify(orderMapper).updateById(any(Order.class));
+        verify(financeTransactionMapper).insert(argThat((FinanceTransaction t) ->
+                "refund".equals(t.getType())
+                        && t.getAmount().compareTo(new BigDecimal("100.00")) == 0));
+    }
+
+    @Test
+    @DisplayName("全额退款 - refundAmount 为 null 时默认退实际收款额")
+    void refundOrder_fullRefundWhenAmountNull() {
+        // given
+        testOrder.setStatus("completed");
+        testOrder.setActualAmount(new BigDecimal("599.00"));
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderMapper.updateById(any(Order.class))).thenReturn(1);
+
+        // when
+        orderService.refundOrder("order-001", null, "全额退款");
+
+        // then
+        assertThat(testOrder.getRefundAmount()).isEqualByComparingTo("599.00");
+        assertThat(testOrder.getRefundAt()).isNotNull();
+        verify(financeTransactionMapper).insert(argThat((FinanceTransaction t) ->
+                "refund".equals(t.getType())
+                        && t.getAmount().compareTo(new BigDecimal("599.00")) == 0));
+    }
+
+    @Test
+    @DisplayName("退款金额累计 - 多次退款累加且不超过实收款")
+    void refundOrder_accumulatesAndCapsAtActualAmount() {
+        // given: 已有退款 400，再退 300 → 累计应封顶在 actualAmount=599
+        testOrder.setStatus("shipped");
+        testOrder.setActualAmount(new BigDecimal("599.00"));
+        testOrder.setRefundAmount(new BigDecimal("400.00"));
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderMapper.updateById(any(Order.class))).thenReturn(1);
+
+        // when
+        orderService.refundOrder("order-001", new BigDecimal("300.00"), "再次退款");
+
+        // then
+        assertThat(testOrder.getRefundAmount()).isEqualByComparingTo("599.00");
+        verify(financeTransactionMapper).insert(argThat((FinanceTransaction t) ->
+                "refund".equals(t.getType())
+                        && t.getAmount().compareTo(new BigDecimal("199.00")) == 0));
+    }
+
+    @Test
+    @DisplayName("退款 - 负数金额被拒绝")
+    void refundOrder_rejectsNegativeAmount() {
         // given
         testOrder.setStatus("confirmed");
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
-        when(orderMapper.update(any(), any())).thenReturn(1);
-        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(testOrderItem));
+
+        // when & then
+        assertThatThrownBy(() -> orderService.refundOrder("order-001", new BigDecimal("-1.00"), null))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("退款金额");
+    }
+
+    @Test
+    @DisplayName("退款 - 金额超过实收款被拒绝")
+    void refundOrder_rejectsAmountAboveActual() {
+        // given
+        testOrder.setStatus("confirmed");
+        testOrder.setActualAmount(new BigDecimal("599.00"));
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+
+        // when & then
+        assertThatThrownBy(() -> orderService.refundOrder("order-001", new BigDecimal("600.00"), null))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("退款金额");
+    }
+
+    @Test
+    @DisplayName("退款 confirmed 订单 - 保持原状态且不恢复库存/销量（退款为财务叠加态）")
+    void refundOrder_keepsStatusAndDoesNotRestoreStock() {
+        // given
+        testOrder.setStatus("confirmed");
+        testOrder.setActualAmount(new BigDecimal("599.00"));
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderMapper.updateById(any(Order.class))).thenReturn(1);
 
         // when
-        orderService.refundOrder("order-001", null);
+        orderService.refundOrder("order-001", null, null);
 
-        // then: 原子流转 + 恢复库存 + 自动登记退款流水
-        verify(orderMapper).update(any(), any());
-        verify(productMapper).decreaseSales(eq("prod-001"), eq(2), any(BigDecimal.class));
+        // then: 不再把状态硬改为 cancelled，也不恢复库存
+        assertThat(testOrder.getStatus()).isEqualTo("confirmed");
+        verify(orderMapper, never()).update(any(), any());
+        verify(productMapper, never()).decreaseSales(anyString(), anyInt(), any(BigDecimal.class));
         verify(financeTransactionMapper).insert(any(FinanceTransaction.class));
     }
 
@@ -639,7 +724,7 @@ class OrderServiceTest {
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
 
         // when & then
-        assertThatThrownBy(() -> orderService.refundOrder("order-001", null))
+        assertThatThrownBy(() -> orderService.refundOrder("order-001", null, null))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("不允许退款");
     }
@@ -723,9 +808,9 @@ class OrderServiceTest {
     // ======================== actualAmount 持久化测试 ========================
 
     @Test
-    @DisplayName("创建订单 - actualAmount 被持久化（用户输入实收款=0）")
+    @DisplayName("创建订单 - actualAmount 被持久化（用户输入实收款=0，优惠金额抵消差额）")
     void createOrder_persistsActualAmount_zero() {
-        // given: 用户输入实收款 = 0（与 totalAmount=599 不同）
+        // given: 用户输入实收款 = 0，优惠金额 = 599（与 totalAmount=599 相抵，保持 应收-优惠=实收 一致）
         OrderCreateRequest.OrderItemRequest itemReq = new OrderCreateRequest.OrderItemRequest();
         itemReq.setProductId("prod-001");
         itemReq.setProductName("蜂巢帘");
@@ -737,12 +822,14 @@ class OrderServiceTest {
         request.setCustomerName("张三");
         request.setCustomerPhone("13800138000");
         request.setActualAmount(BigDecimal.ZERO); // 实收款 = 0
+        request.setDiscountAmount(new BigDecimal("599.00")); // 全免
         request.setItems(List.of(itemReq));
 
         when(orderMapper.insert(any(Order.class))).thenAnswer(invocation -> {
             Order o = invocation.getArgument(0);
-            // 验证 actualAmount 被传入 Order entity
+            // 验证 actualAmount 与 discountAmount 被传入 Order entity
             assertThat(o.getActualAmount()).isEqualTo(BigDecimal.ZERO);
+            assertThat(o.getDiscountAmount()).isEqualByComparingTo("599.00");
             o.setId("order-actual-zero");
             return 1;
         });
@@ -756,6 +843,7 @@ class OrderServiceTest {
                 .customerPhone("13800138000")
                 .totalAmount(new BigDecimal("599.00"))
                 .actualAmount(BigDecimal.ZERO)
+                .discountAmount(new BigDecimal("599.00"))
                 .status("pending")
                 .build();
         when(orderMapper.selectById("order-actual-zero")).thenReturn(savedOrder);
@@ -865,5 +953,275 @@ class OrderServiceTest {
 
         // then
         verify(orderMapper).updateById(argThat((Order o) -> "following".equals(o.getFollowStatus())));
+    }
+
+    // ======================== 优惠金额（discountAmount）测试 ========================
+
+    private OrderCreateRequest buildCreateRequestWithAmounts(BigDecimal actualAmount, BigDecimal discountAmount) {
+        OrderCreateRequest.OrderItemRequest itemReq = new OrderCreateRequest.OrderItemRequest();
+        itemReq.setProductId("prod-001");
+        itemReq.setProductName("蜂巢帘");
+        itemReq.setQuantity(2);
+        itemReq.setUnitPrice(new BigDecimal("299.50"));
+        itemReq.setSubtotal(new BigDecimal("599.00"));
+
+        OrderCreateRequest request = new OrderCreateRequest();
+        request.setCustomerName("张三");
+        request.setCustomerPhone("13800138000");
+        request.setActualAmount(actualAmount);
+        request.setDiscountAmount(discountAmount);
+        request.setItems(List.of(itemReq));
+        return request;
+    }
+
+    @Test
+    @DisplayName("创建订单 - discountAmount 落库并返回详情（应收-优惠=实收）")
+    void createOrder_persistsDiscountAmount() {
+        // given: totalAmount=599, 优惠 99, 实收 500 → 一致
+        OrderCreateRequest request = buildCreateRequestWithAmounts(new BigDecimal("500.00"), new BigDecimal("99.00"));
+
+        when(orderMapper.insert(any(Order.class))).thenAnswer(invocation -> {
+            Order o = invocation.getArgument(0);
+            assertThat(o.getDiscountAmount()).isEqualByComparingTo("99.00");
+            assertThat(o.getActualAmount()).isEqualByComparingTo("500.00");
+            o.setId("order-discount");
+            return 1;
+        });
+        when(orderItemMapper.insert(any(OrderItem.class))).thenReturn(1);
+
+        Order savedOrder = Order.builder()
+                .id("order-discount")
+                .tenantId(1L)
+                .customerName("张三")
+                .totalAmount(new BigDecimal("599.00"))
+                .actualAmount(new BigDecimal("500.00"))
+                .discountAmount(new BigDecimal("99.00"))
+                .status("pending")
+                .build();
+        when(orderMapper.selectById("order-discount")).thenReturn(savedOrder);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(testOrderItem));
+        when(orderLogisticsMapper.selectByOrderId("order-discount", 1L)).thenReturn(List.of());
+
+        // when
+        OrderDetailResponse result = orderService.createOrder(request, 1L);
+
+        // then: 详情返回 discountAmount
+        assertThat(result.getDiscountAmount()).isEqualByComparingTo("99.00");
+        assertThat(result.getActualAmount()).isEqualByComparingTo("500.00");
+    }
+
+    @Test
+    @DisplayName("创建订单 - 优惠金额未传时默认 0")
+    void createOrder_discountAmountDefaultsToZero() {
+        // given: 不传 discountAmount / actualAmount
+        OrderCreateRequest.OrderItemRequest itemReq = new OrderCreateRequest.OrderItemRequest();
+        itemReq.setProductId("prod-001");
+        itemReq.setProductName("蜂巢帘");
+        itemReq.setQuantity(2);
+        itemReq.setUnitPrice(new BigDecimal("299.50"));
+        itemReq.setSubtotal(new BigDecimal("599.00"));
+
+        OrderCreateRequest request = new OrderCreateRequest();
+        request.setCustomerName("张三");
+        request.setCustomerPhone("13800138000");
+        request.setItems(List.of(itemReq));
+
+        when(orderMapper.insert(any(Order.class))).thenAnswer(invocation -> {
+            Order o = invocation.getArgument(0);
+            assertThat(o.getDiscountAmount()).isEqualByComparingTo(BigDecimal.ZERO);
+            o.setId("order-discount-default");
+            return 1;
+        });
+        when(orderItemMapper.insert(any(OrderItem.class))).thenReturn(1);
+
+        Order savedOrder = Order.builder()
+                .id("order-discount-default")
+                .tenantId(1L)
+                .customerName("张三")
+                .totalAmount(new BigDecimal("599.00"))
+                .status("pending")
+                .build();
+        when(orderMapper.selectById("order-discount-default")).thenReturn(savedOrder);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(testOrderItem));
+        when(orderLogisticsMapper.selectByOrderId("order-discount-default", 1L)).thenReturn(List.of());
+
+        // when
+        orderService.createOrder(request, 1L);
+
+        // then
+        verify(orderMapper).insert(argThat((Order o) ->
+                o.getDiscountAmount() != null && o.getDiscountAmount().compareTo(BigDecimal.ZERO) == 0));
+    }
+
+    @Test
+    @DisplayName("创建订单 - 实收与 应收-优惠 不一致被拒绝（超出容差 0.01）")
+    void createOrder_rejectsInconsistentActualAmount() {
+        // given: totalAmount=599, 优惠 99 → 应收 500，但实收传 480（差 20 > 0.01）
+        OrderCreateRequest request = buildCreateRequestWithAmounts(new BigDecimal("480.00"), new BigDecimal("99.00"));
+
+        // when & then
+        assertThatThrownBy(() -> orderService.createOrder(request, 1L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("实收金额");
+    }
+
+    @Test
+    @DisplayName("创建订单 - 实收与应收的偏差在容差 0.01 内允许")
+    void createOrder_acceptsActualAmountWithinTolerance() {
+        // given: totalAmount=599, 优惠 99 → 应收 500，实收 499.99（差 0.01）
+        OrderCreateRequest request = buildCreateRequestWithAmounts(new BigDecimal("499.99"), new BigDecimal("99.00"));
+
+        when(orderMapper.insert(any(Order.class))).thenAnswer(invocation -> {
+            Order o = invocation.getArgument(0);
+            o.setId("order-tolerance");
+            return 1;
+        });
+        when(orderItemMapper.insert(any(OrderItem.class))).thenReturn(1);
+
+        Order savedOrder = Order.builder()
+                .id("order-tolerance")
+                .tenantId(1L)
+                .customerName("张三")
+                .totalAmount(new BigDecimal("599.00"))
+                .actualAmount(new BigDecimal("499.99"))
+                .discountAmount(new BigDecimal("99.00"))
+                .status("pending")
+                .build();
+        when(orderMapper.selectById("order-tolerance")).thenReturn(savedOrder);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(testOrderItem));
+        when(orderLogisticsMapper.selectByOrderId("order-tolerance", 1L)).thenReturn(List.of());
+
+        // when & then: 不抛异常
+        OrderDetailResponse result = orderService.createOrder(request, 1L);
+        assertThat(result).isNotNull();
+    }
+
+    @Test
+    @DisplayName("查询订单详情 - 返回退款/优惠字段")
+    void getOrderById_returnsRefundAndDiscountFields() {
+        // given
+        testOrder.setRefundAmount(new BigDecimal("100.00"));
+        testOrder.setRefundAt(OffsetDateTime.parse("2026-07-01T10:00:00Z"));
+        testOrder.setDiscountAmount(new BigDecimal("99.00"));
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(testOrderItem));
+        when(orderLogisticsMapper.selectByOrderId("order-001", 1L)).thenReturn(List.of());
+
+        // when
+        OrderDetailResponse result = orderService.getOrderById("order-001");
+
+        // then
+        assertThat(result.getRefundAmount()).isEqualByComparingTo("100.00");
+        assertThat(result.getRefundAt()).isEqualTo(OffsetDateTime.parse("2026-07-01T10:00:00Z"));
+        assertThat(result.getDiscountAmount()).isEqualByComparingTo("99.00");
+    }
+
+    // ======================== 取消订单补记退款流水测试 ========================
+
+    @Test
+    @DisplayName("取消 confirmed 订单 - 补记 refund 流水（与 income 对冲）")
+    void cancelOrder_confirmedOrder_recordsRefundTransaction() {
+        // given
+        testOrder.setStatus("confirmed");
+        testOrder.setActualAmount(new BigDecimal("599.00"));
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderMapper.update(any(), any())).thenReturn(1);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(testOrderItem));
+
+        // when
+        orderService.cancelOrder("order-001", "客户取消");
+
+        // then: 状态流转 + 恢复库存 + 登记退款流水
+        verify(orderMapper).update(any(), any());
+        verify(productMapper).decreaseSales(eq("prod-001"), eq(2), any(BigDecimal.class));
+        verify(financeTransactionMapper).insert(argThat((FinanceTransaction t) ->
+                "refund".equals(t.getType())
+                        && t.getAmount().compareTo(new BigDecimal("599.00")) == 0));
+    }
+
+    @Test
+    @DisplayName("取消 pending 订单 - 未收款不补记退款流水")
+    void cancelOrder_pendingOrder_noRefundTransaction() {
+        // given
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderMapper.update(any(), any())).thenReturn(1);
+
+        // when
+        orderService.cancelOrder("order-001", null);
+
+        // then
+        verify(orderMapper).update(any(), any());
+        verify(financeTransactionMapper, never()).insert(any(FinanceTransaction.class));
+    }
+
+    // ======================== 超卖校验测试 ========================
+
+    private OrderItem buildItemWithSku(Long skuId, int quantity) {
+        return OrderItem.builder()
+                .id("item-sku-" + skuId)
+                .tenantId(1L)
+                .orderId("order-001")
+                .productId("prod-001")
+                .productName("蜂巢帘")
+                .quantity(quantity)
+                .unitPrice(new BigDecimal("299.50"))
+                .subtotal(new BigDecimal("299.50").multiply(BigDecimal.valueOf(quantity)))
+                .processingInfo(Map.of("skuId", skuId))
+                .build();
+    }
+
+    @Test
+    @DisplayName("确认支付 - SKU 库存不足拒绝确认，不扣减库存")
+    void confirmPayment_rejectsInsufficientStock() {
+        // given: 订单 2 件，SKU 库存仅 1
+        testOrder.setStatus("pending");
+        OrderItem skuItem = buildItemWithSku(100L, 2);
+        ProductSku sku = ProductSku.builder().id(100L).stock(1).build();
+
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(skuItem));
+        when(productSkuMapper.selectById(100L)).thenReturn(sku);
+
+        // when & then
+        assertThatThrownBy(() -> orderService.confirmPayment("order-001"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("库存不足");
+        verify(productSkuMapper, never()).deductStock(anyLong(), anyInt());
+        verify(productMapper, never()).increaseSales(anyString(), anyInt(), any(BigDecimal.class));
+    }
+
+    @Test
+    @DisplayName("确认支付 - SKU 库存充足正常扣减")
+    void confirmPayment_sufficientStock_deducts() {
+        // given: 订单 2 件，SKU 库存 5 充足
+        testOrder.setStatus("pending");
+        OrderItem skuItem = buildItemWithSku(100L, 2);
+        ProductSku sku = ProductSku.builder().id(100L).stock(5).build();
+
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderMapper.update(any(), any())).thenReturn(1);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(skuItem));
+        when(productSkuMapper.selectById(100L)).thenReturn(sku);
+
+        // when
+        orderService.confirmPayment("order-001");
+
+        // then: 正常扣减 SKU 库存 + 商品销量
+        verify(productSkuMapper).deductStock(100L, 2);
+        verify(productMapper).increaseSales(eq("prod-001"), eq(2), any(BigDecimal.class));
+    }
+
+    @Test
+    @DisplayName("确认支付 - 非 pending 状态拒绝（原子流转返回 0 行）")
+    void confirmPayment_rejectsNonPendingStatus() {
+        // given: 订单已确认，原子条件更新（WHERE status=pending）未命中
+        testOrder.setStatus("confirmed");
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderMapper.update(any(), any())).thenReturn(0);
+
+        // when & then
+        assertThatThrownBy(() -> orderService.confirmPayment("order-001"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("只有待确认状态");
     }
 }

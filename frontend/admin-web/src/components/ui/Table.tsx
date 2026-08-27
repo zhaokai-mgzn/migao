@@ -66,17 +66,17 @@ function Table<T extends Record<string, any>>({
         style={minWidth ? { minWidth: `${minWidth}px` } : undefined}
       >
         <thead>
-          <tr className="bg-neutral-50 border-b border-neutral-200">
+          <tr className="bg-gray-50 border-b border-gray-200">
             {columns.map((column) => (
               <th
                 key={column.key}
                 title={column.title}
                 className={cn(
-                  'px-4 py-3 text-left text-sm font-semibold text-neutral-600',
+                  'px-4 py-3 text-left text-sm font-semibold text-gray-600',
                   'whitespace-nowrap',
                   column.align === 'center' && 'text-center',
                   column.align === 'right' && 'text-right',
-                  column.sortable && 'cursor-pointer select-none hover:bg-neutral-100'
+                  column.sortable && 'cursor-pointer select-none hover:bg-gray-100'
                 )}
                 style={{ width: column.width }}
                 onClick={() => column.sortable && onSort?.(column.key)}
@@ -85,8 +85,8 @@ function Table<T extends Record<string, any>>({
                   <span className="whitespace-nowrap truncate" title={column.title}>{column.title}</span>
                   {column.sortable && (
                     <span className="flex flex-col flex-shrink-0">
-                      <ChevronUp className={cn('w-3 h-3 -mb-1', sortField === column.key && sortOrder === 'asc' ? 'text-primary-600' : 'text-neutral-300')} />
-                      <ChevronDown className={cn('w-3 h-3', sortField === column.key && sortOrder === 'desc' ? 'text-primary-600' : 'text-neutral-300')} />
+                      <ChevronUp className={cn('w-3 h-3 -mb-1', sortField === column.key && sortOrder === 'asc' ? 'text-primary-600' : 'text-gray-300')} />
+                      <ChevronDown className={cn('w-3 h-3', sortField === column.key && sortOrder === 'desc' ? 'text-primary-600' : 'text-gray-300')} />
                     </span>
                   )}
                 </div>
@@ -97,7 +97,7 @@ function Table<T extends Record<string, any>>({
         <tbody>
           {loading ? (
             <tr>
-              <td colSpan={columns.length} className="px-4 py-12 text-center text-neutral-500">
+              <td colSpan={columns.length} className="px-4 py-12 text-center text-gray-500">
                 <div className="flex items-center justify-center gap-2">
                   <div className="w-5 h-5 border-2 border-primary-600 border-t-transparent rounded-full animate-spin" />
                   加载中...
@@ -106,7 +106,7 @@ function Table<T extends Record<string, any>>({
             </tr>
           ) : data.length === 0 ? (
             <tr>
-              <td colSpan={columns.length} className="px-4 py-12 text-center text-neutral-500">
+              <td colSpan={columns.length} className="px-4 py-12 text-center text-gray-500">
                 {emptyText}
               </td>
             </tr>
@@ -115,8 +115,8 @@ function Table<T extends Record<string, any>>({
               <tr
                 key={getRowKey(record)}
                 className={cn(
-                  'border-b border-neutral-100 transition-colors',
-                  onRowClick && 'cursor-pointer hover:bg-primary-50/60'
+                  'border-b border-gray-100 transition-colors',
+                  onRowClick && 'cursor-pointer hover:bg-blue-50'
                 )}
                 onClick={() => onRowClick?.(record)}
               >
@@ -124,7 +124,7 @@ function Table<T extends Record<string, any>>({
                   <td
                     key={`${getRowKey(record)}-${column.key}`}
                     className={cn(
-                      'px-4 py-4 text-sm text-neutral-700',
+                      'px-4 py-4 text-sm text-gray-700',
                       column.align === 'center' && 'text-center',
                       column.align === 'right' && 'text-right'
                     )}

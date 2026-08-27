@@ -29,7 +29,6 @@ from loguru import logger
 
 from app.config import settings
 from app.graph.state import AgentState
-from app.memory.session_state_store import SessionStateStore
 from app.tools.base import ToolContext
 from app.tools.registry import ToolRegistry, set_tool_context, get_tool_context
 from app.core import (
@@ -105,149 +104,9 @@ def _is_cancel_message(text: str) -> bool:
     return True
 
 
-async def _load_pending_validated_input(session_id: str) -> Optional[dict]:
-    """读取会话中 validate_input 校验通过待执行的参数（防 LLM 参数走样）。"""
-    if not session_id:
-        return None
-    try:
-        sstate = await SessionStateStore().load(session_id) or {}
-        vp = sstate.get("pending_validated_input")
-        return vp if isinstance(vp, dict) else None
-    except Exception as e:
-        logger.warning(f"[validated-input] Load pending failed (non-fatal): {e}")
-        return None
-
-
-def _format_validated_input_hint(pending: dict) -> str:
-    """把已校验参数格式化为注入 prompt 的铁律提示。"""
-    params_json = json.dumps(pending.get("params") or {}, ensure_ascii=False)
-    return (
-        "【已校验参数】上一轮 validate_input 已通过以下调用参数（"
-        f"target_tool={pending.get('target_tool')}, "
-        f"target_action={pending.get('target_action')}）：\n"
-        f"{params_json}\n"
-        "若用户已确认执行，必须直接原样调用该工具（字段名与值逐字一致），"
-        "不得重新组装、不得改写字段名或值。"
-    )
-
-
-def _is_pure_confirm(text: str) -> bool:
-    """纯确认检测：短确认消息且无修改意图。
-
-    用于"已校验参数"的确定性直接执行：只有最纯粹的确认（"确认/好的/可以"）
-    才跳过 LLM 直接执行；带修改意图的确认（"确认，但价格改成88"）必须走 LLM
-    重新校验，否则会把旧参数原样执行掉。
-    """
-    t = (text or "").strip()
-    if not t or len(t) > 8:
-        return False
-    if not _is_explicit_confirmation(t):
-        return False
-    modify_markers = ("改", "换", "加", "减", "除", "调", "不", "先", "再")
-    if any(m in t for m in modify_markers):
-        return False
-    return True
-
-
-async def _persist_pending_skill_and_validated(
-    session_id: str,
-    skill_name: str,
-    validated: Optional[dict],
-) -> bool:
-    """单次读改写：同时写入 pending_skill 与 pending_validated_input。
-
-    消除与 ContextManager.save 的并发 read-modify-write 丢失更新
-    （生产回归：validate_input 持久化被 ctx-mgr.save 覆盖，表里只见 pending_skill）。
-    validated=None 时仅写入 pending_skill。
-    """
-    if not session_id:
-        return False
-    try:
-        store = SessionStateStore()
-        existing = await store.load(session_id) or {}
-        existing["pending_skill"] = skill_name
-        if validated:
-            existing["pending_validated_input"] = validated
-        return await store.commit(session_id, existing)
-    except Exception as e:
-        logger.warning(f"[pending-state] persist failed (non-fatal): {e}")
-        return False
-
-
-async def _direct_execute_validated(
-    skill_registry,
-    tool_context,
-    pending: dict,
-    skill_name: str,
-    session_id: str,
-) -> Optional[dict]:
-    """跳过 LLM 直接执行已校验参数（生产回归：多轮创建流程"确认"轮卡死修复）。
-
-    返回 None 表示无法直接执行（工具缺失/权限不足/执行异常），调用方回退 LLM 路径。
-    """
-    target_tool = pending.get("target_tool")
-    params = pending.get("params") or {}
-    tool = skill_registry.get_tool(target_tool) if target_tool else None
-    if not tool:
-        logger.warning(f"[{skill_name}] Direct execute skipped: tool not found={target_tool}")
-        return None
-    try:
-        if not tool.check_permission(tool_context):
-            logger.warning(f"[{skill_name}] Direct execute skipped: permission denied={target_tool}")
-            return None
-        result = await tool.execute(tool_context, **params)
-    except Exception as e:
-        logger.warning(f"[{skill_name}] Direct execute failed (fallback to LLM): {e}")
-        return None
-
-    result_dict = (
-        result.model_dump()
-        if hasattr(result, "model_dump")
-        else {"success": result.success, "message": result.message,
-              "data": getattr(result, "data", None), "error": getattr(result, "error", None)}
-    )
-    ai_msg = AIMessage(
-        content="",
-        tool_calls=[{"name": target_tool, "args": params, "id": "direct_exec"}],
-    )
-    tool_msg = ToolMessage(
-        content=json.dumps(result_dict, ensure_ascii=False),
-        tool_call_id="direct_exec",
-        name=target_tool,
-    )
-
-    # 清除 pending，防止残留到后续无关轮次
-    if session_id:
-        try:
-            sstate = await SessionStateStore().load(session_id) or {}
-            if sstate.get("pending_validated_input", {}).get("target_tool") == target_tool:
-                sstate.pop("pending_validated_input", None)
-                await SessionStateStore().commit(session_id, sstate)
-        except Exception as e:
-            logger.warning(f"[{skill_name}] Clear pending after direct exec failed (non-fatal): {e}")
-    # 与正常路径一致：成功结果记录到 ContextManager 供跨 skill 复用
-    if session_id and result_dict.get("success"):
-        try:
-            from app.memory.context_manager import get_context_manager
-            mgr = get_context_manager()
-            mgr.record_tool_result(session_id, target_tool, result_dict)
-            await mgr.save(session_id)
-        except Exception:
-            pass
-
-    logger.info(
-        f"[{skill_name}] Direct executed validated input: tool={target_tool} "
-        f"success={result.success} | session={session_id}"
-    )
-    return {
-        "messages": [ai_msg, tool_msg],
-        "final_answer": result.message or "",
-        "skill_used": skill_name,
-    }
-
-
 def _extract_content(response: AIMessage) -> str:
     """从 AIMessage 中提取有效文本内容
+
     兼容 MiniMax 思考模式：
     1. 优先取 response.content 并移除 <think> 标签
     2. 若 stripped 结果仍含 <think> 标签（仅 thinking 内容），提取内部文本
@@ -1028,35 +887,7 @@ async def execute_skill(
         full_msg_parts.append("\n" + compression_text)
     if ctx_text:
         full_msg_parts.append("\n" + ctx_text)
-
-    # ── 5.6 已校验参数注入（生产回归：执行轮原样复用，防 LLM 参数二次组装走样）──
-    # validate_input 校验通过时把参数持久化到 SessionStateStore.pending_validated_input；
-    # 执行轮若 target_tool 在当前 skill 工具集内，注入 system prompt 强制原样复用。
-    pending_validated = await _load_pending_validated_input(session_id)
-    if pending_validated and pending_validated.get("target_tool") in (tool_names or []):
-        validated_input_text = _format_validated_input_hint(pending_validated)
-        full_msg_parts.append("\n" + validated_input_text)
-        logger.info(
-            f"[{skill_name}] Injected pending validated input: "
-            f"tool={pending_validated.get('target_tool')} | session={session_id}"
-        )
     full_messages.insert(0, SystemMessage(content="\n\n".join(full_msg_parts)))
-
-    # ── 5.7 确定性直接执行（生产回归：防多轮创建流程"确认"轮卡死）──
-    # 纯确认消息 + 存在已校验参数 → 跳过 LLM 直接执行目标工具。
-    # 带修改意图的确认（"确认，但价格改成88"）不满足 _is_pure_confirm，仍走 LLM。
-    if not is_multimodal and pending_validated and pending_validated.get("target_tool") in (tool_names or []):
-        last_user_text = ""
-        for m in reversed(raw_messages):
-            if isinstance(m, HumanMessage):
-                last_user_text = (_extract_content(m) or "").strip()
-                break
-        if _is_pure_confirm(last_user_text):
-            direct_result = await _direct_execute_validated(
-                skill_registry, tool_context, pending_validated, skill_name, session_id,
-            )
-            if direct_result is not None:
-                return direct_result
 
     # ── 6. Vision 分支 ──
     new_messages: List[Any] = []
@@ -1152,11 +983,6 @@ async def execute_skill(
                 except Exception:
                     pass
         else:
-            # 本轮捕获的"校验通过待执行"参数（循环结束后统一持久化，
-            # 避免与 ContextManager.save 的并发 read-modify-write 丢失更新）
-            validated_input_pending: Optional[dict] = None
-            # 本轮成功执行过的工具名（用于判断校验参数是否已被执行）
-            executed_ok: set = set()
             for iteration in range(max_iterations):
                 logger.info(f"[{skill_name}] Iteration {iteration+1}/{max_iterations} | session={session_id}")
 
@@ -1244,8 +1070,6 @@ async def execute_skill(
 
                 for tool_call, result_str, result_dict in tool_results:
                     tool_name = tool_call["name"]
-                    if result_dict.get("success"):
-                        executed_ok.add(tool_name)
                     # 记录 tool 结果到 ContextManager，跨 skill 共享
                     if session_id and result_dict.get("success"):
                         try:
@@ -1255,31 +1079,6 @@ async def execute_skill(
                             await mgr.save(session_id)  # Redis 持久化
                         except Exception:
                             pass
-                    # 捕获本轮校验通过的参数（循环结束后统一持久化，防并发写丢失）
-                    if tool_name == "validate_input" and result_dict.get("success"):
-                        vdata = result_dict.get("data") or {}
-                        if vdata.get("validated"):
-                            vargs = tool_call.get("args") or {}
-                            validated_input_pending = {
-                                "target_tool": vargs.get("target_tool"),
-                                "target_action": vargs.get("target_action"),
-                                "params": vdata.get("params") or {},
-                            }
-                    # 已校验参数执行成功后清除，防止残留到后续无关轮次
-                    if (session_id and result_dict.get("success")
-                            and pending_validated
-                            and pending_validated.get("target_tool") == tool_name):
-                        try:
-                            sstate = await SessionStateStore().load(session_id) or {}
-                            if sstate.get("pending_validated_input", {}).get("target_tool") == tool_name:
-                                sstate.pop("pending_validated_input", None)
-                                await SessionStateStore().commit(session_id, sstate)
-                                logger.info(
-                                    f"[{skill_name}] Cleared pending validated input after "
-                                    f"tool={tool_name} success | session={session_id}"
-                                )
-                        except Exception as e:
-                            logger.warning(f"[{skill_name}] Clear pending validated input failed (non-fatal): {e}")
                     new_messages.append(ToolMessage(content=result_str, tool_call_id=tool_call["id"], name=tool_name))
                     if tool_name == "interact" and result_dict.get("success"):
                         try:
@@ -1309,16 +1108,9 @@ async def execute_skill(
                 logger.warning(f"[{skill_name}] Failed to clear pending_skill | session={session_id} error={e}")
         else:
             result["pending_interact_skill"] = skill_name
-            # 本轮的"校验通过待执行"参数与 pending_skill 合并为一次写，
-            # 供下一轮注入/直接执行（防与 ContextManager.save 并发丢失更新）
-            to_persist = None
-            if validated_input_pending and validated_input_pending.get("target_tool") not in executed_ok:
-                to_persist = validated_input_pending
             try:
-                await _persist_pending_skill_and_validated(
-                    session_id, skill_name, to_persist,
-                )
+                await SessionMemory().set_pending_skill(session_id, skill_name)
             except Exception as e:
-                logger.warning(f"[{skill_name}] Failed to persist pending state | session={session_id} error={e}")
+                logger.warning(f"[{skill_name}] Failed to persist pending_skill | session={session_id} error={e}")
 
     return result

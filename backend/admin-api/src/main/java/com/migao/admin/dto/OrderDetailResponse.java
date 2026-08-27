@@ -48,6 +48,21 @@ public class OrderDetailResponse {
     private BigDecimal actualAmount;
 
     /**
+     * 优惠金额（应收 totalAmount 与实收 actualAmount 的差额）
+     */
+    private BigDecimal discountAmount;
+
+    /**
+     * 累计已退款金额（>0 表示"已退款"）
+     */
+    private BigDecimal refundAmount;
+
+    /**
+     * 最近一次退款时间
+     */
+    private OffsetDateTime refundAt;
+
+    /**
      * 加工费合计（所有订单明细加工项金额之和）
      */
     private BigDecimal processingFee;

@@ -46,6 +46,7 @@ class IntentType(str, Enum):
     DASHBOARD = "dashboard"
     STATISTICS = "statistics"
     DATA_REPORT = "data_report"
+    FINANCE = "finance"
     SESSION_MANAGE = "session_manage"
     # ── 知识库域 (knowledge) ──
     KNOWLEDGE_FAQ = "knowledge_faq"
@@ -65,7 +66,7 @@ INTENT_DOMAINS: dict[str, set[str]] = {
     "crm": {"customer_manage", "customer_query"},
     "hr": {"employee_manage", "staff_manage", "role_manage", "permission_manage"},
     "settings": {"system_settings", "ai_config", "notification", "quick_reply"},
-    "analytics": {"dashboard", "statistics", "data_report", "session_manage"},
+    "analytics": {"dashboard", "statistics", "data_report", "finance", "session_manage"},
     "knowledge": {"knowledge_faq", "knowledge_manage"},
     # 未来扩展：
     # "supply_chain": {"supplier_query", "purchase_order", ...},
@@ -135,6 +136,7 @@ INTENT_TOOL_MAP: dict[IntentType, list[str]] = {
     IntentType.DASHBOARD: ["dashboard_stats"],
     IntentType.STATISTICS: ["dashboard_stats"],
     IntentType.DATA_REPORT: ["dashboard_stats"],
+    IntentType.FINANCE: ["finance_api"],
     IntentType.SESSION_MANAGE: ["session_manage"],
     IntentType.AFTER_SALES_CREATE: ["after_sales_manage"],
     IntentType.KNOWLEDGE_MANAGE: ["knowledge_manage"],

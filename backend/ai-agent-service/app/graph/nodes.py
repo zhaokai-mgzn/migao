@@ -134,60 +134,6 @@ async def _build_entity_hint(session_id: str) -> str:
 # ────────────────────── 辅助节点 ──────────────────────
 
 
-# 路由 key（skill route_key）→ 意图 映射（pending_skill 快捷路由与确定性确认路由共用）
-_SKILL_TO_INTENT = {
-    "product": "product_inquiry",
-    "order": "order_query",
-    "aftersales": "after_sales",
-    "customer": "customer_query",
-    "staff": "employee_manage",
-    "settings": "system_settings",
-    "data": "dashboard",
-    "general": "general",
-}
-
-
-def _is_pure_confirm_text(text: str) -> bool:
-    """纯确认检测：短确认消息且无修改意图（与 base_skill._is_pure_confirm 同语义）。"""
-    t = (text or "").strip()
-    if not t or len(t) > 8:
-        return False
-    confirm_words = ("确认", "确定", "好的", "可以", "同意", "行", "没问题", "是", "ok", "yes")
-    if not any(w in t for w in confirm_words):
-        return False
-    modify_markers = ("改", "换", "加", "减", "除", "调", "不", "先", "再")
-    if any(m in t for m in modify_markers):
-        return False
-    return True
-
-
-async def _get_pending_validated_tool(session_id: str) -> str:
-    """读取会话中校验通过待执行的目标工具名（无则返回空串）。"""
-    try:
-        from app.memory.session_state_store import SessionStateStore
-        sstate = await SessionStateStore().load(session_id) or {}
-        vp = sstate.get("pending_validated_input")
-        if isinstance(vp, dict) and vp.get("target_tool"):
-            return vp["target_tool"]
-    except Exception as e:
-        logger.warning(f"[intent_router] Load pending validated input failed: {e}")
-    return ""
-
-
-def _find_route_key_for_tool(target_tool: str) -> str:
-    """按工具名反查所属 skill 的 route_key（确定性确认路由用）。"""
-    try:
-        from app.graph.skills.skill_registry import get_skill_registry
-        for cfg in get_skill_registry().get_all():
-            if target_tool in (cfg.tool_names or []):
-                for key in (cfg.route_keys or []):
-                    if key in _SKILL_TO_INTENT:
-                        return key
-    except Exception as e:
-        logger.warning(f"[intent_router] Find route key for tool failed: {e}")
-    return ""
-
-
 async def intent_router_node(state: AgentState) -> dict:
     """执行意图路由
 
@@ -210,6 +156,16 @@ async def intent_router_node(state: AgentState) -> dict:
 
         # 短消息：沿用 pending_skill 快捷路由（节省 LLM 调用，防止误分类）
         if msg_len <= 5:
+            _SKILL_TO_INTENT = {
+                "product": "product_inquiry",
+                "order": "order_query",
+                "aftersales": "after_sales",
+                "customer": "customer_query",
+                "staff": "employee_manage",
+                "settings": "system_settings",
+                "data": "dashboard",
+                "general": "general",
+            }
             synthetic_intent = _SKILL_TO_INTENT.get(pending_skill, "general")
             logger.info(
                 f"[intent_router] Intent rewrite (short msg): pending_skill={pending_skill}"
@@ -230,37 +186,6 @@ async def intent_router_node(state: AgentState) -> dict:
             f" | pending_skill={pending_skill} msg_len={msg_len} session={session_id}"
         )
         # 继续走下面的 LLM 分类流程
-
-    # 确定性确认路由（生产回归：多轮创建流程"确认"轮被 L2 误分类导致断裂）。
-    # LLM 汇总常不调 interact → pending_skill 未设置 → 纯确认消息（"确认"）被 L2
-    # 瞎猜成 order_create/general → 路由错 skill。若会话中存在 validate_input
-    # 已校验通过待执行的参数，纯确认消息直接路由回"校验所在 skill"，
-    # 由 execute_skill 的确定性执行分支原样执行。
-    if not pending_skill and session_id:
-        last_user_msg = ""
-        for m in reversed(state.get("messages", [])):
-            if isinstance(m, HumanMessage):
-                last_user_msg = _extract_text_from_content(m.content)
-                break
-        if _is_pure_confirm_text(last_user_msg):
-            target_tool = await _get_pending_validated_tool(session_id)
-            if target_tool:
-                route_key = _find_route_key_for_tool(target_tool)
-                if route_key:
-                    synthetic_intent = _SKILL_TO_INTENT.get(route_key, "general")
-                    logger.info(
-                        f"[intent_router] Validated-confirm deterministic route: "
-                        f"tool={target_tool} route_key={route_key} intent={synthetic_intent}"
-                        f" | session={session_id}"
-                    )
-                    return {
-                        "intent_result": {
-                            "intent": synthetic_intent,
-                            "confidence": 0.99,
-                            "source": "validated_confirm",
-                        },
-                        "route_decision": {"action": "full_agent"},
-                    }
 
     from app.router.intent_router import IntentRouter
 

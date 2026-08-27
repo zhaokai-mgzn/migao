@@ -19,7 +19,7 @@ export default function OrderItemList({ items, className }: OrderItemListProps) 
   return (
     <div className={className}>
       {/* 表头 */}
-      <div className="grid grid-cols-12 gap-2 px-4 py-2.5 bg-neutral-50 rounded-t-lg text-xs font-semibold text-neutral-500 uppercase">
+      <div className="grid grid-cols-12 gap-2 px-4 py-2.5 bg-gray-50 rounded-t-lg text-xs font-semibold text-gray-500 uppercase">
         <div className="col-span-4">商品信息</div>
         <div className="col-span-2 text-center">数量</div>
         <div className="col-span-2 text-right">单价</div>
@@ -28,39 +28,39 @@ export default function OrderItemList({ items, className }: OrderItemListProps) 
       </div>
 
       {/* 明细行 */}
-      <div className="divide-y divide-neutral-100">
+      <div className="divide-y divide-gray-100">
         {items.map((item, index) => (
           <div key={item.id || index} className="grid grid-cols-12 gap-2 px-4 py-3 items-center">
             <div className="col-span-4">
-              <div className="font-medium text-neutral-900 text-sm">{item.productName}</div>
+              <div className="font-medium text-gray-900 text-sm">{item.productName}</div>
               <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
                 {item.sku && (
-                  <span className="text-xs text-neutral-400">SKU: {item.sku}</span>
+                  <span className="text-xs text-gray-400">SKU: {item.sku}</span>
                 )}
                 {/* 销售信息：颜色、销售方式、门幅 */}
                 {item.processingInfo && typeof item.processingInfo === 'object' && (
                   <>
                     {(item.processingInfo as any).colorName && (
-                      <span className="text-xs text-primary-600 font-medium">{(item.processingInfo as any).colorName}</span>
+                      <span className="text-xs text-blue-600 font-medium">{(item.processingInfo as any).colorName}</span>
                     )}
                     {(item.processingInfo as any).sellingMethod && (
-                      <span className="text-xs text-neutral-400">
+                      <span className="text-xs text-gray-400">
                         {(() => { const m: Record<string, string> = { bulk_cut: '散剪', full_roll: '整卷', per_meter: '按米', per_piece: '按件' }; return m[(item.processingInfo as any).sellingMethod] || (item.processingInfo as any).sellingMethod })()}
                       </span>
                     )}
                     {(item.processingInfo as any).doorWidth && (
-                      <span className="text-xs text-neutral-400">门幅: {(item.processingInfo as any).doorWidth}</span>
+                      <span className="text-xs text-gray-400">门幅: {(item.processingInfo as any).doorWidth}</span>
                     )}
                   </>
                 )}
                 {item.specification && (
-                  <span className="text-xs text-neutral-400">规格: {item.specification}</span>
+                  <span className="text-xs text-gray-400">规格: {item.specification}</span>
                 )}
                 {item.width && (
-                  <span className="text-xs text-neutral-400">宽: {item.width}m</span>
+                  <span className="text-xs text-gray-400">宽: {item.width}m</span>
                 )}
                 {item.height && (
-                  <span className="text-xs text-neutral-400">高: {item.height}m</span>
+                  <span className="text-xs text-gray-400">高: {item.height}m</span>
                 )}
               </div>
               {item.processingInfo && Object.keys(item.processingInfo).length > 0 && (
@@ -69,16 +69,16 @@ export default function OrderItemList({ items, className }: OrderItemListProps) 
                 </div>
               )}
             </div>
-            <div className="col-span-2 text-center text-sm text-neutral-700">
+            <div className="col-span-2 text-center text-sm text-gray-700">
               ×{item.quantity}
             </div>
-            <div className="col-span-2 text-right text-sm text-neutral-700">
+            <div className="col-span-2 text-right text-sm text-gray-700">
               {formatAmount(item.unitPrice)}
             </div>
-            <div className="col-span-2 text-right text-sm text-neutral-500">
+            <div className="col-span-2 text-right text-sm text-gray-500">
               {item.processingFee ? formatAmount(item.processingFee) : '-'}
             </div>
-            <div className="col-span-2 text-right text-sm font-medium text-neutral-900">
+            <div className="col-span-2 text-right text-sm font-medium text-gray-900">
               {formatAmount(item.subtotal + (item.processingFee || 0))}
             </div>
           </div>
@@ -86,20 +86,20 @@ export default function OrderItemList({ items, className }: OrderItemListProps) 
       </div>
 
       {/* 合计 */}
-      <div className="border-t border-neutral-200 px-4 py-3 space-y-2">
+      <div className="border-t border-gray-200 px-4 py-3 space-y-2">
         <div className="flex justify-between text-sm">
-          <span className="text-neutral-500">商品金额</span>
-          <span className="text-neutral-700">{formatAmount(subtotalSum)}</span>
+          <span className="text-gray-500">商品金额</span>
+          <span className="text-gray-700">{formatAmount(subtotalSum)}</span>
         </div>
         {processingFeeSum > 0 && (
           <div className="flex justify-between text-sm">
-            <span className="text-neutral-500">加工费合计</span>
+            <span className="text-gray-500">加工费合计</span>
             <span className="text-amber-600">{formatAmount(processingFeeSum)}</span>
           </div>
         )}
-        <div className="flex justify-between text-base font-semibold pt-2 border-t border-neutral-100">
-          <span className="text-neutral-900">订单总金额</span>
-          <span className="text-primary-600">{formatAmount(totalAmount)}</span>
+        <div className="flex justify-between text-base font-semibold pt-2 border-t border-gray-100">
+          <span className="text-gray-900">订单总金额</span>
+          <span className="text-blue-600">{formatAmount(totalAmount)}</span>
         </div>
       </div>
     </div>

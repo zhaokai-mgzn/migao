@@ -300,6 +300,20 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             totalAmount = totalAmount.add(itemAmount).add(processingFee);
         }
 
+        // 优惠金额（默认 0）；若提供了实收款，校验 应收 - 优惠 ≈ 实收（容差 0.01）
+        BigDecimal discountAmount = request.getDiscountAmount() != null ? request.getDiscountAmount() : BigDecimal.ZERO;
+        if (discountAmount.compareTo(BigDecimal.ZERO) < 0) {
+            throw BusinessException.validationError("优惠金额不能为负数");
+        }
+        if (request.getActualAmount() != null) {
+            BigDecimal expected = totalAmount.subtract(discountAmount);
+            if (expected.subtract(request.getActualAmount()).abs().compareTo(new BigDecimal("0.01")) > 0) {
+                throw BusinessException.validationError(
+                        String.format("实收金额与应收不一致：应收 %s - 优惠 %s = %s，实收 %s（容差 0.01）",
+                                totalAmount, discountAmount, expected, request.getActualAmount()));
+            }
+        }
+
         // 创建订单实体
         Order order = new Order();
         order.setTenantId(tenantId);
@@ -310,6 +324,8 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         order.setTotalAmount(totalAmount);
         // 实收款：用户输入值，未输入时默认等于订单总额
         order.setActualAmount(request.getActualAmount() != null ? request.getActualAmount() : totalAmount);
+        // 优惠金额落库
+        order.setDiscountAmount(discountAmount);
         order.setStatus("pending");
         order.setRemark(request.getRemark());
 
@@ -688,10 +704,19 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
 
     /**
      * 确认支付
-     * 状态流转：pending → confirmed，同时扣减库存、增加销量
+     * 状态流转：pending → confirmed，同时扣减库存、增加销量。
+     * 扣减前先校验 SKU 库存充足，不足则拒绝确认支付（而非 GREATEST 钳 0 导致超卖）。
      */
     @Transactional(rollbackFor = Exception.class)
     public void confirmPayment(String id) {
+        Order order = orderMapper.selectById(id);
+        if (order == null) {
+            throw BusinessException.notFound("订单");
+        }
+
+        // 前置库存校验：库存不足直接拒绝确认支付
+        validateStockSufficient(order);
+
         // 原子状态流转：仅 pending → confirmed，防止并发重复扣减库存
         int rows = transitionStatusAtomic(id, "pending", "confirmed", null);
         if (rows == 0) {
@@ -702,9 +727,37 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         deductStockAndIncreaseSales(id);
 
         // 登记资金流水（收款）——失败不影响订单主流程
-        Order order = orderMapper.selectById(id);
-        recordFinanceTransaction(order, "income", "订单确认收款");
+        Order freshOrder = orderMapper.selectById(id);
+        recordFinanceTransaction(freshOrder != null ? freshOrder : order, "income", "订单确认收款");
         log.info("确认支付成功: id={}", id);
+    }
+
+    /**
+     * 校验订单明细对应的 SKU 库存是否充足（按 processingInfo 匹配 SKU）。
+     * 无匹配 SKU 的明细不校验（对应无 SKU 扣减）。
+     *
+     * @throws BusinessException 库存不足时抛出业务异常
+     */
+    private void validateStockSufficient(Order order) {
+        if (order == null || order.getId() == null) {
+            return;
+        }
+        List<OrderItem> items = orderItemMapper.selectList(
+                new LambdaQueryWrapper<OrderItem>().eq(OrderItem::getOrderId, order.getId()));
+        for (OrderItem item : items) {
+            Long skuId = matchSkuId(item);
+            if (skuId == null || item.getQuantity() == null) {
+                continue;
+            }
+            ProductSku sku = productSkuMapper.selectById(skuId);
+            int stock = sku != null && sku.getStock() != null ? sku.getStock() : 0;
+            if (stock < item.getQuantity()) {
+                throw BusinessException.validationError(
+                        String.format("商品「%s」库存不足：需要 %d 件，当前仅剩 %d 件，请先补货后再确认支付",
+                                item.getProductName() != null ? item.getProductName() : skuId,
+                                item.getQuantity(), stock));
+            }
+        }
     }
 
     /**
@@ -735,19 +788,29 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             throw BusinessException.validationError("订单状态已并发变更，请刷新后重试");
         }
 
-        // 已确认/生产中的订单被取消时，恢复库存和销量
+        // 已确认/生产中的订单被取消时，恢复库存和销量，并补记退款流水（与 confirmPayment 的 income 对冲）
         if ("confirmed".equals(previousStatus) || "producing".equals(previousStatus)) {
             restoreStockAndDecreaseSales(id);
+            BigDecimal remainingRefund = effectiveActualAmount(order).subtract(
+                    order.getRefundAmount() != null ? order.getRefundAmount() : BigDecimal.ZERO);
+            if (remainingRefund.compareTo(BigDecimal.ZERO) > 0) {
+                recordFinanceTransaction(order, remainingRefund, "refund", "订单取消退款");
+            }
         }
         log.info("取消订单成功: id={}, reason={}", id, closeReason);
     }
 
     /**
-     * 退款
-     * 仅允许已确认/生产中/已发货/已完成状态的订单退款，恢复库存和销量
+     * 退款（财务叠加语义：不改订单状态、不恢复库存）
+     * 仅允许已确认/生产中/已发货/已完成状态的订单退款。
+     * 落 refundAmount（累计，封顶实收款）+ refundAt，并登记退款流水。
+     *
+     * @param id           订单ID
+     * @param refundAmount 退款金额（null = 全额退款）
+     * @param refundReason 退款原因（可选）
      */
     @Transactional(rollbackFor = Exception.class)
-    public void refundOrder(String id, String refundReason) {
+    public void refundOrder(String id, BigDecimal refundAmount, String refundReason) {
         Order order = orderMapper.selectById(id);
         if (order == null) {
             throw BusinessException.notFound("订单");
@@ -759,21 +822,32 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
                     "当前状态[" + previousStatus + "]不允许退款，仅已确认/生产中/已发货/已完成可退款");
         }
 
+        BigDecimal actual = effectiveActualAmount(order);
+        BigDecimal refund = refundAmount != null ? refundAmount : actual;
+        if (refund.compareTo(BigDecimal.ZERO) < 0) {
+            throw BusinessException.validationError("退款金额不能为负数");
+        }
+        if (refund.compareTo(actual) > 0) {
+            throw BusinessException.validationError("退款金额不能超过实收款 " + actual);
+        }
+
+        // 累计已退金额，封顶实收款（防并发/多次退款超退）
+        BigDecimal existingRefund = order.getRefundAmount() != null ? order.getRefundAmount() : BigDecimal.ZERO;
+        BigDecimal applied = refund.min(actual.subtract(existingRefund));
+        if (applied.compareTo(BigDecimal.ZERO) <= 0) {
+            throw BusinessException.validationError("该订单已全额退款，无需重复退款");
+        }
+
         String reason = refundReason != null && !refundReason.isBlank() ? refundReason : "退款";
-        // 原子状态流转（防止并发重复恢复库存）
-        int rows = transitionStatusAtomic(id, previousStatus, "cancelled", reason);
-        if (rows == 0) {
-            throw BusinessException.validationError("订单状态已并发变更，请刷新后重试");
-        }
+        // 保持原状态，仅落退款金额与时间（前端"已退款"徽标由 refundAmount>0 判定）
+        order.setRefundAmount(existingRefund.add(applied));
+        order.setRefundAt(OffsetDateTime.now());
+        orderMapper.updateById(order);
 
-        // 已确认及以上的订单被退款时，恢复库存和销量
-        if (!"pending".equals(previousStatus)) {
-            restoreStockAndDecreaseSales(id);
-        }
-
-        // 登记资金流水（退款）——失败不影响订单主流程
-        recordFinanceTransaction(order, "refund", "订单退款: " + reason);
-        log.info("退款成功: id={}, previousStatus={}, refundReason={}", id, previousStatus, refundReason);
+        // 登记资金流水（退款，金额=本次实际退款额）——失败不影响订单主流程
+        recordFinanceTransaction(order, applied, "refund", "订单退款: " + reason);
+        log.info("退款成功: id={}, previousStatus={}, refundAmount={}, refundReason={}",
+                id, previousStatus, applied, refundReason);
     }
 
     /**
@@ -839,15 +913,30 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     // ==================== 财务流水登记 ====================
 
     /**
-     * 登记一笔订单关联的资金流水（收款/退款）。
+     * 订单实际应收（实收）金额：actualAmount 兜底 totalAmount。
+     */
+    private BigDecimal effectiveActualAmount(Order order) {
+        return order.getActualAmount() != null ? order.getActualAmount() : order.getTotalAmount();
+    }
+
+    /**
+     * 登记一笔订单关联的资金流水（收款/退款），金额取订单实收款。
      * 失败仅告警，不影响订单主流程（对账流水为辅助数据）。
      */
     private void recordFinanceTransaction(Order order, String type, String remark) {
+        BigDecimal amount = effectiveActualAmount(order);
+        recordFinanceTransaction(order, amount, type, remark);
+    }
+
+    /**
+     * 登记一笔订单关联的资金流水（收款/退款），金额显式指定（支持部分退款）。
+     * 失败仅告警，不影响订单主流程（对账流水为辅助数据）。
+     */
+    private void recordFinanceTransaction(Order order, BigDecimal amount, String type, String remark) {
         try {
             if (order == null) {
                 return;
             }
-            BigDecimal amount = order.getActualAmount() != null ? order.getActualAmount() : order.getTotalAmount();
             if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
                 return;
             }
@@ -1123,12 +1212,71 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
                 yield getOrderById(resolvedId);
             }
             case "refund" -> {
-                refundOrder(resolvedId, request.getRefundReason());
+                refundOrder(resolvedId, request.getRefundAmount(), request.getRefundReason());
+                yield getOrderById(resolvedId);
+            }
+            case "update_logistics" -> {
+                if (!StringUtils.hasText(request.getLogisticsCompany())) {
+                    throw BusinessException.validationError("logisticsCompany 不能为空");
+                }
+                if (!StringUtils.hasText(request.getTrackingNumber())) {
+                    throw BusinessException.validationError("trackingNumber 不能为空");
+                }
+                upsertLogistics(resolvedId, request.getLogisticsCompany().trim(),
+                        request.getTrackingNumber().trim());
+                // 发货语义：记录物流后将订单流转为 shipped（与契约 order_manage(update_logistics) 可发货一致）
+                shipOrderIfApplicable(resolvedId);
                 yield getOrderById(resolvedId);
             }
             default -> throw BusinessException.validationError(
-                    "不支持的操作类型: " + action + "，可选: update_status/confirm_payment/cancel/refund");
+                    "不支持的操作类型: " + action + "，可选: update_status/update_logistics/confirm_payment/cancel/refund");
         };
+    }
+
+    /**
+     * 更新/创建订单物流信息：存在最新物流记录则更新，否则新建（status=in_transit）。
+     */
+    private void upsertLogistics(String orderId, String logisticsCompany, String trackingNo) {
+        List<OrderLogistics> existing = orderLogisticsMapper.selectByOrderId(orderId, TenantContext.getTenantId());
+        if (existing == null || existing.isEmpty()) {
+            OrderLogistics logistics = OrderLogistics.builder()
+                    .tenantId(TenantContext.getTenantId())
+                    .orderId(orderId)
+                    .logisticsCompany(logisticsCompany)
+                    .trackingNo(trackingNo)
+                    .status("in_transit")
+                    .shippedAt(OffsetDateTime.now())
+                    .build();
+            orderLogisticsMapper.insert(logistics);
+            log.info("创建物流信息成功: orderId={}, trackingNo={}", orderId, trackingNo);
+        } else {
+            OrderLogistics latest = existing.get(0);
+            latest.setLogisticsCompany(logisticsCompany);
+            latest.setTrackingNo(trackingNo);
+            if (latest.getStatus() == null) {
+                latest.setStatus("in_transit");
+            }
+            orderLogisticsMapper.updateById(latest);
+            log.info("更新物流信息成功: id={}, trackingNo={}", latest.getId(), trackingNo);
+        }
+    }
+
+    /**
+     * 发货联动：confirmed/producing 状态的订单在记录物流后原子流转为 shipped。
+     * 已 shipped/completed 保持原状态（仅更新物流）；pending/cancelled 不强制流转。
+     */
+    private void shipOrderIfApplicable(String orderId) {
+        Order order = orderMapper.selectById(orderId);
+        if (order == null) {
+            return;
+        }
+        String currentStatus = order.getStatus();
+        if ("confirmed".equals(currentStatus) || "producing".equals(currentStatus)) {
+            int rows = transitionStatusAtomic(orderId, currentStatus, "shipped", null);
+            if (rows == 0) {
+                throw BusinessException.validationError("订单状态已并发变更，请刷新后重试");
+            }
+        }
     }
 
     /**

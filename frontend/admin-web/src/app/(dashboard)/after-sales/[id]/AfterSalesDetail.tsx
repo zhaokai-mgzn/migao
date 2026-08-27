@@ -59,7 +59,7 @@ const statusTimelineColor: Record<AfterSalesStatus, string> = {
   processing: 'text-blue-500 bg-blue-50 border-blue-200',
   resolved: 'text-green-500 bg-green-50 border-green-200',
   rejected: 'text-red-500 bg-red-50 border-red-200',
-  closed: 'text-neutral-500 bg-neutral-50 border-neutral-200',
+  closed: 'text-gray-500 bg-gray-50 border-gray-200',
 }
 
 export default function AfterSalesDetailPage() {
@@ -146,7 +146,7 @@ export default function AfterSalesDetailPage() {
   if (!ticket) {
     return (
       <div className="p-6 text-center py-12">
-        <p className="text-neutral-500 mb-4">工单不存在或已被删除</p>
+        <p className="text-gray-500 mb-4">工单不存在或已被删除</p>
         <Button onClick={() => router.push('/after-sales')}>返回工单列表</Button>
       </div>
     )
@@ -161,13 +161,13 @@ export default function AfterSalesDetailPage() {
         <div className="flex items-center gap-4">
           <button
             onClick={() => router.push('/after-sales')}
-            className="p-2 hover:bg-neutral-100 rounded-lg transition-colors"
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
           >
-            <ArrowLeft className="w-5 h-5 text-neutral-600" />
+            <ArrowLeft className="w-5 h-5 text-gray-600" />
           </button>
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-xl font-semibold text-neutral-900">工单详情</h1>
+              <h1 className="text-xl font-semibold text-gray-900">工单详情</h1>
               <Badge variant={getStatusVariant(ticket.status)}>
                 {AfterSalesStatusLabels[ticket.status]}
               </Badge>
@@ -177,7 +177,7 @@ export default function AfterSalesDetailPage() {
                 </Badge>
               )}
             </div>
-            <p className="text-sm text-neutral-500 mt-1 font-mono">工单号: {ticket.ticketNo}</p>
+            <p className="text-sm text-gray-500 mt-1 font-mono">工单号: {ticket.ticketNo}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -200,25 +200,25 @@ export default function AfterSalesDetailPage() {
           <Card>
             <div className="p-6">
               <div className="flex items-center gap-2 mb-4">
-                <FileText className="w-5 h-5 text-neutral-500" />
-                <h2 className="text-lg font-semibold text-neutral-900">工单信息</h2>
+                <FileText className="w-5 h-5 text-gray-500" />
+                <h2 className="text-lg font-semibold text-gray-900">工单信息</h2>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <p className="text-xs text-neutral-500 mb-1">售后类型</p>
-                  <p className="text-sm font-medium text-neutral-900">
+                  <p className="text-xs text-gray-500 mb-1">售后类型</p>
+                  <p className="text-sm font-medium text-gray-900">
                     {AfterSalesTypeLabels[ticket.ticketType] || ticket.ticketType}
                   </p>
                 </div>
                 <div>
-                  <p className="text-xs text-neutral-500 mb-1">创建时间</p>
-                  <p className="text-sm font-medium text-neutral-900">
+                  <p className="text-xs text-gray-500 mb-1">创建时间</p>
+                  <p className="text-sm font-medium text-gray-900">
                     {ticket.createdAt ? dayjs(ticket.createdAt).format('YYYY-MM-DD HH:mm') : '-'}
                   </p>
                 </div>
                 {ticket.refundAmount !== undefined && ticket.refundAmount !== null && (
                   <div>
-                    <p className="text-xs text-neutral-500 mb-1">退款金额</p>
+                    <p className="text-xs text-gray-500 mb-1">退款金额</p>
                     <p className="text-sm font-medium text-red-600">
                       ¥{ticket.refundAmount.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </p>
@@ -226,8 +226,8 @@ export default function AfterSalesDetailPage() {
                 )}
                 {ticket.deadline && (
                   <div>
-                    <p className="text-xs text-neutral-500 mb-1">处理截止时间</p>
-                    <p className="text-sm font-medium text-neutral-900">
+                    <p className="text-xs text-gray-500 mb-1">处理截止时间</p>
+                    <p className="text-sm font-medium text-gray-900">
                       {dayjs(ticket.deadline).format('YYYY-MM-DD HH:mm')}
                     </p>
                   </div>
@@ -239,13 +239,13 @@ export default function AfterSalesDetailPage() {
           {/* 售后原因和描述 */}
           <Card>
             <div className="p-6">
-              <h2 className="text-lg font-semibold text-neutral-900 mb-3">售后原因</h2>
-              <p className="text-neutral-600 bg-neutral-50 p-4 rounded-lg whitespace-pre-wrap">
+              <h2 className="text-lg font-semibold text-gray-900 mb-3">售后原因</h2>
+              <p className="text-gray-600 bg-gray-50 p-4 rounded-lg whitespace-pre-wrap">
                 {ticket.description || '无描述'}
               </p>
               {ticket.images && ticket.images.length > 0 && (
                 <div className="mt-4">
-                  <p className="text-sm text-neutral-500 mb-2">相关图片</p>
+                  <p className="text-sm text-gray-500 mb-2">相关图片</p>
                   <div className="flex flex-wrap gap-2">
                     {ticket.images.map((img, i) => (
                       <a
@@ -253,7 +253,7 @@ export default function AfterSalesDetailPage() {
                         href={img}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="w-20 h-20 rounded-lg border border-neutral-200 overflow-hidden hover:border-primary-400 transition-colors"
+                        className="w-20 h-20 rounded-lg border border-gray-200 overflow-hidden hover:border-primary-400 transition-colors"
                       >
                         <Image src={img} alt={`图片${i + 1}`} width={80} height={80} className="w-full h-full object-cover" unoptimized />
                       </a>
@@ -268,13 +268,13 @@ export default function AfterSalesDetailPage() {
           <Card>
             <div className="p-6">
               <div className="flex items-center gap-2 mb-4">
-                <Clock className="w-5 h-5 text-neutral-500" />
-                <h2 className="text-lg font-semibold text-neutral-900">处理时间线</h2>
+                <Clock className="w-5 h-5 text-gray-500" />
+                <h2 className="text-lg font-semibold text-gray-900">处理时间线</h2>
               </div>
               {ticket.statusHistory && ticket.statusHistory.length > 0 ? (
                 <div className="relative">
                   {/* 竖线 */}
-                  <div className="absolute left-4 top-6 bottom-6 w-px bg-neutral-200" />
+                  <div className="absolute left-4 top-6 bottom-6 w-px bg-gray-200" />
                   <div className="space-y-6">
                     {ticket.statusHistory.map((history, index) => {
                       const Icon = statusTimelineIcon[history.status] || AlertCircle
@@ -286,18 +286,18 @@ export default function AfterSalesDetailPage() {
                           </div>
                           <div className="flex-1 min-w-0 pt-1">
                             <div className="flex items-center gap-2">
-                              <span className="text-sm font-medium text-neutral-900">
+                              <span className="text-sm font-medium text-gray-900">
                                 {AfterSalesStatusLabels[history.status]}
                               </span>
-                              <span className="text-xs text-neutral-400">
+                              <span className="text-xs text-gray-400">
                                 {history.time ? dayjs(history.time).format('YYYY-MM-DD HH:mm:ss') : ''}
                               </span>
                             </div>
                             {history.operator && (
-                              <p className="text-xs text-neutral-500 mt-0.5">操作人: {history.operator}</p>
+                              <p className="text-xs text-gray-500 mt-0.5">操作人: {history.operator}</p>
                             )}
                             {history.remark && (
-                              <p className="text-sm text-neutral-600 mt-1 bg-neutral-50 px-3 py-2 rounded">
+                              <p className="text-sm text-gray-600 mt-1 bg-gray-50 px-3 py-2 rounded">
                                 {history.remark}
                               </p>
                             )}
@@ -308,7 +308,7 @@ export default function AfterSalesDetailPage() {
                   </div>
                 </div>
               ) : (
-                <p className="text-neutral-400 text-center py-8">暂无处理记录</p>
+                <p className="text-gray-400 text-center py-8">暂无处理记录</p>
               )}
             </div>
           </Card>
@@ -317,8 +317,8 @@ export default function AfterSalesDetailPage() {
           {ticket.internalNotes && (
             <Card>
               <div className="p-6">
-                <h2 className="text-lg font-semibold text-neutral-900 mb-3">内部备注</h2>
-                <p className="text-neutral-600 bg-amber-50 p-4 rounded-lg border border-amber-100 whitespace-pre-wrap">
+                <h2 className="text-lg font-semibold text-gray-900 mb-3">内部备注</h2>
+                <p className="text-gray-600 bg-amber-50 p-4 rounded-lg border border-amber-100 whitespace-pre-wrap">
                   {ticket.internalNotes}
                 </p>
               </div>
@@ -331,10 +331,10 @@ export default function AfterSalesDetailPage() {
           {/* 关联订单 */}
           <Card>
             <div className="p-6">
-              <h2 className="text-lg font-semibold text-neutral-900 mb-4">关联订单</h2>
+              <h2 className="text-lg font-semibold text-gray-900 mb-4">关联订单</h2>
               <div className="space-y-3">
                 <div className="flex justify-between text-sm">
-                  <span className="text-neutral-500">订单号</span>
+                  <span className="text-gray-500">订单号</span>
                   <button
                     onClick={() => router.push(`/orders/${ticket.orderId}`)}
                     className="font-mono text-primary-600 hover:text-primary-700 flex items-center gap-1"
@@ -350,21 +350,21 @@ export default function AfterSalesDetailPage() {
           {/* 客户信息 */}
           <Card>
             <div className="p-6">
-              <h2 className="text-lg font-semibold text-neutral-900 mb-4">客户信息</h2>
+              <h2 className="text-lg font-semibold text-gray-900 mb-4">客户信息</h2>
               <div className="space-y-4">
                 <div className="flex items-start gap-3">
-                  <User className="w-5 h-5 text-neutral-400 mt-0.5" />
+                  <User className="w-5 h-5 text-gray-400 mt-0.5" />
                   <div>
-                    <p className="text-xs text-neutral-500">客户姓名</p>
-                    <p className="font-medium text-neutral-900">{ticket.customerName || '-'}</p>
+                    <p className="text-xs text-gray-500">客户姓名</p>
+                    <p className="font-medium text-gray-900">{ticket.customerName || '-'}</p>
                   </div>
                 </div>
                 {ticket.customerPhone && (
                   <div className="flex items-start gap-3">
-                    <Phone className="w-5 h-5 text-neutral-400 mt-0.5" />
+                    <Phone className="w-5 h-5 text-gray-400 mt-0.5" />
                     <div>
-                      <p className="text-xs text-neutral-500">联系电话</p>
-                      <p className="font-medium text-neutral-900">{ticket.customerPhone}</p>
+                      <p className="text-xs text-gray-500">联系电话</p>
+                      <p className="font-medium text-gray-900">{ticket.customerPhone}</p>
                     </div>
                   </div>
                 )}
@@ -375,56 +375,56 @@ export default function AfterSalesDetailPage() {
           {/* 工单详细信息 */}
           <Card>
             <div className="p-6">
-              <h2 className="text-lg font-semibold text-neutral-900 mb-4">工单信息</h2>
+              <h2 className="text-lg font-semibold text-gray-900 mb-4">工单信息</h2>
               <div className="space-y-3">
                 <div className="flex justify-between text-sm">
-                  <span className="text-neutral-500">工单ID</span>
-                  <span className="font-mono text-neutral-600 text-xs">{ticket.id}</span>
+                  <span className="text-gray-500">工单ID</span>
+                  <span className="font-mono text-gray-600 text-xs">{ticket.id}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-neutral-500">来源</span>
-                  <span className="text-neutral-700">
+                  <span className="text-gray-500">来源</span>
+                  <span className="text-gray-700">
                     {ticket.source === 'customer' ? '客户提交' : ticket.source === 'agent' ? '客服创建' : '-'}
                   </span>
                 </div>
                 {ticket.handlerName && (
                   <div className="flex justify-between text-sm">
-                    <span className="text-neutral-500">处理人</span>
-                    <span className="text-neutral-700">{ticket.handlerName}</span>
+                    <span className="text-gray-500">处理人</span>
+                    <span className="text-gray-700">{ticket.handlerName}</span>
                   </div>
                 )}
                 {ticket.assignedAt && (
                   <div className="flex justify-between text-sm">
-                    <span className="text-neutral-500">分配时间</span>
-                    <span className="text-neutral-700">
+                    <span className="text-gray-500">分配时间</span>
+                    <span className="text-gray-700">
                       {dayjs(ticket.assignedAt).format('YYYY-MM-DD HH:mm')}
                     </span>
                   </div>
                 )}
                 <div className="flex justify-between text-sm">
-                  <span className="text-neutral-500">创建时间</span>
-                  <span className="text-neutral-700">
+                  <span className="text-gray-500">创建时间</span>
+                  <span className="text-gray-700">
                     {ticket.createdAt ? dayjs(ticket.createdAt).format('YYYY-MM-DD HH:mm') : '-'}
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-neutral-500">更新时间</span>
-                  <span className="text-neutral-700">
+                  <span className="text-gray-500">更新时间</span>
+                  <span className="text-gray-700">
                     {ticket.updatedAt ? dayjs(ticket.updatedAt).format('YYYY-MM-DD HH:mm') : '-'}
                   </span>
                 </div>
                 {ticket.closedAt && (
                   <div className="flex justify-between text-sm">
-                    <span className="text-neutral-500">关闭时间</span>
-                    <span className="text-neutral-700">
+                    <span className="text-gray-500">关闭时间</span>
+                    <span className="text-gray-700">
                       {dayjs(ticket.closedAt).format('YYYY-MM-DD HH:mm')}
                     </span>
                   </div>
                 )}
                 {ticket.closeReason && (
                   <div className="flex justify-between text-sm">
-                    <span className="text-neutral-500">关闭原因</span>
-                    <span className="text-neutral-700">{ticket.closeReason}</span>
+                    <span className="text-gray-500">关闭原因</span>
+                    <span className="text-gray-700">{ticket.closeReason}</span>
                   </div>
                 )}
               </div>
@@ -454,21 +454,21 @@ export default function AfterSalesDetailPage() {
         }
       >
         <div className="space-y-4">
-          <p className="text-neutral-600">
-            确定要将工单 <span className="font-medium text-neutral-900">{ticket.ticketNo}</span> 的状态更新为{' '}
+          <p className="text-gray-600">
+            确定要将工单 <span className="font-medium text-gray-900">{ticket.ticketNo}</span> 的状态更新为{' '}
             <span className="font-medium text-primary-600">
               {pendingAction ? AfterSalesStatusLabels[pendingAction.targetStatus] : ''}
             </span>{' '}
             吗？
           </p>
           <div>
-            <label className="block text-sm font-medium text-neutral-700 mb-1.5">处理备注（可选）</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">处理备注（可选）</label>
             <textarea
               value={statusRemark}
               onChange={(e) => setStatusRemark(e.target.value)}
               placeholder="请输入处理备注..."
               rows={3}
-              className="w-full px-3 py-2 rounded border border-neutral-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 resize-none"
+              className="w-full px-3 py-2 rounded border border-gray-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 resize-none"
             />
           </div>
         </div>

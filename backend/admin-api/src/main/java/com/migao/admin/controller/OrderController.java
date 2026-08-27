@@ -3,9 +3,11 @@ package com.migao.admin.controller;
 import com.migao.admin.dto.*;
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.entity.OrderLogistics;
+import com.migao.admin.exception.BusinessException;
 import com.migao.admin.service.OrderLogisticsService;
 import com.migao.admin.service.OrderService;
 import jakarta.validation.Valid;
+import java.math.BigDecimal;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -171,19 +173,33 @@ public class OrderController {
      * 退款
      *
      * PUT /api/admin/orders/{id}/refund
+     * body 可选字段：refund_reason（退款原因）、refund_amount（退款金额，缺省=全额）
      */
     @PutMapping("/{id:[0-9a-fA-F-]+}/refund")
     public ApiResponse<Void> refundOrder(@PathVariable String id,
                                          @RequestBody(required = false) Map<String, Object> body) {
         String refundReason = null;
-        if (body != null && body.containsKey("refund_reason")) {
-            Object reason = body.get("refund_reason");
-            if (reason != null && !reason.toString().isBlank()) {
-                refundReason = reason.toString().trim();
+        BigDecimal refundAmount = null;
+        if (body != null) {
+            if (body.containsKey("refund_reason")) {
+                Object reason = body.get("refund_reason");
+                if (reason != null && !reason.toString().isBlank()) {
+                    refundReason = reason.toString().trim();
+                }
+            }
+            if (body.containsKey("refund_amount")) {
+                Object amount = body.get("refund_amount");
+                if (amount != null && !amount.toString().isBlank()) {
+                    try {
+                        refundAmount = new BigDecimal(amount.toString().trim());
+                    } catch (NumberFormatException e) {
+                        throw BusinessException.validationError("退款金额格式不正确");
+                    }
+                }
             }
         }
-        log.info("退款: orderId={}, refundReason={}", id, refundReason);
-        orderService.refundOrder(id, refundReason);
+        log.info("退款: orderId={}, refundAmount={}, refundReason={}", id, refundAmount, refundReason);
+        orderService.refundOrder(id, refundAmount, refundReason);
         return ApiResponse.success();
     }
 

@@ -107,7 +107,7 @@ export default function ContactPage() {
     `w-full px-4 py-3 border rounded-xl text-sm transition-all duration-200 outline-none ${
       errors[field]
         ? 'border-red-300 focus:ring-2 focus:ring-red-200 focus:border-red-400 bg-red-50/30'
-        : 'border-neutral-200 focus:ring-2 focus:ring-blue-200 focus:border-blue-400 bg-white hover:border-neutral-300'
+        : 'border-gray-200 focus:ring-2 focus:ring-blue-200 focus:border-blue-400 bg-white hover:border-gray-300'
     }`
 
   return (
@@ -140,13 +140,13 @@ export default function ContactPage() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-16">
             {/* Left: Contact Info */}
             <div>
-              <span className="text-sm font-semibold text-primary-600 uppercase tracking-wider">
+              <span className="text-sm font-semibold text-blue-600 uppercase tracking-wider">
                 联系信息
               </span>
-              <h2 className="mt-2 text-2xl sm:text-3xl font-bold text-neutral-900">
+              <h2 className="mt-2 text-2xl sm:text-3xl font-bold text-gray-900">
                 期待与您沟通
               </h2>
-              <p className="mt-3 text-neutral-500 leading-relaxed">
+              <p className="mt-3 text-gray-500 leading-relaxed">
                 欢迎通过以下方式联系我们，我们的团队将在工作时间内尽快回复您。
               </p>
 
@@ -154,13 +154,13 @@ export default function ContactPage() {
                 {contactInfo.map((item) => (
                   <div key={item.label} className="group flex items-start gap-4 p-4 rounded-xl hover:bg-slate-50 transition-colors duration-200">
                     <div className="w-11 h-11 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl flex items-center justify-center shrink-0 group-hover:from-blue-100 group-hover:to-indigo-100 transition-all duration-300">
-                      <item.icon className="w-5 h-5 text-primary-600" />
+                      <item.icon className="w-5 h-5 text-blue-600" />
                     </div>
                     <div>
-                      <p className="text-xs font-medium text-neutral-400 uppercase tracking-wider">
+                      <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">
                         {item.label}
                       </p>
-                      <p className="text-base text-neutral-900 mt-0.5 font-medium">
+                      <p className="text-base text-gray-900 mt-0.5 font-medium">
                         {item.value}
                       </p>
                     </div>
@@ -171,13 +171,13 @@ export default function ContactPage() {
 
             {/* Right: Contact Form */}
             <div>
-              <span className="text-sm font-semibold text-primary-600 uppercase tracking-wider">
+              <span className="text-sm font-semibold text-blue-600 uppercase tracking-wider">
                 在线留言
               </span>
-              <h2 className="mt-2 text-2xl sm:text-3xl font-bold text-neutral-900">
+              <h2 className="mt-2 text-2xl sm:text-3xl font-bold text-gray-900">
                 给我们留言
               </h2>
-              <p className="mt-3 text-neutral-500 leading-relaxed">
+              <p className="mt-3 text-gray-500 leading-relaxed">
                 填写以下表单，我们会尽快与您联系
               </p>
 
@@ -197,7 +197,7 @@ export default function ContactPage() {
               <form className="mt-6 space-y-5" onSubmit={handleSubmit} noValidate>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                   <div>
-                    <label htmlFor="name" className="block text-sm font-medium text-neutral-700 mb-1.5">
+                    <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1.5">
                       姓名 <span className="text-red-400">*</span>
                     </label>
                     <input
@@ -214,7 +214,7 @@ export default function ContactPage() {
                     )}
                   </div>
                   <div>
-                    <label htmlFor="phone" className="block text-sm font-medium text-neutral-700 mb-1.5">
+                    <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-1.5">
                       电话 <span className="text-red-400">*</span>
                     </label>
                     <input
@@ -232,7 +232,7 @@ export default function ContactPage() {
                   </div>
                 </div>
                 <div>
-                  <label htmlFor="email" className="block text-sm font-medium text-neutral-700 mb-1.5">
+                  <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1.5">
                     邮箱 <span className="text-red-400">*</span>
                   </label>
                   <input
@@ -249,7 +249,7 @@ export default function ContactPage() {
                   )}
                 </div>
                 <div>
-                  <label htmlFor="message" className="block text-sm font-medium text-neutral-700 mb-1.5">
+                  <label htmlFor="message" className="block text-sm font-medium text-gray-700 mb-1.5">
                     留言内容 <span className="text-red-400">*</span>
                   </label>
                   <textarea
@@ -268,7 +268,7 @@ export default function ContactPage() {
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="group w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-3.5 text-sm font-semibold text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl transition-all duration-300 shadow-sm hover:shadow-md"
+                  className="group w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-3.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl transition-all duration-300 shadow-sm hover:shadow-md"
                 >
                   {submitting ? (
                     <>
@@ -295,20 +295,20 @@ export default function ContactPage() {
       <section className="py-16 sm:py-20 bg-slate-50">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="max-w-3xl mx-auto">
-            <div className="bg-white rounded-2xl border border-neutral-100 shadow-sm overflow-hidden">
-              <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-neutral-100">
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+              <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-gray-100">
                 {/* Address & Location */}
                 <div className="p-6 sm:p-8">
                   <div className="flex items-center gap-3 mb-4">
                     <div className="w-10 h-10 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl flex items-center justify-center">
-                      <Building2 className="w-5 h-5 text-primary-600" />
+                      <Building2 className="w-5 h-5 text-blue-600" />
                     </div>
-                    <h3 className="text-lg font-semibold text-neutral-900">公司地址</h3>
+                    <h3 className="text-lg font-semibold text-gray-900">公司地址</h3>
                   </div>
-                  <p className="text-sm text-neutral-600 leading-relaxed">
+                  <p className="text-sm text-gray-600 leading-relaxed">
                     浙江省杭州市余杭区文一西路000号
                   </p>
-                  <p className="text-xs text-neutral-400 mt-2">
+                  <p className="text-xs text-gray-400 mt-2">
                     距地铁5号线创景路站步行10分钟
                   </p>
                 </div>
@@ -317,35 +317,35 @@ export default function ContactPage() {
                 <div className="p-6 sm:p-8">
                   <div className="flex items-center gap-3 mb-4">
                     <div className="w-10 h-10 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl flex items-center justify-center">
-                      <Clock className="w-5 h-5 text-primary-600" />
+                      <Clock className="w-5 h-5 text-blue-600" />
                     </div>
-                    <h3 className="text-lg font-semibold text-neutral-900">工作时间</h3>
+                    <h3 className="text-lg font-semibold text-gray-900">工作时间</h3>
                   </div>
-                  <div className="space-y-2 text-sm text-neutral-600">
+                  <div className="space-y-2 text-sm text-gray-600">
                     <div className="flex justify-between">
                       <span>周一至周五</span>
-                      <span className="font-medium text-neutral-900">9:00 - 18:00</span>
+                      <span className="font-medium text-gray-900">9:00 - 18:00</span>
                     </div>
                     <div className="flex justify-between">
                       <span>周六</span>
-                      <span className="font-medium text-neutral-900">10:00 - 16:00</span>
+                      <span className="font-medium text-gray-900">10:00 - 16:00</span>
                     </div>
                     <div className="flex justify-between">
                       <span>周日</span>
-                      <span className="text-neutral-400">休息</span>
+                      <span className="text-gray-400">休息</span>
                     </div>
                   </div>
                 </div>
               </div>
 
               {/* Bottom bar */}
-              <div className="border-t border-neutral-100 px-6 sm:px-8 py-4 bg-slate-50/50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
-                <p className="text-xs text-neutral-400">
+              <div className="border-t border-gray-100 px-6 sm:px-8 py-4 bg-slate-50/50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                <p className="text-xs text-gray-400">
                   法定节假日工作时间可能调整，请提前致电确认
                 </p>
                 <a
                   href="tel:400-888-8888"
-                  className="inline-flex items-center gap-1.5 text-sm font-medium text-primary-600 hover:text-primary-700 transition-colors"
+                  className="inline-flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-700 transition-colors"
                 >
                   <Phone className="w-3.5 h-3.5" />
                   400-888-8888

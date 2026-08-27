@@ -1,4 +1,3 @@
-// case_ids: UI-005
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
@@ -21,8 +20,7 @@ describe('Button Component', () => {
     render(<Button variant="secondary">Secondary</Button>)
     const btn = screen.getByText('Secondary')
     expect(btn.className).toContain('bg-white')
-    // 织物质感 token 化：gray-300 → neutral-300（边框语义不变）
-    expect(btn.className).toContain('border-neutral-300')
+    expect(btn.className).toContain('border-gray-300')
   })
 
   it('applies danger variant styles', () => {

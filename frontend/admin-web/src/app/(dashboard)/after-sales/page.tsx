@@ -196,8 +196,8 @@ export default function AfterSalesPage() {
       {/* 页面标题 */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-xl font-semibold text-neutral-900">售后管理</h1>
-          <p className="text-sm text-neutral-500 mt-1">管理客户售后工单，处理退货、换货、维修等售后请求</p>
+          <h1 className="text-xl font-semibold text-gray-900">售后管理</h1>
+          <p className="text-sm text-gray-500 mt-1">管理客户售后工单，处理退货、换货、维修等售后请求</p>
         </div>
         <Button onClick={() => setCreateModalOpen(true)}>
           <Plus className="w-4 h-4 mr-1.5" />
@@ -206,7 +206,7 @@ export default function AfterSalesPage() {
       </div>
 
       {/* 状态 Tab 栏 */}
-      <div className="flex items-center gap-0 bg-white border border-neutral-200 rounded-t-lg overflow-x-auto">
+      <div className="flex items-center gap-0 bg-white border border-gray-200 rounded-t-lg overflow-x-auto">
         {statusTabs.map((tab) => (
           <button
             key={tab.key}
@@ -215,7 +215,7 @@ export default function AfterSalesPage() {
               'relative px-4 py-3 text-sm font-medium whitespace-nowrap transition-colors border-b-2',
               searchParams.status === tab.key
                 ? 'text-primary-600 border-primary-600 bg-primary-50/50'
-                : 'text-neutral-500 border-transparent hover:text-neutral-700 hover:bg-neutral-50'
+                : 'text-gray-500 border-transparent hover:text-gray-700 hover:bg-gray-50'
             )}
           >
             {tab.label}
@@ -224,7 +224,7 @@ export default function AfterSalesPage() {
       </div>
 
       {/* 搜索筛选栏 */}
-      <div className="bg-white border-x border-neutral-200 p-4" data-testid="search-area">
+      <div className="bg-white border-x border-gray-200 p-4" data-testid="search-area">
         <div className="flex flex-wrap items-end gap-3">
           <div className="min-w-[240px]">
             <Input
@@ -264,36 +264,36 @@ export default function AfterSalesPage() {
       </div>
 
       {/* 数据表格 */}
-      <div className="bg-white rounded-b-lg border border-t-0 border-neutral-200">
+      <div className="bg-white rounded-b-lg border border-t-0 border-gray-200">
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
-              <tr className="border-b border-neutral-200 bg-neutral-50/50">
-                <th className="text-left px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider whitespace-nowrap">工单号</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider whitespace-nowrap">关联订单</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider whitespace-nowrap">客户</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider whitespace-nowrap">售后类型</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider whitespace-nowrap">状态</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider whitespace-nowrap">优先级</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider whitespace-nowrap">创建时间</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider whitespace-nowrap">更新时间</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider whitespace-nowrap">操作</th>
+              <tr className="border-b border-gray-200 bg-gray-50/50">
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">工单号</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">关联订单</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">客户</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">售后类型</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">状态</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">优先级</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">创建时间</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">更新时间</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">操作</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-neutral-100">
+            <tbody className="divide-y divide-gray-100">
               {loading ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-12 text-center text-neutral-400">
+                  <td colSpan={9} className="px-4 py-12 text-center text-gray-400">
                     <div className="flex items-center justify-center gap-2">
-                      <div className="w-4 h-4 border-2 border-neutral-300 border-t-primary-600 rounded-full animate-spin" />
+                      <div className="w-4 h-4 border-2 border-gray-300 border-t-primary-600 rounded-full animate-spin" />
                       加载中...
                     </div>
                   </td>
                 </tr>
               ) : tickets.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-12 text-center text-neutral-400">
-                    <FileText className="w-8 h-8 mx-auto mb-2 text-neutral-300" />
+                  <td colSpan={9} className="px-4 py-12 text-center text-gray-400">
+                    <FileText className="w-8 h-8 mx-auto mb-2 text-gray-300" />
                     暂无售后工单
                   </td>
                 </tr>
@@ -301,17 +301,17 @@ export default function AfterSalesPage() {
                 tickets.map((ticket) => (
                   <tr
                     key={ticket.id}
-                    className="hover:bg-neutral-50/50 cursor-pointer transition-colors"
+                    className="hover:bg-gray-50/50 cursor-pointer transition-colors"
                     onClick={() => router.push(`/after-sales/${ticket.id}`)}
                   >
                     <td className="px-4 py-3">
-                      <span className="font-mono text-sm text-neutral-900">{ticket.ticketNo}</span>
+                      <span className="font-mono text-sm text-gray-900">{ticket.ticketNo}</span>
                     </td>
                     <td className="px-4 py-3">
-                      <span className="font-mono text-sm text-neutral-600">{ticket.orderNo || '-'}</span>
+                      <span className="font-mono text-sm text-gray-600">{ticket.orderNo || '-'}</span>
                     </td>
                     <td className="px-4 py-3">
-                      <span className="text-sm text-neutral-900">{ticket.customerName || '-'}</span>
+                      <span className="text-sm text-gray-900">{ticket.customerName || '-'}</span>
                     </td>
                     <td className="px-4 py-3">
                       <Badge variant={getTypeVariant(ticket.ticketType)}>
@@ -330,13 +330,13 @@ export default function AfterSalesPage() {
                           {AfterSalesPriorityLabels[ticket.priority]}
                         </Badge>
                       ) : (
-                        <span className="text-sm text-neutral-400">-</span>
+                        <span className="text-sm text-gray-400">-</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-sm text-neutral-500">
+                    <td className="px-4 py-3 text-sm text-gray-500">
                       <DateTimeCell value={ticket.createdAt} />
                     </td>
-                    <td className="px-4 py-3 text-sm text-neutral-500">
+                    <td className="px-4 py-3 text-sm text-gray-500">
                       <DateTimeCell value={ticket.updatedAt} />
                     </td>
                     <td className="px-4 py-3 text-left">
@@ -386,16 +386,16 @@ export default function AfterSalesPage() {
         <div className="space-y-4">
           {/* 关联订单搜索 */}
           <div>
-            <label className="block text-sm font-medium text-neutral-700 mb-1.5">关联订单 *</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">关联订单 *</label>
             {selectedOrder ? (
               <div className="flex items-center justify-between p-3 bg-primary-50 border border-primary-200 rounded-lg">
                 <div>
-                  <p className="text-sm font-medium text-neutral-900">订单号: {selectedOrder.orderNo}</p>
-                  <p className="text-xs text-neutral-500">客户: {selectedOrder.customerName} | 金额: ¥{selectedOrder.totalAmount?.toLocaleString()}</p>
+                  <p className="text-sm font-medium text-gray-900">订单号: {selectedOrder.orderNo}</p>
+                  <p className="text-xs text-gray-500">客户: {selectedOrder.customerName} | 金额: ¥{selectedOrder.totalAmount?.toLocaleString()}</p>
                 </div>
                 <button
                   onClick={() => setSelectedOrder(null)}
-                  className="text-xs text-neutral-500 hover:text-neutral-700"
+                  className="text-xs text-gray-500 hover:text-gray-700"
                 >
                   更换
                 </button>
@@ -409,14 +409,14 @@ export default function AfterSalesPage() {
                     value={orderSearchKeyword}
                     onChange={(e) => setOrderSearchKeyword(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleOrderSearch()}
-                    className="flex-1 h-9 px-3 rounded border border-neutral-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                    className="flex-1 h-9 px-3 rounded border border-gray-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                   />
                   <Button onClick={handleOrderSearch} loading={orderSearching} className="h-9">
                     <Search className="w-4 h-4" />
                   </Button>
                 </div>
                 {orderSearchResults.length > 0 && (
-                  <div className="border border-neutral-200 rounded-lg max-h-40 overflow-y-auto divide-y divide-neutral-100">
+                  <div className="border border-gray-200 rounded-lg max-h-40 overflow-y-auto divide-y divide-gray-100">
                     {orderSearchResults.map((order) => (
                       <button
                         key={order.id}
@@ -424,10 +424,10 @@ export default function AfterSalesPage() {
                           setSelectedOrder(order)
                           setOrderSearchResults([])
                         }}
-                        className="w-full text-left px-3 py-2 hover:bg-neutral-50 transition-colors"
+                        className="w-full text-left px-3 py-2 hover:bg-gray-50 transition-colors"
                       >
-                        <p className="text-sm font-mono text-neutral-900">{order.orderNo}</p>
-                        <p className="text-xs text-neutral-500">{order.customerName} | ¥{order.totalAmount?.toLocaleString()}</p>
+                        <p className="text-sm font-mono text-gray-900">{order.orderNo}</p>
+                        <p className="text-xs text-gray-500">{order.customerName} | ¥{order.totalAmount?.toLocaleString()}</p>
                       </button>
                     ))}
                   </div>
@@ -438,7 +438,7 @@ export default function AfterSalesPage() {
 
           {/* 售后类型 */}
           <div>
-            <label className="block text-sm font-medium text-neutral-700 mb-1.5">售后类型 *</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">售后类型 *</label>
             <div className="flex flex-wrap gap-2">
               {ticketTypeOptions.map((opt) => (
                 <button
@@ -448,7 +448,7 @@ export default function AfterSalesPage() {
                     'px-3 py-1.5 rounded-lg border text-sm font-medium transition-all',
                     newTicketType === opt.value
                       ? 'border-primary-500 bg-primary-50 text-primary-700'
-                      : 'border-neutral-200 hover:border-neutral-300 text-neutral-700'
+                      : 'border-gray-200 hover:border-gray-300 text-gray-700'
                   )}
                 >
                   {opt.label}
@@ -459,7 +459,7 @@ export default function AfterSalesPage() {
 
           {/* 优先级 */}
           <div>
-            <label className="block text-sm font-medium text-neutral-700 mb-1.5">优先级</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">优先级</label>
             <div className="flex gap-2">
               {(['normal', 'urgent', 'critical'] as AfterSalesPriority[]).map((p) => (
                 <button
@@ -471,7 +471,7 @@ export default function AfterSalesPage() {
                       ? p === 'critical' ? 'border-red-500 bg-red-50 text-red-700'
                         : p === 'urgent' ? 'border-amber-500 bg-amber-50 text-amber-700'
                         : 'border-primary-500 bg-primary-50 text-primary-700'
-                      : 'border-neutral-200 hover:border-neutral-300 text-neutral-700'
+                      : 'border-gray-200 hover:border-gray-300 text-gray-700'
                   )}
                 >
                   {AfterSalesPriorityLabels[p]}
@@ -482,13 +482,13 @@ export default function AfterSalesPage() {
 
           {/* 售后原因描述 */}
           <div>
-            <label className="block text-sm font-medium text-neutral-700 mb-1.5">售后原因描述 *</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">售后原因描述 *</label>
             <textarea
               value={newDescription}
               onChange={(e) => setNewDescription(e.target.value)}
               placeholder="请详细描述售后原因..."
               rows={4}
-              className="w-full px-3 py-2 rounded border border-neutral-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 resize-none"
+              className="w-full px-3 py-2 rounded border border-gray-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 resize-none"
             />
           </div>
         </div>

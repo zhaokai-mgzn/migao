@@ -4,6 +4,7 @@ package com.migao.admin.controller;
 
 import com.migao.admin.controller.agent.AgentProductController;
 import com.migao.admin.dto.ProductResponse;
+import com.migao.admin.dto.ProductSkuResponse;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.service.ProductService;
 import org.junit.jupiter.api.BeforeEach;
@@ -60,6 +61,56 @@ class AgentProductControllerTest extends BaseControllerTest {
         p.setTotalStock(stock);
         p.setBasePrice(new BigDecimal("99.00"));
         return p;
+    }
+
+    @Nested
+    @DisplayName("PATCH /{productId}/skus/{skuId} — 单 SKU 改价（前端行内编辑）")
+    class UpdateSkuPriceById {
+
+        @Test
+        @DisplayName("改价成功 — 返回更新后的 SKU")
+        void success() throws Exception {
+            ProductSkuResponse skuResp = new ProductSkuResponse();
+            skuResp.setId(1001L);
+            skuResp.setProductId(PROD_ID);
+            skuResp.setColorName("红色");
+            skuResp.setSellingMethod("bulk_cut");
+            skuResp.setDoorWidth("2.8米");
+            skuResp.setPrice(new BigDecimal("99.00"));
+
+            when(productService.resolveProductId(eq(PROD_ID), eq(TEST_TENANT_ID))).thenReturn(PROD_ID);
+            when(productService.updateSkuPriceById(eq(PROD_ID), eq(1001L),
+                    argThat((BigDecimal p) -> p != null && p.compareTo(new BigDecimal("99.00")) == 0),
+                    eq(TEST_TENANT_ID))).thenReturn(skuResp);
+
+            mockMvc.perform(patch(BASE + "/" + PROD_ID + "/skus/1001")
+                            .contentType("application/json")
+                            .content("{\"price\": 99.00}"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.success").value(true))
+                    .andExpect(jsonPath("$.data.id").value(1001L))
+                    .andExpect(jsonPath("$.data.price").value(99.00));
+        }
+
+        @Test
+        @DisplayName("缺少 price — 参数错误（4xx）")
+        void missingPrice() throws Exception {
+            mockMvc.perform(patch(BASE + "/" + PROD_ID + "/skus/1001")
+                            .contentType("application/json")
+                            .content("{}"))
+                    .andExpect(status().is4xxClientError());
+        }
+
+        @Test
+        @DisplayName("商品 ID 未解析到 — 404")
+        void unresolvedProduct() throws Exception {
+            when(productService.resolveProductId(eq(PROD_ID), eq(TEST_TENANT_ID))).thenReturn(null);
+
+            mockMvc.perform(patch(BASE + "/" + PROD_ID + "/skus/1001")
+                            .contentType("application/json")
+                            .content("{\"price\": 99.00}"))
+                    .andExpect(status().isNotFound());
+        }
     }
 
     @Nested

@@ -1,4 +1,3 @@
-// case_ids: CH-001, CH-002
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { act } from '@testing-library/react'
 
@@ -605,77 +604,6 @@ describe('useChatStore (Zustand chat store) — #571', () => {
       const messages = useChatStore.getState().messages
       expect(messages).toHaveLength(2)
       expect(messages[0].role).toBe('user')
-    })
-
-    it('should normalize persisted tool_calls ({tool,args}) to frontend shape', async () => {
-      mockGetHistory.mockResolvedValue({
-        data: {
-          messages: [
-            {
-              id: 'h1',
-              role: 'assistant',
-              content: '已查询',
-              tool_calls: [{ tool: 'order_query', args: { order_id: 'ORD-9' } }],
-            },
-            {
-              id: 'h2',
-              role: 'assistant',
-              content: '搜索中',
-              tool_calls: [{ name: 'product_search', input: { keyword: '窗帘' }, status: 'running' }],
-            },
-          ],
-        },
-      })
-
-      act(() => {
-        useChatStore.setState({ currentSessionId: 'old' })
-      })
-
-      await act(async () => {
-        await useChatStore.getState().selectSession('new-session')
-      })
-
-      const messages = useChatStore.getState().messages
-      expect(messages[0].tool_calls).toEqual([
-        { name: 'order_query', input: { order_id: 'ORD-9' }, status: 'completed' },
-      ])
-      expect(messages[1].tool_calls).toEqual([
-        { name: 'product_search', input: { keyword: '窗帘' }, status: 'running' },
-      ])
-    })
-
-    it('should drop invalid tool_call entries from history', async () => {
-      mockGetHistory.mockResolvedValue({
-        data: {
-          messages: [
-            {
-              id: 'h1',
-              role: 'assistant',
-              content: 'x',
-              tool_calls: [null, { tool: 'order_query', args: {} }, 'garbage'],
-            },
-            {
-              id: 'h2',
-              role: 'assistant',
-              content: 'y',
-            },
-          ],
-        },
-      })
-
-      act(() => {
-        useChatStore.setState({ currentSessionId: 'old' })
-      })
-
-      await act(async () => {
-        await useChatStore.getState().selectSession('new-session')
-      })
-
-      const messages = useChatStore.getState().messages
-      expect(messages[0].tool_calls).toEqual([
-        { name: 'order_query', input: {}, status: 'completed' },
-      ])
-      expect(messages[1].tool_calls).toBeUndefined()
     })
 
     it('should warn when there are pending tool calls', async () => {

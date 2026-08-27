@@ -147,8 +147,8 @@ export default function NotificationsPage() {
       {/* 页面标题 */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-xl font-semibold text-neutral-900">通知中心</h1>
-          <p className="text-sm text-neutral-500 mt-1">管理和查看系统通知</p>
+          <h1 className="text-xl font-semibold text-gray-900">通知中心</h1>
+          <p className="text-sm text-gray-500 mt-1">管理和查看系统通知</p>
         </div>
         <Button onClick={handleMarkAllAsRead}>
           <CheckCheck className="w-4 h-4 mr-1.5" />
@@ -157,7 +157,7 @@ export default function NotificationsPage() {
       </div>
 
       {/* 状态 Tab 栏 */}
-      <div className="flex items-center gap-0 bg-white border border-neutral-200 rounded-t-lg overflow-x-auto">
+      <div className="flex items-center gap-0 bg-white border border-gray-200 rounded-t-lg overflow-x-auto">
         {statusTabs.map((tab) => (
           <button
             key={tab.key}
@@ -166,7 +166,7 @@ export default function NotificationsPage() {
               'relative px-4 py-3 text-sm font-medium whitespace-nowrap transition-colors border-b-2',
               statusFilter === tab.key
                 ? 'text-primary-600 border-primary-600 bg-primary-50/50'
-                : 'text-neutral-500 border-transparent hover:text-neutral-700 hover:bg-neutral-50'
+                : 'text-gray-500 border-transparent hover:text-gray-700 hover:bg-gray-50'
             )}
           >
             {tab.label}
@@ -175,24 +175,24 @@ export default function NotificationsPage() {
       </div>
 
       {/* 通知列表 */}
-      <div className="bg-white rounded-b-lg border border-t-0 border-neutral-200">
+      <div className="bg-white rounded-b-lg border border-t-0 border-gray-200">
         {loading ? (
           <div className="flex items-center justify-center py-20">
             <div className="w-6 h-6 border-2 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
           </div>
         ) : notifications.length === 0 ? (
           /* 空状态 */
-          <div className="flex flex-col items-center justify-center py-20 text-neutral-400">
+          <div className="flex flex-col items-center justify-center py-20 text-gray-400">
             <Inbox className="w-12 h-12 mb-3 stroke-[1.5]" />
             <p className="text-sm">{getEmptyText()}</p>
           </div>
         ) : (
-          <div className="divide-y divide-neutral-100">
+          <div className="divide-y divide-gray-100">
             {notifications.map((notification) => (
               <div
                 key={notification.id}
                 className={cn(
-                  'px-5 py-4 transition-colors hover:bg-neutral-50',
+                  'px-5 py-4 transition-colors hover:bg-gray-50',
                   notification.status !== 'read' && 'bg-blue-50/30'
                 )}
               >
@@ -202,7 +202,7 @@ export default function NotificationsPage() {
                     <div
                       className={cn(
                         'w-2.5 h-2.5 rounded-full',
-                        notification.status !== 'read' ? 'bg-primary-500' : 'bg-transparent'
+                        notification.status !== 'read' ? 'bg-blue-500' : 'bg-transparent'
                       )}
                     />
                   </div>
@@ -211,41 +211,41 @@ export default function NotificationsPage() {
                   <div className="flex-1 min-w-0">
                     <p className={cn(
                       'text-sm leading-5',
-                      notification.status !== 'read' ? 'font-semibold text-neutral-900' : 'font-medium text-neutral-700'
+                      notification.status !== 'read' ? 'font-semibold text-gray-900' : 'font-medium text-gray-700'
                     )}>
                       {notification.title}
                     </p>
-                    <p className="text-sm text-neutral-500 mt-1 line-clamp-2 leading-5">
+                    <p className="text-sm text-gray-500 mt-1 line-clamp-2 leading-5">
                       {notification.content}
                     </p>
 
                     {/* 底部：渠道标签 + 时间 + 操作 */}
                     <div className="flex items-center gap-3 mt-2">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-neutral-100 text-neutral-600">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">
                         {ChannelLabels[notification.channel] || notification.channel}
                       </span>
-                      <span className="text-xs text-neutral-400">
+                      <span className="text-xs text-gray-400">
                         {formatRelativeTime(notification.createdAt)}
                       </span>
                       <div className="flex items-center gap-1 ml-auto">
                         {notification.status !== 'read' ? (
                           <button
                             onClick={() => handleMarkAsRead(notification)}
-                            className="flex items-center gap-1 px-2 py-1 text-xs text-neutral-500 hover:text-primary-600 hover:bg-primary-50 rounded transition-colors"
+                            className="flex items-center gap-1 px-2 py-1 text-xs text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded transition-colors"
                             title="标记已读"
                           >
                             <MailOpen className="w-3.5 h-3.5" />
                             标记已读
                           </button>
                         ) : (
-                          <span className="flex items-center gap-1 px-2 py-1 text-xs text-neutral-400">
+                          <span className="flex items-center gap-1 px-2 py-1 text-xs text-gray-400">
                             <Mail className="w-3.5 h-3.5" />
                             已读
                           </span>
                         )}
                         <button
                           onClick={() => handleDelete(notification)}
-                          className="flex items-center gap-1 px-2 py-1 text-xs text-neutral-500 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                          className="flex items-center gap-1 px-2 py-1 text-xs text-gray-500 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
                           title="删除"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -284,8 +284,8 @@ export default function NotificationsPage() {
           </>
         }
       >
-        <p className="text-neutral-600">
-          确定要删除通知 <span className="font-medium text-neutral-900">&ldquo;{deletingNotification?.title}&rdquo;</span> 吗？此操作不可恢复。
+        <p className="text-gray-600">
+          确定要删除通知 <span className="font-medium text-gray-900">&ldquo;{deletingNotification?.title}&rdquo;</span> 吗？此操作不可恢复。
         </p>
       </Modal>
     </div>

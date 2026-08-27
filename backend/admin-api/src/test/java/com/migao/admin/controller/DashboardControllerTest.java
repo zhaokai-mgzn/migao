@@ -163,6 +163,27 @@ class DashboardControllerTest {
                     .andExpect(jsonPath("$.success").value(true))
                     .andExpect(jsonPath("$.data").isArray());
         }
+
+        @Test
+        @DisplayName("真实订单状态映射为中文标签 -> 200")
+        void returnRealStatusLabels() throws Exception {
+            when(orderMapper.selectOrderStatusDistribution()).thenReturn(List.of(
+                    Map.of("status", "confirmed", "count", 3L),
+                    Map.of("status", "producing", "count", 2L),
+                    Map.of("status", "pending", "count", 1L)
+            ));
+
+            mockMvc.perform(get("/api/admin/dashboard/order-status"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.success").value(true))
+                    .andExpect(jsonPath("$.data[0].status").value("confirmed"))
+                    .andExpect(jsonPath("$.data[0].label").value("待发货"))
+                    .andExpect(jsonPath("$.data[0].count").value(3))
+                    .andExpect(jsonPath("$.data[1].status").value("producing"))
+                    .andExpect(jsonPath("$.data[1].label").value("生产中"))
+                    .andExpect(jsonPath("$.data[2].status").value("pending"))
+                    .andExpect(jsonPath("$.data[2].label").value("待付款"));
+        }
     }
 
     @Nested

@@ -50,6 +50,9 @@ class CustomerServiceTest {
     @Mock
     private SessionMapper sessionMapper;
 
+    @Mock
+    private SessionMessageMapper sessionMessageMapper;
+
     private CustomerProfile testProfile;
     private CustomerTag testTag;
 
@@ -149,10 +152,28 @@ class CustomerServiceTest {
     @DisplayName("查询客户详情 - 成功")
     void getCustomerDetail_Success() {
         // given
+        testProfile.setTags(List.of("tag-1", "tag-2"));
+        CustomerTag tag1 = CustomerTag.builder().id("tag-1").name("VIP").color("#EF4444").build();
+        CustomerTag tag2 = CustomerTag.builder().id("tag-2").name("定制").color("#48618f").build();
+        CustomerTag tag3 = CustomerTag.builder().id("tag-3").name("未关联").color("#10B981").build();
         when(customerProfileMapper.selectById("cust-001")).thenReturn(testProfile);
-        when(customerTagMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(testTag));
+        when(customerTagMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(tag1, tag2, tag3));
         when(orderMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
-        when(sessionMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+        Session testSession = Session.builder()
+                .id("sess-1")
+                .customerId("cust-001")
+                .channel("wechat_mini")
+                .aiEnabled(false)
+                .createdAt(OffsetDateTime.now())
+                .build();
+        when(sessionMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(testSession));
+        SessionMessage lastMsg = SessionMessage.builder()
+                .id("msg-1")
+                .sessionId("sess-1")
+                .role("user")
+                .content("我想看遮光窗帘")
+                .build();
+        when(sessionMessageMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(lastMsg);
 
         // when
         Map<String, Object> detail = customerService.getCustomerDetail("cust-001");
@@ -164,6 +185,84 @@ class CustomerServiceTest {
         assertThat(detail).containsKey("orders");
         assertThat(detail).containsKey("sessions");
         assertThat(detail.get("profile")).isEqualTo(testProfile);
+        // tags 只返回客户已关联的标签（tag-1/tag-2），不返回未关联的 tag-3
+        @SuppressWarnings("unchecked")
+        List<CustomerTag> detailTags = (List<CustomerTag>) detail.get("tags");
+        assertThat(detailTags).extracting(CustomerTag::getId).containsExactlyInAnyOrder("tag-1", "tag-2");
+        assertThat(detailTags).extracting(CustomerTag::getId).doesNotContain("tag-3");
+        // sessions 附带最后一条消息
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> detailSessions = (List<Map<String, Object>>) detail.get("sessions");
+        assertThat(detailSessions).hasSize(1);
+        assertThat(detailSessions.get(0)).containsEntry("lastMessage", "我想看遮光窗帘");
+        assertThat(detailSessions.get(0)).containsEntry("isAI", false);
+    }
+
+    // ======================== 客户打标测试 ========================
+
+    @Test
+    @DisplayName("给客户添加标签 - 成功写入档案 tags")
+    void addTagToCustomer_Success() {
+        // given
+        testProfile.setTags(null);
+        when(customerProfileMapper.selectById("cust-001")).thenReturn(testProfile);
+        when(customerTagMapper.selectById("tag-9")).thenReturn(CustomerTag.builder().id("tag-9").name("新标签").build());
+        when(customerProfileMapper.updateById(any(CustomerProfile.class))).thenReturn(1);
+
+        // when
+        customerService.addTagToCustomer("cust-001", "tag-9");
+
+        // then
+        assertThat(testProfile.getTags()).isNotNull();
+        assertThat((List<String>) testProfile.getTags()).containsExactly("tag-9");
+        verify(customerProfileMapper).updateById(testProfile);
+    }
+
+    @Test
+    @DisplayName("给客户添加标签 - 重复标签不重复添加")
+    void addTagToCustomer_Duplicate() {
+        // given
+        testProfile.setTags(List.of("tag-1"));
+        when(customerProfileMapper.selectById("cust-001")).thenReturn(testProfile);
+        when(customerTagMapper.selectById("tag-1")).thenReturn(CustomerTag.builder().id("tag-1").name("已有").build());
+
+        // when
+        customerService.addTagToCustomer("cust-001", "tag-1");
+
+        // then
+        assertThat((List<String>) testProfile.getTags()).containsExactly("tag-1");
+        verify(customerProfileMapper, never()).updateById(any(CustomerProfile.class));
+    }
+
+    @Test
+    @DisplayName("移除客户标签 - 成功从档案 tags 删除")
+    void removeTagFromCustomer_Success() {
+        // given
+        testProfile.setTags(List.of("tag-1", "tag-2"));
+        when(customerProfileMapper.selectById("cust-001")).thenReturn(testProfile);
+        when(customerProfileMapper.updateById(any(CustomerProfile.class))).thenReturn(1);
+
+        // when
+        customerService.removeTagFromCustomer("cust-001", "tag-1");
+
+        // then
+        assertThat((List<String>) testProfile.getTags()).containsExactly("tag-2");
+        verify(customerProfileMapper).updateById(testProfile);
+    }
+
+    @Test
+    @DisplayName("移除客户标签 - 标签不存在时幂等")
+    void removeTagFromCustomer_NotExist() {
+        // given
+        testProfile.setTags(List.of("tag-2"));
+        when(customerProfileMapper.selectById("cust-001")).thenReturn(testProfile);
+
+        // when
+        customerService.removeTagFromCustomer("cust-001", "tag-9");
+
+        // then
+        assertThat((List<String>) testProfile.getTags()).containsExactly("tag-2");
+        verify(customerProfileMapper, never()).updateById(any(CustomerProfile.class));
     }
 
     @Test

@@ -17,13 +17,13 @@ interface DateTimeCellProps {
  */
 export default function DateTimeCell({ value }: DateTimeCellProps) {
   if (!value) {
-    return <span className="text-neutral-400 text-sm">-</span>
+    return <span className="text-gray-400 text-sm">-</span>
   }
 
   // 用原生 Date 做合法性检查，兼容测试 mock
   const native = new Date(value)
   if (isNaN(native.getTime())) {
-    return <span className="text-neutral-400 text-sm">{value}</span>
+    return <span className="text-gray-400 text-sm">{value}</span>
   }
 
   const d = dayjs(value)
@@ -31,9 +31,9 @@ export default function DateTimeCell({ value }: DateTimeCellProps) {
   const time = d.format('HH:mm')
 
   return (
-    <div className="text-sm text-neutral-600 leading-snug whitespace-nowrap">
+    <div className="text-sm text-gray-600 leading-snug whitespace-nowrap">
       <div>{date}</div>
-      <div className="text-neutral-400">{time}</div>
+      <div className="text-gray-400">{time}</div>
     </div>
   )
 }

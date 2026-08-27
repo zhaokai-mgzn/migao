@@ -23,23 +23,18 @@ function ChatHeader({
   if (!currentSessionId) return null
 
   return (
-    <div className="flex-shrink-0 h-14 bg-white/90 border-b border-neutral-200/80 backdrop-blur-sm">
+    <div className="flex-shrink-0 h-14 bg-white border-b border-gray-100">
       <div className="h-full w-full max-w-3xl mx-auto px-5 flex items-center justify-between">
         <div className="flex items-center gap-2.5 min-w-0">
-          {/* 会话状态呼吸点 */}
-          <span className={cn(
-            'h-2 w-2 rounded-full flex-shrink-0',
-            session?.status === 'closed' ? 'bg-neutral-300' : 'bg-emerald-500 animate-breathe'
-          )} />
-          <h2 className="text-sm font-semibold text-neutral-800 truncate">
+          <h2 className="text-sm font-semibold text-gray-800 truncate">
             {session?.title || '新对话'}
           </h2>
           {session?.status === 'closed' ? (
-            <span className="inline-flex items-center px-1.5 py-px rounded text-[10px] font-medium bg-neutral-100 text-neutral-500 flex-shrink-0">
+            <span className="inline-flex items-center px-1.5 py-px rounded text-[10px] font-medium bg-gray-100 text-gray-500 flex-shrink-0">
               已结束
             </span>
           ) : (
-            <span className="inline-flex items-center px-1.5 py-px rounded text-[10px] font-medium bg-emerald-50 text-emerald-600 flex-shrink-0">
+            <span className="inline-flex items-center px-1.5 py-px rounded text-[10px] font-medium bg-green-50 text-green-600 flex-shrink-0">
               进行中
             </span>
           )}
@@ -52,7 +47,7 @@ function ChatHeader({
               'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
               insightOpen
                 ? 'bg-primary-50 text-primary-600'
-                : 'text-neutral-500 hover:text-neutral-700 hover:bg-neutral-100'
+                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
             )}
             data-testid="insight-toggle-btn"
             title={insightOpen ? '收起洞察' : '打开会话洞察'}
@@ -70,7 +65,7 @@ export default function ChatArea() {
   const [isInsightOpen, setIsInsightOpen] = useState(false)
 
   return (
-    <div className="relative flex-1 flex flex-col min-w-0 bg-neutral-50/70">
+    <div className="relative flex-1 flex flex-col min-w-0 bg-gray-50">
       <ChatHeader
         insightOpen={isInsightOpen}
         onInsightToggle={() => setIsInsightOpen(prev => !prev)}

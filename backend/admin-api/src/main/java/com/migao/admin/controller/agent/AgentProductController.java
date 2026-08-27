@@ -5,6 +5,7 @@ import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.dto.ProductResponse;
 import com.migao.admin.dto.ProductProcessingItemResponse;
+import com.migao.admin.dto.ProductSkuResponse;
 import com.migao.admin.dto.agent.AgentProductCreateRequest;
 import com.migao.admin.dto.agent.AgentProductUpdateRequest;
 import com.migao.admin.dto.agent.AgentProcessingItemActionRequest;
@@ -13,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 
@@ -141,6 +143,45 @@ public class AgentProductController {
             return ApiResponse.success(result);
         } catch (Exception e) {
             log.warn("[Agent] SKU调价失败: product={}, error={}", productId, e.getMessage());
+            throw e;
+        }
+    }
+
+    /**
+     * Agent/前端行内编辑专用：按 SKU id 精确改价。
+     * PATCH /api/admin/agent/products/{productId}/skus/{skuId}
+     * body: {"price": 99.00}（price ≥ 0），返回更新后的 SKU。
+     * 与 /skus/price（按颜色/售卖方式/门幅匹配）互为补充：
+     * 本端点校验 skuId 属于该商品，供前端拿到 sku.id 后直接调用。
+     */
+    @PatchMapping("/{productId}/skus/{skuId}")
+    public ApiResponse<ProductSkuResponse> updateSkuPriceById(
+            @PathVariable String productId,
+            @PathVariable Long skuId,
+            @RequestBody Map<String, Object> body) {
+        Long tenantId = TenantContext.getTenantId();
+        Object priceObj = body.get("price");
+        if (priceObj == null) {
+            throw BusinessException.validationError("缺少 price 字段");
+        }
+        BigDecimal price;
+        try {
+            price = new BigDecimal(priceObj.toString());
+        } catch (NumberFormatException e) {
+            throw BusinessException.validationError("price 必须为数字");
+        }
+        String resolvedId = productService.resolveProductId(productId, tenantId);
+        if (resolvedId == null) {
+            throw BusinessException.notFound("商品（" + productId + "）",
+                    "请先用 product_search 查出正确 ID");
+        }
+        log.info("[Agent] 单SKU调价: product={}, skuId={}, price={}, tenantId={}",
+                productId, skuId, price, tenantId);
+        try {
+            ProductSkuResponse result = productService.updateSkuPriceById(resolvedId, skuId, price, tenantId);
+            return ApiResponse.success(result);
+        } catch (Exception e) {
+            log.warn("[Agent] 单SKU调价失败: product={}, skuId={}, error={}", productId, skuId, e.getMessage());
             throw e;
         }
     }

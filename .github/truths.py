@@ -117,19 +117,6 @@ def find_case(cases_dir, case_id):
     return None, None
 
 
-def find_page_case(cases_dir, case_id):
-    """按 ID 查找页面用例（page_cases）→ (case, domain) 或 (None, None)。"""
-    load_file = _yaml()
-    for fn in sorted(os.listdir(cases_dir)):
-        if not fn.endswith(".yml"):
-            continue
-        data = load_file(os.path.join(cases_dir, fn))
-        for c in data.get("page_cases") or []:
-            if c.get("id") == case_id:
-                return c, fn[:-4]
-    return None, None
-
-
 def _print_index(index):
     for tid in sorted(index):
         text = index[tid]
@@ -155,24 +142,6 @@ def main(argv=None):
     pv = sub.add_parser("verdict", help="生成 VERDICT_JSON 的 case_results 脚手架（verify-agent 逐用例打分用）")
     pv.add_argument("--cases", required=True)
     pv.add_argument("--ids", nargs="*", help="用例 ID 列表（issue 声明的 cases）；不提供则全量活跃用例")
-
-    pr = sub.add_parser("render", help="渲染真值投影（truths.json / truths.md / truths.html dashboard）")
-    pr.add_argument("--templates", required=True)
-    pr.add_argument("--cases", required=True)
-    pr.add_argument("--page-specs", default="", help="page-specs 目录（可选，页面真值 P 层）")
-    pr.add_argument("--out", required=True, help="输出目录")
-
-    ppc = sub.add_parser("page-case", help="按 ID 查单条页面用例（issue CONTRACT_JSON page_cases 校验用）")
-    ppc.add_argument("case_id")
-    ppc.add_argument("--cases", required=True)
-
-    pq = sub.add_parser("query", help="按 ID 查单条真值（agent 引用真值/理解业务规则用）")
-    pq.add_argument("truth_id")
-    pq.add_argument("--templates", required=True)
-
-    ps = sub.add_parser("search", help="按关键字搜真值（ID 或文本，模糊匹配）")
-    ps.add_argument("keyword")
-    ps.add_argument("--templates", required=True)
 
     args = p.parse_args(argv)
 
@@ -218,52 +187,11 @@ def main(argv=None):
         print(f"   真值: {', '.join(case.get('truths_ref') or []) or '（缺口）'}")
         return 0
 
-    if args.cmd == "page-case":
-        case, domain = find_page_case(args.cases, args.case_id)
-        if case is None:
-            print(f"❌ 页面用例不存在: {args.case_id}（用例库 {args.cases} 的 page_cases）", file=sys.stderr)
-            return 1
-        print(f"✅ {case.get('id')} [{case.get('tier', 'normal')}] {case.get('title', '')}")
-        print(f"   域: {domain} ｜ spec: {case.get('spec', '-')}")
-        return 0
-
-    if args.cmd == "query":
-        index, conflicts, _ = load_all_truths(args.templates)
-        if args.truth_id in index:
-            print(index[args.truth_id])
-            return 0
-        print(f"❌ 真值不存在: {args.truth_id}（真值库 {args.templates}）", file=sys.stderr)
-        return 1
-
-    if args.cmd == "search":
-        index, _, _ = load_all_truths(args.templates)
-        kw = args.keyword.lower()
-        hits = {tid: text for tid, text in index.items() if kw in (tid + text).lower()}
-        if hits:
-            for tid, text in sorted(hits.items()):
-                print(f"{tid}\t{text}")
-            return 0
-        print(f"无匹配: {args.keyword}", file=sys.stderr)
-        return 1
-
     if args.cmd == "index":
         index, conflicts, unid = load_all_truths(args.templates)
         _print_index(index)
         print(f"\n合计 {len(index)} 条真值；无 ID {unid} 条；冲突 {len(conflicts)} 个")
         return 1 if conflicts else 0
-
-    if args.cmd == "render":
-        from junshi.contract_view import render_contract  # 懒加载，避免与 contract_view 的 junshi.truths 引用成环
-        from pathlib import Path
-        try:
-            stats = render_contract(Path(args.templates), Path(args.cases),
-                                    Path(args.page_specs) if args.page_specs else None, Path(args.out))
-        except ValueError as e:
-            print(f"❌ {e}", file=sys.stderr)
-            return 1
-        detail = " / ".join(f"{k} {v}" for k, v in stats.items())
-        print(f"✅ 已渲染 → {args.out}（{detail}）")
-        return 0
 
     report, code = check_cases(args.cases, args.templates)
     print(f"真值库: {report['template_truths']} 条 | 用例引用: {report['case_refs']} 处 | "

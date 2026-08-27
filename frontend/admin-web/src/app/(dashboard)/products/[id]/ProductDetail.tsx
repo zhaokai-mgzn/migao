@@ -191,18 +191,18 @@ export default function ProductDetailPage() {
         <div className="flex items-center gap-3">
           <button
             onClick={() => router.push('/products')}
-            className="p-1.5 rounded-lg hover:bg-neutral-100 text-neutral-500 transition-colors"
+            className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div>
-            <h1 className="text-xl font-bold text-neutral-900">{product.name}</h1>
+            <h1 className="text-xl font-bold text-gray-900">{product.name}</h1>
             <div className="flex items-center gap-2 mt-1">
               <Badge variant={statusVariant[product.status]}>
                 {ProductStatusLabels[product.status]}
               </Badge>
               {product.sku && (
-                <span className="text-sm text-neutral-500 font-mono">SKU: {product.sku}</span>
+                <span className="text-sm text-gray-500 font-mono">SKU: {product.sku}</span>
               )}
             </div>
           </div>
@@ -228,105 +228,105 @@ export default function ProductDetailPage() {
 
       <div className="flex flex-col gap-6">
           {/* Basic info */}
-          <div className="bg-neutral-50 rounded-lg p-4">
-            <h3 className="text-sm font-semibold text-neutral-700 mb-3">基本信息</h3>
+          <div className="bg-gray-50 rounded-lg p-4">
+            <h3 className="text-sm font-semibold text-gray-700 mb-3">基本信息</h3>
             <dl className="grid grid-cols-2 gap-x-6 gap-y-3">
               <div>
-                <dt className="text-xs text-neutral-500">分类</dt>
-                <dd className="text-sm text-neutral-900 mt-0.5">{product.categoryName || '-'}</dd>
+                <dt className="text-xs text-gray-500">分类</dt>
+                <dd className="text-sm text-gray-900 mt-0.5">{product.categoryName || '-'}</dd>
               </div>
               <div>
-                <dt className="text-xs text-neutral-500">品牌</dt>
-                <dd className="text-sm text-neutral-900 mt-0.5">{product.brand || '-'}</dd>
+                <dt className="text-xs text-gray-500">品牌</dt>
+                <dd className="text-sm text-gray-900 mt-0.5">{product.brand || '-'}</dd>
               </div>
               <div>
-                <dt className="text-xs text-neutral-500">计价方式</dt>
-                <dd className="text-sm text-neutral-900 mt-0.5">
+                <dt className="text-xs text-gray-500">计价方式</dt>
+                <dd className="text-sm text-gray-900 mt-0.5">
                   {product.pricingType ? PricingTypeLabels[product.pricingType] : '-'}
                 </dd>
               </div>
               <div>
-                <dt className="text-xs text-neutral-500">单价</dt>
-                <dd className="text-sm font-medium text-neutral-900 mt-0.5">{priceText}</dd>
+                <dt className="text-xs text-gray-500">单价</dt>
+                <dd className="text-sm font-medium text-gray-900 mt-0.5">{priceText}</dd>
               </div>
               {product.costPrice !== undefined && (
                 <div>
-                  <dt className="text-xs text-neutral-500">成本价</dt>
-                  <dd className="text-sm text-neutral-900 mt-0.5">¥{product.costPrice.toFixed(2)}</dd>
+                  <dt className="text-xs text-gray-500">成本价</dt>
+                  <dd className="text-sm text-gray-900 mt-0.5">¥{product.costPrice.toFixed(2)}</dd>
                 </div>
               )}
               <div>
-                <dt className="text-xs text-neutral-500">库存</dt>
-                <dd className="text-sm text-neutral-900 mt-0.5">{product.totalStock ?? product.stock ?? '-'}</dd>
+                <dt className="text-xs text-gray-500">库存</dt>
+                <dd className="text-sm text-gray-900 mt-0.5">{product.totalStock ?? product.stock ?? '-'}</dd>
               </div>
               {stockDeductionLabel && (
                 <div>
-                  <dt className="text-xs text-neutral-500">库存扣减方式</dt>
-                  <dd className="text-sm text-neutral-900 mt-0.5">{stockDeductionLabel}</dd>
+                  <dt className="text-xs text-gray-500">库存扣减方式</dt>
+                  <dd className="text-sm text-gray-900 mt-0.5">{stockDeductionLabel}</dd>
                 </div>
               )}
               {product.stockWarningThreshold != null && (
                 <div>
-                  <dt className="text-xs text-neutral-500">库存预警阈值</dt>
-                  <dd className="text-sm text-neutral-900 mt-0.5">{product.stockWarningThreshold}</dd>
+                  <dt className="text-xs text-gray-500">库存预警阈值</dt>
+                  <dd className="text-sm text-gray-900 mt-0.5">{product.stockWarningThreshold}</dd>
                 </div>
               )}
               {product.skuCode && (
                 <div>
-                  <dt className="text-xs text-neutral-500">货号</dt>
-                  <dd className="text-sm text-neutral-900 mt-0.5 font-mono">{product.skuCode}</dd>
+                  <dt className="text-xs text-gray-500">货号</dt>
+                  <dd className="text-sm text-gray-900 mt-0.5 font-mono">{product.skuCode}</dd>
                 </div>
               )}
               <div>
-                <dt className="text-xs text-neutral-500">在售颜色</dt>
-                <dd className="text-sm text-neutral-900 mt-0.5">{product.colorCount ?? (product.colors?.length ?? '-')}</dd>
+                <dt className="text-xs text-gray-500">在售颜色</dt>
+                <dd className="text-sm text-gray-900 mt-0.5">{product.colorCount ?? (product.colors?.length ?? '-')}</dd>
               </div>
               {product.salesCount != null && (
                 <div>
-                  <dt className="text-xs text-neutral-500">累计销量</dt>
-                  <dd className="text-sm text-neutral-900 mt-0.5">{product.salesCount}</dd>
+                  <dt className="text-xs text-gray-500">累计销量</dt>
+                  <dd className="text-sm text-gray-900 mt-0.5">{product.salesCount}</dd>
                 </div>
               )}
               {product.salesAmount != null && (
                 <div>
-                  <dt className="text-xs text-neutral-500">累计销售额</dt>
-                  <dd className="text-sm text-neutral-900 mt-0.5">¥{product.salesAmount.toFixed(2)}</dd>
+                  <dt className="text-xs text-gray-500">累计销售额</dt>
+                  <dd className="text-sm text-gray-900 mt-0.5">¥{product.salesAmount.toFixed(2)}</dd>
                 </div>
               )}
               {product.editedBy && (
                 <div>
-                  <dt className="text-xs text-neutral-500">最后编辑人</dt>
-                  <dd className="text-sm text-neutral-900 mt-0.5">
+                  <dt className="text-xs text-gray-500">最后编辑人</dt>
+                  <dd className="text-sm text-gray-900 mt-0.5">
                     {product.editedBy === 'internal-service' ? '米宝机器人' : product.editedBy}
                   </dd>
                 </div>
               )}
               {product.editedAt && (
                 <div>
-                  <dt className="text-xs text-neutral-500">最后编辑时间</dt>
-                  <dd className="text-sm text-neutral-900 mt-0.5">{product.editedAt}</dd>
+                  <dt className="text-xs text-gray-500">最后编辑时间</dt>
+                  <dd className="text-sm text-gray-900 mt-0.5">{product.editedAt}</dd>
                 </div>
               )}
               <div>
-                <dt className="text-xs text-neutral-500">创建时间</dt>
-                <dd className="text-sm text-neutral-900 mt-0.5">{product.createdAt || '-'}</dd>
+                <dt className="text-xs text-gray-500">创建时间</dt>
+                <dd className="text-sm text-gray-900 mt-0.5">{product.createdAt || '-'}</dd>
               </div>
               <div>
-                <dt className="text-xs text-neutral-500">更新时间</dt>
-                <dd className="text-sm text-neutral-900 mt-0.5">{product.updatedAt || '-'}</dd>
+                <dt className="text-xs text-gray-500">更新时间</dt>
+                <dd className="text-sm text-gray-900 mt-0.5">{product.updatedAt || '-'}</dd>
               </div>
             </dl>
           </div>
 
           {/* 商品属性 */}
           {specEntries.length > 0 && (
-            <div className="bg-neutral-50 rounded-lg p-4">
-              <h3 className="text-sm font-semibold text-neutral-700 mb-3">商品属性</h3>
+            <div className="bg-gray-50 rounded-lg p-4">
+              <h3 className="text-sm font-semibold text-gray-700 mb-3">商品属性</h3>
               <dl className="grid grid-cols-2 gap-x-6 gap-y-3">
                 {specEntries.map((item) => (
                   <div key={item.key}>
-                    <dt className="text-xs text-neutral-500">{item.label}</dt>
-                    <dd className="text-sm text-neutral-900 mt-0.5">{item.value}</dd>
+                    <dt className="text-xs text-gray-500">{item.label}</dt>
+                    <dd className="text-sm text-gray-900 mt-0.5">{item.value}</dd>
                   </div>
                 ))}
               </dl>
@@ -335,11 +335,11 @@ export default function ProductDetailPage() {
 
           {/* 销售信息（SKU） */}
           {skus.length > 0 && (
-            <div className="bg-neutral-50 rounded-lg p-4">
-              <h3 className="text-sm font-semibold text-neutral-700 mb-3">销售信息</h3>
-              <div className="overflow-x-auto rounded-md border border-neutral-200 bg-white">
+            <div className="bg-gray-50 rounded-lg p-4">
+              <h3 className="text-sm font-semibold text-gray-700 mb-3">销售信息</h3>
+              <div className="overflow-x-auto rounded-md border border-gray-200 bg-white">
                 <table className="min-w-full text-sm">
-                  <thead className="bg-neutral-50 text-neutral-600">
+                  <thead className="bg-gray-50 text-gray-600">
                     <tr>
                       <th className="px-3 py-2 text-left font-medium">颜色</th>
                       <th className="px-3 py-2 text-left font-medium">售卖方式</th>
@@ -349,9 +349,9 @@ export default function ProductDetailPage() {
                       <th className="px-3 py-2 text-right font-medium">价格</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-neutral-100">
+                  <tbody className="divide-y divide-gray-100">
                     {skus.map((sku) => (
-                      <tr key={sku.id} className="text-neutral-900">
+                      <tr key={sku.id} className="text-gray-900">
                         <td className="px-3 py-2">{sku.colorName || '-'}</td>
                         <td className="px-3 py-2">
                           {sku.sellingMethod ? SellingMethodLabels[sku.sellingMethod] || sku.sellingMethod : '-'}
@@ -376,17 +376,17 @@ export default function ProductDetailPage() {
 
           {/* 颜色列表 */}
           {product.colors && product.colors.length > 0 && (
-            <div className="bg-neutral-50 rounded-lg p-4">
-              <h3 className="text-sm font-semibold text-neutral-700 mb-3">商品颜色</h3>
+            <div className="bg-gray-50 rounded-lg p-4">
+              <h3 className="text-sm font-semibold text-gray-700 mb-3">商品颜色</h3>
               <div className="flex flex-wrap gap-2">
                 {product.colors.map((c) => (
                   <div
                     key={c.id}
-                    className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-neutral-200 bg-white text-sm"
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-gray-200 bg-white text-sm"
                   >
                     {c.mainColorHex && (
                       <span
-                        className="w-4 h-4 rounded-full border border-neutral-300 shrink-0"
+                        className="w-4 h-4 rounded-full border border-gray-300 shrink-0"
                         style={{ backgroundColor: c.mainColorHex }}
                       />
                     )}
@@ -399,13 +399,13 @@ export default function ProductDetailPage() {
 
           {/* Processing items */}
           {product.processingItemConfigs && product.processingItemConfigs.length > 0 && (
-            <div className="bg-neutral-50 rounded-lg p-4">
-              <h3 className="text-sm font-semibold text-neutral-700 mb-2">加工项</h3>
+            <div className="bg-gray-50 rounded-lg p-4">
+              <h3 className="text-sm font-semibold text-gray-700 mb-2">加工项</h3>
               <div className="space-y-2">
                 {product.processingItemConfigs.map((cfg, idx) => (
                   <div key={idx} className="flex items-center justify-between text-sm">
-                    <span className="font-medium text-neutral-800">{cfg.processingItemName || '未知加工项'}</span>
-                    <span className="text-primary-600 font-medium">¥{cfg.customPrice?.toFixed(2) || '0.00'}/米</span>
+                    <span className="font-medium text-gray-800">{cfg.processingItemName || '未知加工项'}</span>
+                    <span className="text-blue-600 font-medium">¥{cfg.customPrice?.toFixed(2) || '0.00'}/米</span>
                   </div>
                 ))}
               </div>
@@ -414,22 +414,22 @@ export default function ProductDetailPage() {
 
           {/* Description */}
           {product.description && (
-            <div className="bg-neutral-50 rounded-lg p-4">
-              <h3 className="text-sm font-semibold text-neutral-700 mb-2">商品描述</h3>
+            <div className="bg-gray-50 rounded-lg p-4">
+              <h3 className="text-sm font-semibold text-gray-700 mb-2">商品描述</h3>
               {/^\s*</.test(product.description) ? (
                 <div
-                  className="product-description text-sm text-neutral-700 leading-relaxed"
+                  className="product-description text-sm text-gray-700 leading-relaxed"
                   dangerouslySetInnerHTML={{ __html: sanitizeHtml(product.description) }}
                 />
               ) : (
-                <p className="text-sm text-neutral-600 whitespace-pre-wrap">{product.description}</p>
+                <p className="text-sm text-gray-600 whitespace-pre-wrap">{product.description}</p>
               )}
             </div>
           )}
 
           {/* 商品图片 */}
-          <div className="bg-neutral-50 rounded-lg p-4">
-            <h3 className="text-sm font-semibold text-neutral-700 mb-3">商品图片</h3>
+          <div className="bg-gray-50 rounded-lg p-4">
+            <h3 className="text-sm font-semibold text-gray-700 mb-3">商品图片</h3>
             {allImages.length > 0 ? (
               <div className="space-y-3">
                 {/* Main image */}
@@ -457,7 +457,7 @@ export default function ProductDetailPage() {
                 )}
               </div>
             ) : (
-              <div className="w-full aspect-square rounded-lg bg-neutral-200 flex items-center justify-center text-neutral-400">
+              <div className="w-full aspect-square rounded-lg bg-gray-200 flex items-center justify-center text-gray-400">
                 暂无图片
               </div>
             )}

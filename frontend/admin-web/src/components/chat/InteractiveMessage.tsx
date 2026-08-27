@@ -55,20 +55,20 @@ function ChoiceCard({ interactive, disabled }: Props) {
             disabled={submitted || disabled}
             className={cn(
               'w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-sm transition-colors',
-              'bg-neutral-50 border border-neutral-100 text-neutral-700 hover:bg-neutral-100',
+              'bg-gray-50 border border-gray-100 text-gray-700 hover:bg-gray-100',
               (submitted || disabled) && 'opacity-60 cursor-not-allowed',
             )}
           >
-            <span className="w-5 h-5 rounded-full bg-neutral-200 text-neutral-500 text-[10px] font-semibold flex items-center justify-center flex-shrink-0">
+            <span className="w-5 h-5 rounded-full bg-gray-200 text-gray-500 text-[10px] font-semibold flex items-center justify-center flex-shrink-0">
               {idx + 1}
             </span>
             <span className="flex-1">
               <span className="font-medium">{opt.label}</span>
               {opt.description && (
-                <span className="ml-1.5 text-xs text-neutral-400">{opt.description}</span>
+                <span className="ml-1.5 text-xs text-gray-400">{opt.description}</span>
               )}
             </span>
-            <ChevronRight className="w-4 h-4 text-neutral-300 flex-shrink-0" />
+            <ChevronRight className="w-4 h-4 text-gray-300 flex-shrink-0" />
           </button>
         ))}
       </div>
@@ -114,18 +114,18 @@ function ConfirmCard({ interactive, disabled }: Props) {
       <div className="p-3 space-y-2">
         {fields.map((field, i) => (
           <div key={i} className="flex items-center text-sm">
-            <span className="text-neutral-400 w-16 flex-shrink-0 text-xs">{field.label}</span>
-            <span className="text-neutral-800 font-medium ml-2">{field.value}</span>
+            <span className="text-gray-400 w-16 flex-shrink-0 text-xs">{field.label}</span>
+            <span className="text-gray-800 font-medium ml-2">{field.value}</span>
           </div>
         ))}
       </div>
 
       {/* 操作按钮 */}
       {!submitted && (
-        <div className="px-3 py-2 border-t border-neutral-100 flex gap-2 justify-end">
+        <div className="px-3 py-2 border-t border-gray-100 flex gap-2 justify-end">
           <button
             onClick={() => handleAction(cancelValue)}
-            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-neutral-100 text-neutral-600 hover:bg-neutral-200 transition-colors"
+            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
           >
             <X className="w-3 h-3" />
             {cancelLabel}
@@ -177,14 +177,14 @@ function FormCard({ interactive, disabled }: Props) {
   }
 
   return (
-    <div className="mt-2 border border-neutral-200 rounded-xl overflow-hidden bg-white shadow-sm">
-      <div className="px-3 py-2 bg-neutral-50 border-b border-neutral-100">
-        <p className="text-xs font-medium text-neutral-700">{interactive.title}</p>
+    <div className="mt-2 border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm">
+      <div className="px-3 py-2 bg-gray-50 border-b border-gray-100">
+        <p className="text-xs font-medium text-gray-700">{interactive.title}</p>
       </div>
       <div className="p-3 space-y-2.5">
         {formFields.map((field: InteractiveFormField) => (
           <div key={field.key}>
-            <label className="block text-xs text-neutral-500 mb-1">{field.label}</label>
+            <label className="block text-xs text-gray-500 mb-1">{field.label}</label>
             <input
               type="text"
               value={values[field.key] || ''}
@@ -194,22 +194,22 @@ function FormCard({ interactive, disabled }: Props) {
               className={cn(
                 'w-full px-2.5 py-1.5 rounded-lg border text-sm outline-none',
                 (submitted || disabled)
-                  ? 'bg-neutral-50 border-neutral-200 text-neutral-400'
-                  : 'bg-white border-neutral-200 text-neutral-800 focus:border-primary-400'
+                  ? 'bg-gray-50 border-gray-200 text-gray-400'
+                  : 'bg-white border-gray-200 text-gray-800 focus:border-primary-400'
               )}
             />
           </div>
         ))}
       </div>
       {!submitted && (
-        <div className="px-3 py-2 border-t border-neutral-100 flex justify-end">
+        <div className="px-3 py-2 border-t border-gray-100 flex justify-end">
           <button
             onClick={handleSubmit}
             disabled={disabled}
             className={cn(
               'flex items-center gap-1 px-4 py-1.5 rounded-lg text-xs font-medium transition-colors',
               disabled
-                ? 'bg-neutral-100 text-neutral-400 cursor-not-allowed'
+                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
                 : 'bg-primary-600 text-white hover:bg-primary-700'
             )}
           >
@@ -249,8 +249,8 @@ function PageControls({
   }
 
   return (
-    <div className="px-3 py-2 border-t border-neutral-100 flex items-center justify-between">
-      <span className="text-[10px] text-neutral-400">
+    <div className="px-3 py-2 border-t border-gray-100 flex items-center justify-between">
+      <span className="text-[10px] text-gray-400">
         第 {current}/{total} 页，共 {totalCount} 条
       </span>
       <div className="flex items-center gap-1">
@@ -260,8 +260,8 @@ function PageControls({
           className={cn(
             'flex items-center gap-0.5 px-2 py-1 rounded text-[11px] font-medium transition-colors',
             current <= 1
-              ? 'bg-neutral-50 text-neutral-300 cursor-not-allowed'
-              : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200',
+              ? 'bg-gray-50 text-gray-300 cursor-not-allowed'
+              : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
           )}
         >
           <ChevronLeft className="w-3 h-3" />
@@ -273,8 +273,8 @@ function PageControls({
           className={cn(
             'flex items-center gap-0.5 px-2 py-1 rounded text-[11px] font-medium transition-colors',
             current >= total
-              ? 'bg-neutral-50 text-neutral-300 cursor-not-allowed'
-              : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200',
+              ? 'bg-gray-50 text-gray-300 cursor-not-allowed'
+              : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
           )}
         >
           下一页

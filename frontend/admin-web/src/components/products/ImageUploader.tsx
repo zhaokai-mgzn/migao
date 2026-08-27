@@ -170,7 +170,7 @@ export default function ImageUploader({
   return (
     <div className="w-full">
       {label && (
-        <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+        <label className="block text-sm font-medium text-gray-700 mb-1.5">
           {label}
         </label>
       )}
@@ -185,7 +185,7 @@ export default function ImageUploader({
             onDragOver={(e) => handleDragOver(e, index)}
             onDragEnd={handleDragEnd}
             className={cn(
-              'relative group w-24 h-24 rounded-lg border-2 border-neutral-200 overflow-hidden bg-neutral-50',
+              'relative group w-24 h-24 rounded-lg border-2 border-gray-200 overflow-hidden bg-gray-50',
               dragOverIndex === index && 'border-primary-500 border-dashed',
               dragIndex === index && 'opacity-50',
               multiple && 'cursor-grab active:cursor-grabbing'
@@ -202,7 +202,7 @@ export default function ImageUploader({
                 unoptimized
               />
             ) : (
-              <div className="w-full h-full flex items-center justify-center text-neutral-300">
+              <div className="w-full h-full flex items-center justify-center text-gray-300">
                 <ImageIcon className="w-6 h-6" />
               </div>
             )}
@@ -229,7 +229,7 @@ export default function ImageUploader({
             onDragOver={(e) => { e.preventDefault(); e.stopPropagation() }}
             onDrop={handleDrop}
             className={cn(
-              'relative w-24 h-24 rounded-lg border-2 border-dashed border-neutral-300 flex flex-col items-center justify-center gap-1 cursor-pointer transition-colors',
+              'relative w-24 h-24 rounded-lg border-2 border-dashed border-gray-300 flex flex-col items-center justify-center gap-1 cursor-pointer transition-colors',
               'hover:border-primary-500 hover:bg-primary-50/50',
               uploading && 'pointer-events-none opacity-60'
             )}
@@ -238,12 +238,12 @@ export default function ImageUploader({
               <Loader2 className="w-5 h-5 text-primary-600 animate-spin" />
             ) : (
               <>
-                <Upload className="w-5 h-5 text-neutral-400" />
-                <span className="text-xs text-neutral-500">
+                <Upload className="w-5 h-5 text-gray-400" />
+                <span className="text-xs text-gray-500">
                   {showOrderBadge && value.length === 0 ? '上传封面' : '上传图片'}
                 </span>
                 {showOrderBadge && (
-                  <span className="text-[10px] text-neutral-400 leading-none">
+                  <span className="text-[10px] text-gray-400 leading-none">
                     {value.length}/{max}
                   </span>
                 )}
@@ -262,7 +262,7 @@ export default function ImageUploader({
       </div>
 
       {hint && (
-        <p className="mt-1.5 text-xs text-neutral-500">{hint}</p>
+        <p className="mt-1.5 text-xs text-gray-500">{hint}</p>
       )}
 
       {/* 预览 */}
@@ -277,7 +277,7 @@ export default function ImageUploader({
             )}
             <button
               onClick={() => setPreviewUrl(null)}
-              className="absolute -top-3 -right-3 p-1.5 bg-white rounded-full shadow-lg text-neutral-600 hover:text-neutral-900"
+              className="absolute -top-3 -right-3 p-1.5 bg-white rounded-full shadow-lg text-gray-600 hover:text-gray-900"
             >
               <X className="w-5 h-5" />
             </button>

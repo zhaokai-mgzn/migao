@@ -1,4 +1,3 @@
-// case_ids: UI-005
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 
@@ -129,7 +128,7 @@ describe('OpsSidebar', () => {
     render(<OpsSidebar />)
     const link = screen.getByText('入驻审批').closest('a')!
     expect(link.className).not.toContain('bg-blue-50')
-    expect(link.className).toContain('text-neutral-600')
+    expect(link.className).toContain('text-gray-600')
   })
 
   it('should NOT highlight 平台概览 when on /registrations', () => {
@@ -137,7 +136,7 @@ describe('OpsSidebar', () => {
     render(<OpsSidebar />)
     const link = screen.getByText('平台概览').closest('a')!
     expect(link.className).not.toContain('bg-blue-50')
-    expect(link.className).toContain('text-neutral-600')
+    expect(link.className).toContain('text-gray-600')
   })
 
   // ── 嵌套路由匹配 ──

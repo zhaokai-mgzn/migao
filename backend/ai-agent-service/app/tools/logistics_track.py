@@ -240,10 +240,12 @@ class LogisticsTrackTool(BaseTool):
                 )
             
             tracking_no = logistics.get("trackingNo")
-            company = logistics.get("company", "未知")
-            phone = logistics.get("receiverPhone", "")
-            # 提取手机号后四位（顺丰/中通/申通等需要）
-            phone_tail = phone[-4:] if phone and len(phone) >= 4 else None
+            # 后端 OrderDetailResponse.LogisticsInfo 字段是 logisticsCompany（无 company 字段）
+            company = logistics.get("logisticsCompany", "未知")
+            # OrderDetailResponse.LogisticsInfo 无 receiverPhone 字段，后端不提供
+            # 收/寄件人手机号后四位，无法再拼接（顺丰/中通/申通等需要手机号尾号的
+            # API 场景由 API 自动识别降级处理），故不再读取。
+            phone_tail = None
             
             # 查询物流轨迹
             return await self._track_by_number(

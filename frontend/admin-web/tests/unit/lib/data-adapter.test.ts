@@ -18,6 +18,7 @@ import {
   buildProductPayload,
   buildLogisticsPayload,
   buildCloseOrderPayload,
+  buildRefundPayload,
 } from '@/lib/data-adapter'
 import type {
   ProductFormData,
@@ -63,7 +64,7 @@ describe('BackendToFrontendStatus', () => {
     const expected: Record<BackendOrderStatus, OrderStatus> = {
       pending: 'pending_payment',
       confirmed: 'pending_shipment',
-      processing: 'pending_shipment',
+      producing: 'pending_shipment',
       shipped: 'shipped',
       completed: 'completed',
       cancelled: 'closed',
@@ -75,13 +76,13 @@ describe('BackendToFrontendStatus', () => {
     const keys = Object.keys(BackendToFrontendStatus).sort()
     expect(keys).toEqual([
       'cancelled', 'completed', 'confirmed',
-      'pending', 'processing', 'shipped',
+      'pending', 'producing', 'shipped',
     ])
   })
 
-  it('both "confirmed" and "processing" map to "pending_shipment" (display merge)', () => {
+  it('both "confirmed" and "producing" map to "pending_shipment" (display merge)', () => {
     expect(BackendToFrontendStatus.confirmed).toBe('pending_shipment')
-    expect(BackendToFrontendStatus.processing).toBe('pending_shipment')
+    expect(BackendToFrontendStatus.producing).toBe('pending_shipment')
   })
 
   it('round-trip: front→back→front preserves display status (except refund→cancelled→closed)', () => {
@@ -267,5 +268,34 @@ describe('buildCloseOrderPayload', () => {
     expect(payload).toEqual({ closeReason: '其他原因' })
     // remark should not leak into close order payload
     expect((payload as any).remark).toBeUndefined()
+  })
+})
+
+// ===================================================================
+// 退款 Payload 构建（目标契约：body 支持 refund_reason，并将新增 refund_amount）
+// ===================================================================
+
+describe('buildRefundPayload', () => {
+  it('maps refundAmount → refund_amount 且 refundReason → refund_reason', () => {
+    const payload = buildRefundPayload({ refundAmount: 120.5, refundReason: '质量问题' })
+    expect(payload).toEqual({
+      refund_amount: 120.5,
+      refund_reason: '质量问题',
+    })
+  })
+
+  it('refundAmount 未传时省略 refund_amount（只退原因）', () => {
+    const payload = buildRefundPayload({ refundReason: '协商一致' })
+    expect(payload).toEqual({ refund_reason: '协商一致' })
+    expect((payload as any).refund_amount).toBeUndefined()
+  })
+
+  it('refundReason 缺省时 refund_reason 为空字符串', () => {
+    expect(buildRefundPayload()).toEqual({ refund_reason: '' })
+  })
+
+  it('trim 退款原因前后空白', () => {
+    const payload = buildRefundPayload({ refundReason: '  客户退货  ' })
+    expect(payload).toEqual({ refund_reason: '客户退货' })
   })
 })

@@ -19,7 +19,8 @@ def tool():
 
 @pytest.fixture
 def sample_order_with_logistics():
-    """模拟包含物流信息的订单响应"""
+    """模拟包含物流信息的订单响应（与后端 OrderDetailResponse.LogisticsInfo 对齐：
+    快递公司字段是 logisticsCompany，无 receiverPhone）"""
     return {
         "success": True,
         "data": {
@@ -27,7 +28,7 @@ def sample_order_with_logistics():
             "status": "shipped",
             "logistics": {
                 "trackingNo": "SF1234567890",
-                "company": "顺丰速运",
+                "logisticsCompany": "顺丰速运",
             },
         },
     }
@@ -74,6 +75,41 @@ class TestLogisticsTrackByOrder:
         assert result.data["tracking_number"] == "SF1234567890"
         assert result.data["company"] == "顺丰速运"
         assert "顺丰速运" in result.message
+
+    @patch("app.tools.logistics_track.get_admin_api_client")
+    async def test_logistics_track_parses_logistics_company(
+        self, mock_get_client, tool, sample_tool_context
+    ):
+        """后端响应物流字段是 logisticsCompany（非 company）→ 工具必须正确解析"""
+        mock_client = AsyncMock()
+        async def mock_get(url, **kwargs):
+            if "/api/admin/orders" == url and kwargs.get("params", {}).get("keyword"):
+                return {"success": True, "data": {"items": [{"id": "order_001"}]}}
+            return {
+                "success": True,
+                "data": {
+                    "id": "order_001",
+                    "status": "shipped",
+                    "logistics": {
+                        "trackingNo": "SF1234567890",
+                        "logisticsCompany": "中通快递",
+                    },
+                },
+            }
+        mock_client.get = mock_get
+        mock_get_client.return_value = mock_client
+
+        result = await tool.execute(
+            context=sample_tool_context,
+            order_id="order_001",
+        )
+
+        assert result.success is True
+        assert result.data["tracking_number"] == "SF1234567890"
+        # company 来自 logisticsCompany 字段
+        assert result.data["company"] == "中通快递"
+        # receiverPhone 后端不存在，工具不应报错也不应展示
+        assert "receiverPhone" not in result.data
 
     @patch("app.tools.logistics_track.get_admin_api_client")
     async def test_logistics_track_by_order_legacy_records_shape(
@@ -349,7 +385,7 @@ class TestLogisticsTrackOrderEdge:
         mock_client = AsyncMock()
         async def mock_get(url, **kwargs):
             return {"success": True, "data": {
-                "logistics": {"trackingNo": "SF1", "company": "顺丰速运"}}}
+                "logistics": {"trackingNo": "SF1", "logisticsCompany": "顺丰速运"}}}
         mock_client.get = mock_get
         mock_get_client.return_value = mock_client
 

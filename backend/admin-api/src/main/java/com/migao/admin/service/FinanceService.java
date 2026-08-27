@@ -150,6 +150,32 @@ public class FinanceService extends ServiceImpl<FinanceTransactionMapper, Financ
         return toListResponse(txn);
     }
 
+    /**
+     * 登记一笔订单退款流水（type=refund），供售后工单完结联动等业务调用。
+     * 金额必须为正；amount ≤ 0 或 order 为空时直接忽略。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void recordRefund(Order order, BigDecimal amount, String remark) {
+        if (order == null || amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
+            return;
+        }
+        FinanceTransaction txn = FinanceTransaction.builder()
+                .tenantId(order.getTenantId())
+                .transactionNo(generateTransactionNo(order.getTenantId()))
+                .orderId(order.getId())
+                .orderNo(order.getOrderNo())
+                .type("refund")
+                .amount(amount)
+                .status("success")
+                .operator("系统")
+                .occurredAt(OffsetDateTime.now())
+                .remark(remark)
+                .build();
+        financeTransactionMapper.insert(txn);
+        log.info("登记退款流水: transactionNo={}, amount={}, orderNo={}, remark={}",
+                txn.getTransactionNo(), amount, order.getOrderNo(), remark);
+    }
+
     // ==================== 收支汇总 ====================
 
     /**
@@ -280,6 +306,7 @@ public class FinanceService extends ServiceImpl<FinanceTransactionMapper, Financ
                     BigDecimal receivable = nz(o.getTotalAmount());
                     BigDecimal received = o.getActualAmount() != null ? o.getActualAmount() : receivable;
                     BigDecimal refund = refundMap.getOrDefault(o.getId(), BigDecimal.ZERO);
+                    // 差额 = 应收 - 实收 + 已退（净应收口径：退款订单差额不为 0，标识资金未完全收回）
                     return ReceivableReconciliationResponse.builder()
                             .orderId(o.getId())
                             .orderNo(o.getOrderNo())
@@ -289,7 +316,7 @@ public class FinanceService extends ServiceImpl<FinanceTransactionMapper, Financ
                             .receivableAmount(receivable)
                             .receivedAmount(received)
                             .refundAmount(refund)
-                            .difference(received.subtract(receivable))
+                            .difference(receivable.subtract(received).add(refund))
                             .createdAt(o.getCreatedAt())
                             .build();
                 })
