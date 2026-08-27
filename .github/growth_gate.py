@@ -72,6 +72,19 @@ def expand_test_names(rule, file_path):
     return names
 
 
+def _test_file_variants(path):
+    """返回测试文件路径的候选变体：原样 + .ts/.tsx 互换。
+
+    项目测试实际用 .test.tsx，但 tech-stack.yml 模板写 .test.ts（历史口径），
+    两个扩展名都应命中，避免误判缺测。
+    """
+    if path.endswith(".ts"):
+        return [path, path[:-3] + ".tsx"]
+    if path.endswith(".tsx"):
+        return [path, path[:-4] + ".ts"]
+    return [path]
+
+
 def find_existing_tests(rule, test_names, repo_root):
     """检查哪些测试文件实际存在。
 
@@ -92,9 +105,10 @@ def find_existing_tests(rule, test_names, repo_root):
             if hits:
                 existing.append(tn)
         else:
-            candidates = [os.path.join(base, tn), os.path.join(repo_root, tn)]
-            if any(os.path.exists(c) for c in candidates):
-                existing.append(tn)
+            for cand in [os.path.join(base, tn), os.path.join(repo_root, tn)]:
+                if any(os.path.exists(v) for v in _test_file_variants(cand)):
+                    existing.append(tn)
+                    break
     return existing
 
 
@@ -113,8 +127,8 @@ def resolve_test_paths(rule, test_names, repo_root):
             else:
                 hits = _glob.glob(os.path.join(base, f"**/{tn}.java"), recursive=True)
         else:
-            hits = [c for c in (os.path.join(base, tn), os.path.join(repo_root, tn))
-                    if os.path.exists(c)]
+            for c in (os.path.join(base, tn), os.path.join(repo_root, tn)):
+                hits.extend(v for v in _test_file_variants(c) if os.path.exists(v))
         paths.extend(hits)
     return paths
 
