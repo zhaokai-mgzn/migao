@@ -15,6 +15,7 @@ business_truths:
   - [frontend-fix.dashboard-no-overflow] dashboard 页面在 1440×900 与 1280×800 两视口无水平/垂直截断或溢出
   - [frontend-fix.status-chip] 订单/售后状态用语义色 chips 表达：订单六状态（pending_payment→warning、pending_shipment/shipped→info、completed→success、closed→neutral、refund→error）、售后五状态（pending→warning、processing→info、resolved→success、rejected→error、closed→neutral），统一走 @/lib/status-chip 的 orderStatusChip/afterSalesStatusChip + chipToneClasses 渲染；组件内不再硬编码 bg-blue-50/bg-indigo-50/bg-green-50/bg-gray-50 旧色；未知/空状态回退 neutral 且 label 恒为「暂无数据」
   - [frontend-fix.empty-state] 数据空态显示「暂无数据」，禁止整列 '-' 占位：OrderTable 采购明细列（items 为空）与采购商品列（无 firstItem）渲染「暂无数据」而非裸 '-'，整页无整列 '-' 占位
+  - [frontend-fix.trend-full-width] 经营看板订单/销售额趋势图曲线横向铺满卡片宽度：折线起点≈左内边距、终点≈右内边距，覆盖≥85% 视口宽（无居中留白）；销售额图渲染渐变面积 + 水平网格 + y 轴整齐刻度 + hover tooltip
 
 primary_specs:
   - tests/e2e/specs/

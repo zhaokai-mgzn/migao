@@ -207,8 +207,8 @@ export default function FinancePage() {
       {/* 页面标题 */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-xl font-semibold text-gray-900">财务对账</h1>
-          <p className="text-sm text-gray-500 mt-1">资金流水、收支汇总与应收对账</p>
+          <h1 className="text-xl font-semibold text-neutral-900">财务对账</h1>
+          <p className="text-sm text-neutral-500 mt-1">资金流水、收支汇总与应收对账</p>
         </div>
         <Button onClick={() => setCreateOpen(true)}>
           <Plus className="w-4 h-4 mr-1.5" />
@@ -217,7 +217,7 @@ export default function FinancePage() {
       </div>
 
       {/* 时间范围筛选 */}
-      <div className="bg-white border border-gray-200 rounded-lg p-4 mb-4">
+      <div className="bg-white border border-neutral-200 rounded-lg p-4 mb-4">
         <div className="flex flex-wrap items-end gap-3">
           <div className="min-w-[160px]">
             <Input
@@ -281,7 +281,7 @@ export default function FinancePage() {
       </div>
 
       {/* Tab 栏 */}
-      <div className="flex items-center gap-0 bg-white border border-gray-200 rounded-t-lg overflow-x-auto">
+      <div className="flex items-center gap-0 bg-white border border-neutral-200 rounded-t-lg overflow-x-auto">
         {tabs.map((t) => (
           <button
             key={t.key}
@@ -290,7 +290,7 @@ export default function FinancePage() {
               'relative px-4 py-3 text-sm font-medium whitespace-nowrap transition-colors border-b-2',
               tab === t.key
                 ? 'text-primary-600 border-primary-600 bg-primary-50/50'
-                : 'text-gray-500 border-transparent hover:text-gray-700 hover:bg-gray-50'
+                : 'text-neutral-500 border-transparent hover:text-neutral-700 hover:bg-neutral-50'
             )}
           >
             {t.label}
@@ -300,8 +300,8 @@ export default function FinancePage() {
 
       {/* ===== 资金流水 ===== */}
       {tab === 'transactions' && (
-        <div className="bg-white rounded-b-lg border border-t-0 border-gray-200">
-          <div className="flex flex-wrap items-end gap-3 p-4 border-b border-gray-100">
+        <div className="bg-white rounded-b-lg border border-t-0 border-neutral-200">
+          <div className="flex flex-wrap items-end gap-3 p-4 border-b border-neutral-100">
             <div className="min-w-[140px]">
               <Select
                 label="收支类型"
@@ -340,27 +340,27 @@ export default function FinancePage() {
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-gray-200 bg-gray-50/50">
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">流水号</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">类型</th>
-                  <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">金额</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">支付方式</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">关联订单</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">状态</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">操作人</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">交易时间</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">备注</th>
+                <tr className="border-b border-neutral-200 bg-neutral-50/50">
+                  <th className="text-left px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider whitespace-nowrap">流水号</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider whitespace-nowrap">类型</th>
+                  <th className="text-right px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider whitespace-nowrap">金额</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider whitespace-nowrap">支付方式</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider whitespace-nowrap">关联订单</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider whitespace-nowrap">状态</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider whitespace-nowrap">操作人</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider whitespace-nowrap">交易时间</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider whitespace-nowrap">备注</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-neutral-100">
                 {txnLoading ? (
-                  <tr><td colSpan={9} className="px-4 py-12 text-center text-gray-400">加载中...</td></tr>
+                  <tr><td colSpan={9} className="px-4 py-12 text-center text-neutral-400">加载中...</td></tr>
                 ) : txns.length === 0 ? (
-                  <tr><td colSpan={9} className="px-4 py-12 text-center text-gray-400">暂无资金流水</td></tr>
+                  <tr><td colSpan={9} className="px-4 py-12 text-center text-neutral-400">暂无资金流水</td></tr>
                 ) : (
                   txns.map((t) => (
-                    <tr key={t.id} className="hover:bg-gray-50/50 transition-colors">
-                      <td className="px-4 py-3"><span className="font-mono text-sm text-gray-900">{t.transactionNo}</span></td>
+                    <tr key={t.id} className="hover:bg-neutral-50/50 transition-colors">
+                      <td className="px-4 py-3"><span className="font-mono text-sm text-neutral-900">{t.transactionNo}</span></td>
                       <td className="px-4 py-3">
                         <Badge variant={t.type === 'income' ? 'success' : 'error'}>
                           {FinanceTransactionTypeLabels[t.type] || t.type}
@@ -369,18 +369,18 @@ export default function FinancePage() {
                       <td className={cn('px-4 py-3 text-right font-medium', t.type === 'income' ? 'text-green-600' : 'text-red-600')}>
                         {t.type === 'income' ? '+' : '-'}{fmtMoney(t.amount)}
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-700">
+                      <td className="px-4 py-3 text-sm text-neutral-700">
                         {t.paymentMethod ? FinancePaymentMethodLabels[t.paymentMethod as FinancePaymentMethod] || t.paymentMethod : '-'}
                       </td>
-                      <td className="px-4 py-3"><span className="font-mono text-sm text-gray-600">{t.orderNo || '-'}</span></td>
+                      <td className="px-4 py-3"><span className="font-mono text-sm text-neutral-600">{t.orderNo || '-'}</span></td>
                       <td className="px-4 py-3">
                         <Badge variant={t.status === 'success' ? 'success' : t.status === 'failed' ? 'error' : 'default'}>
                           {FinanceTransactionStatusLabels[t.status] || t.status}
                         </Badge>
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-600">{t.operator || '-'}</td>
-                      <td className="px-4 py-3 text-sm text-gray-500"><DateTimeCell value={t.occurredAt || t.createdAt} /></td>
-                      <td className="px-4 py-3 text-sm text-gray-500 max-w-[200px] truncate">{t.remark || '-'}</td>
+                      <td className="px-4 py-3 text-sm text-neutral-600">{t.operator || '-'}</td>
+                      <td className="px-4 py-3 text-sm text-neutral-500"><DateTimeCell value={t.occurredAt || t.createdAt} /></td>
+                      <td className="px-4 py-3 text-sm text-neutral-500 max-w-[200px] truncate">{t.remark || '-'}</td>
                     </tr>
                   ))
                 )}
@@ -399,28 +399,28 @@ export default function FinancePage() {
 
       {/* ===== 收支汇总 ===== */}
       {tab === 'summary' && (
-        <div className="bg-white rounded-b-lg border border-t-0 border-gray-200 p-6">
-          <h3 className="text-sm font-semibold text-gray-900 mb-3">按支付方式</h3>
+        <div className="bg-white rounded-b-lg border border-t-0 border-neutral-200 p-6">
+          <h3 className="text-sm font-semibold text-neutral-900 mb-3">按支付方式</h3>
           <div className="overflow-x-auto mb-6">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-gray-200 bg-gray-50/50">
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">支付方式</th>
-                  <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">收入</th>
-                  <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">退款</th>
-                  <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">净额</th>
+                <tr className="border-b border-neutral-200 bg-neutral-50/50">
+                  <th className="text-left px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider">支付方式</th>
+                  <th className="text-right px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider">收入</th>
+                  <th className="text-right px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider">退款</th>
+                  <th className="text-right px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider">净额</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-neutral-100">
                 {(summary?.byPaymentMethod ?? []).length === 0 ? (
-                  <tr><td colSpan={4} className="px-4 py-8 text-center text-gray-400">暂无数据</td></tr>
+                  <tr><td colSpan={4} className="px-4 py-8 text-center text-neutral-400">暂无数据</td></tr>
                 ) : (
                   (summary?.byPaymentMethod ?? []).map((m) => (
-                    <tr key={m.paymentMethod} className="hover:bg-gray-50/50">
-                      <td className="px-4 py-3 text-sm text-gray-900">{FinancePaymentMethodLabels[m.paymentMethod as FinancePaymentMethod] || m.paymentMethod}</td>
+                    <tr key={m.paymentMethod} className="hover:bg-neutral-50/50">
+                      <td className="px-4 py-3 text-sm text-neutral-900">{FinancePaymentMethodLabels[m.paymentMethod as FinancePaymentMethod] || m.paymentMethod}</td>
                       <td className="px-4 py-3 text-right text-sm text-green-600">{fmtMoney(m.income)}</td>
                       <td className="px-4 py-3 text-right text-sm text-red-600">{fmtMoney(m.refund)}</td>
-                      <td className="px-4 py-3 text-right text-sm font-medium text-gray-900">{fmtMoney(m.net)}</td>
+                      <td className="px-4 py-3 text-right text-sm font-medium text-neutral-900">{fmtMoney(m.net)}</td>
                     </tr>
                   ))
                 )}
@@ -428,27 +428,27 @@ export default function FinancePage() {
             </table>
           </div>
 
-          <h3 className="text-sm font-semibold text-gray-900 mb-3">按日趋势</h3>
+          <h3 className="text-sm font-semibold text-neutral-900 mb-3">按日趋势</h3>
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-gray-200 bg-gray-50/50">
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">日期</th>
-                  <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">收入</th>
-                  <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">退款</th>
-                  <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">净额</th>
+                <tr className="border-b border-neutral-200 bg-neutral-50/50">
+                  <th className="text-left px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider">日期</th>
+                  <th className="text-right px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider">收入</th>
+                  <th className="text-right px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider">退款</th>
+                  <th className="text-right px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider">净额</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-neutral-100">
                 {(summary?.dailyTrend ?? []).length === 0 ? (
-                  <tr><td colSpan={4} className="px-4 py-8 text-center text-gray-400">暂无数据</td></tr>
+                  <tr><td colSpan={4} className="px-4 py-8 text-center text-neutral-400">暂无数据</td></tr>
                 ) : (
                   (summary?.dailyTrend ?? []).map((d) => (
-                    <tr key={d.date} className="hover:bg-gray-50/50">
-                      <td className="px-4 py-3 text-sm text-gray-900">{d.date || '-'}</td>
+                    <tr key={d.date} className="hover:bg-neutral-50/50">
+                      <td className="px-4 py-3 text-sm text-neutral-900">{d.date || '-'}</td>
                       <td className="px-4 py-3 text-right text-sm text-green-600">{fmtMoney(d.income)}</td>
                       <td className="px-4 py-3 text-right text-sm text-red-600">{fmtMoney(d.refund)}</td>
-                      <td className="px-4 py-3 text-right text-sm font-medium text-gray-900">{fmtMoney(d.net)}</td>
+                      <td className="px-4 py-3 text-right text-sm font-medium text-neutral-900">{fmtMoney(d.net)}</td>
                     </tr>
                   ))
                 )}
@@ -460,8 +460,8 @@ export default function FinancePage() {
 
       {/* ===== 应收对账 ===== */}
       {tab === 'reconciliation' && (
-        <div className="bg-white rounded-b-lg border border-t-0 border-gray-200">
-          <div className="flex flex-wrap items-end gap-3 p-4 border-b border-gray-100">
+        <div className="bg-white rounded-b-lg border border-t-0 border-neutral-200">
+          <div className="flex flex-wrap items-end gap-3 p-4 border-b border-neutral-100">
             <div className="min-w-[220px]">
               <Input
                 label="关键词"
@@ -472,12 +472,12 @@ export default function FinancePage() {
               />
             </div>
             <Button variant="secondary" onClick={handleRecSearch}>查询</Button>
-            <label className="flex items-center gap-2 ml-auto text-sm text-gray-700 cursor-pointer">
+            <label className="flex items-center gap-2 ml-auto text-sm text-neutral-700 cursor-pointer">
               <input
                 type="checkbox"
                 checked={onlyDiff}
                 onChange={(e) => setOnlyDiff(e.target.checked)}
-                className="w-4 h-4 rounded border-gray-300 text-primary-600"
+                className="w-4 h-4 rounded border-neutral-300 text-primary-600"
               />
               仅看异常（差额 ≠ 0）
             </label>
@@ -486,41 +486,41 @@ export default function FinancePage() {
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-gray-200 bg-gray-50/50">
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">订单号</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">客户</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">状态</th>
-                  <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">应收</th>
-                  <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">实收</th>
-                  <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">已退</th>
-                  <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">差额</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">对账</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">下单时间</th>
+                <tr className="border-b border-neutral-200 bg-neutral-50/50">
+                  <th className="text-left px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider whitespace-nowrap">订单号</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider whitespace-nowrap">客户</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider whitespace-nowrap">状态</th>
+                  <th className="text-right px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider whitespace-nowrap">应收</th>
+                  <th className="text-right px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider whitespace-nowrap">实收</th>
+                  <th className="text-right px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider whitespace-nowrap">已退</th>
+                  <th className="text-right px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider whitespace-nowrap">差额</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider whitespace-nowrap">对账</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider whitespace-nowrap">下单时间</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-neutral-100">
                 {recLoading ? (
-                  <tr><td colSpan={9} className="px-4 py-12 text-center text-gray-400">加载中...</td></tr>
+                  <tr><td colSpan={9} className="px-4 py-12 text-center text-neutral-400">加载中...</td></tr>
                 ) : visibleRecs.length === 0 ? (
-                  <tr><td colSpan={9} className="px-4 py-12 text-center text-gray-400">暂无对账数据</td></tr>
+                  <tr><td colSpan={9} className="px-4 py-12 text-center text-neutral-400">暂无对账数据</td></tr>
                 ) : (
                   visibleRecs.map((r) => (
-                    <tr key={r.orderId} className="hover:bg-gray-50/50 transition-colors">
-                      <td className="px-4 py-3"><span className="font-mono text-sm text-gray-900">{r.orderNo}</span></td>
-                      <td className="px-4 py-3 text-sm text-gray-700">{r.customerName || '-'}</td>
+                    <tr key={r.orderId} className="hover:bg-neutral-50/50 transition-colors">
+                      <td className="px-4 py-3"><span className="font-mono text-sm text-neutral-900">{r.orderNo}</span></td>
+                      <td className="px-4 py-3 text-sm text-neutral-700">{r.customerName || '-'}</td>
                       <td className="px-4 py-3">
                         <Badge variant="default">{ORDER_STATUS_LABELS[r.status] || r.status}</Badge>
                       </td>
-                      <td className="px-4 py-3 text-right text-sm text-gray-700">{fmtMoney(r.receivableAmount)}</td>
-                      <td className="px-4 py-3 text-right text-sm text-gray-700">{fmtMoney(r.receivedAmount)}</td>
+                      <td className="px-4 py-3 text-right text-sm text-neutral-700">{fmtMoney(r.receivableAmount)}</td>
+                      <td className="px-4 py-3 text-right text-sm text-neutral-700">{fmtMoney(r.receivedAmount)}</td>
                       <td className="px-4 py-3 text-right text-sm text-red-600">{r.refundAmount > 0 ? fmtMoney(r.refundAmount) : '-'}</td>
-                      <td className={cn('px-4 py-3 text-right text-sm font-medium', r.difference === 0 ? 'text-gray-500' : r.difference > 0 ? 'text-amber-600' : 'text-red-600')}>
+                      <td className={cn('px-4 py-3 text-right text-sm font-medium', r.difference === 0 ? 'text-neutral-500' : r.difference > 0 ? 'text-amber-600' : 'text-red-600')}>
                         {r.difference === 0 ? '0.00' : (r.difference > 0 ? '+' : '') + fmtMoney(r.difference)}
                       </td>
                       <td className="px-4 py-3">
                         <Badge variant={diffVariant(r.difference)}>{diffLabel(r.difference)}</Badge>
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-500"><DateTimeCell value={r.createdAt} /></td>
+                      <td className="px-4 py-3 text-sm text-neutral-500"><DateTimeCell value={r.createdAt} /></td>
                     </tr>
                   ))
                 )}
@@ -551,7 +551,7 @@ export default function FinancePage() {
       >
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">收支类型 *</label>
+            <label className="block text-sm font-medium text-neutral-700 mb-1.5">收支类型 *</label>
             <div className="flex gap-2">
               {(['income', 'refund'] as FinanceTransactionType[]).map((t) => (
                 <button
@@ -561,7 +561,7 @@ export default function FinancePage() {
                     'px-4 py-1.5 rounded-lg border text-sm font-medium transition-all',
                     form.type === t
                       ? t === 'income' ? 'border-green-500 bg-green-50 text-green-700' : 'border-red-500 bg-red-50 text-red-700'
-                      : 'border-gray-200 hover:border-gray-300 text-gray-700'
+                      : 'border-neutral-200 hover:border-neutral-300 text-neutral-700'
                   )}
                 >
                   {FinanceTransactionTypeLabels[t]}
@@ -571,7 +571,7 @@ export default function FinancePage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">金额 *</label>
+            <label className="block text-sm font-medium text-neutral-700 mb-1.5">金额 *</label>
             <Input
               type="number"
               min="0.01"
@@ -583,7 +583,7 @@ export default function FinancePage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">支付方式</label>
+            <label className="block text-sm font-medium text-neutral-700 mb-1.5">支付方式</label>
             <Select
               value={form.paymentMethod}
               onChange={(e) => setForm((f) => ({ ...f, paymentMethod: e.target.value as FinancePaymentMethod }))}
@@ -592,7 +592,7 @@ export default function FinancePage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">关联订单号（可选）</label>
+            <label className="block text-sm font-medium text-neutral-700 mb-1.5">关联订单号（可选）</label>
             <Input
               placeholder="输入订单号或订单 UUID"
               value={form.orderId}
@@ -601,7 +601,7 @@ export default function FinancePage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">交易时间（可选）</label>
+            <label className="block text-sm font-medium text-neutral-700 mb-1.5">交易时间（可选）</label>
             <Input
               type="datetime-local"
               value={form.occurredAt}
@@ -610,12 +610,12 @@ export default function FinancePage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">备注</label>
+            <label className="block text-sm font-medium text-neutral-700 mb-1.5">备注</label>
             <textarea
               value={form.remark}
               onChange={(e) => setForm((f) => ({ ...f, remark: e.target.value }))}
               rows={3}
-              className="w-full px-3 py-2 rounded border border-gray-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 resize-none"
+              className="w-full px-3 py-2 rounded border border-neutral-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 resize-none"
             />
           </div>
         </div>
@@ -632,15 +632,15 @@ function SummaryCard({ title, icon, value, hint, accent }: {
   accent?: string
 }) {
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-4">
+    <div className="bg-white rounded-lg border border-neutral-200 p-4">
       <div className="flex items-center justify-between mb-2">
-        <span className="text-sm text-gray-500">{title}</span>
+        <span className="text-sm text-neutral-500">{title}</span>
         {icon}
       </div>
-      <div className={cn('text-2xl font-semibold', accent ?? 'text-gray-900')}>
+      <div className={cn('text-2xl font-semibold', accent ?? 'text-neutral-900')}>
         {value === null ? '...' : fmtMoney(value ?? 0)}
       </div>
-      {hint && <div className="text-xs text-gray-400 mt-1">{hint}</div>}
+      {hint && <div className="text-xs text-neutral-400 mt-1">{hint}</div>}
     </div>
   )
 }

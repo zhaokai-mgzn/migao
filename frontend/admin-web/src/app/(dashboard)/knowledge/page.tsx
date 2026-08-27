@@ -307,12 +307,12 @@ export default function KnowledgePage() {
       render: (record) => (
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center">
-            <FileText className="w-5 h-5 text-blue-600" />
+            <FileText className="w-5 h-5 text-primary-600" />
           </div>
           <div>
-            <div className="font-medium text-gray-900">{record.name}</div>
+            <div className="font-medium text-neutral-900">{record.name}</div>
             {record.description && (
-              <div className="text-xs text-gray-500">{record.description}</div>
+              <div className="text-xs text-neutral-500">{record.description}</div>
             )}
           </div>
         </div>
@@ -328,7 +328,7 @@ export default function KnowledgePage() {
       key: 'fileSize',
       title: '文件大小',
       width: '100px',
-      render: (record) => <span className="text-gray-600">{formatFileSize(record.fileSize)}</span>,
+      render: (record) => <span className="text-neutral-600">{formatFileSize(record.fileSize)}</span>,
     },
     {
       key: 'chunkCount',
@@ -358,7 +358,7 @@ export default function KnowledgePage() {
         <div className="flex items-center justify-center gap-2">
           <button
             onClick={(e) => { e.stopPropagation(); handleResync(record) }}
-            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+            className="p-1.5 text-primary-600 hover:bg-blue-50 rounded transition-colors"
             title="重新同步"
           >
             <RefreshCw className="w-4 h-4" />
@@ -402,8 +402,8 @@ export default function KnowledgePage() {
       {/* 页面标题 */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-xl font-semibold text-gray-900">知识库管理</h1>
-          <p className="text-sm text-gray-500 mt-1">管理 AI 客服的知识库文档和问答</p>
+          <h1 className="text-xl font-semibold text-neutral-900">知识库管理</h1>
+          <p className="text-sm text-neutral-500 mt-1">管理 AI 客服的知识库文档和问答</p>
         </div>
         <div className="flex items-center gap-3">
           <Button variant="secondary" onClick={() => setSearchTestOpen(true)}>
@@ -421,7 +421,7 @@ export default function KnowledgePage() {
       <SearchBar fields={searchFields} onSearch={handleSearch} onReset={handleReset} loading={loading} className="mb-4" />
 
       {/* 数据表格 */}
-      <div className="bg-white rounded-lg border border-gray-200">
+      <div className="bg-white rounded-lg border border-neutral-200">
         <Table columns={columns} dataSource={documents} loading={loading} rowKey="id" />
         <Pagination current={current} pageSize={pageSize} total={total} onChange={setCurrent} onPageSizeChange={setPageSize} />
       </div>
@@ -442,13 +442,13 @@ export default function KnowledgePage() {
       >
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+            <label className="block text-sm font-medium text-neutral-700 mb-1.5">
               文档名称 <span className="text-red-500">*</span>
             </label>
             <input
               type="text"
               className={`w-full h-9 px-3 rounded border text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 ${
-                formErrors.name ? 'border-red-500' : 'border-gray-300'
+                formErrors.name ? 'border-red-500' : 'border-neutral-300'
               }`}
               placeholder="请输入文档名称"
               value={uploadForm.name}
@@ -458,11 +458,11 @@ export default function KnowledgePage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+            <label className="block text-sm font-medium text-neutral-700 mb-1.5">
               文档类型 <span className="text-red-500">*</span>
             </label>
             <select
-              className="w-full h-9 px-3 rounded border border-gray-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+              className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
               value={uploadForm.type}
               onChange={(e) => setUploadForm({ ...uploadForm, type: e.target.value as 'faq' | 'product' | 'guide' })}
             >
@@ -473,7 +473,7 @@ export default function KnowledgePage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+            <label className="block text-sm font-medium text-neutral-700 mb-1.5">
               选择文件 <span className="text-red-500">*</span>
             </label>
             <div
@@ -482,7 +482,7 @@ export default function KnowledgePage() {
                   ? 'border-primary-500 bg-primary-50'
                   : formErrors.file
                   ? 'border-red-300 bg-red-50'
-                  : 'border-gray-300 hover:border-primary-500'
+                  : 'border-neutral-300 hover:border-primary-500'
               }`}
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
@@ -496,11 +496,11 @@ export default function KnowledgePage() {
                 onChange={handleFileChange}
               />
               <label htmlFor="file-upload" className="cursor-pointer flex flex-col items-center">
-                <Upload className="w-8 h-8 text-gray-400 mb-2" />
-                <span className="text-sm text-gray-600">
+                <Upload className="w-8 h-8 text-neutral-400 mb-2" />
+                <span className="text-sm text-neutral-600">
                   {selectedFile ? selectedFile.name : isDragging ? '释放文件以上传' : '点击选择或拖拽文件到此处'}
                 </span>
-                <span className="text-xs text-gray-400 mt-1">
+                <span className="text-xs text-neutral-400 mt-1">
                   支持 PDF、Word、TXT、Markdown 格式
                 </span>
                 {selectedFile && (
@@ -516,11 +516,11 @@ export default function KnowledgePage() {
           {/* 上传进度条 */}
           {uploading && (
             <div className="space-y-1">
-              <div className="flex justify-between text-xs text-gray-500">
+              <div className="flex justify-between text-xs text-neutral-500">
                 <span>上传进度</span>
                 <span>{Math.round(uploadProgress)}%</span>
               </div>
-              <div className="w-full bg-gray-200 rounded-full h-2">
+              <div className="w-full bg-neutral-200 rounded-full h-2">
                 <div
                   className="bg-primary-600 h-2 rounded-full transition-all duration-300"
                   style={{ width: `${uploadProgress}%` }}
@@ -530,10 +530,10 @@ export default function KnowledgePage() {
           )}
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">描述</label>
+            <label className="block text-sm font-medium text-neutral-700 mb-1.5">描述</label>
             <textarea
               rows={3}
-              className="w-full px-3 py-2 rounded border border-gray-300 text-sm placeholder:text-gray-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 resize-none"
+              className="w-full px-3 py-2 rounded border border-neutral-300 text-sm placeholder:text-neutral-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 resize-none"
               placeholder="请输入文档描述（可选）"
               value={uploadForm.description}
               onChange={(e) => setUploadForm({ ...uploadForm, description: e.target.value })}
@@ -554,8 +554,8 @@ export default function KnowledgePage() {
           </>
         }
       >
-        <p className="text-gray-600">
-          确定要删除文档 <span className="font-medium text-gray-900">{deletingDoc?.name}</span> 吗？此操作不可恢复。
+        <p className="text-neutral-600">
+          确定要删除文档 <span className="font-medium text-neutral-900">{deletingDoc?.name}</span> 吗？此操作不可恢复。
         </p>
       </Modal>
 
@@ -573,7 +573,7 @@ export default function KnowledgePage() {
           <div className="flex gap-3">
             <input
               type="text"
-              className="flex-1 h-9 px-3 rounded border border-gray-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+              className="flex-1 h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
               placeholder="输入搜索内容，测试 RAG 检索效果..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -588,30 +588,30 @@ export default function KnowledgePage() {
           {searchResults.length > 0 && (
             <div className="space-y-3 max-h-[400px] overflow-y-auto">
               {searchResults.map((result, index) => (
-                <div key={result.chunkId} className="border border-gray-200 rounded-lg p-4">
+                <div key={result.chunkId} className="border border-neutral-200 rounded-lg p-4">
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
-                      <span className="text-xs font-medium text-gray-500">#{index + 1}</span>
-                      <span className="text-sm font-medium text-gray-900">{result.source.title}</span>
+                      <span className="text-xs font-medium text-neutral-500">#{index + 1}</span>
+                      <span className="text-sm font-medium text-neutral-900">{result.source.title}</span>
                       <Badge variant="info">{result.source.docType}</Badge>
                     </div>
                     <div className="flex items-center gap-1.5">
-                      <span className="text-xs text-gray-500">相关度</span>
+                      <span className="text-xs text-neutral-500">相关度</span>
                       <span className={`text-sm font-bold ${
-                        result.score >= 0.8 ? 'text-green-600' : result.score >= 0.6 ? 'text-amber-600' : 'text-gray-500'
+                        result.score >= 0.8 ? 'text-green-600' : result.score >= 0.6 ? 'text-amber-600' : 'text-neutral-500'
                       }`}>
                         {(result.score * 100).toFixed(0)}%
                       </span>
                     </div>
                   </div>
-                  <p className="text-sm text-gray-700 leading-relaxed">{result.content}</p>
+                  <p className="text-sm text-neutral-700 leading-relaxed">{result.content}</p>
                 </div>
               ))}
             </div>
           )}
 
           {searchResults.length === 0 && !searching && searchQuery && (
-            <div className="text-center py-8 text-gray-500 text-sm">
+            <div className="text-center py-8 text-neutral-500 text-sm">
               暂无搜索结果，请尝试其他关键词
             </div>
           )}

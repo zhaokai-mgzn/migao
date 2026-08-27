@@ -1323,7 +1323,7 @@
 真值: agent-notification.quick-reply-validate
 溯源: verification 6.7 独有 ｜ tags: create
 
-## ui（4 case）
+## ui（5 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -1375,6 +1375,19 @@
 真值: frontend-fix.dashboard-no-truncate, frontend-fix.axis-sampling, frontend-fix.dashboard-no-overflow
 溯源: 2026-08-25 新增：经营看板织物质感重设计子任务 B（issue #2537） ｜ tags: ui, dashboard, density, axis-sampling
 
+### UI-005. 经营看板趋势图横坐标铺满 + 米宝对话/全局壳层织物质感全面重设计 🔵
+```
+你: 经营看板订单/销售额趋势图横坐标铺满，并对全部 web 功能与米宝对话做织物质感全面重设计
+期望: direct_reply
+数据: 订单趋势折线 polyline 横向铺满卡片宽度（起点<60px、终点>视口宽-30px，覆盖≥85%）
+数据: 销售额趋势渲染面积 path + linearGradient + 水平网格 + y 轴刻度
+数据: 全站 src/**/*.{ts,tsx} 无默认蓝 #3b82f6、无 text-blue|purple|orange 图标残留
+数据: 米宝对话气泡/输入/会话列表/悬浮助手使用织物质感 token
+跳过: 纯前端 UI 由 vitest 单测验证（dashboard.test.tsx + chat 组件测试），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.trend-full-width, frontend-fix.ui-token, frontend-fix.vitest, frontend-fix.tsc
+溯源: 2026-08-26 新增：经营看板趋势图铺满 + 全面重设计（feat/frontend-ui-redesign） ｜ tags: ui, dashboard, chart, token, chat
+
 ## utils（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -1404,8 +1417,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：118（活跃 82，跳过 36）
-- tier 分布：smoke 9 / normal 82 / adversarial 27
+- 用例总数：119（活跃 82，跳过 37）
+- tier 分布：smoke 9 / normal 83 / adversarial 27
 - 售后域：5
 - agents：6
 - api：9
@@ -1423,6 +1436,6 @@
 - 商品域：12
 - registry：1
 - 设置域：7
-- ui：4
+- ui：5
 - utils：2
 

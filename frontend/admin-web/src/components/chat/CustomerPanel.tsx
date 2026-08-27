@@ -38,45 +38,45 @@ export default function CustomerPanel() {
 
   if (collapsed) {
     return (
-      <div className="flex-shrink-0 border-l border-gray-200 bg-white">
+      <div className="flex-shrink-0 border-l border-neutral-200 bg-white">
         <button
           onClick={() => setCollapsed(false)}
-          className="p-3 hover:bg-gray-50 transition-colors"
+          className="p-3 hover:bg-neutral-50 transition-colors"
           title="展开客户信息"
         >
-          <PanelRightOpen className="w-4 h-4 text-gray-500" />
+          <PanelRightOpen className="w-4 h-4 text-neutral-500" />
         </button>
       </div>
     )
   }
 
   return (
-    <div className="w-[280px] flex-shrink-0 border-l border-gray-200 bg-white flex flex-col h-full overflow-hidden">
+    <div className="w-[280px] flex-shrink-0 border-l border-neutral-200 bg-white flex flex-col h-full overflow-hidden">
       {/* 头部 */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-        <h3 className="text-sm font-semibold text-gray-800">客户信息</h3>
+      <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-100">
+        <h3 className="text-sm font-semibold text-neutral-800">客户信息</h3>
         <button
           onClick={() => setCollapsed(true)}
-          className="p-1 rounded hover:bg-gray-100 transition-colors"
+          className="p-1 rounded hover:bg-neutral-100 transition-colors"
           title="收起"
         >
-          <PanelRightClose className="w-4 h-4 text-gray-400" />
+          <PanelRightClose className="w-4 h-4 text-neutral-400" />
         </button>
       </div>
 
       {/* 内容区 */}
       <div className="flex-1 overflow-y-auto">
         {/* 客户基本信息 */}
-        <div className="px-4 py-4 border-b border-gray-100">
+        <div className="px-4 py-4 border-b border-neutral-100">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center flex-shrink-0">
               <User className="w-5 h-5 text-primary-600" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-gray-800 truncate">
+              <p className="text-sm font-medium text-neutral-800 truncate">
                 {customerInfo?.name || '未知客户'}
               </p>
-              <p className="text-xs text-gray-400">
+              <p className="text-xs text-neutral-400">
                 {customerInfo?.source || '在线客服'}
               </p>
             </div>
@@ -93,7 +93,7 @@ export default function CustomerPanel() {
               'inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium',
               currentSession?.status === 'active'
                 ? 'bg-green-50 text-green-700 border border-green-200'
-                : 'bg-gray-50 text-gray-500 border border-gray-200'
+                : 'bg-neutral-50 text-neutral-500 border border-neutral-200'
             )}>
               {currentSession?.status === 'active' ? '在线中' : '已结束'}
             </span>
@@ -101,8 +101,8 @@ export default function CustomerPanel() {
         </div>
 
         {/* 联系 + 会话信息 */}
-        <div className="px-4 py-3 border-b border-gray-100">
-          <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+        <div className="px-4 py-3 border-b border-neutral-100">
+          <h4 className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-2">
             基本信息
           </h4>
           <div className="space-y-2">
@@ -113,16 +113,16 @@ export default function CustomerPanel() {
               value={customerInfo?.registeredDays !== undefined ? `${customerInfo.registeredDays} 天前` : '暂无'}
             />
             <div className="flex items-center gap-2 text-xs">
-              <span className="text-gray-400 flex-shrink-0">
+              <span className="text-neutral-400 flex-shrink-0">
                 <MessageCircle className="w-3.5 h-3.5" />
               </span>
-              <span className="text-gray-500 w-8 flex-shrink-0">会话</span>
-              <span className="text-gray-700 font-mono text-[11px] truncate" title={currentSessionId}>
+              <span className="text-neutral-500 w-8 flex-shrink-0">会话</span>
+              <span className="text-neutral-700 font-mono text-[11px] truncate" title={currentSessionId}>
                 {currentSessionId?.slice(0, 14)}…
               </span>
               <button
                 onClick={handleCopy}
-                className="text-gray-400 hover:text-gray-600 flex-shrink-0 ml-auto"
+                className="text-neutral-400 hover:text-neutral-600 flex-shrink-0 ml-auto"
                 title="复制会话ID"
               >
                 {copied ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
@@ -132,8 +132,8 @@ export default function CustomerPanel() {
         </div>
 
         {/* 客户统计 */}
-        <div className="px-4 py-3 border-b border-gray-100">
-          <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+        <div className="px-4 py-3 border-b border-neutral-100">
+          <h4 className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-2">
             客户画像
           </h4>
           <div className="grid grid-cols-2 gap-2">
@@ -144,7 +144,7 @@ export default function CustomerPanel() {
 
         {/* 最近订单 */}
         <div className="px-4 py-3">
-          <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+          <h4 className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-2">
             最近订单
           </h4>
           {customerInfo?.recentOrders && customerInfo.recentOrders.length > 0 ? (
@@ -160,7 +160,7 @@ export default function CustomerPanel() {
               ))}
             </div>
           ) : (
-            <div className="text-xs text-gray-400 text-center py-4 bg-gray-50 rounded-lg">
+            <div className="text-xs text-neutral-400 text-center py-4 bg-neutral-50 rounded-lg">
               暂无订单数据
             </div>
           )}
@@ -173,20 +173,20 @@ export default function CustomerPanel() {
 function InfoRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
     <div className="flex items-center gap-2 text-xs">
-      <span className="text-gray-400">{icon}</span>
-      <span className="text-gray-500 w-8">{label}</span>
-      <span className="text-gray-700 truncate">{value}</span>
+      <span className="text-neutral-400">{icon}</span>
+      <span className="text-neutral-500 w-8">{label}</span>
+      <span className="text-neutral-700 truncate">{value}</span>
     </div>
   )
 }
 
 function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
-    <div className="bg-gray-50 rounded-lg p-2.5 flex items-center gap-2">
+    <div className="bg-neutral-50 rounded-lg p-2.5 flex items-center gap-2">
       <span className="text-primary-500">{icon}</span>
       <div>
-        <p className="text-base font-semibold text-gray-800">{value}</p>
-        <p className="text-[10px] text-gray-500">{label}</p>
+        <p className="text-base font-semibold text-neutral-800">{value}</p>
+        <p className="text-[10px] text-neutral-500">{label}</p>
       </div>
     </div>
   )
@@ -199,21 +199,21 @@ function RecentOrder({ orderNo, status, amount, time }: { orderNo: string; statu
     producing: { label: '生产中', className: 'bg-purple-50 text-purple-700 border-purple-200' },
     shipped: { label: '已发货', className: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
     completed: { label: '已完成', className: 'bg-green-50 text-green-700 border-green-200' },
-    cancelled: { label: '已取消', className: 'bg-gray-50 text-gray-600 border-gray-200' },
+    cancelled: { label: '已取消', className: 'bg-neutral-50 text-neutral-600 border-neutral-200' },
   }
-  const info = statusMap[status] || { label: status, className: 'bg-gray-50 text-gray-600 border-gray-200' }
+  const info = statusMap[status] || { label: status, className: 'bg-neutral-50 text-neutral-600 border-neutral-200' }
 
   return (
-    <div className="bg-gray-50 rounded-lg p-2.5">
+    <div className="bg-neutral-50 rounded-lg p-2.5">
       <div className="flex items-center justify-between mb-1">
-        <span className="text-[11px] text-gray-500 font-mono">{orderNo}</span>
+        <span className="text-[11px] text-neutral-500 font-mono">{orderNo}</span>
         <span className={cn('text-[10px] px-1.5 py-0.5 rounded border font-medium', info.className)}>
           {info.label}
         </span>
       </div>
       <div className="flex items-center justify-between">
         <p className="text-xs font-semibold text-red-500">{amount}</p>
-        <span className="text-[10px] text-gray-400">{time}</span>
+        <span className="text-[10px] text-neutral-400">{time}</span>
       </div>
     </div>
   )

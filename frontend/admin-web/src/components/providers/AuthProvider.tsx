@@ -26,8 +26,8 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
   // 等待 zustand persist 恢复 + 初始化完成
   if (!isReady) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="flex items-center gap-3 text-gray-500">
+      <div className="min-h-screen flex items-center justify-center bg-neutral-50">
+        <div className="flex items-center gap-3 text-neutral-500">
           <div className="w-5 h-5 border-2 border-primary-600 border-t-transparent rounded-full animate-spin" />
           <span className="text-sm">加载中...</span>
         </div>

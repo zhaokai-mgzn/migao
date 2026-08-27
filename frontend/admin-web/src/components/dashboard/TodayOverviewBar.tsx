@@ -1,6 +1,6 @@
 'use client'
 
-import { ArrowDown, ArrowUp, Package, Settings, TrendingUp } from 'lucide-react'
+import { ArrowDown, ArrowUp, Package, Settings, Sparkles, TrendingUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 /** 今日经营速览洞察条 props（三个数值均由页面从 API 返回值派生传入，组件内无硬编码） */
@@ -54,50 +54,56 @@ export default function TodayOverviewBar({
   return (
     <section
       data-testid="today-overview-bar"
-      className="mb-5 rounded-xl border border-neutral-200 bg-white p-4 shadow-[0_1px_2px_rgba(36,31,24,.04),0_4px_16px_rgba(36,31,24,.06)]"
+      className="relative mb-6 overflow-hidden rounded-xl border border-primary-200/70 bg-white shadow-card"
     >
-      <div className="mb-3 flex items-center gap-2">
-        <span className="inline-flex items-center gap-1 rounded-full bg-primary-50 px-2.5 py-1 text-xs font-semibold text-primary-700">
-          米宝 · 今日经营速览
-        </span>
-        <span className="text-xs text-neutral-400">AI 生成内容仅供参考</span>
+      {/* 顶部品牌渐变细条 */}
+      <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-primary-500 via-accent-500 to-primary-500" />
+
+      <div className="px-5 pt-4">
+        <div className="flex items-center gap-2">
+          <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-primary-600 to-primary-500 px-2.5 py-1 text-xs font-semibold text-white shadow-sm">
+            <Sparkles className="h-3 w-3" />
+            米宝 · 今日经营速览
+          </span>
+          <span className="text-[11px] text-neutral-400">AI 生成内容仅供参考</span>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-3">
         {/* 订单环比 */}
-        <div className="flex items-center gap-3 rounded-lg bg-neutral-50 p-3">
-          <span className="rounded-lg bg-primary-50 p-2">
+        <div className="flex items-center gap-3 rounded-lg bg-neutral-50/80 p-3 transition-colors hover:bg-primary-50/60">
+          <span className="rounded-lg bg-primary-100 p-2">
             <TrendingUp className="h-4 w-4 text-primary-600" />
           </span>
           <div className="min-w-0">
             <p className="text-xs text-neutral-500">订单环比</p>
-            <p className="flex items-center gap-1 text-lg font-semibold text-neutral-900">
+            <p className="tnum flex items-center gap-1 text-lg font-semibold text-neutral-900">
               {formatOrderChange(orderChange)}
-              {up && <ArrowUp className="h-3.5 w-3.5 text-accent-500" />}
+              {up && <ArrowUp className="h-3.5 w-3.5 text-red-500" />}
               {down && <ArrowDown className="h-3.5 w-3.5 text-emerald-500" />}
             </p>
           </div>
         </div>
 
         {/* 含加工占比 */}
-        <div className="flex items-center gap-3 rounded-lg bg-neutral-50 p-3">
-          <span className="rounded-lg bg-accent-50 p-2">
+        <div className="flex items-center gap-3 rounded-lg bg-neutral-50/80 p-3 transition-colors hover:bg-primary-50/60">
+          <span className="rounded-lg bg-accent-100 p-2">
             <Settings className="h-4 w-4 text-accent-600" />
           </span>
           <div className="min-w-0">
             <p className="text-xs text-neutral-500">含加工占比</p>
-            <p className="text-lg font-semibold text-neutral-900">{ratioPct}%</p>
+            <p className="tnum text-lg font-semibold text-neutral-900">{ratioPct}%</p>
           </div>
         </div>
 
         {/* 低库存预警 */}
-        <div className="flex items-center gap-3 rounded-lg bg-neutral-50 p-3">
+        <div className="flex items-center gap-3 rounded-lg bg-neutral-50/80 p-3 transition-colors hover:bg-primary-50/60">
           <span className="rounded-lg bg-red-50 p-2">
             <Package className="h-4 w-4 text-red-500" />
           </span>
           <div className="min-w-0">
             <p className="text-xs text-neutral-500">低库存预警</p>
-            <p className="text-lg font-semibold text-neutral-900">{lowStockCount} 款</p>
+            <p className="tnum text-lg font-semibold text-neutral-900">{lowStockCount} 款</p>
           </div>
         </div>
       </div>

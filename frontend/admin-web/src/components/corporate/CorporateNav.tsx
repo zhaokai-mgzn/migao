@@ -38,7 +38,7 @@ export default function CorporateNav() {
       className={cn(
         'sticky top-0 z-50 transition-all duration-300',
         scrolled
-          ? 'bg-white/95 backdrop-blur-md shadow-sm border-b border-gray-200/60'
+          ? 'bg-white/95 backdrop-blur-md shadow-sm border-b border-neutral-200/60'
           : 'bg-white/80 backdrop-blur-sm border-b border-transparent'
       )}
     >
@@ -47,7 +47,7 @@ export default function CorporateNav() {
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2.5 shrink-0">
             <Logo size="small" />
-            <span className="text-lg font-semibold text-gray-900 tracking-tight">
+            <span className="text-lg font-semibold text-neutral-900 tracking-tight">
               米高
             </span>
           </Link>
@@ -61,8 +61,8 @@ export default function CorporateNav() {
                 className={cn(
                   'px-4 py-2 rounded-lg text-sm font-medium transition-colors',
                   isActive(item.href)
-                    ? 'text-blue-600 bg-blue-50'
-                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                    ? 'text-primary-600 bg-blue-50'
+                    : 'text-neutral-600 hover:text-neutral-900 hover:bg-neutral-50'
                 )}
               >
                 {item.name}
@@ -74,13 +74,13 @@ export default function CorporateNav() {
           <div className="hidden md:flex items-center gap-3">
             <a
               href="https://merchant.migaozn.com/login"
-              className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 transition-colors"
+              className="px-4 py-2 text-sm font-medium text-neutral-700 hover:text-neutral-900 transition-colors"
             >
               商家登录
             </a>
             <Link
               href="/register"
-              className="px-5 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-sm"
+              className="px-5 py-2 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg transition-colors shadow-sm"
             >
               商家入驻
             </Link>
@@ -89,7 +89,7 @@ export default function CorporateNav() {
           {/* Mobile Menu Toggle */}
           <button
             type="button"
-            className="md:hidden p-2 rounded-lg text-gray-600 hover:bg-gray-100 transition-colors"
+            className="md:hidden p-2 rounded-lg text-neutral-600 hover:bg-neutral-100 transition-colors"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             aria-label={mobileMenuOpen ? '关闭菜单' : '打开菜单'}
           >
@@ -100,7 +100,7 @@ export default function CorporateNav() {
 
       {/* Mobile Menu */}
       {mobileMenuOpen && (
-        <div className="md:hidden border-t border-gray-100 bg-white">
+        <div className="md:hidden border-t border-neutral-100 bg-white">
           <div className="px-4 py-3 space-y-1">
             {navItems.map((item) => (
               <Link
@@ -110,25 +110,25 @@ export default function CorporateNav() {
                 className={cn(
                   'block px-4 py-2.5 rounded-lg text-sm font-medium transition-colors',
                   isActive(item.href)
-                    ? 'text-blue-600 bg-blue-50'
-                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                    ? 'text-primary-600 bg-blue-50'
+                    : 'text-neutral-600 hover:text-neutral-900 hover:bg-neutral-50'
                 )}
               >
                 {item.name}
               </Link>
             ))}
-            <div className="pt-3 mt-3 border-t border-gray-100 space-y-2">
+            <div className="pt-3 mt-3 border-t border-neutral-100 space-y-2">
               <a
                 href="https://merchant.migaozn.com/login"
                 onClick={() => setMobileMenuOpen(false)}
-                className="block px-4 py-2.5 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors text-center"
+                className="block px-4 py-2.5 rounded-lg text-sm font-medium text-neutral-700 hover:bg-neutral-50 transition-colors text-center"
               >
                 商家登录
               </a>
               <Link
                 href="/register"
                 onClick={() => setMobileMenuOpen(false)}
-                className="block px-4 py-2.5 rounded-lg text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition-colors text-center"
+                className="block px-4 py-2.5 rounded-lg text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 transition-colors text-center"
               >
                 商家入驻
               </Link>

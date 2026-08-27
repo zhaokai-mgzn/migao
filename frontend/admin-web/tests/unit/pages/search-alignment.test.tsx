@@ -1,3 +1,4 @@
+// case_ids: UI-005
 /**
  * L2 单元测试 — 搜索区域左对齐验证
  *
@@ -98,7 +99,8 @@ const SEARCH_SELECTORS: Record<string, string> = {
   products: '.bg-white.rounded-lg.border',
   'after-sales': '.border-x',
   customers: '[data-testid="search-area"]',
-  employees: '.bg-gray-50.p-4.rounded-lg',
+  // 织物质感 token 化：员工页搜索容器 bg-gray-50 → bg-neutral-50
+  employees: '.bg-neutral-50.p-4.rounded-lg',
 }
 
 async function waitForSearchContainer(pageKey: string, container?: HTMLElement) {

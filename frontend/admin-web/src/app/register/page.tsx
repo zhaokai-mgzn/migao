@@ -153,7 +153,7 @@ export default function RegisterPage() {
       'focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15',
       hasError
         ? 'border-red-400 focus:border-red-500 focus:ring-red-500/15'
-        : 'border-gray-300 hover:border-gray-400'
+        : 'border-neutral-300 hover:border-neutral-400'
     )
 
   return (
@@ -168,10 +168,10 @@ export default function RegisterPage() {
         {/* Logo 区域 */}
         <div className="flex flex-col items-center mb-8">
           <Logo size="large" className="mb-4" />
-          <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
+          <h1 className="text-2xl font-bold text-neutral-900 tracking-tight">
             企业入驻申请
           </h1>
-          <p className="mt-1.5 text-sm text-gray-500">
+          <p className="mt-1.5 text-sm text-neutral-500">
             米高 · AI智能管理平台
           </p>
         </div>
@@ -181,22 +181,22 @@ export default function RegisterPage() {
           <div className="flex items-center justify-center gap-3 mb-6">
             <div className={cn(
               'flex items-center gap-2 text-sm font-medium',
-              step >= 1 ? 'text-primary-600' : 'text-gray-400'
+              step >= 1 ? 'text-primary-600' : 'text-neutral-400'
             )}>
               <div className={cn(
                 'w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold',
-                step >= 1 ? 'bg-primary-600 text-white' : 'bg-gray-200 text-gray-500'
+                step >= 1 ? 'bg-primary-600 text-white' : 'bg-neutral-200 text-neutral-500'
               )}>1</div>
               手机验证
             </div>
-            <div className={cn('w-8 h-0.5', step >= 2 ? 'bg-primary-400' : 'bg-gray-200')} />
+            <div className={cn('w-8 h-0.5', step >= 2 ? 'bg-primary-400' : 'bg-neutral-200')} />
             <div className={cn(
               'flex items-center gap-2 text-sm font-medium',
-              step >= 2 ? 'text-primary-600' : 'text-gray-400'
+              step >= 2 ? 'text-primary-600' : 'text-neutral-400'
             )}>
               <div className={cn(
                 'w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold',
-                step >= 2 ? 'bg-primary-600 text-white' : 'bg-gray-200 text-gray-500'
+                step >= 2 ? 'bg-primary-600 text-white' : 'bg-neutral-200 text-neutral-500'
               )}>2</div>
               企业信息
             </div>
@@ -204,22 +204,22 @@ export default function RegisterPage() {
         )}
 
         {/* 主卡片 */}
-        <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl shadow-gray-200/50 border border-gray-100 p-8">
+        <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl shadow-neutral-200/50 border border-neutral-100 p-8">
 
           {/* ========== 步骤一：手机验证 ========== */}
           {step === 1 && (
             <form onSubmit={handleStepOneNext} className="space-y-5">
               <div className="flex items-center justify-center gap-2 mb-2">
                 <Phone className="w-5 h-5 text-primary-600" />
-                <h2 className="text-lg font-semibold text-gray-900">手机号验证</h2>
+                <h2 className="text-lg font-semibold text-neutral-900">手机号验证</h2>
               </div>
-              <p className="text-sm text-gray-500 text-center mb-4">
+              <p className="text-sm text-neutral-500 text-center mb-4">
                 请先验证您的手机号码
               </p>
 
               {/* 手机号 */}
               <div>
-                <label htmlFor="reg-phone" className="block text-sm font-medium text-gray-700 mb-1.5">
+                <label htmlFor="reg-phone" className="block text-sm font-medium text-neutral-700 mb-1.5">
                   手机号
                 </label>
                 <input
@@ -241,7 +241,7 @@ export default function RegisterPage() {
 
               {/* 验证码 */}
               <div>
-                <label htmlFor="reg-code" className="block text-sm font-medium text-gray-700 mb-1.5">
+                <label htmlFor="reg-code" className="block text-sm font-medium text-neutral-700 mb-1.5">
                   验证码
                 </label>
                 <div className="flex gap-3">
@@ -261,7 +261,7 @@ export default function RegisterPage() {
                       'focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15',
                       phoneErrors.code
                         ? 'border-red-400 focus:border-red-500 focus:ring-red-500/15'
-                        : 'border-gray-300 hover:border-gray-400'
+                        : 'border-neutral-300 hover:border-neutral-400'
                     )}
                   />
                   <button
@@ -272,7 +272,7 @@ export default function RegisterPage() {
                       'shrink-0 h-11 px-4 rounded-lg text-sm font-medium transition-all',
                       'border border-primary-300 text-primary-600',
                       'hover:bg-primary-50',
-                      (countdown > 0 || sendingCode) && 'opacity-60 cursor-not-allowed text-gray-400 border-gray-300 hover:bg-transparent'
+                      (countdown > 0 || sendingCode) && 'opacity-60 cursor-not-allowed text-neutral-400 border-neutral-300 hover:bg-transparent'
                     )}
                   >
                     {sendingCode ? (
@@ -312,15 +312,15 @@ export default function RegisterPage() {
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="flex items-center justify-center gap-2 mb-2">
                 <Building2 className="w-5 h-5 text-primary-600" />
-                <h2 className="text-lg font-semibold text-gray-900">企业信息</h2>
+                <h2 className="text-lg font-semibold text-neutral-900">企业信息</h2>
               </div>
-              <p className="text-sm text-gray-500 text-center mb-4">
+              <p className="text-sm text-neutral-500 text-center mb-4">
                 请填写企业基本信息，完成入驻即可获得米宝AI助手
               </p>
 
               {/* 企业名称 */}
               <div>
-                <label htmlFor="companyName" className="block text-sm font-medium text-gray-700 mb-1.5">
+                <label htmlFor="companyName" className="block text-sm font-medium text-neutral-700 mb-1.5">
                   企业名称 <span className="text-red-500">*</span>
                 </label>
                 <input
@@ -339,7 +339,7 @@ export default function RegisterPage() {
 
               {/* 联系人姓名 */}
               <div>
-                <label htmlFor="contactName" className="block text-sm font-medium text-gray-700 mb-1.5">
+                <label htmlFor="contactName" className="block text-sm font-medium text-neutral-700 mb-1.5">
                   联系人姓名 <span className="text-red-500">*</span>
                 </label>
                 <input
@@ -358,8 +358,8 @@ export default function RegisterPage() {
 
               {/* 行业 */}
               <div>
-                <label htmlFor="industry" className="block text-sm font-medium text-gray-700 mb-1.5">
-                  行业 <span className="text-gray-400 text-xs font-normal">（选填）</span>
+                <label htmlFor="industry" className="block text-sm font-medium text-neutral-700 mb-1.5">
+                  行业 <span className="text-neutral-400 text-xs font-normal">（选填）</span>
                 </label>
                 <input
                   id="industry"
@@ -374,8 +374,8 @@ export default function RegisterPage() {
 
               {/* 企业地址 */}
               <div>
-                <label htmlFor="address" className="block text-sm font-medium text-gray-700 mb-1.5">
-                  企业地址 <span className="text-gray-400 text-xs font-normal">（选填）</span>
+                <label htmlFor="address" className="block text-sm font-medium text-neutral-700 mb-1.5">
+                  企业地址 <span className="text-neutral-400 text-xs font-normal">（选填）</span>
                 </label>
                 <input
                   id="address"
@@ -390,8 +390,8 @@ export default function RegisterPage() {
 
               {/* 企业简介 */}
               <div>
-                <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-1.5">
-                  企业简介 <span className="text-gray-400 text-xs font-normal">（选填）</span>
+                <label htmlFor="description" className="block text-sm font-medium text-neutral-700 mb-1.5">
+                  企业简介 <span className="text-neutral-400 text-xs font-normal">（选填）</span>
                 </label>
                 <textarea
                   id="description"
@@ -403,15 +403,15 @@ export default function RegisterPage() {
                   className={cn(
                     'w-full px-3.5 py-2.5 rounded-lg border text-sm transition-all resize-none',
                     'focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15',
-                    'border-gray-300 hover:border-gray-400'
+                    'border-neutral-300 hover:border-neutral-400'
                   )}
                 />
               </div>
 
               {/* 营业执照上传 */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                  营业执照 <span className="text-gray-400 text-xs font-normal">（选填，可跳过）</span>
+                <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+                  营业执照 <span className="text-neutral-400 text-xs font-normal">（选填，可跳过）</span>
                 </label>
                 {businessLicenseUrl ? (
                   <div className="flex items-center gap-2 p-3 rounded-lg bg-green-50 border border-green-200">
@@ -420,7 +420,7 @@ export default function RegisterPage() {
                     <button
                       type="button"
                       onClick={() => setBusinessLicenseUrl('')}
-                      className="text-xs text-gray-500 hover:text-red-500"
+                      className="text-xs text-neutral-500 hover:text-red-500"
                     >
                       移除
                     </button>
@@ -428,7 +428,7 @@ export default function RegisterPage() {
                 ) : (
                   <label className={cn(
                     'flex items-center justify-center gap-2 h-11 rounded-lg border border-dashed cursor-pointer transition-all',
-                    'border-gray-300 hover:border-primary-400 hover:bg-primary-50/50',
+                    'border-neutral-300 hover:border-primary-400 hover:bg-primary-50/50',
                     uploading && 'opacity-60 cursor-not-allowed'
                   )}>
                     <input
@@ -439,11 +439,11 @@ export default function RegisterPage() {
                       disabled={uploading}
                     />
                     {uploading ? (
-                      <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+                      <Loader2 className="w-4 h-4 animate-spin text-neutral-400" />
                     ) : (
-                      <Upload className="w-4 h-4 text-gray-400" />
+                      <Upload className="w-4 h-4 text-neutral-400" />
                     )}
-                    <span className="text-sm text-gray-500">
+                    <span className="text-sm text-neutral-500">
                       {uploading ? '上传中...' : '点击上传营业执照'}
                     </span>
                   </label>
@@ -457,8 +457,8 @@ export default function RegisterPage() {
                   onClick={() => setStep(1)}
                   className={cn(
                     'flex-1 h-11 rounded-lg text-sm font-medium transition-all',
-                    'border border-gray-300 text-gray-700 hover:bg-gray-50',
-                    'focus:outline-none focus:ring-2 focus:ring-gray-300/40 focus:ring-offset-2',
+                    'border border-neutral-300 text-neutral-700 hover:bg-neutral-50',
+                    'focus:outline-none focus:ring-2 focus:ring-neutral-300/40 focus:ring-offset-2',
                     'active:scale-[0.98]'
                   )}
                 >
@@ -498,25 +498,25 @@ export default function RegisterPage() {
               <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
                 <CheckCircle2 className="w-8 h-8 text-green-600" />
               </div>
-              <h2 className="text-lg font-semibold text-gray-900 mb-2">
+              <h2 className="text-lg font-semibold text-neutral-900 mb-2">
                 申请已提交
               </h2>
-              <p className="text-sm text-gray-500 mb-6 leading-relaxed">
+              <p className="text-sm text-neutral-500 mb-6 leading-relaxed">
                 我们将在 1-3 个工作日内完成审核，<br />
                 审核通过后将短信通知您。
               </p>
 
               {/* 入驻后可获得的能力展示 */}
               <div className="mb-8 w-full max-w-md mx-auto">
-                <p className="text-sm text-gray-500 text-center mb-4">入驻审核通过后，您将获得</p>
+                <p className="text-sm text-neutral-500 text-center mb-4">入驻审核通过后，您将获得</p>
                 <div className="grid grid-cols-1 gap-3">
                   <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg">
                     <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
-                      <Bot className="w-4 h-4 text-blue-600" />
+                      <Bot className="w-4 h-4 text-primary-600" />
                     </div>
                     <div className="text-left">
-                      <p className="text-sm font-medium text-gray-900">米宝 · 智能工作助手</p>
-                      <p className="text-xs text-gray-500">AI驱动的商品、订单、售后智能管理</p>
+                      <p className="text-sm font-medium text-neutral-900">米宝 · 智能工作助手</p>
+                      <p className="text-xs text-neutral-500">AI驱动的商品、订单、售后智能管理</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3 p-3 bg-green-50 rounded-lg">
@@ -524,8 +524,8 @@ export default function RegisterPage() {
                       <MessageCircle className="w-4 h-4 text-green-600" />
                     </div>
                     <div className="text-left">
-                      <p className="text-sm font-medium text-gray-900">小布 · 智能客服</p>
-                      <p className="text-xs text-gray-500">7×24小时AI客服，精准服务您的客户</p>
+                      <p className="text-sm font-medium text-neutral-900">小布 · 智能客服</p>
+                      <p className="text-xs text-neutral-500">7×24小时AI客服，精准服务您的客户</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3 p-3 bg-purple-50 rounded-lg">
@@ -533,8 +533,8 @@ export default function RegisterPage() {
                       <LayoutDashboard className="w-4 h-4 text-purple-600" />
                     </div>
                     <div className="text-left">
-                      <p className="text-sm font-medium text-gray-900">全功能管理后台</p>
-                      <p className="text-xs text-gray-500">商品、订单、客户、数据一站式管理</p>
+                      <p className="text-sm font-medium text-neutral-900">全功能管理后台</p>
+                      <p className="text-xs text-neutral-500">商品、订单、客户、数据一站式管理</p>
                     </div>
                   </div>
                 </div>
@@ -562,14 +562,14 @@ export default function RegisterPage() {
           <div className="mt-6 text-center">
             <Link
               href="/login"
-              className="text-sm text-gray-500 hover:text-primary-600 transition-colors"
+              className="text-sm text-neutral-500 hover:text-primary-600 transition-colors"
             >
               ← 返回登录
             </Link>
           </div>
         )}
 
-        <p className="mt-8 text-center text-xs text-gray-400">
+        <p className="mt-8 text-center text-xs text-neutral-400">
           © 2026 词元通达 · 米高
         </p>
       </div>

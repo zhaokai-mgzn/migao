@@ -2,21 +2,103 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ═══════════════════════════════════════════════════════
+   织物质感 · 全局基调（ershen/design/20-migao-ui-redesign.md）
+   暖中性亚麻底色 + 靛蓝主色 + 陶土点缀
+   ═══════════════════════════════════════════════════════ */
+
 :root {
-  --foreground-rgb: 0, 0, 0;
-  /* #2544: 织物质感底色迁移 —— 米白 #faf7f2（替换旧平灰 #f5f5f5） */
-  --background-start-rgb: 250, 247, 242;
-  --background-end-rgb: 255, 255, 255;
+  --foreground-rgb: 49, 44, 38;          /* neutral-900 */
+  --background-start-rgb: 250, 247, 242; /* neutral-50 米白 */
+  --background-end-rgb: 246, 242, 234;   /* 略暖的亚麻 */
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 body {
   color: rgb(var(--foreground-rgb));
-  background: linear-gradient(
-      to bottom,
-      transparent,
-      rgb(var(--background-end-rgb))
-    )
-    rgb(var(--background-start-rgb));
+  background:
+    radial-gradient(1200px 480px at 20% -10%, rgba(72, 97, 143, 0.05), transparent 60%),
+    radial-gradient(900px 420px at 90% 0%, rgba(192, 106, 62, 0.045), transparent 55%),
+    linear-gradient(to bottom, transparent, rgb(var(--background-end-rgb)))
+      rgb(var(--background-start-rgb));
+  font-feature-settings: 'tnum' 0;
+}
+
+/* 数字等宽：金额/库存/销量等关键数字对齐 */
+.tnum,
+[data-tnum] {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 细滚动条（暖中性） */
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: rgba(180, 170, 148, 0.4); /* neutral-400 */
+  border-radius: 8px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(158, 140, 114, 0.6); /* neutral-500 */
+}
+
+::selection {
+  background: rgba(72, 97, 143, 0.18);
+}
+
+/* 键盘焦点环：统一品牌色 */
+:focus-visible {
+  outline: 2px solid rgba(72, 97, 143, 0.55);
+  outline-offset: 1px;
+}
+
+/* ── 动效 ── */
+
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+
+@keyframes breathe {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.45; }
+}
+
+@keyframes shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+
+@keyframes pulse-ring {
+  0%   { transform: scale(1); opacity: 0.6; }
+  100% { transform: scale(1.7); opacity: 0; }
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.28s ease-out both;
+}
+
+.animate-breathe {
+  animation: breathe 1.6s ease-in-out infinite;
+}
+
+/* 卡片表面：白底 + 极细暖描边 + 软分层阴影（设计契约 2.2） */
+.surface-card {
+  @apply bg-white rounded-xl border border-neutral-200 shadow-card;
+}
+
+/* 区块标题（12 号大写标签，替代生硬的分组条） */
+.section-kicker {
+  @apply text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-400;
 }
 
 /* 商品描述富文本渲染样式 */

@@ -129,7 +129,7 @@ export default function CustomerDetailPage() {
   if (loading) {
     return (
       <div className="p-6 flex items-center justify-center min-h-[400px]">
-        <div className="flex items-center gap-2 text-gray-500">
+        <div className="flex items-center gap-2 text-neutral-500">
           <div className="w-5 h-5 border-2 border-primary-600 border-t-transparent rounded-full animate-spin" />
           加载中...
         </div>
@@ -139,7 +139,7 @@ export default function CustomerDetailPage() {
 
   if (!customer) {
     return (
-      <div className="p-6 text-center text-gray-500">
+      <div className="p-6 text-center text-neutral-500">
         <p>客户不存在</p>
         <Button variant="secondary" className="mt-4" onClick={() => router.back()}>返回</Button>
       </div>
@@ -158,7 +158,7 @@ export default function CustomerDetailPage() {
   return (
     <div className="p-6">
       {/* 返回按钮 */}
-      <button onClick={() => router.back()} className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900 mb-4 transition-colors">
+      <button onClick={() => router.back()} className="flex items-center gap-1 text-sm text-neutral-500 hover:text-neutral-900 mb-4 transition-colors">
         <ArrowLeft className="w-4 h-4" />
         返回客户列表
       </button>
@@ -167,36 +167,36 @@ export default function CustomerDetailPage() {
         {/* 左侧：客户信息卡片 */}
         <div className="lg:col-span-1 space-y-4">
           {/* 基本信息 */}
-          <div className="bg-white border border-gray-200 rounded-lg p-6">
+          <div className="bg-white border border-neutral-200 rounded-lg p-6">
             <div className="flex items-center gap-4 mb-4">
-              <div className="w-16 h-16 rounded-full bg-blue-500 flex items-center justify-center text-white text-2xl font-bold">
+              <div className="w-16 h-16 rounded-full bg-primary-500 flex items-center justify-center text-white text-2xl font-bold">
                 {initials}
               </div>
               <div>
-                <h2 className="text-lg font-semibold text-gray-900">{customer.name || '未知客户'}</h2>
-                {customer.nickname && <p className="text-sm text-gray-500">{customer.nickname}</p>}
+                <h2 className="text-lg font-semibold text-neutral-900">{customer.name || '未知客户'}</h2>
+                {customer.nickname && <p className="text-sm text-neutral-500">{customer.nickname}</p>}
                 <div className="flex items-center gap-1 mt-1">
                   {vipLevelNum > 0 ? (
                     Array.from({ length: vipLevelNum }).map((_, i) => (
                       <Star key={i} className="w-4 h-4 fill-amber-400 text-amber-400" />
                     ))
                   ) : (
-                    <span className="text-xs text-gray-400">普通客户</span>
+                    <span className="text-xs text-neutral-400">普通客户</span>
                   )}
                 </div>
               </div>
             </div>
 
             <div className="space-y-3 text-sm">
-              <div className="flex items-center gap-2 text-gray-600">
-                <Phone className="w-4 h-4 text-gray-400" />
+              <div className="flex items-center gap-2 text-neutral-600">
+                <Phone className="w-4 h-4 text-neutral-400" />
                 <span>{customer.phone || '未填写'}</span>
               </div>
-              <div className="flex items-center gap-2 text-gray-600">
-                <MapPin className="w-4 h-4 text-gray-400" />
+              <div className="flex items-center gap-2 text-neutral-600">
+                <MapPin className="w-4 h-4 text-neutral-400" />
                 <Badge variant="info">{getChannelLabel(customer.channel)}</Badge>
               </div>
-              <div className="text-xs text-gray-400 pt-2 border-t border-gray-100">
+              <div className="text-xs text-neutral-400 pt-2 border-t border-neutral-100">
                 <div>注册时间：{dayjs(customer.createdAt).format('YYYY-MM-DD')}</div>
                 <div>最后互动：{dayjs(customer.lastActiveAt).format('YYYY-MM-DD HH:mm')}</div>
               </div>
@@ -204,22 +204,22 @@ export default function CustomerDetailPage() {
           </div>
 
           {/* 标签管理 */}
-          <div className="bg-white border border-gray-200 rounded-lg p-6">
+          <div className="bg-white border border-neutral-200 rounded-lg p-6">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold text-gray-900">标签</h3>
+              <h3 className="text-sm font-semibold text-neutral-900">标签</h3>
               <div className="relative">
                 <button
-                  className="p-1 text-gray-400 hover:text-primary-600 transition-colors"
+                  className="p-1 text-neutral-400 hover:text-primary-600 transition-colors"
                   onClick={() => setShowTagPicker(!showTagPicker)}
                 >
                   <Plus className="w-4 h-4" />
                 </button>
                 {showTagPicker && availableTags.length > 0 && (
-                  <div className="absolute right-0 top-8 bg-white border border-gray-200 rounded-lg shadow-lg py-2 min-w-[150px] z-10">
+                  <div className="absolute right-0 top-8 bg-white border border-neutral-200 rounded-lg shadow-lg py-2 min-w-[150px] z-10">
                     {availableTags.map((tag) => (
                       <button
                         key={tag.id}
-                        className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 flex items-center gap-2"
+                        className="w-full text-left px-3 py-1.5 text-sm hover:bg-neutral-50 flex items-center gap-2"
                         onClick={() => handleAddTag(tag)}
                       >
                         <span className="w-3 h-3 rounded-full" style={{ backgroundColor: tag.color }} />
@@ -231,7 +231,7 @@ export default function CustomerDetailPage() {
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              {(!customer.tags || customer.tags.length === 0) && <span className="text-xs text-gray-400">暂无标签</span>}
+              {(!customer.tags || customer.tags.length === 0) && <span className="text-xs text-neutral-400">暂无标签</span>}
               {(customer.tags || []).map((tag) => (
                 <span
                   key={tag.id}
@@ -255,9 +255,9 @@ export default function CustomerDetailPage() {
           </div>
 
           {/* 客户备注 */}
-          <div className="bg-white border border-gray-200 rounded-lg p-6">
+          <div className="bg-white border border-neutral-200 rounded-lg p-6">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold text-gray-900">备注</h3>
+              <h3 className="text-sm font-semibold text-neutral-900">备注</h3>
               <Button size="sm" variant="ghost" onClick={handleSaveRemark} loading={savingRemark}>
                 <Save className="w-3.5 h-3.5 mr-1" />
                 保存
@@ -265,7 +265,7 @@ export default function CustomerDetailPage() {
             </div>
             <textarea
               rows={4}
-              className="w-full px-3 py-2 rounded border border-gray-300 text-sm placeholder:text-gray-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 resize-none"
+              className="w-full px-3 py-2 rounded border border-neutral-300 text-sm placeholder:text-neutral-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 resize-none"
               placeholder="添加客户备注..."
               value={remark}
               onChange={(e) => setRemark(e.target.value)}
@@ -275,9 +275,9 @@ export default function CustomerDetailPage() {
 
         {/* 右侧：订单和会话历史 */}
         <div className="lg:col-span-2">
-          <div className="bg-white border border-gray-200 rounded-lg">
+          <div className="bg-white border border-neutral-200 rounded-lg">
             {/* Tab 栏 */}
-            <div className="flex border-b border-gray-200">
+            <div className="flex border-b border-neutral-200">
               {[
                 { key: 'orders' as const, label: '订单历史', icon: ShoppingCart, count: customer.orders?.length },
                 { key: 'sessions' as const, label: '会话历史', icon: MessageSquare, count: customer.sessions?.length },
@@ -288,14 +288,14 @@ export default function CustomerDetailPage() {
                   className={`flex items-center gap-2 px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
                     activeTab === tab.key
                       ? 'border-primary-600 text-primary-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-900'
+                      : 'border-transparent text-neutral-500 hover:text-neutral-900'
                   }`}
                   onClick={() => setActiveTab(tab.key)}
                 >
                   <tab.icon className="w-4 h-4" />
                   {tab.label}
                   {tab.count !== undefined && (
-                    <span className="text-xs bg-gray-100 rounded-full px-2 py-0.5">{tab.count}</span>
+                    <span className="text-xs bg-neutral-100 rounded-full px-2 py-0.5">{tab.count}</span>
                   )}
                 </button>
               ))}
@@ -307,20 +307,20 @@ export default function CustomerDetailPage() {
               {activeTab === 'orders' && (
                 <div className="space-y-3">
                   {(!customer.orders || customer.orders.length === 0) ? (
-                    <p className="text-center text-gray-500 py-8 text-sm">暂无订单记录</p>
+                    <p className="text-center text-neutral-500 py-8 text-sm">暂无订单记录</p>
                   ) : (
                     customer.orders.map((order) => {
                       const statusInfo = getOrderStatusLabel(order.status)
                       return (
-                        <div key={order.id} className="flex items-center justify-between p-4 border border-gray-100 rounded-lg hover:bg-gray-50 transition-colors">
+                        <div key={order.id} className="flex items-center justify-between p-4 border border-neutral-100 rounded-lg hover:bg-neutral-50 transition-colors">
                           <div>
-                            <div className="font-medium text-gray-900">{order.orderNo || '-'}</div>
-                            <div className="text-xs text-gray-500 mt-1">
+                            <div className="font-medium text-neutral-900">{order.orderNo || '-'}</div>
+                            <div className="text-xs text-neutral-500 mt-1">
                               {order.createdAt ? dayjs(order.createdAt).format('YYYY-MM-DD HH:mm') : '-'}
                             </div>
                           </div>
                           <div className="flex items-center gap-4">
-                            <span className="text-base font-semibold text-gray-900">
+                            <span className="text-base font-semibold text-neutral-900">
                               ¥{(order.totalAmount ?? 0).toFixed(2)}
                             </span>
                             <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
@@ -336,23 +336,23 @@ export default function CustomerDetailPage() {
               {activeTab === 'sessions' && (
                 <div className="space-y-3">
                   {(!customer.sessions || customer.sessions.length === 0) ? (
-                    <p className="text-center text-gray-500 py-8 text-sm">暂无会话记录</p>
+                    <p className="text-center text-neutral-500 py-8 text-sm">暂无会话记录</p>
                   ) : (
                     customer.sessions.map((session) => (
-                      <div key={session.id} className="flex items-start gap-3 p-4 border border-gray-100 rounded-lg hover:bg-gray-50 transition-colors">
+                      <div key={session.id} className="flex items-start gap-3 p-4 border border-neutral-100 rounded-lg hover:bg-neutral-50 transition-colors">
                         <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${session.isAI ? 'bg-purple-100' : 'bg-blue-100'}`}>
-                          <MessageSquare className={`w-4 h-4 ${session.isAI ? 'text-purple-600' : 'text-blue-600'}`} />
+                          <MessageSquare className={`w-4 h-4 ${session.isAI ? 'text-purple-600' : 'text-primary-600'}`} />
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1">
                             <Badge variant={session.isAI ? 'default' : 'info'}>
                               {session.isAI ? 'AI 对话' : '人工客服'}
                             </Badge>
-                            <span className="text-xs text-gray-400">
+                            <span className="text-xs text-neutral-400">
                               {dayjs(session.createdAt).format('MM-DD HH:mm')}
                             </span>
                           </div>
-                          <p className="text-sm text-gray-600 truncate">{session.lastMessage}</p>
+                          <p className="text-sm text-neutral-600 truncate">{session.lastMessage}</p>
                         </div>
                       </div>
                     ))
@@ -362,7 +362,7 @@ export default function CustomerDetailPage() {
 
               {/* 跟进记录 */}
               {activeTab === 'notes' && (
-                <div className="text-center text-gray-500 py-8 text-sm">
+                <div className="text-center text-neutral-500 py-8 text-sm">
                   暂无跟进记录，功能开发中...
                 </div>
               )}

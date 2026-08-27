@@ -50,7 +50,7 @@ const EMPTY_SEARCH: SearchState = {
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
-    <label className="text-sm text-gray-600 whitespace-nowrap shrink-0 text-right min-w-[4.5em]">
+    <label className="text-sm text-neutral-600 whitespace-nowrap shrink-0 text-right min-w-[4.5em]">
       {children}
     </label>
   )
@@ -61,9 +61,9 @@ function FieldInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
     <input
       {...props}
       className={cn(
-        'flex-1 min-w-0 h-9 px-3 rounded border border-gray-300 bg-white text-sm',
+        'flex-1 min-w-0 h-9 px-3 rounded border border-neutral-300 bg-white text-sm',
         'focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15',
-        'placeholder:text-gray-400',
+        'placeholder:text-neutral-400',
         props.className
       )}
     />
@@ -362,7 +362,7 @@ export default function OrdersPage() {
     <div className="p-6 space-y-4">
       {/* 标题 */}
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-gray-900">订单列表</h1>
+        <h1 className="text-xl font-semibold text-neutral-900">订单列表</h1>
         <button
           type="button"
           onClick={() => router.push('/orders/new')}
@@ -377,7 +377,7 @@ export default function OrdersPage() {
       </div>
 
       {/* 查询区域 */}
-      <div className="bg-white rounded-lg border border-gray-200 p-5" data-testid="search-area">
+      <div className="bg-white rounded-lg border border-neutral-200 p-5" data-testid="search-area">
         <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_1.5fr] gap-x-6 gap-y-4 mb-4">
           {/* 订单ID */}
           <div className="flex items-center gap-2">
@@ -407,15 +407,15 @@ export default function OrdersPage() {
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
               placeholder="开始日期"
-              className="flex-1 min-w-[130px] h-9 px-3 rounded border border-gray-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+              className="flex-1 min-w-[130px] h-9 px-3 rounded border border-neutral-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
             />
-            <span className="text-gray-400 text-sm">至</span>
+            <span className="text-neutral-400 text-sm">至</span>
             <input
               type="date"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
               placeholder="结束日期"
-              className="flex-1 min-w-[130px] h-9 px-3 rounded border border-gray-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+              className="flex-1 min-w-[130px] h-9 px-3 rounded border border-neutral-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
             />
           </div>
         </div>
@@ -447,7 +447,7 @@ export default function OrdersPage() {
             <select
               value={hasProcessing}
               onChange={(e) => setHasProcessing(e.target.value as '' | 'true' | 'false')}
-              className="flex-1 min-w-0 h-9 px-3 rounded border border-gray-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+              className="flex-1 min-w-0 h-9 px-3 rounded border border-neutral-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
             >
               <option value="">全部</option>
               <option value="true">是</option>
@@ -469,7 +469,7 @@ export default function OrdersPage() {
               type="button"
               onClick={handleReset}
               disabled={loading}
-              className="h-9 px-5 rounded bg-white text-gray-700 text-sm font-medium border border-gray-300 hover:bg-gray-50 active:bg-gray-100 disabled:opacity-50 transition-colors inline-flex items-center gap-1"
+              className="h-9 px-5 rounded bg-white text-neutral-700 text-sm font-medium border border-neutral-300 hover:bg-neutral-50 active:bg-neutral-100 disabled:opacity-50 transition-colors inline-flex items-center gap-1"
             >
               <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M3 12a9 9 0 1 0 3-6.7L3 8" strokeLinecap="round" strokeLinejoin="round" />
@@ -482,9 +482,9 @@ export default function OrdersPage() {
       </div>
 
       {/* 表格 + Tab */}
-      <div className="bg-white rounded-lg border border-gray-200">
+      <div className="bg-white rounded-lg border border-neutral-200">
         {/* Tab 栏 */}
-        <div className="flex items-center gap-6 px-5 pt-3 border-b border-gray-200 overflow-x-auto">
+        <div className="flex items-center gap-6 px-5 pt-3 border-b border-neutral-200 overflow-x-auto">
           {OrderStatusTabs.map((tab) => {
             const active = activeTab === tab.key
             return (
@@ -494,7 +494,7 @@ export default function OrdersPage() {
                 onClick={() => handleTabChange(tab.key)}
                 className={cn(
                   'relative pb-3 text-sm whitespace-nowrap transition-colors',
-                  active ? 'text-primary-600 font-medium' : 'text-gray-600 hover:text-gray-900'
+                  active ? 'text-primary-600 font-medium' : 'text-neutral-600 hover:text-neutral-900'
                 )}
               >
                 {tab.label}
@@ -522,19 +522,19 @@ export default function OrdersPage() {
         />
 
         {/* 分页 */}
-        <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-gray-100">
-          <span className="text-sm text-gray-500 mr-2">共 {total} 条</span>
+        <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-neutral-100">
+          <span className="text-sm text-neutral-500 mr-2">共 {total} 条</span>
           <button
             type="button"
             onClick={() => setCurrent(Math.max(1, current - 1))}
             disabled={current <= 1}
-            className="h-8 w-8 inline-flex items-center justify-center rounded border border-gray-300 text-gray-500 text-sm hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="h-8 w-8 inline-flex items-center justify-center rounded border border-neutral-300 text-neutral-500 text-sm hover:bg-neutral-50 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             ‹
           </button>
           {pageList.map((p, idx) =>
             p === '...' ? (
-              <span key={`dots-${idx}`} className="px-1 text-gray-400 text-sm">
+              <span key={`dots-${idx}`} className="px-1 text-neutral-400 text-sm">
                 …
               </span>
             ) : (
@@ -546,7 +546,7 @@ export default function OrdersPage() {
                   'min-w-[32px] h-8 px-2 rounded text-sm transition-colors',
                   p === current
                     ? 'bg-primary-600 text-white'
-                    : 'text-gray-600 hover:bg-gray-50 border border-gray-300'
+                    : 'text-neutral-600 hover:bg-neutral-50 border border-neutral-300'
                 )}
               >
                 {p}
@@ -557,7 +557,7 @@ export default function OrdersPage() {
             type="button"
             onClick={() => setCurrent(Math.min(totalPages, current + 1))}
             disabled={current >= totalPages}
-            className="h-8 w-8 inline-flex items-center justify-center rounded border border-gray-300 text-gray-500 text-sm hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="h-8 w-8 inline-flex items-center justify-center rounded border border-neutral-300 text-neutral-500 text-sm hover:bg-neutral-50 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             ›
           </button>
