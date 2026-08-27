@@ -701,7 +701,7 @@ describe('CustomerPanel', () => {
 })
 
 // ═══════════════════════════════════════════════════
-// SessionInsight（会话洞察面板 — P0 卡片摘要 + 会话统计）
+// SessionInsight（会话洞察面板 — 米宝工作台账：概览 / 待确认 / 处理进度 / 业务对象）
 // ═══════════════════════════════════════════════════
 
 describe('SessionInsight', () => {
@@ -710,7 +710,7 @@ describe('SessionInsight', () => {
     expect(container.firstChild).toBeNull()
   })
 
-  it('shows session stats when session is active', () => {
+  it('shows 米宝 identity, session stats and copies session id', () => {
     mockUseChatStore.mockReturnValue(
       makeDefaultChatState({
         currentSessionId: 's1',
@@ -733,48 +733,34 @@ describe('SessionInsight', () => {
 
     render(<SessionInsight isOpen onClose={vi.fn()} />)
 
-    // 会话统计存在
+    // 概览：面板标题 + 米宝身份 + 状态 + 消息计数
     expect(screen.getByText('会话洞察')).toBeInTheDocument()
+    expect(screen.getByText('米宝 · B端工作助手')).toBeInTheDocument()
     expect(screen.getByText('进行中')).toBeInTheDocument()
-    // 消息计数显示
     expect(screen.getByText('12')).toBeInTheDocument()
+
+    // 会话标识复制
+    fireEvent.click(screen.getByTitle('复制会话标识'))
+    expect(mockClipboardWriteText).toHaveBeenCalledWith('s1')
   })
 
-  it('shows card summaries extracted from messages', () => {
+  it('renders tool activity timeline with labels, write badge and error suggestion', () => {
     mockUseChatStore.mockReturnValue(
       makeDefaultChatState({
         currentSessionId: 's1',
         sessions: [
           {
-            session_id: 's1',
-            title: '查询',
-            status: 'active',
-            message_count: 5,
-            updated_at: '2025-01-01T10:30:00Z',
-            created_at: '2025-01-01T10:00:00Z',
+            session_id: 's1', title: 't', status: 'active',
+            message_count: 3, updated_at: '2025-01-01T10:00:00Z', created_at: '2025-01-01T10:00:00Z',
           },
         ],
         messages: [
           {
-            id: 'm1', role: 'assistant', content: '结果如下',
-            cards: [
-              {
-                type: 'order',
-                data: { order: { orderNo: 'ORD-001', status: 'confirmed', totalAmount: 299.0 } },
-              },
-              {
-                type: 'product_list',
-                data: { products: [{ name: '窗帘A', price: 100 }, { name: '沙发布B', price: 200 }] },
-              },
-            ],
-          },
-          {
-            id: 'm2', role: 'assistant', content: '物流信息',
-            cards: [
-              {
-                type: 'logistics',
-                data: { tracking_no: 'SF1234', company: '顺丰速运', status: '运输中' },
-              },
+            id: 'm1', role: 'assistant', content: '处理中',
+            tool_calls: [
+              { name: 'order_query', input: { order_id: 'ORD-1' }, status: 'completed' },
+              { name: 'order_manage', input: { order_id: 'ORD-1', action: 'confirm' }, status: 'completed' },
+              { name: 'aftersale_query', input: {}, status: 'error', result: { success: false, suggestion: '请检查工单号' } },
             ],
           },
         ],
@@ -783,14 +769,21 @@ describe('SessionInsight', () => {
 
     render(<SessionInsight isOpen onClose={vi.fn()} />)
 
-    // 卡片摘要 — 允许卡片区和便签板各自展示
-    expect(screen.getAllByText(/ORD-001/).length).toBeGreaterThanOrEqual(1)
-    expect(screen.getByText(/顺丰速运/)).toBeInTheDocument()
-    expect(screen.getAllByText(/窗帘A/).length).toBeGreaterThanOrEqual(1)
-    expect(screen.getAllByText(/沙发布B/).length).toBeGreaterThanOrEqual(1)
+    // 处理进度时间线：工具中文名
+    expect(screen.getByText('处理进度')).toBeInTheDocument()
+    expect(screen.getByText('查询订单')).toBeInTheDocument()
+    expect(screen.getByText('订单管理')).toBeInTheDocument()
+    expect(screen.getByText('查询售后')).toBeInTheDocument()
+    // 写操作徽标：order_manage 标记「写」
+    expect(screen.getAllByText('写')).toHaveLength(1)
+    // 失败工具展示 suggestion
+    expect(screen.getByText('请检查工单号')).toBeInTheDocument()
+    // 概览领域计数 chips（order ×2 + aftersale ×1）
+    expect(screen.getByText('订单 ×2')).toBeInTheDocument()
+    expect(screen.getByText('售后 ×1')).toBeInTheDocument()
   })
 
-  it('shows empty state when session has no cards', () => {
+  it('shows empty processing state when no tool calls', () => {
     mockUseChatStore.mockReturnValue(
       makeDefaultChatState({
         currentSessionId: 's1',
@@ -813,73 +806,59 @@ describe('SessionInsight', () => {
 
     render(<SessionInsight isOpen onClose={vi.fn()} />)
 
-    // 空状态提示
-    expect(screen.getByText(/暂无查询结果/)).toBeInTheDocument()
+    expect(screen.getByText(/暂无处理记录/)).toBeInTheDocument()
   })
 
-  it('deduplicates cards with same type and key data', () => {
-    // 同一笔订单在两个消息中各出现一次，只展示一次
+  it('shows pending-confirm banner for unanswered interactive', () => {
     mockUseChatStore.mockReturnValue(
       makeDefaultChatState({
         currentSessionId: 's1',
         sessions: [
           {
-            session_id: 's1', title: 'test', status: 'active',
-            message_count: 4, updated_at: '2025-01-01T10:30:00Z', created_at: '2025-01-01T10:00:00Z',
+            session_id: 's1', title: 't', status: 'active',
+            message_count: 2, updated_at: '2025-01-01T10:00:00Z', created_at: '2025-01-01T10:00:00Z',
           },
         ],
         messages: [
-          {
-            id: 'm1', role: 'assistant', content: '第一轮',
-            cards: [
-              { type: 'order', data: { order: { orderNo: 'ORD-001', status: 'confirmed', totalAmount: 299.0 } } },
-            ],
-          },
-          {
-            id: 'm2', role: 'assistant', content: '第二轮',
-            cards: [
-              { type: 'order', data: { order: { orderNo: 'ORD-001', status: 'shipped', totalAmount: 299.0 } } },
-            ],
-          },
+          { id: 'm1', role: 'user', content: '创建订单' },
+          { id: 'm2', role: 'assistant', content: '', interactive: { component: 'confirm', title: '确认创建订单' } },
         ],
       })
     )
 
     render(<SessionInsight isOpen onClose={vi.fn()} />)
 
-    // ORD-001 在卡片摘要中出现 1 次（去重），加上便签板实体提取 1 次，共 2 次
-    const occurrences = screen.getAllByText(/ORD-001/)
-    expect(occurrences).toHaveLength(2)
+    expect(screen.getByText('米宝在等你确认')).toBeInTheDocument()
+    expect(screen.getByText('确认创建订单')).toBeInTheDocument()
   })
 
-  it('drawer opens when isOpen=true and hides when isOpen=false', () => {
+  it('hides pending-confirm banner after user answers', () => {
     mockUseChatStore.mockReturnValue(
       makeDefaultChatState({
         currentSessionId: 's1',
         sessions: [
           {
-            session_id: 's1', title: 'test', status: 'active',
-            message_count: 1, updated_at: '2025-01-01T10:30:00Z', created_at: '2025-01-01T10:00:00Z',
+            session_id: 's1', title: 't', status: 'active',
+            message_count: 4, updated_at: '2025-01-01T10:00:00Z', created_at: '2025-01-01T10:00:00Z',
           },
         ],
-        messages: [],
+        messages: [
+          { id: 'm1', role: 'user', content: '创建订单' },
+          { id: 'm2', role: 'assistant', content: '', interactive: { component: 'confirm', title: '确认创建订单' } },
+          { id: 'm3', role: 'user', content: '确认' },
+          { id: 'm4', role: 'assistant', content: '订单已创建' },
+        ],
       })
     )
 
-    const { rerender } = render(<SessionInsight isOpen onClose={vi.fn()} />)
-    // 展开：抽屉可见 + 遮罩存在
-    expect(screen.getByTestId('session-insight-drawer')).toHaveClass('translate-x-0')
-    expect(screen.getByTestId('session-insight-overlay')).toBeInTheDocument()
+    render(<SessionInsight isOpen onClose={vi.fn()} />)
 
-    // 收起：抽屉移出 + 遮罩消失
-    rerender(<SessionInsight isOpen={false} onClose={vi.fn()} />)
-    expect(screen.getByTestId('session-insight-drawer')).toHaveClass('translate-x-full')
-    expect(screen.queryByTestId('session-insight-overlay')).not.toBeInTheDocument()
+    expect(screen.queryByText('米宝在等你确认')).not.toBeInTheDocument()
   })
 
-  // ── 便签板（P1 实体提取 + 点击追问）──
+  // ── 业务对象（实体提取 + 点击追问）──
 
-  it('extracts order entities from tool_call inputs', () => {
+  it('extracts order entities from persisted tool args and follows up on click', () => {
     const sendMessage = vi.fn()
     mockUseChatStore.mockReturnValue(
       makeDefaultChatState({
@@ -891,7 +870,7 @@ describe('SessionInsight', () => {
           {
             id: 'm1', role: 'assistant', content: '查到订单',
             tool_calls: [
-              { name: 'order_query', input: { order_id: 'ORD-001' }, status: 'completed' },
+              { tool: 'order_query', args: { order_id: 'ORD-001' } },
             ],
           },
         ],
@@ -901,8 +880,8 @@ describe('SessionInsight', () => {
 
     render(<SessionInsight isOpen onClose={vi.fn()} />)
 
-    // 便签板展示了订单实体（带类型前缀）
-    expect(screen.getByText('便签板')).toBeInTheDocument()
+    // 业务对象区展示了订单实体（带类型前缀）
+    expect(screen.getByText('业务对象')).toBeInTheDocument()
     expect(screen.getByText('订单 ORD-001')).toBeInTheDocument()
 
     // 点击标签应发送追问
@@ -939,7 +918,7 @@ describe('SessionInsight', () => {
     expect(sendMessage).toHaveBeenCalledWith('查看 遮光窗帘 详情')
   })
 
-  it('extracts logistics entities from card data', () => {
+  it('extracts logistics entities from tool input and follows up via title', () => {
     const sendMessage = vi.fn()
     mockUseChatStore.mockReturnValue(
       makeDefaultChatState({
@@ -950,8 +929,8 @@ describe('SessionInsight', () => {
         messages: [
           {
             id: 'm1', role: 'assistant', content: '物流',
-            cards: [
-              { type: 'logistics', data: { tracking_no: 'SF1234567890', company: '顺丰' } },
+            tool_calls: [
+              { name: 'logistics_track', input: { tracking_no: 'SF1234567890' }, status: 'completed' },
             ],
           },
         ],
@@ -963,7 +942,7 @@ describe('SessionInsight', () => {
 
     expect(screen.getAllByText(/SF1234567890/).length).toBeGreaterThanOrEqual(1)
 
-    // 点击便签板中的物流标签
+    // 点击业务对象中的物流标签
     const tag = screen.getByTitle('点击追问：查询物流 SF1234567890')
     fireEvent.click(tag)
     expect(sendMessage).toHaveBeenCalledWith('查询物流 SF1234567890')
@@ -988,13 +967,12 @@ describe('SessionInsight', () => {
 
     render(<SessionInsight isOpen onClose={vi.fn()} />)
 
-    // ORD-001 在 tool_call 和 card 中各出现一次，实体去重后便签板只展示 1 个标签
-    // 加上卡片摘要区的 1 次，共 2 次
+    // ORD-001 在 tool_call 和 card 中各出现一次，实体去重后业务对象区只展示 1 个标签
     const occurrences = screen.getAllByText(/ORD-001/)
-    expect(occurrences).toHaveLength(2)
+    expect(occurrences).toHaveLength(1)
   })
 
-  it('shows empty pinboard when no entities', () => {
+  it('shows empty business-objects state when no entities', () => {
     mockUseChatStore.mockReturnValue(
       makeDefaultChatState({
         currentSessionId: 's1',
@@ -1009,8 +987,33 @@ describe('SessionInsight', () => {
 
     render(<SessionInsight isOpen onClose={vi.fn()} />)
 
-    // 便签板为空
-    expect(screen.getByText(/暂无便签/)).toBeInTheDocument()
+    // 业务对象为空
+    expect(screen.getByText(/暂无业务对象/)).toBeInTheDocument()
+  })
+
+  it('drawer opens when isOpen=true and hides when isOpen=false', () => {
+    mockUseChatStore.mockReturnValue(
+      makeDefaultChatState({
+        currentSessionId: 's1',
+        sessions: [
+          {
+            session_id: 's1', title: 'test', status: 'active',
+            message_count: 1, updated_at: '2025-01-01T10:30:00Z', created_at: '2025-01-01T10:00:00Z',
+          },
+        ],
+        messages: [],
+      })
+    )
+
+    const { rerender } = render(<SessionInsight isOpen onClose={vi.fn()} />)
+    // 展开：抽屉可见 + 遮罩存在
+    expect(screen.getByTestId('session-insight-drawer')).toHaveClass('translate-x-0')
+    expect(screen.getByTestId('session-insight-overlay')).toBeInTheDocument()
+
+    // 收起：抽屉移出 + 遮罩消失
+    rerender(<SessionInsight isOpen={false} onClose={vi.fn()} />)
+    expect(screen.getByTestId('session-insight-drawer')).toHaveClass('translate-x-full')
+    expect(screen.queryByTestId('session-insight-overlay')).not.toBeInTheDocument()
   })
 })
 

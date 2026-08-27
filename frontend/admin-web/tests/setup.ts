@@ -208,6 +208,10 @@ vi.mock('lucide-react', () => ({
   MessageCircle: iconStub('message-circle'),
   Clock: iconStub('clock'),
   CheckCircle: iconStub('check-circle'),
+  // SessionInsight 重构（工作台账面板）需要的图标
+  Boxes: iconStub('boxes'),
+  UserCog: iconStub('user-cog'),
+  Layers: iconStub('layers'),
   // #572: chat/config 覆盖率补全需要的图标
   Save: iconStub('save'),
   Edit3: iconStub('edit3'),
