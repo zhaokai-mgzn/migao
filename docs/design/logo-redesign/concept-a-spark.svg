@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
+  <defs>
+    <linearGradient id="tileA" x1="2" y1="2" x2="46" y2="46" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6E8CFF"/>
+      <stop offset="1" stop-color="#2F54EB"/>
+    </linearGradient>
+  </defs>
+  <!-- 圆角底板 -->
+  <rect x="2" y="2" width="44" height="44" rx="13.5" fill="url(#tileA)"/>
+  <!-- 八芒「米」字 — 横竖 + 双斜，圆头收笔如织物纱线 -->
+  <g stroke="#FFFFFF" stroke-width="3.4" stroke-linecap="round">
+    <path d="M24 13.6V34.4"/>
+    <path d="M13.6 24H34.4"/>
+    <path d="M16.7 16.7L31.3 31.3"/>
+    <path d="M31.3 16.7L16.7 31.3"/>
+  </g>
+  <!-- 金色米粒点芯 — 织金质感 + AI 灵感 -->
+  <circle cx="24" cy="24" r="3.7" fill="#FFC53D"/>
+</svg>
