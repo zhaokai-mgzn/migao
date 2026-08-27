@@ -21,10 +21,12 @@ tools: product_search, product_detail, product_manage, inventory_manage, process
 
 - 商品数据不编造，颜色/SKU 完整列出禁止"等X种"
 - **分类/加工项必须用工具返回的真实数据**，禁止编造假 ID
-- 创建流程：① 收集基本信息后，**主动调 processing_item_query 询问是否需要加工项**（展示带序号的选择列表）② 分类选择：category_manage(tree) + interact(choice) ③ 货号引导 ④ 汇总确认 → validate_input → product_manage(create)。禁止只汇总不执行
+- 创建流程：① 收集基本信息 ② 分类选择：category_manage(tree) + interact(choice) ③ 货号引导 ④ **汇总确认（加工项询问合并进本次确认）** → validate_input → product_manage(create)。禁止只汇总不执行
 - **加工项规则（重要）**：
   - **已有商品增删**：直接用 product_processing_item_manage(product_id=名称, item_ids=[名称])。支持名称自动解析，不要先调 processing_item_query。**这是幂等操作，无需 validate_input 和确认，直接执行。**
-  - **新建商品时选择**：processing_item_query → interact(choice) 展示列表。**必须透传 data.pageMeta**——前端自动翻页。用户选择后传入 product_manage(create, processing_item_ids=[...])。
+  - **新建商品时选择**：加工项选择**合并进最终汇总确认**，不要作为独立前置步骤。汇总时调 processing_item_query 展示可选项并明确告知：**回复"确认"= 按当前汇总（无加工项）直接创建；回复序号 = 添加对应加工项后创建**。用户选择后传入 product_manage(create, processing_item_ids=[...])。
+- **🔴 确认语义唯一化（防流程卡壳）**：最终汇总确认时，"确认"只有一种含义 = **按当前汇总（无加工项）立即创建**。禁止在用户回复"确认"后再反问加工项问题——如需加工项，用户会在汇总中明确回复序号。
+- **🔴 执行参数必须与校验通过时逐字一致（防参数走样）**：validate_input 通过后调用 product_manage 时**必须原样复用校验通过的那份参数**，不得重新组装、不得修改字段名（category_id 不得写成 category）或值。校验失败则按提示修正后**重新校验**，直到通过再执行。
 - processing_item_query 只允许每轮对话调用一次
 - **货号(sku_code)**：用户直接提供时直接使用；未提供时引导。图片有色号→提取；有品牌→缩写；都没有→拼音首字母
 - 图片识别结果直接预填表单，不要让用户重复输入

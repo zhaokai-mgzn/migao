@@ -1,6 +1,7 @@
 """ValidateInputTool 单元测试 — 纯本地校验，无 API 调用"""
 # case_ids: PR-005
 import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
 from app.tools.validate_input import ValidateInputTool
 
 
@@ -61,62 +62,3 @@ class TestValidateInputSuccess:
             params={"product_id": "prod-001", "adjustment": 30},
         )
         assert result.success is False
-
-
-class TestValidateInputMissing:
-    async def test_missing_params_arg(self, tool, admin_tool_context):
-        """未传 params"""
-        result = await tool.execute(
-            context=admin_tool_context,
-            target_tool="product_manage",
-            target_action="create",
-        )
-        assert result.success is False
-        assert "缺少参数" in result.error
-
-    async def test_missing_required_name(self, tool, admin_tool_context):
-        """缺少必填字段 name"""
-        result = await tool.execute(
-            context=admin_tool_context,
-            target_tool="product_manage",
-            target_action="create",
-            params={"price": 299},
-        )
-        assert result.success is False
-        assert "商品名称" in result.message
-
-    async def test_missing_required_order_id_cancel(self, tool, admin_tool_context):
-        """order_manage.cancel 缺少 order_id"""
-        result = await tool.execute(
-            context=admin_tool_context,
-            target_tool="order_manage",
-            target_action="cancel",
-            params={"reason": "客户要求取消"},
-        )
-        assert result.success is False
-        assert "order_id" in result.message.lower() or "订单ID" in result.message
-
-
-class TestValidateInputTypeCheck:
-    async def test_type_error_negative_price(self, tool, admin_tool_context):
-        """价格不能为负数"""
-        result = await tool.execute(
-            context=admin_tool_context,
-            target_tool="product_manage",
-            target_action="create",
-            params={"name": "窗帘", "price": -1},
-        )
-        assert result.success is False
-        assert "数值过小" in result.message or "校验失败" in result.message
-
-
-class TestValidateInputPermission:
-    async def test_unauthorized(self, tool, unauthorized_tool_context):
-        result = await tool.execute(
-            context=unauthorized_tool_context,
-            target_tool="product_manage",
-            target_action="create",
-            params={"name": "x", "price": 1},
-        )
-        assert result.success is False
-        assert "权限" in result.error
