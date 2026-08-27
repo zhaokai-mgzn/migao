@@ -6,7 +6,7 @@
 import { render, screen } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
 import OrderTable from '@/components/orders/OrderTable'
-import type { Order } from '@/types'
+import type { Order, OrderStatus } from '@/types'
 
 const mockOrder = {
   id: 'order-001',
@@ -179,4 +179,43 @@ describe('OrderTable', () => {
     // 备注列不应显示 - 占位符
     expect(screen.queryByText('-')).toBeNull()
   })
+
+describe('OrderTable 退款按钮（基于真实状态 + refundAmount）', () => {
+  const refundProps = {
+    ...defaultProps,
+    onRefund: vi.fn(),
+    onConfirmPayment: vi.fn(),
+    onConfirmReceive: vi.fn(),
+  }
+
+  it('confirmed 订单（未退款）显示 处理退款 按钮', () => {
+    render(<OrderTable {...refundProps} orders={[{ ...mockOrder, status: 'confirmed' as unknown as OrderStatus, refundAmount: 0 }]} />)
+    expect(screen.getByText('处理退款')).toBeTruthy()
+  })
+
+  it('shipped 订单（未退款）显示 处理退款 按钮', () => {
+    render(<OrderTable {...refundProps} orders={[{ ...mockOrder, status: 'shipped' as unknown as OrderStatus, refundAmount: 0 }]} />)
+    expect(screen.getByText('处理退款')).toBeTruthy()
+  })
+
+  it('completed 订单（未退款）显示 处理退款 按钮', () => {
+    render(<OrderTable {...refundProps} orders={[{ ...mockOrder, status: 'completed' as unknown as OrderStatus, refundAmount: 0 }]} />)
+    expect(screen.getByText('处理退款')).toBeTruthy()
+  })
+
+  it('已退款订单（refundAmount > 0）不显示 处理退款 按钮', () => {
+    render(<OrderTable {...refundProps} orders={[{ ...mockOrder, status: 'completed' as unknown as OrderStatus, refundAmount: 99 }]} />)
+    expect(screen.queryByText('处理退款')).toBeNull()
+  })
+
+  it('pending（待付款）订单不显示 处理退款 按钮', () => {
+    render(<OrderTable {...refundProps} orders={[{ ...mockOrder, status: 'pending_payment' as unknown as OrderStatus, refundAmount: 0 }]} />)
+    expect(screen.queryByText('处理退款')).toBeNull()
+  })
+
+  it('cancelled（已关闭）订单不显示 处理退款 按钮', () => {
+    render(<OrderTable {...refundProps} orders={[{ ...mockOrder, status: 'closed' as unknown as OrderStatus, refundAmount: 0 }]} />)
+    expect(screen.queryByText('处理退款')).toBeNull()
+  })
+})
 })
