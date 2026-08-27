@@ -48,7 +48,12 @@ class SessionStateStore:
                 row = result.fetchone()
                 if not row or not row[0]:
                     return None
-                return json.loads(row[0])
+                # asyncpg 对 jsonb 列返回 dict，对 text/varchar 返回 str；
+                # 两类驱动行为都兼容：dict 原样返回，str 反序列化。
+                state = row[0]
+                if isinstance(state, dict):
+                    return state
+                return json.loads(state)
             except Exception as e:
                 logger.warning(f"[session-state] load failed | session={session_id} error={e}")
                 return None

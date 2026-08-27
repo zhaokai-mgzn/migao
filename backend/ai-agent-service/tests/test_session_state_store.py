@@ -76,6 +76,17 @@ class TestLoad:
         mock_db.execute.side_effect = Exception("DB down")
         assert await store.load("s1") is None
 
+    async def test_load_asyncpg_dict_row_returns_state(self, store, mock_db):
+        """生产回归：asyncpg 对 jsonb 列直接返回 dict（而非 str），
+        load 必须原样返回 dict——旧实现 json.loads(dict) 抛 TypeError 被吞成 None，
+        导致跨轮状态（pending_skill/待校验参数/vision）全部失效（生产线上 28 次告警）。
+        """
+        raw = {"pending_skill": "product", "pending_validated_input": {"target_tool": "product_manage"}}
+        mock_db.execute.return_value = MockDBResult(single_row=(raw,))
+        state = await store.load("s1")
+        assert state == raw
+        assert state["pending_validated_input"]["target_tool"] == "product_manage"
+
 
 class TestCommit:
     async def test_commit_calls_upsert_sql(self, store, mock_db):
