@@ -23,7 +23,7 @@ export default function ToolResultCard({ card }: ToolResultCardProps) {
       return <OrderCard data={card.data} />
     default:
       return (
-        <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-3 text-xs text-neutral-500">
+        <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs text-gray-500">
           <span className="font-medium">未知卡片类型:</span> {card.type}
         </div>
       )
@@ -46,15 +46,15 @@ function ProductListCard({ data }: { data: Record<string, unknown> }) {
 function OrderCard({ data }: { data: Record<string, unknown> }) {
   const order = (data.order as Record<string, unknown>) || data
   return (
-    <div className="bg-white border border-neutral-200 rounded-xl p-3 shadow-sm">
+    <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm">
       <div className="flex items-center justify-between mb-2">
-        <span className="text-xs font-semibold text-neutral-700">
+        <span className="text-xs font-semibold text-gray-700">
           订单 {String(order.orderNo || order.order_no || '')}
         </span>
         <OrderStatusBadge status={(order.status as string) || ''} />
       </div>
       {typeof order.customerName === 'string' && order.customerName && (
-        <p className="text-xs text-neutral-500 mb-1">客户: {order.customerName}</p>
+        <p className="text-xs text-gray-500 mb-1">客户: {order.customerName}</p>
       )}
       {order.totalAmount !== undefined && (
         <p className="text-sm font-semibold text-red-500">
@@ -62,7 +62,7 @@ function OrderCard({ data }: { data: Record<string, unknown> }) {
         </p>
       )}
       {typeof order.createdAt === 'string' && order.createdAt && (
-        <p className="text-[10px] text-neutral-400 mt-1">
+        <p className="text-[10px] text-gray-400 mt-1">
           {new Date(order.createdAt).toLocaleDateString('zh-CN')}
         </p>
       )}
@@ -77,10 +77,10 @@ function OrderStatusBadge({ status }: { status: string }) {
     producing: { label: '生产中', className: 'bg-purple-50 text-purple-700 border-purple-200' },
     shipped: { label: '已发货', className: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
     completed: { label: '已完成', className: 'bg-green-50 text-green-700 border-green-200' },
-    cancelled: { label: '已取消', className: 'bg-neutral-50 text-neutral-600 border-neutral-200' },
+    cancelled: { label: '已取消', className: 'bg-gray-50 text-gray-600 border-gray-200' },
   }
 
-  const info = statusMap[status] || { label: status, className: 'bg-neutral-50 text-neutral-600 border-neutral-200' }
+  const info = statusMap[status] || { label: status, className: 'bg-gray-50 text-gray-600 border-gray-200' }
 
   return (
     <span className={`text-[10px] px-1.5 py-0.5 rounded border font-medium ${info.className}`}>

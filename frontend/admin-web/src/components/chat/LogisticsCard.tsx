@@ -15,16 +15,16 @@ export default function LogisticsCard({ data }: LogisticsCardProps) {
   const tracks = (tracking.tracks as Array<Record<string, unknown>>) || []
 
   return (
-    <div className="bg-white border border-neutral-200 rounded-xl overflow-hidden shadow-sm">
+    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
       {/* 头部 */}
-      <div className="flex items-center gap-2 px-3 py-2.5 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-neutral-100">
-        <Truck className="w-4 h-4 text-primary-600" />
+      <div className="flex items-center gap-2 px-3 py-2.5 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-gray-100">
+        <Truck className="w-4 h-4 text-blue-600" />
         <div className="flex-1 min-w-0">
-          <p className="text-xs font-medium text-neutral-800">
+          <p className="text-xs font-medium text-gray-800">
             {company || '物流信息'}
           </p>
           {trackingNo && (
-            <p className="text-[10px] text-neutral-500 mt-0.5">
+            <p className="text-[10px] text-gray-500 mt-0.5">
               运单号: {trackingNo}
             </p>
           )}
@@ -49,11 +49,11 @@ export default function LogisticsCard({ data }: LogisticsCardProps) {
                     <div
                       className={cn(
                         'w-2 h-2 rounded-full mt-1.5',
-                        isFirst ? 'bg-primary-500' : 'bg-neutral-300'
+                        isFirst ? 'bg-blue-500' : 'bg-gray-300'
                       )}
                     />
                     {index < tracks.length - 1 && index < 4 && (
-                      <div className="w-px flex-1 bg-neutral-200 my-1" />
+                      <div className="w-px flex-1 bg-gray-200 my-1" />
                     )}
                   </div>
 
@@ -62,12 +62,12 @@ export default function LogisticsCard({ data }: LogisticsCardProps) {
                     <p
                       className={cn(
                         'text-xs leading-relaxed',
-                        isFirst ? 'text-neutral-800 font-medium' : 'text-neutral-500'
+                        isFirst ? 'text-gray-800 font-medium' : 'text-gray-500'
                       )}
                     >
                       {(track.description as string) || ''}
                     </p>
-                    <p className="text-[10px] text-neutral-400 mt-0.5">
+                    <p className="text-[10px] text-gray-400 mt-0.5">
                       {(track.time as string) || ''}
                     </p>
                   </div>
@@ -79,7 +79,7 @@ export default function LogisticsCard({ data }: LogisticsCardProps) {
       )}
 
       {tracks.length === 0 && (
-        <div className="px-3 py-4 text-center text-xs text-neutral-400">
+        <div className="px-3 py-4 text-center text-xs text-gray-400">
           暂无物流轨迹
         </div>
       )}

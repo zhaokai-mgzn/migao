@@ -1,7 +1,11 @@
 """
 AI 智能客服系统 - 订单查询 Tool
 
-根据各种条件查询订单，支持订单号、客户手机号、状态、日期等筛选。
+根据各种条件查询订单，支持关键词、订单号、收货人、状态、日期等筛选。
+
+筛选参数与后端 OrderController（GET /api/admin/orders）对齐：
+keyword（通用关键词：客户姓名/手机号/订单号）/ orderId（订单号精确搜索）/
+receiver（收货人姓名或手机号）/ status / startDate / endDate。
 """
 
 from typing import Any, Dict, List, Optional
@@ -12,11 +16,11 @@ from app.utils.http_client import get_admin_api_client
 from app.utils.log_sanitizer import LogSanitizer
 
 
-# 订单状态中文映射
+# 订单状态中文映射（与后端 OrderService 状态机对齐：producing = 生产中）
 ORDER_STATUS_TEXT = {
     "pending": "待付款",
     "confirmed": "已确认（待发货）",
-    "processing": "生产中",
+    "producing": "生产中",
     "shipped": "已发货",
     "completed": "已完成",
     "cancelled": "已取消",
@@ -26,18 +30,18 @@ ORDER_STATUS_TEXT = {
 class OrderQueryTool(BaseTool):
     """订单查询 Tool
     
-    根据订单号、客户手机号、状态、日期等条件查询订单列表。
+    根据关键词、订单号、收货人、状态、日期等条件查询订单列表。
     
     使用场景：
     - 用户询问"我的订单"
     - 用户查询某个订单号的信息
-    - 客服按手机号查询客户订单
-    - 按状态筛选订单（如"待发货的订单"）
+    - 客服按手机号/姓名查询客户订单
+    - 按状态筛选订单（如"待发货的订单""生产中的订单"）
     """
     
     name = "order_query"
     description = (
-        "【触发】查具体订单：用户说'查订单''我的订单''ORD-单号''待发货''某客户订单'时调用。【前置】action: list(翻页)/statistics(汇总)/follow_status_stats(跟进统计)。【何时不用】经营看板的趋势/分布/概览用 dashboard_stats。查物流用 logistics_track。修改用 order_manage。【标注】READONLY — 查具体订单，经营分析用 dashboard_stats"
+        "【触发】查具体订单：用户说'查订单''我的订单''ORD-单号''待发货''某客户订单'时调用。【前置】action: list(翻页)/statistics(汇总)/follow_status_stats(跟进统计)。【参数】list 支持 keyword(关键词)/order_id(订单号)/receiver(收货人姓名或手机号)/status/start_date/end_date。【何时不用】经营看板的趋势/分布/概览用 dashboard_stats。查物流用 logistics_track。修改用 order_manage。【标注】READONLY — 查具体订单，经营分析用 dashboard_stats"
     )
     
     parameters = {
@@ -47,33 +51,37 @@ class OrderQueryTool(BaseTool):
                 "type": "string",
                 "description": (
                     "操作类型："
-                    "list（默认，订单列表查询，支持 order_no/customer_phone/status/date_from/date_to/page/page_size 参数） / "
+                    "list（默认，订单列表查询，支持 keyword/order_id/receiver/status/start_date/end_date/page/page_size 参数） / "
                     "statistics（订单统计汇总数据，不接收其他参数，适用于“订单统计数据”“各状态订单汇总”场景） / "
                     "follow_status_stats（订单跟进状态统计，不接收其他参数，适用于“跟进状态统计”场景）"
                 ),
                 "enum": ["list", "statistics", "follow_status_stats"],
                 "default": "list",
             },
-            "order_no": {
+            "keyword": {
                 "type": "string",
-                "description": "订单编号（可选，仅 action=list 时生效）",
+                "description": "通用关键词（可选，仅 action=list 时生效）：匹配客户姓名/手机号/订单号",
             },
-            "customer_phone": {
+            "order_id": {
                 "type": "string",
-                "description": "客户手机号（可选，仅 action=list 时生效）",
+                "description": "订单号精确搜索（可选，仅 action=list 时生效，如 ORD-xxx）",
+            },
+            "receiver": {
+                "type": "string",
+                "description": "收货人姓名或手机号（可选，仅 action=list 时生效）",
             },
             "status": {
                 "type": "string",
-                "description": "订单状态筛选（可选，仅 action=list 时生效）：pending=待付款, confirmed=已确认（待发货）, processing=生产中, shipped=已发货, completed=已完成, cancelled=已取消",
-                "enum": ["pending", "confirmed", "processing", "shipped", "completed", "cancelled"],
+                "description": "订单状态筛选（可选，仅 action=list 时生效）：pending=待付款, confirmed=已确认（待发货）, producing=生产中, shipped=已发货, completed=已完成, cancelled=已取消",
+                "enum": ["pending", "confirmed", "producing", "shipped", "completed", "cancelled"],
             },
-            "date_from": {
+            "start_date": {
                 "type": "string",
-                "description": "起始日期，格式 YYYYY-MM-DD（可选，仅 action=list 时生效）",
+                "description": "起始日期，格式 YYYY-MM-DD（可选，仅 action=list 时生效）",
             },
-            "date_to": {
+            "end_date": {
                 "type": "string",
-                "description": "截止日期，格式 YYYYY-MM-DD（可选，仅 action=list 时生效）",
+                "description": "截止日期，格式 YYYY-MM-DD（可选，仅 action=list 时生效）",
             },
             "page": {
                 "type": "integer",
@@ -92,15 +100,14 @@ class OrderQueryTool(BaseTool):
         self,
         context: ToolContext,
         action: str = "list",
-        order_no: Optional[str] = None,
-        customer_phone: Optional[str] = None,
+        keyword: Optional[str] = None,
+        order_id: Optional[str] = None,
+        receiver: Optional[str] = None,
         status: Optional[str] = None,
-        date_from: Optional[str] = None,
-        date_to: Optional[str] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
         page: int = 1,
         page_size: int = 10,
-        # LLM 可能传 order_id 而非 order_no，兼容别名
-        order_id: Optional[str] = None,
         **kwargs,
     ) -> ToolResult:
         """执行订单查询
@@ -108,14 +115,14 @@ class OrderQueryTool(BaseTool):
         Args:
             context: Tool 执行上下文
             action: 操作类型 list/statistics/follow_status_stats
-            order_no: 订单编号
-            customer_phone: 客户手机号
+            keyword: 通用关键词（客户姓名/手机号/订单号）
+            order_id: 订单号（精确搜索）
+            receiver: 收货人姓名或手机号
             status: 订单状态
-            date_from: 起始日期
-            date_to: 截止日期
+            start_date: 起始日期
+            end_date: 截止日期
             page: 页码
             page_size: 每页数量
-            order_id: 订单编号（order_no 的别名，兼容 LLM 传参）
 
         Returns:
             ToolResult: 订单查询结果
@@ -129,9 +136,17 @@ class OrderQueryTool(BaseTool):
                 suggestion="请联系管理员获取订单查询权限",
             )
 
-        # 兼容 LLM 传入 order_id 作为 order_no 的别名
-        if not order_no and order_id:
-            order_no = order_id
+        # 旧参数名兼容归一化：order_no/customer_phone/date_from/date_to 是历史 LLM
+        # 可能传的旧名，后端 OrderController 不接收 orderNo/customerPhone/dateFrom/dateTo，
+        # 直接透传会静默失效（报"查到 N 单"实为全量分页）。此处归一化到后端支持的参数。
+        if not order_id and kwargs.get("order_no"):
+            order_id = kwargs["order_no"]
+        if not receiver and kwargs.get("customer_phone"):
+            receiver = kwargs["customer_phone"]
+        if not start_date and kwargs.get("date_from"):
+            start_date = kwargs["date_from"]
+        if not end_date and kwargs.get("date_to"):
+            end_date = kwargs["date_to"]
 
         # 标准化 action
         action = (action or "list").strip().lower()
@@ -154,11 +169,12 @@ class OrderQueryTool(BaseTool):
             page_size = int(page_size) if page_size else 10
             return await self._list_orders(
                 context,
-                order_no=order_no,
-                customer_phone=customer_phone,
+                keyword=keyword,
+                order_id=order_id,
+                receiver=receiver,
                 status=status,
-                date_from=date_from,
-                date_to=date_to,
+                start_date=start_date,
+                end_date=end_date,
                 page=page,
                 page_size=page_size,
             )
@@ -189,14 +205,34 @@ class OrderQueryTool(BaseTool):
             )
         data = response.get("data", {})
         logger.info(f"[order-query] Statistics fetched | tenant={context.tenant_id}")
-        # 构建摘要：提取订单数量和金额
-        today_orders = data.get("todayOrderCount") or data.get("totalOrders") or "N/A"
-        today_amount = data.get("todaySalesAmount") or data.get("totalAmount") or "N/A"
+        # 后端 OrderStatisticsResponse 字段：totalCount/pendingCount/confirmedCount/
+        # producingCount/shippedCount/completedCount/cancelledCount（+unpaid/paid/refunded）
+        total_count = data.get("totalCount")
+        if total_count is None:
+            return ToolResult(
+                success=True,
+                data=data,
+                message="订单统计数据已获取",
+                summary="订单统计: N/A",
+            )
+        status_parts = []
+        for key, label in (
+            ("pendingCount", "待付款"),
+            ("confirmedCount", "待发货"),
+            ("producingCount", "生产中"),
+            ("shippedCount", "已发货"),
+            ("completedCount", "已完成"),
+            ("cancelledCount", "已取消"),
+        ):
+            val = data.get(key)
+            if val is not None:
+                status_parts.append(f"{label}{val}")
+        status_text = "、".join(status_parts) if status_parts else "无明细"
         return ToolResult(
             success=True,
             data=data,
             message="订单统计数据已获取",
-            summary=f"订单统计: {today_orders}单, 金额{today_amount}元",
+            summary=f"订单统计: 共{total_count}单（{status_text}）",
         )
 
     async def _follow_status_stats(self, context: ToolContext) -> ToolResult:
@@ -233,16 +269,17 @@ class OrderQueryTool(BaseTool):
     async def _list_orders(
         self,
         context: ToolContext,
-        order_no: Optional[str],
-        customer_phone: Optional[str],
+        keyword: Optional[str],
+        order_id: Optional[str],
+        receiver: Optional[str],
         status: Optional[str],
-        date_from: Optional[str],
-        date_to: Optional[str],
+        start_date: Optional[str],
+        end_date: Optional[str],
         page: int,
         page_size: int,
     ) -> ToolResult:
         """执行订单列表查询"""
-        # Gap-4 安全加固: customer 角色必须有 customer_id 才能查询
+        # Gap-4 安全加固: customer 角色必须有 user_id 才能查询
         if context.role == "customer" and not str(context.user_id).strip():
             return ToolResult(
                 success=False,
@@ -252,38 +289,35 @@ class OrderQueryTool(BaseTool):
             )
 
         # 查询开始日志
-        if customer_phone:
-            logger.info(f"[order-query] Querying by phone: {LogSanitizer.mask_phone(customer_phone)} | tenant={context.tenant_id}")
-        elif order_no:
-            logger.info(f"[order-query] Querying by order_no: {order_no} | tenant={context.tenant_id}")
+        if keyword:
+            logger.info(f"[order-query] Querying by keyword: {LogSanitizer.mask_phone(keyword)} | tenant={context.tenant_id}")
+        elif order_id:
+            logger.info(f"[order-query] Querying by order_id: {order_id} | tenant={context.tenant_id}")
         else:
             logger.info(f"[order-query] Querying orders: status={status} | tenant={context.tenant_id}")
 
-        # 构建查询参数
+        # 构建查询参数（与后端 OrderController.getOrders 支持的参数一一对应：
+        # page/size/status/keyword/followStatus/hasProcessing/startDate/endDate/orderId/receiver）
         params: Dict[str, Any] = {
             "page": page,
             "size": page_size,
         }
 
-        # Gap-4 安全加固: customer 角色必须带 customer_id 做双重隔离
-        if context.role == "customer":
-            params["customerId"] = str(context.user_id)
-        elif context.role in ("admin", "agent", "tenant_admin"):
-            # admin 可以查看所有客户的订单，不传 customerId
-            pass
-
-        if order_no:
-            params["orderNo"] = order_no
-        if customer_phone:
-            params["customerPhone"] = customer_phone
         if status:
             params["status"] = status
-        if date_from:
-            params["dateFrom"] = date_from
-        if date_to:
-            params["dateTo"] = date_to
+        if keyword:
+            params["keyword"] = keyword
+        if order_id:
+            params["orderId"] = order_id
+        if receiver:
+            params["receiver"] = receiver
+        if start_date:
+            params["startDate"] = start_date
+        if end_date:
+            params["endDate"] = end_date
 
-        # 调用 admin-api
+        # 调用 admin-api（租户隔离由后端 TenantLineInnerInterceptor 在 SQL 层保证，
+        # Agent 通过 tenant_id header 传递租户上下文，客户端不再伪造过滤）
         client = get_admin_api_client()
         response = await client.get(
             "/api/admin/orders",
@@ -306,43 +340,8 @@ class OrderQueryTool(BaseTool):
         records = data.get("items", [])
         total = data.get("total", 0)
 
-        # 验证响应数据的 tenant_id，过滤不属于当前租户的记录
-        verified_records = []
-        filtered_count = 0
-        for record in records:
-            resp_tenant_id = record.get("tenantId") or record.get("tenant_id")
-            if resp_tenant_id is not None and str(resp_tenant_id) != str(context.tenant_id):
-                logger.error(
-                    f"Tenant data integrity violation in order_query: "
-                    f"response tenant_id={resp_tenant_id}, expected={context.tenant_id}"
-                )
-                filtered_count += 1
-                continue
-            # Gap-4 安全加固: customer 角色做 customer_id 双重校验
-            if context.role == "customer":
-                resp_customer_id = (
-                    record.get("customerId")
-                    or record.get("customer_id")
-                    or record.get("userId")
-                )
-                if resp_customer_id is not None and str(resp_customer_id) != str(context.user_id):
-                    logger.error(
-                        f"Customer data integrity violation in order_query: "
-                        f"response customer_id={resp_customer_id}, expected={context.user_id}"
-                    )
-                    filtered_count += 1
-                    continue
-            verified_records.append(record)
-
-        if filtered_count > 0:
-            logger.warning(
-                f"Order query filtered {filtered_count} records due to tenant_id mismatch, "
-                f"tenant={context.tenant_id}"
-            )
-            total = max(0, total - filtered_count)
-
         # 格式化订单列表
-        orders = self._format_orders(verified_records)
+        orders = self._format_orders(records)
 
         logger.info(
             f"[order-query] Found {len(orders)} orders, total={total} | tenant={context.tenant_id}"

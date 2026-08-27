@@ -392,15 +392,11 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
 
         productMapper.updateById(product);
 
-        // 更新销售信息（先删后插），支持笛卡尔积自动生成
+        // 更新销售信息（upsert：按 id/组合匹配原地更新，缺失才删；不再先删后插，
+        // 保证订单 processingInfo 里存的旧 skuId/colorId 仍可被 OrderService.matchSkuId 寻址恢复库存）
         if (request.getColors() != null || request.getSkus() != null
                 || request.getSellingMethods() != null || request.getDoorWidths() != null) {
-            // 删除旧颜色和旧 SKU
-            productSkuMapper.delete(new LambdaQueryWrapper<ProductSku>()
-                    .eq(ProductSku::getProductId, id));
-            productColorMapper.delete(new LambdaQueryWrapper<ProductColor>()
-                    .eq(ProductColor::getProductId, id));
-            // 重新保存（price/stock 优先取请求值，否则用商品当前值）
+            // price/stock 优先取请求值，否则用商品当前值
             BigDecimal skuPrice = request.getBasePrice() != null ? request.getBasePrice() : product.getBasePrice();
             Integer skuStock = request.getStock() != null ? request.getStock() : product.getStock();
             saveColorsAndSkus(id, product.getSkuCode(), tenantId,
@@ -430,11 +426,14 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
     }
 
     /**
-     * 保存商品的颜色与 SKU 数据
+     * 保存商品的颜色与 SKU 数据（create/update 通用，upsert 语义）。
      *
-     * 1. 先批量插入 colors，每条由数据库生成主键，构建 前端临时ID -> DB主键 映射
-     * 2. 再批量插入 skus，使用映射替换 colorId
-     * 3. 仅在 colors / skus 任一非空时执行；空集合或 null 则跳过
+     * 断链防护（#商品模块自洽性）：update 场景不物理删除旧 SKU/颜色，而是
+     * 1. 颜色/SKU 优先按 id 匹配（前端表单带真实 DB id）、其次按名称/组合匹配（Agent 按名称重建）；
+     *    匹配到则原地 update（保留主键）→ 订单 processingInfo 里存的旧 skuId/colorId 仍然可寻址，
+     *    OrderService.matchSkuId 的 skuId 直查与 colorId 回退两条路径都能恢复库存；
+     * 2. 仅删除本次请求中"缺失"的旧行（缺失才删）；
+     * 3. create 场景无现有行，等价于全量插入，行为与旧实现一致。
      */
     private void saveColorsAndSkus(String productId, String productSkuCode, Long tenantId,
                                     List<ProductColorInput> colorInputs,
@@ -443,6 +442,32 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                                     BigDecimal basePrice,
                                     Integer stock,
                                     List<ProductSkuInput> skuInputs) {
+        // 加载现有颜色与 SKU（仅当前商品，不跨租户；create 时为空）
+        List<ProductColor> existingColors = productColorMapper.selectList(
+                new LambdaQueryWrapper<ProductColor>().eq(ProductColor::getProductId, productId));
+        List<ProductSku> existingSkus = productSkuMapper.selectList(
+                new LambdaQueryWrapper<ProductSku>().eq(ProductSku::getProductId, productId));
+        if (existingColors == null) existingColors = new ArrayList<>();
+        if (existingSkus == null) existingSkus = new ArrayList<>();
+
+        Map<Long, ProductColor> colorById = new HashMap<>();
+        Map<String, ProductColor> colorByName = new HashMap<>();
+        // 颜色名 → DB 主键：用于 SKU 匹配时解析 colorId（兼容旧数据 SKU 只有 colorId 无 colorName）
+        Map<String, Long> colorIdByName = new HashMap<>();
+        for (ProductColor c : existingColors) {
+            colorById.put(c.getId(), c);
+            if (StringUtils.hasText(c.getColorName())) {
+                colorByName.putIfAbsent(c.getColorName(), c);
+                colorIdByName.putIfAbsent(c.getColorName(), c.getId());
+            }
+        }
+        Map<Long, ProductSku> skuById = new HashMap<>();
+        for (ProductSku s : existingSkus) {
+            skuById.put(s.getId(), s);
+        }
+        Set<Long> keptColorIds = new LinkedHashSet<>();
+        Set<Long> keptSkuIds = new LinkedHashSet<>();
+
         // 提取颜色名列表（优先用 colorName，即色号如 "2699-01"）
         List<String> colorNames = new ArrayList<>();
         if (colorInputs != null) {
@@ -452,23 +477,51 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             }
         }
 
-        // 保存颜色到 product_colors（兼容前端旧逻辑）
+        // 保存颜色到 product_colors（兼容前端旧逻辑）— upsert：按 id 优先、其次名称匹配
         Map<Long, Long> colorIdMap = new LinkedHashMap<>();
         if (colorInputs != null) {
             int idx = 0;
             for (ProductColorInput input : colorInputs) {
                 if (input == null) continue;
-                ProductColor entity = new ProductColor();
-                entity.setTenantId(tenantId);
-                entity.setProductId(productId);
-                entity.setColorName(input.getColorName());
-                entity.setMainColorHex(input.getMainColorHex());
-                entity.setColorImageUrl(input.getColorImageUrl());
-                entity.setRemark(input.getRemark());
-                entity.setSortOrder(input.getSortOrder() != null ? input.getSortOrder() : idx);
-                productColorMapper.insert(entity);
-                if (input.getId() != null) {
-                    colorIdMap.put(input.getId(), entity.getId());
+                ProductColor matched = null;
+                if (input.getId() != null && input.getId() > 0) {
+                    matched = colorById.get(input.getId());
+                }
+                if (matched == null && StringUtils.hasText(input.getColorName())) {
+                    matched = colorByName.get(input.getColorName());
+                }
+                if (matched != null) {
+                    // 保留主键原地更新，避免旧 colorId 失效
+                    matched.setColorName(input.getColorName());
+                    matched.setMainColorHex(input.getMainColorHex());
+                    matched.setColorImageUrl(input.getColorImageUrl());
+                    matched.setRemark(input.getRemark());
+                    matched.setSortOrder(input.getSortOrder() != null ? input.getSortOrder() : idx);
+                    productColorMapper.updateById(matched);
+                    keptColorIds.add(matched.getId());
+                    if (StringUtils.hasText(matched.getColorName())) {
+                        colorIdByName.put(matched.getColorName(), matched.getId());
+                    }
+                    if (input.getId() != null) {
+                        colorIdMap.put(input.getId(), matched.getId());
+                    }
+                } else {
+                    ProductColor entity = new ProductColor();
+                    entity.setTenantId(tenantId);
+                    entity.setProductId(productId);
+                    entity.setColorName(input.getColorName());
+                    entity.setMainColorHex(input.getMainColorHex());
+                    entity.setColorImageUrl(input.getColorImageUrl());
+                    entity.setRemark(input.getRemark());
+                    entity.setSortOrder(input.getSortOrder() != null ? input.getSortOrder() : idx);
+                    productColorMapper.insert(entity);
+                    keptColorIds.add(entity.getId());
+                    if (StringUtils.hasText(entity.getColorName())) {
+                        colorIdByName.put(entity.getColorName(), entity.getId());
+                    }
+                    if (input.getId() != null) {
+                        colorIdMap.put(input.getId(), entity.getId());
+                    }
                 }
                 idx++;
             }
@@ -523,26 +576,86 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                         mappedColorId = null;
                     }
                 }
-                ProductSku entity = new ProductSku();
-                entity.setTenantId(tenantId);
-                entity.setProductId(productId);
-                entity.setColorId(mappedColorId);
-                entity.setColorName(input.getColorName());
-                entity.setSellingMethod(input.getSellingMethod());
-                entity.setDoorWidth(input.getDoorWidth());
-                entity.setPrice(input.getPrice() != null ? input.getPrice() : BigDecimal.ZERO);
-                entity.setStock(input.getStock() != null ? input.getStock() : 0);
-                // 优先使用传入的 skuCode，未传入则自动生成
-                String skuCode = StringUtils.hasText(input.getSkuCode())
-                        ? input.getSkuCode()
-                        : generateSkuCode(productId, productSkuCode,
-                                colorSeqMap.getOrDefault(input.getColorName(), 0),
-                                input.getSellingMethod(), input.getDoorWidth());
-                entity.setSkuCode(skuCode);
-                entity.setSalesCount(0);
-                productSkuMapper.insert(entity);
+                // Agent 按名称重建时 colorId 为空：用颜色名解析出 DB colorId，
+                // 以便按 colorId 匹配到"只有 colorId 无 colorName"的旧数据 SKU
+                if (mappedColorId == null && StringUtils.hasText(input.getColorName())) {
+                    mappedColorId = colorIdByName.get(input.getColorName());
+                }
+                // upsert：按 id 优先、其次按组合（colorId/colorName + 售卖方式 + 门幅）匹配
+                ProductSku matched = matchExistingSku(skuById, existingSkus, input, mappedColorId);
+                if (matched != null) {
+                    // 保留主键原地更新，避免订单里存的旧 skuId 失效
+                    matched.setColorId(mappedColorId != null ? mappedColorId : matched.getColorId());
+                    matched.setColorName(input.getColorName());
+                    matched.setSellingMethod(input.getSellingMethod());
+                    matched.setDoorWidth(input.getDoorWidth());
+                    matched.setPrice(input.getPrice() != null ? input.getPrice() : matched.getPrice());
+                    matched.setStock(input.getStock() != null ? input.getStock() : matched.getStock());
+                    if (StringUtils.hasText(input.getSkuCode())) {
+                        matched.setSkuCode(input.getSkuCode());
+                    }
+                    productSkuMapper.updateById(matched);
+                    keptSkuIds.add(matched.getId());
+                } else {
+                    ProductSku entity = new ProductSku();
+                    entity.setTenantId(tenantId);
+                    entity.setProductId(productId);
+                    entity.setColorId(mappedColorId);
+                    entity.setColorName(input.getColorName());
+                    entity.setSellingMethod(input.getSellingMethod());
+                    entity.setDoorWidth(input.getDoorWidth());
+                    entity.setPrice(input.getPrice() != null ? input.getPrice() : BigDecimal.ZERO);
+                    entity.setStock(input.getStock() != null ? input.getStock() : 0);
+                    // 优先使用传入的 skuCode，未传入则自动生成
+                    String skuCode = StringUtils.hasText(input.getSkuCode())
+                            ? input.getSkuCode()
+                            : generateSkuCode(productId, productSkuCode,
+                                    colorSeqMap.getOrDefault(input.getColorName(), 0),
+                                    input.getSellingMethod(), input.getDoorWidth());
+                    entity.setSkuCode(skuCode);
+                    entity.setSalesCount(0);
+                    productSkuMapper.insert(entity);
+                    keptSkuIds.add(entity.getId());
+                }
             }
         }
+
+        // 缺失才删：删除本次请求未保留的旧 SKU/颜色（先 SKU 后颜色）
+        for (ProductSku s : existingSkus) {
+            if (!keptSkuIds.contains(s.getId())) {
+                productSkuMapper.deleteById(s.getId());
+            }
+        }
+        for (ProductColor c : existingColors) {
+            if (!keptColorIds.contains(c.getId())) {
+                productColorMapper.deleteById(c.getId());
+            }
+        }
+    }
+
+    /**
+     * 在现有 SKU 中匹配输入：
+     * 1. 优先按真实 DB id（前端表单携带）；2. 其次按组合（colorId/colorName + sellingMethod + doorWidth，Agent 按名称重建路径）。
+     */
+    private ProductSku matchExistingSku(Map<Long, ProductSku> skuById, List<ProductSku> existingSkus,
+                                        ProductSkuInput input, Long resolvedColorId) {
+        if (input.getId() != null && input.getId() > 0) {
+            ProductSku byId = skuById.get(input.getId());
+            if (byId != null) {
+                return byId;
+            }
+        }
+        for (ProductSku s : existingSkus) {
+            boolean colorMatches = (resolvedColorId != null && resolvedColorId.equals(s.getColorId()))
+                    || (StringUtils.hasText(input.getColorName())
+                        && input.getColorName().equals(s.getColorName()));
+            if (colorMatches
+                    && java.util.Objects.equals(input.getSellingMethod(), s.getSellingMethod())
+                    && java.util.Objects.equals(input.getDoorWidth(), s.getDoorWidth())) {
+                return s;
+            }
+        }
+        return null;
     }
 
     /**
@@ -715,6 +828,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
 
     /**
      * 删除商品（逻辑删除）
+     * 状态约束与 batchDelete 一致：仅 draft/off_sale 可删，on_sale/under_review 拒绝。
      */
     @Transactional(rollbackFor = Exception.class)
     public void deleteProduct(String id, Long tenantId) {
@@ -723,8 +837,35 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             throw BusinessException.notFound("商品");
         }
 
+        String currentStatus = product.getStatus() != null ? product.getStatus() : "draft";
+        if (!Set.of("draft", "off_sale").contains(currentStatus)) {
+            throw BusinessException.validationError("当前状态[" + currentStatus + "]不允许删除，请先下架后再删除");
+        }
+
         productMapper.deleteById(id);
         log.info("删除商品成功: id={}", id);
+    }
+
+    /**
+     * 校验商品是否可售（供订单域 createOrder 扣库存前调用，属商品侧职责）。
+     * 可售条件：商品存在、未被逻辑删除（selectById 经 @TableLogic 自动过滤 deleted=0）、
+     * 属于当前租户、status = on_sale。
+     *
+     * @return null 表示可售；否则返回不可售原因（中文，可直接透传前端/agent 展示）
+     */
+    public String validateSellable(String productId, Long tenantId) {
+        Product product = productMapper.selectById(productId);
+        if (product == null) {
+            return "商品不存在或已删除";
+        }
+        if (product.getTenantId() != null && !product.getTenantId().equals(tenantId)) {
+            return "商品不属于当前租户";
+        }
+        if (!"on_sale".equals(product.getStatus())) {
+            return "商品当前状态[" + (product.getStatus() != null ? product.getStatus() : "未知")
+                    + "]，不可售卖";
+        }
+        return null;
     }
 
     /**
@@ -1668,6 +1809,62 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         productSkuMapper.updateById(sku);
         log.info("SKU价格已更新: product={}, color={}, method={}, width={}, price={}",
                 productId, color, sellingMethod, doorWidth, price);
+    }
+
+    /**
+     * Agent/前端行内编辑专用：按 SKU id 精确改价。
+     * 校验 skuId 属于该商品且价格 ≥ 0，原地更新价格行（不删除/重建，保证订单回滚可寻址），
+     * 返回更新后的 SKU。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public ProductSkuResponse updateSkuPriceById(String productId, Long skuId,
+                                                  BigDecimal price, Long tenantId) {
+        Product product = productMapper.selectOne(
+                new LambdaQueryWrapper<Product>()
+                        .eq(Product::getId, productId)
+                        .eq(Product::getTenantId, tenantId));
+        if (product == null) {
+            throw BusinessException.notFound("商品");
+        }
+        if (price == null) {
+            throw BusinessException.validationError("缺少 price 字段");
+        }
+        if (price.signum() < 0) {
+            throw BusinessException.validationError("价格不能为负数");
+        }
+        ProductSku sku = productSkuMapper.selectOne(
+                new LambdaQueryWrapper<ProductSku>()
+                        .eq(ProductSku::getId, skuId)
+                        .eq(ProductSku::getProductId, productId)
+                        .eq(ProductSku::getTenantId, tenantId));
+        if (sku == null) {
+            throw BusinessException.notFound("SKU",
+                    "未找到属于该商品的 SKU（id=" + skuId + "）。请用 product_detail 查看可用 SKU 后重试");
+        }
+        sku.setPrice(price);
+        productSkuMapper.updateById(sku);
+        log.info("SKU价格已更新(单SKU): product={}, skuId={}, price={}, tenant={}",
+                productId, skuId, price, tenantId);
+        return toSkuResponse(sku);
+    }
+
+    /**
+     * ProductSku 实体 → ProductSkuResponse（与 getProductById 中字段口径一致）
+     */
+    private ProductSkuResponse toSkuResponse(ProductSku sku) {
+        ProductSkuResponse resp = new ProductSkuResponse();
+        resp.setId(sku.getId());
+        resp.setProductId(sku.getProductId());
+        resp.setColorId(sku.getColorId());
+        resp.setColorName(sku.getColorName());
+        resp.setSellingMethod(sku.getSellingMethod());
+        resp.setDoorWidth(sku.getDoorWidth());
+        resp.setPrice(sku.getPrice());
+        resp.setStock(sku.getStock());
+        resp.setSkuCode(sku.getSkuCode());
+        resp.setCreatedAt(sku.getCreatedAt());
+        resp.setUpdatedAt(sku.getUpdatedAt());
+        return resp;
     }
 
     public String resolveProductId(String raw, Long tenantId) {

@@ -17,8 +17,8 @@ const Badge = ({ children, variant = 'default', className, onClick, title }: Bad
     warning: 'bg-amber-50 text-amber-700 border-amber-200',
     error: 'bg-red-50 text-red-700 border-red-200',
     danger: 'bg-red-50 text-red-700 border-red-200',
-    info: 'bg-primary-50 text-primary-700 border-primary-200',
-    default: 'bg-neutral-50 text-neutral-600 border-neutral-200',
+    info: 'bg-blue-50 text-blue-700 border-blue-200',
+    default: 'bg-gray-50 text-gray-700 border-gray-200',
   }
 
   // 提取 children 中的文本作为默认 tooltip

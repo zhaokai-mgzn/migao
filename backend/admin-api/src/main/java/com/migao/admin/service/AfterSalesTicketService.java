@@ -19,6 +19,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
@@ -37,6 +38,7 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
     private final AfterSalesTicketMapper afterSalesTicketMapper;
     private final OrderMapper orderMapper;
     private final TicketTimelineMapper ticketTimelineMapper;
+    private final FinanceService financeService;
     private final ObjectMapper objectMapper;
 
     /**
@@ -167,6 +169,25 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
             throw BusinessException.validationError("关联订单不存在");
         }
 
+        // 状态门禁：退款/退货工单仅允许在已确认及以上的订单创建（与 refundOrder 一致）
+        boolean isRefundType = "refund".equals(request.getTicketType()) || "return".equals(request.getTicketType());
+        if (isRefundType && !Set.of("confirmed", "producing", "shipped", "completed").contains(order.getStatus())) {
+            throw BusinessException.validationError(
+                    String.format("当前订单状态[%s]不允许创建退款/退货工单，仅已确认/生产中/已发货/已完成可创建",
+                            order.getStatus()));
+        }
+
+        // 退款金额校验：≥0 且 ≤ 订单实收款
+        if (request.getRefundAmount() != null) {
+            if (request.getRefundAmount().compareTo(BigDecimal.ZERO) < 0) {
+                throw BusinessException.validationError("退款金额不能为负数");
+            }
+            BigDecimal effectiveActual = order.getActualAmount() != null ? order.getActualAmount() : order.getTotalAmount();
+            if (request.getRefundAmount().compareTo(effectiveActual) > 0) {
+                throw BusinessException.validationError("退款金额不能超过订单实收款 " + effectiveActual);
+            }
+        }
+
         // 防重复：检查该订单是否已有活跃工单
         List<AfterSalesTicket> activeTickets = afterSalesTicketMapper.selectList(
             new LambdaQueryWrapper<AfterSalesTicket>()
@@ -286,6 +307,14 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
 
         afterSalesTicketMapper.updateById(ticket);
 
+        // 完结联动：refund/return 工单 resolved 且有退款金额时，累加订单退款并登记退款流水
+        if ("resolved".equals(newStatus)
+                && ("refund".equals(ticket.getTicketType()) || "return".equals(ticket.getTicketType()))
+                && ticket.getRefundAmount() != null
+                && ticket.getRefundAmount().compareTo(BigDecimal.ZERO) > 0) {
+            linkRefundToOrderAndFinance(ticket);
+        }
+
         // 写入时间线记录（每次状态变更都记录）
         TicketTimeline timeline = new TicketTimeline();
         timeline.setTicketId(id);
@@ -302,6 +331,43 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
 
         log.info("更新工单状态成功: id={}, {} -> {}, remark={}", id, currentStatus, newStatus,
                 StringUtils.hasText(request.getRemark()) ? request.getRemark() : "(无)");
+    }
+
+    /**
+     * 售后工单完结（resolved）联动：
+     * 1. 订单累计已退款金额（封顶实收款，防多次工单超退）并置 refundAt；
+     * 2. 通过 FinanceService 登记一条退款流水（type=refund，amount=本次实际退款额）。
+     * 订单不存在或已全额退款时仅告警跳过，不影响工单完结主流程。
+     */
+    private void linkRefundToOrderAndFinance(AfterSalesTicket ticket) {
+        if (!StringUtils.hasText(ticket.getOrderId())) {
+            return;
+        }
+        Order order = orderMapper.selectById(ticket.getOrderId());
+        if (order == null) {
+            log.warn("售后工单完结联动退款失败：订单不存在, ticketNo={}, orderId={}",
+                    ticket.getTicketNo(), ticket.getOrderId());
+            return;
+        }
+        BigDecimal effectiveActual = order.getActualAmount() != null ? order.getActualAmount() : order.getTotalAmount();
+        BigDecimal existingRefund = order.getRefundAmount() != null ? order.getRefundAmount() : BigDecimal.ZERO;
+        BigDecimal applied = ticket.getRefundAmount().min(effectiveActual.subtract(existingRefund));
+        if (applied.compareTo(BigDecimal.ZERO) <= 0) {
+            log.warn("售后工单完结联动退款跳过：订单已全额退款, ticketNo={}, orderId={}",
+                    ticket.getTicketNo(), ticket.getOrderId());
+            return;
+        }
+
+        order.setRefundAmount(existingRefund.add(applied));
+        order.setRefundAt(OffsetDateTime.now());
+        orderMapper.updateById(order);
+
+        try {
+            financeService.recordRefund(order, applied, "售后工单退款: " + ticket.getTicketNo());
+        } catch (Exception e) {
+            log.warn("售后工单完结登记退款流水失败（不影响工单主流程）: ticketNo={}, error={}",
+                    ticket.getTicketNo(), e.getMessage());
+        }
     }
 
     /**

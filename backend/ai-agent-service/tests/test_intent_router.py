@@ -80,6 +80,38 @@ class TestRuleMatcher:
         assert result is not None
         assert result.intent == IntentType.KNOWLEDGE_FAQ
 
+    # --- 财务意图 ---
+
+    def test_keyword_match_finance_summary(self, matcher):
+        """关键词匹配：收支汇总 → FINANCE"""
+        result = matcher.match("查一下本月收支净额")
+        assert result is not None
+        assert result.intent == IntentType.FINANCE
+
+    def test_keyword_match_finance_transactions(self, matcher):
+        """关键词匹配：资金流水 → FINANCE"""
+        result = matcher.match("查一下资金流水")
+        assert result is not None
+        assert result.intent == IntentType.FINANCE
+
+    def test_keyword_match_finance_reconcile(self, matcher):
+        """关键词匹配：应收对账 → FINANCE"""
+        result = matcher.match("哪些订单没对平")
+        assert result is not None
+        assert result.intent == IntentType.FINANCE
+
+    def test_keyword_match_finance_create(self, matcher):
+        """关键词匹配：登记收款 → FINANCE（不被订单意图抢走）"""
+        result = matcher.match("登记一笔线下收款500元")
+        assert result is not None
+        assert result.intent == IntentType.FINANCE
+
+    def test_refund_stays_after_sales(self, matcher):
+        """裸"退款"保持售后意图，不被财务吞掉"""
+        result = matcher.match("我要退款")
+        assert result is not None
+        assert result.intent == IntentType.AFTER_SALES
+
     # --- Greeting 特殊逻辑 ---
 
     def test_greeting_short_message(self, matcher):
@@ -405,8 +437,13 @@ class TestIntentConfig:
     """意图配置测试"""
 
     def test_intent_type_values(self):
-        """所有意图类型存在"""
-        assert len(IntentType) == 29  # 含 order_create
+        """所有意图类型存在（含 order_create 与 finance）"""
+        assert len(IntentType) == 30  # 含 order_create + finance
+
+    def test_finance_maps_to_finance_api(self):
+        """财务意图映射到 finance_api 工具"""
+        tools = INTENT_TOOL_MAP[IntentType.FINANCE]
+        assert "finance_api" in tools
 
     def test_intent_tool_map_coverage(self):
         """所有意图类型都有 tool 映射"""

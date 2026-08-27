@@ -1,10 +1,11 @@
-// case_ids: UI-005
 /**
  * L2 单元测试 — 搜索区域左对齐验证
  *
  * 业务真值 D1：所有表单页搜索/筛选区左侧对齐（与订单页一致）
  * 验证各列表页搜索容器 className 不含水平居中类
  */
+// case_ids: CH-005, CH-006, CH-007
+
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
@@ -99,8 +100,7 @@ const SEARCH_SELECTORS: Record<string, string> = {
   products: '.bg-white.rounded-lg.border',
   'after-sales': '.border-x',
   customers: '[data-testid="search-area"]',
-  // 织物质感 token 化：员工页搜索容器 bg-gray-50 → bg-neutral-50
-  employees: '.bg-neutral-50.p-4.rounded-lg',
+  employees: '.bg-gray-50.p-4.rounded-lg',
 }
 
 async function waitForSearchContainer(pageKey: string, container?: HTMLElement) {

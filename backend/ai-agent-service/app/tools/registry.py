@@ -398,6 +398,7 @@ def create_default_registry() -> ToolRegistry:
     from app.tools.employee_manage import EmployeeManageTool
     from app.tools.role_manage import RoleManageTool
     from app.tools.dashboard_stats import DashboardStatsTool
+    from app.tools.finance_api import FinanceApiTool
     from app.tools.after_sales_manage import AfterSalesManageTool
     from app.tools.aftersale_create import AftersaleCreateTool
     from app.tools.aftersale_query import AftersaleQueryTool
@@ -433,6 +434,7 @@ def create_default_registry() -> ToolRegistry:
     registry.register(EmployeeManageTool())
     registry.register(RoleManageTool())
     registry.register(DashboardStatsTool())
+    registry.register(FinanceApiTool())
     registry.register(AfterSalesManageTool())
     registry.register(AftersaleCreateTool())
     registry.register(AftersaleQueryTool())

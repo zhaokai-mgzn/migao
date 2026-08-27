@@ -1,8 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
-// 本地开发无后端 SMS API，默认 mock；显式传入 E2E_MOCK_AUTH 时尊重调用方（如本地真实后端联调）。
-// CI 由 workflow env 覆盖
-if (!process.env.CI && !process.env.E2E_MOCK_AUTH) process.env.E2E_MOCK_AUTH = 'true'
+// 本地开发无后端 SMS API，默认 mock。CI 由 workflow env 覆盖
+if (!process.env.CI) process.env.E2E_MOCK_AUTH = 'true'
 
 export default defineConfig({
   testDir: './e2e',

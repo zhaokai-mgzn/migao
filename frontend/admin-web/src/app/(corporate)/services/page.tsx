@@ -54,12 +54,12 @@ const coreProducts = [
     title: '小布 · AI 智能客服',
     description: '面向消费者的7×24小时智能客服，基于大语言模型深度理解客户问题，提供专业精准的服务',
     icon: MessageSquare,
-    gradient: 'from-primary-500 to-cyan-500',
+    gradient: 'from-blue-500 to-cyan-500',
     bgGradient: 'from-blue-50 to-cyan-50',
     borderColor: 'border-blue-200 hover:border-blue-300',
     shadowColor: 'hover:shadow-blue-100',
     iconBg: 'from-blue-100 to-cyan-100',
-    iconText: 'text-primary-600',
+    iconText: 'text-blue-600',
     badgeBg: 'bg-blue-100',
     badgeText: 'text-blue-700',
     features: [
@@ -144,13 +144,13 @@ export default function ServicesPage() {
       <section className="py-20 sm:py-28 bg-white">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
-            <span className="text-sm font-semibold text-primary-600 uppercase tracking-wider">
+            <span className="text-sm font-semibold text-blue-600 uppercase tracking-wider">
               核心AI产品
             </span>
-            <h2 className="mt-3 text-3xl sm:text-4xl font-bold text-neutral-900">
+            <h2 className="mt-3 text-3xl sm:text-4xl font-bold text-gray-900">
               AI 双助手，一个对内提效，一个对外服务
             </h2>
-            <p className="mt-4 text-lg text-neutral-500 max-w-2xl mx-auto">
+            <p className="mt-4 text-lg text-gray-500 max-w-2xl mx-auto">
               米宝赋能企业运营，小布服务终端客户，双轮驱动业务增长
             </p>
           </div>
@@ -174,10 +174,10 @@ export default function ServicesPage() {
                     <div className={`w-16 h-16 rounded-2xl bg-gradient-to-br ${product.iconBg} flex items-center justify-center mb-4`}>
                       <product.icon className={`w-8 h-8 ${product.iconText}`} />
                     </div>
-                    <h2 className="text-2xl sm:text-3xl font-bold text-neutral-900">
+                    <h2 className="text-2xl sm:text-3xl font-bold text-gray-900">
                       {product.title}
                     </h2>
-                    <p className="mt-3 text-base text-neutral-600 leading-relaxed">
+                    <p className="mt-3 text-base text-gray-600 leading-relaxed">
                       {product.description}
                     </p>
                   </div>
@@ -190,7 +190,7 @@ export default function ServicesPage() {
                         className="flex items-start gap-3 p-4 bg-white/80 backdrop-blur-sm rounded-xl border border-white/60 hover:bg-white hover:shadow-sm transition-all duration-200"
                       >
                         <feature.icon className={`w-5 h-5 ${product.iconText} shrink-0 mt-0.5`} />
-                        <span className="text-sm text-neutral-700 leading-relaxed">
+                        <span className="text-sm text-gray-700 leading-relaxed">
                           {feature.text}
                         </span>
                       </div>
@@ -207,13 +207,13 @@ export default function ServicesPage() {
       <section className="py-20 sm:py-28 bg-slate-50">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
-            <span className="text-sm font-semibold text-primary-600 uppercase tracking-wider">
+            <span className="text-sm font-semibold text-blue-600 uppercase tracking-wider">
               支撑产品
             </span>
-            <h2 className="mt-3 text-3xl sm:text-4xl font-bold text-neutral-900">
+            <h2 className="mt-3 text-3xl sm:text-4xl font-bold text-gray-900">
               全链路管理能力
             </h2>
-            <p className="mt-4 text-lg text-neutral-500 max-w-2xl mx-auto">
+            <p className="mt-4 text-lg text-gray-500 max-w-2xl mx-auto">
               从后台管理到客户触点，覆盖业务全场景
             </p>
           </div>
@@ -229,10 +229,10 @@ export default function ServicesPage() {
                   <div className={`w-12 h-12 ${colors.bg} rounded-xl flex items-center justify-center mb-5 group-hover:scale-110 transition-transform duration-300`}>
                     <product.icon className={`w-6 h-6 ${colors.icon}`} />
                   </div>
-                  <h3 className="text-xl font-bold text-neutral-900 mb-2">
+                  <h3 className="text-xl font-bold text-gray-900 mb-2">
                     {product.title}
                   </h3>
-                  <p className="text-sm text-neutral-500 leading-relaxed mb-6">
+                  <p className="text-sm text-gray-500 leading-relaxed mb-6">
                     {product.description}
                   </p>
 
@@ -240,7 +240,7 @@ export default function ServicesPage() {
                     {product.features.map((feature) => (
                       <li key={feature.text} className="flex items-start gap-2.5">
                         <feature.icon className={`w-4 h-4 ${colors.icon} shrink-0 mt-0.5`} />
-                        <span className="text-sm text-neutral-600 leading-relaxed">
+                        <span className="text-sm text-gray-600 leading-relaxed">
                           {feature.text}
                         </span>
                       </li>

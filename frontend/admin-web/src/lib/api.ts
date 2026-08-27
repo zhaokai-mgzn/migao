@@ -1,5 +1,6 @@
 import request from './request'
-import { buildProductPayload, buildLogisticsPayload, buildCloseOrderPayload } from './data-adapter'
+import { buildProductPayload, buildLogisticsPayload, buildCloseOrderPayload, buildRefundPayload } from './data-adapter'
+import type { RefundOrderParams } from './data-adapter'
 import type { 
   ApiResponse, 
   PageResponse, 
@@ -45,6 +46,7 @@ import type {
   Customer,
   CustomerListParams,
   CustomerDetail,
+  CustomerDetailResponse,
   CustomerTag,
   CustomerTagFormData,
   AiConfig,
@@ -277,8 +279,9 @@ export const orderApi = {
     request.put<ApiResponse<void>>(`/api/admin/orders/${id}/payment`),
 
   // 退款
-  refundOrder: (id: string) =>
-    request.put<ApiResponse<void>>(`/api/admin/orders/${id}/refund`),
+  // 后端 PUT /api/admin/orders/{id}/refund，body: { refund_reason, refund_amount }
+  refundOrder: (id: string, data?: RefundOrderParams) =>
+    request.put<ApiResponse<void>>(`/api/admin/orders/${id}/refund`, buildRefundPayload(data)),
 
   addRemark: (id: string, content: string) =>
     request.post<ApiResponse<void>>(`/api/admin/orders/${id}/remark`, { content }),
@@ -507,7 +510,7 @@ export const customerApi = {
     request.get<ApiResponse<PageResponse<Customer>>>('/api/admin/customers', { params }),
 
   getCustomer: (id: string) =>
-    request.get<ApiResponse<CustomerDetail>>(`/api/admin/customers/${id}`),
+    request.get<ApiResponse<CustomerDetailResponse>>(`/api/admin/customers/${id}`),
 
   updateCustomer: (id: string, data: Partial<Customer>) =>
     request.put<ApiResponse<Customer>>(`/api/admin/customers/${id}`, data),

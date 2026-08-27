@@ -37,7 +37,7 @@ const STATUS_BADGE_COLORS: Record<ProductStatus, string> = {
   on_sale: 'bg-green-50 text-green-700 border-green-200',
   under_review: 'bg-amber-50 text-amber-700 border-amber-200',
   draft: 'bg-blue-50 text-blue-700 border-blue-200',
-  off_sale: 'bg-neutral-50 text-neutral-700 border-neutral-200',
+  off_sale: 'bg-gray-50 text-gray-700 border-gray-200',
 }
 
 // 数字千分位
@@ -107,7 +107,7 @@ export default function ProductTable({
           checked={selectedIds.includes(record.id)}
           onClick={(e) => e.stopPropagation()}
           onChange={() => handleSelectOne(record.id)}
-          className="w-4 h-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
+          className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
         />
       ),
     },
@@ -120,7 +120,7 @@ export default function ProductTable({
         const shortId = id.length > 8 ? `${id.slice(0, 8)}...` : id
         return (
           <span
-            className="text-neutral-700 font-mono text-sm"
+            className="text-gray-700 font-mono text-sm"
             title={id}
           >
             {shortId}
@@ -133,7 +133,7 @@ export default function ProductTable({
       title: '商品标题',
       render: (record) => (
         <div className="flex items-start gap-3 min-w-[200px]">
-          <div className="w-10 h-10 rounded-md overflow-hidden bg-neutral-100 flex-shrink-0 border border-neutral-200">
+          <div className="w-10 h-10 rounded-md overflow-hidden bg-gray-100 flex-shrink-0 border border-gray-200">
             {(() => {
               const rawUrl = record.images?.[0]
               const imgUrl = rawUrl ? resolveImageUrl(rawUrl) : ''
@@ -150,11 +150,11 @@ export default function ProductTable({
                   />
                 )
               }
-              return <div className="w-full h-full flex items-center justify-center text-neutral-300 text-[10px]">无图</div>
+              return <div className="w-full h-full flex items-center justify-center text-gray-300 text-[10px]">无图</div>
             })()}
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-sm text-neutral-900 leading-snug break-words line-clamp-2">{record.name}</div>
+            <div className="text-sm text-gray-900 leading-snug break-words line-clamp-2">{record.name}</div>
           </div>
         </div>
       ),
@@ -168,7 +168,7 @@ export default function ProductTable({
         const display = code && code.length > 10 ? `${code.slice(0, 10)}...` : code
         return (
           <span
-            className="text-neutral-700 text-sm font-mono"
+            className="text-gray-700 text-sm font-mono"
             title={code || undefined}
           >
             {display || '-'}
@@ -182,7 +182,7 @@ export default function ProductTable({
       width: '80px',
       align: 'center',
       render: (record) => (
-        <span className="text-neutral-700 text-sm">共{record.colorCount ?? 0}色</span>
+        <span className="text-gray-700 text-sm">共{record.colorCount ?? 0}色</span>
       ),
     },
     {
@@ -200,7 +200,7 @@ export default function ProductTable({
         return (
           <span className={cn(
             'text-sm font-medium',
-            isLow ? 'text-red-600' : 'text-neutral-700',
+            isLow ? 'text-red-600' : 'text-gray-700',
             isZero && 'font-bold'
           )}>
             {formatNumber(stock)}
@@ -215,7 +215,7 @@ export default function ProductTable({
       align: 'left',
       sortable: true,
       render: (record) => (
-        <span className="text-neutral-700 text-sm">{formatNumber(record.salesCount)}</span>
+        <span className="text-gray-700 text-sm">{formatNumber(record.salesCount)}</span>
       ),
     },
     {
@@ -225,7 +225,7 @@ export default function ProductTable({
       align: 'left',
       sortable: true,
       render: (record) => (
-        <span className="text-neutral-700 text-sm">{formatCurrency(record.salesAmount)}</span>
+        <span className="text-gray-700 text-sm">{formatCurrency(record.salesAmount)}</span>
       ),
     },
     {
@@ -295,7 +295,7 @@ export default function ProductTable({
   ]
 
   return (
-    <div className="bg-white rounded-lg border border-neutral-200">
+    <div className="bg-white rounded-lg border border-gray-200">
       {/* 自定义表头第一列：全选复选框（覆盖 Table 内部默认表头中的空标题） */}
       <div className="relative">
         <Table<Product>
@@ -318,7 +318,7 @@ export default function ProductTable({
                 if (el) el.indeterminate = partialChecked
               }}
               onChange={handleSelectAll}
-              className="w-4 h-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500 cursor-pointer pointer-events-auto"
+              className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer pointer-events-auto"
             />
           </div>
         )}

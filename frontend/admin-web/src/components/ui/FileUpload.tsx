@@ -50,7 +50,7 @@ export default function FileUpload({
   const getFileIcon = (type: string) => {
     if (isImageType(type)) return <ImageIcon className="w-8 h-8 text-blue-400" />
     if (type.includes('pdf')) return <FileText className="w-8 h-8 text-red-400" />
-    return <File className="w-8 h-8 text-neutral-400" />
+    return <File className="w-8 h-8 text-gray-400" />
   }
 
   const formatSize = (bytes: number) => {
@@ -164,7 +164,7 @@ export default function FileUpload({
   return (
     <div className="w-full">
       {label && (
-        <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+        <label className="block text-sm font-medium text-gray-700 mb-1.5">
           {label}
         </label>
       )}
@@ -175,7 +175,7 @@ export default function FileUpload({
           {value.map((file, index) => (
             <div
               key={file.id || index}
-              className="flex items-center gap-3 p-2.5 rounded-lg border border-neutral-200 bg-neutral-50/50 group"
+              className="flex items-center gap-3 p-2.5 rounded-lg border border-gray-200 bg-gray-50/50 group"
             >
               {/* Thumbnail or icon */}
               {isImageType(file.type) ? (
@@ -189,22 +189,22 @@ export default function FileUpload({
                   unoptimized
                 />
               ) : (
-                <div className="w-10 h-10 rounded bg-white border border-neutral-200 flex items-center justify-center flex-shrink-0">
+                <div className="w-10 h-10 rounded bg-white border border-gray-200 flex items-center justify-center flex-shrink-0">
                   {getFileIcon(file.type)}
                 </div>
               )}
 
               {/* File info */}
               <div className="flex-1 min-w-0">
-                <p className="text-sm text-neutral-900 truncate">{file.name}</p>
-                <p className="text-xs text-neutral-500">{formatSize(file.size)}</p>
+                <p className="text-sm text-gray-900 truncate">{file.name}</p>
+                <p className="text-xs text-gray-500">{formatSize(file.size)}</p>
               </div>
 
               {/* Remove button */}
               <button
                 type="button"
                 onClick={() => handleRemove(index)}
-                className="p-1 text-neutral-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+                className="p-1 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -223,18 +223,18 @@ export default function FileUpload({
             >
               <Loader2 className="w-5 h-5 text-blue-500 animate-spin flex-shrink-0" />
               <div className="flex-1 min-w-0">
-                <p className="text-sm text-neutral-900 truncate">{file.name}</p>
+                <p className="text-sm text-gray-900 truncate">{file.name}</p>
                 <div className="mt-1 w-full bg-blue-100 rounded-full h-1.5">
                   <div
                     className={cn(
                       'h-1.5 rounded-full transition-all duration-300',
-                      file.status === 'error' ? 'bg-red-500' : 'bg-primary-500'
+                      file.status === 'error' ? 'bg-red-500' : 'bg-blue-500'
                     )}
                     style={{ width: `${file.progress}%` }}
                   />
                 </div>
               </div>
-              <span className="text-xs text-neutral-500 flex-shrink-0">{file.progress}%</span>
+              <span className="text-xs text-gray-500 flex-shrink-0">{file.progress}%</span>
             </div>
           ))}
         </div>
@@ -251,7 +251,7 @@ export default function FileUpload({
             'relative rounded-lg border-2 border-dashed p-6 flex flex-col items-center justify-center gap-2 cursor-pointer transition-colors',
             dragOver
               ? 'border-primary-500 bg-primary-50'
-              : 'border-neutral-300 hover:border-primary-400 hover:bg-neutral-50',
+              : 'border-gray-300 hover:border-primary-400 hover:bg-gray-50',
             isUploading && 'pointer-events-none opacity-60'
           )}
         >
@@ -259,10 +259,10 @@ export default function FileUpload({
             <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
           ) : (
             <>
-              <Upload className="w-8 h-8 text-neutral-400" />
+              <Upload className="w-8 h-8 text-gray-400" />
               <div className="text-center">
                 <span className="text-sm font-medium text-primary-600">点击上传</span>
-                <span className="text-sm text-neutral-500"> 或拖拽文件到此处</span>
+                <span className="text-sm text-gray-500"> 或拖拽文件到此处</span>
               </div>
             </>
           )}
@@ -270,7 +270,7 @@ export default function FileUpload({
       )}
 
       {hint && (
-        <p className="mt-1.5 text-xs text-neutral-500">{hint}</p>
+        <p className="mt-1.5 text-xs text-gray-500">{hint}</p>
       )}
 
       <input
@@ -292,7 +292,7 @@ export default function FileUpload({
             <NextImage src={resolveImageUrl(previewUrl)} alt="预览" width={1200} height={900} className="max-w-full max-h-[85vh] object-contain rounded-lg" unoptimized />
             <button
               onClick={() => setPreviewUrl(null)}
-              className="absolute -top-3 -right-3 p-1.5 bg-white rounded-full shadow-lg text-neutral-600 hover:text-neutral-900"
+              className="absolute -top-3 -right-3 p-1.5 bg-white rounded-full shadow-lg text-gray-600 hover:text-gray-900"
             >
               <X className="w-5 h-5" />
             </button>

@@ -1,4 +1,3 @@
-// case_ids: UI-005
 /**
  * NotificationBell 组件测试
  *
@@ -11,6 +10,8 @@
  * - 点击外部关闭
  * - 轮询未读数
  */
+
+// case_ids: CH-003, CH-004
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor, act } from '@testing-library/react'
@@ -242,8 +243,7 @@ describe('NotificationBell', () => {
     const bell = screen.getByTestId('icon-bell').closest('button')!
     await user.click(bell)
     await waitFor(() => {
-      // 织物质感 token 化：默认蓝 → 靛蓝主色（未读圆点语义不变）
-      const dot = document.querySelector('.bg-primary-500')
+      const dot = document.querySelector('.bg-blue-500')
       expect(dot).toBeInTheDocument()
     })
   })

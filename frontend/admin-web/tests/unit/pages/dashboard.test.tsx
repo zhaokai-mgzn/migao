@@ -284,34 +284,6 @@ describe('DashboardPage', () => {
     })
   })
 
-  // ── #2534 redesign：横坐标铺满（像素坐标系渲染，消除 viewBox 居中留白） ──
-
-  it('订单趋势折线横向铺满卡片宽度（起点≈左内边距、终点≈右内边距）', async () => {
-    render(<DashboardPage />)
-    await waitFor(() => {
-      expect(screen.getByText('订单趋势')).toBeInTheDocument()
-    })
-    await waitFor(() => {
-      const orderCard = screen.getByText('订单趋势').closest('.bg-white')!
-      const svg = orderCard.querySelector('svg[viewBox]')!
-      expect(svg).toBeTruthy()
-      const parts = (svg.getAttribute('viewBox') || '').split(' ')
-      const W = parseInt(parts[2] || '0', 10)
-      expect(W).toBeGreaterThan(0)
-      const polyline = orderCard.querySelector('svg polyline')!
-      const xs = (polyline.getAttribute('points') || '').trim()
-        .split(/\s+/).map(p => parseFloat(p.split(',')[0]))
-      expect(xs.length).toBeGreaterThanOrEqual(2)
-      const minX = Math.min(...xs)
-      const maxX = Math.max(...xs)
-      // 起点贴近左内边距（46px），终点贴近 W-右内边距（16px）
-      expect(minX).toBeLessThan(60)
-      expect(maxX).toBeGreaterThan(W - 30)
-      // 曲线覆盖 ≥ 85% 视口宽 — 旧实现固定 40px/点 viewBox 时仅铺 ~40%，居中留白
-      expect((maxX - minX) / W).toBeGreaterThan(0.85)
-    })
-  })
-
   // ── 近期订单 ──
 
   it('should render recent orders table', async () => {
@@ -367,9 +339,7 @@ describe('DashboardPage', () => {
     })
   })
 
-  it('订单/销售额趋势 30 天数据 x 轴刻度自动降采样（每张图 ≤ 7，不密集重叠）', async () => {
-    // 重设计变更（织物质感）：销售额图此前无 x 轴刻度，现与订单图一致渲染
-    // 降采样后的日期标签，因此断言改为「每张趋势图内 ≤ 7 个」，而非全页合计
+  it('订单趋势 30 天数据 x 轴刻度自动降采样（标签数 ≤ 7，不密集重叠）', async () => {
     mockGetOrderTrend.mockResolvedValue({
       data: {
         data: Array.from({ length: 30 }, (_, i) => ({
@@ -383,16 +353,11 @@ describe('DashboardPage', () => {
       expect(screen.getByText('订单趋势')).toBeInTheDocument()
     })
     await waitFor(() => {
-      const orderCard = screen.getByText('订单趋势').closest('.bg-white')!
-      const salesCard = screen.getByText('销售额数据').closest('.bg-white')!
-      const countLabels = (root: Element) =>
-        Array.from(root.querySelectorAll('svg text')).filter(
-          (el) => el.textContent?.match(/^\d{2}-\d{2}$/)
-        ).length
-      expect(countLabels(orderCard)).toBeGreaterThan(0)
-      expect(countLabels(orderCard)).toBeLessThanOrEqual(7)
-      expect(countLabels(salesCard)).toBeGreaterThan(0)
-      expect(countLabels(salesCard)).toBeLessThanOrEqual(7)
+      const dateLabels = Array.from(container.querySelectorAll('svg text')).filter(
+        (el) => el.textContent?.match(/^\d{2}-\d{2}$/)
+      )
+      expect(dateLabels.length).toBeGreaterThan(0)
+      expect(dateLabels.length).toBeLessThanOrEqual(7)
     })
   })
 

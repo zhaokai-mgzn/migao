@@ -29,10 +29,10 @@ export default function OrderTrendChart({ data, loading, onRangeChange }: OrderT
   }
 
   return (
-    <div className="bg-white rounded-xl border border-neutral-100 shadow-sm p-5">
+    <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
       <div className="flex items-center justify-between mb-5">
-        <h3 className="text-sm font-semibold text-neutral-900">订单趋势</h3>
-        <div className="flex gap-1 bg-neutral-100 rounded-lg p-0.5">
+        <h3 className="text-sm font-semibold text-gray-900">订单趋势</h3>
+        <div className="flex gap-1 bg-gray-100 rounded-lg p-0.5">
           {([7, 30] as const).map((d) => (
             <button
               key={d}
@@ -40,8 +40,8 @@ export default function OrderTrendChart({ data, loading, onRangeChange }: OrderT
               className={cn(
                 'px-3 py-1 rounded-md text-xs font-medium transition-colors',
                 range === d
-                  ? 'bg-white text-neutral-900 shadow-sm'
-                  : 'text-neutral-500 hover:text-neutral-700'
+                  ? 'bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
               )}
             >
               {d === 7 ? '近7天' : '近30天'}
@@ -55,7 +55,7 @@ export default function OrderTrendChart({ data, loading, onRangeChange }: OrderT
           <div className="animate-spin w-6 h-6 border-2 border-primary-500 border-t-transparent rounded-full" />
         </div>
       ) : data.length === 0 ? (
-        <div className="h-[260px] flex items-center justify-center text-neutral-400 text-sm">
+        <div className="h-[260px] flex items-center justify-center text-gray-400 text-sm">
           暂无数据
         </div>
       ) : (

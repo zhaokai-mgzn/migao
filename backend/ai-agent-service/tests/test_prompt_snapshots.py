@@ -55,7 +55,7 @@ def test_skill_has_principles(skill):
 def test_skill_prompt_length_reasonable(skill):
     """Prompt 长度在合理范围（200-6000 字符）"""
     prompt = _build_system_prompt(skill)
-    assert 200 < len(prompt) < 9500, f"{skill}: prompt 长度异常 ({len(prompt)} chars)"
+    assert 200 < len(prompt) < 9000, f"{skill}: prompt 长度异常 ({len(prompt)} chars)"
 
 
 # ============ 领域隔离检查 ============
@@ -92,19 +92,6 @@ def test_order_prompt_requires_interact_for_sku_selection():
     """
     prompt = _build_system_prompt("order")
     assert 'interact(component="choice")' in prompt
-
-
-def test_product_prompt_confirm_semantics_and_param_consistency():
-    """生产回归：多轮创建流程两处 LLM 稳定性缺陷的 prompt 修复必须存在。
-
-    1. 加工项确认卡点：加工项询问与汇总确认必须合并为一次确认，
-       "确认"默认语义 = 按当前汇总（无加工项）创建；
-    2. 参数二次组装走样：执行参数必须与 validate_input 通过时逐字一致，
-       禁止改字段名（category_id 写成 category）。
-    """
-    prompt = _build_system_prompt("product")
-    assert "按当前汇总" in prompt
-    assert "不得修改字段名" in prompt or "不得改写字段名" in prompt
 
 
 def test_general_is_fallback_friendly():

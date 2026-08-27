@@ -158,7 +158,7 @@ class FinanceServiceTest {
     }
 
     @Test
-    @DisplayName("应收对账 - 计算差额（实收-应收）与已退")
+    @DisplayName("应收对账 - 差额含已退款（应收-实收+已退）")
     void getReconciliation_computesDifference() {
         Order o1 = Order.builder()
                 .id("o1").tenantId(1L).orderNo("NO1")
@@ -182,6 +182,54 @@ class FinanceServiceTest {
         assertThat(item.getReceivableAmount()).isEqualByComparingTo("200.00");
         assertThat(item.getReceivedAmount()).isEqualByComparingTo("180.00");
         assertThat(item.getRefundAmount()).isEqualByComparingTo("20.00");
-        assertThat(item.getDifference()).isEqualByComparingTo("-20.00");
+        // 差额 = 应收 - 实收 + 已退 = 200 - 180 + 20 = 40（净应收口径）
+        assertThat(item.getDifference()).isEqualByComparingTo("40.00");
+    }
+
+    @Test
+    @DisplayName("应收对账 - 全额收款后退款的订单差额不再显示 0")
+    void getReconciliation_refundedOrderDifferenceNotZero() {
+        // given: 应收=实收=200（全额收款），已退 20 → 差额应显示 20（含已退款金额）
+        Order o1 = Order.builder()
+                .id("o1").tenantId(1L).orderNo("NO2")
+                .customerName("李四").customerPhone("13900139000")
+                .totalAmount(new BigDecimal("200.00")).actualAmount(new BigDecimal("200.00"))
+                .status("completed").createdAt(OffsetDateTime.parse("2025-01-02T10:00:00Z"))
+                .build();
+        Page<Order> mockPage = new Page<>(1, 20);
+        mockPage.setRecords(List.of(o1));
+        mockPage.setTotal(1);
+        when(orderMapper.selectPage(any(Page.class), any(LambdaQueryWrapper.class))).thenReturn(mockPage);
+
+        FinanceTransaction refund = FinanceTransaction.builder()
+                .id("r2").tenantId(1L).orderId("o1").type("refund")
+                .amount(new BigDecimal("20.00")).status("success").build();
+        when(financeTransactionMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(refund));
+
+        PageResponse<ReceivableReconciliationResponse> result = financeService.getReconciliation(1, 20, null, null, null, 1L);
+
+        ReceivableReconciliationResponse item = result.getItems().get(0);
+        assertThat(item.getDifference()).isEqualByComparingTo("20.00");
+    }
+
+    @Test
+    @DisplayName("应收对账 - 无退款订单差额 = 应收-实收")
+    void getReconciliation_noRefundDifference() {
+        // given: 无退款流水
+        Order o1 = Order.builder()
+                .id("o1").tenantId(1L).orderNo("NO3")
+                .customerName("王五").customerPhone("13700137000")
+                .totalAmount(new BigDecimal("200.00")).actualAmount(new BigDecimal("150.00"))
+                .status("confirmed").createdAt(OffsetDateTime.parse("2025-01-03T10:00:00Z"))
+                .build();
+        Page<Order> mockPage = new Page<>(1, 20);
+        mockPage.setRecords(List.of(o1));
+        mockPage.setTotal(1);
+        when(orderMapper.selectPage(any(Page.class), any(LambdaQueryWrapper.class))).thenReturn(mockPage);
+        when(financeTransactionMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+
+        PageResponse<ReceivableReconciliationResponse> result = financeService.getReconciliation(1, 20, null, null, null, 1L);
+
+        assertThat(result.getItems().get(0).getDifference()).isEqualByComparingTo("50.00");
     }
 }

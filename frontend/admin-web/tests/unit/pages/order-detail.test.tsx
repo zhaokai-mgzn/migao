@@ -1,8 +1,11 @@
+// case_ids: OR-001, OR-002, OR-003
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 
 // Mock API
 const mockGetOrder = vi.fn()
+const mockRefundOrder = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   orderApi: {
@@ -11,6 +14,7 @@ vi.mock('@/lib/api', () => ({
     confirmPayment: vi.fn(),
     updateOrderStatus: vi.fn(),
     updateLogistics: vi.fn(),
+    refundOrder: (...args: any[]) => mockRefundOrder(...args),
   },
 }))
 
@@ -42,6 +46,14 @@ vi.mock('@/components/orders', () => ({
   OrderProgressSteps: () => <div data-testid="order-progress">OrderProgressSteps</div>,
   CloseOrderModal: ({ open }: any) => open ? <div data-testid="close-modal">CloseModal</div> : null,
   LogisticsForm: ({ open }: any) => open ? <div data-testid="logistics-form">LogisticsForm</div> : null,
+  RefundOrderModal: ({ open, onConfirm }: any) =>
+    open ? (
+      <div data-testid="refund-modal" role="dialog">
+        <button data-testid="confirm-refund-detail" onClick={() => onConfirm({ refundAmount: 500, refundReason: '质量问题' })}>
+          确认退款
+        </button>
+      </div>
+    ) : null,
 }))
 
 import OrderDetailPage from '@/app/(dashboard)/orders/[id]/OrderDetail'
@@ -138,6 +150,149 @@ describe('OrderDetailPage', () => {
     await waitFor(() => {
       expect(screen.getByText('实收款')).toBeInTheDocument()
       expect(screen.getByText('优惠金额')).toBeInTheDocument()
+    })
+  })
+
+  // ===== 退款展示（目标契约：退款不再改变订单状态，refundAmount>0 表示已退款） =====
+
+  it('renders 已退款 badge when refundAmount > 0 (not depending on refund status)', async () => {
+    mockGetOrder.mockResolvedValue({
+      data: {
+        data: {
+          ...mockOrder,
+          status: 'completed',
+          refundAmount: 150,
+          refundAt: '2026-06-21T10:00:00Z',
+        },
+      },
+    })
+    render(<OrderDetailPage />)
+    await waitFor(() => {
+      expect(screen.getByText('已退款 ¥150.00')).toBeInTheDocument()
+    })
+  })
+
+  it('renders 退款时间 in badge when refundAt provided', async () => {
+    mockGetOrder.mockResolvedValue({
+      data: {
+        data: {
+          ...mockOrder,
+          status: 'completed',
+          refundAmount: 150,
+          refundAt: '2026-06-21T10:00:00Z',
+        },
+      },
+    })
+    render(<OrderDetailPage />)
+    await waitFor(() => {
+      expect(screen.getByText(/退款时间：/)).toBeInTheDocument()
+    })
+  })
+
+  it('amount summary shows 已退款 ¥X row when refundAmount > 0', async () => {
+    mockGetOrder.mockResolvedValue({
+      data: {
+        data: { ...mockOrder, status: 'completed', refundAmount: 150, refundAt: '2026-06-21T10:00:00Z' },
+      },
+    })
+    render(<OrderDetailPage />)
+    await waitFor(() => {
+      expect(screen.getByText('已退款')).toBeInTheDocument()
+      expect(screen.getByText('¥150.00')).toBeInTheDocument()
+    })
+  })
+
+  it('does NOT render 已退款 when refundAmount is 0 or undefined', async () => {
+    mockGetOrder.mockResolvedValue({
+      data: { data: { ...mockOrder, refundAmount: 0 } },
+    })
+    render(<OrderDetailPage />)
+    await waitFor(() => {
+      expect(screen.getByText('商品信息')).toBeInTheDocument()
+    })
+    expect(screen.queryByText('已退款')).not.toBeInTheDocument()
+    expect(screen.queryByText('已退款 ¥0.00')).not.toBeInTheDocument()
+  })
+
+  it('renders "-" for missing paidAt/shippedAt/receivedAt (defensive, no crash)', async () => {
+    const noTimes = { ...mockOrder, paidAt: undefined, shippedAt: undefined, receivedAt: undefined }
+    mockGetOrder.mockResolvedValue({ data: { data: noTimes } })
+    render(<OrderDetailPage />)
+    await waitFor(() => {
+      expect(screen.getByText('基础信息')).toBeInTheDocument()
+    })
+    // 支付时间 / 发货时间 / 确认收货时间 行均显示占位符 "-"
+    for (const label of ['支付时间：', '发货时间：', '确认收货时间：']) {
+      const row = screen.getByText(label).parentElement
+      expect(row).toBeTruthy()
+      expect(row!.textContent).toContain('-')
+    }
+  })
+
+  // ===== 详情页操作区退款按钮（P1：confirmed/producing/shipped/completed 且未退款） =====
+
+  it('待发货（confirmed）未退款订单操作区显示 退款 按钮', async () => {
+    mockGetOrder.mockResolvedValue({
+      data: { data: { ...mockOrder, status: 'confirmed', refundAmount: 0 } },
+    })
+    render(<OrderDetailPage />)
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '退款' })).toBeInTheDocument()
+    })
+  })
+
+  it('已完成未退款订单操作区显示 退款 按钮', async () => {
+    mockGetOrder.mockResolvedValue({
+      data: { data: { ...mockOrder, status: 'completed', refundAmount: 0 } },
+    })
+    render(<OrderDetailPage />)
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '退款' })).toBeInTheDocument()
+    })
+  })
+
+  it('已退款订单（refundAmount > 0）操作区不显示 退款 按钮', async () => {
+    mockGetOrder.mockResolvedValue({
+      data: { data: { ...mockOrder, status: 'completed', refundAmount: 500 } },
+    })
+    render(<OrderDetailPage />)
+    await waitFor(() => {
+      expect(screen.getByText('已退款 ¥500.00')).toBeInTheDocument()
+    })
+    expect(screen.queryByRole('button', { name: '退款' })).not.toBeInTheDocument()
+  })
+
+  it('待付款订单操作区不显示 退款 按钮', async () => {
+    mockGetOrder.mockResolvedValue({
+      data: { data: { ...mockOrder, status: 'pending', refundAmount: 0 } },
+    })
+    render(<OrderDetailPage />)
+    await waitFor(() => {
+      expect(screen.getByText('待买家付款')).toBeInTheDocument()
+    })
+    expect(screen.queryByRole('button', { name: '退款' })).not.toBeInTheDocument()
+  })
+
+  it('点击 退款 弹出退款弹窗，提交调用 refundOrder 并重新加载订单', async () => {
+    const user = userEvent.setup()
+    mockGetOrder.mockResolvedValue({
+      data: { data: { ...mockOrder, status: 'completed', refundAmount: 0 } },
+    })
+    mockRefundOrder.mockResolvedValue({ data: { success: true } })
+    render(<OrderDetailPage />)
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '退款' })).toBeInTheDocument()
+    })
+    await user.click(screen.getByRole('button', { name: '退款' }))
+    expect(screen.getByTestId('refund-modal')).toBeInTheDocument()
+
+    await user.click(screen.getByTestId('confirm-refund-detail'))
+    await waitFor(() => {
+      expect(mockRefundOrder).toHaveBeenCalledWith('test-order-123', { refundAmount: 500, refundReason: '质量问题' })
+    })
+    // 成功后重新加载订单详情
+    await waitFor(() => {
+      expect(mockGetOrder.mock.calls.length).toBeGreaterThanOrEqual(2)
     })
   })
 })

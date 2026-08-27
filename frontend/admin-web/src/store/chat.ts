@@ -4,7 +4,6 @@ import { useAuthStore } from '@/store/auth'
 import type { ChatSession, ChatMessage, ChatToolCall, ChatCard, QuickAction } from '@/types'
 import { toast } from 'sonner'
 import { SSEParser, type SSEEvent } from '@/lib/sse-parser'
-import { normalizeToolCalls } from '@/lib/session-insight'
 
 // 生成唯一 ID
 const generateId = () => Math.random().toString(36).substring(2, 15) + Date.now().toString(36)
@@ -210,13 +209,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         content: msg.content,
         content_type: msg.content_type,
         images: msg.images,
-        // 历史接口持久化的 tool_calls 为 {tool, args} 形状，
-        // 归一化为前端 {name, input, status} 形状（会话洞察面板依赖）
-        ...(Array.isArray(msg.tool_calls) ? { tool_calls: normalizeToolCalls(msg.tool_calls) } : {}),
-        // 后端历史暂不返回以下字段，兼容未来扩展
-        ...(msg.cards ? { cards: msg.cards } : {}),
-        ...(msg.interactive ? { interactive: msg.interactive } : {}),
-        ...(msg.suggestions ? { suggestions: msg.suggestions } : {}),
+        tool_calls: msg.tool_calls,
         created_at: msg.created_at,
       }))
       // 仅当用户没有切换到其他会话时更新

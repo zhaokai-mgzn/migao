@@ -170,13 +170,13 @@ export default function HomePage() {
       <section className="py-20 sm:py-28 bg-white">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="text-center max-w-2xl mx-auto mb-16">
-            <span className="text-sm font-semibold text-primary-600 uppercase tracking-wider">
+            <span className="text-sm font-semibold text-blue-600 uppercase tracking-wider">
               功能亮点
             </span>
-            <h2 className="mt-3 text-3xl sm:text-4xl font-bold text-neutral-900">
+            <h2 className="mt-3 text-3xl sm:text-4xl font-bold text-gray-900">
               为企业量身打造的全方位智能管理平台
             </h2>
-            <p className="mt-4 text-lg text-neutral-500">
+            <p className="mt-4 text-lg text-gray-500">
               五大核心模块，覆盖企业运营全流程
             </p>
           </div>
@@ -184,17 +184,17 @@ export default function HomePage() {
             {features.map((feature, index) => (
               <div
                 key={feature.title}
-                className="group relative p-6 rounded-2xl border border-neutral-100 bg-white hover:border-blue-200 hover:shadow-xl hover:shadow-blue-50 transition-all duration-300 hover:-translate-y-1"
+                className="group relative p-6 rounded-2xl border border-gray-100 bg-white hover:border-blue-200 hover:shadow-xl hover:shadow-blue-50 transition-all duration-300 hover:-translate-y-1"
               >
                 {/* Gradient accent line on top */}
                 <div className="absolute top-0 left-4 right-4 h-0.5 bg-gradient-to-r from-blue-400 to-indigo-400 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                 <div className="w-12 h-12 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl flex items-center justify-center mb-4 group-hover:from-blue-100 group-hover:to-indigo-100 group-hover:scale-110 transition-all duration-300">
-                  <feature.icon className="w-6 h-6 text-primary-600" />
+                  <feature.icon className="w-6 h-6 text-blue-600" />
                 </div>
-                <h3 className="text-base font-semibold text-neutral-900 mb-2 leading-snug">
+                <h3 className="text-base font-semibold text-gray-900 mb-2 leading-snug">
                   {feature.title}
                 </h3>
-                <p className="text-sm text-neutral-500 leading-relaxed">
+                <p className="text-sm text-gray-500 leading-relaxed">
                   {feature.description}
                 </p>
               </div>
@@ -207,13 +207,13 @@ export default function HomePage() {
       <section className="py-20 sm:py-28 bg-slate-50">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="text-center max-w-2xl mx-auto mb-16">
-            <span className="text-sm font-semibold text-primary-600 uppercase tracking-wider">
+            <span className="text-sm font-semibold text-blue-600 uppercase tracking-wider">
               为什么选择米高
             </span>
-            <h2 className="mt-3 text-3xl sm:text-4xl font-bold text-neutral-900">
+            <h2 className="mt-3 text-3xl sm:text-4xl font-bold text-gray-900">
               不只是管理工具，更是您的AI智能运营伙伴
             </h2>
-            <p className="mt-4 text-lg text-neutral-500">
+            <p className="mt-4 text-lg text-gray-500">
               四大核心优势，构建企业智能中枢
             </p>
           </div>
@@ -221,17 +221,17 @@ export default function HomePage() {
             {advantages.map((item, index) => (
               <div
                 key={item.title}
-                className="group flex gap-5 p-6 bg-white rounded-2xl border border-neutral-100 hover:border-blue-100 hover:shadow-lg transition-all duration-300"
+                className="group flex gap-5 p-6 bg-white rounded-2xl border border-gray-100 hover:border-blue-100 hover:shadow-lg transition-all duration-300"
               >
-                <div className="w-12 h-12 bg-gradient-to-br from-primary-500 to-primary-600 rounded-xl flex items-center justify-center shrink-0 group-hover:from-blue-600 group-hover:to-indigo-600 transition-all duration-300 shadow-sm shadow-blue-200">
+                <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shrink-0 group-hover:from-blue-600 group-hover:to-indigo-600 transition-all duration-300 shadow-sm shadow-blue-200">
                   <item.icon className="w-5 h-5 text-white" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h3 className="text-base font-semibold text-neutral-900 mb-1.5 flex items-center gap-2">
+                  <h3 className="text-base font-semibold text-gray-900 mb-1.5 flex items-center gap-2">
                     {item.title}
                     <Check className="w-4 h-4 text-blue-500 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
                   </h3>
-                  <p className="text-sm text-neutral-500 leading-relaxed">
+                  <p className="text-sm text-gray-500 leading-relaxed">
                     {item.description}
                   </p>
                 </div>
@@ -245,13 +245,13 @@ export default function HomePage() {
       <section className="py-20 sm:py-28 bg-white">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="text-center max-w-2xl mx-auto mb-16">
-            <span className="text-sm font-semibold text-primary-600 uppercase tracking-wider">
+            <span className="text-sm font-semibold text-blue-600 uppercase tracking-wider">
               入驻流程
             </span>
-            <h2 className="mt-3 text-3xl sm:text-4xl font-bold text-neutral-900">
+            <h2 className="mt-3 text-3xl sm:text-4xl font-bold text-gray-900">
               简单三步，开启AI赋能的智能运营之旅
             </h2>
-            <p className="mt-4 text-lg text-neutral-500">
+            <p className="mt-4 text-lg text-gray-500">
               从申请到开通，最快当天即可体验
             </p>
           </div>
@@ -274,20 +274,20 @@ export default function HomePage() {
                 <div key={item.step} className="text-center relative group">
                   {/* Step number circle */}
                   <div className="relative w-28 h-28 mx-auto mb-6">
-                    <div className="absolute inset-0 bg-gradient-to-br from-blue-400 to-primary-600 rounded-full opacity-0 group-hover:opacity-100 blur-md transition-opacity duration-300" />
+                    <div className="absolute inset-0 bg-gradient-to-br from-blue-400 to-blue-600 rounded-full opacity-0 group-hover:opacity-100 blur-md transition-opacity duration-300" />
                     <div className="relative w-full h-full bg-gradient-to-br from-blue-50 to-indigo-50 rounded-full flex flex-col items-center justify-center border-2 border-blue-100 group-hover:border-blue-300 group-hover:shadow-lg group-hover:shadow-blue-100 transition-all duration-300">
-                      <item.icon className="w-8 h-8 text-primary-600 mb-1" />
+                      <item.icon className="w-8 h-8 text-blue-600 mb-1" />
                       <span className="text-xs font-bold text-blue-500">{item.step}</span>
                     </div>
                   </div>
 
-                  <span className="inline-block px-3 py-1 rounded-full bg-blue-50 text-xs font-bold text-primary-600 uppercase tracking-wider">
+                  <span className="inline-block px-3 py-1 rounded-full bg-blue-50 text-xs font-bold text-blue-600 uppercase tracking-wider">
                     第{item.step}步
                   </span>
-                  <h3 className="mt-3 text-lg font-semibold text-neutral-900">
+                  <h3 className="mt-3 text-lg font-semibold text-gray-900">
                     {item.title}
                   </h3>
-                  <p className="mt-2 text-sm text-neutral-500 leading-relaxed max-w-xs mx-auto">
+                  <p className="mt-2 text-sm text-gray-500 leading-relaxed max-w-xs mx-auto">
                     {item.description}
                   </p>
                 </div>
@@ -301,13 +301,13 @@ export default function HomePage() {
       <section className="py-20 sm:py-28 bg-slate-50">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="text-center max-w-2xl mx-auto mb-16">
-            <span className="text-sm font-semibold text-primary-600 uppercase tracking-wider">
+            <span className="text-sm font-semibold text-blue-600 uppercase tracking-wider">
               合作品牌
             </span>
-            <h2 className="mt-3 text-3xl sm:text-4xl font-bold text-neutral-900">
+            <h2 className="mt-3 text-3xl sm:text-4xl font-bold text-gray-900">
               众多品牌信赖之选
             </h2>
-            <p className="mt-4 text-lg text-neutral-500">
+            <p className="mt-4 text-lg text-gray-500">
               越来越多的品牌商家正在使用米高智能管理平台
             </p>
           </div>
@@ -315,7 +315,7 @@ export default function HomePage() {
             {partnerLogos.map((partner, index) => (
               <div
                 key={partner.name}
-                className="group aspect-[3/2] bg-white rounded-xl border border-neutral-100 hover:border-blue-200 hover:shadow-md flex items-center justify-center transition-all duration-300 hover:-translate-y-0.5"
+                className="group aspect-[3/2] bg-white rounded-xl border border-gray-100 hover:border-blue-200 hover:shadow-md flex items-center justify-center transition-all duration-300 hover:-translate-y-0.5"
               >
                 <div className="text-center">
                   <div className="w-10 h-10 mx-auto mb-1.5 rounded-lg bg-gradient-to-br from-slate-100 to-slate-200 group-hover:from-blue-50 group-hover:to-indigo-50 flex items-center justify-center transition-all duration-300">

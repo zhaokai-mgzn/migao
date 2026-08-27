@@ -1,4 +1,4 @@
-// case_ids: UI-005
+// case_ids: UI-003
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -107,7 +107,7 @@ describe('CorporateNav', () => {
     // Get all 首页 links; find the one with active class
     const homeLinks = screen.getAllByText('首页')
     const activeLink = homeLinks.find(
-      el => el.closest('a')?.className.includes('text-primary-600')
+      el => el.closest('a')?.className.includes('text-blue-600')
     )
     expect(activeLink).toBeTruthy()
   })
@@ -117,7 +117,7 @@ describe('CorporateNav', () => {
     render(<CorporateNav />)
     const servicesLinks = screen.getAllByText('产品服务')
     const activeLink = servicesLinks.find(
-      el => el.closest('a')?.className.includes('text-primary-600')
+      el => el.closest('a')?.className.includes('text-blue-600')
     )
     expect(activeLink).toBeTruthy()
   })
@@ -127,7 +127,7 @@ describe('CorporateNav', () => {
     render(<CorporateNav />)
     const aboutLinks = screen.getAllByText('关于我们')
     const activeLink = aboutLinks.find(
-      el => el.closest('a')?.className.includes('text-primary-600')
+      el => el.closest('a')?.className.includes('text-blue-600')
     )
     expect(activeLink).toBeTruthy()
   })
@@ -137,7 +137,7 @@ describe('CorporateNav', () => {
     render(<CorporateNav />)
     const contactLinks = screen.getAllByText('联系方式')
     const activeLink = contactLinks.find(
-      el => el.closest('a')?.className.includes('text-primary-600')
+      el => el.closest('a')?.className.includes('text-blue-600')
     )
     expect(activeLink).toBeTruthy()
   })
@@ -147,7 +147,7 @@ describe('CorporateNav', () => {
     render(<CorporateNav />)
     const homeLinks = screen.getAllByText('首页')
     const activeLink = homeLinks.find(
-      el => el.closest('a')?.className.includes('text-primary-600')
+      el => el.closest('a')?.className.includes('text-blue-600')
     )
     expect(activeLink).toBeFalsy()
   })
@@ -157,7 +157,7 @@ describe('CorporateNav', () => {
     render(<CorporateNav />)
     const servicesLinks = screen.getAllByText('产品服务')
     const activeLink = servicesLinks.find(
-      el => el.closest('a')?.className.includes('text-primary-600')
+      el => el.closest('a')?.className.includes('text-blue-600')
     )
     expect(activeLink).toBeTruthy()
   })

@@ -83,14 +83,14 @@ export default function LoginPage() {
       <div className="w-full max-w-[420px] relative z-10">
         <div className="flex flex-col items-center mb-8">
           <Logo size="large" className="mb-4" />
-          <h1 className="text-2xl font-bold text-neutral-900">米高</h1>
-          <p className="mt-1.5 text-sm text-neutral-500">企业级AI电商管理解决方案</p>
+          <h1 className="text-2xl font-bold text-gray-900">米高</h1>
+          <p className="mt-1.5 text-sm text-gray-500">企业级AI电商管理解决方案</p>
         </div>
 
-        <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl border border-neutral-100 p-8">
+        <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl border border-gray-100 p-8">
           <div className="flex items-center justify-center gap-2 mb-6">
             <ShieldCheck className="w-5 h-5 text-primary-600" />
-            <h2 className="text-lg font-semibold text-neutral-900">手机号登录</h2>
+            <h2 className="text-lg font-semibold text-gray-900">手机号登录</h2>
           </div>
 
           {loginError && (
@@ -101,26 +101,26 @@ export default function LoginPage() {
 
           <form onSubmit={handleLogin} className="space-y-5">
             <div>
-              <label htmlFor="phone" className="block text-sm font-medium text-neutral-700 mb-1.5">手机号</label>
+              <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-1.5">手机号</label>
               <div className="relative">
-                <Smartphone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
+                <Smartphone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input id="phone" type="tel" value={phone}
                   onChange={e => { setPhone(e.target.value); if (errors.phone) setErrors(p => ({ ...p, phone: '' })) }}
                   placeholder="请输入手机号"
-                  className={cn('w-full h-11 pl-10 pr-3.5 rounded-lg border text-sm transition-all focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15', errors.phone ? 'border-red-300' : 'border-neutral-300')} />
+                  className={cn('w-full h-11 pl-10 pr-3.5 rounded-lg border text-sm transition-all focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15', errors.phone ? 'border-red-300' : 'border-gray-300')} />
               </div>
               {errors.phone && <p className="mt-1.5 text-xs text-red-500">{errors.phone}</p>}
             </div>
 
             <div>
-              <label htmlFor="code" className="block text-sm font-medium text-neutral-700 mb-1.5">验证码</label>
+              <label htmlFor="code" className="block text-sm font-medium text-gray-700 mb-1.5">验证码</label>
               <div className="flex gap-2">
                 <input id="code" type="text" maxLength={SMS_CODE_LENGTH} value={code}
                   onChange={e => { setCode(e.target.value.replace(/\D/g, '')); if (errors.code) setErrors(p => ({ ...p, code: '' })) }}
                   placeholder={`请输入${SMS_CODE_LENGTH}位验证码`}
-                  className={cn('flex-1 h-11 px-3.5 rounded-lg border text-sm transition-all focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15', errors.code ? 'border-red-300' : 'border-neutral-300')} />
+                  className={cn('flex-1 h-11 px-3.5 rounded-lg border text-sm transition-all focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15', errors.code ? 'border-red-300' : 'border-gray-300')} />
                 <button type="button" onClick={handleSendCode} disabled={countdown > 0}
-                  className={cn('h-11 px-4 rounded-lg text-sm font-medium whitespace-nowrap transition-colors', countdown > 0 ? 'bg-neutral-100 text-neutral-400 cursor-not-allowed' : 'bg-primary-50 text-primary-600 hover:bg-primary-100')}>
+                  className={cn('h-11 px-4 rounded-lg text-sm font-medium whitespace-nowrap transition-colors', countdown > 0 ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-primary-50 text-primary-600 hover:bg-primary-100')}>
                   {countdown > 0 ? `重新发送(${countdown}s)` : '获取验证码'}
                 </button>
               </div>
@@ -134,7 +134,7 @@ export default function LoginPage() {
           </form>
         </div>
 
-        <p className="mt-6 text-center text-xs text-neutral-400">© 2026 词元通达 · 米高</p>
+        <p className="mt-6 text-center text-xs text-gray-400">© 2026 词元通达 · 米高</p>
       </div>
     </div>
   )

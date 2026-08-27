@@ -1,3 +1,4 @@
+// case_ids: CU-001, CU-002
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
@@ -44,7 +45,49 @@ vi.mock('lucide-react', () => {
   }
 })
 
+// Mock customerApi — 模拟后端真实响应（{ id, profile, tags, orders, sessions }）
+vi.mock('@/lib/api', () => {
+  const mockDetail = {
+    id: 'cus-001',
+    profile: {
+      id: 'cus-001',
+      wechatNickname: '张三',
+      phone: '13800138000',
+      sourceChannel: 'wechat_mini',
+      vipLevel: 'vip1',
+      agentNotes: '老客户，偏好遮光窗帘',
+      lastActiveAt: '2026-04-20T14:30:00',
+      registeredAt: '2026-01-15T10:00:00',
+    },
+    tags: [
+      { id: 't1', name: 'VIP客户', color: '#EF4444' },
+      { id: 't2', name: '窗帘定制', color: '#48618f' },
+    ],
+    orders: [
+      { id: 'o1', orderNo: 'ORD20260415001', totalAmount: 2680, status: 'completed', createdAt: '2026-04-15T10:00:00' },
+    ],
+    sessions: [
+      { id: 's1', lastMessage: '我想看看新款遮光窗帘', channel: 'wechat_mini', isAI: true, createdAt: '2026-04-20T14:30:00' },
+    ],
+  }
+  const mockAllTags = [
+    { id: 't1', name: 'VIP客户', color: '#EF4444' },
+    { id: 't2', name: '窗帘定制', color: '#48618f' },
+    { id: 't3', name: '需要跟进', color: '#F59E0B' },
+  ]
+  return {
+    customerApi: {
+      getCustomer: vi.fn().mockResolvedValue({ data: { data: mockDetail } }),
+      getCustomerTags: vi.fn().mockResolvedValue({ data: { data: mockAllTags } }),
+      addTagToCustomer: vi.fn().mockResolvedValue({ data: { success: true } }),
+      removeTagFromCustomer: vi.fn().mockResolvedValue({ data: { success: true } }),
+      updateCustomer: vi.fn().mockResolvedValue({ data: { success: true } }),
+    },
+  }
+})
+
 import CustomerDetailPage from '@/app/(dashboard)/customers/[id]/CustomerDetail'
+import { customerApi } from '@/lib/api'
 
 describe('CustomerDetailPage', () => {
   beforeEach(() => {
@@ -56,67 +99,54 @@ describe('CustomerDetailPage', () => {
     expect(screen.getByText('加载中...')).toBeInTheDocument()
   })
 
-  it('loads and displays customer name after mock data loads', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true })
+  it('loads and displays real customer name from API (not hardcoded)', async () => {
     render(<CustomerDetailPage />)
-    // Fast-forward past the 500ms setTimeout in loadCustomer
-    vi.advanceTimersByTime(600)
-    await vi.runAllTimersAsync()
-
     await waitFor(() => {
-      expect(screen.getByText('张美丽')).toBeInTheDocument()
+      expect(customerApi.getCustomer).toHaveBeenCalledWith('cus-001')
     })
-    vi.useRealTimers()
+    await waitFor(() => {
+      expect(screen.getAllByText('张三').length).toBeGreaterThan(0)
+    })
+    // 硬编码的 mock 客户不应出现
+    expect(screen.queryByText('张美丽')).not.toBeInTheDocument()
   })
 
-  it('displays customer phone after loading', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true })
+  it('displays customer phone from API', async () => {
     render(<CustomerDetailPage />)
-    vi.advanceTimersByTime(600)
-    await vi.runAllTimersAsync()
-
     await waitFor(() => {
-      expect(screen.getByText('13812341234')).toBeInTheDocument()
+      expect(screen.getByText('13800138000')).toBeInTheDocument()
     })
-    vi.useRealTimers()
+  })
+
+  it('displays linked tags from API', async () => {
+    render(<CustomerDetailPage />)
+    await waitFor(() => {
+      expect(screen.getByText('VIP客户')).toBeInTheDocument()
+      expect(screen.getByText('窗帘定制')).toBeInTheDocument()
+    })
   })
 
   it('displays tab bar with Orders, Sessions, Notes', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true })
     render(<CustomerDetailPage />)
-    vi.advanceTimersByTime(600)
-    await vi.runAllTimersAsync()
-
     await waitFor(() => {
       expect(screen.getByText('订单历史')).toBeInTheDocument()
       expect(screen.getByText('会话历史')).toBeInTheDocument()
       expect(screen.getByText('跟进记录')).toBeInTheDocument()
     })
-    vi.useRealTimers()
   })
 
   it('displays order list by default', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true })
     render(<CustomerDetailPage />)
-    vi.advanceTimersByTime(600)
-    await vi.runAllTimersAsync()
-
     await waitFor(() => {
       expect(screen.getByText('ORD20260415001')).toBeInTheDocument()
     })
-    vi.useRealTimers()
   })
 
   it('displays remark textarea', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true })
     render(<CustomerDetailPage />)
-    vi.advanceTimersByTime(600)
-    await vi.runAllTimersAsync()
-
     await waitFor(() => {
       const textarea = screen.getByPlaceholderText('添加客户备注...')
       expect(textarea).toBeInTheDocument()
     })
-    vi.useRealTimers()
   })
 })

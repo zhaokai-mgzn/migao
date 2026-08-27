@@ -195,7 +195,7 @@ cases:
       - tool: order_manage
         args:
           action: update_status
-          status: processing
+          status: producing
       - tool: order_manage
         args:
           action: update_logistics
@@ -205,7 +205,7 @@ cases:
           action: update_status
           status: completed
     data_checks:
-      - "状态流转: pending → processing → shipped → completed"
+      - "状态流转: pending → producing → shipped → completed"
       - "每步操作前先确认当前状态"
     skip_reason: ""
     merge_log: "eval M006 吸收 verification 1.6（单步 update_status）、1.7 的状态更新段，并吸收 eval O004（标记已发货）"

@@ -159,14 +159,14 @@ export default function RemarkPopover({ remark, remarks, children }: RemarkPopov
 
       <div className="p-3">
         {entries.length === 0 ? (
-          <span className="text-neutral-400">暂无备注</span>
+          <span className="text-gray-400">暂无备注</span>
         ) : (
           <ul className="space-y-2.5">
             {entries.map((entry, index) => (
-              <li key={index} className="border-b border-neutral-700 last:border-b-0 pb-2 last:pb-0">
+              <li key={index} className="border-b border-gray-700 last:border-b-0 pb-2 last:pb-0">
                 <div className="flex items-center gap-2 mb-1">
                   {entry.timestamp && (
-                    <span className="text-neutral-400 text-[11px]">
+                    <span className="text-gray-400 text-[11px]">
                       {entry.timestamp}
                     </span>
                   )}

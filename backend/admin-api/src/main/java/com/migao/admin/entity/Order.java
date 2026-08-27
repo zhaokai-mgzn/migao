@@ -40,6 +40,21 @@ public class Order {
      */
     private BigDecimal actualAmount;
 
+    /**
+     * 优惠金额（应收 totalAmount 与实收 actualAmount 之间的差额，默认 0）
+     */
+    private BigDecimal discountAmount;
+
+    /**
+     * 累计已退款金额（退款/售后完结时累加，默认 0；>0 表示"已退款"）
+     */
+    private BigDecimal refundAmount;
+
+    /**
+     * 最近一次退款时间
+     */
+    private OffsetDateTime refundAt;
+
     private String status;
 
     /**

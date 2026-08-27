@@ -103,7 +103,7 @@ public class CustomerController {
             @PathVariable String customerId,
             @PathVariable String tagId) {
         log.info("给客户添加标签: customerId={}, tagId={}", customerId, tagId);
-        // TODO: 实现标签关联逻辑
+        customerService.addTagToCustomer(customerId, tagId);
         return ApiResponse.success();
     }
 
@@ -117,7 +117,7 @@ public class CustomerController {
             @PathVariable String customerId,
             @PathVariable String tagId) {
         log.info("移除客户标签: customerId={}, tagId={}", customerId, tagId);
-        // TODO: 实现标签移除逻辑
+        customerService.removeTagFromCustomer(customerId, tagId);
         return ApiResponse.success();
     }
 

@@ -124,7 +124,7 @@ function FieldCell({ label, required, error, children }: FieldCellProps) {
   return (
     <div>
       <div className="flex items-center gap-3">
-        <label className="shrink-0 w-[72px] text-sm text-neutral-600 text-right leading-9">
+        <label className="shrink-0 w-[72px] text-sm text-gray-600 text-right leading-9">
           {required && <span className="text-red-500 mr-0.5">*</span>}
           {label}
         </label>
@@ -185,7 +185,7 @@ function AttrSelectInput({
               setCustomMode(false)
               onChange('')
             }}
-            className="shrink-0 h-9 px-2 text-xs text-neutral-500 hover:text-neutral-800 hover:bg-neutral-100 rounded"
+            className="shrink-0 h-9 px-2 text-xs text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded"
             title="重新选择"
           >
             换一项
@@ -274,7 +274,7 @@ export default function ProductAttributes({
                   setBrandCustomMode(false)
                   onChange({ brand: '' })
                 }}
-                className="shrink-0 h-9 px-2 text-xs text-neutral-500 hover:text-neutral-800 hover:bg-neutral-100 rounded"
+                className="shrink-0 h-9 px-2 text-xs text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded"
               >
                 换一项
               </button>

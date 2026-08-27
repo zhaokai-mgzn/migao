@@ -94,35 +94,35 @@ export default function SettingsPage() {
   return (
     <div className="p-6">
       <div className="mb-6">
-        <h1 className="text-xl font-semibold text-neutral-900">企业基础信息</h1>
-        <p className="text-sm text-neutral-500 mt-1">配置公司基本信息和系统参数</p>
+        <h1 className="text-xl font-semibold text-gray-900">企业基础信息</h1>
+        <p className="text-sm text-gray-500 mt-1">配置公司基本信息和系统参数</p>
       </div>
 
-      <div className="bg-white border border-neutral-200 rounded-lg p-6 max-w-lg">
+      <div className="bg-white border border-gray-200 rounded-lg p-6 max-w-lg">
         {loadingSettings ? (
-          <div className="text-sm text-neutral-500 py-8 text-center">加载中...</div>
+          <div className="text-sm text-gray-500 py-8 text-center">加载中...</div>
         ) : (
           <div className="space-y-6">
             <div>
-              <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">
                 公司名称 <span className="text-red-500">*</span>
               </label>
               <input
                 type="text"
-                className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                className="w-full h-9 px-3 rounded border border-gray-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                 value={settings.companyName}
                 onChange={(e) => setSettings({ ...settings, companyName: e.target.value })}
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-neutral-700 mb-1.5">Logo</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Logo</label>
               <div className="flex items-center gap-4">
-                <div className="w-16 h-16 bg-neutral-100 rounded-lg flex items-center justify-center border border-neutral-200">
+                <div className="w-16 h-16 bg-gray-100 rounded-lg flex items-center justify-center border border-gray-200">
                   {settings.logo ? (
                     <Image src={settings.logo} alt="Logo" width={64} height={64} className="w-full h-full object-cover rounded-lg" unoptimized />
                   ) : (
-                    <Building2 className="w-8 h-8 text-neutral-400" />
+                    <Building2 className="w-8 h-8 text-gray-400" />
                   )}
                 </div>
                 <Button variant="secondary" size="sm" onClick={() => fileInputRef.current?.click()} loading={uploadingLogo}>上传 Logo</Button>
@@ -130,17 +130,17 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            <div className="border-t border-neutral-200 pt-6">
-              <h3 className="text-sm font-semibold text-neutral-900 mb-4">通知设置</h3>
+            <div className="border-t border-gray-200 pt-6">
+              <h3 className="text-sm font-semibold text-gray-900 mb-4">通知设置</h3>
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <div className="text-sm font-medium text-neutral-700">启用系统通知</div>
-                    <div className="text-xs text-neutral-500">接收订单、客服等重要通知</div>
+                    <div className="text-sm font-medium text-gray-700">启用系统通知</div>
+                    <div className="text-xs text-gray-500">接收订单、客服等重要通知</div>
                   </div>
                   <button
                     className={`relative w-11 h-6 rounded-full transition-colors ${
-                      settings.notificationEnabled ? 'bg-primary-600' : 'bg-neutral-300'
+                      settings.notificationEnabled ? 'bg-primary-600' : 'bg-gray-300'
                     }`}
                     onClick={() => setSettings({ ...settings, notificationEnabled: !settings.notificationEnabled })}
                   >
@@ -154,10 +154,10 @@ export default function SettingsPage() {
 
                 {settings.notificationEnabled && (
                   <div>
-                    <label className="block text-sm font-medium text-neutral-700 mb-1.5">通知邮箱</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1.5">通知邮箱</label>
                     <input
                       type="email"
-                      className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                      className="w-full h-9 px-3 rounded border border-gray-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                       value={settings.notificationEmail || ''}
                       onChange={(e) => setSettings({ ...settings, notificationEmail: e.target.value })}
                       placeholder="接收通知的邮箱地址"

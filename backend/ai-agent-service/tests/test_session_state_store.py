@@ -71,21 +71,30 @@ class TestLoad:
         mock_db.execute.return_value = MockDBResult(single_row=("{}",))
         assert await store.load("s1") == {}
 
-    async def test_load_db_error_returns_none(self, store, mock_db):
-        """DB 异常降级为 None，不抛出"""
-        mock_db.execute.side_effect = Exception("DB down")
-        assert await store.load("s1") is None
+    async def test_load_jsonb_column_returns_dict(self, store, mock_db):
+        """asyncpg 对 jsonb 列返回 dict（非 str）→ 原样返回，不得崩溃
 
-    async def test_load_asyncpg_dict_row_returns_state(self, store, mock_db):
-        """生产回归：asyncpg 对 jsonb 列直接返回 dict（而非 str），
-        load 必须原样返回 dict——旧实现 json.loads(dict) 抛 TypeError 被吞成 None，
-        导致跨轮状态（pending_skill/待校验参数/vision）全部失效（生产线上 28 次告警）。
+        生产事故（sess_9cfeb2c8b3df4a8f）：真实 PG jsonb 经 asyncpg 解码为 dict，
+        json.loads(dict) 抛 TypeError → load 恒返回 None → 跨轮状态全部失效。
+        此前测试用 json.dumps 字符串 mock，掩盖了该缺陷。
         """
-        raw = {"pending_skill": "product", "pending_validated_input": {"target_tool": "product_manage"}}
+        raw = {"pending_validated_input": {"target_tool": "product_manage",
+                                           "target_action": "create",
+                                           "params": {"name": "窗帘"}}}
         mock_db.execute.return_value = MockDBResult(single_row=(raw,))
         state = await store.load("s1")
         assert state == raw
         assert state["pending_validated_input"]["target_tool"] == "product_manage"
+
+    async def test_load_jsonb_none_state_returns_none(self, store, mock_db):
+        """jsonb state 为 None（不应发生但需防御）→ None，不崩溃"""
+        mock_db.execute.return_value = MockDBResult(single_row=(None,))
+        assert await store.load("s1") is None
+
+    async def test_load_db_error_returns_none(self, store, mock_db):
+        """DB 异常降级为 None，不抛出"""
+        mock_db.execute.side_effect = Exception("DB down")
+        assert await store.load("s1") is None
 
 
 class TestCommit:

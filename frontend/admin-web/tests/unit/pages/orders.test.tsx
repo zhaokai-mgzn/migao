@@ -1,3 +1,4 @@
+// case_ids: OR-001, OR-002, OR-003, OR-004, OR-005
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
@@ -7,12 +8,14 @@ import userEvent from '@testing-library/user-event'
 const mockGetOrders = vi.fn()
 const mockDeleteOrder = vi.fn()
 const mockUpdateOrderStatus = vi.fn()
+const mockRefundOrder = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   orderApi: {
     getOrders: (...args: any[]) => mockGetOrders(...args),
     deleteOrder: (...args: any[]) => mockDeleteOrder(...args),
     updateOrderStatus: (...args: any[]) => mockUpdateOrderStatus(...args),
+    refundOrder: (...args: any[]) => mockRefundOrder(...args),
   },
 }))
 
@@ -51,18 +54,26 @@ vi.mock('dayjs', () => ({
 
 // Mock OrderTable component
 vi.mock('@/components/orders', () => ({
-  OrderTable: ({ orders, loading, onView, onClose, onRemark }: any) => (
+  OrderTable: ({ orders, loading, onView, onClose, onRemark, onRefund }: any) => (
     <div data-testid="order-table">
       {loading && <div data-testid="table-loading">加载中...</div>}
       {!loading && orders.length === 0 && <div>暂无数据</div>}
-      {orders.map((o: any) => (
-        <div key={o.id} data-testid={`order-${o.id}`}>
-          <span>{o.orderNo}</span>
-          <span>{o.customerName}</span>
-          <button onClick={() => onView(o)} data-testid={`view-${o.id}`}>查看</button>
-          <button onClick={() => onClose(o)} data-testid={`close-${o.id}`}>关闭</button>
-        </div>
-      ))}
+      {orders.map((o: any) => {
+        // 镜像真实 OrderTable 的退款按钮条件（后端可退状态 + refundAmount === 0）
+        const refundable = ['confirmed', 'producing', 'shipped', 'completed'].includes(o.status)
+          && (o.refundAmount ?? 0) === 0
+        return (
+          <div key={o.id} data-testid={`order-${o.id}`}>
+            <span>{o.orderNo}</span>
+            <span>{o.customerName}</span>
+            <button onClick={() => onView(o)} data-testid={`view-${o.id}`}>查看</button>
+            <button onClick={() => onClose(o)} data-testid={`close-${o.id}`}>关闭</button>
+            {refundable && (
+              <button onClick={() => onRefund(o)} data-testid={`refund-${o.id}`}>处理退款</button>
+            )}
+          </div>
+        )
+      })}
     </div>
   ),
   CloseOrderModal: ({ open, onClose, onConfirm }: any) => (
@@ -70,6 +81,15 @@ vi.mock('@/components/orders', () => ({
   ),
   RemarkModal: ({ open, onClose, onConfirm }: any) => (
     open ? <div data-testid="remark-modal" role="dialog"><button onClick={() => onConfirm('备注内容')}>确认备注</button></div> : null
+  ),
+  RefundOrderModal: ({ open, onConfirm }: any) => (
+    open ? (
+      <div data-testid="refund-modal" role="dialog">
+        <button data-testid="confirm-refund" onClick={() => onConfirm({ refundAmount: 500, refundReason: '质量问题' })}>
+          确认退款
+        </button>
+      </div>
+    ) : null
   ),
 }))
 
@@ -139,6 +159,7 @@ const mockOrders = [
   { id: '1', orderNo: 'MG202600001', customerName: '张先生', status: 'pending', totalAmount: 1999, createdAt: '2026-04-25T10:00:00' },
   { id: '2', orderNo: 'MG202600002', customerName: '李女士', status: 'confirmed', totalAmount: 3500, createdAt: '2026-04-24T09:00:00' },
   { id: '3', orderNo: 'MG202600003', customerName: '王先生', status: 'completed', totalAmount: 899, createdAt: '2026-04-23T08:00:00' },
+  { id: '4', orderNo: 'MG202600004', customerName: '赵女士', status: 'completed', refundAmount: 100, totalAmount: 500, createdAt: '2026-04-22T08:00:00' },
 ]
 
 describe('OrdersPage', () => {
@@ -147,7 +168,7 @@ describe('OrdersPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockGetOrders.mockResolvedValue({
-      data: { data: { items: mockOrders, total: 3 } },
+      data: { data: { items: mockOrders, total: 4 } },
     })
   })
 
@@ -243,6 +264,53 @@ describe('OrdersPage', () => {
     await waitFor(() => {
       expect(screen.getByText('张先生')).toBeInTheDocument()
       expect(screen.getByText('李女士')).toBeInTheDocument()
+    })
+  })
+
+  // ===== 退款流程（P0：处理退款按钮 + 弹窗 + 提交调用 api） =====
+
+  it('退款按钮出现在可退款订单（confirmed/completed 未退款），不出现在 pending/已退款订单', async () => {
+    render(<OrdersPage />)
+    await waitFor(() => {
+      expect(screen.getByTestId('order-1')).toBeInTheDocument()
+    })
+    // confirmed / completed 未退款 → 有按钮
+    expect(screen.getByTestId('refund-2')).toBeInTheDocument()
+    expect(screen.getByTestId('refund-3')).toBeInTheDocument()
+    // pending（待付款）→ 无按钮
+    expect(screen.queryByTestId('refund-1')).not.toBeInTheDocument()
+    // 已退款订单（refundAmount > 0）→ 无按钮
+    expect(screen.queryByTestId('refund-4')).not.toBeInTheDocument()
+  })
+
+  it('点击 处理退款 弹出退款 Modal', async () => {
+    render(<OrdersPage />)
+    await waitFor(() => {
+      expect(screen.getByTestId('refund-2')).toBeInTheDocument()
+    })
+    await user.click(screen.getByTestId('refund-2'))
+    expect(screen.getByTestId('refund-modal')).toBeInTheDocument()
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
+
+  it('提交退款调用 orderApi.refundOrder(id, payload) 并刷新列表', async () => {
+    render(<OrdersPage />)
+    await waitFor(() => {
+      expect(screen.getByTestId('refund-2')).toBeInTheDocument()
+    })
+    await user.click(screen.getByTestId('refund-2'))
+    await user.click(screen.getByTestId('confirm-refund'))
+
+    await waitFor(() => {
+      expect(mockRefundOrder).toHaveBeenCalledWith('2', { refundAmount: 500, refundReason: '质量问题' })
+    })
+    // 成功后刷新列表（初始 1 次 + 退款后 1 次）
+    await waitFor(() => {
+      expect(mockGetOrders.mock.calls.length).toBeGreaterThanOrEqual(2)
+    })
+    // 成功后关闭弹窗
+    await waitFor(() => {
+      expect(screen.queryByTestId('refund-modal')).not.toBeInTheDocument()
     })
   })
 })
