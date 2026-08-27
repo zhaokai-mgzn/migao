@@ -1,3 +1,4 @@
+// case_ids: CH-001, CH-002, CH-003
 /**
  * session-insight 纯函数单测 — 会话洞察面板（米宝工作助手）数据层
  *
