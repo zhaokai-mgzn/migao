@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 560" font-family="'PingFang SC','Hiragino Sans GB','Source Han Sans SC','Microsoft YaHei',sans-serif">
+  <rect width="1200" height="560" fill="#FFFFFF"/>
+  <text x="600" y="52" text-anchor="middle" font-size="24" font-weight="700" fill="#141414">米高 Logo 重设计 · 三个方向</text>
+
+  <!-- ══════════ 面板 A ══════════ -->
+  <rect x="50" y="90" width="300" height="440" rx="20" fill="#FAFAFA"/>
+  <g transform="translate(147.2 130) scale(2.2)">
+    <rect x="2" y="2" width="44" height="44" rx="13.5" fill="url(#oa)"/>
+    <g stroke="#FFFFFF" stroke-width="3.4" stroke-linecap="round">
+      <path d="M24 13.6V34.4"/>
+      <path d="M13.6 24H34.4"/>
+      <path d="M16.7 16.7L31.3 31.3"/>
+      <path d="M31.3 16.7L16.7 31.3"/>
+    </g>
+    <circle cx="24" cy="24" r="3.7" fill="#FFC53D"/>
+  </g>
+  <text x="200" y="280" text-anchor="middle" font-size="26" font-weight="700" fill="#262626">米高</text>
+  <text x="200" y="304" text-anchor="middle" font-size="10" font-weight="600" letter-spacing="5" fill="#8C8C8C" font-family="'Helvetica Neue',Arial,sans-serif">MIGAO</text>
+  <line x1="90" y1="332" x2="310" y2="332" stroke="#E8E8E8"/>
+  <text x="200" y="366" text-anchor="middle" font-size="17" font-weight="700" fill="#141414">方向 A ·「米」·星光</text>
+  <text x="200" y="396" text-anchor="middle" font-size="13" fill="#595959">「米」字化作八芒星，金色米粒点芯</text>
+  <text x="200" y="420" text-anchor="middle" font-size="13" fill="#595959">东方字标 × AI 星芒，织金质感</text>
+
+  <!-- ══════════ 面板 B ══════════ -->
+  <rect x="450" y="90" width="300" height="440" rx="20" fill="#FAFAFA"/>
+  <g transform="translate(547.2 130) scale(2.2)">
+    <rect x="2" y="2" width="44" height="44" rx="13.5" fill="url(#ob)"/>
+    <rect x="11" y="8.6" width="26" height="2.4" rx="1.2" fill="#FFFFFF" fill-opacity="0.35"/>
+    <circle cx="12.8" cy="9.8" r="1.8" stroke="#FFFFFF" stroke-opacity="0.55" stroke-width="1.1" fill="none"/>
+    <circle cx="35.2" cy="9.8" r="1.8" stroke="#FFFFFF" stroke-opacity="0.55" stroke-width="1.1" fill="none"/>
+    <path fill="#FFFFFF" d="M10.8 31.8 L10.8 15.8 Q10.8 13.6 13 13.6 L18.2 13.6 L21.6 27.2 L24 13.6 L26.4 27.2 L29.8 13.6 L35 13.6 Q37.2 13.6 37.2 15.8 L37.2 31.8 C35.2 33.4 32.8 29.8 30.2 30.4 C27.6 31 25.6 33.4 23 32.8 C20.4 32.2 18 29.8 15.2 30.4 C13 30.8 11.6 31.6 10.8 31.8 Z"/>
+  </g>
+  <text x="600" y="280" text-anchor="middle" font-size="26" font-weight="700" fill="#262626">米高</text>
+  <text x="600" y="304" text-anchor="middle" font-size="10" font-weight="600" letter-spacing="5" fill="#8C8C8C" font-family="'Helvetica Neue',Arial,sans-serif">MIGAO</text>
+  <line x1="490" y1="332" x2="710" y2="332" stroke="#E8E8E8"/>
+  <text x="600" y="366" text-anchor="middle" font-size="17" font-weight="700" fill="#141414">方向 B · 帘成 M</text>
+  <text x="600" y="396" text-anchor="middle" font-size="13" fill="#595959">窗帘杆 + 垂帘 M + 波浪底摆</text>
+  <text x="600" y="420" text-anchor="middle" font-size="13" fill="#595959">一眼认出布艺行业</text>
+
+  <!-- ══════════ 面板 C ══════════ -->
+  <rect x="850" y="90" width="300" height="440" rx="20" fill="#FAFAFA"/>
+  <g transform="translate(947.2 130) scale(2.2)">
+    <rect x="2" y="2" width="44" height="44" rx="13.5" fill="url(#oc)"/>
+    <circle cx="24" cy="8.4" r="6.4" fill="#FFC53D" fill-opacity="0.22"/>
+    <path d="M11.5 34.7V16.9Q11.5 14.7 13.7 14.7H18.4L22.9 25.9L24 14.7L25.1 25.9L29.6 14.7H34.3Q36.5 14.7 36.5 16.9V34.7" stroke="#FFFFFF" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <path d="M24 4.4C24.9 6.9 26.2 7.9 28.4 8.4C26.2 8.9 24.9 9.9 24 12.4C23.1 9.9 21.8 8.9 19.6 8.4C21.8 7.9 23.1 6.9 24 4.4Z" fill="#FFC53D"/>
+  </g>
+  <text x="1000" y="280" text-anchor="middle" font-size="26" font-weight="700" fill="#262626">米高</text>
+  <text x="1000" y="304" text-anchor="middle" font-size="10" font-weight="600" letter-spacing="5" fill="#8C8C8C" font-family="'Helvetica Neue',Arial,sans-serif">MIGAO</text>
+  <line x1="890" y1="332" x2="1110" y2="332" stroke="#E8E8E8"/>
+  <text x="1000" y="366" text-anchor="middle" font-size="17" font-weight="700" fill="#141414">方向 C · AI 星 M</text>
+  <text x="1000" y="396" text-anchor="middle" font-size="13" fill="#595959">拱形 M 托起金色星芒</text>
+  <text x="1000" y="420" text-anchor="middle" font-size="13" fill="#595959">星在峰上，寓意「高」与 AI</text>
+
+  <defs>
+    <linearGradient id="oa" x1="2" y1="2" x2="46" y2="46" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6E8CFF"/>
+      <stop offset="1" stop-color="#2F54EB"/>
+    </linearGradient>
+    <linearGradient id="ob" x1="2" y1="2" x2="46" y2="46" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6E8CFF"/>
+      <stop offset="1" stop-color="#2F54EB"/>
+    </linearGradient>
+    <linearGradient id="oc" x1="2" y1="2" x2="46" y2="46" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6E8CFF"/>
+      <stop offset="1" stop-color="#2F54EB"/>
+    </linearGradient>
+  </defs>
+  <text x="600" y="548" text-anchor="middle" font-size="12" fill="#8C8C8C">延续现有蓝色渐变底板（#6E8CFF → #2F54EB），仅重绘图形标 · 金色点缀 #FFC53D</text>
+</svg>

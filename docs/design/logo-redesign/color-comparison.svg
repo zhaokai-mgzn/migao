@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" font-family="'PingFang SC','Hiragino Sans GB','Source Han Sans SC','Microsoft YaHei',sans-serif">
+  <rect width="1200" height="400" fill="#FFFFFF"/>
+  <text x="600" y="28" text-anchor="middle" font-size="20" font-weight="700" fill="#141414">米高 Logo · 底板配色对比（方向 B 帘成 M）</text>
+
+  <!-- 面板 1：维持蓝底 -->
+  <rect x="0" y="44" width="216" height="292" rx="16" fill="#FAFAFA"/>
+  <g transform="translate(60 96) scale(2)">
+    <rect x="2" y="2" width="44" height="44" rx="13.5" fill="url(#p1)"/>
+    <rect x="11" y="8.6" width="26" height="2.4" rx="1.2" fill="#FFFFFF" fill-opacity="0.35"/>
+    <circle cx="12.8" cy="9.8" r="1.8" stroke="#FFFFFF" stroke-opacity="0.55" stroke-width="1.1" fill="none"/>
+    <circle cx="35.2" cy="9.8" r="1.8" stroke="#FFFFFF" stroke-opacity="0.55" stroke-width="1.1" fill="none"/>
+    <path fill="#FFFFFF" d="M10.8 31.8 L10.8 15.8 Q10.8 13.6 13 13.6 L18.2 13.6 L21.6 27.2 L24 13.6 L26.4 27.2 L29.8 13.6 L35 13.6 Q37.2 13.6 37.2 15.8 L37.2 31.8 C35.2 33.4 32.8 29.8 30.2 30.4 C27.6 31 25.6 33.4 23 32.8 C20.4 32.2 18 29.8 15.2 30.4 C13 30.8 11.6 31.6 10.8 31.8 Z"/>
+  </g>
+  <text x="108" y="222" text-anchor="middle" font-size="15" font-weight="700" fill="#141414">① 维持蓝底（已落地）</text>
+  <text x="108" y="244" text-anchor="middle" font-size="12" fill="#8C8C8C">#6E8CFF → #2F54EB</text>
+  <text x="108" y="266" text-anchor="middle" font-size="12" fill="#595959">专业稳妥 · SaaS 惯例</text>
+
+  <!-- 面板 2：白底蓝标 -->
+  <rect x="246" y="44" width="216" height="292" rx="16" fill="#FAFAFA"/>
+  <g transform="translate(306 96) scale(2)">
+    <path fill="url(#p2)" d="M10.8 31.8 L10.8 15.8 Q10.8 13.6 13 13.6 L18.2 13.6 L21.6 27.2 L24 13.6 L26.4 27.2 L29.8 13.6 L35 13.6 Q37.2 13.6 37.2 15.8 L37.2 31.8 C35.2 33.4 32.8 29.8 30.2 30.4 C27.6 31 25.6 33.4 23 32.8 C20.4 32.2 18 29.8 15.2 30.4 C13 30.8 11.6 31.6 10.8 31.8 Z"/>
+  </g>
+  <text x="354" y="222" text-anchor="middle" font-size="15" font-weight="700" fill="#141414">② 白底蓝标</text>
+  <text x="354" y="244" text-anchor="middle" font-size="12" fill="#8C8C8C">无底板 · 渐变蓝 M</text>
+  <text x="354" y="266" text-anchor="middle" font-size="12" fill="#595959">最现代轻量</text>
+
+  <!-- 面板 3：织金暖底 -->
+  <rect x="492" y="44" width="216" height="292" rx="16" fill="#FAFAFA"/>
+  <g transform="translate(552 96) scale(2)">
+    <rect x="2" y="2" width="44" height="44" rx="13.5" fill="url(#p3)"/>
+    <rect x="11" y="8.6" width="26" height="2.4" rx="1.2" fill="#FFFFFF" fill-opacity="0.35"/>
+    <circle cx="12.8" cy="9.8" r="1.8" stroke="#FFFFFF" stroke-opacity="0.55" stroke-width="1.1" fill="none"/>
+    <circle cx="35.2" cy="9.8" r="1.8" stroke="#FFFFFF" stroke-opacity="0.55" stroke-width="1.1" fill="none"/>
+    <path fill="#FFFFFF" d="M10.8 31.8 L10.8 15.8 Q10.8 13.6 13 13.6 L18.2 13.6 L21.6 27.2 L24 13.6 L26.4 27.2 L29.8 13.6 L35 13.6 Q37.2 13.6 37.2 15.8 L37.2 31.8 C35.2 33.4 32.8 29.8 30.2 30.4 C27.6 31 25.6 33.4 23 32.8 C20.4 32.2 18 29.8 15.2 30.4 C13 30.8 11.6 31.6 10.8 31.8 Z"/>
+  </g>
+  <text x="600" y="222" text-anchor="middle" font-size="15" font-weight="700" fill="#141414">③ 织金暖底</text>
+  <text x="600" y="244" text-anchor="middle" font-size="12" fill="#8C8C8C">#FFC53D → #D48806</text>
+  <text x="600" y="266" text-anchor="middle" font-size="12" fill="#595959">布艺温度 · 记忆点最强</text>
+
+  <!-- 面板 4：蓝金渐变底 -->
+  <rect x="738" y="44" width="216" height="292" rx="16" fill="#FAFAFA"/>
+  <g transform="translate(798 96) scale(2)">
+    <rect x="2" y="2" width="44" height="44" rx="13.5" fill="url(#p4)"/>
+    <rect x="11" y="8.6" width="26" height="2.4" rx="1.2" fill="#FFFFFF" fill-opacity="0.30"/>
+    <circle cx="12.8" cy="9.8" r="1.8" stroke="#FFFFFF" stroke-opacity="0.50" stroke-width="1.1" fill="none"/>
+    <circle cx="35.2" cy="9.8" r="1.8" stroke="#FFFFFF" stroke-opacity="0.50" stroke-width="1.1" fill="none"/>
+    <path fill="#FFFFFF" d="M10.8 31.8 L10.8 15.8 Q10.8 13.6 13 13.6 L18.2 13.6 L21.6 27.2 L24 13.6 L26.4 27.2 L29.8 13.6 L35 13.6 Q37.2 13.6 37.2 15.8 L37.2 31.8 C35.2 33.4 32.8 29.8 30.2 30.4 C27.6 31 25.6 33.4 23 32.8 C20.4 32.2 18 29.8 15.2 30.4 C13 30.8 11.6 31.6 10.8 31.8 Z"/>
+  </g>
+  <text x="846" y="222" text-anchor="middle" font-size="15" font-weight="700" fill="#141414">④ 蓝金渐变底</text>
+  <text x="846" y="244" text-anchor="middle" font-size="12" fill="#8C8C8C">#2F54EB → #D48806</text>
+  <text x="846" y="266" text-anchor="middle" font-size="12" fill="#595959">专业 + 温度兼得</text>
+
+  <!-- 面板 5：深藏青底 -->
+  <rect x="984" y="44" width="216" height="292" rx="16" fill="#FAFAFA"/>
+  <g transform="translate(1044 96) scale(2)">
+    <rect x="2" y="2" width="44" height="44" rx="13.5" fill="url(#p5)"/>
+    <rect x="11" y="8.6" width="26" height="2.4" rx="1.2" fill="#FFFFFF" fill-opacity="0.30"/>
+    <circle cx="12.8" cy="9.8" r="1.8" stroke="#FFFFFF" stroke-opacity="0.50" stroke-width="1.1" fill="none"/>
+    <circle cx="35.2" cy="9.8" r="1.8" stroke="#FFFFFF" stroke-opacity="0.50" stroke-width="1.1" fill="none"/>
+    <path fill="#FFFFFF" d="M10.8 31.8 L10.8 15.8 Q10.8 13.6 13 13.6 L18.2 13.6 L21.6 27.2 L24 13.6 L26.4 27.2 L29.8 13.6 L35 13.6 Q37.2 13.6 37.2 15.8 L37.2 31.8 C35.2 33.4 32.8 29.8 30.2 30.4 C27.6 31 25.6 33.4 23 32.8 C20.4 32.2 18 29.8 15.2 30.4 C13 30.8 11.6 31.6 10.8 31.8 Z"/>
+  </g>
+  <text x="1092" y="222" text-anchor="middle" font-size="15" font-weight="700" fill="#141414">⑤ 深藏青底</text>
+  <text x="1092" y="244" text-anchor="middle" font-size="12" fill="#8C8C8C">#1D39C4 → #061178</text>
+  <text x="1092" y="266" text-anchor="middle" font-size="12" fill="#595959">高级稳重</text>
+
+  <defs>
+    <linearGradient id="p1" x1="2" y1="2" x2="46" y2="46" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6E8CFF"/><stop offset="1" stop-color="#2F54EB"/>
+    </linearGradient>
+    <linearGradient id="p2" x1="10" y1="14" x2="38" y2="32" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6E8CFF"/><stop offset="1" stop-color="#2F54EB"/>
+    </linearGradient>
+    <linearGradient id="p3" x1="2" y1="2" x2="46" y2="46" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFC53D"/><stop offset="1" stop-color="#D48806"/>
+    </linearGradient>
+    <linearGradient id="p4" x1="2" y1="2" x2="46" y2="46" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2F54EB"/><stop offset="1" stop-color="#D48806"/>
+    </linearGradient>
+    <linearGradient id="p5" x1="2" y1="2" x2="46" y2="46" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1D39C4"/><stop offset="1" stop-color="#061178"/>
+    </linearGradient>
+  </defs>
+  <text x="600" y="378" text-anchor="middle" font-size="12" fill="#8C8C8C">选定后我将同步替换 admin-web 的 Logo.tsx / public/logo.svg / public/favicon.svg</text>
+</svg>

@@ -11,7 +11,7 @@ interface LogoProps {
   className?: string
 }
 
-/** 米高品牌 Logo — "M" 几何字母标 */
+/** 米高品牌 Logo — 帘成 M：织金暖底 + 窗帘杆 + 垂帘 M + 波浪底摆 */
 export default function Logo({ size = 'medium', className }: LogoProps) {
   const s = sizeMap[size]
   return (
@@ -24,24 +24,22 @@ export default function Logo({ size = 'medium', className }: LogoProps) {
       className={cn('flex-shrink-0', className)}
     >
       <defs>
-        <linearGradient id="logo-grad" x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="#4F6EF7" />
-          <stop offset="100%" stopColor="#3B52CC" />
+        <linearGradient id="logo-grad" x1="2" y1="2" x2="46" y2="46" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#FFC53D" />
+          <stop offset="100%" stopColor="#D48806" />
         </linearGradient>
       </defs>
-      {/* 圆角底板 */}
-      <rect x="2" y="2" width="44" height="44" rx="12" fill="url(#logo-grad)" />
-      {/* M 字母 — 双斜线笔画 */}
+      {/* 织金暖底 */}
+      <rect x="2" y="2" width="44" height="44" rx="13.5" fill="url(#logo-grad)" />
+      {/* 窗帘杆 + 吊环 */}
+      <rect x="11" y="8.6" width="26" height="2.4" rx="1.2" fill="white" fillOpacity="0.35" />
+      <circle cx="12.8" cy="9.8" r="1.8" stroke="white" strokeOpacity="0.55" strokeWidth="1.1" fill="none" />
+      <circle cx="35.2" cy="9.8" r="1.8" stroke="white" strokeOpacity="0.55" strokeWidth="1.1" fill="none" />
+      {/* 垂帘 M — 波浪底摆如窗帘下缘 */}
       <path
-        d="M12 34V20L20 28L24 20L28 28L36 20V34"
-        stroke="white"
-        strokeWidth="3.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        fill="none"
+        fill="white"
+        d="M10.8 31.8 L10.8 15.8 Q10.8 13.6 13 13.6 L18.2 13.6 L21.6 27.2 L24 13.6 L26.4 27.2 L29.8 13.6 L35 13.6 Q37.2 13.6 37.2 15.8 L37.2 31.8 C35.2 33.4 32.8 29.8 30.2 30.4 C27.6 31 25.6 33.4 23 32.8 C20.4 32.2 18 29.8 15.2 30.4 C13 30.8 11.6 31.6 10.8 31.8 Z"
       />
-      {/* 顶部高光点 */}
-      <circle cx="24" cy="10" r="2" fill="white" fillOpacity="0.4" />
     </svg>
   )
 }
