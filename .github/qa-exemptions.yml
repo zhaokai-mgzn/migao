@@ -194,3 +194,6 @@ exemptions:
 
   - pattern: "frontend/admin-web/src/components/providers/AuthProvider.tsx"
     reason: "#2548: React Context 包装组件（AuthProvider），仅提供 auth 上下文无 UI 逻辑，由使用方测试间接覆盖"
+
+  - pattern: "frontend/admin-web/src/components/ui/Logo.tsx"
+    reason: "#2565: 米高 Logo 重设计 — 纯 SVG 图形资产替换（帘成M + 织金暖底），viewBox/API 不变、无交互逻辑；渲染路径由 login/register/sidebar/OpsSidebar/CorporateNav/Footer 等消费方测试覆盖（86 用例全绿），图形正确性由像素级校验保障"
