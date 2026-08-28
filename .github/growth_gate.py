@@ -127,6 +127,7 @@ def resolve_test_paths(rule, test_names, repo_root):
             else:
                 hits = _glob.glob(os.path.join(base, f"**/{tn}.java"), recursive=True)
         else:
+            hits = []
             for c in (os.path.join(base, tn), os.path.join(repo_root, tn)):
                 hits.extend(v for v in _test_file_variants(c) if os.path.exists(v))
         paths.extend(hits)
