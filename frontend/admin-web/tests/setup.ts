@@ -131,6 +131,8 @@ vi.mock('lucide-react', () => ({
   ClipboardCheck: iconStub('clipboard-check'),
   Users: iconStub('users'),
   MessageSquare: iconStub('message-square'),
+  Archive: iconStub('archive'),
+  ListChecks: iconStub('list-checks'),
   DollarSign: iconStub('dollar-sign'),
   FileUp: iconStub('file-up'),
   RotateCcw: iconStub('rotate-ccw'),

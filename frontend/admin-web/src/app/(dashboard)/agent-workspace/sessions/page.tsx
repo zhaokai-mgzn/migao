@@ -1,80 +1,87 @@
 'use client'
 
-import {
-  Monitor,
-  UserPlus,
-  BarChart3,
-  Clock,
-  type LucideIcon,
-} from 'lucide-react'
+/**
+ * 会话管理工作台（客服中心 / 会话管理）
+ *
+ * 会话管理重构落地页（docs/design/session-management-redesign.md 前端侧）：
+ *   - 复用已重构的 SessionService API（chatApi，ai-agent-service /api/chat/*，
+ *     底层为 SessionService 生命周期状态机 + SessionStateStore 跨轮状态）
+ *   - 顶部监控统计条：活跃 / 已关闭 / 总会话数（从 store.sessions 派生，DSH 监控风格）
+ *   - 主体复用 /chat 组件链：SessionList（会话列表）+ ChatArea（聊天区，
+ *     内含 SessionInsight 会话洞察抽屉 = 工具卡片 / 状态面板）
+ */
+import { useEffect } from 'react'
+import { MessageSquare, Archive, ListChecks } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { useChatStore } from '@/store/chat'
+import SessionList from '@/components/chat/SessionList'
+import ChatArea from '@/components/chat/ChatArea'
 
-interface FeatureCardProps {
-  icon: LucideIcon
-  iconColor: string
-  iconBg: string
-  title: string
-  description: string
-}
-
-function FeatureCard({ icon: Icon, iconColor, iconBg, title, description }: FeatureCardProps) {
+/** 监控统计条单格 */
+function StatCell({
+  icon,
+  label,
+  value,
+  valueClass,
+}: {
+  icon: React.ReactNode
+  label: string
+  value: number
+  valueClass?: string
+}) {
   return (
-    <div className="bg-white rounded-xl border border-neutral-100 p-6 shadow-sm hover:shadow-md transition-shadow">
-      <div className={`w-12 h-12 ${iconBg} rounded-lg flex items-center justify-center mb-4`}>
-        <Icon className={`w-6 h-6 ${iconColor}`} />
+    <div className="flex items-center gap-2.5 px-4 py-2 rounded-lg bg-neutral-50/80 border border-neutral-100">
+      {icon}
+      <div className="flex items-baseline gap-1.5">
+        <span className={cn('text-lg font-semibold tabular-nums', valueClass ?? 'text-neutral-900')}>
+          {value}
+        </span>
+        <span className="text-xs text-neutral-500">{label}</span>
       </div>
-      <h3 className="text-base font-semibold text-neutral-900 mb-2">{title}</h3>
-      <p className="text-sm text-neutral-500 leading-relaxed">{description}</p>
     </div>
   )
 }
 
-const features: FeatureCardProps[] = [
-  {
-    icon: Monitor,
-    iconColor: 'text-primary-600',
-    iconBg: 'bg-blue-50',
-    title: '实时会话监控',
-    description: '查看当前进行中、排队中的会话状态',
-  },
-  {
-    icon: UserPlus,
-    iconColor: 'text-indigo-600',
-    iconBg: 'bg-indigo-50',
-    title: '手动分配与干预',
-    description: '支持手动分配会话、转接、结束等操作',
-  },
-  {
-    icon: BarChart3,
-    iconColor: 'text-violet-600',
-    iconBg: 'bg-violet-50',
-    title: '数据统计看板',
-    description: '在线客服数、今日接待量、平均响应时间等关键指标',
-  },
-]
-
 export default function AgentSessionsPage() {
+  const { sessions, fetchSessions } = useChatStore()
+
+  useEffect(() => {
+    fetchSessions()
+  }, [fetchSessions])
+
+  const activeCount = sessions.filter(s => s.status === 'active').length
+  const closedCount = sessions.filter(s => s.status === 'closed').length
+
   return (
-    <div className="p-6 max-w-4xl mx-auto">
-      {/* 顶部标题区 */}
-      <div className="text-center mb-10 pt-8">
-        <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-50 rounded-full mb-5">
-          <Clock className="w-8 h-8 text-primary-600" />
+    <div className="h-[calc(100vh-180px)] flex flex-col">
+      {/* 顶部：标题 + 监控统计条 */}
+      <div className="flex items-center justify-between flex-shrink-0 px-5 h-14 border-b border-neutral-200/80">
+        <h1 className="text-base font-semibold text-neutral-900">会话管理</h1>
+        <div className="flex items-center gap-2" data-testid="session-stats-bar">
+          <StatCell
+            icon={<MessageSquare className="w-4 h-4 text-primary-500" />}
+            label="活跃"
+            value={activeCount}
+            valueClass="text-emerald-600"
+          />
+          <StatCell
+            icon={<Archive className="w-4 h-4 text-neutral-400" />}
+            label="已关闭"
+            value={closedCount}
+          />
+          <StatCell
+            icon={<ListChecks className="w-4 h-4 text-indigo-400" />}
+            label="共"
+            value={sessions.length}
+          />
         </div>
-        <h1 className="text-2xl font-bold text-neutral-900 mb-2">会话监控</h1>
-        <p className="text-base text-neutral-500">该功能正在开发中，敬请期待</p>
       </div>
 
-      {/* 功能预告卡片 */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-10">
-        {features.map((feature) => (
-          <FeatureCard key={feature.title} {...feature} />
-        ))}
+      {/* 主体：会话列表 + 聊天区（复用 /chat 组件链，SessionInsight 为 ChatArea 内抽屉） */}
+      <div className="flex-1 flex min-h-0 overflow-hidden">
+        <SessionList />
+        <ChatArea />
       </div>
-
-      {/* 底部提示 */}
-      <p className="text-center text-sm text-neutral-400">
-        功能即将上线，届时将在此处为您提供实时的会话监控和管理能力
-      </p>
     </div>
   )
 }
