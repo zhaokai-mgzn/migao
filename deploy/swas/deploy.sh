@@ -56,6 +56,15 @@ docker compose up -d --no-deps $UP_SERVICES
 # 容器重建后 IP 可能变化，nginx 启动时缓存旧上游 IP → reload/restart 否则 502
 docker compose restart nginx
 
+# 磁盘自愈：清理悬空/过期镜像（#2571 复现防护：旧镜像堆积曾导致磁盘 100% 部署失败）
+# 只清 <none> 悬空镜像与未被容器引用的旧版本，运行中镜像不受影响
+docker image prune -f || echo "⚠️ docker image prune 失败（不影响本次部署）"
+# 额外水位告警：磁盘 >85% 时明确提示，便于及时介入
+DISK_PCT=$(df / | awk 'NR==2 {gsub("%","",$5); print $5}')
+if [ "${DISK_PCT:-0}" -gt 85 ]; then
+  echo "⚠️ 磁盘水位 ${DISK_PCT}% > 85%，建议清理（docker image prune -a / 扩容）"
+fi
+
 echo "== 3. 健康检查 =="
 HC_FAILED=0
 for spec in "8080 admin-api /actuator/health" "8000 ai-agent /health" "3001 admin-web /"; do
