@@ -6,6 +6,7 @@ import com.migao.admin.dto.PageResponse;
 import com.migao.admin.entity.KnowledgeDocument;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.KnowledgeDocumentMapper;
+import com.migao.admin.security.RequirePermission;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.Data;
@@ -30,6 +31,7 @@ import java.util.Map;
  * - POST   /api/admin/knowledge/test-search          → searchKnowledge
  */
 @Slf4j
+@RequirePermission("knowledge:manage")
 @RestController
 @RequestMapping("/api/admin/knowledge")
 @RequiredArgsConstructor

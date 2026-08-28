@@ -34,7 +34,7 @@ export default function RolesPage() {
     name: '',
     code: '',
     description: '',
-    permissionIds: [] as number[],
+    permissionIds: [] as string[],
   })
 
   // 删除确认
@@ -150,7 +150,7 @@ export default function RolesPage() {
   }
 
   // 权限勾选
-  const togglePermission = (permId: number) => {
+  const togglePermission = (permId: string) => {
     setFormData(prev => ({
       ...prev,
       permissionIds: prev.permissionIds.includes(permId)

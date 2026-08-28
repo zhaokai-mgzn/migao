@@ -3,11 +3,13 @@ package com.migao.admin.service;
 import com.migao.admin.dto.PageResponse;
 import com.migao.admin.entity.Permission;
 import com.migao.admin.entity.Role;
+import com.migao.admin.entity.RolePermission;
 import com.migao.admin.entity.User;
 import com.migao.admin.entity.UserRole;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.PermissionMapper;
 import com.migao.admin.mapper.RoleMapper;
+import com.migao.admin.mapper.RolePermissionMapper;
 import com.migao.admin.mapper.UserMapper;
 import com.migao.admin.mapper.UserRoleMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -21,8 +23,11 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -39,6 +44,7 @@ public class RoleService {
     private final PermissionMapper permissionMapper;
     private final UserRoleMapper userRoleMapper;
     private final UserMapper userMapper;
+    private final RolePermissionMapper rolePermissionMapper;
 
     // ==================== 角色查询 ====================
 
@@ -89,7 +95,7 @@ public class RoleService {
     // ==================== 权限查询 ====================
 
     /**
-     * 根据角色ID查询角色的所有权限
+     * 根据角色ID查询角色的所有权限（role_permissions 关联表 → permissions 表）
      *
      * @param roleId 角色ID
      * @return 权限列表
@@ -99,48 +105,61 @@ public class RoleService {
         if (role == null) {
             return List.of();
         }
-        return getPermissionsByRoleCode(role.getCode());
+        return getPermissionsByRoleId(role.getId());
     }
 
     /**
-     * 根据角色代码查询权限列表
-     *
-     * @param roleCode 角色代码
-     * @return 权限列表
+     * 根据角色ID查询权限列表（role_permissions 关联）
      */
-    public List<Permission> getPermissionsByRoleCode(String roleCode) {
-        List<String> permissionCodes = switch (roleCode) {
-            case "admin" -> List.of("*");
-            case "operator" -> List.of(
-                    "dashboard:view",
-                    "order:list", "order:detail", "order:refund",
-                    "product:list", "product:create", "product:category",
-                    "processing:manage",
-                    "customer:view",
-                    "finance:view",
-                    "agent:session", "agent:quickreply",
-                    "employee:list",
-                    "system:manage"
-            );
-            case "product_manager" -> List.of(
-                    "dashboard:view",
-                    "product:list", "product:create", "product:category",
-                    "processing:manage"
-            );
-            case "knowledge_editor" -> List.of(
-                    "dashboard:view"
-            );
-            default -> List.of();
-        };
-
-        if (permissionCodes.isEmpty() || permissionCodes.contains("*")) {
+    private List<Permission> getPermissionsByRoleId(String roleId) {
+        List<String> permissionIds = getRolePermissionIds(roleId);
+        if (permissionIds.isEmpty()) {
             return List.of();
         }
+        return permissionMapper.selectBatchIds(permissionIds);
+    }
 
-        LambdaQueryWrapper<Permission> wrapper = new LambdaQueryWrapper<>();
-        wrapper.in(Permission::getCode, permissionCodes)
-                .eq(Permission::getDeleted, 0);
-        return permissionMapper.selectList(wrapper);
+    /**
+     * 根据角色ID查询 role_permissions 中的权限 ID 列表
+     */
+    private List<String> getRolePermissionIds(String roleId) {
+        LambdaQueryWrapper<RolePermission> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(RolePermission::getRoleId, roleId)
+                .eq(RolePermission::getDeleted, 0);
+        List<RolePermission> rps = rolePermissionMapper.selectList(wrapper);
+        if (rps.isEmpty()) {
+            return List.of();
+        }
+        return rps.stream()
+                .map(RolePermission::getPermissionId)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * 根据角色ID查询权限码列表（role_permissions → permissions.code）
+     * 无关联记录时返回空集（调用方决定是否回退到硬编码映射）。
+     */
+    private List<String> getRolePermissionCodes(String roleId) {
+        List<Permission> perms = getPermissionsByRoleId(roleId);
+        return perms.stream()
+                .map(Permission::getCode)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * 获取单个角色的权限码：优先 role_permissions 关联（角色管理勾选），
+     * 无关联时回退到内置角色的硬编码映射（admin/operator/product_manager/knowledge_editor）。
+     */
+    private List<String> getPermissionCodesForRoleEntity(Role role) {
+        if ("admin".equals(role.getCode())) {
+            return List.of("*");
+        }
+        List<String> fromDb = getRolePermissionCodes(role.getId());
+        if (!fromDb.isEmpty()) {
+            return fromDb;
+        }
+        return getPermissionCodesForRole(role.getCode());
     }
 
     /**
@@ -178,10 +197,10 @@ public class RoleService {
             }
         }
 
-        // 非 admin 角色：合并角色权限 + 用户个人权限
+        // 非 admin 角色：合并角色权限（role_permissions 优先，内置角色回退硬编码）+ 用户个人权限
         Set<String> permissionSet = new HashSet<>();
         for (Role role : roles) {
-            permissionSet.addAll(getPermissionCodesForRole(role.getCode()));
+            permissionSet.addAll(getPermissionCodesForRoleEntity(role));
         }
 
         // 合并 User.permissions 字段（细粒度菜单权限）
@@ -281,6 +300,8 @@ public class RoleService {
         Page<Role> rolePage = new Page<>(page, size);
         Page<Role> resultPage = roleMapper.selectPage(rolePage, wrapper);
 
+        attachPermissions(resultPage.getRecords());
+
         return PageResponse.of(resultPage.getTotal(), resultPage.getCurrent(), resultPage.getSize(), resultPage.getRecords());
     }
 
@@ -294,7 +315,11 @@ public class RoleService {
         LambdaQueryWrapper<Role> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(Role::getDeleted, 0)
                 .orderByAsc(Role::getCode);
-        return roleMapper.selectList(wrapper);
+        List<Role> roles = roleMapper.selectList(wrapper);
+
+        attachPermissions(roles);
+
+        return roles;
     }
 
     /**
@@ -308,20 +333,23 @@ public class RoleService {
         if (role == null) {
             throw BusinessException.notFound("角色");
         }
+        // 回填角色权限（角色管理页展示/回显勾选）
+        role.setPermissions(getPermissionsByRoleId(role.getId()));
         return role;
     }
 
     /**
      * 创建角色
      *
-     * @param name        角色名称
-     * @param code        角色代码
-     * @param description 描述
-     * @param tenantId    租户ID
+     * @param name         角色名称
+     * @param code         角色代码
+     * @param description  描述
+     * @param tenantId     租户ID
+     * @param permissionIds 勾选的权限 ID 列表（role_permissions 落库，可为空）
      * @return 创建的角色
      */
     @Transactional(rollbackFor = Exception.class)
-    public Role createRole(String name, String code, String description, Long tenantId) {
+    public Role createRole(String name, String code, String description, Long tenantId, List<String> permissionIds) {
         // 验证 code 唯一性
         LambdaQueryWrapper<Role> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(Role::getCode, code)
@@ -341,20 +369,27 @@ public class RoleService {
                 .build();
 
         roleMapper.insert(role);
-        log.info("创建角色成功: id={}, code={}", role.getId(), code);
+
+        // 角色权限真实落库（此前为占位实现，勾选权限不生效）
+        replaceRolePermissions(role.getId(), permissionIds, tenantId);
+        role.setPermissions(getPermissionsByRoleId(role.getId()));
+
+        log.info("创建角色成功: id={}, code={}, permissionCount={}", role.getId(), code,
+                permissionIds == null ? 0 : permissionIds.size());
         return role;
     }
 
     /**
      * 更新角色
      *
-     * @param roleId      角色ID
-     * @param name        角色名称
-     * @param description 描述
+     * @param roleId       角色ID
+     * @param name         角色名称
+     * @param description  描述
+     * @param permissionIds 勾选的权限 ID 列表（null 表示不修改权限）
      * @return 更新后的角色
      */
     @Transactional(rollbackFor = Exception.class)
-    public Role updateRole(String roleId, String name, String description) {
+    public Role updateRole(String roleId, String name, String description, List<String> permissionIds) {
         Role role = getRoleById(roleId);
 
         if (StringUtils.hasText(name)) {
@@ -365,6 +400,13 @@ public class RoleService {
         }
 
         roleMapper.updateById(role);
+
+        // 权限变更：全量替换 role_permissions
+        if (permissionIds != null) {
+            replaceRolePermissions(roleId, permissionIds, role.getTenantId());
+        }
+
+        role.setPermissions(getPermissionsByRoleId(roleId));
         log.info("更新角色成功: id={}", roleId);
         return role;
     }
@@ -389,6 +431,12 @@ public class RoleService {
         }
 
         roleMapper.deleteById(roleId);
+
+        // 清理角色权限关联
+        LambdaQueryWrapper<RolePermission> rpWrapper = new LambdaQueryWrapper<>();
+        rpWrapper.eq(RolePermission::getRoleId, roleId);
+        rolePermissionMapper.delete(rpWrapper);
+
         log.info("删除角色成功: id={}, code={}", roleId, role.getCode());
     }
 
@@ -435,20 +483,102 @@ public class RoleService {
     // ==================== 权限分配 ====================
 
     /**
-     * 为角色分配权限
-     * TODO: 当实现 role_permissions 中间表后，改为从中间表管理
-     * 当前权限是基于角色代码的硬编码映射
+     * 为角色分配权限（role_permissions 全量替换）
      *
      * @param roleId        角色ID
-     * @param permissionIds 权限ID列表
+     * @param permissionIds 权限ID列表（可空 = 清空该角色的权限）
+     * @param tenantId      租户ID
      */
     @Transactional(rollbackFor = Exception.class)
-    public void assignPermissions(String roleId, List<String> permissionIds) {
-        // TODO: 实现 role_permissions 中间表的权限分配
-        // 当前权限是基于角色代码的硬编码映射，待后续数据库驱动的权限管理实现后替换
+    public void assignPermissions(String roleId, List<String> permissionIds, Long tenantId) {
         Role role = getRoleById(roleId);
-        log.info("为角色分配权限（占位实现）: roleId={}, roleCode={}, permissionCount={}",
-                roleId, role.getCode(), permissionIds.size());
+        replaceRolePermissions(roleId, permissionIds, tenantId);
+        log.info("为角色分配权限: roleId={}, roleCode={}, permissionCount={}",
+                roleId, role.getCode(), permissionIds == null ? 0 : permissionIds.size());
+    }
+
+    /**
+     * 全量替换 role_permissions（不校验角色存在性，供 createRole/updateRole 内部使用）
+     */
+    private void replaceRolePermissions(String roleId, List<String> permissionIds, Long tenantId) {
+        // 清空旧关联
+        LambdaQueryWrapper<RolePermission> deleteWrapper = new LambdaQueryWrapper<>();
+        deleteWrapper.eq(RolePermission::getRoleId, roleId);
+        rolePermissionMapper.delete(deleteWrapper);
+
+        // 插入新关联（权限ID去重，过滤不存在/已删除的权限）
+        if (permissionIds != null && !permissionIds.isEmpty()) {
+            List<String> validIds = permissionIds.stream()
+                    .distinct()
+                    .filter(StringUtils::hasText)
+                    .collect(Collectors.toList());
+            if (!validIds.isEmpty()) {
+                List<Permission> existing = permissionMapper.selectBatchIds(validIds);
+                Set<String> existingIds = existing.stream()
+                        .map(Permission::getId)
+                        .collect(Collectors.toSet());
+                for (String permissionId : validIds) {
+                    if (!existingIds.contains(permissionId)) {
+                        continue;
+                    }
+                    RolePermission rp = RolePermission.builder()
+                            .tenantId(tenantId)
+                            .roleId(roleId)
+                            .permissionId(permissionId)
+                            .build();
+                    rolePermissionMapper.insert(rp);
+                }
+            }
+        }
+    }
+
+    /**
+     * 批量回填角色权限（role_permissions → permissions 列表）
+     */
+    private void attachPermissions(List<Role> roles) {
+        if (roles == null || roles.isEmpty()) {
+            return;
+        }
+        List<String> roleIds = roles.stream()
+                .map(Role::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+        if (roleIds.isEmpty()) {
+            return;
+        }
+
+        LambdaQueryWrapper<RolePermission> rpWrapper = new LambdaQueryWrapper<>();
+        rpWrapper.in(RolePermission::getRoleId, roleIds)
+                .eq(RolePermission::getDeleted, 0);
+        List<RolePermission> rps = rolePermissionMapper.selectList(rpWrapper);
+        if (rps.isEmpty()) {
+            roles.forEach(r -> r.setPermissions(List.of()));
+            return;
+        }
+
+        List<String> permissionIds = rps.stream()
+                .map(RolePermission::getPermissionId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+        Map<String, Permission> permMap = new HashMap<>();
+        if (!permissionIds.isEmpty()) {
+            for (Permission p : permissionMapper.selectBatchIds(permissionIds)) {
+                permMap.put(p.getId(), p);
+            }
+        }
+
+        Map<String, List<Permission>> byRole = new HashMap<>();
+        for (RolePermission rp : rps) {
+            Permission p = permMap.get(rp.getPermissionId());
+            if (p != null) {
+                byRole.computeIfAbsent(rp.getRoleId(), k -> new ArrayList<>()).add(p);
+            }
+        }
+
+        for (Role role : roles) {
+            role.setPermissions(byRole.getOrDefault(role.getId(), List.of()));
+        }
     }
 
     /**

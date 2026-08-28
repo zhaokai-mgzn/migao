@@ -12,6 +12,13 @@ vi.mock('sonner', () => ({
   },
 }))
 
+// Mock useAuthStore — 默认 admin(*)，可在用例中覆盖模拟员工权限
+// 支持 selector 调用（usePermission 用 useAuthStore(s => s.user)）
+const mockUseAuthStore = vi.fn()
+vi.mock('@/store/auth', () => ({
+  useAuthStore: (selector: any) => (selector ? selector(mockUseAuthStore()) : mockUseAuthStore()),
+}))
+
 // Mock APIs
 const mockGetEmployees = vi.fn()
 const mockCreateEmployee = vi.fn()
@@ -123,6 +130,10 @@ import EmployeesPage from '@/app/(dashboard)/employees/page'
 describe('EmployeesPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    // 默认当前用户为 admin（全部权限），按钮可见
+    mockUseAuthStore.mockReturnValue({
+      user: { id: '1', name: '管理员', roles: ['admin'], permissions: ['*'] },
+    })
     mockGetEmployees.mockResolvedValue({
       data: {
         data: {
@@ -258,5 +269,42 @@ describe('EmployeesPage', () => {
     expect(callArgs).toHaveProperty('phone', '13800138000')
     expect(callArgs).toHaveProperty('position', '管理员')
     expect(callArgs).toHaveProperty('permissions')
+  })
+
+  // ==================== 员工管理权限全链路（按钮级权限） ====================
+
+  it('仅 employee:list 权限：不显示新增员工/编辑/删除按钮，操作列为只读', async () => {
+    mockUseAuthStore.mockReturnValue({
+      user: { id: '2', name: '客服小王', roles: ['operator'], permissions: ['employee:list'] },
+    })
+    render(<EmployeesPage />)
+    // 页面可访问（路由层要求 employee:list），但写操作按钮不可见
+    expect(screen.getByText('员工管理')).toBeInTheDocument()
+    expect(screen.queryByText('新增员工')).not.toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getAllByText('只读').length).toBeGreaterThan(0)
+    })
+    expect(screen.queryByText('编辑')).not.toBeInTheDocument()
+    expect(screen.queryByText('删除')).not.toBeInTheDocument()
+  })
+
+  it('无 employee:list 权限：新增员工按钮同样不可见（后端会 403，前端隐藏入口）', () => {
+    mockUseAuthStore.mockReturnValue({
+      user: { id: '3', name: '收银员', roles: ['operator'], permissions: ['dashboard:view'] },
+    })
+    render(<EmployeesPage />)
+    expect(screen.queryByText('新增员工')).not.toBeInTheDocument()
+  })
+
+  it('employee:create 权限：显示新增员工与行内编辑/删除按钮', async () => {
+    mockUseAuthStore.mockReturnValue({
+      user: { id: '4', name: '人事主管', roles: ['operator'], permissions: ['employee:list', 'employee:create'] },
+    })
+    render(<EmployeesPage />)
+    expect(screen.getByText('新增员工')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getAllByText('编辑').length).toBeGreaterThan(0)
+    })
+    expect(screen.getAllByText('删除').length).toBeGreaterThan(0)
   })
 })

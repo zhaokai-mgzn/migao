@@ -15,7 +15,7 @@ AI 智能客服系统 - 双 Agent 架构
 """
 
 from typing import AsyncGenerator, Optional, List, Dict, Any, Union
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 import traceback
 
@@ -71,6 +71,9 @@ class AgentContext:
     role: str = "customer"
     identity_type: str = "wechat_mini"
     user_name: Optional[str] = None
+    tenant_name: Optional[str] = None
+    # 细粒度权限码列表（来自 admin-api JWT claims.permissions，与后端 @RequirePermission 同源）
+    permissions: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -80,6 +83,8 @@ class AgentContext:
             "role": self.role,
             "identity_type": self.identity_type,
             "user_name": self.user_name,
+            "tenant_name": self.tenant_name,
+            "permissions": self.permissions,
         }
     
     def to_tool_context(self) -> ToolContext:
@@ -89,6 +94,7 @@ class AgentContext:
             user_id=self.user_id,
             session_id=self.session_id,
             role=self.role,
+            permissions=self.permissions,
         )
 
 
@@ -197,6 +203,8 @@ class BaseAgent:
             "user_name": getattr(context, "user_name", None),
             "session_id": context.session_id,
             "role": context.role,
+            "permissions": getattr(context, "permissions", None) or [],
+            "tenant_name": getattr(context, "tenant_name", None),
             "intent_result": None,
             "route_decision": None,
             "final_answer": "",

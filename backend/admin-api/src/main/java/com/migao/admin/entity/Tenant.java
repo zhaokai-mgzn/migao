@@ -30,6 +30,15 @@ public class Tenant {
 
     private String status;
 
+    /** 企业 Logo（OSS URL），用于管理后台品牌展示 */
+    private String logo;
+
+    /** 系统通知开关 */
+    private Boolean notificationEnabled;
+
+    /** 通知邮箱 */
+    private String notificationEmail;
+
     @TableField(typeHandler = com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler.class)
     private Object authConfig;
 

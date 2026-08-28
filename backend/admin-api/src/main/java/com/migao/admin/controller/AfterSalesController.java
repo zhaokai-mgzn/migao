@@ -4,6 +4,7 @@ import com.migao.admin.dto.*;
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.security.SecurityUser;
 import com.migao.admin.service.AfterSalesTicketService;
+import com.migao.admin.security.RequirePermission;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -22,6 +23,7 @@ import org.springframework.web.bind.annotation.*;
  * - PUT    /api/admin/after-sales/{id}/status → updateTicketStatus
  */
 @Slf4j
+@RequirePermission("order:refund")
 @RestController
 @RequestMapping("/api/admin/after-sales")
 @RequiredArgsConstructor

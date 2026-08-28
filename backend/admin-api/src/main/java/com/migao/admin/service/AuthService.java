@@ -594,8 +594,9 @@ public class AuthService {
         // 构建菜单列表（根据权限）
         List<UserInfoResponse.MenuItem> menus = buildMenusByPermissions(permissions);
 
-        // 查询租户名称
+        // 查询租户名称与 Logo（「企业基础信息」设置，用于前端品牌展示）
         String tenantName = getTenantName(user.getTenantId());
+        String tenantLogo = getTenantLogo(user.getTenantId());
 
         return UserInfoResponse.builder()
                 .user(UserInfoResponse.UserInfo.builder()
@@ -605,6 +606,7 @@ public class AuthService {
                         .avatar(user.getAvatar())
                         .tenantId(user.getTenantId())
                         .tenantName(tenantName)
+                        .tenantLogo(tenantLogo)
                         .status(user.getStatus())
                         .build())
                 .roles(securityUser.getRoles())
@@ -674,6 +676,25 @@ public class AuthService {
             return tenant != null ? tenant.getName() : null;
         } catch (Exception e) {
             log.warn("查询租户名称失败: tenantId={}, error={}", tenantId, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 查询租户 Logo（「企业基础信息」设置的企业 Logo）
+     *
+     * @param tenantId 租户ID
+     * @return 租户 Logo URL，不存在则返回 null
+     */
+    private String getTenantLogo(Long tenantId) {
+        if (tenantId == null || tenantId == -1L) {
+            return null;
+        }
+        try {
+            Tenant tenant = tenantMapper.selectById(tenantId);
+            return tenant != null ? tenant.getLogo() : null;
+        } catch (Exception e) {
+            log.warn("查询租户 Logo 失败: tenantId={}, error={}", tenantId, e.getMessage());
             return null;
         }
     }

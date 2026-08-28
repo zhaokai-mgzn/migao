@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
@@ -37,6 +38,7 @@ import java.util.Map;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -130,7 +132,7 @@ class SettingsControllerTest {
             tenant.setCode("test");
             tenant.setIndustry("布艺");
             when(tenantMapper.selectById(1L)).thenReturn(tenant);
-            when(tenantMapper.updateById(any(Tenant.class))).thenReturn(1);
+            when(tenantMapper.update(any(), any())).thenReturn(1);
 
             Map<String, Object> body = Map.of("name", "新名称");
 
@@ -164,7 +166,7 @@ class SettingsControllerTest {
             tenant.setCode("test");
             tenant.setIndustry("布艺");
             when(tenantMapper.selectById(1L)).thenReturn(tenant);
-            when(tenantMapper.updateById(any(Tenant.class))).thenReturn(1);
+            when(tenantMapper.update(any(), any())).thenReturn(1);
 
             Map<String, Object> body = Map.of("companyName", "新公司名");
 
@@ -186,7 +188,7 @@ class SettingsControllerTest {
             tenant.setCode("test");
             tenant.setIndustry("旧行业");
             when(tenantMapper.selectById(1L)).thenReturn(tenant);
-            when(tenantMapper.updateById(any(Tenant.class))).thenReturn(1);
+            when(tenantMapper.update(any(), any())).thenReturn(1);
 
             Map<String, Object> body = Map.of("industry", "皮革");
 
@@ -196,6 +198,107 @@ class SettingsControllerTest {
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.success").value(true))
                     .andExpect(jsonPath("$.data.industry").value("皮革"));
+        }
+
+        // ============ 品牌与通知设置落库（此前刷新即丢，现持久化） ============
+
+        @Test
+        @DisplayName("更新 Logo + 通知设置 -> 200 且落库")
+        void updateLogoAndNotification_persisted() throws Exception {
+            Tenant tenant = new Tenant();
+            tenant.setId(1L);
+            tenant.setName("测试租户");
+            tenant.setCode("test");
+            when(tenantMapper.selectById(1L)).thenReturn(tenant);
+            when(tenantMapper.update(any(), any())).thenReturn(1);
+
+            Map<String, Object> body = new java.util.HashMap<>();
+            body.put("companyName", "词元通达");
+            body.put("logo", "https://oss.example.com/logo.png");
+            body.put("notificationEnabled", true);
+            body.put("notificationEmail", "admin@migaozn.com");
+
+            mockMvc.perform(put("/api/admin/settings")
+                            .contentType("application/json")
+                            .content(objectMapper.writeValueAsString(body)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.logo").value("https://oss.example.com/logo.png"))
+                    .andExpect(jsonPath("$.data.notificationEnabled").value(true))
+                    .andExpect(jsonPath("$.data.notificationEmail").value("admin@migaozn.com"));
+
+            // 验证落库字段：UpdateWrapper 显式 set（null 亦可清空，MyBatis-Plus 默认跳过 null）
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<com.baomidou.mybatisplus.core.conditions.Wrapper<Tenant>> captor =
+                    ArgumentCaptor.forClass(com.baomidou.mybatisplus.core.conditions.Wrapper.class);
+            verify(tenantMapper).update(isNull(), captor.capture());
+            String sqlSet = captor.getValue().getSqlSet();
+            assertThat(sqlSet).contains("logo=").contains("notification_enabled=").contains("notification_email=");
+        }
+
+        @Test
+        @DisplayName("清空 Logo / 通知邮箱 -> 落库为 NULL（UpdateWrapper 显式 set 解决 null 被跳过）")
+        void clearLogoAndEmail_clearedInDb() throws Exception {
+            Tenant tenant = new Tenant();
+            tenant.setId(1L);
+            tenant.setName("测试租户");
+            tenant.setCode("test");
+            when(tenantMapper.selectById(1L)).thenReturn(tenant);
+            when(tenantMapper.update(any(), any())).thenReturn(1);
+
+            Map<String, Object> body = new java.util.HashMap<>();
+            body.put("logo", null);
+            body.put("notificationEmail", null);
+
+            mockMvc.perform(put("/api/admin/settings")
+                            .contentType("application/json")
+                            .content(objectMapper.writeValueAsString(body)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.logo").doesNotExist())
+                    .andExpect(jsonPath("$.data.notificationEmail").doesNotExist());
+
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<com.baomidou.mybatisplus.core.conditions.Wrapper<Tenant>> captor =
+                    ArgumentCaptor.forClass(com.baomidou.mybatisplus.core.conditions.Wrapper.class);
+            verify(tenantMapper).update(isNull(), captor.capture());
+            String sqlSet = captor.getValue().getSqlSet();
+            assertThat(sqlSet).contains("logo=").contains("notification_email=");
+        }
+
+        @Test
+        @DisplayName("通知邮箱格式错误 -> 422")
+        void updateInvalidNotificationEmail_throws422() throws Exception {
+            Tenant tenant = new Tenant();
+            tenant.setId(1L);
+            tenant.setName("测试租户");
+            tenant.setCode("test");
+            when(tenantMapper.selectById(1L)).thenReturn(tenant);
+
+            Map<String, Object> body = new java.util.HashMap<>();
+            body.put("notificationEmail", "not-an-email");
+
+            mockMvc.perform(put("/api/admin/settings")
+                            .contentType("application/json")
+                            .content(objectMapper.writeValueAsString(body)))
+                    .andExpect(status().isUnprocessableEntity());
+        }
+
+        @Test
+        @DisplayName("GET 返回 logo 与通知设置字段")
+        void getSettings_returnsBrandingFields() throws Exception {
+            Tenant tenant = new Tenant();
+            tenant.setId(1L);
+            tenant.setName("测试租户");
+            tenant.setCode("test");
+            tenant.setLogo("https://oss.example.com/logo.png");
+            tenant.setNotificationEnabled(true);
+            tenant.setNotificationEmail("admin@migaozn.com");
+            when(tenantMapper.selectById(1L)).thenReturn(tenant);
+
+            mockMvc.perform(get("/api/admin/settings"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.logo").value("https://oss.example.com/logo.png"))
+                    .andExpect(jsonPath("$.data.notificationEnabled").value(true))
+                    .andExpect(jsonPath("$.data.notificationEmail").value("admin@migaozn.com"));
         }
     }
 

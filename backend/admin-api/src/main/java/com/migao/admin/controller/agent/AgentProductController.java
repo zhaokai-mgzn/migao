@@ -10,6 +10,7 @@ import com.migao.admin.dto.agent.AgentProductCreateRequest;
 import com.migao.admin.dto.agent.AgentProductUpdateRequest;
 import com.migao.admin.dto.agent.AgentProcessingItemActionRequest;
 import com.migao.admin.service.ProductService;
+import com.migao.admin.security.RequirePermission;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
@@ -27,6 +28,7 @@ import java.util.Map;
  * - 错误返回含 suggestion
  */
 @Slf4j
+@RequirePermission("product:list")
 @RestController
 @RequestMapping("/api/admin/agent/products")
 @RequiredArgsConstructor

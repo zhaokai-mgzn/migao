@@ -2,10 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { act } from '@testing-library/react'
 
-// Mock useAuthStore
+// Mock useAuthStore — 支持 selector 调用（usePermission 用 useAuthStore(s => s.user)）
 const mockUseAuthStore = vi.fn()
 vi.mock('@/store/auth', () => ({
-  useAuthStore: (...args: any[]) => mockUseAuthStore(...args),
+  useAuthStore: (selector: any) => (selector ? selector(mockUseAuthStore()) : mockUseAuthStore()),
 }))
 
 // Mock next/navigation with controllable redirect
@@ -47,7 +47,7 @@ describe('Auth Guard (Dashboard Layout)', () => {
 
   it('should render children when authenticated', () => {
     mockUseAuthStore.mockReturnValue({
-      user: { id: '1', username: 'admin' },
+      user: { id: '1', username: 'admin', roles: ['admin'], permissions: ['*'] },
       isAuthenticated: true,
     })
 
@@ -64,7 +64,7 @@ describe('Auth Guard (Dashboard Layout)', () => {
 
   it('should render layout structure with sidebar and header', () => {
     mockUseAuthStore.mockReturnValue({
-      user: { id: '1', username: 'admin' },
+      user: { id: '1', username: 'admin', roles: ['admin'], permissions: ['*'] },
       isAuthenticated: true,
     })
 
@@ -80,8 +80,8 @@ describe('Auth Guard (Dashboard Layout)', () => {
 
   it('should render the main content area', () => {
     mockUseAuthStore.mockReturnValue({
-      user: null,
-      isAuthenticated: false,
+      user: { id: '1', username: 'admin', roles: ['admin'], permissions: ['*'] },
+      isAuthenticated: true,
     })
 
     render(
@@ -90,8 +90,26 @@ describe('Auth Guard (Dashboard Layout)', () => {
       </DashboardLayout>
     )
 
-    // Layout always renders - auth guard is handled at middleware level
     expect(screen.getByTestId('child-content')).toBeInTheDocument()
+  })
+
+  it('should show 403 panel when user lacks route permission', () => {
+    mockUsePathname.mockReturnValue('/employees')
+    mockUseAuthStore.mockReturnValue({
+      user: { id: '2', username: 'operator', roles: ['operator'], permissions: ['dashboard:view'] },
+      isAuthenticated: true,
+    })
+
+    render(
+      <DashboardLayout>
+        <div data-testid="child-content">Child</div>
+      </DashboardLayout>
+    )
+
+    // 路由级权限守卫（第二道防线）：无 employee:list 时渲染 403 而非子内容
+    expect(screen.queryByTestId('child-content')).not.toBeInTheDocument()
+    expect(screen.getByText(/无权访问该页面/)).toBeInTheDocument()
+    expect(screen.getByText('employee:list')).toBeInTheDocument()
   })
 })
 

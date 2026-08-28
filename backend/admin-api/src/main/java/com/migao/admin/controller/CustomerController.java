@@ -6,6 +6,7 @@ import com.migao.admin.dto.PageResponse;
 import com.migao.admin.entity.CustomerProfile;
 import com.migao.admin.entity.CustomerTag;
 import com.migao.admin.service.CustomerService;
+import com.migao.admin.security.RequirePermission;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
@@ -29,6 +30,7 @@ import java.util.Map;
  * - DELETE /api/admin/customer-tags/{id}     → deleteCustomerTag
  */
 @Slf4j
+@RequirePermission("customer:view")
 @RestController
 @RequiredArgsConstructor
 public class CustomerController {

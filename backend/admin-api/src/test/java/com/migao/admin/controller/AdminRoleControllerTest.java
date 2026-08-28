@@ -132,9 +132,9 @@ class AdminRoleControllerTest {
             Role role = new Role();
             role.setId("2");
             role.setName("operator");
-            when(roleService.createRole(anyString(), anyString(), anyString(), anyLong())).thenReturn(role);
+            when(roleService.createRole(anyString(), anyString(), anyString(), anyLong(), any())).thenReturn(role);
 
-            Map<String, Object> body = Map.of("name", "operator", "code", "op", "permissionIds", List.of(1, 2));
+            Map<String, Object> body = Map.of("name", "operator", "code", "op", "permissionIds", List.of("perm-1", "perm-2"));
 
             mockMvc.perform(post("/api/admin/roles")
                             .contentType("application/json")
@@ -151,7 +151,7 @@ class AdminRoleControllerTest {
         @Test
         @DisplayName("更新角色 -> 200")
         void updateRole() throws Exception {
-            when(roleService.updateRole(anyString(), anyString(), anyString())).thenReturn(new Role());
+            when(roleService.updateRole(anyString(), anyString(), anyString(), any())).thenReturn(new Role());
 
             Map<String, Object> body = Map.of("name", "updated");
 

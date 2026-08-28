@@ -43,6 +43,62 @@ class TestEmployeePermission:
         assert result.success is False
         assert "无效的操作类型" in result.error
 
+    # ============ 员工权限全链路：employee:list / employee:create 细粒度控制 ============
+    # 与后端 AdminUserController 的 @RequirePermission 口径一致：
+    # - 查询（list/detail）需 employee:list
+    # - 写操作（create/update/delete/reset_password/toggle_status）需 employee:create
+    # - admin(*) 全部放行
+
+    @pytest.fixture
+    def operator_list_only_context(self):
+        return ToolContext(
+            tenant_id=1, user_id="op_001", session_id="sess_op", role="operator",
+            permissions=["employee:list"],
+        )
+
+    @pytest.fixture
+    def operator_write_context(self):
+        return ToolContext(
+            tenant_id=1, user_id="op_002", session_id="sess_op2", role="operator",
+            permissions=["employee:list", "employee:create"],
+        )
+
+    @patch("app.tools.employee_manage.get_admin_api_client")
+    async def test_operator_with_list_only_can_query(self, mock_get_client, tool, operator_list_only_context, mock_client):
+        mock_client.get = AsyncMock(return_value={"success": True, "data": {"items": [], "total": 0}})
+        mock_get_client.return_value = mock_client
+        result = await tool.execute(context=operator_list_only_context, action="list")
+        assert result.success is True
+
+    async def test_operator_with_list_only_cannot_create(self, tool, operator_list_only_context):
+        result = await tool.execute(context=operator_list_only_context, action="create", name="张", phone="13800000000")
+        assert result.success is False
+        assert "权限" in result.error
+        assert "管理员工" in result.suggestion
+
+    async def test_operator_with_list_only_cannot_delete(self, tool, operator_list_only_context):
+        result = await tool.execute(context=operator_list_only_context, action="delete", user_id="e1")
+        assert result.success is False
+        assert "权限" in result.error
+
+    @patch("app.tools.employee_manage.get_admin_api_client")
+    async def test_operator_with_create_can_create(self, mock_get_client, tool, operator_write_context, mock_client):
+        mock_client.post = AsyncMock(return_value={"success": True, "data": {"id": "e99"}})
+        mock_get_client.return_value = mock_client
+        result = await tool.execute(
+            context=operator_write_context, action="create",
+            name="张", phone="13800000000", password="Abc@123456", role="operator")
+        assert result.success is True
+
+    async def test_operator_without_any_employee_permission_denied(self, tool):
+        ctx = ToolContext(
+            tenant_id=1, user_id="op_003", session_id="sess_op3", role="operator",
+            permissions=["dashboard:view"],
+        )
+        result = await tool.execute(context=ctx, action="list")
+        assert result.success is False
+        assert "权限" in result.error
+
 
 class TestEmployeeList:
     @patch("app.tools.employee_manage.get_admin_api_client")

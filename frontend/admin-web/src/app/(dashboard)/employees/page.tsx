@@ -5,6 +5,7 @@ import { Plus, Search } from 'lucide-react'
 import { toast } from 'sonner'
 import { employeeApi, roleApi } from '@/lib/api'
 import request from '@/lib/request'
+import { usePermission } from '@/lib/permission'
 import { Button, Input, Select, Modal, Table, Pagination, Badge } from '@/components/ui'
 import type { TableColumn } from '@/components/ui'
 import type { Employee, EmployeeStatus, Role } from '@/types'
@@ -16,6 +17,9 @@ const PRESET_POSITIONS = ['管理员', '客服', '运营', '销售', '财务']
 
 
 export default function EmployeesPage() {
+  const { has: hasPermission } = usePermission()
+  const canWrite = hasPermission('employee:create') // 新增/编辑/删除/禁用均需 employee:create
+
   // 列表状态
   const [employees, setEmployees] = useState<Employee[]>([])
   const [loading, setLoading] = useState(false)
@@ -224,8 +228,9 @@ export default function EmployeesPage() {
       width: '120px',
       render: (record) => (
         <button
-          onClick={() => handleEdit(record)}
-          className="text-primary-600 hover:text-primary-700 hover:underline text-sm font-medium"
+          onClick={() => canWrite && handleEdit(record)}
+          disabled={!canWrite}
+          className="text-primary-600 hover:text-primary-700 hover:underline text-sm font-medium disabled:cursor-default"
         >
           {record.name}
         </button>
@@ -269,12 +274,12 @@ export default function EmployeesPage() {
         return (
         <button
           type="button"
-          onClick={() => handleToggleStatus(record)}
-          disabled={isToggling}
+          onClick={() => canWrite && handleToggleStatus(record)}
+          disabled={!canWrite || isToggling}
           className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed ${
             record.status === 'active' ? 'bg-primary-600' : 'bg-neutral-300'
           }`}
-          title={isToggling ? '处理中...' : record.status === 'active' ? '点击禁用' : '点击启用'}
+          title={!canWrite ? '无权限' : isToggling ? '处理中...' : record.status === 'active' ? '点击禁用' : '点击启用'}
         >
           <span
             className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${
@@ -297,18 +302,24 @@ export default function EmployeesPage() {
       width: '140px',
       render: (record) => (
         <div className="flex items-center gap-3 whitespace-nowrap">
-          <button
-            onClick={(e) => { e.stopPropagation(); handleEdit(record) }}
-            className="text-primary-600 hover:text-primary-700 hover:underline transition-colors text-sm"
-          >
-            编辑
-          </button>
-          <button
-            onClick={(e) => { e.stopPropagation(); setDeleteTarget(record) }}
-            className="text-red-500 hover:text-red-600 hover:underline transition-colors text-sm"
-          >
-            删除
-          </button>
+          {canWrite ? (
+            <>
+              <button
+                onClick={(e) => { e.stopPropagation(); handleEdit(record) }}
+                className="text-primary-600 hover:text-primary-700 hover:underline transition-colors text-sm"
+              >
+                编辑
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); setDeleteTarget(record) }}
+                className="text-red-500 hover:text-red-600 hover:underline transition-colors text-sm"
+              >
+                删除
+              </button>
+            </>
+          ) : (
+            <span className="text-xs text-neutral-400">只读</span>
+          )}
         </div>
       ),
     },
@@ -322,10 +333,14 @@ export default function EmployeesPage() {
           <h1 className="text-xl font-semibold text-neutral-900">员工管理</h1>
           <p className="text-sm text-neutral-500 mt-1">管理系统用户和员工账号</p>
         </div>
-        <Button onClick={handleAdd}>
-          <Plus className="w-4 h-4 mr-1.5" />
-          新增员工
-        </Button>
+        {canWrite ? (
+          <Button onClick={handleAdd}>
+            <Plus className="w-4 h-4 mr-1.5" />
+            新增员工
+          </Button>
+        ) : (
+          <span className="text-xs text-neutral-400">仅拥有 employee:create 权限的员工可管理账号</span>
+        )}
       </div>
 
       {/* 搜索筛选栏 */}

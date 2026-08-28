@@ -6,6 +6,7 @@ import com.migao.admin.entity.OrderLogistics;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.service.OrderLogisticsService;
 import com.migao.admin.service.OrderService;
+import com.migao.admin.security.RequirePermission;
 import jakarta.validation.Valid;
 import java.math.BigDecimal;
 import java.util.Map;
@@ -38,6 +39,7 @@ public class OrderController {
      *
      * GET /api/admin/orders?page=1&size=20&status=pending&keyword=xxx&followStatus=pending&hasProcessing=true&startDate=2025-01-01&endDate=2025-12-31
      */
+    @RequirePermission("order:list")
     @GetMapping
     public ApiResponse<PageResponse<OrderListResponse>> getOrders(
             @RequestParam(defaultValue = "1") long page,
@@ -63,6 +65,7 @@ public class OrderController {
      *
      * POST /api/admin/orders
      */
+    @RequirePermission("order:list")
     @PostMapping
     public ApiResponse<OrderDetailResponse> createOrder(@Valid @RequestBody OrderCreateRequest request) {
         log.info("创建订单: customerName={}", request.getCustomerName());
@@ -76,6 +79,7 @@ public class OrderController {
      *
      * GET /api/admin/orders/statistics
      */
+    @RequirePermission("order:list")
     @GetMapping("/statistics")
     public ApiResponse<OrderStatisticsResponse> getOrderStatistics() {
         log.info("获取订单统计");
@@ -89,6 +93,7 @@ public class OrderController {
      *
      * GET /api/admin/orders/follow-status/stats
      */
+    @RequirePermission("order:list")
     @GetMapping("/follow-status/stats")
     public ApiResponse<FollowStatusStatsResponse> getFollowStatusStats() {
         log.info("获取跟进状态统计");
@@ -104,6 +109,7 @@ public class OrderController {
      *
      * GET /api/admin/orders/{id}
      */
+    @RequirePermission("order:list")
     @GetMapping("/{id:[0-9a-fA-F-]+}")
     public ApiResponse<OrderDetailResponse> getOrderById(@PathVariable String id) {
         log.info("查询订单详情: id={}", id);
@@ -116,6 +122,7 @@ public class OrderController {
      *
      * PUT /api/admin/orders/{id}/status
      */
+    @RequirePermission("order:list")
     @PutMapping("/{id:[0-9a-fA-F-]+}/status")
     public ApiResponse<Void> updateOrderStatus(
             @PathVariable String id,
@@ -130,6 +137,7 @@ public class OrderController {
      *
      * PUT /api/admin/orders/{id}/payment
      */
+    @RequirePermission("order:list")
     @PutMapping("/{id:[0-9a-fA-F-]+}/payment")
     public ApiResponse<Void> confirmPayment(@PathVariable String id) {
         log.info("确认支付: orderId={}", id);
@@ -143,6 +151,7 @@ public class OrderController {
      * PUT /api/admin/orders/{id}/cancel
      * Body: { "closeReason": "缺货" } (可选)
      */
+    @RequirePermission("order:list")
     @PutMapping("/{id:[0-9a-fA-F-]+}/cancel")
     public ApiResponse<Void> cancelOrder(
             @PathVariable String id,
@@ -159,6 +168,7 @@ public class OrderController {
      * POST /api/admin/orders/{id}/remark
      * Body: { "content": "备注内容" }
      */
+    @RequirePermission("order:list")
     @PostMapping("/{id:[0-9a-fA-F-]+}/remark")
     public ApiResponse<Void> addRemark(
             @PathVariable String id,
@@ -175,6 +185,7 @@ public class OrderController {
      * PUT /api/admin/orders/{id}/refund
      * body 可选字段：refund_reason（退款原因）、refund_amount（退款金额，缺省=全额）
      */
+    @RequirePermission("order:refund")
     @PutMapping("/{id:[0-9a-fA-F-]+}/refund")
     public ApiResponse<Void> refundOrder(@PathVariable String id,
                                          @RequestBody(required = false) Map<String, Object> body) {
@@ -208,6 +219,7 @@ public class OrderController {
      *
      * GET /api/admin/orders/{id}/follow-status
      */
+    @RequirePermission("order:list")
     @GetMapping("/{id:[0-9a-fA-F-]+}/follow-status")
     public ApiResponse<FollowStatusResponse> getFollowStatus(@PathVariable String id) {
         log.info("获取订单跟进状态: orderId={}", id);
@@ -220,6 +232,7 @@ public class OrderController {
      *
      * PUT /api/admin/orders/{id}/follow-status
      */
+    @RequirePermission("order:list")
     @PutMapping("/{id:[0-9a-fA-F-]+}/follow-status")
     public ApiResponse<Void> updateFollowStatus(
             @PathVariable String id,
@@ -234,6 +247,7 @@ public class OrderController {
      *
      * DELETE /api/admin/orders/{id}
      */
+    @RequirePermission("order:list")
     @DeleteMapping("/{id:[0-9a-fA-F-]+}")
     public ApiResponse<Void> deleteOrder(@PathVariable String id) {
         log.info("删除订单: id={}", id);
@@ -246,6 +260,7 @@ public class OrderController {
      *
      * PUT /api/admin/orders/{id}/logistics
      */
+    @RequirePermission("order:list")
     @PutMapping("/{id:[0-9a-fA-F-]+}/logistics")
     public ApiResponse<Void> updateLogistics(
             @PathVariable String id,

@@ -7,6 +7,7 @@ import com.migao.admin.dto.agent.AgentOrderCreateRequest;
 import com.migao.admin.dto.agent.AgentOrderResolveResponse;
 import com.migao.admin.dto.agent.AgentOrderUpdateRequest;
 import com.migao.admin.service.OrderService;
+import com.migao.admin.security.RequirePermission;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.*;
  * - 提供订单号→UUID 解析端点
  */
 @Slf4j
+@RequirePermission("order:list")
 @RestController
 @RequestMapping("/api/admin/agent/orders")
 @RequiredArgsConstructor

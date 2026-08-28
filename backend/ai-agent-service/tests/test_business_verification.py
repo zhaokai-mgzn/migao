@@ -413,7 +413,8 @@ class TestToolRegistryCompleteness:
         assert isinstance(tool.allowed_roles, list)
         assert len(tool.allowed_roles) > 0, f"{tool_name} 的 allowed_roles 为空"
         for role in tool.allowed_roles:
-            assert role in {"customer", "admin", "agent", "tenant_admin", "guest"}, (
+            assert role in {"customer", "admin", "agent", "tenant_admin", "guest",
+                            "operator", "product_manager", "knowledge_editor"}, (
                 f"{tool_name} 包含未知角色 {role}"
             )
 
@@ -961,10 +962,10 @@ class TestRoleBasedPermission:
     @pytest.mark.unit
     @pytest.mark.parametrize("tool_name", sorted(B_END_ONLY_TOOLS))
     def test_admin_can_execute_b_end_tool(self, fresh_registry, tool_name):
-        """[Unit] admin 角色应可调用 B 端 Tool"""
+        """[Unit] admin 角色应可调用 B 端 Tool（admin 拥有全部细粒度权限 *，与后端口径一致）"""
         ctx = ToolContext(
             tenant_id=TENANT_A, user_id=ADMIN_USER_ID,
-            session_id="s2", role="admin",
+            session_id="s2", role="admin", permissions=["*"],
         )
         tool = fresh_registry.get_tool(tool_name)
         assert tool.check_permission(ctx) is True, f"admin 应可调用 {tool_name}"
@@ -975,10 +976,10 @@ class TestRoleBasedPermission:
         "category_manage", "processing_item_manage",
     ])
     def test_tenant_admin_can_execute_admin_only_tool(self, fresh_registry, tool_name):
-        """[Unit] tenant_admin 角色可调用 admin/tenant_admin only 的高权限 Tool"""
+        """[Unit] tenant_admin 角色可调用 admin/tenant_admin only 的高权限 Tool（授予全部权限）"""
         ctx = ToolContext(
             tenant_id=TENANT_A, user_id="ta_001",
-            session_id="s3", role="tenant_admin",
+            session_id="s3", role="tenant_admin", permissions=["*"],
         )
         tool = fresh_registry.get_tool(tool_name)
         assert tool.check_permission(ctx) is True
