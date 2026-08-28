@@ -1,3 +1,4 @@
+// case_ids: HR-004, HR-005
 package com.migao.admin.controller;
 
 import com.migao.admin.config.TenantContext;
