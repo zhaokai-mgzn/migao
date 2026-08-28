@@ -133,6 +133,24 @@ jobs:
           echo "::error::E2E 质量门禁失败 — 数据校验或 dashboard 冒烟不通过"
           echo "::error::API 契约变更? cd tests && npx tsx e2e/scripts/record-fixtures.ts"
 
+  # ============ UI 回退检测 — 防「工作区旧 UI 覆盖验收版」复发（#2579 教训）============
+  ui-regression-check:
+    name: UI Regression Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check UI token regression vs origin/main
+        run: |
+          git fetch origin main --quiet
+          chmod +x check-ui-regression.sh
+          ./check-ui-regression.sh --head
+        shell: bash
+
   # ============ QA Growth Gate — 事前测试覆盖门禁（block 模式）============
   qa-growth-gate:
     name: QA Growth Gate
