@@ -6,7 +6,7 @@
 修复后：destructive=True 的工具执行前，当前轮用户消息必须是明确确认，
 否则拦截并引导 LLM 先展示确认卡片。核心判断抽为 _is_explicit_confirmation。
 """
-# case_ids: DF-008
+# case_ids: DF-008, DF-009
 from app.graph.skills.base_skill import _is_explicit_confirmation, _requires_confirmation
 
 
@@ -37,6 +37,21 @@ class TestIsExplicitConfirmation:
         # 长篇消息夹带"确认"字样不应被误判为确认，避免注入/误放行
         long_msg = "这是一条很长很长的用户消息，里面提到了确认一下这个字眼，但实际上并不是用户在点击确认卡片"
         assert _is_explicit_confirmation(long_msg) is False
+
+    # ── 防"指令措辞绕过"（flash 直接执行倾向加固，DF-009）──
+    def test_instruction_phrasing_confirm_action_word_is_rejected(self):
+        # 用户指令"给订单X确认收款"含"确认"，但这是新指令而非对确认卡片的确认
+        # （flash 曾因此跳过确认卡片直接执行破坏性写）
+        assert _is_explicit_confirmation("给订单20260828979270002确认收款") is False
+        assert _is_explicit_confirmation("请确认收款") is False
+        assert _is_explicit_confirmation("帮我确认一下这个订单") is False
+
+    def test_confirm_card_return_value_still_accepted(self):
+        # 确认卡片回传的 confirmValue 以确认词开头 → 仍放行
+        assert _is_explicit_confirmation("确认创建商品测试A") is True
+        assert _is_explicit_confirmation("确认取消订单123456") is True
+        assert _is_explicit_confirmation("好的，确认") is True
+        assert _is_explicit_confirmation("确认无误") is True
 
 
 class TestRequiresConfirmation:

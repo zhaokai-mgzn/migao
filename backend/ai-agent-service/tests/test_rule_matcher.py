@@ -1,4 +1,4 @@
-# case_ids: MC-010, MC-011, AS-003, AS-004, AS-005
+# case_ids: MC-010, MC-011, AS-003, AS-004, AS-005, HR-002, DA-004
 """规则匹配器单元测试（app/router/rule_matcher.py）
 
 覆盖：_extract_text / RuleMatcher.match 关键词优先级 / 正则规则 / 未命中。
@@ -78,6 +78,28 @@ class TestMatch:
         assert result.intent == IntentType.ORDER_QUERY
         assert result.confidence == 0.9
         assert result.matched_keywords[0].startswith("regex:")
+
+    # ── 人事域路由（HR-002：创建员工/添加员工必须路由到 staff，不得被商品正则劫持）──
+    def test_create_employee_account_routes_to_staff(self):
+        result = self._match("创建一个员工账号，姓名张三，手机号13800000000")
+        assert result.intent == IntentType.EMPLOYEE_MANAGE
+
+    def test_add_employee_routes_to_staff(self):
+        result = self._match("添加员工 李四 运营人员")
+        assert result.intent == IntentType.EMPLOYEE_MANAGE
+
+    def test_new_employee_routes_to_staff(self):
+        result = self._match("新建一个员工账号")
+        assert result.intent == IntentType.EMPLOYEE_MANAGE
+
+    # ── 会话管理触发（看看当前有哪些会话 → session_manage）──
+    def test_session_listing_routes_to_session_manage(self):
+        result = self._match("看看当前有哪些会话")
+        assert result.intent == IntentType.SESSION_MANAGE
+
+    def test_customer_service_sessions_routes_to_session_manage(self):
+        result = self._match("看看当前有哪些活跃的客服会话")
+        assert result.intent == IntentType.SESSION_MANAGE
 
     def test_regex_product_creation(self):
         result = self._match("新建一个窗帘")

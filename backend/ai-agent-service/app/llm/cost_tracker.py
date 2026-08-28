@@ -49,7 +49,7 @@ def _calc_cost_cny(model: str, input_tokens: int, output_tokens: int) -> float:
 
     未匹配到的模型按 plus 档兜底，避免成本被静默漏算。
     """
-    pricing = MODEL_PRICING.get(model) or MODEL_PRICING[settings.LLM_MODEL_PRIMARY]  # fallback 到主模型定价
+    pricing = MODEL_PRICING.get(model) or MODEL_PRICING[settings.MINIMAX_MODEL]  # fallback 到主模型定价（env PRIMARY_MODEL）
     cost_input = (input_tokens / 1_000_000.0) * pricing["input"]
     cost_output = (output_tokens / 1_000_000.0) * pricing["output"]
     return round(cost_input + cost_output, 6)

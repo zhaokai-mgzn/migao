@@ -68,8 +68,9 @@ def _make_factory(side_effects):
 # =============================================================================
 @pytest.fixture
 def routing_on(monkeypatch):
-    """开启模型路由"""
+    """开启模型路由（主模型 = env PRIMARY_MODEL，默认 pro 与 LLM_MODEL_PRIMARY 一致）"""
     monkeypatch.setattr(settings, "LLM_ENABLE_MODEL_ROUTING", True)
+    monkeypatch.setattr(settings, "PRIMARY_MODEL", "deepseek-v4-pro")
 
 
 @pytest.fixture
@@ -150,6 +151,13 @@ class TestSelectModel:
         """普通场景 → MODEL_PLUS"""
         assert select_model() == MODEL_PLUS
         assert select_model(intent="order_query", tool_count=2, text_length=1000) == MODEL_PLUS
+
+    def test_routing_complex_uses_env_primary_model(self, routing_on, monkeypatch):
+        """复杂任务/默认 → env PRIMARY_MODEL（换主模型只需改 env，无需改代码）"""
+        monkeypatch.setattr(settings, "PRIMARY_MODEL", "deepseek-v4-flash")
+        assert select_model(intent="order_query", tool_count=5) == "deepseek-v4-flash"
+        assert select_model(intent="order_query", tool_count=2, text_length=1000) == "deepseek-v4-flash"
+        assert select_model() == "deepseek-v4-flash"
 
     def test_routing_force_model_overrides_auto(self, routing_on):
         """force_model 直接覆盖自动判定"""
