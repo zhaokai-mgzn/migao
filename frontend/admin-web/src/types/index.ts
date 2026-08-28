@@ -704,26 +704,27 @@ export interface CustomerDetail extends Customer {
   sessions?: CustomerSession[]
 }
 
-// 后端客户详情响应（原始结构：profile 为 CustomerProfile 实体）
-export interface CustomerDetailResponse {
+// 客户档案（后端 CustomerProfile 实体序列化返回）
+// GET /api/admin/customers/{id} → profile 字段
+export interface CustomerProfile {
   id?: string
-  profile?: {
-    id?: string
-    wechatNickname?: string
-    name?: string
-    phone?: string
-    avatarUrl?: string
-    sourceChannel?: string
-    vipLevel?: string | null
-    agentNotes?: string
-    tags?: unknown
-    lastActiveAt?: string
-    registeredAt?: string
-    createdAt?: string
-    totalOrders?: number
-    totalConsumption?: number
-  }
-  tags?: CustomerTag[]
+  wechatNickname?: string
+  avatarUrl?: string
+  phone?: string
+  sourceChannel?: CustomerChannel | string
+  // 后端返回字符串（normal/vip1/vip2/vip3）
+  vipLevel?: number | string | null
+  // 备注（后端字段名 agentNotes）
+  agentNotes?: string
+  lastActiveAt?: string
+  registeredAt?: string
+}
+
+// 客户详情页响应（后端契约：{ id, profile, tags, orders, sessions }）
+export interface CustomerDetailResponse {
+  id: string
+  profile: CustomerProfile
+  tags?: CustomerTag[] | null
   orders?: CustomerOrder[]
   sessions?: CustomerSession[]
 }

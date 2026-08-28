@@ -206,12 +206,12 @@ export default function RichTextEditor({
   }, [])
 
   return (
-    <div className="rich-text-editor border border-gray-300 rounded-lg overflow-hidden bg-white focus-within:border-primary-500 focus-within:ring-2 focus-within:ring-primary-500/15 transition-all">
+    <div className="rich-text-editor border border-neutral-300 rounded-lg overflow-hidden bg-white focus-within:border-primary-500 focus-within:ring-2 focus-within:ring-primary-500/15 transition-all">
       {/* 工具栏 */}
-      <div className="flex flex-wrap items-center gap-0.5 px-2 py-1.5 border-b border-gray-200 bg-gray-50">
+      <div className="flex flex-wrap items-center gap-0.5 px-2 py-1.5 border-b border-neutral-200 bg-neutral-50">
         {buttons.map((b, i) =>
           b === 'divider' ? (
-            <span key={`d-${i}`} className="mx-1 h-5 w-px bg-gray-300" />
+            <span key={`d-${i}`} className="mx-1 h-5 w-px bg-neutral-300" />
           ) : (
             <button
               key={b.key}
@@ -223,7 +223,7 @@ export default function RichTextEditor({
                 else if (b.command) exec(b.command, b.arg)
               }}
               className={cn(
-                'inline-flex items-center justify-center w-7 h-7 rounded text-gray-600 hover:bg-white hover:text-primary-600 transition-colors',
+                'inline-flex items-center justify-center w-7 h-7 rounded text-neutral-600 hover:bg-white hover:text-primary-600 transition-colors',
                 b.isActive?.() && 'bg-primary-100 text-primary-700'
               )}
             >
@@ -232,7 +232,7 @@ export default function RichTextEditor({
           )
         )}
         {uploading && (
-          <span className="ml-2 inline-flex items-center gap-1 text-xs text-gray-500">
+          <span className="ml-2 inline-flex items-center gap-1 text-xs text-neutral-500">
             <Loader2 className="w-3.5 h-3.5 animate-spin" /> 图片上传中...
           </span>
         )}
@@ -248,7 +248,7 @@ export default function RichTextEditor({
         onCompositionStart={() => { isComposingRef.current = true }}
         onCompositionEnd={() => { isComposingRef.current = false; handleInput() }}
         onPaste={handlePaste}
-        className="rt-editor-content px-4 py-3 outline-none text-sm text-gray-800 leading-relaxed overflow-auto"
+        className="rt-editor-content px-4 py-3 outline-none text-sm text-neutral-800 leading-relaxed overflow-auto"
         style={{ minHeight }}
       />
 

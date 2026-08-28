@@ -351,11 +351,11 @@ export default function ProductsPage() {
     <div className="p-6 space-y-4">
       {/* 页面标题 */}
       <div>
-        <h1 className="text-xl font-bold text-gray-900">商品列表</h1>
+        <h1 className="text-xl font-bold text-neutral-900">商品列表</h1>
       </div>
 
       {/* 搜索区 */}
-      <div className="bg-white rounded-lg border border-gray-200 p-5" data-testid="search-area">
+      <div className="bg-white rounded-lg border border-neutral-200 p-5" data-testid="search-area">
         {/* 第一行：商品ID / 商品标题 / 商品货号 */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-x-8 gap-y-4">
           <FormField label="商品ID">
@@ -368,7 +368,7 @@ export default function ProductsPage() {
               }}
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
               placeholder="请输入商品ID"
-              className="w-full h-9 px-3 rounded border border-gray-300 bg-white text-sm placeholder:text-gray-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+              className="w-full h-9 px-3 rounded border border-neutral-300 bg-white text-sm placeholder:text-neutral-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
             />
           </FormField>
           <FormField label="商品标题">
@@ -381,7 +381,7 @@ export default function ProductsPage() {
               }}
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
               placeholder="请输入商品标题"
-              className="w-full h-9 px-3 rounded border border-gray-300 bg-white text-sm placeholder:text-gray-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+              className="w-full h-9 px-3 rounded border border-neutral-300 bg-white text-sm placeholder:text-neutral-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
             />
           </FormField>
           <FormField label="商品货号">
@@ -394,7 +394,7 @@ export default function ProductsPage() {
               }}
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
               placeholder="请输入商品ID"
-              className="w-full h-9 px-3 rounded border border-gray-300 bg-white text-sm placeholder:text-gray-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+              className="w-full h-9 px-3 rounded border border-neutral-300 bg-white text-sm placeholder:text-neutral-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
             />
           </FormField>
         </div>
@@ -410,7 +410,7 @@ export default function ProductsPage() {
                   setStatus(v)
                   syncUrl({ status: v || undefined, page: 1 })
                 }}
-                className="w-full h-9 pl-3 pr-9 rounded border border-gray-300 bg-white text-sm appearance-none focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                className="w-full h-9 pl-3 pr-9 rounded border border-neutral-300 bg-white text-sm appearance-none focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
               >
                 {STATUS_OPTIONS.map((opt) => (
                   <option key={opt.value} value={opt.value}>
@@ -419,7 +419,7 @@ export default function ProductsPage() {
                 ))}
               </select>
               <svg
-                className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none"
+                className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 pointer-events-none"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
@@ -432,7 +432,7 @@ export default function ProductsPage() {
           <FormField label="创建时间">
             <div className="flex items-center gap-2">
               <div className="relative flex-1">
-                <Calendar className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                <Calendar className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 pointer-events-none" />
                 <input
                   type="date"
                   value={createdFrom}
@@ -441,10 +441,10 @@ export default function ProductsPage() {
                     syncUrl({ createdFrom: e.target.value || undefined, page: 1 })
                   }}
                   placeholder="开始日期"
-                  className="w-full h-9 pl-8 pr-3 rounded border border-gray-300 bg-white text-sm text-gray-700 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                  className="w-full h-9 pl-8 pr-3 rounded border border-neutral-300 bg-white text-sm text-neutral-700 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                 />
               </div>
-              <span className="text-gray-400 text-sm">至</span>
+              <span className="text-neutral-400 text-sm">至</span>
               <div className="relative flex-1">
                 <input
                   type="date"
@@ -454,7 +454,7 @@ export default function ProductsPage() {
                     syncUrl({ createdTo: e.target.value || undefined, page: 1 })
                   }}
                   placeholder="结束日期"
-                  className="w-full h-9 pl-3 pr-3 rounded border border-gray-300 bg-white text-sm text-gray-700 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                  className="w-full h-9 pl-3 pr-3 rounded border border-neutral-300 bg-white text-sm text-neutral-700 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                 />
               </div>
             </div>
@@ -493,7 +493,7 @@ export default function ProductsPage() {
             批量导出
           </Button>
           {hasSelection && (
-            <span className="text-sm text-gray-500 ml-2">
+            <span className="text-sm text-neutral-500 ml-2">
               已选 <span className="text-primary-600 font-medium">{selectedIds.length}</span> 项
             </span>
           )}
@@ -548,7 +548,7 @@ export default function ProductsPage() {
           </>
         }
       >
-        <p className="text-sm text-gray-600 leading-relaxed">{confirmDialog?.desc}</p>
+        <p className="text-sm text-neutral-600 leading-relaxed">{confirmDialog?.desc}</p>
       </Modal>
     </div>
   )
@@ -558,7 +558,7 @@ export default function ProductsPage() {
 function FormField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-center gap-3">
-      <label className="text-sm text-gray-700 whitespace-nowrap min-w-[64px] text-right">
+      <label className="text-sm text-neutral-700 whitespace-nowrap min-w-[64px] text-right">
         {label}
       </label>
       <div className="flex-1 min-w-0">{children}</div>

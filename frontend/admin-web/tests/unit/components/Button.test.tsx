@@ -22,7 +22,7 @@ describe('Button Component', () => {
     render(<Button variant="secondary">Secondary</Button>)
     const btn = screen.getByText('Secondary')
     expect(btn.className).toContain('bg-white')
-    expect(btn.className).toContain('border-gray-300')
+    expect(btn.className).toContain('border-neutral-300')
   })
 
   it('applies danger variant styles', () => {

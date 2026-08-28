@@ -136,7 +136,7 @@ export default function NotificationBell() {
       <button
         ref={buttonRef}
         onClick={togglePanel}
-        className="relative p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+        className="relative p-2 text-neutral-500 hover:text-neutral-700 hover:bg-neutral-100 rounded-lg transition-colors"
       >
         <Bell className="w-5 h-5" />
         {unreadCount > 0 && (
@@ -152,14 +152,14 @@ export default function NotificationBell() {
           ref={panelRef}
           className={cn(
             'absolute right-0 top-full mt-2 w-[360px]',
-            'bg-white rounded-lg shadow-card border border-gray-100',
+            'bg-white rounded-lg shadow-card border border-neutral-100',
             'z-50 overflow-hidden',
             'animate-in fade-in slide-in-from-top-2 duration-200'
           )}
         >
           {/* 面板头部 */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-            <h3 className="text-sm font-semibold text-gray-900">通知</h3>
+          <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-100">
+            <h3 className="text-sm font-semibold text-neutral-900">通知</h3>
             {unreadCount > 0 && (
               <button
                 onClick={handleMarkAllAsRead}
@@ -179,7 +179,7 @@ export default function NotificationBell() {
               </div>
             ) : notifications.length === 0 ? (
               /* 空状态 */
-              <div className="flex flex-col items-center justify-center py-10 text-gray-400">
+              <div className="flex flex-col items-center justify-center py-10 text-neutral-400">
                 <Inbox className="w-10 h-10 mb-2 stroke-[1.5]" />
                 <p className="text-sm">暂无通知</p>
               </div>
@@ -189,8 +189,8 @@ export default function NotificationBell() {
                   key={notification.id}
                   onClick={() => handleMarkAsRead(notification)}
                   className={cn(
-                    'w-full text-left px-4 py-3 border-b border-gray-50 last:border-b-0',
-                    'hover:bg-gray-50 transition-colors',
+                    'w-full text-left px-4 py-3 border-b border-neutral-100 last:border-b-0',
+                    'hover:bg-neutral-50 transition-colors',
                     notification.status !== 'read' && 'bg-blue-50/30'
                   )}
                 >
@@ -200,21 +200,21 @@ export default function NotificationBell() {
                       <div
                         className={cn(
                           'w-2 h-2 rounded-full',
-                          notification.status !== 'read' ? 'bg-blue-500' : 'bg-transparent'
+                          notification.status !== 'read' ? 'bg-primary-500' : 'bg-transparent'
                         )}
                       />
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className={cn(
                         'text-sm leading-5 truncate',
-                        notification.status !== 'read' ? 'font-medium text-gray-900' : 'text-gray-700'
+                        notification.status !== 'read' ? 'font-medium text-neutral-900' : 'text-neutral-700'
                       )}>
                         {notification.title}
                       </p>
-                      <p className="text-xs text-gray-500 mt-0.5 line-clamp-2 leading-4">
+                      <p className="text-xs text-neutral-500 mt-0.5 line-clamp-2 leading-4">
                         {notification.content}
                       </p>
-                      <p className="text-[11px] text-gray-400 mt-1">
+                      <p className="text-[11px] text-neutral-400 mt-1">
                         {formatRelativeTime(notification.createdAt)}
                       </p>
                     </div>
@@ -225,10 +225,10 @@ export default function NotificationBell() {
           </div>
 
           {/* 底部操作栏 */}
-          <div className="flex items-center justify-between px-4 py-2.5 border-t border-gray-100 bg-gray-50/50">
+          <div className="flex items-center justify-between px-4 py-2.5 border-t border-neutral-100 bg-neutral-50/50">
             <button
               onClick={handleMarkAllAsRead}
-              className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 transition-colors"
+              className="flex items-center gap-1 text-xs text-neutral-500 hover:text-neutral-700 transition-colors"
             >
               <Check className="w-3.5 h-3.5" />
               全部标记已读

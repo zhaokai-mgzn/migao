@@ -429,14 +429,14 @@ export default function NewOrderPage() {
       <div className="flex items-center gap-3 mb-6">
         <button
           onClick={() => router.push('/orders')}
-          className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors"
+          className="p-2 rounded-lg border border-neutral-200 hover:bg-neutral-50 transition-colors"
           aria-label="返回"
         >
-          <ArrowLeft className="w-5 h-5 text-gray-600" />
+          <ArrowLeft className="w-5 h-5 text-neutral-600" />
         </button>
         <div className="flex-1">
-          <h1 className="text-xl font-semibold text-gray-900">新增订单</h1>
-          <p className="text-sm text-gray-500 mt-0.5">
+          <h1 className="text-xl font-semibold text-neutral-900">新增订单</h1>
+          <p className="text-sm text-neutral-500 mt-0.5">
             支持添加多个商品，每个商品可单独配置加工项
           </p>
         </div>
@@ -450,7 +450,7 @@ export default function NewOrderPage() {
             <div className="p-6">
               <div className="flex items-center justify-between mb-4">
                 <SectionTitle icon={<Package className="w-4 h-4" />} title="商品信息" />
-                <span className="text-xs text-gray-400">
+                <span className="text-xs text-neutral-400">
                   共 {lineItems.length} 个商品
                 </span>
               </div>
@@ -478,7 +478,7 @@ export default function NewOrderPage() {
               <button
                 type="button"
                 onClick={addLineItem}
-                className="mt-4 w-full h-11 rounded-lg border border-dashed border-gray-300 bg-white text-sm text-gray-500 hover:border-primary-500 hover:text-primary-600 hover:bg-primary-50/30 transition-colors inline-flex items-center justify-center gap-2"
+                className="mt-4 w-full h-11 rounded-lg border border-dashed border-neutral-300 bg-white text-sm text-neutral-500 hover:border-primary-500 hover:text-primary-600 hover:bg-primary-50/30 transition-colors inline-flex items-center justify-center gap-2"
               >
                 <Plus className="w-4 h-4" />
                 添加商品
@@ -520,13 +520,13 @@ export default function NewOrderPage() {
                 />
               </div>
               <div className="mt-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">备注</label>
+                <label className="block text-sm font-medium text-neutral-700 mb-1.5">备注</label>
                 <textarea
                   value={remark}
                   onChange={(e) => setRemark(e.target.value)}
                   placeholder="可填写发货要求、特殊说明等（选填）"
                   rows={3}
-                  className="w-full px-3 py-2 rounded border border-gray-300 text-sm resize-none focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                  className="w-full px-3 py-2 rounded border border-neutral-300 text-sm resize-none focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                 />
               </div>
             </div>
@@ -560,14 +560,14 @@ export default function NewOrderPage() {
                       return (
                         <div
                           key={line.id}
-                          className="flex items-start justify-between gap-2 py-1.5 border-b border-dashed border-gray-100 last:border-0"
+                          className="flex items-start justify-between gap-2 py-1.5 border-b border-dashed border-neutral-100 last:border-0"
                         >
                           <div className="min-w-0 flex-1">
-                            <div className="text-gray-700 truncate">
-                              <span className="text-gray-400 mr-1">{idx + 1}.</span>
+                            <div className="text-neutral-700 truncate">
+                              <span className="text-neutral-400 mr-1">{idx + 1}.</span>
                               {line.product?.name}
                             </div>
-                            <div className="text-xs text-gray-400 mt-0.5">
+                            <div className="text-xs text-neutral-400 mt-0.5">
                               ×{line.quantity} · {formatAmount(line.unitPrice)}
                               {procFee > 0 && (
                                 <span className="ml-2 text-orange-600">
@@ -576,7 +576,7 @@ export default function NewOrderPage() {
                               )}
                             </div>
                           </div>
-                          <span className="text-gray-800 font-medium shrink-0">
+                          <span className="text-neutral-800 font-medium shrink-0">
                             {formatAmount(sub + procFee)}
                           </span>
                         </div>
@@ -592,17 +592,17 @@ export default function NewOrderPage() {
                   value={formatAmount(totals.processingFee)}
                   highlight={totals.processingFee > 0}
                 />
-                <div className="my-2 border-t border-dashed border-gray-200" />
+                <div className="my-2 border-t border-dashed border-neutral-200" />
                 <div className="flex items-baseline justify-between">
-                  <span className="text-gray-700">订单金额</span>
+                  <span className="text-neutral-700">订单金额</span>
                   <span className="text-lg font-semibold text-primary-600">
                     {formatAmount(totals.total)}
                   </span>
                 </div>
 
                 {/* 优惠金额 — issue #672 */}
-                <div className="pt-3 mt-2 border-t border-gray-100">
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                <div className="pt-3 mt-2 border-t border-neutral-100">
+                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
                     优惠金额 (¥)
                   </label>
                   <input
@@ -611,13 +611,13 @@ export default function NewOrderPage() {
                     step={0.01}
                     value={discountAmount}
                     onChange={(e) => setDiscountAmount(e.target.value)}
-                    className="w-full h-9 px-3 rounded border border-gray-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                    className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                   />
-                  <p className="mt-1 text-xs text-gray-400">默认 0，修改后实收款自动联动</p>
+                  <p className="mt-1 text-xs text-neutral-400">默认 0，修改后实收款自动联动</p>
                 </div>
 
-                <div className="pt-3 mt-2 border-t border-gray-100">
-                  <label htmlFor="actualAmount" className="block text-sm font-medium text-gray-700 mb-1.5">
+                <div className="pt-3 mt-2 border-t border-neutral-100">
+                  <label htmlFor="actualAmount" className="block text-sm font-medium text-neutral-700 mb-1.5">
                     实收款 (¥)
                   </label>
                   <input
@@ -627,9 +627,9 @@ export default function NewOrderPage() {
                     step={0.01}
                     value={actualAmount}
                     onChange={(e) => setActualAmount(e.target.value)}
-                    className="w-full h-9 px-3 rounded border border-gray-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                    className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                   />
-                  <p className="mt-1 text-xs text-gray-400">默认与订单金额（扣除优惠后）一致，可手动调整</p>
+                  <p className="mt-1 text-xs text-neutral-400">默认与订单金额（扣除优惠后）一致，可手动调整</p>
                 </div>
               </dl>
             </div>
@@ -679,9 +679,9 @@ export default function NewOrderPage() {
 
           <div className="max-h-[420px] overflow-y-auto -mx-2 px-2">
             {productSearchLoading ? (
-              <p className="text-center text-gray-400 py-8 text-sm">加载中…</p>
+              <p className="text-center text-neutral-400 py-8 text-sm">加载中…</p>
             ) : productResults.length === 0 ? (
-              <p className="text-center text-gray-400 py-8 text-sm">
+              <p className="text-center text-neutral-400 py-8 text-sm">
                 {productKeyword ? '未找到相关商品' : '暂无可选商品'}
               </p>
             ) : (
@@ -691,27 +691,27 @@ export default function NewOrderPage() {
                     key={p.id}
                     type="button"
                     onClick={() => handlePickProduct(p)}
-                    className="flex items-center gap-3 p-3 rounded-lg border border-gray-200 bg-white hover:border-primary-400 hover:bg-primary-50/40 transition-colors text-left"
+                    className="flex items-center gap-3 p-3 rounded-lg border border-neutral-200 bg-white hover:border-primary-400 hover:bg-primary-50/40 transition-colors text-left"
                   >
                     {p.images?.[0] ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
                         src={resolveImageUrl(p.images[0])}
                         alt={p.name}
-                        className="w-12 h-12 rounded object-cover bg-gray-50 border border-gray-200 shrink-0"
+                        className="w-12 h-12 rounded object-cover bg-neutral-50 border border-neutral-200 shrink-0"
                       />
                     ) : (
-                      <div className="w-12 h-12 rounded bg-gray-100 border border-gray-200 flex items-center justify-center text-gray-300 shrink-0">
+                      <div className="w-12 h-12 rounded bg-neutral-100 border border-neutral-200 flex items-center justify-center text-neutral-300 shrink-0">
                         <Package className="w-5 h-5" />
                       </div>
                     )}
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-gray-900 truncate">{p.name}</div>
-                      <div className="text-xs text-gray-400 mt-0.5 truncate">
+                      <div className="text-sm font-medium text-neutral-900 truncate">{p.name}</div>
+                      <div className="text-xs text-neutral-400 mt-0.5 truncate">
                         {p.categoryName || '-'} · {p.skuCode || p.unit || '-'}
                       </div>
                     </div>
-                    <div className="text-sm font-semibold text-gray-900 shrink-0">
+                    <div className="text-sm font-semibold text-neutral-900 shrink-0">
                       ¥{Number(p.price ?? 0).toFixed(2)}
                     </div>
                   </button>
@@ -774,20 +774,20 @@ function LineItemBlock({
   const errPrice = errors[`line_${line.id}_unitPrice`]
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white">
+    <div className="rounded-xl border border-neutral-200 bg-white">
       {/* 行项头部：序号 + 删除 */}
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 bg-gray-50/60 rounded-t-xl">
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-neutral-100 bg-neutral-50/60 rounded-t-xl">
         <div className="flex items-center gap-2">
           <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-primary-600 text-white text-xs font-semibold">
             {index + 1}
           </span>
-          <span className="text-sm font-medium text-gray-700">商品 {index + 1}</span>
+          <span className="text-sm font-medium text-neutral-700">商品 {index + 1}</span>
         </div>
         {canRemove && (
           <button
             type="button"
             onClick={onRemove}
-            className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-red-600 transition-colors"
+            className="inline-flex items-center gap-1 text-xs text-neutral-500 hover:text-red-600 transition-colors"
           >
             <Trash2 className="w-3.5 h-3.5" />
             删除
@@ -800,24 +800,24 @@ function LineItemBlock({
         <div className="mb-4">
           <Label required>选择商品</Label>
           {line.product ? (
-            <div className="flex items-center gap-3 p-3 rounded-lg border border-gray-200 bg-gray-50/60">
+            <div className="flex items-center gap-3 p-3 rounded-lg border border-neutral-200 bg-neutral-50/60">
               {line.product.images?.[0] ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={resolveImageUrl(line.product.images[0])}
                   alt={line.product.name}
-                  className="w-14 h-14 rounded object-cover bg-white border border-gray-200"
+                  className="w-14 h-14 rounded object-cover bg-white border border-neutral-200"
                 />
               ) : (
-                <div className="w-14 h-14 rounded bg-gray-100 border border-gray-200 flex items-center justify-center text-gray-300">
+                <div className="w-14 h-14 rounded bg-neutral-100 border border-neutral-200 flex items-center justify-center text-neutral-300">
                   <Package className="w-6 h-6" />
                 </div>
               )}
               <div className="flex-1 min-w-0">
-                <div className="text-sm font-medium text-gray-900 truncate">
+                <div className="text-sm font-medium text-neutral-900 truncate">
                   {line.product.name}
                 </div>
-                <div className="text-xs text-gray-500 mt-0.5">
+                <div className="text-xs text-neutral-500 mt-0.5">
                   {line.product.categoryName || '-'} · 货号：{line.product.skuCode || '-'}
                 </div>
               </div>
@@ -832,7 +832,7 @@ function LineItemBlock({
             <button
               type="button"
               onClick={onPickProduct}
-              className="w-full h-11 rounded-lg border border-dashed border-gray-300 bg-white text-sm text-gray-500 hover:border-primary-500 hover:text-primary-600 transition-colors inline-flex items-center justify-center gap-2"
+              className="w-full h-11 rounded-lg border border-dashed border-neutral-300 bg-white text-sm text-neutral-500 hover:border-primary-500 hover:text-primary-600 transition-colors inline-flex items-center justify-center gap-2"
             >
               <Search className="w-4 h-4" />
               点击搜索并选择商品
@@ -845,7 +845,7 @@ function LineItemBlock({
         {line.product && (
           <>
             {line.productLoading ? (
-              <div className="text-sm text-gray-400 py-4">商品规格加载中…</div>
+              <div className="text-sm text-neutral-400 py-4">商品规格加载中…</div>
             ) : (
               <>
                 {colorOptions.length > 0 && (
@@ -863,7 +863,7 @@ function LineItemBlock({
                               'h-9 px-3 rounded border text-sm transition-colors ' +
                               (active
                                 ? 'border-primary-600 bg-primary-50 text-primary-700 ring-1 ring-primary-500/30'
-                                : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400')
+                                : 'border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400')
                             }
                           >
                             {c.name}
@@ -890,19 +890,19 @@ function LineItemBlock({
                               'flex items-center justify-between gap-2 px-3 py-2 rounded border text-sm transition-colors ' +
                               (active
                                 ? 'border-primary-600 bg-primary-50 text-primary-700 ring-1 ring-primary-500/30'
-                                : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400')
+                                : 'border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400')
                             }
                           >
                             <div className="text-left">
                               <div className="font-medium">
                                 {sku.doorWidth || '默认规格'}
                                 {sku.sellingMethod && (
-                                  <span className="ml-2 text-xs text-gray-500">
+                                  <span className="ml-2 text-xs text-neutral-500">
                                     {sellingMethodLabel[sku.sellingMethod] || sku.sellingMethod}
                                   </span>
                                 )}
                               </div>
-                              <div className="text-xs text-gray-400 mt-0.5">
+                              <div className="text-xs text-neutral-400 mt-0.5">
                                 库存 {sku.stock ?? 0}
                               </div>
                             </div>
@@ -928,7 +928,7 @@ function LineItemBlock({
                   min={1}
                   value={line.quantity}
                   onChange={(e) => onChangeQty(Math.max(1, Number(e.target.value) || 1))}
-                  className="w-full h-9 px-3 rounded border border-gray-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                  className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                 />
                 {errQty && <p className="mt-1 text-sm text-red-600">{errQty}</p>}
               </div>
@@ -940,7 +940,7 @@ function LineItemBlock({
                   step={0.01}
                   value={line.unitPrice}
                   onChange={(e) => onChangePrice(Number(e.target.value) || 0)}
-                  className="w-full h-9 px-3 rounded border border-gray-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                  className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                 />
                 {errPrice && <p className="mt-1 text-sm text-red-600">{errPrice}</p>}
               </div>
@@ -948,16 +948,16 @@ function LineItemBlock({
 
             {/* 加工选项（按商品过滤） */}
             {supportsProcessing && (
-              <div className="pt-2 border-t border-gray-100">
+              <div className="pt-2 border-t border-neutral-100">
                 <div className="flex items-center gap-2 mb-3">
-                  <Settings2 className="w-4 h-4 text-gray-500" />
-                  <span className="text-sm font-medium text-gray-700">加工选项（可选）</span>
+                  <Settings2 className="w-4 h-4 text-neutral-500" />
+                  <span className="text-sm font-medium text-neutral-700">加工选项（可选）</span>
                 </div>
 
                 {line.processingLoading ? (
-                  <div className="text-sm text-gray-400 py-2">加工项加载中…</div>
+                  <div className="text-sm text-neutral-400 py-2">加工项加载中…</div>
                 ) : line.processingItems.length === 0 ? (
-                  <div className="text-sm text-gray-400 py-2">该商品暂无可选加工项</div>
+                  <div className="text-sm text-neutral-400 py-2">该商品暂无可选加工项</div>
                 ) : (
                   <div className="space-y-2">
                     {line.processingItems.map((pi) => {
@@ -970,7 +970,7 @@ function LineItemBlock({
                             'flex items-center gap-3 p-3 rounded border transition-colors ' +
                             (cfg.selected
                               ? 'border-primary-300 bg-primary-50/40'
-                              : 'border-gray-200 bg-white')
+                              : 'border-neutral-200 bg-white')
                           }
                         >
                           <input
@@ -980,11 +980,11 @@ function LineItemBlock({
                             className="w-4 h-4 accent-primary-600"
                           />
                           <div className="flex-1 min-w-0">
-                            <div className="text-sm font-medium text-gray-900">{pi.name}</div>
-                            <div className="text-xs text-gray-500 mt-0.5">
+                            <div className="text-sm font-medium text-neutral-900">{pi.name}</div>
+                            <div className="text-xs text-neutral-500 mt-0.5">
                               ¥{finalPrice.toFixed(2)} / {pi.unit || '项'}
                               {pi.customPrice != null && pi.customPrice !== pi.unitPrice && (
-                                <span className="ml-2 text-gray-400 line-through">
+                                <span className="ml-2 text-neutral-400 line-through">
                                   ¥{Number(pi.unitPrice).toFixed(2)}
                                 </span>
                               )}
@@ -998,7 +998,7 @@ function LineItemBlock({
                               onChange={(e) =>
                                 onChangeProcessingQty(pi.id, Math.max(1, Number(e.target.value) || 1))
                               }
-                              className="w-20 h-8 px-2 rounded border border-gray-300 text-sm text-center focus:outline-none focus:border-primary-500"
+                              className="w-20 h-8 px-2 rounded border border-neutral-300 text-sm text-center focus:outline-none focus:border-primary-500"
                             />
                           )}
                         </div>
@@ -1031,14 +1031,14 @@ function SectionTitle({ icon, title }: { icon: React.ReactNode; title: string })
       <span className="w-6 h-6 rounded bg-primary-50 text-primary-600 inline-flex items-center justify-center">
         {icon}
       </span>
-      <h2 className="text-base font-semibold text-gray-900">{title}</h2>
+      <h2 className="text-base font-semibold text-neutral-900">{title}</h2>
     </div>
   )
 }
 
 function Label({ children, required }: { children: React.ReactNode; required?: boolean }) {
   return (
-    <label className="block text-sm font-medium text-gray-700 mb-1.5">
+    <label className="block text-sm font-medium text-neutral-700 mb-1.5">
       {children}
       {required && <span className="text-red-500 ml-1">*</span>}
     </label>
@@ -1048,8 +1048,8 @@ function Label({ children, required }: { children: React.ReactNode; required?: b
 function Row({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
   return (
     <div className="flex items-center justify-between">
-      <span className="text-gray-500">{label}</span>
-      <span className={highlight ? 'text-orange-600 font-medium' : 'text-gray-800'}>{value}</span>
+      <span className="text-neutral-500">{label}</span>
+      <span className={highlight ? 'text-orange-600 font-medium' : 'text-neutral-800'}>{value}</span>
     </div>
   )
 }

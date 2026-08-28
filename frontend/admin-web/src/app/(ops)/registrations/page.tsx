@@ -142,13 +142,13 @@ export default function RegistrationsPage() {
       {/* 页面标题 */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-xl font-semibold text-gray-900">企业入驻审批</h1>
-          <p className="text-sm text-gray-500 mt-1">审核企业入驻申请，管理平台租户</p>
+          <h1 className="text-xl font-semibold text-neutral-900">企业入驻审批</h1>
+          <p className="text-sm text-neutral-500 mt-1">审核企业入驻申请，管理平台租户</p>
         </div>
       </div>
 
       {/* 状态 Tab 栏 */}
-      <div className="flex items-center gap-0 bg-white border border-gray-200 rounded-t-lg overflow-x-auto">
+      <div className="flex items-center gap-0 bg-white border border-neutral-200 rounded-t-lg overflow-x-auto">
         {statusTabs.map((tab) => (
           <button
             key={tab.key}
@@ -156,8 +156,8 @@ export default function RegistrationsPage() {
             className={cn(
               'relative px-4 py-3 text-sm font-medium whitespace-nowrap transition-colors border-b-2',
               statusFilter === tab.key
-                ? 'text-blue-600 border-blue-600 bg-blue-50/50'
-                : 'text-gray-500 border-transparent hover:text-gray-700 hover:bg-gray-50'
+                ? 'text-primary-600 border-primary-600 bg-blue-50/50'
+                : 'text-neutral-500 border-transparent hover:text-neutral-700 hover:bg-neutral-50'
             )}
           >
             {tab.label}
@@ -166,46 +166,46 @@ export default function RegistrationsPage() {
       </div>
 
       {/* 数据表格 */}
-      <div className="bg-white rounded-b-lg border border-t-0 border-gray-200">
+      <div className="bg-white rounded-b-lg border border-t-0 border-neutral-200">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-gray-200 bg-gray-50/80">
-                <th className="text-left px-4 py-3 font-medium text-gray-600">企业名称</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">联系人</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">手机号</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">行业</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">状态</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">申请时间</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">操作</th>
+              <tr className="border-b border-neutral-200 bg-neutral-50/80">
+                <th className="text-left px-4 py-3 font-medium text-neutral-600">企业名称</th>
+                <th className="text-left px-4 py-3 font-medium text-neutral-600">联系人</th>
+                <th className="text-left px-4 py-3 font-medium text-neutral-600">手机号</th>
+                <th className="text-left px-4 py-3 font-medium text-neutral-600">行业</th>
+                <th className="text-left px-4 py-3 font-medium text-neutral-600">状态</th>
+                <th className="text-left px-4 py-3 font-medium text-neutral-600">申请时间</th>
+                <th className="text-left px-4 py-3 font-medium text-neutral-600">操作</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="text-center py-12 text-gray-400">
+                  <td colSpan={7} className="text-center py-12 text-neutral-400">
                     加载中...
                   </td>
                 </tr>
               ) : registrations.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="text-center py-12 text-gray-400">
+                  <td colSpan={7} className="text-center py-12 text-neutral-400">
                     暂无数据
                   </td>
                 </tr>
               ) : (
                 registrations.map((item) => (
-                  <tr key={item.id} className="border-b border-gray-100 hover:bg-gray-50/50">
-                    <td className="px-4 py-3 font-medium text-gray-900">{item.companyName}</td>
-                    <td className="px-4 py-3 text-gray-700">{item.contactName}</td>
-                    <td className="px-4 py-3 text-gray-700">{item.phone}</td>
-                    <td className="px-4 py-3 text-gray-700">{item.industry || '-'}</td>
+                  <tr key={item.id} className="border-b border-neutral-100 hover:bg-neutral-50/50">
+                    <td className="px-4 py-3 font-medium text-neutral-900">{item.companyName}</td>
+                    <td className="px-4 py-3 text-neutral-700">{item.contactName}</td>
+                    <td className="px-4 py-3 text-neutral-700">{item.phone}</td>
+                    <td className="px-4 py-3 text-neutral-700">{item.industry || '-'}</td>
                     <td className="px-4 py-3">
                       <Badge variant={RegistrationStatusColors[item.status]}>
                         {RegistrationStatusLabels[item.status]}
                       </Badge>
                     </td>
-                    <td className="px-4 py-3 text-gray-500">
+                    <td className="px-4 py-3 text-neutral-500">
                       <DateTimeCell value={item.createdAt} />
                     </td>
                     <td className="px-4 py-3">
@@ -228,7 +228,7 @@ export default function RegistrationsPage() {
                         ) : (
                           <button
                             onClick={() => handleViewDetail(item)}
-                            className="text-xs px-2.5 py-1 rounded bg-gray-50 text-gray-700 hover:bg-gray-100 transition-colors font-medium inline-flex items-center gap-1"
+                            className="text-xs px-2.5 py-1 rounded bg-neutral-50 text-neutral-700 hover:bg-neutral-100 transition-colors font-medium inline-flex items-center gap-1"
                           >
                             <Eye className="w-3.5 h-3.5" />
                             查看详情
@@ -265,8 +265,8 @@ export default function RegistrationsPage() {
           </>
         }
       >
-        <p className="text-gray-600">
-          确定要通过企业 <span className="font-medium text-gray-900">{approvingItem?.companyName}</span> 的入驻申请吗？
+        <p className="text-neutral-600">
+          确定要通过企业 <span className="font-medium text-neutral-900">{approvingItem?.companyName}</span> 的入驻申请吗？
           通过后系统将自动创建租户和管理员账号。
         </p>
       </Modal>
@@ -284,17 +284,17 @@ export default function RegistrationsPage() {
         }
       >
         <div className="space-y-4">
-          <p className="text-gray-600">
-            驳回企业 <span className="font-medium text-gray-900">{rejectingItem?.companyName}</span> 的入驻申请
+          <p className="text-neutral-600">
+            驳回企业 <span className="font-medium text-neutral-900">{rejectingItem?.companyName}</span> 的入驻申请
           </p>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">驳回原因</label>
+            <label className="block text-sm font-medium text-neutral-700 mb-1.5">驳回原因</label>
             <textarea
               value={rejectReason}
               onChange={(e) => setRejectReason(e.target.value)}
               placeholder="请填写驳回原因..."
               rows={3}
-              className="w-full px-3 py-2 rounded border border-gray-300 bg-white text-sm focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 resize-none"
+              className="w-full px-3 py-2 rounded border border-neutral-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 resize-none"
             />
           </div>
         </div>
@@ -343,11 +343,11 @@ export default function RegistrationsPage() {
             </div>
             {detailItem.businessLicenseUrl && (
               <div>
-                <label className="block text-sm font-medium text-gray-500 mb-2">营业执照</label>
+                <label className="block text-sm font-medium text-neutral-500 mb-2">营业执照</label>
                 <img
                   src={resolveImageUrl(detailItem.businessLicenseUrl)}
                   alt="营业执照"
-                  className="max-w-full max-h-64 rounded-lg border border-gray-200 object-contain"
+                  className="max-w-full max-h-64 rounded-lg border border-neutral-200 object-contain"
                 />
               </div>
             )}
@@ -370,8 +370,8 @@ function DetailField({
 }) {
   return (
     <div className={span === 2 ? 'col-span-2' : ''}>
-      <label className="block text-xs font-medium text-gray-500 mb-1">{label}</label>
-      <div className="text-sm text-gray-900">{value || '-'}</div>
+      <label className="block text-xs font-medium text-neutral-500 mb-1">{label}</label>
+      <div className="text-sm text-neutral-900">{value || '-'}</div>
     </div>
   )
 }

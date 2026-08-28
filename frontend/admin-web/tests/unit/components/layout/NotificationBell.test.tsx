@@ -243,7 +243,7 @@ describe('NotificationBell', () => {
     const bell = screen.getByTestId('icon-bell').closest('button')!
     await user.click(bell)
     await waitFor(() => {
-      const dot = document.querySelector('.bg-blue-500')
+      const dot = document.querySelector('.bg-primary-500')
       expect(dot).toBeInTheDocument()
     })
   })

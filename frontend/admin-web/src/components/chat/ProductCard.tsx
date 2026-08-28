@@ -18,10 +18,10 @@ export default function ProductCard({ data }: ProductCardProps) {
   const description = (product.description as string) || ''
 
   return (
-    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">
+    <div className="bg-white border border-neutral-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">
       <div className="flex gap-3 p-3">
         {/* 商品图片 */}
-        <div className="w-16 h-16 flex-shrink-0 rounded-lg bg-gray-100 overflow-hidden flex items-center justify-center">
+        <div className="w-16 h-16 flex-shrink-0 rounded-lg bg-neutral-100 overflow-hidden flex items-center justify-center">
           {images.length > 0 ? (
             <Image
               src={resolveImageUrl(images[0])}
@@ -32,13 +32,13 @@ export default function ProductCard({ data }: ProductCardProps) {
               unoptimized
             />
           ) : (
-            <ShoppingBag className="w-6 h-6 text-gray-300" />
+            <ShoppingBag className="w-6 h-6 text-neutral-300" />
           )}
         </div>
 
         {/* 商品信息 */}
         <div className="flex-1 min-w-0">
-          <h4 className="text-sm font-medium text-gray-800 truncate">{name}</h4>
+          <h4 className="text-sm font-medium text-neutral-800 truncate">{name}</h4>
           
           {/* 规格 */}
           {Object.keys(specs).length > 0 && (
@@ -46,7 +46,7 @@ export default function ProductCard({ data }: ProductCardProps) {
               {Object.entries(specs).slice(0, 3).map(([key, value]) => (
                 <span
                   key={key}
-                  className="text-[10px] px-1.5 py-0.5 bg-gray-50 text-gray-500 border border-gray-100 rounded"
+                  className="text-[10px] px-1.5 py-0.5 bg-neutral-50 text-neutral-500 border border-neutral-100 rounded"
                 >
                   {key}: {value}
                 </span>
@@ -55,13 +55,13 @@ export default function ProductCard({ data }: ProductCardProps) {
           )}
 
           {description && (
-            <p className="text-[11px] text-gray-400 mt-1 line-clamp-1">{description}</p>
+            <p className="text-[11px] text-neutral-400 mt-1 line-clamp-1">{description}</p>
           )}
 
           {/* 价格 */}
           <div className="flex items-baseline gap-1 mt-1.5">
             <span className="text-sm font-bold text-red-500">¥{price.toFixed(2)}</span>
-            <span className="text-[10px] text-gray-400">/{unit}</span>
+            <span className="text-[10px] text-neutral-400">/{unit}</span>
           </div>
         </div>
       </div>
