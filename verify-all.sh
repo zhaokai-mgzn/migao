@@ -63,6 +63,7 @@ case "$MODE" in
     report "admin-web vitest"     bash -c "cd '$ROOT/frontend/admin-web' && npx vitest run"
     report "admin-web tsc"        bash -c "cd '$ROOT/frontend/admin-web' && npx tsc --noEmit"
     report "QA Growth Gate 预检"  gate_check
+    report "UI 回退检测"        bash -c "cd '$ROOT' && ./check-ui-regression.sh"
     ;;
   full)
     echo "========== MIGAO 全量验证 =========="
@@ -71,6 +72,7 @@ case "$MODE" in
     report "admin-web vitest"     bash -c "cd '$ROOT/frontend/admin-web' && npx vitest run"
     report "admin-web tsc"        bash -c "cd '$ROOT/frontend/admin-web' && npx tsc --noEmit"
     report "QA Growth Gate 预检"  gate_check
+    report "UI 回退检测"        bash -c "cd '$ROOT' && ./check-ui-regression.sh"
     ;;
   frontend)
     report "admin-web vitest"     bash -c "cd '$ROOT/frontend/admin-web' && npx vitest run"
