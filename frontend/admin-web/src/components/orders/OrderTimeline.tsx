@@ -14,10 +14,10 @@ interface OrderTimelineProps {
 
 const statusColors: Record<OrderStatus, { bg: string; border: string; text: string }> = {
   pending_payment: { bg: 'bg-amber-500', border: 'border-amber-500', text: 'text-amber-700' },
-  pending_shipment: { bg: 'bg-blue-500', border: 'border-blue-500', text: 'text-blue-700' },
+  pending_shipment: { bg: 'bg-primary-500', border: 'border-primary-500', text: 'text-blue-700' },
   shipped: { bg: 'bg-indigo-500', border: 'border-indigo-500', text: 'text-indigo-700' },
   completed: { bg: 'bg-green-500', border: 'border-green-500', text: 'text-green-700' },
-  closed: { bg: 'bg-gray-500', border: 'border-gray-500', text: 'text-gray-700' },
+  closed: { bg: 'bg-neutral-500', border: 'border-neutral-1000', text: 'text-neutral-700' },
   refund: { bg: 'bg-red-500', border: 'border-red-500', text: 'text-red-700' },
 }
 
@@ -50,7 +50,7 @@ export default function OrderTimeline({ currentStatus, statusHistory, className 
                       ? `${colors.bg} border-transparent text-white`
                       : isCurrent
                       ? `bg-white ${colors.border} ${colors.text}`
-                      : 'bg-gray-100 border-gray-200 text-gray-400'
+                      : 'bg-neutral-100 border-neutral-200 text-neutral-400'
                   )}
                 >
                   {isCompleted && !isCurrent ? (
@@ -62,13 +62,13 @@ export default function OrderTimeline({ currentStatus, statusHistory, className 
                 <span
                   className={cn(
                     'mt-2 text-xs font-medium whitespace-nowrap',
-                    isCompleted || isCurrent ? colors.text : 'text-gray-400'
+                    isCompleted || isCurrent ? colors.text : 'text-neutral-400'
                   )}
                 >
                   {OrderStatusLabels[status]}
                 </span>
                 {historyItem && (
-                  <span className="mt-0.5 text-[10px] text-gray-400">
+                  <span className="mt-0.5 text-[10px] text-neutral-400">
                     {dayjs(historyItem.time).format('MM-DD HH:mm')}
                   </span>
                 )}
@@ -79,7 +79,7 @@ export default function OrderTimeline({ currentStatus, statusHistory, className 
                 <div
                   className={cn(
                     'flex-1 h-0.5 mx-2 mt-[-20px]',
-                    !isClosed && currentIndex > index ? 'bg-green-400' : 'bg-gray-200'
+                    !isClosed && currentIndex > index ? 'bg-green-400' : 'bg-neutral-200'
                   )}
                 />
               )}
@@ -107,8 +107,8 @@ export default function OrderTimeline({ currentStatus, statusHistory, className 
 
       {/* 状态历史时间线 */}
       {statusHistory && statusHistory.length > 0 && (
-        <div className="mt-4 border-t border-gray-100 pt-4">
-          <h4 className="text-sm font-medium text-gray-700 mb-3">状态变更记录</h4>
+        <div className="mt-4 border-t border-neutral-100 pt-4">
+          <h4 className="text-sm font-medium text-neutral-700 mb-3">状态变更记录</h4>
           <div className="space-y-3">
             {[...statusHistory].reverse().map((item, index) => {
               const colors = statusColors[item.status]
@@ -117,7 +117,7 @@ export default function OrderTimeline({ currentStatus, statusHistory, className 
                   <div className="flex flex-col items-center">
                     <div className={cn('w-2.5 h-2.5 rounded-full mt-1', colors.bg)} />
                     {index < statusHistory.length - 1 && (
-                      <div className="w-px h-6 bg-gray-200 mt-1" />
+                      <div className="w-px h-6 bg-neutral-200 mt-1" />
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
@@ -125,15 +125,15 @@ export default function OrderTimeline({ currentStatus, statusHistory, className 
                       <span className={cn('text-sm font-medium', colors.text)}>
                         {OrderStatusLabels[item.status]}
                       </span>
-                      <span className="text-xs text-gray-400">
+                      <span className="text-xs text-neutral-400">
                         {dayjs(item.time).format('YYYY-MM-DD HH:mm:ss')}
                       </span>
                     </div>
                     {item.operator && (
-                      <p className="text-xs text-gray-500 mt-0.5">操作人: {item.operator}</p>
+                      <p className="text-xs text-neutral-500 mt-0.5">操作人: {item.operator}</p>
                     )}
                     {item.remark && (
-                      <p className="text-xs text-gray-500 mt-0.5">{item.remark}</p>
+                      <p className="text-xs text-neutral-500 mt-0.5">{item.remark}</p>
                     )}
                   </div>
                 </div>

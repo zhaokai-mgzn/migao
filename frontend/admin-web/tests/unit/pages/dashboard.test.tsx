@@ -353,9 +353,13 @@ describe('DashboardPage', () => {
       expect(screen.getByText('订单趋势')).toBeInTheDocument()
     })
     await waitFor(() => {
-      const dateLabels = Array.from(container.querySelectorAll('svg text')).filter(
-        (el) => el.textContent?.match(/^\d{2}-\d{2}$/)
-      )
+      // 只数订单趋势图（第一个 svg[viewBox]）的日期标签；页面有两个 TrendChart（订单趋势+销售额数据）
+      const trendSvg = container.querySelector('svg[viewBox]')
+      const dateLabels = trendSvg
+        ? Array.from(trendSvg.querySelectorAll('text')).filter(
+            (el) => el.textContent?.match(/^\d{2}-\d{2}$/)
+          )
+        : []
       expect(dateLabels.length).toBeGreaterThan(0)
       expect(dateLabels.length).toBeLessThanOrEqual(7)
     })

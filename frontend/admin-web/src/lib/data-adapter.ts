@@ -67,7 +67,7 @@ export function buildCloseOrderPayload(
  * 退款参数（前端字段命名）
  */
 export interface RefundOrderParams {
-  refundAmount?: number        // 退款金额（缺省时不发送 refund_amount）
+  refundAmount?: number        // 退款金额（缺省时不发送 refund_amount，后端视为全额退款）
   refundReason?: string        // 退款原因
 }
 
@@ -76,8 +76,8 @@ export interface RefundOrderParams {
  *
  * 后端端点：PUT /api/admin/orders/{id}/refund
  * 转换规则（蛇形命名）：
- * - refundAmount → refund_amount（后端将新增该字段；缺省则省略）
- * - refundReason → refund_reason（后端已支持）
+ * - refundAmount → refund_amount（缺省则省略该字段）
+ * - refundReason → refund_reason（trim 后下发）
  */
 export function buildRefundPayload(data?: RefundOrderParams): { refund_reason: string; refund_amount?: number } {
   const payload: { refund_reason: string; refund_amount?: number } = {

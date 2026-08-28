@@ -1,7 +1,16 @@
 // case_ids: CU-001, CU-002
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+
+// Mock sonner toast
+vi.mock('sonner', () => ({
+  toast: {
+    success: vi.fn(),
+    error: vi.fn(),
+    info: vi.fn(),
+  },
+}))
 
 // Mock useRouteId to return a valid customer ID
 vi.mock('@/lib/use-route-id', () => ({
@@ -147,6 +156,55 @@ describe('CustomerDetailPage', () => {
     await waitFor(() => {
       const textarea = screen.getByPlaceholderText('添加客户备注...')
       expect(textarea).toBeInTheDocument()
+    })
+  })
+
+  it('calls addTagToCustomer API and renders newly added tag', async () => {
+    render(<CustomerDetailPage />)
+    await waitFor(() => {
+      expect(screen.getByText('张三')).toBeInTheDocument()
+    })
+    // 打开标签选择器（已关联 t1/t2，availableTags 中只剩 t3「需要跟进」）
+    fireEvent.click(screen.getByTestId('icon-plus'))
+    await waitFor(() => {
+      expect(screen.getByText('需要跟进')).toBeInTheDocument()
+    })
+    fireEvent.click(screen.getByText('需要跟进'))
+    await waitFor(() => {
+      expect(customerApi.addTagToCustomer).toHaveBeenCalledWith('cus-001', 't3')
+    })
+    // 打标成功后新标签出现在已选标签区（picker 已关闭，仅剩一处文本）
+    await waitFor(() => {
+      expect(screen.getAllByText('需要跟进')).toHaveLength(1)
+    })
+  })
+
+  it('calls removeTagFromCustomer API and removes tag from display', async () => {
+    render(<CustomerDetailPage />)
+    await waitFor(() => {
+      expect(screen.getByText('VIP客户')).toBeInTheDocument()
+    })
+    // 第一个已选标签「VIP客户」(t1) 的移除按钮（X 图标）
+    const removeButtons = screen.getAllByTestId('icon-x')
+    fireEvent.click(removeButtons[0])
+    await waitFor(() => {
+      expect(customerApi.removeTagFromCustomer).toHaveBeenCalledWith('cus-001', 't1')
+    })
+    await waitFor(() => {
+      expect(screen.queryByText('VIP客户')).not.toBeInTheDocument()
+    })
+  })
+
+  it('calls updateCustomer API with remark when saving remark', async () => {
+    render(<CustomerDetailPage />)
+    await waitFor(() => {
+      expect(screen.getByText('张三')).toBeInTheDocument()
+    })
+    const textarea = screen.getByPlaceholderText('添加客户备注...')
+    fireEvent.change(textarea, { target: { value: '测试备注内容' } })
+    fireEvent.click(screen.getByText('保存'))
+    await waitFor(() => {
+      expect(customerApi.updateCustomer).toHaveBeenCalledWith('cus-001', { remark: '测试备注内容' })
     })
   })
 })

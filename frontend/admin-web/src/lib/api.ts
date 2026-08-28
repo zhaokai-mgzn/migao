@@ -1,5 +1,10 @@
 import request from './request'
-import { buildProductPayload, buildLogisticsPayload, buildCloseOrderPayload, buildRefundPayload } from './data-adapter'
+import {
+  buildProductPayload,
+  buildLogisticsPayload,
+  buildCloseOrderPayload,
+  buildRefundPayload,
+} from './data-adapter'
 import type { RefundOrderParams } from './data-adapter'
 import type { 
   ApiResponse, 
@@ -279,7 +284,7 @@ export const orderApi = {
     request.put<ApiResponse<void>>(`/api/admin/orders/${id}/payment`),
 
   // 退款
-  // 后端 PUT /api/admin/orders/{id}/refund，body: { refund_reason, refund_amount }
+  // 后端 PUT /api/admin/orders/{id}/refund，body: { refund_reason, refund_amount }（refund_amount 缺省=全额）
   refundOrder: (id: string, data?: RefundOrderParams) =>
     request.put<ApiResponse<void>>(`/api/admin/orders/${id}/refund`, buildRefundPayload(data)),
 
@@ -512,8 +517,15 @@ export const customerApi = {
   getCustomer: (id: string) =>
     request.get<ApiResponse<CustomerDetailResponse>>(`/api/admin/customers/${id}`),
 
-  updateCustomer: (id: string, data: Partial<Customer>) =>
-    request.put<ApiResponse<Customer>>(`/api/admin/customers/${id}`, data),
+  // 更新客户档案。前端用 remark 表示备注，后端字段为 agentNotes，这里做字段映射。
+  updateCustomer: (id: string, data: Partial<Customer>) => {
+    const payload: Record<string, unknown> = { ...data }
+    if (payload.remark !== undefined) {
+      payload.agentNotes = payload.remark
+      delete payload.remark
+    }
+    return request.put<ApiResponse<Customer>>(`/api/admin/customers/${id}`, payload)
+  },
 
   getCustomerTags: () =>
     request.get<ApiResponse<CustomerTag[]>>('/api/admin/customer-tags'),

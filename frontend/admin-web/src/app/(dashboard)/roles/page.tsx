@@ -181,8 +181,8 @@ export default function RolesPage() {
       {/* 页面标题 */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-xl font-semibold text-gray-900">角色权限</h1>
-          <p className="text-sm text-gray-500 mt-1">管理系统角色和权限分配</p>
+          <h1 className="text-xl font-semibold text-neutral-900">角色权限</h1>
+          <p className="text-sm text-neutral-500 mt-1">管理系统角色和权限分配</p>
         </div>
         <Button onClick={handleAdd}>
           <Plus className="w-4 h-4 mr-1.5" />
@@ -194,10 +194,10 @@ export default function RolesPage() {
       {loading ? (
         <div className="flex items-center justify-center py-20">
           <div className="w-6 h-6 border-2 border-primary-600 border-t-transparent rounded-full animate-spin" />
-          <span className="ml-2 text-gray-500">加载中...</span>
+          <span className="ml-2 text-neutral-500">加载中...</span>
         </div>
       ) : roles.length === 0 ? (
-        <div className="text-center py-20 text-gray-500">
+        <div className="text-center py-20 text-neutral-500">
           暂无角色，点击上方按钮新增
         </div>
       ) : (
@@ -205,7 +205,7 @@ export default function RolesPage() {
           {roles.map(role => (
             <div
               key={role.id}
-              className="bg-white rounded-lg border border-gray-200 p-5 hover:shadow-md transition-shadow"
+              className="bg-white rounded-lg border border-neutral-200 p-5 hover:shadow-md transition-shadow"
             >
               <div className="flex items-start justify-between mb-3">
                 <div className="flex items-center gap-2">
@@ -213,21 +213,21 @@ export default function RolesPage() {
                     <Shield className="w-5 h-5 text-primary-600" />
                   </div>
                   <div>
-                    <h3 className="font-medium text-gray-900">{role.name}</h3>
-                    <p className="text-xs text-gray-400">{role.code}</p>
+                    <h3 className="font-medium text-neutral-900">{role.name}</h3>
+                    <p className="text-xs text-neutral-400">{role.code}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-1">
                   <button
                     onClick={() => handleEdit(role)}
-                    className="p-1.5 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded transition-colors"
+                    className="p-1.5 text-neutral-400 hover:text-primary-600 hover:bg-primary-50 rounded transition-colors"
                     title="编辑"
                   >
                     <Pencil className="w-4 h-4" />
                   </button>
                   <button
                     onClick={() => setDeleteTarget(role)}
-                    className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                    className="p-1.5 text-neutral-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
                     title="删除"
                   >
                     <Trash2 className="w-4 h-4" />
@@ -236,10 +236,10 @@ export default function RolesPage() {
               </div>
 
               {role.description && (
-                <p className="text-sm text-gray-500 mb-3 line-clamp-2">{role.description}</p>
+                <p className="text-sm text-neutral-500 mb-3 line-clamp-2">{role.description}</p>
               )}
 
-              <div className="flex items-center justify-between text-xs text-gray-400">
+              <div className="flex items-center justify-between text-xs text-neutral-400">
                 <span>
                   <Badge variant="info">{role.permissions?.length || 0} 个权限</Badge>
                 </span>
@@ -282,9 +282,9 @@ export default function RolesPage() {
             disabled={!!editingRole}
           />
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">描述</label>
+            <label className="block text-sm font-medium text-neutral-700 mb-1.5">描述</label>
             <textarea
-              className="w-full h-20 px-3 py-2 rounded border border-gray-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 resize-none"
+              className="w-full h-20 px-3 py-2 rounded border border-neutral-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 resize-none"
               placeholder="角色描述（选填）"
               value={formData.description}
               onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
@@ -293,19 +293,19 @@ export default function RolesPage() {
 
           {/* 权限树 */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">权限分配</label>
+            <label className="block text-sm font-medium text-neutral-700 mb-2">权限分配</label>
             {allPermissions.length === 0 ? (
-              <p className="text-sm text-gray-400">暂无权限数据</p>
+              <p className="text-sm text-neutral-400">暂无权限数据</p>
             ) : (
-              <div className="border border-gray-200 rounded-lg max-h-[300px] overflow-y-auto">
+              <div className="border border-neutral-200 rounded-lg max-h-[300px] overflow-y-auto">
                 {Object.entries(groupedPermissions).map(([resource, perms]) => {
                   const allSelected = perms.every(p => formData.permissionIds.includes(p.id))
                   const someSelected = perms.some(p => formData.permissionIds.includes(p.id))
                   return (
-                    <div key={resource} className="border-b border-gray-100 last:border-b-0">
+                    <div key={resource} className="border-b border-neutral-100 last:border-b-0">
                       {/* 资源组标题 */}
                       <div
-                        className="flex items-center gap-2 px-4 py-2.5 bg-gray-50 cursor-pointer hover:bg-gray-100 transition-colors"
+                        className="flex items-center gap-2 px-4 py-2.5 bg-neutral-50 cursor-pointer hover:bg-neutral-100 transition-colors"
                         onClick={() => toggleResourceGroup(perms)}
                       >
                         <input
@@ -313,10 +313,10 @@ export default function RolesPage() {
                           checked={allSelected}
                           ref={(el) => { if (el) el.indeterminate = someSelected && !allSelected }}
                           onChange={() => toggleResourceGroup(perms)}
-                          className="w-4 h-4 text-primary-600 rounded border-gray-300 focus:ring-primary-500"
+                          className="w-4 h-4 text-primary-600 rounded border-neutral-300 focus:ring-primary-500"
                         />
-                        <span className="text-sm font-medium text-gray-700">{resource}</span>
-                        <span className="text-xs text-gray-400">({perms.length})</span>
+                        <span className="text-sm font-medium text-neutral-700">{resource}</span>
+                        <span className="text-xs text-neutral-400">({perms.length})</span>
                       </div>
                       {/* 权限项 */}
                       <div className="px-4 py-2 flex flex-wrap gap-x-6 gap-y-2">
@@ -329,11 +329,11 @@ export default function RolesPage() {
                               type="checkbox"
                               checked={formData.permissionIds.includes(perm.id)}
                               onChange={() => togglePermission(perm.id)}
-                              className="w-4 h-4 text-primary-600 rounded border-gray-300 focus:ring-primary-500"
+                              className="w-4 h-4 text-primary-600 rounded border-neutral-300 focus:ring-primary-500"
                             />
-                            <span className="text-sm text-gray-600">{perm.name}</span>
+                            <span className="text-sm text-neutral-600">{perm.name}</span>
                             {perm.description && (
-                              <span className="text-xs text-gray-400" title={perm.description}>({perm.action})</span>
+                              <span className="text-xs text-neutral-400" title={perm.description}>({perm.action})</span>
                             )}
                           </label>
                         ))}
@@ -363,8 +363,8 @@ export default function RolesPage() {
           </>
         }
       >
-        <p className="text-gray-600">
-          确定要删除角色 <span className="font-medium text-gray-900">{deleteTarget?.name}</span> 吗？删除后已分配该角色的员工将失去对应权限。
+        <p className="text-neutral-600">
+          确定要删除角色 <span className="font-medium text-neutral-900">{deleteTarget?.name}</span> 吗？删除后已分配该角色的员工将失去对应权限。
         </p>
       </Modal>
     </div>

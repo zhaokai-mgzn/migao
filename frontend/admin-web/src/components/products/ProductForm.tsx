@@ -471,14 +471,14 @@ export default function ProductForm({
   return (
     <div ref={formRef} className="max-w-6xl mx-auto pb-28">
       {/* ============ 顶部标题栏 ============ */}
-      <div className="flex items-center justify-between px-6 py-4 mb-4 bg-white border border-gray-200 rounded-lg">
-        <h2 className="text-lg font-semibold text-gray-900">
+      <div className="flex items-center justify-between px-6 py-4 mb-4 bg-white border border-neutral-200 rounded-lg">
+        <h2 className="text-lg font-semibold text-neutral-900">
           {isEdit ? '编辑商品' : '新增商品'}
         </h2>
         <button
           type="button"
           onClick={handleReset}
-          className="inline-flex items-center gap-1.5 px-3 h-8 text-sm text-gray-600 hover:text-primary-600 hover:bg-gray-50 rounded transition-colors"
+          className="inline-flex items-center gap-1.5 px-3 h-8 text-sm text-neutral-600 hover:text-primary-600 hover:bg-neutral-50 rounded transition-colors"
         >
           <RotateCcw className="w-3.5 h-3.5" />
           重置
@@ -525,7 +525,7 @@ export default function ProductForm({
               />
               <span
                 className={`absolute right-3 top-2.5 text-xs tabular-nums pointer-events-none ${
-                  titleCount > TITLE_MAX ? 'text-red-500' : 'text-gray-400'
+                  titleCount > TITLE_MAX ? 'text-red-500' : 'text-neutral-400'
                 }`}
               >
                 {titleCount}/{TITLE_MAX}
@@ -536,7 +536,7 @@ export default function ProductForm({
           {/* 商品主图 */}
           <FieldRow label="商品主图" required alignTop>
             <div id={ANCHORS.images}>
-              <p className="text-xs text-gray-500 mb-2">
+              <p className="text-xs text-neutral-500 mb-2">
                 照片要求：比例为 1:1，像素尺寸 1440×1440 及以上；至多可上传 5 张，拖拽可调整顺序
               </p>
               <ImageUploader
@@ -595,14 +595,14 @@ export default function ProductForm({
                 <input
                   readOnly
                   value={totalStock}
-                  className="w-full h-9 px-3 pr-8 text-sm rounded border border-gray-200 bg-gray-50 text-gray-700 cursor-not-allowed"
+                  className="w-full h-9 px-3 pr-8 text-sm rounded border border-neutral-200 bg-neutral-50 text-neutral-700 cursor-not-allowed"
                 />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-neutral-400">
                   件
                 </span>
               </div>
             </div>
-            <p className="mt-1.5 text-xs text-gray-500">
+            <p className="mt-1.5 text-xs text-neutral-500">
               此处是商品所有销售规格总库存数量，若需修改请在销售规格表格内修改对应库存
             </p>
           </FieldRow>
@@ -677,7 +677,7 @@ export default function ProductForm({
                       <button
                         type="button"
                         onClick={() => handleRemoveProcessingConfig(idx)}
-                        className="w-9 h-9 inline-flex items-center justify-center rounded text-gray-400 hover:text-red-500 hover:bg-red-50"
+                        className="w-9 h-9 inline-flex items-center justify-center rounded text-neutral-400 hover:text-red-500 hover:bg-red-50"
                         title="删除"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -686,7 +686,7 @@ export default function ProductForm({
                         <button
                           type="button"
                           onClick={handleAddProcessingConfig}
-                          className="w-9 h-9 inline-flex items-center justify-center rounded border border-dashed border-gray-300 text-gray-500 hover:border-primary-400 hover:text-primary-600"
+                          className="w-9 h-9 inline-flex items-center justify-center rounded border border-dashed border-neutral-300 text-neutral-500 hover:border-primary-400 hover:text-primary-600"
                           title="添加"
                         >
                           <Plus className="w-4 h-4" />
@@ -732,14 +732,14 @@ export default function ProductForm({
                       <button
                         type="button"
                         disabled
-                        className="w-9 h-9 inline-flex items-center justify-center rounded text-gray-300 cursor-not-allowed"
+                        className="w-9 h-9 inline-flex items-center justify-center rounded text-neutral-300 cursor-not-allowed"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
                       <button
                         type="button"
                         onClick={handleAddProcessingConfig}
-                        className="w-9 h-9 inline-flex items-center justify-center rounded border border-dashed border-gray-300 text-gray-500 hover:border-primary-400 hover:text-primary-600"
+                        className="w-9 h-9 inline-flex items-center justify-center rounded border border-dashed border-neutral-300 text-neutral-500 hover:border-primary-400 hover:text-primary-600"
                         title="添加"
                       >
                         <Plus className="w-4 h-4" />
@@ -758,8 +758,8 @@ export default function ProductForm({
 
           {/* 发货方式 */}
           <FieldRow label="发货方式">
-            <span className="text-sm text-gray-600">
-              物流发货 <span className="text-gray-400 mx-1">·</span> 邮费到付
+            <span className="text-sm text-neutral-600">
+              物流发货 <span className="text-neutral-400 mx-1">·</span> 邮费到付
             </span>
           </FieldRow>
         </div>
@@ -774,7 +774,7 @@ export default function ProductForm({
             placeholder="图文介绍商品卖点、规格、使用场景等。支持加粗、标题、列表、图片、链接等"
             minHeight={300}
           />
-          <p className="mt-1.5 text-xs text-gray-500">
+          <p className="mt-1.5 text-xs text-neutral-500">
             支持插入图片与链接；插入的图片将上传到 OSS
           </p>
         </FieldRow>
@@ -793,12 +793,12 @@ export default function ProductForm({
       </Section>
 
       {/* ============ 底部固定操作栏 ============ */}
-      <div className="fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur border-t border-gray-200 shadow-[0_-4px_12px_rgba(0,0,0,0.04)]">
+      <div className="fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur border-t border-neutral-200 shadow-[0_-4px_12px_rgba(0,0,0,0.04)]">
         <div className="max-w-6xl mx-auto flex items-center justify-between gap-3 px-6 py-3">
           <button
             type="button"
             onClick={handleReset}
-            className="inline-flex items-center gap-1.5 px-3 h-9 text-sm text-gray-600 hover:text-primary-600 hover:bg-gray-50 rounded transition-colors"
+            className="inline-flex items-center gap-1.5 px-3 h-9 text-sm text-neutral-600 hover:text-primary-600 hover:bg-neutral-50 rounded transition-colors"
           >
             <RotateCcw className="w-3.5 h-3.5" />
             重置
@@ -841,7 +841,7 @@ export default function ProductForm({
           </>
         }
       >
-        <p className="text-sm text-gray-600">
+        <p className="text-sm text-neutral-600">
           当前表单内容尚未保存，离开后将丢失已填写的内容。
         </p>
       </Modal>
@@ -859,19 +859,19 @@ export default function ProductForm({
       >
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <p className="text-sm text-gray-500">管理商品分类，支持对分类进行新增、编辑、删除和排序</p>
+            <p className="text-sm text-neutral-500">管理商品分类，支持对分类进行新增、编辑、删除和排序</p>
             <Button onClick={handleCatAdd} size="sm">
               <Plus className="w-4 h-4 mr-1" />
               添加分类
             </Button>
           </div>
-          <div className="bg-gray-50 rounded-lg border border-gray-200 p-4 max-h-96 overflow-y-auto">
+          <div className="bg-neutral-50 rounded-lg border border-neutral-200 p-4 max-h-96 overflow-y-auto">
             {catModalLoading ? (
               <div className="py-12">
                 <Loading text="加载中..." />
               </div>
             ) : categories.length === 0 ? (
-              <div className="py-12 text-center text-sm text-gray-500">
+              <div className="py-12 text-center text-sm text-neutral-500">
                 管理商品分类，支持对分类进行新增、编辑、删除和排序
               </div>
             ) : (
@@ -912,8 +912,8 @@ export default function ProductForm({
           </>
         }
       >
-        <p className="text-gray-600">
-          确定要删除分类 <span className="font-medium text-gray-900">{catDeleteTarget?.name}</span> 吗？
+        <p className="text-neutral-600">
+          确定要删除分类 <span className="font-medium text-neutral-900">{catDeleteTarget?.name}</span> 吗？
           {catDeleteTarget?.children && catDeleteTarget.children.length > 0 && (
             <span className="block mt-2 text-amber-600">
               该分类下还有 {catDeleteTarget.children.length} 个子分类，删除后子分类也将被移除。
@@ -935,9 +935,9 @@ function Section({
   children: React.ReactNode
 }) {
   return (
-    <section className="bg-white rounded-lg border border-gray-200 mb-5 overflow-hidden">
-      <header className="px-6 py-3.5 border-b border-gray-100">
-        <h3 className="text-base font-semibold text-gray-900 flex items-center gap-2">
+    <section className="bg-white rounded-lg border border-neutral-200 mb-5 overflow-hidden">
+      <header className="px-6 py-3.5 border-b border-neutral-100">
+        <h3 className="text-base font-semibold text-neutral-900 flex items-center gap-2">
           <span className="inline-block w-1 h-4 bg-primary-600 rounded" />
           {title}
         </h3>
@@ -961,7 +961,7 @@ function FieldRow({
   return (
     <div className={`flex gap-4 ${alignTop ? 'items-start' : 'items-center'}`}>
       <label
-        className={`shrink-0 w-28 text-sm text-gray-700 text-right ${
+        className={`shrink-0 w-28 text-sm text-neutral-700 text-right ${
           alignTop ? 'pt-2' : ''
         }`}
       >
@@ -1000,7 +1000,7 @@ function RadioGroup<T extends string | number | boolean>({
               className={`w-4 h-4 rounded-full border flex items-center justify-center transition-colors ${
                 active
                   ? 'border-primary-500'
-                  : 'border-gray-300'
+                  : 'border-neutral-300'
               }`}
             >
               {active && (
@@ -1013,7 +1013,7 @@ function RadioGroup<T extends string | number | boolean>({
               checked={active}
               onChange={() => onChange(opt.value)}
             />
-            <span className={active ? 'text-gray-800' : 'text-gray-600'}>
+            <span className={active ? 'text-neutral-800' : 'text-neutral-600'}>
               {opt.label}
             </span>
           </label>

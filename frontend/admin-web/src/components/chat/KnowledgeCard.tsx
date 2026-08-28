@@ -50,22 +50,22 @@ function KnowledgeItem({
   score?: number
 }) {
   return (
-    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+    <div className="bg-white border border-neutral-200 rounded-xl overflow-hidden shadow-sm">
       <div className="px-3 py-2.5">
         <div className="flex items-start gap-2">
           <FileText className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" />
           <div className="flex-1 min-w-0">
-            <h4 className="text-xs font-medium text-gray-800 truncate">
+            <h4 className="text-xs font-medium text-neutral-800 truncate">
               {title}
             </h4>
             {content && (
-              <p className="text-[11px] text-gray-500 mt-1 line-clamp-3 leading-relaxed">
+              <p className="text-[11px] text-neutral-500 mt-1 line-clamp-3 leading-relaxed">
                 {content}
               </p>
             )}
             <div className="flex items-center gap-2 mt-1.5">
               {source && (
-                <span className="text-[10px] text-gray-400 flex items-center gap-0.5">
+                <span className="text-[10px] text-neutral-400 flex items-center gap-0.5">
                   <ExternalLink className="w-2.5 h-2.5" />
                   {source}
                 </span>
