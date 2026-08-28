@@ -512,7 +512,9 @@ _CONFIRM_EXACT = {
     "确认", "确定", "好的", "可以", "同意", "确认无误", "是", "行", "没问题",
     "ok", "yes", "confirm", "confirmed", "确认操作", "确定操作",
 }
-_CONFIRM_SUBSTR = ("确认", "确定", "同意", "confirm")
+# 强确认词前缀：confirm 卡片回传的 confirmValue 均以确认词开头（如"确认创建商品X"）。
+# 刻意不含"可以/行/是"（易与疑问句/其他语境混淆）——它们仅作为整句精确确认生效。
+_CONFIRM_PREFIX = ("确认", "确定", "同意", "好的", "没问题", "ok", "yes", "confirm")
 
 
 def _is_explicit_confirmation(text: str) -> bool:
@@ -522,14 +524,19 @@ def _is_explicit_confirmation(text: str) -> bool:
     读起来像确认时才允许执行，否则拦截并要求 LLM 先展示确认卡片。
     防的是提示注入（RAG 文档/模型幻觉）诱导 LLM 直接调用不可逆写工具——
     注入内容存在于 SystemMessage/ToolMessage，而非用户消息本身，故此检查有效。
+
+    加固（2026-08-28，flash 主模型适配）：确认词必须位于消息**开头**（或整句
+    精确匹配），排除"指令措辞绕过"——如"给订单X确认收款"含"确认"但这是新指令
+    而非对确认卡片的确认，flash 等更直接的模型会借此跳过确认卡片直接执行破坏性写。
     """
     t = (text or "").strip()
     if not t:
         return False
-    if t.lower() in _CONFIRM_EXACT:
+    tl = t.lower()
+    if tl in _CONFIRM_EXACT:
         return True
-    # 含确认词且长度较短（confirm 卡片回传的 confirmValue，如"确认取消订单123"）
-    if len(t) <= 24 and any(k in t for k in _CONFIRM_SUBSTR):
+    # confirm 卡片回传的 confirmValue（如"确认取消订单123"）或口头确认，以确认词开头且长度受限
+    if len(t) <= 24 and tl.startswith(_CONFIRM_PREFIX):
         return True
     return False
 

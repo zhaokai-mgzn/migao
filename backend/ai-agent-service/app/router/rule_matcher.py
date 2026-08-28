@@ -39,6 +39,11 @@ KEYWORD_MAP: dict[IntentType, list[str]] = {
     IntentType.ORDER_QUERY: ["订单", "我的订单", "订单状态", "查订单", "待发货"],
     IntentType.LOGISTICS_TRACK: ["物流", "快递", "到哪了"],
     IntentType.PRODUCT_INQUIRY: ["商品", "产品", "价格", "多少钱", "加工项", "加工项目", "加工费", "创建商品", "新建商品", "上架", "库存", "规格", "色号", "确认创建商品"],
+    # 人事域（2026-08-28 补：此前缺失导致"创建员工账号/添加员工"被商品正则劫持，HR-002 修复）
+    IntentType.EMPLOYEE_MANAGE: ["员工账号", "员工管理", "员工列表", "创建员工", "新建员工", "添加员工", "开个账号", "开通账号", "员工", "人事"],
+    IntentType.ROLE_MANAGE: ["角色权限", "角色", "权限"],
+    # 会话管理（"看看当前有哪些会话" 此前无法触发 session_manage，SE-001 修复）
+    IntentType.SESSION_MANAGE: ["客服会话", "在线会话", "排队会话", "历史会话", "会话列表", "会话"],
     IntentType.AFTER_SALES: ["退货", "退款", "换货", "售后", "维修"],
     IntentType.KNOWLEDGE_FAQ: ["怎么清洗", "怎么安装", "怎么保养", "怎么测量", "怎么选", "如何", "什么是", "为什么", "教程"],
     IntentType.FAREWELL: ["再见", "拜拜", "bye", "goodbye", "下次见", "回见"],
@@ -57,8 +62,9 @@ REGEX_RULES: list[tuple[re.Pattern, IntentType]] = [
     (re.compile(r"ORD[-\s]?\d{10,20}"), IntentType.ORDER_QUERY),
     # 商品创建：创建/新建/添加/上架 + 商品名（不包含"订单"/"工单"/"售后"上下文）
     (re.compile(r"(?:创建|新建|添加|上架)(?:一个|新的|个)?(?:商品|产品|窗帘|布料|色卡|抱枕|靠垫|桌布|窗纱|卷帘|百叶|罗马帘|床品|沙发垫|桌旗|遮光)"), IntentType.PRODUCT_INQUIRY),
-    # 创建/新建 + 任意商品描述（排除含"订单""工单""售后"的）
-    (re.compile(r"(?:创建|新建|添加)(?!.*(?:订单|工单|售后))(?:一个|新的|个)?.{0,10}(?:商品|产品|窗帘|布料|色卡|窗纱|卷帘|百叶)?"), IntentType.PRODUCT_INQUIRY),
+    # 创建/新建 + 任意商品描述（排除含"订单/工单/售后/员工/账号/角色/权限/分类/通知/会话"的，
+    # 防止"创建员工账号/新建分类/添加通知"等非商品意图被泛化规则劫持 —— HR-002 修复）
+    (re.compile(r"(?:创建|新建|添加)(?!.*(?:订单|工单|售后|员工|账号|角色|权限|分类|通知|会话))(?:一个|新的|个)?.{0,10}(?:商品|产品|窗帘|布料|色卡|窗纱|卷帘|百叶)?"), IntentType.PRODUCT_INQUIRY),
 ]
 
 # 直接回复内容已迁移到 AgentConfig.direct_replies

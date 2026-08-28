@@ -89,9 +89,9 @@ def select_model(
     if intent and intent.lower() in _SIMPLE_INTENTS:
         return settings.LLM_MODEL_FAST
 
-    # 5. 复杂任务 → primary
+    # 5. 复杂任务 → 主模型（env PRIMARY_MODEL，ops 可切换，如 deepseek-v4-flash）
     if tool_count >= _TOOL_COUNT_MAX_THRESHOLD or text_length > _TEXT_LENGTH_MAX_THRESHOLD:
-        return settings.LLM_MODEL_PRIMARY
+        return settings.MINIMAX_MODEL
 
-    # 6. 默认
-    return settings.LLM_MODEL_PRIMARY
+    # 6. 默认 → 主模型（env PRIMARY_MODEL）
+    return settings.MINIMAX_MODEL
