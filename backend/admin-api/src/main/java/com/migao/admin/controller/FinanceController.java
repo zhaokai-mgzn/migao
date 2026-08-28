@@ -4,6 +4,7 @@ import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.*;
 import com.migao.admin.security.SecurityUser;
 import com.migao.admin.service.FinanceService;
+import com.migao.admin.security.RequirePermission;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -21,6 +22,7 @@ import org.springframework.web.bind.annotation.*;
  * - GET  /api/admin/finance/reconciliation → getReconciliation（应收对账）
  */
 @Slf4j
+@RequirePermission("finance:view")
 @RestController
 @RequestMapping("/api/admin/finance")
 @RequiredArgsConstructor

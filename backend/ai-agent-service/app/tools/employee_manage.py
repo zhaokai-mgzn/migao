@@ -34,7 +34,12 @@ class EmployeeManageTool(BaseTool):
     description = (
         "【触发】用户问'员工''客服''账号''同事''有哪些人''创建账号''禁用账号''删除员工''重置密码'时调用。【前置】list/detail 可查询。create 必填 name+phone。delete/reset_password/toggle_status 是破坏性操作。【反例】管理角色权限用 role_manage。查客户用 customer_manage。【标注】WRITE|DESTRUCTIVE — 删除/禁用/重置密码需二次确认"
     )
-    allowed_roles = ["admin", "tenant_admin"]
+    allowed_roles = [
+        "admin", "tenant_admin", "operator", "product_manager", "knowledge_editor",
+    ]
+    # 粗粒度门槛：必须至少拥有员工模块的任意权限；具体 action 的权限在 execute 内按
+    # employee:list（查询）/ employee:create（写操作）二次校验，防止仅 employee:list 者执行写操作。
+    required_permissions = ["employee:list", "employee:create"]
     read_only = False
     destructive = True   # 可删除员工、重置密码、禁用账号
     read_only_actions = {"list", "detail"}  # 只读 action 免确认拦截
@@ -123,13 +128,28 @@ class EmployeeManageTool(BaseTool):
         **kwargs,
     ) -> ToolResult:
         """执行员工管理操作"""
-        # 权限检查
+        # 权限检查（粗粒度：角色 + required_permissions 任一命中）
         if not self.check_permission(context):
             return ToolResult(
                 success=False,
                 error="权限不足",
                 message="您没有权限执行员工管理操作",
                 suggestion="请联系管理员获取执行员工管理操作权限",
+            )
+
+        # 细粒度权限：查询类 action 需要 employee:list，写操作需要 employee:create。
+        # 与后端 AdminUserController 的 @RequirePermission 口径一致，防止仅 employee:list
+        # 的员工通过米宝执行创建/删除/重置密码等写操作。
+        required = "employee:list" if action in self.read_only_actions else "employee:create"
+        if "*" not in (context.permissions or []) and required not in (context.permissions or []):
+            return ToolResult(
+                success=False,
+                error="权限不足",
+                message="您没有权限执行该员工操作",
+                suggestion=(
+                    "请联系管理员在「员工管理」中为您开通相应权限"
+                    f"（{'查询' if required == 'employee:list' else '管理'}员工）"
+                ),
             )
 
         # 参数校验

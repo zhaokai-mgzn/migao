@@ -36,6 +36,24 @@ from app.tools import ToolRegistry, get_tool_registry
 from app.tools.base import ToolContext  # __PAGE__ 分页直调工具时构造执行上下文
 from app.utils.auth import get_current_user, UserIdentity
 
+# 商户员工角色（可进入商家后台使用米宝的运营/管理类工具）。
+# 与 admin-api SecurityConfig 的门禁口径一致：customer/agent（小程序/B2C 用户）不属于此集合。
+MERCHANT_STAFF_ROLES = {
+    "admin", "tenant_admin", "operator", "product_manager",
+    "knowledge_editor", "customer_service", "service",
+}
+
+
+def _to_agent_role(role: str) -> str:
+    """将 JWT 角色映射为米宝执行上下文角色。
+
+    商户员工角色保留原角色（供 Tool.allowed_roles / required_permissions 判断）；
+    非员工角色（小程序/B2C 用户）统一折叠为 customer，禁止访问管理类工具。
+    """
+    if role in MERCHANT_STAFF_ROLES:
+        return role
+    return "customer"
+
 router = APIRouter()
 
 # 会话空闲超时：由后台任务 _session_auto_close_loop 统一处理（main.py）
@@ -88,6 +106,54 @@ async def _get_user_nickname(tenant_id: int, user_id: str) -> Optional[str]:
     except Exception as e:
         logger.warning(
             f"[chat] Failed to query user nickname | user={user_id} error={e}"
+        )
+
+    return None
+
+
+async def _get_tenant_name(tenant_id: int) -> Optional[str]:
+    """获取企业名称（Redis 缓存 → DB 回退）
+
+    缓存 key: tenant_name:{tenant_id}，TTL 1 小时。
+    用于米宝 System Prompt 注入企业身份（此前 identity.md 硬编码"词元通达"，多租户下错误）。
+    失败时静默返回 None（企业名非必需，身份模板有兜底措辞）。
+    """
+    cache_key = f"tenant_name:{tenant_id}"
+
+    # 1. 尝试 Redis 缓存
+    try:
+        from app.utils.redis_client import redis_pool
+        if redis_pool:
+            import redis.asyncio as aioredis
+            client = aioredis.Redis(connection_pool=redis_pool)
+            cached = await client.get(cache_key)
+            if cached:
+                return cached
+    except Exception:
+        pass
+
+    # 2. 缓存未命中，查 DB（tenants 表，与 admin-api 同库）
+    try:
+        from sqlalchemy import text
+        from app.utils.database import AsyncSessionLocal
+        async with AsyncSessionLocal() as db:
+            sql = text("SELECT name FROM tenants WHERE id = :tenant_id AND deleted = 0")
+            result = await db.execute(sql, {"tenant_id": tenant_id})
+            row = result.fetchone()
+            if row and row[0]:
+                tenant_name = str(row[0])
+                try:
+                    from app.utils.redis_client import redis_pool
+                    if redis_pool:
+                        import redis.asyncio as aioredis
+                        client = aioredis.Redis(connection_pool=redis_pool)
+                        await client.setex(cache_key, 3600, tenant_name)
+                except Exception:
+                    pass
+                return tenant_name
+    except Exception as e:
+        logger.warning(
+            f"[chat] Failed to query tenant name | tenant={tenant_id} error={e}"
         )
 
     return None
@@ -670,7 +736,8 @@ async def _handle_page_request(
             # 构建 ToolContext
             tool_context = ToolContext(
                 tenant_id=tenant_id, user_id=user_id, session_id=session_id,
-                role=current_user.role if current_user.role in ("admin", "agent", "tenant_admin") else "customer",
+                role=_to_agent_role(current_user.role),
+                permissions=getattr(current_user, "permissions", None) or [],
             )
 
             # 直接执行工具
@@ -822,10 +889,7 @@ async def send_message(
     agent_type = agent_router.route(current_user)
 
     # 确定 Agent 角色（用于 ToolContext 权限检查）
-    if current_user.role in ("admin", "agent", "tenant_admin"):
-        agent_role = current_user.role
-    else:
-        agent_role = "customer"
+    agent_role = _to_agent_role(current_user.role)
 
     agent = get_agent(tool_registry, agent_type=agent_type)
     
@@ -919,6 +983,8 @@ async def send_message(
             # 5. 创建 Agent 上下文
             # 查询用户昵称（Redis 缓存 → DB 回退），注入到 System Prompt 让 Agent 认识当前对话的人
             user_name: Optional[str] = await _get_user_nickname(tenant_id, user_id)
+            # 查询企业名称（Redis 缓存 → DB 回退），注入企业身份（对应「企业基础信息」的公司名称设置）
+            tenant_name: Optional[str] = await _get_tenant_name(tenant_id)
 
             agent_context = AgentContext(
                 user_id=user_id,
@@ -927,6 +993,8 @@ async def send_message(
                 role=agent_role,
                 identity_type=current_user.identity_type,
                 user_name=user_name,
+                tenant_name=tenant_name,
+                permissions=getattr(current_user, "permissions", None) or [],
             )
             
             # 6. 调用 Agent 处理（流式）

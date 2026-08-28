@@ -226,12 +226,13 @@ def sample_tool_context():
 
 @pytest.fixture
 def admin_tool_context():
-    """管理员角色 Tool 上下文"""
+    """管理员角色 Tool 上下文（admin 拥有全部细粒度权限，与后端 admin 角色口径一致）"""
     return ToolContext(
         tenant_id=1,
         user_id="admin_001",
         session_id="sess_test_002",
         role="admin",
+        permissions=["*"],
     )
 
 

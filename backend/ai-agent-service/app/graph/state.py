@@ -25,8 +25,10 @@ class AgentState(TypedDict):
     tenant_id: int
     user_id: int
     user_name: Optional[str]         # 用户昵称（注入到 System Prompt）
+    tenant_name: Optional[str]       # 企业名称（注入到 System Prompt，对应「企业基础信息」设置）
     session_id: str
     role: str
+    permissions: list[str]           # 细粒度权限码列表（与后端 @RequirePermission 同源）
 
     # 意图识别
     intent_result: Optional[dict]    # IntentResult 序列化

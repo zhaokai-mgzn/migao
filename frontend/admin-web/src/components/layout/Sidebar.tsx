@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
@@ -121,6 +121,14 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const pathname = usePathname()
   const { user } = useAuthStore()
 
+  // 企业 Logo 加载失败标记：URL 失效/过期时回退到米高默认 Logo，避免空白
+  const [logoFailed, setLogoFailed] = useState(false)
+
+  // 企业 Logo 变化时重置失败标记
+  useEffect(() => {
+    setLogoFailed(false)
+  }, [user?.tenantLogo])
+
   // 所有分组默认展开
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(
     () => Object.fromEntries(menuGroups.map(g => [g.key, true]))
@@ -164,14 +172,24 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
       {/* Logo 区域 */}
       <div className={cn('flex items-center border-b border-white/5', collapsed ? 'h-14 justify-center' : 'h-16 py-3 px-4')}>
         <div className="flex items-center gap-3 overflow-hidden">
-          <Logo size="small" />
+          {/* 企业 Logo（「企业基础信息」设置）优先，未设置或加载失败时回退米高默认 Logo */}
+          {user?.tenantLogo && !logoFailed ? (
+            <img
+              src={user.tenantLogo}
+              alt="企业 Logo"
+              className="h-8 w-8 rounded-lg object-cover flex-shrink-0"
+              onError={() => setLogoFailed(true)}
+            />
+          ) : (
+            <Logo size="small" />
+          )}
           {!collapsed && (
             <div className="min-w-0">
               <div className="truncate text-sm font-semibold leading-tight text-white">
                 {user?.tenantName || '米高'}
               </div>
               {user?.tenantName && (
-                <div className="mt-0.5 text-[11px] leading-tight text-neutral-400">米高</div>
+                <div className="mt-0.5 text-[11px] leading-tight text-neutral-400">米高商家管理后台</div>
               )}
             </div>
           )}

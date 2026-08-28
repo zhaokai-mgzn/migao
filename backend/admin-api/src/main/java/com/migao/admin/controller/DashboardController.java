@@ -5,6 +5,7 @@ import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.entity.*;
 import com.migao.admin.mapper.*;
 import com.migao.admin.service.ProductService;
+import com.migao.admin.security.RequirePermission;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.Builder;
 import lombok.Data;
@@ -28,6 +29,7 @@ import java.util.stream.Collectors;
  * 提供 Dashboard 统计数据接口
  */
 @Slf4j
+@RequirePermission("dashboard:view")
 @RestController
 @RequestMapping("/api/admin/dashboard")
 @RequiredArgsConstructor

@@ -1,5 +1,6 @@
+// case_ids: HR-001, DF-007
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 // Mock useAuthStore
@@ -47,6 +48,30 @@ describe('Sidebar', () => {
   it('should render the sidebar with logo', () => {
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
     expect(screen.getByTestId('logo')).toBeInTheDocument()
+  })
+
+  it('未设置企业 Logo 时回退米高默认 Logo', () => {
+    mockUseAuthStore.mockReturnValue({
+      user: { id: '1', username: 'admin', name: '管理员', roles: ['admin'], permissions: ['*'], tenantName: '测试企业' },
+    })
+    render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
+    expect(screen.getByTestId('logo')).toBeInTheDocument()
+    expect(screen.queryByAltText('企业 Logo')).not.toBeInTheDocument()
+  })
+
+  it('已设置企业 Logo 时展示 img，加载失败后回退默认 Logo', () => {
+    mockUseAuthStore.mockReturnValue({
+      user: { id: '1', username: 'admin', name: '管理员', roles: ['admin'], permissions: ['*'], tenantLogo: 'https://oss.example.com/logo.png' },
+    })
+    render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
+    const img = screen.getByAltText('企业 Logo')
+    expect(img).toHaveAttribute('src', 'https://oss.example.com/logo.png')
+    expect(screen.queryByTestId('logo')).not.toBeInTheDocument()
+
+    // Logo URL 失效 → 回退默认 Logo，避免空白
+    fireEvent.error(img)
+    expect(screen.getByTestId('logo')).toBeInTheDocument()
+    expect(screen.queryByAltText('企业 Logo')).not.toBeInTheDocument()
   })
 
   it('should render all menu items', () => {

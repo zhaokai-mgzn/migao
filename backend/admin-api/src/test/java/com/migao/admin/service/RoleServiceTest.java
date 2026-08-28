@@ -1,3 +1,4 @@
+// case_ids: HR-004, HR-005
 package com.migao.admin.service;
 
 import com.migao.admin.dto.PageResponse;
@@ -8,6 +9,7 @@ import com.migao.admin.entity.UserRole;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.PermissionMapper;
 import com.migao.admin.mapper.RoleMapper;
+import com.migao.admin.mapper.RolePermissionMapper;
 import com.migao.admin.mapper.UserMapper;
 import com.migao.admin.mapper.UserRoleMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -16,6 +18,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -43,6 +46,9 @@ class RoleServiceTest {
 
     @Mock
     private UserRoleMapper userRoleMapper;
+
+    @Mock
+    private RolePermissionMapper rolePermissionMapper;
 
     @Mock
     private UserMapper userMapper;
@@ -143,7 +149,7 @@ class RoleServiceTest {
         });
 
         // when
-        Role result = roleService.createRole("运营", "operator", "运营人员", 1L);
+        Role result = roleService.createRole("运营", "operator", "运营人员", 1L, List.of());
 
         // then
         assertThat(result).isNotNull();
@@ -161,7 +167,7 @@ class RoleServiceTest {
         when(roleMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(testRole);
 
         // when & then
-        assertThatThrownBy(() -> roleService.createRole("管理员2", "admin", "重复角色", 1L))
+        assertThatThrownBy(() -> roleService.createRole("管理员2", "admin", "重复角色", 1L, null))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("角色代码已存在");
     }
@@ -176,7 +182,7 @@ class RoleServiceTest {
         when(roleMapper.updateById(any(Role.class))).thenReturn(1);
 
         // when
-        Role result = roleService.updateRole("role-001", "超级管理员", "更新后的描述");
+        Role result = roleService.updateRole("role-001", "超级管理员", "更新后的描述", null);
 
         // then
         assertThat(result).isNotNull();
@@ -193,7 +199,7 @@ class RoleServiceTest {
         when(roleMapper.updateById(any(Role.class))).thenReturn(1);
 
         // when
-        Role result = roleService.updateRole("role-001", "新名称", null);
+        Role result = roleService.updateRole("role-001", "新名称", null, null);
 
         // then
         assertThat(result.getName()).isEqualTo("新名称");
@@ -207,7 +213,7 @@ class RoleServiceTest {
         when(roleMapper.selectById("nonexistent")).thenReturn(null);
 
         // when & then
-        assertThatThrownBy(() -> roleService.updateRole("nonexistent", "新名称", null))
+        assertThatThrownBy(() -> roleService.updateRole("nonexistent", "新名称", null, null))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(ex -> {
                     BusinessException bex = (BusinessException) ex;
@@ -263,16 +269,44 @@ class RoleServiceTest {
     // ======================== assignPermissions 测试 ========================
 
     @Test
-    @DisplayName("为角色分配权限 - 占位实现正常执行")
+    @DisplayName("为角色分配权限 - 全量替换 role_permissions 落库")
     void assignPermissions_Success() {
         // given
         when(roleMapper.selectById("role-001")).thenReturn(testRole);
+        when(rolePermissionMapper.delete(any(LambdaQueryWrapper.class))).thenReturn(1);
+        Permission perm1 = Permission.builder().id("perm-001").code("employee:list").build();
+        Permission perm2 = Permission.builder().id("perm-002").code("employee:create").build();
+        when(permissionMapper.selectBatchIds(List.of("perm-001", "perm-002")))
+                .thenReturn(List.of(perm1, perm2));
 
         // when
-        roleService.assignPermissions("role-001", List.of("perm-001", "perm-002"));
+        roleService.assignPermissions("role-001", List.of("perm-001", "perm-002"), 1L);
 
-        // then: 占位实现不抛异常即为成功
-        verify(roleMapper).selectById("role-001");
+        // then：先清空旧关联，再插入新关联（仅存在的权限）
+        verify(rolePermissionMapper).delete(any(LambdaQueryWrapper.class));
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<com.migao.admin.entity.RolePermission> captor =
+                ArgumentCaptor.forClass(com.migao.admin.entity.RolePermission.class);
+        verify(rolePermissionMapper, times(2)).insert(captor.capture());
+        List<String> insertedIds = captor.getAllValues().stream()
+                .map(com.migao.admin.entity.RolePermission::getPermissionId)
+                .collect(java.util.stream.Collectors.toList());
+        assertThat(insertedIds).containsExactlyInAnyOrder("perm-001", "perm-002");
+    }
+
+    @Test
+    @DisplayName("为角色分配权限 - 空列表清空关联")
+    void assignPermissions_ClearAll() {
+        // given
+        when(roleMapper.selectById("role-001")).thenReturn(testRole);
+        when(rolePermissionMapper.delete(any(LambdaQueryWrapper.class))).thenReturn(2);
+
+        // when
+        roleService.assignPermissions("role-001", List.of(), 1L);
+
+        // then：只清空，不插入
+        verify(rolePermissionMapper).delete(any(LambdaQueryWrapper.class));
+        verify(rolePermissionMapper, never()).insert(any(com.migao.admin.entity.RolePermission.class));
     }
 
     @Test
@@ -282,7 +316,7 @@ class RoleServiceTest {
         when(roleMapper.selectById("nonexistent")).thenReturn(null);
 
         // when & then
-        assertThatThrownBy(() -> roleService.assignPermissions("nonexistent", List.of("perm-001")))
+        assertThatThrownBy(() -> roleService.assignPermissions("nonexistent", List.of("perm-001"), 1L))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(ex -> {
                     BusinessException bex = (BusinessException) ex;
@@ -560,5 +594,57 @@ class RoleServiceTest {
 
         // then
         assertThat(result).isEmpty();
+    }
+
+    // ======================== role_permissions 真实落库生效 ========================
+
+    @Test
+    @DisplayName("getUserPermissions: 自定义角色经 role_permissions 获得勾选权限（角色授权真实生效）")
+    void getUserPermissions_CustomRoleFromRolePermissions() {
+        // given: 自定义角色 custom_staff 分配了 employee:list + dashboard:view
+        when(userRoleMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(List.of(UserRole.builder().id("ur-1").roleId("role-cs").userId("u10").tenantId(1L).deleted(0).build()));
+        Role csRole = Role.builder().id("role-cs").code("custom_staff").tenantId(1L).deleted(0).build();
+        when(roleMapper.selectBatchIds(List.of("role-cs"))).thenReturn(List.of(csRole));
+        // role_permissions 关联存在 → 权限码来自关联表（而非硬编码回退）
+        when(rolePermissionMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(List.of(
+                        com.migao.admin.entity.RolePermission.builder().roleId("role-cs").permissionId("perm-1").deleted(0).build(),
+                        com.migao.admin.entity.RolePermission.builder().roleId("role-cs").permissionId("perm-2").deleted(0).build()));
+        when(permissionMapper.selectBatchIds(List.of("perm-1", "perm-2")))
+                .thenReturn(List.of(
+                        Permission.builder().id("perm-1").code("dashboard:view").build(),
+                        Permission.builder().id("perm-2").code("employee:list").build()));
+        User user = new User();
+        user.setId("u10");
+        user.setPermissions(null);
+        when(userMapper.selectById("u10")).thenReturn(user);
+
+        // when
+        List<String> result = roleService.getUserPermissions("u10");
+
+        // then：恰好是角色管理勾选的权限，不含 operator 等硬编码集合
+        assertThat(result).containsExactlyInAnyOrder("dashboard:view", "employee:list");
+        assertThat(result).doesNotContain("order:list", "system:manage", "product:list");
+    }
+
+    @Test
+    @DisplayName("getRolePermissions: 角色详情返回 role_permissions 关联的权限列表")
+    void getRolePermissions_ReturnsRolePermissionRows() {
+        // given
+        when(roleMapper.selectById("role-cs")).thenReturn(
+                Role.builder().id("role-cs").code("custom_staff").tenantId(1L).deleted(0).build());
+        when(rolePermissionMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(List.of(
+                        com.migao.admin.entity.RolePermission.builder().roleId("role-cs").permissionId("perm-1").deleted(0).build()));
+        when(permissionMapper.selectBatchIds(List.of("perm-1")))
+                .thenReturn(List.of(Permission.builder().id("perm-1").code("employee:list").build()));
+
+        // when
+        List<Permission> result = roleService.getRolePermissions("role-cs");
+
+        // then
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getCode()).isEqualTo("employee:list");
     }
 }

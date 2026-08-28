@@ -6,6 +6,7 @@ import com.migao.admin.dto.CategoryCreateRequest;
 import com.migao.admin.dto.CategoryResponse;
 import com.migao.admin.dto.CategoryUpdateRequest;
 import com.migao.admin.service.CategoryService;
+import com.migao.admin.security.RequirePermission;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,6 +19,7 @@ import java.util.List;
  * 提供分类的树形结构管理接口
  */
 @Slf4j
+@RequirePermission("product:category")
 @RestController
 @RequestMapping("/api/admin/categories")
 @RequiredArgsConstructor

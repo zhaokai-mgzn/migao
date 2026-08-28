@@ -3,6 +3,7 @@ package com.migao.admin.controller;
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.*;
 import com.migao.admin.service.ProcessingItemService;
+import com.migao.admin.security.RequirePermission;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -13,6 +14,7 @@ import org.springframework.web.bind.annotation.*;
  * 提供加工项 CRUD 和价格计算接口
  */
 @Slf4j
+@RequirePermission("processing:manage")
 @RestController
 @RequestMapping("/api/admin/processing-items")
 @RequiredArgsConstructor

@@ -599,16 +599,16 @@ export const roleApi = {
   getAllRoles: () =>
     request.get<ApiResponse<Role[]>>('/api/admin/roles/all'),
 
-  getRole: (id: number) =>
+  getRole: (id: string) =>
     request.get<ApiResponse<Role>>(`/api/admin/roles/${id}`),
 
   createRole: (data: RoleFormData) =>
     request.post<ApiResponse<Role>>('/api/admin/roles', data),
 
-  updateRole: (id: number, data: RoleFormData) =>
+  updateRole: (id: string, data: RoleFormData) =>
     request.put<ApiResponse<Role>>(`/api/admin/roles/${id}`, data),
 
-  deleteRole: (id: number) =>
+  deleteRole: (id: string) =>
     request.delete<ApiResponse<void>>(`/api/admin/roles/${id}`),
 }
 

@@ -213,6 +213,8 @@ class SecurityConfigTest {
     @MockBean
     private com.migao.admin.mapper.UserRoleMapper userRoleMapper;
     @MockBean
+    private com.migao.admin.mapper.RolePermissionMapper rolePermissionMapper;
+    @MockBean
     private com.migao.admin.mapper.TenantApplicationMapper tenantApplicationMapper;
     @MockBean
     private com.migao.admin.mapper.PlatformAdminMapper platformAdminMapper;
@@ -308,6 +310,7 @@ class SecurityConfigTest {
     @DisplayName("越权防护 - admin 角色可访问 /api/admin/**")
     void authorization_adminRole_canAccessAdminEndpoint() throws Exception {
         when(productService.getProducts(any(), nullable(Long.class))).thenReturn(new PageResponse<>());
+        when(roleService.getUserPermissions(any())).thenReturn(List.of("*"));
 
         mockMvc.perform(get("/api/admin/products")
                         .with(user("admin-1").roles("ADMIN")))
@@ -332,6 +335,108 @@ class SecurityConfigTest {
         mockMvc.perform(get("/api/admin/products")
                         .with(user("svc-1").roles("SERVICE")))
                 .andExpect(status().isOk());
+    }
+
+    // ======================== 商户员工角色门禁测试 ========================
+    // 背景：此前 /api/admin/** 仅放行 ADMIN/SUPER_ADMIN/SERVICE，导致 operator 等
+    // 商户员工角色登录后访问任何管理接口一律 403（验收 P1「角色权限真实生效」）。
+    // 目标：商户员工角色（含自定义角色）可进入 /api/admin/**，细粒度由 @RequirePermission 控制；
+    //       customer/agent（小程序/B2C 用户）仍一律 403（垂直越权防护不回归）。
+
+    @Test
+    @DisplayName("商户员工 - operator 角色持有 product:list 可访问商品接口")
+    void authorization_operatorRole_canAccessAdminEndpoint() throws Exception {
+        when(productService.getProducts(any(), nullable(Long.class))).thenReturn(new PageResponse<>());
+        when(roleService.getUserPermissions(any())).thenReturn(List.of("product:list"));
+
+        mockMvc.perform(get("/api/admin/products")
+                        .with(user("operator-1").roles("OPERATOR")))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("商户员工 - 自定义角色持有 product:list 可访问商品接口")
+    void authorization_customRole_canAccessAdminEndpoint() throws Exception {
+        when(productService.getProducts(any(), nullable(Long.class))).thenReturn(new PageResponse<>());
+        when(roleService.getUserPermissions(any())).thenReturn(List.of("product:list"));
+
+        mockMvc.perform(get("/api/admin/products")
+                        .with(user("custom-1").roles("STORE_MANAGER")))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("商户员工 - operator 无 product:list 权限访问商品接口返回 403")
+    void authorization_operatorRole_withoutPermission_denied() throws Exception {
+        when(roleService.getUserPermissions(any())).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/admin/products")
+                        .with(user("operator-2").roles("OPERATOR")))
+                .andExpect(status().isForbidden());
+    }
+
+    // ======================== 员工管理接口细粒度鉴权测试 ========================
+
+    @Test
+    @DisplayName("员工管理 - admin(*) 可创建员工")
+    void employeeCreate_admin_canCreateUser() throws Exception {
+        when(roleService.getUserPermissions(any())).thenReturn(List.of("*"));
+        when(userService.createUser(any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(new com.migao.admin.entity.User());
+
+        mockMvc.perform(post("/api/admin/users")
+                        .with(user("admin-2").roles("ADMIN"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"测试\",\"phone\":\"13900000002\",\"position\":\"客服\",\"permissions\":[\"employee:list\"]}"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("员工管理 - operator 持有 employee:create 可创建员工")
+    void employeeCreate_operatorWithPermission_canCreateUser() throws Exception {
+        when(roleService.getUserPermissions(any())).thenReturn(List.of("employee:create"));
+        when(userService.createUser(any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(new com.migao.admin.entity.User());
+
+        mockMvc.perform(post("/api/admin/users")
+                        .with(user("operator-3").roles("OPERATOR"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"测试\",\"phone\":\"13900000003\",\"position\":\"客服\",\"permissions\":[\"employee:list\"]}"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("员工管理 - operator 无 employee:create 创建员工返回 403")
+    void employeeCreate_operatorWithoutPermission_denied() throws Exception {
+        when(roleService.getUserPermissions(any())).thenReturn(List.of("employee:list"));
+
+        mockMvc.perform(post("/api/admin/users")
+                        .with(user("operator-4").roles("OPERATOR"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"测试\",\"phone\":\"13900000004\",\"position\":\"客服\"}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("员工管理 - operator 持有 employee:list 可查看员工列表")
+    void employeeList_operatorWithPermission_canListUsers() throws Exception {
+        when(roleService.getUserPermissions(any())).thenReturn(List.of("employee:list"));
+        when(userService.getUserPage(anyLong(), anyLong(), any(), any(), any(), any()))
+                .thenReturn(com.migao.admin.dto.PageResponse.of(0L, 1L, 10L, List.of()));
+
+        mockMvc.perform(get("/api/admin/users")
+                        .with(user("operator-5").roles("OPERATOR")))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("员工管理 - operator 无 employee:list 查看员工列表返回 403")
+    void employeeList_operatorWithoutPermission_denied() throws Exception {
+        when(roleService.getUserPermissions(any())).thenReturn(List.of("dashboard:view"));
+
+        mockMvc.perform(get("/api/admin/users")
+                        .with(user("operator-6").roles("OPERATOR")))
+                .andExpect(status().isForbidden());
     }
 
     // ======================== CORS 测试 ========================

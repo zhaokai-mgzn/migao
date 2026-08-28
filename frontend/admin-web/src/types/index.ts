@@ -39,6 +39,8 @@ export interface User {
   menus?: MenuItem[]
   tenantId?: number
   tenantName?: string
+  /** 企业 Logo（「企业基础信息」设置） */
+  tenantLogo?: string
 }
 
 // 菜单项类型
@@ -770,12 +772,13 @@ export interface ChangePasswordParams {
   confirmPassword: string
 }
 
-// 登录日志
+// 登录日志（对应后端 AuditLog action=login 的字段）
 export interface LoginLog {
   id: string
-  ip: string
-  device: string
-  location?: string
+  userId?: string
+  userName?: string
+  ipAddress?: string
+  userAgent?: string
   createdAt: string
 }
 
@@ -1129,7 +1132,8 @@ export const EmployeeStatusLabels: Record<EmployeeStatus, string> = {
 
 // 权限
 export interface Permission {
-  id: number
+  /** 权限 ID（后端 IdType.ASSIGN_UUID，字符串） */
+  id: string
   name: string
   code: string
   resource: string
@@ -1139,7 +1143,8 @@ export interface Permission {
 
 // 角色
 export interface Role {
-  id: number
+  /** 角色 ID（后端 IdType.ASSIGN_UUID，字符串） */
+  id: string
   name: string
   code: string
   description?: string
@@ -1152,7 +1157,7 @@ export interface RoleFormData {
   name: string
   code: string
   description?: string
-  permissionIds: number[]
+  permissionIds: string[]
 }
 
 // 员工

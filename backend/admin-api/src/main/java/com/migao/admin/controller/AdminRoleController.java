@@ -4,6 +4,7 @@ import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.dto.PageResponse;
 import com.migao.admin.entity.Role;
+import com.migao.admin.security.RequirePermission;
 import com.migao.admin.service.RoleService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -72,16 +73,20 @@ public class AdminRoleController {
      *
      * POST /api/admin/roles
      * Body: { "name": "xxx", "code": "xxx", "description": "xxx", "permissionIds": [] }
+     * 权限：system:manage
      */
     @PostMapping
+    @RequirePermission("system:manage")
     public ApiResponse<Role> createRole(@RequestBody Map<String, Object> body) {
         Long tenantId = TenantContext.getTenantId();
         String name = (String) body.get("name");
         String code = (String) body.get("code");
         String description = (String) body.get("description");
+        @SuppressWarnings("unchecked")
+        List<String> permissionIds = (List<String>) body.get("permissionIds");
 
         log.info("创建角色: name={}, code={}, tenantId={}", name, code, tenantId);
-        Role role = roleService.createRole(name, code, description, tenantId);
+        Role role = roleService.createRole(name, code, description, tenantId, permissionIds);
         return ApiResponse.success(role);
     }
 
@@ -90,14 +95,18 @@ public class AdminRoleController {
      *
      * PUT /api/admin/roles/{id}
      * Body: { "name": "xxx", "description": "xxx", "permissionIds": [] }
+     * 权限：system:manage
      */
     @PutMapping("/{id}")
+    @RequirePermission("system:manage")
     public ApiResponse<Role> updateRole(@PathVariable String id, @RequestBody Map<String, Object> body) {
         String name = (String) body.get("name");
         String description = (String) body.get("description");
+        @SuppressWarnings("unchecked")
+        List<String> permissionIds = (List<String>) body.get("permissionIds");
 
         log.info("更新角色: id={}, name={}", id, name);
-        Role role = roleService.updateRole(id, name, description);
+        Role role = roleService.updateRole(id, name, description, permissionIds);
         return ApiResponse.success(role);
     }
 

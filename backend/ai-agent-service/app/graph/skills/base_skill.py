@@ -297,6 +297,7 @@ def build_tool_context(state: AgentState) -> ToolContext:
         user_id=str(state["user_id"]),
         session_id=state.get("session_id", ""),
         role=state.get("role", "customer"),
+        permissions=state.get("permissions") or [],
     )
 
 
@@ -818,14 +819,28 @@ async def execute_skill(
     # ── 4. System Prompt 组装 ──
     user_name_raw = state.get("user_name", "")
     user_role_raw = state.get("role", "")
+    identity_prefix = ""
     if user_name_raw:
         user_name_safe = user_name_raw.replace("\n", " ").replace("\r", " ").strip()[:50]
         user_role_safe = user_role_raw.replace("\n", " ").replace("\r", " ").strip()[:50]
-        system_prompt = (
+        identity_prefix += (
             "【用户信息】当前对话用户: " + user_name_safe
             + "（角色: " + user_role_safe + "）\n"
-            "【用户信息结束】\n\n" + system_prompt
+            "【用户信息结束】\n"
         )
+    # 企业信息注入：对应管理后台「企业基础信息」中的公司名称设置（identity.md 的
+    # 企业名是模板措辞，实际企业名以这里为准，多租户下不再张冠李戴）
+    tenant_name_raw = state.get("tenant_name", "")
+    if tenant_name_raw:
+        tenant_name_safe = tenant_name_raw.replace("\n", " ").replace("\r", " ").strip()[:50]
+        identity_prefix += (
+            "【企业信息】你当前服务的企业是「" + tenant_name_safe + "」"
+            "（即该企业商家管理后台的 AI 助手）。"
+            "企业名称请以此处为准，介绍自己时使用「" + tenant_name_safe + "商家管理后台的 AI 助手」。\n"
+            "【企业信息结束】\n"
+        )
+    if identity_prefix:
+        system_prompt = identity_prefix + "\n" + system_prompt
     system_prompt = _build_system_prompt(skill_name, inline_prompt=system_prompt)
 
     if is_multimodal:

@@ -1,3 +1,4 @@
+// case_ids: HR-001, HR-002, HR-003
 package com.migao.admin.controller;
 
 import com.migao.admin.config.TenantContext;
@@ -111,25 +112,18 @@ class AdminUserControllerTest {
         }
 
         @Test
-        @DisplayName("operator 角色创建用户 → 403")
-        void operatorCannotCreateUser() throws Exception {
+        @DisplayName("operator 创建用户 → 200（细粒度权限已上移至 PermissionInterceptor，集成层见 SecurityConfigTest）")
+        void operatorCanCreateUser() throws Exception {
             setOperatorUser();
+            when(userService.createUser(any(), any(), any(), any(), any(), any(), any()))
+                    .thenReturn(new com.migao.admin.entity.User());
 
             mockMvc.perform(post("/api/admin/users")
                             .contentType("application/json")
                             .content("{\"phone\":\"13900000001\",\"password\":\"test123\",\"name\":\"测试\"}"))
-                    .andExpect(status().isForbidden());
+                    .andExpect(status().isOk());
 
-            verify(userService, never()).createUser(any(), any(), any(), any(), any(), any(), any());
-        }
-
-        @Test
-        @DisplayName("未认证用户创建 → 403")
-        void unauthenticatedCannotCreateUser() throws Exception {
-            mockMvc.perform(post("/api/admin/users")
-                            .contentType("application/json")
-                            .content("{\"phone\":\"13900000001\",\"password\":\"test123\",\"name\":\"测试\"}"))
-                    .andExpect(status().isForbidden());
+            verify(userService, times(1)).createUser(any(), any(), any(), any(), any(), any(), any());
         }
     }
 
@@ -151,14 +145,14 @@ class AdminUserControllerTest {
         }
 
         @Test
-        @DisplayName("operator 重置密码 → 403")
-        void operatorCannotResetPassword() throws Exception {
+        @DisplayName("operator 重置密码 → 200（细粒度权限已上移至 PermissionInterceptor，集成层见 SecurityConfigTest）")
+        void operatorCanResetPassword() throws Exception {
             setOperatorUser();
 
             mockMvc.perform(put("/api/admin/users/user-1/reset-password")
                             .contentType("application/json")
                             .content("{\"newPassword\":\"newpass123\"}"))
-                    .andExpect(status().isForbidden());
+                    .andExpect(status().isOk());
         }
     }
 
@@ -180,14 +174,14 @@ class AdminUserControllerTest {
         }
 
         @Test
-        @DisplayName("operator 切换状态 → 403")
-        void operatorCannotToggleStatus() throws Exception {
+        @DisplayName("operator 切换状态 → 200（细粒度权限已上移至 PermissionInterceptor，集成层见 SecurityConfigTest）")
+        void operatorCanToggleStatus() throws Exception {
             setOperatorUser();
 
             mockMvc.perform(put("/api/admin/users/user-1/status")
                             .contentType("application/json")
                             .content("{\"status\":\"disabled\"}"))
-                    .andExpect(status().isForbidden());
+                    .andExpect(status().isOk());
         }
     }
 
@@ -207,14 +201,14 @@ class AdminUserControllerTest {
         }
 
         @Test
-        @DisplayName("operator 删除用户 → 403")
-        void operatorCannotDeleteUser() throws Exception {
+        @DisplayName("operator 删除用户 → 200（细粒度权限已上移至 PermissionInterceptor，集成层见 SecurityConfigTest）")
+        void operatorCanDeleteUser() throws Exception {
             setOperatorUser();
 
             mockMvc.perform(delete("/api/admin/users/user-1"))
-                    .andExpect(status().isForbidden());
+                    .andExpect(status().isOk());
 
-            verify(userService, never()).deleteUser(any());
+            verify(userService, times(1)).deleteUser(any());
         }
     }
 
