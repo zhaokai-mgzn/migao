@@ -425,7 +425,7 @@ cases:
       - fabric-calc.fixed-height
       - fabric-calc.fixed-width
     user_inputs:
-      - "3米宽 2.5米高 2倍褶皱 遮光布 帮我算多少钱"
+      - "3米宽 2.5米高 2倍褶皱 打孔帘 用98元一米的遮光布 帮我算多少钱"
     expectations:
       - tool: curtain_calc
         args:

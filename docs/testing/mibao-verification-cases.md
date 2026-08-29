@@ -1278,7 +1278,7 @@
 
 ### PR-013. 窗帘算料报价 - 褶皱倍数与用布量计算 🟢
 ```
-你: 3米宽 2.5米高 2倍褶皱 遮光布 帮我算多少钱
+你: 3米宽 2.5米高 2倍褶皱 打孔帘 用98元一米的遮光布 帮我算多少钱
 期望: curtain_calc(window_width=3, window_height=2.5)
 数据: data.fabric_meters > 0
 数据: data.total > 0
