@@ -573,7 +573,7 @@ INSERT INTO schema_migrations (version) VALUES ('V6__add_ship_fee_to_orders.sql'
 5. **verify**：verify-agent 逐用例验收输出 `VERDICT_JSON.case_results`
 6. **grow**：失败用例回写 common_pitfalls + 生成对抗用例（进行中）
 
-**tier → CI 频率**：smoke 9 条（每次 PR `agent-eval-smoke` 100% 通过才合并 + 每日 01:30）/ normal 81 条（每日全量）/ adversarial 27 条（每周六 03:00，只追踪不阻塞）。
+**tier → CI 频率**：smoke 9 条（每次 PR `agent-eval-smoke` 100% 通过才合并）/ normal 81 条（按需手动触发 `agent-eval`，2026-08-29 起取消每日定时）/ adversarial 27 条（每周六 03:00，只追踪不阻塞）。
 
 **校验命令**：
 ```bash
