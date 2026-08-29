@@ -4,6 +4,8 @@
 （由 test_mibao_advanced_multiturn.py 按场景域拆分，2026-08-29）
 """
 # case_ids: AS-005
+from unittest.mock import patch, AsyncMock, MagicMock
+
 from tests.mibao_multiturn_shared import (
     MultiTurnRunner, make_graph_result, make_thinking_response,
     verify_thinking_stripped, verify_thinking_not_leaked, _reset_singletons,
