@@ -24,7 +24,7 @@ export async function miniAppLogin(tenantId: number): Promise<LoginResult> {
     }
 
     // 调用后端登录接口（登录在 admin-api，走 API_BASE_URL）
-    const data = await post<ApiResponse<{ token: string; user: User }>>(
+    const data = await post<ApiResponse<{ accessToken: string; user: User }>>(
       '/api/auth/mini/login',
       {
         code: loginRes.code,
@@ -40,7 +40,7 @@ export async function miniAppLogin(tenantId: number): Promise<LoginResult> {
       }
     }
 
-    const { token, user } = data.data
+    const { accessToken: token, user } = data.data
 
     // 存储到本地
     Taro.setStorageSync(STORAGE_KEYS.TOKEN, token)

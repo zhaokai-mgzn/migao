@@ -297,9 +297,15 @@ _KNOWLEDGE_FALLBACK = {"knowledge_faq": "general", "knowledge_manage": "general"
 
 
 def _get_intent_to_route(agent_type: str = "") -> dict[str, str]:
-    """意图→路由key映射。从 skill_registry 动态构建,避免硬编码不同步。"""
+    """意图→路由key映射。从 skill_registry 动态构建,避免硬编码不同步。
+
+    按 agent_type 对齐 persona：xiaobu 的 C 端专属 skill（如 customer_quote 的
+    quote 意图）只有 xiaobu persona，若用默认 mibao persona 构建会被过滤，
+    导致 quote 意图 fallback 到 general。故按 agent_type 传对应 persona。
+    """
     from app.graph.skills.skill_registry import get_skill_registry
-    intent_map = get_skill_registry().get_intent_to_route_map()
+    persona = "xiaobu" if agent_type == "xiaobu" else "mibao"
+    intent_map = get_skill_registry().get_intent_to_route_map(persona=persona)
     for intent in _DIRECT_REPLY_INTENTS:
         intent_map[intent] = "direct_reply"
     intent_map["general"] = "general"
