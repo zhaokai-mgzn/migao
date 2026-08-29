@@ -389,7 +389,7 @@ def load_cases_from_yaml(cases_dir: str) -> list:
 async def main():
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("suite", choices=["smoke", "full", "adversarial", "case"], nargs="?", default="smoke")
+    parser.add_argument("suite", choices=["smoke", "normal", "full", "adversarial", "case"], nargs="?", default="smoke")
     parser.add_argument("--case-id", help="单条用例 ID（支持新 ID 与 legacy_id，如 OR-002 或 O002）")
     parser.add_argument("--cases", help="用例库目录（cases/*.yml）——提供时直接读 YAML（单一源）")
     args = parser.parse_args()
@@ -403,6 +403,10 @@ async def main():
 
     def smoke_cases():
         return [c for c in cases if c.difficulty == Difficulty.SMOKE and not c.skip_reason]
+
+    def normal_cases():
+        # 每日回归：normal tier（smoke 由 PR gate 跑，adversarial 由每周任务跑）
+        return [c for c in cases if c.difficulty == Difficulty.NORMAL and not c.skip_reason]
 
     def adversarial_cases():
         return [c for c in cases if c.difficulty == Difficulty.ADVERSARIAL and not c.skip_reason]
@@ -419,6 +423,8 @@ async def main():
         results = await run_suite([case], f"单条 {args.case_id}")
     elif args.suite == "smoke":
         results = await run_suite(smoke_cases(), "冒烟")
+    elif args.suite == "normal":
+        results = await run_suite(normal_cases(), "每日回归（normal）")
     elif args.suite == "adversarial":
         results = await run_suite(adversarial_cases(), "对抗")
     elif args.suite == "full":

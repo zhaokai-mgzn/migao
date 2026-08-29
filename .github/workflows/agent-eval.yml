@@ -11,10 +11,9 @@ env:
 
 jobs:
   agent-eval:
-    name: Mibao Agent Eval (full)
+    name: Mibao Agent Eval (normal daily)
     runs-on: ubuntu-latest
-    # 全量评测（active 82 条真实 LLM 多轮）实测 >30min，曾多次被 workflow 超时静默取消
-    # （conclusion=cancelled，不建 issue），2026-08-29 提至 60min
+    # 每日 normal tier（约 47 条真实 LLM 多轮），smoke 由 PR gate 承担、adversarial 由每周任务承担
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -26,15 +25,15 @@ jobs:
       - name: Install deps
         run: pip install httpx
 
-      - name: Run full eval (smoke + normal + adversarial, 真实 LLM)
+      - name: Run daily normal eval (真实 LLM 回归)
         env:
           AI_API_URL: https://ai-api.migaozn.com
           ADMIN_API_URL: https://api.migaozn.com
           SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN }}
           PYTHONUTF8: "1"
           PYTHONIOENCODING: utf-8
-        # full (active_cases) 已包含 smoke tier，不再单独跑 smoke 避免每日双跑
-        run: python tests/agent_eval/local_runner.py full --cases .github/cases
+        # 2026-08-29 优化：每日只跑 normal tier（不再 full 重复 adversarial），与文档 tier 设计对齐
+        run: python tests/agent_eval/local_runner.py normal --cases .github/cases
 
       - name: Create Issue on failure
         if: failure()
