@@ -764,6 +764,52 @@ describe('ToolResultCard', () => {
     expect(screen.getByText('¥299.00')).toBeInTheDocument()
   })
 
+  it('renders order list card when backend sends orders array (order_query list)', () => {
+    const card = {
+      type: 'order' as const,
+      data: {
+        orders: [
+          { id: 'o1', order_no: 'ORD-001', status: 'confirmed', total_amount: 100 },
+          { id: 'o2', order_no: 'ORD-002', status: 'shipped', total_amount: 200 },
+        ],
+      },
+    }
+    render(<ToolResultCard card={card} />)
+    expect(screen.getByText(/ORD-001/)).toBeInTheDocument()
+    expect(screen.getByText(/ORD-002/)).toBeInTheDocument()
+    // 列表不再渲染成只剩「订单」二字的空盒子
+    expect(screen.queryByText(/^订单$/)).not.toBeInTheDocument()
+  })
+
+  it('renders nothing when order card data has no recognizable order fields', () => {
+    // 回归：order_query 列表容器（{orders,total,page...}）此前被原样下发，
+    // OrderCard 渲染出无法理解、无法点击的空「订单」盒子
+    const card = {
+      type: 'order' as const,
+      data: { total: 5, page: 1, page_size: 10, total_pages: 1 },
+    }
+    render(<ToolResultCard card={card} />)
+    expect(screen.queryByText(/订单/)).not.toBeInTheDocument()
+    expect(screen.queryByTestId('order-card')).not.toBeInTheDocument()
+  })
+
+  it('single order card is clickable and links to order detail page', () => {
+    const card = {
+      type: 'order' as const,
+      data: {
+        order: {
+          id: 'o1',
+          order_no: 'ORD-001',
+          status: 'confirmed',
+        },
+      },
+    }
+    render(<ToolResultCard card={card} />)
+    const link = screen.getByRole('link')
+    expect(link).toHaveAttribute('href', '/orders/o1')
+    expect(screen.getByText(/ORD-001/)).toBeInTheDocument()
+  })
+
   it('shows fallback for unknown card type', () => {
     const card = {
       type: 'unknown_type' as any,

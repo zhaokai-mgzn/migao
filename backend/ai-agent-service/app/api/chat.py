@@ -412,6 +412,56 @@ def _should_send_card(tool_name: str, result: Dict[str, Any]) -> bool:
     return False
 
 
+def _normalize_order_card_data(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """归一化 order 卡片载荷，避免前端渲染出空「订单」盒子。
+
+    根因（会话反馈）：order_query(action=list) 的 Tool 结果永远返回
+    {orders: [...], total, page, ...} 容器；此前原样作为 card 数据下发，
+    前端 OrderCard 只认 data.order，取不到 orderNo 后渲染出只剩
+    「订单」二字的空盒子（无法理解、无法点击）。
+
+    归一化规则：
+      - data.order（单订单）           → {"order": <order>}（原样）
+      - data.orders / data.items 单条  → {"order": <order>}（前端按单订单渲染）
+      - data.orders / data.items 多条  → {"orders": [...]}（前端按列表渲染）
+      - 无有效订单                      → None（不下发卡片）
+    """
+    if not isinstance(data, dict):
+        return None
+
+    if data.get("order") is not None:
+        return {"order": data["order"]}
+
+    order_list = data.get("orders")
+    if not isinstance(order_list, list):
+        order_list = data.get("items")  # 兼容旧格式
+    if not isinstance(order_list, list) or len(order_list) == 0:
+        return None
+
+    if len(order_list) == 1:
+        return {"order": order_list[0]}
+    return {"orders": order_list}
+
+
+def _card_payload(tool_name: str, result: Dict[str, Any]) -> tuple[Optional[str], Optional[Dict[str, Any]]]:
+    """统一计算要下发的卡片类型与载荷。
+
+    Returns:
+        (card_type, data)：不需要下发时返回 (None, None)。
+        order 卡片做归一化（单订单→{"order": ...}，多订单→{"orders": [...]}）。
+    """
+    card_type = _detect_card_type(tool_name, result)
+    if not card_type or not _should_send_card(tool_name, result):
+        return None, None
+
+    data = result.get("data", {})
+    if card_type == "order":
+        data = _normalize_order_card_data(data)
+        if data is None:
+            return None, None
+    return card_type, data
+
+
 # ============ SSE 流生成器 ============
 
 async def _agent_stream_to_sse(
@@ -525,15 +575,14 @@ async def _agent_stream_to_sse(
                                 result_dict = tc.get("result", {})
                                 yield SSEEvent.tool_result(tool_name, result_dict)
 
-                                # 检查是否需要发送卡片
-                                if _should_send_card(tool_name, result_dict):
-                                    card_type = _detect_card_type(tool_name, result_dict)
-                                    if card_type:
-                                        logger.info(
-                                            f"[chat/card] Sending card | tool={tool_name} "
-                                            f"type={card_type} data_keys={list(result_dict.get('data', {}).keys())}"
-                                        )
-                                        yield SSEEvent.card(card_type, result_dict.get("data", {}))
+                                # 检查是否需要发送卡片（order 卡片自动归一化载荷）
+                                card_type, card_data = _card_payload(tool_name, result_dict)
+                                if card_type:
+                                    logger.info(
+                                        f"[chat/card] Sending card | tool={tool_name} "
+                                        f"type={card_type} data_keys={list(card_data.keys()) if isinstance(card_data, dict) else 'N/A'}"
+                                    )
+                                    yield SSEEvent.card(card_type, card_data)
 
                                 # 检查是否来自 interact 工具 → 发送交互式组件事件
                                 if tool_name == "interact" and result_dict.get("success"):
@@ -757,10 +806,10 @@ async def _handle_page_request(
                     "success": True, "data": tool_data, "message": result.message,
                 })
 
-                # 检查并发送卡片
-                card_type = _detect_card_type(tool_name, {"data": tool_data})
-                if card_type and _should_send_card(tool_name, {"success": True, "data": tool_data}):
-                    yield SSEEvent.card(card_type, tool_data)
+                # 检查并发送卡片（order 卡片自动归一化载荷）
+                card_type, card_data = _card_payload(tool_name, {"success": True, "data": tool_data})
+                if card_type:
+                    yield SSEEvent.card(card_type, card_data)
 
                 # 构建新一页的选项列表，触发交互组件
                 page = params.get("page", 1)
