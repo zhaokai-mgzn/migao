@@ -54,9 +54,9 @@ jobs:
         working-directory: backend/admin-api
         run: ./mvnw test -q
 
-  # ============ 军师辅助工具单测（junshi/ 逻辑，曾长期无人运行）============
-  junshi-unit-tests:
-    name: junshi helper unit tests
+  # ============ CI workflow 辅助工具单测（CI workflow 逻辑，曾长期无人运行）============
+  ci-workflow-tests:
+    name: ci workflow helper unit tests
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
@@ -64,10 +64,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Run junshi helper tests
+      - name: Run ci workflow helper tests
         run: |
           pip install -q pytest pyyaml
-          python -m pytest tests/unit_junshi -q --tb=short -p no:cacheprovider
+          python -m pytest tests/unit_ci_workflows -q --tb=short -p no:cacheprovider
 
 
   admin-web-test:
@@ -226,7 +226,7 @@ jobs:
           echo "❌ QA Growth Gate 发现 ${{ steps.check.outputs.BLOCKERS }} 处缺测，阻塞合并。"
           echo "请补充对应测试，或在 .github/qa-exemptions.yml 中添加合法豁免项。"
           echo "详见 docs/wiki/Testing.md"
-          gh pr edit "$PR_NUMBER" --add-label "junshi-review/needs-changes" 2>/dev/null || true
+          gh pr edit "$PR_NUMBER" --add-label "review/needs-changes" 2>/dev/null || true
           exit 1
 
       # PR comment — 始终发布/更新（pass/fail/warn 都更新）
@@ -315,11 +315,11 @@ jobs:
       - name: Verify case truths_ref resolve
         run: |
           # 用例库引用真值 ID 校验：引用不存在的真值 → 阻塞合并（fail-closed）
-          # 文件随二郎神 seed 部署：templates/ + cases/ + truths.py（本仓库在 .github/ 下）
+          # 文件随质量门禁体系部署：templates/ + cases/ + truths.py（本仓库在 .github/ 下）
           if [ -f .github/truths.py ] && [ -d .github/templates ] && [ -d .github/cases ]; then
             python3 .github/truths.py check --templates .github/templates --cases .github/cases
           elif [ -d .github/cases ]; then
-            echo "::error:: 存在用例库（cases/）但缺 templates/truths.py — 请同步二郎神 seed"
+            echo "::error:: 存在用例库（cases/）但缺 templates/truths.py — 请同步质量门禁体系 seed"
             exit 1
           else
             echo "ℹ️ 无用例库（cases/），跳过 case-contract 校验"
@@ -392,21 +392,21 @@ jobs:
       - block-env-files
       - admin-api-test
       - admin-web-test
-      - junshi-unit-tests
+      - ci-workflow-tests
       - e2e-quality-gate
       - qa-growth-gate
       - case-truth-check
       - agent-eval-smoke
     steps:
-      - name: Add junshi-review/needs-changes
+      - name: Add review/needs-changes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          if gh pr view "$PR_NUMBER" --json labels --jq '.labels[].name' 2>/dev/null | grep -qx "junshi-review/needs-changes"; then
+          if gh pr view "$PR_NUMBER" --json labels --jq '.labels[].name' 2>/dev/null | grep -qx "review/needs-changes"; then
             echo "ℹ️ needs-changes 标签已存在，跳过"
           else
-            gh pr edit "$PR_NUMBER" --add-label "junshi-review/needs-changes" 2>/dev/null || true
+            gh pr edit "$PR_NUMBER" --add-label "review/needs-changes" 2>/dev/null || true
             echo "🔧 自动标记 needs-changes — agent-poll 将修复"
           fi
 
@@ -421,21 +421,21 @@ jobs:
       - block-env-files
       - admin-api-test
       - admin-web-test
-      - junshi-unit-tests
+      - ci-workflow-tests
       - e2e-quality-gate
       - qa-growth-gate
       - case-truth-check
       - agent-eval-smoke
     steps:
-      - name: Remove junshi-review/needs-changes
+      - name: Remove review/needs-changes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          HAS_LABEL=$(gh pr view "$PR_NUMBER" --json labels --jq '.labels[].name' 2>/dev/null | grep -c 'junshi-review/needs-changes' || echo "0")
+          HAS_LABEL=$(gh pr view "$PR_NUMBER" --json labels --jq '.labels[].name' 2>/dev/null | grep -c 'review/needs-changes' || echo "0")
           if [ "$HAS_LABEL" -gt 0 ]; then
-            gh pr edit "$PR_NUMBER" --remove-label "junshi-review/needs-changes" 2>/dev/null || true
-            echo "🧹 已清除 junshi-review/needs-changes（全部 job 通过）"
+            gh pr edit "$PR_NUMBER" --remove-label "review/needs-changes" 2>/dev/null || true
+            echo "🧹 已清除 review/needs-changes（全部 job 通过）"
           else
             echo "✅ 无需清除（标签不存在）"
           fi

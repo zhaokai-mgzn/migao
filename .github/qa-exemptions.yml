@@ -103,7 +103,7 @@ exemptions:
 
   # WebM→opus 格式映射修复
   - pattern: "backend/ai-agent-service/tests/test_asr.py"
-    reason: "二郎神生成测试，需更新 webm→opus 断言以匹配修复"
+    reason: "自动生成测试，需更新 webm→opus 断言以匹配修复"
 
   - pattern: "backend/admin-api/src/main/java/com/migao/admin/controller/AdminUserController.java"
     reason: "#1830: JavaDoc 注释更新（移除 username 示例），纯文档无逻辑变更。已有 AdminUserControllerTest 覆盖"

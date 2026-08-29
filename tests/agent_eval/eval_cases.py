@@ -665,7 +665,7 @@ _CASE_DA_005 = EvalCase(
     user_inputs=['经营看板页面按织物质感方向重设计'],
     expectations=[''],
     data_checks=['token：主色靛蓝/点缀陶土/米白底，无默认蓝', '商品销量排行表头「日涨」在 1440/1280 两视口无截断', '订单趋势 x 轴刻度在 1280 宽度下降采样不重叠', "订单/售后状态语义色 chips；空态「暂无数据」无 '-' 占位"],
-    skip_reason='UI 页面改版：由 vitest 单测 + Playwright 多视口 E2E + 二郎神页面验收（page_accept）验证，不进入 agent-eval 冒烟',
+    skip_reason='UI 页面改版：由 vitest 单测 + Playwright 多视口 E2E + 页面验收（page_accept）验证，不进入 agent-eval 冒烟',
     tags=['dashboard', 'ui-redesign', 'visual'],
 )
 
@@ -1157,6 +1157,62 @@ _CASE_MC_011 = EvalCase(
     data_checks=["关键词命中 confidence=0.95 source='rule' matched_keywords；REGEX_RULES 命中 0.9 source='rule'（ORD-* 订单号、创建商品正则排除订单/工单/售后）", '均未命中返回 None'],
     skip_reason='纯函数由 pytest 单测验证（tests/test_rule_matcher.py），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['rule_matcher', 'regex', 'fallback'],
+)
+
+# ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
+_CASE_OB_001 = EvalCase(
+    id='OB-001',
+    legacy_id='',
+    title='商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家提交合规入驻申请（POST /api/auth/register），AI 自动甄别'],
+    expectations=['direct_reply'],
+    data_checks=['响应 status=approved 且 applicationId 非空，同步自动创建租户(active)+企业管理员(admin)+默认角色权限', 'tenant_applications 落 review_source=ai / risk_flags / review_summary / reviewed_by=ai', 'ai-agent 内部端点 POST /api/internal/registration/review 规则层无违规 + LLM approve → approve；LLM 不可用且规则层通过 → review_source=system 放行'],
+    skip_reason='由 admin-api 单测（RegistrationServiceTest/ControllerTest/ReviewClientTest）+ ai-agent 单测（test_registration_review.py）+ 前端单测（register.test.tsx）验证，非 LLM 冒烟',
+    tags=['onboarding', 'ai_review', 'auto_approve'],
+)
+
+# ── OB-002 [NORMAL] 商家入驻 - AI 自动驳回（敏感内容 / 法律风险）（源: cases/onboarding.yml）──
+_CASE_OB_002 = EvalCase(
+    id='OB-002',
+    legacy_id='',
+    title='商家入驻 - AI 自动驳回（敏感内容 / 法律风险）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家提交含敏感/违法内容或法律风险的入驻申请'],
+    expectations=['direct_reply'],
+    data_checks=['规则层命中敏感词/注入/格式违规 → 直接驳回（review_source=rule，不调用 LLM 防刷成本）', 'LLM 识别法律风险（decision=reject 或 high 风险）→ 驳回（review_source=ai），响应 rejectReason 非空', '驳回不创建租户/管理员，申请置 rejected'],
+    skip_reason='由 admin-api + ai-agent 单测验证（规则层/LLM 层/决策合成），非 LLM 冒烟',
+    tags=['onboarding', 'ai_review', 'auto_reject', 'compliance'],
+)
+
+# ── OB-003 [NORMAL] 商家入驻 - 防重复/防攻击（手机号/企业名/IP 频率/蜜罐/冷却/fail-closed）（源: cases/onboarding.yml）──
+_CASE_OB_003 = EvalCase(
+    id='OB-003',
+    legacy_id='',
+    title='商家入驻 - 防重复/防攻击（手机号/企业名/IP 频率/蜜罐/冷却/fail-closed）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['同一家公司/手机号/IP 反复提交入驻申请，或自动化脚本提交'],
+    expectations=['direct_reply'],
+    data_checks=['同手机号 pending/approved → 422；同企业规范化名称（去空格/括号/后缀）pending/approved → 422', 'AI 驳回 24h 冷却（review_source=system 的系统繁忙驳回不冷却，可立即重试）', '每手机号每日提交上限 3、每 IP 每小时上限 5（Redis 计数）→ 超限 422', '蜜罐字段 website 被填充 → 不落库不调 AI，静默返回 pending 占位', 'AI 甄别服务不可达 → fail-closed 系统繁忙驳回（review_source=system），绝不放行'],
+    skip_reason='由 RegistrationServiceTest + register.test.tsx（蜜罐隐藏字段）+ ai-agent 单测验证，非 LLM 冒烟',
+    tags=['onboarding', 'anti_abuse', 'rate_limit', 'honeypot', 'dedup'],
+)
+
+# ── OB-004 [NORMAL] 商家入驻 - 人工审批页废弃，仅保留超管 API 兜底（源: cases/onboarding.yml）──
+_CASE_OB_004 = EvalCase(
+    id='OB-004',
+    legacy_id='',
+    title='商家入驻 - 人工审批页废弃，仅保留超管 API 兜底',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['平台不再提供人工审核新商家页面，商家入驻全部由 AI 自动甄别'],
+    expectations=['direct_reply'],
+    data_checks=['ops.migaozn.com 域名分支/入驻审批菜单/审批页面/中间件前缀已移除（前端无 /registrations 页面）', '超管兜底接口保留：GET/PUT /api/super-admin/registrations* 仅 API 应急，无前端入口', '主页与入驻页文案改为 AI 秒审（不再出现 1-3 个工作日人工审核）'],
+    skip_reason='由前端单测验证（corporate-home/app-routes/components-other/register），非 LLM 冒烟',
+    tags=['onboarding', 'ops_page_removed', 'super_admin_api'],
 )
 
 # ── OR-001 [SMOKE] 订单列表查询（源: cases/order.yml）──
@@ -1842,6 +1898,10 @@ ALL_CASES = (
     _CASE_MC_009,
     _CASE_MC_010,
     _CASE_MC_011,
+    _CASE_OB_001,
+    _CASE_OB_002,
+    _CASE_OB_003,
+    _CASE_OB_004,
     _CASE_OR_001,
     _CASE_OR_002,
     _CASE_OR_003,

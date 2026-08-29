@@ -1,7 +1,7 @@
 """
-Test junshi-case-draft CI workflow label guard logic.
+Test case-draft CI workflow label guard logic.
 
-Issue #729: junshi-daily-report cron 创建 issue 时漏打 ai-draft 标签。
+Issue #729: ci-daily-report cron 创建 issue 时漏打 ai-draft 标签。
 本测试验证 CI guard 正确补标。
 """
 import re
@@ -9,7 +9,7 @@ import yaml
 from pathlib import Path
 
 
-WORKFLOW_PATH = Path(__file__).parent.parent.parent / ".github" / "workflows" / "junshi-case-draft.yml"
+WORKFLOW_PATH = Path(__file__).parent.parent.parent / ".github" / "workflows" / "case-draft.yml"
 
 
 def load_workflow() -> dict:
