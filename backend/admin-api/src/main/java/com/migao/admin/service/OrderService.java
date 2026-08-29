@@ -175,7 +175,10 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             Set<String> orderIdsWithProcessing = orderItemMapper.selectList(
                 new LambdaQueryWrapper<OrderItem>()
                     .isNotNull(OrderItem::getProcessingInfo)
-                    .select(OrderItem::getOrderId)
+                    // 投影必须同时带出 processing_info：只 select(orderId) 时 MyBatis-Plus 不会填充
+                    // processingInfo，下方 extractProcessingItems 恒拿到 null → 集合恒为空
+                    // → hasProcessing=true 恒返回 0 条（回归见 OrderServiceTest#getOrderPage_HasProcessingFilter_SubQueryProjectionIncludesProcessingInfo）
+                    .select(OrderItem::getOrderId, OrderItem::getProcessingInfo)
             ).stream()
                 .filter(item -> !extractProcessingItems(item.getProcessingInfo()).isEmpty())
                 .map(OrderItem::getOrderId)
