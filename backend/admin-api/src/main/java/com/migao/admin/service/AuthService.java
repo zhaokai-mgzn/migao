@@ -814,8 +814,8 @@ public class AuthService {
     private List<UserInfoResponse.MenuItem> buildPlatformAdminMenus() {
         List<UserInfoResponse.MenuItem> menus = new java.util.ArrayList<>();
 
-        menus.add(UserInfoResponse.MenuItem.builder()
-                .key("registrations").name("入驻审批").icon("ClipboardCheck").path("/registrations").build());
+        // 注：入驻审批页已废弃（2026-08-30 起商家入驻由 AI 自动甄别开通，
+        // 不再需要人工审批页面；审批接口仍保留供 API 兜底应急）。
         menus.add(UserInfoResponse.MenuItem.builder()
                 .key("platform-dashboard").name("平台概览").icon("LayoutDashboard").path("/platform-dashboard").build());
         menus.add(UserInfoResponse.MenuItem.builder()

@@ -8,7 +8,7 @@ const publicRoutes = ['/login', '/register', '/about', '/services', '/contact']
 const protectedRoutePrefixes = [
   '/dashboard', '/products', '/processing', '/knowledge', '/settings',
   '/orders', '/chat', '/customers', '/employees', '/roles',
-  '/registrations', '/agent-workspace', '/after-sales', '/notifications', '/categories',
+  '/agent-workspace', '/after-sales', '/notifications', '/categories',
 ]
 
 function getCookie(name: string): string | undefined {

@@ -1225,6 +1225,12 @@ export interface Registration {
   rejectReason?: string
   reviewedBy?: number
   reviewedAt?: string
+  /** AI 甄别来源：ai / system / manual */
+  reviewSource?: string
+  /** 风险标记 JSON 数组字符串 */
+  riskFlags?: string
+  /** AI 审查摘要 */
+  reviewSummary?: string
   createdAt: string
   updatedAt: string
 }
@@ -1244,6 +1250,18 @@ export interface RegistrationData {
   industry?: string
   address?: string
   description?: string
+  /** 蜜罐字段（隐藏，真人不会填写；被填充则判定为自动化脚本） */
+  website?: string
+}
+
+// 入驻申请提交结果（AI 自动甄别）
+export interface RegistrationResult {
+  applicationId: number
+  /** approved（AI 甄别通过）/ rejected（AI 甄别驳回）/ pending（兜底） */
+  status: RegistrationStatus
+  message: string
+  /** status=rejected 时的驳回原因 */
+  rejectReason?: string
 }
 
 // ========== 通知类型 ==========

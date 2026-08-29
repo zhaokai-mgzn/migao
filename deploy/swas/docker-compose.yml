@@ -9,6 +9,11 @@ services:
     image: ${ACR_REGISTRY:-crpi-qdcgkzwx9p9zckga.cn-hangzhou.personal.cr.aliyuncs.com}/ai-customer-service/admin-api:${IMAGE_TAG:-latest}
     restart: unless-stopped
     env_file: .env.admin-api
+    environment:
+      # AI 自动甄别：admin-api 调用 ai-agent-service 内部端点（同 compose 网络）
+      # AI_AGENT_SERVICE_TOKEN 须与 .env.ai-agent 的 SERVICE_TOKEN 一致（deploy.sh 自愈补齐）
+      AI_AGENT_BASE_URL: http://ai-agent:8000
+      AI_AGENT_SERVICE_TOKEN: ${AI_AGENT_SERVICE_TOKEN:-}
     ports:
       - "8080:8080"
 

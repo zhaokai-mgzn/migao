@@ -3,6 +3,7 @@
  *
  * 运行：JUDGE_API_KEY=sk-xxx npx playwright test specs/quality/business-judge.spec.ts
  */
+// case_ids: OB-004
 
 import { test, expect } from '@playwright/test'
 import { BusinessJudge, captureEvidence, startApiCapture } from '../../helpers/business-judge'
@@ -396,20 +397,6 @@ describeOrSkip('LLM 业务裁判', () => {
     const result = await judge.evaluate({
       scenario: '管理员查看知识库',
       criteria: ['页面正常加载，非白屏', '如有文档数据或空状态提示', '页面无异常报错'],
-      evidence: { ...evidence, apiCalls },
-    })
-    const details = result.criteriaResults.map(c => `${c.passed ? '✅' : '❌'} ${c.reason}`).join('\n')
-    expect(result.passed, `\n📋 ${result.summary}\n${details}`).toBe(true)
-  })
-
-  test.skip('注册审核 — 页面可访问', async ({ page }) => {
-    const apiCalls = startApiCapture(page)
-    await page.goto('/registrations')
-    await page.waitForTimeout(3000)
-    const evidence = await captureEvidence(page)
-    const result = await judge.evaluate({
-      scenario: '管理员查看注册审核',
-      criteria: ['页面正常加载，非白屏', '如有申请数据或空状态提示', '页面无异常报错'],
       evidence: { ...evidence, apiCalls },
     })
     const details = result.criteriaResults.map(c => `${c.passed ? '✅' : '❌'} ${c.reason}`).join('\n')

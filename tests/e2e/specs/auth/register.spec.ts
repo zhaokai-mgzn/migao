@@ -1,3 +1,4 @@
+// case_ids: OB-001, OB-002, OB-003
 import { test, expect } from '@playwright/test'
 
 test.describe('企业入驻注册页面', () => {
@@ -145,9 +146,9 @@ test.describe('企业入驻注册页面', () => {
     }
   })
 
-  // ── 步骤三：提交成功 ──
+  // ── 步骤三：AI 审核结果（自动甄别，秒级返回） ──
 
-  test('提交成功后显示成功页面', async ({ page }) => {
+  test('提交后展示 AI 审核结果（通过或驳回）', async ({ page }) => {
     await page.locator('#reg-phone').fill('13800138000')
     await page.locator('#reg-code').fill('123456')
     await page.getByRole('button', { name: /下一步/ }).click()
@@ -156,13 +157,14 @@ test.describe('企业入驻注册页面', () => {
     await page.locator('#contactName').fill('张三')
     await page.getByRole('button', { name: /提交申请/ }).click()
 
-    // 等待成功页面或错误 toast 出现
-    const successPage = page.getByText('申请已提交')
+    // 等待 AI 审核结果页或错误 toast 出现
+    const approvedPage = page.getByText('审核通过，欢迎入驻！')
+    const rejectedPage = page.getByText('审核未通过')
     const toast = page.locator('[data-sonner-toast]')
-    await expect(successPage.or(toast).first()).toBeVisible({ timeout: 10000 })
+    await expect(approvedPage.or(rejectedPage).or(toast).first()).toBeVisible({ timeout: 15000 })
   })
 
-  test('成功页面显示能力卡片', async ({ page }) => {
+  test('AI 审核通过页面显示能力卡片', async ({ page }) => {
     await page.locator('#reg-phone').fill('13800138000')
     await page.locator('#reg-code').fill('123456')
     await page.getByRole('button', { name: /下一步/ }).click()
@@ -170,13 +172,13 @@ test.describe('企业入驻注册页面', () => {
     await page.locator('#contactName').fill('张三')
     await page.getByRole('button', { name: /提交申请/ }).click()
 
-    await expect(page.getByText('申请已提交')).toBeVisible({ timeout: 10000 })
-    await expect(page.getByText(/米宝.*智能工作助手/)).toBeVisible()
+    await expect(page.getByText('审核通过，欢迎入驻！')).toBeVisible({ timeout: 15000 })
+    await expect(page.getByText(/米高.*企业智能助手/)).toBeVisible()
     await expect(page.getByText(/小布.*智能客服/)).toBeVisible()
     await expect(page.getByText(/全功能管理后台/)).toBeVisible()
   })
 
-  test('成功页面"返回登录"链接可见', async ({ page }) => {
+  test('AI 审核通过页面"立即登录"链接可见', async ({ page }) => {
     await page.locator('#reg-phone').fill('13800138000')
     await page.locator('#reg-code').fill('123456')
     await page.getByRole('button', { name: /下一步/ }).click()
@@ -184,9 +186,9 @@ test.describe('企业入驻注册页面', () => {
     await page.locator('#contactName').fill('张三')
     await page.getByRole('button', { name: /提交申请/ }).click()
 
-    await expect(page.getByText('申请已提交')).toBeVisible({ timeout: 10000 })
-    const backLink = page.getByRole('link', { name: /返回登录/ })
-    await expect(backLink).toBeVisible()
+    await expect(page.getByText('审核通过，欢迎入驻！')).toBeVisible({ timeout: 15000 })
+    const loginLink = page.getByRole('link', { name: /立即登录/ })
+    await expect(loginLink).toBeVisible()
   })
 
   test('底部"返回登录"链接始终可见', async ({ page }) => {
