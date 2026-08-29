@@ -63,10 +63,15 @@ modules:
         tests:
           - 'tests/test_graph_{1}.py'
           - 'tests/test_skill_{1}.py'
+          # skill 配置（tool_names/intents/route_keys）统一由 test_skill_config_registry 覆盖
+          - 'tests/test_skill_config_registry.py'
       - pattern: 'backend/ai-agent-service/app/agents/(.+)\.py'
         tests:
           - 'tests/test_agent_{1}.py'
           - 'tests/test_intent_{1}.py'
+          # 小布配置/欢迎语 + 租户 AI 配置的既有测试
+          - 'tests/test_xiaobu.py'
+          - 'tests/test_tenant_config.py'
       - pattern: 'backend/ai-agent-service/app/utils/(.+)\.py'
         tests:
           - 'tests/test_utils_{1}.py'

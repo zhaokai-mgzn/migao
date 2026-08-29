@@ -84,6 +84,9 @@ def build_agent_graph(agent_type: str = "xiaobu"):
         # 将 Skill 的 route_keys 映射到 node_id
         for route_key in skill_config.route_keys:
             skill_route_map[route_key] = node_id
+        # 同时映射 skill name → node_id：route_by_intent 的会话连续性会返回
+        # pending_skill（存的是 skill name，如 "customer_order"），需能解析到节点。
+        skill_route_map[skill_name] = node_id
 
     logger.info(
         f"[builder] Registered {len(skill_node_names)} skill nodes | "

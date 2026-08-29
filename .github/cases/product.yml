@@ -409,3 +409,36 @@ cases:
       ci:
         - agent-eval.yml
       verifies: []
+
+  - id: PR-013
+    legacy_id: ""
+    title: "窗帘算料报价 - 褶皱倍数与用布量计算"
+    domains:
+      - product
+    tier: smoke
+    tags:
+      - quote
+      - fabric_calc
+      - smoke
+    truths_ref:
+      - fabric-calc.fullness-default
+      - fabric-calc.fixed-height
+      - fabric-calc.fixed-width
+    user_inputs:
+      - "3米宽 2.5米高 2倍褶皱 打孔帘 用98元一米的遮光布 帮我算多少钱"
+    expectations:
+      - tool: curtain_calc
+        args:
+          window_width: 3
+          window_height: 2.5
+    data_checks:
+      - "data.fabric_meters > 0"
+      - "data.total > 0"
+    skip_reason: "算料报价为小布（C 端）专属功能，米宝（B 端）Agent Eval smoke 评测无 curtain_calc 工具；由 test_curtain_calc.py 单测 + POC 集成测试覆盖"
+    merge_log: "POC 小布增强新增（算料报价 skill）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_curtain_calc.py"
+      ci:
+        - ai-agent-tests.yml
+      verifies: []

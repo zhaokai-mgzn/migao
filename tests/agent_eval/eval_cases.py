@@ -319,6 +319,20 @@ _CASE_API_009 = EvalCase(
     tags=['api', 'upload', 'file_guard'],
 )
 
+# ── API-010 [NORMAL] 微信小程序 mock 登录链路（无 appid 时自动 mock）（源: cases/api.yml）──
+_CASE_API_010 = EvalCase(
+    id='API-010',
+    legacy_id='',
+    title='微信小程序 mock 登录链路（无 appid 时自动 mock）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['POST /api/auth/mini/login 在 wechat.mini.appid 未配置时走 mock 模式', '同 code 二次登录返回同一用户（账号稳定）'],
+    expectations=['direct_reply'],
+    data_checks=['mock 登录成功返回 accessToken + user', '登录参数 tenantId(camelCase) 与后端一致'],
+    skip_reason='',
+    tags=['login', 'mock'],
+)
+
 # ── CT-001 [NORMAL] 分类树（源: cases/category.yml）──
 _CASE_CT_001 = EvalCase(
     id='CT-001',
@@ -457,6 +471,20 @@ _CASE_CH_007 = EvalCase(
     data_checks=['闲聊回复不调用 tool', 'product_detail 正确使用 product_search 返回的 ID'],
     skip_reason='',
     tags=['multi_turn', 'casual_chat', 'context_isolation'],
+)
+
+# ── CH-008 [NORMAL] 转人工创建人工会话 - 客服工作台可见并可回复（源: cases/chat.yml）──
+_CASE_CH_008 = EvalCase(
+    id='CH-008',
+    legacy_id='',
+    title='转人工创建人工会话 - 客服工作台可见并可回复',
+    skill=Skill.MULTI_TURN,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户触发转人工后应创建 agent_session（waiting）并写入系统消息', '客服可在工作台发消息回复，会话 waiting→active', '用户可按 AI 会话 ID 查询人工会话看到客服回复'],
+    expectations=['human_handoff'],
+    data_checks=['createSessionForHandoff 创建 waiting 会话 + system 消息', 'sendMessage(agent) 后会话状态变 active', 'getSessionByAiSessionId 返回含客服消息的会话'],
+    skip_reason='',
+    tags=['handoff', 'agent_session'],
 )
 
 # ── CR-001 [NORMAL] 查商品 → 下单（跨 Skill 复用 UUID）（源: cases/cross.yml）──
@@ -1271,6 +1299,20 @@ _CASE_OR_010 = EvalCase(
     tags=['create', 'confirm'],
 )
 
+# ── OR-011 [NORMAL] AI 下单闭环 - 算料报价→确认→SMS→订单创建（源: cases/order.yml）──
+_CASE_OR_011 = EvalCase(
+    id='OR-011',
+    legacy_id='',
+    title='AI 下单闭环 - 算料报价→确认→SMS→订单创建',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户算料报价后确认下单，走 SMS 验证（bypass）→ order_create 成功'],
+    expectations=['order_create'],
+    data_checks=['order_create 返回订单号'],
+    skip_reason='',
+    tags=['order_create', 'smoke'],
+)
+
 # ── PP-001 [NORMAL] 加工项选择 - 分页翻页（源: cases/processing.yml）──
 _CASE_PP_001 = EvalCase(
     id='PP-001',
@@ -1495,6 +1537,20 @@ _CASE_PR_012 = EvalCase(
     tags=['multi_turn', 'correction', 'mid_flow_change'],
 )
 
+# ── PR-013 [SMOKE] 窗帘算料报价 - 褶皱倍数与用布量计算（源: cases/product.yml）──
+_CASE_PR_013 = EvalCase(
+    id='PR-013',
+    legacy_id='',
+    title='窗帘算料报价 - 褶皱倍数与用布量计算',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.SMOKE,
+    user_inputs=['3米宽 2.5米高 2倍褶皱 打孔帘 用98元一米的遮光布 帮我算多少钱'],
+    expectations=['curtain_calc(window_width=3, window_height=2.5)'],
+    data_checks=['data.fabric_meters > 0', 'data.total > 0'],
+    skip_reason='算料报价为小布（C 端）专属功能，米宝（B 端）Agent Eval smoke 评测无 curtain_calc 工具；由 test_curtain_calc.py 单测 + POC 集成测试覆盖',
+    tags=['quote', 'fabric_calc', 'smoke'],
+)
+
 # ── RG-001 [NORMAL] ToolRegistry 注册/查询/执行审计（源: cases/registry.yml）──
 _CASE_RG_001 = EvalCase(
     id='RG-001',
@@ -1607,6 +1663,20 @@ _CASE_ST_007 = EvalCase(
     tags=['create'],
 )
 
+# ── ST-008 [NORMAL] 机器人设置生效 - 自动转人工关键词 + 非营业时间转人工降级（源: cases/settings.yml）──
+_CASE_ST_008 = EvalCase(
+    id='ST-008',
+    legacy_id='',
+    title='机器人设置生效 - 自动转人工关键词 + 非营业时间转人工降级',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=["商家配置 autoHandoffKeywords=[找老板,我要投诉] 后，用户消息'我要找老板'应触发转人工", '商家配置 afterHoursMode=auto_reply 且非营业时间时，转人工应降级返回 afterHoursMessage'],
+    expectations=['human_handoff'],
+    data_checks=["is_auto_handoff_trigger('我要找老板', config) == true", 'is_after_hours(config, 非营业时间) == true', '非营业时间转人工不创建工单，返回 afterHoursMessage'],
+    skip_reason='',
+    tags=['ai_config', 'handoff'],
+)
+
 # ── UI-001 [NORMAL] 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理（源: cases/ui.yml）──
 _CASE_UI_001 = EvalCase(
     id='UI-001',
@@ -1712,6 +1782,7 @@ ALL_CASES = (
     _CASE_API_007,
     _CASE_API_008,
     _CASE_API_009,
+    _CASE_API_010,
     _CASE_CT_001,
     _CASE_CT_002,
     _CASE_CT_003,
@@ -1722,6 +1793,7 @@ ALL_CASES = (
     _CASE_CH_005,
     _CASE_CH_006,
     _CASE_CH_007,
+    _CASE_CH_008,
     _CASE_CR_001,
     _CASE_CR_002,
     _CASE_CR_003,
@@ -1780,6 +1852,7 @@ ALL_CASES = (
     _CASE_OR_008,
     _CASE_OR_009,
     _CASE_OR_010,
+    _CASE_OR_011,
     _CASE_PP_001,
     _CASE_PP_002,
     _CASE_PP_003,
@@ -1796,6 +1869,7 @@ ALL_CASES = (
     _CASE_PR_010,
     _CASE_PR_011,
     _CASE_PR_012,
+    _CASE_PR_013,
     _CASE_RG_001,
     _CASE_ST_001,
     _CASE_ST_002,
@@ -1804,6 +1878,7 @@ ALL_CASES = (
     _CASE_ST_005,
     _CASE_ST_006,
     _CASE_ST_007,
+    _CASE_ST_008,
     _CASE_UI_001,
     _CASE_UI_002,
     _CASE_UI_003,

@@ -15,6 +15,7 @@ export default function ChatPage() {
     currentSessionId,
     isLoadingMessages,
     error,
+    handedOff,
     createSession,
     sendMessage,
     stopStreaming,
@@ -89,6 +90,13 @@ export default function ChatPage() {
         </View>
       )}
 
+      {/* 已转人工横幅 */}
+      {handedOff && (
+        <View className='chat-page__handoff'>
+          <Text className='chat-page__handoff-text'>👩‍💼 已为您转接人工客服，请稍候，可直接在这里和客服沟通</Text>
+        </View>
+      )}
+
       {/* 主体区域 */}
       <View className='chat-page__body'>
         {isLoadingMessages && messages.length === 0 ? (
@@ -97,7 +105,7 @@ export default function ChatPage() {
           </View>
         ) : (
           <>
-            <MessageList messages={messages} isStreaming={isStreaming} />
+            <MessageList messages={messages} isStreaming={isStreaming} onInteract={handleSend} />
             {showQuickActions && <QuickActions onAction={handleQuickAction} />}
           </>
         )}

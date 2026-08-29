@@ -415,6 +415,7 @@ def create_default_registry() -> ToolRegistry:
     from app.tools.sku_update import SkuUpdateTool
     from app.tools.interact import InteractTool  # noqa: F401 保留以备将来使用
     from app.tools.validate_input import ValidateInputTool
+    from app.tools.curtain_calc import CurtainCalcTool
 
     registry = ToolRegistry()
     
@@ -452,6 +453,7 @@ def create_default_registry() -> ToolRegistry:
     # interact 工具重新启用：支持交互式组件（interactive component support）
     registry.register(InteractTool())
     registry.register(ValidateInputTool())
+    registry.register(CurtainCalcTool())
 
     logger.info(f"Default registry created with {len(registry)} tools")
     return registry

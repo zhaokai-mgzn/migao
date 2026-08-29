@@ -487,10 +487,14 @@ class TestAgentAwareSuggestionsIntegration:
         assert mibao_order != xiaobu_order
 
     def test_mibao_has_all_27_intents(self):
-        """米宝预设覆盖所有 27 个意图"""
+        """米宝预设覆盖所有意图（跳过 C 端专属意图）"""
         from app.suggestions.follow_up import MIBAO_PRESET_SUGGESTIONS
         from app.router.intent_config import IntentType
+        # C 端专属意图（小布算料报价等），米宝（B 端）无需预设
+        XIAOBU_ONLY_INTENTS = {"quote"}
         for intent in IntentType:
+            if intent.value in XIAOBU_ONLY_INTENTS:
+                continue
             assert intent.value in MIBAO_PRESET_SUGGESTIONS, \
                 f"米宝缺少意图 {intent.value} 的预设"
 

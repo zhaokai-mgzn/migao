@@ -134,7 +134,7 @@
 真值: ai-chat.agent-factory
 溯源: 2026-08-25 新增：ai-agent-service agents-customer_service_agent 覆盖率补全（issue #2429） ｜ tags: agents, factory, alias
 
-## api（9 case）
+## api（10 case）
 
 ### API-001. chat 会话生命周期 - 租户隔离 + 用户所有权 + 幂等/重开 🔵
 ```
@@ -242,6 +242,17 @@
 真值: api.upload-validation, api.upload-magic-proxy
 溯源: 2026-08-25 新增：ai-agent-service api 覆盖率补全（issue #2428） ｜ tags: api, upload, file_guard
 
+### API-010. 微信小程序 mock 登录链路（无 appid 时自动 mock） 🔵
+```
+你: POST /api/auth/mini/login 在 wechat.mini.appid 未配置时走 mock 模式
+你: 同 code 二次登录返回同一用户（账号稳定）
+期望: direct_reply
+数据: mock 登录成功返回 accessToken + user
+数据: 登录参数 tenantId(camelCase) 与后端一致
+```
+真值: auth-sms.bypass
+溯源: POC mock 登录集成测试新增 ｜ tags: login, mock
+
 ## 分类域（3 case）
 
 ### CT-001. 分类树 🔵
@@ -272,7 +283,7 @@
 真值: category-manage.delete, category-manage.delete-destructive, ai-chat.confirm-required
 溯源: verification 2.12 独有（二次确认行为在测试中未确认，见 category-manage.yml 缺口注释） ｜ tags: delete, destructive, confirm
 
-## 对话边界域（7 case）
+## 对话边界域（8 case）
 
 ### CH-001. 空结果 + suggestion 引导修复 🔴
 ```
@@ -367,6 +378,19 @@
 ```
 真值: ai-chat.intent-domains, ai-chat.context-memory
 溯源: eval M012 独有 ｜ tags: multi_turn, casual_chat, context_isolation
+
+### CH-008. 转人工创建人工会话 - 客服工作台可见并可回复 🔵
+```
+你: 用户触发转人工后应创建 agent_session（waiting）并写入系统消息
+你: 客服可在工作台发消息回复，会话 waiting→active
+你: 用户可按 AI 会话 ID 查询人工会话看到客服回复
+期望: human_handoff
+数据: createSessionForHandoff 创建 waiting 会话 + system 消息
+数据: sendMessage(agent) 后会话状态变 active
+数据: getSessionByAiSessionId 返回含客服消息的会话
+```
+真值: ai-chat.intent-tool-map, settings-manage.ai-config
+溯源: POC 人工客服工作台新增 ｜ tags: handoff, agent_session
 
 ## 跨域（3 case）
 
@@ -942,7 +966,7 @@
 真值: misc.rule-regex
 溯源: 2026-08-25 新增：ai-agent-service misc-part2 覆盖率补全（issue #2424） ｜ tags: rule_matcher, regex, fallback
 
-## 订单域（10 case）
+## 订单域（11 case）
 
 ### OR-001. 订单列表查询 🟢
 ```
@@ -1058,6 +1082,15 @@
 真值: order.states, order.create-flow
 溯源: verification 1.8 独有（smoke 简化版，与 OR-008/OR-009 的细粒度版互补）；2026-08-14 按 EXAMPLES-order.md 例2 校准为多轮（完整收货信息→选1→确认），单轮直下单与设计澄清流程不符 ｜ tags: create, confirm
 
+### OR-011. AI 下单闭环 - 算料报价→确认→SMS→订单创建 🔵
+```
+你: 用户算料报价后确认下单，走 SMS 验证（bypass）→ order_create 成功
+期望: order_create
+数据: order_create 返回订单号
+```
+真值: order.flow
+溯源: POC 下单闭环集成测试新增 ｜ tags: order_create, smoke
+
 ## 加工项域（4 case）
 
 ### PP-001. 加工项选择 - 分页翻页 🔵
@@ -1098,7 +1131,7 @@
 真值: id-resolve.index
 溯源: eval P006 独有（序号 ID 解析） ｜ tags: id_resolve, adversarial, sequence
 
-## 商品域（12 case）
+## 商品域（13 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
 ```
@@ -1243,6 +1276,17 @@
 真值: product-sku-stock.create-flow, ai-chat.validate-input
 溯源: eval M003 独有（中途纠偏） ｜ tags: multi_turn, correction, mid_flow_change
 
+### PR-013. 窗帘算料报价 - 褶皱倍数与用布量计算 🟢
+```
+你: 3米宽 2.5米高 2倍褶皱 打孔帘 用98元一米的遮光布 帮我算多少钱
+期望: curtain_calc(window_width=3, window_height=2.5)
+数据: data.fabric_meters > 0
+数据: data.total > 0
+跳过: 算料报价为小布（C 端）专属功能，米宝（B 端）Agent Eval smoke 评测无 curtain_calc 工具；由 test_curtain_calc.py 单测 + POC 集成测试覆盖
+```
+真值: fabric-calc.fullness-default, fabric-calc.fixed-height, fabric-calc.fixed-width
+溯源: POC 小布增强新增（算料报价 skill） ｜ tags: quote, fabric_calc, smoke
+
 ## registry（1 case）
 
 ### RG-001. ToolRegistry 注册/查询/执行审计 🔵
@@ -1257,7 +1301,7 @@
 真值: ai-chat.tool-classes, ai-chat.permission-layers
 溯源: 2026-08-25 新增：ai-agent-service tools-mixed-part2 覆盖率补全（issue #2426） ｜ tags: registry, tool_execute, audit
 
-## 设置域（7 case）
+## 设置域（8 case）
 
 ### ST-001. 系统设置 - 读取 🔵
 ```
@@ -1322,6 +1366,18 @@
 ```
 真值: agent-notification.quick-reply-validate
 溯源: verification 6.7 独有 ｜ tags: create
+
+### ST-008. 机器人设置生效 - 自动转人工关键词 + 非营业时间转人工降级 🔵
+```
+你: 商家配置 autoHandoffKeywords=[找老板,我要投诉] 后，用户消息'我要找老板'应触发转人工
+你: 商家配置 afterHoursMode=auto_reply 且非营业时间时，转人工应降级返回 afterHoursMessage
+期望: human_handoff
+数据: is_auto_handoff_trigger('我要找老板', config) == true
+数据: is_after_hours(config, 非营业时间) == true
+数据: 非营业时间转人工不创建工单，返回 afterHoursMessage
+```
+真值: settings-manage.ai-config, settings-manage.immediate-effect
+溯源: POC 机器人设置集成新增 ｜ tags: ai_config, handoff
 
 ## ui（4 case）
 
@@ -1404,13 +1460,13 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：118（活跃 82，跳过 36）
-- tier 分布：smoke 9 / normal 82 / adversarial 27
+- 用例总数：123（活跃 86，跳过 37）
+- tier 分布：smoke 10 / normal 86 / adversarial 27
 - 售后域：5
 - agents：6
-- api：9
+- api：10
 - 分类域：3
-- 对话边界域：7
+- 对话边界域：8
 - 跨域：3
 - 客户域：5
 - 数据域：5
@@ -1418,11 +1474,11 @@
 - finance：3
 - 人事域：5
 - misc：11
-- 订单域：10
+- 订单域：11
 - 加工项域：4
-- 商品域：12
+- 商品域：13
 - registry：1
-- 设置域：7
+- 设置域：8
 - ui：4
 - utils：2
 

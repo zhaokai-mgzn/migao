@@ -86,6 +86,7 @@ const menuGroups: MenuGroup[] = [
     icon: 'LayoutDashboard',
     children: [
       { key: 'dashboard', name: '经营看板', icon: 'BarChart3', path: '/dashboard' },
+      { key: 'human-sessions', name: '人工客服', icon: 'Headset', path: '/agent-workspace/human-sessions', permissionCode: 'agent:session' },
     ],
   },
   {

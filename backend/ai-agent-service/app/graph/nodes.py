@@ -215,6 +215,34 @@ async def intent_router_node(state: AgentState) -> dict:
     # Agent 感知：获取该 Agent 可处理的意图子集
     agent_intents = _get_agent_intents(agent_type)
 
+    # 商家配置的自动转人工关键词：命中则直接转人工（complaint 意图 → human_handoff）
+    # 仅小布（C 端）生效；商家后台「机器人设置」配置 autoHandoffKeywords。
+    tenant_id = state.get("tenant_id")
+    if agent_type == "xiaobu" and tenant_id and user_message:
+        try:
+            from app.agents.tenant_config import (
+                get_tenant_ai_config,
+                is_auto_handoff_trigger,
+            )
+            ai_config = await get_tenant_ai_config(int(tenant_id))
+            if is_auto_handoff_trigger(user_message, ai_config):
+                logger.info(
+                    f"[intent_router] 命中商家转人工关键词 → complaint "
+                    f"| tenant={tenant_id} session={session_id}"
+                )
+                return {
+                    "intent_result": {
+                        "intent": "complaint",
+                        "confidence": 0.99,
+                        "source": "tenant_auto_handoff",
+                    },
+                    "route_decision": {"action": "full_agent"},
+                }
+        except Exception as e:
+            logger.warning(
+                f"[intent_router] 自动转人工关键词检查失败（非致命）: {e}"
+            )
+
     # 注入跨轮实体：让分类器指代消解（"那个订单"→ORD12345），减少误分类。
     # entity_hint 作为独立参数传给 router，仅注入 L2 分类器；
     # L1 规则匹配只看原始用户消息（防止 hint 中的领域词污染关键词匹配）。
@@ -297,9 +325,15 @@ _KNOWLEDGE_FALLBACK = {"knowledge_faq": "general", "knowledge_manage": "general"
 
 
 def _get_intent_to_route(agent_type: str = "") -> dict[str, str]:
-    """意图→路由key映射。从 skill_registry 动态构建,避免硬编码不同步。"""
+    """意图→路由key映射。从 skill_registry 动态构建,避免硬编码不同步。
+
+    按 agent_type 对齐 persona：xiaobu 的 C 端专属 skill（如 customer_quote 的
+    quote 意图）只有 xiaobu persona，若用默认 mibao persona 构建会被过滤，
+    导致 quote 意图 fallback 到 general。故按 agent_type 传对应 persona。
+    """
     from app.graph.skills.skill_registry import get_skill_registry
-    intent_map = get_skill_registry().get_intent_to_route_map()
+    persona = "xiaobu" if agent_type == "xiaobu" else "mibao"
+    intent_map = get_skill_registry().get_intent_to_route_map(persona=persona)
     for intent in _DIRECT_REPLY_INTENTS:
         intent_map[intent] = "direct_reply"
     intent_map["general"] = "general"

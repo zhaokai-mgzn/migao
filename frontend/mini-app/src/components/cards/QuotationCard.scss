@@ -1,0 +1,122 @@
+.quotation-card {
+  background: #fff;
+  border-radius: 16rpx;
+  padding: 24rpx;
+  box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.06);
+  margin: 8rpx 0;
+}
+
+.quotation-card__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding-bottom: 16rpx;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.quotation-card__header-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.quotation-card__header-sub {
+  font-size: 22rpx;
+  color: #9ca3af;
+}
+
+.quotation-card__rows {
+  padding: 8rpx 0;
+}
+
+.quotation-card__row {
+  display: flex;
+  align-items: center;
+  height: 56rpx;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.quotation-card__row-name {
+  width: 120rpx;
+  font-size: 26rpx;
+  color: #374151;
+}
+
+.quotation-card__row-detail {
+  flex: 1;
+  font-size: 22rpx;
+  color: #9ca3af;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.quotation-card__row-cost {
+  font-size: 26rpx;
+  color: #374151;
+  font-variant-numeric: tabular-nums;
+}
+
+.quotation-card__warning {
+  margin-top: 12rpx;
+  padding: 12rpx 16rpx;
+  background: #fff7e6;
+  border-radius: 8rpx;
+}
+
+.quotation-card__warning-text {
+  font-size: 22rpx;
+  color: #d48806;
+}
+
+.quotation-card__total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16rpx 0 8rpx;
+}
+
+.quotation-card__total-label {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.quotation-card__total-amount {
+  font-size: 36rpx;
+  font-weight: 700;
+  color: #b7791f;
+  font-variant-numeric: tabular-nums;
+}
+
+.quotation-card__note {
+  display: block;
+  font-size: 20rpx;
+  color: #bfbfbf;
+  padding-bottom: 8rpx;
+}
+
+.quotation-card__actions {
+  display: flex;
+  gap: 16rpx;
+  padding-top: 8rpx;
+}
+
+.quotation-card__btn {
+  flex: 1;
+  height: 88rpx;
+  border-radius: 16rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.quotation-card__btn--primary {
+  background: #b7791f;
+}
+
+.quotation-card__btn-text {
+  font-size: 28rpx;
+  color: #fff;
+  font-weight: 600;
+}
