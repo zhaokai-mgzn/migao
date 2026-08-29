@@ -67,6 +67,30 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
     );
 
     /**
+     * 工单类型 → 中文业务术语（错误消息用，面向企业客户）。
+     */
+    private static final Map<String, String> TICKET_TYPE_LABELS = Map.of(
+            "refund", "退款",
+            "return", "退货",
+            "exchange", "换货",
+            "repair", "维修",
+            "complaint", "投诉",
+            "other", "其他"
+    );
+
+    /**
+     * 订单状态 → 中文业务术语（错误消息用，面向企业客户）。
+     */
+    private static final Map<String, String> ORDER_STATUS_LABELS = Map.of(
+            "pending", "待付款",
+            "confirmed", "已确认",
+            "producing", "生产中",
+            "shipped", "已发货",
+            "completed", "已完成",
+            "cancelled", "已取消"
+    );
+
+    /**
      * 分页查询售后工单列表
      *
      * @param page       页码
@@ -189,9 +213,10 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
             // 状态门禁：退款/退货工单仅允许在已确认及以上的订单创建（与 refundOrder 一致）
             boolean isRefundType = "refund".equals(request.getTicketType()) || "return".equals(request.getTicketType());
             if (isRefundType && !Set.of("confirmed", "producing", "shipped", "completed").contains(order.getStatus())) {
+                String orderStatusLabel = ORDER_STATUS_LABELS.getOrDefault(order.getStatus(), order.getStatus());
                 throw BusinessException.validationError(
                         String.format("当前订单状态[%s]不允许创建退款/退货工单，仅已确认/生产中/已发货/已完成可创建",
-                                order.getStatus()));
+                                orderStatusLabel));
             }
 
             // 退款金额校验：≥0 且 ≤ 订单实收款
@@ -215,9 +240,10 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
                 boolean hasSameType = activeTickets.stream()
                     .anyMatch(t -> request.getTicketType().equals(t.getTicketType()));
                 if (hasSameType) {
+                    String typeLabel = TICKET_TYPE_LABELS.getOrDefault(request.getTicketType(), request.getTicketType());
                     throw BusinessException.validationError(
                         String.format("该订单已有 %s 类型的活跃工单（%s），请先处理后再创建",
-                            request.getTicketType(),
+                            typeLabel,
                             activeTickets.get(0).getTicketNo()));
                 }
                 // 不同类型 → 记录警告但不阻止
@@ -296,8 +322,10 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
         String currentStatus = ticket.getStatus();
         Set<String> allowedTargets = STATUS_TRANSITIONS.getOrDefault(currentStatus, Set.of());
         if (!allowedTargets.contains(newStatus)) {
+            String currentLabel = TICKET_STATUS_LABELS.getOrDefault(currentStatus, currentStatus);
+            String newLabel = TICKET_STATUS_LABELS.getOrDefault(newStatus, newStatus);
             throw BusinessException.validationError(
-                    String.format("工单状态不允许从 [%s] 变更为 [%s]", currentStatus, newStatus));
+                    String.format("工单状态不允许从 [%s] 变更为 [%s]", currentLabel, newLabel));
         }
 
         ticket.setStatus(newStatus);

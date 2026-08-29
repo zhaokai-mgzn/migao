@@ -80,6 +80,20 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     );
 
     /**
+     * 订单状态 → 中文业务术语（错误消息用）。
+     * 校验/退款等报错会通过 GlobalExceptionHandler 直接展示给企业客户，
+     * 必须用中文（如「待付款」），不能用 pending/confirmed 等英文枚举。
+     */
+    private static final Map<String, String> ORDER_STATUS_LABELS = Map.of(
+            "pending", "待付款",
+            "confirmed", "已确认",
+            "producing", "生产中",
+            "shipped", "已发货",
+            "completed", "已完成",
+            "cancelled", "已取消"
+    );
+
+    /**
      * 分页查询订单列表
      *
      * @param page            页码
@@ -379,15 +393,18 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
 
         // 校验状态值
         if (!STATUS_TRANSITIONS.containsKey(status)) {
-            throw BusinessException.validationError("无效的订单状态: " + status);
+            String statusLabel = ORDER_STATUS_LABELS.getOrDefault(status, status);
+            throw BusinessException.validationError("无效的订单状态: " + statusLabel);
         }
 
         // 校验状态流转是否合法
         String currentStatus = order.getStatus();
         Set<String> allowedTargets = STATUS_TRANSITIONS.getOrDefault(currentStatus, Set.of());
         if (!allowedTargets.contains(status)) {
+            String currentLabel = ORDER_STATUS_LABELS.getOrDefault(currentStatus, currentStatus);
+            String targetLabel = ORDER_STATUS_LABELS.getOrDefault(status, status);
             throw BusinessException.validationError(
-                    String.format("订单状态不允许从 [%s] 变更为 [%s]", currentStatus, status));
+                    String.format("订单状态不允许从 [%s] 变更为 [%s]", currentLabel, targetLabel));
         }
 
         // 统一走带库存/销量副作用的路径，避免与 confirmPayment/cancelOrder 逻辑不一致
@@ -818,8 +835,9 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         String previousStatus = order.getStatus();
         Set<String> refundableStatuses = Set.of("confirmed", "producing", "shipped", "completed");
         if (!refundableStatuses.contains(previousStatus)) {
+            String previousLabel = ORDER_STATUS_LABELS.getOrDefault(previousStatus, previousStatus);
             throw BusinessException.validationError(
-                    "当前状态[" + previousStatus + "]不允许退款，仅已确认/生产中/已发货/已完成可退款");
+                    "当前状态[" + previousLabel + "]不允许退款，仅已确认/生产中/已发货/已完成可退款");
         }
 
         BigDecimal actual = effectiveActualAmount(order);

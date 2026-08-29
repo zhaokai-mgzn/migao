@@ -310,7 +310,8 @@ class AfterSalesTicketServiceTest {
         assertThatThrownBy(() -> afterSalesTicketService.createTicket(request, 1L, "test-user"))
             .isInstanceOf(BusinessException.class)
             .hasMessageContaining("已有")
-            .hasMessageContaining("return");
+            .hasMessageContaining("退货")
+            .hasMessageNotContaining("return");
     }
 
     @Test
@@ -433,7 +434,7 @@ class AfterSalesTicketServiceTest {
     }
 
     @Test
-    @DisplayName("更新工单状态失败 - 非法状态流转 pending -> resolved")
+    @DisplayName("更新工单状态失败 - 非法状态流转 pending -> resolved（报错中文术语）")
     void updateTicketStatus_InvalidTransition() {
         // given
         AfterSalesStatusUpdateRequest request = new AfterSalesStatusUpdateRequest();
@@ -441,10 +442,13 @@ class AfterSalesTicketServiceTest {
 
         when(afterSalesTicketMapper.selectById("ticket-001")).thenReturn(testTicket);
 
-        // when & then
+        // when & then: 报错用中文状态术语，不得暴露英文枚举
         assertThatThrownBy(() -> afterSalesTicketService.updateTicketStatus("ticket-001", request))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("不允许");
+                .hasMessageContaining("待处理")
+                .hasMessageContaining("已解决")
+                .hasMessageNotContaining("pending")
+                .hasMessageNotContaining("resolved");
     }
 
     @Test

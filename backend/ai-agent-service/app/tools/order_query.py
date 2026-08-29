@@ -253,11 +253,22 @@ class OrderQueryTool(BaseTool):
             )
         data = response.get("data", {})
         logger.info(f"[order-query] Follow-status stats fetched | tenant={context.tenant_id}")
-        # 构建摘要：汇总各跟进状态的数量
+        # 构建摘要：汇总各跟进状态的数量（key 用中文业务术语，避免英文枚举流入用户可见回复）
         total_count = data.get("totalCount") or sum(
             v for k, v in (data or {}).items() if isinstance(v, (int, float)) and k != "totalCount"
         )
-        summary_parts = [f"{k}:{v}" for k, v in (data or {}).items() if isinstance(v, (int, float))]
+        FOLLOW_STATUS_LABELS = {
+            "pending": "待跟进",
+            "following": "跟进中",
+            "processing": "跟进中",  # 兼容历史 key
+            "completed": "已跟进",
+            "totalCount": "总数",
+        }
+        summary_parts = [
+            f"{FOLLOW_STATUS_LABELS.get(k, k)}:{v}"
+            for k, v in (data or {}).items()
+            if isinstance(v, (int, float))
+        ]
         summary_text = "、".join(summary_parts[:5]) if summary_parts else "无数据"
         return ToolResult(
             success=True,

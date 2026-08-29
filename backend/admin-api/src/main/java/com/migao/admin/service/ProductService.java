@@ -84,6 +84,18 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
     }
 
     /**
+     * 商品状态 → 中文业务术语（错误消息用）。
+     * 上下架/删除等校验报错会直接展示给企业客户，必须用中文（如「出售中」），
+     * 不能用 on_sale/off_sale 等英文枚举。
+     */
+    private static final Map<String, String> PRODUCT_STATUS_LABELS = Map.of(
+            "draft", "草稿",
+            "under_review", "审核中",
+            "on_sale", "出售中",
+            "off_sale", "已下架"
+    );
+
+    /**
      * 分页查询商品列表
      */
     public PageResponse<ProductResponse> getProducts(ProductQueryRequest query, Long tenantId) {
@@ -839,7 +851,8 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
 
         String currentStatus = product.getStatus() != null ? product.getStatus() : "draft";
         if (!Set.of("draft", "off_sale").contains(currentStatus)) {
-            throw BusinessException.validationError("当前状态[" + currentStatus + "]不允许删除，请先下架后再删除");
+            String statusLabel = PRODUCT_STATUS_LABELS.getOrDefault(currentStatus, currentStatus);
+            throw BusinessException.validationError("当前状态[" + statusLabel + "]不允许删除，请先下架后再删除");
         }
 
         productMapper.deleteById(id);
@@ -886,10 +899,15 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         // 状态流转校验
         List<String> allowedTransitions = STATUS_TRANSITIONS.get(currentStatus);
         if (allowedTransitions == null || !allowedTransitions.contains(status)) {
+            String currentLabel = PRODUCT_STATUS_LABELS.getOrDefault(currentStatus, currentStatus);
+            String targetLabel = PRODUCT_STATUS_LABELS.getOrDefault(status, status);
+            List<String> allowedLabels = allowedTransitions != null
+                    ? allowedTransitions.stream().map(s -> PRODUCT_STATUS_LABELS.getOrDefault(s, s)).toList()
+                    : List.of();
             throw BusinessException.validationError(
                     String.format("状态流转无效: %s → %s，允许的目标状态: %s",
-                            currentStatus, status,
-                            allowedTransitions != null ? allowedTransitions : "无"));
+                            currentLabel, targetLabel,
+                            allowedLabels.isEmpty() ? "无" : String.join("/", allowedLabels)));
         }
 
         product.setStatus(status);
@@ -922,7 +940,8 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             }
             String currentStatus = product.getStatus() != null ? product.getStatus() : "draft";
             if (!allowedStatuses.contains(currentStatus)) {
-                result.addError(id, "当前状态[" + currentStatus + "]不允许上架");
+                String statusLabel = PRODUCT_STATUS_LABELS.getOrDefault(currentStatus, currentStatus);
+                result.addError(id, "当前状态[" + statusLabel + "]不允许上架");
                 continue;
             }
             product.setStatus("on_sale");
@@ -955,7 +974,8 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             }
             String currentStatus = product.getStatus() != null ? product.getStatus() : "draft";
             if (!"on_sale".equals(currentStatus)) {
-                result.addError(id, "当前状态[" + currentStatus + "]不允许下架");
+                String statusLabel = PRODUCT_STATUS_LABELS.getOrDefault(currentStatus, currentStatus);
+                result.addError(id, "当前状态[" + statusLabel + "]不允许下架");
                 continue;
             }
             product.setStatus("off_sale");
@@ -989,7 +1009,8 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             }
             String currentStatus = product.getStatus() != null ? product.getStatus() : "draft";
             if (!allowedStatuses.contains(currentStatus)) {
-                result.addError(id, "当前状态[" + currentStatus + "]不允许删除");
+                String statusLabel = PRODUCT_STATUS_LABELS.getOrDefault(currentStatus, currentStatus);
+                result.addError(id, "当前状态[" + statusLabel + "]不允许删除");
                 continue;
             }
             productMapper.deleteById(id);
