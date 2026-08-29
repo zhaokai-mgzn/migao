@@ -11,9 +11,10 @@ services:
     env_file: .env.admin-api
     environment:
       # AI 自动甄别：admin-api 调用 ai-agent-service 内部端点（同 compose 网络）
-      # AI_AGENT_SERVICE_TOKEN 须与 .env.ai-agent 的 SERVICE_TOKEN 一致（deploy.sh 自愈补齐）
+      # 注意：AI_AGENT_SERVICE_TOKEN 只经 env_file(.env.admin-api) 注入——
+      # compose environment 的 ${VAR:-} 插值读不到 .env.admin-api，会覆盖为空导致
+      # ai-agent 401 校验失败（入驻 fail-closed 系统繁忙）。deploy.sh 自愈补齐该值。
       AI_AGENT_BASE_URL: http://ai-agent:8000
-      AI_AGENT_SERVICE_TOKEN: ${AI_AGENT_SERVICE_TOKEN:-}
     ports:
       - "8080:8080"
 
