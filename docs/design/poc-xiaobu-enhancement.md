@@ -103,3 +103,36 @@
 | `emotionHandoff` | POC 后 | 与 autoHandoffKeywords 部分重叠 |
 | `aiFallbackHandoff/Threshold` | POC 后 | 与现有 prompt"答不上来转人工"重复 |
 | `quickReplies` | 待澄清 | 语义不清（C 端欢迎区 vs 客服工作台，后者已有 QuickReplyTemplate） |
+
+## 七、人工客服工作台（转人工 → 人工客服对话）
+
+> 打通「用户触发转人工 → 客服工作台接待 → 用户看到回复」的完整闭环。
+
+### 链路
+
+```
+用户"我要找老板"
+  → human_handoff：创建投诉工单 + 创建人工会话(agent_session, waiting)
+  → 客服工作台（/agent-workspace/human-sessions）看到会话
+  → 客服发消息（POST /{id}/messages）→ 会话 waiting→active
+  → 用户查人工会话（GET /api/customer/agent-sessions/by-ai/{aiSessionId}）看到回复
+```
+
+### 后端
+
+- `AgentSessionService`：createSessionForHandoff / sendMessage / getSessionByAiSessionId
+- `AgentSessionController`：POST 创建会话 + POST /{id}/messages（客服，agent:session）
+- `CustomerAgentSessionController`（/api/customer/agent-sessions，customer 可访问）：
+  - GET by-ai/{aiSessionId}（用户查人工会话，归属校验）
+  - POST /{id}/messages（用户发消息）
+- `human_handoff`：工单创建成功后同步创建人工会话
+
+### 前端（admin-web）
+
+- 新建 `/agent-workspace/human-sessions`（人工客服工作台）：会话列表 + 对话区 + 发消息
+- 轮询刷新（POC 简单版），WebSocket 实时推送后置
+
+### 验证
+
+- 单元：AgentSessionServiceTest 21 全绿
+- 端到端：转人工→会话创建→客服工作台可见→客服回复→用户看到→会话 active
