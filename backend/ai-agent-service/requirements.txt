@@ -31,7 +31,7 @@ greenlet==3.1.1
 redis==5.2.1
 
 # 工具库
-python-dotenv==1.0.1
+python-dotenv==1.2.3
 pyjwt[crypto]==2.10.1
 cryptography==44.0.0
 python-multipart==0.0.20
