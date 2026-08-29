@@ -4,7 +4,7 @@
 - is_auto_handoff_trigger：命中/未命中关键词、JSON 字符串兼容、空配置
 - get_tenant_ai_config：缓存命中、HTTP 失败降级空 dict
 """
-# case_ids: SE-012
+# case_ids: ST-008
 
 import pytest
 from unittest.mock import AsyncMock, patch

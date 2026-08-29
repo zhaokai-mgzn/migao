@@ -152,7 +152,7 @@ describe('auth utils', () => {
       const mockUser = { id: 'u1', nickname: '用户1', avatar: null, tenant_id: 1 }
       mockPost.mockResolvedValueOnce({
         success: true,
-        data: { token: 'jwt-token-abc', user: mockUser },
+        data: { accessToken: 'jwt-token-abc', user: mockUser },
       })
 
       const result = await miniAppLogin(1)

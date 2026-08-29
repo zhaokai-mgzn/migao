@@ -201,3 +201,34 @@ cases:
       ci:
         - agent-eval.yml
       verifies: []
+
+  - id: ST-008
+    legacy_id: ""
+    title: "机器人设置生效 - 自动转人工关键词 + 非营业时间转人工降级"
+    domains:
+      - settings
+      - chat
+    tier: normal
+    tags:
+      - ai_config
+      - handoff
+    truths_ref:
+      - settings-manage.ai-config
+      - settings-manage.immediate-effect
+    user_inputs:
+      - "商家配置 autoHandoffKeywords=[找老板,我要投诉] 后，用户消息'我要找老板'应触发转人工"
+      - "商家配置 afterHoursMode=auto_reply 且非营业时间时，转人工应降级返回 afterHoursMessage"
+    expectations:
+      - tool: human_handoff
+    data_checks:
+      - "is_auto_handoff_trigger('我要找老板', config) == true"
+      - "is_after_hours(config, 非营业时间) == true"
+      - "非营业时间转人工不创建工单，返回 afterHoursMessage"
+    skip_reason: ""
+    merge_log: "POC 机器人设置集成新增"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tenant_config.py"
+      ci:
+        - ai-agent-tests.yml
+      verifies: []

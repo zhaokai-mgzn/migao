@@ -1267,7 +1267,7 @@
 真值: ai-chat.tool-classes, ai-chat.permission-layers
 溯源: 2026-08-25 新增：ai-agent-service tools-mixed-part2 覆盖率补全（issue #2426） ｜ tags: registry, tool_execute, audit
 
-## 设置域（7 case）
+## 设置域（8 case）
 
 ### ST-001. 系统设置 - 读取 🔵
 ```
@@ -1332,6 +1332,18 @@
 ```
 真值: agent-notification.quick-reply-validate
 溯源: verification 6.7 独有 ｜ tags: create
+
+### ST-008. 机器人设置生效 - 自动转人工关键词 + 非营业时间转人工降级 🔵
+```
+你: 商家配置 autoHandoffKeywords=[找老板,我要投诉] 后，用户消息'我要找老板'应触发转人工
+你: 商家配置 afterHoursMode=auto_reply 且非营业时间时，转人工应降级返回 afterHoursMessage
+期望: human_handoff
+数据: is_auto_handoff_trigger('我要找老板', config) == true
+数据: is_after_hours(config, 非营业时间) == true
+数据: 非营业时间转人工不创建工单，返回 afterHoursMessage
+```
+真值: settings-manage.ai-config, settings-manage.immediate-effect
+溯源: POC 机器人设置集成新增 ｜ tags: ai_config, handoff
 
 ## ui（4 case）
 
@@ -1414,8 +1426,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：119（活跃 83，跳过 36）
-- tier 分布：smoke 10 / normal 82 / adversarial 27
+- 用例总数：120（活跃 84，跳过 36）
+- tier 分布：smoke 10 / normal 83 / adversarial 27
 - 售后域：5
 - agents：6
 - api：9
@@ -1432,7 +1444,7 @@
 - 加工项域：4
 - 商品域：13
 - registry：1
-- 设置域：7
+- 设置域：8
 - ui：4
 - utils：2
 

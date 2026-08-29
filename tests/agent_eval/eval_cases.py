@@ -1621,6 +1621,20 @@ _CASE_ST_007 = EvalCase(
     tags=['create'],
 )
 
+# ── ST-008 [NORMAL] 机器人设置生效 - 自动转人工关键词 + 非营业时间转人工降级（源: cases/settings.yml）──
+_CASE_ST_008 = EvalCase(
+    id='ST-008',
+    legacy_id='',
+    title='机器人设置生效 - 自动转人工关键词 + 非营业时间转人工降级',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=["商家配置 autoHandoffKeywords=[找老板,我要投诉] 后，用户消息'我要找老板'应触发转人工", '商家配置 afterHoursMode=auto_reply 且非营业时间时，转人工应降级返回 afterHoursMessage'],
+    expectations=['human_handoff'],
+    data_checks=["is_auto_handoff_trigger('我要找老板', config) == true", 'is_after_hours(config, 非营业时间) == true', '非营业时间转人工不创建工单，返回 afterHoursMessage'],
+    skip_reason='',
+    tags=['ai_config', 'handoff'],
+)
+
 # ── UI-001 [NORMAL] 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理（源: cases/ui.yml）──
 _CASE_UI_001 = EvalCase(
     id='UI-001',
@@ -1819,6 +1833,7 @@ ALL_CASES = (
     _CASE_ST_005,
     _CASE_ST_006,
     _CASE_ST_007,
+    _CASE_ST_008,
     _CASE_UI_001,
     _CASE_UI_002,
     _CASE_UI_003,
