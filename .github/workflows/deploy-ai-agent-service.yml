@@ -72,10 +72,7 @@ jobs:
           DATABASE_URL: postgresql+asyncpg://${{ secrets.RDS_USER }}:${{ secrets.RDS_PASSWORD }}@${{ secrets.RDS_HOST }}:${{ secrets.RDS_PORT }}/${{ secrets.RDS_DB }}
         run: |
           pip install -r requirements.txt -q
-          python -m pytest tests/ -v --tb=short -q \
-            --ignore=tests/test_post_deploy_verify.py \
-            --ignore=tests/manual_test_pe_flow.py \
-            -m "not integration"
+          python -m pytest tests/ -v --tb=short -q -m "not integration"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3

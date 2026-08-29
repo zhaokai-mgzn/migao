@@ -50,7 +50,4 @@ jobs:
           DASHVECTOR_COLLECTION: ci
           # 其余无默认值字段由 tests/conftest.py setdefault 兜底
         run: |
-          python -m pytest tests/ -v --tb=short -q \
-            --ignore=tests/test_post_deploy_verify.py \
-            --ignore=tests/manual_test_pe_flow.py \
-            -m "not integration"
+          python -m pytest tests/ -v --tb=short -q -m "not integration"

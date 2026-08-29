@@ -1,4 +1,7 @@
 """
+# ⚠️ 本文件同时是 test_e2e/specs/test_tool_coverage.py 的共享基础设施（_make_token/_parse_sse_events/
+# _patch_app_deps/_apply_patches/_create_client/_stream_and_collect/_store/_SessionMemoryFactory），
+# 勿删！自身 16 个测试因环境依赖被 pytest.ini ignore 不收集，但基础设施被其他测试 import。
 AI 对话完整链路 E2E 测试
 
 覆盖四个维度：

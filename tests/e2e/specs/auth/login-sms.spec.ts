@@ -1,5 +1,6 @@
+// case_ids: DF-014
 import { test, expect } from '@playwright/test'
-import { LoginPage } from '../../pages/login.page'
+import { LoginPage } from '../../pages/auth/login.page'
 
 test.describe('登录页面 - 短信验证码登录', () => {
   let page: LoginPage
