@@ -266,5 +266,5 @@ Error: page.goto: Timeout 30000ms exceeded
 ## 参考资料
 
 - [Playwright 官方文档](https://playwright.dev/docs/intro)
-- [项目 TDD 规范](../CLAUDE.md)
+- [项目 TDD 规范](../docs/wiki/Development.md)
 - [OSS 双 Bucket 设计文档](../docs/fixes/oss-dual-bucket-storage.md)

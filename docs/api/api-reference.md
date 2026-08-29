@@ -349,7 +349,7 @@ X-Internal-Signature: hmac_sha256_signature
 }
 ```
 
-> 内部接口通过 HMAC 签名认证（参见 auth-and-deployment.md §3.4），不使用 JWT Cookie。
+> 内部接口通过 HMAC 签名认证（参见部署文档），不使用 JWT Cookie。
 
 ---
 
@@ -601,7 +601,7 @@ Content-Type: application/json
 
 ## 5.5 知识库管理 API (admin-api)
 
-> 完整 RAG 技术方案详见 [自建 RAG 知识库技术方案](../architecture/rag-architecture.md)。
+> 知识库（RAG）在 POC 阶段暂不开放（决策 D1，2026-08-29），本节约 API 形态参考。
 
 ### 5.5.1 创建/上传文档
 
@@ -1294,4 +1294,4 @@ data: {"session_id": "sess_abc123"}
 | X-Internal-Signature | 是 | HMAC-SHA256 签名（`timestamp:body`）|
 | X-Request-Id | 否 | 请求追踪 ID（建议携带）|
 
-> 内部服务不使用 JWT Cookie，通过 HMAC 共享密钥认证。详见 auth-and-deployment.md §3.4。
+> 内部服务不使用 JWT Cookie，通过 HMAC 共享密钥认证。详见部署文档。

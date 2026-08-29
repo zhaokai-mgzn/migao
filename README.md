@@ -296,18 +296,15 @@ gh pr merge --squash --delete-branch
 每个工作流都支持在 GitHub Actions 页面手动触发（`workflow_dispatch`）。
 
 ### 详细部署文档
-- [阿里云部署指南](docs/deployment/deployment-aliyun.md) — Terraform + SAE 时代的历史配置（**SAE 已弃用**，当前部署以 `deploy/swas/deploy.sh` + `docs/wiki/Deployment.md` 为准）
-- [部署检查清单](docs/deployment/deployment-checklist.md) — 历史踩坑记录（含 SAE 时代经验，可参考）
-- [认证与部署](docs/deployment/auth-and-deployment.md) — JWT、OAuth、API 网关路由
+- [SWAS 迁移踩坑](docs/deployment/swas-migration-lessons.md) — SWAS 部署的 16 个坑与经验
+- [部署检查清单](docs/deployment/deployment-checklist.md) — 历史踩坑记录（可参考）
+- 当前部署以 `deploy/swas/deploy.sh` + [docs/wiki/Deployment.md](docs/wiki/Deployment.md) 为准
 
 ## 📖 项目文档
 
 | 类别 | 文档 | 说明 |
 |------|------|------|
-| **架构** | [系统架构设计](docs/architecture/architecture.md) | 双微服务拓扑、多租户、Hermes Agent 框架 |
-| | [多租户多平台](docs/architecture/multi-tenant-multi-platform.md) | SaaS 架构、跨平台身份识别 |
-| | [RAG 架构](docs/architecture/rag-architecture.md) | 混合检索 + Reranker 全链路设计 |
-| | [生产级 AI 架构](docs/architecture/production-ai-architecture.md) | 确定性 Pipeline 备选方案 |
+| **架构** | [系统架构](docs/wiki/Architecture.md) | 双微服务拓扑、多租户、Agent 框架 |
 | **API** | [API 参考文档](docs/api/api-reference.md) | 全量接口定义 + SSE 协议 |
 | **设计** | [UI 设计规范](docs/design/ui-design-spec.md) | 色彩、字体、组件、响应式 |
 | | [管理后台设计](docs/design/admin-dashboard-design.md) | 页面路由、权限矩阵、CRM |
