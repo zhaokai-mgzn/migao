@@ -5,7 +5,7 @@
 
 ## ✨ 核心亮点
 
-- **双 Agent 架构** — C 端客服"小布" + B 端工作助手"米宝"，LangGraph 状态图驱动
+- **双 Agent 架构** — C 端客服"小布" + B 端工作助手"米高"，LangGraph 状态图驱动
 - **23 个 AI 工具** — 商品搜索、订单管理、物流追踪、知识库检索等，自动意图路由
 - **RAG 知识库** — BM25 + 向量混合检索 + Reranker，支持文档上传与自动分块
 - **多租户 SaaS** — 5 层隔离（JWT → MyBatis 拦截器 → PostgreSQL RLS → DashVector → 字段脱敏）
@@ -117,7 +117,7 @@ migao/
 │   │
 │   └── ai-agent-service/       # Python AI Agent 服务（FastAPI + LangGraph）
 │       ├── app/
-│       │   ├── agents/         # 双 Agent：小布（C端）+ 米宝（B端）
+│       │   ├── agents/         # 双 Agent：小布（C端）+ 米高（B端）
 │       │   ├── api/            # SSE 流式聊天 + 内部 API
 │       │   ├── graph/          # LangGraph 状态图（意图路由→工具调用→响应）
 │       │   ├── tools/          # 23 个业务工具

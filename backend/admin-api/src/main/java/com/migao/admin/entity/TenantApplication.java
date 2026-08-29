@@ -45,6 +45,18 @@ public class TenantApplication {
 
     private OffsetDateTime reviewedAt;
 
+    /** 企业名称规范化（去空格/括号/后缀），用于防重复提交精确匹配 */
+    private String companyNameNorm;
+
+    /** 甄别来源：ai（规则层/大模型）/ system（AI 服务不可用降级）/ manual（人工兜底 API） */
+    private String reviewSource;
+
+    /** 风险标记 JSON 数组字符串 */
+    private String riskFlags;
+
+    /** AI 审查摘要（面向运营/审计） */
+    private String reviewSummary;
+
     @TableField(fill = FieldFill.INSERT)
     private OffsetDateTime createdAt;
 

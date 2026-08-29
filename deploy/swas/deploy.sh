@@ -33,6 +33,19 @@ mkdir -p nginx certbot-www
 cp src/deploy/swas/docker-compose.yml ./docker-compose.yml
 cp src/deploy/swas/nginx.conf ./nginx/nginx.conf
 
+# 1.5 AI 自动甄别配置自愈：admin-api 需调用 ai-agent 内部端点做入驻甄别，
+# AI_AGENT_SERVICE_TOKEN 必须与 .env.ai-agent 的 SERVICE_TOKEN 一致，否则入驻全部
+# fail-closed 驳回（系统繁忙）。旧服务器无该配置时自动补齐，避免静默降级。
+if [ -f .env.admin-api ] && ! grep -q '^AI_AGENT_SERVICE_TOKEN=' .env.admin-api; then
+  AI_TOKEN=$(grep '^SERVICE_TOKEN=' .env.ai-agent 2>/dev/null | head -1 | cut -d= -f2- | tr -d '"' || true)
+  if [ -n "$AI_TOKEN" ]; then
+    printf 'AI_AGENT_BASE_URL=http://ai-agent:8000\nAI_AGENT_SERVICE_TOKEN=%s\n' "$AI_TOKEN" >> .env.admin-api
+    echo "  ✅ 自动补齐 admin-api 的 AI 甄别配置（AI_AGENT_SERVICE_TOKEN）"
+  else
+    echo "  ⚠️ .env.ai-agent 无 SERVICE_TOKEN，无法自动补齐 admin-api AI 甄别配置（入驻将 fail-closed）"
+  fi
+fi
+
 echo "== 2. 拉取镜像（tag=$TAG）=="
 if [ -f .env.registry ]; then
   # shellcheck disable=SC1091

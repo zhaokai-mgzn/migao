@@ -8,8 +8,9 @@
 |--------|------|------|
 | `(dashboard)` | merchant.migaozn.com | 数据看板 · 商品(SKU矩阵) · 分类 · 加工项 · 订单(全生命周期) · 售后 · 客户CRM · 聊天坐席 · 知识库 · 通知 · 员工 · 角色 · 财务 · 设置 (16页) |
 | `(corporate)` | migaozn.com | 首页 · 关于 · 联系 · 服务 (4页) |
-| `(ops)` | ops.migaozn.com | 租户注册审批 (1页) |
 | 根路由 | — | 登录 · 注册 |
+
+> 注：`(ops)` 路由组（租户注册审批）已于 2026-08-30 废弃——商家入驻改为 AI 自动甄别（`POST /api/auth/register` 同步返回 approved/rejected），不再有人工审批页面；`ops.migaozn.com` 域名分支与超管「入驻审批」菜单同步移除，超管兜底接口（`/api/super-admin/registrations*`）保留供 API 应急。
 
 ## 技术栈
 
@@ -45,9 +46,8 @@
 ## 中间件 (多域名)
 
 `src/middleware.ts` 按域名路由：
-- `ops.migaozn.com` → 仅 ops 路径
-- `merchant.migaozn.com` → dashboard，拦截 super-admin 路径
-- `migaozn.com` → corporate 页面
+- `merchant.migaozn.com` → dashboard（根路径跳登录）
+- `migaozn.com` → corporate 页面（dashboard 前缀跳 merchant，未知路径回首页）
 
 ## mini-app (Taro 3.6 微信小程序)
 

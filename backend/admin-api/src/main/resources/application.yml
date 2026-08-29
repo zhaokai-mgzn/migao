@@ -65,6 +65,12 @@ spring:
       max-file-size: 20MB
       max-request-size: 50MB
 
+# AI 智能甄别服务（ai-agent-service）内部调用配置
+# 服务不可达 / 未配置 token 时，入驻申请按 fail-closed 驳回（系统繁忙，可稍后重试）
+ai-agent:
+  base-url: ${AI_AGENT_BASE_URL:http://localhost:8000}
+  service-token: ${AI_AGENT_SERVICE_TOKEN:}
+
 # MyBatis-Plus 配置
 mybatis-plus:
   mapper-locations: classpath*:mapper/**/*.xml

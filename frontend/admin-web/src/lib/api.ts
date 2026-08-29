@@ -70,6 +70,7 @@ import type {
   RegistrationData,
   Registration,
   RegistrationListParams,
+  RegistrationResult,
   Notification,
   NotificationQueryParams,
   CreateNotificationRequest,
@@ -103,7 +104,7 @@ export const authApi = {
     request.post<ApiResponse<LoginResponse>>('/api/auth/sms/login', { phone, code }),
 
   submitRegistration: (data: RegistrationData) =>
-    request.post<ApiResponse>('/api/auth/register', data),
+    request.post<ApiResponse<RegistrationResult>>('/api/auth/register', data),
 }
 
 // 商品 API
