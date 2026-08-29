@@ -5,6 +5,7 @@ import com.aliyun.dysmsapi20170525.Client;
 // TODO: 接入阿里云短信服务后恢复以下导入
 // import com.aliyun.dysmsapi20170525.models.SendSmsRequest;
 // import com.aliyun.dysmsapi20170525.models.SendSmsResponse;
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -35,7 +36,7 @@ public class SmsService {
      * 测试阶段万能验证码，通过环境变量注入
      * 默认空字符串 = 禁用 bypass（生产安全）。
      * 仅 dev/CI 环境通过 sms.bypass-code 显式注入以启用测试模式。
-     * TODO: 接入阿里云短信服务后移除此机制
+     * TODO: 接入阿里云短信服务后移除此机制（技术债 Issue #2616）
      */
     @Value("${sms.bypass-code:}")
     private String bypassCode;
@@ -55,6 +56,18 @@ public class SmsService {
         this.redisTemplate = redisTemplate;
         this.smsConfig = smsConfig;
         this.smsClient = smsClient;
+    }
+
+    /**
+     * 启动时检查：若 bypass 万能码已配置，打印醒目警告（POC 模式显式化）。
+     * 生产接入真实短信服务后必须移除 bypass（技术债 Issue #2616）。
+     */
+    @PostConstruct
+    public void logBypassWarningIfEnabled() {
+        if (bypassCode != null && !bypassCode.isEmpty()) {
+            log.warn("[POC 模式] SMS 万能验证码已启用（bypass-code 非空）：任意手机号可使用万能码 {} 登录。"
+                    + "接入真实短信服务后必须移除该机制，见技术债 Issue #2616。", bypassCode);
+        }
     }
 
     /**
@@ -124,7 +137,7 @@ public class SmsService {
         // 测试阶段：使用环境变量 sms.bypass-code 注入的万能验证码
         // 生产环境将 sms.bypass-code 设为空字符串以禁用此机制
         if (bypassCode != null && !bypassCode.isEmpty() && bypassCode.equals(code)) {
-            log.info("[测试模式] 使用 bypass 验证码通过校验: phone={}", phone);
+            log.warn("[POC 模式] 使用万能验证码通过校验: phone={}（接入真实短信服务后必须移除 bypass，Issue #2616）", phone);
             return true;
         }
 
