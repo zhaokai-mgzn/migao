@@ -4,6 +4,7 @@
 验证新增 Skill 不会抢走已有 Skill 的路由，
 确保 Skill Registry 注册正确、意图映射不冲突。
 """
+# case_ids: DF-008, DF-015
 
 import pytest
 

@@ -3,6 +3,7 @@ Tests for app/api/*.py — coverage gap issue #581
 Covers: chat (helpers), sse (SSEEvent/SSEStreamBuilder),
          upload (_sniff_image_type/_validate_image_file), internal (Pydantic models)
 """
+# case_ids: CH-001, API-004
 import pytest
 from unittest.mock import MagicMock, patch
 from datetime import datetime, timezone

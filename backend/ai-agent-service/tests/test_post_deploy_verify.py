@@ -21,6 +21,7 @@ Post-deploy 验证脚本（手动/按需运行，CI 不自动执行）
   ADMIN_API_URL: admin-api 地址 (default: http://localhost:8080)
   TEST_TOKEN: 测试用 JWT token
 """
+# case_ids: API-004
 
 import asyncio
 import json
