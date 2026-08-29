@@ -7,7 +7,7 @@
 
 import { get, post, del } from '../utils/request'
 import { SSEClient } from '../utils/sse'
-import { AI_API_BASE_URL } from '../utils/constants'
+import { AI_API_BASE_URL, API_BASE_URL } from '../utils/constants'
 import type {
   ApiResponse,
   Session,
@@ -15,6 +15,64 @@ import type {
   QuickAction,
   PageResponse,
 } from '../types'
+
+/** 人工客服会话消息（转人工后客服回复） */
+export interface AgentSessionMessage {
+  id: string
+  senderType: 'customer' | 'agent' | 'system'
+  senderName?: string
+  content: string
+  createdAt: string
+}
+
+/** 人工客服会话详情 */
+export interface AgentSessionDetail {
+  id: string
+  aiSessionId: string
+  status: 'waiting' | 'active' | 'ended' | 'transferred'
+  messages?: AgentSessionMessage[]
+}
+
+/**
+ * 获取人工客服会话（转人工后查询客服回复）
+ * GET /api/customer/agent-sessions/by-ai/{aiSessionId}
+ */
+export async function getAgentSessionByAi(
+  aiSessionId: string,
+): Promise<AgentSessionDetail | null> {
+  try {
+    const res = await get<ApiResponse<AgentSessionDetail>>(
+      `/api/customer/agent-sessions/by-ai/${aiSessionId}`,
+      { baseURL: API_BASE_URL },
+    )
+    if (!res.success || !res.data) return null
+    return res.data
+  } catch (e) {
+    console.error('获取人工会话失败:', e)
+    return null
+  }
+}
+
+/**
+ * 向人工客服发送消息（转人工后）
+ * POST /api/customer/agent-sessions/{sessionId}/messages
+ */
+export async function sendAgentMessage(
+  sessionId: string,
+  content: string,
+): Promise<boolean> {
+  try {
+    const res = await post<ApiResponse<void>>(
+      `/api/customer/agent-sessions/${sessionId}/messages`,
+      { content },
+      { baseURL: API_BASE_URL },
+    )
+    return res.success
+  } catch (e) {
+    console.error('发送人工消息失败:', e)
+    return false
+  }
+}
 
 /**
  * 创建新会话

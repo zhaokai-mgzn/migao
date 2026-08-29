@@ -15,6 +15,7 @@ export default function ChatPage() {
     currentSessionId,
     isLoadingMessages,
     error,
+    handedOff,
     createSession,
     sendMessage,
     stopStreaming,
@@ -86,6 +87,13 @@ export default function ChatPage() {
       {error && (
         <View className='chat-page__error'>
           <Text className='chat-page__error-text'>{error}</Text>
+        </View>
+      )}
+
+      {/* 已转人工横幅 */}
+      {handedOff && (
+        <View className='chat-page__handoff'>
+          <Text className='chat-page__handoff-text'>👩‍💼 已为您转接人工客服，请稍候，可直接在这里和客服沟通</Text>
         </View>
       )}
 
