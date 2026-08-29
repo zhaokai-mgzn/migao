@@ -134,13 +134,13 @@ jobs:
         env:
           E2E_MOCK_AUTH: 'true'
         run: |
-          # search-alignment.spec.ts 暂不入 PR 门禁（选择器与当前 UI 失配，2026-08-29 首次入 CI 暴露；
-          # 保留在 nightly-verification 全量中跟踪修复）
+          # search-alignment 选择器已改为 [data-testid="search-area"]（2026-08-29 修复 border-gray 失配）
           npx playwright test --reporter=list --retries=1 --project=web \
             e2e/specs/quality/api-contract.spec.ts \
             e2e/specs/quality/anti-placeholder.spec.ts \
             e2e/specs/quality/cross-page-consistency.spec.ts \
             e2e/specs/quality/business-judge.spec.ts \
+            e2e/specs/quality/search-alignment.spec.ts \
             e2e/specs/dashboard/dashboard.spec.ts
 
       - name: Notify on failure

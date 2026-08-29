@@ -109,7 +109,8 @@ setup('authenticate as admin', async ({ page, baseURL }) => {
 
   // 用 load 而非 networkidle — SSE 会阻止 network idle
   // 注意：/dashboard 是路由组 (dashboard) 的布局，无独立 page.tsx，需导航到子页面
-  await page.goto('/products', { waitUntil: 'load', timeout: 30_000 })
-  await expect(page.locator('aside')).toBeVisible({ timeout: 20_000 })
+  // aside 超时 60s：Next.js dev 冷启动首屏编译慢（CI 曾 20s 超时 flaky，2026-08-29 加固）
+  await page.goto('/products', { waitUntil: 'load', timeout: 60_000 })
+  await expect(page.locator('aside')).toBeVisible({ timeout: 60_000 })
   await page.context().storageState({ path: AUTH_FILE })
 })
