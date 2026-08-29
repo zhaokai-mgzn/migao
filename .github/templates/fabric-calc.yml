@@ -1,0 +1,21 @@
+name: fabric-calc
+description: 窗帘算料报价 — 用布量公式、褶皱倍数、计价规则（POC 小布增强）
+red_flags: []
+
+business_truths:
+  - [fabric-calc.fullness-default] 褶皱倍数默认值：打孔帘(eyelet)=2、韩式褶(s_hook)=2、四爪钩(hook)=2、罗马帘(roman)=1
+  - [fabric-calc.fixed-height] 定高布买宽公式：M = (W + 0.3) × N（W=窗宽，N=褶皱倍数，0.3=左右各15cm覆盖余量）
+  - [fabric-calc.fixed-width] 定宽布买高公式：P = ceil((W+0.3)×N/G)，M = P × (H + 0.3)（G=门幅，H=窗高）；窗高+0.3 > 门幅时触发并告警
+  - [fabric-calc.pattern-loss] 对花损耗：每幅加 1 个花距（30~60cm）
+  - [fabric-calc.roman] 罗马帘公式：M = (W + 0.2) × (H + 0.3)，无褶皱倍率
+  - [fabric-calc.quote-total] 报价总价 = 面料费 + 加工费 + 辅料费 + 安装费；打孔加工费默认8元/米
+  - [fabric-calc.no-fabrication] 不编造报价数据，必须通过 curtain_calc 工具计算
+
+primary_specs:
+  - backend/ai-agent-service/tests/test_curtain_calc.py
+
+reviewer_asserts:
+  - 工具: curtain_calc
+    expect: 定高布 3m×2.5m×2倍×2.8m门幅 → fabric_meters=6.6
+    expect: 定宽布 3m×2.7m×2倍×2.8m门幅 → fabric_meters=9.0 且 warning 非空
+    expect: 报价 total = fabric_cost + processing_cost + accessory_cost + install_cost

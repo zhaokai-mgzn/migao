@@ -89,6 +89,7 @@ deploy/terraform/terraform-output.json
 test-results/
 **/test-results/
 smoke/report.html
+tests/smoke/reports/
 __pycache__/
 
 # Coverage reports

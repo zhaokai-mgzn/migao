@@ -1098,7 +1098,7 @@
 真值: id-resolve.index
 溯源: eval P006 独有（序号 ID 解析） ｜ tags: id_resolve, adversarial, sequence
 
-## 商品域（12 case）
+## 商品域（13 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
 ```
@@ -1242,6 +1242,16 @@
 ```
 真值: product-sku-stock.create-flow, ai-chat.validate-input
 溯源: eval M003 独有（中途纠偏） ｜ tags: multi_turn, correction, mid_flow_change
+
+### PR-013. 窗帘算料报价 - 褶皱倍数与用布量计算 🟢
+```
+你: 3米窗 2倍褶皱 多少钱
+期望: curtain_calc(window_width=3)
+数据: data.fabric_meters > 0
+数据: data.total > 0
+```
+真值: fabric-calc.fullness-default, fabric-calc.fixed-height, fabric-calc.fixed-width
+溯源: POC 小布增强新增（算料报价 skill） ｜ tags: quote, fabric_calc, smoke
 
 ## registry（1 case）
 
@@ -1404,8 +1414,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：118（活跃 82，跳过 36）
-- tier 分布：smoke 9 / normal 82 / adversarial 27
+- 用例总数：119（活跃 83，跳过 36）
+- tier 分布：smoke 10 / normal 82 / adversarial 27
 - 售后域：5
 - agents：6
 - api：9
@@ -1420,7 +1430,7 @@
 - misc：11
 - 订单域：10
 - 加工项域：4
-- 商品域：12
+- 商品域：13
 - registry：1
 - 设置域：7
 - ui：4

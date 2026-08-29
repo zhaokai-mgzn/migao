@@ -1495,6 +1495,20 @@ _CASE_PR_012 = EvalCase(
     tags=['multi_turn', 'correction', 'mid_flow_change'],
 )
 
+# ── PR-013 [SMOKE] 窗帘算料报价 - 褶皱倍数与用布量计算（源: cases/product.yml）──
+_CASE_PR_013 = EvalCase(
+    id='PR-013',
+    legacy_id='',
+    title='窗帘算料报价 - 褶皱倍数与用布量计算',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.SMOKE,
+    user_inputs=['3米窗 2倍褶皱 多少钱'],
+    expectations=['curtain_calc(window_width=3)'],
+    data_checks=['data.fabric_meters > 0', 'data.total > 0'],
+    skip_reason='',
+    tags=['quote', 'fabric_calc', 'smoke'],
+)
+
 # ── RG-001 [NORMAL] ToolRegistry 注册/查询/执行审计（源: cases/registry.yml）──
 _CASE_RG_001 = EvalCase(
     id='RG-001',
@@ -1796,6 +1810,7 @@ ALL_CASES = (
     _CASE_PR_010,
     _CASE_PR_011,
     _CASE_PR_012,
+    _CASE_PR_013,
     _CASE_RG_001,
     _CASE_ST_001,
     _CASE_ST_002,
