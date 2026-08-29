@@ -34,7 +34,7 @@
     "@tarojs/plugin-framework-react": "3.6.40",
     "@tarojs/plugin-platform-alipay": "3.6.40",
     "@tarojs/plugin-platform-swan": "3.6.40",
-    "@tarojs/plugin-platform-tt": "3.6.40",
+    "@tarojs/plugin-platform-tt": "4.2.1",
     "@tarojs/plugin-platform-weapp": "3.6.40",
     "@tarojs/react": "3.6.40",
     "@tarojs/runtime": "3.6.40",
