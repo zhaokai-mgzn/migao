@@ -26,7 +26,7 @@
 
 ## 行为用例单一源（Case Contract，2026-08-14 起）
 
-行为用例只存一份：`.github/cases/<domain>.yml`（80 条 × 12 域，block style，`truths_ref` 引用真值 ID）。以下均为**生成物，禁止手改**：
+行为用例只存一份：`.github/cases/<domain>.yml`（18 域 117 条，block style，`truths_ref` 引用真值 ID）。以下均为**生成物，禁止手改**：
 - `tests/agent_eval/eval_cases.py`（CI 跑）
 - `docs/testing/mibao-verification-cases.md`（人读）
 

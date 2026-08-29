@@ -29,7 +29,7 @@ graph TB
     end
 
     subgraph 数据层
-        C --> E[(PostgreSQL 15<br/>39 张表 · RLS)]
+        C --> E[(PostgreSQL 15<br/>41 张表 · RLS)]
         C --> F[(Redis 7<br/>会话 / 缓存)]
         D --> E
         D --> F
@@ -188,7 +188,7 @@ export PRIMARY_MODEL=deepseek-v4-pro
 docker-compose up --build
 
 # 服务启动后：
-# - Admin API:       http://localhost:8081
+# - Admin API:       http://localhost:8080
 # - AI Agent:        http://localhost:8001
 # - PostgreSQL:      localhost:5432
 # - Redis:           localhost:6379
@@ -211,7 +211,7 @@ cp .env.example .env
 # 编辑 .env 配置数据库、Redis、JWT 密钥等
 
 ./mvnw spring-boot:run
-# → http://localhost:8081
+# → http://localhost:8080
 ```
 
 #### 3. 启动 AI Agent Service（Python）
@@ -320,7 +320,7 @@ gh pr merge --squash --delete-branch
 
 | 阶段 | 进度 | 说明 |
 |------|------|------|
-| 阶段一：基础设施 | 85% | 脚手架、数据库 39 张表、Docker、Terraform |
+| 阶段一：基础设施 | 85% | 脚手架、数据库 41 张表、Docker、Terraform |
 | 阶段二：MVP 核心 | 97% | 商品 CRUD、AI 工具、小程序、RAG、SSE |
 | 阶段三：测试上线 | 20% | 单元测试、集成测试、CI/CD、生产部署 |
 

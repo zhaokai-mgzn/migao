@@ -73,17 +73,8 @@ export default defineConfig({
       dependencies: ['auth-setup'],
     },
 
-    // 向后兼容：全部 authenticated 测试（不含 auth 页面和 real/）
-    {
-      name: 'chromium',
-      testIgnore: /specs\/auth\/|real\/|auth\.setup\.ts/,
-      use: {
-        ...devices['Desktop Chrome'],
-        channel: 'chrome', // 使用本地已安装的 Chrome，而不是下载 Chromium
-        storageState: './e2e/.auth/admin.json',
-      },
-      dependencies: ['auth-setup'],
-    },
+    // 注：曾经的 'chromium' 项目与 'web' 筛选结果完全等价（同跑 specs/ 除 auth），
+    // 会导致每个 spec 执行两遍，已于 2026-08-28 删除。显式传文件路径时 'web' 已兼容。
   ],
 
   // CI 也启动本地 Next.js dev server，E2E 测的是 PR 新代码而非旧部署

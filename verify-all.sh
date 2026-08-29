@@ -38,7 +38,7 @@ report() {
 }
 
 gate_check() {
-  echo "── [QA Growth Gate] 本地预检（与 CI 同规则）──"
+  echo "── [QA Growth Gate] 本地预检（与 pr-check qa-growth-gate 同规则，含 G5 case_ids 追溯）──"
   git fetch origin main --quiet 2>/dev/null || true
   CHANGED=$(git diff --name-only origin/main...HEAD 2>/dev/null || echo "")
   if [ -z "$CHANGED" ]; then
@@ -50,8 +50,15 @@ gate_check() {
     --exemptions .github/qa-exemptions.yml \
     --check-cases .github/cases \
     --json --json-file /tmp/growth-gate-local.json
+  GATE_RC=$?
   BLOCKERS=$(python3 -c "import json;print(json.load(open('/tmp/growth-gate-local.json')).get('blocker_count',0))" 2>/dev/null || echo 1)
-  [ "$BLOCKERS" = "0" ]
+  # 弱断言检查（与 pr-check 的 Check weak asserts step 一致：只扫新增测试文件）
+  NEW_TESTS=$(git diff --diff-filter=A --name-only origin/main...HEAD 2>/dev/null | grep -E '\.(py|java|ts|tsx)$' | grep -iE 'test|spec' || true)
+  if [ -n "$NEW_TESTS" ]; then
+    echo "  🔍 扫描新增测试文件的弱断言"
+    python3 .github/growth_gate.py --check-weak --files $NEW_TESTS || GATE_RC=1
+  fi
+  [ "$GATE_RC" -eq 0 ] && [ "$BLOCKERS" = "0" ]
 }
 
 MODE="${1:-quick}"

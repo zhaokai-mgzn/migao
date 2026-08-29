@@ -1,12 +1,12 @@
 """
-米宝全能力自然语言测试套件
+米宝全能力自然语言测试套件（手动脚本，非 pytest 用例 — 文件名无 test_ 前缀）
 
 覆盖: 商品CRUD / 订单查改 / 客户 / 员工 / 数据 / 知识 / 视觉 / P&E
 每项创建修改后通过 admin-api 校验数据准确性
 
-用法:
-  .venv/bin/python tests/test_mibao_scenarios.py
-  TEST_TOKEN=xxx .venv/bin/python tests/test_mibao_scenarios.py  # 用已有token
+用法（2026-08-28 迁至 tests/manual/）:
+  .venv/bin/python tests/manual/mibao_scenarios.py
+  TEST_TOKEN=xxx .venv/bin/python tests/manual/mibao_scenarios.py  # 用已有token
 """
 # case_ids: CH-007, CR-001, CR-002, CR-003, OR-008, OR-009, PR-008
 

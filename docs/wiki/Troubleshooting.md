@@ -76,4 +76,4 @@
 - RESP3 握手失败 → 确认 `RedisProtocolConfig`（强制 RESP2）已编译进镜像
 
 ---
-详见: [部署检查清单](../deployment/deployment-checklist.md) · [SLS 日志查询 Skill](../../.claude/skills/aliyun-sls-log-query.md)
+详见: [部署检查清单](../deployment/deployment-checklist.md)

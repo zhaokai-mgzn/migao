@@ -997,10 +997,10 @@
 你: 客户确认收货了，标记完成
 期望: order_query(action=detail)
 期望: order_manage(action=confirm_payment)
-期望: order_manage(action=update_status, status=processing)
+期望: order_manage(action=update_status, status=producing)
 期望: order_manage(action=update_logistics, company=顺丰)
 期望: order_manage(action=update_status, status=completed)
-数据: 状态流转: pending → processing → shipped → completed
+数据: 状态流转: pending → producing → shipped → completed
 数据: 每步操作前先确认当前状态
 ```
 真值: order.states, order.flow, order.pay-side-effects, order.cancel-side-effects, order.refund-side-effects

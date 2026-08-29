@@ -190,7 +190,7 @@ cd tests && npx playwright test tests/e2e/specs/products.spec.ts
   - [ ] 新增/修改 API 返回字段 → 已在 api-contract.spec.ts 中验证必填字段存在 + 类型正确
   - [ ] 修改列表/详情字段 → 已在 cross-page-consistency.spec.ts 中验证一致性
   - [ ] E2E 测试命名格式：`{domain}/{feature}.spec.ts`（如 orders/order-create.spec.ts）
-  - [ ] 使用 Page Object 模式封装可复用交互（`tests/e2e/page-objects/`）
+  - [ ] 使用 Page Object 模式封装可复用交互（`tests/e2e/pages/{domain}/{page}.page.ts`）
   - [ ] 禁止手写 mock 数据 → 使用 Record-Replay fixture（`tests/e2e/fixtures/`）
 □ 代码符合项目规范（命名、格式、注释）
 □ 无硬编码密钥、无敏感信息泄露
@@ -236,20 +236,20 @@ cd tests && npx playwright test tests/e2e/specs/products.spec.ts
            └─────────────┘
 ```
 
-> **CI 成熟度说明**：admin-api 有 `./mvnw test` (JUnit) + CI workflow `backend-tests.yml`。ai-agent-service 有 pytest + CI workflow `ai-agent-tests.yml`，但当前覆盖率 ~0%，需补齐。admin-web 有 vitest + CI workflow `frontend-tests.yml`，当前覆盖率 ~20%。E2E smoke 有 pytest + CI workflow `smoke-tests.yml`，当前覆盖率 ~85%。E2E Playwright 测试有 `tests/` 套件 + CI workflow `e2e-tests.yml`，按需增量运行。
+> **CI 成熟度说明**：admin-api 单测在 `pr-check.yml`（admin-api-test job）运行 `./mvnw test`。ai-agent-service 单测在 `ai-agent-tests.yml`（`pytest tests/`，排除 integration / e2e-real）。admin-web vitest + tsc 在 `pr-check.yml`（admin-web-test job）。Playwright quality 门禁在 `pr-check.yml`（e2e-quality-gate，fixture 模式 4 个文件）；post-deploy P0 冒烟在 `smoke-test.yml`（workflow_call）；AI Agent 真实 LLM 评测在 `agent-eval.yml` / `agent-eval-adversarial.yml`；真实 E2E 在 `e2e-real.yml`（每日定时 + 手动）。
 
 ### 本地开发环境
 
 > **⚠️ 铁律：本地只启动米高系统 3 个组件，DB/Redis/中间件全部用云 dev。**
 
-- **本地启动**：admin-api (:8081) + ai-agent-service (:8001) + admin-web (:3001)
+- **本地启动**：admin-api (:8080) + ai-agent-service (:8001) + admin-web (:3001)
 - **云 dev 环境**：PostgreSQL + Redis + DashVector + DashScope + OSS 全部用云端
 - **配置文件**：各模块 `.env` 已预置云 dev 环境的连接信息，禁止改成 localhost
 
 **启动本地服务**（用于真实场景验证）：
 
 ```bash
-# 1. 启动 admin-api（Java 后端，端口 8081）
+# 1. 启动 admin-api（Java 后端，端口 8080）
 cd backend/admin-api && ./mvnw spring-boot:run
 
 # 2. 启动 ai-agent-service（Python AI 服务，端口 8001）
@@ -277,9 +277,9 @@ cd frontend/admin-web && npm run dev
 - 发现 Bug 时：先写一个能复现 Bug 的失败测试 → 修复代码 → 测试通过
 - E2E 测试必须覆盖所有页面的核心交互路径，禁止弱断言
 - **E2E 测试文件命名规范**：`tests/e2e/specs/{domain}/{feature}.spec.ts`，禁止扁平放置
-- **E2E 测试使用 Page Object 模式**：封装可复用交互到 `tests/e2e/page-objects/`
+- **E2E 测试使用 Page Object 模式**：封装可复用交互到 `tests/e2e/pages/{domain}/{page}.page.ts`（如 `tests/e2e/pages/orders/order-list.page.ts`）
 - 新增交互组件必须覆盖完整点击链路（渲染→点击→发送→验证）
-- **禁止手写 E2E mock 数据**。使用 Record-Replay 模式：`cd tests && BASE_URL=http://localhost:8081 npx tsx e2e/scripts/record-fixtures.ts` 录制真实 API 响应到 `fixtures/`，测试中 `import fixture from '../fixtures/xxx.json'`
+- **禁止手写 E2E mock 数据**。使用 Record-Replay 模式：`cd tests && BASE_URL=http://localhost:8080 npx tsx e2e/scripts/record-fixtures.ts` 录制真实 API 响应到 `fixtures/`，测试中 `import fixture from '../fixtures/xxx.json'`
 - **新增数据列表页必须在 `tests/e2e/specs/quality/anti-placeholder.spec.ts` 的 `PAGES` 数组中注册**，确保关键列不会全线显示占位符 `-`
 - **新增/修改 API 返回字段必须在 `tests/e2e/specs/quality/api-contract.spec.ts` 中验证**：必填字段存在、类型正确（number/string/object）、金额字段不能是 string
 - **跨页面数据一致性**：列表页和详情页的同一字段值必须相等（`tests/e2e/specs/quality/cross-page-consistency.spec.ts`）
@@ -324,8 +324,8 @@ app/graph/skills/
 # 第〇步：重启本地服务（确保运行最新代码）
 # ═══════════════════════════════════════════════════════════════
 
-# 重启 admin-api（Java 后端，端口 8081）
-kill $(lsof -t -i :8081) 2>/dev/null
+# 重启 admin-api（Java 后端，端口 8080）
+kill $(lsof -t -i :8080) 2>/dev/null
 cd backend/admin-api && ./mvnw spring-boot:run &
 
 # 重启 ai-agent-service（Python AI 服务，端口 8001）
@@ -337,7 +337,7 @@ kill $(lsof -t -i :3001) 2>/dev/null
 cd frontend/admin-web && npm run dev &
 
 # 验证服务就绪
-lsof -i :8081 -sTCP:LISTEN && lsof -i :8001 -sTCP:LISTEN && lsof -i :3001 -sTCP:LISTEN
+lsof -i :8080 -sTCP:LISTEN && lsof -i :8001 -sTCP:LISTEN && lsof -i :3001 -sTCP:LISTEN
 
 # ═══════════════════════════════════════════════════════════════
 # 第一步：单测全量（变更涉及的所有模块）
@@ -399,7 +399,7 @@ cd tests && BASE_URL=http://localhost:3001 npx playwright test specs/chat/chat.s
 | mini-app（微信小程序） | Taro 3.6 + React + TypeScript |
 | 数据库 | PostgreSQL 15 + Redis 7 |
 | 向量库 | DashVector |
-| LLM | DeepSeek V4 Pro (主) + MiniMax M3 (视觉) |
+| LLM | DeepSeek V4 Pro (主) + DeepSeek V4 Flash Vision (视觉) |
 | 部署 | 阿里云 SWAS 轻量应用服务器（CI 构建镜像 + 服务器 pull）+ RDS + Redis(Tair) + OSS + GitHub Actions |
 
 ## 目录结构
@@ -547,7 +547,7 @@ INSERT INTO schema_migrations (version) VALUES ('V6__add_ship_fee_to_orders.sql'
 | 变更路径 | 工作流 | 部署方式 |
 |---------|--------|---------|
 | `backend/admin-api/**` | deploy-admin-api | 云助手触发 SWAS `deploy.sh`（拉 CI 预构建镜像 + up） |
-| `backend/ai-agent-service/**` | deploy-ai-agent-service | 同上（Fast Gate + 全量单测 → 云助手触发） |
+| `backend/ai-agent-service/**` | deploy-ai-agent-service | 单测全量 → 云助手触发 `deploy.sh` |
 | `frontend/admin-web/**` | deploy-frontend | tsc + vitest → 云助手触发 `deploy.sh` |
 
 三个工作流统一执行：CI 测试 → 构建镜像推 ACR → `aliyun swas-open RunCommand` 在 SWAS 实例上跑 `bash /opt/migao-deploy/deploy.sh`（先自愈式同步最新 deploy.sh → 拉取镜像 → `docker compose up -d` → restart nginx → 健康检查）→ post-deploy 冒烟（smoke-test.yml，对 api.migaozn.com / ai-api.migaozn.com）。
@@ -558,7 +558,7 @@ INSERT INTO schema_migrations (version) VALUES ('V6__add_ship_fee_to_orders.sql'
 
 ## Case Contract — 行为用例单一源（二郎神用例契约）
 
-> 2026-08-14 起生效：行为用例只存一份 `.github/cases/<domain>.yml`（80 条 × 12 域），其余全部为生成物。
+> 2026-08-14 起生效：行为用例只存一份 `.github/cases/<domain>.yml`（18 域 117 条），其余全部为生成物。
 
 **铁律**：
 - 用例文件只用 **block style**（`- item` 逐行），禁止 flow style（`yaml_light` 不支持）
@@ -573,7 +573,7 @@ INSERT INTO schema_migrations (version) VALUES ('V6__add_ship_fee_to_orders.sql'
 5. **verify**：verify-agent 逐用例验收输出 `VERDICT_JSON.case_results`
 6. **grow**：失败用例回写 common_pitfalls + 生成对抗用例（进行中）
 
-**tier → CI 频率**：smoke 9 条（每次 PR `agent-eval-smoke` 100% 通过才合并 + 每日 01:30）/ normal 45 条（每日全量）/ adversarial 26 条（每周六 03:00，只追踪不阻塞）。
+**tier → CI 频率**：smoke 9 条（每次 PR `agent-eval-smoke` 100% 通过才合并 + 每日 01:30）/ normal 81 条（每日全量）/ adversarial 27 条（每周六 03:00，只追踪不阻塞）。
 
 **校验命令**：
 ```bash

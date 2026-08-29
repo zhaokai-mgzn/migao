@@ -7,6 +7,7 @@ LLM 开发时按需加载对应页面 (~50 行/页，按场景索引)：
 | 不了解项目整体 | [Home](Home.md) |
 | 首次搭建/运行 | [Quick-Start](Quick-Start.md) |
 | 写代码前确认规范 | [Development](Development.md) |
+| **并行开发/契约一致性** | **[CONTRACT-LEDGER](CONTRACT-LEDGER.md)** + **[DEV-FLOW](DEV-FLOW.md)** |
 | 改前端/小程序 | [Frontend](Frontend.md) |
 | 改 AI 服务/Tool/Skill | [AI-Agent](AI-Agent.md) |
 | **Skill/Tool 设计范式** | **[Agent-Design-Standard](agent-design-standard.md)** |

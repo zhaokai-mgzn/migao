@@ -243,7 +243,7 @@ cases:
     merge_log: "eval P003 + verification 2.9（同义，取 eval 版）"
     traces:
       tests:
-        - "backend/ai-agent-service/tests/test_mibao_scenarios.py"
+        - "backend/ai-agent-service/tests/manual/mibao_scenarios.py"
       ci:
         - agent-eval.yml
       verifies: []

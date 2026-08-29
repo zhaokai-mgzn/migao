@@ -242,7 +242,7 @@ cases:
     merge_log: "eval M012 独有"
     traces:
       tests:
-        - "backend/ai-agent-service/tests/test_mibao_scenarios.py"
+        - "backend/ai-agent-service/tests/manual/mibao_scenarios.py"
       ci:
         - agent-eval.yml
       verifies: []

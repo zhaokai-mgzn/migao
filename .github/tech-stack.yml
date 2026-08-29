@@ -8,7 +8,7 @@ services:
   - name: admin-api
     kind: java-maven
     source_root: backend/admin-api
-    port: 8081
+    port: 8080
     health_path: /actuator/health
     deploy_workflow: deploy-admin-api.yml
   - name: admin-web
@@ -16,7 +16,7 @@ services:
     source_root: frontend/admin-web
     port: 3001
     health_path: /
-    deploy_workflow: deploy-admin-web.yml
+    deploy_workflow: deploy-frontend.yml
   - name: ai-agent-service
     kind: python-pytest
     source_root: backend/ai-agent-service

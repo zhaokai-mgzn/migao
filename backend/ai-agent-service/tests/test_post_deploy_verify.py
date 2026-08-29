@@ -1,12 +1,17 @@
 """
-Post-deploy 自动验证脚本
+Post-deploy 验证脚本（手动/按需运行，CI 不自动执行）
 
-每次 ai-agent-service 部署后自动运行，验证核心链路：
+部署后核心链路人工/按需验证：
 1. 健康检查
 2. 图片识别 → 颜色完整性
 3. Vision JSON 直接产出
 4. 售卖方式/门幅标准化
 5. P&E 流程不报错
+
+> 注意：本文件是「部署后验证脚本」而非 pytest 用例集，CI 中显式 --ignore。
+> 部署后自动冒烟由 smoke-test.yml（P0，pytest）承担；本脚本用于部署后深度验证
+> （如发布后巡检）时手动运行。若需接入 CI，请在 deploy-ai-agent-service.yml 增加
+> 非阻塞 step 调用下方用法。
 
 用法:
   python tests/test_post_deploy_verify.py --base-url https://dev-api.migaozn.com

@@ -1209,8 +1209,8 @@ _CASE_OR_006 = EvalCase(
     skill=Skill.ORDER,
     difficulty=Difficulty.NORMAL,
     user_inputs=['查一下 ORD-20260701-0001 的状态', '确认支付，标记为生产中', '发货，物流顺丰 SF1234567890', '客户确认收货了，标记完成'],
-    expectations=['order_query(action=detail)', 'order_manage(action=confirm_payment)', 'order_manage(action=update_status, status=processing)', 'order_manage(action=update_logistics, company=顺丰)', 'order_manage(action=update_status, status=completed)'],
-    data_checks=['状态流转: pending → processing → shipped → completed', '每步操作前先确认当前状态'],
+    expectations=['order_query(action=detail)', 'order_manage(action=confirm_payment)', 'order_manage(action=update_status, status=producing)', 'order_manage(action=update_logistics, company=顺丰)', 'order_manage(action=update_status, status=completed)'],
+    data_checks=['状态流转: pending → producing → shipped → completed', '每步操作前先确认当前状态'],
     skip_reason='',
     tags=['multi_turn', 'order_lifecycle', 'status_flow'],
 )
