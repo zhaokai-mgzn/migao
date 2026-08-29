@@ -15,9 +15,9 @@
 | `e2e-real` | schedule 每日 00:00 + 手动 | backend `tests/e2e/real/` 真实 LLM 测试，失败自动建 Issue |
 | `mini-app` | PR/push `frontend/mini-app/**` | tsc + 单测 |
 | `issue-contract-check` | issue opened | 校验 CONTRACT_JSON → needs-verification / needs-truths + cases 引用校验 |
-| `junshi-case-draft` | issue opened/edited/labeled | 军师自动生成验收用例草稿 + DRAFT cases 引用提醒 |
-| `junshi-redraft` | issue_comment (reject) | 驳回后隐藏旧 DRAFT 重新生成 |
-| `junshi-verify-trigger` | PR closed (merged) | 贴 VERIFY_TRIGGER → 双验收 → 通过自动 close issue |
+| `case-draft` | issue opened/edited/labeled | 自动生成验收用例草稿 + DRAFT cases 引用提醒 |
+| `case-redraft` | issue_comment (reject) | 驳回后隐藏旧 DRAFT 重新生成 |
+| `verify-trigger` | PR closed (merged) | 贴 VERIFY_TRIGGER → 双验收 → 通过自动 close issue |
 
 ## 部署目标（2026-08-14 起：SAE → SWAS）
 
@@ -44,10 +44,10 @@ push main（路径过滤）→ CI 测试/构建镜像推 ACR
   → smoke-test.yml post-deploy 冒烟（api.migaozn.com / ai-api.migaozn.com）
 ```
 
-## 军师验收流水线
+## 验收流水线
 
 ```
-Issue 创建（CONTRACT_JSON 含 business_truths + cases 引用）→ 军师自动生成验收草稿 (L2/L3/L4)
+Issue 创建（CONTRACT_JSON 含 business_truths + cases 引用）→ 自动生成验收草稿 (L2/L3/L4)
      → 研发 review → PR 合并
      → 自动触发双验收:
        主验收: spec + L2/L3 业务断言 + 逐用例打分（case_results）

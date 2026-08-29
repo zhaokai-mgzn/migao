@@ -542,7 +542,7 @@
 数据: 商品销量排行表头「日涨」在 1440/1280 两视口无截断
 数据: 订单趋势 x 轴刻度在 1280 宽度下降采样不重叠
 数据: 订单/售后状态语义色 chips；空态「暂无数据」无 '-' 占位
-跳过: UI 页面改版：由 vitest 单测 + Playwright 多视口 E2E + 二郎神页面验收（page_accept）验证，不进入 agent-eval 冒烟
+跳过: UI 页面改版：由 vitest 单测 + Playwright 多视口 E2E + 页面验收（page_accept）验证，不进入 agent-eval 冒烟
 ```
 真值: dashboard-ui.tokens, dashboard-ui.insight-bar, dashboard-ui.no-truncate, dashboard-ui.axis-sampling, dashboard-ui.status-chips, dashboard-ui.no-overflow
 溯源: 2026-08-25 新增：#2532 经营看板织物质感改版（样板页） ｜ tags: dashboard, ui-redesign, visual

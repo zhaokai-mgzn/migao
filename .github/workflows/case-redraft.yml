@@ -1,7 +1,7 @@
-# junshi/redraft.yml — Agent REJECT → 隐藏旧 DRAFT + 打 needs-draft
+# case-redraft.yml — Agent REJECT → 隐藏旧 DRAFT + 打 needs-draft
 # 机械操作: 不依赖 LLM
 
-name: junshi/redraft
+name: case-redraft
 
 on:
   issue_comment:

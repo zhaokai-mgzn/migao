@@ -665,7 +665,7 @@ _CASE_DA_005 = EvalCase(
     user_inputs=['经营看板页面按织物质感方向重设计'],
     expectations=[''],
     data_checks=['token：主色靛蓝/点缀陶土/米白底，无默认蓝', '商品销量排行表头「日涨」在 1440/1280 两视口无截断', '订单趋势 x 轴刻度在 1280 宽度下降采样不重叠', "订单/售后状态语义色 chips；空态「暂无数据」无 '-' 占位"],
-    skip_reason='UI 页面改版：由 vitest 单测 + Playwright 多视口 E2E + 二郎神页面验收（page_accept）验证，不进入 agent-eval 冒烟',
+    skip_reason='UI 页面改版：由 vitest 单测 + Playwright 多视口 E2E + 页面验收（page_accept）验证，不进入 agent-eval 冒烟',
     tags=['dashboard', 'ui-redesign', 'visual'],
 )
 

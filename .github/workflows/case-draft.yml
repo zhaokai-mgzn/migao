@@ -1,4 +1,4 @@
-name: junshi/case-draft
+name: case-draft
 
 # 机械操作:
 # 1. needs-verification issue → 打 needs-draft 标签
@@ -36,7 +36,7 @@ jobs:
           HAS_TRUTH=$(echo "$BODY" | grep -cP 'CONTRACT_JSON|business_truths|业务真值|验收标准' || echo "0")
           if [ "$HAS_TRUTH" -gt 0 ]; then
             gh issue edit "$ISSUE_NUMBER" --add-label "needs-verification" --remove-label "needs-truths" 2>/dev/null || true
-            echo "✅ 已补业务真值 → needs-verification，进入二郎神体系"
+            echo "✅ 已补业务真值 → needs-verification，进入质量门禁体系"
           fi
 
       - name: 打 needs-draft 标签（仅当 needs-verification 且无有效 DRAFT）
@@ -79,7 +79,7 @@ jobs:
           if echo "$DRAFT" | grep -q '"cases"'; then
             echo "✅ DRAFT 已引用 cases"
           else
-            gh issue comment "$ISSUE_NUMBER" --body "⚠️ 本 issue 声明了验收用例 \`$ISSUE_CASES\`，但 DRAFT_JSON 未引用 cases。请军师在 DRAFT 验收方案中加入逐用例执行计划（case-contract：verify-agent 逐用例打分）。" 2>/dev/null || true
+            gh issue comment "$ISSUE_NUMBER" --body "⚠️ 本 issue 声明了验收用例 \`$ISSUE_CASES\`，但 DRAFT_JSON 未引用 cases。请自动评审在 DRAFT 验收方案中加入逐用例执行计划（case-contract：verify-agent 逐用例打分）。" 2>/dev/null || true
             echo "⚠️ 已提醒：DRAFT 未引用 issue 声明的用例"
           fi
 
