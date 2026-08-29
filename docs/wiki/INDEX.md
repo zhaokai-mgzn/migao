@@ -17,6 +17,7 @@ LLM 开发时按需加载对应页面 (~50 行/页，按场景索引)：
 | 部署/CI/CD/环境变量 | [Deployment](Deployment.md) |
 | CI/CD 流水线详情 | [CI-CD](CI-CD.md) |
 | 写测试/了解测试体系 | [Testing](Testing.md) |
+| **测试工程规范（拆分/ignore/脱敏/分层）** | **[test-engineering-standards](../testing/test-engineering-standards.md)** |
 | 遇到问题 | [Troubleshooting](Troubleshooting.md) |
 
 ## 深入阅读
