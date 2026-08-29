@@ -60,18 +60,9 @@ export default defineConfig({
       dependencies: ['auth-setup'],
     },
 
-    // AI Agent 能力测试（手动触发，依赖 LLM，跑远程 dev 环境）
-    {
-      name: 'real',
-      testMatch: /real\/.*\.spec\.ts/,
-      use: {
-        ...devices['Desktop Chrome'],
-        channel: 'chrome',
-        baseURL: process.env.E2E_REAL_BASE_URL || 'https://merchant.migaozn.com',
-        storageState: './e2e/.auth/admin.json',
-      },
-      dependencies: ['auth-setup'],
-    },
+    // 注：'real' project（tests/e2e/real，真实 LLM UI 测试）已于 2026-08-29 删除——
+    // 与 backend pytest e2e/real（API 层，e2e-real.yml 每日调度）1:1 重复但从未入 CI，维护成本双倍。
+    // 真实 LLM 能力验证以 pytest 层为准；chat.page.ts 等被 specs/chat 复用的资源保留。
 
     // 注：曾经的 'chromium' 项目与 'web' 筛选结果完全等价（同跑 specs/ 除 auth），
     // 会导致每个 spec 执行两遍，已于 2026-08-28 删除。显式传文件路径时 'web' 已兼容。
