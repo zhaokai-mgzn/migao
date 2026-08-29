@@ -319,6 +319,20 @@ _CASE_API_009 = EvalCase(
     tags=['api', 'upload', 'file_guard'],
 )
 
+# ── API-010 [NORMAL] 微信小程序 mock 登录链路（无 appid 时自动 mock）（源: cases/api.yml）──
+_CASE_API_010 = EvalCase(
+    id='API-010',
+    legacy_id='',
+    title='微信小程序 mock 登录链路（无 appid 时自动 mock）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['POST /api/auth/mini/login 在 wechat.mini.appid 未配置时走 mock 模式', '同 code 二次登录返回同一用户（账号稳定）'],
+    expectations=['direct_reply'],
+    data_checks=['mock 登录成功返回 accessToken + user', '登录参数 tenantId(camelCase) 与后端一致'],
+    skip_reason='',
+    tags=['login', 'mock'],
+)
+
 # ── CT-001 [NORMAL] 分类树（源: cases/category.yml）──
 _CASE_CT_001 = EvalCase(
     id='CT-001',
@@ -457,6 +471,20 @@ _CASE_CH_007 = EvalCase(
     data_checks=['闲聊回复不调用 tool', 'product_detail 正确使用 product_search 返回的 ID'],
     skip_reason='',
     tags=['multi_turn', 'casual_chat', 'context_isolation'],
+)
+
+# ── CH-008 [NORMAL] 转人工创建人工会话 - 客服工作台可见并可回复（源: cases/chat.yml）──
+_CASE_CH_008 = EvalCase(
+    id='CH-008',
+    legacy_id='',
+    title='转人工创建人工会话 - 客服工作台可见并可回复',
+    skill=Skill.MULTI_TURN,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户触发转人工后应创建 agent_session（waiting）并写入系统消息', '客服可在工作台发消息回复，会话 waiting→active', '用户可按 AI 会话 ID 查询人工会话看到客服回复'],
+    expectations=['human_handoff'],
+    data_checks=['createSessionForHandoff 创建 waiting 会话 + system 消息', 'sendMessage(agent) 后会话状态变 active', 'getSessionByAiSessionId 返回含客服消息的会话'],
+    skip_reason='',
+    tags=['handoff', 'agent_session'],
 )
 
 # ── CR-001 [NORMAL] 查商品 → 下单（跨 Skill 复用 UUID）（源: cases/cross.yml）──
@@ -1271,6 +1299,20 @@ _CASE_OR_010 = EvalCase(
     tags=['create', 'confirm'],
 )
 
+# ── OR-011 [NORMAL] AI 下单闭环 - 算料报价→确认→SMS→订单创建（源: cases/order.yml）──
+_CASE_OR_011 = EvalCase(
+    id='OR-011',
+    legacy_id='',
+    title='AI 下单闭环 - 算料报价→确认→SMS→订单创建',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户算料报价后确认下单，走 SMS 验证（bypass）→ order_create 成功'],
+    expectations=['order_create'],
+    data_checks=['order_create 返回订单号'],
+    skip_reason='',
+    tags=['order_create', 'smoke'],
+)
+
 # ── PP-001 [NORMAL] 加工项选择 - 分页翻页（源: cases/processing.yml）──
 _CASE_PP_001 = EvalCase(
     id='PP-001',
@@ -1740,6 +1782,7 @@ ALL_CASES = (
     _CASE_API_007,
     _CASE_API_008,
     _CASE_API_009,
+    _CASE_API_010,
     _CASE_CT_001,
     _CASE_CT_002,
     _CASE_CT_003,
@@ -1750,6 +1793,7 @@ ALL_CASES = (
     _CASE_CH_005,
     _CASE_CH_006,
     _CASE_CH_007,
+    _CASE_CH_008,
     _CASE_CR_001,
     _CASE_CR_002,
     _CASE_CR_003,
@@ -1808,6 +1852,7 @@ ALL_CASES = (
     _CASE_OR_008,
     _CASE_OR_009,
     _CASE_OR_010,
+    _CASE_OR_011,
     _CASE_PP_001,
     _CASE_PP_002,
     _CASE_PP_003,

@@ -369,3 +369,29 @@ cases:
       ci:
         - agent-eval.yml
       verifies: []
+
+  - id: OR-011
+    legacy_id: ""
+    title: "AI 下单闭环 - 算料报价→确认→SMS→订单创建"
+    domains:
+      - order
+    tier: normal
+    tags:
+      - order_create
+      - smoke
+    truths_ref:
+      - order.flow
+    user_inputs:
+      - "用户算料报价后确认下单，走 SMS 验证（bypass）→ order_create 成功"
+    expectations:
+      - tool: order_create
+    data_checks:
+      - "order_create 返回订单号"
+    skip_reason: ""
+    merge_log: "POC 下单闭环集成测试新增"
+    traces:
+      tests:
+        - "docs/deployment/poc-order-flow-test.py"
+      ci:
+        - ai-agent-tests.yml
+      verifies: []
