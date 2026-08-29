@@ -8,9 +8,10 @@ import './MessageList.scss'
 interface MessageListProps {
   messages: Message[]
   isStreaming: boolean
+  onInteract?: (value: string) => void
 }
 
-export default function MessageList({ messages, isStreaming }: MessageListProps) {
+export default function MessageList({ messages, isStreaming, onInteract }: MessageListProps) {
   const scrollAnchorId = 'msg-anchor'
   const scrollTopRef = useRef(0)
   const scrollIntoViewRef = useRef(scrollAnchorId)
@@ -67,7 +68,7 @@ export default function MessageList({ messages, isStreaming }: MessageListProps)
       >
         <View className='message-list__content'>
           {messages.map((msg) => (
-            <MessageBubble key={msg.id} message={msg} />
+            <MessageBubble key={msg.id} message={msg} onInteract={onInteract} />
           ))}
 
           {/* 思考中动画 */}

@@ -97,7 +97,7 @@ export default function ChatPage() {
           </View>
         ) : (
           <>
-            <MessageList messages={messages} isStreaming={isStreaming} />
+            <MessageList messages={messages} isStreaming={isStreaming} onInteract={handleSend} />
             {showQuickActions && <QuickActions onAction={handleQuickAction} />}
           </>
         )}

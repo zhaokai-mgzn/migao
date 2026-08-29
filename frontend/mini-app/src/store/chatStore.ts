@@ -20,6 +20,7 @@ import type {
   QuickAction,
   CardData,
   ToolCallData,
+  InteractiveData,
 } from '../types'
 import { SSEClient } from '../utils/sse'
 
@@ -256,6 +257,39 @@ export const useChatStore = create<ChatState>()((set, get) => ({
           messages: state.messages.map(msg =>
             msg.id === aiMsgId
               ? { ...msg, cards: [...(msg.cards || []), card] }
+              : msg
+          ),
+        }))
+      },
+
+      onInteractive: (data) => {
+        const interactive: InteractiveData = {
+          type: (data.type || data.component || 'confirm') as InteractiveData['type'],
+          component: data.component,
+          title: data.title || '',
+          options: data.options,
+          fields: data.fields,
+          confirmLabel: data.confirmLabel,
+          cancelLabel: data.cancelLabel,
+          confirmValue: data.confirmValue,
+          cancelValue: data.cancelValue,
+          formFields: data.formFields,
+          submitLabel: data.submitLabel,
+        }
+        set(state => ({
+          messages: state.messages.map(msg =>
+            msg.id === aiMsgId
+              ? { ...msg, interactive }
+              : msg
+          ),
+        }))
+      },
+
+      onSuggestions: (data) => {
+        set(state => ({
+          messages: state.messages.map(msg =>
+            msg.id === aiMsgId
+              ? { ...msg, suggestions: data.questions || [] }
               : msg
           ),
         }))
