@@ -6,7 +6,7 @@
 
 import Taro from '@tarojs/taro'
 import { post } from './request'
-import { AI_API_BASE_URL, STORAGE_KEYS } from './constants'
+import { API_BASE_URL, STORAGE_KEYS } from './constants'
 import type { User, LoginResult, ApiResponse } from '../types'
 
 /**
@@ -23,14 +23,14 @@ export async function miniAppLogin(tenantId: number): Promise<LoginResult> {
       return { success: false, error: '获取微信登录凭证失败' }
     }
 
-    // 调用后端登录接口
+    // 调用后端登录接口（登录在 admin-api，走 API_BASE_URL）
     const data = await post<ApiResponse<{ token: string; user: User }>>(
       '/api/auth/mini/login',
       {
         code: loginRes.code,
-        tenant_id: tenantId,
+        tenantId: tenantId,
       },
-      { baseURL: AI_API_BASE_URL, skipAuth: true },
+      { baseURL: API_BASE_URL, skipAuth: true },
     )
 
     if (!data.success || !data.data) {
