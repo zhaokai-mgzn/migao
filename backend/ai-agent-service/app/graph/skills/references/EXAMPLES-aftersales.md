@@ -18,7 +18,7 @@
 ```
 → after_sales_manage(action=list, status="pending")
 → 📋 待处理工单
-  AS-xxx · ORD-1234 · 退款 · 申请中 · 06-05
+  AS-xxx · ORD-1234 · 退款 · 待处理 · 06-05
 → 工单还在处理中，需要催一下吗？
 ```
 

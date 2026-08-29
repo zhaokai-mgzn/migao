@@ -79,6 +79,8 @@ class TestAfterSalesList:
         assert result.success is True
         assert result.data["items"][0]["id"] == "t1"
         assert result.data["total"] == 1
+        # 结果数据必须附带中文业务术语标签（禁止英文枚举流入 LLM 回复）
+        assert result.data["items"][0]["status_label"] == "待处理"
         params = mock_client.get.call_args[1]["params"]
         assert params["page"] == 2
         assert params["size"] == 5
@@ -93,6 +95,32 @@ class TestAfterSalesList:
         result = await tool.execute(context=admin_tool_context, action="list")
         assert result.success is False
         assert result.error == "服务不可用"
+
+    @patch("app.tools.after_sales_manage.get_admin_api_client")
+    async def test_list_enriches_chinese_labels(self, mock_get_client, tool, admin_tool_context, mock_client):
+        """列表数据必须附带中文业务术语标签（状态/优先级/类型），
+        避免 LLM 把 normal/urgent/critical 等英文枚举原样输出给用户"""
+        mock_client.get = AsyncMock(return_value={
+            "success": True,
+            "data": {"items": [
+                {"id": "t1", "status": "pending", "priority": "normal", "ticketType": "refund"},
+                {"id": "t2", "status": "processing", "priority": "urgent", "ticketType": "complaint"},
+            ], "total": 2},
+        })
+        mock_get_client.return_value = mock_client
+
+        result = await tool.execute(context=admin_tool_context, action="list")
+
+        assert result.success is True
+        items = result.data["items"]
+        assert items[0]["status_label"] == "待处理"
+        assert items[0]["priority_label"] == "普通"
+        assert items[0]["ticket_type_label"] == "退款"
+        assert items[1]["status_label"] == "处理中"
+        assert items[1]["priority_label"] == "紧急"
+        assert items[1]["ticket_type_label"] == "投诉"
+        # 原始枚举值必须保留（内部推理/API 契约需要）
+        assert items[0]["priority"] == "normal"
 
 
 class TestAfterSalesDetail:
@@ -112,7 +140,12 @@ class TestAfterSalesDetail:
 
         result = await tool.execute(context=admin_tool_context, action="detail", ticket_id="t1")
         assert result.success is True
-        assert result.data == payload
+        # 原始字段保留
+        assert result.data["id"] == payload["id"]
+        assert result.data["ticketNo"] == payload["ticketNo"]
+        assert result.data["status"] == payload["status"]
+        # 详情数据附带中文状态标签
+        assert result.data["status_label"] == "待处理"
         assert mock_client.get.call_args[0][0] == "/api/admin/after-sales/t1"
 
 
@@ -205,3 +238,6 @@ class TestAfterSalesUpdateStatus:
         assert result.data == {"ticket_id": "t1", "status": "resolved"}
         assert mock_client.put.call_args[0][0] == "/api/admin/after-sales/t1/status"
         assert mock_client.put.call_args[1]["json_data"] == {"status": "resolved", "reason": "已处理"}
+        # 状态更新回执必须用中文业务术语，禁止输出英文枚举
+        assert "已解决" in result.message
+        assert "resolved" not in result.message

@@ -89,6 +89,8 @@ class TestAftersaleQueryList:
         assert result.data["total"] == 1
         assert len(result.data["items"]) == 1
         assert result.data["items"][0]["ticketNo"] == "AS-001"
+        # 列表数据附带中文状态标签（禁止英文枚举原样回显给用户）
+        assert result.data["items"][0]["status_label"] == "待处理"
 
     @patch("app.tools.aftersale_query.get_admin_api_client")
     async def test_customer_injects_customer_id_filter(self, mock_get_client, tool, customer_ctx):
@@ -148,6 +150,8 @@ class TestAftersaleQueryDetail:
 
         assert result.success is True
         assert result.data["ticketNo"] == "AS-001"
+        # 详情数据附带中文状态标签
+        assert result.data["status_label"] == "待处理"
 
     @patch("app.tools.aftersale_query.get_admin_api_client")
     async def test_detail_missing_ticket_id(self, mock_get_client, tool, customer_ctx):
