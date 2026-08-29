@@ -32,7 +32,7 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
-# case_ids: CH-008
+// case_ids: CH-008
 
 /**
  * AgentSessionService 单元测试
