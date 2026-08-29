@@ -518,9 +518,10 @@ class AfterSalesTicketServiceTest {
         // when
         afterSalesTicketService.updateTicketStatus("ticket-test-001", request);
 
-        // then: internalNotes应包含 time/status/remark（追加格式）
+        // then: internalNotes应包含 time/status/remark（追加格式），状态用中文业务术语（面向企业客户）
         assertThat(testTicket.getInternalNotes()).contains("已分配给客服张三处理");
-        assertThat(testTicket.getInternalNotes()).contains("pending → processing");
+        assertThat(testTicket.getInternalNotes()).contains("待处理 → 处理中");
+        assertThat(testTicket.getInternalNotes()).doesNotContain("pending → processing");
         assertThat(testTicket.getStatus()).isEqualTo("processing");
         verify(afterSalesTicketMapper).updateById(testTicket);
         // 验证timeline被写入
