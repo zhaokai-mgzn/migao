@@ -14,6 +14,7 @@ CUSTOMER_GENERAL_TOOLS = [
     "product_detail",
     "order_query",
     "logistics_track",
+    "human_handoff",
 ]
 
 # 客服通用 Skill 专用 System Prompt

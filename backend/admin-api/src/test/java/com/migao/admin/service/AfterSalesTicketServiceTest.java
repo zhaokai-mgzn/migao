@@ -259,6 +259,42 @@ class AfterSalesTicketServiceTest {
     }
 
     @Test
+    @DisplayName("创建投诉工单成功 - 投诉类型可无关联订单（转人工场景）")
+    void createTicket_ComplaintWithoutOrder_Success() {
+        // given：complaint 类型无订单（不 mock orderMapper.selectById）
+        AfterSalesCreateRequest request = new AfterSalesCreateRequest();
+        request.setOrderId(null);
+        request.setTicketType("complaint");
+        request.setDescription("对服务不满意，要求负责人处理");
+
+        when(afterSalesTicketMapper.insert(any(AfterSalesTicket.class))).thenAnswer(invocation -> {
+            AfterSalesTicket t = invocation.getArgument(0);
+            t.setId("ticket-complaint");
+            return 1;
+        });
+        AfterSalesTicket savedTicket = AfterSalesTicket.builder()
+                .id("ticket-complaint")
+                .tenantId(1L)
+                .ticketNo("AS-20250425-0003")
+                .ticketType("complaint")
+                .status("pending")
+                .description("对服务不满意，要求负责人处理")
+                .source("agent")
+                .createdAt(OffsetDateTime.now())
+                .updatedAt(OffsetDateTime.now())
+                .build();
+        when(afterSalesTicketMapper.selectById("ticket-complaint")).thenReturn(savedTicket);
+
+        // when
+        AfterSalesDetailResponse result = afterSalesTicketService.createTicket(request, 1L, "test-user");
+
+        // then
+        assertThat(result).isNotNull();
+        assertThat(result.getTicketType()).isEqualTo("complaint");
+        verify(afterSalesTicketMapper).insert(any(AfterSalesTicket.class));
+    }
+
+    @Test
     @DisplayName("创建工单被拒 — 同类型活跃工单已存在")
     void createTicket_DuplicateSameType() {
         AfterSalesCreateRequest request = new AfterSalesCreateRequest();
@@ -282,8 +318,8 @@ class AfterSalesTicketServiceTest {
     void createTicket_DifferentTypeAllowed() {
         AfterSalesCreateRequest request = new AfterSalesCreateRequest();
         request.setOrderId("order-001");
-        request.setTicketType("complaint");
-        request.setDescription("投诉问题");
+        request.setTicketType("repair");
+        request.setDescription("维修问题");
 
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
         // 已有 return 工单，新建 complaint → 允许
@@ -746,13 +782,13 @@ class AfterSalesTicketServiceTest {
         when(afterSalesTicketMapper.selectById("ticket-complaint-pending")).thenReturn(
                 AfterSalesTicket.builder().id("ticket-complaint-pending").tenantId(1L)
                         .ticketNo("AS-TEST").orderId("order-001").customerId("张三")
-                        .ticketType("complaint").status("pending").description("投诉")
+                        .ticketType("repair").status("pending").description("维修")
                         .priority("normal").source("agent")
                         .createdAt(OffsetDateTime.now()).updatedAt(OffsetDateTime.now()).build());
 
         // when & then: 不抛异常
         AfterSalesDetailResponse result = afterSalesTicketService.createTicket(
-                buildCreateRequest("complaint", null), 1L, "test-user");
+                buildCreateRequest("repair", null), 1L, "test-user");
         assertThat(result).isNotNull();
     }
 

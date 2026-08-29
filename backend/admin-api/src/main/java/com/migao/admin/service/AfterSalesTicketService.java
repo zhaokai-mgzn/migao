@@ -163,52 +163,57 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
      */
     @Transactional(rollbackFor = Exception.class)
     public AfterSalesDetailResponse createTicket(AfterSalesCreateRequest request, Long tenantId, String operator) {
-        // 校验关联订单是否存在
-        Order order = orderMapper.selectById(request.getOrderId());
-        if (order == null) {
-            throw BusinessException.validationError("关联订单不存在");
-        }
-
-        // 状态门禁：退款/退货工单仅允许在已确认及以上的订单创建（与 refundOrder 一致）
-        boolean isRefundType = "refund".equals(request.getTicketType()) || "return".equals(request.getTicketType());
-        if (isRefundType && !Set.of("confirmed", "producing", "shipped", "completed").contains(order.getStatus())) {
-            throw BusinessException.validationError(
-                    String.format("当前订单状态[%s]不允许创建退款/退货工单，仅已确认/生产中/已发货/已完成可创建",
-                            order.getStatus()));
-        }
-
-        // 退款金额校验：≥0 且 ≤ 订单实收款
-        if (request.getRefundAmount() != null) {
-            if (request.getRefundAmount().compareTo(BigDecimal.ZERO) < 0) {
-                throw BusinessException.validationError("退款金额不能为负数");
+        // 投诉类工单可无关联订单（转人工/服务投诉场景）；其余类型必须关联订单
+        boolean isComplaint = "complaint".equals(request.getTicketType());
+        Order order = null;
+        if (!isComplaint) {
+            // 校验关联订单是否存在
+            order = orderMapper.selectById(request.getOrderId());
+            if (order == null) {
+                throw BusinessException.validationError("关联订单不存在");
             }
-            BigDecimal effectiveActual = order.getActualAmount() != null ? order.getActualAmount() : order.getTotalAmount();
-            if (request.getRefundAmount().compareTo(effectiveActual) > 0) {
-                throw BusinessException.validationError("退款金额不能超过订单实收款 " + effectiveActual);
-            }
-        }
 
-        // 防重复：检查该订单是否已有活跃工单
-        List<AfterSalesTicket> activeTickets = afterSalesTicketMapper.selectList(
-            new LambdaQueryWrapper<AfterSalesTicket>()
-                .eq(AfterSalesTicket::getOrderId, request.getOrderId())
-                .in(AfterSalesTicket::getStatus, "pending", "processing")
-        );
-        if (!activeTickets.isEmpty()) {
-            boolean hasSameType = activeTickets.stream()
-                .anyMatch(t -> request.getTicketType().equals(t.getTicketType()));
-            if (hasSameType) {
+            // 状态门禁：退款/退货工单仅允许在已确认及以上的订单创建（与 refundOrder 一致）
+            boolean isRefundType = "refund".equals(request.getTicketType()) || "return".equals(request.getTicketType());
+            if (isRefundType && !Set.of("confirmed", "producing", "shipped", "completed").contains(order.getStatus())) {
                 throw BusinessException.validationError(
-                    String.format("该订单已有 %s 类型的活跃工单（%s），请先处理后再创建",
-                        request.getTicketType(),
-                        activeTickets.get(0).getTicketNo()));
+                        String.format("当前订单状态[%s]不允许创建退款/退货工单，仅已确认/生产中/已发货/已完成可创建",
+                                order.getStatus()));
             }
-            // 不同类型 → 记录警告但不阻止
-            log.warn("订单 {} 已有活跃工单 {}（类型={}），新建不同类型工单（{}）",
-                request.getOrderId(),
-                activeTickets.get(0).getTicketNo(),
-                activeTickets.get(0).getTicketType(),
-                request.getTicketType());
+
+            // 退款金额校验：≥0 且 ≤ 订单实收款
+            if (request.getRefundAmount() != null) {
+                if (request.getRefundAmount().compareTo(BigDecimal.ZERO) < 0) {
+                    throw BusinessException.validationError("退款金额不能为负数");
+                }
+                BigDecimal effectiveActual = order.getActualAmount() != null ? order.getActualAmount() : order.getTotalAmount();
+                if (request.getRefundAmount().compareTo(effectiveActual) > 0) {
+                    throw BusinessException.validationError("退款金额不能超过订单实收款 " + effectiveActual);
+                }
+            }
+
+            // 防重复：检查该订单是否已有活跃工单
+            List<AfterSalesTicket> activeTickets = afterSalesTicketMapper.selectList(
+                new LambdaQueryWrapper<AfterSalesTicket>()
+                    .eq(AfterSalesTicket::getOrderId, request.getOrderId())
+                    .in(AfterSalesTicket::getStatus, "pending", "processing")
+            );
+            if (!activeTickets.isEmpty()) {
+                boolean hasSameType = activeTickets.stream()
+                    .anyMatch(t -> request.getTicketType().equals(t.getTicketType()));
+                if (hasSameType) {
+                    throw BusinessException.validationError(
+                        String.format("该订单已有 %s 类型的活跃工单（%s），请先处理后再创建",
+                            request.getTicketType(),
+                            activeTickets.get(0).getTicketNo()));
+                }
+                // 不同类型 → 记录警告但不阻止
+                log.warn("订单 {} 已有活跃工单 {}（类型={}），新建不同类型工单（{}）",
+                    request.getOrderId(),
+                    activeTickets.get(0).getTicketNo(),
+                    activeTickets.get(0).getTicketType(),
+                    request.getTicketType());
+            }
         }
 
         // 创建工单实体
@@ -217,7 +222,8 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
         ticket.setTicketNo(generateTicketNo());
         ticket.setOrderId(request.getOrderId());
         // TODO: 当前使用客户名称作为关联标识，后续应改为实际客户ID（需客户表支持手机号→ID查询）
-        ticket.setCustomerId(order.getCustomerName());
+        // 投诉类工单无关联订单，客户标识降级为「投诉用户」
+        ticket.setCustomerId(order != null ? order.getCustomerName() : "投诉用户");
         ticket.setTicketType(request.getTicketType());
         ticket.setStatus("pending");
         ticket.setDescription(request.getDescription());

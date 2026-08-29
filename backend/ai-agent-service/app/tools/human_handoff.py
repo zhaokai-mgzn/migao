@@ -135,11 +135,37 @@ class HumanHandoffTool(BaseTool):
 
         handoff_reason = reason or "客户请求转人工（未提供具体原因）"
 
+        # 非营业时间转人工降级：没有坐席在线，返回 afterHoursMessage 引导留言，
+        # 不创建工单。AI 机器人本身照常服务，此降级只针对「转人工」这个动作。
         try:
+            from app.agents.tenant_config import get_tenant_ai_config, is_after_hours
+            ai_config = await get_tenant_ai_config(context.tenant_id)
+            if is_after_hours(ai_config):
+                msg = (
+                    ai_config.get("afterHoursMessage")
+                    or "当前非营业时间，人工客服已休息，请您留言，我们会尽快回复您～"
+                )
+                logger.info(
+                    f"[human_handoff] 非营业时间转人工降级 | tenant={context.tenant_id} "
+                    f"afterHoursMode={ai_config.get('afterHoursMode')}"
+                )
+                return ToolResult(
+                    success=True,
+                    data={"handoff_deferred": True, "after_hours": True},
+                    message=msg,
+                    summary=f"非营业时间，转人工降级为留言：{msg[:30]}",
+                )
+        except Exception as e:
+            logger.warning(
+                f"[human_handoff] 非营业时间检查失败（非致命，继续正常转人工）: "
+                f"{type(e).__name__}: {e}"
+            )
+
+        try:
+            # 用 Agent 版接口（宽松校验，转人工工单无关联订单，不需要 orderId）
             json_data: Dict[str, Any] = {
                 "ticketType": "complaint",
                 "reason": handoff_reason,
-                "source": "customer",
             }
             if description:
                 json_data["description"] = description
@@ -151,7 +177,7 @@ class HumanHandoffTool(BaseTool):
 
             client = get_admin_api_client()
             response = await client.post(
-                "/api/admin/after-sales",
+                "/api/admin/agent/after-sales",
                 json_data=json_data,
                 tenant_id=context.tenant_id,
                 user_id=context.user_id,
