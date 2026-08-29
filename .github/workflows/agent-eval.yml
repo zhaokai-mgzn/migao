@@ -11,9 +11,11 @@ env:
 
 jobs:
   agent-eval:
-    name: Mibao Agent Eval (smoke)
+    name: Mibao Agent Eval (full)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 全量评测（active 82 条真实 LLM 多轮）实测 >30min，曾多次被 workflow 超时静默取消
+    # （conclusion=cancelled，不建 issue），2026-08-29 提至 60min
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
