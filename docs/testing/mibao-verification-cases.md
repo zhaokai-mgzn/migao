@@ -1282,6 +1282,7 @@
 期望: curtain_calc(window_width=3, window_height=2.5)
 数据: data.fabric_meters > 0
 数据: data.total > 0
+跳过: 算料报价为小布（C 端）专属功能，米宝（B 端）Agent Eval smoke 评测无 curtain_calc 工具；由 test_curtain_calc.py 单测 + POC 集成测试覆盖
 ```
 真值: fabric-calc.fullness-default, fabric-calc.fixed-height, fabric-calc.fixed-width
 溯源: POC 小布增强新增（算料报价 skill） ｜ tags: quote, fabric_calc, smoke
@@ -1459,7 +1460,7 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：123（活跃 87，跳过 36）
+- 用例总数：123（活跃 86，跳过 37）
 - tier 分布：smoke 10 / normal 86 / adversarial 27
 - 售后域：5
 - agents：6

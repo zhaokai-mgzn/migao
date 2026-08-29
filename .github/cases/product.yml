@@ -434,7 +434,7 @@ cases:
     data_checks:
       - "data.fabric_meters > 0"
       - "data.total > 0"
-    skip_reason: ""
+    skip_reason: "算料报价为小布（C 端）专属功能，米宝（B 端）Agent Eval smoke 评测无 curtain_calc 工具；由 test_curtain_calc.py 单测 + POC 集成测试覆盖"
     merge_log: "POC 小布增强新增（算料报价 skill）"
     traces:
       tests:

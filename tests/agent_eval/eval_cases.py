@@ -1547,7 +1547,7 @@ _CASE_PR_013 = EvalCase(
     user_inputs=['3米宽 2.5米高 2倍褶皱 打孔帘 用98元一米的遮光布 帮我算多少钱'],
     expectations=['curtain_calc(window_width=3, window_height=2.5)'],
     data_checks=['data.fabric_meters > 0', 'data.total > 0'],
-    skip_reason='',
+    skip_reason='算料报价为小布（C 端）专属功能，米宝（B 端）Agent Eval smoke 评测无 curtain_calc 工具；由 test_curtain_calc.py 单测 + POC 集成测试覆盖',
     tags=['quote', 'fabric_calc', 'smoke'],
 )
 
