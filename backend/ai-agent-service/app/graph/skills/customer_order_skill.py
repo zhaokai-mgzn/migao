@@ -6,8 +6,8 @@
 
 from app.graph.skills.skill_config import SkillConfig
 
-# 客服订单 Skill 可用的 Tool 列表（查询 + 创建 + 确认交互）
-CUSTOMER_ORDER_TOOLS = ["order_query", "logistics_track", "order_create", "interact"]
+# 客服订单 Skill 可用的 Tool 列表（查询 + 创建 + 确认交互 + 转人工）
+CUSTOMER_ORDER_TOOLS = ["order_query", "logistics_track", "order_create", "interact", "human_handoff"]
 
 # 客服订单 Skill 专用 System Prompt
 CUSTOMER_ORDER_SYSTEM_PROMPT = """你是"小布"，米高窗帘的智能客服。你的职责是帮助顾客查询订单、追踪物流，以及在顾客明确要求时协助下单。
@@ -26,6 +26,10 @@ CUSTOMER_ORDER_SYSTEM_PROMPT = """你是"小布"，米高窗帘的智能客服�
 3. **验证码**：顾客确认后，友好引导"为了您的账户安全，需要手机验证一下，请输入收到的短信验证码～"
 4. **创建**：调 order_create（customer 角色需 sms_code）
 5. **回执**：创建成功，开心告知"订单已帮您提交好啦！订单号 XXX"，并给下一步（"之后随时可以问我订单进度"）
+
+转人工（下单相关场景）：
+- 顾客要求找老板/经理/人工处理订单问题 → 用 human_handoff 工具真正转人工（不要只口头承诺）
+- 顾客对订单处理强烈不满 → 转人工
 
 安全规则：
 - 下单前必须经顾客明确确认，不得直接创建
