@@ -1,0 +1,58 @@
+# Dependabot 配置 — 依赖自动更新
+# 每周一检查依赖更新；合并前需通过 PR 门禁（pr-check / ai-agent-tests）
+# 更多：https://docs.github.com/code-security/dependabot
+version: 2
+updates:
+  - package-ecosystem: "maven"
+    directory: "/backend/admin-api"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels:
+      - "type/chore"
+      - "role/backend"
+
+  - package-ecosystem: "pip"
+    directory: "/backend/ai-agent-service"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels:
+      - "type/chore"
+      - "role/backend"
+
+  - package-ecosystem: "npm"
+    directory: "/frontend/admin-web"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels:
+      - "type/chore"
+      - "role/frontend"
+
+  - package-ecosystem: "npm"
+    directory: "/frontend/mini-app"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels:
+      - "type/chore"
+      - "role/frontend"
+
+  - package-ecosystem: "npm"
+    directory: "/tests"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels:
+      - "type/chore"
+      - "role/qa"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels:
+      - "type/chore"
+      - "role/qa"
