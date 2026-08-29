@@ -1,3 +1,7 @@
+# 测试体系
+
+> **测试工程规范（文件拆分/ignore 单一来源/数据脱敏/分层归属）见 [docs/testing/test-engineering-standards.md](../testing/test-engineering-standards.md)**
+
 # 测试策略
 
 ## 测试金字塔
