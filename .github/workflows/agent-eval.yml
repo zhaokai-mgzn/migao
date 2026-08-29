@@ -1,19 +1,18 @@
 name: Agent Eval (米宝能力评测)
 
 on:
+  # 2026-08-29：取消每日 normal 定时评测（成本高、信号为 LLM 波动为主，按需手动触发即可）。
+  # PR 门禁由 pr-check 的 agent-eval-smoke（9 条）承担；对抗评测由 agent-eval-adversarial.yml 每周跑。
   workflow_dispatch:
-  schedule:
-    # 每天 01:30 CST（UTC+8）= UTC 17:30，低峰期跑米宝冒烟评测
-    - cron: '30 17 * * *'
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   agent-eval:
-    name: Mibao Agent Eval (normal daily)
+    name: Mibao Agent Eval (normal, manual)
     runs-on: ubuntu-latest
-    # 每日 normal tier（约 47 条真实 LLM 多轮），smoke 由 PR gate 承担、adversarial 由每周任务承担
+    # normal tier（约 47 条真实 LLM 多轮），smoke 由 PR gate 承担、adversarial 由每周任务承担
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -25,14 +24,13 @@ jobs:
       - name: Install deps
         run: pip install httpx
 
-      - name: Run daily normal eval (真实 LLM 回归)
+      - name: Run normal eval (真实 LLM 回归，按需)
         env:
           AI_API_URL: https://ai-api.migaozn.com
           ADMIN_API_URL: https://api.migaozn.com
           SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN }}
           PYTHONUTF8: "1"
           PYTHONIOENCODING: utf-8
-        # 2026-08-29 优化：每日只跑 normal tier（不再 full 重复 adversarial），与文档 tier 设计对齐
         run: python tests/agent_eval/local_runner.py normal --cases .github/cases
 
       - name: Create Issue on failure

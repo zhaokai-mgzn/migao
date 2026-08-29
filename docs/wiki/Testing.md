@@ -36,8 +36,8 @@
 
 | tier | 数量 | 频率 | workflow |
 |------|------|------|----------|
-| smoke | 9 | 每次 PR（100% 通过才合并）+ 每日 01:30 | pr-check `agent-eval-smoke` + agent-eval |
-| normal | 45 | 每日 01:30 全量 | agent-eval（smoke→full） |
+| smoke | 9 | 每次 PR（100% 通过才合并） | pr-check `agent-eval-smoke` |
+| normal | 81 | 按需手动触发 | agent-eval（local_runner.py normal） |
 | adversarial | 26 | 每周六 03:00（只追踪不阻塞） | agent-eval-adversarial |
 
 **G5 追溯铁律**：新增/修改测试文件头部必须声明 `# case_ids: OR-001, OR-002`（对应 `.github/cases/` 中的用例 ID），否则 qa-growth-gate block。存量测试未声明 → warn。
