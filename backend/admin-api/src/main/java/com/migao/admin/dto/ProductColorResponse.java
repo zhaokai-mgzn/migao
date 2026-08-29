@@ -1,6 +1,8 @@
 package com.migao.admin.dto;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import lombok.Data;
 
 import java.time.OffsetDateTime;
@@ -11,6 +13,11 @@ import java.time.OffsetDateTime;
 @Data
 public class ProductColorResponse {
 
+    /**
+     * 颜色主键（BIGSERIAL）。值可能超过 JS 安全整数 2^53，序列化为字符串
+     * 防止前端精度丢失（见 LongIdSerializationTest）。
+     */
+    @JsonSerialize(using = ToStringSerializer.class)
     private Long id;
 
     private String productId;

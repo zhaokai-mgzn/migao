@@ -56,7 +56,7 @@ export function rebuildSkus(
           result.push({ ...found, colorName: color.colorName })
         } else {
           result.push({
-            id: -(Date.now() + Math.random()),
+            id: String(-(Date.now() + Math.random())),
             colorId: color.id,
             colorName: color.colorName,
             sellingMethod: method,

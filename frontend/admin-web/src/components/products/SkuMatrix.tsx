@@ -77,7 +77,7 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
       return
     }
     const newColor: ProductColor = {
-      id: -(Date.now() + Math.random()),
+      id: String(-(Date.now() + Math.random())),
       colorName: '',
       remark: '',
       sortOrder: colors.length,
@@ -96,7 +96,7 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
       return
     }
     const newColor: ProductColor = {
-      id: -(Date.now() + Math.random()),
+      id: String(-(Date.now() + Math.random())),
       colorName: name,
       mainColorHex: hex || undefined,
       remark: '',
@@ -118,7 +118,7 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
     }
     const available = MAX_COLORS - colors.length
     const toAdd = names.slice(0, available).map((name, i) => ({
-      id: -(Date.now() + Math.random() + i),
+      id: String(-(Date.now() + Math.random() + i)),
       colorName: name,
       mainColorHex: undefined as string | undefined,
       remark: '',
@@ -275,7 +275,7 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
   )
 
   const handleSkuChange = (
-    colorId: number,
+    colorId: string,
     colorName: string,
     method: SellingMethod,
     width: string,

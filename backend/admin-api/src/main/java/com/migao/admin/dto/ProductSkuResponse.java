@@ -1,6 +1,8 @@
 package com.migao.admin.dto;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -12,10 +14,19 @@ import java.time.OffsetDateTime;
 @Data
 public class ProductSkuResponse {
 
+    /**
+     * SKU 主键（BIGSERIAL）。值可能超过 JS 安全整数 2^53，序列化为字符串
+     * 防止前端精度丢失导致订单扣库存链路失败（见 LongIdSerializationTest）。
+     */
+    @JsonSerialize(using = ToStringSerializer.class)
     private Long id;
 
     private String productId;
 
+    /**
+     * 颜色主键（BIGSERIAL），同样可能超过 2^53，序列化为字符串。
+     */
+    @JsonSerialize(using = ToStringSerializer.class)
     private Long colorId;
 
     private String colorName;

@@ -131,7 +131,7 @@ describe('SkuMatrix (#563)', () => {
 
   it('有颜色数据时在颜色计数中显示数量', () => {
     const color: ProductColor = {
-      id: -1,
+      id: '-1',
       colorName: '红色',
       remark: '',
       sortOrder: 0,
@@ -174,7 +174,7 @@ describe('SkuMatrix (#563)', () => {
 
   it('颜色名称不为空时不显示错误', () => {
     const color: ProductColor = {
-      id: -1,
+      id: '-1',
       colorName: '蓝色',
       remark: '',
       sortOrder: 0,
@@ -207,7 +207,7 @@ describe('SkuMatrix (#563)', () => {
 
   it('#1286 L2-01: 颜色删除按钮 z-index (z-40) 高于色板 popover (z-30)', () => {
     const color: ProductColor = {
-      id: -1,
+      id: '-1',
       colorName: '黑色',
       remark: '',
       sortOrder: 0,
@@ -225,7 +225,7 @@ describe('SkuMatrix (#563)', () => {
 
   it('#1286 L2-01: 售卖方式与规格尺寸删除按钮也有 z-40', () => {
     const color: ProductColor = {
-      id: -1,
+      id: '-1',
       colorName: '黑色',
       remark: '',
       sortOrder: 0,
@@ -238,8 +238,8 @@ describe('SkuMatrix (#563)', () => {
           sellingMethods: ['bulk_cut' as SellingMethod],
           doorWidths: ['2.8米'],
           skus: [{
-            id: -100,
-            colorId: -1,
+            id: '-100',
+            colorId: '-1',
             colorName: '黑色',
             sellingMethod: 'bulk_cut' as SellingMethod,
             doorWidth: '2.8米',
@@ -261,7 +261,7 @@ describe('SkuMatrix (#563)', () => {
 
   it('#1286 L2-03: 删除按钮 DOM 不在色板 popover overlay 容器内', () => {
     const color: ProductColor = {
-      id: -1,
+      id: '-1',
       colorName: '黑色',
       remark: '',
       sortOrder: 0,
@@ -279,7 +279,7 @@ describe('SkuMatrix (#563)', () => {
 
   it('#1286 L2-02: 色板 popover 默认不渲染（关闭状态）', () => {
     const color: ProductColor = {
-      id: -1,
+      id: '-1',
       colorName: '黑色',
       remark: '',
       sortOrder: 0,
@@ -321,9 +321,9 @@ describe('SkuMatrix (#563)', () => {
 
   it('#1286 L3-02: 添加 3 行 → 删除中间行 → 其余行保留', () => {
     const colors: ProductColor[] = [
-      { id: -1, colorName: '黑色', remark: '', sortOrder: 0 },
-      { id: -2, colorName: '红色', remark: '', sortOrder: 1 },
-      { id: -3, colorName: '蓝色', remark: '', sortOrder: 2 },
+      { id: '-1', colorName: '黑色', remark: '', sortOrder: 0 },
+      { id: '-2', colorName: '红色', remark: '', sortOrder: 1 },
+      { id: '-3', colorName: '蓝色', remark: '', sortOrder: 2 },
     ]
     const onChange = vi.fn()
     render(
@@ -345,8 +345,8 @@ describe('SkuMatrix (#563)', () => {
 
   it('#1286 L3-03: 色板展开状态下删除其他行不受影响', () => {
     const colors: ProductColor[] = [
-      { id: -1, colorName: '黑色', remark: '', sortOrder: 0 },
-      { id: -2, colorName: '白色', remark: '', sortOrder: 1 },
+      { id: '-1', colorName: '黑色', remark: '', sortOrder: 0 },
+      { id: '-2', colorName: '白色', remark: '', sortOrder: 1 },
     ]
     const onChange = vi.fn()
     render(
@@ -369,7 +369,7 @@ describe('SkuMatrix (#563)', () => {
 
   it('#1286 L3-04: 仅剩 1 行时删除按钮可见且可点击', () => {
     const colors: ProductColor[] = [
-      { id: -1, colorName: '黑色', remark: '', sortOrder: 0 },
+      { id: '-1', colorName: '黑色', remark: '', sortOrder: 0 },
     ]
     const onChange = vi.fn()
     render(
@@ -389,14 +389,14 @@ describe('SkuMatrix (#563)', () => {
 
   it('有完整 SKU 数据时渲染 SKU 表格', () => {
     const color: ProductColor = {
-      id: -1,
+      id: '-1',
       colorName: '红色',
       remark: '',
       sortOrder: 0,
     }
     const sku: ProductSku = {
-      id: -100,
-      colorId: -1,
+      id: '-100',
+      colorId: '-1',
       colorName: '红色',
       sellingMethod: 'bulk_cut' as SellingMethod,
       doorWidth: '2.8米',
