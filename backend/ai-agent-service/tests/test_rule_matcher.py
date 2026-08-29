@@ -1,4 +1,4 @@
-# case_ids: MC-010, MC-011, AS-003, AS-004, AS-005, HR-002, DA-004
+# case_ids: MC-010, MC-011, AS-003, AS-004, AS-005, HR-002, DA-004, PR-013
 """规则匹配器单元测试（app/router/rule_matcher.py）
 
 覆盖：_extract_text / RuleMatcher.match 关键词优先级 / 正则规则 / 未命中。
@@ -150,3 +150,21 @@ class TestMatch:
         result = self._match("ORD1234567890123 要退款")
         assert result is not None
         assert result.intent == IntentType.AFTER_SALES
+
+    def test_quote_keyword_routes_to_quote(self):
+        # 算料/报价关键词 → quote 意图
+        result = self._match("帮我算一下窗帘要用多少布")
+        assert result is not None
+        assert result.intent == IntentType.QUOTE
+
+    def test_quote_dimension_regex_routes_to_quote(self):
+        # 尺寸数字 + 褶皱 → quote 意图（正则规则）
+        result = self._match("3米窗 2倍褶皱 多少钱")
+        assert result is not None
+        assert result.intent == IntentType.QUOTE
+
+    def test_quote_punch_hole_keyword(self):
+        # 打孔帘关键词 → quote 意图
+        result = self._match("打孔帘 2.7米高 报价")
+        assert result is not None
+        assert result.intent == IntentType.QUOTE

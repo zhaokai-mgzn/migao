@@ -88,6 +88,19 @@ class TestOrderCreateVerifySms:
         assert ok is False
         mock_redis.delete.assert_not_awaited()
 
+    async def test_verify_bypass_code_skips_redis(self, monkeypatch):
+        """万能验证码 bypass：POC/测试阶段直接通过，不碰 Redis"""
+        monkeypatch.setattr("app.tools.order_create.SMS_BYPASS_CODE", "123456")
+        # 不 mock RedisClient，若误触 Redis 会抛异常 → 测试失败
+        ok = await OrderCreateTool._verify_sms_code("13800138000", "123456", 1)
+        assert ok is True
+
+    async def test_verify_bypass_disabled_when_empty(self, monkeypatch):
+        """bypass 码为空时禁用，走原 Redis 校验逻辑"""
+        monkeypatch.setattr("app.tools.order_create.SMS_BYPASS_CODE", "")
+        # 非 4-6 位数字仍直接拒绝（不碰 Redis）
+        assert await OrderCreateTool._verify_sms_code("13800138000", "abc", 1) is False
+
     @patch("app.tools.order_create.RedisClient")
     async def test_verify_redis_error(self, mock_redis_cls):
         mock_redis = AsyncMock()

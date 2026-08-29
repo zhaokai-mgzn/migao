@@ -363,6 +363,8 @@ def _detect_card_type(tool_name: str, result: Dict[str, Any]) -> Optional[str]:
         return "logistics"
     elif tool_name == "order_query":
         return "order"
+    elif tool_name == "curtain_calc":
+        return "quotation"
     return None
 
 
@@ -401,6 +403,11 @@ def _should_send_card(tool_name: str, result: Dict[str, Any]) -> bool:
             f"should_send={should_send} data_keys={list(data.keys()) if isinstance(data, dict) else 'N/A'}"
         )
         return should_send
+
+    # 算料报价有结果时发送报价单卡片
+    if tool_name == "curtain_calc":
+        data = result.get("data", {})
+        return data.get("total") is not None
 
     return False
 

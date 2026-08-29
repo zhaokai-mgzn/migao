@@ -52,11 +52,12 @@ class TestXiaobuConfig:
         assert XIAOBU_CONFIG.display_name == "小布"
         assert XIAOBU_CONFIG.persona == "xiaobu"
 
-    def test_skill_names_exact_four(self):
+    def test_skill_names_exact_five(self):
         from app.agents.agents.xiaobu import XIAOBU_CONFIG
         assert XIAOBU_CONFIG.skill_names == [
             "customer_order",
             "customer_product",
+            "customer_quote",
             "customer_aftersales",
             "customer_knowledge",
         ]

@@ -320,6 +320,7 @@ def _register_all_skills(registry: SkillRegistry):
     from app.graph.skills.customer_knowledge_skill import CUSTOMER_KNOWLEDGE_SKILL_CONFIG
     from app.graph.skills.customer_general_skill import CUSTOMER_GENERAL_SKILL_CONFIG
     from app.graph.skills.customer_aftersales_skill import CUSTOMER_AFTERSALES_SKILL_CONFIG
+    from app.graph.skills.customer_quote_skill import CUSTOMER_QUOTE_SKILL_CONFIG
 
     for config in [
         # 米宝 Skill
@@ -338,5 +339,6 @@ def _register_all_skills(registry: SkillRegistry):
         CUSTOMER_KNOWLEDGE_SKILL_CONFIG,
         CUSTOMER_GENERAL_SKILL_CONFIG,
         CUSTOMER_AFTERSALES_SKILL_CONFIG,
+        CUSTOMER_QUOTE_SKILL_CONFIG,
     ]:
         registry.register(config)

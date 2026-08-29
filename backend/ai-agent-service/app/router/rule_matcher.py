@@ -39,6 +39,8 @@ KEYWORD_MAP: dict[IntentType, list[str]] = {
     IntentType.ORDER_QUERY: ["订单", "我的订单", "订单状态", "查订单", "待发货"],
     IntentType.LOGISTICS_TRACK: ["物流", "快递", "到哪了"],
     IntentType.PRODUCT_INQUIRY: ["商品", "产品", "价格", "多少钱", "加工项", "加工项目", "加工费", "创建商品", "新建商品", "上架", "库存", "规格", "色号", "确认创建商品"],
+    # 算料报价：褶皱/算料/用布量等词特异，优先于商品咨询（"多少钱"）
+    IntentType.QUOTE: ["算料", "报价", "用多少布", "多少米布", "几米布", "用料", "褶皱倍数", "褶皱", "打孔帘", "韩式褶", "四爪钩"],
     # 人事域（2026-08-28 补：此前缺失导致"创建员工账号/添加员工"被商品正则劫持，HR-002 修复）
     IntentType.EMPLOYEE_MANAGE: ["员工账号", "员工管理", "员工列表", "创建员工", "新建员工", "添加员工", "开个账号", "开通账号", "员工", "人事"],
     IntentType.ROLE_MANAGE: ["角色权限", "角色", "权限"],
@@ -65,6 +67,9 @@ REGEX_RULES: list[tuple[re.Pattern, IntentType]] = [
     # 创建/新建 + 任意商品描述（排除含"订单/工单/售后/员工/账号/角色/权限/分类/通知/会话"的，
     # 防止"创建员工账号/新建分类/添加通知"等非商品意图被泛化规则劫持 —— HR-002 修复）
     (re.compile(r"(?:创建|新建|添加)(?!.*(?:订单|工单|售后|员工|账号|角色|权限|分类|通知|会话))(?:一个|新的|个)?.{0,10}(?:商品|产品|窗帘|布料|色卡|窗纱|卷帘|百叶)?"), IntentType.PRODUCT_INQUIRY),
+    # 算料报价：尺寸数字（如"3米宽/3×2.7"）+ 褶皱/倍数/算料/报价 → 算料意图。
+    # 例："3米窗 2倍褶皱 多少钱"、"2.7米高 打孔帘 报价"
+    (re.compile(r"\d+(?:\.\d+)?\s*米?.{0,10}(?:褶皱|倍数|算料|报价|用布|打孔|韩式褶|四爪钩)"), IntentType.QUOTE),
 ]
 
 # 直接回复内容已迁移到 AgentConfig.direct_replies
@@ -128,6 +133,20 @@ class RuleMatcher:
                 confidence=0.95,
                 source="rule",
                 matched_keywords=["订单统计"],
+            )
+
+        # --- 优先匹配「尺寸数字 + 褶皱/算料/报价」→ quote（算料报价） ---
+        # 否则"3米窗 2倍褶皱 多少钱"会被"多少钱"(3字) 压过"褶皱"(2字) 误路由到商品咨询。
+        # 尺寸 + 褶皱/倍数 是算料意图的强信号，前置拦截。
+        _quote_dim = re.compile(
+            r"\d+(?:\.\d+)?\s*米?.{0,10}(?:褶皱|倍数|算料|报价|用布|打孔|韩式褶|四爪钩)"
+        )
+        if _quote_dim.search(text):
+            return IntentResult(
+                intent=IntentType.QUOTE,
+                confidence=0.95,
+                source="rule",
+                matched_keywords=["尺寸+褶皱"],
             )
 
         # 收集所有命中的意图，而不是第一个命中即返回。
