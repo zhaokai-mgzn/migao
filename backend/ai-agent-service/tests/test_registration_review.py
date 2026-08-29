@@ -212,6 +212,31 @@ class TestParseLlmJson:
         assert _parse_llm_json("not json at all") is None
 
 
+class TestLlmPromptRules:
+    """LLM 提示词判定原则（防止大模型误驳回合法商家）"""
+
+    def test_license_optional_not_reject_ground(self):
+        from app.api.registration_review import _build_llm_messages
+
+        sys_msg = _build_llm_messages(_req())[0].content
+        assert "营业执照为选填项" in sys_msg
+        assert "不构成驳回理由" in sys_msg
+
+    def test_missing_optional_fields_not_reject_ground(self):
+        from app.api.registration_review import _build_llm_messages
+
+        sys_msg = _build_llm_messages(_req())[0].content
+        assert "缺失字段" in sys_msg and "不构成驳回理由" in sys_msg
+
+    def test_payload_contains_license_flag(self):
+        from app.api.registration_review import _build_llm_messages
+
+        human_msg = _build_llm_messages(_req(business_license_url="https://oss.example.com/a.jpg"))[1].content
+        assert '"has_business_license": true' in human_msg
+        human_msg2 = _build_llm_messages(_req())[1].content
+        assert '"has_business_license": false' in human_msg2
+
+
 # ============ 内部端点 ============
 
 
