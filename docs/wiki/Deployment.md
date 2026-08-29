@@ -1,6 +1,6 @@
 # 部署
 
-> **2026-08-14 起生产计算层已从 SAE 迁移到 SWAS 轻量应用服务器**。本页为当前事实；SAE 时代的详细踩坑见 `docs/deployment/deployment-aliyun.md`（历史）。
+> **2026-08-14 起生产计算层已从 SAE 迁移到 SWAS 轻量应用服务器**。本页为当前事实；迁移踩坑见 `docs/deployment/swas-migration-lessons.md`，历史踩坑清单见 `docs/deployment/deployment-checklist.md`。
 
 ## CI/CD
 

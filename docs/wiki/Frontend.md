@@ -57,3 +57,28 @@
 
 ---
 详见: [UI 设计规范](../design/ui-design-spec.md) · [管理后台设计](../design/admin-dashboard-design.md)
+
+## Tailwind className 冲突反模式（前端开发必读）
+
+`cn()` 底层用 tailwind-merge，同 class group 中**后者覆盖前者**。以下为项目实际踩过的坑：
+
+### 1. className prop 覆盖组件默认布局
+组件默认 `flex-col`（垂直堆叠），调用方传 `className="flex"` → `cn('flex flex-col', 'flex')` 的 `flex-col` 被覆盖成 `flex`（水平），布局完全错乱。
+**修复**：传 prop 时明确方向语义（`flex-row`/`flex-col`），不依赖默认值；或 `!flex-col` 防覆盖。
+
+### 2. 组件迁移机械搬运 className
+把 `<div className="flex">` 换成 `<Wrapper className="flex">`：原 div 的 `flex` 作用于自己子元素；换到 Wrapper 后变成外层布局方向，与 Wrapper 内部子元素布局**完全无关**。
+**修复**：迁移时检查 className 的布局作用对象是否变化。
+
+### 3. class group 冲突速查表
+
+| 危险组合 (先 → 后) | twMerge 结果 | 视觉后果 |
+|-------------------|-------------|---------|
+| `flex-col` → `flex` | `flex` (row) | 垂直布局变水平 |
+| `flex-row` → `flex-col` | `flex-col` | 水平布局变垂直 |
+| `p-4` → `p-0` | `p-0` | padding 消失 |
+| `rounded-lg` → `rounded-none` | `rounded-none` | 圆角消失 |
+| `bg-white` → `bg-transparent` | `bg-transparent` | 背景消失 |
+| `text-sm` → `text-lg` | `text-lg` | 字号变大 |
+
+> **铁律**：传入组件 prop 的 className 含 Tailwind class 时，必须检查是否与组件默认 className 在同一 class group 中冲突（真值断言：组件两个子区域 rect.top 差 >10px 为垂直排列，而非 rect.left）。

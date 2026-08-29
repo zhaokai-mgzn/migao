@@ -390,8 +390,7 @@ cases:
     skip_reason: ""
     merge_log: "POC 下单闭环集成测试新增"
     traces:
-      tests:
-        - "docs/deployment/poc-order-flow-test.py"
+      tests: []
       ci:
         - ai-agent-tests.yml
       verifies: []

@@ -94,8 +94,8 @@ class AgentContextManager:
     def build_context(self, session_id: str, current_skill: str) -> str:
         """构建注入 LLM 的上下文字符串。
 
-        参考 Claude Code 模式：放在 system prompt 和对话历史之间，
-        作为独立逻辑块。精简如 CLAUDE.md（800 字符以内）。
+        参考：放在 system prompt 和对话历史之间，
+        作为独立逻辑块。精简至 800 字符以内。
         """
         cache = self._get_or_create(session_id)
         lines = []

@@ -67,4 +67,4 @@ Issue 创建（CONTRACT_JSON 含 business_truths + cases 引用）→ 军师自�
 | `SMOKE_SERVICE_TOKEN` | 服务间调用 + agent-eval 评测 |
 
 ---
-详见: [部署指南](../deployment/deployment-aliyun.md)（SAE 章节为历史遗留）· [部署检查清单](../deployment/deployment-checklist.md)
+详见: [SWAS 迁移踩坑](../deployment/swas-migration-lessons.md) · [部署检查清单](../deployment/deployment-checklist.md)

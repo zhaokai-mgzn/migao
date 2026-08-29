@@ -304,7 +304,6 @@ cases:
     traces:
       tests:
         - "frontend/mini-app/tests/auth.test.ts"
-        - "docs/deployment/poc-mock-login-test.py"
       ci:
         - mini-app-tests.yml
       verifies: []
