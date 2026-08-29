@@ -37,9 +37,14 @@ from app.agents.customer_service_agent import (
 from app.router.intent_config import IntentType, IntentResult, RouteDecision
 from app.tools.registry import reset_tool_registry
 from tests.mibao_multiturn_intelligence_shared import (
+    logger,
     TurnResult,
     CaseResult,
     MultiTurnRunner,
+    make_graph_result,
+    make_route_decision,
+    make_skill_result,
+    _reset_singletons,
 )
 
 class TestMibaoMultiturnIntelligence:

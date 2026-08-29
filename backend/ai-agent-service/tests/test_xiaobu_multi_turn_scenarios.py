@@ -37,9 +37,18 @@ from app.tools import set_tool_context
 from app.tools.registry import reset_tool_registry
 from app.router.intent_config import IntentType, IntentResult
 from tests.xiaobu_multi_turn_shared import (
+    logger,
     Issue,
     ScenarioReport,
     MultiTurnRunner,
+    assert_no_issues,
+    log_turn,
+    _extract_tool_calls_from_messages,
+    MOCK_PRODUCTS,
+    MOCK_PRODUCT_DETAIL,
+    MOCK_ORDER,
+    MOCK_ORDER_PENDING,
+    MOCK_KNOWLEDGE_RESULTS,
 )
 
 class TestXiaobuMultiTurnScenarios:

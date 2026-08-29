@@ -9,7 +9,7 @@ from unittest.mock import patch, AsyncMock, MagicMock
 from tests.mibao_multiturn_shared import (
     MultiTurnRunner, make_graph_result, make_thinking_response,
     verify_thinking_stripped, verify_thinking_not_leaked, _reset_singletons,
-    TurnResult, CaseResult,
+    logger, TurnResult, CaseResult,
 )
 
 
