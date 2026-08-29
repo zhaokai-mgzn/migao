@@ -966,58 +966,6 @@
 真值: misc.rule-regex
 溯源: 2026-08-25 新增：ai-agent-service misc-part2 覆盖率补全（issue #2424） ｜ tags: rule_matcher, regex, fallback
 
-## onboarding（4 case）
-
-### OB-001. 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员 🔵
-```
-你: 商家提交合规入驻申请（POST /api/auth/register），AI 自动甄别
-期望: direct_reply
-数据: 响应 status=approved 且 applicationId 非空，同步自动创建租户(active)+企业管理员(admin)+默认角色权限
-数据: tenant_applications 落 review_source=ai / risk_flags / review_summary / reviewed_by=ai
-数据: ai-agent 内部端点 POST /api/internal/registration/review 规则层无违规 + LLM approve → approve；LLM 不可用且规则层通过 → review_source=system 放行
-跳过: 由 admin-api 单测（RegistrationServiceTest/ControllerTest/ReviewClientTest）+ ai-agent 单测（test_registration_review.py）+ 前端单测（register.test.tsx）验证，非 LLM 冒烟
-```
-真值: registration-approval.submit, registration-approval.ai-approve, registration-approval.review-meta, registration-approval.status-enums
-溯源: 2026-08-30 新增：AI 自动入驻改造（人工审批页废弃） ｜ tags: onboarding, ai_review, auto_approve
-
-### OB-002. 商家入驻 - AI 自动驳回（敏感内容 / 法律风险） 🔵
-```
-你: 商家提交含敏感/违法内容或法律风险的入驻申请
-期望: direct_reply
-数据: 规则层命中敏感词/注入/格式违规 → 直接驳回（review_source=rule，不调用 LLM 防刷成本）
-数据: LLM 识别法律风险（decision=reject 或 high 风险）→ 驳回（review_source=ai），响应 rejectReason 非空
-数据: 驳回不创建租户/管理员，申请置 rejected
-跳过: 由 admin-api + ai-agent 单测验证（规则层/LLM 层/决策合成），非 LLM 冒烟
-```
-真值: registration-approval.ai-reject, registration-approval.status-enums
-溯源: 2026-08-30 新增：AI 自动入驻改造 ｜ tags: onboarding, ai_review, auto_reject, compliance
-
-### OB-003. 商家入驻 - 防重复/防攻击（手机号/企业名/IP 频率/蜜罐/冷却/fail-closed） 🔵
-```
-你: 同一家公司/手机号/IP 反复提交入驻申请，或自动化脚本提交
-期望: direct_reply
-数据: 同手机号 pending/approved → 422；同企业规范化名称（去空格/括号/后缀）pending/approved → 422
-数据: AI 驳回 24h 冷却（review_source=system 的系统繁忙驳回不冷却，可立即重试）
-数据: 每手机号每日提交上限 3、每 IP 每小时上限 5（Redis 计数）→ 超限 422
-数据: 蜜罐字段 website 被填充 → 不落库不调 AI，静默返回 pending 占位
-数据: AI 甄别服务不可达 → fail-closed 系统繁忙驳回（review_source=system），绝不放行
-跳过: 由 RegistrationServiceTest + register.test.tsx（蜜罐隐藏字段）+ ai-agent 单测验证，非 LLM 冒烟
-```
-真值: registration-approval.dup-guard, registration-approval.ai-degrade
-溯源: 2026-08-30 新增：AI 自动入驻改造 ｜ tags: onboarding, anti_abuse, rate_limit, honeypot, dedup
-
-### OB-004. 商家入驻 - 人工审批页废弃，仅保留超管 API 兜底 🔵
-```
-你: 平台不再提供人工审核新商家页面，商家入驻全部由 AI 自动甄别
-期望: direct_reply
-数据: ops.migaozn.com 域名分支/入驻审批菜单/审批页面/中间件前缀已移除（前端无 /registrations 页面）
-数据: 超管兜底接口保留：GET/PUT /api/super-admin/registrations* 仅 API 应急，无前端入口
-数据: 主页与入驻页文案改为 AI 秒审（不再出现 1-3 个工作日人工审核）
-跳过: 由前端单测验证（corporate-home/app-routes/components-other/register），非 LLM 冒烟
-```
-真值: registration-approval.super-admin-prefix
-溯源: 2026-08-30 新增：AI 自动入驻改造（人工审批页废弃） ｜ tags: onboarding, ops_page_removed, super_admin_api
-
 ## 订单域（11 case）
 
 ### OR-001. 订单列表查询 🟢
@@ -1512,8 +1460,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：127（活跃 86，跳过 41）
-- tier 分布：smoke 10 / normal 90 / adversarial 27
+- 用例总数：123（活跃 86，跳过 37）
+- tier 分布：smoke 10 / normal 86 / adversarial 27
 - 售后域：5
 - agents：6
 - api：10
@@ -1526,7 +1474,6 @@
 - finance：3
 - 人事域：5
 - misc：11
-- onboarding：4
 - 订单域：11
 - 加工项域：4
 - 商品域：13
