@@ -22,6 +22,7 @@ from app.api.registration_review import (
     review_registration,
     _parse_llm_json,
 )
+from app.config import settings
 
 # ============ 规则层 ============
 
@@ -230,10 +231,12 @@ def client():
             yield c
 
 
-def _call_endpoint(client, token="test-service-token", payload=None):
+def _call_endpoint(client, token=None, payload=None):
+    """默认携带 settings.SERVICE_TOKEN（CI 中为 ci-dummy，本地为 .env 值），
+    与 verify_service_token 的实际校验值保持一致。"""
     return client.post(
         "/api/internal/registration/review",
-        headers={"X-Service-Token": token},
+        headers={"X-Service-Token": token if token is not None else settings.SERVICE_TOKEN},
         json=payload or _req().model_dump(),
     )
 
