@@ -20,7 +20,7 @@
         "source": "agent",
         "priority": "normal",
         "evidenceImages": [],
-        "internalNotes": "[07-04 17:38] pending → processing: 测试新流程2\n[07-04 17:38] processing → resolved: 测试新流程3",
+        "internalNotes": "[07-04 17:38] 待处理 → 处理中: 测试新流程2\n[07-04 17:38] 处理中 → 已解决: 测试新流程3",
         "createdAt": "2026-07-04T17:37:51.610574+08:00",
         "updatedAt": "2026-07-04T17:37:51.614926+08:00"
       },

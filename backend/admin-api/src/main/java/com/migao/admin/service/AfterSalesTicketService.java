@@ -54,6 +54,19 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
     );
 
     /**
+     * 工单状态 → 中文业务术语（写入 internal_notes 用）。
+     * internal_notes 面向企业客户展示，必须用中文（如「待处理 → 处理中」），
+     * 英文枚举仅用于内部存储与 timeline 结构化字段。
+     */
+    private static final Map<String, String> TICKET_STATUS_LABELS = Map.of(
+            "pending", "待处理",
+            "processing", "处理中",
+            "resolved", "已解决",
+            "rejected", "已拒绝",
+            "closed", "已关闭"
+    );
+
+    /**
      * 分页查询售后工单列表
      *
      * @param page       页码
@@ -290,11 +303,14 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
         ticket.setStatus(newStatus);
 
         // 追加备注到 internal_notes（不覆盖历史评论）
+        // 状态用中文业务术语：面向企业客户展示，不能用 pending/processing 等英文枚举
         if (StringUtils.hasText(request.getRemark())) {
             String timestamp = OffsetDateTime.now()
                 .format(DateTimeFormatter.ofPattern("MM-dd HH:mm"));
+            String currentLabel = TICKET_STATUS_LABELS.getOrDefault(currentStatus, currentStatus);
+            String newLabel = TICKET_STATUS_LABELS.getOrDefault(newStatus, newStatus);
             String newNote = String.format("[%s] %s → %s: %s",
-                timestamp, currentStatus, newStatus, request.getRemark());
+                timestamp, currentLabel, newLabel, request.getRemark());
             String existing = ticket.getInternalNotes();
             if (StringUtils.hasText(existing)) {
                 ticket.setInternalNotes(existing + "\n" + newNote);
