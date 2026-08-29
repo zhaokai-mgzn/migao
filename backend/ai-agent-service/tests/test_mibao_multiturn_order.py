@@ -5,6 +5,8 @@
 """
 # case_ids: OR-006, OR-007
 import pytest
+from app.agents.customer_service_agent import reset_agent
+from app.tools.registry import reset_tool_registry
 from unittest.mock import patch, AsyncMock, MagicMock
 
 from tests.mibao_multiturn_shared import (
