@@ -3,6 +3,8 @@
 """
 # case_ids: AS-005, CH-002, OR-006, PR-011, PR-012
 import pytest
+from app.agents.customer_service_agent import reset_agent
+from app.tools.registry import reset_tool_registry
 
 
 @pytest.fixture(autouse=True)
