@@ -478,7 +478,10 @@ class TestOrderQueryStatistics:
         tool = OrderQueryTool()
         result = await tool.execute(context=admin_tool_context, action="follow_status_stats")
         assert result.success is True
-        assert "pending:1" in result.summary
+        # 摘要用中文跟进状态术语，不得暴露英文枚举
+        assert "待跟进:1" in result.summary
+        assert "跟进中:2" in result.summary
+        assert "pending" not in result.summary
         assert mock_client.get.call_args[0][0] == "/api/admin/orders/follow-status/stats"
 
 

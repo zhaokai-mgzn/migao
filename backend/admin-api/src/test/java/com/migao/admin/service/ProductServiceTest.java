@@ -732,22 +732,26 @@ class ProductServiceTest {
         // Given: 商品当前状态为 on_sale
         when(productMapper.selectById("prod-001")).thenReturn(testProduct);
 
-        // When & Then: in_warehouse 已废弃，不能作为目标状态
+        // When & Then: in_warehouse 已废弃，不能作为目标状态；报错用中文术语
         assertThatThrownBy(() -> productService.updateProductStatus("prod-001", "in_warehouse", 1L))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("状态流转无效");
+                .hasMessageContaining("状态流转无效")
+                .hasMessageContaining("出售中")
+                .hasMessageNotContaining("on_sale");
     }
 
     @Test
-    @DisplayName("商品状态变更失败 - 无效状态值")
+    @DisplayName("商品状态变更失败 - 无效状态值（报错中文术语，不含英文枚举）")
     void updateProductStatus_InvalidStatus() {
         // Given: mock商品存在，当前状态为 on_sale
         when(productMapper.selectById("prod-001")).thenReturn(testProduct);
 
-        // When & Then: on_sale 不能流转到 invalid_status
+        // When & Then: on_sale 不能流转到 invalid_status；报错用中文术语
         assertThatThrownBy(() -> productService.updateProductStatus("prod-001", "invalid_status", 1L))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("状态流转无效");
+                .hasMessageContaining("状态流转无效")
+                .hasMessageContaining("出售中")
+                .hasMessageNotContaining("on_sale");
     }
 
     // ═══════════════════════════════════════════════════════════

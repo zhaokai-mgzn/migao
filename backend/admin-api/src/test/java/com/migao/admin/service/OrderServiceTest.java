@@ -397,6 +397,33 @@ class OrderServiceTest {
     }
 
     @Test
+    @DisplayName("更新订单状态 - 错误消息用中文状态术语（面向企业客户）")
+    void updateOrderStatus_ErrorMessagesUseChinese() {
+        // given: 非法流转 pending → shipped
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+
+        // when & then: 报错不得暴露英文枚举 pending/shipped
+        assertThatThrownBy(() -> orderService.updateOrderStatus("order-001", "shipped"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("待付款")
+                .hasMessageContaining("已发货")
+                .hasMessageNotContaining("pending")
+                .hasMessageNotContaining("shipped");
+    }
+
+    @Test
+    @DisplayName("更新订单状态 - 无效状态值报错不含英文枚举")
+    void updateOrderStatus_InvalidStatus_ChineseOnly() {
+        // given
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+
+        // when & then: invalid_status 不是合法枚举，报错展示原始值 + 中文提示
+        assertThatThrownBy(() -> orderService.updateOrderStatus("order-001", "invalid_status"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("无效的订单状态");
+    }
+
+    @Test
     @DisplayName("更新订单状态 - 非法状态流转 pending -> shipped")
     void updateOrderStatus_IllegalTransition() {
         // given
