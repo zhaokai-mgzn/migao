@@ -182,10 +182,10 @@ describe('buildProductPayload', () => {
 
   it('handles colors and SKUs in payload', () => {
     const form = makeProductForm({
-      colors: [{ id: 1, colorName: '红', sortOrder: 0 }],
+      colors: [{ id: '1', colorName: '红', sortOrder: 0 }],
       sellingMethods: ['bulk_cut'] as any,
       doorWidths: ['2.8米'],
-      skus: [{ id: -1, colorId: 1, colorName: '红', sellingMethod: 'bulk_cut', doorWidth: '2.8米', price: 99, stock: 10, status: 'active' }],
+      skus: [{ id: '-1', colorId: '1', colorName: '红', sellingMethod: 'bulk_cut', doorWidth: '2.8米', price: 99, stock: 10, status: 'active' }],
     })
     const payload = buildProductPayload(form)
     expect(payload.colors).toEqual(form.colors)

@@ -1,5 +1,7 @@
 package com.migao.admin.dto;
 
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -13,7 +15,8 @@ import java.math.BigDecimal;
 @AllArgsConstructor
 @NoArgsConstructor
 public class LowStockByColorResponse {
-    /** SKU ID */
+    /** SKU ID（BIGSERIAL，可能超 2^53，序列化为字符串） */
+    @JsonSerialize(using = ToStringSerializer.class)
     private Long skuId;
     /** 商品ID */
     private String productId;
@@ -21,7 +24,8 @@ public class LowStockByColorResponse {
     private String productName;
     /** 商品货号 */
     private String skuCode;
-    /** 颜色ID */
+    /** 颜色ID（BIGSERIAL，可能超 2^53，序列化为字符串） */
+    @JsonSerialize(using = ToStringSerializer.class)
     private Long colorId;
     /** 颜色名称 */
     private String colorName;

@@ -12,9 +12,9 @@ import { Button, Card, Input, Modal } from '@/components/ui'
 import type { Product, OrderItemFormData } from '@/types'
 
 interface OrderProductSku {
-  id: number
+  id: string
   productId?: string
-  colorId: number
+  colorId: string
   colorName?: string
   sellingMethod?: string
   doorWidth?: string
@@ -34,7 +34,7 @@ interface OrderLineItem {
   id: string
   product: ProductDetail | null
   productLoading: boolean
-  selectedColorId: number | null
+  selectedColorId: string | null
   selectedSku: OrderProductSku | null
   quantity: number
   unitPrice: number
@@ -211,7 +211,7 @@ export default function NewOrderPage() {
   }
 
   // ===== 颜色 / 规格 选择 =====
-  const handleSelectColor = (line: OrderLineItem, colorId: number) => {
+  const handleSelectColor = (line: OrderLineItem, colorId: string) => {
     const skusOfColor = (line.product?.skus || []).filter((s) => s.colorId === colorId)
     const autoSku = skusOfColor.length === 1 ? skusOfColor[0] : null
     updateLineItem(line.id, {
@@ -733,7 +733,7 @@ interface LineItemBlockProps {
   errors: Record<string, string>
   onPickProduct: () => void
   onRemove: () => void
-  onSelectColor: (colorId: number) => void
+  onSelectColor: (colorId: string) => void
   onSelectSku: (sku: OrderProductSku) => void
   onChangeQty: (q: number) => void
   onChangePrice: (p: number) => void
@@ -1016,8 +1016,8 @@ function LineItemBlock({
 }
 
 // ====== 工具函数 ======
-function uniqueColors(skus?: OrderProductSku[]): Array<{ id: number; name: string }> {
-  const map = new Map<number, string>()
+function uniqueColors(skus?: OrderProductSku[]): Array<{ id: string; name: string }> {
+  const map = new Map<string, string>()
   ;(skus || []).forEach((s) => {
     if (s.colorId != null) map.set(s.colorId, s.colorName || `颜色${s.colorId}`)
   })

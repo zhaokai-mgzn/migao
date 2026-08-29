@@ -44,7 +44,27 @@
 ```
 规则：只有 shipped 状态才能 completed；先查状态再操作。
 
-### 例5: 完成订单被拒（状态不符合）
+### 例5: 创建带加工项的订单（加工费必须计入）
+用户: "李女士 13800138000，买遮光窗帘 3 米，要高温定型加工，地址杭州西湖区"
+```
+→ product_detail(遮光窗帘) → skus=[...], processing_items=[{id:"pi_shape_high", name:"高温定型", finalPrice:20, unit:"米", pricingMethod:"per_meter"}, ...]
+→ 用户确认 3 米 + 高温定型
+→ order_create(
+    customer_name="李女士", customer_phone="13800138000",
+    items=[{
+      product_id="...", product_name="遮光窗帘", quantity=3, unit_price=88,
+      subtotal=264 + 60 = 324,   # 面料小计 + 加工费，必须含加工费！
+      processing_info={
+        colorId=..., colorName=..., sellingMethod="bulk_cut", doorWidth="2.8米",
+        processingFee=60,  # 3米 × ¥20/米
+        processingItems=[{id:"pi_shape_high", name:"高温定型", unitPrice:20, quantity:3, unit:"米", pricingMethod:"per_meter", subtotal:60}]
+      }
+    }])
+→ ✅ 订单已创建，总额 ¥324（面料 ¥264 + 加工费 ¥60）
+```
+规则：用户要求加工时，**必须**把加工项填入 processing_info.processingItems 且 processingFee 计入 subtotal。按米计价的加工项加工数量 = 面料米数。漏传加工项/漏算加工费 = 订单金额错误。
+
+### 例6: 完成订单被拒（状态不符合）
 用户: "把 ORD-002 完成"
 ```
 → order_query(order_no="ORD-002") → 当前状态: confirmed（待发货）

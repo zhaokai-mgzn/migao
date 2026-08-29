@@ -1321,9 +1321,9 @@ export const SkuStatusLabels: Record<SkuStatus, string> = {
   disabled: '已禁用',
 }
 
-// 商品颜色
+// 商品颜色（id 为 BIGSERIAL，可能超过 JS 2^53，后端序列化为字符串）
 export interface ProductColor {
-  id: number
+  id: string
   colorName: string
   mainColorHex?: string
   colorImageUrl?: string
@@ -1331,10 +1331,10 @@ export interface ProductColor {
   sortOrder?: number
 }
 
-// 商品 SKU
+// 商品 SKU（id/colorId 为 BIGSERIAL，可能超过 JS 2^53，后端序列化为字符串）
 export interface ProductSku {
-  id: number
-  colorId: number
+  id: string
+  colorId: string
   colorName?: string
   sellingMethod: SellingMethod
   doorWidth: string
