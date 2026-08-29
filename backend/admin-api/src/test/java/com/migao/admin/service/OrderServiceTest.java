@@ -1,5 +1,5 @@
 package com.migao.admin.service;
-// case_ids: OR-006, FN-001
+// case_ids: OR-006, FN-001, OR-001
 
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.*;
@@ -26,6 +26,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -172,6 +173,27 @@ class OrderServiceTest {
         // then
         assertThat(result.getTotal()).isEqualTo(0);
         assertThat(result.getItems()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("订单分页查询 - 含加工项过滤：子查询投影必须包含 processing_info（回归：漏投影导致恒为空集）")
+    void getOrderPage_HasProcessingFilter_SubQueryProjectionIncludesProcessingInfo() {
+        // when：hasProcessing=true 触发 order_items 子查询过滤
+        orderService.getOrderPage(1, 20, null, null, null, true, null, null, null, null, null, null, 1L);
+
+        // then：子查询 SELECT 必须同时取回 processingInfo 列。
+        //   根因（2026-08-29 真实数据复现）：之前只 select(orderId)，MyBatis-Plus 只投影 order_id 一列，
+        //   返回实体中 processingInfo 为 null → extractProcessingItems 恒返回空列表 → orderIdsWithProcessing 恒为空
+        //   → hasProcessing=true 恒返回 0 条（基线 4 条含加工订单，过滤后 total=0），
+        //     hasProcessing=false 的 notIn 也恒被跳过（含加工订单漏出）。
+        ArgumentCaptor<LambdaQueryWrapper<OrderItem>> captor = ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(orderItemMapper, atLeastOnce()).selectList(captor.capture());
+        List<String> sqlSelects = captor.getAllValues().stream()
+                .map(w -> String.valueOf(w.getSqlSelect()).toLowerCase())
+                .collect(java.util.stream.Collectors.toList());
+        assertThat(sqlSelects)
+                .as("order_items 子查询 SELECT 列必须包含加工信息列（order_id, processing_info）")
+                .anyMatch(s -> s.contains("processing"));
     }
 
     // ======================== 订单详情测试 ========================
