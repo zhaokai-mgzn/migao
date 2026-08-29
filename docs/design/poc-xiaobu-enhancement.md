@@ -75,3 +75,31 @@
 - 闭环：小布对话内「3米窗 2倍褶皱 遮光布」→ 报价单卡片 → 确认 → SMS 验证 → 订单创建成功 → admin-web 订单列表可见
 - UI：报价单/确认/验证码/追问 chips 均渲染，interact 卡片不出现"未知卡片占位"
 - 三把工具全绿 + 测试带 case_ids
+
+## 六、机器人设置集成（商家后台 → 小布行为）
+
+> 原则：按合理性评估落地，不盲目照搬 TenantAiConfig 全部字段（评估见下）。
+
+### 已集成（P0，端到端验证通过）
+
+| 设置项 | 集成点 | 行为 |
+|---|---|---|
+| `autoHandoffKeywords` | intent_router_node | 用户消息命中商家关键词 → complaint 意图 → human_handoff（转人工） |
+| `afterHoursMode/Message` | human_handoff 工具 | 非营业时间转人工降级为 afterHoursMessage（AI 照常服务，仅转人工降级） |
+| `businessHours/timezone` | tenant_config.is_after_hours | 营业时间判断（`{"start":"09:00","end":"18:00"}`） |
+
+### 架构
+
+- `app/agents/tenant_config.py`：统一拉取 TenantAiConfig（60s 缓存），提供 is_auto_handoff_trigger / is_after_hours
+- `human_handoff` 改调 Agent 版工单接口（转人工工单无关联订单）
+- `customer_aftersales/general` 挂载 human_handoff 工具（此前 LLM 无法调用）
+- admin-api `createTicket`：complaint 类型豁免订单校验（投诉可无订单）
+
+### 合理性评估（不照搬项）
+
+| 设置项 | 结论 | 理由 |
+|---|---|---|
+| `recommendStrategy/Count/Trigger` | ❌ 不做 | 过度设计：推荐应靠 AI 理解上下文自主判断，商家配参数反而僵化 |
+| `emotionHandoff` | POC 后 | 与 autoHandoffKeywords 部分重叠 |
+| `aiFallbackHandoff/Threshold` | POC 后 | 与现有 prompt"答不上来转人工"重复 |
+| `quickReplies` | 待澄清 | 语义不清（C 端欢迎区 vs 客服工作台，后者已有 QuickReplyTemplate） |
