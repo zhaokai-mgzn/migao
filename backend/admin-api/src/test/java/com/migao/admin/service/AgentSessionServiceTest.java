@@ -423,4 +423,112 @@ class AgentSessionServiceTest {
         assertThat(result.getOnlineEmployees()).hasSize(1);
         assertThat(result.getOnlineEmployees().get(0).getName()).isEqualTo("客服小王");
     }
+
+    // ======================== 转人工创建会话 + 消息 ========================
+
+    @Test
+    @DisplayName("转人工创建会话 - 成功创建 waiting 会话并写入系统消息")
+    void createSessionForHandoff_Success() {
+        // given
+        when(agentSessionMapper.insert(any(AgentSession.class))).thenAnswer(inv -> {
+            AgentSession s = inv.getArgument(0);
+            s.setId("agent-session-001");
+            return 1;
+        });
+        when(agentMessageMapper.insert(any(AgentMessage.class))).thenReturn(1);
+
+        // when
+        AgentSession result = agentSessionService.createSessionForHandoff(
+                "ai-sess-001", "cust-001", 1L, "想找老板");
+
+        // then
+        assertThat(result).isNotNull();
+        assertThat(result.getId()).isEqualTo("agent-session-001");
+        assertThat(result.getStatus()).isEqualTo("waiting");
+        assertThat(result.getAiSessionId()).isEqualTo("ai-sess-001");
+        assertThat(result.getReason()).isEqualTo("想找老板");
+        // 系统消息（转人工记录）
+        verify(agentMessageMapper).insert(argThat((AgentMessage m) -> "system".equals(m.getSenderType())));
+    }
+
+    @Test
+    @DisplayName("转人工创建会话 - 未提供原因时用默认值")
+    void createSessionForHandoff_DefaultReason() {
+        // given
+        when(agentSessionMapper.insert(any(AgentSession.class))).thenAnswer(inv -> {
+            AgentSession s = inv.getArgument(0);
+            s.setId("agent-session-002");
+            return 1;
+        });
+        when(agentMessageMapper.insert(any(AgentMessage.class))).thenReturn(1);
+
+        // when
+        AgentSession result = agentSessionService.createSessionForHandoff("ai-sess-002", "cust-001", 1L, null);
+
+        // then
+        assertThat(result.getReason()).isEqualTo("客户请求转人工");
+    }
+
+    @Test
+    @DisplayName("发送消息 - 客服首回把 waiting 会话转为 active")
+    void sendMessage_AgentFirstReplyActivates() {
+        // given
+        AgentSession waitingSession = AgentSession.builder()
+                .id("session-waiting")
+                .tenantId(1L)
+                .status("waiting")
+                .build();
+        when(agentSessionMapper.selectById("session-waiting")).thenReturn(waitingSession);
+        when(agentMessageMapper.insert(any(AgentMessage.class))).thenReturn(1);
+
+        // when
+        AgentMessage msg = agentSessionService.sendMessage(
+                "session-waiting", "agent", "emp-001", "您好，我是人工客服", false);
+
+        // then
+        assertThat(msg.getContent()).isEqualTo("您好，我是人工客服");
+        assertThat(msg.getSenderType()).isEqualTo("agent");
+        // waiting → active
+        verify(agentSessionMapper).updateById(argThat((AgentSession s) -> "active".equals(s.getStatus())));
+    }
+
+    @Test
+    @DisplayName("发送消息 - 空内容被拒绝")
+    void sendMessage_EmptyContentRejected() {
+        assertThatThrownBy(() -> agentSessionService.sendMessage(
+                "session-001", "agent", "emp-001", "", false))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("消息内容不能为空");
+    }
+
+    @Test
+    @DisplayName("按 AI 会话查人工会话 - 用户可查自己的会话")
+    void getSessionByAiSessionId_Success() {
+        // given
+        when(agentSessionMapper.selectOne(any(LambdaQueryWrapper.class)))
+                .thenReturn(testSession);  // testSession: aiSessionId=ai-001, customerId=cust-001
+        when(agentSessionMapper.selectById("session-001")).thenReturn(testSession);
+        when(agentMessageMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+
+        // when
+        AgentSessionDetailResponse result = agentSessionService.getSessionByAiSessionId("ai-001", "cust-001");
+
+        // then
+        assertThat(result).isNotNull();
+        assertThat(result.getId()).isEqualTo("session-001");
+        assertThat(result.getAiSessionId()).isEqualTo("ai-001");
+        assertThat(result.getStatus()).isEqualTo("active");
+    }
+
+    @Test
+    @DisplayName("按 AI 会话查人工会话 - 会话不存在返回 404")
+    void getSessionByAiSessionId_NotFound() {
+        // given
+        when(agentSessionMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null);
+
+        // when & then
+        assertThatThrownBy(() -> agentSessionService.getSessionByAiSessionId("ai-none", "cust-001"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("人工客服会话");
+    }
 }

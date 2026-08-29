@@ -203,9 +203,43 @@ class HumanHandoffTool(BaseTool):
             # Gap-3 安全加固: 通知管理员
             await self._notify_admins(context, ticket_no, handoff_reason)
 
+            # 创建人工客服会话（客服工作台可见、可对话）——转人工核心闭环
+            agent_session_id = None
+            try:
+                session_response = await client.post(
+                    "/api/admin/agent-sessions",
+                    json_data={
+                        "aiSessionId": context.session_id,
+                        "customerId": context.user_id,
+                        "reason": handoff_reason,
+                    },
+                    tenant_id=context.tenant_id,
+                    user_id=context.user_id,
+                )
+                if session_response.get("success") and session_response.get("data"):
+                    agent_session_id = session_response["data"].get("id")
+                    logger.info(
+                        f"[human_handoff] 人工会话创建成功: agentSessionId={agent_session_id} "
+                        f"| tenant={context.tenant_id}"
+                    )
+                else:
+                    logger.warning(
+                        f"[human_handoff] 创建人工会话失败（工单已创建，不影响主流程）: "
+                        f"{session_response.get('error', {}).get('message', 'unknown')}"
+                    )
+            except Exception as e:
+                logger.warning(
+                    f"[human_handoff] 创建人工会话异常（工单已创建，不影响主流程）: "
+                    f"{type(e).__name__}: {e}"
+                )
+
+            data = dict(ticket_data)
+            if agent_session_id:
+                data["agentSessionId"] = agent_session_id
+
             return ToolResult(
                 success=True,
-                data=ticket_data,
+                data=data,
                 message=(
                     f"已为您转接人工客服！工单编号：{ticket_no}。"
                     "我们的客服人员会在工作时间内尽快与您联系，感谢您的耐心等待 🙏"
