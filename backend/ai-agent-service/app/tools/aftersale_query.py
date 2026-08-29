@@ -8,6 +8,7 @@ from typing import Optional, Dict, Any
 from loguru import logger
 
 from app.tools.base import BaseTool, ToolContext, ToolResult
+from app.utils.enum_labels import TICKET_STATUS_LABELS, attach_ticket_labels
 from app.utils.http_client import get_admin_api_client
 
 
@@ -49,7 +50,7 @@ class AftersaleQueryTool(BaseTool):
             },
             "status": {
                 "type": "string",
-                "description": "按状态筛选（list时可选）: pending / processing / resolved / rejected / closed",
+                "description": "按状态筛选（list时可选）: pending=待处理 / processing=处理中 / resolved=已解决 / rejected=已拒绝 / closed=已关闭",
                 "enum": ["pending", "processing", "resolved", "rejected", "closed"],
             },
             "page": {
@@ -203,6 +204,10 @@ class AftersaleQueryTool(BaseTool):
             )
             total = max(0, total - filtered_count)
 
+        # 附中文业务术语标签（status_label/priority_label/ticket_type_label），
+        # 防止 LLM 把 pending/normal 等英文枚举原样输出给用户
+        verified_items = [attach_ticket_labels(item) for item in verified_items]
+
         logger.info(
             f"[aftersale_query] List: page={page}, size={size}, total={total} | "
             f"tenant={context.tenant_id}, user={context.user_id}"
@@ -285,9 +290,13 @@ class AftersaleQueryTool(BaseTool):
             f"tenant={context.tenant_id}, user={context.user_id}"
         )
 
+        # 附中文业务术语标签，防止英文枚举流入用户可见回复
+        data = attach_ticket_labels(data)
+
+        status_label = TICKET_STATUS_LABELS.get(data.get("status"), "未知")
         return ToolResult(
             success=True,
             data=data,
             message=f"工单 {ticket_id} 详情已获取",
-            summary=f"工单{ticket_id}: {data.get('status', 'unknown')}"
+            summary=f"工单{ticket_id}: {status_label}"
         )

@@ -8,6 +8,12 @@ from typing import Any, Dict, Optional
 from loguru import logger
 
 from app.tools.base import BaseTool, ToolContext, ToolResult
+from app.utils.enum_labels import (
+    TICKET_PRIORITY_LABELS,
+    TICKET_STATUS_LABELS,
+    TICKET_TYPE_LABELS,
+    attach_ticket_labels,
+)
 from app.utils.http_client import get_admin_api_client
 
 
@@ -65,12 +71,12 @@ class AfterSalesManageTool(BaseTool):
             },
             "ticket_type": {
                 "type": "string",
-                "description": "工单类型:refund(退款)/ exchange(换货)/ repair(维修)/ complaint(投诉)/ other(其他)",
+                "description": "工单类型:refund=退款/exchange=换货/repair=维修/complaint=投诉/other=其他",
                 "enum": ["refund", "exchange", "repair", "complaint", "other"],
             },
             "status": {
                 "type": "string",
-                "description": "工单状态:pending(待处理)/ processing(处理中)/ resolved(已解决)/ rejected(已拒绝)/ closed(已关闭)",
+                "description": "工单状态:pending=待处理/processing=处理中/resolved=已解决/rejected=已拒绝/closed=已关闭（回复用户时用中文术语）",
                 "enum": ["pending", "processing", "resolved", "rejected", "closed"],
             },
             "reason": {
@@ -88,7 +94,7 @@ class AfterSalesManageTool(BaseTool):
             },
             "priority": {
                 "type": "string",
-                "description": "优先级(可选,默认normal)",
+                "description": "优先级:normal=普通/urgent=紧急/critical=严重(可选,默认普通；回复用户时用中文术语)",
                 "enum": ["normal", "urgent", "critical"],
             },
             "refund_amount": {
@@ -218,6 +224,10 @@ class AfterSalesManageTool(BaseTool):
         items = data.get("items", [])
         total = data.get("total", 0)
 
+        # 附中文业务术语标签（status_label/priority_label/ticket_type_label），
+        # 防止 LLM 把 normal/urgent/critical 等英文枚举原样输出给用户
+        items = [attach_ticket_labels(item) for item in items]
+
         logger.info(
             f"After-sales list: page={page}, size={size}, total={total}, "
             f"tenant={context.tenant_id}"
@@ -263,6 +273,9 @@ class AfterSalesManageTool(BaseTool):
             f"After-sales detail: ticket_id={ticket_id}, tenant={context.tenant_id}"
         )
 
+        # 附中文业务术语标签，防止英文枚举流入用户可见回复
+        data = attach_ticket_labels(data)
+
         return ToolResult(
             success=True,
             data=data,
@@ -296,10 +309,11 @@ class AfterSalesManageTool(BaseTool):
             )
 
         if ticket_type not in VALID_TICKET_TYPES:
+            valid_labels = "、".join(TICKET_TYPE_LABELS.get(t, t) for t in sorted(VALID_TICKET_TYPES))
             return ToolResult(
                 success=False,
                 error=f"无效的工单类型: {ticket_type}",
-                message=f"不支持的工单类型,可选:{', '.join(VALID_TICKET_TYPES)}",
+                message=f"不支持的工单类型,可选:{valid_labels}",
             )
 
         if not reason:
@@ -377,10 +391,11 @@ class AfterSalesManageTool(BaseTool):
             )
 
         if status not in VALID_TICKET_STATUSES:
+            valid_labels = "、".join(TICKET_STATUS_LABELS.get(s, s) for s in VALID_TICKET_STATUSES)
             return ToolResult(
                 success=False,
                 error=f"无效的工单状态: {status}",
-                message=f"不支持的状态值,可选:{', '.join(VALID_TICKET_STATUSES)}",
+                message=f"不支持的状态值,可选:{valid_labels}",
             )
 
         json_data: Dict[str, Any] = {"status": status}
@@ -408,8 +423,9 @@ class AfterSalesManageTool(BaseTool):
             f"tenant={context.tenant_id}, user={context.user_id}"
         )
 
+        status_label = TICKET_STATUS_LABELS.get(status, status)
         return ToolResult(
             success=True,
             data={"ticket_id": ticket_id, "status": status},
-            message=f"售后工单状态已更新为「{status}」",
+            message=f"售后工单状态已更新为「{status_label}」",
         )

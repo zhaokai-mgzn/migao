@@ -53,9 +53,9 @@ def test_skill_has_principles(skill):
 
 @pytest.mark.parametrize("skill", MIBAO_SKILLS)
 def test_skill_prompt_length_reasonable(skill):
-    """Prompt 长度在合理范围（200-6000 字符）"""
+    """Prompt 长度在合理范围（200-9500 字符）"""
     prompt = _build_system_prompt(skill)
-    assert 200 < len(prompt) < 9000, f"{skill}: prompt 长度异常 ({len(prompt)} chars)"
+    assert 200 < len(prompt) < 9500, f"{skill}: prompt 长度异常 ({len(prompt)} chars)"
 
 
 # ============ 领域隔离检查 ============
@@ -142,14 +142,14 @@ def test_snapshot_all_skills():
 
     # 最大长度快照（防止无限制膨胀）
     expected_max = {
-        "product": 9500,  # +1000: 中止铁律+确认语义唯一化+参数一致铁律（EXAMPLES 反例）
-        "order": 6200,  # +600: 中止铁律+跨域归因铁律（共享原则增长）
-        "aftersales": 4500,
-        "customer": 4500,
-        "staff": 4500,
-        "settings": 4500,
+        "product": 9600,  # +100: 中止铁律+确认语义唯一化+参数一致铁律（EXAMPLES 反例）+禁英文枚举全局规则
+        "order": 6600,    # +400: 中止铁律+跨域归因铁律+禁英文枚举全局规则（共享原则增长）
+        "aftersales": 5200,  # +700: 禁英文枚举全局规则 + 售后工单枚举中文对照（本轮新增）
+        "customer": 5000,  # +500: 禁英文枚举全局规则（共享原则增长）
+        "staff": 4900,    # +400: 禁英文枚举全局规则（共享原则增长）
+        "settings": 4900, # +400: 禁英文枚举全局规则（共享原则增长）
         "data": 4500,
-        "general": 4800,
+        "general": 5200,  # +400: 禁英文枚举全局规则（共享原则增长）
     }
     for skill, max_len in expected_max.items():
         prompt = _build_system_prompt(skill)
