@@ -47,6 +47,17 @@ from tests.mibao_multiturn_intelligence_shared import (
     _reset_singletons,
 )
 
+@pytest.fixture(autouse=True)
+def _auto_reset_singletons():
+    """每个测试重置全局单例（原为模块内 autouse，拆分后补回）"""
+    reset_agent()
+    reset_tool_registry()
+    yield
+    reset_agent()
+    reset_tool_registry()
+
+
+
 class TestMibaoMultiturnIntelligence:
     """米宝多轮对话智能测试"""
 

@@ -251,29 +251,6 @@ def _reset_singletons():
     reset_tool_registry()
 
 
-@pytest.fixture
-def agent_context():
-    """标准测试用 AgentContext"""
-    return AgentContext(
-        user_id="user_test_001",
-        tenant_id=1,
-        session_id="sess_multi_turn_001",
-        role="customer",
-        identity_type="wechat_mini",
-    )
-
-
-@pytest.fixture
-def agent_context_b():
-    """另一个用户的 AgentContext"""
-    return AgentContext(
-        user_id="user_test_002",
-        tenant_id=1,
-        session_id="sess_multi_turn_002",
-        role="customer",
-        identity_type="wechat_mini",
-    )
-
 
 def _build_mock_patches():
     """构建所有 Mock patch 列表"""

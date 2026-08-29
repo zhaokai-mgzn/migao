@@ -5,6 +5,17 @@
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _auto_reset_singletons():
+    """每个测试重置全局单例（原为模块内 autouse，拆分后补回）"""
+    reset_agent()
+    reset_tool_registry()
+    yield
+    reset_agent()
+    reset_tool_registry()
+
+
+
 class TestMibaoAdvancedSummaryReport:
     """汇总运行全部高级 Case 并生成报告"""
 

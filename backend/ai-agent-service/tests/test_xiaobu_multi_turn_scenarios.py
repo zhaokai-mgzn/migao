@@ -51,6 +51,43 @@ from tests.xiaobu_multi_turn_shared import (
     MOCK_KNOWLEDGE_RESULTS,
 )
 
+
+@pytest.fixture
+def agent_context():
+    """标准测试用 AgentContext"""
+    return AgentContext(
+        user_id="user_test_001",
+        tenant_id=1,
+        session_id="sess_multi_turn_001",
+        role="customer",
+        identity_type="wechat_mini",
+    )
+
+
+@pytest.fixture
+def agent_context_b():
+    """另一个用户的 AgentContext"""
+    return AgentContext(
+        user_id="user_test_002",
+        tenant_id=1,
+        session_id="sess_multi_turn_002",
+        role="customer",
+        identity_type="wechat_mini",
+    )
+
+
+
+@pytest.fixture(autouse=True)
+def _auto_reset_singletons():
+    """每个测试重置全局单例（原为模块内 autouse，拆分后补回）"""
+    reset_agent()
+    reset_tool_registry()
+    yield
+    reset_agent()
+    reset_tool_registry()
+
+
+
 class TestXiaobuMultiTurnScenarios:
     """小布多轮对话场景测试集"""
 

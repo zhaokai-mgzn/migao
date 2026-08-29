@@ -4,6 +4,7 @@
 （由 test_mibao_advanced_multiturn.py 按场景域拆分，2026-08-29）
 """
 # case_ids: PR-011, PR-012
+import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
 
 from tests.mibao_multiturn_shared import (
@@ -11,6 +12,17 @@ from tests.mibao_multiturn_shared import (
     verify_thinking_stripped, verify_thinking_not_leaked, _reset_singletons,
     logger, TurnResult, CaseResult,
 )
+
+
+@pytest.fixture(autouse=True)
+def _auto_reset_singletons():
+    """每个测试重置全局单例（原为模块内 autouse，拆分后补回）"""
+    reset_agent()
+    reset_tool_registry()
+    yield
+    reset_agent()
+    reset_tool_registry()
+
 
 
 class TestMibaoMultiturnProduct:
