@@ -14,7 +14,7 @@ env:
   # 部署目标：SWAS 轻量应用服务器（2026-08-14 起替代 SAE）
   SWAS_INSTANCE_ID: b23c69e599524b1da719734f72e6a0e3
   SWAS_REGION: cn-hangzhou
-  # ACR 镜像构建为历史遗留（SWAS 服务器自己源码构建，线上不消费该镜像）
+  # CI 构建镜像推送 ACR → SWAS 服务器 docker compose pull 预构建镜像（见 deploy/swas/deploy.sh）
   ACR_REGISTRY: crpi-qdcgkzwx9p9zckga.cn-hangzhou.personal.cr.aliyuncs.com
   ACR_NAMESPACE: ai-customer-service
   IMAGE_NAME: ai-agent-service
@@ -45,17 +45,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
-      - name: ⚡ Fast Gate — Critical Tests
-        working-directory: backend/ai-agent-service
-        run: |
-          pip install -r requirements.txt -q
-          python -m pytest \
-            tests/test_intent_router.py \
-            tests/test_preference_tracker.py \
-            tests/test_tools_base.py \
-            -v --tb=short -q \
-            -m "not integration"
 
       - name: Run unit tests
         working-directory: backend/ai-agent-service

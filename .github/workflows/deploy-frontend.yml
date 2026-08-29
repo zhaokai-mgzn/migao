@@ -11,7 +11,7 @@ env:
   # 部署目标：SWAS 轻量应用服务器（2026-08-14 起替代 SAE）
   SWAS_INSTANCE_ID: b23c69e599524b1da719734f72e6a0e3
   SWAS_REGION: cn-hangzhou
-  # ACR/GHCR 镜像推送为历史遗留（SWAS 服务器自己源码构建，线上不消费镜像）
+  # CI 构建镜像推送 ACR → SWAS 服务器 docker compose pull 预构建镜像（见 deploy/swas/deploy.sh）
   ACR_REGISTRY: crpi-qdcgkzwx9p9zckga.cn-hangzhou.personal.cr.aliyuncs.com
   ACR_NAMESPACE: ai-customer-service
   IMAGE_NAME: admin-web
@@ -52,18 +52,13 @@ jobs:
         run: |
           TAG=${{ steps.tag.outputs.tag }}
           IMG=${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_NAME }}
-          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
           docker build \
             --build-arg NEXT_PUBLIC_API_BASE_URL=${{ secrets.NEXT_PUBLIC_API_BASE_URL || 'https://api.migaozn.com' }} \
             --build-arg NEXT_PUBLIC_AI_API_BASE_URL=${{ secrets.NEXT_PUBLIC_AI_API_BASE_URL || 'https://ai-api.migaozn.com' }} \
             --build-arg NEXT_PUBLIC_COOKIE_DOMAIN=${{ secrets.NEXT_PUBLIC_COOKIE_DOMAIN || '.migaozn.com' }} \
-            -t ghcr.io/zhaokai-mgzn/migao/admin-web:$TAG \
-            -t ghcr.io/zhaokai-mgzn/migao/admin-web:latest \
             -t $IMG:$TAG \
             -t $IMG:latest \
             .
-          docker push ghcr.io/zhaokai-mgzn/migao/admin-web:$TAG
-          docker push ghcr.io/zhaokai-mgzn/migao/admin-web:latest
           docker push $IMG:$TAG
           docker push $IMG:latest
 

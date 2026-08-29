@@ -1,0 +1,81 @@
+name: Nightly Verification (p1 smoke + fixture e2e)
+
+on:
+  schedule:
+    # 每日 02:00 CST（UTC+8）= UTC 18:00
+    - cron: '0 18 * * *'
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  # ============ smoke p1 全量（部署后只跑 p0，p1 此前从不执行）============
+  smoke-p1:
+    name: Smoke p1 regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: tests/smoke/requirements.txt
+
+      - name: Install deps
+        run: pip install -r tests/smoke/requirements.txt
+
+      - name: Run smoke p1 (非 p0 的全部回归标记)
+        env:
+          SMOKE_ENV: production
+          ADMIN_API_URL: https://api.migaozn.com
+          AI_AGENT_URL: https://ai-api.migaozn.com
+          ADMIN_PASSWORD: ${{ secrets.SMOKE_ADMIN_PASSWORD }}
+          SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN }}
+        run: |
+          cd tests/smoke
+          pytest -m "p1" --tb=short -q --timeout=60 || pytest -m "not p0" --tb=short -q --timeout=60
+
+  # ============ fixture e2e specs 全量（pr-check 只跑 6 个 quality/dashboard 文件）============
+  e2e-fixture-full:
+    name: E2E fixture specs (full, web project)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install test deps
+        working-directory: tests
+        run: npm ci
+
+      - name: Install admin-web deps (for Playwright webServer)
+        working-directory: frontend/admin-web
+        run: npm ci
+
+      - name: Run all fixture specs (--project=web, mock auth)
+        working-directory: tests
+        env:
+          E2E_MOCK_AUTH: 'true'
+        run: |
+          npx playwright test --project=web --reporter=list --retries=1
+
+      - name: Create Issue on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `[Nightly] 全量验证失败 — ${new Date().toISOString().slice(0, 10)}`,
+              body: `夜间全量验证失败（smoke p1 / fixture e2e 全量）。\n\n查看详情：${runUrl}`,
+              labels: ['bug', 'role/qa'],
+            })

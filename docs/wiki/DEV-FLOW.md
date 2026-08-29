@@ -2,7 +2,7 @@
 
 > 本文档是 DSH 技能 `migao-dev-flow`（`migao/.agents/skills/migao-dev-flow/SKILL.md`）的仓库同步副本，供团队共享阅读。
 > **修改流程规范时，两份文件需同步更新**（DSH 技能是机器本地、不进 git；本文档是版本化副本）。
-> 内容源自全链路复盘 `walkthrough/RETROSPECTIVE.md` 的 P0/P1 改进。
+> 内容源自历史全链路复盘（RETROSPECTIVE，未入库）的 P0/P1 改进，经实战固化。
 
 ## 1. 三把工具（开发自查用）
 
@@ -58,5 +58,15 @@
 
 ## 5. 相关文档
 - `docs/wiki/CONTRACT-LEDGER.md` — 并行开发契约清单
-- `walkthrough/RETROSPECTIVE.md` — 全链路复盘（本规范来源）
+- 历史复盘文档（未入库）— 全链路复盘（本规范来源，已固化进本页与 DSH 技能）
 - `verify-all.sh` / `contract-check.sh` / `check-ui-regression.sh` — 三把工具
+
+## 6. 提交前体检一键命令
+
+```bash
+# 一次命令检查：case 生成物与 .github/cases/ 单一源是否同步（CI 会 block 分叉）
+cd .github && python3 render_cases.py --cases cases --out-eval /tmp/ec.py --out-md /tmp/cb.md >/dev/null 2>&1 \
+  && diff -q /tmp/ec.py ../tests/agent_eval/eval_cases.py >/dev/null 2>&1 \
+  && diff -q /tmp/cb.md ../docs/testing/mibao-verification-cases.md >/dev/null 2>&1 \
+  && echo "生成物 SYNC ✓" || echo "生成物 DIVERGED ⚠️（需重渲染并提交）"
+```

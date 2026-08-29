@@ -220,9 +220,8 @@ def load_case_index(cases_dir):
         return {}, f"用例库目录不存在: {cases_dir}"
     try:
         here = os.path.dirname(os.path.abspath(__file__))
-        for d in (here, os.path.join(here, "..", "junshi")):
-            if d not in sys.path:
-                sys.path.insert(0, d)
+        if here not in sys.path:
+            sys.path.insert(0, here)
         from yaml_light import load_file
         index = {}
         for fn in sorted(os.listdir(cases_dir)):
@@ -445,9 +444,8 @@ def _load_yaml(path):
         return {}, f"配置文件不存在: {path}"
     try:
         here = os.path.dirname(os.path.abspath(__file__))
-        for d in (here, os.path.join(here, "..", "junshi")):
-            if d not in sys.path:
-                sys.path.insert(0, d)
+        if here not in sys.path:
+            sys.path.insert(0, here)
         from yaml_light import load_file
         data = load_file(path)
         if not isinstance(data, dict):
@@ -461,7 +459,7 @@ def _find_tech_stack():
     env = os.environ.get("TECH_STACK_FILE")
     if env and os.path.exists(env):
         return env
-    for cand in (".github/tech-stack.yml", "junshi/tech-stack.yml"):
+    for cand in (".github/tech-stack.yml",):
         if os.path.exists(cand):
             return cand
     return None

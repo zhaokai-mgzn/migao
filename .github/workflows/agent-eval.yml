@@ -24,15 +24,6 @@ jobs:
       - name: Install deps
         run: pip install httpx
 
-      - name: Run smoke eval (真实 LLM + 多轮业务流)
-        env:
-          AI_API_URL: https://ai-api.migaozn.com
-          ADMIN_API_URL: https://api.migaozn.com
-          SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN }}
-          PYTHONUTF8: "1"
-          PYTHONIOENCODING: utf-8
-        run: python tests/agent_eval/local_runner.py smoke --cases .github/cases
-
       - name: Run full eval (smoke + normal + adversarial, 真实 LLM)
         env:
           AI_API_URL: https://ai-api.migaozn.com
@@ -40,6 +31,7 @@ jobs:
           SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN }}
           PYTHONUTF8: "1"
           PYTHONIOENCODING: utf-8
+        # full (active_cases) 已包含 smoke tier，不再单独跑 smoke 避免每日双跑
         run: python tests/agent_eval/local_runner.py full --cases .github/cases
 
       - name: Create Issue on failure

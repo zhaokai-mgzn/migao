@@ -289,7 +289,7 @@ cases:
     merge_log: "eval O003 独有（SKU 先查流程）；verification 1.8 的简化版见 OR-010"
     traces:
       tests:
-        - "backend/ai-agent-service/tests/test_mibao_scenarios.py"
+        - "backend/ai-agent-service/tests/manual/mibao_scenarios.py"
       ci:
         - agent-eval.yml
       verifies: []
@@ -335,7 +335,7 @@ cases:
     merge_log: "eval M005 独有（多轮引导细节），与 OR-008 互补不合并"
     traces:
       tests:
-        - "backend/ai-agent-service/tests/test_mibao_scenarios.py"
+        - "backend/ai-agent-service/tests/manual/mibao_scenarios.py"
       ci:
         - agent-eval.yml
       verifies: []
