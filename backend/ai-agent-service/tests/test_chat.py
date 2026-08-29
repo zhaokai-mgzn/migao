@@ -15,6 +15,8 @@ from fastapi import HTTPException
 from app.api.chat import (
     _should_send_card,
     _detect_card_type,
+    _normalize_order_card_data,
+    _card_payload,
     _rewrite_image_url,
     _convert_history_to_agent_format,
     _format_datetime,
@@ -111,6 +113,74 @@ class TestDetectCardType:
         assert _detect_card_type("logistics_track", {}) == "logistics"
         assert _detect_card_type("order_query", {}) == "order"
         assert _detect_card_type("unknown", {}) is None
+
+
+class TestNormalizeOrderCardData:
+    """order 卡片数据归一化（修复：order_query 列表结果被原样下发，
+    前端 OrderCard 渲染出只剩「订单」二字的空盒子）"""
+
+    def test_single_order_dict_passthrough(self):
+        data = {"order": {"id": "o1", "orderNo": "ORD-1"}}
+        assert _normalize_order_card_data(data) == data
+
+    def test_single_order_in_orders_list(self):
+        o1 = {"id": "o1", "order_no": "ORD-1"}
+        assert _normalize_order_card_data({"orders": [o1]}) == {"order": o1}
+
+    def test_multiple_orders_kept_as_list(self):
+        o1, o2 = {"id": "o1"}, {"id": "o2"}
+        assert _normalize_order_card_data({"orders": [o1, o2]}) == {"orders": [o1, o2]}
+
+    def test_legacy_items_list_normalized(self):
+        o1, o2 = {"id": "o1"}, {"id": "o2"}
+        assert _normalize_order_card_data({"items": [o1, o2]}) == {"orders": [o1, o2]}
+
+    def test_empty_orders_returns_none(self):
+        assert _normalize_order_card_data({"orders": []}) is None
+
+    def test_no_order_fields_returns_none(self):
+        assert _normalize_order_card_data({"total": 0, "page": 1}) is None
+
+
+class TestCardPayload:
+    """统一卡片下发载荷（card_type, data）——order 卡片必须归一化"""
+
+    def test_product_search_payload(self):
+        card_type, data = _card_payload(
+            "product_search",
+            {"success": True, "data": {"products": [{"id": 1}]}},
+        )
+        assert card_type == "product_list"
+        assert data == {"products": [{"id": 1}]}
+
+    def test_order_query_single_normalized(self):
+        o1 = {"id": "o1", "order_no": "ORD-1"}
+        card_type, data = _card_payload(
+            "order_query",
+            {"success": True, "data": {"orders": [o1], "total": 1}},
+        )
+        assert card_type == "order"
+        assert data == {"order": o1}
+
+    def test_order_query_multi_kept_as_list(self):
+        o1, o2 = {"id": "o1"}, {"id": "o2"}
+        card_type, data = _card_payload(
+            "order_query",
+            {"success": True, "data": {"orders": [o1, o2], "total": 2}},
+        )
+        assert card_type == "order"
+        assert data == {"orders": [o1, o2]}
+
+    def test_order_query_empty_no_card(self):
+        card_type, data = _card_payload(
+            "order_query",
+            {"success": True, "data": {"orders": [], "total": 0}},
+        )
+        assert card_type is None
+        assert data is None
+
+    def test_failed_result_no_card(self):
+        assert _card_payload("order_query", {"success": False}) == (None, None)
 
 
 # ═══════════════════════════════════════════════

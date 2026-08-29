@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import type { ChatCard } from '@/types'
 import ProductCard from './ProductCard'
 import LogisticsCard from './LogisticsCard'
@@ -44,30 +45,77 @@ function ProductListCard({ data }: { data: Record<string, unknown> }) {
 }
 
 function OrderCard({ data }: { data: Record<string, unknown> }) {
-  const order = (data.order as Record<string, unknown>) || data
+  // 兼容后端归一化后的两种载荷：
+  //   单订单 {"order": {...}} / 列表 {"orders": [...]}
+  const single = (data.order as Record<string, unknown> | undefined) ?? undefined
+  const orders = Array.isArray(data.orders) ? (data.orders as Array<Record<string, unknown>>) : undefined
+
+  // 无任何可识别订单数据 → 不渲染（修复：此前 order_query 列表容器被原样下发，
+  // 渲染出只剩「订单」二字的空盒子，用户无法理解也无法点击）
+  if (!single && (!orders || orders.length === 0)) return null
+
+  if (single) {
+    return <OrderRow order={single} />
+  }
+
   return (
-    <div className="bg-white border border-neutral-200 rounded-xl p-3 shadow-sm">
+    <div data-testid="order-card" className="bg-white border border-neutral-200 rounded-xl p-3 shadow-sm space-y-2">
+      {orders!.map((order, index) => (
+        <OrderRow key={(order.id as string) || index} order={order} />
+      ))}
+    </div>
+  )
+}
+
+function OrderRow({ order }: { order: Record<string, unknown> }) {
+  // 兼容后端字段两种命名（camelCase 与 snake_case）
+  const orderNo = String(order.orderNo ?? order.order_no ?? '')
+  const status = (order.status as string) || ''
+  const customerName = (order.customerName ?? order.customer_name ?? '') as string
+  const totalAmount = (order.totalAmount ?? order.total_amount) as number | undefined
+  const createdAt = (order.createdAt ?? order.created_at) as string | undefined
+  const orderId = (order.id as string | undefined)
+
+  const content = (
+    <div
+      data-testid="order-card"
+      className="bg-white border border-neutral-200 rounded-xl p-3 shadow-sm"
+    >
       <div className="flex items-center justify-between mb-2">
         <span className="text-xs font-semibold text-neutral-700">
-          订单 {String(order.orderNo || order.order_no || '')}
+          {orderNo ? `订单 ${orderNo}` : '订单'}
         </span>
-        <OrderStatusBadge status={(order.status as string) || ''} />
+        <OrderStatusBadge status={status} />
       </div>
-      {typeof order.customerName === 'string' && order.customerName && (
-        <p className="text-xs text-neutral-500 mb-1">客户: {order.customerName}</p>
+      {customerName && (
+        <p className="text-xs text-neutral-500 mb-1">客户: {customerName}</p>
       )}
-      {order.totalAmount !== undefined && (
+      {totalAmount !== undefined && (
         <p className="text-sm font-semibold text-red-500">
-          ¥{Number(order.totalAmount || order.total_amount || 0).toFixed(2)}
+          ¥{Number(totalAmount).toFixed(2)}
         </p>
       )}
-      {typeof order.createdAt === 'string' && order.createdAt && (
+      {typeof createdAt === 'string' && createdAt && (
         <p className="text-[10px] text-neutral-400 mt-1">
-          {new Date(order.createdAt).toLocaleDateString('zh-CN')}
+          {new Date(createdAt).toLocaleDateString('zh-CN')}
         </p>
       )}
     </div>
   )
+
+  // 有订单 ID 时整卡可点击跳转订单详情（用户反馈：此前的「订单」字样无法点击）
+  if (orderId) {
+    return (
+      <Link
+        href={`/orders/${orderId}`}
+        className="block hover:opacity-90 transition-opacity"
+        title={orderNo ? `查看订单 ${orderNo}` : '查看订单详情'}
+      >
+        {content}
+      </Link>
+    )
+  }
+  return content
 }
 
 function OrderStatusBadge({ status }: { status: string }) {
