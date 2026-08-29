@@ -1,6 +1,7 @@
 /**
  * SkuMatrix 组件测试
  * 覆盖：#563 — 销售属性矩阵渲染、颜色管理、SKU 表格
+ * case_ids: PR-010
  */
 import { render, screen, fireEvent } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'

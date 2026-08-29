@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+// case_ids: PR-010
 import { validateProductForm, derivePrice } from '@/lib/product-utils'
 import type { ProductFormData, ProductColor, SellingMethod } from '@/types'
 

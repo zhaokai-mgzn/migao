@@ -119,9 +119,9 @@ class OrderCreateTool(BaseTool):
                         },
                         "processing_info": {
                             "type": "object",
-                            "description": "商品销售信息（选了颜色/门幅后必填）：colorId(颜色ID)、colorName(颜色名称)、sellingMethod(售卖方式: bulk_cut散剪/full_roll整卷)、doorWidth(门幅如2.8米)、skuCode(SKU编码)、processingItems(加工项列表)、processingFee(加工费合计)",
+                            "description": "商品销售信息（选了颜色/门幅后必填）：colorId(颜色ID，字符串，来自商品详情)、colorName(颜色名称)、sellingMethod(售卖方式: bulk_cut散剪/full_roll整卷)、doorWidth(门幅如2.8米)、skuCode(SKU编码)、processingItems(加工项列表)、processingFee(加工费合计)",
                             "properties": {
-                                "colorId": {"type": "number", "description": "颜色ID"},
+                                "colorId": {"type": "string", "description": "颜色ID（字符串，来自商品详情）"},
                                 "colorName": {"type": "string", "description": "颜色名称"},
                                 "sellingMethod": {"type": "string", "description": "售卖方式"},
                                 "doorWidth": {"type": "string", "description": "门幅"},

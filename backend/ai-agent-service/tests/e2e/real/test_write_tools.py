@@ -6,7 +6,7 @@
   2. admin-api 直接查询确认数据变更已持久化
   3. 必要时恢复数据（cleanup）
 """
-# case_ids: PR-008, PR-009, PR-011, PR-012, OR-008, OR-010
+# case_ids: PR-008, PR-009, PR-011, PR-012, OR-008, OR-010, PP-003
 import time
 import pytest
 from tests.e2e.real.conftest import (
@@ -37,6 +37,51 @@ class TestOrderWrite:
         orders = admin_search_orders(name_hint)
         if orders:
             assert name_hint in (orders[0].get("customerName") or "")
+
+    @pytest.mark.flaky(reruns=2, reruns_delay=10)  # 真实 LLM 多轮确认偶发卡顿，重试容错
+    def test_order_create_with_processing_item(self, sess):
+        """带加工项下单 → admin-api 验证 processingItems 与加工费已持久化（加工费不得遗漏）"""
+        name_hint = f"E2E加工单_{TS}"
+        # 找一个带加工项的商品（高温定型/打孔等按米计价加工项），确保 product_detail 返回 processing_items
+        products = admin_search_products("米白色遮光窗帘")
+        assert products, "需要带加工项的商品数据（米白色遮光窗帘）"
+        detail = admin_get(f"/api/admin/products/{products[0]['id']}")
+        proc_items = (detail.get("data") or {}).get("processingItems") or []
+        assert proc_items, "商品应关联加工项（前置数据），否则本测试无法验证加工费链路"
+        proc_name = proc_items[0].get("name", "高温定型")
+
+        # R1: 明确商品 + 明确要求加工项（按米计价的加工项 → 加工数量 = 面料米数）
+        sess.send(f"帮我查一下米白色遮光窗帘")
+        sess.send(f"创建订单 {name_hint} 13800002222，米白色遮光窗帘 2米，要加「{proc_name}」加工，地址杭州西湖区")
+        sess.send("选1")  # 多 SKU 商品先选售卖方式
+        ev = confirm_and_execute(sess, "确认创建", "order_create", max_extra=4)
+        assert "order_create" in sse_tools(ev) or "order_manage" in sse_tools(ev), (
+            f"应触发订单创建: {sse_tools(ev)}"
+        )
+        time.sleep(1)
+        orders = admin_search_orders(name_hint)
+        assert orders, f"❌ 未创建订单 '{name_hint}'"
+        oid = orders[0].get("id")
+        detail_order = admin_get(f"/api/admin/orders/{oid}")
+        od = detail_order.get("data") or {}
+        # 强断言：订单必须携带加工项明细与加工费（用户明确要求加工）
+        proc_summary = od.get("processingItems") or []
+        assert proc_summary, (
+            f"❌ 订单缺加工项：用户明确要求「{proc_name}」加工，但订单 processingItems 为空。"
+            f"加工费被遗漏 = 订单金额错误（严重缺陷）。订单详情: {str(od)[:400]}"
+        )
+        names = [p.get("name") for p in proc_summary]
+        assert proc_name in names, f"❌ 订单加工项不含「{proc_name}」: {names}"
+        # 加工费 > 0
+        fee_total = sum(float(p.get("amount") or p.get("unitPrice") or 0) for p in proc_summary)
+        assert fee_total > 0, f"❌ 加工费合计应为正: {proc_summary}"
+        # 订单总额应包含加工费（subtotal = 面料 + 加工）
+        for it in (od.get("items") or []):
+            pi = it.get("processingInfo") or {}
+            if pi.get("processingItems"):
+                assert float(pi.get("processingFee") or 0) > 0, (
+                    f"❌ item.processingInfo.processingFee 应为正: {pi}"
+                )
 
 
 @pytest.mark.real_e2e

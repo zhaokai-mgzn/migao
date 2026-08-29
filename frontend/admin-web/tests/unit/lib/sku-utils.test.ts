@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+// case_ids: PR-010
 import { rebuildSkus } from '@/lib/sku-utils'
 import type { ProductColor, ProductSku, SellingMethod } from '@/types'
 
