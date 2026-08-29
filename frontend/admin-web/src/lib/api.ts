@@ -771,6 +771,12 @@ export const agentSessionApi = {
   /** 获取会话详情（含消息列表） */
   getSession: (id: string) =>
     request.get<ApiResponse<AgentSessionDetail>>(`/api/admin/agent-sessions/${id}`),
+  /** 客服发送消息 */
+  sendMessage: (id: string, content: string, isInternal?: boolean) =>
+    request.post<ApiResponse<AgentMessageItem>>(`/api/admin/agent-sessions/${id}/messages`, {
+      content,
+      isInternal,
+    }),
   /** 手动分配会话给客服员工 */
   assignSession: (id: string, employeeId: string) =>
     request.post<ApiResponse<void>>(`/api/admin/agent-sessions/${id}/assign`, { employeeId }),
