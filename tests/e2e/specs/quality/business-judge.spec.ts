@@ -5,7 +5,7 @@
  */
 // case_ids: OB-004
 
-import { test, expect } from '@playwright/test'
+import { test, expect } from '../../fixtures'
 import { BusinessJudge, captureEvidence, startApiCapture } from '../../helpers/business-judge'
 import ordersFixture from '../../fixtures/orders-list.json'
 import productsFixture from '../../fixtures/products-list.json'

@@ -6,7 +6,7 @@
  *
  * 运行: npx playwright test specs/quality/cross-page-consistency.spec.ts
  */
-import { test, expect } from '@playwright/test'
+import { test, expect } from '../../fixtures'
 import ordersFixture from '../../fixtures/orders-list.json'
 import productsFixture from '../../fixtures/products-list.json'
 import customersFixture from '../../fixtures/customers-list.json'
