@@ -1,6 +1,7 @@
 package com.migao.admin.service;
 // case_ids: OR-006, FN-001, OR-001
 
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.*;
 import com.migao.admin.entity.Order;
@@ -661,7 +662,7 @@ class OrderServiceTest {
         testOrder.setStatus("confirmed");
         testOrder.setActualAmount(new BigDecimal("599.00"));
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
-        when(orderMapper.updateById(any(Order.class))).thenReturn(1);
+        when(orderMapper.update(any(), any(UpdateWrapper.class))).thenReturn(1);
 
         // when
         orderService.refundOrder("order-001", new BigDecimal("100.00"), "部分退款");
@@ -670,11 +671,10 @@ class OrderServiceTest {
         assertThat(testOrder.getStatus()).isEqualTo("confirmed");
         assertThat(testOrder.getRefundAmount()).isEqualByComparingTo("100.00");
         assertThat(testOrder.getRefundAt()).isNotNull();
-        // 不触发状态流转（不调用 orderMapper.update），也不恢复库存
-        verify(orderMapper, never()).update(any(), any());
+        // 原子条件更新（防并发双花，审计 07 P1-10）
+        verify(orderMapper).update(isNull(), any(UpdateWrapper.class));
         verify(productMapper, never()).decreaseSales(anyString(), anyInt(), any(BigDecimal.class));
         // 登记退款流水（金额=本次退款额）
-        verify(orderMapper).updateById(any(Order.class));
         verify(financeTransactionMapper).insert(argThat((FinanceTransaction t) ->
                 "refund".equals(t.getType())
                         && t.getAmount().compareTo(new BigDecimal("100.00")) == 0));
@@ -687,7 +687,7 @@ class OrderServiceTest {
         testOrder.setStatus("completed");
         testOrder.setActualAmount(new BigDecimal("599.00"));
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
-        when(orderMapper.updateById(any(Order.class))).thenReturn(1);
+        when(orderMapper.update(any(), any(UpdateWrapper.class))).thenReturn(1);
 
         // when
         orderService.refundOrder("order-001", null, "全额退款");
@@ -708,7 +708,7 @@ class OrderServiceTest {
         testOrder.setActualAmount(new BigDecimal("599.00"));
         testOrder.setRefundAmount(new BigDecimal("400.00"));
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
-        when(orderMapper.updateById(any(Order.class))).thenReturn(1);
+        when(orderMapper.update(any(), any(UpdateWrapper.class))).thenReturn(1);
 
         // when
         orderService.refundOrder("order-001", new BigDecimal("300.00"), "再次退款");
@@ -718,6 +718,24 @@ class OrderServiceTest {
         verify(financeTransactionMapper).insert(argThat((FinanceTransaction t) ->
                 "refund".equals(t.getType())
                         && t.getAmount().compareTo(new BigDecimal("199.00")) == 0));
+    }
+
+    @Test
+    @DisplayName("退款 - 并发下原子更新失败（更新 0 行）→ 拒绝重复退款（防双花，审计 07 P1-10）")
+    void refundOrder_concurrentAtomicUpdateFails_rejectsDuplication() {
+        // given: 并发场景下 update 条件不满足（refund_amount 已被其他请求累加满）
+        testOrder.setStatus("shipped");
+        testOrder.setActualAmount(new BigDecimal("599.00"));
+        testOrder.setRefundAmount(new BigDecimal("400.00"));
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderMapper.update(any(), any(UpdateWrapper.class))).thenReturn(0);
+
+        // when & then
+        assertThatThrownBy(() -> orderService.refundOrder("order-001", new BigDecimal("300.00"), "并发退款"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("已全额退款");
+        // 不登记资金流水（防止虚增退款）
+        verify(financeTransactionMapper, never()).insert(any(FinanceTransaction.class));
     }
 
     @Test
@@ -754,14 +772,14 @@ class OrderServiceTest {
         testOrder.setStatus("confirmed");
         testOrder.setActualAmount(new BigDecimal("599.00"));
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
-        when(orderMapper.updateById(any(Order.class))).thenReturn(1);
+        when(orderMapper.update(any(), any(UpdateWrapper.class))).thenReturn(1);
 
         // when
         orderService.refundOrder("order-001", null, null);
 
         // then: 不再把状态硬改为 cancelled，也不恢复库存
         assertThat(testOrder.getStatus()).isEqualTo("confirmed");
-        verify(orderMapper, never()).update(any(), any());
+        verify(orderMapper).update(isNull(), any(UpdateWrapper.class));
         verify(productMapper, never()).decreaseSales(anyString(), anyInt(), any(BigDecimal.class));
         verify(financeTransactionMapper).insert(any(FinanceTransaction.class));
     }

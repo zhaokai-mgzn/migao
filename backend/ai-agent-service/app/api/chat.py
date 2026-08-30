@@ -700,21 +700,40 @@ async def _agent_stream_to_sse(
 
 # ============ 分页协议 ============
 
-# __PAGE__ 协议白名单：仅允许只读查询工具，防止任意工具执行
+# __PAGE__ 协议白名单：仅允许只读查询工具，防止任意工具执行（审计 07 P0-L2）。
+# ⚠️ 严禁加入任何含写/破坏性 action 的工具（product_manage/customer_manage/employee_manage
+# 等管理类工具一律不得入列）——该路径直调 execute_tool、绕过 LLM 确认守卫。
 _PAGE_WHITELIST = frozenset({
     "processing_item_query",
     "processing_items",
     "order_query",
     "product_search",
     "product_detail",
-    "product_manage",       # 仅 list 操作
     "logistics_track",
     "aftersale_query",
-    "customer_manage",      # 仅 list 操作
-    "employee_manage",      # 仅 list 操作
     "knowledge_faq",
     "dashboard_stats",
 })
+
+
+def _page_action_allowed(tool_registry, tool_name: str, params: dict) -> bool:
+    """翻页协议 action 级纵深校验（审计 07 P0-L2）。
+
+    白名单工具若定义了 read_only_actions，请求中的 action/operation/op
+    必须属于该只读集合，否则视为写操作拒绝（防未来白名单误加含写 action
+    的工具后被 __PAGE__ 直调绕过确认守卫）。
+    """
+    tool = tool_registry.get_tool(tool_name)
+    if tool is None:
+        return False
+    action = params.get("action") or params.get("operation") or params.get("op")
+    read_only_actions = getattr(tool, "read_only_actions", None) or frozenset()
+    if not action:
+        return True
+    if not read_only_actions:
+        # 工具无只读 action 概念：由工具内部校验 action 合法性（如 aftersale_query 仅 list/detail）
+        return True
+    return action in read_only_actions
 
 async def _handle_page_request(
     request: ChatSendRequest,
@@ -762,9 +781,26 @@ async def _handle_page_request(
             headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
         )
 
-    # 白名单校验：仅允许分页查询工具
+    # 白名单校验：仅允许只读查询工具
     if tool_name not in _PAGE_WHITELIST:
         logger.warning(f"[page] Blocked non-whitelisted tool: {tool_name}")
+        async def _blocked_stream():
+            yield SSEEvent.error("不支持该操作的分页查询")
+            yield SSEEvent.done(session_id, None)
+        return StreamingResponse(
+            _blocked_stream(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
+        )
+
+    # 纵深防御（审计 07 P0-L2）：白名单工具也仅允许只读 action——
+    # 若工具定义了 read_only_actions，请求的 action 必须属于该集合，否则拒绝。
+    # 防未来白名单误加含写 action 的工具后被翻页协议直调绕过确认守卫。
+    if not _page_action_allowed(tool_registry, tool_name, params):
+        logger.warning(
+            f"[page] Blocked write action on whitelisted tool: tool={tool_name} "
+            f"params={params}"
+        )
         async def _blocked_stream():
             yield SSEEvent.error("不支持该操作的分页查询")
             yield SSEEvent.done(session_id, None)

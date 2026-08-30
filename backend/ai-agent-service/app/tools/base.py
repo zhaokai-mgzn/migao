@@ -73,9 +73,12 @@ class BaseTool(ABC):
     # read_only=True  → 纯查询，LLM 可放心调用，无需确认
     # read_only=False → 会修改数据，LLM 应先确认再调用
     # destructive=True → 可执行不可逆的删除/销毁操作，LLM 必须弹 confirm 卡片
+    # requires_confirmation=True → 非 destructive 但高风险写操作（财务/通知/会话/库存等，
+    #   审计 07 P0-L1：间接提示注入可驱动其无确认执行），同样必须弹 confirm 卡片
     # idempotent=True → 相同参数多次调用结果一致，可安全重试
     read_only: bool = True
     destructive: bool = False
+    requires_confirmation: bool = False
     idempotent: bool = True
 
     # read_only_actions: destructive 工具中纯只读的 action 集合（如 list/detail/tree）。

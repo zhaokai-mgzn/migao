@@ -1,4 +1,5 @@
 package com.migao.admin.service;
+// case_ids: DF-010
 
 import com.migao.admin.dto.UploadedFileInfo;
 import com.migao.admin.exception.BusinessException;
@@ -21,6 +22,26 @@ class LocalFileStorageServiceTest {
     @Nested
     @DisplayName("upload")
     class Upload {
+
+        @Test
+        @DisplayName("目录参数路径穿越（../）→ 拒绝（审计 07 P1-7）")
+        void traversalDirectoryRejected() {
+            MockMultipartFile file = new MockMultipartFile(
+                    "file", "test.jpg", "image/jpeg", "hello".getBytes());
+
+            assertThatThrownBy(() -> service.upload(file, "../evil"))
+                    .isInstanceOf(BusinessException.class);
+        }
+
+        @Test
+        @DisplayName("目录参数嵌套穿越（a/../../evil）→ 拒绝")
+        void nestedTraversalDirectoryRejected() {
+            MockMultipartFile file = new MockMultipartFile(
+                    "file", "test.jpg", "image/jpeg", "hello".getBytes());
+
+            assertThatThrownBy(() -> service.upload(file, "a/../../evil"))
+                    .isInstanceOf(BusinessException.class);
+        }
 
         @Test
         @DisplayName("上传图片成功 → 返回 UploadedFileInfo")
@@ -72,6 +93,13 @@ class LocalFileStorageServiceTest {
     @Nested
     @DisplayName("delete")
     class Delete {
+
+        @Test
+        @DisplayName("路径穿越删除（../../application.yml）→ 拒绝（审计 07 P1-7）")
+        void traversalDeleteRejected() {
+            assertThatThrownBy(() -> service.delete("../../application.yml"))
+                    .isInstanceOf(BusinessException.class);
+        }
 
         @Test
         @DisplayName("删除不存在的文件不报错")

@@ -1,5 +1,5 @@
 // case_ids: DA-005
-import { test, expect } from '@playwright/test'
+import { test, expect } from '../../fixtures'
 // auth 由全局 auth-setup 项目提供
 
 /**

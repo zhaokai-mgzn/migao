@@ -88,8 +88,9 @@ export const authApi = {
   login: (data: LoginParams) => 
     request.post<ApiResponse<LoginResponse>>('/api/auth/admin/login', data),
       
-  refreshToken: (refreshToken: string) =>
-    request.post<ApiResponse<RefreshTokenResponse>>('/api/auth/refresh', { refreshToken }),
+  // 审计 07 P1-5：refresh token 由后端 HttpOnly cookie 承载，body 不再传参
+  refreshToken: () =>
+    request.post<ApiResponse<RefreshTokenResponse>>('/api/auth/refresh', {}),
   
   logout: () => 
     request.post('/api/auth/logout'),

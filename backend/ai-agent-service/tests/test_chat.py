@@ -535,6 +535,70 @@ class TestPageRequest:
         assert "tool_result" in body
         reg.execute_tool.assert_awaited_once()
 
+    @pytest.mark.parametrize(
+        "message",
+        [
+            # 写/破坏性工具不在翻页白名单（审计 07 P0-L2：白名单仅允许只读查询）
+            '__PAGE__|employee_manage|{"action":"delete","user_id":"u1"}',
+            '__PAGE__|employee_manage|{"action":"reset_password","user_id":"u1"}',
+            '__PAGE__|product_manage|{"action":"update","product_id":"p1"}',
+            '__PAGE__|product_manage|{"action":"toggle_status","product_id":"p1"}',
+            '__PAGE__|customer_manage|{"action":"delete","customer_id":"c1"}',
+            '__PAGE__|customer_manage|{"action":"create_tag","customer_id":"c1"}',
+        ],
+    )
+    @patch("app.api.chat.SessionMemory")
+    @pytest.mark.asyncio
+    async def test_write_tools_blocked_from_pagination(self, MockSM, message):
+        """写/破坏性工具（员工/商品/客户管理）不得经 __PAGE__ 直调绕过确认守卫。"""
+        from app.api.chat import _handle_page_request
+        MockSM.return_value = _memory(get_session=_session())
+        req = ChatSendRequest(session_id="sess_1", message=message)
+        resp = await _handle_page_request(req, tenant_id=1, user_id="user_1", current_user=_user())
+        body = await self._collect(resp)
+        assert "不支持该操作的分页查询" in body
+
+
+class TestPageActionAllowed:
+    """_page_action_allowed 纵深防御：白名单工具的写 action 一律拒绝（审计 07 P0-L2）。"""
+
+    def _tool(self, read_only_actions):
+        t = MagicMock()
+        t.read_only_actions = frozenset(read_only_actions)
+        return t
+
+    def _registry(self, tool=None):
+        reg = MagicMock()
+        reg.get_tool.return_value = tool
+        return reg
+
+    def test_readonly_action_allowed(self):
+        from app.api.chat import _page_action_allowed
+        reg = self._registry(self._tool({"list", "detail"}))
+        assert _page_action_allowed(reg, "employee_manage", {"action": "list"}) is True
+        assert _page_action_allowed(reg, "employee_manage", {"action": "detail"}) is True
+
+    def test_write_action_rejected(self):
+        from app.api.chat import _page_action_allowed
+        reg = self._registry(self._tool({"list", "detail"}))
+        assert _page_action_allowed(reg, "employee_manage", {"action": "delete"}) is False
+        assert _page_action_allowed(reg, "employee_manage", {"action": "reset_password"}) is False
+
+    def test_operation_alias_rejected(self):
+        from app.api.chat import _page_action_allowed
+        reg = self._registry(self._tool({"list", "detail"}))
+        assert _page_action_allowed(reg, "employee_manage", {"operation": "delete"}) is False
+
+    def test_no_action_param_allowed(self):
+        from app.api.chat import _page_action_allowed
+        reg = self._registry(self._tool({"list", "detail"}))
+        assert _page_action_allowed(reg, "order_query", {"page": 2}) is True
+
+    def test_unknown_tool_rejected(self):
+        from app.api.chat import _page_action_allowed
+        reg = self._registry(None)
+        assert _page_action_allowed(reg, "order_create", {}) is False
+
 
 # ═══════════════════════════════════════════════
 # SSE 流生成器
