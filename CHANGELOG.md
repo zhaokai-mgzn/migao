@@ -14,6 +14,16 @@
 - `ai-agent-service`：`[tool-exec]` 错误日志的 `tool_args` 经 `LogSanitizer.sanitize_tree` 递归脱敏（手机号/邮箱/敏感 key 打码）
 - `ai-agent-service`：记忆提取增加 PII 过滤（`_filter_pii`）——手机号/地址/邮箱类记忆不落库，提取提示词禁止 PII
 
+### 发布体系（2026-08-30）
+
+- 镜像 tag 从时间戳改为 **git SHA 前 7 位**（不可变、可追溯）；`latest` 仅测试环境
+- 新增 `release.yml`：手动触发打 semver tag（patch/minor/major）+ GitHub Release notes；tag 触发版本镜像构建（vX.Y.Z）
+- deploy-* workflow 双模式：push/tag 自动部署**测试环境**（当前 SWAS）；workflow_dispatch 支持填 `image_tag` **回滚/指定版本**（跳过构建）
+- 新增 `deploy-prod.yml`：未来**生产受控发布**入口（GitHub Environment 审批 + 指定版本），当前未启用
+- 新增 `docs/deployment/production-deployment.md`（生产部署方案设计）与 `docs/deployment/rollback.md`（回滚 Runbook）
+- deploy-frontend 补 concurrency group + 部署后域名 200 探测
+- swas-deploy-ci.sh 支持传 IMAGE_TAG
+
 ### 开源治理
 
 - 新增 `SECURITY.md`（安全漏洞报告政策与响应承诺）

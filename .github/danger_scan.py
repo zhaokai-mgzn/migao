@@ -25,7 +25,7 @@ SCHEMA_FILES = ("docs/sql/schema.sql", "docs/sql/schema_full.sql")
 MIGRATION_RE = re.compile(r"^V\d+__.*\.sql$")
 
 
-def analyze(workflow_changes, wf_new_secrets, deleted_files, deploy_files, migration_changes, schema_changes):
+def analyze(workflow_changes, wf_new_secrets, deleted_files, deploy_files, migration_changes, schema_changes, trusted_actor=False):
     """纯函数：对变更清单做安全判定。返回 (blockers, warnings)。
 
     Args:
@@ -41,7 +41,10 @@ def analyze(workflow_changes, wf_new_secrets, deleted_files, deploy_files, migra
 
     for status, path in workflow_changes:
         if status == "A":
-            blockers.append(f"新增 workflow 文件 {path} —— 需人工安全审查（workflow 可携带 secrets 执行）")
+            if trusted_actor:
+                warnings.append(f"新增 workflow 文件 {path}（维护者添加，仍建议人工复核）")
+            else:
+                blockers.append(f"新增 workflow 文件 {path} —— 需人工安全审查（workflow 可携带 secrets 执行）")
         elif status == "D":
             blockers.append(f"删除 workflow 文件 {path} —— 需人工确认")
         elif status in ("M", "R"):
@@ -131,9 +134,10 @@ def main():
     migration_changes = _git_name_status(MIGRATION_DIR + "/*.sql")
     schema_changes = [p for s, p in all_changes if p in SCHEMA_FILES]
 
+    trusted = os.environ.get("DANGER_TRUSTED_ACTOR", "").lower() in ("1", "true", "yes")
     blockers, warnings = analyze(
         workflow_paths, wf_new_secrets, deleted_files, deploy_files,
-        migration_changes, schema_changes,
+        migration_changes, schema_changes, trusted_actor=trusted,
     )
 
     result = {

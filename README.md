@@ -273,11 +273,16 @@ cd tests/smoke && pytest
 
 代码合并到 `main` 分支时，根据变更文件路径自动触发对应工作流：
 
-| 工作流 | 触发路径 | 构建方式 | 部署目标 |
-|--------|---------|---------|---------|
-| `deploy-admin-api` | `backend/admin-api/**` | Maven 单测 + 构建 | SWAS `deploy.sh`（云助手触发） |
-| `deploy-ai-agent-service` | `backend/ai-agent-service/**` | Fast Gate + 全量单测 | SWAS `deploy.sh`（云助手触发） |
-| `deploy-frontend` | `frontend/admin-web/**` | tsc + vitest | SWAS `deploy.sh`（云助手触发） |
+| 工作流 | 触发 | 构建方式 | 部署目标 |
+|--------|------|---------|---------|
+| `deploy-admin-api` | push main（`backend/admin-api/**`）/ tag v* / 手动 | Maven 单测 + 构建（tag=git SHA） | 测试环境 SWAS（自动） |
+| `deploy-ai-agent-service` | push main（`backend/ai-agent-service/**`）/ tag v* / 手动 | 全量单测 + buildx 构建 | 测试环境 SWAS（自动） |
+| `deploy-frontend` | push main（`frontend/admin-web/**`）/ tag v* / 手动 | tsc + vitest + 构建 | 测试环境 SWAS（自动）+ 部署后域名探测 |
+| `deploy-prod` | 手动（指定版本 + 生产审批） | 拉取已构建镜像 | **生产（未来，受控发布）** |
+| `release` | 手动（patch/minor/major） | 打 semver tag + Release notes | 触发 tag 镜像构建 |
+
+> 镜像 tag 为 git SHA 前 7 位（不可变、可追溯）；手动运行 deploy workflow 填 image_tag 可**回滚到指定版本**。
+> 生产发布流程见 [production-deployment.md](docs/deployment/production-deployment.md)；回滚见 [rollback.md](docs/deployment/rollback.md)。
 
 ### 快速部署示例
 
@@ -301,6 +306,8 @@ gh pr merge --squash --delete-branch
 ### 详细部署文档
 - [SWAS 迁移踩坑](docs/deployment/swas-migration-lessons.md) — SWAS 部署的 16 个坑与经验
 - [部署检查清单](docs/deployment/deployment-checklist.md) — 历史踩坑记录（可参考）
+- [生产部署方案](docs/deployment/production-deployment.md) — 未来生产环境受控发布设计
+- [回滚 Runbook](docs/deployment/rollback.md) — 快速/手动回滚流程
 - 当前部署以 `deploy/swas/deploy.sh` + [docs/wiki/Deployment.md](docs/wiki/Deployment.md) 为准
 
 ## 📖 项目文档

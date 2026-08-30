@@ -19,7 +19,7 @@
 | `case-redraft` | issue_comment (reject) | 驳回后隐藏旧 DRAFT 重新生成 |
 | `verify-trigger` | PR closed (merged) | 贴 VERIFY_TRIGGER → 双验收 → 通过自动 close issue |
 
-## 部署目标（2026-08-14 起：SAE → SWAS）
+## 部署目标（2026-08-14 起：SAE → SWAS；当前 SWAS 为**测试环境**）
 
 | 服务 | 目标 | 技术 |
 |------|------|------|
@@ -30,12 +30,14 @@
 
 数据层不在 SWAS 上：PostgreSQL 用阿里云 RDS、Redis 用 Tair 公网代理（admin-api 已强制 Lettuce RESP2）、OSS/DashVector/DashScope 不变。
 
-## 部署链路
+**环境定位**：当前 SWAS 即测试环境（自动部署）；未来正式生产走受控发布（见 [production-deployment.md](../deployment/production-deployment.md) 与 `deploy-prod.yml`）。
+
+## 部署链路（测试环境自动部署）
 
 ```
-push main（路径过滤）→ CI 测试/构建镜像推 ACR
+push main / push tag v*（路径过滤）→ CI 测试/构建镜像推 ACR（tag=sha-<7> 或 vX.Y.Z + latest）
   → aliyun swas-open RunCommand（实例 b23c69e5..., 超时 3600s）
-  → 服务器执行 /opt/migao-deploy/deploy.sh（先自愈式同步最新 deploy.sh）：
+  → 服务器执行 /opt/migao-deploy/deploy.sh <IMAGE_TAG>（先自愈式同步最新 deploy.sh）：
      1. docker login ACR（服务器需凭据拉私有镜像）
      2. docker compose pull（拉 CI 预构建镜像，不做源码构建）
      3. docker compose up -d --no-deps
@@ -43,6 +45,17 @@ push main（路径过滤）→ CI 测试/构建镜像推 ACR
   → CI 轮询 DescribeInvocationResult 至 Success
   → smoke-test.yml post-deploy 冒烟（api.migaozn.com / ai-api.migaozn.com）
 ```
+
+### 镜像 tag 策略（2026-08-30 起）
+
+| 触发 | 镜像 tag | 部署 |
+|------|---------|------|
+| push main（路径匹配） | `sha-<git 前7位>` + latest | 自动部署测试环境（SWAS） |
+| push tag `vX.Y.Z`（release.yml 打标） | `vX.Y.Z` + `sha-<7>` + latest | 自动部署测试环境（回归） |
+| workflow_dispatch（手动）空 image_tag | 构建当前代码 `sha-<7>` 并部署 | 手动部署测试环境 |
+| workflow_dispatch 填 image_tag | 跳过构建，部署指定版本 | **回滚/指定版本** |
+
+生产发布：`deploy-prod.yml`（Environment 审批 + 指定版本），详见 [production-deployment.md](../deployment/production-deployment.md)。回滚见 [rollback.md](../deployment/rollback.md)。
 
 ## 验收流水线
 

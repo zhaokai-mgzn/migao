@@ -142,3 +142,32 @@ class TestMigrationRules:
             schema_changes=[("M", "docs/sql/schema_full.sql")],
         )
         assert not blockers
+
+
+class TestTrustedActor:
+    """维护者新增 workflow（如发布流程）→ 降为 WARN；非维护者 → BLOCK"""
+
+    def test_new_workflow_trusted_actor_warns(self):
+        blockers, warnings = analyze(
+            workflow_changes=[("A", ".github/workflows/release.yml")],
+            wf_new_secrets={},
+            deleted_files=[],
+            deploy_files=[],
+            migration_changes=[],
+            schema_changes=[],
+            trusted_actor=True,
+        )
+        assert not blockers
+        assert any("新增 workflow" in w for w in warnings)
+
+    def test_new_workflow_untrusted_blocks(self):
+        blockers, _ = analyze(
+            workflow_changes=[("A", ".github/workflows/evil.yml")],
+            wf_new_secrets={},
+            deleted_files=[],
+            deploy_files=[],
+            migration_changes=[],
+            schema_changes=[],
+            trusted_actor=False,
+        )
+        assert any("新增 workflow" in b for b in blockers)

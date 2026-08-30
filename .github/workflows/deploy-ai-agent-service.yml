@@ -6,14 +6,21 @@ on:
   push:
     branches:
       - main
+    tags:
+      - 'v*'
     paths:
       - 'backend/ai-agent-service/**'
       - '!backend/ai-agent-service/tests/**'
-  workflow_dispatch:  # 支持手动触发
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: '部署指定镜像 tag（回滚/指定版本用，如 sha-xxxxxxx 或 v1.2.3）。留空 = 构建当前代码并部署'
+        required: false
+        default: ''
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  # 部署目标：SWAS 轻量应用服务器（2026-08-14 起替代 SAE）
+  # 部署目标：SWAS 轻量应用服务器（2026-08-14 起替代 SAE）—— 当前为测试环境
   SWAS_INSTANCE_ID: b23c69e599524b1da719734f72e6a0e3
   SWAS_REGION: cn-hangzhou
   # CI 构建镜像推送 ACR → SWAS 服务器 docker compose pull 预构建镜像（见 deploy/swas/deploy.sh）
@@ -33,22 +40,33 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set image tag
+      # 镜像 tag：git SHA 前 7 位（不可变、可追溯）；回滚/指定版本时用输入值
+      - name: Resolve image tag
         id: tag
-        run: echo "IMAGE_TAG=v$(date +%Y%m%d%H%M%S)" >> $GITHUB_OUTPUT
+        run: |
+          if [ -n "${{ inputs.image_tag }}" ]; then
+            echo "IMAGE_TAG=${{ inputs.image_tag }}" >> "$GITHUB_OUTPUT"
+            echo "MODE=rollback" >> "$GITHUB_OUTPUT"
+          else
+            echo "IMAGE_TAG=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+            echo "MODE=build" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Login to Alibaba Cloud ACR
+        if: steps.tag.outputs.MODE == 'build'
         run: |
           docker login ${{ env.ACR_REGISTRY }} \
             --username ${{ secrets.ACR_USERNAME }} \
             --password ${{ secrets.ACR_PASSWORD }}
 
       - name: Set up Python 3.11
+        if: steps.tag.outputs.MODE == 'build'
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
       - name: Run unit tests
+        if: steps.tag.outputs.MODE == 'build'
         working-directory: backend/ai-agent-service
         env:
           PRIMARY_API_KEY: ${{ secrets.DEEPSEEK_API_KEY || 'ci-dummy' }}
@@ -77,9 +95,11 @@ jobs:
           python -m pytest tests/ -v --tb=short -q -m "not integration"
 
       - name: Set up Docker Buildx
+        if: steps.tag.outputs.MODE == 'build'
         uses: docker/setup-buildx-action@v3
 
       - name: Build and push Docker image
+        if: steps.tag.outputs.MODE == 'build'
         working-directory: backend/ai-agent-service
         run: |
           IMG=${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_NAME }}
@@ -94,15 +114,17 @@ jobs:
             --push .
           echo "IMAGE_FULL=$IMAGE_FULL" >> $GITHUB_ENV
 
-      - name: Deploy to SWAS
+      # 自动部署目标 = 测试环境（当前 SWAS）；生产发布走 deploy-prod（未来）
+      - name: Deploy to SWAS (测试环境)
         env:
           AK: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
           SK: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
           ACR_U: ${{ secrets.ACR_USERNAME }}
           ACR_P: ${{ secrets.ACR_PASSWORD }}
+          IMAGE_TAG: ${{ steps.tag.outputs.IMAGE_TAG }}
         run: |
           bash deploy/scripts/swas-deploy-ci.sh \
-            ${{ env.SWAS_INSTANCE_ID }} ${{ env.SWAS_REGION }} "$AK" "$SK" "$ACR_U" "$ACR_P"
+            ${{ env.SWAS_INSTANCE_ID }} ${{ env.SWAS_REGION }} "$AK" "$SK" "$ACR_U" "$ACR_P" "$IMAGE_TAG"
   smoke-test:
     name: Post-Deploy Smoke Test
     needs: build-and-deploy
