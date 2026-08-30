@@ -1,9 +1,5 @@
+@use "../../../styles/variables.scss" as *;
 // 会话管理页样式
-$primary-color: #2F54EB;
-$text-primary: #1F2937;
-$text-secondary: #6B7280;
-$text-tertiary: #9CA3AF;
-$border-color: #E5E7EB;
 
 .sessions-page {
   display: flex;

@@ -7,6 +7,7 @@ import LogisticsCard from '../cards/LogisticsCard'
 import KnowledgeCard from '../cards/KnowledgeCard'
 import QuotationCard from '../cards/QuotationCard'
 import ConfirmCard from '../cards/ConfirmCard'
+import ChoiceCard from '../cards/ChoiceCard'
 import ToolCallIndicator from '../cards/ToolCallIndicator'
 import SuggestionChips from './SuggestionChips'
 import './MessageBubble.scss'
@@ -146,7 +147,14 @@ function renderInteractive(interactive: InteractiveData, onInteract?: (value: st
           onAction={(value) => onInteract?.(value)}
         />
       )
-    // choice / form 暂以文本形式提示（后续按需渲染）
+    case 'choice':
+      return (
+        <ChoiceCard
+          data={interactive}
+          onAction={(value) => onInteract?.(value)}
+        />
+      )
+    // form 暂以文本形式提示（后续按需渲染）
     default:
       return null
   }

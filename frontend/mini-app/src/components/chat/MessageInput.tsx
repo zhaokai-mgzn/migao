@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react'
 import { View, Textarea, Text, Image } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import { chooseImages, uploadImages } from '../../utils/imageUpload'
+import { recordAndTranscribe } from '../../utils/voice'
 import './MessageInput.scss'
 
 interface MessageInputProps {
@@ -20,13 +21,14 @@ export default function MessageInput({
   const [value, setValue] = useState('')
   const [selectedImages, setSelectedImages] = useState<string[]>([])
   const [isUploading, setIsUploading] = useState(false)
+  const [isRecording, setIsRecording] = useState(false)
 
   const handleInput = useCallback((e: any) => {
     setValue(e.detail.value)
   }, [])
 
   const handleChooseImage = useCallback(async () => {
-    if (isUploading || isStreaming || disabled) return
+    if (isUploading || isStreaming || disabled || isRecording) return
     const maxCount = 3 - selectedImages.length
     if (maxCount <= 0) {
       Taro.showToast({ title: '最多选择 3 张图片', icon: 'none' })
@@ -36,11 +38,34 @@ export default function MessageInput({
     if (paths.length > 0) {
       setSelectedImages(prev => [...prev, ...paths].slice(0, 3))
     }
-  }, [selectedImages, isUploading, isStreaming, disabled])
+  }, [selectedImages, isUploading, isStreaming, disabled, isRecording])
 
   const handleRemoveImage = useCallback((index: number) => {
     setSelectedImages(prev => prev.filter((_, i) => i !== index))
   }, [])
+
+  /** 语音输入：录音 → 转文字 → 回填并自动发送 */
+  const handleVoice = useCallback(async () => {
+    if (isStreaming || disabled || isUploading) return
+
+    setIsRecording(true)
+    Taro.showToast({ title: '正在聆听...', icon: 'none', duration: 30000 })
+    try {
+      const result = await recordAndTranscribe()
+      if (result && result.text) {
+        setValue('')
+        onSend(result.text)
+      } else {
+        Taro.showToast({ title: '未听清，请重试', icon: 'none' })
+      }
+    } catch (error: any) {
+      console.error('语音输入失败:', error)
+      Taro.showToast({ title: error.message || '语音输入失败', icon: 'none' })
+    } finally {
+      setIsRecording(false)
+      Taro.hideToast()
+    }
+  }, [isStreaming, disabled, isUploading, onSend])
 
   const handleSend = useCallback(async () => {
     if (isStreaming) {
@@ -122,6 +147,14 @@ export default function MessageInput({
       )}
 
       <View className='message-input__bar'>
+        {/* 语音按钮 */}
+        <View
+          className={`message-input__voice-btn${isRecording ? ' message-input__voice-btn--recording' : ''}${disabled || isStreaming || isUploading ? ' message-input__voice-btn--disabled' : ''}`}
+          onClick={handleVoice}
+        >
+          <Text className='message-input__voice-btn-icon'>🎤</Text>
+        </View>
+
         {/* 图片选择按钮 */}
         <View
           className={`message-input__img-btn${disabled || isStreaming || isUploading ? ' message-input__img-btn--disabled' : ''}`}
@@ -137,7 +170,7 @@ export default function MessageInput({
             onInput={handleInput}
             onConfirm={handleConfirm}
             placeholder='输入您的问题...'
-            placeholderStyle='color: #9CA3AF'
+            placeholderStyle='color: #9AA5B1'
             maxlength={500}
             autoHeight
             confirmType='send'

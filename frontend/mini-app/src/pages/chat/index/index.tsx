@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from 'react'
+import { useEffect, useCallback, useState } from 'react'
 import { View, Text } from '@tarojs/components'
 import Taro, { useDidShow } from '@tarojs/taro'
 import { useChatStore } from '../../../store/chatStore'
@@ -23,6 +23,16 @@ export default function ChatPage() {
 
   const { isLoggedIn, checkAuth, login } = useAuthStore()
 
+  // 状态栏高度（自定义导航栏需要）
+  const [statusBarHeight, setStatusBarHeight] = useState(20)
+
+  useEffect(() => {
+    try {
+      const info = Taro.getSystemInfoSync()
+      setStatusBarHeight(info.statusBarHeight || 20)
+    } catch {}
+  }, [])
+
   /** 初始化：检查登录 + 创建会话 */
   const initialize = useCallback(async () => {
     // 检查登录状态
@@ -32,7 +42,6 @@ export default function ChatPage() {
       const success = await login()
       if (!success) {
         Taro.showToast({ title: '请先登录', icon: 'none' })
-        // 可以跳转登录页，但目前先静默处理
         return
       }
     }
@@ -82,7 +91,19 @@ export default function ChatPage() {
   const showQuickActions = messages.length === 0 && !isStreaming && !isLoadingMessages
 
   return (
-    <View className='chat-page'>
+    <View className='chat-page' style={{ paddingTop: statusBarHeight }}>
+      {/* 自定义导航栏：深蓝渐变品牌头 */}
+      <View className='chat-page__navbar'>
+        <View className='chat-page__navbar-title'>
+          <View className='chat-page__navbar-logo' />
+          <Text className='chat-page__navbar-name'>小布</Text>
+          <View className='chat-page__navbar-badge'>
+            <Text className='chat-page__navbar-badge-text'>AI</Text>
+          </View>
+        </View>
+        <Text className='chat-page__navbar-sub'>米高窗帘 · 智能购物助手</Text>
+      </View>
+
       {/* 错误提示 */}
       {error && (
         <View className='chat-page__error'>

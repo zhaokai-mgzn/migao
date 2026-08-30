@@ -7,15 +7,16 @@ export default defineAppConfig({
   ],
   window: {
     backgroundTextStyle: 'light',
-    navigationBarBackgroundColor: '#2F54EB',
+    navigationBarBackgroundColor: '#0A2540',
     navigationBarTitleText: '小布',
     navigationBarTextStyle: 'white',
+    backgroundColor: '#F5F7FA',
   },
   tabBar: {
-    color: '#999999',
-    selectedColor: '#2F54EB',
+    color: '#9AA5B1',
+    selectedColor: '#1A73E8',
     backgroundColor: '#ffffff',
-    borderStyle: 'black',
+    borderStyle: 'white',
     list: [
       {
         pagePath: 'pages/chat/index/index',
