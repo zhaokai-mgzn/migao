@@ -2,7 +2,7 @@
 冒烟测试共享 Fixtures
 """
 
-// case_ids: API-010
+# case_ids: API-010
 from typing import Dict
 
 import pytest
