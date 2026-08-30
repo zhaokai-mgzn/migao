@@ -111,9 +111,18 @@ public class RegistrationController {
     // ======================== 内部辅助方法 ========================
 
     /**
-     * 解析客户端 IP：优先 X-Forwarded-For（代理场景取第一个），否则取 remoteAddr
+     * 解析客户端 IP（防伪造，Issue #2661）：
+     * 1. 优先 X-Real-IP —— nginx 用 `proxy_set_header X-Real-IP $remote_addr` 覆盖，
+     *    客户端传入值会被 nginx 替换为真实 TCP 对端地址，不可伪造
+     * 2. 回退 X-Forwarded-For 首位（兼容未设 X-Real-IP 的部署形态；
+     *    nginx 现也已将该头覆盖为 $remote_addr，非 $proxy_add_x_forwarded_for）
+     * 3. 回退 remoteAddr
      */
     private String resolveClientIp(HttpServletRequest request) {
+        String realIp = request.getHeader("X-Real-IP");
+        if (StringUtils.hasText(realIp)) {
+            return realIp.trim();
+        }
         String forwarded = request.getHeader("X-Forwarded-For");
         if (StringUtils.hasText(forwarded)) {
             String first = forwarded.split(",")[0].trim();

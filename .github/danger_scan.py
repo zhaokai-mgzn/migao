@@ -3,6 +3,8 @@
 
 检测 PR（origin/main...HEAD）中的破坏性变更：
 - BLOCK：新增/删除 workflow 文件、修改 workflow 且新增 secrets 引用（workflow 可携带 secrets 执行）
+- BLOCK：已发布数据库迁移被修改/删除（迁移不可变，MigrationRunner 按序执行）；新增迁移命名非法
+- BLOCK：修改 docs/sql/schema*.sql（表结构参考）但未同时新增迁移文件（DDL 与迁移脱节）
 - WARN：批量删除文件（>=30）、修改生产部署文件、修改 workflow（无新增 secrets）
 
 用法（由 pr-check 的 danger-scan job 调用）：
@@ -11,14 +13,19 @@
 """
 import json
 import os
+import re
 import subprocess
 import sys
 
 BASE = os.environ.get("DANGER_BASE", "origin/main")
 BULK_DELETE_THRESHOLD = 30
 
+MIGRATION_DIR = "backend/admin-api/src/main/resources/db/migration"
+SCHEMA_FILES = ("docs/sql/schema.sql", "docs/sql/schema_full.sql")
+MIGRATION_RE = re.compile(r"^V\d+__.*\.sql$")
 
-def analyze(workflow_changes, wf_new_secrets, deleted_files, deploy_files):
+
+def analyze(workflow_changes, wf_new_secrets, deleted_files, deploy_files, migration_changes, schema_changes):
     """纯函数：对变更清单做安全判定。返回 (blockers, warnings)。
 
     Args:
@@ -26,6 +33,8 @@ def analyze(workflow_changes, wf_new_secrets, deleted_files, deploy_files):
         wf_new_secrets:   {path: [新增的含 secrets 的 diff 行]}
         deleted_files:    删除的文件路径列表
         deploy_files:     deploy/ 或 scripts 下被改动的文件列表
+        migration_changes: db/migration/*.sql 的 [(status, path)]
+        schema_changes:    docs/sql/schema*.sql 的 [(status, path)]
     """
     blockers = []
     warnings = []
@@ -44,6 +53,28 @@ def analyze(workflow_changes, wf_new_secrets, deleted_files, deploy_files):
                 )
             else:
                 warnings.append(f"修改 workflow {path} —— 建议人工复核")
+
+    # ---- 迁移不可变（R1）：已发布迁移只增不改；新增迁移命名须 V{n}__desc.sql ----
+    new_migrations = [p for s, p in migration_changes if s == "A"]
+    for status, path in migration_changes:
+        name = path.rsplit("/", 1)[-1]
+        if status == "A":
+            if not MIGRATION_RE.match(name):
+                blockers.append(
+                    f"新增迁移文件名非法 {path} —— 必须为 V{{n}}__desc.sql（MigrationRunner 按文件名排序执行）"
+                )
+        else:
+            blockers.append(
+                f"已发布迁移被修改/删除 {path} —— 迁移不可变（MigrationRunner 按序执行，"
+                f"改动会导致线上 DB 与代码脱节），只能新增 V{{n+1}}__ 迁移"
+            )
+
+    # ---- DDL 与迁移同步（R2）：改表结构参考必须伴随迁移 ----
+    if schema_changes and not new_migrations:
+        blockers.append(
+            f"修改了表结构参考 {SCHEMA_FILES[0]}/{SCHEMA_FILES[1]} 但未新增迁移文件 —— "
+            f"请新增 {MIGRATION_DIR}/V{{n}}__xxx.sql 并保证幂等（IF NOT EXISTS / ADD COLUMN IF NOT EXISTS）"
+        )
 
     if len(deleted_files) >= BULK_DELETE_THRESHOLD:
         warnings.append(f"本次删除 {len(deleted_files)} 个文件（>= {BULK_DELETE_THRESHOLD}）—— 请确认是有意清理")
@@ -97,8 +128,13 @@ def main():
     deploy_files = [p for s, p in all_changes if s in ("M", "A", "R") and
                     (p.startswith("deploy/") or "/deploy/" in p)]
     wf_new_secrets = _workflow_new_secrets(workflow_paths)
+    migration_changes = _git_name_status(MIGRATION_DIR + "/*.sql")
+    schema_changes = [p for s, p in all_changes if p in SCHEMA_FILES]
 
-    blockers, warnings = analyze(workflow_paths, wf_new_secrets, deleted_files, deploy_files)
+    blockers, warnings = analyze(
+        workflow_paths, wf_new_secrets, deleted_files, deploy_files,
+        migration_changes, schema_changes,
+    )
 
     result = {
         "blocker_count": len(blockers),

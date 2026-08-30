@@ -132,6 +132,29 @@ class RegistrationControllerTest extends BaseControllerTest {
     }
 
     @Test
+    @DisplayName("submitRegistration — X-Real-IP 优先于 X-Forwarded-For（防伪造 Issue #2661）")
+    void submitRegistration_prefersXRealIp() throws Exception {
+        RegistrationResponse response = RegistrationResponse.builder()
+                .applicationId(100L)
+                .status("approved")
+                .message("ok")
+                .build();
+        // nginx 会覆盖 X-Real-IP 为真实对端 IP；客户端同时伪造两个头时，必须取 X-Real-IP
+        when(registrationService.submitApplication(any(RegistrationRequest.class), eq("9.9.9.9")))
+                .thenReturn(response);
+
+        mockMvc.perform(post("/api/auth/register")
+                        .header("X-Real-IP", "9.9.9.9")
+                        .header("X-Forwarded-For", "1.2.3.4, 10.0.0.1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(validRegistrationRequest())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("approved"));
+
+        verify(registrationService).submitApplication(any(RegistrationRequest.class), eq("9.9.9.9"));
+    }
+
+    @Test
     @DisplayName("submitRegistration — 缺少必填字段 → 422")
     void submitRegistration_missingRequiredFields() throws Exception {
         mockMvc.perform(post("/api/auth/register")
