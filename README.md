@@ -1,17 +1,21 @@
 # AI 智能客服系统（AIKF）
 
+[![CI](https://github.com/zhaokai-mgzn/migao/actions/workflows/pr-check.yml/badge.svg)](https://github.com/zhaokai-mgzn/migao/actions/workflows/pr-check.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 > 面向通用行业的多租户 AI 智能客服 SaaS 平台，以布艺窗帘行业为示例场景。  
-> 基于大语言模型（DeepSeek V4 Pro + DeepSeek V4 Flash Vision）+ RAG 知识库 + 23 个业务工具，覆盖售前咨询到售后服务全链路。
+> 基于大语言模型（DeepSeek V4 Pro + DeepSeek V4 Flash Vision）+ 31 个业务工具，覆盖售前咨询到售后服务全链路。
 
 ## ✨ 核心亮点
 
 - **双 Agent 架构** — C 端客服"小布" + B 端工作助手"米高"，LangGraph 状态图驱动
-- **23 个 AI 工具** — 商品搜索、订单管理、物流追踪、知识库检索等，自动意图路由
-- **RAG 知识库** — BM25 + 向量混合检索 + Reranker，支持文档上传与自动分块
-- **多租户 SaaS** — 5 层隔离（JWT → MyBatis 拦截器 → PostgreSQL RLS → DashVector → 字段脱敏）
+- **31 个 AI 工具** — 商品搜索、订单管理、物流追踪、客户查询等，自动意图路由
+- **多租户 SaaS** — 租户隔离（JWT 派生 tenant_id → MyBatis 租户拦截器 → 字段脱敏）
 - **完整业务后台** — 商品、订单、CRM、人工坐席、数据看板等 12+ 管理模块
 - **微信小程序** — Taro 跨端框架，SSE 流式对话，原生体验
 - **阿里云全栈部署** — SWAS 轻量应用服务器（CI 构建镜像 + 服务器 pull）+ RDS + Redis(Tair) + OSS，GitHub Actions CI/CD
+
+> ℹ️ **知识库（RAG）说明**：POC 阶段暂不开放（决策记录见 `docs/audit-2026-08/06-open-source-production-gap-analysis.md` 决策 D1），知识问答当前走 LLM 通用知识。
 
 ## 🏗️ 系统架构
 
@@ -29,17 +33,16 @@ graph TB
     end
 
     subgraph 数据层
-        C --> E[(PostgreSQL 15<br/>41 张表 · RLS)]
+        C --> E[(PostgreSQL 15<br/>41 张表)]
         C --> F[(Redis 7<br/>会话 / 缓存)]
         D --> E
         D --> F
-        D --> G[(DashVector<br/>向量数据库)]
     end
 
     subgraph AI 能力
-        D --> H[DashScope<br/>Qwen 3.7-Max]
-        D --> I[RAG Pipeline<br/>BM25 + Vector + Rerank]
-        D --> J[23 Tools<br/>意图路由 + 工具调用]
+        D --> H[DeepSeek<br/>V4 Pro / V4 Flash Vision]
+        D --> I[意图路由 → 工具调用<br/>LangGraph 状态机]
+        D --> J[31 Tools<br/>业务工具 + 权限/确认守卫]
     end
 
     subgraph 基础设施
@@ -54,12 +57,12 @@ graph TB
 
 | 层级 | 技术 | 版本 |
 |------|------|------|
-| **后端 — 管理 API** | Java + Spring Boot + MyBatis-Plus + Spring Security | JDK 21 / Boot 3.3.5 / MP 3.5.8 |
+| **后端 — 管理 API** | Java + Spring Boot + MyBatis-Plus + Spring Security | JDK 21 / Boot 3.3.9 / MP 3.5.8 |
 | **后端 — AI 服务** | Python + FastAPI + LangChain + LangGraph | 3.11 / FastAPI 0.115 / LC 0.3.14 / LG 0.2.60 |
 | **前端 — 管理后台** | Next.js (App Router) + React + TypeScript + Tailwind CSS | 14.2 / React 18 / TS 5.7 |
 | **前端 — 微信小程序** | Taro + React + TypeScript + Sass | 3.6.40 / React 18 |
 | **数据库** | PostgreSQL + Redis | PG 15 / Redis 7 |
-| **向量数据库** | DashVector（阿里云） | — |
+| **向量数据库** | DashVector（阿里云，RAG 恢复时启用） | — |
 | **大语言模型** | DeepSeek V4 Pro (主) + DeepSeek V4 Flash Vision (视觉) | V4-Pro / V4-Flash / V4-Flash-Vision |
 | **认证** | RS256 JWT (BouncyCastle) + 微信小程序登录 + 短信验证码 | — |
 | **部署** | 阿里云 SWAS + RDS + Redis(Tair) + OSS + GitHub Actions | — |
@@ -74,8 +77,8 @@ graph TB
 | 订单服务 | 下单查询、状态跟踪、历史订单 |
 | 售后处理 | 退货/换货/投诉、问题跟踪 |
 | 物流查询 | 实时物流状态、配送时间预估 |
-| 知识库问答 | 基于 RAG 的产品知识和 FAQ 问答 |
-| 图片识别 | 窗帘/面料图片分析（qwen-vl-plus） |
+| 知识库问答 | 基于 LLM 通用知识的产品和 FAQ 问答（RAG 暂不开放，见决策 D1） |
+| 图片识别 | 窗帘/面料图片分析（DeepSeek V4 Flash Vision） |
 | 人工转接 | AI 自动判断并转接人工坐席 |
 | 多轮对话 | 上下文维护、会话记忆、智能追问 |
 
@@ -91,7 +94,7 @@ graph TB
 | 售后工单 | 退货/换货/维修/投诉工单流转 |
 | 客户 CRM | 客户画像、标签管理、客户分群、RFM 评分 |
 | 人工坐席 | 坐席管理、会话分配、快捷回复 |
-| 知识库 | 文档上传、自动分块、向量嵌入、检索测试 |
+| 知识库 | 文档上传与管理（RAG 检索暂不开放，见决策 D1） |
 | 通知中心 | 模板消息、规则引擎、多渠道推送 |
 | 角色权限 | RBAC 五角色、细粒度权限、动态菜单 |
 | 系统设置 | AI 配置（模型/温度/提示词）、租户信息、密码管理 |
@@ -103,14 +106,14 @@ migao/
 ├── backend/
 │   ├── admin-api/              # Java 管理后台 API（Spring Boot 3.3）
 │   │   ├── src/main/java/com/migao/admin/
-│   │   │   ├── controller/     # 19 个 REST Controller
-│   │   │   ├── service/        # 21 个业务 Service
-│   │   │   ├── entity/         # 31 个数据实体
-│   │   │   ├── mapper/         # 31 个 MyBatis-Plus Mapper
-│   │   │   ├── dto/            # 44 个请求/响应 DTO
+│   │   │   ├── controller/     # 27 个 REST Controller
+│   │   │   ├── service/        # 23 个业务 Service
+│   │   │   ├── entity/         # 44 个数据实体
+│   │   │   ├── mapper/         # 44 个 MyBatis-Plus Mapper
+│   │   │   ├── dto/            # 请求/响应 DTO
 │   │   │   ├── security/       # JWT RS256 + RBAC + 多租户
 │   │   │   └── config/         # 全局配置、异常处理、多租户拦截器
-│   │   ├── src/test/           # 15 个单元/集成测试
+│   │   ├── src/test/           # 80+ 单元/集成测试
 │   │   ├── pom.xml
 │   │   ├── Dockerfile
 │   │   └── .env.example
@@ -120,8 +123,7 @@ migao/
 │       │   ├── agents/         # 双 Agent：小布（C端）+ 米高（B端）
 │       │   ├── api/            # SSE 流式聊天 + 内部 API
 │       │   ├── graph/          # LangGraph 状态图（意图路由→工具调用→响应）
-│       │   ├── tools/          # 23 个业务工具
-│       │   ├── rag/            # RAG Pipeline（BM25 + DashVector + Reranker）
+│       │   ├── tools/          # 31 个业务工具（注册于 registry.py）
 │       │   ├── router/         # 意图分类（LLM + 规则引擎）
 │       │   ├── llm/            # LLM 工厂、模型路由、成本追踪
 │       │   ├── cache/          # 语义缓存
@@ -145,21 +147,22 @@ migao/
 │       └── package.json
 │
 ├── deploy/
-│   ├── swas/deploy.sh          # SWAS 服务器部署脚本（CI 云助手触发，拉 CI 镜像）
+│   ├── swas/                   # SWAS 生产部署（deploy.sh + compose + nginx.conf）
 │   ├── docker-compose.yml      # 本地开发（PostgreSQL + Redis + 双后端）
-│   ├── terraform/              # 阿里云 IaC（历史遗留：SAE 已弃用）
-│   └── oss-*.xml               # OSS 静态托管配置
+│   └── scripts/                # 部署辅助脚本（swas-deploy-ci.sh）
 │
 ├── docs/
-│   ├── architecture/           # 架构设计文档（4 篇）
+│   ├── wiki/                   # 现役 Wiki（架构/开发/部署/测试，见 INDEX.md）
 │   ├── api/                    # API 参考文档
-│   ├── design/                 # 产品设计文档（4 篇）
-│   ├── deployment/             # 部署指南（4 篇）
-│   └── sql/                    # 数据库 Schema + 增量迁移脚本
+│   ├── design/                 # 产品设计文档
+│   ├── deployment/             # 部署踩坑与清单
+│   ├── testing/                # 测试工程规范
+│   ├── sql/                    # 数据库 Schema + 增量迁移脚本
+│   └── audit-2026-08/          # 2026-08 审计与决策记录
 │
-├── tests/smoke/                # E2E 冒烟测试（11 个测试文件）
-├── knowledge_base/             # RAG 种子数据（产品目录、FAQ、尺寸指南）
-└── .github/workflows/          # CI/CD（3 个部署流水线）
+├── tests/smoke/                # E2E 冒烟测试（pytest）
+├── knowledge_base/             # 行业知识种子数据
+└── .github/workflows/          # CI/CD（16 个工作流）
 ```
 
 ## 🚀 快速开始
@@ -189,7 +192,7 @@ docker-compose up --build
 
 # 服务启动后：
 # - Admin API:       http://localhost:8080
-# - AI Agent:        http://localhost:8001
+# - AI Agent:        http://localhost:8001（compose 宿主映射，容器内 8000）
 # - PostgreSQL:      localhost:5432
 # - Redis:           localhost:6379
 ```
@@ -221,10 +224,10 @@ cd backend/ai-agent-service
 python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
-# 编辑 .env 配置 DashScope API Key、DashVector、数据库连接等
+# 编辑 .env 配置 LLM API Key、数据库、Redis 等
 
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8001
-# → http://localhost:8001
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+# → http://localhost:8000
 ```
 
 #### 4. 启动管理后台前端（Next.js）
@@ -309,7 +312,7 @@ gh pr merge --squash --delete-branch
 | **设计** | [UI 设计规范](docs/design/ui-design-spec.md) | 色彩、字体、组件、响应式 |
 | | [管理后台设计](docs/design/admin-dashboard-design.md) | 页面路由、权限矩阵、CRM |
 | | [坐席工作台设计](docs/design/agent-workspace-design.md) | 人工坐席流程、WebSocket |
-| | [工具规范](docs/design/skill-spec.md) | 23 个 AI 工具定义与安全层 |
+| | [工具规范](docs/design/skill-spec.md) | 31 个 AI 工具定义与安全层 |
 
 ## 📊 项目进度
 
@@ -317,11 +320,13 @@ gh pr merge --squash --delete-branch
 
 | 阶段 | 进度 | 说明 |
 |------|------|------|
-| 阶段一：基础设施 | 85% | 脚手架、数据库 41 张表、Docker、Terraform |
-| 阶段二：MVP 核心 | 97% | 商品 CRUD、AI 工具、小程序、RAG、SSE |
-| 阶段三：测试上线 | 20% | 单元测试、集成测试、CI/CD、生产部署 |
+| 阶段一：基础设施 | 85% | 脚手架、数据库 41 张表、Docker、CI/CD |
+| 阶段二：MVP 核心 | 97% | 商品 CRUD、AI 工具、小程序、SSE |
+| 阶段三：测试上线 | 20% | 单元测试、集成测试、生产部署 |
 
 ## 🤝 贡献指南
+
+欢迎贡献！详细流程见 [CONTRIBUTING.md](CONTRIBUTING.md)（Issue 先行 → 分支 → 测试先行 → PR 门禁）。
 
 ### 分支策略
 
