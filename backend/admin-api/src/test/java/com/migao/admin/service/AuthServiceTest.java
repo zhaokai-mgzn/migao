@@ -1,3 +1,4 @@
+// case_ids: API-010
 package com.migao.admin.service;
 
 import com.migao.admin.dto.LoginRequest;
@@ -336,6 +337,8 @@ class AuthServiceTest {
 
         assertThat(resp.getUser().getId()).isEqualTo("u2");
         verify(userService).getUserRoles(u2);
+        // 审计 07 P1-5：登录响应不下发 refresh token（仅 HttpOnly cookie 承载）
+        assertThat(resp.getRefreshToken()).isNull();
     }
 
     @Test

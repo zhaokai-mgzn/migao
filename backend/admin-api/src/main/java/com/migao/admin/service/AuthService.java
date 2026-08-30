@@ -61,6 +61,15 @@ public class AuthService {
      */
     private static final String TOKEN_BLACKLIST_PREFIX = "token:blacklist:";
 
+    /**
+     * Refresh Token Cookie 名（审计 07 P1-5/P1-F1）：
+     * refresh token 只经 HttpOnly Cookie 承载，禁止下发到响应体（防前端存储进 localStorage/XSS 窃取）。
+     */
+    private static final String REFRESH_TOKEN_COOKIE = "refresh_token";
+
+    /** Refresh Token Cookie 有效期（秒）：7 天，与 JWT refresh-token-expiration 对齐 */
+    private static final int REFRESH_TOKEN_COOKIE_MAX_AGE = 604800;
+
     @Value("${jwt.cookie.name:access_token}")
     private String cookieName;
 
@@ -163,6 +172,8 @@ public class AuthService {
             );
 
             setTokenCookie(response, accessToken, (int) jwtTokenProvider.getAccessTokenExpiration());
+            // 审计 07 P1-5：refresh token 仅经 HttpOnly cookie 下发，不进响应体
+            setRefreshTokenCookie(response, refreshToken);
 
             // 更新最后登录时间
             platformAdmin.setLastLoginAt(OffsetDateTime.now());
@@ -180,7 +191,7 @@ public class AuthService {
                             .tenantName("米高平台管理")
                             .build())
                     .accessToken(accessToken)
-                    .refreshToken(refreshToken)
+                    .refreshToken(null)  // 审计 07 P1-5: 不下发，仅 HttpOnly cookie
                     .expiresIn(jwtTokenProvider.getAccessTokenExpiration())
                     .build();
         }
@@ -237,6 +248,8 @@ public class AuthService {
 
         // 8. 设置 HttpOnly Cookie
         setTokenCookie(response, accessToken, (int) jwtTokenProvider.getAccessTokenExpiration());
+        // 审计 07 P1-5：refresh token 仅经 HttpOnly cookie 下发，不进响应体
+        setRefreshTokenCookie(response, refreshToken);
 
         // 9. 查询租户名称
         String tenantName = getTenantName(user.getTenantId());
@@ -254,7 +267,7 @@ public class AuthService {
                         .tenantName(tenantName)
                         .build())
                 .accessToken(accessToken)
-                .refreshToken(refreshToken)
+                .refreshToken(null)  // 审计 07 P1-5: 不下发，仅 HttpOnly cookie
                 .expiresIn(jwtTokenProvider.getAccessTokenExpiration())
                 .build();
     }
@@ -312,6 +325,8 @@ public class AuthService {
 
         // 5. 设置 HttpOnly Cookie
         setTokenCookie(response, accessToken, (int) jwtTokenProvider.getAccessTokenExpiration());
+        // 审计 07 P1-5：refresh token 仅经 HttpOnly cookie 下发，不进响应体
+        setRefreshTokenCookie(response, refreshToken);
 
         // 6. 查询租户名称
         String tenantNameVal = getTenantName(user.getTenantId());
@@ -329,7 +344,7 @@ public class AuthService {
                         .tenantName(tenantNameVal)
                         .build())
                 .accessToken(accessToken)
-                .refreshToken(refreshToken)
+                .refreshToken(null)  // 审计 07 P1-5: 不下发，仅 HttpOnly cookie
                 .expiresIn(jwtTokenProvider.getAccessTokenExpiration())
                 .build();
     }
@@ -509,6 +524,8 @@ public class AuthService {
 
         // 设置新的 Cookie
         setTokenCookie(response, newAccessToken, (int) jwtTokenProvider.getAccessTokenExpiration());
+        // 审计 07 P1-5：refresh token 仅经 HttpOnly cookie 轮换下发
+        setRefreshTokenCookie(response, newRefreshToken);
 
         // 查询租户名称
         String tenantName = getTenantName(user.getTenantId());
@@ -670,6 +687,8 @@ public class AuthService {
         }
 
         setTokenCookie(response, newAccessToken, (int) jwtTokenProvider.getAccessTokenExpiration());
+        // 审计 07 P1-5：refresh token 仅经 HttpOnly cookie 轮换下发
+        setRefreshTokenCookie(response, newRefreshToken);
 
         return LoginResponse.builder()
                 .user(LoginResponse.UserInfo.builder()
@@ -765,8 +784,23 @@ public class AuthService {
      * 设置 Token Cookie（含 SameSite 属性）
      */
     private void setTokenCookie(HttpServletResponse response, String token, int maxAge) {
+        setCookie(response, cookieName, token, maxAge);
+    }
+
+    /**
+     * 设置 Refresh Token Cookie（HttpOnly+Secure+SameSite，7 天）。
+     * refresh token 仅经此通道下发（审计 07 P1-5），不进入响应体。
+     */
+    private void setRefreshTokenCookie(HttpServletResponse response, String refreshToken) {
+        setCookie(response, REFRESH_TOKEN_COOKIE, refreshToken, REFRESH_TOKEN_COOKIE_MAX_AGE);
+    }
+
+    /**
+     * 通用 Cookie 写入（HttpOnly/Secure/SameSite/Domain 与 access_token 一致）
+     */
+    private void setCookie(HttpServletResponse response, String name, String value, int maxAge) {
         StringBuilder cookieValue = new StringBuilder();
-        cookieValue.append(cookieName).append("=").append(token);
+        cookieValue.append(name).append("=").append(value);
         cookieValue.append("; Max-Age=").append(maxAge);
         cookieValue.append("; Path=").append(cookiePath);
 
@@ -790,8 +824,17 @@ public class AuthService {
      * 清除 Token Cookie
      */
     private void clearTokenCookie(HttpServletResponse response) {
+        clearCookie(response, cookieName);
+        // 审计 07 P1-5：登出时一并清除 refresh token cookie
+        clearCookie(response, REFRESH_TOKEN_COOKIE);
+    }
+
+    /**
+     * 通用 Cookie 清除
+     */
+    private void clearCookie(HttpServletResponse response, String name) {
         StringBuilder cookieValue = new StringBuilder();
-        cookieValue.append(cookieName).append("=");
+        cookieValue.append(name).append("=");
         cookieValue.append("; Max-Age=0");
         cookieValue.append("; Path=").append(cookiePath);
 
