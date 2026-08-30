@@ -56,7 +56,9 @@ services:
     container_name: aikf-admin-api
     environment:
       <<: *db-env
-      SERVICE_TOKEN_SECRET: ${DEV_SERVICE_TOKEN:-dev-service-token-secret}
+      # ⚠️ 审计 07 P0-3: 移除可猜测默认值（dev-service-token-secret 曾公开可猜）。
+      # 本地启动前必须显式 export DEV_SERVICE_TOKEN=<强随机值>，否则服务间鉴权 fail-closed。
+      SERVICE_TOKEN_SECRET: ${DEV_SERVICE_TOKEN:?请先 export DEV_SERVICE_TOKEN（服务间共享令牌，强随机值）}
     ports:
       - "8080:8080"
     depends_on:
@@ -75,7 +77,7 @@ services:
       DATABASE_URL: postgresql+asyncpg://app_user:${DEV_DB_PASSWORD:-dev_password_123}@postgres:5432/ai_customer_service
       REDIS_URL: redis://:${DEV_REDIS_PASSWORD:-dev_redis_456}@redis:6379/0
       ADMIN_API_BASE_URL: http://admin-api:8080
-      SERVICE_TOKEN: ${DEV_SERVICE_TOKEN:-dev-service-token-secret}
+      SERVICE_TOKEN: ${DEV_SERVICE_TOKEN:?请先 export DEV_SERVICE_TOKEN（与 admin-api 保持一致）}
       PRIMARY_API_KEY: ${PRIMARY_API_KEY:-}
       PRIMARY_MODEL: ${PRIMARY_MODEL:-deepseek-v4-pro}
       DASHVECTOR_API_KEY: ${DASHVECTOR_API_KEY:-}
