@@ -15,11 +15,19 @@ class TestHealthCheck:
     """健康检查验证"""
 
     def test_admin_api_health(self, admin_client: SmokeTestClient):
-        """admin-api /actuator/health 返回 UP"""
+        """admin-api 公网健康检查：/actuator/* 已被 nginx 屏蔽（安全加固），
+        服务在线性通过公开认证端点验证"""
+        # 1) 安全断言：/actuator/health 公网必须 404（nginx 屏蔽，Issue #2662）
         resp = admin_client.get("/actuator/health")
-        assert resp.status_code == 200, f"Health check failed: {resp.status_code} {resp.text}"
-        data = resp.json()
-        assert data.get("status") == "UP", f"Service not UP: {data}"
+        assert resp.status_code == 404, (
+            f"/actuator/health 应被 nginx 屏蔽返回 404（安全加固），实际 {resp.status_code}"
+        )
+
+        # 2) 在线性断言：公开端点 /api/auth/sms/login 空 body → 400/422（参数校验，服务在线）
+        resp = admin_client.post("/api/auth/sms/login", json={})
+        assert resp.status_code in (400, 422), (
+            f"admin-api 应在线（登录端点参数校验响应），实际 {resp.status_code}: {resp.text[:200]}"
+        )
 
     def test_ai_agent_health(self, ai_client: SmokeTestClient):
         """ai-agent-service /health 返回 200"""

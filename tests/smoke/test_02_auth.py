@@ -29,9 +29,13 @@ class TestAuthLogin:
         assert access_token, f"No accessToken in response: {token_data.keys()}"
         assert access_token.startswith("eyJ"), f"Token should be JWT but got: {access_token[:20]}..."
 
-        # 验证有 refresh token
-        refresh_token = token_data.get("refreshToken", token_data.get("refresh_token"))
-        assert refresh_token, "No refreshToken in response"
+        # 审计 07 P1-5：refresh token 仅经 HttpOnly cookie 下发，响应体不得再携带
+        assert "refreshToken" not in token_data or token_data.get("refreshToken") is None, (
+            "refresh token 不应出现在响应体（安全加固，仅 HttpOnly cookie 承载）"
+        )
+        set_cookie = resp.headers.get("set-cookie", "")
+        assert "refresh_token=" in set_cookie, f"缺少 refresh_token Set-Cookie: {set_cookie[:200]}"
+        assert "HttpOnly" in set_cookie, "refresh_token cookie 必须 HttpOnly"
 
     def test_login_wrong_code(self, admin_client: SmokeTestClient, config: EnvConfig):
         """错误验证码登录失败"""
@@ -73,18 +77,16 @@ class TestTokenRefresh:
     """Token 刷新测试"""
 
     def test_refresh_token(self, admin_client: SmokeTestClient, auth_token: dict):
-        """使用 refresh token 获取新的 access token"""
-        resp = admin_client.post("/api/auth/refresh", json={
-            "refreshToken": auth_token["refresh_token"],
-        })
-        if resp.status_code == 200:
-            data = resp.json()
-            token_data = data.get("data", data)
-            new_token = token_data.get("accessToken", token_data.get("access_token"))
-            assert new_token, "Refresh did not return new access token"
-        else:
-            # 部分实现可能 refresh 需要 cookie
-            pytest.skip(f"Token refresh returned {resp.status_code}, may require cookie auth")
+        """使用 HttpOnly refresh_token cookie 获取新的 access token（审计 07 P1-5）"""
+        # 登录时 Set-Cookie 已存入 httpx client cookie jar，无需在 body 传 refresh token
+        resp = admin_client.post("/api/auth/refresh", json={})
+        assert resp.status_code == 200, (
+            f"Refresh via cookie should succeed, got {resp.status_code}: {resp.text[:200]}"
+        )
+        data = resp.json()
+        token_data = data.get("data", data)
+        new_token = token_data.get("accessToken", token_data.get("access_token"))
+        assert new_token, "Refresh did not return new access token"
 
     def test_refresh_invalid_token(self, admin_client: SmokeTestClient):
         """无效 refresh token 返回错误"""

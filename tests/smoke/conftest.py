@@ -48,7 +48,9 @@ def auth_token(admin_client: SmokeTestClient, config: EnvConfig) -> Dict[str, st
     data = resp.json()
     token_data = data.get("data", data)
     access_token = token_data.get("accessToken", token_data.get("access_token", ""))
-    refresh_token = token_data.get("refreshToken", token_data.get("refresh_token", ""))
+    # 审计 07 P1-5：refresh token 不再由响应体下发（仅 HttpOnly cookie 承载）。
+    # httpx.Client 会自动管理 Set-Cookie，后续 refresh 请求无需手动传 refresh token。
+    refresh_token = token_data.get("refreshToken", token_data.get("refresh_token", "")) or ""
 
     if not access_token:
         pytest.fail("SMS 登录响应缺少 access token，认证链路异常")
