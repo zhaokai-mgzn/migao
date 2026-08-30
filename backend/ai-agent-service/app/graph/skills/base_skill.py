@@ -546,18 +546,25 @@ def _requires_confirmation(tool, tool_args: dict, last_user_msg: str) -> bool:
     """判断本次 tool 调用是否需要用户明确确认。
 
     规则：
-    - 非 destructive 工具 → 永不要求确认
-    - destructive 工具 + action ∈ tool.read_only_actions（纯只读，如 list/detail/tree）
-      → 免确认；否则与 _is_explicit_confirmation 一致，须用户明确确认。
-    修复背景：customer/employee/role/category 等 destructive 工具含删除能力，
-    但 list/detail 等 action 是只读查询，此前一律强制确认导致只读查询被
-    confirmation_required 拦截（E2E Real 持续失败）。
+    - 纯查询工具（read_only=True）→ 永不要求确认
+    - 写工具中的只读 action（action ∈ read_only_actions，如 list/detail/tree）→ 免确认
+    - destructive 工具 → 必须用户明确确认（除只读 action 外）
+    - requires_confirmation 工具（非 destructive 但高风险写操作：财务/通知/会话/库存，
+      审计 07 P0-L1 间接提示注入面）→ 同样必须用户明确确认
+    - 其余普通写工具 → 维持现状不强制（依赖 Prompt 文本铁律）
+
+    确认判定与 _is_explicit_confirmation 一致：只有当前轮用户消息读起来像确认才放行，
+    防注入内容（SystemMessage/ToolMessage 中的指令）诱导 LLM 直接执行写操作。
     """
-    if not getattr(tool, "destructive", False):
+    # 纯查询工具永不要求确认
+    if getattr(tool, "read_only", True):
         return False
     action = str(tool_args.get("action") or tool_args.get("operation") or tool_args.get("op") or "")
     read_only_actions = getattr(tool, "read_only_actions", frozenset()) or frozenset()
     if action and action in read_only_actions:
+        return False
+    # 写工具需确认：destructive 或显式标记 requires_confirmation（审计 07 P0-L1）
+    if not getattr(tool, "destructive", False) and not getattr(tool, "requires_confirmation", False):
         return False
     return not _is_explicit_confirmation(last_user_msg)
 
@@ -1067,16 +1074,18 @@ async def execute_skill(
                     if tool is None:
                         logger.warning(f"[{skill_name}] Tool not found: {tool_name} | session={session_id}")
                         return tool_call, json.dumps({"success": False, "error": "tool_not_found", "message": f"工具 {tool_name} 不可用"}, ensure_ascii=False), {"success": False}
-                    # 破坏性写操作：必须经用户明确确认（代码层兜底，防提示注入触发不可逆操作）
+                    # 写操作（destructive 或 requires_confirmation 高风险写）：必须经用户明确确认
+                    # （代码层兜底，防间接提示注入驱动未确认写操作，审计 07 P0-L1）
                     # 豁免：action ∈ tool.read_only_actions 的纯只读调用（list/detail/tree 等）
                     if _requires_confirmation(tool, args, last_user_msg):
                         logger.warning(
-                            f"[{skill_name}] 拦截未确认的破坏性操作 {tool_name} | session={session_id} "
+                            f"[{skill_name}] 拦截未确认的写操作 {tool_name} | session={session_id} "
                             f"last_msg={last_user_msg[:30]!r}"
                         )
                         msg = (
-                            f"工具 {tool_name} 是破坏性操作（不可逆），必须先向用户展示确认卡片并取得明确确认。"
-                            f"请调用 interact（component=confirm）展示操作预览，等用户点击确认后再执行。"
+                            f"工具 {tool_name} 是写操作（可能不可逆或产生数据变更），必须先向用户展示确认卡片"
+                            f"并取得明确确认。请调用 interact（component=confirm）展示操作预览，"
+                            f"等用户点击确认后再执行。"
                         )
                         return tool_call, json.dumps(
                             {"success": False, "error": "confirmation_required", "message": msg},
