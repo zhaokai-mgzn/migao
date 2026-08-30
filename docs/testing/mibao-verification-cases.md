@@ -1431,7 +1431,7 @@
 真值: settings-manage.ai-config, settings-manage.immediate-effect
 溯源: POC 机器人设置集成新增 ｜ tags: ai_config, handoff
 
-## ui（4 case）
+## ui（5 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -1483,6 +1483,21 @@
 真值: frontend-fix.dashboard-no-truncate, frontend-fix.axis-sampling, frontend-fix.dashboard-no-overflow
 溯源: 2026-08-25 新增：经营看板织物质感重设计子任务 B（issue #2537） ｜ tags: ui, dashboard, density, axis-sampling
 
+### UI-005. 侧边栏新增「智能客服」大类——人工客服图标修复 + 机器人设置改名归组 🔵
+```
+你: 侧边栏新增「智能客服」一级大类：人工客服耳机图标修复 + 机器人设置更名为 AI 客服配置并归组
+期望: direct_reply
+数据: Sidebar.tsx 渲染一级大类「智能客服」，DOM 顺序位于「工作台」之后、「商品管理」之前；「人工客服」从「工作台」分组移除
+数据: 「智能客服」下子菜单顺序：「AI 客服配置」在前、「人工客服」在后
+数据: 「人工客服」渲染 Headphones 图标（iconMap 已注册，非 BarChart3 回退），与「经营看板」BarChart3 图标明确区分；「AI 客服配置」渲染 Bot 图标；「智能客服」大类渲染 MessageSquare 图标
+数据: 原「机器人设置」更名为「AI 客服配置」：侧边栏菜单名、页面 H1、Header 面包屑同步一致，不再出现「机器人设置」残留
+数据: 链接路径不变：AI 客服配置 href=/chat/config、人工客服 href=/agent-workspace/human-sessions
+数据: 权限过滤不回归：无 agent:session → 隐藏「人工客服」；无 agent:quickreply → 隐藏「AI 客服配置」；两者均无 → 「智能客服」整组隐藏
+跳过: 纯前端侧边栏菜单/图标/文案由 vitest 单测验证（sidebar/chat-config/Header.test），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.sidebar-smart-cs-group, frontend-fix.cs-menu-icons, frontend-fix.cs-menu-rename, frontend-fix.cs-menu-permission
+溯源: 2026-08-30 新增：侧边栏智能客服大类分组与菜单图标渲染（issue #2670） ｜ tags: ui, sidebar, menu, icon
+
 ## utils（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -1512,8 +1527,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：127（活跃 86，跳过 41）
-- tier 分布：smoke 10 / normal 90 / adversarial 27
+- 用例总数：128（活跃 86，跳过 42）
+- tier 分布：smoke 10 / normal 91 / adversarial 27
 - 售后域：5
 - agents：6
 - api：10
@@ -1532,6 +1547,6 @@
 - 商品域：13
 - registry：1
 - 设置域：8
-- ui：4
+- ui：5
 - utils：2
 
