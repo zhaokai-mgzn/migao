@@ -140,3 +140,42 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: UI-005
+    legacy_id: ""
+    title: "侧边栏新增「智能客服」大类——人工客服图标修复 + 机器人设置改名归组"
+    domains:
+      - ui
+      - frontend
+    tier: normal
+    tags:
+      - ui
+      - sidebar
+      - menu
+      - icon
+    truths_ref:
+      - frontend-fix.sidebar-smart-cs-group
+      - frontend-fix.cs-menu-icons
+      - frontend-fix.cs-menu-rename
+      - frontend-fix.cs-menu-permission
+    user_inputs:
+      - "侧边栏新增「智能客服」一级大类：人工客服耳机图标修复 + 机器人设置更名为 AI 客服配置并归组"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "Sidebar.tsx 渲染一级大类「智能客服」，DOM 顺序位于「工作台」之后、「商品管理」之前；「人工客服」从「工作台」分组移除"
+      - "「智能客服」下子菜单顺序：「AI 客服配置」在前、「人工客服」在后"
+      - "「人工客服」渲染 Headphones 图标（iconMap 已注册，非 BarChart3 回退），与「经营看板」BarChart3 图标明确区分；「AI 客服配置」渲染 Bot 图标；「智能客服」大类渲染 MessageSquare 图标"
+      - "原「机器人设置」更名为「AI 客服配置」：侧边栏菜单名、页面 H1、Header 面包屑同步一致，不再出现「机器人设置」残留"
+      - "链接路径不变：AI 客服配置 href=/chat/config、人工客服 href=/agent-workspace/human-sessions"
+      - "权限过滤不回归：无 agent:session → 隐藏「人工客服」；无 agent:quickreply → 隐藏「AI 客服配置」；两者均无 → 「智能客服」整组隐藏"
+    skip_reason: "纯前端侧边栏菜单/图标/文案由 vitest 单测验证（sidebar/chat-config/Header.test），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-08-30 新增：侧边栏智能客服大类分组与菜单图标渲染（issue #2670）"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/components/sidebar.test.tsx"
+        - "frontend/admin-web/tests/unit/pages/chat-config.test.tsx"
+        - "frontend/admin-web/tests/unit/components/layout/Header.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []

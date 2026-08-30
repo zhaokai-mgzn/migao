@@ -1789,6 +1789,20 @@ _CASE_UI_004 = EvalCase(
     tags=['ui', 'dashboard', 'density', 'axis-sampling'],
 )
 
+# ── UI-005 [NORMAL] 侧边栏新增「智能客服」大类——人工客服图标修复 + 机器人设置改名归组（源: cases/ui.yml）──
+_CASE_UI_005 = EvalCase(
+    id='UI-005',
+    legacy_id='',
+    title='侧边栏新增「智能客服」大类——人工客服图标修复 + 机器人设置改名归组',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['侧边栏新增「智能客服」一级大类：人工客服耳机图标修复 + 机器人设置更名为 AI 客服配置并归组'],
+    expectations=['direct_reply'],
+    data_checks=['Sidebar.tsx 渲染一级大类「智能客服」，DOM 顺序位于「工作台」之后、「商品管理」之前；「人工客服」从「工作台」分组移除', '「智能客服」下子菜单顺序：「AI 客服配置」在前、「人工客服」在后', '「人工客服」渲染 Headphones 图标（iconMap 已注册，非 BarChart3 回退），与「经营看板」BarChart3 图标明确区分；「AI 客服配置」渲染 Bot 图标；「智能客服」大类渲染 MessageSquare 图标', '原「机器人设置」更名为「AI 客服配置」：侧边栏菜单名、页面 H1、Header 面包屑同步一致，不再出现「机器人设置」残留', '链接路径不变：AI 客服配置 href=/chat/config、人工客服 href=/agent-workspace/human-sessions', '权限过滤不回归：无 agent:session → 隐藏「人工客服」；无 agent:quickreply → 隐藏「AI 客服配置」；两者均无 → 「智能客服」整组隐藏'],
+    skip_reason='纯前端侧边栏菜单/图标/文案由 vitest 单测验证（sidebar/chat-config/Header.test），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ui', 'sidebar', 'menu', 'icon'],
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -1943,6 +1957,7 @@ ALL_CASES = (
     _CASE_UI_002,
     _CASE_UI_003,
     _CASE_UI_004,
+    _CASE_UI_005,
     _CASE_UT_001,
     _CASE_UT_002,
 )
