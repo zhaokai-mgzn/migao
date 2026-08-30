@@ -21,6 +21,7 @@ import com.migao.admin.mapper.ProductSkuMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.RequiredArgsConstructor;
@@ -861,9 +862,23 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
 
         String reason = refundReason != null && !refundReason.isBlank() ? refundReason : "退款";
         // 保持原状态，仅落退款金额与时间（前端"已退款"徽标由 refundAmount>0 判定）
+        // 原子条件更新：refund_amount 在库内累加且不超过实收款，防并发双花（审计 07 P1-10）。
+        // 并发请求同时读到 existingRefund 时，DB 层 COALESCE 累加 + WHERE 上限保证只成功一次。
+        OffsetDateTime refundAt = OffsetDateTime.now();
+        UpdateWrapper<Order> refundWrapper = new UpdateWrapper<>();
+        refundWrapper.eq("id", order.getId())
+                .eq("tenant_id", order.getTenantId())
+                .setSql("refund_amount = COALESCE(refund_amount, 0) + " + applied.toPlainString())
+                .set("refund_at", refundAt)
+                .and(w -> w.apply("COALESCE(refund_amount, 0) + {0} <= {1}",
+                        applied, actual));
+        int updated = orderMapper.update(null, refundWrapper);
+        if (updated == 0) {
+            // 条件不满足：已被并发请求退款至上限，拒绝本次
+            throw BusinessException.validationError("该订单已全额退款，无需重复退款");
+        }
         order.setRefundAmount(existingRefund.add(applied));
-        order.setRefundAt(OffsetDateTime.now());
-        orderMapper.updateById(order);
+        order.setRefundAt(refundAt);
 
         // 登记资金流水（退款，金额=本次实际退款额）——失败不影响订单主流程
         recordFinanceTransaction(order, applied, "refund", "订单退款: " + reason);
