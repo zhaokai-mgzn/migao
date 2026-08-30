@@ -1,9 +1,12 @@
 package com.migao.admin.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.migao.admin.exception.BusinessException;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestTemplate;
@@ -11,7 +14,6 @@ import org.springframework.web.client.RestTemplate;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.Map;
 
 /**
  * 微信服务类
@@ -35,6 +37,15 @@ public class WechatService {
      */
     @Value("${wechat.mock-enabled:false}")
     private boolean mockEnabled;
+
+    /**
+     * HTTP 客户端。微信官方接口（尤其错误场景）返回 Content-Type: text/plain，
+     * 不能直接 getForObject(url, Map.class)（缺转换器），必须按 String 接收后手动解析 JSON。
+     * 包级可见字段 + 包级构造器，便于测试注入 MockRestTemplate（见 RegistrationReviewClient 同款模式）。
+     */
+    RestTemplate restTemplate = new RestTemplate();
+
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private static final String CODE2SESSION_URL =
             "https://api.weixin.qq.com/sns/jscode2session?appid=%s&secret=%s&js_code=%s&grant_type=authorization_code";
@@ -72,24 +83,30 @@ public class WechatService {
 
     /**
      * 真实调用微信 code2Session API
+     * 按 String 接收响应后手动解析 JSON：微信官方接口（尤其错误场景）
+     * 返回 Content-Type: text/plain，RestTemplate 无 text/plain → Map 的转换器，
+     * 直接 getForObject(url, Map.class) 会抛 HttpMessageConverter 异常（线上实测发现）。
      */
-    @SuppressWarnings("unchecked")
     private Code2SessionResult realCode2Session(String code) {
         String url = String.format(CODE2SESSION_URL, appId, appSecret, code);
         log.info("调用微信 code2Session 接口: appId={}", appId);
 
         try {
-            RestTemplate restTemplate = new RestTemplate();
-            Map<String, Object> response = restTemplate.getForObject(url, Map.class);
+            ResponseEntity<String> response = restTemplate.getForEntity(url, String.class);
+            String body = response.getBody();
+            if (body == null || body.isBlank()) {
+                throw new BusinessException("WECHAT_API_ERROR", "微信 API 返回为空");
+            }
 
-            if (response == null) {
+            JsonNode root = OBJECT_MAPPER.readTree(body);
+            if (root == null) {
                 throw new BusinessException("WECHAT_API_ERROR", "微信 API 返回为空");
             }
 
             // 检查错误码
-            Integer errcode = (Integer) response.get("errcode");
-            if (errcode != null && errcode != 0) {
-                String errmsg = (String) response.get("errmsg");
+            int errcode = root.path("errcode").asInt(0);
+            if (errcode != 0) {
+                String errmsg = root.path("errmsg").asText("");
                 log.error("微信 code2Session 失败: errcode={}, errmsg={}", errcode, errmsg);
 
                 String errorMessage = switch (errcode) {
@@ -104,9 +121,9 @@ public class WechatService {
             }
 
             Code2SessionResult result = new Code2SessionResult();
-            result.setOpenid((String) response.get("openid"));
-            result.setSessionKey((String) response.get("session_key"));
-            result.setUnionid((String) response.get("unionid"));
+            result.setOpenid(root.path("openid").asText(null));
+            result.setSessionKey(root.path("session_key").asText(null));
+            result.setUnionid(root.path("unionid").asText(null));
 
             if (!StringUtils.hasText(result.getOpenid())) {
                 throw new BusinessException("WECHAT_API_ERROR", "微信 API 未返回 openid");

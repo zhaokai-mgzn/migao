@@ -7,6 +7,9 @@
 *.tfvars
 !*.tfvars.example
 
+# 微信小程序本地私有配置（含真实 AppID，勿入库）
+project.private.config.json
+
 # Terraform
 .terraform/
 terraform.tfstate
