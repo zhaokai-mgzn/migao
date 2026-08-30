@@ -31,6 +31,7 @@ from app.config import settings
 from app.graph.state import AgentState
 from app.tools.base import ToolContext
 from app.tools.registry import ToolRegistry, set_tool_context, get_tool_context
+from app.utils.log_sanitizer import LogSanitizer
 from app.core import (
     CircuitBreakerOpenError,
     LLM_FALLBACK_MESSAGE,
@@ -608,12 +609,12 @@ async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -
         )
         logger.info(f"[tool-exec] {tool_name} done success={result.success}")
     except asyncio.TimeoutError:
-        logger.error(f"[tool-exec] {tool_name} TIMEOUT 30s | args={json.dumps(tool_args, ensure_ascii=False, default=str)[:300]}")
+        logger.error(f"[tool-exec] {tool_name} TIMEOUT 30s | args={json.dumps(LogSanitizer.sanitize_tree(tool_args), ensure_ascii=False, default=str)[:300]}")
         err = json.dumps({"success": False, "error": "timeout", "message": "工具执行超时"}, ensure_ascii=False)
         return err, {"success": False, "error": "timeout"}
     except Exception as e:
         logger.error(
-            f"[tool-exec] {tool_name} ERROR: {e} | args={json.dumps(tool_args, ensure_ascii=False, default=str)[:500]}",
+            f"[tool-exec] {tool_name} ERROR: {e} | args={json.dumps(LogSanitizer.sanitize_tree(tool_args), ensure_ascii=False, default=str)[:500]}",
             exc_info=True,
         )
         err = json.dumps({"success": False, "error": "tool_execution_failed",

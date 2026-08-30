@@ -381,6 +381,22 @@ jobs:
           done
           exit $rc
 
+  # ============ Secret 扫描（gitleaks）— 防密钥/凭据提交 ============
+  gitleaks-scan:
+    name: Secret Scan (gitleaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run gitleaks secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   # ============ 任何 CI 失败都打 needs-changes（独立 job，覆盖全部检查）============
   # G3 fix: 原打标在 qa-growth-gate job 内，无法捕获 admin-api-test/admin-web-test/e2e 失败
   label-needs-changes:
@@ -397,6 +413,7 @@ jobs:
       - qa-growth-gate
       - case-truth-check
       - agent-eval-smoke
+      - gitleaks-scan
     steps:
       - name: Add review/needs-changes
         env:
@@ -426,6 +443,7 @@ jobs:
       - qa-growth-gate
       - case-truth-check
       - agent-eval-smoke
+      - gitleaks-scan
     steps:
       - name: Remove review/needs-changes
         env:
