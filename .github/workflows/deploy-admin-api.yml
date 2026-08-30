@@ -1,4 +1,6 @@
 name: Build and Deploy admin-api
+permissions:
+  contents: read
 
 on:
   push:

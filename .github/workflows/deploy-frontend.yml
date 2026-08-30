@@ -1,4 +1,6 @@
 name: Deploy Frontend
+permissions:
+  contents: read
 
 on:
   push:

@@ -1,4 +1,6 @@
 name: Mini-App CI
+permissions:
+  contents: read
 
 on:
   pull_request:
