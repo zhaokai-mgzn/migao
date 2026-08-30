@@ -144,6 +144,9 @@ wechat:
   mini:
     appid: ${WECHAT_MINI_APPID:}
     secret: ${WECHAT_MINI_SECRET:}
+  # Mock 模式（审计 07 P1-1）：默认 false = 生产 fail-closed。
+  # 仅 dev/CI 显式设置 WECHAT_MOCK_ENABLED=true；生产未配 appid/secret 时 mini 登录直接拒绝。
+  mock-enabled: ${WECHAT_MOCK_ENABLED:false}
 
 # 日志配置
 logging:

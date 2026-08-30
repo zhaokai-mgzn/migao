@@ -28,6 +28,14 @@ public class WechatService {
     @Value("${wechat.mini.secret:}")
     private String appSecret;
 
+    /**
+     * Mock 模式开关（审计 07 P1-1）：默认 false = 生产 fail-closed。
+     * 仅 dev/CI 环境显式设置 WECHAT_MOCK_ENABLED=true 启用；
+     * 未配置真实微信 appid/secret 且 mock 未启用时，登录直接拒绝（禁止伪造 openid）。
+     */
+    @Value("${wechat.mock-enabled:false}")
+    private boolean mockEnabled;
+
     private static final String CODE2SESSION_URL =
             "https://api.weixin.qq.com/sns/jscode2session?appid=%s&secret=%s&js_code=%s&grant_type=authorization_code";
 
@@ -43,15 +51,20 @@ public class WechatService {
 
     /**
      * 调用微信 code2Session 接口
-     * 如果 AppID/Secret 未配置则使用 Mock 模式
+     * AppID/Secret 未配置时：仅当显式启用 wechat.mock-enabled（dev/CI）才使用 Mock 模式，
+     * 否则拒绝登录（fail-closed，防伪造 openid 冒充任意用户，审计 07 P1-1）。
      *
      * @param code 微信小程序 wx.login() 返回的 code
      * @return Code2SessionResult
      */
     public Code2SessionResult code2Session(String code) {
         if (!StringUtils.hasText(appId) || !StringUtils.hasText(appSecret)) {
-            log.warn("【Mock 模式】微信 AppID/Secret 未配置，使用 Mock 模式处理 code2Session");
-            return mockCode2Session(code);
+            if (mockEnabled) {
+                log.warn("【Mock 模式】微信 AppID/Secret 未配置，使用 Mock 模式处理 code2Session");
+                return mockCode2Session(code);
+            }
+            throw new BusinessException("WECHAT_CONFIG_MISSING",
+                    "微信小程序登录未配置，请联系管理员（仅 dev 环境可用 Mock 模式）", 503);
         }
 
         return realCode2Session(code);

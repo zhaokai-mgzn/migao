@@ -64,7 +64,8 @@ public class AuthController {
             @Valid @RequestBody SmsLoginRequest request,
             HttpServletResponse response) {
         log.info("短信验证码登录请求: phone={}", request.getPhone());
-        LoginResponse loginResponse = authService.loginBySms(request.getPhone(), request.getCode(), response);
+        LoginResponse loginResponse = authService.loginBySms(
+                request.getPhone(), request.getCode(), request.getTenantId(), response);
         return ApiResponse.success(loginResponse);
     }
 

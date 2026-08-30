@@ -124,11 +124,12 @@ public class AuthService {
      *
      * @param phone    手机号
      * @param code     短信验证码
+     * @param tenantId 租户 ID（可选）。同手机号存在于多个租户时必填（审计 07 P1-2）
      * @param response HTTP 响应（用于设置 Cookie）
      * @return 登录响应
      */
     @Transactional(rollbackFor = Exception.class)
-    public LoginResponse loginBySms(String phone, String code, HttpServletResponse response) {
+    public LoginResponse loginBySms(String phone, String code, Long tenantId, HttpServletResponse response) {
         log.info("短信验证码登录: phone={}", phone);
 
         // 1. 校验短信验证码
@@ -185,10 +186,26 @@ public class AuthService {
         }
 
         // 3. 根据手机号查找租户用户（跨租户查询，使用 @InterceptorIgnore 绕过多租户拦截器）
-        User user = userMapper.selectByPhoneIgnoreTenant(phone);
-        if (user == null) {
-            log.warn("短信登录失败，用户不存在或已禁用: phone={}", phone);
+        List<User> users = userMapper.selectActiveUsersByPhoneIgnoreTenant(phone);
+        if (users.isEmpty()) {
+            log.warn("短信登录失败，用户不存在或已禁用: phone={}", maskPhone(phone));
             throw BusinessException.authFailed("该手机号未注册");
+        }
+
+        // 3.1 同手机号多租户歧义处理（审计 07 P1-2：禁止静默 LIMIT 1 落错租户）
+        User user;
+        if (users.size() == 1) {
+            user = users.get(0);
+        } else {
+            if (tenantId == null) {
+                log.warn("短信登录失败，手机号关联多个租户且未指定租户: phone={}", maskPhone(phone));
+                throw BusinessException.authFailed(
+                        "该手机号关联多个租户账号，请通过对应租户入口登录或指定租户后重试");
+            }
+            user = users.stream()
+                    .filter(u -> tenantId.equals(u.getTenantId()))
+                    .findFirst()
+                    .orElseThrow(() -> BusinessException.authFailed("该手机号在该租户下未注册"));
         }
 
         // 4. 校验用户状态
@@ -256,7 +273,18 @@ public class AuthService {
     public LoginResponse miniProgramLogin(String code, Long tenantId, HttpServletResponse response) {
         log.info("微信小程序登录: tenantId={}", tenantId);
 
-        // 0. 设置租户上下文
+        // 0. 租户存在性校验（审计 07 P1-1）：拒绝向不存在的租户自动建号/注入用户。
+        //    注意：租户 ID 仍由客户端传入，完整修复需服务端按微信 appid→租户绑定解析（技术债），
+        //    此处先封堵"任意数字即可建号"与 Mock 伪造 openid 两条捷径。
+        if (tenantId == null) {
+            throw BusinessException.validationError("租户标识不能为空");
+        }
+        Tenant tenant = tenantMapper.selectById(tenantId);
+        if (tenant == null || !"active".equals(tenant.getStatus())) {
+            throw BusinessException.authFailed("租户不存在或未启用");
+        }
+
+        // 0.1 设置租户上下文
         TenantContext.setTenantId(tenantId);
 
         // 1. 调用微信 code2Session 接口，用 code 换取 openid + session_key
@@ -896,5 +924,15 @@ public class AuthService {
                                                  List<UserInfoResponse.MenuItem> children) {
         return UserInfoResponse.MenuItem.builder()
                 .key(key).name(name).icon(icon).children(children).build();
+    }
+
+    /**
+     * 手机号脱敏（日志用）：138****8000
+     */
+    private String maskPhone(String phone) {
+        if (phone == null || phone.length() < 7) {
+            return phone;
+        }
+        return phone.substring(0, 3) + "****" + phone.substring(phone.length() - 4);
     }
 }
