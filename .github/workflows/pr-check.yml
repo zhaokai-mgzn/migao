@@ -411,6 +411,8 @@ jobs:
       - name: Run danger scan
         env:
           DANGER_BASE: origin/main
+          # 受信任维护者（owner）新增 workflow（如发布流程）→ 降为 WARN；fork 贡献者 → BLOCK
+          DANGER_TRUSTED_ACTOR: ${{ github.actor == 'zhaokai-mgzn' && '1' || '0' }}
         run: |
           git fetch origin main --quiet
           python3 .github/danger_scan.py
