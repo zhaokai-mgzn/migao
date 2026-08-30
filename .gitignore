@@ -111,3 +111,5 @@ skills-lock.json
 
 # QA Growth Gate 本地生成物
 growth-gate-result.json
+# Danger Scan 本地运行产物
+danger-scan-result.json

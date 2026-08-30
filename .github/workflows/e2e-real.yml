@@ -1,4 +1,7 @@
 name: E2E Real (AI Agent 能力测试)
+permissions:
+  contents: read
+  issues: write
 
 on:
   workflow_dispatch:

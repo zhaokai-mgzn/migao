@@ -1,4 +1,6 @@
 name: Build and Deploy ai-agent-service
+permissions:
+  contents: read
 
 on:
   push:
