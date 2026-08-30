@@ -107,12 +107,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Probe admin domain
+      - name: Probe merchant domain
         run: |
+          # 注意：admin-web 公网域名是 merchant.migaozn.com（nginx server_name，
+          # 见 deploy/swas/nginx.conf）；admin.migaozn.com 未解析，曾导致探测误报失败
           for i in $(seq 1 6); do
-            CODE=$(curl -s -o /dev/null -w "%{http_code}" -m 15 https://admin.migaozn.com/ || echo 000)
-            echo "admin.migaozn.com -> $CODE (attempt $i)"
-            if [ "$CODE" = "200" ]; then echo "✅ 前端部署后探测通过"; exit 0; fi
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" -m 15 https://merchant.migaozn.com/ || echo 000)
+            echo "merchant.migaozn.com -> $CODE (attempt $i)"
+            if [ "$CODE" = "200" ] || [ "$CODE" = "307" ]; then echo "✅ 前端部署后探测通过"; exit 0; fi
             sleep 10
           done
           echo "❌ 前端部署后探测失败（6 次均非 200）"
