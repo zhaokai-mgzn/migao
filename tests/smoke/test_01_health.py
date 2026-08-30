@@ -4,6 +4,7 @@
 验证所有服务的健康检查端点正常响应。
 """
 
+// case_ids: API-010
 import pytest
 
 from .helpers import SmokeTestClient
