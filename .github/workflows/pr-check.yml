@@ -397,6 +397,45 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  # ============ Danger Scan — PR 破坏性变更检测（workflow/批量删除/部署文件）============
+  danger-scan:
+    name: Danger Scan (破坏性变更检测)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run danger scan
+        env:
+          DANGER_BASE: origin/main
+        run: |
+          git fetch origin main --quiet
+          python3 .github/danger_scan.py
+
+      - name: Post danger-scan comment
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let body = '⚠️ danger-scan 报告异常';
+            try {
+              const r = JSON.parse(fs.readFileSync('danger-scan-result.json', 'utf8'));
+              const lines = [];
+              for (const b of r.blockers || []) lines.push('- ❌ ' + b);
+              for (const w of r.warnings || []) lines.push('- ⚠️ ' + w);
+              body = (r.blocker_count > 0 ? '## 🔒 Danger Scan — BLOCKED' : '## ✅ Danger Scan — PASSED') + '\n\n' + (lines.join('\n') || '无');
+            } catch (e) { body = '⚠️ danger-scan 输出解析失败'; }
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number,
+            });
+            const prev = comments.find(c => c.body.includes('Danger Scan'));
+            if (prev) { await github.rest.issues.updateComment({ owner: context.repo.owner, repo: context.repo.repo, comment_id: prev.id, body }); }
+            else { await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number, body }); }
+
   # ============ 任何 CI 失败都打 needs-changes（独立 job，覆盖全部检查）============
   # G3 fix: 原打标在 qa-growth-gate job 内，无法捕获 admin-api-test/admin-web-test/e2e 失败
   label-needs-changes:
@@ -414,6 +453,7 @@ jobs:
       - case-truth-check
       - agent-eval-smoke
       - gitleaks-scan
+      - danger-scan
     steps:
       - name: Add review/needs-changes
         env:
@@ -444,6 +484,7 @@ jobs:
       - case-truth-check
       - agent-eval-smoke
       - gitleaks-scan
+      - danger-scan
     steps:
       - name: Remove review/needs-changes
         env:
