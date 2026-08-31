@@ -1,3 +1,4 @@
+// case_ids: PR-001, PR-002
 /**
  * ProductTable 组件测试
  * 覆盖：#646 移除 in_warehouse — 状态徽章映射无仓库中、操作按钮正确
