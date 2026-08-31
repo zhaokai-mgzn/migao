@@ -21,6 +21,7 @@ business_truths:
   - [frontend-fix.cs-menu-permission] 权限规则不变：agent:session 控制「人工客服」可见、agent:quickreply 控制「AI 客服配置」可见；两个子菜单均不可见时「智能客服」大类整组隐藏
   - [frontend-fix.session-list-single-filter] 会话管理列表为单列表（无「活跃/已关闭」硬 tab，也无「全部/活跃/已结束」筛选 chips/tab）：全部会话按「活跃在前、同组 updated_at 倒序」展示，搜索框按标题/客户/最后消息过滤；已结束行灰化 + 「已结束」徽标 + 重新打开按钮，活跃行保留「结束会话」菜单；空态统一「暂无会话」
   - [frontend-fix.session-reopen-banner] 查看已结束会话时聊天区顶部显示「会话已结束，历史消息已保留」banner + 「继续此会话」按钮：点击调用 reopenSession（保留历史消息、工作状态从空开始）并聚焦输入框，reopen 成功后 banner 消失；会话管理工作台统计条与筛选文案统一为「活跃/已结束/共」，无「已关闭」残留
+  - [frontend-fix.xiaobu-voice-holdtalk] 小布 C 端输入条（mini-app，小程序/H5 同源）默认语音模式「按住说话、松开直接发送」：touchStart 开始录音、touchEnd 停止并转写（后端 /api/chat/transcribe）后直接发送文本，上滑超过阈值取消；左切换键在语音（⌨️）/键盘（🎤）模式间切换，键盘模式保留 textarea+图片+发送；流式或无可发会话时禁止录音，转写失败 toast「未听清，请重试」不发送
 
 primary_specs:
   - tests/e2e/specs/
