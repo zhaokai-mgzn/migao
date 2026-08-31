@@ -5,6 +5,7 @@ import type { Message, ToolCallData, CardData, InteractiveData } from '../../typ
 import ProductCard from '../cards/ProductCard'
 import LogisticsCard from '../cards/LogisticsCard'
 import KnowledgeCard from '../cards/KnowledgeCard'
+import OrderCard from '../cards/OrderCard'
 import QuotationCard from '../cards/QuotationCard'
 import ConfirmCard from '../cards/ConfirmCard'
 import ChoiceCard from '../cards/ChoiceCard'
@@ -96,6 +97,11 @@ function renderCard(card: CardData, idx: number, onInteract?: (value: string) =>
           ))}
         </View>
       )
+    }
+
+    case 'order': {
+      // 订单卡片：归一化载荷 {"order": {...}} 单订单 / {"orders": [...]} 列表
+      return <OrderCard key={`card-${idx}`} data={data} />
     }
 
     case 'quotation': {
