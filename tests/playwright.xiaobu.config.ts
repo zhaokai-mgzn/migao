@@ -42,14 +42,18 @@ export default defineConfig({
   ],
 
   // 静态托管 mini-app H5 产物。
-  // 关键：测试专用 env 覆盖 .env.local 的生产 URL（否则 H5 请求 app.migaozn.com 被 CORS 拦截），
-  // 先 taro build 注入 localhost 地址到 dist/，再 python http.server 托管（hash 路由，SPA 无需 rewrite）。
+  // 关键：测试专用 env 覆盖 .env.local 的生产 URL（否则 H5 请求 app.migaozn.com 被 CORS 拦截）。
+  // CI：build 由 workflow 单独执行（TARO_APP_* 覆盖后产出 dist/），这里只起静态服务器；
+  // 本地：自动 build + serve（保持一键可跑）。
+  // 注意：cwd 恒为 ../frontend/mini-app，webServer 命令的相对路径基于该 cwd。
   webServer: {
-    command: [
-      'TARO_APP_API_URL=http://localhost:8080 TARO_APP_AI_API_URL=http://localhost:8001',
-      'npx taro build --type h5 >/dev/null 2>&1;',
-      'python3 -m http.server 10086 --directory dist',
-    ].join(' '),
+    command: process.env.CI
+      ? 'python3 -m http.server 10086 --directory dist'
+      : [
+          'TARO_APP_API_URL=http://localhost:8080 TARO_APP_AI_API_URL=http://localhost:8001',
+          'npx taro build --type h5 >/dev/null 2>&1;',
+          'python3 -m http.server 10086 --directory dist',
+        ].join(' '),
     cwd: '../frontend/mini-app',
     port: 10086,
     reuseExistingServer: !process.env.CI,
