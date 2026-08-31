@@ -9,7 +9,7 @@
  * 运行: npx playwright test specs/chat/agent-workspace-sessions.spec.ts --project=web
  */
 
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect, type Page } from '../../fixtures'
 
 // ───────────────────────────────────────────────────────────────
 // Mock 数据：与 chat.spec.ts 同源（会话管理页复用同一 chatApi）
@@ -22,6 +22,15 @@ const MOCK_SESSIONS = [
 ]
 
 async function setupSessionMocks(page: Page) {
+  // (dashboard) layout 内 Header 全局轮询未读通知；未 mock 时真后端 401 →
+  // refresh 422 → 强制跳 /login（与 dashboard.spec.ts 同款 mock 模式）
+  await page.route('**/api/admin/notifications/unread-count', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ code: 200, data: 0 }),
+    })
+  })
   await page.route('**/api/chat/sessions*', async (route) => {
     await route.fulfill({
       status: 200,
@@ -92,8 +101,10 @@ test.describe('会话管理工作台 — 占位页替换为真实功能', () => 
       { timeout: 10_000 },
     )
     await expect(page.getByRole('button', { name: /新建对话/ })).toBeVisible({ timeout: 10_000 })
-    await expect(page.getByText('遮光窗帘订单确认')).toBeVisible({ timeout: 10_000 })
-    await expect(page.getByText('纱帘加工进度查询')).toBeVisible()
+    // 列表行作用域断言（避免命中聊天区头部 h2 的同名标题）
+    const sessionRows = page.locator('[data-testid="session-item"]')
+    await expect(sessionRows.filter({ hasText: '遮光窗帘订单确认' })).toBeVisible({ timeout: 10_000 })
+    await expect(sessionRows.filter({ hasText: '纱帘加工进度查询' })).toBeVisible()
   })
 
   test('筛选已结束 chip + 选中已结束会话显示续聊 banner，点击继续此会话重新打开', async ({ page }) => {
@@ -115,13 +126,14 @@ test.describe('会话管理工作台 — 占位页替换为真实功能', () => 
       { timeout: 10_000 },
     )
 
-    // 点击「已结束」筛选 chip → 只剩已结束会话
+    // 点击「已结束」筛选 chip → 列表只剩已结束会话
     await page.getByRole('button', { name: /已结束 \(1\)/ }).click()
-    await expect(page.getByText('已完结售后咨询')).toBeVisible({ timeout: 10_000 })
-    await expect(page.getByText('遮光窗帘订单确认')).toHaveCount(0)
+    const sessionRows = page.locator('[data-testid="session-item"]')
+    await expect(sessionRows.filter({ hasText: '已完结售后咨询' })).toBeVisible({ timeout: 10_000 })
+    await expect(sessionRows.filter({ hasText: '遮光窗帘订单确认' })).toHaveCount(0)
 
     // 选中已结束会话 → 聊天区出现续聊 banner
-    await page.getByText('已完结售后咨询').click()
+    await sessionRows.filter({ hasText: '已完结售后咨询' }).click()
     await expect(page.getByText('会话已结束，历史消息已保留')).toBeVisible({ timeout: 10_000 })
     await expect(page.getByRole('button', { name: '继续此会话' })).toBeVisible()
 
