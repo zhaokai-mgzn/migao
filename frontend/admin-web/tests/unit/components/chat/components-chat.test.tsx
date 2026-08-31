@@ -325,7 +325,7 @@ describe('SessionList', () => {
     expect(screen.getByPlaceholderText('搜索会话...')).toBeInTheDocument()
   })
 
-  it('shows single list with all sessions by default (filter chips, no hard tabs)', () => {
+  it('shows single list with all sessions (no tabs, no filter controls)', () => {
     mockUseChatStore.mockReturnValue(
       makeDefaultChatState({
         sessions: [
@@ -336,53 +336,15 @@ describe('SessionList', () => {
     )
     render(<SessionList />)
 
-    // 筛选 chips 替代硬 tab：全部 / 活跃 / 已结束，带计数
-    expect(screen.getByText('全部 (2)')).toBeInTheDocument()
-    expect(screen.getByText('活跃 (1)')).toBeInTheDocument()
-    expect(screen.getByText('已结束 (1)')).toBeInTheDocument()
-
-    // 默认「全部」：活跃与已结束会话同在一个单列表里
+    // 始终单列表：活跃与已结束会话同屏展示
     expect(screen.getByText('会话1')).toBeInTheDocument()
     expect(screen.getByText('已结束对话')).toBeInTheDocument()
 
-    // 不再有「已关闭」tab 文案
+    // 无「活跃/已关闭」双 tab，也无「全部/活跃/已结束」筛选 chips
+    expect(screen.queryByText(/全部 \(\d\)/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/活跃 \(\d\)/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/已结束 \(\d\)/)).not.toBeInTheDocument()
     expect(screen.queryByText(/已关闭/)).not.toBeInTheDocument()
-  })
-
-  it('filters to active sessions when clicking 活跃 chip', () => {
-    mockUseChatStore.mockReturnValue(
-      makeDefaultChatState({
-        sessions: [
-          { session_id: 's1', title: '会话1', status: 'active', updated_at: '2025-01-02' },
-          { session_id: 's2', title: '已结束对话', status: 'closed', updated_at: '2025-01-01' },
-        ],
-      })
-    )
-    render(<SessionList />)
-
-    fireEvent.click(screen.getByText('活跃 (1)'))
-    expect(screen.getByText('会话1')).toBeInTheDocument()
-    expect(screen.queryByText('已结束对话')).not.toBeInTheDocument()
-  })
-
-  it('filters to closed sessions when clicking 已结束 chip', () => {
-    mockUseChatStore.mockReturnValue(
-      makeDefaultChatState({
-        sessions: [
-          { session_id: 's1', title: '会话1', status: 'active', updated_at: '2025-01-02' },
-          { session_id: 's2', title: '已结束对话', status: 'closed', updated_at: '2025-01-01' },
-        ],
-      })
-    )
-    render(<SessionList />)
-
-    fireEvent.click(screen.getByText('已结束 (1)'))
-    expect(screen.getByText('已结束对话')).toBeInTheDocument()
-    expect(screen.queryByText('会话1')).not.toBeInTheDocument()
-
-    // 已结束行保留「已结束」徽标 + 重新打开按钮
-    expect(screen.getByText('已结束')).toBeInTheDocument()
-    expect(screen.getByTitle('重新打开')).toBeInTheDocument()
   })
 
   it('sorts active sessions before closed ones, each group by updated_at desc', () => {
@@ -405,24 +367,31 @@ describe('SessionList', () => {
     ])
   })
 
-  it('shows distinct empty states per filter', () => {
-    // 无会话 → 全部空态
-    mockUseChatStore.mockReturnValue(makeDefaultChatState({ sessions: [] }))
-    const { rerender } = render(<SessionList />)
-    expect(screen.getByText('暂无会话')).toBeInTheDocument()
-
-    // 活跃筛选空态
+  it('shows 已结束 badge and reopen button on closed rows; 结束会话 menu on active rows', () => {
     mockUseChatStore.mockReturnValue(
       makeDefaultChatState({
-        sessions: [{ session_id: 's1', title: '会话1', status: 'active', updated_at: '2025-01-01' }],
+        sessions: [
+          { session_id: 's1', title: '会话1', status: 'active', updated_at: '2025-01-02' },
+          { session_id: 's2', title: '已结束对话', status: 'closed', updated_at: '2025-01-01' },
+        ],
       })
     )
-    rerender(<SessionList />)
-    fireEvent.click(screen.getByText('活跃 (1)'))
-    expect(screen.queryByText('暂无会话')).not.toBeInTheDocument()
+    const { container } = render(<SessionList />)
 
-    fireEvent.click(screen.getByText('已结束 (0)'))
-    expect(screen.getByText('暂无已结束会话')).toBeInTheDocument()
+    // 已结束行：徽标 + 重新打开按钮（不提供结束菜单）
+    expect(screen.getByText('已结束')).toBeInTheDocument()
+    expect(screen.getByTitle('重新打开')).toBeInTheDocument()
+
+    // 活跃行：打开更多菜单 → 出现「结束会话」
+    const rows = container.querySelectorAll('[data-testid="session-item"]')
+    fireEvent.click(rows[0].querySelector('button')!)
+    expect(screen.getByText('结束会话')).toBeInTheDocument()
+  })
+
+  it('shows 暂无会话 empty state when no sessions', () => {
+    mockUseChatStore.mockReturnValue(makeDefaultChatState({ sessions: [] }))
+    render(<SessionList />)
+    expect(screen.getByText('暂无会话')).toBeInTheDocument()
   })
 })
 

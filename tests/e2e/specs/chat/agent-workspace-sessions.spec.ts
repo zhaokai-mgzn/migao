@@ -90,7 +90,7 @@ test.describe('会话管理工作台 — 占位页替换为真实功能', () => 
     await expect(bar).toContainText('3')
   })
 
-  test('会话列表渲染真实数据（新建对话 + 单列表/筛选 chips）', async ({ page }) => {
+  test('会话列表渲染真实数据（新建对话 + 单列表）', async ({ page }) => {
     await page.goto('/agent-workspace/sessions')
     await page.waitForFunction(
       () => {
@@ -107,7 +107,7 @@ test.describe('会话管理工作台 — 占位页替换为真实功能', () => 
     await expect(sessionRows.filter({ hasText: '纱帘加工进度查询' })).toBeVisible()
   })
 
-  test('筛选已结束 chip + 选中已结束会话显示续聊 banner，点击继续此会话重新打开', async ({ page }) => {
+  test('单列表展示全部会话（无筛选控件），选中已结束会话显示续聊 banner，点击继续此会话重新打开', async ({ page }) => {
     // reopen 端点 mock：PUT /api/chat/sessions/:id/reopen
     await page.route('**/api/chat/sessions/*/reopen', async (route) => {
       await route.fulfill({
@@ -126,11 +126,12 @@ test.describe('会话管理工作台 — 占位页替换为真实功能', () => 
       { timeout: 10_000 },
     )
 
-    // 点击「已结束」筛选 chip → 列表只剩已结束会话
-    await page.getByRole('button', { name: /已结束 \(1\)/ }).click()
+    // 单列表默认展示全部 3 个会话，无筛选 chips/tab
     const sessionRows = page.locator('[data-testid="session-item"]')
-    await expect(sessionRows.filter({ hasText: '已完结售后咨询' })).toBeVisible({ timeout: 10_000 })
-    await expect(sessionRows.filter({ hasText: '遮光窗帘订单确认' })).toHaveCount(0)
+    await expect(sessionRows).toHaveCount(3, { timeout: 10_000 })
+    await expect(sessionRows.filter({ hasText: '已完结售后咨询' })).toBeVisible()
+    await expect(page.getByText(/全部 \(\d\)/)).toHaveCount(0)
+    await expect(page.getByText(/活跃 \(\d\)/)).toHaveCount(0)
 
     // 选中已结束会话 → 聊天区出现续聊 banner
     await sessionRows.filter({ hasText: '已完结售后咨询' }).click()
