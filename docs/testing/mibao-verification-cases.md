@@ -1501,19 +1501,18 @@
 真值: frontend-fix.sidebar-smart-cs-group, frontend-fix.cs-menu-icons, frontend-fix.cs-menu-rename, frontend-fix.cs-menu-permission
 溯源: 2026-08-30 新增：侧边栏智能客服大类分组与菜单图标渲染（issue #2670） ｜ tags: ui, sidebar, menu, icon
 
-### UI-006. 会话管理工作台 - 单列表 + 状态筛选 chips + 已结束会话续聊 banner 🔵
+### UI-006. 会话管理工作台 - 单列表（无筛选控件）+ 已结束会话续聊 banner 🔵
 ```
-你: 会话管理工作台：状态从硬 tab 降级为筛选 chips（全部/活跃/已结束），默认全部且活跃靠前；查看已结束会话显示续聊 banner 可一键重新打开
+你: 会话管理工作台：去掉「活跃/已关闭」硬 tab 与筛选控件，始终单列表展示全部会话（活跃在前、同组 updated_at 倒序），已结束会话灰化；查看已结束会话显示续聊 banner 可一键重新打开
 期望: direct_reply
-数据: SessionList 单列表渲染：默认全部会话按「活跃在前 + updated_at 倒序」排序，无「活跃/已关闭」双 tab
-数据: 筛选 chips 渲染「全部/活跃/已结束」并带计数；切换筛选只显示对应状态会话，空态文案区分（暂无会话/暂无活跃会话/暂无已结束会话）
-数据: 已结束会话行保留灰化 + 「已结束」徽标 + 重新打开按钮；活跃会话行保留「结束会话」菜单
+数据: SessionList 单列表渲染：全部会话按「活跃在前 + updated_at 倒序」排序；无「活跃/已关闭」双 tab，也无「全部/活跃/已结束」筛选 chips/tab
+数据: 已结束会话行保留灰化 + 「已结束」徽标 + 重新打开按钮；活跃会话行保留「结束会话」菜单；空态统一「暂无会话」，搜索空态「没有匹配的会话」
 数据: 查看已结束会话时聊天区顶部显示「会话已结束」banner + 「继续此会话」按钮；点击调用 reopenSession 并聚焦输入框，banner 消失
-数据: 会话管理工作台统计条与筛选文案统一为「活跃/已结束/共」（无「已关闭」残留）
-跳过: 纯前端会话列表/筛选/续聊交互由 vitest 单测 + E2E 点击链路验证，非 LLM 行为，不进入 agent-eval 冒烟
+数据: 会话管理工作台统计条文案统一为「活跃/已结束/共」（无「已关闭」残留）
+跳过: 纯前端会话列表/续聊交互由 vitest 单测 + E2E 点击链路验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.session-list-single-filter, frontend-fix.session-reopen-banner
-溯源: 2026-08-31 新增：会话管理状态 tab 降级为筛选 chips + 续聊 banner（参考 DSH 会话模型评审结论） ｜ tags: ui, session-list, filter, reopen
+溯源: 2026-08-31 新增：会话管理状态 tab 与筛选控件移除，单列表 + 续聊 banner（参考 DSH 会话模型评审结论） ｜ tags: ui, session-list, reopen
 
 ## utils（2 case）
 

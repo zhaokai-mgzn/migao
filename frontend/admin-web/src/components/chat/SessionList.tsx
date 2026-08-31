@@ -13,8 +13,6 @@ import { cn, formatChatTime } from '@/lib/utils'
 import { useChatStore } from '@/store/chat'
 import type { ChatSession } from '@/types'
 
-type SessionFilter = 'all' | 'active' | 'closed'
-
 export default function SessionList() {
   const {
     sessions,
@@ -29,7 +27,6 @@ export default function SessionList() {
   } = useChatStore()
 
   const [contextMenuId, setContextMenuId] = useState<string | null>(null)
-  const [filter, setFilter] = useState<SessionFilter>('all')
 
   // 单列表：活跃在前，同组按 updated_at 倒序（状态是元数据，不是导航）
   const sortedSessions = useMemo(
@@ -45,35 +42,15 @@ export default function SessionList() {
     [sessions]
   )
 
-  // 按筛选 chips 过滤
-  const statusFiltered = useMemo(
-    () =>
-      sortedSessions.filter(
-        s =>
-          filter === 'all' ||
-          (filter === 'active' ? s.status !== 'closed' : s.status === 'closed')
-      ),
-    [sortedSessions, filter]
-  )
-
   const filteredSessions = useMemo(() => {
-    if (!searchKeyword.trim()) return statusFiltered
+    if (!searchKeyword.trim()) return sortedSessions
     const kw = searchKeyword.toLowerCase()
-    return statusFiltered.filter(s =>
+    return sortedSessions.filter(s =>
       (s.title || '').toLowerCase().includes(kw) ||
       (s.customer_name || '').toLowerCase().includes(kw) ||
       (s.last_message || '').toLowerCase().includes(kw)
     )
-  }, [statusFiltered, searchKeyword])
-
-  const activeCount = useMemo(
-    () => sessions.filter(s => s.status !== 'closed').length,
-    [sessions]
-  )
-  const closedCount = useMemo(
-    () => sessions.filter(s => s.status === 'closed').length,
-    [sessions]
-  )
+  }, [sortedSessions, searchKeyword])
 
   const handleCloseSession = useCallback(
     (e: React.MouseEvent, id: string) => {
@@ -120,32 +97,7 @@ export default function SessionList() {
         </div>
       </div>
 
-      {/* 状态筛选 chips：全部 / 活跃 / 已结束（状态是元数据，不是导航） */}
-      <div className="flex items-center gap-1.5 px-3 py-2 border-b border-neutral-100">
-        {(
-          [
-            { key: 'all', label: '全部', count: sessions.length },
-            { key: 'active', label: '活跃', count: activeCount },
-            { key: 'closed', label: '已结束', count: closedCount },
-          ] as { key: SessionFilter; label: string; count: number }[]
-        ).map(opt => (
-          <button
-            key={opt.key}
-            onClick={() => setFilter(opt.key)}
-            className={cn(
-              'px-2.5 py-1 rounded-full text-xs font-medium transition-colors',
-              filter === opt.key
-                ? 'bg-primary-50 text-primary-700 border border-primary-200'
-                : 'text-neutral-500 border border-neutral-200 hover:text-neutral-700 hover:bg-neutral-50'
-            )}
-            data-testid="session-filter-chip"
-          >
-            {opt.label} ({opt.count})
-          </button>
-        ))}
-      </div>
-
-      {/* 会话列表 */}
+      {/* 会话列表（单列表：无 tab、无筛选控件，状态只靠排序与灰化表达） */}
       <div className="flex-1 overflow-y-auto">
         {isLoadingSessions ? (
           <div className="flex items-center justify-center py-8">
@@ -153,13 +105,7 @@ export default function SessionList() {
           </div>
         ) : filteredSessions.length === 0 ? (
           <div className="text-center py-8 text-neutral-400 text-xs">
-            {searchKeyword
-              ? '没有匹配的会话'
-              : filter === 'active'
-                ? '暂无活跃会话'
-                : filter === 'closed'
-                  ? '暂无已结束会话'
-                  : '暂无会话'}
+            {searchKeyword ? '没有匹配的会话' : '暂无会话'}
           </div>
         ) : (
           <div className="py-1">
