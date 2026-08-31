@@ -41,6 +41,9 @@ exemptions:
   - pattern: "backend/ai-agent-service/app/tools/product_manage.py"
     reason: "错误处理加固：_resolve_category_id 失败返回 None + suggestion。逻辑变更小，由已有 test_tools_product_detail/test_tools_validate_input 间接覆盖"
 
+  - pattern: "backend/ai-agent-service/app/tools/__init__.py"
+    reason: "Tool 模块 re-export（纯 import + __all__，无运行时逻辑）；新增 CustomerOrderQueryTool 由 tests/test_tools_customer_order_query.py 直接覆盖"
+
   - pattern: "backend/ai-agent-service/app/api/chat.py"
     reason: "删除 close_other_active_sessions 调用（3处）：纯删除代码，不引入新逻辑。已有 test_session_memory 覆盖底层函数"
 
