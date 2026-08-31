@@ -13,7 +13,7 @@ import { cn, formatChatTime } from '@/lib/utils'
 import { useChatStore } from '@/store/chat'
 import type { ChatSession } from '@/types'
 
-type SessionTab = 'active' | 'closed'
+type SessionFilter = 'all' | 'active' | 'closed'
 
 export default function SessionList() {
   const {
@@ -29,26 +29,45 @@ export default function SessionList() {
   } = useChatStore()
 
   const [contextMenuId, setContextMenuId] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<SessionTab>('active')
+  const [filter, setFilter] = useState<SessionFilter>('all')
 
-  // 按 tab 过滤
-  const tabFiltered = useMemo(
-    () => sessions.filter(s => s.status === activeTab || (activeTab === 'active' && !s.status)),
-    [sessions, activeTab]
+  // 单列表：活跃在前，同组按 updated_at 倒序（状态是元数据，不是导航）
+  const sortedSessions = useMemo(
+    () =>
+      [...sessions].sort((a, b) => {
+        const aClosed = a.status === 'closed' ? 1 : 0
+        const bClosed = b.status === 'closed' ? 1 : 0
+        if (aClosed !== bClosed) return aClosed - bClosed
+        const at = new Date(a.updated_at || a.created_at || 0).getTime()
+        const bt = new Date(b.updated_at || b.created_at || 0).getTime()
+        return bt - at
+      }),
+    [sessions]
+  )
+
+  // 按筛选 chips 过滤
+  const statusFiltered = useMemo(
+    () =>
+      sortedSessions.filter(
+        s =>
+          filter === 'all' ||
+          (filter === 'active' ? s.status !== 'closed' : s.status === 'closed')
+      ),
+    [sortedSessions, filter]
   )
 
   const filteredSessions = useMemo(() => {
-    if (!searchKeyword.trim()) return tabFiltered
+    if (!searchKeyword.trim()) return statusFiltered
     const kw = searchKeyword.toLowerCase()
-    return tabFiltered.filter(s =>
+    return statusFiltered.filter(s =>
       (s.title || '').toLowerCase().includes(kw) ||
       (s.customer_name || '').toLowerCase().includes(kw) ||
       (s.last_message || '').toLowerCase().includes(kw)
     )
-  }, [tabFiltered, searchKeyword])
+  }, [statusFiltered, searchKeyword])
 
   const activeCount = useMemo(
-    () => sessions.filter(s => s.status === 'active' || !s.status).length,
+    () => sessions.filter(s => s.status !== 'closed').length,
     [sessions]
   )
   const closedCount = useMemo(
@@ -101,30 +120,29 @@ export default function SessionList() {
         </div>
       </div>
 
-      {/* Tab 切换：活跃 / 已关闭 */}
-      <div className="flex border-b border-neutral-100">
-        <button
-          onClick={() => setActiveTab('active')}
-          className={cn(
-            'flex-1 py-2 text-xs font-medium transition-colors border-b-2',
-            activeTab === 'active'
-              ? 'text-primary-600 border-primary-600'
-              : 'text-neutral-400 border-transparent hover:text-neutral-600'
-          )}
-        >
-          活跃 ({activeCount})
-        </button>
-        <button
-          onClick={() => setActiveTab('closed')}
-          className={cn(
-            'flex-1 py-2 text-xs font-medium transition-colors border-b-2',
-            activeTab === 'closed'
-              ? 'text-primary-600 border-primary-600'
-              : 'text-neutral-400 border-transparent hover:text-neutral-600'
-          )}
-        >
-          已关闭 ({closedCount})
-        </button>
+      {/* 状态筛选 chips：全部 / 活跃 / 已结束（状态是元数据，不是导航） */}
+      <div className="flex items-center gap-1.5 px-3 py-2 border-b border-neutral-100">
+        {(
+          [
+            { key: 'all', label: '全部', count: sessions.length },
+            { key: 'active', label: '活跃', count: activeCount },
+            { key: 'closed', label: '已结束', count: closedCount },
+          ] as { key: SessionFilter; label: string; count: number }[]
+        ).map(opt => (
+          <button
+            key={opt.key}
+            onClick={() => setFilter(opt.key)}
+            className={cn(
+              'px-2.5 py-1 rounded-full text-xs font-medium transition-colors',
+              filter === opt.key
+                ? 'bg-primary-50 text-primary-700 border border-primary-200'
+                : 'text-neutral-500 border border-neutral-200 hover:text-neutral-700 hover:bg-neutral-50'
+            )}
+            data-testid="session-filter-chip"
+          >
+            {opt.label} ({opt.count})
+          </button>
+        ))}
       </div>
 
       {/* 会话列表 */}
@@ -135,7 +153,13 @@ export default function SessionList() {
           </div>
         ) : filteredSessions.length === 0 ? (
           <div className="text-center py-8 text-neutral-400 text-xs">
-            {searchKeyword ? '没有匹配的会话' : activeTab === 'active' ? '暂无活跃会话' : '暂无已关闭会话'}
+            {searchKeyword
+              ? '没有匹配的会话'
+              : filter === 'active'
+                ? '暂无活跃会话'
+                : filter === 'closed'
+                  ? '暂无已结束会话'
+                  : '暂无会话'}
           </div>
         ) : (
           <div className="py-1">
@@ -191,6 +215,7 @@ function SessionItem({
   return (
     <div
       onClick={onSelect}
+      data-testid="session-item"
       className={cn(
         'group relative mx-1 mb-0.5 px-3 py-2 rounded-lg cursor-pointer transition-colors',
         isActive
