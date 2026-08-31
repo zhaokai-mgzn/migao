@@ -73,7 +73,7 @@ cases:
 
   - id: UI-003
     legacy_id: ""
-    title: "米宝「今日经营速览」洞察条 - 订单环比/含加工占比/低库存预警"
+    title: "米宝「今日经营速览」洞察条 - 一句话经营解读"
     domains:
       - ui
       - frontend
@@ -93,12 +93,12 @@ cases:
     expectations:
       - tool: direct_reply
     data_checks:
-      - "frontend/admin-web/src/components/dashboard/TodayOverviewBar.tsx 渲染订单环比/含加工占比/低库存预警三个区块"
+      - "frontend/admin-web/src/components/dashboard/TodayOverviewBar.tsx 以「一句话经营解读」串联今日订单/销售额/环比/提醒"
       - "含加工占比 = processingCount / pendingCount，pendingCount<=0 时渲染 0% 而非 NaN/Infinity/undefined"
-      - "订单环比/低库存预警数值来自 props（由页面 API 返回值派生），组件内无硬编码固定数值"
+      - "一句话中的数值全部来自 props（由页面 API 返回值派生），组件内无硬编码固定数值"
       - "洞察条置于经营看板顶部（先于待处理区块渲染）"
     skip_reason: "纯前端组件由 vitest 单测验证（TodayOverviewBar.test.tsx + dashboard.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-08-25 新增：经营看板织物质感重设计子任务 C（issue #2538）"
+    merge_log: "2026-08-25 新增：经营看板织物质感重设计子任务 C（issue #2538）；2026-08-31 更新：洞察条改为一句话经营解读（PD 精简改版）"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/components/dashboard/TodayOverviewBar.test.tsx"

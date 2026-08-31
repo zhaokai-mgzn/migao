@@ -542,10 +542,13 @@
 数据: 商品销量排行表头「日涨」在 1440/1280 两视口无截断
 数据: 订单趋势 x 轴刻度在 1280 宽度下降采样不重叠
 数据: 订单/售后状态语义色 chips；空态「暂无数据」无 '-' 占位
+数据: 销售额趋势/迷你图使用真实 amount 数据，无 23.8 假乘数
+数据: 经营数据 4 卡自洽：客单价 = 今日销售额 ÷ 今日订单数
+数据: 涨跌语义色：上涨=绿色（好事）、下跌=红色（需关注）
 跳过: UI 页面改版：由 vitest 单测 + Playwright 多视口 E2E + 页面验收（page_accept）验证，不进入 agent-eval 冒烟
 ```
 真值: dashboard-ui.tokens, dashboard-ui.insight-bar, dashboard-ui.no-truncate, dashboard-ui.axis-sampling, dashboard-ui.status-chips, dashboard-ui.no-overflow
-溯源: 2026-08-25 新增：#2532 经营看板织物质感改版（样板页） ｜ tags: dashboard, ui-redesign, visual
+溯源: 2026-08-25 新增：#2532 经营看板织物质感改版（样板页）；2026-08-31 更新：PD 精简改版（洞察条一句话解读 + 客单价卡 + 绿涨红跌 + 修复 23.8 假数据） ｜ tags: dashboard, ui-redesign, visual
 
 ## 防御域（16 case）
 
@@ -1458,18 +1461,18 @@
 真值: frontend-fix.status-chip, frontend-fix.empty-state
 溯源: 2026-08-25 新增：经营看板织物质感重设计子任务 D（issue #2539） ｜ tags: ui, status-chip, empty-state
 
-### UI-003. 米宝「今日经营速览」洞察条 - 订单环比/含加工占比/低库存预警 🔵
+### UI-003. 米宝「今日经营速览」洞察条 - 一句话经营解读 🔵
 ```
 你: 经营看板织物质感重设计子任务 C：米宝「今日经营速览」洞察条置于页面顶部
 期望: direct_reply
-数据: frontend/admin-web/src/components/dashboard/TodayOverviewBar.tsx 渲染订单环比/含加工占比/低库存预警三个区块
+数据: frontend/admin-web/src/components/dashboard/TodayOverviewBar.tsx 以「一句话经营解读」串联今日订单/销售额/环比/提醒
 数据: 含加工占比 = processingCount / pendingCount，pendingCount<=0 时渲染 0% 而非 NaN/Infinity/undefined
-数据: 订单环比/低库存预警数值来自 props（由页面 API 返回值派生），组件内无硬编码固定数值
+数据: 一句话中的数值全部来自 props（由页面 API 返回值派生），组件内无硬编码固定数值
 数据: 洞察条置于经营看板顶部（先于待处理区块渲染）
 跳过: 纯前端组件由 vitest 单测验证（TodayOverviewBar.test.tsx + dashboard.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: dashboard-jump.overview, dashboard-jump.processing-shipment, dashboard-jump.low-stock, dashboard-jump.real-data
-溯源: 2026-08-25 新增：经营看板织物质感重设计子任务 C（issue #2538） ｜ tags: ui, dashboard, insight, token
+溯源: 2026-08-25 新增：经营看板织物质感重设计子任务 C（issue #2538）；2026-08-31 更新：洞察条改为一句话经营解读（PD 精简改版） ｜ tags: ui, dashboard, insight, token
 
 ### UI-004. 经营看板密度治理 - 商品销量排行表头不截断 + 订单趋势 x 轴降采样 🔵
 ```
