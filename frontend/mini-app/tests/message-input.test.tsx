@@ -10,11 +10,12 @@ import '@testing-library/jest-dom'
 import { render, screen, fireEvent, act } from '@testing-library/react'
 import Taro from '@tarojs/taro'
 import MessageInput from '../src/components/chat/MessageInput'
-import { startRecording, stopAndTranscribe } from '../src/utils/voice'
+import { startRecording, stopAndTranscribe, isVoiceSupported } from '../src/utils/voice'
 
 jest.mock('../src/utils/voice', () => ({
   startRecording: jest.fn(),
   stopAndTranscribe: jest.fn(),
+  isVoiceSupported: jest.fn(() => true),
 }))
 
 jest.mock('../src/utils/imageUpload', () => ({
@@ -46,6 +47,7 @@ function holdAndRelease(clientY = 200) {
 
 beforeEach(() => {
   jest.clearAllMocks()
+  ;(isVoiceSupported as jest.Mock).mockReturnValue(true)
 })
 
 describe('MessageInput — 语音/键盘双模式', () => {
@@ -134,6 +136,15 @@ describe('MessageInput — 语音/键盘双模式', () => {
 
     expect(props.onSend).toHaveBeenCalledWith('你好')
     expect(textarea).toHaveValue('')
+  })
+
+  it('环境不支持录音（H5）→ 默认键盘模式，无模式切换键', () => {
+    ;(isVoiceSupported as jest.Mock).mockReturnValue(false)
+    renderInput()
+    expect(screen.getByPlaceholderText('输入您的问题...')).toBeInTheDocument()
+    expect(screen.queryByText('按住 说话')).not.toBeInTheDocument()
+    expect(screen.queryByText('⌨️')).not.toBeInTheDocument()
+    expect(screen.queryByText('🎤')).not.toBeInTheDocument()
   })
 
   it('键盘模式流式中显示停止按钮，点击触发 onStop', () => {
