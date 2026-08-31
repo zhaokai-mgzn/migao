@@ -1434,7 +1434,7 @@
 真值: settings-manage.ai-config, settings-manage.immediate-effect
 溯源: POC 机器人设置集成新增 ｜ tags: ai_config, handoff
 
-## ui（7 case）
+## ui（8 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -1527,6 +1527,19 @@
 真值: frontend-fix.xiaobu-voice-holdtalk
 溯源: 2026-08-31 新增：小布 C 端语音输入（按住说话/松开发送/键盘切换，参考瑞幸 C 端设计） ｜ tags: mini-app, voice-input, hold-to-talk
 
+### UI-008. 米高会话列表折叠/展开窄 rail（参考 DSH sidebar 折叠交互） 🔵
+```
+你: 会话列表支持折叠为窄 rail（图标态），展开恢复完整列表，折叠偏好持久化到 localStorage
+期望: direct_reply
+数据: SessionList 折叠按钮 aria-label「折叠会话列表」且展开态 aria-expanded=true；点击折叠 → 窄 rail 仅保留「新建对话」图标按钮 + 展开 toggle（aria-label「展开会话列表」、aria-expanded=false），列表项/搜索隐藏
+数据: 再点展开 → 完整 w-64 列表恢复（新建对话/搜索/右键菜单功能全部保留）
+数据: 折叠偏好写入 localStorage（key chat.session-list.collapsed），刷新/重挂后恢复折叠态
+数据: 折叠动画为 Tailwind width transition + overflow-hidden（参考 DSH slide+crossfade 的简洁等价）
+跳过: 纯前端会话列表折叠交互由 vitest 单测 + E2E 点击链路验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.session-list-collapse
+溯源: 2026-08-31 新增：会话列表折叠/展开窄 rail（参考 DSH sidebar 折叠交互，Issue #2691） ｜ tags: ui, session-list, collapse, rail
+
 ## utils（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -1556,8 +1569,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：130（活跃 86，跳过 44）
-- tier 分布：smoke 10 / normal 93 / adversarial 27
+- 用例总数：131（活跃 86，跳过 45）
+- tier 分布：smoke 10 / normal 94 / adversarial 27
 - 售后域：5
 - agents：6
 - api：10
@@ -1576,6 +1589,6 @@
 - 商品域：13
 - registry：1
 - 设置域：8
-- ui：7
+- ui：8
 - utils：2
 
