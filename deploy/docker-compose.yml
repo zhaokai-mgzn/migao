@@ -84,7 +84,7 @@ services:
       # 审计 07 P0-1: 与 admin-api 对齐，dev 显式注入万能码（order_create 客户下单验证）
       SMS_BYPASS_CODE: ${SMS_BYPASS_CODE:-123456}
       PRIMARY_API_KEY: ${PRIMARY_API_KEY:-}
-      PRIMARY_MODEL: ${PRIMARY_MODEL:-deepseek-v4-pro}
+      PRIMARY_MODEL: ${PRIMARY_MODEL:-deepseek-v4-flash}
       DASHVECTOR_API_KEY: ${DASHVECTOR_API_KEY:-}
       DASHVECTOR_ENDPOINT: ${DASHVECTOR_ENDPOINT:-}
     ports:
