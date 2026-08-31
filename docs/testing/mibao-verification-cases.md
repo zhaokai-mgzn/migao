@@ -1434,7 +1434,7 @@
 真值: settings-manage.ai-config, settings-manage.immediate-effect
 溯源: POC 机器人设置集成新增 ｜ tags: ai_config, handoff
 
-## ui（6 case）
+## ui（7 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -1514,6 +1514,19 @@
 真值: frontend-fix.session-list-single-filter, frontend-fix.session-reopen-banner
 溯源: 2026-08-31 新增：会话管理状态 tab 与筛选控件移除，单列表 + 续聊 banner（参考 DSH 会话模型评审结论） ｜ tags: ui, session-list, reopen
 
+### UI-007. 小布 C 端输入条 - 默认按住说话（松开发送）与键盘模式切换 🔵
+```
+你: 小布 C 端（小程序/H5 同源）输入条参考瑞幸设计：默认「按住说话、松开直接发送」，可一键切回键盘模式输入文字；上滑取消录音
+期望: direct_reply
+数据: mini-app MessageInput 默认语音模式：渲染「按住 说话」按钮，不渲染 textarea；左切换键显示 ⌨️
+数据: 语音模式按住（touchStart）调用 startRecording，松开（touchEnd）调用 stopAndTranscribe → 转写文本直接 onSend；上滑超过阈值取消不发送
+数据: 切到键盘模式：切换键变 🎤，显示 textarea + 图片 + 发送（保留原功能）；切回语音模式恢复按住说话
+数据: 流式/无会话时禁止录音；转写失败 toast「未听清，请重试」不发送
+跳过: 纯前端 C 端输入交互由 mini-app jest 单测验证（message-input.test.tsx，9 例），非 LLM 行为，不进入 agent-eval 冒烟；xiaobu H5 E2E 基建在 WIP 分支（main 未落）
+```
+真值: frontend-fix.xiaobu-voice-holdtalk
+溯源: 2026-08-31 新增：小布 C 端语音输入（按住说话/松开发送/键盘切换，参考瑞幸 C 端设计） ｜ tags: mini-app, voice-input, hold-to-talk
+
 ## utils（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -1543,8 +1556,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：129（活跃 86，跳过 43）
-- tier 分布：smoke 10 / normal 92 / adversarial 27
+- 用例总数：130（活跃 86，跳过 44）
+- tier 分布：smoke 10 / normal 93 / adversarial 27
 - 售后域：5
 - agents：6
 - api：10
@@ -1563,6 +1576,6 @@
 - 商品域：13
 - registry：1
 - 设置域：8
-- ui：6
+- ui：7
 - utils：2
 

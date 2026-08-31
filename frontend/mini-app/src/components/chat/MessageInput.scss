@@ -141,4 +141,68 @@
     color: #ffffff;
     line-height: 1;
   }
+
+  // 语音/键盘模式切换键
+  &__mode-btn {
+    flex-shrink: 0;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: #F3F4F6;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    &--disabled {
+      opacity: 0.4;
+    }
+  }
+
+  &__mode-btn-icon {
+    font-size: 32px;
+    line-height: 1;
+  }
+
+  // 按住说话大按钮（语音模式）
+  &__hold-btn {
+    flex: 1;
+    height: 72px;
+    border-radius: 36px;
+    background: #F3F4F6;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    &--recording {
+      background: rgba(255, 77, 79, 0.92);
+      animation: voice-pulse 1.2s ease-in-out infinite;
+    }
+
+    &--cancelling {
+      background: rgba(255, 77, 79, 0.6);
+    }
+
+    &--disabled {
+      opacity: 0.4;
+    }
+  }
+
+  &__hold-btn-text {
+    font-size: 28px;
+    color: #1F2937;
+
+    .message-input__hold-btn--recording &,
+    .message-input__hold-btn--cancelling & {
+      color: #ffffff;
+    }
+  }
+}
+
+@keyframes voice-pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.02);
+  }
 }

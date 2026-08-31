@@ -1817,6 +1817,20 @@ _CASE_UI_006 = EvalCase(
     tags=['ui', 'session-list', 'reopen'],
 )
 
+# ── UI-007 [NORMAL] 小布 C 端输入条 - 默认按住说话（松开发送）与键盘模式切换（源: cases/ui.yml）──
+_CASE_UI_007 = EvalCase(
+    id='UI-007',
+    legacy_id='',
+    title='小布 C 端输入条 - 默认按住说话（松开发送）与键盘模式切换',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['小布 C 端（小程序/H5 同源）输入条参考瑞幸设计：默认「按住说话、松开直接发送」，可一键切回键盘模式输入文字；上滑取消录音'],
+    expectations=['direct_reply'],
+    data_checks=['mini-app MessageInput 默认语音模式：渲染「按住 说话」按钮，不渲染 textarea；左切换键显示 ⌨️', '语音模式按住（touchStart）调用 startRecording，松开（touchEnd）调用 stopAndTranscribe → 转写文本直接 onSend；上滑超过阈值取消不发送', '切到键盘模式：切换键变 🎤，显示 textarea + 图片 + 发送（保留原功能）；切回语音模式恢复按住说话', '流式/无会话时禁止录音；转写失败 toast「未听清，请重试」不发送'],
+    skip_reason='纯前端 C 端输入交互由 mini-app jest 单测验证（message-input.test.tsx，9 例），非 LLM 行为，不进入 agent-eval 冒烟；xiaobu H5 E2E 基建在 WIP 分支（main 未落）',
+    tags=['mini-app', 'voice-input', 'hold-to-talk'],
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -1973,6 +1987,7 @@ ALL_CASES = (
     _CASE_UI_004,
     _CASE_UI_005,
     _CASE_UI_006,
+    _CASE_UI_007,
     _CASE_UT_001,
     _CASE_UT_002,
 )

@@ -1,7 +1,8 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { View, Textarea, Text, Image } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import { chooseImages, uploadImages } from '../../utils/imageUpload'
+import { startRecording, stopAndTranscribe } from '../../utils/voice'
 import './MessageInput.scss'
 
 interface MessageInputProps {
@@ -11,22 +12,89 @@ interface MessageInputProps {
   disabled?: boolean
 }
 
+type InputMode = 'voice' | 'keyboard'
+
+/** 上滑取消阈值（px） */
+const CANCEL_THRESHOLD = 50
+
 export default function MessageInput({
   onSend,
   onStop,
   isStreaming,
   disabled = false,
 }: MessageInputProps) {
+  // 默认语音模式：按住说话、松开发送；⌨️/🎤 一键切回键盘输入
+  const [mode, setMode] = useState<InputMode>('voice')
   const [value, setValue] = useState('')
   const [selectedImages, setSelectedImages] = useState<string[]>([])
   const [isUploading, setIsUploading] = useState(false)
+  const [isRecording, setIsRecording] = useState(false)
+  const [isCancelling, setIsCancelling] = useState(false)
+
+  // 录音触摸跟踪（ref，避免触摸事件竞态）
+  const touchStartYRef = useRef(0)
+  const cancellingRef = useRef(false)
+  const recordingRef = useRef(false)
+
+  const canVoice = !disabled && !isStreaming && !isUploading
+  const isKeyboard = mode === 'keyboard'
+
+  // ── 语音模式：按住说话 / 松开发送 / 上滑取消 ──
+
+  const handleTouchStart = useCallback(
+    (e: any) => {
+      if (!canVoice) return
+      recordingRef.current = true
+      cancellingRef.current = false
+      touchStartYRef.current = e.touches?.[0]?.clientY ?? 0
+      setIsRecording(true)
+      setIsCancelling(false)
+      startRecording()
+    },
+    [canVoice]
+  )
+
+  const handleTouchMove = useCallback((e: any) => {
+    if (!recordingRef.current) return
+    const y = e.touches?.[0]?.clientY ?? 0
+    const cancelled = touchStartYRef.current - y > CANCEL_THRESHOLD
+    cancellingRef.current = cancelled
+    setIsCancelling(cancelled)
+  }, [])
+
+  const handleTouchEnd = useCallback(async () => {
+    if (!recordingRef.current) return
+    recordingRef.current = false
+    setIsRecording(false)
+    setIsCancelling(false)
+
+    if (cancellingRef.current) {
+      cancellingRef.current = false
+      Taro.showToast({ title: '已取消', icon: 'none' })
+      return
+    }
+
+    try {
+      const result = await stopAndTranscribe()
+      if (result && result.text) {
+        onSend(result.text)
+      } else {
+        Taro.showToast({ title: '未听清，请重试', icon: 'none' })
+      }
+    } catch (error: any) {
+      console.error('语音输入失败:', error)
+      Taro.showToast({ title: error.message || '语音输入失败', icon: 'none' })
+    }
+  }, [onSend])
+
+  // ── 键盘模式：图片 + 文本 ──
 
   const handleInput = useCallback((e: any) => {
     setValue(e.detail.value)
   }, [])
 
   const handleChooseImage = useCallback(async () => {
-    if (isUploading || isStreaming || disabled) return
+    if (isUploading || isStreaming || disabled || isRecording) return
     const maxCount = 3 - selectedImages.length
     if (maxCount <= 0) {
       Taro.showToast({ title: '最多选择 3 张图片', icon: 'none' })
@@ -36,7 +104,7 @@ export default function MessageInput({
     if (paths.length > 0) {
       setSelectedImages(prev => [...prev, ...paths].slice(0, 3))
     }
-  }, [selectedImages, isUploading, isStreaming, disabled])
+  }, [selectedImages, isUploading, isStreaming, disabled, isRecording])
 
   const handleRemoveImage = useCallback((index: number) => {
     setSelectedImages(prev => prev.filter((_, i) => i !== index))
@@ -95,8 +163,8 @@ export default function MessageInput({
 
   return (
     <View className='message-input'>
-      {/* 图片预览区域 */}
-      {selectedImages.length > 0 && (
+      {/* 图片预览区域（键盘模式） */}
+      {isKeyboard && selectedImages.length > 0 && (
         <View className='message-input__images'>
           {selectedImages.map((path, idx) => (
             <View key={`preview-${idx}`} className='message-input__image-item'>
@@ -122,33 +190,63 @@ export default function MessageInput({
       )}
 
       <View className='message-input__bar'>
-        {/* 图片选择按钮 */}
+        {/* 语音/键盘模式切换键 */}
         <View
-          className={`message-input__img-btn${disabled || isStreaming || isUploading ? ' message-input__img-btn--disabled' : ''}`}
-          onClick={handleChooseImage}
+          className='message-input__mode-btn'
+          onClick={() => setMode(mode => (mode === 'voice' ? 'keyboard' : 'voice'))}
         >
-          <Text className='message-input__img-btn-icon'>+</Text>
+          <Text className='message-input__mode-btn-icon'>{isKeyboard ? '🎤' : '⌨️'}</Text>
         </View>
 
-        <View className='message-input__textarea-wrap'>
-          <Textarea
-            className='message-input__textarea'
-            value={value}
-            onInput={handleInput}
-            onConfirm={handleConfirm}
-            placeholder='输入您的问题...'
-            placeholderStyle='color: #9CA3AF'
-            maxlength={500}
-            autoHeight
-            confirmType='send'
-            adjustPosition
-            showConfirmBar={false}
-            disabled={disabled || isUploading}
-          />
-        </View>
-        <View className={btnClass} onClick={handleSend}>
-          <Text className='message-input__btn-icon'>{btnIcon}</Text>
-        </View>
+        {isKeyboard ? (
+          <>
+            {/* 图片选择按钮 */}
+            <View
+              className={`message-input__img-btn${disabled || isStreaming || isUploading ? ' message-input__img-btn--disabled' : ''}`}
+              onClick={handleChooseImage}
+            >
+              <Text className='message-input__img-btn-icon'>+</Text>
+            </View>
+
+            <View className='message-input__textarea-wrap'>
+              <Textarea
+                className='message-input__textarea'
+                value={value}
+                onInput={handleInput}
+                onConfirm={handleConfirm}
+                placeholder='输入您的问题...'
+                placeholderStyle='color: #9AA5B1'
+                maxlength={500}
+                autoHeight
+                confirmType='send'
+                adjustPosition
+                showConfirmBar={false}
+                disabled={disabled || isUploading}
+              />
+            </View>
+            <View className={btnClass} onClick={handleSend}>
+              <Text className='message-input__btn-icon'>{btnIcon}</Text>
+            </View>
+          </>
+        ) : (
+          <>
+            {/* 按住说话 */}
+            <View
+              className={`message-input__hold-btn${isRecording ? ' message-input__hold-btn--recording' : ''}${isCancelling ? ' message-input__hold-btn--cancelling' : ''}${!canVoice ? ' message-input__hold-btn--disabled' : ''}`}
+              onTouchStart={handleTouchStart}
+              onTouchMove={handleTouchMove}
+              onTouchEnd={handleTouchEnd}
+            >
+              <Text className='message-input__hold-btn-text'>
+                {isRecording
+                  ? isCancelling
+                    ? '松开 取消'
+                    : '松开 发送 · 上滑 取消'
+                  : '按住 说话'}
+              </Text>
+            </View>
+          </>
+        )}
       </View>
     </View>
   )
