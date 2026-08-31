@@ -1,4 +1,4 @@
-// case_ids: DA-004
+// case_ids: DA-004, UI-006
 /**
  * 会话管理工作台（/agent-workspace/sessions）E2E
  *
@@ -61,7 +61,7 @@ test.describe('会话管理工作台 — 占位页替换为真实功能', () => 
     await expect(page.getByText('该功能正在开发中')).toHaveCount(0)
   })
 
-  test('顶部统计条按会话状态派生（活跃 2 / 已关闭 1 / 共 3）', async ({ page }) => {
+  test('顶部统计条按会话状态派生（活跃 2 / 已结束 1 / 共 3）', async ({ page }) => {
     await page.goto('/agent-workspace/sessions')
     await page.waitForFunction(
       () => {
@@ -75,13 +75,13 @@ test.describe('会话管理工作台 — 占位页替换为真实功能', () => 
     await expect(bar).toBeVisible({ timeout: 10_000 })
     await expect(bar).toContainText('活跃')
     await expect(bar).toContainText('2')
-    await expect(bar).toContainText('已关闭')
+    await expect(bar).toContainText('已结束')
     await expect(bar).toContainText('1')
     await expect(bar).toContainText('共')
     await expect(bar).toContainText('3')
   })
 
-  test('会话列表渲染真实数据（新建对话 + 活跃/已关闭 tab）', async ({ page }) => {
+  test('会话列表渲染真实数据（新建对话 + 单列表/筛选 chips）', async ({ page }) => {
     await page.goto('/agent-workspace/sessions')
     await page.waitForFunction(
       () => {
@@ -94,6 +94,43 @@ test.describe('会话管理工作台 — 占位页替换为真实功能', () => 
     await expect(page.getByRole('button', { name: /新建对话/ })).toBeVisible({ timeout: 10_000 })
     await expect(page.getByText('遮光窗帘订单确认')).toBeVisible({ timeout: 10_000 })
     await expect(page.getByText('纱帘加工进度查询')).toBeVisible()
+  })
+
+  test('筛选已结束 chip + 选中已结束会话显示续聊 banner，点击继续此会话重新打开', async ({ page }) => {
+    // reopen 端点 mock：PUT /api/chat/sessions/:id/reopen
+    await page.route('**/api/chat/sessions/*/reopen', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: { success: true } }),
+      })
+    })
+    await page.goto('/agent-workspace/sessions')
+    await page.waitForFunction(
+      () => {
+        const raw = localStorage.getItem('auth-storage')
+        if (!raw) return false
+        try { return !!(JSON.parse(raw)?.state?.accessToken) } catch { return false }
+      },
+      { timeout: 10_000 },
+    )
+
+    // 点击「已结束」筛选 chip → 只剩已结束会话
+    await page.getByRole('button', { name: /已结束 \(1\)/ }).click()
+    await expect(page.getByText('已完结售后咨询')).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByText('遮光窗帘订单确认')).toHaveCount(0)
+
+    // 选中已结束会话 → 聊天区出现续聊 banner
+    await page.getByText('已完结售后咨询').click()
+    await expect(page.getByText('会话已结束，历史消息已保留')).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByRole('button', { name: '继续此会话' })).toBeVisible()
+
+    // 点击「继续此会话」→ banner 消失，输入框恢复可输入
+    await page.getByRole('button', { name: '继续此会话' }).click()
+    await expect(page.getByText('会话已结束，历史消息已保留')).toHaveCount(0)
+    await expect(page.locator('textarea[placeholder*="输入消息"]').first()).toBeVisible({
+      timeout: 10_000,
+    })
   })
 
   test('选中会话后聊天区加载历史（复用 /chat 组件链）', async ({ page }) => {

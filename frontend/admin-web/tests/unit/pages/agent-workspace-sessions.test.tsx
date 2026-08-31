@@ -1,10 +1,10 @@
-// case_ids: DA-004
+// case_ids: DA-004, UI-006
 /**
  * agent-workspace/sessions — 会话管理工作台（客服中心 / 会话管理）
  *
  * 会话管理重构落地页：把占位页改造成真实会话管理工作台。
  * 复用已重构的 SessionService API（chatApi，ai-agent-service /api/chat/*）：
- *   - 顶部监控统计条：活跃 / 已关闭 / 总数（从 store.sessions 派生）
+ *   - 顶部监控统计条：活跃 / 已结束 / 总数（从 store.sessions 派生）
  *   - 主体复用 /chat 组件链：SessionList（会话列表）+ ChatArea（聊天 + 会话洞察抽屉）
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -63,11 +63,11 @@ describe('AgentSessionsPage — 会话管理工作台', () => {
     expect(mockFetchSessions).toHaveBeenCalled()
   })
 
-  it('顶部统计条展示活跃 / 已关闭 / 总会话数（从 store 派生）', () => {
+  it('顶部统计条展示活跃 / 已结束 / 总会话数（从 store 派生）', () => {
     render(<AgentSessionsPage />)
     expect(screen.getByText('活跃')).toBeInTheDocument()
     expect(screen.getByText('2')).toBeInTheDocument()
-    expect(screen.getByText('已关闭')).toBeInTheDocument()
+    expect(screen.getByText('已结束')).toBeInTheDocument()
     expect(screen.getByText('1')).toBeInTheDocument()
     expect(screen.getByText('共')).toBeInTheDocument()
     expect(screen.getByText('3')).toBeInTheDocument()

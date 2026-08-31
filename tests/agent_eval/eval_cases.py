@@ -1803,6 +1803,20 @@ _CASE_UI_005 = EvalCase(
     tags=['ui', 'sidebar', 'menu', 'icon'],
 )
 
+# ── UI-006 [NORMAL] 会话管理工作台 - 单列表 + 状态筛选 chips + 已结束会话续聊 banner（源: cases/ui.yml）──
+_CASE_UI_006 = EvalCase(
+    id='UI-006',
+    legacy_id='',
+    title='会话管理工作台 - 单列表 + 状态筛选 chips + 已结束会话续聊 banner',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['会话管理工作台：状态从硬 tab 降级为筛选 chips（全部/活跃/已结束），默认全部且活跃靠前；查看已结束会话显示续聊 banner 可一键重新打开'],
+    expectations=['direct_reply'],
+    data_checks=['SessionList 单列表渲染：默认全部会话按「活跃在前 + updated_at 倒序」排序，无「活跃/已关闭」双 tab', '筛选 chips 渲染「全部/活跃/已结束」并带计数；切换筛选只显示对应状态会话，空态文案区分（暂无会话/暂无活跃会话/暂无已结束会话）', '已结束会话行保留灰化 + 「已结束」徽标 + 重新打开按钮；活跃会话行保留「结束会话」菜单', '查看已结束会话时聊天区顶部显示「会话已结束」banner + 「继续此会话」按钮；点击调用 reopenSession 并聚焦输入框，banner 消失', '会话管理工作台统计条与筛选文案统一为「活跃/已结束/共」（无「已关闭」残留）'],
+    skip_reason='纯前端会话列表/筛选/续聊交互由 vitest 单测 + E2E 点击链路验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ui', 'session-list', 'filter', 'reopen'],
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -1958,6 +1972,7 @@ ALL_CASES = (
     _CASE_UI_003,
     _CASE_UI_004,
     _CASE_UI_005,
+    _CASE_UI_006,
     _CASE_UT_001,
     _CASE_UT_002,
 )

@@ -1434,7 +1434,7 @@
 真值: settings-manage.ai-config, settings-manage.immediate-effect
 溯源: POC 机器人设置集成新增 ｜ tags: ai_config, handoff
 
-## ui（5 case）
+## ui（6 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -1501,6 +1501,20 @@
 真值: frontend-fix.sidebar-smart-cs-group, frontend-fix.cs-menu-icons, frontend-fix.cs-menu-rename, frontend-fix.cs-menu-permission
 溯源: 2026-08-30 新增：侧边栏智能客服大类分组与菜单图标渲染（issue #2670） ｜ tags: ui, sidebar, menu, icon
 
+### UI-006. 会话管理工作台 - 单列表 + 状态筛选 chips + 已结束会话续聊 banner 🔵
+```
+你: 会话管理工作台：状态从硬 tab 降级为筛选 chips（全部/活跃/已结束），默认全部且活跃靠前；查看已结束会话显示续聊 banner 可一键重新打开
+期望: direct_reply
+数据: SessionList 单列表渲染：默认全部会话按「活跃在前 + updated_at 倒序」排序，无「活跃/已关闭」双 tab
+数据: 筛选 chips 渲染「全部/活跃/已结束」并带计数；切换筛选只显示对应状态会话，空态文案区分（暂无会话/暂无活跃会话/暂无已结束会话）
+数据: 已结束会话行保留灰化 + 「已结束」徽标 + 重新打开按钮；活跃会话行保留「结束会话」菜单
+数据: 查看已结束会话时聊天区顶部显示「会话已结束」banner + 「继续此会话」按钮；点击调用 reopenSession 并聚焦输入框，banner 消失
+数据: 会话管理工作台统计条与筛选文案统一为「活跃/已结束/共」（无「已关闭」残留）
+跳过: 纯前端会话列表/筛选/续聊交互由 vitest 单测 + E2E 点击链路验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.session-list-single-filter, frontend-fix.session-reopen-banner
+溯源: 2026-08-31 新增：会话管理状态 tab 降级为筛选 chips + 续聊 banner（参考 DSH 会话模型评审结论） ｜ tags: ui, session-list, filter, reopen
+
 ## utils（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -1530,8 +1544,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：128（活跃 86，跳过 42）
-- tier 分布：smoke 10 / normal 91 / adversarial 27
+- 用例总数：129（活跃 86，跳过 43）
+- tier 分布：smoke 10 / normal 92 / adversarial 27
 - 售后域：5
 - agents：6
 - api：10
@@ -1550,6 +1564,6 @@
 - 商品域：13
 - registry：1
 - 设置域：8
-- ui：5
+- ui：6
 - utils：2
 
