@@ -27,6 +27,7 @@ export default function MessageInput() {
   const [input, setInput] = useState('')
   const [images, setImages] = useState<PendingImage[]>([])
   const [isUploading, setIsUploading] = useState(false)
+  const [isDragOver, setIsDragOver] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -71,6 +72,11 @@ export default function MessageInput() {
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || [])
     if (fileInputRef.current) fileInputRef.current.value = ''
+    await handleFiles(files)
+  }
+
+  /** 校验并上传图片附件（点击选择与拖拽共用） */
+  const handleFiles = async (files: File[]) => {
     if (files.length === 0) return
 
     // 验证数量
@@ -112,6 +118,27 @@ export default function MessageInput() {
     } finally {
       setIsUploading(false)
     }
+  }
+
+  // ═══════ 拖拽上传（UI-009）═══════
+  const handleDragOver = (e: React.DragEvent) => {
+    if (isSessionClosed || isStreaming || isUploading) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'copy'
+    setIsDragOver(true)
+  }
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragOver(false)
+  }
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragOver(false)
+    if (isSessionClosed || isStreaming || isUploading) return
+    const files = Array.from(e.dataTransfer.files || [])
+    void handleFiles(files)
   }
 
   const removeImage = (index: number) => {
@@ -198,7 +225,27 @@ export default function MessageInput() {
           </div>
         )}
 
-        <div className="relative flex items-end gap-2 bg-white border border-neutral-200 rounded-2xl px-3 py-2 shadow-sm focus-within:border-primary-300 focus-within:ring-2 focus-within:ring-primary-400/15 transition-all">
+        <div
+          role="region"
+          aria-label="消息输入区"
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          className={cn(
+            'relative flex items-end gap-2 bg-white border rounded-2xl px-3 py-2 shadow-sm transition-all',
+            isDragOver
+              ? 'border-primary-400 ring-2 ring-primary-400/15'
+              : 'border-neutral-200 focus-within:border-primary-300 focus-within:ring-2 focus-within:ring-primary-400/15'
+          )}
+        >
+          {/* 拖拽高亮遮罩 */}
+          {isDragOver && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-primary-500/10 border-2 border-dashed border-primary-400 pointer-events-none">
+              <span className="text-sm font-medium text-primary-600 bg-white/80 px-3 py-1 rounded-full shadow-sm">
+                松开上传图片
+              </span>
+            </div>
+          )}
           {/* 语音输入按钮 */}
           <button
             onClick={

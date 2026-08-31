@@ -1480,7 +1480,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## ui（8 case）
+## ui（9 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -1586,6 +1586,18 @@
 真值: frontend-fix.session-list-collapse
 溯源: 2026-08-31 新增：会话列表折叠/展开窄 rail（参考 DSH sidebar 折叠交互，Issue #2691） ｜ tags: ui, session-list, collapse, rail
 
+### UI-009. 米宝聊天输入框 - 拖拽图片作为附件上传 🔵
+```
+你: 米宝聊天输入框支持把图片文件直接拖拽到输入区作为附件上传，与点击「添加图片」按钮共用同一套校验与上传链路（最多 3 张、5MB、jpeg/png/gif/webp）
+期望: direct_reply
+数据: 输入区（aria-label「消息输入区」）绑定 onDragOver/onDragLeave/onDrop；拖拽悬停时显示「松开上传图片」高亮提示
+数据: drop 图片文件 → 调用 chatApi.uploadChatImages 并出现预览缩略图；拖拽非图片文件 toast「不支持的文件类型」、超 5MB toast「超过 5MB 限制」、超过 3 张 toast「最多上传 3 张图片」
+数据: 会话已关闭/流式中/上传中拖拽不生效；拖拽上传与点击上传共用 handleFiles 校验逻辑
+跳过: 纯前端聊天输入拖拽交互由 vitest 单测 + E2E 点击链路验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.chat-input-drag-drop
+溯源: 2026-08-31 新增：米宝输入框拖拽图片附件上传（drag & drop 复用 uploadChatImages 链路） ｜ tags: ui, chat-input, drag-drop, image-upload
+
 ## utils（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -1615,8 +1627,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：135（活跃 86，跳过 49）
-- tier 分布：smoke 10 / normal 98 / adversarial 27
+- 用例总数：136（活跃 86，跳过 50）
+- tier 分布：smoke 10 / normal 99 / adversarial 27
 - 售后域：5
 - agents：6
 - api：10
@@ -1636,6 +1648,6 @@
 - registry：1
 - 设置域：8
 - token-refresh：4
-- ui：8
+- ui：9
 - utils：2
 

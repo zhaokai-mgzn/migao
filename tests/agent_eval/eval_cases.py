@@ -1901,6 +1901,20 @@ _CASE_UI_008 = EvalCase(
     tags=['ui', 'session-list', 'collapse', 'rail'],
 )
 
+# ── UI-009 [NORMAL] 米宝聊天输入框 - 拖拽图片作为附件上传（源: cases/ui.yml）──
+_CASE_UI_009 = EvalCase(
+    id='UI-009',
+    legacy_id='',
+    title='米宝聊天输入框 - 拖拽图片作为附件上传',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['米宝聊天输入框支持把图片文件直接拖拽到输入区作为附件上传，与点击「添加图片」按钮共用同一套校验与上传链路（最多 3 张、5MB、jpeg/png/gif/webp）'],
+    expectations=['direct_reply'],
+    data_checks=['输入区（aria-label「消息输入区」）绑定 onDragOver/onDragLeave/onDrop；拖拽悬停时显示「松开上传图片」高亮提示', 'drop 图片文件 → 调用 chatApi.uploadChatImages 并出现预览缩略图；拖拽非图片文件 toast「不支持的文件类型」、超 5MB toast「超过 5MB 限制」、超过 3 张 toast「最多上传 3 张图片」', '会话已关闭/流式中/上传中拖拽不生效；拖拽上传与点击上传共用 handleFiles 校验逻辑'],
+    skip_reason='纯前端聊天输入拖拽交互由 vitest 单测 + E2E 点击链路验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ui', 'chat-input', 'drag-drop', 'image-upload'],
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -2063,6 +2077,7 @@ ALL_CASES = (
     _CASE_UI_006,
     _CASE_UI_007,
     _CASE_UI_008,
+    _CASE_UI_009,
     _CASE_UT_001,
     _CASE_UT_002,
 )
