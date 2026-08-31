@@ -19,6 +19,8 @@ business_truths:
   - [frontend-fix.cs-menu-icons] 「人工客服」渲染客服耳机 Headphones 图标（iconMap 已注册，不回退 BarChart3，与「经营看板」柱状图图标明确区分）；「AI 客服配置」渲染 Bot 图标；「智能客服」大类渲染 MessageSquare 图标
   - [frontend-fix.cs-menu-rename] 原「机器人设置」更名为「AI 客服配置」：侧边栏菜单名、页面 H1、面包屑文案同步一致；点击仍进入原路由 /chat/config，机器人名称/欢迎语/快捷回复等功能不回归
   - [frontend-fix.cs-menu-permission] 权限规则不变：agent:session 控制「人工客服」可见、agent:quickreply 控制「AI 客服配置」可见；两个子菜单均不可见时「智能客服」大类整组隐藏
+  - [frontend-fix.session-list-single-filter] 会话管理列表为单列表（无「活跃/已关闭」硬 tab）：默认「全部」且活跃会话在前、同组按 updated_at 倒序；状态是筛选 chips（全部/活跃/已结束，带计数），切换筛选只显示对应状态，空态文案按筛选区分（暂无会话/暂无活跃会话/暂无已结束会话）；已结束行灰化 + 「已结束」徽标 + 重新打开按钮，活跃行保留「结束会话」菜单
+  - [frontend-fix.session-reopen-banner] 查看已结束会话时聊天区顶部显示「会话已结束，历史消息已保留」banner + 「继续此会话」按钮：点击调用 reopenSession（保留历史消息、工作状态从空开始）并聚焦输入框，reopen 成功后 banner 消失；会话管理工作台统计条与筛选文案统一为「活跃/已结束/共」，无「已关闭」残留
 
 primary_specs:
   - tests/e2e/specs/
