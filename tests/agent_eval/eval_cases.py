@@ -1831,6 +1831,20 @@ _CASE_UI_007 = EvalCase(
     tags=['mini-app', 'voice-input', 'hold-to-talk'],
 )
 
+# ── UI-008 [NORMAL] 米高会话列表折叠/展开窄 rail（参考 DSH sidebar 折叠交互）（源: cases/ui.yml）──
+_CASE_UI_008 = EvalCase(
+    id='UI-008',
+    legacy_id='',
+    title='米高会话列表折叠/展开窄 rail（参考 DSH sidebar 折叠交互）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['会话列表支持折叠为窄 rail（图标态），展开恢复完整列表，折叠偏好持久化到 localStorage'],
+    expectations=['direct_reply'],
+    data_checks=['SessionList 折叠按钮 aria-label「折叠会话列表」且展开态 aria-expanded=true；点击折叠 → 窄 rail 仅保留「新建对话」图标按钮 + 展开 toggle（aria-label「展开会话列表」、aria-expanded=false），列表项/搜索隐藏', '再点展开 → 完整 w-64 列表恢复（新建对话/搜索/右键菜单功能全部保留）', '折叠偏好写入 localStorage（key chat.session-list.collapsed），刷新/重挂后恢复折叠态', '折叠动画为 Tailwind width transition + overflow-hidden（参考 DSH slide+crossfade 的简洁等价）'],
+    skip_reason='纯前端会话列表折叠交互由 vitest 单测 + E2E 点击链路验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ui', 'session-list', 'collapse', 'rail'],
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -1988,6 +2002,7 @@ ALL_CASES = (
     _CASE_UI_005,
     _CASE_UI_006,
     _CASE_UI_007,
+    _CASE_UI_008,
     _CASE_UT_001,
     _CASE_UT_002,
 )

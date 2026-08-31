@@ -246,3 +246,36 @@ cases:
       ci:
         - mini-app.yml
       verifies: []
+
+  - id: UI-008
+    legacy_id: ""
+    title: "米高会话列表折叠/展开窄 rail（参考 DSH sidebar 折叠交互）"
+    domains:
+      - ui
+      - frontend
+    tier: normal
+    tags:
+      - ui
+      - session-list
+      - collapse
+      - rail
+    truths_ref:
+      - frontend-fix.session-list-collapse
+    user_inputs:
+      - "会话列表支持折叠为窄 rail（图标态），展开恢复完整列表，折叠偏好持久化到 localStorage"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "SessionList 折叠按钮 aria-label「折叠会话列表」且展开态 aria-expanded=true；点击折叠 → 窄 rail 仅保留「新建对话」图标按钮 + 展开 toggle（aria-label「展开会话列表」、aria-expanded=false），列表项/搜索隐藏"
+      - "再点展开 → 完整 w-64 列表恢复（新建对话/搜索/右键菜单功能全部保留）"
+      - "折叠偏好写入 localStorage（key chat.session-list.collapsed），刷新/重挂后恢复折叠态"
+      - "折叠动画为 Tailwind width transition + overflow-hidden（参考 DSH slide+crossfade 的简洁等价）"
+    skip_reason: "纯前端会话列表折叠交互由 vitest 单测 + E2E 点击链路验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-08-31 新增：会话列表折叠/展开窄 rail（参考 DSH sidebar 折叠交互，Issue #2691）"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/components/chat/SessionList.test.tsx"
+        - "tests/e2e/specs/chat/agent-workspace-sessions.spec.ts"
+      ci:
+        - pr-check.yml
+      verifies: []
