@@ -85,6 +85,25 @@ class ServiceTokenFilterTest {
     }
 
     @Test
+    @DisplayName("有效 Service Token + X-User-Id — 透传真实用户 ID（C 端数据隔离依据）")
+    void validServiceToken_WithXUserId_PassthroughRealUser() throws ServletException, IOException {
+        when(request.getHeader(HEADER_NAME)).thenReturn(SECRET);
+        when(request.getHeader("X-Tenant-Id")).thenReturn("5");
+        when(request.getHeader("X-User-Id")).thenReturn("customer-007");
+
+        filter.doFilterInternal(request, response, filterChain);
+
+        verify(filterChain).doFilter(request, response);
+
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        assertThat(auth).isNotNull();
+        SecurityUser user = (SecurityUser) auth.getPrincipal();
+        // 关键：userId 必须是真实用户而非 internal-service 占位
+        assertThat(user.getUserId()).isEqualTo("customer-007");
+        assertThat(user.getTenantId()).isEqualTo(5L);
+    }
+
+    @Test
     @DisplayName("有效 Service Token — 无 X-Tenant-Id 时返回 400")
     void validToken_NoTenantIdHeader_UsesDefaultTenantId() throws ServletException, IOException {
         when(request.getHeader(HEADER_NAME)).thenReturn(SECRET);

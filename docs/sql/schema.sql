@@ -673,6 +673,8 @@ CREATE TABLE orders (
     stock_deducted BOOLEAN DEFAULT FALSE,           -- 是否已扣库存
     -- 来自 010_order_follow_status.sql
     follow_status VARCHAR(20) DEFAULT 'pending',    -- 跟进状态: pending/following/completed
+    -- 来自 V20260901__add_order_user_id.sql
+    user_id VARCHAR(64),                            -- 下单用户ID（users.id，C 端数据隔离依据）
     remark TEXT,                                     -- 备注
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),

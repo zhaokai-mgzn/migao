@@ -388,6 +388,7 @@ CREATE TABLE IF NOT EXISTS orders (
     payment_status VARCHAR(20) DEFAULT 'unpaid',
     stock_deducted BOOLEAN DEFAULT FALSE,
     follow_status VARCHAR(20) DEFAULT 'pending',
+    user_id VARCHAR(64),                          -- 下单用户ID（users.id，C 端数据隔离依据）
     remark TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),

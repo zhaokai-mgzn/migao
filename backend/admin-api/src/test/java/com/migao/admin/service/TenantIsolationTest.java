@@ -431,7 +431,7 @@ class TenantIsolationTest {
 
         // When: 以租户A身份查询订单列表
         com.migao.admin.dto.PageResponse<com.migao.admin.dto.OrderListResponse> result =
-                orderService.getOrderPage(1, 20, null, null, null, null, null, null, null, null, null, null, TENANT_A);
+                orderService.getOrderPage(1, 20, null, null, null, null, null, null, null, null, null, null, TENANT_A, null);
 
         // Then: 只返回租户A的订单
         assertThat(result.getItems()).hasSize(1);

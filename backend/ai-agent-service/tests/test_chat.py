@@ -102,6 +102,12 @@ class TestShouldSendCard:
     def test_order_query_empty(self):
         assert _should_send_card("order_query", {"success": True, "data": {}}) is False
 
+    def test_customer_order_query_sends_card(self):
+        """C 端 customer_order_query 与 B 端 order_query 同卡片规则"""
+        assert _should_send_card("customer_order_query", {"success": True, "data": {"orders": [{"id": "o1"}]}}) is True
+        assert _should_send_card("customer_order_query", {"success": True, "data": {"order": {"id": "o1"}}}) is True
+        assert _should_send_card("customer_order_query", {"success": True, "data": {}}) is False
+
     def test_unknown_tool(self):
         assert _should_send_card("other_tool", {"success": True, "data": {"x": 1}}) is False
 
@@ -112,6 +118,7 @@ class TestDetectCardType:
         assert _detect_card_type("product_detail", {}) == "product_detail"
         assert _detect_card_type("logistics_track", {}) == "logistics"
         assert _detect_card_type("order_query", {}) == "order"
+        assert _detect_card_type("customer_order_query", {}) == "order"
         assert _detect_card_type("unknown", {}) is None
 
 

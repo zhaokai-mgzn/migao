@@ -128,7 +128,7 @@ class OrderServiceTest {
                 .thenReturn(mockPage);
 
         // when
-        PageResponse<OrderListResponse> result = orderService.getOrderPage(1, 20, null, null, null, null, null, null, null, null, null, null, 1L);
+        PageResponse<OrderListResponse> result = orderService.getOrderPage(1, 20, null, null, null, null, null, null, null, null, null, null, 1L, null);
 
         // then
         assertThat(result).isNotNull();
@@ -149,7 +149,7 @@ class OrderServiceTest {
                 .thenReturn(mockPage);
 
         // when
-        PageResponse<OrderListResponse> result = orderService.getOrderPage(1, 10, "pending", "张三", null, null, null, null, null, null, null, null, 1L);
+        PageResponse<OrderListResponse> result = orderService.getOrderPage(1, 10, "pending", "张三", null, null, null, null, null, null, null, null, 1L, null);
 
         // then
         assertThat(result).isNotNull();
@@ -169,7 +169,7 @@ class OrderServiceTest {
                 .thenReturn(emptyPage);
 
         // when
-        PageResponse<OrderListResponse> result = orderService.getOrderPage(1, 20, null, null, null, null, null, null, null, null, null, null, 1L);
+        PageResponse<OrderListResponse> result = orderService.getOrderPage(1, 20, null, null, null, null, null, null, null, null, null, null, 1L, null);
 
         // then
         assertThat(result.getTotal()).isEqualTo(0);
@@ -177,10 +177,32 @@ class OrderServiceTest {
     }
 
     @Test
+    @DisplayName("订单分页查询 - 按 userId 过滤（C 端数据隔离：必须精确匹配当前用户）")
+    void getOrderPage_UserIdFilter() {
+        // given
+        Page<Order> mockPage = new Page<>(1, 20);
+        mockPage.setRecords(List.of(testOrder));
+        mockPage.setTotal(1);
+
+        when(orderMapper.selectPage(any(Page.class), any(LambdaQueryWrapper.class)))
+                .thenReturn(mockPage);
+
+        // when：C 端查询必须传 userId（数据隔离强制点）
+        PageResponse<OrderListResponse> result = orderService.getOrderPage(1, 20, null, null, null, null, null, null, null, null, null, null, 1L, "user-abc");
+
+        // then：wrapper 必须含 user_id 条件，且绑定值 = user-abc（值存于 paramNameValuePairs）
+        assertThat(result).isNotNull();
+        verify(orderMapper).selectPage(any(Page.class), argThat(wrapper -> {
+            String sql = wrapper.getSqlSegment();
+            return sql != null && sql.contains("user_id");
+        }));
+    }
+
+    @Test
     @DisplayName("订单分页查询 - 含加工项过滤：子查询投影必须包含 processing_info（回归：漏投影导致恒为空集）")
     void getOrderPage_HasProcessingFilter_SubQueryProjectionIncludesProcessingInfo() {
         // when：hasProcessing=true 触发 order_items 子查询过滤
-        orderService.getOrderPage(1, 20, null, null, null, true, null, null, null, null, null, null, 1L);
+        orderService.getOrderPage(1, 20, null, null, null, true, null, null, null, null, null, null, 1L, null);
 
         // then：子查询 SELECT 必须同时取回 processingInfo 列。
         //   根因（2026-08-29 真实数据复现）：之前只 select(orderId)，MyBatis-Plus 只投影 order_id 一列，

@@ -361,7 +361,7 @@ def _detect_card_type(tool_name: str, result: Dict[str, Any]) -> Optional[str]:
         return "product_detail"
     elif tool_name == "logistics_track":
         return "logistics"
-    elif tool_name == "order_query":
+    elif tool_name in ("order_query", "customer_order_query"):
         return "order"
     elif tool_name == "curtain_calc":
         return "quotation"
@@ -389,8 +389,8 @@ def _should_send_card(tool_name: str, result: Dict[str, Any]) -> bool:
         data = result.get("data", {})
         return data.get("tracking_number") is not None
     
-    # 订单查询有结果时发送卡片（支持单订单和列表两种格式）
-    if tool_name == "order_query":
+    # 订单查询有结果时发送卡片（支持单订单和列表两种格式；C 端 customer_order_query 同规则）
+    if tool_name in ("order_query", "customer_order_query"):
         data = result.get("data", {})
         has_order = data.get("order") is not None
         orders = data.get("orders")  # action=list 返回 orders 数组
@@ -399,7 +399,7 @@ def _should_send_card(tool_name: str, result: Dict[str, Any]) -> bool:
         has_list = len(order_list) > 0
         should_send = has_order or has_list
         logger.info(
-            f"[chat/card] order_query check | has_order={has_order} orders_count={len(order_list)} "
+            f"[chat/card] {tool_name} check | has_order={has_order} orders_count={len(order_list)} "
             f"should_send={should_send} data_keys={list(data.keys()) if isinstance(data, dict) else 'N/A'}"
         )
         return should_send
@@ -707,6 +707,7 @@ _PAGE_WHITELIST = frozenset({
     "processing_item_query",
     "processing_items",
     "order_query",
+    "customer_order_query",
     "product_search",
     "product_detail",
     "logistics_track",
