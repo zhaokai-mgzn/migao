@@ -38,7 +38,7 @@ async function mockDashboardApis(page: import('@playwright/test').Page) {
       date: `06-${String(i + 1).padStart(2, '0')}`,
       orders: Math.floor(Math.random() * 50) + 10,
       sessions: Math.floor(Math.random() * 30) + 5,
-      totalAmount: (Math.floor(Math.random() * 50) + 10) * 23.8,
+      amount: (Math.floor(Math.random() * 50) + 10) * 23.8,
     }))
     await route.fulfill({
       status: 200,
@@ -181,29 +181,35 @@ test.describe('仪表盘页面', () => {
   test('3 个经营数据卡片标题正确渲染', async ({ page }) => {
     await expect(page.getByText('今日订单数')).toBeVisible()
     await expect(page.getByText('今日销售额')).toBeVisible()
+    await expect(page.getByText('客单价')).toBeVisible()
     await expect(page.getByText('本月销售额')).toBeVisible()
   })
 
   test('"今日订单数"卡片：数量 + 变化', async ({ page }) => {
     // todayOrders: 42 — toLocaleString() → "42"
     await expect(page.locator('text=42').first()).toBeVisible()
-    // change 格式：较昨天 {val}（无 % 前缀，BizStatCard 模板硬编码）
-    await expect(page.getByText('较昨天 12.5')).toBeVisible()
+    // change 格式：较昨日 +12.5%（带符号，BizStatCard 渲染 change.text）
+    await expect(page.getByText('较昨日 +12.5%')).toBeVisible()
   })
 
   test('"今日销售额"卡片：货币格式化 + 变化', async ({ page }) => {
     // todaySales: 8900 → fmtCurrency → "¥8,900"
-    await expect(page.getByText('¥8,900')).toBeVisible()
-    // todaySalesChange: 8.3 → 较昨天 8.3
-    await expect(page.getByText('较昨天 8.3')).toBeVisible()
+    // 注意：洞察句也含「销售额 ¥8,900」，需 exact 精确匹配卡片数值
+    await expect(page.getByText('¥8,900', { exact: true })).toBeVisible()
+    // todaySalesChange: 8.3 → 较昨日 +8.3%
+    await expect(page.getByText('较昨日 +8.3%')).toBeVisible()
+  })
+
+  test('"客单价"卡片 = 今日销售额 ÷ 今日订单数', async ({ page }) => {
+    // todaySales 8900 / todayOrders 42 = 211.9 → Math.round → 212 → ¥212
+    await expect(page.getByText('¥212')).toBeVisible()
   })
 
   test('"本月销售额"卡片：货币格式化', async ({ page }) => {
-    // monthRevenue: 256800 → fmtCurrency → "¥25.7万"
-    await expect(page.getByText('¥25.7万')).toBeVisible()
-    // monthRevenueChange: -3.2 → val 字符串为 "-3.2% 较上月"，BizStatCard 前缀 "较昨天 "
-    // 实际渲染：较昨天 -3.2% 较上月；getByText 使用子串匹配
-    await expect(page.getByText('-3.2% 较上月')).toBeVisible()
+    // monthRevenue: 256800 → fmtCurrency → "¥25.68万"（万单位最多 2 位小数去尾零）
+    await expect(page.getByText('¥25.68万')).toBeVisible()
+    // monthRevenueChange: -3.2 → 较上月 -3.2%（不再拼接「较昨天 -3.2% 较上月」）
+    await expect(page.getByText('较上月 -3.2%')).toBeVisible()
   })
 
   test('订单趋势图渲染（内联 SVG）', async ({ page }) => {
@@ -404,6 +410,7 @@ test.describe('仪表盘空数据状态', () => {
   test('经营数据卡片零值正常渲染', async ({ page }) => {
     await expect(page.getByText('今日订单数')).toBeVisible()
     await expect(page.getByText('今日销售额')).toBeVisible()
+    await expect(page.getByText('客单价')).toBeVisible()
     await expect(page.getByText('本月销售额')).toBeVisible()
   })
 })

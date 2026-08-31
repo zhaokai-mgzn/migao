@@ -831,7 +831,7 @@ export interface PendingTask {
 export interface OrderTrendPoint {
   date: string
   orders: number
-  totalAmount?: number  // 当日订单总金额（分）
+  amount?: number  // 当日订单总金额（分），字段与后端 OrderTrendPointResponse 对齐
 }
 
 // 订单状态分布

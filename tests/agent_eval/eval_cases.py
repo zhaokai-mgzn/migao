@@ -664,7 +664,7 @@ _CASE_DA_005 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['经营看板页面按织物质感方向重设计'],
     expectations=[''],
-    data_checks=['token：主色靛蓝/点缀陶土/米白底，无默认蓝', '商品销量排行表头「日涨」在 1440/1280 两视口无截断', '订单趋势 x 轴刻度在 1280 宽度下降采样不重叠', "订单/售后状态语义色 chips；空态「暂无数据」无 '-' 占位"],
+    data_checks=['token：主色靛蓝/点缀陶土/米白底，无默认蓝', '商品销量排行表头「日涨」在 1440/1280 两视口无截断', '订单趋势 x 轴刻度在 1280 宽度下降采样不重叠', "订单/售后状态语义色 chips；空态「暂无数据」无 '-' 占位", '销售额趋势/迷你图使用真实 amount 数据，无 23.8 假乘数', '经营数据 4 卡自洽：客单价 = 今日销售额 ÷ 今日订单数', '涨跌语义色：上涨=绿色（好事）、下跌=红色（需关注）'],
     skip_reason='UI 页面改版：由 vitest 单测 + Playwright 多视口 E2E + 页面验收（page_accept）验证，不进入 agent-eval 冒烟',
     tags=['dashboard', 'ui-redesign', 'visual'],
 )
@@ -1761,16 +1761,16 @@ _CASE_UI_002 = EvalCase(
     tags=['ui', 'status-chip', 'empty-state'],
 )
 
-# ── UI-003 [NORMAL] 米宝「今日经营速览」洞察条 - 订单环比/含加工占比/低库存预警（源: cases/ui.yml）──
+# ── UI-003 [NORMAL] 米宝「今日经营速览」洞察条 - 一句话经营解读（源: cases/ui.yml）──
 _CASE_UI_003 = EvalCase(
     id='UI-003',
     legacy_id='',
-    title='米宝「今日经营速览」洞察条 - 订单环比/含加工占比/低库存预警',
+    title='米宝「今日经营速览」洞察条 - 一句话经营解读',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
     user_inputs=['经营看板织物质感重设计子任务 C：米宝「今日经营速览」洞察条置于页面顶部'],
     expectations=['direct_reply'],
-    data_checks=['frontend/admin-web/src/components/dashboard/TodayOverviewBar.tsx 渲染订单环比/含加工占比/低库存预警三个区块', '含加工占比 = processingCount / pendingCount，pendingCount<=0 时渲染 0% 而非 NaN/Infinity/undefined', '订单环比/低库存预警数值来自 props（由页面 API 返回值派生），组件内无硬编码固定数值', '洞察条置于经营看板顶部（先于待处理区块渲染）'],
+    data_checks=['frontend/admin-web/src/components/dashboard/TodayOverviewBar.tsx 以「一句话经营解读」串联今日订单/销售额/环比/提醒', '含加工占比 = processingCount / pendingCount，pendingCount<=0 时渲染 0% 而非 NaN/Infinity/undefined', '一句话中的数值全部来自 props（由页面 API 返回值派生），组件内无硬编码固定数值', '洞察条置于经营看板顶部（先于待处理区块渲染）'],
     skip_reason='纯前端组件由 vitest 单测验证（TodayOverviewBar.test.tsx + dashboard.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['ui', 'dashboard', 'insight', 'token'],
 )
