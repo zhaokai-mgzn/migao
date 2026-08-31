@@ -61,6 +61,12 @@ export default function ChatPage() {
     if (!useChatStore.getState().currentSessionId) {
       initialize()
     }
+    // 消费「我的」页订单/售后入口的待发提示（唤起对话追问进度）
+    const pending = Taro.getStorageSync('pendingOrderPrompt') as string | ''
+    if (pending) {
+      Taro.removeStorageSync('pendingOrderPrompt')
+      setTimeout(() => handleSend(pending), 300)
+    }
   })
 
   /** 发送消息 */

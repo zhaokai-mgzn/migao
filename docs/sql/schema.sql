@@ -151,6 +151,8 @@ CREATE TABLE products (
     edited_at TIMESTAMP WITH TIME ZONE,                     -- 最后编辑时间
     -- 加工项关联（来自 009_processing_item_price.sql）
     has_processing BOOLEAN DEFAULT FALSE,                   -- 是否含加工项
+    -- 商家推荐标记（来自 V20260903__add_product_recommended.sql）
+    recommended BOOLEAN DEFAULT FALSE,                       -- 是否商家推荐（C 端新品推荐位展示依据）
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     deleted INTEGER DEFAULT 0

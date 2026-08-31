@@ -3,6 +3,7 @@ import { View, ScrollView, Text } from '@tarojs/components'
 import type { Message } from '../../types'
 import MessageBubble from './MessageBubble'
 import TypingIndicator from './TypingIndicator'
+import NewArrivals from './NewArrivals'
 import './MessageList.scss'
 
 interface MessageListProps {
@@ -54,6 +55,8 @@ export default function MessageList({ messages, isStreaming, onInteract }: Messa
           <Text className='message-list__empty-text'>
             你的专属智能购物助手{'\n'}查订单、找产品、了解窗帘知识，都可以问我
           </Text>
+          {/* 新品推荐（空态引导转化入口）：点商品卡片 → 唤起对话询问 */}
+          {onInteract && <NewArrivals onPick={onInteract} />}
         </View>
       </View>
     )
