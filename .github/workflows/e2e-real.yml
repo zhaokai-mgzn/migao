@@ -44,7 +44,7 @@ jobs:
           # 本 job 显式运行它们，失败自动建 issue 而非静默不跑）
           PRIMARY_API_KEY: ${{ secrets.DEEPSEEK_API_KEY || 'ci-dummy' }}
           PRIMARY_BASE_URL: https://api.deepseek.com
-          PRIMARY_MODEL: deepseek-v4-pro
+          PRIMARY_MODEL: deepseek-v4-flash
           VISION_API_KEY: ${{ secrets.DEEPSEEK_API_KEY || 'ci-dummy' }}
           VISION_MODEL: deepseek-v4-flash-vision-exp
           DASHVECTOR_API_KEY: ${{ secrets.DASHVECTOR_API_KEY || 'ci-dummy' }}

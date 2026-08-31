@@ -128,6 +128,10 @@ export const productApi = {
   updateProductStatus: (id: string, status: ProductStatus) => 
     request.put<ApiResponse<Product>>(`/api/admin/products/${id}/status`, { status }),
 
+  // 设置/取消商品推荐标记（C 端「新品推荐」位控制）
+  updateProductRecommended: (id: string, recommended: boolean) =>
+    request.put<ApiResponse<void>>(`/api/admin/products/${id}/recommend`, { recommended }),
+
   // 批量上架
   batchOnShelf: (productIds: string[]) =>
     request.post<ApiResponse<void>>('/api/admin/products/batch/on-shelf', { productIds }),

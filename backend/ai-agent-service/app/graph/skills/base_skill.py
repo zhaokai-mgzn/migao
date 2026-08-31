@@ -899,6 +899,8 @@ async def execute_skill(
             from app.memory.context_manager import get_context_manager
             ctx_mgr = get_context_manager()
             await ctx_mgr.load(session_id)  # Redis 恢复
+            # T1 主题域切换：先记录切换（异域时旧域实体标 stale），再更新当前 skill
+            ctx_mgr.record_domain_switch(session_id, skill_name)
             ctx_mgr.set_last_skill(session_id, skill_name)
             ctx_text = ctx_mgr.build_context(session_id, skill_name)
             # 对话压缩：超过 20 条消息时只保留最近 12 条，其余生成摘要
@@ -1111,6 +1113,18 @@ async def execute_skill(
                             await mgr.save(session_id)  # Redis 持久化
                         except Exception:
                             pass
+                    # T2 事务终态：terminal 工具成功后重置当前域上下文（草稿/实体/待确认）
+                    if session_id and result_dict.get("success") and result_dict.get("terminal"):
+                        try:
+                            from app.memory.context_manager import get_context_manager
+                            mgr = get_context_manager()
+                            mgr.reset_domain(session_id, skill_name)
+                            await mgr.save(session_id)
+                            logger.info(
+                                f"[{skill_name}] Terminal tool {tool_name} — domain context reset | session={session_id}"
+                            )
+                        except Exception as e:
+                            logger.warning(f"[{skill_name}] Terminal reset failed | session={session_id} error={e}")
                     new_messages.append(ToolMessage(content=result_str, tool_call_id=tool_call["id"], name=tool_name))
                     if tool_name == "interact" and result_dict.get("success"):
                         try:

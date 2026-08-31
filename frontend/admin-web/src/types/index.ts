@@ -131,6 +131,8 @@ export interface Product {
   editedBy?: string
   // 最后编辑时间
   editedAt?: string
+  // 是否商家推荐（C 端「新品推荐」位展示依据）
+  recommended?: boolean
   // 库存预警阈值
   stockWarningThreshold?: number
   // 库存扣减模式：兼容后端('on_order' | 'on_payment')与表单('on_place' | 'on_pay')两套枚举

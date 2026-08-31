@@ -389,6 +389,7 @@ def create_default_registry() -> ToolRegistry:
     from app.tools.logistics_track import LogisticsTrackTool
     # [RAG 禁用] from app.tools.knowledge_search import KnowledgeSearchTool
     from app.tools.order_query import OrderQueryTool
+    from app.tools.customer_order_query import CustomerOrderQueryTool
     from app.tools.order_manage import OrderManageTool
     from app.tools.order_create import OrderCreateTool
     from app.tools.product_manage import ProductManageTool
@@ -425,6 +426,7 @@ def create_default_registry() -> ToolRegistry:
     registry.register(LogisticsTrackTool())
     # [RAG 禁用] registry.register(KnowledgeSearchTool())
     registry.register(OrderQueryTool())
+    registry.register(CustomerOrderQueryTool())
     registry.register(OrderManageTool())
     registry.register(OrderCreateTool())
     registry.register(ProductManageTool())

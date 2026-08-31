@@ -2,7 +2,7 @@ import { useState, useCallback, useRef } from 'react'
 import { View, Textarea, Text, Image } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import { chooseImages, uploadImages } from '../../utils/imageUpload'
-import { startRecording, stopAndTranscribe } from '../../utils/voice'
+import { startRecording, stopAndTranscribe, isVoiceSupported } from '../../utils/voice'
 import './MessageInput.scss'
 
 interface MessageInputProps {
@@ -23,8 +23,9 @@ export default function MessageInput({
   isStreaming,
   disabled = false,
 }: MessageInputProps) {
-  // 默认语音模式：按住说话、松开发送；⌨️/🎤 一键切回键盘输入
-  const [mode, setMode] = useState<InputMode>('voice')
+  // 默认语音模式（按住说话、松开发送）；H5 等不支持录音的环境默认键盘模式
+  const voiceSupported = isVoiceSupported()
+  const [mode, setMode] = useState<InputMode>(voiceSupported ? 'voice' : 'keyboard')
   const [value, setValue] = useState('')
   const [selectedImages, setSelectedImages] = useState<string[]>([])
   const [isUploading, setIsUploading] = useState(false)
@@ -36,7 +37,7 @@ export default function MessageInput({
   const cancellingRef = useRef(false)
   const recordingRef = useRef(false)
 
-  const canVoice = !disabled && !isStreaming && !isUploading
+  const canVoice = voiceSupported && !disabled && !isStreaming && !isUploading
   const isKeyboard = mode === 'keyboard'
 
   // ── 语音模式：按住说话 / 松开发送 / 上滑取消 ──
@@ -190,13 +191,15 @@ export default function MessageInput({
       )}
 
       <View className='message-input__bar'>
-        {/* 语音/键盘模式切换键 */}
-        <View
-          className='message-input__mode-btn'
-          onClick={() => setMode(mode => (mode === 'voice' ? 'keyboard' : 'voice'))}
-        >
-          <Text className='message-input__mode-btn-icon'>{isKeyboard ? '🎤' : '⌨️'}</Text>
-        </View>
+        {/* 语音/键盘模式切换键（仅录音可用环境展示） */}
+        {voiceSupported && (
+          <View
+            className='message-input__mode-btn'
+            onClick={() => setMode(mode => (mode === 'voice' ? 'keyboard' : 'voice'))}
+          >
+            <Text className='message-input__mode-btn-icon'>{isKeyboard ? '🎤' : '⌨️'}</Text>
+          </View>
+        )}
 
         {isKeyboard ? (
           <>

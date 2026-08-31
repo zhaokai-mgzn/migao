@@ -1,3 +1,4 @@
+// case_ids: OR-001, DF-002, DF-014
 package com.migao.admin.security;
 
 import com.migao.admin.config.TenantContext;
@@ -82,6 +83,25 @@ class ServiceTokenFilterTest {
         assertThat(user.getTenantId()).isEqualTo(5L);
         assertThat(auth.getAuthorities()).extracting("authority")
                 .contains("ROLE_SERVICE", "ROLE_INTERNAL");
+    }
+
+    @Test
+    @DisplayName("有效 Service Token + X-User-Id — 透传真实用户 ID（C 端数据隔离依据）")
+    void validServiceToken_WithXUserId_PassthroughRealUser() throws ServletException, IOException {
+        when(request.getHeader(HEADER_NAME)).thenReturn(SECRET);
+        when(request.getHeader("X-Tenant-Id")).thenReturn("5");
+        when(request.getHeader("X-User-Id")).thenReturn("customer-007");
+
+        filter.doFilterInternal(request, response, filterChain);
+
+        verify(filterChain).doFilter(request, response);
+
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        assertThat(auth).isNotNull();
+        SecurityUser user = (SecurityUser) auth.getPrincipal();
+        // 关键：userId 必须是真实用户而非 internal-service 占位
+        assertThat(user.getUserId()).isEqualTo("customer-007");
+        assertThat(user.getTenantId()).isEqualTo(5L);
     }
 
     @Test

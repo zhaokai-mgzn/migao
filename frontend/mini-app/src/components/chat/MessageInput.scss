@@ -1,157 +1,82 @@
+@use '../../styles/variables.scss' as *;
+
 .message-input {
   display: flex;
   flex-direction: column;
-  background: #ffffff;
-  border-top: 1px solid #E5E7EB;
+  background: $bg-primary;
+  border-top: 1px solid $border-color;
+  padding-bottom: env(safe-area-inset-bottom);
 
-  // 图片预览区域
+  // 图片预览区域（键盘模式）
   &__images {
     display: flex;
     flex-wrap: wrap;
-    gap: 12px;
-    padding: 16px 24px 0;
+    gap: $space-sm;
+    padding: $space-md $space-lg 0;
   }
 
   &__image-item {
     position: relative;
-    width: 120px;
-    height: 120px;
+    width: 64px;
+    height: 64px;
   }
 
   &__image-thumb {
-    width: 120px;
-    height: 120px;
-    border-radius: 8px;
-    background: #F3F4F6;
+    width: 64px;
+    height: 64px;
+    border-radius: $radius-md;
+    background: $bg-secondary;
   }
 
   &__image-remove {
     position: absolute;
-    top: -8px;
-    right: -8px;
-    width: 36px;
-    height: 36px;
+    top: -6px;
+    right: -6px;
+    width: 20px;
+    height: 20px;
     border-radius: 50%;
-    background: rgba(0, 0, 0, 0.5);
+    background: rgba(10, 37, 64, 0.8);
     display: flex;
     align-items: center;
     justify-content: center;
   }
 
   &__image-remove-icon {
+    font-size: 20px;
     color: #ffffff;
-    font-size: 24px;
-    line-height: 1;
   }
 
   &__upload-loading {
-    width: 120px;
-    height: 120px;
-    border-radius: 8px;
-    background: #F3F4F6;
     display: flex;
     align-items: center;
     justify-content: center;
+    padding: 20px;
   }
 
   &__upload-loading-text {
-    font-size: 22px;
-    color: #9CA3AF;
+    font-size: 24px;
+    color: $text-tertiary;
   }
 
-  // 底部输入栏
+  // ── 输入条（一体化圆角）──
   &__bar {
     display: flex;
     align-items: flex-end;
-    padding: 16px 24px;
-    padding-bottom: calc(16px + env(safe-area-inset-bottom));
-    gap: 12px;
-  }
-
-  // 图片选择按钮
-  &__img-btn {
-    flex-shrink: 0;
-    width: 72px;
-    height: 72px;
-    border-radius: 50%;
-    background: #F3F4F6;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-
-    &--disabled {
-      opacity: 0.4;
-    }
-  }
-
-  &__img-btn-icon {
-    font-size: 40px;
-    color: #6B7280;
-    line-height: 1;
-  }
-
-  &__textarea-wrap {
-    flex: 1;
-    background: #F3F4F6;
-    border-radius: 20px;
-    padding: 12px 20px;
-    display: flex;
-    align-items: center;
-  }
-
-  &__textarea {
-    width: 100%;
-    font-size: 28px;
-    line-height: 1.5;
-    color: #1F2937;
-    max-height: 160px; // 约 4 行
-  }
-
-  &__btn {
-    flex-shrink: 0;
-    width: 72px;
-    height: 72px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border: none;
-    padding: 0;
-    margin: 0;
-
-    &::after {
-      border: none;
-    }
-
-    &--active {
-      background: #2F54EB;
-    }
-
-    &--disabled {
-      background: #E5E7EB;
-    }
-
-    &--stop {
-      background: #FF4D4F;
-    }
-  }
-
-  &__btn-icon {
-    font-size: 32px;
-    color: #ffffff;
-    line-height: 1;
+    gap: $space-sm;
+    padding: $space-md $space-lg;
   }
 
   // 语音/键盘模式切换键
   &__mode-btn {
-    flex-shrink: 0;
-    width: 56px;
-    height: 56px;
+    width: 44px;
+    height: 44px;
     border-radius: 50%;
-    background: #F3F4F6;
+    background: $bg-secondary;
+    border: 1px solid $border-color;
     display: flex;
     align-items: center;
     justify-content: center;
+    flex-shrink: 0;
 
     &--disabled {
       opacity: 0.4;
@@ -159,27 +84,29 @@
   }
 
   &__mode-btn-icon {
-    font-size: 32px;
-    line-height: 1;
+    font-size: 28px;
   }
 
-  // 按住说话大按钮（语音模式）
+  // 按住说话大按钮（语音模式，默认态）
   &__hold-btn {
     flex: 1;
-    height: 72px;
-    border-radius: 36px;
-    background: #F3F4F6;
+    height: 44px;
+    border-radius: $radius-full;
+    background: $bg-secondary;
+    border: 1px solid $border-color;
     display: flex;
     align-items: center;
     justify-content: center;
 
     &--recording {
-      background: rgba(255, 77, 79, 0.92);
+      background: rgba(229, 72, 77, 0.92);
+      border-color: transparent;
       animation: voice-pulse 1.2s ease-in-out infinite;
     }
 
     &--cancelling {
-      background: rgba(255, 77, 79, 0.6);
+      background: rgba(229, 72, 77, 0.6);
+      border-color: transparent;
     }
 
     &--disabled {
@@ -189,10 +116,87 @@
 
   &__hold-btn-text {
     font-size: 28px;
-    color: #1F2937;
+    color: $text-primary;
 
     .message-input__hold-btn--recording &,
     .message-input__hold-btn--cancelling & {
+      color: #ffffff;
+    }
+  }
+
+  // 图片按钮（键盘模式）
+  &__img-btn {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: $bg-secondary;
+    border: 1px solid $border-color;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+
+    &--disabled {
+      opacity: 0.4;
+    }
+  }
+
+  &__img-btn-icon {
+    font-size: 28px;
+    color: $text-secondary;
+  }
+
+  &__textarea-wrap {
+    flex: 1;
+    background: $bg-secondary;
+    border-radius: $radius-full;
+    border: 1px solid $border-color;
+    padding: 10px 18px;
+    min-height: 44px;
+  }
+
+  &__textarea {
+    width: 100%;
+    font-size: 28px;
+    line-height: 1.5;
+    color: $text-primary;
+    min-height: 24px;
+  }
+
+  // 发送按钮
+  &__btn {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    background: $bg-secondary;
+    border: 1px solid $border-color;
+
+    &--active {
+      background: $gradient-brand;
+      border-color: transparent;
+    }
+
+    &--stop {
+      background: rgba(229, 72, 77, 0.9);
+      border-color: transparent;
+    }
+
+    &--disabled {
+      opacity: 0.5;
+    }
+  }
+
+  &__btn-icon {
+    font-size: 30px;
+    color: $text-primary;
+    line-height: 1;
+
+    .message-input__btn--active &,
+    .message-input__btn--stop & {
       color: #ffffff;
     }
   }
@@ -203,6 +207,6 @@
     transform: scale(1);
   }
   50% {
-    transform: scale(1.02);
+    transform: scale(1.08);
   }
 }

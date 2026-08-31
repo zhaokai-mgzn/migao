@@ -2,6 +2,7 @@ package com.migao.admin.controller;
 
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.*;
+import com.migao.admin.exception.BusinessException;
 import com.migao.admin.service.ProductService;
 import com.migao.admin.security.RequirePermission;
 import jakarta.servlet.http.HttpServletResponse;
@@ -113,6 +114,27 @@ public class ProductController {
         String status = body.get("status");
         log.info("更新商品状态: id={}, status={}, tenantId={}", id, status, tenantId);
         productService.updateProductStatus(id, status, tenantId);
+        return ApiResponse.success();
+    }
+
+    /**
+     * 设置/取消商品推荐标记（C 端「新品推荐」位控制）
+     *
+     * PUT /api/admin/products/{id}/recommend
+     * Body: { "recommended": true / false }
+     */
+    @RequirePermission("product:create")
+    @PutMapping("/{id}/recommend")
+    public ApiResponse<Void> updateProductRecommended(
+            @PathVariable String id,
+            @RequestBody Map<String, Boolean> body) {
+        Long tenantId = TenantContext.getTenantId();
+        Boolean recommended = body.get("recommended");
+        if (recommended == null) {
+            throw new BusinessException("VALIDATION_ERROR", "recommended 不能为空");
+        }
+        log.info("设置商品推荐标记: id={}, recommended={}, tenantId={}", id, recommended, tenantId);
+        productService.updateProductRecommended(id, recommended, tenantId);
         return ApiResponse.success();
     }
 

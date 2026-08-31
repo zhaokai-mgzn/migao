@@ -41,6 +41,9 @@ exemptions:
   - pattern: "backend/ai-agent-service/app/tools/product_manage.py"
     reason: "错误处理加固：_resolve_category_id 失败返回 None + suggestion。逻辑变更小，由已有 test_tools_product_detail/test_tools_validate_input 间接覆盖"
 
+  - pattern: "backend/ai-agent-service/app/tools/__init__.py"
+    reason: "Tool 模块 re-export（纯 import + __all__，无运行时逻辑）；新增 CustomerOrderQueryTool 由 tests/test_tools_customer_order_query.py 直接覆盖"
+
   - pattern: "backend/ai-agent-service/app/api/chat.py"
     reason: "删除 close_other_active_sessions 调用（3处）：纯删除代码，不引入新逻辑。已有 test_session_memory 覆盖底层函数"
 
@@ -87,6 +90,8 @@ exemptions:
   # #1720/#1723 — 米宝语音输入 ASR + 前端录音交互
   - pattern: "backend/ai-agent-service/app/api/asr.py"
     reason: "#1720 新增 ASR 语音转文字端点。DashScope SDK 封装，本地实测通过"
+  - pattern: "backend/ai-agent-service/app/api/products.py"
+    reason: "C 端只读端点（新品推荐/我的订单/我的售后）。已有 tests/test_api_products.py（9 tests PASS，含数据隔离断言）；gate 模板要求 tests/test_api/products.py 命名不符（同 chat.py/asr.py 豁免先例）"
   - pattern: "backend/ai-agent-service/app/llm/router.py"
     reason: "#2546: select_model 路由逻辑已由 tests/test_llm_pipeline.py TestSelectModel + tests/test_vision_integration.py TestSelectModelWithVision 覆盖（gate 模板要求独立 test_llm_router.py 不存在）"
 

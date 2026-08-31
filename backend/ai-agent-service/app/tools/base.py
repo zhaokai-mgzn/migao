@@ -39,6 +39,10 @@ class ToolResult(BaseModel):
     message: Optional[str] = Field(None, description="提示消息（给用户看的）")
     summary: Optional[str] = Field(None, description="LLM友好摘要（每个tool自行填写）")
     suggestion: Optional[str] = Field(None, description="失败时的修复建议（给LLM看，帮助引导用户）")
+    # terminal=True 表示该工具执行是一个「事务终态」：下单成功/售后创建成功/转人工成功等。
+    # 触发 ContextManager.reset_domain()——清空当前域会话级状态（草稿/待确认/实体），
+    # 避免旧状态污染下一轮对话（替代脆弱的字符串匹配清理，见 xiaobu-c-end-redesign.md §4.2 T2）。
+    terminal: bool = Field(default=False, description="是否为事务终态（完成后需重置会话级上下文）")
 
     class Config:
         extra = "allow"
