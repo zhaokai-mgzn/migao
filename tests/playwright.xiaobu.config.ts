@@ -20,7 +20,8 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   timeout: 30_000,
-  expect: { timeout: 5_000 },
+  // CI 冷 runner 首屏加载 10MB+ bundle 较慢（WIP 分支 CI 曾 5s 超时全挂），放宽到 15s
+  expect: { timeout: 15_000 },
 
   use: {
     testIdAttribute: 'data-testid',
