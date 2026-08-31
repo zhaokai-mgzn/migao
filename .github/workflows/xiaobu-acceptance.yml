@@ -27,7 +27,7 @@ jobs:
           cache: pip
           cache-dependency-path: backend/ai-agent-service/requirements.txt
 
-      - name: Start local stack (docker-compose: PG + Redis + admin-api + ai-agent DEBUG)
+      - name: "Start local stack (docker-compose: PG + Redis + admin-api + ai-agent DEBUG)"
         env:
           DEV_SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN || 'ci-service-token-placeholder' }}
           PRIMARY_API_KEY: ${{ secrets.DEEPSEEK_API_KEY || 'ci-dummy' }}
