@@ -1,4 +1,4 @@
-// case_ids: DA-004, UI-006
+// case_ids: DA-004, UI-006, UI-008
 /**
  * 会话管理工作台（/agent-workspace/sessions）E2E
  *
@@ -158,5 +158,37 @@ test.describe('会话管理工作台 — 占位页替换为真实功能', () => 
     )
     // 第一个会话自动选中 → 消息输入框渲染（MessageInput 需要 currentSessionId 非空）
     await expect(page.locator('textarea[placeholder*="输入消息"]').first()).toBeVisible({ timeout: 10_000 })
+  })
+
+  test('会话列表可折叠为窄 rail 并可展开恢复', async ({ page }) => {
+    await page.goto('/agent-workspace/sessions')
+    await page.waitForFunction(
+      () => {
+        const raw = localStorage.getItem('auth-storage')
+        if (!raw) return false
+        try { return !!(JSON.parse(raw)?.state?.accessToken) } catch { return false }
+      },
+      { timeout: 10_000 },
+    )
+
+    // 默认展开：折叠按钮可见，aria-expanded 同步
+    const collapseBtn = page.getByRole('button', { name: '折叠会话列表' })
+    await expect(collapseBtn).toBeVisible({ timeout: 10_000 })
+    await expect(collapseBtn).toHaveAttribute('aria-expanded', 'true')
+
+    // 折叠 → 窄 rail（展开按钮 + 新建图标按钮），列表项隐藏
+    await collapseBtn.click()
+    const expandBtn = page.getByRole('button', { name: '展开会话列表' })
+    await expect(expandBtn).toBeVisible()
+    await expect(expandBtn).toHaveAttribute('aria-expanded', 'false')
+    await expect(page.locator('[data-testid="session-item"]')).toHaveCount(0)
+    await expect(page.getByRole('button', { name: '新建对话' })).toBeVisible()
+
+    // 展开 → 列表恢复
+    await expandBtn.click()
+    await expect(page.getByRole('button', { name: '折叠会话列表' })).toBeVisible()
+    await expect(
+      page.locator('[data-testid="session-item"]').filter({ hasText: '遮光窗帘订单确认' })
+    ).toBeVisible({ timeout: 10_000 })
   })
 })
