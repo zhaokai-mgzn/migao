@@ -106,6 +106,11 @@ public class Product {
      */
     private OffsetDateTime editedAt;
 
+    /**
+     * 是否商家推荐（C 端「新品推荐」位展示依据，商家在商品管理页显式打标）
+     */
+    private Boolean recommended;
+
     @TableField(fill = FieldFill.INSERT)
     private OffsetDateTime createdAt;
 

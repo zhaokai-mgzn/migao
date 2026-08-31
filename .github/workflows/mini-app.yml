@@ -42,3 +42,49 @@ jobs:
       - name: Run unit tests
         working-directory: ${{ env.WORKING_DIR }}
         run: npm test
+
+  # 小布 H5 视觉回归：build:h5（测试 env 覆盖生产 URL）→ Playwright mock 数据 → 基线比对。
+  # 覆盖无会话 UX（2 tab）/新品推荐/OrderCard 渲染，验证 C 端视觉/布局回归（API 层测不到）。
+  xiaobu-h5-visual:
+    name: xiaobu H5 visual regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: ${{ env.WORKING_DIR }}/package-lock.json
+
+      - name: Install mini-app deps
+        working-directory: ${{ env.WORKING_DIR }}
+        run: npm ci
+
+      - name: Install Playwright deps
+        working-directory: tests
+        run: |
+          npm ci
+          npx playwright install chromium --with-deps
+
+      - name: Build H5 (test env overrides prod URL)
+        working-directory: ${{ env.WORKING_DIR }}
+        env:
+          TARO_APP_API_URL: http://localhost:8080
+          TARO_APP_AI_API_URL: http://localhost:8001
+        run: npm run build:h5
+
+      - name: Run visual regression
+        working-directory: tests
+        env:
+          CI: 'true'
+        run: npx playwright test specs/xiaobu/xiaobu-h5.spec.ts --config=playwright.xiaobu.config.ts
+
+      - name: Upload visual diff artifacts (failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xiaobu-visual-diffs
+          path: tests/test-results/xiaobu/

@@ -1,3 +1,4 @@
+// case_ids: API-005
 /**
  * SSE 流式客户端测试
  *
@@ -56,6 +57,53 @@ describe('SSEClient', () => {
   // ========== 增量 SSE 解析 ==========
 
   describe('parseSSEBufferIncremental (via sendMessage)', () => {
+    it('应通过 onChunkReceived 增量解析分块数据（chunked 流式路径）', () => {
+      // 模拟 wx.request 的 enableChunkedTransfer 行为：注册 onChunkReceived 回调，
+      // 数据分两次到达（模拟网络分块），每次只到达半条事件。
+      let chunkCallback: ((response: { data: ArrayBuffer }) => void) | null = null
+      ;(Taro.request as jest.Mock).mockImplementation(() => {
+        return {
+          abort: jest.fn(),
+          onChunkReceived: (cb: (response: { data: ArrayBuffer }) => void) => {
+            chunkCallback = cb
+          },
+        }
+      })
+
+      client.sendMessage('s1', 'test', undefined, callbacks)
+
+      // 第一块：只到达 `event: te`（事件类型名不完整）
+      const enc = new TextEncoder()
+      chunkCallback!({ data: enc.encode('event: te').buffer as ArrayBuffer })
+      // 第二块：补全事件类型 + data（此时应触发解析）
+      chunkCallback!({
+        data: enc.encode('xt\ndata: {"content":"你好"}\n\n').buffer as ArrayBuffer,
+      })
+
+      expect(callbacks.onText).toHaveBeenCalledWith({ content: '你好' })
+    })
+
+    it('应通过 onChunkReceived 处理跨块分割的 data 内容', () => {
+      let chunkCallback: ((response: { data: ArrayBuffer }) => void) | null = null
+      ;(Taro.request as jest.Mock).mockImplementation(() => {
+        return {
+          abort: jest.fn(),
+          onChunkReceived: (cb: (response: { data: ArrayBuffer }) => void) => {
+            chunkCallback = cb
+          },
+        }
+      })
+
+      client.sendMessage('s1', 'test', undefined, callbacks)
+
+      const enc = new TextEncoder()
+      // 事件头完整，但 data 内容被拆成两半
+      chunkCallback!({ data: enc.encode('event: text\ndata: {"cont').buffer as ArrayBuffer })
+      chunkCallback!({ data: enc.encode('ent":"流式"}\n\n').buffer as ArrayBuffer })
+
+      expect(callbacks.onText).toHaveBeenCalledWith({ content: '流式' })
+    })
+
     it('应解析 text 事件', () => {
       // 模拟 Taro.request 的 success 回调
       ;(Taro.request as jest.Mock).mockImplementation((options: any) => {
@@ -69,7 +117,7 @@ describe('SSEClient', () => {
         return { abort: jest.fn(), onChunkReceived: undefined }
       })
 
-      client.sendMessage('session-1', '你好', callbacks)
+      client.sendMessage('session-1', '你好', undefined, callbacks)
 
       // 执行微任务
       jest.runAllTimers()
@@ -88,7 +136,7 @@ describe('SSEClient', () => {
         return { abort: jest.fn(), onChunkReceived: undefined }
       })
 
-      client.sendMessage('s1', 'test', callbacks)
+      client.sendMessage('s1', 'test', undefined, callbacks)
       jest.runAllTimers()
 
       expect(callbacks.onDone).toHaveBeenCalledWith({
@@ -108,7 +156,7 @@ describe('SSEClient', () => {
         return { abort: jest.fn(), onChunkReceived: undefined }
       })
 
-      client.sendMessage('s1', '搜索窗帘', callbacks)
+      client.sendMessage('s1', '搜索窗帘', undefined, callbacks)
       jest.runAllTimers()
 
       expect(callbacks.onToolCall).toHaveBeenCalledWith({
@@ -128,7 +176,7 @@ describe('SSEClient', () => {
         return { abort: jest.fn(), onChunkReceived: undefined }
       })
 
-      client.sendMessage('s1', 'test', callbacks)
+      client.sendMessage('s1', 'test', undefined, callbacks)
       jest.runAllTimers()
 
       expect(callbacks.onError).toHaveBeenCalledWith({
@@ -148,7 +196,7 @@ describe('SSEClient', () => {
         return { abort: jest.fn(), onChunkReceived: undefined }
       })
 
-      client.sendMessage('s1', 'test', callbacks)
+      client.sendMessage('s1', 'test', undefined, callbacks)
       jest.runAllTimers()
 
       expect(callbacks.onCard).toHaveBeenCalledWith({
@@ -168,7 +216,7 @@ describe('SSEClient', () => {
         return { abort: jest.fn(), onChunkReceived: undefined }
       })
 
-      client.sendMessage('s1', 'test', callbacks)
+      client.sendMessage('s1', 'test', undefined, callbacks)
       jest.runAllTimers()
 
       expect(callbacks.onLoading).toHaveBeenCalledWith({ content: '正在搜索...' })
@@ -185,7 +233,7 @@ describe('SSEClient', () => {
         return { abort: jest.fn(), onChunkReceived: undefined }
       })
 
-      client.sendMessage('s1', 'test', callbacks)
+      client.sendMessage('s1', 'test', undefined, callbacks)
       jest.runAllTimers()
 
       expect(callbacks.onText).toHaveBeenCalledWith({ content: 'hello' })
@@ -211,7 +259,7 @@ describe('SSEClient', () => {
         return { abort: jest.fn(), onChunkReceived: undefined }
       })
 
-      client.sendMessage('s1', 'test', callbacks)
+      client.sendMessage('s1', 'test', undefined, callbacks)
       jest.runAllTimers()
 
       expect(callbacks.onText).toHaveBeenCalledTimes(2)
@@ -230,7 +278,7 @@ describe('SSEClient', () => {
         return { abort: jest.fn(), onChunkReceived: undefined }
       })
 
-      client.sendMessage('s1', 'test', callbacks)
+      client.sendMessage('s1', 'test', undefined, callbacks)
       jest.runAllTimers()
 
       expect(callbacks.onError).toHaveBeenCalledWith(
@@ -246,7 +294,7 @@ describe('SSEClient', () => {
         return { abort: jest.fn(), onChunkReceived: undefined }
       })
 
-      client.sendMessage('s1', 'test', callbacks)
+      client.sendMessage('s1', 'test', undefined, callbacks)
       jest.runAllTimers()
 
       expect(callbacks.onError).toHaveBeenCalledWith(
@@ -265,7 +313,7 @@ describe('SSEClient', () => {
         return { abort: jest.fn(), onChunkReceived: undefined }
       })
 
-      client.sendMessage('s1', 'test', callbacks)
+      client.sendMessage('s1', 'test', undefined, callbacks)
       jest.runAllTimers()
 
       expect(callbacks.onError).toHaveBeenCalledWith(
@@ -290,7 +338,7 @@ describe('SSEClient', () => {
         return { abort: abortFn, onChunkReceived: undefined }
       })
 
-      client.sendMessage('s1', 'test', callbacks)
+      client.sendMessage('s1', 'test', undefined, callbacks)
       client.abort()
 
       jest.runAllTimers()

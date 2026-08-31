@@ -361,7 +361,7 @@ def _detect_card_type(tool_name: str, result: Dict[str, Any]) -> Optional[str]:
         return "product_detail"
     elif tool_name == "logistics_track":
         return "logistics"
-    elif tool_name == "order_query":
+    elif tool_name in ("order_query", "customer_order_query"):
         return "order"
     elif tool_name == "curtain_calc":
         return "quotation"
@@ -389,8 +389,8 @@ def _should_send_card(tool_name: str, result: Dict[str, Any]) -> bool:
         data = result.get("data", {})
         return data.get("tracking_number") is not None
     
-    # 订单查询有结果时发送卡片（支持单订单和列表两种格式）
-    if tool_name == "order_query":
+    # 订单查询有结果时发送卡片（支持单订单和列表两种格式；C 端 customer_order_query 同规则）
+    if tool_name in ("order_query", "customer_order_query"):
         data = result.get("data", {})
         has_order = data.get("order") is not None
         orders = data.get("orders")  # action=list 返回 orders 数组
@@ -399,7 +399,7 @@ def _should_send_card(tool_name: str, result: Dict[str, Any]) -> bool:
         has_list = len(order_list) > 0
         should_send = has_order or has_list
         logger.info(
-            f"[chat/card] order_query check | has_order={has_order} orders_count={len(order_list)} "
+            f"[chat/card] {tool_name} check | has_order={has_order} orders_count={len(order_list)} "
             f"should_send={should_send} data_keys={list(data.keys()) if isinstance(data, dict) else 'N/A'}"
         )
         return should_send
@@ -707,6 +707,7 @@ _PAGE_WHITELIST = frozenset({
     "processing_item_query",
     "processing_items",
     "order_query",
+    "customer_order_query",
     "product_search",
     "product_detail",
     "logistics_track",
@@ -1201,6 +1202,43 @@ async def list_sessions(
         "size": size,
         "total": len(formatted_sessions),
     })
+
+
+@router.get("/sessions/latest")
+async def get_latest_session(
+    current_user: UserIdentity = Depends(get_current_user),
+):
+    """
+    获取最近一次的活跃会话（无会话 UX：打开即续聊，前端无感知）。
+
+    - 返回最近一条 active 会话（按 updated_at 倒序）；无则返回 null
+    - 前端据此决定「续聊」或「新建」，不暴露会话列表概念
+
+    Returns:
+        { "session": {...} | null }
+    """
+    session_memory = SessionMemory()
+    sessions = await session_memory.get_sessions(
+        tenant_id=current_user.tenant_id,
+        customer_id=current_user.user_id,
+        page=1,
+        size=1,
+    )
+    if not sessions:
+        return make_response(True, data={"session": None})
+
+    session = sessions[0]
+    return make_response(True, data={"session": {
+        "id": session["id"],
+        "tenant_id": session["tenant_id"],
+        "user_id": session["customer_id"],
+        "title": session["title"],
+        "status": session.get("status", "active"),
+        "last_message": session.get("last_message"),
+        "message_count": session.get("message_count", 0),
+        "created_at": _format_datetime(session["created_at"]),
+        "updated_at": _format_datetime(session["updated_at"]),
+    }})
 
 
 @router.put("/sessions/{session_id}/close")

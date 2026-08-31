@@ -1,15 +1,18 @@
+@use '../../styles/variables.scss' as *;
+
 .message-bubble {
   display: flex;
   padding: 8px 24px;
 
-  // 用户消息 - 右对齐
+  // 用户消息 - 右对齐（深蓝渐变气泡）
   &--user {
     justify-content: flex-end;
 
     .message-bubble__content {
-      background: #2F54EB;
-      color: #ffffff;
-      border-radius: 16px 16px 4px 16px;
+      background: $bubble-user-bg;
+      color: $bubble-user-text;
+      border-radius: $radius-lg $radius-lg 4px $radius-lg;
+      box-shadow: 0 2px 8px rgba(26, 115, 232, 0.25);
     }
 
     .message-bubble__time {
@@ -17,15 +20,16 @@
     }
   }
 
-  // AI 消息 - 左对齐
+  // AI 消息 - 左对齐（白卡片）
   &--assistant {
     justify-content: flex-start;
 
     .message-bubble__content {
-      background: #ffffff;
-      color: #1F2937;
-      border-radius: 16px 16px 16px 4px;
-      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+      background: $bubble-ai-bg;
+      color: $bubble-ai-text;
+      border-radius: $radius-lg $radius-lg $radius-lg 4px;
+      box-shadow: $shadow-card;
+      border: 1px solid rgba(10, 37, 64, 0.04);
     }
 
     .message-bubble__time {
@@ -34,13 +38,13 @@
   }
 
   &__wrapper {
-    max-width: 75%;
+    max-width: 78%;
     display: flex;
     flex-direction: column;
   }
 
   &__content {
-    padding: 16px 20px;
+    padding: 14px 18px;
     font-size: 28px;
     line-height: 1.6;
     word-break: break-all;
@@ -59,8 +63,8 @@
   }
 
   &__time {
-    font-size: 22px;
-    color: #9CA3AF;
+    font-size: 20px;
+    color: $text-tertiary;
     margin-top: 6px;
     padding: 0 4px;
   }
@@ -77,7 +81,7 @@
   &__image {
     width: 200px;
     height: 200px;
-    border-radius: 8px;
+    border-radius: $radius-md;
     background: #F3F4F6;
   }
 
@@ -95,9 +99,9 @@
     gap: 8px;
     padding: 10px 16px;
     background: #F3F4F6;
-    border-radius: 8px;
+    border-radius: $radius-md;
     font-size: 24px;
-    color: #6B7280;
+    color: $text-secondary;
   }
 
   &__tool-icon {
@@ -106,7 +110,7 @@
 
   &__tool-name {
     font-size: 24px;
-    color: #6B7280;
+    color: $text-secondary;
   }
 
   // 卡片区域
@@ -125,9 +129,9 @@
 
   &__card-placeholder {
     padding: 20px;
-    background: #F9FAFB;
-    border: 1px dashed #E5E7EB;
-    border-radius: 12px;
+    background: $bg-secondary;
+    border: 1px dashed $border-color;
+    border-radius: $radius-md;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -135,18 +139,18 @@
 
   &__card-text {
     font-size: 24px;
-    color: #9CA3AF;
+    color: $text-tertiary;
   }
 
   // 错误消息
   &__error {
     .message-bubble__content {
-      background: #FFF2F0;
-      border: 1px solid #FFCCC7;
+      background: rgba(229, 72, 77, 0.08);
+      border: 1px solid rgba(229, 72, 77, 0.25);
     }
 
     .message-bubble__text {
-      color: #FF4D4F;
+      color: $error-color;
     }
   }
 }

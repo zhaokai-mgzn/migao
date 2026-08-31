@@ -234,13 +234,26 @@ class OrderControllerTest extends BaseControllerTest {
         @DisplayName("列表查询携带租户 ID")
         void listPassesTenantId() throws Exception {
             when(orderService.getOrderPage(anyLong(), anyLong(), isNull(), isNull(), isNull(),
-                    isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(TEST_TENANT_ID)))
+                    isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(TEST_TENANT_ID), isNull()))
                     .thenReturn(PageResponse.of(0L, 1L, 20L, List.of()));
 
             mockMvc.perform(get(BASE));
 
             verify(orderService).getOrderPage(anyLong(), anyLong(), isNull(), isNull(), isNull(),
-                    isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(TEST_TENANT_ID));
+                    isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(TEST_TENANT_ID), isNull());
+        }
+
+        @Test
+        @DisplayName("列表查询支持按 userId 过滤（C 端数据隔离）")
+        void listPassesUserIdFilter() throws Exception {
+            when(orderService.getOrderPage(anyLong(), anyLong(), isNull(), isNull(), isNull(),
+                    isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(TEST_TENANT_ID), eq("user-abc")))
+                    .thenReturn(PageResponse.of(0L, 1L, 20L, List.of()));
+
+            mockMvc.perform(get(BASE).param("userId", "user-abc"));
+
+            verify(orderService).getOrderPage(anyLong(), anyLong(), isNull(), isNull(), isNull(),
+                    isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(TEST_TENANT_ID), eq("user-abc"));
         }
 
         @Test

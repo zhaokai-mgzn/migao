@@ -15,7 +15,7 @@ from app.config import settings
 
 
 # ---- 模型路由常量已收敛到 settings（app/config.py），禁止在此硬编码 ----
-#     settings.LLM_MODEL_PRIMARY — deepseek-v4-pro 复杂推理 / 多工具协同 / 默认
+#     settings.LLM_MODEL_PRIMARY — deepseek-v4-flash 复杂推理 / 多工具协同 / 默认
 #     settings.LLM_MODEL_FAST    — deepseek-v4-flash 轻量快速
 #     settings.VISION_MODEL      — 视觉模型（deepseek-v4-flash-vision-exp）
 

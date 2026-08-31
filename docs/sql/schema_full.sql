@@ -161,6 +161,7 @@ CREATE TABLE IF NOT EXISTS products (
     edited_by VARCHAR(50),
     edited_at TIMESTAMP WITH TIME ZONE,
     has_processing BOOLEAN DEFAULT FALSE,
+    recommended BOOLEAN DEFAULT FALSE,           -- 商家推荐标记（C 端新品推荐位展示依据）
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     deleted INTEGER DEFAULT 0
@@ -388,6 +389,7 @@ CREATE TABLE IF NOT EXISTS orders (
     payment_status VARCHAR(20) DEFAULT 'unpaid',
     stock_deducted BOOLEAN DEFAULT FALSE,
     follow_status VARCHAR(20) DEFAULT 'pending',
+    user_id VARCHAR(64),                          -- 下单用户ID（users.id，C 端数据隔离依据）
     remark TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
