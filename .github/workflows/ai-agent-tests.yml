@@ -39,7 +39,7 @@ jobs:
           # LLM / 视觉 / 向量库占位：单测 mock 外部依赖，ci-dummy 兜底避免 secrets 依赖
           PRIMARY_API_KEY: ${{ secrets.DEEPSEEK_API_KEY || 'ci-dummy' }}
           PRIMARY_BASE_URL: https://api.deepseek.com
-          PRIMARY_MODEL: deepseek-v4-pro
+          PRIMARY_MODEL: deepseek-v4-flash
           VISION_API_KEY: ${{ secrets.DEEPSEEK_API_KEY || 'ci-dummy' }}
           VISION_BASE_URL: https://api.deepseek.com/v1
           VISION_MODEL: deepseek-v4-flash-vision-exp

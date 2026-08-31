@@ -185,7 +185,7 @@ cd deploy
 
 # 配置 AI 服务环境变量（首次）
 export PRIMARY_API_KEY=your_deepseek_key
-export PRIMARY_MODEL=deepseek-v4-pro
+export PRIMARY_MODEL=deepseek-v4-flash
 
 # 启动所有服务
 docker-compose up --build

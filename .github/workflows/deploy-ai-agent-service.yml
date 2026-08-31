@@ -71,7 +71,7 @@ jobs:
         env:
           PRIMARY_API_KEY: ${{ secrets.DEEPSEEK_API_KEY || 'ci-dummy' }}
           PRIMARY_BASE_URL: https://api.deepseek.com
-          PRIMARY_MODEL: deepseek-v4-pro
+          PRIMARY_MODEL: deepseek-v4-flash
           PRIMARY_FAST_MODEL: deepseek-v4-flash
           ASR_API_KEY: ${{ secrets.ASR_API_KEY || 'ci-dummy' }}
           ASR_MODEL: paraformer-realtime-8k-v2

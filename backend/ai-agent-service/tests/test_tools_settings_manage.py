@@ -39,7 +39,7 @@ class TestAIConfig:
     async def test_get_ai_config(self, mock_get_client, tool, admin_tool_context):
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value={
-            "success": True, "data": {"model": "deepseek-v4-pro", "temperature": 0.7}
+            "success": True, "data": {"model": "deepseek-v4-flash", "temperature": 0.7}
         })
         mock_get_client.return_value = mock_client
         result = await tool.execute(context=admin_tool_context, action="get_ai_config")
