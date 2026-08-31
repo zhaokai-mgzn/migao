@@ -39,11 +39,11 @@ export interface MiniTicket {
 
 /**
  * 新品推荐（商家显式打标的在售商品）
- * GET /chat/products/new-arrivals?size=6
+ * GET /api/chat/products/new-arrivals?size=6
  */
 export async function getNewArrivals(size = 6): Promise<MiniProduct[]> {
   const res = await get<ApiResponse<{ items: MiniProduct[]; total: number }>>(
-    '/chat/products/new-arrivals',
+    '/api/chat/products/new-arrivals',
     { baseURL: AI_API_BASE_URL, params: { size } },
   )
   if (!res.success || !res.data) return []
@@ -58,11 +58,11 @@ export async function getNewArrivals(size = 6): Promise<MiniProduct[]> {
 
 /**
  * 我的订单（「我的」页入口，强制按当前用户过滤）
- * GET /chat/orders/mine?page=1&size=5
+ * GET /api/chat/orders/mine?page=1&size=5
  */
 export async function getMyOrders(size = 5): Promise<MiniOrder[]> {
   const res = await get<ApiResponse<{ items: MiniOrder[]; total: number }>>(
-    '/chat/orders/mine',
+    '/api/chat/orders/mine',
     { baseURL: AI_API_BASE_URL, params: { page: 1, size } },
   )
   if (!res.success || !res.data) return []
@@ -78,11 +78,11 @@ export async function getMyOrders(size = 5): Promise<MiniOrder[]> {
 
 /**
  * 我的售后工单（「我的」页入口，强制按当前用户过滤）
- * GET /chat/after-sales/mine?page=1&size=5
+ * GET /api/chat/after-sales/mine?page=1&size=5
  */
 export async function getMyTickets(size = 5): Promise<MiniTicket[]> {
   const res = await get<ApiResponse<{ items: MiniTicket[]; total: number }>>(
-    '/chat/after-sales/mine',
+    '/api/chat/after-sales/mine',
     { baseURL: AI_API_BASE_URL, params: { page: 1, size } },
   )
   if (!res.success || !res.data) return []

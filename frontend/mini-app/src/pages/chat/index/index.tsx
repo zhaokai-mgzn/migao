@@ -16,6 +16,7 @@ export default function ChatPage() {
     isLoadingMessages,
     error,
     handedOff,
+    ensureLatestSession,
     createSession,
     sendMessage,
     stopStreaming,
@@ -33,7 +34,7 @@ export default function ChatPage() {
     } catch {}
   }, [])
 
-  /** 初始化：检查登录 + 创建会话 */
+  /** 初始化：检查登录 + 续聊/新建会话（无会话 UX，前端无感） */
   const initialize = useCallback(async () => {
     // 检查登录状态
     const authed = checkAuth()
@@ -46,11 +47,9 @@ export default function ChatPage() {
       }
     }
 
-    // 如果没有当前会话，创建一个
-    if (!useChatStore.getState().currentSessionId) {
-      await createSession()
-    }
-  }, [checkAuth, login, createSession])
+    // 无会话 UX：续聊最近一次，无则静默新建
+    await ensureLatestSession()
+  }, [checkAuth, login, ensureLatestSession])
 
   useEffect(() => {
     initialize()
@@ -73,12 +72,17 @@ export default function ChatPage() {
   const handleSend = useCallback(
     async (content: string, images?: string[]) => {
       if (!currentSessionId) {
-        await createSession()
+        await ensureLatestSession()
       }
       await sendMessage(content, images)
     },
-    [currentSessionId, createSession, sendMessage],
+    [currentSessionId, ensureLatestSession, sendMessage],
   )
+
+  /** 新对话（清空当前会话工作状态，不展示会话列表） */
+  const handleNewChat = useCallback(async () => {
+    await createSession()
+  }, [createSession])
 
   /** 快捷操作 */
   const handleQuickAction = useCallback(
@@ -107,7 +111,13 @@ export default function ChatPage() {
             <Text className='chat-page__navbar-badge-text'>AI</Text>
           </View>
         </View>
-        <Text className='chat-page__navbar-sub'>米高窗帘 · 智能购物助手</Text>
+        <View className='chat-page__navbar-right'>
+          <Text className='chat-page__navbar-sub'>米高窗帘 · 智能购物助手</Text>
+          {/* 新对话（清空工作状态，不展示会话列表） */}
+          <View className='chat-page__new-chat' onClick={handleNewChat} hoverClass='chat-page__new-chat--hover'>
+            <Text className='chat-page__new-chat-text'>🔄 新对话</Text>
+          </View>
+        </View>
       </View>
 
       {/* 错误提示 */}

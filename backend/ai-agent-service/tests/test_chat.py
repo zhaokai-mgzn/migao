@@ -25,6 +25,7 @@ from app.api.chat import (
     send_message,
     create_session,
     list_sessions,
+    get_latest_session,
     close_session_endpoint,
     reopen_session_endpoint,
     delete_session,
@@ -264,6 +265,35 @@ class TestListSessions:
         assert result["success"] is True
         assert result["data"]["total"] == 1
         assert result["data"]["items"][0]["status"] == "active"
+
+
+class TestGetLatestSession:
+    """无会话 UX：打开即续聊（latest 端点返回最近 active 会话）"""
+
+    @patch("app.api.chat.SessionMemory")
+    @pytest.mark.asyncio
+    async def test_has_recent_session(self, MockSM):
+        """有最近会话 → 返回该会话（前端续聊）"""
+        m = _memory(get_sessions=[_session(id="sess-latest")])
+        MockSM.return_value = m
+        result = await get_latest_session(current_user=_user())
+        assert result["success"] is True
+        assert result["data"]["session"]["id"] == "sess-latest"
+        # 必须按最新会话取（size=1 + updated_at desc 由 SessionMemory 保证）
+        m.get_sessions.assert_called_once()
+        call = m.get_sessions.call_args
+        assert call.kwargs["size"] == 1
+        assert call.kwargs["customer_id"] == "user_1"
+
+    @patch("app.api.chat.SessionMemory")
+    @pytest.mark.asyncio
+    async def test_no_session_returns_null(self, MockSM):
+        """无会话 → 返回 null（前端新建，无感）"""
+        m = _memory(get_sessions=[])
+        MockSM.return_value = m
+        result = await get_latest_session(current_user=_user())
+        assert result["success"] is True
+        assert result["data"]["session"] is None
 
 
 class TestCloseSession:

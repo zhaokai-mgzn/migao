@@ -102,6 +102,9 @@ export class SSEClient {
         ...(images?.length ? { images } : {}),
       },
       timeout: 120000, // SSE 流式请求需要更长超时
+      // H5 环境：Taro.request 默认 dataType='json'，SSE 文本会被 response.json() 解析失败返回 null，
+      // 导致流式对话完全不可用（visual 回归发现）。显式声明 text 让响应按文本返回。
+      dataType: 'text',
       // @ts-ignore - enableChunkedTransfer 是 wx.request 的原生参数
       enableChunkedTransfer: true,
       success: (res) => {

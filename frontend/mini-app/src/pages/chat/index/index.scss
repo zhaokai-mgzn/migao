@@ -71,6 +71,32 @@
     color: rgba(255, 255, 255, 0.75);
   }
 
+  &__navbar-right {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  &__new-chat {
+    margin-top: 6px;
+    padding: 6px 16px;
+    border-radius: $radius-full;
+    background: rgba(255, 255, 255, 0.16);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    flex-shrink: 0;
+
+    &--hover {
+      opacity: 0.8;
+    }
+  }
+
+  &__new-chat-text {
+    font-size: 20px;
+    font-weight: 500;
+    color: #ffffff;
+  }
+
   // ── 主体 ──
   &__body {
     flex: 1;

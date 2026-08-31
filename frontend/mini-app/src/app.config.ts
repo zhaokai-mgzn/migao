@@ -1,7 +1,6 @@
 export default defineAppConfig({
   pages: [
     'pages/chat/index/index',
-    'pages/chat/sessions/index',
     'pages/auth/login/index',
     'pages/profile/index/index',
   ],
@@ -23,12 +22,6 @@ export default defineAppConfig({
         text: '对话',
         iconPath: 'assets/tabbar/chat.png',
         selectedIconPath: 'assets/tabbar/chat-active.png',
-      },
-      {
-        pagePath: 'pages/chat/sessions/index',
-        text: '会话',
-        iconPath: 'assets/tabbar/sessions.png',
-        selectedIconPath: 'assets/tabbar/sessions-active.png',
       },
       {
         pagePath: 'pages/profile/index/index',
