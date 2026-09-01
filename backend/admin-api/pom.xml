@@ -24,7 +24,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
         <!-- 依赖版本 -->
-        <mybatis-plus.version>3.5.8</mybatis-plus.version>
+        <mybatis-plus.version>3.5.17</mybatis-plus.version>
         <jjwt.version>0.13.0</jjwt.version>
         <bouncy-castle.version>1.78</bouncy-castle.version>
         <aliyun-oss.version>3.17.4</aliyun-oss.version>
