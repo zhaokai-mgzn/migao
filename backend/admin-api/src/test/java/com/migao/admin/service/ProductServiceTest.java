@@ -754,6 +754,64 @@ class ProductServiceTest {
                 .hasMessageNotContaining("on_sale");
     }
 
+    // ======================== 商品推荐标记测试（C 端新品推荐闭环） ========================
+
+    @Test
+    @DisplayName("上架商品可设为推荐")
+    void updateRecommended_OnSaleProduct() {
+        when(productMapper.selectById("prod-001")).thenReturn(testProduct);
+        when(productMapper.updateById(any(Product.class))).thenReturn(1);
+
+        productService.updateProductRecommended("prod-001", true, 1L);
+
+        verify(productMapper).updateById(argThat((Product p) -> Boolean.TRUE.equals(p.getRecommended())));
+    }
+
+    @Test
+    @DisplayName("取消推荐成功")
+    void updateRecommended_Unset() {
+        Product recProduct = Product.builder()
+                .id("prod-004")
+                .tenantId(1L)
+                .name("推荐商品")
+                .status("on_sale")
+                .recommended(true)
+                .build();
+        when(productMapper.selectById("prod-004")).thenReturn(recProduct);
+        when(productMapper.updateById(any(Product.class))).thenReturn(1);
+
+        productService.updateProductRecommended("prod-004", false, 1L);
+
+        verify(productMapper).updateById(argThat((Product p) -> Boolean.FALSE.equals(p.getRecommended())));
+    }
+
+    @Test
+    @DisplayName("非上架商品不可设为推荐（仅上架商品可出现在 C 端推荐位）")
+    void updateRecommended_RejectsOffSale() {
+        Product offSaleProduct = Product.builder()
+                .id("prod-005")
+                .tenantId(1L)
+                .name("已下架商品")
+                .status("off_sale")
+                .build();
+        when(productMapper.selectById("prod-005")).thenReturn(offSaleProduct);
+
+        assertThatThrownBy(() -> productService.updateProductRecommended("prod-005", true, 1L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("仅上架商品可设为推荐");
+
+        verify(productMapper, never()).updateById(any(Product.class));
+    }
+
+    @Test
+    @DisplayName("设置不存在的商品推荐标记 -> 404")
+    void updateRecommended_NotFound() {
+        when(productMapper.selectById("nonexistent")).thenReturn(null);
+
+        assertThatThrownBy(() -> productService.updateProductRecommended("nonexistent", true, 1L))
+                .isInstanceOf(BusinessException.class);
+    }
+
     // ═══════════════════════════════════════════════════════════
     // getLowStockByColor 测试（#316 库存告警按颜色维度）
     // ═══════════════════════════════════════════════════════════

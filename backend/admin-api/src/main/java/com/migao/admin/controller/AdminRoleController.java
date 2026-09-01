@@ -116,6 +116,7 @@ public class AdminRoleController {
      * DELETE /api/admin/roles/{id}
      */
     @DeleteMapping("/{id}")
+    @RequirePermission("system:manage")  // 审计 07 P1-4: 角色删除属系统管理操作
     public ApiResponse<Void> deleteRole(@PathVariable String id) {
         log.info("删除角色: id={}", id);
         roleService.deleteRole(id);

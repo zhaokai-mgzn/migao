@@ -1,9 +1,12 @@
+// case_ids: API-010
 package com.migao.admin.service;
 
 import com.migao.admin.dto.LoginRequest;
 import com.migao.admin.dto.LoginResponse;
 import com.migao.admin.entity.User;
 import com.migao.admin.mapper.PlatformAdminMapper;
+import com.migao.admin.mapper.TenantMapper;
+import com.migao.admin.mapper.UserMapper;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.security.JwtTokenProvider;
 import jakarta.servlet.http.HttpServletResponse;
@@ -41,6 +44,12 @@ class AuthServiceTest {
     private RoleService roleService;
 
     @Mock
+    private WechatService wechatService;
+
+    @Mock
+    private SmsService smsService;
+
+    @Mock
     private JwtTokenProvider jwtTokenProvider;
 
     @Mock
@@ -54,6 +63,12 @@ class AuthServiceTest {
 
     @Mock
     private PlatformAdminMapper platformAdminMapper;
+
+    @Mock
+    private UserMapper userMapper;
+
+    @Mock
+    private TenantMapper tenantMapper;
 
     private User testUser;
     private LoginRequest loginRequest;
@@ -280,5 +295,65 @@ class AuthServiceTest {
         assertThatThrownBy(() -> authService.handleWechatH5Callback("auth-code", "state-123", response))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("尚未实现");
+    }
+
+    // ======================== 短信登录 - 同手机号跨租户歧义（审计 07 P1-2） ========================
+
+    @Test
+    @DisplayName("短信登录 - 同手机号多租户且未指定租户 → 拒绝（防登录落错租户）")
+    void loginBySms_MultiTenantAmbiguity_Rejected() {
+        User u1 = User.builder().id("u1").tenantId(1L).phone("13800138000").role("admin").status("active").build();
+        User u2 = User.builder().id("u2").tenantId(2L).phone("13800138000").role("admin").status("active").build();
+
+        when(smsService.verifyCode("13800138000", "123456")).thenReturn(true);
+        when(platformAdminMapper.selectOne(any())).thenReturn(null);
+        when(userMapper.selectActiveUsersByPhoneIgnoreTenant("13800138000")).thenReturn(List.of(u1, u2));
+
+        assertThatThrownBy(() -> authService.loginBySms(
+                "13800138000", "123456", null, mock(HttpServletResponse.class)))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("多个租户");
+    }
+
+    @Test
+    @DisplayName("短信登录 - 多租户时按指定 tenantId 精确匹配")
+    void loginBySms_MultiTenant_WithTenantId_SelectsCorrectTenant() {
+        User u1 = User.builder().id("u1").tenantId(1L).phone("13800138000").role("admin").status("active").build();
+        User u2 = User.builder().id("u2").tenantId(2L).phone("13800138000").role("admin").status("active").build();
+
+        when(smsService.verifyCode("13800138000", "123456")).thenReturn(true);
+        when(platformAdminMapper.selectOne(any())).thenReturn(null);
+        when(userMapper.selectActiveUsersByPhoneIgnoreTenant("13800138000")).thenReturn(List.of(u1, u2));
+        when(jwtTokenProvider.generateAccessToken(anyString(), anyLong(), anyString(), anyList(), anyList()))
+                .thenReturn("jwt-token-2");
+        when(jwtTokenProvider.generateRefreshToken(anyString(), anyLong())).thenReturn("refresh-token-2");
+        when(jwtTokenProvider.getAccessTokenExpiration()).thenReturn(7200L);
+        when(userService.getUserRoles(any())).thenReturn(List.of("admin"));
+        when(roleService.getUserPermissions(anyString())).thenReturn(List.of("*"));
+        when(tenantMapper.selectById(2L)).thenReturn(null); // 租户名查询可空
+
+        LoginResponse resp = authService.loginBySms(
+                "13800138000", "123456", 2L, mock(HttpServletResponse.class));
+
+        assertThat(resp.getUser().getId()).isEqualTo("u2");
+        verify(userService).getUserRoles(u2);
+        // 审计 07 P1-5：登录响应不下发 refresh token（仅 HttpOnly cookie 承载）
+        assertThat(resp.getRefreshToken()).isNull();
+    }
+
+    @Test
+    @DisplayName("短信登录 - 多租户指定不存在的租户 → 拒绝")
+    void loginBySms_MultiTenant_WrongTenantId_Rejected() {
+        User u1 = User.builder().id("u1").tenantId(1L).phone("13800138000").role("admin").status("active").build();
+        User u2 = User.builder().id("u2").tenantId(2L).phone("13800138000").role("admin").status("active").build();
+
+        when(smsService.verifyCode("13800138000", "123456")).thenReturn(true);
+        when(platformAdminMapper.selectOne(any())).thenReturn(null);
+        when(userMapper.selectActiveUsersByPhoneIgnoreTenant("13800138000")).thenReturn(List.of(u1, u2));
+
+        assertThatThrownBy(() -> authService.loginBySms(
+                "13800138000", "123456", 9L, mock(HttpServletResponse.class)))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("未注册");
     }
 }

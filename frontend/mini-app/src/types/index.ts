@@ -74,6 +74,14 @@ export interface InteractiveData {
     required?: boolean
   }>
   submitLabel?: string
+  /** 翻页元信息（choice 组件分页查询下发） */
+  pageMeta?: {
+    current: number
+    total: number
+    totalCount?: number
+    tool?: string
+    params?: string
+  }
 }
 
 export interface ToolCallData {

@@ -39,6 +39,11 @@ public class OrderCreateRequest {
     private String remark;
 
     /**
+     * 下单用户 ID（可选；C 端小布下单时绑定真实用户，供数据隔离查询）
+     */
+    private String userId;
+
+    /**
      * 实收款（用户输入的实际收款金额，默认等于订单总额）
      */
     private BigDecimal actualAmount;

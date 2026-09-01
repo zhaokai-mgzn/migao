@@ -132,6 +132,11 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             wrapper.eq(Product::getStatus, query.getStatus());
         }
 
+        // 商家推荐筛选（C 端新品推荐位：recommended=true）
+        if (query.getRecommended() != null) {
+            wrapper.eq(Product::getRecommended, query.getRecommended());
+        }
+
         // 低库存筛选（#1291→#1396: 使用 SKU 级 EXISTS 子查询，口径统一 — 仅 on_sale 商品）
         if (query.getStockBelow() != null) {
             // 未显式指定 status 时，自动过滤 on_sale（排除已下架/已关闭商品）
@@ -916,6 +921,34 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         productMapper.updateById(product);
 
         log.info("更新商品状态成功: id={}, {} -> {}", id, currentStatus, status);
+    }
+
+    /**
+     * 设置/取消商品推荐标记（C 端「新品推荐」位控制，商家显式打标）
+     *
+     * @param id          商品 ID
+     * @param recommended true=推荐 / false=取消推荐
+     * @param tenantId    租户 ID
+     */
+    public void updateProductRecommended(String id, Boolean recommended, Long tenantId) {
+        Product product = productMapper.selectById(id);
+        if (product == null) {
+            throw BusinessException.notFound("商品");
+        }
+        if (Boolean.TRUE.equals(recommended)) {
+            // 只允许推荐已上架商品（下架商品不应出现在 C 端推荐位）
+            String currentStatus = product.getStatus() == null ? "draft" : product.getStatus();
+            if (!"on_sale".equals(currentStatus)) {
+                String label = PRODUCT_STATUS_LABELS.getOrDefault(currentStatus, currentStatus);
+                throw BusinessException.validationError(
+                        String.format("仅上架商品可设为推荐，当前状态: %s", label));
+            }
+        }
+        product.setRecommended(recommended);
+        product.setEditedBy(getCurrentUsername());
+        product.setEditedAt(OffsetDateTime.now());
+        productMapper.updateById(product);
+        log.info("更新商品推荐标记成功: id={}, recommended={}, tenantId={}", id, recommended, tenantId);
     }
 
     // ========== 批量操作 ==========

@@ -40,6 +40,8 @@ public class ServiceTokenFilter extends OncePerRequestFilter {
     // 内部服务角色
     private static final String SERVICE_ROLE = "ROLE_SERVICE";
     private static final String SERVICE_USERNAME = "internal-service";
+    // 内部服务调用时的真实用户请求头（ai-agent-service 透传的当前用户 ID，C 端数据隔离依据）
+    private static final String USER_ID_HEADER = "X-User-Id";
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
@@ -63,9 +65,15 @@ public class ServiceTokenFilter extends OncePerRequestFilter {
                     // 从请求头中提取租户ID（内部服务调用时通过 X-Tenant-Id 传递）
                     Long tenantId = parseTenantId(request.getHeader("X-Tenant-Id"));
 
-                    // 创建 SecurityUser（内部服务身份）
+                    // 透传真实用户 ID（ai-agent-service 调用时携带 X-User-Id）：
+                    // 无 X-User-Id（如 B 端员工上下文缺省或纯服务端调用）回退为 service 占位，
+                    // 保证 SecurityUser.userId 语义一致且不抛错；C 端数据隔离由业务层据此强制过滤。
+                    String realUserId = request.getHeader(USER_ID_HEADER);
+                    String effectiveUserId = StringUtils.hasText(realUserId) ? realUserId : SERVICE_USERNAME;
+
+                    // 创建 SecurityUser（内部服务身份，userId 透传真实用户）
                     SecurityUser securityUser = new SecurityUser(
-                            SERVICE_USERNAME, tenantId, SERVICE_USERNAME,
+                            effectiveUserId, tenantId, SERVICE_USERNAME,
                             List.of("service"), authorities);
 
                     UsernamePasswordAuthenticationToken authentication =

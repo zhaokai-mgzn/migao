@@ -39,6 +39,10 @@ class ToolResult(BaseModel):
     message: Optional[str] = Field(None, description="提示消息（给用户看的）")
     summary: Optional[str] = Field(None, description="LLM友好摘要（每个tool自行填写）")
     suggestion: Optional[str] = Field(None, description="失败时的修复建议（给LLM看，帮助引导用户）")
+    # terminal=True 表示该工具执行是一个「事务终态」：下单成功/售后创建成功/转人工成功等。
+    # 触发 ContextManager.reset_domain()——清空当前域会话级状态（草稿/待确认/实体），
+    # 避免旧状态污染下一轮对话（替代脆弱的字符串匹配清理，见 xiaobu-c-end-redesign.md §4.2 T2）。
+    terminal: bool = Field(default=False, description="是否为事务终态（完成后需重置会话级上下文）")
 
     class Config:
         extra = "allow"
@@ -73,9 +77,12 @@ class BaseTool(ABC):
     # read_only=True  → 纯查询，LLM 可放心调用，无需确认
     # read_only=False → 会修改数据，LLM 应先确认再调用
     # destructive=True → 可执行不可逆的删除/销毁操作，LLM 必须弹 confirm 卡片
+    # requires_confirmation=True → 非 destructive 但高风险写操作（财务/通知/会话/库存等，
+    #   审计 07 P0-L1：间接提示注入可驱动其无确认执行），同样必须弹 confirm 卡片
     # idempotent=True → 相同参数多次调用结果一致，可安全重试
     read_only: bool = True
     destructive: bool = False
+    requires_confirmation: bool = False
     idempotent: bool = True
 
     # read_only_actions: destructive 工具中纯只读的 action 集合（如 list/detail/tree）。

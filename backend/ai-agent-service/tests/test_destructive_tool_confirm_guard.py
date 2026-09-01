@@ -64,10 +64,12 @@ class TestRequiresConfirmation:
     """
 
     @staticmethod
-    def _make_tool(destructive=True, read_only_actions=()):
+    def _make_tool(destructive=True, read_only_actions=(), requires_confirmation=False):
         return type("FakeTool", (), {
+            "read_only": False,  # 写工具
             "destructive": destructive,
             "read_only_actions": frozenset(read_only_actions),
+            "requires_confirmation": requires_confirmation,
         })()
 
     def test_destructive_write_action_without_confirm(self):
@@ -92,15 +94,34 @@ class TestRequiresConfirmation:
         t = self._make_tool(read_only_actions={"list"})
         assert _requires_confirmation(t, {}, "查一下") is True
 
-    def test_non_destructive_tool_never_requires(self):
+    def test_plain_write_tool_never_requires(self):
+        # 普通写工具（未标记 destructive/requires_confirmation）：维持现状不强制
         t = self._make_tool(destructive=False)
         assert _requires_confirmation(t, {"action": "delete"}, "删除") is False
 
+    def test_requires_confirmation_write_tool_needs_confirm(self):
+        # 高风险非 destructive 写工具（财务/通知/会话/库存，审计 07 P0-L1）：
+        # 标记 requires_confirmation 后，无明确确认即拦截
+        t = self._make_tool(destructive=False, requires_confirmation=True)
+        assert _requires_confirmation(t, {"action": "create"}, "帮我记一笔账") is True
+
+    def test_requires_confirmation_with_confirm_allowed(self):
+        t = self._make_tool(destructive=False, requires_confirmation=True)
+        assert _requires_confirmation(t, {"action": "create"}, "确认创建") is False
+
+    def test_requires_confirmation_read_action_exempt(self):
+        # 只读 action（list/detail）即使标记 requires_confirmation 也豁免
+        t = self._make_tool(destructive=False, requires_confirmation=True,
+                            read_only_actions={"list", "detail"})
+        assert _requires_confirmation(t, {"action": "list"}, "查一下") is False
+        assert _requires_confirmation(t, {"action": "detail"}, "查详情") is False
+
 
 class TestReadOnlyActionsContract:
-    """契约：destructive 工具的 read_only_actions 必须是 VALID_ACTIONS 子集。
+    """契约：需确认工具的 read_only_actions 必须是 VALID_ACTIONS 子集。
 
-    防止声明笔误（如把写 action 误标为只读，导致破坏性操作被豁免确认）。
+    防止声明笔误（如把写 action 误标为只读，导致写操作被豁免确认）。
+    覆盖 destructive 工具与 requires_confirmation 高风险写工具（审计 07 P0-L1）。
     """
 
     def test_read_only_actions_are_valid_actions(self):
@@ -109,9 +130,10 @@ class TestReadOnlyActionsContract:
         from app.tools.registry import get_tool_registry
 
         tools = get_tool_registry().get_all_tools()
-        destructive = [t for t in tools if getattr(t, "destructive", False)]
-        assert destructive, "应存在 destructive 工具"
-        for tool in destructive:
+        confirmable = [t for t in tools
+                       if getattr(t, "destructive", False) or getattr(t, "requires_confirmation", False)]
+        assert confirmable, "应存在需确认工具（destructive 或 requires_confirmation）"
+        for tool in confirmable:
             # VALID_ACTIONS 是各工具模块级常量（非类属性），从模块取
             mod = importlib.import_module(tool.__module__)
             valid = set(getattr(mod, "VALID_ACTIONS", set()))
