@@ -28,6 +28,28 @@ Commit: `feat(frontend): 描述` / `fix(backend): 描述` / `test:` / `refactor:
 
 禁止 push main，必须 PR + 关联 Issue (`Fixes #xxx`)。
 
+## 本地验证与分支治理（2026-09-01 实战教训）
+
+**教训**：曾积压 40+ 本地分支未合并，切换旧分支后工作区被旧代码覆盖，未提交改动被静默携带 → 「切换分支后功能退化」。规则：
+
+1. **分支开即关联 Issue，验证完即 PR，CI 绿即合并**——分支存活目标 < 1-2 天。
+2. **切换分支前 `git status` 必须干净**（有改动先 commit/stash）——未提交改动会被静默带到新分支。
+3. **本地验证必须基于最新主线**：验证前先 `git fetch origin main && git rebase origin/main`，否则验证的是旧基线。
+4. **多分支并行验证用 git worktree**（每个分支独立工作目录，切换零污染）：
+   ```bash
+   ./scripts/dev-worktree.sh add <branch>   # 建独立工作区（默认 ../migao-wt/<分支>）
+   ./scripts/dev-worktree.sh list
+   ./scripts/dev-worktree.sh rm <分支> --delete-branch
+   ```
+5. **定期清理滞留分支**：
+   ```bash
+   git branch --merged origin/main | xargs git branch -d            # 已合并全删
+   git cherry origin/main <branch> | grep -c '^+'                    # 全 '-' = 内容已落地，可删
+   git log origin/main..<branch> --oneline                           # 看独有提交，确认无独有内容后删
+   git worktree prune                                               # 清残留 worktree
+   ```
+   删除前先确认分支内容已通过 PR 合入 main（squash 合并后 hash 不同，`git cherry` 仍会显示 `+`，以 PR 状态与文件内容为准）。
+
 ## 测试分层
 
 | 层 | 工具 | 覆盖要求 |
