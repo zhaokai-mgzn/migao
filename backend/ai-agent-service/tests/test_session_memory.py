@@ -680,3 +680,32 @@ class TestCleanupClosedSessions:
         mock_db.execute.return_value.rowcount = 3
         count = await memory.cleanup_closed_sessions(older_than_days=90)
         assert count == 3
+
+
+class TestGetSessions:
+    """get_sessions 会话列表（含 status 过滤回归）"""
+
+    async def test_status_filter_applied_to_sql(self, memory, mock_db):
+        """传 status 时 SQL 必须带 s.status 过滤条件。
+
+        回归保护：#2726 — get_sessions 无 status 过滤时，/sessions/latest
+        会返回已关闭会话，前端续聊后发送报 409 SESSION_CLOSED。
+        """
+        mock_db.execute.return_value = MockDBResult(rows=[])
+        await memory.get_sessions(
+            tenant_id=1, customer_id="user_1", page=1, size=20, status="active",
+        )
+        call = mock_db.execute.call_args
+        sql = call.args[0].text
+        assert "s.status = :status" in sql, f"SQL 必须含 status 过滤条件，实际: {sql}"
+        # 参数绑定正确传入
+        assert call.args[1].get("status") == "active", f"status 参数未绑定，实际: {call.args[1]}"
+
+    async def test_no_status_filter_when_not_given(self, memory, mock_db):
+        """不传 status 时保持原行为（列表端点可见全部状态，如 closed 历史）"""
+        mock_db.execute.return_value = MockDBResult(rows=[])
+        await memory.get_sessions(tenant_id=1, customer_id="user_1", page=1, size=20)
+        call = mock_db.execute.call_args
+        sql = call.args[0].text
+        assert "s.status = :status" not in sql, f"不传 status 不应加过滤条件，实际: {sql}"
+        assert "status" not in call.args[1], f"不传 status 不应绑定 status 参数，实际: {call.args[1]}"
