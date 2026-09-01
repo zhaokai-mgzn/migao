@@ -664,8 +664,8 @@ _CASE_DA_005 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['经营看板页面按织物质感方向重设计'],
     expectations=[''],
-    data_checks=['token：主色靛蓝/点缀陶土/米白底，无默认蓝', '商品销量排行表头「日涨」在 1440/1280 两视口无截断', '订单趋势 x 轴刻度在 1280 宽度下降采样不重叠', "订单/售后状态语义色 chips；空态「暂无数据」无 '-' 占位"],
-    skip_reason='UI 页面改版：由 vitest 单测 + Playwright 多视口 E2E + 二郎神页面验收（page_accept）验证，不进入 agent-eval 冒烟',
+    data_checks=['token：主色靛蓝/点缀陶土/米白底，无默认蓝', '商品销量排行表头「日涨」在 1440/1280 两视口无截断', '订单趋势 x 轴刻度在 1280 宽度下降采样不重叠', "订单/售后状态语义色 chips；空态「暂无数据」无 '-' 占位", '销售额趋势/迷你图使用真实 amount 数据，无 23.8 假乘数', '经营数据 4 卡自洽：客单价 = 今日销售额 ÷ 今日订单数', '涨跌语义色：上涨=绿色（好事）、下跌=红色（需关注）'],
+    skip_reason='UI 页面改版：由 vitest 单测 + Playwright 多视口 E2E + 页面验收（page_accept）验证，不进入 agent-eval 冒烟',
     tags=['dashboard', 'ui-redesign', 'visual'],
 )
 
@@ -1157,6 +1157,62 @@ _CASE_MC_011 = EvalCase(
     data_checks=["关键词命中 confidence=0.95 source='rule' matched_keywords；REGEX_RULES 命中 0.9 source='rule'（ORD-* 订单号、创建商品正则排除订单/工单/售后）", '均未命中返回 None'],
     skip_reason='纯函数由 pytest 单测验证（tests/test_rule_matcher.py），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['rule_matcher', 'regex', 'fallback'],
+)
+
+# ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
+_CASE_OB_001 = EvalCase(
+    id='OB-001',
+    legacy_id='',
+    title='商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家提交合规入驻申请（POST /api/auth/register），AI 自动甄别'],
+    expectations=['direct_reply'],
+    data_checks=['响应 status=approved 且 applicationId 非空，同步自动创建租户(active)+企业管理员(admin)+默认角色权限', 'tenant_applications 落 review_source=ai / risk_flags / review_summary / reviewed_by=ai', 'ai-agent 内部端点 POST /api/internal/registration/review 规则层无违规 + LLM approve → approve；LLM 不可用且规则层通过 → review_source=system 放行'],
+    skip_reason='由 admin-api 单测（RegistrationServiceTest/ControllerTest/ReviewClientTest）+ ai-agent 单测（test_registration_review.py）+ 前端单测（register.test.tsx）验证，非 LLM 冒烟',
+    tags=['onboarding', 'ai_review', 'auto_approve'],
+)
+
+# ── OB-002 [NORMAL] 商家入驻 - AI 自动驳回（敏感内容 / 法律风险）（源: cases/onboarding.yml）──
+_CASE_OB_002 = EvalCase(
+    id='OB-002',
+    legacy_id='',
+    title='商家入驻 - AI 自动驳回（敏感内容 / 法律风险）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家提交含敏感/违法内容或法律风险的入驻申请'],
+    expectations=['direct_reply'],
+    data_checks=['规则层命中敏感词/注入/格式违规 → 直接驳回（review_source=rule，不调用 LLM 防刷成本）', 'LLM 识别法律风险（decision=reject 或 high 风险）→ 驳回（review_source=ai），响应 rejectReason 非空', '驳回不创建租户/管理员，申请置 rejected'],
+    skip_reason='由 admin-api + ai-agent 单测验证（规则层/LLM 层/决策合成），非 LLM 冒烟',
+    tags=['onboarding', 'ai_review', 'auto_reject', 'compliance'],
+)
+
+# ── OB-003 [NORMAL] 商家入驻 - 防重复/防攻击（手机号/企业名/IP 频率/蜜罐/冷却/fail-closed）（源: cases/onboarding.yml）──
+_CASE_OB_003 = EvalCase(
+    id='OB-003',
+    legacy_id='',
+    title='商家入驻 - 防重复/防攻击（手机号/企业名/IP 频率/蜜罐/冷却/fail-closed）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['同一家公司/手机号/IP 反复提交入驻申请，或自动化脚本提交'],
+    expectations=['direct_reply'],
+    data_checks=['同手机号 pending/approved → 422；同企业规范化名称（去空格/括号/后缀）pending/approved → 422', 'AI 驳回 24h 冷却（review_source=system 的系统繁忙驳回不冷却，可立即重试）', '每手机号每日提交上限 3、每 IP 每小时上限 5（Redis 计数）→ 超限 422', '蜜罐字段 website 被填充 → 不落库不调 AI，静默返回 pending 占位', 'AI 甄别服务不可达 → fail-closed 系统繁忙驳回（review_source=system），绝不放行'],
+    skip_reason='由 RegistrationServiceTest + register.test.tsx（蜜罐隐藏字段）+ ai-agent 单测验证，非 LLM 冒烟',
+    tags=['onboarding', 'anti_abuse', 'rate_limit', 'honeypot', 'dedup'],
+)
+
+# ── OB-004 [NORMAL] 商家入驻 - 人工审批页废弃，仅保留超管 API 兜底（源: cases/onboarding.yml）──
+_CASE_OB_004 = EvalCase(
+    id='OB-004',
+    legacy_id='',
+    title='商家入驻 - 人工审批页废弃，仅保留超管 API 兜底',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['平台不再提供人工审核新商家页面，商家入驻全部由 AI 自动甄别'],
+    expectations=['direct_reply'],
+    data_checks=['ops.migaozn.com 域名分支/入驻审批菜单/审批页面/中间件前缀已移除（前端无 /registrations 页面）', '超管兜底接口保留：GET/PUT /api/super-admin/registrations* 仅 API 应急，无前端入口', '主页与入驻页文案改为 AI 秒审（不再出现 1-3 个工作日人工审核）'],
+    skip_reason='由前端单测验证（corporate-home/app-routes/components-other/register），非 LLM 冒烟',
+    tags=['onboarding', 'ops_page_removed', 'super_admin_api'],
 )
 
 # ── OR-001 [SMOKE] 订单列表查询（源: cases/order.yml）──
@@ -1705,16 +1761,16 @@ _CASE_UI_002 = EvalCase(
     tags=['ui', 'status-chip', 'empty-state'],
 )
 
-# ── UI-003 [NORMAL] 米宝「今日经营速览」洞察条 - 订单环比/含加工占比/低库存预警（源: cases/ui.yml）──
+# ── UI-003 [NORMAL] 米宝「今日经营速览」洞察条 - 一句话经营解读（源: cases/ui.yml）──
 _CASE_UI_003 = EvalCase(
     id='UI-003',
     legacy_id='',
-    title='米宝「今日经营速览」洞察条 - 订单环比/含加工占比/低库存预警',
+    title='米宝「今日经营速览」洞察条 - 一句话经营解读',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
     user_inputs=['经营看板织物质感重设计子任务 C：米宝「今日经营速览」洞察条置于页面顶部'],
     expectations=['direct_reply'],
-    data_checks=['frontend/admin-web/src/components/dashboard/TodayOverviewBar.tsx 渲染订单环比/含加工占比/低库存预警三个区块', '含加工占比 = processingCount / pendingCount，pendingCount<=0 时渲染 0% 而非 NaN/Infinity/undefined', '订单环比/低库存预警数值来自 props（由页面 API 返回值派生），组件内无硬编码固定数值', '洞察条置于经营看板顶部（先于待处理区块渲染）'],
+    data_checks=['frontend/admin-web/src/components/dashboard/TodayOverviewBar.tsx 以「一句话经营解读」串联今日订单/销售额/环比/提醒', '含加工占比 = processingCount / pendingCount，pendingCount<=0 时渲染 0% 而非 NaN/Infinity/undefined', '一句话中的数值全部来自 props（由页面 API 返回值派生），组件内无硬编码固定数值', '洞察条置于经营看板顶部（先于待处理区块渲染）'],
     skip_reason='纯前端组件由 vitest 单测验证（TodayOverviewBar.test.tsx + dashboard.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['ui', 'dashboard', 'insight', 'token'],
 )
@@ -1731,6 +1787,62 @@ _CASE_UI_004 = EvalCase(
     data_checks=['商品销量排行表头「日涨」列渲染 whitespace-nowrap，1440×900 与 1280×800 两视口无截断', '订单趋势图 x 轴刻度按 sampleTickIndices 降采样，1280 宽度下标签数 ≤ 7 且不密集重叠', 'dashboard 页面在 1440×900 与 1280×800 两视口无水平/垂直截断或溢出'],
     skip_reason='纯前端密度/布局治理由 vitest 单测验证（axis-sampling.test.ts + dashboard.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['ui', 'dashboard', 'density', 'axis-sampling'],
+)
+
+# ── UI-005 [NORMAL] 侧边栏新增「智能客服」大类——人工客服图标修复 + 机器人设置改名归组（源: cases/ui.yml）──
+_CASE_UI_005 = EvalCase(
+    id='UI-005',
+    legacy_id='',
+    title='侧边栏新增「智能客服」大类——人工客服图标修复 + 机器人设置改名归组',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['侧边栏新增「智能客服」一级大类：人工客服耳机图标修复 + 机器人设置更名为 AI 客服配置并归组'],
+    expectations=['direct_reply'],
+    data_checks=['Sidebar.tsx 渲染一级大类「智能客服」，DOM 顺序位于「工作台」之后、「商品管理」之前；「人工客服」从「工作台」分组移除', '「智能客服」下子菜单顺序：「AI 客服配置」在前、「人工客服」在后', '「人工客服」渲染 Headphones 图标（iconMap 已注册，非 BarChart3 回退），与「经营看板」BarChart3 图标明确区分；「AI 客服配置」渲染 Bot 图标；「智能客服」大类渲染 MessageSquare 图标', '原「机器人设置」更名为「AI 客服配置」：侧边栏菜单名、页面 H1、Header 面包屑同步一致，不再出现「机器人设置」残留', '链接路径不变：AI 客服配置 href=/chat/config、人工客服 href=/agent-workspace/human-sessions', '权限过滤不回归：无 agent:session → 隐藏「人工客服」；无 agent:quickreply → 隐藏「AI 客服配置」；两者均无 → 「智能客服」整组隐藏'],
+    skip_reason='纯前端侧边栏菜单/图标/文案由 vitest 单测验证（sidebar/chat-config/Header.test），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ui', 'sidebar', 'menu', 'icon'],
+)
+
+# ── UI-006 [NORMAL] 会话管理工作台 - 单列表（无筛选控件）+ 已结束会话续聊 banner（源: cases/ui.yml）──
+_CASE_UI_006 = EvalCase(
+    id='UI-006',
+    legacy_id='',
+    title='会话管理工作台 - 单列表（无筛选控件）+ 已结束会话续聊 banner',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['会话管理工作台：去掉「活跃/已关闭」硬 tab 与筛选控件，始终单列表展示全部会话（活跃在前、同组 updated_at 倒序），已结束会话灰化；查看已结束会话显示续聊 banner 可一键重新打开'],
+    expectations=['direct_reply'],
+    data_checks=['SessionList 单列表渲染：全部会话按「活跃在前 + updated_at 倒序」排序；无「活跃/已关闭」双 tab，也无「全部/活跃/已结束」筛选 chips/tab', '已结束会话行保留灰化 + 「已结束」徽标 + 重新打开按钮；活跃会话行保留「结束会话」菜单；空态统一「暂无会话」，搜索空态「没有匹配的会话」', '查看已结束会话时聊天区顶部显示「会话已结束」banner + 「继续此会话」按钮；点击调用 reopenSession 并聚焦输入框，banner 消失', '会话管理工作台统计条文案统一为「活跃/已结束/共」（无「已关闭」残留）'],
+    skip_reason='纯前端会话列表/续聊交互由 vitest 单测 + E2E 点击链路验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ui', 'session-list', 'reopen'],
+)
+
+# ── UI-007 [NORMAL] 小布 C 端输入条 - 默认按住说话（松开发送）与键盘模式切换（源: cases/ui.yml）──
+_CASE_UI_007 = EvalCase(
+    id='UI-007',
+    legacy_id='',
+    title='小布 C 端输入条 - 默认按住说话（松开发送）与键盘模式切换',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['小布 C 端（小程序/H5 同源）输入条参考瑞幸设计：默认「按住说话、松开直接发送」，可一键切回键盘模式输入文字；上滑取消录音'],
+    expectations=['direct_reply'],
+    data_checks=['mini-app MessageInput 默认语音模式：渲染「按住 说话」按钮，不渲染 textarea；左切换键显示 ⌨️', '语音模式按住（touchStart）调用 startRecording，松开（touchEnd）调用 stopAndTranscribe → 转写文本直接 onSend；上滑超过阈值取消不发送', '切到键盘模式：切换键变 🎤，显示 textarea + 图片 + 发送（保留原功能）；切回语音模式恢复按住说话', '流式/无会话时禁止录音；转写失败 toast「未听清，请重试」不发送'],
+    skip_reason='纯前端 C 端输入交互由 mini-app jest 单测验证（message-input.test.tsx，9 例），非 LLM 行为，不进入 agent-eval 冒烟；xiaobu H5 E2E 基建在 WIP 分支（main 未落）',
+    tags=['mini-app', 'voice-input', 'hold-to-talk'],
+)
+
+# ── UI-008 [NORMAL] 米高会话列表折叠/展开窄 rail（参考 DSH sidebar 折叠交互）（源: cases/ui.yml）──
+_CASE_UI_008 = EvalCase(
+    id='UI-008',
+    legacy_id='',
+    title='米高会话列表折叠/展开窄 rail（参考 DSH sidebar 折叠交互）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['会话列表支持折叠为窄 rail（图标态），展开恢复完整列表，折叠偏好持久化到 localStorage'],
+    expectations=['direct_reply'],
+    data_checks=['SessionList 折叠按钮 aria-label「折叠会话列表」且展开态 aria-expanded=true；点击折叠 → 窄 rail 仅保留「新建对话」图标按钮 + 展开 toggle（aria-label「展开会话列表」、aria-expanded=false），列表项/搜索隐藏', '再点展开 → 完整 w-64 列表恢复（新建对话/搜索/右键菜单功能全部保留）', '折叠偏好写入 localStorage（key chat.session-list.collapsed），刷新/重挂后恢复折叠态', '折叠动画为 Tailwind width transition + overflow-hidden（参考 DSH slide+crossfade 的简洁等价）'],
+    skip_reason='纯前端会话列表折叠交互由 vitest 单测 + E2E 点击链路验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ui', 'session-list', 'collapse', 'rail'],
 )
 
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
@@ -1842,6 +1954,10 @@ ALL_CASES = (
     _CASE_MC_009,
     _CASE_MC_010,
     _CASE_MC_011,
+    _CASE_OB_001,
+    _CASE_OB_002,
+    _CASE_OB_003,
+    _CASE_OB_004,
     _CASE_OR_001,
     _CASE_OR_002,
     _CASE_OR_003,
@@ -1883,6 +1999,10 @@ ALL_CASES = (
     _CASE_UI_002,
     _CASE_UI_003,
     _CASE_UI_004,
+    _CASE_UI_005,
+    _CASE_UI_006,
+    _CASE_UI_007,
+    _CASE_UI_008,
     _CASE_UT_001,
     _CASE_UT_002,
 )

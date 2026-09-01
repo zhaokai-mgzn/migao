@@ -1,3 +1,4 @@
+// case_ids: DF-010
 package com.migao.admin.controller;
 
 import com.migao.admin.dto.UploadedFileInfo;
@@ -23,6 +24,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * UploadController 单元测试
@@ -153,5 +155,23 @@ class UploadControllerTest {
                 .andExpect(jsonPath("$.data.urls[0]").value("https://oss.example.com/images/a.jpg"));
 
         verify(fileStorageService).upload(any(), eq("images"));
+    }
+
+    @Test
+    @DisplayName("上传/删除端点声明基础权限注解 dashboard:view（审计 07 P1-4）")
+    void uploadEndpoints_havePermissionAnnotation() throws Exception {
+        for (String m : new String[]{"uploadFile", "uploadFiles", "deleteFile",
+                                     "uploadImage", "uploadImages", "deleteImage"}) {
+            Class<?>[] params = switch (m) {
+                case "uploadFile", "uploadImage" -> new Class<?>[]{org.springframework.web.multipart.MultipartFile.class, String.class};
+                case "uploadFiles", "uploadImages" -> new Class<?>[]{java.util.List.class, String.class};
+                case "deleteFile" -> new Class<?>[]{String.class, java.util.Map.class};
+                default -> new Class<?>[]{java.util.Map.class};  // deleteImage
+            };
+            var method = UploadController.class.getMethod(m, params);
+            var ann = method.getAnnotation(com.migao.admin.security.RequirePermission.class);
+            assertThat(ann).as(m).isNotNull();
+            assertThat(ann.value()).isEqualTo("dashboard:view");
+        }
     }
 }

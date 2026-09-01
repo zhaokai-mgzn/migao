@@ -80,4 +80,4 @@ users.permissions (JSON 权限码)               （员工管理页直接勾选�
 | 服务间 | `X-Service-Token` | ServiceTokenFilter → ROLE_SERVICE 直通 |
 
 ---
-详见: [认证部署](../deployment/auth-and-deployment.md) · [API 参考](../api/api-reference.md)
+详见: [部署](Deployment.md) · [API 参考](../api/api-reference.md)

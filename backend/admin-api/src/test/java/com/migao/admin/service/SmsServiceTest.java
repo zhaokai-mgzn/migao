@@ -88,6 +88,77 @@ class SmsServiceTest {
     }
 
     @Test
+    @DisplayName("验证码校验 - bypass 未配置时万能码 123456 被拒绝（生产 fail-closed 默认）")
+    void verifyCode_BypassDisabled_RejectsMagicCode() {
+        String phone = "13800138000";
+        // 默认 bypassCode 为空字符串 = 禁用万能码（生产安全）
+        ReflectionTestUtils.setField(smsService, "bypassCode", "");
+
+        when(valueOps.get("sms:code:" + phone)).thenReturn("654321");
+
+        assertThat(smsService.verifyCode(phone, "123456")).isFalse();
+    }
+
+    @Test
+    @DisplayName("验证码校验 - 失败次数达阈值后锁定并清除验证码（防爆破）")
+    void verifyCode_ExceedMaxFails_LocksAndDeletesCode() {
+        String phone = "13800138000";
+        // 已有 5 次失败记录（达到 MAX_VERIFY_FAILS）
+        when(valueOps.get("sms:fail:" + phone)).thenReturn("5");
+
+        assertThat(smsService.verifyCode(phone, "000000")).isFalse();
+
+        // 锁定后清除验证码，即使后续输入正确码也无法校验
+        verify(redisTemplate).delete("sms:code:" + phone);
+    }
+
+    @Test
+    @DisplayName("验证码校验 - 错误码触发失败计数，首次失败设置 5 分钟 TTL")
+    void verifyCode_WrongCode_IncrementsFailCount() {
+        String phone = "13800138000";
+        when(valueOps.get("sms:code:" + phone)).thenReturn("654321");
+        when(valueOps.increment("sms:fail:" + phone)).thenReturn(1L);
+
+        assertThat(smsService.verifyCode(phone, "000000")).isFalse();
+
+        verify(valueOps).increment("sms:fail:" + phone);
+        verify(redisTemplate).expire("sms:fail:" + phone, 300L, TimeUnit.SECONDS);
+    }
+
+    @Test
+    @DisplayName("验证码校验 - 校验成功后清除失败计数")
+    void verifyCode_Success_ClearsFailCount() {
+        String phone = "13800138000";
+        when(valueOps.get("sms:code:" + phone)).thenReturn("123456");
+        when(valueOps.get("sms:fail:" + phone)).thenReturn("2");
+
+        assertThat(smsService.verifyCode(phone, "123456")).isTrue();
+
+        verify(redisTemplate).delete("sms:fail:" + phone);
+    }
+
+    @Test
+    @DisplayName("发送验证码 - 日志不泄露生成的验证码（PII/凭据脱敏）")
+    void sendVerificationCode_LogDoesNotLeakGeneratedCode() {
+        String phone = "13800138000";
+
+        ListAppender<ILoggingEvent> appender = attachListAppender();
+        try {
+            smsService.sendVerificationCode(phone);
+
+            List<ILoggingEvent> events = appender.list;
+            // 日志中不得出现 6 位验证码或 generatedCode 字样
+            assertThat(events).noneMatch(e ->
+                    e.getMessage().contains("generatedCode")
+                            || e.getMessage().matches(".*code=\\d{6}.*"));
+            // 手机号应脱敏（不出现完整明文）
+            assertThat(events).noneMatch(e -> e.getMessage().contains(phone));
+        } finally {
+            detachListAppender(appender);
+        }
+    }
+
+    @Test
     @DisplayName("验证码校验 - bypass 万能码命中时输出 WARN 警告日志（POC 模式显式化）")
     void verifyCode_BypassMatch_LogsWarning() {
         String phone = "13800138000";

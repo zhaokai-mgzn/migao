@@ -66,7 +66,8 @@ public class LocalFileStorageService implements FileStorageService {
         String storedFilename = fileId + extension;
 
         // 构建存储路径：uploads/{directory}/{filename}
-        Path uploadPath = Paths.get(UPLOAD_DIR, directory);
+        // 安全校验：directory 禁止路径穿越（../），必须位于 uploads 根内（审计 07 P1-7）
+        Path uploadPath = safeResolve(directory);
 
         try {
             Files.createDirectories(uploadPath);
@@ -74,7 +75,7 @@ public class LocalFileStorageService implements FileStorageService {
             Files.copy(file.getInputStream(), filePath, StandardCopyOption.REPLACE_EXISTING);
 
             // 构建访问 URL（相对路径，由 Controller 层组装完整 URL）
-            String url = ACCESS_PATH_PREFIX + directory + "/" + storedFilename;
+            String url = ACCESS_PATH_PREFIX + (StringUtils.hasText(directory) ? directory : "") + "/" + storedFilename;
             log.info("本地存储文件成功: path={}, url={}", filePath, url);
 
             return UploadedFileInfo.builder()
@@ -104,7 +105,8 @@ public class LocalFileStorageService implements FileStorageService {
             relativePath = fileUrl.substring(ACCESS_PATH_PREFIX.length());
         }
 
-        Path filePath = Paths.get(UPLOAD_DIR, relativePath);
+        // 安全校验：禁止路径穿越删除 uploads 之外的文件（审计 07 P1-7）
+        Path filePath = safeResolve(relativePath);
         try {
             if (Files.exists(filePath)) {
                 Files.delete(filePath);
@@ -113,6 +115,24 @@ public class LocalFileStorageService implements FileStorageService {
         } catch (IOException e) {
             log.error("删除本地文件失败: {}, error={}", filePath, e.getMessage(), e);
         }
+    }
+
+    /**
+     * 解析并校验用户可控的相对路径：规范化后必须位于 uploads 根内。
+     * 防路径穿越（../、绝对路径逃逸）导致的任意目录写/删（审计 07 P1-7）。
+     *
+     * @param relative 用户可控相对路径；null/空 → uploads 根
+     * @return 规范化后的绝对路径
+     */
+    private Path safeResolve(String relative) {
+        Path base = Paths.get(UPLOAD_DIR).toAbsolutePath().normalize();
+        Path target = StringUtils.hasText(relative)
+                ? base.resolve(relative).normalize()
+                : base;
+        if (!target.startsWith(base)) {
+            throw BusinessException.validationError("非法文件路径");
+        }
+        return target;
     }
 
     @Override

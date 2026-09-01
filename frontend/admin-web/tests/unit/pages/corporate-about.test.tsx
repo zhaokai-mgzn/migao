@@ -1,3 +1,4 @@
+// case_ids: OB-004
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 
@@ -29,7 +30,7 @@ describe('CorporateAboutPage', () => {
 
   it('renders company intro text', () => {
     render(<AboutPage />)
-    expect(screen.getByText(/米高是词元通达旗下的AI智能电商管理平台/)).toBeInTheDocument()
+    expect(screen.getByText(/米高是杭州词元通达科技有限公司旗下的AI智能电商管理平台/)).toBeInTheDocument()
   })
 
   it('renders mission and vision', () => {

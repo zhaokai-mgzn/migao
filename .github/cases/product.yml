@@ -1,9 +1,9 @@
 # cases/product.yml — 商品/库存/创建流程用例（并源转换）
 #
-# 标准：ershen/design/16-case-contract.md（schema v1.0）
+# 标准：外部契约标准 16-case-contract（schema v1.0）
 # 来源：eval P001~P007 + M001/M002/M003 + verification 2.1~2.9
 # 并源结果：18 个源用例 → 12 条（1:1 合并 3 对，M 系列并入创建流程组）
-# 校验：python3 ershen/engine/junshi/truths.py check --templates ershen/seed/migao/templates --cases ershen/seed/migao/cases
+# 校验：python3 .github/truths.py check --templates .github/templates --cases .github/cases
 
 schema: "case-contract/1.0"
 domain: product

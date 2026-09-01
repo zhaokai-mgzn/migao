@@ -22,7 +22,7 @@ type BatchAction = 'on_shelf' | 'off_shelf' | 'delete'
 
 interface SingleConfirm {
   product: Product
-  action: 'on_shelf' | 'off_shelf' | 'delete'
+  action: 'on_shelf' | 'off_shelf' | 'delete' | 'recommend' | 'unrecommend'
 }
 
 export default function ProductsPage() {
@@ -203,6 +203,8 @@ export default function ProductsPage() {
   const handleEdit = (p: Product) => router.push(`/products/${p.id}/edit`)
   const handlePutOnShelf = (p: Product) => setSingleConfirm({ product: p, action: 'on_shelf' })
   const handleTakeOffShelf = (p: Product) => setSingleConfirm({ product: p, action: 'off_shelf' })
+  const handleRecommend = (p: Product) => setSingleConfirm({ product: p, action: 'recommend' })
+  const handleUnrecommend = (p: Product) => setSingleConfirm({ product: p, action: 'unrecommend' })
   const handleDeleteSingle = (p: Product) => setSingleConfirm({ product: p, action: 'delete' })
 
   // ===== 单条确认提交 =====
@@ -217,6 +219,12 @@ export default function ProductsPage() {
       } else if (action === 'off_shelf') {
         await productApi.updateProductStatus(product.id, 'off_sale')
         toast.success('已下架')
+      } else if (action === 'recommend') {
+        await productApi.updateProductRecommended(product.id, true)
+        toast.success('已设为推荐')
+      } else if (action === 'unrecommend') {
+        await productApi.updateProductRecommended(product.id, false)
+        toast.success('已取消推荐')
       } else if (action === 'delete') {
         await productApi.deleteProduct(product.id)
         toast.success('已删除')
@@ -330,6 +338,24 @@ export default function ProductsPage() {
         return {
           title: '立即下架',
           desc: '是否确认下架？商品下架后状态变更为"已下架"，可重新对商品进行管理上架。',
+          variant: 'primary' as const,
+          onSubmit: submitSingleConfirm,
+          onClose: () => setSingleConfirm(null),
+        }
+      }
+      if (action === 'recommend') {
+        return {
+          title: '设为推荐',
+          desc: '设为推荐后，该商品将展示在小布对话页的「新品推荐」位。是否确认？',
+          variant: 'primary' as const,
+          onSubmit: submitSingleConfirm,
+          onClose: () => setSingleConfirm(null),
+        }
+      }
+      if (action === 'unrecommend') {
+        return {
+          title: '取消推荐',
+          desc: '取消推荐后，该商品将从 C 端「新品推荐」位移除。是否确认？',
           variant: 'primary' as const,
           onSubmit: submitSingleConfirm,
           onClose: () => setSingleConfirm(null),
@@ -524,6 +550,8 @@ export default function ProductsPage() {
         onEdit={handleEdit}
         onPutOnShelf={handlePutOnShelf}
         onTakeOffShelf={handleTakeOffShelf}
+        onRecommend={handleRecommend}
+        onUnrecommend={handleUnrecommend}
         onDelete={handleDeleteSingle}
       />
 

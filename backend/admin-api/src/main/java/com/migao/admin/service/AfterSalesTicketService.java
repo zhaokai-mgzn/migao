@@ -9,6 +9,7 @@ import com.migao.admin.mapper.AfterSalesTicketMapper;
 import com.migao.admin.mapper.OrderMapper;
 import com.migao.admin.mapper.TicketTimelineMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -408,9 +409,23 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
             return;
         }
 
+        // 原子条件更新：refund_amount 库内累加 + WHERE 上限，防并发工单超退（审计 07 P1-10）
+        OffsetDateTime refundAt = OffsetDateTime.now();
+        UpdateWrapper<Order> refundWrapper = new UpdateWrapper<>();
+        refundWrapper.eq("id", order.getId())
+                .eq("tenant_id", order.getTenantId())
+                .setSql("refund_amount = COALESCE(refund_amount, 0) + " + applied.toPlainString())
+                .set("refund_at", refundAt)
+                .and(w -> w.apply("COALESCE(refund_amount, 0) + {0} <= {1}",
+                        applied, effectiveActual));
+        int updated = orderMapper.update(null, refundWrapper);
+        if (updated == 0) {
+            log.warn("售后工单完结联动退款跳过：并发下退款条件不满足（已满额）, ticketNo={}, orderId={}",
+                    ticket.getTicketNo(), ticket.getOrderId());
+            return;
+        }
         order.setRefundAmount(existingRefund.add(applied));
-        order.setRefundAt(OffsetDateTime.now());
-        orderMapper.updateById(order);
+        order.setRefundAt(refundAt);
 
         try {
             financeService.recordRefund(order, applied, "售后工单退款: " + ticket.getTicketNo());
