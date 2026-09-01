@@ -116,3 +116,6 @@ skills-lock.json
 growth-gate-result.json
 # Danger Scan 本地运行产物
 danger-scan-result.json
+
+# Taro 本地私有配置（含真实 AppID，不入库）
+frontend/mini-app/project.private.config.json
