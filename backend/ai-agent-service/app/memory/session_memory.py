@@ -401,7 +401,8 @@ class SessionMemory:
         tenant_id: int, 
         customer_id: str, 
         page: int = 1, 
-        size: int = 20
+        size: int = 20,
+        status: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """
         获取客户的会话列表
@@ -411,17 +412,19 @@ class SessionMemory:
             customer_id: 客户 ID
             page: 页码，从 1 开始
             size: 每页数量
-            
+            status: 可选状态过滤（如 "active"）；None 时返回全部状态
+
         Returns:
             List[dict]: 会话列表
         """
         offset = (page - 1) * size
+        status_filter = " AND s.status = :status" if status else ""
         
         async with await self._get_session() as db:
             try:
                 from sqlalchemy import text
                 # 获取会话列表及消息数量、状态、最后一条消息、客户名称
-                sql = text("""
+                sql = text(f"""
                     SELECT 
                         s.id, s.tenant_id, s.customer_id, s.metadata,
                         s.created_at, s.updated_at,
@@ -439,17 +442,21 @@ class SessionMemory:
                     LEFT JOIN session_messages m ON s.id = m.session_id
                     LEFT JOIN users u ON s.customer_id = u.id
                     WHERE s.tenant_id = :tenant_id AND s.customer_id = :customer_id
+                    {status_filter}
                     GROUP BY s.id, s.tenant_id, s.customer_id, s.metadata,
                              s.created_at, s.updated_at, s.status, u.nickname
                     ORDER BY s.updated_at DESC
                     LIMIT :limit OFFSET :offset
                 """)
-                result = await db.execute(sql, {
+                params = {
                     "tenant_id": tenant_id,
                     "customer_id": customer_id,
                     "limit": size,
                     "offset": offset,
-                })
+                }
+                if status:
+                    params["status"] = status
+                result = await db.execute(sql, params)
                 rows = result.fetchall()
                 
                 sessions = []

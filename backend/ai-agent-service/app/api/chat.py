@@ -1223,6 +1223,7 @@ async def get_latest_session(
         customer_id=current_user.user_id,
         page=1,
         size=1,
+        status="active",  # #2726: 只续聊 active 会话，防续聊 closed 会话导致发送 409
     )
     if not sessions:
         return make_response(True, data={"session": None})

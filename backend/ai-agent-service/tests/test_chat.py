@@ -295,6 +295,23 @@ class TestGetLatestSession:
         assert result["success"] is True
         assert result["data"]["session"] is None
 
+    @patch("app.api.chat.SessionMemory")
+    @pytest.mark.asyncio
+    async def test_latest_requests_active_status_filter(self, MockSM):
+        """latest 必须向 get_sessions 传 status="active"（SQL 层过滤 closed 会话）。
+
+        回归保护：#2726 — 修复前 latest 不传 status，会返回已关闭会话；
+        前端 ensureLatestSession 续聊该 closed 会话 → 发送时 send_gate 判定
+        SESSION_CLOSED → 409，用户看到「请求失败: 409」。
+        """
+        m = _memory(get_sessions=[_session(id="sess-closed", status="closed")])
+        MockSM.return_value = m
+        result = await get_latest_session(current_user=_user())
+        assert result["success"] is True
+        call = m.get_sessions.call_args
+        assert call.kwargs.get("status") == "active", \
+            "latest 必须传 status=active 过滤已关闭会话（否则续聊 closed 会话，发送报 409 SESSION_CLOSED）"
+
 
 class TestCloseSession:
     @patch("app.api.chat.SessionMemory")
