@@ -1,3 +1,4 @@
+// case_ids: OB-001, OB-002, OB-003, OB-004
 package com.migao.admin.controller;
 
 import com.migao.admin.dto.PageResponse;
@@ -22,6 +23,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -60,17 +62,17 @@ class RegistrationControllerTest extends BaseControllerTest {
         super.baseTearDown();
     }
 
-    // ======================== 公开注册 ========================
+    // ======================== 公开注册（AI 自动甄别） ========================
 
     @Test
-    @DisplayName("submitRegistration — 提交入驻申请成功 → 200")
+    @DisplayName("submitRegistration — AI 甄别通过 → 200 approved")
     void submitRegistration_success() throws Exception {
         RegistrationResponse response = RegistrationResponse.builder()
                 .applicationId(100L)
-                .status("pending")
-                .message("入驻申请已提交，我们将尽快审核")
+                .status("approved")
+                .message("AI 甄别通过，欢迎入驻米高平台")
                 .build();
-        when(registrationService.submitApplication(any(RegistrationRequest.class)))
+        when(registrationService.submitApplication(any(RegistrationRequest.class), anyString()))
                 .thenReturn(response);
 
         mockMvc.perform(post("/api/auth/register")
@@ -79,10 +81,77 @@ class RegistrationControllerTest extends BaseControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.applicationId").value(100))
-                .andExpect(jsonPath("$.data.status").value("pending"))
-                .andExpect(jsonPath("$.data.message").value("入驻申请已提交，我们将尽快审核"));
+                .andExpect(jsonPath("$.data.status").value("approved"))
+                .andExpect(jsonPath("$.data.message").value("AI 甄别通过，欢迎入驻米高平台"));
 
-        verify(registrationService).submitApplication(any(RegistrationRequest.class));
+        verify(registrationService).submitApplication(any(RegistrationRequest.class), anyString());
+    }
+
+    @Test
+    @DisplayName("submitRegistration — AI 甄别驳回 → 200 rejected 且返回驳回原因")
+    void submitRegistration_rejected() throws Exception {
+        RegistrationResponse response = RegistrationResponse.builder()
+                .applicationId(100L)
+                .status("rejected")
+                .message("AI 甄别未通过")
+                .rejectReason("企业名称暗示无资质金融业务")
+                .build();
+        when(registrationService.submitApplication(any(RegistrationRequest.class), anyString()))
+                .thenReturn(response);
+
+        mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(validRegistrationRequest())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.status").value("rejected"))
+                .andExpect(jsonPath("$.data.rejectReason").value("企业名称暗示无资质金融业务"));
+
+        verify(registrationService).submitApplication(any(RegistrationRequest.class), anyString());
+    }
+
+    @Test
+    @DisplayName("submitRegistration — 客户端 IP 透传（X-Forwarded-For）")
+    void submitRegistration_forwardsClientIp() throws Exception {
+        RegistrationResponse response = RegistrationResponse.builder()
+                .applicationId(100L)
+                .status("approved")
+                .message("ok")
+                .build();
+        when(registrationService.submitApplication(any(RegistrationRequest.class), eq("1.2.3.4")))
+                .thenReturn(response);
+
+        mockMvc.perform(post("/api/auth/register")
+                        .header("X-Forwarded-For", "1.2.3.4, 10.0.0.1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(validRegistrationRequest())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("approved"));
+
+        verify(registrationService).submitApplication(any(RegistrationRequest.class), eq("1.2.3.4"));
+    }
+
+    @Test
+    @DisplayName("submitRegistration — X-Real-IP 优先于 X-Forwarded-For（防伪造 Issue #2661）")
+    void submitRegistration_prefersXRealIp() throws Exception {
+        RegistrationResponse response = RegistrationResponse.builder()
+                .applicationId(100L)
+                .status("approved")
+                .message("ok")
+                .build();
+        // nginx 会覆盖 X-Real-IP 为真实对端 IP；客户端同时伪造两个头时，必须取 X-Real-IP
+        when(registrationService.submitApplication(any(RegistrationRequest.class), eq("9.9.9.9")))
+                .thenReturn(response);
+
+        mockMvc.perform(post("/api/auth/register")
+                        .header("X-Real-IP", "9.9.9.9")
+                        .header("X-Forwarded-For", "1.2.3.4, 10.0.0.1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(validRegistrationRequest())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("approved"));
+
+        verify(registrationService).submitApplication(any(RegistrationRequest.class), eq("9.9.9.9"));
     }
 
     @Test

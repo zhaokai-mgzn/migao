@@ -1,4 +1,5 @@
 package com.migao.admin.service;
+// case_ids: HR-002, DF-007
 
 import com.migao.admin.dto.PageResponse;
 import com.migao.admin.entity.Role;
@@ -214,6 +215,58 @@ class UserServiceTest {
         // 密码已脱敏
         assertThat(result.getPasswordHash()).isNull();
         verify(userMapper).insert(any(User.class));
+    }
+
+    @Test
+    @DisplayName("创建用户失败 - 禁止分配系统保留角色 super_admin（防垂直越权，审计 07 P0-2）")
+    void createUser_ForbiddenRole_Rejected() {
+        // when & then
+        assertThatThrownBy(() -> userService.createUser(
+                "13600136000", "password123", "越权测试", "super_admin", "管理员", null, 1L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("系统保留角色");
+    }
+
+    @Test
+    @DisplayName("创建用户失败 - 禁止分配 B2C/内部角色（customer/agent/service）")
+    void createUser_ForbiddenB2cRoles_Rejected() {
+        assertThatThrownBy(() -> userService.createUser(
+                "13500135000", null, "客户", "customer", null, null, 1L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("系统保留角色");
+
+        assertThatThrownBy(() -> userService.createUser(
+                "13400134000", null, "客服", "agent", null, null, 1L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("系统保留角色");
+    }
+
+    @Test
+    @DisplayName("创建用户失败 - 禁止授予通配权限 *（超管全权限，审计 07 P0-2）")
+    void createUser_WildcardPermissions_Rejected() {
+        // when & then
+        assertThatThrownBy(() -> userService.createUser(
+                "13300133000", "password123", "通配权限", "operator", "客服", "[\"*\"]", 1L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("通配权限");
+    }
+
+    @Test
+    @DisplayName("更新用户失败 - 禁止将角色改为 super_admin（提权拦截，审计 07 P0-2）")
+    void updateUser_ForbiddenRole_Rejected() {
+        // when & then（校验在查询用户之前即拒绝，无需 stub 用户）
+        assertThatThrownBy(() -> userService.updateUser("user-001", "改名", null, "super_admin", null))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("系统保留角色");
+    }
+
+    @Test
+    @DisplayName("更新用户失败 - 禁止授予通配权限 *")
+    void updateUser_WildcardPermissions_Rejected() {
+        // when & then（校验在查询用户之前即拒绝）
+        assertThatThrownBy(() -> userService.updateUser("user-001", null, null, null, "[\"*\"]"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("通配权限");
     }
 
     @Test

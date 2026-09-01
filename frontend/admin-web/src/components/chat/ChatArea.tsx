@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { PanelRightOpen } from 'lucide-react'
+import { PanelRightOpen, RotateCcw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useChatStore } from '@/store/chat'
 import MessageList from './MessageList'
@@ -66,6 +66,39 @@ function ChatHeader({
   )
 }
 
+/** 已结束会话续聊 banner — 查看已结束会话时提示，可一键重新打开并聚焦输入框 */
+function ClosedSessionBanner() {
+  const { currentSessionId, sessions, reopenSession } = useChatStore()
+  const session = sessions.find(s => s.session_id === currentSessionId)
+
+  if (!currentSessionId || session?.status !== 'closed') return null
+
+  const handleReopen = async () => {
+    if (!currentSessionId) return
+    await reopenSession(currentSessionId)
+    // reopen 成功后聚焦输入框（MessageInput 的 textarea 带固定 id）
+    setTimeout(() => {
+      document.getElementById('chat-message-input')?.focus()
+    }, 0)
+  }
+
+  return (
+    <div
+      className="flex items-center justify-between gap-3 px-5 py-2 bg-amber-50/90 border-b border-amber-200/70"
+      data-testid="closed-session-banner"
+    >
+      <span className="text-xs text-amber-700">会话已结束，历史消息已保留</span>
+      <button
+        onClick={handleReopen}
+        className="flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-medium text-amber-700 bg-amber-100 hover:bg-amber-200 transition-colors"
+      >
+        <RotateCcw className="w-3 h-3" />
+        继续此会话
+      </button>
+    </div>
+  )
+}
+
 export default function ChatArea() {
   const [isInsightOpen, setIsInsightOpen] = useState(false)
 
@@ -75,6 +108,7 @@ export default function ChatArea() {
         insightOpen={isInsightOpen}
         onInsightToggle={() => setIsInsightOpen(prev => !prev)}
       />
+      <ClosedSessionBanner />
       <MessageList />
       <QuickActions />
       <MessageInput />

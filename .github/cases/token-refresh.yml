@@ -1,0 +1,119 @@
+# cases/token-refresh.yml — admin-web lib-token-refresh 覆盖率用例（issue #2421）
+# 来源：issue #2421 coverage-gap 反推（token-refresh-manager.ts 的 4 条 L2 真值）。
+# 均为单元测试契约（依赖注入 mock 的 async 方法），不进入 agent-eval 冒烟（skip_reason 显式标注）。
+
+schema: "case-contract/1.0"
+domain: token-refresh
+
+cases:
+  - id: TR-001
+    legacy_id: ""
+    title: "refresh-success — 401 自动刷新并重放原请求"
+    domains:
+      - token-refresh
+    tier: normal
+    tags:
+      - token_refresh
+      - auth
+      - retry
+    truths_ref:
+      - token-refresh.refresh-success
+    user_inputs:
+      - "admin-web 业务请求收到 401，TokenRefreshManager 自动刷新并重放"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "refreshAccessToken() 被调用一次；原请求 headers.Authorization 更新为 Bearer <newToken>"
+      - "原请求 _retry=true；通过注入的 axiosInstance 重放原请求并返回其结果"
+    skip_reason: "依赖注入 mock 的单元测试验证（frontend/admin-web/tests/unit/lib/token-refresh-manager.test.ts），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421）"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/lib/token-refresh-manager.test.ts"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: TR-002
+    legacy_id: ""
+    title: "single-flight — 并发 401 仅触发一次刷新并共享结果"
+    domains:
+      - token-refresh
+    tier: normal
+    tags:
+      - token_refresh
+      - concurrency
+      - single_flight
+    truths_ref:
+      - token-refresh.single-flight
+    user_inputs:
+      - "多个请求同时收到 401，TokenRefreshManager 单飞刷新"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "refreshAccessToken() 仅调用一次；刷新中后续请求入 failedQueue 挂起"
+      - "刷新成功后队列请求以同一新 token resolve，且刷新结束后 isRefreshing=false、queueLength=0"
+    skip_reason: "依赖注入 mock 的单元测试验证（frontend/admin-web/tests/unit/lib/token-refresh-manager.test.ts），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421）"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/lib/token-refresh-manager.test.ts"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: TR-003
+    legacy_id: ""
+    title: "refresh-failed — 刷新失败清除凭证并跳登录页"
+    domains:
+      - token-refresh
+    tier: normal
+    tags:
+      - token_refresh
+      - auth
+      - logout
+    truths_ref:
+      - token-refresh.refresh-failed
+    user_inputs:
+      - "刷新接口失败或返回 null，TokenRefreshManager 登出"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "refreshAccessToken 返回 null 或抛异常 → 全部挂起请求 reject、clearAuth() 被调用"
+      - "window.location.href 置为 /login；原请求 Promise.reject（null 分支带 'Token refresh failed'，异常分支透传原错误）"
+    skip_reason: "依赖注入 mock 的单元测试验证（frontend/admin-web/tests/unit/lib/token-refresh-manager.test.ts），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421）"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/lib/token-refresh-manager.test.ts"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: TR-004
+    legacy_id: ""
+    title: "no-loop — 刷新/登录请求自身 401 不触发刷新（防死循环）"
+    domains:
+      - token-refresh
+    tier: normal
+    tags:
+      - token_refresh
+      - auth
+      - no_loop
+    truths_ref:
+      - token-refresh.no-loop
+    user_inputs:
+      - "刷新或登录请求自身收到 401，TokenRefreshManager 直接拒绝"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "URL 含 /api/auth/refresh 或 /api/auth/admin/login → reject('Authentication failed')"
+      - "refreshAccessToken 不被调用；clearAuth() 被调用、window.location.href 置为 /login"
+    skip_reason: "依赖注入 mock 的单元测试验证（frontend/admin-web/tests/unit/lib/token-refresh-manager.test.ts），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421）"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/lib/token-refresh-manager.test.ts"
+      ci:
+        - pr-check.yml
+      verifies: []

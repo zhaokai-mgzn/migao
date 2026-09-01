@@ -1,3 +1,4 @@
+// case_ids: TR-001, TR-002, TR-003, TR-004
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { InternalAxiosRequestConfig } from 'axios'
 
@@ -220,6 +221,9 @@ describe('TokenRefreshManager', () => {
       // p2 should resolve with the new token string
       const result2 = await p2
       expect(result2).toBe('new-token-abc')
+
+      // single-flight: refresh 接口只被首个请求调用一次
+      expect(mockRefreshAccessToken).toHaveBeenCalledTimes(1)
 
       expect(manager.getQueueStatus()).toEqual({ isRefreshing: false, queueLength: 0 })
     })

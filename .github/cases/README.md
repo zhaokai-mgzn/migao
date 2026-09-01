@@ -1,6 +1,6 @@
 # cases/ — 用例契约库（并源试点）
 
-> 单一行为用例源。标准见 `ershen/design/16-case-contract.md`（schema v1.0 草案）。
+> 单一行为用例源。标准见 `外部契约标准 16-case-contract`（schema v1.0 草案）。
 
 ## 文件结构
 
@@ -35,11 +35,11 @@ cases/
 
 | 步骤 | 状态 |
 |---|---|
-| 映射表（94 例 → 16 模板） | ✅ `ershen/docs/case-source-mapping.md` |
-| schema 标准 | ✅ `ershen/design/16-case-contract.md` |
+| 映射表（94 例 → 16 模板） | ✅ `外部 docs/case-source-mapping.md` |
+| schema 标准 | ✅ `外部契约标准 16-case-contract` |
 | 真值 ID 化（templates 侧） | ✅ 19 模板 151 条全部带 `[模板名.短名]` ID 前缀 |
 | 真值缺口补齐 | ✅ 新建 `id-resolve.yml` / `category-manage.yml` / `defense.yml`，增补 ai-chat/order/dashboard/product 4 个模板 |
-| 真值解析器 | ✅ `ershen/engine/junshi/truths.py`（index / check，fail-closed）+ `test_truths.py` 6 条单测 |
+| 真值解析器 | ✅ `.github/truths.py`（index / check，fail-closed）+ `test_truths.py` 6 条单测 |
 | 12 域用例转换 | ✅ 80 条全部落地（126 处 truths_ref 可解析，7 个缺口用例显式标注） |
 | CI 门禁 | ✅ `pr-check.yml` 新增 `case-truth-check` job（seed + migao 两份），seed 文件已部署至 `migao/.github/` |
 | `render_cases.py` 生成器 | ✅ YAML → `eval_cases.py`（80 条）+ `mibao-verification-cases.md`，两者已生成、禁止手改 |
@@ -77,10 +77,10 @@ python3 .github/render_cases.py \
 
 ```bash
 # 用例引用校验（fail-closed；缺口用例仅告警）
-python3 ershen/engine/junshi/truths.py check \
-  --templates ershen/seed/migao/templates \
-  --cases ershen/seed/migao/cases
+python3 .github/truths.py check \
+  --templates .github/templates \
+  --cases .github/cases
 
 # 全量真值索引
-python3 ershen/engine/junshi/truths.py index --templates ershen/seed/migao/templates
+python3 .github/truths.py index --templates .github/templates
 ```

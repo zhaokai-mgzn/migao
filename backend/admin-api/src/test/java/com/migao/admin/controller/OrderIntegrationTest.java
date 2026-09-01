@@ -1,3 +1,4 @@
+// case_ids: OR-001, OR-002, OR-003, OR-004, OR-005, OR-006
 package com.migao.admin.controller;
 
 import com.migao.admin.config.GlobalExceptionHandler;
@@ -163,7 +164,7 @@ class OrderIntegrationTest {
 
         PageResponse<OrderListResponse> pageResponse = PageResponse.of(2L, 1L, 20L, List.of(order1, order2));
 
-        when(orderService.getOrderPage(eq(1L), eq(20L), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(1L)))
+        when(orderService.getOrderPage(eq(1L), eq(20L), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(1L), isNull()))
                 .thenReturn(pageResponse);
 
         // When & Then
@@ -194,7 +195,7 @@ class OrderIntegrationTest {
         PageResponse<OrderListResponse> pageResponse = PageResponse.of(1L, 1L, 20L, List.of(order1));
 
         when(orderService.getOrderPage(eq(1L), eq(20L), isNull(), isNull(), isNull(), isNull(),
-                eq("2025-01-01"), eq("2025-12-31"), isNull(), isNull(), isNull(), isNull(), eq(1L)))
+                eq("2025-01-01"), eq("2025-12-31"), isNull(), isNull(), isNull(), isNull(), eq(1L), isNull()))
                 .thenReturn(pageResponse);
 
         // When & Then
@@ -211,7 +212,7 @@ class OrderIntegrationTest {
                 .andExpect(jsonPath("$.data.items[0].orderNo").value("ORD20250425001"));
 
         verify(orderService).getOrderPage(eq(1L), eq(20L), isNull(), isNull(), isNull(), isNull(),
-                eq("2025-01-01"), eq("2025-12-31"), isNull(), isNull(), isNull(), isNull(), eq(1L));
+                eq("2025-01-01"), eq("2025-12-31"), isNull(), isNull(), isNull(), isNull(), eq(1L), isNull());
     }
 
     // ======================== 查询订单详情 ========================

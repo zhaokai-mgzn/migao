@@ -122,6 +122,11 @@ public class ProductResponse {
     private BigDecimal salesAmount;
 
     /**
+     * 是否商家推荐（C 端「新品推荐」位展示依据）
+     */
+    private Boolean recommended;
+
+    /**
      * 颜色分类列表（详情接口返回）
      */
     private List<ProductColorResponse> colors;
