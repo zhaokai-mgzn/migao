@@ -48,12 +48,18 @@
 | UI Regression Check | 防 UI token 回退 | 工作区旧 UI 被提交 |
 | QA Growth Gate | case_ids/测试覆盖/弱断言 | 测试忘带 case_ids、测试放错目录 |
 | Case Contract | 用例引用完整性 | 改了 case yml 未重渲染 |
-| Agent Eval (smoke) | 米宝真实 LLM 行为 | 偶发波动（已自动重试，无需干预） |
+| Agent Eval (smoke) | 米宝真实 LLM 行为 | **偶发 LLM 波动**（CI 内部已自动重试 1 次）；2 次均失败时用 `gh run rerun <run-id> --failed` 重跑（`gh pr checks --rerun-failed` 实测不生效） |
 | admin-api/web/ai-agent 单测 | 三模块测试 | 并行改动契约不一致 |
 
 ## 4. 部署
 - 合并到 main 自动触发 3 个部署（admin-api/ai-agent/frontend）+ post-deploy 冒烟。
-- 部署后验证：`curl api.migaozn.com/actuator/health`、`merchant.migaozn.com/login` 200。
+- **部署后验证（2026-09-01 修正：`/actuator/health` 公网 404 是 nginx 屏蔽的预期行为，勿当成故障）**：
+  ```bash
+  curl -s https://ai-api.migaozn.com/health          # ai-agent → {"status":"healthy"}
+  curl -s -o /dev/null -w "%{http_code}\n" https://merchant.migaozn.com/login   # frontend → 200
+  curl -s -o /dev/null -w "%{http_code}\n" -X POST https://api.migaozn.com/api/auth/sms-code -H 'Content-Type: application/json' -d '{}'  # admin-api → 401（存活+鉴权）
+  ```
+- 冒烟失败若为全量 502/Connection refused 且后续部署已覆盖 → 多为**部署滚动重启瞬态**，以最新一次部署结论为准。
 - 生产登录：13800138000 / 万能码 123456（短信网关仍 bypass，上线前需接入）。
 
 ## 5. 相关文档
