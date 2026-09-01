@@ -349,6 +349,11 @@ export const useChatStore = create<ChatState>()((set, get) => ({
           cancelValue: data.cancelValue,
           formFields: data.formFields,
           submitLabel: data.submitLabel,
+          // 订单确认附加交互（瑞幸式：自提/外送 + 支付方式）
+          orderConfirm: data.orderConfirm,
+          deliveryOptions: data.deliveryOptions,
+          paymentOptions: data.paymentOptions,
+          amount: data.amount,
         }
         set(state => ({
           messages: state.messages.map(msg =>

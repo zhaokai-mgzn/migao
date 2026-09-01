@@ -74,6 +74,12 @@ export interface InteractiveData {
     required?: boolean
   }>
   submitLabel?: string
+  /** 订单确认附加交互（瑞幸式：配送方式/支付方式选择），仅 confirm 组件在说明是订单确认时携带 */
+  orderConfirm?: boolean
+  deliveryOptions?: Array<{ label: string; value: string }>
+  paymentOptions?: Array<{ label: string; value: string }>
+  /** 应付金额（展示用） */
+  amount?: string
   /** 翻页元信息（choice 组件分页查询下发） */
   pageMeta?: {
     current: number

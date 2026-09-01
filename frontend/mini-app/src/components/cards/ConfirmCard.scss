@@ -52,6 +52,103 @@
   gap: 16rpx;
 }
 
+// ── 订单确认附加交互（瑞幸式：自提/外送 + 支付方式）──
+.confirm-card__order-meta {
+  padding: 8rpx 0 20rpx;
+}
+
+.confirm-card__meta-label {
+  display: block;
+  font-size: 24rpx;
+  color: #8a8a8a;
+  margin-bottom: 12rpx;
+}
+
+.confirm-card__seg {
+  margin-bottom: 20rpx;
+}
+
+.confirm-card__seg-row {
+  display: flex;
+  gap: 16rpx;
+}
+
+.confirm-card__seg-item {
+  flex: 1;
+  height: 64rpx;
+  border-radius: 12rpx;
+  border: 1rpx solid #e8e8e8;
+  background: #f7f7f7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  &--active {
+    border-color: #1a73e8;
+    background: #e8f1fe;
+  }
+}
+
+.confirm-card__seg-text {
+  font-size: 26rpx;
+  color: #333;
+
+  .confirm-card__seg-item--active &,
+  .confirm-card__seg-item--active & {
+    color: #1a73e8;
+    font-weight: 600;
+  }
+}
+
+.confirm-card__payment-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16rpx;
+}
+
+.confirm-card__payment-item {
+  padding: 12rpx 24rpx;
+  border-radius: 12rpx;
+  border: 1rpx solid #e8e8e8;
+  background: #fff;
+  display: flex;
+  align-items: center;
+
+  &--active {
+    border-color: #1a73e8;
+    background: #e8f1fe;
+  }
+}
+
+.confirm-card__payment-text {
+  font-size: 26rpx;
+  color: #333;
+
+  .confirm-card__payment-item--active & {
+    color: #1a73e8;
+    font-weight: 600;
+  }
+}
+
+.confirm-card__amount-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 12rpx;
+  margin-top: 20rpx;
+}
+
+.confirm-card__amount-label {
+  font-size: 24rpx;
+  color: #8a8a8a;
+}
+
+.confirm-card__amount-value {
+  font-size: 36rpx;
+  font-weight: 700;
+  color: #1a73e8;
+}
+
 .confirm-card__btn {
   flex: 1;
   height: 88rpx;

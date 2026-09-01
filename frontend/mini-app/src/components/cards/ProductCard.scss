@@ -41,6 +41,18 @@
     overflow: hidden;
   }
 
+  // 规格行（瑞幸式：颜色/门幅/售卖方式等）
+  &__spec {
+    margin-top: 4px;
+    font-size: 22px;
+    color: $text-tertiary;
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
   &__price-row {
     display: flex;
     align-items: baseline;
@@ -58,6 +70,19 @@
     font-size: 22px;
     font-weight: 500;
     color: $brand-gold;
+  }
+
+  // 划线原价（「预计到手」时展示）
+  &__price-original {
+    font-size: 22px;
+    color: $text-tertiary;
+    text-decoration: line-through;
+  }
+
+  // 「预计到手」提示（划线原价下方）
+  &__price-hint {
+    font-size: 20px;
+    color: $text-tertiary;
   }
 
   &__sales {

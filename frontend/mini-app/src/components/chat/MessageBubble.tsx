@@ -70,7 +70,11 @@ function renderCard(card: CardData, idx: number, onInteract?: (value: string) =>
       return (
         <View key={`card-${idx}`} className='message-bubble__card-group'>
           {products.map((product: any, pIdx: number) => (
-            <ProductCard key={`product-${pIdx}`} data={product} />
+            <ProductCard
+              key={`product-${pIdx}`}
+              data={product}
+              onOrder={onInteract ? (name) => onInteract(`我要下单${name}`) : undefined}
+            />
           ))}
         </View>
       )
@@ -78,7 +82,13 @@ function renderCard(card: CardData, idx: number, onInteract?: (value: string) =>
 
     case 'product_detail': {
       const product = data?.product || data
-      return <ProductCard key={`card-${idx}`} data={product} />
+      return (
+        <ProductCard
+          key={`card-${idx}`}
+          data={product}
+          onOrder={onInteract ? (name) => onInteract(`我要下单${name}`) : undefined}
+        />
+      )
     }
 
     case 'logistics':
