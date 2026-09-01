@@ -3,6 +3,7 @@ import { View, Text, Image } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import type { Message, ToolCallData, CardData, InteractiveData } from '../../types'
 import ProductCard from '../cards/ProductCard'
+import ProductFormList from '../cards/ProductFormList'
 import LogisticsCard from '../cards/LogisticsCard'
 import KnowledgeCard from '../cards/KnowledgeCard'
 import OrderCard from '../cards/OrderCard'
@@ -67,10 +68,24 @@ function renderCard(card: CardData, idx: number, onInteract?: (value: string) =>
     case 'product_recommend': {
       // data 可能是单个商品或商品列表
       const products = Array.isArray(data?.products) ? data.products : (Array.isArray(data) ? data : [data])
+      // 多商品 → 瑞幸式商品表单列表（紧凑行 + 可点规格 + 去下单）
+      if (products.length > 1) {
+        return (
+          <ProductFormList
+            key={`card-${idx}`}
+            products={products}
+            onInteract={(value) => onInteract?.(value)}
+          />
+        )
+      }
       return (
         <View key={`card-${idx}`} className='message-bubble__card-group'>
           {products.map((product: any, pIdx: number) => (
-            <ProductCard key={`product-${pIdx}`} data={product} />
+            <ProductCard
+              key={`product-${pIdx}`}
+              data={product}
+              onOrder={onInteract ? (name) => onInteract(`我要下单${name}`) : undefined}
+            />
           ))}
         </View>
       )
@@ -78,7 +93,13 @@ function renderCard(card: CardData, idx: number, onInteract?: (value: string) =>
 
     case 'product_detail': {
       const product = data?.product || data
-      return <ProductCard key={`card-${idx}`} data={product} />
+      return (
+        <ProductCard
+          key={`card-${idx}`}
+          data={product}
+          onOrder={onInteract ? (name) => onInteract(`我要下单${name}`) : undefined}
+        />
+      )
     }
 
     case 'logistics':

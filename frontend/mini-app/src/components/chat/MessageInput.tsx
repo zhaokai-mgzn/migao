@@ -107,6 +107,24 @@ export default function MessageInput({
     }
   }, [selectedImages, isUploading, isStreaming, disabled, isRecording])
 
+  /** 语音模式图片识别：选图 → 上传 → 直接发送图片消息（后端走 vision 识别） */
+  const handleVoiceImage = useCallback(async () => {
+    if (!canVoice) return
+    const paths = await chooseImages(3)
+    if (paths.length === 0) return
+    setIsUploading(true)
+    try {
+      const uploaded = await uploadImages(paths)
+      const imageUrls = uploaded.map(f => f.url)
+      onSend('', imageUrls)
+    } catch (error: any) {
+      console.error('图片上传失败:', error)
+      Taro.showToast({ title: error.message || '图片上传失败', icon: 'none' })
+    } finally {
+      setIsUploading(false)
+    }
+  }, [canVoice, onSend])
+
   const handleRemoveImage = useCallback((index: number) => {
     setSelectedImages(prev => prev.filter((_, i) => i !== index))
   }, [])
@@ -233,6 +251,13 @@ export default function MessageInput({
           </>
         ) : (
           <>
+            {/* 图片识别入口（瑞幸式：语音模式也可发图识图） */}
+            <View
+              className={`message-input__img-btn${!canVoice ? ' message-input__img-btn--disabled' : ''}`}
+              onClick={handleVoiceImage}
+            >
+              <Text className='message-input__img-btn-icon'>📷</Text>
+            </View>
             {/* 按住说话 */}
             <View
               className={`message-input__hold-btn${isRecording ? ' message-input__hold-btn--recording' : ''}${isCancelling ? ' message-input__hold-btn--cancelling' : ''}${!canVoice ? ' message-input__hold-btn--disabled' : ''}`}

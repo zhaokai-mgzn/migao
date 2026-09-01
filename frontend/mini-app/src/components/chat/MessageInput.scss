@@ -87,16 +87,17 @@
     font-size: 28px;
   }
 
-  // 按住说话大按钮（语音模式，默认态）
+  // 按住说话大按钮（语音模式，默认态）— 瑞幸式蓝色渐变胶囊
   &__hold-btn {
     flex: 1;
-    height: 44px;
+    height: 48px;
     border-radius: $radius-full;
-    background: $bg-secondary;
-    border: 1px solid $border-color;
+    background: $gradient-brand;
+    border: none;
     display: flex;
     align-items: center;
     justify-content: center;
+    box-shadow: 0 4px 12px rgba(26, 115, 232, 0.25);
 
     &--recording {
       background: rgba(229, 72, 77, 0.92);
@@ -116,7 +117,8 @@
 
   &__hold-btn-text {
     font-size: 28px;
-    color: $text-primary;
+    font-weight: 600;
+    color: #ffffff;
 
     .message-input__hold-btn--recording &,
     .message-input__hold-btn--cancelling & {
