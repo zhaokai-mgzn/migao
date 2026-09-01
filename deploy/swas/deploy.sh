@@ -54,6 +54,13 @@ if [ -f .env.admin-api ] && ! grep -q '^SMS_BYPASS_CODE=' .env.admin-api; then
   printf 'SMS_BYPASS_CODE=123456\n' >> .env.admin-api
   echo "  ⚠️【POC 模式】已自动启用 SMS 万能码 123456（决策 D2）。接入真实短信后须在 .env.admin-api 显式置空 SMS_BYPASS_CODE= 以禁用（技术债 Issue #2616）"
 fi
+# 1.6b ai-agent 侧 SMS 万能码自愈（#518 回归）：order_create 工具的 bypass 校验
+# 读的是 ai-agent 自身环境变量 SMS_BYPASS_CODE（app/tools/order_create.py），
+# 缺失时 C 端下单的短信验证码必然校验失败（用户收不到短信）。对齐 admin-api 自愈补齐。
+if [ -f .env.ai-agent ] && ! grep -q '^SMS_BYPASS_CODE=' .env.ai-agent; then
+  printf 'SMS_BYPASS_CODE=123456\n' >> .env.ai-agent
+  echo "  ⚠️【POC 模式】已自动启用 ai-agent SMS 万能码 123456（决策 D2）。接入真实短信后须在 .env.ai-agent 显式置空 SMS_BYPASS_CODE= 以禁用（技术债 Issue #2616）"
+fi
 
 echo "== 2. 拉取镜像（tag=$TAG）=="
 if [ -f .env.registry ]; then
