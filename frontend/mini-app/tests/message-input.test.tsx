@@ -11,6 +11,7 @@ import { render, screen, fireEvent, act } from '@testing-library/react'
 import Taro from '@tarojs/taro'
 import MessageInput from '../src/components/chat/MessageInput'
 import { startRecording, stopAndTranscribe, isVoiceSupported } from '../src/utils/voice'
+import { chooseImages, uploadImages } from '../src/utils/imageUpload'
 
 jest.mock('../src/utils/voice', () => ({
   startRecording: jest.fn(),
@@ -154,5 +155,32 @@ describe('MessageInput — 语音/键盘双模式', () => {
     const stopBtn = screen.getByText('■')
     fireEvent.click(stopBtn)
     expect(props.onStop).toHaveBeenCalled()
+  })
+
+  it('语音模式提供图片识别入口：选图→上传→onSend 发送图片消息', async () => {
+    const mockChoose = chooseImages as jest.Mock
+    const mockUpload = uploadImages as jest.Mock
+    mockChoose.mockResolvedValue(['/tmp/a.jpg'])
+    mockUpload.mockResolvedValue([{ id: 'f1', url: 'https://cdn/x/a.jpg', name: 'a.jpg', size: 10 }])
+    const { props } = renderInput()
+
+    // 语音模式（默认）：点击图片识别按钮
+    fireEvent.click(screen.getByText('📷'))
+
+    expect(mockChoose).toHaveBeenCalledTimes(1)
+    await act(async () => {})
+    expect(mockUpload).toHaveBeenCalledWith(['/tmp/a.jpg'])
+    expect(props.onSend).toHaveBeenCalledWith('', ['https://cdn/x/a.jpg'])
+  })
+
+  it('语音模式图片识别：取消选图不发送', async () => {
+    const mockChoose = chooseImages as jest.Mock
+    mockChoose.mockResolvedValue([])
+    const { props } = renderInput()
+
+    fireEvent.click(screen.getByText('📷'))
+    await act(async () => {})
+
+    expect(props.onSend).not.toHaveBeenCalled()
   })
 })
