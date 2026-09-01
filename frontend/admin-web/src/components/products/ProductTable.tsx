@@ -29,6 +29,8 @@ interface ProductTableProps {
   onEdit: (product: Product) => void
   onPutOnShelf: (product: Product) => void
   onTakeOffShelf: (product: Product) => void
+  onRecommend: (product: Product) => void
+  onUnrecommend: (product: Product) => void
   onDelete: (product: Product) => void
 }
 
@@ -68,6 +70,8 @@ export default function ProductTable({
   onEdit,
   onPutOnShelf,
   onTakeOffShelf,
+  onRecommend,
+  onUnrecommend,
   onDelete,
 }: ProductTableProps) {
   const [brokenImages, setBrokenImages] = useState<Set<string>>(new Set())
@@ -259,11 +263,16 @@ export default function ProductTable({
         const dangerLink = 'text-red-500 hover:text-red-600 hover:underline transition-colors'
         return (
           <div className="flex items-center gap-3 text-sm whitespace-nowrap">
-            {/* 出售中：查看 编辑 下架 删除 */}
+            {/* 出售中：查看 编辑 推荐/取消推荐 下架 删除 */}
             {record.status === 'on_sale' && (
               <>
                 <button onClick={(e) => { stop(e); onView(record) }} className={linkBase}>查看</button>
                 <button onClick={(e) => { stop(e); onEdit(record) }} className={linkBase}>编辑</button>
+                {record.recommended ? (
+                  <button onClick={(e) => { stop(e); onUnrecommend(record) }} className="text-amber-600 hover:text-amber-700 hover:underline transition-colors">取消推荐</button>
+                ) : (
+                  <button onClick={(e) => { stop(e); onRecommend(record) }} className={linkBase}>推荐</button>
+                )}
                 <button onClick={(e) => { stop(e); onTakeOffShelf(record) }} className={linkBase}>下架</button>
                 <button onClick={(e) => { stop(e); onDelete(record) }} className={dangerLink}>删除</button>
               </>

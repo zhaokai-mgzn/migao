@@ -26,9 +26,7 @@ Wiki 页面是摘要，详细文档在：
 
 | 域 | 详细文档路径 |
 |----|------------|
-| 架构 | `docs/architecture/architecture.md` (v8.0 历史参考) |
-| 多租户 | `docs/architecture/multi-tenant-multi-platform.md` |
-| RAG | `docs/architecture/rag-architecture.md` |
-| API | `docs/api/api-reference.md` |
-| 部署 | `docs/deployment/deployment-aliyun.md` |
-| SQL | `docs/sql/schema.sql` |
+| 架构 | [docs/wiki/Architecture.md](Architecture.md)（当前事实） |
+| 部署 | [docs/deployment/swas-migration-lessons.md](../deployment/swas-migration-lessons.md)（SWAS 踩坑）· [deployment-checklist.md](../deployment/deployment-checklist.md) |
+| API | [docs/api/api-reference.md](../api/api-reference.md) |
+| SQL | [docs/sql/schema.sql](../sql/schema.sql) |

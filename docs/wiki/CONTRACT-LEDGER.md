@@ -23,6 +23,7 @@
 | 退款金额 | `refundAmount` + `refundAt` | `refundAmount`/`refundAt` | `refund_amount`（API 入参蛇形） | 退款 API body 用 `refund_reason`/`refund_amount` |
 | 物流公司 | `logisticsCompany` | `logisticsCompany` | `logisticsCompany`（读响应） | 勿用 company |
 | 运单号 | `trackingNo` | `trackingNo` | `trackingNumber` | Agent 发 update_logistics 用 trackingNumber |
+| 下单用户ID | `userId`（Order/OrderCreateRequest/AgentOrderCreateRequest，来自 X-User-Id 透传） | — | `context.user_id`（customer_order_query 强制注入） | **C 端数据隔离字段**（V20260901）；B 端查询用 B 端 order_query，C 端用小布专用 customer_order_query |
 
 ## 三、端点签名（勿自造）
 
@@ -32,6 +33,7 @@
 | Agent 统一改单 | `PATCH /api/admin/agent/orders/{id}` | action ∈ {update_status, update_logistics, confirm_payment, cancel, refund} |
 | Agent 单 SKU 改价 | `PATCH /api/admin/agent/products/{productId}/skus/{skuId}` | `price`（≥0） |
 | Agent 创建商品 | `POST /api/admin/agent/products` | `basePrice`（前端适配层 price→basePrice） |
+| **C 端我的订单** | `GET /api/admin/agent/orders/mine?page&size&status` | **强制按 X-User-Id 过滤，仅状态/分页参数**（数据隔离强制点） |
 
 ## 四、跨模块联动约定（改一处必须检查另一处）
 

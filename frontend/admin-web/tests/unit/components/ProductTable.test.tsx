@@ -1,9 +1,10 @@
+// case_ids: PR-001, PR-002
 /**
  * ProductTable 组件测试
  * 覆盖：#646 移除 in_warehouse — 状态徽章映射无仓库中、操作按钮正确
  *       #1200 库存飘红阈值
  */
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
 import ProductTable from '@/components/products/ProductTable'
 import type { Product, ProductStatus } from '@/types'
@@ -48,6 +49,8 @@ const defaultProps = {
   onEdit: vi.fn(),
   onPutOnShelf: vi.fn(),
   onTakeOffShelf: vi.fn(),
+  onRecommend: vi.fn(),
+  onUnrecommend: vi.fn(),
   onDelete: vi.fn(),
 }
 
@@ -107,6 +110,33 @@ describe('ProductTable (#646 — 移除 in_warehouse)', () => {
       expect(screen.getByText('编辑')).toBeTruthy()
       expect(screen.getByText('下架')).toBeTruthy()
       expect(screen.getByText('删除')).toBeTruthy()
+    })
+
+    it('on_sale 未推荐时显示「推荐」按钮，点击触发 onRecommend', () => {
+      const onRecommend = vi.fn()
+      render(<ProductTable {...defaultProps} onRecommend={onRecommend} />)
+      const btn = screen.getByText('推荐')
+      expect(btn).toBeTruthy()
+      fireEvent.click(btn)
+      expect(onRecommend).toHaveBeenCalledTimes(1)
+    })
+
+    it('on_sale 已推荐时显示「取消推荐」并触发 onUnrecommend', () => {
+      const product = { ...baseProduct, recommended: true as const }
+      const onUnrecommend = vi.fn()
+      render(<ProductTable {...defaultProps} products={[product]} onUnrecommend={onUnrecommend} />)
+      const btn = screen.getByText('取消推荐')
+      expect(btn).toBeTruthy()
+      expect(screen.queryByText('推荐')).toBeNull()
+      fireEvent.click(btn)
+      expect(onUnrecommend).toHaveBeenCalledTimes(1)
+    })
+
+    it('off_sale 不显示推荐按钮', () => {
+      const product = { ...baseProduct, status: 'off_sale' as const }
+      render(<ProductTable {...defaultProps} products={[product]} />)
+      expect(screen.queryByText('推荐')).toBeNull()
+      expect(screen.queryByText('取消推荐')).toBeNull()
     })
 
     it('off_sale 显示：查看 编辑 上架 删除', () => {

@@ -16,7 +16,7 @@ public class RegistrationResponse {
     private Long applicationId;
 
     /**
-     * 申请状态
+     * 申请状态：approved（AI 甄别通过）/ rejected（AI 甄别驳回）/ pending（兜底，一般不出现）
      */
     private String status;
 
@@ -24,4 +24,9 @@ public class RegistrationResponse {
      * 提示消息
      */
     private String message;
+
+    /**
+     * 驳回原因（status=rejected 时返回，面向申请人）
+     */
+    private String rejectReason;
 }

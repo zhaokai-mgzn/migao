@@ -172,6 +172,7 @@ public class SettingsController {
      * GET /api/admin/tenant/ai-config
      */
     @GetMapping("/api/admin/tenant/ai-config")
+    @RequirePermission("system:manage")  // 审计 07 P1-4: AI 配置属系统设置，补权限门槛
     public ApiResponse<TenantAiConfig> getAiConfig() {
         Long tenantId = TenantContext.getTenantId();
         log.info("获取AI配置: tenantId={}", tenantId);
@@ -196,6 +197,7 @@ public class SettingsController {
      * PUT /api/admin/tenant/ai-config
      */
     @PutMapping("/api/admin/tenant/ai-config")
+    @RequirePermission("system:manage")  // 审计 07 P1-4: AI 配置属系统设置，补权限门槛
     public ApiResponse<TenantAiConfig> updateAiConfig(@RequestBody TenantAiConfig config) {
         Long tenantId = TenantContext.getTenantId();
         log.info("更新AI配置: tenantId={}", tenantId);

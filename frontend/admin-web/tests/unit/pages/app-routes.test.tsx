@@ -1,10 +1,11 @@
+// case_ids: OB-004
 import { describe, it, expect } from 'vitest'
 
 describe('app routes — #564 #565 #566', () => {
   const pages = [
     'orders/new/page', 'knowledge/page', 'employees/page',
     'categories/page', 'services/page', 'products/[id]/edit/EditProduct',
-    'registrations/page', 'customers/[id]/CustomerDetail', 'orders/[id]/OrderDetail',
+    'customers/[id]/CustomerDetail', 'orders/[id]/OrderDetail',
   ]
   for (const p of pages) {
     it(`page ${p} can be loaded`, async () => {

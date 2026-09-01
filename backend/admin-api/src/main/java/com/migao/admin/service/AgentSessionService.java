@@ -368,6 +368,11 @@ public class AgentSessionService extends ServiceImpl<AgentSessionMapper, AgentSe
         if (!session.getTenantId().equals(currentTenantId)) {
             throw BusinessException.notFound("客服会话");
         }
+        // 客户消息归属校验（审计 07 P1-3）：customer 只能向自己的会话发消息，
+        // 防租户内客户间消息注入/伪造
+        if ("customer".equals(senderType) && !session.getCustomerId().equals(senderId)) {
+            throw BusinessException.notFound("客服会话");
+        }
         if ("ended".equals(session.getStatus())) {
             throw BusinessException.validationError("会话已结束，无法发送消息");
         }

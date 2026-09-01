@@ -30,6 +30,11 @@ BYPASS_CODE = os.environ.get("BYPASS_CODE", "123456")
 # CI 模式：SERVICE_TOKEN 存在时，chat/send 无 auth（DEBUG 默认用户），admin-api 用 X-Service-Token
 SERVICE_TOKEN = os.environ.get("SERVICE_TOKEN", "")
 
+# Persona：mibao（默认，B 端工作助手）/ xiaobu（C 端客服小布）
+# xiaobu 模式：不带 Bearer token，通过 X-Debug-Role: customer 让 DEBUG 模式路由到小布，
+# 并验证 C 端数据隔离（customer_order_query 而非 order_query）。
+PERSONA = os.environ.get("PERSONA", "mibao").strip().lower()
+
 
 def _validate_service_token(token: str) -> str | None:
     """校验 SERVICE_TOKEN 是否纯 ASCII（HTTP header 值必须是 ASCII）。
@@ -101,6 +106,9 @@ async def restore_product(token: str, product_id: str):
 
 async def login() -> str:
     """获取测试 token（CI 模式直接返回空字符串，走 SERVICE_TOKEN 无 auth）"""
+    # xiaobu 模式：不登录，走 DEBUG customer 身份（X-Debug-Role header 由 send 注入）
+    if PERSONA == "xiaobu":
+        return ""
     if SERVICE_TOKEN:
         return ""
     async with httpx.AsyncClient() as c:
@@ -108,10 +116,16 @@ async def login() -> str:
                          json={"phone": PHONE, "code": BYPASS_CODE}, timeout=10)
         return r.json()["data"]["accessToken"]
 
+def _chat_headers(token: str) -> dict:
+    """ai-agent 请求头：xiaobu 用 DEBUG customer 身份；否则 Bearer token"""
+    if PERSONA == "xiaobu":
+        return {"X-Debug-Role": "customer"}
+    return {"Authorization": f"Bearer {token}"} if token else {}
+
 async def get_or_create_session(token: str, prefer_new: bool = True) -> str:
     """获取或创建会话"""
     async with httpx.AsyncClient() as c:
-        h = {"Authorization": f"Bearer {token}"} if token else {}
+        h = _chat_headers(token)
         if prefer_new:
             r = await c.post(f"{AI_API}/api/chat/sessions", headers=h, json={}, timeout=10)
             return r.json()["data"]["id"]
@@ -125,7 +139,7 @@ async def get_or_create_session(token: str, prefer_new: bool = True) -> str:
 async def send_message(token: str, session_id: str, message: str) -> dict:
     """发送消息并收集 SSE 事件"""
     async with httpx.AsyncClient(timeout=120) as c:
-        h = {"Authorization": f"Bearer {token}"} if token else {}
+        h = _chat_headers(token)
 
         result = {
             "user_message": message,
@@ -188,9 +202,15 @@ def check_expectation(result: dict, expectation: str) -> tuple[bool, str]:
         return False, "expected direct_reply (no tool) but got tool calls"
 
     # 检查 tool 名称（支持 OR 逻辑：A or B）
-    or_parts = [p.strip() for p in exp_lower.split(" or ")]
+    # xiaobu 模式：expectation 里的 order_query 视为 customer_order_query（C 端物理隔离后）
+    expected_tools = []
+    for part in exp_lower.split(" or "):
+        t = part.strip()
+        if PERSONA == "xiaobu" and t == "order_query":
+            t = "customer_order_query"
+        expected_tools.append(t)
     for tool_name in result.get("__all_tool_names", []):
-        for part in or_parts:
+        for part in expected_tools:
             if tool_name in part:
                 return True, f"tool '{tool_name}' matched"
 
@@ -400,6 +420,18 @@ async def main():
     else:
         cases = ALL_CASES
         print(f"📚 用例源: eval_cases.py（生成物，{len(cases)} 条）")
+
+    # xiaobu 模式：仅跑 C 端可用用例（订单查询/下单/售后/通用），
+    # 跳过管理类（order_manage/after_sales_manage/product_manage 等 B 端工具）用例
+    if PERSONA == "xiaobu":
+        XIAOBU_ONLY_TAGS = {"order_query", "order_create", "aftersale", "query", "product"}
+        def xiaobu_filter(c):
+            if c.skip_reason:
+                return False
+            tags = set(c.tags or [])
+            return bool(tags & XIAOBU_ONLY_TAGS)
+        cases = [c for c in cases if xiaobu_filter(c)]
+        print(f"🧪 Persona=xiaobu：过滤后 {len(cases)} 条 C 端用例")
 
     def smoke_cases():
         return [c for c in cases if c.difficulty == Difficulty.SMOKE and not c.skip_reason]

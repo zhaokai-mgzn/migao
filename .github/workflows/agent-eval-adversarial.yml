@@ -1,4 +1,6 @@
 name: Agent Eval Adversarial (米宝对抗评测)
+permissions:
+  contents: read
 
 on:
   workflow_dispatch:
