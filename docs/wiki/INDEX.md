@@ -15,6 +15,7 @@ LLM 开发时按需加载对应页面 (~50 行/页，按场景索引)：
 | 改数据库/查表结构 | [Database](Database.md) |
 | 改权限/认证 | [RBAC](RBAC.md) |
 | 部署/CI/CD/环境变量 | [Deployment](Deployment.md) |
+| **可观测性/监控/ARMS 接入** | **[Observability](Observability.md)** |
 | CI/CD 流水线详情 | [CI-CD](CI-CD.md) |
 | 写测试/了解测试体系 | [Testing](Testing.md) |
 | **测试工程规范（拆分/ignore/脱敏/分层）** | **[test-engineering-standards](../testing/test-engineering-standards.md)** |
