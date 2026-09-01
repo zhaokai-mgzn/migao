@@ -1,0 +1,25 @@
+schema: "page-spec/1.0"
+name: order-refund-finance
+domain: ui
+title: 订单退款/优惠金额/对账差额展示（issue #2574 前端验收）
+path: /orders
+tier: normal
+truths_ref:
+  - order.refund-side-effects
+  - frontend-fix.empty-state
+expect: 订单列表页渲染退款相关 UI：已退款订单显示「已退款」徽标；列表展示优惠金额/实收金额；存在退款入口（退款按钮/RefundOrderModal）。订单详情页展示 refundAmount/refundAt/discountAmount。finance 对账页差异标签按「应收-实收+已退」口径渲染。
+required_texts:
+  - 订单
+  - 实收
+forbidden_texts:
+  - "[object Object]"
+  - "NaN"
+  - "undefined"
+  - "N/A"
+anti_patterns:
+  - layout_overflow
+  - broken_image
+  - placeholder_column
+viewports:
+  - width: 1440
+    height: 900

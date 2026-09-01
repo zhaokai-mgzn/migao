@@ -1,0 +1,25 @@
+schema: "page-spec/1.0"
+name: mini-chat
+domain: ui
+title: 小布智能助手 C 端聊天页（报价单/确认卡/追问 chips）
+path: /
+tier: smoke
+expect: 小布 C 端聊天页正常渲染：消息气泡、底部输入框、追问建议 chips（SuggestionChips）；收到报价后渲染报价单卡片（QuotationCard）与下单确认卡片（ConfirmCard）；无 [object Object]/NaN/开发中/占位页 残留。
+truths_ref:
+  - fabric-calc.quote-total
+  - fabric-calc.no-fabrication
+required_texts:
+  - 小布
+  - 请输入
+forbidden_texts:
+  - "[object Object]"
+  - "NaN"
+  - "开发中"
+  - "占位页"
+anti_patterns:
+  - layout_overflow
+  - broken_image
+  - placeholder_column
+viewports:
+  - width: 390
+    height: 844
