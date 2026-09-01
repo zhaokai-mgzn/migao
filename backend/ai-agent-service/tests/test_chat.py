@@ -15,6 +15,8 @@ from fastapi import HTTPException
 from app.api.chat import (
     _should_send_card,
     _detect_card_type,
+    _normalize_order_card_data,
+    _card_payload,
     _rewrite_image_url,
     _convert_history_to_agent_format,
     _format_datetime,
@@ -23,6 +25,7 @@ from app.api.chat import (
     send_message,
     create_session,
     list_sessions,
+    get_latest_session,
     close_session_endpoint,
     reopen_session_endpoint,
     delete_session,
@@ -100,6 +103,12 @@ class TestShouldSendCard:
     def test_order_query_empty(self):
         assert _should_send_card("order_query", {"success": True, "data": {}}) is False
 
+    def test_customer_order_query_sends_card(self):
+        """C 端 customer_order_query 与 B 端 order_query 同卡片规则"""
+        assert _should_send_card("customer_order_query", {"success": True, "data": {"orders": [{"id": "o1"}]}}) is True
+        assert _should_send_card("customer_order_query", {"success": True, "data": {"order": {"id": "o1"}}}) is True
+        assert _should_send_card("customer_order_query", {"success": True, "data": {}}) is False
+
     def test_unknown_tool(self):
         assert _should_send_card("other_tool", {"success": True, "data": {"x": 1}}) is False
 
@@ -110,7 +119,76 @@ class TestDetectCardType:
         assert _detect_card_type("product_detail", {}) == "product_detail"
         assert _detect_card_type("logistics_track", {}) == "logistics"
         assert _detect_card_type("order_query", {}) == "order"
+        assert _detect_card_type("customer_order_query", {}) == "order"
         assert _detect_card_type("unknown", {}) is None
+
+
+class TestNormalizeOrderCardData:
+    """order 卡片数据归一化（修复：order_query 列表结果被原样下发，
+    前端 OrderCard 渲染出只剩「订单」二字的空盒子）"""
+
+    def test_single_order_dict_passthrough(self):
+        data = {"order": {"id": "o1", "orderNo": "ORD-1"}}
+        assert _normalize_order_card_data(data) == data
+
+    def test_single_order_in_orders_list(self):
+        o1 = {"id": "o1", "order_no": "ORD-1"}
+        assert _normalize_order_card_data({"orders": [o1]}) == {"order": o1}
+
+    def test_multiple_orders_kept_as_list(self):
+        o1, o2 = {"id": "o1"}, {"id": "o2"}
+        assert _normalize_order_card_data({"orders": [o1, o2]}) == {"orders": [o1, o2]}
+
+    def test_legacy_items_list_normalized(self):
+        o1, o2 = {"id": "o1"}, {"id": "o2"}
+        assert _normalize_order_card_data({"items": [o1, o2]}) == {"orders": [o1, o2]}
+
+    def test_empty_orders_returns_none(self):
+        assert _normalize_order_card_data({"orders": []}) is None
+
+    def test_no_order_fields_returns_none(self):
+        assert _normalize_order_card_data({"total": 0, "page": 1}) is None
+
+
+class TestCardPayload:
+    """统一卡片下发载荷（card_type, data）——order 卡片必须归一化"""
+
+    def test_product_search_payload(self):
+        card_type, data = _card_payload(
+            "product_search",
+            {"success": True, "data": {"products": [{"id": 1}]}},
+        )
+        assert card_type == "product_list"
+        assert data == {"products": [{"id": 1}]}
+
+    def test_order_query_single_normalized(self):
+        o1 = {"id": "o1", "order_no": "ORD-1"}
+        card_type, data = _card_payload(
+            "order_query",
+            {"success": True, "data": {"orders": [o1], "total": 1}},
+        )
+        assert card_type == "order"
+        assert data == {"order": o1}
+
+    def test_order_query_multi_kept_as_list(self):
+        o1, o2 = {"id": "o1"}, {"id": "o2"}
+        card_type, data = _card_payload(
+            "order_query",
+            {"success": True, "data": {"orders": [o1, o2], "total": 2}},
+        )
+        assert card_type == "order"
+        assert data == {"orders": [o1, o2]}
+
+    def test_order_query_empty_no_card(self):
+        card_type, data = _card_payload(
+            "order_query",
+            {"success": True, "data": {"orders": [], "total": 0}},
+        )
+        assert card_type is None
+        assert data is None
+
+    def test_failed_result_no_card(self):
+        assert _card_payload("order_query", {"success": False}) == (None, None)
 
 
 # ═══════════════════════════════════════════════
@@ -187,6 +265,35 @@ class TestListSessions:
         assert result["success"] is True
         assert result["data"]["total"] == 1
         assert result["data"]["items"][0]["status"] == "active"
+
+
+class TestGetLatestSession:
+    """无会话 UX：打开即续聊（latest 端点返回最近 active 会话）"""
+
+    @patch("app.api.chat.SessionMemory")
+    @pytest.mark.asyncio
+    async def test_has_recent_session(self, MockSM):
+        """有最近会话 → 返回该会话（前端续聊）"""
+        m = _memory(get_sessions=[_session(id="sess-latest")])
+        MockSM.return_value = m
+        result = await get_latest_session(current_user=_user())
+        assert result["success"] is True
+        assert result["data"]["session"]["id"] == "sess-latest"
+        # 必须按最新会话取（size=1 + updated_at desc 由 SessionMemory 保证）
+        m.get_sessions.assert_called_once()
+        call = m.get_sessions.call_args
+        assert call.kwargs["size"] == 1
+        assert call.kwargs["customer_id"] == "user_1"
+
+    @patch("app.api.chat.SessionMemory")
+    @pytest.mark.asyncio
+    async def test_no_session_returns_null(self, MockSM):
+        """无会话 → 返回 null（前端新建，无感）"""
+        m = _memory(get_sessions=[])
+        MockSM.return_value = m
+        result = await get_latest_session(current_user=_user())
+        assert result["success"] is True
+        assert result["data"]["session"] is None
 
 
 class TestCloseSession:
@@ -431,6 +538,103 @@ class TestPageRequest:
         resp = await _handle_page_request(req, tenant_id=1, user_id="user_1", current_user=_user())
         body = await self._collect(resp)
         assert "不支持该操作的分页查询" in body
+
+    @patch("app.api.chat.get_tool_registry")
+    @patch("app.api.chat.SessionMemory")
+    @pytest.mark.asyncio
+    async def test_page_happy_path_executes_tool(self, MockSM, mock_registry):
+        """__PAGE__ happy path：白名单工具真实执行成功 → tool_call/tool_result 事件。
+
+        回归生产 bug：chat.py 使用 ToolContext 但从未 import（NameError），
+        导致所有翻页请求报"翻页查询失败"（本地复现 traceback 确认）。
+        """
+        from app.api.chat import _handle_page_request
+        from app.tools.base import ToolResult
+
+        MockSM.return_value = _memory(get_session=_session())
+        reg = MagicMock()
+        reg.execute_tool = AsyncMock(return_value=ToolResult(
+            success=True,
+            data={"items": [{"name": "打孔加工", "unit_price": 9.0, "unit": "米"}],
+                  "total": 33, "page": 2, "size": 3},
+            message="查询成功",
+        ))
+        mock_registry.return_value = reg
+
+        req = ChatSendRequest(
+            session_id="sess_1",
+            message='__PAGE__|processing_item_query|{"page":2,"size":3}',
+        )
+        resp = await _handle_page_request(req, tenant_id=1, user_id="user_1", current_user=_user())
+        body = await self._collect(resp)
+        assert "翻页查询失败" not in body
+        assert "tool_call" in body
+        assert "tool_result" in body
+        reg.execute_tool.assert_awaited_once()
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            # 写/破坏性工具不在翻页白名单（审计 07 P0-L2：白名单仅允许只读查询）
+            '__PAGE__|employee_manage|{"action":"delete","user_id":"u1"}',
+            '__PAGE__|employee_manage|{"action":"reset_password","user_id":"u1"}',
+            '__PAGE__|product_manage|{"action":"update","product_id":"p1"}',
+            '__PAGE__|product_manage|{"action":"toggle_status","product_id":"p1"}',
+            '__PAGE__|customer_manage|{"action":"delete","customer_id":"c1"}',
+            '__PAGE__|customer_manage|{"action":"create_tag","customer_id":"c1"}',
+        ],
+    )
+    @patch("app.api.chat.SessionMemory")
+    @pytest.mark.asyncio
+    async def test_write_tools_blocked_from_pagination(self, MockSM, message):
+        """写/破坏性工具（员工/商品/客户管理）不得经 __PAGE__ 直调绕过确认守卫。"""
+        from app.api.chat import _handle_page_request
+        MockSM.return_value = _memory(get_session=_session())
+        req = ChatSendRequest(session_id="sess_1", message=message)
+        resp = await _handle_page_request(req, tenant_id=1, user_id="user_1", current_user=_user())
+        body = await self._collect(resp)
+        assert "不支持该操作的分页查询" in body
+
+
+class TestPageActionAllowed:
+    """_page_action_allowed 纵深防御：白名单工具的写 action 一律拒绝（审计 07 P0-L2）。"""
+
+    def _tool(self, read_only_actions):
+        t = MagicMock()
+        t.read_only_actions = frozenset(read_only_actions)
+        return t
+
+    def _registry(self, tool=None):
+        reg = MagicMock()
+        reg.get_tool.return_value = tool
+        return reg
+
+    def test_readonly_action_allowed(self):
+        from app.api.chat import _page_action_allowed
+        reg = self._registry(self._tool({"list", "detail"}))
+        assert _page_action_allowed(reg, "employee_manage", {"action": "list"}) is True
+        assert _page_action_allowed(reg, "employee_manage", {"action": "detail"}) is True
+
+    def test_write_action_rejected(self):
+        from app.api.chat import _page_action_allowed
+        reg = self._registry(self._tool({"list", "detail"}))
+        assert _page_action_allowed(reg, "employee_manage", {"action": "delete"}) is False
+        assert _page_action_allowed(reg, "employee_manage", {"action": "reset_password"}) is False
+
+    def test_operation_alias_rejected(self):
+        from app.api.chat import _page_action_allowed
+        reg = self._registry(self._tool({"list", "detail"}))
+        assert _page_action_allowed(reg, "employee_manage", {"operation": "delete"}) is False
+
+    def test_no_action_param_allowed(self):
+        from app.api.chat import _page_action_allowed
+        reg = self._registry(self._tool({"list", "detail"}))
+        assert _page_action_allowed(reg, "order_query", {"page": 2}) is True
+
+    def test_unknown_tool_rejected(self):
+        from app.api.chat import _page_action_allowed
+        reg = self._registry(None)
+        assert _page_action_allowed(reg, "order_create", {}) is False
 
 
 # ═══════════════════════════════════════════════

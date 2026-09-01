@@ -103,6 +103,11 @@ export default function OrderTable({
 
   const renderActions = (order: Order) => {
     const displayStatus = normalizeOrderStatus(order.status as string)
+    // 后端允许退款的状态：confirmed / producing / shipped / completed
+    // （前端展示态 pending_shipment 同时覆盖 confirmed + producing）
+    const refundable = ['pending_shipment', 'shipped', 'completed'].includes(displayStatus)
+    // 已退款标记：refundAmount > 0（退款不再把订单置为 cancelled，订单保持原状态）
+    const alreadyRefunded = (order.refundAmount ?? 0) > 0
     const actions: React.ReactNode[] = [
       <ActionLink key="view" onClick={() => onView(order)}>查看</ActionLink>,
       <ActionLink key="remark" onClick={() => onRemark(order)}>备注</ActionLink>,
@@ -124,7 +129,8 @@ export default function OrderTable({
           确认收货
         </ActionLink>
       )
-    } else if (displayStatus === 'refund' && onRefund) {
+    }
+    if (refundable && !alreadyRefunded && onRefund) {
       actions.push(<ActionLink key="refund" onClick={() => onRefund(order)}>处理退款</ActionLink>)
     }
     return (
@@ -140,7 +146,7 @@ export default function OrderTable({
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
-          <tr className="bg-gray-50 text-gray-600 text-left">
+          <tr className="bg-neutral-50 text-neutral-600 text-left">
             <th className="pl-2 pr-3 py-3 font-medium w-10">
               <input
                 type="checkbox"
@@ -149,7 +155,7 @@ export default function OrderTable({
                   if (el) el.indeterminate = someSelected
                 }}
                 onChange={toggleAll}
-                className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                className="w-4 h-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500"
               />
             </th>
             <th className="pl-0 pr-4 py-3 font-medium whitespace-nowrap">订单ID</th>
@@ -157,7 +163,7 @@ export default function OrderTable({
             <th className="px-4 py-3 font-medium">
               <div className="flex flex-col">
                 <span>采购明细</span>
-                <span className="text-xs font-normal text-gray-400">(名称:单价×数量+加工费)</span>
+                <span className="text-xs font-normal text-neutral-400">(名称:单价×数量+加工费)</span>
               </div>
             </th>
             <th className="px-4 py-3 font-medium text-right whitespace-nowrap">累计金额(元)</th>
@@ -166,7 +172,7 @@ export default function OrderTable({
             <th className="px-4 py-3 font-medium whitespace-nowrap">
               <span className="inline-flex items-center gap-1">
                 下单时间
-                <ArrowDown className="w-3.5 h-3.5 text-gray-400" />
+                <ArrowDown className="w-3.5 h-3.5 text-neutral-400" />
               </span>
             </th>
             <th className="px-4 py-3 font-medium whitespace-nowrap">状态</th>
@@ -177,13 +183,13 @@ export default function OrderTable({
         <tbody>
           {loading ? (
             <tr>
-              <td colSpan={11} className="px-4 py-16 text-center text-gray-400">
+              <td colSpan={11} className="px-4 py-16 text-center text-neutral-400">
                 加载中…
               </td>
             </tr>
           ) : orders.length === 0 ? (
             <tr>
-              <td colSpan={11} className="px-4 py-16 text-center text-gray-400">
+              <td colSpan={11} className="px-4 py-16 text-center text-neutral-400">
                 暂无数据
               </td>
             </tr>
@@ -195,8 +201,8 @@ export default function OrderTable({
                 <tr
                   key={order.id}
                   className={cn(
-                    'border-b border-gray-100 align-top transition-colors',
-                    checked ? 'bg-primary-50/40' : 'hover:bg-gray-50'
+                    'border-b border-neutral-100 align-top transition-colors',
+                    checked ? 'bg-primary-50/40' : 'hover:bg-neutral-50'
                   )}
                 >
                   <td className="pl-2 pr-3 py-4">
@@ -205,12 +211,12 @@ export default function OrderTable({
                       checked={checked}
                       onChange={() => toggleOne(order.id)}
                       onClick={(e) => e.stopPropagation()}
-                      className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                      className="w-4 h-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500"
                     />
                   </td>
 
                   {/* 订单ID */}
-                  <td className="pl-0 pr-4 py-4 font-mono text-gray-800 whitespace-nowrap">
+                  <td className="pl-0 pr-4 py-4 font-mono text-neutral-800 whitespace-nowrap">
                     {order.orderNo || order.id}
                   </td>
 
@@ -218,33 +224,34 @@ export default function OrderTable({
                   <td className="pl-0 pr-4 py-4 min-w-[160px]">
                     {firstItem ? (
                       <div className="space-y-1">
-                        <div className="text-gray-900 font-medium leading-tight">
+                        <div className="text-neutral-900 font-medium leading-tight">
                           {firstItem.productName}
                         </div>
-                        <div className="text-xs text-gray-500 leading-tight">
+                        <div className="text-xs text-neutral-500 leading-tight">
                           货号 {(firstItem as any).skuCode || firstItem.productCode || '-'}
                         </div>
                       </div>
                     ) : (
-                      <span className="text-gray-400">-</span>
+                      <span className="text-neutral-400">暂无数据</span>
                     )}
                   </td>
 
                   {/* 采购明细（名称 : 规格 : 单价 : 数量 : 加工费） */}
                   <td className="px-4 py-4 min-w-[280px]">
-                    <div className="space-y-1.5">
+                    {order.items?.length || order.processingItems?.length ? (
+                      <div className="space-y-1.5">
                       {order.items?.map((item) => {
                         const pi = (item as any).processingInfo
                         const fee = pi?.totalAmount || pi?.totalFee || 0
                         return (
-                          <div key={item.id} className="text-gray-700 leading-tight text-xs">
+                          <div key={item.id} className="text-neutral-700 leading-tight text-xs">
                             <span>{item.productName || item.productCode || '-'}</span>
                             {': '}
                             <span className="font-mono">{formatNumber(item.unitPrice)}</span>元
                             {' × '}<span className="font-mono">{formatNumber(item.quantity)}</span>米
                             {' = '}<span className="font-mono">{formatNumber(getItemAmount(item))}</span>元
                             {fee > 0 && (
-                              <span className="text-gray-400">{' + 加工费'}<span className="font-mono">{formatNumber(fee)}</span>元</span>
+                              <span className="text-neutral-400">{' + 加工费'}<span className="font-mono">{formatNumber(fee)}</span>元</span>
                             )}
                           </div>
                         )
@@ -260,22 +267,25 @@ export default function OrderTable({
                           {' = '}<span className="font-mono">{formatNumber(proc.amount)}</span>元
                         </div>
                       ))}
-                    </div>
+                      </div>
+                    ) : (
+                      <span className="text-neutral-400">暂无数据</span>
+                    )}
                   </td>
 
                   {/* 累计金额 */}
-                  <td className="px-4 py-4 text-right font-mono text-gray-900 whitespace-nowrap">
+                  <td className="px-4 py-4 text-right font-mono text-neutral-900 whitespace-nowrap">
                     {formatNumber(order.totalAmount)}
                   </td>
 
                   {/* 实收款 */}
-                  <td className="px-4 py-4 text-right font-mono text-gray-900 whitespace-nowrap">
+                  <td className="px-4 py-4 text-right font-mono text-neutral-900 whitespace-nowrap">
                     {formatNumber(order.actualAmount)}
                   </td>
 
                   {/* 收货人信息 */}
                   <td className="px-4 py-4 min-w-[200px]">
-                    <div className="space-y-0.5 text-gray-700 leading-tight">
+                    <div className="space-y-0.5 text-neutral-700 leading-tight">
                       <div>姓名：{order.customerName || '-'}</div>
                       <div>电话：{order.customerPhone || '-'}</div>
                       <div className="truncate max-w-[220px]" title={order.customerAddress}>
@@ -298,11 +308,11 @@ export default function OrderTable({
                   <td className="px-4 py-4 min-w-[100px] max-w-[160px]">
                     <RemarkPopover remark={order.remark} remarks={order.remarks}>
                       {order.remark || (order.remarks && order.remarks.length > 0) ? (
-                        <span className="text-xs text-gray-500 truncate block">
+                        <span className="text-xs text-neutral-500 truncate block">
                           💬 {getRemarkPreview(order)}
                         </span>
                       ) : (
-                        <span className="text-xs text-gray-300">-</span>
+                        <span className="text-xs text-neutral-300">-</span>
                       )}
                     </RemarkPopover>
                   </td>

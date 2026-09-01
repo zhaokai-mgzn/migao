@@ -1,0 +1,281 @@
+# cases/ui.yml — 前端 UI 织物质感设计 token 用例（issue #2534）
+# 来源：issue #2534（经营看板织物质感重设计 · 子任务 A：设计 token 迁移）。
+# 纯前端 token 契约（tailwind.config.ts + src/ 默认蓝清理），由 vitest 单测验证，
+# 不进入 agent-eval 冒烟（skip_reason 显式标注）。
+
+schema: "case-contract/1.0"
+domain: ui
+
+cases:
+  - id: UI-001
+    legacy_id: ""
+    title: "织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理"
+    domains:
+      - ui
+      - frontend
+    tier: normal
+    tags:
+      - ui
+      - token
+      - tailwind
+    truths_ref:
+      - frontend-fix.ui-token
+    user_inputs:
+      - "经营看板织物质感重设计子任务 A：建立设计 token 体系"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "tailwind.config.ts theme.extend.colors.primary[500] = '#48618f'"
+      - "tailwind.config.ts theme.extend.colors.accent[500] = '#c06a3e'"
+      - "tailwind.config.ts theme.extend.colors.neutral[50] = '#faf7f2'"
+      - "frontend/admin-web/src/**/*.{ts,tsx} 扫描 '#3b82f6'（大小写不敏感）计数 = 0"
+    skip_reason: "纯前端设计 token 由 vitest 单测验证（tests/unit/tailwind.config.test.ts），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-08-25 新增：经营看板织物质感重设计子任务 A（issue #2534）"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/tailwind.config.test.ts"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: UI-002
+    legacy_id: ""
+    title: "订单/售后状态语义色 chips + 数据空态「暂无数据」治理"
+    domains:
+      - ui
+      - frontend
+    tier: normal
+    tags:
+      - ui
+      - status-chip
+      - empty-state
+    truths_ref:
+      - frontend-fix.status-chip
+      - frontend-fix.empty-state
+    user_inputs:
+      - "订单/售后状态用语义色 chips 表达，数据空态显示暂无数据"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "OrderStatusBadge shipped 含 bg-primary-50 且不含 bg-indigo-50"
+      - "OrderStatusBadge closed 含 bg-neutral-100 且不含 bg-gray-50"
+      - "OrderTable 采购明细列 items=[] 与采购商品列无 firstItem 渲染「暂无数据」"
+    skip_reason: "纯前端 UI chips/空态由 vitest 单测验证（status-chip/OrderStatusBadge/OrderTable/RecentOrders/after-sales），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-08-25 新增：经营看板织物质感重设计子任务 D（issue #2539）"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/lib/status-chip.test.ts"
+        - "frontend/admin-web/tests/unit/components/OrderStatusBadge.test.tsx"
+        - "frontend/admin-web/tests/unit/components/OrderTable.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: UI-003
+    legacy_id: ""
+    title: "米宝「今日经营速览」洞察条 - 一句话经营解读"
+    domains:
+      - ui
+      - frontend
+    tier: normal
+    tags:
+      - ui
+      - dashboard
+      - insight
+      - token
+    truths_ref:
+      - dashboard-jump.overview
+      - dashboard-jump.processing-shipment
+      - dashboard-jump.low-stock
+      - dashboard-jump.real-data
+    user_inputs:
+      - "经营看板织物质感重设计子任务 C：米宝「今日经营速览」洞察条置于页面顶部"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "frontend/admin-web/src/components/dashboard/TodayOverviewBar.tsx 以「一句话经营解读」串联今日订单/销售额/环比/提醒"
+      - "含加工占比 = processingCount / pendingCount，pendingCount<=0 时渲染 0% 而非 NaN/Infinity/undefined"
+      - "一句话中的数值全部来自 props（由页面 API 返回值派生），组件内无硬编码固定数值"
+      - "洞察条置于经营看板顶部（先于待处理区块渲染）"
+    skip_reason: "纯前端组件由 vitest 单测验证（TodayOverviewBar.test.tsx + dashboard.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-08-25 新增：经营看板织物质感重设计子任务 C（issue #2538）；2026-08-31 更新：洞察条改为一句话经营解读（PD 精简改版）"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/components/dashboard/TodayOverviewBar.test.tsx"
+        - "frontend/admin-web/tests/unit/pages/dashboard.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: UI-004
+    legacy_id: ""
+    title: "经营看板密度治理 - 商品销量排行表头不截断 + 订单趋势 x 轴降采样"
+    domains:
+      - ui
+      - frontend
+    tier: normal
+    tags:
+      - ui
+      - dashboard
+      - density
+      - axis-sampling
+    truths_ref:
+      - frontend-fix.dashboard-no-truncate
+      - frontend-fix.axis-sampling
+      - frontend-fix.dashboard-no-overflow
+    user_inputs:
+      - "经营看板织物质感重设计子任务 B：dashboard 密度修复（表格/图表多视口）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "商品销量排行表头「日涨」列渲染 whitespace-nowrap，1440×900 与 1280×800 两视口无截断"
+      - "订单趋势图 x 轴刻度按 sampleTickIndices 降采样，1280 宽度下标签数 ≤ 7 且不密集重叠"
+      - "dashboard 页面在 1440×900 与 1280×800 两视口无水平/垂直截断或溢出"
+    skip_reason: "纯前端密度/布局治理由 vitest 单测验证（axis-sampling.test.ts + dashboard.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-08-25 新增：经营看板织物质感重设计子任务 B（issue #2537）"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/lib/axis-sampling.test.ts"
+        - "frontend/admin-web/tests/unit/pages/dashboard.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: UI-005
+    legacy_id: ""
+    title: "侧边栏新增「智能客服」大类——人工客服图标修复 + 机器人设置改名归组"
+    domains:
+      - ui
+      - frontend
+    tier: normal
+    tags:
+      - ui
+      - sidebar
+      - menu
+      - icon
+    truths_ref:
+      - frontend-fix.sidebar-smart-cs-group
+      - frontend-fix.cs-menu-icons
+      - frontend-fix.cs-menu-rename
+      - frontend-fix.cs-menu-permission
+    user_inputs:
+      - "侧边栏新增「智能客服」一级大类：人工客服耳机图标修复 + 机器人设置更名为 AI 客服配置并归组"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "Sidebar.tsx 渲染一级大类「智能客服」，DOM 顺序位于「工作台」之后、「商品管理」之前；「人工客服」从「工作台」分组移除"
+      - "「智能客服」下子菜单顺序：「AI 客服配置」在前、「人工客服」在后"
+      - "「人工客服」渲染 Headphones 图标（iconMap 已注册，非 BarChart3 回退），与「经营看板」BarChart3 图标明确区分；「AI 客服配置」渲染 Bot 图标；「智能客服」大类渲染 MessageSquare 图标"
+      - "原「机器人设置」更名为「AI 客服配置」：侧边栏菜单名、页面 H1、Header 面包屑同步一致，不再出现「机器人设置」残留"
+      - "链接路径不变：AI 客服配置 href=/chat/config、人工客服 href=/agent-workspace/human-sessions"
+      - "权限过滤不回归：无 agent:session → 隐藏「人工客服」；无 agent:quickreply → 隐藏「AI 客服配置」；两者均无 → 「智能客服」整组隐藏"
+    skip_reason: "纯前端侧边栏菜单/图标/文案由 vitest 单测验证（sidebar/chat-config/Header.test），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-08-30 新增：侧边栏智能客服大类分组与菜单图标渲染（issue #2670）"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/components/sidebar.test.tsx"
+        - "frontend/admin-web/tests/unit/pages/chat-config.test.tsx"
+        - "frontend/admin-web/tests/unit/components/layout/Header.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: UI-006
+    legacy_id: ""
+    title: "会话管理工作台 - 单列表（无筛选控件）+ 已结束会话续聊 banner"
+    domains:
+      - ui
+      - frontend
+    tier: normal
+    tags:
+      - ui
+      - session-list
+      - reopen
+    truths_ref:
+      - frontend-fix.session-list-single-filter
+      - frontend-fix.session-reopen-banner
+    user_inputs:
+      - "会话管理工作台：去掉「活跃/已关闭」硬 tab 与筛选控件，始终单列表展示全部会话（活跃在前、同组 updated_at 倒序），已结束会话灰化；查看已结束会话显示续聊 banner 可一键重新打开"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "SessionList 单列表渲染：全部会话按「活跃在前 + updated_at 倒序」排序；无「活跃/已关闭」双 tab，也无「全部/活跃/已结束」筛选 chips/tab"
+      - "已结束会话行保留灰化 + 「已结束」徽标 + 重新打开按钮；活跃会话行保留「结束会话」菜单；空态统一「暂无会话」，搜索空态「没有匹配的会话」"
+      - "查看已结束会话时聊天区顶部显示「会话已结束」banner + 「继续此会话」按钮；点击调用 reopenSession 并聚焦输入框，banner 消失"
+      - "会话管理工作台统计条文案统一为「活跃/已结束/共」（无「已关闭」残留）"
+    skip_reason: "纯前端会话列表/续聊交互由 vitest 单测 + E2E 点击链路验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-08-31 新增：会话管理状态 tab 与筛选控件移除，单列表 + 续聊 banner（参考 DSH 会话模型评审结论）"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/components/chat/components-chat.test.tsx"
+        - "frontend/admin-web/tests/unit/components/chat/ChatArea.test.tsx"
+        - "frontend/admin-web/tests/unit/pages/agent-workspace-sessions.test.tsx"
+        - "tests/e2e/specs/chat/agent-workspace-sessions.spec.ts"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: UI-007
+    legacy_id: ""
+    title: "小布 C 端输入条 - 默认按住说话（松开发送）与键盘模式切换"
+    domains:
+      - ui
+      - frontend
+      - mini-app
+    tier: normal
+    tags:
+      - mini-app
+      - voice-input
+      - hold-to-talk
+    truths_ref:
+      - frontend-fix.xiaobu-voice-holdtalk
+    user_inputs:
+      - "小布 C 端（小程序/H5 同源）输入条参考瑞幸设计：默认「按住说话、松开直接发送」，可一键切回键盘模式输入文字；上滑取消录音"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "mini-app MessageInput 默认语音模式：渲染「按住 说话」按钮，不渲染 textarea；左切换键显示 ⌨️"
+      - "语音模式按住（touchStart）调用 startRecording，松开（touchEnd）调用 stopAndTranscribe → 转写文本直接 onSend；上滑超过阈值取消不发送"
+      - "切到键盘模式：切换键变 🎤，显示 textarea + 图片 + 发送（保留原功能）；切回语音模式恢复按住说话"
+      - "流式/无会话时禁止录音；转写失败 toast「未听清，请重试」不发送"
+    skip_reason: "纯前端 C 端输入交互由 mini-app jest 单测验证（message-input.test.tsx，9 例），非 LLM 行为，不进入 agent-eval 冒烟；xiaobu H5 E2E 基建在 WIP 分支（main 未落）"
+    merge_log: "2026-08-31 新增：小布 C 端语音输入（按住说话/松开发送/键盘切换，参考瑞幸 C 端设计）"
+    traces:
+      tests:
+        - "frontend/mini-app/tests/message-input.test.tsx"
+      ci:
+        - mini-app.yml
+      verifies: []
+
+  - id: UI-008
+    legacy_id: ""
+    title: "米高会话列表折叠/展开窄 rail（参考 DSH sidebar 折叠交互）"
+    domains:
+      - ui
+      - frontend
+    tier: normal
+    tags:
+      - ui
+      - session-list
+      - collapse
+      - rail
+    truths_ref:
+      - frontend-fix.session-list-collapse
+    user_inputs:
+      - "会话列表支持折叠为窄 rail（图标态），展开恢复完整列表，折叠偏好持久化到 localStorage"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "SessionList 折叠按钮 aria-label「折叠会话列表」且展开态 aria-expanded=true；点击折叠 → 窄 rail 仅保留「新建对话」图标按钮 + 展开 toggle（aria-label「展开会话列表」、aria-expanded=false），列表项/搜索隐藏"
+      - "再点展开 → 完整 w-64 列表恢复（新建对话/搜索/右键菜单功能全部保留）"
+      - "折叠偏好写入 localStorage（key chat.session-list.collapsed），刷新/重挂后恢复折叠态"
+      - "折叠动画为 Tailwind width transition + overflow-hidden（参考 DSH slide+crossfade 的简洁等价）"
+    skip_reason: "纯前端会话列表折叠交互由 vitest 单测 + E2E 点击链路验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-08-31 新增：会话列表折叠/展开窄 rail（参考 DSH sidebar 折叠交互，Issue #2691）"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/components/chat/SessionList.test.tsx"
+        - "tests/e2e/specs/chat/agent-workspace-sessions.spec.ts"
+      ci:
+        - pr-check.yml
+      verifies: []

@@ -278,3 +278,32 @@ cases:
       ci:
         - ai-agent-tests.yml
       verifies: []
+
+  - id: API-010
+    legacy_id: ""
+    title: "微信小程序 mock 登录链路（无 appid 时自动 mock）"
+    domains:
+      - api
+      - auth
+    tier: normal
+    tags:
+      - login
+      - mock
+    truths_ref:
+      - auth-sms.bypass
+    user_inputs:
+      - "POST /api/auth/mini/login 在 wechat.mini.appid 未配置时走 mock 模式"
+      - "同 code 二次登录返回同一用户（账号稳定）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "mock 登录成功返回 accessToken + user"
+      - "登录参数 tenantId(camelCase) 与后端一致"
+    skip_reason: ""
+    merge_log: "POC mock 登录集成测试新增"
+    traces:
+      tests:
+        - "frontend/mini-app/tests/auth.test.ts"
+      ci:
+        - mini-app-tests.yml
+      verifies: []

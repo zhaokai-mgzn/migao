@@ -9,6 +9,7 @@ AI 智能客服系统 - 订单创建 Tool
 """
 from __future__ import annotations
 
+import os
 import re
 from typing import Any, Dict, List, Optional
 from loguru import logger
@@ -23,6 +24,10 @@ _OTP_KEY_PREFIX = "sms:otp:"
 _OTP_TTL_SECONDS = 300  # 5分钟有效期
 _OTP_VALID_PATTERN = re.compile(r"^\d{4,6}$")  # 4-6位数字验证码
 _PHONE_PATTERN = re.compile(r"^1[3-9]\d{9}$")  # 中国大陆手机号
+
+# 万能验证码 bypass（POC/测试阶段，对齐 admin-api 的 sms.bypass-code 机制）。
+# 空字符串 = 禁用 bypass（生产安全默认）。POC 部署时设置 SMS_BYPASS_CODE=123456 与 admin-api 对齐。
+SMS_BYPASS_CODE = os.getenv("SMS_BYPASS_CODE", "")
 
 
 class OrderCreateTool(BaseTool):
@@ -114,9 +119,9 @@ class OrderCreateTool(BaseTool):
                         },
                         "processing_info": {
                             "type": "object",
-                            "description": "商品销售信息（选了颜色/门幅后必填）：colorId(颜色ID)、colorName(颜色名称)、sellingMethod(售卖方式: bulk_cut散剪/full_roll整卷)、doorWidth(门幅如2.8米)、skuCode(SKU编码)、processingItems(加工项列表)、processingFee(加工费合计)",
+                            "description": "商品销售信息（选了颜色/门幅后必填）：colorId(颜色ID，字符串，来自商品详情)、colorName(颜色名称)、sellingMethod(售卖方式: bulk_cut散剪/full_roll整卷)、doorWidth(门幅如2.8米)、skuCode(SKU编码)、processingItems(加工项列表)、processingFee(加工费合计)",
                             "properties": {
-                                "colorId": {"type": "number", "description": "颜色ID"},
+                                "colorId": {"type": "string", "description": "颜色ID（字符串，来自商品详情）"},
                                 "colorName": {"type": "string", "description": "颜色名称"},
                                 "sellingMethod": {"type": "string", "description": "售卖方式"},
                                 "doorWidth": {"type": "string", "description": "门幅"},
@@ -168,6 +173,12 @@ class OrderCreateTool(BaseTool):
         Returns:
             bool: 验证是否通过
         """
+        # 万能验证码 bypass：POC/测试阶段直接通过（不碰 Redis）。
+        # 生产环境须将 SMS_BYPASS_CODE 设为空以禁用。
+        if SMS_BYPASS_CODE and code and code.strip() == SMS_BYPASS_CODE:
+            logger.info(f"[sms_verify] Bypass code accepted: phone={phone[:3]}****{phone[-4:]}, tenant={tenant_id}")
+            return True
+
         if not _OTP_VALID_PATTERN.match(code or ""):
             return False
 
@@ -400,6 +411,8 @@ class OrderCreateTool(BaseTool):
                 data=order_data,
                 message=f"订单创建成功！订单号：{order_id}，客户：{customer_name}，共 {len(items)} 件商品",
                 summary=f"订单创建成功: 订单号{order_id}, 客户{customer_name}, {len(items)}件商品",
+                # T2 事务终态：下单完成 → 清空订单域草稿/待确认状态（防下一轮污染）
+                terminal=True,
             )
 
         except Exception as e:

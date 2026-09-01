@@ -5,14 +5,17 @@ import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.dto.ProductResponse;
 import com.migao.admin.dto.ProductProcessingItemResponse;
+import com.migao.admin.dto.ProductSkuResponse;
 import com.migao.admin.dto.agent.AgentProductCreateRequest;
 import com.migao.admin.dto.agent.AgentProductUpdateRequest;
 import com.migao.admin.dto.agent.AgentProcessingItemActionRequest;
 import com.migao.admin.service.ProductService;
+import com.migao.admin.security.RequirePermission;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 
@@ -25,6 +28,7 @@ import java.util.Map;
  * - 错误返回含 suggestion
  */
 @Slf4j
+@RequirePermission("product:list")
 @RestController
 @RequestMapping("/api/admin/agent/products")
 @RequiredArgsConstructor
@@ -74,6 +78,44 @@ public class AgentProductController {
     }
 
     /**
+     * Agent 专用库存调整（生产回归修复：杜绝"假成功"）。
+     * PATCH /api/admin/agent/products/{id}/stock
+     * body: {"adjustment": +30, "reason": "盘点"}（adjustment 正=增加 负=减少）
+     * 返回更新后的商品详情，data.stock 为 SKU 汇总值，供 agent 读回校验。
+     */
+    @PatchMapping("/{id}/stock")
+    public ApiResponse<ProductResponse> adjustStock(
+            @PathVariable String id,
+            @RequestBody Map<String, Object> body) {
+        Long tenantId = TenantContext.getTenantId();
+        Object adjObj = body.get("adjustment");
+        if (adjObj == null) {
+            throw BusinessException.validationError("缺少 adjustment 字段（正=增加，负=减少）");
+        }
+        Integer adjustment;
+        try {
+            adjustment = Integer.valueOf(adjObj.toString());
+        } catch (NumberFormatException e) {
+            throw BusinessException.validationError("adjustment 必须为整数");
+        }
+        String reason = (String) body.getOrDefault("reason", "");
+        String resolvedId = productService.resolveProductId(id, tenantId);
+        if (resolvedId == null) {
+            throw BusinessException.notFound("商品",
+                    "未找到商品「" + id + "」，请先用 product_search 查出正确 ID 后重试");
+        }
+        log.info("[Agent] 库存调整: product={}, adjustment={}, reason={}, tenantId={}",
+                id, adjustment, reason, tenantId);
+        try {
+            ProductResponse result = productService.adjustStockForAgent(resolvedId, adjustment, reason, tenantId);
+            return ApiResponse.success(result);
+        } catch (Exception e) {
+            log.warn("[Agent] 库存调整失败: product={}, adjustment={}, error={}", id, adjustment, e.getMessage());
+            throw e;
+        }
+    }
+
+    /**
      * Agent 专用 SKU 价格更新。按颜色/售卖方式/门幅精确匹配。
      * PATCH /api/admin/agent/products/{productId}/skus/price
      */
@@ -103,6 +145,45 @@ public class AgentProductController {
             return ApiResponse.success(result);
         } catch (Exception e) {
             log.warn("[Agent] SKU调价失败: product={}, error={}", productId, e.getMessage());
+            throw e;
+        }
+    }
+
+    /**
+     * Agent/前端行内编辑专用：按 SKU id 精确改价。
+     * PATCH /api/admin/agent/products/{productId}/skus/{skuId}
+     * body: {"price": 99.00}（price ≥ 0），返回更新后的 SKU。
+     * 与 /skus/price（按颜色/售卖方式/门幅匹配）互为补充：
+     * 本端点校验 skuId 属于该商品，供前端拿到 sku.id 后直接调用。
+     */
+    @PatchMapping("/{productId}/skus/{skuId}")
+    public ApiResponse<ProductSkuResponse> updateSkuPriceById(
+            @PathVariable String productId,
+            @PathVariable Long skuId,
+            @RequestBody Map<String, Object> body) {
+        Long tenantId = TenantContext.getTenantId();
+        Object priceObj = body.get("price");
+        if (priceObj == null) {
+            throw BusinessException.validationError("缺少 price 字段");
+        }
+        BigDecimal price;
+        try {
+            price = new BigDecimal(priceObj.toString());
+        } catch (NumberFormatException e) {
+            throw BusinessException.validationError("price 必须为数字");
+        }
+        String resolvedId = productService.resolveProductId(productId, tenantId);
+        if (resolvedId == null) {
+            throw BusinessException.notFound("商品（" + productId + "）",
+                    "请先用 product_search 查出正确 ID");
+        }
+        log.info("[Agent] 单SKU调价: product={}, skuId={}, price={}, tenantId={}",
+                productId, skuId, price, tenantId);
+        try {
+            ProductSkuResponse result = productService.updateSkuPriceById(resolvedId, skuId, price, tenantId);
+            return ApiResponse.success(result);
+        } catch (Exception e) {
+            log.warn("[Agent] 单SKU调价失败: product={}, skuId={}, error={}", productId, skuId, e.getMessage());
             throw e;
         }
     }

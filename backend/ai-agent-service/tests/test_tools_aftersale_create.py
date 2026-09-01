@@ -64,6 +64,9 @@ class TestAftersaleCreateSuccess:
         )
 
         assert result.success is True
+        # 创建成功回执必须用中文业务术语（类型：退款），禁止输出英文枚举 ticket_type
+        assert "退款" in result.message
+        assert "refund" not in result.message
         # 验证 API 请求体使用 "description" 键（非 "reason"）
         call_args = mock_client.post.call_args
         json_data = call_args.kwargs.get("json_data", {})

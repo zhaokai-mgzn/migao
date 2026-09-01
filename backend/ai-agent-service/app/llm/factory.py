@@ -74,9 +74,10 @@ class LLMFactory:
 
     @staticmethod
     def create_vision_llm(model_override: Optional[str] = None) -> ChatOpenAI:
-        """创建视觉多模态 LLM 实例（独立视觉模型配置）
+        """创建视觉多模态 LLM 实例（图片识别）
 
-        MiniMax-M3 使用 adaptive thinking（自适应推理），深挖色号/材质/风格。
+        DeepSeek vision（deepseek-v4-flash-vision-exp）为 OpenAI 兼容接口，
+        与主模型共用 DeepSeek API key（推理/视觉同 key）。
         """
         model = model_override or settings.VISION_MODEL
         return ChatOpenAI(
@@ -87,7 +88,6 @@ class LLMFactory:
             streaming=True,
             max_completion_tokens=16384,
             request_timeout=60,
-            extra_body={"thinking": {"type": "adaptive"}},
         )
 
     @staticmethod
@@ -181,6 +181,23 @@ class LLMFactory:
         )
         response = await llm.ainvoke(cleaned)
         return response.content.strip() if hasattr(response, 'content') else str(response)
+
+    @staticmethod
+    def create_registration_review_llm() -> ChatOpenAI:
+        """创建企业入驻合规审查 LLM
+
+        - temperature=0  确定性输出，便于 JSON 解析
+        - max_completion_tokens=800  仅需返回结构化审查结论
+        - thinking=disabled  关闭深度思考，降低延迟与成本
+        """
+        return _new_chat_model(
+            model=settings.INTENT_MODEL,
+            api_key=MINIMAX_API_KEY,
+            base_url=MINIMAX_BASE_URL,
+            temperature=0,
+            max_completion_tokens=800,
+            extra_body={"thinking": {"type": "disabled"}},
+        )
 
     @staticmethod
     def create_suggestion_llm() -> ChatOpenAI:

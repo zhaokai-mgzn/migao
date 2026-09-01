@@ -5,7 +5,6 @@ import {
   User,
   LogOut,
   ChevronDown,
-  Settings,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { cn } from '@/lib/utils'
@@ -39,7 +38,7 @@ const ROUTE_BREADCRUMB_MAP: Array<{
   { match: (p) => p.startsWith('/agent-workspace/sessions'), crumbs: [{ label: '客服中心' }, { label: '会话监控' }] },
   { match: (p) => p.startsWith('/agent-workspace/quick-replies'), crumbs: [{ label: '客服中心' }, { label: '快捷回复' }] },
   { match: (p) => p.startsWith('/agent-workspace'), crumbs: [{ label: '客服中心' }, { label: '客服工作台' }] },
-  { match: (p) => p.startsWith('/chat/config'), crumbs: [{ label: '机器人设置' }] },
+  { match: (p) => p.startsWith('/chat/config'), crumbs: [{ label: '智能客服' }, { label: 'AI 客服配置' }] },
   { match: (p) => p.startsWith('/chat'), crumbs: [{ label: '客服中心' }, { label: '在线对话' }] },
 
   // 系统管理（不在侧边栏主菜单，但在通知/角色页面使用）
@@ -74,7 +73,7 @@ export default function Header({ title, breadcrumbs }: HeaderProps) {
   const pageTitle = title || resolvedBreadcrumbs?.[resolvedBreadcrumbs.length - 1]?.label || '数据看板'
 
   return (
-    <header className="h-14 bg-white border-b border-gray-200 flex items-center justify-between px-6 sticky top-0 z-40">
+    <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-neutral-200/80 bg-white/85 px-6 backdrop-blur-sm">
       {/* 左侧：面包屑 / 页面标题 */}
       <div className="flex items-center">
         {resolvedBreadcrumbs ? (
@@ -84,12 +83,12 @@ export default function Header({ title, breadcrumbs }: HeaderProps) {
               return (
                 <div key={`${crumb.label}-${index}`} className="flex items-center">
                   {index > 0 && (
-                    <span className="mx-2 text-gray-400">/</span>
+                    <span className="mx-2 text-neutral-300">/</span>
                   )}
                   {crumb.href && !isLast ? (
                     <a
                       href={crumb.href}
-                      className="text-gray-500 hover:text-primary-600 transition-colors"
+                      className="text-neutral-500 transition-colors hover:text-primary-600"
                     >
                       {crumb.label}
                     </a>
@@ -97,8 +96,8 @@ export default function Header({ title, breadcrumbs }: HeaderProps) {
                     <span
                       className={cn(
                         isLast
-                          ? 'text-gray-900 font-medium'
-                          : 'text-gray-500'
+                          ? 'font-medium text-neutral-900'
+                          : 'text-neutral-500'
                       )}
                     >
                       {crumb.label}
@@ -109,60 +108,49 @@ export default function Header({ title, breadcrumbs }: HeaderProps) {
             })}
           </nav>
         ) : (
-          <h1 className="text-base font-medium text-gray-900">{pageTitle}</h1>
+          <h1 className="text-base font-medium text-neutral-900">{pageTitle}</h1>
         )}
       </div>
 
       {/* 右侧：通知 + 用户信息 */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3">
         {/* 通知铃铛 */}
         <NotificationBell />
 
         {/* 用户下拉菜单 */}
         <div className="relative group">
-          <button className="flex items-center gap-2 p-1.5 pr-3 rounded-lg hover:bg-gray-100 transition-colors">
-            {/* 头像 */}
-            <div className="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center">
-              <User className="w-4 h-4 text-primary-600" />
+          <button className="flex items-center gap-2 rounded-lg p-1.5 pr-3 transition-colors hover:bg-neutral-100">
+            {/* 头像 — 品牌靛蓝渐变 */}
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-primary-400 to-primary-600 shadow-sm">
+              <User className="h-4 w-4 text-white" />
             </div>
             {/* 昵称 */}
-            <span className="text-sm text-gray-700 hidden sm:block">
+            <span className="hidden text-sm text-neutral-700 sm:block">
               {user?.name || user?.nickname || user?.username || '管理员'}
             </span>
-            <ChevronDown className="w-4 h-4 text-gray-400 hidden sm:block" />
+            <ChevronDown className="hidden h-4 w-4 text-neutral-400 sm:block" />
           </button>
 
           {/* 下拉菜单 */}
           <div className={cn(
             'absolute right-0 top-full mt-1 w-48 py-1',
-            'bg-white rounded-lg shadow-card border border-gray-100',
+            'rounded-lg border border-neutral-200 bg-white shadow-card-hover',
             'opacity-0 invisible group-hover:opacity-100 group-hover:visible',
             'transition-all duration-200'
           )}>
-            <div className="px-4 py-2 border-b border-gray-100">
-              <p className="text-sm font-medium text-gray-900">
+            <div className="border-b border-neutral-100 px-4 py-2">
+              <p className="text-sm font-medium text-neutral-900">
                 {user?.name || user?.nickname || user?.username || '管理员'}
               </p>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-neutral-500">
                 {user?.email || user?.username || ''}
               </p>
             </div>
-            {user?.roles?.includes('super_admin') && (
-              <a
-                href="https://ops.migaozn.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-              >
-                <Settings className="w-4 h-4" />
-                平台管理
-              </a>
-            )}
             <button
               onClick={handleLogout}
-              className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+              className="flex w-full items-center gap-2 px-4 py-2 text-sm text-red-600 transition-colors hover:bg-red-50"
             >
-              <LogOut className="w-4 h-4" />
+              <LogOut className="h-4 w-4" />
               退出登录
             </button>
           </div>

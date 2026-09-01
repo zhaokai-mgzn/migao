@@ -39,10 +39,10 @@ jobs:
           # LLM / 视觉 / 向量库占位：单测 mock 外部依赖，ci-dummy 兜底避免 secrets 依赖
           PRIMARY_API_KEY: ${{ secrets.DEEPSEEK_API_KEY || 'ci-dummy' }}
           PRIMARY_BASE_URL: https://api.deepseek.com
-          PRIMARY_MODEL: deepseek-v4-pro
-          VISION_API_KEY: ${{ secrets.MINIMAX_API_KEY || 'ci-dummy' }}
-          VISION_BASE_URL: https://api.minimaxi.com/v1
-          VISION_MODEL: MiniMax-M3
+          PRIMARY_MODEL: deepseek-v4-flash
+          VISION_API_KEY: ${{ secrets.DEEPSEEK_API_KEY || 'ci-dummy' }}
+          VISION_BASE_URL: https://api.deepseek.com/v1
+          VISION_MODEL: deepseek-v4-flash-vision-exp
           ASR_API_KEY: ${{ secrets.ASR_API_KEY || 'ci-dummy' }}
           ASR_MODEL: paraformer-realtime-8k-v2
           DASHVECTOR_API_KEY: ci-dummy
@@ -50,7 +50,4 @@ jobs:
           DASHVECTOR_COLLECTION: ci
           # 其余无默认值字段由 tests/conftest.py setdefault 兜底
         run: |
-          python -m pytest tests/ -v --tb=short -q \
-            --ignore=tests/test_post_deploy_verify.py \
-            --ignore=tests/manual_test_pe_flow.py \
-            -m "not integration"
+          python -m pytest tests/ -v --tb=short -q -m "not integration"

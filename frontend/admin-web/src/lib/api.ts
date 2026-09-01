@@ -1,5 +1,11 @@
 import request from './request'
-import { buildProductPayload, buildLogisticsPayload, buildCloseOrderPayload } from './data-adapter'
+import {
+  buildProductPayload,
+  buildLogisticsPayload,
+  buildCloseOrderPayload,
+  buildRefundPayload,
+} from './data-adapter'
+import type { RefundOrderParams } from './data-adapter'
 import type { 
   ApiResponse, 
   PageResponse, 
@@ -45,6 +51,7 @@ import type {
   Customer,
   CustomerListParams,
   CustomerDetail,
+  CustomerDetailResponse,
   CustomerTag,
   CustomerTagFormData,
   AiConfig,
@@ -63,6 +70,7 @@ import type {
   RegistrationData,
   Registration,
   RegistrationListParams,
+  RegistrationResult,
   Notification,
   NotificationQueryParams,
   CreateNotificationRequest,
@@ -80,8 +88,9 @@ export const authApi = {
   login: (data: LoginParams) => 
     request.post<ApiResponse<LoginResponse>>('/api/auth/admin/login', data),
       
-  refreshToken: (refreshToken: string) =>
-    request.post<ApiResponse<RefreshTokenResponse>>('/api/auth/refresh', { refreshToken }),
+  // 审计 07 P1-5：refresh token 由后端 HttpOnly cookie 承载，body 不再传参
+  refreshToken: () =>
+    request.post<ApiResponse<RefreshTokenResponse>>('/api/auth/refresh', {}),
   
   logout: () => 
     request.post('/api/auth/logout'),
@@ -96,7 +105,7 @@ export const authApi = {
     request.post<ApiResponse<LoginResponse>>('/api/auth/sms/login', { phone, code }),
 
   submitRegistration: (data: RegistrationData) =>
-    request.post<ApiResponse>('/api/auth/register', data),
+    request.post<ApiResponse<RegistrationResult>>('/api/auth/register', data),
 }
 
 // 商品 API
@@ -118,6 +127,10 @@ export const productApi = {
   
   updateProductStatus: (id: string, status: ProductStatus) => 
     request.put<ApiResponse<Product>>(`/api/admin/products/${id}/status`, { status }),
+
+  // 设置/取消商品推荐标记（C 端「新品推荐」位控制）
+  updateProductRecommended: (id: string, recommended: boolean) =>
+    request.put<ApiResponse<void>>(`/api/admin/products/${id}/recommend`, { recommended }),
 
   // 批量上架
   batchOnShelf: (productIds: string[]) =>
@@ -277,8 +290,9 @@ export const orderApi = {
     request.put<ApiResponse<void>>(`/api/admin/orders/${id}/payment`),
 
   // 退款
-  refundOrder: (id: string) =>
-    request.put<ApiResponse<void>>(`/api/admin/orders/${id}/refund`),
+  // 后端 PUT /api/admin/orders/{id}/refund，body: { refund_reason, refund_amount }（refund_amount 缺省=全额）
+  refundOrder: (id: string, data?: RefundOrderParams) =>
+    request.put<ApiResponse<void>>(`/api/admin/orders/${id}/refund`, buildRefundPayload(data)),
 
   addRemark: (id: string, content: string) =>
     request.post<ApiResponse<void>>(`/api/admin/orders/${id}/remark`, { content }),
@@ -507,10 +521,17 @@ export const customerApi = {
     request.get<ApiResponse<PageResponse<Customer>>>('/api/admin/customers', { params }),
 
   getCustomer: (id: string) =>
-    request.get<ApiResponse<CustomerDetail>>(`/api/admin/customers/${id}`),
+    request.get<ApiResponse<CustomerDetailResponse>>(`/api/admin/customers/${id}`),
 
-  updateCustomer: (id: string, data: Partial<Customer>) =>
-    request.put<ApiResponse<Customer>>(`/api/admin/customers/${id}`, data),
+  // 更新客户档案。前端用 remark 表示备注，后端字段为 agentNotes，这里做字段映射。
+  updateCustomer: (id: string, data: Partial<Customer>) => {
+    const payload: Record<string, unknown> = { ...data }
+    if (payload.remark !== undefined) {
+      payload.agentNotes = payload.remark
+      delete payload.remark
+    }
+    return request.put<ApiResponse<Customer>>(`/api/admin/customers/${id}`, payload)
+  },
 
   getCustomerTags: () =>
     request.get<ApiResponse<CustomerTag[]>>('/api/admin/customer-tags'),
@@ -584,16 +605,16 @@ export const roleApi = {
   getAllRoles: () =>
     request.get<ApiResponse<Role[]>>('/api/admin/roles/all'),
 
-  getRole: (id: number) =>
+  getRole: (id: string) =>
     request.get<ApiResponse<Role>>(`/api/admin/roles/${id}`),
 
   createRole: (data: RoleFormData) =>
     request.post<ApiResponse<Role>>('/api/admin/roles', data),
 
-  updateRole: (id: number, data: RoleFormData) =>
+  updateRole: (id: string, data: RoleFormData) =>
     request.put<ApiResponse<Role>>(`/api/admin/roles/${id}`, data),
 
-  deleteRole: (id: number) =>
+  deleteRole: (id: string) =>
     request.delete<ApiResponse<void>>(`/api/admin/roles/${id}`),
 }
 
@@ -756,6 +777,12 @@ export const agentSessionApi = {
   /** 获取会话详情（含消息列表） */
   getSession: (id: string) =>
     request.get<ApiResponse<AgentSessionDetail>>(`/api/admin/agent-sessions/${id}`),
+  /** 客服发送消息 */
+  sendMessage: (id: string, content: string, isInternal?: boolean) =>
+    request.post<ApiResponse<AgentMessageItem>>(`/api/admin/agent-sessions/${id}/messages`, {
+      content,
+      isInternal,
+    }),
   /** 手动分配会话给客服员工 */
   assignSession: (id: string, employeeId: string) =>
     request.post<ApiResponse<void>>(`/api/admin/agent-sessions/${id}/assign`, { employeeId }),

@@ -11,29 +11,44 @@ import {
   Smartphone,
   ShieldCheck,
   FileText,
-  Search,
+  Zap,
   Rocket,
   ArrowRight,
   Check,
+  Factory,
+  Sofa,
+  Shirt,
+  ShoppingBag,
+  Landmark,
+  BadgeCheck,
 } from 'lucide-react'
 
 export const metadata: Metadata = {
   title: '米高 — AI驱动的新一代企业智能管理平台',
   description:
-    '米高SaaS平台为每一位商家配备专属AI助手——米宝智能工作助手与小布智能客服，从内部运营到客户服务，全方位驱动业务增长。',
+    '杭州词元通达科技有限公司出品的米高智能管理平台，为每位商家配备双AI助手——米高企业智能工作助手与小布智能客服。从内部运营到客户服务，AI 自动甄别入驻，秒级开通，全方位驱动业务增长。',
 }
 
-const features = [
+const agents = [
   {
     icon: Bot,
-    title: '米宝 · 企业智能助手',
-    description: '您的专属AI工作搭档，智能处理商品管理、订单跟踪、库存盘点、售后协调，让日常运营事半功倍',
+    name: '米高',
+    role: '企业智能工作助手',
+    description:
+      '您的专属AI工作搭档，7×24小时在线处理商品管理、订单跟踪、库存盘点、售后协调，把运营人员从重复劳动中解放出来，让日常经营事半功倍。',
+    highlights: ['商品 · 订单 · 库存智能管理', '售后协调与异常预警', '经营数据即问即答'],
   },
   {
     icon: MessageSquare,
-    title: '小布 · AI 智能客服',
-    description: '7×24小时在线，基于大模型深度理解客户意图，智能应答产品咨询、物流追踪、售后问题',
+    name: '小布',
+    role: 'AI 智能客服',
+    description:
+      '面向您客户的7×24小时AI客服，基于大模型深度理解客户意图，智能应答产品咨询、物流追踪、退换货等问题，大幅降低客服成本，提升客户满意度。',
+    highlights: ['微信小程序等多渠道接入', '基于企业知识库精准应答', '自动学习，越用越懂您的业务'],
   },
+]
+
+const features = [
   {
     icon: Package,
     title: '商品管理',
@@ -55,7 +70,7 @@ const advantages = [
   {
     icon: Sparkles,
     title: '双AI助手赋能',
-    description: '为企业配备米宝工作助手 + 小布智能客服，内部提效与客户服务双轮驱动',
+    description: '为企业配备米高工作助手 + 小布智能客服，内部提效与客户服务双轮驱动',
   },
   {
     icon: Brain,
@@ -79,29 +94,45 @@ const steps = [
     icon: FileText,
     step: '01',
     title: '提交申请',
-    description: '填写企业信息，最快几分钟即可完成提交',
+    description: '填写企业信息并完成手机验证，全程仅需几分钟',
   },
   {
-    icon: Search,
+    icon: Zap,
     step: '02',
-    title: '平台审核',
-    description: '1-3个工作日内完成审核，专人对接跟进',
+    title: 'AI 智能甄别',
+    description: 'AI 自动核验企业信息与合规性，秒级返回审核结果，无需人工等待',
   },
   {
     icon: Rocket,
     step: '03',
-    title: '开通使用',
-    description: '审核通过即刻获得管理后台与米宝AI助手，开启智能运营',
+    title: '即刻开通',
+    description: '审核通过即刻获得管理后台、米高助手与小布客服，开启智能运营',
   },
 ]
 
-const partnerLogos = [
-  { name: '品牌 A', letter: 'A' },
-  { name: '品牌 B', letter: 'B' },
-  { name: '品牌 C', letter: 'C' },
-  { name: '品牌 D', letter: 'D' },
-  { name: '品牌 E', letter: 'E' },
-  { name: '品牌 F', letter: 'F' },
+const industries = [
+  { icon: Factory, name: '布艺纺织' },
+  { icon: Sofa, name: '家居建材' },
+  { icon: Shirt, name: '服装服饰' },
+  { icon: ShoppingBag, name: '电商零售' },
+]
+
+const trustPoints = [
+  {
+    icon: BadgeCheck,
+    title: 'AI 自动合规甄别',
+    description: '入驻申请由 AI 自动审查，合法合规、无敏感信息即刻通过',
+  },
+  {
+    icon: Landmark,
+    title: '正规运营主体',
+    description: '杭州词元通达科技有限公司，为您提供长期稳定的产品服务',
+  },
+  {
+    icon: ShieldCheck,
+    title: '多重风控防护',
+    description: '租户级数据隔离、防重复提交与恶意刷量防护，平台安全合规',
+  },
 ]
 
 export default function HomePage() {
@@ -121,18 +152,19 @@ export default function HomePage() {
             {/* Badge */}
             <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/15 backdrop-blur-sm border border-white/20 text-sm text-blue-100 mb-8">
               <Sparkles className="w-4 h-4" />
-              <span>AI 赋能的智能电商管理平台</span>
+              <span>杭州词元通达科技有限公司 · 双 AI 助手智能管理平台</span>
             </div>
 
             <h1 className="text-3xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight leading-tight">
-              AI 驱动的新一代
+              米高 × 小布
               <br />
               <span className="bg-gradient-to-r from-white via-blue-100 to-blue-200 bg-clip-text text-transparent">
-                企业智能管理平台
+                AI 驱动的新一代企业智能管理平台
               </span>
             </h1>
             <p className="mt-6 text-lg sm:text-xl text-blue-100/90 leading-relaxed max-w-2xl mx-auto">
-              米高 SaaS 平台，为每一位商家配备专属AI助手——米宝智能工作助手与小布智能客服，从内部运营到客户服务，全方位驱动业务增长。
+              米高企业智能工作助手 + 小布智能客服，双 AI 覆盖内部运营与客户服务全链路。
+              企业入驻由 AI 自动甄别，合法合规即刻开通，最快几分钟即可开始智能运营。
             </p>
             <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
               <Link
@@ -166,35 +198,84 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Features Section */}
+      {/* 双 Agent Section */}
       <section className="py-20 sm:py-28 bg-white">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="text-center max-w-2xl mx-auto mb-16">
-            <span className="text-sm font-semibold text-blue-600 uppercase tracking-wider">
-              功能亮点
+            <span className="text-sm font-semibold text-primary-600 uppercase tracking-wider">
+              双 AI 助手
             </span>
-            <h2 className="mt-3 text-3xl sm:text-4xl font-bold text-gray-900">
-              为企业量身打造的全方位智能管理平台
+            <h2 className="mt-3 text-3xl sm:text-4xl font-bold text-neutral-900">
+              一位管好内部运营，一位服务您的客户
             </h2>
-            <p className="mt-4 text-lg text-gray-500">
-              五大核心模块，覆盖企业运营全流程
+            <p className="mt-4 text-lg text-neutral-500">
+              米高 + 小布，两大 AI 助手协同，为您的生意全程护航
             </p>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-5xl mx-auto">
+            {agents.map((agent, index) => (
+              <div
+                key={agent.name}
+                className="group relative p-8 rounded-2xl border border-neutral-100 bg-gradient-to-br from-slate-50 to-white hover:border-blue-200 hover:shadow-xl hover:shadow-blue-50 transition-all duration-300 hover:-translate-y-1"
+              >
+                <div className="absolute top-0 left-4 right-4 h-0.5 bg-gradient-to-r from-blue-400 to-indigo-400 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                <div className="flex items-center gap-4 mb-5">
+                  <div className="w-14 h-14 bg-gradient-to-br from-primary-500 to-primary-600 rounded-2xl flex items-center justify-center shadow-sm shadow-blue-200">
+                    <agent.icon className="w-7 h-7 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold text-neutral-900">
+                      {agent.name}
+                      <span className="ml-2 text-sm font-medium text-primary-600">{agent.role}</span>
+                    </h3>
+                  </div>
+                </div>
+                <p className="text-sm text-neutral-500 leading-relaxed mb-5">
+                  {agent.description}
+                </p>
+                <ul className="space-y-2">
+                  {agent.highlights.map((item) => (
+                    <li key={item} className="flex items-center gap-2 text-sm text-neutral-600">
+                      <Check className="w-4 h-4 text-blue-500 shrink-0" />
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Features Section */}
+      <section className="py-20 sm:py-28 bg-slate-50">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="text-center max-w-2xl mx-auto mb-16">
+            <span className="text-sm font-semibold text-primary-600 uppercase tracking-wider">
+              核心能力
+            </span>
+            <h2 className="mt-3 text-3xl sm:text-4xl font-bold text-neutral-900">
+              覆盖企业经营全流程的智能模块
+            </h2>
+            <p className="mt-4 text-lg text-neutral-500">
+              商品、订单、知识库三大模块，配合双 AI 助手高效运转
+            </p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 max-w-4xl mx-auto">
             {features.map((feature, index) => (
               <div
                 key={feature.title}
-                className="group relative p-6 rounded-2xl border border-gray-100 bg-white hover:border-blue-200 hover:shadow-xl hover:shadow-blue-50 transition-all duration-300 hover:-translate-y-1"
+                className="group relative p-6 rounded-2xl border border-neutral-100 bg-white hover:border-blue-200 hover:shadow-xl hover:shadow-blue-50 transition-all duration-300 hover:-translate-y-1"
               >
                 {/* Gradient accent line on top */}
                 <div className="absolute top-0 left-4 right-4 h-0.5 bg-gradient-to-r from-blue-400 to-indigo-400 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                 <div className="w-12 h-12 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl flex items-center justify-center mb-4 group-hover:from-blue-100 group-hover:to-indigo-100 group-hover:scale-110 transition-all duration-300">
-                  <feature.icon className="w-6 h-6 text-blue-600" />
+                  <feature.icon className="w-6 h-6 text-primary-600" />
                 </div>
-                <h3 className="text-base font-semibold text-gray-900 mb-2 leading-snug">
+                <h3 className="text-base font-semibold text-neutral-900 mb-2 leading-snug">
                   {feature.title}
                 </h3>
-                <p className="text-sm text-gray-500 leading-relaxed">
+                <p className="text-sm text-neutral-500 leading-relaxed">
                   {feature.description}
                 </p>
               </div>
@@ -204,16 +285,16 @@ export default function HomePage() {
       </section>
 
       {/* Advantages Section */}
-      <section className="py-20 sm:py-28 bg-slate-50">
+      <section className="py-20 sm:py-28 bg-white">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="text-center max-w-2xl mx-auto mb-16">
-            <span className="text-sm font-semibold text-blue-600 uppercase tracking-wider">
+            <span className="text-sm font-semibold text-primary-600 uppercase tracking-wider">
               为什么选择米高
             </span>
-            <h2 className="mt-3 text-3xl sm:text-4xl font-bold text-gray-900">
+            <h2 className="mt-3 text-3xl sm:text-4xl font-bold text-neutral-900">
               不只是管理工具，更是您的AI智能运营伙伴
             </h2>
-            <p className="mt-4 text-lg text-gray-500">
+            <p className="mt-4 text-lg text-neutral-500">
               四大核心优势，构建企业智能中枢
             </p>
           </div>
@@ -221,17 +302,17 @@ export default function HomePage() {
             {advantages.map((item, index) => (
               <div
                 key={item.title}
-                className="group flex gap-5 p-6 bg-white rounded-2xl border border-gray-100 hover:border-blue-100 hover:shadow-lg transition-all duration-300"
+                className="group flex gap-5 p-6 bg-slate-50 rounded-2xl border border-neutral-100 hover:border-blue-100 hover:shadow-lg transition-all duration-300"
               >
-                <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shrink-0 group-hover:from-blue-600 group-hover:to-indigo-600 transition-all duration-300 shadow-sm shadow-blue-200">
+                <div className="w-12 h-12 bg-gradient-to-br from-primary-500 to-primary-600 rounded-xl flex items-center justify-center shrink-0 group-hover:from-blue-600 group-hover:to-indigo-600 transition-all duration-300 shadow-sm shadow-blue-200">
                   <item.icon className="w-5 h-5 text-white" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h3 className="text-base font-semibold text-gray-900 mb-1.5 flex items-center gap-2">
+                  <h3 className="text-base font-semibold text-neutral-900 mb-1.5 flex items-center gap-2">
                     {item.title}
                     <Check className="w-4 h-4 text-blue-500 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
                   </h3>
-                  <p className="text-sm text-gray-500 leading-relaxed">
+                  <p className="text-sm text-neutral-500 leading-relaxed">
                     {item.description}
                   </p>
                 </div>
@@ -242,17 +323,17 @@ export default function HomePage() {
       </section>
 
       {/* Steps Section */}
-      <section className="py-20 sm:py-28 bg-white">
+      <section className="py-20 sm:py-28 bg-slate-50">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="text-center max-w-2xl mx-auto mb-16">
-            <span className="text-sm font-semibold text-blue-600 uppercase tracking-wider">
+            <span className="text-sm font-semibold text-primary-600 uppercase tracking-wider">
               入驻流程
             </span>
-            <h2 className="mt-3 text-3xl sm:text-4xl font-bold text-gray-900">
-              简单三步，开启AI赋能的智能运营之旅
+            <h2 className="mt-3 text-3xl sm:text-4xl font-bold text-neutral-900">
+              三步开启，AI 秒审即刻上线
             </h2>
-            <p className="mt-4 text-lg text-gray-500">
-              从申请到开通，最快当天即可体验
+            <p className="mt-4 text-lg text-neutral-500">
+              提交申请后由 AI 自动甄别，无需等待人工审核
             </p>
           </div>
           <div className="relative max-w-4xl mx-auto">
@@ -274,20 +355,20 @@ export default function HomePage() {
                 <div key={item.step} className="text-center relative group">
                   {/* Step number circle */}
                   <div className="relative w-28 h-28 mx-auto mb-6">
-                    <div className="absolute inset-0 bg-gradient-to-br from-blue-400 to-blue-600 rounded-full opacity-0 group-hover:opacity-100 blur-md transition-opacity duration-300" />
+                    <div className="absolute inset-0 bg-gradient-to-br from-blue-400 to-primary-600 rounded-full opacity-0 group-hover:opacity-100 blur-md transition-opacity duration-300" />
                     <div className="relative w-full h-full bg-gradient-to-br from-blue-50 to-indigo-50 rounded-full flex flex-col items-center justify-center border-2 border-blue-100 group-hover:border-blue-300 group-hover:shadow-lg group-hover:shadow-blue-100 transition-all duration-300">
-                      <item.icon className="w-8 h-8 text-blue-600 mb-1" />
+                      <item.icon className="w-8 h-8 text-primary-600 mb-1" />
                       <span className="text-xs font-bold text-blue-500">{item.step}</span>
                     </div>
                   </div>
 
-                  <span className="inline-block px-3 py-1 rounded-full bg-blue-50 text-xs font-bold text-blue-600 uppercase tracking-wider">
+                  <span className="inline-block px-3 py-1 rounded-full bg-blue-50 text-xs font-bold text-primary-600 uppercase tracking-wider">
                     第{item.step}步
                   </span>
-                  <h3 className="mt-3 text-lg font-semibold text-gray-900">
+                  <h3 className="mt-3 text-lg font-semibold text-neutral-900">
                     {item.title}
                   </h3>
-                  <p className="mt-2 text-sm text-gray-500 leading-relaxed max-w-xs mx-auto">
+                  <p className="mt-2 text-sm text-neutral-500 leading-relaxed max-w-xs mx-auto">
                     {item.description}
                   </p>
                 </div>
@@ -297,35 +378,57 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Partners / Brands Section */}
-      <section className="py-20 sm:py-28 bg-slate-50">
+      {/* 适用行业 & 合规保障 Section */}
+      <section className="py-20 sm:py-28 bg-white">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="text-center max-w-2xl mx-auto mb-16">
-            <span className="text-sm font-semibold text-blue-600 uppercase tracking-wider">
-              合作品牌
+            <span className="text-sm font-semibold text-primary-600 uppercase tracking-wider">
+              适用行业与合规保障
             </span>
-            <h2 className="mt-3 text-3xl sm:text-4xl font-bold text-gray-900">
-              众多品牌信赖之选
+            <h2 className="mt-3 text-3xl sm:text-4xl font-bold text-neutral-900">
+              面向多行业商家，安全合规地智能升级
             </h2>
-            <p className="mt-4 text-lg text-gray-500">
-              越来越多的品牌商家正在使用米高智能管理平台
+            <p className="mt-4 text-lg text-neutral-500">
+              源自布艺纺织行业实践，服务各类成长型商家
             </p>
           </div>
-          <div className="grid grid-cols-3 md:grid-cols-6 gap-6 max-w-4xl mx-auto">
-            {partnerLogos.map((partner, index) => (
+
+          {/* 适用行业 */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 max-w-3xl mx-auto mb-16">
+            {industries.map((industry, index) => (
               <div
-                key={partner.name}
-                className="group aspect-[3/2] bg-white rounded-xl border border-gray-100 hover:border-blue-200 hover:shadow-md flex items-center justify-center transition-all duration-300 hover:-translate-y-0.5"
+                key={industry.name}
+                className="group aspect-[3/2] bg-slate-50 rounded-xl border border-neutral-100 hover:border-blue-200 hover:shadow-md flex items-center justify-center transition-all duration-300 hover:-translate-y-0.5"
               >
                 <div className="text-center">
                   <div className="w-10 h-10 mx-auto mb-1.5 rounded-lg bg-gradient-to-br from-slate-100 to-slate-200 group-hover:from-blue-50 group-hover:to-indigo-50 flex items-center justify-center transition-all duration-300">
-                    <span className="text-sm font-bold text-slate-400 group-hover:text-blue-500 transition-colors">
-                      {partner.letter}
-                    </span>
+                    <industry.icon className="w-5 h-5 text-slate-400 group-hover:text-blue-500 transition-colors" />
                   </div>
-                  <span className="text-xs text-slate-400 group-hover:text-slate-500 transition-colors">
-                    {partner.name}
+                  <span className="text-xs text-slate-500 group-hover:text-neutral-700 transition-colors">
+                    {industry.name}
                   </span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* 合规保障 */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
+            {trustPoints.map((point, index) => (
+              <div
+                key={point.title}
+                className="group flex gap-4 p-6 bg-white rounded-2xl border border-neutral-100 hover:border-blue-100 hover:shadow-lg transition-all duration-300"
+              >
+                <div className="w-11 h-11 bg-gradient-to-br from-primary-500 to-primary-600 rounded-xl flex items-center justify-center shrink-0 shadow-sm shadow-blue-200">
+                  <point.icon className="w-5 h-5 text-white" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-base font-semibold text-neutral-900 mb-1">
+                    {point.title}
+                  </h3>
+                  <p className="text-sm text-neutral-500 leading-relaxed">
+                    {point.description}
+                  </p>
                 </div>
               </div>
             ))}
@@ -346,7 +449,7 @@ export default function HomePage() {
             准备好让AI助手驱动您的业务增长了吗？
           </h2>
           <p className="mt-4 text-lg text-blue-100/90 max-w-xl mx-auto leading-relaxed">
-            立即入驻米高平台，获取专属米宝智能工作助手，开启高效运营新时代
+            立即入驻米高平台，AI 自动甄别秒级通过，即刻获取米高工作助手与小布智能客服
           </p>
           <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
             <Link

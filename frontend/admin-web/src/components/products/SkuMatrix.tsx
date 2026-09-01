@@ -77,7 +77,7 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
       return
     }
     const newColor: ProductColor = {
-      id: -(Date.now() + Math.random()),
+      id: String(-(Date.now() + Math.random())),
       colorName: '',
       remark: '',
       sortOrder: colors.length,
@@ -96,7 +96,7 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
       return
     }
     const newColor: ProductColor = {
-      id: -(Date.now() + Math.random()),
+      id: String(-(Date.now() + Math.random())),
       colorName: name,
       mainColorHex: hex || undefined,
       remark: '',
@@ -118,7 +118,7 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
     }
     const available = MAX_COLORS - colors.length
     const toAdd = names.slice(0, available).map((name, i) => ({
-      id: -(Date.now() + Math.random() + i),
+      id: String(-(Date.now() + Math.random() + i)),
       colorName: name,
       mainColorHex: undefined as string | undefined,
       remark: '',
@@ -275,7 +275,7 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
   )
 
   const handleSkuChange = (
-    colorId: number,
+    colorId: string,
     colorName: string,
     method: SellingMethod,
     width: string,
@@ -365,7 +365,7 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
   return (
     <div className="space-y-7">
       {/* ===== 销售属性标题 ===== */}
-      <div className="text-sm font-medium text-gray-800">
+      <div className="text-sm font-medium text-neutral-800">
         销售属性<span className="text-red-500 ml-1">*</span>
       </div>
 
@@ -373,11 +373,11 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
       <div>
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-700">
+            <span className="text-sm text-neutral-700">
               颜色分类
-              <span className="ml-1 text-gray-400">({colors.length})</span>
+              <span className="ml-1 text-neutral-400">({colors.length})</span>
             </span>
-            <span className="text-xs text-gray-400">
+            <span className="text-xs text-neutral-400">
               最多新增 {MAX_COLORS} 个颜色分类，每种颜色分类最多可输入 {COLOR_NAME_MAX} 字符。
             </span>
           </div>
@@ -385,7 +385,7 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
             type="button"
             onClick={() => setColorSortMode((v) => !v)}
             className={`text-sm px-2 py-0.5 rounded transition-colors ${
-              colorSortMode ? 'text-primary-600 bg-primary-50' : 'text-primary-500 hover:bg-gray-50'
+              colorSortMode ? 'text-primary-600 bg-primary-50' : 'text-primary-500 hover:bg-neutral-50'
             }`}
           >
             {colorSortMode ? '完成排序' : '排序'}
@@ -413,7 +413,7 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
                 }`}
               >
                 {colorSortMode && (
-                  <GripVertical className="w-4 h-4 text-gray-400 shrink-0" />
+                  <GripVertical className="w-4 h-4 text-neutral-400 shrink-0" />
                 )}
                 {/* 名称 + 主色选择器 */}
                 <div className="flex-1 min-w-0">
@@ -437,14 +437,14 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
                     maxLength={COLOR_NAME_MAX}
                     placeholder="备注(可选)"
                     onChange={(e) => handleUpdateColor(idx, { remark: e.target.value })}
-                    className="w-full h-9 px-2.5 text-sm rounded border border-gray-300 bg-white focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                    className="w-full h-9 px-2.5 text-sm rounded border border-neutral-300 bg-white focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                   />
                 </div>
                 {/* 删除 */}
                 <button
                   type="button"
                   onClick={() => handleRemoveColor(idx)}
-                  className="relative z-40 shrink-0 w-9 h-9 inline-flex items-center justify-center rounded text-gray-400 hover:text-red-500 hover:bg-red-50"
+                  className="relative z-40 shrink-0 w-9 h-9 inline-flex items-center justify-center rounded text-neutral-400 hover:text-red-500 hover:bg-red-50"
                   title="删除"
                 >
                   <Trash2 className="w-4 h-4" />
@@ -462,7 +462,7 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
             <button
               type="button"
               onClick={handleAddColor}
-              className="h-9 inline-flex items-center justify-center gap-1 rounded border border-dashed border-gray-300 text-sm text-gray-500 hover:border-primary-400 hover:text-primary-600 hover:bg-primary-50/30 transition-colors"
+              className="h-9 inline-flex items-center justify-center gap-1 rounded border border-dashed border-neutral-300 text-sm text-neutral-500 hover:border-primary-400 hover:text-primary-600 hover:bg-primary-50/30 transition-colors"
             >
               <Plus className="w-4 h-4" />
               添加颜色分类
@@ -501,7 +501,7 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
             <button
               type="button"
               onClick={() => handleRemoveSellingMethod(idx)}
-              className="relative z-40 w-9 h-9 inline-flex items-center justify-center rounded text-gray-400 hover:text-red-500 hover:bg-red-50"
+              className="relative z-40 w-9 h-9 inline-flex items-center justify-center rounded text-neutral-400 hover:text-red-500 hover:bg-red-50"
               title="删除"
             >
               <Trash2 className="w-4 h-4" />
@@ -534,7 +534,7 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
             <button
               type="button"
               onClick={() => handleRemoveDoorWidth(idx)}
-              className="relative z-40 w-9 h-9 inline-flex items-center justify-center rounded text-gray-400 hover:text-red-500 hover:bg-red-50"
+              className="relative z-40 w-9 h-9 inline-flex items-center justify-center rounded text-neutral-400 hover:text-red-500 hover:bg-red-50"
               title="删除"
             >
               <Trash2 className="w-4 h-4" />
@@ -546,16 +546,16 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
       {/* ===== 销售规格表 ===== */}
       <div>
         <div className="flex items-center justify-between mb-2">
-          <span className="text-sm font-medium text-gray-800">
+          <span className="text-sm font-medium text-neutral-800">
             销售规格<span className="text-red-500 ml-1">*</span>
           </span>
-          <span className="text-xs text-gray-400 tabular-nums">
+          <span className="text-xs text-neutral-400 tabular-nums">
             总数: {totalSkus}/{MAX_SKUS}
           </span>
         </div>
 
         {/* 批量填写工具栏 */}
-        <div className="flex flex-wrap items-center gap-2 mb-2 p-2 rounded bg-gray-50/60 border border-gray-200/70">
+        <div className="flex flex-wrap items-center gap-2 mb-2 p-2 rounded bg-neutral-50/60 border border-neutral-200/70">
           <div className="w-28">
             <Select
               options={[
@@ -591,9 +591,9 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
               step="0.01"
               value={batchPrice}
               onChange={(e) => setBatchPrice(e.target.value)}
-              className="h-9 w-28 pl-2 pr-8 text-sm rounded border border-gray-300 bg-white focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+              className="h-9 w-28 pl-2 pr-8 text-sm rounded border border-neutral-300 bg-white focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
             />
-            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">
+            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-neutral-400">
               元
             </span>
           </div>
@@ -605,9 +605,9 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
               step="1"
               value={batchStock}
               onChange={(e) => setBatchStock(e.target.value)}
-              className="h-9 w-28 pl-2 pr-8 text-sm rounded border border-gray-300 bg-white focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+              className="h-9 w-28 pl-2 pr-8 text-sm rounded border border-neutral-300 bg-white focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
             />
-            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">
+            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-neutral-400">
               件
             </span>
           </div>
@@ -622,32 +622,32 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
         </div>
 
         {/* 批量填写提示 */}
-        <p className="text-xs text-gray-400 mb-2">
+        <p className="text-xs text-neutral-400 mb-2">
           提示：选择目标范围并填入价格/库存，点击&ldquo;批量填写&rdquo;即可统一设置。多个规格请分批次填写。
         </p>
 
         {totalSkus === 0 ? (
-          <div className="text-sm text-gray-400 text-center py-6 border border-dashed border-gray-200 rounded">
+          <div className="text-sm text-neutral-400 text-center py-6 border border-dashed border-neutral-200 rounded">
             请先完善颜色分类、售卖方式、规格尺寸
           </div>
         ) : (
-          <div className="overflow-x-auto border border-gray-200 rounded-md">
+          <div className="overflow-x-auto border border-neutral-200 rounded-md">
             <table className="w-full text-sm border-collapse">
-              <thead className="bg-gray-50/80">
-                <tr className="text-gray-600">
-                  <th className="px-3 py-2.5 text-left font-medium border-b border-gray-200 w-[26%]">
+              <thead className="bg-neutral-50/80">
+                <tr className="text-neutral-600">
+                  <th className="px-3 py-2.5 text-left font-medium border-b border-neutral-200 w-[26%]">
                     颜色分类
                   </th>
-                  <th className="px-3 py-2.5 text-left font-medium border-b border-gray-200 w-[14%]">
+                  <th className="px-3 py-2.5 text-left font-medium border-b border-neutral-200 w-[14%]">
                     售卖方式
                   </th>
-                  <th className="px-3 py-2.5 text-left font-medium border-b border-gray-200 w-[14%]">
+                  <th className="px-3 py-2.5 text-left font-medium border-b border-neutral-200 w-[14%]">
                     规格尺寸
                   </th>
-                  <th className="px-3 py-2.5 text-left font-medium border-b border-gray-200 w-[23%]">
+                  <th className="px-3 py-2.5 text-left font-medium border-b border-neutral-200 w-[23%]">
                     <span className="text-red-500 mr-0.5">*</span>价格（元）
                   </th>
-                  <th className="px-3 py-2.5 text-left font-medium border-b border-gray-200 w-[23%]">
+                  <th className="px-3 py-2.5 text-left font-medium border-b border-neutral-200 w-[23%]">
                     <span className="text-red-500 mr-0.5">*</span>库存（米）
                   </th>
                 </tr>
@@ -672,17 +672,17 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
                       return (
                         <tr
                           key={`${color.id}-${method}-${width}`}
-                          className="border-b border-gray-100 last:border-b-0 hover:bg-gray-50/40"
+                          className="border-b border-neutral-100 last:border-b-0 hover:bg-neutral-50/40"
                         >
                           {isFirstRowOfColor && (
                             <td
                               rowSpan={colorRowSpan}
-                              className="px-3 py-2 align-middle border-r border-gray-100 bg-white"
+                              className="px-3 py-2 align-middle border-r border-neutral-100 bg-white"
                             >
-                              <div className="text-sm text-gray-700 truncate">
+                              <div className="text-sm text-neutral-700 truncate">
                                 {color.colorName || '未命名'}
                                 {color.remark && (
-                                  <span className="text-gray-400">
+                                  <span className="text-neutral-400">
                                     （{color.remark}）
                                   </span>
                                 )}
@@ -692,15 +692,15 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
                           {isFirstRowOfMethod && (
                             <td
                               rowSpan={validDoorWidths.length}
-                              className="px-3 py-2 align-middle border-r border-gray-100 text-gray-700"
+                              className="px-3 py-2 align-middle border-r border-neutral-100 text-neutral-700"
                             >
                               {SellingMethodLabels[method]}
                             </td>
                           )}
-                          <td className="px-3 py-2 border-r border-gray-100 text-gray-700">
+                          <td className="px-3 py-2 border-r border-neutral-100 text-neutral-700">
                             {width}
                           </td>
-                          <td className="px-3 py-2 border-r border-gray-100">
+                          <td className="px-3 py-2 border-r border-neutral-100">
                             <input
                               type="number"
                               min="0"
@@ -717,7 +717,7 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
                                   parseFloat(e.target.value) || 0
                                 )
                               }
-                              className="w-full h-8 px-2 text-sm rounded border border-gray-300 bg-white focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                              className="w-full h-8 px-2 text-sm rounded border border-neutral-300 bg-white focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                             />
                           </td>
                           <td className="px-3 py-2">
@@ -737,7 +737,7 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
                                   parseInt(e.target.value, 10) || 0
                                 )
                               }
-                              className="w-full h-8 px-2 text-sm rounded border border-gray-300 bg-white focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                              className="w-full h-8 px-2 text-sm rounded border border-neutral-300 bg-white focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                             />
                           </td>
                         </tr>
@@ -779,9 +779,9 @@ function RowSelectorSection({
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
-        <span className="text-sm text-gray-700">
+        <span className="text-sm text-neutral-700">
           {title}
-          <span className="ml-1 text-gray-400">({count})</span>
+          <span className="ml-1 text-neutral-400">({count})</span>
         </span>
         <span className="text-sm text-primary-500 cursor-default select-none">排序</span>
       </div>
@@ -793,8 +793,8 @@ function RowSelectorSection({
           disabled={!canAdd}
           className={`w-9 h-9 inline-flex items-center justify-center rounded border border-dashed transition-colors ${
             canAdd
-              ? 'border-gray-300 text-gray-500 hover:border-primary-400 hover:text-primary-600'
-              : 'border-gray-200 text-gray-300 cursor-not-allowed'
+              ? 'border-neutral-300 text-neutral-500 hover:border-primary-400 hover:text-primary-600'
+              : 'border-neutral-200 text-neutral-300 cursor-not-allowed'
           }`}
           title="添加"
         >
@@ -831,11 +831,11 @@ function PresetColorPalette({
               key={c.name}
               type="button"
               onClick={() => onPick(c.name, c.hex)}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded border border-gray-200 hover:border-primary-400 hover:bg-primary-50 text-xs transition-colors"
+              className="inline-flex items-center gap-1 px-2 py-1 rounded border border-neutral-200 hover:border-primary-400 hover:bg-primary-50 text-xs transition-colors"
               title={c.name}
             >
               <span
-                className="w-3.5 h-3.5 rounded-full border border-gray-300 flex-shrink-0"
+                className="w-3.5 h-3.5 rounded-full border border-neutral-300 flex-shrink-0"
                 style={{ backgroundColor: c.hex }}
               />
               {c.name}
@@ -880,13 +880,13 @@ function BatchColorInput({ onAdd }: { onAdd: (names: string[]) => void }) {
             onChange={(e) => setText(e.target.value)}
             placeholder="每行一个颜色名称，或用逗号、顿号分隔&#10;例如：红色, 蓝色, 米色"
             rows={3}
-            className="w-full px-3 py-2 text-sm rounded border border-gray-300 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 resize-none"
+            className="w-full px-3 py-2 text-sm rounded border border-neutral-300 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 resize-none"
           />
           <div className="flex items-center gap-2">
             <Button type="button" size="sm" onClick={handleApply} disabled={!text.trim()}>
               添加颜色
             </Button>
-            <span className="text-xs text-gray-400">
+            <span className="text-xs text-neutral-400">
               支持换行、逗号、顿号分隔
             </span>
           </div>
@@ -944,24 +944,24 @@ function ColorPicker({
         className={`flex items-stretch h-9 rounded border bg-white focus-within:ring-2 focus-within:ring-primary-500/15 ${
           hasError
             ? 'border-red-400 focus-within:border-red-500'
-            : 'border-gray-300 focus-within:border-primary-500'
+            : 'border-neutral-300 focus-within:border-primary-500'
         }`}
       >
         {/* 色块触发 popover */}
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="shrink-0 w-9 h-full inline-flex items-center justify-center border-r border-gray-200 hover:bg-gray-50 transition-colors"
+          className="shrink-0 w-9 h-full inline-flex items-center justify-center border-r border-neutral-200 hover:bg-neutral-50 transition-colors"
           title="选择主色"
         >
           {mainColorHex ? (
             <span
-              className="w-5 h-5 rounded-sm border border-gray-200 shadow-inner"
+              className="w-5 h-5 rounded-sm border border-neutral-200 shadow-inner"
               style={{ backgroundColor: mainColorHex }}
             />
           ) : (
             <span
-              className="w-5 h-5 rounded-sm border border-dashed border-gray-300 bg-[conic-gradient(from_45deg,#f87171,#fbbf24,#34d399,#60a5fa,#a78bfa,#f87171)]"
+              className="w-5 h-5 rounded-sm border border-dashed border-neutral-300 bg-[conic-gradient(from_45deg,#f87171,#fbbf24,#34d399,#60a5fa,#a78bfa,#f87171)]"
               aria-hidden
             />
           )}
@@ -980,12 +980,12 @@ function ColorPicker({
       {/* 预设颜色面板 */}
       {open && (
         <div
-          className="absolute z-30 mt-1 left-0 w-[280px] rounded-lg border border-gray-200 bg-white shadow-lg p-3"
+          className="absolute z-30 mt-1 left-0 w-[280px] rounded-lg border border-neutral-200 bg-white shadow-lg p-3"
           role="dialog"
           aria-label="选择主色"
         >
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs text-gray-500">选择主色（选择后可编辑名称）</span>
+            <span className="text-xs text-neutral-500">选择主色（选择后可编辑名称）</span>
           </div>
           <div className="grid grid-cols-5 gap-2">
             {PRESET_COLORS.map((c) => {
@@ -996,14 +996,14 @@ function ColorPicker({
                   key={c.hex}
                   type="button"
                   onClick={() => handlePick(c.hex, c.name)}
-                  className="flex flex-col items-center gap-1 p-1 rounded hover:bg-gray-50 transition-colors"
+                  className="flex flex-col items-center gap-1 p-1 rounded hover:bg-neutral-50 transition-colors"
                   title={`${c.name} ${c.hex}`}
                 >
                   <span
                     className={`relative w-8 h-8 rounded border ${
                       c.hex.toUpperCase() === '#FFFFFF'
-                        ? 'border-gray-300'
-                        : 'border-gray-200'
+                        ? 'border-neutral-300'
+                        : 'border-neutral-200'
                     } shadow-inner`}
                     style={{ backgroundColor: c.hex }}
                   >
@@ -1013,13 +1013,13 @@ function ColorPicker({
                           ['#FFFFFF', '#FFFDD0', '#FFFF00', '#FFC0CB', '#00FFFF', '#C0C0C0', '#C3B091'].includes(
                             c.hex.toUpperCase()
                           )
-                            ? 'text-gray-700'
+                            ? 'text-neutral-700'
                             : 'text-white'
                         }`}
                       />
                     )}
                   </span>
-                  <span className="text-[11px] text-gray-600 leading-none">{c.name}</span>
+                  <span className="text-[11px] text-neutral-600 leading-none">{c.name}</span>
                 </button>
               )
             })}

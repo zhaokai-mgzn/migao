@@ -242,7 +242,40 @@ cases:
     merge_log: "eval M012 独有"
     traces:
       tests:
-        - "backend/ai-agent-service/tests/test_mibao_scenarios.py"
+        - "backend/ai-agent-service/tests/manual/mibao_scenarios.py"
       ci:
         - agent-eval.yml
+      verifies: []
+
+  - id: CH-008
+    legacy_id: ""
+    title: "转人工创建人工会话 - 客服工作台可见并可回复"
+    domains:
+      - chat
+      - settings
+    tier: normal
+    tags:
+      - handoff
+      - agent_session
+    truths_ref:
+      - ai-chat.intent-tool-map
+      - settings-manage.ai-config
+    user_inputs:
+      - "用户触发转人工后应创建 agent_session（waiting）并写入系统消息"
+      - "客服可在工作台发消息回复，会话 waiting→active"
+      - "用户可按 AI 会话 ID 查询人工会话看到客服回复"
+    expectations:
+      - tool: human_handoff
+    data_checks:
+      - "createSessionForHandoff 创建 waiting 会话 + system 消息"
+      - "sendMessage(agent) 后会话状态变 active"
+      - "getSessionByAiSessionId 返回含客服消息的会话"
+    skip_reason: ""
+    merge_log: "POC 人工客服工作台新增"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/AgentSessionServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/CustomerAgentSessionControllerTest.java"
+      ci:
+        - admin-api-tests.yml
       verifies: []

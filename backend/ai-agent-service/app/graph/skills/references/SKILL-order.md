@@ -27,8 +27,8 @@ constraints:
   - 「完成订单」= 确认收货 → order_manage(update_status, completed)，前提 shipped
 state_machine:
   pending: 待付款 → confirmed
-  confirmed: 待发货 → processing 或 cancelled
-  processing: 生产中 → shipped
+  confirmed: 待发货 → producing 或 cancelled
+  producing: 生产中 → shipped
   shipped: 已发货 → completed（确认收货触发）
   completed: 已完成（终态）
   cancelled: 已取消（终态，仅可从 pending/confirmed 转入）

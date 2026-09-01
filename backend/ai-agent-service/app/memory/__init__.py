@@ -2,7 +2,7 @@
 AI 智能客服系统 - Memory 模块
 
 提供四层记忆系统：
-1. Short-term Memory: 当前对话上下文（PostgreSQL session_messages + Redis ConversationTracker）
+1. Short-term Memory: 当前对话上下文（PostgreSQL session_messages + session_states 跨轮状态）
 2. Long-term Memory: 用户画像/历史偏好（PostgreSQL user_memories 表）
 3. Semantic Memory: 领域知识（DashVector 向量数据库，当前禁用）
 4. Procedural Memory: Tool 执行经验（PostgreSQL）

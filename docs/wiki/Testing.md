@@ -1,3 +1,7 @@
+# 测试体系
+
+> **测试工程规范（文件拆分/ignore 单一来源/数据脱敏/分层归属）见 [docs/testing/test-engineering-standards.md](../testing/test-engineering-standards.md)**
+
 # 测试策略
 
 ## 测试金字塔
@@ -26,7 +30,7 @@
 
 ## 行为用例单一源（Case Contract，2026-08-14 起）
 
-行为用例只存一份：`.github/cases/<domain>.yml`（80 条 × 12 域，block style，`truths_ref` 引用真值 ID）。以下均为**生成物，禁止手改**：
+行为用例只存一份：`.github/cases/<domain>.yml`（18 域 117 条，block style，`truths_ref` 引用真值 ID）。以下均为**生成物，禁止手改**：
 - `tests/agent_eval/eval_cases.py`（CI 跑）
 - `docs/testing/mibao-verification-cases.md`（人读）
 
@@ -36,8 +40,8 @@
 
 | tier | 数量 | 频率 | workflow |
 |------|------|------|----------|
-| smoke | 9 | 每次 PR（100% 通过才合并）+ 每日 01:30 | pr-check `agent-eval-smoke` + agent-eval |
-| normal | 45 | 每日 01:30 全量 | agent-eval（smoke→full） |
+| smoke | 9 | 每次 PR（100% 通过才合并） | pr-check `agent-eval-smoke` |
+| normal | 81 | 按需手动触发 | agent-eval（local_runner.py normal） |
 | adversarial | 26 | 每周六 03:00（只追踪不阻塞） | agent-eval-adversarial |
 
 **G5 追溯铁律**：新增/修改测试文件头部必须声明 `# case_ids: OR-001, OR-002`（对应 `.github/cases/` 中的用例 ID），否则 qa-growth-gate block。存量测试未声明 → warn。
@@ -72,6 +76,39 @@ specs/
 - **新增交互组件** → 覆盖完整点击链路 (渲染→点击→发送→验证)
 - **新增数据列表页** → 注册到 `quality/anti-placeholder.spec.ts` 的 `PAGES` 数组
 - **新增/修改 API 字段** → 更新 `quality/api-contract.spec.ts`
+
+### E2E 选择器优先级
+
+```
+1. getByRole('heading'/'button'/'columnheader', { name })
+2. getByTitle('...')  — 图标按钮（无文字）
+3. getByLabel('...')  — 表单字段
+4. getByText('...', { exact: true })
+5. locator('.class').filter({ hasText })
+6. getByText('...').first()  — 最后手段
+```
+
+**禁止**: 裸 `getByText('短词')` 用于包含 sidebar 的页面。
+
+### 禁止提交
+
+- `.env` / 密钥 / 敏感配置（CI 有 block-env-files 门禁）
+- 手写 E2E mock 数据（必须 Record-Replay fixture）
+- 跳过测试直接写实现的代码
+
+## QA Growth Gate — 变更类型 → 强制测试
+
+PR 合并前，CI（pr-check qa-growth-gate）自动扫描变更文件，以下文件类型强制对应测试：
+
+| 变更类型 | 测试要求 |
+|---------|---------|
+| Controller (Java) | MockMvc 集成测试 + API contract E2E |
+| Service (Java) | JUnit 单测 (覆盖率 ≥80%) |
+| Tool (Python) | L2 单测 + L3 Real E2E |
+| Component (TSX) | E2E 点击链路 (渲染→点击→发送→验证) |
+| Page (TSX) | E2E spec + anti-placeholder 注册 |
+
+规则源：`.github/tech-stack.yml`（单一来源）；豁免：`.github/qa-exemptions.yml`；执行器：`.github/growth_gate.py`（fail-closed）。
 
 ## 运行命令
 

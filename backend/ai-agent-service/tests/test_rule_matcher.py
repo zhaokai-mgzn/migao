@@ -1,4 +1,4 @@
-# case_ids: MC-010, MC-011
+# case_ids: MC-010, MC-011, AS-003, AS-004, AS-005, HR-002, DA-004, PR-013
 """规则匹配器单元测试（app/router/rule_matcher.py）
 
 覆盖：_extract_text / RuleMatcher.match 关键词优先级 / 正则规则 / 未命中。
@@ -79,6 +79,28 @@ class TestMatch:
         assert result.confidence == 0.9
         assert result.matched_keywords[0].startswith("regex:")
 
+    # ── 人事域路由（HR-002：创建员工/添加员工必须路由到 staff，不得被商品正则劫持）──
+    def test_create_employee_account_routes_to_staff(self):
+        result = self._match("创建一个员工账号，姓名张三，手机号13800000000")
+        assert result.intent == IntentType.EMPLOYEE_MANAGE
+
+    def test_add_employee_routes_to_staff(self):
+        result = self._match("添加员工 李四 运营人员")
+        assert result.intent == IntentType.EMPLOYEE_MANAGE
+
+    def test_new_employee_routes_to_staff(self):
+        result = self._match("新建一个员工账号")
+        assert result.intent == IntentType.EMPLOYEE_MANAGE
+
+    # ── 会话管理触发（看看当前有哪些会话 → session_manage）──
+    def test_session_listing_routes_to_session_manage(self):
+        result = self._match("看看当前有哪些会话")
+        assert result.intent == IntentType.SESSION_MANAGE
+
+    def test_customer_service_sessions_routes_to_session_manage(self):
+        result = self._match("看看当前有哪些活跃的客服会话")
+        assert result.intent == IntentType.SESSION_MANAGE
+
     def test_regex_product_creation(self):
         result = self._match("新建一个窗帘")
         assert result.intent == IntentType.PRODUCT_INQUIRY
@@ -92,3 +114,57 @@ class TestMatch:
 
     def test_no_match_returns_none(self):
         assert self._match("随便说点什么") is None
+
+    def test_ambiguous_order_and_aftersales_returns_none(self):
+        # 跨域消息：订单实体 + 售后动作 → 多意图冲突，L1 不硬猜，交给 L2 带上下文分类
+        # （修复生产回归：售后工单创建被"订单"关键词抢占路由）
+        assert self._match("给订单20260826708690102创建退款售后工单") is None
+
+    def test_ambiguous_product_and_aftersales_returns_none(self):
+        # 售后补信息消息含"商品"实体 + "退款"动作 → 同样不硬猜
+        assert self._match("客户手机号13800138000，要退款，商品有瑕疵") is None
+
+    def test_ambiguous_order_entity_and_return_action_returns_none(self):
+        # 指代上下文："这个订单…退货…建售后工单"
+        assert self._match("这个订单的客户要退货，帮他建个售后工单") is None
+
+    def test_single_aftersales_keyword_still_matches(self):
+        # 纯售后意图（单意图）仍走 L1 快速通道
+        result = self._match("看看售后工单")
+        assert result is not None
+        assert result.intent == IntentType.AFTER_SALES
+
+    def test_single_order_keyword_still_matches(self):
+        result = self._match("查一下订单")
+        assert result is not None
+        assert result.intent == IntentType.ORDER_QUERY
+
+    def test_single_intent_multi_keywords_same_intent_still_matches(self):
+        # 同意图多关键词（订单 + 待发货）不算冲突
+        result = self._match("查一下待发货订单")
+        assert result is not None
+        assert result.intent == IntentType.ORDER_QUERY
+
+    def test_mixed_regex_and_keyword_prefers_keyword_intent(self):
+        # regex 命中不计长度：ORD 单号 + "退款" → 售后意图胜出（售后 skill 持有 order_query）
+        result = self._match("ORD1234567890123 要退款")
+        assert result is not None
+        assert result.intent == IntentType.AFTER_SALES
+
+    def test_quote_keyword_routes_to_quote(self):
+        # 算料/报价关键词 → quote 意图
+        result = self._match("帮我算一下窗帘要用多少布")
+        assert result is not None
+        assert result.intent == IntentType.QUOTE
+
+    def test_quote_dimension_regex_routes_to_quote(self):
+        # 尺寸数字 + 褶皱 → quote 意图（正则规则）
+        result = self._match("3米窗 2倍褶皱 多少钱")
+        assert result is not None
+        assert result.intent == IntentType.QUOTE
+
+    def test_quote_punch_hole_keyword(self):
+        # 打孔帘关键词 → quote 意图
+        result = self._match("打孔帘 2.7米高 报价")
+        assert result is not None
+        assert result.intent == IntentType.QUOTE

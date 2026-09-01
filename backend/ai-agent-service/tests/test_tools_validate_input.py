@@ -1,4 +1,5 @@
 """ValidateInputTool 单元测试 — 纯本地校验，无 API 调用"""
+# case_ids: PR-005
 import pytest
 from app.tools.validate_input import ValidateInputTool
 
@@ -39,6 +40,27 @@ class TestValidateInputSuccess:
             params={"product_id": "prod-001", "name": "新名称"},
         )
         assert result.success is True
+
+    async def test_inventory_adjust_valid(self, tool, admin_tool_context):
+        """生产回归：inventory_manage/adjust 必须有校验规则（旧实现返回"未知的工具"，
+        且 LLM 绕过校验直接执行写操作）"""
+        result = await tool.execute(
+            context=admin_tool_context,
+            target_tool="inventory_manage",
+            target_action="adjust",
+            params={"product_id": "prod-001", "adjustment": 30, "reason": "盘点"},
+        )
+        assert result.success is True
+        assert result.data["validated"] is True
+
+    async def test_inventory_adjust_missing_reason(self, tool, admin_tool_context):
+        result = await tool.execute(
+            context=admin_tool_context,
+            target_tool="inventory_manage",
+            target_action="adjust",
+            params={"product_id": "prod-001", "adjustment": 30},
+        )
+        assert result.success is False
 
 
 class TestValidateInputMissing:

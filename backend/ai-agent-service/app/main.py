@@ -33,19 +33,19 @@ SESSION_RETENTION_DAYS = 90         # 已关闭会话保留天数
 
 
 async def _session_auto_close_loop():
-    """后台循环：定期扫描并关闭空闲会话 + 每日清理过期已关闭会话"""
+    """后台循环：定期扫描并关闭空闲会话 + 每日清理过期已关闭会话（经 SessionService）"""
     from datetime import datetime
-    from app.memory.session_memory import SessionMemory
+    from app.memory.session_service import SessionService
 
-    session_memory = SessionMemory()
+    session_service = SessionService()
     last_cleanup_date = None
 
     while True:
         try:
             await asyncio.sleep(SESSION_CLEANUP_INTERVAL)
 
-            # 1. 关闭空闲会话
-            count = await session_memory.close_idle_sessions(
+            # 1. 关闭空闲会话（active → closed/expired 语义由状态机约束）
+            count = await session_service.expire_idle(
                 idle_minutes=SESSION_AUTO_CLOSE_MINUTES
             )
             if count > 0:
@@ -57,7 +57,7 @@ async def _session_auto_close_loop():
             # 2. 每天清理一次过期已关闭会话
             today = datetime.utcnow().date()
             if last_cleanup_date != today:
-                deleted = await session_memory.cleanup_closed_sessions(
+                deleted = await session_service.purge(
                     older_than_days=SESSION_RETENTION_DAYS
                 )
                 if deleted > 0:
@@ -181,6 +181,18 @@ def create_app() -> FastAPI:
             "service": settings.APP_NAME,
             "version": settings.APP_VERSION,
         }
+
+    # Readiness：探活 Redis + DB（供 compose healthcheck / 编排使用，fail-closed）
+    @app.get("/ready")
+    async def ready_check():
+        from fastapi.responses import JSONResponse
+        from app.utils.health import check_readiness
+        if not await check_readiness():
+            return JSONResponse(
+                status_code=503,
+                content={"status": "not_ready", "service": settings.APP_NAME},
+            )
+        return {"status": "ready", "service": settings.APP_NAME}
 
     return app
 

@@ -131,7 +131,7 @@ export default function ShipOrder() {
   if (!order) {
     return (
       <div className="p-6 text-center py-12">
-        <p className="text-gray-500 mb-4">订单不存在或已被删除</p>
+        <p className="text-neutral-500 mb-4">订单不存在或已被删除</p>
         <Button onClick={() => router.push('/orders')}>返回订单列表</Button>
       </div>
     )
@@ -142,7 +142,7 @@ export default function ShipOrder() {
   if (!shippableStatuses.has(order.status)) {
     return (
       <div className="p-6 text-center py-12">
-        <p className="text-gray-500 mb-4">当前订单状态不允许发货</p>
+        <p className="text-neutral-500 mb-4">当前订单状态不允许发货</p>
         <Button onClick={() => router.push(`/orders/${order.id}`)}>返回订单详情</Button>
       </div>
     )
@@ -151,7 +151,7 @@ export default function ShipOrder() {
   return (
     <div className="p-6">
       {/* 面包屑 */}
-      <div className="flex items-center gap-1.5 text-sm text-gray-500 mb-3">
+      <div className="flex items-center gap-1.5 text-sm text-neutral-500 mb-3">
         <button onClick={() => router.push('/')} className="hover:text-primary-600 transition-colors">
           首页
         </button>
@@ -169,25 +169,25 @@ export default function ShipOrder() {
           订单详情
         </button>
         <ChevronRight className="w-3.5 h-3.5" />
-        <span className="text-gray-900">商品发货</span>
+        <span className="text-neutral-900">商品发货</span>
       </div>
 
       {/* 标题 */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <h1 className="text-xl font-semibold text-gray-900">商品发货</h1>
+          <h1 className="text-xl font-semibold text-neutral-900">商品发货</h1>
           <Zap className="w-5 h-5 text-amber-500 fill-amber-500" />
         </div>
       </div>
-      <div className="border-b border-gray-200 mb-6" />
+      <div className="border-b border-neutral-200 mb-6" />
 
       {/* 确认商品信息 */}
       <SectionLabel>确认商品信息</SectionLabel>
-      <div className="bg-white rounded-lg border border-gray-200 shadow-card mb-6">
-        <div className="flex items-center justify-between px-6 py-3.5 border-b border-gray-100">
+      <div className="bg-white rounded-lg border border-neutral-200 shadow-card mb-6">
+        <div className="flex items-center justify-between px-6 py-3.5 border-b border-neutral-100">
           <div className="flex items-center gap-2">
             <span className="inline-block w-1 h-4 bg-primary-500 rounded-sm" />
-            <h2 className="text-base font-semibold text-gray-900">商品信息</h2>
+            <h2 className="text-base font-semibold text-neutral-900">商品信息</h2>
           </div>
           <span className="text-sm text-primary-600 font-medium">
             订单实收款：{formatAmount(order.actualAmount)}元
@@ -205,10 +205,10 @@ export default function ShipOrder() {
 
       {/* 确认收货信息 */}
       <SectionLabel>确认收货信息</SectionLabel>
-      <div className="bg-white rounded-lg border border-gray-200 shadow-card mb-6">
-        <div className="flex items-center gap-2 px-6 py-3.5 border-b border-gray-100">
+      <div className="bg-white rounded-lg border border-neutral-200 shadow-card mb-6">
+        <div className="flex items-center gap-2 px-6 py-3.5 border-b border-neutral-100">
           <span className="inline-block w-1 h-4 bg-primary-500 rounded-sm" />
-          <h2 className="text-base font-semibold text-gray-900">收货信息</h2>
+          <h2 className="text-base font-semibold text-neutral-900">收货信息</h2>
         </div>
         <div className="px-6 py-5">
           <div className="grid grid-cols-2 gap-y-4 gap-x-8 text-sm">
@@ -223,11 +223,11 @@ export default function ShipOrder() {
 
       {/* 确认物流 */}
       <SectionLabel>确认物流</SectionLabel>
-      <div className="bg-white rounded-lg border border-gray-200 shadow-card mb-6">
+      <div className="bg-white rounded-lg border border-neutral-200 shadow-card mb-6">
         <div className="px-6 py-6 space-y-5">
           {/* 发货方式 */}
           <div className="flex items-center gap-4 text-sm">
-            <span className="text-gray-700 w-20 shrink-0">
+            <span className="text-neutral-700 w-20 shrink-0">
               <span className="text-red-500 mr-1">*</span>发货方式：
             </span>
             <div className="flex items-center gap-6">
@@ -248,14 +248,14 @@ export default function ShipOrder() {
           {shippingMethod === 'logistics' && (
             <>
               <div className="flex items-center gap-4 text-sm">
-                <span className="text-gray-700 w-20 shrink-0">
+                <span className="text-neutral-700 w-20 shrink-0">
                   <span className="text-red-500 mr-1">*</span>物流公司：
                 </span>
                 <select
                   value={logisticsCompany}
                   onChange={(e) => setLogisticsCompany(e.target.value)}
                   className={cn(
-                    'h-9 px-3 pr-9 rounded border border-gray-300 bg-white text-sm appearance-none min-w-[220px]',
+                    'h-9 px-3 pr-9 rounded border border-neutral-300 bg-white text-sm appearance-none min-w-[220px]',
                     'focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15',
                     'bg-no-repeat bg-[right_0.75rem_center]'
                   )}
@@ -274,7 +274,7 @@ export default function ShipOrder() {
 
               {/* 快递单号 */}
               <div className="flex items-center gap-4 text-sm">
-                <span className="text-gray-700 w-20 shrink-0">
+                <span className="text-neutral-700 w-20 shrink-0">
                   <span className="text-red-500 mr-1">*</span>快递单号：
                 </span>
                 <input
@@ -282,8 +282,8 @@ export default function ShipOrder() {
                   onChange={(e) => setTrackingNo(e.target.value)}
                   placeholder="请输入快递单号"
                   className={cn(
-                    'h-9 px-3 rounded border border-gray-300 bg-white text-sm min-w-[320px]',
-                    'placeholder:text-gray-400',
+                    'h-9 px-3 rounded border border-neutral-300 bg-white text-sm min-w-[320px]',
+                    'placeholder:text-neutral-400',
                     'focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15'
                   )}
                 />
@@ -309,14 +309,14 @@ export default function ShipOrder() {
 // ========== 子组件 ==========
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
-  return <div className="text-sm font-medium text-gray-700 mb-2.5">{children}</div>
+  return <div className="text-sm font-medium text-neutral-700 mb-2.5">{children}</div>
 }
 
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex items-baseline gap-2">
-      <span className="text-gray-500 shrink-0">{label}：</span>
-      <span className="text-gray-900 break-all">{value}</span>
+      <span className="text-neutral-500 shrink-0">{label}：</span>
+      <span className="text-neutral-900 break-all">{value}</span>
     </div>
   )
 }
@@ -331,12 +331,12 @@ function RadioOption({
   label: string
 }) {
   return (
-    <label className="flex items-center gap-2 cursor-pointer text-gray-700">
+    <label className="flex items-center gap-2 cursor-pointer text-neutral-700">
       <input
         type="radio"
         checked={checked}
         onChange={onChange}
-        className="w-4 h-4 border-gray-300 text-primary-600 focus:ring-primary-500"
+        className="w-4 h-4 border-neutral-300 text-primary-600 focus:ring-primary-500"
       />
       {label}
     </label>
@@ -345,13 +345,13 @@ function RadioOption({
 
 function ProductTable({ groups }: { groups: ProductGroup[] }) {
   if (groups.length === 0) {
-    return <div className="text-center text-gray-400 py-8 text-sm">暂无商品</div>
+    return <div className="text-center text-neutral-400 py-8 text-sm">暂无商品</div>
   }
 
   return (
-    <div className="overflow-x-auto rounded border border-gray-200">
+    <div className="overflow-x-auto rounded border border-neutral-200">
       <table className="w-full text-sm">
-        <thead className="bg-gray-50 text-gray-600">
+        <thead className="bg-neutral-50 text-neutral-600">
           <tr>
             <Th className="pl-0">商品</Th>
             <Th className="pl-0">商品货号</Th>
@@ -363,14 +363,14 @@ function ProductTable({ groups }: { groups: ProductGroup[] }) {
             <Th align="right">商品合计(元)</Th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-gray-100">
+        <tbody className="divide-y divide-neutral-100">
           {groups.map((group) =>
             group.rows.map((row, rowIdx) => (
-              <tr key={`${group.key}-${row.id || rowIdx}`} className="hover:bg-gray-50/50">
+              <tr key={`${group.key}-${row.id || rowIdx}`} className="hover:bg-neutral-50/50">
                 {rowIdx === 0 && (
                   <td
                     rowSpan={group.rows.length}
-                    className="pl-0 pr-3 py-3 align-top border-r border-gray-100 font-medium text-gray-900"
+                    className="pl-0 pr-3 py-3 align-top border-r border-neutral-100 font-medium text-neutral-900"
                   >
                     {group.productName}
                   </td>
@@ -390,7 +390,7 @@ function ProductTable({ groups }: { groups: ProductGroup[] }) {
                 {rowIdx === 0 && (
                   <td
                     rowSpan={group.rows.length}
-                    className="px-3 py-3 text-right align-top border-l border-gray-100 text-primary-600 font-semibold"
+                    className="px-3 py-3 text-right align-top border-l border-neutral-100 text-primary-600 font-semibold"
                   >
                     {formatAmount(group.groupTotal)}
                   </td>
@@ -412,9 +412,9 @@ function ProcessingTable({
   total: number
 }) {
   return (
-    <div className="overflow-x-auto rounded border border-gray-200">
+    <div className="overflow-x-auto rounded border border-neutral-200">
       <table className="w-full text-sm">
-        <thead className="bg-gray-50 text-gray-600">
+        <thead className="bg-neutral-50 text-neutral-600">
           <tr>
             <Th>加工项</Th>
             <Th align="right">单价(元/米)</Th>
@@ -423,9 +423,9 @@ function ProcessingTable({
             <Th align="right">加工合计</Th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-gray-100">
+        <tbody className="divide-y divide-neutral-100">
           {items.map((item, idx) => (
-            <tr key={item.id || idx} className="hover:bg-gray-50/50">
+            <tr key={item.id || idx} className="hover:bg-neutral-50/50">
               <Td>{item.name}</Td>
               <Td align="right">{formatAmount(item.unitPrice)}</Td>
               <Td align="center" className="text-primary-600 font-medium">
@@ -437,7 +437,7 @@ function ProcessingTable({
               {idx === 0 && (
                 <td
                   rowSpan={items.length}
-                  className="px-3 py-3 text-right align-top border-l border-gray-100 text-primary-600 font-semibold"
+                  className="px-3 py-3 text-right align-top border-l border-neutral-100 text-primary-600 font-semibold"
                 >
                   {formatAmount(total)}
                 </td>
@@ -462,7 +462,7 @@ function Th({
   return (
     <th
       className={cn(
-        'px-3 py-2.5 text-xs font-semibold text-gray-600 whitespace-nowrap',
+        'px-3 py-2.5 text-xs font-semibold text-neutral-600 whitespace-nowrap',
         align === 'right' && 'text-right',
         align === 'center' && 'text-center',
         align === 'left' && 'text-left',
@@ -486,7 +486,7 @@ function Td({
   return (
     <td
       className={cn(
-        'px-3 py-3 text-gray-700',
+        'px-3 py-3 text-neutral-700',
         align === 'right' && 'text-right',
         align === 'center' && 'text-center',
         align === 'left' && 'text-left',

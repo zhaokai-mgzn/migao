@@ -5,6 +5,7 @@ import { Plus, Search } from 'lucide-react'
 import { toast } from 'sonner'
 import { employeeApi, roleApi } from '@/lib/api'
 import request from '@/lib/request'
+import { usePermission } from '@/lib/permission'
 import { Button, Input, Select, Modal, Table, Pagination, Badge } from '@/components/ui'
 import type { TableColumn } from '@/components/ui'
 import type { Employee, EmployeeStatus, Role } from '@/types'
@@ -16,6 +17,9 @@ const PRESET_POSITIONS = ['管理员', '客服', '运营', '销售', '财务']
 
 
 export default function EmployeesPage() {
+  const { has: hasPermission } = usePermission()
+  const canWrite = hasPermission('employee:create') // 新增/编辑/删除/禁用均需 employee:create
+
   // 列表状态
   const [employees, setEmployees] = useState<Employee[]>([])
   const [loading, setLoading] = useState(false)
@@ -215,7 +219,7 @@ export default function EmployeesPage() {
       title: '序号',
       width: '70px',
       render: (_record, index) => (
-        <span className="text-gray-500">{(current - 1) * pageSize + index + 1}</span>
+        <span className="text-neutral-500">{(current - 1) * pageSize + index + 1}</span>
       ),
     },
     {
@@ -224,8 +228,9 @@ export default function EmployeesPage() {
       width: '120px',
       render: (record) => (
         <button
-          onClick={() => handleEdit(record)}
-          className="text-primary-600 hover:text-primary-700 hover:underline text-sm font-medium"
+          onClick={() => canWrite && handleEdit(record)}
+          disabled={!canWrite}
+          className="text-primary-600 hover:text-primary-700 hover:underline text-sm font-medium disabled:cursor-default"
         >
           {record.name}
         </button>
@@ -237,7 +242,7 @@ export default function EmployeesPage() {
       title: '岗位',
       width: '100px',
       render: (record) => (
-        <span className="text-sm text-gray-700">{record.position || '-'}</span>
+        <span className="text-sm text-neutral-700">{record.position || '-'}</span>
       ),
     },
     {
@@ -246,7 +251,7 @@ export default function EmployeesPage() {
       width: '200px',
       render: (record) => {
         const codes: string[] = record.permissions || []
-        if (codes.length === 0) return <span className="text-gray-400 text-sm">未分配</span>
+        if (codes.length === 0) return <span className="text-neutral-400 text-sm">未分配</span>
         // 拥有全部权限时折叠为单个标签
         if (totalLeafCount > 0 && codes.length >= totalLeafCount) {
           return <Badge variant="success">全部权限</Badge>
@@ -255,7 +260,7 @@ export default function EmployeesPage() {
         return (
           <div className="flex flex-wrap gap-1">
             {labels.map((l, i) => <Badge key={i} variant="info">{l}</Badge>)}
-            {codes.length > 3 && <span className="text-xs text-gray-400">+{codes.length - 3}</span>}
+            {codes.length > 3 && <span className="text-xs text-neutral-400">+{codes.length - 3}</span>}
           </div>
         )
       },
@@ -269,12 +274,12 @@ export default function EmployeesPage() {
         return (
         <button
           type="button"
-          onClick={() => handleToggleStatus(record)}
-          disabled={isToggling}
+          onClick={() => canWrite && handleToggleStatus(record)}
+          disabled={!canWrite || isToggling}
           className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed ${
-            record.status === 'active' ? 'bg-primary-600' : 'bg-gray-300'
+            record.status === 'active' ? 'bg-primary-600' : 'bg-neutral-300'
           }`}
-          title={isToggling ? '处理中...' : record.status === 'active' ? '点击禁用' : '点击启用'}
+          title={!canWrite ? '无权限' : isToggling ? '处理中...' : record.status === 'active' ? '点击禁用' : '点击启用'}
         >
           <span
             className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${
@@ -297,18 +302,24 @@ export default function EmployeesPage() {
       width: '140px',
       render: (record) => (
         <div className="flex items-center gap-3 whitespace-nowrap">
-          <button
-            onClick={(e) => { e.stopPropagation(); handleEdit(record) }}
-            className="text-primary-600 hover:text-primary-700 hover:underline transition-colors text-sm"
-          >
-            编辑
-          </button>
-          <button
-            onClick={(e) => { e.stopPropagation(); setDeleteTarget(record) }}
-            className="text-red-500 hover:text-red-600 hover:underline transition-colors text-sm"
-          >
-            删除
-          </button>
+          {canWrite ? (
+            <>
+              <button
+                onClick={(e) => { e.stopPropagation(); handleEdit(record) }}
+                className="text-primary-600 hover:text-primary-700 hover:underline transition-colors text-sm"
+              >
+                编辑
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); setDeleteTarget(record) }}
+                className="text-red-500 hover:text-red-600 hover:underline transition-colors text-sm"
+              >
+                删除
+              </button>
+            </>
+          ) : (
+            <span className="text-xs text-neutral-400">只读</span>
+          )}
         </div>
       ),
     },
@@ -319,17 +330,21 @@ export default function EmployeesPage() {
       {/* 页面标题 */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-xl font-semibold text-gray-900">员工管理</h1>
-          <p className="text-sm text-gray-500 mt-1">管理系统用户和员工账号</p>
+          <h1 className="text-xl font-semibold text-neutral-900">员工管理</h1>
+          <p className="text-sm text-neutral-500 mt-1">管理系统用户和员工账号</p>
         </div>
-        <Button onClick={handleAdd}>
-          <Plus className="w-4 h-4 mr-1.5" />
-          新增员工
-        </Button>
+        {canWrite ? (
+          <Button onClick={handleAdd}>
+            <Plus className="w-4 h-4 mr-1.5" />
+            新增员工
+          </Button>
+        ) : (
+          <span className="text-xs text-neutral-400">仅拥有 employee:create 权限的员工可管理账号</span>
+        )}
       </div>
 
       {/* 搜索筛选栏 */}
-      <div className="bg-gray-50 p-4 rounded-lg mb-4" data-testid="search-area">
+      <div className="bg-neutral-50 p-4 rounded-lg mb-4" data-testid="search-area">
         <div className="flex flex-wrap items-end gap-4">
           <div className="min-w-[200px]">
             <Input
@@ -376,7 +391,7 @@ export default function EmployeesPage() {
       </div>
 
       {/* 表格 */}
-      <div className="bg-white rounded-lg border border-gray-200">
+      <div className="bg-white rounded-lg border border-neutral-200">
         <Table<Employee>
           columns={columns}
           dataSource={employees}
@@ -423,23 +438,23 @@ export default function EmployeesPage() {
             onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
           />
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">岗位 *</label>
+            <label className="block text-sm font-medium text-neutral-700 mb-1">岗位 *</label>
             <input
               list="position-list"
               placeholder="选择或输入岗位，如：客服"
               value={formData.position}
               onChange={(e) => setFormData(prev => ({ ...prev, position: e.target.value }))}
-              className="w-full h-10 px-3 rounded-lg border border-gray-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-gray-400"
+              className="w-full h-10 px-3 rounded-lg border border-neutral-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
             />
             <datalist id="position-list">
               {PRESET_POSITIONS.map(p => <option key={p} value={p} />)}
             </datalist>
-            <p className="text-xs text-gray-400 mt-1">选择或输入员工岗位（必填）</p>
+            <p className="text-xs text-neutral-400 mt-1">选择或输入员工岗位（必填）</p>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">账号权限 *</label>
+            <label className="block text-sm font-medium text-neutral-700 mb-2">账号权限 *</label>
             {menuTree.length > 0 ? (
-              <div className="max-h-[360px] overflow-y-auto border border-gray-200 rounded-lg p-3">
+              <div className="max-h-[360px] overflow-y-auto border border-neutral-200 rounded-lg p-3">
                 <TreeCheckbox
                   tree={menuTree}
                   selected={formData.permissions}
@@ -447,7 +462,7 @@ export default function EmployeesPage() {
                 />
               </div>
             ) : (
-              <span className="text-sm text-gray-400">加载菜单权限中...</span>
+              <span className="text-sm text-neutral-400">加载菜单权限中...</span>
             )}
           </div>
         </div>
@@ -469,8 +484,8 @@ export default function EmployeesPage() {
           </>
         }
       >
-        <p className="text-gray-600">
-          确定要删除员工 <span className="font-medium text-gray-900">{deleteTarget?.name}</span> 吗？此操作不可撤销。
+        <p className="text-neutral-600">
+          确定要删除员工 <span className="font-medium text-neutral-900">{deleteTarget?.name}</span> 吗？此操作不可撤销。
         </p>
       </Modal>
     </div>

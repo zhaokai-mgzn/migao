@@ -1,3 +1,5 @@
+// case_ids: AS-001, AS-002, AS-003, AS-004, AS-005
+
 package com.migao.admin.service;
 
 import com.migao.admin.dto.*;
@@ -9,6 +11,7 @@ import com.migao.admin.mapper.OrderMapper;
 import com.migao.admin.mapper.TicketTimelineMapper;
 import com.migao.admin.entity.TicketTimeline;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -48,6 +51,9 @@ class AfterSalesTicketServiceTest {
     @Mock
     private ObjectMapper objectMapper;
 
+    @Mock
+    private FinanceService financeService;
+
     private AfterSalesTicket testTicket;
     private Order testOrder;
 
@@ -60,7 +66,8 @@ class AfterSalesTicketServiceTest {
                 .customerName("张三")
                 .customerPhone("13800138000")
                 .totalAmount(new BigDecimal("999.00"))
-                .status("delivered")
+                .actualAmount(new BigDecimal("999.00"))
+                .status("shipped")
                 .build();
 
         testTicket = AfterSalesTicket.builder()
@@ -253,6 +260,42 @@ class AfterSalesTicketServiceTest {
     }
 
     @Test
+    @DisplayName("创建投诉工单成功 - 投诉类型可无关联订单（转人工场景）")
+    void createTicket_ComplaintWithoutOrder_Success() {
+        // given：complaint 类型无订单（不 mock orderMapper.selectById）
+        AfterSalesCreateRequest request = new AfterSalesCreateRequest();
+        request.setOrderId(null);
+        request.setTicketType("complaint");
+        request.setDescription("对服务不满意，要求负责人处理");
+
+        when(afterSalesTicketMapper.insert(any(AfterSalesTicket.class))).thenAnswer(invocation -> {
+            AfterSalesTicket t = invocation.getArgument(0);
+            t.setId("ticket-complaint");
+            return 1;
+        });
+        AfterSalesTicket savedTicket = AfterSalesTicket.builder()
+                .id("ticket-complaint")
+                .tenantId(1L)
+                .ticketNo("AS-20250425-0003")
+                .ticketType("complaint")
+                .status("pending")
+                .description("对服务不满意，要求负责人处理")
+                .source("agent")
+                .createdAt(OffsetDateTime.now())
+                .updatedAt(OffsetDateTime.now())
+                .build();
+        when(afterSalesTicketMapper.selectById("ticket-complaint")).thenReturn(savedTicket);
+
+        // when
+        AfterSalesDetailResponse result = afterSalesTicketService.createTicket(request, 1L, "test-user");
+
+        // then
+        assertThat(result).isNotNull();
+        assertThat(result.getTicketType()).isEqualTo("complaint");
+        verify(afterSalesTicketMapper).insert(any(AfterSalesTicket.class));
+    }
+
+    @Test
     @DisplayName("创建工单被拒 — 同类型活跃工单已存在")
     void createTicket_DuplicateSameType() {
         AfterSalesCreateRequest request = new AfterSalesCreateRequest();
@@ -268,7 +311,8 @@ class AfterSalesTicketServiceTest {
         assertThatThrownBy(() -> afterSalesTicketService.createTicket(request, 1L, "test-user"))
             .isInstanceOf(BusinessException.class)
             .hasMessageContaining("已有")
-            .hasMessageContaining("return");
+            .hasMessageContaining("退货")
+            .hasMessageNotContaining("return");
     }
 
     @Test
@@ -276,8 +320,8 @@ class AfterSalesTicketServiceTest {
     void createTicket_DifferentTypeAllowed() {
         AfterSalesCreateRequest request = new AfterSalesCreateRequest();
         request.setOrderId("order-001");
-        request.setTicketType("complaint");
-        request.setDescription("投诉问题");
+        request.setTicketType("repair");
+        request.setDescription("维修问题");
 
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
         // 已有 return 工单，新建 complaint → 允许
@@ -391,7 +435,7 @@ class AfterSalesTicketServiceTest {
     }
 
     @Test
-    @DisplayName("更新工单状态失败 - 非法状态流转 pending -> resolved")
+    @DisplayName("更新工单状态失败 - 非法状态流转 pending -> resolved（报错中文术语）")
     void updateTicketStatus_InvalidTransition() {
         // given
         AfterSalesStatusUpdateRequest request = new AfterSalesStatusUpdateRequest();
@@ -399,10 +443,13 @@ class AfterSalesTicketServiceTest {
 
         when(afterSalesTicketMapper.selectById("ticket-001")).thenReturn(testTicket);
 
-        // when & then
+        // when & then: 报错用中文状态术语，不得暴露英文枚举
         assertThatThrownBy(() -> afterSalesTicketService.updateTicketStatus("ticket-001", request))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("不允许");
+                .hasMessageContaining("待处理")
+                .hasMessageContaining("已解决")
+                .hasMessageNotContaining("pending")
+                .hasMessageNotContaining("resolved");
     }
 
     @Test
@@ -476,9 +523,10 @@ class AfterSalesTicketServiceTest {
         // when
         afterSalesTicketService.updateTicketStatus("ticket-test-001", request);
 
-        // then: internalNotes应包含 time/status/remark（追加格式）
+        // then: internalNotes应包含 time/status/remark（追加格式），状态用中文业务术语（面向企业客户）
         assertThat(testTicket.getInternalNotes()).contains("已分配给客服张三处理");
-        assertThat(testTicket.getInternalNotes()).contains("pending → processing");
+        assertThat(testTicket.getInternalNotes()).contains("待处理 → 处理中");
+        assertThat(testTicket.getInternalNotes()).doesNotContain("pending → processing");
         assertThat(testTicket.getStatus()).isEqualTo("processing");
         verify(afterSalesTicketMapper).updateById(testTicket);
         // 验证timeline被写入
@@ -502,4 +550,277 @@ class AfterSalesTicketServiceTest {
         verify(ticketTimelineMapper).insert(org.mockito.ArgumentMatchers.<TicketTimeline>any());
     }
 
+    // ======================== 售后完结联动订单 + 财务 ========================
+
+    @Test
+    @DisplayName("updateTicketStatus — refund 工单 resolved 联动订单退款 + 财务流水")
+    void updateTicketStatus_ResolvedRefundTicket_linksOrderAndFinance() {
+        // given: processing → resolved 的 refund 工单，退款金额 300
+        AfterSalesTicket processingTicket = AfterSalesTicket.builder()
+                .id("ticket-r1")
+                .tenantId(1L)
+                .ticketNo("AS-REFUND-001")
+                .orderId("order-001")
+                .ticketType("refund")
+                .status("processing")
+                .refundAmount(new BigDecimal("300.00"))
+                .build();
+
+        AfterSalesStatusUpdateRequest request = new AfterSalesStatusUpdateRequest();
+        request.setStatus("resolved");
+
+        when(afterSalesTicketMapper.selectById("ticket-r1")).thenReturn(processingTicket);
+        when(afterSalesTicketMapper.updateById(any(AfterSalesTicket.class))).thenReturn(1);
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderMapper.update(any(), any(UpdateWrapper.class))).thenReturn(1);
+
+        // when
+        afterSalesTicketService.updateTicketStatus("ticket-r1", request);
+
+        // then: 订单原子累加 refundAmount（防并发双花，审计 07 P1-10）、置 refundAt，并登记退款流水
+        verify(orderMapper).update(isNull(), argThat((UpdateWrapper<Order> w) ->
+                w.getSqlSet() != null && w.getSqlSet().contains("refund_amount")));
+        assertThat(testOrder.getRefundAmount()).isEqualByComparingTo("300.00");
+        assertThat(testOrder.getRefundAt()).isNotNull();
+        verify(financeService).recordRefund(argThat((Order o) -> "order-001".equals(o.getId())),
+                argThat(amt -> amt != null && amt.compareTo(new BigDecimal("300.00")) == 0),
+                org.mockito.ArgumentMatchers.contains("AS-REFUND-001"));
+    }
+
+    @Test
+    @DisplayName("updateTicketStatus — return 工单 resolved 同样联动退款")
+    void updateTicketStatus_ResolvedReturnTicket_linksOrderAndFinance() {
+        // given
+        AfterSalesTicket processingTicket = AfterSalesTicket.builder()
+                .id("ticket-r2")
+                .tenantId(1L)
+                .ticketNo("AS-RETURN-001")
+                .orderId("order-001")
+                .ticketType("return")
+                .status("processing")
+                .refundAmount(new BigDecimal("200.00"))
+                .build();
+
+        AfterSalesStatusUpdateRequest request = new AfterSalesStatusUpdateRequest();
+        request.setStatus("resolved");
+
+        when(afterSalesTicketMapper.selectById("ticket-r2")).thenReturn(processingTicket);
+        when(afterSalesTicketMapper.updateById(any(AfterSalesTicket.class))).thenReturn(1);
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderMapper.update(any(), any(UpdateWrapper.class))).thenReturn(1);
+
+        // when
+        afterSalesTicketService.updateTicketStatus("ticket-r2", request);
+
+        // then
+        verify(orderMapper).update(isNull(), any(UpdateWrapper.class));
+        assertThat(testOrder.getRefundAmount()).isEqualByComparingTo("200.00");
+        verify(financeService).recordRefund(any(Order.class),
+                argThat(amt -> amt.compareTo(new BigDecimal("200.00")) == 0), anyString());
+    }
+
+    @Test
+    @DisplayName("updateTicketStatus — 非退款类工单（repair）resolved 不联动")
+    void updateTicketStatus_ResolvedNonRefundType_noLinkage() {
+        // given
+        AfterSalesTicket processingTicket = AfterSalesTicket.builder()
+                .id("ticket-r3")
+                .tenantId(1L)
+                .ticketNo("AS-REPAIR-001")
+                .orderId("order-001")
+                .ticketType("repair")
+                .status("processing")
+                .refundAmount(new BigDecimal("200.00"))
+                .build();
+
+        AfterSalesStatusUpdateRequest request = new AfterSalesStatusUpdateRequest();
+        request.setStatus("resolved");
+
+        when(afterSalesTicketMapper.selectById("ticket-r3")).thenReturn(processingTicket);
+        when(afterSalesTicketMapper.updateById(any(AfterSalesTicket.class))).thenReturn(1);
+
+        // when
+        afterSalesTicketService.updateTicketStatus("ticket-r3", request);
+
+        // then: 不联动订单、不写退款流水
+        verify(orderMapper, never()).updateById(any(Order.class));
+        verify(financeService, never()).recordRefund(any(Order.class), any(), anyString());
+    }
+
+    @Test
+    @DisplayName("updateTicketStatus — refundAmount 为 0 的 refund 工单 resolved 不联动")
+    void updateTicketStatus_ResolvedZeroRefundAmount_noLinkage() {
+        // given
+        AfterSalesTicket processingTicket = AfterSalesTicket.builder()
+                .id("ticket-r4")
+                .tenantId(1L)
+                .ticketNo("AS-ZERO-001")
+                .orderId("order-001")
+                .ticketType("refund")
+                .status("processing")
+                .refundAmount(BigDecimal.ZERO)
+                .build();
+
+        AfterSalesStatusUpdateRequest request = new AfterSalesStatusUpdateRequest();
+        request.setStatus("resolved");
+
+        when(afterSalesTicketMapper.selectById("ticket-r4")).thenReturn(processingTicket);
+        when(afterSalesTicketMapper.updateById(any(AfterSalesTicket.class))).thenReturn(1);
+
+        // when
+        afterSalesTicketService.updateTicketStatus("ticket-r4", request);
+
+        // then
+        verify(orderMapper, never()).updateById(any(Order.class));
+        verify(financeService, never()).recordRefund(any(Order.class), any(), anyString());
+    }
+
+    @Test
+    @DisplayName("updateTicketStatus — 已全额退款的订单，resolved 不再重复累计")
+    void updateTicketStatus_Resolved_refundCappedAtActualAmount() {
+        // given: 订单已退 950，工单再退 200 → 累计封顶 999
+        testOrder.setRefundAmount(new BigDecimal("950.00"));
+        AfterSalesTicket processingTicket = AfterSalesTicket.builder()
+                .id("ticket-r5")
+                .tenantId(1L)
+                .ticketNo("AS-CAP-001")
+                .orderId("order-001")
+                .ticketType("refund")
+                .status("processing")
+                .refundAmount(new BigDecimal("200.00"))
+                .build();
+
+        AfterSalesStatusUpdateRequest request = new AfterSalesStatusUpdateRequest();
+        request.setStatus("resolved");
+
+        when(afterSalesTicketMapper.selectById("ticket-r5")).thenReturn(processingTicket);
+        when(afterSalesTicketMapper.updateById(any(AfterSalesTicket.class))).thenReturn(1);
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderMapper.update(any(), any(UpdateWrapper.class))).thenReturn(1);
+
+        // when
+        afterSalesTicketService.updateTicketStatus("ticket-r5", request);
+
+        // then: 只补足到实收款 999，流水金额 = 49
+        verify(orderMapper).update(isNull(), any(UpdateWrapper.class));
+        assertThat(testOrder.getRefundAmount()).isEqualByComparingTo("999.00");
+        verify(financeService).recordRefund(any(Order.class),
+                argThat(amt -> amt.compareTo(new BigDecimal("49.00")) == 0), anyString());
+    }
+
+    // ======================== 创建工单状态门禁 + 退款金额校验 ========================
+
+    private AfterSalesCreateRequest buildCreateRequest(String ticketType, BigDecimal refundAmount) {
+        AfterSalesCreateRequest request = new AfterSalesCreateRequest();
+        request.setOrderId("order-001");
+        request.setTicketType(ticketType);
+        request.setDescription("测试描述");
+        request.setRefundAmount(refundAmount);
+        return request;
+    }
+
+    @Test
+    @DisplayName("创建工单 - pending 订单不允许建退款/退货工单")
+    void createTicket_rejectsPendingOrderForRefundType() {
+        // given
+        testOrder.setStatus("pending");
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+
+        // when & then
+        assertThatThrownBy(() -> afterSalesTicketService.createTicket(
+                buildCreateRequest("refund", new BigDecimal("100.00")), 1L, "test-user"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("不允许创建退款/退货工单");
+    }
+
+    @Test
+    @DisplayName("创建工单 - cancelled 订单不允许建退款/退货工单")
+    void createTicket_rejectsCancelledOrderForRefundType() {
+        // given
+        testOrder.setStatus("cancelled");
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+
+        // when & then
+        assertThatThrownBy(() -> afterSalesTicketService.createTicket(
+                buildCreateRequest("return", new BigDecimal("100.00")), 1L, "test-user"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("不允许创建退款/退货工单");
+    }
+
+    @Test
+    @DisplayName("创建工单 - completed 订单允许建退款工单")
+    void createTicket_acceptsCompletedOrderForRefundType() {
+        // given
+        testOrder.setStatus("completed");
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(afterSalesTicketMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+        when(afterSalesTicketMapper.insert(any(AfterSalesTicket.class))).thenAnswer(inv -> {
+            AfterSalesTicket t = inv.getArgument(0);
+            t.setId("ticket-completed");
+            return 1;
+        });
+        when(afterSalesTicketMapper.selectById("ticket-completed")).thenReturn(
+                AfterSalesTicket.builder().id("ticket-completed").tenantId(1L)
+                        .ticketNo("AS-TEST").orderId("order-001").customerId("张三")
+                        .ticketType("refund").status("pending").description("测试")
+                        .priority("normal").source("agent").refundAmount(new BigDecimal("100.00"))
+                        .createdAt(OffsetDateTime.now()).updatedAt(OffsetDateTime.now()).build());
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+
+        // when & then: 不抛异常
+        AfterSalesDetailResponse result = afterSalesTicketService.createTicket(
+                buildCreateRequest("refund", new BigDecimal("100.00")), 1L, "test-user");
+        assertThat(result).isNotNull();
+    }
+
+    @Test
+    @DisplayName("创建工单 - 非退款类工单不受状态门禁限制（pending 可建）")
+    void createTicket_acceptsNonRefundTypeOnPendingOrder() {
+        // given
+        testOrder.setStatus("pending");
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(afterSalesTicketMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+        when(afterSalesTicketMapper.insert(any(AfterSalesTicket.class))).thenAnswer(inv -> {
+            AfterSalesTicket t = inv.getArgument(0);
+            t.setId("ticket-complaint-pending");
+            return 1;
+        });
+        when(afterSalesTicketMapper.selectById("ticket-complaint-pending")).thenReturn(
+                AfterSalesTicket.builder().id("ticket-complaint-pending").tenantId(1L)
+                        .ticketNo("AS-TEST").orderId("order-001").customerId("张三")
+                        .ticketType("repair").status("pending").description("维修")
+                        .priority("normal").source("agent")
+                        .createdAt(OffsetDateTime.now()).updatedAt(OffsetDateTime.now()).build());
+
+        // when & then: 不抛异常
+        AfterSalesDetailResponse result = afterSalesTicketService.createTicket(
+                buildCreateRequest("repair", null), 1L, "test-user");
+        assertThat(result).isNotNull();
+    }
+
+    @Test
+    @DisplayName("创建工单 - 负数退款金额被拒绝")
+    void createTicket_rejectsNegativeRefundAmount() {
+        // given
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+
+        // when & then
+        assertThatThrownBy(() -> afterSalesTicketService.createTicket(
+                buildCreateRequest("refund", new BigDecimal("-10.00")), 1L, "test-user"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("退款金额");
+    }
+
+    @Test
+    @DisplayName("创建工单 - 退款金额超过订单实收款被拒绝")
+    void createTicket_rejectsRefundAmountExceedingActual() {
+        // given: 实收 999，工单退款 1000
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+
+        // when & then
+        assertThatThrownBy(() -> afterSalesTicketService.createTicket(
+                buildCreateRequest("refund", new BigDecimal("1000.00")), 1L, "test-user"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("退款金额");
+    }
 }

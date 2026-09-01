@@ -59,15 +59,23 @@ _VALIDATION_RULES: Dict[str, Dict[str, Any]] = {
             "order_id": {"type": str, "min_len": 1, "label": "订单ID或订单号"},
         },
     },
+    "inventory_manage": {
+        "adjust": {
+            "required": ["product_id", "adjustment", "reason"],
+            "product_id": {"type": str, "min_len": 1, "label": "商品ID"},
+            "adjustment": {"type": int, "label": "调整数量（正数增加，负数减少，不能为0）"},
+            "reason": {"type": str, "min_len": 1, "label": "调整原因"},
+        },
+    },
     "after_sales_manage": {
         "create": {
             "required": ["ticket_type", "order_id", "reason"],
-            "ticket_type": {"type": str, "min_len": 1, "label": "工单类型(refund/exchange/repair/complaint/other)"},
+            "ticket_type": {"type": str, "min_len": 1, "label": "工单类型(退款/换货/维修/投诉/其他; 传值 refund/exchange/repair/complaint/other)"},
             "order_id": {"type": str, "min_len": 1, "label": "关联订单ID"},
             "reason": {"type": str, "min_len": 1, "label": "原因说明"},
             "description": {"type": str, "label": "详细描述"},
             "images": {"type": list, "label": "凭证图片URL列表"},
-            "priority": {"type": str, "label": "优先级(normal/urgent/critical)"},
+            "priority": {"type": str, "label": "优先级(普通/紧急/严重; 传值 normal/urgent/critical)"},
             "refund_amount": {"type": (int, float), "min": 0, "label": "退款金额"},
         },
     },

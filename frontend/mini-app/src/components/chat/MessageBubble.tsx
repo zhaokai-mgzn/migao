@@ -1,15 +1,22 @@
 import { useMemo, useCallback } from 'react'
 import { View, Text, Image } from '@tarojs/components'
 import Taro from '@tarojs/taro'
-import type { Message, ToolCallData, CardData } from '../../types'
+import type { Message, ToolCallData, CardData, InteractiveData } from '../../types'
 import ProductCard from '../cards/ProductCard'
 import LogisticsCard from '../cards/LogisticsCard'
 import KnowledgeCard from '../cards/KnowledgeCard'
+import OrderCard from '../cards/OrderCard'
+import QuotationCard from '../cards/QuotationCard'
+import ConfirmCard from '../cards/ConfirmCard'
+import ChoiceCard from '../cards/ChoiceCard'
 import ToolCallIndicator from '../cards/ToolCallIndicator'
+import SuggestionChips from './SuggestionChips'
 import './MessageBubble.scss'
 
 interface MessageBubbleProps {
   message: Message
+  /** 交互回调：点击确认/取消/追问/下单按钮时，发送对应文本作为用户消息 */
+  onInteract?: (value: string) => void
 }
 
 /** 格式化时间 */
@@ -51,7 +58,7 @@ function renderToolCalls(toolCalls: ToolCallData[]) {
 }
 
 /** 渲染单张卡片 */
-function renderCard(card: CardData, idx: number) {
+function renderCard(card: CardData, idx: number, onInteract?: (value: string) => void) {
   const { type, data } = card
 
   switch (type) {
@@ -92,6 +99,22 @@ function renderCard(card: CardData, idx: number) {
       )
     }
 
+    case 'order': {
+      // 订单卡片：归一化载荷 {"order": {...}} 单订单 / {"orders": [...]} 列表
+      return <OrderCard key={`card-${idx}`} data={data} />
+    }
+
+    case 'quotation': {
+      // 报价单卡片（curtain_calc 结果）
+      return (
+        <QuotationCard
+          key={`card-${idx}`}
+          data={data}
+          onConfirm={onInteract ? () => onInteract('我要下单') : undefined}
+        />
+      )
+    }
+
     default:
       // 未知卡片类型，显示占位
       return (
@@ -103,25 +126,51 @@ function renderCard(card: CardData, idx: number) {
 }
 
 /** 渲染卡片列表 */
-function renderCards(cards: CardData[]) {
+function renderCards(cards: CardData[], onInteract?: (value: string) => void) {
   return (
     <View className='message-bubble__cards'>
-      {cards.map((card, idx) => renderCard(card, idx))}
+      {cards.map((card, idx) => renderCard(card, idx, onInteract))}
     </View>
   )
 }
 
 /** 渲染单个 cardData（message.cardData） */
-function renderSingleCard(cardData: CardData) {
+function renderSingleCard(cardData: CardData, onInteract?: (value: string) => void) {
   return (
     <View className='message-bubble__cards'>
-      {renderCard(cardData, 0)}
+      {renderCard(cardData, 0, onInteract)}
     </View>
   )
 }
 
-export default function MessageBubble({ message }: MessageBubbleProps) {
-  const { role, content, isStreaming, tool_calls, toolCall, cards, cardData, type, created_at, images } = message
+/** 渲染交互式组件（confirm/choice/form） */
+function renderInteractive(interactive: InteractiveData, onInteract?: (value: string) => void) {
+  switch (interactive.type) {
+    case 'confirm':
+      return (
+        <ConfirmCard
+          data={interactive}
+          onAction={(value) => onInteract?.(value)}
+        />
+      )
+    case 'choice':
+      return (
+        <ChoiceCard
+          data={interactive}
+          onAction={(value) => onInteract?.(value)}
+        />
+      )
+    // form 暂以文本形式提示（后续按需渲染）
+    default:
+      return null
+  }
+}
+
+export default function MessageBubble({ message, onInteract }: MessageBubbleProps) {
+  const {
+    role, content, isStreaming, tool_calls, toolCall, cards, cardData,
+    type, created_at, images, interactive, suggestions,
+  } = message
 
   const timeStr = useMemo(() => formatTime(created_at), [created_at])
 
@@ -175,10 +224,18 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
         )}
 
         {/* 卡片区域 - 数组形式 */}
-        {cards && cards.length > 0 && renderCards(cards)}
+        {cards && cards.length > 0 && renderCards(cards, onInteract)}
 
         {/* 卡片区域 - 单个 cardData（兼容） */}
-        {!cards?.length && cardData && renderSingleCard(cardData)}
+        {!cards?.length && cardData && renderSingleCard(cardData, onInteract)}
+
+        {/* 交互式组件（confirm 等） */}
+        {interactive && renderInteractive(interactive, onInteract)}
+
+        {/* 建议追问 chips */}
+        {suggestions && suggestions.length > 0 && onInteract && (
+          <SuggestionChips questions={suggestions} onAction={onInteract} />
+        )}
 
         {/* 时间戳 */}
         {timeStr && <Text className='message-bubble__time'>{timeStr}</Text>}

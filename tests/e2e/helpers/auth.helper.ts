@@ -131,6 +131,9 @@ export async function injectAuth(
         username: 'admin',
         name: '管理员',
         roles: ['admin'],
+        // admin 角色在后端 getUserPermissions 中恒为 ["*"]，mock 需与之对齐，
+        // 否则侧边栏/页面按钮级权限（如 employee:create）会误判无权限
+        permissions: ['*'],
         tenantId: 1,
         tenantName: '测试企业',
       },

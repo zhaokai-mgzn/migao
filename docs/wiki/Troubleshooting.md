@@ -8,7 +8,7 @@
 | ai-agent-service | 8000 | `config.py` → `PORT` |
 | admin-web | 3001 | `package.json` → `next dev -p` |
 
-> CLAUDE.md 启动命令中 ai-agent 传了 `--port 8001` 覆盖默认值，wiki 文档以代码默认端口为准。
+> ai-agent 启动命令可通过 `--port` 覆盖默认端口，wiki 文档以代码默认端口为准。
 
 ## 启动问题
 
@@ -76,4 +76,4 @@
 - RESP3 握手失败 → 确认 `RedisProtocolConfig`（强制 RESP2）已编译进镜像
 
 ---
-详见: [部署检查清单](../deployment/deployment-checklist.md) · [SLS 日志查询 Skill](../../.claude/skills/aliyun-sls-log-query.md)
+详见: [部署检查清单](../deployment/deployment-checklist.md)

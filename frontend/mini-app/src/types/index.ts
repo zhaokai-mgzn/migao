@@ -46,11 +46,42 @@ export interface Message {
   cards?: CardData[]
   toolCall?: ToolCallData
   tool_calls?: ToolCallData[]
+  interactive?: InteractiveData
+  suggestions?: string[]
 }
 
 export interface CardData {
   type: string // 'product_list' | 'product_detail' | 'logistics' | 'order'
   data: any
+}
+
+/** 交互式组件数据（interact 工具下发，SSE interactive 事件） */
+export interface InteractiveData {
+  type: 'choice' | 'confirm' | 'form'
+  component?: string
+  title: string
+  options?: Array<{ label: string; value: string; description?: string }>
+  fields?: Array<{ label: string; value: string }>
+  confirmLabel?: string
+  cancelLabel?: string
+  confirmValue?: string
+  cancelValue?: string
+  formFields?: Array<{
+    key: string
+    label: string
+    placeholder?: string
+    value?: string
+    required?: boolean
+  }>
+  submitLabel?: string
+  /** 翻页元信息（choice 组件分页查询下发） */
+  pageMeta?: {
+    current: number
+    total: number
+    totalCount?: number
+    tool?: string
+    params?: string
+  }
 }
 
 export interface ToolCallData {
@@ -106,6 +137,17 @@ export interface SSEToolResultEvent {
 export interface SSECardEvent {
   type: string
   data: any
+}
+
+export interface SSEInteractiveEvent {
+  type: string
+  component?: string
+  title?: string
+  [key: string]: any
+}
+
+export interface SSESuggestionsEvent {
+  questions: string[]
 }
 
 export interface SSEDoneEvent {

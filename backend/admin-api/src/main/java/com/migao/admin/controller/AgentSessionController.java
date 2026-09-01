@@ -1,8 +1,11 @@
 package com.migao.admin.controller;
 
 import com.migao.admin.dto.*;
+import com.migao.admin.entity.AgentMessage;
+import com.migao.admin.entity.AgentSession;
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.service.AgentSessionService;
+import com.migao.admin.security.RequirePermission;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,6 +23,7 @@ import org.springframework.web.bind.annotation.*;
  * - POST   /api/admin/agent-sessions/{id}/end     → endSession
  */
 @Slf4j
+@RequirePermission("agent:session")
 @RestController
 @RequestMapping("/api/admin/agent-sessions")
 @RequiredArgsConstructor
@@ -95,5 +99,66 @@ public class AgentSessionController {
         log.info("结束会话: sessionId={}", id);
         agentSessionService.endSession(id);
         return ApiResponse.success();
+    }
+
+    /**
+     * 转人工创建会话（AI 客服 → 人工客服桥接）
+     *
+     * 由 ai-agent-service 的 human_handoff 工具调用（service token 或管理员）。
+     * POST /api/admin/agent-sessions
+     */
+    @PostMapping
+    public ApiResponse<AgentSessionDetailResponse> createSessionForHandoff(
+            @Valid @RequestBody AgentSessionCreateRequest request) {
+        Long tenantId = TenantContext.getTenantId();
+        log.info("转人工创建会话: aiSessionId={}, customerId={}, tenantId={}",
+                request.getAiSessionId(), request.getCustomerId(), tenantId);
+        AgentSession session = agentSessionService.createSessionForHandoff(
+                request.getAiSessionId(), request.getCustomerId(), tenantId, request.getReason());
+        AgentSessionDetailResponse detail = agentSessionService.getSessionDetail(session.getId());
+        return ApiResponse.success(detail);
+    }
+
+    /**
+     * 客服发送消息（人工会话）
+     *
+     * POST /api/admin/agent-sessions/{id}/messages
+     */
+    @PostMapping("/{id}/messages")
+    public ApiResponse<AgentMessageResponse> sendMessage(
+            @PathVariable String id,
+            @Valid @RequestBody AgentMessageSendRequest request) {
+        log.info("客服发送消息: sessionId={}, isInternal={}", id, request.getIsInternal());
+        // 从 SecurityContext 取当前员工（客服）
+        String employeeId = getCurrentOperator();
+        AgentMessage msg = agentSessionService.sendMessage(
+                id, "agent", employeeId, request.getContent(), request.getIsInternal());
+        return ApiResponse.success(buildMessageResponse(msg));
+    }
+
+    /** 从 SecurityContext 提取当前操作人信息 */
+    private String getCurrentOperator() {
+        try {
+            var auth = org.springframework.security.core.context.SecurityContextHolder
+                    .getContext().getAuthentication();
+            if (auth != null && auth.getPrincipal() instanceof com.migao.admin.security.SecurityUser securityUser) {
+                return securityUser.getUsername();
+            }
+        } catch (Exception ignored) {
+            // 非 Web 上下文或无认证信息时降级
+        }
+        return "system";
+    }
+
+    private AgentMessageResponse buildMessageResponse(AgentMessage msg) {
+        return AgentMessageResponse.builder()
+                .id(msg.getId())
+                .senderType(msg.getSenderType())
+                .senderId(msg.getSenderId())
+                .contentType(msg.getContentType())
+                .content(msg.getContent())
+                .isInternal(msg.getIsInternal())
+                .createdAt(msg.getCreatedAt())
+                .build();
     }
 }

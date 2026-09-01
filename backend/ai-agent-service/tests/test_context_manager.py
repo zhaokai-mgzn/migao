@@ -379,11 +379,11 @@ class TestCompressConversation:
 
 
 class TestRedisPersistence:
-    """save / load — Redis 持久化"""
+    """save / load — 持久化经 SessionStateStore（会话管理重构 P1）"""
 
     @pytest.mark.asyncio
-    async def test_save_without_redis(self):
-        """Redis 不可用时 save 不抛异常"""
+    async def test_save_without_store(self):
+        """存储不可用时 save 不抛异常"""
         from app.memory.context_manager import AgentContextManager
         mgr = AgentContextManager()
         mgr._cache["sess_1"] = OrderedDict({"entities": {"product_ids": []}})
@@ -391,37 +391,67 @@ class TestRedisPersistence:
         await mgr.save("sess_1")
 
     @pytest.mark.asyncio
-    async def test_load_without_redis(self):
-        """Redis 不可用时 load 不抛异常"""
+    async def test_load_without_store(self):
+        """存储不可用时 load 不抛异常"""
         from app.memory.context_manager import AgentContextManager
         mgr = AgentContextManager()
         await mgr.load("sess_1")  # Should not raise
 
     @pytest.mark.asyncio
-    @patch("app.utils.redis_client.get_redis")
-    async def test_save_to_redis(self, mock_get_redis):
-        mock_redis = AsyncMock()
-        mock_get_redis.return_value = mock_redis
+    async def test_save_commits_via_session_state_store(self):
+        """save 调用 SessionStateStore.commit 持久化缓存（合并语义）"""
         from app.memory.context_manager import AgentContextManager
         mgr = AgentContextManager()
-        mgr._cache["sess_1"] = OrderedDict({"foo": "bar"})
-        await mgr.save("sess_1")
-        mock_redis.set.assert_called_once()
-        # Key should be ctx:sess_1
-        args = mock_redis.set.call_args[0]
-        assert args[0] == "ctx:sess_1"
+        mgr._cache["sess_1"] = OrderedDict({"entities": {"product_ids": [{"id": "p1", "name": "窗帘"}]}})
+
+        mock_store = AsyncMock()
+        mock_store.load = AsyncMock(return_value={"pending_skill": "product"})
+        mock_store.commit = AsyncMock(return_value=True)
+
+        with patch("app.memory.context_manager.SessionStateStore", return_value=mock_store) as mock_cls:
+            await mgr.save("sess_1")
+
+        # commit 应收到合并后的状态：保留已有 pending_skill，写入缓存字段
+        mock_store.load.assert_called_once_with("sess_1")
+        mock_store.commit.assert_called_once()
+        merged = mock_store.commit.call_args[0][1]
+        assert merged["pending_skill"] == "product"
+        assert merged["entities"]["product_ids"][0]["id"] == "p1"
 
     @pytest.mark.asyncio
-    @patch("app.utils.redis_client.get_redis")
-    async def test_load_from_redis(self, mock_get_redis):
-        import json
-        mock_redis = AsyncMock()
-        mock_redis.get.return_value = json.dumps({"foo": "loaded"})
-        mock_get_redis.return_value = mock_redis
+    async def test_load_restores_cache_from_store(self):
+        """load 从 SessionStateStore 读取并填充内存缓存"""
         from app.memory.context_manager import AgentContextManager
         mgr = AgentContextManager()
-        await mgr.load("sess_1")
-        assert mgr._cache["sess_1"]["foo"] == "loaded"
+
+        mock_store = AsyncMock()
+        mock_store.load = AsyncMock(return_value={
+            "entities": {"order_nos": [{"id": "o1", "no": "ORD-1"}]},
+            "last_skill": "order",
+        })
+        mock_store.commit = AsyncMock(return_value=True)
+
+        with patch("app.memory.context_manager.SessionStateStore", return_value=mock_store):
+            await mgr.load("sess_1")
+
+        assert mgr._cache["sess_1"]["entities"]["order_nos"][0]["no"] == "ORD-1"
+        assert mgr._cache["sess_1"]["last_skill"] == "order"
+
+    @pytest.mark.asyncio
+    async def test_load_none_keeps_cache_untouched(self):
+        """存储中无状态时 load 不覆盖内存缓存"""
+        from app.memory.context_manager import AgentContextManager
+        mgr = AgentContextManager()
+        mgr._cache["sess_1"] = OrderedDict({"entities": {"product_ids": []}})
+
+        mock_store = AsyncMock()
+        mock_store.load = AsyncMock(return_value=None)
+        mock_store.commit = AsyncMock(return_value=True)
+
+        with patch("app.memory.context_manager.SessionStateStore", return_value=mock_store):
+            await mgr.load("sess_1")
+
+        assert mgr._cache["sess_1"] == {"entities": {"product_ids": []}}
 
 
 class TestToolHints:

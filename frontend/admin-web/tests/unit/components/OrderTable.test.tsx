@@ -2,10 +2,11 @@
  * OrderTable 组件测试
  * 覆盖：基本渲染、采购商品列、采购明细列、空状态、加载状态
  */
+// case_ids: UI-002
 import { render, screen } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
 import OrderTable from '@/components/orders/OrderTable'
-import type { Order } from '@/types'
+import type { Order, OrderStatus } from '@/types'
 
 const mockOrder = {
   id: 'order-001',
@@ -147,6 +148,21 @@ describe('OrderTable', () => {
     expect(screen.getByText('-')).toBeTruthy()
   })
 
+  // #2539: 采购明细列 items 为空与采购商品列无 firstItem 时渲染「暂无数据」，整表无裸 '-' 占位
+  it('采购明细列 items 为空与采购商品列无 firstItem 时渲染「暂无数据」，无裸 - 占位', () => {
+    const emptyItemsOrder = {
+      ...mockOrder,
+      items: [],
+      processingItems: [],
+      remark: '有备注',
+      customerAddress: '测试地址',
+    }
+    render(<OrderTable {...defaultProps} orders={[emptyItemsOrder]} />)
+    const emptyLabels = screen.getAllByText('暂无数据')
+    expect(emptyLabels.length).toBeGreaterThanOrEqual(2)
+    expect(screen.queryByText('-')).toBeNull()
+  })
+
   // #1289: 订单有 remarks[] 数组但 remark 字符串为空时，触发显示最新备注预览
   it('#1289: remarks 数组有数据但 remark 为空时，应显示最新备注预览', () => {
     const orderWithRemarksArray = {
@@ -163,4 +179,43 @@ describe('OrderTable', () => {
     // 备注列不应显示 - 占位符
     expect(screen.queryByText('-')).toBeNull()
   })
+
+describe('OrderTable 退款按钮（基于真实状态 + refundAmount）', () => {
+  const refundProps = {
+    ...defaultProps,
+    onRefund: vi.fn(),
+    onConfirmPayment: vi.fn(),
+    onConfirmReceive: vi.fn(),
+  }
+
+  it('confirmed 订单（未退款）显示 处理退款 按钮', () => {
+    render(<OrderTable {...refundProps} orders={[{ ...mockOrder, status: 'confirmed' as unknown as OrderStatus, refundAmount: 0 }]} />)
+    expect(screen.getByText('处理退款')).toBeTruthy()
+  })
+
+  it('shipped 订单（未退款）显示 处理退款 按钮', () => {
+    render(<OrderTable {...refundProps} orders={[{ ...mockOrder, status: 'shipped' as unknown as OrderStatus, refundAmount: 0 }]} />)
+    expect(screen.getByText('处理退款')).toBeTruthy()
+  })
+
+  it('completed 订单（未退款）显示 处理退款 按钮', () => {
+    render(<OrderTable {...refundProps} orders={[{ ...mockOrder, status: 'completed' as unknown as OrderStatus, refundAmount: 0 }]} />)
+    expect(screen.getByText('处理退款')).toBeTruthy()
+  })
+
+  it('已退款订单（refundAmount > 0）不显示 处理退款 按钮', () => {
+    render(<OrderTable {...refundProps} orders={[{ ...mockOrder, status: 'completed' as unknown as OrderStatus, refundAmount: 99 }]} />)
+    expect(screen.queryByText('处理退款')).toBeNull()
+  })
+
+  it('pending（待付款）订单不显示 处理退款 按钮', () => {
+    render(<OrderTable {...refundProps} orders={[{ ...mockOrder, status: 'pending_payment' as unknown as OrderStatus, refundAmount: 0 }]} />)
+    expect(screen.queryByText('处理退款')).toBeNull()
+  })
+
+  it('cancelled（已关闭）订单不显示 处理退款 按钮', () => {
+    render(<OrderTable {...refundProps} orders={[{ ...mockOrder, status: 'closed' as unknown as OrderStatus, refundAmount: 0 }]} />)
+    expect(screen.queryByText('处理退款')).toBeNull()
+  })
+})
 })

@@ -9,10 +9,13 @@ import { create } from 'zustand'
 import {
   createSession as apiCreateSession,
   getSessionList,
+  getLatestSession,
   deleteSession as apiDeleteSession,
   getSessionMessages,
   getQuickActions as apiGetQuickActions,
   createChatSSEClient,
+  getAgentSessionByAi,
+  sendAgentMessage,
 } from '../services/chatService'
 import type {
   Session,
@@ -20,6 +23,7 @@ import type {
   QuickAction,
   CardData,
   ToolCallData,
+  InteractiveData,
 } from '../types'
 import { SSEClient } from '../utils/sse'
 
@@ -39,11 +43,17 @@ interface ChatState {
   quickActions: QuickAction[]
   error: string | null
 
+  // 转人工状态（handedOff 后消息走人工客服通道）
+  handedOff: boolean
+  agentSessionId: string | null
+  _agentPollTimer: ReturnType<typeof setInterval> | null
+
   // 内部引用
   _sseClient: SSEClient | null
 
   // Actions
   createSession: () => Promise<void>
+  ensureLatestSession: () => Promise<void>
   loadSessions: () => Promise<void>
   deleteSession: (id: string) => Promise<void>
   selectSession: (id: string) => Promise<void>
@@ -56,6 +66,7 @@ interface ChatState {
   stopStreaming: () => void
   clearMessages: () => void
   loadQuickActions: () => Promise<void>
+  startAgentPolling: () => void
 }
 
 export const useChatStore = create<ChatState>()((set, get) => ({
@@ -68,6 +79,9 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   isLoadingMessages: false,
   quickActions: [],
   error: null,
+  handedOff: false,
+  agentSessionId: null,
+  _agentPollTimer: null,
   _sseClient: null,
 
   /**
@@ -85,6 +99,29 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     } catch (error: any) {
       console.error('创建会话失败:', error)
       set({ error: '创建会话失败' })
+    }
+  },
+
+  /**
+   * 无会话 UX：确保有当前会话（续聊最近一次，无则新建，前端无感知）
+   */
+  ensureLatestSession: async () => {
+    // 已有当前会话直接返回
+    if (get().currentSessionId) return
+
+    try {
+      // 1. 续聊：取最近一次会话
+      const latest = await getLatestSession()
+      if (latest) {
+        set({ currentSessionId: latest.id, messages: [], error: null, isLoadingMessages: true })
+        await get().loadMessages(latest.id)
+        return
+      }
+      // 2. 无会话：静默新建
+      await get().createSession()
+    } catch (error: any) {
+      console.error('初始化会话失败:', error)
+      set({ error: '初始化会话失败' })
     }
   },
 
@@ -168,8 +205,27 @@ export const useChatStore = create<ChatState>()((set, get) => ({
    * 发送消息并处理 SSE 流
    */
   sendMessage: async (content: string, images?: string[]) => {
-    const { currentSessionId, isStreaming } = get()
+    const { currentSessionId, isStreaming, handedOff, agentSessionId } = get()
     if (!currentSessionId || isStreaming || !content.trim()) return
+
+    // 转人工后：消息直接进人工客服会话，不再走 AI
+    if (handedOff && agentSessionId) {
+      const userMsg: Message = {
+        id: generateId(),
+        session_id: currentSessionId,
+        role: 'user',
+        content: content.trim(),
+        created_at: new Date().toISOString(),
+      }
+      set(state => ({ messages: [...state.messages, userMsg] }))
+      const ok = await sendAgentMessage(agentSessionId, content.trim())
+      if (!ok) {
+        set({ error: '消息发送失败，请稍后重试' })
+      }
+      // 立即拉取一次人工会话（客服可能已回复）
+      await get().startAgentPolling()
+      return
+    }
 
     // 添加用户消息
     const userMsg: Message = {
@@ -224,6 +280,25 @@ export const useChatStore = create<ChatState>()((set, get) => ({
           args: data.args,
           status: 'running',
         }
+
+        // 检测转人工：human_handoff 工具被调用 → 进入人工客服模式
+        if (data.tool === 'human_handoff') {
+          set(state => ({
+            handedOff: true,
+            agentSessionId: state.agentSessionId || null,
+            messages: state.messages.map(msg =>
+              msg.id === aiMsgId
+                ? { ...msg, tool_calls: [...(msg.tool_calls || []), toolCall] }
+                : msg
+            ),
+          }))
+          // 延迟启动人工会话轮询（等 human_handoff 完成创建会话）
+          setTimeout(() => {
+            get().startAgentPolling()
+          }, 1500)
+          return
+        }
+
         set(state => ({
           messages: state.messages.map(msg =>
             msg.id === aiMsgId
@@ -256,6 +331,39 @@ export const useChatStore = create<ChatState>()((set, get) => ({
           messages: state.messages.map(msg =>
             msg.id === aiMsgId
               ? { ...msg, cards: [...(msg.cards || []), card] }
+              : msg
+          ),
+        }))
+      },
+
+      onInteractive: (data) => {
+        const interactive: InteractiveData = {
+          type: (data.type || data.component || 'confirm') as InteractiveData['type'],
+          component: data.component,
+          title: data.title || '',
+          options: data.options,
+          fields: data.fields,
+          confirmLabel: data.confirmLabel,
+          cancelLabel: data.cancelLabel,
+          confirmValue: data.confirmValue,
+          cancelValue: data.cancelValue,
+          formFields: data.formFields,
+          submitLabel: data.submitLabel,
+        }
+        set(state => ({
+          messages: state.messages.map(msg =>
+            msg.id === aiMsgId
+              ? { ...msg, interactive }
+              : msg
+          ),
+        }))
+      },
+
+      onSuggestions: (data) => {
+        set(state => ({
+          messages: state.messages.map(msg =>
+            msg.id === aiMsgId
+              ? { ...msg, suggestions: data.questions || [] }
               : msg
           ),
         }))
@@ -379,9 +487,12 @@ export const useChatStore = create<ChatState>()((set, get) => ({
    * 清空消息和会话状态（登出时调用）
    */
   clearMessages: () => {
-    const { _sseClient } = get()
+    const { _sseClient, _agentPollTimer } = get()
     if (_sseClient) {
       _sseClient.abort()
+    }
+    if (_agentPollTimer) {
+      clearInterval(_agentPollTimer)
     }
     set({
       messages: [],
@@ -390,6 +501,9 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       error: null,
       isStreaming: false,
       streamingContent: '',
+      handedOff: false,
+      agentSessionId: null,
+      _agentPollTimer: null,
       _sseClient: null,
     })
   },
@@ -404,6 +518,57 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     } catch (error) {
       console.error('获取快捷操作失败:', error)
     }
+  },
+
+  /**
+   * 轮询人工客服会话消息（转人工后显示客服回复）
+   * 通过 AI 会话 ID 查询人工会话，把客服消息追加到消息列表（去重）。
+   */
+  startAgentPolling: () => {
+    const { _agentPollTimer, currentSessionId, agentSessionId } = get()
+    // 清掉旧轮询
+    if (_agentPollTimer) {
+      clearInterval(_agentPollTimer)
+    }
+
+    const pollOnce = async () => {
+      const { currentSessionId: sid, handedOff } = get()
+      if (!sid || !handedOff) return
+      const detail = await getAgentSessionByAi(sid)
+      if (!detail || !detail.messages) return
+
+      set(state => {
+        // 首次拿到 agentSessionId
+        const resolvedAgentId = state.agentSessionId || detail.id
+        // 把人工客服消息映射为 assistant 消息（去重 by id）
+        const existingIds = new Set(state.messages.map(m => m.id))
+        const agentMsgs = (detail.messages || [])
+          .filter(m => m.senderType === 'agent')
+          .map(m => ({
+            id: `agent-${m.id}`,
+            session_id: sid,
+            role: 'assistant' as const,
+            content: m.content,
+            created_at: m.createdAt,
+          }))
+          .filter(m => !existingIds.has(m.id))
+        if (agentMsgs.length === 0 && state.agentSessionId === resolvedAgentId) {
+          return state
+        }
+        return {
+          ...state,
+          agentSessionId: resolvedAgentId,
+          messages: [...state.messages, ...agentMsgs],
+        }
+      })
+    }
+
+    // 立即拉一次
+    pollOnce()
+    // 每 3s 轮询（POC 简单版）
+    const timer = setInterval(pollOnce, 3000)
+    set({ _agentPollTimer: timer })
+    void agentSessionId
   },
 }))
 

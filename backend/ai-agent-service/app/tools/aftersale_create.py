@@ -11,6 +11,7 @@ from typing import Optional, Dict, Any
 from loguru import logger
 
 from app.tools.base import BaseTool, ToolContext, ToolResult
+from app.utils.enum_labels import TICKET_TYPE_LABELS
 from app.utils.http_client import get_admin_api_client
 
 
@@ -72,7 +73,7 @@ class AftersaleCreateTool(BaseTool):
             },
             "priority": {
                 "type": "string",
-                "description": "优先级（可选，默认 normal）",
+                "description": "优先级：normal=普通/urgent=紧急/critical=严重（可选，默认普通）",
                 "enum": ["normal", "urgent", "critical"],
             },
             "refund_amount": {
@@ -189,11 +190,12 @@ class AftersaleCreateTool(BaseTool):
             )
 
         if ticket_type not in VALID_TICKET_TYPES:
+            valid_labels = "、".join(TICKET_TYPE_LABELS.get(t, t) for t in sorted(VALID_TICKET_TYPES))
             return ToolResult(
                 success=False,
                 error=f"无效的工单类型: {ticket_type}",
-                message=f"不支持的售后类型，可选: {', '.join(VALID_TICKET_TYPES)}",
-                suggestion=f"请从以下类型中选择: {', '.join(VALID_TICKET_TYPES)}",
+                message=f"不支持的售后类型，可选: {valid_labels}",
+                suggestion=f"请从以下类型中选择: {valid_labels}",
             )
 
         if not reason:
@@ -264,15 +266,18 @@ class AftersaleCreateTool(BaseTool):
                 f"tenant={context.tenant_id}, user={context.user_id}"
             )
 
+            ticket_type_label = TICKET_TYPE_LABELS.get(ticket_type, ticket_type)
             return ToolResult(
                 success=True,
                 data=ticket_data,
                 message=(
                     f"售后工单已创建成功！工单编号：{ticket_no}。"
-                    f"类型：{ticket_type}，原因：{reason}。"
+                    f"类型：{ticket_type_label}，原因：{reason}。"
                     "我们会尽快处理，感谢您的耐心等待 🙏"
                 ),
-                summary=f"售后工单创建成功: {ticket_no}, 类型{ticket_type}, 订单{order_id}",
+                summary=f"售后工单创建成功: {ticket_no}, 类型{ticket_type_label}, 订单{order_id}",
+                # T2 事务终态：售后创建完成 → 清空售后域草稿状态
+                terminal=True,
             )
 
         except Exception as e:

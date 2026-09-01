@@ -1,3 +1,5 @@
+// case_ids: PR-001, PR-002, PR-003, PR-004, PR-005, PR-006
+
 package com.migao.admin.service;
 
 import com.migao.admin.dto.*;
@@ -415,17 +417,36 @@ class ProductServiceTest {
     // ======================== 删除商品测试 ========================
 
     @Test
-    @DisplayName("删除商品成功")
+    @DisplayName("删除商品成功 - off_sale 状态可删")
     void deleteProduct_Success() {
-        // Given
-        when(productMapper.selectById("prod-001")).thenReturn(testProduct);
-        when(productMapper.deleteById("prod-001")).thenReturn(1);
+        // Given: off_sale 商品（与 batchDelete 状态约束一致）
+        Product offSaleProduct = Product.builder()
+                .id("prod-off")
+                .tenantId(1L)
+                .name("已下架商品")
+                .status("off_sale")
+                .build();
+        when(productMapper.selectById("prod-off")).thenReturn(offSaleProduct);
+        when(productMapper.deleteById("prod-off")).thenReturn(1);
 
         // When
-        productService.deleteProduct("prod-001", 1L);
+        productService.deleteProduct("prod-off", 1L);
 
         // Then
-        verify(productMapper).deleteById("prod-001");
+        verify(productMapper).deleteById("prod-off");
+    }
+
+    @Test
+    @DisplayName("删除商品失败 - on_sale 商品拒绝删除（与 batchDelete 一致）")
+    void deleteProduct_OnSaleRejected() {
+        // Given: on_sale 商品
+        when(productMapper.selectById("prod-001")).thenReturn(testProduct);
+
+        // When & Then
+        assertThatThrownBy(() -> productService.deleteProduct("prod-001", 1L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("不允许删除");
+        verify(productMapper, never()).deleteById(anyString());
     }
 
     @Test
@@ -441,6 +462,208 @@ class ProductServiceTest {
                     BusinessException bex = (BusinessException) ex;
                     assertThat(bex.getCode()).isEqualTo("NOT_FOUND");
                 });
+    }
+
+    // ======================== 单 SKU 改价（前端行内编辑） ========================
+
+    @Test
+    @DisplayName("单SKU改价成功 - skuId 属于商品时原地更新价格并返回 SKU")
+    void updateSkuPriceById_Success() {
+        // Given: 商品存在（id+tenant），SKU 属于该商品
+        when(productMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(testProduct);
+        ProductSku sku = ProductSku.builder()
+                .id(1001L).tenantId(1L).productId("prod-001")
+                .colorName("红色").sellingMethod("bulk_cut").doorWidth("2.8米")
+                .price(new BigDecimal("88.00")).stock(10).skuCode("HCL-01-SJ-28").build();
+        when(productSkuMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(sku);
+        when(productSkuMapper.updateById(any(ProductSku.class))).thenReturn(1);
+
+        // When
+        ProductSkuResponse result = productService.updateSkuPriceById("prod-001", 1001L, new BigDecimal("99.00"), 1L);
+
+        // Then: 返回更新后的 SKU，且只更新价格行（不删除/重建）
+        assertThat(result.getId()).isEqualTo(1001L);
+        assertThat(result.getPrice()).isEqualByComparingTo(new BigDecimal("99.00"));
+        verify(productSkuMapper).updateById(argThat((ProductSku s) ->
+                s.getId() == 1001L && s.getPrice().compareTo(new BigDecimal("99.00")) == 0));
+        verify(productSkuMapper, never()).delete(any());
+    }
+
+    @Test
+    @DisplayName("单SKU改价 - 负数价格被拒绝（422）")
+    void updateSkuPriceById_NegativePriceRejected() {
+        when(productMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(testProduct);
+
+        assertThatThrownBy(() -> productService.updateSkuPriceById("prod-001", 1001L, new BigDecimal("-1.00"), 1L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("价格");
+        verify(productSkuMapper, never()).updateById(any(ProductSku.class));
+    }
+
+    @Test
+    @DisplayName("单SKU改价 - skuId 不属于该商品/不存在时抛 404")
+    void updateSkuPriceById_SkuNotFound() {
+        when(productMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(testProduct);
+        when(productSkuMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null);
+
+        assertThatThrownBy(() -> productService.updateSkuPriceById("prod-001", 999L, new BigDecimal("99.00"), 1L))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> {
+                    BusinessException bex = (BusinessException) ex;
+                    assertThat(bex.getHttpStatus()).isEqualTo(404);
+                });
+        verify(productSkuMapper, never()).updateById(any(ProductSku.class));
+    }
+
+    // ======================== 更新商品 SKU 断链防护（订单回滚可寻址） ========================
+
+    @Test
+    @DisplayName("更新商品 - 已存在 SKU/颜色按 id 原地更新（不删除重建，旧 skuId 保持可回滚）")
+    void updateProduct_PreservesExistingSkuAndColorIds() {
+        // Given: 请求携带已有颜色(50)/SKU(1001) 的真实 DB id
+        ProductUpdateRequest request = new ProductUpdateRequest();
+        request.setName("更新后的商品");
+        request.setCategoryId("cat-001");
+        request.setBasePrice(new BigDecimal("399.00"));
+
+        ProductColorInput c1 = new ProductColorInput();
+        c1.setId(50L);
+        c1.setColorName("红色");
+        request.setColors(List.of(c1));
+
+        ProductSkuInput s1 = new ProductSkuInput();
+        s1.setId(1001L);
+        s1.setColorId(50L);
+        s1.setColorName("红色");
+        s1.setSellingMethod("bulk_cut");
+        s1.setDoorWidth("2.8米");
+        s1.setPrice(new BigDecimal("99.00"));
+        s1.setStock(10);
+        request.setSkus(List.of(s1));
+
+        ProductColor existingColor = ProductColor.builder()
+                .id(50L).tenantId(1L).productId("prod-001").colorName("红色").sortOrder(0).build();
+        ProductSku existingSku = ProductSku.builder()
+                .id(1001L).tenantId(1L).productId("prod-001").colorId(50L)
+                .colorName("红色").sellingMethod("bulk_cut").doorWidth("2.8米")
+                .price(new BigDecimal("88.00")).stock(10).skuCode("HCL-01-SJ-28").build();
+
+        when(productMapper.selectById("prod-001")).thenReturn(testProduct).thenReturn(testProduct);
+        when(categoryMapper.selectById("cat-001")).thenReturn(testCategory);
+        when(productMapper.updateById(any(Product.class))).thenReturn(1);
+        when(productColorMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(existingColor));
+        when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(existingSku));
+        when(productColorMapper.selectCount(any(LambdaQueryWrapper.class))).thenReturn(1L);
+
+        // When
+        productService.updateProduct("prod-001", request, 1L);
+
+        // Then: 不物理删除旧 SKU/颜色；旧行按 id 原地更新，不插入新行
+        verify(productSkuMapper, never()).delete(any());
+        verify(productColorMapper, never()).delete(any());
+        verify(productSkuMapper, never()).deleteById(anyLong());
+        verify(productColorMapper, never()).deleteById(anyLong());
+        verify(productSkuMapper, never()).insert(any(ProductSku.class));
+        verify(productColorMapper, never()).insert(any(ProductColor.class));
+        verify(productColorMapper).updateById(argThat((ProductColor c) -> c.getId() == 50L));
+        verify(productSkuMapper).updateById(argThat((ProductSku s) -> s.getId() == 1001L));
+    }
+
+    @Test
+    @DisplayName("Agent 更新商品 - 同名颜色/组合的旧 SKU 保持原 id（不重建）")
+    void updateProductForAgent_PreservesExistingSkuIds() {
+        // Given: Agent 只传颜色/售卖方式/门幅名称（无 id），触发 SKU 重建
+        com.migao.admin.dto.agent.AgentProductUpdateRequest req =
+                new com.migao.admin.dto.agent.AgentProductUpdateRequest();
+        req.setColors(List.of("红色"));
+        req.setSellingMethods(List.of("bulk_cut"));
+        req.setDoorWidths(List.of("2.8米"));
+
+        ProductColor existingColor = ProductColor.builder()
+                .id(50L).tenantId(1L).productId("prod-001").colorName("红色").sortOrder(0).build();
+        ProductSku existingSku = ProductSku.builder()
+                .id(1001L).tenantId(1L).productId("prod-001").colorId(50L)
+                .colorName("红色").sellingMethod("bulk_cut").doorWidth("2.8米")
+                .price(new BigDecimal("88.00")).stock(10).skuCode("HCL-01-SJ-28").build();
+
+        when(productMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(testProduct);
+        when(productMapper.selectById("prod-001")).thenReturn(testProduct);
+        when(productMapper.updateById(any(Product.class))).thenReturn(1);
+        when(productColorMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(existingColor));
+        when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(existingSku));
+        when(productColorMapper.selectCount(any(LambdaQueryWrapper.class))).thenReturn(1L);
+
+        // When
+        productService.updateProductForAgent("prod-001", req, 1L);
+
+        // Then: 旧 SKU/颜色行保留（按组合/名称匹配原地更新）
+        verify(productSkuMapper, never()).delete(any());
+        verify(productColorMapper, never()).delete(any());
+        verify(productSkuMapper, never()).insert(any(ProductSku.class));
+        verify(productColorMapper, never()).insert(any(ProductColor.class));
+        verify(productColorMapper).updateById(argThat((ProductColor c) -> c.getId() == 50L));
+        verify(productSkuMapper).updateById(argThat((ProductSku s) -> s.getId() == 1001L));
+    }
+
+    // ======================== 商品可售校验（供订单域调用） ========================
+
+    @Test
+    @DisplayName("可售校验 - on_sale 商品返回 null（可售）")
+    void validateSellable_OnSale() {
+        when(productMapper.selectById("prod-001")).thenReturn(testProduct);
+
+        assertThat(productService.validateSellable("prod-001", 1L)).isNull();
+    }
+
+    @Test
+    @DisplayName("可售校验 - 非 on_sale 商品返回不可售原因")
+    void validateSellable_NotOnSale() {
+        Product offSaleProduct = Product.builder()
+                .id("prod-off").tenantId(1L).name("已下架商品").status("off_sale").build();
+        when(productMapper.selectById("prod-off")).thenReturn(offSaleProduct);
+
+        assertThat(productService.validateSellable("prod-off", 1L)).contains("不可售卖");
+    }
+
+    @Test
+    @DisplayName("可售校验 - 商品不存在（含逻辑删除）返回原因")
+    void validateSellable_NotFound() {
+        when(productMapper.selectById("nonexistent")).thenReturn(null);
+
+        assertThat(productService.validateSellable("nonexistent", 1L)).contains("不存在");
+    }
+
+    @Test
+    @DisplayName("Agent 更新商品 - 旧数据 SKU（colorName 为空，仅 colorId）按颜色 id 匹配保留")
+    void updateProductForAgent_PreservesLegacySkuIds() {
+        // Given: 旧数据 SKU 只有 colorId 无 colorName；Agent 按颜色名称重建
+        com.migao.admin.dto.agent.AgentProductUpdateRequest req =
+                new com.migao.admin.dto.agent.AgentProductUpdateRequest();
+        req.setColors(List.of("红色"));
+        req.setSellingMethods(List.of("bulk_cut"));
+        req.setDoorWidths(List.of("2.8米"));
+
+        ProductColor existingColor = ProductColor.builder()
+                .id(50L).tenantId(1L).productId("prod-001").colorName("红色").sortOrder(0).build();
+        ProductSku legacySku = ProductSku.builder()
+                .id(1001L).tenantId(1L).productId("prod-001").colorId(50L)
+                .colorName(null).sellingMethod("bulk_cut").doorWidth("2.8米")
+                .price(new BigDecimal("88.00")).stock(10).skuCode("HCL-01-SJ-28").build();
+
+        when(productMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(testProduct);
+        when(productMapper.selectById("prod-001")).thenReturn(testProduct);
+        when(productMapper.updateById(any(Product.class))).thenReturn(1);
+        when(productColorMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(existingColor));
+        when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(legacySku));
+        when(productColorMapper.selectCount(any(LambdaQueryWrapper.class))).thenReturn(1L);
+
+        // When
+        productService.updateProductForAgent("prod-001", req, 1L);
+
+        // Then: 旧 SKU 通过 colorId（颜色名→id 解析）匹配，保留原 id，不重建
+        verify(productSkuMapper, never()).delete(any());
+        verify(productSkuMapper, never()).insert(any(ProductSku.class));
+        verify(productSkuMapper).updateById(argThat((ProductSku s) -> s.getId() == 1001L));
     }
 
     // ======================== 商品状态变更测试 ========================
@@ -509,22 +732,84 @@ class ProductServiceTest {
         // Given: 商品当前状态为 on_sale
         when(productMapper.selectById("prod-001")).thenReturn(testProduct);
 
-        // When & Then: in_warehouse 已废弃，不能作为目标状态
+        // When & Then: in_warehouse 已废弃，不能作为目标状态；报错用中文术语
         assertThatThrownBy(() -> productService.updateProductStatus("prod-001", "in_warehouse", 1L))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("状态流转无效");
+                .hasMessageContaining("状态流转无效")
+                .hasMessageContaining("出售中")
+                .hasMessageNotContaining("on_sale");
     }
 
     @Test
-    @DisplayName("商品状态变更失败 - 无效状态值")
+    @DisplayName("商品状态变更失败 - 无效状态值（报错中文术语，不含英文枚举）")
     void updateProductStatus_InvalidStatus() {
         // Given: mock商品存在，当前状态为 on_sale
         when(productMapper.selectById("prod-001")).thenReturn(testProduct);
 
-        // When & Then: on_sale 不能流转到 invalid_status
+        // When & Then: on_sale 不能流转到 invalid_status；报错用中文术语
         assertThatThrownBy(() -> productService.updateProductStatus("prod-001", "invalid_status", 1L))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("状态流转无效");
+                .hasMessageContaining("状态流转无效")
+                .hasMessageContaining("出售中")
+                .hasMessageNotContaining("on_sale");
+    }
+
+    // ======================== 商品推荐标记测试（C 端新品推荐闭环） ========================
+
+    @Test
+    @DisplayName("上架商品可设为推荐")
+    void updateRecommended_OnSaleProduct() {
+        when(productMapper.selectById("prod-001")).thenReturn(testProduct);
+        when(productMapper.updateById(any(Product.class))).thenReturn(1);
+
+        productService.updateProductRecommended("prod-001", true, 1L);
+
+        verify(productMapper).updateById(argThat((Product p) -> Boolean.TRUE.equals(p.getRecommended())));
+    }
+
+    @Test
+    @DisplayName("取消推荐成功")
+    void updateRecommended_Unset() {
+        Product recProduct = Product.builder()
+                .id("prod-004")
+                .tenantId(1L)
+                .name("推荐商品")
+                .status("on_sale")
+                .recommended(true)
+                .build();
+        when(productMapper.selectById("prod-004")).thenReturn(recProduct);
+        when(productMapper.updateById(any(Product.class))).thenReturn(1);
+
+        productService.updateProductRecommended("prod-004", false, 1L);
+
+        verify(productMapper).updateById(argThat((Product p) -> Boolean.FALSE.equals(p.getRecommended())));
+    }
+
+    @Test
+    @DisplayName("非上架商品不可设为推荐（仅上架商品可出现在 C 端推荐位）")
+    void updateRecommended_RejectsOffSale() {
+        Product offSaleProduct = Product.builder()
+                .id("prod-005")
+                .tenantId(1L)
+                .name("已下架商品")
+                .status("off_sale")
+                .build();
+        when(productMapper.selectById("prod-005")).thenReturn(offSaleProduct);
+
+        assertThatThrownBy(() -> productService.updateProductRecommended("prod-005", true, 1L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("仅上架商品可设为推荐");
+
+        verify(productMapper, never()).updateById(any(Product.class));
+    }
+
+    @Test
+    @DisplayName("设置不存在的商品推荐标记 -> 404")
+    void updateRecommended_NotFound() {
+        when(productMapper.selectById("nonexistent")).thenReturn(null);
+
+        assertThatThrownBy(() -> productService.updateProductRecommended("nonexistent", true, 1L))
+                .isInstanceOf(BusinessException.class);
     }
 
     // ═══════════════════════════════════════════════════════════

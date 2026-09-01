@@ -389,6 +389,7 @@ def create_default_registry() -> ToolRegistry:
     from app.tools.logistics_track import LogisticsTrackTool
     # [RAG 禁用] from app.tools.knowledge_search import KnowledgeSearchTool
     from app.tools.order_query import OrderQueryTool
+    from app.tools.customer_order_query import CustomerOrderQueryTool
     from app.tools.order_manage import OrderManageTool
     from app.tools.order_create import OrderCreateTool
     from app.tools.product_manage import ProductManageTool
@@ -398,6 +399,7 @@ def create_default_registry() -> ToolRegistry:
     from app.tools.employee_manage import EmployeeManageTool
     from app.tools.role_manage import RoleManageTool
     from app.tools.dashboard_stats import DashboardStatsTool
+    from app.tools.finance_api import FinanceApiTool
     from app.tools.after_sales_manage import AfterSalesManageTool
     from app.tools.aftersale_create import AftersaleCreateTool
     from app.tools.aftersale_query import AftersaleQueryTool
@@ -414,6 +416,7 @@ def create_default_registry() -> ToolRegistry:
     from app.tools.sku_update import SkuUpdateTool
     from app.tools.interact import InteractTool  # noqa: F401 保留以备将来使用
     from app.tools.validate_input import ValidateInputTool
+    from app.tools.curtain_calc import CurtainCalcTool
 
     registry = ToolRegistry()
     
@@ -423,6 +426,7 @@ def create_default_registry() -> ToolRegistry:
     registry.register(LogisticsTrackTool())
     # [RAG 禁用] registry.register(KnowledgeSearchTool())
     registry.register(OrderQueryTool())
+    registry.register(CustomerOrderQueryTool())
     registry.register(OrderManageTool())
     registry.register(OrderCreateTool())
     registry.register(ProductManageTool())
@@ -433,6 +437,7 @@ def create_default_registry() -> ToolRegistry:
     registry.register(EmployeeManageTool())
     registry.register(RoleManageTool())
     registry.register(DashboardStatsTool())
+    registry.register(FinanceApiTool())
     registry.register(AfterSalesManageTool())
     registry.register(AftersaleCreateTool())
     registry.register(AftersaleQueryTool())
@@ -450,6 +455,7 @@ def create_default_registry() -> ToolRegistry:
     # interact 工具重新启用：支持交互式组件（interactive component support）
     registry.register(InteractTool())
     registry.register(ValidateInputTool())
+    registry.register(CurtainCalcTool())
 
     logger.info(f"Default registry created with {len(registry)} tools")
     return registry

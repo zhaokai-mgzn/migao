@@ -2,7 +2,9 @@ package com.migao.admin.controller;
 
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.*;
+import com.migao.admin.exception.BusinessException;
 import com.migao.admin.service.ProductService;
+import com.migao.admin.security.RequirePermission;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -30,6 +32,7 @@ public class ProductController {
      *
      * GET /api/admin/products?page=1&size=20&keyword=xxx&categoryId=xxx&status=on_sale
      */
+    @RequirePermission("product:list")
     @GetMapping
     public ApiResponse<PageResponse<ProductResponse>> getProducts(ProductQueryRequest query) {
         Long tenantId = TenantContext.getTenantId();
@@ -43,6 +46,7 @@ public class ProductController {
      *
      * GET /api/admin/products/{id}
      */
+    @RequirePermission("product:list")
     @GetMapping("/{id}")
     public ApiResponse<ProductResponse> getProductById(@PathVariable String id) {
         Long tenantId = TenantContext.getTenantId();
@@ -56,6 +60,7 @@ public class ProductController {
      *
      * POST /api/admin/products
      */
+    @RequirePermission("product:create")
     @PostMapping
     public ApiResponse<ProductResponse> createProduct(@Valid @RequestBody ProductCreateRequest request) {
         Long tenantId = TenantContext.getTenantId();
@@ -69,6 +74,7 @@ public class ProductController {
      *
      * PUT /api/admin/products/{id}
      */
+    @RequirePermission("product:create")
     @PutMapping("/{id}")
     public ApiResponse<ProductResponse> updateProduct(
             @PathVariable String id,
@@ -84,6 +90,7 @@ public class ProductController {
      *
      * DELETE /api/admin/products/{id}
      */
+    @RequirePermission("product:create")
     @DeleteMapping("/{id}")
     public ApiResponse<Void> deleteProduct(@PathVariable String id) {
         Long tenantId = TenantContext.getTenantId();
@@ -98,6 +105,7 @@ public class ProductController {
      * PUT /api/admin/products/{id}/status
      * Body: { "status": "on_sale" / "off_sale" }
      */
+    @RequirePermission("product:create")
     @PutMapping("/{id}/status")
     public ApiResponse<Void> updateProductStatus(
             @PathVariable String id,
@@ -110,10 +118,32 @@ public class ProductController {
     }
 
     /**
+     * 设置/取消商品推荐标记（C 端「新品推荐」位控制）
+     *
+     * PUT /api/admin/products/{id}/recommend
+     * Body: { "recommended": true / false }
+     */
+    @RequirePermission("product:create")
+    @PutMapping("/{id}/recommend")
+    public ApiResponse<Void> updateProductRecommended(
+            @PathVariable String id,
+            @RequestBody Map<String, Boolean> body) {
+        Long tenantId = TenantContext.getTenantId();
+        Boolean recommended = body.get("recommended");
+        if (recommended == null) {
+            throw new BusinessException("VALIDATION_ERROR", "recommended 不能为空");
+        }
+        log.info("设置商品推荐标记: id={}, recommended={}, tenantId={}", id, recommended, tenantId);
+        productService.updateProductRecommended(id, recommended, tenantId);
+        return ApiResponse.success();
+    }
+
+    /**
      * 按颜色+规格维度查询低库存 SKU（库存告警用）
      *
      * GET /api/admin/products/low-stock-by-color?threshold=100&limit=50
      */
+    @RequirePermission("product:list")
     @GetMapping("/low-stock-by-color")
     public ApiResponse<List<LowStockByColorResponse>> getLowStockByColor(
             @RequestParam(defaultValue = "100") int threshold,
@@ -129,6 +159,7 @@ public class ProductController {
      * POST /api/admin/products/batch/on-shelf
      * Body: { "productIds": ["id1", "id2", ...] }
      */
+    @RequirePermission("product:create")
     @PostMapping("/batch/on-shelf")
     public ApiResponse<BatchOperationResult> batchOnShelf(@RequestBody Map<String, List<String>> body) {
         Long tenantId = TenantContext.getTenantId();
@@ -144,6 +175,7 @@ public class ProductController {
      * POST /api/admin/products/batch/off-shelf
      * Body: { "productIds": ["id1", "id2", ...] }
      */
+    @RequirePermission("product:create")
     @PostMapping("/batch/off-shelf")
     public ApiResponse<BatchOperationResult> batchOffShelf(@RequestBody Map<String, List<String>> body) {
         Long tenantId = TenantContext.getTenantId();
@@ -159,6 +191,7 @@ public class ProductController {
      * POST /api/admin/products/batch/delete
      * Body: { "productIds": ["id1", "id2", ...] }
      */
+    @RequirePermission("product:create")
     @PostMapping("/batch/delete")
     public ApiResponse<BatchOperationResult> batchDelete(@RequestBody Map<String, List<String>> body) {
         Long tenantId = TenantContext.getTenantId();
@@ -173,6 +206,7 @@ public class ProductController {
      *
      * GET /api/admin/products/{id}/processing-items
      */
+    @RequirePermission("product:list")
     @GetMapping("/{id}/processing-items")
     public ApiResponse<List<ProductProcessingItemResponse>> getProductProcessingItems(@PathVariable String id) {
         Long tenantId = TenantContext.getTenantId();
@@ -186,6 +220,7 @@ public class ProductController {
      *
      * GET /api/admin/products/export?keyword=xxx&categoryId=xxx&status=on_sale
      */
+    @RequirePermission("product:list")
     @GetMapping("/export")
     public void exportProducts(ProductQueryRequest query, HttpServletResponse response) throws IOException {
         Long tenantId = TenantContext.getTenantId();

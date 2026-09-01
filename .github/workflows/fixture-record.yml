@@ -1,0 +1,72 @@
+name: Fixture Re-record
+permissions:
+  contents: write
+  pull-requests: write
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 每月 1 日 03:00 CST（UTC+8）= UTC 19:00，重录 API fixtures 防过期失真
+    - cron: '0 19 1 * *'
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  re-record:
+    name: Re-record API fixtures
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install test deps
+        working-directory: tests
+        run: npm ci
+
+      - name: Re-record fixtures from dev API
+        working-directory: tests
+        env:
+          BASE_URL: ${{ secrets.E2E_ADMIN_API_URL || 'https://api.migaozn.com' }}
+          E2E_MOCK_AUTH: 'false'
+          E2E_ADMIN_PHONE: ${{ secrets.E2E_ADMIN_PHONE || '13800138000' }}
+          E2E_SMS_CODE: ${{ secrets.E2E_SMS_CODE || '123456' }}
+        run: |
+          npx tsx e2e/scripts/record-fixtures.ts
+
+      - name: Open PR if fixtures changed
+        if: success()
+        run: |
+          if [ -z "$(git status --porcelain -- tests/e2e/fixtures/)" ]; then
+            echo "✅ fixtures 无变化，无需更新"
+          else
+            git config user.name "migao-fixture-bot"
+            git config user.email "fixture-bot@users.noreply.github.com"
+            BRANCH="chore/fixture-rerecord-$(date +%Y%m%d)"
+            git checkout -b "$BRANCH"
+            git add tests/e2e/fixtures/
+            git commit -m "chore(e2e): 重录 API fixtures（月度自动，含脱敏）"
+            git push origin "$BRANCH"
+            gh pr create --title "chore(e2e): 重录 API fixtures（月度自动）" \
+              --body "月度 fixture 重录，保持 quality 测试数据新鲜。录制即脱敏（手机号确定性掩码）。" \
+              --base main
+          fi
+
+      - name: Notify on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `[Fixture] 重录失败 — ${new Date().toISOString().slice(0, 10)}`,
+              body: `fixture 重录失败（录制脚本或登录异常）。\n\n查看详情：${runUrl}`,
+              labels: ['bug', 'role/qa'],
+            })

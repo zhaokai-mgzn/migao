@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+// case_ids: OR-007, OR-008
+
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import dayjs from 'dayjs'
@@ -139,7 +141,7 @@ describe('LogisticsInfo — #686 logisticsCompany 字段名修复', () => {
     // First track dot should have blue-500 class
     const dots = container.querySelectorAll('.rounded-full')
     const firstDot = dots[0]
-    expect(firstDot.className).toContain('bg-blue-500')
+    expect(firstDot.className).toContain('bg-primary-500')
   })
 
   describe('onEdit callback', () => {

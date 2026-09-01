@@ -65,6 +65,12 @@ spring:
       max-file-size: 20MB
       max-request-size: 50MB
 
+# AI 智能甄别服务（ai-agent-service）内部调用配置
+# 服务不可达 / 未配置 token 时，入驻申请按 fail-closed 驳回（系统繁忙，可稍后重试）
+ai-agent:
+  base-url: ${AI_AGENT_BASE_URL:http://localhost:8000}
+  service-token: ${AI_AGENT_SERVICE_TOKEN:}
+
 # MyBatis-Plus 配置
 mybatis-plus:
   mapper-locations: classpath*:mapper/**/*.xml
@@ -128,16 +134,19 @@ aliyun:
     access-key-secret: ${ALIYUN_SMS_ACCESS_KEY_SECRET:}
     sign-name: ${ALIYUN_SMS_SIGN_NAME:}
     template-code: ${ALIYUN_SMS_TEMPLATE_CODE:}
-    # ⚠️ 禁止删除！万能验证码，本地/dev/CI 冒烟测试必需。
-    # 生产环境通过环境变量 SMS_BYPASS_CODE= 设为空禁用，代码会跳过 bypass。
-    # 删除此行会导致 SmsService.verifyCode() bypass 机制失效，全部冒烟测试认证失败。
-    bypass-code: ${SMS_BYPASS_CODE:123456}
+    # ⚠️ 万能验证码（POC 模式）：默认空 = 生产 fail-closed 禁用。
+    # 仅 dev/CI 测试环境通过环境变量 SMS_BYPASS_CODE=123456 显式启用（如 backend/admin-api/.env）。
+    # 生产环境严禁配置该变量；接入真实短信服务后整体移除（技术债 Issue #2616）。
+    bypass-code: ${SMS_BYPASS_CODE:}
 
 # 微信小程序配置
 wechat:
   mini:
     appid: ${WECHAT_MINI_APPID:}
     secret: ${WECHAT_MINI_SECRET:}
+  # Mock 模式（审计 07 P1-1）：默认 false = 生产 fail-closed。
+  # 仅 dev/CI 显式设置 WECHAT_MOCK_ENABLED=true；生产未配 appid/secret 时 mini 登录直接拒绝。
+  mock-enabled: ${WECHAT_MOCK_ENABLED:false}
 
 # 日志配置
 logging:

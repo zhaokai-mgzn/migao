@@ -1,3 +1,4 @@
+// case_ids: UI-002
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
@@ -93,7 +94,7 @@ vi.mock('@/components/ui', () => ({
       </select>
     </div>
   ),
-  StatusBadge: ({ label, color, dot, className, onClick }: any) => React.createElement('span', { onClick, className, title: label }, dot ? React.createElement('span', { className: 'w-1.5 h-1.5 rounded-full' }) : null, label),
+  StatusBadge: ({ label, color, dot, className, onClick }: any) => React.createElement('span', { onClick, className: [color, className].filter(Boolean).join(' '), title: label }, dot ? React.createElement('span', { className: 'w-1.5 h-1.5 rounded-full' }) : null, label),
   Badge: ({ children, variant }: any) => <span data-testid="badge" data-variant={variant}>{children}</span>,
 }))
 
@@ -194,5 +195,40 @@ describe('AfterSalesPage', () => {
     await waitFor(() => {
       expect(screen.getByTestId('pagination')).toBeInTheDocument()
     })
+  })
+
+  it('五种售后状态渲染语义色 chips，未知状态回退 neutral 且 label=暂无数据', async () => {
+    const base = {
+      customerName: '张先生', ticketType: 'return', priority: 'normal',
+      createdAt: '2026-04-25T10:00:00', updatedAt: '2026-04-25T10:00:00',
+    }
+    mockGetTickets.mockResolvedValue({
+      data: { data: { items: [
+        { id: 's1', ticketNo: 'T1', orderNo: 'O1', status: 'pending', ...base },
+        { id: 's2', ticketNo: 'T2', orderNo: 'O2', status: 'processing', ...base },
+        { id: 's3', ticketNo: 'T3', orderNo: 'O3', status: 'resolved', ...base },
+        { id: 's4', ticketNo: 'T4', orderNo: 'O4', status: 'rejected', ...base },
+        { id: 's5', ticketNo: 'T5', orderNo: 'O5', status: 'closed', ...base },
+        { id: 's6', ticketNo: 'T6', orderNo: 'O6', status: 'unknown-status' as any, ...base },
+      ], total: 6 } },
+    })
+
+    render(<AfterSalesPage />)
+    await waitFor(() => {
+      expect(screen.getByText('T1')).toBeInTheDocument()
+    })
+
+    const findByTone = (text: string, toneClass: string) =>
+      screen.getAllByText(text).find((el) => el.className.includes(toneClass))
+
+    expect(findByTone('待处理', 'bg-amber-50')).toBeTruthy()
+    expect(findByTone('处理中', 'bg-primary-50')).toBeTruthy()
+    expect(findByTone('已完成', 'bg-emerald-50')).toBeTruthy()
+    expect(findByTone('已拒绝', 'bg-red-50')).toBeTruthy()
+    expect(findByTone('已关闭', 'bg-neutral-100')).toBeTruthy()
+
+    // 未知状态 → neutral + 「暂无数据」
+    const unknownChip = screen.getAllByText('暂无数据').find((el) => el.className.includes('bg-neutral-100'))
+    expect(unknownChip).toBeTruthy()
   })
 })

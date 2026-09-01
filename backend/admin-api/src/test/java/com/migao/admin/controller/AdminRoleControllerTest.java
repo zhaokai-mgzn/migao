@@ -1,3 +1,4 @@
+// case_ids: HR-004, HR-005
 package com.migao.admin.controller;
 
 import com.migao.admin.config.TenantContext;
@@ -27,6 +28,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * AdminRoleController 单元测试
@@ -132,9 +134,9 @@ class AdminRoleControllerTest {
             Role role = new Role();
             role.setId("2");
             role.setName("operator");
-            when(roleService.createRole(anyString(), anyString(), anyString(), anyLong())).thenReturn(role);
+            when(roleService.createRole(anyString(), anyString(), anyString(), anyLong(), any())).thenReturn(role);
 
-            Map<String, Object> body = Map.of("name", "operator", "code", "op", "permissionIds", List.of(1, 2));
+            Map<String, Object> body = Map.of("name", "operator", "code", "op", "permissionIds", List.of("perm-1", "perm-2"));
 
             mockMvc.perform(post("/api/admin/roles")
                             .contentType("application/json")
@@ -151,7 +153,7 @@ class AdminRoleControllerTest {
         @Test
         @DisplayName("更新角色 -> 200")
         void updateRole() throws Exception {
-            when(roleService.updateRole(anyString(), anyString(), anyString())).thenReturn(new Role());
+            when(roleService.updateRole(anyString(), anyString(), anyString(), any())).thenReturn(new Role());
 
             Map<String, Object> body = Map.of("name", "updated");
 
@@ -176,5 +178,14 @@ class AdminRoleControllerTest {
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.success").value(true));
         }
+    }
+
+    @Test
+    @DisplayName("deleteRole 声明 system:manage 权限注解（审计 07 P1-4）")
+    void deleteRole_hasPermissionAnnotation() throws Exception {
+        var method = AdminRoleController.class.getMethod("deleteRole", String.class);
+        var ann = method.getAnnotation(com.migao.admin.security.RequirePermission.class);
+        assertThat(ann).isNotNull();
+        assertThat(ann.value()).isEqualTo("system:manage");
     }
 }

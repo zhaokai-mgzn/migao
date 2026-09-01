@@ -9,6 +9,7 @@
 
 改动 references/ 下的 Prompt 文件后运行此测试即可发现意外变更。
 """
+# case_ids: MC-003, MC-010
 
 import pytest
 
@@ -52,9 +53,9 @@ def test_skill_has_principles(skill):
 
 @pytest.mark.parametrize("skill", MIBAO_SKILLS)
 def test_skill_prompt_length_reasonable(skill):
-    """Prompt 长度在合理范围（200-6000 字符）"""
+    """Prompt 长度在合理范围（200-9500 字符）"""
     prompt = _build_system_prompt(skill)
-    assert 200 < len(prompt) < 9000, f"{skill}: prompt 长度异常 ({len(prompt)} chars)"
+    assert 200 < len(prompt) < 9500, f"{skill}: prompt 长度异常 ({len(prompt)} chars)"
 
 
 # ============ 领域隔离检查 ============
@@ -83,10 +84,33 @@ def test_aftersales_has_critical_rules():
     assert "转人工" in prompt or "人工介入" in prompt
 
 
+def test_order_prompt_requires_interact_for_sku_selection():
+    """生产回归 OR-010 flaky：多 SKU 选择必须用 interact(choice) 组件。
+
+    旧 prompt 要求"展示表格让用户选"→ LLM 输出纯文本选项，pending_skill 未设置，
+    后续"选1"短消息被误路由 → 回复"没有订单创建权限"。
+    """
+    prompt = _build_system_prompt("order")
+    assert 'interact(component="choice")' in prompt
+
+
 def test_general_is_fallback_friendly():
     """兜底节点必须引导用户说出具体需求"""
     prompt = _build_system_prompt("general")
     assert "创建商品" in prompt or "写操作" in prompt  # 必须有写操作引导
+
+
+def test_cross_domain_write_no_permission_blame():
+    """生产回归（sess_9cfeb2c8b3df4a8f）：跨域写操作失败禁止甩锅"权限/工具缺失"。
+
+    商品创建确认轮被误路由到订单技能时，LLM 曾声称"没有可用的创建商品执行工具/
+    联系管理员开通权限"——错误归因误导用户。共享原则必须规定：模块不符时如实
+    说明并引导用户重新表达意图，而非归因权限。
+    """
+    for skill in ("order", "product", "general"):
+        prompt = _build_system_prompt(skill)
+        assert "不得甩锅权限" in prompt, f"{skill}: 缺少跨域失败归因规则"
+        assert "重新表达" in prompt or "重新说出" in prompt, f"{skill}: 规则未要求引导用户重新表达意图"
 
 
 # ============ Prompt 增量快照 ============
@@ -118,14 +142,14 @@ def test_snapshot_all_skills():
 
     # 最大长度快照（防止无限制膨胀）
     expected_max = {
-        "product": 8500,  # +1000: product_update tool + 3 EXAMPLES
-        "order": 5600,  # +400: SKU 规格选择流程
-        "aftersales": 4300,
-        "customer": 4300,
-        "staff": 4300,
-        "settings": 4300,
-        "data": 4300,
-        "general": 4800,
+        "product": 9600,  # +100: 中止铁律+确认语义唯一化+参数一致铁律（EXAMPLES 反例）+禁英文枚举全局规则
+        "order": 8000,    # +1400: 加工项下单铁律（数据来源/金额计算/数量确认/示例）+ 中止铁律+跨域归因铁律+禁英文枚举全局规则
+        "aftersales": 5200,  # +700: 禁英文枚举全局规则 + 售后工单枚举中文对照（本轮新增）
+        "customer": 5000,  # +500: 禁英文枚举全局规则（共享原则增长）
+        "staff": 4900,    # +400: 禁英文枚举全局规则（共享原则增长）
+        "settings": 4900, # +400: 禁英文枚举全局规则（共享原则增长）
+        "data": 4500,
+        "general": 5200,  # +400: 禁英文枚举全局规则（共享原则增长）
     }
     for skill, max_len in expected_max.items():
         prompt = _build_system_prompt(skill)

@@ -9,6 +9,7 @@ import com.migao.admin.mapper.AfterSalesTicketMapper;
 import com.migao.admin.mapper.OrderMapper;
 import com.migao.admin.mapper.TicketTimelineMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -19,6 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
@@ -37,6 +39,7 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
     private final AfterSalesTicketMapper afterSalesTicketMapper;
     private final OrderMapper orderMapper;
     private final TicketTimelineMapper ticketTimelineMapper;
+    private final FinanceService financeService;
     private final ObjectMapper objectMapper;
 
     /**
@@ -49,6 +52,43 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
             "resolved", Set.of(),
             "rejected", Set.of(),
             "closed", Set.of()
+    );
+
+    /**
+     * 工单状态 → 中文业务术语（写入 internal_notes 用）。
+     * internal_notes 面向企业客户展示，必须用中文（如「待处理 → 处理中」），
+     * 英文枚举仅用于内部存储与 timeline 结构化字段。
+     */
+    private static final Map<String, String> TICKET_STATUS_LABELS = Map.of(
+            "pending", "待处理",
+            "processing", "处理中",
+            "resolved", "已解决",
+            "rejected", "已拒绝",
+            "closed", "已关闭"
+    );
+
+    /**
+     * 工单类型 → 中文业务术语（错误消息用，面向企业客户）。
+     */
+    private static final Map<String, String> TICKET_TYPE_LABELS = Map.of(
+            "refund", "退款",
+            "return", "退货",
+            "exchange", "换货",
+            "repair", "维修",
+            "complaint", "投诉",
+            "other", "其他"
+    );
+
+    /**
+     * 订单状态 → 中文业务术语（错误消息用，面向企业客户）。
+     */
+    private static final Map<String, String> ORDER_STATUS_LABELS = Map.of(
+            "pending", "待付款",
+            "confirmed", "已确认",
+            "producing", "生产中",
+            "shipped", "已发货",
+            "completed", "已完成",
+            "cancelled", "已取消"
     );
 
     /**
@@ -161,33 +201,59 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
      */
     @Transactional(rollbackFor = Exception.class)
     public AfterSalesDetailResponse createTicket(AfterSalesCreateRequest request, Long tenantId, String operator) {
-        // 校验关联订单是否存在
-        Order order = orderMapper.selectById(request.getOrderId());
-        if (order == null) {
-            throw BusinessException.validationError("关联订单不存在");
-        }
-
-        // 防重复：检查该订单是否已有活跃工单
-        List<AfterSalesTicket> activeTickets = afterSalesTicketMapper.selectList(
-            new LambdaQueryWrapper<AfterSalesTicket>()
-                .eq(AfterSalesTicket::getOrderId, request.getOrderId())
-                .in(AfterSalesTicket::getStatus, "pending", "processing")
-        );
-        if (!activeTickets.isEmpty()) {
-            boolean hasSameType = activeTickets.stream()
-                .anyMatch(t -> request.getTicketType().equals(t.getTicketType()));
-            if (hasSameType) {
-                throw BusinessException.validationError(
-                    String.format("该订单已有 %s 类型的活跃工单（%s），请先处理后再创建",
-                        request.getTicketType(),
-                        activeTickets.get(0).getTicketNo()));
+        // 投诉类工单可无关联订单（转人工/服务投诉场景）；其余类型必须关联订单
+        boolean isComplaint = "complaint".equals(request.getTicketType());
+        Order order = null;
+        if (!isComplaint) {
+            // 校验关联订单是否存在
+            order = orderMapper.selectById(request.getOrderId());
+            if (order == null) {
+                throw BusinessException.validationError("关联订单不存在");
             }
-            // 不同类型 → 记录警告但不阻止
-            log.warn("订单 {} 已有活跃工单 {}（类型={}），新建不同类型工单（{}）",
-                request.getOrderId(),
-                activeTickets.get(0).getTicketNo(),
-                activeTickets.get(0).getTicketType(),
-                request.getTicketType());
+
+            // 状态门禁：退款/退货工单仅允许在已确认及以上的订单创建（与 refundOrder 一致）
+            boolean isRefundType = "refund".equals(request.getTicketType()) || "return".equals(request.getTicketType());
+            if (isRefundType && !Set.of("confirmed", "producing", "shipped", "completed").contains(order.getStatus())) {
+                String orderStatusLabel = ORDER_STATUS_LABELS.getOrDefault(order.getStatus(), order.getStatus());
+                throw BusinessException.validationError(
+                        String.format("当前订单状态[%s]不允许创建退款/退货工单，仅已确认/生产中/已发货/已完成可创建",
+                                orderStatusLabel));
+            }
+
+            // 退款金额校验：≥0 且 ≤ 订单实收款
+            if (request.getRefundAmount() != null) {
+                if (request.getRefundAmount().compareTo(BigDecimal.ZERO) < 0) {
+                    throw BusinessException.validationError("退款金额不能为负数");
+                }
+                BigDecimal effectiveActual = order.getActualAmount() != null ? order.getActualAmount() : order.getTotalAmount();
+                if (request.getRefundAmount().compareTo(effectiveActual) > 0) {
+                    throw BusinessException.validationError("退款金额不能超过订单实收款 " + effectiveActual);
+                }
+            }
+
+            // 防重复：检查该订单是否已有活跃工单
+            List<AfterSalesTicket> activeTickets = afterSalesTicketMapper.selectList(
+                new LambdaQueryWrapper<AfterSalesTicket>()
+                    .eq(AfterSalesTicket::getOrderId, request.getOrderId())
+                    .in(AfterSalesTicket::getStatus, "pending", "processing")
+            );
+            if (!activeTickets.isEmpty()) {
+                boolean hasSameType = activeTickets.stream()
+                    .anyMatch(t -> request.getTicketType().equals(t.getTicketType()));
+                if (hasSameType) {
+                    String typeLabel = TICKET_TYPE_LABELS.getOrDefault(request.getTicketType(), request.getTicketType());
+                    throw BusinessException.validationError(
+                        String.format("该订单已有 %s 类型的活跃工单（%s），请先处理后再创建",
+                            typeLabel,
+                            activeTickets.get(0).getTicketNo()));
+                }
+                // 不同类型 → 记录警告但不阻止
+                log.warn("订单 {} 已有活跃工单 {}（类型={}），新建不同类型工单（{}）",
+                    request.getOrderId(),
+                    activeTickets.get(0).getTicketNo(),
+                    activeTickets.get(0).getTicketType(),
+                    request.getTicketType());
+            }
         }
 
         // 创建工单实体
@@ -196,7 +262,8 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
         ticket.setTicketNo(generateTicketNo());
         ticket.setOrderId(request.getOrderId());
         // TODO: 当前使用客户名称作为关联标识，后续应改为实际客户ID（需客户表支持手机号→ID查询）
-        ticket.setCustomerId(order.getCustomerName());
+        // 投诉类工单无关联订单，客户标识降级为「投诉用户」
+        ticket.setCustomerId(order != null ? order.getCustomerName() : "投诉用户");
         ticket.setTicketType(request.getTicketType());
         ticket.setStatus("pending");
         ticket.setDescription(request.getDescription());
@@ -256,18 +323,23 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
         String currentStatus = ticket.getStatus();
         Set<String> allowedTargets = STATUS_TRANSITIONS.getOrDefault(currentStatus, Set.of());
         if (!allowedTargets.contains(newStatus)) {
+            String currentLabel = TICKET_STATUS_LABELS.getOrDefault(currentStatus, currentStatus);
+            String newLabel = TICKET_STATUS_LABELS.getOrDefault(newStatus, newStatus);
             throw BusinessException.validationError(
-                    String.format("工单状态不允许从 [%s] 变更为 [%s]", currentStatus, newStatus));
+                    String.format("工单状态不允许从 [%s] 变更为 [%s]", currentLabel, newLabel));
         }
 
         ticket.setStatus(newStatus);
 
         // 追加备注到 internal_notes（不覆盖历史评论）
+        // 状态用中文业务术语：面向企业客户展示，不能用 pending/processing 等英文枚举
         if (StringUtils.hasText(request.getRemark())) {
             String timestamp = OffsetDateTime.now()
                 .format(DateTimeFormatter.ofPattern("MM-dd HH:mm"));
+            String currentLabel = TICKET_STATUS_LABELS.getOrDefault(currentStatus, currentStatus);
+            String newLabel = TICKET_STATUS_LABELS.getOrDefault(newStatus, newStatus);
             String newNote = String.format("[%s] %s → %s: %s",
-                timestamp, currentStatus, newStatus, request.getRemark());
+                timestamp, currentLabel, newLabel, request.getRemark());
             String existing = ticket.getInternalNotes();
             if (StringUtils.hasText(existing)) {
                 ticket.setInternalNotes(existing + "\n" + newNote);
@@ -286,6 +358,14 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
 
         afterSalesTicketMapper.updateById(ticket);
 
+        // 完结联动：refund/return 工单 resolved 且有退款金额时，累加订单退款并登记退款流水
+        if ("resolved".equals(newStatus)
+                && ("refund".equals(ticket.getTicketType()) || "return".equals(ticket.getTicketType()))
+                && ticket.getRefundAmount() != null
+                && ticket.getRefundAmount().compareTo(BigDecimal.ZERO) > 0) {
+            linkRefundToOrderAndFinance(ticket);
+        }
+
         // 写入时间线记录（每次状态变更都记录）
         TicketTimeline timeline = new TicketTimeline();
         timeline.setTicketId(id);
@@ -302,6 +382,57 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
 
         log.info("更新工单状态成功: id={}, {} -> {}, remark={}", id, currentStatus, newStatus,
                 StringUtils.hasText(request.getRemark()) ? request.getRemark() : "(无)");
+    }
+
+    /**
+     * 售后工单完结（resolved）联动：
+     * 1. 订单累计已退款金额（封顶实收款，防多次工单超退）并置 refundAt；
+     * 2. 通过 FinanceService 登记一条退款流水（type=refund，amount=本次实际退款额）。
+     * 订单不存在或已全额退款时仅告警跳过，不影响工单完结主流程。
+     */
+    private void linkRefundToOrderAndFinance(AfterSalesTicket ticket) {
+        if (!StringUtils.hasText(ticket.getOrderId())) {
+            return;
+        }
+        Order order = orderMapper.selectById(ticket.getOrderId());
+        if (order == null) {
+            log.warn("售后工单完结联动退款失败：订单不存在, ticketNo={}, orderId={}",
+                    ticket.getTicketNo(), ticket.getOrderId());
+            return;
+        }
+        BigDecimal effectiveActual = order.getActualAmount() != null ? order.getActualAmount() : order.getTotalAmount();
+        BigDecimal existingRefund = order.getRefundAmount() != null ? order.getRefundAmount() : BigDecimal.ZERO;
+        BigDecimal applied = ticket.getRefundAmount().min(effectiveActual.subtract(existingRefund));
+        if (applied.compareTo(BigDecimal.ZERO) <= 0) {
+            log.warn("售后工单完结联动退款跳过：订单已全额退款, ticketNo={}, orderId={}",
+                    ticket.getTicketNo(), ticket.getOrderId());
+            return;
+        }
+
+        // 原子条件更新：refund_amount 库内累加 + WHERE 上限，防并发工单超退（审计 07 P1-10）
+        OffsetDateTime refundAt = OffsetDateTime.now();
+        UpdateWrapper<Order> refundWrapper = new UpdateWrapper<>();
+        refundWrapper.eq("id", order.getId())
+                .eq("tenant_id", order.getTenantId())
+                .setSql("refund_amount = COALESCE(refund_amount, 0) + " + applied.toPlainString())
+                .set("refund_at", refundAt)
+                .and(w -> w.apply("COALESCE(refund_amount, 0) + {0} <= {1}",
+                        applied, effectiveActual));
+        int updated = orderMapper.update(null, refundWrapper);
+        if (updated == 0) {
+            log.warn("售后工单完结联动退款跳过：并发下退款条件不满足（已满额）, ticketNo={}, orderId={}",
+                    ticket.getTicketNo(), ticket.getOrderId());
+            return;
+        }
+        order.setRefundAmount(existingRefund.add(applied));
+        order.setRefundAt(refundAt);
+
+        try {
+            financeService.recordRefund(order, applied, "售后工单退款: " + ticket.getTicketNo());
+        } catch (Exception e) {
+            log.warn("售后工单完结登记退款流水失败（不影响工单主流程）: ticketNo={}, error={}",
+                    ticket.getTicketNo(), e.getMessage());
+        }
     }
 
     /**

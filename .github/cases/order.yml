@@ -1,6 +1,6 @@
 # cases/order.yml — 订单域用例（并源转换示范）
 #
-# 标准：ershen/design/16-case-contract.md（schema v1.0 草案）
+# 标准：外部契约标准 16-case-contract（schema v1.0 草案）
 # 来源：eval_cases.py 的 O001~O005 + M005/M006/M007(订单段) + C002(订单段)
 #       mibao-verification-cases.md 的 1.1~1.8
 # 并源结果：14 个源用例 → 10 条，合并 4 条、verification 独有 4 条获新 ID
@@ -9,7 +9,7 @@
 #   yaml_light 不支持 [a, b] / {k: v}，会被解析成字符串，静默破坏结构。
 #
 # ★ truths_ref 引用 templates/*.yml 的真值 ID（真值 ID 化已完成，125 条全部带 [模板名.短名] 前缀）。
-#   校验：python3 ershen/engine/junshi/truths.py check --templates ershen/seed/migao/templates --cases ershen/seed/migao/cases
+#   校验：python3 .github/truths.py check --templates .github/templates --cases .github/cases
 
 schema: "case-contract/1.0"
 domain: order
@@ -195,7 +195,7 @@ cases:
       - tool: order_manage
         args:
           action: update_status
-          status: processing
+          status: producing
       - tool: order_manage
         args:
           action: update_logistics
@@ -205,7 +205,7 @@ cases:
           action: update_status
           status: completed
     data_checks:
-      - "状态流转: pending → processing → shipped → completed"
+      - "状态流转: pending → producing → shipped → completed"
       - "每步操作前先确认当前状态"
     skip_reason: ""
     merge_log: "eval M006 吸收 verification 1.6（单步 update_status）、1.7 的状态更新段，并吸收 eval O004（标记已发货）"
@@ -289,7 +289,7 @@ cases:
     merge_log: "eval O003 独有（SKU 先查流程）；verification 1.8 的简化版见 OR-010"
     traces:
       tests:
-        - "backend/ai-agent-service/tests/test_mibao_scenarios.py"
+        - "backend/ai-agent-service/tests/manual/mibao_scenarios.py"
       ci:
         - agent-eval.yml
       verifies: []
@@ -335,7 +335,7 @@ cases:
     merge_log: "eval M005 独有（多轮引导细节），与 OR-008 互补不合并"
     traces:
       tests:
-        - "backend/ai-agent-service/tests/test_mibao_scenarios.py"
+        - "backend/ai-agent-service/tests/manual/mibao_scenarios.py"
       ci:
         - agent-eval.yml
       verifies: []
@@ -368,4 +368,29 @@ cases:
         - "backend/ai-agent-service/tests/test_tools_order_manage.py"
       ci:
         - agent-eval.yml
+      verifies: []
+
+  - id: OR-011
+    legacy_id: ""
+    title: "AI 下单闭环 - 算料报价→确认→SMS→订单创建"
+    domains:
+      - order
+    tier: normal
+    tags:
+      - order_create
+      - smoke
+    truths_ref:
+      - order.flow
+    user_inputs:
+      - "用户算料报价后确认下单，走 SMS 验证（bypass）→ order_create 成功"
+    expectations:
+      - tool: order_create
+    data_checks:
+      - "order_create 返回订单号"
+    skip_reason: ""
+    merge_log: "POC 下单闭环集成测试新增"
+    traces:
+      tests: []
+      ci:
+        - ai-agent-tests.yml
       verifies: []

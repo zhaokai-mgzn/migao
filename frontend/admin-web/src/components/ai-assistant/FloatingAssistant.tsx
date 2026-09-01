@@ -145,7 +145,7 @@ export default function FloatingAssistant() {
                 defaultWidth={isFullscreen ? '100%' : 'min(920px, calc(100vw - 3rem))'}
                 showTopHandle={!isFullscreen}
                 className={cn(
-                  'bg-white shadow-2xl rounded-2xl border border-gray-200',
+                  'bg-white shadow-float rounded-2xl border border-neutral-200/80',
                   isFullscreen && 'rounded-none border-0'
                 )}
               >
@@ -208,7 +208,7 @@ export default function FloatingAssistant() {
       {/* ===== 最小化浮窗 ===== */}
       {isOpen && isMinimized && (
         <div
-          className="fixed z-50 bg-white shadow-2xl rounded-xl border border-gray-200 overflow-hidden flex flex-col"
+          className="fixed z-50 bg-white shadow-float rounded-xl border border-neutral-200/80 overflow-hidden flex flex-col"
           style={{
             left: floatPos.x,
             top: floatPos.y,
@@ -259,14 +259,16 @@ export default function FloatingAssistant() {
           className={cn(
             'fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full',
             'flex items-center justify-center',
-            'bg-primary-600 text-white shadow-lg',
-            'hover:bg-primary-700 hover:shadow-xl hover:scale-110',
+            'bg-gradient-to-br from-primary-600 to-primary-500 text-white shadow-float',
+            'hover:from-primary-700 hover:to-primary-600 hover:shadow-float hover:scale-110',
             'active:scale-95',
             'transition-all duration-200 ease-in-out',
           )}
           title="打开米宝"
         >
-          <Bot className="w-6 h-6" />
+          {/* 呼吸光环 */}
+          <span className="absolute inset-0 rounded-full bg-primary-500/40 animate-ping" style={{ animationDuration: '2.4s' }} />
+          <Bot className="relative w-6 h-6" />
         </button>
       )}
     </>

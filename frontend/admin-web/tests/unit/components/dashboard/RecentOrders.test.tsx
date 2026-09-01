@@ -1,3 +1,4 @@
+// case_ids: UI-002
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 
@@ -138,6 +139,26 @@ describe('RecentOrders', () => {
     expect(screen.getByText('已关闭')).toBeInTheDocument()
   })
 
+  // --- Status chips (semantic tones) ---
+  it('renders status as semantic chips — closed uses neutral, not Badge default', () => {
+    render(<RecentOrders orders={mockOrders} />)
+    const closedChip = screen.getByText('已关闭')
+    expect(closedChip.className).toContain('bg-neutral-100')
+    expect(closedChip.className).not.toContain('bg-gray-50')
+  })
+
+  it('renders status as semantic chips — completed uses emerald success', () => {
+    render(<RecentOrders orders={mockOrders} />)
+    const completedChip = screen.getByText('已完成')
+    expect(completedChip.className).toContain('bg-emerald-50')
+  })
+
+  it('renders status as semantic chips — pending_payment uses amber warning', () => {
+    render(<RecentOrders orders={mockOrders} />)
+    const pendingChip = screen.getByText('待付款')
+    expect(pendingChip.className).toContain('bg-amber-50')
+  })
+
   // --- Time formatting ---
   it('renders formatted time with MM-DD pattern', () => {
     render(<RecentOrders orders={mockOrders} />)
@@ -150,5 +171,17 @@ describe('RecentOrders', () => {
     render(<RecentOrders orders={mockOrders} />)
     // ORDER-003 has no createdAt
     expect(screen.getByText('--')).toBeInTheDocument()
+  })
+
+  // --- Empty state customization (#2544) ---
+  it('supports custom emptyText via prop', () => {
+    render(<RecentOrders orders={[]} emptyText="暂无近期订单" />)
+    expect(screen.getByText('暂无近期订单')).toBeInTheDocument()
+    expect(screen.queryByText('暂无订单数据')).not.toBeInTheDocument()
+  })
+
+  it('supports custom emptyHint via prop', () => {
+    render(<RecentOrders orders={[]} emptyText="暂无近期订单" emptyHint="新订单将在此展示" />)
+    expect(screen.getByText('新订单将在此展示')).toBeInTheDocument()
   })
 })

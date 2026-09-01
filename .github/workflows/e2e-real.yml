@@ -1,4 +1,7 @@
 name: E2E Real (AI Agent 能力测试)
+permissions:
+  contents: read
+  issues: write
 
 on:
   workflow_dispatch:
@@ -36,11 +39,29 @@ jobs:
           ADMIN_API_BASE_URL: ${{ secrets.E2E_ADMIN_API_URL || 'https://api.migaozn.com' }}
           AI_AGENT_URL: ${{ secrets.AI_AGENT_SERVICE_URL }}
           SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN }}
+          # 以下 env 供 integration 标记的 4 个真实环境测试使用（2026-08-28 接入每日调度，
+          # 修复「135 个 integration 测试从未执行」问题；原 -m "not integration" 在 PR CI 排除，
+          # 本 job 显式运行它们，失败自动建 issue 而非静默不跑）
+          PRIMARY_API_KEY: ${{ secrets.DEEPSEEK_API_KEY || 'ci-dummy' }}
+          PRIMARY_BASE_URL: https://api.deepseek.com
+          PRIMARY_MODEL: deepseek-v4-flash
+          VISION_API_KEY: ${{ secrets.DEEPSEEK_API_KEY || 'ci-dummy' }}
+          VISION_MODEL: deepseek-v4-flash-vision-exp
+          DASHVECTOR_API_KEY: ${{ secrets.DASHVECTOR_API_KEY || 'ci-dummy' }}
+          DASHVECTOR_ENDPOINT: ${{ secrets.DASHVECTOR_ENDPOINT || 'https://ci-dummy.dashvector.cn-hangzhou.aliyuncs.com' }}
+          DASHVECTOR_COLLECTION: ${{ secrets.DASHVECTOR_COLLECTION || 'ci' }}
+          DATABASE_URL: postgresql+asyncpg://${{ secrets.RDS_USER }}:${{ secrets.RDS_PASSWORD }}@${{ secrets.RDS_HOST }}:${{ secrets.RDS_PORT }}/${{ secrets.RDS_DB }}
+          JWT_PUBLIC_KEY: ${{ secrets.JWT_PUBLIC_KEY || 'ci-dummy' }}
         run: |
           # 真实 LLM 零 Mock E2E：失败用例自动重试 1 次，容错 LLM 工具选择的非确定性波动
           # （order_create 偶发未调、工具选择歧义等，与 Agent Eval local_runner 重试同源）。
           # 重试不掩盖确定性 bug：重试仍失败 → run 仍 failure → 自动开 role/qa issue。
-          python -m pytest tests/e2e/real/ -v --tb=long -q \
+          python -m pytest tests/e2e/real/ \
+            tests/test_business_verification.py \
+            tests/test_cross_service_tenant.py \
+            tests/test_e2e_full_chain.py \
+            tests/test_performance_isolation.py \
+            -v --tb=long -q \
             --timeout=120 \
             --no-cov \
             --maxfail=10 \

@@ -35,6 +35,8 @@ class InventoryManageTool(BaseTool):
     allowed_roles = ["admin", "agent", "customer", "tenant_admin"]
 
     read_only = False
+    requires_confirmation = True  # 审计 07 P0-L1: 高风险非 destructive 写操作需用户确认
+    read_only_actions = {"query", "low_stock_alert"}  # 只读 action 免确认
     destructive = False  # 库存调整可逆
     idempotent = False   # 调整操作非幂等
 
@@ -288,32 +290,56 @@ class InventoryManageTool(BaseTool):
                 message=f"当前库存 {current_stock}，无法减少 {abs(adjustment)}",
             )
         
-        # 更新库存（对抗编程：透传 reason，防止丢失调整原因）
-        update_payload: dict = {"name": product_name, "stock": new_stock}
+        # 更新库存（生产回归修复）：
+        # 旧实现 PUT /api/admin/products/{id} 传 stock，admin-api 静默忽略该字段
+        # 但仍返回 success → agent 报"已调整"而 DB 未变（假成功）。
+        # 现在改调 agent 专用库存端点 /api/admin/agent/products/{id}/stock，
+        # 并读回校验端点返回的 stock 是否等于 new_stock，不一致即 fail-closed。
+        update_payload: dict = {"adjustment": adjustment}
         if reason:
             update_payload["reason"] = reason
-        response = await client.put(
-            f"/api/admin/products/{product_id}",
+        response = await client.patch(
+            f"/api/admin/agent/products/{product_id}/stock",
             json_data=update_payload,
             tenant_id=context.tenant_id,
             user_id=context.user_id,
         )
-        
+
         if not response.get("success"):
             error_msg = response.get("error", {}).get("message", "更新失败")
             return ToolResult(
                 success=False,
                 error=error_msg,
                 message=f"库存调整失败：{error_msg}",
+                suggestion="请确认商品存在且库存充足后重试；如持续失败请联系技术支持",
             )
-        
+
+        # 读回校验：端点响应中 data.stock 必须等于预期 new_stock，防止静默忽略导致的假成功
+        resp_data = response.get("data") or {}
+        actual_stock = resp_data.get("stock")
+        if actual_stock != new_stock:
+            logger.error(
+                f"[inventory] Read-back mismatch: product_id={product_id}, "
+                f"expected={new_stock}, actual={actual_stock}, tenant={context.tenant_id}"
+            )
+            return ToolResult(
+                success=False,
+                error="库存调整未生效",
+                message=(
+                    f"库存调整未生效：预期 {current_stock} → {new_stock}，"
+                    f"但系统读回仍为 {actual_stock}。为避免误导，本次操作已标记失败，"
+                    f"请在商家后台库存页面核实后重试。"
+                ),
+                suggestion="库存写入链路异常，请联系技术支持核查 SKU 库存端点",
+            )
+
         adjust_text = f"增加 {adjustment}" if adjustment > 0 else f"减少 {abs(adjustment)}"
         logger.info(
             f"Inventory adjusted: product_id={product_id}, "
             f"adjustment={adjustment}, {current_stock} -> {new_stock}, "
             f"reason={reason}, tenant={context.tenant_id}, user={context.user_id}"
         )
-        
+
         return ToolResult(
             success=True,
             data={

@@ -23,12 +23,12 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 
-# MiniMax 定价（元 / 百万 tokens，参考公开价目）
+# DeepSeek 定价（元 / 百万 tokens，参考公开价目）
 # 模型名统一使用 settings 常量，下线模型只需改 config.py
 from app.config import settings
 MODEL_PRICING: dict[str, dict[str, float]] = {
-    settings.LLM_MODEL_FAST:    {"input": 1.00, "output": 4.00},       # M2.7-highspeed
-    settings.LLM_MODEL_PRIMARY: {"input": 4.00, "output": 16.00},      # MiniMax-M3
+    settings.LLM_MODEL_FAST:    {"input": 1.00, "output": 4.00},       # deepseek-v4-flash
+    settings.LLM_MODEL_PRIMARY: {"input": 1.00, "output": 4.00},       # deepseek-v4-flash
 }
 
 
@@ -49,7 +49,7 @@ def _calc_cost_cny(model: str, input_tokens: int, output_tokens: int) -> float:
 
     未匹配到的模型按 plus 档兜底，避免成本被静默漏算。
     """
-    pricing = MODEL_PRICING.get(model) or MODEL_PRICING[settings.LLM_MODEL_PRIMARY]  # fallback 到主模型定价
+    pricing = MODEL_PRICING.get(model) or MODEL_PRICING[settings.MINIMAX_MODEL]  # fallback 到主模型定价（env PRIMARY_MODEL）
     cost_input = (input_tokens / 1_000_000.0) * pricing["input"]
     cost_output = (output_tokens / 1_000_000.0) * pricing["output"]
     return round(cost_input + cost_output, 6)

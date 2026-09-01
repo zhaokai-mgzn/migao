@@ -33,12 +33,33 @@ public class Order {
 
     private String customerAddress;
 
+    /**
+     * 下单用户 ID（users.id，C 端数据隔离依据；
+     * 商户代下单可为空或商户员工 ID）
+     */
+    private String userId;
+
     private BigDecimal totalAmount;
 
     /**
      * 实收款（用户输入的实际收款金额，默认等于 totalAmount）
      */
     private BigDecimal actualAmount;
+
+    /**
+     * 优惠金额（应收 totalAmount 与实收 actualAmount 之间的差额，默认 0）
+     */
+    private BigDecimal discountAmount;
+
+    /**
+     * 累计已退款金额（退款/售后完结时累加，默认 0；>0 表示"已退款"）
+     */
+    private BigDecimal refundAmount;
+
+    /**
+     * 最近一次退款时间
+     */
+    private OffsetDateTime refundAt;
 
     private String status;
 

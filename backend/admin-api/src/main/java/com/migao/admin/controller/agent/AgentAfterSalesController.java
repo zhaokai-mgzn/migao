@@ -6,6 +6,7 @@ import com.migao.admin.dto.AfterSalesDetailResponse;
 import com.migao.admin.dto.agent.AgentAfterSalesCreateRequest;
 import com.migao.admin.security.SecurityUser;
 import com.migao.admin.service.AfterSalesTicketService;
+import com.migao.admin.security.RequirePermission;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.Authentication;
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.*;
  * - 订单所有权校验内置（仅 customer 角色需要）
  */
 @Slf4j
+@RequirePermission("order:refund")
 @RestController
 @RequestMapping("/api/admin/agent/after-sales")
 @RequiredArgsConstructor

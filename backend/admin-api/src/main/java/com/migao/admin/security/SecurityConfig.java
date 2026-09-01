@@ -6,18 +6,24 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
+import org.springframework.security.authorization.AuthorizationDecision;
+import org.springframework.security.authorization.AuthorizationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -25,6 +31,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Spring Security 配置类
@@ -132,11 +139,12 @@ public class SecurityConfig {
                                 // 本地文件静态资源（无需认证）
                                 "/api/files/static/**"
                         ).permitAll()
-                        // 管理后台接口：仅 admin / super_admin 角色 + 内部服务（ROLE_SERVICE）可访问。
-                        // 修复垂直越权：此前仅要求 authenticated()，任意已登录角色（含 customer/agent）
-                        // 均可直接访问管理后台接口。
+                        // 管理后台接口：允许平台管理员(ADMIN/SUPER_ADMIN)、内部服务(SERVICE)
+                        // 以及商户员工角色（operator/product_manager/知识编辑/角色管理创建的自定义角色等）
+                        // 访问；小程序/B2C 用户（customer/agent）一律禁止（垂直越权防护）。
+                        // 细粒度权限由 @RequirePermission + PermissionInterceptor 在业务层校验。
                         .requestMatchers("/api/admin/**")
-                        .hasAnyRole("ADMIN", "SUPER_ADMIN", "SERVICE")
+                        .access(adminApiAuthorizationManager())
                         // 其他路径需要认证（包括 /api/super-admin/** 超管接口，由业务层校验超管角色）
                         .anyRequest().authenticated()
                 )
@@ -172,6 +180,48 @@ public class SecurityConfig {
                 );
 
         return http.build();
+    }
+
+    /**
+     * 管理后台接口门禁（/api/admin/**）
+     *
+     * <p>角色口径：
+     * <ul>
+     *   <li>平台管理员（admin/super_admin）与内部服务（service）：直接放行；</li>
+     *   <li>小程序/B2C 用户角色（customer/agent）：一律拒绝（垂直越权防护，不回归）；</li>
+     *   <li>其余角色视为商户员工角色（含角色管理创建的自定义角色）：允许进入管理后台，
+     *       具体接口能否访问由 {@code @RequirePermission} + {@link PermissionInterceptor} 按权限码细粒度校验。</li>
+     * </ul>
+     */
+    @Bean
+    public AuthorizationManager<RequestAuthorizationContext> adminApiAuthorizationManager() {
+        return (authenticationSupplier, context) -> {
+            Authentication authentication = authenticationSupplier != null ? authenticationSupplier.get() : null;
+            if (authentication == null || !authentication.isAuthenticated()
+                    || authentication instanceof AnonymousAuthenticationToken) {
+                return new AuthorizationDecision(false);
+            }
+            boolean hasRole = false;
+            for (GrantedAuthority authority : authentication.getAuthorities()) {
+                String name = authority.getAuthority();
+                if (name == null) {
+                    continue;
+                }
+                String role = name.startsWith("ROLE_") ? name.substring(5) : name;
+                role = role.toLowerCase(Locale.ROOT);
+                // 平台管理员 / 内部服务：放行
+                if ("admin".equals(role) || "super_admin".equals(role) || "service".equals(role)) {
+                    return new AuthorizationDecision(true);
+                }
+                // 小程序/B2C 用户：拒绝（垂直越权防护）
+                if ("customer".equals(role) || "agent".equals(role)) {
+                    return new AuthorizationDecision(false);
+                }
+                hasRole = true;
+            }
+            // 其余角色（商户员工，含自定义角色）：允许进入，细粒度权限由业务层校验
+            return new AuthorizationDecision(hasRole);
+        };
     }
 
     /**

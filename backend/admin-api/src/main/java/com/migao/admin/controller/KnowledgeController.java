@@ -6,6 +6,7 @@ import com.migao.admin.dto.PageResponse;
 import com.migao.admin.entity.KnowledgeDocument;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.KnowledgeDocumentMapper;
+import com.migao.admin.security.RequirePermission;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.Data;
@@ -30,6 +31,7 @@ import java.util.Map;
  * - POST   /api/admin/knowledge/test-search          → searchKnowledge
  */
 @Slf4j
+@RequirePermission("knowledge:manage")
 @RestController
 @RequestMapping("/api/admin/knowledge")
 @RequiredArgsConstructor
@@ -170,9 +172,12 @@ public class KnowledgeController {
                 .eq(KnowledgeDocument::getIsActive, true);
 
         if (StringUtils.hasText(request.getQuery())) {
-            wrapper.like(KnowledgeDocument::getTitle, request.getQuery())
+            // OR 必须嵌套在括号内：tenant_id=? AND is_active=? AND (title LIKE ? OR content LIKE ?)
+            // 直接 eq(...).like(...).or().like(...) 会生成 (tenant AND active AND title) OR content，
+            // SQL 中 AND 优先级高于 OR → content 命中所有租户文档（跨租户泄露，审计 07 P1-6）
+            wrapper.and(w -> w.like(KnowledgeDocument::getTitle, request.getQuery())
                     .or()
-                    .like(KnowledgeDocument::getContent, request.getQuery());
+                    .like(KnowledgeDocument::getContent, request.getQuery()));
         }
 
         wrapper.last("LIMIT 10");

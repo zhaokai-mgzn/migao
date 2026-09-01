@@ -1,3 +1,4 @@
+// case_ids: DF-007
 package com.migao.admin.security;
 
 import com.migao.admin.service.RoleService;
@@ -69,7 +70,7 @@ class PermissionInterceptorTest {
         when(roleService.getUserPermissions("user-001"))
                 .thenReturn(List.of("product:manage", "dashboard:view"));
 
-        Object result = interceptor.intercept(joinPoint, requirePermission);
+        Object result = interceptor.doIntercept(joinPoint, requirePermission);
 
         assertThat(result).isEqualTo("result");
         verify(joinPoint).proceed();
@@ -87,7 +88,7 @@ class PermissionInterceptorTest {
         context.setAuthentication(authentication);
         when(roleService.getUserPermissions("admin-001")).thenReturn(List.of("*"));
 
-        Object result = interceptor.intercept(joinPoint, requirePermission);
+        Object result = interceptor.doIntercept(joinPoint, requirePermission);
 
         assertThat(result).isEqualTo("result");
         verify(joinPoint).proceed();
@@ -107,7 +108,7 @@ class PermissionInterceptorTest {
         when(roleService.getUserPermissions("user-001"))
                 .thenReturn(List.of("dashboard:view"));
 
-        assertThatThrownBy(() -> interceptor.intercept(joinPoint, requirePermission))
+        assertThatThrownBy(() -> interceptor.doIntercept(joinPoint, requirePermission))
                 .isInstanceOf(AccessDeniedException.class)
                 .hasMessageContaining("权限不足")
                 .hasMessageContaining("product:manage");
@@ -126,7 +127,7 @@ class PermissionInterceptorTest {
         context.setAuthentication(authentication);
         when(roleService.getUserPermissions("user-001")).thenReturn(List.of());
 
-        assertThatThrownBy(() -> interceptor.intercept(joinPoint, requirePermission))
+        assertThatThrownBy(() -> interceptor.doIntercept(joinPoint, requirePermission))
                 .isInstanceOf(AccessDeniedException.class)
                 .hasMessageContaining("权限不足");
 
@@ -141,7 +142,7 @@ class PermissionInterceptorTest {
         SecurityContext context = SecurityContextHolder.getContext();
         context.setAuthentication(null);
 
-        assertThatThrownBy(() -> interceptor.intercept(joinPoint, requirePermission))
+        assertThatThrownBy(() -> interceptor.doIntercept(joinPoint, requirePermission))
                 .isInstanceOf(AccessDeniedException.class)
                 .hasMessageContaining("用户未认证");
 
@@ -156,7 +157,7 @@ class PermissionInterceptorTest {
         SecurityContext context = SecurityContextHolder.getContext();
         context.setAuthentication(authentication);
 
-        assertThatThrownBy(() -> interceptor.intercept(joinPoint, requirePermission))
+        assertThatThrownBy(() -> interceptor.doIntercept(joinPoint, requirePermission))
                 .isInstanceOf(AccessDeniedException.class)
                 .hasMessageContaining("用户未认证");
 
@@ -177,7 +178,7 @@ class PermissionInterceptorTest {
         context.setAuthentication(authentication);
         when(roleService.getUserPermissions("security-001")).thenReturn(List.of("*"));
 
-        interceptor.intercept(joinPoint, requirePermission);
+        interceptor.doIntercept(joinPoint, requirePermission);
 
         verify(roleService).getUserPermissions("security-001");
     }
@@ -193,7 +194,7 @@ class PermissionInterceptorTest {
         context.setAuthentication(authentication);
         when(roleService.getUserPermissions("spring-user-001")).thenReturn(List.of("*"));
 
-        interceptor.intercept(joinPoint, requirePermission);
+        interceptor.doIntercept(joinPoint, requirePermission);
 
         verify(roleService).getUserPermissions("spring-user-001");
     }
@@ -206,11 +207,51 @@ class PermissionInterceptorTest {
         SecurityContext context = SecurityContextHolder.getContext();
         context.setAuthentication(authentication);
 
-        assertThatThrownBy(() -> interceptor.intercept(joinPoint, requirePermission))
+        assertThatThrownBy(() -> interceptor.doIntercept(joinPoint, requirePermission))
                 .isInstanceOf(AccessDeniedException.class)
                 .hasMessageContaining("无法获取用户信息");
 
         verify(joinPoint, never()).proceed();
+        verifyNoInteractions(roleService);
+    }
+
+    // ======================== 平台管理员/内部服务直通场景 ========================
+    // super_admin（platform_admins 表，不在 users 表）与 service（内部服务）不做细粒度权限查询，
+    // 直接放行。修复：此前 getUserPermissions(platformAdminId) 返回空集导致平台管理员 403。
+
+    @Test
+    @DisplayName("super_admin 角色 - 跳过权限查询直接放行")
+    void superAdminBypassesPermissionQuery() throws Throwable {
+        SecurityUser securityUser = new SecurityUser("pa-001", -1L, "platform-admin",
+                List.of("super_admin"), List.of(new SimpleGrantedAuthority("ROLE_SUPER_ADMIN")));
+        when(authentication.isAuthenticated()).thenReturn(true);
+        when(authentication.getPrincipal()).thenReturn(securityUser);
+        when(authentication.getAuthorities()).thenAnswer(invocation -> securityUser.getAuthorities());
+        SecurityContext context = SecurityContextHolder.getContext();
+        context.setAuthentication(authentication);
+
+        Object result = interceptor.doIntercept(joinPoint, requirePermission);
+
+        assertThat(result).isEqualTo("result");
+        verify(joinPoint).proceed();
+        verifyNoInteractions(roleService);
+    }
+
+    @Test
+    @DisplayName("service 内部服务角色 - 跳过权限查询直接放行")
+    void serviceRoleBypassesPermissionQuery() throws Throwable {
+        SecurityUser securityUser = new SecurityUser("internal-service", 1L, "internal-service",
+                List.of("service"), List.of(new SimpleGrantedAuthority("ROLE_SERVICE")));
+        when(authentication.isAuthenticated()).thenReturn(true);
+        when(authentication.getPrincipal()).thenReturn(securityUser);
+        when(authentication.getAuthorities()).thenAnswer(invocation -> securityUser.getAuthorities());
+        SecurityContext context = SecurityContextHolder.getContext();
+        context.setAuthentication(authentication);
+
+        Object result = interceptor.doIntercept(joinPoint, requirePermission);
+
+        assertThat(result).isEqualTo("result");
+        verify(joinPoint).proceed();
         verifyNoInteractions(roleService);
     }
 }

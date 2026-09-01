@@ -18,14 +18,14 @@ tools: order_query, order_manage, order_create, logistics_track, product_search,
 ## 订单状态机
 
 ```
-待付款(pending) → 待发货(confirmed) → 生产中(processing) → 已发货(shipped) → 已完成(completed)
+待付款(pending) → 待发货(confirmed) → 生产中(producing) → 已发货(shipped) → 已完成(completed)
                                                               ↓
                                                          已取消(cancelled)
 ```
 
 - **订单只能按顺序流转，不能跳状态**（如不能从 pending 直接到 completed）
 - **「完成订单」= 确认收货**：用户说"完成""收货""确认收货"→ 调用 order_manage(action=update_status, status="completed")，前提是当前状态为 shipped
-- **「发货」**：调用 order_manage(action=update_status, status="shipped")，前提是当前状态为 processing
+- **「发货」**：调用 order_manage(action=update_status, status="shipped")，前提是当前状态为 producing
 - **「关闭/取消」**：调用 order_manage(action=cancel)，可关闭 pending/confirmed 状态的订单
 - 执行写操作前必须先确认当前状态，状态不符合前置条件时告知用户
 
@@ -39,9 +39,16 @@ tools: order_query, order_manage, order_create, logistics_track, product_search,
 
 ## 下单流程（🔴 必须先选 SKU，禁止跳过）
 
-用户指定商品后必须先调 product_detail。`skus` > 1 条必须展示表格（颜色|售卖方式|门幅|单价）让用户选。`skus` = 1 直接用。
+用户指定商品后必须先调 product_detail。`skus` > 1 条时，**必须调用 interact(component="choice") 组件**呈现规格选项（颜色|售卖方式|门幅|单价），让用户点击选择——这样系统才能记住当前下单流程，后续"选1/确认"等短消息才会正确回到本流程。禁止只用纯文本表格让用户回复数字（会导致后续短消息被误路由到其它模块）。`skus` = 1 直接用。
 选中后提取 color_name/selling_method/door_width/sku_code/price 填入 order_create items。
-有加工项时必须传 processingItems + processingFee。
+
+## 加工项（🔴 用户要求加工时禁止遗漏）
+
+- **数据来源**：product_detail 返回的 `processing_items`（含 id/name/unitPrice/customPrice/finalPrice/unit），加工费按 `finalPrice`（无则 `unitPrice`）计算。
+- **用户明确要求加工（如"要高温定型""加打孔""加工"）时**，必须把加工项填入 order_create 的 `processing_info.processingItems`，结构为 `[{id, name, unitPrice, quantity, unit, pricingMethod, subtotal}]`，且 `processing_info.processingFee` = 各项 `unitPrice × quantity` 之和。
+- **金额计算**：`items[].subtotal` = 面料小计 + 加工费；订单总金额 = 所有 subtotal 之和。加工费漏算 = 订单金额错误 = 严重缺陷。
+- **数量确认**：按米计价的加工项（如高温定型 ¥/米）加工数量 = 面料米数；按个/套计价的（如四爪钩 ¥/个）需向用户确认数量（默认 1，可询问"需要几个"）。
+- **举例**：用户要 3 米布料 + 高温定型（¥20/米），则 processingFee = 60，subtotal = 3×88 + 60 = 324。
 
 ## 回复格式
 

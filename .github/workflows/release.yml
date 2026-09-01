@@ -1,0 +1,66 @@
+name: Release (semver tag)
+permissions:
+  contents: write
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_bump:
+        description: '版本增量（基于最新 tag）'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+        default: patch
+      prerelease:
+        description: '标记为预发布（prerelease）'
+        type: boolean
+        default: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute next version
+        id: ver
+        run: |
+          LATEST=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          python3 - "$LATEST" "${{ inputs.version_bump }}" <<'PY'
+          import sys
+          cur = sys.argv[1].lstrip("v")
+          parts = [int(x) for x in cur.split(".")]
+          bump = sys.argv[2]
+          if bump == "major":
+              parts[0] += 1; parts[1] = 0; parts[2] = 0
+          elif bump == "minor":
+              parts[1] += 1; parts[2] = 0
+          else:
+              parts[2] += 1
+          print(f"version=v{parts[0]}.{parts[1]}.{parts[2]}")
+          PY
+
+      - name: Create tag and GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.ver.outputs.version }}"
+          if git rev-parse "$VERSION" >/dev/null 2>&1; then
+            echo "❌ 版本 $VERSION 已存在"; exit 1
+          fi
+          git tag "$VERSION"
+          git push origin "$VERSION"
+          PRERELEASE_FLAG=""
+          if [ "${{ inputs.prerelease }}" = "true" ]; then PRERELEASE_FLAG="--prerelease"; fi
+          gh release create "$VERSION" $PRERELEASE_FLAG --generate-notes
+          echo "✅ 已创建 Release $VERSION"
+          echo "   镜像构建：deploy-* workflow 的 tag 触发（push tags v*）自动完成"
+          echo "   生产发布：手动运行 deploy-prod（指定 $VERSION）"
+
+  # tag 触发构建提示（实际构建由 deploy-*.yml 的 push tags v* 完成）
+  # 本 job 仅用于在 Release 页面展示构建状态

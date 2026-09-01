@@ -164,7 +164,7 @@ export default function MessageInput() {
   if (!currentSessionId) return null
 
   return (
-    <div className="px-4 py-3 bg-white border-t border-gray-200">
+    <div className="px-4 py-3 bg-white border-t border-neutral-200/80">
       <div className="max-w-3xl mx-auto">
         {/* 图片预览区 */}
         {images.length > 0 && (
@@ -172,7 +172,7 @@ export default function MessageInput() {
             {images.map((img, index) => (
               <div
                 key={index}
-                className="relative group w-20 h-20 rounded-lg overflow-hidden border border-gray-200 bg-gray-50 flex-shrink-0"
+                className="relative group w-20 h-20 rounded-lg overflow-hidden border border-neutral-200 bg-neutral-50 flex-shrink-0"
               >
                 <NextImage
                   src={img.localPreview || img.url}
@@ -191,14 +191,14 @@ export default function MessageInput() {
               </div>
             ))}
             {isUploading && (
-              <div className="w-20 h-20 rounded-lg border border-dashed border-gray-300 bg-gray-50 flex items-center justify-center flex-shrink-0">
-                <Loader2 className="w-5 h-5 text-gray-400 animate-spin" />
+              <div className="w-20 h-20 rounded-lg border border-dashed border-neutral-300 bg-neutral-50 flex items-center justify-center flex-shrink-0">
+                <Loader2 className="w-5 h-5 text-neutral-400 animate-spin" />
               </div>
             )}
           </div>
         )}
 
-        <div className="relative flex items-end gap-2 bg-white border border-gray-200 rounded-2xl px-3 py-2 shadow-sm focus-within:border-primary-300 focus-within:ring-2 focus-within:ring-primary-400/15 transition-all">
+        <div className="relative flex items-end gap-2 bg-white border border-neutral-200 rounded-2xl px-3 py-2 shadow-sm focus-within:border-primary-300 focus-within:ring-2 focus-within:ring-primary-400/15 transition-all">
           {/* 语音输入按钮 */}
           <button
             onClick={
@@ -222,10 +222,10 @@ export default function MessageInput() {
             className={cn(
               'p-1.5 rounded-lg transition-all flex-shrink-0',
               isSessionClosed || voice.state === 'transcribing'
-                ? 'text-gray-300 cursor-not-allowed'
+                ? 'text-neutral-300 cursor-not-allowed'
                 : voice.state === 'recording'
                   ? 'text-red-500 bg-red-50 shadow-[0_0_0_2px_rgba(239,68,68,0.2)]'
-                  : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'
+                  : 'text-neutral-400 hover:text-neutral-600 hover:bg-neutral-50'
             )}
             title={
               voice.state === 'recording'
@@ -251,8 +251,8 @@ export default function MessageInput() {
             className={cn(
               'p-1.5 rounded-lg transition-colors flex-shrink-0',
               isSessionClosed || images.length >= MAX_IMAGES
-                ? 'text-gray-300 cursor-not-allowed'
-                : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'
+                ? 'text-neutral-300 cursor-not-allowed'
+                : 'text-neutral-400 hover:text-neutral-600 hover:bg-neutral-50'
             )}
             title={isSessionClosed ? '会话已结束' : images.length >= MAX_IMAGES ? `最多 ${MAX_IMAGES} 张图片` : '添加图片'}
           >
@@ -280,7 +280,7 @@ export default function MessageInput() {
                 disabled
                 placeholder="会话已结束，请创建新对话"
                 rows={1}
-                className="flex-1 bg-transparent border-0 resize-none max-h-32 px-1 py-1.5 text-sm focus:outline-none focus:ring-0 disabled:opacity-50 placeholder:text-gray-400"
+                className="flex-1 bg-transparent border-0 resize-none max-h-32 px-1 py-1.5 text-sm focus:outline-none focus:ring-0 disabled:opacity-50 placeholder:text-neutral-400"
               />
               <button
                 onClick={handleNewSession}
@@ -294,6 +294,7 @@ export default function MessageInput() {
             <>
               <textarea
                 ref={textareaRef}
+                id="chat-message-input"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => {
@@ -315,7 +316,7 @@ export default function MessageInput() {
                 disabled={isStreaming || voice.state === 'transcribing'}
                 rows={1}
                 className={cn(
-                  'flex-1 bg-transparent border-0 resize-none max-h-32 px-1 py-1.5 text-sm focus:outline-none focus:ring-0 disabled:opacity-50 placeholder:text-gray-400',
+                  'flex-1 bg-transparent border-0 resize-none max-h-32 px-1 py-1.5 text-sm focus:outline-none focus:ring-0 disabled:opacity-50 placeholder:text-neutral-400',
                   voice.state === 'recording' && 'placeholder:text-red-400'
                 )}
               />
@@ -336,7 +337,7 @@ export default function MessageInput() {
                     'p-2 rounded-xl transition-all flex-shrink-0',
                     canSend
                       ? 'bg-gradient-to-br from-primary-500 to-primary-600 text-white hover:from-primary-600 hover:to-primary-700 shadow-sm hover:shadow-md active:scale-95'
-                      : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                      : 'bg-neutral-100 text-neutral-400 cursor-not-allowed'
                   )}
                   title="发送"
                 >
@@ -346,7 +347,7 @@ export default function MessageInput() {
             </>
           )}
         </div>
-        <p className="text-[10px] text-gray-400/60 mt-1.5 text-center">
+        <p className="text-[10px] text-neutral-400/70 mt-1.5 text-center">
           AI 生成内容仅供参考
         </p>
       </div>

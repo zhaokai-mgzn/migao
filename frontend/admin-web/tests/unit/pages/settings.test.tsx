@@ -1,3 +1,4 @@
+// case_ids: ST-001, ST-003
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -8,6 +9,10 @@ vi.mock('lucide-react', () => {
   return {
     Building2: stub('building2'),
     Save: stub('save'),
+    KeyRound: stub('key-round'),
+    History: stub('history'),
+    ChevronLeft: stub('chevron-left'),
+    ChevronRight: stub('chevron-right'),
     Zap: stub('zap'),
     Package: stub('package'),
     Search: stub('search'),
@@ -55,6 +60,12 @@ vi.mock('next/link', () => ({
   default: ({ children, href, ...props }: any) => <a href={href} {...props}>{children}</a>,
 }))
 
+// Mock 图片尺寸读取（jsdom 无法真实解码图片）
+const mockReadImageDimensions = vi.fn()
+vi.mock('@/lib/image-dimensions', () => ({
+  readImageDimensions: (...args: any[]) => mockReadImageDimensions(...args),
+}))
+
 // Mock next/navigation
 const mockRouterPush = vi.fn()
 const mockRouterReplace = vi.fn()
@@ -92,7 +103,7 @@ function mockApiSuccess() {
     data: {
       data: {
         items: [
-          { id: '1', ip: '192.168.1.1', device: 'Chrome / Windows', location: '杭州', createdAt: '2026-06-19T12:00:00Z' },
+          { id: '1', userName: '管理员', ipAddress: '192.168.1.1', userAgent: 'Chrome / Windows', createdAt: '2026-06-19T12:00:00Z' },
         ],
       },
     },
@@ -103,22 +114,28 @@ describe('SettingsPage — AI tab removed (Issue #502)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockApiSuccess()
+    // 默认图片尺寸满足最小分辨率（128×128）
+    mockReadImageDimensions.mockResolvedValue({ width: 128, height: 128 })
   })
 
   // ================================================================
   // CP-2/CP-3: 验证 AI tab 已拿掉 + 迁移提示出现
   // ================================================================
 
-  describe('Tab 结构 — 不应出现 AI 配置', () => {
-    it('应该只显示基本设置内容，无 tab 导航', async () => {
+  describe('Tab 结构 — 基本设置/修改密码/登录日志，无 AI 配置', () => {
+    it('默认显示基本设置内容，存在三个 tab', async () => {
       render(<SettingsPage />)
       await waitFor(() => {
         expect(screen.getByText('企业基础信息')).toBeInTheDocument()
       })
 
-      // 确认没有 tab 导航按钮（账户安全已隐藏）
+      // 三个 tab 存在：基本设置 / 修改密码 / 登录日志
+      expect(screen.getByRole('button', { name: /基本设置/ })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /修改密码/ })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /登录日志/ })).toBeInTheDocument()
+      // 不应出现 AI 配置 / 账户安全 tab
+      expect(screen.queryByRole('button', { name: /AI 配置/ })).toBeNull()
       expect(screen.queryByRole('button', { name: /账户安全/ })).toBeNull()
-      expect(screen.queryByRole('button', { name: /基本设置/ })).toBeNull()
     })
 
     it('不应该渲染 AI 配置 tab 按钮', async () => {
@@ -154,7 +171,7 @@ describe('SettingsPage — AI tab removed (Issue #502)', () => {
       expect(screen.queryByText(/前往配置/)).toBeNull()
     })
 
-    it('不应该渲染前往机器人设置的链接', async () => {
+    it('不应该渲染前往 AI 客服配置的链接', async () => {
       render(<SettingsPage />)
       await waitFor(() => {
         expect(screen.getByText('企业基础信息')).toBeInTheDocument()
@@ -340,6 +357,48 @@ describe('SettingsPage — AI tab removed (Issue #502)', () => {
       expect(mockUploadImage).not.toHaveBeenCalled()
     })
 
+    it('分辨率过低（<128px）应 toast 报错且不调用上传接口', async () => {
+      const user = userEvent.setup()
+      const { toast } = await import('sonner')
+      mockReadImageDimensions.mockResolvedValue({ width: 64, height: 64 })
+
+      render(<SettingsPage />)
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /上传 Logo/ })).toBeInTheDocument()
+      })
+
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
+      const file = new File(['dummy'], 'small.png', { type: 'image/png' })
+      await user.upload(fileInput, file)
+
+      await waitFor(() => {
+        expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('分辨率过低'))
+      })
+      expect(mockReadImageDimensions).toHaveBeenCalled()
+      expect(mockUploadImage).not.toHaveBeenCalled()
+    })
+
+    it('分辨率满足最小要求（≥128px）时可正常上传', async () => {
+      const user = userEvent.setup()
+      mockReadImageDimensions.mockResolvedValue({ width: 512, height: 256 })
+      mockUploadImage.mockResolvedValue({ data: { data: { url: 'https://oss.example.com/ok.png', id: 'f3' } } })
+
+      render(<SettingsPage />)
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /上传 Logo/ })).toBeInTheDocument()
+      })
+
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
+      const file = new File(['dummy'], 'wide.png', { type: 'image/png' })
+      await user.upload(fileInput, file)
+
+      await waitFor(() => {
+        expect(mockUploadImage).toHaveBeenCalledWith(file)
+      })
+    })
+
     it('上传成功后应更新 Logo 预览', async () => {
       const user = userEvent.setup()
       const logoUrl = 'https://oss.example.com/logos/company-logo.png'
@@ -367,6 +426,136 @@ describe('SettingsPage — AI tab removed (Issue #502)', () => {
         const logoImg = screen.getByAltText('Logo')
         expect(logoImg).toBeInTheDocument()
         expect(logoImg).toHaveAttribute('src', logoUrl)
+      })
+    })
+
+    it('未设置 Logo 时展示占位图标（不渲染 img）', async () => {
+      mockGetSettings.mockResolvedValue({
+        data: { data: { companyName: '测试企业', logo: '', notificationEnabled: false, notificationEmail: '' } },
+      })
+      render(<SettingsPage />)
+      await waitFor(() => {
+        expect(document.querySelector('[data-testid="icon-building2"]')).toBeInTheDocument()
+      })
+      expect(screen.queryByAltText('Logo')).not.toBeInTheDocument()
+    })
+
+    it('已设置 Logo 时可点击「移除 Logo」回到未设置状态（保存后落库为 NULL）', async () => {
+      const user = userEvent.setup()
+      mockGetSettings.mockResolvedValue({
+        data: { data: { companyName: '测试企业', logo: 'https://oss.example.com/logo.png', notificationEnabled: false, notificationEmail: '' } },
+      })
+      render(<SettingsPage />)
+      await waitFor(() => {
+        expect(screen.getByAltText('Logo')).toBeInTheDocument()
+      })
+      expect(screen.getByRole('button', { name: /移除 Logo/ })).toBeInTheDocument()
+
+      await user.click(screen.getByRole('button', { name: /移除 Logo/ }))
+
+      // 预览回到占位图标
+      await waitFor(() => {
+        expect(document.querySelector('[data-testid="icon-building2"]')).toBeInTheDocument()
+      })
+      expect(screen.queryByAltText('Logo')).not.toBeInTheDocument()
+    })
+
+    it('Logo 加载失败时预览回退到占位图标', async () => {
+      mockGetSettings.mockResolvedValue({
+        data: { data: { companyName: '测试企业', logo: 'https://broken.example.com/expired.png', notificationEnabled: false, notificationEmail: '' } },
+      })
+      render(<SettingsPage />)
+      await waitFor(() => {
+        expect(screen.getByAltText('Logo')).toBeInTheDocument()
+      })
+      // 模拟图片加载失败
+      fireEvent.error(screen.getByAltText('Logo'))
+      await waitFor(() => {
+        expect(document.querySelector('[data-testid="icon-building2"]')).toBeInTheDocument()
+      })
+    })
+  })
+
+  // ================================================================
+  // 修改密码 Tab — 设置体现：账号安全能力
+  // ================================================================
+
+  describe('修改密码 Tab', () => {
+    it('切换到修改密码 tab 显示表单', async () => {
+      const user = userEvent.setup()
+      render(<SettingsPage />)
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /修改密码/ })).toBeInTheDocument()
+      })
+      await user.click(screen.getAllByRole('button', { name: /修改密码/ })[0])
+
+      expect(screen.getByPlaceholderText('请输入当前密码')).toBeInTheDocument()
+      expect(screen.getByPlaceholderText('至少 8 位')).toBeInTheDocument()
+      expect(screen.getByPlaceholderText('再次输入新密码')).toBeInTheDocument()
+    })
+
+    it('两次新密码不一致 → toast 报错且不调接口', async () => {
+      const user = userEvent.setup()
+      const { toast } = await import('sonner')
+      render(<SettingsPage />)
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /修改密码/ })).toBeInTheDocument()
+      })
+      await user.click(screen.getAllByRole('button', { name: /修改密码/ })[0])
+
+      fireEvent.change(screen.getByPlaceholderText('请输入当前密码'), { target: { value: 'old123456' } })
+      fireEvent.change(screen.getByPlaceholderText('至少 8 位'), { target: { value: 'new123456' } })
+      fireEvent.change(screen.getByPlaceholderText('再次输入新密码'), { target: { value: 'different' } })
+      fireEvent.click(screen.getAllByRole('button', { name: /修改密码/ })[1])
+
+      await waitFor(() => {
+        expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('不一致'))
+      })
+      expect(mockChangePassword).not.toHaveBeenCalled()
+    })
+
+    it('校验通过后调用 changePassword 接口', async () => {
+      const user = userEvent.setup()
+      mockChangePassword.mockResolvedValue({ data: { success: true } })
+      render(<SettingsPage />)
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /修改密码/ })).toBeInTheDocument()
+      })
+      await user.click(screen.getAllByRole('button', { name: /修改密码/ })[0])
+
+      fireEvent.change(screen.getByPlaceholderText('请输入当前密码'), { target: { value: 'old123456' } })
+      fireEvent.change(screen.getByPlaceholderText('至少 8 位'), { target: { value: 'new123456' } })
+      fireEvent.change(screen.getByPlaceholderText('再次输入新密码'), { target: { value: 'new123456' } })
+      fireEvent.click(screen.getAllByRole('button', { name: /修改密码/ })[1])
+
+      await waitFor(() => {
+        expect(mockChangePassword).toHaveBeenCalledWith({
+          oldPassword: 'old123456',
+          newPassword: 'new123456',
+          confirmPassword: 'new123456',
+        })
+      })
+    })
+  })
+
+  // ================================================================
+  // 登录日志 Tab — 设置体现：登录审计
+  // ================================================================
+
+  describe('登录日志 Tab', () => {
+    it('切换到登录日志 tab 加载并展示日志', async () => {
+      const user = userEvent.setup()
+      render(<SettingsPage />)
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /登录日志/ })).toBeInTheDocument()
+      })
+      await user.click(screen.getByRole('button', { name: /登录日志/ }))
+
+      await waitFor(() => {
+        expect(mockGetLoginLogs).toHaveBeenCalled()
+      })
+      await waitFor(() => {
+        expect(screen.getByText('192.168.1.1')).toBeInTheDocument()
       })
     })
   })

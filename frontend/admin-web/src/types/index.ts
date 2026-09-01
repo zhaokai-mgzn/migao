@@ -39,6 +39,8 @@ export interface User {
   menus?: MenuItem[]
   tenantId?: number
   tenantName?: string
+  /** 企业 Logo（「企业基础信息」设置） */
+  tenantLogo?: string
 }
 
 // 菜单项类型
@@ -129,6 +131,8 @@ export interface Product {
   editedBy?: string
   // 最后编辑时间
   editedAt?: string
+  // 是否商家推荐（C 端「新品推荐」位展示依据）
+  recommended?: boolean
   // 库存预警阈值
   stockWarningThreshold?: number
   // 库存扣减模式：兼容后端('on_order' | 'on_payment')与表单('on_place' | 'on_pay')两套枚举
@@ -363,7 +367,7 @@ export type OrderStatus = 'pending_payment' | 'pending_shipment' | 'shipped' | '
 export type BackendOrderStatus =
   | 'pending'
   | 'confirmed'
-  | 'processing'
+  | 'producing'
   | 'shipped'
   | 'completed'
   | 'cancelled'
@@ -371,7 +375,7 @@ export type BackendOrderStatus =
 // 前端到后端状态映射（用于API请求时的status参数）
 export const FrontendToBackendStatus: Record<OrderStatus, BackendOrderStatus> = {
   pending_payment: 'pending',
-  pending_shipment: 'confirmed', // confirmed 和 processing 都算待发货
+  pending_shipment: 'confirmed', // confirmed 和 producing 都算待发货
   shipped: 'shipped',
   completed: 'completed',
   closed: 'cancelled',
@@ -382,7 +386,7 @@ export const FrontendToBackendStatus: Record<OrderStatus, BackendOrderStatus> = 
 export const BackendToFrontendStatus: Record<BackendOrderStatus, OrderStatus> = {
   pending: 'pending_payment',
   confirmed: 'pending_shipment',
-  processing: 'pending_shipment', // processing 也归入待发货
+  producing: 'pending_shipment', // producing 也归入待发货
   shipped: 'shipped',
   completed: 'completed',
   cancelled: 'closed',
@@ -534,6 +538,8 @@ export interface Order {
   totalAmount: number          // 累计金额
   actualAmount: number         // 实收款
   discountAmount?: number      // 优惠金额 (issue #672)
+  refundAmount?: number        // 已退款金额（>0 表示订单已退款；退款不再改变订单状态）
+  refundAt?: string            // 退款时间
   status: OrderStatus
   hasProcessing: boolean       // 是否含加工
   paymentDeadline?: string     // 支付截止时间（待付款状态用）
@@ -702,6 +708,31 @@ export interface CustomerDetail extends Customer {
   sessions?: CustomerSession[]
 }
 
+// 客户档案（后端 CustomerProfile 实体序列化返回）
+// GET /api/admin/customers/{id} → profile 字段
+export interface CustomerProfile {
+  id?: string
+  wechatNickname?: string
+  avatarUrl?: string
+  phone?: string
+  sourceChannel?: CustomerChannel | string
+  // 后端返回字符串（normal/vip1/vip2/vip3）
+  vipLevel?: number | string | null
+  // 备注（后端字段名 agentNotes）
+  agentNotes?: string
+  lastActiveAt?: string
+  registeredAt?: string
+}
+
+// 客户详情页响应（后端契约：{ id, profile, tags, orders, sessions }）
+export interface CustomerDetailResponse {
+  id: string
+  profile: CustomerProfile
+  tags?: CustomerTag[] | null
+  orders?: CustomerOrder[]
+  sessions?: CustomerSession[]
+}
+
 // 客户订单摘要
 export interface CustomerOrder {
   id: string
@@ -743,12 +774,13 @@ export interface ChangePasswordParams {
   confirmPassword: string
 }
 
-// 登录日志
+// 登录日志（对应后端 AuditLog action=login 的字段）
 export interface LoginLog {
   id: string
-  ip: string
-  device: string
-  location?: string
+  userId?: string
+  userName?: string
+  ipAddress?: string
+  userAgent?: string
   createdAt: string
 }
 
@@ -801,7 +833,7 @@ export interface PendingTask {
 export interface OrderTrendPoint {
   date: string
   orders: number
-  totalAmount?: number  // 当日订单总金额（分）
+  amount?: number  // 当日订单总金额（分），字段与后端 OrderTrendPointResponse 对齐
 }
 
 // 订单状态分布
@@ -1102,7 +1134,8 @@ export const EmployeeStatusLabels: Record<EmployeeStatus, string> = {
 
 // 权限
 export interface Permission {
-  id: number
+  /** 权限 ID（后端 IdType.ASSIGN_UUID，字符串） */
+  id: string
   name: string
   code: string
   resource: string
@@ -1112,7 +1145,8 @@ export interface Permission {
 
 // 角色
 export interface Role {
-  id: number
+  /** 角色 ID（后端 IdType.ASSIGN_UUID，字符串） */
+  id: string
   name: string
   code: string
   description?: string
@@ -1125,7 +1159,7 @@ export interface RoleFormData {
   name: string
   code: string
   description?: string
-  permissionIds: number[]
+  permissionIds: string[]
 }
 
 // 员工
@@ -1193,6 +1227,12 @@ export interface Registration {
   rejectReason?: string
   reviewedBy?: number
   reviewedAt?: string
+  /** AI 甄别来源：ai / system / manual */
+  reviewSource?: string
+  /** 风险标记 JSON 数组字符串 */
+  riskFlags?: string
+  /** AI 审查摘要 */
+  reviewSummary?: string
   createdAt: string
   updatedAt: string
 }
@@ -1212,6 +1252,18 @@ export interface RegistrationData {
   industry?: string
   address?: string
   description?: string
+  /** 蜜罐字段（隐藏，真人不会填写；被填充则判定为自动化脚本） */
+  website?: string
+}
+
+// 入驻申请提交结果（AI 自动甄别）
+export interface RegistrationResult {
+  applicationId: number
+  /** approved（AI 甄别通过）/ rejected（AI 甄别驳回）/ pending（兜底） */
+  status: RegistrationStatus
+  message: string
+  /** status=rejected 时的驳回原因 */
+  rejectReason?: string
 }
 
 // ========== 通知类型 ==========
@@ -1289,9 +1341,9 @@ export const SkuStatusLabels: Record<SkuStatus, string> = {
   disabled: '已禁用',
 }
 
-// 商品颜色
+// 商品颜色（id 为 BIGSERIAL，可能超过 JS 2^53，后端序列化为字符串）
 export interface ProductColor {
-  id: number
+  id: string
   colorName: string
   mainColorHex?: string
   colorImageUrl?: string
@@ -1299,10 +1351,10 @@ export interface ProductColor {
   sortOrder?: number
 }
 
-// 商品 SKU
+// 商品 SKU（id/colorId 为 BIGSERIAL，可能超过 JS 2^53，后端序列化为字符串）
 export interface ProductSku {
-  id: number
-  colorId: number
+  id: string
+  colorId: string
   colorName?: string
   sellingMethod: SellingMethod
   doorWidth: string

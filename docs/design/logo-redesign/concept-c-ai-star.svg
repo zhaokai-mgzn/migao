@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
+  <defs>
+    <linearGradient id="tileC" x1="2" y1="2" x2="46" y2="46" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6E8CFF"/>
+      <stop offset="1" stop-color="#2F54EB"/>
+    </linearGradient>
+  </defs>
+  <!-- 圆角底板 -->
+  <rect x="2" y="2" width="44" height="44" rx="13.5" fill="url(#tileC)"/>
+  <!-- 星芒光晕 -->
+  <circle cx="24" cy="8.4" r="6.4" fill="#FFC53D" fill-opacity="0.22"/>
+  <!-- 拱形 M — 扁平宽顶 + 圆角，现代几何感 -->
+  <path d="M11.5 34.7V16.9Q11.5 14.7 13.7 14.7H18.4L22.9 25.9L24 14.7L25.1 25.9L29.6 14.7H34.3Q36.5 14.7 36.5 16.9V34.7" stroke="#FFFFFF" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- 金色四芒星 — 悬于峰顶，寓意「高」+ AI -->
+  <path d="M24 4.4C24.9 6.9 26.2 7.9 28.4 8.4C26.2 8.9 24.9 9.9 24 12.4C23.1 9.9 21.8 8.9 19.6 8.4C21.8 7.9 23.1 6.9 24 4.4Z" fill="#FFC53D"/>
+</svg>

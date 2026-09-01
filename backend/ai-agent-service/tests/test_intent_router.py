@@ -80,6 +80,38 @@ class TestRuleMatcher:
         assert result is not None
         assert result.intent == IntentType.KNOWLEDGE_FAQ
 
+    # --- 财务意图 ---
+
+    def test_keyword_match_finance_summary(self, matcher):
+        """关键词匹配：收支汇总 → FINANCE"""
+        result = matcher.match("查一下本月收支净额")
+        assert result is not None
+        assert result.intent == IntentType.FINANCE
+
+    def test_keyword_match_finance_transactions(self, matcher):
+        """关键词匹配：资金流水 → FINANCE"""
+        result = matcher.match("查一下资金流水")
+        assert result is not None
+        assert result.intent == IntentType.FINANCE
+
+    def test_keyword_match_finance_reconcile(self, matcher):
+        """关键词匹配：应收对账 → FINANCE"""
+        result = matcher.match("哪些订单没对平")
+        assert result is not None
+        assert result.intent == IntentType.FINANCE
+
+    def test_keyword_match_finance_create(self, matcher):
+        """关键词匹配：登记收款 → FINANCE（不被订单意图抢走）"""
+        result = matcher.match("登记一笔线下收款500元")
+        assert result is not None
+        assert result.intent == IntentType.FINANCE
+
+    def test_refund_stays_after_sales(self, matcher):
+        """裸"退款"保持售后意图，不被财务吞掉"""
+        result = matcher.match("我要退款")
+        assert result is not None
+        assert result.intent == IntentType.AFTER_SALES
+
     # --- Greeting 特殊逻辑 ---
 
     def test_greeting_short_message(self, matcher):
@@ -368,6 +400,36 @@ class TestIntentRouter:
             assert decision.intent_result.source == "classifier"
             assert decision.intent_result.intent == IntentType.PRODUCT_INQUIRY
 
+    @pytest.mark.asyncio
+    async def test_route_entity_hint_not_visible_to_l1(self, router):
+        """实体提示仅注入 L2，不污染 L1 关键词匹配。
+
+        生产回归：context 实体标签（如"加工项"）被拼进 user_message 后交给 L1，
+        导致"先帮我查一下售后工单"被 L1 按 hint 中的"加工项"误路由到 product。
+        """
+        hint = "[上下文实体] 之前对话已涉及：加工项「叭叭叭」"
+        decision = await router.route("先帮我查一下售后工单", entity_hint=hint)
+        # L1 只看原始用户消息 → 命中"售后" → AFTER_SALES
+        assert decision.intent_result.source == "rule"
+        assert decision.intent_result.intent == IntentType.AFTER_SALES
+
+    @pytest.mark.asyncio
+    async def test_route_entity_hint_passed_to_classifier(self, router):
+        """L1 未命中时，classifier 收到含实体提示的完整消息"""
+        hint = "[上下文实体] 之前对话已涉及：订单「ORD123」"
+        captured = {}
+
+        async def fake_classify(message, chat_history=None, agent_intents=None):
+            captured["message"] = message
+            return IntentResult(
+                intent=IntentType.AFTER_SALES, confidence=0.85, source="classifier",
+            )
+
+        with patch.object(router.intent_classifier, "classify", new=fake_classify):
+            await router.route("这个订单要退货", entity_hint=hint)
+        assert "ORD123" in captured["message"]
+        assert "这个订单要退货" in captured["message"]
+
 
 # ========== IntentConfig 数据结构测试 ==========
 
@@ -375,8 +437,13 @@ class TestIntentConfig:
     """意图配置测试"""
 
     def test_intent_type_values(self):
-        """所有意图类型存在"""
-        assert len(IntentType) == 29  # 含 order_create
+        """所有意图类型存在（含 order_create / finance / quote 算料）"""
+        assert len(IntentType) == 31  # 含 order_create + finance + quote（算料报价）
+
+    def test_finance_maps_to_finance_api(self):
+        """财务意图映射到 finance_api 工具"""
+        tools = INTENT_TOOL_MAP[IntentType.FINANCE]
+        assert "finance_api" in tools
 
     def test_intent_tool_map_coverage(self):
         """所有意图类型都有 tool 映射"""

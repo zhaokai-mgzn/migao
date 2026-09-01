@@ -33,7 +33,7 @@ cases:
     merge_log: "eval C001 独有"
     traces:
       tests:
-        - "backend/ai-agent-service/tests/test_mibao_scenarios.py"
+        - "backend/ai-agent-service/tests/manual/mibao_scenarios.py"
       ci:
         - agent-eval.yml
       verifies: []
@@ -68,7 +68,7 @@ cases:
     merge_log: "eval C003 独有"
     traces:
       tests:
-        - "backend/ai-agent-service/tests/test_mibao_scenarios.py"
+        - "backend/ai-agent-service/tests/manual/mibao_scenarios.py"
       ci:
         - agent-eval.yml
       verifies: []
@@ -114,7 +114,7 @@ cases:
     merge_log: "eval M007 独有（物流查询是旅程一环，独立用例见 OR-005）"
     traces:
       tests:
-        - "backend/ai-agent-service/tests/test_mibao_scenarios.py"
+        - "backend/ai-agent-service/tests/manual/mibao_scenarios.py"
       ci:
         - agent-eval.yml
       verifies: []

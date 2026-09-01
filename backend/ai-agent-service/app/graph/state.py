@@ -1,4 +1,4 @@
-"""AgentState - LangGraph 图的状态模型定义"""
+"""AgentState - LangGraph 图的状态模型定义（会话管理重构 P3：已精简）"""
 
 from typing import TypedDict, Optional, Annotated
 
@@ -7,7 +7,13 @@ from langgraph.graph.message import add_messages
 
 
 class AgentState(TypedDict):
-    """LangGraph 图的全局状态，贯穿所有节点。"""
+    """LangGraph 图的全局状态，贯穿所有节点。
+
+    P3 精简：移除 graph 内零消费的死字段
+    （recent_entities / cached_answer / intent_chain / stage / entities）。
+    跨轮状态（pending_interact_skill）由 SessionStateStore 持久化，
+    _build_initial_state 负责恢复。
+    """
 
     # 对话消息列表 - 使用 LangGraph 的 add_messages reducer 自动追加
     messages: Annotated[list[BaseMessage], add_messages]
@@ -19,21 +25,14 @@ class AgentState(TypedDict):
     tenant_id: int
     user_id: int
     user_name: Optional[str]         # 用户昵称（注入到 System Prompt）
+    tenant_name: Optional[str]       # 企业名称（注入到 System Prompt，对应「企业基础信息」设置）
     session_id: str
     role: str
+    permissions: list[str]           # 细粒度权限码列表（与后端 @RequirePermission 同源）
 
     # 意图识别
     intent_result: Optional[dict]    # IntentResult 序列化
     route_decision: Optional[dict]   # RouteDecision 序列化
-
-    # 上下文追踪
-    entities: dict                   # 提取的关键实体
-    recent_entities: list[dict]      # 本轮对话涉及的实体 [{type, value, label}, ...]
-    intent_chain: list[str]          # 意图变化序列
-    stage: str                       # 对话阶段 (initial/querying/confirming/processing/completed)
-
-    # 缓存
-    cached_answer: Optional[str]     # 语义缓存命中的答案
 
     # 输出
     final_answer: str                # 最终回答文本

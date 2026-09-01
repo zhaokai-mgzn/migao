@@ -46,6 +46,7 @@ class IntentRouter:
         message: Union[str, list],
         chat_history: list = None,
         agent_intents: list[str] | None = None,
+        entity_hint: str = "",
     ) -> RouteDecision:
         """
         对用户消息进行意图路由
@@ -55,11 +56,14 @@ class IntentRouter:
             chat_history: 对话历史
             agent_intents: 该 Agent 可处理的意图列表（可选）。
                            传入后分类器只考虑这些意图，提升准确率。
+            entity_hint: 跨轮实体提示（如"[上下文实体] 之前对话已涉及：订单「ORD123」"）。
+                         仅注入 L2 分类器做指代消解；L1 规则匹配只看原始用户消息，
+                         防止 hint 中的领域词（如"加工项"）污染关键词匹配误路由。
 
         Returns:
             RouteDecision: 路由决策结果
         """
-        # L1: 规则匹配
+        # L1: 规则匹配（只看原始用户消息，实体提示不得参与关键词匹配）
         intent_result = self.rule_matcher.match(message)
         if intent_result:
             logger.info(
@@ -68,9 +72,12 @@ class IntentRouter:
             )
             return self._make_decision(intent_result)
 
-        # L2: 小模型分类（Agent 感知）
+        # L2: 小模型分类（Agent 感知，注入实体提示做指代消解）
+        classify_message = message
+        if entity_hint:
+            classify_message = f"{entity_hint}\n用户消息：{message}"
         intent_result = await self.intent_classifier.classify(
-            message, chat_history, agent_intents=agent_intents
+            classify_message, chat_history, agent_intents=agent_intents
         )
         logger.info(
             f"[IntentRouter] L2 classifier result: intent={intent_result.intent.value}, "

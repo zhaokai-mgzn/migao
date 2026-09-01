@@ -1,10 +1,103 @@
+@use '../../../styles/variables.scss' as *;
+
 .chat-page {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background: #F9FAFB;
+  background: $bg-secondary;
   overflow: hidden;
 
+  // ── 自定义导航栏（瑞幸式深蓝渐变品牌头）──
+  &__navbar {
+    padding: 12px 24px 16px;
+    background: $gradient-brand;
+    border-bottom-left-radius: 24px;
+    border-bottom-right-radius: 24px;
+    box-shadow: $shadow-pop;
+    position: relative;
+    z-index: 10;
+  }
+
+  &__navbar-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  &__navbar-logo {
+    width: 36px;
+    height: 36px;
+    border-radius: 12px;
+    background: $gradient-gold;
+    position: relative;
+
+    &::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.9);
+    }
+  }
+
+  &__navbar-name {
+    font-size: 34px;
+    font-weight: 700;
+    color: #ffffff;
+    letter-spacing: 1px;
+  }
+
+  &__navbar-badge {
+    padding: 2px 10px;
+    border-radius: $radius-full;
+    background: rgba(255, 255, 255, 0.18);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+  }
+
+  &__navbar-badge-text {
+    font-size: 20px;
+    font-weight: 600;
+    color: $brand-gold-light;
+  }
+
+  &__navbar-sub {
+    display: block;
+    margin-top: 6px;
+    font-size: 22px;
+    color: rgba(255, 255, 255, 0.75);
+  }
+
+  &__navbar-right {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  &__new-chat {
+    margin-top: 6px;
+    padding: 6px 16px;
+    border-radius: $radius-full;
+    background: rgba(255, 255, 255, 0.16);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    flex-shrink: 0;
+
+    &--hover {
+      opacity: 0.8;
+    }
+  }
+
+  &__new-chat-text {
+    font-size: 20px;
+    font-weight: 500;
+    color: #ffffff;
+  }
+
+  // ── 主体 ──
   &__body {
     flex: 1;
     display: flex;
@@ -23,7 +116,7 @@
 
   &__loading-text {
     font-size: 28px;
-    color: #9CA3AF;
+    color: $text-tertiary;
   }
 
   // 错误提示
@@ -32,12 +125,24 @@
     align-items: center;
     justify-content: center;
     padding: 12px 24px;
-    background: #FFF2F0;
-    border-bottom: 1px solid #FFCCC7;
+    background: rgba(229, 72, 77, 0.08);
+    border-bottom: 1px solid rgba(229, 72, 77, 0.2);
   }
 
   &__error-text {
     font-size: 24px;
-    color: #FF4D4F;
+    color: $error-color;
+  }
+
+  // 转人工横幅
+  &__handoff {
+    padding: 12rpx 24rpx;
+    background: rgba(200, 162, 75, 0.1);
+    border-bottom: 1px solid rgba(200, 162, 75, 0.25);
+  }
+
+  &__handoff-text {
+    font-size: 24rpx;
+    color: $brand-gold;
   }
 }

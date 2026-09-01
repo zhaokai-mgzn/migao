@@ -138,6 +138,31 @@ public class AgentSessionService extends ServiceImpl<AgentSessionMapper, AgentSe
     /**
      * 获取会话详情
      */
+    /**
+     * 根据 AI 会话 ID 查询人工客服会话（用户端：转人工后查看客服回复）
+     *
+     * 校验 customerId 归属（用户只能看自己的会话）。
+     *
+     * @param aiSessionId AI 会话 ID（sessions 表）
+     * @param customerId 客户 ID（当前登录用户）
+     * @return 会话详情（含消息）
+     */
+    public AgentSessionDetailResponse getSessionByAiSessionId(String aiSessionId, String customerId) {
+        if (!StringUtils.hasText(aiSessionId)) {
+            throw BusinessException.validationError("AI 会话 ID 不能为空");
+        }
+        LambdaQueryWrapper<AgentSession> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(AgentSession::getAiSessionId, aiSessionId)
+                .eq(AgentSession::getCustomerId, customerId)
+                .orderByDesc(AgentSession::getCreatedAt)
+                .last("LIMIT 1");
+        AgentSession session = agentSessionMapper.selectOne(wrapper);
+        if (session == null) {
+            throw BusinessException.notFound("人工客服会话");
+        }
+        return getSessionDetail(session.getId());
+    }
+
     public AgentSessionDetailResponse getSessionDetail(String id) {
         AgentSession session = agentSessionMapper.selectById(id);
         if (session == null) {
@@ -273,6 +298,108 @@ public class AgentSessionService extends ServiceImpl<AgentSessionMapper, AgentSe
     /**
      * 结束会话
      */
+    /**
+     * 转人工创建会话（AI 客服 → 人工客服桥接）
+     *
+     * 用户触发转人工时，创建等待分配的人工会话，并写入系统消息。
+     * 会话状态初始为 waiting，客服分配/接待后转 active。
+     *
+     * @param aiSessionId AI 会话 ID（sessions 表，用于关联回溯 AI 对话）
+     * @param customerId 客户 ID（customer_profiles）
+     * @param tenantId 租户 ID
+     * @param reason 转人工原因
+     * @return 创建的会话
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public AgentSession createSessionForHandoff(String aiSessionId, String customerId, Long tenantId, String reason) {
+        AgentSession session = AgentSession.builder()
+                .tenantId(tenantId)
+                .customerId(customerId)
+                .aiSessionId(aiSessionId)
+                .status("waiting")
+                .priority(1)
+                .reason(StringUtils.hasText(reason) ? reason : "客户请求转人工")
+                .queuePosition(0)
+                .startedAt(OffsetDateTime.now())
+                .build();
+        agentSessionMapper.insert(session);
+
+        // 写入系统消息：会话创建记录
+        AgentMessage sysMsg = AgentMessage.builder()
+                .tenantId(tenantId)
+                .sessionId(session.getId())
+                .senderType("system")
+                .contentType("text")
+                .content("客户请求转人工：" + session.getReason())
+                .isInternal(false)
+                .build();
+        agentMessageMapper.insert(sysMsg);
+
+        log.info("[agent-session] 转人工会话创建: sessionId={} aiSessionId={} tenant={}",
+                session.getId(), aiSessionId, tenantId);
+        return session;
+    }
+
+    /**
+     * 发送人工会话消息（客服或用户）
+     *
+     * 客服（agent）或用户（customer）在人工会话中发送消息。
+     * 会话处于 waiting 时，客服首次回复自动转为 active。
+     *
+     * @param sessionId 人工会话 ID
+     * @param senderType 发送者类型：agent / customer / system
+     * @param senderId 发送者 ID
+     * @param content 消息内容
+     * @param isInternal 是否内部备注（仅客服可见）
+     * @return 保存的消息
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public AgentMessage sendMessage(String sessionId, String senderType, String senderId,
+                                    String content, Boolean isInternal) {
+        if (!StringUtils.hasText(content)) {
+            throw BusinessException.validationError("消息内容不能为空");
+        }
+        AgentSession session = agentSessionMapper.selectById(sessionId);
+        if (session == null) {
+            throw BusinessException.notFound("客服会话");
+        }
+        // 租户隔离校验：禁止跨租户操作
+        Long currentTenantId = TenantContext.getTenantId();
+        if (!session.getTenantId().equals(currentTenantId)) {
+            throw BusinessException.notFound("客服会话");
+        }
+        // 客户消息归属校验（审计 07 P1-3）：customer 只能向自己的会话发消息，
+        // 防租户内客户间消息注入/伪造
+        if ("customer".equals(senderType) && !session.getCustomerId().equals(senderId)) {
+            throw BusinessException.notFound("客服会话");
+        }
+        if ("ended".equals(session.getStatus())) {
+            throw BusinessException.validationError("会话已结束，无法发送消息");
+        }
+
+        AgentMessage msg = AgentMessage.builder()
+                .tenantId(session.getTenantId())
+                .sessionId(sessionId)
+                .senderType(senderType)
+                .senderId(senderId)
+                .contentType("text")
+                .content(content)
+                .isInternal(Boolean.TRUE.equals(isInternal))
+                .build();
+        agentMessageMapper.insert(msg);
+
+        // 客服首次回复：waiting → active
+        if ("agent".equals(senderType) && "waiting".equals(session.getStatus())) {
+            AgentSession update = new AgentSession();
+            update.setId(sessionId);
+            update.setStatus("active");
+            agentSessionMapper.updateById(update);
+            log.info("[agent-session] 客服接待，会话 active: sessionId={} employeeId={}", sessionId, senderId);
+        }
+
+        return msg;
+    }
+
     @Transactional(rollbackFor = Exception.class)
     public void endSession(String sessionId) {
         AgentSession session = agentSessionMapper.selectById(sessionId);

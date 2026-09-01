@@ -11,6 +11,8 @@
  * - 轮询未读数
  */
 
+// case_ids: CH-003, CH-004
+
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -241,7 +243,7 @@ describe('NotificationBell', () => {
     const bell = screen.getByTestId('icon-bell').closest('button')!
     await user.click(bell)
     await waitFor(() => {
-      const dot = document.querySelector('.bg-blue-500')
+      const dot = document.querySelector('.bg-primary-500')
       expect(dot).toBeInTheDocument()
     })
   })

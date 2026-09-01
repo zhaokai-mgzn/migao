@@ -116,7 +116,7 @@
 
 - 现象：米宝「新建会话」（`POST /api/chat/sessions`）返回 `401 TOKEN_INVALID: The specified alg value is not allowed`。
 - 根因：`backend/admin-api/src/main/resources/rsa/private.pem` 被 `.gitignore`（`**/rsa/private.pem`）排除、**从未进仓库**，因此也没进 Docker 镜像。admin-api 生产容器里没有 RSA 私钥，`JwtTokenProvider.init()` 静默回退 HS256（每次启动随机密钥）→ 签出 `alg=HS256` 的 token；而 ai-agent-service 的 `verify_jwt_token` 写死 `algorithms=["RS256"]` → 拒绝为 TOKEN_INVALID。
-- 修复（PR 走二郎神闭环）：`JwtTokenProvider` 改为 **RS256-only + fail-fast**（密钥缺失抛 `IllegalStateException`，不再静默降级），并让私钥/公钥**各自独立加载**（`JWT_PRIVATE_KEY_PEM` 单独即可生效，公钥走 classpath）。
+- 修复（PR 走研发闭环）：`JwtTokenProvider` 改为 **RS256-only + fail-fast**（密钥缺失抛 `IllegalStateException`，不再静默降级），并让私钥/公钥**各自独立加载**（`JWT_PRIVATE_KEY_PEM` 单独即可生效，公钥走 classpath）。
 - 规避/必做：生产 `.env.admin-api` 必须注入 `JWT_PRIVATE_KEY_PEM`（PEM 内容，与 ai-agent 的 `JWT_PUBLIC_KEY` 是同一对；本地 gitignored 的 `rsa/private.pem` 即匹配的私钥）。**没配私钥就合入部署 → fail-fast 会让 admin-api 启动即崩**（比「聊天坏」更糟）。
 
 ### 2. CI 缺 private.pem → 单测全红（fail-fast 把历史隐患暴露出来）

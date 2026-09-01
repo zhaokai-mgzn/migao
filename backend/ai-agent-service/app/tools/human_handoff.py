@@ -135,11 +135,37 @@ class HumanHandoffTool(BaseTool):
 
         handoff_reason = reason or "客户请求转人工（未提供具体原因）"
 
+        # 非营业时间转人工降级：没有坐席在线，返回 afterHoursMessage 引导留言，
+        # 不创建工单。AI 机器人本身照常服务，此降级只针对「转人工」这个动作。
         try:
+            from app.agents.tenant_config import get_tenant_ai_config, is_after_hours
+            ai_config = await get_tenant_ai_config(context.tenant_id)
+            if is_after_hours(ai_config):
+                msg = (
+                    ai_config.get("afterHoursMessage")
+                    or "当前非营业时间，人工客服已休息，请您留言，我们会尽快回复您～"
+                )
+                logger.info(
+                    f"[human_handoff] 非营业时间转人工降级 | tenant={context.tenant_id} "
+                    f"afterHoursMode={ai_config.get('afterHoursMode')}"
+                )
+                return ToolResult(
+                    success=True,
+                    data={"handoff_deferred": True, "after_hours": True},
+                    message=msg,
+                    summary=f"非营业时间，转人工降级为留言：{msg[:30]}",
+                )
+        except Exception as e:
+            logger.warning(
+                f"[human_handoff] 非营业时间检查失败（非致命，继续正常转人工）: "
+                f"{type(e).__name__}: {e}"
+            )
+
+        try:
+            # 用 Agent 版接口（宽松校验，转人工工单无关联订单，不需要 orderId）
             json_data: Dict[str, Any] = {
                 "ticketType": "complaint",
                 "reason": handoff_reason,
-                "source": "customer",
             }
             if description:
                 json_data["description"] = description
@@ -151,7 +177,7 @@ class HumanHandoffTool(BaseTool):
 
             client = get_admin_api_client()
             response = await client.post(
-                "/api/admin/after-sales",
+                "/api/admin/agent/after-sales",
                 json_data=json_data,
                 tenant_id=context.tenant_id,
                 user_id=context.user_id,
@@ -177,14 +203,50 @@ class HumanHandoffTool(BaseTool):
             # Gap-3 安全加固: 通知管理员
             await self._notify_admins(context, ticket_no, handoff_reason)
 
+            # 创建人工客服会话（客服工作台可见、可对话）——转人工核心闭环
+            agent_session_id = None
+            try:
+                session_response = await client.post(
+                    "/api/admin/agent-sessions",
+                    json_data={
+                        "aiSessionId": context.session_id,
+                        "customerId": context.user_id,
+                        "reason": handoff_reason,
+                    },
+                    tenant_id=context.tenant_id,
+                    user_id=context.user_id,
+                )
+                if session_response.get("success") and session_response.get("data"):
+                    agent_session_id = session_response["data"].get("id")
+                    logger.info(
+                        f"[human_handoff] 人工会话创建成功: agentSessionId={agent_session_id} "
+                        f"| tenant={context.tenant_id}"
+                    )
+                else:
+                    logger.warning(
+                        f"[human_handoff] 创建人工会话失败（工单已创建，不影响主流程）: "
+                        f"{session_response.get('error', {}).get('message', 'unknown')}"
+                    )
+            except Exception as e:
+                logger.warning(
+                    f"[human_handoff] 创建人工会话异常（工单已创建，不影响主流程）: "
+                    f"{type(e).__name__}: {e}"
+                )
+
+            data = dict(ticket_data)
+            if agent_session_id:
+                data["agentSessionId"] = agent_session_id
+
             return ToolResult(
                 success=True,
-                data=ticket_data,
+                data=data,
                 message=(
                     f"已为您转接人工客服！工单编号：{ticket_no}。"
                     "我们的客服人员会在工作时间内尽快与您联系，感谢您的耐心等待 🙏"
                 ),
                 summary=f"转人工成功: 工单{ticket_no}, 原因:{handoff_reason[:30]}",
+                # T2 事务终态：转人工完成 → 清空会话级状态（进入人工流程，AI 上下文不再续用）
+                terminal=True,
             )
 
         except Exception as e:

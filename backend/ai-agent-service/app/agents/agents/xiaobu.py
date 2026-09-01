@@ -34,6 +34,7 @@ XIAOBU_CONFIG = AgentConfig(
     skill_names=[
         "customer_order",       # 订单查询+物流+创建
         "customer_product",     # 商品搜索+详情
+        "customer_quote",       # 窗帘算料报价
         "customer_aftersales",  # 售后申请+查询
         "customer_knowledge",   # 知识问答(LLM内置)
     ],

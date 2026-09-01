@@ -13,6 +13,8 @@ from typing import Dict, Optional
 from collections import OrderedDict
 from loguru import logger
 
+from app.memory.session_state_store import SessionStateStore
+
 _ = _time  # suppress unused import warning, used in _summarize_result via __import__
 
 
@@ -36,6 +38,20 @@ class AgentContextManager:
     MAX_ENTITIES = 10
     MAX_TOOL_RESULTS = 8
     MAX_CONTEXT_LENGTH = 800
+
+    # 域分桶映射：entity 类型 → 归属域（主题域隔离 T1 依据）
+    # 同一实体类型固定属于一个域；域切换时只重置当前域，不误伤其他域
+    ENTITY_DOMAIN = {
+        "order_nos": "order",
+        "product_ids": "product",
+        "processing_item_ids": "product",
+        "customer_ids": "customer",
+        "aftersale_nos": "aftersales",
+    }
+
+    # 记录每个 entity 的域归属（_extract_entities 时写入 {entity_type: {id: domain}}）
+    # 用于 reset_domain 精确清空指定域的实体
+    DOMAIN_INDEX_KEY = "_domain_index"
 
     # Tool hints: 每个 skill 最常用的工具，减少 LLM 试错
     SKILL_TOOL_HINTS = {
@@ -66,6 +82,8 @@ class AgentContextManager:
         # 只存关键字段，避免塞入大 JSON
         summary = self._summarize_result(tool_name, result)
         if summary:
+            # 记录工具结果归属域（T1 切域后按域过滤，不注入旧域摘要）
+            summary["domain"] = self._tool_domain(tool_name)
             cache["tool_results"].append(summary)
             if len(cache["tool_results"]) > self.MAX_TOOL_RESULTS:
                 cache["tool_results"].pop(0)
@@ -87,23 +105,98 @@ class AgentContextManager:
         cache = self._get_or_create(session_id)
         return cache.get("entities", {})
 
+    # ── 上下文自动清理（T1/T2/T3，见 xiaobu-c-end-redesign.md §4.2）──
+
+    def record_domain_switch(self, session_id: str, current_skill: str) -> None:
+        """T1 主题域切换：将旧域实体标 stale，防止跨域污染。
+
+        - 同域（last_skill == current_skill）：no-op
+        - 异域：把非当前域的实体标记 stale（不移除——支持"回到刚才话题"回溯名称）
+        - build_context 只注入当前域实体 + 最近 1 个 stale 域的名称索引（不带 ID）
+        """
+        cache = self._get_or_create(session_id)
+        last_skill = cache.get("last_skill", "")
+        if not last_skill or last_skill == current_skill:
+            return
+        # 记录 stale 域（保留名称索引供回溯），并标记非当前域实体
+        stale_domains = set(cache.get("_stale_domains", []))
+        stale_domains.add(last_skill)
+        cache["_stale_domains"] = list(stale_domains)
+        cache["_current_domain"] = current_skill
+
+    def reset_domain(self, session_id: str, domain: str) -> None:
+        """T2 事务终态：清空指定域全部会话级状态（草稿/实体/tool_results/pending）。
+
+        被 terminal tool（order_create/aftersale_create/human_handoff 成功）触发。
+        其他域状态保留（product 域的推荐结果不受下单影响）。
+        """
+        cache = self._get_or_create(session_id)
+        entities = cache.get("entities", {})
+        domain_index = cache.get(self.DOMAIN_INDEX_KEY, {})
+        # 清空属于该域的实体类型
+        for etype, edomain in self.ENTITY_DOMAIN.items():
+            if edomain == domain:
+                entities.pop(etype, None)
+        # 清空该域的工具结果（tool_results 里记录 tool 名，按域过滤）
+        domain_tools = self._domain_tools(domain)
+        if cache.get("tool_results"):
+            cache["tool_results"] = [
+                r for r in cache["tool_results"]
+                if r.get("tool") not in domain_tools
+            ]
+        # 当前域完成：移除 last_skill（避免残留导致下轮误判同域）
+        if cache.get("last_skill") == domain:
+            cache.pop("last_skill", None)
+        cache.pop("_current_domain", None)
+        # 从 stale 集合中移除已重置的域
+        if cache.get("_stale_domains"):
+            cache["_stale_domains"] = [d for d in cache["_stale_domains"] if d != domain]
+
+    def reset_session(self, session_id: str) -> None:
+        """T4/T3b：完整清空会话级状态（新对话/长空闲）。
+
+        仅清 L2（entities/tool_results/last_skill/vision），
+        不动对话历史（L3）与用户级记忆（L1，由调用方决定）。
+        """
+        cache = self._get_or_create(session_id)
+        for key in ("entities", "tool_results", "last_skill", "vision_fields",
+                    "_stale_domains", "_current_domain", self.DOMAIN_INDEX_KEY):
+            cache.pop(key, None)
+
+    def decay_tool_state(self, session_id: str) -> None:
+        """T3a 短空闲（15min）：清工具结果缓存，保留实体与历史供续聊。
+
+        工具缓存失效 → 下轮 LLM 重新查询获取最新数据（避免用过期结果应答）。
+        """
+        cache = self._get_or_create(session_id)
+        cache.pop("tool_results", None)
+
     # ── 读取 ──
 
     def build_context(self, session_id: str, current_skill: str) -> str:
         """构建注入 LLM 的上下文字符串。
 
-        参考 Claude Code 模式：放在 system prompt 和对话历史之间，
-        作为独立逻辑块。精简如 CLAUDE.md（800 字符以内）。
+        参考：放在 system prompt 和对话历史之间，
+        作为独立逻辑块。精简至 800 字符以内。
         """
         cache = self._get_or_create(session_id)
         lines = []
 
-        # 1. 已知实体 — 放在最前面，格式强调，LLM 第一眼就看到
+        # 1. 已知实体 — 按当前域过滤注入（T1：切域后旧域实体不注入，防跨域污染）
         entities = cache.get("entities", {})
-        if entities:
+        current_domain = cache.get("_current_domain", "")
+        stale_domains = set(cache.get("_stale_domains", []))
+        active_entities = {}
+        for etype, items in entities.items():
+            edomain = self.ENTITY_DOMAIN.get(etype)
+            # 当前域或未分类的实体注入；stale 域实体只留名称索引
+            if edomain in stale_domains and edomain != current_domain:
+                continue
+            active_entities[etype] = items
+        if active_entities:
             header = "🔴 以下 ID 在之前的对话中已获取，直接复用，禁止重新查询："
             lines.append(header)
-            for entity_type, items in entities.items():
+            for entity_type, items in active_entities.items():
                 if not items:
                     continue
                 label = {"product_ids": "商品 UUID", "order_nos": "订单 UUID",
@@ -115,6 +208,12 @@ class AgentContextManager:
                     name = item.get("name", "")
                     item_strs.append(f"  {label} → {name} = {eid}")
                 lines.append("\n".join(item_strs))
+
+        # 1.5 主题域切换提示（T1）：告诉 LLM 上一话题已归档
+        if stale_domains and current_domain:
+            domain_label = {"order": "订单", "product": "商品",
+                            "aftersales": "售后", "customer": "客户"}.get(current_domain, current_domain)
+            lines.append(f"【话题已切换】当前话题为「{domain_label}」；上一话题的上下文已归档，若用户回到原话题请重新查询。")
 
         # 2. Vision/图片识别结果
         vision = cache.get("vision_fields", {})
@@ -139,11 +238,16 @@ class AgentContextManager:
         if hint:
             lines.append(f"工具链: {hint}")
 
-        # 4. 最近 tool 摘要 — 只保留关键统计
+        # 4. 最近 tool 摘要 — 只保留关键统计（T1：切域后只注入当前域摘要）
         tool_results = cache.get("tool_results", [])
+        stale_domains_tool = stale_domains  # 复用上方 stale 集合
         if tool_results:
+            current_domain_tools = self._domain_tools(current_domain) if current_domain else None
             recent = tool_results[-3:]
             for r in recent:
+                # 若已切域：跳过旧域摘要，避免"找到1个订单"污染商品话题
+                if current_domain_tools is not None and r.get("domain") != current_domain:
+                    continue
                 summary = r.get("summary", "")
                 if summary:
                     lines.append(summary[:120])
@@ -203,33 +307,59 @@ class AgentContextManager:
 
         return "\n".join(lines)
 
-    # ── Redis 持久化 ──
+    # ── 持久化（经 SessionStateStore，会话管理重构 P1）──
+    #
+    # 跨轮工作状态统一存于 PG session_states 表（SessionStateStore 深模块）。
+    # save/load 采用合并语义：先读已有状态，再并入本模块维护的字段
+    # （entities / tool_results / last_skill / vision_fields），不覆盖其它字段
+    # （如 pending_skill，未来也可能入同一状态）。
 
     async def save(self, session_id: str) -> None:
-        """持久化到 Redis（Tair），跨实例共享"""
+        """持久化当前缓存到 SessionStateStore（合并语义）"""
         try:
-            from app.utils.redis_client import get_redis
-            redis = get_redis()
-            if redis and session_id in self._cache:
-                key = f"ctx:{session_id}"
-                await redis.set(key, json.dumps(self._cache[session_id], ensure_ascii=False, default=str), ex=3600)
+            store = SessionStateStore()
+            existing = await store.load(session_id) or {}
+            if session_id in self._cache:
+                existing.update(self._cache[session_id])
+            await store.commit(session_id, existing)
         except Exception as e:
-            logger.warning(f"[ctx-mgr] Redis save failed: {e}")
+            logger.warning(f"[ctx-mgr] save failed: {e}")
 
     async def load(self, session_id: str) -> None:
-        """从 Redis 恢复"""
+        """从 SessionStateStore 恢复缓存（不覆盖已存在的内存状态）"""
         try:
-            from app.utils.redis_client import get_redis
-            redis = get_redis()
-            if redis:
-                key = f"ctx:{session_id}"
-                data = await redis.get(key)
-                if data:
-                    self._cache[session_id] = json.loads(data)
+            store = SessionStateStore()
+            data = await store.load(session_id)
+            if data and session_id not in self._cache:
+                self._cache[session_id] = OrderedDict(data)
         except Exception as e:
-            logger.warning(f"[ctx-mgr] Redis load failed: {e}")
+            logger.warning(f"[ctx-mgr] load failed: {e}")
 
     # ── 内部 ──
+
+    def _domain_tools(self, domain: str) -> set:
+        """返回某域的工具名集合（tool_results 按工具名归属域）"""
+        mapping = {
+            "order": {"order_query", "customer_order_query", "order_create", "order_manage", "logistics_track"},
+            "product": {"product_search", "product_detail", "product_manage", "product_update",
+                        "sku_update", "curtain_calc", "processing_item_query", "processing_item_manage"},
+            "aftersales": {"aftersale_query", "aftersale_create", "after_sales_manage"},
+            "customer": {"customer_manage"},
+        }
+        return mapping.get(domain, set())
+
+    def _tool_domain(self, tool_name: str) -> str:
+        """反查工具名归属域（默认 general）"""
+        for domain, tools in {
+            "order": {"order_query", "customer_order_query", "order_create", "order_manage", "logistics_track"},
+            "product": {"product_search", "product_detail", "product_manage", "product_update",
+                        "sku_update", "curtain_calc", "processing_item_query", "processing_item_manage"},
+            "aftersales": {"aftersale_query", "aftersale_create", "after_sales_manage"},
+            "customer": {"customer_manage"},
+        }.items():
+            if tool_name in tools:
+                return domain
+        return "general"
 
     def _get_or_create(self, session_id: str) -> OrderedDict:
         if session_id not in self._cache:
@@ -289,6 +419,11 @@ class AgentContextManager:
                 existing = entities.setdefault(entity_type, [])
                 if not any(e.get("id") == eid or e.get("no") == eid for e in existing):
                     existing.append({"id": eid, "name": name, "source": tool_name})
+                    # 记录实体域归属（供 reset_domain 精确清空）
+                    domain = self.ENTITY_DOMAIN.get(entity_type)
+                    if domain:
+                        idx = cache.setdefault(self.DOMAIN_INDEX_KEY, {})
+                        idx.setdefault(entity_type, {})[eid] = domain
 
         # 2. Vision/图片识别结果提取（product_manage create 成功后）
         if tool_name == "product_manage" and result.get("success"):

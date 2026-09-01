@@ -32,33 +32,61 @@ class TestInventoryQuery:
 
 class TestInventoryAdjust:
     @patch("app.tools.inventory_manage.get_admin_api_client")
-    async def test_adjust_includes_name_in_put(self, mock_get_client, tool, admin_tool_context):
-        """库存调整 PUT 请求包含 name 字段（避免 Java @NotBlank 校验失败）"""
+    async def test_adjust_uses_agent_stock_endpoint(self, mock_get_client, tool, admin_tool_context):
+        """生产回归修复：库存调整必须走 agent 专用库存端点并校验读回。
+
+        旧实现 PUT /api/admin/products/{id} 传 stock，admin-api 静默忽略该字段
+        但仍返回 success → agent 报"50→80"而 DB 仍是 50（假成功）。
+        """
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value={
             "success": True, "data": {"name": "窗帘-欧式", "stock": 100}
         })
-        mock_client.put = AsyncMock(return_value={"success": True})
-        mock_get_client.return_value = mock_client
-        result = await tool.execute(
-            context=admin_tool_context, action="adjust",
-            product_id="prod-1", adjustment=50, reason="adjust test")
-        assert result.success is True
-        # 验证 PUT body 包含 name
-        call_args = mock_client.put.call_args
-        assert "name" in call_args.kwargs.get("json_data", {})
-
-    @patch("app.tools.inventory_manage.get_admin_api_client")
-    async def test_adjust(self, mock_get_client, tool, admin_tool_context):
-        mock_client = AsyncMock()
-        # adjust 先 get 查库存，再 put 调整
-        mock_client.get = AsyncMock(return_value={"success": True, "data": {"stock": 100}})
-        mock_client.put = AsyncMock(return_value={"success": True})
+        mock_client.patch = AsyncMock(return_value={
+            "success": True, "data": {"name": "窗帘-欧式", "stock": 150}
+        })
         mock_get_client.return_value = mock_client
         result = await tool.execute(
             context=admin_tool_context, action="adjust",
             product_id="prod-1", adjustment=50, reason="盘点调整")
         assert result.success is True
+        # 必须调用 agent 专用库存端点，且透传 adjustment/reason
+        path = mock_client.patch.call_args.args[0]
+        assert path == "/api/admin/agent/products/prod-1/stock"
+        body = mock_client.patch.call_args.kwargs.get("json_data", {})
+        assert body.get("adjustment") == 50
+        assert body.get("reason") == "盘点调整"
+        assert result.data.get("new_stock") == 150
+
+    @patch("app.tools.inventory_manage.get_admin_api_client")
+    async def test_adjust_readback_mismatch_fails_closed(self, mock_get_client, tool, admin_tool_context):
+        """端点返回 success 但读回库存与预期不符 → 必须报失败（杜绝假成功）"""
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value={
+            "success": True, "data": {"name": "窗帘-欧式", "stock": 100}
+        })
+        mock_client.patch = AsyncMock(return_value={
+            "success": True, "data": {"name": "窗帘-欧式", "stock": 100}  # 未被更新
+        })
+        mock_get_client.return_value = mock_client
+        result = await tool.execute(
+            context=admin_tool_context, action="adjust",
+            product_id="prod-1", adjustment=50, reason="盘点调整")
+        assert result.success is False
+        assert "未生效" in (result.message or "")
+
+    @patch("app.tools.inventory_manage.get_admin_api_client")
+    async def test_adjust_endpoint_error_fails_closed(self, mock_get_client, tool, admin_tool_context):
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value={
+            "success": True, "data": {"stock": 100}
+        })
+        mock_client.patch = AsyncMock(return_value={"success": False, "error": {"message": "库存不足"}})
+        mock_get_client.return_value = mock_client
+        result = await tool.execute(
+            context=admin_tool_context, action="adjust",
+            product_id="prod-1", adjustment=50, reason="盘点调整")
+        assert result.success is False
 
 
 class TestLowStockAlert:

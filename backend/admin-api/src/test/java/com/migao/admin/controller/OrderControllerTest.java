@@ -1,3 +1,5 @@
+// case_ids: OR-001, OR-002, OR-003, OR-004, OR-005, OR-006
+
 package com.migao.admin.controller;
 
 import com.migao.admin.dto.*;
@@ -152,19 +154,36 @@ class OrderControllerTest extends BaseControllerTest {
         @Test
         @DisplayName("退款成功 -> 200")
         void refund() throws Exception {
-            doNothing().when(orderService).refundOrder(eq(ORDER_ID), isNull());
+            doNothing().when(orderService).refundOrder(eq(ORDER_ID), isNull(), isNull());
 
             mockMvc.perform(put(BASE + "/" + ORDER_ID + "/refund"))
                     .andExpect(status().isOk());
 
-            verify(orderService).refundOrder(eq(ORDER_ID), isNull());
+            verify(orderService).refundOrder(eq(ORDER_ID), isNull(), isNull());
+        }
+
+        @Test
+        @DisplayName("退款成功 - 携带金额与原因 -> 200")
+        void refundWithAmountAndReason() throws Exception {
+            doNothing().when(orderService).refundOrder(eq(ORDER_ID),
+                    argThat(bd -> bd != null && bd.compareTo(new BigDecimal("100.00")) == 0),
+                    eq("部分退款"));
+
+            mockMvc.perform(put(BASE + "/" + ORDER_ID + "/refund")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"refund_amount\": 100.00, \"refund_reason\": \"部分退款\"}"))
+                    .andExpect(status().isOk());
+
+            verify(orderService).refundOrder(eq(ORDER_ID),
+                    argThat(bd -> bd != null && bd.compareTo(new BigDecimal("100.00")) == 0),
+                    eq("部分退款"));
         }
 
         @Test
         @DisplayName("非可退款状态退款 -> 400")
         void refundInvalidStatus() throws Exception {
             doThrow(new BusinessException("INVALID_STATUS", "当前状态不允许退款", 400))
-                    .when(orderService).refundOrder(eq(ORDER_ID), isNull());
+                    .when(orderService).refundOrder(eq(ORDER_ID), isNull(), isNull());
 
             mockMvc.perform(put(BASE + "/" + ORDER_ID + "/refund"))
                     .andExpect(status().isBadRequest());
@@ -215,13 +234,26 @@ class OrderControllerTest extends BaseControllerTest {
         @DisplayName("列表查询携带租户 ID")
         void listPassesTenantId() throws Exception {
             when(orderService.getOrderPage(anyLong(), anyLong(), isNull(), isNull(), isNull(),
-                    isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(TEST_TENANT_ID)))
+                    isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(TEST_TENANT_ID), isNull()))
                     .thenReturn(PageResponse.of(0L, 1L, 20L, List.of()));
 
             mockMvc.perform(get(BASE));
 
             verify(orderService).getOrderPage(anyLong(), anyLong(), isNull(), isNull(), isNull(),
-                    isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(TEST_TENANT_ID));
+                    isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(TEST_TENANT_ID), isNull());
+        }
+
+        @Test
+        @DisplayName("列表查询支持按 userId 过滤（C 端数据隔离）")
+        void listPassesUserIdFilter() throws Exception {
+            when(orderService.getOrderPage(anyLong(), anyLong(), isNull(), isNull(), isNull(),
+                    isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(TEST_TENANT_ID), eq("user-abc")))
+                    .thenReturn(PageResponse.of(0L, 1L, 20L, List.of()));
+
+            mockMvc.perform(get(BASE).param("userId", "user-abc"));
+
+            verify(orderService).getOrderPage(anyLong(), anyLong(), isNull(), isNull(), isNull(),
+                    isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(TEST_TENANT_ID), eq("user-abc"));
         }
 
         @Test

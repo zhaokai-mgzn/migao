@@ -12,6 +12,7 @@ import com.migao.admin.mapper.TenantMapper;
 import com.migao.admin.mapper.UserMapper;
 import com.migao.admin.security.SecurityUser;
 import com.migao.admin.service.AuditLogService;
+import com.migao.admin.security.RequirePermission;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
@@ -54,6 +55,7 @@ public class SettingsController {
      *
      * GET /api/admin/settings
      */
+    @RequirePermission("system:manage")
     @GetMapping("/api/admin/settings")
     public ApiResponse<Map<String, Object>> getSettings() {
         Long tenantId = TenantContext.getTenantId();
@@ -68,6 +70,9 @@ public class SettingsController {
         settings.put("tenantId", tenant.getId());
         settings.put("name", tenant.getName());
         settings.put("companyName", tenant.getName());  // 前端用 companyName
+        settings.put("logo", tenant.getLogo());         // 企业 Logo（可能为空）
+        settings.put("notificationEnabled", Boolean.TRUE.equals(tenant.getNotificationEnabled()));
+        settings.put("notificationEmail", tenant.getNotificationEmail());
         settings.put("code", tenant.getCode());
         settings.put("industry", tenant.getIndustry());
         settings.put("status", tenant.getStatus());
@@ -80,6 +85,7 @@ public class SettingsController {
      *
      * PUT /api/admin/settings
      */
+    @RequirePermission("system:manage")
     @PutMapping("/api/admin/settings")
     public ApiResponse<Map<String, Object>> updateSettings(@RequestBody Map<String, Object> data) {
         Long tenantId = TenantContext.getTenantId();
@@ -90,23 +96,67 @@ public class SettingsController {
             throw BusinessException.notFound("租户");
         }
 
+        // 注意：不能使用 updateById（MyBatis-Plus 默认跳过 null 字段），否则用户
+        // 清空 Logo / 通知邮箱时 UPDATE 不包含该列，旧值残留。改用 UpdateWrapper
+        // 显式 set 提交的字段（null 即清空）。此处用字符串列名而非 Lambda 列名，
+        // 避免依赖 MyBatis-Plus TableInfo 缓存（单测环境不可用）。
+        var wrapper = new com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper<com.migao.admin.entity.Tenant>();
+        wrapper.eq("id", tenantId);
+
         // 兼容前端 companyName / name 两种字段名
         if (data.containsKey("companyName")) {
-            tenant.setName((String) data.get("companyName"));
+            String name = (String) data.get("companyName");
+            if (name != null && name.isBlank()) {
+                throw BusinessException.validationError("公司名称不能为空");
+            }
+            wrapper.set("name", name);
+            tenant.setName(name);
         } else if (data.containsKey("name")) {
-            tenant.setName((String) data.get("name"));
+            String name = (String) data.get("name");
+            wrapper.set("name", name);
+            tenant.setName(name);
         }
         if (data.containsKey("industry")) {
-            tenant.setIndustry((String) data.get("industry"));
+            String industry = (String) data.get("industry");
+            wrapper.set("industry", industry);
+            tenant.setIndustry(industry);
         }
 
-        tenantMapper.updateById(tenant);
+        // 品牌与通知设置：此前仅前端 state 保存（刷新即丢），现落库持久化；null/空串即清空
+        if (data.containsKey("logo")) {
+            String logo = (String) data.get("logo");
+            wrapper.set("logo", logo == null || logo.isBlank() ? null : logo);
+            tenant.setLogo(logo == null || logo.isBlank() ? null : logo);
+        }
+        if (data.containsKey("notificationEnabled")) {
+            Object val = data.get("notificationEnabled");
+            boolean enabled = Boolean.TRUE.equals(val) || "true".equalsIgnoreCase(String.valueOf(val));
+            wrapper.set("notification_enabled", enabled);
+            tenant.setNotificationEnabled(enabled);
+        }
+        if (data.containsKey("notificationEmail")) {
+            String email = (String) data.get("notificationEmail");
+            if (email != null && !email.isBlank()) {
+                // 邮箱格式校验（非空时）
+                if (!email.matches("^[\\w.+-]+@[\\w-]+(\\.[\\w-]+)+$")) {
+                    throw BusinessException.validationError("通知邮箱格式不正确");
+                }
+            }
+            String finalEmail = email == null || email.isBlank() ? null : email;
+            wrapper.set("notification_email", finalEmail);
+            tenant.setNotificationEmail(finalEmail);
+        }
+
+        tenantMapper.update(null, wrapper);
 
         // 返回更新后的设置
         Map<String, Object> settings = new HashMap<>();
         settings.put("tenantId", tenant.getId());
         settings.put("name", tenant.getName());
         settings.put("companyName", tenant.getName());
+        settings.put("logo", tenant.getLogo());
+        settings.put("notificationEnabled", Boolean.TRUE.equals(tenant.getNotificationEnabled()));
+        settings.put("notificationEmail", tenant.getNotificationEmail());
         settings.put("code", tenant.getCode());
         settings.put("industry", tenant.getIndustry());
         settings.put("status", tenant.getStatus());
@@ -122,6 +172,7 @@ public class SettingsController {
      * GET /api/admin/tenant/ai-config
      */
     @GetMapping("/api/admin/tenant/ai-config")
+    @RequirePermission("system:manage")  // 审计 07 P1-4: AI 配置属系统设置，补权限门槛
     public ApiResponse<TenantAiConfig> getAiConfig() {
         Long tenantId = TenantContext.getTenantId();
         log.info("获取AI配置: tenantId={}", tenantId);
@@ -146,6 +197,7 @@ public class SettingsController {
      * PUT /api/admin/tenant/ai-config
      */
     @PutMapping("/api/admin/tenant/ai-config")
+    @RequirePermission("system:manage")  // 审计 07 P1-4: AI 配置属系统设置，补权限门槛
     public ApiResponse<TenantAiConfig> updateAiConfig(@RequestBody TenantAiConfig config) {
         Long tenantId = TenantContext.getTenantId();
         log.info("更新AI配置: tenantId={}", tenantId);
@@ -251,6 +303,7 @@ public class SettingsController {
      *
      * GET /api/admin/settings/login-logs?page=1&size=10
      */
+    @RequirePermission("system:manage")
     @GetMapping("/api/admin/settings/login-logs")
     public ApiResponse<PageResponse<AuditLog>> getLoginLogs(
             @RequestParam(defaultValue = "1") long page,

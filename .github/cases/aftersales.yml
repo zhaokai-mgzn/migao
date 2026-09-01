@@ -87,7 +87,7 @@ cases:
       - "这个订单客户要退货，创建售后工单"
     expectations:
       - tool: order_query
-      - tool: aftersale_create
+      - tool: after_sales_manage or aftersale_create
         args:
           order_id: "复用上轮 UUID"
     data_checks:
@@ -156,8 +156,8 @@ cases:
       - "这工单现在什么状态了"
     expectations:
       - tool: order_query
-      - tool: aftersale_create
-      - tool: aftersale_query
+      - tool: after_sales_manage or aftersale_create
+      - tool: after_sales_manage or aftersale_query
     data_checks:
       - "aftersale_create 的 order_id 来自第2步查询结果"
       - "售后工单包含正确的退款原因"

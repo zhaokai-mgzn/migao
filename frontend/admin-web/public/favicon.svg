@@ -1,4 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <rect width="100" height="100" rx="20" fill="#2563eb"/>
-  <text x="50" y="68" font-size="55" font-weight="bold" fill="white" text-anchor="middle" font-family="sans-serif">米</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
+  <defs>
+    <linearGradient id="g" x1="2" y1="2" x2="46" y2="46" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFC53D"/>
+      <stop offset="100%" stop-color="#D48806"/>
+    </linearGradient>
+  </defs>
+  <!-- favicon 简化版：16px 下去掉窗帘杆与吊环，保留垂帘 M -->
+  <rect x="2" y="2" width="44" height="44" rx="13.5" fill="url(#g)"/>
+  <path fill="white" d="M10.8 31.8 L10.8 15.8 Q10.8 13.6 13 13.6 L18.2 13.6 L21.6 27.2 L24 13.6 L26.4 27.2 L29.8 13.6 L35 13.6 Q37.2 13.6 37.2 15.8 L37.2 31.8 C35.2 33.4 32.8 29.8 30.2 30.4 C27.6 31 25.6 33.4 23 32.8 C20.4 32.2 18 29.8 15.2 30.4 C13 30.8 11.6 31.6 10.8 31.8 Z"/>
 </svg>

@@ -138,18 +138,20 @@ class TestFormatOrders:
 # ============================================================
 
 class TestOrderQueryCustomerIsolation:
-    """Gap-4: 订单查询必须做 customer_id 隔离"""
+    """订单查询隔离：依赖后端租户隔离（TenantLineInnerInterceptor 自动注入 tenant_id）。
+
+    后端 OrderListResponse 无 tenantId/customerId 字段，客户端读这些字段做
+    "二次校验" 是空操作。真实的租户隔离由 admin-api 在 SQL 层保证，Agent 只
+    负责透传 X-Tenant-Id 头，不再伪造客户侧过滤。
+    """
 
     @patch("app.tools.order_query.get_admin_api_client")
-    async def test_order_query_for_customer_includes_customer_id_filter(self, mock_get_client, sample_tool_context):
-        """customer角色查询订单 → 请求中必须包含 customer_id 过滤参数"""
+    async def test_order_query_for_customer_does_not_send_customer_id_param(self, mock_get_client, sample_tool_context):
+        """customer 角色查询订单 → 不传后端不支持的 customerId 参数，只传租户头"""
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value={
             "success": True,
-            "data": {
-                "items": [],
-                "total": 0,
-            },
+            "data": {"items": [], "total": 0},
         })
         mock_get_client.return_value = mock_client
 
@@ -163,13 +165,13 @@ class TestOrderQueryCustomerIsolation:
 
         assert result.success is True
 
-        # 验证 admin-api 调用参数中包含 customer_id 过滤
         call_args = mock_client.get.call_args
         params = call_args[1].get("params", {})
-
-        # 对于 customer 角色，必须传 customerId 参数
-        assert "customerId" in params or "customer_id" in params, (
-            f"customer查询订单必须包含customer_id过滤参数，当前params: {params}"
+        assert "customerId" not in params, (
+            f"customerId 后端不支持，不得透传，当前 params: {params}"
+        )
+        assert call_args[1].get("tenant_id") == sample_tool_context.tenant_id, (
+            f"请求必须携带 X-Tenant-Id header(tenant_id kwarg): {call_args}"
         )
 
     @patch("app.tools.order_query.get_admin_api_client")
@@ -180,8 +182,8 @@ class TestOrderQueryCustomerIsolation:
             "success": True,
             "data": {
                 "items": [
-                    {"id": "ord-1", "orderNo": "O1", "customerName": "客户A", "customerPhone": "138", "totalAmount": 100, "status": "pending", "createdAt": "", "tenantId": 1},
-                    {"id": "ord-2", "orderNo": "O2", "customerName": "客户B", "customerPhone": "139", "totalAmount": 200, "status": "confirmed", "createdAt": "", "tenantId": 1},
+                    {"id": "ord-1", "orderNo": "O1", "customerName": "客户A", "customerPhone": "138", "totalAmount": 100, "status": "pending", "createdAt": ""},
+                    {"id": "ord-2", "orderNo": "O2", "customerName": "客户B", "customerPhone": "139", "totalAmount": 200, "status": "confirmed", "createdAt": ""},
                 ],
                 "total": 2,
             },
@@ -201,14 +203,15 @@ class TestOrderQueryCustomerIsolation:
         assert result.data["total"] == 2
 
     @patch("app.tools.order_query.get_admin_api_client")
-    async def test_order_query_filters_by_customer_id_for_customer_role(self, mock_get_client, sample_tool_context):
-        """customer角色查询 → 只返回自己的订单（验证返回数据属于当前客户）"""
+    async def test_order_query_returns_records_as_backend_supplies(self, mock_get_client, sample_tool_context):
+        """响应中的记录原样返回：隔离由后端 SQL 层保证，客户端不再按
+        tenantId/customerId 伪造过滤（响应字段不存在 = 空操作）"""
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value={
             "success": True,
             "data": {
                 "items": [
-                    {"id": "ord-mine", "orderNo": "O-MINE-001", "customerName": "我的", "customerPhone": "138", "totalAmount": 100, "status": "pending", "createdAt": "", "tenantId": 1, "customerId": sample_tool_context.user_id},
+                    {"id": "ord-mine", "orderNo": "O-MINE-001", "customerName": "我的", "customerPhone": "138", "totalAmount": 100, "status": "pending", "createdAt": ""},
                 ],
                 "total": 1,
             },
@@ -223,10 +226,11 @@ class TestOrderQueryCustomerIsolation:
 
         assert result.success is True
         assert result.data["total"] == 1
+        assert len(result.data["orders"]) == 1
 
     @patch("app.tools.order_query.get_admin_api_client")
-    async def test_order_query_includes_both_tenant_id_header_and_customer_id_param(self, mock_get_client, sample_tool_context):
-        """customer角色查订单 → 验证 HTTP 请求同时携带 X-Tenant-Id header 和 customerId query param"""
+    async def test_order_query_sends_tenant_header(self, mock_get_client, sample_tool_context):
+        """customer 角色查订单 → HTTP 请求必须携带 X-Tenant-Id header"""
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value={
             "success": True,
@@ -245,21 +249,18 @@ class TestOrderQueryCustomerIsolation:
         assert call_kwargs.get("tenant_id") == sample_tool_context.tenant_id, (
             f"请求必须包含X-Tenant-Id header(tenant_id kwarg): {call_kwargs}"
         )
-        params = call_kwargs.get("params", {})
-        assert str(params.get("customerId")) == str(sample_tool_context.user_id), (
-            f"customer角色查询订单必须传customerId参数，当前params: {params}"
-        )
 
     @patch("app.tools.order_query.get_admin_api_client")
-    async def test_order_query_response_filters_by_tenant_id(self, mock_get_client, admin_tool_context):
-        """API 返回含跨租户记录 → 验证 tenant_id 不匹配的记录被过滤"""
+    async def test_order_query_does_not_client_filter_cross_tenant_records(self, mock_get_client, admin_tool_context):
+        """后端返回的记录原样透传，客户端不再按响应 tenantId 伪造过滤
+        （OrderListResponse 无 tenantId 字段，旧逻辑是恒不触发的空操作）"""
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value={
             "success": True,
             "data": {
                 "items": [
-                    {"id": "ord-1", "orderNo": "O1", "tenantId": 1, "customerId": "a", "customerName": "A", "customerPhone": "138", "totalAmount": 100, "status": "pending", "createdAt": ""},
-                    {"id": "ord-2", "orderNo": "O2", "tenantId": 999, "customerId": "b", "customerName": "B", "customerPhone": "139", "totalAmount": 200, "status": "confirmed", "createdAt": ""},
+                    {"id": "ord-1", "orderNo": "O1", "customerName": "A", "customerPhone": "138", "totalAmount": 100, "status": "pending", "createdAt": ""},
+                    {"id": "ord-2", "orderNo": "O2", "customerName": "B", "customerPhone": "139", "totalAmount": 200, "status": "confirmed", "createdAt": ""},
                 ],
                 "total": 2,
             },
@@ -273,10 +274,9 @@ class TestOrderQueryCustomerIsolation:
         )
 
         assert result.success is True
-        assert result.data["total"] == 1
+        assert result.data["total"] == 2
         orders = result.data.get("orders", [])
-        assert len(orders) == 1
-        assert orders[0]["order_no"] == "O1"
+        assert len(orders) == 2
 
     @patch("app.tools.order_query.get_admin_api_client")
     async def test_order_query_missing_customer_id_rejected(self, mock_get_client, sample_tool_context):
@@ -307,10 +307,16 @@ class TestOrderQueryCustomerIsolation:
 
 
 class TestOrderQueryListParams:
-    """list action 的别名兼容、action 标准化与 camelCase 参数映射"""
+    """list action 的筛选参数与后端 OrderController 对齐：
+
+    后端只支持 page/size/status/keyword/followStatus/hasProcessing/
+    startDate/endDate/orderId/receiver/productCode/productTitle。
+    旧参数 order_no/customer_phone/date_from/date_to/customerId 必须
+    归一化到支持的参数，不得再透传（否则参数静默失效）。
+    """
 
     @patch("app.tools.order_query.get_admin_api_client")
-    async def test_order_id_alias_and_camel_case_params(self, mock_get_client, admin_tool_context):
+    async def test_supported_filter_params_map_to_backend(self, mock_get_client, admin_tool_context):
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value={"success": True, "data": {"items": [], "total": 0}})
         mock_get_client.return_value = mock_client
@@ -318,21 +324,54 @@ class TestOrderQueryListParams:
         tool = OrderQueryTool()
         result = await tool.execute(
             context=admin_tool_context,
-            action="LIST",
+            action="list",
+            keyword="张",
             order_id="ORD-123",
+            receiver="李",
+            status="producing",
+            start_date="2026-06-01",
+            end_date="2026-06-30",
+        )
+
+        assert result.success is True
+        params = mock_client.get.call_args[1]["params"]
+        assert params["keyword"] == "张"
+        assert params["orderId"] == "ORD-123"
+        assert params["receiver"] == "李"
+        assert params["status"] == "producing"
+        assert params["startDate"] == "2026-06-01"
+        assert params["endDate"] == "2026-06-30"
+
+    @patch("app.tools.order_query.get_admin_api_client")
+    async def test_unsupported_legacy_params_normalized(self, mock_get_client, admin_tool_context):
+        """旧参数 order_no/customer_phone/date_from/date_to 必须归一化到后端支持的参数，
+        禁止继续透传 orderNo/customerPhone/dateFrom/dateTo（后端不接收 = 静默失效）"""
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value={"success": True, "data": {"items": [], "total": 0}})
+        mock_get_client.return_value = mock_client
+
+        tool = OrderQueryTool()
+        result = await tool.execute(
+            context=admin_tool_context,
+            action="list",
+            order_no="ORD-123",
             customer_phone="13800138000",
-            status="confirmed",
             date_from="2026-06-01",
             date_to="2026-06-30",
         )
 
         assert result.success is True
         params = mock_client.get.call_args[1]["params"]
-        assert params["orderNo"] == "ORD-123"
-        assert params["customerPhone"] == "13800138000"
-        assert params["status"] == "confirmed"
-        assert params["dateFrom"] == "2026-06-01"
-        assert params["dateTo"] == "2026-06-30"
+        # 归一化后的参数
+        assert params["orderId"] == "ORD-123"
+        assert params["receiver"] == "13800138000"
+        assert params["startDate"] == "2026-06-01"
+        assert params["endDate"] == "2026-06-30"
+        # 后端不支持的参数必须消失
+        for unsupported in ("orderNo", "customerPhone", "dateFrom", "dateTo", "customerId"):
+            assert unsupported not in params, (
+                f"参数 {unsupported} 后端不支持，不得透传，当前 params: {params}"
+            )
 
     @patch("app.tools.order_query.get_admin_api_client")
     async def test_page_size_coerced_to_int(self, mock_get_client, admin_tool_context):
@@ -384,22 +423,36 @@ class TestOrderQueryListParams:
 
 
 class TestOrderQueryStatistics:
-    """statistics / follow_status_stats 摘要构建"""
+    """statistics / follow_status_stats 摘要构建
+
+    后端 OrderStatisticsResponse 字段：totalCount/pendingCount/confirmedCount/
+    producingCount/shippedCount/completedCount/cancelledCount（+unpaid/paid/refunded）。
+    """
 
     @patch("app.tools.order_query.get_admin_api_client")
     async def test_statistics_summary(self, mock_get_client, admin_tool_context):
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value={
             "success": True,
-            "data": {"todayOrderCount": 3, "todaySalesAmount": 500.0},
+            "data": {
+                "totalCount": 42,
+                "pendingCount": 5,
+                "confirmedCount": 10,
+                "producingCount": 7,
+                "shippedCount": 8,
+                "completedCount": 9,
+                "cancelledCount": 3,
+            },
         })
         mock_get_client.return_value = mock_client
 
         tool = OrderQueryTool()
         result = await tool.execute(context=admin_tool_context, action="statistics")
         assert result.success is True
-        assert "3单" in result.summary
-        assert "500.0元" in result.summary
+        # 摘要必须包含真实数字而非 N/A
+        assert "N/A" not in result.summary
+        assert "42" in result.summary
+        assert "7" in result.summary  # producingCount
         assert mock_client.get.call_args[0][0] == "/api/admin/orders/statistics"
 
     @patch("app.tools.order_query.get_admin_api_client")
@@ -425,7 +478,10 @@ class TestOrderQueryStatistics:
         tool = OrderQueryTool()
         result = await tool.execute(context=admin_tool_context, action="follow_status_stats")
         assert result.success is True
-        assert "pending:1" in result.summary
+        # 摘要用中文跟进状态术语，不得暴露英文枚举
+        assert "待跟进:1" in result.summary
+        assert "跟进中:2" in result.summary
+        assert "pending" not in result.summary
         assert mock_client.get.call_args[0][0] == "/api/admin/orders/follow-status/stats"
 
 
@@ -459,7 +515,7 @@ class TestFormatOrdersExtras:
         expected = {
             "pending": "待付款",
             "confirmed": "已确认（待发货）",
-            "processing": "生产中",
+            "producing": "生产中",
             "shipped": "已发货",
             "completed": "已完成",
             "cancelled": "已取消",
@@ -468,3 +524,34 @@ class TestFormatOrdersExtras:
             record = {"id": "o", "orderNo": "O1", "status": status, "items": []}
             result = tool._format_orders([record])
             assert result[0]["status_text"] == text
+
+
+class TestOrderQueryStatusVocabulary:
+    """状态词表与后端对齐：订单状态是 producing（生产中），不是 processing"""
+
+    def test_status_enum_uses_producing(self):
+        """参数 schema 的 status 枚举必须使用 producing 且不含 processing"""
+        status_enum = OrderQueryTool.parameters["properties"]["status"]["enum"]
+        assert "producing" in status_enum
+        assert "processing" not in status_enum
+
+    def test_status_text_map_uses_producing(self):
+        """ORDER_STATUS_TEXT 必须使用 producing 键，且不含 processing 键"""
+        from app.tools.order_query import ORDER_STATUS_TEXT
+        assert ORDER_STATUS_TEXT["producing"] == "生产中"
+        assert "processing" not in ORDER_STATUS_TEXT
+
+    @patch("app.tools.order_query.get_admin_api_client")
+    async def test_list_status_producing_sent_to_backend(self, mock_get_client, admin_tool_context):
+        """action=list + status=producing → 请求参数 status=producing"""
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value={"success": True, "data": {"items": [], "total": 0}})
+        mock_get_client.return_value = mock_client
+
+        tool = OrderQueryTool()
+        result = await tool.execute(
+            context=admin_tool_context, action="list", status="producing"
+        )
+        assert result.success is True
+        params = mock_client.get.call_args[1]["params"]
+        assert params["status"] == "producing"

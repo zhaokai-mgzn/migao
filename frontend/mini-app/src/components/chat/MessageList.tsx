@@ -3,14 +3,16 @@ import { View, ScrollView, Text } from '@tarojs/components'
 import type { Message } from '../../types'
 import MessageBubble from './MessageBubble'
 import TypingIndicator from './TypingIndicator'
+import NewArrivals from './NewArrivals'
 import './MessageList.scss'
 
 interface MessageListProps {
   messages: Message[]
   isStreaming: boolean
+  onInteract?: (value: string) => void
 }
 
-export default function MessageList({ messages, isStreaming }: MessageListProps) {
+export default function MessageList({ messages, isStreaming, onInteract }: MessageListProps) {
   const scrollAnchorId = 'msg-anchor'
   const scrollTopRef = useRef(0)
   const scrollIntoViewRef = useRef(scrollAnchorId)
@@ -46,10 +48,15 @@ export default function MessageList({ messages, isStreaming }: MessageListProps)
     return (
       <View className='message-list'>
         <View className='message-list__empty'>
-          <Text className='message-list__empty-icon'>💬</Text>
+          <View className='message-list__empty-brand'>
+            <Text className='message-list__empty-brand-text'>布</Text>
+          </View>
+          <Text className='message-list__empty-title'>你好，我是小布</Text>
           <Text className='message-list__empty-text'>
-            您好！我是小布{'\n'}有什么可以帮您的吗？
+            你的专属智能购物助手{'\n'}查订单、找产品、了解窗帘知识，都可以问我
           </Text>
+          {/* 新品推荐（空态引导转化入口）：点商品卡片 → 唤起对话询问 */}
+          {onInteract && <NewArrivals onPick={onInteract} />}
         </View>
       </View>
     )
@@ -67,7 +74,7 @@ export default function MessageList({ messages, isStreaming }: MessageListProps)
       >
         <View className='message-list__content'>
           {messages.map((msg) => (
-            <MessageBubble key={msg.id} message={msg} />
+            <MessageBubble key={msg.id} message={msg} onInteract={onInteract} />
           ))}
 
           {/* 思考中动画 */}

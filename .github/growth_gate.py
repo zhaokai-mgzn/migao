@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-二郎神 QA Growth Gate — 数据驱动的事前测试覆盖门禁（G1 修复）
+QA Growth Gate — 数据驱动的事前测试覆盖门禁（G1 修复）
 
 单一规则源：tech-stack.yml 的 `modules`（文件 → 测试映射）。
 豁免：.github/qa-exemptions.yml 的 `exemptions[].pattern`（路径 glob，`*` 不跨 `/`）。
@@ -72,6 +72,19 @@ def expand_test_names(rule, file_path):
     return names
 
 
+def _test_file_variants(path):
+    """返回测试文件路径的候选变体：原样 + .ts/.tsx 互换。
+
+    项目测试实际用 .test.tsx，但 tech-stack.yml 模板写 .test.ts（历史口径），
+    两个扩展名都应命中，避免误判缺测。
+    """
+    if path.endswith(".ts"):
+        return [path, path[:-3] + ".tsx"]
+    if path.endswith(".tsx"):
+        return [path, path[:-4] + ".ts"]
+    return [path]
+
+
 def find_existing_tests(rule, test_names, repo_root):
     """检查哪些测试文件实际存在。
 
@@ -92,9 +105,10 @@ def find_existing_tests(rule, test_names, repo_root):
             if hits:
                 existing.append(tn)
         else:
-            candidates = [os.path.join(base, tn), os.path.join(repo_root, tn)]
-            if any(os.path.exists(c) for c in candidates):
-                existing.append(tn)
+            for cand in [os.path.join(base, tn), os.path.join(repo_root, tn)]:
+                if any(os.path.exists(v) for v in _test_file_variants(cand)):
+                    existing.append(tn)
+                    break
     return existing
 
 
@@ -113,8 +127,9 @@ def resolve_test_paths(rule, test_names, repo_root):
             else:
                 hits = _glob.glob(os.path.join(base, f"**/{tn}.java"), recursive=True)
         else:
-            hits = [c for c in (os.path.join(base, tn), os.path.join(repo_root, tn))
-                    if os.path.exists(c)]
+            hits = []
+            for c in (os.path.join(base, tn), os.path.join(repo_root, tn)):
+                hits.extend(v for v in _test_file_variants(c) if os.path.exists(v))
         paths.extend(hits)
     return paths
 
@@ -205,9 +220,8 @@ def load_case_index(cases_dir):
         return {}, f"用例库目录不存在: {cases_dir}"
     try:
         here = os.path.dirname(os.path.abspath(__file__))
-        for d in (here, os.path.join(here, "..", "junshi")):
-            if d not in sys.path:
-                sys.path.insert(0, d)
+        if here not in sys.path:
+            sys.path.insert(0, here)
         from yaml_light import load_file
         index = {}
         for fn in sorted(os.listdir(cases_dir)):
@@ -430,9 +444,8 @@ def _load_yaml(path):
         return {}, f"配置文件不存在: {path}"
     try:
         here = os.path.dirname(os.path.abspath(__file__))
-        for d in (here, os.path.join(here, "..", "junshi")):
-            if d not in sys.path:
-                sys.path.insert(0, d)
+        if here not in sys.path:
+            sys.path.insert(0, here)
         from yaml_light import load_file
         data = load_file(path)
         if not isinstance(data, dict):
@@ -446,7 +459,7 @@ def _find_tech_stack():
     env = os.environ.get("TECH_STACK_FILE")
     if env and os.path.exists(env):
         return env
-    for cand in (".github/tech-stack.yml", "junshi/tech-stack.yml"):
+    for cand in (".github/tech-stack.yml",):
         if os.path.exists(cand):
             return cand
     return None
@@ -533,7 +546,7 @@ def _render_markdown(results, blockers, warnings):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="二郎神 QA Growth Gate（数据驱动）")
+    parser = argparse.ArgumentParser(description="QA Growth Gate（数据驱动）")
     parser.add_argument("--base", default="origin/main")
     parser.add_argument("--files", nargs="*", help="手动指定变更文件（跳过 git diff）")
     parser.add_argument("--tech-stack", help="tech-stack.yml 路径")

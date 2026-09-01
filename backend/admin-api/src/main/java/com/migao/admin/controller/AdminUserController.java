@@ -6,12 +6,11 @@ import com.migao.admin.dto.PageResponse;
 import com.migao.admin.entity.Role;
 import com.migao.admin.entity.User;
 import com.migao.admin.exception.BusinessException;
-import com.migao.admin.security.SecurityUser;
+import com.migao.admin.security.RequirePermission;
 import com.migao.admin.service.RoleService;
 import com.migao.admin.service.UserService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -43,8 +42,10 @@ public class AdminUserController {
      * 分页查询用户列表
      *
      * GET /api/admin/users?page=1&size=10&keyword=xxx&status=active
+     * 权限：employee:list
      */
     @GetMapping
+    @RequirePermission("employee:list")
     public ApiResponse<PageResponse<Map<String, Object>>> getUsers(
             @RequestParam(defaultValue = "1") long page,
             @RequestParam(defaultValue = "10") long size,
@@ -69,8 +70,10 @@ public class AdminUserController {
      * 查询用户详情
      *
      * GET /api/admin/users/{id}
+     * 权限：employee:list
      */
     @GetMapping("/{id}")
+    @RequirePermission("employee:list")
     public ApiResponse<Map<String, Object>> getUser(@PathVariable String id) {
         log.info("查询用户详情: id={}", id);
         User user = userService.getUserDetail(id);
@@ -78,28 +81,15 @@ public class AdminUserController {
     }
 
     /**
-     * 校验当前用户是否为管理员，非管理员抛出权限异常
-     */
-    private void requireAdmin() {
-        var auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null || !(auth.getPrincipal() instanceof SecurityUser)) {
-            throw BusinessException.permissionDenied();
-        }
-        SecurityUser user = (SecurityUser) auth.getPrincipal();
-        if (user.getRoles() == null || !user.getRoles().contains("admin")) {
-            throw BusinessException.permissionDenied();
-        }
-    }
-
-    /**
      * 创建用户
      *
      * POST /api/admin/users
      * Body: { "phone": "xxx", "password": "xxx", "name": "xxx", "roleIds": [] }
+     * 权限：employee:create（由 PermissionInterceptor 拦截校验）
      */
     @PostMapping
+    @RequirePermission("employee:create")
     public ApiResponse<User> createUser(@RequestBody Map<String, Object> body) {
-        requireAdmin();
         Long tenantId = TenantContext.getTenantId();
         String phone = body.containsKey("phone") ? (String) body.get("phone") : (String) body.get("username");
         if (phone == null || phone.isBlank()) {
@@ -165,10 +155,11 @@ public class AdminUserController {
      *
      * PUT /api/admin/users/{id}
      * Body: { "name": "xxx", "phone": "xxx", "password": "xxx" }
+     * 权限：employee:create
      */
     @PutMapping("/{id}")
+    @RequirePermission("employee:create")
     public ApiResponse<User> updateUser(@PathVariable String id, @RequestBody Map<String, Object> body) {
-        requireAdmin();
         String name = (String) body.get("name");
         String avatar = (String) body.get("avatar");
         String role = (String) body.get("role");
@@ -199,10 +190,11 @@ public class AdminUserController {
      * 删除用户
      *
      * DELETE /api/admin/users/{id}
+     * 权限：employee:create
      */
     @DeleteMapping("/{id}")
+    @RequirePermission("employee:create")
     public ApiResponse<Void> deleteUser(@PathVariable String id) {
-        requireAdmin();
         log.info("删除用户: id={}", id);
         userService.deleteUser(id);
         return ApiResponse.success();
@@ -213,11 +205,12 @@ public class AdminUserController {
      *
      * PUT /api/admin/users/{id}/reset-password
      * Body: { "newPassword": "xxx" }
+     * 权限：employee:create
      */
     @PutMapping("/{id}/reset-password")
+    @RequirePermission("employee:create")
     public ApiResponse<Map<String, String>> resetPassword(@PathVariable String id,
                                                            @RequestBody(required = false) Map<String, String> body) {
-        requireAdmin();
         String newPassword = null;
         if (body != null) {
             newPassword = body.get("newPassword");
@@ -239,10 +232,11 @@ public class AdminUserController {
      *
      * PUT /api/admin/users/{id}/status
      * Body: { "status": "active" | "disabled" }
+     * 权限：employee:create
      */
     @PutMapping("/{id}/status")
+    @RequirePermission("employee:create")
     public ApiResponse<Void> toggleUserStatus(@PathVariable String id, @RequestBody Map<String, String> body) {
-        requireAdmin();
         String status = body.get("status");
         log.info("切换用户状态: id={}, status={}", id, status);
         if ("active".equals(status)) {

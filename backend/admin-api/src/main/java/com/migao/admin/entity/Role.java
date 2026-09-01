@@ -32,6 +32,10 @@ public class Role {
 
     private String status;
 
+    /** 角色已分配的权限列表（role_permissions 关联，@TableField(exist=false) 不落库） */
+    @TableField(exist = false)
+    private java.util.List<com.migao.admin.entity.Permission> permissions;
+
     @TableField(fill = FieldFill.INSERT)
     private OffsetDateTime createdAt;
 

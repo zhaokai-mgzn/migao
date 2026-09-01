@@ -6,7 +6,7 @@
 修复后：destructive=True 的工具执行前，当前轮用户消息必须是明确确认，
 否则拦截并引导 LLM 先展示确认卡片。核心判断抽为 _is_explicit_confirmation。
 """
-# case_ids: DF-008
+# case_ids: DF-008, DF-009
 from app.graph.skills.base_skill import _is_explicit_confirmation, _requires_confirmation
 
 
@@ -38,6 +38,21 @@ class TestIsExplicitConfirmation:
         long_msg = "这是一条很长很长的用户消息，里面提到了确认一下这个字眼，但实际上并不是用户在点击确认卡片"
         assert _is_explicit_confirmation(long_msg) is False
 
+    # ── 防"指令措辞绕过"（flash 直接执行倾向加固，DF-009）──
+    def test_instruction_phrasing_confirm_action_word_is_rejected(self):
+        # 用户指令"给订单X确认收款"含"确认"，但这是新指令而非对确认卡片的确认
+        # （flash 曾因此跳过确认卡片直接执行破坏性写）
+        assert _is_explicit_confirmation("给订单20260828979270002确认收款") is False
+        assert _is_explicit_confirmation("请确认收款") is False
+        assert _is_explicit_confirmation("帮我确认一下这个订单") is False
+
+    def test_confirm_card_return_value_still_accepted(self):
+        # 确认卡片回传的 confirmValue 以确认词开头 → 仍放行
+        assert _is_explicit_confirmation("确认创建商品测试A") is True
+        assert _is_explicit_confirmation("确认取消订单123456") is True
+        assert _is_explicit_confirmation("好的，确认") is True
+        assert _is_explicit_confirmation("确认无误") is True
+
 
 class TestRequiresConfirmation:
     """_requires_confirmation：destructive 工具的只读 action 免确认（本次修复）。
@@ -49,10 +64,12 @@ class TestRequiresConfirmation:
     """
 
     @staticmethod
-    def _make_tool(destructive=True, read_only_actions=()):
+    def _make_tool(destructive=True, read_only_actions=(), requires_confirmation=False):
         return type("FakeTool", (), {
+            "read_only": False,  # 写工具
             "destructive": destructive,
             "read_only_actions": frozenset(read_only_actions),
+            "requires_confirmation": requires_confirmation,
         })()
 
     def test_destructive_write_action_without_confirm(self):
@@ -77,15 +94,34 @@ class TestRequiresConfirmation:
         t = self._make_tool(read_only_actions={"list"})
         assert _requires_confirmation(t, {}, "查一下") is True
 
-    def test_non_destructive_tool_never_requires(self):
+    def test_plain_write_tool_never_requires(self):
+        # 普通写工具（未标记 destructive/requires_confirmation）：维持现状不强制
         t = self._make_tool(destructive=False)
         assert _requires_confirmation(t, {"action": "delete"}, "删除") is False
 
+    def test_requires_confirmation_write_tool_needs_confirm(self):
+        # 高风险非 destructive 写工具（财务/通知/会话/库存，审计 07 P0-L1）：
+        # 标记 requires_confirmation 后，无明确确认即拦截
+        t = self._make_tool(destructive=False, requires_confirmation=True)
+        assert _requires_confirmation(t, {"action": "create"}, "帮我记一笔账") is True
+
+    def test_requires_confirmation_with_confirm_allowed(self):
+        t = self._make_tool(destructive=False, requires_confirmation=True)
+        assert _requires_confirmation(t, {"action": "create"}, "确认创建") is False
+
+    def test_requires_confirmation_read_action_exempt(self):
+        # 只读 action（list/detail）即使标记 requires_confirmation 也豁免
+        t = self._make_tool(destructive=False, requires_confirmation=True,
+                            read_only_actions={"list", "detail"})
+        assert _requires_confirmation(t, {"action": "list"}, "查一下") is False
+        assert _requires_confirmation(t, {"action": "detail"}, "查详情") is False
+
 
 class TestReadOnlyActionsContract:
-    """契约：destructive 工具的 read_only_actions 必须是 VALID_ACTIONS 子集。
+    """契约：需确认工具的 read_only_actions 必须是 VALID_ACTIONS 子集。
 
-    防止声明笔误（如把写 action 误标为只读，导致破坏性操作被豁免确认）。
+    防止声明笔误（如把写 action 误标为只读，导致写操作被豁免确认）。
+    覆盖 destructive 工具与 requires_confirmation 高风险写工具（审计 07 P0-L1）。
     """
 
     def test_read_only_actions_are_valid_actions(self):
@@ -94,9 +130,10 @@ class TestReadOnlyActionsContract:
         from app.tools.registry import get_tool_registry
 
         tools = get_tool_registry().get_all_tools()
-        destructive = [t for t in tools if getattr(t, "destructive", False)]
-        assert destructive, "应存在 destructive 工具"
-        for tool in destructive:
+        confirmable = [t for t in tools
+                       if getattr(t, "destructive", False) or getattr(t, "requires_confirmation", False)]
+        assert confirmable, "应存在需确认工具（destructive 或 requires_confirmation）"
+        for tool in confirmable:
             # VALID_ACTIONS 是各工具模块级常量（非类属性），从模块取
             mod = importlib.import_module(tool.__module__)
             valid = set(getattr(mod, "VALID_ACTIONS", set()))

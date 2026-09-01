@@ -33,6 +33,7 @@ public class CustomerService extends ServiceImpl<CustomerProfileMapper, Customer
     private final CustomerSegmentMemberMapper customerSegmentMemberMapper;
     private final OrderMapper orderMapper;
     private final SessionMapper sessionMapper;
+    private final SessionMessageMapper sessionMessageMapper;
 
     // ==================== 客户列表与详情 ====================
 
@@ -94,8 +95,14 @@ public class CustomerService extends ServiceImpl<CustomerProfileMapper, Customer
         detail.put("id", profile.getId());
         detail.put("profile", profile);
 
-        // 查询客户标签
-        List<CustomerTag> tags = getCustomerTags(profile.getTenantId());
+        // 查询客户已关联标签（按 profile.tags 中的标签 ID 过滤，而非返回租户全部标签）
+        List<CustomerTag> allTags = getCustomerTags(profile.getTenantId());
+        List<String> linkedTagIds = readTagIds(profile.getTags());
+        List<CustomerTag> tags = linkedTagIds.isEmpty()
+                ? List.of()
+                : allTags.stream()
+                        .filter(t -> linkedTagIds.contains(t.getId()))
+                        .toList();
         detail.put("tags", tags);
 
         // 查询订单历史（最近10条）
@@ -106,13 +113,30 @@ public class CustomerService extends ServiceImpl<CustomerProfileMapper, Customer
         List<Order> orders = orderMapper.selectList(orderWrapper);
         detail.put("orders", orders);
 
-        // 查询会话历史（最近10条）
+        // 查询会话历史（最近10条），附带最后一条消息与是否 AI 对话
         LambdaQueryWrapper<Session> sessionWrapper = new LambdaQueryWrapper<>();
         sessionWrapper.eq(Session::getCustomerId, customerId)
                 .orderByDesc(Session::getCreatedAt)
                 .last("LIMIT 10");
         List<Session> sessions = sessionMapper.selectList(sessionWrapper);
-        detail.put("sessions", sessions);
+        List<Map<String, Object>> sessionItems = new ArrayList<>();
+        for (Session session : sessions) {
+            Map<String, Object> item = new HashMap<>();
+            item.put("id", session.getId());
+            item.put("channel", session.getChannel());
+            item.put("createdAt", session.getCreatedAt());
+            item.put("isAI", Boolean.TRUE.equals(session.getAiEnabled()));
+            // 取最后一条消息作为摘要
+            SessionMessage lastMsg = sessionMessageMapper.selectOne(
+                    new LambdaQueryWrapper<SessionMessage>()
+                            .eq(SessionMessage::getSessionId, session.getId())
+                            .orderByDesc(SessionMessage::getCreatedAt)
+                            .last("LIMIT 1"));
+            item.put("lastMessage", lastMsg != null && StringUtils.hasText(lastMsg.getContent())
+                    ? lastMsg.getContent() : "");
+            sessionItems.add(item);
+        }
+        detail.put("sessions", sessionItems);
 
         return detail;
     }
@@ -326,6 +350,74 @@ public class CustomerService extends ServiceImpl<CustomerProfileMapper, Customer
         LambdaQueryWrapper<CustomerTag> wrapper = new LambdaQueryWrapper<>();
         wrapper.orderByDesc(CustomerTag::getCreatedAt);
         return customerTagMapper.selectList(wrapper);
+    }
+
+    /**
+     * 给客户添加标签（写入 customer_profiles.tags JSONB 的标签 ID 列表）
+     *
+     * @param customerId 客户ID
+     * @param tagId      标签ID
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void addTagToCustomer(String customerId, String tagId) {
+        CustomerProfile profile = customerProfileMapper.selectById(customerId);
+        if (profile == null) {
+            throw BusinessException.notFound("客户");
+        }
+        // 校验标签存在
+        CustomerTag tag = customerTagMapper.selectById(tagId);
+        if (tag == null) {
+            throw BusinessException.notFound("客户标签");
+        }
+        List<String> tagIds = new ArrayList<>(readTagIds(profile.getTags()));
+        if (tagIds.contains(tagId)) {
+            log.info("客户已存在该标签，跳过: customerId={}, tagId={}", customerId, tagId);
+            return;
+        }
+        tagIds.add(tagId);
+        profile.setTags(tagIds);
+        customerProfileMapper.updateById(profile);
+        log.info("客户添加标签成功: customerId={}, tagId={}", customerId, tagId);
+    }
+
+    /**
+     * 移除客户标签（从 customer_profiles.tags JSONB 删除标签 ID）
+     *
+     * @param customerId 客户ID
+     * @param tagId      标签ID
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void removeTagFromCustomer(String customerId, String tagId) {
+        CustomerProfile profile = customerProfileMapper.selectById(customerId);
+        if (profile == null) {
+            throw BusinessException.notFound("客户");
+        }
+        List<String> tagIds = new ArrayList<>(readTagIds(profile.getTags()));
+        if (!tagIds.remove(tagId)) {
+            log.info("客户不存在该标签，幂等跳过: customerId={}, tagId={}", customerId, tagId);
+            return;
+        }
+        profile.setTags(tagIds);
+        customerProfileMapper.updateById(profile);
+        log.info("客户移除标签成功: customerId={}, tagId={}", customerId, tagId);
+    }
+
+    /**
+     * 解析 customer_profiles.tags JSONB 为标签 ID 列表（兼容 null / 单字符串 / 字符串列表）
+     */
+    @SuppressWarnings("unchecked")
+    private List<String> readTagIds(Object tags) {
+        if (tags == null) {
+            return List.of();
+        }
+        if (tags instanceof List) {
+            List<?> list = (List<?>) tags;
+            return list.stream()
+                    .filter(item -> item != null)
+                    .map(String::valueOf)
+                    .toList();
+        }
+        return List.of(String.valueOf(tags));
     }
 
     /**

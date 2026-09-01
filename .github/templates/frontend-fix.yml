@@ -9,6 +9,20 @@ business_truths:
   - [frontend-fix.tsc] 变更后 tsc --noEmit 通过
   - [frontend-fix.e2e] E2E 测试覆盖变更路径
   - [frontend-fix.layout] 涉及尺寸/长宽比/对齐/间距/溢出的 UI 变更，E2E 必须有几何断言（boundingBox/getComputedStyle），仅「元素存在/不存在」不算覆盖
+  - [frontend-fix.ui-token] 织物质感设计 token：primary.500=#48618f（靛蓝主色）、accent.500=#c06a3e（陶土点缀）、neutral.50=#faf7f2（暖中性米白底）；primary/accent/neutral 三组各为完整 50-900 阶；src/ 下 .tsx/.ts 不再出现默认蓝 #3b82f6 十六进制字面量
+  - [frontend-fix.dashboard-no-truncate] 商品销量排行表头「日涨」列在 1440×900 与 1280×800 两视口均无截断
+  - [frontend-fix.axis-sampling] 订单趋势图 x 轴刻度在 1280 宽度下自动降采样，刻度不密集重叠
+  - [frontend-fix.dashboard-no-overflow] dashboard 页面在 1440×900 与 1280×800 两视口无水平/垂直截断或溢出
+  - [frontend-fix.status-chip] 订单/售后状态用语义色 chips 表达：订单六状态（pending_payment→warning、pending_shipment/shipped→info、completed→success、closed→neutral、refund→error）、售后五状态（pending→warning、processing→info、resolved→success、rejected→error、closed→neutral），统一走 @/lib/status-chip 的 orderStatusChip/afterSalesStatusChip + chipToneClasses 渲染；组件内不再硬编码 bg-blue-50/bg-indigo-50/bg-green-50/bg-gray-50 旧色；未知/空状态回退 neutral 且 label 恒为「暂无数据」
+  - [frontend-fix.empty-state] 数据空态显示「暂无数据」，禁止整列 '-' 占位：OrderTable 采购明细列（items 为空）与采购商品列（无 firstItem）渲染「暂无数据」而非裸 '-'，整页无整列 '-' 占位
+  - [frontend-fix.sidebar-smart-cs-group] 侧边栏新增一级大类「智能客服」，位于「工作台」之后、「商品管理」之前；「人工客服」从「工作台」分组移除；「智能客服」下子菜单顺序「AI 客服配置」在前、「人工客服」在后
+  - [frontend-fix.cs-menu-icons] 「人工客服」渲染客服耳机 Headphones 图标（iconMap 已注册，不回退 BarChart3，与「经营看板」柱状图图标明确区分）；「AI 客服配置」渲染 Bot 图标；「智能客服」大类渲染 MessageSquare 图标
+  - [frontend-fix.cs-menu-rename] 原「机器人设置」更名为「AI 客服配置」：侧边栏菜单名、页面 H1、面包屑文案同步一致；点击仍进入原路由 /chat/config，机器人名称/欢迎语/快捷回复等功能不回归
+  - [frontend-fix.cs-menu-permission] 权限规则不变：agent:session 控制「人工客服」可见、agent:quickreply 控制「AI 客服配置」可见；两个子菜单均不可见时「智能客服」大类整组隐藏
+  - [frontend-fix.session-list-single-filter] 会话管理列表为单列表（无「活跃/已关闭」硬 tab，也无「全部/活跃/已结束」筛选 chips/tab）：全部会话按「活跃在前、同组 updated_at 倒序」展示，搜索框按标题/客户/最后消息过滤；已结束行灰化 + 「已结束」徽标 + 重新打开按钮，活跃行保留「结束会话」菜单；空态统一「暂无会话」
+  - [frontend-fix.session-reopen-banner] 查看已结束会话时聊天区顶部显示「会话已结束，历史消息已保留」banner + 「继续此会话」按钮：点击调用 reopenSession（保留历史消息、工作状态从空开始）并聚焦输入框，reopen 成功后 banner 消失；会话管理工作台统计条与筛选文案统一为「活跃/已结束/共」，无「已关闭」残留
+  - [frontend-fix.xiaobu-voice-holdtalk] 小布 C 端输入条（mini-app，小程序/H5 同源）默认语音模式「按住说话、松开直接发送」：touchStart 开始录音、touchEnd 停止并转写（后端 /api/chat/transcribe）后直接发送文本，上滑超过阈值取消；左切换键在语音（⌨️）/键盘（🎤）模式间切换，键盘模式保留 textarea+图片+发送；流式或无可发会话时禁止录音，转写失败 toast「未听清，请重试」不发送
+  - [frontend-fix.session-list-collapse] 米高会话列表（admin-web SessionList，/chat 与 /agent-workspace/sessions 共用）支持折叠/展开窄 rail（参考 DSH sidebar 折叠交互）：默认展开 w-64 完整列表（新建对话/搜索/右键菜单功能不回归），折叠按钮带 aria-label「折叠会话列表」/「展开会话列表」+ aria-expanded 同步，折叠后仅保留图标态「新建对话」按钮与展开 toggle 的窄 rail（w-12），展开恢复完整列表；Tailwind width transition + overflow-hidden 动画；折叠偏好持久化到 localStorage（key chat.session-list.collapsed），刷新/重挂后恢复
 
 primary_specs:
   - tests/e2e/specs/

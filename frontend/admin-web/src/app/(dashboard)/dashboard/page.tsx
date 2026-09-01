@@ -7,20 +7,33 @@ import request from '@/lib/request'
 import { dashboardApi } from '@/lib/api'
 import { cn, formatFullDateTime } from '@/lib/utils'
 import type { DashboardStats, OrderTrendPoint, Order, ProductRanking } from '@/types'
-import { normalizeOrderStatus, OrderStatusLabels } from '@/types'
+import TodayOverviewBar from '@/components/dashboard/TodayOverviewBar'
+import TrendChart from '@/components/dashboard/TrendChart'
+import RecentOrders from '@/components/dashboard/RecentOrders'
 
 // ═══════════════════════════════════════════════════════
 // 格式化
 // ═══════════════════════════════════════════════════════
 
 function fmtCurrency(n: number): string {
-  if (n >= 10000) return '¥' + (n / 10000).toFixed(1) + '万'
+  if (n >= 10000) {
+    const w = parseFloat((n / 10000).toFixed(2))
+    return '¥' + w + '万'
+  }
   return '¥' + n.toLocaleString('zh-CN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
 }
 
 function fmtNum(n: number): string {
   if (n >= 10000) return (n / 10000).toFixed(1) + '万'
   return n.toLocaleString('zh-CN')
+}
+
+/** 涨跌百分比带符号：+25.5% / -12.3% / 0% */
+function fmtSigned(n: number): string {
+  if (!Number.isFinite(n)) return '—'
+  if (n === 0) return '0%'
+  const sign = n > 0 ? '+' : '-'
+  return `${sign}${Math.abs(n)}%`
 }
 
 function now(): string {
@@ -31,19 +44,44 @@ function now(): string {
 // 迷你趋势图（SVG）
 // ═══════════════════════════════════════════════════════
 
-function MiniSparkline({ data, color, width = 80, height = 28 }: { data: number[]; color: string; width?: number; height?: number }) {
+function MiniSparkline({ data, color, width = 88, height = 30 }: { data: number[]; color: string; width?: number; height?: number }) {
   if (!data.length) return (
     <svg width={width} height={height} className="flex-shrink-0">
-      <line x1="0" y1={height / 2} x2={width} y2={height / 2} stroke="#E5E7EB" strokeWidth="1" strokeDasharray="3 3" />
+      <line x1="0" y1={height / 2} x2={width} y2={height / 2} stroke="#E6DFD3" strokeWidth="1" strokeDasharray="3 3" />
     </svg>
   )
   const max = Math.max(...data, 1)
   const min = Math.min(...data, 0)
   const range = max - min || 1
-  const points = data.map((v, i) => `${(i / (data.length - 1)) * width},${height - ((v - min) / range) * (height - 4) - 2}`).join(' ')
+  const points = data.map((v, i) => `${(i / (data.length - 1)) * width},${height - ((v - min) / range) * (height - 6) - 3}`).join(' ')
+  const gradId = `spark-${color.replace('#', '')}`
   return (
     <svg width={width} height={height} className="flex-shrink-0">
-      <polyline points={points} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <defs>
+        <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.22" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <polygon points={`0,${height} ${points} ${width},${height}`} fill={`url(#${gradId})`} />
+      <polyline points={points} fill="none" stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function MiniBarChart({ data, color, width = 88, height = 30 }: { data: number[]; color: string; width?: number; height?: number }) {
+  if (!data.length) return (
+    <svg width={width} height={height} className="flex-shrink-0">
+      <line x1="0" y1={height / 2} x2={width} y2={height / 2} stroke="#E6DFD3" strokeWidth="1" strokeDasharray="3 3" />
+    </svg>
+  )
+  const barW = Math.max(2, width / data.length - 2)
+  const max = Math.max(...data, 1)
+  return (
+    <svg width={width} height={height} className="flex-shrink-0">
+      {data.map((v, i) => (
+        <rect key={i} x={i * (barW + 2)} y={height - (v / max) * (height - 4)} width={barW} height={(v / max) * (height - 4)} fill={color} rx="2" opacity="0.78" />
+      ))}
     </svg>
   )
 }
@@ -53,35 +91,18 @@ function ChartSkeleton({ bars = 7, heights }: { bars?: number; heights?: number[
   return (
     <div className="h-full flex flex-col justify-end relative">
       <svg className="absolute inset-0 w-full h-full" viewBox="0 0 400 200" preserveAspectRatio="none">
-        <line x1="40" y1="10" x2="40" y2="170" stroke="#F3F4F6" strokeWidth="1" />
-        <line x1="40" y1="170" x2="380" y2="170" stroke="#F3F4F6" strokeWidth="1" />
+        <line x1="40" y1="10" x2="40" y2="170" stroke="#F2EDE5" strokeWidth="1" />
+        <line x1="40" y1="170" x2="380" y2="170" stroke="#F2EDE5" strokeWidth="1" />
         {[30, 65, 100, 135].map((y, i) => (
-          <line key={i} x1="40" y1={y} x2="380" y2={y} stroke="#F3F4F6" strokeWidth="1" strokeDasharray="4 4" />
+          <line key={i} x1="40" y1={y} x2="380" y2={y} stroke="#F2EDE5" strokeWidth="1" strokeDasharray="4 4" />
         ))}
       </svg>
       <div className="relative z-10 flex items-end gap-2 px-[10%] pb-5">
         {h.slice(0, bars).map((pct, i) => (
-          <div key={i} className="flex-1 bg-gray-100 rounded-sm animate-pulse" style={{ height: `${Math.min(pct, 85)}%` }} />
+          <div key={i} className="flex-1 bg-neutral-100 rounded-sm animate-pulse" style={{ height: `${Math.min(pct, 85)}%` }} />
         ))}
       </div>
     </div>
-  )
-}
-
-function MiniBarChart({ data, color, width = 80, height = 28 }: { data: number[]; color: string; width?: number; height?: number }) {
-  if (!data.length) return (
-    <svg width={width} height={height} className="flex-shrink-0">
-      <line x1="0" y1={height / 2} x2={width} y2={height / 2} stroke="#E5E7EB" strokeWidth="1" strokeDasharray="3 3" />
-    </svg>
-  )
-  const barW = Math.max(2, width / data.length - 2)
-  const max = Math.max(...data, 1)
-  return (
-    <svg width={width} height={height} className="flex-shrink-0">
-      {data.map((v, i) => (
-        <rect key={i} x={i * (barW + 2)} y={height - (v / max) * (height - 2)} width={barW} height={(v / max) * (height - 2)} fill={color} rx="1" opacity="0.7" />
-      ))}
-    </svg>
   )
 }
 
@@ -89,47 +110,76 @@ function MiniBarChart({ data, color, width = 80, height = 28 }: { data: number[]
 // 子组件
 // ═══════════════════════════════════════════════════════
 
-function BizStatCard({ title, value, change, icon, sparkline, chartType }: {
-  title: string; value: string; change?: { val: string; up: boolean }; icon: React.ReactNode; sparkline?: number[]; chartType?: 'line' | 'bar'
+const METRIC_STYLES: Record<string, { tile: string; icon: string; spark: string }> = {
+  orders:  { tile: 'bg-primary-50',  icon: 'text-primary-600',  spark: '#48618f' },
+  sales:   { tile: 'bg-accent-50',   icon: 'text-accent-600',   spark: '#c06a3e' },
+  month:   { tile: 'bg-amber-50',    icon: 'text-amber-600',    spark: '#b8933d' },
+}
+
+function BizStatCard({ title, value, change, hint, icon, sparkline, chartType, metric = 'orders' }: {
+  title: string; value: string; change?: { text: string; up: boolean }; hint?: string; icon: React.ReactNode; sparkline?: number[]; chartType?: 'line' | 'bar'; metric?: keyof typeof METRIC_STYLES
 }) {
+  const style = METRIC_STYLES[metric] || METRIC_STYLES.orders
   return (
-    <div className="bg-white rounded-xl border border-gray-100 p-5 hover:shadow-md transition-shadow">
+    <div className="group bg-white rounded-xl border border-neutral-200 shadow-card p-5 transition-all hover:-translate-y-0.5 hover:shadow-card-hover animate-fade-in-up">
       <div className="flex items-start justify-between mb-3">
-        <span className="text-sm text-gray-500">{title}</span>
-        <span className="p-1.5 rounded-lg bg-gray-50">{icon}</span>
+        <div className="flex items-center gap-2.5">
+          <span className={cn('p-2 rounded-lg', style.tile)}>{icon}</span>
+          <span className="text-sm text-neutral-500">{title}</span>
+        </div>
+        {change && (
+          <span className={cn(
+            'inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[11px] font-medium',
+            change.up ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'
+          )}>
+            {change.up ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />}
+            {change.text}
+          </span>
+        )}
       </div>
       <div className="flex items-end justify-between">
         <div>
-          <p className="text-2xl font-bold text-gray-900">{value}</p>
-          {change && (
-            <p className={cn('text-xs mt-1 flex items-center gap-0.5', change.up ? 'text-red-500' : 'text-green-500')}>
-              {change.up ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />}
-              较昨天 {change.val}
-            </p>
-          )}
+          <p className="tnum text-[26px] font-bold leading-none text-neutral-900">{value}</p>
+          {hint && <p className="mt-1.5 text-xs text-neutral-400">{hint}</p>}
         </div>
         {sparkline && (chartType === 'bar'
-          ? <MiniBarChart data={sparkline} color="#3B82F6" />
-          : <MiniSparkline data={sparkline} color="#3B82F6" />
+          ? <MiniBarChart data={sparkline} color={style.spark} />
+          : <MiniSparkline data={sparkline} color={style.spark} />
         )}
       </div>
     </div>
   )
 }
 
-const PENDING_COLORS: Record<string, string> = {
-  blue: 'bg-blue-50', purple: 'bg-purple-50', red: 'bg-red-50', amber: 'bg-amber-50', green: 'bg-green-50',
+const PENDING_COLORS: Record<string, { tile: string; icon: string }> = {
+  blue:   { tile: 'bg-primary-50',  icon: 'text-primary-600' },
+  purple: { tile: 'bg-accent-50',   icon: 'text-accent-600' },
+  red:    { tile: 'bg-red-50',      icon: 'text-red-600' },
+  amber:  { tile: 'bg-amber-50',    icon: 'text-amber-600' },
+  green:  { tile: 'bg-emerald-50',  icon: 'text-emerald-600' },
 }
 
 function PendingCard({ title, count, icon, color }: { title: string; count: number; icon: React.ReactNode; color: string }) {
+  const c = PENDING_COLORS[color] || PENDING_COLORS.blue
   return (
-    <div className="flex items-center gap-3 p-4 rounded-lg border border-gray-100 bg-white">
-      <span className={cn('p-2 rounded-lg', PENDING_COLORS[color] || 'bg-gray-50')}>{icon}</span>
-      <div className="flex-1">
-        <p className="text-xs text-gray-500">{title}</p>
-        <p className="text-xl font-bold text-gray-900">{fmtNum(count)}</p>
+    <div className="group flex items-center gap-3.5 rounded-xl border border-neutral-200 bg-white p-4 shadow-card transition-all hover:-translate-y-0.5 hover:shadow-card-hover">
+      <span className={cn('p-2.5 rounded-lg transition-transform group-hover:scale-105', c.tile)}>{icon}</span>
+      <div className="flex-1 min-w-0">
+        <p className="text-xs text-neutral-500">{title}</p>
+        <p className="tnum text-2xl font-bold leading-tight text-neutral-900">{fmtNum(count)}</p>
       </div>
+      <ArrowRight className="w-4 h-4 text-neutral-300 transition-all group-hover:translate-x-0.5 group-hover:text-primary-500" />
     </div>
+  )
+}
+
+/** 区块标题：左侧色点 + 标题（与洞察条/卡片同源的主色体系） */
+function SectionHeading({ icon, colorClass, children }: { icon: React.ReactNode; colorClass: string; children: React.ReactNode }) {
+  return (
+    <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-neutral-700">
+      <span className={cn('flex h-6 w-6 items-center justify-center rounded-md', colorClass)}>{icon}</span>
+      {children}
+    </h2>
   )
 }
 
@@ -193,62 +243,94 @@ export default function DashboardPage() {
   // 从 trend 数据提取迷你图
   const sparkline = trendData.map(d => d.orders || 0).slice(-14)
 
+  // 销售额序列（真实 amount 字段，单位分；不再用 23.8 假乘数估算）
+  const salesSeries = trendData.map(d => d.amount || 0)
+
+  // 客单价 = 今日销售额 ÷ 今日订单数（数字自洽：订单数 × 客单价 ≈ 销售额）
+  const avgOrderValue = (stats?.todayOrders ?? 0) > 0
+    ? Math.round((stats?.todaySales ?? 0) / (stats?.todayOrders ?? 1))
+    : 0
+
+  // 销量排行最大值（进度条基准）
+  const maxSalesQty = Math.max(...ranking.map(r => r.salesQty || 0), 1)
+
   return (
-    <div className="p-6">
+    <div className="p-5 sm:p-6">
       {/* 顶部 */}
-      <div className="flex items-center justify-between mb-5">
+      <div className="mb-5 flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-gray-900">数据看板</h1>
-          <p className="text-xs text-gray-400 mt-1">数据更新时间：{updateTime}</p>
+          <h1 className="text-xl font-bold text-neutral-900">数据看板</h1>
+          <p className="mt-0.5 text-xs text-neutral-400">数据更新时间：{updateTime}</p>
         </div>
-        <button onClick={fetchData} className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100">
-          <RefreshCw className={cn('w-4 h-4', loading && 'animate-spin')} />
+        <button
+          onClick={fetchData}
+          className="flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-500 shadow-card transition-colors hover:border-primary-200 hover:text-primary-600"
+        >
+          <RefreshCw className={cn('w-3.5 h-3.5', loading && 'animate-spin')} />
+          刷新
         </button>
       </div>
 
+      {/* 米宝「今日经营速览」洞察条 — 一句话经营解读，置于页面顶部 */}
+      <TodayOverviewBar
+        todayOrders={stats?.todayOrders ?? 0}
+        todaySales={stats?.todaySales ?? 0}
+        orderChange={stats?.todayOrdersChange ?? 0}
+        salesChange={stats?.todaySalesChange ?? 0}
+        processingCount={processingShipment}
+        pendingCount={pendingShipment}
+        lowStockCount={lowStockCount}
+      />
+
       {/* ① 待处理任务 */}
-      <div className="mb-5">
-        <h2 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-          <Package className="w-4 h-4 text-amber-500" />待处理
-        </h2>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <Link href="/orders?status=待发货"><PendingCard title="待发货订单" count={pendingShipment} icon={<Package className="w-4 h-4 text-blue-600" />} color="blue" /></Link>
-          <Link href="/orders?category=含加工订单&status=待发货"><PendingCard title="含加工待发货订单" count={processingShipment} icon={<Settings className="w-4 h-4 text-purple-600" />} color="purple" /></Link>
+      <div className="mb-6">
+        <SectionHeading icon={<Package className="h-3.5 w-3.5 text-amber-600" />} colorClass="bg-amber-50">待处理</SectionHeading>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <Link href="/orders?status=待发货"><PendingCard title="待发货订单" count={pendingShipment} icon={<Package className="w-4 h-4 text-primary-600" />} color="blue" /></Link>
+          <Link href="/orders?category=含加工订单&status=待发货"><PendingCard title="含加工待发货订单" count={processingShipment} icon={<Settings className="w-4 h-4 text-accent-600" />} color="purple" /></Link>
           <Link href="/products?low_stock=true"><PendingCard title="待补库存商品" count={lowStockCount} icon={<Package className="w-4 h-4 text-red-600" />} color="red" /></Link>
         </div>
       </div>
 
-      {/* ② 经营数据卡片 */}
-      <div className="mb-5">
-        <h2 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-          <TrendingUp className="w-4 h-4 text-primary-500" />经营数据
-        </h2>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      {/* ② 经营数据卡片（4 卡自洽：订单数 × 客单价 ≈ 销售额） */}
+      <div className="mb-6">
+        <SectionHeading icon={<TrendingUp className="h-3.5 w-3.5 text-primary-600" />} colorClass="bg-primary-50">经营数据</SectionHeading>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {loading ? (
-            Array.from({ length: 3 }).map((_, i) => <div key={i} className="bg-white rounded-xl border border-gray-100 p-5 animate-pulse h-[120px]" />)
+            Array.from({ length: 4 }).map((_, i) => <div key={i} className="bg-white rounded-xl border border-neutral-200 shadow-card h-[120px] animate-pulse p-5" />)
           ) : (
             <>
               <BizStatCard
+                metric="orders"
                 title="今日订单数"
                 value={stats?.todayOrders?.toLocaleString() || '0'}
-                change={{ val: `${stats?.todayOrdersChange || 0}`, up: (stats?.todayOrdersChange || 0) > 0 }}
-                icon={<ClipboardList className="w-4 h-4 text-blue-600" />}
+                change={{ text: `较昨日 ${fmtSigned(stats?.todayOrdersChange ?? 0)}`, up: (stats?.todayOrdersChange ?? 0) > 0 }}
+                icon={<ClipboardList className="w-4 h-4 text-primary-600" />}
                 sparkline={sparkline}
                 chartType="line"
               />
               <BizStatCard
+                metric="sales"
                 title="今日销售额"
                 value={fmtCurrency(stats?.todaySales || 0)}
-                change={{ val: `${stats?.todaySalesChange || 0}`, up: (stats?.todaySalesChange || 0) > 0 }}
-                icon={<DollarSign className="w-4 h-4 text-green-600" />}
-                sparkline={sparkline.map(v => v * 23.8)}
+                change={{ text: `较昨日 ${fmtSigned(stats?.todaySalesChange ?? 0)}`, up: (stats?.todaySalesChange ?? 0) > 0 }}
+                icon={<DollarSign className="w-4 h-4 text-emerald-600" />}
+                sparkline={salesSeries.slice(-14)}
                 chartType="bar"
               />
               <BizStatCard
+                metric="month"
+                title="客单价"
+                value={avgOrderValue > 0 ? fmtCurrency(avgOrderValue) : '—'}
+                hint={avgOrderValue > 0 ? '今日每单平均消费' : '暂无订单'}
+                icon={<TrendingUp className="w-4 h-4 text-accent-600" />}
+              />
+              <BizStatCard
+                metric="month"
                 title="本月销售额"
                 value={fmtCurrency(stats?.monthRevenue || 0)}
-                change={{ val: `${stats?.monthRevenueChange || 0}% 较上月`, up: (stats?.monthRevenueChange || 0) > 0 }}
-                icon={<DollarSign className="w-4 h-4 text-orange-600" />}
+                change={{ text: `较上月 ${fmtSigned(stats?.monthRevenueChange ?? 0)}`, up: (stats?.monthRevenueChange ?? 0) > 0 }}
+                icon={<DollarSign className="w-4 h-4 text-accent-600" />}
               />
             </>
           )}
@@ -256,51 +338,41 @@ export default function DashboardPage() {
       </div>
 
       {/* ③ 趋势图 */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-5">
+      <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* 订单趋势 */}
-        <div className="bg-white rounded-xl border border-gray-100 p-5">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-gray-800">订单趋势</h3>
-            <div className="flex gap-1 bg-gray-100 rounded-lg p-0.5">
+        <div className="bg-white rounded-xl border border-neutral-200 shadow-card p-5">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-neutral-800">订单趋势</h3>
+            <div className="flex gap-1 rounded-lg bg-neutral-100 p-0.5">
               {[7, 30].map(d => (
                 <button key={d} onClick={() => setTrendDays(d)}
-                  className={cn('px-3 py-1 text-xs rounded-md', trendDays === d ? 'bg-white shadow text-gray-900' : 'text-gray-500')}>
+                  className={cn(
+                    'rounded-md px-3 py-1 text-xs font-medium transition-all',
+                    trendDays === d ? 'bg-white text-primary-700 shadow-sm' : 'text-neutral-500 hover:text-neutral-700'
+                  )}>
                   近{d}天
                 </button>
               ))}
             </div>
           </div>
-          <div className="h-48">
+          <div className="h-[240px]">
             {loading ? (
               <ChartSkeleton bars={7} />
-            ) : trendData.length > 0 ? (() => {
-              const rawMax = Math.max(...trendData.map(t => t.orders || 0), 0)
-              // Y-axis: 10% headroom; when all data is 0, use sensible default to avoid flatlining
-              const chartMax = rawMax === 0 ? 10 : rawMax * 1.1
-              const toY = (v: number) => 200 - (v / chartMax) * 175
-              return (
-                <svg width="100%" height="100%" viewBox={`0 0 ${Math.max(trendData.length * 40, 300)} 240`} overflow="visible">
-                  <polyline fill="none" stroke="#3B82F6" strokeWidth="2"
-                    points={trendData.map((d, i) => `${i * 40 + 20},${toY(d.orders || 0)}`).join(' ')} />
-                  {trendData.map((d, i) => (
-                    <circle key={i} cx={i * 40 + 20} cy={toY(d.orders || 0)} r="3" fill="#3B82F6" />
-                  ))}
-                  {trendData.filter((_, i) => i % Math.ceil(trendData.length / 7) === 0).map((d, i) => (
-                    <text key={i} x={i * 40 * Math.ceil(trendData.length / 7) + 20} y="225" textAnchor="middle" fontSize="10" fill="#9CA3AF">
-                      {d.date?.slice(5)}
-                    </text>
-                  ))}
-                </svg>
-              )
-            })() : (
+            ) : trendData.length > 0 ? (
+              <TrendChart
+                data={trendData}
+                series={[{ key: 'orders', name: '订单数', color: '#48618f', dots: true }]}
+                formatValue={fmtNum}
+              />
+            ) : (
               <div className="h-full flex flex-col items-center justify-center">
                 <div className="flex flex-col items-center">
-                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-50 flex items-center justify-center mb-3">
-                    <TrendingUp className="w-6 h-6 text-blue-400" />
+                  <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary-50 to-indigo-50">
+                    <TrendingUp className="w-6 h-6 text-primary-400" />
                   </div>
-                  <p className="text-sm font-medium text-gray-500">暂无订单数据</p>
-                  <p className="text-xs text-gray-400 mt-1 mb-4">创建订单后，趋势图将在此展示</p>
-                  <Link href="/orders/new" className="inline-flex items-center gap-1.5 text-xs font-medium text-white bg-blue-500 hover:bg-blue-600 px-3.5 py-2 rounded-lg transition-colors shadow-sm">
+                  <p className="text-sm font-medium text-neutral-500">暂无订单数据</p>
+                  <p className="mt-1 mb-4 text-xs text-neutral-400">创建订单后，趋势图将在此展示</p>
+                  <Link href="/orders/new" className="inline-flex items-center gap-1.5 rounded-lg bg-primary-500 px-3.5 py-2 text-xs font-medium text-white shadow-sm transition-colors hover:bg-primary-600">
                     创建订单 <ArrowRight className="w-3 h-3" />
                   </Link>
                 </div>
@@ -310,37 +382,29 @@ export default function DashboardPage() {
         </div>
 
         {/* 销售额趋势 */}
-        <div className="bg-white rounded-xl border border-gray-100 p-5">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-gray-800">销售额数据</h3>
-            <span className="text-xs text-gray-400">数据更新时间：{updateTime === '--' ? updateTime : updateTime.slice(11, 19)}</span>
+        <div className="bg-white rounded-xl border border-neutral-200 shadow-card p-5">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-neutral-800">销售额数据</h3>
+            <span className="text-xs text-neutral-400">数据更新时间：{updateTime === '--' ? updateTime : updateTime.slice(11, 19)}</span>
           </div>
-          <div className="h-48">
+          <div className="h-[240px]">
             {loading ? (
               <ChartSkeleton bars={7} heights={[45, 32, 58, 25, 52, 38, 48]} />
-            ) : trendData.length > 0 ? (() => {
-              const salesValues = trendData.map(d => (d.totalAmount || d.orders * 23.8) || 0)
-              const rawMax = Math.max(...salesValues, 0)
-              const chartMax = rawMax === 0 ? 10 : rawMax * 1.1
-              const toY = (v: number) => 200 - (v / chartMax) * 175
-              return (
-                <svg width="100%" height="100%" viewBox={`0 0 ${Math.max(trendData.length * 40, 300)} 240`} overflow="visible">
-                  <defs><linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#3B82F6" stopOpacity="0.3" /><stop offset="100%" stopColor="#3B82F6" stopOpacity="0" /></linearGradient></defs>
-                  <path fill="url(#areaGrad)"
-                    d={`M 20 200 ${trendData.map((_, i) => `L ${i * 40 + 20} ${toY(salesValues[i])}`).join(' ')} L ${(trendData.length - 1) * 40 + 20} 200 Z`} />
-                  <polyline fill="none" stroke="#3B82F6" strokeWidth="2"
-                    points={trendData.map((_, i) => `${i * 40 + 20},${toY(salesValues[i])}`).join(' ')} />
-                </svg>
-              )
-            })() : (
+            ) : trendData.length > 0 ? (
+              <TrendChart
+                data={trendData}
+                series={[{ key: 'amount', name: '销售额', color: '#c06a3e', area: true, dots: true }]}
+                formatValue={fmtCurrency}
+              />
+            ) : (
               <div className="h-full flex flex-col items-center justify-center">
                 <div className="flex flex-col items-center">
-                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-50 to-green-50 flex items-center justify-center mb-3">
-                    <DollarSign className="w-6 h-6 text-emerald-400" />
+                  <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-accent-50 to-orange-50">
+                    <DollarSign className="w-6 h-6 text-accent-400" />
                   </div>
-                  <p className="text-sm font-medium text-gray-500">暂无销售额数据</p>
-                  <p className="text-xs text-gray-400 mt-1 mb-4">产生订单后，销售趋势将在此展示</p>
-                  <Link href="/orders/new" className="inline-flex items-center gap-1.5 text-xs font-medium text-white bg-emerald-500 hover:bg-emerald-600 px-3.5 py-2 rounded-lg transition-colors shadow-sm">
+                  <p className="text-sm font-medium text-neutral-500">暂无销售额数据</p>
+                  <p className="mt-1 mb-4 text-xs text-neutral-400">产生订单后，销售趋势将在此展示</p>
+                  <Link href="/orders/new" className="inline-flex items-center gap-1.5 rounded-lg bg-accent-500 px-3.5 py-2 text-xs font-medium text-white shadow-sm transition-colors hover:bg-accent-600">
                     创建订单 <ArrowRight className="w-3 h-3" />
                   </Link>
                 </div>
@@ -351,76 +415,59 @@ export default function DashboardPage() {
       </div>
 
       {/* ④ 列表 */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* 近期订单 */}
-        <div className="bg-white rounded-xl border border-gray-100 p-5">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-gray-800">近期订单</h3>
-            <a href="/orders" className="text-xs text-primary-600 hover:underline flex items-center gap-1">查看全部 <ArrowRight className="w-3 h-3" /></a>
-          </div>
-          <table className="w-full text-xs">
-            <thead><tr className="text-gray-500 border-b"><th className="text-left py-2 font-medium">订单号</th><th className="text-left py-2 font-medium">客户</th><th className="text-right py-2 font-medium">金额</th><th className="text-right py-2 font-medium">状态</th><th className="text-right py-2 font-medium">时间</th></tr></thead>
-            <tbody>
-              {loading ? (
-                Array.from({ length: 5 }).map((_, i) => (
-                  <tr key={i} className="border-b border-gray-50">
-                    <td className="py-2"><div className="h-4 bg-gray-100 rounded animate-pulse w-20" /></td>
-                    <td className="py-2"><div className="h-4 bg-gray-100 rounded animate-pulse w-14" /></td>
-                    <td className="py-2 text-right"><div className="h-4 bg-gray-100 rounded animate-pulse w-12 ml-auto" /></td>
-                    <td className="py-2 text-right"><div className="h-4 bg-gray-100 rounded animate-pulse w-14 ml-auto" /></td>
-                    <td className="py-2 text-right"><div className="h-4 bg-gray-100 rounded animate-pulse w-16 ml-auto" /></td>
-                  </tr>
-                ))
-              ) : (
-                recentOrders.slice(0, 5).map(o => (
-                  <tr key={o.id} className="border-b border-gray-50 hover:bg-gray-50">
-                    <td className="py-2"><a href={`/orders/${o.id}`} className="text-blue-600 font-mono text-[11px] hover:underline">{o.orderNo?.slice(0, 16)}</a></td>
-                    <td className="py-2 text-gray-700">{o.customerName}</td>
-                    <td className="py-2 text-right text-gray-900 font-mono">{fmtCurrency(o.totalAmount)}</td>
-                    <td className="py-2 text-right"><StatusBadge status={o.status as string} /></td>
-                    <td className="py-2 text-right text-gray-400 text-[11px]">{o.createdAt?.slice(5, 16)?.replace('T', ' ')}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-          {!loading && recentOrders.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-10">
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-50 to-indigo-50 flex items-center justify-center mb-3">
-                <ClipboardList className="w-5 h-5 text-blue-400" />
-              </div>
-              <p className="text-sm font-medium text-gray-500">暂无近期订单</p>
-              <p className="text-xs text-gray-400 mt-1">新订单将在此展示</p>
-            </div>
-          )}
-        </div>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {/* 近期订单 — #2544: 复用 RecentOrders 组件（语义色 chips + 空态治理） */}
+        <RecentOrders
+          orders={recentOrders}
+          loading={loading}
+          emptyText="暂无近期订单"
+          emptyHint="新订单将在此展示"
+        />
 
         {/* 商品销量排行 */}
-        <div className="bg-white rounded-xl border border-gray-100 p-5">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-gray-800">商品销量排行</h3>
-            <a href="/products?sortBy=salesCount&sortOrder=desc" className="text-xs text-primary-600 hover:underline flex items-center gap-1">查看更多 <ArrowRight className="w-3 h-3" /></a>
+        <div className="bg-white rounded-xl border border-neutral-200 shadow-card p-5">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-neutral-800">商品销量排行</h3>
+            <a href="/products?sortBy=salesCount&sortOrder=desc" className="flex items-center gap-1 text-xs text-primary-600 hover:underline">查看更多 <ArrowRight className="w-3 h-3" /></a>
           </div>
           {loading ? (
-            <div className="space-y-2">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-8 bg-gray-100 rounded animate-pulse" />)}</div>
+            <div className="space-y-2">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-9 animate-pulse rounded bg-neutral-100" />)}</div>
           ) : ranking.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-10">
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-50 to-orange-50 flex items-center justify-center mb-3">
+              <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-amber-50 to-orange-50">
                 <Package className="w-5 h-5 text-amber-400" />
               </div>
-              <p className="text-sm font-medium text-gray-500">暂无排行数据</p>
-              <p className="text-xs text-gray-400 mt-1">产生订单后，销量排行将在此展示</p>
+              <p className="text-sm font-medium text-neutral-500">暂无排行数据</p>
+              <p className="mt-1 text-xs text-neutral-400">产生订单后，销量排行将在此展示</p>
             </div>
           ) : (
             <table className="w-full text-xs">
-              <thead><tr className="text-gray-500 border-b"><th className="text-left py-2 font-medium w-8">#</th><th className="text-left py-2 font-medium">商品</th><th className="text-right py-2 font-medium">成交量</th><th className="text-right py-2 font-medium">日涨</th></tr></thead>
+              <thead><tr className="border-b border-neutral-100 text-neutral-400"><th className="w-10 py-2 text-left font-medium whitespace-nowrap">#</th><th className="py-2 text-left font-medium whitespace-nowrap">商品</th><th className="py-2 text-right font-medium whitespace-nowrap">成交量</th><th className="py-2 text-right font-medium whitespace-nowrap" title="较昨日销量涨跌幅">日涨</th></tr></thead>
               <tbody>
                 {ranking.slice(0, 10).map(r => (
-                  <tr key={r.productId} className="border-b border-gray-50 hover:bg-gray-50">
-                    <td className="py-2 text-gray-400">{r.rank}</td>
-                    <td className="py-2 text-gray-700 truncate max-w-[160px]" title={r.productName}>{r.productName}</td>
-                    <td className="py-2 text-right font-mono text-gray-900">{r.qtyDisplay}</td>
-                    <td className={cn('py-2 text-right', r.dailyChange > 0 ? 'text-red-500' : 'text-green-500')}>
+                  <tr key={r.productId} className="border-b border-neutral-50 transition-colors hover:bg-neutral-50/70">
+                    <td className="py-2.5">
+                      <span className={cn(
+                        'inline-flex h-5 w-5 items-center justify-center rounded-md text-[11px] font-semibold',
+                        r.rank === 1 ? 'bg-amber-100 text-amber-700' :
+                        r.rank === 2 ? 'bg-neutral-200 text-neutral-600' :
+                        r.rank === 3 ? 'bg-accent-100 text-accent-700' :
+                        'text-neutral-400'
+                      )}>
+                        {r.rank}
+                      </span>
+                    </td>
+                    <td className="max-w-[160px] py-2.5">
+                      <div className="flex items-center gap-2">
+                        <span className="truncate text-neutral-700" title={r.productName}>{r.productName}</span>
+                      </div>
+                      {/* 销量进度条 — 相对当日冠军的占比 */}
+                      <div className="mt-1 h-1 w-full max-w-[140px] overflow-hidden rounded-full bg-neutral-100">
+                        <div className="h-full rounded-full bg-gradient-to-r from-primary-400 to-primary-500" style={{ width: `${Math.min(100, (r.salesQty || 0) / maxSalesQty * 100)}%` }} />
+                      </div>
+                    </td>
+                    <td className="tnum py-2.5 text-right font-mono text-neutral-900 whitespace-nowrap">{r.qtyDisplay}</td>
+                    <td className={cn('py-2.5 text-right whitespace-nowrap', r.dailyChange > 0 ? 'text-emerald-600' : 'text-red-500')}>
                       {r.dailyChange > 0 ? '▲' : '▼'} {Math.abs(r.dailyChange)}%
                     </td>
                   </tr>
@@ -431,23 +478,5 @@ export default function DashboardPage() {
         </div>
       </div>
     </div>
-  )
-}
-
-// ========== 订单状态徽章（中文） ==========
-
-function StatusBadge({ status }: { status: string }) {
-  const s = normalizeOrderStatus(status)
-  const label = OrderStatusLabels[s]
-  const colorClass =
-    s === 'completed' ? 'bg-green-100 text-green-700' :
-    s === 'pending_shipment' || s === 'shipped' ? 'bg-blue-100 text-blue-700' :
-    s === 'pending_payment' ? 'bg-amber-100 text-amber-700' :
-    s === 'closed' ? 'bg-gray-100 text-gray-500' :
-    'bg-gray-100 text-gray-600'
-  return (
-    <span className={cn('inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium', colorClass)}>
-      {label}
-    </span>
   )
 }

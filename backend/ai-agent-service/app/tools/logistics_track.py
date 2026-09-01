@@ -182,7 +182,9 @@ class LogisticsTrackTool(BaseTool):
                     user_id=context.user_id,
                 )
                 search_data = search_response.get("data", {})
-                records = search_data.get("records", [])
+                # 生产回归修复：admin-api 列表接口实际返回 items（旧实现读 records 永远为空，
+                # 导致按订单号查物流恒定"订单不存在"）。兼容两种字段名。
+                records = search_data.get("items") or search_data.get("records") or []
                 if not records:
                     return ToolResult(
                         success=False,
@@ -238,10 +240,12 @@ class LogisticsTrackTool(BaseTool):
                 )
             
             tracking_no = logistics.get("trackingNo")
-            company = logistics.get("company", "未知")
-            phone = logistics.get("receiverPhone", "")
-            # 提取手机号后四位（顺丰/中通/申通等需要）
-            phone_tail = phone[-4:] if phone and len(phone) >= 4 else None
+            # 后端 OrderDetailResponse.LogisticsInfo 字段是 logisticsCompany（无 company 字段）
+            company = logistics.get("logisticsCompany", "未知")
+            # OrderDetailResponse.LogisticsInfo 无 receiverPhone 字段，后端不提供
+            # 收/寄件人手机号后四位，无法再拼接（顺丰/中通/申通等需要手机号尾号的
+            # API 场景由 API 自动识别降级处理），故不再读取。
+            phone_tail = None
             
             # 查询物流轨迹
             return await self._track_by_number(

@@ -26,6 +26,8 @@ import type {
   SSEDoneEvent,
   SSEErrorEvent,
   SSELoadingEvent,
+  SSEInteractiveEvent,
+  SSESuggestionsEvent,
 } from '../types'
 
 export interface SSECallbacks {
@@ -37,6 +39,10 @@ export interface SSECallbacks {
   onToolResult?: (data: SSEToolResultEvent) => void
   /** 卡片数据 */
   onCard?: (data: SSECardEvent) => void
+  /** 交互式组件（choice/confirm/form） */
+  onInteractive?: (data: SSEInteractiveEvent) => void
+  /** 建议追问 */
+  onSuggestions?: (data: SSESuggestionsEvent) => void
   /** 加载状态 */
   onLoading?: (data: SSELoadingEvent) => void
   /** 流式完成 */
@@ -96,6 +102,9 @@ export class SSEClient {
         ...(images?.length ? { images } : {}),
       },
       timeout: 120000, // SSE 流式请求需要更长超时
+      // H5 环境：Taro.request 默认 dataType='json'，SSE 文本会被 response.json() 解析失败返回 null，
+      // 导致流式对话完全不可用（visual 回归发现）。显式声明 text 让响应按文本返回。
+      dataType: 'text',
       // @ts-ignore - enableChunkedTransfer 是 wx.request 的原生参数
       enableChunkedTransfer: true,
       success: (res) => {
@@ -225,6 +234,14 @@ export class SSEClient {
 
         case 'card':
           callbacks.onCard?.(data as SSECardEvent)
+          break
+
+        case 'interactive':
+          callbacks.onInteractive?.(data as SSEInteractiveEvent)
+          break
+
+        case 'suggestions':
+          callbacks.onSuggestions?.(data as SSESuggestionsEvent)
           break
 
         case 'loading':

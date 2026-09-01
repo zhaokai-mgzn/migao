@@ -1,33 +1,27 @@
 export default defineAppConfig({
   pages: [
     'pages/chat/index/index',
-    'pages/chat/sessions/index',
     'pages/auth/login/index',
     'pages/profile/index/index',
   ],
   window: {
     backgroundTextStyle: 'light',
-    navigationBarBackgroundColor: '#2F54EB',
+    navigationBarBackgroundColor: '#0A2540',
     navigationBarTitleText: '小布',
     navigationBarTextStyle: 'white',
+    backgroundColor: '#F5F7FA',
   },
   tabBar: {
-    color: '#999999',
-    selectedColor: '#2F54EB',
+    color: '#9AA5B1',
+    selectedColor: '#1A73E8',
     backgroundColor: '#ffffff',
-    borderStyle: 'black',
+    borderStyle: 'white',
     list: [
       {
         pagePath: 'pages/chat/index/index',
         text: '对话',
         iconPath: 'assets/tabbar/chat.png',
         selectedIconPath: 'assets/tabbar/chat-active.png',
-      },
-      {
-        pagePath: 'pages/chat/sessions/index',
-        text: '会话',
-        iconPath: 'assets/tabbar/sessions.png',
-        selectedIconPath: 'assets/tabbar/sessions-active.png',
       },
       {
         pagePath: 'pages/profile/index/index',

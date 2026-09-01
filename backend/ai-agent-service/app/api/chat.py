@@ -33,7 +33,26 @@ from app.agents.customer_service_agent import (
     get_agent,
 )
 from app.tools import ToolRegistry, get_tool_registry
+from app.tools.base import ToolContext  # __PAGE__ 分页直调工具时构造执行上下文
 from app.utils.auth import get_current_user, UserIdentity
+
+# 商户员工角色（可进入商家后台使用米宝的运营/管理类工具）。
+# 与 admin-api SecurityConfig 的门禁口径一致：customer/agent（小程序/B2C 用户）不属于此集合。
+MERCHANT_STAFF_ROLES = {
+    "admin", "tenant_admin", "operator", "product_manager",
+    "knowledge_editor", "customer_service", "service",
+}
+
+
+def _to_agent_role(role: str) -> str:
+    """将 JWT 角色映射为米宝执行上下文角色。
+
+    商户员工角色保留原角色（供 Tool.allowed_roles / required_permissions 判断）；
+    非员工角色（小程序/B2C 用户）统一折叠为 customer，禁止访问管理类工具。
+    """
+    if role in MERCHANT_STAFF_ROLES:
+        return role
+    return "customer"
 
 router = APIRouter()
 
@@ -87,6 +106,54 @@ async def _get_user_nickname(tenant_id: int, user_id: str) -> Optional[str]:
     except Exception as e:
         logger.warning(
             f"[chat] Failed to query user nickname | user={user_id} error={e}"
+        )
+
+    return None
+
+
+async def _get_tenant_name(tenant_id: int) -> Optional[str]:
+    """获取企业名称（Redis 缓存 → DB 回退）
+
+    缓存 key: tenant_name:{tenant_id}，TTL 1 小时。
+    用于米宝 System Prompt 注入企业身份（此前 identity.md 硬编码"词元通达"，多租户下错误）。
+    失败时静默返回 None（企业名非必需，身份模板有兜底措辞）。
+    """
+    cache_key = f"tenant_name:{tenant_id}"
+
+    # 1. 尝试 Redis 缓存
+    try:
+        from app.utils.redis_client import redis_pool
+        if redis_pool:
+            import redis.asyncio as aioredis
+            client = aioredis.Redis(connection_pool=redis_pool)
+            cached = await client.get(cache_key)
+            if cached:
+                return cached
+    except Exception:
+        pass
+
+    # 2. 缓存未命中，查 DB（tenants 表，与 admin-api 同库）
+    try:
+        from sqlalchemy import text
+        from app.utils.database import AsyncSessionLocal
+        async with AsyncSessionLocal() as db:
+            sql = text("SELECT name FROM tenants WHERE id = :tenant_id AND deleted = 0")
+            result = await db.execute(sql, {"tenant_id": tenant_id})
+            row = result.fetchone()
+            if row and row[0]:
+                tenant_name = str(row[0])
+                try:
+                    from app.utils.redis_client import redis_pool
+                    if redis_pool:
+                        import redis.asyncio as aioredis
+                        client = aioredis.Redis(connection_pool=redis_pool)
+                        await client.setex(cache_key, 3600, tenant_name)
+                except Exception:
+                    pass
+                return tenant_name
+    except Exception as e:
+        logger.warning(
+            f"[chat] Failed to query tenant name | tenant={tenant_id} error={e}"
         )
 
     return None
@@ -166,6 +233,69 @@ def _format_datetime(dt: Any) -> str:
     return s
 
 
+async def _guard_session(
+    session_memory: SessionMemory,
+    session_id: str,
+    *,
+    tenant_id: int,
+    user_id: str,
+    action: str = "访问",
+) -> dict:
+    """会话守卫（会话管理重构 P2）：统一 404/403 校验。
+
+    替代原先散落在 close/reopen/delete/history 各端点的重复校验：
+    - 会话不存在 → 404 SESSION_NOT_FOUND
+    - 跨租户 / 跨用户 → 403 PERMISSION_DENIED
+
+    Returns:
+        session dict；校验失败抛 HTTPException（错误格式统一 make_response）。
+    """
+    session = await session_memory.get_session(session_id)
+    if not session:
+        raise HTTPException(
+            status_code=404,
+            detail=make_response(False, error_code="SESSION_NOT_FOUND", error_message="会话不存在"),
+        )
+    if session.get("tenant_id") != tenant_id:
+        logger.warning(
+            f"[chat/guard] Cross-tenant {action} attempt: user_tenant={tenant_id}, "
+            f"session_tenant={session.get('tenant_id')}, session_id={session_id}, "
+            f"user_id={user_id}"
+        )
+        raise HTTPException(
+            status_code=403,
+            detail=make_response(False, error_code="PERMISSION_DENIED", error_message=f"无权{action}该会话"),
+        )
+    if session.get("customer_id") != user_id:
+        logger.warning(
+            f"[chat/guard] Unauthorized {action} attempt: user_id={user_id}, "
+            f"session_owner={session.get('customer_id')}, session_id={session_id}, "
+            f"tenant_id={tenant_id}"
+        )
+        raise HTTPException(
+            status_code=403,
+            detail=make_response(False, error_code="PERMISSION_DENIED", error_message=f"无权{action}该会话"),
+        )
+    return session
+
+
+def _raise_session_error(code: str, message: str) -> None:
+    """把 send_gate 的 (code, message) 转为统一 make_response 格式的 HTTPException。
+
+    状态码映射：SESSION_NOT_FOUND→404, PERMISSION_DENIED→403, SESSION_CLOSED→409。
+    """
+    status_map = {
+        "SESSION_NOT_FOUND": 404,
+        "PERMISSION_DENIED": 403,
+        "SESSION_CLOSED": 409,
+    }
+    status_code = status_map.get(code, 400)
+    raise HTTPException(
+        status_code=status_code,
+        detail=make_response(False, error_code=code, error_message=message),
+    )
+
+
 def _convert_history_to_agent_format(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """将数据库消息格式转换为 Agent 所需的格式（支持多模态）
 
@@ -231,8 +361,10 @@ def _detect_card_type(tool_name: str, result: Dict[str, Any]) -> Optional[str]:
         return "product_detail"
     elif tool_name == "logistics_track":
         return "logistics"
-    elif tool_name == "order_query":
+    elif tool_name in ("order_query", "customer_order_query"):
         return "order"
+    elif tool_name == "curtain_calc":
+        return "quotation"
     return None
 
 
@@ -257,8 +389,8 @@ def _should_send_card(tool_name: str, result: Dict[str, Any]) -> bool:
         data = result.get("data", {})
         return data.get("tracking_number") is not None
     
-    # 订单查询有结果时发送卡片（支持单订单和列表两种格式）
-    if tool_name == "order_query":
+    # 订单查询有结果时发送卡片（支持单订单和列表两种格式；C 端 customer_order_query 同规则）
+    if tool_name in ("order_query", "customer_order_query"):
         data = result.get("data", {})
         has_order = data.get("order") is not None
         orders = data.get("orders")  # action=list 返回 orders 数组
@@ -267,12 +399,67 @@ def _should_send_card(tool_name: str, result: Dict[str, Any]) -> bool:
         has_list = len(order_list) > 0
         should_send = has_order or has_list
         logger.info(
-            f"[chat/card] order_query check | has_order={has_order} orders_count={len(order_list)} "
+            f"[chat/card] {tool_name} check | has_order={has_order} orders_count={len(order_list)} "
             f"should_send={should_send} data_keys={list(data.keys()) if isinstance(data, dict) else 'N/A'}"
         )
         return should_send
 
+    # 算料报价有结果时发送报价单卡片
+    if tool_name == "curtain_calc":
+        data = result.get("data", {})
+        return data.get("total") is not None
+
     return False
+
+
+def _normalize_order_card_data(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """归一化 order 卡片载荷，避免前端渲染出空「订单」盒子。
+
+    根因（会话反馈）：order_query(action=list) 的 Tool 结果永远返回
+    {orders: [...], total, page, ...} 容器；此前原样作为 card 数据下发，
+    前端 OrderCard 只认 data.order，取不到 orderNo 后渲染出只剩
+    「订单」二字的空盒子（无法理解、无法点击）。
+
+    归一化规则：
+      - data.order（单订单）           → {"order": <order>}（原样）
+      - data.orders / data.items 单条  → {"order": <order>}（前端按单订单渲染）
+      - data.orders / data.items 多条  → {"orders": [...]}（前端按列表渲染）
+      - 无有效订单                      → None（不下发卡片）
+    """
+    if not isinstance(data, dict):
+        return None
+
+    if data.get("order") is not None:
+        return {"order": data["order"]}
+
+    order_list = data.get("orders")
+    if not isinstance(order_list, list):
+        order_list = data.get("items")  # 兼容旧格式
+    if not isinstance(order_list, list) or len(order_list) == 0:
+        return None
+
+    if len(order_list) == 1:
+        return {"order": order_list[0]}
+    return {"orders": order_list}
+
+
+def _card_payload(tool_name: str, result: Dict[str, Any]) -> tuple[Optional[str], Optional[Dict[str, Any]]]:
+    """统一计算要下发的卡片类型与载荷。
+
+    Returns:
+        (card_type, data)：不需要下发时返回 (None, None)。
+        order 卡片做归一化（单订单→{"order": ...}，多订单→{"orders": [...]}）。
+    """
+    card_type = _detect_card_type(tool_name, result)
+    if not card_type or not _should_send_card(tool_name, result):
+        return None, None
+
+    data = result.get("data", {})
+    if card_type == "order":
+        data = _normalize_order_card_data(data)
+        if data is None:
+            return None, None
+    return card_type, data
 
 
 # ============ SSE 流生成器 ============
@@ -297,7 +484,7 @@ async def _agent_stream_to_sse(
     3. Tool 调用由 LangGraph Skill 节点内部处理
     4. 根据 Tool 结果发送卡片事件
     5. 保存消息到数据库
-    6. 后续问题建议由图内 suggestions_node 生成
+    6. 后续问题建议由 LLM 在回复中自然生成
     """
     full_response = []
     tool_calls_info = []
@@ -388,15 +575,14 @@ async def _agent_stream_to_sse(
                                 result_dict = tc.get("result", {})
                                 yield SSEEvent.tool_result(tool_name, result_dict)
 
-                                # 检查是否需要发送卡片
-                                if _should_send_card(tool_name, result_dict):
-                                    card_type = _detect_card_type(tool_name, result_dict)
-                                    if card_type:
-                                        logger.info(
-                                            f"[chat/card] Sending card | tool={tool_name} "
-                                            f"type={card_type} data_keys={list(result_dict.get('data', {}).keys())}"
-                                        )
-                                        yield SSEEvent.card(card_type, result_dict.get("data", {}))
+                                # 检查是否需要发送卡片（order 卡片自动归一化载荷）
+                                card_type, card_data = _card_payload(tool_name, result_dict)
+                                if card_type:
+                                    logger.info(
+                                        f"[chat/card] Sending card | tool={tool_name} "
+                                        f"type={card_type} data_keys={list(card_data.keys()) if isinstance(card_data, dict) else 'N/A'}"
+                                    )
+                                    yield SSEEvent.card(card_type, card_data)
 
                                 # 检查是否来自 interact 工具 → 发送交互式组件事件
                                 if tool_name == "interact" and result_dict.get("success"):
@@ -465,8 +651,7 @@ async def _agent_stream_to_sse(
                 exc_info=True,
             )
 
-        # suggestions 已在 LangGraph 图内的 suggestions_node 生成并通过流传递
-        # 无需在此额外生成
+        # suggestions 由 LLM 在回复中自然生成，无需在此额外生成
 
         # 异步提取用户记忆（fire-and-forget，不阻塞 SSE 流）
         # user_message 提取自 message 参数（可能为 str 或 list）
@@ -515,21 +700,41 @@ async def _agent_stream_to_sse(
 
 # ============ 分页协议 ============
 
-# __PAGE__ 协议白名单：仅允许只读查询工具，防止任意工具执行
+# __PAGE__ 协议白名单：仅允许只读查询工具，防止任意工具执行（审计 07 P0-L2）。
+# ⚠️ 严禁加入任何含写/破坏性 action 的工具（product_manage/customer_manage/employee_manage
+# 等管理类工具一律不得入列）——该路径直调 execute_tool、绕过 LLM 确认守卫。
 _PAGE_WHITELIST = frozenset({
     "processing_item_query",
     "processing_items",
     "order_query",
+    "customer_order_query",
     "product_search",
     "product_detail",
-    "product_manage",       # 仅 list 操作
     "logistics_track",
     "aftersale_query",
-    "customer_manage",      # 仅 list 操作
-    "employee_manage",      # 仅 list 操作
     "knowledge_faq",
     "dashboard_stats",
 })
+
+
+def _page_action_allowed(tool_registry, tool_name: str, params: dict) -> bool:
+    """翻页协议 action 级纵深校验（审计 07 P0-L2）。
+
+    白名单工具若定义了 read_only_actions，请求中的 action/operation/op
+    必须属于该只读集合，否则视为写操作拒绝（防未来白名单误加含写 action
+    的工具后被 __PAGE__ 直调绕过确认守卫）。
+    """
+    tool = tool_registry.get_tool(tool_name)
+    if tool is None:
+        return False
+    action = params.get("action") or params.get("operation") or params.get("op")
+    read_only_actions = getattr(tool, "read_only_actions", None) or frozenset()
+    if not action:
+        return True
+    if not read_only_actions:
+        # 工具无只读 action 概念：由工具内部校验 action 合法性（如 aftersale_query 仅 list/detail）
+        return True
+    return action in read_only_actions
 
 async def _handle_page_request(
     request: ChatSendRequest,
@@ -546,28 +751,20 @@ async def _handle_page_request(
     session_memory = SessionMemory()
     tool_registry = get_tool_registry()
 
-    # ── 安全校验：与 send_message 保持一致的 session 验证 ──
+    # ── 安全校验：与 send_message 共用统一守卫（存在/租户/用户/closed + 刷新 last_activity）──
+    from app.memory.session_service import SessionService
+    session_service = SessionService(session_memory)
     session_id = request.session_id
     if not session_id:
         session_id = await session_memory.create_session(
             tenant_id=tenant_id, customer_id=user_id, title=None,
         )
     else:
-        session = await session_memory.get_session(session_id)
-        if not session:
-            raise HTTPException(
-                status_code=404,
-                detail=make_response(False, error_code="SESSION_NOT_FOUND", error_message="会话不存在"),
-            )
-        if session.get("tenant_id") != tenant_id:
-            raise HTTPException(status_code=403, detail=make_response(
-                False, error_code="PERMISSION_DENIED", error_message="无权访问该会话"))
-        if session.get("customer_id") != user_id:
-            raise HTTPException(status_code=403, detail=make_response(
-                False, error_code="PERMISSION_DENIED", error_message="无权访问该会话"))
-        if session.get("status") == "closed":
-            raise HTTPException(status_code=409, detail={
-                "success": False, "error": {"code": "SESSION_CLOSED", "message": "该会话已结束，请创建新对话"}})
+        _session, _gate_error = await session_service.send_gate(
+            session_id, tenant_id=tenant_id, user_id=user_id,
+        )
+        if _gate_error:
+            _raise_session_error(*_gate_error)
 
     # 解析 __PAGE__ 消息
     try:
@@ -585,9 +782,26 @@ async def _handle_page_request(
             headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
         )
 
-    # 白名单校验：仅允许分页查询工具
+    # 白名单校验：仅允许只读查询工具
     if tool_name not in _PAGE_WHITELIST:
         logger.warning(f"[page] Blocked non-whitelisted tool: {tool_name}")
+        async def _blocked_stream():
+            yield SSEEvent.error("不支持该操作的分页查询")
+            yield SSEEvent.done(session_id, None)
+        return StreamingResponse(
+            _blocked_stream(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
+        )
+
+    # 纵深防御（审计 07 P0-L2）：白名单工具也仅允许只读 action——
+    # 若工具定义了 read_only_actions，请求的 action 必须属于该集合，否则拒绝。
+    # 防未来白名单误加含写 action 的工具后被翻页协议直调绕过确认守卫。
+    if not _page_action_allowed(tool_registry, tool_name, params):
+        logger.warning(
+            f"[page] Blocked write action on whitelisted tool: tool={tool_name} "
+            f"params={params}"
+        )
         async def _blocked_stream():
             yield SSEEvent.error("不支持该操作的分页查询")
             yield SSEEvent.done(session_id, None)
@@ -615,7 +829,8 @@ async def _handle_page_request(
             # 构建 ToolContext
             tool_context = ToolContext(
                 tenant_id=tenant_id, user_id=user_id, session_id=session_id,
-                role=current_user.role if current_user.role in ("admin", "agent", "tenant_admin") else "customer",
+                role=_to_agent_role(current_user.role),
+                permissions=getattr(current_user, "permissions", None) or [],
             )
 
             # 直接执行工具
@@ -628,10 +843,10 @@ async def _handle_page_request(
                     "success": True, "data": tool_data, "message": result.message,
                 })
 
-                # 检查并发送卡片
-                card_type = _detect_card_type(tool_name, {"data": tool_data})
-                if card_type and _should_send_card(tool_name, {"success": True, "data": tool_data}):
-                    yield SSEEvent.card(card_type, tool_data)
+                # 检查并发送卡片（order 卡片自动归一化载荷）
+                card_type, card_data = _card_payload(tool_name, {"success": True, "data": tool_data})
+                if card_type:
+                    yield SSEEvent.card(card_type, card_data)
 
                 # 构建新一页的选项列表，触发交互组件
                 page = params.get("page", 1)
@@ -767,14 +982,13 @@ async def send_message(
     agent_type = agent_router.route(current_user)
 
     # 确定 Agent 角色（用于 ToolContext 权限检查）
-    if current_user.role in ("admin", "agent", "tenant_admin"):
-        agent_role = current_user.role
-    else:
-        agent_role = "customer"
+    agent_role = _to_agent_role(current_user.role)
 
     agent = get_agent(tool_registry, agent_type=agent_type)
     
-    # 1. 创建或获取 session
+    # 1. 创建或获取 session（统一守卫：存在/租户/用户/closed + 刷新 last_activity）
+    from app.memory.session_service import SessionService
+    session_service = SessionService(session_memory)
     session_id = request.session_id
     if not session_id:
         # 创建新会话。不再强制关闭其他活跃会话，支持多会话并存
@@ -784,50 +998,13 @@ async def send_message(
             title=None,  # 自动生成标题
         )
     else:
-        # 验证会话存在且属于当前用户
-        session = await session_memory.get_session(session_id)
-        if not session:
-            raise HTTPException(
-                status_code=404,
-                detail=make_response(False, error_code="SESSION_NOT_FOUND", error_message="会话不存在")
-            )
-        # 先验证租户隔离
-        if session.get("tenant_id") != tenant_id:
-            logger.warning(
-                f"Cross-tenant session access attempt: user_tenant={tenant_id}, "
-                f"session_tenant={session.get('tenant_id')}, session_id={session_id}, "
-                f"user_id={user_id}"
-            )
-            raise HTTPException(
-                status_code=403,
-                detail=make_response(False, error_code="PERMISSION_DENIED", error_message="无权访问该会话")
-            )
-        # 再验证用户所有权
-        if session.get("customer_id") != user_id:
-            logger.warning(
-                f"Unauthorized session access attempt: user_id={user_id}, "
-                f"session_owner={session.get('customer_id')}, session_id={session_id}, "
-                f"tenant_id={tenant_id}"
-            )
-            raise HTTPException(
-                status_code=403,
-                detail=make_response(False, error_code="PERMISSION_DENIED", error_message="无权访问该会话")
-            )
-        # 拒绝在已关闭会话上发送消息
-        if session.get("status") == "closed":
-            logger.info(
-                f"[chat/send] Reject send on closed session | session={session_id} user={user_id}"
-            )
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "success": False,
-                    "error": {
-                        "code": "SESSION_CLOSED",
-                        "message": "该会话已结束，请创建新对话",
-                    }
-                }
-            )
+        _session, _gate_error = await session_service.send_gate(
+            session_id,
+            tenant_id=tenant_id,
+            user_id=user_id,
+        )
+        if _gate_error:
+            _raise_session_error(*_gate_error)
         # 空闲超时统一由后台任务 _session_auto_close_loop 处理，
         # send 路径不做会话轮换，避免 session_id 突变导致前端状态不一致
     
@@ -875,12 +1052,11 @@ async def send_message(
                 session_id, max_tokens=MAX_CONTEXT_TOKENS
             )
 
-            # 4a. 如果历史超限，压缩早期消息为摘要
+            # 4a. 如果历史超限，压缩早期消息为摘要（经 ContextBuilder，摘要回写工作状态）
             if needs_compression:
                 try:
-                    from app.context.tracker import ConversationTracker
-                    tracker = ConversationTracker()
-                    history_messages = await tracker.compress_history(
+                    from app.memory.context_builder import ContextBuilder
+                    history_messages = await ContextBuilder().compress_history(
                         history_messages,
                         session_id=session_id,
                         max_turns=10,
@@ -900,6 +1076,8 @@ async def send_message(
             # 5. 创建 Agent 上下文
             # 查询用户昵称（Redis 缓存 → DB 回退），注入到 System Prompt 让 Agent 认识当前对话的人
             user_name: Optional[str] = await _get_user_nickname(tenant_id, user_id)
+            # 查询企业名称（Redis 缓存 → DB 回退），注入企业身份（对应「企业基础信息」的公司名称设置）
+            tenant_name: Optional[str] = await _get_tenant_name(tenant_id)
 
             agent_context = AgentContext(
                 user_id=user_id,
@@ -908,6 +1086,8 @@ async def send_message(
                 role=agent_role,
                 identity_type=current_user.identity_type,
                 user_name=user_name,
+                tenant_name=tenant_name,
+                permissions=getattr(current_user, "permissions", None) or [],
             )
             
             # 6. 调用 Agent 处理（流式）
@@ -1024,6 +1204,43 @@ async def list_sessions(
     })
 
 
+@router.get("/sessions/latest")
+async def get_latest_session(
+    current_user: UserIdentity = Depends(get_current_user),
+):
+    """
+    获取最近一次的活跃会话（无会话 UX：打开即续聊，前端无感知）。
+
+    - 返回最近一条 active 会话（按 updated_at 倒序）；无则返回 null
+    - 前端据此决定「续聊」或「新建」，不暴露会话列表概念
+
+    Returns:
+        { "session": {...} | null }
+    """
+    session_memory = SessionMemory()
+    sessions = await session_memory.get_sessions(
+        tenant_id=current_user.tenant_id,
+        customer_id=current_user.user_id,
+        page=1,
+        size=1,
+    )
+    if not sessions:
+        return make_response(True, data={"session": None})
+
+    session = sessions[0]
+    return make_response(True, data={"session": {
+        "id": session["id"],
+        "tenant_id": session["tenant_id"],
+        "user_id": session["customer_id"],
+        "title": session["title"],
+        "status": session.get("status", "active"),
+        "last_message": session.get("last_message"),
+        "message_count": session.get("message_count", 0),
+        "created_at": _format_datetime(session["created_at"]),
+        "updated_at": _format_datetime(session["updated_at"]),
+    }})
+
+
 @router.put("/sessions/{session_id}/close")
 async def close_session_endpoint(
     session_id: str,
@@ -1037,52 +1254,11 @@ async def close_session_endpoint(
     - PUT close: 仅将 status 置为 closed，保留历史消息。
     """
     session_memory = SessionMemory()
-
-    session = await session_memory.get_session(session_id)
-    if not session:
-        raise HTTPException(
-            status_code=404,
-            detail={
-                "success": False,
-                "error": {
-                    "code": "SESSION_NOT_FOUND",
-                    "message": "会话不存在",
-                }
-            },
-        )
-
-    if session.get("tenant_id") != current_user.tenant_id:
-        logger.warning(
-            f"Cross-tenant session close attempt: user_tenant={current_user.tenant_id}, "
-            f"session_tenant={session.get('tenant_id')}, session_id={session_id}, "
-            f"user_id={current_user.user_id}"
-        )
-        raise HTTPException(
-            status_code=403,
-            detail={
-                "success": False,
-                "error": {
-                    "code": "PERMISSION_DENIED",
-                    "message": "无权关闭该会话",
-                }
-            },
-        )
-    if session.get("customer_id") != current_user.user_id:
-        logger.warning(
-            f"Unauthorized session close attempt: user_id={current_user.user_id}, "
-            f"session_owner={session.get('customer_id')}, session_id={session_id}, "
-            f"tenant_id={current_user.tenant_id}"
-        )
-        raise HTTPException(
-            status_code=403,
-            detail={
-                "success": False,
-                "error": {
-                    "code": "PERMISSION_DENIED",
-                    "message": "无权关闭该会话",
-                }
-            },
-        )
+    session = await _guard_session(
+        session_memory, session_id,
+        tenant_id=current_user.tenant_id, user_id=current_user.user_id,
+        action="关闭",
+    )
 
     # 幂等语义：已 closed 仍返回成功
     if session.get("status") == "closed":
@@ -1093,7 +1269,8 @@ async def close_session_endpoint(
             "message": "会话已处于关闭状态",
         })
 
-    await session_memory.close_session(session_id)
+    from app.memory.session_service import SessionService
+    await SessionService(session_memory).close(session_id)
     logger.info(
         f"Session closed via API: session_id={session_id}, user_id={current_user.user_id}, "
         f"tenant_id={current_user.tenant_id}"
@@ -1116,21 +1293,16 @@ async def reopen_session_endpoint(
     仅会话所有者可操作。
     """
     session_memory = SessionMemory()
-    session = await session_memory.get_session(session_id)
-    if not session:
-        raise HTTPException(
-            status_code=404,
-            detail={"success": False, "error": {"code": "SESSION_NOT_FOUND", "message": "会话不存在"}},
-        )
-    if session.get("tenant_id") != current_user.tenant_id or session.get("customer_id") != current_user.user_id:
-        raise HTTPException(
-            status_code=403,
-            detail={"success": False, "error": {"code": "PERMISSION_DENIED", "message": "无权操作该会话"}},
-        )
+    session = await _guard_session(
+        session_memory, session_id,
+        tenant_id=current_user.tenant_id, user_id=current_user.user_id,
+        action="操作",
+    )
     if session.get("status") != "closed":
         return make_response(True, data={"session_id": session_id, "status": session.get("status"), "message": "会话已是活跃状态"})
 
-    await session_memory.reopen_session(session_id)
+    from app.memory.session_service import SessionService
+    await SessionService(session_memory).reopen(session_id)
     logger.info(f"Session reopened: session_id={session_id}, user_id={current_user.user_id}")
     return make_response(True, data={"session_id": session_id, "status": "active", "message": "会话已重新打开"})
 
@@ -1151,57 +1323,16 @@ async def delete_session(
     """
     session_memory = SessionMemory()
     
-    # 验证会话存在且属于当前用户
-    session = await session_memory.get_session(session_id)
-    if not session:
-        raise HTTPException(
-            status_code=404,
-            detail={
-                "success": False,
-                "error": {
-                    "code": "SESSION_NOT_FOUND",
-                    "message": "会话不存在",
-                }
-            }
-        )
+    # 统一会话守卫：存在 + 租户/用户所有权（404/403）
+    await _guard_session(
+        session_memory, session_id,
+        tenant_id=current_user.tenant_id, user_id=current_user.user_id,
+        action="删除",
+    )
     
-    # 先验证租户隔离
-    if session.get("tenant_id") != current_user.tenant_id:
-        logger.warning(
-            f"Cross-tenant session delete attempt: user_tenant={current_user.tenant_id}, "
-            f"session_tenant={session.get('tenant_id')}, session_id={session_id}, "
-            f"user_id={current_user.user_id}"
-        )
-        raise HTTPException(
-            status_code=403,
-            detail={
-                "success": False,
-                "error": {
-                    "code": "PERMISSION_DENIED",
-                    "message": "无权删除该会话",
-                }
-            }
-        )
-    # 再验证用户所有权
-    if session.get("customer_id") != current_user.user_id:
-        logger.warning(
-            f"Unauthorized session delete attempt: user_id={current_user.user_id}, "
-            f"session_owner={session.get('customer_id')}, session_id={session_id}, "
-            f"tenant_id={current_user.tenant_id}"
-        )
-        raise HTTPException(
-            status_code=403,
-            detail={
-                "success": False,
-                "error": {
-                    "code": "PERMISSION_DENIED",
-                    "message": "无权删除该会话",
-                }
-            }
-        )
-    
-    # 删除会话
-    await session_memory.delete_session(session_id)
+    # 删除会话（经 SessionService，终态 purged 语义）
+    from app.memory.session_service import SessionService
+    await SessionService(session_memory).delete(session_id)
     logger.info(f"Session deleted: session_id={session_id}, user_id={current_user.user_id}, tenant_id={current_user.tenant_id}")
     
     return make_response(True, data={
@@ -1228,56 +1359,14 @@ async def get_history(
     """
     session_memory = SessionMemory()
     logger.debug(f"[chat/history] Fetching | tenant={current_user.tenant_id} user={current_user.user_id} session={session_id}")
-    
-    # 验证会话存在且属于当前用户
-    session = await session_memory.get_session(session_id)
-    if not session:
-        raise HTTPException(
-            status_code=404,
-            detail={
-                "success": False,
-                "error": {
-                    "code": "SESSION_NOT_FOUND",
-                    "message": "会话不存在",
-                }
-            }
-        )
-    
-    # 先验证租户隔离
-    if session.get("tenant_id") != current_user.tenant_id:
-        logger.warning(
-            f"Cross-tenant history access attempt: user_tenant={current_user.tenant_id}, "
-            f"session_tenant={session.get('tenant_id')}, session_id={session_id}, "
-            f"user_id={current_user.user_id}"
-        )
-        raise HTTPException(
-            status_code=403,
-            detail={
-                "success": False,
-                "error": {
-                    "code": "PERMISSION_DENIED",
-                    "message": "无权访问该会话",
-                }
-            }
-        )
-    # 再验证用户所有权
-    if session.get("customer_id") != current_user.user_id:
-        logger.warning(
-            f"Unauthorized history access attempt: user_id={current_user.user_id}, "
-            f"session_owner={session.get('customer_id')}, session_id={session_id}, "
-            f"tenant_id={current_user.tenant_id}"
-        )
-        raise HTTPException(
-            status_code=403,
-            detail={
-                "success": False,
-                "error": {
-                    "code": "PERMISSION_DENIED",
-                    "message": "无权访问该会话",
-                }
-            }
-        )
-    
+
+    # 统一会话守卫：存在 + 租户/用户所有权（404/403）
+    await _guard_session(
+        session_memory, session_id,
+        tenant_id=current_user.tenant_id, user_id=current_user.user_id,
+        action="访问",
+    )
+
     # 获取历史消息
     messages = await session_memory.get_history(session_id, limit=limit)
     
@@ -1452,6 +1541,12 @@ async def get_quick_actions(
             "name": "售后管理",
             "icon": "headphones",
             "prompt": "查看售后工单",
+        },
+        {
+            "id": "customer_manage",
+            "name": "客户管理",
+            "icon": "users",
+            "prompt": "查看客户列表",
         },
     ]
     

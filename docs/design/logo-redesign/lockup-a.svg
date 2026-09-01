@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 190 48" fill="none">
+  <defs>
+    <linearGradient id="tileA" x1="2" y1="2" x2="46" y2="46" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6E8CFF"/>
+      <stop offset="1" stop-color="#2F54EB"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="44" height="44" rx="13.5" fill="url(#tileA)"/>
+  <g stroke="#FFFFFF" stroke-width="3.4" stroke-linecap="round">
+    <path d="M24 13.6V34.4"/>
+    <path d="M13.6 24H34.4"/>
+    <path d="M16.7 16.7L31.3 31.3"/>
+    <path d="M31.3 16.7L16.7 31.3"/>
+  </g>
+  <circle cx="24" cy="24" r="3.7" fill="#FFC53D"/>
+  <text x="60" y="23" font-family="'PingFang SC','Hiragino Sans GB','Source Han Sans SC','Microsoft YaHei',sans-serif" font-size="24" font-weight="700" fill="#262626">米高</text>
+  <text x="60.5" y="39" font-family="'Helvetica Neue',Arial,sans-serif" font-size="9.5" font-weight="600" letter-spacing="4.6" fill="#8C8C8C">MIGAO</text>
+</svg>

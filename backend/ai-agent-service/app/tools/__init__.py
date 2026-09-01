@@ -40,6 +40,7 @@ from app.tools.product_search import ProductSearchTool
 from app.tools.product_detail import ProductDetailTool
 from app.tools.logistics_track import LogisticsTrackTool
 from app.tools.order_query import OrderQueryTool
+from app.tools.customer_order_query import CustomerOrderQueryTool
 from app.tools.order_manage import OrderManageTool
 from app.tools.product_manage import ProductManageTool
 from app.tools.inventory_manage import InventoryManageTool
@@ -78,6 +79,7 @@ __all__ = [
     "LogisticsTrackTool",
     # [RAG 禁用] "KnowledgeSearchTool",
     "OrderQueryTool",
+    "CustomerOrderQueryTool",
     "OrderManageTool",
     "ProductManageTool",
     "InventoryManageTool",

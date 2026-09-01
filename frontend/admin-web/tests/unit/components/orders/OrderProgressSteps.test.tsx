@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+// case_ids: OR-009, OR-010
+
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import dayjs from 'dayjs'
@@ -162,14 +164,14 @@ describe('OrderProgressSteps', () => {
     it('completed step labels use text-gray-900', () => {
       render(<OrderProgressSteps status="completed" />)
       const label = screen.getByText('已付款')
-      expect(label.className).toContain('text-gray-900')
+      expect(label.className).toContain('text-neutral-900')
     })
 
     it('upcoming step labels use text-gray-400', () => {
       render(<OrderProgressSteps status="pending_payment" />)
       // Step 4 "已完成" is upcoming
       const label = screen.getByText('已完成')
-      expect(label.className).toContain('text-gray-400')
+      expect(label.className).toContain('text-neutral-400')
     })
   })
 })

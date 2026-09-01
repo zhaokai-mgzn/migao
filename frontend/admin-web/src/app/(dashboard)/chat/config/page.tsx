@@ -155,8 +155,8 @@ export default function ChatConfigPage() {
   return (
     <div className="p-6">
       <div className="mb-6">
-        <h1 className="text-xl font-semibold text-gray-900">机器人设置</h1>
-        <p className="text-sm text-gray-500 mt-1">配置小布机器人的名称、欢迎语和快捷回复</p>
+        <h1 className="text-xl font-semibold text-neutral-900">AI 客服配置</h1>
+        <p className="text-sm text-neutral-500 mt-1">配置小布机器人的名称、欢迎语和快捷回复</p>
       </div>
 
       <div className="flex gap-6">
@@ -169,7 +169,7 @@ export default function ChatConfigPage() {
                 className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
                   activeTab === tab.key
                     ? 'bg-primary-50 text-primary-700'
-                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                    : 'text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900'
                 }`}
                 onClick={() => setActiveTab(tab.key)}
               >
@@ -184,38 +184,38 @@ export default function ChatConfigPage() {
         <div className="flex-1 min-w-0">
           {/* 基础设置 */}
           {activeTab === 'basic' && (
-            <div className="bg-white border border-gray-200 rounded-lg p-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-6">基础设置</h2>
+            <div className="bg-white border border-neutral-200 rounded-lg p-6">
+              <h2 className="text-lg font-semibold text-neutral-900 mb-6">基础设置</h2>
               {loading ? (
-                <div className="text-center py-12 text-sm text-gray-500">加载中...</div>
+                <div className="text-center py-12 text-sm text-neutral-500">加载中...</div>
               ) : (
                 <div className="space-y-6 max-w-lg">
                   {/* 机器人名称 */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    <label className="block text-sm font-medium text-neutral-700 mb-1.5">
                       机器人名称 <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="text"
-                      className="w-full h-9 px-3 rounded border border-gray-300 text-sm placeholder:text-gray-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                      className="w-full h-9 px-3 rounded border border-neutral-300 text-sm placeholder:text-neutral-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                       placeholder="小布"
                       value={aiConfig.botName}
                       onChange={(e) => setAiConfig({ ...aiConfig, botName: e.target.value })}
                     />
-                    <p className="text-xs text-gray-500 mt-1.5">客户在对话中看到的 AI 助手名称</p>
+                    <p className="text-xs text-neutral-500 mt-1.5">客户在对话中看到的 AI 助手名称</p>
                   </div>
 
                   {/* 欢迎语 */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">欢迎语</label>
+                    <label className="block text-sm font-medium text-neutral-700 mb-1.5">欢迎语</label>
                     <textarea
                       rows={3}
-                      className="w-full px-3 py-2 rounded border border-gray-300 text-sm placeholder:text-gray-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 resize-none"
+                      className="w-full px-3 py-2 rounded border border-neutral-300 text-sm placeholder:text-neutral-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 resize-none"
                       placeholder="您好，我是小布，有什么可以帮您？"
                       value={aiConfig.greetingTemplate}
                       onChange={(e) => setAiConfig({ ...aiConfig, greetingTemplate: e.target.value })}
                     />
-                    <p className="text-xs text-gray-500 mt-1.5">客户发起对话时看到的第一条消息，支持变量 {'{customer_name}'}</p>
+                    <p className="text-xs text-neutral-500 mt-1.5">客户发起对话时看到的第一条消息，支持变量 {'{customer_name}'}</p>
                   </div>
 
                   <div className="pt-4">
@@ -231,9 +231,9 @@ export default function ChatConfigPage() {
 
           {/* 快捷回复 */}
           {activeTab === 'quick-replies' && (
-            <div className="bg-white border border-gray-200 rounded-lg p-6">
+            <div className="bg-white border border-neutral-200 rounded-lg p-6">
               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-lg font-semibold text-gray-900">快捷回复</h2>
+                <h2 className="text-lg font-semibold text-neutral-900">快捷回复</h2>
                 <Button
                   variant="secondary"
                   size="sm"
@@ -246,25 +246,25 @@ export default function ChatConfigPage() {
 
               {/* 新建表单 */}
               {showNewForm && (
-                <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
-                  <h3 className="text-sm font-semibold text-gray-700 mb-3">新建快捷回复</h3>
+                <div className="mb-6 p-4 bg-neutral-50 rounded-lg border border-neutral-200">
+                  <h3 className="text-sm font-semibold text-neutral-700 mb-3">新建快捷回复</h3>
                   <div className="space-y-3">
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">标题</label>
+                        <label className="block text-xs font-medium text-neutral-600 mb-1">标题</label>
                         <input
                           type="text"
-                          className="w-full h-8 px-2.5 rounded border border-gray-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                          className="w-full h-8 px-2.5 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                           placeholder="例如：欢迎语"
                           value={newForm.title}
                           onChange={(e) => setNewForm({ ...newForm, title: e.target.value })}
                         />
                       </div>
                       <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">分类</label>
+                        <label className="block text-xs font-medium text-neutral-600 mb-1">分类</label>
                         <input
                           type="text"
-                          className="w-full h-8 px-2.5 rounded border border-gray-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                          className="w-full h-8 px-2.5 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                           placeholder="通用"
                           value={newForm.category}
                           onChange={(e) => setNewForm({ ...newForm, category: e.target.value })}
@@ -272,10 +272,10 @@ export default function ChatConfigPage() {
                       </div>
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">回复内容</label>
+                      <label className="block text-xs font-medium text-neutral-600 mb-1">回复内容</label>
                       <textarea
                         rows={3}
-                        className="w-full px-2.5 py-1.5 rounded border border-gray-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 resize-none"
+                        className="w-full px-2.5 py-1.5 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 resize-none"
                         placeholder="输入快捷回复内容..."
                         value={newForm.content}
                         onChange={(e) => setNewForm({ ...newForm, content: e.target.value })}
@@ -297,48 +297,48 @@ export default function ChatConfigPage() {
 
               {/* 快捷回复列表 */}
               {loadingTemplates ? (
-                <div className="text-center py-12 text-sm text-gray-500">加载中...</div>
+                <div className="text-center py-12 text-sm text-neutral-500">加载中...</div>
               ) : templates.length === 0 ? (
                 <div className="text-center py-12">
-                  <Zap className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-                  <p className="text-sm text-gray-500">暂无快捷回复</p>
-                  <p className="text-xs text-gray-400 mt-1">点击&ldquo;新建回复&rdquo;添加第一条快捷回复</p>
+                  <Zap className="w-10 h-10 text-neutral-300 mx-auto mb-3" />
+                  <p className="text-sm text-neutral-500">暂无快捷回复</p>
+                  <p className="text-xs text-neutral-400 mt-1">点击&ldquo;新建回复&rdquo;添加第一条快捷回复</p>
                 </div>
               ) : (
                 <div className="space-y-3">
                   {templates.map((tpl) => (
                     <div
                       key={tpl.id}
-                      className="border border-gray-200 rounded-lg p-4 hover:border-gray-300 transition-colors"
+                      className="border border-neutral-200 rounded-lg p-4 hover:border-neutral-300 transition-colors"
                     >
                       {editingId === tpl.id ? (
                         /* 编辑模式 */
                         <div className="space-y-3">
                           <div className="grid grid-cols-2 gap-3">
                             <div>
-                              <label className="block text-xs font-medium text-gray-600 mb-1">标题</label>
+                              <label className="block text-xs font-medium text-neutral-600 mb-1">标题</label>
                               <input
                                 type="text"
-                                className="w-full h-8 px-2.5 rounded border border-gray-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                                className="w-full h-8 px-2.5 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                                 value={editForm.title}
                                 onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
                               />
                             </div>
                             <div>
-                              <label className="block text-xs font-medium text-gray-600 mb-1">分类</label>
+                              <label className="block text-xs font-medium text-neutral-600 mb-1">分类</label>
                               <input
                                 type="text"
-                                className="w-full h-8 px-2.5 rounded border border-gray-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                                className="w-full h-8 px-2.5 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                                 value={editForm.category}
                                 onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}
                               />
                             </div>
                           </div>
                           <div>
-                            <label className="block text-xs font-medium text-gray-600 mb-1">回复内容</label>
+                            <label className="block text-xs font-medium text-neutral-600 mb-1">回复内容</label>
                             <textarea
                               rows={3}
-                              className="w-full px-2.5 py-1.5 rounded border border-gray-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 resize-none"
+                              className="w-full px-2.5 py-1.5 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 resize-none"
                               value={editForm.content}
                               onChange={(e) => setEditForm({ ...editForm, content: e.target.value })}
                             />
@@ -360,7 +360,7 @@ export default function ChatConfigPage() {
                           <div className="flex items-start justify-between">
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 mb-1">
-                                <h4 className="text-sm font-semibold text-gray-900">{tpl.title}</h4>
+                                <h4 className="text-sm font-semibold text-neutral-900">{tpl.title}</h4>
                                 <Badge variant="default" className="text-xs">
                                   {tpl.category}
                                 </Badge>
@@ -370,24 +370,24 @@ export default function ChatConfigPage() {
                                   </Badge>
                                 )}
                               </div>
-                              <p className="text-sm text-gray-600 whitespace-pre-wrap line-clamp-2">
+                              <p className="text-sm text-neutral-600 whitespace-pre-wrap line-clamp-2">
                                 {tpl.content}
                               </p>
-                              <div className="flex items-center gap-3 mt-2 text-xs text-gray-400">
+                              <div className="flex items-center gap-3 mt-2 text-xs text-neutral-400">
                                 <span>使用 {tpl.usageCount || 0} 次</span>
                                 <span>{tpl.updatedAt ? new Date(tpl.updatedAt).toLocaleDateString('zh-CN') : ''}</span>
                               </div>
                             </div>
                             <div className="flex items-center gap-1 ml-4 flex-shrink-0">
                               <button
-                                className="p-1.5 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded transition-colors"
+                                className="p-1.5 text-neutral-400 hover:text-primary-600 hover:bg-primary-50 rounded transition-colors"
                                 onClick={() => startEdit(tpl)}
                                 title="编辑"
                               >
                                 <Edit3 className="w-4 h-4" />
                               </button>
                               <button
-                                className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                                className="p-1.5 text-neutral-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
                                 onClick={() => handleDelete(tpl.id, tpl.title)}
                                 title="删除"
                               >

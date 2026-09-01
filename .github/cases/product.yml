@@ -1,9 +1,9 @@
 # cases/product.yml — 商品/库存/创建流程用例（并源转换）
 #
-# 标准：ershen/design/16-case-contract.md（schema v1.0）
+# 标准：外部契约标准 16-case-contract（schema v1.0）
 # 来源：eval P001~P007 + M001/M002/M003 + verification 2.1~2.9
 # 并源结果：18 个源用例 → 12 条（1:1 合并 3 对，M 系列并入创建流程组）
-# 校验：python3 ershen/engine/junshi/truths.py check --templates ershen/seed/migao/templates --cases ershen/seed/migao/cases
+# 校验：python3 .github/truths.py check --templates .github/templates --cases .github/cases
 
 schema: "case-contract/1.0"
 domain: product
@@ -243,7 +243,7 @@ cases:
     merge_log: "eval P003 + verification 2.9（同义，取 eval 版）"
     traces:
       tests:
-        - "backend/ai-agent-service/tests/test_mibao_scenarios.py"
+        - "backend/ai-agent-service/tests/manual/mibao_scenarios.py"
       ci:
         - agent-eval.yml
       verifies: []
@@ -408,4 +408,37 @@ cases:
         - "backend/ai-agent-service/tests/test_mibao_advanced_multiturn.py"
       ci:
         - agent-eval.yml
+      verifies: []
+
+  - id: PR-013
+    legacy_id: ""
+    title: "窗帘算料报价 - 褶皱倍数与用布量计算"
+    domains:
+      - product
+    tier: smoke
+    tags:
+      - quote
+      - fabric_calc
+      - smoke
+    truths_ref:
+      - fabric-calc.fullness-default
+      - fabric-calc.fixed-height
+      - fabric-calc.fixed-width
+    user_inputs:
+      - "3米宽 2.5米高 2倍褶皱 打孔帘 用98元一米的遮光布 帮我算多少钱"
+    expectations:
+      - tool: curtain_calc
+        args:
+          window_width: 3
+          window_height: 2.5
+    data_checks:
+      - "data.fabric_meters > 0"
+      - "data.total > 0"
+    skip_reason: "算料报价为小布（C 端）专属功能，米宝（B 端）Agent Eval smoke 评测无 curtain_calc 工具；由 test_curtain_calc.py 单测 + POC 集成测试覆盖"
+    merge_log: "POC 小布增强新增（算料报价 skill）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_curtain_calc.py"
+      ci:
+        - ai-agent-tests.yml
       verifies: []

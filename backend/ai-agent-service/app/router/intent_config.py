@@ -27,6 +27,7 @@ class IntentType(str, Enum):
     COMPLAINT = "complaint"
     # ── 商品域 (product) ──
     PRODUCT_INQUIRY = "product_inquiry"
+    QUOTE = "quote"  # 窗帘算料报价（C 端小布）
     CATEGORY_MANAGE = "category_manage"
     PROCESSING_MANAGE = "processing_manage"
     # ── 客户关系域 (crm) ──
@@ -46,6 +47,7 @@ class IntentType(str, Enum):
     DASHBOARD = "dashboard"
     STATISTICS = "statistics"
     DATA_REPORT = "data_report"
+    FINANCE = "finance"
     SESSION_MANAGE = "session_manage"
     # ── 知识库域 (knowledge) ──
     KNOWLEDGE_FAQ = "knowledge_faq"
@@ -61,11 +63,11 @@ class IntentType(str, Enum):
 INTENT_DOMAINS: dict[str, set[str]] = {
     "common": {"greeting", "farewell", "capabilities", "general"},
     "order": {"order_query", "order_create", "logistics_track", "after_sales", "after_sales_create", "complaint"},
-    "product": {"product_inquiry", "category_manage", "processing_manage"},
+    "product": {"product_inquiry", "quote", "category_manage", "processing_manage"},
     "crm": {"customer_manage", "customer_query"},
     "hr": {"employee_manage", "staff_manage", "role_manage", "permission_manage"},
     "settings": {"system_settings", "ai_config", "notification", "quick_reply"},
-    "analytics": {"dashboard", "statistics", "data_report", "session_manage"},
+    "analytics": {"dashboard", "statistics", "data_report", "finance", "session_manage"},
     "knowledge": {"knowledge_faq", "knowledge_manage"},
     # 未来扩展：
     # "supply_chain": {"supplier_query", "purchase_order", ...},
@@ -114,6 +116,7 @@ INTENT_TOOL_MAP: dict[IntentType, list[str]] = {
     IntentType.ORDER_CREATE: ["order_create"],
     IntentType.LOGISTICS_TRACK: ["logistics_track"],
     IntentType.PRODUCT_INQUIRY: ["product_search", "product_detail"],
+    IntentType.QUOTE: ["curtain_calc", "product_detail"],
     IntentType.AFTER_SALES: ["order_query", "after_sales_manage"],
     IntentType.KNOWLEDGE_FAQ: ["knowledge_search"],
     IntentType.GREETING: [],
@@ -135,6 +138,7 @@ INTENT_TOOL_MAP: dict[IntentType, list[str]] = {
     IntentType.DASHBOARD: ["dashboard_stats"],
     IntentType.STATISTICS: ["dashboard_stats"],
     IntentType.DATA_REPORT: ["dashboard_stats"],
+    IntentType.FINANCE: ["finance_api"],
     IntentType.SESSION_MANAGE: ["session_manage"],
     IntentType.AFTER_SALES_CREATE: ["after_sales_manage"],
     IntentType.KNOWLEDGE_MANAGE: ["knowledge_manage"],

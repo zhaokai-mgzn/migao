@@ -18,11 +18,11 @@ interface StatCardProps {
 
 export default function StatCard({ title, value, change, description, icon, iconBgColor }: StatCardProps) {
   return (
-    <div className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
+    <div className="bg-white rounded-xl p-5 border border-neutral-100 shadow-sm hover:shadow-md transition-shadow">
       <div className="flex items-start justify-between">
         <div className="flex-1 min-w-0">
-          <p className="text-sm text-gray-500 mb-1">{title}</p>
-          <h3 className="text-2xl font-bold text-gray-900 tabular-nums tracking-tight">{value}</h3>
+          <p className="text-sm text-neutral-500 mb-1">{title}</p>
+          <h3 className="text-2xl font-bold text-neutral-900 tabular-nums tracking-tight">{value}</h3>
 
           {change && (
             <div className="flex items-center gap-1 mt-2">
@@ -43,7 +43,7 @@ export default function StatCard({ title, value, change, description, icon, icon
           )}
 
           {description && (
-            <p className="text-xs text-gray-400 mt-1">{description}</p>
+            <p className="text-xs text-neutral-400 mt-1">{description}</p>
           )}
         </div>
 

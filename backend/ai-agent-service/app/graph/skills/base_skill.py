@@ -31,7 +31,7 @@ from app.config import settings
 from app.graph.state import AgentState
 from app.tools.base import ToolContext
 from app.tools.registry import ToolRegistry, set_tool_context, get_tool_context
-from app.context.tracker import ConversationTracker
+from app.utils.log_sanitizer import LogSanitizer
 from app.core import (
     CircuitBreakerOpenError,
     LLM_FALLBACK_MESSAGE,
@@ -44,18 +44,6 @@ from app.llm import LLMFactory, select_model, has_images, call_with_retry, cost_
 LLM_BREAKER = "llm_minimax"
 
 
-# 全局 ConversationTracker 实例（进程内共享）
-_tracker: Optional[ConversationTracker] = None
-
-
-def get_tracker() -> ConversationTracker:
-    """获取全局 ConversationTracker 实例"""
-    global _tracker
-    if _tracker is None:
-        _tracker = ConversationTracker()
-    return _tracker
-
-
 def _strip_think_tags(text: str) -> str:
     """移除 <think>...</think> 标签及其内容"""
     if not isinstance(text, str):
@@ -65,6 +53,56 @@ def _strip_think_tags(text: str) -> str:
     # 移除 <think>...</think> 块（含跨行）
     cleaned = re.sub(r"<think>[\s\S]*?</think>", "", text).strip()
     return cleaned if cleaned else text
+
+
+# 无条件强取消短语：几乎总是指"放弃当前流程"（与第三方行为无关）
+_STRONG_CANCEL_PHRASES = ("算了", "不创建了", "取消创建", "取消操作")
+
+# 语境化取消短语：可能是第三方行为（"客户不要了/不买了"是订单取消的原因而非放弃流程），
+# 带业务领域语境标记时不算流程取消。
+_CONTEXT_CANCEL_PHRASES = ("不要了", "不买了", "不用了")
+
+# "取消"单独出现时歧义大：可能是实体名的一部分（如商品名"回归测试取消Z03"），
+# 也可能是业务动作（"帮我取消订单X"应交由领域工具处理）。
+# 以下语境的"取消"不作为流程取消指令。
+_CANCEL_AMBIGUOUS_MARKERS = (
+    "创建", "新建", "添加", "上架", "名称", "货号", "价格", "库存", "商品",
+    "订单", "工单", "售后", "退款", "客户", "用户",
+)
+
+
+def _is_cancel_message(text: str) -> bool:
+    """判断用户消息是否为明确的"放弃当前流程"取消指令。
+
+    生产回归修复：原实现 `any(kw in msg for kw in cancel_keywords)` 纯子串匹配，
+    导致两类误判：
+    1. 商品名含"取消"（"帮我创建一个商品，名称回归测试取消Z03"）→ 创建请求被吞；
+    2. "帮我取消订单X" → 业务动作被吞，订单实际未取消（未调 order_manage）。
+
+    规则：
+    - 无条件强取消（算了/不创建了/取消创建…）→ 直接视为取消；
+    - 语境化短语（不要了/不买了/不用了）：带业务领域标记（订单/客户/商品…）→
+      是第三方行为描述，不算流程取消（交领域工具）；
+    - 含"取消"且带创建/业务领域语境标记 → 不是流程取消；
+    - 含"取消"的短消息（≤20 字，确认卡片语境）→ 视为取消；
+    - 其它 → 不是取消。
+    """
+    if not text:
+        return False
+    text = str(text).strip()
+    if any(kw in text for kw in _STRONG_CANCEL_PHRASES):
+        return True
+    has_domain_marker = any(marker in text for marker in _CANCEL_AMBIGUOUS_MARKERS)
+    if any(kw in text for kw in _CONTEXT_CANCEL_PHRASES):
+        # "客户不要了"是订单取消原因；"不要了"裸消息是放弃流程
+        return not has_domain_marker
+    if "取消" not in text:
+        return False
+    if has_domain_marker:
+        return False
+    if len(text) > 20:
+        return False
+    return True
 
 
 def _extract_content(response: AIMessage) -> str:
@@ -182,8 +220,8 @@ def get_skill_llm(
 
     # 根据模型类型选择工厂方法
     # 注意：不能用 "vl" in model 判断，非视觉专用模型也支持视觉理解
-    # 正确做法：由 vision_detected（消息含图片）+ MINIMAX_VISION_ENABLED（功能开关）决定
-    if vision_detected and settings.MINIMAX_VISION_ENABLED:
+    # 正确做法：由 vision_detected（消息含图片）+ VISION_ENABLED（功能开关）决定
+    if vision_detected and settings.VISION_ENABLED:
         return LLMFactory.create_vision_llm(model_override=model)
 
     # 复杂意图开启深度思考，简单意图关闭（首次响应从 7-15s 降到 1-3s）
@@ -260,6 +298,7 @@ def build_tool_context(state: AgentState) -> ToolContext:
         user_id=str(state["user_id"]),
         session_id=state.get("session_id", ""),
         role=state.get("role", "customer"),
+        permissions=state.get("permissions") or [],
     )
 
 
@@ -474,7 +513,9 @@ _CONFIRM_EXACT = {
     "确认", "确定", "好的", "可以", "同意", "确认无误", "是", "行", "没问题",
     "ok", "yes", "confirm", "confirmed", "确认操作", "确定操作",
 }
-_CONFIRM_SUBSTR = ("确认", "确定", "同意", "confirm")
+# 强确认词前缀：confirm 卡片回传的 confirmValue 均以确认词开头（如"确认创建商品X"）。
+# 刻意不含"可以/行/是"（易与疑问句/其他语境混淆）——它们仅作为整句精确确认生效。
+_CONFIRM_PREFIX = ("确认", "确定", "同意", "好的", "没问题", "ok", "yes", "confirm")
 
 
 def _is_explicit_confirmation(text: str) -> bool:
@@ -484,14 +525,19 @@ def _is_explicit_confirmation(text: str) -> bool:
     读起来像确认时才允许执行，否则拦截并要求 LLM 先展示确认卡片。
     防的是提示注入（RAG 文档/模型幻觉）诱导 LLM 直接调用不可逆写工具——
     注入内容存在于 SystemMessage/ToolMessage，而非用户消息本身，故此检查有效。
+
+    加固（2026-08-28，flash 主模型适配）：确认词必须位于消息**开头**（或整句
+    精确匹配），排除"指令措辞绕过"——如"给订单X确认收款"含"确认"但这是新指令
+    而非对确认卡片的确认，flash 等更直接的模型会借此跳过确认卡片直接执行破坏性写。
     """
     t = (text or "").strip()
     if not t:
         return False
-    if t.lower() in _CONFIRM_EXACT:
+    tl = t.lower()
+    if tl in _CONFIRM_EXACT:
         return True
-    # 含确认词且长度较短（confirm 卡片回传的 confirmValue，如"确认取消订单123"）
-    if len(t) <= 24 and any(k in t for k in _CONFIRM_SUBSTR):
+    # confirm 卡片回传的 confirmValue（如"确认取消订单123"）或口头确认，以确认词开头且长度受限
+    if len(t) <= 24 and tl.startswith(_CONFIRM_PREFIX):
         return True
     return False
 
@@ -500,18 +546,25 @@ def _requires_confirmation(tool, tool_args: dict, last_user_msg: str) -> bool:
     """判断本次 tool 调用是否需要用户明确确认。
 
     规则：
-    - 非 destructive 工具 → 永不要求确认
-    - destructive 工具 + action ∈ tool.read_only_actions（纯只读，如 list/detail/tree）
-      → 免确认；否则与 _is_explicit_confirmation 一致，须用户明确确认。
-    修复背景：customer/employee/role/category 等 destructive 工具含删除能力，
-    但 list/detail 等 action 是只读查询，此前一律强制确认导致只读查询被
-    confirmation_required 拦截（E2E Real 持续失败）。
+    - 纯查询工具（read_only=True）→ 永不要求确认
+    - 写工具中的只读 action（action ∈ read_only_actions，如 list/detail/tree）→ 免确认
+    - destructive 工具 → 必须用户明确确认（除只读 action 外）
+    - requires_confirmation 工具（非 destructive 但高风险写操作：财务/通知/会话/库存，
+      审计 07 P0-L1 间接提示注入面）→ 同样必须用户明确确认
+    - 其余普通写工具 → 维持现状不强制（依赖 Prompt 文本铁律）
+
+    确认判定与 _is_explicit_confirmation 一致：只有当前轮用户消息读起来像确认才放行，
+    防注入内容（SystemMessage/ToolMessage 中的指令）诱导 LLM 直接执行写操作。
     """
-    if not getattr(tool, "destructive", False):
+    # 纯查询工具永不要求确认
+    if getattr(tool, "read_only", True):
         return False
     action = str(tool_args.get("action") or tool_args.get("operation") or tool_args.get("op") or "")
     read_only_actions = getattr(tool, "read_only_actions", frozenset()) or frozenset()
     if action and action in read_only_actions:
+        return False
+    # 写工具需确认：destructive 或显式标记 requires_confirmation（审计 07 P0-L1）
+    if not getattr(tool, "destructive", False) and not getattr(tool, "requires_confirmation", False):
         return False
     return not _is_explicit_confirmation(last_user_msg)
 
@@ -563,12 +616,12 @@ async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -
         )
         logger.info(f"[tool-exec] {tool_name} done success={result.success}")
     except asyncio.TimeoutError:
-        logger.error(f"[tool-exec] {tool_name} TIMEOUT 30s | args={json.dumps(tool_args, ensure_ascii=False, default=str)[:300]}")
+        logger.error(f"[tool-exec] {tool_name} TIMEOUT 30s | args={json.dumps(LogSanitizer.sanitize_tree(tool_args), ensure_ascii=False, default=str)[:300]}")
         err = json.dumps({"success": False, "error": "timeout", "message": "工具执行超时"}, ensure_ascii=False)
         return err, {"success": False, "error": "timeout"}
     except Exception as e:
         logger.error(
-            f"[tool-exec] {tool_name} ERROR: {e} | args={json.dumps(tool_args, ensure_ascii=False, default=str)[:500]}",
+            f"[tool-exec] {tool_name} ERROR: {e} | args={json.dumps(LogSanitizer.sanitize_tree(tool_args), ensure_ascii=False, default=str)[:500]}",
             exc_info=True,
         )
         err = json.dumps({"success": False, "error": "tool_execution_failed",
@@ -781,14 +834,28 @@ async def execute_skill(
     # ── 4. System Prompt 组装 ──
     user_name_raw = state.get("user_name", "")
     user_role_raw = state.get("role", "")
+    identity_prefix = ""
     if user_name_raw:
         user_name_safe = user_name_raw.replace("\n", " ").replace("\r", " ").strip()[:50]
         user_role_safe = user_role_raw.replace("\n", " ").replace("\r", " ").strip()[:50]
-        system_prompt = (
+        identity_prefix += (
             "【用户信息】当前对话用户: " + user_name_safe
             + "（角色: " + user_role_safe + "）\n"
-            "【用户信息结束】\n\n" + system_prompt
+            "【用户信息结束】\n"
         )
+    # 企业信息注入：对应管理后台「企业基础信息」中的公司名称设置（identity.md 的
+    # 企业名是模板措辞，实际企业名以这里为准，多租户下不再张冠李戴）
+    tenant_name_raw = state.get("tenant_name", "")
+    if tenant_name_raw:
+        tenant_name_safe = tenant_name_raw.replace("\n", " ").replace("\r", " ").strip()[:50]
+        identity_prefix += (
+            "【企业信息】你当前服务的企业是「" + tenant_name_safe + "」"
+            "（即该企业商家管理后台的 AI 助手）。"
+            "企业名称请以此处为准，介绍自己时使用「" + tenant_name_safe + "商家管理后台的 AI 助手」。\n"
+            "【企业信息结束】\n"
+        )
+    if identity_prefix:
+        system_prompt = identity_prefix + "\n" + system_prompt
     system_prompt = _build_system_prompt(skill_name, inline_prompt=system_prompt)
 
     if is_multimodal:
@@ -832,6 +899,8 @@ async def execute_skill(
             from app.memory.context_manager import get_context_manager
             ctx_mgr = get_context_manager()
             await ctx_mgr.load(session_id)  # Redis 恢复
+            # T1 主题域切换：先记录切换（异域时旧域实体标 stale），再更新当前 skill
+            ctx_mgr.record_domain_switch(session_id, skill_name)
             ctx_mgr.set_last_skill(session_id, skill_name)
             ctx_text = ctx_mgr.build_context(session_id, skill_name)
             # 对话压缩：超过 20 条消息时只保留最近 12 条，其余生成摘要
@@ -929,14 +998,14 @@ async def execute_skill(
 
     # ── 7. ReAct 循环 ──
     if not is_multimodal or (is_multimodal and vision_analysis):
-        # 取消检测
+        # 取消检测（生产回归修复：原实现纯关键词子串匹配，
+        # "回归测试取消Z03"这类商品名、"帮我取消订单X"这类业务动作都被误判为取消指令）
         last_user_msg = ""
         for m in reversed(raw_messages):
             if isinstance(m, HumanMessage):
                 last_user_msg = _extract_content(m)
                 break
-        cancel_keywords = ["算了", "取消", "不创建了", "不买了", "不要了", "不用了"]
-        if any(kw in last_user_msg for kw in cancel_keywords):
+        if _is_cancel_message(last_user_msg):
             logger.info(f"[{skill_name}] Cancel detected | session={session_id}")
             final_content = "好的，已取消。有什么其他需要帮您的吗？"
             new_messages.clear()
@@ -946,7 +1015,6 @@ async def execute_skill(
                 except Exception:
                     pass
         else:
-            tracker = get_tracker()
             for iteration in range(max_iterations):
                 logger.info(f"[{skill_name}] Iteration {iteration+1}/{max_iterations} | session={session_id}")
 
@@ -1008,16 +1076,18 @@ async def execute_skill(
                     if tool is None:
                         logger.warning(f"[{skill_name}] Tool not found: {tool_name} | session={session_id}")
                         return tool_call, json.dumps({"success": False, "error": "tool_not_found", "message": f"工具 {tool_name} 不可用"}, ensure_ascii=False), {"success": False}
-                    # 破坏性写操作：必须经用户明确确认（代码层兜底，防提示注入触发不可逆操作）
+                    # 写操作（destructive 或 requires_confirmation 高风险写）：必须经用户明确确认
+                    # （代码层兜底，防间接提示注入驱动未确认写操作，审计 07 P0-L1）
                     # 豁免：action ∈ tool.read_only_actions 的纯只读调用（list/detail/tree 等）
                     if _requires_confirmation(tool, args, last_user_msg):
                         logger.warning(
-                            f"[{skill_name}] 拦截未确认的破坏性操作 {tool_name} | session={session_id} "
+                            f"[{skill_name}] 拦截未确认的写操作 {tool_name} | session={session_id} "
                             f"last_msg={last_user_msg[:30]!r}"
                         )
                         msg = (
-                            f"工具 {tool_name} 是破坏性操作（不可逆），必须先向用户展示确认卡片并取得明确确认。"
-                            f"请调用 interact（component=confirm）展示操作预览，等用户点击确认后再执行。"
+                            f"工具 {tool_name} 是写操作（可能不可逆或产生数据变更），必须先向用户展示确认卡片"
+                            f"并取得明确确认。请调用 interact（component=confirm）展示操作预览，"
+                            f"等用户点击确认后再执行。"
                         )
                         return tool_call, json.dumps(
                             {"success": False, "error": "confirmation_required", "message": msg},
@@ -1043,11 +1113,19 @@ async def execute_skill(
                             await mgr.save(session_id)  # Redis 持久化
                         except Exception:
                             pass
+                    # T2 事务终态：terminal 工具成功后重置当前域上下文（草稿/实体/待确认）
+                    if session_id and result_dict.get("success") and result_dict.get("terminal"):
+                        try:
+                            from app.memory.context_manager import get_context_manager
+                            mgr = get_context_manager()
+                            mgr.reset_domain(session_id, skill_name)
+                            await mgr.save(session_id)
+                            logger.info(
+                                f"[{skill_name}] Terminal tool {tool_name} — domain context reset | session={session_id}"
+                            )
+                        except Exception as e:
+                            logger.warning(f"[{skill_name}] Terminal reset failed | session={session_id} error={e}")
                     new_messages.append(ToolMessage(content=result_str, tool_call_id=tool_call["id"], name=tool_name))
-                    try:
-                        tracker.extract(tool_name, result_dict)
-                    except Exception:
-                        pass
                     if tool_name == "interact" and result_dict.get("success"):
                         try:
                             await SessionMemory().set_pending_skill(session_id, skill_name)
@@ -1057,14 +1135,8 @@ async def execute_skill(
                 # 达到 max_iterations — 不暴露 LLM 的半截思考，用友好兜底
                 final_content = "抱歉，处理步骤较多，请稍后重试或换个简单的方式描述需求。"
 
-    # ── 8. 实体追踪 ──
-    entities = {}
-    if session_id:
-        extracted = get_tracker().get_entities(session_id)
-        entities = {"order_nos": extracted.order_nos, "phone_numbers": extracted.phone_numbers, "product_names": extracted.product_names, "product_ids": extracted.product_ids, "amounts": extracted.amounts}
-
     # ── 9. 返回值 ──
-    result: dict[str, Any] = {"messages": new_messages, "final_answer": final_content, "skill_used": skill_name, "entities": entities}
+    result: dict[str, Any] = {"messages": new_messages, "final_answer": final_content, "skill_used": skill_name}
 
     # ── 10. 跨轮持久化 ──
     creation_skills = {"product", "order", "aftersales"}

@@ -252,8 +252,8 @@ export default function ProcessingPage() {
   return (
     <div className="p-6">
       {/* 页面标题 */}
-      <h1 className="text-xl font-semibold text-gray-900 mb-2">加工项配置</h1>
-      <p className="text-sm text-gray-500 mb-6">
+      <h1 className="text-xl font-semibold text-neutral-900 mb-2">加工项配置</h1>
+      <p className="text-sm text-neutral-500 mb-6">
         加工项是指为特定订单定制的产品修改服务，例如窗帘的长度裁剪、打孔方式选择等。
         您可以在这里管理可用的加工项类型和价格，下单时客户可选择需要的加工服务。
       </p>
@@ -267,20 +267,20 @@ export default function ProcessingPage() {
       </div>
 
       {/* 列表（只读） */}
-      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+      <div className="bg-white rounded-lg border border-neutral-200 overflow-hidden">
         <table className="w-full border-collapse">
           <thead>
-            <tr className="border-b border-gray-200 bg-gray-50/60">
-              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900 w-[30%] whitespace-nowrap">
+            <tr className="border-b border-neutral-200 bg-neutral-50/60">
+              <th className="px-4 py-3 text-left text-sm font-semibold text-neutral-900 w-[30%] whitespace-nowrap">
                 加工项名称
               </th>
-              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900 w-[20%] whitespace-nowrap">
+              <th className="px-4 py-3 text-left text-sm font-semibold text-neutral-900 w-[20%] whitespace-nowrap">
                 加工项价格
               </th>
-              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900 w-[25%] whitespace-nowrap">
+              <th className="px-4 py-3 text-left text-sm font-semibold text-neutral-900 w-[25%] whitespace-nowrap">
                 加工项计价方式
               </th>
-              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900 w-[25%] whitespace-nowrap">
+              <th className="px-4 py-3 text-left text-sm font-semibold text-neutral-900 w-[25%] whitespace-nowrap">
                 操作
               </th>
             </tr>
@@ -288,7 +288,7 @@ export default function ProcessingPage() {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={4} className="px-4 py-12 text-center text-gray-500">
+                <td colSpan={4} className="px-4 py-12 text-center text-neutral-500">
                   <div className="flex items-center justify-center gap-2">
                     <div className="w-5 h-5 border-2 border-primary-600 border-t-transparent rounded-full animate-spin" />
                     加载中...
@@ -297,19 +297,19 @@ export default function ProcessingPage() {
               </tr>
             ) : items.length === 0 ? (
               <tr>
-                <td colSpan={4} className="px-4 py-12 text-center text-sm text-gray-400">
+                <td colSpan={4} className="px-4 py-12 text-center text-sm text-neutral-400">
                   暂无加工项，点击右上角「新增加工项」开始创建
                 </td>
               </tr>
             ) : (
               items.map((item) => (
                 <Fragment key={item.id}>
-                  <tr className="border-b border-gray-100 hover:bg-gray-50/40">
-                    <td className="px-4 py-3 text-sm text-gray-900">{item.name}</td>
-                    <td className="px-4 py-3 text-sm text-gray-900">
+                  <tr className="border-b border-neutral-100 hover:bg-neutral-50/40">
+                    <td className="px-4 py-3 text-sm text-neutral-900">{item.name}</td>
+                    <td className="px-4 py-3 text-sm text-neutral-900">
                       {Number(item.unitPrice ?? item.basePrice ?? 0).toFixed(2)}
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-900">
+                    <td className="px-4 py-3 text-sm text-neutral-900">
                       {getPricingMethodLabel(item.pricingMethod || '')}
                     </td>
                     <td className="px-4 py-3">
@@ -357,13 +357,13 @@ export default function ProcessingPage() {
         <div className="space-y-4">
           {/* 加工项名称 */}
           <div>
-            <label className="block text-sm font-medium text-gray-800 mb-1.5">
+            <label className="block text-sm font-medium text-neutral-800 mb-1.5">
               加工项名称<span className="text-red-500 ml-0.5">*</span>
             </label>
             <input
               type="text"
-              className={`w-full h-9 px-3 rounded border text-sm placeholder:text-gray-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 ${
-                errors.name ? 'border-red-500' : 'border-gray-300'
+              className={`w-full h-9 px-3 rounded border text-sm placeholder:text-neutral-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 ${
+                errors.name ? 'border-red-500' : 'border-neutral-300'
               }`}
               placeholder="请输入加工项名称（最多20个字符）"
               maxLength={20}
@@ -375,13 +375,13 @@ export default function ProcessingPage() {
 
           {/* 加工项价格 */}
           <div>
-            <label className="block text-sm font-medium text-gray-800 mb-1.5">
+            <label className="block text-sm font-medium text-neutral-800 mb-1.5">
               加工项价格<span className="text-red-500 ml-0.5">*</span>
             </label>
             <input
               type="number"
-              className={`w-full h-9 px-3 rounded border text-sm placeholder:text-gray-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 ${
-                errors.unitPrice ? 'border-red-500' : 'border-gray-300'
+              className={`w-full h-9 px-3 rounded border text-sm placeholder:text-neutral-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 ${
+                errors.unitPrice ? 'border-red-500' : 'border-neutral-300'
               }`}
               placeholder="请输入价格（0.10 ~ 999.99）"
               step="0.01"
@@ -395,12 +395,12 @@ export default function ProcessingPage() {
 
           {/* 计价方式 */}
           <div>
-            <label className="block text-sm font-medium text-gray-800 mb-1.5">
+            <label className="block text-sm font-medium text-neutral-800 mb-1.5">
               加工项计价方式<span className="text-red-500 ml-0.5">*</span>
             </label>
             <select
               className={`w-full h-9 px-3 pr-8 rounded border bg-white text-sm appearance-none focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 ${
-                errors.pricingMethod ? 'border-red-500' : 'border-gray-300'
+                errors.pricingMethod ? 'border-red-500' : 'border-neutral-300'
               }`}
               value={form.pricingMethod}
               onChange={(e) => updateField('pricingMethod', e.target.value as PricingMethod | '')}
@@ -421,9 +421,9 @@ export default function ProcessingPage() {
 
           {/* 设置优惠 */}
           <div>
-            <label className="block text-sm font-medium text-gray-800 mb-1.5">设置优惠</label>
+            <label className="block text-sm font-medium text-neutral-800 mb-1.5">设置优惠</label>
             <select
-              className="w-full h-9 px-3 pr-8 rounded border border-gray-300 bg-white text-sm appearance-none focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+              className="w-full h-9 px-3 pr-8 rounded border border-neutral-300 bg-white text-sm appearance-none focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
               value={form.discount}
               onChange={(e) => updateField('discount', e.target.value)}
             >
@@ -437,7 +437,7 @@ export default function ProcessingPage() {
             {form.discount === 'amount_off' && (
               <div className="mt-2 flex items-center gap-2">
                 <select
-                  className="h-9 px-3 pr-8 rounded border border-gray-300 bg-white text-sm appearance-none focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                  className="h-9 px-3 pr-8 rounded border border-neutral-300 bg-white text-sm appearance-none focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                   value={form.discountQty}
                   onChange={(e) => updateField('discountQty', e.target.value)}
                 >
@@ -450,12 +450,12 @@ export default function ProcessingPage() {
                 <div className="flex items-center">
                   <input
                     type="text"
-                    className="w-32 h-9 px-3 rounded-l border border-gray-300 text-sm placeholder:text-gray-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                    className="w-32 h-9 px-3 rounded-l border border-neutral-300 text-sm placeholder:text-neutral-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                     placeholder="请输入折扣力度"
                     value={form.discountRate}
                     onChange={(e) => updateField('discountRate', e.target.value)}
                   />
-                  <span className="h-9 px-2 flex items-center border border-l-0 border-gray-300 rounded-r bg-gray-50 text-sm text-gray-600">
+                  <span className="h-9 px-2 flex items-center border border-l-0 border-neutral-300 rounded-r bg-neutral-50 text-sm text-neutral-600">
                     折
                   </span>
                 </div>
@@ -465,12 +465,12 @@ export default function ProcessingPage() {
 
           {/* 适用商品分类 */}
           <div className="space-y-2">
-            <label className="block text-sm font-medium text-gray-800">适用商品分类</label>
-            <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-2 space-y-1">
+            <label className="block text-sm font-medium text-neutral-800">适用商品分类</label>
+            <div className="max-h-40 overflow-y-auto border border-neutral-200 rounded-lg p-2 space-y-1">
               {catOptions.map((opt) => (
                 <label
                   key={opt.value}
-                  className="flex items-center gap-2 text-sm hover:bg-gray-50 px-1 py-0.5 rounded cursor-pointer"
+                  className="flex items-center gap-2 text-sm hover:bg-neutral-50 px-1 py-0.5 rounded cursor-pointer"
                 >
                   <input
                     type="checkbox"
@@ -489,10 +489,10 @@ export default function ProcessingPage() {
                         })
                       }
                     }}
-                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    className="rounded border-neutral-300 text-primary-600 focus:ring-primary-500"
                   />
                   <span
-                    className="text-gray-700"
+                    className="text-neutral-700"
                     style={{ paddingLeft: `${opt.indent * 12}px` }}
                   >
                     {opt.label.trim()}
@@ -500,10 +500,10 @@ export default function ProcessingPage() {
                 </label>
               ))}
               {catOptions.length === 0 && (
-                <p className="text-gray-400 text-xs py-1">暂无商品分类</p>
+                <p className="text-neutral-400 text-xs py-1">暂无商品分类</p>
               )}
             </div>
-            <p className="text-xs text-gray-400">不选则适用所有商品分类</p>
+            <p className="text-xs text-neutral-400">不选则适用所有商品分类</p>
           </div>
         </div>
       </Modal>
@@ -524,7 +524,7 @@ export default function ProcessingPage() {
           </>
         }
       >
-        <p className="text-gray-600 text-sm leading-relaxed">
+        <p className="text-neutral-600 text-sm leading-relaxed">
           删除后，当用户再购买已关联当前加工项的商品时，将不会再看到当前加工项。确定要删除当前加工项吗？
         </p>
       </Modal>

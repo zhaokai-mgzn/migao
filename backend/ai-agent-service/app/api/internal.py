@@ -85,6 +85,7 @@ async def execute_tool(
         user_id=request.user_id,
         session_id=request.session_id,
         role="admin",  # 内部调用使用 admin 角色
+        permissions=["*"],  # admin 拥有全部细粒度权限（与后端 admin 角色口径一致）
     )
     
     # 执行 Tool

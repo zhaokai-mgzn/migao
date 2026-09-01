@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
+  <defs>
+    <linearGradient id="gg" x1="2" y1="2" x2="46" y2="46" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFC53D"/>
+      <stop offset="1" stop-color="#D48806"/>
+    </linearGradient>
+  </defs>
+  <!-- 织金暖底 -->
+  <rect x="2" y="2" width="44" height="44" rx="13.5" fill="url(#gg)"/>
+  <rect x="11" y="8.6" width="26" height="2.4" rx="1.2" fill="#FFFFFF" fill-opacity="0.35"/>
+  <circle cx="12.8" cy="9.8" r="1.8" stroke="#FFFFFF" stroke-opacity="0.55" stroke-width="1.1" fill="none"/>
+  <circle cx="35.2" cy="9.8" r="1.8" stroke="#FFFFFF" stroke-opacity="0.55" stroke-width="1.1" fill="none"/>
+  <path fill="#FFFFFF" d="M10.8 31.8 L10.8 15.8 Q10.8 13.6 13 13.6 L18.2 13.6 L21.6 27.2 L24 13.6 L26.4 27.2 L29.8 13.6 L35 13.6 Q37.2 13.6 37.2 15.8 L37.2 31.8 C35.2 33.4 32.8 29.8 30.2 30.4 C27.6 31 25.6 33.4 23 32.8 C20.4 32.2 18 29.8 15.2 30.4 C13 30.8 11.6 31.6 10.8 31.8 Z"/>
+</svg>

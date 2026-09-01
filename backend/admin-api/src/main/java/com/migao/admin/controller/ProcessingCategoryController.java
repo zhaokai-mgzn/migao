@@ -6,6 +6,7 @@ import com.migao.admin.dto.ProcessingCategoryCreateRequest;
 import com.migao.admin.dto.ProcessingCategoryResponse;
 import com.migao.admin.dto.ProcessingCategoryUpdateRequest;
 import com.migao.admin.service.ProcessingCategoryService;
+import com.migao.admin.security.RequirePermission;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,6 +19,7 @@ import java.util.List;
  * 提供加工分类的增删改查接口
  */
 @Slf4j
+@RequirePermission("processing:manage")
 @RestController
 @RequestMapping("/api/admin/processing-categories")
 @RequiredArgsConstructor

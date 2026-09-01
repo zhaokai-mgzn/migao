@@ -3,9 +3,12 @@ package com.migao.admin.controller;
 import com.migao.admin.dto.*;
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.entity.OrderLogistics;
+import com.migao.admin.exception.BusinessException;
 import com.migao.admin.service.OrderLogisticsService;
 import com.migao.admin.service.OrderService;
+import com.migao.admin.security.RequirePermission;
 import jakarta.validation.Valid;
+import java.math.BigDecimal;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -36,6 +39,7 @@ public class OrderController {
      *
      * GET /api/admin/orders?page=1&size=20&status=pending&keyword=xxx&followStatus=pending&hasProcessing=true&startDate=2025-01-01&endDate=2025-12-31
      */
+    @RequirePermission("order:list")
     @GetMapping
     public ApiResponse<PageResponse<OrderListResponse>> getOrders(
             @RequestParam(defaultValue = "1") long page,
@@ -49,10 +53,11 @@ public class OrderController {
             @RequestParam(required = false) String orderId,
             @RequestParam(required = false) String receiver,
             @RequestParam(required = false) String productCode,
-            @RequestParam(required = false) String productTitle) {
+            @RequestParam(required = false) String productTitle,
+            @RequestParam(required = false) String userId) {
         log.info("查询订单列表: page={}, size={}, status={}, keyword={}, orderId={}, receiver={}, startDate={}, endDate={}", page, size, status, keyword, orderId, receiver, startDate, endDate);
         Long tenantId = TenantContext.getTenantId();
-        PageResponse<OrderListResponse> result = orderService.getOrderPage(page, size, status, keyword, followStatus, hasProcessing, startDate, endDate, orderId, receiver, productCode, productTitle, tenantId);
+        PageResponse<OrderListResponse> result = orderService.getOrderPage(page, size, status, keyword, followStatus, hasProcessing, startDate, endDate, orderId, receiver, productCode, productTitle, tenantId, userId);
         return ApiResponse.success(result);
     }
 
@@ -61,6 +66,7 @@ public class OrderController {
      *
      * POST /api/admin/orders
      */
+    @RequirePermission("order:list")
     @PostMapping
     public ApiResponse<OrderDetailResponse> createOrder(@Valid @RequestBody OrderCreateRequest request) {
         log.info("创建订单: customerName={}", request.getCustomerName());
@@ -74,6 +80,7 @@ public class OrderController {
      *
      * GET /api/admin/orders/statistics
      */
+    @RequirePermission("order:list")
     @GetMapping("/statistics")
     public ApiResponse<OrderStatisticsResponse> getOrderStatistics() {
         log.info("获取订单统计");
@@ -87,6 +94,7 @@ public class OrderController {
      *
      * GET /api/admin/orders/follow-status/stats
      */
+    @RequirePermission("order:list")
     @GetMapping("/follow-status/stats")
     public ApiResponse<FollowStatusStatsResponse> getFollowStatusStats() {
         log.info("获取跟进状态统计");
@@ -102,6 +110,7 @@ public class OrderController {
      *
      * GET /api/admin/orders/{id}
      */
+    @RequirePermission("order:list")
     @GetMapping("/{id:[0-9a-fA-F-]+}")
     public ApiResponse<OrderDetailResponse> getOrderById(@PathVariable String id) {
         log.info("查询订单详情: id={}", id);
@@ -114,6 +123,7 @@ public class OrderController {
      *
      * PUT /api/admin/orders/{id}/status
      */
+    @RequirePermission("order:list")
     @PutMapping("/{id:[0-9a-fA-F-]+}/status")
     public ApiResponse<Void> updateOrderStatus(
             @PathVariable String id,
@@ -128,6 +138,7 @@ public class OrderController {
      *
      * PUT /api/admin/orders/{id}/payment
      */
+    @RequirePermission("order:list")
     @PutMapping("/{id:[0-9a-fA-F-]+}/payment")
     public ApiResponse<Void> confirmPayment(@PathVariable String id) {
         log.info("确认支付: orderId={}", id);
@@ -141,6 +152,7 @@ public class OrderController {
      * PUT /api/admin/orders/{id}/cancel
      * Body: { "closeReason": "缺货" } (可选)
      */
+    @RequirePermission("order:list")
     @PutMapping("/{id:[0-9a-fA-F-]+}/cancel")
     public ApiResponse<Void> cancelOrder(
             @PathVariable String id,
@@ -157,6 +169,7 @@ public class OrderController {
      * POST /api/admin/orders/{id}/remark
      * Body: { "content": "备注内容" }
      */
+    @RequirePermission("order:list")
     @PostMapping("/{id:[0-9a-fA-F-]+}/remark")
     public ApiResponse<Void> addRemark(
             @PathVariable String id,
@@ -171,19 +184,34 @@ public class OrderController {
      * 退款
      *
      * PUT /api/admin/orders/{id}/refund
+     * body 可选字段：refund_reason（退款原因）、refund_amount（退款金额，缺省=全额）
      */
+    @RequirePermission("order:refund")
     @PutMapping("/{id:[0-9a-fA-F-]+}/refund")
     public ApiResponse<Void> refundOrder(@PathVariable String id,
                                          @RequestBody(required = false) Map<String, Object> body) {
         String refundReason = null;
-        if (body != null && body.containsKey("refund_reason")) {
-            Object reason = body.get("refund_reason");
-            if (reason != null && !reason.toString().isBlank()) {
-                refundReason = reason.toString().trim();
+        BigDecimal refundAmount = null;
+        if (body != null) {
+            if (body.containsKey("refund_reason")) {
+                Object reason = body.get("refund_reason");
+                if (reason != null && !reason.toString().isBlank()) {
+                    refundReason = reason.toString().trim();
+                }
+            }
+            if (body.containsKey("refund_amount")) {
+                Object amount = body.get("refund_amount");
+                if (amount != null && !amount.toString().isBlank()) {
+                    try {
+                        refundAmount = new BigDecimal(amount.toString().trim());
+                    } catch (NumberFormatException e) {
+                        throw BusinessException.validationError("退款金额格式不正确");
+                    }
+                }
             }
         }
-        log.info("退款: orderId={}, refundReason={}", id, refundReason);
-        orderService.refundOrder(id, refundReason);
+        log.info("退款: orderId={}, refundAmount={}, refundReason={}", id, refundAmount, refundReason);
+        orderService.refundOrder(id, refundAmount, refundReason);
         return ApiResponse.success();
     }
 
@@ -192,6 +220,7 @@ public class OrderController {
      *
      * GET /api/admin/orders/{id}/follow-status
      */
+    @RequirePermission("order:list")
     @GetMapping("/{id:[0-9a-fA-F-]+}/follow-status")
     public ApiResponse<FollowStatusResponse> getFollowStatus(@PathVariable String id) {
         log.info("获取订单跟进状态: orderId={}", id);
@@ -204,6 +233,7 @@ public class OrderController {
      *
      * PUT /api/admin/orders/{id}/follow-status
      */
+    @RequirePermission("order:list")
     @PutMapping("/{id:[0-9a-fA-F-]+}/follow-status")
     public ApiResponse<Void> updateFollowStatus(
             @PathVariable String id,
@@ -218,6 +248,7 @@ public class OrderController {
      *
      * DELETE /api/admin/orders/{id}
      */
+    @RequirePermission("order:list")
     @DeleteMapping("/{id:[0-9a-fA-F-]+}")
     public ApiResponse<Void> deleteOrder(@PathVariable String id) {
         log.info("删除订单: id={}", id);
@@ -230,6 +261,7 @@ public class OrderController {
      *
      * PUT /api/admin/orders/{id}/logistics
      */
+    @RequirePermission("order:list")
     @PutMapping("/{id:[0-9a-fA-F-]+}/logistics")
     public ApiResponse<Void> updateLogistics(
             @PathVariable String id,

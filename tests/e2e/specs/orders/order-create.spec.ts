@@ -1,3 +1,4 @@
+// case_ids: OR-008, OR-009, OR-010
 import { test, expect } from '@playwright/test'
 import productsListFixture from '../../fixtures/products-list.json'
 import productsDetailFixture from '../../fixtures/products-detail.json'
@@ -89,10 +90,13 @@ test.describe('订单创建', () => {
       // 等待产品数据加载和颜色/加工选项渲染
       await page.waitForTimeout(1500)
     })
+    // TODO: fixture 商品缺 colors 字段（products-list.json 无 colors/sellingMethods），
+    // 且当前商品选择弹窗未渲染颜色区。补 fixture 数据 + 对齐弹窗 UI 后可放开。
     test.skip('颜色选择', async ({ page }) => {
       await expect(page.getByRole('button', { name: C1 })).toBeVisible({ timeout: 10000 })
       await expect(page.getByRole('button', { name: C2 })).toBeVisible({ timeout: 10000 })
     })
+    // TODO: fixture 商品缺 processingItems 数据（同上），放开前需补录 fixture 并确认弹窗渲染。
     test.skip('加工选项', async ({ page }) => {
       await expect(page.getByText(PR1)).toBeVisible({ timeout: 10000 })
       await expect(page.getByText(PR2)).toBeVisible({ timeout: 10000 })

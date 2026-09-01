@@ -1,3 +1,4 @@
+// case_ids: CH-001, CH-002, CH-003, UI-006
 /**
  * components/chat 覆盖率补全 — Issue #567
  *
@@ -87,7 +88,6 @@ import SessionList from '@/components/chat/SessionList'
 import InteractiveMessage from '@/components/chat/InteractiveMessage'
 import MessageInput from '@/components/chat/MessageInput'
 import CustomerPanel from '@/components/chat/CustomerPanel'
-import SessionInsight from '@/components/chat/SessionInsight'
 import ToolResultCard from '@/components/chat/ToolResultCard'
 import LogisticsCard from '@/components/chat/LogisticsCard'
 
@@ -325,41 +325,73 @@ describe('SessionList', () => {
     expect(screen.getByPlaceholderText('搜索会话...')).toBeInTheDocument()
   })
 
-  it('shows empty state for active tab when no sessions', () => {
-    render(<SessionList />)
-    expect(screen.getByText('暂无活跃会话')).toBeInTheDocument()
-  })
-
-  it('shows active and closed tabs with counts', () => {
+  it('shows single list with all sessions (no tabs, no filter controls)', () => {
     mockUseChatStore.mockReturnValue(
       makeDefaultChatState({
         sessions: [
-          { session_id: 's1', title: '会话1', status: 'active', updated_at: '2025-01-01' },
-          { session_id: 's2', title: '会话2', status: 'closed', updated_at: '2025-01-02' },
+          { session_id: 's1', title: '会话1', status: 'active', updated_at: '2025-01-02' },
+          { session_id: 's2', title: '已结束对话', status: 'closed', updated_at: '2025-01-01' },
         ],
       })
     )
     render(<SessionList />)
 
-    expect(screen.getByText('活跃 (1)')).toBeInTheDocument()
-    expect(screen.getByText('已关闭 (1)')).toBeInTheDocument()
+    // 始终单列表：活跃与已结束会话同屏展示
     expect(screen.getByText('会话1')).toBeInTheDocument()
+    expect(screen.getByText('已结束对话')).toBeInTheDocument()
+
+    // 无「活跃/已关闭」双 tab，也无「全部/活跃/已结束」筛选 chips
+    expect(screen.queryByText(/全部 \(\d\)/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/活跃 \(\d\)/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/已结束 \(\d\)/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/已关闭/)).not.toBeInTheDocument()
   })
 
-  it('switches to closed tab and shows closed sessions', () => {
+  it('sorts active sessions before closed ones, each group by updated_at desc', () => {
     mockUseChatStore.mockReturnValue(
       makeDefaultChatState({
         sessions: [
-          { session_id: 's1', title: '会话1', status: 'active', updated_at: '2025-01-01' },
-          { session_id: 's2', title: '已结束对话', status: 'closed', updated_at: '2025-01-02' },
+          { session_id: 's1', title: '旧关闭', status: 'closed', updated_at: '2025-01-03' },
+          { session_id: 's2', title: '新活跃', status: 'active', updated_at: '2025-01-02' },
+          { session_id: 's3', title: '旧活跃', status: 'active', updated_at: '2025-01-01' },
         ],
       })
     )
-    render(<SessionList />)
+    const { container } = render(<SessionList />)
 
-    // Click "已关闭" tab
-    fireEvent.click(screen.getByText(/已关闭/))
-    expect(screen.getByText('已结束对话')).toBeInTheDocument()
+    const rows = Array.from(container.querySelectorAll('[data-testid="session-item"]'))
+    expect(rows.map(r => r.textContent)).toEqual([
+      expect.stringContaining('新活跃'),
+      expect.stringContaining('旧活跃'),
+      expect.stringContaining('旧关闭'),
+    ])
+  })
+
+  it('shows 已结束 badge and reopen button on closed rows; 结束会话 menu on active rows', () => {
+    mockUseChatStore.mockReturnValue(
+      makeDefaultChatState({
+        sessions: [
+          { session_id: 's1', title: '会话1', status: 'active', updated_at: '2025-01-02' },
+          { session_id: 's2', title: '已结束对话', status: 'closed', updated_at: '2025-01-01' },
+        ],
+      })
+    )
+    const { container } = render(<SessionList />)
+
+    // 已结束行：徽标 + 重新打开按钮（不提供结束菜单）
+    expect(screen.getByText('已结束')).toBeInTheDocument()
+    expect(screen.getByTitle('重新打开')).toBeInTheDocument()
+
+    // 活跃行：打开更多菜单 → 出现「结束会话」
+    const rows = container.querySelectorAll('[data-testid="session-item"]')
+    fireEvent.click(rows[0].querySelector('button')!)
+    expect(screen.getByText('结束会话')).toBeInTheDocument()
+  })
+
+  it('shows 暂无会话 empty state when no sessions', () => {
+    mockUseChatStore.mockReturnValue(makeDefaultChatState({ sessions: [] }))
+    render(<SessionList />)
+    expect(screen.getByText('暂无会话')).toBeInTheDocument()
   })
 })
 
@@ -701,320 +733,6 @@ describe('CustomerPanel', () => {
 })
 
 // ═══════════════════════════════════════════════════
-// SessionInsight（会话洞察面板 — P0 卡片摘要 + 会话统计）
-// ═══════════════════════════════════════════════════
-
-describe('SessionInsight', () => {
-  it('returns null when no session is selected', () => {
-    const { container } = render(<SessionInsight isOpen onClose={vi.fn()} />)
-    expect(container.firstChild).toBeNull()
-  })
-
-  it('shows session stats when session is active', () => {
-    mockUseChatStore.mockReturnValue(
-      makeDefaultChatState({
-        currentSessionId: 's1',
-        sessions: [
-          {
-            session_id: 's1',
-            title: '客户咨询',
-            status: 'active',
-            message_count: 12,
-            updated_at: '2025-01-01T10:30:00Z',
-            created_at: '2025-01-01T10:00:00Z',
-          },
-        ],
-        messages: [
-          { id: 'm1', role: 'user', content: '查订单' },
-          { id: 'm2', role: 'assistant', content: '好的' },
-        ],
-      })
-    )
-
-    render(<SessionInsight isOpen onClose={vi.fn()} />)
-
-    // 会话统计存在
-    expect(screen.getByText('会话洞察')).toBeInTheDocument()
-    expect(screen.getByText('进行中')).toBeInTheDocument()
-    // 消息计数显示
-    expect(screen.getByText('12')).toBeInTheDocument()
-  })
-
-  it('shows card summaries extracted from messages', () => {
-    mockUseChatStore.mockReturnValue(
-      makeDefaultChatState({
-        currentSessionId: 's1',
-        sessions: [
-          {
-            session_id: 's1',
-            title: '查询',
-            status: 'active',
-            message_count: 5,
-            updated_at: '2025-01-01T10:30:00Z',
-            created_at: '2025-01-01T10:00:00Z',
-          },
-        ],
-        messages: [
-          {
-            id: 'm1', role: 'assistant', content: '结果如下',
-            cards: [
-              {
-                type: 'order',
-                data: { order: { orderNo: 'ORD-001', status: 'confirmed', totalAmount: 299.0 } },
-              },
-              {
-                type: 'product_list',
-                data: { products: [{ name: '窗帘A', price: 100 }, { name: '沙发布B', price: 200 }] },
-              },
-            ],
-          },
-          {
-            id: 'm2', role: 'assistant', content: '物流信息',
-            cards: [
-              {
-                type: 'logistics',
-                data: { tracking_no: 'SF1234', company: '顺丰速运', status: '运输中' },
-              },
-            ],
-          },
-        ],
-      })
-    )
-
-    render(<SessionInsight isOpen onClose={vi.fn()} />)
-
-    // 卡片摘要 — 允许卡片区和便签板各自展示
-    expect(screen.getAllByText(/ORD-001/).length).toBeGreaterThanOrEqual(1)
-    expect(screen.getByText(/顺丰速运/)).toBeInTheDocument()
-    expect(screen.getAllByText(/窗帘A/).length).toBeGreaterThanOrEqual(1)
-    expect(screen.getAllByText(/沙发布B/).length).toBeGreaterThanOrEqual(1)
-  })
-
-  it('shows empty state when session has no cards', () => {
-    mockUseChatStore.mockReturnValue(
-      makeDefaultChatState({
-        currentSessionId: 's1',
-        sessions: [
-          {
-            session_id: 's1',
-            title: '新对话',
-            status: 'active',
-            message_count: 2,
-            updated_at: '2025-01-01T10:30:00Z',
-            created_at: '2025-01-01T10:00:00Z',
-          },
-        ],
-        messages: [
-          { id: 'm1', role: 'user', content: '你好' },
-          { id: 'm2', role: 'assistant', content: '您好！有什么可以帮助您的？' },
-        ],
-      })
-    )
-
-    render(<SessionInsight isOpen onClose={vi.fn()} />)
-
-    // 空状态提示
-    expect(screen.getByText(/暂无查询结果/)).toBeInTheDocument()
-  })
-
-  it('deduplicates cards with same type and key data', () => {
-    // 同一笔订单在两个消息中各出现一次，只展示一次
-    mockUseChatStore.mockReturnValue(
-      makeDefaultChatState({
-        currentSessionId: 's1',
-        sessions: [
-          {
-            session_id: 's1', title: 'test', status: 'active',
-            message_count: 4, updated_at: '2025-01-01T10:30:00Z', created_at: '2025-01-01T10:00:00Z',
-          },
-        ],
-        messages: [
-          {
-            id: 'm1', role: 'assistant', content: '第一轮',
-            cards: [
-              { type: 'order', data: { order: { orderNo: 'ORD-001', status: 'confirmed', totalAmount: 299.0 } } },
-            ],
-          },
-          {
-            id: 'm2', role: 'assistant', content: '第二轮',
-            cards: [
-              { type: 'order', data: { order: { orderNo: 'ORD-001', status: 'shipped', totalAmount: 299.0 } } },
-            ],
-          },
-        ],
-      })
-    )
-
-    render(<SessionInsight isOpen onClose={vi.fn()} />)
-
-    // ORD-001 在卡片摘要中出现 1 次（去重），加上便签板实体提取 1 次，共 2 次
-    const occurrences = screen.getAllByText(/ORD-001/)
-    expect(occurrences).toHaveLength(2)
-  })
-
-  it('drawer opens when isOpen=true and hides when isOpen=false', () => {
-    mockUseChatStore.mockReturnValue(
-      makeDefaultChatState({
-        currentSessionId: 's1',
-        sessions: [
-          {
-            session_id: 's1', title: 'test', status: 'active',
-            message_count: 1, updated_at: '2025-01-01T10:30:00Z', created_at: '2025-01-01T10:00:00Z',
-          },
-        ],
-        messages: [],
-      })
-    )
-
-    const { rerender } = render(<SessionInsight isOpen onClose={vi.fn()} />)
-    // 展开：抽屉可见 + 遮罩存在
-    expect(screen.getByTestId('session-insight-drawer')).toHaveClass('translate-x-0')
-    expect(screen.getByTestId('session-insight-overlay')).toBeInTheDocument()
-
-    // 收起：抽屉移出 + 遮罩消失
-    rerender(<SessionInsight isOpen={false} onClose={vi.fn()} />)
-    expect(screen.getByTestId('session-insight-drawer')).toHaveClass('translate-x-full')
-    expect(screen.queryByTestId('session-insight-overlay')).not.toBeInTheDocument()
-  })
-
-  // ── 便签板（P1 实体提取 + 点击追问）──
-
-  it('extracts order entities from tool_call inputs', () => {
-    const sendMessage = vi.fn()
-    mockUseChatStore.mockReturnValue(
-      makeDefaultChatState({
-        currentSessionId: 's1',
-        sessions: [
-          { session_id: 's1', title: 't', status: 'active', message_count: 3, updated_at: '2025-01-01T10:00:00Z', created_at: '2025-01-01T10:00:00Z' },
-        ],
-        messages: [
-          {
-            id: 'm1', role: 'assistant', content: '查到订单',
-            tool_calls: [
-              { name: 'order_query', input: { order_id: 'ORD-001' }, status: 'completed' },
-            ],
-          },
-        ],
-        sendMessage,
-      })
-    )
-
-    render(<SessionInsight isOpen onClose={vi.fn()} />)
-
-    // 便签板展示了订单实体（带类型前缀）
-    expect(screen.getByText('便签板')).toBeInTheDocument()
-    expect(screen.getByText('订单 ORD-001')).toBeInTheDocument()
-
-    // 点击标签应发送追问
-    fireEvent.click(screen.getByText('订单 ORD-001'))
-    expect(sendMessage).toHaveBeenCalledWith('查看订单 ORD-001')
-  })
-
-  it('extracts product entities from card data', () => {
-    const sendMessage = vi.fn()
-    mockUseChatStore.mockReturnValue(
-      makeDefaultChatState({
-        currentSessionId: 's1',
-        sessions: [
-          { session_id: 's1', title: 't', status: 'active', message_count: 2, updated_at: '2025-01-01T10:00:00Z', created_at: '2025-01-01T10:00:00Z' },
-        ],
-        messages: [
-          {
-            id: 'm1', role: 'assistant', content: '商品结果',
-            cards: [
-              { type: 'product_list', data: { products: [{ name: '遮光窗帘' }, { name: '透光纱帘' }] } },
-            ],
-          },
-        ],
-        sendMessage,
-      })
-    )
-
-    render(<SessionInsight isOpen onClose={vi.fn()} />)
-
-    expect(screen.getByText('商品 遮光窗帘')).toBeInTheDocument()
-    expect(screen.getByText('商品 透光纱帘')).toBeInTheDocument()
-
-    fireEvent.click(screen.getByText('商品 遮光窗帘'))
-    expect(sendMessage).toHaveBeenCalledWith('查看 遮光窗帘 详情')
-  })
-
-  it('extracts logistics entities from card data', () => {
-    const sendMessage = vi.fn()
-    mockUseChatStore.mockReturnValue(
-      makeDefaultChatState({
-        currentSessionId: 's1',
-        sessions: [
-          { session_id: 's1', title: 't', status: 'active', message_count: 1, updated_at: '2025-01-01T10:00:00Z', created_at: '2025-01-01T10:00:00Z' },
-        ],
-        messages: [
-          {
-            id: 'm1', role: 'assistant', content: '物流',
-            cards: [
-              { type: 'logistics', data: { tracking_no: 'SF1234567890', company: '顺丰' } },
-            ],
-          },
-        ],
-        sendMessage,
-      })
-    )
-
-    render(<SessionInsight isOpen onClose={vi.fn()} />)
-
-    expect(screen.getAllByText(/SF1234567890/).length).toBeGreaterThanOrEqual(1)
-
-    // 点击便签板中的物流标签
-    const tag = screen.getByTitle('点击追问：查询物流 SF1234567890')
-    fireEvent.click(tag)
-    expect(sendMessage).toHaveBeenCalledWith('查询物流 SF1234567890')
-  })
-
-  it('deduplicates entities across cards and tool_calls', () => {
-    mockUseChatStore.mockReturnValue(
-      makeDefaultChatState({
-        currentSessionId: 's1',
-        sessions: [
-          { session_id: 's1', title: 't', status: 'active', message_count: 4, updated_at: '2025-01-01T10:00:00Z', created_at: '2025-01-01T10:00:00Z' },
-        ],
-        messages: [
-          {
-            id: 'm1', role: 'assistant', content: 'a',
-            tool_calls: [{ name: 'order_query', input: { order_id: 'ORD-001' }, status: 'completed' }],
-            cards: [{ type: 'order', data: { order: { orderNo: 'ORD-001' } } }],
-          },
-        ],
-      })
-    )
-
-    render(<SessionInsight isOpen onClose={vi.fn()} />)
-
-    // ORD-001 在 tool_call 和 card 中各出现一次，实体去重后便签板只展示 1 个标签
-    // 加上卡片摘要区的 1 次，共 2 次
-    const occurrences = screen.getAllByText(/ORD-001/)
-    expect(occurrences).toHaveLength(2)
-  })
-
-  it('shows empty pinboard when no entities', () => {
-    mockUseChatStore.mockReturnValue(
-      makeDefaultChatState({
-        currentSessionId: 's1',
-        sessions: [
-          { session_id: 's1', title: 't', status: 'active', message_count: 1, updated_at: '2025-01-01T10:00:00Z', created_at: '2025-01-01T10:00:00Z' },
-        ],
-        messages: [
-          { id: 'm1', role: 'assistant', content: '你好，有什么可以帮您？' },
-        ],
-      })
-    )
-
-    render(<SessionInsight isOpen onClose={vi.fn()} />)
-
-    // 便签板为空
-    expect(screen.getByText(/暂无便签/)).toBeInTheDocument()
-  })
-})
-
-// ═══════════════════════════════════════════════════
 // ToolResultCard
 // ═══════════════════════════════════════════════════
 
@@ -1076,6 +794,52 @@ describe('ToolResultCard', () => {
     expect(screen.getByText(/ORD-001/)).toBeInTheDocument()
     expect(screen.getByText('已确认')).toBeInTheDocument()
     expect(screen.getByText('¥299.00')).toBeInTheDocument()
+  })
+
+  it('renders order list card when backend sends orders array (order_query list)', () => {
+    const card = {
+      type: 'order' as const,
+      data: {
+        orders: [
+          { id: 'o1', order_no: 'ORD-001', status: 'confirmed', total_amount: 100 },
+          { id: 'o2', order_no: 'ORD-002', status: 'shipped', total_amount: 200 },
+        ],
+      },
+    }
+    render(<ToolResultCard card={card} />)
+    expect(screen.getByText(/ORD-001/)).toBeInTheDocument()
+    expect(screen.getByText(/ORD-002/)).toBeInTheDocument()
+    // 列表不再渲染成只剩「订单」二字的空盒子
+    expect(screen.queryByText(/^订单$/)).not.toBeInTheDocument()
+  })
+
+  it('renders nothing when order card data has no recognizable order fields', () => {
+    // 回归：order_query 列表容器（{orders,total,page...}）此前被原样下发，
+    // OrderCard 渲染出无法理解、无法点击的空「订单」盒子
+    const card = {
+      type: 'order' as const,
+      data: { total: 5, page: 1, page_size: 10, total_pages: 1 },
+    }
+    render(<ToolResultCard card={card} />)
+    expect(screen.queryByText(/订单/)).not.toBeInTheDocument()
+    expect(screen.queryByTestId('order-card')).not.toBeInTheDocument()
+  })
+
+  it('single order card is clickable and links to order detail page', () => {
+    const card = {
+      type: 'order' as const,
+      data: {
+        order: {
+          id: 'o1',
+          order_no: 'ORD-001',
+          status: 'confirmed',
+        },
+      },
+    }
+    render(<ToolResultCard card={card} />)
+    const link = screen.getByRole('link')
+    expect(link).toHaveAttribute('href', '/orders/o1')
+    expect(screen.getByText(/ORD-001/)).toBeInTheDocument()
   })
 
   it('shows fallback for unknown card type', () => {

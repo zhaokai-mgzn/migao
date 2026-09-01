@@ -5,7 +5,7 @@
 ## 技术栈
 
 - Python 3.11 + FastAPI + LangChain + LangGraph
-- DeepSeek V4 Pro（主模型）+ MiniMax M3（视觉模型）
+- DeepSeek V4 Pro（主模型）+ DeepSeek V4 Flash Vision（视觉模型，图片识别）
 - PostgreSQL + Redis + DashVector（向量检索）
 
 ## 快速开始
@@ -51,7 +51,7 @@ app/
 | 变量 | 说明 |
 |------|------|
 | `PRIMARY_API_KEY` | DeepSeek API Key |
-| `VISION_API_KEY` | MiniMax API Key |
+| `VISION_API_KEY` | DeepSeek API Key（与主模型同 key） |
 | `ADMIN_API_BASE_URL` | Java 后端地址 |
 | `SERVICE_TOKEN` | 服务间认证 Token |
 | `JWT_PUBLIC_KEY` | JWT 验证公钥 |

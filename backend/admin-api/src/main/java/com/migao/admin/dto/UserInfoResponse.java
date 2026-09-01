@@ -73,6 +73,11 @@ public class UserInfoResponse {
         private String tenantName;
 
         /**
+         * 企业 Logo（「企业基础信息」设置）
+         */
+        private String tenantLogo;
+
+        /**
          * 状态
          */
         private String status;

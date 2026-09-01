@@ -3,6 +3,7 @@ package com.migao.admin.controller;
 import com.migao.admin.dto.*;
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.service.QuickReplyTemplateService;
+import com.migao.admin.security.RequirePermission;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -22,6 +23,7 @@ import java.util.List;
  * - DELETE /api/admin/quick-replies/{id}         → deleteTemplate
  */
 @Slf4j
+@RequirePermission("agent:quickreply")
 @RestController
 @RequestMapping("/api/admin/quick-replies")
 @RequiredArgsConstructor

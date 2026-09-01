@@ -1,27 +1,92 @@
-/** @type {import('tailwindcss').Config} */
-module.exports = {
+import type { Config } from 'tailwindcss'
+
+/**
+ * 经营看板「织物质感」设计 token（issue #2534 子任务 A）。
+ * primary/accent/neutral 三组各为完整 50-900 阶，替换原有单一默认蓝 primary。
+ * 设计依据：ershen/design/20-migao-ui-redesign.md。
+ */
+const config: Config = {
   content: [
     './src/pages/**/*.{js,ts,jsx,tsx,mdx}',
     './src/components/**/*.{js,ts,jsx,tsx,mdx}',
     './src/app/**/*.{js,ts,jsx,tsx,mdx}',
+    // #2544: 必须包含 src/lib —— status-chip.ts 等 lib 内的语义色类
+    // 若不扫描，bg-emerald-50/text-emerald-700/border-emerald-200 等仅在 lib
+    // 出现的类会被 purge，导致「已完成」等 chips 在生产无样式渲染。
+    './src/lib/**/*.{js,ts,jsx,tsx,mdx}',
   ],
   theme: {
     extend: {
       colors: {
         primary: {
-          50: '#eff6ff',
-          100: '#dbeafe',
-          200: '#bfdbfe',
-          300: '#93c5fd',
-          400: '#60a5fa',
-          500: '#3b82f6',
-          600: '#2563eb',
-          700: '#1d4ed8',
-          800: '#1e40af',
-          900: '#1e3a8a',
+          50: '#eef2f8',
+          100: '#d9e2ef',
+          200: '#b3c4de',
+          300: '#8ba4c7',
+          400: '#6a84ac',
+          500: '#48618f',
+          600: '#3a4e75',
+          700: '#2e3d5c',
+          800: '#232e46',
+          900: '#191f31',
         },
+        accent: {
+          50: '#faf0ea',
+          100: '#f3dccd',
+          200: '#e7b99d',
+          300: '#d9966f',
+          400: '#cc8056',
+          500: '#c06a3e',
+          600: '#a05531',
+          700: '#804426',
+          800: '#5f331c',
+          900: '#402314',
+        },
+        neutral: {
+          50: '#faf7f2',
+          100: '#f2ede5',
+          200: '#e6dfd3',
+          300: '#d4c9b8',
+          400: '#b8aa94',
+          500: '#9c8c72',
+          600: '#7e6f57',
+          700: '#625545',
+          800: '#484036',
+          900: '#312c26',
+        },
+        // 图表语义色：经营看板折线/面积图专用，与「织物质感」主色系同源
+        chart: {
+          order: '#48618f',    // 靛蓝 — 订单量
+          sales: '#c06a3e',    // 陶土 — 销售额
+          session: '#5f8f6f',  // 亚麻绿 — 会话量
+          gold: '#b8933d',     // 织金 — 毛利/排行
+        },
+      },
+      fontFamily: {
+        sans: [
+          '-apple-system',
+          'BlinkMacSystemFont',
+          '"SF Pro SC"',
+          '"SF Pro Text"',
+          '"PingFang SC"',
+          '"Hiragino Sans GB"',
+          '"Microsoft YaHei"',
+          '"Helvetica Neue"',
+          'Helvetica',
+          'Arial',
+          'sans-serif',
+        ],
+      },
+      boxShadow: {
+        // 软分层阴影（替代生硬边框），色相取自暖中性阴影 rgba(36,31,24,…)
+        card: '0 1px 2px rgba(36,31,24,.04), 0 4px 16px rgba(36,31,24,.06)',
+        'card-hover': '0 2px 6px rgba(36,31,24,.06), 0 8px 24px rgba(36,31,24,.10)',
+        modal: '0 12px 40px rgba(36,31,24,.16)',
+        float: '0 8px 30px rgba(36,31,24,.14)',
       },
     },
   },
   plugins: [],
 }
+
+export default config

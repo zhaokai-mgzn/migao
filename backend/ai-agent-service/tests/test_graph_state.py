@@ -5,6 +5,7 @@ LangGraph AgentState 状态模型测试
 - AgentState 字段定义验证
 - messages 字段的 add_messages reducer 行为
 """
+# case_ids: CH-005
 
 import pytest
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
@@ -17,15 +18,22 @@ class TestAgentStateFields:
     """AgentState 字段定义验证"""
 
     def test_state_has_required_fields(self):
-        """AgentState 包含所有必要字段"""
+        """AgentState 包含所有必要字段（会话管理重构 P3：已删死字段）"""
         annotations = AgentState.__annotations__
         expected_fields = [
             "messages", "tenant_id", "user_id", "session_id", "role",
-            "intent_result", "route_decision", "entities", "intent_chain",
-            "stage", "cached_answer", "final_answer", "skill_used", "suggestions",
+            "intent_result", "route_decision",
+            "final_answer", "skill_used", "suggestions",
+            "pending_interact_skill",
         ]
         for field in expected_fields:
             assert field in annotations, f"Missing field: {field}"
+
+    def test_state_excludes_dead_fields(self):
+        """死字段已移除：recent_entities/cached_answer/intent_chain/stage/entities"""
+        annotations = AgentState.__annotations__
+        for field in ("recent_entities", "cached_answer", "intent_chain", "stage", "entities"):
+            assert field not in annotations, f"Dead field should be removed: {field}"
 
     def test_state_is_typed_dict(self):
         """AgentState 是 TypedDict 子类"""

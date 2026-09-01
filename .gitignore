@@ -7,6 +7,9 @@
 *.tfvars
 !*.tfvars.example
 
+# 微信小程序本地私有配置（含真实 AppID，勿入库）
+project.private.config.json
+
 # Terraform
 .terraform/
 terraform.tfstate
@@ -89,6 +92,7 @@ deploy/terraform/terraform-output.json
 test-results/
 **/test-results/
 smoke/report.html
+tests/smoke/reports/
 __pycache__/
 
 # Coverage reports
@@ -96,7 +100,6 @@ coverage/
 **/htmlcov/
 *.lcov
 target/site/jacoco/
-junshi/archive.py
 .claude/settings.json
 backend/ai-agent-service/coverage.json
 youke/.qoder/
@@ -111,3 +114,5 @@ skills-lock.json
 
 # QA Growth Gate 本地生成物
 growth-gate-result.json
+# Danger Scan 本地运行产物
+danger-scan-result.json
