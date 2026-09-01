@@ -1,4 +1,4 @@
-@import '../../../app.scss';
+@use "../../../styles/variables.scss" as *;
 
 .login-page {
   display: flex;

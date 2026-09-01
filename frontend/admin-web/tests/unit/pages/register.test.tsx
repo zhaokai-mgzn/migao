@@ -1,5 +1,6 @@
+// case_ids: OB-001, OB-002, OB-003
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 // Mock APIs
@@ -127,6 +128,118 @@ describe('RegisterPage', () => {
     // 步骤 2 渲染后，企业名称输入框出现
     await waitFor(() => {
       expect(screen.getByPlaceholderText('请输入企业名称')).toBeInTheDocument()
+    })
+  })
+
+  // ===== AI 自动甄别（OB-001/OB-002/OB-003） =====
+
+  /** 走到步骤二并提交申请，返回提交按钮 */
+  async function fillCompanyAndSubmit(user: ReturnType<typeof userEvent.setup>) {
+    await user.type(screen.getByPlaceholderText('请输入手机号'), '13800138000')
+    await user.type(screen.getByPlaceholderText('请输入6位验证码'), '123456')
+    await user.click(screen.getByText('下一步'))
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText('请输入企业名称')).toBeInTheDocument()
+    })
+    await user.type(screen.getByPlaceholderText('请输入企业名称'), '杭州测试布艺有限公司')
+    await user.type(screen.getByPlaceholderText('请输入联系人姓名'), '张三')
+    await user.click(screen.getByText('提交申请'))
+  }
+
+  it('步骤二含蜜罐隐藏字段（防自动化脚本）', async () => {
+    const user = userEvent.setup()
+    render(<RegisterPage />)
+    await user.type(screen.getByPlaceholderText('请输入手机号'), '13800138000')
+    await user.type(screen.getByPlaceholderText('请输入6位验证码'), '123456')
+    await user.click(screen.getByText('下一步'))
+    await waitFor(() => {
+      const honeypot = screen.getByLabelText('请勿填写此字段')
+      expect(honeypot).toBeInTheDocument()
+      expect(honeypot.closest('div')).toHaveClass('hidden')
+    })
+  })
+
+  it('步骤二文案提示 AI 自动甄别', async () => {
+    const user = userEvent.setup()
+    render(<RegisterPage />)
+    await user.type(screen.getByPlaceholderText('请输入手机号'), '13800138000')
+    await user.type(screen.getByPlaceholderText('请输入6位验证码'), '123456')
+    await user.click(screen.getByText('下一步'))
+    await waitFor(() => {
+      expect(screen.getByText(/AI 智能甄别/)).toBeInTheDocument()
+      expect(screen.getByText(/无需等待人工审核/)).toBeInTheDocument()
+    })
+  })
+
+  it('AI 甄别通过 → 展示「审核通过」与「立即登录」', async () => {
+    const user = userEvent.setup()
+    mockSubmitRegistration.mockResolvedValue({
+      data: {
+        data: { applicationId: 100, status: 'approved', message: 'AI 甄别通过，欢迎入驻米高平台' },
+      },
+    })
+    render(<RegisterPage />)
+    await fillCompanyAndSubmit(user)
+
+    await waitFor(() => {
+      expect(screen.getByText('审核通过，欢迎入驻！')).toBeInTheDocument()
+    })
+    expect(screen.getByText(/企业账号已自动开通/)).toBeInTheDocument()
+    expect(screen.getByText('立即登录')).toBeInTheDocument()
+    expect(screen.getByText('米高 · 企业智能助手')).toBeInTheDocument()
+    expect(screen.getByText('小布 · 智能客服')).toBeInTheDocument()
+  })
+
+  it('AI 甄别驳回 → 展示驳回原因', async () => {
+    const user = userEvent.setup()
+    mockSubmitRegistration.mockResolvedValue({
+      data: {
+        data: {
+          applicationId: 100,
+          status: 'rejected',
+          message: 'AI 甄别未通过',
+          rejectReason: '企业名称暗示无资质金融业务',
+        },
+      },
+    })
+    render(<RegisterPage />)
+    await fillCompanyAndSubmit(user)
+
+    await waitFor(() => {
+      expect(screen.getByText('审核未通过')).toBeInTheDocument()
+    })
+    expect(screen.getByText('企业名称暗示无资质金融业务')).toBeInTheDocument()
+    expect(screen.getByText(/24 小时后重新提交/)).toBeInTheDocument()
+  })
+
+  it('提交时按钮显示「AI 甄别中」', async () => {
+    const user = userEvent.setup()
+    let resolveSubmit: (v: unknown) => void
+    mockSubmitRegistration.mockReturnValue(
+      new Promise((resolve) => { resolveSubmit = resolve })
+    )
+    render(<RegisterPage />)
+
+    // 进入步骤二
+    await user.type(screen.getByPlaceholderText('请输入手机号'), '13800138000')
+    await user.type(screen.getByPlaceholderText('请输入6位验证码'), '123456')
+    await user.click(screen.getByText('下一步'))
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText('请输入企业名称')).toBeInTheDocument()
+    })
+    await user.type(screen.getByPlaceholderText('请输入企业名称'), '杭州测试布艺有限公司')
+    await user.type(screen.getByPlaceholderText('请输入联系人姓名'), '张三')
+
+    // fireEvent 不等待异步 handler，可观测到提交中的中间状态
+    fireEvent.click(screen.getByText('提交申请'))
+    await waitFor(() => {
+      expect(screen.getByText('AI 甄别中...')).toBeInTheDocument()
+    })
+    await act(async () => {
+      resolveSubmit!({ data: { data: { applicationId: 100, status: 'approved', message: 'ok' } } })
+    })
+    await waitFor(() => {
+      expect(screen.getByText('审核通过，欢迎入驻！')).toBeInTheDocument()
     })
   })
 })

@@ -1,4 +1,6 @@
 name: Agent Eval (米宝能力评测)
+permissions:
+  contents: read
 
 on:
   # 2026-08-29：取消每日 normal 定时评测（成本高、信号为 LLM 波动为主，按需手动触发即可）。
@@ -15,7 +17,7 @@ jobs:
     # normal tier（约 47 条真实 LLM 多轮），smoke 由 PR gate 承担、adversarial 由每周任务承担
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v5
         with:
@@ -35,7 +37,7 @@ jobs:
 
       - name: Create Issue on failure
         if: failure()
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`

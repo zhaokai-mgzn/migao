@@ -1,7 +1,9 @@
+@use '../../styles/variables.scss' as *;
+
 .message-list {
   flex: 1;
   height: 0; // 让 flex 生效
-  background: #F9FAFB;
+  background: $bg-secondary;
 
   &__scroll {
     height: 100%;
@@ -15,23 +17,45 @@
     justify-content: flex-end;
   }
 
+  // ── 空态：品牌欢迎卡片（瑞幸式引导）──
   &__empty {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 80px 40px;
+    padding: 60px 40px;
   }
 
-  &__empty-icon {
-    font-size: 80px;
+  &__empty-brand {
+    width: 88px;
+    height: 88px;
+    border-radius: 28px;
+    background: $gradient-brand;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     margin-bottom: 24px;
+    box-shadow: $shadow-pop;
+  }
+
+  &__empty-brand-text {
+    font-size: 44px;
+    font-weight: 700;
+    color: $brand-gold-light;
+  }
+
+  &__empty-title {
+    font-size: 34px;
+    font-weight: 600;
+    color: $text-primary;
+    margin-bottom: 8px;
   }
 
   &__empty-text {
-    font-size: 28px;
-    color: #9CA3AF;
+    font-size: 26px;
+    color: $text-secondary;
     text-align: center;
+    line-height: 1.6;
   }
 
   // 消息间距

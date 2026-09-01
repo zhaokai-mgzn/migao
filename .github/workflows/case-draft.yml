@@ -1,0 +1,95 @@
+name: case-draft
+
+# 机械操作:
+# 1. needs-verification issue → 打 needs-draft 标签
+# 2. needs-truths issue 补了 CONTRACT_JSON → 转 needs-verification
+# 3. process-improvement issue 缺 ai-draft → 自动补 ai-draft 标签 (issue #729)
+
+on:
+  issues:
+    types: [opened, edited, labeled]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  trigger:
+    if: |
+      (contains(github.event.issue.labels.*.name, 'needs-verification') ||
+       contains(github.event.issue.labels.*.name, 'needs-truths') ||
+       contains(github.event.issue.labels.*.name, 'process-improvement')) &&
+      !contains(github.event.issue.labels.*.name, 'ai-draft') &&
+      !contains(github.event.issue.labels.*.name, 'block/need-human') &&
+      !contains(github.event.issue.labels.*.name, 'hold/auto-fail')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: 处理 needs-truths → needs-verification 转换
+        if: contains(github.event.issue.labels.*.name, 'needs-truths')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          BODY=$(gh issue view "$ISSUE_NUMBER" --json body --jq '.body')
+          HAS_TRUTH=$(echo "$BODY" | grep -cP 'CONTRACT_JSON|business_truths|业务真值|验收标准' || echo "0")
+          if [ "$HAS_TRUTH" -gt 0 ]; then
+            gh issue edit "$ISSUE_NUMBER" --add-label "needs-verification" --remove-label "needs-truths" 2>/dev/null || true
+            echo "✅ 已补业务真值 → needs-verification，进入质量门禁体系"
+          fi
+
+      - name: 打 needs-draft 标签（仅当 needs-verification 且无有效 DRAFT）
+        if: contains(github.event.issue.labels.*.name, 'needs-verification')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          VALID=$(gh issue view "$ISSUE_NUMBER" --comments --json comments \
+            --jq '[.comments[] | select(.body | contains("<!-- DRAFT_JSON") and (contains("OUTDATED") | not))] | length' 2>/dev/null || echo "0")
+          if [ "$VALID" -gt 0 ]; then
+            echo "✅ 已有有效 DRAFT_JSON，跳过"
+            exit 0
+          fi
+          gh issue edit "$ISSUE_NUMBER" --add-label "needs-draft" 2>/dev/null || true
+          echo "✅ needs-draft — 等 agent-poll 生成 case"
+
+      - name: 校验 DRAFT 是否引用 issue 声明的用例（case-contract）
+        if: contains(github.event.issue.labels.*.name, 'needs-verification')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          BODY=$(gh issue view "$ISSUE_NUMBER" --json body --jq '.body')
+          ISSUE_CASES=$(echo "$BODY" | python3 -c "
+          import sys, re
+          m = re.search(r'\"cases\"\s*:\s*\[([^\]]*)\]', sys.stdin.read())
+          print(m.group(1).strip() if m else '')
+          ")
+          if [ -z "$ISSUE_CASES" ]; then
+            echo "ℹ️ issue 未声明 cases，跳过"
+            exit 0
+          fi
+          DRAFT=$(gh issue view "$ISSUE_NUMBER" --comments --json comments \
+            --jq '[.comments[] | select(.body | contains("<!-- DRAFT_JSON") and (contains("OUTDATED") | not))] | .[0].body' 2>/dev/null || echo "")
+          if [ -z "$DRAFT" ]; then
+            echo "⏳ 尚无有效 DRAFT，needs-draft 流程会处理"
+            exit 0
+          fi
+          if echo "$DRAFT" | grep -q '"cases"'; then
+            echo "✅ DRAFT 已引用 cases"
+          else
+            gh issue comment "$ISSUE_NUMBER" --body "⚠️ 本 issue 声明了验收用例 \`$ISSUE_CASES\`，但 DRAFT_JSON 未引用 cases。请自动评审在 DRAFT 验收方案中加入逐用例执行计划（case-contract：verify-agent 逐用例打分）。" 2>/dev/null || true
+            echo "⚠️ 已提醒：DRAFT 未引用 issue 声明的用例"
+          fi
+
+      - name: 补 ai-draft 标签（process-improvement 缺标 guard）
+        if: |
+          contains(github.event.issue.labels.*.name, 'process-improvement') &&
+          !contains(github.event.issue.labels.*.name, 'ai-draft')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          gh issue edit "$ISSUE_NUMBER" --add-label "ai-draft" 2>/dev/null || true
+          echo "✅ ai-draft guard: process-improvement issue 已自动补 ai-draft 标签"

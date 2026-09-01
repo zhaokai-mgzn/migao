@@ -27,6 +27,7 @@ class ProductProcessingItemManageTool(BaseTool):
     allowed_roles = ["admin", "tenant_admin"]
 
     read_only = False
+    requires_confirmation = True  # 审计 07 P0-L1: 高风险非 destructive 写操作需用户确认
     destructive = False  # add/remove 本身不具破坏性，可回滚
     idempotent = True    # 重复 add 幂等（已存在跳过）
 

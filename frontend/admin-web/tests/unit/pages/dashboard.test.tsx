@@ -1,4 +1,4 @@
-// case_ids: UI-003, UI-004
+// case_ids: UI-003, UI-004, DA-005
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 
@@ -119,13 +119,17 @@ describe('DashboardPage', () => {
 
   // ── 米宝「今日经营速览」洞察条 ──
 
-  it('洞察条置于经营看板顶部，渲染「订单环比 / 含加工占比 / 低库存预警」三个区块', async () => {
+  it('洞察条置于经营看板顶部，渲染一句话经营解读（订单/环比/加工/库存串联）', async () => {
     render(<DashboardPage />)
     await waitFor(() => {
       expect(screen.getByText(/今日经营速览/)).toBeInTheDocument()
-      expect(screen.getByText('订单环比')).toBeInTheDocument()
-      expect(screen.getByText('含加工占比')).toBeInTheDocument()
-      expect(screen.getByText('低库存预警')).toBeInTheDocument()
+      // 一句话解读：主句（订单+销售额）
+      expect(screen.getByText(/今日订单 10 单、销售额 ¥3\.98万/)).toBeInTheDocument()
+      // 环比句（订单+销售额）
+      expect(screen.getByText(/较昨日订单 \+25\.5%、销售额 -12\.3%/)).toBeInTheDocument()
+      // 提醒句（含加工占比 + 低库存）
+      expect(screen.getByText(/含加工订单占 38%/)).toBeInTheDocument()
+      expect(screen.getByText(/2 款商品库存偏低/)).toBeInTheDocument()
     })
     // 顶部定位：洞察条先于「待处理」区块
     const bar = screen.getByTestId('today-overview-bar')
@@ -133,28 +137,76 @@ describe('DashboardPage', () => {
     expect(bar.compareDocumentPosition(pending) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
-  it('洞察条三数值来自 API 返回值（无硬编码假数据）', async () => {
+  it('洞察句数字全部来自 API 返回值（无硬编码假数据）', async () => {
+    // 改 stats → 洞察句随之变化
+    mockGetStats.mockResolvedValue({
+      data: {
+        data: {
+          todayOrders: 6,
+          todaySales: 9000,
+          todayOrdersChange: 8.8,
+          todaySalesChange: 2.1,
+          monthRevenue: 5000000,
+          monthRevenueChange: 15.8,
+          lowStockItems: 1,
+        },
+      },
+    })
     render(<DashboardPage />)
     await waitFor(() => {
-      // 订单环比 = stats.todayOrdersChange = 25.5
-      expect(screen.getByText('+25.5%')).toBeInTheDocument()
-      // 含加工占比 = processing 3 / pending 8 = 37.5% → 38%
-      expect(screen.getByText('38%')).toBeInTheDocument()
-      // 低库存预警 = stats.lowStockItems = 2
-      expect(screen.getByText('2 款')).toBeInTheDocument()
+      expect(screen.getByText(/今日订单 6 单、销售额 ¥9,000/)).toBeInTheDocument()
+      expect(screen.getByText(/较昨日订单 \+8\.8%、销售额 \+2\.1%/)).toBeInTheDocument()
+      expect(screen.getByText(/1 款商品库存偏低/)).toBeInTheDocument()
     })
   })
 
   // ── 经营数据 ──
 
-  it('should render business stats section', async () => {
+  it('should render business stats section (4 cards)', async () => {
     render(<DashboardPage />)
     await waitFor(() => {
       expect(screen.getByText('经营数据')).toBeInTheDocument()
       expect(screen.getByText('今日订单数')).toBeInTheDocument()
       expect(screen.getByText('今日销售额')).toBeInTheDocument()
+      expect(screen.getByText('客单价')).toBeInTheDocument()
       expect(screen.getByText('本月销售额')).toBeInTheDocument()
     })
+  })
+
+  it('客单价 = 今日销售额 ÷ 今日订单数（数字自洽）', async () => {
+    // mock: todaySales=39800, todayOrders=10 → 客单价 ¥3,980
+    render(<DashboardPage />)
+    await waitFor(() => {
+      expect(screen.getByText('¥3,980')).toBeInTheDocument()
+    })
+  })
+
+  it('经营数据徽章文案口径统一：较昨日/较上月，带符号百分比', async () => {
+    render(<DashboardPage />)
+    await waitFor(() => {
+      // 今日订单数：较昨日 +25.5%（正数带加号）
+      expect(screen.getByText(/较昨日 \+25\.5%/)).toBeInTheDocument()
+      // 今日销售额：较昨日 -12.3%（负数带负号）
+      expect(screen.getByText(/较昨日 -12\.3%/)).toBeInTheDocument()
+      // 本月销售额：较上月 +15.8% — 不再拼接「较昨天 X 较上月」
+      expect(screen.getByText(/较上月 \+15\.8%/)).toBeInTheDocument()
+      expect(screen.queryByText(/较昨天/)).not.toBeInTheDocument()
+    })
+  })
+
+  it('涨跌语义色：上涨=绿色（好事）、下跌=红色（需关注）', async () => {
+    render(<DashboardPage />)
+    await waitFor(() => {
+      expect(screen.getByText('今日订单数')).toBeInTheDocument()
+    })
+    // 今日订单数：+25.5% 上涨 → emerald（绿）
+    const upBadge = screen.getByText(/较昨日 \+25\.5%/).closest('span')!
+    expect(upBadge.className).toContain('bg-emerald-50')
+    expect(upBadge.className).toContain('text-emerald-600')
+    // 今日销售额：-12.3% 下跌 → red（红）
+    const downBadge = screen.getByText(/较昨日 -12\.3%/).closest('span')!
+    expect(downBadge.className).toContain('bg-red-50')
+    expect(downBadge.className).toContain('text-red-600')
   })
 
   it('should display stats values after loading', async () => {

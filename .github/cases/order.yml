@@ -1,6 +1,6 @@
 # cases/order.yml — 订单域用例（并源转换示范）
 #
-# 标准：ershen/design/16-case-contract.md（schema v1.0 草案）
+# 标准：外部契约标准 16-case-contract（schema v1.0 草案）
 # 来源：eval_cases.py 的 O001~O005 + M005/M006/M007(订单段) + C002(订单段)
 #       mibao-verification-cases.md 的 1.1~1.8
 # 并源结果：14 个源用例 → 10 条，合并 4 条、verification 独有 4 条获新 ID
@@ -9,7 +9,7 @@
 #   yaml_light 不支持 [a, b] / {k: v}，会被解析成字符串，静默破坏结构。
 #
 # ★ truths_ref 引用 templates/*.yml 的真值 ID（真值 ID 化已完成，125 条全部带 [模板名.短名] 前缀）。
-#   校验：python3 ershen/engine/junshi/truths.py check --templates ershen/seed/migao/templates --cases ershen/seed/migao/cases
+#   校验：python3 .github/truths.py check --templates .github/templates --cases .github/cases
 
 schema: "case-contract/1.0"
 domain: order
@@ -390,8 +390,7 @@ cases:
     skip_reason: ""
     merge_log: "POC 下单闭环集成测试新增"
     traces:
-      tests:
-        - "docs/deployment/poc-order-flow-test.py"
+      tests: []
       ci:
         - ai-agent-tests.yml
       verifies: []

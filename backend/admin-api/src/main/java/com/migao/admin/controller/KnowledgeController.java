@@ -172,9 +172,12 @@ public class KnowledgeController {
                 .eq(KnowledgeDocument::getIsActive, true);
 
         if (StringUtils.hasText(request.getQuery())) {
-            wrapper.like(KnowledgeDocument::getTitle, request.getQuery())
+            // OR 必须嵌套在括号内：tenant_id=? AND is_active=? AND (title LIKE ? OR content LIKE ?)
+            // 直接 eq(...).like(...).or().like(...) 会生成 (tenant AND active AND title) OR content，
+            // SQL 中 AND 优先级高于 OR → content 命中所有租户文档（跨租户泄露，审计 07 P1-6）
+            wrapper.and(w -> w.like(KnowledgeDocument::getTitle, request.getQuery())
                     .or()
-                    .like(KnowledgeDocument::getContent, request.getQuery());
+                    .like(KnowledgeDocument::getContent, request.getQuery()));
         }
 
         wrapper.last("LIMIT 10");

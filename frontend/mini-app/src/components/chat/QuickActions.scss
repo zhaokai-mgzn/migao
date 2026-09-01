@@ -1,9 +1,11 @@
+@use '../../styles/variables.scss' as *;
+
 .quick-actions {
-  padding: 24px;
+  padding: 16px 24px 24px;
 
   &__title {
     font-size: 26px;
-    color: #9CA3AF;
+    color: $text-tertiary;
     text-align: center;
     margin-bottom: 20px;
   }
@@ -11,7 +13,7 @@
   &__grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 16px;
+    gap: 14px;
   }
 
   &__item {
@@ -19,15 +21,17 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 24px 16px;
-    background: #ffffff;
-    border-radius: 12px;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+    padding: 22px 16px;
+    background: $bg-primary;
+    border-radius: $radius-lg;
+    border: 1px solid $border-color;
+    box-shadow: $shadow-card;
     transition: transform 0.1s ease;
 
     &:active {
       transform: scale(0.96);
-      background: #F3F4F6;
+      background: $primary-light;
+      border-color: rgba(26, 115, 232, 0.3);
     }
   }
 
@@ -38,7 +42,7 @@
 
   &__label {
     font-size: 26px;
-    color: #1F2937;
+    color: $text-primary;
     font-weight: 500;
   }
 }

@@ -1,14 +1,23 @@
-name: Deploy Frontend
+name: Build and Deploy frontend (admin-web)
+permissions:
+  contents: read
 
 on:
   push:
     branches: [main]
+    tags:
+      - 'v*'
     paths:
       - 'frontend/admin-web/**'
   workflow_dispatch:
+    inputs:
+      image_tag:
+        description: '部署指定镜像 tag（回滚/指定版本用，如 sha-xxxxxxx 或 v1.2.3）。留空 = 构建当前代码并部署'
+        required: false
+        default: ''
 
 env:
-  # 部署目标：SWAS 轻量应用服务器（2026-08-14 起替代 SAE）
+  # 部署目标：SWAS 轻量应用服务器（2026-08-14 起替代 SAE）—— 当前为测试环境
   SWAS_INSTANCE_ID: b23c69e599524b1da719734f72e6a0e3
   SWAS_REGION: cn-hangzhou
   # CI 构建镜像推送 ACR → SWAS 服务器 docker compose pull 预构建镜像（见 deploy/swas/deploy.sh）
@@ -17,40 +26,57 @@ env:
   IMAGE_NAME: admin-web
 
 jobs:
-  deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-frontend
+      cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - name: Set tag
+      # 镜像 tag：git SHA 前 7 位（不可变、可追溯）；回滚/指定版本时用输入值
+      - name: Resolve image tag
         id: tag
-        run: echo "tag=v$(date +%Y%m%d%H%M%S)" >> $GITHUB_OUTPUT
+        run: |
+          if [ -n "${{ inputs.image_tag }}" ]; then
+            echo "IMAGE_TAG=${{ inputs.image_tag }}" >> "$GITHUB_OUTPUT"
+            echo "MODE=rollback" >> "$GITHUB_OUTPUT"
+          else
+            echo "IMAGE_TAG=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+            echo "MODE=build" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Docker login ACR
+        if: steps.tag.outputs.MODE == 'build'
         run: echo "${{ secrets.ACR_PASSWORD }}" | docker login ${{ env.ACR_REGISTRY }} -u ${{ secrets.ACR_USERNAME }} --password-stdin
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
+        if: steps.tag.outputs.MODE == 'build'
         with:
           node-version: '20'
           cache: 'npm'
           cache-dependency-path: frontend/admin-web/package-lock.json
 
       - name: npm ci
+        if: steps.tag.outputs.MODE == 'build'
         working-directory: frontend/admin-web
         run: npm ci
 
       - name: Type check
+        if: steps.tag.outputs.MODE == 'build'
         working-directory: frontend/admin-web
         run: npx tsc --noEmit
 
       - name: Unit tests
+        if: steps.tag.outputs.MODE == 'build'
         working-directory: frontend/admin-web
         run: npx vitest run
 
       - name: Build and push
+        if: steps.tag.outputs.MODE == 'build'
         working-directory: frontend/admin-web
         run: |
-          TAG=${{ steps.tag.outputs.tag }}
+          TAG=${{ steps.tag.outputs.IMAGE_TAG }}
           IMG=${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_NAME }}
           docker build \
             --build-arg NEXT_PUBLIC_API_BASE_URL=${{ secrets.NEXT_PUBLIC_API_BASE_URL || 'https://api.migaozn.com' }} \
@@ -62,12 +88,34 @@ jobs:
           docker push $IMG:$TAG
           docker push $IMG:latest
 
-      - name: Deploy to SWAS
+      # 自动部署目标 = 测试环境（当前 SWAS）；生产发布走 deploy-prod（未来）
+      - name: Deploy to SWAS (测试环境)
         env:
           AK: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
           SK: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
           ACR_U: ${{ secrets.ACR_USERNAME }}
           ACR_P: ${{ secrets.ACR_PASSWORD }}
+          IMAGE_TAG: ${{ steps.tag.outputs.IMAGE_TAG }}
         run: |
           bash deploy/scripts/swas-deploy-ci.sh \
-            ${{ env.SWAS_INSTANCE_ID }} ${{ env.SWAS_REGION }} "$AK" "$SK" "$ACR_U" "$ACR_P"
+            ${{ env.SWAS_INSTANCE_ID }} ${{ env.SWAS_REGION }} "$AK" "$SK" "$ACR_U" "$ACR_P" "$IMAGE_TAG"
+
+  # 部署后探测：前端域名 HTTP 200（防构建期 baked NEXT_PUBLIC_* 配错无信号）
+  post-deploy-probe:
+    name: Post-Deploy Frontend Probe
+    needs: build-and-deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe merchant domain
+        run: |
+          # 注意：admin-web 公网域名是 merchant.migaozn.com（nginx server_name，
+          # 见 deploy/swas/nginx.conf）；admin.migaozn.com 未解析，曾导致探测误报失败
+          for i in $(seq 1 6); do
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" -m 15 https://merchant.migaozn.com/ || echo 000)
+            echo "merchant.migaozn.com -> $CODE (attempt $i)"
+            if [ "$CODE" = "200" ] || [ "$CODE" = "307" ]; then echo "✅ 前端部署后探测通过"; exit 0; fi
+            sleep 10
+          done
+          echo "❌ 前端部署后探测失败（6 次均非 200）"
+          exit 1

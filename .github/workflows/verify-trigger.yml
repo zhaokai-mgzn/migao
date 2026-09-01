@@ -1,0 +1,70 @@
+name: verify-trigger
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 护栏检查
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          MERGED: ${{ github.event.pull_request.merged }}
+        run: |
+          if [ "$EVENT_NAME" != "pull_request" ]; then
+            echo "⏭️  非 PR 事件，跳过"; exit 0
+          fi
+          if [ "$MERGED" != "true" ]; then
+            echo "⏭️  PR 未合并，跳过"; exit 0
+          fi
+      - uses: actions/checkout@v7
+      - name: 贴 VERIFY_TRIGGER + 打标签
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          set -euo pipefail
+          ISSUE_NUM=$(echo "$PR_BODY" | grep -oP '(Fixes|Closes|Resolves)\s+#\K\d+' | head -1 || echo "")
+          if [ -z "$ISSUE_NUM" ]; then echo "No linked issue, skip"; exit 0; fi
+          AI_DRAFT=$(gh issue view "$ISSUE_NUM" --json labels --jq '.labels[].name' | grep -c '^ai-draft$' || echo "0")
+          if [ "$AI_DRAFT" -gt 0 ]; then echo "✅ ai-draft issue，跳过自动验收"; exit 0; fi
+          ISSUE_LABELS=$(gh issue view "$ISSUE_NUM" --json labels --jq '.labels[].name')
+          if echo "$ISSUE_LABELS" | grep -qE '^type/(infra|chore|docs|meta|refactor)$'; then
+            echo "⏭️  工程类 issue（type/infra|chore|docs|meta|refactor），无业务真值，跳过自动评审验收 reopen"
+            exit 0
+          fi
+          if echo "$ISSUE_LABELS" | grep -qE '^(needs-truths|needs-draft)$'; then
+            echo "⏭️  issue 缺业务真值（needs-truths/needs-draft），无真值可验收，跳过 reopen + ai-verify/pending"
+            exit 0
+          fi
+          cat > /tmp/verify.md << COMMENT
+          ## 🤖 自动评审验收触发
+          PR [#$PR_NUMBER]($PR_URL) 已合入 \`main\`。
+          | 项目 | 值 |
+          |------|-----|
+          | Issue | #$ISSUE_NUM |
+          | Commit | \`$PR_SHA\` |
+          | Author | @$PR_AUTHOR |
+          ---
+          <!-- VERIFY_TRIGGER
+          { "issue_id": $ISSUE_NUM, "pr_number": $PR_NUMBER, "commit": "$PR_SHA", "pr_author": "$PR_AUTHOR", "merged_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)" }
+          -->
+          COMMENT
+          gh issue comment "$ISSUE_NUM" --body-file /tmp/verify.md
+          gh issue edit "$ISSUE_NUM" --add-label "ai-verify/pending" 2>/dev/null || true
+          if [ "$(gh issue view "$ISSUE_NUM" --json state --jq '.state')" = "CLOSED" ]; then
+            gh issue reopen "$ISSUE_NUM" 2>/dev/null || true
+          fi
+          echo "✅ VERIFY_TRIGGER posted + ai-verify/pending"

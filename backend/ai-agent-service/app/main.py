@@ -182,6 +182,18 @@ def create_app() -> FastAPI:
             "version": settings.APP_VERSION,
         }
 
+    # Readiness：探活 Redis + DB（供 compose healthcheck / 编排使用，fail-closed）
+    @app.get("/ready")
+    async def ready_check():
+        from fastapi.responses import JSONResponse
+        from app.utils.health import check_readiness
+        if not await check_readiness():
+            return JSONResponse(
+                status_code=503,
+                content={"status": "not_ready", "service": settings.APP_NAME},
+            )
+        return {"status": "ready", "service": settings.APP_NAME}
+
     return app
 
 

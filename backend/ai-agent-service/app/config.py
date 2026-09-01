@@ -114,7 +114,7 @@ class Settings(BaseSettings):
     INTENT_MODEL: str = "deepseek-v4-flash"              # 意图分类/摘要（快速模型）
 
     # LLM 模型路由常量 — 所有模型名统一在 config.py 管理
-    LLM_MODEL_PRIMARY: str = "deepseek-v4-pro"           # 复杂推理 / 多工具 / 默认
+    LLM_MODEL_PRIMARY: str = "deepseek-v4-flash"         # 复杂推理 / 多工具 / 默认
     LLM_MODEL_FAST: str = "deepseek-v4-flash"            # 轻量快速（意图路由、分类、摘要）
 
     LLM_ENABLE_MODEL_ROUTING: bool = True

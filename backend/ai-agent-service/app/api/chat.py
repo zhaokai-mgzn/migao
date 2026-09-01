@@ -361,7 +361,7 @@ def _detect_card_type(tool_name: str, result: Dict[str, Any]) -> Optional[str]:
         return "product_detail"
     elif tool_name == "logistics_track":
         return "logistics"
-    elif tool_name == "order_query":
+    elif tool_name in ("order_query", "customer_order_query"):
         return "order"
     elif tool_name == "curtain_calc":
         return "quotation"
@@ -389,8 +389,8 @@ def _should_send_card(tool_name: str, result: Dict[str, Any]) -> bool:
         data = result.get("data", {})
         return data.get("tracking_number") is not None
     
-    # 订单查询有结果时发送卡片（支持单订单和列表两种格式）
-    if tool_name == "order_query":
+    # 订单查询有结果时发送卡片（支持单订单和列表两种格式；C 端 customer_order_query 同规则）
+    if tool_name in ("order_query", "customer_order_query"):
         data = result.get("data", {})
         has_order = data.get("order") is not None
         orders = data.get("orders")  # action=list 返回 orders 数组
@@ -399,7 +399,7 @@ def _should_send_card(tool_name: str, result: Dict[str, Any]) -> bool:
         has_list = len(order_list) > 0
         should_send = has_order or has_list
         logger.info(
-            f"[chat/card] order_query check | has_order={has_order} orders_count={len(order_list)} "
+            f"[chat/card] {tool_name} check | has_order={has_order} orders_count={len(order_list)} "
             f"should_send={should_send} data_keys={list(data.keys()) if isinstance(data, dict) else 'N/A'}"
         )
         return should_send
@@ -700,21 +700,41 @@ async def _agent_stream_to_sse(
 
 # ============ 分页协议 ============
 
-# __PAGE__ 协议白名单：仅允许只读查询工具，防止任意工具执行
+# __PAGE__ 协议白名单：仅允许只读查询工具，防止任意工具执行（审计 07 P0-L2）。
+# ⚠️ 严禁加入任何含写/破坏性 action 的工具（product_manage/customer_manage/employee_manage
+# 等管理类工具一律不得入列）——该路径直调 execute_tool、绕过 LLM 确认守卫。
 _PAGE_WHITELIST = frozenset({
     "processing_item_query",
     "processing_items",
     "order_query",
+    "customer_order_query",
     "product_search",
     "product_detail",
-    "product_manage",       # 仅 list 操作
     "logistics_track",
     "aftersale_query",
-    "customer_manage",      # 仅 list 操作
-    "employee_manage",      # 仅 list 操作
     "knowledge_faq",
     "dashboard_stats",
 })
+
+
+def _page_action_allowed(tool_registry, tool_name: str, params: dict) -> bool:
+    """翻页协议 action 级纵深校验（审计 07 P0-L2）。
+
+    白名单工具若定义了 read_only_actions，请求中的 action/operation/op
+    必须属于该只读集合，否则视为写操作拒绝（防未来白名单误加含写 action
+    的工具后被 __PAGE__ 直调绕过确认守卫）。
+    """
+    tool = tool_registry.get_tool(tool_name)
+    if tool is None:
+        return False
+    action = params.get("action") or params.get("operation") or params.get("op")
+    read_only_actions = getattr(tool, "read_only_actions", None) or frozenset()
+    if not action:
+        return True
+    if not read_only_actions:
+        # 工具无只读 action 概念：由工具内部校验 action 合法性（如 aftersale_query 仅 list/detail）
+        return True
+    return action in read_only_actions
 
 async def _handle_page_request(
     request: ChatSendRequest,
@@ -762,9 +782,26 @@ async def _handle_page_request(
             headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
         )
 
-    # 白名单校验：仅允许分页查询工具
+    # 白名单校验：仅允许只读查询工具
     if tool_name not in _PAGE_WHITELIST:
         logger.warning(f"[page] Blocked non-whitelisted tool: {tool_name}")
+        async def _blocked_stream():
+            yield SSEEvent.error("不支持该操作的分页查询")
+            yield SSEEvent.done(session_id, None)
+        return StreamingResponse(
+            _blocked_stream(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
+        )
+
+    # 纵深防御（审计 07 P0-L2）：白名单工具也仅允许只读 action——
+    # 若工具定义了 read_only_actions，请求的 action 必须属于该集合，否则拒绝。
+    # 防未来白名单误加含写 action 的工具后被翻页协议直调绕过确认守卫。
+    if not _page_action_allowed(tool_registry, tool_name, params):
+        logger.warning(
+            f"[page] Blocked write action on whitelisted tool: tool={tool_name} "
+            f"params={params}"
+        )
         async def _blocked_stream():
             yield SSEEvent.error("不支持该操作的分页查询")
             yield SSEEvent.done(session_id, None)
@@ -1165,6 +1202,43 @@ async def list_sessions(
         "size": size,
         "total": len(formatted_sessions),
     })
+
+
+@router.get("/sessions/latest")
+async def get_latest_session(
+    current_user: UserIdentity = Depends(get_current_user),
+):
+    """
+    获取最近一次的活跃会话（无会话 UX：打开即续聊，前端无感知）。
+
+    - 返回最近一条 active 会话（按 updated_at 倒序）；无则返回 null
+    - 前端据此决定「续聊」或「新建」，不暴露会话列表概念
+
+    Returns:
+        { "session": {...} | null }
+    """
+    session_memory = SessionMemory()
+    sessions = await session_memory.get_sessions(
+        tenant_id=current_user.tenant_id,
+        customer_id=current_user.user_id,
+        page=1,
+        size=1,
+    )
+    if not sessions:
+        return make_response(True, data={"session": None})
+
+    session = sessions[0]
+    return make_response(True, data={"session": {
+        "id": session["id"],
+        "tenant_id": session["tenant_id"],
+        "user_id": session["customer_id"],
+        "title": session["title"],
+        "status": session.get("status", "active"),
+        "last_message": session.get("last_message"),
+        "message_count": session.get("message_count", 0),
+        "created_at": _format_datetime(session["created_at"]),
+        "updated_at": _format_datetime(session["updated_at"]),
+    }})
 
 
 @router.put("/sessions/{session_id}/close")
