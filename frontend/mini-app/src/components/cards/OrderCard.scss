@@ -137,9 +137,17 @@
   &__customer-row {
     padding: $space-sm 0;
     border-top: 1px solid $border-color;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
   }
 
   &__customer {
+    font-size: 22px;
+    color: $text-secondary;
+  }
+
+  &__customer-phone {
     font-size: 22px;
     color: $text-secondary;
   }
