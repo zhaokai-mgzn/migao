@@ -11,6 +11,7 @@ import com.migao.admin.mapper.OrderMapper;
 import com.migao.admin.mapper.TicketTimelineMapper;
 import com.migao.admin.entity.TicketTimeline;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -571,16 +572,16 @@ class AfterSalesTicketServiceTest {
         when(afterSalesTicketMapper.selectById("ticket-r1")).thenReturn(processingTicket);
         when(afterSalesTicketMapper.updateById(any(AfterSalesTicket.class))).thenReturn(1);
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
-        when(orderMapper.updateById(any(Order.class))).thenReturn(1);
+        when(orderMapper.update(any(), any(UpdateWrapper.class))).thenReturn(1);
 
         // when
         afterSalesTicketService.updateTicketStatus("ticket-r1", request);
 
-        // then: 订单累加 refundAmount、置 refundAt，并登记退款流水
-        verify(orderMapper).updateById(argThat((Order o) ->
-                o.getRefundAmount() != null
-                        && o.getRefundAmount().compareTo(new BigDecimal("300.00")) == 0
-                        && o.getRefundAt() != null));
+        // then: 订单原子累加 refundAmount（防并发双花，审计 07 P1-10）、置 refundAt，并登记退款流水
+        verify(orderMapper).update(isNull(), argThat((UpdateWrapper<Order> w) ->
+                w.getSqlSet() != null && w.getSqlSet().contains("refund_amount")));
+        assertThat(testOrder.getRefundAmount()).isEqualByComparingTo("300.00");
+        assertThat(testOrder.getRefundAt()).isNotNull();
         verify(financeService).recordRefund(argThat((Order o) -> "order-001".equals(o.getId())),
                 argThat(amt -> amt != null && amt.compareTo(new BigDecimal("300.00")) == 0),
                 org.mockito.ArgumentMatchers.contains("AS-REFUND-001"));
@@ -606,14 +607,14 @@ class AfterSalesTicketServiceTest {
         when(afterSalesTicketMapper.selectById("ticket-r2")).thenReturn(processingTicket);
         when(afterSalesTicketMapper.updateById(any(AfterSalesTicket.class))).thenReturn(1);
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
-        when(orderMapper.updateById(any(Order.class))).thenReturn(1);
+        when(orderMapper.update(any(), any(UpdateWrapper.class))).thenReturn(1);
 
         // when
         afterSalesTicketService.updateTicketStatus("ticket-r2", request);
 
         // then
-        verify(orderMapper).updateById(argThat((Order o) ->
-                o.getRefundAmount().compareTo(new BigDecimal("200.00")) == 0));
+        verify(orderMapper).update(isNull(), any(UpdateWrapper.class));
+        assertThat(testOrder.getRefundAmount()).isEqualByComparingTo("200.00");
         verify(financeService).recordRefund(any(Order.class),
                 argThat(amt -> amt.compareTo(new BigDecimal("200.00")) == 0), anyString());
     }
@@ -695,14 +696,14 @@ class AfterSalesTicketServiceTest {
         when(afterSalesTicketMapper.selectById("ticket-r5")).thenReturn(processingTicket);
         when(afterSalesTicketMapper.updateById(any(AfterSalesTicket.class))).thenReturn(1);
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
-        when(orderMapper.updateById(any(Order.class))).thenReturn(1);
+        when(orderMapper.update(any(), any(UpdateWrapper.class))).thenReturn(1);
 
         // when
         afterSalesTicketService.updateTicketStatus("ticket-r5", request);
 
         // then: 只补足到实收款 999，流水金额 = 49
-        verify(orderMapper).updateById(argThat((Order o) ->
-                o.getRefundAmount().compareTo(new BigDecimal("999.00")) == 0));
+        verify(orderMapper).update(isNull(), any(UpdateWrapper.class));
+        assertThat(testOrder.getRefundAmount()).isEqualByComparingTo("999.00");
         verify(financeService).recordRefund(any(Order.class),
                 argThat(amt -> amt.compareTo(new BigDecimal("49.00")) == 0), anyString());
     }

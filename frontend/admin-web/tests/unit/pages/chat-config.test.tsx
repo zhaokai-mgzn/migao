@@ -1,3 +1,4 @@
+// case_ids: UI-005
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
@@ -97,7 +98,7 @@ describe('ChatConfigPage', () => {
     render(<ChatConfigPage />)
 
     await waitFor(() => {
-      expect(screen.getByText('机器人设置')).toBeInTheDocument()
+      expect(screen.getByText('AI 客服配置')).toBeInTheDocument()
     })
     expect(
       screen.getByText(/配置小布机器人的名称、欢迎语和快捷回复/),
@@ -108,7 +109,7 @@ describe('ChatConfigPage', () => {
     render(<ChatConfigPage />)
 
     await waitFor(() => {
-      expect(screen.getByText('机器人设置')).toBeInTheDocument()
+      expect(screen.getByText('AI 客服配置')).toBeInTheDocument()
     })
 
     expect(screen.getByRole('button', { name: /基础设置/ })).toBeInTheDocument()

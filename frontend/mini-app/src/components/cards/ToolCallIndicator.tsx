@@ -48,6 +48,11 @@ const TOOL_CONFIG: Record<string, { running: string; completed: string; icon: st
     running: '正在查询订单...',
     completed: '订单查询完成',
   },
+  customer_order_query: {
+    icon: '📦',
+    running: '正在查询您的订单...',
+    completed: '订单查询完成',
+  },
   create_after_sale: {
     icon: '🔄',
     running: '正在创建售后单...',

@@ -40,6 +40,31 @@ public class UserService implements UserDetailsService {
 
     private static final BCryptPasswordEncoder PASSWORD_ENCODER = new BCryptPasswordEncoder();
 
+    /**
+     * 系统保留角色：商户侧员工管理禁止赋值（防垂直越权，审计 07 P0-2）。
+     * super_admin 平台超管仅由 platform_admins 表管理；service 为内部服务角色；
+     * customer/agent 为 B2C 角色；tenant_admin 为历史遗留管理角色。
+     */
+    private static final java.util.Set<String> FORBIDDEN_USER_ROLES = java.util.Set.of(
+            "super_admin", "service", "customer", "agent", "tenant_admin"
+    );
+
+    /**
+     * 校验角色/权限是否允许由商户侧员工管理赋值。
+     * 禁止系统保留角色与通配权限码（"*" 为超管/内部服务全权限）。
+     *
+     * @param role        角色代码（可能为 null，null 表示不指定）
+     * @param permissions 权限码 JSON 数组字符串（可能为 null）
+     */
+    private void assertAssignableRoleAndPermissions(String role, String permissions) {
+        if (StringUtils.hasText(role) && FORBIDDEN_USER_ROLES.contains(role)) {
+            throw BusinessException.validationError("角色 " + role + " 为系统保留角色，禁止在员工管理中分配");
+        }
+        if (permissions != null && permissions.contains("*")) {
+            throw BusinessException.validationError("禁止授予通配权限 (*)，请勾选具体权限码");
+        }
+    }
+
     // ==================== 认证相关方法 ====================
 
     /**
@@ -225,6 +250,9 @@ public class UserService implements UserDetailsService {
      */
     @Transactional(rollbackFor = Exception.class)
     public User createUser(String phone, String password, String nickname, String role, String position, String permissions, Long tenantId) {
+        // 安全校验：禁止商户侧分配系统保留角色/通配权限（审计 07 P0-2）
+        assertAssignableRoleAndPermissions(role, permissions);
+
         // 验证手机号唯一性
         LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(User::getPhone, phone)
@@ -275,6 +303,9 @@ public class UserService implements UserDetailsService {
      */
     @Transactional(rollbackFor = Exception.class)
     public User updateUser(String userId, String nickname, String avatar, String role, String permissions) {
+        // 安全校验：禁止商户侧分配系统保留角色/通配权限（审计 07 P0-2）
+        assertAssignableRoleAndPermissions(role, permissions);
+
         User user = getUserById(userId);
 
         if (StringUtils.hasText(nickname)) {

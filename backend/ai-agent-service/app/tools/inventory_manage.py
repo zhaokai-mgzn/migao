@@ -35,6 +35,8 @@ class InventoryManageTool(BaseTool):
     allowed_roles = ["admin", "agent", "customer", "tenant_admin"]
 
     read_only = False
+    requires_confirmation = True  # 审计 07 P0-L1: 高风险非 destructive 写操作需用户确认
+    read_only_actions = {"query", "low_stock_alert"}  # 只读 action 免确认
     destructive = False  # 库存调整可逆
     idempotent = False   # 调整操作非幂等
 

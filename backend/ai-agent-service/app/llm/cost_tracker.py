@@ -23,12 +23,12 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 
-# MiniMax 定价（元 / 百万 tokens，参考公开价目）
+# DeepSeek 定价（元 / 百万 tokens，参考公开价目）
 # 模型名统一使用 settings 常量，下线模型只需改 config.py
 from app.config import settings
 MODEL_PRICING: dict[str, dict[str, float]] = {
     settings.LLM_MODEL_FAST:    {"input": 1.00, "output": 4.00},       # deepseek-v4-flash
-    settings.LLM_MODEL_PRIMARY: {"input": 4.00, "output": 16.00},      # deepseek-v4-pro
+    settings.LLM_MODEL_PRIMARY: {"input": 1.00, "output": 4.00},       # deepseek-v4-flash
 }
 
 

@@ -539,4 +539,16 @@ class SettingsControllerTest {
         when(auth.getPrincipal()).thenReturn(securityUser);
         SecurityContextHolder.getContext().setAuthentication(auth);
     }
+
+    @Test
+    @DisplayName("AI 配置读写声明 system:manage 权限注解（审计 07 P1-4）")
+    void aiConfigEndpoints_havePermissionAnnotation() throws Exception {
+        for (String m : new String[]{"getAiConfig", "updateAiConfig"}) {
+            var method = SettingsController.class.getMethod(m, m.equals("getAiConfig")
+                    ? new Class<?>[0] : new Class<?>[]{TenantAiConfig.class});
+            var ann = method.getAnnotation(com.migao.admin.security.RequirePermission.class);
+            assertThat(ann).as(m).isNotNull();
+            assertThat(ann.value()).isEqualTo("system:manage");
+        }
+    }
 }

@@ -171,7 +171,7 @@ describe('SettingsPage — AI tab removed (Issue #502)', () => {
       expect(screen.queryByText(/前往配置/)).toBeNull()
     })
 
-    it('不应该渲染前往机器人设置的链接', async () => {
+    it('不应该渲染前往 AI 客服配置的链接', async () => {
       render(<SettingsPage />)
       await waitFor(() => {
         expect(screen.getByText('企业基础信息')).toBeInTheDocument()

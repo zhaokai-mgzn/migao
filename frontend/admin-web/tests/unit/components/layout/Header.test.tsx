@@ -1,3 +1,4 @@
+// case_ids: UI-005
 /**
  * Header 组件测试
  *
@@ -376,7 +377,8 @@ describe('Header', () => {
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('机器人设置')).toBeInTheDocument()
+    expect(screen.getByText('智能客服')).toBeInTheDocument()
+    expect(screen.getByText('AI 客服配置')).toBeInTheDocument()
   })
 
   it('/chat 路径面包屑', async () => {

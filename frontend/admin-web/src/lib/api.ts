@@ -70,6 +70,7 @@ import type {
   RegistrationData,
   Registration,
   RegistrationListParams,
+  RegistrationResult,
   Notification,
   NotificationQueryParams,
   CreateNotificationRequest,
@@ -87,8 +88,9 @@ export const authApi = {
   login: (data: LoginParams) => 
     request.post<ApiResponse<LoginResponse>>('/api/auth/admin/login', data),
       
-  refreshToken: (refreshToken: string) =>
-    request.post<ApiResponse<RefreshTokenResponse>>('/api/auth/refresh', { refreshToken }),
+  // 审计 07 P1-5：refresh token 由后端 HttpOnly cookie 承载，body 不再传参
+  refreshToken: () =>
+    request.post<ApiResponse<RefreshTokenResponse>>('/api/auth/refresh', {}),
   
   logout: () => 
     request.post('/api/auth/logout'),
@@ -103,7 +105,7 @@ export const authApi = {
     request.post<ApiResponse<LoginResponse>>('/api/auth/sms/login', { phone, code }),
 
   submitRegistration: (data: RegistrationData) =>
-    request.post<ApiResponse>('/api/auth/register', data),
+    request.post<ApiResponse<RegistrationResult>>('/api/auth/register', data),
 }
 
 // 商品 API
@@ -125,6 +127,10 @@ export const productApi = {
   
   updateProductStatus: (id: string, status: ProductStatus) => 
     request.put<ApiResponse<Product>>(`/api/admin/products/${id}/status`, { status }),
+
+  // 设置/取消商品推荐标记（C 端「新品推荐」位控制）
+  updateProductRecommended: (id: string, recommended: boolean) =>
+    request.put<ApiResponse<void>>(`/api/admin/products/${id}/recommend`, { recommended }),
 
   // 批量上架
   batchOnShelf: (productIds: string[]) =>
