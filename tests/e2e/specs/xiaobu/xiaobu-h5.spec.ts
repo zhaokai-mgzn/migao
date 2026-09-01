@@ -104,12 +104,6 @@ async function setupMocks(page: import('@playwright/test').Page) {
 // ═══════════════════════════════════════════════════════════════
 
 test.describe('小布 H5 视觉回归', () => {
-  test.beforeEach(async ({ page }) => {
-    // 调试：捕获页面 JS 运行时异常与 console error（issue #2693 定位）
-    page.on('pageerror', (e) => console.log('🔴 PAGEERROR:', e.message, e.stack?.split('\n')[1] || ''))
-    page.on('console', (m) => { if (m.type() === 'error') console.log('🟠 CONSOLE_ERROR:', m.text()) })
-  })
-
   test('空态欢迎屏：无会话概念 + 新品推荐展示', async ({ page }) => {
     await setupMocks(page)
     await page.goto('/#/pages/chat/index/index')
