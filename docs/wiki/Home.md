@@ -18,7 +18,7 @@
 | Admin API | Java 21 / Spring Boot 3.3.5 / MyBatis-Plus 3.5.8 |
 | AI Service | Python 3.11 / FastAPI 0.115 / LangChain 0.3.14 / LangGraph 0.2.60 |
 | Admin Web | Next.js 14.2 (App Router) / React 18 / TypeScript 5.7 / Tailwind |
-| Mini App | Taro 3.6.40 / React 18 / Sass |
+| Mini App | Taro 4.2.1 / React 18 / Sass |
 | DB | PostgreSQL 15 + Redis 7 |
 | Vector | DashVector |
 | LLM | DeepSeek V4 Pro (主) + DeepSeek V4 Flash (意图) + DeepSeek V4 Flash Vision (视觉) |
