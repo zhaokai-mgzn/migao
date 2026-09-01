@@ -6,7 +6,7 @@
  * 会话管理重构落地页（docs/design/session-management-redesign.md 前端侧）：
  *   - 复用已重构的 SessionService API（chatApi，ai-agent-service /api/chat/*，
  *     底层为 SessionService 生命周期状态机 + SessionStateStore 跨轮状态）
- *   - 顶部监控统计条：活跃 / 已关闭 / 总会话数（从 store.sessions 派生，DSH 监控风格）
+ *   - 顶部监控统计条：活跃 / 已结束 / 总会话数（从 store.sessions 派生，DSH 监控风格）
  *   - 主体复用 /chat 组件链：SessionList（会话列表）+ ChatArea（聊天区，
  *     内含 SessionInsight 会话洞察抽屉 = 工具卡片 / 状态面板）
  */
@@ -66,7 +66,7 @@ export default function AgentSessionsPage() {
           />
           <StatCell
             icon={<Archive className="w-4 h-4 text-neutral-400" />}
-            label="已关闭"
+            label="已结束"
             value={closedCount}
           />
           <StatCell

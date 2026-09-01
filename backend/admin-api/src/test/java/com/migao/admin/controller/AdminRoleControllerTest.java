@@ -28,6 +28,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * AdminRoleController 单元测试
@@ -177,5 +178,14 @@ class AdminRoleControllerTest {
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.success").value(true));
         }
+    }
+
+    @Test
+    @DisplayName("deleteRole 声明 system:manage 权限注解（审计 07 P1-4）")
+    void deleteRole_hasPermissionAnnotation() throws Exception {
+        var method = AdminRoleController.class.getMethod("deleteRole", String.class);
+        var ann = method.getAnnotation(com.migao.admin.security.RequirePermission.class);
+        assertThat(ann).isNotNull();
+        assertThat(ann.value()).isEqualTo("system:manage");
     }
 }

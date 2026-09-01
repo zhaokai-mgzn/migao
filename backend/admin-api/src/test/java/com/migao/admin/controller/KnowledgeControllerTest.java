@@ -1,5 +1,8 @@
 package com.migao.admin.controller;
+// case_ids: DF-009
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.entity.KnowledgeDocument;
 import com.migao.admin.exception.BusinessException;
@@ -12,12 +15,15 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -43,6 +49,13 @@ class KnowledgeControllerTest {
 
     @BeforeEach
     void setUp() {
+        // 纯 MockMvc 环境需手动初始化 MP 实体元数据（否则 LambdaQueryWrapper 无法解析列名）
+        com.baomidou.mybatisplus.core.MybatisConfiguration configuration =
+                new com.baomidou.mybatisplus.core.MybatisConfiguration();
+        org.apache.ibatis.builder.MapperBuilderAssistant assistant =
+                new org.apache.ibatis.builder.MapperBuilderAssistant(configuration, "");
+        TableInfoHelper.initTableInfo(assistant, KnowledgeDocument.class);
+
         mockMvc = MockMvcBuilders.standaloneSetup(knowledgeController)
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
@@ -131,6 +144,52 @@ class KnowledgeControllerTest {
 
             mockMvc.perform(post("/api/admin/knowledge/documents/doc-2/embed"))
                     .andExpect(status().isNotFound());
+        }
+    }
+
+    // ============ test-search 跨租户过滤回归（审计 07 P1-6）============
+
+    @Nested
+    @DisplayName("POST /test-search")
+    class TestSearch {
+
+        @Test
+        @DisplayName("标题/内容 OR 条件必须包裹在括号内，防止绕过租户过滤（DF-009）")
+        void searchKeepsTenantFilterWithOrNested() throws Exception {
+            when(knowledgeDocumentMapper.selectList(any())).thenReturn(java.util.List.of());
+
+            mockMvc.perform(post("/api/admin/knowledge/test-search")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"query\":\"窗帘\"}"))
+                    .andExpect(status().isOk());
+
+            ArgumentCaptor<LambdaQueryWrapper<KnowledgeDocument>> captor =
+                    ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+            verify(knowledgeDocumentMapper).selectList(captor.capture());
+            String sql = captor.getValue().getCustomSqlSegment();
+
+            // OR 必须嵌套：...(title LIKE ? OR content LIKE ?)...，而不是 (tenant AND title) OR content 逃逸租户过滤
+            assertThat(sql)
+                    .as("租户过滤必须与 OR 条件同括号：%s", sql)
+                    .matches(".*\\(title LIKE .* OR content LIKE .*\\).*");
+        }
+
+        @Test
+        @DisplayName("搜索仍保留 tenant_id 与 is_active 过滤条件")
+        void searchKeepsTenantAndActiveFilter() throws Exception {
+            when(knowledgeDocumentMapper.selectList(any())).thenReturn(java.util.List.of());
+
+            mockMvc.perform(post("/api/admin/knowledge/test-search")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"query\":\"窗帘\"}"))
+                    .andExpect(status().isOk());
+
+            ArgumentCaptor<LambdaQueryWrapper<KnowledgeDocument>> captor =
+                    ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+            verify(knowledgeDocumentMapper).selectList(captor.capture());
+            String sql = captor.getValue().getCustomSqlSegment();
+
+            assertThat(sql).contains("tenant_id").contains("is_active");
         }
     }
 }

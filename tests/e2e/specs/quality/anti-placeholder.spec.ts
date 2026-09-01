@@ -6,7 +6,8 @@
  *
  * 如果某列所有行都是 '-'，说明后端未返回该字段或前端未渲染。
  */
-import { test } from '@playwright/test'
+// case_ids: UI-001, UI-002
+import { test } from '../../fixtures'
 import { assertNoPlaceholderFallback } from '../../helpers/assertions.helper'
 import ordersFixture from '../../fixtures/orders-list.json'
 import productsFixture from '../../fixtures/products-list.json'

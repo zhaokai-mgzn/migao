@@ -9,6 +9,7 @@ import { create } from 'zustand'
 import {
   createSession as apiCreateSession,
   getSessionList,
+  getLatestSession,
   deleteSession as apiDeleteSession,
   getSessionMessages,
   getQuickActions as apiGetQuickActions,
@@ -52,6 +53,7 @@ interface ChatState {
 
   // Actions
   createSession: () => Promise<void>
+  ensureLatestSession: () => Promise<void>
   loadSessions: () => Promise<void>
   deleteSession: (id: string) => Promise<void>
   selectSession: (id: string) => Promise<void>
@@ -97,6 +99,29 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     } catch (error: any) {
       console.error('创建会话失败:', error)
       set({ error: '创建会话失败' })
+    }
+  },
+
+  /**
+   * 无会话 UX：确保有当前会话（续聊最近一次，无则新建，前端无感知）
+   */
+  ensureLatestSession: async () => {
+    // 已有当前会话直接返回
+    if (get().currentSessionId) return
+
+    try {
+      // 1. 续聊：取最近一次会话
+      const latest = await getLatestSession()
+      if (latest) {
+        set({ currentSessionId: latest.id, messages: [], error: null, isLoadingMessages: true })
+        await get().loadMessages(latest.id)
+        return
+      }
+      // 2. 无会话：静默新建
+      await get().createSession()
+    } catch (error: any) {
+      console.error('初始化会话失败:', error)
+      set({ error: '初始化会话失败' })
     }
   },
 

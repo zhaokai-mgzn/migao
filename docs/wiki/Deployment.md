@@ -1,6 +1,6 @@
 # 部署
 
-> **2026-08-14 起生产计算层已从 SAE 迁移到 SWAS 轻量应用服务器**。本页为当前事实；SAE 时代的详细踩坑见 `docs/deployment/deployment-aliyun.md`（历史）。
+> **2026-08-14 起生产计算层已从 SAE 迁移到 SWAS 轻量应用服务器**。本页为当前事实；迁移踩坑见 `docs/deployment/swas-migration-lessons.md`，历史踩坑清单见 `docs/deployment/deployment-checklist.md`。
 
 ## CI/CD
 
@@ -26,9 +26,9 @@
 域名分流（nginx）：
 - `api.migaozn.com` → admin-api:8080
 - `ai-api.migaozn.com` → ai-agent:8000
-- `migaozn.com` / `www.migaozn.com` / `merchant.migaozn.com` / `ops.migaozn.com` → admin-web:3001
+- `migaozn.com` / `www.migaozn.com` / `merchant.migaozn.com` → admin-web:3001
 
-> 注：nginx `server_name` 里还列了 `admin.migaozn.com`，但该域名**无 DNS 解析**，实际前端入口是上面 4 个域名。
+> 注：nginx `server_name` 里还列了 `admin.migaozn.com` 与 `ops.migaozn.com`（后者已废弃：商家入驻 2026-08-30 起由 AI 自动甄别，无人工审批页面），两域名均无实际前端入口。
 
 ## 阿里云服务
 

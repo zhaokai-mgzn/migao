@@ -50,3 +50,25 @@ class LogSanitizer:
             else:
                 filtered[k] = v
         return filtered
+
+
+    @staticmethod
+    def sanitize_tree(node):
+        """递归脱敏任意嵌套结构（日志 tool_args 用）。
+
+        - dict：敏感 key（SENSITIVE_KEYS）值打码为 '***'；其余递归
+        - list：逐项递归
+        - str：mask_text（手机号/邮箱打码）
+        - 其他类型（int/bool/None 等）原样返回
+        """
+        if isinstance(node, dict):
+            return {
+                k: ('***' if str(k).lower() in LogSanitizer.SENSITIVE_KEYS
+                    else LogSanitizer.sanitize_tree(v))
+                for k, v in node.items()
+            }
+        if isinstance(node, list):
+            return [LogSanitizer.sanitize_tree(item) for item in node]
+        if isinstance(node, str):
+            return LogSanitizer.mask_text(node)
+        return node

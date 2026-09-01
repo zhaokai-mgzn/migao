@@ -1,0 +1,178 @@
+// ============================================================
+// OrderCard — 小布机器人回复中的订单卡片（v2 深蓝金风格）
+// 业界主流 Receipt 模式（Microsoft Adaptive Cards / 电商客服）：
+//   头部：订单号 + 状态 chip
+//   中部：商品明细行（名称 ×数量 | 小计）
+//   底部：下单时间 + 合计金额（品牌色加粗强调）
+// 多订单时每单独立卡片堆叠（淘宝/京东客服订单列表式）。
+// ============================================================
+@use '../../styles/variables.scss' as *;
+
+.order-card {
+  background: $bg-primary;
+  border-radius: $radius-md;
+  box-shadow: $shadow-card;
+  padding: $space-lg;
+  overflow: hidden;
+
+  &__list {
+    display: flex;
+    flex-direction: column;
+    gap: $space-md;
+  }
+
+  &__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: $space-sm;
+    margin-bottom: $space-md;
+  }
+
+  &__order-no {
+    font-size: 26px;
+    font-weight: 600;
+    color: $text-primary;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__status {
+    flex-shrink: 0;
+    padding: 2px 10px;
+    border-radius: $radius-full;
+    font-size: 20px;
+    font-weight: 500;
+
+    &--pending {
+      background: #fff7e6;
+      color: #b45309;
+    }
+
+    &--confirmed {
+      background: $primary-light;
+      color: $brand-blue;
+    }
+
+    &--producing {
+      background: #f3e8ff;
+      color: #7c3aed;
+    }
+
+    &--shipped {
+      background: #e0f2fe;
+      color: #0369a1;
+    }
+
+    &--completed {
+      background: #e6f7ee;
+      color: $success-color;
+    }
+
+    &--cancelled {
+      background: $bg-secondary;
+      color: $text-tertiary;
+    }
+
+    &--default {
+      background: $bg-secondary;
+      color: $text-secondary;
+    }
+  }
+
+  // 商品明细
+  &__items {
+    border-top: 1px solid $border-color;
+    padding-top: $space-sm;
+    margin-bottom: $space-sm;
+  }
+
+  &__item-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: $space-sm;
+    padding: $space-xs 0;
+  }
+
+  &__item-info {
+    display: flex;
+    align-items: center;
+    gap: $space-sm;
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__item-name {
+    font-size: 24px;
+    color: $text-primary;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__item-qty {
+    flex-shrink: 0;
+    font-size: 22px;
+    color: $text-secondary;
+  }
+
+  &__item-amount {
+    flex-shrink: 0;
+    font-size: 22px;
+    color: $text-secondary;
+  }
+
+  &__item-more {
+    display: block;
+    font-size: 22px;
+    color: $text-tertiary;
+    padding: $space-xs 0;
+  }
+
+  &__customer-row {
+    padding: $space-sm 0;
+    border-top: 1px solid $border-color;
+  }
+
+  &__customer {
+    font-size: 22px;
+    color: $text-secondary;
+  }
+
+  // 底部：时间 + 合计
+  &__footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: $space-sm;
+    border-top: 1px solid $border-color;
+    padding-top: $space-sm;
+  }
+
+  &__date {
+    font-size: 20px;
+    color: $text-tertiary;
+  }
+
+  &__total {
+    display: flex;
+    align-items: baseline;
+    gap: $space-xs;
+  }
+
+  &__total-label {
+    font-size: 22px;
+    color: $text-secondary;
+  }
+
+  &__amount {
+    font-size: 32px;
+    font-weight: 700;
+    color: $brand-gold;
+  }
+}

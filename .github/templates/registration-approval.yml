@@ -1,36 +1,44 @@
 name: registration-approval
-description: 租户注册审批
+description: 商家入驻（租户注册 + AI 自动甄别开通）
 red_flags: []
 
 business_truths:
-  - [registration-approval.submit] 提交入驻申请 POST /api/auth/register（公开，需短信验证码）：必填 companyName/contactName/phone/smsCode，成功后 status="pending"（待审核）
-  - [registration-approval.dup-guard] 重复提交：同手机号已有 pending 申请 → 422；已有 approved 记录 → 422
-  - [registration-approval.super-admin-prefix] 审批为平台超管（super_admin 角色）接口，前缀 /api/super-admin/registrations，非 /api/admin
-  - [registration-approval.approve-side-effects] 审批通过 PUT /api/super-admin/registrations/{id}/approve：校验 status=pending，创建租户(status=active) + 企业管理员用户(role=admin, 随机12位初始密码) + 初始化默认角色(admin/operator/customer_service)与 5 个默认权限，申请置 approved
+  - [registration-approval.submit] 提交入驻申请 POST /api/auth/register（公开，需短信验证码 + 蜜罐防刷）：必填 companyName/contactName/phone/smsCode，提交后由 AI 自动甄别并同步返回终态 status（approved/rejected/pending），不再走人工审批
+  - [registration-approval.ai-approve] AI 甄别通过：合法合规、无敏感信息 → 自动创建租户(status=active) + 企业管理员(role=admin, 随机12位初始密码) + 默认角色(admin/operator/customer_service)与 5 个默认权限，申请置 approved，响应 {applicationId, status:"approved", message}
+  - [registration-approval.ai-reject] AI 甄别驳回：命中规则层敏感词/注入/格式违规或大模型识别法律风险 → 申请置 rejected，响应 {applicationId, status:"rejected", rejectReason}，review_source=ai
+  - [registration-approval.ai-degrade] AI 甄别服务不可达 → fail-closed：review_source=system 的系统繁忙驳回（可立即重试，不进入冷却），绝不在甄别不可用时放行
+  - [registration-approval.dup-guard] 防重复/防攻击：同手机号 pending/approved → 422；同手机号 AI 驳回 24h 冷却；同企业规范化名称（去空格/括号/后缀）pending/approved → 422；每手机号每日提交上限 3、每 IP 每小时上限 5（Redis 计数）；蜜罐字段被填充 → 静默忽略不落库
+  - [registration-approval.review-meta] 甄别元数据落库：tenant_applications.review_source(ai/system/manual)、risk_flags(JSON)、review_summary、reviewed_at；reviewed_by 仅人工审批填超管 userId（该列有 FK REFERENCES users(id)），AI/系统自动审核为 null，审核来源以 review_source 为准
+  - [registration-approval.super-admin-prefix] 超管兜底接口（人工审批页已废弃，接口保留供 API 应急）：前缀 /api/super-admin/registrations
+  - [registration-approval.approve-side-effects] 审批通过 PUT /api/super-admin/registrations/{id}/approve：校验 status=pending，创建租户 + 管理员 + 默认角色权限，申请置 approved
   - [registration-approval.reject] 驳回 PUT /api/super-admin/registrations/{id}/reject：body 需 rejectReason，申请置 rejected
   - [registration-approval.reapprove-guard] 重复审批（非 pending 状态）→ 422
   - [registration-approval.status-enums] 申请状态枚举：pending / approved / rejected
 
 primary_specs:
   - tests/e2e/specs/auth/register.spec.ts
-  - tests/e2e/specs/platform/registrations.spec.ts
+  - backend/admin-api/src/test/java/com/migao/admin/service/RegistrationServiceTest.java
+  - backend/ai-agent-service/tests/test_registration_review.py
 
 reviewer_asserts:
-  - API: POST /api/auth/register
-    expect: HTTP 200，response.data.status="pending" AND response.data.applicationId 非空
-  - API: GET /api/super-admin/registrations?status=pending
-    expect: 需 super_admin；HTTP 200，data.items 每条 status="pending"
+  - API: POST /api/auth/register（合法合规资料）
+    expect: HTTP 200，response.data.status="approved" AND response.data.applicationId 非空（自动创建租户+管理员）
+  - API: POST /api/auth/register（含敏感/违法内容）
+    expect: HTTP 200，response.data.status="rejected" AND response.data.rejectReason 非空
+  - API: POST /api/auth/register（同手机号或同企业名重复提交）
+    expect: HTTP 422，response.error.code=VALIDATION_ERROR
+  - API: POST /api/auth/register（蜜罐字段 website 被填充）
+    expect: HTTP 200 但返回 pending 占位且不创建任何申请/租户（防自动化脚本）
   - API: PUT /api/super-admin/registrations/{id}/approve
-    expect: HTTP 200（审批副作用：创建租户+管理员，通过「该租户后续可登录」间接验证）
-  - API: PUT /api/super-admin/registrations/{id}/reject
-    expect: HTTP 200（body 含 rejectReason）
+    expect: HTTP 200（副作用：创建租户+管理员，通过「该租户后续可登录」间接验证；仅 API 兜底，无前端页面）
   - API: GET /api/super-admin/registrations（普通租户 admin 调用）
     expect: HTTP 403（非 super_admin）
 
 confidence_required: 80%
 
 common_pitfalls:
-  - 重复注册未提示（pending 与 approved 两种都要校验）
-  - 审批后租户未创建（approve 副作用：租户+admin 用户+默认角色权限）——副作用落库由 admin-api 保证，verify 通过「审批后该租户可登录」间接验证
-  - 用错路径/方法（应为 PUT /api/super-admin/registrations/{id}/approve，非 POST /api/admin/...）
+  - 重复提交未提示（同手机号与同企业规范化名称都要校验）
+  - AI 甄别服务不可用时放行（应 fail-closed 系统繁忙驳回，不进入冷却可重试）
+  - 蜜罐/频率限制缺失导致刷量（每手机号每日 3 次、每 IP 每小时 5 次）
   - status 用中文"待审核"（实际为 pending）
+  - 人工审批页已废弃仍被引用（ops 页面与菜单项已删除，仅保留 API 兜底）

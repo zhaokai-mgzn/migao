@@ -155,7 +155,7 @@ export default function ChatConfigPage() {
   return (
     <div className="p-6">
       <div className="mb-6">
-        <h1 className="text-xl font-semibold text-neutral-900">机器人设置</h1>
+        <h1 className="text-xl font-semibold text-neutral-900">AI 客服配置</h1>
         <p className="text-sm text-neutral-500 mt-1">配置小布机器人的名称、欢迎语和快捷回复</p>
       </div>
 

@@ -2,7 +2,7 @@
 """
 truths.py — 业务真值 ID 解析器（case-contract 标准配套，零依赖）
 
-背景：二郎神已有一版 truth-miner 生成的业务真值模板（seed/<client>/templates/*.yml），
+背景：已有一版 truth-miner 生成的业务真值模板（seed/<client>/templates/*.yml），
 case-contract 标准（design/16-case-contract.md）的用例库（cases/*.yml）通过 truths_ref
 引用这些真值。引用机制 = 「ID 前缀标注」：每条 business_truths 以 [<模板名>.<短名>] 开头，
 字符串形状不变 → verify-agent / check_assert / learn.py 零破坏。
@@ -371,7 +371,6 @@ def main(argv=None):
         return 1 if conflicts else 0
 
     if args.cmd == "render":
-        from junshi.contract_view import render_contract  # 懒加载，避免与 contract_view 的 junshi.truths 引用成环
         from pathlib import Path
         try:
             stats = render_contract(Path(args.templates), Path(args.cases),

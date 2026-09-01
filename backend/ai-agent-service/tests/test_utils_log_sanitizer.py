@@ -74,3 +74,31 @@ class TestFilterParams:
     def test_empty_and_none_unchanged(self):
         assert LogSanitizer.filter_params({}) == {}
         assert LogSanitizer.filter_params(None) is None
+
+
+class TestSanitizeTree:
+    """sanitize_tree：递归脱敏嵌套结构（日志脱敏用，DF-010）"""
+
+    def test_nested_dict_phone_masked(self):
+        result = LogSanitizer.sanitize_tree({
+            "customer": {"name": "张三", "phone": "13812345678"},
+            "address": "浙江省杭州市文一西路100号",
+        })
+        assert result["customer"]["phone"] == "138****5678"
+
+    def test_sensitive_key_masked_recursively(self):
+        result = LogSanitizer.sanitize_tree({"nested": {"api_key": "sk-abc"}})
+        assert result["nested"]["api_key"] == "***"
+
+    def test_list_recursion(self):
+        result = LogSanitizer.sanitize_tree({
+            "items": [{"phone": "13900001111"}, "call 13700002222"],
+        })
+        assert result["items"][0]["phone"] == "139****1111"
+        assert "137****2222" in result["items"][1]
+
+    def test_primitives_unchanged(self):
+        assert LogSanitizer.sanitize_tree(None) is None
+        assert LogSanitizer.sanitize_tree(25) == 25
+        assert LogSanitizer.sanitize_tree(True) is True
+        assert LogSanitizer.sanitize_tree("普通文本") == "普通文本"
