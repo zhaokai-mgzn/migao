@@ -15,7 +15,13 @@ export default defineConfig(async (merge) => {
     sourceRoot: 'src',
     outputRoot: 'dist',
     plugins: [],
-    defineConstants: {},
+    // 显式定义 TARO_APP_* 环境变量替换（webpack DefinePlugin），不依赖 .env 文件：
+    // Taro 的 dotenv 机制只注入 .env/.env.local 中的变量，CI 无 .env 文件时产物会残留
+    // process.env 引用导致浏览器端 `process is not defined` 白屏（issue #2693）。
+    defineConstants: {
+      'process.env.TARO_APP_API_URL': JSON.stringify(process.env.TARO_APP_API_URL || ''),
+      'process.env.TARO_APP_AI_API_URL': JSON.stringify(process.env.TARO_APP_AI_API_URL || ''),
+    },
     copy: {
       patterns: [],
       options: {},
