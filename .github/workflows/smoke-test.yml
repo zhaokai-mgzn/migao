@@ -40,6 +40,23 @@ jobs:
       - name: Install dependencies
         run: pip install -r tests/smoke/requirements.txt
 
+      - name: Wait for services ready
+        # 2026-09-01 新增：部署为滚动重启，冒烟过早会撞上服务未就绪的瞬态 502
+        # （greenlet 部署冒烟 8 failed 全 502 教训），先等待就绪再测，最多 5 分钟。
+        env:
+          ADMIN_API_URL: ${{ inputs.admin_api_url }}
+          AI_AGENT_URL: ${{ inputs.ai_agent_url }}
+        run: |
+          ready=0
+          for i in $(seq 1 30); do
+            ai=$(curl -s -o /dev/null -w "%{http_code}" -m 10 "$AI_AGENT_URL/health" || true)
+            adm=$(curl -s -o /dev/null -w "%{http_code}" -m 10 -X POST "$ADMIN_API_URL/api/auth/sms-code" -H 'Content-Type: application/json' -d '{}' || true)
+            echo "attempt $i: ai-agent=$ai admin-api=$adm"
+            if [ "$ai" = "200" ] && [ "$adm" = "401" ]; then ready=1; break; fi
+            sleep 10
+          done
+          [ "$ready" = "1" ] && echo "✅ 服务就绪" || echo "⚠️ 5 分钟内未就绪，继续冒烟（由断言判定）"
+
       - name: Run P0 smoke tests
         env:
           SMOKE_ENV: production
