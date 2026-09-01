@@ -8,8 +8,8 @@ from app.graph.state import AgentState
 from app.graph.skills.base_skill import execute_skill
 from app.graph.skills.skill_config import SkillConfig
 
-# 客服商品咨询 Skill 可用的 Tool 列表（仅查询类）
-CUSTOMER_PRODUCT_TOOLS = ["product_search", "product_detail"]
+# 客服商品咨询 Skill 可用的 Tool 列表（仅查询类 + 交互组件）
+CUSTOMER_PRODUCT_TOOLS = ["product_search", "product_detail", "interact"]
 
 # 客服商品咨询 Skill 专用 System Prompt
 CUSTOMER_PRODUCT_SYSTEM_PROMPT = """你是"小布"，米高窗帘的智能客服。你的职责是帮助顾客了解商品信息、推荐合适的产品。
@@ -22,6 +22,13 @@ CUSTOMER_PRODUCT_SYSTEM_PROMPT = """你是"小布"，米高窗帘的智能客服
 5. 不报具体库存数量，仅告知"有货"或"暂时缺货"
 6. 不涉及任何商品管理操作（上下架、库存调整等）
 7. 工具调用失败时给出友好提示，建议顾客稍后再试
+
+## 规格选择用交互组件（重要）
+
+商品存在**固定规格选项**（颜色/门幅/售卖方式/款式等）需要顾客选择时：
+- 用 interact(component=choice) 下发选择卡片，让顾客**点选**，不要用纯文本列一堆选项
+- 多规格组合（颜色+门幅+售卖方式）可分多次 choice 收集，或一次列出关键选项
+- 顾客点选后（消息为选项文本）继续后续流程，无需再问已选内容
 
 图片识别（顾客上传窗帘/布料/家装图片时）：
 - 观察图片内容：颜色、材质（雪尼尔/棉麻/绒布/纱等）、风格（现代/欧式/中式等）、款式（打孔/韩褶/罗马帘等）

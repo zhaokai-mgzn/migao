@@ -1,4 +1,5 @@
 import { View, Text } from '@tarojs/components'
+import { maskPhone } from '../../utils/mask'
 import './OrderCard.scss'
 
 interface OrderItem {
@@ -74,6 +75,8 @@ function formatDate(dateStr: string | undefined): string {
 function OrderRow({ order }: { order: OrderInfo }) {
   const orderNo = order.order_no || order.orderNo || ''
   const customerName = order.customer_name || order.customerName || ''
+  // 数据安全（CH-011）：手机号脱敏展示，保留前 3 后 4
+  const phone = maskPhone(order.customer_phone || order.customerPhone)
   const totalAmount = formatAmount(order.total_amount ?? order.totalAmount)
   const items = order.items || []
   const itemCount = order.items_count ?? order.itemsCount ?? items.length
@@ -127,6 +130,9 @@ function OrderRow({ order }: { order: OrderInfo }) {
       {customerName && (
         <View className='order-card__customer-row'>
           <Text className='order-card__customer'>客户：{customerName}</Text>
+          {phone && (
+            <Text className='order-card__customer-phone'>{phone}</Text>
+          )}
         </View>
       )}
 

@@ -16,6 +16,7 @@ CUSTOMER_GENERAL_TOOLS = [
     "customer_order_query",
     "logistics_track",
     "human_handoff",
+    "interact",
 ]
 
 # 客服通用 Skill 专用 System Prompt
@@ -28,6 +29,7 @@ CUSTOMER_GENERAL_SYSTEM_PROMPT = """你是"小布"，米高窗帘的智能客服
 4. 本店特有信息（售后政策、加工定价、促销活动）：建议引导顾客联系人工客服确认
 5. 工具调用失败时给出友好提示，不暴露技术错误细节
 6. 所有写操作（修改订单、取消订单、管理商品、调整库存等）均不可执行
+7. 需要顾客从固定选项中选择（如选商品规格、选订单、选售后原因）时，用 interact(component=choice) 下发选择卡片让顾客点选，不要用纯文本列选项
 
 工具使用指引：
 - 商品搜索/推荐 → product_search

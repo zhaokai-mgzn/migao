@@ -82,4 +82,36 @@ describe('OrderCard', () => {
     const { container } = render(<OrderCard data={{}} />)
     expect(container.firstChild).toBeNull()
   })
+
+  it('手机号应脱敏展示（CH-011 数据安全）：13800138000 → 138****8000', () => {
+    render(
+      <OrderCard
+        data={{
+          order: {
+            order_no: 'ORD-1001',
+            status: 'shipped',
+            status_text: '已发货',
+            total_amount: 299.5,
+            customer_name: '张三',
+            customer_phone: '13800138000',
+          },
+        }}
+      />,
+    )
+    expect(screen.getByText('138****8000')).toBeTruthy()
+    // 明文手机号不得出现在卡片中
+    expect(screen.queryByText('13800138000')).toBeNull()
+  })
+
+  it('无手机号时仅展示客户名（不渲染脱敏空串）', () => {
+    render(
+      <OrderCard
+        data={{
+          order: { order_no: 'ORD-1002', status: 'pending', status_text: '待付款', customer_name: '李四' },
+        }}
+      />,
+    )
+    expect(screen.getByText(/李四/)).toBeTruthy()
+    expect(screen.queryByText('****')).toBeNull()
+  })
 })
