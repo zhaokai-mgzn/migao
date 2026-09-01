@@ -32,7 +32,7 @@ jobs:
       group: deploy-frontend
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # 镜像 tag：git SHA 前 7 位（不可变、可追溯）；回滚/指定版本时用输入值
       - name: Resolve image tag

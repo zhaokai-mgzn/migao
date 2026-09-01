@@ -24,7 +24,7 @@ jobs:
       !contains(github.event.issue.labels.*.name, 'hold/auto-fail')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: 处理 needs-truths → needs-verification 转换
         if: contains(github.event.issue.labels.*.name, 'needs-truths')
