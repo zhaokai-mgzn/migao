@@ -399,7 +399,7 @@
 数据: 日志中手机号脱敏（138****8000）
 数据: payload 超限/非法 JSON 回退为普通文本处理
 ```
-真值: ai-chat.form-inject
+真值: ai-chat.context-memory
 溯源: C 端表单化交互（miniapp-multiturn-form-scenarios.md）M1+M2 ｜ tags: form, interactive, multi_turn
 
 ### CH-010. 选购下单表单化交互（choice 选品→form 收参→confirm 确认→下单） 🔵
@@ -417,7 +417,7 @@
 数据: order_create 前必有 interact(confirm) 确认（写操作守卫）
 数据: order_create items 含所选 SKU（颜色/门幅/售卖方式）与数量
 ```
-真值: ai-chat.form-inject, order.flow
+真值: ai-chat.confirm-required, order.flow
 溯源: C 端表单化交互方案 S1（miniapp-multiturn-form-scenarios.md） ｜ tags: multi_turn, form, interactive, order
 
 ### CH-011. 数据安全 - 跨用户订单查询拒绝 + 订单卡片手机号脱敏 🔴
@@ -443,7 +443,7 @@
 数据: aftersale_create 前必有 interact(confirm) 确认
 数据: 售后单归属当前用户（数据隔离）
 ```
-真值: aftersales.flow
+真值: aftersales-flow.flow
 溯源: C 端表单化交互方案 S3（miniapp-multiturn-form-scenarios.md） ｜ tags: multi_turn, aftersales, interactive
 
 ## 跨域（3 case）
