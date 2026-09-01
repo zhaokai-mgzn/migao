@@ -923,6 +923,82 @@ async def _handle_page_request(
     )
 
 
+# ============ 表单协议 ============
+
+# __FORM__ payload 大小上限（防超长注入；超出回退为普通文本）
+_FORM_MAX_LEN = 2048
+
+
+async def _handle_form_request(
+    request: "ChatSendRequest",
+    tenant_id: int,
+    user_id: str,
+    current_user,
+):
+    """
+    处理 __FORM__ 表单提交：解析字段 → 注入 LLM 上下文 → 走正常 agent 流程。
+
+    消息格式：__FORM__|{json}
+    例：__FORM__|{"customer_name":"张三","customer_phone":"13800138000","quantity":"3"}
+
+    设计（docs/design/miniapp-multiturn-form-scenarios.md §4）：
+    - 表单字段以可读文本注入本轮会话上下文（LLM 无感协议，兼容现有 flow，
+      保留 LLM 确认/校验能力；区别于 __PAGE__ 的直调工具）
+    - payload 超限 / 非法 JSON / 非对象 → 回退为普通文本处理（不阻断对话）
+    - 日志手机号/邮箱脱敏（LogSanitizer），防敏感信息泄露
+    """
+    from app.memory.session_service import SessionService
+    from app.utils.log_sanitizer import LogSanitizer
+
+    # ── 安全校验：与 send_message 共用统一守卫（存在/租户/用户/closed + 刷新 last_activity）──
+    session_memory = SessionMemory()
+    session_service = SessionService(session_memory)
+    session_id = request.session_id
+    if not session_id:
+        session_id = await session_memory.create_session(
+            tenant_id=tenant_id, customer_id=user_id, title=None,
+        )
+    else:
+        _session, _gate_error = await session_service.send_gate(
+            session_id, tenant_id=tenant_id, user_id=user_id,
+        )
+        if _gate_error:
+            _raise_session_error(*_gate_error)
+
+    raw = request.message
+
+    # 大小限制：超限回退普通文本（防超长注入）
+    if len(raw) > _FORM_MAX_LEN:
+        logger.warning(f"[form] __FORM__ payload too large ({len(raw)}B), fallback to plain text")
+        return await send_message(request, current_user)
+
+    try:
+        payload = json.loads(raw[len("__FORM__|"):])
+    except (ValueError, json.JSONDecodeError) as e:
+        logger.warning(f"[form] Bad __FORM__ payload, fallback to plain text: {e}")
+        return await send_message(request, current_user)
+
+    if not isinstance(payload, dict):
+        logger.warning("[form] __FORM__ payload not an object, fallback to plain text")
+        return await send_message(request, current_user)
+
+    logger.info(
+        f"[form] Form submitted | tenant={tenant_id} user={user_id} session={session_id} "
+        f"payload={LogSanitizer.mask_text(raw)}"
+    )
+
+    # 注入上下文：转可读文本作为本轮用户消息（LLM 自然理解，不改写历史）
+    lines = [f"{k}: {v}" for k, v in payload.items() if v not in (None, "")]
+    injected = "（用户通过表单提交）" + "；".join(lines)
+    injected_request = ChatSendRequest(
+        session_id=session_id,
+        message=injected,
+        images=request.images,
+        ignored_suggestions=request.ignored_suggestions,
+    )
+    return await send_message(injected_request, current_user)
+
+
 # ============ API 路由 ============
 
 @router.post("/send")
@@ -950,6 +1026,10 @@ async def send_message(
     # ── __PAGE__ 分页协议：绕过 LLM 直接调工具，杜绝翻页幻觉 ──
     if request.message.startswith("__PAGE__|"):
         return await _handle_page_request(request, tenant_id, user_id, current_user)
+
+    # ── __FORM__ 表单协议：解析字段注入 LLM 上下文（C 端表单化交互）──
+    if request.message.startswith("__FORM__|"):
+        return await _handle_form_request(request, tenant_id, user_id, current_user)
 
     logger.info(
         f"[chat/send] Message received | tenant={tenant_id} user={user_id} session={request.session_id or 'new'} msg_len={len(request.message)}"
