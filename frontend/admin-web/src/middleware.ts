@@ -3,22 +3,7 @@ import type { NextRequest } from 'next/server'
 
 // ── Path lists ──────────────────────────────────────────────────
 
-/** Paths allowed on ops.migaozn.com (plus /api/auth/*) */
-const OPS_ALLOWED_PREFIXES = [
-  '/registrations',
-  '/platform-dashboard',
-  '/tenants',
-  '/platform-settings',
-  '/login',
-]
-
-/** Super-admin paths blocked on merchant.migaozn.com */
-const SUPER_ADMIN_PREFIXES = [
-  '/registrations',
-  '/platform-dashboard',
-  '/tenants',
-  '/platform-settings',
-]
+// 注：ops.migaozn.com 人工审批入口已废弃（2026-08-30 起商家入驻由 AI 自动甄别开通）。
 
 /** Corporate paths allowed on migaozn.com (bare domain), excluding root */
 const CORPORATE_PREFIXES = [
@@ -85,22 +70,11 @@ function handleRequest(hostname: string, pathname: string, request: NextRequest)
     return NextResponse.next()
   }
 
-  // ── ops.migaozn.com ──────────────────────────────────────────
-  if (hostname === 'ops.migaozn.com') {
-    if (startsWithAny(pathname, OPS_ALLOWED_PREFIXES) || isApiAuth(pathname)) {
-      return NextResponse.next()
-    }
-    return NextResponse.redirect(new URL('/registrations', request.url))
-  }
-
   // ── merchant.migaozn.com ─────────────────────────────────────
   if (hostname === 'merchant.migaozn.com') {
     // 根路径 → 登录页（auth guard 会在登录后跳转到 dashboard）
     if (pathname === '/') {
       return NextResponse.redirect(new URL('/login', request.url))
-    }
-    if (startsWithAny(pathname, SUPER_ADMIN_PREFIXES)) {
-      return new NextResponse(null, { status: 404 })
     }
     return NextResponse.next()
   }

@@ -34,6 +34,11 @@ public class ProductQueryRequest {
     private String status;
 
     /**
+     * 推荐筛选：true=仅商家推荐（C 端新品推荐位），false=仅非推荐，null=不过滤
+     */
+    private Boolean recommended;
+
+    /**
      * 页码，默认 1
      */
     private Long page = 1L;

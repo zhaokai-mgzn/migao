@@ -1,4 +1,6 @@
 name: Agent Eval (米宝能力评测)
+permissions:
+  contents: read
 
 on:
   # 2026-08-29：取消每日 normal 定时评测（成本高、信号为 LLM 波动为主，按需手动触发即可）。

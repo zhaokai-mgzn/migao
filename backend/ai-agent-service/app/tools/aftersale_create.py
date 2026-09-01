@@ -276,6 +276,8 @@ class AftersaleCreateTool(BaseTool):
                     "我们会尽快处理，感谢您的耐心等待 🙏"
                 ),
                 summary=f"售后工单创建成功: {ticket_no}, 类型{ticket_type_label}, 订单{order_id}",
+                # T2 事务终态：售后创建完成 → 清空售后域草稿状态
+                terminal=True,
             )
 
         except Exception as e:

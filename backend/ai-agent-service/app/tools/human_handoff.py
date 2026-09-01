@@ -245,6 +245,8 @@ class HumanHandoffTool(BaseTool):
                     "我们的客服人员会在工作时间内尽快与您联系，感谢您的耐心等待 🙏"
                 ),
                 summary=f"转人工成功: 工单{ticket_no}, 原因:{handoff_reason[:30]}",
+                # T2 事务终态：转人工完成 → 清空会话级状态（进入人工流程，AI 上下文不再续用）
+                terminal=True,
             )
 
         except Exception as e:

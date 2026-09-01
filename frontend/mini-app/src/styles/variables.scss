@@ -1,0 +1,54 @@
+// ============================================================
+// 米高 AI 智能客服小程序 — 全局设计变量（v2 瑞幸深蓝金风格）
+// 设计语言：深蓝主色 + 金铜点缀 + 大圆角 + 卡片化
+// ============================================================
+
+// ── 品牌色（深蓝金，参考瑞幸 AI 智能体设计语言）──
+$brand-navy: #0A2540;        // 深蓝主色（顶部渐变基底 / 强调）
+$brand-blue: #1A73E8;        // 品牌蓝（交互主色）
+$brand-blue-light: #4D9BFF;  // 浅蓝（渐变辅助）
+$brand-gold: #C8A24B;        // 金铜点缀（价格/亮点）
+$brand-gold-light: #E8D5A8;  // 浅金（渐变/背景）
+
+// ── 功能色 ──
+$primary-color: $brand-blue;
+$primary-light: #E8F1FE;
+$success-color: #22A06B;
+$error-color: #E5484D;
+$warning-color: $brand-gold;
+
+// ── 中性色 ──
+$text-primary: #0A2540;
+$text-secondary: #5A6B7C;
+$text-tertiary: #9AA5B1;
+$bg-primary: #FFFFFF;
+$bg-secondary: #F5F7FA;
+$border-color: #EAEEF3;
+
+// ── 圆角 ──
+$radius-sm: 8px;
+$radius-md: 12px;
+$radius-lg: 16px;
+$radius-xl: 24px;
+$radius-full: 999px;
+
+// ── 阴影 ──
+$shadow-card: 0 2px 12px rgba(10, 37, 64, 0.06);
+$shadow-pop: 0 4px 20px rgba(10, 37, 64, 0.12);
+
+// ── 消息气泡 ──
+$bubble-user-bg: linear-gradient(135deg, #1A73E8 0%, #0A2540 100%);
+$bubble-user-text: #FFFFFF;
+$bubble-ai-bg: #FFFFFF;
+$bubble-ai-text: $text-primary;
+
+// ── 渐变 ──
+$gradient-brand: linear-gradient(135deg, #0A2540 0%, #1A73E8 100%);
+$gradient-gold: linear-gradient(135deg, #C8A24B 0%, #E8D5A8 100%);
+
+// ── 间距 ──
+$space-xs: 4px;
+$space-sm: 8px;
+$space-md: 12px;
+$space-lg: 16px;
+$space-xl: 24px;

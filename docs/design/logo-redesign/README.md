@@ -47,8 +47,6 @@
 | `variant-{white-blue,gold,blue-gold,navy}.svg` | 底板配色变体（织金暖底 = `variant-gold.svg`，已落地）|
 | `color-comparison.svg` | 5 版底板配色对比图 |
 | `overview.svg` | 三方向对比总览图 |
-| `preview/*.png` | qlmanage 渲染的 1024px 预览 |
-| `verify_preview.py` | 像素级自动校验脚本（无 PIL 依赖）|
 
 ## 落地清单（选定方向后执行）
 

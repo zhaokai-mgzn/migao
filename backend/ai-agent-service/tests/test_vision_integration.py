@@ -251,8 +251,9 @@ class TestSelectModelWithVision:
         monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-v4-flash-vision-exp")
         assert select_model(has_vision=True) == "deepseek-v4-flash-vision-exp"
 
-        monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-v4-pro")
-        assert select_model(has_vision=True) == "deepseek-v4-pro"
+        # 视觉模型可被运维替换为其他 DeepSeek 模型（仅验证路由返回配置值）
+        monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-v4-flash")
+        assert select_model(has_vision=True) == "deepseek-v4-flash"
 
     def test_select_model_with_vision_overrides_intent(self, routing_on, vision_enabled, monkeypatch):
         """has_vision=True 优先级高于简单意图"""
@@ -300,11 +301,11 @@ class TestVisionModelPricing:
             assert MODEL_PRICING[m]["input"] > 0
             assert MODEL_PRICING[m]["output"] > 0
 
-        # 快速模型应比主模型便宜
+        # 主模型已统一为 deepseek-v4-flash，与快模型同价
         fast = MODEL_PRICING[fast_model]
         primary = MODEL_PRICING[primary_model]
-        assert fast["input"] < primary["input"]
-        assert fast["output"] < primary["output"]
+        assert fast["input"] == primary["input"]
+        assert fast["output"] == primary["output"]
 
     def test_old_models_removed(self):
         """旧 Qwen VL / MiniMax 模型已从定价表中移除"""

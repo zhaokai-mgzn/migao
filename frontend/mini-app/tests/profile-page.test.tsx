@@ -1,3 +1,4 @@
+// case_ids: OR-001, AS-001
 /**
  * 个人中心页面测试
  *
@@ -15,6 +16,7 @@ jest.mock('@tarojs/taro', () => {
       showToast: jest.fn(),
       showModal: jest.fn(() => Promise.resolve({ confirm: true })),
       redirectTo: jest.fn(),
+      switchTab: jest.fn(),
       getStorageSync: jest.fn((k: string) => storage[k] ?? ''),
       setStorageSync: jest.fn((k: string, v: any) => { storage[k] = v }),
       removeStorageSync: jest.fn((k: string) => { delete storage[k] }),
@@ -54,6 +56,15 @@ chatStoreMock.useChatStore.getState = jest.fn(() => ({
 
 jest.mock('../src/services/userService', () => ({
   getUserInfo: jest.fn(),
+}))
+
+jest.mock('../src/services/productService', () => ({
+  getMyOrders: jest.fn(() => Promise.resolve([
+    { id: 'o1', order_no: 'ORD-1001', status: 'shipped', status_text: '已发货', total_amount: 299.5, created_at: '2026-06-01T10:00:00Z' },
+  ])),
+  getMyTickets: jest.fn(() => Promise.resolve([
+    { id: 't1', ticket_no: 'AS-001', status: 'pending', ticket_type: 'refund', created_at: '2026-06-01T10:00:00Z' },
+  ])),
 }))
 
 import Taro from '@tarojs/taro'
@@ -146,10 +157,19 @@ describe('ProfilePage', () => {
     )
   })
 
-  it('应显示统计数据', () => {
+  it('应显示我的订单与售后入口', async () => {
     render(<ProfilePage />)
-    // 2个session, 应显示 "2" 作为总会话数
-    expect(screen.getByText('总会话数')).toBeTruthy()
-    expect(screen.getByText('本月对话')).toBeTruthy()
+    expect(screen.getByText(/我的订单/)).toBeTruthy()
+    expect(screen.getByText(/我的售后/)).toBeTruthy()
+    // 订单数据渲染（异步）
+    await screen.findByText('ORD-1001')
+    await screen.findByText('AS-001')
+  })
+
+  it('点击订单应唤起对话追问进度', async () => {
+    render(<ProfilePage />)
+    await screen.findByText('ORD-1001')
+    fireEvent.click(screen.getByText('ORD-1001'))
+    expect(Taro.switchTab).toHaveBeenCalledWith({ url: '/pages/chat/index/index' })
   })
 })
