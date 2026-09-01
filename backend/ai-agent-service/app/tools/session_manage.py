@@ -35,6 +35,8 @@ class SessionManageTool(BaseTool):
     allowed_roles = ["admin", "agent", "tenant_admin"]
 
     read_only = False
+    requires_confirmation = True  # 审计 07 P0-L1: 高风险非 destructive 写操作需用户确认
+    read_only_actions = {"list", "monitor", "detail"}  # 只读 action 免确认
     destructive = False  # 分配/结束会话非破坏性（可重新分配）
     idempotent = False   # 分配/结束非幂等
 

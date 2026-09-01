@@ -19,7 +19,7 @@ export default function SettingsPage() {
   const router = useRouter()
   const [tab, setTab] = useState<SettingsTab>('basic')
 
-  // 旧链接 /settings?tab=ai → 重定向到机器人设置
+  // 旧链接 /settings?tab=ai → 重定向到 AI 客服配置
   useEffect(() => {
     if (searchParams.get('tab') === 'ai') {
       router.replace('/chat/config')

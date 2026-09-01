@@ -95,6 +95,34 @@ class Session:
         return parse_sse(r.text)
 
 
+class CustomerSession:
+    """C 端（小布）真实 Agent 会话 — 以 DEBUG customer 身份驱动。
+
+    通过 X-Debug-Role: customer 让 ai-agent 在 DEBUG 模式路由到小布
+    （CustomerServiceAgent），用于 C 端行为验收（数据隔离/工具选择）。
+    """
+
+    def __init__(self):
+        self.id = None
+        self.headers = {"X-Debug-Role": "customer"}
+
+    def create(self):
+        r = requests.post(f"{AGENT}/api/chat/sessions",
+                          json={"title": "Xiaobu E2E"}, headers=self.headers)
+        assert r.status_code == 200, f"Create session: {r.text}"
+        self.id = r.json()["data"]["id"]
+        return self
+
+    def send(self, message, timeout=60):
+        """发送消息 → 返回解析后的 SSE 事件"""
+        with httpx.Client(timeout=timeout) as c:
+            r = c.post(f"{AGENT}/api/chat/send",
+                       headers=self.headers,
+                       json={"session_id": self.id, "message": message})
+        assert r.status_code == 200, f"Send failed: {r.text[:200]}"
+        return parse_sse(r.text)
+
+
 # ═══ admin-api 验证 ═══
 
 def admin_get(path, params=None):

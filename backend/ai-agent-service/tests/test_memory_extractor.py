@@ -60,7 +60,7 @@ class TestExtractMemoriesFromTurn:
     @pytest.mark.asyncio
     async def test_llm_result_gets_context_appended(self):
         mock_response = MagicMock()
-        mock_response.content = '[{"type": "fact", "key": "phone", "value": "138"}]'
+        mock_response.content = '[{"type": "fact", "key": "order", "value": "ORD-123"}]'
         mock_llm = MagicMock()
         mock_llm.ainvoke = AsyncMock(return_value=mock_response)
 
@@ -69,19 +69,19 @@ class TestExtractMemoriesFromTurn:
             return_value=mock_llm,
         ):
             result = await extract_memories_from_turn(
-                user_message="我的手机号是13800138000",
-                assistant_reply="好的，已记录您的手机号。",
+                user_message="我的订单号是ORD-123",
+                assistant_reply="好的，已记录您的订单号。",
                 session_id="sess-1",
             )
 
         assert len(result) == 1
-        assert result[0]["context"] == "session=sess-1 | user: 我的手机号是13800138000"
+        assert result[0]["context"] == "session=sess-1 | user: 我的订单号是ORD-123"
 
     @pytest.mark.asyncio
     async def test_existing_context_not_overwritten(self):
         mock_response = MagicMock()
         mock_response.content = (
-            '[{"type": "fact", "key": "phone", "value": "138", "context": "已有"}]'
+            '[{"type": "fact", "key": "order", "value": "ORD-123", "context": "已有"}]'
         )
         mock_llm = MagicMock()
         mock_llm.ainvoke = AsyncMock(return_value=mock_response)
@@ -91,8 +91,8 @@ class TestExtractMemoriesFromTurn:
             return_value=mock_llm,
         ):
             result = await extract_memories_from_turn(
-                user_message="我的手机号是13800138000",
-                assistant_reply="好的，已记录您的手机号。",
+                user_message="我的订单号是ORD-123",
+                assistant_reply="好的，已记录您的订单号。",
                 session_id="sess-2",
             )
 
@@ -175,3 +175,42 @@ class TestExtractAndSave:
                 session_id="s1",
             )
         assert count == 0
+
+
+class TestFilterPii:
+    """_filter_pii：PII 记忆过滤（手机号/地址/邮箱不落库）"""
+
+    def test_phone_in_value_dropped(self):
+        from app.memory.extractor import _filter_pii
+        result = _filter_pii([{"type": "fact", "key": "contact", "value": "手机 13812345678"}])
+        assert result == []
+
+    def test_phone_key_dropped(self):
+        from app.memory.extractor import _filter_pii
+        result = _filter_pii([{"type": "fact", "key": "phone", "value": "13812345678"}])
+        assert result == []
+
+    def test_address_key_dropped(self):
+        from app.memory.extractor import _filter_pii
+        result = _filter_pii([{"type": "fact", "key": "address", "value": "文一西路100号"}])
+        assert result == []
+
+    def test_email_key_dropped(self):
+        from app.memory.extractor import _filter_pii
+        result = _filter_pii([{"type": "fact", "key": "email", "value": "a@b.com"}])
+        assert result == []
+
+    def test_normal_memories_kept(self):
+        from app.memory.extractor import _filter_pii
+        result = _filter_pii([{"type": "preference", "key": "style", "value": "简约风格"}])
+        assert len(result) == 1
+        assert result[0]["key"] == "style"
+
+    def test_mixed_list_filters_only_pii(self):
+        from app.memory.extractor import _filter_pii
+        result = _filter_pii([
+            {"type": "fact", "key": "order", "value": "ORD-123"},
+            {"type": "fact", "key": "phone", "value": "13812345678"},
+        ])
+        assert len(result) == 1
+        assert result[0]["key"] == "order"

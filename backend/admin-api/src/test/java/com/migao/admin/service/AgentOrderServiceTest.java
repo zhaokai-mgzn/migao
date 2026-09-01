@@ -235,15 +235,15 @@ class AgentOrderServiceTest {
 
             when(orderMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(testOrder);
             when(orderMapper.selectById("order-uuid-001")).thenReturn(testOrder);
-            when(orderMapper.updateById(any(Order.class))).thenReturn(1);
+            when(orderMapper.update(any(), any(com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper.class))).thenReturn(1);
             when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
 
             // when
             orderService.updateOrderForAgent("order-uuid-001", req, 1L);
 
-            // then: refundOrder 以 3 参调用并记录退款金额
-            verify(orderMapper).updateById(argThat((Order o) ->
-                    o.getRefundAmount() != null && o.getRefundAmount().compareTo(new BigDecimal("100.00")) == 0));
+            // then: refundOrder 以 3 参调用，原子累加退款金额（审计 07 P1-10）
+            assertThat(testOrder.getRefundAmount()).isEqualByComparingTo("100.00");
+            verify(orderMapper).update(isNull(), any(com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper.class));
         }
     }
 }

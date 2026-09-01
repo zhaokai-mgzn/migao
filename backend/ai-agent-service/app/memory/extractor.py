@@ -13,13 +13,34 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from loguru import logger
 
 
+# PII 黑名单：这些 key 或值含手机号/邮箱的记忆一律不落库（个保法最小化原则）
+_PII_KEYS = frozenset({'phone', 'mobile', 'address', 'email', 'id_card', 'idcard'})
+_PHONE_RE = re.compile(r'1[3-9]\d{9}')
+
+
+def _filter_pii(memories: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """过滤含个人隐私信息的记忆（手机号/邮箱/地址 key 或值），PII 不落库。"""
+    if not memories:
+        return memories
+    out = []
+    for m in memories:
+        key = str(m.get('key', '')).lower()
+        value = str(m.get('value', ''))
+        if key in _PII_KEYS:
+            continue
+        if _PHONE_RE.search(value) or re.search(r'[\w.+-]+@[\w-]+\.[\w.]+', value):
+            continue
+        out.append(m)
+    return out
+
+
 EXTRACTION_PROMPT = """你是一个记忆提取器。从以下客服对话中提取值得记住的用户信息。
 
 只提取**明确表达**的内容，不要编造或推测。
 
 记忆类型：
 - preference: 用户偏好（喜欢什么风格、预算范围、常用功能等）
-- fact: 关键事实（订单号、手机号、地址、常用商品分类等）
+- fact: 关键事实（订单号、常用商品分类等）
 - feedback: 用户对 AI 的纠正（"不对，那个订单号是..."）
 - reference: 其他值得记住的信息
 
@@ -29,6 +50,7 @@ EXTRACTION_PROMPT = """你是一个记忆提取器。从以下客服对话中提
 3. 如果对话中没有值得记住的信息，返回空数组
 4. 不要重复已明确的信息
 5. 直接返回 JSON 数组，不要其他内容
+6. **禁止提取个人隐私信息**：手机号、地址、邮箱、身份证号等一律不要提取（记忆系统不保存 PII）
 
 输出格式：
 [{"type": "preference", "key": "style", "value": "喜欢简约风格", "importance": 0.8}]"""
@@ -92,7 +114,7 @@ async def extract_memories_from_turn(
             HumanMessage(content=prompt),
         ])
         content = response.content if isinstance(response.content, str) else ""
-        items = _parse_extraction_result(content)
+        items = _filter_pii(_parse_extraction_result(content))
 
         if items:
             # 添加 context 字段

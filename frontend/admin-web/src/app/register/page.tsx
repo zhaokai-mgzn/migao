@@ -2,15 +2,15 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { Phone, Loader2, Building2, ArrowLeft, ArrowRight, CheckCircle2, Upload, Bot, MessageCircle, LayoutDashboard } from 'lucide-react'
+import { Phone, Loader2, Building2, ArrowLeft, ArrowRight, CheckCircle2, XCircle, Upload, Bot, MessageCircle, LayoutDashboard, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
 import { authApi } from '@/lib/api'
 import { fileApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import Logo from '@/components/ui/Logo'
-import type { RegistrationData } from '@/types'
+import type { RegistrationData, RegistrationResult } from '@/types'
 
-type Step = 1 | 2 | 3 // 1: 手机验证, 2: 企业信息, 3: 提交成功
+type Step = 1 | 2 | 3 // 1: 手机验证, 2: 企业信息, 3: AI 审核结果
 
 export default function RegisterPage() {
   const [step, setStep] = useState<Step>(1)
@@ -29,11 +29,15 @@ export default function RegisterPage() {
     industry: '',
     address: '',
     description: '',
+    website: '', // 蜜罐字段（隐藏，真人不会填写）
   })
   const [businessLicenseUrl, setBusinessLicenseUrl] = useState('')
   const [companyErrors, setCompanyErrors] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
   const [uploading, setUploading] = useState(false)
+
+  // 步骤三：AI 审核结果
+  const [submitResult, setSubmitResult] = useState<RegistrationResult | null>(null)
 
   // 倒计时
   useEffect(() => {
@@ -115,7 +119,7 @@ export default function RegisterPage() {
     }
   }
 
-  // 提交申请
+  // 提交申请（提交后由 AI 自动甄别，秒级返回结果）
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     const errors: Record<string, string> = {}
@@ -135,9 +139,10 @@ export default function RegisterPage() {
         industry: companyForm.industry.trim() || undefined,
         address: companyForm.address.trim() || undefined,
         description: companyForm.description.trim() || undefined,
+        website: companyForm.website.trim() || undefined,
       }
-      await authApi.submitRegistration(data)
-      toast.success('申请提交成功')
+      const res = await authApi.submitRegistration(data)
+      setSubmitResult(res.data.data)
       setStep(3)
     } catch (error: any) {
       const msg = error?.response?.data?.message || error?.message || '提交失败，请重试'
@@ -315,7 +320,7 @@ export default function RegisterPage() {
                 <h2 className="text-lg font-semibold text-neutral-900">企业信息</h2>
               </div>
               <p className="text-sm text-neutral-500 text-center mb-4">
-                请填写企业基本信息，完成入驻即可获得米宝AI助手
+                提交后由 AI 智能甄别合规性，无敏感信息将秒级审核通过，立即开通米高助手
               </p>
 
               {/* 企业名称 */}
@@ -367,7 +372,7 @@ export default function RegisterPage() {
                   type="text"
                   value={companyForm.industry}
                   onChange={handleCompanyChange}
-                  placeholder="如：家居建材、电子商务等"
+                  placeholder="如：布艺纺织、家居建材、电子商务等"
                   className={inputClassName(false)}
                 />
               </div>
@@ -450,6 +455,29 @@ export default function RegisterPage() {
                 )}
               </div>
 
+              {/* 蜜罐字段（隐藏，供识别自动化脚本） */}
+              <div className="hidden" aria-hidden="true">
+                <label htmlFor="website">请勿填写此字段</label>
+                <input
+                  id="website"
+                  name="website"
+                  type="text"
+                  tabIndex={-1}
+                  autoComplete="off"
+                  value={companyForm.website}
+                  onChange={handleCompanyChange}
+                />
+              </div>
+
+              {/* AI 甄别提示 */}
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-50/70 border border-blue-100">
+                <ShieldCheck className="w-4 h-4 text-primary-600 shrink-0 mt-0.5" />
+                <p className="text-xs text-neutral-600 leading-relaxed">
+                  提交即视为同意平台服务条款。您的资料将由 AI 自动甄别，仅用于入驻审核，
+                  审核通过后将自动开通企业账号，无需等待人工审核。
+                </p>
+              </div>
+
               {/* 按钮 */}
               <div className="flex gap-3 pt-2">
                 <button
@@ -482,7 +510,7 @@ export default function RegisterPage() {
                   {submitting ? (
                     <span className="flex items-center justify-center gap-2">
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      提交中...
+                      AI 甄别中...
                     </span>
                   ) : (
                     '提交申请'
@@ -492,67 +520,125 @@ export default function RegisterPage() {
             </form>
           )}
 
-          {/* ========== 步骤三：提交成功 ========== */}
-          {step === 3 && (
+          {/* ========== 步骤三：AI 审核结果 ========== */}
+          {step === 3 && submitResult && (
             <div className="text-center py-6">
-              <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <CheckCircle2 className="w-8 h-8 text-green-600" />
-              </div>
-              <h2 className="text-lg font-semibold text-neutral-900 mb-2">
-                申请已提交
-              </h2>
-              <p className="text-sm text-neutral-500 mb-6 leading-relaxed">
-                我们将在 1-3 个工作日内完成审核，<br />
-                审核通过后将短信通知您。
-              </p>
+              {submitResult.status === 'approved' ? (
+                <>
+                  <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <CheckCircle2 className="w-8 h-8 text-green-600" />
+                  </div>
+                  <h2 className="text-lg font-semibold text-neutral-900 mb-2">
+                    审核通过，欢迎入驻！
+                  </h2>
+                  <p className="text-sm text-neutral-500 mb-6 leading-relaxed">
+                    AI 甄别已通过，企业账号已自动开通，<br />
+                    您现在即可登录使用米高智能管理平台。
+                  </p>
 
-              {/* 入驻后可获得的能力展示 */}
-              <div className="mb-8 w-full max-w-md mx-auto">
-                <p className="text-sm text-neutral-500 text-center mb-4">入驻审核通过后，您将获得</p>
-                <div className="grid grid-cols-1 gap-3">
-                  <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg">
-                    <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
-                      <Bot className="w-4 h-4 text-primary-600" />
-                    </div>
-                    <div className="text-left">
-                      <p className="text-sm font-medium text-neutral-900">米宝 · 智能工作助手</p>
-                      <p className="text-xs text-neutral-500">AI驱动的商品、订单、售后智能管理</p>
+                  {/* 入驻后获得的能力 */}
+                  <div className="mb-8 w-full max-w-md mx-auto">
+                    <p className="text-sm text-neutral-500 text-center mb-4">您已获得</p>
+                    <div className="grid grid-cols-1 gap-3">
+                      <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg">
+                        <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+                          <Bot className="w-4 h-4 text-primary-600" />
+                        </div>
+                        <div className="text-left">
+                          <p className="text-sm font-medium text-neutral-900">米高 · 企业智能助手</p>
+                          <p className="text-xs text-neutral-500">AI驱动的商品、订单、售后智能管理</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3 p-3 bg-green-50 rounded-lg">
+                        <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
+                          <MessageCircle className="w-4 h-4 text-green-600" />
+                        </div>
+                        <div className="text-left">
+                          <p className="text-sm font-medium text-neutral-900">小布 · 智能客服</p>
+                          <p className="text-xs text-neutral-500">7×24小时AI客服，精准服务您的客户</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3 p-3 bg-purple-50 rounded-lg">
+                        <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center flex-shrink-0">
+                          <LayoutDashboard className="w-4 h-4 text-purple-600" />
+                        </div>
+                        <div className="text-left">
+                          <p className="text-sm font-medium text-neutral-900">全功能管理后台</p>
+                          <p className="text-xs text-neutral-500">商品、订单、客户、数据一站式管理</p>
+                        </div>
+                      </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3 p-3 bg-green-50 rounded-lg">
-                    <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
-                      <MessageCircle className="w-4 h-4 text-green-600" />
-                    </div>
-                    <div className="text-left">
-                      <p className="text-sm font-medium text-neutral-900">小布 · 智能客服</p>
-                      <p className="text-xs text-neutral-500">7×24小时AI客服，精准服务您的客户</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3 p-3 bg-purple-50 rounded-lg">
-                    <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center flex-shrink-0">
-                      <LayoutDashboard className="w-4 h-4 text-purple-600" />
-                    </div>
-                    <div className="text-left">
-                      <p className="text-sm font-medium text-neutral-900">全功能管理后台</p>
-                      <p className="text-xs text-neutral-500">商品、订单、客户、数据一站式管理</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
 
-              <Link
-                href="/login"
-                className={cn(
-                  'inline-flex items-center justify-center gap-2 h-11 px-8 rounded-lg text-sm font-semibold text-white transition-all',
-                  'bg-gradient-to-r from-primary-600 to-primary-700',
-                  'hover:from-primary-700 hover:to-primary-800 hover:shadow-lg hover:shadow-primary-500/25',
-                  'focus:outline-none focus:ring-2 focus:ring-primary-500/40 focus:ring-offset-2',
-                  'active:scale-[0.98]'
-                )}
-              >
-                <ArrowLeft className="w-4 h-4" />
-                返回登录
-              </Link>
+                  <Link
+                    href="/login"
+                    className={cn(
+                      'inline-flex items-center justify-center gap-2 h-11 px-8 rounded-lg text-sm font-semibold text-white transition-all',
+                      'bg-gradient-to-r from-primary-600 to-primary-700',
+                      'hover:from-primary-700 hover:to-primary-800 hover:shadow-lg hover:shadow-primary-500/25',
+                      'focus:outline-none focus:ring-2 focus:ring-primary-500/40 focus:ring-offset-2',
+                      'active:scale-[0.98]'
+                    )}
+                  >
+                    立即登录
+                    <ArrowRight className="w-4 h-4" />
+                  </Link>
+                </>
+              ) : submitResult.status === 'rejected' ? (
+                <>
+                  <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <XCircle className="w-8 h-8 text-red-600" />
+                  </div>
+                  <h2 className="text-lg font-semibold text-neutral-900 mb-2">
+                    审核未通过
+                  </h2>
+                  <p className="text-sm text-neutral-500 mb-4 leading-relaxed">
+                    您的入驻申请未通过 AI 合规甄别
+                  </p>
+                  <div className="mb-6 p-3 rounded-lg bg-red-50 border border-red-100 text-left">
+                    <p className="text-xs text-neutral-500 mb-1">驳回原因</p>
+                    <p className="text-sm text-neutral-800 leading-relaxed">
+                      {submitResult.rejectReason || '申请资料不符合入驻要求'}
+                    </p>
+                  </div>
+                  <p className="text-xs text-neutral-400 leading-relaxed mb-8">
+                    如为误判或资料有误，可于 24 小时后重新提交；如有疑问请联系平台顾问。
+                  </p>
+                  <Link
+                    href="/login"
+                    className={cn(
+                      'inline-flex items-center justify-center gap-2 h-11 px-8 rounded-lg text-sm font-medium transition-all',
+                      'border border-neutral-300 text-neutral-700 hover:bg-neutral-50'
+                    )}
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                    返回登录
+                  </Link>
+                </>
+              ) : (
+                <>
+                  <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Loader2 className="w-8 h-8 text-primary-600 animate-spin" />
+                  </div>
+                  <h2 className="text-lg font-semibold text-neutral-900 mb-2">
+                    申请已提交
+                  </h2>
+                  <p className="text-sm text-neutral-500 mb-6 leading-relaxed">
+                    正在等待 AI 甄别结果，<br />
+                    请稍后刷新页面查看进度。
+                  </p>
+                  <Link
+                    href="/login"
+                    className={cn(
+                      'inline-flex items-center justify-center gap-2 h-11 px-8 rounded-lg text-sm font-semibold text-white transition-all',
+                      'bg-gradient-to-r from-primary-600 to-primary-700',
+                      'hover:from-primary-700 hover:to-primary-800 hover:shadow-lg hover:shadow-primary-500/25'
+                    )}
+                  >
+                    返回登录
+                  </Link>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -570,7 +656,7 @@ export default function RegisterPage() {
         )}
 
         <p className="mt-8 text-center text-xs text-neutral-400">
-          © 2026 词元通达 · 米高
+          © 2026 杭州词元通达科技有限公司 · 米高
         </p>
       </div>
     </div>

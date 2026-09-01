@@ -542,10 +542,13 @@
 数据: 商品销量排行表头「日涨」在 1440/1280 两视口无截断
 数据: 订单趋势 x 轴刻度在 1280 宽度下降采样不重叠
 数据: 订单/售后状态语义色 chips；空态「暂无数据」无 '-' 占位
-跳过: UI 页面改版：由 vitest 单测 + Playwright 多视口 E2E + 二郎神页面验收（page_accept）验证，不进入 agent-eval 冒烟
+数据: 销售额趋势/迷你图使用真实 amount 数据，无 23.8 假乘数
+数据: 经营数据 4 卡自洽：客单价 = 今日销售额 ÷ 今日订单数
+数据: 涨跌语义色：上涨=绿色（好事）、下跌=红色（需关注）
+跳过: UI 页面改版：由 vitest 单测 + Playwright 多视口 E2E + 页面验收（page_accept）验证，不进入 agent-eval 冒烟
 ```
 真值: dashboard-ui.tokens, dashboard-ui.insight-bar, dashboard-ui.no-truncate, dashboard-ui.axis-sampling, dashboard-ui.status-chips, dashboard-ui.no-overflow
-溯源: 2026-08-25 新增：#2532 经营看板织物质感改版（样板页） ｜ tags: dashboard, ui-redesign, visual
+溯源: 2026-08-25 新增：#2532 经营看板织物质感改版（样板页）；2026-08-31 更新：PD 精简改版（洞察条一句话解读 + 客单价卡 + 绿涨红跌 + 修复 23.8 假数据） ｜ tags: dashboard, ui-redesign, visual
 
 ## 防御域（16 case）
 
@@ -966,6 +969,58 @@
 真值: misc.rule-regex
 溯源: 2026-08-25 新增：ai-agent-service misc-part2 覆盖率补全（issue #2424） ｜ tags: rule_matcher, regex, fallback
 
+## onboarding（4 case）
+
+### OB-001. 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员 🔵
+```
+你: 商家提交合规入驻申请（POST /api/auth/register），AI 自动甄别
+期望: direct_reply
+数据: 响应 status=approved 且 applicationId 非空，同步自动创建租户(active)+企业管理员(admin)+默认角色权限
+数据: tenant_applications 落 review_source=ai / risk_flags / review_summary / reviewed_by=ai
+数据: ai-agent 内部端点 POST /api/internal/registration/review 规则层无违规 + LLM approve → approve；LLM 不可用且规则层通过 → review_source=system 放行
+跳过: 由 admin-api 单测（RegistrationServiceTest/ControllerTest/ReviewClientTest）+ ai-agent 单测（test_registration_review.py）+ 前端单测（register.test.tsx）验证，非 LLM 冒烟
+```
+真值: registration-approval.submit, registration-approval.ai-approve, registration-approval.review-meta, registration-approval.status-enums
+溯源: 2026-08-30 新增：AI 自动入驻改造（人工审批页废弃） ｜ tags: onboarding, ai_review, auto_approve
+
+### OB-002. 商家入驻 - AI 自动驳回（敏感内容 / 法律风险） 🔵
+```
+你: 商家提交含敏感/违法内容或法律风险的入驻申请
+期望: direct_reply
+数据: 规则层命中敏感词/注入/格式违规 → 直接驳回（review_source=rule，不调用 LLM 防刷成本）
+数据: LLM 识别法律风险（decision=reject 或 high 风险）→ 驳回（review_source=ai），响应 rejectReason 非空
+数据: 驳回不创建租户/管理员，申请置 rejected
+跳过: 由 admin-api + ai-agent 单测验证（规则层/LLM 层/决策合成），非 LLM 冒烟
+```
+真值: registration-approval.ai-reject, registration-approval.status-enums
+溯源: 2026-08-30 新增：AI 自动入驻改造 ｜ tags: onboarding, ai_review, auto_reject, compliance
+
+### OB-003. 商家入驻 - 防重复/防攻击（手机号/企业名/IP 频率/蜜罐/冷却/fail-closed） 🔵
+```
+你: 同一家公司/手机号/IP 反复提交入驻申请，或自动化脚本提交
+期望: direct_reply
+数据: 同手机号 pending/approved → 422；同企业规范化名称（去空格/括号/后缀）pending/approved → 422
+数据: AI 驳回 24h 冷却（review_source=system 的系统繁忙驳回不冷却，可立即重试）
+数据: 每手机号每日提交上限 3、每 IP 每小时上限 5（Redis 计数）→ 超限 422
+数据: 蜜罐字段 website 被填充 → 不落库不调 AI，静默返回 pending 占位
+数据: AI 甄别服务不可达 → fail-closed 系统繁忙驳回（review_source=system），绝不放行
+跳过: 由 RegistrationServiceTest + register.test.tsx（蜜罐隐藏字段）+ ai-agent 单测验证，非 LLM 冒烟
+```
+真值: registration-approval.dup-guard, registration-approval.ai-degrade
+溯源: 2026-08-30 新增：AI 自动入驻改造 ｜ tags: onboarding, anti_abuse, rate_limit, honeypot, dedup
+
+### OB-004. 商家入驻 - 人工审批页废弃，仅保留超管 API 兜底 🔵
+```
+你: 平台不再提供人工审核新商家页面，商家入驻全部由 AI 自动甄别
+期望: direct_reply
+数据: ops.migaozn.com 域名分支/入驻审批菜单/审批页面/中间件前缀已移除（前端无 /registrations 页面）
+数据: 超管兜底接口保留：GET/PUT /api/super-admin/registrations* 仅 API 应急，无前端入口
+数据: 主页与入驻页文案改为 AI 秒审（不再出现 1-3 个工作日人工审核）
+跳过: 由前端单测验证（corporate-home/app-routes/components-other/register），非 LLM 冒烟
+```
+真值: registration-approval.super-admin-prefix
+溯源: 2026-08-30 新增：AI 自动入驻改造（人工审批页废弃） ｜ tags: onboarding, ops_page_removed, super_admin_api
+
 ## 订单域（11 case）
 
 ### OR-001. 订单列表查询 🟢
@@ -1379,7 +1434,7 @@
 真值: settings-manage.ai-config, settings-manage.immediate-effect
 溯源: POC 机器人设置集成新增 ｜ tags: ai_config, handoff
 
-## ui（4 case）
+## ui（8 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -1406,18 +1461,18 @@
 真值: frontend-fix.status-chip, frontend-fix.empty-state
 溯源: 2026-08-25 新增：经营看板织物质感重设计子任务 D（issue #2539） ｜ tags: ui, status-chip, empty-state
 
-### UI-003. 米宝「今日经营速览」洞察条 - 订单环比/含加工占比/低库存预警 🔵
+### UI-003. 米宝「今日经营速览」洞察条 - 一句话经营解读 🔵
 ```
 你: 经营看板织物质感重设计子任务 C：米宝「今日经营速览」洞察条置于页面顶部
 期望: direct_reply
-数据: frontend/admin-web/src/components/dashboard/TodayOverviewBar.tsx 渲染订单环比/含加工占比/低库存预警三个区块
+数据: frontend/admin-web/src/components/dashboard/TodayOverviewBar.tsx 以「一句话经营解读」串联今日订单/销售额/环比/提醒
 数据: 含加工占比 = processingCount / pendingCount，pendingCount<=0 时渲染 0% 而非 NaN/Infinity/undefined
-数据: 订单环比/低库存预警数值来自 props（由页面 API 返回值派生），组件内无硬编码固定数值
+数据: 一句话中的数值全部来自 props（由页面 API 返回值派生），组件内无硬编码固定数值
 数据: 洞察条置于经营看板顶部（先于待处理区块渲染）
 跳过: 纯前端组件由 vitest 单测验证（TodayOverviewBar.test.tsx + dashboard.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: dashboard-jump.overview, dashboard-jump.processing-shipment, dashboard-jump.low-stock, dashboard-jump.real-data
-溯源: 2026-08-25 新增：经营看板织物质感重设计子任务 C（issue #2538） ｜ tags: ui, dashboard, insight, token
+溯源: 2026-08-25 新增：经营看板织物质感重设计子任务 C（issue #2538）；2026-08-31 更新：洞察条改为一句话经营解读（PD 精简改版） ｜ tags: ui, dashboard, insight, token
 
 ### UI-004. 经营看板密度治理 - 商品销量排行表头不截断 + 订单趋势 x 轴降采样 🔵
 ```
@@ -1430,6 +1485,60 @@
 ```
 真值: frontend-fix.dashboard-no-truncate, frontend-fix.axis-sampling, frontend-fix.dashboard-no-overflow
 溯源: 2026-08-25 新增：经营看板织物质感重设计子任务 B（issue #2537） ｜ tags: ui, dashboard, density, axis-sampling
+
+### UI-005. 侧边栏新增「智能客服」大类——人工客服图标修复 + 机器人设置改名归组 🔵
+```
+你: 侧边栏新增「智能客服」一级大类：人工客服耳机图标修复 + 机器人设置更名为 AI 客服配置并归组
+期望: direct_reply
+数据: Sidebar.tsx 渲染一级大类「智能客服」，DOM 顺序位于「工作台」之后、「商品管理」之前；「人工客服」从「工作台」分组移除
+数据: 「智能客服」下子菜单顺序：「AI 客服配置」在前、「人工客服」在后
+数据: 「人工客服」渲染 Headphones 图标（iconMap 已注册，非 BarChart3 回退），与「经营看板」BarChart3 图标明确区分；「AI 客服配置」渲染 Bot 图标；「智能客服」大类渲染 MessageSquare 图标
+数据: 原「机器人设置」更名为「AI 客服配置」：侧边栏菜单名、页面 H1、Header 面包屑同步一致，不再出现「机器人设置」残留
+数据: 链接路径不变：AI 客服配置 href=/chat/config、人工客服 href=/agent-workspace/human-sessions
+数据: 权限过滤不回归：无 agent:session → 隐藏「人工客服」；无 agent:quickreply → 隐藏「AI 客服配置」；两者均无 → 「智能客服」整组隐藏
+跳过: 纯前端侧边栏菜单/图标/文案由 vitest 单测验证（sidebar/chat-config/Header.test），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.sidebar-smart-cs-group, frontend-fix.cs-menu-icons, frontend-fix.cs-menu-rename, frontend-fix.cs-menu-permission
+溯源: 2026-08-30 新增：侧边栏智能客服大类分组与菜单图标渲染（issue #2670） ｜ tags: ui, sidebar, menu, icon
+
+### UI-006. 会话管理工作台 - 单列表（无筛选控件）+ 已结束会话续聊 banner 🔵
+```
+你: 会话管理工作台：去掉「活跃/已关闭」硬 tab 与筛选控件，始终单列表展示全部会话（活跃在前、同组 updated_at 倒序），已结束会话灰化；查看已结束会话显示续聊 banner 可一键重新打开
+期望: direct_reply
+数据: SessionList 单列表渲染：全部会话按「活跃在前 + updated_at 倒序」排序；无「活跃/已关闭」双 tab，也无「全部/活跃/已结束」筛选 chips/tab
+数据: 已结束会话行保留灰化 + 「已结束」徽标 + 重新打开按钮；活跃会话行保留「结束会话」菜单；空态统一「暂无会话」，搜索空态「没有匹配的会话」
+数据: 查看已结束会话时聊天区顶部显示「会话已结束」banner + 「继续此会话」按钮；点击调用 reopenSession 并聚焦输入框，banner 消失
+数据: 会话管理工作台统计条文案统一为「活跃/已结束/共」（无「已关闭」残留）
+跳过: 纯前端会话列表/续聊交互由 vitest 单测 + E2E 点击链路验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.session-list-single-filter, frontend-fix.session-reopen-banner
+溯源: 2026-08-31 新增：会话管理状态 tab 与筛选控件移除，单列表 + 续聊 banner（参考 DSH 会话模型评审结论） ｜ tags: ui, session-list, reopen
+
+### UI-007. 小布 C 端输入条 - 默认按住说话（松开发送）与键盘模式切换 🔵
+```
+你: 小布 C 端（小程序/H5 同源）输入条参考瑞幸设计：默认「按住说话、松开直接发送」，可一键切回键盘模式输入文字；上滑取消录音
+期望: direct_reply
+数据: mini-app MessageInput 默认语音模式：渲染「按住 说话」按钮，不渲染 textarea；左切换键显示 ⌨️
+数据: 语音模式按住（touchStart）调用 startRecording，松开（touchEnd）调用 stopAndTranscribe → 转写文本直接 onSend；上滑超过阈值取消不发送
+数据: 切到键盘模式：切换键变 🎤，显示 textarea + 图片 + 发送（保留原功能）；切回语音模式恢复按住说话
+数据: 流式/无会话时禁止录音；转写失败 toast「未听清，请重试」不发送
+跳过: 纯前端 C 端输入交互由 mini-app jest 单测验证（message-input.test.tsx，9 例），非 LLM 行为，不进入 agent-eval 冒烟；xiaobu H5 E2E 基建在 WIP 分支（main 未落）
+```
+真值: frontend-fix.xiaobu-voice-holdtalk
+溯源: 2026-08-31 新增：小布 C 端语音输入（按住说话/松开发送/键盘切换，参考瑞幸 C 端设计） ｜ tags: mini-app, voice-input, hold-to-talk
+
+### UI-008. 米高会话列表折叠/展开窄 rail（参考 DSH sidebar 折叠交互） 🔵
+```
+你: 会话列表支持折叠为窄 rail（图标态），展开恢复完整列表，折叠偏好持久化到 localStorage
+期望: direct_reply
+数据: SessionList 折叠按钮 aria-label「折叠会话列表」且展开态 aria-expanded=true；点击折叠 → 窄 rail 仅保留「新建对话」图标按钮 + 展开 toggle（aria-label「展开会话列表」、aria-expanded=false），列表项/搜索隐藏
+数据: 再点展开 → 完整 w-64 列表恢复（新建对话/搜索/右键菜单功能全部保留）
+数据: 折叠偏好写入 localStorage（key chat.session-list.collapsed），刷新/重挂后恢复折叠态
+数据: 折叠动画为 Tailwind width transition + overflow-hidden（参考 DSH slide+crossfade 的简洁等价）
+跳过: 纯前端会话列表折叠交互由 vitest 单测 + E2E 点击链路验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.session-list-collapse
+溯源: 2026-08-31 新增：会话列表折叠/展开窄 rail（参考 DSH sidebar 折叠交互，Issue #2691） ｜ tags: ui, session-list, collapse, rail
 
 ## utils（2 case）
 
@@ -1460,8 +1569,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：123（活跃 86，跳过 37）
-- tier 分布：smoke 10 / normal 86 / adversarial 27
+- 用例总数：131（活跃 86，跳过 45）
+- tier 分布：smoke 10 / normal 94 / adversarial 27
 - 售后域：5
 - agents：6
 - api：10
@@ -1474,11 +1583,12 @@
 - finance：3
 - 人事域：5
 - misc：11
+- onboarding：4
 - 订单域：11
 - 加工项域：4
 - 商品域：13
 - registry：1
 - 设置域：8
-- ui：4
+- ui：8
 - utils：2
 
