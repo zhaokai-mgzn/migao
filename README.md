@@ -60,7 +60,7 @@ graph TB
 | **后端 — 管理 API** | Java + Spring Boot + MyBatis-Plus + Spring Security | JDK 21 / Boot 3.3.9 / MP 3.5.8 |
 | **后端 — AI 服务** | Python + FastAPI + LangChain + LangGraph | 3.11 / FastAPI 0.115 / LC 0.3.14 / LG 0.2.60 |
 | **前端 — 管理后台** | Next.js (App Router) + React + TypeScript + Tailwind CSS | 14.2 / React 18 / TS 5.7 |
-| **前端 — 微信小程序** | Taro + React + TypeScript + Sass | 3.6.40 / React 18 |
+| **前端 — 微信小程序** | Taro + React + TypeScript + Sass | 4.2.1 / React 18 |
 | **数据库** | PostgreSQL + Redis | PG 15 / Redis 7 |
 | **向量数据库** | DashVector（阿里云，RAG 恢复时启用） | — |
 | **大语言模型** | DeepSeek V4 Pro (主) + DeepSeek V4 Flash Vision (视觉) | V4-Pro / V4-Flash / V4-Flash-Vision |

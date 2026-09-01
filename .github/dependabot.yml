@@ -38,6 +38,14 @@ updates:
     labels:
       - "type/chore"
       - "role/frontend"
+    # Taro 全家桶（@tarojs/* + babel-preset-taro + eslint-config-taro）必须整组同版本升级：
+    # 各包 peer 依赖互指精确版本（如 @tarojs/plugin-platform-* peer @tarojs/service@x.y.z），
+    # 单包升级必现 peer 冲突（曾关闭 #2644/#2645/#2634 等「半套升级」PR）。
+    # 升级路径：整组升版本 + 跑 mini-app CI 与视觉回归，作为一次工程级 PR 提交。
+    ignore:
+      - dependency-name: "@tarojs/*"
+      - dependency-name: "babel-preset-taro"
+      - dependency-name: "eslint-config-taro"
 
   - package-ecosystem: "npm"
     directory: "/tests"
