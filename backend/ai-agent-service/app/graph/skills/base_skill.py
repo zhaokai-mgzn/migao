@@ -31,6 +31,7 @@ from app.config import settings
 from app.graph.state import AgentState
 from app.tools.base import ToolContext
 from app.tools.registry import ToolRegistry, set_tool_context, get_tool_context
+from app.utils.log_sanitizer import LogSanitizer
 from app.core import (
     CircuitBreakerOpenError,
     LLM_FALLBACK_MESSAGE,
@@ -545,18 +546,25 @@ def _requires_confirmation(tool, tool_args: dict, last_user_msg: str) -> bool:
     """判断本次 tool 调用是否需要用户明确确认。
 
     规则：
-    - 非 destructive 工具 → 永不要求确认
-    - destructive 工具 + action ∈ tool.read_only_actions（纯只读，如 list/detail/tree）
-      → 免确认；否则与 _is_explicit_confirmation 一致，须用户明确确认。
-    修复背景：customer/employee/role/category 等 destructive 工具含删除能力，
-    但 list/detail 等 action 是只读查询，此前一律强制确认导致只读查询被
-    confirmation_required 拦截（E2E Real 持续失败）。
+    - 纯查询工具（read_only=True）→ 永不要求确认
+    - 写工具中的只读 action（action ∈ read_only_actions，如 list/detail/tree）→ 免确认
+    - destructive 工具 → 必须用户明确确认（除只读 action 外）
+    - requires_confirmation 工具（非 destructive 但高风险写操作：财务/通知/会话/库存，
+      审计 07 P0-L1 间接提示注入面）→ 同样必须用户明确确认
+    - 其余普通写工具 → 维持现状不强制（依赖 Prompt 文本铁律）
+
+    确认判定与 _is_explicit_confirmation 一致：只有当前轮用户消息读起来像确认才放行，
+    防注入内容（SystemMessage/ToolMessage 中的指令）诱导 LLM 直接执行写操作。
     """
-    if not getattr(tool, "destructive", False):
+    # 纯查询工具永不要求确认
+    if getattr(tool, "read_only", True):
         return False
     action = str(tool_args.get("action") or tool_args.get("operation") or tool_args.get("op") or "")
     read_only_actions = getattr(tool, "read_only_actions", frozenset()) or frozenset()
     if action and action in read_only_actions:
+        return False
+    # 写工具需确认：destructive 或显式标记 requires_confirmation（审计 07 P0-L1）
+    if not getattr(tool, "destructive", False) and not getattr(tool, "requires_confirmation", False):
         return False
     return not _is_explicit_confirmation(last_user_msg)
 
@@ -608,12 +616,12 @@ async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -
         )
         logger.info(f"[tool-exec] {tool_name} done success={result.success}")
     except asyncio.TimeoutError:
-        logger.error(f"[tool-exec] {tool_name} TIMEOUT 30s | args={json.dumps(tool_args, ensure_ascii=False, default=str)[:300]}")
+        logger.error(f"[tool-exec] {tool_name} TIMEOUT 30s | args={json.dumps(LogSanitizer.sanitize_tree(tool_args), ensure_ascii=False, default=str)[:300]}")
         err = json.dumps({"success": False, "error": "timeout", "message": "工具执行超时"}, ensure_ascii=False)
         return err, {"success": False, "error": "timeout"}
     except Exception as e:
         logger.error(
-            f"[tool-exec] {tool_name} ERROR: {e} | args={json.dumps(tool_args, ensure_ascii=False, default=str)[:500]}",
+            f"[tool-exec] {tool_name} ERROR: {e} | args={json.dumps(LogSanitizer.sanitize_tree(tool_args), ensure_ascii=False, default=str)[:500]}",
             exc_info=True,
         )
         err = json.dumps({"success": False, "error": "tool_execution_failed",
@@ -891,6 +899,8 @@ async def execute_skill(
             from app.memory.context_manager import get_context_manager
             ctx_mgr = get_context_manager()
             await ctx_mgr.load(session_id)  # Redis 恢复
+            # T1 主题域切换：先记录切换（异域时旧域实体标 stale），再更新当前 skill
+            ctx_mgr.record_domain_switch(session_id, skill_name)
             ctx_mgr.set_last_skill(session_id, skill_name)
             ctx_text = ctx_mgr.build_context(session_id, skill_name)
             # 对话压缩：超过 20 条消息时只保留最近 12 条，其余生成摘要
@@ -1066,16 +1076,18 @@ async def execute_skill(
                     if tool is None:
                         logger.warning(f"[{skill_name}] Tool not found: {tool_name} | session={session_id}")
                         return tool_call, json.dumps({"success": False, "error": "tool_not_found", "message": f"工具 {tool_name} 不可用"}, ensure_ascii=False), {"success": False}
-                    # 破坏性写操作：必须经用户明确确认（代码层兜底，防提示注入触发不可逆操作）
+                    # 写操作（destructive 或 requires_confirmation 高风险写）：必须经用户明确确认
+                    # （代码层兜底，防间接提示注入驱动未确认写操作，审计 07 P0-L1）
                     # 豁免：action ∈ tool.read_only_actions 的纯只读调用（list/detail/tree 等）
                     if _requires_confirmation(tool, args, last_user_msg):
                         logger.warning(
-                            f"[{skill_name}] 拦截未确认的破坏性操作 {tool_name} | session={session_id} "
+                            f"[{skill_name}] 拦截未确认的写操作 {tool_name} | session={session_id} "
                             f"last_msg={last_user_msg[:30]!r}"
                         )
                         msg = (
-                            f"工具 {tool_name} 是破坏性操作（不可逆），必须先向用户展示确认卡片并取得明确确认。"
-                            f"请调用 interact（component=confirm）展示操作预览，等用户点击确认后再执行。"
+                            f"工具 {tool_name} 是写操作（可能不可逆或产生数据变更），必须先向用户展示确认卡片"
+                            f"并取得明确确认。请调用 interact（component=confirm）展示操作预览，"
+                            f"等用户点击确认后再执行。"
                         )
                         return tool_call, json.dumps(
                             {"success": False, "error": "confirmation_required", "message": msg},
@@ -1101,6 +1113,18 @@ async def execute_skill(
                             await mgr.save(session_id)  # Redis 持久化
                         except Exception:
                             pass
+                    # T2 事务终态：terminal 工具成功后重置当前域上下文（草稿/实体/待确认）
+                    if session_id and result_dict.get("success") and result_dict.get("terminal"):
+                        try:
+                            from app.memory.context_manager import get_context_manager
+                            mgr = get_context_manager()
+                            mgr.reset_domain(session_id, skill_name)
+                            await mgr.save(session_id)
+                            logger.info(
+                                f"[{skill_name}] Terminal tool {tool_name} — domain context reset | session={session_id}"
+                            )
+                        except Exception as e:
+                            logger.warning(f"[{skill_name}] Terminal reset failed | session={session_id} error={e}")
                     new_messages.append(ToolMessage(content=result_str, tool_call_id=tool_call["id"], name=tool_name))
                     if tool_name == "interact" and result_dict.get("success"):
                         try:

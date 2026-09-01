@@ -183,6 +183,23 @@ class LLMFactory:
         return response.content.strip() if hasattr(response, 'content') else str(response)
 
     @staticmethod
+    def create_registration_review_llm() -> ChatOpenAI:
+        """创建企业入驻合规审查 LLM
+
+        - temperature=0  确定性输出，便于 JSON 解析
+        - max_completion_tokens=800  仅需返回结构化审查结论
+        - thinking=disabled  关闭深度思考，降低延迟与成本
+        """
+        return _new_chat_model(
+            model=settings.INTENT_MODEL,
+            api_key=MINIMAX_API_KEY,
+            base_url=MINIMAX_BASE_URL,
+            temperature=0,
+            max_completion_tokens=800,
+            extra_body={"thinking": {"type": "disabled"}},
+        )
+
+    @staticmethod
     def create_suggestion_llm() -> ChatOpenAI:
         """创建建议/推荐生成 LLM
 

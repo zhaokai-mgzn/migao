@@ -9,8 +9,16 @@ services:
     image: ${ACR_REGISTRY:-crpi-qdcgkzwx9p9zckga.cn-hangzhou.personal.cr.aliyuncs.com}/ai-customer-service/admin-api:${IMAGE_TAG:-latest}
     restart: unless-stopped
     env_file: .env.admin-api
+    environment:
+      # AI 自动甄别：admin-api 调用 ai-agent-service 内部端点（同 compose 网络）
+      # 注意：AI_AGENT_SERVICE_TOKEN 只经 env_file(.env.admin-api) 注入——
+      # compose environment 的 ${VAR:-} 插值读不到 .env.admin-api，会覆盖为空导致
+      # ai-agent 401 校验失败（入驻 fail-closed 系统繁忙）。deploy.sh 自愈补齐该值。
+      AI_AGENT_BASE_URL: http://ai-agent:8000
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
+    mem_limit: 1536m
+    cpus: 1.0
 
   ai-agent:
     image: ${ACR_REGISTRY:-crpi-qdcgkzwx9p9zckga.cn-hangzhou.personal.cr.aliyuncs.com}/ai-customer-service/ai-agent-service:${IMAGE_TAG:-latest}
@@ -29,14 +37,24 @@ services:
         RwIDAQAB
         -----END PUBLIC KEY-----
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
+    mem_limit: 1024m
+    cpus: 1.0
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/ready', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
   admin-web:
     image: ${ACR_REGISTRY:-crpi-qdcgkzwx9p9zckga.cn-hangzhou.personal.cr.aliyuncs.com}/ai-customer-service/admin-web:${IMAGE_TAG:-latest}
     restart: unless-stopped
     env_file: .env.admin-web
     ports:
-      - "3001:3001"
+      - "127.0.0.1:3001:3001"
+    mem_limit: 512m
+    cpus: 0.5
 
   nginx:
     image: nginx:alpine
@@ -44,6 +62,8 @@ services:
     ports:
       - "80:80"
       - "443:443"
+    mem_limit: 256m
+    cpus: 0.25
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro

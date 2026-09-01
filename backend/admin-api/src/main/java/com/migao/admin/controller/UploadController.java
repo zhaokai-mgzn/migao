@@ -3,6 +3,7 @@ package com.migao.admin.controller;
 import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.dto.UploadedFileInfo;
 import com.migao.admin.exception.BusinessException;
+import com.migao.admin.security.RequirePermission;
 import com.migao.admin.service.FileStorageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -31,6 +32,7 @@ public class UploadController {
      * POST /api/admin/files/upload
      */
     @PostMapping("/api/admin/files/upload")
+    @RequirePermission("dashboard:view")  // 审计 07 P1-4: 通用文件操作需基础员工权限
     public ApiResponse<UploadedFileInfo> uploadFile(
             @RequestParam("file") MultipartFile file,
             @RequestParam(value = "directory", defaultValue = "images") String directory) {
@@ -46,6 +48,7 @@ public class UploadController {
      * POST /api/admin/files/upload-batch
      */
     @PostMapping("/api/admin/files/upload-batch")
+    @RequirePermission("dashboard:view")  // 审计 07 P1-4: 通用文件操作需基础员工权限
     public ApiResponse<List<UploadedFileInfo>> uploadFiles(
             @RequestParam("files") List<MultipartFile> files,
             @RequestParam(value = "directory", defaultValue = "images") String directory) {
@@ -69,6 +72,7 @@ public class UploadController {
      * DELETE /api/admin/files/{fileId}
      */
     @DeleteMapping("/api/admin/files/{fileId}")
+    @RequirePermission("dashboard:view")  // 审计 07 P1-4: 通用文件操作需基础员工权限
     public ApiResponse<Void> deleteFile(
             @PathVariable String fileId,
             @RequestBody(required = false) Map<String, String> body) {
@@ -88,6 +92,7 @@ public class UploadController {
      * POST /api/admin/upload/image
      */
     @PostMapping("/api/admin/upload/image")
+    @RequirePermission("dashboard:view")  // 审计 07 P1-4: 通用文件操作需基础员工权限
     public ApiResponse<Map<String, String>> uploadImage(
             @RequestParam("file") MultipartFile file,
             @RequestParam(value = "directory", defaultValue = "images") String directory) {
@@ -103,6 +108,7 @@ public class UploadController {
      * POST /api/admin/upload/images
      */
     @PostMapping("/api/admin/upload/images")
+    @RequirePermission("dashboard:view")  // 审计 07 P1-4: 通用文件操作需基础员工权限
     public ApiResponse<Map<String, List<String>>> uploadImages(
             @RequestParam("files") List<MultipartFile> files,
             @RequestParam(value = "directory", defaultValue = "images") String directory) {
@@ -121,6 +127,7 @@ public class UploadController {
      * DELETE /api/admin/upload/image
      */
     @DeleteMapping("/api/admin/upload/image")
+    @RequirePermission("dashboard:view")  // 审计 07 P1-4: 通用文件操作需基础员工权限
     public ApiResponse<Void> deleteImage(@RequestBody Map<String, String> body) {
         String url = body.get("url");
         log.info("删除图片(兼容): url={}", url);

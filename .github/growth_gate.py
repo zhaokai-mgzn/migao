@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-二郎神 QA Growth Gate — 数据驱动的事前测试覆盖门禁（G1 修复）
+QA Growth Gate — 数据驱动的事前测试覆盖门禁（G1 修复）
 
 单一规则源：tech-stack.yml 的 `modules`（文件 → 测试映射）。
 豁免：.github/qa-exemptions.yml 的 `exemptions[].pattern`（路径 glob，`*` 不跨 `/`）。
@@ -546,7 +546,7 @@ def _render_markdown(results, blockers, warnings):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="二郎神 QA Growth Gate（数据驱动）")
+    parser = argparse.ArgumentParser(description="QA Growth Gate（数据驱动）")
     parser.add_argument("--base", default="origin/main")
     parser.add_argument("--files", nargs="*", help="手动指定变更文件（跳过 git diff）")
     parser.add_argument("--tech-stack", help="tech-stack.yml 路径")

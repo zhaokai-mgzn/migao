@@ -411,6 +411,8 @@ class OrderCreateTool(BaseTool):
                 data=order_data,
                 message=f"订单创建成功！订单号：{order_id}，客户：{customer_name}，共 {len(items)} 件商品",
                 summary=f"订单创建成功: 订单号{order_id}, 客户{customer_name}, {len(items)}件商品",
+                # T2 事务终态：下单完成 → 清空订单域草稿/待确认状态（防下一轮污染）
+                terminal=True,
             )
 
         except Exception as e:

@@ -1,4 +1,4 @@
-// case_ids: DA-004
+// case_ids: DA-004, UI-006, UI-008
 /**
  * 会话管理工作台（/agent-workspace/sessions）E2E
  *
@@ -9,7 +9,7 @@
  * 运行: npx playwright test specs/chat/agent-workspace-sessions.spec.ts --project=web
  */
 
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect, type Page } from '../../fixtures'
 
 // ───────────────────────────────────────────────────────────────
 // Mock 数据：与 chat.spec.ts 同源（会话管理页复用同一 chatApi）
@@ -22,6 +22,15 @@ const MOCK_SESSIONS = [
 ]
 
 async function setupSessionMocks(page: Page) {
+  // (dashboard) layout 内 Header 全局轮询未读通知；未 mock 时真后端 401 →
+  // refresh 422 → 强制跳 /login（与 dashboard.spec.ts 同款 mock 模式）
+  await page.route('**/api/admin/notifications/unread-count', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ code: 200, data: 0 }),
+    })
+  })
   await page.route('**/api/chat/sessions*', async (route) => {
     await route.fulfill({
       status: 200,
@@ -61,7 +70,7 @@ test.describe('会话管理工作台 — 占位页替换为真实功能', () => 
     await expect(page.getByText('该功能正在开发中')).toHaveCount(0)
   })
 
-  test('顶部统计条按会话状态派生（活跃 2 / 已关闭 1 / 共 3）', async ({ page }) => {
+  test('顶部统计条按会话状态派生（活跃 2 / 已结束 1 / 共 3）', async ({ page }) => {
     await page.goto('/agent-workspace/sessions')
     await page.waitForFunction(
       () => {
@@ -75,13 +84,13 @@ test.describe('会话管理工作台 — 占位页替换为真实功能', () => 
     await expect(bar).toBeVisible({ timeout: 10_000 })
     await expect(bar).toContainText('活跃')
     await expect(bar).toContainText('2')
-    await expect(bar).toContainText('已关闭')
+    await expect(bar).toContainText('已结束')
     await expect(bar).toContainText('1')
     await expect(bar).toContainText('共')
     await expect(bar).toContainText('3')
   })
 
-  test('会话列表渲染真实数据（新建对话 + 活跃/已关闭 tab）', async ({ page }) => {
+  test('会话列表渲染真实数据（新建对话 + 单列表）', async ({ page }) => {
     await page.goto('/agent-workspace/sessions')
     await page.waitForFunction(
       () => {
@@ -92,8 +101,49 @@ test.describe('会话管理工作台 — 占位页替换为真实功能', () => 
       { timeout: 10_000 },
     )
     await expect(page.getByRole('button', { name: /新建对话/ })).toBeVisible({ timeout: 10_000 })
-    await expect(page.getByText('遮光窗帘订单确认')).toBeVisible({ timeout: 10_000 })
-    await expect(page.getByText('纱帘加工进度查询')).toBeVisible()
+    // 列表行作用域断言（避免命中聊天区头部 h2 的同名标题）
+    const sessionRows = page.locator('[data-testid="session-item"]')
+    await expect(sessionRows.filter({ hasText: '遮光窗帘订单确认' })).toBeVisible({ timeout: 10_000 })
+    await expect(sessionRows.filter({ hasText: '纱帘加工进度查询' })).toBeVisible()
+  })
+
+  test('单列表展示全部会话（无筛选控件），选中已结束会话显示续聊 banner，点击继续此会话重新打开', async ({ page }) => {
+    // reopen 端点 mock：PUT /api/chat/sessions/:id/reopen
+    await page.route('**/api/chat/sessions/*/reopen', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: { success: true } }),
+      })
+    })
+    await page.goto('/agent-workspace/sessions')
+    await page.waitForFunction(
+      () => {
+        const raw = localStorage.getItem('auth-storage')
+        if (!raw) return false
+        try { return !!(JSON.parse(raw)?.state?.accessToken) } catch { return false }
+      },
+      { timeout: 10_000 },
+    )
+
+    // 单列表默认展示全部 3 个会话，无筛选 chips/tab
+    const sessionRows = page.locator('[data-testid="session-item"]')
+    await expect(sessionRows).toHaveCount(3, { timeout: 10_000 })
+    await expect(sessionRows.filter({ hasText: '已完结售后咨询' })).toBeVisible()
+    await expect(page.getByText(/全部 \(\d\)/)).toHaveCount(0)
+    await expect(page.getByText(/活跃 \(\d\)/)).toHaveCount(0)
+
+    // 选中已结束会话 → 聊天区出现续聊 banner
+    await sessionRows.filter({ hasText: '已完结售后咨询' }).click()
+    await expect(page.getByText('会话已结束，历史消息已保留')).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByRole('button', { name: '继续此会话' })).toBeVisible()
+
+    // 点击「继续此会话」→ banner 消失，输入框恢复可输入
+    await page.getByRole('button', { name: '继续此会话' }).click()
+    await expect(page.getByText('会话已结束，历史消息已保留')).toHaveCount(0)
+    await expect(page.locator('textarea[placeholder*="输入消息"]').first()).toBeVisible({
+      timeout: 10_000,
+    })
   })
 
   test('选中会话后聊天区加载历史（复用 /chat 组件链）', async ({ page }) => {
@@ -108,5 +158,37 @@ test.describe('会话管理工作台 — 占位页替换为真实功能', () => 
     )
     // 第一个会话自动选中 → 消息输入框渲染（MessageInput 需要 currentSessionId 非空）
     await expect(page.locator('textarea[placeholder*="输入消息"]').first()).toBeVisible({ timeout: 10_000 })
+  })
+
+  test('会话列表可折叠为窄 rail 并可展开恢复', async ({ page }) => {
+    await page.goto('/agent-workspace/sessions')
+    await page.waitForFunction(
+      () => {
+        const raw = localStorage.getItem('auth-storage')
+        if (!raw) return false
+        try { return !!(JSON.parse(raw)?.state?.accessToken) } catch { return false }
+      },
+      { timeout: 10_000 },
+    )
+
+    // 默认展开：折叠按钮可见，aria-expanded 同步
+    const collapseBtn = page.getByRole('button', { name: '折叠会话列表' })
+    await expect(collapseBtn).toBeVisible({ timeout: 10_000 })
+    await expect(collapseBtn).toHaveAttribute('aria-expanded', 'true')
+
+    // 折叠 → 窄 rail（展开按钮 + 新建图标按钮），列表项隐藏
+    await collapseBtn.click()
+    const expandBtn = page.getByRole('button', { name: '展开会话列表' })
+    await expect(expandBtn).toBeVisible()
+    await expect(expandBtn).toHaveAttribute('aria-expanded', 'false')
+    await expect(page.locator('[data-testid="session-item"]')).toHaveCount(0)
+    await expect(page.getByRole('button', { name: '新建对话' })).toBeVisible()
+
+    // 展开 → 列表恢复
+    await expandBtn.click()
+    await expect(page.getByRole('button', { name: '折叠会话列表' })).toBeVisible()
+    await expect(
+      page.locator('[data-testid="session-item"]').filter({ hasText: '遮光窗帘订单确认' })
+    ).toBeVisible({ timeout: 10_000 })
   })
 })

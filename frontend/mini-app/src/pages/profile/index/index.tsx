@@ -4,19 +4,33 @@ import { View, Text, Image } from '@tarojs/components'
 import { useAuthStore } from '../../../store/authStore'
 import { useChatStore } from '../../../store/chatStore'
 import { getUserInfo } from '../../../services/userService'
+import { getMyOrders, getMyTickets } from '../../../services/productService'
+import type { MiniOrder, MiniTicket } from '../../../services/productService'
 import './index.scss'
 
-/** 判断日期是否属于当月 */
-function isCurrentMonth(dateStr: string): boolean {
-  const now = new Date()
-  const d = new Date(dateStr)
-  return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()
+/** 订单/售后状态中文标签 */
+const ORDER_STATUS_TEXT: Record<string, string> = {
+  pending: '待付款',
+  confirmed: '已确认',
+  producing: '生产中',
+  shipped: '已发货',
+  completed: '已完成',
+  cancelled: '已取消',
+}
+
+const TICKET_TYPE_TEXT: Record<string, string> = {
+  refund: '退款',
+  exchange: '换货',
+  repair: '维修',
+  complaint: '投诉',
+  other: '其他',
 }
 
 export default function ProfilePage() {
   const { user, isLoggedIn, setUser, logout } = useAuthStore()
-  const { sessions } = useChatStore()
   const [loading, setLoading] = useState(false)
+  const [orders, setOrders] = useState<MiniOrder[]>([])
+  const [tickets, setTickets] = useState<MiniTicket[]>([])
 
   // 拉取用户信息（store 没有时走接口）
   const fetchUser = useCallback(async () => {
@@ -32,23 +46,43 @@ export default function ProfilePage() {
     }
   }, [user, setUser])
 
+  // 拉取我的订单 + 售后工单（C 端数据隔离端点）
+  const fetchMyData = useCallback(async () => {
+    const [orderList, ticketList] = await Promise.allSettled([
+      getMyOrders(3),
+      getMyTickets(3),
+    ])
+    if (orderList.status === 'fulfilled') setOrders(orderList.value)
+    if (ticketList.status === 'fulfilled') setTickets(ticketList.value)
+  }, [])
+
   useEffect(() => {
-    if (isLoggedIn && !user) {
-      fetchUser()
+    if (isLoggedIn) {
+      if (!user) fetchUser()
+      fetchMyData()
     }
-  }, [isLoggedIn, user, fetchUser])
+  }, [isLoggedIn, user, fetchUser, fetchMyData])
 
   useDidShow(() => {
-    if (isLoggedIn && !user) {
-      fetchUser()
+    if (isLoggedIn) {
+      if (!user) fetchUser()
+      fetchMyData()
     }
   })
 
-  // ========== 统计 ==========
-  const totalSessions = sessions.length || 0
-  const monthSessions = sessions.filter((s) => isCurrentMonth(s.created_at)).length
+  // ========== 入口点击 ==========
+  const handleOrderDetail = (order: MiniOrder) => {
+    // 唤起对话追问订单（闭环在对话里，不另造详情页）
+    Taro.switchTab({ url: '/pages/chat/index/index' })
+    // 通过事件总线把订单号注入对话（chatStore 在页面 show 后消费）
+    Taro.setStorageSync('pendingOrderPrompt', `帮我查一下订单 ${order.order_no} 的进度`)
+  }
 
-  // ========== 设置列表点击 ==========
+  const handleTicketDetail = (ticket: MiniTicket) => {
+    Taro.switchTab({ url: '/pages/chat/index/index' })
+    Taro.setStorageSync('pendingOrderPrompt', `帮我查一下售后工单 ${ticket.ticket_no} 的进度`)
+  }
+
   const handleAccountInfo = () => {
     Taro.showToast({ title: '功能开发中', icon: 'none' })
   }
@@ -126,16 +160,44 @@ export default function ProfilePage() {
         </View>
       </View>
 
-      {/* ===== 统计卡片 ===== */}
-      <View className='stats-card'>
-        <View className='stat-item'>
-          <Text className='stat-value'>{totalSessions > 0 ? totalSessions : '--'}</Text>
-          <Text className='stat-label'>总会话数</Text>
+      {/* ===== 我的订单 ===== */}
+      <View className='section-card'>
+        <View className='section-card__header'>
+          <Text className='section-card__title'>📦 我的订单</Text>
         </View>
-        <View className='stat-item'>
-          <Text className='stat-value'>{totalSessions > 0 ? monthSessions : '--'}</Text>
-          <Text className='stat-label'>本月对话</Text>
+        {orders.length === 0 ? (
+          <Text className='section-card__empty'>暂无订单</Text>
+        ) : (
+          orders.map((o) => (
+            <View key={o.id} className='entry-row' hoverClass='entry-row--hover' onClick={() => handleOrderDetail(o)}>
+              <View className='entry-row__main'>
+                <Text className='entry-row__title'>{o.order_no}</Text>
+                <Text className='entry-row__sub'>{ORDER_STATUS_TEXT[o.status] || o.status_text || o.status}</Text>
+              </View>
+              <Text className='entry-row__value'>¥{Number(o.total_amount || 0).toFixed(2)}</Text>
+            </View>
+          ))
+        )}
+      </View>
+
+      {/* ===== 我的售后 ===== */}
+      <View className='section-card'>
+        <View className='section-card__header'>
+          <Text className='section-card__title'>🔄 我的售后</Text>
         </View>
+        {tickets.length === 0 ? (
+          <Text className='section-card__empty'>暂无售后工单</Text>
+        ) : (
+          tickets.map((t) => (
+            <View key={t.id} className='entry-row' hoverClass='entry-row--hover' onClick={() => handleTicketDetail(t)}>
+              <View className='entry-row__main'>
+                <Text className='entry-row__title'>{t.ticket_no}</Text>
+                <Text className='entry-row__sub'>{TICKET_TYPE_TEXT[t.ticket_type] || t.ticket_type} · {t.status}</Text>
+              </View>
+              <Text className='entry-row__arrow'>›</Text>
+            </View>
+          ))
+        )}
       </View>
 
       {/* ===== 设置列表 ===== */}

@@ -46,9 +46,12 @@ export default function ProductCard({ data }: ProductCardProps) {
         />
         <View className='product-card__info'>
           <Text className='product-card__name'>{data.name}</Text>
-          <Text className='product-card__price'>¥{price}</Text>
+          <View className='product-card__price-row'>
+            <Text className='product-card__price-unit'>¥</Text>
+            <Text className='product-card__price'>{price}</Text>
+          </View>
           {data.sales_count !== undefined && data.sales_count !== null && (
-            <Text className='product-card__sales'>销量: {data.sales_count}</Text>
+            <Text className='product-card__sales'>已售 {data.sales_count} 件</Text>
           )}
         </View>
       </View>

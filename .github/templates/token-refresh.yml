@@ -1,0 +1,22 @@
+name: token-refresh
+description: admin-web 前端 Token 刷新管理器（TokenRefreshManager）真值域 — lib-token-refresh 覆盖率分组（issue #2421）
+
+business_truths:
+  - [token-refresh.refresh-success] 业务请求收到 401 → handle401Error 调 refreshAccessToken() 取新 accessToken；成功后置 _retry=true、写 headers.Authorization='Bearer <newToken>'，并用注入的 axiosInstance 重放原请求返回其结果
+  - [token-refresh.single-flight] 刷新进行中（isRefreshing=true）时并发 401 请求入 failedQueue 挂起（resolve/reject + 原 config）；refreshAccessToken 仅被首个请求调用一次，刷新成功后 processQueue 用同一新 token 逐个 resolve 队列请求
+  - [token-refresh.refresh-failed] refreshAccessToken 返回 null 或抛异常 → processQueue 以错误 reject 全部挂起请求、clearAuth() 清除本地凭证、window.location.href='/login' 跳登录页；原请求返回 Promise.reject
+  - [token-refresh.no-loop] 请求 URL 含 /api/auth/refresh 或 /api/auth/admin/login 且收到 401 → 直接 clearAuth + 跳 /login + reject('Authentication failed')，不触发 refreshAccessToken（防刷新死循环）
+
+reviewer_asserts:
+  - vitest: frontend/admin-web/tests/unit/lib/token-refresh-manager.test.ts
+    expect: 全部通过（refresh-success / single-flight / refresh-failed / no-loop 四条 L2）
+  - tsc: cd frontend/admin-web && npx tsc --noEmit
+    expect: 通过（token-refresh-manager.ts 74 行零类型错误）
+
+confidence_required: 100%
+
+common_pitfalls:
+  - 刷新/登录请求自身 401 未直接拒绝 → refreshAccessToken 死循环
+  - 并发 401 未做 single-flight → refresh 接口被重复调用
+  - 刷新失败未 clearAuth → 残留过期 token 导致后续请求持续 401
+  - 刷新成功未更新 Authorization 头 → 重放请求仍带旧 token 再次 401

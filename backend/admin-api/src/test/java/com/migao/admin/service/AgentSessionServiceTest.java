@@ -503,6 +503,36 @@ class AgentSessionServiceTest {
     }
 
     @Test
+    @DisplayName("发送消息 - 客户向他人会话发消息 → 404（会话归属校验，审计 07 P1-3）")
+    void sendMessage_CustomerNotOwner_Rejected() {
+        // given: 会话属于 cust-001，当前发送者是 cust-999
+        when(agentSessionMapper.selectById("session-001")).thenReturn(testSession);
+
+        // when & then
+        assertThatThrownBy(() -> agentSessionService.sendMessage(
+                "session-001", "customer", "cust-999", "你好", false))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("客服会话");
+    }
+
+    @Test
+    @DisplayName("发送消息 - 客户向自己的会话发消息 → 成功")
+    void sendMessage_CustomerOwner_Success() {
+        // given
+        when(agentSessionMapper.selectById("session-001")).thenReturn(testSession);
+        when(agentMessageMapper.insert(any(AgentMessage.class))).thenReturn(1);
+
+        // when
+        AgentMessage msg = agentSessionService.sendMessage(
+                "session-001", "customer", "cust-001", "我想咨询订单", false);
+
+        // then
+        assertThat(msg.getSenderType()).isEqualTo("customer");
+        assertThat(msg.getSenderId()).isEqualTo("cust-001");
+        verify(agentMessageMapper).insert(any(AgentMessage.class));
+    }
+
+    @Test
     @DisplayName("按 AI 会话查人工会话 - 用户可查自己的会话")
     void getSessionByAiSessionId_Success() {
         // given

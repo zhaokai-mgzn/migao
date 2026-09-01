@@ -1,3 +1,4 @@
+// case_ids: OR-001, CH-001
 /**
  * 消息气泡组件测试
  *
@@ -22,6 +23,11 @@ jest.mock('../src/components/cards/LogisticsCard', () => {
 jest.mock('../src/components/cards/KnowledgeCard', () => {
   return function MockKnowledgeCard() {
     return <div data-testid="knowledge-card">knowledge</div>
+  }
+})
+jest.mock('../src/components/cards/OrderCard', () => {
+  return function MockOrderCard() {
+    return <div data-testid="order-card">order</div>
   }
 })
 jest.mock('../src/components/cards/ToolCallIndicator', () => {
@@ -131,6 +137,35 @@ describe('MessageBubble', () => {
     render(<MessageBubble message={msg} />)
 
     expect(screen.getByTestId('knowledge-card')).toBeTruthy()
+  })
+
+  it('应渲染订单卡片（不再落入 📎 order 占位符）', () => {
+    const msg: Message = {
+      ...baseMsg,
+      role: 'assistant',
+      content: '为您查询到以下订单：',
+      cards: [
+        { type: 'order', data: { orders: [{ order_no: 'ORD-1001', status: 'shipped', status_text: '已发货' }] } },
+      ],
+    }
+    render(<MessageBubble message={msg} />)
+
+    expect(screen.getByTestId('order-card')).toBeTruthy()
+    // 占位符不应出现：order 卡片类型必须有专门渲染分支
+    expect(screen.queryByText(/📎 order/)).toBeNull()
+  })
+
+  it('应渲染单订单 cardData（{"order": ...} 兼容模式）', () => {
+    const msg: Message = {
+      ...baseMsg,
+      role: 'assistant',
+      content: '您的订单：',
+      cardData: { type: 'order', data: { order: { order_no: 'ORD-2002', status: 'completed' } } },
+    }
+    render(<MessageBubble message={msg} />)
+
+    expect(screen.getByTestId('order-card')).toBeTruthy()
+    expect(screen.queryByText(/📎 order/)).toBeNull()
   })
 
   it('未知卡片类型应显示占位', () => {

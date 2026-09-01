@@ -16,13 +16,24 @@ import RecentOrders from '@/components/dashboard/RecentOrders'
 // ═══════════════════════════════════════════════════════
 
 function fmtCurrency(n: number): string {
-  if (n >= 10000) return '¥' + (n / 10000).toFixed(1) + '万'
+  if (n >= 10000) {
+    const w = parseFloat((n / 10000).toFixed(2))
+    return '¥' + w + '万'
+  }
   return '¥' + n.toLocaleString('zh-CN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
 }
 
 function fmtNum(n: number): string {
   if (n >= 10000) return (n / 10000).toFixed(1) + '万'
   return n.toLocaleString('zh-CN')
+}
+
+/** 涨跌百分比带符号：+25.5% / -12.3% / 0% */
+function fmtSigned(n: number): string {
+  if (!Number.isFinite(n)) return '—'
+  if (n === 0) return '0%'
+  const sign = n > 0 ? '+' : '-'
+  return `${sign}${Math.abs(n)}%`
 }
 
 function now(): string {
@@ -105,8 +116,8 @@ const METRIC_STYLES: Record<string, { tile: string; icon: string; spark: string 
   month:   { tile: 'bg-amber-50',    icon: 'text-amber-600',    spark: '#b8933d' },
 }
 
-function BizStatCard({ title, value, change, icon, sparkline, chartType, metric = 'orders' }: {
-  title: string; value: string; change?: { val: string; up: boolean }; icon: React.ReactNode; sparkline?: number[]; chartType?: 'line' | 'bar'; metric?: keyof typeof METRIC_STYLES
+function BizStatCard({ title, value, change, hint, icon, sparkline, chartType, metric = 'orders' }: {
+  title: string; value: string; change?: { text: string; up: boolean }; hint?: string; icon: React.ReactNode; sparkline?: number[]; chartType?: 'line' | 'bar'; metric?: keyof typeof METRIC_STYLES
 }) {
   const style = METRIC_STYLES[metric] || METRIC_STYLES.orders
   return (
@@ -119,15 +130,18 @@ function BizStatCard({ title, value, change, icon, sparkline, chartType, metric 
         {change && (
           <span className={cn(
             'inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[11px] font-medium',
-            change.up ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'
+            change.up ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'
           )}>
             {change.up ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />}
-            较昨天 {change.val}
+            {change.text}
           </span>
         )}
       </div>
       <div className="flex items-end justify-between">
-        <p className="tnum text-[26px] font-bold leading-none text-neutral-900">{value}</p>
+        <div>
+          <p className="tnum text-[26px] font-bold leading-none text-neutral-900">{value}</p>
+          {hint && <p className="mt-1.5 text-xs text-neutral-400">{hint}</p>}
+        </div>
         {sparkline && (chartType === 'bar'
           ? <MiniBarChart data={sparkline} color={style.spark} />
           : <MiniSparkline data={sparkline} color={style.spark} />
@@ -229,8 +243,13 @@ export default function DashboardPage() {
   // 从 trend 数据提取迷你图
   const sparkline = trendData.map(d => d.orders || 0).slice(-14)
 
-  // 销售额序列（优先真实 totalAmount，兼容旧数据按客单价折算）
-  const salesSeries = trendData.map(d => (d.totalAmount || d.orders * 23.8) || 0)
+  // 销售额序列（真实 amount 字段，单位分；不再用 23.8 假乘数估算）
+  const salesSeries = trendData.map(d => d.amount || 0)
+
+  // 客单价 = 今日销售额 ÷ 今日订单数（数字自洽：订单数 × 客单价 ≈ 销售额）
+  const avgOrderValue = (stats?.todayOrders ?? 0) > 0
+    ? Math.round((stats?.todaySales ?? 0) / (stats?.todayOrders ?? 1))
+    : 0
 
   // 销量排行最大值（进度条基准）
   const maxSalesQty = Math.max(...ranking.map(r => r.salesQty || 0), 1)
@@ -252,9 +271,12 @@ export default function DashboardPage() {
         </button>
       </div>
 
-      {/* 米宝「今日经营速览」洞察条 — AI 洞察一等公民，置于页面顶部 */}
+      {/* 米宝「今日经营速览」洞察条 — 一句话经营解读，置于页面顶部 */}
       <TodayOverviewBar
+        todayOrders={stats?.todayOrders ?? 0}
+        todaySales={stats?.todaySales ?? 0}
         orderChange={stats?.todayOrdersChange ?? 0}
+        salesChange={stats?.todaySalesChange ?? 0}
         processingCount={processingShipment}
         pendingCount={pendingShipment}
         lowStockCount={lowStockCount}
@@ -270,19 +292,19 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ② 经营数据卡片 */}
+      {/* ② 经营数据卡片（4 卡自洽：订单数 × 客单价 ≈ 销售额） */}
       <div className="mb-6">
         <SectionHeading icon={<TrendingUp className="h-3.5 w-3.5 text-primary-600" />} colorClass="bg-primary-50">经营数据</SectionHeading>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {loading ? (
-            Array.from({ length: 3 }).map((_, i) => <div key={i} className="bg-white rounded-xl border border-neutral-200 shadow-card h-[120px] animate-pulse p-5" />)
+            Array.from({ length: 4 }).map((_, i) => <div key={i} className="bg-white rounded-xl border border-neutral-200 shadow-card h-[120px] animate-pulse p-5" />)
           ) : (
             <>
               <BizStatCard
                 metric="orders"
                 title="今日订单数"
                 value={stats?.todayOrders?.toLocaleString() || '0'}
-                change={{ val: `${stats?.todayOrdersChange || 0}`, up: (stats?.todayOrdersChange || 0) > 0 }}
+                change={{ text: `较昨日 ${fmtSigned(stats?.todayOrdersChange ?? 0)}`, up: (stats?.todayOrdersChange ?? 0) > 0 }}
                 icon={<ClipboardList className="w-4 h-4 text-primary-600" />}
                 sparkline={sparkline}
                 chartType="line"
@@ -291,16 +313,23 @@ export default function DashboardPage() {
                 metric="sales"
                 title="今日销售额"
                 value={fmtCurrency(stats?.todaySales || 0)}
-                change={{ val: `${stats?.todaySalesChange || 0}`, up: (stats?.todaySalesChange || 0) > 0 }}
+                change={{ text: `较昨日 ${fmtSigned(stats?.todaySalesChange ?? 0)}`, up: (stats?.todaySalesChange ?? 0) > 0 }}
                 icon={<DollarSign className="w-4 h-4 text-emerald-600" />}
-                sparkline={sparkline.map(v => v * 23.8)}
+                sparkline={salesSeries.slice(-14)}
                 chartType="bar"
+              />
+              <BizStatCard
+                metric="month"
+                title="客单价"
+                value={avgOrderValue > 0 ? fmtCurrency(avgOrderValue) : '—'}
+                hint={avgOrderValue > 0 ? '今日每单平均消费' : '暂无订单'}
+                icon={<TrendingUp className="w-4 h-4 text-accent-600" />}
               />
               <BizStatCard
                 metric="month"
                 title="本月销售额"
                 value={fmtCurrency(stats?.monthRevenue || 0)}
-                change={{ val: `${stats?.monthRevenueChange || 0}% 较上月`, up: (stats?.monthRevenueChange || 0) > 0 }}
+                change={{ text: `较上月 ${fmtSigned(stats?.monthRevenueChange ?? 0)}`, up: (stats?.monthRevenueChange ?? 0) > 0 }}
                 icon={<DollarSign className="w-4 h-4 text-accent-600" />}
               />
             </>
@@ -363,7 +392,7 @@ export default function DashboardPage() {
               <ChartSkeleton bars={7} heights={[45, 32, 58, 25, 52, 38, 48]} />
             ) : trendData.length > 0 ? (
               <TrendChart
-                data={trendData.map((d, i) => ({ ...d, amount: salesSeries[i] }))}
+                data={trendData}
                 series={[{ key: 'amount', name: '销售额', color: '#c06a3e', area: true, dots: true }]}
                 formatValue={fmtCurrency}
               />
@@ -413,7 +442,7 @@ export default function DashboardPage() {
             </div>
           ) : (
             <table className="w-full text-xs">
-              <thead><tr className="border-b border-neutral-100 text-neutral-400"><th className="w-10 py-2 text-left font-medium whitespace-nowrap">#</th><th className="py-2 text-left font-medium whitespace-nowrap">商品</th><th className="py-2 text-right font-medium whitespace-nowrap">成交量</th><th className="py-2 text-right font-medium whitespace-nowrap">日涨</th></tr></thead>
+              <thead><tr className="border-b border-neutral-100 text-neutral-400"><th className="w-10 py-2 text-left font-medium whitespace-nowrap">#</th><th className="py-2 text-left font-medium whitespace-nowrap">商品</th><th className="py-2 text-right font-medium whitespace-nowrap">成交量</th><th className="py-2 text-right font-medium whitespace-nowrap" title="较昨日销量涨跌幅">日涨</th></tr></thead>
               <tbody>
                 {ranking.slice(0, 10).map(r => (
                   <tr key={r.productId} className="border-b border-neutral-50 transition-colors hover:bg-neutral-50/70">
@@ -438,7 +467,7 @@ export default function DashboardPage() {
                       </div>
                     </td>
                     <td className="tnum py-2.5 text-right font-mono text-neutral-900 whitespace-nowrap">{r.qtyDisplay}</td>
-                    <td className={cn('py-2.5 text-right whitespace-nowrap', r.dailyChange > 0 ? 'text-red-500' : 'text-emerald-500')}>
+                    <td className={cn('py-2.5 text-right whitespace-nowrap', r.dailyChange > 0 ? 'text-emerald-600' : 'text-red-500')}>
                       {r.dailyChange > 0 ? '▲' : '▼'} {Math.abs(r.dailyChange)}%
                     </td>
                   </tr>

@@ -1,4 +1,6 @@
 name: Agent Eval Adversarial (米宝对抗评测)
+permissions:
+  contents: read
 
 on:
   workflow_dispatch:
@@ -15,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v5
         with:
@@ -35,7 +37,7 @@ jobs:
 
       - name: Create Issue on failure (tracking only)
         if: failure()
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`

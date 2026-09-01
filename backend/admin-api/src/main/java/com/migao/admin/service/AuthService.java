@@ -61,6 +61,15 @@ public class AuthService {
      */
     private static final String TOKEN_BLACKLIST_PREFIX = "token:blacklist:";
 
+    /**
+     * Refresh Token Cookie 名（审计 07 P1-5/P1-F1）：
+     * refresh token 只经 HttpOnly Cookie 承载，禁止下发到响应体（防前端存储进 localStorage/XSS 窃取）。
+     */
+    private static final String REFRESH_TOKEN_COOKIE = "refresh_token";
+
+    /** Refresh Token Cookie 有效期（秒）：7 天，与 JWT refresh-token-expiration 对齐 */
+    private static final int REFRESH_TOKEN_COOKIE_MAX_AGE = 604800;
+
     @Value("${jwt.cookie.name:access_token}")
     private String cookieName;
 
@@ -124,11 +133,12 @@ public class AuthService {
      *
      * @param phone    手机号
      * @param code     短信验证码
+     * @param tenantId 租户 ID（可选）。同手机号存在于多个租户时必填（审计 07 P1-2）
      * @param response HTTP 响应（用于设置 Cookie）
      * @return 登录响应
      */
     @Transactional(rollbackFor = Exception.class)
-    public LoginResponse loginBySms(String phone, String code, HttpServletResponse response) {
+    public LoginResponse loginBySms(String phone, String code, Long tenantId, HttpServletResponse response) {
         log.info("短信验证码登录: phone={}", phone);
 
         // 1. 校验短信验证码
@@ -162,6 +172,8 @@ public class AuthService {
             );
 
             setTokenCookie(response, accessToken, (int) jwtTokenProvider.getAccessTokenExpiration());
+            // 审计 07 P1-5：refresh token 仅经 HttpOnly cookie 下发，不进响应体
+            setRefreshTokenCookie(response, refreshToken);
 
             // 更新最后登录时间
             platformAdmin.setLastLoginAt(OffsetDateTime.now());
@@ -179,16 +191,32 @@ public class AuthService {
                             .tenantName("米高平台管理")
                             .build())
                     .accessToken(accessToken)
-                    .refreshToken(refreshToken)
+                    .refreshToken(null)  // 审计 07 P1-5: 不下发，仅 HttpOnly cookie
                     .expiresIn(jwtTokenProvider.getAccessTokenExpiration())
                     .build();
         }
 
         // 3. 根据手机号查找租户用户（跨租户查询，使用 @InterceptorIgnore 绕过多租户拦截器）
-        User user = userMapper.selectByPhoneIgnoreTenant(phone);
-        if (user == null) {
-            log.warn("短信登录失败，用户不存在或已禁用: phone={}", phone);
+        List<User> users = userMapper.selectActiveUsersByPhoneIgnoreTenant(phone);
+        if (users.isEmpty()) {
+            log.warn("短信登录失败，用户不存在或已禁用: phone={}", maskPhone(phone));
             throw BusinessException.authFailed("该手机号未注册");
+        }
+
+        // 3.1 同手机号多租户歧义处理（审计 07 P1-2：禁止静默 LIMIT 1 落错租户）
+        User user;
+        if (users.size() == 1) {
+            user = users.get(0);
+        } else {
+            if (tenantId == null) {
+                log.warn("短信登录失败，手机号关联多个租户且未指定租户: phone={}", maskPhone(phone));
+                throw BusinessException.authFailed(
+                        "该手机号关联多个租户账号，请通过对应租户入口登录或指定租户后重试");
+            }
+            user = users.stream()
+                    .filter(u -> tenantId.equals(u.getTenantId()))
+                    .findFirst()
+                    .orElseThrow(() -> BusinessException.authFailed("该手机号在该租户下未注册"));
         }
 
         // 4. 校验用户状态
@@ -220,6 +248,8 @@ public class AuthService {
 
         // 8. 设置 HttpOnly Cookie
         setTokenCookie(response, accessToken, (int) jwtTokenProvider.getAccessTokenExpiration());
+        // 审计 07 P1-5：refresh token 仅经 HttpOnly cookie 下发，不进响应体
+        setRefreshTokenCookie(response, refreshToken);
 
         // 9. 查询租户名称
         String tenantName = getTenantName(user.getTenantId());
@@ -237,7 +267,7 @@ public class AuthService {
                         .tenantName(tenantName)
                         .build())
                 .accessToken(accessToken)
-                .refreshToken(refreshToken)
+                .refreshToken(null)  // 审计 07 P1-5: 不下发，仅 HttpOnly cookie
                 .expiresIn(jwtTokenProvider.getAccessTokenExpiration())
                 .build();
     }
@@ -256,7 +286,18 @@ public class AuthService {
     public LoginResponse miniProgramLogin(String code, Long tenantId, HttpServletResponse response) {
         log.info("微信小程序登录: tenantId={}", tenantId);
 
-        // 0. 设置租户上下文
+        // 0. 租户存在性校验（审计 07 P1-1）：拒绝向不存在的租户自动建号/注入用户。
+        //    注意：租户 ID 仍由客户端传入，完整修复需服务端按微信 appid→租户绑定解析（技术债），
+        //    此处先封堵"任意数字即可建号"与 Mock 伪造 openid 两条捷径。
+        if (tenantId == null) {
+            throw BusinessException.validationError("租户标识不能为空");
+        }
+        Tenant tenant = tenantMapper.selectById(tenantId);
+        if (tenant == null || !"active".equals(tenant.getStatus())) {
+            throw BusinessException.authFailed("租户不存在或未启用");
+        }
+
+        // 0.1 设置租户上下文
         TenantContext.setTenantId(tenantId);
 
         // 1. 调用微信 code2Session 接口，用 code 换取 openid + session_key
@@ -284,6 +325,8 @@ public class AuthService {
 
         // 5. 设置 HttpOnly Cookie
         setTokenCookie(response, accessToken, (int) jwtTokenProvider.getAccessTokenExpiration());
+        // 审计 07 P1-5：refresh token 仅经 HttpOnly cookie 下发，不进响应体
+        setRefreshTokenCookie(response, refreshToken);
 
         // 6. 查询租户名称
         String tenantNameVal = getTenantName(user.getTenantId());
@@ -301,7 +344,7 @@ public class AuthService {
                         .tenantName(tenantNameVal)
                         .build())
                 .accessToken(accessToken)
-                .refreshToken(refreshToken)
+                .refreshToken(null)  // 审计 07 P1-5: 不下发，仅 HttpOnly cookie
                 .expiresIn(jwtTokenProvider.getAccessTokenExpiration())
                 .build();
     }
@@ -481,6 +524,8 @@ public class AuthService {
 
         // 设置新的 Cookie
         setTokenCookie(response, newAccessToken, (int) jwtTokenProvider.getAccessTokenExpiration());
+        // 审计 07 P1-5：refresh token 仅经 HttpOnly cookie 轮换下发
+        setRefreshTokenCookie(response, newRefreshToken);
 
         // 查询租户名称
         String tenantName = getTenantName(user.getTenantId());
@@ -642,6 +687,8 @@ public class AuthService {
         }
 
         setTokenCookie(response, newAccessToken, (int) jwtTokenProvider.getAccessTokenExpiration());
+        // 审计 07 P1-5：refresh token 仅经 HttpOnly cookie 轮换下发
+        setRefreshTokenCookie(response, newRefreshToken);
 
         return LoginResponse.builder()
                 .user(LoginResponse.UserInfo.builder()
@@ -737,8 +784,23 @@ public class AuthService {
      * 设置 Token Cookie（含 SameSite 属性）
      */
     private void setTokenCookie(HttpServletResponse response, String token, int maxAge) {
+        setCookie(response, cookieName, token, maxAge);
+    }
+
+    /**
+     * 设置 Refresh Token Cookie（HttpOnly+Secure+SameSite，7 天）。
+     * refresh token 仅经此通道下发（审计 07 P1-5），不进入响应体。
+     */
+    private void setRefreshTokenCookie(HttpServletResponse response, String refreshToken) {
+        setCookie(response, REFRESH_TOKEN_COOKIE, refreshToken, REFRESH_TOKEN_COOKIE_MAX_AGE);
+    }
+
+    /**
+     * 通用 Cookie 写入（HttpOnly/Secure/SameSite/Domain 与 access_token 一致）
+     */
+    private void setCookie(HttpServletResponse response, String name, String value, int maxAge) {
         StringBuilder cookieValue = new StringBuilder();
-        cookieValue.append(cookieName).append("=").append(token);
+        cookieValue.append(name).append("=").append(value);
         cookieValue.append("; Max-Age=").append(maxAge);
         cookieValue.append("; Path=").append(cookiePath);
 
@@ -762,8 +824,17 @@ public class AuthService {
      * 清除 Token Cookie
      */
     private void clearTokenCookie(HttpServletResponse response) {
+        clearCookie(response, cookieName);
+        // 审计 07 P1-5：登出时一并清除 refresh token cookie
+        clearCookie(response, REFRESH_TOKEN_COOKIE);
+    }
+
+    /**
+     * 通用 Cookie 清除
+     */
+    private void clearCookie(HttpServletResponse response, String name) {
         StringBuilder cookieValue = new StringBuilder();
-        cookieValue.append(cookieName).append("=");
+        cookieValue.append(name).append("=");
         cookieValue.append("; Max-Age=0");
         cookieValue.append("; Path=").append(cookiePath);
 
@@ -814,8 +885,8 @@ public class AuthService {
     private List<UserInfoResponse.MenuItem> buildPlatformAdminMenus() {
         List<UserInfoResponse.MenuItem> menus = new java.util.ArrayList<>();
 
-        menus.add(UserInfoResponse.MenuItem.builder()
-                .key("registrations").name("入驻审批").icon("ClipboardCheck").path("/registrations").build());
+        // 注：入驻审批页已废弃（2026-08-30 起商家入驻由 AI 自动甄别开通，
+        // 不再需要人工审批页面；审批接口仍保留供 API 兜底应急）。
         menus.add(UserInfoResponse.MenuItem.builder()
                 .key("platform-dashboard").name("平台概览").icon("LayoutDashboard").path("/platform-dashboard").build());
         menus.add(UserInfoResponse.MenuItem.builder()
@@ -896,5 +967,15 @@ public class AuthService {
                                                  List<UserInfoResponse.MenuItem> children) {
         return UserInfoResponse.MenuItem.builder()
                 .key(key).name(name).icon(icon).children(children).build();
+    }
+
+    /**
+     * 手机号脱敏（日志用）：138****8000
+     */
+    private String maskPhone(String phone) {
+        if (phone == null || phone.length() < 7) {
+            return phone;
+        }
+        return phone.substring(0, 3) + "****" + phone.substring(phone.length() - 4);
     }
 }

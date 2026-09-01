@@ -1,0 +1,75 @@
+name: Deploy Production (受控发布)
+permissions:
+  contents: read
+
+# ⚠️ 未来生产环境发布入口（当前生产环境尚未就绪，见 docs/deployment/production-deployment.md）
+# 启用条件：
+#   1. 生产服务器/集群就绪后，在仓库 Secrets 配置 PROD_* 系列凭据
+#   2. 在 GitHub 创建 production Environment（推荐配置 required reviewers 人工审批）
+#   3. 生产 ACR 命名空间/仓库与测试隔离，只接收 release tag 镜像
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '要发布的版本：semver tag（v1.2.3）或镜像 tag（sha-xxxxxxx）。必须已由 CI 构建推送到生产 ACR'
+        required: true
+      services:
+        description: '发布模块，逗号分隔（admin-api, ai-agent, admin-web）'
+        default: 'admin-api,ai-agent,admin-web'
+        required: false
+
+jobs:
+  deploy-prod:
+    runs-on: ubuntu-latest
+    environment: production   # GitHub Environments：可配 required reviewers（人工审批）+ 部署保护
+    concurrency:
+      group: deploy-prod
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Validate inputs
+        run: |
+          VERSION="${{ inputs.version }}"
+          case "$VERSION" in
+            v*|sha-*) echo "✅ 版本格式合法: $VERSION" ;;
+            *) echo "❌ 版本必须是 vX.Y.Z 或 sha-xxxxxxx 格式"; exit 1 ;;
+          esac
+          echo "services: ${{ inputs.services }}"
+
+      # 部署到生产（配置见 production-deployment.md）：
+      # 生产服务器/集群通过 RunCommand 或 ssh 执行 pull + up（与测试环境 deploy.sh 相同模式）
+      - name: Deploy to production servers
+        env:
+          AK: ${{ secrets.PROD_ALIYUN_ACCESS_KEY_ID }}
+          SK: ${{ secrets.PROD_ALIYUN_ACCESS_KEY_SECRET }}
+          ACR_U: ${{ secrets.PROD_ACR_USERNAME }}
+          ACR_P: ${{ secrets.PROD_ACR_PASSWORD }}
+          PROD_INSTANCES: ${{ vars.PROD_SWAS_INSTANCE_IDS }}
+        run: |
+          if [ -z "$AK" ] || [ -z "$PROD_INSTANCES" ]; then
+            echo "❌ 生产凭据未配置（PROD_ALIYUN_ACCESS_KEY_ID / PROD_SWAS_INSTANCE_IDS）。"
+            echo "   生产环境就绪后按 docs/deployment/production-deployment.md 配置。"
+            exit 1
+          fi
+          for INSTANCE in $PROD_INSTANCES; do
+            echo "== 部署到生产实例 $INSTANCE（version=${{ inputs.version }}）=="
+            bash deploy/scripts/swas-deploy-ci.sh \
+              "$INSTANCE" "${{ vars.PROD_SWAS_REGION || 'cn-hangzhou' }}" \
+              "$AK" "$SK" "$ACR_U" "$ACR_P" "${{ inputs.version }}"
+          done
+
+      - name: Post-deploy production smoke
+        run: |
+          echo "== 生产冒烟（生产域名）=="
+          for URL in ${{ vars.PROD_HEALTH_URLS }}; do
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" -m 15 "$URL" || echo 000)
+            echo "$URL -> $CODE"
+            if [ "$CODE" != "200" ]; then echo "❌ 生产健康检查失败: $URL"; exit 1; fi
+          done
+          echo "✅ 生产发布完成（version=${{ inputs.version }}）"
+
+      - name: Rollback hint
+        run: |
+          echo "回滚：重新运行本 workflow，version 填上一稳定版本（镜像 tag 不可变，ACR 中始终存在）。"
+          echo "详见 docs/deployment/rollback.md"

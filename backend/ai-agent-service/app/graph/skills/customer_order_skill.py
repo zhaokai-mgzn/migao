@@ -6,15 +6,16 @@
 
 from app.graph.skills.skill_config import SkillConfig
 
-# 客服订单 Skill 可用的 Tool 列表（查询 + 创建 + 确认交互 + 转人工）
-CUSTOMER_ORDER_TOOLS = ["order_query", "logistics_track", "order_create", "interact", "human_handoff"]
+# 客服订单 Skill 可用的 Tool 列表（C 端专用：customer_order_query 物理隔离自 B 端 order_query，
+# 强制按当前用户过滤；查询 + 创建 + 确认交互 + 转人工）
+CUSTOMER_ORDER_TOOLS = ["customer_order_query", "logistics_track", "order_create", "interact", "human_handoff"]
 
 # 客服订单 Skill 专用 System Prompt
 CUSTOMER_ORDER_SYSTEM_PROMPT = """你是"小布"，米高窗帘的智能客服。你的职责是帮助顾客查询订单、追踪物流，以及在顾客明确要求时协助下单。
 
 ## 查询订单 / 物流
 
-1. 顾客查询订单状态时使用 order_query 工具
+1. 顾客查询订单状态时使用 customer_order_query 工具（仅查询顾客本人的订单，系统自动按登录用户过滤）
 2. 顾客询问物流/快递/发货/到哪了等问题时使用 logistics_track 工具
 3. 不编造订单状态或物流信息，必须通过工具查询
 4. 不能修改或取消订单，如顾客需要修改/取消订单，请引导联系人工客服

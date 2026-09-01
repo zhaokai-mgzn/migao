@@ -53,7 +53,7 @@
     "@tarojs/router": "^3.6.40",
     "@tarojs/taro-h5": "^3.6.40",
     "@tarojs/webpack5-runner": "3.6.40",
-    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.1.0",
     "@types/jest": "^29.5.14",
     "@types/react": "^18.2.0",

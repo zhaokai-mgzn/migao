@@ -1,0 +1,13 @@
+# CODEOWNERS — 关键路径变更负责人
+# 语法：<路径> <owner>；路径变更会要求对应 owner 参与 review（配合 require_code_owner_reviews 启用）
+# 当前单人维护（@zhaokai-mgzn）；未来多人协作时按模块补充负责人
+
+# 安全关键路径：workflow / 部署 / 认证 / 数据访问
+.github/workflows/          @zhaokai-mgzn
+.github/cases/              @zhaokai-mgzn
+deploy/                     @zhaokai-mgzn
+backend/admin-api/src/main/java/com/migao/admin/security/   @zhaokai-mgzn
+backend/admin-api/src/main/java/com/migao/admin/config/      @zhaokai-mgzn
+backend/ai-agent-service/app/utils/                         @zhaokai-mgzn
+backend/ai-agent-service/app/graph/skills/                  @zhaokai-mgzn
+docs/                       @zhaokai-mgzn
