@@ -10,6 +10,7 @@ import com.migao.admin.dto.SmsLoginRequest;
 import com.migao.admin.dto.UserInfoResponse;
 import com.migao.admin.service.AuthService;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.util.StringUtils;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -64,7 +65,8 @@ public class AuthController {
             @Valid @RequestBody SmsLoginRequest request,
             HttpServletResponse response) {
         log.info("短信验证码登录请求: phone={}", request.getPhone());
-        LoginResponse loginResponse = authService.loginBySms(request.getPhone(), request.getCode(), response);
+        LoginResponse loginResponse = authService.loginBySms(
+                request.getPhone(), request.getCode(), request.getTenantId(), response);
         return ApiResponse.success(loginResponse);
     }
 
@@ -132,11 +134,36 @@ public class AuthController {
      */
     @PostMapping("/refresh")
     public ApiResponse<LoginResponse> refreshToken(
-            @Valid @RequestBody RefreshTokenRequest request,
+            @RequestBody(required = false) RefreshTokenRequest request,
+            HttpServletRequest httpRequest,
             HttpServletResponse response) {
         log.info("刷新 Token 请求");
-        LoginResponse loginResponse = authService.refreshToken(request.getRefreshToken(), response);
+        // 审计 07 P1-5：优先从 HttpOnly refresh_token cookie 读取（前端不再持有/传输 refresh token），
+        // body 传参仅作向后兼容
+        String refreshToken = request != null && StringUtils.hasText(request.getRefreshToken())
+                ? request.getRefreshToken()
+                : extractCookie(httpRequest, "refresh_token");
+        if (!StringUtils.hasText(refreshToken)) {
+            throw com.migao.admin.exception.BusinessException.authFailed("缺少 Refresh Token");
+        }
+        LoginResponse loginResponse = authService.refreshToken(refreshToken, response);
         return ApiResponse.success(loginResponse);
+    }
+
+    /**
+     * 从请求 Cookie 中提取指定名称的值
+     */
+    private String extractCookie(HttpServletRequest request, String name) {
+        jakarta.servlet.http.Cookie[] cookies = request.getCookies();
+        if (cookies == null) {
+            return null;
+        }
+        for (jakarta.servlet.http.Cookie cookie : cookies) {
+            if (name.equals(cookie.getName())) {
+                return cookie.getValue();
+            }
+        }
+        return null;
     }
 
     /**

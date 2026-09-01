@@ -1,3 +1,4 @@
+// case_ids: PR-001, PR-002
 package com.migao.admin.controller;
 
 import com.migao.admin.dto.*;
@@ -224,6 +225,46 @@ class ProductControllerTest extends BaseControllerTest {
             mockMvc.perform(put(BASE + "/nonexistent")
                             .contentType(MediaType.APPLICATION_JSON).content(body))
                     .andExpect(status().isNotFound());
+        }
+    }
+
+    // ==================== PUT /api/admin/products/{id}/recommend ====================
+
+    @Nested
+    @DisplayName("PUT /api/admin/products/{id}/recommend — 设置推荐标记")
+    class UpdateRecommended {
+
+        @Test
+        @DisplayName("设置推荐成功 -> 200")
+        void setRecommended() throws Exception {
+            mockMvc.perform(put(BASE + "/" + PROD_ID + "/recommend")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"recommended\":true}"))
+                    .andExpect(status().isOk());
+
+            verify(productService).updateProductRecommended(eq(PROD_ID), eq(true), eq(TEST_TENANT_ID));
+        }
+
+        @Test
+        @DisplayName("取消推荐成功 -> 200")
+        void unsetRecommended() throws Exception {
+            mockMvc.perform(put(BASE + "/" + PROD_ID + "/recommend")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"recommended\":false}"))
+                    .andExpect(status().isOk());
+
+            verify(productService).updateProductRecommended(eq(PROD_ID), eq(false), eq(TEST_TENANT_ID));
+        }
+
+        @Test
+        @DisplayName("recommended 缺失 -> 400")
+        void missingRecommended() throws Exception {
+            mockMvc.perform(put(BASE + "/" + PROD_ID + "/recommend")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{}"))
+                    .andExpect(status().isBadRequest());
+
+            verify(productService, never()).updateProductRecommended(any(), any(), any());
         }
     }
 

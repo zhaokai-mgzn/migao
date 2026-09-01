@@ -19,7 +19,12 @@ import java.time.OffsetDateTime;
 @TableName(value = "tenants", autoResultMap = true)
 public class Tenant {
 
-    @TableId(type = IdType.ASSIGN_ID)
+    /**
+     * 生产库 tenants.id 为 GENERATED ALWAYS AS IDENTITY（PG18），
+     * 必须用 AUTO 让数据库生成主键；ASSIGN_ID 会显式插入非 DEFAULT 值被 PG 拒绝
+     * （云验收实测：AI 自动开通租户时报 cannot insert a non-DEFAULT value into column id）
+     */
+    @TableId(type = IdType.AUTO)
     private Long id;
 
     private String name;

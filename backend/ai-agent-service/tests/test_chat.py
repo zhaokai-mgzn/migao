@@ -25,6 +25,7 @@ from app.api.chat import (
     send_message,
     create_session,
     list_sessions,
+    get_latest_session,
     close_session_endpoint,
     reopen_session_endpoint,
     delete_session,
@@ -102,6 +103,12 @@ class TestShouldSendCard:
     def test_order_query_empty(self):
         assert _should_send_card("order_query", {"success": True, "data": {}}) is False
 
+    def test_customer_order_query_sends_card(self):
+        """C 端 customer_order_query 与 B 端 order_query 同卡片规则"""
+        assert _should_send_card("customer_order_query", {"success": True, "data": {"orders": [{"id": "o1"}]}}) is True
+        assert _should_send_card("customer_order_query", {"success": True, "data": {"order": {"id": "o1"}}}) is True
+        assert _should_send_card("customer_order_query", {"success": True, "data": {}}) is False
+
     def test_unknown_tool(self):
         assert _should_send_card("other_tool", {"success": True, "data": {"x": 1}}) is False
 
@@ -112,6 +119,7 @@ class TestDetectCardType:
         assert _detect_card_type("product_detail", {}) == "product_detail"
         assert _detect_card_type("logistics_track", {}) == "logistics"
         assert _detect_card_type("order_query", {}) == "order"
+        assert _detect_card_type("customer_order_query", {}) == "order"
         assert _detect_card_type("unknown", {}) is None
 
 
@@ -257,6 +265,35 @@ class TestListSessions:
         assert result["success"] is True
         assert result["data"]["total"] == 1
         assert result["data"]["items"][0]["status"] == "active"
+
+
+class TestGetLatestSession:
+    """无会话 UX：打开即续聊（latest 端点返回最近 active 会话）"""
+
+    @patch("app.api.chat.SessionMemory")
+    @pytest.mark.asyncio
+    async def test_has_recent_session(self, MockSM):
+        """有最近会话 → 返回该会话（前端续聊）"""
+        m = _memory(get_sessions=[_session(id="sess-latest")])
+        MockSM.return_value = m
+        result = await get_latest_session(current_user=_user())
+        assert result["success"] is True
+        assert result["data"]["session"]["id"] == "sess-latest"
+        # 必须按最新会话取（size=1 + updated_at desc 由 SessionMemory 保证）
+        m.get_sessions.assert_called_once()
+        call = m.get_sessions.call_args
+        assert call.kwargs["size"] == 1
+        assert call.kwargs["customer_id"] == "user_1"
+
+    @patch("app.api.chat.SessionMemory")
+    @pytest.mark.asyncio
+    async def test_no_session_returns_null(self, MockSM):
+        """无会话 → 返回 null（前端新建，无感）"""
+        m = _memory(get_sessions=[])
+        MockSM.return_value = m
+        result = await get_latest_session(current_user=_user())
+        assert result["success"] is True
+        assert result["data"]["session"] is None
 
 
 class TestCloseSession:
@@ -534,6 +571,70 @@ class TestPageRequest:
         assert "tool_call" in body
         assert "tool_result" in body
         reg.execute_tool.assert_awaited_once()
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            # 写/破坏性工具不在翻页白名单（审计 07 P0-L2：白名单仅允许只读查询）
+            '__PAGE__|employee_manage|{"action":"delete","user_id":"u1"}',
+            '__PAGE__|employee_manage|{"action":"reset_password","user_id":"u1"}',
+            '__PAGE__|product_manage|{"action":"update","product_id":"p1"}',
+            '__PAGE__|product_manage|{"action":"toggle_status","product_id":"p1"}',
+            '__PAGE__|customer_manage|{"action":"delete","customer_id":"c1"}',
+            '__PAGE__|customer_manage|{"action":"create_tag","customer_id":"c1"}',
+        ],
+    )
+    @patch("app.api.chat.SessionMemory")
+    @pytest.mark.asyncio
+    async def test_write_tools_blocked_from_pagination(self, MockSM, message):
+        """写/破坏性工具（员工/商品/客户管理）不得经 __PAGE__ 直调绕过确认守卫。"""
+        from app.api.chat import _handle_page_request
+        MockSM.return_value = _memory(get_session=_session())
+        req = ChatSendRequest(session_id="sess_1", message=message)
+        resp = await _handle_page_request(req, tenant_id=1, user_id="user_1", current_user=_user())
+        body = await self._collect(resp)
+        assert "不支持该操作的分页查询" in body
+
+
+class TestPageActionAllowed:
+    """_page_action_allowed 纵深防御：白名单工具的写 action 一律拒绝（审计 07 P0-L2）。"""
+
+    def _tool(self, read_only_actions):
+        t = MagicMock()
+        t.read_only_actions = frozenset(read_only_actions)
+        return t
+
+    def _registry(self, tool=None):
+        reg = MagicMock()
+        reg.get_tool.return_value = tool
+        return reg
+
+    def test_readonly_action_allowed(self):
+        from app.api.chat import _page_action_allowed
+        reg = self._registry(self._tool({"list", "detail"}))
+        assert _page_action_allowed(reg, "employee_manage", {"action": "list"}) is True
+        assert _page_action_allowed(reg, "employee_manage", {"action": "detail"}) is True
+
+    def test_write_action_rejected(self):
+        from app.api.chat import _page_action_allowed
+        reg = self._registry(self._tool({"list", "detail"}))
+        assert _page_action_allowed(reg, "employee_manage", {"action": "delete"}) is False
+        assert _page_action_allowed(reg, "employee_manage", {"action": "reset_password"}) is False
+
+    def test_operation_alias_rejected(self):
+        from app.api.chat import _page_action_allowed
+        reg = self._registry(self._tool({"list", "detail"}))
+        assert _page_action_allowed(reg, "employee_manage", {"operation": "delete"}) is False
+
+    def test_no_action_param_allowed(self):
+        from app.api.chat import _page_action_allowed
+        reg = self._registry(self._tool({"list", "detail"}))
+        assert _page_action_allowed(reg, "order_query", {"page": 2}) is True
+
+    def test_unknown_tool_rejected(self):
+        from app.api.chat import _page_action_allowed
+        reg = self._registry(None)
+        assert _page_action_allowed(reg, "order_create", {}) is False
 
 
 # ═══════════════════════════════════════════════

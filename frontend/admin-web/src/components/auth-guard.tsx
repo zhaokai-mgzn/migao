@@ -8,14 +8,12 @@ const publicRoutes = ['/login', '/register', '/about', '/services', '/contact']
 const protectedRoutePrefixes = [
   '/dashboard', '/products', '/processing', '/knowledge', '/settings',
   '/orders', '/chat', '/customers', '/employees', '/roles',
-  '/registrations', '/agent-workspace', '/after-sales', '/notifications', '/categories',
+  '/agent-workspace', '/after-sales', '/notifications', '/categories',
 ]
 
-function getCookie(name: string): string | undefined {
-  if (typeof document === 'undefined') return undefined
-  const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'))
-  return match ? match[2] : undefined
-}
+// 审计 07 P1-F1：JWT 为 HttpOnly cookie，JS 无法读取——
+// 登录态只以 store.isAuthenticated（由 /api/auth/me 验证后置位）为准，
+// 不再依赖可读 cookie/本地存储。
 
 /** 去掉尾部斜杠（根路径除外），兼容 trailingSlash: true */
 function normalizePath(p: string): string {
@@ -31,11 +29,9 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   const _hasHydrated = useAuthStore((s) => s._hasHydrated)
 
   useEffect(() => {
-    // 等待 Zustand 水合完成再做认证检查
     if (!_hasHydrated) return
 
-    const accessToken = getCookie('access_token')
-    const isLoggedIn = isAuthenticated || !!accessToken
+    const isLoggedIn = isAuthenticated
 
     const isProtectedRoute = protectedRoutePrefixes.some(prefix => pathname.startsWith(prefix))
 

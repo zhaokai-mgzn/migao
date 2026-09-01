@@ -54,4 +54,10 @@ public class RegistrationRequest {
      * 企业描述
      */
     private String description;
+
+    /**
+     * 蜜罐字段（隐藏于表单，正常人不会填写）
+     * 若被填充 → 判定为自动化脚本提交，不落库、不调 AI，静默忽略
+     */
+    private String website;
 }

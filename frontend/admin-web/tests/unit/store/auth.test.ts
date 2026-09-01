@@ -1,3 +1,4 @@
+// case_ids: API-010
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { act } from '@testing-library/react'
 
@@ -29,11 +30,10 @@ describe('useAuthStore (Zustand auth store)', () => {
       useAuthStore.setState({
         user: null,
         accessToken: null,
-        refreshToken: null,
         isAuthenticated: false,
         isLoading: false,
         rememberMe: true,
-        _hasHydrated: false,
+        _hasHydrated: true,
       })
     })
     // Mock document.cookie
@@ -48,7 +48,6 @@ describe('useAuthStore (Zustand auth store)', () => {
       const state = useAuthStore.getState()
       expect(state.user).toBeNull()
       expect(state.accessToken).toBeNull()
-      expect(state.refreshToken).toBeNull()
       expect(state.isAuthenticated).toBe(false)
       expect(state.isLoading).toBe(false)
       expect(state.rememberMe).toBe(true)
@@ -77,7 +76,6 @@ describe('useAuthStore (Zustand auth store)', () => {
 
       const state = useAuthStore.getState()
       expect(state.accessToken).toBe('access-123')
-      expect(state.refreshToken).toBe('refresh-456')
       expect(state.isAuthenticated).toBe(true)
       expect(state.isLoading).toBe(false)
     })
@@ -174,7 +172,6 @@ describe('useAuthStore (Zustand auth store)', () => {
         useAuthStore.setState({
           user: { id: 1, username: 'admin' } as any,
           accessToken: 'token',
-          refreshToken: 'refresh',
           isAuthenticated: true,
         })
       })
@@ -188,7 +185,6 @@ describe('useAuthStore (Zustand auth store)', () => {
       const state = useAuthStore.getState()
       expect(state.user).toBeNull()
       expect(state.accessToken).toBeNull()
-      expect(state.refreshToken).toBeNull()
       expect(state.isAuthenticated).toBe(false)
     })
 
@@ -212,20 +208,13 @@ describe('useAuthStore (Zustand auth store)', () => {
   })
 
   describe('refreshAccessToken', () => {
-    it('should return new token on successful refresh', async () => {
+    it('should call refresh endpoint (cookie-based) and update access token', async () => {
       act(() => {
-        useAuthStore.setState({
-          refreshToken: 'old-refresh',
-        })
+        useAuthStore.setState({ accessToken: 'old-access', isAuthenticated: true })
       })
 
       mockRefreshToken.mockResolvedValue({
-        data: {
-          data: {
-            accessToken: 'new-access-token',
-            refreshToken: 'new-refresh-token',
-          },
-        },
+        data: { data: { accessToken: 'new-access-token' } },
       })
 
       let result: string | null = null
@@ -233,30 +222,14 @@ describe('useAuthStore (Zustand auth store)', () => {
         result = await useAuthStore.getState().refreshAccessToken()
       })
 
+      expect(mockRefreshToken).toHaveBeenCalledWith()  // 审计 07 P1-5: 无参（cookie 承载）
       expect(result).toBe('new-access-token')
       expect(useAuthStore.getState().accessToken).toBe('new-access-token')
-      expect(useAuthStore.getState().refreshToken).toBe('new-refresh-token')
-    })
-
-    it('should return null and clear auth when no refresh token', async () => {
-      act(() => {
-        useAuthStore.setState({
-          refreshToken: null,
-        })
-      })
-
-      let result: string | null = 'something'
-      await act(async () => {
-        result = await useAuthStore.getState().refreshAccessToken()
-      })
-
-      expect(result).toBeNull()
     })
 
     it('should return null and clear auth on refresh failure', async () => {
       act(() => {
         useAuthStore.setState({
-          refreshToken: 'old-refresh',
           accessToken: 'old-access',
           isAuthenticated: true,
         })
@@ -273,29 +246,6 @@ describe('useAuthStore (Zustand auth store)', () => {
       expect(useAuthStore.getState().accessToken).toBeNull()
       expect(useAuthStore.getState().isAuthenticated).toBe(false)
     })
-
-    it('should keep old refresh token if new one is not provided', async () => {
-      act(() => {
-        useAuthStore.setState({
-          refreshToken: 'keep-this-refresh',
-        })
-      })
-
-      mockRefreshToken.mockResolvedValue({
-        data: {
-          data: {
-            accessToken: 'new-access',
-            refreshToken: undefined,
-          },
-        },
-      })
-
-      await act(async () => {
-        await useAuthStore.getState().refreshAccessToken()
-      })
-
-      expect(useAuthStore.getState().refreshToken).toBe('keep-this-refresh')
-    })
   })
 
   describe('clearAuth', () => {
@@ -304,7 +254,6 @@ describe('useAuthStore (Zustand auth store)', () => {
         useAuthStore.setState({
           user: { id: 1, username: 'admin' } as any,
           accessToken: 'token',
-          refreshToken: 'refresh',
           isAuthenticated: true,
           isLoading: true,
         })
@@ -317,7 +266,6 @@ describe('useAuthStore (Zustand auth store)', () => {
       const state = useAuthStore.getState()
       expect(state.user).toBeNull()
       expect(state.accessToken).toBeNull()
-      expect(state.refreshToken).toBeNull()
       expect(state.isAuthenticated).toBe(false)
       expect(state.isLoading).toBe(false)
     })
@@ -448,7 +396,6 @@ describe('useAuthStore (Zustand auth store)', () => {
       })
 
       expect(useAuthStore.getState().accessToken).toBe('sms-access-token')
-      expect(useAuthStore.getState().refreshToken).toBe('sms-refresh-token')
       expect(useAuthStore.getState().isAuthenticated).toBe(true)
       expect(mockSmsLogin).toHaveBeenCalledWith(phone, code)
     })
@@ -488,7 +435,6 @@ describe('useAuthStore (Zustand auth store)', () => {
         useAuthStore.setState({
           user: { id: '1', username: 'adminA', tenantId: 'tenant_A' } as any,
           accessToken: 'tenant-A-token',
-          refreshToken: 'tenant-A-refresh',
           isAuthenticated: true,
         })
       })

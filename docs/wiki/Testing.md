@@ -77,6 +77,39 @@ specs/
 - **新增数据列表页** → 注册到 `quality/anti-placeholder.spec.ts` 的 `PAGES` 数组
 - **新增/修改 API 字段** → 更新 `quality/api-contract.spec.ts`
 
+### E2E 选择器优先级
+
+```
+1. getByRole('heading'/'button'/'columnheader', { name })
+2. getByTitle('...')  — 图标按钮（无文字）
+3. getByLabel('...')  — 表单字段
+4. getByText('...', { exact: true })
+5. locator('.class').filter({ hasText })
+6. getByText('...').first()  — 最后手段
+```
+
+**禁止**: 裸 `getByText('短词')` 用于包含 sidebar 的页面。
+
+### 禁止提交
+
+- `.env` / 密钥 / 敏感配置（CI 有 block-env-files 门禁）
+- 手写 E2E mock 数据（必须 Record-Replay fixture）
+- 跳过测试直接写实现的代码
+
+## QA Growth Gate — 变更类型 → 强制测试
+
+PR 合并前，CI（pr-check qa-growth-gate）自动扫描变更文件，以下文件类型强制对应测试：
+
+| 变更类型 | 测试要求 |
+|---------|---------|
+| Controller (Java) | MockMvc 集成测试 + API contract E2E |
+| Service (Java) | JUnit 单测 (覆盖率 ≥80%) |
+| Tool (Python) | L2 单测 + L3 Real E2E |
+| Component (TSX) | E2E 点击链路 (渲染→点击→发送→验证) |
+| Page (TSX) | E2E spec + anti-placeholder 注册 |
+
+规则源：`.github/tech-stack.yml`（单一来源）；豁免：`.github/qa-exemptions.yml`；执行器：`.github/growth_gate.py`（fail-closed）。
+
 ## 运行命令
 
 ```bash

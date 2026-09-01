@@ -35,7 +35,9 @@ class TestRequiresConfirmationReadActions:
     @staticmethod
     def _make_tool(destructive=True, read_only_actions=()):
         return type("FakeTool", (), {
+            "read_only": False,  # 写工具（审计 07 P0-L1: read_only=True 永不确认）
             "destructive": destructive,
+            "requires_confirmation": False,
             "read_only_actions": frozenset(read_only_actions),
         })()
 

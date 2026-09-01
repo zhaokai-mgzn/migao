@@ -4,7 +4,7 @@ import { Lightbulb, Heart, Sprout, Lock, Target, Eye } from 'lucide-react'
 export const metadata: Metadata = {
   title: '关于米高 — AI双助手重新定义企业电商管理',
   description:
-    '米高致力于为企业提供从内部运营到客户服务的一站式智能解决方案，以米宝+小布双助手模式构建行业标杆。',
+    '杭州词元通达科技有限公司出品的米高平台，为企业提供从内部运营到客户服务的一站式智能解决方案，以米高+小布双助手模式构建行业标杆。',
 }
 
 const values = [
@@ -39,12 +39,12 @@ const timeline = [
   {
     period: '2024 Q2',
     title: '核心引擎开发',
-    description: 'AI Agent框架搭建，米宝与小布双智能助手引擎开发',
+    description: 'AI Agent框架搭建，米高与小布双智能助手引擎开发',
   },
   {
     period: '2024 Q3',
     title: '平台上线',
-    description: '商家管理后台正式发布，米宝助手入驻管理后台，首批商家测试',
+    description: '商家管理后台正式发布，米高助手入驻管理后台，首批商家测试',
   },
   {
     period: '2024 Q4',
@@ -54,7 +54,7 @@ const timeline = [
   {
     period: '2025',
     title: '能力进化',
-    description: '米宝与小布持续进化，功能扩展，服务更多行业商家',
+    description: '米高与小布持续进化，功能扩展，服务更多行业商家',
   },
 ]
 
@@ -90,13 +90,13 @@ export default function AboutPage() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="max-w-3xl mx-auto space-y-6 text-neutral-600 leading-relaxed text-base sm:text-lg">
             <p>
-              米高是词元通达旗下的AI智能电商管理平台，致力于为企业提供从内部运营到客户服务的一站式智能解决方案。
+              米高是杭州词元通达科技有限公司旗下的AI智能电商管理平台，致力于为企业提供从内部运营到客户服务的一站式智能解决方案。
             </p>
             <p>
               我们深知，不同行业的企业在商品管理、订单处理、客户服务等环节面临着各自独特的挑战。传统管理模式人力成本高、响应效率低、多平台协同困难——米高正是为解决这些痛点而生。
             </p>
             <p>
-              基于大语言模型技术，米高为每一位商家打造了两位AI助手：面向企业员工的「米宝」智能工作助手，和面向消费者的「小布」智能客服。米宝帮助运营团队高效处理商品管理、订单跟踪、库存盘点、售后协调等日常事务；小布则7×24小时在线，精准理解客户意图，提供专业贴心的购物咨询服务。
+              基于大语言模型技术，米高为每一位商家打造了两位AI助手：面向企业员工的「米高」智能工作助手，和面向消费者的「小布」智能客服。米高帮助运营团队高效处理商品管理、订单跟踪、库存盘点、售后协调等日常事务；小布则7×24小时在线，精准理解客户意图，提供专业贴心的购物咨询服务。
             </p>
             <p>
               作为SaaS平台，我们为每位商家提供独立的数据空间和个性化的AI能力，确保数据安全的同时，让AI深度学习每位商家的业务知识，提供越来越精准的智能服务。
@@ -127,7 +127,7 @@ export default function AboutPage() {
               </div>
               <h2 className="text-xl font-bold text-neutral-900 mb-3">我们的愿景</h2>
               <p className="text-neutral-600 leading-relaxed">
-                成为企业电商领域领先的AI智能管理服务商，以「米宝+小布」双助手模式构建行业标杆，推动千万商家的数字化转型与服务升级。
+                成为企业电商领域领先的AI智能管理服务商，以「米高+小布」双助手模式构建行业标杆，推动千万商家的数字化转型与服务升级。
               </p>
             </div>
           </div>

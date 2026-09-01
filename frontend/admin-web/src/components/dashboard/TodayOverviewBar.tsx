@@ -1,12 +1,18 @@
 'use client'
 
-import { ArrowDown, ArrowUp, Package, Settings, Sparkles, TrendingUp } from 'lucide-react'
+import { Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-/** 今日经营速览洞察条 props（三个数值均由页面从 API 返回值派生传入，组件内无硬编码） */
+/** 今日经营速览洞察条 props（数值均由页面从 API 返回值派生传入，组件内无硬编码） */
 export interface TodayOverviewBarProps {
+  /** 今日订单数 */
+  todayOrders: number
+  /** 今日销售额 */
+  todaySales: number
   /** 订单环比（百分比，正=较昨日上涨） */
   orderChange: number
+  /** 销售额环比（百分比，正=较昨日上涨） */
+  salesChange: number
   /** 含加工待发货订单数 */
   processingCount: number
   /** 待发货订单数 */
@@ -37,19 +43,68 @@ export function formatOrderChange(orderChange: number): string {
   return `${sign}${Math.abs(orderChange)}%`
 }
 
+/** 金额格式化：≥ 1 万转「万」（最多 2 位小数，去尾零），否则千分位（最多 2 位小数） */
+function fmtCurrency(n: number): string {
+  if (!Number.isFinite(n)) return '¥0'
+  if (n >= 10000) {
+    const w = parseFloat((n / 10000).toFixed(2))
+    return '¥' + w + '万'
+  }
+  return '¥' + n.toLocaleString('zh-CN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
+}
+
+export interface InsightParams {
+  todayOrders: number
+  todaySales: number
+  orderChange: number
+  salesChange: number
+  /** 含加工占比百分比（0-100） */
+  processingRatioPct: number
+  lowStockCount: number
+}
+
+/**
+ * 生成一句话经营解读：把今日订单/销售额/环比/提醒串联成一句人话。
+ * 全部由 API 派生数值生成，无硬编码假数据；非有限值一律规避。
+ */
+export function buildInsightSentence(p: InsightParams): string {
+  const { todayOrders, todaySales, orderChange, salesChange, processingRatioPct, lowStockCount } = p
+
+  if (todayOrders <= 0 && todaySales <= 0) {
+    return '今日暂无新订单，销售额 ¥0'
+  }
+
+  const parts: string[] = []
+  parts.push(`今日订单 ${Math.max(todayOrders, 0)} 单、销售额 ${fmtCurrency(todaySales)}`)
+  parts.push(`较昨日订单 ${formatOrderChange(orderChange)}、销售额 ${formatOrderChange(salesChange)}`)
+  if (processingRatioPct > 0) parts.push(`含加工订单占 ${Math.round(processingRatioPct)}%`)
+  if (lowStockCount > 0) parts.push(`${Math.max(lowStockCount, 0)} 款商品库存偏低`)
+
+  return parts.join('，')
+}
+
 /**
  * 米宝「今日经营速览」洞察条（经营看板顶部 AI 洞察一等公民）。
- * 展示三项：订单环比 / 含加工占比 / 低库存预警。
+ * 以「一句话经营解读」形式呈现：数字串联成句，客户一眼读懂业务含义。
  */
 export default function TodayOverviewBar({
+  todayOrders,
+  todaySales,
   orderChange,
+  salesChange,
   processingCount,
   pendingCount,
   lowStockCount,
 }: TodayOverviewBarProps) {
   const ratioPct = Math.round(processingRatio(processingCount, pendingCount) * 100)
-  const up = orderChange > 0
-  const down = orderChange < 0
+  const sentence = buildInsightSentence({
+    todayOrders,
+    todaySales,
+    orderChange,
+    salesChange,
+    processingRatioPct: ratioPct,
+    lowStockCount,
+  })
 
   return (
     <section
@@ -59,53 +114,15 @@ export default function TodayOverviewBar({
       {/* 顶部品牌渐变细条 */}
       <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-primary-500 via-accent-500 to-primary-500" />
 
-      <div className="px-5 pt-4">
-        <div className="flex items-center gap-2">
+      <div className="px-5 py-4">
+        <div className="mb-2.5 flex items-center gap-2">
           <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-primary-600 to-primary-500 px-2.5 py-1 text-xs font-semibold text-white shadow-sm">
             <Sparkles className="h-3 w-3" />
             米宝 · 今日经营速览
           </span>
           <span className="text-[11px] text-neutral-400">AI 生成内容仅供参考</span>
         </div>
-      </div>
-
-      <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-3">
-        {/* 订单环比 */}
-        <div className="flex items-center gap-3 rounded-lg bg-neutral-50/80 p-3 transition-colors hover:bg-primary-50/60">
-          <span className="rounded-lg bg-primary-100 p-2">
-            <TrendingUp className="h-4 w-4 text-primary-600" />
-          </span>
-          <div className="min-w-0">
-            <p className="text-xs text-neutral-500">订单环比</p>
-            <p className="tnum flex items-center gap-1 text-lg font-semibold text-neutral-900">
-              {formatOrderChange(orderChange)}
-              {up && <ArrowUp className="h-3.5 w-3.5 text-red-500" />}
-              {down && <ArrowDown className="h-3.5 w-3.5 text-emerald-500" />}
-            </p>
-          </div>
-        </div>
-
-        {/* 含加工占比 */}
-        <div className="flex items-center gap-3 rounded-lg bg-neutral-50/80 p-3 transition-colors hover:bg-primary-50/60">
-          <span className="rounded-lg bg-accent-100 p-2">
-            <Settings className="h-4 w-4 text-accent-600" />
-          </span>
-          <div className="min-w-0">
-            <p className="text-xs text-neutral-500">含加工占比</p>
-            <p className="tnum text-lg font-semibold text-neutral-900">{ratioPct}%</p>
-          </div>
-        </div>
-
-        {/* 低库存预警 */}
-        <div className="flex items-center gap-3 rounded-lg bg-neutral-50/80 p-3 transition-colors hover:bg-primary-50/60">
-          <span className="rounded-lg bg-red-50 p-2">
-            <Package className="h-4 w-4 text-red-500" />
-          </span>
-          <div className="min-w-0">
-            <p className="text-xs text-neutral-500">低库存预警</p>
-            <p className="tnum text-lg font-semibold text-neutral-900">{lowStockCount} 款</p>
-          </div>
-        </div>
+        <p className={cn('text-sm leading-relaxed text-neutral-700')}>{sentence}</p>
       </div>
     </section>
   )

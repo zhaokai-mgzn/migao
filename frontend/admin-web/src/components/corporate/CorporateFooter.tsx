@@ -24,8 +24,7 @@ export default function CorporateFooter() {
               </span>
             </div>
             <p className="text-sm text-slate-400 leading-relaxed max-w-xs">
-              米高致力于为企业提供一站式AI电商管理解决方案，
-              助力商家提升服务效率与客户体验。
+              杭州词元通达科技有限公司出品的米高智能管理平台，为企业提供米高工作助手与小布智能客服双 AI 解决方案，助力商家提升服务效率与客户体验。
             </p>
           </div>
 
@@ -72,7 +71,7 @@ export default function CorporateFooter() {
 
         {/* Copyright */}
         <div className="py-6 text-center text-sm text-slate-500">
-          © 2026 词元通达 · 米高 版权所有
+          © 2026 杭州词元通达科技有限公司 · 米高 版权所有
         </div>
       </div>
     </footer>

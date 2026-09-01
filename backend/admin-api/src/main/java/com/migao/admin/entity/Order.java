@@ -33,6 +33,12 @@ public class Order {
 
     private String customerAddress;
 
+    /**
+     * 下单用户 ID（users.id，C 端数据隔离依据；
+     * 商户代下单可为空或商户员工 ID）
+     */
+    private String userId;
+
     private BigDecimal totalAmount;
 
     /**

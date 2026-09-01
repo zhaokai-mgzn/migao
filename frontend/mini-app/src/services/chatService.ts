@@ -109,6 +109,19 @@ export async function getSessionList(
 }
 
 /**
+ * 获取最近一次会话（无会话 UX：打开即续聊）
+ * GET /api/chat/sessions/latest → { session: Session | null }
+ */
+export async function getLatestSession(): Promise<Session | null> {
+  const res = await get<ApiResponse<{ session: Session | null }>>(
+    '/api/chat/sessions/latest',
+    { baseURL: AI_API_BASE_URL },
+  )
+  if (!res.success || !res.data) return null
+  return res.data.session || null
+}
+
+/**
  * 删除会话
  * DELETE /api/chat/sessions/{id}
  */
@@ -175,6 +188,7 @@ export function createChatSSEClient(): SSEClient {
 export default {
   createSession,
   getSessionList,
+  getLatestSession,
   deleteSession,
   getSessionMessages,
   getQuickActions,

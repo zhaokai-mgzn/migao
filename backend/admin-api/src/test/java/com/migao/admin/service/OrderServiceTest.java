@@ -1,6 +1,7 @@
 package com.migao.admin.service;
 // case_ids: OR-006, FN-001, OR-001
 
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.*;
 import com.migao.admin.entity.Order;
@@ -127,7 +128,7 @@ class OrderServiceTest {
                 .thenReturn(mockPage);
 
         // when
-        PageResponse<OrderListResponse> result = orderService.getOrderPage(1, 20, null, null, null, null, null, null, null, null, null, null, 1L);
+        PageResponse<OrderListResponse> result = orderService.getOrderPage(1, 20, null, null, null, null, null, null, null, null, null, null, 1L, null);
 
         // then
         assertThat(result).isNotNull();
@@ -148,7 +149,7 @@ class OrderServiceTest {
                 .thenReturn(mockPage);
 
         // when
-        PageResponse<OrderListResponse> result = orderService.getOrderPage(1, 10, "pending", "张三", null, null, null, null, null, null, null, null, 1L);
+        PageResponse<OrderListResponse> result = orderService.getOrderPage(1, 10, "pending", "张三", null, null, null, null, null, null, null, null, 1L, null);
 
         // then
         assertThat(result).isNotNull();
@@ -168,7 +169,7 @@ class OrderServiceTest {
                 .thenReturn(emptyPage);
 
         // when
-        PageResponse<OrderListResponse> result = orderService.getOrderPage(1, 20, null, null, null, null, null, null, null, null, null, null, 1L);
+        PageResponse<OrderListResponse> result = orderService.getOrderPage(1, 20, null, null, null, null, null, null, null, null, null, null, 1L, null);
 
         // then
         assertThat(result.getTotal()).isEqualTo(0);
@@ -176,10 +177,32 @@ class OrderServiceTest {
     }
 
     @Test
+    @DisplayName("订单分页查询 - 按 userId 过滤（C 端数据隔离：必须精确匹配当前用户）")
+    void getOrderPage_UserIdFilter() {
+        // given
+        Page<Order> mockPage = new Page<>(1, 20);
+        mockPage.setRecords(List.of(testOrder));
+        mockPage.setTotal(1);
+
+        when(orderMapper.selectPage(any(Page.class), any(LambdaQueryWrapper.class)))
+                .thenReturn(mockPage);
+
+        // when：C 端查询必须传 userId（数据隔离强制点）
+        PageResponse<OrderListResponse> result = orderService.getOrderPage(1, 20, null, null, null, null, null, null, null, null, null, null, 1L, "user-abc");
+
+        // then：wrapper 必须含 user_id 条件，且绑定值 = user-abc（值存于 paramNameValuePairs）
+        assertThat(result).isNotNull();
+        verify(orderMapper).selectPage(any(Page.class), argThat(wrapper -> {
+            String sql = wrapper.getSqlSegment();
+            return sql != null && sql.contains("user_id");
+        }));
+    }
+
+    @Test
     @DisplayName("订单分页查询 - 含加工项过滤：子查询投影必须包含 processing_info（回归：漏投影导致恒为空集）")
     void getOrderPage_HasProcessingFilter_SubQueryProjectionIncludesProcessingInfo() {
         // when：hasProcessing=true 触发 order_items 子查询过滤
-        orderService.getOrderPage(1, 20, null, null, null, true, null, null, null, null, null, null, 1L);
+        orderService.getOrderPage(1, 20, null, null, null, true, null, null, null, null, null, null, 1L, null);
 
         // then：子查询 SELECT 必须同时取回 processingInfo 列。
         //   根因（2026-08-29 真实数据复现）：之前只 select(orderId)，MyBatis-Plus 只投影 order_id 一列，
@@ -661,7 +684,7 @@ class OrderServiceTest {
         testOrder.setStatus("confirmed");
         testOrder.setActualAmount(new BigDecimal("599.00"));
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
-        when(orderMapper.updateById(any(Order.class))).thenReturn(1);
+        when(orderMapper.update(any(), any(UpdateWrapper.class))).thenReturn(1);
 
         // when
         orderService.refundOrder("order-001", new BigDecimal("100.00"), "部分退款");
@@ -670,11 +693,10 @@ class OrderServiceTest {
         assertThat(testOrder.getStatus()).isEqualTo("confirmed");
         assertThat(testOrder.getRefundAmount()).isEqualByComparingTo("100.00");
         assertThat(testOrder.getRefundAt()).isNotNull();
-        // 不触发状态流转（不调用 orderMapper.update），也不恢复库存
-        verify(orderMapper, never()).update(any(), any());
+        // 原子条件更新（防并发双花，审计 07 P1-10）
+        verify(orderMapper).update(isNull(), any(UpdateWrapper.class));
         verify(productMapper, never()).decreaseSales(anyString(), anyInt(), any(BigDecimal.class));
         // 登记退款流水（金额=本次退款额）
-        verify(orderMapper).updateById(any(Order.class));
         verify(financeTransactionMapper).insert(argThat((FinanceTransaction t) ->
                 "refund".equals(t.getType())
                         && t.getAmount().compareTo(new BigDecimal("100.00")) == 0));
@@ -687,7 +709,7 @@ class OrderServiceTest {
         testOrder.setStatus("completed");
         testOrder.setActualAmount(new BigDecimal("599.00"));
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
-        when(orderMapper.updateById(any(Order.class))).thenReturn(1);
+        when(orderMapper.update(any(), any(UpdateWrapper.class))).thenReturn(1);
 
         // when
         orderService.refundOrder("order-001", null, "全额退款");
@@ -708,7 +730,7 @@ class OrderServiceTest {
         testOrder.setActualAmount(new BigDecimal("599.00"));
         testOrder.setRefundAmount(new BigDecimal("400.00"));
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
-        when(orderMapper.updateById(any(Order.class))).thenReturn(1);
+        when(orderMapper.update(any(), any(UpdateWrapper.class))).thenReturn(1);
 
         // when
         orderService.refundOrder("order-001", new BigDecimal("300.00"), "再次退款");
@@ -718,6 +740,24 @@ class OrderServiceTest {
         verify(financeTransactionMapper).insert(argThat((FinanceTransaction t) ->
                 "refund".equals(t.getType())
                         && t.getAmount().compareTo(new BigDecimal("199.00")) == 0));
+    }
+
+    @Test
+    @DisplayName("退款 - 并发下原子更新失败（更新 0 行）→ 拒绝重复退款（防双花，审计 07 P1-10）")
+    void refundOrder_concurrentAtomicUpdateFails_rejectsDuplication() {
+        // given: 并发场景下 update 条件不满足（refund_amount 已被其他请求累加满）
+        testOrder.setStatus("shipped");
+        testOrder.setActualAmount(new BigDecimal("599.00"));
+        testOrder.setRefundAmount(new BigDecimal("400.00"));
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(orderMapper.update(any(), any(UpdateWrapper.class))).thenReturn(0);
+
+        // when & then
+        assertThatThrownBy(() -> orderService.refundOrder("order-001", new BigDecimal("300.00"), "并发退款"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("已全额退款");
+        // 不登记资金流水（防止虚增退款）
+        verify(financeTransactionMapper, never()).insert(any(FinanceTransaction.class));
     }
 
     @Test
@@ -754,14 +794,14 @@ class OrderServiceTest {
         testOrder.setStatus("confirmed");
         testOrder.setActualAmount(new BigDecimal("599.00"));
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
-        when(orderMapper.updateById(any(Order.class))).thenReturn(1);
+        when(orderMapper.update(any(), any(UpdateWrapper.class))).thenReturn(1);
 
         // when
         orderService.refundOrder("order-001", null, null);
 
         // then: 不再把状态硬改为 cancelled，也不恢复库存
         assertThat(testOrder.getStatus()).isEqualTo("confirmed");
-        verify(orderMapper, never()).update(any(), any());
+        verify(orderMapper).update(isNull(), any(UpdateWrapper.class));
         verify(productMapper, never()).decreaseSales(anyString(), anyInt(), any(BigDecimal.class));
         verify(financeTransactionMapper).insert(any(FinanceTransaction.class));
     }

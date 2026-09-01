@@ -68,9 +68,9 @@ def _make_factory(side_effects):
 # =============================================================================
 @pytest.fixture
 def routing_on(monkeypatch):
-    """开启模型路由（主模型 = env PRIMARY_MODEL，默认 pro 与 LLM_MODEL_PRIMARY 一致）"""
+    """开启模型路由（主模型 = env PRIMARY_MODEL，默认 flash 与 LLM_MODEL_PRIMARY 一致）"""
     monkeypatch.setattr(settings, "LLM_ENABLE_MODEL_ROUTING", True)
-    monkeypatch.setattr(settings, "PRIMARY_MODEL", "deepseek-v4-pro")
+    monkeypatch.setattr(settings, "PRIMARY_MODEL", "deepseek-v4-flash")
 
 
 @pytest.fixture
@@ -241,19 +241,19 @@ class TestCostTracker:
         r = fresh_tracker.track_call(model=MODEL_FLASH, input_tokens=2_000_000, output_tokens=1_000_000)
         assert r.cost_cny == pytest.approx(1.00 * 2 + 4.00 * 1, rel=1e-6)
 
-        # 主模型 deepseek-v4-pro: input=4.00, output=16.00
+        # 主模型 deepseek-v4-flash: input=1.00, output=4.00
         r2 = fresh_tracker.track_call(model=MODEL_PLUS, input_tokens=500_000, output_tokens=500_000)
-        assert r2.cost_cny == pytest.approx(4.00 * 0.5 + 16.00 * 0.5, rel=1e-6)
+        assert r2.cost_cny == pytest.approx(1.00 * 0.5 + 4.00 * 0.5, rel=1e-6)
 
         # 未知模型回退主模型定价
         r3 = fresh_tracker.track_call(model="qwen3.7-max", input_tokens=100_000, output_tokens=100_000)
-        assert r3.cost_cny == pytest.approx(4.00 * 0.1 + 16.00 * 0.1, rel=1e-6)
+        assert r3.cost_cny == pytest.approx(1.00 * 0.1 + 4.00 * 0.1, rel=1e-6)
 
     def test_unknown_model_falls_back_to_plus_pricing(self, fresh_tracker):
         """未知模型按 plus 兜底"""
         r = fresh_tracker.track_call(model="qwen-unknown", input_tokens=1_000_000, output_tokens=0)
-        # plus input=4.00 元/百万
-        assert r.cost_cny == pytest.approx(4.00, rel=1e-6)
+        # plus input=1.00 元/百万
+        assert r.cost_cny == pytest.approx(1.00, rel=1e-6)
 
     def test_total_cost_accumulates(self, fresh_tracker):
         """多次调用累计 total_cost"""
@@ -266,8 +266,8 @@ class TestCostTracker:
         """超预算时 logger.warning 被触发（仅首次）"""
         monkeypatch.setattr(settings, "LLM_MONTHLY_BUDGET_CNY", 1.0)
         with caplog.at_level(logging.WARNING, logger="app.llm.cost_tracker"):
-            # 一次大额调用：max input = 20元/百万, 1M => 20元 > 1元
-            fresh_tracker.track_call(model="qwen3.7-max", input_tokens=1_000_000, output_tokens=0)
+            # 一次大额调用：主模型 flash input=1.00元/百万, 2M => 2.00元 > 1元
+            fresh_tracker.track_call(model="qwen3.7-max", input_tokens=2_000_000, output_tokens=0)
 
         warning_msgs = [r.message for r in caplog.records if r.levelno == logging.WARNING]
         assert any("budget exceeded" in m for m in warning_msgs)
@@ -275,7 +275,7 @@ class TestCostTracker:
         # 第二次再超预算不再 warning（_budget_warned=True）
         caplog.clear()
         with caplog.at_level(logging.WARNING, logger="app.llm.cost_tracker"):
-            fresh_tracker.track_call(model="qwen3.7-max", input_tokens=1_000_000, output_tokens=0)
+            fresh_tracker.track_call(model="qwen3.7-max", input_tokens=2_000_000, output_tokens=0)
         more_warnings = [r for r in caplog.records if r.levelno == logging.WARNING and "budget exceeded" in r.message]
         assert len(more_warnings) == 0
 

@@ -46,7 +46,7 @@ Commit: `feat(frontend): 描述` / `fix(backend): 描述` / `test:` / `refactor:
 
 ## 🎯 AI 验收体系（项目生命线，2026-06-16 凯总明确）
 
-**所有交付（人/AI 员工/军师）必须遵守的铁律**：
+**所有交付（人/AI 员工）必须遵守的铁律**：
 
 ### 1. 任何功能/Bug 先开 issue
 - 用 `.github/ISSUE_TEMPLATE/feature.md` 或 `bug.md`
@@ -56,8 +56,8 @@ Commit: `feat(frontend): 描述` / `fix(backend): 描述` / `test:` / `refactor:
 - ✅ "含加工待发货 = 状态为待发货 且 含加工项"
 - ❌ "SELECT COUNT(*) ..."（技术）
 
-### 3. 军师反推 case 草稿 → 研发 review
-- 提交 issue 后 1-5 分钟，军师自动评论 L2/L3/L4 草稿
+### 3. 自动反推 case 草稿 → 研发 review
+- 提交 issue 后 1-5 分钟，自动评论 L2/L3/L4 草稿
 - 研发可改/删/补，**草稿不是命令**
 
 ### 4. PR 合 main → 双验收自动跑
@@ -78,10 +78,10 @@ Commit: `feat(frontend): 描述` / `fix(backend): 描述` / `test:` / `refactor:
 - ❌ 业务真值用技术语言
 - ❌ 研发拒绝 review 草稿
 - ❌ 凯总/娜总人为验收（除非 block/override）
-- ❌ 军师写业务 case 终稿
+- ❌ 自动写业务 case 终稿
 
 ### 参考
-- 军师验证流水线：`.github/workflows/junshi-*.yml`（case-draft / redraft / verify-trigger）
-- 研发流程：TDD → PR → CI Gate → 军师双验收 → AutoMerge → Close
+- 验证流水线：`.github/workflows/case-draft / redraft / verify-trigger`（case-draft / redraft / verify-trigger）
+- 研发流程：TDD → PR → CI Gate → 双验收 → AutoMerge → Close
 - 行为用例单一源（case-contract）：`.github/cases/*.yml` — issue 的 CONTRACT_JSON 声明 `cases: ["OR-002"]`；TDD Red 阶段先跑引用的用例确认 FAIL；新增/修改测试文件头部声明 `# case_ids:`（G5 门禁）
 - 详情见 issue #450 v3.1 + [Testing](Testing.md)

@@ -38,7 +38,7 @@ class TestDefaults:
 
     def test_llm_defaults(self):
         s = _make_settings()
-        assert s.LLM_MODEL_PRIMARY == "deepseek-v4-pro"
+        assert s.LLM_MODEL_PRIMARY == "deepseek-v4-flash"
         assert s.LLM_MODEL_FAST == "deepseek-v4-flash"
         assert s.INTENT_MODEL == "deepseek-v4-flash"
         assert s.LLM_ENABLE_MODEL_ROUTING is True
