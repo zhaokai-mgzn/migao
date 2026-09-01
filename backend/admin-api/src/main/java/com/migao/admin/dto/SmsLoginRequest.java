@@ -22,4 +22,10 @@ public class SmsLoginRequest {
      */
     @NotBlank(message = "验证码不能为空")
     private String code;
+
+    /**
+     * 租户 ID（可选）。同手机号存在于多个租户时必填，用于精确匹配
+     * （审计 07 P1-2：禁止静默登录进错误租户）。
+     */
+    private Long tenantId;
 }

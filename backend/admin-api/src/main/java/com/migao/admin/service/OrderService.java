@@ -21,6 +21,7 @@ import com.migao.admin.mapper.ProductSkuMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.RequiredArgsConstructor;
@@ -105,10 +106,16 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      * @param startDate       开始日期（YYYY-MM-DD 格式）
      * @param endDate         结束日期（YYYY-MM-DD 格式）
      * @param tenantId        租户ID
+     * @param userId          下单用户ID（C 端数据隔离：非空时强制只查该用户的订单）
      * @return 分页响应
      */
-    public PageResponse<OrderListResponse> getOrderPage(long page, long size, String status, String keyword, String followStatus, Boolean hasProcessing, String startDate, String endDate, String orderId, String receiver, String productCode, String productTitle, Long tenantId) {
+    public PageResponse<OrderListResponse> getOrderPage(long page, long size, String status, String keyword, String followStatus, Boolean hasProcessing, String startDate, String endDate, String orderId, String receiver, String productCode, String productTitle, Long tenantId, String userId) {
         LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<>();
+
+        // C 端数据隔离：按下单用户过滤（必须精确匹配 user_id，忽略其他模糊条件）
+        if (StringUtils.hasText(userId)) {
+            wrapper.eq(Order::getUserId, userId);
+        }
 
         // 状态筛选
         if (StringUtils.hasText(status)) {
@@ -345,6 +352,8 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         order.setDiscountAmount(discountAmount);
         order.setStatus("pending");
         order.setRemark(request.getRemark());
+        // C 端数据隔离：绑定下单用户（可为空=游客/商户代录）
+        order.setUserId(request.getUserId());
 
         // 保存订单
         orderMapper.insert(order);
@@ -861,9 +870,23 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
 
         String reason = refundReason != null && !refundReason.isBlank() ? refundReason : "退款";
         // 保持原状态，仅落退款金额与时间（前端"已退款"徽标由 refundAmount>0 判定）
+        // 原子条件更新：refund_amount 在库内累加且不超过实收款，防并发双花（审计 07 P1-10）。
+        // 并发请求同时读到 existingRefund 时，DB 层 COALESCE 累加 + WHERE 上限保证只成功一次。
+        OffsetDateTime refundAt = OffsetDateTime.now();
+        UpdateWrapper<Order> refundWrapper = new UpdateWrapper<>();
+        refundWrapper.eq("id", order.getId())
+                .eq("tenant_id", order.getTenantId())
+                .setSql("refund_amount = COALESCE(refund_amount, 0) + " + applied.toPlainString())
+                .set("refund_at", refundAt)
+                .and(w -> w.apply("COALESCE(refund_amount, 0) + {0} <= {1}",
+                        applied, actual));
+        int updated = orderMapper.update(null, refundWrapper);
+        if (updated == 0) {
+            // 条件不满足：已被并发请求退款至上限，拒绝本次
+            throw BusinessException.validationError("该订单已全额退款，无需重复退款");
+        }
         order.setRefundAmount(existingRefund.add(applied));
-        order.setRefundAt(OffsetDateTime.now());
-        orderMapper.updateById(order);
+        order.setRefundAt(refundAt);
 
         // 登记资金流水（退款，金额=本次实际退款额）——失败不影响订单主流程
         recordFinanceTransaction(order, applied, "refund", "订单退款: " + reason);
@@ -1173,6 +1196,8 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         createReq.setCustomerPhone(phone);
         createReq.setCustomerAddress(request.getCustomerAddress());
         createReq.setRemark(request.getRemark());
+        // C 端数据隔离：透传下单用户（可为空=商户代录，语义为"游客订单"）
+        createReq.setUserId(request.getUserId());
 
         List<OrderCreateRequest.OrderItemRequest> itemReqs = new ArrayList<>();
         for (var item : request.getItems()) {

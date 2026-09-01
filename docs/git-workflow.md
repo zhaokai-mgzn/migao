@@ -192,4 +192,4 @@ gh run view <run-id> --log
 
 - [GitHub REST API 文档](https://docs.github.com/rest)
 - [Git 配置选项](https://git-scm.com/docs/git-config)
-- [项目规范](./CLAUDE.md)
+- [项目规范](./wiki/Development.md)

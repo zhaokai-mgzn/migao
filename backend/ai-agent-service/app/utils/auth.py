@@ -254,15 +254,27 @@ async def get_current_user(
         token = authorization.credentials
     
     if not token:
-        # 开发环境：如果未提供 Token 且 DEBUG=true，使用默认用户身份
+        # 开发环境：如果未提供 Token 且 DEBUG=true，使用默认用户身份。
+        # 支持 X-Debug-Role: customer → 小布（C 端验收用）；缺省/其他 → 米宝（默认管理员）。
+        # 生产（DEBUG=false）永远不进入此分支——fail-closed，无 token 一律 401。
         if settings.DEBUG:
-            logger.warning("No auth token provided in DEBUG mode, using default user identity")
-            default_user = UserIdentity(
-                user_id="dev_user",
-                tenant_id=1,
-                identity_type="account",
-                role=UserRole.ADMIN,
-            )
+            debug_role = request.headers.get("X-Debug-Role", "").strip().lower()
+            if debug_role == "customer":
+                logger.warning("No auth token in DEBUG mode, using CUSTOMER identity (xiaobu)")
+                default_user = UserIdentity(
+                    user_id="debug_customer_1",
+                    tenant_id=1,
+                    identity_type="account",
+                    role=UserRole.CUSTOMER,
+                )
+            else:
+                logger.warning("No auth token provided in DEBUG mode, using default user identity")
+                default_user = UserIdentity(
+                    user_id="dev_user",
+                    tenant_id=1,
+                    identity_type="account",
+                    role=UserRole.ADMIN,
+                )
             request.state.user = default_user
             return default_user
         

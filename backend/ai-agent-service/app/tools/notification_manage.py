@@ -59,6 +59,8 @@ class NotificationManageTool(BaseTool):
     allowed_roles = ["admin", "agent", "tenant_admin"]
 
     read_only = False
+    requires_confirmation = True  # 审计 07 P0-L1: 高风险非 destructive 写操作需用户确认
+    read_only_actions = {"list", "unread_count"}  # 只读 action 免确认
     destructive = False  # 通知的删除非破坏性（可重新发送）
     idempotent = False   # 创建/删除非幂等
 

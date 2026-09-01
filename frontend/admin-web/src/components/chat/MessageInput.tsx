@@ -294,6 +294,7 @@ export default function MessageInput() {
             <>
               <textarea
                 ref={textareaRef}
+                id="chat-message-input"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => {

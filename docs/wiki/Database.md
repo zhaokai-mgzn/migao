@@ -49,4 +49,4 @@ Flyway 已移除（与 PG 18 不兼容），替换为自定义 `MigrationRunner`
 当前迁移: V1 ~ V9 + V20260604 ~ V20260614
 
 ---
-详见: [schema.sql](../sql/schema.sql) · [多租户架构](../architecture/multi-tenant-multi-platform.md)
+详见: [schema.sql](../sql/schema.sql) · [架构](Architecture.md)

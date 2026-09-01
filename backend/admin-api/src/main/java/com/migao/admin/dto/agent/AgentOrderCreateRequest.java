@@ -25,6 +25,12 @@ public class AgentOrderCreateRequest {
     /** 订单备注（可选） */
     private String remark;
 
+    /**
+     * 下单用户 ID（可选，内部服务调用时由 ai-agent 透传 X-User-Id；
+     * C 端小布下单时绑定真实用户，供数据隔离查询）
+     */
+    private String userId;
+
     /** 商品明细（必填，至少一项） */
     private List<AgentOrderItem> items;
 

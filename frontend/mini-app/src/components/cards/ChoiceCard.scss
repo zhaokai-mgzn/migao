@@ -1,0 +1,97 @@
+@use '../../styles/variables.scss' as *;
+
+// ChoiceCard 样式 —— 深蓝金瑞幸风格 v2（与全局设计变量同步）
+.choice-card {
+  margin-top: 8px;
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 16px;
+  border: 1px solid #eceff3;
+  box-shadow: 0 2px 8px rgba(10, 37, 64, 0.06);
+
+  &__title {
+    display: block;
+    font-size: 14px;
+    font-weight: 600;
+    color: #0a2540;
+    margin-bottom: 12px;
+    line-height: 1.5;
+  }
+
+  &__options {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  &__option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 14px;
+    background: #f7f9fc;
+    border-radius: 12px;
+    border: 1px solid #eef1f6;
+
+    &--hover {
+      background: #eef4ff;
+      border-color: #1a73e8;
+    }
+  }
+
+  &__option-main {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  &__option-label {
+    font-size: 14px;
+    font-weight: 500;
+    color: #0a2540;
+  }
+
+  &__option-desc {
+    font-size: 12px;
+    color: #6b7280;
+  }
+
+  &__option-arrow {
+    font-size: 18px;
+    color: #9aa5b1;
+  }
+
+  &__paging {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #eef1f6;
+  }
+
+  &__page-btn {
+    padding: 6px 14px;
+    background: #0a2540;
+    border-radius: 20px;
+
+    &--disabled {
+      background: #e5e9ef;
+    }
+  }
+
+  &__page-btn-text {
+    font-size: 13px;
+    font-weight: 500;
+    color: #ffffff;
+
+    .choice-card__page-btn--disabled & {
+      color: #9aa5b1;
+    }
+  }
+
+  &__page-indicator {
+    font-size: 13px;
+    color: #6b7280;
+  }
+}

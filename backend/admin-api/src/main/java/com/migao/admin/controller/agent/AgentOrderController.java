@@ -3,13 +3,18 @@ package com.migao.admin.controller.agent;
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.dto.OrderDetailResponse;
+import com.migao.admin.dto.OrderListResponse;
+import com.migao.admin.dto.PageResponse;
 import com.migao.admin.dto.agent.AgentOrderCreateRequest;
 import com.migao.admin.dto.agent.AgentOrderResolveResponse;
 import com.migao.admin.dto.agent.AgentOrderUpdateRequest;
+import com.migao.admin.security.SecurityUser;
 import com.migao.admin.service.OrderService;
 import com.migao.admin.security.RequirePermission;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 /**
@@ -36,9 +41,12 @@ public class AgentOrderController {
     @PostMapping
     public ApiResponse<OrderDetailResponse> createOrder(@RequestBody AgentOrderCreateRequest request) {
         Long tenantId = TenantContext.getTenantId();
-        log.info("[Agent] 创建订单: customer={}, items={}, tenantId={}",
+        // C 端数据隔离：绑定当前真实用户（ServiceTokenFilter 从 X-User-Id 透传）
+        request.setUserId(currentUserId());
+        log.info("[Agent] 创建订单: customer={}, items={}, tenantId={}, userId={}",
                 request.getCustomerName(),
-                request.getItems() != null ? request.getItems().size() : 0, tenantId);
+                request.getItems() != null ? request.getItems().size() : 0, tenantId,
+                request.getUserId());
         try {
             OrderDetailResponse result = orderService.createOrderForAgent(request, tenantId);
             return ApiResponse.success(result);
@@ -82,5 +90,42 @@ public class AgentOrderController {
             log.warn("[Agent] 解析订单失败: keyword={}, error={}", keyword, e.getMessage());
             throw e;
         }
+    }
+
+    /**
+     * C 端（小布/customer 角色）"我的订单"查询。
+     * GET /api/admin/agent/orders/mine?page=1&size=10&status=shipped
+     *
+     * 数据隔离强制点：无论调用方传什么筛选参数，都强制按当前登录用户（X-User-Id
+     * 透传的 SecurityUser.userId）过滤，用户只能看到自己的订单。
+     * 缺省 userId（内部服务占位）时直接拒绝，避免跨用户数据泄露。
+     */
+    @GetMapping("/mine")
+    public ApiResponse<PageResponse<OrderListResponse>> getMyOrders(
+            @RequestParam(defaultValue = "1") long page,
+            @RequestParam(defaultValue = "10") long size,
+            @RequestParam(required = false) String status) {
+        Long tenantId = TenantContext.getTenantId();
+        String userId = currentUserId();
+        if (userId == null || userId.isBlank() || "internal-service".equals(userId)) {
+            log.warn("[Agent] 拒绝 C 端订单查询: 缺少真实用户标识 tenantId={}", tenantId);
+            throw com.migao.admin.exception.BusinessException.authFailed("缺少用户标识，无法查询订单");
+        }
+        log.info("[Agent] 查询我的订单: userId={}, page={}, size={}, status={}, tenantId={}",
+                userId, page, size, status, tenantId);
+        // 强制 userId 过滤 + 仅允许状态筛选（不允许 keyword/receiver 等模糊条件，避免跨用户试探）
+        PageResponse<OrderListResponse> result = orderService.getOrderPage(
+                page, size, status, null, null, null, null, null, null, null, null, null,
+                tenantId, userId);
+        return ApiResponse.success(result);
+    }
+
+    /** 从 SecurityContext 提取当前真实用户 ID（ServiceTokenFilter 已透传 X-User-Id） */
+    private String currentUserId() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication != null && authentication.getPrincipal() instanceof SecurityUser securityUser) {
+            return securityUser.getUserId();
+        }
+        return null;
     }
 }

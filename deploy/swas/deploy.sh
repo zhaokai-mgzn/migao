@@ -33,6 +33,28 @@ mkdir -p nginx certbot-www
 cp src/deploy/swas/docker-compose.yml ./docker-compose.yml
 cp src/deploy/swas/nginx.conf ./nginx/nginx.conf
 
+# 1.5 AI 自动甄别配置自愈：admin-api 需调用 ai-agent 内部端点做入驻甄别，
+# AI_AGENT_SERVICE_TOKEN 必须与 .env.ai-agent 的 SERVICE_TOKEN 一致，否则入驻全部
+# fail-closed 驳回（系统繁忙）。旧服务器无该配置时自动补齐，避免静默降级。
+if [ -f .env.admin-api ] && ! grep -q '^AI_AGENT_SERVICE_TOKEN=' .env.admin-api; then
+  AI_TOKEN=$(grep '^SERVICE_TOKEN=' .env.ai-agent 2>/dev/null | head -1 | cut -d= -f2- | tr -d '"' || true)
+  if [ -n "$AI_TOKEN" ]; then
+    printf 'AI_AGENT_BASE_URL=http://ai-agent:8000\nAI_AGENT_SERVICE_TOKEN=%s\n' "$AI_TOKEN" >> .env.admin-api
+    echo "  ✅ 自动补齐 admin-api 的 AI 甄别配置（AI_AGENT_SERVICE_TOKEN）"
+  else
+    echo "  ⚠️ .env.ai-agent 无 SERVICE_TOKEN，无法自动补齐 admin-api AI 甄别配置（入驻将 fail-closed）"
+  fi
+fi
+
+# 1.6 SMS 万能码 POC 自愈（决策 D2 + 审计 07 P0-1）：
+# sms.bypass-code 默认已改空（生产 fail-closed）。POC 阶段保留万能码——
+# 若 .env.admin-api 完全缺失 SMS_BYPASS_CODE 配置，自动补齐 123456 并醒目警告；
+# 显式配置过（含置空禁用）则尊重现状，绝不覆盖。
+if [ -f .env.admin-api ] && ! grep -q '^SMS_BYPASS_CODE=' .env.admin-api; then
+  printf 'SMS_BYPASS_CODE=123456\n' >> .env.admin-api
+  echo "  ⚠️【POC 模式】已自动启用 SMS 万能码 123456（决策 D2）。接入真实短信后须在 .env.admin-api 显式置空 SMS_BYPASS_CODE= 以禁用（技术债 Issue #2616）"
+fi
+
 echo "== 2. 拉取镜像（tag=$TAG）=="
 if [ -f .env.registry ]; then
   # shellcheck disable=SC1091
