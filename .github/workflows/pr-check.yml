@@ -232,7 +232,7 @@ jobs:
       # PR comment — 始终发布/更新（pass/fail/warn 都更新）
       - name: Post PR comment
         if: always()
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const fs = require('fs');
@@ -419,7 +419,7 @@ jobs:
 
       - name: Post danger-scan comment
         if: always()
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const fs = require('fs');
