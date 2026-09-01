@@ -62,6 +62,12 @@
 - 增加 `timeout` 配置
 - 检查 ai-agent-service 日志确认 SSE 流正常推送
 
+**视觉回归「整页白屏 / 不渲染」（issue #2693 教训）**
+- CI 上报 `process is not defined` 或页面加载后不请求路由 chunk → **Taro dotenv 只注入 `.env`/`.env.local` 文件的 `TARO_APP_*` 到 DefinePlugin**；CI 无 .env 文件时产物残留 `process.env` → 浏览器 ReferenceError → 白屏。
+  - 修复：`frontend/mini-app/config/index.ts` 的 `defineConstants` 显式替换 `process.env.TARO_APP_API_URL/AI_API_URL`（不依赖 .env 文件）。验证：构建后 `grep -c "process\.env" dist/js/app.js` 应为 0。
+- `toHaveScreenshot` 报 "A snapshot doesn't exist ...-linux.png" → 基线按平台查找（mac→darwin / CI→linux），**双平台基线都要提交**；linux 基线用 CI `--update-snapshots` 生成或从失败 actual 截图采纳。
+- 定位白屏三步：① spec 加 `page.on('pageerror')`/`console` 打印重跑 ② 下载 `xiaobu-visual-diffs` artifact（trace.zip + 截图，像素分析判纯白）③ 对比本地构建产物。
+
 ## SWAS 部署
 
 **健康检查失败**
