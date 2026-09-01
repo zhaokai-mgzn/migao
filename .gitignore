@@ -119,3 +119,7 @@ danger-scan-result.json
 
 # Taro 本地私有配置（含真实 AppID，不入库）
 frontend/mini-app/project.private.config.json
+
+# 小程序 E2E 验收产物（截图/报告不入库）
+frontend/mini-app/e2e/screenshots/
+frontend/mini-app/e2e/report.md
