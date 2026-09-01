@@ -24,7 +24,7 @@ jobs:
           if [ "$MERGED" != "true" ]; then
             echo "⏭️  PR 未合并，跳过"; exit 0
           fi
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: 贴 VERIFY_TRIGGER + 打标签
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
