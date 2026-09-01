@@ -50,7 +50,7 @@ jobs:
         if: steps.tag.outputs.MODE == 'build'
         run: echo "${{ secrets.ACR_PASSWORD }}" | docker login ${{ env.ACR_REGISTRY }} -u ${{ secrets.ACR_USERNAME }} --password-stdin
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         if: steps.tag.outputs.MODE == 'build'
         with:
           node-version: '20'
