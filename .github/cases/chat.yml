@@ -292,7 +292,7 @@ cases:
       - interactive
       - multi_turn
     truths_ref:
-      - ai-chat.form-inject
+      - ai-chat.context-memory
     user_inputs:
       - "__FORM__|{\"customer_name\":\"张三\",\"customer_phone\":\"13800138000\",\"customer_address\":\"杭州市西湖区\",\"quantity\":\"3\"}"
     expectations: []
@@ -323,7 +323,7 @@ cases:
       - interactive
       - order
     truths_ref:
-      - ai-chat.form-inject
+      - ai-chat.confirm-required
       - order.flow
     user_inputs:
       - "推荐几款热销窗帘"
@@ -393,7 +393,7 @@ cases:
       - aftersales
       - interactive
     truths_ref:
-      - aftersales.flow
+      - aftersales-flow.flow
     user_inputs:
       - "我要退货"
       - "第一笔订单"
