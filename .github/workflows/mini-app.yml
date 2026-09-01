@@ -45,11 +45,8 @@ jobs:
 
   # 小布 H5 视觉回归：build:h5（测试 env 覆盖生产 URL）→ Playwright mock 数据 → 基线比对。
   # 覆盖无会话 UX（2 tab）/新品推荐/OrderCard 渲染，验证 C 端视觉/布局回归（API 层测不到）。
-  # ⚠️ 2026-08-31 临时禁用：该 job 在源分支（fix/wechat-code2session-textplain）CI 上从未绿过——
-  #   app.js 加载后不请求路由 chunk、页面整体不渲染，本地 Node20/24 双环境复现均 4/4 通过，
-  #   属 CI 环境问题（非代码问题）。跟进：issue #2693。修好后去掉 `if: false` 恢复。
+  # issue #2693 跟进：恢复实验（2026-09-01）——重新启用该 job，观察最新 CI 失败日志定位环境差异
   xiaobu-h5-visual:
-    if: false
     name: xiaobu H5 visual regression
     runs-on: ubuntu-latest
     timeout-minutes: 15
