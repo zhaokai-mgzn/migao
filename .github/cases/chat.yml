@@ -279,3 +279,32 @@ cases:
       ci:
         - admin-api-tests.yml
       verifies: []
+
+  - id: CH-009
+    legacy_id: ""
+    title: "interact form 表单提交注入上下文（__FORM__ 协议）"
+    domains:
+      - chat
+      - order
+    tier: normal
+    tags:
+      - form
+      - interactive
+      - multi_turn
+    truths_ref:
+      - ai-chat.form-inject
+    user_inputs:
+      - "__FORM__|{\"customer_name\":\"张三\",\"customer_phone\":\"13800138000\",\"customer_address\":\"杭州市西湖区\",\"quantity\":\"3\"}"
+    expectations: []
+    data_checks:
+      - "表单字段注入本轮 LLM 上下文（不改写会话历史）"
+      - "日志中手机号脱敏（138****8000）"
+      - "payload 超限/非法 JSON 回退为普通文本处理"
+    skip_reason: ""
+    merge_log: "C 端表单化交互（miniapp-multiturn-form-scenarios.md）M1+M2"
+    traces:
+      tests:
+        - "frontend/mini-app/tests/form-card.test.tsx"
+        - "backend/ai-agent-service/tests/test_chat.py"
+      ci: []
+      verifies: []

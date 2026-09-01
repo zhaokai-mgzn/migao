@@ -9,6 +9,7 @@ import OrderCard from '../cards/OrderCard'
 import QuotationCard from '../cards/QuotationCard'
 import ConfirmCard from '../cards/ConfirmCard'
 import ChoiceCard from '../cards/ChoiceCard'
+import FormCard from '../cards/FormCard'
 import ToolCallIndicator from '../cards/ToolCallIndicator'
 import SuggestionChips from './SuggestionChips'
 import './MessageBubble.scss'
@@ -160,7 +161,13 @@ function renderInteractive(interactive: InteractiveData, onInteract?: (value: st
           onAction={(value) => onInteract?.(value)}
         />
       )
-    // form 暂以文本形式提示（后续按需渲染）
+    case 'form':
+      return (
+        <FormCard
+          data={interactive}
+          onAction={(value) => onInteract?.(value)}
+        />
+      )
     default:
       return null
   }

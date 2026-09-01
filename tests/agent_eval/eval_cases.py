@@ -487,6 +487,20 @@ _CASE_CH_008 = EvalCase(
     tags=['handoff', 'agent_session'],
 )
 
+# ── CH-009 [NORMAL] interact form 表单提交注入上下文（__FORM__ 协议）（源: cases/chat.yml）──
+_CASE_CH_009 = EvalCase(
+    id='CH-009',
+    legacy_id='',
+    title='interact form 表单提交注入上下文（__FORM__ 协议）',
+    skill=Skill.MULTI_TURN,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['__FORM__|{\\"customer_name\\":\\"张三\\",\\"customer_phone\\":\\"13800138000\\",\\"customer_address\\":\\"杭州市西湖区\\",\\"quantity\\":\\"3\\"}'],
+    expectations=[],
+    data_checks=['表单字段注入本轮 LLM 上下文（不改写会话历史）', '日志中手机号脱敏（138****8000）', 'payload 超限/非法 JSON 回退为普通文本处理'],
+    skip_reason='',
+    tags=['form', 'interactive', 'multi_turn'],
+)
+
 # ── CR-001 [NORMAL] 查商品 → 下单（跨 Skill 复用 UUID）（源: cases/cross.yml）──
 _CASE_CR_001 = EvalCase(
     id='CR-001',
@@ -1976,6 +1990,7 @@ ALL_CASES = (
     _CASE_CH_006,
     _CASE_CH_007,
     _CASE_CH_008,
+    _CASE_CH_009,
     _CASE_CR_001,
     _CASE_CR_002,
     _CASE_CR_003,

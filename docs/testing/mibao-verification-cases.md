@@ -283,7 +283,7 @@
 真值: category-manage.delete, category-manage.delete-destructive, ai-chat.confirm-required
 溯源: verification 2.12 独有（二次确认行为在测试中未确认，见 category-manage.yml 缺口注释） ｜ tags: delete, destructive, confirm
 
-## 对话边界域（8 case）
+## 对话边界域（9 case）
 
 ### CH-001. 空结果 + suggestion 引导修复 🔴
 ```
@@ -391,6 +391,16 @@
 ```
 真值: ai-chat.intent-tool-map, settings-manage.ai-config
 溯源: POC 人工客服工作台新增 ｜ tags: handoff, agent_session
+
+### CH-009. interact form 表单提交注入上下文（__FORM__ 协议） 🔵
+```
+你: __FORM__|{\"customer_name\":\"张三\",\"customer_phone\":\"13800138000\",\"customer_address\":\"杭州市西湖区\",\"quantity\":\"3\"}
+数据: 表单字段注入本轮 LLM 上下文（不改写会话历史）
+数据: 日志中手机号脱敏（138****8000）
+数据: payload 超限/非法 JSON 回退为普通文本处理
+```
+真值: ai-chat.form-inject
+溯源: C 端表单化交互（miniapp-multiturn-form-scenarios.md）M1+M2 ｜ tags: form, interactive, multi_turn
 
 ## 跨域（3 case）
 
@@ -1627,13 +1637,13 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：136（活跃 86，跳过 50）
-- tier 分布：smoke 10 / normal 99 / adversarial 27
+- 用例总数：137（活跃 87，跳过 50）
+- tier 分布：smoke 10 / normal 100 / adversarial 27
 - 售后域：5
 - agents：6
 - api：10
 - 分类域：3
-- 对话边界域：8
+- 对话边界域：9
 - 跨域：3
 - 客户域：5
 - 数据域：5

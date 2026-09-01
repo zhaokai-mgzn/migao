@@ -655,6 +655,102 @@ class TestPageActionAllowed:
 
 
 # ═══════════════════════════════════════════════
+# __FORM__ 表单协议（CH-009）
+# ═══════════════════════════════════════════════
+
+class TestFormProtocol:
+    """__FORM__ 表单提交：解析字段 → 注入 LLM 上下文 → 走正常 agent 流程。
+
+    覆盖：合法 payload 注入、超限回退、非法 JSON 回退、非对象回退、入口委托、closed 拦截。
+    """
+
+    @patch("app.api.chat.send_message")
+    @patch("app.api.chat.SessionMemory")
+    @pytest.mark.asyncio
+    async def test_valid_payload_injects_context(self, MockSM, mock_send):
+        """合法 payload → 字段以（用户通过表单提交）注入，走 send_message"""
+        from app.api.chat import _handle_form_request
+        MockSM.return_value = _memory(get_session=_session(id="sess_1"))
+        mock_send.return_value = MagicMock()
+        req = ChatSendRequest(
+            session_id="sess_1",
+            message='__FORM__|{"customer_name":"张三","customer_phone":"13800138000","quantity":"3"}',
+        )
+        result = await _handle_form_request(req, tenant_id=1, user_id="user_1", current_user=_user())
+        assert result is mock_send.return_value
+        mock_send.assert_awaited_once()
+        injected = mock_send.call_args.args[0].message
+        assert injected.startswith("（用户通过表单提交）")
+        assert "customer_name: 张三" in injected
+        assert "quantity: 3" in injected
+
+    @patch("app.api.chat.send_message")
+    @patch("app.api.chat.SessionMemory")
+    @pytest.mark.asyncio
+    async def test_oversized_payload_falls_back(self, MockSM, mock_send):
+        """payload 超限 → 回退为普通文本（原始消息直接交给 send_message）"""
+        from app.api.chat import _handle_form_request, _FORM_MAX_LEN
+        MockSM.return_value = _memory(get_session=_session(id="sess_1"))
+        mock_send.return_value = MagicMock()
+        big = "__FORM__|" + ("x" * (_FORM_MAX_LEN + 1))
+        req = ChatSendRequest(session_id="sess_1", message=big)
+        await _handle_form_request(req, tenant_id=1, user_id="user_1", current_user=_user())
+        mock_send.assert_awaited_once()
+        assert mock_send.call_args.args[0].message == big
+
+    @patch("app.api.chat.send_message")
+    @patch("app.api.chat.SessionMemory")
+    @pytest.mark.asyncio
+    async def test_invalid_json_falls_back(self, MockSM, mock_send):
+        """非法 JSON → 回退为普通文本"""
+        from app.api.chat import _handle_form_request
+        MockSM.return_value = _memory(get_session=_session(id="sess_1"))
+        mock_send.return_value = MagicMock()
+        req = ChatSendRequest(session_id="sess_1", message="__FORM__|not-json")
+        await _handle_form_request(req, tenant_id=1, user_id="user_1", current_user=_user())
+        mock_send.assert_awaited_once()
+        assert mock_send.call_args.args[0].message == "__FORM__|not-json"
+
+    @patch("app.api.chat.send_message")
+    @patch("app.api.chat.SessionMemory")
+    @pytest.mark.asyncio
+    async def test_non_object_payload_falls_back(self, MockSM, mock_send):
+        """payload 非对象（数组/标量）→ 回退为普通文本"""
+        from app.api.chat import _handle_form_request
+        MockSM.return_value = _memory(get_session=_session(id="sess_1"))
+        mock_send.return_value = MagicMock()
+        req = ChatSendRequest(session_id="sess_1", message='__FORM__|["a","b"]')
+        await _handle_form_request(req, tenant_id=1, user_id="user_1", current_user=_user())
+        mock_send.assert_awaited_once()
+        assert mock_send.call_args.args[0].message == '__FORM__|["a","b"]'
+
+    @patch("app.api.chat._handle_form_request")
+    @pytest.mark.asyncio
+    async def test_form_protocol_delegation(self, mock_form):
+        """send_message 入口：__FORM__ 前缀委托 _handle_form_request"""
+        mock_form.return_value = MagicMock()
+        req = ChatSendRequest(message='__FORM__|{"customer_name":"张三"}')
+        await send_message(req, current_user=_user())
+        mock_form.assert_awaited_once()
+
+    @patch("app.api.chat.send_message")
+    @pytest.mark.asyncio
+    async def test_closed_session_blocked(self, mock_send):
+        """closed 会话提交表单 → 409（复用统一守卫）"""
+        from app.api.chat import _handle_form_request
+        with patch("app.api.chat.SessionMemory", return_value=_memory(get_session=_session(status="closed"))):
+            req = ChatSendRequest(
+                session_id="sess_1",
+                message='__FORM__|{"customer_name":"张三"}',
+            )
+            with pytest.raises(HTTPException) as e:
+                await _handle_form_request(req, tenant_id=1, user_id="user_1", current_user=_user())
+            assert e.value.status_code == 409
+            assert e.value.detail["error"]["code"] == "SESSION_CLOSED"
+        mock_send.assert_not_awaited()
+
+
+# ═══════════════════════════════════════════════
 # SSE 流生成器
 # ═══════════════════════════════════════════════
 
