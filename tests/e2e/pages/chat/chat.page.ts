@@ -10,6 +10,8 @@ export class ChatPage extends BasePage {
   readonly sendBtn: Locator
   readonly stopBtn: Locator
   readonly imageUploadBtn: Locator
+  /** 消息输入区（拖拽上传 drop zone，aria-label「消息输入区」） */
+  readonly inputZone: Locator
   readonly customerPanel: Locator
   readonly quickActions: Locator
   // 洞察抽屉（SessionInsight 抽屉化后）
@@ -28,6 +30,7 @@ export class ChatPage extends BasePage {
     this.sendBtn = page.locator('button').filter({ has: page.locator('svg.lucide-send') }).first()
     this.stopBtn = page.locator('button').filter({ has: page.locator('svg.lucide-stop-circle') })
     this.imageUploadBtn = page.locator('button').filter({ has: page.locator('svg.lucide-image-plus') })
+    this.inputZone = page.getByRole('region', { name: '消息输入区' })
     this.customerPanel = page.locator('.w-\\[280px\\]')
     this.quickActions = page.locator('text=快捷操作').first()
     this.insightDrawer = page.locator('[data-testid="session-insight-drawer"]')

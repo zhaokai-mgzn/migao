@@ -279,3 +279,35 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: UI-009
+    legacy_id: ""
+    title: "米宝聊天输入框 - 拖拽图片作为附件上传"
+    domains:
+      - ui
+      - frontend
+    tier: normal
+    tags:
+      - ui
+      - chat-input
+      - drag-drop
+      - image-upload
+    truths_ref:
+      - frontend-fix.chat-input-drag-drop
+    user_inputs:
+      - "米宝聊天输入框支持把图片文件直接拖拽到输入区作为附件上传，与点击「添加图片」按钮共用同一套校验与上传链路（最多 3 张、5MB、jpeg/png/gif/webp）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "输入区（aria-label「消息输入区」）绑定 onDragOver/onDragLeave/onDrop；拖拽悬停时显示「松开上传图片」高亮提示"
+      - "drop 图片文件 → 调用 chatApi.uploadChatImages 并出现预览缩略图；拖拽非图片文件 toast「不支持的文件类型」、超 5MB toast「超过 5MB 限制」、超过 3 张 toast「最多上传 3 张图片」"
+      - "会话已关闭/流式中/上传中拖拽不生效；拖拽上传与点击上传共用 handleFiles 校验逻辑"
+    skip_reason: "纯前端聊天输入拖拽交互由 vitest 单测 + E2E 点击链路验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-08-31 新增：米宝输入框拖拽图片附件上传（drag & drop 复用 uploadChatImages 链路）"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/components/chat/MessageInput.test.tsx"
+        - "tests/e2e/specs/chat/chat.spec.ts"
+      ci:
+        - pr-check.yml
+      verifies: []
