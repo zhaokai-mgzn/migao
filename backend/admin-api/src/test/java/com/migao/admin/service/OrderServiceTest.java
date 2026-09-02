@@ -18,6 +18,7 @@ import com.migao.admin.mapper.ProductMapper;
 import com.migao.admin.mapper.ProductSkuMapper;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
@@ -35,6 +36,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
@@ -1312,5 +1314,89 @@ class OrderServiceTest {
         assertThatThrownBy(() -> orderService.confirmPayment("order-001"))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("只有待确认状态");
+    }
+
+    // ======================== 手机号回填绑定 / C 端 mine phone 兜底 ========================
+
+    @Test
+    @DisplayName("bindOrdersToUser - 只回填该手机号下 user_id 为空的本租户订单")
+    void bindOrdersToUser_BindsOnlyUnboundOrdersOfPhone() {
+        // given
+        when(orderMapper.update(any(), any())).thenReturn(3);
+
+        // when
+        int updated = orderService.bindOrdersToUser(1L, "user-001", "13900139000");
+
+        // then
+        assertThat(updated).isEqualTo(3);
+        org.mockito.ArgumentCaptor<LambdaUpdateWrapper<Order>> wrapperCaptor =
+                org.mockito.ArgumentCaptor.forClass(LambdaUpdateWrapper.class);
+        verify(orderMapper).update(isNull(), wrapperCaptor.capture());
+        assertThat(wrapperCaptor.getValue().getSqlSet()).contains("user_id");
+        assertThat(wrapperCaptor.getValue().getSqlSegment()).contains("customer_phone");
+    }
+
+    @Test
+    @DisplayName("bindOrdersToUser - 空手机号直接返回 0（不查库）")
+    void bindOrdersToUser_BlankPhoneSkips() {
+        int updated = orderService.bindOrdersToUser(1L, "user-001", "  ");
+
+        assertThat(updated).isEqualTo(0);
+        verify(orderMapper, never()).update(any(), any());
+    }
+
+    @Test
+    @DisplayName("bindOrdersToUser - 空 userId 直接返回 0（不查库）")
+    void bindOrdersToUser_BlankUserSkips() {
+        int updated = orderService.bindOrdersToUser(1L, "internal-service", "13900139000");
+
+        assertThat(updated).isEqualTo(0);
+        verify(orderMapper, never()).update(any(), any());
+    }
+
+    @Test
+    @DisplayName("getMyOrderPage - phone 兜底：user_id=本人 OR 未绑定但 customer_phone=本人")
+    void getMyOrderPage_PhoneFallbackFilter() {
+        // given
+        Page<Order> mockPage = new Page<>(1, 10);
+        mockPage.setRecords(List.of(testOrder));
+        mockPage.setTotal(1);
+        when(orderMapper.selectPage(any(Page.class), any(LambdaQueryWrapper.class)))
+                .thenReturn(mockPage);
+
+        // when
+        PageResponse<OrderListResponse> result = orderService.getMyOrderPage(
+                1, 10, null, 1L, "user-001", "13900139000");
+
+        // then
+        assertThat(result).isNotNull();
+        assertThat(result.getItems()).hasSize(1);
+        org.mockito.ArgumentCaptor<LambdaQueryWrapper<Order>> wrapperCaptor =
+                org.mockito.ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(orderMapper).selectPage(any(Page.class), wrapperCaptor.capture());
+        String sql = wrapperCaptor.getValue().getSqlSegment();
+        assertThat(sql).contains("user_id");
+        assertThat(sql).contains("customer_phone");
+    }
+
+    @Test
+    @DisplayName("getMyOrderPage - 无 phone 兜底时退化为仅 user_id 匹配")
+    void getMyOrderPage_NoPhone_UserOnlyFilter() {
+        Page<Order> mockPage = new Page<>(1, 10);
+        mockPage.setRecords(List.of());
+        mockPage.setTotal(0);
+        when(orderMapper.selectPage(any(Page.class), any(LambdaQueryWrapper.class)))
+                .thenReturn(mockPage);
+
+        PageResponse<OrderListResponse> result = orderService.getMyOrderPage(
+                1, 10, null, 1L, "user-001", null);
+
+        assertThat(result.getItems()).isEmpty();
+        org.mockito.ArgumentCaptor<LambdaQueryWrapper<Order>> wrapperCaptor =
+                org.mockito.ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(orderMapper).selectPage(any(Page.class), wrapperCaptor.capture());
+        String sql = wrapperCaptor.getValue().getSqlSegment();
+        assertThat(sql).contains("user_id");
+        assertThat(sql).doesNotContain("customer_phone");
     }
 }

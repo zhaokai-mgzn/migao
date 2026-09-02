@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import Taro, { useDidShow } from '@tarojs/taro'
-import { View, Text, Image } from '@tarojs/components'
+import { View, Text, Image, Button } from '@tarojs/components'
 import { useAuthStore } from '../../../store/authStore'
 import { useChatStore } from '../../../store/chatStore'
-import { getUserInfo } from '../../../services/userService'
+import { getUserInfo, bindMiniPhone } from '../../../services/userService'
 import { getMyOrders, getMyTickets } from '../../../services/productService'
 import type { MiniOrder, MiniTicket } from '../../../services/productService'
 import './index.scss'
@@ -119,6 +119,42 @@ export default function ProfilePage() {
     })
   }
 
+  // ========== 手机号绑定（关联名下商户代录订单） ==========
+  const [bindingPhone, setBindingPhone] = useState(false)
+
+  /** 微信 getPhoneNumber 授权回调：拿动态 code → 后端换号 + 回填名下订单 */
+  const handleGetPhoneNumber = async (e: any) => {
+    if (bindingPhone) return
+    const detail = e?.detail || {}
+    // 用户拒绝授权：errMsg 以 "fail" 开头（如 cancel）
+    const errMsg: string = detail.errMsg || ''
+    if (errMsg.startsWith('fail') || errMsg.includes('cancel')) {
+      Taro.showToast({ title: '已取消授权', icon: 'none' })
+      return
+    }
+    const code: string = detail.code || ''
+    if (!code) {
+      Taro.showToast({ title: '未获取到授权凭证，请重试', icon: 'none' })
+      return
+    }
+    setBindingPhone(true)
+    try {
+      const result = await bindMiniPhone(code)
+      // 更新 store 中的 user.phone
+      if (user) {
+        setUser({ ...user, phone: result.phone })
+      }
+      const boundMsg = result.boundOrders > 0
+        ? `绑定成功，已关联 ${result.boundOrders} 笔历史订单`
+        : '绑定成功'
+      Taro.showToast({ title: boundMsg, icon: 'none' })
+    } catch (err: any) {
+      Taro.showToast({ title: err?.message || '绑定失败，请重试', icon: 'none' })
+    } finally {
+      setBindingPhone(false)
+    }
+  }
+
   const handleGoLogin = () => {
     Taro.redirectTo({ url: '/pages/auth/login/index' })
   }
@@ -157,6 +193,18 @@ export default function ProfilePage() {
         <View className='user-info'>
           <Text className='user-nickname'>{loading ? '加载中…' : user?.nickname || '用户'}</Text>
           <Text className='user-id'>ID: {user?.id || '--'}</Text>
+          {user?.phone ? (
+            <Text className='user-phone'>📱 {user.phone.replace(/^(\d{3})\d{4}(\d{4})$/, '$1****$2')}</Text>
+          ) : (
+            <Button
+              className='bind-phone-btn'
+              openType='getPhoneNumber'
+              onGetPhoneNumber={handleGetPhoneNumber}
+              loading={bindingPhone}
+            >
+              绑定手机号，查看名下订单
+            </Button>
+          )}
         </View>
       </View>
 

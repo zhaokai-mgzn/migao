@@ -32,6 +32,7 @@ import org.springframework.web.bind.annotation.*;
 public class AgentOrderController {
 
     private final OrderService orderService;
+    private final com.migao.admin.mapper.UserMapper userMapper;
 
     /**
      * Agent 专用创建订单。
@@ -113,10 +114,20 @@ public class AgentOrderController {
         }
         log.info("[Agent] 查询我的订单: userId={}, page={}, size={}, status={}, tenantId={}",
                 userId, page, size, status, tenantId);
-        // 强制 userId 过滤 + 仅允许状态筛选（不允许 keyword/receiver 等模糊条件，避免跨用户试探）
-        PageResponse<OrderListResponse> result = orderService.getOrderPage(
-                page, size, status, null, null, null, null, null, null, null, null, null,
-                tenantId, userId);
+        // 取当前用户已绑定手机号（用于名下商户代录订单的 phone 兜底；未绑定则仅 user_id 匹配）
+        String userPhone = null;
+        try {
+            com.migao.admin.entity.User currentUser = userMapper.selectById(userId);
+            if (currentUser != null && org.springframework.util.StringUtils.hasText(currentUser.getPhone())) {
+                userPhone = currentUser.getPhone();
+            }
+        } catch (Exception e) {
+            log.warn("[Agent] 查询当前用户手机号失败（不影响 user_id 直配查询）: userId={}", userId);
+        }
+        // 强制用户隔离 + 仅允许状态筛选（不允许 keyword/receiver 等模糊条件，避免跨用户试探）；
+        // phone 兜底仅作用于 user_id IS NULL 且 customer_phone=本人绑定号的订单（商户代录/历史订单）
+        PageResponse<OrderListResponse> result = orderService.getMyOrderPage(
+                page, size, status, tenantId, userId, userPhone);
         return ApiResponse.success(result);
     }
 

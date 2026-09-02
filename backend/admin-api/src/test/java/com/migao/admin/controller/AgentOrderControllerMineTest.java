@@ -2,8 +2,10 @@
 package com.migao.admin.controller;
 
 import com.migao.admin.controller.agent.AgentOrderController;
+import com.migao.admin.dto.OrderListResponse;
 import com.migao.admin.dto.PageResponse;
-
+import com.migao.admin.entity.User;
+import com.migao.admin.mapper.UserMapper;
 import com.migao.admin.service.OrderService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -43,6 +45,8 @@ class AgentOrderControllerMineTest extends BaseControllerTest {
 
     @Mock private OrderService orderService;
 
+    @Mock private UserMapper userMapper;
+
     @InjectMocks
     private AgentOrderController agentOrderController;
 
@@ -81,39 +85,53 @@ class AgentOrderControllerMineTest extends BaseControllerTest {
         @DisplayName("真实用户可查询，且强制按当前用户过滤（只允许状态/分页参数）")
         void realUserQueriesWithForcedFilter() throws Exception {
             setServiceUserWithRealId("customer-001");
-            when(orderService.getOrderPage(
-                    anyLong(), anyLong(), isNull(), isNull(), isNull(),
-                    isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(),
-                    eq(TEST_TENANT_ID), eq("customer-001")))
+            // 用户未绑定手机号 → phone 兜底为 null（仅 user_id 直配）
+            User noPhoneUser = User.builder().id("customer-001").phone(null).build();
+            when(userMapper.selectById("customer-001")).thenReturn(noPhoneUser);
+            when(orderService.getMyOrderPage(
+                    eq(1L), eq(10L), isNull(), eq(TEST_TENANT_ID), eq("customer-001"), isNull()))
                     .thenReturn(PageResponse.of(0L, 1L, 10L, List.of()));
 
             mockMvc.perform(get(MINE))
                     .andExpect(status().isOk());
 
-            // 强制 userId=当前用户；keyword/receiver 等模糊条件必须为 null
-            verify(orderService).getOrderPage(
-                    anyLong(), anyLong(), isNull(), isNull(), isNull(),
-                    isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(),
-                    eq(TEST_TENANT_ID), eq("customer-001"));
+            // 强制走 C 端专用 mine 查询（user_id + phone 兜底由 service 处理）
+            verify(orderService).getMyOrderPage(
+                    eq(1L), eq(10L), isNull(), eq(TEST_TENANT_ID), eq("customer-001"), isNull());
+        }
+
+        @Test
+        @DisplayName("用户已绑定手机号 → phone 兜底透传（名下商户代录订单可见）")
+        void boundPhonePassedForFallback() throws Exception {
+            setServiceUserWithRealId("customer-003");
+            User boundUser = User.builder().id("customer-003").phone("13900139000").build();
+            when(userMapper.selectById("customer-003")).thenReturn(boundUser);
+            when(orderService.getMyOrderPage(
+                    eq(1L), eq(10L), isNull(), eq(TEST_TENANT_ID), eq("customer-003"), eq("13900139000")))
+                    .thenReturn(PageResponse.of(0L, 1L, 10L, List.of()));
+
+            mockMvc.perform(get(MINE))
+                    .andExpect(status().isOk());
+
+            verify(orderService).getMyOrderPage(
+                    eq(1L), eq(10L), isNull(), eq(TEST_TENANT_ID), eq("customer-003"), eq("13900139000"));
         }
 
         @Test
         @DisplayName("支持状态筛选透传")
         void statusFilterPassedThrough() throws Exception {
             setServiceUserWithRealId("customer-002");
-            when(orderService.getOrderPage(
-                    anyLong(), anyLong(), eq("shipped"), isNull(), isNull(),
-                    isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(),
-                    eq(TEST_TENANT_ID), eq("customer-002")))
+            when(userMapper.selectById("customer-002")).thenReturn(
+                    User.builder().id("customer-002").phone(null).build());
+            when(orderService.getMyOrderPage(
+                    eq(1L), eq(10L), eq("shipped"), eq(TEST_TENANT_ID), eq("customer-002"), isNull()))
                     .thenReturn(PageResponse.of(0L, 1L, 10L, List.of()));
 
             mockMvc.perform(get(MINE).param("status", "shipped"))
                     .andExpect(status().isOk());
 
-            verify(orderService).getOrderPage(
-                    anyLong(), anyLong(), eq("shipped"), isNull(), isNull(),
-                    isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(),
-                    eq(TEST_TENANT_ID), eq("customer-002"));
+            verify(orderService).getMyOrderPage(
+                    eq(1L), eq(10L), eq("shipped"), eq(TEST_TENANT_ID), eq("customer-002"), isNull());
         }
 
         @Test
@@ -125,8 +143,7 @@ class AgentOrderControllerMineTest extends BaseControllerTest {
             mockMvc.perform(get(MINE))
                     .andExpect(status().is4xxClientError());
 
-            verify(orderService, never()).getOrderPage(anyLong(), anyLong(), any(), any(), any(),
-                    any(), any(), any(), any(), any(), any(), any(), anyLong(), any());
+            verify(orderService, never()).getMyOrderPage(anyLong(), anyLong(), any(), anyLong(), any(), any());
         }
 
         @Test
@@ -137,8 +154,7 @@ class AgentOrderControllerMineTest extends BaseControllerTest {
             mockMvc.perform(get(MINE))
                     .andExpect(status().is4xxClientError());
 
-            verify(orderService, never()).getOrderPage(anyLong(), anyLong(), any(), any(), any(),
-                    any(), any(), any(), any(), any(), any(), any(), anyLong(), any());
+            verify(orderService, never()).getMyOrderPage(anyLong(), anyLong(), any(), anyLong(), any(), any());
         }
     }
 }

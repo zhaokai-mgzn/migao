@@ -74,6 +74,30 @@
   white-space: nowrap;
 }
 
+.user-phone {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.75);
+  display: block;
+  margin-top: 6px;
+}
+
+.bind-phone-btn {
+  margin-top: 8px;
+  padding: 0 14px;
+  height: 32px;
+  line-height: 32px;
+  font-size: 12px;
+  color: #ffffff;
+  background-color: rgba(255, 255, 255, 0.16);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  display: inline-block;
+
+  &::after {
+    border: none;
+  }
+}
+
 // ========== 我的订单 / 我的售后 区块 ==========
 .section-card {
   margin: 0 16px 16px;

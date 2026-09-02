@@ -3,15 +3,20 @@ package com.migao.admin.controller;
 import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.dto.LoginRequest;
 import com.migao.admin.dto.LoginResponse;
-import com.migao.admin.exception.BusinessException;
+import com.migao.admin.dto.MiniPhoneBindRequest;
 import com.migao.admin.dto.MiniLoginRequest;
 import com.migao.admin.dto.RefreshTokenRequest;
 import com.migao.admin.dto.SmsLoginRequest;
 import com.migao.admin.dto.UserInfoResponse;
+import com.migao.admin.exception.BusinessException;
+import com.migao.admin.security.SecurityUser;
 import com.migao.admin.service.AuthService;
+import com.migao.admin.service.MiniPhoneBindService;
 import jakarta.servlet.http.HttpServletRequest;
-import org.springframework.util.StringUtils;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.util.StringUtils;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -28,6 +33,7 @@ import org.springframework.web.bind.annotation.*;
 public class AuthController {
 
     private final AuthService authService;
+    private final com.migao.admin.service.MiniPhoneBindService miniPhoneBindService;
 
     // ======================== 账号密码登录 ========================
 
@@ -87,6 +93,34 @@ public class AuthController {
         log.info("微信小程序登录请求: tenantId={}", request.getTenantId());
         LoginResponse loginResponse = authService.miniProgramLogin(request.getCode(), request.getTenantId(), response);
         return ApiResponse.success(loginResponse);
+    }
+
+    /**
+     * 微信小程序手机号绑定（需已登录）
+     *
+     * POST /api/auth/mini/bind-phone
+     *
+     * Request: { "code": "open-type=getPhoneNumber 授权返回的动态 code" }
+     * Response: { "success": true, "data": { "phone": "138****8000", "boundOrders": 2 } }
+     *
+     * 业务闭环：小程序客户授权手机号 → 换号写 users.phone → 回填名下
+     * user_id 为空的商户代录/历史订单（customer_phone=本人手机号）→
+     * C 端「我的订单」即可看到名下全部订单。
+     */
+    @PostMapping("/mini/bind-phone")
+    public ApiResponse<MiniPhoneBindService.BindResult> bindMiniPhone(
+            @Valid @RequestBody MiniPhoneBindRequest request,
+            HttpServletRequest httpRequest) {
+        // 从 SecurityContext 取当前认证用户（JWT：customer 角色访问小程序接口）
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !(authentication.getPrincipal() instanceof SecurityUser securityUser)) {
+            throw BusinessException.authFailed("请先登录后再绑定手机号");
+        }
+        log.info("微信小程序手机号绑定请求: userId={}, tenantId={}",
+                securityUser.getUserId(), securityUser.getTenantId());
+        MiniPhoneBindService.BindResult result = miniPhoneBindService.bind(
+                securityUser.getUserId(), securityUser.getTenantId(), request.getCode());
+        return ApiResponse.success(result);
     }
 
     // ======================== 微信公众号 OAuth（占位） ========================

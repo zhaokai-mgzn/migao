@@ -9,6 +9,8 @@ export interface User {
   nickname: string
   avatar: string | null
   tenant_id: number
+  /** 已绑定的手机号（微信授权绑定后回填；用于名下商户代录订单的 phone 兜底展示） */
+  phone?: string | null
 }
 
 export interface LoginResult {

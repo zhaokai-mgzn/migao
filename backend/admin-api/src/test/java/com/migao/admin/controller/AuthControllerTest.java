@@ -5,7 +5,9 @@ import com.migao.admin.config.GlobalExceptionHandler;
 import com.migao.admin.dto.LoginResponse;
 import com.migao.admin.dto.SmsLoginRequest;
 import com.migao.admin.exception.BusinessException;
+import com.migao.admin.security.SecurityUser;
 import com.migao.admin.service.AuthService;
+import com.migao.admin.service.MiniPhoneBindService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -14,8 +16,13 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+
+import java.util.List;
 
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -35,6 +42,9 @@ class AuthControllerTest {
     @Mock
     private AuthService authService;
 
+    @Mock
+    private MiniPhoneBindService miniPhoneBindService;
+
     @InjectMocks
     private AuthController authController;
 
@@ -43,6 +53,18 @@ class AuthControllerTest {
         mockMvc = MockMvcBuilders.standaloneSetup(authController)
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
+    }
+
+    /** 模拟 JWT 认证用户（小程序 customer） */
+    private void setMiniCustomerAuth() {
+        SecurityUser user = new SecurityUser(
+                "user-mini-001", 1L, "微信用户",
+                List.of("customer"),
+                List.of(new SimpleGrantedAuthority("ROLE_customer"))
+        );
+        Authentication auth = mock(Authentication.class);
+        when(auth.getPrincipal()).thenReturn(user);
+        SecurityContextHolder.getContext().setAuthentication(auth);
     }
 
     @Test
@@ -112,5 +134,49 @@ class AuthControllerTest {
                 .andExpect(status().isOk());
 
         verify(authService).loginBySms(eq("13800138000"), eq("123456"), isNull(), any());
+    }
+
+    @Test
+    @DisplayName("bind-phone - 已登录小程序客户授权手机号 → 换号并回填名下订单")
+    void bindPhone_AuthenticatedCustomer_Binds() throws Exception {
+        setMiniCustomerAuth();
+        MiniPhoneBindService.BindResult result = new MiniPhoneBindService.BindResult();
+        result.setPhone("13900139000");
+        result.setBoundOrders(2);
+        when(miniPhoneBindService.bind(eq("user-mini-001"), eq(1L), eq("wx-phone-code")))
+                .thenReturn(result);
+
+        mockMvc.perform(post("/api/auth/mini/bind-phone")
+                        .contentType("application/json")
+                        .content("{\"code\":\"wx-phone-code\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.phone").value("13900139000"))
+                .andExpect(jsonPath("$.data.boundOrders").value(2));
+
+        verify(miniPhoneBindService).bind(eq("user-mini-001"), eq(1L), eq("wx-phone-code"));
+    }
+
+    @Test
+    @DisplayName("bind-phone - 未登录 → 401")
+    void bindPhone_Unauthenticated_Rejected() throws Exception {
+        SecurityContextHolder.clearContext();
+
+        mockMvc.perform(post("/api/auth/mini/bind-phone")
+                        .contentType("application/json")
+                        .content("{\"code\":\"wx-phone-code\"}"))
+                .andExpect(status().is4xxClientError());
+
+        verify(miniPhoneBindService, never()).bind(anyString(), anyLong(), anyString());
+    }
+
+    @Test
+    @DisplayName("bind-phone - code 为空 → 400（参数校验，未进入业务层）")
+    void bindPhone_EmptyCode_Rejected() throws Exception {
+        mockMvc.perform(post("/api/auth/mini/bind-phone")
+                        .contentType("application/json")
+                        .content("{}"))
+                .andExpect(status().is4xxClientError());
+
+        verify(miniPhoneBindService, never()).bind(anyString(), anyLong(), anyString());
     }
 }

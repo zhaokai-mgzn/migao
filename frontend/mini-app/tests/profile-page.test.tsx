@@ -29,6 +29,7 @@ jest.mock('@tarojs/taro', () => {
 const mockLogout = jest.fn()
 const mockSetUser = jest.fn()
 const mockClearMessages = jest.fn()
+const mockBindMiniPhone = jest.fn()
 
 jest.mock('../src/store/authStore', () => ({
   useAuthStore: jest.fn(() => ({
@@ -56,6 +57,7 @@ chatStoreMock.useChatStore.getState = jest.fn(() => ({
 
 jest.mock('../src/services/userService', () => ({
   getUserInfo: jest.fn(),
+  bindMiniPhone: (...args: any[]) => mockBindMiniPhone(...args),
 }))
 
 jest.mock('../src/services/productService', () => ({
@@ -171,5 +173,55 @@ describe('ProfilePage', () => {
     await screen.findByText('ORD-1001')
     fireEvent.click(screen.getByText('ORD-1001'))
     expect(Taro.switchTab).toHaveBeenCalledWith({ url: '/pages/chat/index/index' })
+  })
+
+  it('未绑定手机号应显示绑定入口', () => {
+    render(<ProfilePage />)
+    expect(screen.getByText(/绑定手机号/)).toBeTruthy()
+  })
+
+  it('已绑定手机号应显示脱敏手机号（不显示绑定按钮）', () => {
+    ;(useAuthStore as unknown as jest.Mock).mockReturnValue({
+      user: { id: 'u1', nickname: '测试用户', avatar: null, tenant_id: 1, phone: '13900139000' },
+      isLoggedIn: true,
+      setUser: mockSetUser,
+      logout: mockLogout,
+    })
+    render(<ProfilePage />)
+    expect(screen.getByText('📱 139****9000')).toBeTruthy()
+    expect(screen.queryByText(/绑定手机号/)).toBeNull()
+  })
+
+  it('getPhoneNumber 授权成功 → 调 bindMiniPhone 并更新 user', async () => {
+    mockBindMiniPhone.mockResolvedValueOnce({ phone: '13900139000', boundOrders: 2 })
+    render(<ProfilePage />)
+
+    const btn = screen.getByText(/绑定手机号/)
+    // Taro Button 的 props（含 onGetPhoneNumber）暴露在 DOM 节点的 __reactProps$ key 上
+    const node: any = (btn as any).closest('button')
+    const propsKey = Object.keys(node).find((k) => k.startsWith('__reactProps$'))
+    const onGetPhoneNumber = propsKey ? node[propsKey].onGetPhoneNumber : null
+    expect(onGetPhoneNumber).toBeTruthy()
+    // 模拟微信授权成功回调 e.detail.code
+    await onGetPhoneNumber({ detail: { code: 'wx-phone-code', errMsg: 'getPhoneNumber:ok' } })
+    await Promise.resolve()
+    expect(mockBindMiniPhone).toHaveBeenCalledWith('wx-phone-code')
+    // setUser 以新 phone 更新
+    expect(mockSetUser).toHaveBeenCalledWith(
+      expect.objectContaining({ phone: '13900139000' }),
+    )
+  })
+
+  it('getPhoneNumber 授权取消 → 不调 bindMiniPhone', async () => {
+    mockBindMiniPhone.mockClear()
+    render(<ProfilePage />)
+    const btn = screen.getByText(/绑定手机号/)
+    const node: any = (btn as any).closest('button')
+    const propsKey = Object.keys(node).find((k) => k.startsWith('__reactProps$'))
+    const onGetPhoneNumber = propsKey ? node[propsKey].onGetPhoneNumber : null
+    if (onGetPhoneNumber) {
+      await onGetPhoneNumber({ detail: { errMsg: 'getPhoneNumber:fail user deny' } })
+    }
+    expect(mockBindMiniPhone).not.toHaveBeenCalled()
   })
 })
