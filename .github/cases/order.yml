@@ -394,3 +394,73 @@ cases:
       ci:
         - ai-agent-tests.yml
       verifies: []
+
+  - id: OR-012
+    legacy_id: ""
+    title: "C 端物流查询 - 仅限本人已发货订单 + 拒绝快递单号直查"
+    domains:
+      - order
+      - chat
+      - defense
+    tier: normal
+    tags:
+      - query
+      - logistics
+      - data_safety
+    truths_ref:
+      - order.logistics
+    user_inputs:
+      - "帮我查一下物流"
+      - "查一下单号 SF1234567890 的物流"
+    expectations:
+      - tool: customer_logistics_track
+    data_checks:
+      - "customer_logistics_track 无 tracking_number 参数；无论 LLM 通过什么参数传快递单号都必须拒绝（引导提供订单）"
+      - "只查当前用户已发货(在途)订单的物流：/orders/mine?status=shipped 后端强制按用户过滤，返回每笔订单的运单号/快递公司/轨迹"
+      - "传其他用户/非在途订单号 → 拒绝；无在途订单 → 提示暂无"
+      - "customer_logistics_track 命中 logistics 卡片（logistics_list 非空）"
+    skip_reason: ""
+    merge_log: "2026-09-01 新增：C 端查物流入口（转人工→查物流）后端能力，与 B 端 logistics_track 物理隔离"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_customer_logistics_track.py"
+        - "backend/ai-agent-service/tests/test_chat.py"
+        - "backend/ai-agent-service/tests/test_xiaobu_multi_turn_scenarios.py"
+        - "backend/ai-agent-service/tests/test_business_verification.py"
+        - "backend/ai-agent-service/tests/e2e/specs/test_tool_coverage.py"
+      ci:
+        - ai-agent-tests.yml
+      verifies: []
+
+  - id: OR-013
+    legacy_id: ""
+    title: "B 端物流查询 - 仅支持真实订单号，拒绝快递单号直查"
+    domains:
+      - order
+      - defense
+    tier: normal
+    tags:
+      - query
+      - logistics
+      - data_safety
+    truths_ref:
+      - order.logistics
+    user_inputs:
+      - "用快递单号 SF1234567890 查一下物流"
+      - "查 ORD-20260701-0001 的物流"
+    expectations:
+      - tool: logistics_track
+    data_checks:
+      - "logistics_track 参数仅剩 order_id（required）；传 tracking_number 必须拒绝并引导提供订单号"
+      - "快递单号只能由系统从订单详情读取后内部查询轨迹（_track_by_number 为内部链路）"
+      - "按真实订单号查询：订单详情→运单号→轨迹（API 失败降级 mock）"
+    skip_reason: ""
+    merge_log: "2026-09-01 新增：B 端物流查询安全收紧（禁止物流号直查，防用他人运单号刺探）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_logistics_track.py"
+        - "backend/ai-agent-service/tests/test_e2e_full_chain.py"
+        - "backend/ai-agent-service/tests/test_e2e_mibao_scenarios.py"
+      ci:
+        - ai-agent-tests.yml
+      verifies: []

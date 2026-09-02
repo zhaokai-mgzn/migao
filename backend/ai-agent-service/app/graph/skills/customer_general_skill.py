@@ -9,12 +9,12 @@ from app.graph.skills.base_skill import execute_skill
 from app.graph.skills.skill_config import SkillConfig
 
 # 客服通用 Skill 可用的 Tool 列表 — 全部客服可用工具（仅查询类；订单查询用 C 端专用 customer_order_query，
-# 与 B 端 order_query 物理隔离，强制按当前用户过滤）
+# 物流用 C 端专用 customer_logistics_track，与 B 端物理隔离，强制按当前用户过滤 + 拒绝快递单号直查）
 CUSTOMER_GENERAL_TOOLS = [
     "product_search",
     "product_detail",
     "customer_order_query",
-    "logistics_track",
+    "customer_logistics_track",
     "human_handoff",
     "interact",
 ]
@@ -35,7 +35,7 @@ CUSTOMER_GENERAL_SYSTEM_PROMPT = """你是"小布"，米高窗帘的智能客服
 - 商品搜索/推荐 → product_search
 - 商品详情/价格/规格 → product_detail
 - 订单状态查询 → customer_order_query（仅查询顾客本人订单）
-- 物流追踪 → logistics_track
+- 物流追踪 → customer_logistics_track（仅查顾客本人已发货在途订单；顾客报快递单号时礼貌拒绝，引导选订单）
 
 图片识别（顾客上传窗帘/布料/家装图片时）：
 - 观察图片内容：颜色、材质、风格、款式

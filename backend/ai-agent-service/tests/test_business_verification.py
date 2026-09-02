@@ -16,7 +16,7 @@ AI Agent Service - 业务验证综合测试
 - 使用 mock 替代 Admin API、DashScope LLM 等外部依赖
 - 参考 tests/test_e2e_chat_flow.py 与 tests/conftest.py 的现有模式
 """
-# case_ids: CH-005, CH-006, API-001
+# case_ids: CH-005, CH-006, API-001, OR-012
 
 import json
 import time
@@ -747,7 +747,7 @@ class TestBusinessScenarios:
                 assert "inventory_manage" in tool_calls
 
     async def test_customer_order_query_and_logistics_track(self):
-        """场景B：订单管理 - 客户查询订单 → 跟踪物流"""
+        """场景B：订单管理 - 客户查询订单 → 跟踪物流（C 端专用 customer_logistics_track，仅本人订单）"""
         patches = _patch_app_deps() + [
             patch("app.api.chat.SessionMemory", new=_SessionMemoryFactory()),
             patch("app.api.chat.get_agent"),
@@ -768,15 +768,18 @@ class TestBusinessScenarios:
             )
             yield AgentResponse(
                 content="", type="tool_call",
-                tool_calls=[{"tool": "logistics_track", "tool_input": {"tracking_no": "SF123"}}],
+                tool_calls=[{"tool": "customer_logistics_track", "tool_input": {"order_id": "ord_1001"}}],
             )
             yield AgentResponse(
                 content="", type="tool_result",
-                tool_calls=[{"tool": "logistics_track", "result": {
+                tool_calls=[{"tool": "customer_logistics_track", "result": {
                     "success": True,
                     "data": {
-                        "tracking_number": "SF123",
-                        "traces": [{"time": "2026-05-30 10:00", "desc": "已揽收"}],
+                        "logistics": {"order_no": "ord_1001", "tracking_number": "SF123",
+                                      "status": "in_transit", "status_text": "运输中"},
+                        "logistics_list": [{"order_no": "ord_1001", "tracking_number": "SF123",
+                                            "status": "in_transit", "status_text": "运输中"}],
+                        "total": 1,
                     },
                 }}],
             )
@@ -793,7 +796,7 @@ class TestBusinessScenarios:
                 )
                 events = _parse_sse_events(raw)
                 tool_names = [e["data"]["tool"] for e in events if e["event"] == "tool_call"]
-                assert tool_names == ["order_query", "logistics_track"]
+                assert tool_names == ["order_query", "customer_logistics_track"]
                 # 应该既有 order 卡片也有 logistics 卡片
                 card_types = [e["data"]["type"] for e in events if e["event"] == "card"]
                 assert "order" in card_types

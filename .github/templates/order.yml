@@ -13,7 +13,7 @@ business_truths:
 
   - [order.statistics] order_query(action=statistics)：订单统计汇总，不接收其他参数（适用「订单统计数据」「各状态订单汇总」场景）
   - [order.follow-status-stats] order_query(action=follow_status_stats)：订单跟进状态统计，不接收其他参数
-  - [order.logistics] logistics_track 按 order_id 或 tracking_number 查询物流轨迹；用户只说「查物流」未给单号时先询问，不得空查（READONLY）
+  - [order.logistics] 物流查询仅支持真实订单号：B 端 logistics_track 按 order_id 查询（订单详情→运单号→轨迹）；C 端 customer_logistics_track 仅查顾客本人已发货(在途)订单的物流（/orders/mine?status=shipped 后端强制按用户过滤）。**两端一律拒绝用户直接提供快递单号查询**（快递单号只能由系统从订单详情读取后内部查询）。用户只说「查物流」未给订单号时先询问，不得空查（READONLY）
   # ⚠️ 缺口: 订单号生成规则（ORD-yyyyMMdd-XXXX 仅来自用例示例，生成代码未确认；解析侧见 order.no-format）
   - [order.no-format] 订单号以 ORD- 前缀标识；服务端接口支持 ORD-xxx 与 UUID 双格式自动解析（AgentOrderController / AfterSalesTicketService）
   - [order.create-flow] 创建订单前置：必须先调 product_detail 查 SKU；多 SKU 必须让用户选规格（颜色/售卖方式/门幅），单 SKU 直接用；禁止跳过 SKU 选择直接下单（order_create.py）

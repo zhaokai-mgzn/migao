@@ -82,42 +82,46 @@ class LogisticsTrackTool(BaseTool):
     使用场景：
     - 用户询问"我的订单到哪了"
     - 用户询问物流进度
-    - 用户查询快递状态
+    
+    **安全铁律（2026-09 收紧）：仅支持通过真实订单号（order_id/订单号）查询物流，
+    禁止直接通过快递单号查询**——防止用他人运单号刺探物流信息。快递单号只能由
+    系统从订单详情中读取后内部用于查询轨迹，不接受用户直接提供。
     
     支持阿里云市场物流查询 API，API 调用失败时降级到 Mock 数据。
     """
     
     name = "logistics_track"
     description = (
-        "【触发】用户问'物流''快递''到哪了''发货了吗''配送''签收'时调用。【前置】需要 order_id 或 tracking_number。用户只说'查物流'但没提供单号时，先问订单号，不要空调。【反例】查订单详情(金额/商品/客户)用 order_query，不要混淆。【标注】READONLY"
+        "【触发】用户问'物流''快递''到哪了''发货了吗''配送''签收'时调用。【前置】必须提供 order_id（真实订单号）。"
+        "用户只说'查物流'但没提供订单号时，先问订单号，不要空调。"
+        "【铁律】不接受用户提供的快递单号/运单号直接查询——用户给单号时引导其提供订单号，"
+        "运单号只能由系统从订单详情中读取。"
+        "【反例】查订单详情(金额/商品/客户)用 order_query，不要混淆。【标注】READONLY"
     )
     
     parameters = {
         "type": "object",
         "properties": {
-            "tracking_number": {
-                "type": "string",
-                "description": "快递单号（可选，优先使用订单号）",
-            },
             "order_id": {
                 "type": "string",
-                "description": "订单号（可选，如果有订单号优先使用）",
+                "description": "真实订单号（必填，如 ORD-20260531-4186447007，或订单 UUID）",
             },
         },
+        "required": ["order_id"],
     }
     
     async def execute(
         self,
         context: ToolContext,
-        tracking_number: Optional[str] = None,
         order_id: Optional[str] = None,
+        tracking_number: Optional[str] = None,
     ) -> ToolResult:
         """执行物流查询
         
         Args:
             context: Tool 执行上下文
-            tracking_number: 快递单号
-            order_id: 订单号
+            order_id: 真实订单号（必填）
+            tracking_number: 已废弃——拒绝直接按快递单号查询
             
         Returns:
             ToolResult: 物流信息
@@ -131,26 +135,30 @@ class LogisticsTrackTool(BaseTool):
                 suggestion="请联系管理员获取查询物流信息权限",
             )
         
-        if not tracking_number and not order_id:
+        # 铁律：拒绝直接按快递单号查询（无论通过哪个参数传入）
+        if tracking_number:
+            return ToolResult(
+                success=False,
+                error="不支持快递单号查询",
+                message="仅支持通过真实订单号查询物流，请提供订单号",
+                suggestion="请用户提供真实订单号（如 ORD-xxx）后调用本工具，不要用快递单号",
+            )
+        
+        if not order_id:
             return ToolResult(
                 success=False,
                 error="缺少查询参数",
-                message="请提供订单号或快递单号",
+                message="请提供订单号",
+                suggestion="用户只说'查物流'时，先询问其订单号再查询",
             )
         
         try:
-            # 优先使用订单号查询
-            if order_id:
-                logger.info(f"[logistics] Querying by order_id: {order_id} | tenant={context.tenant_id}")
-                return await self._track_by_order(context, order_id)
-            else:
-                logger.info(f"[logistics] Querying by tracking_number: {tracking_number} | tenant={context.tenant_id}")
-                return await self._track_by_number(context, tracking_number)
-                
+            logger.info(f"[logistics] Querying by order_id: {order_id} | tenant={context.tenant_id}")
+            return await self._track_by_order(context, order_id)
         except Exception as e:
-            logger.warning(f"[logistics] Query failed, using fallback data | tracking_no={tracking_number or order_id} error={e}")
+            logger.warning(f"[logistics] Query failed, using fallback data | order_id={order_id} error={e}")
             # 出错时返回 mock 数据（降级方案）
-            return self._get_mock_result(tracking_number or order_id)
+            return self._get_mock_result(None, order_id=order_id)
     
     async def _track_by_order(
         self,

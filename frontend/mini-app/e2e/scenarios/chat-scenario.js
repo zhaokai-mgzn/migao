@@ -1,4 +1,4 @@
-// case_ids: CH-001, CH-005, UI-007
+// case_ids: CH-001, CH-005, UI-007, UI-010
 /**
  * 小布对话页 E2E 验收
  * 覆盖：入口渲染（品牌导航）→ 会话就绪 → 快捷操作发消息（真实后端 SSE）→ 新对话 → 键盘模式输入发消息
@@ -65,7 +65,7 @@ async function run(mp) {
   if (qa2) {
     const items = await page.$$('.quick-actions__item')
     const label = items && items.length > 0 ? await items[0].text() : ''
-    rep.step('快捷操作卡片存在（查订单/找产品/退换货/转人工）', items && items.length >= 4,
+    rep.step('快捷操作卡片存在（查订单/找产品/售后咨询/查物流）', items && items.length >= 4,
       `items=${items ? items.length : 0} first=${label || ''}`)
     await items[0].tap()
     const userBubble = await waitForBubble(page, 'user', 30000)

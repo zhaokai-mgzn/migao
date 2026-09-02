@@ -9,8 +9,8 @@ interface QuickActionsProps {
 const DEFAULT_ACTIONS = [
   { icon: '📦', label: '查订单', prompt: '帮我查一下最近的订单' },
   { icon: '🔍', label: '找产品', prompt: '推荐一下热门窗帘产品' },
-  { icon: '🔄', label: '退换货', prompt: '我想申请退换货' },
-  { icon: '👤', label: '转人工', prompt: '我想联系人工客服' },
+  { icon: '🤝', label: '售后咨询', prompt: '我想咨询售后问题' },
+  { icon: '🚚', label: '查物流', prompt: '帮我查一下物流' },
 ]
 
 export default function QuickActions({ onAction }: QuickActionsProps) {

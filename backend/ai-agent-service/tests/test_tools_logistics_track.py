@@ -3,7 +3,7 @@
 
 测试 LogisticsTrackTool.execute() 的各种场景
 """
-# case_ids: OR-005
+# case_ids: OR-005, OR-013
 
 import pytest
 from unittest.mock import patch, AsyncMock
@@ -171,29 +171,20 @@ class TestLogisticsTrackByOrder:
         assert "未发货" in result.error or "未发货" in result.message
 
 
-class TestLogisticsTrackByNumber:
-    """物流查询 - 通过快递单号查询"""
+class TestLogisticsTrackRejectsTrackingNumber:
+    """物流查询 - 禁止直接通过快递单号查询（安全铁律）"""
 
-    @patch("app.tools.logistics_track.get_admin_api_client")
-    async def test_logistics_track_by_tracking_number(
-        self, mock_get_client, tool, sample_tool_context
+    async def test_logistics_track_by_tracking_number_rejected(
+        self, tool, sample_tool_context
     ):
-        """通过快递单号查询（返回 mock 数据）"""
-        mock_client = AsyncMock()
-        mock_get_client.return_value = mock_client
-
+        """通过快递单号查询 → 必须被拒绝（只能通过真实订单号查）"""
         result = await tool.execute(
             context=sample_tool_context,
             tracking_number="SF9876543210",
         )
 
-        # 当前实现使用 mock 数据
-        assert result.success is True
-        assert result.data is not None
-        assert "tracking_number" in result.data
-        assert result.data["tracking_number"] == "SF9876543210"
-        assert "traces" in result.data
-        assert isinstance(result.data["traces"], list)
+        assert result.success is False
+        assert "快递单号" in result.error or "订单号" in result.message
 
 
 class TestLogisticsTrackValidation:

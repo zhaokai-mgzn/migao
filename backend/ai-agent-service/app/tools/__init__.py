@@ -39,6 +39,7 @@ from app.tools.registry import (
 from app.tools.product_search import ProductSearchTool
 from app.tools.product_detail import ProductDetailTool
 from app.tools.logistics_track import LogisticsTrackTool
+from app.tools.customer_logistics_track import CustomerLogisticsTrackTool
 from app.tools.order_query import OrderQueryTool
 from app.tools.customer_order_query import CustomerOrderQueryTool
 from app.tools.order_manage import OrderManageTool
