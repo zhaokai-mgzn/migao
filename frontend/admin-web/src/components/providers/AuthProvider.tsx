@@ -1,14 +1,24 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { usePathname } from 'next/navigation'
 import { useAuthStore } from '@/store/auth'
+import { isPublicRoute } from '@/lib/auth-redirect'
 
 export default function AuthProvider({ children }: { children: React.ReactNode }) {
   const { initialize, _hasHydrated } = useAuthStore()
   const [isReady, setIsReady] = useState(false)
+  const pathname = usePathname() ?? ''
 
   useEffect(() => {
     if (!_hasHydrated) return
+
+    // 公开路由（登录/注册等）无需恢复会话：跳过 initialize，直接渲染。
+    // 否则无 cookie 访问 /login → /api/auth/me 401 → 拦截器强制跳 /login → 死循环（issue #2757）
+    if (isPublicRoute(pathname)) {
+      setIsReady(true)
+      return
+    }
 
     const init = async () => {
       try {
@@ -21,7 +31,7 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
     }
 
     init()
-  }, [_hasHydrated, initialize])
+  }, [_hasHydrated, initialize, pathname])
 
   // 等待 zustand persist 恢复 + 初始化完成
   if (!isReady) {
