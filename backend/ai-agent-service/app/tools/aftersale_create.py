@@ -90,19 +90,24 @@ class AftersaleCreateTool(BaseTool):
     ) -> tuple[bool, Optional[str]]:
         """验证订单属于当前客户
 
-        调用 admin-api 查询订单详情，校验 customerId 是否匹配 context.user_id。
+        调用 C 端专用端点 GET /api/admin/agent/orders/mine（后端按 X-User-Id
+        强制过滤），从本人订单列表匹配 order_id（支持 UUID 或订单号）。
+        不调 UUID-only 的 GET /api/admin/orders/{id}——该端点不接受订单号，
+        订单号直查会 404（真实链路 bug，见 aftersale 闭环验证）。
 
         Args:
             context: Tool 执行上下文
-            order_id: 订单ID
+            order_id: 订单ID（UUID 或订单号）
 
         Returns:
             tuple[bool, Optional[str]]: (是否属于当前客户, 错误信息)
         """
         try:
             client = get_admin_api_client()
+            # 拉取本人订单（size 上限 50；C 端用户订单量小，足够覆盖售后场景）
             response = await client.get(
-                f"/api/admin/orders/{order_id}",
+                "/api/admin/agent/orders/mine",
+                params={"page": 1, "size": 50},
                 tenant_id=context.tenant_id,
                 user_id=context.user_id,
             )
@@ -110,26 +115,15 @@ class AftersaleCreateTool(BaseTool):
             if not response.get("success"):
                 return False, "订单不存在或无法访问"
 
-            order_data = response.get("data", {})
-            # 多层 fallback：优先用 customerId 做精确匹配
-            order_customer_id = (
-                order_data.get("customerId")
-                or order_data.get("customer_id")
-                or order_data.get("userId")
-            )
+            data = response.get("data", {})
+            items = data.get("items", []) or []
+            target = str(order_id).strip()
+            for order in items:
+                if str(order.get("id", "")).strip() == target or \
+                        str(order.get("orderNo", "")).strip() == target:
+                    return True, None
 
-            if order_customer_id is not None:
-                if str(order_customer_id) != str(context.user_id):
-                    return False, "该订单不属于您，无法创建售后工单"
-                return True, None
-
-            # customerId 不在 OrderDetailResponse 中时，依赖 admin-api 的 X-User-Id 头做授权
-            # （Java 后端通过 TenantContext + SecurityUser 做租户+用户级隔离）
-            logger.warning(
-                f"[aftersale_create] OrderDetailResponse 缺少 customerId/customer_id/userId 字段，"
-                f"所有权校验降级为后端授权 | order_id={order_id}"
-            )
-            return True, None
+            return False, "该订单不属于您，无法创建售后工单"
 
         except Exception as e:
             logger.error(
@@ -217,16 +211,16 @@ class AftersaleCreateTool(BaseTool):
             )
 
         try:
-            # 对抗编程：Java API 的 description 字段 = reason(简要) + description(详细)
-            desc_text = reason
-            if description:
-                desc_text = f"{reason} — {description}"
+            # 对抗编程：Agent 端点 createTicketForAgent 的 reason 字段 = 原因说明（必填），
+            # description 可选补充；orderId 支持订单号/UUID 服务端解析。
+            # 勿用 /api/admin/after-sales（createTicket 仅按 UUID selectById，订单号会 404）。
             json_data: Dict[str, Any] = {
                 "orderId": order_id,
                 "ticketType": ticket_type,
-                "description": desc_text,
-                "source": "customer",
+                "reason": reason,
             }
+            if description:
+                json_data["description"] = description
             if images:
                 json_data["images"] = images
             if priority:
@@ -242,7 +236,7 @@ class AftersaleCreateTool(BaseTool):
 
             client = get_admin_api_client()
             response = await client.post(
-                "/api/admin/after-sales",
+                "/api/admin/agent/after-sales",
                 json_data=json_data,
                 tenant_id=context.tenant_id,
                 user_id=context.user_id,
