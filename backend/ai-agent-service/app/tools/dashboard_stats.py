@@ -1,7 +1,7 @@
 """
 AI 智能客服系统 - 数据看板 Tool
 
-获取Dashboard统计数据，支持概览统计、订单趋势、状态分布、最近订单、活跃会话。
+获取Dashboard统计数据，支持概览统计、订单趋势、状态分布、最近订单、活跃会话、商品销量排行。
 """
 
 from typing import Any, Dict, Optional
@@ -12,13 +12,20 @@ from app.utils.http_client import get_admin_api_client
 
 
 # 操作类型
-VALID_ACTIONS = {"overview", "order_trend", "order_status", "recent_orders", "active_sessions"}
+VALID_ACTIONS = {
+    "overview",
+    "order_trend",
+    "order_status",
+    "recent_orders",
+    "active_sessions",
+    "product_ranking",
+}
 
 
 class DashboardStatsTool(BaseTool):
     """数据看板 Tool
 
-    获取Dashboard统计数据，支持概览统计、订单趋势、状态分布、最近订单、活跃会话。
+    获取Dashboard统计数据，支持概览统计、订单趋势、状态分布、最近订单、活跃会话、商品销量排行。
 
     使用场景：
     - 查看今日经营概览（订单数、客户数、工单等）
@@ -26,11 +33,12 @@ class DashboardStatsTool(BaseTool):
     - 查看订单状态分布（饼图数据）
     - 查看最近订单列表
     - 查看当前活跃的客服会话
+    - 查看商品销量排行（哪个商品卖得最好）
     """
 
     name = "dashboard_stats"
     description = (
-        "【触发】用户说'今天生意''经营看板''数据概览''订单趋势''状态分布''最近X条订单''活跃会话''看看数据'时，优先用本工具而非 order_query。【何时用】任何看板/趋势/分布/概览类查询。【何时不用】查某个具体订单（用 order_query）、查客服会话详情（用 session_manage）。【前置】action: overview(今日概览)/order_trend(趋势,需days)/order_status(状态分布)/recent_orders(最近,需limit)/active_sessions(活跃,需limit)。days默认7,limit默认5。【标注】READONLY — 经营分析专用，不查具体记录"
+        "【触发】用户说'今天生意''经营看板''数据概览''订单趋势''状态分布''最近X条订单''活跃会话''哪个卖得好''卖得最好''销量排行''看看数据'时，优先用本工具而非 order_query。【何时用】任何看板/趋势/分布/概览类查询。【何时不用】查某个具体订单（用 order_query）、查客服会话详情（用 session_manage）。【前置】action: overview(今日概览)/order_trend(趋势,需days)/order_status(状态分布)/recent_orders(最近,需limit)/active_sessions(活跃,需limit)/product_ranking(商品销量排行,period=day近7天|month近30天,需limit)。days默认7,limit默认5。【标注】READONLY — 经营分析专用，不查具体记录"
     )
     allowed_roles = ["admin", "agent", "tenant_admin", "operator"]
 
@@ -45,9 +53,17 @@ class DashboardStatsTool(BaseTool):
                     "order_trend（订单趋势折线数据，需配合 days，适用于“最近 N 天订单趋势”场景） / "
                     "order_status（订单状态分布饼图数据） / "
                     "recent_orders（最近订单列表，需配合 limit） / "
-                    "active_sessions（当前活跃客服会话列表，需配合 limit）"
+                    "active_sessions（当前活跃客服会话列表，需配合 limit） / "
+                    "product_ranking（商品销量排行，需配合 period 与 limit，适用于“哪个商品卖得最好”场景）"
                 ),
-                "enum": ["overview", "order_trend", "order_status", "recent_orders", "active_sessions"],
+                "enum": [
+                    "overview",
+                    "order_trend",
+                    "order_status",
+                    "recent_orders",
+                    "active_sessions",
+                    "product_ranking",
+                ],
             },
             "days": {
                 "type": "integer",
@@ -64,8 +80,17 @@ class DashboardStatsTool(BaseTool):
             },
             "limit": {
                 "type": "integer",
-                "description": "返回条数限制，仅在 action=recent_orders 或 active_sessions 时生效，默认 5。",
+                "description": "返回条数限制，在 action=recent_orders / active_sessions / product_ranking 时生效，默认 5。",
                 "default": 5,
+            },
+            "period": {
+                "type": "string",
+                "description": (
+                    "排行周期，仅在 action=product_ranking 时生效：day（近 7 天）/ month（近 30 天，本月）。"
+                    "用户说“这个月/本月/近一个月”传 month；“最近一周/这几天”传 day。默认 day。"
+                ),
+                "enum": ["day", "month"],
+                "default": "day",
             },
         },
         "required": ["action"],
@@ -77,6 +102,7 @@ class DashboardStatsTool(BaseTool):
         action: str,
         days: int = 7,
         limit: int = 5,
+        period: str = "day",
         **kwargs,
     ) -> ToolResult:
         """执行数据看板查询"""
@@ -100,6 +126,8 @@ class DashboardStatsTool(BaseTool):
         # 强制转换参数为 int
         days = int(days) if days else 7
         limit = int(limit) if limit else 5
+        # period 仅 product_ranking 使用，白名单防注入
+        period = period if period in ("day", "month") else "day"
 
         try:
             if action == "overview":
@@ -112,6 +140,8 @@ class DashboardStatsTool(BaseTool):
                 return await self._recent_orders(context, limit)
             elif action == "active_sessions":
                 return await self._active_sessions(context, limit)
+            elif action == "product_ranking":
+                return await self._product_ranking(context, period, limit)
             else:
                 return ToolResult(
                     success=False,
@@ -302,4 +332,60 @@ class DashboardStatsTool(BaseTool):
             data=data,
             message=f"当前活跃会话数据已获取",
             summary=f"当前{session_count}个活跃会话",
+        )
+
+    async def _product_ranking(self, context: ToolContext, period: str, limit: int) -> ToolResult:
+        """获取商品销量排行（哪个商品卖得最好）
+
+        转发 admin-api GET /api/admin/dashboard/product-ranking（按 productId 聚合销量/金额），
+        period=day 近 7 天 / month 近 30 天。返回 ProductRanking[]（rank/productName/salesQty/...）。
+        """
+        client = get_admin_api_client()
+        response = await client.get(
+            "/api/admin/dashboard/product-ranking",
+            params={"period": period, "limit": limit},
+            tenant_id=context.tenant_id,
+            user_id=context.user_id,
+        )
+        if not isinstance(response, dict):
+            response = {"data": response} if isinstance(response, list) else {}
+
+        if not response.get("success"):
+            error_msg = response.get("error", {}).get("message", "查询失败")
+            return ToolResult(
+                success=False,
+                error=error_msg,
+                message="商品销量排行查询失败，请稍后重试",
+                suggestion="请稍后重试，如持续失败请联系技术支持",
+            )
+
+        data = response.get("data", {})
+        logger.info(
+            f"[dashboard-stats] Product ranking fetched, period={period}, limit={limit} "
+            f"| tenant={context.tenant_id}"
+        )
+
+        # 统一 data 结构为 dict（ToolResult.data 契约要求 dict）：
+        # admin-api 返回 ProductRanking[]（list）→ 包成 {"items": [...]}；
+        # 兼容已有 {"list"/"items"} 包裹形式。
+        if isinstance(data, list):
+            wrapped: Dict[str, Any] = {"items": data}
+        else:
+            wrapped = data if isinstance(data, dict) else {"items": []}
+
+        # 构建摘要：榜首商品 + 排行条数
+        ranking_list = wrapped.get("items", wrapped.get("list", []))
+        top_name = ""
+        if isinstance(ranking_list, list) and ranking_list:
+            first = ranking_list[0]
+            top_name = first.get("productName") or first.get("product_name") or ""
+        period_label = "本月" if period == "month" else "近7天"
+        summary = f"{period_label}销量排行: {len(ranking_list) if isinstance(ranking_list, list) else 0}个商品"
+        if top_name:
+            summary += f"，榜首「{top_name}」"
+        return ToolResult(
+            success=True,
+            data=wrapped,
+            message="商品销量排行数据已获取",
+            summary=summary,
         )

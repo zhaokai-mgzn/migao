@@ -165,3 +165,38 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: DA-006
+    legacy_id: ""
+    title: "商品销量排行 - 米宝答「哪个商品卖得最好」（dashboard_stats product_ranking）"
+    domains:
+      - data
+      - chat
+    tier: normal
+    tags:
+      - dashboard
+      - ranking
+      - product
+    truths_ref:
+      - ai-chat.permission-layers
+    user_inputs:
+      - "这个月哪个商品卖得最好？"
+      - "最近一周卖得最多的是什么窗帘？"
+    expectations:
+      - tool: dashboard_stats
+        args:
+          action: product_ranking
+          period: month
+    data_checks:
+      - "dashboard_stats 支持 action=product_ranking：转发 admin-api GET /api/admin/dashboard/product-ranking（params period=day|month + limit）"
+      - "返回按 productId 聚合的销量排行（rank/productName/salesQty/salesAmount），ToolResult.data 为 dict 契约（list 响应包裹为 items）"
+      - "摘要含榜首商品名（如「本月销量排行: N个商品，榜首「星空全遮光窗帘」」）"
+      - "权限：admin/agent/tenant_admin/operator 可查；customer 拒绝（不越权）"
+    skip_reason: "非 LLM 行为：转发实现与权限由 ai-agent 单测验证（test_tools_dashboard_stats.py），不进入 agent-eval 冒烟"
+    merge_log: "2026-09-02 新增：POC 演示审查 E 项 — 米宝问数「哪个花色卖得最好」无工具支撑（dashboard_stats 无 TopN）；按订单数据实际粒度实现商品维度排行（order_items 无颜色字段，花色排行需 schema 变更后置）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_dashboard_stats.py"
+      ci:
+        - ai-agent-tests.yml
+      verifies: []
