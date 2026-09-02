@@ -26,7 +26,7 @@ class OrderManageTool(BaseTool):
         "【标注】WRITE|DESTRUCTIVE — 取消/退款前必须二次确认"
     )
 
-    allowed_roles = ["admin", "agent", "tenant_admin"]
+    allowed_roles = ["admin", "agent", "tenant_admin", "operator"]
     read_only = False
     destructive = True
     idempotent = False

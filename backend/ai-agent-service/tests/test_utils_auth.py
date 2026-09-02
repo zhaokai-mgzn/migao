@@ -9,7 +9,7 @@
 - get_optional_user：认证失败返回 None / DEBUG 默认用户
 - require_roles：允许角色放行 / 越权 → 403 PERMISSION_DENIED
 """
-# case_ids: DF-007, DF-009, DF-014
+# case_ids: DF-007, DF-009, DF-014, DF-017
 
 import time
 import jwt
@@ -212,6 +212,39 @@ class TestGetOptionalUser:
         result = await get_optional_user(request, authorization=None)
 
         assert result.user_id == "dev_user"
+
+
+class TestMerchantStaffRoles:
+    """admin-api 商户员工角色码必须能通过认证（角色码漂移修复，POC 审查 D 项）。
+
+    此前 UserRole 枚举仅 customer/agent/admin 三值，admin-api 签发的
+    operator/product_manager/customer_service 等员工角色 JWT 全部 401，
+    商户员工无法使用米宝 B 端对话。
+    """
+
+    @pytest.mark.parametrize(
+        "role_code",
+        ["operator", "product_manager", "customer_service", "knowledge_editor", "super_admin"],
+    )
+    @patch("app.utils.auth.settings")
+    @pytest.mark.asyncio
+    async def test_merchant_staff_role_passes_auth(self, mock_settings, role_code):
+        mock_settings.DEBUG = False
+        mock_settings.JWT_PUBLIC_KEY = _PUBLIC_PEM
+
+        creds = HTTPAuthorizationCredentials(
+            scheme="Bearer",
+            credentials=_sign(_future_payload(role=role_code)),
+        )
+        request = MagicMock()
+        request.cookies = {}
+        request.state = MagicMock()
+
+        user = await get_current_user(request, authorization=creds)
+
+        assert user.user_id == "u1"
+        assert user.tenant_id == 1
+        assert user.role == role_code  # 原角色保留，供 allowed_roles 细粒度判断
 
 
 class TestRequireRoles:

@@ -30,6 +30,13 @@ MIBAO_CONFIG = AgentConfig(
         "support_supervisor",
         "support_agent",
         "product_manager",
+        # ── admin-api 商户员工角色码（角色码漂移修复，POC 审查 D 项）──
+        # admin-api 实际签发: admin/operator/product_manager/knowledge_editor/customer_service
+        # （RegistrationService + RoleService）。此前缺失导致这些角色认证通过后
+        # 仍被路由到小布（C 端人格），无法使用米宝 B 端能力。
+        "operator",
+        "knowledge_editor",
+        "customer_service",
     },
     greeting=(
         "您好！我是米宝，您的智能工作助手。"

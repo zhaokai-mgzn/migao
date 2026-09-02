@@ -20,10 +20,24 @@ from app.config import settings
 
 
 class UserRole(str, Enum):
-    """用户角色枚举"""
+    """用户角色枚举
+
+    注意：此枚举仅用于 require_roles 等端点级粗筛，且必须与 admin-api
+    实际签发的角色码对齐——商户员工角色码（operator/product_manager/
+    customer_service/knowledge_editor/super_admin）均须在此放行，否则
+    admin-api JWT 在解析处被 pydantic 校验拒绝（401），员工无法使用米宝
+    B 端对话（角色码漂移修复，POC 审查 D 项）。
+    细粒度权限由 AgentConfig.allowed_roles / Tool.allowed_roles 判断。
+    """
     CUSTOMER = "customer"
     AGENT = "agent"
     ADMIN = "admin"
+    # ── admin-api 商户员工角色码（对齐 RegistrationService / RoleService）──
+    SUPER_ADMIN = "super_admin"
+    OPERATOR = "operator"
+    PRODUCT_MANAGER = "product_manager"
+    KNOWLEDGE_EDITOR = "knowledge_editor"
+    CUSTOMER_SERVICE = "customer_service"
 
 
 class UserIdentity(BaseModel):

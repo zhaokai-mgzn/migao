@@ -43,7 +43,9 @@ class TestAftersaleQueryDeclaration:
         assert tool.idempotent is True
 
     def test_allowed_roles(self, tool):
-        assert set(tool.allowed_roles) == {"customer", "admin", "agent", "tenant_admin"}
+        # operator：admin-api 员工角色（RoleService operator 有 order:refund 权限码，
+        # 角色码漂移修复 POC-2761 D 项）
+        assert set(tool.allowed_roles) == {"customer", "admin", "agent", "tenant_admin", "operator"}
 
 
 class TestAftersaleQueryPermission:

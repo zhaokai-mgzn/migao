@@ -46,7 +46,7 @@ class AfterSalesManageTool(BaseTool):
         "create 必填: ticket_type(退款/换货/维修/投诉/其他) + order_id + reason。"
         "可选: refund_amount, priority, images。仅查工单用 list/detail action。WRITE"
     )
-    allowed_roles = ["admin", "agent", "tenant_admin"]
+    allowed_roles = ["admin", "agent", "tenant_admin", "operator"]
 
     read_only = False
     destructive = True   # 可关闭/拒绝工单（不可逆）

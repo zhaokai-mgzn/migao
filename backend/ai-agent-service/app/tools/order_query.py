@@ -43,6 +43,9 @@ class OrderQueryTool(BaseTool):
     description = (
         "【触发】查具体订单：用户说'查订单''我的订单''ORD-单号''待发货''某客户订单'时调用。【前置】action: list(翻页)/statistics(汇总)/follow_status_stats(跟进统计)。【参数】list 支持 keyword(关键词)/order_id(订单号)/receiver(收货人姓名或手机号)/status/start_date/end_date。【何时不用】经营看板的趋势/分布/概览用 dashboard_stats。查物流用 logistics_track。修改用 order_manage。【标注】READONLY — 查具体订单，经营分析用 dashboard_stats"
     )
+    # 含 operator：admin-api 员工角色（RoleService operator 有 order:list/detail 权限码，
+    # 角色码漂移修复 POC-2761 D 项）。customer 保留（C 端本人订单查询）。
+    allowed_roles = ["customer", "admin", "agent", "tenant_admin", "operator"]
     
     parameters = {
         "type": "object",

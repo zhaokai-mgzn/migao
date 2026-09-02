@@ -30,7 +30,7 @@ class AftersaleQueryTool(BaseTool):
         "【安全】只能查询当前客户自己的工单。"
         "【标注】READONLY — 纯查询，无需确认"
     )
-    allowed_roles = ["customer", "admin", "agent", "tenant_admin"]
+    allowed_roles = ["customer", "admin", "agent", "tenant_admin", "operator"]
 
     read_only = True
     destructive = False

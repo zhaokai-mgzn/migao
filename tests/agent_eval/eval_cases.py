@@ -1005,6 +1005,20 @@ _CASE_DF_016 = EvalCase(
     tags=['defense', 'security', 'jwt_alg', 'session_create'],
 )
 
+# ── DF-017 [NORMAL] 商户员工角色码认证放行 - admin-api 签发 operator/product_manager/customer_service 等角色 JWT 不被 401 误拒（源: cases/defense.yml）──
+_CASE_DF_017 = EvalCase(
+    id='DF-017',
+    legacy_id='',
+    title='商户员工角色码认证放行 - admin-api 签发 operator/product_manager/customer_service 等角色 JWT 不被 401 误拒',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['admin-api 商户员工（operator/product_manager/customer_service/knowledge_editor）登录后打开米宝 B 端对话'],
+    expectations=['direct_reply'],
+    data_checks=['UserRole 枚举须包含 admin-api 全部商户员工角色码（admin/operator/product_manager/knowledge_editor/customer_service/super_admin），admin-api JWT 解析不被 pydantic 校验拒绝（此前仅 customer/agent/admin 三值 → 员工 401）', '认证通过后原角色码保留（不折叠），AgentConfig.allowed_roles 按角色路由：operator/product_manager/customer_service/knowledge_editor → mibao（B 端），customer → xiaobu（C 端）', '工具层 allowed_roles 放行 operator 等员工角色执行其 admin-api 权限码对应的只读/业务工具（如 dashboard_stats/order_query/product_search），customer 角色仍被拒（无越权）'],
+    skip_reason='认证/路由/工具权限由 ai-agent 单测验证（test_utils_auth.py 等），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['defense', 'auth', 'role-drift'],
+)
+
 # ── FN-001 [NORMAL] 资金流水查询与登记（源: cases/finance.yml）──
 _CASE_FN_001 = EvalCase(
     id='FN-001',
@@ -2223,6 +2237,7 @@ ALL_CASES = (
     _CASE_DF_014,
     _CASE_DF_015,
     _CASE_DF_016,
+    _CASE_DF_017,
     _CASE_FN_001,
     _CASE_FN_002,
     _CASE_FN_003,
