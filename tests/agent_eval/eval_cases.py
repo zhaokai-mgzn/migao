@@ -543,6 +543,62 @@ _CASE_CH_012 = EvalCase(
     tags=['multi_turn', 'aftersales', 'interactive'],
 )
 
+# ── CH-013 [NORMAL] AI 检测不满情绪 → 建议转人工卡片 → 用户确认后创建人工会话（源: cases/chat.yml）──
+_CASE_CH_013 = EvalCase(
+    id='CH-013',
+    legacy_id='',
+    title='AI 检测不满情绪 → 建议转人工卡片 → 用户确认后创建人工会话',
+    skill=Skill.MULTI_TURN,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['你们窗帘质量太差了，气死我了', '转人工客服'],
+    expectations=['interact', 'human_handoff'],
+    data_checks=['不满情绪（general 意图）命中后 AI 先发建议卡片（interact choice），不直接转', '用户点『转人工客服』后命中 D1 显式请求 → human_handoff 创建人工会话', 'interact 卡片选项含『转人工客服』『继续咨询小布』'],
+    skip_reason='',
+    tags=['multi_turn', 'handoff', 'ai_guided'],
+)
+
+# ── CH-014 [NORMAL] 用户拒绝建议 → 继续 AI 咨询且本会话不再自动建议（源: cases/chat.yml）──
+_CASE_CH_014 = EvalCase(
+    id='CH-014',
+    legacy_id='',
+    title='用户拒绝建议 → 继续 AI 咨询且本会话不再自动建议',
+    skill=Skill.MULTI_TURN,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['你们太坑了，再也不买了', '继续咨询小布', '你们又没解决，气死我了'],
+    expectations=['interact'],
+    data_checks=['首次不满 → 建议卡片（offer_count 记为 1）', '用户点『继续咨询小布』→ 消息正常路由（general），不创建工单', '再次不满 → 冷却生效不再弹建议卡（handoff.offer_count >= 1）'],
+    skip_reason='',
+    tags=['multi_turn', 'handoff', 'cooldown'],
+)
+
+# ── CH-015 [NORMAL] 用户显式『转人工』不经建议卡片直接转（能力不退化）（源: cases/chat.yml）──
+_CASE_CH_015 = EvalCase(
+    id='CH-015',
+    legacy_id='',
+    title='用户显式『转人工』不经建议卡片直接转（能力不退化）',
+    skill=Skill.MULTI_TURN,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['我要转人工'],
+    expectations=['human_handoff'],
+    data_checks=['显式转人工请求 → intent_router 短路直转 complaint（source=explicit_handoff）', '不先弹建议卡片（无 interact），直接 human_handoff'],
+    skip_reason='',
+    tags=['handoff', 'regression'],
+)
+
+# ── CH-016 [NORMAL] 明确业务意图（下单/查单/报价）不弹转人工建议卡（防打断）（源: cases/chat.yml）──
+_CASE_CH_016 = EvalCase(
+    id='CH-016',
+    legacy_id='',
+    title='明确业务意图（下单/查单/报价）不弹转人工建议卡（防打断）',
+    skill=Skill.MULTI_TURN,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['帮我查一下最近订单到哪了', '这个窗帘褶皱倍数算得不对'],
+    expectations=[],
+    data_checks=['order_query/quote 等明确业务意图即使含情绪词也不 offer（judge 白名单）', '正常咨询不出现 interact 建议卡片'],
+    skip_reason='',
+    tags=['handoff', 'non_interrupt'],
+)
+
 # ── CR-001 [NORMAL] 查商品 → 下单（跨 Skill 复用 UUID）（源: cases/cross.yml）──
 _CASE_CR_001 = EvalCase(
     id='CR-001',
@@ -2092,6 +2148,10 @@ ALL_CASES = (
     _CASE_CH_010,
     _CASE_CH_011,
     _CASE_CH_012,
+    _CASE_CH_013,
+    _CASE_CH_014,
+    _CASE_CH_015,
+    _CASE_CH_016,
     _CASE_CR_001,
     _CASE_CR_002,
     _CASE_CR_003,

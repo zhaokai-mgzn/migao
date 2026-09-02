@@ -56,6 +56,12 @@ def build_agent_graph(agent_type: str = "xiaobu"):
     graph.add_node("intent_router", intent_router_node)
     graph.add_node("direct_reply", direct_reply_node)
 
+    # AI 主动引导转人工（xiaobu C 端）：建议卡片节点 + 路由映射
+    # 仅 xiaobu 注册（handoff_offer 仅小布路由触发；mibao 不需要）
+    if agent_type == "xiaobu":
+        from app.graph.handoff_offer import handoff_offer_node
+        graph.add_node("handoff_offer", handoff_offer_node)
+
     # ── 2. 从配置动态注册 Skill 节点 ──
     # 收集所有 Skill 名称（业务 Skill + 兜底 Skill）
     all_skill_names = agent_config.get_all_skill_names()
@@ -63,6 +69,8 @@ def build_agent_graph(agent_type: str = "xiaobu"):
 
     # 构建路由映射：route_key → node_id
     skill_route_map = {"direct_reply": "direct_reply"}
+    if agent_type == "xiaobu":
+        skill_route_map["handoff_offer"] = "handoff_offer"
 
     for skill_name in all_skill_names:
         skill_config = skill_registry.get(skill_name)
@@ -108,6 +116,10 @@ def build_agent_graph(agent_type: str = "xiaobu"):
     # 所有 Skill 节点 → 结束（后续建议由 LLM 在回复中自然生成）
     for skill_node_name in skill_node_names:
         graph.add_edge(skill_node_name, END)
+
+    # handoff_offer（xiaobu 建议转人工节点）→ 结束
+    if agent_type == "xiaobu":
+        graph.add_edge("handoff_offer", END)
 
     return graph.compile()
 

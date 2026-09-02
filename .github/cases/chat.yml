@@ -414,3 +414,126 @@ cases:
       ci:
         - agent-eval.yml
       verifies: []
+
+  - id: CH-013
+    legacy_id: ""
+    title: "AI 检测不满情绪 → 建议转人工卡片 → 用户确认后创建人工会话"
+    domains:
+      - chat
+      - handoff
+    tier: normal
+    tags:
+      - multi_turn
+      - handoff
+      - ai_guided
+    truths_ref:
+      - ai-chat.handoff-offer
+      - ai-chat.intent-tool-map
+    user_inputs:
+      - "你们窗帘质量太差了，气死我了"
+      - "转人工客服"
+    expectations:
+      - tool: interact
+      - tool: human_handoff
+    data_checks:
+      - "不满情绪（general 意图）命中后 AI 先发建议卡片（interact choice），不直接转"
+      - "用户点『转人工客服』后命中 D1 显式请求 → human_handoff 创建人工会话"
+      - "interact 卡片选项含『转人工客服』『继续咨询小布』"
+    skip_reason: ""
+    merge_log: "xiaobu-ai-handoff-guidance.md D3 AI 主动引导转人工"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_handoff_judge.py"
+        - "backend/ai-agent-service/tests/test_xiaobu_handoff_offer.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: CH-014
+    legacy_id: ""
+    title: "用户拒绝建议 → 继续 AI 咨询且本会话不再自动建议"
+    domains:
+      - chat
+      - handoff
+    tier: normal
+    tags:
+      - multi_turn
+      - handoff
+      - cooldown
+    truths_ref:
+      - ai-chat.handoff-offer
+    user_inputs:
+      - "你们太坑了，再也不买了"
+      - "继续咨询小布"
+      - "你们又没解决，气死我了"
+    expectations:
+      - tool: interact
+    data_checks:
+      - "首次不满 → 建议卡片（offer_count 记为 1）"
+      - "用户点『继续咨询小布』→ 消息正常路由（general），不创建工单"
+      - "再次不满 → 冷却生效不再弹建议卡（handoff.offer_count >= 1）"
+    skip_reason: ""
+    merge_log: "xiaobu-ai-handoff-guidance.md 冷却/防骚扰"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_handoff_judge.py"
+        - "backend/ai-agent-service/tests/test_xiaobu_handoff_offer.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: CH-015
+    legacy_id: ""
+    title: "用户显式『转人工』不经建议卡片直接转（能力不退化）"
+    domains:
+      - chat
+      - handoff
+    tier: normal
+    tags:
+      - handoff
+      - regression
+    truths_ref:
+      - ai-chat.intent-tool-map
+    user_inputs:
+      - "我要转人工"
+    expectations:
+      - tool: human_handoff
+    data_checks:
+      - "显式转人工请求 → intent_router 短路直转 complaint（source=explicit_handoff）"
+      - "不先弹建议卡片（无 interact），直接 human_handoff"
+    skip_reason: ""
+    merge_log: "xiaobu-ai-handoff-guidance.md D1 显式直转（UI-010 能力不退化）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_xiaobu_handoff_offer.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: CH-016
+    legacy_id: ""
+    title: "明确业务意图（下单/查单/报价）不弹转人工建议卡（防打断）"
+    domains:
+      - chat
+      - handoff
+    tier: normal
+    tags:
+      - handoff
+      - non_interrupt
+    truths_ref:
+      - ai-chat.handoff-offer
+    user_inputs:
+      - "帮我查一下最近订单到哪了"
+      - "这个窗帘褶皱倍数算得不对"
+    expectations: []
+    data_checks:
+      - "order_query/quote 等明确业务意图即使含情绪词也不 offer（judge 白名单）"
+      - "正常咨询不出现 interact 建议卡片"
+    skip_reason: ""
+    merge_log: "xiaobu-ai-handoff-guidance.md 意图过滤防打断"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_handoff_judge.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
