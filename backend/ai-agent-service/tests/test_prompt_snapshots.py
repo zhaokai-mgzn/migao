@@ -180,6 +180,10 @@ def test_customer_aftersales_fewshot_guides_aftersale_create():
     assert "转人工" in prompt and "换货" in prompt
     # 反例存在（错误示例指明换货走 human_handoff 是错误）
     assert "human_handoff" in prompt
+    # 已发货订单可售后（状态门禁：confirmed/producing/shipped/completed 均可建退换货）
+    # —— 真实闭环回归：AI 看到"已发货"误判不能售后而转人工
+    assert "已发货" in prompt, "few-shot 未说明已发货订单可申请售后"
+    assert "尺寸买大了" in prompt, "few-shot 缺少已发货换货示例"
 
 
 def test_customer_aftersales_prompt_loaded_with_identity():
