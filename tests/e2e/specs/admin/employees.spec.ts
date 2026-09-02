@@ -1,4 +1,5 @@
-import { test, expect } from '@playwright/test'
+// case_ids: HR-001, HR-002, HR-003
+import { test, expect } from '../../fixtures'
 
 // ==================== Inline Mock Data ====================
 

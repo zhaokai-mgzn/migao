@@ -1,3 +1,4 @@
+// case_ids: UI-008
 /**
  * E2E — 米宝最小化浮窗布局断言
  *
@@ -6,7 +7,7 @@
  *
  * 曾 bug：360×480（偏小）→ 560×480（横向，方向错误）均不符合主流竖版聊天窗。
  */
-import { test, expect } from '@playwright/test'
+import { test, expect } from '../../fixtures'
 import { assertSize, assertAspectRatio } from '../../pages/layout'
 
 async function mockChatApis(page: import('@playwright/test').Page): Promise<void> {

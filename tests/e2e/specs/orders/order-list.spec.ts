@@ -1,4 +1,5 @@
-import { test, expect } from '@playwright/test'
+// case_ids: OR-001, OR-002
+import { test, expect } from '../../fixtures'
 // auth 由全局 auth-setup 项目提供
 
 // ========== Mock Data ==========

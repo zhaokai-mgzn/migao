@@ -1,4 +1,5 @@
-import { test, expect } from '@playwright/test'
+// case_ids: ST-001, ST-002, ST-003
+import { test, expect } from '../../fixtures'
 import { SettingsPage } from '../../pages/settings/settings.page'
 
 test.describe('系统设置页面 — AI 配置迁移提示已移除 (Issue #647)', () => {

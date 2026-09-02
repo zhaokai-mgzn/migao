@@ -1,9 +1,10 @@
+// case_ids: OR-002
 /**
  * E2E: 订单列表备注浮窗 (#1289)
  *
  * 验证 RemarkPopover 的 hover 触发、内容完整、时间倒序、不遮挡关键列。
  */
-import { test, expect } from '@playwright/test'
+import { test, expect } from '../../fixtures'
 
 // ========== Mock Data ==========
 

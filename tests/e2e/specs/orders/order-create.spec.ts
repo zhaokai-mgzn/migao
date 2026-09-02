@@ -1,5 +1,5 @@
 // case_ids: OR-008, OR-009, OR-010
-import { test, expect } from '@playwright/test'
+import { test, expect } from '../../fixtures'
 import productsListFixture from '../../fixtures/products-list.json'
 import productsDetailFixture from '../../fixtures/products-detail.json'
 

@@ -1,4 +1,5 @@
-import { test, expect } from '@playwright/test'
+// case_ids: OR-001
+import { test, expect } from '../../fixtures'
 import * as path from 'path'
 import * as fs from 'fs'
 

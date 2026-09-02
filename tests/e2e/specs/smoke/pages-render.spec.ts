@@ -1,7 +1,8 @@
+// case_ids: DA-001
 /**
  * 最小可用性验证 — 确认 E2E auth 和基础页面渲染正常
  */
-import { test, expect } from '@playwright/test'
+import { test, expect } from '../../fixtures'
 
 test.describe('冒烟：页面基础渲染', () => {
   test.beforeEach(async ({ page }) => {

@@ -1,4 +1,5 @@
-import { test, expect } from '@playwright/test'
+// case_ids: PR-003
+import { test, expect } from '../../fixtures'
 
 /**
  * 商品详情 E2E 测试

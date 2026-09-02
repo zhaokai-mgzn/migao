@@ -1,4 +1,5 @@
-import { test, expect } from '@playwright/test'
+// case_ids: AS-001
+import { test, expect } from '../../fixtures'
 import { AfterSalesListPage } from '../../pages/after-sales/after-sales-list.page'
 
 // ==================== Inline Mock Data ====================

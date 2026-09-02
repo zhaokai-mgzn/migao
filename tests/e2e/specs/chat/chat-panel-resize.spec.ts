@@ -1,3 +1,4 @@
+// case_ids: UI-008
 /**
  * 米宝对话面板高度调整 + 拖拽缩放 E2E 测试
  *
@@ -6,7 +7,7 @@
  * 运行: npx playwright test specs/chat/chat-panel-resize.spec.ts --project=web
  */
 
-import { test, expect } from '@playwright/test'
+import { test, expect } from '../../fixtures'
 import { ChatPage } from '../../pages/chat/chat.page'
 
 const STORAGE_KEY = 'mibao_chat_panel_height'
