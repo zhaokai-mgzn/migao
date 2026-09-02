@@ -1215,6 +1215,20 @@ _CASE_MC_011 = EvalCase(
     tags=['rule_matcher', 'regex', 'fallback'],
 )
 
+# ── MC-012 [NORMAL] CI 失败报告去重 - 同日同标题 open issue 存在时不重复建（源: cases/misc.yml）──
+_CASE_MC_012 = EvalCase(
+    id='MC-012',
+    legacy_id='',
+    title='CI 失败报告去重 - 同日同标题 open issue 存在时不重复建',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['e2e-real/nightly/xiaobu/agent-eval/fixture 等 CI 失败时自动建 issue，同日同标题已存在 open issue 应复用而非重复创建'],
+    expectations=['direct_reply'],
+    data_checks=['CI workflow 的 Create Issue step 必须先 search 同标题 open issue：已存在 → 仅评论追加 run 链接；不存在 → 才 issues.create', '守卫与创建逻辑同属一个 github-script step，避免 failure 时重复 issue 堆积'],
+    skip_reason='CI workflow 结构由 pytest 单测验证（tests/unit_ci_workflows/test_issue_dedup_guard.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'issue-dedup', 'nightly'],
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -2126,6 +2140,7 @@ ALL_CASES = (
     _CASE_MC_009,
     _CASE_MC_010,
     _CASE_MC_011,
+    _CASE_MC_012,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,

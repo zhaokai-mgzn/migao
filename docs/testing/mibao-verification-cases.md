@@ -896,7 +896,7 @@
 真值: employee-role.role-crud, employee-role.permissions
 溯源: verification 5.5 独有 ｜ tags: create, permission
 
-## misc（11 case）
+## misc（12 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -1022,6 +1022,16 @@
 ```
 真值: misc.rule-regex
 溯源: 2026-08-25 新增：ai-agent-service misc-part2 覆盖率补全（issue #2424） ｜ tags: rule_matcher, regex, fallback
+
+### MC-012. CI 失败报告去重 - 同日同标题 open issue 存在时不重复建 🔵
+```
+你: e2e-real/nightly/xiaobu/agent-eval/fixture 等 CI 失败时自动建 issue，同日同标题已存在 open issue 应复用而非重复创建
+期望: direct_reply
+数据: CI workflow 的 Create Issue step 必须先 search 同标题 open issue：已存在 → 仅评论追加 run 链接；不存在 → 才 issues.create
+数据: 守卫与创建逻辑同属一个 github-script step，避免 failure 时重复 issue 堆积
+跳过: CI workflow 结构由 pytest 单测验证（tests/unit_ci_workflows/test_issue_dedup_guard.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-02 新增：CI 自动失败报告去重守卫（issue #2746） ｜ tags: ci, issue-dedup, nightly
 
 ## onboarding（4 case）
 
@@ -1719,8 +1729,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：143（活跃 92，跳过 51）
-- tier 分布：smoke 10 / normal 105 / adversarial 28
+- 用例总数：144（活跃 92，跳过 52）
+- tier 分布：smoke 10 / normal 106 / adversarial 28
 - 售后域：5
 - agents：6
 - api：10
@@ -1732,7 +1742,7 @@
 - 防御域：16
 - finance：3
 - 人事域：5
-- misc：11
+- misc：12
 - onboarding：4
 - 订单域：13
 - 加工项域：4
@@ -1742,4 +1752,7 @@
 - token-refresh：4
 - ui：10
 - utils：2
+
+### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
+- MC-012: CI 失败报告去重 - 同日同标题 open issue 存在时不重复建
 
