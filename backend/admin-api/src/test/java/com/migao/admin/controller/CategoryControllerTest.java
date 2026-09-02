@@ -1,3 +1,4 @@
+// case_ids: CT-001, CT-002
 package com.migao.admin.controller;
 
 import com.migao.admin.dto.CategoryCreateRequest;
@@ -20,6 +21,9 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
 
+import org.mockito.ArgumentCaptor;
+
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
@@ -115,6 +119,19 @@ class CategoryControllerTest extends BaseControllerTest {
                     .andExpect(jsonPath("$.success").value(true))
                     .andExpect(jsonPath("$.data").isEmpty());
         }
+
+        @Test
+        @DisplayName("分类树响应节点携带 sort 字段（契约字段名为 sort）")
+        void getCategoryTree_returnsSortField() throws Exception {
+            CategoryResponse resp = buildCategoryResponse();
+            resp.setSortOrder(7);
+            when(categoryService.getCategoryTree(TEST_TENANT_ID))
+                    .thenReturn(List.of(resp));
+
+            mockMvc.perform(get("/api/admin/categories"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data[0].sort").value(7));
+        }
     }
 
     @Nested
@@ -136,6 +153,25 @@ class CategoryControllerTest extends BaseControllerTest {
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.success").value(true))
                     .andExpect(jsonPath("$.data.name").value("布料分类"));
+        }
+
+        @Test
+        @DisplayName("创建分类 - 请求体 sort 字段绑定到 sortOrder 并持久化")
+        void createCategory_withSortField() throws Exception {
+            when(categoryService.createCategory(any(CategoryCreateRequest.class), eq(TEST_TENANT_ID)))
+                    .thenReturn(buildCategoryResponse());
+
+            String body = "{\"name\":\"新分类\",\"sort\":10}";
+
+            mockMvc.perform(post("/api/admin/categories")
+                            .contentType("application/json")
+                            .content(body))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.success").value(true));
+
+            ArgumentCaptor<CategoryCreateRequest> captor = ArgumentCaptor.forClass(CategoryCreateRequest.class);
+            verify(categoryService).createCategory(captor.capture(), eq(TEST_TENANT_ID));
+            assertThat(captor.getValue().getSortOrder()).isEqualTo(10);
         }
 
         @Test
@@ -218,6 +254,25 @@ class CategoryControllerTest extends BaseControllerTest {
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.success").value(true))
                     .andExpect(jsonPath("$.data.name").value("已更新"));
+        }
+
+        @Test
+        @DisplayName("更新分类 - 请求体 sort 字段绑定到 sortOrder 并持久化")
+        void updateCategory_withSortField() throws Exception {
+            when(categoryService.updateCategory(eq("cat-1"), any(CategoryUpdateRequest.class), eq(TEST_TENANT_ID)))
+                    .thenReturn(buildCategoryResponse());
+
+            String body = "{\"name\":\"已更新\",\"sort\":10}";
+
+            mockMvc.perform(put("/api/admin/categories/cat-1")
+                            .contentType("application/json")
+                            .content(body))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.success").value(true));
+
+            ArgumentCaptor<CategoryUpdateRequest> captor = ArgumentCaptor.forClass(CategoryUpdateRequest.class);
+            verify(categoryService).updateCategory(eq("cat-1"), captor.capture(), eq(TEST_TENANT_ID));
+            assertThat(captor.getValue().getSortOrder()).isEqualTo(10);
         }
 
         @Test

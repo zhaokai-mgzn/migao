@@ -40,9 +40,10 @@ public class CategoryService extends ServiceImpl<CategoryMapper, Category> {
      * @return 分类树列表
      */
     public List<CategoryResponse> getCategoryTree(Long tenantId) {
-        // 查询所有分类
+        // 查询所有分类：按排序号升序 + id 兜底，保证展示顺序稳定
         LambdaQueryWrapper<Category> wrapper = new LambdaQueryWrapper<>();
         wrapper.orderByAsc(Category::getSortOrder);
+        wrapper.orderByAsc(Category::getId);
         List<Category> categories = categoryMapper.selectList(wrapper);
 
         // 构建树形结构
