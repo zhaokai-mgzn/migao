@@ -1215,6 +1215,20 @@ _CASE_MC_011 = EvalCase(
     tags=['rule_matcher', 'regex', 'fallback'],
 )
 
+# ── MC-012 [NORMAL] CI 失败报告去重 - 同日同标题 open issue 存在时不重复建（源: cases/misc.yml）──
+_CASE_MC_012 = EvalCase(
+    id='MC-012',
+    legacy_id='',
+    title='CI 失败报告去重 - 同日同标题 open issue 存在时不重复建',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['e2e-real/nightly/xiaobu/agent-eval/fixture 等 CI 失败时自动建 issue，同日同标题已存在 open issue 应复用而非重复创建'],
+    expectations=['direct_reply'],
+    data_checks=['CI workflow 的 Create Issue step 必须先 search 同标题 open issue：已存在 → 仅评论追加 run 链接；不存在 → 才 issues.create', '守卫与创建逻辑同属一个 github-script step，避免 failure 时重复 issue 堆积'],
+    skip_reason='CI workflow 结构由 pytest 单测验证（tests/unit_ci_workflows/test_issue_dedup_guard.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'issue-dedup', 'nightly'],
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -1406,7 +1420,7 @@ _CASE_OR_010 = EvalCase(
     difficulty=Difficulty.SMOKE,
     user_inputs=['创建订单：张三 13812345678，杭州西湖区文三路1号，米白色遮光窗帘 2件', '选1', '确认'],
     expectations=['validate_input', 'order_create'],
-    data_checks=['返回订单号'],
+    data_checks=['返回订单号', '下单全流程不得向顾客索要单价/金额——价格取自商品数据/算料结果（实测反复要价导致下单卡死 + 本用例评估不稳）'],
     skip_reason='',
     tags=['create', 'confirm'],
 )
@@ -1420,7 +1434,7 @@ _CASE_OR_011 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['用户算料报价后确认下单，走 SMS 验证（bypass）→ order_create 成功'],
     expectations=['order_create'],
-    data_checks=['order_create 返回订单号'],
+    data_checks=['order_create 返回订单号', '订单必须携带有效收件人手机号：agent 路径必填+11位格式校验；表单 API @Pattern 同规则（非法手机号 → 400 拒绝创建）——手机号是客户绑定归属回填与物流查询（顺丰等需尾号）的关键信息，禁止缺失/非法'],
     skip_reason='',
     tags=['order_create', 'smoke'],
 )
@@ -2126,6 +2140,7 @@ ALL_CASES = (
     _CASE_MC_009,
     _CASE_MC_010,
     _CASE_MC_011,
+    _CASE_MC_012,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,

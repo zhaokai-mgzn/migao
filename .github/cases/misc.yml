@@ -342,3 +342,38 @@ cases:
       ci:
         - ai-agent-tests.yml
       verifies: []
+
+  - id: MC-012
+    legacy_id: ""
+    title: "CI 失败报告去重 - 同日同标题 open issue 存在时不重复建"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+      - issue-dedup
+      - nightly
+    truths_ref: []
+    # ⚠️ 真值暂缺：CI workflow 行为（非 LLM/业务真值），由 tests/unit_ci_workflows/ 单测验证，
+    # 映射表 5.1 节跟踪，禁止装作无事发生。
+    user_inputs:
+      - "e2e-real/nightly/xiaobu/agent-eval/fixture 等 CI 失败时自动建 issue，同日同标题已存在 open issue 应复用而非重复创建"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "CI workflow 的 Create Issue step 必须先 search 同标题 open issue：已存在 → 仅评论追加 run 链接；不存在 → 才 issues.create"
+      - "守卫与创建逻辑同属一个 github-script step，避免 failure 时重复 issue 堆积"
+    skip_reason: "CI workflow 结构由 pytest 单测验证（tests/unit_ci_workflows/test_issue_dedup_guard.py），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-02 新增：CI 自动失败报告去重守卫（issue #2746）"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_issue_dedup_guard.py"
+      ci:
+        - e2e-real.yml
+        - nightly-verification.yml
+        - xiaobu-acceptance.yml
+        - agent-eval.yml
+        - agent-eval-adversarial.yml
+        - fixture-record.yml
+      verifies: []

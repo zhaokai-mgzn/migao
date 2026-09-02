@@ -295,8 +295,15 @@ class CustomerLogisticsTrackTool(BaseTool):
 
         company = logistics.get("logisticsCompany") or logistics.get("company") or "未知"
 
+        # 顺丰/中通/申通等需「运单号:收件人手机后4位」：取订单根级 customerPhone 末 4 位
+        # （与 B 端 logistics_track 同规则，保证此类快递不降级 mock）
+        phone_tail = None
+        order_phone = order.get("customerPhone") or order.get("customer_phone")
+        if order_phone and len(str(order_phone).strip()) >= 4:
+            phone_tail = str(order_phone).strip()[-4:]
+
         track_result = await self._tracker._track_by_number(
-            context, tracking_no, company, order_id=order_no
+            context, tracking_no, company, order_id=order_no, phone=phone_tail
         )
         if not track_result.success or not track_result.data:
             return None

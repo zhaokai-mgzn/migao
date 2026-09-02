@@ -459,3 +459,47 @@ class TestLogisticsStatusInferenceRealWording:
     ])
     def test_infer_from_real_wording(self, tool, content, expected):
         assert tool._infer_status_from_traces([{"content": content}]) == expected
+
+
+class TestLogisticsPhoneTailFromOrder:
+    """订单手机号末4位必须拼进物流 API 请求（顺丰/中通/申通需要，2026-09 修复）"""
+
+    @patch("app.tools.logistics_track.get_admin_api_client")
+    @patch("app.tools.logistics_track.httpx.AsyncClient")
+    async def test_sf_query_appends_phone_tail(
+        self, mock_http_client, mock_get_client, tool, admin_tool_context
+    ):
+        """订单详情含 customerPhone → 顺丰查询 no=SF单号:手机尾号4位"""
+        mock_client = AsyncMock()
+        async def mock_get(url, **kwargs):
+            if kwargs.get("params", {}).get("keyword"):
+                return {"success": True, "data": {"items": [{"id": "order_uuid"}]}}
+            return {"success": True, "data": {
+                "id": "order_uuid",
+                "customerPhone": "13900139000",
+                "logistics": {"trackingNo": "SF1234567890", "logisticsCompany": "顺丰速运"},
+            }}
+        mock_client.get = mock_get
+        mock_get_client.return_value = mock_client
+
+        api_params = {}
+        async def fake_api_get(url, headers=None, params=None):
+            api_params.update(dict(params) if params else {})
+            class R:
+                def raise_for_status(self): pass
+                def json(self): return {"status": "0", "result": {
+                    "type": "SFEXPRESS", "number": "SF1234567890",
+                    "list": [{"time": "2026-09-01 10:00", "context": "已签收"}]}}
+            return R()
+        mock_api = AsyncMock()
+        mock_api.get = fake_api_get
+        mock_http_client.return_value.__aenter__.return_value = mock_api
+
+        with patch("app.tools.logistics_track.settings") as ms:
+            ms.LOGISTICS_APPCODE = "x"
+            ms.LOGISTICS_API_URL = "https://f/kdi"
+            result = await tool._track_by_order(admin_tool_context, "ORD-1")
+
+        assert result.success is True
+        # 顺丰需要手机尾号：no 应为 运单号:9000
+        assert api_params.get("no") == "SF1234567890:9000"

@@ -247,3 +247,50 @@ class TestCustomerLogisticsTrackDefense:
 
         assert result.success is False
         assert result.suggestion
+
+
+class TestCustomerLogisticsPhoneTail:
+    """C 端物流同样把订单手机号末4位拼进物流 API（顺丰等需要）"""
+
+    @patch("app.tools.customer_logistics_track.get_admin_api_client")
+    @patch("app.tools.logistics_track.httpx.AsyncClient")
+    async def test_sf_query_appends_phone_tail(
+        self, mock_http_client, mock_get_client, tool, sample_tool_context
+    ):
+        """/mine 列表 + 详情含 customerPhone=13456800969 → SF 查询 no 带 :0969"""
+        mock_client = AsyncMock()
+
+        async def mock_get(url, **kwargs):
+            if "orders/mine" in url:
+                return {"success": True, "data": {"items": [
+                    {"id": "order_001", "orderNo": "ORD-1", "status": "shipped"}], "total": 1}}
+            return {"success": True, "data": {
+                "id": "order_001", "orderNo": "ORD-1", "status": "shipped",
+                "customerPhone": "13456800969",
+                "logistics": {"trackingNo": "SF5119892884882", "logisticsCompany": "顺丰速运"},
+            }}
+
+        mock_client.get = mock_get
+        mock_get_client.return_value = mock_client
+
+        api_params = {}
+        async def fake_api_get(url, headers=None, params=None):
+            api_params.update(dict(params) if params else {})
+            class R:
+                def raise_for_status(self): pass
+                def json(self): return {"status": "0", "result": {
+                    "type": "SFEXPRESS", "number": "SF5119892884882",
+                    "list": [{"time": "2026-09-01 10:00", "context": "派送成功"}]}}
+            return R()
+        mock_api = AsyncMock()
+        mock_api.get = fake_api_get
+        mock_http_client.return_value.__aenter__.return_value = mock_api
+
+        with patch("app.tools.logistics_track.settings") as ms:
+            ms.LOGISTICS_APPCODE = "x"
+            ms.LOGISTICS_API_URL = "https://f/kdi"
+            result = await tool.execute(context=sample_tool_context)
+
+        assert result.success is True
+        assert result.data["total"] == 1
+        assert api_params.get("no") == "SF5119892884882:0969"
