@@ -1617,7 +1617,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## ui（12 case）
+## ui（13 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -1774,6 +1774,19 @@
 真值: frontend-fix.no-api-change, frontend-fix.vitest, frontend-fix.e2e
 溯源: 2026-09-02 新增：POC 演示修复 — 订单列表无自动轮询/刷新入口，顾客下单后老板看不到新单（原需手动切 tab/F5） ｜ tags: ui, orders, list, refresh
 
+### UI-013. 小布 C 端支持纯图消息发送（拍照识别：无文本仅图片 → 后端 vision 理解） 🔵
+```
+你: 顾客拍一张窗帘照片直接发送（不带文字），小布应能收到并走视觉理解推荐相似商品
+期望: direct_reply
+数据: chatStore.sendMessage 允许 content 为空但 images 非空的消息：不再被 `!content.trim()` 守卫静默拦截（发送后 SSE POST /api/chat/send 带 images、message 为空串）
+数据: MessageBubble 对纯图消息（content 空 + images 有）不渲染空文本区，仅渲染图片缩略图
+数据: 空文本且无图片仍被拦截（不发送），行为不回归
+数据: 转人工态（handedOff+agentSessionId）纯图消息静默忽略（人工会话仅文本通道，不向客服发空文本）
+跳过: 纯前端发送层由 mini-app jest 单测验证（store-chat.test.ts / message-bubble.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change, frontend-fix.vitest
+溯源: 2026-09-02 新增：POC 演示修复 — 拍照找布场景顾客发纯图会被 chatStore 静默拦截（chatStore.ts `!content.trim()` 守卫），须文字同行才发得出 ｜ tags: mini-app, chat-input, image, vision
+
 ## utils（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -1803,8 +1816,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：150（活跃 96，跳过 54）
-- tier 分布：smoke 10 / normal 112 / adversarial 28
+- 用例总数：151（活跃 96，跳过 55）
+- tier 分布：smoke 10 / normal 113 / adversarial 28
 - 售后域：5
 - agents：6
 - api：10
@@ -1824,7 +1837,7 @@
 - registry：1
 - 设置域：8
 - token-refresh：4
-- ui：12
+- ui：13
 - utils：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）

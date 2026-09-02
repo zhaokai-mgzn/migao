@@ -206,10 +206,15 @@ export const useChatStore = create<ChatState>()((set, get) => ({
    */
   sendMessage: async (content: string, images?: string[]) => {
     const { currentSessionId, isStreaming, handedOff, agentSessionId } = get()
-    if (!currentSessionId || isStreaming || !content.trim()) return
+    // 文本或图片至少其一存在才可发送（支持纯图消息，如"这款窗帘有吗"的拍照识别场景）
+    const hasText = content.trim().length > 0
+    const hasImages = !!images && images.length > 0
+    if (!currentSessionId || isStreaming || (!hasText && !hasImages)) return
 
     // 转人工后：消息直接进人工客服会话，不再走 AI
     if (handedOff && agentSessionId) {
+      // 人工客服会话仅支持文本（无图片通道），纯图消息在此静默忽略
+      if (!hasText) return
       const userMsg: Message = {
         id: generateId(),
         session_id: currentSessionId,

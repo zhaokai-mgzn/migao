@@ -1,4 +1,4 @@
-// case_ids: OR-001, CH-001
+// case_ids: OR-001, CH-001, UI-013
 /**
  * 消息气泡组件测试
  *
@@ -202,5 +202,23 @@ describe('MessageBubble', () => {
     render(<MessageBubble message={msg} />)
 
     expect(screen.getByTestId('tool-indicator')).toBeTruthy()
+  })
+
+  // UI-013: 纯图消息（content 空 + images 有）不渲染空文本区，仅渲染图片
+  it('纯图消息（无文本）渲染图片缩略图且不渲染空文本区', () => {
+    const imgMsg: Message = {
+      ...baseMsg,
+      id: 'm-img',
+      content: '',
+      images: ['https://img.example.com/curtain.jpg'],
+    }
+    const { container } = render(<MessageBubble message={imgMsg} />)
+
+    // 图片渲染（Taro Image mock 为 <img>）
+    const img = container.querySelector('img')
+    expect(img).toBeTruthy()
+    expect(img?.getAttribute('src')).toBe('https://img.example.com/curtain.jpg')
+    // 无空文本区（.message-bubble__content 不应存在）
+    expect(container.querySelector('.message-bubble__content')).toBeNull()
   })
 })

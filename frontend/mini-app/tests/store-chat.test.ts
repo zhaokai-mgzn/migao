@@ -3,15 +3,19 @@
  *
  * 覆盖: 会话管理(创建/加载/删除/选择)、消息管理、流式状态
  */
+// case_ids: UI-013
 
 // Mock chatService
 jest.mock('../src/services/chatService', () => ({
   createSession: jest.fn(),
   getSessionList: jest.fn(),
+  getLatestSession: jest.fn(),
   deleteSession: jest.fn(),
   getSessionMessages: jest.fn(),
   getQuickActions: jest.fn(),
   createChatSSEClient: jest.fn(),
+  getAgentSessionByAi: jest.fn(),
+  sendAgentMessage: jest.fn(),
 }))
 
 // Mock sse
@@ -40,10 +44,13 @@ function getChatStore() {
   jest.mock('../src/services/chatService', () => ({
     createSession: jest.fn(),
     getSessionList: jest.fn(),
+    getLatestSession: jest.fn(),
     deleteSession: jest.fn(),
     getSessionMessages: jest.fn(),
     getQuickActions: jest.fn(),
     createChatSSEClient: jest.fn(),
+    getAgentSessionByAi: jest.fn(),
+    sendAgentMessage: jest.fn(),
   }))
   jest.mock('../src/utils/sse', () => ({ SSEClient: jest.fn() }))
   const { useChatStore } = require('../src/store/chatStore')
@@ -231,6 +238,58 @@ describe('chatStore', () => {
       await store.getState().loadQuickActions()
 
       expect(store.getState().quickActions).toEqual(actions)
+    })
+  })
+
+  // UI-013: 纯图消息放行（拍照识别：无文本仅图片 → SSE 带 images 发送）
+  describe('sendMessage 纯图', () => {
+    it('纯图消息（空文本 + images）应放行并携带 images 发送', async () => {
+      const store = getChatStore()
+      const { createChatSSEClient: mockCreate } = require('../src/services/chatService')
+      const sseSend = jest.fn()
+      mockCreate.mockReturnValue({ sendMessage: sseSend })
+      store.setState({ currentSessionId: 's1', isStreaming: false, handedOff: false })
+
+      await store.getState().sendMessage('', ['https://img.example.com/curtain.jpg'])
+
+      // SSE 客户端已发送：sessionId / message='' / images 透传
+      expect(sseSend).toHaveBeenCalledTimes(1)
+      expect(sseSend.mock.calls[0][0]).toBe('s1')
+      expect(sseSend.mock.calls[0][1]).toBe('')
+      expect(sseSend.mock.calls[0][2]).toEqual(['https://img.example.com/curtain.jpg'])
+      // 用户消息入 messages：content 空但 images 保留
+      const userMsg = store.getState().messages[0]
+      expect(userMsg.role).toBe('user')
+      expect(userMsg.content).toBe('')
+      expect(userMsg.images).toEqual(['https://img.example.com/curtain.jpg'])
+    })
+
+    it('空文本且无图片仍被拦截（不发送）', async () => {
+      const store = getChatStore()
+      const { createChatSSEClient: mockCreate } = require('../src/services/chatService')
+      const sseSend = jest.fn()
+      mockCreate.mockReturnValue({ sendMessage: sseSend })
+      store.setState({ currentSessionId: 's1', isStreaming: false, handedOff: false })
+
+      await store.getState().sendMessage('   ')
+
+      expect(sseSend).not.toHaveBeenCalled()
+      expect(store.getState().messages).toHaveLength(0)
+    })
+
+    it('转人工态下纯图消息静默忽略（人工会话仅文本通道）', async () => {
+      const store = getChatStore()
+      const { sendAgentMessage: mockSendAgent } = require('../src/services/chatService')
+      store.setState({
+        currentSessionId: 's1',
+        isStreaming: false,
+        handedOff: true,
+        agentSessionId: 'agent-1',
+      })
+
+      await store.getState().sendMessage('', ['https://img.example.com/curtain.jpg'])
+
+      expect(mockSendAgent).not.toHaveBeenCalled()
     })
   })
 })

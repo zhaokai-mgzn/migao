@@ -210,14 +210,11 @@ export default function MessageBubble({ message, onInteract }: MessageBubbleProp
 
   const bubbleClass = `message-bubble message-bubble--${role}`
 
-  // 判断是否为 tool_call 类型消息（仅显示工具指示器）
-  const isToolCallMessage = type === 'tool_call'
-
   return (
     <View className={bubbleClass}>
       <View className='message-bubble__wrapper'>
-        {/* 文本内容（tool_call 类型消息如果没有 content 则跳过） */}
-        {(!isToolCallMessage || content) && (
+        {/* 文本内容（纯图消息 content 为空时不渲染空文本区；tool_call 有 content 时也显示） */}
+        {content && (
           <View className='message-bubble__content'>
             <Text className='message-bubble__text'>
               {content}
