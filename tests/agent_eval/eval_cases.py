@@ -2083,6 +2083,34 @@ _CASE_UI_010 = EvalCase(
     tags=['mini-app', 'quick-actions', 'chat-entry'],
 )
 
+# ── UI-011 [NORMAL] 侧边栏智能客服组新增「米宝 · 在线对话」/chat 入口（agent:session）（源: cases/ui.yml）──
+_CASE_UI_011 = EvalCase(
+    id='UI-011',
+    legacy_id='',
+    title='侧边栏智能客服组新增「米宝 · 在线对话」/chat 入口（agent:session）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['侧边栏「智能客服」组新增「米宝 · 在线对话」入口，点击进入 /chat'],
+    expectations=['direct_reply'],
+    data_checks=['Sidebar「智能客服」组子菜单顺序：米宝·在线对话(/chat) 在前、AI 客服配置(/chat/config) 次之、人工客服(/agent-workspace/human-sessions) 在后，共 3 项', '「米宝 · 在线对话」渲染 MessageCircle 图标（iconMap 已注册 MessageCircle，非 Bot/MessageSquare 重复）', '权限过滤：agent:session 控制「米宝 · 在线对话」与「人工客服」可见；无 agent:session → 隐藏米宝入口与人工客服，保留 AI 客服配置', '「智能客服」组三个子菜单均不可见时整组隐藏（不回归 UI-005 行为）'],
+    skip_reason='纯前端侧边栏菜单由 vitest 单测验证（sidebar.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ui', 'sidebar', 'mibao', 'chat-entry'],
+)
+
+# ── UI-012 [NORMAL] 订单列表页「刷新」按钮 — 保持当前筛选条件重新拉取（演示实时可见新订单）（源: cases/ui.yml）──
+_CASE_UI_012 = EvalCase(
+    id='UI-012',
+    legacy_id='',
+    title='订单列表页「刷新」按钮 — 保持当前筛选条件重新拉取（演示实时可见新订单）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['老板在订单列表页，顾客刚下单 → 点「刷新」按钮，新订单出现在列表（无需 F5/切 tab）'],
+    expectations=['direct_reply'],
+    data_checks=['订单列表查询按钮旁渲染「刷新」按钮（RefreshCw 图标，aria-label=刷新，title=刷新订单列表）', '点击「刷新」保持当前搜索条件/分页重新调用列表接口（GET /api/admin/orders），列表数据更新', '列表加载中（loading=true）时刷新按钮禁用（disabled），避免并发请求', '刷新失败 toast「加载订单失败」，页面不崩溃'],
+    skip_reason='纯前端交互由 E2E 验证（tests/e2e/specs/orders/order-list.spec.ts），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ui', 'orders', 'list', 'refresh'],
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -2258,6 +2286,8 @@ ALL_CASES = (
     _CASE_UI_008,
     _CASE_UI_009,
     _CASE_UI_010,
+    _CASE_UI_011,
+    _CASE_UI_012,
     _CASE_UT_001,
     _CASE_UT_002,
 )

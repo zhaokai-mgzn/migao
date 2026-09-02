@@ -1,4 +1,4 @@
-// case_ids: OR-001, OR-002
+// case_ids: OR-001, OR-002, UI-012
 import { test, expect } from '../../fixtures'
 // auth 由全局 auth-setup 项目提供
 
@@ -578,5 +578,39 @@ test.describe('订单列表页面', () => {
 
     await page.waitForURL(/\/orders\/new/, { timeout: 5_000 })
     expect(page.url()).toContain('/orders/new')
+  })
+
+  // ========== 手动刷新 (25) ==========
+
+  test('刷新按钮重新拉取订单列表（保持当前条件）', async ({ page }) => {
+    // 记录列表接口 GET 请求次数
+    let listRequests = 0
+    await page.route('**/api/admin/orders*', async (route) => {
+      if (route.request().method() !== 'GET') return
+      listRequests += 1
+      const url = new URL(route.request().url())
+      const pg = Number(url.searchParams.get('page')) || 1
+      const size = Number(url.searchParams.get('size')) || 20
+      const items = MOCK_ORDERS.slice(0, 2) // 固定返回前 2 条，避免受初始 mock 影响
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 200,
+          data: { items, total: 2, page: pg, size },
+        }),
+      })
+    })
+
+    await page.goto('/orders')
+    await expect(page.getByText('加载中…')).not.toBeVisible({ timeout: 10_000 })
+    await expect(page.getByText('YK20260601001')).toBeVisible()
+    const afterLoad = listRequests
+
+    // 点刷新 → 应再次发起列表请求并渲染
+    await page.getByRole('button', { name: '刷新' }).click()
+    await page.waitForTimeout(500)
+    expect(listRequests).toBeGreaterThan(afterLoad)
+    await expect(page.getByText('YK20260601001')).toBeVisible()
   })
 })
