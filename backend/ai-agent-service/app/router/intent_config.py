@@ -114,7 +114,7 @@ class RouteDecision:
 INTENT_TOOL_MAP: dict[IntentType, list[str]] = {
     IntentType.ORDER_QUERY: ["order_query"],
     IntentType.ORDER_CREATE: ["order_create"],
-    IntentType.LOGISTICS_TRACK: ["logistics_track"],
+    IntentType.LOGISTICS_TRACK: ["logistics_track", "customer_logistics_track"],
     IntentType.PRODUCT_INQUIRY: ["product_search", "product_detail"],
     IntentType.QUOTE: ["curtain_calc", "product_detail"],
     IntentType.AFTER_SALES: ["order_query", "after_sales_manage"],

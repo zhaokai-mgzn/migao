@@ -7,8 +7,8 @@ description: >
   帮助顾客查询订单状态和物流追踪（小布）。
   仅持有查询工具，不执行订单修改或退款操作。
 tools:
-  - order_query
-  - logistics_track
+  - customer_order_query
+  - customer_logistics_track
 triggers:
   - 我的订单 / 订单到哪了
   - 物流查询 / 快递
@@ -25,6 +25,7 @@ constraints:
 
 ## 执行原则
 
-1. **只读不写**：仅 order_query + logistics_track
+1. **只读不写**：仅 customer_order_query + customer_logistics_track
 2. **如实展示**：物流轨迹按 API 返回的 traces 数组逐条展示
-3. **引导转接**：涉及退款/取消等操作引导转米宝
+3. **物流铁律**：只查顾客本人已发货(在途)订单；拒绝顾客提供的快递单号直查
+4. **引导转接**：涉及退款/取消等操作引导转米宝

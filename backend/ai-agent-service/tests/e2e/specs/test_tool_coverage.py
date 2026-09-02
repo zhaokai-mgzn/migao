@@ -4,6 +4,7 @@ E2E: 全部 21 工具 + 错误恢复 + C端场景
 复用 test_e2e_chat_flow.py 的基础设施。
 每个测试：创建 session → mock agent stream → 发送消息 → 验证 SSE 事件。
 """
+# case_ids: OR-012
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
 
@@ -105,12 +106,14 @@ class TestQueryTools:
 
     async def test_logistics_track(self):
         async def s(msg, ctx, hist):
-            yield AgentResponse("", "tool_call", tool_calls=[_tc("logistics_track", {"order_id": "ORD-001"})])
+            yield AgentResponse("", "tool_call", tool_calls=[_tc("customer_logistics_track", {"order_id": "ORD-001"})])
             yield AgentResponse("", "tool_result",
-                tool_calls=[_tr("logistics_track", {"success": True, "data": {
-                    "company": "中通", "tracking_number": "7512345678", "status_text": "运输中"}})])
+                tool_calls=[_tr("customer_logistics_track", {"success": True, "data": {
+                    "logistics": {"company": "中通", "tracking_number": "7512345678", "status_text": "运输中"},
+                    "logistics_list": [{"order_no": "ORD-001", "company": "中通", "tracking_number": "7512345678", "status_text": "运输中"}],
+                    "total": 1}})])
             yield AgentResponse("中通7512345678运输中", "text")
-        await _run(AH, s, verify_tools=["logistics_track"], verify_text=["中通"])
+        await _run(AH, s, verify_tools=["customer_logistics_track"], verify_text=["中通"])
 
     async def test_dashboard_stats(self):
         async def s(msg, ctx, hist):

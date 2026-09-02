@@ -1425,6 +1425,34 @@ _CASE_OR_011 = EvalCase(
     tags=['order_create', 'smoke'],
 )
 
+# ── OR-012 [NORMAL] C 端物流查询 - 仅限本人已发货订单 + 拒绝快递单号直查（源: cases/order.yml）──
+_CASE_OR_012 = EvalCase(
+    id='OR-012',
+    legacy_id='',
+    title='C 端物流查询 - 仅限本人已发货订单 + 拒绝快递单号直查',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['帮我查一下物流', '查一下单号 SF1234567890 的物流'],
+    expectations=['customer_logistics_track'],
+    data_checks=['customer_logistics_track 无 tracking_number 参数；无论 LLM 通过什么参数传快递单号都必须拒绝（引导提供订单）', '只查当前用户已发货(在途)订单的物流：/orders/mine?status=shipped 后端强制按用户过滤，返回每笔订单的运单号/快递公司/轨迹', '传其他用户/非在途订单号 → 拒绝；无在途订单 → 提示暂无', 'customer_logistics_track 命中 logistics 卡片（logistics_list 非空）'],
+    skip_reason='',
+    tags=['query', 'logistics', 'data_safety'],
+)
+
+# ── OR-013 [NORMAL] B 端物流查询 - 仅支持真实订单号，拒绝快递单号直查（源: cases/order.yml）──
+_CASE_OR_013 = EvalCase(
+    id='OR-013',
+    legacy_id='',
+    title='B 端物流查询 - 仅支持真实订单号，拒绝快递单号直查',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用快递单号 SF1234567890 查一下物流', '查 ORD-20260701-0001 的物流'],
+    expectations=['logistics_track'],
+    data_checks=['logistics_track 参数仅剩 order_id（required）；传 tracking_number 必须拒绝并引导提供订单号', '快递单号只能由系统从订单详情读取后内部查询轨迹（_track_by_number 为内部链路）', '按真实订单号查询：订单详情→运单号→轨迹（API 失败降级 mock）'],
+    skip_reason='',
+    tags=['query', 'logistics', 'data_safety'],
+)
+
 # ── PP-001 [NORMAL] 加工项选择 - 分页翻页（源: cases/processing.yml）──
 _CASE_PP_001 = EvalCase(
     id='PP-001',
@@ -1971,6 +1999,20 @@ _CASE_UI_009 = EvalCase(
     tags=['ui', 'chat-input', 'drag-drop', 'image-upload'],
 )
 
+# ── UI-010 [NORMAL] 小布聊天主页快捷入口改版 - 转人工→查物流、退换货→售后咨询（源: cases/ui.yml）──
+_CASE_UI_010 = EvalCase(
+    id='UI-010',
+    legacy_id='',
+    title='小布聊天主页快捷入口改版 - 转人工→查物流、退换货→售后咨询',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['小布聊天主页四个快捷对话入口：查订单/找产品/售后咨询/查物流'],
+    expectations=['direct_reply'],
+    data_checks=['QuickActions 渲染 4 个入口：查订单/找产品/售后咨询/查物流（无「退换货」「转人工」文案残留）', '点击「查物流」发送物流查询 prompt（如「帮我查一下物流」），进入 C 端仅查本人已发货订单物流的链路', '点击「售后咨询」发送售后 prompt（如「我想咨询售后问题」），进入售后工单快捷对话', '「转人工」入口移除后，输入「转人工」关键词仍可触发 human_handoff（能力不退化）'],
+    skip_reason='纯前端入口改版由 mini-app jest 单测 + xiaobu E2E 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['mini-app', 'quick-actions', 'chat-entry'],
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -2099,6 +2141,8 @@ ALL_CASES = (
     _CASE_OR_009,
     _CASE_OR_010,
     _CASE_OR_011,
+    _CASE_OR_012,
+    _CASE_OR_013,
     _CASE_PP_001,
     _CASE_PP_002,
     _CASE_PP_003,
@@ -2138,6 +2182,7 @@ ALL_CASES = (
     _CASE_UI_007,
     _CASE_UI_008,
     _CASE_UI_009,
+    _CASE_UI_010,
     _CASE_UT_001,
     _CASE_UT_002,
 )

@@ -17,7 +17,7 @@
   每轮对话手动维护 chat_history，模拟真实多轮场景。
   Mock 层：LLM (ChatOpenAI)、AdminApiClient、SemanticCache、Suggestions。
 """
-# case_ids: CH-005, CH-006, CH-007
+# case_ids: CH-005, CH-006, CH-007, OR-012
 import json
 import time
 import asyncio
@@ -137,7 +137,7 @@ class TestXiaobuMultiTurnScenarios:
             if "物流" in user_text or "快递" in user_text:
                 return _make_llm_response(
                     "",
-                    tool_calls=[{"name": "logistics_track", "args": {"order_id": "ORD20250501001"}, "id": f"tc_{call_idx}"}],
+                    tool_calls=[{"name": "customer_logistics_track", "args": {"order_id": "ORD20250501001"}, "id": f"tc_{call_idx}"}],
                 )
             if "保养" in user_text or "清洗" in user_text:
                 # [RAG 禁用] knowledge_search 已下线，改为直接文本回复
@@ -152,7 +152,13 @@ class TestXiaobuMultiTurnScenarios:
             resp = MagicMock()
             resp.raise_for_status = MagicMock()
             path = str(args[0]) if args else ""
-            if "orders" in path:
+            if "orders/mine" in path:
+                # C 端"我的订单"列表：返回一笔已发货订单
+                resp.json.return_value = {
+                    "success": True,
+                    "data": {"items": [MOCK_ORDER], "total": 1},
+                }
+            elif "orders" in path:
                 resp.json.return_value = {"success": True, "data": {**MOCK_ORDER}}
             else:
                 resp.json.return_value = {

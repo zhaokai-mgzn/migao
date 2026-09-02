@@ -10,6 +10,7 @@
 所有测试 Mock admin-api HTTP调用和外部依赖（DashScope/DashVector），
 不依赖外部服务实际运行。
 """
+# case_ids: OR-013
 
 import asyncio
 import time
@@ -292,7 +293,7 @@ class TestExceptionBoundaryChain:
             assert result_search.message is not None
             assert "出错" in result_search.message or "重试" in result_search.message
 
-            # logistics_track (by tracking_number): 应该降级到 mock 数据
+            # logistics_track (by tracking_number): 安全铁律 → 拒绝直查（只能通过真实订单号）
             with patch("app.tools.logistics_track.settings") as mock_settings:
                 mock_settings.LOGISTICS_APPCODE = ""
                 mock_settings.LOGISTICS_API_URL = "https://fake.api/kdi"
@@ -300,10 +301,10 @@ class TestExceptionBoundaryChain:
                 result_logistics = await registry.execute_tool(
                     "logistics_track", ctx_tenant_a, tracking_number="SF0000000000"
                 )
-                # 降级到 mock 数据，仍然返回成功
-                assert result_logistics.success is True
-                assert result_logistics.data is not None
-                assert "tracking_number" in result_logistics.data
+                # 快递单号直查必须被拒绝
+                assert result_logistics.success is False
+                assert "快递单号" in (result_logistics.error or "")
+                assert result_logistics.data is None
 
     @pytest.mark.integration
     @pytest.mark.asyncio

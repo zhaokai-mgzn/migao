@@ -34,6 +34,7 @@
 | Agent 单 SKU 改价 | `PATCH /api/admin/agent/products/{productId}/skus/{skuId}` | `price`（≥0） |
 | Agent 创建商品 | `POST /api/admin/agent/products` | `basePrice`（前端适配层 price→basePrice） |
 | **C 端我的订单** | `GET /api/admin/agent/orders/mine?page&size&status` | **强制按 X-User-Id 过滤，仅状态/分页参数**（数据隔离强制点） |
+| **C 端我的物流** | `GET /api/admin/agent/orders/mine?status=shipped` → 逐单 `GET /api/admin/orders/{id}` 取 `logistics` | 小布专用 `customer_logistics_track`：只查本人**已发货(在途)**订单；**两端一律拒绝用户提供快递单号直查**（运单号仅由系统从订单详情读取） |
 
 ## 四、跨模块联动约定（改一处必须检查另一处）
 
@@ -43,6 +44,7 @@
 | 订单取消/退款 → 库存 | 确认支付扣库存；取消/退款恢复库存 | 超卖/库存虚增 |
 | 订单 → 财务流水 | confirmPayment 记 income；cancel/refund 记 refund | 对账不平 |
 | 下单 → 客户建档 | 老客户只刷新 lastActiveAt（不累计） | 画像失真（已知，勿重复实现） |
+| C 端查物流 | `customer_logistics_track`（仅本人已发货订单，拒绝快递单号直查）↔ B 端 `logistics_track`（仅 order_id，拒绝 tracking_number） | 用户/LLM 传快递单号直查必须拒绝；快递单号只能由系统从订单详情读取后内部查询轨迹 |
 
 ## 五、验收前必跑
 

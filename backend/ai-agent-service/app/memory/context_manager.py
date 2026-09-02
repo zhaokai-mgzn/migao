@@ -340,7 +340,7 @@ class AgentContextManager:
     def _domain_tools(self, domain: str) -> set:
         """返回某域的工具名集合（tool_results 按工具名归属域）"""
         mapping = {
-            "order": {"order_query", "customer_order_query", "order_create", "order_manage", "logistics_track"},
+            "order": {"order_query", "customer_order_query", "order_create", "order_manage", "logistics_track", "customer_logistics_track"},
             "product": {"product_search", "product_detail", "product_manage", "product_update",
                         "sku_update", "curtain_calc", "processing_item_query", "processing_item_manage"},
             "aftersales": {"aftersale_query", "aftersale_create", "after_sales_manage"},
@@ -351,7 +351,7 @@ class AgentContextManager:
     def _tool_domain(self, tool_name: str) -> str:
         """反查工具名归属域（默认 general）"""
         for domain, tools in {
-            "order": {"order_query", "customer_order_query", "order_create", "order_manage", "logistics_track"},
+            "order": {"order_query", "customer_order_query", "order_create", "order_manage", "logistics_track", "customer_logistics_track"},
             "product": {"product_search", "product_detail", "product_manage", "product_update",
                         "sku_update", "curtain_calc", "processing_item_query", "processing_item_manage"},
             "aftersales": {"aftersale_query", "aftersale_create", "after_sales_manage"},

@@ -225,7 +225,7 @@ class TestRegistrySingleton:
         names = reg.get_tool_names()
         # 全量工具注册（含 part2 分组 8 个 + 其它）
         for expected in (
-            "logistics_track", "settings_manage", "order_manage", "dashboard_stats",
+            "logistics_track", "customer_logistics_track", "settings_manage", "order_manage", "dashboard_stats",
             "quick_reply_manage", "order_create", "inventory_manage",
             "product_search", "product_detail", "order_query",
         ):

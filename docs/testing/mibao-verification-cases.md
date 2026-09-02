@@ -1075,7 +1075,7 @@
 真值: registration-approval.super-admin-prefix
 溯源: 2026-08-30 新增：AI 自动入驻改造（人工审批页废弃） ｜ tags: onboarding, ops_page_removed, super_admin_api
 
-## 订单域（11 case）
+## 订单域（13 case）
 
 ### OR-001. 订单列表查询 🟢
 ```
@@ -1199,6 +1199,31 @@
 ```
 真值: order.flow
 溯源: POC 下单闭环集成测试新增 ｜ tags: order_create, smoke
+
+### OR-012. C 端物流查询 - 仅限本人已发货订单 + 拒绝快递单号直查 🔵
+```
+你: 帮我查一下物流
+你: 查一下单号 SF1234567890 的物流
+期望: customer_logistics_track
+数据: customer_logistics_track 无 tracking_number 参数；无论 LLM 通过什么参数传快递单号都必须拒绝（引导提供订单）
+数据: 只查当前用户已发货(在途)订单的物流：/orders/mine?status=shipped 后端强制按用户过滤，返回每笔订单的运单号/快递公司/轨迹
+数据: 传其他用户/非在途订单号 → 拒绝；无在途订单 → 提示暂无
+数据: customer_logistics_track 命中 logistics 卡片（logistics_list 非空）
+```
+真值: order.logistics
+溯源: 2026-09-01 新增：C 端查物流入口（转人工→查物流）后端能力，与 B 端 logistics_track 物理隔离 ｜ tags: query, logistics, data_safety
+
+### OR-013. B 端物流查询 - 仅支持真实订单号，拒绝快递单号直查 🔵
+```
+你: 用快递单号 SF1234567890 查一下物流
+你: 查 ORD-20260701-0001 的物流
+期望: logistics_track
+数据: logistics_track 参数仅剩 order_id（required）；传 tracking_number 必须拒绝并引导提供订单号
+数据: 快递单号只能由系统从订单详情读取后内部查询轨迹（_track_by_number 为内部链路）
+数据: 按真实订单号查询：订单详情→运单号→轨迹（API 失败降级 mock）
+```
+真值: order.logistics
+溯源: 2026-09-01 新增：B 端物流查询安全收紧（禁止物流号直查，防用他人运单号刺探） ｜ tags: query, logistics, data_safety
 
 ## 加工项域（4 case）
 
@@ -1534,7 +1559,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## ui（9 case）
+## ui（10 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -1652,6 +1677,19 @@
 真值: frontend-fix.chat-input-drag-drop
 溯源: 2026-08-31 新增：米宝输入框拖拽图片附件上传（drag & drop 复用 uploadChatImages 链路） ｜ tags: ui, chat-input, drag-drop, image-upload
 
+### UI-010. 小布聊天主页快捷入口改版 - 转人工→查物流、退换货→售后咨询 🔵
+```
+你: 小布聊天主页四个快捷对话入口：查订单/找产品/售后咨询/查物流
+期望: direct_reply
+数据: QuickActions 渲染 4 个入口：查订单/找产品/售后咨询/查物流（无「退换货」「转人工」文案残留）
+数据: 点击「查物流」发送物流查询 prompt（如「帮我查一下物流」），进入 C 端仅查本人已发货订单物流的链路
+数据: 点击「售后咨询」发送售后 prompt（如「我想咨询售后问题」），进入售后工单快捷对话
+数据: 「转人工」入口移除后，输入「转人工」关键词仍可触发 human_handoff（能力不退化）
+跳过: 纯前端入口改版由 mini-app jest 单测 + xiaobu E2E 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.xiaobu-quick-actions
+溯源: 2026-09-01 新增：小布快捷入口改版（转人工→查物流、退换货→售后咨询，弱化退换货引导） ｜ tags: mini-app, quick-actions, chat-entry
+
 ## utils（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -1681,8 +1719,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：140（活跃 90，跳过 50）
-- tier 分布：smoke 10 / normal 102 / adversarial 28
+- 用例总数：143（活跃 92，跳过 51）
+- tier 分布：smoke 10 / normal 105 / adversarial 28
 - 售后域：5
 - agents：6
 - api：10
@@ -1696,12 +1734,12 @@
 - 人事域：5
 - misc：11
 - onboarding：4
-- 订单域：11
+- 订单域：13
 - 加工项域：4
 - 商品域：13
 - registry：1
 - 设置域：8
 - token-refresh：4
-- ui：9
+- ui：10
 - utils：2
 

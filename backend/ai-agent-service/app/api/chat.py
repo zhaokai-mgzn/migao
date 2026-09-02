@@ -359,7 +359,7 @@ def _detect_card_type(tool_name: str, result: Dict[str, Any]) -> Optional[str]:
         return "product_list"
     elif tool_name == "product_detail":
         return "product_detail"
-    elif tool_name == "logistics_track":
+    elif tool_name in ("logistics_track", "customer_logistics_track"):
         return "logistics"
     elif tool_name in ("order_query", "customer_order_query"):
         return "order"
@@ -385,9 +385,16 @@ def _should_send_card(tool_name: str, result: Dict[str, Any]) -> bool:
         return data.get("product") is not None
     
     # 物流查询有结果时发送卡片
+    # - B 端 logistics_track: 单笔物流（data.tracking_number）
+    # - C 端 customer_logistics_track: 在途订单列表（data.logistics_list 非空；卡片取第一笔 data.logistics）
     if tool_name == "logistics_track":
         data = result.get("data", {})
         return data.get("tracking_number") is not None
+
+    if tool_name == "customer_logistics_track":
+        data = result.get("data", {})
+        logistics_list = data.get("logistics_list")
+        return isinstance(logistics_list, list) and len(logistics_list) > 0
     
     # 订单查询有结果时发送卡片（支持单订单和列表两种格式；C 端 customer_order_query 同规则）
     if tool_name in ("order_query", "customer_order_query"):
@@ -711,6 +718,7 @@ _PAGE_WHITELIST = frozenset({
     "product_search",
     "product_detail",
     "logistics_track",
+    "customer_logistics_track",
     "aftersale_query",
     "knowledge_faq",
     "dashboard_stats",

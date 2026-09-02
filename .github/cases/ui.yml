@@ -311,3 +311,36 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: UI-010
+    legacy_id: ""
+    title: "小布聊天主页快捷入口改版 - 转人工→查物流、退换货→售后咨询"
+    domains:
+      - ui
+      - frontend
+      - mini-app
+    tier: normal
+    tags:
+      - mini-app
+      - quick-actions
+      - chat-entry
+    truths_ref:
+      - frontend-fix.xiaobu-quick-actions
+    user_inputs:
+      - "小布聊天主页四个快捷对话入口：查订单/找产品/售后咨询/查物流"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "QuickActions 渲染 4 个入口：查订单/找产品/售后咨询/查物流（无「退换货」「转人工」文案残留）"
+      - "点击「查物流」发送物流查询 prompt（如「帮我查一下物流」），进入 C 端仅查本人已发货订单物流的链路"
+      - "点击「售后咨询」发送售后 prompt（如「我想咨询售后问题」），进入售后工单快捷对话"
+      - "「转人工」入口移除后，输入「转人工」关键词仍可触发 human_handoff（能力不退化）"
+    skip_reason: "纯前端入口改版由 mini-app jest 单测 + xiaobu E2E 验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-01 新增：小布快捷入口改版（转人工→查物流、退换货→售后咨询，弱化退换货引导）"
+    traces:
+      tests:
+        - "frontend/mini-app/tests/quick-actions.test.tsx"
+        - "frontend/mini-app/e2e/scenarios/chat-scenario.js"
+      ci:
+        - mini-app.yml
+      verifies: []

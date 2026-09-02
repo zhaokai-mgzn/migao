@@ -5,7 +5,7 @@
 _convert_history_to_agent_format 多模态、suggestion-feedback、quick-actions、
 send_message 会话校验与 __PAGE__ 协议守卫、_agent_stream_to_sse 事件序列。
 """
-# case_ids: API-001, API-002, API-003, API-004, API-005
+# case_ids: API-001, API-002, API-003, API-004, API-005, OR-012
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -91,6 +91,20 @@ class TestShouldSendCard:
         assert _should_send_card("logistics_track", {"success": True, "data": {"tracking_number": "SF1"}}) is True
         assert _should_send_card("logistics_track", {"success": True, "data": {}}) is False
 
+    def test_customer_logistics_track_sends_card(self):
+        """C 端 customer_logistics_track：logistics_list 非空才发卡片"""
+        assert _should_send_card("customer_logistics_track", {
+            "success": True,
+            "data": {"logistics": {"tracking_number": "SF1"},
+                     "logistics_list": [{"order_no": "ORD-1", "tracking_number": "SF1"}],
+                     "total": 1},
+        }) is True
+        assert _should_send_card("customer_logistics_track", {
+            "success": True,
+            "data": {"logistics": None, "logistics_list": [], "total": 0},
+        }) is False
+        assert _should_send_card("customer_logistics_track", {"success": True, "data": {}}) is False
+
     def test_order_query_single_order(self):
         assert _should_send_card("order_query", {"success": True, "data": {"order": {"id": "o1"}}}) is True
 
@@ -118,6 +132,7 @@ class TestDetectCardType:
         assert _detect_card_type("product_search", {}) == "product_list"
         assert _detect_card_type("product_detail", {}) == "product_detail"
         assert _detect_card_type("logistics_track", {}) == "logistics"
+        assert _detect_card_type("customer_logistics_track", {}) == "logistics"
         assert _detect_card_type("order_query", {}) == "order"
         assert _detect_card_type("customer_order_query", {}) == "order"
         assert _detect_card_type("unknown", {}) is None
