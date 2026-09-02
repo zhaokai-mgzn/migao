@@ -1434,7 +1434,7 @@ _CASE_OR_011 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['用户算料报价后确认下单，走 SMS 验证（bypass）→ order_create 成功'],
     expectations=['order_create'],
-    data_checks=['order_create 返回订单号'],
+    data_checks=['order_create 返回订单号', '订单必须携带有效收件人手机号：agent 路径必填+11位格式校验；表单 API @Pattern 同规则（非法手机号 → 400 拒绝创建）——手机号是客户绑定归属回填与物流查询（顺丰等需尾号）的关键信息，禁止缺失/非法'],
     skip_reason='',
     tags=['order_create', 'smoke'],
 )

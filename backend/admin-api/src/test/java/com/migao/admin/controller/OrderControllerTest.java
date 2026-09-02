@@ -1,4 +1,4 @@
-// case_ids: OR-001, OR-002, OR-003, OR-004, OR-005, OR-006
+// case_ids: OR-001, OR-002, OR-003, OR-004, OR-005, OR-006, OR-011
 
 package com.migao.admin.controller;
 
@@ -269,6 +269,19 @@ class OrderControllerTest extends BaseControllerTest {
             mockMvc.perform(post(BASE).contentType(MediaType.APPLICATION_JSON).content(body));
 
             verify(orderService).createOrder(any(OrderCreateRequest.class), eq(TEST_TENANT_ID));
+        }
+
+        @Test
+        @DisplayName("创建订单 — 手机号格式非法 -> 400（订单必须携带有效手机号）")
+        void createRejectsInvalidPhone() throws Exception {
+            String body = """
+                    {"customerName":"张三","customerPhone":"12345","items":[{"productId":"prod-001","productName":"窗帘","quantity":1,"unitPrice":100,"subtotal":100}]}
+                    """;
+
+            mockMvc.perform(post(BASE).contentType(MediaType.APPLICATION_JSON).content(body))
+                    .andExpect(status().isUnprocessableEntity());
+
+            verifyNoInteractions(orderService);
         }
     }
 }

@@ -4,6 +4,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
 import lombok.Data;
 
@@ -23,9 +24,11 @@ public class OrderCreateRequest {
     private String customerName;
 
     /**
-     * 客户电话
+     * 客户电话（必填；格式校验与 agent 下单路径一致，保证订单携带有效手机号——
+     * 用于售后联系、客户绑定归属回填、以及物流查询手机尾号）
      */
     @NotBlank(message = "客户电话不能为空")
+    @Pattern(regexp = "^1[3-9]\\d{9}$", message = "手机号格式不正确，请输入11位中国大陆手机号")
     private String customerPhone;
 
     /**

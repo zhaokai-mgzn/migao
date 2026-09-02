@@ -387,10 +387,12 @@ cases:
       - tool: order_create
     data_checks:
       - "order_create 返回订单号"
+      - "订单必须携带有效收件人手机号：agent 路径必填+11位格式校验；表单 API @Pattern 同规则（非法手机号 → 400 拒绝创建）——手机号是客户绑定归属回填与物流查询（顺丰等需尾号）的关键信息，禁止缺失/非法"
     skip_reason: ""
-    merge_log: "POC 下单闭环集成测试新增"
+    merge_log: "POC 下单闭环集成测试新增；2026-09-02 补订单手机号完整性约束"
     traces:
-      tests: []
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/OrderControllerTest.java"
       ci:
         - ai-agent-tests.yml
       verifies: []
