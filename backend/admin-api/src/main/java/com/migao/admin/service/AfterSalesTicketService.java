@@ -164,6 +164,68 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
     }
 
     /**
+     * C 端「我的售后」分页查询 — 用户级数据隔离强制点。
+     *
+     * 只返回「当前用户订单产生的售后工单」：以 orders.user_id = userId 反查
+     * 用户订单 id 集合，再过滤 after_sales_tickets.order_id ∈ 该集合。
+     * 不暴露任何跨用户筛选参数（防绕过）。
+     *
+     * @param tenantId 租户ID
+     * @param userId   当前用户ID（X-User-Id 透传）
+     * @param page     页码
+     * @param size     每页大小
+     * @return 分页响应
+     */
+    public PageResponse<AfterSalesListResponse> getTicketPageForUser(Long tenantId, String userId,
+                                                                     long page, long size) {
+        if (userId == null || userId.isBlank() || "internal-service".equals(userId)) {
+            log.warn("[after-sales/mine] 拒绝查询: 缺少真实用户标识 tenantId={}", tenantId);
+            throw BusinessException.authFailed("缺少用户标识，无法查询售后工单");
+        }
+
+        // 1. 反查当前用户订单 id 集合（租户由 TenantLineInnerInterceptor 自动注入）
+        List<Order> userOrders = orderMapper.selectList(
+                new LambdaQueryWrapper<Order>()
+                        .eq(Order::getUserId, userId)
+                        .select(Order::getId));
+        if (userOrders.isEmpty()) {
+            return PageResponse.of(0L, page, size, Collections.emptyList());
+        }
+        Set<String> userOrderIds = userOrders.stream()
+                .map(Order::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        if (userOrderIds.isEmpty()) {
+            return PageResponse.of(0L, page, size, Collections.emptyList());
+        }
+
+        // 2. 只查这些订单上的售后工单
+        LambdaQueryWrapper<AfterSalesTicket> wrapper = new LambdaQueryWrapper<>();
+        wrapper.in(AfterSalesTicket::getOrderId, userOrderIds);
+        wrapper.orderByDesc(AfterSalesTicket::getCreatedAt);
+
+        Page<AfterSalesTicket> ticketPage = new Page<>(page, size);
+        Page<AfterSalesTicket> resultPage = afterSalesTicketMapper.selectPage(ticketPage, wrapper);
+
+        // 3. 批量补关联订单信息后转换（与 getTicketPage 共用转换逻辑）
+        Set<String> orderIds = resultPage.getRecords().stream()
+                .map(AfterSalesTicket::getOrderId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        Map<String, Order> orderMap = new HashMap<>();
+        if (!orderIds.isEmpty()) {
+            List<Order> orders = orderMapper.selectBatchIds(orderIds);
+            orderMap = orders.stream().collect(Collectors.toMap(Order::getId, o -> o, (a, b) -> a));
+        }
+        Map<String, Order> finalOrderMap = orderMap;
+        List<AfterSalesListResponse> responses = resultPage.getRecords().stream()
+                .map(ticket -> convertToListResponse(ticket, finalOrderMap.get(ticket.getOrderId())))
+                .collect(Collectors.toList());
+
+        return PageResponse.of(resultPage.getTotal(), resultPage.getCurrent(), resultPage.getSize(), responses);
+    }
+
+    /**
      * 根据ID查询工单详情
      *
      * @param id 工单ID

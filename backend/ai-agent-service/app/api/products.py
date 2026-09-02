@@ -20,6 +20,7 @@ from loguru import logger
 
 from app.utils.auth import get_current_user, UserIdentity
 from app.utils.http_client import get_admin_api_client
+from app.api.response_models import make_response
 
 router = APIRouter()
 
@@ -53,7 +54,7 @@ async def new_arrivals(
     if not response.get("success"):
         logger.info(f"[new-arrivals] admin-api rejected | tenant={tenant_id} "
                     f"error={response.get('error', {}).get('message', 'unknown')}")
-        return {"items": [], "total": 0}
+        return make_response(True, data={"items": [], "total": 0})
 
     data = response.get("data", {})
     items = data.get("items", []) or []
@@ -68,7 +69,7 @@ async def new_arrivals(
                      (p.get("images") or [None])[0],
             "sales_count": p.get("salesCount") or p.get("sales_count") or 0,
         })
-    return {"items": lite, "total": data.get("total", len(lite))}
+    return make_response(True, data={"items": lite, "total": data.get("total", len(lite))})
 
 
 @router.get("/orders/mine")
@@ -102,7 +103,7 @@ async def my_orders(
     if not response.get("success"):
         logger.info(f"[my-orders] admin-api rejected | tenant={tenant_id} "
                     f"error={response.get('error', {}).get('message', 'unknown')}")
-        return {"items": [], "total": 0}
+        return make_response(True, data={"items": [], "total": 0})
 
     data = response.get("data", {})
     items = data.get("items", []) or []
@@ -117,7 +118,7 @@ async def my_orders(
             "total_amount": o.get("totalAmount") or o.get("total_amount") or 0,
             "created_at": o.get("createdAt") or o.get("created_at", ""),
         })
-    return {"items": lite, "total": data.get("total", len(lite))}
+    return make_response(True, data={"items": lite, "total": data.get("total", len(lite))})
 
 
 @router.get("/after-sales/mine")
@@ -128,16 +129,16 @@ async def my_after_sales(
 ) -> dict:
     """我的售后工单（「我的」页入口）：强制按当前用户过滤。
 
-    复用售后查询的用户隔离参数（customerId 透传当前用户），
-    后端 after-sales 列表同样按 tenant + customer 双重过滤。
+    复用 C 端专用端点 /api/admin/agent/after-sales/mine（数据隔离强制点：
+    admin-api 从 X-User-Id 反查当前用户订单 → 只返回这些订单上的工单，
+    此处仅透传展示字段，不传 customerId 等跨用户参数）。
     """
     tenant_id = user.tenant_id
     try:
         client = get_admin_api_client()
         response = await client.get(
-            "/api/admin/after-sales",
-            params={"page": page, "size": size,
-                    "customerId": user.user_id},
+            "/api/admin/agent/after-sales/mine",
+            params={"page": page, "size": size},
             tenant_id=tenant_id,
             user_id=user.user_id,
         )
@@ -148,7 +149,7 @@ async def my_after_sales(
     if not response.get("success"):
         logger.info(f"[my-after-sales] admin-api rejected | tenant={tenant_id} "
                     f"error={response.get('error', {}).get('message', 'unknown')}")
-        return {"items": [], "total": 0}
+        return make_response(True, data={"items": [], "total": 0})
 
     data = response.get("data", {})
     items = data.get("items", []) or []
@@ -162,4 +163,4 @@ async def my_after_sales(
             "ticket_type": t.get("ticketType") or t.get("ticket_type", ""),
             "created_at": t.get("createdAt") or t.get("created_at", ""),
         })
-    return {"items": lite, "total": data.get("total", len(lite))}
+    return make_response(True, data={"items": lite, "total": data.get("total", len(lite))})

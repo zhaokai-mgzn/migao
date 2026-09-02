@@ -7,7 +7,9 @@ C 端只读端点测试 — 新品推荐 + 我的订单/售后（数据隔离）
 - 订单/售后强制按当前用户过滤（透传 user_id）
 - 固定参数（size 1~12 / 1~20），不可传任意筛选
 - 精简字段返回（不泄露内部字段）
-- admin-api 失败时降级为空列表（不抛 500）
+- 统一响应包装 {success, data:{items,total}}（与 ai-api 其余端点/H5 mock 一致，
+  mini-app productService 按 ApiResponse 解包，裸结构会导致前端恒空）
+- admin-api 失败时降级为空列表（success=true + data 空，不抛 500）
 """
 # case_ids: PR-001, OR-001, AS-001
 import pytest
@@ -62,11 +64,13 @@ async def test_new_arrivals_forwards_to_admin_api():
         assert call.kwargs["user_id"] == "cust-1"
 
         # 精简字段：不含 internalField
-        assert result["total"] == 2
-        assert len(result["items"]) == 2
-        assert result["items"][0]["name"] == "遮光窗帘"
-        assert result["items"][0]["price"] == 19900
-        assert "internalField" not in result["items"][0]
+        assert result["success"] is True
+        data = result["data"]
+        assert data["total"] == 2
+        assert len(data["items"]) == 2
+        assert data["items"][0]["name"] == "遮光窗帘"
+        assert data["items"][0]["price"] == 19900
+        assert "internalField" not in data["items"][0]
 
 
 @pytest.mark.asyncio
@@ -81,7 +85,8 @@ async def test_new_arrivals_size_bounded():
 
         # 正常范围内调用成功
         result = await new_arrivals(size=12, user=user)
-        assert result["items"] == []
+        assert result["success"] is True
+        assert result["data"]["items"] == []
 
 
 @pytest.mark.asyncio
@@ -99,8 +104,9 @@ async def test_new_arrivals_admin_failure_degrades_to_empty():
         mock_get_client.return_value = mock_client
 
         result = await new_arrivals(size=6, user=user)
-        assert result["items"] == []
-        assert result["total"] == 0
+        assert result["success"] is True
+        assert result["data"]["items"] == []
+        assert result["data"]["total"] == 0
 
 
 @pytest.mark.asyncio
@@ -148,9 +154,11 @@ async def test_my_orders_forces_user_filter():
         assert call.kwargs["tenant_id"] == 7
         assert call.kwargs["params"]["page"] == 1
         assert call.kwargs["params"]["size"] == 5
-        # 精简字段
-        assert result["items"][0]["order_no"] == "ORD-A"
-        assert "internalField" not in result["items"][0]
+        # 统一包装 + 精简字段
+        assert result["success"] is True
+        data = result["data"]
+        assert data["items"][0]["order_no"] == "ORD-A"
+        assert "internalField" not in data["items"][0]
 
 
 @pytest.mark.asyncio
@@ -178,13 +186,14 @@ async def test_my_orders_failure_degrades_to_empty():
         mock_get_client.return_value = mock_client
 
         result = await my_orders(page=1, size=5, status=None, user=user)
-        assert result["items"] == []
-        assert result["total"] == 0
+        assert result["success"] is True
+        assert result["data"]["items"] == []
+        assert result["data"]["total"] == 0
 
 
 @pytest.mark.asyncio
 async def test_my_after_sales_forces_user_filter():
-    """我的售后：透传 customerId=当前用户，强制用户隔离"""
+    """我的售后：调用 C 端专用 /mine 端点，强制透传当前用户"""
     user = _customer_user(user_id="cust-9")
     mock_response = {
         "success": True,
@@ -204,10 +213,14 @@ async def test_my_after_sales_forces_user_filter():
         result = await my_after_sales(page=1, size=5, user=user)
 
         call = mock_client.get.call_args
-        assert call.args[0] == "/api/admin/after-sales"
-        assert call.kwargs["params"]["customerId"] == "cust-9"
+        assert call.args[0] == "/api/admin/agent/after-sales/mine"
+        # 用户隔离由后端从 X-User-Id 强制，不透传 customerId 等跨用户参数
         assert call.kwargs["user_id"] == "cust-9"
-        assert result["items"][0]["ticket_no"] == "AS-001"
+        assert "customerId" not in call.kwargs["params"]
+        assert call.kwargs["params"]["page"] == 1
+        assert call.kwargs["params"]["size"] == 5
+        assert result["success"] is True
+        assert result["data"]["items"][0]["ticket_no"] == "AS-001"
 
 
 @pytest.mark.asyncio
@@ -222,4 +235,5 @@ async def test_my_after_sales_failure_degrades_to_empty():
         mock_get_client.return_value = mock_client
 
         result = await my_after_sales(page=1, size=5, user=user)
-        assert result["items"] == []
+        assert result["success"] is True
+        assert result["data"]["items"] == []

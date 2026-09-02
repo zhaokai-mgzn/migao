@@ -34,6 +34,7 @@
 | Agent 单 SKU 改价 | `PATCH /api/admin/agent/products/{productId}/skus/{skuId}` | `price`（≥0） |
 | Agent 创建商品 | `POST /api/admin/agent/products` | `basePrice`（前端适配层 price→basePrice） |
 | **C 端我的订单** | `GET /api/admin/agent/orders/mine?page&size&status` | **强制按 X-User-Id 过滤，仅状态/分页参数**（数据隔离强制点） |
+| **C 端我的售后** | `GET /api/admin/agent/after-sales/mine?page&size` | **强制按 X-User-Id 反查用户订单 → 只返回这些订单上的工单**（数据隔离强制点；勿用 `GET /api/admin/after-sales?customerId=`——该参数不存在且工单 customer_id 存的是客户姓名） |
 | **C 端我的物流** | `GET /api/admin/agent/orders/mine?status=shipped` → 逐单 `GET /api/admin/orders/{id}` 取 `logistics` | 小布专用 `customer_logistics_track`：只查本人**已发货(在途)**订单；**两端一律拒绝用户提供快递单号直查**（运单号仅由系统从订单详情读取） |
 
 ## 四、跨模块联动约定（改一处必须检查另一处）
