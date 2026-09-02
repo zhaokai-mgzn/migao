@@ -27,6 +27,9 @@ class ProductSearchTool(BaseTool):
     description = (
         "【触发】用户问'有什么XX''搜XX''找XX商品''有没有XX'或提到商品关键词/分类时调用。【前置】keyword 可选，缺关键词时列出全部。支持 stock_status 筛选缺货/低库存。【反例】查单个商品详情用 product_detail，查分类用 category_manage(tree)。【标注】READONLY — 放心调用，无需确认"
     )
+    # 含 operator：admin-api 员工角色（RoleService operator 有 product:list 权限码，
+    # 角色码漂移修复 POC-2761 D 项）。customer 保留（C 端商品搜索）。
+    allowed_roles = ["customer", "admin", "agent", "tenant_admin", "operator"]
     
     parameters = {
         "type": "object",

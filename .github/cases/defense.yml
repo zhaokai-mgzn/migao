@@ -526,3 +526,34 @@ cases:
       ci:
         - deploy-admin-api.yml
       verifies: []
+
+  - id: DF-017
+    legacy_id: ""
+    title: "商户员工角色码认证放行 - admin-api 签发 operator/product_manager/customer_service 等角色 JWT 不被 401 误拒"
+    domains:
+      - chat
+      - hr
+    tier: normal
+    tags:
+      - defense
+      - auth
+      - role-drift
+    truths_ref:
+      - ai-chat.permission-layers
+    user_inputs:
+      - "admin-api 商户员工（operator/product_manager/customer_service/knowledge_editor）登录后打开米宝 B 端对话"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "UserRole 枚举须包含 admin-api 全部商户员工角色码（admin/operator/product_manager/knowledge_editor/customer_service/super_admin），admin-api JWT 解析不被 pydantic 校验拒绝（此前仅 customer/agent/admin 三值 → 员工 401）"
+      - "认证通过后原角色码保留（不折叠），AgentConfig.allowed_roles 按角色路由：operator/product_manager/customer_service/knowledge_editor → mibao（B 端），customer → xiaobu（C 端）"
+      - "工具层 allowed_roles 放行 operator 等员工角色执行其 admin-api 权限码对应的只读/业务工具（如 dashboard_stats/order_query/product_search），customer 角色仍被拒（无越权）"
+    skip_reason: "认证/路由/工具权限由 ai-agent 单测验证（test_utils_auth.py 等），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-02 新增：POC 演示审查 D 项 — 角色码漂移导致商户员工（非 admin）米宝对话全部 401（UserRole 枚举硬编码三值 vs admin-api 签发五角色码）；修复 UserRole 枚举 + mibao.allowed_roles + 工具层 allowed_roles 三方对齐"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_utils_auth.py"
+        - "backend/ai-agent-service/tests/test_tools_dashboard_stats.py"
+      ci:
+        - ai-agent-tests.yml
+      verifies: []

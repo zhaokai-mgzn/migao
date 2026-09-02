@@ -27,7 +27,9 @@ class TestDashboardDeclaration:
         assert tool.idempotent is True
 
     def test_allowed_roles(self, tool):
-        assert set(tool.allowed_roles) == {"admin", "agent", "tenant_admin"}
+        # operator：admin-api 员工角色码（RoleService operator 有 dashboard:view，
+        # 角色码漂移修复 POC-2761 D 项）
+        assert set(tool.allowed_roles) == {"admin", "agent", "tenant_admin", "operator"}
 
 
 class TestDashboardPermission:
@@ -38,6 +40,11 @@ class TestDashboardPermission:
 
     def test_agent_allowed(self, tool, agent_ctx):
         assert tool.check_permission(agent_ctx) is True
+
+    def test_operator_allowed(self, tool):
+        # operator 员工（admin-api 签发角色码）应能查经营看板
+        op_ctx = ToolContext(tenant_id=1, user_id="op_001", session_id="s", role="operator")
+        assert tool.check_permission(op_ctx) is True
 
     def test_customer_denied(self, tool, sample_tool_context):
         assert tool.check_permission(sample_tool_context) is False

@@ -32,7 +32,7 @@ class SessionManageTool(BaseTool):
     description = (
         "【触发】用户说'会话列表''排队多少人''在线客服''客服情况''分配会话''结束会话'时调用。【前置】list/monitor/detail 查。assign 需 session_id+agent_id。end 需确认。【何时不用】经营概况用 dashboard_stats。查客服员工用 employee_manage。【标注】WRITE(assign/end) — 查询安全，写需确认"
     )
-    allowed_roles = ["admin", "agent", "tenant_admin"]
+    allowed_roles = ["admin", "agent", "tenant_admin", "operator"]
 
     read_only = False
     requires_confirmation = True  # 审计 07 P0-L1: 高风险非 destructive 写操作需用户确认

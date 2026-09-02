@@ -29,7 +29,7 @@ class ProductManageTool(BaseTool):
         "【标注】WRITE|DESTRUCTIVE"
     )
 
-    allowed_roles = ["admin", "agent", "tenant_admin"]
+    allowed_roles = ["admin", "agent", "tenant_admin", "operator"]
     read_only = False
     destructive = True
     idempotent = False
