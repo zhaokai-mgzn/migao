@@ -212,11 +212,101 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         Page<Order> orderPage = new Page<>(page, size);
         Page<Order> resultPage = orderMapper.selectPage(orderPage, wrapper);
 
-        // 转换为响应 DTO
+        // 转换为响应 DTO + 批量补充明细
         List<OrderListResponse> responses = resultPage.getRecords().stream()
                 .map(this::convertToListResponse)
                 .collect(Collectors.toList());
+        enrichListResponses(responses);
 
+        return PageResponse.of(resultPage.getTotal(), resultPage.getCurrent(), resultPage.getSize(), responses);
+    }
+
+    /**
+     * C 端「我的订单」分页查询 — user_id 直配 + 手机号兜底。
+     *
+     * 数据隔离语义（与 V23 回填一致）：
+     * - orders.user_id = 当前用户 → 必然可见（聊天/绑定下单）
+     * - orders.user_id IS NULL AND orders.customer_phone = 当前用户已绑定手机号
+     *   → 视为「名下」订单（商户代录/历史订单），仅当本人已授权绑定手机号才可见，
+     *   且 customer_phone 必须精确等于本人手机号（不越权）
+     *
+     * @param page     页码
+     * @param size     每页大小
+     * @param status   订单状态（可选）
+     * @param tenantId 租户ID
+     * @param userId   当前用户ID（X-User-Id 透传）
+     * @param userPhone 当前用户已绑定手机号（可为空：未绑定时退化为仅 user_id 匹配）
+     * @return 分页响应
+     */
+    public PageResponse<OrderListResponse> getMyOrderPage(long page, long size, String status,
+                                                          Long tenantId, String userId, String userPhone) {
+        if (userId == null || userId.isBlank() || "internal-service".equals(userId)) {
+            throw BusinessException.authFailed("缺少用户标识，无法查询订单");
+        }
+
+        LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<>();
+        // 用户级隔离：本人订单 OR（未绑定 + 手机号=本人）——手机号兜底仅在有绑定号时启用
+        if (StringUtils.hasText(userPhone)) {
+            wrapper.and(w -> w.eq(Order::getUserId, userId)
+                    .or(o -> o.isNull(Order::getUserId).eq(Order::getCustomerPhone, userPhone.trim())));
+        } else {
+            wrapper.eq(Order::getUserId, userId);
+        }
+
+        // 状态筛选
+        if (StringUtils.hasText(status)) {
+            wrapper.eq(Order::getStatus, status);
+        }
+
+        wrapper.orderByDesc(Order::getCreatedAt);
+
+        Page<Order> orderPage = new Page<>(page, size);
+        Page<Order> resultPage = orderMapper.selectPage(orderPage, wrapper);
+
+        List<OrderListResponse> responses = resultPage.getRecords().stream()
+                .map(this::convertToListResponse)
+                .collect(Collectors.toList());
+        enrichListResponses(responses);
+
+        return PageResponse.of(resultPage.getTotal(), resultPage.getCurrent(), resultPage.getSize(), responses);
+    }
+
+    /**
+     * 手机号回填绑定：把「该手机号下 user_id 为空的本租户订单」绑定到指定用户。
+     *
+     * 场景：小程序客户授权绑定手机号后，商户代录/历史订单（仅存 customer_phone、
+     * user_id 为空）据此归属到本人——V23 回填 SQL 的运行时等价物。
+     * 防误绑：只更新 user_id IS NULL 的订单（已归属他人的不动）；tenant 由
+     * TenantLineInnerInterceptor 自动注入。
+     *
+     * @param tenantId 租户ID
+     * @param userId   当前用户ID
+     * @param phone    用户刚绑定（且校验过未被同租户其他用户占用）的手机号
+     * @return 受影响行数
+     */
+    public int bindOrdersToUser(Long tenantId, String userId, String phone) {
+        if (!StringUtils.hasText(phone) || phone.isBlank()) {
+            log.info("[bind-orders] 跳过：手机号为空 tenantId={}", tenantId);
+            return 0;
+        }
+        if (userId == null || userId.isBlank() || "internal-service".equals(userId)) {
+            log.info("[bind-orders] 跳过：用户标识缺失 tenantId={}", tenantId);
+            return 0;
+        }
+        LambdaUpdateWrapper<Order> wrapper = new LambdaUpdateWrapper<>();
+        wrapper.isNull(Order::getUserId)
+                .eq(Order::getCustomerPhone, phone.trim())
+                .set(Order::getUserId, userId);
+        int updated = orderMapper.update(null, wrapper);
+        log.info("[bind-orders] 手机号回填完成: tenantId={}, userId={}, phone={}****, bound={}",
+                tenantId, userId, phone.substring(0, 3), updated);
+        return updated;
+    }
+
+    /**
+     * 批量补充订单明细/加工费/实收款（getOrderPage 与 getMyOrderPage 共用，避免 N+1）
+     */
+    private void enrichListResponses(List<OrderListResponse> responses) {
         // 批量补充订单明细，避免 N+1 查询；前端列表"采购商品"列依赖 items[0]
         List<String> orderIds = responses.stream()
                 .map(OrderListResponse::getId)
@@ -283,8 +373,6 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
                 }
             }
         }
-
-        return PageResponse.of(resultPage.getTotal(), resultPage.getCurrent(), resultPage.getSize(), responses);
     }
 
     /**

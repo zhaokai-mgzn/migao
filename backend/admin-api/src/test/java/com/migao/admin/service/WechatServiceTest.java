@@ -131,4 +131,86 @@ class WechatServiceTest {
                     assertThat(be.getCode()).isEqualTo("WECHAT_API_ERROR");
                 });
     }
+
+    // ======================== getPhoneNumber（手机号授权换取）=======================
+
+    @Test
+    @DisplayName("Mock 模式 - getPhoneNumber 返回确定性的 11 位手机号（联调用）")
+    void getPhoneNumber_MockMode_ReturnsDeterministicPhone() {
+        ReflectionTestUtils.setField(wechatService, "appId", "");
+        ReflectionTestUtils.setField(wechatService, "appSecret", "");
+        ReflectionTestUtils.setField(wechatService, "mockEnabled", true);
+
+        WechatService.PhoneNumberResult result = wechatService.getPhoneNumber("phone-code-abc");
+
+        assertThat(result).isNotNull();
+        assertThat(result.getPurePhoneNumber()).matches("^1[3-9]\\d{9}$");
+        // 同一 code → 同一手机号（确定性，便于联调与断言）
+        WechatService.PhoneNumberResult again = wechatService.getPhoneNumber("phone-code-abc");
+        assertThat(again.getPurePhoneNumber()).isEqualTo(result.getPurePhoneNumber());
+    }
+
+    @Test
+    @DisplayName("Mock 未显式启用且微信未配置 → getPhoneNumber 拒绝（fail-closed）")
+    void getPhoneNumber_MockDisabled_Rejects() {
+        ReflectionTestUtils.setField(wechatService, "appId", "");
+        ReflectionTestUtils.setField(wechatService, "appSecret", "");
+        ReflectionTestUtils.setField(wechatService, "mockEnabled", false);
+
+        assertThatThrownBy(() -> wechatService.getPhoneNumber("phone-code"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("微信");
+    }
+
+    @Test
+    @DisplayName("真实模式 - 先取 access_token 再换手机号，返回 purePhoneNumber")
+    void getPhoneNumber_RealMode_ReturnsPhone() {
+        ReflectionTestUtils.setField(wechatService, "appId", "wx-test-appid");
+        ReflectionTestUtils.setField(wechatService, "appSecret", "secret");
+        ReflectionTestUtils.setField(wechatService, "mockEnabled", false);
+        ReflectionTestUtils.setField(wechatService, "restTemplate", restTemplate);
+
+        // 第一次调用：token 未缓存 → 请求 cgi-bin/token
+        mockWechatResponse("{\"access_token\":\"ACCESS_TOKEN_1\",\"expires_in\":7200}",
+                "application/json;charset=UTF-8");
+
+        // POST /wxa/business/getuserphonenumber 换号
+        HttpHeaders postHeaders = new HttpHeaders();
+        postHeaders.setContentType(MediaType.APPLICATION_JSON);
+        ResponseEntity<String> phoneEntity = new ResponseEntity<>(
+                "{\"errcode\":0,\"errmsg\":\"ok\",\"phone_info\":{\"phoneNumber\":\"+8613800138000\",\"purePhoneNumber\":\"13800138000\",\"countryCode\":\"86\"}}",
+                postHeaders, HttpStatus.OK);
+        when(restTemplate.postForEntity(anyString(), any(), any(Class.class)))
+                .thenReturn(phoneEntity);
+
+        WechatService.PhoneNumberResult result = wechatService.getPhoneNumber("phone-code-real");
+
+        assertThat(result).isNotNull();
+        assertThat(result.getPurePhoneNumber()).isEqualTo("13800138000");
+        assertThat(result.getPhoneNumber()).isEqualTo("+8613800138000");
+    }
+
+    @Test
+    @DisplayName("真实模式 - 换号接口返回 errcode → 抛 WECHAT_API_ERROR")
+    void getPhoneNumber_WechatError_Throws() {
+        ReflectionTestUtils.setField(wechatService, "appId", "wx-test-appid");
+        ReflectionTestUtils.setField(wechatService, "appSecret", "secret");
+        ReflectionTestUtils.setField(wechatService, "mockEnabled", false);
+        ReflectionTestUtils.setField(wechatService, "restTemplate", restTemplate);
+
+        mockWechatResponse("{\"access_token\":\"ACCESS_TOKEN_1\",\"expires_in\":7200}",
+                "application/json;charset=UTF-8");
+
+        HttpHeaders postHeaders = new HttpHeaders();
+        postHeaders.setContentType(MediaType.APPLICATION_JSON);
+        ResponseEntity<String> phoneEntity = new ResponseEntity<>(
+                "{\"errcode\":40029,\"errmsg\":\"invalid code\"}",
+                postHeaders, HttpStatus.OK);
+        when(restTemplate.postForEntity(anyString(), any(), any(Class.class)))
+                .thenReturn(phoneEntity);
+
+        assertThatThrownBy(() -> wechatService.getPhoneNumber("phone-code-error"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("code 无效");
+    }
 }

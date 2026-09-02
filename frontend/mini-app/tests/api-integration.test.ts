@@ -1,3 +1,4 @@
+// case_ids: OR-001, CH-001, API-010
 /**
  * API 集成测试
  *
@@ -195,6 +196,41 @@ describe('userService API', () => {
           data: { nickname: '新昵称' },
         }),
       )
+    })
+  })
+
+  describe('bindMiniPhone', () => {
+    it('应 POST /api/auth/mini/bind-phone 并返回绑定结果', async () => {
+      ;(Taro.request as jest.Mock).mockResolvedValueOnce({
+        statusCode: 200,
+        data: {
+          success: true,
+          data: { phone: '13900139000', boundOrders: 2 },
+        },
+      })
+
+      const { bindMiniPhone } = require('../src/services/userService')
+      const result = await bindMiniPhone('wx-phone-code')
+
+      expect(result.phone).toBe('13900139000')
+      expect(result.boundOrders).toBe(2)
+      expect(Taro.request).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: 'POST',
+          url: expect.stringContaining('/api/auth/mini/bind-phone'),
+          data: { code: 'wx-phone-code' },
+        }),
+      )
+    })
+
+    it('绑定失败应抛出错误', async () => {
+      ;(Taro.request as jest.Mock).mockResolvedValueOnce({
+        statusCode: 200,
+        data: { success: false, error: { code: 'ERR', message: '该手机号已被绑定' } },
+      })
+
+      const { bindMiniPhone } = require('../src/services/userService')
+      await expect(bindMiniPhone('bad-code')).rejects.toThrow('该手机号已被绑定')
     })
   })
 })
