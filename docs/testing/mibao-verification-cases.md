@@ -596,7 +596,7 @@
 真值: id-resolve.name, customer-list.search-fields, order.states
 溯源: eval M011 独有（模糊澄清 + 客户搜索真值） ｜ tags: fuzzy_input, progressive_clarification, adversarial
 
-## 数据域（5 case）
+## 数据域（6 case）
 
 ### DA-001. 经营概览 🔵
 ```
@@ -649,6 +649,20 @@
 ```
 真值: dashboard-ui.tokens, dashboard-ui.insight-bar, dashboard-ui.no-truncate, dashboard-ui.axis-sampling, dashboard-ui.status-chips, dashboard-ui.no-overflow
 溯源: 2026-08-25 新增：#2532 经营看板织物质感改版（样板页）；2026-08-31 更新：PD 精简改版（洞察条一句话解读 + 客单价卡 + 绿涨红跌 + 修复 23.8 假数据） ｜ tags: dashboard, ui-redesign, visual
+
+### DA-006. 商品销量排行 - 米宝答「哪个商品卖得最好」（dashboard_stats product_ranking） 🔵
+```
+你: 这个月哪个商品卖得最好？
+你: 最近一周卖得最多的是什么窗帘？
+期望: dashboard_stats(action=product_ranking, period=month)
+数据: dashboard_stats 支持 action=product_ranking：转发 admin-api GET /api/admin/dashboard/product-ranking（params period=day|month + limit）
+数据: 返回按 productId 聚合的销量排行（rank/productName/salesQty/salesAmount），ToolResult.data 为 dict 契约（list 响应包裹为 items）
+数据: 摘要含榜首商品名（如「本月销量排行: N个商品，榜首「星空全遮光窗帘」」）
+数据: 权限：admin/agent/tenant_admin/operator 可查；customer 拒绝（不越权）
+跳过: 非 LLM 行为：转发实现与权限由 ai-agent 单测验证（test_tools_dashboard_stats.py），不进入 agent-eval 冒烟
+```
+真值: ai-chat.permission-layers
+溯源: 2026-09-02 新增：POC 演示审查 E 项 — 米宝问数「哪个花色卖得最好」无工具支撑（dashboard_stats 无 TopN）；按订单数据实际粒度实现商品维度排行（order_items 无颜色字段，花色排行需 schema 变更后置） ｜ tags: dashboard, ranking, product
 
 ## 防御域（17 case）
 
@@ -1828,8 +1842,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：152（活跃 96，跳过 56）
-- tier 分布：smoke 10 / normal 114 / adversarial 28
+- 用例总数：153（活跃 96，跳过 57）
+- tier 分布：smoke 10 / normal 115 / adversarial 28
 - 售后域：5
 - agents：6
 - api：10
@@ -1837,7 +1851,7 @@
 - 对话边界域：16
 - 跨域：3
 - 客户域：5
-- 数据域：5
+- 数据域：6
 - 防御域：17
 - finance：3
 - 人事域：5

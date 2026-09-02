@@ -781,6 +781,20 @@ _CASE_DA_005 = EvalCase(
     tags=['dashboard', 'ui-redesign', 'visual'],
 )
 
+# ── DA-006 [NORMAL] 商品销量排行 - 米宝答「哪个商品卖得最好」（dashboard_stats product_ranking）（源: cases/data.yml）──
+_CASE_DA_006 = EvalCase(
+    id='DA-006',
+    legacy_id='',
+    title='商品销量排行 - 米宝答「哪个商品卖得最好」（dashboard_stats product_ranking）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['这个月哪个商品卖得最好？', '最近一周卖得最多的是什么窗帘？'],
+    expectations=['dashboard_stats(action=product_ranking, period=month)'],
+    data_checks=['dashboard_stats 支持 action=product_ranking：转发 admin-api GET /api/admin/dashboard/product-ranking（params period=day|month + limit）', '返回按 productId 聚合的销量排行（rank/productName/salesQty/salesAmount），ToolResult.data 为 dict 契约（list 响应包裹为 items）', '摘要含榜首商品名（如「本月销量排行: N个商品，榜首「星空全遮光窗帘」」）', '权限：admin/agent/tenant_admin/operator 可查；customer 拒绝（不越权）'],
+    skip_reason='非 LLM 行为：转发实现与权限由 ai-agent 单测验证（test_tools_dashboard_stats.py），不进入 agent-eval 冒烟',
+    tags=['dashboard', 'ranking', 'product'],
+)
+
 # ── DF-001 [ADVERSARIAL] Token攻击 - 要求生成超长回复（源: cases/defense.yml）──
 _CASE_DF_001 = EvalCase(
     id='DF-001',
@@ -2221,6 +2235,7 @@ ALL_CASES = (
     _CASE_DA_003,
     _CASE_DA_004,
     _CASE_DA_005,
+    _CASE_DA_006,
     _CASE_DF_001,
     _CASE_DF_002,
     _CASE_DF_003,

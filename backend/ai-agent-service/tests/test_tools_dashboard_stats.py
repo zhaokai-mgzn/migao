@@ -1,5 +1,5 @@
 """DashboardStatsTool 单元测试 — 经营看板 5 类统计查询"""
-# case_ids: DA-001, DA-002, DA-003
+# case_ids: DA-001, DA-002, DA-003, DA-005
 import pytest
 from unittest.mock import AsyncMock, patch
 
@@ -302,6 +302,72 @@ class TestDashboardActiveSessions:
         mock_get_client.return_value = mock_client
 
         result = await tool.execute(context=admin_tool_context, action="active_sessions")
+
+        assert result.success is False
+
+
+class TestDashboardProductRanking:
+    """商品销量排行 product_ranking — DA-005（POC 问数增强 E 项）
+
+    米宝答「这个月哪个商品卖得最好」：转发 admin-api /api/admin/dashboard/product-ranking
+    （按 productId 聚合销量/金额，period=day 近7天 / month 近30天）。
+    """
+
+    @patch("app.tools.dashboard_stats.get_admin_api_client")
+    async def test_product_ranking_success(self, mock_get_client, tool, admin_tool_context):
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(
+            return_value={
+                "success": True,
+                "data": [
+                    {
+                        "rank": 1,
+                        "productId": "p1",
+                        "productName": "星空全遮光窗帘",
+                        "salesQty": 20,
+                        "salesAmount": 2000,
+                        "qtyDisplay": "20 米",
+                        "amountDisplay": "¥2,000",
+                        "dailyChange": 0.5,
+                    },
+                    {
+                        "rank": 2,
+                        "productId": "p2",
+                        "productName": "云朵半遮光窗帘",
+                        "salesQty": 10,
+                        "salesAmount": 700,
+                        "qtyDisplay": "10 米",
+                        "amountDisplay": "¥700",
+                        "dailyChange": -0.1,
+                    },
+                ],
+            }
+        )
+        mock_get_client.return_value = mock_client
+
+        result = await tool.execute(
+            context=admin_tool_context, action="product_ranking", period="month", limit=5
+        )
+
+        assert result.success is True
+        # 转发端点与参数正确
+        args, kwargs = mock_client.get.await_args
+        assert "/api/admin/dashboard/product-ranking" in args[0]
+        assert kwargs["params"] == {"period": "month", "limit": 5}
+        # 摘要含榜首商品
+        assert "星空全遮光窗帘" in result.summary
+        # data 为 dict 契约（list 被包裹为 items）
+        assert result.data["items"][0]["productName"] == "星空全遮光窗帘"
+
+    @patch("app.tools.dashboard_stats.get_admin_api_client")
+    async def test_product_ranking_failure(self, mock_get_client, tool, admin_tool_context):
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(
+            return_value={"success": False, "error": {"message": "查询失败"}}
+        )
+        mock_get_client.return_value = mock_client
+
+        result = await tool.execute(context=admin_tool_context, action="product_ranking")
 
         assert result.success is False
 
