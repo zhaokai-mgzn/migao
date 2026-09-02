@@ -62,6 +62,23 @@ if [ -f .env.ai-agent ] && ! grep -q '^SMS_BYPASS_CODE=' .env.ai-agent; then
   echo "  ⚠️【POC 模式】已自动启用 ai-agent SMS 万能码 123456（决策 D2）。接入真实短信后须在 .env.ai-agent 显式置空 SMS_BYPASS_CODE= 以禁用（技术债 Issue #2616）"
 fi
 
+echo "== 1.9 磁盘水位预检（#2571 防护：部署前磁盘满会导致 pull/up 失败 + admin-api 503）=="
+DISK_PCT=$(df / | awk 'NR==2 {gsub("%","",$5); print $5}')
+if [ "${DISK_PCT:-0}" -gt 90 ]; then
+  echo "  ⚠️ 磁盘水位 ${DISK_PCT}% > 90%，先深度清理再继续部署"
+  docker system prune -af --volumes 2>/dev/null || docker system prune -af 2>/dev/null || true
+  journalctl --vacuum-size=50M >/dev/null 2>&1 || true
+  DISK_PCT2=$(df / | awk 'NR==2 {gsub("%","",$5); print $5}')
+  echo "  清理后磁盘: ${DISK_PCT2}%（原 ${DISK_PCT}%）"
+  if [ "${DISK_PCT2:-0}" -gt 95 ]; then
+    echo "  ❌ 深度清理后磁盘仍 >95%（${DISK_PCT2}%），中止部署避免故障"
+    echo "   人工介入：ssh 服务器排查大文件（du -xhd1 / | sort -rh | head）"
+    exit 1
+  fi
+else
+  echo "  磁盘水位 ${DISK_PCT}%（≤90%，OK）"
+fi
+
 echo "== 2. 拉取镜像（tag=$TAG）=="
 if [ -f .env.registry ]; then
   # shellcheck disable=SC1091
