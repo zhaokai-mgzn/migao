@@ -1,5 +1,6 @@
 package com.migao.admin.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.constraints.NotBlank;
 import lombok.Data;
 
@@ -26,8 +27,9 @@ public class CategoryUpdateRequest {
     private Integer level;
 
     /**
-     * 排序号
+     * 排序号（JSON 契约字段名为 sort，DB 列 sort_order）
      */
+    @JsonProperty("sort")
     private Integer sortOrder;
 
     /**

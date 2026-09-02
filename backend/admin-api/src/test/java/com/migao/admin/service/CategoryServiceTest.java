@@ -1,3 +1,4 @@
+// case_ids: CT-001, CT-002
 package com.migao.admin.service;
 
 import com.migao.admin.dto.CategoryCreateRequest;
@@ -13,6 +14,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -146,6 +148,30 @@ class CategoryServiceTest {
     }
 
     @Test
+    @DisplayName("创建分类 - 请求携带的 sortOrder 持久化到插入实体")
+    void createCategory_PersistsSortOrder() {
+        // given
+        CategoryCreateRequest request = new CategoryCreateRequest();
+        request.setName("新分类");
+        request.setSortOrder(7);
+
+        when(categoryMapper.insert(any(Category.class))).thenAnswer(invocation -> {
+            Category c = invocation.getArgument(0);
+            c.setId("cat-sort");
+            return 1;
+        });
+
+        // when
+        CategoryResponse result = categoryService.createCategory(request, 1L);
+
+        // then
+        assertThat(result.getSortOrder()).isEqualTo(7);
+        ArgumentCaptor<Category> captor = ArgumentCaptor.forClass(Category.class);
+        verify(categoryMapper).insert(captor.capture());
+        assertThat(captor.getValue().getSortOrder()).isEqualTo(7);
+    }
+
+    @Test
     @DisplayName("创建子分类成功 - 校验父分类存在")
     void createCategory_WithParentSuccess() {
         // given
@@ -206,6 +232,27 @@ class CategoryServiceTest {
         assertThat(result).isNotNull();
         assertThat(result.getName()).isEqualTo("更新后的分类");
         verify(categoryMapper).updateById(any(Category.class));
+    }
+
+    @Test
+    @DisplayName("更新分类 - 请求携带的 sortOrder 持久化到更新实体")
+    void updateCategory_PersistsSortOrder() {
+        // given
+        CategoryUpdateRequest request = new CategoryUpdateRequest();
+        request.setName("更新后的分类");
+        request.setSortOrder(10);
+
+        when(categoryMapper.selectById("cat-001")).thenReturn(parentCategory);
+        when(categoryMapper.updateById(any(Category.class))).thenReturn(1);
+
+        // when
+        CategoryResponse result = categoryService.updateCategory("cat-001", request, 1L);
+
+        // then
+        assertThat(result.getSortOrder()).isEqualTo(10);
+        ArgumentCaptor<Category> captor = ArgumentCaptor.forClass(Category.class);
+        verify(categoryMapper).updateById(captor.capture());
+        assertThat(captor.getValue().getSortOrder()).isEqualTo(10);
     }
 
     @Test

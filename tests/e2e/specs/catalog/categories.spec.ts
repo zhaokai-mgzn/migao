@@ -25,15 +25,46 @@ const MOCK_CATEGORIES = [
   },
 ]
 
+interface MockCategory {
+  id: string
+  name: string
+  sort: number
+  children?: MockCategory[]
+}
+
+// 可变的 mock「后端」状态：PUT 落库、GET 读取（等价 sort_order 列持久化）
+let mockState: MockCategory[] = []
+
+// 等价后端列表查询 ORDER BY sort ASC, id ASC：深拷贝并按 sort 升序重排
+function sortedClone(nodes: MockCategory[]): MockCategory[] {
+  return [...nodes]
+    .map((n) => ({ ...n, children: n.children ? sortedClone(n.children) : [] }))
+    .sort((a, b) => a.sort - b.sort || (a.id < b.id ? -1 : 1))
+}
+
+// 递归更新指定分类的 sort（模拟 UPDATE categories SET sort_order = ?）
+function setNodeSort(nodes: MockCategory[], id: string, sort: number): boolean {
+  for (const n of nodes) {
+    if (n.id === id) {
+      n.sort = sort
+      return true
+    }
+    if (n.children && setNodeSort(n.children, id, sort)) return true
+  }
+  return false
+}
+
 test.describe('分类管理', () => {
   test.beforeEach(async ({ page }) => {
+    // 每个用例从初始数据重置 mock 后端
+    mockState = sortedClone(MOCK_CATEGORIES)
     // 拦截分类列表 API
     await page.route('**/api/admin/categories*', async (route) => {
       if (route.request().method() === 'GET') {
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
-          body: JSON.stringify({ code: 200, data: MOCK_CATEGORIES }),
+          body: JSON.stringify({ code: 200, data: mockState }),
         })
       } else {
         await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 200 }) })
@@ -180,6 +211,85 @@ test.describe('分类管理', () => {
       await page.getByRole('button', { name: '确认删除' }).click()
       await page.waitForTimeout(500)
       expect(deleteCalled).toBe(true)
+    })
+  })
+
+  test.describe('排序持久化（issue #1832）', () => {
+    // 修改 cat_001（窗帘布艺）sort → 保存 → 刷新，断言仍为修改值
+    test('修改排序值保存后刷新仍保留', async ({ page }) => {
+      let putSort: number | undefined
+      await page.route('**/api/admin/categories/cat_001', async (route) => {
+        if (route.request().method() === 'PUT') {
+          const body = route.request().postDataJSON()
+          putSort = Number(body?.sort)
+          setNodeSort(mockState, 'cat_001', Number.isFinite(putSort) ? putSort : 0)
+          mockState = sortedClone(mockState)
+          await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 200 }) })
+        } else {
+          await route.fallback()
+        }
+      })
+
+      // 打开「窗帘布艺」编辑对话框，把排序从 1 改为 10
+      let treeNode = page.locator('text=窗帘布艺').locator('..')
+      await treeNode.hover()
+      await treeNode.getByTitle('编辑').click()
+      const sortInput = page.getByRole('spinbutton')
+      await expect(sortInput).toHaveValue('1')
+      await sortInput.fill('10')
+
+      // 保存
+      const dialog = page.locator('.fixed.inset-0.z-50').last()
+      await dialog.getByRole('button', { name: '保存' }).click()
+      await expect(dialog).toBeHidden()
+
+      // 提交 payload 必带 sort
+      expect(putSort).toBe(10)
+
+      // 刷新页面后排序值保留
+      await page.reload()
+      await expect(page.getByRole('heading', { name: '分类管理' })).toBeVisible()
+      treeNode = page.locator('text=窗帘布艺').locator('..')
+      await treeNode.hover()
+      await treeNode.getByTitle('编辑').click()
+      await expect(page.getByRole('spinbutton')).toHaveValue('10')
+    })
+
+    // 排序值调大后列表按 sort 升序重排（等价后端 ORDER BY sort ASC）
+    test('调整排序保存后刷新，列表按 sort 升序展示', async ({ page }) => {
+      await page.route('**/api/admin/categories/cat_001', async (route) => {
+        if (route.request().method() === 'PUT') {
+          const body = route.request().postDataJSON()
+          const sort = Number(body?.sort)
+          setNodeSort(mockState, 'cat_001', Number.isFinite(sort) ? sort : 0)
+          mockState = sortedClone(mockState)
+          await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 200 }) })
+        } else {
+          await route.fallback()
+        }
+      })
+
+      // 窗帘布艺 sort 1 → 10（沙发面料保持 sort 2），保存
+      let treeNode = page.locator('text=窗帘布艺').locator('..')
+      await treeNode.hover()
+      await treeNode.getByTitle('编辑').click()
+      // 先等对话框表单完成回填（useEffect 填充 name/sort），避免提交空表单
+      const sortInput = page.getByRole('spinbutton')
+      await expect(sortInput).toHaveValue('1')
+      await sortInput.fill('10')
+      const dialog = page.locator('.fixed.inset-0.z-50').last()
+      await dialog.getByRole('button', { name: '保存' }).click()
+      await expect(dialog).toBeHidden()
+
+      // 刷新 → 沙发面料(sort=2) 应在 窗帘布艺(sort=10) 上方
+      await page.reload()
+      const sofa = page.getByText('沙发面料', { exact: true })
+      const curtain = page.getByText('窗帘布艺', { exact: true })
+      await expect(sofa).toBeVisible()
+      await expect(curtain).toBeVisible()
+      const sofaBox = await sofa.boundingBox()
+      const curtainBox = await curtain.boundingBox()
+      expect(sofaBox!.y).toBeLessThan(curtainBox!.y)
     })
   })
 
