@@ -283,7 +283,7 @@
 真值: category-manage.delete, category-manage.delete-destructive, ai-chat.confirm-required
 溯源: verification 2.12 独有（二次确认行为在测试中未确认，见 category-manage.yml 缺口注释） ｜ tags: delete, destructive, confirm
 
-## 对话边界域（12 case）
+## 对话边界域（16 case）
 
 ### CH-001. 空结果 + suggestion 引导修复 🔴
 ```
@@ -445,6 +445,52 @@
 ```
 真值: aftersales-flow.flow
 溯源: C 端表单化交互方案 S3（miniapp-multiturn-form-scenarios.md） ｜ tags: multi_turn, aftersales, interactive
+
+### CH-013. AI 检测不满情绪 → 建议转人工卡片 → 用户确认后创建人工会话 🔵
+```
+你: 你们窗帘质量太差了，气死我了
+你: 转人工客服
+期望: interact
+期望: human_handoff
+数据: 不满情绪（general 意图）命中后 AI 先发建议卡片（interact choice），不直接转
+数据: 用户点『转人工客服』后命中 D1 显式请求 → human_handoff 创建人工会话
+数据: interact 卡片选项含『转人工客服』『继续咨询小布』
+```
+真值: ai-chat.handoff-offer, ai-chat.intent-tool-map
+溯源: xiaobu-ai-handoff-guidance.md D3 AI 主动引导转人工 ｜ tags: multi_turn, handoff, ai_guided
+
+### CH-014. 用户拒绝建议 → 继续 AI 咨询且本会话不再自动建议 🔵
+```
+你: 你们太坑了，再也不买了
+你: 继续咨询小布
+你: 你们又没解决，气死我了
+期望: interact
+数据: 首次不满 → 建议卡片（offer_count 记为 1）
+数据: 用户点『继续咨询小布』→ 消息正常路由（general），不创建工单
+数据: 再次不满 → 冷却生效不再弹建议卡（handoff.offer_count >= 1）
+```
+真值: ai-chat.handoff-offer
+溯源: xiaobu-ai-handoff-guidance.md 冷却/防骚扰 ｜ tags: multi_turn, handoff, cooldown
+
+### CH-015. 用户显式『转人工』不经建议卡片直接转（能力不退化） 🔵
+```
+你: 我要转人工
+期望: human_handoff
+数据: 显式转人工请求 → intent_router 短路直转 complaint（source=explicit_handoff）
+数据: 不先弹建议卡片（无 interact），直接 human_handoff
+```
+真值: ai-chat.intent-tool-map
+溯源: xiaobu-ai-handoff-guidance.md D1 显式直转（UI-010 能力不退化） ｜ tags: handoff, regression
+
+### CH-016. 明确业务意图（下单/查单/报价）不弹转人工建议卡（防打断） 🔵
+```
+你: 帮我查一下最近订单到哪了
+你: 这个窗帘褶皱倍数算得不对
+数据: order_query/quote 等明确业务意图即使含情绪词也不 offer（judge 白名单）
+数据: 正常咨询不出现 interact 建议卡片
+```
+真值: ai-chat.handoff-offer
+溯源: xiaobu-ai-handoff-guidance.md 意图过滤防打断 ｜ tags: handoff, non_interrupt
 
 ## 跨域（3 case）
 
@@ -1731,13 +1777,13 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：144（活跃 92，跳过 52）
-- tier 分布：smoke 10 / normal 106 / adversarial 28
+- 用例总数：148（活跃 96，跳过 52）
+- tier 分布：smoke 10 / normal 110 / adversarial 28
 - 售后域：5
 - agents：6
 - api：10
 - 分类域：3
-- 对话边界域：12
+- 对话边界域：16
 - 跨域：3
 - 客户域：5
 - 数据域：5

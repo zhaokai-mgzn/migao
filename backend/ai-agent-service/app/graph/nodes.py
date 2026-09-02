@@ -14,6 +14,7 @@ from typing import Union
 from langchain_core.messages import AIMessage, HumanMessage
 from loguru import logger
 
+from app.graph.handoff_judge import is_explicit_handoff_request
 from app.graph.state import AgentState
 
 
@@ -141,9 +142,35 @@ async def intent_router_node(state: AgentState) -> dict:
     - 短消息（≤5 字，如"查啊""确认""1"）：跳过 LLM，直接路由到 pending skill
     - 长消息：仍走 LLM 分类，让 LLM 有机会检测 topic switch
     防止用户被锁死在单一 skill 中无法退出。
+
+    AI 主动引导转人工（xiaobu，见 handoff_judge.py / handoff_offer.py）：
+    - D1 用户显式转人工请求（"转人工/找人工…"）→ 短路直转 complaint
+      （优先于 pending_skill / LLM 分类，任何流程中用户要求转人工都应直转）
+    - D3 结构化信号（负面情绪/多轮未解决/能力外）命中且意图白名单内 →
+      route_decision.action="handoff_offer"（建议卡片），由 route_by_intent 路由。
     """
-    pending_skill = state.get("pending_interact_skill", "")
+    agent_type = state.get("agent_type", "xiaobu")
     session_id = state.get("session_id", "")
+    tenant_id = state.get("tenant_id")
+
+    # ── D1 显式转人工请求 → 短路直转 complaint（不弹建议卡、不调 LLM）──
+    if agent_type == "xiaobu":
+        last_msg = _get_last_human_text(state.get("messages", [])) or ""
+        if is_explicit_handoff_request(last_msg):
+            logger.info(
+                f"[intent_router] 显式转人工请求 → complaint 直转 "
+                f"| tenant={tenant_id} session={session_id}"
+            )
+            return {
+                "intent_result": {
+                    "intent": "complaint",
+                    "confidence": 0.99,
+                    "source": "explicit_handoff",
+                },
+                "route_decision": {"action": "full_agent"},
+            }
+
+    pending_skill = state.get("pending_interact_skill", "")
     if pending_skill:
         # 检查最后一条用户消息长度
         messages = state.get("messages", [])
@@ -259,6 +286,63 @@ async def intent_router_node(state: AgentState) -> dict:
         f" action={route_decision.action}"
         f" | session={session_id}"
     )
+
+    # ── D3 AI 主动引导转人工（结构化信号，xiaobu C 端）──
+    # 商家关键词（上）与显式请求（函数头）已直转；此处只处理"用户未明说但
+    # 信号提示该建议转人工"：general/after_sales 意图 + 负面情绪/多轮未解决/
+    # 能力外信号 → route 到 handoff_offer（建议卡片，用户确认后才真正转）。
+    # pending_skill 存在（用户在表单流程中）时不做 offer，防打断。
+    if (
+        agent_type == "xiaobu"
+        and not pending_skill
+        and route_decision.action in ("full_agent", "route_with_hint")
+    ):
+        try:
+            from app.graph.handoff_judge import judge_handoff
+            from app.memory.session_state_store import SessionStateStore
+
+            intent_value = route_decision.intent_result.intent.value
+            # recent_user_messages：本条之前的最近用户消息（S2 多轮信号）
+            recent_user_msgs = [
+                m.get("content", "")
+                for m in chat_history
+                if isinstance(m, dict) and m.get("role") == "user"
+            ]
+            # 会话冷却状态（读取失败按无状态降级，不弹卡也不影响主流程）
+            handoff_state = {}
+            try:
+                store = SessionStateStore()
+                full_state = await store.load(session_id) or {}
+                handoff_state = full_state.get("handoff") or {}
+            except Exception as e:
+                logger.debug(f"[intent_router] handoff state load failed (non-fatal): {e}")
+
+            verdict = judge_handoff(
+                user_message,
+                intent=intent_value,
+                recent_user_messages=recent_user_msgs,
+                handoff_state=handoff_state,
+            )
+            if verdict.action == "offer":
+                logger.info(
+                    f"[intent_router] D3 handoff offer | signal={verdict.signal} "
+                    f"reason={verdict.reason} | tenant={tenant_id} session={session_id}"
+                )
+                return {
+                    "intent_result": {
+                        "intent": intent_value,
+                        "confidence": route_decision.intent_result.confidence,
+                        "source": route_decision.intent_result.source,
+                        "signal": verdict.signal,
+                    },
+                    "route_decision": {
+                        "action": "handoff_offer",
+                        "direct_reply": None,
+                        "tool_hint": None,
+                    },
+                }
+        except Exception as e:
+            logger.warning(f"[intent_router] handoff offer judge failed (non-fatal): {e}")
 
     return {
         "intent_result": {
@@ -404,6 +488,14 @@ def route_by_intent(state: AgentState) -> str:
     session_id = state.get("session_id", "")
     route = state.get("route_decision") or {}
     action = route.get("action", "full_agent")
+
+    # AI 主动引导转人工（D3）：路由到 handoff_offer 节点（建议卡片）
+    if action == "handoff_offer":
+        logger.info(
+            f"[route_by_intent] Routing to handoff_offer (AI guided handoff)"
+            f" | tenant={state.get('tenant_id')} session={session_id}"
+        )
+        return "handoff_offer"
 
     if action == "direct_reply":
         # 多模态输入不走直复节点——直接回复模板没有图片处理能力

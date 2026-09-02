@@ -4,6 +4,7 @@ description: AI 客服对话域（意图路由 + 工具调用 + 双 Agent + conf
 business_truths:
   - [ai-chat.intent-domains] 意图分 9 领域分组：common(问候/告别/能力/通用) / order / product / crm / hr / settings / analytics / knowledge
   - [ai-chat.intent-tool-map] 意图→工具映射：order_query→order_query、product_inquiry→product_search/detail、complaint→human_handoff、dashboard→dashboard_stats 等（INTENT_TOOL_MAP）
+  - [ai-chat.handoff-offer] AI 主动引导转人工（xiaobu，handoff_judge/handoff_offer）：三类触发——D1 显式请求（"转人工/找人工…"→intent_router 短路直转 complaint，source=explicit_handoff）/ D2 商家关键词（autoHandoffKeywords→complaint）/ D3 AI 建议（judge_handoff 纯规则信号：S1 单轮负面情绪仅 general 意图 offer、S2 近 3 条用户消息 ≥2 负面 offer、S3 能力外词 offer；意图白名单 {general, after_sales} 防打断业务流；冷却 offer_count≥1 或用户拒绝后不再建议）。D3 offer 路由到 handoff_offer 确定性节点：产安抚文案 + interact choice 卡片（value"转人工客服"/"继续咨询小布"），用户确认后才走 human_handoff；显式/商家触发不经卡片直转
   - [ai-chat.route-actions] 路由 action 4 类：direct_reply（直接答）/ route_with_hint（带工具提示）/ full_agent（全 Agent）/ human_handoff（转人工）
   - [ai-chat.tool-classes] 工具分类：read_only（纯查询，无需确认）/ destructive（不可逆删除，必须弹 confirm 卡片）/ idempotent（可安全重试）
   - [ai-chat.confirm-required] 写操作（read_only=False）必须先弹 confirm 卡片，用户确认后才执行
