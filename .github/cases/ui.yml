@@ -344,3 +344,71 @@ cases:
       ci:
         - mini-app.yml
       verifies: []
+
+  - id: UI-011
+    legacy_id: ""
+    title: "侧边栏智能客服组新增「米宝 · 在线对话」/chat 入口（agent:session）"
+    domains:
+      - ui
+      - frontend
+    tier: normal
+    tags:
+      - ui
+      - sidebar
+      - mibao
+      - chat-entry
+    truths_ref:
+      - frontend-fix.sidebar-smart-cs-group
+      - frontend-fix.cs-menu-icons
+      - frontend-fix.cs-menu-permission
+    user_inputs:
+      - "侧边栏「智能客服」组新增「米宝 · 在线对话」入口，点击进入 /chat"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "Sidebar「智能客服」组子菜单顺序：米宝·在线对话(/chat) 在前、AI 客服配置(/chat/config) 次之、人工客服(/agent-workspace/human-sessions) 在后，共 3 项"
+      - "「米宝 · 在线对话」渲染 MessageCircle 图标（iconMap 已注册 MessageCircle，非 Bot/MessageSquare 重复）"
+      - "权限过滤：agent:session 控制「米宝 · 在线对话」与「人工客服」可见；无 agent:session → 隐藏米宝入口与人工客服，保留 AI 客服配置"
+      - "「智能客服」组三个子菜单均不可见时整组隐藏（不回归 UI-005 行为）"
+    skip_reason: "纯前端侧边栏菜单由 vitest 单测验证（sidebar.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-02 新增：POC 演示入口修复 — 侧边栏智能客服组加米宝在线对话 /chat 菜单项（米宝入口原仅 FAB/直输 /chat，老板演示找不到）"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/components/sidebar.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: UI-012
+    legacy_id: ""
+    title: "订单列表页「刷新」按钮 — 保持当前筛选条件重新拉取（演示实时可见新订单）"
+    domains:
+      - ui
+      - frontend
+    tier: normal
+    tags:
+      - ui
+      - orders
+      - list
+      - refresh
+    truths_ref:
+      - frontend-fix.no-api-change
+      - frontend-fix.vitest
+      - frontend-fix.e2e
+    user_inputs:
+      - "老板在订单列表页，顾客刚下单 → 点「刷新」按钮，新订单出现在列表（无需 F5/切 tab）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "订单列表查询按钮旁渲染「刷新」按钮（RefreshCw 图标，aria-label=刷新，title=刷新订单列表）"
+      - "点击「刷新」保持当前搜索条件/分页重新调用列表接口（GET /api/admin/orders），列表数据更新"
+      - "列表加载中（loading=true）时刷新按钮禁用（disabled），避免并发请求"
+      - "刷新失败 toast「加载订单失败」，页面不崩溃"
+    skip_reason: "纯前端交互由 E2E 验证（tests/e2e/specs/orders/order-list.spec.ts），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-02 新增：POC 演示修复 — 订单列表无自动轮询/刷新入口，顾客下单后老板看不到新单（原需手动切 tab/F5）"
+    traces:
+      tests:
+        - "tests/e2e/specs/orders/order-list.spec.ts"
+      ci:
+        - pr-check.yml
+      verifies: []

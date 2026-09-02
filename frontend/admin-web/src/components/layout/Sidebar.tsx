@@ -24,6 +24,7 @@ import {
   UserCircle,
   Headphones,
   MessageSquare,
+  MessageCircle,
   Bot,
   Monitor,
   FolderTree,
@@ -51,6 +52,7 @@ const iconMap: Record<string, LucideIcon> = {
   UserCircle,
   Headphones,
   MessageSquare,
+  MessageCircle,
   Bot,
   Monitor,
   FolderTree,
@@ -88,12 +90,13 @@ const menuGroups: MenuGroup[] = [
       { key: 'dashboard', name: '经营看板', icon: 'BarChart3', path: '/dashboard' },
     ],
   },
-  // UI-005: 智能客服大类（AI 客服配置在前、人工客服在后；均不可见时整组隐藏）
+  // UI-005/UI-011: 智能客服大类（米宝·在线对话 在前；均不可见时整组隐藏）
   {
     key: 'smart-customer-service',
     name: '智能客服',
     icon: 'MessageSquare',
     children: [
+      { key: 'mibao-chat', name: '米宝 · 在线对话', icon: 'MessageCircle', path: '/chat', permissionCode: 'agent:session' },
       { key: 'chat-config', name: 'AI 客服配置', icon: 'Bot', path: '/chat/config', permissionCode: 'agent:quickreply' },
       { key: 'human-sessions', name: '人工客服', icon: 'Headphones', path: '/agent-workspace/human-sessions', permissionCode: 'agent:session' },
     ],

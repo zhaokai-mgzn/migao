@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
-import { Search } from 'lucide-react'
+import { Search, RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { orderApi } from '@/lib/api'
 import { OrderTable, CloseOrderModal, RemarkModal, RefundOrderModal } from '@/components/orders'
@@ -500,6 +500,17 @@ export default function OrdersPage() {
                 <path d="M3 3v5h5" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
               重置
+            </button>
+            <button
+              type="button"
+              onClick={() => loadOrders()}
+              disabled={loading}
+              title="刷新订单列表"
+              aria-label="刷新"
+              className="h-9 px-3 rounded bg-white text-neutral-700 text-sm font-medium border border-neutral-300 hover:bg-neutral-50 active:bg-neutral-100 disabled:opacity-50 transition-colors inline-flex items-center gap-1.5"
+            >
+              <RefreshCw className="w-4 h-4" />
+              刷新
             </button>
           </div>
         </div>

@@ -1617,7 +1617,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## ui（10 case）
+## ui（12 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -1748,6 +1748,32 @@
 真值: frontend-fix.xiaobu-quick-actions
 溯源: 2026-09-01 新增：小布快捷入口改版（转人工→查物流、退换货→售后咨询，弱化退换货引导） ｜ tags: mini-app, quick-actions, chat-entry
 
+### UI-011. 侧边栏智能客服组新增「米宝 · 在线对话」/chat 入口（agent:session） 🔵
+```
+你: 侧边栏「智能客服」组新增「米宝 · 在线对话」入口，点击进入 /chat
+期望: direct_reply
+数据: Sidebar「智能客服」组子菜单顺序：米宝·在线对话(/chat) 在前、AI 客服配置(/chat/config) 次之、人工客服(/agent-workspace/human-sessions) 在后，共 3 项
+数据: 「米宝 · 在线对话」渲染 MessageCircle 图标（iconMap 已注册 MessageCircle，非 Bot/MessageSquare 重复）
+数据: 权限过滤：agent:session 控制「米宝 · 在线对话」与「人工客服」可见；无 agent:session → 隐藏米宝入口与人工客服，保留 AI 客服配置
+数据: 「智能客服」组三个子菜单均不可见时整组隐藏（不回归 UI-005 行为）
+跳过: 纯前端侧边栏菜单由 vitest 单测验证（sidebar.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.sidebar-smart-cs-group, frontend-fix.cs-menu-icons, frontend-fix.cs-menu-permission
+溯源: 2026-09-02 新增：POC 演示入口修复 — 侧边栏智能客服组加米宝在线对话 /chat 菜单项（米宝入口原仅 FAB/直输 /chat，老板演示找不到） ｜ tags: ui, sidebar, mibao, chat-entry
+
+### UI-012. 订单列表页「刷新」按钮 — 保持当前筛选条件重新拉取（演示实时可见新订单） 🔵
+```
+你: 老板在订单列表页，顾客刚下单 → 点「刷新」按钮，新订单出现在列表（无需 F5/切 tab）
+期望: direct_reply
+数据: 订单列表查询按钮旁渲染「刷新」按钮（RefreshCw 图标，aria-label=刷新，title=刷新订单列表）
+数据: 点击「刷新」保持当前搜索条件/分页重新调用列表接口（GET /api/admin/orders），列表数据更新
+数据: 列表加载中（loading=true）时刷新按钮禁用（disabled），避免并发请求
+数据: 刷新失败 toast「加载订单失败」，页面不崩溃
+跳过: 纯前端交互由 E2E 验证（tests/e2e/specs/orders/order-list.spec.ts），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change, frontend-fix.vitest, frontend-fix.e2e
+溯源: 2026-09-02 新增：POC 演示修复 — 订单列表无自动轮询/刷新入口，顾客下单后老板看不到新单（原需手动切 tab/F5） ｜ tags: ui, orders, list, refresh
+
 ## utils（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -1777,8 +1803,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：148（活跃 96，跳过 52）
-- tier 分布：smoke 10 / normal 110 / adversarial 28
+- 用例总数：150（活跃 96，跳过 54）
+- tier 分布：smoke 10 / normal 112 / adversarial 28
 - 售后域：5
 - agents：6
 - api：10
@@ -1798,7 +1824,7 @@
 - registry：1
 - 设置域：8
 - token-refresh：4
-- ui：10
+- ui：12
 - utils：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
