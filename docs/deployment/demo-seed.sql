@@ -161,20 +161,20 @@ WHERE NOT EXISTS (SELECT 1 FROM customer_profiles WHERE id = 'cu-003' AND tenant
 -- ──────────────────────────────────────────────
 -- 6. 订单（4 个不同状态）
 -- ──────────────────────────────────────────────
-INSERT INTO orders (id, tenant_id, order_no, customer_name, customer_phone, customer_address, total_amount, status, payment_status, follow_status, remark, created_at)
-SELECT 'o-001', :tenant_id, 'YK20260801001', '林女士', '13800138001', '杭州市西湖区文三路100号', 1280.50, 'completed', 'paid', 'completed', '星空全遮光窗帘 2 套，打孔加工', NOW() - INTERVAL '20 days'
+INSERT INTO orders (id, tenant_id, order_no, customer_name, customer_phone, customer_address, total_amount, actual_amount, status, payment_status, follow_status, remark, created_at)
+SELECT 'o-001', :tenant_id, 'YK20260801001', '林女士', '13800138001', '杭州市西湖区文三路100号', 1280.50, 1280.50, 'completed', 'paid', 'completed', '星空全遮光窗帘 2 套，打孔加工', NOW() - INTERVAL '20 days'
 WHERE NOT EXISTS (SELECT 1 FROM orders WHERE id = 'o-001' AND tenant_id = :tenant_id);
 
-INSERT INTO orders (id, tenant_id, order_no, customer_name, customer_phone, customer_address, total_amount, status, payment_status, follow_status, remark, created_at)
-SELECT 'o-002', :tenant_id, 'YK20260820002', '王先生', '13900139002', '杭州市滨江区江南大道200号', 3560.00, 'producing', 'paid', 'following', '雪尼尔窗帘 3 套，韩式褶加工，对花', NOW() - INTERVAL '3 days'
+INSERT INTO orders (id, tenant_id, order_no, customer_name, customer_phone, customer_address, total_amount, actual_amount, status, payment_status, follow_status, remark, created_at)
+SELECT 'o-002', :tenant_id, 'YK20260820002', '王先生', '13900139002', '杭州市滨江区江南大道200号', 3560.00, 3000.00, 'producing', 'unpaid', 'following', '雪尼尔窗帘 3 套，韩式褶加工，对花（已付定金 3000，尾款 560 赊账）', NOW() - INTERVAL '3 days'
 WHERE NOT EXISTS (SELECT 1 FROM orders WHERE id = 'o-002' AND tenant_id = :tenant_id);
 
-INSERT INTO orders (id, tenant_id, order_no, customer_name, customer_phone, customer_address, total_amount, status, payment_status, follow_status, remark, created_at)
-SELECT 'o-003', :tenant_id, 'YK20260828003', '陈阿姨', '13700137003', '宁波市鄞州区', 890.00, 'confirmed', 'unpaid', 'pending', '雾霭柔光纱帘 1 套', NOW() - INTERVAL '1 day'
+INSERT INTO orders (id, tenant_id, order_no, customer_name, customer_phone, customer_address, total_amount, actual_amount, status, payment_status, follow_status, remark, created_at)
+SELECT 'o-003', :tenant_id, 'YK20260828003', '陈阿姨', '13700137003', '宁波市鄞州区', 890.00, 0.00, 'confirmed', 'unpaid', 'pending', '雾霭柔光纱帘 1 套（未付款，赊账待收）', NOW() - INTERVAL '1 day'
 WHERE NOT EXISTS (SELECT 1 FROM orders WHERE id = 'o-003' AND tenant_id = :tenant_id);
 
-INSERT INTO orders (id, tenant_id, order_no, customer_name, customer_phone, customer_address, total_amount, status, payment_status, follow_status, remark, created_at)
-SELECT 'o-004', :tenant_id, 'YK20260829004', '林女士', '13800138001', '杭州市西湖区文三路100号', 2200.00, 'pending', 'unpaid', 'pending', '云朵半遮光窗帘 1 套，待确认尺寸', NOW()
+INSERT INTO orders (id, tenant_id, order_no, customer_name, customer_phone, customer_address, total_amount, actual_amount, status, payment_status, follow_status, remark, created_at)
+SELECT 'o-004', :tenant_id, 'YK20260829004', '林女士', '13800138001', '杭州市西湖区文三路100号', 2200.00, 0.00, 'pending', 'unpaid', 'pending', '云朵半遮光窗帘 1 套，待确认尺寸（未付款）', NOW()
 WHERE NOT EXISTS (SELECT 1 FROM orders WHERE id = 'o-004' AND tenant_id = :tenant_id);
 
 -- 订单明细（o-001）
