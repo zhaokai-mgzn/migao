@@ -399,3 +399,63 @@ class TestLogisticsTrackOrderEdge:
         result = await tool._track_by_order(admin_tool_context, "ORD-1")
         assert result.success is False
         assert "订单不存在" in result.error
+
+
+class TestLogisticsApiAutoDetectRetry:
+    """阿里云市场 API：显式公司 code 被拒(203) → 去 type 自动识别重试（真实数据回归）"""
+
+    @patch("app.tools.logistics_track.httpx.AsyncClient")
+    async def test_203_retry_without_type(self, mock_http_client, tool, admin_tool_context):
+        """type=JT 返回 203（快递公司不存在）→ 去掉 type 重试成功"""
+        calls = []
+
+        class _FakeResp:
+            def raise_for_status(self):
+                pass
+            def json(self):
+                pass
+
+        async def fake_get(url, headers=None, params=None):
+            calls.append(dict(url=url, params=dict(params) if params else None))  # 拷贝，避免重试 pop 污染记录
+            r = _FakeResp()
+            if len(calls) == 1:
+                r.json = lambda: {"status": "203", "msg": "快递公司不存在:JT"}
+            else:
+                r.json = lambda: {"status": "0", "result": {
+                    "type": "JITU", "number": "JT3175138582857",
+                    "list": [{"time": "2026-08-28 20:33", "context": "【义乌转运中心】快件已发出"}]}}
+            return r
+
+        mock_client = AsyncMock()
+        mock_client.get = fake_get
+        mock_http_client.return_value.__aenter__.return_value = mock_client
+
+        with patch("app.tools.logistics_track.settings") as mock_settings:
+            mock_settings.LOGISTICS_APPCODE = "test-appcode"
+            mock_settings.LOGISTICS_API_URL = "https://fake.api/kdi"
+            result = await tool._call_logistics_api("JT3175138582857", "极兔速递")
+
+        assert result is not None
+        assert result["status"] == "0"
+        # 第一次带 type=JT，第二次去掉 type（自动识别）
+        assert calls[0]["params"].get("type") == "JITU"
+        assert "type" not in calls[1]["params"]
+
+    def test_company_code_jitu(self, tool):
+        """极兔中文名 → JITU（阿里云市场 kdi API 实际 code，JT 会被 203 拒绝）"""
+        assert tool._get_company_code("极兔速递") == "JITU"
+        assert tool._get_company_code("极兔") == "JITU"
+
+
+class TestLogisticsStatusInferenceRealWording:
+    """真实快递轨迹措辞的状态推断（圆通/中通/顺丰 实测文案）"""
+
+    @pytest.mark.parametrize("content,expected", [
+        ("快件已由菜鸟驿站杭州西溪蝶园店送达（上门服务）", "delivered"),
+        ("已于 09-02 送货上门，签收人：家门口", "delivered"),
+        ("您的快件已派送成功（家门口）", "delivered"),
+        ("快件正在派送中，请保持电话畅通", "out_for_delivery"),
+        ("快件已到达【杭州转运中心】", "in_transit"),
+    ])
+    def test_infer_from_real_wording(self, tool, content, expected):
+        assert tool._infer_status_from_traces([{"content": content}]) == expected

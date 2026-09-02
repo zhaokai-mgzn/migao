@@ -29,6 +29,9 @@ STATUS_TEXT_MAP = {
 CN_STATUS_MAP = {
     "签收": "delivered",
     "已签收": "delivered",
+    "签收人": "delivered",   # 如「送货上门，签收人：家门口」
+    "送达": "delivered",     # 如「快件已送达（上门服务）」
+    "派送成功": "delivered",  # 如「您的快件已派送成功（家门口）」
     "派送": "out_for_delivery",
     "派件": "out_for_delivery",
     "正在派送": "out_for_delivery",
@@ -60,6 +63,7 @@ COMPANY_NAME_MAP = {
     "EMS": "EMS",
     "JD": "京东物流",
     "JT": "极兔速递",
+    "JITU": "极兔速递",  # 阿里云市场 kdi API 实际返回的极兔 code（JT 不被识别）
     "DB": "德邦快递",
     "BEST": "百世快递",
     "TTKDEX": "天天快递",
@@ -377,8 +381,25 @@ class LogisticsTrackTool(BaseTool):
             f"msg={result.get('msg')}, result_type={result.get('result', {}).get('type')}"
         )
         
+        # 显式快递公司代码不被该 API 识别（如极兔需 JITU 而非 JT）→ 去掉 type 走自动识别重试一次
+        # （单号自动识别 95% 准确，见商品文档；避免因 code 映射偏差整单降级 mock）
+        if str(result.get("status")) == "203" and "type" in params:
+            logger.warning(
+                f"[logistics] Company code '{params['type']}' rejected (203), "
+                f"retrying with auto-detect | no={params['no']}"
+            )
+            params.pop("type")
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(
+                    settings.LOGISTICS_API_URL,
+                    headers=headers,
+                    params=params,
+                )
+                response.raise_for_status()
+                result = response.json()
+        
         # status "0" 表示成功，"205" 表示无信息但结构正常
-        if result.get("status") not in ("0", "205"):
+        if str(result.get("status")) not in ("0", "205"):
             logger.warning(
                 f"Logistics API returned error: "
                 f"status={result.get('status')}, msg={result.get('msg')}"
@@ -503,8 +524,8 @@ class LogisticsTrackTool(BaseTool):
             "EMS": "EMS",
             "京东": "JD",
             "京东物流": "JD",
-            "极兔": "JT",
-            "极兔速递": "JT",
+            "极兔": "JITU",
+            "极兔速递": "JITU",
             "德邦": "DB",
             "德邦快递": "DB",
             "百世": "BEST",

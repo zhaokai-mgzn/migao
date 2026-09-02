@@ -1448,7 +1448,7 @@ _CASE_OR_013 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['用快递单号 SF1234567890 查一下物流', '查 ORD-20260701-0001 的物流'],
     expectations=['logistics_track'],
-    data_checks=['logistics_track 参数仅剩 order_id（required）；传 tracking_number 必须拒绝并引导提供订单号', '快递单号只能由系统从订单详情读取后内部查询轨迹（_track_by_number 为内部链路）', '按真实订单号查询：订单详情→运单号→轨迹（API 失败降级 mock）'],
+    data_checks=['logistics_track 参数仅剩 order_id（required）；传 tracking_number 必须拒绝并引导提供订单号', '快递单号只能由系统从订单详情读取后内部查询轨迹（_track_by_number 为内部链路）', '按真实订单号查询：订单详情→运单号→轨迹（API 失败降级 mock）；显式公司 code 不被 API 识别(203)时去掉 type 自动识别重试一次'],
     skip_reason='',
     tags=['query', 'logistics', 'data_safety'],
 )
