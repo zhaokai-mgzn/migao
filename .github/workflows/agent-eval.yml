@@ -35,16 +35,31 @@ jobs:
           PYTHONIOENCODING: utf-8
         run: python tests/agent_eval/local_runner.py normal --cases .github/cases
 
-      - name: Create Issue on failure
+      - name: Create Issue on failure (dedup guard)
         if: failure()
         uses: actions/github-script@v9
         with:
           script: |
             const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
-            await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: `[Agent Eval] 米宝冒烟评测失败 — ${new Date().toISOString().slice(0, 10)}`,
-              body: `米宝能力冒烟评测失败（真实 LLM + 多轮业务流）。\n\n查看详情：${runUrl}`,
-              labels: ['bug', 'role/qa'],
-            })
+            const title = `[Agent Eval] 米宝冒烟评测失败 — ${new Date().toISOString().slice(0, 10)}`
+            // 去重守卫（issue #2746）：同日同标题 open issue 已存在 → 仅评论追加，不重复建
+            const q = `repo:${context.repo.owner}/${context.repo.repo} is:issue is:open in:title "${title}"`
+            const { data: search } = await github.rest.search.issues({ q })
+            if (search.total_count > 0) {
+              const existing = search.items[0]
+              console.log(`⏭️ 已存在同标题 open issue #${existing.number}，仅追加评论`)
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                body: `同日同标题再次失败（新增 run）：${runUrl}`,
+              })
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body: `米宝能力冒烟评测失败（真实 LLM + 多轮业务流）。\n\n查看详情：${runUrl}`,
+                labels: ['bug', 'role/qa'],
+              })
+            }
