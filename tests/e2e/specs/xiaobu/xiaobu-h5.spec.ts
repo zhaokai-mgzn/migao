@@ -11,7 +11,7 @@
  * Mock 策略：拦截 API 返回固定数据，保证视觉断言确定性（不依赖真实 LLM/后端）。
  */
 
-import { test, expect } from '@playwright/test'
+import { test, expect } from '../../fixtures'
 
 // ═══════════════════════════════════════════════════════════════
 // Mock 数据

@@ -1,4 +1,5 @@
-import { test, expect } from '@playwright/test'
+// case_ids: CU-002
+import { test, expect } from '../../fixtures'
 import { CustomerDetailPage } from '../../pages/customers/customer-detail.page'
 
 test.describe('客户详情页面', () => {

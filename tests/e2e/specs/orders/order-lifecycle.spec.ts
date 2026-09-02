@@ -1,3 +1,4 @@
+// case_ids: OR-006
 /**
  * 订单全生命周期 E2E 测试
  *
@@ -5,7 +6,7 @@
  *
  * 运行：cd tests && BASE_URL=http://localhost:3001 npx playwright test specs/orders/order-lifecycle.spec.ts
  */
-import { test, expect } from '@playwright/test'
+import { test, expect } from '../../fixtures'
 
 // ========== Mock Data ==========
 
