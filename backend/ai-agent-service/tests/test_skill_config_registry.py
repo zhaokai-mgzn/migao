@@ -1,3 +1,4 @@
+# case_ids: AS-003
 """
 SkillConfig + SkillRegistry 单元测试
 
@@ -357,3 +358,37 @@ class TestAgentRouter:
         user = object()  # 无 role 属性
         result = router.route(user)
         assert result in ("mibao", "xiaobu")
+
+
+# ────────────── 小布 C 端售后 skill 引导（闭环回归） ──────────────
+
+
+def test_customer_aftersales_prompt_not_handoff_on_aftersale_requests():
+    """真实闭环回归：顾客换货/退货被误路由到 human_handoff。
+
+    customer_aftersales 的 system prompt 必须明确「售后诉求 ≠ 转人工」——
+    换货/退货/退款/色差/质量等是 aftersale_create 场景，转人工仅限明确要求/
+    情绪激动/涉赔偿。
+    """
+    from app.graph.skills.customer_aftersales_skill import (
+        CUSTOMER_AFTERSALES_TOOLS,
+        CUSTOMER_AFTERSALES_SYSTEM_PROMPT,
+        CUSTOMER_AFTERSALES_SKILL_CONFIG,
+    )
+
+    # 工具列表包含 aftersale_create（核心建单工具）
+    assert "aftersale_create" in CUSTOMER_AFTERSALES_TOOLS
+    assert "human_handoff" in CUSTOMER_AFTERSALES_TOOLS
+
+    # prompt 明确售后诉求应走 aftersale_create
+    assert "aftersale_create" in CUSTOMER_AFTERSALES_SYSTEM_PROMPT
+    # 「售后诉求 ≠ 转人工」边界
+    assert "售后诉求 ≠ 转人工" in CUSTOMER_AFTERSALES_SYSTEM_PROMPT
+    # 换货/退货/色差/质量 = 创建场景，不是转人工理由
+    assert "换货/退货/退款/维修/色差/质量问题" in CUSTOMER_AFTERSALES_SYSTEM_PROMPT
+    # 转人工触发边界仍保留
+    assert "转人工" in CUSTOMER_AFTERSALES_SYSTEM_PROMPT
+
+    # skill 配置正确挂载（供 registry 注册）
+    assert CUSTOMER_AFTERSALES_SKILL_CONFIG.name == "customer_aftersales"
+    assert CUSTOMER_AFTERSALES_SKILL_CONFIG.default_persona == "xiaobu"

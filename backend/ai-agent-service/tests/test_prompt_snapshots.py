@@ -164,3 +164,26 @@ def test_snapshot_all_skills():
                 f"⚠️  {skill}: prompt 长度 {len(prompt)}/{max_len} "
                 f"({len(prompt)*100//max_len}%) — 接近上限，新内容需精简"
             )
+
+
+# ============ 小布 C 端售后 few-shot 引导 ============
+
+def test_customer_aftersales_fewshot_guides_aftersale_create():
+    """小布售后必须注入 C 端 few-shot：明确换货/退货诉求 → aftersale_create，
+    而非误走 human_handoff（真实闭环回归：两次新会话 AI 均转人工建 complaint 工单）。"""
+    prompt = _build_system_prompt("customer_aftersales")
+    # few-shot 已注入
+    assert "Few-shot 参考示例" in prompt, "customer_aftersales 缺少 few-shot 注入"
+    # 核心引导：换货/退货应 aftersale_create
+    assert "aftersale_create" in prompt, "few-shot 未包含 aftersale_create 引导"
+    # 转人工边界明确（禁止把换货/退货转人工）
+    assert "转人工" in prompt and "换货" in prompt
+    # 反例存在（错误示例指明换货走 human_handoff 是错误）
+    assert "human_handoff" in prompt
+
+
+def test_customer_aftersales_prompt_loaded_with_identity():
+    """小布售后 prompt 组装包含公共身份与原则（无意外污染）"""
+    prompt = _build_system_prompt("customer_aftersales")
+    assert "词元通达商家管理后台" in prompt, "缺少公共身份"
+    assert "不编造数据" in prompt, "缺少公共原则"
