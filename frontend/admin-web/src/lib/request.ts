@@ -1,6 +1,7 @@
 import axios, { AxiosInstance, AxiosResponse, InternalAxiosRequestConfig, AxiosError } from 'axios'
 import { toast } from 'sonner'
 import { useAuthStore } from '@/store/auth'
+import { shouldRedirectToLogin } from '@/lib/auth-redirect'
 
 // 创建 Axios 实例
 const request: AxiosInstance = axios.create({
@@ -11,6 +12,17 @@ const request: AxiosInstance = axios.create({
     'Content-Type': 'application/json',
   },
 })
+
+/**
+ * 跳转登录页（带死循环守卫）：已在公开路由（如 /login 自身）时不强制跳转。
+ * 否则 refresh 401 → 跳 /login → 页面重载 → initialize → 401 → 死循环（issue #2757）。
+ */
+function redirectToLogin() {
+  if (typeof window === 'undefined') return
+  if (shouldRedirectToLogin(window.location.pathname)) {
+    window.location.href = '/login'
+  }
+}
 
 // ========== Token 刷新队列 ==========
 let isRefreshing = false
@@ -66,9 +78,7 @@ request.interceptors.response.use(
       const url = originalRequest.url || ''
       if (url.includes('/api/auth/refresh') || url.includes('/api/auth/admin/login')) {
         useAuthStore.getState().clearAuth()
-        if (typeof window !== 'undefined') {
-          window.location.href = '/login'
-        }
+        redirectToLogin()
         return Promise.reject(error)
       }
 
@@ -103,17 +113,13 @@ request.interceptors.response.use(
           // 刷新失败
           processQueue(error)
           toast.error('登录已过期，请重新登录')
-          if (typeof window !== 'undefined') {
-            window.location.href = '/login'
-          }
+          redirectToLogin()
           return Promise.reject(error)
         }
       } catch (refreshError) {
         processQueue(refreshError)
         toast.error('登录已过期，请重新登录')
-        if (typeof window !== 'undefined') {
-          window.location.href = '/login'
-        }
+        redirectToLogin()
         return Promise.reject(refreshError)
       } finally {
         isRefreshing = false
