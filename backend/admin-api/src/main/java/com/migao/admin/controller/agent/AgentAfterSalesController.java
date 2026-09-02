@@ -48,6 +48,40 @@ public class AgentAfterSalesController {
         }
     }
 
+    /**
+     * C 端（小布/customer 角色）"我的售后"查询。
+     * GET /api/admin/agent/after-sales/mine?page=1&size=10
+     *
+     * 数据隔离强制点：无论调用方传什么参数，都只返回「当前登录用户订单上的
+     * 售后工单」（X-User-Id 透传 → SecurityUser.userId）。缺省 userId（内部
+     * 服务占位）时直接拒绝，避免跨用户数据泄露。
+     */
+    @GetMapping("/mine")
+    public ApiResponse<com.migao.admin.dto.PageResponse<com.migao.admin.dto.AfterSalesListResponse>> getMyTickets(
+            @RequestParam(defaultValue = "1") long page,
+            @RequestParam(defaultValue = "10") long size) {
+        Long tenantId = TenantContext.getTenantId();
+        String userId = currentUserId();
+        if (userId == null || userId.isBlank() || "internal-service".equals(userId)) {
+            log.warn("[Agent] 拒绝 C 端售后查询: 缺少真实用户标识 tenantId={}", tenantId);
+            throw com.migao.admin.exception.BusinessException.authFailed("缺少用户标识，无法查询售后工单");
+        }
+        log.info("[Agent] 查询我的售后工单: userId={}, page={}, size={}, tenantId={}",
+                userId, page, size, tenantId);
+        com.migao.admin.dto.PageResponse<com.migao.admin.dto.AfterSalesListResponse> result =
+                afterSalesTicketService.getTicketPageForUser(tenantId, userId, page, size);
+        return ApiResponse.success(result);
+    }
+
+    /** 从 SecurityContext 提取当前真实用户 ID（ServiceTokenFilter 已透传 X-User-Id） */
+    private String currentUserId() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getPrincipal() instanceof SecurityUser securityUser) {
+            return securityUser.getUserId();
+        }
+        return null;
+    }
+
     /** 从 SecurityContext 提取当前操作人 */
     private String getCurrentOperator() {
         try {

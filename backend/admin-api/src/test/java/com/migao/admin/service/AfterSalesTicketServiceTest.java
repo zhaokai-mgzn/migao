@@ -12,7 +12,10 @@ import com.migao.admin.mapper.TicketTimelineMapper;
 import com.migao.admin.entity.TicketTimeline;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -59,6 +62,12 @@ class AfterSalesTicketServiceTest {
 
     @BeforeEach
     void setUp() {
+        // MyBatis-Plus LambdaQueryWrapper 需要 TableInfo 缓存（mock 环境不自动初始化）
+        MybatisConfiguration conf = new MybatisConfiguration();
+        MapperBuilderAssistant assistant = new MapperBuilderAssistant(conf, "");
+        TableInfoHelper.initTableInfo(assistant, Order.class);
+        TableInfoHelper.initTableInfo(assistant, AfterSalesTicket.class);
+
         testOrder = Order.builder()
                 .id("order-001")
                 .tenantId(1L)
@@ -152,6 +161,73 @@ class AfterSalesTicketServiceTest {
         // then
         assertThat(result.getTotal()).isEqualTo(0);
         assertThat(result.getItems()).isEmpty();
+    }
+
+    // ======================== C 端"我的售后"用户隔离测试 ========================
+
+    @Test
+    @DisplayName("我的售后 - 只返回该用户订单上的工单（无该用户订单 → 空）")
+    void getTicketPageForUser_NoOrdersReturnsEmpty() {
+        // given: 该用户没有任何订单
+        when(orderMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+
+        // when
+        PageResponse<AfterSalesListResponse> result = afterSalesTicketService.getTicketPageForUser(
+                1L, "customer-001", 1, 10);
+
+        // then: 不查售后表，直接返回空
+        assertThat(result.getTotal()).isEqualTo(0);
+        assertThat(result.getItems()).isEmpty();
+        verify(afterSalesTicketMapper, never()).selectPage(any(Page.class), any(LambdaQueryWrapper.class));
+    }
+
+    @Test
+    @DisplayName("我的售后 - 有用户订单时按订单 id 集合过滤工单")
+    void getTicketPageForUser_FiltersByUserOrders() {
+        // given: 用户有两笔订单
+        Order orderA = Order.builder().id("order-a").build();
+        Order orderB = Order.builder().id("order-b").build();
+        when(orderMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(orderA, orderB));
+
+        Page<AfterSalesTicket> mockPage = new Page<>(1, 10);
+        mockPage.setRecords(List.of(testTicket));  // testTicket.orderId = "order-001"
+        mockPage.setTotal(1);
+        when(afterSalesTicketMapper.selectPage(any(Page.class), any(LambdaQueryWrapper.class)))
+                .thenReturn(mockPage);
+        when(orderMapper.selectBatchIds(anyCollection())).thenReturn(List.of(testOrder));
+
+        // when
+        PageResponse<AfterSalesListResponse> result = afterSalesTicketService.getTicketPageForUser(
+                1L, "customer-001", 1, 10);
+
+        // then
+        assertThat(result).isNotNull();
+        assertThat(result.getItems()).hasSize(1);
+        assertThat(result.getItems().get(0).getTicketNo()).isEqualTo("AS-20250425-0001");
+        // 反查订单时按 userId 过滤 + 工单查询按订单集合过滤（用户级隔离）
+        org.mockito.ArgumentCaptor<LambdaQueryWrapper<Order>> orderWrapperCaptor =
+                org.mockito.ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(orderMapper).selectList(orderWrapperCaptor.capture());
+        assertThat(orderWrapperCaptor.getValue().getSqlSegment()).contains("user_id");
+
+        org.mockito.ArgumentCaptor<LambdaQueryWrapper<AfterSalesTicket>> ticketWrapperCaptor =
+                org.mockito.ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(afterSalesTicketMapper).selectPage(any(Page.class), ticketWrapperCaptor.capture());
+        assertThat(ticketWrapperCaptor.getValue().getSqlSegment()).contains("order_id");
+    }
+
+    @Test
+    @DisplayName("我的售后 - 用户标识缺失/内部占位 → 拒绝且不查库")
+    void getTicketPageForUser_RejectsMissingUser() {
+        assertThatThrownBy(() -> afterSalesTicketService.getTicketPageForUser(1L, null, 1, 10))
+                .isInstanceOf(BusinessException.class);
+        assertThatThrownBy(() -> afterSalesTicketService.getTicketPageForUser(1L, "internal-service", 1, 10))
+                .isInstanceOf(BusinessException.class);
+        assertThatThrownBy(() -> afterSalesTicketService.getTicketPageForUser(1L, "  ", 1, 10))
+                .isInstanceOf(BusinessException.class);
+
+        verify(orderMapper, never()).selectList(any(LambdaQueryWrapper.class));
+        verify(afterSalesTicketMapper, never()).selectPage(any(Page.class), any(LambdaQueryWrapper.class));
     }
 
     // ======================== 工单详情测试 ========================
