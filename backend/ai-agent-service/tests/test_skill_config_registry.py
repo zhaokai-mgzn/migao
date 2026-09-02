@@ -386,6 +386,10 @@ def test_customer_aftersales_prompt_not_handoff_on_aftersale_requests():
     assert "售后诉求 ≠ 转人工" in CUSTOMER_AFTERSALES_SYSTEM_PROMPT
     # 换货/退货/色差/质量 = 创建场景，不是转人工理由
     assert "换货/退货/退款/维修/色差/质量问题" in CUSTOMER_AFTERSALES_SYSTEM_PROMPT
+    # 已发货（shipped）等已确认及以上订单可正常创建退/换货工单（状态门禁允许）
+    # —— 真实闭环回归：AI 看到"已发货"误判不能售后而转人工
+    assert "已发货" in CUSTOMER_AFTERSALES_SYSTEM_PROMPT
+    assert "shipped" in CUSTOMER_AFTERSALES_SYSTEM_PROMPT
     # 转人工触发边界仍保留
     assert "转人工" in CUSTOMER_AFTERSALES_SYSTEM_PROMPT
 
