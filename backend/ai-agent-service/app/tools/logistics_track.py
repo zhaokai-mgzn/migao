@@ -254,10 +254,13 @@ class LogisticsTrackTool(BaseTool):
             tracking_no = logistics.get("trackingNo")
             # 后端 OrderDetailResponse.LogisticsInfo 字段是 logisticsCompany（无 company 字段）
             company = logistics.get("logisticsCompany", "未知")
-            # OrderDetailResponse.LogisticsInfo 无 receiverPhone 字段，后端不提供
-            # 收/寄件人手机号后四位，无法再拼接（顺丰/中通/申通等需要手机号尾号的
-            # API 场景由 API 自动识别降级处理），故不再读取。
+            # 顺丰/中通/申通等需要「运单号:收件人手机号后4位」才能查全量轨迹：
+            # 收件人手机号 = 订单根级 customerPhone（OrderDetailResponse 提供），取末 4 位。
+            # （2026-09 修复：此前误以为后端不提供手机号 → 尾号恒为 None → 此类快递恒降级 mock）
             phone_tail = None
+            order_phone = order.get("customerPhone") or order.get("customer_phone")
+            if order_phone and len(str(order_phone).strip()) >= 4:
+                phone_tail = str(order_phone).strip()[-4:]
             
             # 查询物流轨迹
             return await self._track_by_number(

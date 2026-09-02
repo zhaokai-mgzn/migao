@@ -1196,9 +1196,10 @@
 你: 用户算料报价后确认下单，走 SMS 验证（bypass）→ order_create 成功
 期望: order_create
 数据: order_create 返回订单号
+数据: 订单必须携带有效收件人手机号：agent 路径必填+11位格式校验；表单 API @Pattern 同规则（非法手机号 → 400 拒绝创建）——手机号是客户绑定归属回填与物流查询（顺丰等需尾号）的关键信息，禁止缺失/非法
 ```
 真值: order.flow
-溯源: POC 下单闭环集成测试新增 ｜ tags: order_create, smoke
+溯源: POC 下单闭环集成测试新增；2026-09-02 补订单手机号完整性约束 ｜ tags: order_create, smoke
 
 ### OR-012. C 端物流查询 - 仅限本人已发货订单 + 拒绝快递单号直查 🔵
 ```
