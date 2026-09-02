@@ -33,16 +33,17 @@ class TestAftersaleCreateSuccess:
         from app.tools.aftersale_create import AftersaleCreateTool
 
         mock_client = AsyncMock()
-        # Mock: 订单查询（所有权验证）返回属于当前客户的订单
+        # Mock: C 端我的订单列表（所有权验证）返回属于当前客户的订单
         mock_client.get = AsyncMock(return_value={
             "success": True,
             "data": {
-                "id": "order-123",
-                "orderNo": "ORD-001",
-                "customerId": sample_tool_context.user_id,  # 属于当前客户
+                "items": [
+                    {"id": "order-123", "orderNo": "ORD-001", "customerId": sample_tool_context.user_id},
+                ],
+                "total": 1,
             },
         })
-        # Mock: 售后工单创建
+        # Mock: 售后工单创建（Agent 端点，支持订单号解析）
         mock_client.post = AsyncMock(return_value={
             "success": True,
             "data": {
@@ -67,23 +68,28 @@ class TestAftersaleCreateSuccess:
         # 创建成功回执必须用中文业务术语（类型：退款），禁止输出英文枚举 ticket_type
         assert "退款" in result.message
         assert "refund" not in result.message
-        # 验证 API 请求体使用 "description" 键（非 "reason"）
+        # 验证 API 请求体使用 "reason" 键（Agent 端点 createTicketForAgent 要求）
         call_args = mock_client.post.call_args
         json_data = call_args.kwargs.get("json_data", {})
-        assert "description" in json_data
-        assert json_data["description"] == "商品与描述不符"
+        assert "reason" in json_data
+        assert json_data["reason"] == "商品与描述不符"
         assert "as-cust-001" in str(result.data)
 
-        # 验证先调了订单查询（get）再创建（post）
+        # 验证先调了我的订单列表（get）再创建（post）
         assert mock_client.get.called, "必须先查询订单验证所有权"
+        # 预检必须走 C 端专用 mine 端点（按用户强制过滤，支持订单号/UUID）
+        get_url = mock_client.get.call_args[0][0]
+        assert get_url == "/api/admin/agent/orders/mine", f"预检应走 mine 端点: {get_url}"
         mock_client.post.assert_called_once()
 
-        # 验证传入了正确的参数
+        # 建单走 Agent 端点（支持订单号解析，勿用 UUID-only 的 /after-sales）
+        post_url = mock_client.post.call_args[0][0]
+        assert post_url == "/api/admin/agent/after-sales", f"建单应走 agent 端点: {post_url}"
         call_args = mock_client.post.call_args
         json_data = call_args[1]["json_data"]
         assert json_data["orderId"] == "order-123"
         assert json_data["ticketType"] == "refund"
-        assert json_data["source"] == "customer"
+        assert "reason" in json_data or "description" in json_data
 
 
 class TestAftersaleCreateValidation:
@@ -156,9 +162,10 @@ class TestAftersaleCreateFailure:
         from app.tools.aftersale_create import AftersaleCreateTool
 
         mock_client = AsyncMock()
-        mock_client.post = AsyncMock(return_value={
-            "success": False,
-            "error": {"message": "订单不存在"},
+        # 预检：mine 列表不含 order-999 → 拒绝（不发起建单）
+        mock_client.get = AsyncMock(return_value={
+            "success": True,
+            "data": {"items": [], "total": 0},
         })
         mock_get_client.return_value = mock_client
 
@@ -172,6 +179,8 @@ class TestAftersaleCreateFailure:
 
         assert result.success is False
         assert result.suggestion is not None
+        # 非本人订单不应发起建单
+        mock_client.post.assert_not_called()
 
 
 # ============================================================
@@ -188,19 +197,19 @@ class TestAftersaleCreateOrderOwnership:
         """创建售后工单前 → 应先查询订单确认属于当前客户"""
         from app.tools.aftersale_create import AftersaleCreateTool
 
-        # Mock admin-api 对订单查询的响应（order_id 属于 customer user_001）
+        # Mock admin-api 我的订单列表（order_id 属于 customer user_001）
         mock_client = AsyncMock()
-        # 第一次调用: 查询订单详情（验证所有权）
+        # 第一次调用: 我的订单列表（验证所有权——按用户强制过滤）
         mock_client.get = AsyncMock(return_value={
             "success": True,
             "data": {
-                "id": "order-123",
-                "orderNo": "ORD-001",
-                "customerId": sample_tool_context.user_id,  # 属于当前客户
-                "customerIdRaw": None,
+                "items": [
+                    {"id": "order-123", "orderNo": "ORD-001", "customerId": sample_tool_context.user_id},
+                ],
+                "total": 1,
             },
         })
-        # 第二次调用: 创建售后工单
+        # 第二次调用: 创建售后工单（Agent 端点）
         mock_client.post = AsyncMock(return_value={
             "success": True,
             "data": {"id": "as-cust-001", "ticketNo": "AS-001", "status": "pending"},
@@ -219,25 +228,27 @@ class TestAftersaleCreateOrderOwnership:
             f"订单属于当前客户时应成功创建: error={result.error}"
         )
 
-        # 验证先调了订单查询再创建
+        # 验证先查我的订单列表再创建
         assert mock_client.get.called, "必须先查询订单验证所有权"
-        # 验证查询了订单详情
         get_call_url = mock_client.get.call_args[0][0] if mock_client.get.call_args else ""
-        assert "order" in get_call_url.lower(), f"应先查询订单: {get_call_url}"
+        assert get_call_url == "/api/admin/agent/orders/mine", f"预检应走 mine 端点: {get_call_url}"
+        post_url = mock_client.post.call_args[0][0] if mock_client.post.call_args else ""
+        assert post_url == "/api/admin/agent/after-sales", f"建单应走 agent 端点: {post_url}"
 
     @patch("app.tools.aftersale_create.get_admin_api_client")
     async def test_non_owner_cannot_create_aftersale_for_order(self, mock_get_client, sample_tool_context):
         """订单不属于当前客户时 → 创建售后工单应失败"""
         from app.tools.aftersale_create import AftersaleCreateTool
 
-        # Mock admin-api: 订单属于另一个客户 (user_999)，不是当前客户 (user_001)
+        # Mock admin-api: 我的订单列表不含该单（用户 user_001 名下无 order-456）
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value={
             "success": True,
             "data": {
-                "id": "order-456",
-                "orderNo": "ORD-456",
-                "customerId": "user_999",  # ← 不属于当前客户！
+                "items": [
+                    {"id": "order-111", "orderNo": "ORD-111", "customerId": sample_tool_context.user_id},
+                ],
+                "total": 1,
             },
         })
         mock_get_client.return_value = mock_client
@@ -245,7 +256,7 @@ class TestAftersaleCreateOrderOwnership:
         tool = AftersaleCreateTool()
         result = await tool.execute(
             context=sample_tool_context,  # user_id = "user_001"
-            order_id="order-456",
+            order_id="order-456",  # 不在我的订单列表里
             ticket_type="complaint",
             reason="不是我自己的订单",
         )
@@ -256,6 +267,8 @@ class TestAftersaleCreateOrderOwnership:
         assert "不属于" in (result.error or "") + (result.message or ""), (
             f"错误信息应说明订单不属于当前客户: error={result.error}, message={result.message}"
         )
+        # 非本人订单 → 不应发起建单请求
+        mock_client.post.assert_not_called()
 
 
 # ============================================================
