@@ -361,8 +361,9 @@ cases:
       - tool: order_create
     data_checks:
       - "返回订单号"
+      - "下单全流程不得向顾客索要单价/金额——价格取自商品数据/算料结果（实测反复要价导致下单卡死 + 本用例评估不稳）"
     skip_reason: ""
-    merge_log: "verification 1.8 独有（smoke 简化版，与 OR-008/OR-009 的细粒度版互补）；2026-08-14 按 EXAMPLES-order.md 例2 校准为多轮（完整收货信息→选1→确认），单轮直下单与设计澄清流程不符"
+    merge_log: "verification 1.8 独有（smoke 简化版，与 OR-008/OR-009 的细粒度版互补）；2026-08-14 按 EXAMPLES-order.md 例2 校准为多轮（完整收货信息→选1→确认），单轮直下单与设计澄清流程不符；2026-09-02 补价格铁律"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_order_manage.py"
