@@ -2111,6 +2111,20 @@ _CASE_UI_012 = EvalCase(
     tags=['ui', 'orders', 'list', 'refresh'],
 )
 
+# ── UI-013 [NORMAL] 小布 C 端支持纯图消息发送（拍照识别：无文本仅图片 → 后端 vision 理解）（源: cases/ui.yml）──
+_CASE_UI_013 = EvalCase(
+    id='UI-013',
+    legacy_id='',
+    title='小布 C 端支持纯图消息发送（拍照识别：无文本仅图片 → 后端 vision 理解）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['顾客拍一张窗帘照片直接发送（不带文字），小布应能收到并走视觉理解推荐相似商品'],
+    expectations=['direct_reply'],
+    data_checks=['chatStore.sendMessage 允许 content 为空但 images 非空的消息：不再被 `!content.trim()` 守卫静默拦截（发送后 SSE POST /api/chat/send 带 images、message 为空串）', 'MessageBubble 对纯图消息（content 空 + images 有）不渲染空文本区，仅渲染图片缩略图', '空文本且无图片仍被拦截（不发送），行为不回归', '转人工态（handedOff+agentSessionId）纯图消息静默忽略（人工会话仅文本通道，不向客服发空文本）'],
+    skip_reason='纯前端发送层由 mini-app jest 单测验证（store-chat.test.ts / message-bubble.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['mini-app', 'chat-input', 'image', 'vision'],
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -2288,6 +2302,7 @@ ALL_CASES = (
     _CASE_UI_010,
     _CASE_UI_011,
     _CASE_UI_012,
+    _CASE_UI_013,
     _CASE_UT_001,
     _CASE_UT_002,
 )

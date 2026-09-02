@@ -412,3 +412,38 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: UI-013
+    legacy_id: ""
+    title: "小布 C 端支持纯图消息发送（拍照识别：无文本仅图片 → 后端 vision 理解）"
+    domains:
+      - ui
+      - frontend
+      - mini-app
+    tier: normal
+    tags:
+      - mini-app
+      - chat-input
+      - image
+      - vision
+    truths_ref:
+      - frontend-fix.no-api-change
+      - frontend-fix.vitest
+    user_inputs:
+      - "顾客拍一张窗帘照片直接发送（不带文字），小布应能收到并走视觉理解推荐相似商品"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "chatStore.sendMessage 允许 content 为空但 images 非空的消息：不再被 `!content.trim()` 守卫静默拦截（发送后 SSE POST /api/chat/send 带 images、message 为空串）"
+      - "MessageBubble 对纯图消息（content 空 + images 有）不渲染空文本区，仅渲染图片缩略图"
+      - "空文本且无图片仍被拦截（不发送），行为不回归"
+      - "转人工态（handedOff+agentSessionId）纯图消息静默忽略（人工会话仅文本通道，不向客服发空文本）"
+    skip_reason: "纯前端发送层由 mini-app jest 单测验证（store-chat.test.ts / message-bubble.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-02 新增：POC 演示修复 — 拍照找布场景顾客发纯图会被 chatStore 静默拦截（chatStore.ts `!content.trim()` 守卫），须文字同行才发得出"
+    traces:
+      tests:
+        - "frontend/mini-app/tests/store-chat.test.ts"
+        - "frontend/mini-app/tests/message-bubble.test.tsx"
+      ci:
+        - mini-app.yml
+      verifies: []
