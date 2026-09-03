@@ -226,8 +226,8 @@ public class RoleService {
                     "customer:view",
                     "finance:view",
                     "agent:session", "agent:quickreply",
-                    "employee:list",
-                    "system:manage"
+                    "employee:list"
+                    // 注意：不含 system:manage —— 角色管理/企业信息/系统设置归 admin 专属（越权守卫）
             );
             case "product_manager" -> List.of(
                     "dashboard:view",

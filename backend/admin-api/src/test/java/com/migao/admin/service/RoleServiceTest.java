@@ -431,7 +431,7 @@ class RoleServiceTest {
     }
 
     @Test
-    @DisplayName("getUserPermissions: operator 角色获得全部常用权限")
+    @DisplayName("getUserPermissions: operator 角色获得业务常用权限（不含 system:manage 系统管理）")
     void getUserPermissions_OperatorGetsAllCommonPermissions() {
         // given
         when(userRoleMapper.selectList(any(LambdaQueryWrapper.class)))
@@ -447,7 +447,7 @@ class RoleServiceTest {
         // when
         List<String> result = roleService.getUserPermissions("u2");
 
-        // then: 13 个权限码
+        // then: 12 个业务权限码（员工管理保留；系统管理归 admin 专属）
         assertThat(result).contains(
                 "dashboard:view",
                 "order:list", "order:detail", "order:refund",
@@ -455,8 +455,10 @@ class RoleServiceTest {
                 "processing:manage",
                 "customer:view", "finance:view",
                 "agent:session", "agent:quickreply",
-                "employee:list", "system:manage"
+                "employee:list"
         );
+        // 越权守卫：operator 不得持有 system:manage（角色管理/系统设置归 admin）
+        assertThat(result).doesNotContain("system:manage");
     }
 
     @Test
