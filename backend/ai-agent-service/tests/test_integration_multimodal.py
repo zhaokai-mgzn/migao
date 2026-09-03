@@ -144,6 +144,14 @@ class InMemorySessionStore:
     async def session_exists(self, session_id):
         return session_id in self.sessions
 
+    async def touch_activity(self, session_id: str) -> bool:
+        # 对齐 SessionMemory.touch_activity（session_service.send_gate 调用）
+        if session_id in self.sessions:
+            from datetime import datetime
+            self.sessions[session_id]["updated_at"] = datetime.utcnow()
+            return True
+        return False
+
 
 _store = InMemorySessionStore()
 
