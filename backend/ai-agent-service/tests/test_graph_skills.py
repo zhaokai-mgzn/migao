@@ -7,11 +7,11 @@ LangGraph Skill 节点测试
 - ToolContext 从 state 正确构建
 - base_skill 的 execute_skill 逻辑
 """
-# case_ids: AG-004
+# case_ids: AG-004, CH-003, MC-008
 
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
-from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
 from app.graph.skills.order_skill import ORDER_TOOLS, ORDER_SKILL_CONFIG
 from app.graph.skills.product_skill import PRODUCT_TOOLS, PRODUCT_SKILL_CONFIG
@@ -676,6 +676,91 @@ class TestExecuteSkillTextAfterMultimodal:
         assert captured[1].content == "你好"
         assert captured[2].content == "您好！有什么可以帮您？"
         assert captured[3].content == "帮我查一下订单 ORD-2024-001"
+
+
+class TestVisionClarifyGuide:
+    """Phase 1（issue #2777）：多模态输入的意图澄清引导
+
+    用户随手发图（可能不带文字/带口语短句）时，vision prompt 注入段必须引导模型：
+    1. 先呈现"我的理解"（图里是什么 + 可能的用途）
+    2. 意图模糊时给出候选意图让用户确认（不硬猜直接执行）
+    对应 G2/G3 缺口与低学历用户场景（docs/design/agent-clarification-capability-research.md §6 Phase 1）。
+    """
+
+    @pytest.fixture(autouse=True)
+    def _capture(self):
+        """构造 mock：拦截传给 LLM 的 messages，返回无 tool 的空回复"""
+        captured = []
+
+        async def _capture_and_respond(messages):
+            captured.extend(messages)
+            resp = MagicMock(spec=AIMessage)
+            resp.content = "好的，我明白了。"
+            resp.tool_calls = []
+            return resp
+
+        mock_registry = MagicMock()
+        mock_registry.get_langchain_tools.return_value = []
+        mock_breaker = MagicMock()
+
+        async def _passthrough_breaker(fn):
+            return await fn()
+
+        mock_breaker.call = _passthrough_breaker
+        mock_llm = MagicMock()
+        mock_llm.ainvoke = AsyncMock(side_effect=_capture_and_respond)
+        mock_llm.model_name = "qwen3.6-flash"
+
+        patchers = [
+            patch("app.graph.skills.base_skill.create_skill_registry", return_value=mock_registry),
+            patch("app.graph.skills.base_skill.set_tool_context"),
+            patch("app.graph.skills.base_skill.get_breaker", return_value=mock_breaker),
+            patch("app.graph.skills.base_skill.get_skill_llm", return_value=mock_llm),
+        ]
+        for p in patchers:
+            p.start()
+        self.captured = captured
+        yield
+        for p in patchers:
+            p.stop()
+
+    async def test_multimodal_prompt_includes_clarify_guide(self):
+        """多模态 system prompt 必须包含意图澄清引导（图片≠直接下单指令）"""
+        from app.graph.skills.base_skill import VISION_CLARIFY_GUIDE
+
+        captured = self.captured
+        state = _make_multimodal_state()
+        await execute_skill(
+            state=state,
+            skill_name="product",
+            tool_names=[],
+            system_prompt="你是商品助手",
+        )
+
+        # 校验常量存在且完整（防误删）
+        assert "我的理解" in VISION_CLARIFY_GUIDE
+        assert "候选意图" in VISION_CLARIFY_GUIDE
+
+        # 校验注入到 system prompt（首条 SystemMessage）
+        system_msgs = [m for m in captured if isinstance(m, SystemMessage)]
+        assert system_msgs, "应存在 SystemMessage"
+        joined = "\n".join(getattr(m, "content", "") or "" for m in system_msgs)
+        assert "候选意图" in joined, "多模态 system prompt 缺少澄清引导段"
+
+    async def test_text_path_does_not_inject_clarify_guide(self):
+        """纯文本路径不应注入图片澄清引导（防无关上下文膨胀）"""
+        captured = self.captured
+        state = _make_state()
+        state["messages"] = [HumanMessage(content="帮我查一下订单")]
+        await execute_skill(
+            state=state,
+            skill_name="order",
+            tool_names=[],
+            system_prompt="你是订单助手",
+        )
+        system_msgs = [m for m in captured if isinstance(m, SystemMessage)]
+        joined = "\n".join(getattr(m, "content", "") or "" for m in system_msgs)
+        assert "候选意图" not in joined, "纯文本路径不应注入图片澄清引导"
 
 
 class TestExtractContentThinkingGuard:
