@@ -162,7 +162,9 @@ cases:
       - compliance
       - gb47746
     truths_ref:
-      - frontend-corporate-home.gb47746-claim
+      - frontend-fix.vitest
+      - frontend-fix.tsc
+      - frontend-fix.no-api-change
     user_inputs:
       - "官网主页展示「遵循国家标准」区块：标准号 GB/T 47746-2026 与《顾客联络服务 人工与智能客户服务协同要求》"
       - "4 个能力点：自动识别复杂诉求转人工 / 转人工规则可配置 / 转人工即同步上下文 / AI 严格承诺边界"

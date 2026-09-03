@@ -1186,7 +1186,7 @@
 数据: corporate-home.test.tsx 断言标准号与能力点渲染（无快照/无新 icon）
 跳过: 由前端单测验证（corporate-home.test.tsx），非 LLM 冒烟
 ```
-真值: frontend-corporate-home.gb47746-claim
+真值: frontend-fix.vitest, frontend-fix.tsc, frontend-fix.no-api-change
 溯源: 2026-09-03 新增：GB/T 47746-2026 合规官网宣称（issue #2787） ｜ tags: homepage, compliance, gb47746
 
 ## 订单域（13 case）
