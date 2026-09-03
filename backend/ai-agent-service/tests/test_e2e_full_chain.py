@@ -414,6 +414,7 @@ class TestExceptionBoundaryChain:
                         # 尝试发送消息到不存在的会话
                         resp = client.post(
                             "/api/chat/send",
+                            headers={"X-Debug-Role": "mibao"},
                             json={
                                 "session_id": "non_existent_session_id",
                                 "message": "hello",
@@ -424,9 +425,9 @@ class TestExceptionBoundaryChain:
                         assert body["detail"]["error"]["code"] == "SESSION_NOT_FOUND"
 
                         # 尝试获取不存在会话的历史
-                        resp = client.get("/api/chat/history/non_existent_session_id")
+                        resp = client.get("/api/chat/history/non_existent_session_id", headers={"X-Debug-Role": "mibao"})
                         assert resp.status_code == 404
 
                         # 尝试删除不存在的会话
-                        resp = client.delete("/api/chat/sessions/non_existent_session_id")
+                        resp = client.delete("/api/chat/sessions/non_existent_session_id", headers={"X-Debug-Role": "mibao"})
                         assert resp.status_code == 404

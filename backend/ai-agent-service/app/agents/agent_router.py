@@ -52,15 +52,29 @@ class AgentRouter:
             )
             return agent_name
 
-        # 兜底：优先返回最小权限 Agent（xiaobu），避免误暴露管理后台能力
+        # 兜底分流（P1-C 修复，RBAC 走查）：
+        # - C 端角色（customer/agent）→ 最小权限 xiaobu（安全兜底不变）
+        # - 商户员工（admin-api 签发的后台 JWT，含「角色管理」自定义角色码，
+        #   无法在 allowed_roles 白名单穷举）→ mibao；米宝工具级权限仍由
+        #   permissions claim 强控（required_permissions），自定义角色无权限码
+        #   自然被工具拒绝，不会越权暴露管理能力。
         all_configs = get_all_agent_configs()
-        safe_fallback = all_configs.get("xiaobu") or all_configs.get("customer_general")
-        if safe_fallback:
+        role_l = (role or "").lower()
+        if role_l in ("customer", "agent"):
+            safe_fallback = all_configs.get("xiaobu") or all_configs.get("customer_general")
+            if safe_fallback:
+                logger.warning(
+                    f"[AgentRouter] C-end role={role} no exact match, "
+                    f"falling back to least-privileged agent '{safe_fallback.name}'"
+                )
+                return safe_fallback.name
+        merchant_fallback = all_configs.get("mibao")
+        if merchant_fallback:
             logger.warning(
-                f"[AgentRouter] No matching agent for role={role}, "
-                f"falling back to least-privileged agent '{safe_fallback.name}'"
+                f"[AgentRouter] Merchant-staff role={role} not in any agent's "
+                f"allowed_roles (custom role), routing to '{merchant_fallback.name}'"
             )
-            return safe_fallback.name
+            return merchant_fallback.name
 
         # 极端兜底
         if all_configs:
