@@ -13,6 +13,7 @@ from app.graph.skills.skill_config import SkillConfig
 # [RAG 禁用] 移除 knowledge_search,原用于查询售后政策
 AFTERSALES_TOOLS = ["order_query", "order_manage", "after_sales_manage",
     "validate_input",  # 写操作前置校验
+    "interact",        # 交互卡片：写操作 confirm、售后类型/原因 choice
 ]
 
 # 售后 Skill 专用 System Prompt

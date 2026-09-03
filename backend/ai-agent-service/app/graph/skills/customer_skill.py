@@ -14,6 +14,7 @@ from app.graph.skills.skill_config import SkillConfig
 # product_search: 查推荐商品
 CUSTOMER_TOOLS = ["customer_manage", "order_query", "product_search",
     "validate_input",  # 写操作前置校验
+    "interact",        # 交互卡片：destructive 写操作（删客户/标签）confirm、客户选择 choice
 ]
 
 # 客户 Skill 专用 System Prompt
