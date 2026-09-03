@@ -283,7 +283,7 @@
 真值: category-manage.delete, category-manage.delete-destructive, ai-chat.confirm-required
 溯源: verification 2.12 独有（二次确认行为在测试中未确认，见 category-manage.yml 缺口注释） ｜ tags: delete, destructive, confirm
 
-## 对话边界域（21 case）
+## 对话边界域（22 case）
 
 ### CH-001. 空结果 + suggestion 引导修复 🔴
 ```
@@ -561,6 +561,22 @@
 ```
 真值: ai-chat.route-actions
 溯源: issue #2794：agent-eval runner 图片消息支持（case schema dict 形态 user_inputs） ｜ tags: clarification, multimodal, image
+
+### CH-022. 连续模糊意图 - 澄清轮上限后给具体示例兜底（不无限追问） 🔵
+```
+你: 帮我看看
+你: 就是那个
+你: 你懂的
+你: 算了不说了
+期望: direct_reply or interact
+数据: 低置信澄清（source=low_confidence 重写 general）轮次计数存 SessionStateStore.clarify
+数据: 连续澄清 ≥ MAX_CLARIFY_ROUNDS(2) 轮后，不再以『您想做什么』追问——改给具体示例（查订单/搜商品/算料话术）+ 转人工出口
+数据: 用户给出实质意图/点选澄清卡 → 澄清计数清零，正常流程恢复
+数据: 存储异常降级不阻断主流程
+跳过: 轮次护栏为代码层纯逻辑，由 pytest 单测覆盖（test_clarify_guard.py 17 例含端到端序列），不进入 agent-eval 冒烟
+```
+真值: ai-chat.route-actions
+溯源: issue #2796：澄清轮次护栏（clarify_guard.apply_clarify_guard 挂 intent_router_node） ｜ tags: clarification, round_guard
 
 ## 跨域（3 case）
 
@@ -1934,7 +1950,7 @@
 - agents：6
 - api：10
 - 分类域：3
-- 对话边界域：21
+- 对话边界域：22
 - 跨域：3
 - 客户域：5
 - 数据域：6
