@@ -90,12 +90,14 @@ public class DashboardController {
         java.util.List<Order> todayList = orderMapper.selectList(
                 new LambdaQueryWrapper<Order>().eq(Order::getTenantId, tenantId).ge(Order::getCreatedAt, todayStart));
         long todaySales = todayList.stream().map(o -> o.getTotalAmount() != null ? o.getTotalAmount() : BigDecimal.ZERO)
-                .reduce(BigDecimal.ZERO, BigDecimal::add).longValue();
+                .reduce(BigDecimal.ZERO, BigDecimal::add)
+                .setScale(0, java.math.RoundingMode.HALF_UP).longValue();
         java.util.List<Order> yesterdayList = orderMapper.selectList(
                 new LambdaQueryWrapper<Order>().eq(Order::getTenantId, tenantId)
                         .ge(Order::getCreatedAt, yesterdayStart).lt(Order::getCreatedAt, todayStart));
         long yesterdaySales = yesterdayList.stream().map(o -> o.getTotalAmount() != null ? o.getTotalAmount() : BigDecimal.ZERO)
-                .reduce(BigDecimal.ZERO, BigDecimal::add).longValue();
+                .reduce(BigDecimal.ZERO, BigDecimal::add)
+                .setScale(0, java.math.RoundingMode.HALF_UP).longValue();
         double todaySalesChange = yesterdaySales > 0
                 ? ((double) (todaySales - yesterdaySales) / yesterdaySales) * 100 : 0;
 
