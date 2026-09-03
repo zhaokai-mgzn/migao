@@ -558,6 +558,9 @@ export const useChatStore = create<ChatState>()((set, get) => ({
             id: `agent-${m.id}`,
             session_id: sid,
             role: 'assistant' as const,
+            // GB-02（GB/T 47746-2026, issue #2780）：人工客服消息显式打标 source='human'，
+            // 渲染层据此与 AI 回复区分（此前与 AI 同构、人机不可区分）
+            source: 'human' as const,
             content: m.content,
             created_at: m.createdAt,
           }))

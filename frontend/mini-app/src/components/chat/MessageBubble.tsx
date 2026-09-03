@@ -213,6 +213,26 @@ export default function MessageBubble({ message, onInteract }: MessageBubbleProp
   return (
     <View className={bubbleClass}>
       <View className='message-bubble__wrapper'>
+        {/* GB-02（GB/T 47746-2026, issue #2780）：消息来源标识——AI 助手 / 人工客服
+            AI 标识仅在文本回复上显示（纯卡片/纯工具消息不显示，避免干扰卡片语义）；
+            人工客服消息显式打标（转人工后由 chatStore 轮询映射写入 source='human'） */}
+        {(() => {
+          const isHuman = message.source === 'human'
+          return role === 'assistant' && (isHuman || !!content) ? (
+            <View className='message-bubble__source'>
+              <Text
+                className={
+                  isHuman
+                    ? 'message-bubble__source-text message-bubble__source-text--human'
+                    : 'message-bubble__source-text'
+                }
+              >
+                {isHuman ? '👩‍💼 人工客服' : '🤖 AI 助手'}
+              </Text>
+            </View>
+          ) : null
+        })()}
+
         {/* 文本内容（纯图消息 content 为空时不渲染空文本区；tool_call 有 content 时也显示） */}
         {content && (
           <View className='message-bubble__content'>

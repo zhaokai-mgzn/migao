@@ -293,3 +293,49 @@ describe('chatStore', () => {
     })
   })
 })
+
+describe('转人工轮询映射（GB-02, issue #2780）', () => {
+  it('人工客服消息映射为 assistant 且 source=human（与 AI 回复可区分）', async () => {
+    const store = getChatStore()
+    const chatService = require('../src/services/chatService')
+    const mockByAi = chatService.getAgentSessionByAi as jest.Mock
+    mockByAi.mockResolvedValue({
+      id: 'agent-sess-1',
+      messages: [
+        {
+          id: 'am1',
+          senderType: 'agent',
+          senderId: 'emp-1',
+          senderName: '客服小王',
+          contentType: 'text',
+          content: '您好，我是人工客服，已看到您和 AI 的沟通',
+          createdAt: '2026-09-01T10:00:00Z',
+        },
+        {
+          id: 'um1',
+          senderType: 'customer',
+          senderId: 'cust-1',
+          contentType: 'text',
+          content: '在吗',
+          createdAt: '2026-09-01T10:00:01Z',
+        },
+      ],
+    })
+    store.setState({ currentSessionId: 's1', handedOff: true })
+
+    // 启动轮询（立即拉取一次）
+    store.getState().startAgentPolling()
+    await new Promise(r => setTimeout(r, 10))
+
+    const msgs = store.getState().messages
+    // 仅 agent（人工客服）消息被映射；customer 消息忽略
+    expect(msgs).toHaveLength(1)
+    expect(msgs[0].role).toBe('assistant')
+    expect(msgs[0].source).toBe('human')
+    expect(msgs[0].content).toContain('我是人工客服')
+
+    // 清理轮询定时器，避免 open handle
+    const timer = (store.getState() as any)._agentPollTimer
+    if (timer) clearInterval(timer)
+  })
+})
