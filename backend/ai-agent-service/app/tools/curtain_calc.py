@@ -298,9 +298,15 @@ class CurtainCalcTool(BaseTool):
                 suggestion="悬挂方式仅支持：打孔(eyelet)/韩式褶(s_hook)/四爪钩(hook)/罗马帘(roman)",
             )
 
-        # 面料单价：未提供时用默认（LLM 应优先从 product_detail 查）
+        # GB/T 47746-2026 承诺边界：面料单价缺失时禁止按默认 30 元/米兜底报价
+        # （默认价可能与真实售价不符，属编造报价承诺）。必须先查商品拿到真实单价再报价。
         if fabric_price is None:
-            fabric_price = 30.0
+            return ToolResult(
+                success=False,
+                error="缺少面料单价",
+                message="缺少面料单价，请先查商品信息再报价",
+                suggestion="请先调用 product_detail 或 product_search 查询该商品的面料单价（元/米），拿到真实单价后再重新计算报价",
+            )
 
         try:
             quote = build_quote(
@@ -329,7 +335,10 @@ class CurtainCalcTool(BaseTool):
                     f"（面料¥{quote['fabric_cost']}+加工¥{quote['processing_cost']}"
                     f"+辅料¥{quote['accessory_cost']}+安装¥{quote['install_cost']}）"
                 ),
-                message=f"算料完成：共需面料 {quote['fabric_meters']} 米，总价 ¥{quote['total']}",
+                message=(
+                    f"算料完成：共需面料 {quote['fabric_meters']} 米，总价 ¥{quote['total']}"
+                    "（以上为 AI 按您提供尺寸的预估报价，最终以实际测量/确认为准）"
+                ),
             )
         except Exception as e:
             logger.error(f"[curtain-calc] Failed: {type(e).__name__}: {e}")

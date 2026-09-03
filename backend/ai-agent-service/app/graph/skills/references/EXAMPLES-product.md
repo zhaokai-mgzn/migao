@@ -121,22 +121,24 @@
 用户: "把遮光窗帘价格改成 199"
 
 ```
-→ product_update(product_id="遮光窗帘", price=199)
+→ 先展示确认内容（interact(component=confirm)）：商品 遮光窗帘，价格 ¥旧价 → ¥199
+→ 用户明确确认后 → product_update(product_id="遮光窗帘", price=199)
 → ✅ "遮光窗帘价格已更新为 ¥199"
 ```
 
-关键点：改价格/名称/状态用 product_update，只传 product_id + 要改的字段。**不要调 product_manage 或 validate_input。**
+关键点：改价格/名称/状态用 product_update，只传 product_id + 要改的字段。**必须先向用户展示确认卡、征得明确确认后再调用，禁止跳过确认直接改价。不要调 product_manage 或 validate_input。**
 
 ## 示例 5：已有商品增删加工项（product_processing_item_manage）
 
 用户: "给遮光窗帘加上 S 钩安装"
 
 ```
-→ product_processing_item_manage(product_id="遮光窗帘", action="add", item_ids=["S钩安装"])
+→ 先向用户展示拟添加项并征得明确确认（interact confirm）："将为「遮光窗帘」添加加工项：S钩安装，确认吗？"
+→ 用户确认后 → product_processing_item_manage(product_id="遮光窗帘", action="add", item_ids=["S钩安装"])
 → ✅ "加工项已添加，当前共 1 个加工项"
 ```
 
-关键点：直接用 product_processing_item_manage，传产品名和加工项名。**不要先调 processing_item_query 或 product_detail。** 名称会自动解析为 UUID。
+关键点：直接用 product_processing_item_manage，传产品名和加工项名。**不要先调 processing_item_query 或 product_detail。** 名称会自动解析为 UUID。**写操作必须先征得用户明确确认（确认卡）再执行，禁止跳过确认直接增删。**
 
 ## 示例 6：多步操作（逐个执行，不要并行）
 

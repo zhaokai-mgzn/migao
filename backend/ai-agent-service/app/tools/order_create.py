@@ -55,6 +55,9 @@ class OrderCreateTool(BaseTool):
 
     read_only = False
     destructive = False
+    # GB/T 47746-2026 承诺边界：下单即与顾客达成交易合同（金额/履约承诺），
+    # 含 B 端客服代顾客下单——必须先向用户展示订单确认卡并取得明确确认后才能执行。
+    requires_confirmation = True
     idempotent = False  # 每次调用创建新订单
 
     # 关联校验工具

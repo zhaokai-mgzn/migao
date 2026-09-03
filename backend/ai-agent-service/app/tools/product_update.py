@@ -48,6 +48,15 @@ class ProductUpdateTool(BaseTool):
         description: Optional[str] = None,
         status: Optional[str] = None,
     ) -> ToolResult:
+        # 权限检查：改价/改名属对商品定价的承诺修改，仅限商户角色（admin/tenant_admin）
+        if not self.check_permission(context):
+            return ToolResult(
+                success=False,
+                error="权限不足",
+                message="您没有权限修改商品信息",
+                suggestion="商品更新仅对商家账号开放（admin/tenant_admin），请确认当前账号角色或联系管理员",
+            )
+
         # Build only the fields that were actually provided
         # ⚠️ 请求体字段名必须与 admin-api AgentProductUpdateRequest 对齐：basePrice（非 price）。
         # Jackson 忽略未知字段，传 price 会被静默丢弃 → 价格更新无效（E2E Real 暴露）。
