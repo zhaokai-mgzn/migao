@@ -7,7 +7,7 @@ LangGraph Skill 节点测试
 - ToolContext 从 state 正确构建
 - base_skill 的 execute_skill 逻辑
 """
-# case_ids: AG-004, CH-003, MC-008
+# case_ids: AG-004, CH-003, CH-023, MC-008
 
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
@@ -762,6 +762,17 @@ class TestVisionClarifyGuide:
         system_msgs = [m for m in captured if isinstance(m, SystemMessage)]
         joined = "\n".join(getattr(m, "content", "") or "" for m in system_msgs)
         assert "候选意图" not in joined, "纯文本路径不应注入图片澄清引导"
+
+
+class TestVisionGroundedGuide:
+    """Phase 2c（issue #2799）：图片澄清候选 grounded 到店铺真实商品"""
+
+    def test_guide_contains_grounded_instruction(self):
+        """VISION_CLARIFY_GUIDE 必须引导商品类候选先检索真实商品（不编造）。"""
+        from app.graph.skills.base_skill import VISION_CLARIFY_GUIDE
+        assert "product_search" in VISION_CLARIFY_GUIDE, "澄清引导缺 grounded 检索指令"
+        assert "编造" in VISION_CLARIFY_GUIDE, "澄清引导缺不编造约束"
+        assert "没搜到" in VISION_CLARIFY_GUIDE, "澄清引导缺无命中兜底话术"
 
 
 class TestExtractContentThinkingGuard:
