@@ -84,7 +84,7 @@ class TestSkillToolSubsets:
         assert "product_search" not in AFTERSALES_TOOLS
 
     def test_general_tools_includes_all(self):
-        """通用兜底 Skill 包含查询 + 基础管理 Tool"""
+        """通用兜底 Skill 包含查询 + 基础管理 Tool + interact（澄清卡承载，Phase 2 #2789）"""
         expected = {
             "order_query",
             "logistics_track",
@@ -99,6 +99,7 @@ class TestSkillToolSubsets:
             "quick_reply_manage",
             "processing_item_manage",
             "category_manage",
+            "interact",
         }
         assert set(GENERAL_TOOLS) == expected
 
