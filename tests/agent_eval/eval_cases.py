@@ -31,6 +31,7 @@ class EvalCase:
     title: str
     skill: Skill
     difficulty: Difficulty
+    # 每轮可为 str（纯文本）或 dict（{text, images[]} 带图消息，issue #2794）
     user_inputs: List[str]
     expectations: List[str]
     data_checks: List[str]
@@ -652,6 +653,20 @@ _CASE_CH_020 = EvalCase(
     expectations=['interact or product_search'],
     data_checks=['customer_product/customer_general 图片段含『候选意图卡』与『不要默认直接搜相似』引导（prompt 契约测试）', '顾客意图明确（『找类似的』『推荐』）→ 直接 product_search，不发卡', '仅发图/意图不明 → interact(choice) 候选卡（2-4 项可点选），点选后再动作'],
     skip_reason='图片消息由 pytest 覆盖（test_prompt_snapshots 契约断言），agent-eval runner 当前无发图能力，不进入 agent-eval 冒烟',
+    tags=['clarification', 'multimodal', 'image'],
+)
+
+# ── CH-021 [NORMAL] 图片消息端到端 - 真实发图后 AI 走 vision 链路（澄清/识别不报错）（源: cases/chat.yml）──
+_CASE_CH_021 = EvalCase(
+    id='CH-021',
+    legacy_id='',
+    title='图片消息端到端 - 真实发图后 AI 走 vision 链路（澄清/识别不报错）',
+    skill=Skill.MULTI_TURN,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[{'text': '看看这个面料', 'images': ['https://picsum.photos/seed/curtain-fabric/800/600']}],
+    expectations=['interact or product_search or direct_reply'],
+    data_checks=['带图消息 body 含 images（local_runner send_message 透传，issue #2794）', 'AI 不报『图片分析失败/无法处理』类错误；图片走 vision 链路（理解或澄清）', '意图明确才执行；意图不明可澄清（候选卡或追问），不硬猜'],
+    skip_reason='真实 vision LLM 行为（成本/波动），tier normal 不进 PR smoke；由手动 agent-eval normal/图片用例专用 CI 触发',
     tags=['clarification', 'multimodal', 'image'],
 )
 
@@ -2282,6 +2297,7 @@ ALL_CASES = (
     _CASE_CH_018,
     _CASE_CH_019,
     _CASE_CH_020,
+    _CASE_CH_021,
     _CASE_CR_001,
     _CASE_CR_002,
     _CASE_CR_003,
