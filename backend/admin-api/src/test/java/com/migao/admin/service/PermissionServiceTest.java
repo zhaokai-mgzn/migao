@@ -1,3 +1,5 @@
+// case_ids: HR-004
+
 package com.migao.admin.service;
 
 import com.migao.admin.entity.Permission;
@@ -122,4 +124,25 @@ class PermissionServiceTest {
         assertThat(result).isFalse();
         verify(permissionMapper, never()).insert(any(Permission.class));
     }
+
+    @Test
+    @DisplayName("ensureFullPermissionCatalog — 幂等补种缺失的细粒度权限码")
+    void ensureFullPermissionCatalog_backfillsMissingCodes() {
+        // 存量租户仅有 5 条旧大类码
+        Permission old = new Permission();
+        old.setCode("dashboard:view");
+        when(permissionMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(old));
+        // insert 返回 1
+        when(permissionMapper.insert(any(Permission.class))).thenReturn(1);
+
+        int inserted = permissionService.ensureFullPermissionCatalog(1L);
+
+        // 目录 17 码 - 已有 1 码 = 应补 16 码
+        assertThat(inserted).isEqualTo(16);
+        // 补种的码应含 order:list / employee:create / finance:view（此前角色管理无法授予）
+        verify(permissionMapper, atLeastOnce()).insert(argThat((Permission p) ->
+                "order:list".equals(p.getCode()) || "employee:create".equals(p.getCode())
+                        || "finance:view".equals(p.getCode()) || "customer:view".equals(p.getCode())));
+    }
 }
+

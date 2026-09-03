@@ -518,13 +518,27 @@ public class RegistrationService {
                 .build();
         roleMapper.insert(csRole);
 
-        // 创建默认权限
+        // 创建默认权限目录（RBAC 修复：与代码 @RequirePermission / 前端菜单树 / 内置角色映射
+        // 全量对齐——此前仅 5 条大类码，角色管理页无法授予 order:list / employee:create 等细粒度码，
+        // 自定义角色形同虚设。product:manage 保留兼容旧 role_permissions 引用）
         String[][] defaultPermissions = {
                 {"仪表板查看", "dashboard:view", "dashboard", "view", "查看数据概览"},
-                {"商品管理", "product:manage", "product", "manage", "管理商品"},
+                {"商品管理", "product:manage", "product", "manage", "管理商品(旧大类码，兼容)"},
+                {"商品列表", "product:list", "product", "list", "查看商品列表"},
+                {"新增商品", "product:create", "product", "create", "新增/编辑/上下架商品"},
+                {"商品分类", "product:category", "product", "category", "管理商品分类"},
                 {"加工管理", "processing:manage", "processing", "manage", "管理加工项"},
                 {"知识库管理", "knowledge:manage", "knowledge", "manage", "管理知识库"},
-                {"系统管理", "system:manage", "system", "manage", "管理系统设置"}
+                {"订单列表", "order:list", "order", "list", "查看订单列表"},
+                {"订单详情", "order:detail", "order", "detail", "查看订单详情"},
+                {"订单退款", "order:refund", "order", "refund", "处理退款/售后工单"},
+                {"客户管理", "customer:view", "customer", "view", "查看客户"},
+                {"财务对账", "finance:view", "finance", "view", "查看财务流水/对账"},
+                {"会话监控", "agent:session", "agent", "session", "米宝对话/会话监控/人工客服"},
+                {"快捷回复", "agent:quickreply", "agent", "quickreply", "机器人设置/快捷回复"},
+                {"员工列表", "employee:list", "employee", "list", "查看员工列表"},
+                {"新增员工", "employee:create", "employee", "create", "新增/编辑/删除员工"},
+                {"系统管理", "system:manage", "system", "manage", "企业信息/角色管理/系统设置"}
         };
 
         for (String[] perm : defaultPermissions) {
