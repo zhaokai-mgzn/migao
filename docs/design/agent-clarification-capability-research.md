@@ -333,3 +333,17 @@
 | 兜底话术 | ✅ | CLARIFY_FORCE_EXAMPLE_TEXT：低学历友好（①查订单 ②搜商品 ③算料 示例 + 转人工出口） | 断言含示例与出口 |
 | 行为用例 | ✅ | CH-022（连续模糊→兜底示例）+ 渲染 159 条 + truth check | gate ✅ |
 | 设计语义 | ✅ | 达上限的"本轮"仍正常澄清（用户最后机会），下一轮仍模糊才兜底——不激进打断 | 序列测试 |
+
+---
+
+## 十四、实施进度 Phase 2c 轻量版 grounded（issue #2799，2026-09-03）
+
+> 实施分支：`feat/2799-clarify-grounded`。承接 §7 风险表方向：关键词级轻检索，不依赖向量/OCR（G10 全量版后续）。
+
+| 项 | 状态 | 落地位置 | 验证 |
+|---|---|---|---|
+| 关键词提取纯函数 | ✅ | `app/graph/clarify_grounded.py`：extract_search_keywords（面料材质/颜色/风格，去"色"、行业色号、停用词过滤、去重上限）/ pick_primary_keyword（材质优先） | 单测 10 例（含边界：无命中/停用词/多色） |
+| grounded 检索引导 | ✅ | `base_skill.py` VISION_CLARIFY_GUIDE 追加第 6 条：商品类候选先按图片特征调 product_search 命中真实商品作候选（名称+价格），无命中如实说明不编造 | 契约测试 TestVisionGroundedGuide |
+| 行为用例 | ✅ | CH-023（图片澄清候选 grounded）+ 渲染 161 条 + truth check | gate ✅ |
+| 三把工具 | ✅ | — | gate / UI / contract 全绿 |
+| G10 全量版（图向量/OCR 底座） | ⏳ 后续 | 依赖向量检索/OCR 基础设施投入 | — |

@@ -745,3 +745,38 @@ cases:
       ci:
         - agent-eval.yml
       verifies: []
+
+  - id: CH-023
+    legacy_id: ""
+    title: "图片澄清候选 grounded 商户库 - 商品类候选先检索真实商品（不编造）"
+    domains:
+      - chat
+      - product
+    tier: normal
+    tags:
+      - clarification
+      - multimodal
+      - image
+      - grounded
+    truths_ref:
+      - ai-chat.route-actions
+    user_inputs:
+      - text: "帮我看看这个布料有没有卖的"
+        images:
+          - "https://picsum.photos/seed/curtain-fabric-g/800/600"
+    expectations:
+      - tool: product_search or interact or direct_reply
+    data_checks:
+      - "VISION_CLARIFY_GUIDE 含 grounded 引导：商品类候选先按图片特征（颜色/面料/风格）调 product_search 检索"
+      - "澄清候选引用命中的真实商品（名称+价格），如『店里的雪尼尔遮光窗帘 ¥88/米』"
+      - "检索无命中 → 如实说『店里暂时没搜到一样的』，不凭空编造商品名/价格"
+      - "关键词提取纯函数（clarify_grounded.extract_search_keywords）由 pytest 单测覆盖"
+    skip_reason: "图片消息由 pytest 覆盖（TestVisionGroundedGuide + test_clarify_grounded），agent-eval runner 无稳定发图环境，不进入 agent-eval 冒烟"
+    merge_log: "issue #2799：Phase 2c 轻量版 grounded（关键词提取纯函数 + VISION_CLARIFY_GUIDE 检索引导）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_graph_skills.py"
+        - "backend/ai-agent-service/tests/test_clarify_grounded.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
