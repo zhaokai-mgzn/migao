@@ -164,4 +164,54 @@ describe('FinancePage', () => {
     expect(screen.getByTestId('modal')).toBeInTheDocument()
     expect(screen.getByText('收支类型 *')).toBeInTheDocument()
   })
+
+  // ── 应收对账差额语义（P2-1：少收/应退/多收 区分）──
+
+  it('已完成+已退>0 订单差额显示「应退」而非「少收」', async () => {
+    // given: 已完成订单，应收119.8 实收119.8 已退20 → 净应收差 +20（退款未核销）
+    mockGetReconciliation.mockResolvedValue({
+      data: { data: { items: [{
+        orderId: 'o1', orderNo: '20260902507820031', customerName: '李雷',
+        status: 'completed', receivableAmount: 119.8, receivedAmount: 119.8,
+        refundAmount: 20, difference: 20,
+      }], total: 1 } },
+    })
+    render(<FinancePage />)
+    await user.click(screen.getByText('应收对账'))
+    await waitFor(() => {
+      expect(screen.getByText('应退')).toBeInTheDocument()
+    })
+    expect(screen.queryByText('少收')).not.toBeInTheDocument()
+  })
+
+  it('实收不足订单差额显示「少收」', async () => {
+    // given: 待发货订单，应收119.8 实收0 已退0 → 差 +119.8（客户未付）
+    mockGetReconciliation.mockResolvedValue({
+      data: { data: { items: [{
+        orderId: 'o2', orderNo: '2026090300001', customerName: '王五',
+        status: 'confirmed', receivableAmount: 119.8, receivedAmount: 0,
+        refundAmount: 0, difference: 119.8,
+      }], total: 1 } },
+    })
+    render(<FinancePage />)
+    await user.click(screen.getByText('应收对账'))
+    await waitFor(() => {
+      expect(screen.getByText('少收')).toBeInTheDocument()
+    })
+  })
+
+  it('差额为 0 显示「已对平」', async () => {
+    mockGetReconciliation.mockResolvedValue({
+      data: { data: { items: [{
+        orderId: 'o3', orderNo: '2026090300002', customerName: '赵六',
+        status: 'completed', receivableAmount: 100, receivedAmount: 100,
+        refundAmount: 0, difference: 0,
+      }], total: 1 } },
+    })
+    render(<FinancePage />)
+    await user.click(screen.getByText('应收对账'))
+    await waitFor(() => {
+      expect(screen.getByText('已对平')).toBeInTheDocument()
+    })
+  })
 })

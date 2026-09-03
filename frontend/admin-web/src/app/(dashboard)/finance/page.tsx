@@ -197,8 +197,16 @@ export default function FinancePage() {
     }
   }
 
-  const diffVariant = (d: number) => (d === 0 ? 'success' : d > 0 ? 'warning' : 'error')
-  const diffLabel = (d: number) => (d === 0 ? '已对平' : d > 0 ? '少收' : '多收')  // 新口径: 正=少收(应收>实收+已退), 负=多收(应退)
+  // 差额语义（P2-1 修复）：difference = 应收 - 实收 + 已退（净应收口径）
+  // - 0 → 已对平
+  // - 已完成订单（实收=应收）差额>0 源于退款未核销 → 「应退」而非「少收」
+  // - 其他 >0 → 实收不足 → 「少收」；<0 → 实收超出 → 「多收」
+  const diffVariant = (r: { status: string; difference: number }) =>
+    r.difference === 0 ? 'success' : (r.status === 'completed' && r.difference > 0) ? 'info' : r.difference > 0 ? 'warning' : 'error'
+  const diffLabel = (r: { status: string; difference: number }) =>
+    r.difference === 0 ? '已对平'
+      : (r.status === 'completed' && r.difference > 0) ? '应退'
+      : r.difference > 0 ? '少收' : '多收'
 
   const visibleRecs = onlyDiff ? recs.filter((r) => r.difference !== 0) : recs
 
@@ -518,7 +526,7 @@ export default function FinancePage() {
                         {r.difference === 0 ? '0.00' : (r.difference > 0 ? '+' : '') + fmtMoney(r.difference)}
                       </td>
                       <td className="px-4 py-3">
-                        <Badge variant={diffVariant(r.difference)}>{diffLabel(r.difference)}</Badge>
+                        <Badge variant={diffVariant(r)}>{diffLabel(r)}</Badge>
                       </td>
                       <td className="px-4 py-3 text-sm text-neutral-500"><DateTimeCell value={r.createdAt} /></td>
                     </tr>
