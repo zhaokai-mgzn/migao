@@ -93,6 +93,9 @@ describe('Sidebar', () => {
     expect(screen.getByText('加工项管理')).toBeInTheDocument()
     // RBAC 菜单入口修复：角色权限入口应显示（system:manage 权限，admin 全权限）
     expect(screen.getByText('角色权限')).toBeInTheDocument()
+    // 菜单入口补齐：知识库（knowledge:manage）+ 通知中心（全员）入口可见
+    expect(screen.getByText('知识库')).toBeInTheDocument()
+    expect(screen.getByText('通知中心')).toBeInTheDocument()
     expect(screen.getByText('订单列表')).toBeInTheDocument()
     expect(screen.getByText('售后工单')).toBeInTheDocument()
     // 独立菜单项
@@ -112,6 +115,8 @@ describe('Sidebar', () => {
     expect(screen.getByText('米宝 · 在线对话').closest('a')).toHaveAttribute('href', '/chat')
     expect(screen.getByText('AI 客服配置').closest('a')).toHaveAttribute('href', '/chat/config')
     expect(screen.getByText('人工客服').closest('a')).toHaveAttribute('href', '/agent-workspace/human-sessions')
+    expect(screen.getByText('知识库').closest('a')).toHaveAttribute('href', '/knowledge')
+    expect(screen.getByText('通知中心').closest('a')).toHaveAttribute('href', '/notifications')
   })
 
   // ── 折叠状态 ──
@@ -270,6 +275,8 @@ describe('Sidebar', () => {
       expect(screen.getByText('财务对账')).toBeInTheDocument()
       expect(screen.getByText('员工管理')).toBeInTheDocument()
       expect(screen.getByText('企业基础信息')).toBeInTheDocument()
+      expect(screen.getByText('知识库')).toBeInTheDocument()
+      expect(screen.getByText('通知中心')).toBeInTheDocument()
       // UI-005/UI-011: admin 可见智能客服大类及其子菜单（米宝·在线对话/AI 客服配置/人工客服）
       expect(screen.getByText('智能客服')).toBeInTheDocument()
       expect(screen.getByText('米宝 · 在线对话')).toBeInTheDocument()
@@ -294,6 +301,9 @@ describe('Sidebar', () => {
       expect(screen.queryByText('财务对账')).not.toBeInTheDocument()
       expect(screen.queryByText('员工管理')).not.toBeInTheDocument()
       expect(screen.queryByText('企业基础信息')).not.toBeInTheDocument()
+      // 无 knowledge:manage → 知识库入口隐藏；通知中心全员可见
+      expect(screen.queryByText('知识库')).not.toBeInTheDocument()
+      expect(screen.getByText('通知中心')).toBeInTheDocument()
       // UI-005/UI-011: 无 agent:session / agent:quickreply → 智能客服整组隐藏
       expect(screen.queryByText('智能客服')).not.toBeInTheDocument()
       expect(screen.queryByText('米宝 · 在线对话')).not.toBeInTheDocument()
@@ -314,6 +324,10 @@ describe('Sidebar', () => {
       // 独立菜单项也不在
       expect(screen.queryByText('客户管理')).not.toBeInTheDocument()
       expect(screen.queryByText('员工管理')).not.toBeInTheDocument()
+      // 零权限也可见：通知中心（无权限码，全员）
+      expect(screen.getByText('通知中心')).toBeInTheDocument()
+      // 零权限不可见：知识库（需 knowledge:manage）
+      expect(screen.queryByText('知识库')).not.toBeInTheDocument()
     })
 
     it('无 agent:quickreply 权限 → 隐藏「AI 客服配置」，保留「米宝·在线对话」+「人工客服」', () => {

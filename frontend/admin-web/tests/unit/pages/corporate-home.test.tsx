@@ -1,4 +1,4 @@
-// case_ids: OB-004
+// case_ids: OB-004, OB-005
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 
@@ -126,5 +126,26 @@ describe('CorporateHomePage（主页文案重设计：米高+小布双 Agent，�
     render(<HomePage />)
     expect(screen.getByText(/准备好让AI助手驱动您的业务增长了吗/)).toBeInTheDocument()
     expect(screen.getByText(/AI 自动甄别秒级通过/)).toBeInTheDocument()
+  })
+
+  it('renders GB/T 47746-2026 遵循国家标准区块（标准号 + 4 能力点 + 免责小字，issue #2787）', () => {
+    render(<HomePage />)
+    // 区块标题与标准号
+    expect(screen.getByText('遵循国家标准')).toBeInTheDocument()
+    expect(screen.getByText(/让人工与智能客服协同更可靠/)).toBeInTheDocument()
+    expect(screen.getByText('GB/T 47746-2026')).toBeInTheDocument()
+    expect(screen.getByText(/顾客联络服务 人工与智能客户服务协同要求/)).toBeInTheDocument()
+    // 4 能力点
+    expect(screen.getByText('自动识别复杂诉求转人工')).toBeInTheDocument()
+    expect(screen.getByText('转人工规则可配置')).toBeInTheDocument()
+    expect(screen.getByText('转人工即同步上下文')).toBeInTheDocument()
+    expect(screen.getByText('AI 严格承诺边界')).toBeInTheDocument()
+    // 关键证据句（能力点描述）
+    expect(screen.getByText(/沟通记录同步给人工客服，无需重复描述/)).toBeInTheDocument()
+    expect(screen.getByText(/AI 只做规则解释与材料收集/)).toBeInTheDocument()
+    // 免责小字（无认证/备案结论）
+    expect(screen.getByText(/不构成任何认证、检测或备案结论/)).toBeInTheDocument()
+    // 红线：不得出现「已通过认证/备案」等误导措辞
+    expect(screen.queryByText(/已通过.*认证/)).not.toBeInTheDocument()
   })
 })

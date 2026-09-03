@@ -247,6 +247,71 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* 国家标准合规宣称 Section（GB/T 47746-2026，issue #2787） */}
+      <section className="py-20 sm:py-28 bg-gradient-to-b from-white via-blue-50/40 to-white">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="text-center max-w-2xl mx-auto mb-14">
+            <span className="text-sm font-semibold text-primary-600 uppercase tracking-wider">
+              遵循国家标准
+            </span>
+            <h2 className="mt-3 text-3xl sm:text-4xl font-bold text-neutral-900">
+              让人工与智能客服协同更可靠
+            </h2>
+            <p className="mt-4 text-lg text-neutral-500">
+              对标推荐性国标 <span className="font-semibold text-neutral-700">GB/T 47746-2026</span>
+              《顾客联络服务 人工与智能客户服务协同要求》（2026-09-01 实施），设计顾客服务协同机制
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-5xl mx-auto">
+            {[
+              {
+                icon: Sparkles,
+                title: '自动识别复杂诉求转人工',
+                description: '情绪化、多轮未解决、涉赔偿/法律等超范围诉求，AI 自动建议或直接转接人工客服——先 AI 应答，人工兜底。',
+              },
+              {
+                icon: Zap,
+                title: '转人工规则可配置',
+                description: '顾客可直接提出转人工，商家还可自定义触发关键词，转接规则随业务灵活调整。',
+              },
+              {
+                icon: MessageSquare,
+                title: '转人工即同步上下文',
+                description: '转人工后自动创建人工会话与工单并通知坐席，顾客与 AI 的沟通记录同步给人工客服，无需重复描述；原对话即可继续沟通（非营业时间自动转为留言）。',
+              },
+              {
+                icon: ShieldCheck,
+                title: 'AI 严格承诺边界',
+                description: '涉及价格、折扣、退款金额等敏感事项，AI 只做规则解释与材料收集，申请类动作一律待人工客服或规范流程审核确认。',
+              },
+            ].map((item, index) => (
+              <div
+                key={item.title}
+                className="group flex gap-4 p-6 bg-white rounded-2xl border border-neutral-100 hover:border-blue-200 hover:shadow-lg hover:shadow-blue-50 transition-all duration-300"
+              >
+                <div className="w-11 h-11 bg-gradient-to-br from-primary-500 to-primary-600 rounded-xl flex items-center justify-center shrink-0 shadow-sm shadow-blue-200">
+                  <item.icon className="w-5 h-5 text-white" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-base font-semibold text-neutral-900 mb-1.5">
+                    {item.title}
+                  </h3>
+                  <p className="text-sm text-neutral-500 leading-relaxed">
+                    {item.description}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <p className="mt-10 text-center text-xs text-neutral-400 max-w-3xl mx-auto leading-relaxed">
+            「遵循/对标 GB/T 47746-2026」指小布智能客服的人机协同机制功能设计参考该推荐性国家标准；
+            该标准为推荐性标准、无认证或备案机制，本页面不构成任何认证、检测或备案结论。
+          </p>
+        </div>
+      </section>
+
       {/* Features Section */}
       <section className="py-20 sm:py-28 bg-slate-50">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">

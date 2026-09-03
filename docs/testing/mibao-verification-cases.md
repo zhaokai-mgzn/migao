@@ -1175,7 +1175,7 @@
 ```
 溯源: 2026-09-02 新增：CI 自动失败报告去重守卫（issue #2746） ｜ tags: ci, issue-dedup, nightly
 
-## onboarding（4 case）
+## onboarding（5 case）
 
 ### OB-001. 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员 🔵
 ```
@@ -1226,6 +1226,20 @@
 ```
 真值: registration-approval.super-admin-prefix
 溯源: 2026-08-30 新增：AI 自动入驻改造（人工审批页废弃） ｜ tags: onboarding, ops_page_removed, super_admin_api
+
+### OB-005. 官网主页 GB/T 47746-2026 遵循宣称（标准号 + 能力点 + 免责小字） 🔵
+```
+你: 官网主页展示「遵循国家标准」区块：标准号 GB/T 47746-2026 与《顾客联络服务 人工与智能客户服务协同要求》
+你: 4 个能力点：自动识别复杂诉求转人工 / 转人工规则可配置 / 转人工即同步上下文 / AI 严格承诺边界
+你: 页脚免责：推荐性国标无认证机制，不构成认证、检测或备案结论
+期望: direct_reply
+数据: corporate-home page.tsx 含 GB/T 47746-2026 区块（标准号、4 能力点、免责小字）
+数据: 文案不含「认证/通过检测/备案」误导词
+数据: corporate-home.test.tsx 断言标准号与能力点渲染（无快照/无新 icon）
+跳过: 由前端单测验证（corporate-home.test.tsx），非 LLM 冒烟
+```
+真值: frontend-fix.vitest, frontend-fix.tsc, frontend-fix.no-api-change
+溯源: 2026-09-03 新增：GB/T 47746-2026 合规官网宣称（issue #2787） ｜ tags: homepage, compliance, gb47746
 
 ## 订单域（13 case）
 
@@ -1914,8 +1928,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：158（活跃 98，跳过 60）
-- tier 分布：smoke 10 / normal 120 / adversarial 28
+- 用例总数：159（活跃 98，跳过 61）
+- tier 分布：smoke 10 / normal 121 / adversarial 28
 - 售后域：5
 - agents：6
 - api：10
@@ -1928,7 +1942,7 @@
 - finance：3
 - 人事域：5
 - misc：12
-- onboarding：4
+- onboarding：5
 - 订单域：13
 - 加工项域：4
 - 商品域：13
