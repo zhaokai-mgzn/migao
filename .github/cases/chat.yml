@@ -75,7 +75,7 @@ cases:
 
   - id: CH-003
     legacy_id: "8.4"
-    title: "模糊意图引导 - 不猜测，列出选项"
+    title: "模糊意图引导 - 不猜测，澄清卡或文本列选项（低学历点选友好）"
     domains:
       - chat
     tier: normal
@@ -86,12 +86,13 @@ cases:
     user_inputs:
       - "帮我看看"
     expectations:
-      # 不调用任何写工具；引导澄清（话术需具体，如「请说'创建商品'」）
-      - tool: direct_reply
+      # 不猜测执行任何业务工具；澄清 = interact(choice) 候选卡 或 文本引导（话术需具体，如「请说'创建商品'」）
+      - tool: direct_reply or interact
     data_checks:
-      - "无猜测性 tool 调用"
+      - "无猜测性业务 tool 调用（product_search/order_query 等不得在澄清轮误触发）"
+      - "澄清卡选项 2-4 个、可点选；文本引导须给具体话术示例"
     skip_reason: ""
-    merge_log: "verification 8.4 独有"
+    merge_log: "verification 8.4 独有；2026-09-03 Phase 2 (#2789)：general 澄清承载升级为 choice 卡或文本，期望放宽为 direct_reply or interact"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_intent_router.py"
@@ -579,5 +580,136 @@ cases:
         - "frontend/admin-web/tests/unit/pages/human-sessions.test.tsx"
       ci:
         - admin-api-tests.yml
+        - agent-eval.yml
+      verifies: []
+
+  - id: CH-018
+    legacy_id: ""
+    title: "低学历用户图片意图澄清 - 随手发图不带文字时先给候选意图再动作（issue #2777）"
+    domains:
+      - chat
+      - product
+    tier: normal
+    tags:
+      - clarification
+      - multimodal
+      - image
+    truths_ref:
+      - ai-chat.route-actions
+    user_inputs:
+      - "用户只上传一张窗帘照片（无文字），可能想找同款/查自己订单里这个商品/问面料/录成新商品，意图不明确"
+      - "用户上传一张与店铺某商品几乎相同的图片并说『跟这个一样的』"
+    expectations:
+      - tool: interact
+        args:
+          component: choice
+    data_checks:
+      - "多模态 system prompt 注入 VISION_CLARIFY_GUIDE（呈现理解 + 候选意图 + 不连环追问）"
+      - "意图明确（带『创建这个商品』等文字）时直接进既有流程，不多问"
+      - "意图不明确（纯图/口语短句）时：先给出 2-4 个候选意图（找同款/识别面料/算料/查订单/建品），不直接执行写操作"
+      - "候选意图用简短大白话列出，可用 interact(choice) 卡片点选"
+      - "已识别字段不重复反问，不编造图片中不存在的信息"
+    skip_reason: "纯图澄清注入由 pytest 单测验证（test_graph_skills.py::TestVisionClarifyGuide，mock LLM 断言 system prompt），agent-eval runner 当前无发图能力，不进入 agent-eval 冒烟"
+    merge_log: "issue #2777 Phase 1：VISION_CLARIFY_GUIDE + base_skill 多模态注入（澄清能力强化）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_graph_skills.py"
+        - "backend/ai-agent-service/tests/test_vision_integration.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: CH-019
+    legacy_id: ""
+    title: "B 端米宝交互卡可用 - 建品/下单/售后/客户写操作可发 interact 卡片（issue #2777 G6）"
+    domains:
+      - chat
+      - product
+      - order
+    tier: normal
+    tags:
+      - interactive
+      - confirmation
+    truths_ref:
+      - ai-chat.confirm-required
+    user_inputs:
+      - "米宝（B 端商家）创建商品选加工项/分类时应能下发 interact(choice) 卡片"
+      - "米宝写操作（建品/下单/售后改状态/客户删除）被 confirm 守卫拦截后应能调用 interact(confirm) 展示确认卡"
+    expectations:
+      - tool: interact
+    data_checks:
+      - "B 端 product/order/aftersales/customer skill 的 tool_names 均绑定 interact（G6 契约测试）"
+      - "product_skill.py/prompts/order.md 要求 interact 的指令与工具绑定一致，无 tool_not_found 退化"
+      - "前端 admin-web store 完整透传 confirmValue/cancelValue/pageMeta（confirm 卡回传上下文值而非死值）"
+    skip_reason: ""
+    merge_log: "issue #2777：G6 interact 绑定 B 端 + admin-web store 字段透传修复"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_skill_routing_integrity.py"
+        - "frontend/admin-web/tests/unit/store/chat.test.ts"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: CH-020
+    legacy_id: ""
+    title: "C 端随手发图意图不明 - 先给候选意图卡，不默认直接搜相似（低学历场景）"
+    domains:
+      - chat
+      - product
+    tier: normal
+    tags:
+      - clarification
+      - multimodal
+      - image
+    truths_ref:
+      - ai-chat.route-actions
+    user_inputs:
+      - "顾客只上传一张窗帘照片（无文字）想问问能不能照着做，AI 不应直接当『找同款』搜相似，应先给候选意图卡（找同款/识别面料/量尺寸算料/查订单/售后咨询）"
+    expectations:
+      - tool: interact or product_search
+    data_checks:
+      - "customer_product/customer_general 图片段含『候选意图卡』与『不要默认直接搜相似』引导（prompt 契约测试）"
+      - "顾客意图明确（『找类似的』『推荐』）→ 直接 product_search，不发卡"
+      - "仅发图/意图不明 → interact(choice) 候选卡（2-4 项可点选），点选后再动作"
+    skip_reason: "图片消息由 pytest 覆盖（test_prompt_snapshots 契约断言），agent-eval runner 当前无发图能力，不进入 agent-eval 冒烟"
+    merge_log: "issue #2789 Phase 2：C 端图片澄清候选引导（customer_product/customer_general 图片段升级）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_prompt_snapshots.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: CH-021
+    legacy_id: ""
+    title: "图片消息端到端 - 真实发图后 AI 走 vision 链路（澄清/识别不报错）"
+    domains:
+      - chat
+      - product
+    tier: normal
+    tags:
+      - clarification
+      - multimodal
+      - image
+    truths_ref:
+      - ai-chat.route-actions
+    user_inputs:
+      - text: "看看这个面料"
+        images:
+          - "https://picsum.photos/seed/curtain-fabric/800/600"
+    expectations:
+      - tool: interact or product_search or direct_reply
+    data_checks:
+      - "带图消息 body 含 images（local_runner send_message 透传，issue #2794）"
+      - "AI 不报『图片分析失败/无法处理』类错误；图片走 vision 链路（理解或澄清）"
+      - "意图明确才执行；意图不明可澄清（候选卡或追问），不硬猜"
+    skip_reason: "真实 vision LLM 行为（成本/波动），tier normal 不进 PR smoke；由手动 agent-eval normal/图片用例专用 CI 触发"
+    merge_log: "issue #2794：agent-eval runner 图片消息支持（case schema dict 形态 user_inputs）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_graph_skills.py"
+        - "backend/ai-agent-service/tests/test_vision_integration.py"
+      ci:
         - agent-eval.yml
       verifies: []

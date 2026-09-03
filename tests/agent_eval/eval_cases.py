@@ -31,6 +31,7 @@ class EvalCase:
     title: str
     skill: Skill
     difficulty: Difficulty
+    # 每轮可为 str（纯文本）或 dict（{text, images[]} 带图消息，issue #2794）
     user_inputs: List[str]
     expectations: List[str]
     data_checks: List[str]
@@ -403,16 +404,16 @@ _CASE_CH_002 = EvalCase(
     tags=['multi_turn', 'cancel', 'user_abort'],
 )
 
-# ── CH-003 [NORMAL] 模糊意图引导 - 不猜测，列出选项（源: cases/chat.yml）──
+# ── CH-003 [NORMAL] 模糊意图引导 - 不猜测，澄清卡或文本列选项（低学历点选友好）（源: cases/chat.yml）──
 _CASE_CH_003 = EvalCase(
     id='CH-003',
     legacy_id='8.4',
-    title='模糊意图引导 - 不猜测，列出选项',
+    title='模糊意图引导 - 不猜测，澄清卡或文本列选项（低学历点选友好）',
     skill=Skill.MULTI_TURN,
     difficulty=Difficulty.NORMAL,
     user_inputs=['帮我看看'],
-    expectations=['direct_reply'],
-    data_checks=['无猜测性 tool 调用'],
+    expectations=['direct_reply or interact'],
+    data_checks=['无猜测性业务 tool 调用（product_search/order_query 等不得在澄清轮误触发）', '澄清卡选项 2-4 个、可点选；文本引导须给具体话术示例'],
     skip_reason='',
     tags=['clarification'],
 )
@@ -611,6 +612,62 @@ _CASE_CH_017 = EvalCase(
     data_checks=['human_handoff POST 携带 aiContextSummary 与 aiContextMessages（仅 role=user/assistant，剥 think/图片占位，逐条与总量截断）', 'createSessionForHandoff 持久化 ai_context_summary/ai_context_messages（JSONB）', 'getSessionDetail(admin) 返回 aiContext；跨租户访问拒绝', 'getSessionByAiSessionId(customer) 不含 aiContext 且过滤 isInternal 消息', 'AI 会话关闭/清理后人工会话快照仍可见（快照语义）'],
     skip_reason='',
     tags=['handoff', 'agent_session', 'ai_context'],
+)
+
+# ── CH-018 [NORMAL] 低学历用户图片意图澄清 - 随手发图不带文字时先给候选意图再动作（issue #2777）（源: cases/chat.yml）──
+_CASE_CH_018 = EvalCase(
+    id='CH-018',
+    legacy_id='',
+    title='低学历用户图片意图澄清 - 随手发图不带文字时先给候选意图再动作（issue #2777）',
+    skill=Skill.MULTI_TURN,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户只上传一张窗帘照片（无文字），可能想找同款/查自己订单里这个商品/问面料/录成新商品，意图不明确', '用户上传一张与店铺某商品几乎相同的图片并说『跟这个一样的』'],
+    expectations=['interact(component=choice)'],
+    data_checks=['多模态 system prompt 注入 VISION_CLARIFY_GUIDE（呈现理解 + 候选意图 + 不连环追问）', '意图明确（带『创建这个商品』等文字）时直接进既有流程，不多问', '意图不明确（纯图/口语短句）时：先给出 2-4 个候选意图（找同款/识别面料/算料/查订单/建品），不直接执行写操作', '候选意图用简短大白话列出，可用 interact(choice) 卡片点选', '已识别字段不重复反问，不编造图片中不存在的信息'],
+    skip_reason='纯图澄清注入由 pytest 单测验证（test_graph_skills.py::TestVisionClarifyGuide，mock LLM 断言 system prompt），agent-eval runner 当前无发图能力，不进入 agent-eval 冒烟',
+    tags=['clarification', 'multimodal', 'image'],
+)
+
+# ── CH-019 [NORMAL] B 端米宝交互卡可用 - 建品/下单/售后/客户写操作可发 interact 卡片（issue #2777 G6）（源: cases/chat.yml）──
+_CASE_CH_019 = EvalCase(
+    id='CH-019',
+    legacy_id='',
+    title='B 端米宝交互卡可用 - 建品/下单/售后/客户写操作可发 interact 卡片（issue #2777 G6）',
+    skill=Skill.MULTI_TURN,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['米宝（B 端商家）创建商品选加工项/分类时应能下发 interact(choice) 卡片', '米宝写操作（建品/下单/售后改状态/客户删除）被 confirm 守卫拦截后应能调用 interact(confirm) 展示确认卡'],
+    expectations=['interact'],
+    data_checks=['B 端 product/order/aftersales/customer skill 的 tool_names 均绑定 interact（G6 契约测试）', 'product_skill.py/prompts/order.md 要求 interact 的指令与工具绑定一致，无 tool_not_found 退化', '前端 admin-web store 完整透传 confirmValue/cancelValue/pageMeta（confirm 卡回传上下文值而非死值）'],
+    skip_reason='',
+    tags=['interactive', 'confirmation'],
+)
+
+# ── CH-020 [NORMAL] C 端随手发图意图不明 - 先给候选意图卡，不默认直接搜相似（低学历场景）（源: cases/chat.yml）──
+_CASE_CH_020 = EvalCase(
+    id='CH-020',
+    legacy_id='',
+    title='C 端随手发图意图不明 - 先给候选意图卡，不默认直接搜相似（低学历场景）',
+    skill=Skill.MULTI_TURN,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['顾客只上传一张窗帘照片（无文字）想问问能不能照着做，AI 不应直接当『找同款』搜相似，应先给候选意图卡（找同款/识别面料/量尺寸算料/查订单/售后咨询）'],
+    expectations=['interact or product_search'],
+    data_checks=['customer_product/customer_general 图片段含『候选意图卡』与『不要默认直接搜相似』引导（prompt 契约测试）', '顾客意图明确（『找类似的』『推荐』）→ 直接 product_search，不发卡', '仅发图/意图不明 → interact(choice) 候选卡（2-4 项可点选），点选后再动作'],
+    skip_reason='图片消息由 pytest 覆盖（test_prompt_snapshots 契约断言），agent-eval runner 当前无发图能力，不进入 agent-eval 冒烟',
+    tags=['clarification', 'multimodal', 'image'],
+)
+
+# ── CH-021 [NORMAL] 图片消息端到端 - 真实发图后 AI 走 vision 链路（澄清/识别不报错）（源: cases/chat.yml）──
+_CASE_CH_021 = EvalCase(
+    id='CH-021',
+    legacy_id='',
+    title='图片消息端到端 - 真实发图后 AI 走 vision 链路（澄清/识别不报错）',
+    skill=Skill.MULTI_TURN,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[{'text': '看看这个面料', 'images': ['https://picsum.photos/seed/curtain-fabric/800/600']}],
+    expectations=['interact or product_search or direct_reply'],
+    data_checks=['带图消息 body 含 images（local_runner send_message 透传，issue #2794）', 'AI 不报『图片分析失败/无法处理』类错误；图片走 vision 链路（理解或澄清）', '意图明确才执行；意图不明可澄清（候选卡或追问），不硬猜'],
+    skip_reason='真实 vision LLM 行为（成本/波动），tier normal 不进 PR smoke；由手动 agent-eval normal/图片用例专用 CI 触发',
+    tags=['clarification', 'multimodal', 'image'],
 )
 
 # ── CR-001 [NORMAL] 查商品 → 下单（跨 Skill 复用 UUID）（源: cases/cross.yml）──
@@ -1768,7 +1825,7 @@ _CASE_PR_010 = EvalCase(
     title='商品全生命周期 - 搜索→查看→修改→关联加工项→验证',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.SMOKE,
-    user_inputs=['搜索窗帘', '看看第一个的详情', '把价格改成 198', '给它加上S钩安装', '再看看这个商品的详情确认一下'],
+    user_inputs=['搜索窗帘', '看看第一个的详情', '把价格改成 198', '确认', '给它加上S钩安装', '确认', '再看看这个商品的详情确认一下'],
     expectations=['product_search', 'product_detail(product_id=1)', 'product_update(price=198)', 'product_processing_item_manage(action=add)', 'product_detail'],
     data_checks=['第3轮 product_id 来自第2轮结果', '第4轮 product_id 来自第2轮结果', '全程未重新 product_search 查同一个商品'],
     skip_reason='',
@@ -2251,6 +2308,10 @@ ALL_CASES = (
     _CASE_CH_015,
     _CASE_CH_016,
     _CASE_CH_017,
+    _CASE_CH_018,
+    _CASE_CH_019,
+    _CASE_CH_020,
+    _CASE_CH_021,
     _CASE_CR_001,
     _CASE_CR_002,
     _CASE_CR_003,

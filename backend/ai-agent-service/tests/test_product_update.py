@@ -46,3 +46,11 @@ class TestProductUpdateRequestField:
         _, kwargs = patched.call_args
         body = kwargs.get("json_data") or {}
         assert set(body.keys()) == {"basePrice"}, f"只应传 basePrice: {body}"
+
+    @pytest.mark.asyncio
+    async def test_denied_role_rejected_before_api_call(self, tool):
+        """customer 角色 execute 直接被拒（权限守卫前置），不发修改请求"""
+        ctx = ToolContext(tenant_id=1, user_id="c1", role="customer")
+        result = await tool.execute(ctx, product_id="p1", price=200.0)
+        assert result.success is False
+        assert "权限" in (result.error or "")

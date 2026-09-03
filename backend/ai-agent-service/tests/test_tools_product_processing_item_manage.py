@@ -81,3 +81,11 @@ class TestExecute:
         admin_ctx = ToolContext(tenant_id=1, user_id="admin_1", session_id="s", role="admin")
         assert tool.check_permission(customer_ctx) is False
         assert tool.check_permission(admin_ctx) is True
+
+    @pytest.mark.asyncio
+    async def test_denied_role_rejected_before_any_call(self, tool):
+        """customer 角色 execute 直接被拒（权限守卫前置），不触发 ID 解析/API 调用"""
+        customer_ctx = ToolContext(tenant_id=1, user_id="c1", session_id="s", role="customer")
+        result = await tool.execute(customer_ctx, product_id=PRODUCT_ID, action="add", item_ids=[ITEM_ID])
+        assert result.success is False
+        assert "权限" in (result.error or "")

@@ -91,6 +91,8 @@ describe('Sidebar', () => {
     // #1403: 商品分类管理已移出侧边栏，入口内嵌到新增商品页
     expect(screen.queryByText('商品分类管理')).not.toBeInTheDocument()
     expect(screen.getByText('加工项管理')).toBeInTheDocument()
+    // RBAC 菜单入口修复：角色权限入口应显示（system:manage 权限，admin 全权限）
+    expect(screen.getByText('角色权限')).toBeInTheDocument()
     expect(screen.getByText('订单列表')).toBeInTheDocument()
     expect(screen.getByText('售后工单')).toBeInTheDocument()
     // 独立菜单项

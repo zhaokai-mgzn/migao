@@ -954,6 +954,12 @@ public class AuthService {
         if (isAll || permissions.contains("system:manage")) {
             menus.add(menuItem("settings", "企业基础信息", "Building2", "/settings"));
         }
+        if (isAll || permissions.contains("knowledge:manage")) {
+            menus.add(menuItem("knowledge", "知识库", "BookOpen", "/knowledge"));
+        }
+        if (isAll || permissions.contains("system:manage")) {
+            menus.add(menuItem("roles", "角色权限", "ShieldCheck", "/roles"));
+        }
 
         return menus;
     }

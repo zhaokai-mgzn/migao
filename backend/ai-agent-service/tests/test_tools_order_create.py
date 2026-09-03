@@ -49,6 +49,10 @@ class TestOrderCreateDeclaration:
     def test_related_tools(self, tool):
         assert "validate_input" in tool.related_tools
 
+    def test_requires_confirmation(self, tool):
+        # GB/T 47746-2026 承诺边界：下单=交易合同（含 B 端代下单），必须先确认再执行
+        assert tool.requires_confirmation is True
+
 
 class TestOrderCreateOtpKey:
     """SMS 验证码 Redis key 构造"""

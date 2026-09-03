@@ -55,6 +55,15 @@ class SkuUpdateTool(BaseTool):
         selling_method: str = "",
         door_width: str = "",
     ) -> ToolResult:
+        # 权限检查：SKU 调价属对商品定价的承诺修改，仅限商户角色（admin/tenant_admin）
+        if not self.check_permission(context):
+            return ToolResult(
+                success=False,
+                error="权限不足",
+                message="您没有权限调整 SKU 价格",
+                suggestion="SKU 调价仅对商家账号开放（admin/tenant_admin），请确认当前账号角色或联系管理员",
+            )
+
         if not product_id or ".." in str(product_id):
             return ToolResult(success=False, error="Invalid product_id")
 

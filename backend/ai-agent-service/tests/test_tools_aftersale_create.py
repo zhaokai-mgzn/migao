@@ -8,6 +8,16 @@ import pytest
 from unittest.mock import patch, AsyncMock
 
 
+class TestAftersaleCreateDeclaration:
+    """安全元数据：售后申请属对顾客的承诺行为，必须 requires_confirmation（GB/T 47746-2026）"""
+
+    def test_requires_confirmation_flag(self):
+        from app.tools.aftersale_create import AftersaleCreateTool
+        tool = AftersaleCreateTool()
+        assert tool.read_only is False
+        assert tool.requires_confirmation is True, "售后申请（含 refund_amount）必须先确认再执行"
+
+
 class TestAftersaleCreatePermission:
     """权限校验 — customer角色可创建售后工单"""
 
