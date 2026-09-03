@@ -128,6 +128,10 @@ describe('SkuMatrix (#563)', () => {
     const nextValue = onChange.mock.calls[0][0]
     expect(nextValue.colors).toHaveLength(1)
     expect(nextValue.colors[0].colorName).toBe('')
+    // P0-1 回归：颜色临时 id 必须是纯整数（后端 ProductColorInput.id 为 Long，
+    // 浮点字符串会导致商品创建 400「请求体格式错误或缺失」）
+    expect(nextValue.colors[0].id).toMatch(/^-?\d+$/)
+    expect(Number.isInteger(Number(nextValue.colors[0].id))).toBe(true)
   })
 
   it('有颜色数据时在颜色计数中显示数量', () => {

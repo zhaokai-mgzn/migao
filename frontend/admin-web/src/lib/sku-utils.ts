@@ -7,6 +7,28 @@
 import type { ProductColor, ProductSku, SellingMethod } from '@/types'
 
 /**
+ * 生成前端临时 ID（颜色 / SKU 行）。
+ *
+ * P0-1 契约修复：此前用 `String(-(Date.now() + Math.random()))` 产出
+ * "-1788388811825.4893" 这类【浮点】字符串，而后端
+ * `ProductColorInput.id` / `ProductSkuInput.id` 均为 `Long`，
+ * Jackson 反序列化失败 → POST /api/admin/products 恒 400
+ * 「请求体格式错误或缺失」，商家 UI 无法新建任何商品。
+ *
+ * 现改为模块级【单调递减整数】计数器：
+ * - 始终为纯整数字符串（可被 Long 解析）
+ * - 会话内唯一（不复用、不撞色），后端颜色→DB id 映射依赖该唯一性
+ * - 保持负数语义（后端以负数判定"待落库的新增行"，见 ProductColorInput 注释）
+ */
+let tempIdCounter = 0
+
+/** @returns 单调递减的纯整数字符串临时 id（如 "-1"、"-2"、…） */
+export function nextTempId(): string {
+  tempIdCounter -= 1
+  return String(tempIdCounter)
+}
+
+/**
  * 根据颜色 × 售卖方式 × 门幅 三维矩阵重建 SKU 列表。
  *
  * 规则：
@@ -56,7 +78,7 @@ export function rebuildSkus(
           result.push({ ...found, colorName: color.colorName })
         } else {
           result.push({
-            id: String(-(Date.now() + Math.random())),
+            id: nextTempId(),
             colorId: color.id,
             colorName: color.colorName,
             sellingMethod: method,
