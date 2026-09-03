@@ -283,7 +283,7 @@
 真值: category-manage.delete, category-manage.delete-destructive, ai-chat.confirm-required
 溯源: verification 2.12 独有（二次确认行为在测试中未确认，见 category-manage.yml 缺口注释） ｜ tags: delete, destructive, confirm
 
-## 对话边界域（22 case）
+## 对话边界域（23 case）
 
 ### CH-001. 空结果 + suggestion 引导修复 🔴
 ```
@@ -577,6 +577,19 @@
 ```
 真值: ai-chat.route-actions
 溯源: issue #2796：澄清轮次护栏（clarify_guard.apply_clarify_guard 挂 intent_router_node） ｜ tags: clarification, round_guard
+
+### CH-023. 图片澄清候选 grounded 商户库 - 商品类候选先检索真实商品（不编造） 🔵
+```
+你: 帮我看看这个布料有没有卖的 [📷 附 1 图]
+期望: product_search or interact or direct_reply
+数据: VISION_CLARIFY_GUIDE 含 grounded 引导：商品类候选先按图片特征（颜色/面料/风格）调 product_search 检索
+数据: 澄清候选引用命中的真实商品（名称+价格），如『店里的雪尼尔遮光窗帘 ¥88/米』
+数据: 检索无命中 → 如实说『店里暂时没搜到一样的』，不凭空编造商品名/价格
+数据: 关键词提取纯函数（clarify_grounded.extract_search_keywords）由 pytest 单测覆盖
+跳过: 图片消息由 pytest 覆盖（TestVisionGroundedGuide + test_clarify_grounded），agent-eval runner 无稳定发图环境，不进入 agent-eval 冒烟
+```
+真值: ai-chat.route-actions
+溯源: issue #2799：Phase 2c 轻量版 grounded（关键词提取纯函数 + VISION_CLARIFY_GUIDE 检索引导） ｜ tags: clarification, multimodal, image, grounded
 
 ## 跨域（3 case）
 
@@ -1944,13 +1957,13 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：159（活跃 98，跳过 61）
-- tier 分布：smoke 10 / normal 121 / adversarial 28
+- 用例总数：161（活跃 98，跳过 63）
+- tier 分布：smoke 10 / normal 123 / adversarial 28
 - 售后域：5
 - agents：6
 - api：10
 - 分类域：3
-- 对话边界域：22
+- 对话边界域：23
 - 跨域：3
 - 客户域：5
 - 数据域：6

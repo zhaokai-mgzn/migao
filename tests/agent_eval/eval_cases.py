@@ -684,6 +684,20 @@ _CASE_CH_022 = EvalCase(
     tags=['clarification', 'round_guard'],
 )
 
+# ── CH-023 [NORMAL] 图片澄清候选 grounded 商户库 - 商品类候选先检索真实商品（不编造）（源: cases/chat.yml）──
+_CASE_CH_023 = EvalCase(
+    id='CH-023',
+    legacy_id='',
+    title='图片澄清候选 grounded 商户库 - 商品类候选先检索真实商品（不编造）',
+    skill=Skill.MULTI_TURN,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[{'text': '帮我看看这个布料有没有卖的', 'images': ['https://picsum.photos/seed/curtain-fabric-g/800/600']}],
+    expectations=['product_search or interact or direct_reply'],
+    data_checks=['VISION_CLARIFY_GUIDE 含 grounded 引导：商品类候选先按图片特征（颜色/面料/风格）调 product_search 检索', '澄清候选引用命中的真实商品（名称+价格），如『店里的雪尼尔遮光窗帘 ¥88/米』', '检索无命中 → 如实说『店里暂时没搜到一样的』，不凭空编造商品名/价格', '关键词提取纯函数（clarify_grounded.extract_search_keywords）由 pytest 单测覆盖'],
+    skip_reason='图片消息由 pytest 覆盖（TestVisionGroundedGuide + test_clarify_grounded），agent-eval runner 无稳定发图环境，不进入 agent-eval 冒烟',
+    tags=['clarification', 'multimodal', 'image', 'grounded'],
+)
+
 # ── CR-001 [NORMAL] 查商品 → 下单（跨 Skill 复用 UUID）（源: cases/cross.yml）──
 _CASE_CR_001 = EvalCase(
     id='CR-001',
@@ -2327,6 +2341,7 @@ ALL_CASES = (
     _CASE_CH_020,
     _CASE_CH_021,
     _CASE_CH_022,
+    _CASE_CH_023,
     _CASE_CR_001,
     _CASE_CR_002,
     _CASE_CR_003,
