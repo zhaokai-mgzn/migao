@@ -127,6 +127,8 @@ const standaloneItems: MenuItem[] = [
   { key: 'finance', name: '财务对账', icon: 'Calculator', path: '/finance', permissionCode: 'finance:view' },
   { key: 'employees', name: '员工管理', icon: 'Users', path: '/employees', permissionCode: 'employee:list' },
   { key: 'settings', name: '企业基础信息', icon: 'Building2', path: '/settings', permissionCode: 'system:manage' },
+  // 角色管理此前无侧边栏入口（仅 URL 直达）；归入系统管理权限组
+  { key: 'roles', name: '角色权限', icon: 'ShieldCheck', path: '/roles', permissionCode: 'system:manage' },
 ]
 
 export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
