@@ -318,3 +318,18 @@
 | 守护脚本 | ✅ | `tests/agent_eval/selftest_images.py`（非 test 命名防 gate 误判）：send_message/run_case/YAML 三段自测 | venv python3.11 全绿 |
 | 三把工具 | ✅ | — | gate / UI / contract 全绿 |
 | 剩余：真实图 CI 触发 + 澄清 KPI 回流 | ⏳ 后续 | CH-021 tier normal 需手动/定时 agent-eval 触发；澄清样本落库评测属 Phase 3 后半 | — |
+
+---
+
+## 十三、实施进度 G4 澄清轮次护栏（issue #2796，2026-09-03）
+
+> 实施分支：`feat/2796-clarify-round-guard`。承接调研 §6 Phase 1 第 3 点（澄清轮上限）与 §11 G4。
+
+| 项 | 状态 | 落地位置 | 验证 |
+|---|---|---|---|
+| 纯函数状态机 | ✅ | `app/graph/clarify_guard.py`：judge_clarify / tick_clarify / should_force_example（澄清轮 +1、实质轮清零、上限封顶、force_example 标记） | 单测 17 例 |
+| 异步守卫 | ✅ | `apply_clarify_guard`：SessionStateStore `clarify` 键持久化；连续澄清 ≥2 轮后改写路由为 direct_reply（CLARIFY_FORCE_EXAMPLE_TEXT：具体示例 + 转人工出口）；存储异常降级不阻断 | 单测（含端到端序列：轮1/轮2 给机会→轮3 兜底→实质轮清零） |
+| 意图路由挂点 | ✅ | `nodes.py` intent_router_node：route() 后、D3 前——低置信重写 general（source=low_confidence）即澄清轮，接入守卫 | 受影响组 169 passed |
+| 兜底话术 | ✅ | CLARIFY_FORCE_EXAMPLE_TEXT：低学历友好（①查订单 ②搜商品 ③算料 示例 + 转人工出口） | 断言含示例与出口 |
+| 行为用例 | ✅ | CH-022（连续模糊→兜底示例）+ 渲染 159 条 + truth check | gate ✅ |
+| 设计语义 | ✅ | 达上限的"本轮"仍正常澄清（用户最后机会），下一轮仍模糊才兜底——不激进打断 | 序列测试 |

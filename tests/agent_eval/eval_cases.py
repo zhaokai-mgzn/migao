@@ -670,6 +670,20 @@ _CASE_CH_021 = EvalCase(
     tags=['clarification', 'multimodal', 'image'],
 )
 
+# ── CH-022 [NORMAL] 连续模糊意图 - 澄清轮上限后给具体示例兜底（不无限追问）（源: cases/chat.yml）──
+_CASE_CH_022 = EvalCase(
+    id='CH-022',
+    legacy_id='',
+    title='连续模糊意图 - 澄清轮上限后给具体示例兜底（不无限追问）',
+    skill=Skill.MULTI_TURN,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['帮我看看', '就是那个', '你懂的', '算了不说了'],
+    expectations=['direct_reply or interact'],
+    data_checks=['低置信澄清（source=low_confidence 重写 general）轮次计数存 SessionStateStore.clarify', '连续澄清 ≥ MAX_CLARIFY_ROUNDS(2) 轮后，不再以『您想做什么』追问——改给具体示例（查订单/搜商品/算料话术）+ 转人工出口', '用户给出实质意图/点选澄清卡 → 澄清计数清零，正常流程恢复', '存储异常降级不阻断主流程'],
+    skip_reason='轮次护栏为代码层纯逻辑，由 pytest 单测覆盖（test_clarify_guard.py 17 例含端到端序列），不进入 agent-eval 冒烟',
+    tags=['clarification', 'round_guard'],
+)
+
 # ── CR-001 [NORMAL] 查商品 → 下单（跨 Skill 复用 UUID）（源: cases/cross.yml）──
 _CASE_CR_001 = EvalCase(
     id='CR-001',
@@ -2298,6 +2312,7 @@ ALL_CASES = (
     _CASE_CH_019,
     _CASE_CH_020,
     _CASE_CH_021,
+    _CASE_CH_022,
     _CASE_CR_001,
     _CASE_CR_002,
     _CASE_CR_003,
