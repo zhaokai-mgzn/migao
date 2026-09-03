@@ -181,4 +181,26 @@ test.describe('员工管理页面', () => {
     await page.getByRole('button', { name: /重置/ }).click()
     await expect(searchInput).toHaveValue('')
   })
+  test('创建员工 - 选择角色下拉应提交 role（RBAC P0 回归）', async ({ page: p }) => {
+    const modal = p.locator('[role="dialog"]')
+    let postedBody = null
+    await p.route('**/api/admin/users*', async (route) => {
+      if (route.request().method() === 'POST') {
+        postedBody = JSON.parse(route.request().postData() || '{}')
+        await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ success: true, data: { id: 99 } }) })
+      } else { await route.continue() }
+    })
+    await p.getByRole('button', { name: /新增员工/ }).click()
+    await modal.locator('input[placeholder*="姓名"]').fill('角色测试')
+    await modal.locator('input[placeholder*="手机号"]').fill('13900001111')
+    await modal.locator('input[placeholder*="选择或输入岗位"]').fill('运营专员')
+    // 角色下拉：选「客服（service）」；此前 UI 不传 role 导致后端默认 operator
+    const roleSelect = modal.locator('select').first()
+    await roleSelect.selectOption('service')
+    await modal.getByRole('button', { name: /创建|保存/ }).click()
+    await expect(p.locator('[data-sonner-toast]').first()).toBeVisible({ timeout: 5000 })
+    expect(postedBody).not.toBeNull()
+    expect(postedBody.role).toBe('service')
+    expect(postedBody.position).toBe('运营专员')
+  })
 })

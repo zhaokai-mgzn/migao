@@ -1188,6 +1188,8 @@ export interface EmployeeFormData {
   name: string
   phone: string
   position: string
+  /** RBAC 角色码（admin/operator/product_manager/自定义角色）；此前 UI 不传导致新建员工恒为 operator */
+  role?: string
   permissions: string[]
 }
 
