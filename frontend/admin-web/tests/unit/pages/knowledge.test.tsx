@@ -2,10 +2,22 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+// case_ids: API-008
 
-// Mock API
+// Mock API — 页面改造后走真实后端 CRUD（P0-1 知识库假成功修复回归）
 vi.mock('@/lib/api', () => ({
-  knowledgeApi: {},
+  knowledgeApi: {
+    getDocuments: vi.fn().mockResolvedValue({
+      data: {
+        success: true,
+        data: { items: [{ id: 'doc_1', title: '窗帘常见问题 FAQ', docType: 'faq', chunkCount: 24, embeddingStatus: 'processed', category: '客户常见咨询', createdAt: '2026-04-15T10:30:00' }], total: 1, page: 1, size: 20 },
+      },
+    }),
+    uploadDocument: vi.fn().mockResolvedValue({ data: { success: true, data: { id: 'doc_new' } } }),
+    deleteDocument: vi.fn().mockResolvedValue({ data: { success: true } }),
+    resyncDocument: vi.fn().mockResolvedValue({ data: { success: true } }),
+    searchKnowledge: vi.fn().mockResolvedValue({ data: { success: true, data: { results: [] } } }),
+  },
 }))
 
 // Mock dayjs
@@ -95,13 +107,14 @@ describe('KnowledgePage', () => {
     })
   })
 
-  it('should display mock documents in table', async () => {
+  it('should display real API documents in table (no mock hardcode)', async () => {
     render(<KnowledgePage />)
     await waitFor(() => {
       expect(screen.getByText('窗帘常见问题 FAQ')).toBeInTheDocument()
-      expect(screen.getByText('产品目录 2026')).toBeInTheDocument()
-      expect(screen.getByText('窗帘尺寸测量指南')).toBeInTheDocument()
     })
+    // 页面不再硬编码假数据：数据源必须来自 knowledgeApi.getDocuments
+    const api = (await import('@/lib/api')).knowledgeApi as any
+    expect(api.getDocuments).toHaveBeenCalled()
   })
 
   it('should open upload modal when upload button clicked', async () => {

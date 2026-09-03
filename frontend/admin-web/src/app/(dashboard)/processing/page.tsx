@@ -35,6 +35,7 @@ interface FormData {
   discount: string
   discountQty: string
   discountRate: string
+  categoryId: string
   applicableProductCategories: string[]
 }
 
@@ -73,6 +74,7 @@ const EMPTY_FORM: FormData = {
   discount: '',
   discountQty: '2',
   discountRate: '',
+  categoryId: '',
   applicableProductCategories: [],
 }
 
@@ -124,7 +126,8 @@ export default function ProcessingPage() {
   // 打开新增弹窗
   const openCreate = () => {
     setEditingId(null)
-    setForm(EMPTY_FORM)
+    // 默认选中第一个加工分类；无分类时留空并在弹窗内引导创建
+    setForm({ ...EMPTY_FORM, categoryId: categories[0]?.id || '' })
     setErrors({})
     setFormOpen(true)
   }
@@ -139,6 +142,7 @@ export default function ProcessingPage() {
       discount: '',
       discountQty: '2',
       discountRate: '',
+      categoryId: item.categoryId || categories[0]?.id || '',
       applicableProductCategories: item.applicableProductCategories || [],
     })
     setErrors({})
@@ -179,7 +183,42 @@ export default function ProcessingPage() {
       errs.pricingMethod = '请选择计价方式'
     }
 
+    if (!form.categoryId) {
+      errs.categoryId = '请先选择或创建加工分类'
+    }
+
     return errs
+  }
+
+  // 弹窗内一键创建加工分类（新商家从 0 首次使用加工项时的流程断点修复）
+  const [newCategoryName, setNewCategoryName] = useState('')
+  const [creatingCategory, setCreatingCategory] = useState(false)
+  const handleCreateCategory = async () => {
+    const name = newCategoryName.trim()
+    if (!name) {
+      toast.error('请输入加工分类名称')
+      return
+    }
+    setCreatingCategory(true)
+    try {
+      const res = await processingCategoryApi.createProcessingCategory({ name, sort: 0 })
+      toast.success('加工分类已创建')
+      await loadData()
+      // 自动选中刚创建的分类
+      const created = res.data?.data
+      if (created?.id) {
+        setForm((prev) => ({ ...prev, categoryId: created.id }))
+      } else {
+        // 兜底：刷新后选第一个
+        setForm((prev) => ({ ...prev, categoryId: categories[0]?.id || '' }))
+      }
+      setNewCategoryName('')
+    } catch (error) {
+      console.error('创建加工分类失败:', error)
+      toast.error('创建加工分类失败')
+    } finally {
+      setCreatingCategory(false)
+    }
   }
 
   // 保存
@@ -192,11 +231,10 @@ export default function ProcessingPage() {
 
     setSaving(true)
     try {
-      const defaultCategoryId = categories[0]?.id || 'default'
       const pricingMethod = form.pricingMethod as PricingMethod
       const payload = {
         name: form.name.trim(),
-        categoryId: defaultCategoryId,
+        categoryId: form.categoryId, // 用户显式选择（此前强取 categories[0] 且新租户为空 → 提交 'default' 报「加工分类不存在」）
         pricingMethod,
         unitPrice: parseFloat(form.unitPrice),
         unit: PRICING_UNIT_MAP[pricingMethod] || '套',
@@ -416,6 +454,60 @@ export default function ProcessingPage() {
             </select>
             {errors.pricingMethod && (
               <p className="mt-1 text-xs text-red-600">{errors.pricingMethod}</p>
+            )}
+          </div>
+
+          {/* 加工分类（必选：后端加工项强依赖加工分类，新租户从 0 需先建） */}
+          <div>
+            <label className="block text-sm font-medium text-neutral-800 mb-1.5">
+              加工分类<span className="text-red-500 ml-0.5">*</span>
+            </label>
+            {categories.length > 0 ? (
+              <select
+                className={`w-full h-9 px-3 pr-8 rounded border bg-white text-sm appearance-none focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 ${
+                  errors.categoryId ? 'border-red-500' : 'border-neutral-300'
+                }`}
+                value={form.categoryId}
+                onChange={(e) => updateField('categoryId', e.target.value)}
+              >
+                <option value="" disabled>
+                  请选择加工分类
+                </option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-2">
+                <p className="text-xs text-amber-700">
+                  当前还没有加工分类，加工项必须归属于一个加工分类。请先创建：
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    className="flex-1 h-9 px-3 rounded border border-amber-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                    placeholder="请输入加工分类名称，如：基础加工"
+                    value={newCategoryName}
+                    onChange={(e) => setNewCategoryName(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleCreateCategory()}
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={handleCreateCategory}
+                    loading={creatingCategory}
+                    className="shrink-0"
+                  >
+                    创建
+                  </Button>
+                </div>
+              </div>
+            )}
+            {errors.categoryId && categories.length > 0 && (
+              <p className="mt-1 text-xs text-red-600">{errors.categoryId}</p>
             )}
           </div>
 

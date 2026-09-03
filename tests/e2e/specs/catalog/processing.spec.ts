@@ -170,11 +170,51 @@ test.describe('加工项配置', () => {
     test('选择优惠类型应展开折扣配置', async ({ page }) => {
       await page.getByRole('button', { name: /添加加工项/ }).click()
       const dialog = page.locator('.fixed.inset-0.z-50').last()
-      // 选择"按金额满减"优惠
-      const discountSelect = dialog.locator('select').nth(1)
+      // select 顺序：0=计价方式, 1=加工分类, 2=优惠
+      const discountSelect = dialog.locator('select').nth(2)
       await discountSelect.selectOption('amount_off')
       // 应显示满X件选择和折扣力度输入
       await expect(dialog.getByText('折')).toBeVisible()
+    })
+
+    test('新增弹窗应含加工分类下拉且默认选中第一个分类', async ({ page }) => {
+      await page.getByRole('button', { name: /添加加工项/ }).click()
+      const dialog = page.locator('.fixed.inset-0.z-50').last()
+      // 加工分类字段可见（P0 验证：此前该字段缺失，提交强取 categories[0]，新租户空列表时提交 'default' 报「加工分类不存在」）
+      await expect(dialog.getByText('加工分类')).toBeVisible()
+      const categorySelect = dialog.locator('select').nth(1)
+      await expect(categorySelect).toHaveValue('cat_proc_001')
+      await expect(categorySelect.locator('option')).toContainText('窗帘加工')
+    })
+
+    test('无加工分类时弹窗显示创建引导并可一键创建', async ({ page }) => {
+      // 覆盖：加工分类接口返回空列表 → 弹窗应显示内联创建区（P0-2 流程断点修复）
+      await page.route('**/api/admin/processing-categories*', async (route) => {
+        if (route.request().method() === 'POST') {
+          await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({ code: 200, data: { id: 'cat_new_001', name: '基础加工' } }),
+          })
+        } else {
+          await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({ code: 200, data: [] }),
+          })
+        }
+      })
+      // 重新加载使空分类生效
+      await page.goto('/processing')
+      await page.getByRole('button', { name: /添加加工项/ }).click()
+      const dialog = page.locator('.fixed.inset-0.z-50').last()
+      await expect(dialog.getByText(/还没有加工分类/)).toBeVisible()
+      await dialog.getByPlaceholder('请输入加工分类名称，如：基础加工').fill('基础加工')
+      await dialog.getByRole('button', { name: '创建' }).click()
+      // 创建后分类 select 出现且选中新分类
+      const categorySelect = dialog.locator('select').nth(1)
+      await expect(categorySelect).toBeVisible()
+      await expect(categorySelect).toHaveValue('cat_new_001')
     })
   })
 
