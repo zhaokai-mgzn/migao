@@ -403,16 +403,16 @@ _CASE_CH_002 = EvalCase(
     tags=['multi_turn', 'cancel', 'user_abort'],
 )
 
-# ── CH-003 [NORMAL] 模糊意图引导 - 不猜测，列出选项（源: cases/chat.yml）──
+# ── CH-003 [NORMAL] 模糊意图引导 - 不猜测，澄清卡或文本列选项（低学历点选友好）（源: cases/chat.yml）──
 _CASE_CH_003 = EvalCase(
     id='CH-003',
     legacy_id='8.4',
-    title='模糊意图引导 - 不猜测，列出选项',
+    title='模糊意图引导 - 不猜测，澄清卡或文本列选项（低学历点选友好）',
     skill=Skill.MULTI_TURN,
     difficulty=Difficulty.NORMAL,
     user_inputs=['帮我看看'],
-    expectations=['direct_reply'],
-    data_checks=['无猜测性 tool 调用'],
+    expectations=['direct_reply or interact'],
+    data_checks=['无猜测性业务 tool 调用（product_search/order_query 等不得在澄清轮误触发）', '澄清卡选项 2-4 个、可点选；文本引导须给具体话术示例'],
     skip_reason='',
     tags=['clarification'],
 )
@@ -639,6 +639,20 @@ _CASE_CH_019 = EvalCase(
     data_checks=['B 端 product/order/aftersales/customer skill 的 tool_names 均绑定 interact（G6 契约测试）', 'product_skill.py/prompts/order.md 要求 interact 的指令与工具绑定一致，无 tool_not_found 退化', '前端 admin-web store 完整透传 confirmValue/cancelValue/pageMeta（confirm 卡回传上下文值而非死值）'],
     skip_reason='',
     tags=['interactive', 'confirmation'],
+)
+
+# ── CH-020 [NORMAL] C 端随手发图意图不明 - 先给候选意图卡，不默认直接搜相似（低学历场景）（源: cases/chat.yml）──
+_CASE_CH_020 = EvalCase(
+    id='CH-020',
+    legacy_id='',
+    title='C 端随手发图意图不明 - 先给候选意图卡，不默认直接搜相似（低学历场景）',
+    skill=Skill.MULTI_TURN,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['顾客只上传一张窗帘照片（无文字）想问问能不能照着做，AI 不应直接当『找同款』搜相似，应先给候选意图卡（找同款/识别面料/量尺寸算料/查订单/售后咨询）'],
+    expectations=['interact or product_search'],
+    data_checks=['customer_product/customer_general 图片段含『候选意图卡』与『不要默认直接搜相似』引导（prompt 契约测试）', '顾客意图明确（『找类似的』『推荐』）→ 直接 product_search，不发卡', '仅发图/意图不明 → interact(choice) 候选卡（2-4 项可点选），点选后再动作'],
+    skip_reason='图片消息由 pytest 覆盖（test_prompt_snapshots 契约断言），agent-eval runner 当前无发图能力，不进入 agent-eval 冒烟',
+    tags=['clarification', 'multimodal', 'image'],
 )
 
 # ── CR-001 [NORMAL] 查商品 → 下单（跨 Skill 复用 UUID）（源: cases/cross.yml）──
@@ -2267,6 +2281,7 @@ ALL_CASES = (
     _CASE_CH_017,
     _CASE_CH_018,
     _CASE_CH_019,
+    _CASE_CH_020,
     _CASE_CR_001,
     _CASE_CR_002,
     _CASE_CR_003,
