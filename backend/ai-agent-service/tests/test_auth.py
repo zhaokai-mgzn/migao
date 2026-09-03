@@ -172,8 +172,13 @@ class TestGetCurrentUser:
 
     @patch("app.utils.auth.settings")
     @pytest.mark.asyncio
-    async def test_no_token_in_debug_mode_returns_default_user(self, mock_settings):
-        """DEBUG 模式下无 Token 应返回默认用户身份"""
+    async def test_no_token_in_debug_mode_without_debug_header_returns_401(self, mock_settings):
+        """P0-3 回归：DEBUG=true 且无 token 时，不带 X-Debug-Role 头 → 必须 401
+
+        此前实现会静默降级为 tenant_id=1 的 dev_user 管理员；生产若误配
+        DEBUG=true，任何浏览器无 token 请求都会读到租户 1（词元通达）数据
+        （跨租户数据泄露，POC 实测）。现 fail-closed：无头一律 401。
+        """
         mock_settings.DEBUG = True
         mock_settings.JWT_PUBLIC_KEY = ""
 
@@ -182,9 +187,45 @@ class TestGetCurrentUser:
         request = MagicMock()
         request.cookies = {}
         request.state = MagicMock()
+        request.headers = {"X-Debug-Role": ""}  # 无显式调试角色
+
+        with pytest.raises(HTTPException) as exc_info:
+            await get_current_user(request, authorization=None)
+        assert exc_info.value.status_code == 401
+
+    @patch("app.utils.auth.settings")
+    @pytest.mark.asyncio
+    async def test_no_token_in_debug_mode_with_customer_header_returns_customer(self, mock_settings):
+        """DEBUG + 显式 X-Debug-Role: customer → 小布 C 端身份（本地验收/CI xiaobu 用）"""
+        mock_settings.DEBUG = True
+        mock_settings.JWT_PUBLIC_KEY = ""
+
+        from app.utils.auth import get_current_user
+
+        request = MagicMock()
+        request.cookies = {}
+        request.state = MagicMock()
+        request.headers = {"X-Debug-Role": "customer"}
 
         user = await get_current_user(request, authorization=None)
+        assert user.user_id == "debug_customer_1"
+        assert user.role == "customer"
 
+    @patch("app.utils.auth.settings")
+    @pytest.mark.asyncio
+    async def test_no_token_in_debug_mode_with_admin_header_returns_dev_user(self, mock_settings):
+        """DEBUG + 显式 X-Debug-Role: mibao → 管理员身份（B 端 eval 显式声明后仍可用）"""
+        mock_settings.DEBUG = True
+        mock_settings.JWT_PUBLIC_KEY = ""
+
+        from app.utils.auth import get_current_user
+
+        request = MagicMock()
+        request.cookies = {}
+        request.state = MagicMock()
+        request.headers = {"X-Debug-Role": "mibao"}
+
+        user = await get_current_user(request, authorization=None)
         assert user.user_id == "dev_user"
         assert user.tenant_id == 1
 

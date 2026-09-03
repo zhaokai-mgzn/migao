@@ -117,9 +117,18 @@ async def login() -> str:
         return r.json()["data"]["accessToken"]
 
 def _chat_headers(token: str) -> dict:
-    """ai-agent 请求头：xiaobu 用 DEBUG customer 身份；否则 Bearer token"""
+    """ai-agent 请求头：调试身份必须显式声明（P0-3 安全加固）
+
+    - xiaobu（C 端）：X-Debug-Role: customer（DEBUG 本地栈/CI 显式注入小布身份）
+    - mibao（B 端）+ SERVICE_TOKEN（CI）：X-Debug-Role: mibao——此前不带任何头
+      依赖"无 token → DEBUG 静默降级 tenant1 管理员"，服务端已 fail-closed，
+      现改为显式声明管理员调试身份，语义不变（eval 仍跑 tenant1 词元通达）。
+    - 其它（本地真实登录）：Bearer token
+    """
     if PERSONA == "xiaobu":
         return {"X-Debug-Role": "customer"}
+    if SERVICE_TOKEN:
+        return {"X-Debug-Role": "mibao"}
     return {"Authorization": f"Bearer {token}"} if token else {}
 
 async def get_or_create_session(token: str, prefer_new: bool = True) -> str:

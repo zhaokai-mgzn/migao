@@ -386,6 +386,7 @@ export const chatApi = {
   /** 获取会话列表 */
   getSessions: async (token: string) => {
     const res = await fetch(`${AI_SERVICE_URL}/api/chat/sessions`, {
+      credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
@@ -398,6 +399,7 @@ export const chatApi = {
   /** 创建新会话 */
   createSession: async (token: string) => {
     const res = await fetch(`${AI_SERVICE_URL}/api/chat/sessions`, {
+      credentials: 'include',
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -412,6 +414,7 @@ export const chatApi = {
   /** 获取历史消息 */
   getHistory: async (sessionId: string, token: string) => {
     const res = await fetch(`${AI_SERVICE_URL}/api/chat/history/${sessionId}`, {
+      credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
@@ -424,6 +427,7 @@ export const chatApi = {
   /** 结束会话（仅转换状态为 closed，保留历史消息） */
   closeSession: async (sessionId: string, token: string) => {
     const res = await fetch(`${AI_SERVICE_URL}/api/chat/sessions/${sessionId}/close`, {
+      credentials: 'include',
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -437,6 +441,7 @@ export const chatApi = {
   /** 重新打开已关闭的会话 */
   reopenSession: async (sessionId: string, token: string) => {
     const res = await fetch(`${AI_SERVICE_URL}/api/chat/sessions/${sessionId}/reopen`, {
+      credentials: 'include',
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -450,6 +455,7 @@ export const chatApi = {
   /** 删除会话（物理删除会话及其所有消息） */
   deleteSession: async (sessionId: string, token: string) => {
     const res = await fetch(`${AI_SERVICE_URL}/api/chat/sessions/${sessionId}`, {
+      credentials: 'include',
       method: 'DELETE',
       headers: {
         'Content-Type': 'application/json',
@@ -463,6 +469,7 @@ export const chatApi = {
   /** 发送消息（SSE 流式，返回 Response 供调用方处理流） */
   sendMessage: async (sessionId: string, message: string, token: string) => {
     const res = await fetch(`${AI_SERVICE_URL}/api/chat/send`, {
+      credentials: 'include',
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -482,6 +489,7 @@ export const chatApi = {
     const formData = new FormData()
     files.forEach((file) => formData.append('files', file))
     const res = await fetch(`${AI_SERVICE_URL}/api/chat/upload-image`, {
+      credentials: 'include',
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -498,6 +506,7 @@ export const chatApi = {
     formData.append('audio', audioBlob, 'recording.webm')
     const params = language ? `?language=${encodeURIComponent(language)}` : ''
     const res = await fetch(`${AI_SERVICE_URL}/api/chat/transcribe${params}`, {
+      credentials: 'include',
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,

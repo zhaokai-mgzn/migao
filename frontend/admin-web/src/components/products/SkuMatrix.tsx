@@ -7,7 +7,7 @@ import { toast } from 'sonner'
 import { Button, Select } from '@/components/ui'
 import type { ProductColor, ProductSku, SellingMethod } from '@/types'
 import { SellingMethodLabels } from '@/types'
-import { rebuildSkus } from '@/lib/sku-utils'
+import { rebuildSkus, nextTempId } from '@/lib/sku-utils'
 
 interface SkuMatrixProps {
   value: {
@@ -77,7 +77,7 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
       return
     }
     const newColor: ProductColor = {
-      id: String(-(Date.now() + Math.random())),
+      id: nextTempId(),
       colorName: '',
       remark: '',
       sortOrder: colors.length,
@@ -96,7 +96,7 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
       return
     }
     const newColor: ProductColor = {
-      id: String(-(Date.now() + Math.random())),
+      id: nextTempId(),
       colorName: name,
       mainColorHex: hex || undefined,
       remark: '',
@@ -118,7 +118,7 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
     }
     const available = MAX_COLORS - colors.length
     const toAdd = names.slice(0, available).map((name, i) => ({
-      id: String(-(Date.now() + Math.random() + i)),
+      id: nextTempId(),
       colorName: name,
       mainColorHex: undefined as string | undefined,
       remark: '',

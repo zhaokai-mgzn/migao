@@ -52,6 +52,27 @@ describe('rebuildSkus', () => {
     expect(Number(result[0].id)).toBeLessThan(0)
   })
 
+  it('generates temp SKU ids as integers, not floats (P0-1: Long deserialization contract)', () => {
+    // 回归：#P0-1 — 此前 id = String(-(Date.now() + Math.random())) 产出
+    // "-1788388811825.4893" 这类浮点字符串，后端 ProductSkuInput.id(Long)
+    // Jackson 反序列化失败 → POST /api/admin/products 400「请求体格式错误」。
+    const result = rebuildSkus(
+      [color('1', '红色'), color('2', '蓝色')],
+      [SM_BULK, SM_ROLL],
+      ['2.8米'],
+      [],
+    )
+    expect(result).toHaveLength(4)
+    for (const sku of result) {
+      // 必须可被 Long 解析：纯整数字符串（可选负号 + 数字），不得含小数点
+      expect(sku.id).toMatch(/^-?\d+$/)
+      expect(Number.isInteger(Number(sku.id))).toBe(true)
+    }
+    // 唯一性：同一批次生成的临时 id 不允许重复（浮点方案依赖随机数，整数方案需自增保证）
+    const ids = new Set(result.map((s) => s.id))
+    expect(ids.size).toBe(result.length)
+  })
+
   it('generates full matrix: 2 colors × 2 methods × 2 widths = 8 SKUs', () => {
     const result = rebuildSkus(
       [color('1', '红色'), color('2', '蓝色')],

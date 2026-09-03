@@ -594,7 +594,7 @@ CREATE TABLE IF NOT EXISTS knowledge_sync_history (
 CREATE TABLE IF NOT EXISTS after_sales_tickets (
     id VARCHAR(64) PRIMARY KEY,
     tenant_id BIGINT NOT NULL REFERENCES tenants(id),
-    ticket_no VARCHAR(64) UNIQUE,
+    ticket_no VARCHAR(64),
     order_id VARCHAR(64),
     customer_id VARCHAR(64),
     ticket_type VARCHAR(32) NOT NULL,
@@ -614,7 +614,9 @@ CREATE TABLE IF NOT EXISTS after_sales_tickets (
     close_reason TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    deleted INTEGER DEFAULT 0
+    deleted INTEGER DEFAULT 0,
+    -- 工单号租户内唯一（多租户隔离；全局唯一会让新租户从 0001 起号撞老租户，见 V25 迁移）
+    CONSTRAINT uq_after_sales_tickets_tenant_no UNIQUE (tenant_id, ticket_no)
 );
 
 -- 工单处理时间线表

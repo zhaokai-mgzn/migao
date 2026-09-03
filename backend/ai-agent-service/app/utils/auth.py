@@ -268,11 +268,17 @@ async def get_current_user(
         token = authorization.credentials
     
     if not token:
-        # 开发环境：如果未提供 Token 且 DEBUG=true，使用默认用户身份。
-        # 支持 X-Debug-Role: customer → 小布（C 端验收用）；缺省/其他 → 米宝（默认管理员）。
-        # 生产（DEBUG=false）永远不进入此分支——fail-closed，无 token 一律 401。
-        if settings.DEBUG:
-            debug_role = request.headers.get("X-Debug-Role", "").strip().lower()
+        # 开发环境：未提供 Token 且 DEBUG=true 时，可注入默认用户身份。
+        # 【P0-3 安全加固 2026-09-03】DEBUG 降级必须带显式调试头 X-Debug-Role，
+        # 禁止"无 token 无头 → 静默直通租户 1 管理员"：
+        #   - 此前生产若误配 DEBUG=true，任何浏览器/客户端无 token 请求都会被
+        #     降级为 tenant_id=1 的 dev_user 管理员，导致跨租户数据泄露
+        #     （POC 实测：新商家 /chat 页面读到词元通达租户的全部订单/会话）。
+        #   - 现在：DEBUG=true 且无 token 时，仅当请求带 X-Debug-Role 头才放行
+        #     （本地验收 / CI xiaobu 显式注入该头）；无头一律 401 fail-closed。
+        #   - 生产正确配置（DEBUG=false）永远不进入此分支，行为不变。
+        debug_role = request.headers.get("X-Debug-Role", "").strip().lower()
+        if settings.DEBUG and debug_role:
             if debug_role == "customer":
                 logger.warning("No auth token in DEBUG mode, using CUSTOMER identity (xiaobu)")
                 default_user = UserIdentity(
@@ -282,7 +288,10 @@ async def get_current_user(
                     role=UserRole.CUSTOMER,
                 )
             else:
-                logger.warning("No auth token provided in DEBUG mode, using default user identity")
+                logger.warning(
+                    "No auth token in DEBUG mode with explicit X-Debug-Role=%s, "
+                    "using ADMIN identity (mibao/dev)", debug_role
+                )
                 default_user = UserIdentity(
                     user_id="dev_user",
                     tenant_id=1,
@@ -293,7 +302,10 @@ async def get_current_user(
             return default_user
         
         client_ip = request.client.host if request.client else "unknown"
-        logger.warning(f"Authentication failed: no token provided, client_ip={client_ip}")
+        logger.warning(
+            f"Authentication failed: no token provided (DEBUG={settings.DEBUG}, "
+            f"x-debug-role={request.headers.get('X-Debug-Role', '')!r}), client_ip={client_ip}"
+        )
         raise HTTPException(
             status_code=401,
             detail={

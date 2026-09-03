@@ -6,7 +6,7 @@ import { toast } from 'sonner'
 import { knowledgeApi } from '@/lib/api'
 import { Table, Pagination, Modal, Button, Badge, SearchBar } from '@/components/ui'
 import type { TableColumn } from '@/components/ui'
-import type { KnowledgeDocument, KnowledgeDocumentUploadForm, KnowledgeSearchResult } from '@/types'
+import type { KnowledgeDocument, KnowledgeDocumentUploadForm, KnowledgeDocStatus, KnowledgeSearchResult } from '@/types'
 import DateTimeCell from '@/components/common/DateTimeCell'
 
 export default function KnowledgePage() {
@@ -48,56 +48,36 @@ export default function KnowledgePage() {
   const loadData = useCallback(async () => {
     setLoading(true)
     try {
-      // Mock 数据
-      setDocuments([
-        {
-          id: '1',
-          name: '窗帘常见问题 FAQ',
-          type: 'faq',
-          chunkCount: 24,
-          status: 'processed',
-          description: '客户常见咨询问题汇总',
-          fileSize: 125000,
-          uploadedAt: '2026-04-15T10:30:00',
-        },
-        {
-          id: '2',
-          name: '产品目录 2026',
-          type: 'product',
-          chunkCount: 156,
-          status: 'processed',
-          description: '全系列产品详细介绍',
-          fileSize: 2340000,
-          uploadedAt: '2026-04-14T16:45:00',
-        },
-        {
-          id: '3',
-          name: '窗帘尺寸测量指南',
-          type: 'guide',
-          chunkCount: 12,
-          status: 'processing',
-          description: '如何正确测量窗帘尺寸',
-          fileSize: 89000,
-          uploadedAt: '2026-04-18T09:20:00',
-        },
-        {
-          id: '4',
-          name: '安装服务说明',
-          type: 'guide',
-          chunkCount: 0,
-          status: 'failed',
-          description: '上门安装服务流程说明',
-          fileSize: 45000,
-          uploadedAt: '2026-04-10T14:00:00',
-        },
-      ])
-      setTotal(4)
+      // P0 验证修复：此前整页 mock 4 条假文档（2026-08-27 报告 §2.4 遗留），
+      // 上传/删除全部假成功。现接真实后端 CRUD（文档列表真实落库）。
+      const params: Record<string, unknown> = { page: current, size: pageSize }
+      if (searchParams.keyword) params.keyword = searchParams.keyword
+      if (searchParams.type) params.type = searchParams.type
+      const res = await knowledgeApi.getDocuments(params as never)
+      const pageData = res.data?.data
+      const items = (pageData?.items || []).map((doc: any) => ({
+        id: doc.id,
+        // 后端字段：title/docType/category/embeddingStatus/createdAt
+        name: doc.title || doc.name || '',
+        type: doc.docType || doc.type || 'faq',
+        chunkCount: doc.chunkCount ?? 0,
+        status: (doc.embeddingStatus === 'processed' || doc.embeddingStatus === 'completed'
+          ? 'processed'
+          : doc.embeddingStatus === 'failed' ? 'failed' : 'processing') as KnowledgeDocStatus,
+        description: doc.category || doc.description || '',
+        fileUrl: doc.fileUrl,
+        fileSize: doc.fileSize,
+        uploadedAt: doc.createdAt || doc.uploadedAt || '',
+      }))
+      setDocuments(items)
+      setTotal(pageData?.total ?? items.length)
     } catch (error) {
-      console.error('加载数据失败:', error)
+      console.error('加载知识库失败:', error)
+      toast.error('加载知识库失败')
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [current, pageSize, searchParams])
 
   useEffect(() => {
     loadData()
@@ -174,47 +154,41 @@ export default function KnowledgePage() {
     if (file) handleFileSelect(file)
   }
 
-  // 处理上传（带进度模拟）
+  // 处理上传（真实 API 落库；向量化仍在建设中，落库后状态为 processing/pending）
   const handleUpload = async () => {
     if (!validateUploadForm()) return
 
     setUploading(true)
     setUploadProgress(0)
     try {
-      // 模拟上传进度
-      const progressInterval = setInterval(() => {
-        setUploadProgress((prev) => {
-          if (prev >= 90) {
-            clearInterval(progressInterval)
-            return 90
-          }
-          return prev + Math.random() * 15
-        })
-      }, 300)
-
-      await new Promise((resolve) => setTimeout(resolve, 2000))
-      clearInterval(progressInterval)
+      // 真实上传：multipart/form-data → 后端落库（embeddingStatus=pending）
+      const data: KnowledgeDocumentUploadForm = {
+        name: uploadForm.name.trim(),
+        type: uploadForm.type,
+        description: uploadForm.description || undefined,
+        file: selectedFile || undefined,
+      }
+      await knowledgeApi.uploadDocument(data)
       setUploadProgress(100)
-
       toast.success('文档上传成功')
-      setTimeout(() => {
-        setUploadModalOpen(false)
-        loadData()
-      }, 500)
+      setUploadModalOpen(false)
+      loadData()
     } catch (error) {
+      console.error('上传文档失败:', error)
       toast.error('上传失败')
     } finally {
       setUploading(false)
     }
   }
 
-  // 重新同步
+  // 重新同步（触发后端 embed 任务；后端当前为占位实现，如实反馈而非假成功）
   const handleResync = async (doc: KnowledgeDocument) => {
     try {
-      // await knowledgeApi.resyncDocument(doc.id)
+      await knowledgeApi.resyncDocument(doc.id)
       toast.success(`已触发文档「${doc.name}」重新同步`)
       loadData()
     } catch (error) {
+      console.error('重新同步失败:', error)
       toast.error('重新同步失败')
     }
   }
@@ -228,10 +202,12 @@ export default function KnowledgePage() {
   const confirmDelete = async () => {
     if (!deletingDoc) return
     try {
-      await new Promise((resolve) => setTimeout(resolve, 500))
+      // 真实删除（此前 setTimeout 假成功）
+      await knowledgeApi.deleteDocument(deletingDoc.id)
       toast.success('删除成功')
       loadData()
     } catch (error) {
+      console.error('删除文档失败:', error)
       toast.error('删除失败')
     } finally {
       setDeleteModalOpen(false)
@@ -247,29 +223,23 @@ export default function KnowledgePage() {
     }
     setSearching(true)
     try {
-      // Mock 搜索结果
-      await new Promise((resolve) => setTimeout(resolve, 800))
-      setSearchResults([
-        {
-          chunkId: 'chunk_001',
-          content: '遮光窗帘布采用高精密织造工艺，遮光率可达 85%-95%。适用于卧室、会议室等需要遮光的场景。加工方式可选：打孔加工（¥5/个）、挂钩加工（¥3/个）。',
-          score: 0.92,
-          source: { documentId: 'doc_001', title: '遮光窗帘布 - 产品说明', docType: 'product_info' },
-        },
-        {
-          chunkId: 'chunk_002',
-          content: '窗帘尺寸测量方法：1. 测量窗户宽度，左右各加 15-20cm；2. 测量窗户高度，上方加 10cm，下方根据需要确定长度。',
-          score: 0.78,
-          source: { documentId: 'doc_002', title: '窗帘尺寸测量指南', docType: 'guide' },
-        },
-        {
-          chunkId: 'chunk_003',
-          content: '常见问题：Q: 窗帘可以机洗吗？A: 建议手洗或干洗，机洗可能导致面料变形。',
-          score: 0.65,
-          source: { documentId: 'doc_003', title: '窗帘常见问题 FAQ', docType: 'faq' },
-        },
-      ])
+      // 接真实后端检索（title/content LIKE，租户内）；向量 RAG 尚未接入（后端 TODO 注明）
+      const res = await knowledgeApi.searchKnowledge({ query: searchQuery.trim(), topK: 10 })
+      const results = res.data?.data?.results || []
+      setSearchResults(
+        results.map((doc: any) => ({
+          chunkId: doc.id || '',
+          content: doc.content || doc.category || '',
+          score: 1,
+          source: {
+            documentId: doc.id,
+            title: doc.title || doc.name || '',
+            docType: doc.docType || 'faq',
+          },
+        })),
+      )
     } catch (error) {
+      console.error('知识库搜索失败:', error)
       toast.error('搜索失败')
     } finally {
       setSearching(false)
@@ -435,7 +405,7 @@ export default function KnowledgePage() {
           <>
             <Button variant="secondary" onClick={() => setUploadModalOpen(false)}>取消</Button>
             <Button onClick={handleUpload} loading={uploading}>
-              {uploading ? `上传中 ${Math.round(uploadProgress)}%` : '上传'}
+              {uploading ? '上传中…' : '上传'}
             </Button>
           </>
         }
