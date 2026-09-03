@@ -303,3 +303,18 @@
 | 后端全量 / 三把工具 | ✅ | — | 2160 passed / gate、UI、contract 全绿 |
 | Phase 2c：澄清候选 grounded 商户库（图→疑似实体检索注入） | ⏳ 后续 | 依赖以图搜图/OCR 底座（G10）；当前由 VISION_CLARIFY_GUIDE"不得编造图片不存在信息"prompt 层约束 | — |
 | Phase 3（澄清 KPI 评测闭环 + runner 发图能力） | ⏳ 后续 | agent-eval runner 需支持 images 入参 + case schema images 字段 + 公网测试图 | — |
+
+---
+
+## 十二、实施进度 Phase 3 前置（issue #2794，2026-09-03）
+
+> 实施分支：`feat/2791-clarify-eval-images`（独立 worktree）。打通 agent-eval 图片消息能力。
+
+| 项 | 状态 | 落地位置 | 验证 |
+|---|---|---|---|
+| runner 图片支持 | ✅ | `tests/agent_eval/local_runner.py`：send_message 增 images 入参（body 透传后端 ChatSendRequest.images）；run_case 轮次支持 str/dict（{text, images}）混合 | 自测（纯文本不带 images/带图透传/轮次解析） |
+| case schema 扩展 | ✅ | `.github/cases/*.yml` user_inputs 每轮可为 dict；render_cases EvalCase 注释 + md 渲染兼容（📷 附图数）；旧 str 形态 157 条全部兼容 | YAML 加载 158 条 |
+| 端到端图片用例 | ✅ | CH-021：真实发图（picsum seed 图）→ vision 链路（澄清/识别不报错），期望 interact or product_search or direct_reply（三元 or，runner Phase 2 已支持） | 期望自测 4/4 |
+| 守护脚本 | ✅ | `tests/agent_eval/selftest_images.py`（非 test 命名防 gate 误判）：send_message/run_case/YAML 三段自测 | venv python3.11 全绿 |
+| 三把工具 | ✅ | — | gate / UI / contract 全绿 |
+| 剩余：真实图 CI 触发 + 澄清 KPI 回流 | ⏳ 后续 | CH-021 tier normal 需手动/定时 agent-eval 触发；澄清样本落库评测属 Phase 3 后半 | — |

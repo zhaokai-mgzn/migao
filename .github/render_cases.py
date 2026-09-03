@@ -131,6 +131,7 @@ def to_eval_py(cases):
            "    title: str",
            "    skill: Skill",
            "    difficulty: Difficulty",
+           "    # 每轮可为 str（纯文本）或 dict（{text, images[]} 带图消息，issue #2794）",
            "    user_inputs: List[str]",
            "    expectations: List[str]",
            '    data_checks: List[str]',
@@ -216,7 +217,13 @@ def to_md(cases):
             lines.append(f"### {c['id']}. {c['title']} {icon}")
             lines.append("```")
             for msg in c.get("user_inputs") or []:
-                lines.append(f"你: {msg}")
+                if isinstance(msg, dict):
+                    # 带图消息：文本 + 图片数（issue #2794）
+                    _t = msg.get("text", "")
+                    _imgs = msg.get("images") or []
+                    lines.append(f"你: {_t} [📷 附 {len(_imgs)} 图]" if _t else f"你: [📷 纯图片 x{len(_imgs)}]")
+                else:
+                    lines.append(f"你: {msg}")
             for e in (c.get("expectations") or []):
                 lines.append(f"期望: {exp_to_str(e)}")
             for d in (c.get("data_checks") or []):

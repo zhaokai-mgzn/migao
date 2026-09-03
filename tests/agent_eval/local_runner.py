@@ -145,13 +145,25 @@ async def get_or_create_session(token: str, prefer_new: bool = True) -> str:
         r = await c.post(f"{AI_API}/api/chat/sessions", headers=h, json={}, timeout=10)
         return r.json()["data"]["id"]
 
-async def send_message(token: str, session_id: str, message: str) -> dict:
-    """发送消息并收集 SSE 事件"""
+async def send_message(token: str, session_id: str, message: str, images: list = None) -> dict:
+    """发送消息并收集 SSE 事件
+
+    Args:
+        message: 文本内容
+        images: 可选图片 URL 列表（后端 ChatSendRequest.images，≤3 张，
+                https:// 或 /api/files 开头）。带图时后端走多模态/vision 链路
+                （图片意图澄清用例端到端验收，issue #2794）。
+    """
+    body = {"session_id": session_id, "message": message}
+    if images:
+        body["images"] = images
+
     async with httpx.AsyncClient(timeout=120) as c:
         h = _chat_headers(token)
 
         result = {
             "user_message": message,
+            "images": images or [],
             "tool_calls": [],
             "tool_results": [],
             "final_text": "",
@@ -163,7 +175,7 @@ async def send_message(token: str, session_id: str, message: str) -> dict:
         current_event = None
         async with c.stream("POST", f"{AI_API}/api/chat/send",
                             headers=h,
-                            json={"session_id": session_id, "message": message}) as resp:
+                            json=body) as resp:
             async for line in resp.aiter_lines():
                 line = line.strip()
                 if not line:
@@ -274,12 +286,22 @@ def check_expectation(result: dict, expectation: str) -> tuple[bool, str]:
     return False, f"unmatched expectation: {expectation[:80]}"
 
 async def run_case(case, token: str, session_id: str) -> dict:
-    """运行单个评测用例（多轮对话）"""
+    """运行单个评测用例（多轮对话）
+
+    user_inputs 每轮可为 str（纯文本）或 dict（带图消息）：
+      {"text": "看看这个", "images": ["https://...jpg"]}
+    """
     results = []
     all_tool_names = []
 
     for i, msg in enumerate(case.user_inputs):
-        r = await send_message(token, session_id, msg)
+        if isinstance(msg, dict):
+            text = msg.get("text", "")
+            images = msg.get("images") or []
+        else:
+            text = msg
+            images = []
+        r = await send_message(token, session_id, text, images=images)
         r["__round"] = i + 1
         r["__all_tool_names"] = [tc["name"] for tc in r["tool_calls"]]
         all_tool_names.extend(r["__all_tool_names"])

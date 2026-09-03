@@ -680,3 +680,36 @@ cases:
       ci:
         - agent-eval.yml
       verifies: []
+
+  - id: CH-021
+    legacy_id: ""
+    title: "图片消息端到端 - 真实发图后 AI 走 vision 链路（澄清/识别不报错）"
+    domains:
+      - chat
+      - product
+    tier: normal
+    tags:
+      - clarification
+      - multimodal
+      - image
+    truths_ref:
+      - ai-chat.route-actions
+    user_inputs:
+      - text: "看看这个面料"
+        images:
+          - "https://picsum.photos/seed/curtain-fabric/800/600"
+    expectations:
+      - tool: interact or product_search or direct_reply
+    data_checks:
+      - "带图消息 body 含 images（local_runner send_message 透传，issue #2794）"
+      - "AI 不报『图片分析失败/无法处理』类错误；图片走 vision 链路（理解或澄清）"
+      - "意图明确才执行；意图不明可澄清（候选卡或追问），不硬猜"
+    skip_reason: "真实 vision LLM 行为（成本/波动），tier normal 不进 PR smoke；由手动 agent-eval normal/图片用例专用 CI 触发"
+    merge_log: "issue #2794：agent-eval runner 图片消息支持（case schema dict 形态 user_inputs）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_graph_skills.py"
+        - "backend/ai-agent-service/tests/test_vision_integration.py"
+      ci:
+        - agent-eval.yml
+      verifies: []

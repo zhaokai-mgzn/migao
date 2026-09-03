@@ -283,7 +283,7 @@
 真值: category-manage.delete, category-manage.delete-destructive, ai-chat.confirm-required
 溯源: verification 2.12 独有（二次确认行为在测试中未确认，见 category-manage.yml 缺口注释） ｜ tags: delete, destructive, confirm
 
-## 对话边界域（20 case）
+## 对话边界域（21 case）
 
 ### CH-001. 空结果 + suggestion 引导修复 🔴
 ```
@@ -549,6 +549,18 @@
 ```
 真值: ai-chat.route-actions
 溯源: issue #2789 Phase 2：C 端图片澄清候选引导（customer_product/customer_general 图片段升级） ｜ tags: clarification, multimodal, image
+
+### CH-021. 图片消息端到端 - 真实发图后 AI 走 vision 链路（澄清/识别不报错） 🔵
+```
+你: 看看这个面料 [📷 附 1 图]
+期望: interact or product_search or direct_reply
+数据: 带图消息 body 含 images（local_runner send_message 透传，issue #2794）
+数据: AI 不报『图片分析失败/无法处理』类错误；图片走 vision 链路（理解或澄清）
+数据: 意图明确才执行；意图不明可澄清（候选卡或追问），不硬猜
+跳过: 真实 vision LLM 行为（成本/波动），tier normal 不进 PR smoke；由手动 agent-eval normal/图片用例专用 CI 触发
+```
+真值: ai-chat.route-actions
+溯源: issue #2794：agent-eval runner 图片消息支持（case schema dict 形态 user_inputs） ｜ tags: clarification, multimodal, image
 
 ## 跨域（3 case）
 
@@ -1902,13 +1914,13 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：157（活跃 98，跳过 59）
-- tier 分布：smoke 10 / normal 119 / adversarial 28
+- 用例总数：158（活跃 98，跳过 60）
+- tier 分布：smoke 10 / normal 120 / adversarial 28
 - 售后域：5
 - agents：6
 - api：10
 - 分类域：3
-- 对话边界域：20
+- 对话边界域：21
 - 跨域：3
 - 客户域：5
 - 数据域：6
