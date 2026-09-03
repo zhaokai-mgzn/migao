@@ -283,7 +283,7 @@
 真值: category-manage.delete, category-manage.delete-destructive, ai-chat.confirm-required
 溯源: verification 2.12 独有（二次确认行为在测试中未确认，见 category-manage.yml 缺口注释） ｜ tags: delete, destructive, confirm
 
-## 对话边界域（17 case）
+## 对话边界域（19 case）
 
 ### CH-001. 空结果 + suggestion 引导修复 🔴
 ```
@@ -509,6 +509,33 @@
 ```
 真值: ai-chat.intent-tool-map, ai-chat.handoff-offer
 溯源: 2026 新增：GB/T 47746-2026 转人工 AI 上下文同步（issue #2776） ｜ tags: handoff, agent_session, ai_context
+
+### CH-018. 低学历用户图片意图澄清 - 随手发图不带文字时先给候选意图再动作（issue #2777） 🔵
+```
+你: 用户只上传一张窗帘照片（无文字），可能想找同款/查自己订单里这个商品/问面料/录成新商品，意图不明确
+你: 用户上传一张与店铺某商品几乎相同的图片并说『跟这个一样的』
+期望: interact(component=choice)
+数据: 多模态 system prompt 注入 VISION_CLARIFY_GUIDE（呈现理解 + 候选意图 + 不连环追问）
+数据: 意图明确（带『创建这个商品』等文字）时直接进既有流程，不多问
+数据: 意图不明确（纯图/口语短句）时：先给出 2-4 个候选意图（找同款/识别面料/算料/查订单/建品），不直接执行写操作
+数据: 候选意图用简短大白话列出，可用 interact(choice) 卡片点选
+数据: 已识别字段不重复反问，不编造图片中不存在的信息
+跳过: 纯图澄清注入由 pytest 单测验证（test_graph_skills.py::TestVisionClarifyGuide，mock LLM 断言 system prompt），agent-eval runner 当前无发图能力，不进入 agent-eval 冒烟
+```
+真值: ai-chat.route-actions
+溯源: issue #2777 Phase 1：VISION_CLARIFY_GUIDE + base_skill 多模态注入（澄清能力强化） ｜ tags: clarification, multimodal, image
+
+### CH-019. B 端米宝交互卡可用 - 建品/下单/售后/客户写操作可发 interact 卡片（issue #2777 G6） 🔵
+```
+你: 米宝（B 端商家）创建商品选加工项/分类时应能下发 interact(choice) 卡片
+你: 米宝写操作（建品/下单/售后改状态/客户删除）被 confirm 守卫拦截后应能调用 interact(confirm) 展示确认卡
+期望: interact
+数据: B 端 product/order/aftersales/customer skill 的 tool_names 均绑定 interact（G6 契约测试）
+数据: product_skill.py/prompts/order.md 要求 interact 的指令与工具绑定一致，无 tool_not_found 退化
+数据: 前端 admin-web store 完整透传 confirmValue/cancelValue/pageMeta（confirm 卡回传上下文值而非死值）
+```
+真值: ai-chat.confirm-required
+溯源: issue #2777：G6 interact 绑定 B 端 + admin-web store 字段透传修复 ｜ tags: interactive, confirmation
 
 ## 跨域（3 case）
 
@@ -1860,13 +1887,13 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：154（活跃 97，跳过 57）
-- tier 分布：smoke 10 / normal 116 / adversarial 28
+- 用例总数：156（活跃 98，跳过 58）
+- tier 分布：smoke 10 / normal 118 / adversarial 28
 - 售后域：5
 - agents：6
 - api：10
 - 分类域：3
-- 对话边界域：17
+- 对话边界域：19
 - 跨域：3
 - 客户域：5
 - 数据域：6

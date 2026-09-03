@@ -113,6 +113,27 @@ def test_cross_domain_write_no_permission_blame():
         assert "重新表达" in prompt or "重新说出" in prompt, f"{skill}: 规则未要求引导用户重新表达意图"
 
 
+def test_product_image_create_wording_unified():
+    """G7 仲裁（issue #2777）：图片建品话术三方统一，杜绝"呈现 vs 预填"矛盾漂移。
+
+    旧矛盾：product_skill.py 内联要求"图片识别后的第一步是向用户呈现识别结果…
+    让用户确认"，而 EXAMPLES-product.md 写"识别结果直接预填，不做二次确认"——
+    同一流程两种指令，模型行为漂移。统一仲裁口径：
+    「识别结果以预填 form 呈现（呈现即一次确认入口）；已识别字段不重复反问，
+    缺失字段引导补充；禁止跳过呈现直接建品」。
+    """
+    prompt = _build_system_prompt("product")
+    # 统一口径关键词必须在（覆盖 prompts/product.md + EXAMPLES-product.md + 内联）
+    assert "预填" in prompt, "product prompt 缺少『预填』统一口径"
+    assert "一次确认" in prompt or "确认或修改" in prompt, "product prompt 缺少『一次确认』语义"
+    # 已识别字段不得反问（呈现预填的价值所在）
+    assert "不重复反问" in prompt or "重复反问" in prompt or "不要重复输入" in prompt, (
+        "product prompt 缺少『已识别字段不重复反问』约束"
+    )
+    # 旧矛盾措辞不得复活
+    assert "不做二次确认" not in prompt, "product prompt 出现旧矛盾措辞『不做二次确认』"
+
+
 # ============ Prompt 增量快照 ============
 
 def test_snapshot_all_skills():
