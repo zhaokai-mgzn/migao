@@ -81,6 +81,9 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       const token = getToken()
       const AI_SERVICE_URL = chatApi.AI_SERVICE_URL
       const res = await fetch(`${AI_SERVICE_URL}/api/chat/quick-actions`, {
+        // P0-3 补齐：credentials include — 整页刷新后内存 token 丢失，
+        // 需携带 HttpOnly cookie（.migaozn.com）让 ai-agent 恢复真实身份
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
@@ -332,6 +335,9 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 
       const response = await fetch(`${AI_SERVICE_URL}/api/chat/send`, {
         method: 'POST',
+        // P0-3 补齐：credentials include — 整页刷新后内存 token 丢失，
+        // 需携带 HttpOnly cookie 让 ai-agent 恢复真实租户身份（否则空 Bearer → 401）
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,

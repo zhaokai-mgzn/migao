@@ -49,7 +49,11 @@ class UserIdentity(BaseModel):
     user_id: str
     tenant_id: int
     identity_type: str  # wechat_mini / wechat_h5 / account / agent_wechat_mini
-    role: UserRole
+    # P1-C（RBAC 走查）：role 用 str 而非 UserRole 枚举——商户可在「角色管理」创建
+    # 任意自定义角色码（如 poc_operator_custom），枚举强校验会拒绝未知码 → 401
+    # TOKEN_INVALID，自定义角色员工无法使用米宝。已知枚举码仍定义于 UserRole 供
+    # require_roles 白名单引用；此处放宽为 str 仅做格式透传，权限由 permissions claim 控制。
+    role: str
     permissions: list[str] = []  # 细粒度权限码列表
     external_id: Optional[str] = None  # 第三方平台用户 ID（如微信 openid）
     exp: Optional[int] = None  # Token 过期时间

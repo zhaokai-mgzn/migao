@@ -64,7 +64,9 @@ export default function RolesPage() {
   const loadPermissions = useCallback(async () => {
     try {
       const res = await permissionApi.getPermissions()
-      setAllPermissions(res.data.data || [])
+      const perms = (res.data.data || []) as any[]
+      // RBAC 修复：后端字段为 resourceType，roles 页分组/展示用 resource/action 别名
+      setAllPermissions(perms.map((p: any) => ({ ...p, resource: p.resource || p.resourceType || 'other' })))
     } catch (e) {
       // ignore
     }

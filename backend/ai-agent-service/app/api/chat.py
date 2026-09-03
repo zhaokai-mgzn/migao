@@ -36,23 +36,24 @@ from app.tools import ToolRegistry, get_tool_registry
 from app.tools.base import ToolContext  # __PAGE__ 分页直调工具时构造执行上下文
 from app.utils.auth import get_current_user, UserIdentity
 
-# 商户员工角色（可进入商家后台使用米宝的运营/管理类工具）。
-# 与 admin-api SecurityConfig 的门禁口径一致：customer/agent（小程序/B2C 用户）不属于此集合。
-MERCHANT_STAFF_ROLES = {
-    "admin", "tenant_admin", "operator", "product_manager",
-    "knowledge_editor", "customer_service", "service",
-}
+# C 端专属角色（小程序/B2C 用户）：统一折叠为 customer，禁止访问管理类工具。
+# 与 admin-api SecurityConfig 门禁口径一致：customer/agent 不属于商户员工。
+CUSTOMER_ONLY_ROLES = {"customer", "agent"}
 
 
 def _to_agent_role(role: str) -> str:
     """将 JWT 角色映射为米宝执行上下文角色。
 
-    商户员工角色保留原角色（供 Tool.allowed_roles / required_permissions 判断）；
-    非员工角色（小程序/B2C 用户）统一折叠为 customer，禁止访问管理类工具。
+    - C 端角色（customer/agent）→ customer（折叠，禁管理工具）；
+    - 其余一律视为商户员工并保留原角色码（供 Tool.allowed_roles /
+      required_permissions 判断）——包括 admin-api「角色管理」创建的任意自定义
+      角色码（P1-C 修复：此前只认白名单 MERCHANT_STAFF_ROLES，自定义角色码
+      被折叠成 customer 无法使用米宝；admin-api 只给商户员工签发后台 JWT，
+      工具级权限仍由 permissions claim 强控，放宽不会越权）。
     """
-    if role in MERCHANT_STAFF_ROLES:
-        return role
-    return "customer"
+    if role in CUSTOMER_ONLY_ROLES:
+        return "customer"
+    return role
 
 router = APIRouter()
 

@@ -222,6 +222,8 @@ function MessageBubble({ message }: { message: ChatMessage }) {
                     const AI_SERVICE_URL = chatApi.AI_SERVICE_URL
                     fetch(`${AI_SERVICE_URL}/api/chat/suggestion-feedback`, {
                       method: 'POST',
+                      // 与其它 ai-api 调用一致：携带 HttpOnly cookie（整页刷新后内存 token 缺失）
+                      credentials: 'include',
                       headers: {
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${token}`,

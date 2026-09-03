@@ -247,6 +247,33 @@ class TestGetCurrentUser:
         assert exc_info.value.status_code == 401
 
 
+    @patch("app.utils.auth.settings")
+    @pytest.mark.asyncio
+    async def test_custom_merchant_role_code_parses(self, mock_settings, make_jwt_token):
+        """P1-C 回归：自定义角色码不得导致 401（role 放宽为 str 透传）"""
+        mock_settings.DEBUG = True
+        mock_settings.JWT_PUBLIC_KEY = ""
+
+        from app.utils.auth import get_current_user
+
+        payload = {
+            "userId": "custom_staff_1",
+            "tenantId": 20,
+            "roles": ["poc_operator_custom"],
+            "permissions": ["dashboard:view", "knowledge:manage"],
+            "identityType": "sms",
+        }
+        token = make_jwt_token(payload)
+        request = MagicMock()
+        request.cookies = {"access_token": token}
+        request.state = MagicMock()
+
+        user = await get_current_user(request, authorization=None)
+        assert user.user_id == "custom_staff_1"
+        assert user.role == "poc_operator_custom"
+        assert "dashboard:view" in user.permissions
+
+
 class TestVerifyServiceToken:
     """verify_service_token 函数测试"""
 
