@@ -204,3 +204,45 @@ def test_quote_warning_on_over_limit():
     )
     assert quote["fabric_meters"] == pytest.approx(9.0)
     assert quote.get("warning")  # 必须有告警
+
+
+# ──────────────────────────────────────────────
+# 7. GB/T 47746-2026 承诺边界：面料单价缺失 → 拒绝（不再按默认 30 元/米兜底）
+# ──────────────────────────────────────────────
+
+class TestCurtainCalcPriceGuard:
+    """Tool 层 execute：无 fabric_price 必须失败并引导查价；报价成功须带「预估」限定"""
+
+    async def test_missing_fabric_price_rejected_with_suggestion(self, sample_tool_context):
+        """未提供 fabric_price → 失败且 suggestion 引导先查商品信息（不再输出默认 30 元报价）"""
+        from app.tools.curtain_calc import CurtainCalcTool
+        tool = CurtainCalcTool()
+        result = await tool.execute(
+            context=sample_tool_context,
+            window_width=3.0,
+            window_height=2.5,
+            mounting="eyelet",
+        )
+        assert result.success is False, "缺少面料单价时必须拒绝报价，禁止默认兜底"
+        assert result.error == "缺少面料单价"
+        assert "面料单价" in (result.message or "")
+        assert result.suggestion and "product_detail" in result.suggestion, (
+            "suggestion 应引导先用 product_detail/product_search 查询面料单价"
+        )
+        assert result.data is None
+
+    async def test_quote_success_message_contains_estimate_qualifier(self, sample_tool_context):
+        """提供 fabric_price → 成功，且 message 含「估算/预估」限定（非精确报价承诺）"""
+        from app.tools.curtain_calc import CurtainCalcTool
+        tool = CurtainCalcTool()
+        result = await tool.execute(
+            context=sample_tool_context,
+            window_width=3.0,
+            window_height=2.5,
+            mounting="eyelet",
+            fabric_price=30.0,
+        )
+        assert result.success is True, f"提供面料单价应正常报价: error={result.error}"
+        assert "预估" in (result.message or "") or "估算" in (result.message or ""), (
+            f"报价 message 必须带预估限定: {result.message}"
+        )

@@ -44,6 +44,9 @@ class AftersaleCreateTool(BaseTool):
 
     read_only = False
     destructive = False
+    # GB/T 47746-2026 承诺边界：售后申请（可能含 refund_amount 退款诉求）即向顾客
+    # 作出的处理承诺，执行前必须先弹确认卡片并取得顾客明确确认。
+    requires_confirmation = True
     idempotent = False
 
     parameters = {
