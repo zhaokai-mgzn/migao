@@ -1,6 +1,7 @@
 package com.migao.admin.service;
 
 import com.migao.admin.config.TenantContext;
+import com.migao.admin.dto.AgentAiContextMessage;
 import com.migao.admin.dto.AgentMonitorResponse;
 import com.migao.admin.dto.AgentSessionDetailResponse;
 import com.migao.admin.dto.AgentSessionListResponse;
@@ -26,13 +27,15 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
-// case_ids: CH-008
+// case_ids: CH-008, CH-017
 
 /**
  * AgentSessionService 单元测试
@@ -538,7 +541,6 @@ class AgentSessionServiceTest {
         // given
         when(agentSessionMapper.selectOne(any(LambdaQueryWrapper.class)))
                 .thenReturn(testSession);  // testSession: aiSessionId=ai-001, customerId=cust-001
-        when(agentSessionMapper.selectById("session-001")).thenReturn(testSession);
         when(agentMessageMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
 
         // when
@@ -561,5 +563,129 @@ class AgentSessionServiceTest {
         assertThatThrownBy(() -> agentSessionService.getSessionByAiSessionId("ai-none", "cust-001"))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("人工客服会话");
+    }
+
+    // ================== GB-01 AI 上下文快照（GB/T 47746-2026, issue #2776） ==================
+
+    @Test
+    @DisplayName("转人工创建会话 - 持久化 AI 上下文摘要与消息快照")
+    void createSessionForHandoff_PersistsAiContext() {
+        // given
+        when(agentSessionMapper.insert(any(AgentSession.class))).thenAnswer(inv -> {
+            AgentSession s = inv.getArgument(0);
+            s.setId("agent-session-ctx-1");
+            return 1;
+        });
+        when(agentMessageMapper.insert(any(AgentMessage.class))).thenReturn(1);
+
+        // when
+        AgentSession result = agentSessionService.createSessionForHandoff(
+                "ai-sess-001", "cust-001", 1L, "窗帘色差",
+                "顾客反馈窗帘遮光率与描述不符，要求人工处理",
+                List.of(
+                        AgentAiContextMessage.builder().role("user").content("窗帘有色差吗？").build(),
+                        AgentAiContextMessage.builder().role("assistant").content("正在为您核实，请稍候。").build()));
+
+        // then
+        assertThat(result.getAiContextSummary()).isEqualTo("顾客反馈窗帘遮光率与描述不符，要求人工处理");
+        assertThat(result.getAiContextMessages()).isInstanceOf(List.class);
+        List<?> turns = (List<?>) result.getAiContextMessages();
+        assertThat(turns).hasSize(2);
+        AgentAiContextMessage first = (AgentAiContextMessage) turns.get(0);
+        assertThat(first.getRole()).isEqualTo("user");
+        assertThat(first.getContent()).isEqualTo("窗帘有色差吗？");
+    }
+
+    @Test
+    @DisplayName("转人工创建会话 - AI 上下文超长被服务端截断兜底（summary 500/条数 20/每条 500）")
+    void createSessionForHandoff_AiContextTruncated() {
+        // given
+        when(agentSessionMapper.insert(any(AgentSession.class))).thenAnswer(inv -> {
+            AgentSession s = inv.getArgument(0);
+            s.setId("agent-session-ctx-2");
+            return 1;
+        });
+        when(agentMessageMapper.insert(any(AgentMessage.class))).thenReturn(1);
+
+        String longSummary = "长".repeat(600);
+        String longContent = "长".repeat(600);
+        List<AgentAiContextMessage> many = new ArrayList<>();
+        for (int i = 0; i < 25; i++) {
+            many.add(AgentAiContextMessage.builder().role("user").content(longContent).build());
+        }
+
+        // when
+        AgentSession result = agentSessionService.createSessionForHandoff(
+                "ai-sess-001", "cust-001", 1L, null, longSummary, many);
+
+        // then
+        assertThat(result.getAiContextSummary()).hasSize(500);
+        List<?> turns = (List<?>) result.getAiContextMessages();
+        assertThat(turns).hasSize(20);
+        AgentAiContextMessage first = (AgentAiContextMessage) turns.get(0);
+        assertThat(first.getContent()).hasSize(500);
+    }
+
+    @Test
+    @DisplayName("管理端会话详情 - 返回 AI 上下文快照与摘要")
+    void getSessionDetail_IncludesAiContext() {
+        // given
+        AgentSession ctxSession = AgentSession.builder()
+                .id("session-ctx")
+                .tenantId(1L)
+                .customerId("cust-001")
+                .aiSessionId("ai-001")
+                .status("waiting")
+                .reason("色差")
+                .aiContextSummary("顾客反馈窗帘色差，要求人工处理")
+                .aiContextMessages(List.of(
+                        Map.of("role", "user", "content", "窗帘有色差吗？"),
+                        Map.of("role", "assistant", "content", "正在为您核实，请稍候。")))
+                .build();
+        when(agentSessionMapper.selectById("session-ctx")).thenReturn(ctxSession);
+        when(agentMessageMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+
+        // when
+        AgentSessionDetailResponse detail = agentSessionService.getSessionDetail("session-ctx");
+
+        // then
+        assertThat(detail.getAiContextSummary()).isEqualTo("顾客反馈窗帘色差，要求人工处理");
+        assertThat(detail.getAiContext()).hasSize(2);
+        assertThat(detail.getAiContext().get(0).getRole()).isEqualTo("user");
+        assertThat(detail.getAiContext().get(1).getContent()).isEqualTo("正在为您核实，请稍候。");
+    }
+
+    @Test
+    @DisplayName("顾客端 by-ai 详情 - 不含 AI 上下文且过滤 isInternal 内部备注（A7 修复）")
+    void getSessionByAiSessionId_ExcludesAiContextAndInternal() {
+        // given：会话带 AI 上下文 + 混合消息（含内部备注）
+        AgentSession s = AgentSession.builder()
+                .id("session-1")
+                .tenantId(1L)
+                .customerId("cust-001")
+                .aiSessionId("ai-1")
+                .status("active")
+                .reason("色差")
+                .aiContextSummary("顾客反馈色差（内部摘要不应返回顾客端）")
+                .aiContextMessages(List.of(Map.of("role", "user", "content", "窗帘有色差吗？")))
+                .build();
+        when(agentSessionMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(s);
+        when(customerProfileMapper.selectById("cust-001")).thenReturn(testCustomer);
+        when(agentMessageMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(
+                AgentMessage.builder().id("m1").sessionId("session-1").tenantId(1L)
+                        .senderType("customer").senderId("cust-001").contentType("text").content("在吗？").isInternal(false).build(),
+                AgentMessage.builder().id("m2").sessionId("session-1").tenantId(1L)
+                        .senderType("agent").senderId("emp-1").contentType("text").content("在的，请问有什么可以帮您").isInternal(false).build(),
+                AgentMessage.builder().id("m3").sessionId("session-1").tenantId(1L)
+                        .senderType("agent").senderId("emp-1").contentType("text").content("【内部备注】该客户 VIP 需优先").isInternal(true).build()));
+
+        // when
+        AgentSessionDetailResponse detail = agentSessionService.getSessionByAiSessionId("ai-1", "cust-001");
+
+        // then
+        assertThat(detail.getAiContext()).isNull();
+        assertThat(detail.getAiContextSummary()).isNull();
+        assertThat(detail.getMessages()).hasSize(2);
+        assertThat(detail.getMessages()).noneMatch(m -> Boolean.TRUE.equals(m.getIsInternal()));
     }
 }

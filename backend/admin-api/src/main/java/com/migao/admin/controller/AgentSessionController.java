@@ -111,10 +111,12 @@ public class AgentSessionController {
     public ApiResponse<AgentSessionDetailResponse> createSessionForHandoff(
             @Valid @RequestBody AgentSessionCreateRequest request) {
         Long tenantId = TenantContext.getTenantId();
-        log.info("转人工创建会话: aiSessionId={}, customerId={}, tenantId={}",
-                request.getAiSessionId(), request.getCustomerId(), tenantId);
+        log.info("转人工创建会话: aiSessionId={}, customerId={}, tenantId={}, aiContextTurns={}",
+                request.getAiSessionId(), request.getCustomerId(), tenantId,
+                request.getAiContextMessages() == null ? 0 : request.getAiContextMessages().size());
         AgentSession session = agentSessionService.createSessionForHandoff(
-                request.getAiSessionId(), request.getCustomerId(), tenantId, request.getReason());
+                request.getAiSessionId(), request.getCustomerId(), tenantId, request.getReason(),
+                request.getAiContextSummary(), request.getAiContextMessages());
         AgentSessionDetailResponse detail = agentSessionService.getSessionDetail(session.getId());
         return ApiResponse.success(detail);
     }

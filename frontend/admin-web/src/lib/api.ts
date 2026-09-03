@@ -694,6 +694,18 @@ export interface AgentSessionDetail extends AgentSession {
   messages: AgentMessageItem[]
   customerPhone?: string
   customerAvatarUrl?: string
+  /** 转人工时点 AI 会话上下文摘要（管理端可见；GB/T 47746-2026） */
+  aiContextSummary?: string | null
+  /** 转人工前顾客与 AI 客服（小布）的对话快照（管理端可见） */
+  aiContext?: AgentAiTurn[] | null
+}
+
+/** 转人工前 AI 对话快照消息 */
+export interface AgentAiTurn {
+  role: 'user' | 'assistant'
+  content: string
+  contentType?: string
+  createdAt?: string
 }
 
 /** 客服工作台消息 */

@@ -37,6 +37,7 @@
 | **小程序绑定手机号** | `POST /api/auth/mini/bind-phone` body `{code}`（JWT 认证） | code = `open-type="getPhoneNumber"` 授权动态令牌；后端换号 → 写 `users.phone` → 回填名下 `user_id IS NULL AND customer_phone=该号` 的订单（V23 运行时化） |
 | **C 端我的售后** | `GET /api/admin/agent/after-sales/mine?page&size` | **强制按 X-User-Id 反查用户订单 → 只返回这些订单上的工单**（数据隔离强制点；勿用 `GET /api/admin/after-sales?customerId=`——该参数不存在且工单 customer_id 存的是客户姓名） |
 | **C 端我的物流** | `GET /api/admin/agent/orders/mine?status=shipped` → 逐单 `GET /api/admin/orders/{id}` 取 `logistics` | 小布专用 `customer_logistics_track`：只查本人**已发货(在途)**订单；**两端一律拒绝用户提供快递单号直查**（运单号仅由系统从订单详情读取） |
+| **转人工建人工会话** | `POST /api/admin/agent-sessions`（ai-agent human_handoff 调用） | 字段 `aiSessionId/customerId/reason` + **GB-01 新增** `aiContextSummary`（≤500 字）+ `aiContextMessages`（≤20 条 `{role: user\|assistant, content, contentType?, createdAt?}`，每条 ≤500 字）；管理端详情 `GET /api/admin/agent-sessions/{id}` 响应含 `aiContextSummary`/`aiContext`；**顾客端** `GET /api/customer/agent-sessions/by-ai/{aiSessionId}` **不含** aiContext 且过滤 isInternal 消息（GB/T 47746-2026 对齐，issue #2776） |
 
 ## 四、跨模块联动约定（改一处必须检查另一处）
 

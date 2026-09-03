@@ -283,7 +283,7 @@
 真值: category-manage.delete, category-manage.delete-destructive, ai-chat.confirm-required
 溯源: verification 2.12 独有（二次确认行为在测试中未确认，见 category-manage.yml 缺口注释） ｜ tags: delete, destructive, confirm
 
-## 对话边界域（16 case）
+## 对话边界域（17 case）
 
 ### CH-001. 空结果 + suggestion 引导修复 🔴
 ```
@@ -388,9 +388,12 @@
 数据: createSessionForHandoff 创建 waiting 会话 + system 消息
 数据: sendMessage(agent) 后会话状态变 active
 数据: getSessionByAiSessionId 返回含客服消息的会话
+数据: createSessionForHandoff 持久化 ai_context_summary/ai_context_messages（快照字段可空）
+数据: getSessionDetail(admin) 返回 aiContext；跨租户读取拒绝
+数据: getSessionByAiSessionId(customer) 不含 aiContext 且过滤 isInternal 消息
 ```
 真值: ai-chat.intent-tool-map, settings-manage.ai-config
-溯源: POC 人工客服工作台新增 ｜ tags: handoff, agent_session
+溯源: POC 人工客服工作台新增；2026 扩展：AI 上下文同步断言（GB/T 47746-2026） ｜ tags: handoff, agent_session
 
 ### CH-009. interact form 表单提交注入上下文（__FORM__ 协议） 🔵
 ```
@@ -491,6 +494,21 @@
 ```
 真值: ai-chat.handoff-offer
 溯源: xiaobu-ai-handoff-guidance.md 意图过滤防打断 ｜ tags: handoff, non_interrupt
+
+### CH-017. 转人工携带 AI 对话上下文 - 客服工作台可见转人工前对话（GB/T 47746-2026 对齐） 🔵
+```
+你: 用户与 AI 聊过 3 轮（含查单/商品咨询）后触发转人工，human_handoff 应携带最近 N 轮 user/assistant 文本快照与可选摘要
+你: 人工客服打开该会话应能看到『AI 对话记录（转人工前）』与『人工接待记录』分区展示
+你: 顾客端按 aiSessionId 查询人工会话不应返回 aiContext（避免轮询载荷放大与重复展示）
+期望: human_handoff
+数据: human_handoff POST 携带 aiContextSummary 与 aiContextMessages（仅 role=user/assistant，剥 think/图片占位，逐条与总量截断）
+数据: createSessionForHandoff 持久化 ai_context_summary/ai_context_messages（JSONB）
+数据: getSessionDetail(admin) 返回 aiContext；跨租户访问拒绝
+数据: getSessionByAiSessionId(customer) 不含 aiContext 且过滤 isInternal 消息
+数据: AI 会话关闭/清理后人工会话快照仍可见（快照语义）
+```
+真值: ai-chat.intent-tool-map, ai-chat.handoff-offer
+溯源: 2026 新增：GB/T 47746-2026 转人工 AI 上下文同步（issue #2776） ｜ tags: handoff, agent_session, ai_context
 
 ## 跨域（3 case）
 
@@ -1842,13 +1860,13 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：153（活跃 96，跳过 57）
-- tier 分布：smoke 10 / normal 115 / adversarial 28
+- 用例总数：154（活跃 97，跳过 57）
+- tier 分布：smoke 10 / normal 116 / adversarial 28
 - 售后域：5
 - agents：6
 - api：10
 - 分类域：3
-- 对话边界域：16
+- 对话边界域：17
 - 跨域：3
 - 客户域：5
 - 数据域：6

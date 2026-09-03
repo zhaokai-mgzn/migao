@@ -12,7 +12,7 @@
  * 区别于「会话管理」页（AI 会话 /chat），本页是真正的人工客服接待。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { MessageSquare, Send } from 'lucide-react'
+import { Bot, MessageSquare, Send } from 'lucide-react'
 import { agentSessionApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import type { AgentMessageItem, AgentSession, AgentSessionDetail } from '@/lib/api'
@@ -184,6 +184,45 @@ export default function HumanAgentSessionsPage() {
 
               {/* 消息区 */}
               <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 py-4 space-y-3 bg-neutral-50/50">
+                {/* GB-01（GB/T 47746-2026）：转人工前 AI 对话上下文——人工客服无需顾客重复复述 */}
+                {(detail.aiContextSummary || (detail.aiContext && detail.aiContext.length > 0)) && (
+                  <div className="rounded-xl border border-blue-200/70 bg-blue-50/60 p-3 space-y-2">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-blue-700">
+                      <Bot className="w-3.5 h-3.5" />
+                      <span>顾客与 AI 客服（小布）的对话 · 转人工前</span>
+                    </div>
+                    {detail.aiContextSummary && (
+                      <div className="text-xs text-neutral-600 bg-white/80 border border-blue-100 rounded-lg px-2.5 py-1.5">
+                        📋 对话摘要：{detail.aiContextSummary}
+                      </div>
+                    )}
+                    {detail.aiContext?.map((turn, idx) => (
+                      <div key={`ai-ctx-${idx}`} className="flex justify-start">
+                        <div
+                          className={cn(
+                            'max-w-[85%] px-2.5 py-1.5 rounded-lg text-xs shadow-sm',
+                            turn.role === 'assistant'
+                              ? 'bg-indigo-50 border border-indigo-100 text-neutral-700'
+                              : 'bg-white border border-neutral-200 text-neutral-700',
+                          )}
+                        >
+                          <div
+                            className={cn(
+                              'mb-0.5 text-[10px] font-medium',
+                              turn.role === 'assistant' ? 'text-indigo-500' : 'text-neutral-400',
+                            )}
+                          >
+                            {turn.role === 'assistant' ? '小布 · AI' : '顾客'}
+                          </div>
+                          <div className="whitespace-pre-wrap break-words">{turn.content}</div>
+                        </div>
+                      </div>
+                    ))}
+                    <div className="text-center text-[10px] text-neutral-400 pt-0.5">
+                      ———— 以下为人工接待记录 ————
+                    </div>
+                  </div>
+                )}
                 {detail.messages?.map(m => (
                   <div
                     key={m.id}

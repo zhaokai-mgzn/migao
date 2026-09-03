@@ -8,10 +8,83 @@ AI 智能客服系统 - 转人工 Tool (小布专用)
 - 通知失败不影响工单创建（工单已记录，管理员可通过工单列表查看）
 """
 from typing import Optional, Dict, Any
+import re
 from loguru import logger
 
 from app.tools.base import BaseTool, ToolContext, ToolResult
 from app.utils.http_client import get_admin_api_client
+
+# ── GB/T 47746-2026 转人工上下文同步（issue #2776）────────────────────
+# 转人工时把 AI 会话最近 N 轮 user/assistant 文本快照带给人工客服，
+# 让人工客服无需顾客复述即可了解已沟通内容。
+_AI_CONTEXT_HISTORY_LIMIT = 12      # SessionMemory.get_history 拉取上限
+_AI_CONTEXT_MAX_TURNS = 20          # 快照最多携带轮数
+_AI_CONTEXT_MAX_CHARS_PER_TURN = 500
+_THINK_PATTERN = re.compile(r"<think>[\s\S]*?</think>")
+
+
+def _clean_ai_context_message(msg: dict) -> Optional[dict]:
+    """把 session_messages 行清洗为快照 turn；非 user/assistant 返回 None。
+
+    - assistant 内容剥离 <think>...</think>（同 chat.py 对历史消息的处理）
+    - 文本为空的多模态消息（图片等）以「[图片]」占位，不透传 URL（PII）
+    - 每条 content 超长截断
+    """
+    role = msg.get("role")
+    if role not in ("user", "assistant"):
+        return None
+    content_type = msg.get("content_type") or "text"
+    content = (msg.get("content") or "").strip()
+    if not content and content_type == "text":
+        return None
+    if not content:
+        # 多模态（图片等）：占位，不透传 URL
+        return {
+            "role": role,
+            "content": "[图片]",
+            "contentType": content_type,
+            "createdAt": str(msg.get("created_at") or ""),
+        }
+    if role == "assistant":
+        content = _THINK_PATTERN.sub("", content).strip()
+    if not content:
+        return None
+    if len(content) > _AI_CONTEXT_MAX_CHARS_PER_TURN:
+        content = content[:_AI_CONTEXT_MAX_CHARS_PER_TURN] + "…（已截断）"
+    turn: Dict[str, str] = {"role": role, "content": content}
+    if content_type != "text":
+        turn["contentType"] = content_type
+    if msg.get("created_at"):
+        turn["createdAt"] = str(msg["created_at"])
+    return turn
+
+
+async def _load_ai_context(session_id: Optional[str]) -> Dict[str, Any]:
+    """取当前 AI 会话最近对话快照。
+
+    非致命：任何异常仅记日志并返回空快照，绝不阻塞转人工主流程。
+    """
+    if not session_id:
+        return {"summary": "", "messages": []}
+    try:
+        from app.memory.session_memory import SessionMemory
+        messages = await SessionMemory().get_history(
+            session_id, limit=_AI_CONTEXT_HISTORY_LIMIT
+        )
+    except Exception as e:
+        logger.warning(
+            f"[human_handoff] AI 上下文收集失败（非致命，转人工继续）: "
+            f"{type(e).__name__}: {e}"
+        )
+        return {"summary": "", "messages": []}
+    turns: list = []
+    for msg in messages or []:
+        turn = _clean_ai_context_message(msg)
+        if turn:
+            turns.append(turn)
+        if len(turns) >= _AI_CONTEXT_MAX_TURNS:
+            break
+    return {"summary": "", "messages": turns}
 
 
 class HumanHandoffTool(BaseTool):
@@ -50,6 +123,10 @@ class HumanHandoffTool(BaseTool):
             "description": {
                 "type": "string",
                 "description": "详细问题描述（选填）",
+            },
+            "summary": {
+                "type": "string",
+                "description": "（选填）转人工前问题的简短摘要（1-2 句，可含订单号/商品等关键信息），供人工客服快速了解",
             },
         },
     }
@@ -112,15 +189,17 @@ class HumanHandoffTool(BaseTool):
         context: ToolContext,
         reason: Optional[str] = None,
         description: Optional[str] = None,
+        summary: Optional[str] = None,
     ) -> ToolResult:
         """执行转人工操作
 
-        创建投诉工单 → 通知管理员 → 返回安抚话术
+        创建投诉工单 → 通知管理员 → 创建人工会话（携带 AI 对话上下文快照）→ 返回安抚话术
 
         Args:
             context: Tool 执行上下文
             reason: 转人工原因
             description: 详细描述
+            summary: 一句话摘要（选填，供人工客服快速了解）
 
         Returns:
             ToolResult: 包含安抚话术的返回结果
@@ -203,6 +282,12 @@ class HumanHandoffTool(BaseTool):
             # Gap-3 安全加固: 通知管理员
             await self._notify_admins(context, ticket_no, handoff_reason)
 
+            # GB-01（GB/T 47746-2026）：转人工时点携带 AI 对话上下文快照，
+            # 让人工客服无需顾客复述即可了解已沟通内容（非致命，失败留空继续）。
+            ai_context = await _load_ai_context(context.session_id)
+            if summary:
+                ai_context["summary"] = (summary or "").strip()[:_AI_CONTEXT_MAX_CHARS_PER_TURN]
+
             # 创建人工客服会话（客服工作台可见、可对话）——转人工核心闭环
             agent_session_id = None
             try:
@@ -212,6 +297,8 @@ class HumanHandoffTool(BaseTool):
                         "aiSessionId": context.session_id,
                         "customerId": context.user_id,
                         "reason": handoff_reason,
+                        "aiContextSummary": ai_context.get("summary") or "",
+                        "aiContextMessages": ai_context.get("messages") or [],
                     },
                     tenant_id=context.tenant_id,
                     user_id=context.user_id,

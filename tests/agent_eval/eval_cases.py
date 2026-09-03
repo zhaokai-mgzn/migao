@@ -482,7 +482,7 @@ _CASE_CH_008 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['用户触发转人工后应创建 agent_session（waiting）并写入系统消息', '客服可在工作台发消息回复，会话 waiting→active', '用户可按 AI 会话 ID 查询人工会话看到客服回复'],
     expectations=['human_handoff'],
-    data_checks=['createSessionForHandoff 创建 waiting 会话 + system 消息', 'sendMessage(agent) 后会话状态变 active', 'getSessionByAiSessionId 返回含客服消息的会话'],
+    data_checks=['createSessionForHandoff 创建 waiting 会话 + system 消息', 'sendMessage(agent) 后会话状态变 active', 'getSessionByAiSessionId 返回含客服消息的会话', 'createSessionForHandoff 持久化 ai_context_summary/ai_context_messages（快照字段可空）', 'getSessionDetail(admin) 返回 aiContext；跨租户读取拒绝', 'getSessionByAiSessionId(customer) 不含 aiContext 且过滤 isInternal 消息'],
     skip_reason='',
     tags=['handoff', 'agent_session'],
 )
@@ -597,6 +597,20 @@ _CASE_CH_016 = EvalCase(
     data_checks=['order_query/quote 等明确业务意图即使含情绪词也不 offer（judge 白名单）', '正常咨询不出现 interact 建议卡片'],
     skip_reason='',
     tags=['handoff', 'non_interrupt'],
+)
+
+# ── CH-017 [NORMAL] 转人工携带 AI 对话上下文 - 客服工作台可见转人工前对话（GB/T 47746-2026 对齐）（源: cases/chat.yml）──
+_CASE_CH_017 = EvalCase(
+    id='CH-017',
+    legacy_id='',
+    title='转人工携带 AI 对话上下文 - 客服工作台可见转人工前对话（GB/T 47746-2026 对齐）',
+    skill=Skill.MULTI_TURN,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户与 AI 聊过 3 轮（含查单/商品咨询）后触发转人工，human_handoff 应携带最近 N 轮 user/assistant 文本快照与可选摘要', '人工客服打开该会话应能看到『AI 对话记录（转人工前）』与『人工接待记录』分区展示', '顾客端按 aiSessionId 查询人工会话不应返回 aiContext（避免轮询载荷放大与重复展示）'],
+    expectations=['human_handoff'],
+    data_checks=['human_handoff POST 携带 aiContextSummary 与 aiContextMessages（仅 role=user/assistant，剥 think/图片占位，逐条与总量截断）', 'createSessionForHandoff 持久化 ai_context_summary/ai_context_messages（JSONB）', 'getSessionDetail(admin) 返回 aiContext；跨租户访问拒绝', 'getSessionByAiSessionId(customer) 不含 aiContext 且过滤 isInternal 消息', 'AI 会话关闭/清理后人工会话快照仍可见（快照语义）'],
+    skip_reason='',
+    tags=['handoff', 'agent_session', 'ai_context'],
 )
 
 # ── CR-001 [NORMAL] 查商品 → 下单（跨 Skill 复用 UUID）（源: cases/cross.yml）──
@@ -2222,6 +2236,7 @@ ALL_CASES = (
     _CASE_CH_014,
     _CASE_CH_015,
     _CASE_CH_016,
+    _CASE_CH_017,
     _CASE_CR_001,
     _CASE_CR_002,
     _CASE_CR_003,
