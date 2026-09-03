@@ -299,7 +299,9 @@ cases:
       - "搜索窗帘"
       - "看看第一个的详情"
       - "把价格改成 198"
+      - "确认"
       - "给它加上S钩安装"
+      - "确认"
       - "再看看这个商品的详情确认一下"
     expectations:
       - tool: product_search
@@ -318,7 +320,7 @@ cases:
       - "第4轮 product_id 来自第2轮结果"
       - "全程未重新 product_search 查同一个商品"
     skip_reason: ""
-    merge_log: "eval M001 独有（多轮 ID 复用，覆盖 2.3+2.8 的多轮形态）"
+    merge_log: "eval M001 独有（多轮 ID 复用，覆盖 2.3+2.8 的多轮形态）；2026-09-03 Phase 2 适配：product_update/product_processing_item_manage 均 requires_confirmation，写操作轮后补『确认』（与 OR-010 模式一致）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_mibao_multiturn_intelligence.py"

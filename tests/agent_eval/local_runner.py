@@ -201,19 +201,39 @@ async def send_message(token: str, session_id: str, message: str) -> dict:
         return result
 
 def check_expectation(result: dict, expectation: str) -> tuple[bool, str]:
-    """检查一条 expectation 是否满足"""
+    """检查一条 expectation 是否满足
+
+    支持 OR 逻辑（'A or B'）：任一满足即通过。
+    direct_reply 语义（澄清/引导形态）：该轮无 tool_calls 且有 final_text。
+    组合形态如 'direct_reply or interact'（模糊意图澄清：文本引导或澄清卡均可）。
+    """
     exp_lower = expectation.lower()
 
-    # 检查 direct_reply（路由动作：直接回复、未调工具且有文本输出）
-    if "direct_reply" in exp_lower:
+    # 拆 OR 分支（保持向后兼容：无 or 时等价于单分支）
+    parts = [p.strip() for p in exp_lower.split(" or ") if p.strip()]
+    has_direct_part = any("direct_reply" in p for p in parts)
+
+    if has_direct_part:
+        # direct_reply 分支满足：无工具调用且有文本输出
         if not result.get("tool_calls") and result.get("final_text"):
             return True, "direct reply without tool call"
-        return False, "expected direct_reply (no tool) but got tool calls"
+        # 单值 direct_reply（无 or）→ 维持旧语义：有工具调用即失败
+        if len(parts) == 1:
+            return False, "expected direct_reply (no tool) but got tool calls"
+        # 含 or：direct 分支未命中，继续尝试其他工具分支
+        parts = [p for p in parts if "direct_reply" not in p]
+
+    # 反转断言（未被调用 / not called）优先：不受下方工具名子串匹配干扰
+    if "未被调用" in expectation or "not called" in exp_lower:
+        for tc in result["tool_calls"]:
+            if tc["name"] in exp_lower:
+                return False, f"tool {tc['name']} was called but should NOT be"
+        return True, "tool not called as expected"
 
     # 检查 tool 名称（支持 OR 逻辑：A or B）
     # xiaobu 模式：expectation 里的 order_query 视为 customer_order_query（C 端物理隔离后）
     expected_tools = []
-    for part in exp_lower.split(" or "):
+    for part in parts:
         t = part.strip()
         if PERSONA == "xiaobu" and t == "order_query":
             t = "customer_order_query"

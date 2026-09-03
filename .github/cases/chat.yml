@@ -75,7 +75,7 @@ cases:
 
   - id: CH-003
     legacy_id: "8.4"
-    title: "模糊意图引导 - 不猜测，列出选项"
+    title: "模糊意图引导 - 不猜测，澄清卡或文本列选项（低学历点选友好）"
     domains:
       - chat
     tier: normal
@@ -86,12 +86,13 @@ cases:
     user_inputs:
       - "帮我看看"
     expectations:
-      # 不调用任何写工具；引导澄清（话术需具体，如「请说'创建商品'」）
-      - tool: direct_reply
+      # 不猜测执行任何业务工具；澄清 = interact(choice) 候选卡 或 文本引导（话术需具体，如「请说'创建商品'」）
+      - tool: direct_reply or interact
     data_checks:
-      - "无猜测性 tool 调用"
+      - "无猜测性业务 tool 调用（product_search/order_query 等不得在澄清轮误触发）"
+      - "澄清卡选项 2-4 个、可点选；文本引导须给具体话术示例"
     skip_reason: ""
-    merge_log: "verification 8.4 独有"
+    merge_log: "verification 8.4 独有；2026-09-03 Phase 2 (#2789)：general 澄清承载升级为 choice 卡或文本，期望放宽为 direct_reply or interact"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_intent_router.py"
@@ -646,6 +647,36 @@ cases:
       tests:
         - "backend/ai-agent-service/tests/test_skill_routing_integrity.py"
         - "frontend/admin-web/tests/unit/store/chat.test.ts"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: CH-020
+    legacy_id: ""
+    title: "C 端随手发图意图不明 - 先给候选意图卡，不默认直接搜相似（低学历场景）"
+    domains:
+      - chat
+      - product
+    tier: normal
+    tags:
+      - clarification
+      - multimodal
+      - image
+    truths_ref:
+      - ai-chat.route-actions
+    user_inputs:
+      - "顾客只上传一张窗帘照片（无文字）想问问能不能照着做，AI 不应直接当『找同款』搜相似，应先给候选意图卡（找同款/识别面料/量尺寸算料/查订单/售后咨询）"
+    expectations:
+      - tool: interact or product_search
+    data_checks:
+      - "customer_product/customer_general 图片段含『候选意图卡』与『不要默认直接搜相似』引导（prompt 契约测试）"
+      - "顾客意图明确（『找类似的』『推荐』）→ 直接 product_search，不发卡"
+      - "仅发图/意图不明 → interact(choice) 候选卡（2-4 项可点选），点选后再动作"
+    skip_reason: "图片消息由 pytest 覆盖（test_prompt_snapshots 契约断言），agent-eval runner 当前无发图能力，不进入 agent-eval 冒烟"
+    merge_log: "issue #2789 Phase 2：C 端图片澄清候选引导（customer_product/customer_general 图片段升级）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_prompt_snapshots.py"
       ci:
         - agent-eval.yml
       verifies: []
