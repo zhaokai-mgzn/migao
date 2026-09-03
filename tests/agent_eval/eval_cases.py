@@ -1383,6 +1383,20 @@ _CASE_OB_004 = EvalCase(
     tags=['onboarding', 'ops_page_removed', 'super_admin_api'],
 )
 
+# ── OB-005 [NORMAL] 官网主页 GB/T 47746-2026 遵循宣称（标准号 + 能力点 + 免责小字）（源: cases/onboarding.yml）──
+_CASE_OB_005 = EvalCase(
+    id='OB-005',
+    legacy_id='',
+    title='官网主页 GB/T 47746-2026 遵循宣称（标准号 + 能力点 + 免责小字）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['官网主页展示「遵循国家标准」区块：标准号 GB/T 47746-2026 与《顾客联络服务 人工与智能客户服务协同要求》', '4 个能力点：自动识别复杂诉求转人工 / 转人工规则可配置 / 转人工即同步上下文 / AI 严格承诺边界', '页脚免责：推荐性国标无认证机制，不构成认证、检测或备案结论'],
+    expectations=['direct_reply'],
+    data_checks=['corporate-home page.tsx 含 GB/T 47746-2026 区块（标准号、4 能力点、免责小字）', '文案不含「认证/通过检测/备案」误导词', 'corporate-home.test.tsx 断言标准号与能力点渲染（无快照/无新 icon）'],
+    skip_reason='由前端单测验证（corporate-home.test.tsx），非 LLM 冒烟',
+    tags=['homepage', 'compliance', 'gb47746'],
+)
+
 # ── OR-001 [SMOKE] 订单列表查询（源: cases/order.yml）──
 _CASE_OR_001 = EvalCase(
     id='OR-001',
@@ -2292,6 +2306,7 @@ ALL_CASES = (
     _CASE_OB_002,
     _CASE_OB_003,
     _CASE_OB_004,
+    _CASE_OB_005,
     _CASE_OR_001,
     _CASE_OR_002,
     _CASE_OR_003,
