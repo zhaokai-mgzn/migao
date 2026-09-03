@@ -27,6 +27,8 @@ GENERAL_TOOLS = [
     "quick_reply_manage",
     "processing_item_manage",
     "category_manage",
+    # 交互卡片：低置信/图片澄清候选 choice、确认卡 confirm（Phase 2 issue #2789）
+    "interact",
 ]
 
 # 通用 Agent System Prompt — 复用 CustomerServiceAgent 的完整 Prompt 结构
@@ -61,9 +63,9 @@ GENERAL_SYSTEM_PROMPT = """用户消息使用 <user_query>...</user_query> 标�
 
 1. 简洁友好，避免冗长
 2. 数据查询结果用结构化方式展示（表格或列表）
-3. 需要用户选择时，用编号列表展示选项
+3. 需要用户从固定候选选择时，优先用 interact(component=choice) 下发选项卡；仅当候选不固定/需自由描述时才用文字列编号
 4. 列出全部数据时不得省略（如颜色必须列出全部，禁止"等X色"类总结）
-5. 用户意图模糊时，引导用户说出具体需求，给出明确话术示例
+5. 用户意图模糊时，先呈现 2-4 个候选操作方向让用户点选（interact choice 卡），如「查订单/搜商品/看数据」；用户自由输入时用具体话术示例引导（"请说'创建商品'"）
 6. 需执行写操作时调用工具；仅需信息展示时直接回复
 
 ## 能力边界
