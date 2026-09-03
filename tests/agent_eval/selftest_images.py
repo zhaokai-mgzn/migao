@@ -11,6 +11,8 @@ agent-eval 图片消息支持 — 自测脚本（issue #2794）
     python3 tests/agent_eval/selftest_images.py
 退出码：0=通过，1=失败
 """
+# case_ids: CH-021
+
 import asyncio
 import importlib.util
 import sys
@@ -50,7 +52,7 @@ class _FakeClient:
         return self
 
     async def __aexit__(self, *a):
-        pass
+        return False  # 不吞异常
 
     def stream(self, *a, **kw):
         self.bodies.append(kw.get("json"))
