@@ -267,6 +267,11 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
         boolean isComplaint = "complaint".equals(request.getTicketType());
         Order order = null;
         if (!isComplaint) {
+            // 校验关联订单ID非空（complaint 之外必须传；DTO 层不再 @NotBlank 一刀切，
+            // 避免 selectById(null) 落入 MyBatis 异常而非业务提示）
+            if (!StringUtils.hasText(request.getOrderId())) {
+                throw BusinessException.validationError("关联订单不能为空");
+            }
             // 校验关联订单是否存在
             order = orderMapper.selectById(request.getOrderId());
             if (order == null) {

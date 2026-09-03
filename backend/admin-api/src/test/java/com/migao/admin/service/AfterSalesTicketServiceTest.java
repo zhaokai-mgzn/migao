@@ -899,4 +899,38 @@ class AfterSalesTicketServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("退款金额");
     }
+
+    @Test
+    @DisplayName("P0-2 回归：新租户当天无历史工单时从 0001 起号（复合唯一约束后不再跨租户撞号）")
+    void createTicket_newTenantStartsSeqFrom0001() {
+        // given：新租户（tenant=20）当天无任何工单 → 查号返回 null（模拟 selectOne 为空）
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(afterSalesTicketMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+        when(afterSalesTicketMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null);
+        // insert 时捕获落库的工单号
+        final String[] insertedTicketNo = new String[1];
+        when(afterSalesTicketMapper.insert(any(AfterSalesTicket.class))).thenAnswer(invocation -> {
+            AfterSalesTicket t = invocation.getArgument(0);
+            insertedTicketNo[0] = t.getTicketNo();
+            t.setId("ticket-new-tenant");
+            return 1;
+        });
+        AfterSalesTicket saved = AfterSalesTicket.builder()
+                .id("ticket-new-tenant").tenantId(20L).ticketNo(insertedTicketNo[0])
+                .orderId("order-001").customerId("客户A").ticketType("refund")
+                .status("pending").description("POC 验证").source("agent").priority("normal")
+                .createdAt(OffsetDateTime.now()).updatedAt(OffsetDateTime.now()).build();
+        when(afterSalesTicketMapper.selectById("ticket-new-tenant")).thenReturn(saved);
+
+        // when
+        afterSalesTicketService.createTicket(buildCreateRequest("refund", null), 20L, "test-user");
+
+        // then：生成号必须是 AS-yyyyMMdd-0001（本租户无历史从 1 起）；
+        // DB 层 (tenant_id, ticket_no) 复合唯一保证与老租户同名号互不冲突
+        assertThat(insertedTicketNo[0]).isNotNull();
+        java.util.regex.Pattern p = java.util.regex.Pattern.compile("^AS-\\d{8}-0001$");
+        assertThat(p.matcher(insertedTicketNo[0]).matches())
+                .as("新租户首单应为 AS-<date>-0001，实际=" + insertedTicketNo[0])
+                .isTrue();
+    }
 }
