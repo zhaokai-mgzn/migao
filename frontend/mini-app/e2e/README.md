@@ -29,6 +29,8 @@ npm run test:e2e
 | 对话页 | `scenarios/chat-scenario.js` | 入口渲染、品牌导航、会话就绪、快捷操作发消息（SSE）、新对话、语音/键盘切换、键盘输入发消息 |
 | 个人中心 | `scenarios/profile-scenario.js` | tab 切换、用户信息、订单/售后区块、设置项 |
 | 登录页 | `scenarios/login-scenario.js` | 品牌区、一键登录按钮、协议链接；已登录自动跳转（预期） |
+| 多轮表单化 | `scenarios/multiturn-scenario.js` | 推荐→选品→规格→下单信息收参、订单卡片手机号脱敏 |
+| 售后链路 | `scenarios/aftersales-scenario.js` | 售后咨询快捷操作 → 真实后端 SSE 售后回复（退货/退款引导语义） |
 
 ## 说明与坑
 

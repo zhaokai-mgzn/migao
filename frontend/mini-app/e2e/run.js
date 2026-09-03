@@ -16,6 +16,7 @@ const SCENARIOS = [
   require('./scenarios/profile-scenario'),
   require('./scenarios/login-scenario'),
   require('./scenarios/multiturn-scenario'),
+  require('./scenarios/aftersales-scenario'),
 ]
 
 async function main() {
