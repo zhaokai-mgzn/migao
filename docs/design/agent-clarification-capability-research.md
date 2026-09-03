@@ -286,3 +286,20 @@
 | 前置核实结论：B 端前端渲染 | ✅ 核实 | admin-web `InteractiveMessage.tsx` 组件/事件/测试俱在，非从零开发；仅 store 字段透传缺口（已修） | 前端子代理逐文件核实 |
 | 后端全量 / 前端全量 / 三把工具 | ⏳ 验证中 | — | — |
 | Phase 2（图片意图澄清卡 + B 端澄清候选）+ Phase 3（评测闭环） | ⏳ 后续 | 依赖本 PR 合并后 cases 提级与真实图 eval 支持（runner 发图能力未具备） | — |
+
+---
+
+## 十一、实施进度 Phase 2（issue #2789，2026-09-03）
+
+> 实施分支：`feat/2787-clarify-phase2`（独立 worktree）。承接 §十 Phase 1（#2777/PR #2784 已合并）。
+
+| 项 | 状态 | 落地位置 | 验证 |
+|---|---|---|---|
+| runner 澄清语义扩展 | ✅ | `tests/agent_eval/local_runner.py`：`direct_reply or interact` 组合期望支持（澄清卡与文本引导皆算澄清）；顺带修复「X 未被调用」反转断言被工具名子串匹配提前误判的 bug | 自测 9/9 |
+| Phase 2a：B 端 general 澄清承载 | ✅ | `general_agent.py` GENERAL_TOOLS 绑 interact + 内联 prompt 澄清引导升级；`prompts/general.md` + `EXAMPLES-general.md`（choice 候选卡示例） | 契约测试 test_general_binds_interact_for_clarify_cards + prompt 快照 |
+| 修复 main 既有快照漂移 | ✅ | `test_prompt_snapshots.py` 长度边界上调（product 9586 由 #2784+#2785 累积；general 5465 由本 PR 澄清引导增长）——测试文档明示"故意改动→更新 expected" | 快照 38 passed |
+| Phase 2b：C 端图片澄清候选 | ✅ | `customer_product_skill.py`/`customer_general_skill.py` 图片段：意图不明→interact choice 候选卡（找同款/识别面料/量尺寸算料/查订单/售后咨询），**不默认直接搜相似** | prompt 契约测试 4 条 |
+| cases 更新 | ✅ | CH-003 期望放宽为 `direct_reply or interact`（澄清卡或文本皆可）；新增 CH-020（C 端随手发图→候选意图卡） | render 157 条 + truth check ✅ |
+| 后端全量 / 三把工具 | ✅ | — | 2160 passed / gate、UI、contract 全绿 |
+| Phase 2c：澄清候选 grounded 商户库（图→疑似实体检索注入） | ⏳ 后续 | 依赖以图搜图/OCR 底座（G10）；当前由 VISION_CLARIFY_GUIDE"不得编造图片不存在信息"prompt 层约束 | — |
+| Phase 3（澄清 KPI 评测闭环 + runner 发图能力） | ⏳ 后续 | agent-eval runner 需支持 images 入参 + case schema images 字段 + 公网测试图 | — |

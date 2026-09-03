@@ -183,3 +183,19 @@ def test_all_write_skills_bind_interact_via_confirm_guard():
         assert "interact" in skill.tool_names, (
             f"Skill '{name}' 需经 confirm 守卫的写操作确认，必须绑定 interact（G6 回归）"
         )
+
+
+def test_general_binds_interact_for_clarify_cards():
+    """general 兜底 skill 必须绑定 interact（Phase 2, issue #2789）。
+
+    general 是低置信意图/图片消息的澄清主战场（intent_router 低置信重写 →
+    general；图片强制路由 vision mode），且 VISION_CLARIFY_GUIDE（Phase 1）
+    明确要求意图模糊时优先 interact(choice) 下发候选卡。若 general 未绑定
+    interact，澄清只能退化为纯文本——无法承载"2-4 候选意图点选"的澄清卡。
+    """
+    registry = get_skill_registry()
+    general = registry.get("general")
+    assert general is not None, "general skill 未注册"
+    assert "interact" in general.tool_names, (
+        "general skill 需承载低置信/图片澄清卡，必须绑定 interact（Phase 2 回归）"
+    )

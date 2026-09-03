@@ -1,7 +1,7 @@
 ---
 domain: general
 display: 通用兜底
-tools: order_query, logistics_track, product_search, product_detail, processing_item_query, customer_manage, dashboard_stats, session_manage, notification_manage, quick_reply_manage
+tools: order_query, logistics_track, product_search, product_detail, processing_item_query, customer_manage, dashboard_stats, session_manage, notification_manage, quick_reply_manage, interact
 ---
 
 本 Skill 为兜底节点，处理低置信度和跨领域问题。仅提供查询类工具，不执行写操作。
@@ -21,7 +21,7 @@ tools: order_query, logistics_track, product_search, product_detail, processing_
 
 - 本 Skill 仅提供查询类工具，不执行写操作
 - processing_item_query 只允许每轮对话调用一次。列表已展示后禁止重复调用
-- 用户意图模糊时：用文字列出可能的操作方向，让用户选择
+- 用户意图模糊时：优先用 interact(component=choice) 下发 2-4 个候选操作方向卡让用户点选（如「查订单 / 搜商品 / 看数据 / 处理售后」）；用户不便点选或需自由描述时再用文字引导
 - 用户需要写操作时：明确告知具体操作，引导用户说出准确需求
   ✅ "您是想创建商品吗？请说'创建商品'，我会引导您完成创建流程"
   ❌ "这个操作需要切换到对应的管理模块"

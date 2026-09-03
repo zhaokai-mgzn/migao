@@ -283,7 +283,7 @@
 真值: category-manage.delete, category-manage.delete-destructive, ai-chat.confirm-required
 溯源: verification 2.12 独有（二次确认行为在测试中未确认，见 category-manage.yml 缺口注释） ｜ tags: delete, destructive, confirm
 
-## 对话边界域（19 case）
+## 对话边界域（20 case）
 
 ### CH-001. 空结果 + suggestion 引导修复 🔴
 ```
@@ -308,14 +308,15 @@
 真值: ai-chat.escape-hatch
 溯源: eval M004 + verification 8.2（原用例「长度>10」与代码不符，已按 ai-chat.escape-hatch 校准） ｜ tags: multi_turn, cancel, user_abort
 
-### CH-003. 模糊意图引导 - 不猜测，列出选项 🔵
+### CH-003. 模糊意图引导 - 不猜测，澄清卡或文本列选项（低学历点选友好） 🔵
 ```
 你: 帮我看看
-期望: direct_reply
-数据: 无猜测性 tool 调用
+期望: direct_reply or interact
+数据: 无猜测性业务 tool 调用（product_search/order_query 等不得在澄清轮误触发）
+数据: 澄清卡选项 2-4 个、可点选；文本引导须给具体话术示例
 ```
 真值: ai-chat.route-actions
-溯源: verification 8.4 独有 ｜ tags: clarification
+溯源: verification 8.4 独有；2026-09-03 Phase 2 (#2789)：general 澄清承载升级为 choice 卡或文本，期望放宽为 direct_reply or interact ｜ tags: clarification
 
 ### CH-004. 数据来源标注 [工具返回] 🔵
 ```
@@ -536,6 +537,18 @@
 ```
 真值: ai-chat.confirm-required
 溯源: issue #2777：G6 interact 绑定 B 端 + admin-web store 字段透传修复 ｜ tags: interactive, confirmation
+
+### CH-020. C 端随手发图意图不明 - 先给候选意图卡，不默认直接搜相似（低学历场景） 🔵
+```
+你: 顾客只上传一张窗帘照片（无文字）想问问能不能照着做，AI 不应直接当『找同款』搜相似，应先给候选意图卡（找同款/识别面料/量尺寸算料/查订单/售后咨询）
+期望: interact or product_search
+数据: customer_product/customer_general 图片段含『候选意图卡』与『不要默认直接搜相似』引导（prompt 契约测试）
+数据: 顾客意图明确（『找类似的』『推荐』）→ 直接 product_search，不发卡
+数据: 仅发图/意图不明 → interact(choice) 候选卡（2-4 项可点选），点选后再动作
+跳过: 图片消息由 pytest 覆盖（test_prompt_snapshots 契约断言），agent-eval runner 当前无发图能力，不进入 agent-eval 冒烟
+```
+真值: ai-chat.route-actions
+溯源: issue #2789 Phase 2：C 端图片澄清候选引导（customer_product/customer_general 图片段升级） ｜ tags: clarification, multimodal, image
 
 ## 跨域（3 case）
 
@@ -1488,7 +1501,9 @@
 你: 搜索窗帘
 你: 看看第一个的详情
 你: 把价格改成 198
+你: 确认
 你: 给它加上S钩安装
+你: 确认
 你: 再看看这个商品的详情确认一下
 期望: product_search
 期望: product_detail(product_id=1)
@@ -1500,7 +1515,7 @@
 数据: 全程未重新 product_search 查同一个商品
 ```
 真值: id-resolve.index, id-resolve.no-fabricate, product-sku-stock.status-flow
-溯源: eval M001 独有（多轮 ID 复用，覆盖 2.3+2.8 的多轮形态） ｜ tags: multi_turn, single_skill, full_lifecycle, id_reuse, smoke
+溯源: eval M001 独有（多轮 ID 复用，覆盖 2.3+2.8 的多轮形态）；2026-09-03 Phase 2 适配：product_update/product_processing_item_manage 均 requires_confirmation，写操作轮后补『确认』（与 OR-010 模式一致） ｜ tags: multi_turn, single_skill, full_lifecycle, id_reuse, smoke
 
 ### PR-011. 创建商品完整引导流程 - AI 主导收集信息 🔵
 ```
@@ -1887,13 +1902,13 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：156（活跃 98，跳过 58）
-- tier 分布：smoke 10 / normal 118 / adversarial 28
+- 用例总数：157（活跃 98，跳过 59）
+- tier 分布：smoke 10 / normal 119 / adversarial 28
 - 售后域：5
 - agents：6
 - api：10
 - 分类域：3
-- 对话边界域：19
+- 对话边界域：20
 - 跨域：3
 - 客户域：5
 - 数据域：6

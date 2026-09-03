@@ -9,7 +9,7 @@
 
 改动 references/ 下的 Prompt 文件后运行此测试即可发现意外变更。
 """
-# case_ids: MC-003, MC-010
+# case_ids: MC-003, MC-010, CH-003, CH-018
 
 import pytest
 
@@ -53,9 +53,13 @@ def test_skill_has_principles(skill):
 
 @pytest.mark.parametrize("skill", MIBAO_SKILLS)
 def test_skill_prompt_length_reasonable(skill):
-    """Prompt 长度在合理范围（200-9500 字符）"""
+    """Prompt 长度在合理范围（200-10500 字符）
+
+    2026-09-03 上限 9500→10500：product 累积澄清话术（#2784）+ 承诺边界（#2785）
+    达 9586，9500 误报；10500 仍防失控膨胀（正常增量 ~几百字符/PR）。
+    """
     prompt = _build_system_prompt(skill)
-    assert 200 < len(prompt) < 9500, f"{skill}: prompt 长度异常 ({len(prompt)} chars)"
+    assert 200 < len(prompt) < 10500, f"{skill}: prompt 长度异常 ({len(prompt)} chars)"
 
 
 # ============ 领域隔离检查 ============
@@ -163,14 +167,14 @@ def test_snapshot_all_skills():
 
     # 最大长度快照（防止无限制膨胀）
     expected_max = {
-        "product": 9600,  # +100: 中止铁律+确认语义唯一化+参数一致铁律（EXAMPLES 反例）+禁英文枚举全局规则
+        "product": 9800,  # +300: 澄清话术(#2784)+承诺边界(#2785)达 9586；+300 防下个 PR 误触
         "order": 8000,    # +1400: 加工项下单铁律（数据来源/金额计算/数量确认/示例）+ 中止铁律+跨域归因铁律+禁英文枚举全局规则
         "aftersales": 5200,  # +700: 禁英文枚举全局规则 + 售后工单枚举中文对照（本轮新增）
         "customer": 5000,  # +500: 禁英文枚举全局规则（共享原则增长）
         "staff": 4900,    # +400: 禁英文枚举全局规则（共享原则增长）
         "settings": 4900, # +400: 禁英文枚举全局规则（共享原则增长）
         "data": 4500,
-        "general": 5200,  # +400: 禁英文枚举全局规则（共享原则增长）
+        "general": 5800,  # +600: Phase 2 (#2789) 澄清卡引导（choice 候选示例）达 5465
     }
     for skill, max_len in expected_max.items():
         prompt = _build_system_prompt(skill)
@@ -212,3 +216,54 @@ def test_customer_aftersales_prompt_loaded_with_identity():
     prompt = _build_system_prompt("customer_aftersales")
     assert "词元通达商家管理后台" in prompt, "缺少公共身份"
     assert "不编造数据" in prompt, "缺少公共原则"
+
+
+# ============ Phase 2 澄清卡契约（issue #2789） ============
+
+def test_general_prompt_guides_choice_clarify():
+    """B 端 general 兜底（低置信/图片澄清主战场）prompt 必须引导澄清卡。
+
+    旧引导只有"用文字列出可能的操作方向"（prompts/general.md），无 interact 承载；
+    Phase 2 升级为 interact(choice) 候选卡 + 文字兜底（低学历可点选）。
+    """
+    prompt = _build_system_prompt("general")
+    assert "interact" in prompt, "general prompt 缺少 interact 澄清卡引导"
+    assert "候选" in prompt, "general prompt 缺少候选方向语义"
+
+
+def test_general_inline_prompt_guides_choice_clarify():
+    """general_agent.py 内联 SYSTEM_PROMPT 的回复格式必须与 references 一致。
+
+    _build_system_prompt 组装的是 references/ 层；general 的"回复格式"引导在
+    内联 prompt（general_agent.py GENERAL_SYSTEM_PROMPT），须同样要求 choice 卡优先。
+    """
+    from app.graph.skills.general_agent import GENERAL_SYSTEM_PROMPT
+    assert "interact(component=choice)" in GENERAL_SYSTEM_PROMPT, (
+        "general 内联 prompt 缺少 interact choice 澄清卡引导（Phase 2 回归）"
+    )
+
+
+def test_customer_product_image_clarify_not_default_search():
+    """C 端 customer_product 图片段：意图不明时先澄清候选，不默认直接搜相似。
+
+    回归背景：小布 C 端顾客随手发图时，旧 prompt"识别后主动搜相似"会把
+    "想量尺寸/想问价/想做售后"一律当"找同款"处理（G1 缺口）。
+    """
+    from app.graph.skills.customer_product_skill import CUSTOMER_PRODUCT_SYSTEM_PROMPT
+    assert "候选意图卡" in CUSTOMER_PRODUCT_SYSTEM_PROMPT, (
+        "customer_product 图片段缺少候选意图澄清卡引导"
+    )
+    assert "不要默认直接搜相似" in CUSTOMER_PRODUCT_SYSTEM_PROMPT, (
+        "customer_product 图片段仍默认直接搜相似（应意图明确才搜）"
+    )
+
+
+def test_customer_general_image_clarify_not_default_search():
+    """C 端 customer_general 图片段：意图不明时先澄清候选，不默认直接搜相似。"""
+    from app.graph.skills.customer_general_skill import CUSTOMER_GENERAL_SYSTEM_PROMPT
+    assert "候选意图卡" in CUSTOMER_GENERAL_SYSTEM_PROMPT, (
+        "customer_general 图片段缺少候选意图澄清卡引导"
+    )
+    assert "不要默认直接搜相似" in CUSTOMER_GENERAL_SYSTEM_PROMPT, (
+        "customer_general 图片段仍默认直接搜相似（应意图明确才搜）"
+    )
