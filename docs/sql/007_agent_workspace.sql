@@ -18,6 +18,8 @@ CREATE TABLE IF NOT EXISTS agent_sessions (
     status VARCHAR(32) DEFAULT 'waiting',  -- waiting / active / ended / transferred
     priority INTEGER DEFAULT 0,  -- 优先级
     reason TEXT,  -- 转人工原因
+    ai_context_summary TEXT,  -- 转人工时点 AI 会话上下文摘要（客服可见；GB/T 47746-2026，V26）
+    ai_context_messages JSONB NOT NULL DEFAULT '[]',  -- 转人工时点 AI 会话最近 N 轮消息快照（V26）
     queue_position INTEGER,  -- 排队位置
     started_at TIMESTAMP WITH TIME ZONE,  -- 开始服务时间
     ended_at TIMESTAMP WITH TIME ZONE,  -- 结束时间

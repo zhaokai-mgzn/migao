@@ -1,9 +1,11 @@
 package com.migao.admin.controller;
 
+import com.migao.admin.dto.AgentAiContextMessage;
 import com.migao.admin.dto.AgentMonitorResponse;
 import com.migao.admin.dto.AgentSessionDetailResponse;
 import com.migao.admin.dto.AgentSessionListResponse;
 import com.migao.admin.dto.PageResponse;
+import com.migao.admin.entity.AgentSession;
 import com.migao.admin.service.AgentSessionService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -15,6 +17,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
@@ -24,8 +27,10 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+// case_ids: CH-008, CH-017
 
 /**
  * AgentSessionController 单元测试
@@ -144,5 +149,42 @@ class AgentSessionControllerTest extends BaseControllerTest {
                 .andExpect(jsonPath("$.data.customerName").value("客户A"));
 
         verify(agentSessionService).getSessionDetail("s-1");
+    }
+
+    @Test
+    @DisplayName("createSessionForHandoff — 携带 AI 上下文快照创建人工会话 → 200 且详情含 aiContext")
+    void createSessionForHandoff_withAiContext() throws Exception {
+        // given
+        AgentSession created = AgentSession.builder().id("as-1").build();
+        when(agentSessionService.createSessionForHandoff(
+                eq("ai-1"), eq("cust-1"), eq(TEST_TENANT_ID), eq("我要投诉"),
+                eq("顾客反馈物流慢"), any()))
+                .thenReturn(created);
+
+        AgentSessionDetailResponse detail = AgentSessionDetailResponse.builder()
+                .id("as-1")
+                .aiSessionId("ai-1")
+                .reason("我要投诉")
+                .aiContextSummary("顾客反馈物流慢")
+                .aiContext(List.of(AgentAiContextMessage.builder()
+                        .role("user").content("我的窗帘订单到哪了？").build()))
+                .build();
+        when(agentSessionService.getSessionDetail("as-1")).thenReturn(detail);
+
+        // when & then
+        mockMvc.perform(post(BASE)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"aiSessionId\":\"ai-1\",\"customerId\":\"cust-1\",\"reason\":\"我要投诉\","
+                                + "\"aiContextSummary\":\"顾客反馈物流慢\","
+                                + "\"aiContextMessages\":[{\"role\":\"user\",\"content\":\"我的窗帘订单到哪了？\"}]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.id").value("as-1"))
+                .andExpect(jsonPath("$.data.aiContextSummary").value("顾客反馈物流慢"))
+                .andExpect(jsonPath("$.data.aiContext[0].role").value("user"));
+
+        verify(agentSessionService).createSessionForHandoff(
+                eq("ai-1"), eq("cust-1"), eq(TEST_TENANT_ID), eq("我要投诉"),
+                eq("顾客反馈物流慢"), any());
     }
 }

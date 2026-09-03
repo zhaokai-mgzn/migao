@@ -38,6 +38,13 @@ public class AgentSession {
 
     private String reason;
 
+    /** 转人工时点 AI 会话上下文摘要（客服可见；GB/T 47746-2026 对齐，issue #2776） */
+    private String aiContextSummary;
+
+    /** 转人工时点 AI 会话最近 N 轮消息快照（JSONB：List&lt;AgentAiContextMessage&gt;） */
+    @TableField(typeHandler = com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler.class)
+    private Object aiContextMessages;
+
     private Integer queuePosition;
 
     private OffsetDateTime startedAt;

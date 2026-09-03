@@ -48,6 +48,12 @@ public class AgentSessionDetailResponse {
     /** 消息列表 */
     private List<AgentMessageResponse> messages;
 
+    /** 转人工时点 AI 会话上下文摘要（管理端可见；顾客端接口不含，GB/T 47746-2026） */
+    private String aiContextSummary;
+
+    /** 转人工前 AI 对话快照（管理端可见；顾客端接口不含） */
+    private List<AgentAiContextMessage> aiContext;
+
     private String customerPhone;
 
     private String customerAvatarUrl;

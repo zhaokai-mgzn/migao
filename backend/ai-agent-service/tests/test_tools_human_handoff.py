@@ -2,9 +2,24 @@
 测试 app.tools.human_handoff — 转人工工具
 
 业务真值 #3: 客户说转人工→自动创建工单并通知管理员
+GB-01（GB/T 47746-2026）: 转人工创建人工会话时携带 AI 对话上下文快照
 """
+# case_ids: CH-008, CH-017
 import pytest
 from unittest.mock import patch, AsyncMock
+
+
+@pytest.fixture(autouse=True)
+def _no_db_history():
+    """单元测试默认不访问真实 DB：SessionMemory.get_history 打桩返回空。
+
+    需要断言上下文快照的用例在测试内再覆盖该桩。
+    """
+    with patch(
+        "app.memory.session_memory.SessionMemory.get_history",
+        new=AsyncMock(return_value=[]),
+    ):
+        yield
 
 
 class TestHumanHandoffPermission:
@@ -220,3 +235,134 @@ class TestHumanHandoffAdminNotification:
         assert result.success is True, (
             f"工单已创建，通知失败不应影响转人工结果: error={result.error}"
         )
+
+
+# ============================================================
+# GB-01 (GB/T 47746-2026, issue #2776): 转人工携带 AI 对话上下文快照
+# 业务真值: human_handoff 创建人工会话时，POST 载荷携带 aiContextSummary /
+#           aiContextMessages（最近 N 轮 user/assistant 文本；剥 think、空内容过滤、图片占位）
+# ============================================================
+
+class TestHumanHandoffAiContext:
+    """转人工 → AI 上下文同步（人工客服可见，避免顾客复述）"""
+
+    _SAMPLE_HISTORY = [
+        {"id": "m1", "session_id": "sess_test_001", "role": "user",
+         "content_type": "text", "content": "我的窗帘订单到哪了？",
+         "tool_calls": None, "metadata": {}, "created_at": "2026-09-01T10:00:00Z"},
+        {"id": "m2", "session_id": "sess_test_001", "role": "assistant",
+         "content_type": "text", "content": "正在为您查询，<think>内部推理</think>请稍候。",
+         "tool_calls": None, "metadata": {}, "created_at": "2026-09-01T10:00:01Z"},
+        {"id": "m3", "session_id": "sess_test_001", "role": "system",
+         "content_type": "text", "content": "系统消息不应入快照",
+         "tool_calls": None, "metadata": {}, "created_at": "2026-09-01T10:00:02Z"},
+        {"id": "m4", "session_id": "sess_test_001", "role": "user",
+         "content_type": "image", "content": "",
+         "tool_calls": None, "metadata": {}, "created_at": "2026-09-01T10:00:03Z"},
+    ]
+
+    @patch("app.tools.human_handoff.get_admin_api_client")
+    async def test_handoff_posts_ai_context_snapshot(self, mock_get_client, sample_tool_context):
+        """创建人工会话的 POST 应携带清洗后的 AI 对话快照"""
+        from app.tools.human_handoff import HumanHandoffTool
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(side_effect=[
+            {"success": True, "data": {"id": "t-ctx-1", "ticketNo": "AS-C-1", "ticketType": "complaint"}},
+            {"success": True, "data": {"id": "n-ctx-1"}},
+            {"success": True, "data": {"id": "as-ctx-1"}},
+        ])
+        mock_get_client.return_value = mock_client
+
+        tool = HumanHandoffTool()
+        with patch(
+            "app.memory.session_memory.SessionMemory.get_history",
+            new=AsyncMock(return_value=self._SAMPLE_HISTORY),
+        ) as mock_get_history:
+            result = await tool.execute(context=sample_tool_context, reason="我要投诉")
+
+        assert result.success is True, f"转人工应成功: {result.error}"
+        assert mock_client.post.call_count == 3, (
+            f"应 3 次 post（工单+通知+人工会话）: {mock_client.post.call_count}"
+        )
+
+        session_call = mock_client.post.call_args_list[2]
+        assert "agent-sessions" in str(session_call[0][0])
+        json_data = session_call[1]["json_data"]
+        assert json_data["aiSessionId"] == "sess_test_001"
+        assert json_data["aiContextSummary"] == ""
+
+        turns = json_data["aiContextMessages"]
+        assert isinstance(turns, list)
+        # user 消息保留原文
+        user_turn = turns[0]
+        assert user_turn["role"] == "user"
+        assert user_turn["content"] == "我的窗帘订单到哪了？"
+        # assistant <think> 已剥离
+        assistant_turn = turns[1]
+        assert assistant_turn["role"] == "assistant"
+        assert "内部推理" not in assistant_turn["content"]
+        assert "<think>" not in assistant_turn["content"]
+        # system 消息被过滤
+        roles = [t["role"] for t in turns]
+        assert "system" not in roles
+        # 图片消息占位（不透传 URL）
+        image_turn = next((t for t in turns if t.get("contentType") == "image"), None)
+        assert image_turn is not None
+        assert image_turn["content"] == "[图片]"
+        # 历史读取确实发生
+        assert mock_get_history.await_count == 1
+
+    @patch("app.tools.human_handoff.get_admin_api_client")
+    async def test_handoff_passes_llm_summary(self, mock_get_client, sample_tool_context):
+        """LLM 提供的 summary 参数应透传到 aiContextSummary"""
+        from app.tools.human_handoff import HumanHandoffTool
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(side_effect=[
+            {"success": True, "data": {"id": "t-ctx-2", "ticketNo": "AS-C-2"}},
+            {"success": True, "data": {"id": "n-ctx-2"}},
+            {"success": True, "data": {"id": "as-ctx-2"}},
+        ])
+        mock_get_client.return_value = mock_client
+
+        tool = HumanHandoffTool()
+        with patch(
+            "app.memory.session_memory.SessionMemory.get_history",
+            new=AsyncMock(return_value=[]),
+        ):
+            result = await tool.execute(
+                context=sample_tool_context,
+                reason="窗帘色差",
+                summary="顾客反馈窗帘遮光率与描述不符，已咨询三次仍不满意，要求人工处理",
+            )
+
+        assert result.success is True
+        json_data = mock_client.post.call_args_list[2][1]["json_data"]
+        assert "人工处理" in json_data["aiContextSummary"]
+        assert json_data["aiContextMessages"] == []
+
+    @patch("app.tools.human_handoff.get_admin_api_client")
+    async def test_handoff_succeeds_when_history_fetch_fails(self, mock_get_client, sample_tool_context):
+        """AI 历史读取异常时转人工仍成功（快照降级为空，不影响主流程）"""
+        from app.tools.human_handoff import HumanHandoffTool
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(side_effect=[
+            {"success": True, "data": {"id": "t-ctx-3", "ticketNo": "AS-C-3"}},
+            {"success": True, "data": {"id": "n-ctx-3"}},
+            {"success": True, "data": {"id": "as-ctx-3"}},
+        ])
+        mock_get_client.return_value = mock_client
+
+        tool = HumanHandoffTool()
+        with patch(
+            "app.memory.session_memory.SessionMemory.get_history",
+            new=AsyncMock(side_effect=Exception("db down")),
+        ):
+            result = await tool.execute(context=sample_tool_context, reason="需要人工")
+
+        assert result.success is True, f"历史读取失败不应阻塞转人工: {result.error}"
+        json_data = mock_client.post.call_args_list[2][1]["json_data"]
+        assert json_data["aiContextSummary"] == ""
+        assert json_data["aiContextMessages"] == []

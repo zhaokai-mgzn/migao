@@ -136,16 +136,15 @@ public class AgentSessionService extends ServiceImpl<AgentSessionMapper, AgentSe
     }
 
     /**
-     * 获取会话详情
-     */
-    /**
      * 根据 AI 会话 ID 查询人工客服会话（用户端：转人工后查看客服回复）
      *
      * 校验 customerId 归属（用户只能看自己的会话）。
+     * 顾客端视角：**不含 aiContext 快照**（避免轮询载荷放大与重复展示），
+     * 且过滤 isInternal 内部备注（GB/T 47746-2026 隐私口径，issue #2776）。
      *
      * @param aiSessionId AI 会话 ID（sessions 表）
      * @param customerId 客户 ID（当前登录用户）
-     * @return 会话详情（含消息）
+     * @return 会话详情（含客服消息，不含 AI 上下文与内部备注）
      */
     public AgentSessionDetailResponse getSessionByAiSessionId(String aiSessionId, String customerId) {
         if (!StringUtils.hasText(aiSessionId)) {
@@ -160,9 +159,14 @@ public class AgentSessionService extends ServiceImpl<AgentSessionMapper, AgentSe
         if (session == null) {
             throw BusinessException.notFound("人工客服会话");
         }
-        return getSessionDetail(session.getId());
+        return buildSessionDetail(session, false, true);
     }
 
+    /**
+     * 获取会话详情（管理端/客服工作台视角）
+     *
+     * 含转人工前 AI 对话快照（aiContextSummary/aiContext），内部备注对客服可见。
+     */
     public AgentSessionDetailResponse getSessionDetail(String id) {
         AgentSession session = agentSessionMapper.selectById(id);
         if (session == null) {
@@ -173,12 +177,29 @@ public class AgentSessionService extends ServiceImpl<AgentSessionMapper, AgentSe
         if (!session.getTenantId().equals(currentTenantId)) {
             throw BusinessException.notFound("客服会话");
         }
+        return buildSessionDetail(session, true, false);
+    }
+
+    /**
+     * 组装会话详情响应（管理端/顾客端共用，参数控制 AI 上下文与内部备注可见性）
+     *
+     * @param session         已通过租户/归属校验的会话
+     * @param includeAiContext true=管理端：返回 aiContextSummary/aiContext；false=顾客端
+     * @param filterInternal   true=顾客端：过滤 isInternal=true 的内部备注
+     */
+    private AgentSessionDetailResponse buildSessionDetail(
+            AgentSession session, boolean includeAiContext, boolean filterInternal) {
 
         // 查询关联消息（按创建时间正序）
         LambdaQueryWrapper<AgentMessage> msgWrapper = new LambdaQueryWrapper<>();
-        msgWrapper.eq(AgentMessage::getSessionId, id)
+        msgWrapper.eq(AgentMessage::getSessionId, session.getId())
                 .orderByAsc(AgentMessage::getCreatedAt);
         List<AgentMessage> messages = agentMessageMapper.selectList(msgWrapper);
+        if (filterInternal) {
+            messages = messages.stream()
+                    .filter(m -> !Boolean.TRUE.equals(m.getIsInternal()))
+                    .collect(Collectors.toList());
+        }
 
         // 查询客户信息
         final CustomerProfile customer = StringUtils.hasText(session.getCustomerId())
@@ -231,9 +252,42 @@ public class AgentSessionService extends ServiceImpl<AgentSessionMapper, AgentSe
                 .createdAt(session.getCreatedAt())
                 .endedAt(session.getEndedAt())
                 .messages(messageResponses)
+                .aiContextSummary(includeAiContext ? session.getAiContextSummary() : null)
+                .aiContext(includeAiContext ? mapAiContext(session.getAiContextMessages()) : null)
                 .customerPhone(customer != null ? customer.getPhone() : null)
                 .customerAvatarUrl(customer != null ? customer.getAvatarUrl() : null)
                 .build();
+    }
+
+    /**
+     * 把 JSONB 快照（List<Map>/List<AgentAiContextMessage>）映射为响应 DTO；
+     * 空/异常一律返回 null，不抛错。
+     */
+    private List<AgentAiContextMessage> mapAiContext(Object raw) {
+        if (!(raw instanceof List)) {
+            return null;
+        }
+        List<AgentAiContextMessage> out = new ArrayList<>();
+        for (Object item : (List<?>) raw) {
+            if (item == null) {
+                continue;
+            }
+            if (item instanceof AgentAiContextMessage m) {
+                out.add(m);
+            } else if (item instanceof Map<?, ?> map) {
+                out.add(AgentAiContextMessage.builder()
+                        .role(anyToString(map.get("role")))
+                        .content(anyToString(map.get("content")))
+                        .contentType(anyToString(map.get("contentType")))
+                        .createdAt(anyToString(map.get("createdAt")))
+                        .build());
+            }
+        }
+        return out.isEmpty() ? null : out;
+    }
+
+    private static String anyToString(Object value) {
+        return value == null ? null : String.valueOf(value);
     }
 
     /**
@@ -303,15 +357,58 @@ public class AgentSessionService extends ServiceImpl<AgentSessionMapper, AgentSe
      *
      * 用户触发转人工时，创建等待分配的人工会话，并写入系统消息。
      * 会话状态初始为 waiting，客服分配/接待后转 active。
+     * GB/T 47746-2026（issue #2776）：同时快照转人工时点 AI 对话上下文
+     * （aiContextSummary 摘要 + aiContextMessages 最近 N 轮 user/assistant 文本），
+     * 供人工客服工作台展示，避免顾客重复复述。
      *
      * @param aiSessionId AI 会话 ID（sessions 表，用于关联回溯 AI 对话）
      * @param customerId 客户 ID（customer_profiles）
      * @param tenantId 租户 ID
      * @param reason 转人工原因
+     * @param aiContextSummary AI 会话上下文摘要（选填，超长截断 500 字符）
+     * @param aiContextMessages AI 会话最近 N 轮消息快照（选填，≤20 条、每条 ≤500 字符）
      * @return 创建的会话
      */
     @Transactional(rollbackFor = Exception.class)
     public AgentSession createSessionForHandoff(String aiSessionId, String customerId, Long tenantId, String reason) {
+        return createSessionForHandoff(aiSessionId, customerId, tenantId, reason, null, null);
+    }
+
+    /**
+     * 转人工创建会话（含 AI 上下文快照，见 {@link #createSessionForHandoff(String, String, Long, String)}）
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public AgentSession createSessionForHandoff(String aiSessionId, String customerId, Long tenantId, String reason,
+                                                String aiContextSummary, List<AgentAiContextMessage> aiContextMessages) {
+        // 服务端兜底：防超大 payload（summary ≤500 字、快照 ≤20 条、每条 content ≤500 字）
+        String safeSummary = null;
+        if (StringUtils.hasText(aiContextSummary)) {
+            safeSummary = aiContextSummary.length() > 500
+                    ? aiContextSummary.substring(0, 500) : aiContextSummary;
+        }
+        List<AgentAiContextMessage> safeMessages = null;
+        if (aiContextMessages != null && !aiContextMessages.isEmpty()) {
+            safeMessages = new ArrayList<>();
+            for (AgentAiContextMessage msg : aiContextMessages) {
+                if (safeMessages.size() >= 20) {
+                    break;
+                }
+                if (msg == null) {
+                    continue;
+                }
+                String content = msg.getContent();
+                if (content != null && content.length() > 500) {
+                    content = content.substring(0, 500);
+                }
+                safeMessages.add(AgentAiContextMessage.builder()
+                        .role(msg.getRole())
+                        .content(content)
+                        .contentType(msg.getContentType())
+                        .createdAt(msg.getCreatedAt())
+                        .build());
+            }
+        }
+
         AgentSession session = AgentSession.builder()
                 .tenantId(tenantId)
                 .customerId(customerId)
@@ -319,6 +416,8 @@ public class AgentSessionService extends ServiceImpl<AgentSessionMapper, AgentSe
                 .status("waiting")
                 .priority(1)
                 .reason(StringUtils.hasText(reason) ? reason : "客户请求转人工")
+                .aiContextSummary(safeSummary)
+                .aiContextMessages(safeMessages)
                 .queuePosition(0)
                 .startedAt(OffsetDateTime.now())
                 .build();
@@ -335,8 +434,9 @@ public class AgentSessionService extends ServiceImpl<AgentSessionMapper, AgentSe
                 .build();
         agentMessageMapper.insert(sysMsg);
 
-        log.info("[agent-session] 转人工会话创建: sessionId={} aiSessionId={} tenant={}",
-                session.getId(), aiSessionId, tenantId);
+        log.info("[agent-session] 转人工会话创建: sessionId={} aiSessionId={} tenant={} aiContextTurns={}",
+                session.getId(), aiSessionId, tenantId,
+                safeMessages == null ? 0 : safeMessages.size());
         return session;
     }
 
