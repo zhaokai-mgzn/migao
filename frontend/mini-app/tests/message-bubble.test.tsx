@@ -221,4 +221,46 @@ describe('MessageBubble', () => {
     // 无空文本区（.message-bubble__content 不应存在）
     expect(container.querySelector('.message-bubble__content')).toBeNull()
   })
+
+  // GB-02（GB/T 47746-2026, issue #2780）：AI 助手 / 人工客服来源标识
+  it('assistant 文本消息应显示「AI 助手」来源标识', () => {
+    const aiMsg: Message = {
+      ...baseMsg,
+      role: 'assistant',
+      content: '这是 AI 回复',
+    }
+    render(<MessageBubble message={aiMsg} />)
+    expect(screen.getByText(/AI 助手/)).toBeTruthy()
+  })
+
+  it('assistant 无文本（纯工具/卡片消息）不显示来源标识（不影响卡片语义与截图基线）', () => {
+    const toolMsg: Message = {
+      ...baseMsg,
+      role: 'assistant',
+      content: '',
+      type: 'tool_call',
+      toolCall: { tool: 'curtain_calc', status: 'completed' },
+    }
+    render(<MessageBubble message={toolMsg} />)
+    expect(screen.queryByText(/AI 助手/)).toBeNull()
+  })
+
+  it('source=human 的消息显示「人工客服」标识且不显示「AI 助手」（转人工后人机可区分）', () => {
+    const humanMsg: Message = {
+      ...baseMsg,
+      role: 'assistant',
+      source: 'human',
+      content: '您好，我是人工客服',
+    }
+    render(<MessageBubble message={humanMsg} />)
+    // 标签（锚定首尾，避免与正文「我是人工客服」误匹配）
+    expect(screen.getByText(/^👩‍💼 人工客服$/)).toBeTruthy()
+    expect(screen.queryByText(/^🤖 AI 助手$/)).toBeNull()
+  })
+
+  it('user 消息不显示来源标识', () => {
+    render(<MessageBubble message={baseMsg} />)
+    expect(screen.queryByText(/AI 助手/)).toBeNull()
+    expect(screen.queryByText(/人工客服/)).toBeNull()
+  })
 })

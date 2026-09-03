@@ -163,3 +163,21 @@
     opacity: 0;
   }
 }
+
+// GB-02: 消息来源标识（AI 助手 / 人工客服，GB/T 47746-2026）
+.message-bubble__source {
+  margin-bottom: 4px;
+}
+
+.message-bubble__source-text {
+  display: inline-flex;
+  align-items: center;
+  font-size: 20px;
+  line-height: 1;
+  color: #94a0b4;
+  letter-spacing: 0.5px;
+}
+
+.message-bubble__source-text--human {
+  color: #2f9e6e;
+}
