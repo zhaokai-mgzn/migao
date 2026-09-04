@@ -4,7 +4,15 @@
 schema.yaml（YAML 定义）+ loader（加载与铁律校验）+ models（数据模型）。
 """
 
+from app.ontology.contract import check_intent_ownership
 from app.ontology.loader import OntologySchemaError, load_ontology
-from app.ontology.models import Ontology, OntologyObject
+from app.ontology.models import IntentOwnership, Ontology, OntologyObject
 
-__all__ = ["Ontology", "OntologyObject", "OntologySchemaError", "load_ontology"]
+__all__ = [
+    "IntentOwnership",
+    "Ontology",
+    "OntologyObject",
+    "OntologySchemaError",
+    "check_intent_ownership",
+    "load_ontology",
+]

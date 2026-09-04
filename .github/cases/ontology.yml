@@ -69,3 +69,33 @@ cases:
       ci:
         - ai-agent-tests.yml
       verifies: []
+  - id: OB-003
+    legacy_id: ""
+    title: "intent 归属表入 schema + 双端能力视图契约校验"
+    domains:
+      - ontology
+      - cross
+    tier: normal
+    tags:
+      - ontology
+      - intent_ownership
+      - contract
+      - dual_agent
+    truths_ref:
+      - ai-chat.context-memory
+    user_inputs:
+      - "schema 声明 intent→route_key→agents 归属表；契约校验与 skill_registry 实际映射对比"
+    expectations:
+      - tool: none
+    data_checks:
+      - "schema.intent_ownership 声明订单/售后域 intent 归属（order_query→order 等）"
+      - "契约校验：schema 声明 intent 必须存在于 skill 映射；实际 intent 必须登记 schema；双端（mibao/xiaobu）声明的 route_key 必须各自可达"
+      - "缺失/漂移返回违规清单（不抛异常，由调用方决定阻断）"
+    skip_reason: "契约校验为纯数据结构逻辑，由 pytest 单测验证（backend/ai-agent-service/tests/test_ontology_contract.py），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-04 新增：issue #2821 切片 3（intent 归属 schema + 契约校验）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_ontology_contract.py"
+      ci:
+        - ai-agent-tests.yml
+      verifies: []

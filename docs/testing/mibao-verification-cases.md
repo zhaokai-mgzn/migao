@@ -1337,7 +1337,7 @@
 真值: frontend-fix.vitest, frontend-fix.tsc, frontend-fix.no-api-change
 溯源: 2026-09-03 新增：GB/T 47746-2026 合规官网宣称（issue #2787） ｜ tags: homepage, compliance, gb47746
 
-## ontology（2 case）
+## ontology（3 case）
 
 ### OB-001. 本体 schema 加载与状态枚举校验（订单/商品/售后/客户） 🔵
 ```
@@ -1365,6 +1365,18 @@
 ```
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 切片 2（vision 候选实体 → 上下文实体槽） ｜ tags: ontology, vision, context_memory, grounding
+
+### OB-003. intent 归属表入 schema + 双端能力视图契约校验 🔵
+```
+你: schema 声明 intent→route_key→agents 归属表；契约校验与 skill_registry 实际映射对比
+期望: none
+数据: schema.intent_ownership 声明订单/售后域 intent 归属（order_query→order 等）
+数据: 契约校验：schema 声明 intent 必须存在于 skill 映射；实际 intent 必须登记 schema；双端（mibao/xiaobu）声明的 route_key 必须各自可达
+数据: 缺失/漂移返回违规清单（不抛异常，由调用方决定阻断）
+跳过: 契约校验为纯数据结构逻辑，由 pytest 单测验证（backend/ai-agent-service/tests/test_ontology_contract.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: ai-chat.context-memory
+溯源: 2026-09-04 新增：issue #2821 切片 3（intent 归属 schema + 契约校验） ｜ tags: ontology, intent_ownership, contract, dual_agent
 
 ## 订单域（13 case）
 
@@ -2053,8 +2065,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：168（活跃 98，跳过 70）
-- tier 分布：smoke 10 / normal 130 / adversarial 28
+- 用例总数：169（活跃 98，跳过 71）
+- tier 分布：smoke 10 / normal 131 / adversarial 28
 - 售后域：5
 - agents：6
 - api：10
@@ -2068,7 +2080,7 @@
 - 人事域：5
 - misc：15
 - onboarding：5
-- ontology：2
+- ontology：3
 - 订单域：13
 - 加工项域：4
 - 商品域：13

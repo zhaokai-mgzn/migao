@@ -8,6 +8,36 @@
 # =============================================================================
 version: "1.0"
 
+# ── intent 归属表（切片 3）：intent → route_key → 必须可达的 Agent ──
+# 契约校验（app.ontology.contract）据此与 skill_registry 实际映射对比，
+# 把「修改 B 端 intent 必须验证 xiaobu 路由」从注释承诺变为机器校验。
+# 试点范围：订单/售后域核心 intent；新增 intent 必须在此登记，否则 contract 报违规。
+intent_ownership:
+  order_query:
+    route_key: order
+    agents: [mibao, xiaobu]
+    description: 查询订单（B 端 order_query / C 端 customer_order_query）
+  order_create:
+    route_key: order
+    agents: [mibao, xiaobu]
+    description: 创建订单（写工具确认闸）
+  logistics_track:
+    route_key: order
+    agents: [mibao, xiaobu]
+    description: 物流查询（C 端仅本人已发货订单）
+  after_sales:
+    route_key: aftersales
+    agents: [mibao, xiaobu]
+    description: 售后咨询
+  after_sales_create:
+    route_key: aftersales
+    agents: [mibao, xiaobu]
+    description: 创建售后工单（恒 pending）
+  complaint:
+    route_key: aftersales
+    agents: [mibao, xiaobu]
+    description: 投诉（涉赔偿/法律转人工）
+
 objects:
   order:
     display_name: 订单

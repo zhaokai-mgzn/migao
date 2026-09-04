@@ -14,6 +14,7 @@ import yaml
 
 from app.ontology.models import (
     ActionDef,
+    IntentOwnership,
     Ontology,
     OntologyObject,
     PropertyDef,
@@ -72,7 +73,8 @@ def load_ontology(path: Optional[Path | str] = None) -> Ontology:
     objects: Dict[str, OntologyObject] = {}
     for name, obj_raw in data["objects"].items():
         objects[name] = _parse_object(name, obj_raw)
-    return Ontology(version=version, objects=objects)
+    intent_ownership = _parse_intent_ownership(data.get("intent_ownership"))
+    return Ontology(version=version, objects=objects, intent_ownership=intent_ownership)
 
 
 def _parse_object(name: str, obj_raw: object) -> OntologyObject:
@@ -187,3 +189,28 @@ def _parse_rules(obj_name: str, rules_raw: object) -> List[RuleDef]:
         else:
             raise _schema_error(f"对象 {obj_name} rules 项必须为字符串或映射")
     return rules
+
+
+def _parse_intent_ownership(intent_raw: object) -> Dict[str, IntentOwnership]:
+    """解析 intent_ownership 段 → {intent: IntentOwnership}
+
+    每个 intent 必须声明 route_key；agents 缺省为空（表示未声明可达性）。
+    """
+    owned: Dict[str, IntentOwnership] = {}
+    if not isinstance(intent_raw, dict):
+        return owned
+    for intent, spec in intent_raw.items():
+        if not isinstance(spec, dict):
+            raise _schema_error(f"intent_ownership.{intent} 定义必须为映射")
+        route_key = str(spec.get("route_key", ""))
+        if not route_key:
+            raise _schema_error(f"intent_ownership.{intent} 缺少 route_key")
+        agents_raw = spec.get("agents")
+        agents = [str(x) for x in agents_raw] if isinstance(agents_raw, list) else []
+        owned[intent] = IntentOwnership(
+            intent=intent,
+            route_key=route_key,
+            agents=agents,
+            description=str(spec.get("description", "")),
+        )
+    return owned

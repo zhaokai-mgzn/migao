@@ -1580,6 +1580,20 @@ _CASE_OB_002 = EvalCase(
     tags=['ontology', 'vision', 'context_memory', 'grounding'],
 )
 
+# ── OB-003 [NORMAL] intent 归属表入 schema + 双端能力视图契约校验（源: cases/ontology.yml）──
+_CASE_OB_003 = EvalCase(
+    id='OB-003',
+    legacy_id='',
+    title='intent 归属表入 schema + 双端能力视图契约校验',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['schema 声明 intent→route_key→agents 归属表；契约校验与 skill_registry 实际映射对比'],
+    expectations=['none'],
+    data_checks=['schema.intent_ownership 声明订单/售后域 intent 归属（order_query→order 等）', '契约校验：schema 声明 intent 必须存在于 skill 映射；实际 intent 必须登记 schema；双端（mibao/xiaobu）声明的 route_key 必须各自可达', '缺失/漂移返回违规清单（不抛异常，由调用方决定阻断）'],
+    skip_reason='契约校验为纯数据结构逻辑，由 pytest 单测验证（backend/ai-agent-service/tests/test_ontology_contract.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ontology', 'intent_ownership', 'contract', 'dual_agent'],
+)
+
 # ── OR-001 [SMOKE] 订单列表查询（源: cases/order.yml）──
 _CASE_OR_001 = EvalCase(
     id='OR-001',
@@ -2503,6 +2517,7 @@ ALL_CASES = (
     _CASE_OB_005,
     _CASE_OB_001,
     _CASE_OB_002,
+    _CASE_OB_003,
     _CASE_OR_001,
     _CASE_OR_002,
     _CASE_OR_003,

@@ -87,14 +87,31 @@ class OntologyObject:
 
 
 @dataclass(frozen=True)
+class IntentOwnership:
+    """意图归属声明（intent → route_key → agents）
+
+    单一事实源：schema.intent_ownership 声明每个业务 intent 属于哪个路由
+    以及哪些 Agent 必须可达。契约校验（app.ontology.contract）据此与
+    skill_registry 实际映射对比，把『修改 B 端 intent 必须验证 xiaobu』
+    从注释承诺变为机器校验。
+    """
+    intent: str
+    route_key: str
+    agents: List[str] = field(default_factory=list)
+    description: str = ""
+
+
+@dataclass(frozen=True)
 class Ontology:
     """领域本体：对象集合 + 版本
 
     四对象（order / product_sku / aftersales / customer）作为切片 1 范围；
     objects 为 name → OntologyObject 映射。
+    intent_ownership: intent → IntentOwnership 归属表（切片 3）。
     """
     version: str
     objects: Dict[str, OntologyObject] = field(default_factory=dict)
+    intent_ownership: Dict[str, IntentOwnership] = field(default_factory=dict)
 
     def get_object(self, name: str) -> Optional[OntologyObject]:
         return self.objects.get(name)
