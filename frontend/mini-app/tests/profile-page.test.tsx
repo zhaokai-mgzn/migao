@@ -68,6 +68,7 @@ jest.mock('../src/services/productService', () => ({
   ])),
   getMyTickets: jest.fn(() => Promise.resolve([
     { id: 't1', ticket_no: 'AS-001', status: 'pending', ticket_type: 'refund', created_at: '2026-06-01T10:00:00Z' },
+    { id: 't2', ticket_no: 'AS-002', status: 'processing', ticket_type: 'return', created_at: '2026-06-02T10:00:00Z' },
   ])),
 }))
 
@@ -160,6 +161,11 @@ describe('ProfilePage', () => {
     // 订单数据渲染（异步）
     await screen.findByText('ORD-1001')
     await screen.findByText('AS-001')
+    // issue #2857: 售后工单状态/类型中文展示（refund→退款 / return→退货 / pending→待处理 / processing→处理中）
+    await screen.findByText(/退款 · 待处理/)
+    await screen.findByText(/退货 · 处理中/)
+    // 不出现英文 raw 值残留
+    expect(screen.queryByText(/refund|return|pending|processing/)).toBeNull()
   })
 
   it('点击订单应唤起对话追问进度', async () => {

@@ -1,7 +1,7 @@
 import { useMemo, useCallback } from 'react'
 import { View, Text, Image } from '@tarojs/components'
 import Taro from '@tarojs/taro'
-import type { Message, ToolCallData, CardData, InteractiveData } from '../../types'
+import type { Message, CardData, InteractiveData } from '../../types'
 import ProductCard from '../cards/ProductCard'
 import ProductFormList from '../cards/ProductFormList'
 import LogisticsCard from '../cards/LogisticsCard'
@@ -11,7 +11,6 @@ import QuotationCard from '../cards/QuotationCard'
 import ConfirmCard from '../cards/ConfirmCard'
 import ChoiceCard from '../cards/ChoiceCard'
 import FormCard from '../cards/FormCard'
-import ToolCallIndicator from '../cards/ToolCallIndicator'
 import SuggestionChips from './SuggestionChips'
 import './MessageBubble.scss'
 
@@ -42,21 +41,6 @@ function formatTime(dateStr: string): string {
   const month = String(date.getMonth() + 1).padStart(2, '0')
   const day = String(date.getDate()).padStart(2, '0')
   return `${month}-${day} ${hours}:${minutes}`
-}
-
-/** 渲染工具调用指示器 */
-function renderToolCalls(toolCalls: ToolCallData[]) {
-  return (
-    <View className='message-bubble__tool-calls'>
-      {toolCalls.map((tc, idx) => (
-        <ToolCallIndicator
-          key={`tool-${idx}`}
-          toolName={tc.tool}
-          status={tc.status}
-        />
-      ))}
-    </View>
-  )
 }
 
 /** 渲染单张卡片 */
@@ -138,10 +122,10 @@ function renderCard(card: CardData, idx: number, onInteract?: (value: string) =>
     }
 
     default:
-      // 未知卡片类型，显示占位
+      // 未知卡片类型：对客户隐藏内部 type（issue #2857），展示通用占位
       return (
         <View key={`card-${idx}`} className='message-bubble__card-placeholder'>
-          <Text className='message-bubble__card-text'>📎 {type}</Text>
+          <Text className='message-bubble__card-text'>📎 消息内容暂不支持预览</Text>
         </View>
       )
   }
@@ -196,7 +180,7 @@ function renderInteractive(interactive: InteractiveData, onInteract?: (value: st
 
 export default function MessageBubble({ message, onInteract }: MessageBubbleProps) {
   const {
-    role, content, isStreaming, tool_calls, toolCall, cards, cardData,
+    role, content, isStreaming, cards, cardData,
     type, created_at, images, interactive, suggestions,
   } = message
 
@@ -258,15 +242,8 @@ export default function MessageBubble({ message, onInteract }: MessageBubbleProp
           </View>
         )}
 
-        {/* 工具调用指示器 - 数组形式 */}
-        {tool_calls && tool_calls.length > 0 && renderToolCalls(tool_calls)}
-
-        {/* 工具调用指示器 - 单个 toolCall（兼容） */}
-        {!tool_calls?.length && toolCall && (
-          <View className='message-bubble__tool-calls'>
-            <ToolCallIndicator toolName={toolCall.tool} status={toolCall.status} />
-          </View>
-        )}
+        {/* 工具调用过程对客户隐藏（issue #2857）：不渲染 tool_calls / toolCall 指示器，
+            仅保留数据在消息对象中（供转人工等逻辑判定） */}
 
         {/* 卡片区域 - 数组形式 */}
         {cards && cards.length > 0 && renderCards(cards, onInteract)}
