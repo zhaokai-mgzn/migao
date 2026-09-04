@@ -1552,9 +1552,9 @@ _CASE_OB_005 = EvalCase(
     tags=['homepage', 'compliance', 'gb47746'],
 )
 
-# ── OB-001 [NORMAL] 本体 schema 加载与状态枚举校验（订单/商品/售后/客户）（源: cases/ontology.yml）──
-_CASE_OB_001 = EvalCase(
-    id='OB-001',
+# ── ON-001 [NORMAL] 本体 schema 加载与状态枚举校验（订单/商品/售后/客户）（源: cases/ontology.yml）──
+_CASE_ON_001 = EvalCase(
+    id='ON-001',
     legacy_id='',
     title='本体 schema 加载与状态枚举校验（订单/商品/售后/客户）',
     skill=Skill.GENERAL,
@@ -1566,9 +1566,9 @@ _CASE_OB_001 = EvalCase(
     tags=['ontology', 'schema', 'enum_alignment'],
 )
 
-# ── OB-002 [NORMAL] vision 分析候选实体写入上下文实体槽（G10 修复）（源: cases/ontology.yml）──
-_CASE_OB_002 = EvalCase(
-    id='OB-002',
+# ── ON-002 [NORMAL] vision 分析候选实体写入上下文实体槽（G10 修复）（源: cases/ontology.yml）──
+_CASE_ON_002 = EvalCase(
+    id='ON-002',
     legacy_id='',
     title='vision 分析候选实体写入上下文实体槽（G10 修复）',
     skill=Skill.GENERAL,
@@ -1580,9 +1580,9 @@ _CASE_OB_002 = EvalCase(
     tags=['ontology', 'vision', 'context_memory', 'grounding'],
 )
 
-# ── OB-003 [NORMAL] intent 归属表入 schema + 双端能力视图契约校验（源: cases/ontology.yml）──
-_CASE_OB_003 = EvalCase(
-    id='OB-003',
+# ── ON-003 [NORMAL] intent 归属表入 schema + 双端能力视图契约校验（源: cases/ontology.yml）──
+_CASE_ON_003 = EvalCase(
+    id='ON-003',
     legacy_id='',
     title='intent 归属表入 schema + 双端能力视图契约校验',
     skill=Skill.GENERAL,
@@ -2515,9 +2515,9 @@ ALL_CASES = (
     _CASE_OB_003,
     _CASE_OB_004,
     _CASE_OB_005,
-    _CASE_OB_001,
-    _CASE_OB_002,
-    _CASE_OB_003,
+    _CASE_ON_001,
+    _CASE_ON_002,
+    _CASE_ON_003,
     _CASE_OR_001,
     _CASE_OR_002,
     _CASE_OR_003,

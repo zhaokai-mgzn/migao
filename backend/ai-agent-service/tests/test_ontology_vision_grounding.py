@@ -10,7 +10,7 @@ vision 候选实体 → 上下文实体槽 grounding 测试（issue #2821 切片
 Seam: AgentContextManager.record_vision_candidates()（公共接口，
 不触碰 _extract_entities 内部实现）。
 """
-# case_ids: OB-002
+# case_ids: ON-002
 
 import pytest
 

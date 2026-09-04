@@ -9,7 +9,7 @@ intent 归属契约校验测试（issue #2821 切片 3）
 Seam: app.ontology.contract.check_intent_ownership()（纯函数，输入 schema + 实际映射，
 输出违规清单；不触碰 skill_registry 内部实现）。
 """
-# case_ids: OB-003
+# case_ids: ON-003
 
 import pytest
 

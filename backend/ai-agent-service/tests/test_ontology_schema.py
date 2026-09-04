@@ -9,7 +9,7 @@
 Seam: app.ontology.loader.load_ontology() → Ontology（唯一公共入口，
 不触碰内部 models/加载实现细节）。
 """
-# case_ids: OB-001
+# case_ids: ON-001
 
 import pytest
 

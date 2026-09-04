@@ -1339,7 +1339,7 @@
 
 ## ontology（3 case）
 
-### OB-001. 本体 schema 加载与状态枚举校验（订单/商品/售后/客户） 🔵
+### ON-001. 本体 schema 加载与状态枚举校验（订单/商品/售后/客户） 🔵
 ```
 你: 加载默认本体 schema，校验四对象（订单/商品SKU/售后单/客户）定义与状态枚举
 期望: none
@@ -1353,7 +1353,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 本体模块切片 1（schema + loader + 校验） ｜ tags: ontology, schema, enum_alignment
 
-### OB-002. vision 分析候选实体写入上下文实体槽（G10 修复） 🔵
+### ON-002. vision 分析候选实体写入上下文实体槽（G10 修复） 🔵
 ```
 你: 用户发图，vision 分析识别出候选商品/订单/客户 → 候选实体写入 context_manager 实体槽 → 后续轮次 build_context 注入
 期望: none
@@ -1366,7 +1366,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 切片 2（vision 候选实体 → 上下文实体槽） ｜ tags: ontology, vision, context_memory, grounding
 
-### OB-003. intent 归属表入 schema + 双端能力视图契约校验 🔵
+### ON-003. intent 归属表入 schema + 双端能力视图契约校验 🔵
 ```
 你: schema 声明 intent→route_key→agents 归属表；契约校验与 skill_registry 实际映射对比
 期望: none

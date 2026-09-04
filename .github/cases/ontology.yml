@@ -7,7 +7,7 @@ schema: "case-contract/1.0"
 domain: ontology
 
 cases:
-  - id: OB-001
+  - id: ON-001
     legacy_id: ""
     title: "本体 schema 加载与状态枚举校验（订单/商品/售后/客户）"
     domains:
@@ -38,7 +38,7 @@ cases:
       ci:
         - ai-agent-tests.yml
       verifies: []
-  - id: OB-002
+  - id: ON-002
     legacy_id: ""
     title: "vision 分析候选实体写入上下文实体槽（G10 修复）"
     domains:
@@ -69,7 +69,7 @@ cases:
       ci:
         - ai-agent-tests.yml
       verifies: []
-  - id: OB-003
+  - id: ON-003
     legacy_id: ""
     title: "intent 归属表入 schema + 双端能力视图契约校验"
     domains:
