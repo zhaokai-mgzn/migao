@@ -4,6 +4,12 @@ FROM node:20-alpine
 
 WORKDIR /app
 
+# 统一时区 UTC+8（业务时间均为北京时间；alpine 需 tzdata 才能解析 Asia/Shanghai）
+RUN apk add --no-cache tzdata && \
+    cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
+    echo "Asia/Shanghai" > /etc/timezone
+ENV TZ=Asia/Shanghai
+
 # 安装依赖
 COPY package*.json ./
 RUN npm ci

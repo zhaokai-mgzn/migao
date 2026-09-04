@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 import time
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
 from loguru import logger
@@ -22,6 +22,29 @@ from app.utils.http_client import get_admin_api_client
 # tenant_id -> (fetch_timestamp, config_dict)
 _cache: Dict[int, tuple[float, Dict[str, Any]]] = {}
 _CACHE_TTL_SECONDS = 60.0
+
+# Asia/Shanghai 无夏令时，固定 UTC+8；容器无 tzdata 时 zoneinfo 兜底用
+_TZ_FALLBACK = timezone(timedelta(hours=8))
+_DEFAULT_TZ_NAME = "Asia/Shanghai"
+
+# zoneinfo 缓存的 tz 对象（避免每次新建）
+_tz_cache: Dict[str, Any] = {}
+
+
+def _resolve_tz(tz_name: Optional[str]) -> Any:
+    """解析时区：zoneinfo 优先；无 tzdata 时回退 UTC+8（中国业务固定偏移）。"""
+    name = tz_name or _DEFAULT_TZ_NAME
+    if name in _tz_cache:
+        return _tz_cache[name]
+    try:
+        from zoneinfo import ZoneInfo
+
+        tz = ZoneInfo(name)
+    except Exception:
+        # 容器无 tzdata（python:3.11-slim 默认不带）→ Asia/Shanghai 固定 +8
+        tz = _TZ_FALLBACK
+    _tz_cache[name] = tz
+    return tz
 
 
 async def get_tenant_ai_config(tenant_id: int) -> Dict[str, Any]:
@@ -125,6 +148,14 @@ def is_after_hours(config: Dict[str, Any], now: Optional[datetime] = None) -> bo
     if not start or not end:
         return bool(config.get("afterHoursMessage"))
 
-    now = now or datetime.now()
+    # 营业时间按租户配置时区解读（生产回归：容器 UTC 时上海 10:16 被误判非营业）
+    tz = _resolve_tz(config.get("timezone"))
+    if now is None:
+        now = datetime.now(tz)
+    elif now.tzinfo is not None:
+        # aware now（如 UTC 注入）→ 转换到租户时区再比较
+        now = now.astimezone(tz)
+    # naive now（老测试注入方式）视为已是租户时区时间，直接使用
+
     current = now.strftime("%H:%M")
     return not (start <= current <= end)
