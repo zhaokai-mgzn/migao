@@ -83,10 +83,6 @@ export default function ProfilePage() {
     Taro.setStorageSync('pendingOrderPrompt', `帮我查一下售后工单 ${ticket.ticket_no} 的进度`)
   }
 
-  const handleAccountInfo = () => {
-    Taro.showToast({ title: '功能开发中', icon: 'none' })
-  }
-
   const handleAbout = () => {
     Taro.showModal({
       title: '关于我们',
@@ -250,10 +246,6 @@ export default function ProfilePage() {
 
       {/* ===== 设置列表 ===== */}
       <View className='settings-card'>
-        <View className='setting-item' onClick={handleAccountInfo}>
-          <Text className='setting-label'>账号信息</Text>
-          <Text className='setting-arrow'>›</Text>
-        </View>
         <View className='setting-item' onClick={handleAbout}>
           <Text className='setting-label'>关于我们</Text>
           <Text className='setting-arrow'>›</Text>
