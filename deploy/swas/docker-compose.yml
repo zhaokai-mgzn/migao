@@ -66,6 +66,9 @@ services:
   nginx:
     image: nginx:alpine
     restart: unless-stopped
+    environment:
+      # 统一时区 UTC+8（所有系统/agent 业务时间均为北京时间）
+      TZ: Asia/Shanghai
     ports:
       - "80:80"
       - "443:443"
