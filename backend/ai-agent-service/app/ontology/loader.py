@@ -30,13 +30,19 @@ class OntologySchemaError(ValueError):
 # 默认 schema 与 loader 同目录
 DEFAULT_SCHEMA_PATH = Path(__file__).resolve().parent / "schema.yaml"
 
-# ── 状态枚举铁律词表（独立真值来源：docs/wiki/CONTRACT-LEDGER.md §一）──
+# ── 状态枚举铁律词表（独立真值来源：CONTRACT-LEDGER §一 + 代码真值）──
 # 加载时校验：schema 中的 <对象>.status 枚举必须与词表**逐字一致**，
 # 否则 OntologySchemaError——从源头拦截"processing/producing"类漂移。
 STATUS_LEXICON: Dict[str, List[str]] = {
     "order.status": ["pending", "confirmed", "producing", "shipped", "completed", "cancelled"],
     "aftersales.status": ["pending", "processing", "rejected", "resolved", "closed"],
     "product_sku.status": ["draft", "on_sale", "off_sale", "under_review"],
+    # 切片 B 扩展对象（2026-09-04 代码真值：AgentEmployeeService 错误消息 /
+    # DTO 注释 / admin-web types）
+    "employee.status": ["online", "offline", "busy"],
+    "processing_item.status": ["active", "inactive"],
+    "category.status": ["active", "inactive"],
+    "knowledge_document.status": ["processed", "processing", "failed"],
 }
 
 

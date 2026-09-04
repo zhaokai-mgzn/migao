@@ -1552,16 +1552,16 @@ _CASE_OB_005 = EvalCase(
     tags=['homepage', 'compliance', 'gb47746'],
 )
 
-# ── ON-001 [NORMAL] 本体 schema 加载与状态枚举校验（订单/商品/售后/客户）（源: cases/ontology.yml）──
+# ── ON-001 [NORMAL] 本体 schema 加载与状态枚举校验（核心四对象 + 扩展四对象）（源: cases/ontology.yml）──
 _CASE_ON_001 = EvalCase(
     id='ON-001',
     legacy_id='',
-    title='本体 schema 加载与状态枚举校验（订单/商品/售后/客户）',
+    title='本体 schema 加载与状态枚举校验（核心四对象 + 扩展四对象）',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['加载默认本体 schema，校验四对象（订单/商品SKU/售后单/客户）定义与状态枚举'],
+    user_inputs=['加载默认本体 schema，校验八对象（订单/商品SKU/售后单/客户 + 员工/加工项/分类/知识文档）定义与状态枚举'],
     expectations=['none'],
-    data_checks=['默认 schema.yaml 存在且可加载，返回 Ontology 含 order/product_sku/aftersales/customer 四对象', '订单状态枚举 == [pending, confirmed, producing, shipped, completed, cancelled]（与 CONTRACT-LEDGER 的 OrderService.java 状态机一致，生产中是 producing 非 processing）', '售后工单状态枚举 == [pending, processing, rejected, resolved, closed]', '商品状态枚举 == [draft, on_sale, off_sale, under_review]', '非法状态值（如 processing 混入订单枚举）加载校验必须拒绝并给出明确错误'],
+    data_checks=['默认 schema.yaml 存在且可加载，返回 Ontology 八对象：order/product_sku/aftersales/customer + employee/processing_item/category/knowledge_document', '每个对象具备属性/关系/动作/规则四要素', '订单状态枚举 == [pending, confirmed, producing, shipped, completed, cancelled]（与 CONTRACT-LEDGER 的 OrderService.java 状态机一致，生产中是 producing 非 processing）', '售后工单状态枚举 == [pending, processing, rejected, resolved, closed]；商品状态枚举 == [draft, on_sale, off_sale, under_review]', '扩展对象状态枚举与代码真值一致：员工 == [online, offline, busy]（AgentEmployeeService 错误消息）、加工项/分类 == [active, inactive]（DTO 注释）、知识文档 == [processed, processing, failed]（admin-web KnowledgeDocStatus）', '非法状态值（如 processing 混入订单枚举）加载校验必须拒绝并给出明确错误'],
     skip_reason='本体模块为纯数据结构契约，由 pytest 单测验证（backend/ai-agent-service/tests/test_ontology_schema.py），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['ontology', 'schema', 'enum_alignment'],
 )
@@ -1580,18 +1580,32 @@ _CASE_ON_002 = EvalCase(
     tags=['ontology', 'vision', 'context_memory', 'grounding'],
 )
 
-# ── ON-003 [NORMAL] intent 归属表入 schema + 双端能力视图契约校验（源: cases/ontology.yml）──
+# ── ON-003 [NORMAL] intent 归属表全量登记 + 双端能力视图契约校验（v2 按 agent 核对）（源: cases/ontology.yml）──
 _CASE_ON_003 = EvalCase(
     id='ON-003',
     legacy_id='',
-    title='intent 归属表入 schema + 双端能力视图契约校验',
+    title='intent 归属表全量登记 + 双端能力视图契约校验（v2 按 agent 核对）',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['schema 声明 intent→route_key→agents 归属表；契约校验与 skill_registry 实际映射对比'],
+    user_inputs=['schema 全量登记 27 个业务 intent（双端 23 + finance 仅 mibao + knowledge_faq/knowledge_manage/quote 仅 xiaobu）；契约校验与双端真实映射按 agent 分别对比'],
     expectations=['none'],
-    data_checks=['schema.intent_ownership 声明订单/售后域 intent 归属（order_query→order 等）', '契约校验：schema 声明 intent 必须存在于 skill 映射；实际 intent 必须登记 schema；双端（mibao/xiaobu）声明的 route_key 必须各自可达', '缺失/漂移返回违规清单（不抛异常，由调用方决定阻断）'],
+    data_checks=['schema.intent_ownership 全量登记 27 个业务 intent（排除 general 兜底；mibao 因 RAG 禁用不可达 knowledge 域）', '契约校验 v2：schema 声明某 agent 可达的 intent 必须在该 agent 映射中存在（防假声明）；mibao route_key 严格一致（B 端是约定事实源，xiaobu 兜底覆盖不计漂移）；任一 agent 映射有但 schema 未登记 → 违规；声明可达的 route_key 必须在该 agent 真实可达集合中', 'xiaobu 专属 intent（quote/knowledge_faq/knowledge_manage）在 mibao 映射缺失是正常的，不得误报', '缺失/漂移返回违规清单（不抛异常，由调用方决定阻断）'],
     skip_reason='契约校验为纯数据结构逻辑，由 pytest 单测验证（backend/ai-agent-service/tests/test_ontology_contract.py），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['ontology', 'intent_ownership', 'contract', 'dual_agent'],
+)
+
+# ── ON-004 [NORMAL] vision 分析文本落上下文槽 + base_skill 接线（行为闭环收口）（源: cases/ontology.yml）──
+_CASE_ON_004 = EvalCase(
+    id='ON-004',
+    legacy_id='',
+    title='vision 分析文本落上下文槽 + base_skill 接线（行为闭环收口）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['vision 分析完成后，分析文本写入 context_manager 上下文槽（record_vision_analysis）→ build_context 跨 skill 注入，澄清候选 grounded 有召回保障；base_skill 接线调用'],
+    expectations=['none'],
+    data_checks=['record_vision_analysis 写入后 build_context 注入包含 vision 分析文本（截断 800 字符）', '重复写入覆盖旧文本（最新图片分析优先）；空文本/无 session 不落槽', 'base_skill vision 分支分析成功后调用 record_vision_analysis（与 set_vision_analysis 并列，异常降级不破坏主流程）'],
+    skip_reason='上下文记忆为纯数据结构契约，由 pytest 单测验证（backend/ai-agent-service/tests/test_ontology_vision_grounding.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ontology', 'vision', 'context_memory', 'grounding', 'base_skill'],
 )
 
 # ── OR-001 [SMOKE] 订单列表查询（源: cases/order.yml）──
@@ -2518,6 +2532,7 @@ ALL_CASES = (
     _CASE_ON_001,
     _CASE_ON_002,
     _CASE_ON_003,
+    _CASE_ON_004,
     _CASE_OR_001,
     _CASE_OR_002,
     _CASE_OR_003,

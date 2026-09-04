@@ -1337,21 +1337,22 @@
 真值: frontend-fix.vitest, frontend-fix.tsc, frontend-fix.no-api-change
 溯源: 2026-09-03 新增：GB/T 47746-2026 合规官网宣称（issue #2787） ｜ tags: homepage, compliance, gb47746
 
-## ontology（3 case）
+## ontology（4 case）
 
-### ON-001. 本体 schema 加载与状态枚举校验（订单/商品/售后/客户） 🔵
+### ON-001. 本体 schema 加载与状态枚举校验（核心四对象 + 扩展四对象） 🔵
 ```
-你: 加载默认本体 schema，校验四对象（订单/商品SKU/售后单/客户）定义与状态枚举
+你: 加载默认本体 schema，校验八对象（订单/商品SKU/售后单/客户 + 员工/加工项/分类/知识文档）定义与状态枚举
 期望: none
-数据: 默认 schema.yaml 存在且可加载，返回 Ontology 含 order/product_sku/aftersales/customer 四对象
+数据: 默认 schema.yaml 存在且可加载，返回 Ontology 八对象：order/product_sku/aftersales/customer + employee/processing_item/category/knowledge_document
+数据: 每个对象具备属性/关系/动作/规则四要素
 数据: 订单状态枚举 == [pending, confirmed, producing, shipped, completed, cancelled]（与 CONTRACT-LEDGER 的 OrderService.java 状态机一致，生产中是 producing 非 processing）
-数据: 售后工单状态枚举 == [pending, processing, rejected, resolved, closed]
-数据: 商品状态枚举 == [draft, on_sale, off_sale, under_review]
+数据: 售后工单状态枚举 == [pending, processing, rejected, resolved, closed]；商品状态枚举 == [draft, on_sale, off_sale, under_review]
+数据: 扩展对象状态枚举与代码真值一致：员工 == [online, offline, busy]（AgentEmployeeService 错误消息）、加工项/分类 == [active, inactive]（DTO 注释）、知识文档 == [processed, processing, failed]（admin-web KnowledgeDocStatus）
 数据: 非法状态值（如 processing 混入订单枚举）加载校验必须拒绝并给出明确错误
 跳过: 本体模块为纯数据结构契约，由 pytest 单测验证（backend/ai-agent-service/tests/test_ontology_schema.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: ai-chat.context-memory
-溯源: 2026-09-04 新增：issue #2821 本体模块切片 1（schema + loader + 校验） ｜ tags: ontology, schema, enum_alignment
+溯源: 2026-09-04 新增：issue #2821 本体模块切片 1（schema + loader + 校验）；延续切片 B 扩展四对象 ｜ tags: ontology, schema, enum_alignment
 
 ### ON-002. vision 分析候选实体写入上下文实体槽（G10 修复） 🔵
 ```
@@ -1366,17 +1367,30 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 切片 2（vision 候选实体 → 上下文实体槽） ｜ tags: ontology, vision, context_memory, grounding
 
-### ON-003. intent 归属表入 schema + 双端能力视图契约校验 🔵
+### ON-003. intent 归属表全量登记 + 双端能力视图契约校验（v2 按 agent 核对） 🔵
 ```
-你: schema 声明 intent→route_key→agents 归属表；契约校验与 skill_registry 实际映射对比
+你: schema 全量登记 27 个业务 intent（双端 23 + finance 仅 mibao + knowledge_faq/knowledge_manage/quote 仅 xiaobu）；契约校验与双端真实映射按 agent 分别对比
 期望: none
-数据: schema.intent_ownership 声明订单/售后域 intent 归属（order_query→order 等）
-数据: 契约校验：schema 声明 intent 必须存在于 skill 映射；实际 intent 必须登记 schema；双端（mibao/xiaobu）声明的 route_key 必须各自可达
+数据: schema.intent_ownership 全量登记 27 个业务 intent（排除 general 兜底；mibao 因 RAG 禁用不可达 knowledge 域）
+数据: 契约校验 v2：schema 声明某 agent 可达的 intent 必须在该 agent 映射中存在（防假声明）；mibao route_key 严格一致（B 端是约定事实源，xiaobu 兜底覆盖不计漂移）；任一 agent 映射有但 schema 未登记 → 违规；声明可达的 route_key 必须在该 agent 真实可达集合中
+数据: xiaobu 专属 intent（quote/knowledge_faq/knowledge_manage）在 mibao 映射缺失是正常的，不得误报
 数据: 缺失/漂移返回违规清单（不抛异常，由调用方决定阻断）
 跳过: 契约校验为纯数据结构逻辑，由 pytest 单测验证（backend/ai-agent-service/tests/test_ontology_contract.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: ai-chat.context-memory
-溯源: 2026-09-04 新增：issue #2821 切片 3（intent 归属 schema + 契约校验） ｜ tags: ontology, intent_ownership, contract, dual_agent
+溯源: 2026-09-04 更新：切片 A 全量登记 27 intent + 契约校验 v2（按 agent 核对，get_all_skill_names 口径） ｜ tags: ontology, intent_ownership, contract, dual_agent
+
+### ON-004. vision 分析文本落上下文槽 + base_skill 接线（行为闭环收口） 🔵
+```
+你: vision 分析完成后，分析文本写入 context_manager 上下文槽（record_vision_analysis）→ build_context 跨 skill 注入，澄清候选 grounded 有召回保障；base_skill 接线调用
+期望: none
+数据: record_vision_analysis 写入后 build_context 注入包含 vision 分析文本（截断 800 字符）
+数据: 重复写入覆盖旧文本（最新图片分析优先）；空文本/无 session 不落槽
+数据: base_skill vision 分支分析成功后调用 record_vision_analysis（与 set_vision_analysis 并列，异常降级不破坏主流程）
+跳过: 上下文记忆为纯数据结构契约，由 pytest 单测验证（backend/ai-agent-service/tests/test_ontology_vision_grounding.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: ai-chat.context-memory
+溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
 ## 订单域（13 case）
 
@@ -2065,8 +2079,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：169（活跃 98，跳过 71）
-- tier 分布：smoke 10 / normal 131 / adversarial 28
+- 用例总数：170（活跃 98，跳过 72）
+- tier 分布：smoke 10 / normal 132 / adversarial 28
 - 售后域：5
 - agents：6
 - api：10
@@ -2080,7 +2094,7 @@
 - 人事域：5
 - misc：15
 - onboarding：5
-- ontology：3
+- ontology：4
 - 订单域：13
 - 加工项域：4
 - 商品域：13
