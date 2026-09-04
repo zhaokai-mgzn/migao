@@ -4,12 +4,12 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 > 面向通用行业的多租户 AI 智能客服 SaaS 平台，以布艺窗帘行业为示例场景。  
-> 基于大语言模型（DeepSeek V4 Pro + DeepSeek V4 Flash Vision）+ 31 个业务工具，覆盖售前咨询到售后服务全链路。
+> 基于大语言模型（DeepSeek V4 Pro + DeepSeek V4 Flash Vision）+ 33 个业务工具，覆盖售前咨询到售后服务全链路。
 
 ## ✨ 核心亮点
 
 - **双 Agent 架构** — C 端客服"小布" + B 端工作助手"米宝"，LangGraph 状态图驱动
-- **31 个 AI 工具** — 商品搜索、订单管理、物流追踪、客户查询等，自动意图路由
+- **33 个 AI 工具** — 商品搜索、订单管理、物流追踪、客户查询等，自动意图路由
 - **多租户 SaaS** — 租户隔离（JWT 派生 tenant_id → MyBatis 租户拦截器 → 字段脱敏）
 - **完整业务后台** — 商品、订单、CRM、人工坐席、数据看板等 12+ 管理模块
 - **微信小程序** — Taro 跨端框架，SSE 流式对话，原生体验
@@ -22,7 +22,7 @@
 ```mermaid
 graph TB
     subgraph 客户端
-        A[微信小程序<br/>Taro 3.6] --> |SSE| GW[API 网关]
+        A[微信小程序<br/>Taro 4.2.1] --> |SSE| GW[API 网关]
         B[管理后台<br/>Next.js 14] --> |REST| GW
     end
 
@@ -42,7 +42,7 @@ graph TB
     subgraph AI 能力
         D --> H[DeepSeek<br/>V4 Pro / V4 Flash Vision]
         D --> I[意图路由 → 工具调用<br/>LangGraph 状态机]
-        D --> J[31 Tools<br/>业务工具 + 权限/确认守卫]
+        D --> J[33 Tools<br/>业务工具 + 权限/确认守卫]
     end
 
     subgraph 基础设施
@@ -74,13 +74,14 @@ graph TB
 | 能力 | 说明 |
 |------|------|
 | 售前咨询 | 产品推荐、材质介绍、风格搭配、窗帘尺寸计算 |
-| 订单服务 | 下单查询、状态跟踪、历史订单 |
+| 订单服务 | 下单查询、状态跟踪、历史订单、AI 下单（服务端取价校验） |
 | 售后处理 | 退货/换货/投诉、问题跟踪 |
 | 物流查询 | 实时物流状态、配送时间预估 |
 | 知识库问答 | 基于 LLM 通用知识的产品和 FAQ 问答（RAG 暂不开放，见决策 D1） |
-| 图片识别 | 窗帘/面料图片分析（DeepSeek V4 Flash Vision） |
-| 人工转接 | AI 自动判断并转接人工坐席 |
-| 多轮对话 | 上下文维护、会话记忆、智能追问 |
+| 图片识别 | 窗帘/面料图片分析（DeepSeek V4 Flash Vision）；随手发图自动澄清 |
+| 人工转接 | AI 自动判断并转接人工坐席，转人工携带 AI 对话上下文快照 |
+| 多轮对话 | 上下文维护、会话记忆、智能追问、连续模糊意图护栏 |
+| 长期记忆 | C 端用户画像记忆 + 会话末聚合（PII 过滤，可查询/删除），下单地址自动填充 |
 
 ### B 端 — 管理后台
 
@@ -107,7 +108,7 @@ migao/
 │   ├── admin-api/              # Java 管理后台 API（Spring Boot 3.3）
 │   │   ├── src/main/java/com/migao/admin/
 │   │   │   ├── controller/     # 27 个 REST Controller
-│   │   │   ├── service/        # 23 个业务 Service
+│   │   │   ├── service/        # 26 个业务 Service
 │   │   │   ├── entity/         # 44 个数据实体
 │   │   │   ├── mapper/         # 44 个 MyBatis-Plus Mapper
 │   │   │   ├── dto/            # 请求/响应 DTO
@@ -123,7 +124,7 @@ migao/
 │       │   ├── agents/         # 双 Agent：小布（C端）+ 米宝（B端）
 │       │   ├── api/            # SSE 流式聊天 + 内部 API
 │       │   ├── graph/          # LangGraph 状态图（意图路由→工具调用→响应）
-│       │   ├── tools/          # 31 个业务工具（注册于 registry.py）
+│       │   ├── tools/          # 33 个业务工具（注册于 registry.py）
 │       │   ├── router/         # 意图分类（LLM + 规则引擎）
 │       │   ├── llm/            # LLM 工厂、模型路由、成本追踪
 │       │   ├── cache/          # 语义缓存
@@ -141,7 +142,7 @@ migao/
 │   │   ├── package.json
 │   │   └── .env.development / .env.production
 │   │
-│   └── mini-app/               # Taro 3.6 微信小程序
+│   └── mini-app/               # Taro 4.2.1 微信小程序 + H5（app.migaozn.com）
 │       ├── src/pages/          # 对话、会话列表、个人中心
 │       ├── src/components/     # 消息气泡、产品卡片、物流卡片等
 │       └── package.json
@@ -162,7 +163,7 @@ migao/
 │
 ├── tests/smoke/                # E2E 冒烟测试（pytest）
 ├── knowledge_base/             # 行业知识种子数据
-└── .github/workflows/          # CI/CD（16 个工作流）
+└── .github/workflows/          # CI/CD（19 个工作流）
 ```
 
 ## 🚀 快速开始
@@ -319,7 +320,7 @@ gh pr merge --squash --delete-branch
 | **设计** | [UI 设计规范](docs/design/ui-design-spec.md) | 色彩、字体、组件、响应式 |
 | | [管理后台设计](docs/design/admin-dashboard-design.md) | 页面路由、权限矩阵、CRM |
 | | [坐席工作台设计](docs/design/agent-workspace-design.md) | 人工坐席流程、WebSocket |
-| | [工具规范](docs/design/skill-spec.md) | 31 个 AI 工具定义与安全层 |
+| | [工具规范](docs/design/skill-spec.md) | 33 个 AI 工具定义与安全层 |
 
 ## 📊 项目进度
 

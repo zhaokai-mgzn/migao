@@ -32,6 +32,7 @@ from app.graph.state import AgentState
 from app.tools.base import ToolContext
 from app.tools.registry import ToolRegistry, set_tool_context, get_tool_context
 from app.utils.log_sanitizer import LogSanitizer
+from app.memory.user_memory import UserMemoryManager
 from app.core import (
     CircuitBreakerOpenError,
     LLM_FALLBACK_MESSAGE,
@@ -754,6 +755,35 @@ async def _self_correct_retry(
         return None
 
 
+async def _inject_user_memories(system_prompt: str, state: AgentState) -> str:
+    """C 端长期记忆注入（issue #2815：仅 xiaobu；mibao 不注入）。
+
+    - 读取 user_memories 中 importance>=0.5 的 top 记忆（agent_type='xiaobu'）
+    - format_for_prompt 已做 XML 转义/截断消毒（审计 07 P1-L9：接线必须先消毒）
+    - 注入位置：identity_prefix 之后、_build_system_prompt 之前
+    - 任何异常不抛（fire-and-forget 语义，不破坏主流程）
+    """
+    if state.get("agent_type") != "xiaobu":
+        return system_prompt
+    try:
+        tenant_id = int(state.get("tenant_id", 0) or 0)
+        user_id = state.get("user_id", "")
+        if not tenant_id or not user_id:
+            return system_prompt
+        mem_text = await UserMemoryManager().format_for_prompt(
+            tenant_id, user_id, agent_type="xiaobu"
+        )
+        if mem_text:
+            logger.info(
+                f"[memory-inject] Injected user memories | "
+                f"tenant={tenant_id} user={user_id} len={len(mem_text)}"
+            )
+            return mem_text + "\n" + system_prompt
+    except Exception as e:
+        logger.warning(f"[memory-inject] Failed | error={e}")
+    return system_prompt
+
+
 async def execute_skill(
     state: AgentState,
     skill_name: str,
@@ -883,6 +913,9 @@ async def execute_skill(
         system_prompt = identity_prefix + "\n" + system_prompt
     system_prompt = _build_system_prompt(skill_name, inline_prompt=system_prompt)
 
+    # 4b. C 端长期记忆注入（issue #2815：仅 xiaobu；mibao 不注入）
+    system_prompt = await _inject_user_memories(system_prompt, state)
+
     if is_multimodal:
         system_prompt = (
             "【图片理解能力已启用】您可以识别和分析用户上传的图片内容。\n"
@@ -999,6 +1032,13 @@ async def execute_skill(
                     await SessionMemory().set_vision_analysis(session_id, vision_analysis)
                 except Exception as e:
                     logger.error(f"[{skill_name}] set_vision_analysis failed | session={session_id} error={e}")
+                # 切片 C：vision 分析全文落上下文槽，跨 skill 召回「图=什么」（G10 收口）
+                try:
+                    from app.memory.context_manager import get_context_manager
+                    ctx_mgr = get_context_manager()
+                    ctx_mgr.record_vision_analysis(session_id, vision_analysis)
+                except Exception as e:
+                    logger.warning(f"[{skill_name}] record_vision_analysis failed | session={session_id} error={e}")
 
             messages = _sanitize_messages_for_text_path(list(messages))
             system_msg = SystemMessage(content=system_prompt)

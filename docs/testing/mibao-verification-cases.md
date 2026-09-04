@@ -283,7 +283,7 @@
 真值: category-manage.delete, category-manage.delete-destructive, ai-chat.confirm-required
 溯源: verification 2.12 独有（二次确认行为在测试中未确认，见 category-manage.yml 缺口注释） ｜ tags: delete, destructive, confirm
 
-## 对话边界域（23 case）
+## 对话边界域（25 case）
 
 ### CH-001. 空结果 + suggestion 引导修复 🔴
 ```
@@ -590,6 +590,35 @@
 ```
 真值: ai-chat.route-actions
 溯源: issue #2799：Phase 2c 轻量版 grounded（关键词提取纯函数 + VISION_CLARIFY_GUIDE 检索引导） ｜ tags: clarification, multimodal, image, grounded
+
+### CH-024. C端老客户偏好识别 - 长期记忆注入（小布） 🔵
+```
+你: 帮我看看有没有奶油风遮光窗帘
+期望: product_search
+数据: 仅 xiaobu 会话注入用户长期记忆（format_for_prompt 输出经消毒后拼入 system prompt）
+数据: 注入的记忆来自 user_memories 表且 agent_type='xiaobu'、importance>=0.5、LIMIT 20
+数据: mibao（B端）会话不注入用户记忆（agent_type 分流）
+数据: 注入文本做过 XML 转义/长度截断（防持久化注入，审计 07 P1-L9）
+跳过: 记忆注入链路由 pytest 单测验证（tests/test_user_memory.py + tests/test_memory_injection.py），agent-eval 无稳定记忆数据
+```
+真值: ai-chat.context-memory
+溯源: issue #2815：C 端长期记忆系统 — 注入接线 ｜ tags: memory, xiaobu, long_term, personalization
+
+### CH-025. 下单地址自动填充 - 最近订单收货信息预填（可修改） 🔵
+```
+你: 我要买那个遮光窗帘，帮我下单
+你: 确认
+期望: customer_address_query
+期望: interact(component=form)
+期望: order_create
+数据: 老客户（有历史订单）下单时先调 customer_address_query 取最近订单收货信息
+数据: interact form 预填收货人/手机号/地址（formFields 带 value），用户可修改
+数据: 新客户（无历史订单）customer_address_query 返回空 → 维持原表单询问流程
+数据: customer_address_query 仅查当前用户本人订单（强制 user_id 过滤，只读）
+跳过: 工具与 skill prompt 由 pytest 单测验证（tests/test_customer_address_query.py），agent-eval 无稳定订单数据
+```
+真值: ai-chat.context-memory
+溯源: issue #2815：C 端长期记忆系统 — 下单自动填充收货信息场景 ｜ tags: memory, xiaobu, address_prefill, order_create
 
 ## 跨域（3 case）
 
@@ -1067,7 +1096,7 @@
 真值: employee-role.role-crud, employee-role.permissions
 溯源: verification 5.5 独有 ｜ tags: create, permission
 
-## misc（12 case）
+## misc（15 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -1204,6 +1233,44 @@
 ```
 溯源: 2026-09-02 新增：CI 自动失败报告去重守卫（issue #2746） ｜ tags: ci, issue-dedup, nightly
 
+### MC-013. 记忆提取 C 端受控词表 + PII 变体过滤 + agent_type 分流 🔵
+```
+你: ai-agent-service 记忆提取：仅 C 端（xiaobu）落库；key 受控词表约束；PII 变体 key/值拦截
+期望: direct_reply
+数据: extract_memories_from_turn/extract_and_save 新增 agent_type 参数：agent_type != 'xiaobu' → 直接返回 0/[]（B 端不落库）
+数据: C 端受控词表 CEND_MEMORY_KEYS：LLM 返回的 key 不在词表内 → 丢弃；词表含 curtain_style/curtain_color/window_size/budget 等画像字段
+数据: _filter_pii 变体拦截：key 词根匹配（phone/mobile/address/name/contact/wechat/id_card/idcard 等 40+ 变体）而非精确黑名单；value 含手机号/邮箱 → 丢弃
+数据: context 字段去 PII：不再写原始 user_message 明文（或做脱敏），避免手机号/地址落库
+跳过: 纯函数/依赖注入 mock 由 pytest 单测验证（tests/test_memory_extractor.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: misc.parse-extraction-result, misc.extract-llm-flow
+溯源: issue #2815：C 端长期记忆系统 — extractor 质量改造 ｜ tags: memory, extractor, pii, agent_split
+
+### MC-014. 用户记忆 agent_type 读写 + format_for_prompt 消毒 🔵
+```
+你: ai-agent-service 用户记忆管理：agent_type 维度读写；注入文本消毒防持久化注入
+期望: direct_reply
+数据: upsert/batch_upsert 写入 agent_type（xiaobu/mibao）；get_important_memories/format_for_prompt 支持按 agent_type 过滤
+数据: format_for_prompt 输出消毒：XML 标签转义（<>&）、值长度截断、strip 控制字符 → 防跨会话持久化注入（审计 07 P1-L9）
+数据: 消毒后注入仅对 xiaobu 生效（agent_type 分流，CH-024 关联）
+跳过: 依赖注入 mock 的 async 方法由 pytest 单测验证（tests/test_user_memory.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: misc.extract-and-save
+溯源: issue #2815：C 端长期记忆系统 — user_memory agent_type + 消毒 ｜ tags: memory, user_memory, sanitize
+
+### MC-015. 用户记忆合规 API - 查询与删除（个保法查询权/删除权） 🔵
+```
+你: ai-agent-service 提供 GET/DELETE /memories：用户查询/删除自己保存的记忆（agent_type=xiaobu）
+期望: direct_reply
+数据: GET /memories 调 UserMemoryManager.get_all_memories(tenant, user, agent_type='xiaobu')，返回记忆列表（type/key/value/importance/时间）
+数据: DELETE /memories 调 delete_all(tenant, user, agent_type='xiaobu')，返回删除条数
+数据: 跨租户/跨用户不可访问（仅查当前登录用户自己的记忆）
+数据: 异常时返回空列表/0 条，不抛 500
+跳过: 依赖注入 mock 由 pytest 单测验证（tests/test_memories_api.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: misc.extract-and-save
+溯源: issue #2815：C 端长期记忆系统 — 合规 API（个保法查询权/删除权） ｜ tags: memory, compliance, privacy
+
 ## onboarding（5 case）
 
 ### OB-001. 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员 🔵
@@ -1269,6 +1336,61 @@
 ```
 真值: frontend-fix.vitest, frontend-fix.tsc, frontend-fix.no-api-change
 溯源: 2026-09-03 新增：GB/T 47746-2026 合规官网宣称（issue #2787） ｜ tags: homepage, compliance, gb47746
+
+## ontology（4 case）
+
+### ON-001. 本体 schema 加载与状态枚举校验（核心四对象 + 扩展四对象） 🔵
+```
+你: 加载默认本体 schema，校验八对象（订单/商品SKU/售后单/客户 + 员工/加工项/分类/知识文档）定义与状态枚举
+期望: none
+数据: 默认 schema.yaml 存在且可加载，返回 Ontology 八对象：order/product_sku/aftersales/customer + employee/processing_item/category/knowledge_document
+数据: 每个对象具备属性/关系/动作/规则四要素
+数据: 订单状态枚举 == [pending, confirmed, producing, shipped, completed, cancelled]（与 CONTRACT-LEDGER 的 OrderService.java 状态机一致，生产中是 producing 非 processing）
+数据: 售后工单状态枚举 == [pending, processing, rejected, resolved, closed]；商品状态枚举 == [draft, on_sale, off_sale, under_review]
+数据: 扩展对象状态枚举与代码真值一致：员工 == [online, offline, busy]（AgentEmployeeService 错误消息）、加工项/分类 == [active, inactive]（DTO 注释）、知识文档 == [processed, processing, failed]（admin-web KnowledgeDocStatus）
+数据: 非法状态值（如 processing 混入订单枚举）加载校验必须拒绝并给出明确错误
+跳过: 本体模块为纯数据结构契约，由 pytest 单测验证（backend/ai-agent-service/tests/test_ontology_schema.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: ai-chat.context-memory
+溯源: 2026-09-04 新增：issue #2821 本体模块切片 1（schema + loader + 校验）；延续切片 B 扩展四对象 ｜ tags: ontology, schema, enum_alignment
+
+### ON-002. vision 分析候选实体写入上下文实体槽（G10 修复） 🔵
+```
+你: 用户发图，vision 分析识别出候选商品/订单/客户 → 候选实体写入 context_manager 实体槽 → 后续轮次 build_context 注入
+期望: none
+数据: record_vision_candidates 写入后 get_entities 返回包含 source=vision 的候选实体
+数据: build_context 注入的上下文包含 vision 候选实体（图片关联对象有召回保障）
+数据: 重复写入同一候选去重；非法 entity_type 拒绝
+数据: 实体槽与 _extract_entities 的工具结果提取共存（vision 与工具结果互不覆盖）
+跳过: 上下文记忆为纯数据结构契约，由 pytest 单测验证（backend/ai-agent-service/tests/test_ontology_vision_grounding.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: ai-chat.context-memory
+溯源: 2026-09-04 新增：issue #2821 切片 2（vision 候选实体 → 上下文实体槽） ｜ tags: ontology, vision, context_memory, grounding
+
+### ON-003. intent 归属表全量登记 + 双端能力视图契约校验（v2 按 agent 核对） 🔵
+```
+你: schema 全量登记 27 个业务 intent（双端 23 + finance 仅 mibao + knowledge_faq/knowledge_manage/quote 仅 xiaobu）；契约校验与双端真实映射按 agent 分别对比
+期望: none
+数据: schema.intent_ownership 全量登记 27 个业务 intent（排除 general 兜底；mibao 因 RAG 禁用不可达 knowledge 域）
+数据: 契约校验 v2：schema 声明某 agent 可达的 intent 必须在该 agent 映射中存在（防假声明）；mibao route_key 严格一致（B 端是约定事实源，xiaobu 兜底覆盖不计漂移）；任一 agent 映射有但 schema 未登记 → 违规；声明可达的 route_key 必须在该 agent 真实可达集合中
+数据: xiaobu 专属 intent（quote/knowledge_faq/knowledge_manage）在 mibao 映射缺失是正常的，不得误报
+数据: 缺失/漂移返回违规清单（不抛异常，由调用方决定阻断）
+跳过: 契约校验为纯数据结构逻辑，由 pytest 单测验证（backend/ai-agent-service/tests/test_ontology_contract.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: ai-chat.context-memory
+溯源: 2026-09-04 更新：切片 A 全量登记 27 intent + 契约校验 v2（按 agent 核对，get_all_skill_names 口径） ｜ tags: ontology, intent_ownership, contract, dual_agent
+
+### ON-004. vision 分析文本落上下文槽 + base_skill 接线（行为闭环收口） 🔵
+```
+你: vision 分析完成后，分析文本写入 context_manager 上下文槽（record_vision_analysis）→ build_context 跨 skill 注入，澄清候选 grounded 有召回保障；base_skill 接线调用
+期望: none
+数据: record_vision_analysis 写入后 build_context 注入包含 vision 分析文本（截断 800 字符）
+数据: 重复写入覆盖旧文本（最新图片分析优先）；空文本/无 session 不落槽
+数据: base_skill vision 分支分析成功后调用 record_vision_analysis（与 set_vision_analysis 并列，异常降级不破坏主流程）
+跳过: 上下文记忆为纯数据结构契约，由 pytest 单测验证（backend/ai-agent-service/tests/test_ontology_vision_grounding.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: ai-chat.context-memory
+溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
 ## 订单域（13 case）
 
@@ -1376,16 +1498,16 @@
 
 ### OR-010. 创建订单 - 汇总确认简化流程 🟢
 ```
-你: 创建订单：张三 13812345678，杭州西湖区文三路1号，米白色遮光窗帘 2件
-你: 选1
-你: 确认
+你: 创建订单：张三 13812345678，杭州西湖区文三路1号，米白色遮光窗帘 2米
+你: 选散剪售卖，2.8米门幅
+你: 确认下单
 期望: validate_input
 期望: order_create
 数据: 返回订单号
 数据: 下单全流程不得向顾客索要单价/金额——价格取自商品数据/算料结果（实测反复要价导致下单卡死 + 本用例评估不稳）
 ```
 真值: order.states, order.create-flow
-溯源: verification 1.8 独有（smoke 简化版，与 OR-008/OR-009 的细粒度版互补）；2026-08-14 按 EXAMPLES-order.md 例2 校准为多轮（完整收货信息→选1→确认），单轮直下单与设计澄清流程不符；2026-09-02 补价格铁律 ｜ tags: create, confirm
+溯源: verification 1.8 独有（smoke 简化版，与 OR-008/OR-009 的细粒度版互补）；2026-08-14 按 EXAMPLES-order.md 例2 校准为多轮（完整收货信息→选1→确认），单轮直下单与设计澄清流程不符；2026-09-02 补价格铁律；2026-09-04 修复 choice 卡片消费协议不匹配（审计 #2818 Agent Eval 失败根因）：原「选1」为自然语言序号，LLM 无法关联 interact(choice) 选项导致反复 product_detail 追问、永不进入 validate_input/order_create；改为显式售卖方式描述（与 OR-008/009 一致），且「2件」与商品按米计价（¥99/米）矛盾改为「2米」，实测全流程通过 ｜ tags: create, confirm
 
 ### OR-011. AI 下单闭环 - 算料报价→确认→SMS→订单创建 🔵
 ```
@@ -1957,21 +2079,22 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：161（活跃 98，跳过 63）
-- tier 分布：smoke 10 / normal 123 / adversarial 28
+- 用例总数：170（活跃 98，跳过 72）
+- tier 分布：smoke 10 / normal 132 / adversarial 28
 - 售后域：5
 - agents：6
 - api：10
 - 分类域：3
-- 对话边界域：23
+- 对话边界域：25
 - 跨域：3
 - 客户域：5
 - 数据域：6
 - 防御域：17
 - finance：3
 - 人事域：5
-- misc：12
+- misc：15
 - onboarding：5
+- ontology：4
 - 订单域：13
 - 加工项域：4
 - 商品域：13

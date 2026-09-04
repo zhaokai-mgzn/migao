@@ -46,20 +46,24 @@ if [ -f .env.admin-api ] && ! grep -q '^AI_AGENT_SERVICE_TOKEN=' .env.admin-api;
   fi
 fi
 
-# 1.6 SMS 万能码 POC 自愈（决策 D2 + 审计 07 P0-1）：
-# sms.bypass-code 默认已改空（生产 fail-closed）。POC 阶段保留万能码——
-# 若 .env.admin-api 完全缺失 SMS_BYPASS_CODE 配置，自动补齐 123456 并醒目警告；
-# 显式配置过（含置空禁用）则尊重现状，绝不覆盖。
+# 1.6 SMS 万能码 fail-closed（决策 D2 修正 + 审计 07 P0-1 + audit-2026-09 P1）：
+# sms.bypass-code 默认已改空（生产 fail-closed）。此前"自动补齐 123456"违反
+# fail-closed 原则——生产首次部署若未显式配置即自动启用万能码登录（越权入口）。
+# 现在改为：.env.admin-api 必须显式声明 SMS_BYPASS_CODE（可为空=禁用），缺失即中止。
 if [ -f .env.admin-api ] && ! grep -q '^SMS_BYPASS_CODE=' .env.admin-api; then
-  printf 'SMS_BYPASS_CODE=123456\n' >> .env.admin-api
-  echo "  ⚠️【POC 模式】已自动启用 SMS 万能码 123456（决策 D2）。接入真实短信后须在 .env.admin-api 显式置空 SMS_BYPASS_CODE= 以禁用（技术债 Issue #2616）"
+  echo "  ❌ .env.admin-api 缺少显式 SMS_BYPASS_CODE 配置（fail-closed 强制）"
+  echo "    · 测试环境（POC 万能码）：追加 SMS_BYPASS_CODE=123456 后重跑"
+  echo "    · 生产环境：显式追加 SMS_BYPASS_CODE= 置空禁用万能码（技术债 Issue #2616 关闭前不允许缺省）"
+  exit 1
 fi
-# 1.6b ai-agent 侧 SMS 万能码自愈（#518 回归）：order_create 工具的 bypass 校验
+# 1.6b ai-agent 侧 SMS 万能码同规则（#518 回归）：order_create 工具的 bypass 校验
 # 读的是 ai-agent 自身环境变量 SMS_BYPASS_CODE（app/tools/order_create.py），
-# 缺失时 C 端下单的短信验证码必然校验失败（用户收不到短信）。对齐 admin-api 自愈补齐。
+# 缺失时 C 端下单的短信验证码必然校验失败。与 admin-api 同样强制显式声明。
 if [ -f .env.ai-agent ] && ! grep -q '^SMS_BYPASS_CODE=' .env.ai-agent; then
-  printf 'SMS_BYPASS_CODE=123456\n' >> .env.ai-agent
-  echo "  ⚠️【POC 模式】已自动启用 ai-agent SMS 万能码 123456（决策 D2）。接入真实短信后须在 .env.ai-agent 显式置空 SMS_BYPASS_CODE= 以禁用（技术债 Issue #2616）"
+  echo "  ❌ .env.ai-agent 缺少显式 SMS_BYPASS_CODE 配置（fail-closed 强制）"
+  echo "    · 测试环境（POC 万能码）：追加 SMS_BYPASS_CODE=123456 后重跑"
+  echo "    · 生产环境：显式追加 SMS_BYPASS_CODE= 置空禁用万能码（技术债 Issue #2616 关闭前不允许缺省）"
+  exit 1
 fi
 
 echo "== 1.9 磁盘水位预检（#2571 防护：部署前磁盘满会导致 pull/up 失败 + admin-api 503）=="

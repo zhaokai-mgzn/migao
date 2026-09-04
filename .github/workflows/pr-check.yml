@@ -5,6 +5,11 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# CI 队列治理（v1.3，2026-09-04）：同 PR 新 push 自动取消旧 run，防多 PR/多 commit 并发打满队列
+concurrency:
+  group: ci-pr-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   pull-requests: write
@@ -347,6 +352,8 @@ jobs:
           fi
 
   # ============ Agent Eval smoke — 每次 PR 跑 smoke tier 用例（case-contract §六：100% 通过才合并）============
+  # v1.3 门控（2026-09-04）：真实 LLM 评测有 token 成本，仅当 AI 相关路径有变更才跑。
+  # 纯依赖升级（dependabot）/前端/Java 变更跳过（step 级跳过，job 仍 success 不阻塞 required check）。
   agent-eval-smoke:
     name: Agent Eval (smoke tier)
     runs-on: ubuntu-latest
@@ -354,15 +361,35 @@ jobs:
     if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-python@v7
         with:
           python-version: '3.11'
 
+      - name: Detect AI-related changes
+        id: detect
+        run: |
+          git fetch origin main --quiet
+          CHANGED=$(git diff --name-only origin/main...HEAD)
+          echo "── 变更文件（${#CHANGED} 行）──"
+          echo "$CHANGED" | head -20
+          # AI 相关路径：ai-agent 服务、eval 用例库、真实 E2E。其余（前端/Java/依赖清单）不触发真实 LLM。
+          AI_HITS=$(echo "$CHANGED" | grep -E '^(backend/ai-agent-service/|tests/agent_eval/|\.github/cases/|tests/e2e/real/)' || true)
+          if [ -n "$AI_HITS" ]; then
+            echo "run_eval=true" >> "$GITHUB_OUTPUT"
+            echo "✅ 检测到 AI 相关变更（$(echo "$AI_HITS" | wc -l | tr -d ' ') 个），执行真实 LLM 冒烟评测"
+          else
+            echo "run_eval=false" >> "$GITHUB_OUTPUT"
+            echo "⏭️ 无 AI 相关变更，跳过真实 LLM 冒烟评测（省 token）"
+          fi
+
       - name: Install deps
         run: pip install httpx
 
       - name: Run smoke eval (真实 LLM + 多轮业务流)
+        if: steps.detect.outputs.run_eval == 'true'
         env:
           AI_API_URL: https://ai-api.migaozn.com
           ADMIN_API_URL: https://api.migaozn.com

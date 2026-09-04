@@ -1,0 +1,692 @@
+# =============================================================================
+# MIGAO 领域本体 schema — 机器可消费单一事实源（issue #2821 切片 1）
+#
+# 范围：切片 1 四核心对象（订单/商品SKU/售后单/客户）× 四要素（属性/关系/动作/规则）
+# 状态枚举铁律来源：docs/wiki/CONTRACT-LEDGER.md §一（勿在此处私自改枚举，
+# 修改必须同步 CONTRACT-LEDGER 与 loader.STATUS_LEXICON，否则加载直接拒绝）。
+# 字段挂载点（source）指向 admin-api Java 实体，供跨端对账。
+# =============================================================================
+version: "1.0"
+
+# ── intent 归属表（切片 3 + 延续切片 A 全量登记）：intent → route_key → 必须可达的 Agent ──
+# 契约校验（app.ontology.contract）据此与双端真实映射（agent_intent_maps）对比，
+# 把「修改 B 端 intent 必须验证 xiaobu 路由」从注释承诺变为机器校验（全量严查）。
+# route_key 以 B 端全局映射为约定事实源（skill_registry.get_intent_to_route_map(persona=mibao)）；
+# agents 声明真实可达端：mibao=商家后台，xiaobu=小程序消费者。
+# 兜底 intent「general」不属于业务表；B 端 RAG 禁用故 knowledge 域仅 xiaobu 可达。
+intent_ownership:
+  # ── 订单域 ──
+  order_query:
+    route_key: order
+    agents: [mibao, xiaobu]
+    description: 查询订单（B 端 order_query / C 端 customer_order_query）
+  order_create:
+    route_key: order
+    agents: [mibao, xiaobu]
+    description: 创建订单（写工具确认闸）
+  logistics_track:
+    route_key: order
+    agents: [mibao, xiaobu]
+    description: 物流查询（C 端仅本人已发货订单）
+  # ── 售后域 ──
+  after_sales:
+    route_key: aftersales
+    agents: [mibao, xiaobu]
+    description: 售后咨询
+  after_sales_create:
+    route_key: aftersales
+    agents: [mibao, xiaobu]
+    description: 创建售后工单（恒 pending）
+  complaint:
+    route_key: aftersales
+    agents: [mibao, xiaobu]
+    description: 投诉（涉赔偿/法律转人工）
+  # ── 商品域 ──
+  product_inquiry:
+    route_key: product
+    agents: [mibao, xiaobu]
+    description: 商品咨询/检索
+  category_manage:
+    route_key: product
+    agents: [mibao, xiaobu]
+    description: 分类管理
+  processing_manage:
+    route_key: product
+    agents: [mibao, xiaobu]
+    description: 加工项管理（算料）
+  # ── 客户域 ──
+  customer_manage:
+    route_key: customer
+    agents: [mibao, xiaobu]
+    description: 客户管理（建档/更新）
+  customer_query:
+    route_key: customer
+    agents: [mibao, xiaobu]
+    description: 客户查询
+  # ── 人事域 ──
+  employee_manage:
+    route_key: staff
+    agents: [mibao, xiaobu]
+    description: 员工管理
+  staff_manage:
+    route_key: staff
+    agents: [mibao, xiaobu]
+    description: 人事管理
+  role_manage:
+    route_key: staff
+    agents: [mibao, xiaobu]
+    description: 角色管理
+  permission_manage:
+    route_key: staff
+    agents: [mibao, xiaobu]
+    description: 权限管理
+  # ── 设置域 ──
+  system_settings:
+    route_key: settings
+    agents: [mibao, xiaobu]
+    description: 系统设置
+  ai_config:
+    route_key: settings
+    agents: [mibao, xiaobu]
+    description: AI 配置
+  notification:
+    route_key: settings
+    agents: [mibao, xiaobu]
+    description: 通知管理
+  quick_reply:
+    route_key: settings
+    agents: [mibao, xiaobu]
+    description: 快捷回复
+  # ── 数据域 ──
+  dashboard:
+    route_key: data
+    agents: [mibao, xiaobu]
+    description: 看板概览
+  statistics:
+    route_key: data
+    agents: [mibao, xiaobu]
+    description: 统计报表
+  data_report:
+    route_key: data
+    agents: [mibao, xiaobu]
+    description: 数据报表
+  finance:
+    route_key: data
+    agents: [mibao]
+    description: 财务（仅 B 端可达）
+  session_manage:
+    route_key: data
+    agents: [mibao, xiaobu]
+    description: 会话管理
+  # ── 知识域（B 端 RAG 禁用，仅 xiaobu 可达）──
+  knowledge_faq:
+    route_key: knowledge
+    agents: [xiaobu]
+    description: 知识库问答（C 端小布）
+  knowledge_manage:
+    route_key: knowledge
+    agents: [xiaobu]
+    description: 知识库管理（C 端兜底声明）
+  # ── C 端专属 ──
+  quote:
+    route_key: quote
+    agents: [xiaobu]
+    description: 窗帘算料报价（仅小布 customer_quote）
+
+objects:
+  order:
+    display_name: 订单
+    properties:
+      id:
+        type: string
+        required: true
+        source: "Order.id"
+        description: 订单 UUID
+      order_no:
+        type: string
+        required: true
+        source: "Order.orderNo"
+        description: 业务订单号
+      tenant_id:
+        type: string
+        required: true
+        source: "Order.tenantId"
+        description: 租户隔离字段
+      user_id:
+        type: string
+        required: false
+        source: "Order.userId"
+        description: 下单用户ID（C 端数据隔离字段，X-User-Id 透传）
+      customer_name:
+        type: string
+        required: false
+        source: "Order.customerName"
+        description: 客户姓名
+      customer_phone:
+        type: string
+        required: false
+        source: "Order.customerPhone"
+        description: 客户手机号
+      customer_address:
+        type: string
+        required: false
+        source: "Order.customerAddress"
+        description: 客户收货地址
+      total_amount:
+        type: decimal
+        required: false
+        source: "Order.totalAmount"
+        description: 订单总额
+      actual_amount:
+        type: decimal
+        required: false
+        source: "Order.actualAmount"
+        description: 实付金额
+      discount_amount:
+        type: decimal
+        required: false
+        source: "Order.discountAmount"
+        description: 优惠金额（三端字段名一致）
+      refund_amount:
+        type: decimal
+        required: false
+        source: "Order.refundAmount"
+        description: 累计退款金额
+      status:
+        type: enum
+        required: true
+        source: "Order.status"
+        values: [pending, confirmed, producing, shipped, completed, cancelled]
+        description: 订单状态（DB 枚举，生产中是 producing 非 processing）
+      follow_status:
+        type: string
+        required: false
+        source: "Order.followStatus"
+        description: 跟进状态
+      remark:
+        type: string
+        required: false
+        source: "Order.remark"
+        description: 备注
+      close_reason:
+        type: string
+        required: false
+        source: "Order.closeReason"
+        description: 关闭原因
+    relations:
+      - name: has_items
+        target: order_item
+        cardinality: "1:N"
+        description: 订单包含订单明细
+      - name: belongs_to_customer
+        target: customer
+        cardinality: "N:1"
+        description: 订单归属客户
+      - name: has_aftersales
+        target: aftersales
+        cardinality: "1:N"
+        description: 订单可挂多个售后工单
+    actions:
+      - name: order_query
+        description: 查询订单（B 端 order_query / C 端 customer_order_query）
+      - name: order_create
+        confirmation_required: true
+        description: 创建订单（写工具确认闸，GB-03）
+      - name: order_update
+        confirmation_required: true
+        preconditions:
+          - "action ∈ {update_status, update_logistics, confirm_payment, cancel, refund}"
+        description: Agent 统一改单（PATCH /api/admin/agent/orders/{id}）
+    rules:
+      - text: "订单状态枚举以 CONTRACT-LEDGER 为准（producing 非 processing）"
+        severity: must
+      - text: "服务端不信任 LLM 定价：下单重算 subtotal，单价取 SKU 权威价"
+        severity: must
+      - text: "C 端订单查询强制按 X-User-Id 过滤（user_id=本人 OR 手机号兜底），禁止跨用户"
+        severity: must
+      - text: "已发货订单取消/退款需人工确认，禁止 LLM 自行终态变更"
+        severity: must
+
+  product_sku:
+    display_name: 商品SKU
+    properties:
+      id:
+        type: string
+        required: true
+        source: "ProductSku.id"
+        description: SKU UUID
+      product_id:
+        type: string
+        required: true
+        source: "ProductSku.productId"
+        description: 所属商品
+      sku_code:
+        type: string
+        required: false
+        source: "ProductSku.skuCode"
+        description: SKU 编码
+      price:
+        type: decimal
+        required: true
+        source: "ProductSku.price"
+        description: 售价（权威价来源）
+      stock:
+        type: int
+        required: false
+        source: "ProductSku.stock"
+        description: 库存
+      status:
+        type: enum
+        required: true
+        source: "ProductSku.status"
+        values: [draft, on_sale, off_sale, under_review]
+        description: 商品状态
+      attributes:
+        type: string
+        required: false
+        source: "ProductSku.attributes"
+        description: SKU 属性（颜色/尺寸等 JSON）
+    relations:
+      - name: belongs_to_product
+        target: product
+        cardinality: "N:1"
+        description: SKU 归属商品
+      - name: has_processing_items
+        target: processing_item
+        cardinality: "N:M"
+        description: SKU 关联加工项（算料）
+    actions:
+      - name: product_query
+        description: 查询商品/SKU（B 端 product / C 端 customer_product）
+      - name: product_create
+        confirmation_required: true
+        description: 创建商品（含图片建品属性求证）
+      - name: sku_price_update
+        confirmation_required: true
+        preconditions:
+          - "price >= 0"
+        description: 单 SKU 改价（PATCH /api/admin/agent/products/{id}/skus/{skuId}）
+    rules:
+      - text: "SKU 价格是权威价：下单/改价一律以 SKU 价格为基准，禁止向顾客索要价格"
+        severity: must
+      - text: "小布（C 端）无改价/取消类动作：L0 工具白名单物理隔离资金/改价/取消工具"
+        severity: must
+      - text: "价格/库存变更需确认闸（GB-03）"
+        severity: must
+
+  aftersales:
+    display_name: 售后单
+    properties:
+      id:
+        type: string
+        required: true
+        source: "AfterSalesTicket.id"
+        description: 售后工单 UUID
+      order_id:
+        type: string
+        required: true
+        source: "AfterSalesTicket.orderId"
+        description: 关联订单
+      status:
+        type: enum
+        required: true
+        source: "AfterSalesTicket.status"
+        values: [pending, processing, rejected, resolved, closed]
+        description: 售后工单状态
+      type:
+        type: string
+        required: false
+        source: "AfterSalesTicket.type"
+        description: 售后类型（退货/换货/维修）
+      reason:
+        type: string
+        required: false
+        source: "AfterSalesTicket.reason"
+        description: 售后原因
+      refund_amount:
+        type: decimal
+        required: false
+        source: "AfterSalesTicket.refundAmount"
+        description: 退款金额
+    relations:
+      - name: references_order
+        target: order
+        cardinality: "N:1"
+        description: 售后单关联订单
+    actions:
+      - name: aftersales_create
+        confirmation_required: true
+        preconditions:
+          - "创建恒 pending，由商户审核"
+        description: 创建售后工单（写工具确认闸，GB-03）
+      - name: aftersales_query
+        description: 查询售后（B 端 / C 端 customer_aftersales，C 端强制按本人订单反查）
+      - name: aftersales_update
+        confirmation_required: true
+        description: 售后处理（B 端）
+    rules:
+      - text: "售后申请创建恒 pending，由商户审核；AI 只解释规则与收集材料，不做终态承诺"
+        severity: must
+      - text: "售后 resolved + refund/return 类 → 订单累加 refundAmount、写退款流水"
+        severity: must
+      - text: "小布无退款/改价/取消工具；涉赔偿/法律一律转人工"
+        severity: must
+      - text: "C 端售后查询按 X-User-Id 反查本人订单，只返回这些订单上的工单"
+        severity: must
+
+  customer:
+    display_name: 客户
+    properties:
+      id:
+        type: string
+        required: true
+        source: "CustomerProfile.id"
+        description: 客户 UUID
+      name:
+        type: string
+        required: false
+        source: "CustomerProfile.name"
+        description: 客户姓名
+      phone:
+        type: string
+        required: false
+        source: "CustomerProfile.phone"
+        description: 客户手机号
+      address:
+        type: string
+        required: false
+        source: "CustomerProfile.address"
+        description: 客户地址
+      user_id:
+        type: string
+        required: false
+        source: "CustomerProfile.userId"
+        description: 绑定用户ID（C 端）
+      last_active_at:
+        type: datetime
+        required: false
+        source: "CustomerProfile.lastActiveAt"
+        description: 最近活跃时间
+    relations:
+      - name: has_orders
+        target: order
+        cardinality: "1:N"
+        description: 客户名下订单
+      - name: has_aftersales
+        target: aftersales
+        cardinality: "1:N"
+        description: 客户名下售后
+    actions:
+      - name: customer_query
+        description: 查询客户（B 端 customer_query / C 端仅本人）
+      - name: customer_create
+        confirmation_required: true
+        description: 客户建档（下单自动建档）
+    rules:
+      - text: "老客户只刷新 lastActiveAt，不重复累计画像（勿重复实现）"
+        severity: must
+      - text: "客户 PII（手机号/地址）只用于订单关联与授权查询，禁止注入无关记忆"
+        severity: must
+
+  employee:
+    display_name: 员工
+    properties:
+      id:
+        type: string
+        required: true
+        source: "AgentEmployee.id"
+        description: 员工 UUID
+      user_id:
+        type: string
+        required: false
+        source: "AgentEmployee.userId"
+        description: 关联用户 ID
+      name:
+        type: string
+        required: false
+        source: "AgentEmployee.name"
+        description: 员工姓名
+      email:
+        type: string
+        required: false
+        source: "AgentEmployee.email"
+        description: 邮箱
+      phone:
+        type: string
+        required: false
+        source: "AgentEmployee.phone"
+        description: 手机号
+      status:
+        type: enum
+        required: true
+        source: "AgentEmployee.status"
+        values: [online, offline, busy]
+        description: 员工状态（AgentEmployeeService 合法值）
+      max_concurrent_sessions:
+        type: int
+        required: false
+        source: "AgentEmployee.maxConcurrentSessions"
+        description: 最大并发会话数
+    relations:
+      - name: handles_sessions
+        target: agent_session
+        cardinality: "1:N"
+        description: 员工处理人工会话
+      - name: belongs_to_tenant
+        target: tenant
+        cardinality: "N:1"
+        description: 员工归属租户
+    actions:
+      - name: employee_manage
+        description: 员工管理（查询/新增/状态变更，B 端 staff skill）
+      - name: staff_manage
+        description: 人事管理（B 端 staff skill）
+      - name: role_manage
+        confirmation_required: true
+        description: 角色管理（分配角色，B 端 staff skill）
+      - name: permission_manage
+        confirmation_required: true
+        description: 权限管理（B 端 staff skill）
+    rules:
+      - text: "员工状态合法值为 online/offline/busy，非法值拒绝（AgentEmployeeService）"
+        severity: must
+      - text: "角色/权限变更需确认闸（GB-03）"
+        severity: must
+
+  processing_item:
+    display_name: 加工项
+    properties:
+      id:
+        type: string
+        required: true
+        source: "ProcessingItem.id"
+        description: 加工项 UUID
+      name:
+        type: string
+        required: false
+        source: "ProcessingItem.name"
+        description: 加工项名称
+      category_id:
+        type: string
+        required: false
+        source: "ProcessingItem.categoryId"
+        description: 加工分类 ID
+      pricing_method:
+        type: string
+        required: false
+        source: "ProcessingItem.pricingMethod"
+        description: 计价方式（按米/按件等）
+      unit_price:
+        type: decimal
+        required: false
+        source: "ProcessingItem.unitPrice"
+        description: 单价
+      unit:
+        type: string
+        required: false
+        source: "ProcessingItem.unit"
+        description: 单位
+      min_quantity:
+        type: int
+        required: false
+        source: "ProcessingItem.minQuantity"
+        description: 最小起订量
+      max_quantity:
+        type: int
+        required: false
+        source: "ProcessingItem.maxQuantity"
+        description: 最大订购量
+      processing_days:
+        type: int
+        required: false
+        source: "ProcessingItem.processingDays"
+        description: 加工天数
+      status:
+        type: enum
+        required: true
+        source: "ProcessingItem.status"
+        values: [active, inactive]
+        description: 加工项状态（ProcessingItemStatus）
+    relations:
+      - name: belongs_to_category
+        target: processing_category
+        cardinality: "N:1"
+        description: 加工项归属加工分类
+      - name: linked_to_products
+        target: product_sku
+        cardinality: "N:M"
+        description: 加工项关联商品 SKU（算料）
+    actions:
+      - name: processing_item_query
+        description: 查询加工项（算料）
+      - name: processing_manage
+        confirmation_required: true
+        description: 加工项管理（创建/修改，B 端）
+    rules:
+      - text: "加工项状态合法值为 active/inactive（前端 ProcessingItemStatus）"
+        severity: must
+      - text: "算料报价引用加工项单价，禁止编造计价"
+        severity: must
+
+  category:
+    display_name: 分类
+    properties:
+      id:
+        type: string
+        required: true
+        source: "Category.id"
+        description: 分类 UUID
+      name:
+        type: string
+        required: false
+        source: "Category.name"
+        description: 分类名称
+      parent_id:
+        type: string
+        required: false
+        source: "Category.parentId"
+        description: 父分类 ID（多级分类）
+      level:
+        type: int
+        required: false
+        source: "Category.level"
+        description: 层级
+      sort_order:
+        type: int
+        required: false
+        source: "Category.sortOrder"
+        description: 排序
+      status:
+        type: enum
+        required: true
+        source: "Category.status"
+        values: [active, inactive]
+        description: 分类状态（active=启用 inactive=禁用）
+    relations:
+      - name: has_products
+        target: product_sku
+        cardinality: "1:N"
+        description: 分类下商品
+      - name: has_parent
+        target: category
+        cardinality: "N:1"
+        description: 父分类
+    actions:
+      - name: category_query
+        description: 查询分类
+      - name: category_manage
+        confirmation_required: true
+        description: 分类管理（创建/修改，B 端 product skill）
+    rules:
+      - text: "分类状态合法值为 active/inactive（CategoryCreateRequest 注释）"
+        severity: must
+      - text: "删除分类前必须确认无商品挂载（防孤儿数据）"
+        severity: must
+
+  knowledge_document:
+    display_name: 知识文档
+    properties:
+      id:
+        type: string
+        required: true
+        source: "KnowledgeDocument.id"
+        description: 知识文档 UUID
+      title:
+        type: string
+        required: false
+        source: "KnowledgeDocument.title"
+        description: 标题
+      doc_type:
+        type: enum
+        required: false
+        source: "KnowledgeDocument.docType"
+        values: [faq, product, guide]
+        description: 文档类型（KnowledgeDocType）
+      category:
+        type: string
+        required: false
+        source: "KnowledgeDocument.category"
+        description: 知识分类
+      product_id:
+        type: string
+        required: false
+        source: "KnowledgeDocument.productId"
+        description: 关联商品
+      status:
+        type: enum
+        required: true
+        source: "KnowledgeDocument.embeddingStatus"
+        values: [processed, processing, failed]
+        description: 嵌入处理状态（KnowledgeDocStatus）
+      is_active:
+        type: bool
+        required: false
+        source: "KnowledgeDocument.isActive"
+        description: 是否启用
+      chunk_count:
+        type: int
+        required: false
+        source: "KnowledgeDocument.chunkCount"
+        description: 分块数
+    relations:
+      - name: belongs_to_product
+        target: product_sku
+        cardinality: "N:1"
+        description: 知识文档挂载商品（RAG 检索域约束）
+      - name: split_into_chunks
+        target: knowledge_chunk
+        cardinality: "1:N"
+        description: 文档分块
+    actions:
+      - name: knowledge_faq
+        description: 知识问答（C 端 customer_knowledge，RAG 启用后）
+      - name: knowledge_manage
+        confirmation_required: true
+        description: 知识库管理（上传/同步，B 端；当前 RAG 禁用）
+    rules:
+      - text: "知识文档状态合法值为 processed/processing/failed（前端 KnowledgeDocStatus）"
+        severity: must
+      - text: "知识检索域受本体约束：只召回挂载到商品/分类的知识条目，防召回域漂移"
+        severity: must
+      - text: "RAG 当前禁用（B 端 knowledge skill 注释掉），启用需回归验证"
+        severity: should

@@ -1,3 +1,4 @@
+// case_ids: UI-011
 /**
  * FloatingAssistant 组件测试 — 重构后版本
  *

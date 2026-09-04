@@ -698,6 +698,34 @@ _CASE_CH_023 = EvalCase(
     tags=['clarification', 'multimodal', 'image', 'grounded'],
 )
 
+# ── CH-024 [NORMAL] C端老客户偏好识别 - 长期记忆注入（小布）（源: cases/chat.yml）──
+_CASE_CH_024 = EvalCase(
+    id='CH-024',
+    legacy_id='',
+    title='C端老客户偏好识别 - 长期记忆注入（小布）',
+    skill=Skill.MULTI_TURN,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['帮我看看有没有奶油风遮光窗帘'],
+    expectations=['product_search'],
+    data_checks=['仅 xiaobu 会话注入用户长期记忆（format_for_prompt 输出经消毒后拼入 system prompt）', "注入的记忆来自 user_memories 表且 agent_type='xiaobu'、importance>=0.5、LIMIT 20", 'mibao（B端）会话不注入用户记忆（agent_type 分流）', '注入文本做过 XML 转义/长度截断（防持久化注入，审计 07 P1-L9）'],
+    skip_reason='记忆注入链路由 pytest 单测验证（tests/test_user_memory.py + tests/test_memory_injection.py），agent-eval 无稳定记忆数据',
+    tags=['memory', 'xiaobu', 'long_term', 'personalization'],
+)
+
+# ── CH-025 [NORMAL] 下单地址自动填充 - 最近订单收货信息预填（可修改）（源: cases/chat.yml）──
+_CASE_CH_025 = EvalCase(
+    id='CH-025',
+    legacy_id='',
+    title='下单地址自动填充 - 最近订单收货信息预填（可修改）',
+    skill=Skill.MULTI_TURN,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['我要买那个遮光窗帘，帮我下单', '确认'],
+    expectations=['customer_address_query', 'interact(component=form)', 'order_create'],
+    data_checks=['老客户（有历史订单）下单时先调 customer_address_query 取最近订单收货信息', 'interact form 预填收货人/手机号/地址（formFields 带 value），用户可修改', '新客户（无历史订单）customer_address_query 返回空 → 维持原表单询问流程', 'customer_address_query 仅查当前用户本人订单（强制 user_id 过滤，只读）'],
+    skip_reason='工具与 skill prompt 由 pytest 单测验证（tests/test_customer_address_query.py），agent-eval 无稳定订单数据',
+    tags=['memory', 'xiaobu', 'address_prefill', 'order_create'],
+)
+
 # ── CR-001 [NORMAL] 查商品 → 下单（跨 Skill 复用 UUID）（源: cases/cross.yml）──
 _CASE_CR_001 = EvalCase(
     id='CR-001',
@@ -1412,6 +1440,48 @@ _CASE_MC_012 = EvalCase(
     tags=['ci', 'issue-dedup', 'nightly'],
 )
 
+# ── MC-013 [NORMAL] 记忆提取 C 端受控词表 + PII 变体过滤 + agent_type 分流（源: cases/misc.yml）──
+_CASE_MC_013 = EvalCase(
+    id='MC-013',
+    legacy_id='',
+    title='记忆提取 C 端受控词表 + PII 变体过滤 + agent_type 分流',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 记忆提取：仅 C 端（xiaobu）落库；key 受控词表约束；PII 变体 key/值拦截'],
+    expectations=['direct_reply'],
+    data_checks=["extract_memories_from_turn/extract_and_save 新增 agent_type 参数：agent_type != 'xiaobu' → 直接返回 0/[]（B 端不落库）", 'C 端受控词表 CEND_MEMORY_KEYS：LLM 返回的 key 不在词表内 → 丢弃；词表含 curtain_style/curtain_color/window_size/budget 等画像字段', '_filter_pii 变体拦截：key 词根匹配（phone/mobile/address/name/contact/wechat/id_card/idcard 等 40+ 变体）而非精确黑名单；value 含手机号/邮箱 → 丢弃', 'context 字段去 PII：不再写原始 user_message 明文（或做脱敏），避免手机号/地址落库'],
+    skip_reason='纯函数/依赖注入 mock 由 pytest 单测验证（tests/test_memory_extractor.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['memory', 'extractor', 'pii', 'agent_split'],
+)
+
+# ── MC-014 [NORMAL] 用户记忆 agent_type 读写 + format_for_prompt 消毒（源: cases/misc.yml）──
+_CASE_MC_014 = EvalCase(
+    id='MC-014',
+    legacy_id='',
+    title='用户记忆 agent_type 读写 + format_for_prompt 消毒',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 用户记忆管理：agent_type 维度读写；注入文本消毒防持久化注入'],
+    expectations=['direct_reply'],
+    data_checks=['upsert/batch_upsert 写入 agent_type（xiaobu/mibao）；get_important_memories/format_for_prompt 支持按 agent_type 过滤', 'format_for_prompt 输出消毒：XML 标签转义（<>&）、值长度截断、strip 控制字符 → 防跨会话持久化注入（审计 07 P1-L9）', '消毒后注入仅对 xiaobu 生效（agent_type 分流，CH-024 关联）'],
+    skip_reason='依赖注入 mock 的 async 方法由 pytest 单测验证（tests/test_user_memory.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['memory', 'user_memory', 'sanitize'],
+)
+
+# ── MC-015 [NORMAL] 用户记忆合规 API - 查询与删除（个保法查询权/删除权）（源: cases/misc.yml）──
+_CASE_MC_015 = EvalCase(
+    id='MC-015',
+    legacy_id='',
+    title='用户记忆合规 API - 查询与删除（个保法查询权/删除权）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 提供 GET/DELETE /memories：用户查询/删除自己保存的记忆（agent_type=xiaobu）'],
+    expectations=['direct_reply'],
+    data_checks=["GET /memories 调 UserMemoryManager.get_all_memories(tenant, user, agent_type='xiaobu')，返回记忆列表（type/key/value/importance/时间）", "DELETE /memories 调 delete_all(tenant, user, agent_type='xiaobu')，返回删除条数", '跨租户/跨用户不可访问（仅查当前登录用户自己的记忆）', '异常时返回空列表/0 条，不抛 500'],
+    skip_reason='依赖注入 mock 由 pytest 单测验证（tests/test_memories_api.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['memory', 'compliance', 'privacy'],
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -1480,6 +1550,62 @@ _CASE_OB_005 = EvalCase(
     data_checks=['corporate-home page.tsx 含 GB/T 47746-2026 区块（标准号、4 能力点、免责小字）', '文案不含「认证/通过检测/备案」误导词', 'corporate-home.test.tsx 断言标准号与能力点渲染（无快照/无新 icon）'],
     skip_reason='由前端单测验证（corporate-home.test.tsx），非 LLM 冒烟',
     tags=['homepage', 'compliance', 'gb47746'],
+)
+
+# ── ON-001 [NORMAL] 本体 schema 加载与状态枚举校验（核心四对象 + 扩展四对象）（源: cases/ontology.yml）──
+_CASE_ON_001 = EvalCase(
+    id='ON-001',
+    legacy_id='',
+    title='本体 schema 加载与状态枚举校验（核心四对象 + 扩展四对象）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['加载默认本体 schema，校验八对象（订单/商品SKU/售后单/客户 + 员工/加工项/分类/知识文档）定义与状态枚举'],
+    expectations=['none'],
+    data_checks=['默认 schema.yaml 存在且可加载，返回 Ontology 八对象：order/product_sku/aftersales/customer + employee/processing_item/category/knowledge_document', '每个对象具备属性/关系/动作/规则四要素', '订单状态枚举 == [pending, confirmed, producing, shipped, completed, cancelled]（与 CONTRACT-LEDGER 的 OrderService.java 状态机一致，生产中是 producing 非 processing）', '售后工单状态枚举 == [pending, processing, rejected, resolved, closed]；商品状态枚举 == [draft, on_sale, off_sale, under_review]', '扩展对象状态枚举与代码真值一致：员工 == [online, offline, busy]（AgentEmployeeService 错误消息）、加工项/分类 == [active, inactive]（DTO 注释）、知识文档 == [processed, processing, failed]（admin-web KnowledgeDocStatus）', '非法状态值（如 processing 混入订单枚举）加载校验必须拒绝并给出明确错误'],
+    skip_reason='本体模块为纯数据结构契约，由 pytest 单测验证（backend/ai-agent-service/tests/test_ontology_schema.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ontology', 'schema', 'enum_alignment'],
+)
+
+# ── ON-002 [NORMAL] vision 分析候选实体写入上下文实体槽（G10 修复）（源: cases/ontology.yml）──
+_CASE_ON_002 = EvalCase(
+    id='ON-002',
+    legacy_id='',
+    title='vision 分析候选实体写入上下文实体槽（G10 修复）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户发图，vision 分析识别出候选商品/订单/客户 → 候选实体写入 context_manager 实体槽 → 后续轮次 build_context 注入'],
+    expectations=['none'],
+    data_checks=['record_vision_candidates 写入后 get_entities 返回包含 source=vision 的候选实体', 'build_context 注入的上下文包含 vision 候选实体（图片关联对象有召回保障）', '重复写入同一候选去重；非法 entity_type 拒绝', '实体槽与 _extract_entities 的工具结果提取共存（vision 与工具结果互不覆盖）'],
+    skip_reason='上下文记忆为纯数据结构契约，由 pytest 单测验证（backend/ai-agent-service/tests/test_ontology_vision_grounding.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ontology', 'vision', 'context_memory', 'grounding'],
+)
+
+# ── ON-003 [NORMAL] intent 归属表全量登记 + 双端能力视图契约校验（v2 按 agent 核对）（源: cases/ontology.yml）──
+_CASE_ON_003 = EvalCase(
+    id='ON-003',
+    legacy_id='',
+    title='intent 归属表全量登记 + 双端能力视图契约校验（v2 按 agent 核对）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['schema 全量登记 27 个业务 intent（双端 23 + finance 仅 mibao + knowledge_faq/knowledge_manage/quote 仅 xiaobu）；契约校验与双端真实映射按 agent 分别对比'],
+    expectations=['none'],
+    data_checks=['schema.intent_ownership 全量登记 27 个业务 intent（排除 general 兜底；mibao 因 RAG 禁用不可达 knowledge 域）', '契约校验 v2：schema 声明某 agent 可达的 intent 必须在该 agent 映射中存在（防假声明）；mibao route_key 严格一致（B 端是约定事实源，xiaobu 兜底覆盖不计漂移）；任一 agent 映射有但 schema 未登记 → 违规；声明可达的 route_key 必须在该 agent 真实可达集合中', 'xiaobu 专属 intent（quote/knowledge_faq/knowledge_manage）在 mibao 映射缺失是正常的，不得误报', '缺失/漂移返回违规清单（不抛异常，由调用方决定阻断）'],
+    skip_reason='契约校验为纯数据结构逻辑，由 pytest 单测验证（backend/ai-agent-service/tests/test_ontology_contract.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ontology', 'intent_ownership', 'contract', 'dual_agent'],
+)
+
+# ── ON-004 [NORMAL] vision 分析文本落上下文槽 + base_skill 接线（行为闭环收口）（源: cases/ontology.yml）──
+_CASE_ON_004 = EvalCase(
+    id='ON-004',
+    legacy_id='',
+    title='vision 分析文本落上下文槽 + base_skill 接线（行为闭环收口）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['vision 分析完成后，分析文本写入 context_manager 上下文槽（record_vision_analysis）→ build_context 跨 skill 注入，澄清候选 grounded 有召回保障；base_skill 接线调用'],
+    expectations=['none'],
+    data_checks=['record_vision_analysis 写入后 build_context 注入包含 vision 分析文本（截断 800 字符）', '重复写入覆盖旧文本（最新图片分析优先）；空文本/无 session 不落槽', 'base_skill vision 分支分析成功后调用 record_vision_analysis（与 set_vision_analysis 并列，异常降级不破坏主流程）'],
+    skip_reason='上下文记忆为纯数据结构契约，由 pytest 单测验证（backend/ai-agent-service/tests/test_ontology_vision_grounding.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ontology', 'vision', 'context_memory', 'grounding', 'base_skill'],
 )
 
 # ── OR-001 [SMOKE] 订单列表查询（源: cases/order.yml）──
@@ -1615,7 +1741,7 @@ _CASE_OR_010 = EvalCase(
     title='创建订单 - 汇总确认简化流程',
     skill=Skill.ORDER,
     difficulty=Difficulty.SMOKE,
-    user_inputs=['创建订单：张三 13812345678，杭州西湖区文三路1号，米白色遮光窗帘 2件', '选1', '确认'],
+    user_inputs=['创建订单：张三 13812345678，杭州西湖区文三路1号，米白色遮光窗帘 2米', '选散剪售卖，2.8米门幅', '确认下单'],
     expectations=['validate_input', 'order_create'],
     data_checks=['返回订单号', '下单全流程不得向顾客索要单价/金额——价格取自商品数据/算料结果（实测反复要价导致下单卡死 + 本用例评估不稳）'],
     skip_reason='',
@@ -2342,6 +2468,8 @@ ALL_CASES = (
     _CASE_CH_021,
     _CASE_CH_022,
     _CASE_CH_023,
+    _CASE_CH_024,
+    _CASE_CH_025,
     _CASE_CR_001,
     _CASE_CR_002,
     _CASE_CR_003,
@@ -2393,11 +2521,18 @@ ALL_CASES = (
     _CASE_MC_010,
     _CASE_MC_011,
     _CASE_MC_012,
+    _CASE_MC_013,
+    _CASE_MC_014,
+    _CASE_MC_015,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,
     _CASE_OB_004,
     _CASE_OB_005,
+    _CASE_ON_001,
+    _CASE_ON_002,
+    _CASE_ON_003,
+    _CASE_ON_004,
     _CASE_OR_001,
     _CASE_OR_002,
     _CASE_OR_003,

@@ -82,6 +82,22 @@ else
   check "退款 payload 蛇形契约" 1 "data-adapter.ts 无 refund_amount/refund_reason"
 fi
 
+# ── 6. intent 归属契约（schema 单一事实源 vs 双端视图，issue #2821 切片 3 + 延续切片 A）──
+# 把「修改 B 端 intent 必须验证 xiaobu 路由」从注释承诺变为机器校验（全量严查）。
+# 用 ai-agent 的 .venv python（仓库代码使用 3.10+ 语法）；venv 缺失时降级跳过。
+if [ -x "backend/ai-agent-service/.venv/bin/python" ]; then
+  ONT_OUTPUT=$(backend/ai-agent-service/.venv/bin/python scripts/check_ontology_contract.py 2>&1)
+  ONT_RC=$?
+  if [ "$ONT_RC" = "0" ]; then
+    check "intent 归属契约一致（全量严查：双端视图对齐 schema）" 0 ""
+  else
+    ONT_DETAIL=$(echo "$ONT_OUTPUT" | grep -E "^❌|Error|Traceback" | head -3 | tr '\n' ' ')
+    check "intent 归属契约一致（全量严查：双端视图对齐 schema）" 1 "$ONT_DETAIL"
+  fi
+else
+  echo "ℹ️  跳过 intent 归属契约（.venv 不存在，先创建 backend/ai-agent-service/.venv）"
+fi
+
 echo ""
 if [ "$FAIL" = "0" ]; then
   echo "✅ 契约检查全部通过（三端一致）"

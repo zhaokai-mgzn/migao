@@ -1,4 +1,5 @@
 package com.migao.admin.security;
+// case_ids: DF-014, DF-016
 // 对抗性审查修复 #937：异常日志级别提升
 
 import com.migao.admin.config.TenantContext;

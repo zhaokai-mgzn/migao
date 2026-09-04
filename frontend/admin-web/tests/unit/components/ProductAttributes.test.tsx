@@ -1,3 +1,4 @@
+// case_ids: PR-008
 /**
  * ProductAttributes 组件测试
  * 覆盖：#563 — 货号/品牌/计价单位 + 规格属性字段渲染

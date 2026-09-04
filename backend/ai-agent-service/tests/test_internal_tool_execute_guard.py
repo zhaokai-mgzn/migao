@@ -1,4 +1,5 @@
 """内部 /api/internal/tools/execute 端点安全加固 — 回归测试
+# case_ids: DF-008
 
 修复背景：
 1. /tools/execute 硬编码 role="admin" 且信任请求体 tenant_id/user_id，

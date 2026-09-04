@@ -1,0 +1,86 @@
+[
+  {
+    "id": "B-01",
+    "title": "低置信意图澄清（帮我看看）— 应弹澄清卡 choice",
+    "domain": "clarify",
+    "rounds": [
+      {"text": "帮我看看", "images": []}
+    ]
+  },
+  {
+    "id": "B-02",
+    "title": "连续模糊意图澄清护栏（≥2轮→兜底示例话术）",
+    "domain": "clarify_guard",
+    "rounds": [
+      {"text": "帮我看看", "images": []},
+      {"text": "就是那个", "images": []},
+      {"text": "你懂的", "images": []}
+    ]
+  },
+  {
+    "id": "B-03",
+    "title": "图片建品（真实业务图+明确意图）— 应识别→预填→确认",
+    "domain": "product",
+    "rounds": [
+      {"text": "创建这个商品", "images": ["https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/09/04/e5a68d1a02f844c6a45846784765a737.jpg"]},
+      {"text": "确认", "images": []}
+    ]
+  },
+  {
+    "id": "B-04",
+    "title": "图片 grounded 检索（发商户已有商品图→应命中真实商品）",
+    "domain": "product",
+    "rounds": [
+      {"text": "店里有没有这个商品", "images": ["https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/products/2026/09/03/242067da19ce423383bdb7f7149b2085.png"]}
+    ]
+  },
+  {
+    "id": "B-05",
+    "title": "商品搜索（遮光窗帘）",
+    "domain": "product",
+    "rounds": [
+      {"text": "搜一下遮光窗帘", "images": []}
+    ]
+  },
+  {
+    "id": "B-06",
+    "title": "商品改价（requires_confirmation 确认流程）",
+    "domain": "product",
+    "rounds": [
+      {"text": "把夏日清风窗帘的价格改成 199", "images": []},
+      {"text": "确认", "images": []}
+    ]
+  },
+  {
+    "id": "B-07",
+    "title": "订单查询",
+    "domain": "order",
+    "rounds": [
+      {"text": "查一下最近的订单", "images": []}
+    ]
+  },
+  {
+    "id": "B-08",
+    "title": "客户查询",
+    "domain": "customer",
+    "rounds": [
+      {"text": "查一下客户列表", "images": []}
+    ]
+  },
+  {
+    "id": "B-09",
+    "title": "数据看板（经营数据）",
+    "domain": "data",
+    "rounds": [
+      {"text": "今天经营数据怎么样", "images": []}
+    ]
+  },
+  {
+    "id": "B-10",
+    "title": "售后工单查询",
+    "domain": "aftersales",
+    "rounds": [
+      {"text": "看看售后工单", "images": []}
+    ]
+  }
+]

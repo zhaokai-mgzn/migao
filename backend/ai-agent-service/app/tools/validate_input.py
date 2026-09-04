@@ -79,6 +79,27 @@ _VALIDATION_RULES: Dict[str, Dict[str, Any]] = {
             "refund_amount": {"type": (int, float), "min": 0, "label": "退款金额"},
         },
     },
+    "aftersale_create": {
+        "create": {
+            "required": ["order_id", "ticket_type", "reason"],
+            "order_id": {"type": str, "min_len": 1, "label": "订单ID"},
+            "ticket_type": {
+                "type": str,
+                "min_len": 1,
+                "label": "工单类型",
+                "enum": ["refund", "exchange", "repair", "complaint", "other"],
+            },
+            "reason": {"type": str, "min_len": 1, "label": "原因说明"},
+            "description": {"type": str, "label": "详细描述"},
+            "images": {"type": list, "label": "凭证图片URL列表"},
+            "priority": {
+                "type": str,
+                "label": "优先级",
+                "enum": ["normal", "urgent", "critical"],
+            },
+            "refund_amount": {"type": (int, float), "min": 0, "label": "退款金额"},
+        },
+    },
     "employee_manage": {
         "create": {
             "required": ["name", "phone"],
@@ -216,6 +237,14 @@ class ValidateInputTool(BaseTool):
             if min_len is not None and isinstance(val, (str, list)) and len(val) < min_len:
                 label = rule.get("label", field)
                 issues.append(f"长度不足: {label} ({field}) 最少需要 {min_len} 个")
+
+            # 枚举值检查（如工单类型/售卖方式等受限枚举）
+            enum_vals = rule.get("enum")
+            if enum_vals and val not in enum_vals:
+                label = rule.get("label", field)
+                issues.append(
+                    f"取值非法: {label} ({field}) 应为 {enum_vals} 之一，实际为 {val!r}"
+                )
 
         # 3. update 操作检查 product_id
         if target_action == "update":
