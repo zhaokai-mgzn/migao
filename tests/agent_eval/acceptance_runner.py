@@ -111,11 +111,20 @@ def _fmt_interactive(i: dict) -> str:
 
 async def run_scenario(sc: dict, token: str) -> dict:
     """跑一个场景（多轮），返回完整记录"""
-    # 新建会话
-    async with httpx.AsyncClient() as c:
-        r = await c.post(f"{AI_API}/api/chat/sessions",
-                         headers=_headers(token), json={}, timeout=15)
-        session_id = r.json()["data"]["id"]
+    # 新建会话（线上偶发失败重试 2 次）
+    session_id = None
+    for attempt in range(3):
+        try:
+            async with httpx.AsyncClient() as c:
+                r = await c.post(f"{AI_API}/api/chat/sessions",
+                                 headers=_headers(token), json={}, timeout=15)
+                session_id = r.json()["data"]["id"]
+            if session_id:
+                break
+        except Exception:
+            if attempt == 2:
+                raise
+            await asyncio.sleep(1.0)
 
     rounds = []
     for i, rd in enumerate(sc.get("rounds", [])):
