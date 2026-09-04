@@ -31,6 +31,7 @@ npm run test:e2e
 | 登录页 | `scenarios/login-scenario.js` | 品牌区、一键登录按钮、协议链接；已登录自动跳转（预期） |
 | 多轮表单化 | `scenarios/multiturn-scenario.js` | 推荐→选品→规格→下单信息收参、订单卡片手机号脱敏 |
 | 售后链路 | `scenarios/aftersales-scenario.js` | 售后咨询快捷操作 → 真实后端 SSE 售后回复（退货/退款引导语义） |
+| 转人工链路 | `scenarios/handoff-scenario.js` | 输入「我要转人工」→ SSE human_handoff → C 端「已转人工」横幅 |
 
 ## 说明与坑
 
