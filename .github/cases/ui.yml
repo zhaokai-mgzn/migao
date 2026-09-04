@@ -101,7 +101,7 @@ cases:
     merge_log: "2026-08-25 新增：经营看板织物质感重设计子任务 C（issue #2538）；2026-08-31 更新：洞察条改为一句话经营解读（PD 精简改版）"
     traces:
       tests:
-        - "frontend/admin-web/tests/unit/components/dashboard/TodayOverviewBar.test.tsx"
+        - "frontend/admin-web/tests/unit/components/TodayOverviewBar.test.tsx"
         - "frontend/admin-web/tests/unit/pages/dashboard.test.tsx"
       ci:
         - pr-check.yml
@@ -173,9 +173,9 @@ cases:
     merge_log: "2026-08-30 新增：侧边栏智能客服大类分组与菜单图标渲染（issue #2670）"
     traces:
       tests:
-        - "frontend/admin-web/tests/unit/components/sidebar.test.tsx"
+        - "frontend/admin-web/tests/unit/components/Sidebar.test.tsx"
         - "frontend/admin-web/tests/unit/pages/chat-config.test.tsx"
-        - "frontend/admin-web/tests/unit/components/layout/Header.test.tsx"
+        - "frontend/admin-web/tests/unit/components/Header.test.tsx"
       ci:
         - pr-check.yml
       verifies: []
@@ -207,8 +207,8 @@ cases:
     merge_log: "2026-08-31 新增：会话管理状态 tab 与筛选控件移除，单列表 + 续聊 banner（参考 DSH 会话模型评审结论）"
     traces:
       tests:
-        - "frontend/admin-web/tests/unit/components/chat/components-chat.test.tsx"
-        - "frontend/admin-web/tests/unit/components/chat/ChatArea.test.tsx"
+        - "frontend/admin-web/tests/unit/components/components-chat.test.tsx"
+        - "frontend/admin-web/tests/unit/components/ChatArea.test.tsx"
         - "frontend/admin-web/tests/unit/pages/agent-workspace-sessions.test.tsx"
         - "tests/e2e/specs/chat/agent-workspace-sessions.spec.ts"
       ci:
@@ -274,7 +274,7 @@ cases:
     merge_log: "2026-08-31 新增：会话列表折叠/展开窄 rail（参考 DSH sidebar 折叠交互，Issue #2691）"
     traces:
       tests:
-        - "frontend/admin-web/tests/unit/components/chat/SessionList.test.tsx"
+        - "frontend/admin-web/tests/unit/components/SessionList.test.tsx"
         - "tests/e2e/specs/chat/agent-workspace-sessions.spec.ts"
       ci:
         - pr-check.yml
@@ -306,7 +306,7 @@ cases:
     merge_log: "2026-08-31 新增：米宝输入框拖拽图片附件上传（drag & drop 复用 uploadChatImages 链路）"
     traces:
       tests:
-        - "frontend/admin-web/tests/unit/components/chat/MessageInput.test.tsx"
+        - "frontend/admin-web/tests/unit/components/MessageInput.test.tsx"
         - "tests/e2e/specs/chat/chat.spec.ts"
       ci:
         - pr-check.yml
@@ -374,7 +374,7 @@ cases:
     merge_log: "2026-09-02 新增：POC 演示入口修复 — 侧边栏智能客服组加米宝在线对话 /chat 菜单项（米宝入口原仅 FAB/直输 /chat，老板演示找不到）"
     traces:
       tests:
-        - "frontend/admin-web/tests/unit/components/sidebar.test.tsx"
+        - "frontend/admin-web/tests/unit/components/Sidebar.test.tsx"
       ci:
         - pr-check.yml
       verifies: []
