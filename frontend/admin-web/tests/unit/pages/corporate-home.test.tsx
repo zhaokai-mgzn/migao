@@ -148,4 +148,17 @@ describe('CorporateHomePage（主页文案重设计：米高+小布双 Agent，�
     // 红线：不得出现「已通过认证/备案」等误导措辞
     expect(screen.queryByText(/已通过.*认证/)).not.toBeInTheDocument()
   })
+
+  it('宣传真实性：不夸大 AI 自学习/知识库检索能力（RAG POC 未开放，issue #2807）', () => {
+    render(<HomePage />)
+    // 新的真实表述
+    expect(screen.getByText(/商品·订单·物流实时查询应答/)).toBeInTheDocument()
+    expect(screen.getByText(/自动判断复杂诉求，转人工客服兜底/)).toBeInTheDocument()
+    expect(screen.getByText(/AI 应答基于实时业务数据，不编造事实/)).toBeInTheDocument()
+    // 旧夸大表述不得残留（README 决策 D1：知识库 RAG POC 阶段不开放）
+    expect(screen.queryByText(/自动学习/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/越用越懂/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/越用越精准/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/基于企业知识库精准应答/)).not.toBeInTheDocument()
+  })
 })
