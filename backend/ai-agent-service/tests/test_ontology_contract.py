@@ -42,12 +42,12 @@ REAL_AGENT_ROUTE_KEYS = {
 
 class TestSchemaIntentOwnership:
     def test_schema_declares_order_domain_intents(self, ontology):
-        """schema 必须声明订单/售后域 intent 归属（试点范围）"""
+        """schema 必须声明订单/售后域 intent 归属（试点范围，精确 6 个）"""
         owned = ontology.intent_ownership
-        assert owned is not None and len(owned) >= 6
-        for intent in ("order_query", "order_create", "logistics_track",
-                       "after_sales", "after_sales_create", "complaint"):
-            assert intent in owned, f"schema 未登记 intent {intent}"
+        assert set(owned) == {
+            "order_query", "order_create", "logistics_track",
+            "after_sales", "after_sales_create", "complaint",
+        }
         assert owned["order_query"].route_key == "order"
         assert owned["after_sales"].route_key == "aftersales"
 
