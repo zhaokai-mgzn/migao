@@ -1,0 +1,334 @@
+# =============================================================================
+# MIGAO 领域本体 schema — 机器可消费单一事实源（issue #2821 切片 1）
+#
+# 范围：切片 1 四核心对象（订单/商品SKU/售后单/客户）× 四要素（属性/关系/动作/规则）
+# 状态枚举铁律来源：docs/wiki/CONTRACT-LEDGER.md §一（勿在此处私自改枚举，
+# 修改必须同步 CONTRACT-LEDGER 与 loader.STATUS_LEXICON，否则加载直接拒绝）。
+# 字段挂载点（source）指向 admin-api Java 实体，供跨端对账。
+# =============================================================================
+version: "1.0"
+
+# ── intent 归属表（切片 3）：intent → route_key → 必须可达的 Agent ──
+# 契约校验（app.ontology.contract）据此与 skill_registry 实际映射对比，
+# 把「修改 B 端 intent 必须验证 xiaobu 路由」从注释承诺变为机器校验。
+# 试点范围：订单/售后域核心 intent；新增 intent 必须在此登记，否则 contract 报违规。
+intent_ownership:
+  order_query:
+    route_key: order
+    agents: [mibao, xiaobu]
+    description: 查询订单（B 端 order_query / C 端 customer_order_query）
+  order_create:
+    route_key: order
+    agents: [mibao, xiaobu]
+    description: 创建订单（写工具确认闸）
+  logistics_track:
+    route_key: order
+    agents: [mibao, xiaobu]
+    description: 物流查询（C 端仅本人已发货订单）
+  after_sales:
+    route_key: aftersales
+    agents: [mibao, xiaobu]
+    description: 售后咨询
+  after_sales_create:
+    route_key: aftersales
+    agents: [mibao, xiaobu]
+    description: 创建售后工单（恒 pending）
+  complaint:
+    route_key: aftersales
+    agents: [mibao, xiaobu]
+    description: 投诉（涉赔偿/法律转人工）
+
+objects:
+  order:
+    display_name: 订单
+    properties:
+      id:
+        type: string
+        required: true
+        source: "Order.id"
+        description: 订单 UUID
+      order_no:
+        type: string
+        required: true
+        source: "Order.orderNo"
+        description: 业务订单号
+      tenant_id:
+        type: string
+        required: true
+        source: "Order.tenantId"
+        description: 租户隔离字段
+      user_id:
+        type: string
+        required: false
+        source: "Order.userId"
+        description: 下单用户ID（C 端数据隔离字段，X-User-Id 透传）
+      customer_name:
+        type: string
+        required: false
+        source: "Order.customerName"
+        description: 客户姓名
+      customer_phone:
+        type: string
+        required: false
+        source: "Order.customerPhone"
+        description: 客户手机号
+      customer_address:
+        type: string
+        required: false
+        source: "Order.customerAddress"
+        description: 客户收货地址
+      total_amount:
+        type: decimal
+        required: false
+        source: "Order.totalAmount"
+        description: 订单总额
+      actual_amount:
+        type: decimal
+        required: false
+        source: "Order.actualAmount"
+        description: 实付金额
+      discount_amount:
+        type: decimal
+        required: false
+        source: "Order.discountAmount"
+        description: 优惠金额（三端字段名一致）
+      refund_amount:
+        type: decimal
+        required: false
+        source: "Order.refundAmount"
+        description: 累计退款金额
+      status:
+        type: enum
+        required: true
+        source: "Order.status"
+        values: [pending, confirmed, producing, shipped, completed, cancelled]
+        description: 订单状态（DB 枚举，生产中是 producing 非 processing）
+      follow_status:
+        type: string
+        required: false
+        source: "Order.followStatus"
+        description: 跟进状态
+      remark:
+        type: string
+        required: false
+        source: "Order.remark"
+        description: 备注
+      close_reason:
+        type: string
+        required: false
+        source: "Order.closeReason"
+        description: 关闭原因
+    relations:
+      - name: has_items
+        target: order_item
+        cardinality: "1:N"
+        description: 订单包含订单明细
+      - name: belongs_to_customer
+        target: customer
+        cardinality: "N:1"
+        description: 订单归属客户
+      - name: has_aftersales
+        target: aftersales
+        cardinality: "1:N"
+        description: 订单可挂多个售后工单
+    actions:
+      - name: order_query
+        description: 查询订单（B 端 order_query / C 端 customer_order_query）
+      - name: order_create
+        confirmation_required: true
+        description: 创建订单（写工具确认闸，GB-03）
+      - name: order_update
+        confirmation_required: true
+        preconditions:
+          - "action ∈ {update_status, update_logistics, confirm_payment, cancel, refund}"
+        description: Agent 统一改单（PATCH /api/admin/agent/orders/{id}）
+    rules:
+      - text: "订单状态枚举以 CONTRACT-LEDGER 为准（producing 非 processing）"
+        severity: must
+      - text: "服务端不信任 LLM 定价：下单重算 subtotal，单价取 SKU 权威价"
+        severity: must
+      - text: "C 端订单查询强制按 X-User-Id 过滤（user_id=本人 OR 手机号兜底），禁止跨用户"
+        severity: must
+      - text: "已发货订单取消/退款需人工确认，禁止 LLM 自行终态变更"
+        severity: must
+
+  product_sku:
+    display_name: 商品SKU
+    properties:
+      id:
+        type: string
+        required: true
+        source: "ProductSku.id"
+        description: SKU UUID
+      product_id:
+        type: string
+        required: true
+        source: "ProductSku.productId"
+        description: 所属商品
+      sku_code:
+        type: string
+        required: false
+        source: "ProductSku.skuCode"
+        description: SKU 编码
+      price:
+        type: decimal
+        required: true
+        source: "ProductSku.price"
+        description: 售价（权威价来源）
+      stock:
+        type: int
+        required: false
+        source: "ProductSku.stock"
+        description: 库存
+      status:
+        type: enum
+        required: true
+        source: "ProductSku.status"
+        values: [draft, on_sale, off_sale, under_review]
+        description: 商品状态
+      attributes:
+        type: string
+        required: false
+        source: "ProductSku.attributes"
+        description: SKU 属性（颜色/尺寸等 JSON）
+    relations:
+      - name: belongs_to_product
+        target: product
+        cardinality: "N:1"
+        description: SKU 归属商品
+      - name: has_processing_items
+        target: processing_item
+        cardinality: "N:M"
+        description: SKU 关联加工项（算料）
+    actions:
+      - name: product_query
+        description: 查询商品/SKU（B 端 product / C 端 customer_product）
+      - name: product_create
+        confirmation_required: true
+        description: 创建商品（含图片建品属性求证）
+      - name: sku_price_update
+        confirmation_required: true
+        preconditions:
+          - "price >= 0"
+        description: 单 SKU 改价（PATCH /api/admin/agent/products/{id}/skus/{skuId}）
+    rules:
+      - text: "SKU 价格是权威价：下单/改价一律以 SKU 价格为基准，禁止向顾客索要价格"
+        severity: must
+      - text: "小布（C 端）无改价/取消类动作：L0 工具白名单物理隔离资金/改价/取消工具"
+        severity: must
+      - text: "价格/库存变更需确认闸（GB-03）"
+        severity: must
+
+  aftersales:
+    display_name: 售后单
+    properties:
+      id:
+        type: string
+        required: true
+        source: "AfterSalesTicket.id"
+        description: 售后工单 UUID
+      order_id:
+        type: string
+        required: true
+        source: "AfterSalesTicket.orderId"
+        description: 关联订单
+      status:
+        type: enum
+        required: true
+        source: "AfterSalesTicket.status"
+        values: [pending, processing, rejected, resolved, closed]
+        description: 售后工单状态
+      type:
+        type: string
+        required: false
+        source: "AfterSalesTicket.type"
+        description: 售后类型（退货/换货/维修）
+      reason:
+        type: string
+        required: false
+        source: "AfterSalesTicket.reason"
+        description: 售后原因
+      refund_amount:
+        type: decimal
+        required: false
+        source: "AfterSalesTicket.refundAmount"
+        description: 退款金额
+    relations:
+      - name: references_order
+        target: order
+        cardinality: "N:1"
+        description: 售后单关联订单
+    actions:
+      - name: aftersales_create
+        confirmation_required: true
+        preconditions:
+          - "创建恒 pending，由商户审核"
+        description: 创建售后工单（写工具确认闸，GB-03）
+      - name: aftersales_query
+        description: 查询售后（B 端 / C 端 customer_aftersales，C 端强制按本人订单反查）
+      - name: aftersales_update
+        confirmation_required: true
+        description: 售后处理（B 端）
+    rules:
+      - text: "售后申请创建恒 pending，由商户审核；AI 只解释规则与收集材料，不做终态承诺"
+        severity: must
+      - text: "售后 resolved + refund/return 类 → 订单累加 refundAmount、写退款流水"
+        severity: must
+      - text: "小布无退款/改价/取消工具；涉赔偿/法律一律转人工"
+        severity: must
+      - text: "C 端售后查询按 X-User-Id 反查本人订单，只返回这些订单上的工单"
+        severity: must
+
+  customer:
+    display_name: 客户
+    properties:
+      id:
+        type: string
+        required: true
+        source: "CustomerProfile.id"
+        description: 客户 UUID
+      name:
+        type: string
+        required: false
+        source: "CustomerProfile.name"
+        description: 客户姓名
+      phone:
+        type: string
+        required: false
+        source: "CustomerProfile.phone"
+        description: 客户手机号
+      address:
+        type: string
+        required: false
+        source: "CustomerProfile.address"
+        description: 客户地址
+      user_id:
+        type: string
+        required: false
+        source: "CustomerProfile.userId"
+        description: 绑定用户ID（C 端）
+      last_active_at:
+        type: datetime
+        required: false
+        source: "CustomerProfile.lastActiveAt"
+        description: 最近活跃时间
+    relations:
+      - name: has_orders
+        target: order
+        cardinality: "1:N"
+        description: 客户名下订单
+      - name: has_aftersales
+        target: aftersales
+        cardinality: "1:N"
+        description: 客户名下售后
+    actions:
+      - name: customer_query
+        description: 查询客户（B 端 customer_query / C 端仅本人）
+      - name: customer_create
+        confirmation_required: true
+        description: 客户建档（下单自动建档）
+    rules:
+      - text: "老客户只刷新 lastActiveAt，不重复累计画像（勿重复实现）"
+        severity: must
+      - text: "客户 PII（手机号/地址）只用于订单关联与授权查询，禁止注入无关记忆"
+        severity: must

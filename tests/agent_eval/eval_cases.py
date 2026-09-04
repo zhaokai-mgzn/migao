@@ -1552,6 +1552,48 @@ _CASE_OB_005 = EvalCase(
     tags=['homepage', 'compliance', 'gb47746'],
 )
 
+# ── ON-001 [NORMAL] 本体 schema 加载与状态枚举校验（订单/商品/售后/客户）（源: cases/ontology.yml）──
+_CASE_ON_001 = EvalCase(
+    id='ON-001',
+    legacy_id='',
+    title='本体 schema 加载与状态枚举校验（订单/商品/售后/客户）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['加载默认本体 schema，校验四对象（订单/商品SKU/售后单/客户）定义与状态枚举'],
+    expectations=['none'],
+    data_checks=['默认 schema.yaml 存在且可加载，返回 Ontology 含 order/product_sku/aftersales/customer 四对象', '订单状态枚举 == [pending, confirmed, producing, shipped, completed, cancelled]（与 CONTRACT-LEDGER 的 OrderService.java 状态机一致，生产中是 producing 非 processing）', '售后工单状态枚举 == [pending, processing, rejected, resolved, closed]', '商品状态枚举 == [draft, on_sale, off_sale, under_review]', '非法状态值（如 processing 混入订单枚举）加载校验必须拒绝并给出明确错误'],
+    skip_reason='本体模块为纯数据结构契约，由 pytest 单测验证（backend/ai-agent-service/tests/test_ontology_schema.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ontology', 'schema', 'enum_alignment'],
+)
+
+# ── ON-002 [NORMAL] vision 分析候选实体写入上下文实体槽（G10 修复）（源: cases/ontology.yml）──
+_CASE_ON_002 = EvalCase(
+    id='ON-002',
+    legacy_id='',
+    title='vision 分析候选实体写入上下文实体槽（G10 修复）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户发图，vision 分析识别出候选商品/订单/客户 → 候选实体写入 context_manager 实体槽 → 后续轮次 build_context 注入'],
+    expectations=['none'],
+    data_checks=['record_vision_candidates 写入后 get_entities 返回包含 source=vision 的候选实体', 'build_context 注入的上下文包含 vision 候选实体（图片关联对象有召回保障）', '重复写入同一候选去重；非法 entity_type 拒绝', '实体槽与 _extract_entities 的工具结果提取共存（vision 与工具结果互不覆盖）'],
+    skip_reason='上下文记忆为纯数据结构契约，由 pytest 单测验证（backend/ai-agent-service/tests/test_ontology_vision_grounding.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ontology', 'vision', 'context_memory', 'grounding'],
+)
+
+# ── ON-003 [NORMAL] intent 归属表入 schema + 双端能力视图契约校验（源: cases/ontology.yml）──
+_CASE_ON_003 = EvalCase(
+    id='ON-003',
+    legacy_id='',
+    title='intent 归属表入 schema + 双端能力视图契约校验',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['schema 声明 intent→route_key→agents 归属表；契约校验与 skill_registry 实际映射对比'],
+    expectations=['none'],
+    data_checks=['schema.intent_ownership 声明订单/售后域 intent 归属（order_query→order 等）', '契约校验：schema 声明 intent 必须存在于 skill 映射；实际 intent 必须登记 schema；双端（mibao/xiaobu）声明的 route_key 必须各自可达', '缺失/漂移返回违规清单（不抛异常，由调用方决定阻断）'],
+    skip_reason='契约校验为纯数据结构逻辑，由 pytest 单测验证（backend/ai-agent-service/tests/test_ontology_contract.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ontology', 'intent_ownership', 'contract', 'dual_agent'],
+)
+
 # ── OR-001 [SMOKE] 订单列表查询（源: cases/order.yml）──
 _CASE_OR_001 = EvalCase(
     id='OR-001',
@@ -2473,6 +2515,9 @@ ALL_CASES = (
     _CASE_OB_003,
     _CASE_OB_004,
     _CASE_OB_005,
+    _CASE_ON_001,
+    _CASE_ON_002,
+    _CASE_ON_003,
     _CASE_OR_001,
     _CASE_OR_002,
     _CASE_OR_003,

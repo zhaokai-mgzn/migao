@@ -9,7 +9,7 @@ Agent Context Manager — 在 ReAct 循环前主动构建上下文注入 LLM。
 
 import json
 import time as _time
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 from collections import OrderedDict
 from loguru import logger
 
@@ -90,6 +90,55 @@ class AgentContextManager:
 
         # 自动提取 entities
         self._extract_entities(cache, tool_name, result)
+
+    def record_vision_candidates(
+        self, session_id: str, entity_type: str, candidates: List[dict]
+    ) -> None:
+        """记录 vision 分析识别出的候选实体到上下文实体槽（issue #2821 切片 2）
+
+        图片链路 grounding 关键一步：vision 分析结果写入实体槽后，
+        build_context 跨轮注入「图片关联对象」——澄清卡候选 grounded 到商户对象
+        有了代码层保障（G10 修复）。
+
+        Args:
+            session_id: 会话 ID
+            entity_type: 实体类型，必须 ∈ ENTITY_DOMAIN（order_nos/product_ids/
+                         processing_item_ids/customer_ids/aftersale_nos）
+            candidates: 候选实体列表，每项含 id/name，如
+                        [{"id": "sku-1", "name": "雪尼尔遮光窗帘"}]
+
+        Raises:
+            ValueError: entity_type 不在 ENTITY_DOMAIN 中
+        """
+        if entity_type not in self.ENTITY_DOMAIN:
+            raise ValueError(
+                f"非法实体类型 {entity_type}，合法值: {sorted(self.ENTITY_DOMAIN)}"
+            )
+        cache = self._get_or_create(session_id)
+        if "entities" not in cache:
+            cache["entities"] = {}
+        entities = cache["entities"]
+
+        existing = entities.setdefault(entity_type, [])
+        for cand in candidates or []:
+            if not isinstance(cand, dict):
+                continue
+            eid = cand.get("id") or cand.get("no") or ""
+            name = cand.get("name", "")
+            if not eid:
+                continue
+            if any(e.get("id") == eid or e.get("no") == eid for e in existing):
+                continue
+            existing.append({"id": eid, "name": name, "source": "vision"})
+            # 记录实体域归属（与 _extract_entities 一致，供 reset_domain 精确清空）
+            domain = self.ENTITY_DOMAIN.get(entity_type)
+            if domain:
+                idx = cache.setdefault(self.DOMAIN_INDEX_KEY, {})
+                idx.setdefault(entity_type, {})[eid] = domain
+
+        # 限制每类实体数量（与 _extract_entities 一致）
+        if len(existing) > self.MAX_ENTITIES:
+            del existing[: len(existing) - self.MAX_ENTITIES]
 
     def set_last_skill(self, session_id: str, skill_name: str) -> None:
         """记录当前 skill"""

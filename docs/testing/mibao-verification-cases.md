@@ -1337,6 +1337,47 @@
 真值: frontend-fix.vitest, frontend-fix.tsc, frontend-fix.no-api-change
 溯源: 2026-09-03 新增：GB/T 47746-2026 合规官网宣称（issue #2787） ｜ tags: homepage, compliance, gb47746
 
+## ontology（3 case）
+
+### ON-001. 本体 schema 加载与状态枚举校验（订单/商品/售后/客户） 🔵
+```
+你: 加载默认本体 schema，校验四对象（订单/商品SKU/售后单/客户）定义与状态枚举
+期望: none
+数据: 默认 schema.yaml 存在且可加载，返回 Ontology 含 order/product_sku/aftersales/customer 四对象
+数据: 订单状态枚举 == [pending, confirmed, producing, shipped, completed, cancelled]（与 CONTRACT-LEDGER 的 OrderService.java 状态机一致，生产中是 producing 非 processing）
+数据: 售后工单状态枚举 == [pending, processing, rejected, resolved, closed]
+数据: 商品状态枚举 == [draft, on_sale, off_sale, under_review]
+数据: 非法状态值（如 processing 混入订单枚举）加载校验必须拒绝并给出明确错误
+跳过: 本体模块为纯数据结构契约，由 pytest 单测验证（backend/ai-agent-service/tests/test_ontology_schema.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: ai-chat.context-memory
+溯源: 2026-09-04 新增：issue #2821 本体模块切片 1（schema + loader + 校验） ｜ tags: ontology, schema, enum_alignment
+
+### ON-002. vision 分析候选实体写入上下文实体槽（G10 修复） 🔵
+```
+你: 用户发图，vision 分析识别出候选商品/订单/客户 → 候选实体写入 context_manager 实体槽 → 后续轮次 build_context 注入
+期望: none
+数据: record_vision_candidates 写入后 get_entities 返回包含 source=vision 的候选实体
+数据: build_context 注入的上下文包含 vision 候选实体（图片关联对象有召回保障）
+数据: 重复写入同一候选去重；非法 entity_type 拒绝
+数据: 实体槽与 _extract_entities 的工具结果提取共存（vision 与工具结果互不覆盖）
+跳过: 上下文记忆为纯数据结构契约，由 pytest 单测验证（backend/ai-agent-service/tests/test_ontology_vision_grounding.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: ai-chat.context-memory
+溯源: 2026-09-04 新增：issue #2821 切片 2（vision 候选实体 → 上下文实体槽） ｜ tags: ontology, vision, context_memory, grounding
+
+### ON-003. intent 归属表入 schema + 双端能力视图契约校验 🔵
+```
+你: schema 声明 intent→route_key→agents 归属表；契约校验与 skill_registry 实际映射对比
+期望: none
+数据: schema.intent_ownership 声明订单/售后域 intent 归属（order_query→order 等）
+数据: 契约校验：schema 声明 intent 必须存在于 skill 映射；实际 intent 必须登记 schema；双端（mibao/xiaobu）声明的 route_key 必须各自可达
+数据: 缺失/漂移返回违规清单（不抛异常，由调用方决定阻断）
+跳过: 契约校验为纯数据结构逻辑，由 pytest 单测验证（backend/ai-agent-service/tests/test_ontology_contract.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: ai-chat.context-memory
+溯源: 2026-09-04 新增：issue #2821 切片 3（intent 归属 schema + 契约校验） ｜ tags: ontology, intent_ownership, contract, dual_agent
+
 ## 订单域（13 case）
 
 ### OR-001. 订单列表查询 🟢
@@ -2024,8 +2065,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：166（活跃 98，跳过 68）
-- tier 分布：smoke 10 / normal 128 / adversarial 28
+- 用例总数：169（活跃 98，跳过 71）
+- tier 分布：smoke 10 / normal 131 / adversarial 28
 - 售后域：5
 - agents：6
 - api：10
@@ -2039,6 +2080,7 @@
 - 人事域：5
 - misc：15
 - onboarding：5
+- ontology：3
 - 订单域：13
 - 加工项域：4
 - 商品域：13
