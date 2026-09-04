@@ -1337,6 +1337,22 @@
 真值: frontend-fix.vitest, frontend-fix.tsc, frontend-fix.no-api-change
 溯源: 2026-09-03 新增：GB/T 47746-2026 合规官网宣称（issue #2787） ｜ tags: homepage, compliance, gb47746
 
+## ontology（1 case）
+
+### OB-001. 本体 schema 加载与状态枚举校验（订单/商品/售后/客户） 🔵
+```
+你: 加载默认本体 schema，校验四对象（订单/商品SKU/售后单/客户）定义与状态枚举
+期望: none
+数据: 默认 schema.yaml 存在且可加载，返回 Ontology 含 order/product_sku/aftersales/customer 四对象
+数据: 订单状态枚举 == [pending, confirmed, producing, shipped, completed, cancelled]（与 CONTRACT-LEDGER 的 OrderService.java 状态机一致，生产中是 producing 非 processing）
+数据: 售后工单状态枚举 == [pending, processing, rejected, resolved, closed]
+数据: 商品状态枚举 == [draft, on_sale, off_sale, under_review]
+数据: 非法状态值（如 processing 混入订单枚举）加载校验必须拒绝并给出明确错误
+跳过: 本体模块为纯数据结构契约，由 pytest 单测验证（backend/ai-agent-service/tests/test_ontology_schema.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: ai-chat.context-memory
+溯源: 2026-09-04 新增：issue #2821 本体模块切片 1（schema + loader + 校验） ｜ tags: ontology, schema, enum_alignment
+
 ## 订单域（13 case）
 
 ### OR-001. 订单列表查询 🟢
@@ -2024,8 +2040,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：166（活跃 98，跳过 68）
-- tier 分布：smoke 10 / normal 128 / adversarial 28
+- 用例总数：167（活跃 98，跳过 69）
+- tier 分布：smoke 10 / normal 129 / adversarial 28
 - 售后域：5
 - agents：6
 - api：10
@@ -2039,6 +2055,7 @@
 - 人事域：5
 - misc：15
 - onboarding：5
+- ontology：1
 - 订单域：13
 - 加工项域：4
 - 商品域：13

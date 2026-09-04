@@ -1552,6 +1552,20 @@ _CASE_OB_005 = EvalCase(
     tags=['homepage', 'compliance', 'gb47746'],
 )
 
+# ── OB-001 [NORMAL] 本体 schema 加载与状态枚举校验（订单/商品/售后/客户）（源: cases/ontology.yml）──
+_CASE_OB_001 = EvalCase(
+    id='OB-001',
+    legacy_id='',
+    title='本体 schema 加载与状态枚举校验（订单/商品/售后/客户）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['加载默认本体 schema，校验四对象（订单/商品SKU/售后单/客户）定义与状态枚举'],
+    expectations=['none'],
+    data_checks=['默认 schema.yaml 存在且可加载，返回 Ontology 含 order/product_sku/aftersales/customer 四对象', '订单状态枚举 == [pending, confirmed, producing, shipped, completed, cancelled]（与 CONTRACT-LEDGER 的 OrderService.java 状态机一致，生产中是 producing 非 processing）', '售后工单状态枚举 == [pending, processing, rejected, resolved, closed]', '商品状态枚举 == [draft, on_sale, off_sale, under_review]', '非法状态值（如 processing 混入订单枚举）加载校验必须拒绝并给出明确错误'],
+    skip_reason='本体模块为纯数据结构契约，由 pytest 单测验证（backend/ai-agent-service/tests/test_ontology_schema.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ontology', 'schema', 'enum_alignment'],
+)
+
 # ── OR-001 [SMOKE] 订单列表查询（源: cases/order.yml）──
 _CASE_OR_001 = EvalCase(
     id='OR-001',
@@ -2473,6 +2487,7 @@ ALL_CASES = (
     _CASE_OB_003,
     _CASE_OB_004,
     _CASE_OB_005,
+    _CASE_OB_001,
     _CASE_OR_001,
     _CASE_OR_002,
     _CASE_OR_003,

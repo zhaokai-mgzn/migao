@@ -92,6 +92,10 @@ modules:
         tests:
           - 'tests/test_llm_{1}.py'
           - 'tests/test_{1}.py'
+      # 领域本体模块（issue #2821）：schema/loader/models 由 test_ontology_schema 统一覆盖
+      - pattern: 'backend/ai-agent-service/app/ontology/(.+)\.py'
+        tests:
+          - 'tests/test_ontology_schema.py'
       - pattern: 'backend/ai-agent-service/app/(.+)\.py'
         tests:
           - 'tests/test_{1}.py'
