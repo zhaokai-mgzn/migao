@@ -153,7 +153,7 @@
 ### 6.2 评估后暂不修改（含决策依据）
 
 - **human_handoff 确认闸**（P2-2.5 建议 `requires_confirmation=True`）：**不改**。依据：①转人工是**用户显式请求**（"我要转人工"本身即确认意图），非 LLM 自发写操作；②#2812 刚验收的 E2E（CH-013/014）期望「我要转人工→SSE human_handoff→C 端横幅」直转链路，加闸会拦截（last_msg 非确认词）导致链路断裂；③GB 3.2 要求「转人工便捷入口、不层层隐藏」，加确认闸与之冲突。风险已由 prompt 铁律（EXAMPLES-customer_aftersales 转人工边界）+ allowed_roles=["customer"] 覆盖。
-- **PR-010 偶发失败**（smoke 9 用例中 1 个 ⚠️ 80%）：本地与 CI 表现不一致（CI 缺 product_update(price=198)、本地缺 product_processing_item_manage(action=add)），属 7 轮长链 LLM 波动，非本批引入、非 required check，记录观察不修。
+- **PR-010 偶发失败**（smoke 9 用例中 1 个 ⚠️ 80%）：本地与 CI 表现不一致且**失败点每次不同**——CI 缺 `product_update(price=198)`（tools 序列无 product_update，仅 product_processing_item_manage）、本地缺 `product_processing_item_manage(action=add)`（tools 序列无该工具）→ 属 7 轮长链 LLM 波动（同一期望两轮落点不同），非本批引入、非 required check，记录观察不修。PR #2820 CI 复现同型失败（8/9，仅 PR-010 80%）。
 - **gate 组件测试缺口**（P1-1.3，23 个子目录测试 + 60 条豁免）：工程级测试搬迁，涉及 qa-exemptions 大改与全量 E2E 回归，**建议独立 PR** 处理，不在本批混合提交。
 - **Java/前端整组升级**（P1-1.4/1.5）、**langchain 依赖防护**（P2-2.10）、**venv 重建**（P2-2.12）：工程级任务，独立排期。
 - **admin-web `.env.*` 入库**（P2-2.7）、**deploy.sh 配置随 main 漂移**（P2-2.8）、**render_cases 域映射**（P2-2.9）、**CU-003 文档口径**（P2-2.13）、**端口/schema 口径**（P2-2.14）：留待后续批次，避免本批 diff 过大。
