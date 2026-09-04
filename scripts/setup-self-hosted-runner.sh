@@ -24,7 +24,7 @@ set -uo pipefail
 
 REPO="zhaokai-mgzn/migao"
 RUNNER_DIR="${RUNNER_DIR:-$HOME/actions-runner}"
-RUNNER_VERSION="2.319.1"   # 2026-09 稳定版，按需升级
+RUNNER_VERSION="2.337.0"   # 2026-08 最新稳定版，按需升级（查：gh api repos/actions/runner/releases/latest）
 ARCH="$(uname -m)"; [ "$ARCH" = "arm64" ] && RUNNER_ARCH="arm64" || RUNNER_ARCH="x64"
 OS="$(uname -s | tr 'A-Z' 'a-z')"   # darwin / linux
 
