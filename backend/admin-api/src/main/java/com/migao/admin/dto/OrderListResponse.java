@@ -35,6 +35,11 @@ public class OrderListResponse {
     private String customerPhone;
 
     /**
+     * 收货地址（issue #2815：C 端下单自动填充用；BeanUtils.copyProperties 自动复制）
+     */
+    private String customerAddress;
+
+    /**
      * 总金额（商品小计 + 加工费）
      */
     private BigDecimal totalAmount;

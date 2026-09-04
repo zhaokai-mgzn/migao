@@ -1,4 +1,4 @@
-// case_ids: OR-001, DF-002
+// case_ids: OR-001, DF-002, CH-025
 package com.migao.admin.controller;
 
 import com.migao.admin.controller.agent.AgentOrderController;
@@ -155,6 +155,29 @@ class AgentOrderControllerMineTest extends BaseControllerTest {
                     .andExpect(status().is4xxClientError());
 
             verify(orderService, never()).getMyOrderPage(anyLong(), anyLong(), any(), anyLong(), any(), any());
+        }
+
+        @Test
+        @DisplayName("响应含收货地址（issue #2815：C 端下单自动填充数据源）")
+        void responseCarriesCustomerAddress() throws Exception {
+            setServiceUserWithRealId("customer-001");
+            when(userMapper.selectById("customer-001")).thenReturn(
+                    User.builder().id("customer-001").phone(null).build());
+
+            OrderListResponse order = new OrderListResponse();
+            order.setId("o1");
+            order.setOrderNo("ORD-001");
+            order.setCustomerName("张三");
+            order.setCustomerPhone("13800138000");
+            order.setCustomerAddress("杭州西湖区文三路1号");
+            when(orderService.getMyOrderPage(
+                    eq(1L), eq(10L), isNull(), eq(TEST_TENANT_ID), eq("customer-001"), isNull()))
+                    .thenReturn(PageResponse.of(1L, 1L, 10L, List.of(order)));
+
+            mockMvc.perform(get(MINE))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.items[0].customerAddress").value("杭州西湖区文三路1号"))
+                    .andExpect(jsonPath("$.data.items[0].customerName").value("张三"));
         }
     }
 }

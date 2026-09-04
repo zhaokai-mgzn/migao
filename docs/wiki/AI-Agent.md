@@ -42,7 +42,7 @@ app/
 | 域 | Tools |
 |----|-------|
 | 商品 | product_search, product_detail, product_manage, category_manage |
-| 订单 | order_search, order_detail, order_create, order_manage, logistics_track |
+| 订单 | order_search, order_detail, order_create, order_manage, logistics_track, customer_order_query, customer_address_query |
 | 售后 | aftersale_create, aftersale_query, after_sales_manage |
 | 加工 | processing_item_query, processing_item_manage, processing_items |
 | 库存 | inventory_manage |
