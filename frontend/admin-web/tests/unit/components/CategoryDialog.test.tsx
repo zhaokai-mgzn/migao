@@ -1,3 +1,4 @@
+// case_ids: CT-002
 /**
  * CategoryDialog 组件测试
  * 覆盖：#563 — Modal 渲染、表单字段、新增/编辑模式

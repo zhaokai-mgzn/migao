@@ -1,3 +1,4 @@
+// case_ids: PR-008
 /**
  * RichTextEditor 组件测试
  * 覆盖：#563 — 工具栏渲染、编辑区渲染、placeholder
