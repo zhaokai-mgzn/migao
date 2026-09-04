@@ -1,8 +1,10 @@
-// case_ids: OR-001, AS-001
+// case_ids: OR-001, AS-001, UI-015
 /**
  * 个人中心页面测试
  *
  * 覆盖: 未登录状态、已登录渲染、统计数据、退出登录
+ *
+ * UI-015: 移除「账号信息」占位入口（功能开发中 → 占位消失，避免 POC 演示露馅）
  */
 import React from 'react'
 import { render, screen, fireEvent } from '@testing-library/react'
@@ -100,9 +102,10 @@ describe('ProfilePage', () => {
     expect(screen.getByText('测')).toBeTruthy()
   })
 
-  it('应显示设置菜单项', () => {
+  it('应显示设置菜单项（账号信息占位已移除，UI-015）', () => {
     render(<ProfilePage />)
-    expect(screen.getByText('账号信息')).toBeTruthy()
+    // UI-015：无「功能开发中」占位入口残留
+    expect(screen.queryByText('账号信息')).toBeNull()
     expect(screen.getByText('关于我们')).toBeTruthy()
     expect(screen.getByText('隐私协议')).toBeTruthy()
   })
@@ -139,15 +142,6 @@ describe('ProfilePage', () => {
     expect(Taro.redirectTo).toHaveBeenCalledWith({
       url: '/pages/auth/login/index',
     })
-  })
-
-  it('点击"账号信息"应提示功能开发中', () => {
-    render(<ProfilePage />)
-    fireEvent.click(screen.getByText('账号信息'))
-
-    expect(Taro.showToast).toHaveBeenCalledWith(
-      expect.objectContaining({ title: '功能开发中' }),
-    )
   })
 
   it('点击"关于我们"应显示版本弹窗', () => {

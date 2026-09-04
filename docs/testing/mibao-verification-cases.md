@@ -1880,7 +1880,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## ui（13 case）
+## ui（16 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -2050,6 +2050,42 @@
 真值: frontend-fix.no-api-change, frontend-fix.vitest
 溯源: 2026-09-02 新增：POC 演示修复 — 拍照找布场景顾客发纯图会被 chatStore 静默拦截（chatStore.ts `!content.trim()` 守卫），须文字同行才发得出 ｜ tags: mini-app, chat-input, image, vision
 
+### UI-014. 小布聊天主页快捷入口新增「算料报价」全宽主入口（POC 算料闭环直达） 🔵
+```
+你: 顾客打开小布聊天主页，快捷入口区应有一个醒目的「算料报价」入口可直达算料报价链路
+期望: direct_reply
+数据: QuickActions 渲染 5 个入口：算料报价/查订单/找产品/售后咨询/查物流（无「退换货」「转人工」文案残留）
+数据: 「算料报价」是首项且带 wide 全宽样式（2 列网格中 grid-column 1/-1 跨整行），视觉突出
+数据: 点击「算料报价」发送算料 prompt（含 quote 路由关键词：用料/报价），直达 curtain_calc 算料报价链路
+数据: 其余 4 入口行为不回归（查订单/找产品/售后咨询/查物流 prompt 不变）
+跳过: 纯前端入口由 mini-app jest 单测验证（quick-actions.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.xiaobu-quick-actions
+溯源: 2026-09-04 新增：POC 演示增强 — 算料报价是演示第 2 幕核心动作，此前仅靠顾客手打话术，加全宽快捷入口一键直达 ｜ tags: mini-app, quick-actions, quote
+
+### UI-015. 我的页移除「账号信息」占位入口（功能开发中占位不进 POC 演示） 🔵
+```
+你: 顾客打开「我的」页，设置列表不应出现点了只提示「功能开发中」的占位入口
+期望: direct_reply
+数据: 设置列表无「账号信息」占位入口（页面顶部已有用户信息，占位菜单冗余）
+数据: 「关于我们」「隐私协议」「退出登录」等真实入口保留，不回归
+跳过: 纯前端 UI 由 mini-app jest 单测验证（profile-page.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-09-04 新增：POC 演示清理 — 老板现场点「账号信息」会看到「功能开发中」toast，露馅，先移除占位 ｜ tags: mini-app, profile
+
+### UI-016. C 端品牌名去硬编码 — 导航副标题企业名取自企业设置租户名（tenantName） 🔵
+```
+你: 多租户场景下，C 端聊天页导航副标题应显示当前企业（租户）设置里的公司名，而不是写死的「米高窗帘」
+期望: direct_reply
+数据: 导航副标题由 buildBrandSubtitle(user.tenantName) 生成：有租户名 → 「{企业名} · 智能购物助手」
+数据: 租户名为空/未登录 → 仅「智能购物助手」，不硬编码默认企业名
+数据: User 类型含 tenantName（camelCase，对齐 admin-api mini/login 返回）
+跳过: 纯前端文案由 mini-app jest 单测验证（brand.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-09-04 新增：品牌硬编码修复 — 导航副标题原写死「米高窗帘」，多租户下串台 ｜ tags: mini-app, brand
+
 ## utils（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -2079,8 +2115,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：170（活跃 98，跳过 72）
-- tier 分布：smoke 10 / normal 132 / adversarial 28
+- 用例总数：173（活跃 98，跳过 75）
+- tier 分布：smoke 10 / normal 135 / adversarial 28
 - 售后域：5
 - agents：6
 - api：10
@@ -2101,7 +2137,7 @@
 - registry：1
 - 设置域：8
 - token-refresh：4
-- ui：13
+- ui：16
 - utils：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）

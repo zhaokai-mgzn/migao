@@ -35,6 +35,32 @@
     }
   }
 
+  // 算料报价全宽主入口（UI-014，POC 核心动作）：2 列网格中跨整行 + 品牌强调
+  &__item--wide {
+    grid-column: 1 / -1;
+    flex-direction: row;
+    gap: 12px;
+    padding: 18px 24px;
+    background: linear-gradient(135deg, $primary-color 0%, #3b82f6 100%);
+    border-color: transparent;
+
+    .quick-actions__icon {
+      font-size: 36px;
+      margin-bottom: 0;
+    }
+
+    .quick-actions__label {
+      color: #ffffff;
+      font-size: 30px;
+      font-weight: 600;
+    }
+
+    &:active {
+      background: linear-gradient(135deg, $primary-color 0%, #3b82f6 100%);
+      border-color: transparent;
+    }
+  }
+
   &__icon {
     font-size: 40px;
     margin-bottom: 10px;

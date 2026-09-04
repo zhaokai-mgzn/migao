@@ -3,6 +3,7 @@ import { View, Text } from '@tarojs/components'
 import Taro, { useDidShow } from '@tarojs/taro'
 import { useChatStore } from '../../../store/chatStore'
 import { useAuthStore } from '../../../store/authStore'
+import { buildBrandSubtitle } from '../../../utils/brand'
 import MessageList from '../../../components/chat/MessageList'
 import MessageInput from '../../../components/chat/MessageInput'
 import QuickActions from '../../../components/chat/QuickActions'
@@ -22,7 +23,7 @@ export default function ChatPage() {
     stopStreaming,
   } = useChatStore()
 
-  const { isLoggedIn, checkAuth, login } = useAuthStore()
+  const { isLoggedIn, checkAuth, login, user } = useAuthStore()
 
   // 状态栏高度（自定义导航栏需要）
   const [statusBarHeight, setStatusBarHeight] = useState(20)
@@ -112,7 +113,7 @@ export default function ChatPage() {
           </View>
         </View>
         <View className='chat-page__navbar-right'>
-          <Text className='chat-page__navbar-sub'>米高窗帘 · 智能购物助手</Text>
+          <Text className='chat-page__navbar-sub'>{buildBrandSubtitle(user?.tenantName)}</Text>
           {/* 新对话（清空工作状态，不展示会话列表） */}
           <View className='chat-page__new-chat' onClick={handleNewChat} hoverClass='chat-page__new-chat--hover'>
             <Text className='chat-page__new-chat-text'>🔄 新对话</Text>
