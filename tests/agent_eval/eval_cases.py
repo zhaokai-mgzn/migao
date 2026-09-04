@@ -698,6 +698,34 @@ _CASE_CH_023 = EvalCase(
     tags=['clarification', 'multimodal', 'image', 'grounded'],
 )
 
+# ── CH-024 [NORMAL] C端老客户偏好识别 - 长期记忆注入（小布）（源: cases/chat.yml）──
+_CASE_CH_024 = EvalCase(
+    id='CH-024',
+    legacy_id='',
+    title='C端老客户偏好识别 - 长期记忆注入（小布）',
+    skill=Skill.MULTI_TURN,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['帮我看看有没有奶油风遮光窗帘'],
+    expectations=['product_search'],
+    data_checks=['仅 xiaobu 会话注入用户长期记忆（format_for_prompt 输出经消毒后拼入 system prompt）', "注入的记忆来自 user_memories 表且 agent_type='xiaobu'、importance>=0.5、LIMIT 20", 'mibao（B端）会话不注入用户记忆（agent_type 分流）', '注入文本做过 XML 转义/长度截断（防持久化注入，审计 07 P1-L9）'],
+    skip_reason='记忆注入链路由 pytest 单测验证（tests/test_user_memory.py + tests/test_memory_injection.py），agent-eval 无稳定记忆数据',
+    tags=['memory', 'xiaobu', 'long_term', 'personalization'],
+)
+
+# ── CH-025 [NORMAL] 下单地址自动填充 - 最近订单收货信息预填（可修改）（源: cases/chat.yml）──
+_CASE_CH_025 = EvalCase(
+    id='CH-025',
+    legacy_id='',
+    title='下单地址自动填充 - 最近订单收货信息预填（可修改）',
+    skill=Skill.MULTI_TURN,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['我要买那个遮光窗帘，帮我下单', '确认'],
+    expectations=['customer_address_query', 'interact(component=form)', 'order_create'],
+    data_checks=['老客户（有历史订单）下单时先调 customer_address_query 取最近订单收货信息', 'interact form 预填收货人/手机号/地址（formFields 带 value），用户可修改', '新客户（无历史订单）customer_address_query 返回空 → 维持原表单询问流程', 'customer_address_query 仅查当前用户本人订单（强制 user_id 过滤，只读）'],
+    skip_reason='工具与 skill prompt 由 pytest 单测验证（tests/test_customer_address_query.py），agent-eval 无稳定订单数据',
+    tags=['memory', 'xiaobu', 'address_prefill', 'order_create'],
+)
+
 # ── CR-001 [NORMAL] 查商品 → 下单（跨 Skill 复用 UUID）（源: cases/cross.yml）──
 _CASE_CR_001 = EvalCase(
     id='CR-001',
@@ -1410,6 +1438,48 @@ _CASE_MC_012 = EvalCase(
     data_checks=['CI workflow 的 Create Issue step 必须先 search 同标题 open issue：已存在 → 仅评论追加 run 链接；不存在 → 才 issues.create', '守卫与创建逻辑同属一个 github-script step，避免 failure 时重复 issue 堆积'],
     skip_reason='CI workflow 结构由 pytest 单测验证（tests/unit_ci_workflows/test_issue_dedup_guard.py），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['ci', 'issue-dedup', 'nightly'],
+)
+
+# ── MC-013 [NORMAL] 记忆提取 C 端受控词表 + PII 变体过滤 + agent_type 分流（源: cases/misc.yml）──
+_CASE_MC_013 = EvalCase(
+    id='MC-013',
+    legacy_id='',
+    title='记忆提取 C 端受控词表 + PII 变体过滤 + agent_type 分流',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 记忆提取：仅 C 端（xiaobu）落库；key 受控词表约束；PII 变体 key/值拦截'],
+    expectations=['direct_reply'],
+    data_checks=["extract_memories_from_turn/extract_and_save 新增 agent_type 参数：agent_type != 'xiaobu' → 直接返回 0/[]（B 端不落库）", 'C 端受控词表 CEND_MEMORY_KEYS：LLM 返回的 key 不在词表内 → 丢弃；词表含 curtain_style/curtain_color/window_size/budget 等画像字段', '_filter_pii 变体拦截：key 词根匹配（phone/mobile/address/name/contact/wechat/id_card/idcard 等 40+ 变体）而非精确黑名单；value 含手机号/邮箱 → 丢弃', 'context 字段去 PII：不再写原始 user_message 明文（或做脱敏），避免手机号/地址落库'],
+    skip_reason='纯函数/依赖注入 mock 由 pytest 单测验证（tests/test_memory_extractor.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['memory', 'extractor', 'pii', 'agent_split'],
+)
+
+# ── MC-014 [NORMAL] 用户记忆 agent_type 读写 + format_for_prompt 消毒（源: cases/misc.yml）──
+_CASE_MC_014 = EvalCase(
+    id='MC-014',
+    legacy_id='',
+    title='用户记忆 agent_type 读写 + format_for_prompt 消毒',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 用户记忆管理：agent_type 维度读写；注入文本消毒防持久化注入'],
+    expectations=['direct_reply'],
+    data_checks=['upsert/batch_upsert 写入 agent_type（xiaobu/mibao）；get_important_memories/format_for_prompt 支持按 agent_type 过滤', 'format_for_prompt 输出消毒：XML 标签转义（<>&）、值长度截断、strip 控制字符 → 防跨会话持久化注入（审计 07 P1-L9）', '消毒后注入仅对 xiaobu 生效（agent_type 分流，CH-024 关联）'],
+    skip_reason='依赖注入 mock 的 async 方法由 pytest 单测验证（tests/test_user_memory.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['memory', 'user_memory', 'sanitize'],
+)
+
+# ── MC-015 [NORMAL] 用户记忆合规 API - 查询与删除（个保法查询权/删除权）（源: cases/misc.yml）──
+_CASE_MC_015 = EvalCase(
+    id='MC-015',
+    legacy_id='',
+    title='用户记忆合规 API - 查询与删除（个保法查询权/删除权）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 提供 GET/DELETE /memories：用户查询/删除自己保存的记忆（agent_type=xiaobu）'],
+    expectations=['direct_reply'],
+    data_checks=["GET /memories 调 UserMemoryManager.get_all_memories(tenant, user, agent_type='xiaobu')，返回记忆列表（type/key/value/importance/时间）", "DELETE /memories 调 delete_all(tenant, user, agent_type='xiaobu')，返回删除条数", '跨租户/跨用户不可访问（仅查当前登录用户自己的记忆）', '异常时返回空列表/0 条，不抛 500'],
+    skip_reason='依赖注入 mock 由 pytest 单测验证（tests/test_memories_api.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['memory', 'compliance', 'privacy'],
 )
 
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
@@ -2342,6 +2412,8 @@ ALL_CASES = (
     _CASE_CH_021,
     _CASE_CH_022,
     _CASE_CH_023,
+    _CASE_CH_024,
+    _CASE_CH_025,
     _CASE_CR_001,
     _CASE_CR_002,
     _CASE_CR_003,
@@ -2393,6 +2465,9 @@ ALL_CASES = (
     _CASE_MC_010,
     _CASE_MC_011,
     _CASE_MC_012,
+    _CASE_MC_013,
+    _CASE_MC_014,
+    _CASE_MC_015,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,

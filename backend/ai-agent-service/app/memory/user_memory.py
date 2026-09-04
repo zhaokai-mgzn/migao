@@ -41,6 +41,7 @@ class UserMemoryManager:
         tenant_id: int,
         user_id: str,
         min_importance: float = None,
+        agent_type: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """获取用户的高重要性记忆（用于注入 System Prompt）
 
@@ -48,27 +49,33 @@ class UserMemoryManager:
             tenant_id: 租户 ID
             user_id: 用户 ID
             min_importance: 最低重要性阈值，默认 0.5
+            agent_type: Agent 维度过滤（issue #2815：注入只取 xiaobu 记忆；None 不过滤）
 
         Returns:
             记忆列表，按重要性降序排列
         """
         threshold = min_importance if min_importance is not None else self._INJECT_MIN_IMPORTANCE
+        agent_clause = " AND agent_type = :agent_type" if agent_type else ""
         async with await self._get_session() as db:
             from sqlalchemy import text
-            sql = text("""
+            sql = text(f"""
                 SELECT id, tenant_id, user_id, type, key, value,
                        importance, context, created_at, updated_at
                 FROM user_memories
                 WHERE tenant_id = :tenant_id AND user_id = :user_id
                   AND importance >= :min_importance
+                  {agent_clause}
                 ORDER BY importance DESC
                 LIMIT 20
             """)
-            result = await db.execute(sql, {
+            params = {
                 "tenant_id": tenant_id,
                 "user_id": user_id,
                 "min_importance": threshold,
-            })
+            }
+            if agent_type:
+                params["agent_type"] = agent_type
+            result = await db.execute(sql, params)
             rows = result.fetchall()
             memories = [
                 {
@@ -82,7 +89,7 @@ class UserMemoryManager:
             if memories:
                 logger.debug(
                     f"[user-memory] Loaded {len(memories)} memories | "
-                    f"tenant={tenant_id} user={user_id}"
+                    f"tenant={tenant_id} user={user_id} agent={agent_type or 'all'}"
                 )
             return memories
 
@@ -90,13 +97,24 @@ class UserMemoryManager:
         self,
         tenant_id: int,
         user_id: str,
+        agent_type: Optional[str] = None,
     ) -> str:
         """将用户记忆格式化为 System Prompt 注入文本
+
+        issue #2815（MC-014）：注入前消毒——XML 转义 + 值长度截断 + 去控制字符，
+        防跨会话持久化注入（审计 07 P1-L9：format_for_prompt 未接线时潜伏，接线必须先消毒）。
+
+        Args:
+            tenant_id: 租户 ID
+            user_id: 用户 ID
+            agent_type: Agent 维度过滤（仅 xiaobu 注入时传 "xiaobu"）
 
         Returns:
             XML 格式的记忆文本，无记忆时返回空字符串
         """
-        memories = await self.get_important_memories(tenant_id, user_id)
+        memories = await self.get_important_memories(
+            tenant_id, user_id, agent_type=agent_type
+        )
         if not memories:
             return ""
 
@@ -105,21 +123,35 @@ class UserMemoryManager:
         facts = [m for m in memories if m["type"] == "fact"]
         feedbacks = [m for m in memories if m["type"] == "feedback"]
 
+        def _clean(text: str, max_len: int = 100) -> str:
+            """消毒：去控制字符 → XML 转义 → 截断（防注入 + 控 token）"""
+            if not text:
+                return ""
+            text = "".join(ch for ch in str(text) if ch.isprintable())
+            text = (
+                text.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace('"', "&quot;")
+                .replace("'", "&apos;")
+            )
+            return text[:max_len]
+
         lines = ["<user_memories>"]
         if preferences:
             lines.append("  <preferences>")
             for m in preferences:
-                lines.append(f"    {m['value']}")
+                lines.append(f"    {_clean(m['value'])}")
             lines.append("  </preferences>")
         if facts:
             lines.append("  <facts>")
             for m in facts:
-                lines.append(f"    {m['key']}: {m['value']}")
+                lines.append(f"    {_clean(m['key'], 40)}: {_clean(m['value'])}")
             lines.append("  </facts>")
         if feedbacks:
             lines.append("  <feedback>")
             for m in feedbacks:
-                lines.append(f"    {m['value']}")
+                lines.append(f"    {_clean(m['value'])}")
             lines.append("  </feedback>")
         lines.append("</user_memories>")
 
@@ -142,8 +174,12 @@ class UserMemoryManager:
         importance: float = 0.5,
         context: str = "",
         related_to: Optional[List[str]] = None,
+        agent_type: str = "xiaobu",
     ) -> Optional[str]:
-        """写入或更新一条记忆（按 tenant_id + user_id + key 去重）
+        """写入或更新一条记忆（按 tenant_id + user_id + agent_type + key 去重）
+
+        issue #2815：新增 agent_type 维度——C 端（xiaobu）画像与 B 端（mibao）
+        记忆互不覆盖；注入时按 agent_type 过滤。
 
         Args:
             tenant_id: 租户 ID
@@ -154,6 +190,7 @@ class UserMemoryManager:
             importance: 重要性 (0-1)
             context: 记录时的上下文
             related_to: 关联记忆 ID 列表
+            agent_type: 归属 Agent（xiaobu/mibao），默认 xiaobu
 
         Returns:
             记忆 ID，失败返回 None
@@ -162,13 +199,15 @@ class UserMemoryManager:
             try:
                 from sqlalchemy import text
 
-                # 先查是否存在
+                # 先查是否存在（agent_type 参与去重）
                 check_sql = text("""
                     SELECT id FROM user_memories
-                    WHERE tenant_id = :tenant_id AND user_id = :user_id AND key = :key
+                    WHERE tenant_id = :tenant_id AND user_id = :user_id
+                      AND agent_type = :agent_type AND key = :key
                 """)
                 check_result = await db.execute(check_sql, {
-                    "tenant_id": tenant_id, "user_id": user_id, "key": key,
+                    "tenant_id": tenant_id, "user_id": user_id,
+                    "agent_type": agent_type, "key": key,
                 })
                 existing = check_result.fetchone()
 
@@ -187,25 +226,26 @@ class UserMemoryManager:
                         "related_to": related_to if related_to else [],
                     })
                     logger.debug(
-                        f"[user-memory] Updated | id={memory_id} key={key}"
+                        f"[user-memory] Updated | id={memory_id} key={key} agent={agent_type}"
                     )
                 else:
                     memory_id = f"mem_{uuid.uuid4().hex[:16]}"
                     insert_sql = text("""
                         INSERT INTO user_memories
-                        (id, tenant_id, user_id, type, key, value, importance, context, related_to)
+                        (id, tenant_id, user_id, type, key, value, importance, context, related_to, agent_type)
                         VALUES (:id, :tenant_id, :user_id, :type, :key, :value,
-                                :importance, :context, CAST(:related_to AS text[]))
+                                :importance, :context, CAST(:related_to AS text[]), :agent_type)
                     """)
                     await db.execute(insert_sql, {
                         "id": memory_id, "tenant_id": tenant_id, "user_id": user_id,
                         "type": type_, "key": key, "value": value,
                         "importance": importance, "context": context,
                         "related_to": related_to if related_to else [],
+                        "agent_type": agent_type,
                     })
                     logger.info(
                         f"[user-memory] Created | id={memory_id} type={type_} key={key} "
-                        f"user={user_id}"
+                        f"user={user_id} agent={agent_type}"
                     )
 
                 await db.commit()
@@ -223,6 +263,7 @@ class UserMemoryManager:
         tenant_id: int,
         user_id: str,
         items: List[Dict[str, Any]],
+        agent_type: str = "xiaobu",
     ) -> int:
         """批量写入记忆
 
@@ -230,6 +271,7 @@ class UserMemoryManager:
             tenant_id: 租户 ID
             user_id: 用户 ID
             items: 记忆列表，每项含 type, key, value, importance(可选), context(可选)
+            agent_type: 归属 Agent（xiaobu/mibao），默认 xiaobu（issue #2815）
 
         Returns:
             成功写入的条数
@@ -245,6 +287,7 @@ class UserMemoryManager:
                 importance=item.get("importance", 0.5),
                 context=item.get("context", ""),
                 related_to=item.get("related_to"),
+                agent_type=agent_type,
             )
             if rid:
                 count += 1
@@ -323,3 +366,88 @@ class UserMemoryManager:
                 await db.rollback()
                 logger.warning(f"[user-memory] Delete by key failed: {e}")
                 return False
+
+    # ── 合规 API（个保法查询权/删除权，issue #2815）──
+
+    async def get_all_memories(
+        self,
+        tenant_id: int,
+        user_id: str,
+        agent_type: Optional[str] = None,
+        limit: int = 50,
+    ) -> List[Dict[str, Any]]:
+        """查询用户全部记忆（用户可查看自己已保存的记忆，个保法查询权）
+
+        Args:
+            tenant_id: 租户 ID
+            user_id: 用户 ID
+            agent_type: Agent 维度过滤（None = 全部）
+            limit: 返回条数上限（默认 50）
+
+        Returns:
+            记忆列表（按 updated_at 倒序），含 type/key/value/importance/created_at
+        """
+        agent_clause = " AND agent_type = :agent_type" if agent_type else ""
+        async with await self._get_session() as db:
+            try:
+                from sqlalchemy import text
+                sql = text(f"""
+                    SELECT id, tenant_id, user_id, type, key, value,
+                           importance, context, created_at, updated_at
+                    FROM user_memories
+                    WHERE tenant_id = :tenant_id AND user_id = :user_id
+                      {agent_clause}
+                    ORDER BY updated_at DESC
+                    LIMIT :limit
+                """)
+                params = {"tenant_id": tenant_id, "user_id": user_id, "limit": limit}
+                if agent_type:
+                    params["agent_type"] = agent_type
+                result = await db.execute(sql, params)
+                rows = result.fetchall()
+                return [
+                    {
+                        "id": r[0], "type": r[3], "key": r[4], "value": r[5],
+                        "importance": r[6], "created_at": r[8], "updated_at": r[9],
+                    }
+                    for r in rows
+                ]
+            except Exception as e:
+                logger.warning(f"[user-memory] get_all_memories failed: {e}")
+                return []
+
+    async def delete_all(
+        self,
+        tenant_id: int,
+        user_id: str,
+        agent_type: Optional[str] = None,
+    ) -> int:
+        """删除用户全部记忆（个保法删除权）
+
+        Args:
+            tenant_id: 租户 ID
+            user_id: 用户 ID
+            agent_type: Agent 维度过滤（None = 全部删除）
+
+        Returns:
+            删除条数
+        """
+        agent_clause = " AND agent_type = :agent_type" if agent_type else ""
+        async with await self._get_session() as db:
+            try:
+                from sqlalchemy import text
+                params = {"tenant_id": tenant_id, "user_id": user_id}
+                sql = text(f"""
+                    DELETE FROM user_memories
+                    WHERE tenant_id = :tenant_id AND user_id = :user_id
+                      {agent_clause}
+                """)
+                if agent_type:
+                    params["agent_type"] = agent_type
+                result = await db.execute(sql, params)
+                await db.commit()
+                return result.rowcount or 0
+            except Exception as e:
+                await db.rollback()
+                logger.warning(f"[user-memory] delete_all failed: {e}")
+                return 0

@@ -377,3 +377,97 @@ cases:
         - agent-eval-adversarial.yml
         - fixture-record.yml
       verifies: []
+
+  - id: MC-013
+    legacy_id: ""
+    title: "记忆提取 C 端受控词表 + PII 变体过滤 + agent_type 分流"
+    domains:
+      - misc
+      - chat
+    tier: normal
+    tags:
+      - memory
+      - extractor
+      - pii
+      - agent_split
+    truths_ref:
+      - misc.parse-extraction-result
+      - misc.extract-llm-flow
+    user_inputs:
+      - "ai-agent-service 记忆提取：仅 C 端（xiaobu）落库；key 受控词表约束；PII 变体 key/值拦截"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "extract_memories_from_turn/extract_and_save 新增 agent_type 参数：agent_type != 'xiaobu' → 直接返回 0/[]（B 端不落库）"
+      - "C 端受控词表 CEND_MEMORY_KEYS：LLM 返回的 key 不在词表内 → 丢弃；词表含 curtain_style/curtain_color/window_size/budget 等画像字段"
+      - "_filter_pii 变体拦截：key 词根匹配（phone/mobile/address/name/contact/wechat/id_card/idcard 等 40+ 变体）而非精确黑名单；value 含手机号/邮箱 → 丢弃"
+      - "context 字段去 PII：不再写原始 user_message 明文（或做脱敏），避免手机号/地址落库"
+    skip_reason: "纯函数/依赖注入 mock 由 pytest 单测验证（tests/test_memory_extractor.py），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "issue #2815：C 端长期记忆系统 — extractor 质量改造"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_memory_extractor.py"
+      ci:
+        - ai-agent-tests.yml
+      verifies: []
+
+  - id: MC-014
+    legacy_id: ""
+    title: "用户记忆 agent_type 读写 + format_for_prompt 消毒"
+    domains:
+      - misc
+      - chat
+    tier: normal
+    tags:
+      - memory
+      - user_memory
+      - sanitize
+    truths_ref:
+      - misc.extract-and-save
+    user_inputs:
+      - "ai-agent-service 用户记忆管理：agent_type 维度读写；注入文本消毒防持久化注入"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "upsert/batch_upsert 写入 agent_type（xiaobu/mibao）；get_important_memories/format_for_prompt 支持按 agent_type 过滤"
+      - "format_for_prompt 输出消毒：XML 标签转义（<>&）、值长度截断、strip 控制字符 → 防跨会话持久化注入（审计 07 P1-L9）"
+      - "消毒后注入仅对 xiaobu 生效（agent_type 分流，CH-024 关联）"
+    skip_reason: "依赖注入 mock 的 async 方法由 pytest 单测验证（tests/test_user_memory.py），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "issue #2815：C 端长期记忆系统 — user_memory agent_type + 消毒"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_user_memory.py"
+      ci:
+        - ai-agent-tests.yml
+      verifies: []
+
+  - id: MC-015
+    legacy_id: ""
+    title: "用户记忆合规 API - 查询与删除（个保法查询权/删除权）"
+    domains:
+      - misc
+      - chat
+    tier: normal
+    tags:
+      - memory
+      - compliance
+      - privacy
+    truths_ref:
+      - misc.extract-and-save
+    user_inputs:
+      - "ai-agent-service 提供 GET/DELETE /memories：用户查询/删除自己保存的记忆（agent_type=xiaobu）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "GET /memories 调 UserMemoryManager.get_all_memories(tenant, user, agent_type='xiaobu')，返回记忆列表（type/key/value/importance/时间）"
+      - "DELETE /memories 调 delete_all(tenant, user, agent_type='xiaobu')，返回删除条数"
+      - "跨租户/跨用户不可访问（仅查当前登录用户自己的记忆）"
+      - "异常时返回空列表/0 条，不抛 500"
+    skip_reason: "依赖注入 mock 由 pytest 单测验证（tests/test_memories_api.py），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "issue #2815：C 端长期记忆系统 — 合规 API（个保法查询权/删除权）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_memories_api.py"
+      ci:
+        - ai-agent-tests.yml
+      verifies: []

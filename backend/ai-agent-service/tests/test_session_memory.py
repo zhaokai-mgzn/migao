@@ -299,12 +299,16 @@ class TestDeleteSession:
 
     async def test_delete_session_success(self, memory, mock_db):
         """成功删除会话"""
-        result = await memory.delete_session(session_id="sess_001")
+        with patch("app.memory.session_memory.SessionMemory._flush_pending_memories",
+                   new_callable=AsyncMock) as mock_flush:
+            result = await memory.delete_session(session_id="sess_001")
 
         assert result is True
         # 两次 execute：DELETE messages + DELETE sessions
         assert mock_db.execute.call_count == 2
         mock_db.commit.assert_called_once()
+        # 会话末聚合（issue #2815）：删除前先 flush 候选记忆，避免丢失
+        mock_flush.assert_awaited_once_with("sess_001")
 
     async def test_delete_session_db_error(self, memory, mock_db):
         """删除会话 - 数据库错误"""
@@ -324,12 +328,16 @@ class TestCloseSession:
         mock_db.execute.return_value.rowcount = 1
         mock_store = AsyncMock()
         mock_store.clear = AsyncMock(return_value=True)
-        with patch("app.memory.session_memory.SessionStateStore", return_value=mock_store):
+        with patch("app.memory.session_memory.SessionStateStore", return_value=mock_store), \
+             patch("app.memory.session_memory.SessionMemory._flush_pending_memories",
+                   new_callable=AsyncMock) as mock_flush:
             result = await memory.close_session(session_id="sess_001")
 
         assert result is True
         mock_db.commit.assert_called_once()
         mock_store.clear.assert_called_once_with("sess_001")
+        # 会话末聚合（issue #2815）：关闭前先 flush 候选记忆
+        mock_flush.assert_awaited_once_with("sess_001")
 
     async def test_close_session_already_closed(self, memory, mock_db):
         """关闭已关闭的会话 — rowcount=0 不影响"""
@@ -487,13 +495,17 @@ class TestCloseIdleSessions:
         mock_store = AsyncMock()
         mock_store.clear = AsyncMock(return_value=True)
 
-        with patch("app.memory.session_memory.SessionStateStore", return_value=mock_store):
+        with patch("app.memory.session_memory.SessionStateStore", return_value=mock_store), \
+             patch("app.memory.session_memory.SessionMemory._flush_pending_memories",
+                   new_callable=AsyncMock) as mock_flush:
             count = await memory.close_idle_sessions(idle_minutes=30)
 
         assert count == 2
         assert mock_db.execute.call_count == 2
         # 清理了两个会话的工作状态
         assert mock_store.clear.call_count == 2
+        # 会话末聚合（issue #2815）：每个 idle 会话关闭前都 flush 候选记忆
+        assert mock_flush.await_count == 2
 
     async def test_close_idle_sessions_none_idle(self, memory, mock_db):
         """没有空闲会话时返回0"""

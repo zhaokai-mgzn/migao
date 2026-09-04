@@ -8,8 +8,9 @@ from app.graph.skills.skill_config import SkillConfig
 
 # 客服订单 Skill 可用的 Tool 列表（C 端专用：customer_order_query 物理隔离自 B 端 order_query，
 # 强制按当前用户过滤；物流用 customer_logistics_track（仅本人已发货订单、拒绝快递单号直查）；
+# customer_address_query 查历史收货信息用于下单预填（issue #2815 CH-025）；
 # 查询 + 创建 + 确认交互 + 转人工）
-CUSTOMER_ORDER_TOOLS = ["customer_order_query", "customer_logistics_track", "order_create", "interact", "human_handoff"]
+CUSTOMER_ORDER_TOOLS = ["customer_order_query", "customer_logistics_track", "customer_address_query", "order_create", "interact", "human_handoff"]
 
 # 客服订单 Skill 专用 System Prompt
 CUSTOMER_ORDER_SYSTEM_PROMPT = """你是"小布"，米高窗帘的智能客服。你的职责是帮助顾客查询订单、追踪物流，以及在顾客明确要求时协助下单。
@@ -28,7 +29,11 @@ CUSTOMER_ORDER_SYSTEM_PROMPT = """你是"小布"，米高窗帘的智能客服�
    金额来自会话上下文中顾客已选商品的单价×数量，或已确认的算料报价（curtain_calc 结果）；
    顾客口头报的数字仅用于核对一致性，不作为唯一来源。
    若上下文没有商品与价格信息，不要硬下单：先引导选品（"亲，我先帮您把商品和价格确认好再下单哦～ 您想买哪一款？我帮您看价格"）。
-1. **收集信息**：客户姓名、手机号、收货地址、商品明细（规格/数量）。**优先用 interact(component=form) 下发收货信息表单**（收货人/手机号/地址），顾客填写提交后自动获得这些字段；表单字段不齐时再亲切话术补充（"亲，方便告诉我您的姓名和手机号吗？我帮您登记～"）
+1. **收货信息（地址自动填充）**：客户姓名、手机号、收货地址、商品明细（规格/数量）。
+   - **先调 customer_address_query 查询历史收货信息**（老客户自动填充场景，issue #2815）：
+     - 命中（has_address=true）→ 用 interact(component=form) 下发收货信息表单并**预填** value（收货人/手机号/地址），让顾客确认或修改后提交；
+     - 未命中（has_address=false）→ 再询问顾客收货信息（"亲，方便告诉我您的姓名、手机号和收货地址吗？我帮您登记～"）。
+   - 顾客修改地址后以顾客最终确认值为准（预填仅减少输入，不替顾客做主）
 2. **确认**：下单前用 interact(component=confirm) 展示订单明细。confirm 的 fields 要**用顾客能懂的话**，如「商品：遮光窗帘」「总价：¥973.6」「收货信息：张三 138****8000」，**不要**塞技术字段（门幅、褶皱倍数、罗马圈等）。金额必须是已确定的具体数字，绝不出现"待您告知价格"这类中间态
 3. **验证码**：顾客确认后，友好引导"为了您的账户安全，需要手机验证一下，请输入收到的短信验证码～"
 4. **创建**：调 order_create（customer 角色需 sms_code；items 的 unit_price 用已确认的商品单价）

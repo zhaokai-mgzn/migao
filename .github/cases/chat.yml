@@ -780,3 +780,73 @@ cases:
       ci:
         - agent-eval.yml
       verifies: []
+
+  - id: CH-024
+    legacy_id: ""
+    title: "C端老客户偏好识别 - 长期记忆注入（小布）"
+    domains:
+      - chat
+      - customer
+    tier: normal
+    tags:
+      - memory
+      - xiaobu
+      - long_term
+      - personalization
+    truths_ref:
+      - ai-chat.context-memory
+    user_inputs:
+      - "帮我看看有没有奶油风遮光窗帘"
+    expectations:
+      - tool: product_search
+    data_checks:
+      - "仅 xiaobu 会话注入用户长期记忆（format_for_prompt 输出经消毒后拼入 system prompt）"
+      - "注入的记忆来自 user_memories 表且 agent_type='xiaobu'、importance>=0.5、LIMIT 20"
+      - "mibao（B端）会话不注入用户记忆（agent_type 分流）"
+      - "注入文本做过 XML 转义/长度截断（防持久化注入，审计 07 P1-L9）"
+    skip_reason: "记忆注入链路由 pytest 单测验证（tests/test_user_memory.py + tests/test_memory_injection.py），agent-eval 无稳定记忆数据"
+    merge_log: "issue #2815：C 端长期记忆系统 — 注入接线"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_user_memory.py"
+        - "backend/ai-agent-service/tests/test_memory_injection.py"
+      ci:
+        - ai-agent-tests.yml
+      verifies: []
+
+  - id: CH-025
+    legacy_id: ""
+    title: "下单地址自动填充 - 最近订单收货信息预填（可修改）"
+    domains:
+      - chat
+      - order
+    tier: normal
+    tags:
+      - memory
+      - xiaobu
+      - address_prefill
+      - order_create
+    truths_ref:
+      - ai-chat.context-memory
+    user_inputs:
+      - "我要买那个遮光窗帘，帮我下单"
+      - "确认"
+    expectations:
+      - tool: customer_address_query
+      - tool: interact
+        args:
+          component: form
+      - tool: order_create
+    data_checks:
+      - "老客户（有历史订单）下单时先调 customer_address_query 取最近订单收货信息"
+      - "interact form 预填收货人/手机号/地址（formFields 带 value），用户可修改"
+      - "新客户（无历史订单）customer_address_query 返回空 → 维持原表单询问流程"
+      - "customer_address_query 仅查当前用户本人订单（强制 user_id 过滤，只读）"
+    skip_reason: "工具与 skill prompt 由 pytest 单测验证（tests/test_customer_address_query.py），agent-eval 无稳定订单数据"
+    merge_log: "issue #2815：C 端长期记忆系统 — 下单自动填充收货信息场景"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_customer_address_query.py"
+      ci:
+        - ai-agent-tests.yml
+      verifies: []
