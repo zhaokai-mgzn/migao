@@ -73,7 +73,8 @@ jobs:
   admin-web-test:
     name: admin-web typecheck + unit tests
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 2026-09-04 提升：runner 高峰慢时 10 分钟不够（实测 10m16s 被取消），改为 15 分钟
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
 
@@ -111,7 +112,9 @@ jobs:
   e2e-quality-gate:
     name: E2E quality gate
     runs-on: ubuntu-latest
-    timeout-minutes: 6
+    # 2026-09-04 提升：GitHub 托管 runner 高峰慢时 6 分钟跑不完（多次 exceed 6m 超时），
+    # 改为 15 分钟吸收慢 runner 波动（issue #2786 环境问题）
+    timeout-minutes: 15
     if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v7
