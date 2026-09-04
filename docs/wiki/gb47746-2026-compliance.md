@@ -30,8 +30,8 @@
 | 3.2 | 转人工便捷入口、不层层隐藏 | D1 显式请求直转 + D3 AI 主动建议卡 + 商家自定义 autoHandoffKeywords；mini-app 对话内表达即可触发 | `graph/handoff_judge.py`、`handoff_offer.py`、`agents/tenant_config.py` | 🟢 满足（无独立「转人工按钮」，「对话内直接表达需求/AI 自动判断建议」为实际机制） |
 | 3.3 | 达到条件自动流转人工 | D3 judge S1 负面情绪 / S2 多轮未解决 / S3 赔偿·法律等超范围 + 每会话建议上限与拒绝冷却 | `graph/handoff_judge.py`、`nodes.py` | 🟢 满足 |
 | 3.4 | 切换后信息同步、不重复询问 | **GB-01（PR #2778）**：转人工时快照 AI 会话最近 12 轮 user/assistant 文本 + 可选摘要 → 人工会话落库 → 工作台「AI 对话分区」展示；顾客端不含快照且过滤内部备注 | `human_handoff.py`、admin-api `AgentSessionService`、admin-web `human-sessions/page.tsx` | 🟢 已闭合（原 🔴） |
-| 3.5 | AI 回复显著标识 + 风险提示 | 导航「小布+AI」badge 为会话级隐式标识；**消息级 source 标识与高敏确定性风险提示 = GB-02 待落地**（方案已定：Message.source/disclaimer + 轮询打标 + 徽标渲染） | 审计② | 🟡 部分（GB-02 待做） |
-| 3.6 | 价格/折扣/退款/赔偿/合同变更：AI 只解释规则、收集材料、生成工单；最终确认归人工或规范化流程 | 工具层闸门总体成立：小布零资金工具；售后单创建恒 pending；B 端资金类写工具 13/16 有确认卡代码闸；赔偿无执行工具一律转人工。**缺口 = GB-03**：order_create/aftersale_create 无代码确认闸、curtain_calc 默认 30 元/米兜底、B 端资金终态无审批复核节点、两处 EXAMPLES 教学语料瑕疵 | 审计③ | 🟡 部分（GB-03 待做） |
+| 3.5 | AI 回复显著标识 + 风险提示 | **GB-02（PR #2781 已合并）**：消息级 `source` 标识（AI 助手/人工客服，转人工后人机可区分）；导航会话级「小布+AI」badge。高敏答复确定性风险提示为后续增强项（当前依赖提示层约束） | mini-app `chatStore`/`MessageBubble` | 🟢 满足（风险提示增强项待办） |
+| 3.6 | 价格/折扣/退款/赔偿/合同变更：AI 只解释规则、收集材料、生成工单；最终确认归人工或规范化流程 | **GB-03 M1/M2（PR #2785 已合并）**：确认闸覆盖全部写工具（含 order_create/aftersale_create）；curtain_calc 无静默默认价（缺单价即失败引导）；商户写工具补权限；教学语料/终态话术规范。遗留增强项：B 端资金终态状态机审批节点（M3）与 agent 下单服务端取价 | 审计③ + PR #2785 | 🟢 主体满足（M3 审批增强项待办） |
 | 3.7 | 过程可追溯 | 会话/消息/工单落库；转人工快照（GB-01）增强时点上下文可审计性 | 全链路 | 🟢 满足 |
 
 ## 4. 已确认机制清单（宣称证据）
@@ -39,27 +39,27 @@
 1. **自动识别复杂诉求转人工**：D3 judge 负面情绪/多轮未解决/赔偿·法律·维权超范围 → AI 自动建议转人工（冷却防骚扰）；顾客显式「转人工/找人工/找真人…」直转（D1）；商家可自定义触发关键词。证据：`handoff_judge.py`、`nodes.py`、`tenant_config.py`。
 2. **转人工规则可配置**：每租户 `autoHandoffKeywords` + 营业时间/afterHours 留言降级。证据：`tenant_config.py`。
 3. **转人工即建单同步（GB-01 已闭合）**：转人工自动建人工会话（waiting）+ 投诉工单 + 通知坐席；**携带转人工前 AI 对话快照与摘要，工作台分区展示，顾客无需复述**；顾客在原对话内与人工客服继续沟通。证据：`human_handoff.py`、`AgentSessionService`、`human-sessions/page.tsx`（PR #2778）。
-4. **AI 严格承诺边界**：小布无任何退款/改价/取消工具；涉赔偿/法律一律转人工；售后申请创建恒 pending、由商户审核；金额类写操作须聊天确认卡（B 端）；服务端不信任 LLM 定价（下单重算 subtotal）。证据：`xiaobu.py` 白名单、`aftersale_create.py`、`order_create.py`、`base_skill.py` 确认闸、EXAMPLES 反例库。⚠️ GB-03 落地前，宣称措辞限定「AI 只解释规则与收集材料、申请类动作恒待人工审核」，不宣称「全部金额操作均经审批流」。
+4. **AI 严格承诺边界**：小布无任何退款/改价/取消工具；涉赔偿/法律一律转人工；售后申请创建恒 pending、由商户审核；**写工具确认闸全覆盖（GB-03 M1，PR #2785：含 order_create/aftersale_create）**；服务端不信任 LLM 定价（下单重算 subtotal）。证据：`xiaobu.py` 白名单、`aftersale_create.py`、`order_create.py`、`base_skill.py` 确认闸、EXAMPLES 反例库。⚠️ 宣称措辞限定「AI 只解释规则与收集材料、申请类动作恒待人工/规范化流程确认」；不宣称存在独立审批流节点（B 端资金终态状态机审批为 M3 增强项）。
 
 ## 5. 差距清单与落地（GB-NN）
 
 | ID | 关联条款 | 差距 | 方案 | 状态 |
 |---|---|---|---|---|
-| GB-01 | 3.4 | 人工客服看不到 AI 对话 → 顾客需复述 | 转人工时点快照 + 工作台分区展示（**PR #2778 已实现**） | ✅ PR CI 验证中 |
-| GB-02 | 3.5 | 无消息级 AI 标识；转人工后人机同构；高敏答复无确定性风险提示 | Message.source/disclaimer + 前端徽标（「AI 助手」/「人工客服」）+ 按 tool_calls 确定性免责；基线双平台更新 | ⏳ 待开工（方案见审计②） |
-| GB-03 | 3.6 | ①order_create/aftersale_create 无代码确认闸 ②curtain_calc 默认价 30 元 ③B 端资金终态无审批复核（P0-1）④EXAMPLES 教学语料（编造满减/直改价）⑤logistics mock 假轨迹 ⑥product_update 等缺 check_permission | M1 工具层最小修复 → M2 提示层 → M3 审批/服务端取价（跨模块，需契约）→ M4 用例 | ⏳ 待开工（审计③有完整文件级清单） |
-| GB-04 | 官网宣称 | 首页无国标宣称；需待 GB-01/02/03 闭合后上线真实能力宣称 | 首页双 Agent 区之后新增「遵循国家标准」section（插入点 page.tsx 双 Agent 区后）+ corporate-home 单测 + OB-005 用例；文案禁用词见审计④ | ⏳ 依赖 01-03 落地 |
-| GB-05 | 3.6/宣传 | contact 页占位信息（地址/电话/邮箱）为假值；README/首页「AI 自动学习」与 RAG POC 现状有张力；米高/米宝命名漂移 | 配套收口（宣传真实性自查） | ⏳ |
+| GB-01 | 3.4 | 人工客服看不到 AI 对话 → 顾客需复述 | 转人工时点快照 + 工作台分区展示 | ✅ 已合并（#2778） |
+| GB-02 | 3.5 | 无消息级 AI 标识；转人工后人机同构 | Message.source 打标 + 「AI 助手/人工客服」徽标（高敏确定性风险提示为后续增强项） | ✅ 已合并（#2781） |
+| GB-03 | 3.6 | ①order_create/aftersale_create 无确认闸 ②curtain_calc 默认价 ③教学语料 ④权限缺口 | M1 工具层 + M2 提示层（M3 状态机审批/服务端取价为后续增强项） | ✅ 已合并（#2785） |
+| GB-04 | 官网宣称 | 首页无国标宣称 | 首页「遵循国家标准」section + corporate-home 单测 + OB-005 | ✅ 已合并（#2788） |
+| GB-05 | 3.6/宣传 | contact 页占位假值；「AI 自动学习」表述与 RAG POC 现状有张力；米高/米宝命名漂移 | 配套收口（宣传真实性自查） | ⏳ 建议后续 |
 
 ## 6. 落地路线（PR 追踪）
 
 | PR | 内容 | Issue | 状态 |
 |---|---|---|---|
-| 本文档 | 差距分析 + INDEX 登记 | #2775 | ✅ 已提交 |
-| [#2778](https://github.com/zhaokai-mgzn/migao/pull/2778) | GB-01 转人工上下文同步（ai-agent→admin-api→admin-web） | #2776 | ✅ CI 验证中 |
-| — | GB-02 AI 生成标识与风险提示 | #2775 | ⏳ |
-| — | GB-03 承诺边界收口（M1→M2→M3→M4） | #2775 | ⏳ |
-| — | GB-04 官网主页合规宣称 + UI 测试 | #2775 | ⏳（依赖上三项） |
+| 本文档 | 差距分析 + INDEX 登记 | #2775 | ✅ 已合并（#2779） |
+| [#2778](https://github.com/zhaokai-mgzn/migao/pull/2778) | GB-01 转人工上下文同步（ai-agent→admin-api→admin-web） | #2776 | ✅ 已合并 |
+| [#2781](https://github.com/zhaokai-mgzn/migao/pull/2781) | GB-02 AI 生成标识与人机区分 | #2780 | ✅ 已合并 |
+| [#2785](https://github.com/zhaokai-mgzn/migao/pull/2785) | GB-03 承诺边界收口（M1/M2） | #2782 | ✅ 已合并 |
+| [#2788](https://github.com/zhaokai-mgzn/migao/pull/2788) | GB-04 官网主页合规宣称 + UI 测试 | #2787 | ✅ 已合并 |
 
 ## 7. 验证与验收
 
