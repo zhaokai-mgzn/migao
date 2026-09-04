@@ -1032,6 +1032,13 @@ async def execute_skill(
                     await SessionMemory().set_vision_analysis(session_id, vision_analysis)
                 except Exception as e:
                     logger.error(f"[{skill_name}] set_vision_analysis failed | session={session_id} error={e}")
+                # 切片 C：vision 分析全文落上下文槽，跨 skill 召回「图=什么」（G10 收口）
+                try:
+                    from app.memory.context_manager import get_context_manager
+                    ctx_mgr = get_context_manager()
+                    ctx_mgr.record_vision_analysis(session_id, vision_analysis)
+                except Exception as e:
+                    logger.warning(f"[{skill_name}] record_vision_analysis failed | session={session_id} error={e}")
 
             messages = _sanitize_messages_for_text_path(list(messages))
             system_msg = SystemMessage(content=system_prompt)

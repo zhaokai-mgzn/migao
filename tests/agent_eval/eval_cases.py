@@ -1594,6 +1594,20 @@ _CASE_ON_003 = EvalCase(
     tags=['ontology', 'intent_ownership', 'contract', 'dual_agent'],
 )
 
+# ── ON-004 [NORMAL] vision 分析文本落上下文槽 + base_skill 接线（行为闭环收口）（源: cases/ontology.yml）──
+_CASE_ON_004 = EvalCase(
+    id='ON-004',
+    legacy_id='',
+    title='vision 分析文本落上下文槽 + base_skill 接线（行为闭环收口）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['vision 分析完成后，分析文本写入 context_manager 上下文槽（record_vision_analysis）→ build_context 跨 skill 注入，澄清候选 grounded 有召回保障；base_skill 接线调用'],
+    expectations=['none'],
+    data_checks=['record_vision_analysis 写入后 build_context 注入包含 vision 分析文本（截断 800 字符）', '重复写入覆盖旧文本（最新图片分析优先）；空文本/无 session 不落槽', 'base_skill vision 分支分析成功后调用 record_vision_analysis（与 set_vision_analysis 并列，异常降级不破坏主流程）'],
+    skip_reason='上下文记忆为纯数据结构契约，由 pytest 单测验证（backend/ai-agent-service/tests/test_ontology_vision_grounding.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ontology', 'vision', 'context_memory', 'grounding', 'base_skill'],
+)
+
 # ── OR-001 [SMOKE] 订单列表查询（源: cases/order.yml）──
 _CASE_OR_001 = EvalCase(
     id='OR-001',
@@ -2518,6 +2532,7 @@ ALL_CASES = (
     _CASE_ON_001,
     _CASE_ON_002,
     _CASE_ON_003,
+    _CASE_ON_004,
     _CASE_OR_001,
     _CASE_OR_002,
     _CASE_OR_003,

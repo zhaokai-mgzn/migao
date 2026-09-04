@@ -1337,7 +1337,7 @@
 真值: frontend-fix.vitest, frontend-fix.tsc, frontend-fix.no-api-change
 溯源: 2026-09-03 新增：GB/T 47746-2026 合规官网宣称（issue #2787） ｜ tags: homepage, compliance, gb47746
 
-## ontology（3 case）
+## ontology（4 case）
 
 ### ON-001. 本体 schema 加载与状态枚举校验（核心四对象 + 扩展四对象） 🔵
 ```
@@ -1379,6 +1379,18 @@
 ```
 真值: ai-chat.context-memory
 溯源: 2026-09-04 更新：切片 A 全量登记 27 intent + 契约校验 v2（按 agent 核对，get_all_skill_names 口径） ｜ tags: ontology, intent_ownership, contract, dual_agent
+
+### ON-004. vision 分析文本落上下文槽 + base_skill 接线（行为闭环收口） 🔵
+```
+你: vision 分析完成后，分析文本写入 context_manager 上下文槽（record_vision_analysis）→ build_context 跨 skill 注入，澄清候选 grounded 有召回保障；base_skill 接线调用
+期望: none
+数据: record_vision_analysis 写入后 build_context 注入包含 vision 分析文本（截断 800 字符）
+数据: 重复写入覆盖旧文本（最新图片分析优先）；空文本/无 session 不落槽
+数据: base_skill vision 分支分析成功后调用 record_vision_analysis（与 set_vision_analysis 并列，异常降级不破坏主流程）
+跳过: 上下文记忆为纯数据结构契约，由 pytest 单测验证（backend/ai-agent-service/tests/test_ontology_vision_grounding.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: ai-chat.context-memory
+溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
 ## 订单域（13 case）
 
@@ -2067,8 +2079,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：169（活跃 98，跳过 71）
-- tier 分布：smoke 10 / normal 131 / adversarial 28
+- 用例总数：170（活跃 98，跳过 72）
+- tier 分布：smoke 10 / normal 132 / adversarial 28
 - 售后域：5
 - agents：6
 - api：10
@@ -2082,7 +2094,7 @@
 - 人事域：5
 - misc：15
 - onboarding：5
-- ontology：3
+- ontology：4
 - 订单域：13
 - 加工项域：4
 - 商品域：13

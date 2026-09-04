@@ -140,6 +140,22 @@ class AgentContextManager:
         if len(existing) > self.MAX_ENTITIES:
             del existing[: len(existing) - self.MAX_ENTITIES]
 
+    def record_vision_analysis(self, session_id: str, analysis_text: str) -> None:
+        """记录 vision 分析全文到上下文槽（issue #2821 延续切片 C）
+
+        与 record_vision_candidates（结构化候选实体）互补：本方法保留分析原文，
+        build_context 跨 skill 注入「用户上轮发了图，识别结果为 X」——
+        图片关联对象（商品/订单/客户）有跨 skill 召回保障（G10 收口）。
+
+        Args:
+            session_id: 会话 ID
+            analysis_text: vision 分析文本；空文本不落槽（不产生噪音）
+        """
+        if not session_id or not analysis_text:
+            return
+        cache = self._get_or_create(session_id)
+        cache["vision_analysis"] = analysis_text
+
     def set_last_skill(self, session_id: str, skill_name: str) -> None:
         """记录当前 skill"""
         cache = self._get_or_create(session_id)
@@ -276,6 +292,11 @@ class AgentContextManager:
                     parts.append(f"{field}: {json.dumps(val, ensure_ascii=False)}")
             if parts:
                 lines.append("图片识别: " + " | ".join(parts))
+
+        # 2.5 vision 分析全文（切片 C：跨 skill 召回「用户上轮发了图，识别结果为 X」）
+        vision_analysis = cache.get("vision_analysis", "")
+        if vision_analysis:
+            lines.append(f"图片分析: {vision_analysis[:self.MAX_CONTEXT_LENGTH]}")
 
         # 3. 跨域切换提示 — 一行
         last_skill = cache.get("last_skill", "")
