@@ -5,7 +5,7 @@ interface TypingIndicatorProps {
   text?: string
 }
 
-export default function TypingIndicator({ text = 'AI 正在思考...' }: TypingIndicatorProps) {
+export default function TypingIndicator({ text = '小布正在思考...' }: TypingIndicatorProps) {
   return (
     <View className='typing-indicator'>
       <View className='typing-indicator__bubble'>

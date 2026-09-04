@@ -18,12 +18,23 @@ const ORDER_STATUS_TEXT: Record<string, string> = {
   cancelled: '已取消',
 }
 
+/** 售后工单类型中文标签（对齐 admin-api 枚举：refund/return/exchange/repair/complaint/other，issue #2857） */
 const TICKET_TYPE_TEXT: Record<string, string> = {
   refund: '退款',
+  return: '退货',
   exchange: '换货',
   repair: '维修',
   complaint: '投诉',
   other: '其他',
+}
+
+/** 售后工单状态中文标签（对齐 ai-agent TICKET_STATUS_LABELS：pending/processing/resolved/rejected/closed，issue #2857） */
+const TICKET_STATUS_TEXT: Record<string, string> = {
+  pending: '待处理',
+  processing: '处理中',
+  resolved: '已解决',
+  rejected: '已拒绝',
+  closed: '已关闭',
 }
 
 export default function ProfilePage() {
@@ -236,7 +247,7 @@ export default function ProfilePage() {
             <View key={t.id} className='entry-row' hoverClass='entry-row--hover' onClick={() => handleTicketDetail(t)}>
               <View className='entry-row__main'>
                 <Text className='entry-row__title'>{t.ticket_no}</Text>
-                <Text className='entry-row__sub'>{TICKET_TYPE_TEXT[t.ticket_type] || t.ticket_type} · {t.status}</Text>
+                <Text className='entry-row__sub'>{TICKET_TYPE_TEXT[t.ticket_type] || t.ticket_type} · {TICKET_STATUS_TEXT[t.status] || t.status}</Text>
               </View>
               <Text className='entry-row__arrow'>›</Text>
             </View>

@@ -73,6 +73,11 @@ public class UserInfoResponse {
         private String tenantName;
 
         /**
+         * 智能客服名称（TenantAiConfig.botName，C 端思考中/空态/导航名展示；未配置为 null → 前端兜底「小布」）
+         */
+        private String botName;
+
+        /**
          * 企业 Logo（「企业基础信息」设置）
          */
         private String tenantLogo;

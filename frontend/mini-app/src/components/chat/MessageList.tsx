@@ -4,6 +4,8 @@ import type { Message } from '../../types'
 import MessageBubble from './MessageBubble'
 import TypingIndicator from './TypingIndicator'
 import NewArrivals from './NewArrivals'
+import { useAuthStore } from '../../store/authStore'
+import { buildBotName } from '../../utils/brand'
 import './MessageList.scss'
 
 interface MessageListProps {
@@ -13,6 +15,8 @@ interface MessageListProps {
 }
 
 export default function MessageList({ messages, isStreaming, onInteract }: MessageListProps) {
+  // UI-018：智能客服名称取自租户配置 botName（未配置默认「小布」）
+  const botName = buildBotName(useAuthStore((s) => s.user)?.botName)
   const scrollAnchorId = 'msg-anchor'
   const scrollTopRef = useRef(0)
   const scrollIntoViewRef = useRef(scrollAnchorId)
@@ -51,7 +55,7 @@ export default function MessageList({ messages, isStreaming, onInteract }: Messa
           <View className='message-list__empty-brand'>
             <Text className='message-list__empty-brand-text'>布</Text>
           </View>
-          <Text className='message-list__empty-title'>你好，我是小布</Text>
+          <Text className='message-list__empty-title'>你好，我是{botName}</Text>
           <Text className='message-list__empty-text'>
             你的专属智能购物助手{'\n'}查订单、找产品、了解窗帘知识，都可以问我
           </Text>
@@ -77,8 +81,8 @@ export default function MessageList({ messages, isStreaming, onInteract }: Messa
             <MessageBubble key={msg.id} message={msg} onInteract={onInteract} />
           ))}
 
-          {/* 思考中动画 */}
-          {showTyping && <TypingIndicator />}
+          {/* 思考中动画（UI-018：显示租户 botName，默认「小布正在思考...」） */}
+          {showTyping && <TypingIndicator text={`${botName}正在思考...`} />}
 
           {/* 滚动锚点 */}
           <View id={scrollAnchorId} className='message-list__anchor' />

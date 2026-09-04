@@ -1,4 +1,4 @@
-// case_ids: OR-001, AS-001
+// case_ids: OR-001, AS-001, UI-015
 /**
  * 小布「我的」页 E2E 验收
  * 覆盖：tab 切换 → 用户信息区 → 订单/售后区块 → 设置项
@@ -54,7 +54,8 @@ async function run(mp) {
   if (settings && settings.length > 0) {
     for (const el of settings) labels.push((await el.text()) || '')
   }
-  rep.step('设置项（账号信息/关于我们）', labels.includes('账号信息') && labels.includes('关于我们'),
+  // UI-015 已移除「账号信息」占位入口（2026-09-04 #2851），设置项为 关于我们 + 隐私协议
+  rep.step('设置项（关于我们/隐私协议）', labels.includes('关于我们') && labels.includes('隐私协议'),
     `labels=${labels.join(' / ') || '(空)'}`)
 
   await capture(mp, SCENARIO, '02-profile-full.png')
