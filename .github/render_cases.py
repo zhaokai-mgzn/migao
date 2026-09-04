@@ -74,6 +74,27 @@ def load_case_dicts(cases_dir):
     return cases
 
 
+def filter_by_persona(cases, persona: str):
+    """按归属 agent 过滤用例（issue #2855）。
+
+    persona 字段取值：mibao / xiaobu / ""(缺省=双端)。
+    - 跑 mibao 时：跳过 persona=="xiaobu" 的用例（C 端专属，B 端必挂）
+    - 跑 xiaobu 时：跳过 persona=="mibao" 的用例（B 端专属，C 端必挂）
+    - persona 为空/其它：双端都跑（向后兼容）
+    """
+    persona = (persona or "").strip().lower()
+    if persona not in ("mibao", "xiaobu"):
+        return list(cases)
+    # 跑 mibao 排除 xiaobu 专属；跑 xiaobu 排除 mibao 专属；未标记(both)双端保留
+    other = "xiaobu" if persona == "mibao" else "mibao"
+
+    def _p(c):
+        v = c.get("persona") if isinstance(c, dict) else getattr(c, "persona", "")
+        return (v or "").strip().lower()
+
+    return [c for c in cases if _p(c) != other]
+
+
 # ── 期望断言 → 旧 eval 的字符串形态 ──
 
 def exp_to_str(e):
@@ -138,6 +159,7 @@ def to_eval_py(cases):
            '    skip_reason: str = ""',
            '    legacy_id: str = ""',
            "    tags: List[str] = field(default_factory=list)",
+           '    persona: str = ""   # 归属 agent: mibao / xiaobu / ""(双端)，issue #2855',
            "", ""]
 
     for c in cases:
@@ -157,6 +179,7 @@ def to_eval_py(cases):
         out.append(f"    data_checks={c.get('data_checks') or []!r},")
         out.append(f"    skip_reason={_py_repr(c.get('skip_reason', ''))},")
         out.append(f"    tags={c.get('tags') or []!r},")
+        out.append(f"    persona={_py_repr(c.get('persona', ''))},")
         out.append(")")
         out.append("")
 

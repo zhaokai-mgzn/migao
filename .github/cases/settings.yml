@@ -209,6 +209,7 @@ cases:
       - settings
       - chat
     tier: normal
+    persona: xiaobu
     tags:
       - ai_config
       - handoff
