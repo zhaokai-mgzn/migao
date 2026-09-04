@@ -186,7 +186,7 @@ describe('RegisterPage', () => {
     })
     expect(screen.getByText(/企业账号已自动开通/)).toBeInTheDocument()
     expect(screen.getByText('立即登录')).toBeInTheDocument()
-    expect(screen.getByText('米高 · 企业智能助手')).toBeInTheDocument()
+    expect(screen.getByText('米宝 · 企业智能助手')).toBeInTheDocument()
     expect(screen.getByText('小布 · 智能客服')).toBeInTheDocument()
   })
 

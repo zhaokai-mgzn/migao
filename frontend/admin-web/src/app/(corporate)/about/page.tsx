@@ -4,7 +4,7 @@ import { Lightbulb, Heart, Sprout, Lock, Target, Eye } from 'lucide-react'
 export const metadata: Metadata = {
   title: '关于米高 — AI双助手重新定义企业电商管理',
   description:
-    '杭州词元通达科技有限公司出品的米高平台，为企业提供从内部运营到客户服务的一站式智能解决方案，以米高+小布双助手模式构建行业标杆。',
+    '杭州词元通达科技有限公司出品的米高平台，为企业提供从内部运营到客户服务的一站式智能解决方案，以米宝+小布双助手模式构建行业标杆。',
 }
 
 const values = [
@@ -39,12 +39,12 @@ const timeline = [
   {
     period: '2024 Q2',
     title: '核心引擎开发',
-    description: 'AI Agent框架搭建，米高与小布双智能助手引擎开发',
+    description: 'AI Agent框架搭建，米宝与小布双智能助手引擎开发',
   },
   {
     period: '2024 Q3',
     title: '平台上线',
-    description: '商家管理后台正式发布，米高助手入驻管理后台，首批商家测试',
+    description: '商家管理后台正式发布，米宝助手入驻管理后台，首批商家测试',
   },
   {
     period: '2024 Q4',
@@ -54,7 +54,7 @@ const timeline = [
   {
     period: '2025',
     title: '能力进化',
-    description: '米高与小布持续进化，功能扩展，服务更多行业商家',
+    description: '米宝与小布持续进化，功能扩展，服务更多行业商家',
   },
 ]
 
