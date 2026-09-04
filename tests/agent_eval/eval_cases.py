@@ -2573,6 +2573,7 @@ _CASE_UI_014 = EvalCase(
     data_checks=['QuickActions 渲染 5 个入口：算料报价/查订单/找产品/售后咨询/查物流（无「退换货」「转人工」文案残留）', '「算料报价」是首项且带 wide 全宽样式（2 列网格中 grid-column 1/-1 跨整行），视觉突出', '点击「算料报价」发送算料 prompt（含 quote 路由关键词：用料/报价），直达 curtain_calc 算料报价链路', '其余 4 入口行为不回归（查订单/找产品/售后咨询/查物流 prompt 不变）'],
     skip_reason='纯前端入口由 mini-app jest 单测验证（quick-actions.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['mini-app', 'quick-actions', 'quote'],
+    persona='',
 )
 
 # ── UI-015 [NORMAL] 我的页移除「账号信息」占位入口（功能开发中占位不进 POC 演示）（源: cases/ui.yml）──
@@ -2587,6 +2588,7 @@ _CASE_UI_015 = EvalCase(
     data_checks=['设置列表无「账号信息」占位入口（页面顶部已有用户信息，占位菜单冗余）', '「关于我们」「隐私协议」「退出登录」等真实入口保留，不回归'],
     skip_reason='纯前端 UI 由 mini-app jest 单测验证（profile-page.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['mini-app', 'profile'],
+    persona='',
 )
 
 # ── UI-016 [NORMAL] C 端品牌名去硬编码 — 导航副标题企业名取自企业设置租户名（tenantName）（源: cases/ui.yml）──
@@ -2601,6 +2603,7 @@ _CASE_UI_016 = EvalCase(
     data_checks=['导航副标题由 buildBrandSubtitle(user.tenantName) 生成：有租户名 → 「{企业名} · 智能购物助手」', '租户名为空/未登录 → 仅「智能购物助手」，不硬编码默认企业名', 'User 类型含 tenantName（camelCase，对齐 admin-api mini/login 返回）'],
     skip_reason='纯前端文案由 mini-app jest 单测验证（brand.test.ts），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['mini-app', 'brand'],
+    persona='',
 )
 
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
