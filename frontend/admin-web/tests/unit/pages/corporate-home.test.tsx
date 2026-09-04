@@ -36,10 +36,10 @@ vi.mock('lucide-react', () => {
 
 import HomePage from '@/app/(corporate)/page'
 
-describe('CorporateHomePage（主页文案重设计：米高+小布双 Agent，公司杭州词元通达科技有限公司）', () => {
+describe('CorporateHomePage（主页文案重设计：米宝+小布双 Agent，公司杭州词元通达科技有限公司）', () => {
   it('renders hero heading with 双 Agent 品牌', () => {
     render(<HomePage />)
-    expect(screen.getByText(/米高 × 小布/)).toBeInTheDocument()
+    expect(screen.getByText(/米宝 × 小布/)).toBeInTheDocument()
     expect(screen.getByText(/AI 驱动的新一代/)).toBeInTheDocument()
     expect(screen.getByText(/企业智能管理平台/)).toBeInTheDocument()
   })
@@ -52,7 +52,7 @@ describe('CorporateHomePage（主页文案重设计：米高+小布双 Agent，�
 
   it('renders hero description mentioning AI 秒级甄别', () => {
     render(<HomePage />)
-    expect(screen.getByText(/米高企业智能工作助手 \+ 小布智能客服/)).toBeInTheDocument()
+    expect(screen.getByText(/米宝企业智能工作助手 \+ 小布智能客服/)).toBeInTheDocument()
     // 「AI 自动甄别」出现在 Hero 与步骤区等多处
     expect(screen.getAllByText(/AI 自动甄别/).length).toBeGreaterThanOrEqual(1)
   })
@@ -65,10 +65,10 @@ describe('CorporateHomePage（主页文案重设计：米高+小布双 Agent，�
     expect(screen.getByText('了解更多')).toBeInTheDocument()
   })
 
-  it('renders 双 Agent 区（米高 + 小布）', () => {
+  it('renders 双 Agent 区（米宝 + 小布）', () => {
     render(<HomePage />)
     expect(screen.getByText('双 AI 助手')).toBeInTheDocument()
-    expect(screen.getByText('米高')).toBeInTheDocument()
+    expect(screen.getByText('米宝')).toBeInTheDocument()
     expect(screen.getByText('企业智能工作助手')).toBeInTheDocument()
     expect(screen.getByText('小布')).toBeInTheDocument()
     expect(screen.getByText('AI 智能客服')).toBeInTheDocument()

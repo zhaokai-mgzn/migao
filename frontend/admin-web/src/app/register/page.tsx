@@ -320,7 +320,7 @@ export default function RegisterPage() {
                 <h2 className="text-lg font-semibold text-neutral-900">企业信息</h2>
               </div>
               <p className="text-sm text-neutral-500 text-center mb-4">
-                提交后由 AI 智能甄别合规性，无敏感信息将秒级审核通过，立即开通米高助手
+                提交后由 AI 智能甄别合规性，无敏感信息将秒级审核通过，立即开通米宝助手
               </p>
 
               {/* 企业名称 */}
@@ -545,7 +545,7 @@ export default function RegisterPage() {
                           <Bot className="w-4 h-4 text-primary-600" />
                         </div>
                         <div className="text-left">
-                          <p className="text-sm font-medium text-neutral-900">米高 · 企业智能助手</p>
+                          <p className="text-sm font-medium text-neutral-900">米宝 · 企业智能助手</p>
                           <p className="text-xs text-neutral-500">AI驱动的商品、订单、售后智能管理</p>
                         </div>
                       </div>

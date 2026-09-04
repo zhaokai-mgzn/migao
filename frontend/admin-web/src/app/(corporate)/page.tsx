@@ -26,13 +26,13 @@ import {
 export const metadata: Metadata = {
   title: '米高 — AI驱动的新一代企业智能管理平台',
   description:
-    '杭州词元通达科技有限公司出品的米高智能管理平台，为每位商家配备双AI助手——米高企业智能工作助手与小布智能客服。从内部运营到客户服务，AI 自动甄别入驻，秒级开通，全方位驱动业务增长。',
+    '杭州词元通达科技有限公司出品的米高智能管理平台，为每位商家配备双AI助手——米宝企业智能工作助手与小布智能客服。从内部运营到客户服务，AI 自动甄别入驻，秒级开通，全方位驱动业务增长。',
 }
 
 const agents = [
   {
     icon: Bot,
-    name: '米高',
+    name: '米宝',
     role: '企业智能工作助手',
     description:
       '您的专属AI工作搭档，7×24小时在线处理商品管理、订单跟踪、库存盘点、售后协调，把运营人员从重复劳动中解放出来，让日常经营事半功倍。',
@@ -71,7 +71,7 @@ const advantages = [
   {
     icon: Sparkles,
     title: '双AI助手赋能',
-    description: '为企业配备米高工作助手 + 小布智能客服，内部提效与客户服务双轮驱动',
+    description: '为企业配备米宝工作助手 + 小布智能客服，内部提效与客户服务双轮驱动',
   },
   {
     icon: Brain,
@@ -107,7 +107,7 @@ const steps = [
     icon: Rocket,
     step: '03',
     title: '即刻开通',
-    description: '审核通过即刻获得管理后台、米高助手与小布客服，开启智能运营',
+    description: '审核通过即刻获得管理后台、米宝助手与小布客服，开启智能运营',
   },
 ]
 
@@ -157,14 +157,14 @@ export default function HomePage() {
             </div>
 
             <h1 className="text-3xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight leading-tight">
-              米高 × 小布
+              米宝 × 小布
               <br />
               <span className="bg-gradient-to-r from-white via-blue-100 to-blue-200 bg-clip-text text-transparent">
                 AI 驱动的新一代企业智能管理平台
               </span>
             </h1>
             <p className="mt-6 text-lg sm:text-xl text-blue-100/90 leading-relaxed max-w-2xl mx-auto">
-              米高企业智能工作助手 + 小布智能客服，双 AI 覆盖内部运营与客户服务全链路。
+              米宝企业智能工作助手 + 小布智能客服，双 AI 覆盖内部运营与客户服务全链路。
               企业入驻由 AI 自动甄别，合法合规即刻开通，最快几分钟即可开始智能运营。
             </p>
             <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
@@ -210,7 +210,7 @@ export default function HomePage() {
               一位管好内部运营，一位服务您的客户
             </h2>
             <p className="mt-4 text-lg text-neutral-500">
-              米高 + 小布，两大 AI 助手协同，为您的生意全程护航
+              米宝 + 小布，两大 AI 助手协同，为您的生意全程护航
             </p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-5xl mx-auto">
@@ -515,7 +515,7 @@ export default function HomePage() {
             准备好让AI助手驱动您的业务增长了吗？
           </h2>
           <p className="mt-4 text-lg text-blue-100/90 max-w-xl mx-auto leading-relaxed">
-            立即入驻米高平台，AI 自动甄别秒级通过，即刻获取米高工作助手与小布智能客服
+            立即入驻米高平台，AI 自动甄别秒级通过，即刻获取米宝工作助手与小布智能客服
           </p>
           <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
             <Link
