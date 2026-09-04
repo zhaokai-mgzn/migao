@@ -5,6 +5,11 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# CI 队列治理（v1.3）：同 PR 新 push 自动取消旧 run
+concurrency:
+  group: ci-ai-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -15,14 +20,40 @@ jobs:
   # ============ ai-agent-service 单测全量（匹配分支保护 required check）============
   # job name 必须精确为 "ai-agent-service unit tests"，否则分支保护的
   # required_status_checks 无法识别，PR 会一直 BLOCKED。
+  # v1.3 门控（2026-09-04）：job 保持运行（required check 永不悬空），
+  # 仅当 ai-agent 相关路径有变更才执行实际单测 —— 前端/Java 纯依赖升级（dependabot）
+  # 跳过空跑，省 CI 队列与时长（与 pr-check 的 agent-eval-smoke 同款 bash 检测）。
   ai-agent-service-test:
     name: ai-agent-service unit tests
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Detect ai-agent-related changes
+        id: detect
+        run: |
+          # 仅 PR 事件用 diff 门控；push main / workflow_dispatch 全量跑（origin/main 与 HEAD 相同，diff 无意义）
+          if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
+            echo "run_tests=true" >> "$GITHUB_OUTPUT"
+            echo "✅ 非 PR 事件（push/workflow_dispatch），全量执行单测"
+            exit 0
+          fi
+          git fetch origin main --quiet
+          CHANGED=$(git diff --name-only origin/main...HEAD)
+          HITS=$(echo "$CHANGED" | grep -E '^(backend/ai-agent-service/|tests/|\.github/|requirements.*\.txt$|pyproject\.toml$)' || true)
+          if [ -n "$HITS" ]; then
+            echo "run_tests=true" >> "$GITHUB_OUTPUT"
+            echo "✅ 检测到 ai-agent 相关变更，执行单测"
+          else
+            echo "run_tests=false" >> "$GITHUB_OUTPUT"
+            echo "⏭️ 无 ai-agent 相关变更（前端/Java/依赖清单类 PR），跳过单测空跑"
+          fi
 
       - name: Set up Python 3.11
+        if: steps.detect.outputs.run_tests == 'true'
         uses: actions/setup-python@v7
         with:
           python-version: '3.11'
@@ -30,10 +61,12 @@ jobs:
           cache-dependency-path: backend/ai-agent-service/requirements.txt
 
       - name: Install dependencies
+        if: steps.detect.outputs.run_tests == 'true'
         working-directory: backend/ai-agent-service
         run: pip install -r requirements.txt -q
 
       - name: Run unit tests
+        if: steps.detect.outputs.run_tests == 'true'
         working-directory: backend/ai-agent-service
         env:
           # LLM / 视觉 / 向量库占位：单测 mock 外部依赖，ci-dummy 兜底避免 secrets 依赖

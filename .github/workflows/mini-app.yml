@@ -11,20 +11,51 @@ on:
     paths:
       - 'frontend/mini-app/**'
 
+# CI 队列治理（v1.3）：同 PR 新 push 自动取消旧 run
+concurrency:
+  group: ci-miniapp-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   NODE_VERSION: '20'
   WORKING_DIR: frontend/mini-app
 
 jobs:
+  # v1.3 门控（2026-09-04）：job 保持运行（required check 永不悬空），
+  # 仅当 mini-app 相关路径有变更才执行实际构建/测试 —— 纯依赖升级（dependabot）跳过空跑。
+  # 与 pr-check/ai-agent-tests 同款 bash 变更检测（不加第三方 action）。
   typecheck-and-test:
     name: mini-app typecheck + unit tests
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Detect mini-app changes
+        id: detect
+        run: |
+          # 仅 PR 事件用 diff 门控；push main / workflow_dispatch 全量跑（origin/main 与 HEAD 相同，diff 无意义）
+          if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
+            echo "run_tests=true" >> "$GITHUB_OUTPUT"
+            echo "✅ 非 PR 事件（push/workflow_dispatch），全量执行 typecheck/单测"
+            exit 0
+          fi
+          git fetch origin main --quiet
+          CHANGED=$(git diff --name-only origin/main...HEAD)
+          HITS=$(echo "$CHANGED" | grep -E '^(frontend/mini-app/|tests/|\.github/)' || true)
+          if [ -n "$HITS" ]; then
+            echo "run_tests=true" >> "$GITHUB_OUTPUT"
+            echo "✅ 检测到 mini-app 相关变更，执行 typecheck/单测"
+          else
+            echo "run_tests=false" >> "$GITHUB_OUTPUT"
+            echo "⏭️ 无 mini-app 相关变更（其他模块 PR），跳过 typecheck/单测空跑"
+          fi
 
       - name: Setup Node.js
+        if: steps.detect.outputs.run_tests == 'true'
         uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -32,14 +63,17 @@ jobs:
           cache-dependency-path: ${{ env.WORKING_DIR }}/package-lock.json
 
       - name: Install dependencies
+        if: steps.detect.outputs.run_tests == 'true'
         working-directory: ${{ env.WORKING_DIR }}
         run: npm ci
 
       - name: TypeScript type check
+        if: steps.detect.outputs.run_tests == 'true'
         working-directory: ${{ env.WORKING_DIR }}
         run: npx tsc --noEmit
 
       - name: Run unit tests
+        if: steps.detect.outputs.run_tests == 'true'
         working-directory: ${{ env.WORKING_DIR }}
         run: npm test
 
@@ -52,8 +86,31 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Detect mini-app changes
+        id: detect
+        run: |
+          # 仅 PR 事件用 diff 门控；push main / workflow_dispatch 全量跑（origin/main 与 HEAD 相同，diff 无意义）
+          if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
+            echo "run_tests=true" >> "$GITHUB_OUTPUT"
+            echo "✅ 非 PR 事件（push/workflow_dispatch），全量执行视觉回归"
+            exit 0
+          fi
+          git fetch origin main --quiet
+          CHANGED=$(git diff --name-only origin/main...HEAD)
+          HITS=$(echo "$CHANGED" | grep -E '^(frontend/mini-app/|tests/|\.github/)' || true)
+          if [ -n "$HITS" ]; then
+            echo "run_tests=true" >> "$GITHUB_OUTPUT"
+            echo "✅ 检测到 mini-app 相关变更，执行视觉回归"
+          else
+            echo "run_tests=false" >> "$GITHUB_OUTPUT"
+            echo "⏭️ 无 mini-app 相关变更（其他模块 PR），跳过视觉回归空跑"
+          fi
 
       - name: Setup Node.js
+        if: steps.detect.outputs.run_tests == 'true'
         uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -61,16 +118,19 @@ jobs:
           cache-dependency-path: ${{ env.WORKING_DIR }}/package-lock.json
 
       - name: Install mini-app deps
+        if: steps.detect.outputs.run_tests == 'true'
         working-directory: ${{ env.WORKING_DIR }}
         run: npm ci
 
       - name: Install Playwright deps
+        if: steps.detect.outputs.run_tests == 'true'
         working-directory: tests
         run: |
           npm ci
           npx playwright install chromium --with-deps
 
       - name: Build H5 (test env overrides prod URL)
+        if: steps.detect.outputs.run_tests == 'true'
         working-directory: ${{ env.WORKING_DIR }}
         env:
           TARO_APP_API_URL: http://localhost:8080
@@ -78,13 +138,14 @@ jobs:
         run: npm run build:h5
 
       - name: Run visual regression
+        if: steps.detect.outputs.run_tests == 'true'
         working-directory: tests
         env:
           CI: 'true'
         run: npx playwright test specs/xiaobu/xiaobu-h5.spec.ts --config=playwright.xiaobu.config.ts
 
       - name: Upload visual diff artifacts (failure)
-        if: failure()
+        if: failure() && steps.detect.outputs.run_tests == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: xiaobu-visual-diffs
