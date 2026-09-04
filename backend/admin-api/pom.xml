@@ -26,7 +26,7 @@
         <!-- 依赖版本 -->
         <mybatis-plus.version>3.5.8</mybatis-plus.version>
         <jjwt.version>0.13.0</jjwt.version>
-        <bouncy-castle.version>1.78</bouncy-castle.version>
+        <bouncy-castle.version>1.85</bouncy-castle.version>
         <aliyun-oss.version>3.18.5</aliyun-oss.version>
         <aliyun-dysmsapi.version>4.6.0</aliyun-dysmsapi.version>
         <springdoc.version>2.6.0</springdoc.version>
