@@ -1566,6 +1566,20 @@ _CASE_OB_001 = EvalCase(
     tags=['ontology', 'schema', 'enum_alignment'],
 )
 
+# ── OB-002 [NORMAL] vision 分析候选实体写入上下文实体槽（G10 修复）（源: cases/ontology.yml）──
+_CASE_OB_002 = EvalCase(
+    id='OB-002',
+    legacy_id='',
+    title='vision 分析候选实体写入上下文实体槽（G10 修复）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户发图，vision 分析识别出候选商品/订单/客户 → 候选实体写入 context_manager 实体槽 → 后续轮次 build_context 注入'],
+    expectations=['none'],
+    data_checks=['record_vision_candidates 写入后 get_entities 返回包含 source=vision 的候选实体', 'build_context 注入的上下文包含 vision 候选实体（图片关联对象有召回保障）', '重复写入同一候选去重；非法 entity_type 拒绝', '实体槽与 _extract_entities 的工具结果提取共存（vision 与工具结果互不覆盖）'],
+    skip_reason='上下文记忆为纯数据结构契约，由 pytest 单测验证（backend/ai-agent-service/tests/test_ontology_vision_grounding.py），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ontology', 'vision', 'context_memory', 'grounding'],
+)
+
 # ── OR-001 [SMOKE] 订单列表查询（源: cases/order.yml）──
 _CASE_OR_001 = EvalCase(
     id='OR-001',
@@ -2488,6 +2502,7 @@ ALL_CASES = (
     _CASE_OB_004,
     _CASE_OB_005,
     _CASE_OB_001,
+    _CASE_OB_002,
     _CASE_OR_001,
     _CASE_OR_002,
     _CASE_OR_003,

@@ -1337,7 +1337,7 @@
 真值: frontend-fix.vitest, frontend-fix.tsc, frontend-fix.no-api-change
 溯源: 2026-09-03 新增：GB/T 47746-2026 合规官网宣称（issue #2787） ｜ tags: homepage, compliance, gb47746
 
-## ontology（1 case）
+## ontology（2 case）
 
 ### OB-001. 本体 schema 加载与状态枚举校验（订单/商品/售后/客户） 🔵
 ```
@@ -1352,6 +1352,19 @@
 ```
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 本体模块切片 1（schema + loader + 校验） ｜ tags: ontology, schema, enum_alignment
+
+### OB-002. vision 分析候选实体写入上下文实体槽（G10 修复） 🔵
+```
+你: 用户发图，vision 分析识别出候选商品/订单/客户 → 候选实体写入 context_manager 实体槽 → 后续轮次 build_context 注入
+期望: none
+数据: record_vision_candidates 写入后 get_entities 返回包含 source=vision 的候选实体
+数据: build_context 注入的上下文包含 vision 候选实体（图片关联对象有召回保障）
+数据: 重复写入同一候选去重；非法 entity_type 拒绝
+数据: 实体槽与 _extract_entities 的工具结果提取共存（vision 与工具结果互不覆盖）
+跳过: 上下文记忆为纯数据结构契约，由 pytest 单测验证（backend/ai-agent-service/tests/test_ontology_vision_grounding.py），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: ai-chat.context-memory
+溯源: 2026-09-04 新增：issue #2821 切片 2（vision 候选实体 → 上下文实体槽） ｜ tags: ontology, vision, context_memory, grounding
 
 ## 订单域（13 case）
 
@@ -2040,8 +2053,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：167（活跃 98，跳过 69）
-- tier 分布：smoke 10 / normal 129 / adversarial 28
+- 用例总数：168（活跃 98，跳过 70）
+- tier 分布：smoke 10 / normal 130 / adversarial 28
 - 售后域：5
 - agents：6
 - api：10
@@ -2055,7 +2068,7 @@
 - 人事域：5
 - misc：15
 - onboarding：5
-- ontology：1
+- ontology：2
 - 订单域：13
 - 加工项域：4
 - 商品域：13
