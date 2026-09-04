@@ -391,6 +391,7 @@ def create_default_registry() -> ToolRegistry:
     # [RAG 禁用] from app.tools.knowledge_search import KnowledgeSearchTool
     from app.tools.order_query import OrderQueryTool
     from app.tools.customer_order_query import CustomerOrderQueryTool
+    from app.tools.customer_address_query import CustomerAddressQueryTool
     from app.tools.order_manage import OrderManageTool
     from app.tools.order_create import OrderCreateTool
     from app.tools.product_manage import ProductManageTool
@@ -429,6 +430,7 @@ def create_default_registry() -> ToolRegistry:
     # [RAG 禁用] registry.register(KnowledgeSearchTool())
     registry.register(OrderQueryTool())
     registry.register(CustomerOrderQueryTool())
+    registry.register(CustomerAddressQueryTool())
     registry.register(OrderManageTool())
     registry.register(OrderCreateTool())
     registry.register(ProductManageTool())

@@ -27,6 +27,7 @@ from app.api.response_models import make_response
 from app.config import settings
 from app.api.sse import SSEEvent
 from app.memory.session_memory import SessionMemory
+from app.memory.user_memory import UserMemoryManager
 from app.agents.customer_service_agent import (
     BaseAgent,
     AgentContext,
@@ -199,23 +200,31 @@ async def _extract_memories_async(
     user_message: str,
     assistant_reply: str,
     session_id: str,
+    agent_type: str = "xiaobu",
 ) -> None:
-    """fire-and-forget：从对话中提取并保存用户记忆"""
+    """fire-and-forget：每轮把记忆候选累积到会话状态（issue #2815 会话末聚合）。
+
+    - 仅 xiaobu（C 端）累积；mibao 直接跳过
+    - 候选按 key 去重累积于 session_states，会话关闭时由 flush_memories 批量落库
+    - 失败不阻塞主流程（fire-and-forget 语义）
+    """
     try:
-        from app.memory.extractor import extract_and_save
-        count = await extract_and_save(
+        from app.memory.extractor import extract_and_accumulate
+        count = await extract_and_accumulate(
             tenant_id=tenant_id,
             user_id=user_id,
+            agent_type=agent_type,
+            session_id=session_id,
             user_message=user_message,
             assistant_reply=assistant_reply,
-            session_id=session_id,
         )
         if count > 0:
-            logger.info(
-                f"[chat/send] Memory extracted | session={session_id} count={count}"
+            logger.debug(
+                f"[chat/send] Memory accumulated | session={session_id} "
+                f"agent={agent_type} count={count}"
             )
     except Exception as e:
-        logger.debug(f"[chat/send] Memory extraction failed (non-fatal): {e}")
+        logger.debug(f"[chat/send] Memory accumulation failed (non-fatal): {e}")
 
 def _format_datetime(dt: Any) -> str:
     """格式化日期时间为 ISO 8601 字符串（UTC，以 Z 结尾）"""
@@ -675,6 +684,7 @@ async def _agent_stream_to_sse(
                         user_message=user_msg_text,
                         assistant_reply=assistant_content,
                         session_id=session_id,
+                        agent_type=getattr(agent, "_agent_type", "xiaobu"),
                     )
                 )
             except Exception as mem_err:
@@ -1643,3 +1653,57 @@ async def get_quick_actions(
     return make_response(True, data={
         "actions": actions,
     })
+
+
+# ──────────────── 用户记忆合规 API（issue #2815，个保法查询权/删除权）────────────────
+
+@router.get("/memories")
+async def get_user_memories(
+    current_user: UserIdentity = Depends(get_current_user),
+    agent_type: str = "xiaobu",  # FastAPI 自动视为 query 参数；默认 C 端记忆
+):
+    """查询当前用户已保存的记忆（个保法第 45 条查询权）。
+
+    - 仅返回当前登录用户自己的记忆（tenant_id + user_id 强制过滤）
+    - 默认只查 xiaobu（C 端画像）；B 端（mibao）本期不产生记忆
+    - 异常时返回空列表，不抛 500
+    """
+    try:
+        memories = await UserMemoryManager().get_all_memories(
+            current_user.tenant_id,
+            current_user.user_id,
+            agent_type=agent_type,
+        )
+        return make_response(True, data={"memories": memories})
+    except Exception as e:
+        logger.warning(
+            f"[chat/memories] Query failed | tenant={current_user.tenant_id} "
+            f"user={current_user.user_id} error={e}"
+        )
+        return make_response(True, data={"memories": []})
+
+
+@router.delete("/memories")
+async def delete_user_memories(
+    current_user: UserIdentity = Depends(get_current_user),
+    agent_type: str = "xiaobu",  # FastAPI 自动视为 query 参数；默认 C 端记忆
+):
+    """删除当前用户已保存的记忆（个保法第 47 条删除权）。
+
+    - 仅删除当前登录用户自己的记忆（tenant_id + user_id 强制过滤）
+    - 默认只删 xiaobu（C 端画像）
+    - 异常时返回 0，不抛 500
+    """
+    try:
+        deleted = await UserMemoryManager().delete_all(
+            current_user.tenant_id,
+            current_user.user_id,
+            agent_type=agent_type,
+        )
+        return make_response(True, data={"deleted": deleted})
+    except Exception as e:
+        logger.warning(
+            f"[chat/memories] Delete failed | tenant={current_user.tenant_id} "
+            f"user={current_user.user_id} error={e}"
+        )
+        return make_response(True, data={"deleted": 0})

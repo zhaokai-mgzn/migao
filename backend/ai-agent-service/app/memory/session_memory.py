@@ -587,6 +587,12 @@ class SessionMemory:
                 await db.commit()
                 affected = result.rowcount or 0
 
+                # 会话末聚合落库（issue #2815）：关闭前先把累积的记忆候选写入 user_memories
+                try:
+                    await self._flush_pending_memories(session_id)
+                except Exception:
+                    pass  # flush 失败不影响主流程
+
                 # 会话工作状态随关闭清理（会话管理重构 P1：SessionStateStore）
                 try:
                     await SessionStateStore().clear(session_id)
@@ -604,6 +610,18 @@ class SessionMemory:
                     exc_info=True,
                 )
                 raise
+
+    async def _flush_pending_memories(self, session_id: str) -> None:
+        """会话末聚合落库：把 session_states 中累积的记忆候选写入 user_memories（issue #2815）。
+
+        仅在关闭/删除会话前调用；候选载荷自带 tenant/user/agent_type，无需额外身份参数。
+        任何异常不抛出（fire-and-forget 语义，不破坏关闭主流程）。
+        """
+        try:
+            from app.memory.extractor import flush_memories
+            await flush_memories(session_id)
+        except Exception as e:
+            logger.warning(f"[session-memory] Flush pending memories failed | session={session_id} error={e}")
 
     async def close_other_active_sessions(
         self,
@@ -863,6 +881,11 @@ class SessionMemory:
         async with await self._get_session() as db:
             try:
                 from sqlalchemy import text
+                # 会话末聚合落库（issue #2815）：删除前先 flush 候选记忆，避免丢失
+                try:
+                    await self._flush_pending_memories(session_id)
+                except Exception:
+                    pass  # flush 失败不影响主流程
                 # 先删除消息
                 delete_messages_sql = text("""
                     DELETE FROM session_messages WHERE session_id = :session_id
@@ -986,6 +1009,12 @@ class SessionMemory:
                 await db.commit()
                 count = result.rowcount or 0
 
+                # 会话末聚合落库（issue #2815）：先 flush 候选，再清工作状态
+                for sid in idle_ids:
+                    try:
+                        await self._flush_pending_memories(sid)
+                    except Exception:
+                        pass  # flush 失败不影响主流程
                 # 清理工作状态（决策②：close 后工作状态从空开始）
                 for sid in idle_ids:
                     try:
