@@ -1366,17 +1366,18 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 切片 2（vision 候选实体 → 上下文实体槽） ｜ tags: ontology, vision, context_memory, grounding
 
-### ON-003. intent 归属表入 schema + 双端能力视图契约校验 🔵
+### ON-003. intent 归属表全量登记 + 双端能力视图契约校验（v2 按 agent 核对） 🔵
 ```
-你: schema 声明 intent→route_key→agents 归属表；契约校验与 skill_registry 实际映射对比
+你: schema 全量登记 27 个业务 intent（双端 23 + finance 仅 mibao + knowledge_faq/knowledge_manage/quote 仅 xiaobu）；契约校验与双端真实映射按 agent 分别对比
 期望: none
-数据: schema.intent_ownership 声明订单/售后域 intent 归属（order_query→order 等）
-数据: 契约校验：schema 声明 intent 必须存在于 skill 映射；实际 intent 必须登记 schema；双端（mibao/xiaobu）声明的 route_key 必须各自可达
+数据: schema.intent_ownership 全量登记 27 个业务 intent（排除 general 兜底；mibao 因 RAG 禁用不可达 knowledge 域）
+数据: 契约校验 v2：schema 声明某 agent 可达的 intent 必须在该 agent 映射中存在（防假声明）；mibao route_key 严格一致（B 端是约定事实源，xiaobu 兜底覆盖不计漂移）；任一 agent 映射有但 schema 未登记 → 违规；声明可达的 route_key 必须在该 agent 真实可达集合中
+数据: xiaobu 专属 intent（quote/knowledge_faq/knowledge_manage）在 mibao 映射缺失是正常的，不得误报
 数据: 缺失/漂移返回违规清单（不抛异常，由调用方决定阻断）
 跳过: 契约校验为纯数据结构逻辑，由 pytest 单测验证（backend/ai-agent-service/tests/test_ontology_contract.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: ai-chat.context-memory
-溯源: 2026-09-04 新增：issue #2821 切片 3（intent 归属 schema + 契约校验） ｜ tags: ontology, intent_ownership, contract, dual_agent
+溯源: 2026-09-04 更新：切片 A 全量登记 27 intent + 契约校验 v2（按 agent 核对，get_all_skill_names 口径） ｜ tags: ontology, intent_ownership, contract, dual_agent
 
 ## 订单域（13 case）
 

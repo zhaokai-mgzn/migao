@@ -8,11 +8,14 @@
 # =============================================================================
 version: "1.0"
 
-# ── intent 归属表（切片 3）：intent → route_key → 必须可达的 Agent ──
-# 契约校验（app.ontology.contract）据此与 skill_registry 实际映射对比，
-# 把「修改 B 端 intent 必须验证 xiaobu 路由」从注释承诺变为机器校验。
-# 试点范围：订单/售后域核心 intent；新增 intent 必须在此登记，否则 contract 报违规。
+# ── intent 归属表（切片 3 + 延续切片 A 全量登记）：intent → route_key → 必须可达的 Agent ──
+# 契约校验（app.ontology.contract）据此与双端真实映射（agent_intent_maps）对比，
+# 把「修改 B 端 intent 必须验证 xiaobu 路由」从注释承诺变为机器校验（全量严查）。
+# route_key 以 B 端全局映射为约定事实源（skill_registry.get_intent_to_route_map(persona=mibao)）；
+# agents 声明真实可达端：mibao=商家后台，xiaobu=小程序消费者。
+# 兜底 intent「general」不属于业务表；B 端 RAG 禁用故 knowledge 域仅 xiaobu 可达。
 intent_ownership:
+  # ── 订单域 ──
   order_query:
     route_key: order
     agents: [mibao, xiaobu]
@@ -25,6 +28,7 @@ intent_ownership:
     route_key: order
     agents: [mibao, xiaobu]
     description: 物流查询（C 端仅本人已发货订单）
+  # ── 售后域 ──
   after_sales:
     route_key: aftersales
     agents: [mibao, xiaobu]
@@ -37,6 +41,97 @@ intent_ownership:
     route_key: aftersales
     agents: [mibao, xiaobu]
     description: 投诉（涉赔偿/法律转人工）
+  # ── 商品域 ──
+  product_inquiry:
+    route_key: product
+    agents: [mibao, xiaobu]
+    description: 商品咨询/检索
+  category_manage:
+    route_key: product
+    agents: [mibao, xiaobu]
+    description: 分类管理
+  processing_manage:
+    route_key: product
+    agents: [mibao, xiaobu]
+    description: 加工项管理（算料）
+  # ── 客户域 ──
+  customer_manage:
+    route_key: customer
+    agents: [mibao, xiaobu]
+    description: 客户管理（建档/更新）
+  customer_query:
+    route_key: customer
+    agents: [mibao, xiaobu]
+    description: 客户查询
+  # ── 人事域 ──
+  employee_manage:
+    route_key: staff
+    agents: [mibao, xiaobu]
+    description: 员工管理
+  staff_manage:
+    route_key: staff
+    agents: [mibao, xiaobu]
+    description: 人事管理
+  role_manage:
+    route_key: staff
+    agents: [mibao, xiaobu]
+    description: 角色管理
+  permission_manage:
+    route_key: staff
+    agents: [mibao, xiaobu]
+    description: 权限管理
+  # ── 设置域 ──
+  system_settings:
+    route_key: settings
+    agents: [mibao, xiaobu]
+    description: 系统设置
+  ai_config:
+    route_key: settings
+    agents: [mibao, xiaobu]
+    description: AI 配置
+  notification:
+    route_key: settings
+    agents: [mibao, xiaobu]
+    description: 通知管理
+  quick_reply:
+    route_key: settings
+    agents: [mibao, xiaobu]
+    description: 快捷回复
+  # ── 数据域 ──
+  dashboard:
+    route_key: data
+    agents: [mibao, xiaobu]
+    description: 看板概览
+  statistics:
+    route_key: data
+    agents: [mibao, xiaobu]
+    description: 统计报表
+  data_report:
+    route_key: data
+    agents: [mibao, xiaobu]
+    description: 数据报表
+  finance:
+    route_key: data
+    agents: [mibao]
+    description: 财务（仅 B 端可达）
+  session_manage:
+    route_key: data
+    agents: [mibao, xiaobu]
+    description: 会话管理
+  # ── 知识域（B 端 RAG 禁用，仅 xiaobu 可达）──
+  knowledge_faq:
+    route_key: knowledge
+    agents: [xiaobu]
+    description: 知识库问答（C 端小布）
+  knowledge_manage:
+    route_key: knowledge
+    agents: [xiaobu]
+    description: 知识库管理（C 端兜底声明）
+  # ── C 端专属 ──
+  quote:
+    route_key: quote
+    agents: [xiaobu]
+    description: 窗帘算料报价（仅小布 customer_quote）
 
 objects:
   order:
