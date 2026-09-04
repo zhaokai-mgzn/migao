@@ -37,11 +37,11 @@ vi.mock('lucide-react', () => {
 import HomePage from '@/app/(corporate)/page'
 
 describe('CorporateHomePage（主页文案重设计：米宝+小布双 Agent，公司杭州词元通达科技有限公司）', () => {
-  it('renders hero heading with 双 Agent 品牌', () => {
+  it('renders hero heading: 米宝×小布 品牌 + 人设身份（AI 员工 × AI 客服）', () => {
     render(<HomePage />)
     expect(screen.getByText(/米宝 × 小布/)).toBeInTheDocument()
-    expect(screen.getByText(/AI 驱动的新一代/)).toBeInTheDocument()
-    expect(screen.getByText(/企业智能管理平台/)).toBeInTheDocument()
+    // 人设镜像行：按位置对应 米宝=AI 员工（内部运营）、小布=AI 客服（issue #2844）
+    expect(screen.getByText(/AI 员工 × AI 客服/)).toBeInTheDocument()
   })
 
   it('renders company name in hero badge', () => {
@@ -50,9 +50,11 @@ describe('CorporateHomePage（主页文案重设计：米宝+小布双 Agent，�
     expect(screen.getAllByText(/杭州词元通达科技有限公司/).length).toBeGreaterThanOrEqual(1)
   })
 
-  it('renders hero description mentioning AI 秒级甄别', () => {
+  it('renders hero description 双角色分工 + AI 自动甄别秒级开通', () => {
     render(<HomePage />)
-    expect(screen.getByText(/米宝企业智能工作助手 \+ 小布智能客服/)).toBeInTheDocument()
+    // 分工句：米宝理内部（订单/库存/售后），小布待客户（咨询/物流/退换）
+    expect(screen.getByText(/米宝替您打理内部——订单、库存、售后件件有着落/)).toBeInTheDocument()
+    expect(screen.getByText(/小布替您接待客户——咨询、物流、退换样样有回应/)).toBeInTheDocument()
     // 「AI 自动甄别」出现在 Hero 与步骤区等多处
     expect(screen.getAllByText(/AI 自动甄别/).length).toBeGreaterThanOrEqual(1)
   })

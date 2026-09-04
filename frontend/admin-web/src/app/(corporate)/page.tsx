@@ -160,12 +160,12 @@ export default function HomePage() {
               米宝 × 小布
               <br />
               <span className="bg-gradient-to-r from-white via-blue-100 to-blue-200 bg-clip-text text-transparent">
-                AI 驱动的新一代企业智能管理平台
+                AI 员工 × AI 客服
               </span>
             </h1>
             <p className="mt-6 text-lg sm:text-xl text-blue-100/90 leading-relaxed max-w-2xl mx-auto">
-              米宝企业智能工作助手 + 小布智能客服，双 AI 覆盖内部运营与客户服务全链路。
-              企业入驻由 AI 自动甄别，合法合规即刻开通，最快几分钟即可开始智能运营。
+              米宝替您打理内部——订单、库存、售后件件有着落；小布替您接待客户——咨询、物流、退换样样有回应。
+              入驻由 AI 自动甄别，合规即刻开通，最快几分钟就能让生意跑起来。
             </p>
             <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
               <Link
