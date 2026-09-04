@@ -427,3 +427,266 @@ objects:
         severity: must
       - text: "客户 PII（手机号/地址）只用于订单关联与授权查询，禁止注入无关记忆"
         severity: must
+
+  employee:
+    display_name: 员工
+    properties:
+      id:
+        type: string
+        required: true
+        source: "AgentEmployee.id"
+        description: 员工 UUID
+      user_id:
+        type: string
+        required: false
+        source: "AgentEmployee.userId"
+        description: 关联用户 ID
+      name:
+        type: string
+        required: false
+        source: "AgentEmployee.name"
+        description: 员工姓名
+      email:
+        type: string
+        required: false
+        source: "AgentEmployee.email"
+        description: 邮箱
+      phone:
+        type: string
+        required: false
+        source: "AgentEmployee.phone"
+        description: 手机号
+      status:
+        type: enum
+        required: true
+        source: "AgentEmployee.status"
+        values: [online, offline, busy]
+        description: 员工状态（AgentEmployeeService 合法值）
+      max_concurrent_sessions:
+        type: int
+        required: false
+        source: "AgentEmployee.maxConcurrentSessions"
+        description: 最大并发会话数
+    relations:
+      - name: handles_sessions
+        target: agent_session
+        cardinality: "1:N"
+        description: 员工处理人工会话
+      - name: belongs_to_tenant
+        target: tenant
+        cardinality: "N:1"
+        description: 员工归属租户
+    actions:
+      - name: employee_manage
+        description: 员工管理（查询/新增/状态变更，B 端 staff skill）
+      - name: staff_manage
+        description: 人事管理（B 端 staff skill）
+      - name: role_manage
+        confirmation_required: true
+        description: 角色管理（分配角色，B 端 staff skill）
+      - name: permission_manage
+        confirmation_required: true
+        description: 权限管理（B 端 staff skill）
+    rules:
+      - text: "员工状态合法值为 online/offline/busy，非法值拒绝（AgentEmployeeService）"
+        severity: must
+      - text: "角色/权限变更需确认闸（GB-03）"
+        severity: must
+
+  processing_item:
+    display_name: 加工项
+    properties:
+      id:
+        type: string
+        required: true
+        source: "ProcessingItem.id"
+        description: 加工项 UUID
+      name:
+        type: string
+        required: false
+        source: "ProcessingItem.name"
+        description: 加工项名称
+      category_id:
+        type: string
+        required: false
+        source: "ProcessingItem.categoryId"
+        description: 加工分类 ID
+      pricing_method:
+        type: string
+        required: false
+        source: "ProcessingItem.pricingMethod"
+        description: 计价方式（按米/按件等）
+      unit_price:
+        type: decimal
+        required: false
+        source: "ProcessingItem.unitPrice"
+        description: 单价
+      unit:
+        type: string
+        required: false
+        source: "ProcessingItem.unit"
+        description: 单位
+      min_quantity:
+        type: int
+        required: false
+        source: "ProcessingItem.minQuantity"
+        description: 最小起订量
+      max_quantity:
+        type: int
+        required: false
+        source: "ProcessingItem.maxQuantity"
+        description: 最大订购量
+      processing_days:
+        type: int
+        required: false
+        source: "ProcessingItem.processingDays"
+        description: 加工天数
+      status:
+        type: enum
+        required: true
+        source: "ProcessingItem.status"
+        values: [active, inactive]
+        description: 加工项状态（ProcessingItemStatus）
+    relations:
+      - name: belongs_to_category
+        target: processing_category
+        cardinality: "N:1"
+        description: 加工项归属加工分类
+      - name: linked_to_products
+        target: product_sku
+        cardinality: "N:M"
+        description: 加工项关联商品 SKU（算料）
+    actions:
+      - name: processing_item_query
+        description: 查询加工项（算料）
+      - name: processing_manage
+        confirmation_required: true
+        description: 加工项管理（创建/修改，B 端）
+    rules:
+      - text: "加工项状态合法值为 active/inactive（前端 ProcessingItemStatus）"
+        severity: must
+      - text: "算料报价引用加工项单价，禁止编造计价"
+        severity: must
+
+  category:
+    display_name: 分类
+    properties:
+      id:
+        type: string
+        required: true
+        source: "Category.id"
+        description: 分类 UUID
+      name:
+        type: string
+        required: false
+        source: "Category.name"
+        description: 分类名称
+      parent_id:
+        type: string
+        required: false
+        source: "Category.parentId"
+        description: 父分类 ID（多级分类）
+      level:
+        type: int
+        required: false
+        source: "Category.level"
+        description: 层级
+      sort_order:
+        type: int
+        required: false
+        source: "Category.sortOrder"
+        description: 排序
+      status:
+        type: enum
+        required: true
+        source: "Category.status"
+        values: [active, inactive]
+        description: 分类状态（active=启用 inactive=禁用）
+    relations:
+      - name: has_products
+        target: product_sku
+        cardinality: "1:N"
+        description: 分类下商品
+      - name: has_parent
+        target: category
+        cardinality: "N:1"
+        description: 父分类
+    actions:
+      - name: category_query
+        description: 查询分类
+      - name: category_manage
+        confirmation_required: true
+        description: 分类管理（创建/修改，B 端 product skill）
+    rules:
+      - text: "分类状态合法值为 active/inactive（CategoryCreateRequest 注释）"
+        severity: must
+      - text: "删除分类前必须确认无商品挂载（防孤儿数据）"
+        severity: must
+
+  knowledge_document:
+    display_name: 知识文档
+    properties:
+      id:
+        type: string
+        required: true
+        source: "KnowledgeDocument.id"
+        description: 知识文档 UUID
+      title:
+        type: string
+        required: false
+        source: "KnowledgeDocument.title"
+        description: 标题
+      doc_type:
+        type: enum
+        required: false
+        source: "KnowledgeDocument.docType"
+        values: [faq, product, guide]
+        description: 文档类型（KnowledgeDocType）
+      category:
+        type: string
+        required: false
+        source: "KnowledgeDocument.category"
+        description: 知识分类
+      product_id:
+        type: string
+        required: false
+        source: "KnowledgeDocument.productId"
+        description: 关联商品
+      status:
+        type: enum
+        required: true
+        source: "KnowledgeDocument.embeddingStatus"
+        values: [processed, processing, failed]
+        description: 嵌入处理状态（KnowledgeDocStatus）
+      is_active:
+        type: bool
+        required: false
+        source: "KnowledgeDocument.isActive"
+        description: 是否启用
+      chunk_count:
+        type: int
+        required: false
+        source: "KnowledgeDocument.chunkCount"
+        description: 分块数
+    relations:
+      - name: belongs_to_product
+        target: product_sku
+        cardinality: "N:1"
+        description: 知识文档挂载商品（RAG 检索域约束）
+      - name: split_into_chunks
+        target: knowledge_chunk
+        cardinality: "1:N"
+        description: 文档分块
+    actions:
+      - name: knowledge_faq
+        description: 知识问答（C 端 customer_knowledge，RAG 启用后）
+      - name: knowledge_manage
+        confirmation_required: true
+        description: 知识库管理（上传/同步，B 端；当前 RAG 禁用）
+    rules:
+      - text: "知识文档状态合法值为 processed/processing/failed（前端 KnowledgeDocStatus）"
+        severity: must
+      - text: "知识检索域受本体约束：只召回挂载到商品/分类的知识条目，防召回域漂移"
+        severity: must
+      - text: "RAG 当前禁用（B 端 knowledge skill 注释掉），启用需回归验证"
+        severity: should

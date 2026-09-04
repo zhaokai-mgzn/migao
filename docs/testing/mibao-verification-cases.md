@@ -1339,19 +1339,20 @@
 
 ## ontology（3 case）
 
-### ON-001. 本体 schema 加载与状态枚举校验（订单/商品/售后/客户） 🔵
+### ON-001. 本体 schema 加载与状态枚举校验（核心四对象 + 扩展四对象） 🔵
 ```
-你: 加载默认本体 schema，校验四对象（订单/商品SKU/售后单/客户）定义与状态枚举
+你: 加载默认本体 schema，校验八对象（订单/商品SKU/售后单/客户 + 员工/加工项/分类/知识文档）定义与状态枚举
 期望: none
-数据: 默认 schema.yaml 存在且可加载，返回 Ontology 含 order/product_sku/aftersales/customer 四对象
+数据: 默认 schema.yaml 存在且可加载，返回 Ontology 八对象：order/product_sku/aftersales/customer + employee/processing_item/category/knowledge_document
+数据: 每个对象具备属性/关系/动作/规则四要素
 数据: 订单状态枚举 == [pending, confirmed, producing, shipped, completed, cancelled]（与 CONTRACT-LEDGER 的 OrderService.java 状态机一致，生产中是 producing 非 processing）
-数据: 售后工单状态枚举 == [pending, processing, rejected, resolved, closed]
-数据: 商品状态枚举 == [draft, on_sale, off_sale, under_review]
+数据: 售后工单状态枚举 == [pending, processing, rejected, resolved, closed]；商品状态枚举 == [draft, on_sale, off_sale, under_review]
+数据: 扩展对象状态枚举与代码真值一致：员工 == [online, offline, busy]（AgentEmployeeService 错误消息）、加工项/分类 == [active, inactive]（DTO 注释）、知识文档 == [processed, processing, failed]（admin-web KnowledgeDocStatus）
 数据: 非法状态值（如 processing 混入订单枚举）加载校验必须拒绝并给出明确错误
 跳过: 本体模块为纯数据结构契约，由 pytest 单测验证（backend/ai-agent-service/tests/test_ontology_schema.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: ai-chat.context-memory
-溯源: 2026-09-04 新增：issue #2821 本体模块切片 1（schema + loader + 校验） ｜ tags: ontology, schema, enum_alignment
+溯源: 2026-09-04 新增：issue #2821 本体模块切片 1（schema + loader + 校验）；延续切片 B 扩展四对象 ｜ tags: ontology, schema, enum_alignment
 
 ### ON-002. vision 分析候选实体写入上下文实体槽（G10 修复） 🔵
 ```

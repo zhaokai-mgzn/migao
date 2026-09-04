@@ -1552,16 +1552,16 @@ _CASE_OB_005 = EvalCase(
     tags=['homepage', 'compliance', 'gb47746'],
 )
 
-# ── ON-001 [NORMAL] 本体 schema 加载与状态枚举校验（订单/商品/售后/客户）（源: cases/ontology.yml）──
+# ── ON-001 [NORMAL] 本体 schema 加载与状态枚举校验（核心四对象 + 扩展四对象）（源: cases/ontology.yml）──
 _CASE_ON_001 = EvalCase(
     id='ON-001',
     legacy_id='',
-    title='本体 schema 加载与状态枚举校验（订单/商品/售后/客户）',
+    title='本体 schema 加载与状态枚举校验（核心四对象 + 扩展四对象）',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['加载默认本体 schema，校验四对象（订单/商品SKU/售后单/客户）定义与状态枚举'],
+    user_inputs=['加载默认本体 schema，校验八对象（订单/商品SKU/售后单/客户 + 员工/加工项/分类/知识文档）定义与状态枚举'],
     expectations=['none'],
-    data_checks=['默认 schema.yaml 存在且可加载，返回 Ontology 含 order/product_sku/aftersales/customer 四对象', '订单状态枚举 == [pending, confirmed, producing, shipped, completed, cancelled]（与 CONTRACT-LEDGER 的 OrderService.java 状态机一致，生产中是 producing 非 processing）', '售后工单状态枚举 == [pending, processing, rejected, resolved, closed]', '商品状态枚举 == [draft, on_sale, off_sale, under_review]', '非法状态值（如 processing 混入订单枚举）加载校验必须拒绝并给出明确错误'],
+    data_checks=['默认 schema.yaml 存在且可加载，返回 Ontology 八对象：order/product_sku/aftersales/customer + employee/processing_item/category/knowledge_document', '每个对象具备属性/关系/动作/规则四要素', '订单状态枚举 == [pending, confirmed, producing, shipped, completed, cancelled]（与 CONTRACT-LEDGER 的 OrderService.java 状态机一致，生产中是 producing 非 processing）', '售后工单状态枚举 == [pending, processing, rejected, resolved, closed]；商品状态枚举 == [draft, on_sale, off_sale, under_review]', '扩展对象状态枚举与代码真值一致：员工 == [online, offline, busy]（AgentEmployeeService 错误消息）、加工项/分类 == [active, inactive]（DTO 注释）、知识文档 == [processed, processing, failed]（admin-web KnowledgeDocStatus）', '非法状态值（如 processing 混入订单枚举）加载校验必须拒绝并给出明确错误'],
     skip_reason='本体模块为纯数据结构契约，由 pytest 单测验证（backend/ai-agent-service/tests/test_ontology_schema.py），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['ontology', 'schema', 'enum_alignment'],
 )
