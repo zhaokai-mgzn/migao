@@ -18,6 +18,30 @@ from app.graph.handoff_judge import is_explicit_handoff_request
 from app.graph.state import AgentState
 
 
+# ── 业务领域关键词（单一来源）──
+# 用于 route_by_intent 的 escape hatch（topic switch）与
+# plan_rewrite 路径的澄清轮护栏判定：短消息是否包含实质业务意图。
+_SKILL_DOMAIN_KEYWORDS = {
+    "order": {"查订单", "物流", "发货", "订单"},
+    "aftersales": {"售后", "退货", "退款", "换货", "投诉"},
+    "product": {"查商品", "搜商品", "创建商品", "商品管理"},
+    "customer": {"客户", "会员"},
+    "staff": {"员工", "角色", "权限"},
+    "settings": {"设置", "配置", "通知", "快捷回复"},
+}
+
+
+def _msg_has_domain_keyword(text: str) -> bool:
+    """消息是否包含任何业务领域关键词（用户给出实质意图方向）。"""
+    if not text:
+        return False
+    return any(
+        kw in text
+        for kws in _SKILL_DOMAIN_KEYWORDS.values()
+        for kw in kws
+    )
+
+
 # ────────────────────── 多模态内容处理 ──────────────────────
 
 
@@ -198,6 +222,61 @@ async def intent_router_node(state: AgentState) -> dict:
                 f"[intent_router] Intent rewrite (short msg): pending_skill={pending_skill}"
                 f" → intent={synthetic_intent} | msg_len={msg_len} | session={session_id}"
             )
+
+            # ── 澄清轮护栏（issue #2796）：plan_rewrite 路径同样计数 ──
+            # 缺陷（真实验收 #2801 发现）：澄清卡下发后 pending_skill 已设置，
+            # 后续模糊轮（如"就是那个""你懂的"）走 plan_rewrite 提前 return，
+            # 完全绕过下方护栏挂点（其条件含 not pending_skill）→ 兜底永不触发。
+            # 修复：仅当 pending_skill 是澄清流程（general / customer_general，
+            # 澄清卡由对应兜底 skill 下发）且短消息不含任何业务领域关键词
+            # （仍无实质意图）→ 计澄清轮；表单/业务流程（product/order 等的
+            # "确认"）属实质交互 → 清零。已达上限 → 强制返回兜底话术。
+            if session_id:
+                try:
+                    from app.graph.clarify_guard import apply_clarify_guard
+                    from app.router.intent_config import RouteDecision
+
+                    is_clarify_round = (
+                        pending_skill in ("general", "customer_general")
+                        and not _msg_has_domain_keyword(last_user_msg)
+                    )
+                    # 构造护栏兼容的 route_decision（仅需 action/direct_reply 属性）
+                    guard_decision = RouteDecision(
+                        intent_result=type(
+                            "IR",
+                            (),
+                            {"intent": synthetic_intent, "confidence": 0.99, "source": "plan_rewrite"},
+                        )(),
+                        action="full_agent",
+                    )
+                    guarded = await apply_clarify_guard(
+                        session_id,
+                        is_clarify_round=is_clarify_round,
+                        route_decision=guard_decision,
+                    )
+                    if guarded.action == "direct_reply":
+                        logger.info(
+                            f"[intent_router] Clarify guard force example (plan_rewrite path)"
+                            f" | session={session_id}"
+                        )
+                        return {
+                            "intent_result": {
+                                "intent": synthetic_intent,
+                                "confidence": 0.99,
+                                "source": "plan_rewrite",
+                            },
+                            "route_decision": {
+                                "action": "direct_reply",
+                                "direct_reply": guarded.direct_reply,
+                                "tool_hint": None,
+                                "guard_forced": True,
+                            },
+                        }
+                except Exception as e:
+                    logger.warning(
+                        f"[intent_router] Clarify guard (plan_rewrite) failed (non-fatal): {e}"
+                    )
+
             return {
                 "intent_result": {
                     "intent": synthetic_intent,
@@ -288,8 +367,11 @@ async def intent_router_node(state: AgentState) -> dict:
     )
 
     # ── 澄清轮次护栏（issue #2796）──
-    # 低置信重写 general（source=low_confidence）即澄清轮：连续 ≥N 轮仍无实质
-    # 意图 → 强制给具体示例兜底话术（防低学历用户被无限追问），而非继续追问。
+    # 路由到 general（兜底澄清 skill）即澄清轮：连续 ≥N 轮仍无实质意图 →
+    # 强制给具体示例兜底话术（防低学历用户被无限追问），而非继续追问。
+    # 注意：不以 source=="low_confidence" 为唯一判定——classifier 直接判 general
+    # （GENERAL 在低置信重写豁免清单内）同样是"AI 听不明白要澄清"的信号
+    # （真实验收 #2801 发现：R1"帮我看看"confidence=0.30 source=classifier 未被计数）。
     if (
         session_id
         and route_decision.action in ("full_agent", "route_with_hint")
@@ -300,7 +382,6 @@ async def intent_router_node(state: AgentState) -> dict:
 
             is_clarify_round = (
                 route_decision.intent_result.intent.value == "general"
-                and route_decision.intent_result.source == "low_confidence"
             )
             guarded = await apply_clarify_guard(
                 session_id,
@@ -383,6 +464,8 @@ async def intent_router_node(state: AgentState) -> dict:
             "action": route_decision.action,
             "direct_reply": route_decision.direct_reply,
             "tool_hint": route_decision.tool_hint,
+            # 澄清护栏强制兜底标记：route_by_intent 遇到时不可被 pending_skill 覆盖
+            "guard_forced": bool(getattr(route_decision, "guard_forced", False)),
         },
     }
 
@@ -535,13 +618,20 @@ def route_by_intent(state: AgentState) -> str:
             )
             return "general"
         # 如果有 pending skill，不执行 direct_reply，继续走 skill 流程
-        if pending_skill:
+        # 例外：澄清护栏强制兜底（guard_forced=True）时，兜底话术必须直达
+        # 用户，不能被 pending_skill（澄清卡/表单流程）覆盖回 general skill
+        # （真实验收 #2801 发现：护栏改写后被 pending 覆盖，兜底永不触达）。
+        if pending_skill and not route.get("guard_forced"):
             logger.info(
                 f"[route_by_intent] Pending interact skill '{pending_skill}' overrides direct_reply"
                 f" | session={session_id}"
             )
             return pending_skill
-        logger.info(f"[route_by_intent] Direct reply, no pending skill | session={session_id}")
+        logger.info(
+            f"[route_by_intent] Direct reply"
+            f" (pending_skill={pending_skill or 'none'}, guard_forced={route.get('guard_forced')})"
+            f" | session={session_id}"
+        )
         return "direct_reply"
 
     intent = (state.get("intent_result") or {}).get("intent", "general")
@@ -554,14 +644,7 @@ def route_by_intent(state: AgentState) -> str:
         # 注意：不能用字符数判断——中文确认消息（如"好的，确认创建，克重选中"）轻松超过10字。
         # 仅当消息包含其他领域的显式触发词时才允许逃逸。
         last_msg = _get_last_human_text(state.get("messages", [])) or ""
-        _SKILL_DOMAIN_KEYWORDS = {
-            "order": {"查订单", "物流", "发货", "订单"},
-            "aftersales": {"售后", "退货", "退款", "换货", "投诉"},
-            "product": {"查商品", "搜商品", "创建商品", "商品管理"},
-            "customer": {"客户", "会员"},
-            "staff": {"员工", "角色", "权限"},
-            "settings": {"设置", "配置", "通知", "快捷回复"},
-        }
+        # 使用模块级单一来源关键词表（plan_rewrite 护栏与 escape hatch 共用）
         # 如果用户消息包含非当前 skill 领域的关键词，允许切换
         current_domain_keywords = _SKILL_DOMAIN_KEYWORDS.get(pending_skill, set())
         for skill_domain, keywords in _SKILL_DOMAIN_KEYWORDS.items():

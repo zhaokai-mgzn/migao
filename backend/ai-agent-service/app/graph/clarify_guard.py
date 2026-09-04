@@ -153,22 +153,29 @@ def _rewrite_to_example(route_decision: Any) -> Any:
 
     RouteDecision 是 dataclass：优先 dataclasses.replace（保持其它字段），
     非 dataclass（测试替身等）回退到同属性复制；结构异常时原样返回。
+
+    改写结果附带 guard_forced=True 标记：route_by_intent 遇到该标记时，
+    即使存在 pending_interact_skill（澄清卡/表单流程），也必须走兜底话术，
+    不能再被 pending_skill 覆盖回 general skill（真实验收 #2801 发现）。
     """
     import dataclasses
 
     if dataclasses.is_dataclass(route_decision):
-        return dataclasses.replace(
+        new = dataclasses.replace(
             route_decision,
             action="direct_reply",
             direct_reply=CLARIFY_FORCE_EXAMPLE_TEXT,
             tool_hint=None,
         )
+        new.guard_forced = True
+        return new
     try:
         new = type(route_decision)()
         new.intent_result = route_decision.intent_result
         new.action = "direct_reply"
         new.direct_reply = CLARIFY_FORCE_EXAMPLE_TEXT
         new.tool_hint = None
+        new.guard_forced = True
         return new
     except Exception:
         # 结构异常时兜底：原样返回（守卫宁可失效也不阻断）
