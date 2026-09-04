@@ -20,6 +20,17 @@ updates:
     labels:
       - "type/chore"
       - "role/backend"
+    # langchain 全家桶必须整组同步升级：langchain-openai 1.6.x 要求 langchain-core 1.6.x，
+    # 而仓库钉住 langchain-core==1.4.8（audit-2026-09 实测冲突组合），单包升级必现
+    # pip ResolutionImpossible（曾关闭 langchain-openai 1.6 冲突 PR）。
+    # 升级路径：core+openai+deepseek+graph+checkpoint+prebuilt+sd 整组升，作为一次工程级 PR。
+    ignore:
+      - dependency-name: "langchain-core"
+      - dependency-name: "langchain-openai"
+      - dependency-name: "langchain-deepseek"
+      - dependency-name: "langgraph"
+      - dependency-name: "langgraph-checkpoint"
+      - dependency-name: "langgraph-prebuilt"
 
   - package-ecosystem: "npm"
     directory: "/frontend/admin-web"

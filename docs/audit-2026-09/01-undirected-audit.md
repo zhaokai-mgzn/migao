@@ -154,6 +154,13 @@
 
 - **human_handoff 确认闸**（P2-2.5 建议 `requires_confirmation=True`）：**不改**。依据：①转人工是**用户显式请求**（"我要转人工"本身即确认意图），非 LLM 自发写操作；②#2812 刚验收的 E2E（CH-013/014）期望「我要转人工→SSE human_handoff→C 端横幅」直转链路，加闸会拦截（last_msg 非确认词）导致链路断裂；③GB 3.2 要求「转人工便捷入口、不层层隐藏」，加确认闸与之冲突。风险已由 prompt 铁律（EXAMPLES-customer_aftersales 转人工边界）+ allowed_roles=["customer"] 覆盖。
 - **PR-010 偶发失败**（smoke 9 用例中 1 个 ⚠️ 80%）：本地与 CI 表现不一致且**失败点每次不同**——CI 缺 `product_update(price=198)`（tools 序列无 product_update，仅 product_processing_item_manage）、本地缺 `product_processing_item_manage(action=add)`（tools 序列无该工具）→ 属 7 轮长链 LLM 波动（同一期望两轮落点不同），非本批引入、非 required check，记录观察不修。PR #2820 CI 复现同型失败（8/9，仅 PR-010 80%）。
-- **gate 组件测试缺口**（P1-1.3，23 个子目录测试 + 60 条豁免）：工程级测试搬迁，涉及 qa-exemptions 大改与全量 E2E 回归，**建议独立 PR** 处理，不在本批混合提交。
-- **Java/前端整组升级**（P1-1.4/1.5）、**langchain 依赖防护**（P2-2.10）、**venv 重建**（P2-2.12）：工程级任务，独立排期。
-- **admin-web `.env.*` 入库**（P2-2.7）、**deploy.sh 配置随 main 漂移**（P2-2.8）、**render_cases 域映射**（P2-2.9）、**CU-003 文档口径**（P2-2.13）、**端口/schema 口径**（P2-2.14）：留待后续批次，避免本批 diff 过大。
+- **gate 组件测试缺口**（P1-1.3，23 个子目录测试 + 60 条豁免）：**已在本批执行**（PR #2823，见 §6.3）——测试平铺 + 豁免清理 + 大小写对齐 + case_ids 补齐，QA Growth Gate 恢复对组件的覆盖校验。
+- **Java/前端整组升级**（P1-1.4/1.5）、**venv 重建**（P2-2.12）：工程级任务，独立排期（需整组回归，风险高，不盲目推进）。
+- **admin-web `.env.*` 入库**（P2-2.7）、**deploy.sh 配置随 main 漂移**（P2-2.8）、**render_cases 域映射**（P2-2.9）、**CU-003 文档口径**（P2-2.13）、**端口/schema 口径**（P2-2.14）：低价值或需独立排期，不做。
+
+### 6.3 第二批修复执行记录（2026-09-04，高价值优先）
+
+| # | 修复项 | 内容 | 验证 |
+|---|---|---|---|
+| 1 | **gate 组件测试缺口**（P1-1.3） | ①git mv 平铺 23 个组件测试至 `tests/unit/components/` 根目录（gate 模板不递归子目录）；②`components-chat.test.tsx` 合并（保留 905 行深度版 + 补 KnowledgeCard/ProductCard import 冒烟断言）；③大小写对齐重命名 sidebar→Sidebar、pagination→Pagination、search-bar→SearchBar（防 Linux CI 大小写敏感误判）；④`qa-exemptions.yml` 删 39 条已失效豁免（数据驱动验证空豁免可命中）、保留 21 条正当豁免；⑤12 个平铺测试补 case_ids（gate 视 git mv 为修改）；⑥`cases/ui.yml` traces 同步平铺路径 + 重渲染生成物 | admin-web vitest 107 文件 1455 tests 全过；`./verify-all.sh quick` 6/6；gate 数据驱动复扫 65 组件仅 4 个预存异常（Logo/MibaoLogo/LogisticsForm 本就无测试无豁免；auth-guard 连字符正则盲区——均非本批引入，另立评估）；PR #2823 CI：QA Growth Gate ✅ / Case Contract ✅ |
+| 2 | **langchain dependabot 防护**（P2-2.10） | pip 块 ignore langchain-core/openai/deepseek/langgraph/checkpoint/prebuilt（照抄 mini-app Taro 防半套升级模式），防单包升级触发 core 1.4.8 冲突 | YAML 解析通过；PR #2823 同批提交 |
