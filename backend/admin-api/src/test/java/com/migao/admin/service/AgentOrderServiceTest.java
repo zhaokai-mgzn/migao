@@ -1,5 +1,5 @@
 package com.migao.admin.service;
-// case_ids: OR-008
+// case_ids: OR-008, OR-011
 
 import com.migao.admin.dto.*;
 import com.migao.admin.dto.agent.*;
@@ -21,6 +21,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -112,6 +113,97 @@ class AgentOrderServiceTest {
             req.setCustomerName("张三"); req.setCustomerPhone("13800001111");
             assertThatThrownBy(() -> orderService.createOrderForAgent(req, 1L))
                     .isInstanceOf(BusinessException.class);
+        }
+
+        // ============ GB/T 47746-2026 M3 服务端取价校验（issue #2806） ============
+
+        private AgentOrderCreateRequest buildPriceReq(String skuCode, String colorName,
+                                                      BigDecimal unitPrice, Object processingInfo) {
+            AgentOrderCreateRequest req = new AgentOrderCreateRequest();
+            req.setCustomerName("张三"); req.setCustomerPhone("13800001111");
+            AgentOrderCreateRequest.AgentOrderItem item = new AgentOrderCreateRequest.AgentOrderItem();
+            item.setProductName("遮光窗帘"); item.setProductId("p-001");
+            item.setSkuCode(skuCode); item.setColorName(colorName);
+            item.setProcessingInfo(processingInfo);
+            item.setQuantity(2); item.setUnitPrice(unitPrice);
+            req.setItems(List.of(item));
+            return req;
+        }
+
+        private void mockOrderInsert() {
+            when(orderMapper.insert(any(Order.class))).thenAnswer(inv -> {
+                Order o = inv.getArgument(0); o.setId("order-new"); return 1;
+            });
+            when(orderMapper.selectById("order-new")).thenReturn(
+                    Order.builder().id("order-new").orderNo("ORD-new")
+                            .customerName("张三").status("pending")
+                            .totalAmount(new BigDecimal("300.00")).build());
+            when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+        }
+
+        @Test
+        @DisplayName("取价校验：skuCode 可解析且单价一致 → 成功（M3）")
+        void priceMatchBySkuCode() {
+            AgentOrderCreateRequest req = buildPriceReq("SKU-001", null, new BigDecimal("150"), null);
+            when(productSkuMapper.selectList(any(LambdaQueryWrapper.class)))
+                    .thenReturn(List.of(ProductSku.builder().id(1L).price(new BigDecimal("150")).build()));
+            mockOrderInsert();
+
+            OrderDetailResponse result = orderService.createOrderForAgent(req, 1L);
+            assertThat(result).isNotNull();
+            verify(productSkuMapper).selectList(any(LambdaQueryWrapper.class));
+        }
+
+        @Test
+        @DisplayName("取价校验：processingInfo 内 colorName 可解析且单价一致 → 成功（M3，兼容 ai-agent 现状）")
+        void priceMatchFromProcessingInfo() {
+            AgentOrderCreateRequest req = buildPriceReq(null, null, new BigDecimal("150"),
+                    Map.of("colorName", "白色"));
+            when(productSkuMapper.selectList(any(LambdaQueryWrapper.class)))
+                    .thenReturn(List.of(ProductSku.builder().id(1L).price(new BigDecimal("150")).build()));
+            mockOrderInsert();
+
+            OrderDetailResponse result = orderService.createOrderForAgent(req, 1L);
+            assertThat(result).isNotNull();
+            verify(productSkuMapper).selectList(any(LambdaQueryWrapper.class));
+        }
+
+        @Test
+        @DisplayName("取价校验：SKU 可解析但单价不一致 → 拒绝并附权威价（M3）")
+        void priceMismatchRejected() {
+            AgentOrderCreateRequest req = buildPriceReq("SKU-001", null, new BigDecimal("160"), null);
+            when(productSkuMapper.selectList(any(LambdaQueryWrapper.class)))
+                    .thenReturn(List.of(ProductSku.builder().id(1L).price(new BigDecimal("150")).build()));
+
+            assertThatThrownBy(() -> orderService.createOrderForAgent(req, 1L))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("单价与系统价格不一致")
+                    .hasMessageContaining("系统价 150.00");
+        }
+
+        @Test
+        @DisplayName("取价校验：SKU 无法解析 → 不拦截（防误伤）")
+        void priceUnresolvableSkips() {
+            AgentOrderCreateRequest req = buildPriceReq("SKU-NOPE", null, new BigDecimal("999"), null);
+            when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+            mockOrderInsert();
+
+            OrderDetailResponse result = orderService.createOrderForAgent(req, 1L);
+            assertThat(result).isNotNull();
+        }
+
+        @Test
+        @DisplayName("取价校验：SKU 歧义（命中多条）→ 不拦截")
+        void priceAmbiguousSkips() {
+            AgentOrderCreateRequest req = buildPriceReq(null, "白色", new BigDecimal("150"), null);
+            when(productSkuMapper.selectList(any(LambdaQueryWrapper.class)))
+                    .thenReturn(List.of(
+                            ProductSku.builder().id(1L).price(new BigDecimal("150")).build(),
+                            ProductSku.builder().id(2L).price(new BigDecimal("180")).build()));
+            mockOrderInsert();
+
+            OrderDetailResponse result = orderService.createOrderForAgent(req, 1L);
+            assertThat(result).isNotNull();
         }
     }
 
