@@ -1289,6 +1289,10 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
 
         List<OrderCreateRequest.OrderItemRequest> itemReqs = new ArrayList<>();
         for (var item : request.getItems()) {
+            // GB/T 47746-2026 M3（issue #2806）：服务端取价校验——SKU 可解析时，
+            // unitPrice 必须与权威价严格一致（防 LLM 定价幻觉；解析不到不拦截防误伤）
+            validateAgentItemUnitPrice(item, tenantId);
+
             OrderCreateRequest.OrderItemRequest itemReq = new OrderCreateRequest.OrderItemRequest();
             itemReq.setProductName(item.getProductName());
             itemReq.setProductId(item.getProductId());
@@ -1308,6 +1312,71 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         createReq.setItems(itemReqs);
 
         return createOrder(createReq, tenantId);
+    }
+
+    /**
+     * Agent 下单明细单价的服务端取价校验（GB/T 47746-2026 M3，issue #2806）。
+     *
+     * 规则（严格一致才放行，用户已确认）：
+     * - 明细同时提供 productId 与 skuCode（或 colorName）且能解析到唯一 SKU → 请求 unitPrice
+     *   必须与 SKU 权威价一致（BigDecimal compareTo == 0），不一致抛 400 并附权威价供修正；
+     * - 解析不到（无 SKU 标识 / SKU 不存在 / 命中多条 SKU 无法唯一确定）→ 不拦截（防误伤），记 warn。
+     */
+    private void validateAgentItemUnitPrice(AgentOrderCreateRequest.AgentOrderItem item, Long tenantId) {
+        if (item.getUnitPrice() == null) {
+            return;
+        }
+        // SKU 标识优先取顶层字段（契约预留），否则从 processingInfo（商品销售信息）内解析，
+        // 兼容 ai-agent order_create 现状（skuCode/colorName 嵌套在 processing_info 内）
+        String skuCode = item.getSkuCode();
+        String colorName = item.getColorName();
+        if (!StringUtils.hasText(skuCode) && !StringUtils.hasText(colorName) && item.getProcessingInfo() instanceof Map<?, ?> info) {
+            Object rawSku = info.get("skuCode");
+            if (rawSku != null) {
+                skuCode = String.valueOf(rawSku);
+            }
+            Object rawColor = info.get("colorName");
+            if (rawColor != null) {
+                colorName = String.valueOf(rawColor);
+            }
+        }
+        boolean hasSkuKey = StringUtils.hasText(skuCode) || StringUtils.hasText(colorName);
+        if (!StringUtils.hasText(item.getProductId()) || !hasSkuKey) {
+            return; // 无 SKU 标识，无法解析权威价 → 不拦截
+        }
+
+        LambdaQueryWrapper<ProductSku> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(ProductSku::getTenantId, tenantId)
+                .eq(ProductSku::getProductId, item.getProductId());
+        if (StringUtils.hasText(skuCode)) {
+            wrapper.eq(ProductSku::getSkuCode, skuCode);
+        } else {
+            wrapper.eq(ProductSku::getColorName, colorName);
+        }
+        wrapper.orderByAsc(ProductSku::getId)
+                .last("LIMIT 2"); // 取 2 条探测歧义
+        List<ProductSku> skus = productSkuMapper.selectList(wrapper);
+        if (skus == null || skus.isEmpty()) {
+            log.warn("[order] 取价校验跳过（SKU 未解析到）: productId={} skuCode={} colorName={}",
+                    item.getProductId(), skuCode, colorName);
+            return;
+        }
+        if (skus.size() > 1) {
+            log.warn("[order] 取价校验跳过（SKU 不唯一，无法确定权威价）: productId={} skuCode={}",
+                    item.getProductId(), skuCode);
+            return;
+        }
+        BigDecimal authoritative = skus.get(0).getPrice();
+        if (authoritative == null) {
+            return; // SKU 无价格，无从校验
+        }
+        if (item.getUnitPrice().compareTo(authoritative) != 0) {
+            log.warn("[order] 取价校验拒绝（LLM 单价≠权威价）: productId={} skuCode={} request={} authoritative={}",
+                    item.getProductId(), skuCode, item.getUnitPrice(), authoritative);
+            throw BusinessException.validationError(
+                    String.format("商品「%s」单价与系统价格不一致：请求 %.2f 元，系统价 %.2f 元。请以系统价重新下单。",
+                            item.getProductName(), item.getUnitPrice(), authoritative));
+        }
     }
 
     /**

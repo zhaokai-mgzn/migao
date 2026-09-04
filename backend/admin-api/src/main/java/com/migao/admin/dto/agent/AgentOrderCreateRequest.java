@@ -44,6 +44,12 @@ public class AgentOrderCreateRequest {
         /** 商品 ID（可选，可为 UUID / 名称） */
         private String productId;
 
+        /** SKU 编码（可选；提供且可解析时，服务端按 SKU 权威价严格校验 unitPrice，GB/T 47746-2026 M3，issue #2806） */
+        private String skuCode;
+
+        /** 颜色名称（可选；无 skuCode 时兜底解析 SKU 用） */
+        private String colorName;
+
         /** 数量（必填） */
         private Integer quantity;
 
