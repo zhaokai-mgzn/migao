@@ -28,7 +28,7 @@ sse-starlette==2.2.1
 asyncpg==0.30.0
 SQLAlchemy==2.0.37
 greenlet==3.5.5
-redis==5.2.1
+redis==8.1.0
 
 # 工具库
 python-dotenv==1.2.3
