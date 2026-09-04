@@ -1,5 +1,5 @@
 """ValidateInputTool 单元测试 — 纯本地校验，无 API 调用"""
-# case_ids: PR-005
+# case_ids: PR-005, AS-003
 import pytest
 from app.tools.validate_input import ValidateInputTool
 
@@ -59,6 +59,58 @@ class TestValidateInputSuccess:
             target_tool="inventory_manage",
             target_action="adjust",
             params={"product_id": "prod-001", "adjustment": 30},
+        )
+        assert result.success is False
+
+
+class TestValidateInputAftersaleCreate:
+    """aftersale_create（C 端售后创建）参数校验 — audit-2026-09 P2：
+
+    售后创建是写操作（会生成工单），customer_aftersales_skill 的 validate_input
+    前置必须能校验其必填参数（order_id/ticket_type/reason），否则 LLM 可绕过校验
+    直接以残缺参数创建工单（对账/状态机破坏，GB-03 承诺边界）。
+    """
+
+    async def test_aftersale_create_valid(self, tool, admin_tool_context):
+        result = await tool.execute(
+            context=admin_tool_context,
+            target_tool="aftersale_create",
+            target_action="create",
+            params={
+                "order_id": "ORD-001",
+                "ticket_type": "refund",
+                "reason": "窗帘有色差",
+            },
+        )
+        assert result.success is True
+        assert result.data["validated"] is True
+
+    async def test_aftersale_create_missing_order_id(self, tool, admin_tool_context):
+        result = await tool.execute(
+            context=admin_tool_context,
+            target_tool="aftersale_create",
+            target_action="create",
+            params={"ticket_type": "refund", "reason": "窗帘有色差"},
+        )
+        assert result.success is False
+        assert "订单ID" in result.message or "order_id" in result.message.lower()
+
+    async def test_aftersale_create_missing_reason(self, tool, admin_tool_context):
+        result = await tool.execute(
+            context=admin_tool_context,
+            target_tool="aftersale_create",
+            target_action="create",
+            params={"order_id": "ORD-001", "ticket_type": "refund"},
+        )
+        assert result.success is False
+        assert "原因" in result.message or "reason" in result.message.lower()
+
+    async def test_aftersale_create_invalid_ticket_type(self, tool, admin_tool_context):
+        result = await tool.execute(
+            context=admin_tool_context,
+            target_tool="aftersale_create",
+            target_action="create",
+            params={"order_id": "ORD-001", "ticket_type": "bogus", "reason": "测试"},
         )
         assert result.success is False
 

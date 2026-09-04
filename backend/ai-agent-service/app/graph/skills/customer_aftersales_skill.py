@@ -3,7 +3,7 @@
 """
 from app.graph.skills.skill_config import create_skill_config
 
-CUSTOMER_AFTERSALES_TOOLS = ["aftersale_query", "aftersale_create", "human_handoff"]
+CUSTOMER_AFTERSALES_TOOLS = ["aftersale_query", "aftersale_create", "validate_input", "human_handoff"]
 
 CUSTOMER_AFTERSALES_SYSTEM_PROMPT = """你是"小布"，米高窗帘的售后客服。你的职责是帮助顾客处理售后问题。
 
