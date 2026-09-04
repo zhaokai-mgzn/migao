@@ -95,7 +95,9 @@ class TestRequiresConfirmation:
         assert _requires_confirmation(t, {}, "查一下") is True
 
     def test_plain_write_tool_never_requires(self):
-        # 普通写工具（未标记 destructive/requires_confirmation）：维持现状不强制
+        # 未标记的普通写工具（无 destructive/requires_confirmation）：维持现状不强制。
+        # 合同/承诺类写工具（order_create/aftersale_create）已单独标记
+        # requires_confirmation=True，见 TestOrderCreateAftersaleCreateRequireConfirmation。
         t = self._make_tool(destructive=False)
         assert _requires_confirmation(t, {"action": "delete"}, "删除") is False
 
@@ -115,6 +117,28 @@ class TestRequiresConfirmation:
                             read_only_actions={"list", "detail"})
         assert _requires_confirmation(t, {"action": "list"}, "查一下") is False
         assert _requires_confirmation(t, {"action": "detail"}, "查详情") is False
+
+
+class TestOrderCreateAftersaleCreateRequireConfirmation:
+    """GB/T 47746-2026 承诺边界（#2782）：下单/售后申请即向顾客作出承诺
+    （订单=交易合同、售后申请含退款诉求），即使非 destructive 也必须标记
+    requires_confirmation=True——无明确确认即被确认守卫拦截。"""
+
+    def test_order_create_requires_confirmation(self):
+        from app.tools.order_create import OrderCreateTool
+        tool = OrderCreateTool()
+        assert tool.requires_confirmation is True
+        # 顾客直接要求下单但未确认 → 拦截
+        assert _requires_confirmation(tool, {}, "帮我下单") is True
+        # 明确确认后才放行
+        assert _requires_confirmation(tool, {}, "确认下单") is False
+
+    def test_aftersale_create_requires_confirmation(self):
+        from app.tools.aftersale_create import AftersaleCreateTool
+        tool = AftersaleCreateTool()
+        assert tool.requires_confirmation is True
+        assert _requires_confirmation(tool, {}, "我要退货") is True
+        assert _requires_confirmation(tool, {}, "确认退款") is False
 
 
 class TestReadOnlyActionsContract:

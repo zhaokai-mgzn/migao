@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { Bot, MessageSquare, Save, Plus, Trash2, Edit3, X, Check, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button, Badge } from '@/components/ui'
@@ -16,7 +17,12 @@ const TABS: { key: ConfigTab; label: string; icon: typeof Bot }[] = [
 ]
 
 export default function ChatConfigPage() {
-  const [activeTab, setActiveTab] = useState<ConfigTab>('basic')
+  const searchParams = useSearchParams()
+  const urlTab = searchParams?.get('tab')
+  // 支持 ?tab=quick-replies 直达（快捷回复占位页重定向至此）
+  const [activeTab, setActiveTab] = useState<ConfigTab>(
+    urlTab === 'quick-replies' ? 'quick-replies' : 'basic'
+  )
 
   // ========== 基础设置 ==========
   const defaultAiConfig: AiConfig = {

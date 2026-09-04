@@ -20,7 +20,8 @@ class ProductProcessingItemManageTool(BaseTool):
 
     name = "product_processing_item_manage"
     description = (
-        "【触发】用户说'添加加工项''加上XX''关联XX'时**直接调用**，无需 validate_input 和确认。"
+        "【触发】用户说'添加加工项''加上XX''关联XX'时调用。"
+        "【确认】必须先向用户展示拟添加/移除的加工项，征得明确确认后再执行。"
         "【前置】product_id/item_ids 支持名称/UUID/序号自动解析。不要先调 processing_item_query。"
         "【标注】WRITE|IDEMPOTENT — 幂等操作，重复执行不会出错"
     )
@@ -60,6 +61,15 @@ class ProductProcessingItemManageTool(BaseTool):
         item_ids: list,
     ) -> ToolResult:
         """执行商品加工项关联操作"""
+
+        # 权限检查：商品加工项关联修改仅限商户角色（admin/tenant_admin）
+        if not self.check_permission(context):
+            return ToolResult(
+                success=False,
+                error="权限不足",
+                message="您没有权限管理商品加工项",
+                suggestion="加工项管理仅对商家账号开放（admin/tenant_admin），请确认当前账号角色或联系管理员",
+            )
 
         if action not in ("add", "remove"):
             return ToolResult(

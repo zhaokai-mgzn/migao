@@ -38,6 +38,8 @@ export interface Message {
   id: string
   session_id?: string
   role: 'user' | 'assistant' | 'system'
+  /** 消息来源（GB/T 47746-2026 人机区分，issue #2780）：ai=AI 助手；human=人工客服 */
+  source?: 'ai' | 'human'
   content: string
   created_at: string
   type?: 'text' | 'card' | 'tool_call'

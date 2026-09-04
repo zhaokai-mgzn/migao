@@ -287,6 +287,35 @@ async def intent_router_node(state: AgentState) -> dict:
         f" | session={session_id}"
     )
 
+    # ── 澄清轮次护栏（issue #2796）──
+    # 低置信重写 general（source=low_confidence）即澄清轮：连续 ≥N 轮仍无实质
+    # 意图 → 强制给具体示例兜底话术（防低学历用户被无限追问），而非继续追问。
+    if (
+        session_id
+        and route_decision.action in ("full_agent", "route_with_hint")
+        and not pending_skill
+    ):
+        try:
+            from app.graph.clarify_guard import apply_clarify_guard
+
+            is_clarify_round = (
+                route_decision.intent_result.intent.value == "general"
+                and route_decision.intent_result.source == "low_confidence"
+            )
+            guarded = await apply_clarify_guard(
+                session_id,
+                is_clarify_round=is_clarify_round,
+                route_decision=route_decision,
+            )
+            if guarded is not route_decision:
+                logger.info(
+                    f"[intent_router] Clarify guard rewrote to example fallback"
+                    f" | session={session_id}"
+                )
+                route_decision = guarded
+        except Exception as e:
+            logger.warning(f"[intent_router] clarify guard failed (non-fatal): {e}")
+
     # ── D3 AI 主动引导转人工（结构化信号，xiaobu C 端）──
     # 商家关键词（上）与显式请求（函数头）已直转；此处只处理"用户未明说但
     # 信号提示该建议转人工"：general/after_sales 意图 + 负面情绪/多轮未解决/

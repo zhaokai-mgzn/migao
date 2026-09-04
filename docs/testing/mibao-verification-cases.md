@@ -283,7 +283,7 @@
 真值: category-manage.delete, category-manage.delete-destructive, ai-chat.confirm-required
 溯源: verification 2.12 独有（二次确认行为在测试中未确认，见 category-manage.yml 缺口注释） ｜ tags: delete, destructive, confirm
 
-## 对话边界域（17 case）
+## 对话边界域（23 case）
 
 ### CH-001. 空结果 + suggestion 引导修复 🔴
 ```
@@ -308,14 +308,15 @@
 真值: ai-chat.escape-hatch
 溯源: eval M004 + verification 8.2（原用例「长度>10」与代码不符，已按 ai-chat.escape-hatch 校准） ｜ tags: multi_turn, cancel, user_abort
 
-### CH-003. 模糊意图引导 - 不猜测，列出选项 🔵
+### CH-003. 模糊意图引导 - 不猜测，澄清卡或文本列选项（低学历点选友好） 🔵
 ```
 你: 帮我看看
-期望: direct_reply
-数据: 无猜测性 tool 调用
+期望: direct_reply or interact
+数据: 无猜测性业务 tool 调用（product_search/order_query 等不得在澄清轮误触发）
+数据: 澄清卡选项 2-4 个、可点选；文本引导须给具体话术示例
 ```
 真值: ai-chat.route-actions
-溯源: verification 8.4 独有 ｜ tags: clarification
+溯源: verification 8.4 独有；2026-09-03 Phase 2 (#2789)：general 澄清承载升级为 choice 卡或文本，期望放宽为 direct_reply or interact ｜ tags: clarification
 
 ### CH-004. 数据来源标注 [工具返回] 🔵
 ```
@@ -509,6 +510,86 @@
 ```
 真值: ai-chat.intent-tool-map, ai-chat.handoff-offer
 溯源: 2026 新增：GB/T 47746-2026 转人工 AI 上下文同步（issue #2776） ｜ tags: handoff, agent_session, ai_context
+
+### CH-018. 低学历用户图片意图澄清 - 随手发图不带文字时先给候选意图再动作（issue #2777） 🔵
+```
+你: 用户只上传一张窗帘照片（无文字），可能想找同款/查自己订单里这个商品/问面料/录成新商品，意图不明确
+你: 用户上传一张与店铺某商品几乎相同的图片并说『跟这个一样的』
+期望: interact(component=choice)
+数据: 多模态 system prompt 注入 VISION_CLARIFY_GUIDE（呈现理解 + 候选意图 + 不连环追问）
+数据: 意图明确（带『创建这个商品』等文字）时直接进既有流程，不多问
+数据: 意图不明确（纯图/口语短句）时：先给出 2-4 个候选意图（找同款/识别面料/算料/查订单/建品），不直接执行写操作
+数据: 候选意图用简短大白话列出，可用 interact(choice) 卡片点选
+数据: 已识别字段不重复反问，不编造图片中不存在的信息
+跳过: 纯图澄清注入由 pytest 单测验证（test_graph_skills.py::TestVisionClarifyGuide，mock LLM 断言 system prompt），agent-eval runner 当前无发图能力，不进入 agent-eval 冒烟
+```
+真值: ai-chat.route-actions
+溯源: issue #2777 Phase 1：VISION_CLARIFY_GUIDE + base_skill 多模态注入（澄清能力强化） ｜ tags: clarification, multimodal, image
+
+### CH-019. B 端米宝交互卡可用 - 建品/下单/售后/客户写操作可发 interact 卡片（issue #2777 G6） 🔵
+```
+你: 米宝（B 端商家）创建商品选加工项/分类时应能下发 interact(choice) 卡片
+你: 米宝写操作（建品/下单/售后改状态/客户删除）被 confirm 守卫拦截后应能调用 interact(confirm) 展示确认卡
+期望: interact
+数据: B 端 product/order/aftersales/customer skill 的 tool_names 均绑定 interact（G6 契约测试）
+数据: product_skill.py/prompts/order.md 要求 interact 的指令与工具绑定一致，无 tool_not_found 退化
+数据: 前端 admin-web store 完整透传 confirmValue/cancelValue/pageMeta（confirm 卡回传上下文值而非死值）
+```
+真值: ai-chat.confirm-required
+溯源: issue #2777：G6 interact 绑定 B 端 + admin-web store 字段透传修复 ｜ tags: interactive, confirmation
+
+### CH-020. C 端随手发图意图不明 - 先给候选意图卡，不默认直接搜相似（低学历场景） 🔵
+```
+你: 顾客只上传一张窗帘照片（无文字）想问问能不能照着做，AI 不应直接当『找同款』搜相似，应先给候选意图卡（找同款/识别面料/量尺寸算料/查订单/售后咨询）
+期望: interact or product_search
+数据: customer_product/customer_general 图片段含『候选意图卡』与『不要默认直接搜相似』引导（prompt 契约测试）
+数据: 顾客意图明确（『找类似的』『推荐』）→ 直接 product_search，不发卡
+数据: 仅发图/意图不明 → interact(choice) 候选卡（2-4 项可点选），点选后再动作
+跳过: 图片消息由 pytest 覆盖（test_prompt_snapshots 契约断言），agent-eval runner 当前无发图能力，不进入 agent-eval 冒烟
+```
+真值: ai-chat.route-actions
+溯源: issue #2789 Phase 2：C 端图片澄清候选引导（customer_product/customer_general 图片段升级） ｜ tags: clarification, multimodal, image
+
+### CH-021. 图片消息端到端 - 真实发图后 AI 走 vision 链路（澄清/识别不报错） 🔵
+```
+你: 看看这个面料 [📷 附 1 图]
+期望: interact or product_search or direct_reply
+数据: 带图消息 body 含 images（local_runner send_message 透传，issue #2794）
+数据: AI 不报『图片分析失败/无法处理』类错误；图片走 vision 链路（理解或澄清）
+数据: 意图明确才执行；意图不明可澄清（候选卡或追问），不硬猜
+跳过: 真实 vision LLM 行为（成本/波动），tier normal 不进 PR smoke；由手动 agent-eval normal/图片用例专用 CI 触发
+```
+真值: ai-chat.route-actions
+溯源: issue #2794：agent-eval runner 图片消息支持（case schema dict 形态 user_inputs） ｜ tags: clarification, multimodal, image
+
+### CH-022. 连续模糊意图 - 澄清轮上限后给具体示例兜底（不无限追问） 🔵
+```
+你: 帮我看看
+你: 就是那个
+你: 你懂的
+你: 算了不说了
+期望: direct_reply or interact
+数据: 低置信澄清（source=low_confidence 重写 general）轮次计数存 SessionStateStore.clarify
+数据: 连续澄清 ≥ MAX_CLARIFY_ROUNDS(2) 轮后，不再以『您想做什么』追问——改给具体示例（查订单/搜商品/算料话术）+ 转人工出口
+数据: 用户给出实质意图/点选澄清卡 → 澄清计数清零，正常流程恢复
+数据: 存储异常降级不阻断主流程
+跳过: 轮次护栏为代码层纯逻辑，由 pytest 单测覆盖（test_clarify_guard.py 17 例含端到端序列），不进入 agent-eval 冒烟
+```
+真值: ai-chat.route-actions
+溯源: issue #2796：澄清轮次护栏（clarify_guard.apply_clarify_guard 挂 intent_router_node） ｜ tags: clarification, round_guard
+
+### CH-023. 图片澄清候选 grounded 商户库 - 商品类候选先检索真实商品（不编造） 🔵
+```
+你: 帮我看看这个布料有没有卖的 [📷 附 1 图]
+期望: product_search or interact or direct_reply
+数据: VISION_CLARIFY_GUIDE 含 grounded 引导：商品类候选先按图片特征（颜色/面料/风格）调 product_search 检索
+数据: 澄清候选引用命中的真实商品（名称+价格），如『店里的雪尼尔遮光窗帘 ¥88/米』
+数据: 检索无命中 → 如实说『店里暂时没搜到一样的』，不凭空编造商品名/价格
+数据: 关键词提取纯函数（clarify_grounded.extract_search_keywords）由 pytest 单测覆盖
+跳过: 图片消息由 pytest 覆盖（TestVisionGroundedGuide + test_clarify_grounded），agent-eval runner 无稳定发图环境，不进入 agent-eval 冒烟
+```
+真值: ai-chat.route-actions
+溯源: issue #2799：Phase 2c 轻量版 grounded（关键词提取纯函数 + VISION_CLARIFY_GUIDE 检索引导） ｜ tags: clarification, multimodal, image, grounded
 
 ## 跨域（3 case）
 
@@ -1475,7 +1556,9 @@
 你: 搜索窗帘
 你: 看看第一个的详情
 你: 把价格改成 198
+你: 确认
 你: 给它加上S钩安装
+你: 确认
 你: 再看看这个商品的详情确认一下
 期望: product_search
 期望: product_detail(product_id=1)
@@ -1487,7 +1570,7 @@
 数据: 全程未重新 product_search 查同一个商品
 ```
 真值: id-resolve.index, id-resolve.no-fabricate, product-sku-stock.status-flow
-溯源: eval M001 独有（多轮 ID 复用，覆盖 2.3+2.8 的多轮形态） ｜ tags: multi_turn, single_skill, full_lifecycle, id_reuse, smoke
+溯源: eval M001 独有（多轮 ID 复用，覆盖 2.3+2.8 的多轮形态）；2026-09-03 Phase 2 适配：product_update/product_processing_item_manage 均 requires_confirmation，写操作轮后补『确认』（与 OR-010 模式一致） ｜ tags: multi_turn, single_skill, full_lifecycle, id_reuse, smoke
 
 ### PR-011. 创建商品完整引导流程 - AI 主导收集信息 🔵
 ```
@@ -1874,13 +1957,13 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：155（活跃 97，跳过 58）
-- tier 分布：smoke 10 / normal 117 / adversarial 28
+- 用例总数：161（活跃 98，跳过 63）
+- tier 分布：smoke 10 / normal 123 / adversarial 28
 - 售后域：5
 - agents：6
 - api：10
 - 分类域：3
-- 对话边界域：17
+- 对话边界域：23
 - 跨域：3
 - 客户域：5
 - 数据域：6

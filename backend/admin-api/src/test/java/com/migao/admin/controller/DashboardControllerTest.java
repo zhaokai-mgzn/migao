@@ -122,6 +122,34 @@ class DashboardControllerTest {
                     .andExpect(jsonPath("$.data.totalCustomers").isNumber())
                     .andExpect(jsonPath("$.data.activeSessions").isNumber());
         }
+
+        @Test
+        @DisplayName("小数销售额舍入口径一致：todaySales 与 monthRevenue 均四舍五入（P2-3）")
+        void decimalSalesRoundingConsistent() throws Exception {
+            // given: 今日订单 119.8 元（如 59.9×2），本月订单 100.2 元
+            when(productMapper.selectCount(any())).thenReturn(100L);
+            when(orderMapper.selectCount(any())).thenReturn(50L, 5L, 3L, 10L, 5L);
+            when(orderMapper.selectList(any())).thenReturn(
+                    List.of(mockOrderDecimal("119.8")),   // todayList: 119.8 → 应舍入 120
+                    List.of(mockOrderDecimal("100.2")),   // yesterdayList
+                    List.of(mockOrderDecimal("100.2")),   // monthList: 100.2 → 应舍入 100
+                    List.of(),                            // lastMonthList
+                    List.of()                             // shipOrderIds for #387
+            );
+            when(userMapper.selectCount(any())).thenReturn(200L, 10L);
+            when(afterSalesTicketMapper.selectCount(any())).thenReturn(15L);
+            when(sessionMapper.selectCount(any())).thenReturn(3L, 2L);
+            when(orderItemMapper.selectList(any())).thenReturn(List.of());
+            when(productService.getLowStockSkuCount(eq(1L), eq(100))).thenReturn(8L);
+
+            // when & then
+            mockMvc.perform(get("/api/admin/dashboard/stats"))
+                    .andExpect(status().isOk())
+                    // todaySales: 119.8 → HALF_UP → 120（不得截断为 119）
+                    .andExpect(jsonPath("$.data.todaySales").value(120))
+                    // monthRevenue: 100.2 → HALF_UP → 100
+                    .andExpect(jsonPath("$.data.monthRevenue").value(100));
+        }
     }
 
     @Nested
@@ -261,6 +289,12 @@ class DashboardControllerTest {
         o.setStatus("completed");
         o.setCustomerName("测试客户");
         o.setCustomerPhone("13800000000");
+        return o;
+    }
+
+    private static Order mockOrderDecimal(String amount) {
+        Order o = mockOrder(0L);
+        o.setTotalAmount(new BigDecimal(amount));
         return o;
     }
 }

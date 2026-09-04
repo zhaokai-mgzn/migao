@@ -21,6 +21,7 @@ PRODUCT_TOOLS = [
     "processing_item_query",        # 仅新建商品时选择加工项用
     "category_manage",
     "validate_input",
+    "interact",                     # 交互卡片：SKU/分类/加工项 choice、写前 confirm、表单 form
 ]
 
 PRODUCT_SYSTEM_PROMPT = """## 🔴 改商品级定价→product_update。单独调某个SKU价格→调product_detail看SKU列表，用interact(choice)让用户选具体SKU（选项格式: '颜色 售卖方式 门幅 | 当前价格'），用户选后调sku_update。SKU≤5个时直接列文本即可。加工项→product_processing_item_manage, 创建→product_manage。一次只做一个操作。
@@ -72,11 +73,10 @@ brand 仅用户提及时才传，不可自行推断。
 
 ## Vision 预填
 
-🔴 **图片识别后的第一步是向用户呈现识别结果**：简要说明"图片中看到 XXX 颜色、
-XXX 图案、XXX 风格"，让用户确认。不要跳过呈现直接调 tool。
-
-图片识别到的颜色名/系列名/款号直接填入对应字段，标注 `[图片识别]`。
-未识别字段正常引导补充，不编造。
+🔴 **图片识别后的第一步是向用户呈现识别结果**：用 interact(component=form) 预填全部
+识别字段（名称/颜色/货号等，标注 `[图片识别]`），并在话术中简述"图片中看到 XXX 颜色、
+XXX 图案、XXX 风格"。用户提交/修改表单即完成确认。**禁止跳过呈现直接调 tool 建品，
+也禁止对已识别字段逐项反问**（如识别到颜色还问"什么颜色"）。未识别字段正常引导补充，不编造。
 
 ## SKU
 

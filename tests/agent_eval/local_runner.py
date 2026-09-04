@@ -145,13 +145,25 @@ async def get_or_create_session(token: str, prefer_new: bool = True) -> str:
         r = await c.post(f"{AI_API}/api/chat/sessions", headers=h, json={}, timeout=10)
         return r.json()["data"]["id"]
 
-async def send_message(token: str, session_id: str, message: str) -> dict:
-    """发送消息并收集 SSE 事件"""
+async def send_message(token: str, session_id: str, message: str, images: list = None) -> dict:
+    """发送消息并收集 SSE 事件
+
+    Args:
+        message: 文本内容
+        images: 可选图片 URL 列表（后端 ChatSendRequest.images，≤3 张，
+                https:// 或 /api/files 开头）。带图时后端走多模态/vision 链路
+                （图片意图澄清用例端到端验收，issue #2794）。
+    """
+    body = {"session_id": session_id, "message": message}
+    if images:
+        body["images"] = images
+
     async with httpx.AsyncClient(timeout=120) as c:
         h = _chat_headers(token)
 
         result = {
             "user_message": message,
+            "images": images or [],
             "tool_calls": [],
             "tool_results": [],
             "final_text": "",
@@ -163,7 +175,7 @@ async def send_message(token: str, session_id: str, message: str) -> dict:
         current_event = None
         async with c.stream("POST", f"{AI_API}/api/chat/send",
                             headers=h,
-                            json={"session_id": session_id, "message": message}) as resp:
+                            json=body) as resp:
             async for line in resp.aiter_lines():
                 line = line.strip()
                 if not line:
@@ -201,19 +213,39 @@ async def send_message(token: str, session_id: str, message: str) -> dict:
         return result
 
 def check_expectation(result: dict, expectation: str) -> tuple[bool, str]:
-    """检查一条 expectation 是否满足"""
+    """检查一条 expectation 是否满足
+
+    支持 OR 逻辑（'A or B'）：任一满足即通过。
+    direct_reply 语义（澄清/引导形态）：该轮无 tool_calls 且有 final_text。
+    组合形态如 'direct_reply or interact'（模糊意图澄清：文本引导或澄清卡均可）。
+    """
     exp_lower = expectation.lower()
 
-    # 检查 direct_reply（路由动作：直接回复、未调工具且有文本输出）
-    if "direct_reply" in exp_lower:
+    # 拆 OR 分支（保持向后兼容：无 or 时等价于单分支）
+    parts = [p.strip() for p in exp_lower.split(" or ") if p.strip()]
+    has_direct_part = any("direct_reply" in p for p in parts)
+
+    if has_direct_part:
+        # direct_reply 分支满足：无工具调用且有文本输出
         if not result.get("tool_calls") and result.get("final_text"):
             return True, "direct reply without tool call"
-        return False, "expected direct_reply (no tool) but got tool calls"
+        # 单值 direct_reply（无 or）→ 维持旧语义：有工具调用即失败
+        if len(parts) == 1:
+            return False, "expected direct_reply (no tool) but got tool calls"
+        # 含 or：direct 分支未命中，继续尝试其他工具分支
+        parts = [p for p in parts if "direct_reply" not in p]
+
+    # 反转断言（未被调用 / not called）优先：不受下方工具名子串匹配干扰
+    if "未被调用" in expectation or "not called" in exp_lower:
+        for tc in result["tool_calls"]:
+            if tc["name"] in exp_lower:
+                return False, f"tool {tc['name']} was called but should NOT be"
+        return True, "tool not called as expected"
 
     # 检查 tool 名称（支持 OR 逻辑：A or B）
     # xiaobu 模式：expectation 里的 order_query 视为 customer_order_query（C 端物理隔离后）
     expected_tools = []
-    for part in exp_lower.split(" or "):
+    for part in parts:
         t = part.strip()
         if PERSONA == "xiaobu" and t == "order_query":
             t = "customer_order_query"
@@ -254,12 +286,22 @@ def check_expectation(result: dict, expectation: str) -> tuple[bool, str]:
     return False, f"unmatched expectation: {expectation[:80]}"
 
 async def run_case(case, token: str, session_id: str) -> dict:
-    """运行单个评测用例（多轮对话）"""
+    """运行单个评测用例（多轮对话）
+
+    user_inputs 每轮可为 str（纯文本）或 dict（带图消息）：
+      {"text": "看看这个", "images": ["https://...jpg"]}
+    """
     results = []
     all_tool_names = []
 
     for i, msg in enumerate(case.user_inputs):
-        r = await send_message(token, session_id, msg)
+        if isinstance(msg, dict):
+            text = msg.get("text", "")
+            images = msg.get("images") or []
+        else:
+            text = msg
+            images = []
+        r = await send_message(token, session_id, text, images=images)
         r["__round"] = i + 1
         r["__all_tool_names"] = [tc["name"] for tc in r["tool_calls"]]
         all_tool_names.extend(r["__all_tool_names"])

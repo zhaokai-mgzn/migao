@@ -1,4 +1,4 @@
-// case_ids: CH-001, CH-002
+// case_ids: CH-001, CH-002, CH-010
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { act } from '@testing-library/react'
 
@@ -1292,6 +1292,82 @@ describe('useChatStore (Zustand chat store) — #571', () => {
       // handleSSEEvent 处理 interactive case 分支（模块私有函数）
       const { messages } = useChatStore.getState()
       expect(messages.length).toBeGreaterThanOrEqual(0)
+    })
+
+    it('should persist confirm fields on interactive confirm event (B 端 confirm 卡语义)', async () => {
+      // 回归：B 端 admin-web store 曾丢弃 confirmValue/cancelValue/confirmLabel/cancelLabel，
+      // 导致 confirm 卡点击后恒回传死值「确认/取消」（后端依赖 confirmValue 携带上下文路由）
+      const mockRead = vi.fn()
+        .mockResolvedValueOnce({
+          done: false,
+          value: new TextEncoder().encode(
+            'event: interactive\ndata: ' + JSON.stringify({
+              type: 'confirm',
+              component: 'confirm',
+              title: '确认创建商品？',
+              fields: [{ label: '商品名', value: '遮光窗帘' }],
+              confirmLabel: '确认创建',
+              confirmValue: '确认创建商品遮光窗帘',
+              cancelLabel: '再想想',
+              cancelValue: '取消创建',
+            }) + '\n\n',
+          ),
+        })
+        .mockResolvedValueOnce({ done: true, value: undefined })
+
+      const mockReader = { read: mockRead, cancel: vi.fn(), releaseLock: vi.fn() }
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        body: { getReader: () => mockReader },
+      })
+
+      await act(async () => {
+        await useChatStore.getState().sendMessage('帮我创建一个商品')
+      })
+
+      const aiMsg = useChatStore.getState().messages[1]
+      expect(aiMsg.interactive?.component).toBe('confirm')
+      expect(aiMsg.interactive?.title).toBe('确认创建商品？')
+      expect(aiMsg.interactive?.confirmLabel).toBe('确认创建')
+      expect(aiMsg.interactive?.confirmValue).toBe('确认创建商品遮光窗帘')
+      expect(aiMsg.interactive?.cancelLabel).toBe('再想想')
+      expect(aiMsg.interactive?.cancelValue).toBe('取消创建')
+    })
+
+    it('should persist pageMeta on interactive choice event (choice 分页)', async () => {
+      // 回归：store 曾丢弃 pageMeta → B 端 ChoiceCard 翻页控件永远不渲染
+      const mockRead = vi.fn()
+        .mockResolvedValueOnce({
+          done: false,
+          value: new TextEncoder().encode(
+            'event: interactive\ndata: ' + JSON.stringify({
+              type: 'choice',
+              component: 'choice',
+              title: '请选择加工项',
+              options: [{ label: '打孔 ¥8/米', value: 'pi_1' }],
+              pageMeta: { current: 1, total: 2, totalCount: 13, tool: 'processing_item_query', params: '{"page":1,"size":10}' },
+            }) + '\n\n',
+          ),
+        })
+        .mockResolvedValueOnce({ done: true, value: undefined })
+
+      const mockReader = { read: mockRead, cancel: vi.fn(), releaseLock: vi.fn() }
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        body: { getReader: () => mockReader },
+      })
+
+      await act(async () => {
+        await useChatStore.getState().sendMessage('选加工项')
+      })
+
+      const aiMsg = useChatStore.getState().messages[1]
+      expect(aiMsg.interactive?.component).toBe('choice')
+      expect(aiMsg.interactive?.options).toHaveLength(1)
+      expect(aiMsg.interactive?.pageMeta?.total).toBe(2)
+      expect(aiMsg.interactive?.pageMeta?.tool).toBe('processing_item_query')
     })
 
     // -----------------------------------------------------------------------
