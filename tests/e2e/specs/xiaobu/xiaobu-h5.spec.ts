@@ -1,4 +1,4 @@
-// case_ids: OR-001, PR-001, DF-002
+// case_ids: OR-001, PR-001, DF-002, UI-014, UI-016
 /**
  * 小布 H5 视觉回归 — 无会话 UX + 新品推荐 + 订单卡片
  *
@@ -9,6 +9,9 @@
  * 用静态服务器提供 dist/（见 playwright.xiaobu.config.ts webServer）。
  *
  * Mock 策略：拦截 API 返回固定数据，保证视觉断言确定性（不依赖真实 LLM/后端）。
+ *
+ * UI-014: 快捷入口算料报价全宽主入口可见
+ * UI-016: 导航副标题企业名取自企业设置 tenantName（mock='米高窗帘'）
  */
 
 import { test, expect } from '../../fixtures'
@@ -69,7 +72,7 @@ async function setupMocks(page: import('@playwright/test').Page) {
     const b64 = (s: string) => btoa(unescape(encodeURIComponent(s)))
     const fakeJwt = `${b64('{"alg":"none","typ":"JWT"}' as any)}.${b64('{"userId":"u-visual"}' as any)}.sig`
     localStorage.setItem('auth_token', JSON.stringify({ data: fakeJwt }))
-    localStorage.setItem('auth_user', JSON.stringify({ data: JSON.stringify({ id: 'u-visual', nickname: '视觉测试', avatar: null, tenant_id: 1 }) }))
+    localStorage.setItem('auth_user', JSON.stringify({ data: JSON.stringify({ id: 'u-visual', nickname: '视觉测试', avatar: null, tenant_id: 1, tenantName: '米高窗帘' }) }))
     localStorage.setItem('tenant_id', JSON.stringify({ data: '1' }))
   })
 
@@ -110,6 +113,10 @@ test.describe('小布 H5 视觉回归', () => {
 
     // 品牌区（导航栏标题）
     await expect(page.locator('.chat-page__navbar-name')).toBeVisible()
+    // UI-016：副标题企业名来自企业设置（mock tenantName='米高窗帘'），非硬编码默认值
+    await expect(page.getByText('米高窗帘 · 智能购物助手')).toBeVisible()
+    // UI-014：算料报价全宽主快捷入口可见
+    await expect(page.getByText('算料报价')).toBeVisible()
     // 无「会话」tab（2 tab：对话/我的）
     await expect(page.getByText('会话', { exact: true })).toHaveCount(0)
     // 新品推荐区

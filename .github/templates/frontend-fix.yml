@@ -24,7 +24,7 @@ business_truths:
   - [frontend-fix.xiaobu-voice-holdtalk] 小布 C 端输入条（mini-app，小程序/H5 同源）默认语音模式「按住说话、松开直接发送」：touchStart 开始录音、touchEnd 停止并转写（后端 /api/chat/transcribe）后直接发送文本，上滑超过阈值取消；左切换键在语音（⌨️）/键盘（🎤）模式间切换，键盘模式保留 textarea+图片+发送；流式或无可发会话时禁止录音，转写失败 toast「未听清，请重试」不发送
   - [frontend-fix.chat-input-drag-drop] 米宝聊天输入框支持拖拽图片附件上传（admin-web MessageInput）：输入区（aria-label「消息输入区」）绑定 onDragOver/onDragLeave/onDrop，拖拽悬停显示「松开上传图片」高亮遮罩；drop 图片文件走与点击「添加图片」按钮完全相同的 handleFiles 校验上传链路（chatApi.uploadChatImages，最多 3 张、单张 ≤5MB、仅 image/jpeg|png|gif|webp），成功后生成 localPreview 预览缩略图；非图片 toast「不支持的文件类型」、超 5MB toast「超过 5MB 限制」、已满 3 张 toast「最多上传 3 张图片」；会话已结束/流式生成中/上传中拖拽不生效
   - [frontend-fix.session-list-collapse] 米高会话列表（admin-web SessionList，/chat 与 /agent-workspace/sessions 共用）支持折叠/展开窄 rail（参考 DSH sidebar 折叠交互）：默认展开 w-64 完整列表（新建对话/搜索/右键菜单功能不回归），折叠按钮带 aria-label「折叠会话列表」/「展开会话列表」+ aria-expanded 同步，折叠后仅保留图标态「新建对话」按钮与展开 toggle 的窄 rail（w-12），展开恢复完整列表；Tailwind width transition + overflow-hidden 动画；折叠偏好持久化到 localStorage（key chat.session-list.collapsed），刷新/重挂后恢复
-  - [frontend-fix.xiaobu-quick-actions] 小布 C 端聊天主页四个快捷对话入口（QuickActions）：「查订单」「找产品」「售后咨询」「查物流」。原「退换货」入口改名为「售后咨询」（弱化退换货引导，点击仍进入售后工单快捷对话）；原「转人工」入口改名为「查物流」（点击发送物流查询 prompt，进入仅查本人已发货订单物流的 customer_logistics_track 链路）。点击任一入口即发送对应 prompt 触发对话；「转人工」仍可通过输入「转人工」等关键词触发（human_handoff 不因入口移除而失效）
+  - [frontend-fix.xiaobu-quick-actions] 小布 C 端聊天主页快捷对话入口（QuickActions）：「算料报价」（首项全宽主入口，发算料 prompt 直达 curtain_calc 报价链路，UI-014）「查订单」「找产品」「售后咨询」「查物流」。原「退换货」入口改名为「售后咨询」（弱化退换货引导，点击仍进入售后工单快捷对话）；原「转人工」入口改名为「查物流」（点击发送物流查询 prompt，进入仅查本人已发货订单物流的 customer_logistics_track 链路）。点击任一入口即发送对应 prompt 触发对话；「转人工」仍可通过输入「转人工」等关键词触发（human_handoff 不因入口移除而失效）
 
 primary_specs:
   - tests/e2e/specs/
