@@ -10,6 +10,8 @@ services:
     restart: unless-stopped
     env_file: .env.admin-api
     environment:
+      # 统一时区 UTC+8（业务时间均为北京时间）
+      TZ: Asia/Shanghai
       # AI 自动甄别：admin-api 调用 ai-agent-service 内部端点（同 compose 网络）
       # 注意：AI_AGENT_SERVICE_TOKEN 只经 env_file(.env.admin-api) 注入——
       # compose environment 的 ${VAR:-} 插值读不到 .env.admin-api，会覆盖为空导致
@@ -25,6 +27,8 @@ services:
     restart: unless-stopped
     env_file: .env.ai-agent
     environment:
+      # 统一时区 UTC+8（业务时间均为北京时间）
+      TZ: Asia/Shanghai
       # 校验 admin-api 签发的 JWT 所需的公开密钥（非敏感，可入仓）
       JWT_PUBLIC_KEY: |
         -----BEGIN PUBLIC KEY-----
@@ -51,6 +55,9 @@ services:
     image: ${ACR_REGISTRY:-crpi-qdcgkzwx9p9zckga.cn-hangzhou.personal.cr.aliyuncs.com}/ai-customer-service/admin-web:${IMAGE_TAG:-latest}
     restart: unless-stopped
     env_file: .env.admin-web
+    environment:
+      # 统一时区 UTC+8（业务时间均为北京时间）
+      TZ: Asia/Shanghai
     ports:
       - "127.0.0.1:3001:3001"
     mem_limit: 512m

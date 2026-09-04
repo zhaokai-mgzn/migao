@@ -5,10 +5,13 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# 安装系统依赖（含 ffmpeg 用于音频转码）
+# 安装系统依赖（含 ffmpeg 用于音频转码 + tzdata 保证容器时区可解析）
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends gcc libpq-dev ffmpeg && \
+    apt-get install -y --no-install-recommends gcc libpq-dev ffmpeg tzdata && \
     rm -rf /var/lib/apt/lists/*
+
+# 统一时区 UTC+8（所有系统/agent 业务时间均为北京时间）
+ENV TZ=Asia/Shanghai
 
 # 复制并安装 Python 依赖
 ARG PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/

@@ -16,7 +16,7 @@ from app.agents.tenant_config import (
     is_after_hours,
 )
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 class TestAutoHandoffTrigger:
@@ -113,3 +113,40 @@ class TestAfterHours:
             "afterHoursMessage": "已下班",
         }
         assert is_after_hours(config, now=datetime(2026, 8, 29, 20, 0)) is True
+
+    # ═══ 时区缺陷回归（生产实测：tenant1 上海 10:16 被误判非营业）═══
+    # 业务时间按租户配置 timezone（Asia/Shanghai）解读；now 为 UTC 时须先转换。
+    # 生产现象：容器默认 UTC，上海 10:16 = UTC 02:16，落在 09:00-18:00 外 → 误降级。
+
+    def test_shanghai_business_hours_with_utc_now(self):
+        """UTC 02:16 = 上海 10:16（配置 timezone=Asia/Shanghai）→ 营业中，不降级"""
+        config = {
+            "afterHoursMode": "auto_reply",
+            "businessHours": {"start": "09:00", "end": "18:00"},
+            "afterHoursMessage": "已下班",
+            "timezone": "Asia/Shanghai",
+        }
+        # UTC 02:16 对应上海 10:16，应在营业时间内
+        utc_now = datetime(2026, 8, 29, 2, 16, tzinfo=timezone.utc)
+        assert is_after_hours(config, now=utc_now) is False
+
+    def test_shanghai_after_hours_with_utc_now(self):
+        """UTC 14:00 = 上海 22:00 → 营业外，降级"""
+        config = {
+            "afterHoursMode": "auto_reply",
+            "businessHours": {"start": "09:00", "end": "18:00"},
+            "afterHoursMessage": "已下班",
+            "timezone": "Asia/Shanghai",
+        }
+        utc_now = datetime(2026, 8, 29, 14, 0, tzinfo=timezone.utc)
+        assert is_after_hours(config, now=utc_now) is True
+
+    def test_naive_now_interpreted_as_tenant_timezone(self):
+        """无时区 now（老测试注入方式）按租户时区解读：上海 12:00 营业中"""
+        config = {
+            "afterHoursMode": "auto_reply",
+            "businessHours": {"start": "09:00", "end": "18:00"},
+            "afterHoursMessage": "已下班",
+            "timezone": "Asia/Shanghai",
+        }
+        assert is_after_hours(config, now=datetime(2026, 8, 29, 12, 0)) is False
