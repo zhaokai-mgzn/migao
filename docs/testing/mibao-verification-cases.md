@@ -283,7 +283,7 @@
 真值: category-manage.delete, category-manage.delete-destructive, ai-chat.confirm-required
 溯源: verification 2.12 独有（二次确认行为在测试中未确认，见 category-manage.yml 缺口注释） ｜ tags: delete, destructive, confirm
 
-## 对话边界域（25 case）
+## 对话边界域（26 case）
 
 ### CH-001. 空结果 + suggestion 引导修复 🔴
 ```
@@ -619,6 +619,18 @@
 ```
 真值: ai-chat.context-memory
 溯源: issue #2815：C 端长期记忆系统 — 下单自动填充收货信息场景 ｜ tags: memory, xiaobu, address_prefill, order_create
+
+### CH-026. 澄清卡后发图不崩溃 - 交互等待中用户发图走 vision 链路（线上 AttributeError 修复真实验收） 🔵
+```
+你: 帮我看看
+你: 就是这种 [📷 附 1 图]
+期望: direct_reply or interact
+期望: product_search or direct_reply or interact
+数据: 最后一轮（发图轮）不得出现任何 error 事件；runner 最后一轮报错即判整个用例失败（防假验收：前面轮次命中 expectation 掩盖图片轮崩溃）
+数据: 图片使用云 dev OSS 资产（vision 模型可抓取；picsum.photos 在 vision 供应商侧抓取失败会误报『图片分析暂时无法完成』）
+```
+真值: ai-chat.route-actions
+溯源: issue #2884/#2888：线上会话 sess_806703a2dcca4059 澄清卡后发图崩溃（intent_router_node 对多模态 list content 调 .strip() 抛 AttributeError）修复后的真实验收用例；本机真实链路已实证 pre-fix 逐字复现 / 修复后正常走 vision ｜ tags: multimodal, image, regression, xiaobu, product
 
 ## 跨域（3 case）
 
@@ -2138,13 +2150,13 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：175（活跃 98，跳过 77）
-- tier 分布：smoke 8 / normal 139 / adversarial 28
+- 用例总数：176（活跃 99，跳过 77）
+- tier 分布：smoke 8 / normal 140 / adversarial 28
 - 售后域：5
 - agents：6
 - api：10
 - 分类域：3
-- 对话边界域：25
+- 对话边界域：26
 - 跨域：3
 - 客户域：5
 - 数据域：6
