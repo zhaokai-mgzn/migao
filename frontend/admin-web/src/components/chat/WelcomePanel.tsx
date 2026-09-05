@@ -79,7 +79,7 @@ export default function WelcomePanel() {
 
       {/* 底部提示 */}
       <p className="mt-8 max-w-xs text-center text-xs leading-relaxed text-neutral-400">
-        发送消息后，点击顶部<span className="font-medium text-neutral-500">洞察</span>按钮可查看查询结果和便签，点击便签标签可快速追问
+        发送消息后，点击顶部<span className="font-medium text-neutral-500">会话简报</span>按钮可查看本次会话的成果与待办，点击办理结果可快速追问
       </p>
     </div>
   )

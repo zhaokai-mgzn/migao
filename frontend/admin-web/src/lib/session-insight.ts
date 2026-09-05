@@ -405,3 +405,285 @@ export function groupEntities(entities: SessionEntity[]): EntityGroup[] {
   }
   return groups
 }
+
+// ═══════════════════════════════════════════════════════════
+// 会话简报（UI-019）— 从「工具台账」到「业务简报」
+//
+// 用户（商家）不关心 agent 调用了哪些工具，只关心业务结果：
+//   buildSessionBrief（会话结论）、extractLedgerRows（办理结果）、
+//   collectSuggestions（接下来可以问）、extractFailedActions（需要你处理）。
+// 全部确定性推导（纯函数，刷新可靠、可单测），不调 LLM。
+// ═══════════════════════════════════════════════════════════
+
+// ─── 会话结论 ───────────────────────────────────────────
+
+export type BriefKind = 'done' | 'failed' | 'pending'
+
+export interface BriefLine {
+  kind: BriefKind
+  /** 业务语言的一句话，如「查询了 2 笔订单」「已创建售后工单」 */
+  text: string
+}
+
+export interface SessionBrief {
+  lines: BriefLine[]
+  totals: { orders: number; amount: number | null }
+}
+
+/** 查询类工具 → 结论聚合组（用业务语言表达，绝不出工具原始名） */
+const QUERY_GROUP: Record<string, string> = {
+  order_query: 'order',
+  aftersale_query: 'aftersale',
+  logistics_track: 'logistics',
+  customer_logistics_track: 'logistics',
+  product_search: 'product',
+  product_detail: 'product',
+  processing_item_query: 'processing',
+  query_processing_items: 'processing',
+  dashboard_stats: 'data',
+}
+
+/** 聚合组 → 业务语言模板 */
+const QUERY_BRIEF: Record<string, (n: number) => string> = {
+  order: n => `查询了 ${n} 笔订单`,
+  aftersale: n => `查询了 ${n} 个售后`,
+  logistics: n => `查询了 ${n} 条物流`,
+  product: n => `查看了 ${n} 个商品`,
+  processing: n => `查询了 ${n} 个加工项`,
+  data: () => '查看了经营数据',
+}
+
+/** 写操作 label → 「已…」语义（label 以动作动词开头时） */
+const WRITE_ACTION_PREFIXES = ['创建', '更新', '修改', '删除', '设置']
+
+function buildDoneWriteLine(label: string): string {
+  const matched = WRITE_ACTION_PREFIXES.find(p => label.startsWith(p))
+  return matched ? `已${label}` : `已完成${label}`
+}
+
+/** 失败原因：result.suggestion/message/error（业务化或可读文案） */
+function errorReasonText(tool: NormalizedToolCall): string | null {
+  if (!isRecord(tool.result)) return null
+  const rec = tool.result
+  const value = rec.suggestion ?? rec.message ?? rec.error
+  return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
+function toNum(v: unknown): number | undefined {
+  return typeof v === 'number' && Number.isFinite(v) ? v : undefined
+}
+
+function toStr(v: unknown): string {
+  return typeof v === 'string' ? v.trim() : ''
+}
+
+/** 订单合计：不同订单号计数 + 金额求和（金额去重按订单号） */
+function computeOrderTotals(messages: ChatMessage[]): SessionBrief['totals'] {
+  const seen = new Set<string>()
+  let count = 0
+  let sum = 0
+  let hasAmount = false
+  const addOrder = (no: string | undefined, amount: number | undefined) => {
+    if (!no) return
+    if (seen.has(no)) return
+    seen.add(no)
+    count += 1
+    if (amount !== undefined) {
+      sum += amount
+      hasAmount = true
+    }
+  }
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]
+    for (const card of m.cards || []) {
+      if (card.type !== 'order') continue
+      const data = isRecord(card.data) ? card.data : {}
+      if (isRecord(data.order)) {
+        addOrder(toStr(data.order.orderNo ?? data.order.order_no), toNum(data.order.totalAmount ?? data.order.total_amount))
+      } else if (Array.isArray(data.orders)) {
+        for (const o of data.orders) {
+          if (isRecord(o)) addOrder(toStr(o.orderNo ?? o.order_no), toNum(o.totalAmount ?? o.total_amount))
+        }
+      } else {
+        addOrder(toStr(data.orderNo ?? data.order_no), toNum(data.totalAmount ?? data.total_amount))
+      }
+    }
+  }
+  return { orders: count, amount: hasAmount ? sum : null }
+}
+
+/**
+ * 会话结论 — 业务语言一句话摘要（确定性推导）：
+ *   - 查询类工具按业务域聚合（「查询了 N 笔订单」「查看了经营数据」）
+ *   - 写操作完成（「已创建售后工单」「已完成订单管理」）
+ *   - 失败（「查询订单失败：原因」）+ 待确认提示
+ * 不产出：参数校验/请求确认等 agent 内部编排，以及任何工具原始名。
+ */
+export function buildSessionBrief(messages: ChatMessage[]): SessionBrief {
+  const ordered = [...extractToolEvents(messages)].reverse()
+
+  const queryCounts = new Map<string, number>()
+  const doneLines: BriefLine[] = []
+  const failedLines: BriefLine[] = []
+
+  for (const event of ordered) {
+    const { tool, meta } = event
+    if (tool.status === 'error') {
+      const reason = errorReasonText(tool)
+      failedLines.push({ kind: 'failed', text: reason ? `${meta.label}失败：${reason}` : `${meta.label}失败` })
+      continue
+    }
+    const group = QUERY_GROUP[tool.name]
+    if (group) {
+      queryCounts.set(group, (queryCounts.get(group) || 0) + 1)
+    } else if (meta.write) {
+      doneLines.push({ kind: 'done', text: buildDoneWriteLine(meta.label) })
+    }
+  }
+
+  const queryLines: BriefLine[] = []
+  for (const [group, count] of queryCounts) {
+    const tpl = QUERY_BRIEF[group]
+    if (tpl) queryLines.push({ kind: 'done', text: tpl(count) })
+  }
+
+  const lines: BriefLine[] = [...queryLines, ...doneLines, ...failedLines]
+  if (detectPendingInteraction(messages)) {
+    lines.push({ kind: 'pending', text: '有 1 项操作待你确认' })
+  }
+
+  return { lines, totals: computeOrderTotals(messages) }
+}
+
+// ─── 需要你处理：失败操作（业务语言可读） ──────────────
+
+export interface FailedAction {
+  label: string
+  reason?: string
+}
+
+/** 会话内失败的业务操作（最新在前），供「需要你处理」区展示 */
+export function extractFailedActions(messages: ChatMessage[]): FailedAction[] {
+  const out: FailedAction[] = []
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]
+    for (const tool of normalizeToolCalls(m.tool_calls)) {
+      if (tool.status === 'error') {
+        out.push({ label: getToolMeta(tool.name).label, reason: errorReasonText(tool) ?? undefined })
+      }
+    }
+  }
+  return out
+}
+
+// ─── 办理结果：业务对象明细行（带状态/金额/客户） ─────────
+
+export interface LedgerRow {
+  type: EntityType
+  /** 业务标签：订单 A001 / 商品 遮光窗帘 / 物流 SF123 */
+  label: string
+  /** 业务状态原文（订单状态/物流状态等，组件层转文案与配色） */
+  status?: string
+  amount?: number
+  customer?: string
+  /** 有业务详情页时跳转（如订单详情） */
+  href?: string
+  /** 点击发送的追问 */
+  followUp: string
+}
+
+function rowFromOrder(order: Record<string, unknown>): LedgerRow {
+  const orderNo = toStr(order.orderNo ?? order.order_no)
+  const orderId = toStr(order.id)
+  return {
+    type: 'order',
+    label: `订单 ${orderNo || orderId}`,
+    status: toStr(order.status) || undefined,
+    amount: toNum(order.totalAmount ?? order.total_amount),
+    customer: toStr(order.customerName ?? order.customer_name) || undefined,
+    href: orderId ? `/orders/${orderId}` : undefined,
+    followUp: orderNo ? `查看订单 ${orderNo}` : '查看订单详情',
+  }
+}
+
+/**
+ * 办理结果明细 — 从卡片（富数据：状态/金额/客户）优先，
+ * 兜底工具入参/结果中的实体（仅编号），跨来源按 type+label 去重。最新在前。
+ */
+export function extractLedgerRows(messages: ChatMessage[]): LedgerRow[] {
+  const rows: LedgerRow[] = []
+  const seen = new Set<string>()
+  const add = (row: LedgerRow) => {
+    const key = `${row.type}:${row.label}`
+    if (seen.has(key)) return
+    seen.add(key)
+    rows.push(row)
+  }
+
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]
+    // 卡片（富数据）
+    for (const card of m.cards || []) {
+      const data = isRecord(card.data) ? card.data : {}
+      switch (card.type) {
+        case 'order': {
+          if (isRecord(data.order)) {
+            add(rowFromOrder(data.order))
+          } else if (Array.isArray(data.orders)) {
+            for (const o of data.orders) if (isRecord(o)) add(rowFromOrder(o))
+          } else {
+            add(rowFromOrder(data))
+          }
+          break
+        }
+        case 'logistics': {
+          const no = toStr(data.trackingNo ?? data.tracking_no)
+          if (!no) break
+          add({
+            type: 'logistics',
+            label: `物流 ${no}`,
+            status: toStr(data.status) || undefined,
+            followUp: `查询物流 ${no}`,
+          })
+          break
+        }
+        case 'product_list': {
+          const products = Array.isArray(data.products) ? data.products : []
+          for (const p of products) {
+            if (!isRecord(p)) continue
+            const name = toStr(p.name)
+            if (name) add({ type: 'product', label: `商品 ${name}`, followUp: `查看 ${name} 详情` })
+          }
+          break
+        }
+        case 'product_detail': {
+          const product = isRecord(data.product) ? data.product : data
+          const name = toStr(product.name)
+          if (name) add({ type: 'product', label: `商品 ${name}`, followUp: `查看 ${name} 详情` })
+          break
+        }
+        default:
+          break
+      }
+    }
+  }
+
+  // 兜底：工具入参/结果中的实体（卡片未覆盖的，如售后工单/客户）
+  for (const e of extractEntities(messages)) {
+    add({ type: e.type, label: e.label, followUp: e.followUp })
+  }
+  return rows
+}
+
+// ─── 接下来可以问：复用 agent 已生成的后续建议 ───────────
+
+/** 取最近一条 assistant 消息的后续问题建议（点击即发送） */
+export function collectSuggestions(messages: ChatMessage[]): string[] {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]
+    if (m.role === 'assistant' && Array.isArray(m.suggestions) && m.suggestions.length > 0) {
+      return m.suggestions
+    }
+  }
+  return []
+}
