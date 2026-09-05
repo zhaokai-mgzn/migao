@@ -791,6 +791,21 @@ _CASE_CH_026 = EvalCase(
     persona='',
 )
 
+# ── CH-027 [NORMAL] 流式回复中切换会话再切回 - 等待状态与最终回复保留（issue #2901）（源: cases/chat.yml）──
+_CASE_CH_027 = EvalCase(
+    id='CH-027',
+    legacy_id='',
+    title='流式回复中切换会话再切回 - 等待状态与最终回复保留（issue #2901）',
+    skill=Skill.MULTI_TURN,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['会话 A 发消息后米宝回复中，切到会话 B 再切回会话 A', '切回后等待动画恢复；流结束后最终回复可见'],
+    expectations=['切回原会话时在途 AI 占位（isStreaming）恢复，等待动画重新可见（前端 store 单测断言）', '切回后流结束，最终回复内容出现在该会话消息列表中'],
+    data_checks=['前端单测验证（无需真实 LLM）：发消息→切 B→切回 A→断言占位恢复→流结束断言回复可见'],
+    skip_reason='前端 UI 状态修复，不进入 agent-eval 冒烟',
+    tags=['streaming', 'sse', 'multi_session', 'frontend'],
+    persona='',
+)
+
 # ── CR-001 [NORMAL] 查商品 → 下单（跨 Skill 复用 UUID）（源: cases/cross.yml）──
 _CASE_CR_001 = EvalCase(
     id='CR-001',
@@ -2747,6 +2762,7 @@ ALL_CASES = (
     _CASE_CH_024,
     _CASE_CH_025,
     _CASE_CH_026,
+    _CASE_CH_027,
     _CASE_CR_001,
     _CASE_CR_002,
     _CASE_CR_003,

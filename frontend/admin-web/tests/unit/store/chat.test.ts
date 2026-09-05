@@ -1,4 +1,4 @@
-// case_ids: CH-001, CH-002, CH-010, PP-001
+// case_ids: CH-001, CH-002, CH-010, PP-001, CH-027
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { act } from '@testing-library/react'
 
@@ -140,6 +140,8 @@ describe('useChatStore (Zustand chat store) — #571', () => {
         isLoadingQuickActions: false,
         error: null,
         choiceSelections: {},
+        // CH-027：在途流缓冲（issue #2901）——每个测试从空态开始，防跨测试泄漏
+        liveMessage: null,
       })
     })
 

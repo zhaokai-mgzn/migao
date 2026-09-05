@@ -283,7 +283,7 @@
 真值: category-manage.delete, category-manage.delete-destructive, ai-chat.confirm-required
 溯源: verification 2.12 独有（二次确认行为在测试中未确认，见 category-manage.yml 缺口注释） ｜ tags: delete, destructive, confirm
 
-## 对话边界域（26 case）
+## 对话边界域（27 case）
 
 ### CH-001. 空结果 + suggestion 引导修复 🔴
 ```
@@ -631,6 +631,18 @@
 ```
 真值: ai-chat.route-actions
 溯源: issue #2884/#2887：线上会话 sess_806703a2dcca4059 澄清卡后发图崩溃（intent_router_node 对多模态 list content 调 .strip() 抛 AttributeError）修复后的真实验收用例；本机真实链路已实证 pre-fix 逐字复现 / 修复后正常走 vision ｜ tags: multimodal, image, regression, xiaobu, product
+
+### CH-027. 流式回复中切换会话再切回 - 等待状态与最终回复保留（issue #2901） 🔵
+```
+你: 会话 A 发消息后米宝回复中，切到会话 B 再切回会话 A
+你: 切回后等待动画恢复；流结束后最终回复可见
+期望: 切回原会话时在途 AI 占位（isStreaming）恢复，等待动画重新可见（前端 store 单测断言）
+期望: 切回后流结束，最终回复内容出现在该会话消息列表中
+数据: 前端单测验证（无需真实 LLM）：发消息→切 B→切回 A→断言占位恢复→流结束断言回复可见
+跳过: 前端 UI 状态修复，不进入 agent-eval 冒烟
+```
+真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
+溯源: issue #2901：admin-web chat store 的 isStreaming/messages 为全局单例，切会话使在途 SSE 增量写空、assistant 消息仅在流结束入库 → 切回无等待动画且回复丢失。修复：liveMessage 按会话持有在途流，selectSession 重挂占位，流结束落视图/由历史权威路径接管。truths_ref 置空：纯前端 UI 状态用例，真值库（ai-chat.*）为后端 agent 行为，无对应真值（标缺口）。 ｜ tags: streaming, sse, multi_session, frontend
 
 ## 跨域（3 case）
 
@@ -2165,13 +2177,13 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：177（活跃 99，跳过 78）
-- tier 分布：smoke 8 / normal 141 / adversarial 28
+- 用例总数：178（活跃 99，跳过 79）
+- tier 分布：smoke 8 / normal 142 / adversarial 28
 - 售后域：5
 - agents：6
 - api：10
 - 分类域：3
-- 对话边界域：26
+- 对话边界域：27
 - 跨域：3
 - 客户域：5
 - 数据域：6
@@ -2191,5 +2203,6 @@
 - utils：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
+- CH-027: 流式回复中切换会话再切回 - 等待状态与最终回复保留（issue #2901）
 - MC-012: CI 失败报告去重 - 同日同标题 open issue 存在时不重复建
 
