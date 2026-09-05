@@ -7,7 +7,8 @@ name: Close Linked Issues on Merge
 # 本工作流在 PR 合并后解析 body 的 Closes/Fixes/Resolves 关键词，
 # 若对应 issue 仍 open 则强制关闭并留 comment，把「PR 合并 → issue 关闭」变成强保证。
 #
-# 触发：pull_request closed 且 merged=true，仅默认分支 main（与 GitHub 官方关键词规则一致）
+# 触发：pull_request closed 且 merged=true，仅默认分支 main（与 GitHub 官方关键词规则一致）；
+#       workflow_dispatch 可指定已合并 PR 号手动补关（pr_number 输入，自动跑用）
 # 安全：不 checkout、不执行 PR 代码，仅通过 API 读取 body / 关闭 issue（无 fork 风险）；
 #       仅同仓库 PR 生效。
 # 幂等：issue 已关 → no-op；无关键词 → 跳过；合并补偿与 GitHub 异步关闭并发也为 no-op。
@@ -16,6 +17,12 @@ on:
   pull_request:
     types: [closed]
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: '已合并 PR 号（手动补偿关闭用，如 2938）'
+        required: false
+        type: string
 
 permissions:
   pull-requests: read
@@ -25,8 +32,9 @@ jobs:
   close-linked-issues:
     name: Close linked issues (compensation)
     if: >
-      github.event.pull_request.merged == true &&
-      github.event.pull_request.head.repo.full_name == github.repository
+      (github.event_name == 'workflow_dispatch') ||
+      (github.event.pull_request.merged == true &&
+       github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -34,12 +42,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          PR_NUMBER: ${{ inputs.pr_number || github.event.pull_request.number }}
         run: |
           set -euo pipefail
 
           body="$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json body --jq '.body' 2>/dev/null || echo '')"
+          PR_MERGE_SHA="$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json mergeCommit --jq '.mergeCommit.oid' 2>/dev/null || echo '')"
 
           # GitHub 官方支持的关键词（大小写不敏感）：close closes closed / fix fixes fixed / resolve resolves resolved
           issues="$(printf '%s' "$body" | grep -oiE '(close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)[[:space:]]*#[0-9]+' | grep -oE '#[0-9]+' | sort -u | tr '\n' ' ')"
@@ -54,7 +62,7 @@ jobs:
             state="$(gh issue view "$num" --repo "$GH_REPO" --json state --jq '.state' 2>/dev/null || echo 'unknown')"
             if [ "$state" = "open" ]; then
               gh issue close "$num" --repo "$GH_REPO" \
-                --comment "🔁 补偿关闭（close-linked-issues workflow）：PR #$PR_NUMBER 已合并（commit \`${PR_MERGE_SHA:0:8}\`）但 GitHub 异步自动关闭未生效，由本工作流兜底关闭（issue #2937）。"
+                --comment "🔁 补偿关闭（close-linked-issues workflow）：PR #$PR_NUMBER 已合并${PR_MERGE_SHA:+（commit \`${PR_MERGE_SHA:0:8}\`）}但 GitHub 异步自动关闭未生效，由本工作流兜底关闭（issue #2937）。"
               echo "✅ 已关闭 issue #$num（合并前为 open）"
             else
               echo "⏭️  issue #$num 当前 state=$state，无需处理"
