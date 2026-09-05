@@ -45,10 +45,9 @@ class TestSmokeTierFreeze:
         cases = load_case_dicts(str(CASES_DIR))
         by_id = {c["id"]: c for c in cases}
         for cid in DRIFT_PATHS:
-            c = by_id.get(cid)
-            assert c is not None, f"{cid} 不存在"
-            assert not c.get("skip_reason"), f"{cid} 不应被 skip（每日回归仍需覆盖）"
-            assert c.get("tier") == "normal", f"{cid} 应降级为 normal（仍跑每日回归）"
+            assert cid in by_id, f"{cid} 不存在"
+            assert not by_id[cid].get("skip_reason"), f"{cid} 不应被 skip（每日回归仍需覆盖）"
+            assert by_id[cid].get("tier") == "normal", f"{cid} 应降级为 normal（仍跑每日回归）"
 
     def test_smoke_set_exact(self):
         assert _active_smoke_ids() == EXPECTED_SMOKE
