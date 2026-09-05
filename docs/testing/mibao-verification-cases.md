@@ -1615,21 +1615,28 @@
 
 ### PP-003. 加工项 - 传名称自动解析 UUID 🔴
 ```
-你: 给遮光窗帘添加打孔加工
+你: 给遮光窗帘添加打孔
+你: 确认添加
+期望: interact(component=confirm)
 期望: product_processing_item_manage(action=add, item_ids=[打孔])
 数据: success=true
+数据: 确认卡先于写操作（GB/T 47746-2026 确认闸，与 OR-010/PR-010 模式一致）
 ```
 真值: id-resolve.name, id-resolve.no-fabricate
-溯源: eval P005 独有（名称 ID 解析） ｜ tags: id_resolve, adversarial
+溯源: eval P005 独有（名称 ID 解析）；2026-09-05 #2854 适配 #2785 确认闸：改多轮确认流（轮1 interact(confirm)，轮2 确认后 add） ｜ tags: id_resolve, adversarial, confirm
 
 ### PP-004. 加工项 - 传序号自动解析 UUID 🔴
 ```
 你: 给遮光窗帘添加第1、3、5个加工项
-期望: product_processing_item_manage(action=add, item_ids=[1, 3, 5])
+你: 确认添加
+期望: interact(component=confirm)
+期望: product_processing_item_manage(action=add)
 数据: success=true
+数据: 确认卡先于写操作（GB/T 47746-2026 确认闸，与 OR-010/PR-010 模式一致）
+数据: item_ids 解析自序号 1/3/5 对应加工项（LLM 可传名称或序号，resolver 兜底；序号解析单测见 test_id_resolver.py）
 ```
 真值: id-resolve.index
-溯源: eval P006 独有（序号 ID 解析） ｜ tags: id_resolve, adversarial, sequence
+溯源: eval P006 独有（序号 ID 解析）；2026-09-05 #2854 适配 #2785 确认闸：改多轮确认流（轮1 interact(confirm)，轮2 确认后 add）；action 强校验 + success=true 落评分（#2854 P0-3），item_ids 不写死数字——实测 LLM 会把序号翻译为名称传参（业务等价），序号→UUID 解析真值由 test_id_resolver.py 单测覆盖 ｜ tags: id_resolve, adversarial, sequence, confirm
 
 ## 商品域（15 case）
 

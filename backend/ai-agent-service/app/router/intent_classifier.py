@@ -75,7 +75,7 @@ _INTENT_DESCRIPTIONS: dict[str, str] = {
 
 # 意图判定提示（消歧规则，仅在有相关意图时展示）
 _INTENT_DISAMBIGUATION: dict[str, str] = {
-    "order_query": "只是问订单记录则归 order_query；'订单统计/订单数据/订单量'也归 order_query（订单域统计，不是经营看板）",
+    "order_query": "只是问订单记录则归 order_query；'订单统计/订单数据/订单量'也归 order_query（订单域统计，不是经营看板）；但'订单趋势/走势/环比/涨跌'是经营数据分析，归数据域（dashboard/statistics/data_report），不是订单记录查询",
     "after_sales_create": "'退款/退换货/售后工单/受理投诉'在商家后台上下文优先 after_sales_create",
     "after_sales": "仅是咨询退换政策则仍为 after_sales",
     "processing_manage": "'加工项'需要创建/修改/上下架/删除/调价 -> processing_manage",
@@ -92,9 +92,9 @@ _INTENT_DISAMBIGUATION: dict[str, str] = {
     "ai_config": "AI 相关配置优先 ai_config",
     "notification": "'通知/公告/消息'优先 notification",
     "quick_reply": "'快捷回复/模板'优先 quick_reply",
-    "dashboard": "'看板/总览'优先 dashboard",
-    "statistics": "具体指标优先 statistics（经营看板/转化率等，不含订单统计）",
-    "data_report": "报表/趋势优先 data_report",
+    "dashboard": "'看板/总览'优先 dashboard；'订单趋势/走势/环比/涨跌'归数据域（dashboard_stats）",
+    "statistics": "具体指标优先 statistics（经营看板/转化率等，不含订单统计）；'订单趋势/走势/环比/涨跌'归数据域（dashboard_stats）",
+    "data_report": "报表/趋势优先 data_report；'订单趋势/走势/环比/涨跌'归数据域（dashboard_stats）",
     "session_manage": "'会话/在线咨询/接入人工'优先 session_manage",
 }
 

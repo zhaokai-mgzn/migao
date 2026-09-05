@@ -1,4 +1,4 @@
-# case_ids: MC-003, MC-004
+# case_ids: MC-003, MC-004, DA-002
 """意图分类器单元测试（app/router/intent_classifier.py）
 
 覆盖：_extract_text / _build_classifier_prompt / IntentClassifier._parse_response / classify。
@@ -60,6 +60,24 @@ class TestBuildClassifierPrompt:
         prompt = _build_classifier_prompt(["order_query"])
         assert "订单统计" in prompt  # order_query 的消歧规则
         assert "看板/总览" not in prompt  # dashboard 的消歧规则不应出现
+
+    def test_order_trend_disambiguation_to_data_domain(self):
+        """DA-002 消歧规则（issue #2854）：'订单趋势/走势/环比/涨跌'须归数据域而非 order_query。
+
+        8-29 基线 DA-002 通过 → 本体论后反复 order_query（12 次）的根因之一是
+        L2 分类器把「最近7天订单趋势」误判为订单域查询。此处验证 prompt 消歧规则
+        明确指向 dashboard_stats 对应意图。
+        """
+        prompt = _build_classifier_prompt(["statistics", "dashboard", "order_query", "data_report"])
+        assert "订单趋势" in prompt
+        assert "走势" in prompt
+        assert "环比" in prompt
+        assert "涨跌" in prompt
+        # 规则必须把趋势类词引向数据域（dashboard_stats），不得引向 order_query
+        trend_rule_lines = [ln for ln in prompt.splitlines() if "趋势" in ln and "订单" in ln]
+        assert trend_rule_lines, "缺少「订单趋势归数据域」消歧规则"
+        joined = " ".join(trend_rule_lines)
+        assert "dashboard_stats" in joined or "数据域" in joined or "统计" in joined
 
 
 class TestParseResponse:

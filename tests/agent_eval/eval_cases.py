@@ -2013,11 +2013,11 @@ _CASE_PP_003 = EvalCase(
     title='加工项 - 传名称自动解析 UUID',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.ADVERSARIAL,
-    user_inputs=['给遮光窗帘添加打孔加工'],
-    expectations=['product_processing_item_manage(action=add, item_ids=[打孔])'],
-    data_checks=['success=true'],
+    user_inputs=['给遮光窗帘添加打孔', '确认添加'],
+    expectations=['interact(component=confirm)', 'product_processing_item_manage(action=add, item_ids=[打孔])'],
+    data_checks=['success=true', '确认卡先于写操作（GB/T 47746-2026 确认闸，与 OR-010/PR-010 模式一致）'],
     skip_reason='',
-    tags=['id_resolve', 'adversarial'],
+    tags=['id_resolve', 'adversarial', 'confirm'],
     persona='',
 )
 
@@ -2028,11 +2028,11 @@ _CASE_PP_004 = EvalCase(
     title='加工项 - 传序号自动解析 UUID',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.ADVERSARIAL,
-    user_inputs=['给遮光窗帘添加第1、3、5个加工项'],
-    expectations=['product_processing_item_manage(action=add, item_ids=[1, 3, 5])'],
-    data_checks=['success=true'],
+    user_inputs=['给遮光窗帘添加第1、3、5个加工项', '确认添加'],
+    expectations=['interact(component=confirm)', 'product_processing_item_manage(action=add)'],
+    data_checks=['success=true', '确认卡先于写操作（GB/T 47746-2026 确认闸，与 OR-010/PR-010 模式一致）', 'item_ids 解析自序号 1/3/5 对应加工项（LLM 可传名称或序号，resolver 兜底；序号解析单测见 test_id_resolver.py）'],
     skip_reason='',
-    tags=['id_resolve', 'adversarial', 'sequence'],
+    tags=['id_resolve', 'adversarial', 'sequence', 'confirm'],
     persona='',
 )
 
