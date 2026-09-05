@@ -4,6 +4,7 @@
 用法: python oss_upload_test_image.py [output_key]
 输出: 打印 OSS 公开 URL
 """
+# case_ids: CH-021, CH-026
 import base64
 import hashlib
 import hmac

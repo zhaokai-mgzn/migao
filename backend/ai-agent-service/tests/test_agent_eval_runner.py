@@ -33,8 +33,7 @@ class TestLastRoundErrorVerdict:
             {"error":  "抱歉，遇到问题: AttributeError: 'list' object has no attribute 'strip'"},
         ]
         verdict = lr._last_round_error_verdict(results, ["success=true"], [])
-        assert verdict is not None
-        assert "最后轮报错" in verdict
+        assert verdict and "最后轮报错" in verdict
 
     def test_last_round_error_no_expectation_fails(self):
         results = [{"error": None}, {"error": "boom"}]
@@ -58,7 +57,7 @@ class TestLastRoundErrorVerdict:
         verdict = lr._last_round_error_verdict(
             results, ["tool: product_detail"], ["error.code=NOT_FOUND"]
         )
-        assert verdict is None
+        assert not verdict
 
     def test_data_checks_suggestion_exempts(self):
         results = [{"error": None}, {"error": "suggestion returned"}]
