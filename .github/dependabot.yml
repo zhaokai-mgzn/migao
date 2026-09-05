@@ -11,6 +11,11 @@ updates:
     labels:
       - "type/chore"
       - "role/backend"
+    # mybatis-plus 3.5.9+ 破坏性：extension 拆独立模块，单包升级必现类冲突（曾关闭 #2620）。
+    # 升级路径：starter+extension 整组升，作为一次工程级 PR。
+    ignore:
+      - dependency-name: "com.baomidou:mybatis-plus-*"
+        versions: [">=3.5.9"]
 
   - package-ecosystem: "pip"
     directory: "/backend/ai-agent-service"
@@ -31,6 +36,12 @@ updates:
       - dependency-name: "langgraph"
       - dependency-name: "langgraph-checkpoint"
       - dependency-name: "langgraph-prebuilt"
+      # pytest-asyncio 1.x 与 pytest==8.3.4 不共存（曾关闭 #2624）；redis 5→8 跨 3 个大版本，
+      # 连接池/响应类型 API 破坏面大，需工程级评估（曾关闭 #2833）。两者大版本升级统一走工程级 PR。
+      - dependency-name: "pytest-asyncio"
+        versions: [">=1.0.0"]
+      - dependency-name: "redis"
+        versions: [">=8.0.0"]
 
   - package-ecosystem: "npm"
     directory: "/frontend/admin-web"
@@ -40,6 +51,19 @@ updates:
     labels:
       - "type/chore"
       - "role/frontend"
+    # 半套升级/大版本破坏（曾关闭 #2631/#2639/#2718/#2839）：
+    # - vitest 4 需 @vitest/coverage-v8 4 配套，单升必 peer 冲突
+    # - tailwindcss 4 拆分 @tailwindcss/postcss 插件，工程级迁移
+    # - typescript 5→7 大版本跳变，需工程级评估
+    ignore:
+      - dependency-name: "vitest"
+        versions: [">=4.0.0"]
+      - dependency-name: "@vitest/coverage-v8"
+        versions: [">=4.0.0"]
+      - dependency-name: "tailwindcss"
+        versions: [">=4.0.0"]
+      - dependency-name: "typescript"
+        versions: [">=6.0.0"]
 
   - package-ecosystem: "npm"
     directory: "/frontend/mini-app"
@@ -57,6 +81,14 @@ updates:
       - dependency-name: "@tarojs/*"
       - dependency-name: "babel-preset-taro"
       - dependency-name: "eslint-config-taro"
+      # Babel 8 与现有 Babel 7 工具链（babel-jest/预设）不兼容（曾关闭 #2642/#2838）；
+      # eslint-plugin-react-hooks 7 与当前 eslint 8 不兼容（曾关闭 #2831）。均需工程级整组升级。
+      - dependency-name: "@babel/core"
+        versions: [">=8.0.0"]
+      - dependency-name: "@babel/runtime"
+        versions: [">=8.0.0"]
+      - dependency-name: "eslint-plugin-react-hooks"
+        versions: [">=7.0.0"]
 
   - package-ecosystem: "npm"
     directory: "/tests"

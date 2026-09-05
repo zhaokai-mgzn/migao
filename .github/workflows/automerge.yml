@@ -1,0 +1,47 @@
+name: Auto Merge
+
+# 合并治理（2026-09-05 新增）：
+# 背景：retrospective 阶段 6——「owner 不能 approve 自己的 PR，必须等人」+ CI 全绿后仍要人工点合并。
+# 分支保护 required_approving_review_count=0（无需 review），因此 CI 全绿即可自动合并，
+# 消除「等待人工点合并」环节。本工作流对满足条件的 PR 开启原生 auto-merge，
+# 由 GitHub 在 required checks 全绿后自动 squash 合并 + 删分支（仓库已开 delete_branch_on_merge）。
+#
+# 安全护栏：
+# - 仅同仓库 PR 生效（fork PR 除外，防 token 滥用）
+# - bot PR（dependabot 等）跳过 —— 依赖升级仍需人工按 SOP 分类（半套升级/大版本破坏要人工关）
+# - draft PR 跳过；带 block/merge 标签的 PR 跳过（人工闸）
+# - 目标分支仅 main
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
+
+permissions:
+  pull-requests: write
+  contents: write
+
+jobs:
+  enable-auto-merge:
+    name: Enable auto-merge
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: |
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.user.type != 'Bot' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      !contains(github.event.pull_request.labels.*.name, 'block/merge')
+
+    steps:
+      - name: Enable native auto-merge (squash)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          gh pr merge "${{ github.event.pull_request.number }}" \
+            --auto --squash --delete-branch 2>&1
+          rc=$?
+          if [ $rc -ne 0 ]; then
+            # 常见幂等场景：已处于 auto-merge 状态 / 合并条件暂不满足（CI 未绿），非错误
+            echo "⚠️  gh pr merge --auto 返回 $rc（已开启过或暂不可合并时属正常）"
+          fi

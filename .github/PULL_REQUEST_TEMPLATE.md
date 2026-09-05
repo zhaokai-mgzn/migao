@@ -1,9 +1,14 @@
-## 关联 Issue
+## 关联 Issue（必填 —— 合并后自动关闭对应 issue）
 
-Closes #_____
+> **规则**：`Closes #<issue号>` 必须填写，合并时 GitHub 会自动关闭该 issue（只认 body 里的
+> `Closes/Fixes/Resolves #xx`，不认标题里的「(issue #xx)」）。CI 的 `pr-issue-link` 检查会
+> 在缺少此关联时打 `needs-issue-link` 标签提醒。依赖升级类 PR 若确无 issue 关联，请将本段标注
+> `N/A（dependabot/基建）`。
+
+Closes #____
 
 <!-- 如果是修复验收 block 的 PR，还需标注父 issue -->
-Fixes #_____（父 issue，如适用）
+Fixes #____（父 issue，如适用）
 
 ## 改动摘要
 

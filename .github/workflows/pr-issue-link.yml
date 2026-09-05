@@ -1,0 +1,78 @@
+name: PR Issue Link Check
+
+# issue 治理闭环（2026-09-05 新增）：
+# 存量教训——9 个已合并 PR 的 body 全部缺少 Closes #xx 关键词，导致 issue 修复后不自动关闭，
+# 全靠人工对账（12 个 open issue 里 8 个已修复未关闭）。本检查把「PR 必须关联 issue」前置到 CI：
+# body 无 Closes/Fixes/Resolves #xx → 打 needs-issue-link 标签 + 评论提醒。
+# 只提醒不 block（dependabot 等基建 PR 确实可能无 issue 关联，且 needs-issue-link 非 required check）。
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, ready_for_review, synchronize]
+
+permissions:
+  pull-requests: write
+  issues: write
+
+jobs:
+  issue-link-check:
+    name: Check Closes #xx
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    # dependabot/renovate 等 bot 的依赖升级 PR 无 issue 关联，跳过检查
+    if: github.event.pull_request.user.type != 'Bot'
+
+    steps:
+      - name: Check PR body issue reference
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const body = context.payload.pull_request.body || '';
+            const hasRef = /(closes|fixes|resolves)\s+#\d+/i.test(body);
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const prNumber = context.payload.pull_request.number;
+            const label = 'needs-issue-link';
+
+            const listRes = await github.rest.issues.listLabelsOnIssue({ owner, repo, issue_number: prNumber });
+            const hasLabel = listRes.data.some(l => l.name === label);
+
+            if (hasRef) {
+              if (hasLabel) {
+                await github.rest.issues.removeLabel({ owner, repo, issue_number: prNumber, name: label });
+                console.log('OK: PR #' + prNumber + ' body 含 Closes #xx，已移除 ' + label + ' 标签');
+              } else {
+                console.log('OK: PR #' + prNumber + ' body 含 Closes #xx，无需处理');
+              }
+              return;
+            }
+
+            // 缺 Closes #xx：补标签 + 评论提醒（不 block）
+            if (!hasLabel) {
+              await github.rest.issues.addLabels({ owner, repo, issue_number: prNumber, labels: [label] });
+            }
+
+            const marker = '<!-- pr-issue-link-check -->';
+            const comments = await github.rest.issues.listComments({ owner, repo, issue_number: prNumber });
+            const exists = comments.data.some(c => c.body.includes(marker));
+            if (exists) {
+              console.log('WARN: 提醒评论已存在，跳过重复评论');
+              return;
+            }
+
+            const lines = [
+              '## 🔗 缺少关联 Issue（needs-issue-link）',
+              '',
+              '本 PR 的 body 未填写 `Closes #<issue号>`。合并后 **GitHub 不会自动关闭对应 issue**（只认 body 里的 Closes/Fixes/Resolves 关键词）。',
+              '',
+              '- 请在 **Description / 编辑框** 中补充：`Closes #123`（替换为实际 issue 号）',
+              '- 若确无 issue 关联（如 dependabot/基建类），在 PR 描述中标注 `N/A（dependabot/基建）` 并说明理由，可移除本标签',
+              '',
+              marker
+            ];
+            await github.rest.issues.createComment({
+              owner, repo,
+              issue_number: prNumber,
+              body: lines.join('\n')
+            });
+            console.log('WARN: PR #' + prNumber + ' 缺 Closes #xx，已打 ' + label + ' 标签并提醒');
