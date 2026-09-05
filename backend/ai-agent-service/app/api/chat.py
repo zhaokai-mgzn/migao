@@ -905,12 +905,18 @@ async def _handle_page_request(
                         "params": next_params_str,
                     }
 
-                    yield SSEEvent.interactive("choice", {
+                    # 加工项翻页场景：新页 choice 仍须保持多选模式
+                    # （issue #2894：翻页后丢失 multiSelect → 前端退回单选择卡锁死）
+                    interactive_payload = {
                         "component": "choice",
                         "title": f"{result.message} (第{page}/{total_pages}页)",
                         "options": options,
                         "pageMeta": next_page_meta,
-                    })
+                    }
+                    if tool_name == "processing_item_query":
+                        interactive_payload["multiSelect"] = True
+
+                    yield SSEEvent.interactive("choice", interactive_payload)
 
             else:
                 yield SSEEvent.error(result.message or "查询失败")

@@ -157,6 +157,11 @@ class InteractTool(BaseTool):
                 },
                 "required": ["current", "total", "totalCount", "tool", "params"],
             },
+            "multiSelect": {
+                "type": "boolean",
+                "description": "choice 组件是否允许多选（可选，默认 false）。为 true 时用户可连续点击多个选项（如创建商品选择加工项），前端支持多次选择 + 翻页继续选择。",
+                "default": False,
+            },
         },
         "required": ["component", "title"],
     }
@@ -175,6 +180,7 @@ class InteractTool(BaseTool):
         formFields: Optional[List[Dict[str, str]]] = None,
         submitLabel: str = "提交",
         pageMeta: Optional[Dict[str, Any]] = None,
+        multiSelect: bool = False,
     ) -> ToolResult:
         """执行交互组件请求
 
@@ -193,6 +199,8 @@ class InteractTool(BaseTool):
             cancelValue: 取消按钮值
             pageMeta: choice 组件分页元数据（可选，如 processing_item_query
                 返回的 pageMeta，前端据此渲染翻页按钮，无需 LLM 参与）
+            multiSelect: choice 组件是否允许多选（默认 False）。加工项选择等
+                场景传 True，前端支持连续点击多个选项 + 翻页继续选择（issue #2894）
 
         Returns:
             ToolResult: 包含交互组件定义
@@ -238,6 +246,10 @@ class InteractTool(BaseTool):
             # 用户选完分类后 agent 无回复。https://github.com/zhaokai-mgzn/migao/issues/2892
             if pageMeta is not None:
                 interactive_data["pageMeta"] = pageMeta
+            # multiSelect 透传：加工项选择等场景需多次选择，前端据此不锁死卡片
+            # 并保留翻页控件（issue #2894，B 端加工项多选/翻页不可用）
+            if multiSelect:
+                interactive_data["multiSelect"] = True
 
         elif component == "confirm":
             # 处理 LLM 可能传入 JSON 字符串而非数组的问题

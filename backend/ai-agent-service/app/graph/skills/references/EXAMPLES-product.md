@@ -35,10 +35,11 @@
       {label:"2. S钩安装 ¥5/米", value:"pi_i9j0k1l2m3n4o5p6"},
       {label:"3. 韩式褶加工 ¥12/米", value:"pi_q7r8s9t0u1v2w3x4"}
     ],
-    pageMeta: {current:1, total:2, totalCount:16, tool:"processing_item_query", params:'{"page":1,"size":10}'}  // 🔴 必须透传，前端自动翻页
+    pageMeta: {current:1, total:2, totalCount:16, tool:"processing_item_query", params:'{"page":1,"size":10}'},  // 🔴 必须透传，前端自动翻页
+    multiSelect: true  // 🔴 必须传：支持连续点选多个加工项（issue #2894）
   )
-→ 用户点击序号 1 → 发送 "1. 打孔加工 ¥8/米"
-→ 继续展示剩余选项让用户可再加加工项；用户回复 "不需要" → 跳过加工项关联
+→ 用户连续点击序号 1 和 3 → 分别发送 "1. 打孔加工 ¥8/米"、"3. 韩式褶加工 ¥12/米"
+→ 用户可翻页继续选择；用户回复 "不需要" → 跳过加工项关联
 ```
 
 ### 轮次 3 — 汇总确认

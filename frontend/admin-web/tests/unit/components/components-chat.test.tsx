@@ -1,4 +1,4 @@
-// case_ids: CH-001, CH-002, CH-003, UI-006
+// case_ids: CH-001, CH-002, CH-003, UI-006, PP-001, PR-010
 /**
  * components/chat 覆盖率补全 — Issue #567
  *
@@ -462,6 +462,76 @@ describe('InteractiveMessage', () => {
     fireEvent.click(screen.getByText('窗帘'))
 
     expect(sendMessage).toHaveBeenCalledWith('窗帘')
+  })
+
+  it('allows selecting multiple options when multiSelect (加工项多选)', () => {
+    // 回归 #2894: 加工项 choice 需支持多次点击选择（每个选项分别发送 label），
+    // 点击第一个选项后卡片不得锁死，需能继续选择第二个。
+    const sendMessage = vi.fn()
+    mockUseChatStore.mockReturnValue(
+      makeDefaultChatState({ sendMessage }),
+    )
+
+    const interactive = {
+      component: 'choice' as const,
+      title: '请选择加工项',
+      multiSelect: true,
+      options: [
+        { label: '打孔加工', value: 'pi_hole' },
+        { label: '韩式折边', value: 'pi_pleat' },
+        { label: 'S钩安装', value: 'pi_shook' },
+      ],
+    }
+    render(<InteractiveMessage interactive={interactive} />)
+
+    fireEvent.click(screen.getByText('打孔加工'))
+    fireEvent.click(screen.getByText('韩式折边'))
+
+    // 分别发送 label，无需点击确认按钮
+    expect(sendMessage).toHaveBeenCalledTimes(2)
+    expect(sendMessage).toHaveBeenCalledWith('打孔加工')
+    expect(sendMessage).toHaveBeenCalledWith('韩式折边')
+  })
+
+  it('keeps pagination visible after selecting when multiSelect (加工项翻页保留)', () => {
+    // 回归 #2894: 分页控件渲染条件曾依赖 !submitted —— 点过一个选项后
+    // 翻页按钮消失，无法翻页浏览/选择其余加工项。multiSelect 模式下
+    // PageControls 必须在已选后仍保持可见。
+    const sendMessage = vi.fn()
+    mockUseChatStore.mockReturnValue(
+      makeDefaultChatState({ sendMessage }),
+    )
+
+    const interactive = {
+      component: 'choice' as const,
+      title: '请选择加工项',
+      multiSelect: true,
+      options: [
+        { label: '打孔加工', value: 'pi_hole' },
+        { label: '韩式折边', value: 'pi_pleat' },
+      ],
+      pageMeta: {
+        current: 1,
+        total: 3,
+        totalCount: 22,
+        tool: 'processing_item_query',
+        params: '{"page":1,"size":10}',
+      },
+    }
+    render(<InteractiveMessage interactive={interactive} />)
+
+    // 初始分页控件可见
+    expect(screen.getByText('第 1/3 页，共 22 条')).toBeInTheDocument()
+
+    // 选择一个加工项后分页控件仍然可见（不随 submitted 消失）
+    fireEvent.click(screen.getByText('打孔加工'))
+    expect(screen.getByText('第 1/3 页，共 22 条')).toBeInTheDocument()
+
+    // 翻页按钮仍可点击并发送 __PAGE__ 协议消息
+    fireEvent.click(screen.getByText('下一页'))
+    expect(sendMessage).toHaveBeenCalledWith(
+      expect.stringContaining('__PAGE__|processing_item_query|')
+    )
   })
 
   it('renders confirm card with fields and buttons', () => {

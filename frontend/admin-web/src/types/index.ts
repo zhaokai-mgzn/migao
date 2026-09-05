@@ -1017,6 +1017,9 @@ export interface InteractiveComponent {
   title: string
   // choice 组件
   options?: InteractiveOption[]
+  // 是否允许多选（加工项选择等场景）。为 true 时点击选项不锁死卡片，
+  // 支持连续点击多个选项分别发送；配合 pageMeta 支持翻页继续选择。
+  multiSelect?: boolean
   // confirm 组件
   fields?: InteractiveField[]
   confirmLabel?: string

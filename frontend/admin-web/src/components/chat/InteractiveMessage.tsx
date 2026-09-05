@@ -26,15 +26,30 @@ export default function InteractiveMessage({ interactive, disabled }: Props) {
 
 /**
  * 选项卡片 — 单选/多选按钮
+ *
+ * 多选模式（interactive.multiSelect === true，如加工项选择，issue #2894）：
+ * - 点击选项不锁死整卡，可连续选择多个选项，每个选项分别发送 label；
+ * - 已选选项标记「已选」并禁点，防重复发送；
+ * - 分页控件在已选后仍保持可见，翻页不清空已选、可继续选择。
+ * 单选模式（无 multiSelect）：点击即发送并锁死卡片（原行为）。
  */
 function ChoiceCard({ interactive, disabled }: Props) {
   const { sendMessage } = useChatStore()
   const [submitted, setSubmitted] = useState(false)
+  const [selectedValues, setSelectedValues] = useState<Set<string>>(new Set())
 
   const options = Array.isArray(interactive.options) ? interactive.options : []
+  const isMultiSelect = interactive.multiSelect === true
 
   const clickOption = (opt: InteractiveOption) => {
     if (submitted || disabled) return
+    if (isMultiSelect) {
+      // 多选：该选项已选过则忽略（防重复发送），否则标记已选并发送
+      if (selectedValues.has(opt.value)) return
+      setSelectedValues(prev => new Set(prev).add(opt.value))
+      sendMessage(opt.label || opt.value)
+      return
+    }
     setSubmitted(true)
     sendMessage(opt.label || opt.value)
   }
@@ -44,21 +59,30 @@ function ChoiceCard({ interactive, disabled }: Props) {
       {/* 标题 */}
       <div className="px-3 py-2 bg-primary-50 border-b border-primary-100">
         <p className="text-xs font-medium text-primary-700">{interactive.title}</p>
+        {isMultiSelect && !submitted && (
+          <p className="text-[10px] text-primary-400 mt-0.5">可多选，已选 {selectedValues.size} 项</p>
+        )}
       </div>
 
       {/* 选项列表 — 点击直接发送 */}
       <div className="p-2 space-y-1">
-        {options.map((opt: InteractiveOption, idx: number) => (
+        {options.map((opt: InteractiveOption, idx: number) => {
+          const isSelected = isMultiSelect && selectedValues.has(opt.value)
+          const isDisabled = submitted || disabled || isSelected
+          return (
           <button
             key={opt.value}
             onClick={() => clickOption(opt)}
-            disabled={submitted || disabled}
+            disabled={isDisabled}
             className={cn(
               'w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-sm transition-colors',
-              'bg-neutral-50 border border-neutral-100 text-neutral-700 hover:bg-neutral-100',
-              (submitted || disabled) && 'opacity-60 cursor-not-allowed',
+              isSelected
+                ? 'bg-primary-50 border border-primary-300 text-primary-700'
+                : 'bg-neutral-50 border border-neutral-100 text-neutral-700 hover:bg-neutral-100',
+              isDisabled && (isSelected ? '' : 'opacity-60 cursor-not-allowed'),
             )}
           >
+            {isSelected && <Check className="w-3.5 h-3.5 text-primary-500 flex-shrink-0" />}
             <span className="w-5 h-5 rounded-full bg-neutral-200 text-neutral-500 text-[10px] font-semibold flex items-center justify-center flex-shrink-0">
               {idx + 1}
             </span>
@@ -68,13 +92,14 @@ function ChoiceCard({ interactive, disabled }: Props) {
                 <span className="ml-1.5 text-xs text-neutral-400">{opt.description}</span>
               )}
             </span>
-            <ChevronRight className="w-4 h-4 text-neutral-300 flex-shrink-0" />
+            {!isSelected && <ChevronRight className="w-4 h-4 text-neutral-300 flex-shrink-0" />}
           </button>
-        ))}
+          )
+        })}
       </div>
 
-      {/* 分页控件 */}
-      {interactive.pageMeta && !submitted && (
+      {/* 分页控件 — 多选模式下已选后仍可见，可继续翻页选择其它加工项 */}
+      {interactive.pageMeta && !submitted && !disabled && (
         <PageControls
           pageMeta={interactive.pageMeta}
           disabled={disabled}

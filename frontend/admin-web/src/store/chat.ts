@@ -595,12 +595,14 @@ function handleSSEEvent(
                       formFields: parsedData.formFields,
                       submitLabel: parsedData.submitLabel,
                       // 完整透传 confirm/form/分页字段：confirmValue 携带上下文
-                      // （后端依赖其路由后续消息），pageMeta 驱动 ChoiceCard 翻页
+                      // （后端依赖其路由后续消息），pageMeta 驱动 ChoiceCard 翻页，
+                      // multiSelect 驱动多选不锁死（加工项选择，issue #2894）
                       confirmLabel: parsedData.confirmLabel,
                       confirmValue: parsedData.confirmValue,
                       cancelLabel: parsedData.cancelLabel,
                       cancelValue: parsedData.cancelValue,
                       pageMeta: parsedData.pageMeta,
+                      multiSelect: parsedData.multiSelect,
                     },
                   }
                 : msg
