@@ -444,3 +444,87 @@ cases:
       ci:
         - ai-agent-tests.yml
       verifies: []
+
+  - id: PR-014
+    legacy_id: ""
+    title: "加工项多选一次性提交 - 展示选择器→用户点完成→解析全部名称→汇总确认"
+    domains:
+      - product
+    tier: normal
+    tags:
+      - multi_turn
+      - guided_flow
+      - processing_item
+      - multi_select
+    truths_ref:
+      - product-sku-stock.create-flow
+      - ai-chat.validate-input
+    user_inputs:
+      - "录入这个商品，名称测试窗帘，价格 100"
+      - "分类选窗帘"
+      - "已选加工项：打孔加工、韩式折边"
+    expectations:
+      - tool: interact
+        args:
+          component: choice
+          multiSelect: true
+      - tool: processing_item_query
+      - tool: validate_input
+      - tool: product_manage
+        args:
+          action: create
+    data_checks:
+      - "「已选加工项：打孔加工、韩式折边」被解析为 2 个加工项（不只取第一个）"
+      - "未在用户提交完整列表后再次询问加工项"
+      - "最终创建成功且关联加工项数量 = 2"
+    skip_reason: ""
+    merge_log: "2026-09-05 交互验证机制行为层新增（issue #2896 复盘）：前端 choice 多选「完成选择」按钮一次性提交『已选加工项：A、B』格式，需真实 LLM 验证解析全部名称 + 不二次询问"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_interaction_flow_runner.py"
+        - "frontend/admin-web/tests/unit/components/components-chat.test.tsx"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: PR-015
+    legacy_id: ""
+    title: "加工项多选翻页 - 翻页后继续选择并一次性提交"
+    domains:
+      - product
+    tier: normal
+    tags:
+      - multi_turn
+      - processing_item
+      - pagination
+      - multi_select
+    truths_ref:
+      - product-sku-stock.create-flow
+    user_inputs:
+      - "录入这个商品，名称测试窗帘，价格 100"
+      - "分类选窗帘"
+      - "翻页查看第2页加工项"
+      - "已选加工项：高温定型"
+    expectations:
+      - tool: interact
+        args:
+          component: choice
+          multiSelect: true
+      - tool: processing_item_query
+      - tool: validate_input
+      - tool: product_manage
+        args:
+          action: create
+    data_checks:
+      - "翻页（__PAGE__ 协议）后加工项选择仍可继续（multiSelect 不丢）"
+      - "翻页后勾选累积一次性提交被正确解析"
+      - "最终创建成功"
+    skip_reason: ""
+    merge_log: "2026-09-05 交互验证机制行为层新增（issue #2896 复盘）：翻页后 multiSelect/pagination 契约保持"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_interaction_flow_runner.py"
+        - "frontend/admin-web/tests/unit/store/interactive-contract.test.ts"
+      ci:
+        - agent-eval.yml
+      verifies: []
