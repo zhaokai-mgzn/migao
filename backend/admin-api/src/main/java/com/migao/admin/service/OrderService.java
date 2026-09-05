@@ -426,6 +426,11 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             }
         }
 
+        // 前置库存校验：库存不足拒绝创建订单（提示前移至下单时，issue #2922）。
+        // 与确认支付共用同一套 SKU 匹配/库存口径（validateStockSufficient），
+        // 无 SKU 匹配的明细不校验（与扣减语义一致）。
+        validateStockSufficientForRequest(request, "下单");
+
         // 创建订单实体
         Order order = new Order();
         order.setTenantId(tenantId);
@@ -853,6 +858,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      * 校验订单明细对应的 SKU 库存是否充足（按 processingInfo 匹配 SKU）。
      * 无匹配 SKU 的明细不校验（对应无 SKU 扣减）。
      *
+     * @param order       订单（已落库，明细从 order_item 表加载）
      * @throws BusinessException 库存不足时抛出业务异常
      */
     private void validateStockSufficient(Order order) {
@@ -861,6 +867,44 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         }
         List<OrderItem> items = orderItemMapper.selectList(
                 new LambdaQueryWrapper<OrderItem>().eq(OrderItem::getOrderId, order.getId()));
+        validateStockSufficientForItems(items, "确认支付");
+    }
+
+    /**
+     * 创建订单前的库存校验入口（issue #2922：库存不足提示前移至下单时）。
+     * 与确认支付共用 validateStockSufficientForItems 的同一套 SKU 匹配/库存口径。
+     *
+     * @param request     创建订单请求
+     * @param actionLabel 动作文案（如「下单」），用于错误提示
+     */
+    private void validateStockSufficientForRequest(OrderCreateRequest request, String actionLabel) {
+        if (request.getItems() == null || request.getItems().isEmpty()) {
+            return;
+        }
+        List<OrderItem> draftItems = new ArrayList<>(request.getItems().size());
+        for (OrderCreateRequest.OrderItemRequest itemRequest : request.getItems()) {
+            OrderItem draft = new OrderItem();
+            draft.setProductId(itemRequest.getProductId());
+            draft.setProductName(itemRequest.getProductName());
+            draft.setQuantity(itemRequest.getQuantity());
+            draft.setProcessingInfo(itemRequest.getProcessingInfo());
+            draftItems.add(draft);
+        }
+        validateStockSufficientForItems(draftItems, actionLabel);
+    }
+
+    /**
+     * 核心库存校验：遍历明细，按 processingInfo 匹配 SKU 并校验库存充足。
+     * 无匹配 SKU 的明细不校验（对应无 SKU 扣减，与确认支付/扣减语义一致）。
+     *
+     * @param items      订单明细（已落库的 OrderItem 或下单请求构造的草稿明细均可）
+     * @param actionLabel 动作文案（如「下单」/「确认支付」），用于错误提示
+     * @throws BusinessException 库存不足时抛出业务异常
+     */
+    private void validateStockSufficientForItems(List<OrderItem> items, String actionLabel) {
+        if (items == null) {
+            return;
+        }
         for (OrderItem item : items) {
             Long skuId = matchSkuId(item);
             if (skuId == null || item.getQuantity() == null) {
@@ -870,9 +914,9 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             int stock = sku != null && sku.getStock() != null ? sku.getStock() : 0;
             if (stock < item.getQuantity()) {
                 throw BusinessException.validationError(
-                        String.format("商品「%s」库存不足：需要 %d 件，当前仅剩 %d 件，请先补货后再确认支付",
+                        String.format("商品「%s」库存不足：需要 %d 件，当前仅剩 %d 件，请先补货后再%s",
                                 item.getProductName() != null ? item.getProductName() : skuId,
-                                item.getQuantity(), stock));
+                                item.getQuantity(), stock, actionLabel));
             }
         }
     }
