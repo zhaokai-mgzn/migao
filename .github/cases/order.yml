@@ -345,7 +345,7 @@ cases:
     title: "创建订单 - 汇总确认简化流程"
     domains:
       - order
-    tier: smoke
+    tier: normal
     tags:
       - create
       - confirm

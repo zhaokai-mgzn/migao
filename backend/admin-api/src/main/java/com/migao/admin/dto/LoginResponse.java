@@ -46,5 +46,7 @@ public class LoginResponse {
         private List<String> roles;
         private Long tenantId;
         private String tenantName;
+        /** 智能客服名称（TenantAiConfig.botName，C 端思考中/空态/导航名展示；未配置为 null → 前端兜底「小布」） */
+        private String botName;
     }
 }

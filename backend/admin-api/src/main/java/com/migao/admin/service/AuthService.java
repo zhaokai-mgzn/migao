@@ -55,6 +55,7 @@ public class AuthService {
     private final UserIdentityMapper userIdentityMapper;
     private final TenantMapper tenantMapper;
     private final PlatformAdminMapper platformAdminMapper;
+    private final com.migao.admin.mapper.TenantAiConfigMapper tenantAiConfigMapper;
 
     /**
      * Redis Token 黑名单 key 前缀
@@ -265,6 +266,7 @@ public class AuthService {
                         .roles(roles)
                         .tenantId(user.getTenantId())
                         .tenantName(tenantName)
+                        .botName(getBotName(user.getTenantId()))
                         .build())
                 .accessToken(accessToken)
                 .refreshToken(null)  // 审计 07 P1-5: 不下发，仅 HttpOnly cookie
@@ -342,6 +344,7 @@ public class AuthService {
                         .roles(roles)
                         .tenantId(user.getTenantId())
                         .tenantName(tenantNameVal)
+                        .botName(getBotName(user.getTenantId()))
                         .build())
                 .accessToken(accessToken)
                 .refreshToken(null)  // 审计 07 P1-5: 不下发，仅 HttpOnly cookie
@@ -651,6 +654,7 @@ public class AuthService {
                         .avatar(user.getAvatar())
                         .tenantId(user.getTenantId())
                         .tenantName(tenantName)
+                        .botName(getBotName(user.getTenantId()))
                         .tenantLogo(tenantLogo)
                         .status(user.getStatus())
                         .build())
@@ -723,6 +727,28 @@ public class AuthService {
             return tenant != null ? tenant.getName() : null;
         } catch (Exception e) {
             log.warn("查询租户名称失败: tenantId={}, error={}", tenantId, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 查询智能客服名称（TenantAiConfig.botName，C 端思考中/空态/导航名展示）
+     *
+     * @param tenantId 租户ID
+     * @return 智能客服名称，未配置或查询失败返回 null（前端兜底「小布」）
+     */
+    private String getBotName(Long tenantId) {
+        if (tenantId == null || tenantId == -1L) {
+            return null;
+        }
+        try {
+            com.migao.admin.entity.TenantAiConfig config = tenantAiConfigMapper.selectOne(
+                    new LambdaQueryWrapper<com.migao.admin.entity.TenantAiConfig>()
+                            .eq(com.migao.admin.entity.TenantAiConfig::getTenantId, tenantId)
+                            .last("LIMIT 1"));
+            return config != null ? config.getBotName() : null;
+        } catch (Exception e) {
+            log.warn("查询智能客服名称失败: tenantId={}, error={}", tenantId, e.getMessage());
             return null;
         }
     }

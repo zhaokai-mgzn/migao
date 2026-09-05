@@ -3,7 +3,7 @@ import { View, Text } from '@tarojs/components'
 import Taro, { useDidShow } from '@tarojs/taro'
 import { useChatStore } from '../../../store/chatStore'
 import { useAuthStore } from '../../../store/authStore'
-import { buildBrandSubtitle } from '../../../utils/brand'
+import { buildBrandSubtitle, buildBotName } from '../../../utils/brand'
 import MessageList from '../../../components/chat/MessageList'
 import MessageInput from '../../../components/chat/MessageInput'
 import QuickActions from '../../../components/chat/QuickActions'
@@ -107,7 +107,7 @@ export default function ChatPage() {
       <View className='chat-page__navbar'>
         <View className='chat-page__navbar-title'>
           <View className='chat-page__navbar-logo' />
-          <Text className='chat-page__navbar-name'>小布</Text>
+          <Text className='chat-page__navbar-name'>{buildBotName(user?.botName)}</Text>
           <View className='chat-page__navbar-badge'>
             <Text className='chat-page__navbar-badge-text'>AI</Text>
           </View>

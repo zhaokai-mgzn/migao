@@ -1,4 +1,4 @@
-// case_ids: CH-001, CH-005, UI-007, UI-010
+// case_ids: CH-001, CH-005, UI-007, UI-010, UI-016
 /**
  * 小布对话页 E2E 验收
  * 覆盖：入口渲染（品牌导航）→ 会话就绪 → 快捷操作发消息（真实后端 SSE）→ 新对话 → 键盘模式输入发消息
@@ -30,11 +30,11 @@ async function run(mp) {
     page ? `path=${page.path}` : '无法获取当前页面')
   await capture(mp, SCENARIO, '01-entry.png')
 
-  // ── 2. 品牌导航栏 ──
+  // ── 2. 品牌导航栏（UI-016：副标题租户化 buildBrandSubtitle(tenantName)，断言「智能购物助手」兜底子串）──
   const navName = await waitForText(page, '.chat-page__navbar-name', '小布', 15000)
   rep.step('导航栏品牌名「小布」', !!navName, navName ? `text=${navName}` : '未找到')
-  const navSub = await waitForText(page, '.chat-page__navbar-sub', '米高窗帘', 5000)
-  rep.step('导航栏副标「米高窗帘 · 智能购物助手」', !!navSub, navSub ? `text=${navSub}` : '未找到')
+  const navSub = await waitForText(page, '.chat-page__navbar-sub', '智能购物助手', 8000)
+  rep.step('导航栏副标（租户名·智能购物助手）', !!navSub, navSub ? `text=${navSub}` : '未找到')
 
   // ── 3. 等待会话就绪（空态欢迎语 / 快捷操作 / 历史消息任一出现）──
   const ready = await (async () => {

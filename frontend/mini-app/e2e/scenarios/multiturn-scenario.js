@@ -52,6 +52,16 @@ async function run(mp) {
     await sleep(2000)
   }
 
+  // 默认语音模式（UI-007）：先切键盘模式，textarea 才渲染（与 chat 场景一致）
+  const holdBtn = await page.$('.message-input__hold-btn')
+  if (holdBtn) {
+    const modeBtn = await page.$('.message-input__mode-btn')
+    if (modeBtn) {
+      await modeBtn.tap()
+      await sleep(800)
+    }
+  }
+
   // 第 1 轮：推荐热销窗帘 → 期望出现商品卡片/文本（LLM 用 product_list 卡片展示）
   const input = await waitForElement(page, '.message-input__textarea', 15000)
   if (input) {

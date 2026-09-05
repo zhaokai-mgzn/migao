@@ -1496,7 +1496,7 @@
 真值: order.states, order.create-flow, product-sku-stock.aggregate
 溯源: eval M005 独有（多轮引导细节），与 OR-008 互补不合并 ｜ tags: multi_turn, order_create, sku_select, full_flow
 
-### OR-010. 创建订单 - 汇总确认简化流程 🟢
+### OR-010. 创建订单 - 汇总确认简化流程 🔵
 ```
 你: 创建订单：张三 13812345678，杭州西湖区文三路1号，米白色遮光窗帘 2米
 你: 选散剪售卖，2.8米门幅
@@ -1673,7 +1673,7 @@
 真值: id-resolve.name, id-resolve.no-fabricate
 溯源: eval P007 + verification 2.8（同义，取 eval 的 ID 解析版） ｜ tags: id_resolve, update
 
-### PR-010. 商品全生命周期 - 搜索→查看→修改→关联加工项→验证 🟢
+### PR-010. 商品全生命周期 - 搜索→查看→修改→关联加工项→验证 🔵
 ```
 你: 搜索窗帘
 你: 看看第一个的详情
@@ -1880,7 +1880,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## ui（16 case）
+## ui（18 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -2086,6 +2086,29 @@
 真值: frontend-fix.no-api-change
 溯源: 2026-09-04 新增：品牌硬编码修复 — 导航副标题原写死「米高窗帘」，多租户下串台 ｜ tags: mini-app, brand
 
+### UI-017. C 端隐藏工具执行指示器 — 工具调用过程不对客户展示 🔵
+```
+你: 客户在聊天页不应看到「正在搜索商品...」「商品搜索完成」等工具执行过程指示器
+期望: direct_reply
+数据: MessageBubble 不渲染 tool_calls/toolCall 指示器（数据仍保留供转人工等逻辑判定）
+数据: 未知卡片类型占位不暴露内部 type（显示「消息内容暂不支持预览」）
+跳过: 纯前端渲染由 mini-app jest 单测验证（message-bubble.test.tsx），非 LLM 行为
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-09-04 新增：工具执行过程对客户不可见（issue #2857） ｜ tags: mini-app, chat
+
+### UI-018. C 端智能客服名称取 botName 配置 — 思考中/空态/导航名去硬编码（默认小布） 🔵
+```
+你: C 端「正在思考...」/空态/导航名应使用企业设置里的智能客服名称（TenantAiConfig.botName），未配置默认「小布」
+期望: direct_reply
+数据: admin-api mini/login 与 /api/admin/user/info 返回 botName（camelCase，对齐 User 类型）
+数据: 思考中文案 = 「{botName}正在思考...」；空态 = 「你好，我是{botName}」；导航名 = buildBotName(botName)
+数据: botName 为空/未登录 → 兜底「小布」（buildBotName 默认值）
+跳过: 纯前端文案由 mini-app jest 单测验证（brand.test.ts + message-list），非 LLM 行为
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-09-04 新增：智能客服名称去硬编码 — 思考中/空态/导航名原写死「AI/小布」（issue #2857） ｜ tags: mini-app, brand
+
 ## utils（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -2115,8 +2138,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：173（活跃 98，跳过 75）
-- tier 分布：smoke 10 / normal 135 / adversarial 28
+- 用例总数：175（活跃 98，跳过 77）
+- tier 分布：smoke 8 / normal 139 / adversarial 28
 - 售后域：5
 - agents：6
 - api：10
@@ -2137,7 +2160,7 @@
 - registry：1
 - 设置域：8
 - token-refresh：4
-- ui：16
+- ui：18
 - utils：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）

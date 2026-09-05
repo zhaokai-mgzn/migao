@@ -1856,13 +1856,13 @@ _CASE_OR_009 = EvalCase(
     persona='',
 )
 
-# ── OR-010 [SMOKE] 创建订单 - 汇总确认简化流程（源: cases/order.yml）──
+# ── OR-010 [NORMAL] 创建订单 - 汇总确认简化流程（源: cases/order.yml）──
 _CASE_OR_010 = EvalCase(
     id='OR-010',
     legacy_id='1.8',
     title='创建订单 - 汇总确认简化流程',
     skill=Skill.ORDER,
-    difficulty=Difficulty.SMOKE,
+    difficulty=Difficulty.NORMAL,
     user_inputs=['创建订单：张三 13812345678，杭州西湖区文三路1号，米白色遮光窗帘 2米', '选散剪售卖，2.8米门幅', '确认下单'],
     expectations=['validate_input', 'order_create'],
     data_checks=['返回订单号', '下单全流程不得向顾客索要单价/金额——价格取自商品数据/算料结果（实测反复要价导致下单卡死 + 本用例评估不稳）'],
@@ -2111,13 +2111,13 @@ _CASE_PR_009 = EvalCase(
     persona='',
 )
 
-# ── PR-010 [SMOKE] 商品全生命周期 - 搜索→查看→修改→关联加工项→验证（源: cases/product.yml）──
+# ── PR-010 [NORMAL] 商品全生命周期 - 搜索→查看→修改→关联加工项→验证（源: cases/product.yml）──
 _CASE_PR_010 = EvalCase(
     id='PR-010',
     legacy_id='M001',
     title='商品全生命周期 - 搜索→查看→修改→关联加工项→验证',
     skill=Skill.PRODUCT,
-    difficulty=Difficulty.SMOKE,
+    difficulty=Difficulty.NORMAL,
     user_inputs=['搜索窗帘', '看看第一个的详情', '把价格改成 198', '确认', '给它加上S钩安装', '确认', '再看看这个商品的详情确认一下'],
     expectations=['product_search', 'product_detail(product_id=1)', 'product_update(price=198)', 'product_processing_item_manage(action=add)', 'product_detail'],
     data_checks=['第3轮 product_id 来自第2轮结果', '第4轮 product_id 来自第2轮结果', '全程未重新 product_search 查同一个商品'],
@@ -2606,6 +2606,34 @@ _CASE_UI_016 = EvalCase(
     persona='',
 )
 
+# ── UI-017 [NORMAL] C 端隐藏工具执行指示器 — 工具调用过程不对客户展示（源: cases/ui.yml）──
+_CASE_UI_017 = EvalCase(
+    id='UI-017',
+    legacy_id='',
+    title='C 端隐藏工具执行指示器 — 工具调用过程不对客户展示',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['客户在聊天页不应看到「正在搜索商品...」「商品搜索完成」等工具执行过程指示器'],
+    expectations=['direct_reply'],
+    data_checks=['MessageBubble 不渲染 tool_calls/toolCall 指示器（数据仍保留供转人工等逻辑判定）', '未知卡片类型占位不暴露内部 type（显示「消息内容暂不支持预览」）'],
+    skip_reason='纯前端渲染由 mini-app jest 单测验证（message-bubble.test.tsx），非 LLM 行为',
+    tags=['mini-app', 'chat'],
+)
+
+# ── UI-018 [NORMAL] C 端智能客服名称取 botName 配置 — 思考中/空态/导航名去硬编码（默认小布）（源: cases/ui.yml）──
+_CASE_UI_018 = EvalCase(
+    id='UI-018',
+    legacy_id='',
+    title='C 端智能客服名称取 botName 配置 — 思考中/空态/导航名去硬编码（默认小布）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['C 端「正在思考...」/空态/导航名应使用企业设置里的智能客服名称（TenantAiConfig.botName），未配置默认「小布」'],
+    expectations=['direct_reply'],
+    data_checks=['admin-api mini/login 与 /api/admin/user/info 返回 botName（camelCase，对齐 User 类型）', '思考中文案 = 「{botName}正在思考...」；空态 = 「你好，我是{botName}」；导航名 = buildBotName(botName)', 'botName 为空/未登录 → 兜底「小布」（buildBotName 默认值）'],
+    skip_reason='纯前端文案由 mini-app jest 单测验证（brand.test.ts + message-list），非 LLM 行为',
+    tags=['mini-app', 'brand'],
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -2808,6 +2836,8 @@ ALL_CASES = (
     _CASE_UI_014,
     _CASE_UI_015,
     _CASE_UI_016,
+    _CASE_UI_017,
+    _CASE_UI_018,
     _CASE_UT_001,
     _CASE_UT_002,
 )

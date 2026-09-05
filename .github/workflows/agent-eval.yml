@@ -4,7 +4,7 @@ permissions:
 
 on:
   # 2026-08-29：取消每日 normal 定时评测（成本高、信号为 LLM 波动为主，按需手动触发即可）。
-  # PR 门禁由 pr-check 的 agent-eval-smoke（9 条）承担；对抗评测由 agent-eval-adversarial.yml 每周跑。
+  # PR 门禁由 pr-check 的 agent-eval-smoke（7 条）承担；对抗评测由 agent-eval-adversarial.yml 每周跑。
   workflow_dispatch:
 
 env:

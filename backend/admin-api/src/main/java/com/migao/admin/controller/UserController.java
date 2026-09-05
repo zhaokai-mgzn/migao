@@ -32,6 +32,7 @@ public class UserController {
     private final UserMapper userMapper;
     private final TenantMapper tenantMapper;
     private final RoleService roleService;
+    private final com.migao.admin.mapper.TenantAiConfigMapper tenantAiConfigMapper;
 
     /**
      * 获取当前登录用户信息
@@ -94,6 +95,18 @@ public class UserController {
             }
         }
 
+        // 查询智能客服名称（TenantAiConfig.botName，C 端思考中/空态/导航名展示；未配置为 null → 前端兜底「小布」）
+        String botName = null;
+        if (user.getTenantId() != null) {
+            com.migao.admin.entity.TenantAiConfig aiConfig = tenantAiConfigMapper.selectOne(
+                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.migao.admin.entity.TenantAiConfig>()
+                            .eq(com.migao.admin.entity.TenantAiConfig::getTenantId, user.getTenantId())
+                            .last("LIMIT 1"));
+            if (aiConfig != null) {
+                botName = aiConfig.getBotName();
+            }
+        }
+
         // 构建响应
         UserInfoResponse response = UserInfoResponse.builder()
                 .user(UserInfoResponse.UserInfo.builder()
@@ -103,6 +116,7 @@ public class UserController {
                         .avatar(user.getAvatar())
                         .tenantId(user.getTenantId())
                         .tenantName(tenantName)
+                        .botName(botName)
                         .status(user.getStatus())
                         .build())
                 .roles(roles)

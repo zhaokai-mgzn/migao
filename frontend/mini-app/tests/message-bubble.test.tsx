@@ -1,4 +1,4 @@
-// case_ids: OR-001, CH-001, UI-013
+// case_ids: OR-001, CH-001, UI-013, UI-017
 /**
  * 消息气泡组件测试
  *
@@ -28,11 +28,6 @@ jest.mock('../src/components/cards/KnowledgeCard', () => {
 jest.mock('../src/components/cards/OrderCard', () => {
   return function MockOrderCard() {
     return <div data-testid="order-card">order</div>
-  }
-})
-jest.mock('../src/components/cards/ToolCallIndicator', () => {
-  return function MockToolCallIndicator({ toolName, status }: any) {
-    return <div data-testid="tool-indicator">{toolName}: {status}</div>
   }
 })
 
@@ -82,7 +77,8 @@ describe('MessageBubble', () => {
     expect(screen.getByText(expectedTime)).toBeTruthy()
   })
 
-  it('应渲染工具调用指示器', () => {
+  // UI-017: 工具执行过程对客户隐藏（不渲染 tool_calls 指示器）
+  it('不渲染工具执行指示器（工具调用过程对客户隐藏）', () => {
     const msg: Message = {
       ...baseMsg,
       role: 'assistant',
@@ -93,8 +89,8 @@ describe('MessageBubble', () => {
     }
     render(<MessageBubble message={msg} />)
 
-    const indicators = screen.getAllByTestId('tool-indicator')
-    expect(indicators).toHaveLength(2)
+    const indicators = screen.queryAllByTestId('tool-indicator')
+    expect(indicators).toHaveLength(0)
   })
 
   it('应渲染商品卡片', () => {
@@ -168,7 +164,8 @@ describe('MessageBubble', () => {
     expect(screen.queryByText(/📎 order/)).toBeNull()
   })
 
-  it('未知卡片类型应显示占位', () => {
+  // UI-017: 未知卡片类型不暴露内部 type（显示通用占位「消息内容暂不支持预览」）
+  it('未知卡片类型显示通用占位（不暴露内部 type）', () => {
     const msg: Message = {
       ...baseMsg,
       role: 'assistant',
@@ -176,7 +173,8 @@ describe('MessageBubble', () => {
     }
     render(<MessageBubble message={msg} />)
 
-    expect(screen.getByText(/unknown_type/)).toBeTruthy()
+    expect(screen.getByText(/消息内容暂不支持预览/)).toBeTruthy()
+    expect(screen.queryByText(/unknown_type/)).toBeNull()
   })
 
   it('应处理单个 cardData (兼容模式)', () => {
@@ -201,7 +199,7 @@ describe('MessageBubble', () => {
     }
     render(<MessageBubble message={msg} />)
 
-    expect(screen.getByTestId('tool-indicator')).toBeTruthy()
+    expect(screen.queryByTestId('tool-indicator')).toBeNull()
   })
 
   // UI-013: 纯图消息（content 空 + images 有）不渲染空文本区，仅渲染图片

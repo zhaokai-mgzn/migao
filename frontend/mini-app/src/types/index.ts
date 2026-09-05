@@ -12,6 +12,8 @@ export interface User {
   /** 企业名（租户公司名，来自企业基础信息设置；C 端导航副标题展示用，UI-016）。
    *  注意：数据源是 admin-api（camelCase JSON），字段名与后端 tenantName 一致 */
   tenantName?: string | null
+  /** 智能客服名称（TenantAiConfig.botName，C 端思考中/空态/导航名展示，UI-018；未配置为 null → 前端兜底「小布」） */
+  botName?: string | null
   /** 已绑定的手机号（微信授权绑定后回填；用于名下商户代录订单的 phone 兜底展示） */
   phone?: string | null
 }
