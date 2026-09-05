@@ -898,8 +898,7 @@ cases:
       - sse
       - multi_session
       - frontend
-    truths_ref:
-      - frontend-chat.session-stream-keep
+    truths_ref: []
     user_inputs:
       - "会话 A 发消息后米宝回复中，切到会话 B 再切回会话 A"
       - "切回后等待动画恢复；流结束后最终回复可见"
@@ -909,7 +908,7 @@ cases:
     data_checks:
       - "前端单测验证（无需真实 LLM）：发消息→切 B→切回 A→断言占位恢复→流结束断言回复可见"
     skip_reason: "前端 UI 状态修复，不进入 agent-eval 冒烟"
-    merge_log: "issue #2901：admin-web chat store 的 isStreaming/messages 为全局单例，切会话使在途 SSE 增量写空、assistant 消息仅在流结束入库 → 切回无等待动画且回复丢失。修复：liveMessage 按会话持有在途流，selectSession 重挂占位，流结束落视图/由历史权威路径接管。"
+    merge_log: "issue #2901：admin-web chat store 的 isStreaming/messages 为全局单例，切会话使在途 SSE 增量写空、assistant 消息仅在流结束入库 → 切回无等待动画且回复丢失。修复：liveMessage 按会话持有在途流，selectSession 重挂占位，流结束落视图/由历史权威路径接管。truths_ref 置空：纯前端 UI 状态用例，真值库（ai-chat.*）为后端 agent 行为，无对应真值（标缺口）。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/store/chat-stream-session-switch.test.ts"

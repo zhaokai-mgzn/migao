@@ -641,8 +641,8 @@
 数据: 前端单测验证（无需真实 LLM）：发消息→切 B→切回 A→断言占位恢复→流结束断言回复可见
 跳过: 前端 UI 状态修复，不进入 agent-eval 冒烟
 ```
-真值: frontend-chat.session-stream-keep
-溯源: issue #2901：admin-web chat store 的 isStreaming/messages 为全局单例，切会话使在途 SSE 增量写空、assistant 消息仅在流结束入库 → 切回无等待动画且回复丢失。修复：liveMessage 按会话持有在途流，selectSession 重挂占位，流结束落视图/由历史权威路径接管。 ｜ tags: streaming, sse, multi_session, frontend
+真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
+溯源: issue #2901：admin-web chat store 的 isStreaming/messages 为全局单例，切会话使在途 SSE 增量写空、assistant 消息仅在流结束入库 → 切回无等待动画且回复丢失。修复：liveMessage 按会话持有在途流，selectSession 重挂占位，流结束落视图/由历史权威路径接管。truths_ref 置空：纯前端 UI 状态用例，真值库（ai-chat.*）为后端 agent 行为，无对应真值（标缺口）。 ｜ tags: streaming, sse, multi_session, frontend
 
 ## 跨域（3 case）
 
@@ -2203,5 +2203,6 @@
 - utils：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
+- CH-027: 流式回复中切换会话再切回 - 等待状态与最终回复保留（issue #2901）
 - MC-012: CI 失败报告去重 - 同日同标题 open issue 存在时不重复建
 
