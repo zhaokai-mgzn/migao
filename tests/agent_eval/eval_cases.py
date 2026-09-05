@@ -806,6 +806,21 @@ _CASE_CH_027 = EvalCase(
     persona='',
 )
 
+# ── CH-028 [NORMAL] 多会话并发流 - 会话 A 回复中 B 可发送，增量/停止互不干扰（issue #2906）（源: cases/chat.yml）──
+_CASE_CH_028 = EvalCase(
+    id='CH-028',
+    legacy_id='',
+    title='多会话并发流 - 会话 A 回复中 B 可发送，增量/停止互不干扰（issue #2906）',
+    skill=Skill.MULTI_TURN,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['会话 A 回复进行中，切到会话 B 发送并同时回复', '两路流各自推进；停止只停当前会话；完成后各自落库可见'],
+    expectations=['会话 A 在途时，会话 B 发送成功（两路 streams 共存，前端 store 单测断言）', '两会话增量互不串流：各自视图末条为各自内容', 'stopStreaming 只停当前会话的流，另一会话流不受影响', '左侧会话列表对该会话显示「正在回复」等待动效（streams 指示）'],
+    data_checks=['前端单测验证（无需真实 LLM）：A 流挂起→切 B→B 发送→双流增量→A 完成→B 完成→两会话终态可见'],
+    skip_reason='前端 UI 状态能力，不进入 agent-eval 冒烟',
+    tags=['streaming', 'sse', 'multi_session', 'concurrency', 'frontend'],
+    persona='',
+)
+
 # ── CR-001 [NORMAL] 查商品 → 下单（跨 Skill 复用 UUID）（源: cases/cross.yml）──
 _CASE_CR_001 = EvalCase(
     id='CR-001',
@@ -2666,6 +2681,21 @@ _CASE_UI_018 = EvalCase(
     persona='',
 )
 
+# ── UI-020 [NORMAL] 订单列表采购明细 — 含加工项订单展示加工项计费（加工费合计 + 加工项明细行）（源: cases/ui.yml）──
+_CASE_UI_020 = EvalCase(
+    id='UI-020',
+    legacy_id='',
+    title='订单列表采购明细 — 含加工项订单展示加工项计费（加工费合计 + 加工项明细行）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['订单包含加工项（如打孔、韩式打褶定型）时，订单列表「采购明细」列应展示该项加工费与加工项明细，与详情页口径一致'],
+    expectations=['direct_reply'],
+    data_checks=['OrderTable 采购明细列从 processingInfo.processingFee（非 totalAmount/totalFee）取加工费，商品行后展示「+ 加工费{金额}元」', 'processingInfo 无 processingFee 字段时，按 processingInfo.processingItems 的 amount/subtotal 求和兜底展示加工费', '含加工项订单逐项展示加工项明细行：名称 × 单价元/米 × 数量米 = 金额元（数据源 item.processingInfo.processingItems）', '不含加工项订单不出现「+ 加工费0元」等误导信息'],
+    skip_reason='纯前端列表展示由 vitest 单测验证（OrderTable.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ui', 'orders', 'list', 'processing-fee'],
+    persona='',
+)
+
 # ── UI-019 [NORMAL] 米宝工作台「洞察」重构为「会话简报」 — 工具台账转业务简报（结论/待办/办理结果/建议）（源: cases/ui.yml）──
 _CASE_UI_019 = EvalCase(
     id='UI-019',
@@ -2681,9 +2711,9 @@ _CASE_UI_019 = EvalCase(
     persona='',
 )
 
-# ── UI-020 [NORMAL] 米宝展开大面板缩放手柄加大 + 缩放上限放开到视口 100%（拖到最大不留白）（源: cases/ui.yml）──
-_CASE_UI_020 = EvalCase(
-    id='UI-020',
+# ── UI-021 [NORMAL] 米宝展开大面板缩放手柄加大 + 缩放上限放开到视口 100%（拖到最大不留白）（源: cases/ui.yml）──
+_CASE_UI_021 = EvalCase(
+    id='UI-021',
     legacy_id='',
     title='米宝展开大面板缩放手柄加大 + 缩放上限放开到视口 100%（拖到最大不留白）',
     skill=Skill.GENERAL,
@@ -2696,9 +2726,9 @@ _CASE_UI_020 = EvalCase(
     persona='',
 )
 
-# ── UI-021 [NORMAL] 米宝展开大面板新增右下角斜向缩放把手（同时调整宽度与高度）（源: cases/ui.yml）──
-_CASE_UI_021 = EvalCase(
-    id='UI-021',
+# ── UI-022 [NORMAL] 米宝展开大面板新增右下角斜向缩放把手（同时调整宽度与高度）（源: cases/ui.yml）──
+_CASE_UI_022 = EvalCase(
+    id='UI-022',
     legacy_id='',
     title='米宝展开大面板新增右下角斜向缩放把手（同时调整宽度与高度）',
     skill=Skill.GENERAL,
@@ -2711,9 +2741,9 @@ _CASE_UI_021 = EvalCase(
     persona='',
 )
 
-# ── UI-022 [NORMAL] 米宝最小化浮窗 — 默认高度按视口自适应（≥600 上限 760）+ 底部/右下角把手调大小 + 位置与尺寸越界自动钳制（源: cases/ui.yml）──
-_CASE_UI_022 = EvalCase(
-    id='UI-022',
+# ── UI-023 [NORMAL] 米宝最小化浮窗 — 默认高度按视口自适应（≥600 上限 760）+ 底部/右下角把手调大小 + 位置与尺寸越界自动钳制（源: cases/ui.yml）──
+_CASE_UI_023 = EvalCase(
+    id='UI-023',
     legacy_id='',
     title='米宝最小化浮窗 — 默认高度按视口自适应（≥600 上限 760）+ 底部/右下角把手调大小 + 位置与尺寸越界自动钳制',
     skill=Skill.GENERAL,
@@ -2808,6 +2838,7 @@ ALL_CASES = (
     _CASE_CH_025,
     _CASE_CH_026,
     _CASE_CH_027,
+    _CASE_CH_028,
     _CASE_CR_001,
     _CASE_CR_002,
     _CASE_CR_003,
@@ -2932,10 +2963,11 @@ ALL_CASES = (
     _CASE_UI_016,
     _CASE_UI_017,
     _CASE_UI_018,
-    _CASE_UI_019,
     _CASE_UI_020,
+    _CASE_UI_019,
     _CASE_UI_021,
     _CASE_UI_022,
+    _CASE_UI_023,
     _CASE_UT_001,
     _CASE_UT_002,
 )

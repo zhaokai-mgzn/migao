@@ -10,7 +10,6 @@ interface CategoryDialogProps {
   onSubmit: (data: CategoryFormData) => Promise<void>
   category?: Category | null
   categories: Category[]
-  presetParentId?: string
 }
 
 export default function CategoryDialog({
@@ -19,12 +18,9 @@ export default function CategoryDialog({
   onSubmit,
   category,
   categories: _categories,
-  presetParentId,
 }: CategoryDialogProps) {
   const [form, setForm] = useState<CategoryFormData>({
     name: '',
-    parentId: '',
-    sort: 0,
   })
   const [submitting, setSubmitting] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -35,14 +31,12 @@ export default function CategoryDialog({
     if (category) {
       setForm({
         name: category.name,
-        parentId: category.parentId || '',
-        sort: category.sort || 0,
       })
     } else {
-      setForm({ name: '', parentId: presetParentId || '', sort: 0 })
+      setForm({ name: '' })
     }
     setErrors({})
-  }, [category, open, presetParentId])
+  }, [category, open])
 
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {}
@@ -58,8 +52,7 @@ export default function CategoryDialog({
     setSubmitting(true)
     try {
       await onSubmit({
-        ...form,
-        parentId: form.parentId || undefined,
+        name: form.name.trim(),
       })
       onClose()
     } catch (e) {
@@ -94,14 +87,7 @@ export default function CategoryDialog({
           onChange={(e) => setForm({ ...form, name: e.target.value })}
           error={errors.name}
         />
-
-        <Input
-          label="排序"
-          type="number"
-          placeholder="数值越小越靠前"
-          value={String(form.sort || 0)}
-          onChange={(e) => setForm({ ...form, sort: Number(e.target.value) })}
-        />
+        <p className="text-xs text-neutral-400">分类顺序可通过列表中的上移/下移按钮调整。</p>
       </div>
     </Modal>
   )

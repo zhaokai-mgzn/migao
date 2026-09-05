@@ -1,8 +1,8 @@
 /**
  * OrderTable 组件测试
- * 覆盖：基本渲染、采购商品列、采购明细列、空状态、加载状态
+ * 覆盖：基本渲染、采购商品列、采购明细列、加工项计费、空状态、加载状态
  */
-// case_ids: UI-002
+// case_ids: UI-002, UI-020
 import { render, screen } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
 import OrderTable from '@/components/orders/OrderTable'
@@ -82,6 +82,65 @@ describe('OrderTable', () => {
     expect(cellText).toMatch(/窗帘\s*:\s*\d/)
     // 不应出现 ' / 数字' 模式（在采购明细列上下文中）
     expect(cellText).not.toMatch(/窗帘\s*\/\s*\d/)
+  })
+
+  // #2916: 订单列表「采购明细」列漏掉加工项计费。
+  // 根因：组件读 processingInfo.totalAmount/totalFee（字段从未写入），真实数据在
+  // processingInfo.processingFee（该项加工费合计）+ processingInfo.processingItems（加工项明细）。
+  describe('采购明细列加工项计费（#2916）', () => {
+    const processingOrder = {
+      ...mockOrder,
+      items: [
+        {
+          ...mockOrder.items![0],
+          processingInfo: {
+            processingFee: 50,
+            processingItems: [
+              { id: 'pi-1', name: '打孔', unitPrice: 10, quantity: 5, subtotal: 50 },
+            ],
+          },
+        },
+      ],
+    }
+    const detailCell = () => document.querySelector('td.min-w-\\[280px\\]') as HTMLElement
+
+    it('含加工项订单：商品行后展示 + 加工费{金额}元', () => {
+      render(<OrderTable {...defaultProps} orders={[processingOrder]} />)
+      const cellText = detailCell().textContent || ''
+      // 商品行：窗帘 : 99元 × 3米 = 297元 + 加工费50元（加工费与商品行同行展示）
+      expect(cellText).toMatch(/窗帘\s*:\s*99元\s*×\s*3米\s*=\s*297元/)
+      expect(cellText).toMatch(/\+\s*加工费50元/)
+    })
+
+    it('含加工项订单：逐项展示加工项明细（名称 × 单价元/米 × 数量米 = 金额元）', () => {
+      render(<OrderTable {...defaultProps} orders={[processingOrder]} />)
+      const cellText = detailCell().textContent || ''
+      expect(cellText).toMatch(/打孔\s*×\s*10元\/米\s*×\s*5米\s*=\s*50元/)
+    })
+
+    it('不含加工项订单：采购明细列不出现加工费字样', () => {
+      render(<OrderTable {...defaultProps} />)
+      expect(detailCell().textContent).not.toMatch(/加工费/)
+    })
+
+    it('#2916 兼容旧数据：processingInfo 无 processingFee 但带加工项明细时按明细求和展示', () => {
+      const noFeeFieldOrder = {
+        ...mockOrder,
+        items: [
+          {
+            ...mockOrder.items![0],
+            processingInfo: {
+              processingItems: [
+                { id: 'pi-1', name: '高温定型', unitPrice: 8, quantity: 4, subtotal: 32 },
+              ],
+            },
+          },
+        ],
+      }
+      render(<OrderTable {...defaultProps} orders={[noFeeFieldOrder]} />)
+      const cellText = detailCell().textContent || ''
+      expect(cellText).toMatch(/\+\s*加工费32元/)
+    })
   })
 
   it('空列表显示"暂无数据"', () => {

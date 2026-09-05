@@ -17,20 +17,21 @@ public class CategoryCreateRequest {
     private String name;
 
     /**
-     * 父分类ID（为空表示顶级分类）
+     * 父分类ID（已废弃：父子概念移除，服务端忽略）
      */
     private String parentId;
 
     /**
-     * 层级
+     * 层级（已废弃：服务端固定为 1）
      */
     private Integer level = 1;
 
     /**
-     * 排序号（JSON 契约字段名为 sort，DB 列 sort_order）
+     * 排序号（JSON 契约字段名为 sort，DB 列 sort_order）。
+     * 未传（null）时服务端自动追加到列表末尾
      */
     @JsonProperty("sort")
-    private Integer sortOrder = 0;
+    private Integer sortOrder;
 
     /**
      * 图标

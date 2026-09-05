@@ -1,4 +1,4 @@
-// case_ids: UI-020, UI-021
+// case_ids: UI-021, UI-022
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useResizableWidth } from '@/hooks/useResizableWidth'

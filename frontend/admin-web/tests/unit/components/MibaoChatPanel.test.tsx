@@ -1,4 +1,4 @@
-// case_ids: UI-020, UI-021
+// case_ids: UI-021, UI-022
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import MibaoChatPanel from '@/components/business/MibaoChatPanel'

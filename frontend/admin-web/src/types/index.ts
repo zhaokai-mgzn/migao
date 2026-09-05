@@ -237,11 +237,9 @@ export interface Category {
   children?: Category[]
 }
 
-// 分类表单数据
+// 分类表单数据（issue #2905：仅名称；顺序通过上移/下移调整，不再提交 sort/parentId）
 export interface CategoryFormData {
   name: string
-  parentId?: string
-  sort?: number
 }
 
 // 加工项状态

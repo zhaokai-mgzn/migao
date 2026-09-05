@@ -283,7 +283,7 @@
 真值: category-manage.delete, category-manage.delete-destructive, ai-chat.confirm-required
 溯源: verification 2.12 独有（二次确认行为在测试中未确认，见 category-manage.yml 缺口注释） ｜ tags: delete, destructive, confirm
 
-## 对话边界域（27 case）
+## 对话边界域（28 case）
 
 ### CH-001. 空结果 + suggestion 引导修复 🔴
 ```
@@ -643,6 +643,20 @@
 ```
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
 溯源: issue #2901：admin-web chat store 的 isStreaming/messages 为全局单例，切会话使在途 SSE 增量写空、assistant 消息仅在流结束入库 → 切回无等待动画且回复丢失。修复：liveMessage 按会话持有在途流，selectSession 重挂占位，流结束落视图/由历史权威路径接管。truths_ref 置空：纯前端 UI 状态用例，真值库（ai-chat.*）为后端 agent 行为，无对应真值（标缺口）。 ｜ tags: streaming, sse, multi_session, frontend
+
+### CH-028. 多会话并发流 - 会话 A 回复中 B 可发送，增量/停止互不干扰（issue #2906） 🔵
+```
+你: 会话 A 回复进行中，切到会话 B 发送并同时回复
+你: 两路流各自推进；停止只停当前会话；完成后各自落库可见
+期望: 会话 A 在途时，会话 B 发送成功（两路 streams 共存，前端 store 单测断言）
+期望: 两会话增量互不串流：各自视图末条为各自内容
+期望: stopStreaming 只停当前会话的流，另一会话流不受影响
+期望: 左侧会话列表对该会话显示「正在回复」等待动效（streams 指示）
+数据: 前端单测验证（无需真实 LLM）：A 流挂起→切 B→B 发送→双流增量→A 完成→B 完成→两会话终态可见
+跳过: 前端 UI 状态能力，不进入 agent-eval 冒烟
+```
+真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
+溯源: issue #2906：#2901 修复（liveMessage 单缓冲）仍假设全局单并发流。重构为 messageStore（每会话快照）+ streams（每会话在途流）+ withView 投影（messages/isStreaming 兼容）：sendMessage 只挡当前会话、SSE 按归属流写入、stopStreaming 只停当前、轮换迁移流与快照、SessionList 显示每会话等待动效。truths_ref 置空：纯前端状态用例，真值库为后端 agent 行为，无对应真值（标缺口）。 ｜ tags: streaming, sse, multi_session, concurrency, frontend
 
 ## 跨域（3 case）
 
@@ -1904,7 +1918,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## ui（22 case）
+## ui（23 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -2133,6 +2147,19 @@
 真值: frontend-fix.no-api-change
 溯源: 2026-09-04 新增：智能客服名称去硬编码 — 思考中/空态/导航名原写死「AI/小布」（issue #2857） ｜ tags: mini-app, brand
 
+### UI-020. 订单列表采购明细 — 含加工项订单展示加工项计费（加工费合计 + 加工项明细行） 🔵
+```
+你: 订单包含加工项（如打孔、韩式打褶定型）时，订单列表「采购明细」列应展示该项加工费与加工项明细，与详情页口径一致
+期望: direct_reply
+数据: OrderTable 采购明细列从 processingInfo.processingFee（非 totalAmount/totalFee）取加工费，商品行后展示「+ 加工费{金额}元」
+数据: processingInfo 无 processingFee 字段时，按 processingInfo.processingItems 的 amount/subtotal 求和兜底展示加工费
+数据: 含加工项订单逐项展示加工项明细行：名称 × 单价元/米 × 数量米 = 金额元（数据源 item.processingInfo.processingItems）
+数据: 不含加工项订单不出现「+ 加工费0元」等误导信息
+跳过: 纯前端列表展示由 vitest 单测验证（OrderTable.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-09-05 新增：订单列表采购明细漏加工项计费修复（issue #2916） ｜ tags: ui, orders, list, processing-fee
+
 ### UI-019. 米宝工作台「洞察」重构为「会话简报」 — 工具台账转业务简报（结论/待办/办理结果/建议） 🔵
 ```
 你: 米宝会话页顶部「洞察」抽屉展示的是工具调用台账（查询订单/参数校验/请求确认），商家用户不理解也不关心 agent 调用了哪些工具
@@ -2148,7 +2175,7 @@
 真值: frontend-fix.no-api-change
 溯源: 2026-09-05 新增：米宝「洞察」重构为「会话简报」— 工具语言转业务信息（issue #2897） ｜ tags: ui, admin-web, chat, insight
 
-### UI-020. 米宝展开大面板缩放手柄加大 + 缩放上限放开到视口 100%（拖到最大不留白） 🔵
+### UI-021. 米宝展开大面板缩放手柄加大 + 缩放上限放开到视口 100%（拖到最大不留白） 🔵
 ```
 你: 米宝 AI 对话浮框（点开机器人后的默认大弹框）的顶部/底部/右侧缩放手柄只有 8px 太大难抓取；高度/宽度最多只能缩放到视口 90%，上下左右总会留空白拖不满屏
 期望: direct_reply
@@ -2160,7 +2187,7 @@
 真值: frontend-fix.no-api-change
 溯源: 2026-09-05 新增：大面板缩放手柄加大 + 缩放上限 100% 不留白（issue #2918） ｜ tags: ui, admin-web, floating-assistant, resize
 
-### UI-021. 米宝展开大面板新增右下角斜向缩放把手（同时调整宽度与高度） 🔵
+### UI-022. 米宝展开大面板新增右下角斜向缩放把手（同时调整宽度与高度） 🔵
 ```
 你: 米宝大弹框只能横向（右侧把手）/上下（顶部/底部把手）分别缩放，没有斜向缩放能力；希望加一个右下角把手，按住后沿对角线拖动可同时调整宽度与高度
 期望: direct_reply
@@ -2172,7 +2199,7 @@
 真值: frontend-fix.no-api-change
 溯源: 2026-09-05 新增：大面板右下角斜向缩放把手（issue #2918） ｜ tags: ui, admin-web, floating-assistant, resize
 
-### UI-022. 米宝最小化浮窗 — 默认高度按视口自适应（≥600 上限 760）+ 底部/右下角把手调大小 + 位置与尺寸越界自动钳制 🔵
+### UI-023. 米宝最小化浮窗 — 默认高度按视口自适应（≥600 上限 760）+ 底部/右下角把手调大小 + 位置与尺寸越界自动钳制 🔵
 ```
 你: 米宝收起后的最小化小浮窗固定 400×600，高度不够、聊天布局拥挤；且换屏/改窗口后存储的浮窗位置会落到视口外看不见
 期望: direct_reply
@@ -2213,13 +2240,13 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：181（活跃 99，跳过 82）
-- tier 分布：smoke 8 / normal 145 / adversarial 28
+- 用例总数：183（活跃 99，跳过 84）
+- tier 分布：smoke 8 / normal 147 / adversarial 28
 - 售后域：5
 - agents：6
 - api：10
 - 分类域：3
-- 对话边界域：27
+- 对话边界域：28
 - 跨域：3
 - 客户域：5
 - 数据域：6
@@ -2235,10 +2262,11 @@
 - registry：1
 - 设置域：8
 - token-refresh：4
-- ui：22
+- ui：23
 - utils：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
 - CH-027: 流式回复中切换会话再切回 - 等待状态与最终回复保留（issue #2901）
+- CH-028: 多会话并发流 - 会话 A 回复中 B 可发送，增量/停止互不干扰（issue #2906）
 - MC-012: CI 失败报告去重 - 同日同标题 open issue 存在时不重复建
 

@@ -2,7 +2,7 @@
 'use client'
 
 import { useMemo, useRef, useState, useEffect } from 'react'
-import { Plus, Trash2, GripVertical, Check } from 'lucide-react'
+import { Plus, Trash2, GripVertical, Check, AlertCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button, Select } from '@/components/ui'
 import type { ProductColor, ProductSku, SellingMethod } from '@/types'
@@ -273,6 +273,39 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
     () => doorWidths.filter((w) => !!w),
     [doorWidths]
   )
+
+  // 与表格渲染共用同一匹配逻辑（优先 colorId，兜底 colorName）
+  const findSku = (
+    color: ProductColor,
+    method: SellingMethod,
+    width: string
+  ): ProductSku | undefined =>
+    skus.find((s) => {
+      const idMatch = s.colorId != null && s.colorId === color.id
+      const nameMatch = s.colorName === color.colorName
+      return (
+        (idMatch || (s.colorId == null && nameMatch)) &&
+        s.sellingMethod === method &&
+        s.doorWidth === width
+      )
+    })
+
+  // 未填写的价格/库存单元格计数（与 validateProductForm 规则一致：价格>0、库存>=0）
+  const invalidCounts = useMemo(() => {
+    let price = 0
+    let stock = 0
+    for (const color of colors) {
+      for (const method of validSellingMethods) {
+        for (const width of validDoorWidths) {
+          const sku = findSku(color, method, width)
+          if (!sku || Number(sku.price) <= 0) price++
+          if (!sku || Number(sku.stock) < 0) stock++
+        }
+      }
+    }
+    return { price, stock, total: price + stock }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [colors, validSellingMethods, validDoorWidths, skus])
 
   const handleSkuChange = (
     colorId: string,
@@ -626,6 +659,25 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
           提示：选择目标范围并填入价格/库存，点击&ldquo;批量填写&rdquo;即可统一设置。多个规格请分批次填写。
         </p>
 
+        {/* #2908: SKU 校验失败醒目提示（带计数 + 锚点供滚动定位） */}
+        {errors?.skus && totalSkus > 0 && (
+          <div
+            id="pf-skus-error"
+            role="alert"
+            className="flex items-start gap-2 px-3 py-2.5 mb-3 rounded-md border border-red-300 bg-red-50"
+          >
+            <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-red-600" />
+            <p className="text-sm text-red-700 leading-relaxed">
+              <span className="font-medium">{errors.skus}</span>
+              {invalidCounts.total > 0 && (
+                <>
+                  ，还有 <span className="font-semibold">{invalidCounts.total}</span> 处价格/库存未填写
+                </>
+              )}
+            </p>
+          </div>
+        )}
+
         {totalSkus === 0 ? (
           <div className="text-sm text-neutral-400 text-center py-6 border border-dashed border-neutral-200 rounded">
             请先完善颜色分类、售卖方式、规格尺寸
@@ -658,15 +710,17 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
                     validSellingMethods.length * validDoorWidths.length || 1
                   return validSellingMethods.map((method, mIdx) =>
                     validDoorWidths.map((width, wIdx) => {
-                      const sku = skus.find(
-                        (s) => {
-                          const idMatch = s.colorId != null && s.colorId === color.id
-                          const nameMatch = s.colorName === color.colorName
-                          return (idMatch || (s.colorId == null && nameMatch)) &&
-                            s.sellingMethod === method &&
-                            s.doorWidth === width
-                        }
-                      )
+                      const sku = findSku(color, method, width)
+                      // 与 validateProductForm 规则一致：价格必须 >0，库存必须 >=0
+                      const priceInvalid = !sku || Number(sku.price) <= 0
+                      const stockInvalid = !sku || Number(sku.stock) < 0
+                      const validationOn = !!errors?.skus
+                      const cellCls =
+                        'w-full h-8 px-2 text-sm rounded border focus:outline-none focus:ring-2'
+                      const cellClsNormal =
+                        'bg-white border-neutral-300 focus:border-primary-500 focus:ring-primary-500/15'
+                      const cellClsError =
+                        'bg-red-50/60 border-red-400 focus:border-red-500 focus:ring-red-500/15'
                       const isFirstRowOfColor = mIdx === 0 && wIdx === 0
                       const isFirstRowOfMethod = wIdx === 0
                       return (
@@ -717,7 +771,10 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
                                   parseFloat(e.target.value) || 0
                                 )
                               }
-                              className="w-full h-8 px-2 text-sm rounded border border-neutral-300 bg-white focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                              aria-invalid={validationOn && priceInvalid ? true : undefined}
+                              className={`${cellCls} ${
+                                validationOn && priceInvalid ? cellClsError : cellClsNormal
+                              }`}
                             />
                           </td>
                           <td className="px-3 py-2">
@@ -737,7 +794,10 @@ export default function SkuMatrix({ value, onChange, errors }: SkuMatrixProps) {
                                   parseInt(e.target.value, 10) || 0
                                 )
                               }
-                              className="w-full h-8 px-2 text-sm rounded border border-neutral-300 bg-white focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                              aria-invalid={validationOn && stockInvalid ? true : undefined}
+                              className={`${cellCls} ${
+                                validationOn && stockInvalid ? cellClsError : cellClsNormal
+                              }`}
                             />
                           </td>
                         </tr>

@@ -1,4 +1,4 @@
-// case_ids: UI-011, UI-022
+// case_ids: UI-011, UI-023
 /**
  * FloatingAssistant 组件测试 — 重构后版本
  *
