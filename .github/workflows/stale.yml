@@ -1,0 +1,56 @@
+name: Stale 清理
+
+# issue/PR 生命周期治理（2026-09-05 新增）：
+# 背景：#20 这类 4 个月静默长尾 + 已修复未关闭的 issue 全靠人工对账。
+# 本工作流对长期无活动的 issue/PR 打 meta/stale 标签并评论提醒（再无人理会在 30 天后关闭），
+# 把「静默堆积」变成「可视化 + 自动回收」。阈值有意保守（30 天），活跃开发节奏下不误伤。
+
+on:
+  schedule:
+    - cron: "17 3 * * *"   # 每天 03:17 UTC 跑一次（避开整点 CI 高峰）
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  stale:
+    name: Mark stale & close abandoned
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/stale@v9
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+          # ── Issue 规则 ──
+          # 30 天无活动 → stale 标签 + 提醒；再 30 天（共 60 天）无活动 → 关闭
+          days-before-issue-stale: 30
+          days-before-issue-close: 30
+          stale-issue-label: meta/stale
+          stale-issue-message: |
+            ⏳ 本 issue 已 30 天无活动，被打上 `meta/stale` 标签。
+            如果仍在进行中，请更新状态（评论/改标签）；否则 30 天后将自动关闭。
+          close-issue-message: |
+            🗑️ 本 issue 已 60 天无活动，自动关闭。如仍需处理，回复即可重新打开。
+          # 豁免：等业务真值 / 等人工决策 / 历史基建长尾不误删（仍会被标记提醒）
+          exempt-issue-labels: >
+            needs-truths,
+            block/need-human,
+            ai-verify/pending,
+            ai-draft
+
+          # ── PR 规则 ──
+          # 45 天无活动 → stale 提醒；再 15 天（共 60 天）→ 关闭（被依赖升级「半套升级」长期滞留的 PR 自动回收）
+          days-before-pr-stale: 45
+          days-before-pr-close: 15
+          stale-pr-label: meta/stale
+          stale-pr-message: |
+            ⏳ 本 PR 已 45 天无活动，被打上 `meta/stale` 标签。
+            如仍在推进请更新；否则 15 天后将自动关闭。
+          close-pr-message: |
+            🗑️ 本 PR 已 60 天无活动，自动关闭。需要时可用原分支重新发起 PR。
+          # draft PR 不自动回收（开发中往往长期静默）
+          exempt-draft-pr: true
+          operations-per-run: 200
