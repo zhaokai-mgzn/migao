@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChevronRight, Zap, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
+import { toastRequestError } from '@/lib/api-error'
 import dayjs from 'dayjs'
 import { orderApi } from '@/lib/api'
 import { useRouteId } from '@/lib/use-route-id'
@@ -114,7 +115,7 @@ export default function OrderDetailPage() {
       if (data) setOrder(data)
     } catch (e) {
       console.error('加载订单失败:', e)
-      toast.error('加载订单详情失败')
+      toastRequestError(e, '加载订单详情失败')
     } finally {
       setLoading(false)
     }
@@ -144,7 +145,7 @@ export default function OrderDetailPage() {
       setCloseModalOpen(false)
       loadOrder()
     } catch (e) {
-      toast.error('关闭订单失败')
+      toastRequestError(e, '关闭订单失败')
     } finally {
       setCloseSubmitting(false)
     }
@@ -160,7 +161,7 @@ export default function OrderDetailPage() {
       setConfirmPaymentOpen(false)
       loadOrder()
     } catch (e) {
-      toast.error('确认付款失败')
+      toastRequestError(e, '确认付款失败')
     } finally {
       setPaymentSubmitting(false)
     }
@@ -176,7 +177,7 @@ export default function OrderDetailPage() {
       setConfirmReceiveOpen(false)
       loadOrder()
     } catch (e) {
-      toast.error('确认收货失败')
+      toastRequestError(e, '确认收货失败')
     } finally {
       setReceiveSubmitting(false)
     }
@@ -191,7 +192,7 @@ export default function OrderDetailPage() {
       setShowEditLogistics(false)
       loadOrder()
     } catch (err) {
-      toast.error('更新物流信息失败')
+      toastRequestError(err, '更新物流信息失败')
       throw err // 抛出以阻止 LogisticsForm 自动关闭
     }
   }
@@ -207,7 +208,7 @@ export default function OrderDetailPage() {
       loadOrder()
     } catch (e) {
       console.error(e)
-      toast.error('退款失败')
+      toastRequestError(e, '退款失败')
     } finally {
       setRefundSubmitting(false)
     }

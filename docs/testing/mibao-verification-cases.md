@@ -1951,7 +1951,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## ui（23 case）
+## ui（24 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -2244,6 +2244,18 @@
 真值: frontend-fix.no-api-change
 溯源: 2026-09-05 新增：最小化浮窗高度自适应 + 缩放把手 + 越界钳制（issue #2918） ｜ tags: ui, admin-web, floating-assistant, minimized-window
 
+### UI-024. 请求错误提示去重 — 拦截器已展示后端具体错误，页面不再叠加通用错误 toast 🔵
+```
+你: 订单详情页点「确认付款」失败（如商品库存不足）：只看到 1 条具体错误提示（含「库存不足」详情），不再同时叠加「确认付款失败」通用提示
+期望: direct_reply
+数据: request.ts 响应拦截器 toast 后端具体错误（success:false 业务错误 / HTTP 错误 / 网络错误 / 登录已过期）后，给错误对象打已提示标记（api-error.ts 的 markErrorToastShown / isErrorToastShown，Symbol.for 稳定键，frozen 对象不抛错）
+数据: 页面 catch 统一走 toastRequestError(e, fallback, {id?})：拦截器已提示 → 不再重复弹 fallback；传入 loading toast id 且已提示时先 dismiss（订单列表页「操作中…」不滞留）；未标记错误（客户端校验等本地错误）→ 弹 fallback
+数据: 订单域页面（订单详情/订单列表/发货/新建订单）请求失败 catch 不再重复 toast 通用错误；客户端校验类提示（如「请输入快递单号」「请完善订单信息」）保留不变，不回归
+跳过: 纯前端错误提示行为由 vitest 单测验证（api-error/request/order-detail 三套），toast 链路由 request 拦截器单测覆盖，非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change, frontend-fix.vitest, frontend-fix.e2e
+溯源: 2026-09-05 新增：拦截器与页面 catch 双重 toast 导致错误提示重复弹出（issue #2923），订单域落地去重模式，其余模块批量清理留后续 issue ｜ tags: ui, admin-web, toast, error-handling
+
 ## utils（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -2273,8 +2285,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：185（活跃 101，跳过 84）
-- tier 分布：smoke 8 / normal 149 / adversarial 28
+- 用例总数：186（活跃 101，跳过 85）
+- tier 分布：smoke 8 / normal 150 / adversarial 28
 - 售后域：5
 - agents：6
 - api：10
@@ -2295,7 +2307,7 @@
 - registry：1
 - 设置域：8
 - token-refresh：4
-- ui：23
+- ui：24
 - utils：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）

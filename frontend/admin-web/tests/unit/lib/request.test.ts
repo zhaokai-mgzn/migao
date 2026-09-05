@@ -1,7 +1,9 @@
+// case_ids: UI-024
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import axios from 'axios'
 import type { AxiosError, AxiosResponse, InternalAxiosRequestConfig } from 'axios'
 import { toast } from 'sonner'
+import { isErrorToastShown } from '@/lib/api-error'
 
 // Mock the auth store before importing request
 const mockGetState = vi.fn()
@@ -452,6 +454,114 @@ describe('request (Axios instance)', () => {
 
       await expect(request.get('/api/data')).rejects.toBeDefined()
       expect(toast.error).toHaveBeenCalledWith('请求失败 (429)')
+
+      request.defaults.adapter = originalAdapter
+    })
+  })
+describe('response interceptor - 错误 toast 去重标记（issue #2923）', () => {
+    // 拦截器 toast 后必须给错误对象打标记，页面 catch 才能据此避免重复提示
+
+    it('业务错误（success:false）拒绝的错误带已提示标记', async () => {
+      const mockAdapter = vi.fn().mockResolvedValue({
+        status: 200,
+        data: { success: false, error: { code: 'STOCK_NOT_ENOUGH', message: '库存不足' } },
+        headers: {},
+        config: {} as InternalAxiosRequestConfig,
+        statusText: 'OK',
+      })
+
+      const originalAdapter = request.defaults.adapter
+      request.defaults.adapter = mockAdapter
+
+      const rejection = await request.get('/test').then(
+        () => null,
+        (e: unknown) => e
+      )
+      expect(isErrorToastShown(rejection)).toBe(true)
+
+      request.defaults.adapter = originalAdapter
+    })
+
+    it('HTTP 500 拒绝的错误带已提示标记', async () => {
+      const mockAdapter = vi.fn().mockRejectedValue(
+        createAxiosError(500, { message: 'Internal Server Error' })
+      )
+
+      const originalAdapter = request.defaults.adapter
+      request.defaults.adapter = mockAdapter
+
+      const rejection = await request.get('/test').then(
+        () => null,
+        (e: unknown) => e
+      )
+      expect(isErrorToastShown(rejection)).toBe(true)
+
+      request.defaults.adapter = originalAdapter
+    })
+
+    it('默认分支（data.error.message）拒绝的错误带已提示标记', async () => {
+      const mockAdapter = vi.fn().mockRejectedValue(
+        createAxiosError(422, {
+          success: false,
+          error: { code: 'VALIDATION_ERROR', message: '分类ID不能为空' },
+        })
+      )
+
+      const originalAdapter = request.defaults.adapter
+      request.defaults.adapter = mockAdapter
+
+      const rejection = await request.get('/test').then(
+        () => null,
+        (e: unknown) => e
+      )
+      expect(isErrorToastShown(rejection)).toBe(true)
+
+      request.defaults.adapter = originalAdapter
+    })
+
+    it('网络错误（无响应）拒绝的错误带已提示标记', async () => {
+      const error = new Error('Network Error') as AxiosError
+      error.isAxiosError = true
+      error.config = { url: '/test', headers: {} } as InternalAxiosRequestConfig
+      error.request = {}
+      error.response = undefined
+      error.toJSON = () => ({})
+
+      const mockAdapter = vi.fn().mockRejectedValue(error)
+
+      const originalAdapter = request.defaults.adapter
+      request.defaults.adapter = mockAdapter
+
+      const rejection = await request.get('/test').then(
+        () => null,
+        (e: unknown) => e
+      )
+      expect(isErrorToastShown(rejection)).toBe(true)
+
+      request.defaults.adapter = originalAdapter
+    })
+
+    it('Token 刷新失败（登录已过期）拒绝的错误带已提示标记', async () => {
+      mockGetState.mockReturnValue({
+        accessToken: 'expired-token',
+        refreshToken: 'refresh-token',
+        clearAuth: vi.fn(),
+        refreshAccessToken: vi.fn().mockResolvedValue(null),
+      })
+
+      const mockAdapter = vi.fn().mockRejectedValue(
+        createAxiosError(401, { message: 'Unauthorized' })
+      )
+
+      const originalAdapter = request.defaults.adapter
+      request.defaults.adapter = mockAdapter
+
+      const rejection = await request.get('/api/data').then(
+        () => null,
+        (e: unknown) => e
+      )
+      expect(toast.error).toHaveBeenCalledWith('登录已过期，请重新登录')
+      expect(isErrorToastShown(rejection)).toBe(true)
 
       request.defaults.adapter = originalAdapter
     })
