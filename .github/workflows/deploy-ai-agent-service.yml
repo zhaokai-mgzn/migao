@@ -11,6 +11,11 @@ on:
     paths:
       - 'backend/ai-agent-service/**'
       - '!backend/ai-agent-service/tests/**'
+  # 部署对账（issue #2935）：连续快速合并时 GitHub 可能吞掉 push 触发
+  # （2026-09-05 实测 #2926 合入 main 后未生成任何 deploy run——镜像从未构建）。
+  # 定时兜底：检查 main HEAD 对应的 sha-xxx 镜像是否已存在，缺失则补一次构建部署。
+  schedule:
+    - cron: '*/20 * * * *'
   workflow_dispatch:
     inputs:
       image_tag:
@@ -31,6 +36,9 @@ env:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    # 部署对账输出（issue #2935）：schedule 触发时若镜像已存在则 skip=true（本轮未部署）
+    outputs:
+      deployed: ${{ steps.sync.outputs.skip }}
 
     concurrency:
       group: deploy-ai-agent-service
@@ -59,14 +67,33 @@ jobs:
             --username ${{ secrets.ACR_USERNAME }} \
             --password ${{ secrets.ACR_PASSWORD }}
 
+      # ── 部署对账（仅 schedule 触发时生效，issue #2935）──
+      # 连续快速合并时 GitHub 可能吞掉 push 触发（2026-09-05 实测 #2926 合入 main
+      # 后未生成任何 deploy run——镜像从未构建）。定时兜底：main HEAD 对应的
+      # sha-<head7> 镜像已存在 → 该 commit 构建过，跳过本轮构建部署；
+      # 缺失 → push 触发被吞，执行完整构建部署。
+      - name: Skip if already built (schedule reconcile)
+        id: sync
+        if: github.event_name == 'schedule'
+        run: |
+          EXPECTED_TAG="sha-${GITHUB_SHA::7}"
+          IMAGE="${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_NAME }}:${EXPECTED_TAG}"
+          if docker manifest inspect "$IMAGE" >/dev/null 2>&1; then
+            echo "✅ 镜像 ${IMAGE} 已存在——main 当前 commit 已构建过，跳过构建部署"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "⚠️ 镜像 ${IMAGE} 缺失——该 commit 的部署触发可能被吞（连续快速合并），执行完整构建部署"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Set up Python 3.11
-        if: steps.tag.outputs.MODE == 'build'
+        if: steps.tag.outputs.MODE == 'build' && steps.sync.outputs.skip != 'true'
         uses: actions/setup-python@v7
         with:
           python-version: '3.11'
 
       - name: Run unit tests
-        if: steps.tag.outputs.MODE == 'build'
+        if: steps.tag.outputs.MODE == 'build' && steps.sync.outputs.skip != 'true'
         working-directory: backend/ai-agent-service
         env:
           PRIMARY_API_KEY: ${{ secrets.DEEPSEEK_API_KEY || 'ci-dummy' }}
@@ -95,11 +122,11 @@ jobs:
           python -m pytest tests/ -v --tb=short -q -m "not integration"
 
       - name: Set up Docker Buildx
-        if: steps.tag.outputs.MODE == 'build'
+        if: steps.tag.outputs.MODE == 'build' && steps.sync.outputs.skip != 'true'
         uses: docker/setup-buildx-action@v4
 
       - name: Build and push Docker image
-        if: steps.tag.outputs.MODE == 'build'
+        if: steps.tag.outputs.MODE == 'build' && steps.sync.outputs.skip != 'true'
         working-directory: backend/ai-agent-service
         run: |
           IMG=${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_NAME }}
@@ -116,6 +143,7 @@ jobs:
 
       # 自动部署目标 = 测试环境（当前 SWAS）；生产发布走 deploy-prod（未来）
       - name: Deploy to SWAS (测试环境)
+        if: steps.sync.outputs.skip != 'true'
         env:
           AK: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
           SK: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
@@ -128,6 +156,8 @@ jobs:
   smoke-test:
     name: Post-Deploy Smoke Test
     needs: build-and-deploy
+    # schedule 对账跳过构建部署时（本轮未部署）不再跑冒烟；push/rollback 正常跑
+    if: github.event_name != 'schedule' || needs.build-and-deploy.outputs.deployed == 'false'
     uses: ./.github/workflows/smoke-test.yml
     with:
       admin_api_url: 'https://api.migaozn.com'

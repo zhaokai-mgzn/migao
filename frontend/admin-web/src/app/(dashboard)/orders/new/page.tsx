@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Search, Package, User, Receipt, Settings2, Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { toastRequestError } from '@/lib/api-error'
 import { orderApi, productApi } from '@/lib/api'
 import type { ProductProcessingItem } from '@/lib/api'
 import { resolveImageUrl } from '@/lib/utils'
@@ -127,7 +128,7 @@ export default function NewOrderPage() {
       })
       setProductResults(res.data?.data?.items || [])
     } catch (e) {
-      toast.error('搜索商品失败')
+      toastRequestError(e, '搜索商品失败')
     } finally {
       setProductSearchLoading(false)
     }
@@ -168,7 +169,7 @@ export default function NewOrderPage() {
       const res = await productApi.getProduct(product.id)
       detail = res.data?.data as unknown as ProductDetail
     } catch (e) {
-      toast.error('加载商品详情失败')
+      toastRequestError(e, '加载商品详情失败')
       detail = product as unknown as ProductDetail
     }
 
@@ -415,8 +416,7 @@ export default function NewOrderPage() {
       toast.success('订单创建成功')
       router.push('/orders')
     } catch (err) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
-      toast.error(msg || '创建订单失败')
+      toastRequestError(err, '创建订单失败')
     } finally {
       setSubmitting(false)
     }

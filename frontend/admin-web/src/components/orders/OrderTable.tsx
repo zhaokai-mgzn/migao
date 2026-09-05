@@ -53,6 +53,42 @@ function getItemAmount(item: { amount?: number; subtotal?: number; unitPrice?: n
   return unit * qty
 }
 
+/** 加工项明细条目（processingInfo.processingItems 中的元素） */
+interface ProcessingDetail {
+  id?: string
+  name?: string
+  unitPrice?: number
+  quantity?: number
+  amount?: number
+  subtotal?: number
+}
+
+/**
+ * 单个订单明细项的加工费合计（#2916）。
+ * 列表接口把加工信息嵌套在每个明细项的 processingInfo 内：
+ * { processingFee: <该项加工费合计>, processingItems: [{id,name,unitPrice,quantity,subtotal}] }
+ * 优先取 processingFee 字段，缺省时按加工项明细（amount/subtotal）求和兜底。
+ */
+function getItemProcessingFee(pi: Record<string, unknown> | undefined): number {
+  if (!pi) return 0
+  const direct = Number(pi.processingFee ?? 0)
+  if (Number.isFinite(direct) && direct > 0) return direct
+  const list = Array.isArray(pi.processingItems) ? (pi.processingItems as ProcessingDetail[]) : []
+  return list.reduce((sum, p) => {
+    const amt = Number(p?.amount ?? p?.subtotal ?? 0)
+    return sum + (Number.isFinite(amt) ? amt : 0)
+  }, 0)
+}
+
+/** 加工项明细金额：amount → subtotal → unitPrice*quantity 兜底 */
+function getProcessingDetailAmount(p: ProcessingDetail): number {
+  const amt = Number(p?.amount ?? p?.subtotal ?? 0)
+  if (Number.isFinite(amt) && amt > 0) return amt
+  const unit = Number(p?.unitPrice ?? 0)
+  const qty = Number(p?.quantity ?? 0)
+  return (Number.isFinite(unit) ? unit : 0) * (Number.isFinite(qty) ? qty : 0)
+}
+
 function ActionLink({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
   return (
     <button
@@ -241,32 +277,36 @@ export default function OrderTable({
                     {order.items?.length || order.processingItems?.length ? (
                       <div className="space-y-1.5">
                       {order.items?.map((item) => {
-                        const pi = (item as any).processingInfo
-                        const fee = pi?.totalAmount || pi?.totalFee || 0
+                        // #2916: 加工信息嵌套在明细项 processingInfo 内（列表接口不下发顶层 processingItems）
+                        const pi = item.processingInfo
+                        const fee = getItemProcessingFee(pi)
+                        const procList = (Array.isArray(pi?.processingItems) ? pi.processingItems : []) as ProcessingDetail[]
                         return (
-                          <div key={item.id} className="text-neutral-700 leading-tight text-xs">
-                            <span>{item.productName || item.productCode || '-'}</span>
-                            {': '}
-                            <span className="font-mono">{formatNumber(item.unitPrice)}</span>元
-                            {' × '}<span className="font-mono">{formatNumber(item.quantity)}</span>米
-                            {' = '}<span className="font-mono">{formatNumber(getItemAmount(item))}</span>元
-                            {fee > 0 && (
-                              <span className="text-neutral-400">{' + 加工费'}<span className="font-mono">{formatNumber(fee)}</span>元</span>
-                            )}
+                          <div key={item.id} className="space-y-0.5">
+                            <div className="text-neutral-700 leading-tight text-xs">
+                              <span>{item.productName || item.productCode || '-'}</span>
+                              {': '}
+                              <span className="font-mono">{formatNumber(item.unitPrice)}</span>元
+                              {' × '}<span className="font-mono">{formatNumber(item.quantity)}</span>米
+                              {' = '}<span className="font-mono">{formatNumber(getItemAmount(item))}</span>元
+                              {fee > 0 && (
+                                <span className="text-neutral-400">{' + 加工费'}<span className="font-mono">{formatNumber(fee)}</span>元</span>
+                              )}
+                            </div>
+                            {procList.length > 0 && procList.map((proc, idx) => (
+                              <div
+                                key={proc.id || idx}
+                                className="text-amber-600 leading-tight text-xs"
+                              >
+                                <span className="font-medium">{proc.name}</span>
+                                {' × '}<span className="font-mono">{formatNumber(proc.unitPrice)}</span>元/米
+                                {' × '}<span className="font-mono">{formatNumber(proc.quantity)}</span>米
+                                {' = '}<span className="font-mono">{formatNumber(getProcessingDetailAmount(proc))}</span>元
+                              </div>
+                            ))}
                           </div>
                         )
                       })}
-                      {order.processingItems?.map((proc, idx) => (
-                        <div
-                          key={proc.id || idx}
-                          className="text-amber-600 leading-tight text-xs"
-                        >
-                          <span className="font-medium">{proc.name}</span>
-                          {' × '}<span className="font-mono">{formatNumber(proc.unitPrice)}</span>元/米
-                          {' × '}<span className="font-mono">{formatNumber(proc.quantity)}</span>米
-                          {' = '}<span className="font-mono">{formatNumber(proc.amount)}</span>元
-                        </div>
-                      ))}
                       </div>
                     ) : (
                       <span className="text-neutral-400">暂无数据</span>

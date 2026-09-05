@@ -399,6 +399,40 @@ VISION_CLARIFY_GUIDE = (
 )
 
 
+# ────────────────────── Vision 弱分析守卫（issue #2914）──────────────────────
+# 线上会话 sess_c40f60ffcae94f2b 实证：vision 偶发输出只有概括、没有实体的弱分析
+# （"受图片分辨率限制…不敢编造色号糊弄您"），且会被 set_vision_analysis 缓存并注入
+# 后续轮次（"你识别不出颜色?"拿到缓存的弱文本）→ 一次弱结果毒化整个会话。
+_DEGRADED_VISION_HINTS = (
+    "分辨率限制",
+    "看不清",
+    "看不清楚",
+    "无法辨认",
+    "无法识别",
+    "不敢编造",
+    "没有十足把握",
+)
+
+
+def _is_degraded_vision_analysis(text: str) -> bool:
+    """判断 vision 分析是否为弱结果（空/过短/明确表示看不清、无法识别）。"""
+    if not text:
+        return True
+    if len(text) < 20:
+        return True
+    return any(hint in text for hint in _DEGRADED_VISION_HINTS)
+
+
+def _vision_retry_needed(text: str, attempt: int) -> bool:
+    """vision 调用是否应重试：第 0 次拿到空/弱分析时重试一次，第 1 次不再重试。"""
+    return (not text or _is_degraded_vision_analysis(text)) and attempt < 1
+
+
+def _usable_vision_analysis(text: str) -> str:
+    """重试后仍弱 → 清空（不缓存、走兜底），防弱结果毒化会话后续轮次。"""
+    return "" if _is_degraded_vision_analysis(text) else text
+
+
 def _read_cached(path: str) -> str:
     """读取文件内容，带缓存。文件不存在时返回 ''。"""
     if path in _PROMPT_CACHE:
@@ -1019,8 +1053,13 @@ async def execute_skill(
                     response.content if isinstance(response.content, str) else str(response.content)
                 )
                 logger.info(f"[{skill_name}] Vision completed | len={len(vision_analysis)}")
-                if not vision_analysis and vision_attempt < 1:
-                    logger.warning(f"[{skill_name}] Vision returned empty, retrying | session={session_id}")
+                # issue #2914：vision 偶发输出只有概括、没有实体的弱分析（如"受图片分辨率限制…"）。
+                # 空或弱分析重试一次；重试后仍弱则清空（不缓存、走兜底），防弱结果毒化会话后续轮次。
+                if _vision_retry_needed(vision_analysis, vision_attempt):
+                    logger.warning(
+                        f"[{skill_name}] Vision returned degraded/empty analysis, retrying "
+                        f"| attempt={vision_attempt+1}/2 session={session_id}"
+                    )
                     continue
                 break
             except CircuitBreakerOpenError:
@@ -1031,6 +1070,12 @@ async def execute_skill(
                 logger.error(f"[{skill_name}] Vision failed: {e} | session={session_id}")
                 vision_analysis = ""
                 break
+
+        # 重试后仍弱 → 清空，不缓存不注入（防"你识别不出颜色?"拿到缓存的弱文本）
+        if vision_analysis:
+            vision_analysis = _usable_vision_analysis(vision_analysis)
+            if not vision_analysis:
+                logger.warning(f"[{skill_name}] Vision degraded after retry, discarding (no cache) | session={session_id}")
 
         if not vision_analysis:
             final_content = "抱歉，图片分析暂时无法完成，请用文字描述您的需求，我会帮您处理。"

@@ -16,7 +16,6 @@ export default function CategoriesPage() {
   // Dialog state
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingCategory, setEditingCategory] = useState<Category | null>(null)
-  const [presetParent, setPresetParent] = useState<Category | null>(null)
 
   // Delete confirmation
   const [deleteTarget, setDeleteTarget] = useState<Category | null>(null)
@@ -40,19 +39,11 @@ export default function CategoriesPage() {
 
   const handleAdd = () => {
     setEditingCategory(null)
-    setPresetParent(null)
-    setDialogOpen(true)
-  }
-
-  const handleAddChild = (parent: Category) => {
-    setEditingCategory(null)
-    setPresetParent(parent)
     setDialogOpen(true)
   }
 
   const handleEdit = (category: Category) => {
     setEditingCategory(category)
-    setPresetParent(null)
     setDialogOpen(true)
   }
 
@@ -61,13 +52,31 @@ export default function CategoriesPage() {
       await categoryApi.updateCategory(editingCategory.id, data)
       toast.success('分类已更新')
     } else {
-      await categoryApi.createCategory({
-        ...data,
-        parentId: presetParent ? presetParent.id : data.parentId,
-      })
+      await categoryApi.createCategory(data)
       toast.success('分类已创建')
     }
     loadCategories()
+  }
+
+  // issue #2905：上移/下移
+  const handleMoveUp = async (category: Category) => {
+    try {
+      await categoryApi.moveCategory(category.id, 'up')
+      toast.success(`「${category.name}」已上移`)
+      loadCategories()
+    } catch (e) {
+      // Error handled by API layer
+    }
+  }
+
+  const handleMoveDown = async (category: Category) => {
+    try {
+      await categoryApi.moveCategory(category.id, 'down')
+      toast.success(`「${category.name}」已下移`)
+      loadCategories()
+    } catch (e) {
+      // Error handled by API layer
+    }
   }
 
   const handleDelete = async () => {
@@ -99,7 +108,7 @@ export default function CategoriesPage() {
         </Button>
       </div>
 
-      {/* Category tree — 全宽，简洁模式 */}
+      {/* Category list — 全宽，扁平结构 */}
       <div className="bg-white rounded-lg border border-neutral-200 p-5">
         {loading ? (
           <div className="py-12">
@@ -114,7 +123,8 @@ export default function CategoriesPage() {
             categories={categories}
             onEdit={handleEdit}
             onDelete={setDeleteTarget}
-            onAddChild={handleAddChild}
+            onMoveUp={handleMoveUp}
+            onMoveDown={handleMoveDown}
           />
         )}
       </div>
@@ -126,7 +136,6 @@ export default function CategoriesPage() {
         onSubmit={handleSubmit}
         category={editingCategory}
         categories={categories}
-        presetParentId={presetParent?.id}
       />
 
       {/* Delete confirmation */}
@@ -147,11 +156,6 @@ export default function CategoriesPage() {
       >
         <p className="text-neutral-600">
           确定要删除分类 <span className="font-medium text-neutral-900">{deleteTarget?.name}</span> 吗？
-          {deleteTarget?.children && deleteTarget.children.length > 0 && (
-            <span className="block mt-2 text-amber-600">
-              该分类下还有 {deleteTarget.children.length} 个子分类，删除后子分类也将被移除。
-            </span>
-          )}
         </p>
       </Modal>
     </div>

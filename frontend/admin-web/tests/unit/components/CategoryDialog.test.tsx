@@ -1,7 +1,7 @@
-// case_ids: CT-002
+// case_ids: CT-001, CT-002, CT-003
 /**
  * CategoryDialog 组件测试
- * 覆盖：#563 — Modal 渲染、表单字段、新增/编辑模式
+ * 覆盖：#563 — Modal 渲染、表单字段、新增/编辑模式（issue #2905 — 移除排序输入框）
  */
 import { render, screen, fireEvent } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
@@ -75,7 +75,7 @@ describe('CategoryDialog (#563)', () => {
     expect(screen.queryByText('父级分类')).toBeFalsy()
   })
 
-  it('渲染排序输入框', () => {
+  it('不渲染排序输入框（排序改由列表上下移动控件完成）', () => {
     render(
       <CategoryDialog
         open={true}
@@ -84,7 +84,7 @@ describe('CategoryDialog (#563)', () => {
         categories={mockCategories}
       />
     )
-    expect(screen.getByText('排序')).toBeTruthy()
+    expect(screen.queryByText('排序')).toBeFalsy()
   })
 
   it('渲染取消和添加按钮', () => {
@@ -143,21 +143,5 @@ describe('CategoryDialog (#563)', () => {
     )
     fireEvent.click(screen.getByText('取消'))
     expect(onClose).toHaveBeenCalled()
-  })
-
-  it('预设 parentId 时分类名称输入框正常渲染', () => {
-    render(
-      <CategoryDialog
-        open={true}
-        onClose={vi.fn()}
-        onSubmit={vi.fn().mockResolvedValue(undefined)}
-        categories={mockCategories}
-        presetParentId="c1"
-      />
-    )
-    // 分类名称输入框应存在（parentId 通过 form state 传递，不在 UI 显示）
-    expect(screen.getByPlaceholderText('请输入分类名称')).toBeTruthy()
-    // 父级分类字段已移除，不应在 UI 中显示
-    expect(screen.queryByText('父级分类')).toBeFalsy()
   })
 })

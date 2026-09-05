@@ -241,6 +241,9 @@ function SessionItem({
   onReopenSession: () => void
   formatTime: (d: string) => string
 }) {
+  // 该会话是否有在途流（多会话并发，issue #2906）——「正在回复」等待动效
+  const isStreaming = useChatStore(s => !!s.streams[session.session_id])
+
   return (
     <div
       onClick={onSelect}
@@ -257,12 +260,16 @@ function SessionItem({
         <div className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-primary-500" />
       )}
       <div className="flex items-start gap-2.5">
-        {/* 状态指示器 */}
+        {/* 状态指示器：该会话正在回复（有在途流）→ 呼吸等待动效；否则按会话状态着色 */}
         <div className="mt-1.5 flex-shrink-0">
           <div
+            data-testid={isStreaming ? 'session-streaming-dot' : undefined}
+            title={isStreaming ? '正在回复…' : undefined}
             className={cn(
               'w-2 h-2 rounded-full',
-              session.status === 'active' ? 'bg-emerald-500' : 'bg-neutral-300'
+              isStreaming
+                ? 'bg-primary-500 animate-pulse'
+                : session.status === 'active' ? 'bg-emerald-500' : 'bg-neutral-300'
             )}
           />
         </div>

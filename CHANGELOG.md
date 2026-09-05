@@ -10,6 +10,23 @@
 
 - `admin-web`：财务对账页「本期收入/本期退款」统计口径可见——打开页面默认把本期（自然月：本月1号~今天）填充到开始/结束日期并生效查询，资金流水/收支汇总/应收对账三个 tab 默认均按本期范围统计；「重置」恢复本期默认视图（此前未选日期时统计全部历史，与「本期」字面不符且口径不可见；行为用例 FN-004，case_ids: FN-001~004）
 
+### 部署触发定时对账 — 防连续快速合并吞掉部署（2026-09-05，#2935）
+
+- `deploy-ai-agent-service`：新增 `schedule`（每 20 分钟）触发的**部署对账**——构建前检查 ACR 中 main HEAD 对应的 `sha-<head7>` 镜像是否已存在；缺失说明该 commit 的 push 触发被 GitHub 吞掉（#2924→#2926 实测 #2926 未触发任何构建），自动补一次完整构建部署；已存在则跳过本轮（含冒烟）
+- `deploy-ai-agent-service`：对账复用已有 ACR 登录步骤与凭据（无新增 secrets 引用），仅在 schedule 触发时生效，push / workflow_dispatch 路径不变
+
+### 会话自动关闭加固 — 启动宽限期 + 单次扫描上限（2026-09-05，#2915）
+
+- `ai-agent-service`：会话自动关闭循环增加**启动宽限期**（SESSION_STARTUP_GRACE_S=600s）——进程刚启动（部署/重启）时不立即扫描关闭，防部署过渡期把积压/时间戳未修正的会话一次性批量误杀（#2904 部署后首次扫描 89 会话被一批关闭的实证教训）
+- `ai-agent-service`：`close_idle_sessions` 增加**单次扫描上限**（AUTO_CLOSE_SCAN_LIMIT=25）——积压分多轮消化（SQL LIMIT + 客户端截断 + UPDATE 按 ANY(ids) 只动限额内会话），不再出现"一批 89 全关"突袭
+- `ai-agent-service`：`SessionService.expire_idle` 透传 limit；回归单测 5 例（case_ids: MC-009/API-001/CH-005/CH-006/DA-004）
+
+### 图片识别修复 — 视觉路由不受文本路由开关影响（2026-09-05，#2914）
+
+- `ai-agent-service`：修复 `LLM_ENABLE_MODEL_ROUTING=False` 时视觉请求误路由到纯文本主模型（deepseek-v4-flash 无法看图）导致图片颜色识别失效——`select_model` 的 `has_vision` 判定移到路由开关短路之前，含图消息恒走 `VISION_MODEL`（deepseek-v4-flash-vision-exp）；线上实证 sess_c40f60ffcae94f2b 色卡图原本只能识别"17 个颜色"概要
+- `ai-agent-service`：Vision 弱分析守卫——空/过短/"分辨率限制/看不清/不敢编造"等弱分析重试一次，重试后仍弱则清空不缓存（防一次弱结果经 set_vision_analysis 毒化会话后续轮次）
+- `ai-agent-service`：回归单测 20 例（test_llm_pipeline/test_ontology_vision_grounding/test_vision_integration，case_ids: MC-008/CH-021/ON-002/ON-004）
+
 ### 米宝「洞察」重构为「会话简报」（2026-09-05，#2897）
 
 - `admin-web`：米宝工作台会话页「洞察」抽屉重构为「会话简报」——从工具台账转业务简报（商家用户不关心 agent 调用了哪些工具）：会话结论（业务语言确定性推导：查询聚合「查询了 N 笔订单」/ 写操作完成 / 失败原因 / 待确认）/ 需要你处理（待确认安全闸 + 失败操作业务化原因）/ 办理结果（明细行带状态徽标/金额/客户，有详情页点击跳转、无则点击追问，跨来源去重）/ 接下来可以问（复用 agent 已生成的后续建议，点击即发送）；删除工具时间线、业务域 ×N 计数、裸编号便签；会话标识弱化保留；入口文案「洞察」→「会话简报」并同步 WelcomePanel 引导（行为用例 UI-019）

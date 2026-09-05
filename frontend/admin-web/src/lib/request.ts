@@ -2,6 +2,7 @@ import axios, { AxiosInstance, AxiosResponse, InternalAxiosRequestConfig, AxiosE
 import { toast } from 'sonner'
 import { useAuthStore } from '@/store/auth'
 import { shouldRedirectToLogin } from '@/lib/auth-redirect'
+import { markErrorToastShown } from '@/lib/api-error'
 
 // 创建 Axios 实例
 const request: AxiosInstance = axios.create({
@@ -34,6 +35,7 @@ let failedQueue: Array<{
 const processQueue = (error: unknown, token: string | null = null) => {
   failedQueue.forEach(({ resolve, reject }) => {
     if (error) {
+      markErrorToastShown(error) // 排队失败的请求同样认为已提示，避免页面再叠一条
       reject(error)
     } else {
       resolve(token)
@@ -64,7 +66,9 @@ request.interceptors.response.use(
     if (data.success === false) {
       const errorMessage = data.error?.message || '请求失败'
       toast.error(errorMessage)
-      return Promise.reject(new Error(errorMessage))
+      const error = new Error(errorMessage)
+      markErrorToastShown(error)
+      return Promise.reject(error)
     }
 
     return response
@@ -113,12 +117,14 @@ request.interceptors.response.use(
           // 刷新失败
           processQueue(error)
           toast.error('登录已过期，请重新登录')
+          markErrorToastShown(error)
           redirectToLogin()
           return Promise.reject(error)
         }
       } catch (refreshError) {
         processQueue(refreshError)
         toast.error('登录已过期，请重新登录')
+        markErrorToastShown(refreshError)
         redirectToLogin()
         return Promise.reject(refreshError)
       } finally {
@@ -147,6 +153,7 @@ request.interceptors.response.use(
     } else {
       toast.error(error.message || '请求发生错误')
     }
+    markErrorToastShown(error) // 以上分支均已 toast，页面 catch 不应再重复提示
 
     return Promise.reject(error)
   }

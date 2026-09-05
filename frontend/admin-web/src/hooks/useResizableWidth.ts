@@ -20,6 +20,8 @@ interface UseResizableWidthReturn {
   }
   isDragging: boolean
   resetWidth: () => void
+  /** 程序化设置宽度（夹在 [minWidth, maxWidth] 内）——右下角斜向缩放共用 */
+  setWidth: (width: number) => void
 }
 
 function readStoredWidth(key: string): number | null {
@@ -118,6 +120,12 @@ export function useResizableWidth({
     setStoredWidth(null)
   }, [storageKey])
 
+  /** 程序化设置宽度（夹在 [minWidth, maxWidth] 内）——右下角斜向缩放共用 */
+  const setWidth = useCallback((width: number) => {
+    const maxWidth = maxWidthProp ?? window.innerWidth
+    setStoredWidth(Math.round(Math.min(maxWidth, Math.max(minWidth, width))))
+  }, [minWidth, maxWidthProp])
+
   const containerStyle = {
     width: storedWidth !== null ? `${storedWidth}px` : defaultWidth,
   }
@@ -130,5 +138,5 @@ export function useResizableWidth({
     'aria-orientation': 'vertical' as const,
   }
 
-  return { containerStyle, handleProps, isDragging, resetWidth }
+  return { containerStyle, handleProps, isDragging, resetWidth, setWidth }
 }

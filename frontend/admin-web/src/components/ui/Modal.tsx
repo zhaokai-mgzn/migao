@@ -68,13 +68,13 @@ const Modal = ({
           role="dialog"
           aria-modal="true"
           aria-label={title || '对话框'}
-          className="relative bg-white rounded-2xl shadow-modal w-full animate-in fade-in zoom-in-95 duration-200"
+          className="relative bg-white rounded-2xl shadow-modal w-full max-h-full flex flex-col animate-in fade-in zoom-in-95 duration-200"
           style={{ maxWidth: widthStyle }}
           onClick={(e) => e.stopPropagation()}
         >
-          {/* 头部 */}
+          {/* 头部（常驻一屏内，超高时不被顶出视口） */}
           {title && (
-            <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-200">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-200 shrink-0">
               <h3 className="text-lg font-semibold text-neutral-900">{title}</h3>
               {closable && (
                 <button
@@ -87,16 +87,16 @@ const Modal = ({
             </div>
           )}
 
-          {/* 内容 */}
-          <div className="px-6 py-4">{children}</div>
+          {/* 内容（超高时内部滚动，保证标题与底部按钮同屏可见） */}
+          <div data-testid="modal-body" className="px-6 py-4 overflow-y-auto min-h-0 flex-1">{children}</div>
 
-          {/* 底部 */}
+          {/* 底部（常驻一屏内） */}
           {footer !== undefined ? (
-            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-neutral-200">
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-neutral-200 shrink-0">
               {footer}
             </div>
           ) : (
-            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-neutral-200">
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-neutral-200 shrink-0">
               <Button variant="secondary" onClick={onClose}>
                 取消
               </Button>

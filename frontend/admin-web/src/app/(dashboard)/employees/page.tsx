@@ -8,7 +8,7 @@ import request from '@/lib/request'
 import { usePermission } from '@/lib/permission'
 import { Button, Input, Select, Modal, Table, Pagination, Badge } from '@/components/ui'
 import type { TableColumn } from '@/components/ui'
-import type { Employee, EmployeeStatus, Role } from '@/types'
+import type { Employee, EmployeeStatus, Role, EmployeeFormData } from '@/types'
 import { TreeCheckbox, type TreeNode } from '@/components/ui/TreeCheckbox'
 import DateTimeCell from '@/components/common/DateTimeCell'
 
@@ -153,27 +153,23 @@ export default function EmployeesPage() {
     if (!formData.phone.trim()) { toast.error('请输入手机号'); return }
     if (!formData.position.trim()) { toast.error('请选择岗位'); return }
 
+    // 「角色」字段已从表单移除（#2907）：新建时不传 role，后端默认 operator；
+    // 账号权限由下方权限树直接分配。编辑时回传员工原角色码，避免角色被重置。
+    const payload: EmployeeFormData = {
+      name: formData.name,
+      phone: formData.phone,
+      position: formData.position,
+      permissions: formData.permissions,
+    }
+    if (formData.role) payload.role = formData.role
+
     setFormLoading(true)
     try {
       if (editingEmployee) {
-        await employeeApi.updateEmployee(editingEmployee.id, {
-          name: formData.name,
-          phone: formData.phone || undefined,
-          position: formData.position || undefined,
-          // RBAC 修复（P0）：提交角色码，此前只传 position 导致后端默认 operator
-          role: formData.role || undefined,
-          permissions: formData.permissions,
-        })
+        await employeeApi.updateEmployee(editingEmployee.id, payload)
         toast.success('编辑成功')
       } else {
-        await employeeApi.createEmployee({
-          name: formData.name,
-          phone: formData.phone,
-          position: formData.position,
-          // RBAC 修复（P0）：提交角色码，此前只传 position 导致后端默认 operator
-          role: formData.role || undefined,
-          permissions: formData.permissions,
-        })
+        await employeeApi.createEmployee(payload)
         toast.success('创建成功')
       }
       setFormOpen(false)
@@ -456,20 +452,6 @@ export default function EmployeesPage() {
               {PRESET_POSITIONS.map(p => <option key={p} value={p} />)}
             </datalist>
             <p className="text-xs text-neutral-400 mt-1">选择或输入员工岗位（必填）</p>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-neutral-700 mb-1">角色 *</label>
-            <select
-              value={formData.role}
-              onChange={(e) => setFormData(prev => ({ ...prev, role: e.target.value }))}
-              className="w-full h-10 px-3 rounded-lg border border-neutral-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
-            >
-              <option value="">请选择角色</option>
-              {allRoles.map(r => (
-                <option key={r.code} value={r.code}>{r.name}（{r.code}）</option>
-              ))}
-            </select>
-            <p className="text-xs text-neutral-400 mt-1">角色决定员工权限范围（岗位是职位名称，角色是权限组）</p>
           </div>
           <div>
             <label className="block text-sm font-medium text-neutral-700 mb-2">账号权限 *</label>

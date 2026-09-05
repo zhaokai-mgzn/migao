@@ -1,4 +1,4 @@
-// case_ids: CT-001, CT-002
+// case_ids: CT-001, CT-002, CT-003
 package com.migao.admin.controller;
 
 import com.migao.admin.dto.CategoryCreateRequest;
@@ -39,7 +39,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * CategoryController 单元测试
- * 验证分类树查询、创建、更新、删除接口
+ * 验证分类列表查询、创建、更新、删除、上下移动接口（issue #2905）
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -84,7 +84,7 @@ class CategoryControllerTest extends BaseControllerTest {
     class GetCategoryTree {
 
         @Test
-        @DisplayName("返回分类树 -> 200")
+        @DisplayName("返回分类列表 -> 200")
         void getCategoryTree() throws Exception {
             when(categoryService.getCategoryTree(TEST_TENANT_ID))
                     .thenReturn(List.of(buildCategoryResponse()));
@@ -97,7 +97,7 @@ class CategoryControllerTest extends BaseControllerTest {
         }
 
         @Test
-        @DisplayName("通过 /tree 路径返回分类树 -> 200")
+        @DisplayName("通过 /tree 路径返回分类列表 -> 200")
         void getCategoryTreeViaTreePath() throws Exception {
             when(categoryService.getCategoryTree(TEST_TENANT_ID))
                     .thenReturn(List.of());
@@ -109,7 +109,7 @@ class CategoryControllerTest extends BaseControllerTest {
         }
 
         @Test
-        @DisplayName("返回空树 -> 200")
+        @DisplayName("返回空列表 -> 200")
         void emptyTree() throws Exception {
             when(categoryService.getCategoryTree(TEST_TENANT_ID))
                     .thenReturn(List.of());
@@ -121,7 +121,7 @@ class CategoryControllerTest extends BaseControllerTest {
         }
 
         @Test
-        @DisplayName("分类树响应节点携带 sort 字段（契约字段名为 sort）")
+        @DisplayName("分类列表响应节点携带 sort 字段（契约字段名为 sort）")
         void getCategoryTree_returnsSortField() throws Exception {
             CategoryResponse resp = buildCategoryResponse();
             resp.setSortOrder(7);
@@ -145,7 +145,7 @@ class CategoryControllerTest extends BaseControllerTest {
             when(categoryService.createCategory(any(CategoryCreateRequest.class), eq(TEST_TENANT_ID)))
                     .thenReturn(resp);
 
-            String body = "{\"name\":\"新分类\",\"parentId\":null,\"sortOrder\":1}";
+            String body = "{\"name\":\"新分类\",\"parentId\":null}";
 
             mockMvc.perform(post("/api/admin/categories")
                             .contentType("application/json")
@@ -175,23 +175,21 @@ class CategoryControllerTest extends BaseControllerTest {
         }
 
         @Test
-        @DisplayName("创建子分类（含 parentId） -> 200")
-        void createChildCategory() throws Exception {
-            CategoryResponse resp = buildCategoryResponse();
-            resp.setId("cat-2");
-            resp.setParentId("cat-1");
-            resp.setLevel(2);
+        @DisplayName("创建分类 - 未指定 sort 时服务端 append 末尾（DTO sort 为 null）")
+        void createCategory_withoutSortField() throws Exception {
             when(categoryService.createCategory(any(CategoryCreateRequest.class), eq(TEST_TENANT_ID)))
-                    .thenReturn(resp);
+                    .thenReturn(buildCategoryResponse());
 
-            String body = "{\"name\":\"子分类\",\"parentId\":\"cat-1\"}";
+            String body = "{\"name\":\"新分类\"}";
 
             mockMvc.perform(post("/api/admin/categories")
                             .contentType("application/json")
                             .content(body))
-                    .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.success").value(true))
-                    .andExpect(jsonPath("$.data.parentId").value("cat-1"));
+                    .andExpect(status().isOk());
+
+            ArgumentCaptor<CategoryCreateRequest> captor = ArgumentCaptor.forClass(CategoryCreateRequest.class);
+            verify(categoryService).createCategory(captor.capture(), eq(TEST_TENANT_ID));
+            assertThat(captor.getValue().getSortOrder()).isNull();
         }
 
         @Test
@@ -210,21 +208,6 @@ class CategoryControllerTest extends BaseControllerTest {
         @DisplayName("缺少 name 字段 -> 422")
         void missingName_validationError() throws Exception {
             String body = "{\"sortOrder\":1}";
-
-            mockMvc.perform(post("/api/admin/categories")
-                            .contentType("application/json")
-                            .content(body))
-                    .andExpect(status().isUnprocessableEntity())
-                    .andExpect(jsonPath("$.success").value(false));
-        }
-
-        @Test
-        @DisplayName("父分类不存在 -> 422")
-        void parentNotFound() throws Exception {
-            when(categoryService.createCategory(any(CategoryCreateRequest.class), eq(TEST_TENANT_ID)))
-                    .thenThrow(BusinessException.validationError("父分类不存在"));
-
-            String body = "{\"name\":\"子分类\",\"parentId\":\"nonexistent\"}";
 
             mockMvc.perform(post("/api/admin/categories")
                             .contentType("application/json")
@@ -301,19 +284,71 @@ class CategoryControllerTest extends BaseControllerTest {
                     .andExpect(status().isUnprocessableEntity())
                     .andExpect(jsonPath("$.success").value(false));
         }
+    }
+
+    @Nested
+    @DisplayName("POST /api/admin/categories/{id}/move")
+    class MoveCategory {
 
         @Test
-        @DisplayName("将自己设为自己父分类 -> 422")
-        void selfAsParent_validationError() throws Exception {
-            when(categoryService.updateCategory(eq("cat-1"), any(CategoryUpdateRequest.class), eq(TEST_TENANT_ID)))
-                    .thenThrow(BusinessException.validationError("不能将自己设为父分类"));
+        @DisplayName("上移分类 -> 200")
+        void moveUp() throws Exception {
+            doNothing().when(categoryService).moveCategory("cat-1", "up", TEST_TENANT_ID);
 
-            String body = "{\"name\":\"分类\",\"parentId\":\"cat-1\"}";
-
-            mockMvc.perform(put("/api/admin/categories/cat-1")
+            mockMvc.perform(post("/api/admin/categories/cat-1/move")
                             .contentType("application/json")
-                            .content(body))
-                    .andExpect(status().isUnprocessableEntity());
+                            .content("{\"direction\":\"up\"}"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.success").value(true));
+
+            verify(categoryService).moveCategory("cat-1", "up", TEST_TENANT_ID);
+        }
+
+        @Test
+        @DisplayName("下移分类 -> 200")
+        void moveDown() throws Exception {
+            doNothing().when(categoryService).moveCategory("cat-1", "down", TEST_TENANT_ID);
+
+            mockMvc.perform(post("/api/admin/categories/cat-1/move")
+                            .contentType("application/json")
+                            .content("{\"direction\":\"down\"}"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.success").value(true));
+
+            verify(categoryService).moveCategory("cat-1", "down", TEST_TENANT_ID);
+        }
+
+        @Test
+        @DisplayName("direction 为空 -> 422")
+        void emptyDirection() throws Exception {
+            mockMvc.perform(post("/api/admin/categories/cat-1/move")
+                            .contentType("application/json")
+                            .content("{\"direction\":\"\"}"))
+                    .andExpect(status().isUnprocessableEntity())
+                    .andExpect(jsonPath("$.success").value(false));
+        }
+
+        @Test
+        @DisplayName("缺少 direction 字段 -> 422")
+        void missingDirection() throws Exception {
+            mockMvc.perform(post("/api/admin/categories/cat-1/move")
+                            .contentType("application/json")
+                            .content("{}"))
+                    .andExpect(status().isUnprocessableEntity())
+                    .andExpect(jsonPath("$.success").value(false));
+        }
+
+        @Test
+        @DisplayName("分类不存在 -> 404")
+        void categoryNotFound() throws Exception {
+            doThrow(BusinessException.notFound("分类"))
+                    .when(categoryService).moveCategory("nonexistent", "up", TEST_TENANT_ID);
+
+            mockMvc.perform(post("/api/admin/categories/nonexistent/move")
+                            .contentType("application/json")
+                            .content("{\"direction\":\"up\"}"))
+                    .andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.success").value(false));
         }
     }
 
@@ -343,17 +378,6 @@ class CategoryControllerTest extends BaseControllerTest {
         }
 
         @Test
-        @DisplayName("有子分类无法删除 -> 422")
-        void hasChildren_validationError() throws Exception {
-            doThrow(BusinessException.validationError("该分类下有子分类，无法删除"))
-                    .when(categoryService).deleteCategory("cat-1", TEST_TENANT_ID);
-
-            mockMvc.perform(delete("/api/admin/categories/cat-1"))
-                    .andExpect(status().isUnprocessableEntity())
-                    .andExpect(jsonPath("$.success").value(false));
-        }
-
-        @Test
         @DisplayName("有关联商品无法删除 -> 422")
         void hasProducts_validationError() throws Exception {
             doThrow(BusinessException.validationError("该分类下有关联商品，无法删除"))
@@ -370,7 +394,7 @@ class CategoryControllerTest extends BaseControllerTest {
     class TenantIsolation {
 
         @Test
-        @DisplayName("获取树形结构携带租户 ID")
+        @DisplayName("获取分类列表携带租户 ID")
         void getTreePassesTenantId() throws Exception {
             when(categoryService.getCategoryTree(TEST_TENANT_ID)).thenReturn(List.of());
 
@@ -390,6 +414,18 @@ class CategoryControllerTest extends BaseControllerTest {
                     .content("{\"name\":\"测试\"}"));
 
             verify(categoryService).createCategory(any(CategoryCreateRequest.class), eq(TEST_TENANT_ID));
+        }
+
+        @Test
+        @DisplayName("移动分类携带租户 ID")
+        void movePassesTenantId() throws Exception {
+            doNothing().when(categoryService).moveCategory("cat-1", "up", TEST_TENANT_ID);
+
+            mockMvc.perform(post("/api/admin/categories/cat-1/move")
+                    .contentType("application/json")
+                    .content("{\"direction\":\"up\"}"));
+
+            verify(categoryService).moveCategory("cat-1", "up", TEST_TENANT_ID);
         }
 
         @Test

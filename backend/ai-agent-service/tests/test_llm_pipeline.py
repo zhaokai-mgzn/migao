@@ -1,4 +1,4 @@
-# case_ids: MC-008
+# case_ids: MC-008, CH-021
 """
 单元测试: LLM 管道 (app/llm/*)
 
@@ -178,6 +178,77 @@ class TestSelectModel:
         """阈值边界: tool_count=2 走 plus, text_length=8000 走 plus"""
         assert select_model(tool_count=2) == MODEL_PLUS
         assert select_model(text_length=8000) == MODEL_PLUS
+
+    # ── issue #2914：视觉路由必须独立于 LLM_ENABLE_MODEL_ROUTING 开关 ──
+
+    def test_routing_disabled_still_routes_vision(self, routing_off, monkeypatch):
+        """路由关闭 + 含图消息 → 仍路由到 VISION_MODEL（视觉路由只看 has_vision/VISION_ENABLED）"""
+        monkeypatch.setattr(settings, "PRIMARY_MODEL", "deepseek-v4-flash")
+        monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-v4-flash-vision-exp")
+        monkeypatch.setattr(settings, "VISION_ENABLED", True)
+        # 回归根因：此前 routing 关闭时含图消息也返回 PRIMARY_MODEL（纯文本模型，无法看图）
+        assert select_model(has_vision=True, intent="order_query") == "deepseek-v4-flash-vision-exp"
+
+    def test_routing_disabled_non_vision_keeps_default(self, routing_off, monkeypatch):
+        """路由关闭 + 无图消息 → 行为不变，仍走默认主模型"""
+        monkeypatch.setattr(settings, "PRIMARY_MODEL", "deepseek-v4-flash")
+        monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-v4-flash-vision-exp")
+        monkeypatch.setattr(settings, "VISION_ENABLED", True)
+        assert select_model(has_vision=False) == "deepseek-v4-flash"
+
+    def test_routing_off_vision_disabled_uses_default(self, routing_off, monkeypatch):
+        """路由关闭 + VISION_ENABLED=False → 含图消息仍走默认模型（视觉功能整体关闭）"""
+        monkeypatch.setattr(settings, "PRIMARY_MODEL", "deepseek-v4-flash")
+        monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-v4-flash-vision-exp")
+        monkeypatch.setattr(settings, "VISION_ENABLED", False)
+        assert select_model(has_vision=True) == "deepseek-v4-flash"
+
+    def test_routing_on_vision_still_routes_vision(self, routing_on, monkeypatch):
+        """路由开启 + 含图消息 → 仍走 VISION_MODEL（不回归已有语义）"""
+        monkeypatch.setattr(settings, "PRIMARY_MODEL", "deepseek-v4-flash")
+        monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-v4-flash-vision-exp")
+        monkeypatch.setattr(settings, "VISION_ENABLED", True)
+        assert select_model(has_vision=True, intent="greeting") == "deepseek-v4-flash-vision-exp"
+
+
+class TestSkillLLMVisionRouting:
+    """get_skill_llm 层：多模态消息在路由关闭时也必须创建视觉模型实例（issue #2914）
+
+    根因链路：select_model 在 routing 关闭时返回 PRIMARY_MODEL（纯文本），
+    get_skill_llm 再把它作为 model_override 传给 create_vision_llm →
+    视觉请求实际发给无法看图的文本模型（线上 sess_c40f60ffcae94f2b 图片颜色识别失效）。
+    """
+
+    def test_routing_off_multimodal_picks_vision_model(self, routing_off, monkeypatch):
+        from app.graph.skills.base_skill import get_skill_llm
+        from langchain_core.messages import HumanMessage
+
+        monkeypatch.setattr(settings, "PRIMARY_MODEL", "deepseek-v4-flash")
+        monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-v4-flash-vision-exp")
+        monkeypatch.setattr(settings, "VISION_ENABLED", True)
+        monkeypatch.setattr(settings, "VISION_API_KEY", "ci-dummy")
+        msgs = [
+            HumanMessage(content=[
+                {"type": "text", "text": "录入这个商品"},
+                {"type": "image_url", "image_url": {"url": "https://example.com/a.jpg"}},
+            ])
+        ]
+        llm = get_skill_llm(intent="product_inquiry", messages=msgs)
+        model = getattr(llm, "model_name", None) or getattr(llm, "model", "")
+        assert model == "deepseek-v4-flash-vision-exp"
+
+    def test_routing_off_text_message_uses_primary_model(self, routing_off, monkeypatch):
+        """纯文本消息在路由关闭时仍用主模型（不回归）"""
+        from app.graph.skills.base_skill import get_skill_llm
+        from langchain_core.messages import HumanMessage
+
+        monkeypatch.setattr(settings, "PRIMARY_MODEL", "deepseek-v4-flash")
+        monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-v4-flash-vision-exp")
+        monkeypatch.setattr(settings, "VISION_ENABLED", True)
+        monkeypatch.setattr(settings, "VISION_API_KEY", "ci-dummy")
+        llm = get_skill_llm(intent="product_inquiry", messages=[HumanMessage(content="查一下价格")])
+        model = getattr(llm, "model_name", None) or getattr(llm, "model", "")
+        assert model == "deepseek-v4-flash"
 
 
 # =============================================================================

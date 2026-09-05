@@ -1,7 +1,7 @@
 // case_ids: HR-001, HR-002
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react'
 
 // Mock sonner toast
 const mockToastError = vi.fn()
@@ -204,19 +204,22 @@ describe('EmployeesPage', () => {
     expect(screen.queryByText('用户名')).not.toBeInTheDocument()
   })
 
-  it('#1830: 新增弹窗仅含姓名/手机号/岗位/账号权限 4 字段', async () => {
+  it('#1830/#2907: 新增弹窗仅含姓名/手机号/岗位/账号权限 4 字段，不含角色/用户名字段', async () => {
     render(<EmployeesPage />)
     fireEvent.click(screen.getByText('新增员工'))
     await waitFor(() => {
       expect(screen.getByTestId('modal')).toBeInTheDocument()
     })
+    const modal = within(screen.getByTestId('modal'))
     // 必须看到这 4 个 label
-    expect(screen.getByText('姓名 *')).toBeInTheDocument()
-    expect(screen.getByText('手机号 *')).toBeInTheDocument()
-    expect(screen.getByText('岗位 *')).toBeInTheDocument()
-    expect(screen.getByText('账号权限 *')).toBeInTheDocument()
-    // 不包含用户名字段
-    expect(screen.queryByText('用户名')).not.toBeInTheDocument()
+    expect(modal.getByText('姓名 *')).toBeInTheDocument()
+    expect(modal.getByText('手机号 *')).toBeInTheDocument()
+    expect(modal.getByText('岗位 *')).toBeInTheDocument()
+    expect(modal.getByText('账号权限 *')).toBeInTheDocument()
+    // 不包含用户名字段（#1830）
+    expect(modal.queryByText('用户名')).not.toBeInTheDocument()
+    // 不包含角色字段（#2907：新增员工弹窗去掉「角色」）
+    expect(modal.queryByText('角色')).not.toBeInTheDocument()
   })
 
   it('#1830: 填写完整表单点创建不触发「请输入用户名」错误', async () => {
@@ -242,7 +245,7 @@ describe('EmployeesPage', () => {
     })
   })
 
-  it('#1830: 创建员工 payload 不含 username 字段', async () => {
+  it('#1830/#2907: 创建员工 payload 不含 username/role 字段', async () => {
     mockCreateEmployee.mockResolvedValue({ data: { data: { id: 99 } } })
     render(<EmployeesPage />)
     fireEvent.click(screen.getByText('新增员工'))
@@ -266,6 +269,7 @@ describe('EmployeesPage', () => {
     const callArgs = mockCreateEmployee.mock.calls[0]?.[0]
     expect(callArgs).toBeDefined()
     expect(callArgs).not.toHaveProperty('username')
+    expect(callArgs).not.toHaveProperty('role')
     expect(callArgs).toHaveProperty('name', '张三')
     expect(callArgs).toHaveProperty('phone', '13800138000')
     expect(callArgs).toHaveProperty('position', '管理员')

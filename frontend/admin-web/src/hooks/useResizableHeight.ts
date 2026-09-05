@@ -28,6 +28,8 @@ interface UseResizableHeightReturn {
   }
   isDragging: boolean
   resetHeight: () => void
+  /** 程序化设置高度（夹在 [minHeight, maxHeight] 内）——右下角斜向缩放共用 */
+  setHeight: (height: number) => void
 }
 
 function readStoredHeight(key: string): number | null {
@@ -129,6 +131,12 @@ export function useResizableHeight({
     setStoredHeight(null)
   }, [storageKey])
 
+  /** 程序化设置高度（夹在 [minHeight, maxHeight] 内）——右下角斜向缩放共用 */
+  const setHeight = useCallback((height: number) => {
+    const maxHeight = maxHeightProp ?? window.innerHeight
+    setStoredHeight(Math.round(Math.min(maxHeight, Math.max(minHeight, height))))
+  }, [minHeight, maxHeightProp])
+
   const containerStyle = {
     height: storedHeight !== null ? `${storedHeight}px` : defaultHeight,
   }
@@ -149,5 +157,5 @@ export function useResizableHeight({
     'aria-orientation': 'horizontal' as const,
   }
 
-  return { containerStyle, handleProps, topHandleProps, isDragging, resetHeight }
+  return { containerStyle, handleProps, topHandleProps, isDragging, resetHeight, setHeight }
 }

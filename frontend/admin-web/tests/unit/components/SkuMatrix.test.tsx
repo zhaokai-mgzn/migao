@@ -427,4 +427,99 @@ describe('SkuMatrix (#563)', () => {
     // 表格中显示颜色名称
     expect(screen.getByText('红色')).toBeTruthy()
   })
+
+  // ========== #2908: 校验失败提示可见性 ==========
+
+  const skuErrorValue = {
+    colors: [
+      { id: '-1', colorName: '红色', remark: '', sortOrder: 0 } as ProductColor,
+    ],
+    sellingMethods: ['bulk_cut' as SellingMethod],
+    doorWidths: ['2.8米'],
+    skus: [
+      {
+        id: '-100',
+        colorId: '-1',
+        colorName: '红色',
+        sellingMethod: 'bulk_cut' as SellingMethod,
+        doorWidth: '2.8米',
+        price: 0,
+        stock: 0,
+        status: 'active',
+      } as ProductSku,
+    ],
+  }
+  const SKU_ERROR = '请完整填写所有 SKU 的价格与库存'
+
+  it('#2908 L2-01: errors.skus 存在时渲染醒目警示横幅（含未填写计数）', () => {
+    render(
+      <SkuMatrix
+        value={skuErrorValue}
+        onChange={vi.fn()}
+        errors={{ skus: SKU_ERROR }}
+      />
+    )
+    const alert = screen.getByRole('alert')
+    expect(alert.textContent).toContain(SKU_ERROR)
+    // 价格=0 未填写 → 计数 1 处
+    expect(alert.textContent).toContain('1 处')
+  })
+
+  it('#2908 L2-02: 无校验错误时不渲染警示横幅', () => {
+    render(<SkuMatrix value={skuErrorValue} onChange={vi.fn()} />)
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('#2908 L2-03: 校验失败时高亮未填写的价格单元格，正常单元格不高亮', () => {
+    const { container } = render(
+      <SkuMatrix
+        value={skuErrorValue}
+        onChange={vi.fn()}
+        errors={{ skus: SKU_ERROR }}
+      />
+    )
+    const priceInput = container.querySelector(
+      'td input[type="number"]'
+    ) as HTMLInputElement
+    expect(priceInput.className).toContain('border-red-400')
+    // 库存为 0 视为有效，不标红
+    const stockInput = container.querySelectorAll('td input[type="number"]')[1]
+    expect((stockInput as HTMLInputElement).className).not.toContain(
+      'border-red-400'
+    )
+    // aria-invalid 标记
+    expect(priceInput.getAttribute('aria-invalid')).toBe('true')
+  })
+
+  it('#2908 L2-04: 未触发校验（无 errors）时不因价格=0 标红', () => {
+    const { container } = render(
+      <SkuMatrix value={skuErrorValue} onChange={vi.fn()} />
+    )
+    const priceInput = container.querySelector(
+      'td input[type="number"]'
+    ) as HTMLInputElement
+    expect(priceInput.className).not.toContain('border-red-400')
+  })
+
+  it('#2908 L2-05: SKU 行缺失（矩阵未重建）时价格与库存单元格均标红', () => {
+    const { container } = render(
+      <SkuMatrix
+        value={{
+          colors: [
+            { id: '-1', colorName: '红色', remark: '', sortOrder: 0 },
+          ] as ProductColor[],
+          sellingMethods: ['bulk_cut' as SellingMethod],
+          doorWidths: ['2.8米'],
+          skus: [],
+        }}
+        onChange={vi.fn()}
+        errors={{ skus: SKU_ERROR }}
+      />
+    )
+    const inputs = container.querySelectorAll('td input[type="number"]')
+    expect(inputs.length).toBe(2)
+    inputs.forEach((i) =>
+      expect((i as HTMLInputElement).className).toContain('border-red-400')
+    )
+  })
 })

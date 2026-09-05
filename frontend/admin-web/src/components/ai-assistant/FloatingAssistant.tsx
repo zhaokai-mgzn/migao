@@ -1,17 +1,20 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { X, Bot, Maximize2, Minimize2, Minus, Expand } from 'lucide-react'
+import { X, Bot, Maximize2, Minimize2, Minus, Expand, GripHorizontal, MoveDiagonal } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useChatStore } from '@/store/chat'
 import SessionList from '@/components/chat/SessionList'
 import ChatArea from '@/components/chat/ChatArea'
 import MibaoChatPanel from '@/components/business/MibaoChatPanel'
 
-// 最小化浮窗尺寸 — 参照主流 AI 助手/客服聊天浮窗（Intercom/Zendesk/Crisp 等）的竖版比例：宽约 400、高约 600
-const MINIMIZED_WIDTH = 400
-const MINIMIZED_HEIGHT = 600
+// 最小化浮窗尺寸（UI-021）— 参照主流 AI 助手/客服聊天浮窗（Intercom/Zendesk/Crisp 等）竖版比例：
+// 宽默认 400；高按视口自适应（默认 ≥600、上限 760），且可通过底部/右下角把手继续调整到贴满视口
+const MINIMIZED_DEFAULT_WIDTH = 400
+const MINIMIZED_MIN_WIDTH = 320
+const MINIMIZED_MIN_HEIGHT = 360
 const STORAGE_KEY_MINIMIZED_POS = 'mibao_minimized_pos'
+const STORAGE_KEY_MINIMIZED_SIZE = 'mibao_minimized_size'
 
 /** 读取 localStorage 中的浮窗位置 */
 function readStoredPos(): { x: number; y: number } | null {
@@ -28,29 +31,88 @@ function readStoredPos(): { x: number; y: number } | null {
   }
 }
 
+/** 读取 localStorage 中的浮窗尺寸 */
+function readStoredSize(): { w: number; h: number } | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_MINIMIZED_SIZE)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (typeof parsed.w === 'number' && typeof parsed.h === 'number'
+      && parsed.w >= MINIMIZED_MIN_WIDTH && parsed.h >= MINIMIZED_MIN_HEIGHT) {
+      return parsed
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+/** 默认尺寸：宽 400；高度按视口自适应（不低于 600、上限 760，小屏不超过视口） */
+function defaultMinimizedSize(): { w: number; h: number } {
+  const h = Math.min(760, Math.max(600, Math.round(window.innerHeight * 0.8)))
+  return { w: MINIMIZED_DEFAULT_WIDTH, h }
+}
+
+/** 尺寸钳制到视口内（小屏不留白） */
+function clampSizeToViewport(size: { w: number; h: number }): { w: number; h: number } {
+  return {
+    w: Math.min(Math.max(MINIMIZED_MIN_WIDTH, size.w), Math.max(MINIMIZED_MIN_WIDTH, window.innerWidth)),
+    h: Math.min(Math.max(MINIMIZED_MIN_HEIGHT, size.h), Math.max(MINIMIZED_MIN_HEIGHT, window.innerHeight)),
+  }
+}
+
+/** 位置钳制到视口内（0 ≤ x ≤ iw - w，0 ≤ y ≤ ih - h，贴边不留白） */
+function clampPos(pos: { x: number; y: number }, size: { w: number; h: number }): { x: number; y: number } {
+  const maxX = Math.max(0, window.innerWidth - size.w)
+  const maxY = Math.max(0, window.innerHeight - size.h)
+  return {
+    x: Math.min(Math.max(0, pos.x), maxX),
+    y: Math.min(Math.max(0, pos.y), maxY),
+  }
+}
+
 export default function FloatingAssistant() {
   const [isOpen, setIsOpen] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [isMinimized, setIsMinimized] = useState(false)
   const { fetchSessions } = useChatStore()
 
-  // 最小化浮窗位置
+  // 最小化浮窗尺寸（含存储恢复 + 视口钳制）
+  const [floatSize, setFloatSize] = useState<{ w: number; h: number }>(() => {
+    if (typeof window === 'undefined') return { w: MINIMIZED_DEFAULT_WIDTH, h: MINIMIZED_MIN_HEIGHT }
+    return clampSizeToViewport(readStoredSize() || defaultMinimizedSize())
+  })
+
+  // 最小化浮窗位置（含存储恢复 + 越界回钳）
   const [floatPos, setFloatPos] = useState<{ x: number; y: number }>(() => {
     if (typeof window === 'undefined') return { x: 16, y: 16 }
-    return readStoredPos() || {
-      x: window.innerWidth - MINIMIZED_WIDTH - 16,
-      y: window.innerHeight - MINIMIZED_HEIGHT - 80,
+    const size = clampSizeToViewport(readStoredSize() || defaultMinimizedSize())
+    const stored = readStoredPos()
+    if (stored) return clampPos(stored, size)
+    return {
+      x: Math.max(0, window.innerWidth - size.w - 16),
+      y: Math.max(0, window.innerHeight - size.h - 80),
     }
   })
   const [isDraggingFloat, setIsDraggingFloat] = useState(false)
   const dragOffset = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
+
+  // 浮窗缩放（底部调高 / 右下角斜向缩放）
+  const [isResizingFloat, setIsResizingFloat] = useState(false)
+  const resizeStartRef = useRef<{
+    startX: number
+    startY: number
+    startW: number
+    startH: number
+    mode: 'bottom' | 'corner'
+  } | null>(null)
 
   // 首次打开时加载会话列表
   useEffect(() => {
     if (isOpen) fetchSessions()
   }, [isOpen, fetchSessions])
 
-  // 最小化浮窗拖拽
+  // 最小化浮窗拖拽（移动）
   const handleFloatMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
     setIsDraggingFloat(true)
@@ -64,8 +126,8 @@ export default function FloatingAssistant() {
     if (!isDraggingFloat) return
 
     const handleMouseMove = (e: MouseEvent) => {
-      const newX = Math.max(0, Math.min(window.innerWidth - MINIMIZED_WIDTH, e.clientX - dragOffset.current.x))
-      const newY = Math.max(0, Math.min(window.innerHeight - MINIMIZED_HEIGHT, e.clientY - dragOffset.current.y))
+      const newX = Math.max(0, Math.min(window.innerWidth - floatSize.w, e.clientX - dragOffset.current.x))
+      const newY = Math.max(0, Math.min(window.innerHeight - floatSize.h, e.clientY - dragOffset.current.y))
       setFloatPos({ x: newX, y: newY })
     }
 
@@ -86,7 +148,64 @@ export default function FloatingAssistant() {
       document.removeEventListener('mousemove', handleMouseMove)
       document.removeEventListener('mouseup', handleMouseUp)
     }
-  }, [isDraggingFloat])
+  }, [isDraggingFloat, floatSize.w, floatSize.h])
+
+  // 最小化浮窗缩放（底部调高 / 右下角斜向缩放）
+  const handleFloatResizeMouseDown = useCallback((e: React.MouseEvent, mode: 'bottom' | 'corner') => {
+    e.preventDefault()
+    e.stopPropagation()
+    resizeStartRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      startW: floatSize.w,
+      startH: floatSize.h,
+      mode,
+    }
+    document.body.style.userSelect = 'none'
+    document.body.style.cursor = mode === 'corner' ? 'nwse-resize' : 'ns-resize'
+    setIsResizingFloat(true)
+  }, [floatSize.w, floatSize.h])
+
+  useEffect(() => {
+    if (!isResizingFloat) return
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const start = resizeStartRef.current
+      if (!start) return
+      const dx = e.clientX - start.startX
+      const dy = e.clientY - start.startY
+      const w = start.mode === 'corner'
+        ? Math.min(Math.max(MINIMIZED_MIN_WIDTH, start.startW + dx), window.innerWidth)
+        : start.startW
+      const h = Math.min(Math.max(MINIMIZED_MIN_HEIGHT, start.startH + dy), window.innerHeight)
+      setFloatSize({ w, h })
+      // 尺寸变化后重新钳制位置，避免浮窗越出视口（贴边不留白）
+      setFloatPos(prev => clampPos(prev, { w, h }))
+    }
+
+    const handleMouseUp = () => {
+      setIsResizingFloat(false)
+      resizeStartRef.current = null
+      document.body.style.userSelect = ''
+      document.body.style.cursor = ''
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+      // 持久化尺寸
+      try {
+        setFloatSize(size => {
+          localStorage.setItem(STORAGE_KEY_MINIMIZED_SIZE, JSON.stringify(size))
+          return size
+        })
+      } catch { /* ignore */ }
+    }
+
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [isResizingFloat])
 
   const togglePanel = () => {
     if (isMinimized) {
@@ -208,12 +327,13 @@ export default function FloatingAssistant() {
       {/* ===== 最小化浮窗 ===== */}
       {isOpen && isMinimized && (
         <div
+          data-testid="float-minimized-window"
           className="fixed z-50 bg-white shadow-float rounded-xl border border-neutral-200/80 overflow-hidden flex flex-col"
           style={{
             left: floatPos.x,
             top: floatPos.y,
-            width: MINIMIZED_WIDTH,
-            height: MINIMIZED_HEIGHT,
+            width: floatSize.w,
+            height: floatSize.h,
           }}
         >
           {/* 浮窗头部（可拖拽） */}
@@ -248,6 +368,29 @@ export default function FloatingAssistant() {
           {/* 浮窗聊天内容 */}
           <div className="flex-1 flex min-h-0 overflow-hidden">
             <ChatArea />
+          </div>
+
+          {/* 底部高度调节把手（拖上下调整高度），默认透明、hover 时轻提示 */}
+          <div
+            data-testid="float-minimized-resize-bottom"
+            className="absolute bottom-0 left-0 right-0 h-3 flex items-center justify-center bg-transparent hover:bg-neutral-100/70 transition-colors select-none group"
+            style={{ cursor: 'ns-resize' }}
+            onMouseDown={(e) => handleFloatResizeMouseDown(e, 'bottom')}
+            title="拖拽调整高度"
+          >
+            <GripHorizontal className="w-5 h-3 text-neutral-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+          </div>
+
+          {/* 右下角斜向缩放把手（同时调整宽高） */}
+          <div
+            data-testid="float-minimized-resize-corner"
+            className="absolute bottom-0 right-0 w-4 h-4 flex items-center justify-center bg-transparent hover:bg-neutral-100/70 transition-colors select-none group z-10"
+            style={{ cursor: 'nwse-resize' }}
+            onMouseDown={(e) => handleFloatResizeMouseDown(e, 'corner')}
+            title="拖拽调整大小（斜向缩放）"
+            aria-label="拖拽调整大小（斜向缩放）"
+          >
+            <MoveDiagonal className="w-3.5 h-3.5 text-neutral-400 opacity-0 group-hover:opacity-100 transition-opacity" />
           </div>
         </div>
       )}
