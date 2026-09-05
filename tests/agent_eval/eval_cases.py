@@ -1734,13 +1734,13 @@ _CASE_OR_009 = EvalCase(
     tags=['multi_turn', 'order_create', 'sku_select', 'full_flow'],
 )
 
-# ── OR-010 [SMOKE] 创建订单 - 汇总确认简化流程（源: cases/order.yml）──
+# ── OR-010 [NORMAL] 创建订单 - 汇总确认简化流程（源: cases/order.yml）──
 _CASE_OR_010 = EvalCase(
     id='OR-010',
     legacy_id='1.8',
     title='创建订单 - 汇总确认简化流程',
     skill=Skill.ORDER,
-    difficulty=Difficulty.SMOKE,
+    difficulty=Difficulty.NORMAL,
     user_inputs=['创建订单：张三 13812345678，杭州西湖区文三路1号，米白色遮光窗帘 2米', '选散剪售卖，2.8米门幅', '确认下单'],
     expectations=['validate_input', 'order_create'],
     data_checks=['返回订单号', '下单全流程不得向顾客索要单价/金额——价格取自商品数据/算料结果（实测反复要价导致下单卡死 + 本用例评估不稳）'],
@@ -1972,13 +1972,13 @@ _CASE_PR_009 = EvalCase(
     tags=['id_resolve', 'update'],
 )
 
-# ── PR-010 [SMOKE] 商品全生命周期 - 搜索→查看→修改→关联加工项→验证（源: cases/product.yml）──
+# ── PR-010 [NORMAL] 商品全生命周期 - 搜索→查看→修改→关联加工项→验证（源: cases/product.yml）──
 _CASE_PR_010 = EvalCase(
     id='PR-010',
     legacy_id='M001',
     title='商品全生命周期 - 搜索→查看→修改→关联加工项→验证',
     skill=Skill.PRODUCT,
-    difficulty=Difficulty.SMOKE,
+    difficulty=Difficulty.NORMAL,
     user_inputs=['搜索窗帘', '看看第一个的详情', '把价格改成 198', '确认', '给它加上S钩安装', '确认', '再看看这个商品的详情确认一下'],
     expectations=['product_search', 'product_detail(product_id=1)', 'product_update(price=198)', 'product_processing_item_manage(action=add)', 'product_detail'],
     data_checks=['第3轮 product_id 来自第2轮结果', '第4轮 product_id 来自第2轮结果', '全程未重新 product_search 查同一个商品'],

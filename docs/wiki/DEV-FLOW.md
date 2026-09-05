@@ -86,7 +86,7 @@ CI 里调用**真实 LLM**（生产 `ai-api.migaozn.com` + `SERVICE_TOKEN`）的
 
 | 环节 | 触发 | 规模 | 治理 |
 |---|---|---|---|
-| **Agent Eval (smoke)** | **每次 PR**（已加门控） | smoke tier ~9 条真实 LLM 多轮 | **已加 changed-files 门控**：仅当 `backend/ai-agent-service/`、`tests/agent_eval/`、`.github/cases/`、`tests/e2e/real/` 有变更才跑；dependabot/前端/Java 纯依赖升级 PR 跳过（skipped 不阻塞 required check）→ 单次 dependabot 潮可省 150+ 次 LLM 调用 |
+| **Agent Eval (smoke)** | **每次 PR**（已加门控） | smoke tier ~7 条真实 LLM 多轮 | **已加 changed-files 门控**：仅当 `backend/ai-agent-service/`、`tests/agent_eval/`、`.github/cases/`、`tests/e2e/real/` 有变更才跑；dependabot/前端/Java 纯依赖升级 PR 跳过（skipped 不阻塞 required check）→ 单次 dependabot 潮可省 150+ 次 LLM 调用 |
 | E2E Real | 每日 00:00 定时 | 135+ integration 真实 LLM | 频率已合理（低峰回归），保持 |
 
 - 其余环节不烧真实 token：`nightly-verification` 是 fixture e2e + smoke p1（HTTP 层）；`xiaobu-acceptance` 是本地 mock 栈；`agent-eval.yml`(normal 47 条) 与 `adversarial` 已降频为手动/每周。
