@@ -2786,6 +2786,21 @@ _CASE_UI_023 = EvalCase(
     persona='',
 )
 
+# ── UI-024 [NORMAL] 请求错误提示去重 — 拦截器已展示后端具体错误，页面不再叠加通用错误 toast（源: cases/ui.yml）──
+_CASE_UI_024 = EvalCase(
+    id='UI-024',
+    legacy_id='',
+    title='请求错误提示去重 — 拦截器已展示后端具体错误，页面不再叠加通用错误 toast',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['订单详情页点「确认付款」失败（如商品库存不足）：只看到 1 条具体错误提示（含「库存不足」详情），不再同时叠加「确认付款失败」通用提示'],
+    expectations=['direct_reply'],
+    data_checks=['request.ts 响应拦截器 toast 后端具体错误（success:false 业务错误 / HTTP 错误 / 网络错误 / 登录已过期）后，给错误对象打已提示标记（api-error.ts 的 markErrorToastShown / isErrorToastShown，Symbol.for 稳定键，frozen 对象不抛错）', '页面 catch 统一走 toastRequestError(e, fallback, {id?})：拦截器已提示 → 不再重复弹 fallback；传入 loading toast id 且已提示时先 dismiss（订单列表页「操作中…」不滞留）；未标记错误（客户端校验等本地错误）→ 弹 fallback', '订单域页面（订单详情/订单列表/发货/新建订单）请求失败 catch 不再重复 toast 通用错误；客户端校验类提示（如「请输入快递单号」「请完善订单信息」）保留不变，不回归'],
+    skip_reason='纯前端错误提示行为由 vitest 单测验证（api-error/request/order-detail 三套），toast 链路由 request 拦截器单测覆盖，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ui', 'admin-web', 'toast', 'error-handling'],
+    persona='',
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -3000,6 +3015,7 @@ ALL_CASES = (
     _CASE_UI_021,
     _CASE_UI_022,
     _CASE_UI_023,
+    _CASE_UI_024,
     _CASE_UT_001,
     _CASE_UT_002,
 )

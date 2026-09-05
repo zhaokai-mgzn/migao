@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
+import { toastRequestError } from '@/lib/api-error'
 import { Search, RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { orderApi } from '@/lib/api'
@@ -217,7 +218,7 @@ export default function OrdersPage() {
       setTotal(pageData?.total || 0)
     } catch (e) {
       console.error(e)
-      toast.error('加载订单失败')
+      toastRequestError(e, '加载订单失败')
     } finally {
       setLoading(false)
     }
@@ -295,7 +296,7 @@ export default function OrdersPage() {
       loadOrders()
     } catch (e) {
       console.error(e)
-      toast.error('确认付款失败', { id: toastId })
+      toastRequestError(e, '确认付款失败', { id: toastId })
     }
   }
 
@@ -308,7 +309,7 @@ export default function OrdersPage() {
       loadOrders()
     } catch (e) {
       console.error(e)
-      toast.error('确认收货失败', { id: toastId })
+      toastRequestError(e, '确认收货失败', { id: toastId })
     }
   }
 
@@ -323,7 +324,7 @@ export default function OrdersPage() {
       loadOrders()
     } catch (e) {
       console.error(e)
-      toast.error('关闭订单失败')
+      toastRequestError(e, '关闭订单失败')
     } finally {
       setActionLoading(false)
     }
@@ -340,7 +341,7 @@ export default function OrdersPage() {
       loadOrders()
     } catch (e) {
       console.error(e)
-      toast.error('添加备注失败')
+      toastRequestError(e, '添加备注失败')
     } finally {
       setActionLoading(false)
     }
@@ -358,7 +359,7 @@ export default function OrdersPage() {
       loadOrders()
     } catch (e) {
       console.error(e)
-      toast.error('退款失败')
+      toastRequestError(e, '退款失败')
     } finally {
       setActionLoading(false)
     }
