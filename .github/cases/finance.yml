@@ -93,3 +93,32 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: FN-004
+    title: "收支汇总默认本期（自然月）时间范围"
+    domains:
+      - finance
+    tier: normal
+    tags:
+      - finance
+      - summary
+    truths_ref:
+      - finance.summary
+    user_inputs:
+      - "本期收入退款是多少"
+    expectations:
+      - tool: finance_api
+        args:
+          action: get_summary
+          startDate: "本月1号"
+          endDate: "今天"
+    data_checks:
+      - "默认加载时开始/结束日期填充本期（本月1号~今天），getSummary/getTransactions/getReconciliation 均携带该范围"
+    skip_reason: ""
+    merge_log: "本期默认时间范围（本月1号~今天）"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/pages/finance.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []

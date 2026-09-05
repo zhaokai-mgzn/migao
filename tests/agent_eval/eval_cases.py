@@ -1316,6 +1316,21 @@ _CASE_FN_003 = EvalCase(
     persona='',
 )
 
+# ── FN-004 [NORMAL] 收支汇总默认本期（自然月）时间范围（源: cases/finance.yml）──
+_CASE_FN_004 = EvalCase(
+    id='FN-004',
+    legacy_id='',
+    title='收支汇总默认本期（自然月）时间范围',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['本期收入退款是多少'],
+    expectations=['finance_api(action=get_summary, startDate=本月1号, endDate=今天)'],
+    data_checks=['默认加载时开始/结束日期填充本期（本月1号~今天），getSummary/getTransactions/getReconciliation 均携带该范围'],
+    skip_reason='',
+    tags=['finance', 'summary'],
+    persona='',
+)
+
 # ── HR-001 [SMOKE] 员工列表（源: cases/hr.yml）──
 _CASE_HR_001 = EvalCase(
     id='HR-001',
@@ -2797,6 +2812,7 @@ ALL_CASES = (
     _CASE_FN_001,
     _CASE_FN_002,
     _CASE_FN_003,
+    _CASE_FN_004,
     _CASE_HR_001,
     _CASE_HR_002,
     _CASE_HR_003,

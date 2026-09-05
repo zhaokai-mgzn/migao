@@ -23,6 +23,24 @@ import DateTimeCell from '@/components/common/DateTimeCell'
 const fmtMoney = (n?: number) =>
   '¥' + (n ?? 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
+// 将 Date 格式化为 YYYY-MM-DD（与 <input type="date"> 及后端时间参数一致）
+function formatDate(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+// 「本期」默认时间范围：自然月 = 本月 1 号 ~ 今天。
+// 打开页面即填充开始/结束日期并生效，「本期收入/本期退款」统计口径对用户可见。
+function getCurrentPeriod(): { startDate: string; endDate: string } {
+  const today = new Date()
+  const firstDay = new Date(today.getFullYear(), today.getMonth(), 1)
+  return { startDate: formatDate(firstDay), endDate: formatDate(today) }
+}
+
+const CURRENT_PERIOD = getCurrentPeriod()
+
 // 后端订单状态 → 中文（避免与前端 OrderStatus 枚举混用）
 const ORDER_STATUS_LABELS: Record<string, string> = {
   pending: '待付款',
@@ -42,10 +60,10 @@ const tabs: { key: TabKey; label: string }[] = [
 ]
 
 export default function FinancePage() {
-  // ===== 时间范围（summary / 三个 tab 共用） =====
-  const [startDate, setStartDate] = useState('')
-  const [endDate, setEndDate] = useState('')
-  const [appliedRange, setAppliedRange] = useState<{ startDate: string; endDate: string }>({ startDate: '', endDate: '' })
+  // ===== 时间范围（summary / 三个 tab 共用），默认本期 = 本月1号~今天 =====
+  const [startDate, setStartDate] = useState(CURRENT_PERIOD.startDate)
+  const [endDate, setEndDate] = useState(CURRENT_PERIOD.endDate)
+  const [appliedRange, setAppliedRange] = useState<{ startDate: string; endDate: string }>({ ...CURRENT_PERIOD })
 
   // ===== 收支汇总 =====
   const [summary, setSummary] = useState<FinanceSummary | null>(null)
@@ -152,9 +170,10 @@ export default function FinancePage() {
   }
 
   const resetRange = () => {
-    setStartDate('')
-    setEndDate('')
-    setAppliedRange({ startDate: '', endDate: '' })
+    // 重置 = 恢复默认视图（本期：本月1号~今天），保证「本期」口径与日期框始终一致
+    setStartDate(CURRENT_PERIOD.startDate)
+    setEndDate(CURRENT_PERIOD.endDate)
+    setAppliedRange({ ...CURRENT_PERIOD })
     setTxnPage(1)
     setRecPage(1)
   }

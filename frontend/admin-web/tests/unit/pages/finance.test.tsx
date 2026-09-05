@@ -1,5 +1,5 @@
 import React from 'react';
-// case_ids: FN-001, FN-002, FN-003
+// case_ids: FN-001, FN-002, FN-003, FN-004
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -66,8 +66,8 @@ vi.mock('@/components/ui', () => ({
   Button: ({ children, onClick, ...props }: any) => <button onClick={onClick} {...props}>{children}</button>,
   Input: ({ label, value, onChange, onKeyDown, ...props }: any) => (
     <div>
-      <label>{label}</label>
-      <input value={value} onChange={onChange} onKeyDown={onKeyDown} {...props} />
+      <label htmlFor={label}>{label}</label>
+      <input id={label} value={value} onChange={onChange} onKeyDown={onKeyDown} {...props} />
     </div>
   ),
   Select: ({ label, options, value, onChange }: any) => (
@@ -213,5 +213,46 @@ describe('FinancePage', () => {
     await waitFor(() => {
       expect(screen.getByText('已对平')).toBeInTheDocument()
     })
+  })
+
+  // ── 本期默认时间范围（FN-004）：自然月 = 本月1号 ~ 今天 ──
+
+  const fmtDate = (d: Date) => {
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+  }
+  const currentPeriod = {
+    start: fmtDate(new Date(new Date().getFullYear(), new Date().getMonth(), 1)),
+    end: fmtDate(new Date()),
+  }
+
+  it('打开页面默认填充本期（本月1号~今天）并生效查询', async () => {
+    render(<FinancePage />)
+
+    // 日期框被默认填充为本期范围
+    await waitFor(() => {
+      expect(screen.getByLabelText('开始日期')).toHaveValue(currentPeriod.start)
+    })
+    expect(screen.getByLabelText('结束日期')).toHaveValue(currentPeriod.end)
+    // 三个数据源都按本期范围查询
+    expect(mockGetSummary).toHaveBeenCalledWith({ startDate: currentPeriod.start, endDate: currentPeriod.end })
+    expect(mockGetTransactions).toHaveBeenCalledWith(
+      expect.objectContaining({ startDate: currentPeriod.start, endDate: currentPeriod.end })
+    )
+    expect(mockGetReconciliation).toHaveBeenCalledWith(
+      expect.objectContaining({ startDate: currentPeriod.start, endDate: currentPeriod.end })
+    )
+  })
+
+  it('重置后恢复本期（本月1号~今天）并重新查询', async () => {
+    render(<FinancePage />)
+    // 先修改日期框模拟用户筛选
+    await user.clear(screen.getByLabelText('开始日期'))
+    await user.type(screen.getByLabelText('开始日期'), '2025-01-01')
+    await user.click(screen.getByText('重置'))
+
+    expect(screen.getByLabelText('开始日期')).toHaveValue(currentPeriod.start)
+    expect(screen.getByLabelText('结束日期')).toHaveValue(currentPeriod.end)
+    expect(mockGetSummary).toHaveBeenLastCalledWith({ startDate: currentPeriod.start, endDate: currentPeriod.end })
   })
 })
