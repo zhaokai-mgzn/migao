@@ -1,4 +1,4 @@
-// case_ids: CH-001, CH-002, CH-010
+// case_ids: CH-001, CH-002, CH-010, PP-001
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { act } from '@testing-library/react'
 
@@ -1347,6 +1347,7 @@ describe('useChatStore (Zustand chat store) — #571', () => {
               title: '请选择加工项',
               options: [{ label: '打孔 ¥8/米', value: 'pi_1' }],
               pageMeta: { current: 1, total: 2, totalCount: 13, tool: 'processing_item_query', params: '{"page":1,"size":10}' },
+              multiSelect: true,
             }) + '\n\n',
           ),
         })
@@ -1368,6 +1369,8 @@ describe('useChatStore (Zustand chat store) — #571', () => {
       expect(aiMsg.interactive?.options).toHaveLength(1)
       expect(aiMsg.interactive?.pageMeta?.total).toBe(2)
       expect(aiMsg.interactive?.pageMeta?.tool).toBe('processing_item_query')
+      // 回归 #2894: multiSelect 标记须透传持久化，否则多选模式前端丢失
+      expect(aiMsg.interactive?.multiSelect).toBe(true)
     })
 
     // -----------------------------------------------------------------------

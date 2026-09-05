@@ -64,6 +64,43 @@ class TestInteractChoice:
         assert result.data["component"] == "choice"
         assert result.data["pageMeta"] == page_meta
 
+    async def test_choice_multi_select_passthrough(self, tool, sample_tool_context):
+        """choice 组件 multiSelect=True 时透传到 data（B 端加工项多选）。
+
+        回归（issue #2894）：加工项选择需支持多次点击选择（每个选项分别发送），
+        multiSelect 标记须透传，前端 ChoiceCard 据此不锁死卡片并保留翻页控件。
+        """
+        result = await tool.execute(
+            context=sample_tool_context,
+            component="choice",
+            title="请选择加工项",
+            options=[
+                {"label": "打孔加工", "value": "pi_hole"},
+                {"label": "韩式折边", "value": "pi_pleat"},
+            ],
+            pageMeta={
+                "current": 1,
+                "total": 3,
+                "totalCount": 22,
+                "tool": "processing_item_query",
+                "params": json.dumps({"keyword": "", "page": 1, "size": 10}, ensure_ascii=False),
+            },
+            multiSelect=True,
+        )
+        assert result.success is True
+        assert result.data["multiSelect"] is True
+
+    async def test_choice_multi_select_default_false(self, tool, sample_tool_context):
+        """未显式传 multiSelect 时默认为单选（不输出 multiSelect 字段）。"""
+        result = await tool.execute(
+            context=sample_tool_context,
+            component="choice",
+            title="请选择分类",
+            options=[{"label": "窗帘", "value": "curtain"}],
+        )
+        assert result.success is True
+        assert "multiSelect" not in result.data
+
 class TestInteractConfirm:
     async def test_confirm_component(self, tool, sample_tool_context):
         result = await tool.execute(
