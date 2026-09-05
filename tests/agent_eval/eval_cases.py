@@ -2618,6 +2618,7 @@ _CASE_UI_017 = EvalCase(
     data_checks=['MessageBubble 不渲染 tool_calls/toolCall 指示器（数据仍保留供转人工等逻辑判定）', '未知卡片类型占位不暴露内部 type（显示「消息内容暂不支持预览」）'],
     skip_reason='纯前端渲染由 mini-app jest 单测验证（message-bubble.test.tsx），非 LLM 行为',
     tags=['mini-app', 'chat'],
+    persona='',
 )
 
 # ── UI-018 [NORMAL] C 端智能客服名称取 botName 配置 — 思考中/空态/导航名去硬编码（默认小布）（源: cases/ui.yml）──
@@ -2632,6 +2633,7 @@ _CASE_UI_018 = EvalCase(
     data_checks=['admin-api mini/login 与 /api/admin/user/info 返回 botName（camelCase，对齐 User 类型）', '思考中文案 = 「{botName}正在思考...」；空态 = 「你好，我是{botName}」；导航名 = buildBotName(botName)', 'botName 为空/未登录 → 兜底「小布」（buildBotName 默认值）'],
     skip_reason='纯前端文案由 mini-app jest 单测验证（brand.test.ts + message-list），非 LLM 行为',
     tags=['mini-app', 'brand'],
+    persona='',
 )
 
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
