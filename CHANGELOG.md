@@ -6,6 +6,11 @@
 
 ## [Unreleased]
 
+### 部署触发定时对账 — 防连续快速合并吞掉部署（2026-09-05，#2935）
+
+- `deploy-ai-agent-service`：新增 `schedule`（每 20 分钟）触发的**部署对账**——构建前检查 ACR 中 main HEAD 对应的 `sha-<head7>` 镜像是否已存在；缺失说明该 commit 的 push 触发被 GitHub 吞掉（#2924→#2926 实测 #2926 未触发任何构建），自动补一次完整构建部署；已存在则跳过本轮（含冒烟）
+- `deploy-ai-agent-service`：对账复用已有 ACR 登录步骤与凭据（无新增 secrets 引用），仅在 schedule 触发时生效，push / workflow_dispatch 路径不变
+
 ### 会话自动关闭加固 — 启动宽限期 + 单次扫描上限（2026-09-05，#2915）
 
 - `ai-agent-service`：会话自动关闭循环增加**启动宽限期**（SESSION_STARTUP_GRACE_S=600s）——进程刚启动（部署/重启）时不立即扫描关闭，防部署过渡期把积压/时间戳未修正的会话一次性批量误杀（#2904 部署后首次扫描 89 会话被一批关闭的实证教训）
