@@ -31,7 +31,7 @@
         <aliyun-dysmsapi.version>4.6.0</aliyun-dysmsapi.version>
         <springdoc.version>2.6.0</springdoc.version>
         <mapstruct.version>1.6.3</mapstruct.version>
-        <lombok.version>1.18.46</lombok.version>
+        <lombok.version>1.18.48</lombok.version>
     </properties>
 
     <dependencies>
