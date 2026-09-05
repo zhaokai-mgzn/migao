@@ -8,7 +8,7 @@ vision 候选实体 → 上下文实体槽 grounding 测试（issue #2821 切片
 
 Seam: AgentContextManager 公共方法（不触碰内部实现细节）。
 """
-# case_ids: ON-002, ON-004
+# case_ids: ON-002, ON-004, CH-021
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -206,3 +206,49 @@ class TestBaseSkillVisionWiring:
         args, kwargs = self.captured_mgr.record_vision_analysis.call_args
         assert args[0] == "sess_wiring_1"
         assert "雪尼尔" in args[1]
+
+
+class TestVisionAnalysisQualityGuard:
+    """弱分析判定与重试/缓存守卫（issue #2914 次生问题）
+
+    线上会话 sess_c40f60ffcae94f2b 实证：
+    vision 弱分析（"受图片分辨率限制…不敢编造色号"）会被 set_vision_analysis
+    缓存并注入后续轮次，一次弱结果毒化整个会话。
+    守卫目标：弱分析重试一次；重试后仍弱则不缓存、走兜底话术。
+    """
+
+    def test_empty_is_degraded(self):
+        from app.graph.skills.base_skill import _is_degraded_vision_analysis
+        assert _is_degraded_vision_analysis("") is True
+        assert _is_degraded_vision_analysis(None) is True
+
+    def test_short_text_is_degraded(self):
+        from app.graph.skills.base_skill import _is_degraded_vision_analysis
+        assert _is_degraded_vision_analysis("这是窗帘") is True
+
+    def test_resolution_excuse_is_degraded(self):
+        """线上实测弱分析原文：只概括不枚举，并自称看不清"""
+        from app.graph.skills.base_skill import _is_degraded_vision_analysis
+        text = "受图片分辨率限制，我没有十足把握，不敢编造色号糊弄您"
+        assert _is_degraded_vision_analysis(text) is True
+
+    def test_full_color_enumeration_not_degraded(self):
+        from app.graph.skills.base_skill import _is_degraded_vision_analysis
+        text = "1#轻轻茉莉 2#杏仁奶盖 3#栀子生椰 4#丝绒奶茶 …… 共 18 个色号，无 9#"
+        assert _is_degraded_vision_analysis(text) is False
+
+    def test_retry_needed_only_on_first_attempt(self):
+        from app.graph.skills.base_skill import _is_degraded_vision_analysis, _vision_retry_needed
+        assert _vision_retry_needed("受图片分辨率限制", 0) is True
+        assert _vision_retry_needed("受图片分辨率限制", 1) is False
+        assert _vision_retry_needed("", 0) is True
+        good_short = "1#轻轻茉莉 2#杏仁奶盖 3#栀子生椰"  # >20 字符的实质分析
+        assert _is_degraded_vision_analysis(good_short) is False
+        assert _vision_retry_needed(good_short, 0) is False
+
+    def test_usable_analysis_blanks_degraded(self):
+        """弱分析清空 → 不入缓存、走兜底（防一次弱结果毒化会话后续轮次）"""
+        from app.graph.skills.base_skill import _usable_vision_analysis
+        assert _usable_vision_analysis("受图片分辨率限制") == ""
+        assert _usable_vision_analysis("这是窗帘") == ""
+        assert _usable_vision_analysis("1#轻轻茉莉 2#杏仁奶盖 …… 共18色") != ""

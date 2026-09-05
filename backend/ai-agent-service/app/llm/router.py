@@ -74,7 +74,11 @@ def select_model(
         模型名（DeepSeek 可识别的 model 字段）
     """
     # 1. 路由开关关闭时直接走默认模型
-    if not settings.LLM_ENABLE_MODEL_ROUTING:
+    #    视觉消息除外：视觉路由由 VISION_ENABLED/VISION_MODEL 单独配置，
+    #    不受 LLM_ENABLE_MODEL_ROUTING（文本模型选型开关）影响。
+    #    （issue #2914：线上 sess_c40f60ffcae94f2b 图片颜色识别失效——
+    #     此前 routing 关闭时含图消息也返回 PRIMARY_MODEL 纯文本模型，无法看图）
+    if not settings.LLM_ENABLE_MODEL_ROUTING and not (has_vision and settings.VISION_ENABLED):
         return settings.MINIMAX_MODEL
 
     # 2. 显式 force_model 优先
