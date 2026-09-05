@@ -1,6 +1,7 @@
+// case_ids: HR-002
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, within } from '@testing-library/react'
 import Modal from '@/components/ui/Modal'
 
 describe('Modal Component', () => {
@@ -81,5 +82,23 @@ describe('Modal Component', () => {
     const { unmount } = render(<Modal open onClose={vi.fn()}>Content</Modal>)
     unmount()
     expect(document.body.style.overflow).toBe('')
+  })
+
+  it('#2907: 内容超高时弹窗高度受限，标题与底部按钮一屏可见（内容区内部滚动）', () => {
+    render(
+      <Modal open onClose={vi.fn()} title="弹窗标题" footer={<button>保存</button>}>
+        <div className="h-[2000px]" />
+      </Modal>
+    )
+    const dialog = screen.getByRole('dialog')
+    // 弹窗整体受视口高度约束（max-h-full + flex-col），标题/底部按钮常驻一屏内
+    expect(dialog.className).toContain('max-h-full')
+    expect(dialog.className).toContain('flex-col')
+    // 内容区超高时内部滚动（overflow-y-auto）
+    const body = within(dialog).getByTestId('modal-body')
+    expect(body.className).toContain('overflow-y-auto')
+    // 标题与底部按钮仍在 DOM 中可见
+    expect(within(dialog).getByRole('heading', { name: '弹窗标题' })).toBeInTheDocument()
+    expect(within(dialog).getByText('保存')).toBeInTheDocument()
   })
 })
