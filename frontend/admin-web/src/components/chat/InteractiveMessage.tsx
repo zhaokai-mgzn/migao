@@ -27,31 +27,41 @@ export default function InteractiveMessage({ interactive, disabled }: Props) {
 /**
  * 选项卡片 — 单选/多选按钮
  *
- * 多选模式（interactive.multiSelect === true，如加工项选择，issue #2894）：
- * - 点击选项不锁死整卡，可连续选择多个选项，每个选项分别发送 label；
- * - 已选选项标记「已选」并禁点，防重复发送；
- * - 分页控件在已选后仍保持可见，翻页不清空已选、可继续选择。
+ * 多选模式（interactive.multiSelect === true，如加工项选择，issue #2896）：
+ * - 点击选项仅本地勾选/取消（存 store 按 `${sessionId}:${tool}` 共享，
+ *   翻页后新页卡片继承已选，不触发 agent 逐条回复）；
+ * - 「完成选择」按钮一次性提交全部已选 label（逗号拼接），提交后锁定；
+ * - 分页控件保持可见，翻页不清空已选。
  * 单选模式（无 multiSelect）：点击即发送并锁死卡片（原行为）。
  */
 function ChoiceCard({ interactive, disabled }: Props) {
-  const { sendMessage } = useChatStore()
+  const { sendMessage, currentSessionId, choiceSelections, toggleChoiceSelection, clearChoiceSelections } = useChatStore()
   const [submitted, setSubmitted] = useState(false)
-  const [selectedValues, setSelectedValues] = useState<Set<string>>(new Set())
 
   const options = Array.isArray(interactive.options) ? interactive.options : []
   const isMultiSelect = interactive.multiSelect === true
+  const tool = interactive.pageMeta?.tool || 'choice'
+  const selectionKey = `${currentSessionId || ''}:${tool}`
+  const selectedLabels = isMultiSelect ? (choiceSelections[selectionKey] || []) : []
 
   const clickOption = (opt: InteractiveOption) => {
     if (submitted || disabled) return
     if (isMultiSelect) {
-      // 多选：该选项已选过则忽略（防重复发送），否则标记已选并发送
-      if (selectedValues.has(opt.value)) return
-      setSelectedValues(prev => new Set(prev).add(opt.value))
-      sendMessage(opt.label || opt.value)
+      // 多选：仅本地勾选累积，不发送、不触发 agent 回复
+      toggleChoiceSelection(currentSessionId || '', tool, opt.label || opt.value)
       return
     }
     setSubmitted(true)
     sendMessage(opt.label || opt.value)
+  }
+
+  const submitSelections = () => {
+    if (submitted || disabled || selectedLabels.length === 0) return
+    // 一次性提交全部已选加工项：格式与 PRODUCT_SYSTEM_PROMPT「需主动询问加工项」
+    // 对齐，agent 收到完整列表后进入汇总确认，不会每次点选都触发回复
+    sendMessage(`已选加工项：${selectedLabels.join('、')}`)
+    clearChoiceSelections(currentSessionId || '', tool)
+    setSubmitted(true)
   }
 
   return (
@@ -60,32 +70,34 @@ function ChoiceCard({ interactive, disabled }: Props) {
       <div className="px-3 py-2 bg-primary-50 border-b border-primary-100">
         <p className="text-xs font-medium text-primary-700">{interactive.title}</p>
         {isMultiSelect && !submitted && (
-          <p className="text-[10px] text-primary-400 mt-0.5">可多选，已选 {selectedValues.size} 项</p>
+          <p className="text-[10px] text-primary-400 mt-0.5">可多选，已选 {selectedLabels.length} 项</p>
         )}
       </div>
 
-      {/* 选项列表 — 点击直接发送 */}
+      {/* 选项列表 — 多选点击勾选累积，单选点击直接发送 */}
       <div className="p-2 space-y-1">
         {options.map((opt: InteractiveOption, idx: number) => {
-          const isSelected = isMultiSelect && selectedValues.has(opt.value)
-          const isDisabled = submitted || disabled || isSelected
+          const isSelected = isMultiSelect && selectedLabels.includes(opt.label || opt.value)
           return (
           <button
             key={opt.value}
             onClick={() => clickOption(opt)}
-            disabled={isDisabled}
+            disabled={submitted || disabled}
             className={cn(
               'w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-sm transition-colors',
               isSelected
                 ? 'bg-primary-50 border border-primary-300 text-primary-700'
                 : 'bg-neutral-50 border border-neutral-100 text-neutral-700 hover:bg-neutral-100',
-              isDisabled && (isSelected ? '' : 'opacity-60 cursor-not-allowed'),
+              (submitted || disabled) && 'opacity-60 cursor-not-allowed',
             )}
           >
-            {isSelected && <Check className="w-3.5 h-3.5 text-primary-500 flex-shrink-0" />}
-            <span className="w-5 h-5 rounded-full bg-neutral-200 text-neutral-500 text-[10px] font-semibold flex items-center justify-center flex-shrink-0">
-              {idx + 1}
-            </span>
+            {isSelected ? (
+              <Check className="w-3.5 h-3.5 text-primary-500 flex-shrink-0" />
+            ) : (
+              <span className="w-5 h-5 rounded-full bg-neutral-200 text-neutral-500 text-[10px] font-semibold flex items-center justify-center flex-shrink-0">
+                {idx + 1}
+              </span>
+            )}
             <span className="flex-1">
               <span className="font-medium">{opt.label}</span>
               {opt.description && (
@@ -97,6 +109,45 @@ function ChoiceCard({ interactive, disabled }: Props) {
           )
         })}
       </div>
+
+      {/* 多选完成/跳过按钮 — 完成：一次性提交已选加工项；跳过：不关联加工项 */}
+      {isMultiSelect && !submitted && (
+        <div className="px-3 py-2 border-t border-neutral-100 flex gap-2">
+          {selectedLabels.length > 0 && (
+            <button
+              onClick={submitSelections}
+              disabled={disabled}
+              className={cn(
+                'flex-1 flex items-center justify-center gap-1 px-3 py-2 rounded-lg text-xs font-medium transition-colors',
+                disabled
+                  ? 'bg-neutral-100 text-neutral-400 cursor-not-allowed'
+                  : 'bg-primary-600 text-white hover:bg-primary-700',
+              )}
+            >
+              <Check className="w-3.5 h-3.5" />
+              完成选择（{selectedLabels.length}）
+            </button>
+          )}
+          <button
+            onClick={() => {
+              if (submitted || disabled) return
+              clearChoiceSelections(currentSessionId || '', tool)
+              setSubmitted(true)
+              sendMessage('不需要加工项')
+            }}
+            disabled={disabled}
+            className={cn(
+              'flex-1 flex items-center justify-center gap-1 px-3 py-2 rounded-lg text-xs font-medium transition-colors',
+              disabled
+                ? 'bg-neutral-100 text-neutral-400 cursor-not-allowed'
+                : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200',
+            )}
+          >
+            <X className="w-3.5 h-3.5" />
+            不需要加工项
+          </button>
+        </div>
+      )}
 
       {/* 分页控件 — 多选模式下已选后仍可见，可继续翻页选择其它加工项 */}
       {interactive.pageMeta && !submitted && !disabled && (
