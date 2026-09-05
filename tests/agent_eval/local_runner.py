@@ -315,6 +315,54 @@ def _last_round_error_verdict(results: list, expectations: list, data_checks: li
     return f"最后轮报错（用例未预期错误）: {str(last_error)[:120]}"
 
 
+# ── 波动分类（issue #2890：Agent Eval smoke 偶发 LLM 波动根治）──
+# 目标：把「失败→人工 gh run rerun 拼人品」变成「机器判定」——
+#   - llm-noise     ：第二次（新 session）通过 → 噪声，自动放行并记 flake 台账；
+#   - reproducible  ：两次同指纹失败 → 确定性回归，禁止 rerun 掩盖（按签名排查）；
+#   - unstable      ：两次失败但指纹不同 → LLM 发散，标注待查（可 rerun 取证）；
+#   - infra         ：失败为传输/超时/5xx → 运行级重试（workflow 已整跑重试 1 次）。
+_INFRA_MARKERS = (
+    "transport", "connect", "timeout", "all connection attempts failed",
+    " 502", " 503", " 504", "internal server error", "bad gateway",
+)
+
+
+def _is_infra_error(err) -> bool:
+    """失败是否运行级（网络/超时/5xx）——与 LLM 波动无关，重试属于合理操作。"""
+    s = str(err).lower()
+    return any(m in s for m in _INFRA_MARKERS)
+
+
+def _failure_signature(result: dict) -> str:
+    """失败指纹：失败期望（断言+原因）与最后轮错误首行 → 判定两次失败是否同根因。
+
+    两次失败指纹一致 = 大概率确定性复现（同一违反点），不一致 = 各次不同路径的
+    随机失败。错误事件保留前 100 字符（如 "AttributeError: 'list' object ..."）。
+    """
+    parts = [
+        f"{exp}|{str(detail)[:60]}"
+        for exp, detail in result.get("failed", [])
+    ]
+    parts = sorted(set(parts))
+    err = result.get("last_error")
+    if err:
+        parts.append(f"error|{str(err)[:100]}")
+    return "||".join(parts)
+
+
+def _classify_attempts(first: dict, second: dict) -> str:
+    """两次尝试（同用例、新 session）结果的波动分类。"""
+    if first.get("score", 0) >= 1.0:
+        return "pass"
+    if second.get("score", 0) >= 1.0:
+        return "llm-noise"
+    if _is_infra_error(first.get("last_error")) or _is_infra_error(second.get("last_error")):
+        return "infra"
+    if _failure_signature(first) == _failure_signature(second):
+        return "reproducible"
+    return "unstable"
+
+
 async def run_case(case, token: str, session_id: str) -> dict:
     """运行单个评测用例（多轮对话）
 
@@ -385,10 +433,15 @@ async def run_case(case, token: str, session_id: str) -> dict:
         "final_text": results[-1].get("final_text", "")[:200] if results else "",
     }
 
-async def run_suite(cases, label: str):
-    """运行一组用例"""
+async def run_suite(cases, label: str, classify: bool = True):
+    """运行一组用例
+
+    classify（默认开，issue #2890 波动分类）：失败用例重试 1 次并判定
+    llm-noise / reproducible / unstable / infra（见 _classify_attempts），
+    noise 自动放行并记 flake 台账；true regressions 显式标注禁止 rerun 掩盖。
+    """
     print(f"\n{'='*60}")
-    print(f"  {label}: {len(cases)} 个用例")
+    print(f"  {label}: {len(cases)} 个用例" + ("" if classify else "（--no-classify 兼容模式）"))
     print(f"{'='*60}")
 
     try:
@@ -401,6 +454,7 @@ async def run_suite(cases, label: str):
     results = []
     passed_count = 0
     total_score = 0.0
+    flake_ledger = []  # 台账：一次运行中「首次失败经分类放行/确认」的用例
 
     for i, case in enumerate(cases):
         if case.skip_reason:
@@ -424,16 +478,50 @@ async def run_suite(cases, label: str):
 
         try:
             r = await run_case(case, token, session_id)
-            # 真实 LLM 评测 flaky 容错：失败用例自动重试 1 次（新 session 隔离上下文）。
-            # 背景：OR-010 等用例依赖 LLM 工具选择，非确定性导致偶发「validate_input 后
-            # 未调 order_create」而失败（8/14 起 Agent Eval smoke 每日阻塞 PR 合并）。
-            # 重试只用于容错 LLM 波动，不做断言放宽；重试仍失败则保留两者中较高分供诊断。
-            if r["score"] < 1.0:
+            # 真实 LLM 评测 flaky 容错：失败用例自动重试 1 次（新 session 隔离上下文），
+            # 并按指纹分类（issue #2890）：噪声放行 + 记台账；复现型/不稳定型显式标注，
+            # 禁止 rerun 掩盖确定性回归。
+            classification = "pass"
+            if r["score"] < 1.0 and classify:
+                retry_sid = await get_or_create_session(token, prefer_new=True)
+                r2 = await run_case(case, token, retry_sid)
+                r2["retried"] = True
+                classification = _classify_attempts(r, r2)
+                if classification == "llm-noise":
+                    r = r2
+                    flake_ledger.append({
+                        "case_id": case.id,
+                        "title": case.title,
+                        "classification": "llm-noise",
+                        "reason": "首次失败、新 session 重试通过（LLM 波动）",
+                        "signature": _failure_signature(r2),
+                        "run_id": os.environ.get("GITHUB_RUN_ID", "local"),
+                        "sha": os.environ.get("GITHUB_SHA", "")[:12],
+                    })
+                else:
+                    # reproducible / unstable / infra：保留第二次尝试作为失败证据
+                    r = r2
+                    flake_ledger.append({
+                        "case_id": case.id,
+                        "title": case.title,
+                        "classification": classification,
+                        "reason": {
+                            "reproducible": "两次同指纹失败（确定性回归，禁止 rerun 掩盖，按签名排查）",
+                            "unstable": "两次失败但指纹不同（LLM 发散，标注待查）",
+                            "infra": "传输/超时/5xx（运行级，可整跑重试）",
+                        }.get(classification, classification),
+                        "signature": _failure_signature(r2),
+                        "run_id": os.environ.get("GITHUB_RUN_ID", "local"),
+                        "sha": os.environ.get("GITHUB_SHA", "")[:12],
+                    })
+            elif r["score"] < 1.0:
+                # --no-classify 兼容模式：旧的无差别单次重试
                 retry_sid = await get_or_create_session(token, prefer_new=True)
                 r2 = await run_case(case, token, retry_sid)
                 r2["retried"] = True
                 if r2["score"] >= 1.0 or r2["score"] > r["score"]:
                     r = r2
+            r["classification"] = classification
             results.append(r)
             total_score += r["score"]
             if r["score"] >= 1.0:
@@ -441,7 +529,13 @@ async def run_suite(cases, label: str):
 
             status = "✅" if r["score"] >= 1.0 else "⚠️" if r["score"] >= 0.5 else "❌"
             retry_note = "（重试后通过）" if r.get("retried") and r["score"] >= 1.0 else ""
-            print(f"  {icon} {status} {case.id}: {case.title[:50]}{retry_note}")
+            cls_note = {
+                "llm-noise": " 🎲噪声·重试放行(已记账)",
+                "reproducible": " 🔬复现型回归·禁止rerun",
+                "unstable": " 🧬不稳定·两次不同指纹",
+                "infra": " 🌐运行级故障",
+            }.get(classification, "")
+            print(f"  {icon} {status} {case.id}: {case.title[:50]}{retry_note}{cls_note}")
             print(f"     rounds={r['rounds']} tools={r['tool_calls']} score={r['score']:.0%}")
             if r["failed"]:
                 for exp, detail in r["failed"][:2]:
@@ -456,6 +550,32 @@ async def run_suite(cases, label: str):
                 await restore_product(token, pid)
 
         await asyncio.sleep(1)  # rate limit
+
+    # ── flake 台账（issue #2890）：落盘 + 摘要，驱动断言收敛与高波动用例治理 ──
+    if classify and flake_ledger:
+        try:
+            import json as _json
+            ledger_path = os.environ.get("AGENT_EVAL_FLAKE_LOG", "agent-eval-flakes.json")
+            _prev = []
+            if os.path.exists(ledger_path):
+                try:
+                    import json as _json2
+                    with open(ledger_path, "r", encoding="utf-8") as _f:
+                        _prev = _json2.load(_f)
+                except Exception:
+                    _prev = []
+            with open(ledger_path, "w", encoding="utf-8") as _f:
+                _json.dump(_prev + flake_ledger, _f, ensure_ascii=False, indent=1)
+            print(f"\n⚠️ flake 台账（{len(flake_ledger)} 条本次新增）→ {ledger_path}")
+            for entry in flake_ledger:
+                print(f"   - {entry['case_id']} [{entry['classification']}] {entry['reason'][:46]}")
+        except Exception as e:
+            print(f"⚠️ 台账写入失败（非致命）: {e}")
+
+    # ── 运行级 infra 提示 ──
+    if any(r.get("classification") == "infra" for r in results):
+        print("\n🌐 检测到运行级故障（传输/超时/5xx）：整跑重试是合理操作（workflow 已自动做 1 次）；")
+        print("   复现型（🔬）失败【不要】rerun——签名一致即确定性回归，直接按签名排查。")
 
     # Summary
     n = len(results)
@@ -500,6 +620,8 @@ async def main():
     parser.add_argument("suite", choices=["smoke", "normal", "full", "adversarial", "case"], nargs="?", default="smoke")
     parser.add_argument("--case-id", help="单条用例 ID（支持新 ID 与 legacy_id，如 OR-002 或 O002）")
     parser.add_argument("--cases", help="用例库目录（cases/*.yml）——提供时直接读 YAML（单一源）")
+    parser.add_argument("--no-classify", action="store_true",
+                        help="关闭波动分类（issue #2890 兼容开关：恢复旧的无差别单次重试，调试用）")
     args = parser.parse_args()
 
     if args.cases:
@@ -548,9 +670,9 @@ async def main():
         if not case:
             print(f"用例 {args.case_id} 不存在")
             return
-        results = await run_suite([case], f"单条 {args.case_id}")
+        results = await run_suite([case], f"单条 {args.case_id}", classify=not args.no_classify)
     elif args.suite == "smoke":
-        results = await run_suite(smoke_cases(), "冒烟")
+        results = await run_suite(smoke_cases(), "冒烟", classify=not args.no_classify)
     elif args.suite == "normal":
         results = await run_suite(normal_cases(), "每日回归（normal）")
     elif args.suite == "adversarial":

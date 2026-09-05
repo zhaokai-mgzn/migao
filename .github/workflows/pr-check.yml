@@ -396,7 +396,10 @@ jobs:
           SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN }}
           PYTHONUTF8: "1"
           PYTHONIOENCODING: utf-8
-        # 真实 LLM 评测有偶发波动（单条用例工具调用漂移），重试 1 次避免误阻塞合并
+          AGENT_EVAL_FLAKE_LOG: agent-eval-flakes.json
+        # 波动分类（issue #2890）：runner 内按指纹判定 llm-noise（自动放行+记台账）/
+        # reproducible（禁止 rerun 掩盖）/ unstable / infra。此处整跑重试仅兜底
+        # 运行级故障（传输/超时/5xx）；复现型失败不要人工 rerun，直接看台账签名排查。
         run: |
           set +e
           for attempt in 1 2; do
@@ -410,6 +413,14 @@ jobs:
             echo "⚠️ 第 ${attempt} 次失败(exit $rc)，$([ $attempt -eq 1 ] && echo '重试...' || echo '两次均失败')"
           done
           exit $rc
+
+      - name: Upload agent-eval flake ledger
+        if: always() && hashFiles('agent-eval-flakes.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-eval-flakes
+          path: agent-eval-flakes.json
+          if-no-files-found: ignore
 
   # ============ Secret 扫描（gitleaks）— 防密钥/凭据提交 ============
   gitleaks-scan:
