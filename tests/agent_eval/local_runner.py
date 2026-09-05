@@ -20,6 +20,10 @@ for _stream in (sys.stdout, sys.stderr):
             pass
 
 sys.path.insert(0, os.path.dirname(__file__))
+# 模块级注入 .github（render_cases/filter_by_persona 单一源，issue #2855）——
+# 保证无 --cases（ALL_CASES 生成物）路径下 main() 也能 import
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(_REPO_ROOT / ".github"))
 from eval_cases import ALL_CASES, EvalCase, Skill, Difficulty
 
 # Config
@@ -453,6 +457,7 @@ def load_cases_from_yaml(cases_dir: str) -> list:
             data_checks=c.get("data_checks") or [],
             skip_reason=c.get("skip_reason", ""),
             tags=c.get("tags") or [],
+            persona=c.get("persona", ""),
         ))
     return cases
 
@@ -471,6 +476,14 @@ async def main():
     else:
         cases = ALL_CASES
         print(f"📚 用例源: eval_cases.py（生成物，{len(cases)} 条）")
+
+    # persona 归属过滤（issue #2855）：mibao 跳过 C 端专属（xiaobu）用例，
+    # xiaobu 跳过 B 端专属（mibao）用例；未标记=双端保留。
+    from render_cases import filter_by_persona
+    before = len(cases)
+    cases = filter_by_persona(cases, PERSONA)
+    if len(cases) != before:
+        print(f"🧪 Persona={PERSONA}：persona 过滤后 {len(cases)}/{before} 条（排除 {before - len(cases)} 条另一端专属）")
 
     # xiaobu 模式：仅跑 C 端可用用例（订单查询/下单/售后/通用），
     # 跳过管理类（order_manage/after_sales_manage/product_manage 等 B 端工具）用例

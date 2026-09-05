@@ -406,6 +406,7 @@ cases:
       - chat
       - defense
     tier: normal
+    persona: xiaobu
     tags:
       - query
       - logistics

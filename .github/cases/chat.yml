@@ -255,6 +255,7 @@ cases:
       - chat
       - settings
     tier: normal
+    persona: xiaobu
     tags:
       - handoff
       - agent_session
@@ -394,6 +395,7 @@ cases:
       - chat
       - aftersales
     tier: normal
+    persona: xiaobu
     tags:
       - multi_turn
       - aftersales
@@ -428,6 +430,7 @@ cases:
       - chat
       - handoff
     tier: normal
+    persona: xiaobu
     tags:
       - multi_turn
       - handoff
@@ -462,6 +465,7 @@ cases:
       - chat
       - handoff
     tier: normal
+    persona: xiaobu
     tags:
       - multi_turn
       - handoff
@@ -495,6 +499,7 @@ cases:
       - chat
       - handoff
     tier: normal
+    persona: xiaobu
     tags:
       - handoff
       - regression
@@ -550,6 +555,7 @@ cases:
       - chat
       - settings
     tier: normal
+    persona: xiaobu
     tags:
       - handoff
       - agent_session

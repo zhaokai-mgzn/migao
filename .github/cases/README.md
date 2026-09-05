@@ -30,6 +30,9 @@ cases/
 3. **并源溯源**：每条用例的 `merge_log` 记录「由哪些旧用例合并而来」，防止合并时丢覆盖。
 4. **缺口显式**：真值暂缺时 `truths_ref: []` + ⚠️ 注释，由映射表 5.1 节跟踪补真值，禁止留空装作无事发生。
 5. **生成物禁手写**：`eval_cases.py` 与 `mibao-verification-cases.md` 迁移完成后由 `render_cases.py` 渲染。
+6. **persona 归属（issue #2855）**：可选字段 `persona: mibao | xiaobu`，标记用例归属 agent；缺省/`both` = 双端。
+   `local_runner` 按 persona 过滤（mibao 跳过 xiaobu 专属，反之亦然），防止 C/B 端专属用例在另一端回归中误报。
+   已标记案例：转人工（human_handoff）、C 端订单/物流（customer_* 工具）等小布专属用例。
 
 ## 迁移进度
 
