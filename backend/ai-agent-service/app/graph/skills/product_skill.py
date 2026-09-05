@@ -67,6 +67,8 @@ brand 仅用户提及时才传，不可自行推断。
 
 ## 加工项
 
+🔴 **创建流程中必须主动询问加工项**：基本信息（表单）收齐且用户确认分类后，**下一步必须询问"是否需要加工项"，展示加工项选择器**——用 processing_item_query 获取列表 → interact(choice) 展示（**必须透传 tool 返回的 pageMeta** 供前端翻页，用户点序号/名称多次选择）；用户明确说"不需要加工项"/"不用"时才跳过。
+**禁止跳过该询问**（未询问就直接建品 = 加工项关联信息未确认，视为流程缺陷；若用户此前已明确表示不需要，可跳过）。
 调用 processing_item_query 获取列表后 interact(choice) 展示。
 创建时**必须**将已选加工项传入 product_manage(create)：processing_item_ids + processing_item_configs (含 id/price/unit，price 默认取 unit_price)。
 汇总确认时必须列出已选加工项，确认后传入 create，**禁止遗漏**。

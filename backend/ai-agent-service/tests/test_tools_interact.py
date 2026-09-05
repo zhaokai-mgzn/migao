@@ -1,4 +1,5 @@
 """InteractTool 单元测试 — 生成交互组件，无 API 调用"""
+# case_ids: PP-001, PR-010
 import pytest
 import json
 from app.tools.interact import InteractTool
@@ -34,6 +35,34 @@ class TestInteractChoice:
         )
         assert result.success is True
         assert result.data["options"][0]["label"] == "深灰"
+
+    async def test_choice_with_pagemeta(self, tool, sample_tool_context):
+        """choice 组件接收 pageMeta 并透传（加工项列表分页展示）。
+
+        生产回归（sess_fba38395ed094a9d）：processing_item_query 返回的 pageMeta
+        提示 LLM「调用 interact(choice) 时直接透传」，但 execute 签名无该参数
+        导致 TypeError → 整个 agent 流崩溃、assistant 消息不落库。
+        """
+        page_meta = {
+            "current": 1,
+            "total": 4,
+            "totalCount": 32,
+            "tool": "processing_item_query",
+            "params": json.dumps({"keyword": "", "page": 1, "size": 10}, ensure_ascii=False),
+        }
+        result = await tool.execute(
+            context=sample_tool_context,
+            component="choice",
+            title="请选择加工项",
+            options=[
+                {"label": "1. 罗马杆环安装", "value": "proc_item_hook_roman"},
+                {"label": "2. 高温定型", "value": "proc_item_shape_high"},
+            ],
+            pageMeta=page_meta,
+        )
+        assert result.success is True
+        assert result.data["component"] == "choice"
+        assert result.data["pageMeta"] == page_meta
 
 class TestInteractConfirm:
     async def test_confirm_component(self, tool, sample_tool_context):
