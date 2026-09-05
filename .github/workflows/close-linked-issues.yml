@@ -7,14 +7,17 @@ name: Close Linked Issues on Merge
 # 本工作流在 PR 合并后解析 body 的 Closes/Fixes/Resolves 关键词，
 # 若对应 issue 仍 open 则强制关闭并留 comment，把「PR 合并 → issue 关闭」变成强保证。
 #
-# 触发：pull_request closed 且 merged=true，仅默认分支 main（与 GitHub 官方关键词规则一致）；
+# 触发：pull_request_target closed 且 merged=true，仅默认分支 main（与 GitHub 官方关键词规则一致）；
+#       用 pull_request_target 而非 pull_request：close-on-merge 类 bot 的标准做法——
+#       pull_request 的 [closed] 触发器对 auto-merge 合并存在已知不可靠（实证 #2939 合并后未触发；
+#       community discussion #148367 同症状）；target 用默认分支的 workflow 文件，API-only 无 fork 风险。
 #       workflow_dispatch 可指定已合并 PR 号手动补关（pr_number 输入，自动跑用）
 # 安全：不 checkout、不执行 PR 代码，仅通过 API 读取 body / 关闭 issue（无 fork 风险）；
 #       仅同仓库 PR 生效。
 # 幂等：issue 已关 → no-op；无关键词 → 跳过；合并补偿与 GitHub 异步关闭并发也为 no-op。
 
 on:
-  pull_request:
+  pull_request_target:
     types: [closed]
     branches: [main]
   workflow_dispatch:
@@ -60,11 +63,15 @@ jobs:
           for iss in $issues; do
             num="${iss#\#}"
             state="$(gh issue view "$num" --repo "$GH_REPO" --json state --jq '.state' 2>/dev/null || echo 'unknown')"
-            if [ "$state" = "open" ]; then
-              gh issue close "$num" --repo "$GH_REPO" \
-                --comment "🔁 补偿关闭（close-linked-issues workflow）：PR #$PR_NUMBER 已合并${PR_MERGE_SHA:+（commit \`${PR_MERGE_SHA:0:8}\`）}但 GitHub 异步自动关闭未生效，由本工作流兜底关闭（issue #2937）。"
-              echo "✅ 已关闭 issue #$num（合并前为 open）"
-            else
-              echo "⏭️  issue #$num 当前 state=$state，无需处理"
-            fi
+            # 注意：gh API 返回大写 OPEN/CLOSED，比较必须大小写无关（E2E 实证踩坑）
+            case "$state" in
+              OPEN|open)
+                gh issue close "$num" --repo "$GH_REPO" \
+                  --comment "🔁 补偿关闭（close-linked-issues workflow）：PR #$PR_NUMBER 已合并${PR_MERGE_SHA:+（commit \`${PR_MERGE_SHA:0:8}\`）}但 GitHub 异步自动关闭未生效，由本工作流兜底关闭（issue #2937）。"
+                echo "✅ 已关闭 issue #$num（合并前为 open）"
+                ;;
+              *)
+                echo "⏭️  issue #$num 当前 state=$state，无需处理"
+                ;;
+            esac
           done
