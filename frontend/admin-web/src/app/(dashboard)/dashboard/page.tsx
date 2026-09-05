@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { ClipboardList, DollarSign, TrendingUp, Package, Settings, ArrowRight, RefreshCw, ArrowUp, ArrowDown } from 'lucide-react'
-import request from '@/lib/request'
 import { dashboardApi } from '@/lib/api'
 import { cn, formatFullDateTime } from '@/lib/utils'
 import type { DashboardStats, OrderTrendPoint, Order, ProductRanking } from '@/types'
@@ -202,36 +201,43 @@ export default function DashboardPage() {
   const fetchData = useCallback(async () => {
     setLoading(true)
     try {
-      const [statsRes, trendRes, ordersRes] = await Promise.all([
+      // #2886: 4 个接口一次并发（原 3 波串行 → 1 波，整页接口等待从 ~640ms 降到单波 max）
+      //   pendingShipOrders / processingPendingOrders / lowStockItems 均由 stats 聚合返回，
+      //   不再单独请求 pending-shipment-count / processing-shipment-count 两个重复计数接口
+      const [statsRes, trendRes, ordersRes, rkRes] = await Promise.allSettled([
         dashboardApi.getStats(),
         dashboardApi.getOrderTrend(trendDays),
         dashboardApi.getRecentOrders(5),
+        dashboardApi.getProductRanking('day', 10),
       ])
-      const s = statsRes.data.data
-      setStats(s)
-      setTrendData(Array.isArray(trendRes.data.data) ? trendRes.data.data : [])
-      setRecentOrders(ordersRes.data.data || [])
 
-      // 商品排行
-      try {
-        const rkResp = await dashboardApi.getProductRanking('day', 10)
-        setRanking((rkResp.data as any)?.data || [])
-      } catch (e) { console.error("page.tsx", e); }
-
-      // 待发货订单数（status = 待发货）
-      try {
-        const resp = await request.get('/api/admin/dashboard/pending-shipment-count')
-        setPendingShipment(resp.data?.data ?? 0)
-      } catch (e) { console.error("page.tsx", e); }
-      // 含加工待发货订单数（status = 待发货 AND has_processing = true）
-      try {
-        const resp = await request.get('/api/admin/dashboard/processing-shipment-count')
-        setProcessingShipment(resp.data?.data ?? 0)
-      } catch (e) { console.error("page.tsx", e); }
-      // #1396: 待补库存口径统一 — 使用 stats.lowStockItems（后端 countLowStockSkus 排除已删除+已下架）
-      setLowStockCount(s.lowStockItems ?? 0)
+      if (statsRes.status === 'fulfilled') {
+        const s = statsRes.value.data.data
+        setStats(s)
+        setLowStockCount(s.lowStockItems ?? 0)
+        setPendingShipment(s.pendingShipOrders ?? 0)
+        setProcessingShipment(s.processingPendingOrders ?? 0)
+      } else {
+        console.error('Dashboard stats:', statsRes.reason)
+      }
+      if (trendRes.status === 'fulfilled') {
+        setTrendData(Array.isArray(trendRes.value.data.data) ? trendRes.value.data.data : [])
+      } else {
+        console.error('Dashboard trend:', trendRes.reason)
+      }
+      if (ordersRes.status === 'fulfilled') {
+        setRecentOrders(ordersRes.value.data.data || [])
+      } else {
+        console.error('Dashboard recent orders:', ordersRes.reason)
+      }
+      if (rkRes.status === 'fulfilled') {
+        setRanking((rkRes.value.data as any)?.data || [])
+      } else {
+        console.error('Dashboard ranking:', rkRes.reason)
+      }
       setUpdateTime(now())
     } catch (error) {
+      // Promise.allSettled 不会整体 reject，此分支仅兜底
       console.error('Dashboard load:', error)
     } finally {
       setLoading(false)
