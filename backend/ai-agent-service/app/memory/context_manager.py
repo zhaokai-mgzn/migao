@@ -468,12 +468,19 @@ class AgentContextManager:
         vision = cache["vision_fields"]
 
         # 1. 常规实体提取
-        for list_key, entity_type, id_field, name_field in [
-            ("products", "product_ids", "id", "name"),
-            ("items", "processing_item_ids", "id", "name"),
-            ("orders", "order_nos", "id", "order_no"),
-            ("customers", "customer_ids", "id", "name"),
+        # 生产缺陷（线上 sess_60238786c0694dbc 实证）：售后工单列表/订单列表等
+        # 也返回 data.items（工单/订单 id 无 name），泛化抽取把工单 UUID 误记为
+        # 空名加工项实体，污染商品录入等流程的加工项上下文。
+        # 因此 items → processing_item_ids 仅限加工项域工具。
+        PROCESSING_ITEM_TOOLS = {"processing_item_query", "processing_item_manage"}
+        for list_key, entity_type, id_field, name_field, allowed_tools in [
+            ("products", "product_ids", "id", "name", None),
+            ("items", "processing_item_ids", "id", "name", PROCESSING_ITEM_TOOLS),
+            ("orders", "order_nos", "id", "order_no", None),
+            ("customers", "customer_ids", "id", "name", None),
         ]:
+            if allowed_tools is not None and tool_name not in allowed_tools:
+                continue
             items = data.get(list_key, [])
             if not isinstance(items, list):
                 items = [items] if isinstance(items, dict) else []

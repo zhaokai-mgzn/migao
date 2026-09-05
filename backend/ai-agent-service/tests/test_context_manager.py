@@ -4,7 +4,7 @@ AgentContextManager 单元测试
 覆盖 context_manager.py 所有核心路径：
 - 单例模式、缓存 CRUD、实体提取、上下文构建、对话压缩
 """
-# case_ids: DF-004, DF-012, DF-013, DF-015
+# case_ids: DF-004, DF-012, DF-013, DF-015, PP-001
 
 import pytest
 from collections import OrderedDict
@@ -211,6 +211,42 @@ class TestExtractEntities:
             "data": {"items": [{"id": "pi_1", "name": "S钩安装"}]}
         })
         assert len(cache["entities"]["processing_item_ids"]) == 1
+
+    def test_after_sales_items_not_mis_extracted_as_processing_items(self):
+        """售后工单列表 data.items（工单）不得误抽为加工项实体
+
+        线上 sess_60238786c0694dbc 实证：after_sales_manage 列表也返回
+        data.items（工单 id 无 name）→ 泛化抽取把工单 UUID 记成空名加工项，
+        污染后续商品录入流程的加工项上下文。
+        """
+        from app.memory.context_manager import AgentContextManager
+        mgr = AgentContextManager()
+        cache = OrderedDict()
+        mgr._extract_entities(cache, "after_sales_manage", {
+            "data": {"items": [{"id": "039bccaa94bc24f3c8f38eb2f937fe75",
+                                "ticket_no": "AS-20260904-0002"}]}
+        })
+        assert cache.get("entities", {}).get("processing_item_ids", []) == []
+
+    def test_order_query_items_not_mis_extracted_as_processing_items(self):
+        """订单列表 data.items（订单）同样不得误抽为加工项"""
+        from app.memory.context_manager import AgentContextManager
+        mgr = AgentContextManager()
+        cache = OrderedDict()
+        mgr._extract_entities(cache, "order_query", {
+            "data": {"items": [{"id": "o1", "order_no": "ORD-001"}]}
+        })
+        assert cache.get("entities", {}).get("processing_item_ids", []) == []
+
+    def test_processing_item_manage_items_extracted(self):
+        """加工项域工具（processing_item_manage）的 items 仍正常抽取"""
+        from app.memory.context_manager import AgentContextManager
+        mgr = AgentContextManager()
+        cache = OrderedDict()
+        mgr._extract_entities(cache, "processing_item_manage", {
+            "data": {"items": [{"id": "pi_9", "name": "高温定型"}]}
+        })
+        assert cache["entities"]["processing_item_ids"][0]["id"] == "pi_9"
 
     def test_handles_single_dict_as_list(self):
         """data 中 items 是 dict 而非 list 时自动包装为 list"""

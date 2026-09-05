@@ -6,7 +6,7 @@ AI 智能客服系统 - 会话记忆管理
 
 import json
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from loguru import logger
@@ -44,11 +44,16 @@ class SessionMemory:
     
     def _now_iso(self) -> str:
         """获取当前时间 ISO 格式"""
-        return datetime.utcnow().isoformat() + "Z"
-    
+        return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
     def _now(self) -> datetime:
-        """获取当前 UTC 时间（datetime 对象，asyncpg 需要）"""
-        return datetime.utcnow()
+        """获取当前 UTC 时间（timezone-aware，asyncpg 需要）
+
+        生产缺陷（sess_60238786c0694dbc 实证）：naive datetime.utcnow() 经
+        asyncpg 写入 timestamptz 列时按连接时区（Asia/Shanghai）解读再转 UTC，
+        落库偏移 8h（created_at 早于 started_at 倒挂）。必须返回 aware UTC。
+        """
+        return datetime.now(timezone.utc)
 
     @staticmethod
     def _estimate_tokens(text: str) -> int:

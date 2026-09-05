@@ -69,17 +69,19 @@ class SessionStateStore:
         async with await self._get_session() as db:
             try:
                 from sqlalchemy import text
-                from datetime import datetime
                 sql = text("""
                     INSERT INTO session_states (session_id, state, updated_at)
                     VALUES (:session_id, CAST(:state AS jsonb), :now)
                     ON CONFLICT (session_id)
                     DO UPDATE SET state = EXCLUDED.state, updated_at = EXCLUDED.updated_at
                 """)
+                # naive utcnow 会被 asyncpg 按连接时区（Asia/Shanghai）解读 → 落库偏移 8h
+                # （线上 sess_60238786c0694dbc 实证），必须用 timezone-aware UTC
+                from datetime import datetime, timezone
                 await db.execute(sql, {
                     "session_id": session_id,
                     "state": json.dumps(state or {}, ensure_ascii=False, default=str),
-                    "now": datetime.utcnow(),
+                    "now": datetime.now(timezone.utc),
                 })
                 await db.commit()
                 return True
