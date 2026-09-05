@@ -179,6 +179,10 @@ export const categoryApi = {
   
   deleteCategory: (id: string) => 
     request.delete<ApiResponse<void>>(`/api/admin/categories/${id}`),
+  
+  /** 上移/下移分类（issue #2905）：direction = 'up' | 'down' */
+  moveCategory: (id: string, direction: 'up' | 'down') => 
+    request.post<ApiResponse<void>>(`/api/admin/categories/${id}/move`, { direction }),
 }
 
 // 加工项 API

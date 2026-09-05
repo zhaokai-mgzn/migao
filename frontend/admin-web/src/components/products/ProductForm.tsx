@@ -112,7 +112,6 @@ export default function ProductForm({
   const [catModalLoading, setCatModalLoading] = useState(false)
   const [editingCategory, setEditingCategory] = useState<Category | null>(null)
   const [catDialogOpen, setCatDialogOpen] = useState(false)
-  const [presetParent, setPresetParent] = useState<Category | null>(null)
   const [catDeleteTarget, setCatDeleteTarget] = useState<Category | null>(null)
   const [catDeleting, setCatDeleting] = useState(false)
 
@@ -388,20 +387,35 @@ export default function ProductForm({
 
   const handleCatAdd = () => {
     setEditingCategory(null)
-    setPresetParent(null)
-    setCatDialogOpen(true)
-  }
-
-  const handleCatAddChild = (parent: Category) => {
-    setEditingCategory(null)
-    setPresetParent(parent)
     setCatDialogOpen(true)
   }
 
   const handleCatEdit = (category: Category) => {
     setEditingCategory(category)
-    setPresetParent(null)
     setCatDialogOpen(true)
+  }
+
+  // issue #2905：上下移动分类（上移/下移后刷新弹窗内列表）
+  const handleCatMoveUp = async (category: Category) => {
+    try {
+      await categoryApi.moveCategory(category.id, 'up')
+      toast.success(`「${category.name}」已上移`)
+      const res = await categoryApi.getCategories()
+      setCategories(res.data.data || [])
+    } catch (e) {
+      // Error handled by API layer
+    }
+  }
+
+  const handleCatMoveDown = async (category: Category) => {
+    try {
+      await categoryApi.moveCategory(category.id, 'down')
+      toast.success(`「${category.name}」已下移`)
+      const res = await categoryApi.getCategories()
+      setCategories(res.data.data || [])
+    } catch (e) {
+      // Error handled by API layer
+    }
   }
 
   const handleCatSubmit = async (data: CategoryFormData) => {
@@ -409,10 +423,7 @@ export default function ProductForm({
       await categoryApi.updateCategory(editingCategory.id, data)
       toast.success('分类已更新')
     } else {
-      await categoryApi.createCategory({
-        ...data,
-        parentId: presetParent ? presetParent.id : data.parentId,
-      })
+      await categoryApi.createCategory(data)
       toast.success('分类已创建')
     }
     const res = await categoryApi.getCategories()
@@ -879,7 +890,8 @@ export default function ProductForm({
                 categories={categories}
                 onEdit={handleCatEdit}
                 onDelete={setCatDeleteTarget}
-                onAddChild={handleCatAddChild}
+                onMoveUp={handleCatMoveUp}
+                onMoveDown={handleCatMoveDown}
               />
             )}
           </div>
@@ -893,7 +905,6 @@ export default function ProductForm({
         onSubmit={handleCatSubmit}
         category={editingCategory}
         categories={categories}
-        presetParentId={presetParent?.id}
       />
 
       {/* 删除确认 */}
@@ -914,11 +925,6 @@ export default function ProductForm({
       >
         <p className="text-neutral-600">
           确定要删除分类 <span className="font-medium text-neutral-900">{catDeleteTarget?.name}</span> 吗？
-          {catDeleteTarget?.children && catDeleteTarget.children.length > 0 && (
-            <span className="block mt-2 text-amber-600">
-              该分类下还有 {catDeleteTarget.children.length} 个子分类，删除后子分类也将被移除。
-            </span>
-          )}
         </p>
       </Modal>
     </div>

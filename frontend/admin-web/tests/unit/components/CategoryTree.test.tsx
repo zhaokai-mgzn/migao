@@ -1,7 +1,7 @@
-// case_ids: CT-001
+// case_ids: CT-001, CT-002, CT-003
 /**
- * CategoryTree 组件测试
- * 覆盖：#563 — 树节点渲染、空状态、选择/展开交互
+ * CategoryTree 组件测试（issue #2905 — 分类排序重构）
+ * 覆盖：扁平列表渲染、空状态、上移/下移按钮（边界禁用）、编辑/删除操作
  */
 import { render, screen, fireEvent } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
@@ -15,34 +15,22 @@ vi.mock('@/lib/utils', () => ({
 }))
 
 const mockCategories: Category[] = [
-  {
-    id: 'c1',
-    name: '窗帘',
-    sort: 0,
-    children: [
-      { id: 'c1-1', name: '遮光窗帘', sort: 0, parentId: 'c1' },
-      { id: 'c1-2', name: '纱帘', sort: 1, parentId: 'c1' },
-    ],
-  },
+  { id: 'c1', name: '窗帘', sort: 0 },
   { id: 'c2', name: '窗纱', sort: 1 },
+  { id: 'c3', name: '遮光帘', sort: 2 },
 ]
 
-describe('CategoryTree (#563)', () => {
+describe('CategoryTree (#2905)', () => {
   it('空列表显示统一占位文案', () => {
     render(<CategoryTree categories={[]} />)
     expect(screen.getByText('管理商品分类，支持对分类进行新增、编辑、删除和排序')).toBeTruthy()
   })
 
-  it('渲染分类名称', () => {
+  it('平铺渲染全部分类（无父子嵌套）', () => {
     render(<CategoryTree categories={mockCategories} />)
     expect(screen.getByText('窗帘')).toBeTruthy()
     expect(screen.getByText('窗纱')).toBeTruthy()
-  })
-
-  it('渲染子分类名称', () => {
-    render(<CategoryTree categories={mockCategories} />)
-    expect(screen.getByText('遮光窗帘')).toBeTruthy()
-    expect(screen.getByText('纱帘')).toBeTruthy()
+    expect(screen.getByText('遮光帘')).toBeTruthy()
   })
 
   it('点击分类触发 onSelect', () => {
@@ -77,9 +65,10 @@ describe('CategoryTree (#563)', () => {
         onEdit={onEdit}
       />
     )
-    // 找到"窗帘"行的编辑按钮（Pencil 图标 mock 为 icon-pencil）
     const editButtons = document.querySelectorAll('[data-testid="icon-pencil"]')
-    expect(editButtons.length).toBeGreaterThan(0)
+    expect(editButtons.length).toBe(3)
+    fireEvent.click(editButtons[0])
+    expect(onEdit).toHaveBeenCalledWith(mockCategories[0])
   })
 
   it('点击删除按钮触发 onDelete', () => {
@@ -91,33 +80,72 @@ describe('CategoryTree (#563)', () => {
       />
     )
     const deleteButtons = document.querySelectorAll('[data-testid="icon-trash2"]')
-    expect(deleteButtons.length).toBeGreaterThan(0)
+    expect(deleteButtons.length).toBe(3)
+    fireEvent.click(deleteButtons[1])
+    expect(onDelete).toHaveBeenCalledWith(mockCategories[1])
   })
 
-  it('一级分类显示添加子分类按钮', () => {
-    const onAddChild = vi.fn()
+  // ── 上下移动（issue #2905）──
+
+  it('点击上移按钮触发 onMoveUp', () => {
+    const onMoveUp = vi.fn()
     render(
       <CategoryTree
         categories={mockCategories}
-        onAddChild={onAddChild}
+        onMoveUp={onMoveUp}
       />
     )
-    // Plus 图标（添加子分类）
-    const addButtons = document.querySelectorAll('[data-testid="icon-plus"]')
-    expect(addButtons.length).toBeGreaterThan(0)
+    const upButtons = document.querySelectorAll('[data-testid="icon-chevron-up"]')
+    expect(upButtons.length).toBe(3)
+    fireEvent.click(upButtons[1])
+    expect(onMoveUp).toHaveBeenCalledWith(mockCategories[1])
   })
 
-  it('展开/折叠切换', () => {
-    render(<CategoryTree categories={mockCategories} />)
-    // 子分类初始可见（expanded 默认为 true）
-    expect(screen.getByText('遮光窗帘')).toBeTruthy()
+  it('点击下移按钮触发 onMoveDown', () => {
+    const onMoveDown = vi.fn()
+    render(
+      <CategoryTree
+        categories={mockCategories}
+        onMoveDown={onMoveDown}
+      />
+    )
+    const downButtons = document.querySelectorAll('[data-testid="icon-chevron-down"]')
+    expect(downButtons.length).toBe(3)
+    fireEvent.click(downButtons[0])
+    expect(onMoveDown).toHaveBeenCalledWith(mockCategories[0])
+  })
 
-    // 点击展开/折叠按钮（第一个 ChevronDown 是父级"窗帘"的 toggle）
-    const allToggles = screen.getAllByTestId('icon-chevron-down')
-    // 第一个是父级"窗帘"的可见 toggle
-    fireEvent.click(allToggles[0])
-    // 折叠后子分类不可见
-    expect(screen.queryByText('遮光窗帘')).toBeNull()
-    expect(screen.queryByText('纱帘')).toBeNull()
+  it('首行上移按钮被禁用', () => {
+    render(
+      <CategoryTree
+        categories={mockCategories}
+        onMoveUp={vi.fn()}
+      />
+    )
+    const upButtons = document.querySelectorAll('[data-testid="icon-chevron-up"]')
+    const firstBtn = upButtons[0].closest('button') as HTMLButtonElement
+    const secondBtn = upButtons[1].closest('button') as HTMLButtonElement
+    expect(firstBtn.disabled).toBe(true)
+    expect(secondBtn.disabled).toBe(false)
+  })
+
+  it('末行下移按钮被禁用', () => {
+    render(
+      <CategoryTree
+        categories={mockCategories}
+        onMoveDown={vi.fn()}
+      />
+    )
+    const downButtons = document.querySelectorAll('[data-testid="icon-chevron-down"]')
+    const lastBtn = downButtons[2].closest('button') as HTMLButtonElement
+    const middleBtn = downButtons[1].closest('button') as HTMLButtonElement
+    expect(lastBtn.disabled).toBe(true)
+    expect(middleBtn.disabled).toBe(false)
+  })
+
+  it('未提供 onMoveUp/onMoveDown 时不渲染移动按钮', () => {
+    render(<CategoryTree categories={mockCategories} />)
+    expect(document.querySelectorAll('[data-testid="icon-chevron-up"]').length).toBe(0)
+    expect(document.querySelectorAll('[data-testid="icon-chevron-down"]').length).toBe(0)
   })
 })
