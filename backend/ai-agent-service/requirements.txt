@@ -22,7 +22,7 @@ pdfplumber==0.11.4
 numpy==1.26.4
 
 # SSE
-sse-starlette==2.2.1
+sse-starlette==3.4.8
 
 # 数据库
 asyncpg==0.30.0
