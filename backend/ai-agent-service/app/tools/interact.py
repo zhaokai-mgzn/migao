@@ -174,6 +174,7 @@ class InteractTool(BaseTool):
         cancelValue: str = "取消",
         formFields: Optional[List[Dict[str, str]]] = None,
         submitLabel: str = "提交",
+        pageMeta: Optional[Dict[str, Any]] = None,
     ) -> ToolResult:
         """执行交互组件请求
 
@@ -190,6 +191,8 @@ class InteractTool(BaseTool):
             cancelLabel: 取消按钮文字
             confirmValue: 确认按钮值
             cancelValue: 取消按钮值
+            pageMeta: choice 组件分页元数据（可选，如 processing_item_query
+                返回的 pageMeta，前端据此渲染翻页按钮，无需 LLM 参与）
 
         Returns:
             ToolResult: 包含交互组件定义
@@ -229,6 +232,12 @@ class InteractTool(BaseTool):
                 "title": title,
                 "options": options,
             }
+            # pageMeta 透传：加工项/商品列表分页场景（processing_item_query 返回的
+            # pageMeta 提示 LLM 原样透传，前端 ChoiceCard 据此渲染翻页按钮）。
+            # 生产回归（sess_fba38395ed094a9d）：签名缺该参数 → TypeError 崩溃，
+            # 用户选完分类后 agent 无回复。https://github.com/zhaokai-mgzn/migao/issues/2892
+            if pageMeta is not None:
+                interactive_data["pageMeta"] = pageMeta
 
         elif component == "confirm":
             # 处理 LLM 可能传入 JSON 字符串而非数组的问题

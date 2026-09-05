@@ -642,12 +642,24 @@ async def _execute_tool_safe(tool, tool_args: dict, tool_context, state: dict) -
         )
         logger.info(f"[tool-exec] {tool_name} done success={result.success}")
     except asyncio.TimeoutError:
-        logger.error(f"[tool-exec] {tool_name} TIMEOUT 30s | args={json.dumps(LogSanitizer.sanitize_tree(tool_args), ensure_ascii=False, default=str)[:300]}")
+        logger.error(
+            "[tool-exec] {} TIMEOUT 30s | args={}",
+            tool_name,
+            json.dumps(LogSanitizer.sanitize_tree(tool_args), ensure_ascii=False, default=str)[:300],
+        )
         err = json.dumps({"success": False, "error": "timeout", "message": "工具执行超时"}, ensure_ascii=False)
         return err, {"success": False, "error": "timeout"}
     except Exception as e:
+        # 生产回归（sess_fba38395ed094a9d）：此前用 f-string 把 args JSON 拼进消息文本，
+        # loguru 因 exc_info=True 触发 message.format()，JSON 里的未配对花括号（如截断的
+        # {"component":...）二次抛错（ValueError: unmatched '{'），穿透 except 掩盖真实
+        # TypeError，agent 流崩溃且 assistant 消息不落库。
+        # 修复：参数化占位符传参 —— args 作为 format 参数不会被再次解析。
         logger.error(
-            f"[tool-exec] {tool_name} ERROR: {e} | args={json.dumps(LogSanitizer.sanitize_tree(tool_args), ensure_ascii=False, default=str)[:500]}",
+            "[tool-exec] {} ERROR: {} | args={}",
+            tool_name,
+            e,
+            json.dumps(LogSanitizer.sanitize_tree(tool_args), ensure_ascii=False, default=str)[:500],
             exc_info=True,
         )
         err = json.dumps({"success": False, "error": "tool_execution_failed",

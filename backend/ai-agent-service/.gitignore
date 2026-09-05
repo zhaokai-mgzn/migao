@@ -8,3 +8,4 @@ venv/
 .ruff_cache/
 logs/
 .venv311/
+.venv
