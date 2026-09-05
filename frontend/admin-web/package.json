@@ -17,7 +17,7 @@
     "dayjs": "^1.11.23",
     "dompurify": "^3.4.14",
     "lucide-react": "^1.38.0",
-    "next": "^14.2.18",
+    "next": "^16.3.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-markdown": "^10.1.0",
