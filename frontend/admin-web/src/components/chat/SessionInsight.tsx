@@ -1,15 +1,16 @@
 'use client'
 
 /**
- * 会话洞察 — 米宝（B端工作助手）会话的右侧工作台账抽屉
+ * 会话简报 — 米宝（B端工作助手）会话的右侧业务简报抽屉
  *
- * 信息架构（依据米宝定位：面向商家的智能工作助手，
- * 「查询 → 校验 → confirm 确认 → 写操作 → 追问建议」的工具链工作范式）：
- *   1. 概览     — 米宝身份 + 会话状态 + 已触达业务域
- *   2. 待确认   — 米宝在等待用户确认的交互卡（写操作安全闸）
- *   3. 处理进度 — 工具调用时间线：做了什么、写到哪、哪里失败
- *   4. 业务对象 — 会话涉及的订单/商品/物流/售后/客户，点击可追问
- *   5. 会话信息 — 消息数/历时 + 会话标识（调试用，弱化展示）
+ * 信息架构（UI-019 / issue #2897，从「工具台账」改为「业务简报」——
+ * 商家用户不关心 agent 调用了哪些工具，只关心业务结果）：
+ *   1. 会话结论   — 业务语言摘要：查询聚合 / 写操作完成 / 失败 / 待确认
+ *   2. 需要你处理 — 待确认安全闸 + 失败操作（业务化原因）
+ *   3. 办理结果   — 业务对象明细行（状态/金额/客户，点击跳详情或追问）
+ *   4. 接下来可以问 — 复用 agent 已生成的后续建议，点击即发送
+ *   5. 会话信息   — 消息数/历时 + 会话标识（调试用，弱化展示）
+ * 不再展示工具调用时间线/领域计数等机器语言。
  */
 import { useState, useMemo, useCallback, type ComponentType, type ReactNode } from 'react'
 import {
@@ -18,83 +19,35 @@ import {
   AlertTriangle,
   CheckCircle2,
   XCircle,
-  Loader2,
   ShoppingBag,
   Package,
   Truck,
   RotateCcw,
   Users,
   Layers,
-  Boxes,
-  BarChart3,
-  UserCog,
-  Settings,
-  Zap,
-  Hash,
-  Copy,
-  Check,
+  ChevronRight,
   MessageSquare,
   Clock,
+  Copy,
+  Check,
 } from 'lucide-react'
+import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { useChatStore } from '@/store/chat'
 import {
-  extractToolEvents,
+  buildSessionBrief,
   detectPendingInteraction,
-  extractEntities,
-  groupEntities,
-  DOMAIN_LABELS,
-  type InsightDomain,
+  extractFailedActions,
+  extractLedgerRows,
+  collectSuggestions,
+  type BriefKind,
   type EntityType,
-  type NormalizedToolCall,
+  type LedgerRow,
 } from '@/lib/session-insight'
-
-type IconComponent = ComponentType<{ className?: string }>
-
-// ─── 领域展示元信息 ─────────────────────────────────
-
-const DOMAIN_ICONS: Record<InsightDomain, IconComponent> = {
-  order: ShoppingBag,
-  product: Package,
-  logistics: Truck,
-  aftersale: RotateCcw,
-  customer: Users,
-  inventory: Boxes,
-  staff: UserCog,
-  settings: Settings,
-  data: BarChart3,
-  workflow: Zap,
-}
-
-const DOMAIN_ICON_CLASSES: Record<InsightDomain, string> = {
-  order: 'text-blue-500',
-  product: 'text-amber-500',
-  logistics: 'text-green-500',
-  aftersale: 'text-red-500',
-  customer: 'text-indigo-500',
-  inventory: 'text-teal-500',
-  staff: 'text-slate-500',
-  settings: 'text-gray-400',
-  data: 'text-violet-500',
-  workflow: 'text-purple-500',
-}
-
-const DOMAIN_CHIP_CLASSES: Record<InsightDomain, string> = {
-  order: 'bg-blue-50 text-blue-600 border-blue-200',
-  product: 'bg-amber-50 text-amber-600 border-amber-200',
-  logistics: 'bg-green-50 text-green-600 border-green-200',
-  aftersale: 'bg-red-50 text-red-600 border-red-200',
-  customer: 'bg-indigo-50 text-indigo-600 border-indigo-200',
-  inventory: 'bg-teal-50 text-teal-600 border-teal-200',
-  staff: 'bg-slate-100 text-slate-600 border-slate-200',
-  settings: 'bg-gray-100 text-gray-600 border-gray-200',
-  data: 'bg-violet-50 text-violet-600 border-violet-200',
-  workflow: 'bg-purple-50 text-purple-600 border-purple-200',
-}
 
 // ─── 业务对象展示元信息 ─────────────────────────────
 
-const ENTITY_ICONS: Record<EntityType, IconComponent> = {
+const ENTITY_ICONS: Record<EntityType, ComponentType<{ className?: string }>> = {
   order: ShoppingBag,
   product: Package,
   logistics: Truck,
@@ -112,26 +65,47 @@ const ENTITY_ICON_CLASSES: Record<EntityType, string> = {
   processing: 'text-purple-500',
 }
 
-const ENTITY_CHIP_CLASSES: Record<EntityType, string> = {
-  order: 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100',
-  product: 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100',
-  logistics: 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100',
-  aftersale: 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100',
-  customer: 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100',
-  processing: 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100',
+/** 订单状态 → 业务文案与配色（办理结果行） */
+const ORDER_STATUS_META: Record<string, { label: string; className: string }> = {
+  pending: { label: '待确认', className: 'bg-amber-50 text-amber-700 border-amber-200' },
+  confirmed: { label: '已确认', className: 'bg-blue-50 text-blue-700 border-blue-200' },
+  producing: { label: '生产中', className: 'bg-purple-50 text-purple-700 border-purple-200' },
+  shipped: { label: '已发货', className: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
+  completed: { label: '已完成', className: 'bg-green-50 text-green-700 border-green-200' },
+  cancelled: { label: '已取消', className: 'bg-neutral-50 text-neutral-600 border-neutral-200' },
 }
 
-// ─── 失败工具的修复建议 ─────────────────────────────
-
-function errorSuggestion(tool: NormalizedToolCall): string | null {
-  const result = tool.result
-  if (!result || typeof result !== 'object') return null
-  const rec = result as Record<string, unknown>
-  const value = rec.suggestion ?? rec.message ?? rec.error
-  return typeof value === 'string' && value.trim() ? value.trim() : null
+function statusBadge(type: EntityType, status?: string) {
+  if (!status) return null
+  if (type === 'order' && ORDER_STATUS_META[status]) {
+    const meta = ORDER_STATUS_META[status]
+    return (
+      <span className={cn('inline-flex items-center px-1.5 py-px rounded text-[10px] font-medium border', meta.className)}>
+        {meta.label}
+      </span>
+    )
+  }
+  // 非订单域状态直接展示业务原文（如物流「运输中」）
+  return (
+    <span className="inline-flex items-center px-1.5 py-px rounded text-[10px] font-medium border bg-neutral-50 text-neutral-600 border-neutral-200">
+      {status}
+    </span>
+  )
 }
 
-// ═══════════════════════════════════════════════════
+function fmtAmount(n: number): string {
+  return `¥${n.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
+// ─── 会话结论行图标（按 kind 着色） ─────────────────────
+
+const BRIEF_ICONS: Record<BriefKind, { icon: ComponentType<{ className?: string }>; className: string }> = {
+  done: { icon: CheckCircle2, className: 'text-green-500' },
+  failed: { icon: XCircle, className: 'text-red-500' },
+  pending: { icon: AlertTriangle, className: 'text-amber-500' },
+}
+
+// ═══════════════════════════════════════════════════════════
 
 interface SessionInsightProps {
   /** 抽屉是否展开（默认收起） */
@@ -156,25 +130,18 @@ export default function SessionInsight({ isOpen = false, onClose }: SessionInsig
     [sessions, currentSessionId],
   )
 
-  // 工作台账：工具时间线（最新在前）
-  const toolEvents = useMemo(() => extractToolEvents(messages), [messages])
-
-  // 概览领域计数（保持工具调用顺序）
-  const domainCounts = useMemo(() => {
-    const counts = new Map<InsightDomain, number>()
-    for (const event of toolEvents) {
-      counts.set(event.meta.domain, (counts.get(event.meta.domain) || 0) + 1)
-    }
-    return Array.from(counts.entries())
-  }, [toolEvents])
-
+  // 会话结论（业务语言，确定性推导）
+  const brief = useMemo(() => buildSessionBrief(messages), [messages])
   // 待确认交互（写操作安全闸）
   const pendingInteraction = useMemo(() => detectPendingInteraction(messages), [messages])
+  // 失败操作（需要你处理）
+  const failedActions = useMemo(() => extractFailedActions(messages), [messages])
+  // 办理结果明细
+  const ledgerRows = useMemo(() => extractLedgerRows(messages), [messages])
+  // 接下来可以问
+  const suggestions = useMemo(() => collectSuggestions(messages), [messages])
 
-  // 业务对象（跨来源去重）
-  const entityGroups = useMemo(() => groupEntities(extractEntities(messages)), [messages])
-
-  const handleEntityClick = useCallback(
+  const handleSend = useCallback(
     (followUp: string) => { sendMessage(followUp) },
     [sendMessage],
   )
@@ -195,6 +162,10 @@ export default function SessionInsight({ isOpen = false, onClose }: SessionInsig
   }, [currentSession?.created_at, currentSession?.updated_at])
 
   if (!currentSessionId) return null
+
+  const hasBrief = brief.lines.length > 0 || brief.totals.orders > 0
+  const hasActions = Boolean(pendingInteraction) || failedActions.length > 0
+  const isEmpty = !hasBrief && !hasActions && ledgerRows.length === 0
 
   return (
     <>
@@ -219,14 +190,14 @@ export default function SessionInsight({ isOpen = false, onClose }: SessionInsig
       >
         {/* 头部 */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-          <h3 className="text-sm font-semibold text-gray-800">会话洞察</h3>
-          <button onClick={onClose} className="p-1 rounded hover:bg-gray-100 transition-colors" title="关闭洞察">
+          <h3 className="text-sm font-semibold text-gray-800">会话简报</h3>
+          <button onClick={onClose} className="p-1 rounded hover:bg-gray-100 transition-colors" title="关闭会话简报">
             <X className="w-4 h-4 text-gray-400" />
           </button>
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          {/* ─── 概览：米宝身份 + 已触达业务域 ─── */}
+          {/* ─── 概览：米宝身份 + 会话状态 ─── */}
           <div className="px-4 py-3 border-b border-gray-100">
             <div className="flex items-center gap-2.5">
               <span className="w-8 h-8 rounded-lg bg-primary-50 text-primary-600 flex items-center justify-center flex-shrink-0">
@@ -245,144 +216,120 @@ export default function SessionInsight({ isOpen = false, onClose }: SessionInsig
                 {sessionStatus === 'active' ? '进行中' : '已结束'}
               </span>
             </div>
-
-            {domainCounts.length > 0 && (
-              <div className="mt-2.5 flex flex-wrap gap-1.5">
-                {domainCounts.map(([domain, count]) => (
-                  <span
-                    key={domain}
-                    className={cn(
-                      'inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border',
-                      DOMAIN_CHIP_CLASSES[domain],
-                    )}
-                  >
-                    {DOMAIN_LABELS[domain]} ×{count}
-                  </span>
-                ))}
-              </div>
-            )}
           </div>
 
-          {/* ─── 待确认：写操作安全闸 ─── */}
-          {pendingInteraction && (
-            <div
-              data-testid="insight-pending-confirm"
-              className="mx-3 mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 flex items-start gap-2"
-            >
-              <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
-              <div className="min-w-0">
-                <p className="text-xs font-semibold text-amber-800">米宝在等你确认</p>
-                {pendingInteraction.title && (
-                  <p className="text-[11px] text-amber-700 mt-0.5 truncate">{pendingInteraction.title}</p>
-                )}
-                <p className="text-[10px] text-amber-600 mt-0.5">请回到对话中完成确认，米宝才会继续</p>
-              </div>
-            </div>
-          )}
-
-          {/* ─── 处理进度：工具调用时间线 ─── */}
-          <div className="px-3 py-3 border-b border-gray-100">
-            <h4 className="px-1 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">处理进度</h4>
-
-            {toolEvents.length === 0 ? (
-              <div className="text-xs text-gray-400 text-center py-6 bg-gray-50 rounded-lg leading-relaxed">
-                暂无处理记录
+          {isEmpty ? (
+            /* ─── 空态：友好引导 ─── */
+            <div className="px-4 py-10 text-center">
+              <p className="text-xs text-gray-400 leading-relaxed">
+                本会话还没有记录
                 <br />
-                <span className="text-[11px]">向米宝提问后，这里会记录每一步操作</span>
+                <span className="text-[11px]">向米宝提问后，这里会汇总本次会话的成果与待办</span>
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* ─── 会话结论 ─── */}
+              <div className="px-3 py-3 border-b border-gray-100" data-testid="brief-conclusion">
+                <h4 className="px-1 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">会话结论</h4>
+                <div className="space-y-1.5">
+                  {brief.lines.map((line, idx) => {
+                    const meta = BRIEF_ICONS[line.kind]
+                    const Icon = meta.icon
+                    return (
+                      <div key={`${line.kind}-${idx}`} className="flex items-start gap-2 rounded-lg border border-gray-200 bg-white px-2.5 py-2">
+                        <Icon className={cn('w-3.5 h-3.5 mt-0.5 flex-shrink-0', meta.className)} />
+                        <span className="text-xs text-gray-700 leading-relaxed break-all">{line.text}</span>
+                      </div>
+                    )
+                  })}
+                  {brief.totals.orders > 0 && (
+                    <div className="flex items-center gap-2 rounded-lg bg-primary-50/60 border border-primary-100 px-2.5 py-2">
+                      <span className="text-xs font-medium text-primary-700 leading-relaxed">
+                        涉及订单 {brief.totals.orders} 笔
+                        {brief.totals.amount !== null && ` · 合计 ¥${Math.round(brief.totals.amount).toLocaleString('zh-CN')}`}
+                      </span>
+                    </div>
+                  )}
+                </div>
               </div>
-            ) : (
-              <div className="space-y-1.5">
-                {toolEvents.map((event, idx) => {
-                  const DomainIcon = DOMAIN_ICONS[event.meta.domain]
-                  const isError = event.tool.status === 'error'
-                  const isRunning = event.tool.status === 'running'
-                  const suggestion = isError ? errorSuggestion(event.tool) : null
 
-                  return (
-                    <div
-                      key={`${event.messageId}-${event.tool.name}-${idx}`}
-                      className={cn(
-                        'flex items-start gap-2 rounded-lg border px-2.5 py-2',
-                        isError ? 'border-red-100 bg-red-50/40' : 'border-gray-200 bg-white',
-                      )}
-                    >
-                      <DomainIcon className={cn('w-3.5 h-3.5 mt-0.5 flex-shrink-0', DOMAIN_ICON_CLASSES[event.meta.domain])} />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <span className={cn('text-xs font-medium truncate', isError ? 'text-red-700' : 'text-gray-700')}>
-                            {event.meta.label}
-                          </span>
-                          {event.meta.write && (
-                            <span className="inline-flex items-center px-1 py-px rounded bg-orange-50 text-orange-600 border border-orange-200 text-[9px] font-medium flex-shrink-0">
-                              写
-                            </span>
+              {/* ─── 需要你处理 ─── */}
+              <div className="px-3 py-3 border-b border-gray-100" data-testid="brief-actions">
+                <h4 className="px-1 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">需要你处理</h4>
+
+                {hasActions ? (
+                  <div className="space-y-1.5">
+                    {/* 待确认：写操作安全闸 */}
+                    {pendingInteraction && (
+                      <div
+                        data-testid="insight-pending-confirm"
+                        className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 flex items-start gap-2"
+                      >
+                        <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold text-amber-800">米宝在等你确认</p>
+                          {pendingInteraction.title && (
+                            <p className="text-[11px] text-amber-700 mt-0.5 truncate">{pendingInteraction.title}</p>
+                          )}
+                          <p className="text-[10px] text-amber-600 mt-0.5">请回到对话中完成确认，米宝才会继续</p>
+                        </div>
+                      </div>
+                    )}
+                    {/* 失败操作：业务化原因 */}
+                    {failedActions.map((action, idx) => (
+                      <div key={`failed-${idx}`} className="flex items-start gap-2 rounded-lg border border-red-100 bg-red-50/40 px-2.5 py-2">
+                        <XCircle className="w-3.5 h-3.5 text-red-500 flex-shrink-0 mt-0.5" />
+                        <div className="min-w-0">
+                          <p className="text-xs font-medium text-red-700">{action.label}失败</p>
+                          {action.reason && (
+                            <p className="text-[11px] text-red-500 mt-0.5 leading-relaxed break-all">{action.reason}</p>
                           )}
                         </div>
-                        {suggestion && (
-                          <p className="text-[11px] text-red-500 mt-0.5 leading-relaxed break-all">
-                            ↳ <span>{suggestion}</span>
-                          </p>
-                        )}
                       </div>
-                      {isRunning ? (
-                        <Loader2 className="w-3.5 h-3.5 text-amber-500 flex-shrink-0 mt-0.5 animate-spin" />
-                      ) : isError ? (
-                        <XCircle className="w-3.5 h-3.5 text-red-500 flex-shrink-0 mt-0.5" />
-                      ) : (
-                        <CheckCircle2 className="w-3.5 h-3.5 text-green-500 flex-shrink-0 mt-0.5" />
-                      )}
-                    </div>
-                  )
-                })}
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-[11px] text-gray-400 text-center py-4 bg-gray-50 rounded-lg">暂无待办</div>
+                )}
               </div>
-            )}
-          </div>
 
-          {/* ─── 业务对象：实体收集 + 点击追问 ─── */}
-          <div className="px-3 py-3">
-            <h4 className="px-1 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">业务对象</h4>
+              {/* ─── 办理结果 ─── */}
+              <div className="px-3 py-3 border-b border-gray-100" data-testid="brief-ledger">
+                <h4 className="px-1 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">办理结果</h4>
+                {ledgerRows.length === 0 ? (
+                  <div className="text-[11px] text-gray-400 text-center py-4 bg-gray-50 rounded-lg">
+                    查询订单、商品或物流后，会自动汇总到这里
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    {ledgerRows.map(row => (
+                      <LedgerRowItem key={`${row.type}-${row.label}`} row={row} onSend={handleSend} />
+                    ))}
+                  </div>
+                )}
+              </div>
 
-            {entityGroups.length === 0 ? (
-              <div className="text-xs text-gray-400 text-center py-6 bg-gray-50 rounded-lg leading-relaxed">
-                暂无业务对象
-                <br />
-                <span className="text-[11px]">查询订单、商品或物流后</span>
-                <br />
-                <span className="text-[11px]">会自动收集到这里，点击标签可快速追问</span>
-              </div>
-            ) : (
-              <div>
-                {entityGroups.map(group => {
-                  const GroupIcon = ENTITY_ICONS[group.type]
-                  return (
-                    <div key={group.type} className="mb-3 last:mb-0">
-                      <div className="flex items-center gap-1.5 mb-1.5">
-                        <GroupIcon className={cn('w-3.5 h-3.5', ENTITY_ICON_CLASSES[group.type])} />
-                        <span className="text-[11px] font-semibold text-gray-600">{group.label}</span>
-                        <span className="text-[10px] text-gray-400">×{group.entities.length}</span>
-                      </div>
-                      <div className="flex flex-wrap gap-1.5">
-                        {group.entities.map(entity => (
-                          <button
-                            key={`${entity.type}-${entity.value}`}
-                            onClick={() => handleEntityClick(entity.followUp)}
-                            className={cn(
-                              'inline-flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium transition-colors cursor-pointer border',
-                              ENTITY_CHIP_CLASSES[entity.type],
-                            )}
-                            title={`点击追问：${entity.followUp}`}
-                          >
-                            <Hash className="w-3 h-3" />
-                            {entity.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
+              {/* ─── 接下来可以问 ─── */}
+              {suggestions.length > 0 && (
+                <div className="px-3 py-3" data-testid="brief-questions">
+                  <h4 className="px-1 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">接下来可以问</h4>
+                  <div className="flex flex-wrap gap-1.5">
+                    {suggestions.map(suggestion => (
+                      <button
+                        key={suggestion}
+                        onClick={() => handleSend(suggestion)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[11px] font-medium text-primary-700 bg-primary-50 border border-primary-200 hover:bg-primary-100 transition-colors cursor-pointer"
+                      >
+                        {suggestion}
+                        <ChevronRight className="w-3 h-3" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
         </div>
 
         {/* ─── 会话信息（弱化展示，调试用） ─── */}
@@ -412,6 +359,48 @@ export default function SessionInsight({ isOpen = false, onClose }: SessionInsig
         </div>
       </div>
     </>
+  )
+}
+
+// ─── 办理结果明细行 ──────────────────────────────────
+
+function LedgerRowItem({ row, onSend }: { row: LedgerRow; onSend: (followUp: string) => void }) {
+  const Icon = ENTITY_ICONS[row.type]
+  const content = (
+    <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-2.5 py-2 w-full text-left">
+      <Icon className={cn('w-3.5 h-3.5 flex-shrink-0', ENTITY_ICON_CLASSES[row.type])} />
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs font-medium text-gray-700 truncate">{row.label}</span>
+          {statusBadge(row.type, row.status)}
+        </div>
+        {(row.amount !== undefined || row.customer) && (
+          <p className="text-[11px] text-gray-500 mt-0.5 truncate">
+            {row.amount !== undefined && <span className="font-semibold text-red-500">{fmtAmount(row.amount)}</span>}
+            {row.amount !== undefined && row.customer && <span> · </span>}
+            {row.customer}
+          </p>
+        )}
+      </div>
+      <ChevronRight className="w-3.5 h-3.5 text-gray-300 flex-shrink-0" />
+    </div>
+  )
+
+  if (row.href) {
+    return (
+      <Link
+        href={row.href}
+        className="block hover:opacity-90 transition-opacity"
+        title={`查看${row.label} 详情`}
+      >
+        {content}
+      </Link>
+    )
+  }
+  return (
+    <button onClick={() => onSend(row.followUp)} className="block w-full hover:opacity-90 transition-opacity cursor-pointer" title={row.followUp}>
+      {content}
+    </button>
   )
 }
 

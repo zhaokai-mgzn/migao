@@ -1,4 +1,4 @@
-// case_ids: UI-009
+// case_ids: UI-009, UI-019
 /**
  * 聊天 SSE E2E 测试
  *
@@ -270,7 +270,7 @@ test.describe('聊天 — 错误处理', () => {
   })
 })
 
-test.describe('聊天 — 洞察抽屉', () => {
+test.describe('聊天 — 会话简报抽屉（UI-019）', () => {
   let chatPage: ChatPage
 
   test.beforeEach(async ({ page }) => {
@@ -282,15 +282,23 @@ test.describe('聊天 — 洞察抽屉', () => {
     await expect(chatPage.messageInput).toBeVisible({ timeout: 10_000 })
   })
 
-  test('默认状态下洞察抽屉收起', async () => {
+  test('默认状态下会话简报抽屉收起', async () => {
     await expect(chatPage.insightDrawer).toBeHidden()
     await expect(chatPage.insightOverlay).not.toBeVisible()
   })
 
-  test('点击洞察按钮展开抽屉', async ({ page }) => {
+  test('点击会话简报按钮展开抽屉', async ({ page }) => {
     await chatPage.insightToggleBtn.click()
     await expect(chatPage.insightDrawer).toBeVisible()
-    await expect(page.getByText('会话洞察')).toBeVisible()
+    await expect(page.getByText('会话简报')).toBeVisible()
+  })
+
+  test('空会话抽屉展示友好空态（业务语言，无工具时间线）', async ({ page }) => {
+    await chatPage.insightToggleBtn.click()
+    await expect(chatPage.insightDrawer).toBeVisible()
+    // 空态引导文案（纯业务语言，不出现机器词汇）
+    await expect(page.getByText(/本会话还没有记录/)).toBeVisible()
+    await expect(page.getByText('处理进度')).toHaveCount(0)
   })
 
   test('点击遮罩关闭抽屉', async ({ page }) => {

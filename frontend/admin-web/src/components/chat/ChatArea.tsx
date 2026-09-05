@@ -55,10 +55,10 @@ function ChatHeader({
                 : 'text-neutral-500 hover:text-neutral-700 hover:bg-neutral-100'
             )}
             data-testid="insight-toggle-btn"
-            title={insightOpen ? '收起洞察' : '打开会话洞察'}
+            title={insightOpen ? '收起会话简报' : '打开会话简报'}
           >
             <PanelRightOpen className="w-3.5 h-3.5" />
-            洞察
+            会话简报
           </button>
         </div>
       </div>
