@@ -116,6 +116,9 @@ function makeDefaultChatState(overrides: Record<string, unknown> = {}) {
     quickActions: [],
     isLoadingQuickActions: false,
     error: null,
+    choiceSelections: {},
+    toggleChoiceSelection: vi.fn(),
+    clearChoiceSelections: vi.fn(),
     ...overrides,
   }
 }
@@ -464,12 +467,15 @@ describe('InteractiveMessage', () => {
     expect(sendMessage).toHaveBeenCalledWith('窗帘')
   })
 
-  it('allows selecting multiple options when multiSelect (加工项多选)', () => {
-    // 回归 #2894: 加工项 choice 需支持多次点击选择（每个选项分别发送 label），
-    // 点击第一个选项后卡片不得锁死，需能继续选择第二个。
+  it('multiSelect: 点击选项仅本地勾选，不触发 agent 回复；完成按钮一次性提交', () => {
+    // issue #2896: 加工项多选曾「点一项 sendMessage 一条」→ agent 逐条回复
+    // （收到单个选项即汇总确认，多选流程被打断）。重设计为本地勾选累积
+    // → 「完成选择」按钮一次性提交全部已选。
     const sendMessage = vi.fn()
+    const toggleChoiceSelection = vi.fn()
+    const clearChoiceSelections = vi.fn()
     mockUseChatStore.mockReturnValue(
-      makeDefaultChatState({ sendMessage }),
+      makeDefaultChatState({ sendMessage, toggleChoiceSelection, clearChoiceSelections, choiceSelections: {} }),
     )
 
     const interactive = {
@@ -481,25 +487,105 @@ describe('InteractiveMessage', () => {
         { label: '韩式折边', value: 'pi_pleat' },
         { label: 'S钩安装', value: 'pi_shook' },
       ],
+      pageMeta: {
+        current: 1,
+        total: 2,
+        totalCount: 12,
+        tool: 'processing_item_query',
+        params: '{"page":1,"size":10}',
+      },
     }
     render(<InteractiveMessage interactive={interactive} />)
 
+    // 点击选项：只勾选累积，不发送（不触发 agent 回复）
     fireEvent.click(screen.getByText('打孔加工'))
     fireEvent.click(screen.getByText('韩式折边'))
+    expect(sendMessage).not.toHaveBeenCalled()
+    expect(toggleChoiceSelection).toHaveBeenCalledTimes(2)
+    expect(toggleChoiceSelection).toHaveBeenCalledWith('', 'processing_item_query', '打孔加工')
+    expect(toggleChoiceSelection).toHaveBeenCalledWith('', 'processing_item_query', '韩式折边')
 
-    // 分别发送 label，无需点击确认按钮
-    expect(sendMessage).toHaveBeenCalledTimes(2)
-    expect(sendMessage).toHaveBeenCalledWith('打孔加工')
-    expect(sendMessage).toHaveBeenCalledWith('韩式折边')
+    // 完成按钮出现并一次性提交（story 里勾选在 store；组件用 store 的 choiceSelections）
+  })
+
+  it('multiSelect: 勾选状态从 store 读取，完成按钮一次性提交已选列表', () => {
+    // issue #2896: 已选项来自 store（跨页保留），点「完成选择」一次性
+    // 提交「已选加工项：A、B」，并清空 store 勾选、锁定卡片。
+    const sendMessage = vi.fn()
+    const toggleChoiceSelection = vi.fn()
+    const clearChoiceSelections = vi.fn()
+    mockUseChatStore.mockReturnValue(
+      makeDefaultChatState({
+        sendMessage,
+        toggleChoiceSelection,
+        clearChoiceSelections,
+        choiceSelections: {
+          ':processing_item_query': ['打孔加工', '韩式折边'],
+        },
+      }),
+    )
+
+    const interactive = {
+      component: 'choice' as const,
+      title: '请选择加工项',
+      multiSelect: true,
+      options: [
+        { label: '打孔加工', value: 'pi_hole' },
+        { label: '韩式折边', value: 'pi_pleat' },
+        { label: 'S钩安装', value: 'pi_shook' },
+      ],
+      pageMeta: {
+        current: 1,
+        total: 2,
+        totalCount: 12,
+        tool: 'processing_item_query',
+        params: '{"page":1,"size":10}',
+      },
+    }
+    render(<InteractiveMessage interactive={interactive} />)
+
+    // 已选项从 store 恢复（高亮），未选项仍可勾选
+    expect(screen.getByText('可多选，已选 2 项')).toBeInTheDocument()
+
+    // 点完成选择：一次性提交全部已选，清空勾选，锁定卡片
+    fireEvent.click(screen.getByText('完成选择（2）'))
+    expect(sendMessage).toHaveBeenCalledWith('已选加工项：打孔加工、韩式折边')
+    expect(clearChoiceSelections).toHaveBeenCalledWith('', 'processing_item_query')
+    expect(sendMessage).toHaveBeenCalledTimes(1)
+  })
+
+  it('multiSelect: 点「不需要加工项」跳过关联', () => {
+    // issue #2896: 提供显式「不需要加工项」入口，无需用户手打文本。
+    const sendMessage = vi.fn()
+    const clearChoiceSelections = vi.fn()
+    mockUseChatStore.mockReturnValue(
+      makeDefaultChatState({ sendMessage, clearChoiceSelections }),
+    )
+
+    const interactive = {
+      component: 'choice' as const,
+      title: '请选择加工项',
+      multiSelect: true,
+      options: [
+        { label: '打孔加工', value: 'pi_hole' },
+        { label: '韩式折边', value: 'pi_pleat' },
+      ],
+    }
+    render(<InteractiveMessage interactive={interactive} />)
+
+    fireEvent.click(screen.getByText('不需要加工项'))
+    expect(sendMessage).toHaveBeenCalledWith('不需要加工项')
+    expect(sendMessage).toHaveBeenCalledTimes(1)
   })
 
   it('keeps pagination visible after selecting when multiSelect (加工项翻页保留)', () => {
-    // 回归 #2894: 分页控件渲染条件曾依赖 !submitted —— 点过一个选项后
+    // 回归 #2894/#2896: 分页控件渲染条件曾依赖 !submitted —— 点过一个选项后
     // 翻页按钮消失，无法翻页浏览/选择其余加工项。multiSelect 模式下
     // PageControls 必须在已选后仍保持可见。
     const sendMessage = vi.fn()
+    const toggleChoiceSelection = vi.fn()
     mockUseChatStore.mockReturnValue(
-      makeDefaultChatState({ sendMessage }),
+      makeDefaultChatState({ sendMessage, toggleChoiceSelection, choiceSelections: {} }),
     )
 
     const interactive = {
@@ -523,9 +609,10 @@ describe('InteractiveMessage', () => {
     // 初始分页控件可见
     expect(screen.getByText('第 1/3 页，共 22 条')).toBeInTheDocument()
 
-    // 选择一个加工项后分页控件仍然可见（不随 submitted 消失）
+    // 勾选一个加工项后分页控件仍然可见（本地勾选，不触发 agent，也不锁卡）
     fireEvent.click(screen.getByText('打孔加工'))
     expect(screen.getByText('第 1/3 页，共 22 条')).toBeInTheDocument()
+    expect(sendMessage).not.toHaveBeenCalled()
 
     // 翻页按钮仍可点击并发送 __PAGE__ 协议消息
     fireEvent.click(screen.getByText('下一页'))

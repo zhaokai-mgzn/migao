@@ -139,6 +139,7 @@ describe('useChatStore (Zustand chat store) — #571', () => {
         quickActions: [],
         isLoadingQuickActions: false,
         error: null,
+        choiceSelections: {},
       })
     })
 
@@ -163,6 +164,53 @@ describe('useChatStore (Zustand chat store) — #571', () => {
       expect(state.quickActions).toEqual([])
       expect(state.isLoadingQuickActions).toBe(false)
       expect(state.error).toBeNull()
+      expect(state.choiceSelections).toEqual({})
+    })
+  })
+
+  // =========================================================================
+  // choiceSelections — 加工项多选勾选（跨页保留，issue #2896）
+  // =========================================================================
+  describe('choiceSelections', () => {
+    it('should toggle selections per session:tool key', () => {
+      const s = useChatStore.getState()
+      act(() => s.toggleChoiceSelection('sess1', 'processing_item_query', '打孔加工'))
+      act(() => s.toggleChoiceSelection('sess1', 'processing_item_query', '韩式折边'))
+      act(() => s.toggleChoiceSelection('sess1', 'processing_item_query', '打孔加工')) // 取消打孔
+
+      const key = 'sess1:processing_item_query'
+      expect(useChatStore.getState().choiceSelections[key]).toEqual(['韩式折边'])
+    })
+
+    it('should isolate selections across sessions (切换会话不串台)', () => {
+      const s = useChatStore.getState()
+      act(() => s.toggleChoiceSelection('sess1', 'processing_item_query', '打孔加工'))
+      act(() => s.toggleChoiceSelection('sess2', 'processing_item_query', '高温定型'))
+
+      expect(useChatStore.getState().choiceSelections['sess1:processing_item_query']).toEqual(['打孔加工'])
+      expect(useChatStore.getState().choiceSelections['sess2:processing_item_query']).toEqual(['高温定型'])
+    })
+
+    it('should clear selections for a session:tool key', () => {
+      const s = useChatStore.getState()
+      act(() => s.toggleChoiceSelection('sess1', 'processing_item_query', '打孔加工'))
+      act(() => s.clearChoiceSelections('sess1', 'processing_item_query'))
+      expect(useChatStore.getState().choiceSelections['sess1:processing_item_query']).toBeUndefined()
+    })
+
+    it('should reset selections when switching session (防跨会话串台)', async () => {
+      const s = useChatStore.getState()
+      act(() => s.toggleChoiceSelection('sess1', 'processing_item_query', '打孔加工'))
+
+      // 模拟切到新会话（fetch 返回空历史）
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ success: true, data: { messages: [] } }),
+      })
+      act(() => { useChatStore.setState({ currentSessionId: 'sess1' }) })
+      await act(async () => { await useChatStore.getState().selectSession('sess2') })
+
+      expect(useChatStore.getState().choiceSelections).toEqual({})
     })
   })
 

@@ -21,6 +21,10 @@ interface ChatState {
   quickActions: QuickAction[]
   isLoadingQuickActions: boolean
   error: string | null
+  // choice 多选勾选（key = `${sessionId}:${tool}`，跨页保留）
+  // 加工项选择场景：点击选项仅本地勾选累积，不触发 agent 回复，
+  // 用户点「完成选择」后一次性提交；翻页后新卡片从 store 恢复已选（issue #2896）
+  choiceSelections: Record<string, string[]>
 
   // 方法
   fetchSessions: () => Promise<void>
@@ -33,6 +37,8 @@ interface ChatState {
   stopStreaming: () => void
   clearCurrentSession: () => void
   fetchQuickActions: () => Promise<void>
+  toggleChoiceSelection: (sessionId: string, tool: string, label: string) => void
+  clearChoiceSelections: (sessionId: string, tool: string) => void
 }
 
 const getToken = () => useAuthStore.getState().accessToken || ''
@@ -70,10 +76,31 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   quickActions: [],
   isLoadingQuickActions: false,
   error: null,
+  choiceSelections: {},
 
   setSearchKeyword: (keyword: string) => set({ searchKeyword: keyword }),
 
-  clearCurrentSession: () => set({ currentSessionId: null, messages: [], error: null }),
+  clearCurrentSession: () => set({ currentSessionId: null, messages: [], error: null, choiceSelections: {} }),
+
+  toggleChoiceSelection: (sessionId: string, tool: string, label: string) => {
+    const key = `${sessionId}:${tool}`
+    set(state => {
+      const current = state.choiceSelections[key] || []
+      const next = current.includes(label)
+        ? current.filter(l => l !== label)
+        : [...current, label]
+      return { choiceSelections: { ...state.choiceSelections, [key]: next } }
+    })
+  },
+
+  clearChoiceSelections: (sessionId: string, tool: string) => {
+    const key = `${sessionId}:${tool}`
+    set(state => {
+      const next = { ...state.choiceSelections }
+      delete next[key]
+      return { choiceSelections: next }
+    })
+  },
 
   fetchQuickActions: async () => {
     set({ isLoadingQuickActions: true })
@@ -198,7 +225,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     }
 
     const requestId = generateId() // 请求去重标记
-    set({ currentSessionId: id, messages: [], isLoadingMessages: true }); persistSessionId(id)
+    set({ currentSessionId: id, messages: [], isLoadingMessages: true, choiceSelections: {} }); persistSessionId(id)
 
     try {
       const data = await chatApi.getHistory(id, getToken())
