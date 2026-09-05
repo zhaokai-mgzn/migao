@@ -13,6 +13,7 @@ SessionStateStore 是跨轮工作状态的单一事实源（PG session_states �
 import pytest
 import json
 from unittest.mock import AsyncMock
+from datetime import timezone
 
 from app.memory.session_state_store import SessionStateStore
 
@@ -134,6 +135,18 @@ class TestCommit:
         """DB 异常返回 False，不抛出"""
         mock_db.execute.side_effect = Exception("DB down")
         assert await store.commit("s1", {"pending_skill": "x"}) is False
+
+    async def test_commit_binds_aware_utc_updated_at(self, store, mock_db):
+        """commit 的 updated_at 必须是 aware UTC
+
+        线上 sess_60238786c0694dbc 实证：naive utcnow 经 asyncpg 按连接时区
+        （Asia/Shanghai）解读 → session_states.updated_at 落库偏移 8h。
+        """
+        assert await store.commit("s1", {"pending_skill": "product"}) is True
+
+        params = mock_db.execute.call_args.args[1]
+        assert params["now"].tzinfo is not None, "updated_at 必须是 timezone-aware"
+        assert params["now"].tzinfo == timezone.utc, "updated_at 必须是 UTC"
 
 
 class TestClear:

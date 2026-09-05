@@ -34,7 +34,7 @@ SESSION_RETENTION_DAYS = 90         # 已关闭会话保留天数
 
 async def _session_auto_close_loop():
     """后台循环：定期扫描并关闭空闲会话 + 每日清理过期已关闭会话（经 SessionService）"""
-    from datetime import datetime
+    from datetime import datetime, timezone
     from app.memory.session_service import SessionService
 
     session_service = SessionService()
@@ -55,7 +55,7 @@ async def _session_auto_close_loop():
                 )
 
             # 2. 每天清理一次过期已关闭会话
-            today = datetime.utcnow().date()
+            today = datetime.now(timezone.utc).date()
             if last_cleanup_date != today:
                 deleted = await session_service.purge(
                     older_than_days=SESSION_RETENTION_DAYS

@@ -9,7 +9,7 @@ get_session, delete_session 等
 import pytest
 import json
 from unittest.mock import patch, AsyncMock, MagicMock, PropertyMock
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.memory.session_memory import SessionMemory
 
@@ -524,6 +524,67 @@ class TestCloseIdleSessions:
         count = await memory.close_idle_sessions(idle_minutes=30)
 
         assert count == 0  # 降级返回0
+
+
+class TestTimestampConsistency:
+    """时间戳一致性（线上 sess_60238786c0694dbc 实证）
+
+    naive datetime.utcnow() 经 asyncpg 写入 timestamptz 列时，被按连接时区
+    （Asia/Shanghai）解读再转 UTC → 落库偏移 8h，同一行出现
+    created_at(21:53) 早于 started_at(次日05:53) 的倒挂，消息 updated_at
+    也全部超前 8h。修复要求：写 PG 的时间戳绑定值必须是 timezone-aware UTC。
+    """
+
+    @staticmethod
+    def _params(mock_db, index):
+        """取第 index 次 execute 调用的绑定参数字典（兼容位置/关键字两种写法）"""
+        call = mock_db.execute.call_args_list[index]
+        return call.args[1] if len(call.args) > 1 else call.kwargs
+
+    async def test_create_session_binds_aware_utc(self, memory, mock_db):
+        """create_session 的 created_at/updated_at 必须是 aware UTC"""
+        await memory.create_session(tenant_id=1, customer_id="user_001")
+
+        params = self._params(mock_db, 0)
+        for key in ("created_at", "updated_at"):
+            assert params[key].tzinfo is not None, f"{key} 必须是 timezone-aware"
+            assert params[key].tzinfo == timezone.utc, f"{key} 必须是 UTC"
+
+    async def test_save_message_binds_aware_utc(self, memory, mock_db):
+        """save_message 的 INSERT created_at 与 UPDATE sessions.updated_at 均为 aware UTC"""
+        await memory.save_message(
+            session_id="sess_1", role="user", content="你好", tenant_id=1
+        )
+
+        insert_params = self._params(mock_db, 0)
+        assert insert_params["created_at"].tzinfo == timezone.utc
+        update_params = self._params(mock_db, 1)
+        assert update_params["updated_at"].tzinfo == timezone.utc
+
+    async def test_close_idle_sessions_binds_aware_utc(self, memory, mock_db):
+        """close_idle_sessions 的 now/cutoff 必须是 aware UTC（与 PG now() 同尺度比较）"""
+        select_result = MockDBResult(rows=[("s1",)])
+        update_result = MockDBResult(rowcount=1)
+        mock_db.execute.side_effect = [select_result, update_result]
+        mock_store = AsyncMock()
+        mock_store.clear = AsyncMock(return_value=True)
+
+        with patch("app.memory.session_memory.SessionStateStore", return_value=mock_store), \
+             patch("app.memory.session_memory.SessionMemory._flush_pending_memories",
+                   new_callable=AsyncMock):
+            await memory.close_idle_sessions(idle_minutes=30)
+
+        params = self._params(mock_db, 1)
+        assert params["now"].tzinfo == timezone.utc
+        assert params["cutoff"].tzinfo == timezone.utc
+
+    async def test_cleanup_closed_sessions_binds_aware_utc(self, memory, mock_db):
+        """cleanup_closed_sessions 的 cutoff 必须是 aware UTC"""
+        mock_db.execute.return_value = MockDBResult(rowcount=3)
+        await memory.cleanup_closed_sessions(older_than_days=90)
+
+        params = self._params(mock_db, 0)
+        assert params["cutoff"].tzinfo == timezone.utc
 
 
 class TestGetHistoryByTokens:
