@@ -19,6 +19,12 @@
 #   rm 自动清理；lock 子命令查看/手动清理（含失效锁）。锁目录在 .git/ 下，
 #   不污染工作区、不进 git。
 #
+# 误删保护（v1.5，2026-09-05 新增）：
+#   rm --delete-branch 曾因 worktree 分支解析歧义误删本地 main（issue #2930）：
+#   ① 改为按 path 从 `git worktree list --porcelain` 权威解析该工作区 HEAD 的分支；
+#   ② 主干分支（main/master）硬保护，拒绝通过 --delete-branch 删除；
+#   ③ 删除前打印实际删除的分支名，便于审计。
+#
 # 环境变量：
 #   MIGAO_WT_BASE=...  # 覆盖工作区根目录（默认仓库父目录下的 migao-wt/）
 #   FORCE_LOCK=1       # 忽略会话锁强制建工作区（危险，仅确认无活跃会话时用）
@@ -160,6 +166,18 @@ cmd_list() {
   lock_list
 }
 
+# 按工作区路径权威解析其 HEAD 引用的分支名（v1.5，替代 branch --show-current：
+# 后者在部分 git 场景下解析歧义，曾导致 rm 误删本地 main，见 issue #2930）。
+# detached HEAD 无 branch 行 → 输出空。
+wt_branch_of() {
+  local wt="$1"
+  git -C "$ROOT" worktree list --porcelain \
+    | grep -A3 "^worktree ${wt}$" \
+    | grep "^branch refs/heads/" \
+    | cut -d' ' -f2- \
+    | sed 's#^refs/heads/##'
+}
+
 cmd_rm() {
   [ $# -ge 1 ] || usage
   local target="$1"
@@ -170,7 +188,7 @@ cmd_rm() {
   local branch=""
   if [ -d "$target" ]; then
     path="$target"
-    branch="$(git -C "$path" branch --show-current 2>/dev/null || true)"
+    branch="$(wt_branch_of "$path" || true)"
   else
     # target 视为分支名：porcelain 按 worktree/HEAD/branch 分组，branch 是块尾，向前 2 行找 worktree
     local line
@@ -189,6 +207,11 @@ cmd_rm() {
   fi
 
   if [ "$delete_branch" = "1" ] && [ -n "$branch" ]; then
+    # 主干分支硬保护（v1.5，issue #2930）：main/master 拒绝经 --delete-branch 删除
+    if [ "$branch" = "main" ] || [ "$branch" = "master" ]; then
+      echo "🛡️  拒绝删除主干分支：${branch}（如需删除请手动 git branch -D ${branch} 并确认）"
+      return 0
+    fi
     # 分支可能同时被其他 worktree 使用，检查后再删
     if git -C "$ROOT" show-ref --verify --quiet "refs/heads/$branch" \
        && ! git -C "$ROOT" worktree list --porcelain | grep -q "^branch refs/heads/$branch$"; then
