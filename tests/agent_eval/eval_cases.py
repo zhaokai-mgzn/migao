@@ -806,6 +806,21 @@ _CASE_CH_027 = EvalCase(
     persona='',
 )
 
+# ── CH-028 [NORMAL] 多会话并发流 - 会话 A 回复中 B 可发送，增量/停止互不干扰（issue #2906）（源: cases/chat.yml）──
+_CASE_CH_028 = EvalCase(
+    id='CH-028',
+    legacy_id='',
+    title='多会话并发流 - 会话 A 回复中 B 可发送，增量/停止互不干扰（issue #2906）',
+    skill=Skill.MULTI_TURN,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['会话 A 回复进行中，切到会话 B 发送并同时回复', '两路流各自推进；停止只停当前会话；完成后各自落库可见'],
+    expectations=['会话 A 在途时，会话 B 发送成功（两路 streams 共存，前端 store 单测断言）', '两会话增量互不串流：各自视图末条为各自内容', 'stopStreaming 只停当前会话的流，另一会话流不受影响', '左侧会话列表对该会话显示「正在回复」等待动效（streams 指示）'],
+    data_checks=['前端单测验证（无需真实 LLM）：A 流挂起→切 B→B 发送→双流增量→A 完成→B 完成→两会话终态可见'],
+    skip_reason='前端 UI 状态能力，不进入 agent-eval 冒烟',
+    tags=['streaming', 'sse', 'multi_session', 'concurrency', 'frontend'],
+    persona='',
+)
+
 # ── CR-001 [NORMAL] 查商品 → 下单（跨 Skill 复用 UUID）（源: cases/cross.yml）──
 _CASE_CR_001 = EvalCase(
     id='CR-001',
@@ -2763,6 +2778,7 @@ ALL_CASES = (
     _CASE_CH_025,
     _CASE_CH_026,
     _CASE_CH_027,
+    _CASE_CH_028,
     _CASE_CR_001,
     _CASE_CR_002,
     _CASE_CR_003,

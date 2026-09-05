@@ -1,4 +1,4 @@
-// case_ids: CH-001, CH-002, CH-010, PP-001, CH-027
+// case_ids: CH-001, CH-002, CH-010, PP-001, CH-027, CH-028
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { act } from '@testing-library/react'
 
@@ -140,8 +140,9 @@ describe('useChatStore (Zustand chat store) — #571', () => {
         isLoadingQuickActions: false,
         error: null,
         choiceSelections: {},
-        // CH-027：在途流缓冲（issue #2901）——每个测试从空态开始，防跨测试泄漏
-        liveMessage: null,
+        // CH-027/CH-028：每会话消息存储 + 在途流（issue #2901/#2906）——每个测试从空态开始，防跨测试泄漏
+        messageStore: {},
+        streams: {},
       })
     })
 
@@ -340,7 +341,15 @@ describe('useChatStore (Zustand chat store) — #571', () => {
       const controller = { abort: mockAbort } as unknown as AbortController
 
       act(() => {
-        useChatStore.setState({ isStreaming: true, abortController: controller })
+        useChatStore.setState({
+          currentSessionId: 'cs1',
+          streams: {
+            cs1: {
+              aiMsg: makeMsg({ role: 'assistant', isStreaming: true }),
+              abortController: controller,
+            },
+          },
+        })
       })
 
       act(() => {
@@ -377,12 +386,13 @@ describe('useChatStore (Zustand chat store) — #571', () => {
 
       act(() => {
         useChatStore.setState({
-          isStreaming: true,
-          abortController: controller,
-          messages: [
-            { id: 'u1', role: 'user', content: 'hello' },
-            streamingMsg,
-          ],
+          currentSessionId: 'cs1',
+          messageStore: {
+            cs1: [{ id: 'u1', role: 'user', content: 'hello' }],
+          },
+          streams: {
+            cs1: { aiMsg: streamingMsg, abortController: controller },
+          },
         })
       })
 
@@ -1167,14 +1177,18 @@ describe('useChatStore (Zustand chat store) — #571', () => {
     })
 
     it('should NOT rotate session when pending tools exist', async () => {
+      // 上个回合仍有 running 工具（真实态存于 messageStore；投影由 store 推导）
       act(() => {
         useChatStore.setState({
-          messages: [
-            makeMsg({
-              role: 'assistant',
-              tool_calls: [{ name: 'create_order', status: 'running' }],
-            }),
-          ],
+          messageStore: {
+            cs1: [
+              makeMsg({
+                id: 'tool-msg-1',
+                role: 'assistant',
+                tool_calls: [{ name: 'create_order', status: 'running' }],
+              }),
+            ],
+          },
         })
       })
 

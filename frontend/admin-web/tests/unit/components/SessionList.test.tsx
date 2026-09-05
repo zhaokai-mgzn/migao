@@ -1,4 +1,4 @@
-// case_ids: UI-008
+// case_ids: UI-008, CH-028
 /**
  * SessionList 折叠/展开功能 — Issue #2691（参考 DSH sidebar 折叠交互）
  *
@@ -17,7 +17,12 @@ import { render, screen, fireEvent } from '@testing-library/react'
 const mockUseChatStore = vi.fn()
 
 vi.mock('@/store/chat', () => {
-  const fn = (...args: any[]) => mockUseChatStore(...args)
+  // CH-028（issue #2906）：SessionItem 使用 selector 形式（s => !!s.streams[...]），
+  // mock 需应用 selector 返回值，否则组件拿到整个 state 恒真
+  const fn = (selector?: (s: any) => any, ...rest: any[]) => {
+    const state = mockUseChatStore(selector, ...rest)
+    return selector ? selector(state) : state
+  }
   return {
     useChatStore: Object.assign(fn, { getState: () => mockUseChatStore() }),
   }
@@ -35,6 +40,8 @@ function makeDefaultChatState(overrides: Record<string, unknown> = {}) {
     currentSessionId: null as string | null,
     messages: [] as any[],
     isStreaming: false,
+    // CH-028（issue #2906）：每会话在途流 —— SessionItem 读取 streams 判断「正在回复」
+    streams: {} as Record<string, { aiMsg: any; abortController: AbortController }>,
     isLoadingSessions: false,
     isLoadingMessages: false,
     searchKeyword: '',
@@ -151,5 +158,30 @@ describe('SessionList 折叠功能（UI-008）', () => {
     // 重挂后恢复折叠态：窄 rail 展开按钮 + 列表项隐藏
     expect(screen.getByRole('button', { name: '展开会话列表' })).toBeInTheDocument()
     expect(screen.queryByText('会话1')).not.toBeInTheDocument()
+  })
+
+  it('CH-028：会话有在途流时显示「正在回复」等待动效指示', () => {
+    mockUseChatStore.mockReturnValue(
+      makeDefaultChatState({
+        sessions: [ACTIVE_SESSION],
+        streams: {
+          s1: {
+            aiMsg: { id: 'ai-1', role: 'assistant', content: '', isStreaming: true },
+            abortController: new AbortController(),
+          },
+        },
+      })
+    )
+    render(<SessionList />)
+
+    expect(screen.getByTestId('session-streaming-dot')).toBeInTheDocument()
+  })
+
+  it('CH-028：会话无在途流时不显示等待动效', () => {
+    mockUseChatStore.mockReturnValue(makeDefaultChatState({ sessions: [ACTIVE_SESSION] }))
+    render(<SessionList />)
+
+    expect(screen.queryByTestId('session-streaming-dot')).toBeNull()
+    expect(screen.getByText('会话1')).toBeInTheDocument()
   })
 })
