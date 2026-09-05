@@ -1,3 +1,4 @@
+// case_ids: CT-001, CT-002, CT-003
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
@@ -8,6 +9,7 @@ const mockGetCategories = vi.fn()
 const mockCreateCategory = vi.fn()
 const mockUpdateCategory = vi.fn()
 const mockDeleteCategory = vi.fn()
+const mockMoveCategory = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   categoryApi: {
@@ -15,10 +17,11 @@ vi.mock('@/lib/api', () => ({
     createCategory: (...args: any[]) => mockCreateCategory(...args),
     updateCategory: (...args: any[]) => mockUpdateCategory(...args),
     deleteCategory: (...args: any[]) => mockDeleteCategory(...args),
+    moveCategory: (...args: any[]) => mockMoveCategory(...args),
   },
 }))
 
-// ===== Mock CategoryTree =====
+// ===== Mock CategoryTree（扁平列表 + 上移/下移，issue #2905）=====
 const mockCategoryTreeProps = vi.fn()
 vi.mock('@/components/products/CategoryTree', () => ({
   default: (props: any) => {
@@ -34,8 +37,11 @@ vi.mock('@/components/products/CategoryTree', () => ({
             <button data-testid={`delete-${c.id}`} onClick={() => props.onDelete(c)}>
               删除
             </button>
-            <button data-testid={`add-child-${c.id}`} onClick={() => props.onAddChild(c)}>
-              添加子分类
+            <button data-testid={`move-up-${c.id}`} onClick={() => props.onMoveUp(c)}>
+              上移
+            </button>
+            <button data-testid={`move-down-${c.id}`} onClick={() => props.onMoveDown(c)}>
+              下移
             </button>
           </div>
         ))}
@@ -53,9 +59,6 @@ vi.mock('@/components/products/CategoryDialog', () => ({
     return (
       <div data-testid="category-dialog" role="dialog">
         <h2>{props.category ? '编辑分类' : '添加分类'}</h2>
-        {props.presetParentId && (
-          <span data-testid="preset-parent-id">{props.presetParentId}</span>
-        )}
         <button data-testid="dialog-submit" onClick={() => props.onSubmit({ name: '新分类' })}>
           提交
         </button>
@@ -98,8 +101,8 @@ vi.mock('@/components/ui', () => ({
 import CategoriesPage from '@/app/(dashboard)/categories/page'
 
 const mockCategories = [
-  { id: '1', name: '窗帘', children: [{ id: '2', name: '布艺窗帘' }] },
-  { id: '3', name: '卷帘', children: [] },
+  { id: '1', name: '窗帘', sort: 0 },
+  { id: '3', name: '卷帘', sort: 1 },
 ]
 
 describe('CategoriesPage', () => {
@@ -160,7 +163,7 @@ describe('CategoriesPage', () => {
     })
   })
 
-  it('should render category tree with loaded data', async () => {
+  it('should render category list with loaded data', async () => {
     render(<CategoriesPage />)
     await waitFor(() => {
       expect(screen.getByTestId('category-tree')).toBeInTheDocument()
@@ -176,6 +179,18 @@ describe('CategoriesPage', () => {
     await waitFor(() => {
       expect(mockCategoryTreeProps).toHaveBeenCalledWith(
         expect.objectContaining({ categories: mockCategories })
+      )
+    })
+  })
+
+  it('should pass move handlers to CategoryTree', async () => {
+    render(<CategoriesPage />)
+    await waitFor(() => {
+      expect(mockCategoryTreeProps).toHaveBeenCalledWith(
+        expect.objectContaining({
+          onMoveUp: expect.any(Function),
+          onMoveDown: expect.any(Function),
+        })
       )
     })
   })
@@ -237,21 +252,6 @@ describe('CategoriesPage', () => {
     })
   })
 
-  // ── Add child category ──
-
-  it('should open dialog with presetParent when adding child', async () => {
-    render(<CategoriesPage />)
-    await waitFor(() => {
-      expect(screen.getByTestId('add-child-1')).toBeInTheDocument()
-    })
-    await user.click(screen.getByTestId('add-child-1'))
-    await waitFor(() => {
-      expect(screen.getByTestId('category-dialog')).toBeInTheDocument()
-      expect(screen.getByRole('heading', { name: '添加分类' })).toBeInTheDocument()
-      expect(screen.getByTestId('preset-parent-id')).toHaveTextContent('1')
-    })
-  })
-
   // ── CRUD operations ──
 
   it('should call createCategory on dialog submit when adding', async () => {
@@ -288,6 +288,39 @@ describe('CategoriesPage', () => {
     })
   })
 
+  // ── Move handlers（issue #2905）──
+
+  it('should call moveCategory("up") and reload when moving up', async () => {
+    mockMoveCategory.mockResolvedValue({ data: {} })
+    render(<CategoriesPage />)
+    await waitFor(() => {
+      expect(screen.getByTestId('move-up-1')).toBeInTheDocument()
+    })
+    await user.click(screen.getByTestId('move-up-1'))
+    await waitFor(() => {
+      expect(mockMoveCategory).toHaveBeenCalledWith('1', 'up')
+    })
+    // 移动后重新拉取列表
+    await waitFor(() => {
+      expect(mockGetCategories).toHaveBeenCalledTimes(2)
+    })
+  })
+
+  it('should call moveCategory("down") and reload when moving down', async () => {
+    mockMoveCategory.mockResolvedValue({ data: {} })
+    render(<CategoriesPage />)
+    await waitFor(() => {
+      expect(screen.getByTestId('move-down-3')).toBeInTheDocument()
+    })
+    await user.click(screen.getByTestId('move-down-3'))
+    await waitFor(() => {
+      expect(mockMoveCategory).toHaveBeenCalledWith('3', 'down')
+    })
+    await waitFor(() => {
+      expect(mockGetCategories).toHaveBeenCalledTimes(2)
+    })
+  })
+
   // ── Delete confirmation modal ──
 
   it('should show delete modal when onDelete is triggered', async () => {
@@ -317,28 +350,16 @@ describe('CategoriesPage', () => {
     })
   })
 
-  it('should show children warning when category has sub-categories', async () => {
+  it('should not show children warning in delete modal (父子概念移除)', async () => {
     render(<CategoriesPage />)
     await waitFor(() => {
       expect(screen.getByTestId('delete-1')).toBeInTheDocument()
     })
     await user.click(screen.getByTestId('delete-1'))
     await waitFor(() => {
-      expect(screen.getByText(/该分类下还有 1 个子分类/)).toBeInTheDocument()
-    })
-  })
-
-  it('should not show children warning when category has no sub-categories', async () => {
-    render(<CategoriesPage />)
-    await waitFor(() => {
-      expect(screen.getByTestId('delete-3')).toBeInTheDocument()
-    })
-    await user.click(screen.getByTestId('delete-3'))
-    await waitFor(() => {
       expect(screen.getByTestId('modal')).toBeInTheDocument()
-      expect(screen.getByRole('heading', { name: '确认删除' })).toBeInTheDocument()
     })
-    // Category "卷帘" has no children, so warning should not appear
+    // 删除确认不再有「子分类」提示（issue #2905）
     expect(screen.queryByText(/该分类下还有/)).not.toBeInTheDocument()
   })
 
