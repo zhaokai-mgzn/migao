@@ -141,7 +141,7 @@ cases:
     expectations:
       - page: /dashboard
         required_texts:
-          - 数据看板
+          - 经营看板
           - 今日经营速览
           - 较昨日
           - 客单价

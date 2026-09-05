@@ -37,7 +37,7 @@ import {
 
 /** Sidebar menu path → display name mapping (from Sidebar.tsx menuGroups) */
 const SIDEBAR_MENU: Record<string, string> = {
-  '/dashboard': '数据看板',
+  '/dashboard': '经营看板',
   '/products': '商品管理',
   '/processing': '加工项管理',
   '/orders': '订单管理',

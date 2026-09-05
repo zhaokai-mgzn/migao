@@ -47,7 +47,7 @@ public class UserController {
      *     "roles": ["admin"],
      *     "permissions": ["product:manage", "knowledge:manage", ...],
      *     "menus": [
-     *       { "key": "dashboard", "name": "数据看板", "icon": "BarChart3", "path": "/dashboard" },
+     *       { "key": "dashboard", "name": "经营看板", "icon": "BarChart3", "path": "/dashboard" },
      *       { "key": "products", "name": "商品管理", "icon": "Package", "path": "/products" },
      *       ...
      *     ]
@@ -156,11 +156,11 @@ public class UserController {
         // 检查是否为管理员（拥有所有权限）
         boolean isAdmin = roles.contains("admin") || permissions.contains("*");
 
-        // 数据看板菜单 - 需要 dashboard:view 权限或者是管理员
+        // 经营看板菜单 - 需要 dashboard:view 权限或者是管理员
         if (isAdmin || permissions.contains("dashboard:view")) {
             menus.add(UserInfoResponse.MenuItem.builder()
                     .key("dashboard")
-                    .name("数据看板")
+                    .name("经营看板")
                     .icon("BarChart3")
                     .path("/dashboard")
                     .build());

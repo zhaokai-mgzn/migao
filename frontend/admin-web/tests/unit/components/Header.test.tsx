@@ -73,23 +73,23 @@ describe('Header', () => {
 
   // ─── 面包屑：默认路由 ───
 
-  it('根路径 / 应显示"工作台 > 数据看板"面包屑', async () => {
+  it('根路径 / 应显示"工作台 > 经营看板"面包屑', async () => {
     mockPathname = '/'
     await act(async () => {
       render(<Header />)
     })
     expect(screen.getByText('工作台')).toBeInTheDocument()
-    // 数据看板 是最后一级，使用 span 渲染（非链接）
-    // 注意：路径 '/' 时 match 到 /dashboard 规则，显示 "工作台" + "数据看板"
+    // 经营看板 是最后一级，使用 span 渲染（非链接）
+    // 注意：路径 '/' 时 match 到 /dashboard 规则，显示 "工作台" + "经营看板"
   })
 
-  it('/dashboard 路径应显示"工作台 > 数据看板"面包屑', async () => {
+  it('/dashboard 路径应显示"工作台 > 经营看板"面包屑', async () => {
     mockPathname = '/dashboard'
     await act(async () => {
       render(<Header />)
     })
     expect(screen.getByText('工作台')).toBeInTheDocument()
-    expect(screen.getByText('数据看板')).toBeInTheDocument()
+    expect(screen.getByText('经营看板')).toBeInTheDocument()
   })
 
   it('/products 路径应显示"商品管理 > 商品列表"面包屑', async () => {
@@ -137,12 +137,12 @@ describe('Header', () => {
     expect(screen.getByText('工作台')).toBeInTheDocument()
   })
 
-  it('pathname 为 null 时应显示"数据看板"', async () => {
+  it('pathname 为 null 时应显示"经营看板"', async () => {
     mockPathname = null as unknown as string
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('数据看板')).toBeInTheDocument()
+    expect(screen.getByText('经营看板')).toBeInTheDocument()
   })
 
   // ─── 子路径匹配 ───
