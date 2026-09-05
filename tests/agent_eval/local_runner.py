@@ -289,6 +289,32 @@ def check_expectation(result: dict, expectation: str) -> tuple[bool, str]:
 
     return False, f"unmatched expectation: {expectation[:80]}"
 
+def _last_round_error_verdict(results: list, expectations: list, data_checks: list) -> str | None:
+    """真实验收守卫（issue #2887 验收复盘）：最后轮报错 → 用例判失败。
+
+    背景：expectations 是「任意一轮命中即过」，图片轮报错时前面的轮次可能已命中
+    success=true / tool 等 expectation，用例仍被计为通过（假验收 —— 线上
+    sess_806703a2dcca4059 的图片崩溃正是类假阳性）。
+    规则：最后一轮（用例终点）出现 error 事件且用例未显式预期错误
+    （expectations/data_checks 含 error.code= 或 suggestion）→ 返回失败原因；
+    否则返回 None。
+    """
+    if not results:
+        return None
+    last_error = results[-1].get("error")
+    if not last_error:
+        return None
+    expected_err_markers = ("error.code", "suggestion")
+    all_checks = list(expectations or []) + list(data_checks or [])
+    expects_error = any(
+        any(m in (str(c).lower()) for m in expected_err_markers)
+        for c in all_checks
+    )
+    if expects_error:
+        return None
+    return f"最后轮报错（用例未预期错误）: {str(last_error)[:120]}"
+
+
 async def run_case(case, token: str, session_id: str) -> dict:
     """运行单个评测用例（多轮对话）
 
@@ -337,6 +363,12 @@ async def run_case(case, token: str, session_id: str) -> dict:
 
     total_exp = len(case.expectations)
     score = passed_expectations / total_exp if total_exp > 0 else 1.0
+
+    # 真实验收守卫：最后轮报错 → 整体判失败（除非用例显式预期错误）
+    verdict = _last_round_error_verdict(results, case.expectations, case.data_checks)
+    if verdict:
+        failed_expectations.append((verdict, results[-1].get("error", "")))
+        score = 0.0
 
     return {
         "case_id": case.id,

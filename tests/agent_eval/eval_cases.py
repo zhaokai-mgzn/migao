@@ -776,6 +776,21 @@ _CASE_CH_025 = EvalCase(
     persona='',
 )
 
+# ── CH-026 [NORMAL] 澄清卡后发图不崩溃 - 交互等待中用户发图走 vision 链路（线上 AttributeError 修复真实验收）（源: cases/chat.yml）──
+_CASE_CH_026 = EvalCase(
+    id='CH-026',
+    legacy_id='',
+    title='澄清卡后发图不崩溃 - 交互等待中用户发图走 vision 链路（线上 AttributeError 修复真实验收）',
+    skill=Skill.MULTI_TURN,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['帮我看看', {'text': '就是这种', 'images': ['https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/vision-acceptance/curtain-fabric-1.png']}],
+    expectations=['direct_reply or interact', 'product_search or direct_reply or interact'],
+    data_checks=['最后一轮（发图轮）不得出现任何 error 事件；runner 最后一轮报错即判整个用例失败（防假验收：前面轮次命中 expectation 掩盖图片轮崩溃）', '图片使用云 dev OSS 资产（vision 模型可抓取；picsum.photos 在 vision 供应商侧抓取失败会误报『图片分析暂时无法完成』）'],
+    skip_reason='',
+    tags=['multimodal', 'image', 'regression', 'xiaobu', 'product'],
+    persona='',
+)
+
 # ── CR-001 [NORMAL] 查商品 → 下单（跨 Skill 复用 UUID）（源: cases/cross.yml）──
 _CASE_CR_001 = EvalCase(
     id='CR-001',
@@ -2716,6 +2731,7 @@ ALL_CASES = (
     _CASE_CH_023,
     _CASE_CH_024,
     _CASE_CH_025,
+    _CASE_CH_026,
     _CASE_CR_001,
     _CASE_CR_002,
     _CASE_CR_003,

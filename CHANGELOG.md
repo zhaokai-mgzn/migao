@@ -6,6 +6,12 @@
 
 ## [Unreleased]
 
+### Agent Eval 真实验收收口（2026-09-05，#2887）
+
+- `agent-eval`：最后一轮报错即判用例失败——expectations 此前是「任意一轮命中即过」，图片轮崩溃会被前面轮次（success=true 等）掩盖成 100% 通过（假验收，线上 sess_806703a2dcca4059 崩溃漏过多轮验收）；显式预期错误（error.code=/suggestion）的用例豁免
+- `agent-eval`：新增行为用例 CH-026「澄清卡后发图不崩溃」（tier normal，图片用云 dev OSS 资产，vision 模型可抓取）；本机真实链路实证 pre-fix 逐字复现 AttributeError / 修复后 vision 识别「彩色渐变条纹」+ 接地搜索
+- `ai-agent-service`：新增 tests/manual/accept_drive.py（澄清卡→发图 真实验收驱动器）与 oss_upload_test_image.py（凭证经 .env 读取，无硬编码）；回归单测 test_agent_eval_runner.py（case_ids: CH-021/CH-026）
+
 ### 图片消息崩溃修复（2026-09-05，#2884）
 
 - `ai-agent-service`：C 端小布 pending_skill 存在时发图崩溃——`intent_router_node` 对多模态 list content 调 `.strip()` 抛 `AttributeError`（会话 sess_806703a2dcca4059 真实报错），改用 `_get_last_human_text` 提取纯文本后再判消息长度；回归测试锁定（case_ids: CH-021，#2884）
