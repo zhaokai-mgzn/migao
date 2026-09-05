@@ -19,6 +19,8 @@ from typing import Any, Dict, Optional, Tuple
 
 from loguru import logger
 
+from app.memory.session_memory import AUTO_CLOSE_SCAN_LIMIT
+
 
 class SessionService:
     """会话生命周期唯一写入者"""
@@ -62,9 +64,12 @@ class SessionService:
         """物理删除会话及消息（终态）"""
         return await self._memory.delete_session(session_id)
 
-    async def expire_idle(self, idle_minutes: int = 30) -> int:
-        """active → closed：批量关闭空闲会话（与手动 close 同落 closed）"""
-        return await self._memory.close_idle_sessions(idle_minutes=idle_minutes)
+    async def expire_idle(self, idle_minutes: int = 30, limit: int = AUTO_CLOSE_SCAN_LIMIT) -> int:
+        """active → closed：批量关闭空闲会话（与手动 close 同落 closed）
+
+        limit：单次扫描关闭上限（issue #2915），积压分多轮消化，防批量误杀。
+        """
+        return await self._memory.close_idle_sessions(idle_minutes=idle_minutes, limit=limit)
 
     async def purge(self, older_than_days: int = 90) -> int:
         """closed → 物理清理：清理过期已关闭会话"""

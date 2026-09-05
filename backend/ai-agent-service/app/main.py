@@ -15,6 +15,7 @@ AI 智能客服系统 - AI Agent 服务入口
 
 from contextlib import asynccontextmanager
 import asyncio
+import time
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
@@ -30,19 +31,29 @@ from app.utils.redis_client import init_redis, close_redis
 SESSION_AUTO_CLOSE_MINUTES = 240    # 空闲超时分钟数（4 小时）
 SESSION_CLEANUP_INTERVAL = 300      # 后台扫描间隔（秒）
 SESSION_RETENTION_DAYS = 90         # 已关闭会话保留天数
+SESSION_STARTUP_GRACE_S = 600       # 启动宽限期（秒）：进程启动后 N 秒内不执行关闭扫描（issue #2915）
 
 
 async def _session_auto_close_loop():
-    """后台循环：定期扫描并关闭空闲会话 + 每日清理过期已关闭会话（经 SessionService）"""
+    """后台循环：定期扫描并关闭空闲会话 + 每日清理过期已关闭会话（经 SessionService）
+
+    启动宽限期（issue #2915）：进程刚启动（部署/重启）时不立即扫描关闭——
+    避免部署过渡期把积压/时间戳未修正的会话一次性批量误杀（线上 89 会话
+    在 #2904 部署后首次扫描被一批关闭的教训）。
+    """
     from datetime import datetime, timezone
     from app.memory.session_service import SessionService
 
     session_service = SessionService()
     last_cleanup_date = None
+    started_at = time.monotonic()
 
     while True:
         try:
             await asyncio.sleep(SESSION_CLEANUP_INTERVAL)
+
+            if time.monotonic() - started_at < SESSION_STARTUP_GRACE_S:
+                continue
 
             # 1. 关闭空闲会话（active → closed/expired 语义由状态机约束）
             count = await session_service.expire_idle(
