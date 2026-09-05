@@ -886,3 +886,32 @@ cases:
       - "图片使用云 dev OSS 资产（vision 模型可抓取；picsum.photos 在 vision 供应商侧抓取失败会误报『图片分析暂时无法完成』）"
     skip_reason: ""
     merge_log: "issue #2884/#2887：线上会话 sess_806703a2dcca4059 澄清卡后发图崩溃（intent_router_node 对多模态 list content 调 .strip() 抛 AttributeError）修复后的真实验收用例；本机真实链路已实证 pre-fix 逐字复现 / 修复后正常走 vision"
+
+  - id: CH-027
+    legacy_id: ""
+    title: "流式回复中切换会话再切回 - 等待状态与最终回复保留（issue #2901）"
+    domains:
+      - chat
+    tier: normal
+    tags:
+      - streaming
+      - sse
+      - multi_session
+      - frontend
+    truths_ref:
+      - frontend-chat.session-stream-keep
+    user_inputs:
+      - "会话 A 发消息后米宝回复中，切到会话 B 再切回会话 A"
+      - "切回后等待动画恢复；流结束后最终回复可见"
+    expectations:
+      - "切回原会话时在途 AI 占位（isStreaming）恢复，等待动画重新可见（前端 store 单测断言）"
+      - "切回后流结束，最终回复内容出现在该会话消息列表中"
+    data_checks:
+      - "前端单测验证（无需真实 LLM）：发消息→切 B→切回 A→断言占位恢复→流结束断言回复可见"
+    skip_reason: "前端 UI 状态修复，不进入 agent-eval 冒烟"
+    merge_log: "issue #2901：admin-web chat store 的 isStreaming/messages 为全局单例，切会话使在途 SSE 增量写空、assistant 消息仅在流结束入库 → 切回无等待动画且回复丢失。修复：liveMessage 按会话持有在途流，selectSession 重挂占位，流结束落视图/由历史权威路径接管。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/store/chat-stream-session-switch.test.ts"
+      ci: []
+      verifies: []

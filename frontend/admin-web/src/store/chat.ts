@@ -18,6 +18,10 @@ interface ChatState {
   isLoadingMessages: boolean
   searchKeyword: string
   abortController: AbortController | null
+  // 在途 AI 回复（全局至多一条并发流）：跨会话切换存活，记录归属会话。
+  // 渲染 = messages(当前会话历史) + 同会话 live 占位；流结束由 finally 落视图/落 live。
+  // 修复 issue #2901：流式回复中切走再切回，等待动画与最终回复不再丢失。
+  liveMessage: { sessionId: string; aiMsg: ChatMessage } | null
   quickActions: QuickAction[]
   isLoadingQuickActions: boolean
   error: string | null
@@ -64,6 +68,34 @@ function hasPendingTools(messages: ChatMessage[]): boolean {
   )
 }
 
+/** 当前会话的「有效」消息 = 历史 + 同会话在途 live 占位（渲染层最终看到的形态） */
+function effectiveMessages(state: ChatState): ChatMessage[] {
+  return state.liveMessage && state.liveMessage.sessionId === state.currentSessionId
+    ? [...state.messages, state.liveMessage.aiMsg]
+    : state.messages
+}
+
+/**
+ * 更新在途 live 消息（跨会话切换存活的流缓冲），并同步当前视图内同名占位。
+ * live 归属会话 == 当前会话时，同步写 messages 里的占位（渲染层零改动）；
+ * 归属其他会话时仅写 liveMessage，切回时由 selectSession 重新挂载。
+ */
+function patchLive(
+  state: ChatState,
+  update: (msg: ChatMessage) => ChatMessage
+): Partial<ChatState> {
+  const live = state.liveMessage
+  if (!live) return {}
+  const nextAiMsg = update(live.aiMsg)
+  const patch: Partial<ChatState> = {
+    liveMessage: { sessionId: live.sessionId, aiMsg: nextAiMsg },
+  }
+  if (live.sessionId === state.currentSessionId) {
+    patch.messages = state.messages.map(m => (m.id === live.aiMsg.id ? nextAiMsg : m))
+  }
+  return patch
+}
+
 export const useChatStore = create<ChatState>()((set, get) => ({
   sessions: [],
   currentSessionId: null,
@@ -73,6 +105,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   isLoadingMessages: false,
   searchKeyword: '',
   abortController: null,
+  liveMessage: null,
   quickActions: [],
   isLoadingQuickActions: false,
   error: null,
@@ -80,7 +113,15 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 
   setSearchKeyword: (keyword: string) => set({ searchKeyword: keyword }),
 
-  clearCurrentSession: () => set({ currentSessionId: null, messages: [], error: null, choiceSelections: {} }),
+  clearCurrentSession: () => set({
+    currentSessionId: null,
+    messages: [],
+    error: null,
+    choiceSelections: {},
+    liveMessage: null,
+    isStreaming: false,
+    abortController: null,
+  }),
 
   toggleChoiceSelection: (sessionId: string, tool: string, label: string) => {
     const key = `${sessionId}:${tool}`
@@ -172,7 +213,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       set({ sessions: finalSessions, error: null })
 
       // 如果没有选中会话且无未完成交互，自动选中第一个
-      if (!get().currentSessionId && sessions.length > 0 && !hasPendingTools(get().messages)) {
+      if (!get().currentSessionId && sessions.length > 0 && !hasPendingTools(effectiveMessages(get()))) {
         get().selectSession(sessions[0].session_id)
       }
     } catch (error) {
@@ -186,7 +227,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 
   createSession: async () => {
     // 检查是否有未完成的交互组件（form/choice/confirm 等待用户操作）
-    if (hasPendingTools(get().messages)) {
+    if (hasPendingTools(effectiveMessages(get()))) {
       toast.warning('当前有未完成的交互操作，请先完成后再创建新对话')
       return
     }
@@ -219,7 +260,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     if (id === currentSessionId) return
 
     // 检查是否有未完成的交互组件，避免中断交互流程
-    if (hasPendingTools(get().messages)) {
+    if (hasPendingTools(effectiveMessages(get()))) {
       toast.warning('当前有未完成的交互操作，请先完成后再切换会话')
       return
     }
@@ -244,7 +285,19 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       }))
       // 仅当用户没有切换到其他会话时更新
       if (get().currentSessionId === id) {
-        set({ messages })
+        // 在途回复恢复（issue #2901）：
+        // - live 归属本会话且仍在流式 → 挂到历史末尾，等待占位恢复可见；
+        // - live 归属本会话但已结束 → 后端已持久化（save_message），历史为权威，丢弃本地副本；
+        // - 其他会话的 in-flight 流不受影响（liveMessage 原样保留）。
+        const live = get().liveMessage
+        const liveForThis = live && live.sessionId === id ? live : null
+        const finalMessages = liveForThis && liveForThis.aiMsg.isStreaming
+          ? [...messages, liveForThis.aiMsg]
+          : messages
+        set({
+          messages: finalMessages,
+          liveMessage: liveForThis && !liveForThis.aiMsg.isStreaming ? null : live,
+        })
       }
     } catch (error) {
       console.error('获取历史消息失败:', error)
@@ -255,7 +308,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 
   closeSession: async (id: string) => {
     // 关闭的是当前会话时，检查是否有未完成的交互组件
-    if (id === get().currentSessionId && hasPendingTools(get().messages)) {
+    if (id === get().currentSessionId && hasPendingTools(effectiveMessages(get()))) {
       toast.warning('当前有未完成的交互操作，请先完成后再关闭会话')
       return
     }
@@ -352,6 +405,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 
     set(state => ({
       messages: [...state.messages, userMsg, aiMsg],
+      liveMessage: { sessionId: currentSessionId, aiMsg },
       isStreaming: true,
       abortController,
     }))
@@ -418,35 +472,44 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         // 会话已被后端关闭，提示用户手动创建新对话
         set(state => ({
           isStreaming: false,
-          messages: state.messages.map(msg =>
-            msg.id === aiMsgId
-              ? { ...msg, content: '会话已结束，请点击"新建对话"开始新会话。', isStreaming: false }
-              : msg
-          ),
+          ...patchLive(state, msg => ({
+            ...msg,
+            content: '会话已结束，请点击"新建对话"开始新会话。',
+            isStreaming: false,
+          })),
         }))
         toast.error('会话已结束，请创建新对话')
         return
       }
 
       set(state => ({
-        messages: state.messages.map(msg =>
-          msg.id === aiMsgId
-            ? { ...msg, content: '抱歉，发送消息时出现错误，请稍后重试。', isStreaming: false }
-            : msg
-        ),
+        ...patchLive(state, msg => ({
+          ...msg,
+          content: '抱歉，发送消息时出现错误，请稍后重试。',
+          isStreaming: false,
+        })),
       }))
     } finally {
-      // 标记 AI 消息流式结束
+      // 标记 AI 消息流式结束（issue #2901：流状态按会话持有，跨切换存活）
       const aborted = abortController.signal.aborted
-      set(state => ({
-        isStreaming: false,
-        abortController: null,
-        messages: state.messages.map(msg =>
-          msg.id === aiMsgId
-            ? { ...msg, isStreaming: false, wasAborted: aborted }
-            : msg
-        ),
-      }))
+      const live = get().liveMessage
+      if (live) {
+        const finalMsg: ChatMessage = { ...live.aiMsg, isStreaming: false, wasAborted: aborted }
+        if (live.sessionId === get().currentSessionId) {
+          // 视图内：占位已在 messages（sendMessage 置入 / selectSession 重挂），按 id 替换为终态
+          set(state => ({
+            isStreaming: false,
+            abortController: null,
+            liveMessage: null,
+            messages: state.messages.map(m => (m.id === live.aiMsg.id ? finalMsg : m)),
+          }))
+        } else {
+          // 后台完成：终态暂存 live，切回时由 selectSession 的历史权威路径接管
+          set({ isStreaming: false, abortController: null, liveMessage: { sessionId: live.sessionId, aiMsg: finalMsg } })
+        }
+      } else {
+        set({ isStreaming: false, abortController: null })
+      }
 
       // 刷新会话列表以更新标题/最后消息
       get().fetchSessions()
@@ -458,7 +521,9 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 function handleSSEEvent(
   eventType: string,
   data: any,
-  aiMsgId: string,
+  // 占位消息 id 已随流保存在 liveMessage 中（patchLive 按 live.aiMsg.id 定位），
+  // 入参保留仅供调用方追溯，此处不再使用。
+  _aiMsgId: string,
   set: (fn: (state: ChatState) => Partial<ChatState>) => void,
   get: () => ChatState
 ) {
@@ -473,14 +538,11 @@ function handleSSEEvent(
 
       case 'text_delta':
       case 'text':
-        // 逐字追加内容
-        set(state => ({
-          messages: state.messages.map(msg =>
-            msg.id === aiMsgId
-              ? { ...msg, content: msg.content + (parsedData.content || parsedData.delta || '') }
-              : msg
-          ),
-        }))
+        // 逐字追加内容（写 live 缓冲 + 当前视图占位，issue #2901）
+        set(state => patchLive(state, msg => ({
+          ...msg,
+          content: msg.content + (parsedData.content || parsedData.delta || ''),
+        })))
         break
 
       case 'loading':
@@ -494,28 +556,22 @@ function handleSSEEvent(
           input: parsedData.input || parsedData.args,
           status: 'running',
         }
-        set(state => ({
-          messages: state.messages.map(msg =>
-            msg.id === aiMsgId
-              ? { ...msg, tool_calls: [...(msg.tool_calls || []), toolCall] }
-              : msg
-          ),
-        }))
+        set(state => patchLive(state, msg => ({
+          ...msg,
+          tool_calls: [...(msg.tool_calls || []), toolCall],
+        })))
         break
       }
 
       case 'tool_result': {
-        set(state => ({
-          messages: state.messages.map(msg => {
-            if (msg.id !== aiMsgId) return msg
-            const toolName = parsedData.tool_name || parsedData.tool || parsedData.name
-            const toolCalls = (msg.tool_calls || []).map(tc =>
-              tc.name === toolName && tc.status === 'running'
-                ? { ...tc, result: parsedData.result, status: 'completed' as const }
-                : tc
-            )
-            return { ...msg, tool_calls: toolCalls }
-          }),
+        set(state => patchLive(state, msg => {
+          const toolName = parsedData.tool_name || parsedData.tool || parsedData.name
+          const toolCalls = (msg.tool_calls || []).map(tc =>
+            tc.name === toolName && tc.status === 'running'
+              ? { ...tc, result: parsedData.result, status: 'completed' as const }
+              : tc
+          )
+          return { ...msg, tool_calls: toolCalls }
         }))
         break
       }
@@ -526,25 +582,16 @@ function handleSSEEvent(
           type: parsedData.type,
           data: parsedData.data || {},
         }
-        set(state => ({
-          messages: state.messages.map(msg =>
-            msg.id === aiMsgId
-              ? { ...msg, cards: [...(msg.cards || []), card] }
-              : msg
-          ),
-        }))
+        set(state => patchLive(state, msg => ({
+          ...msg,
+          cards: [...(msg.cards || []), card],
+        })))
         break
       }
 
       case 'suggestions': {
         const suggestions = parsedData.questions || []
-        set(state => ({
-          messages: state.messages.map(msg =>
-            msg.id === aiMsgId
-              ? { ...msg, suggestions }
-              : msg
-          ),
-        }))
+        set(state => patchLive(state, msg => ({ ...msg, suggestions })))
         break
       }
 
@@ -558,16 +605,19 @@ function handleSSEEvent(
           const shouldRotate =
             !!newSessionId &&
             newSessionId !== state.currentSessionId &&
-            !hasPendingTools(state.messages)
+            !hasPendingTools(effectiveMessages(state))
+          const patch = patchLive(state, msg => ({ ...msg, isStreaming: false }))
           if (shouldRotate) {
             persistSessionId(newSessionId)
+            // live 归属的流在轮换后移到新会话（issue #2901：状态按会话持有）
+            if (patch.liveMessage) {
+              patch.liveMessage = { sessionId: newSessionId, aiMsg: patch.liveMessage.aiMsg }
+            }
           }
           return {
+            ...patch,
             isStreaming: false,
             ...(shouldRotate ? { currentSessionId: newSessionId } : {}),
-            messages: state.messages.map(msg =>
-              msg.id === aiMsgId ? { ...msg, isStreaming: false } : msg
-            ),
           }
         })
         break
@@ -575,92 +625,75 @@ function handleSSEEvent(
       case 'error':
         set(state => ({
           isStreaming: false,
-          messages: state.messages.map(msg =>
-            msg.id === aiMsgId
-              ? { ...msg, content: `错误: ${parsedData.message || '未知错误'}`, isStreaming: false }
-              : msg
-          ),
+          ...patchLive(state, msg => ({
+            ...msg,
+            content: `错误: ${parsedData.message || '未知错误'}`,
+            isStreaming: false,
+          })),
         }))
         break
 
       case 'message':
         // 兼容 { type: "text", content: "..." } 格式
         if (parsedData.type === 'text' || parsedData.content) {
-          set(state => ({
-            messages: state.messages.map(msg =>
-              msg.id === aiMsgId
-                ? { ...msg, content: msg.content + (parsedData.content || parsedData.delta || '') }
-                : msg
-            ),
-          }))
+          set(state => patchLive(state, msg => ({
+            ...msg,
+            content: msg.content + (parsedData.content || parsedData.delta || ''),
+          })))
         } else if (parsedData.type === 'loading') {
           // loading 状态，不追加到内容
         } else if (parsedData.type === 'error') {
-          set(state => ({
-            messages: state.messages.map(msg =>
-              msg.id === aiMsgId
-                ? { ...msg, content: `错误: ${parsedData.message || '未知错误'}`, isStreaming: false }
-                : msg
-            ),
-          }))
+          set(state => patchLive(state, msg => ({
+            ...msg,
+            content: `错误: ${parsedData.message || '未知错误'}`,
+            isStreaming: false,
+          })))
         }
         break
 
       case 'interactive':
         if (parsedData.type && parsedData.component) {
-          set(state => ({
-            messages: state.messages.map(msg =>
-              msg.id === aiMsgId
-                ? {
-                    ...msg,
-                    interactive: {
-                      type: parsedData.type,
-                      component: parsedData.component,
-                      title: parsedData.title || '',
-                      options: parsedData.options,
-                      fields: parsedData.fields,
-                      formFields: parsedData.formFields,
-                      submitLabel: parsedData.submitLabel,
-                      // 完整透传 confirm/form/分页字段：confirmValue 携带上下文
-                      // （后端依赖其路由后续消息），pageMeta 驱动 ChoiceCard 翻页，
-                      // multiSelect 驱动多选不锁死（加工项选择，issue #2894）
-                      confirmLabel: parsedData.confirmLabel,
-                      confirmValue: parsedData.confirmValue,
-                      cancelLabel: parsedData.cancelLabel,
-                      cancelValue: parsedData.cancelValue,
-                      pageMeta: parsedData.pageMeta,
-                      multiSelect: parsedData.multiSelect,
-                    },
-                  }
-                : msg
-            ),
-          }))
+          set(state => patchLive(state, msg => ({
+            ...msg,
+            interactive: {
+              type: parsedData.type,
+              component: parsedData.component,
+              title: parsedData.title || '',
+              options: parsedData.options,
+              fields: parsedData.fields,
+              formFields: parsedData.formFields,
+              submitLabel: parsedData.submitLabel,
+              // 完整透传 confirm/form/分页字段：confirmValue 携带上下文
+              // （后端依赖其路由后续消息），pageMeta 驱动 ChoiceCard 翻页，
+              // multiSelect 驱动多选不锁死（加工项选择，issue #2894）
+              confirmLabel: parsedData.confirmLabel,
+              confirmValue: parsedData.confirmValue,
+              cancelLabel: parsedData.cancelLabel,
+              cancelValue: parsedData.cancelValue,
+              pageMeta: parsedData.pageMeta,
+              multiSelect: parsedData.multiSelect,
+            },
+          })))
         }
         break
 
       default:
         // 未知事件类型，尝试作为文本处理
         if (parsedData.content || parsedData.delta) {
-          set(state => ({
-            messages: state.messages.map(msg =>
-              msg.id === aiMsgId
-                ? { ...msg, content: msg.content + (parsedData.content || parsedData.delta || '') }
-                : msg
-            ),
-          }))
+          set(state => patchLive(state, msg => ({
+            ...msg,
+            content: msg.content + (parsedData.content || parsedData.delta || ''),
+          })))
         }
         break;
     }
   } catch (e) {
     // 解析失败，如果是字符串直接追加
     if (typeof data === 'string' && data.trim()) {
-      set(state => ({
-        messages: state.messages.map(msg =>
-          msg.id === aiMsgId
-            ? { ...msg, content: msg.content + data }
-            : msg
-        ),
-      }))
+      set(state => patchLive(state, msg => ({
+        ...msg,
+        content: msg.content + data,
+      })))
     }
   }
 }
