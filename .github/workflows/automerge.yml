@@ -33,9 +33,18 @@ jobs:
       !contains(github.event.pull_request.labels.*.name, 'block/merge')
 
     steps:
+      # 2026-09-05 修复（issue #2929）：runner 无 git 上下文时新版 gh CLI 无法解析仓库
+      # （`failed to run git: not a git repository`），必须先 checkout 才能执行 gh pr merge --auto
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
       - name: Enable native auto-merge (squash)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 双保险：即使 git 上下文异常，gh 也能凭 GH_REPO 解析目标仓库
+          GH_REPO: ${{ github.repository }}
         run: |
           set +e
           gh pr merge "${{ github.event.pull_request.number }}" \
