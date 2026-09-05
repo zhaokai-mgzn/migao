@@ -914,3 +914,35 @@ cases:
         - "frontend/admin-web/tests/unit/store/chat-stream-session-switch.test.ts"
       ci: []
       verifies: []
+
+  - id: CH-028
+    legacy_id: ""
+    title: "多会话并发流 - 会话 A 回复中 B 可发送，增量/停止互不干扰（issue #2906）"
+    domains:
+      - chat
+    tier: normal
+    tags:
+      - streaming
+      - sse
+      - multi_session
+      - concurrency
+      - frontend
+    truths_ref: []
+    user_inputs:
+      - "会话 A 回复进行中，切到会话 B 发送并同时回复"
+      - "两路流各自推进；停止只停当前会话；完成后各自落库可见"
+    expectations:
+      - "会话 A 在途时，会话 B 发送成功（两路 streams 共存，前端 store 单测断言）"
+      - "两会话增量互不串流：各自视图末条为各自内容"
+      - "stopStreaming 只停当前会话的流，另一会话流不受影响"
+      - "左侧会话列表对该会话显示「正在回复」等待动效（streams 指示）"
+    data_checks:
+      - "前端单测验证（无需真实 LLM）：A 流挂起→切 B→B 发送→双流增量→A 完成→B 完成→两会话终态可见"
+    skip_reason: "前端 UI 状态能力，不进入 agent-eval 冒烟"
+    merge_log: "issue #2906：#2901 修复（liveMessage 单缓冲）仍假设全局单并发流。重构为 messageStore（每会话快照）+ streams（每会话在途流）+ withView 投影（messages/isStreaming 兼容）：sendMessage 只挡当前会话、SSE 按归属流写入、stopStreaming 只停当前、轮换迁移流与快照、SessionList 显示每会话等待动效。truths_ref 置空：纯前端状态用例，真值库为后端 agent 行为，无对应真值（标缺口）。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/store/chat-multi-session.test.ts"
+        - "frontend/admin-web/tests/unit/components/SessionList.test.tsx"
+      ci: []
+      verifies: []

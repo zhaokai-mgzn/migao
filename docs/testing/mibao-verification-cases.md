@@ -283,7 +283,7 @@
 真值: category-manage.delete, category-manage.delete-destructive, ai-chat.confirm-required
 溯源: verification 2.12 独有（二次确认行为在测试中未确认，见 category-manage.yml 缺口注释） ｜ tags: delete, destructive, confirm
 
-## 对话边界域（27 case）
+## 对话边界域（28 case）
 
 ### CH-001. 空结果 + suggestion 引导修复 🔴
 ```
@@ -643,6 +643,20 @@
 ```
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
 溯源: issue #2901：admin-web chat store 的 isStreaming/messages 为全局单例，切会话使在途 SSE 增量写空、assistant 消息仅在流结束入库 → 切回无等待动画且回复丢失。修复：liveMessage 按会话持有在途流，selectSession 重挂占位，流结束落视图/由历史权威路径接管。truths_ref 置空：纯前端 UI 状态用例，真值库（ai-chat.*）为后端 agent 行为，无对应真值（标缺口）。 ｜ tags: streaming, sse, multi_session, frontend
+
+### CH-028. 多会话并发流 - 会话 A 回复中 B 可发送，增量/停止互不干扰（issue #2906） 🔵
+```
+你: 会话 A 回复进行中，切到会话 B 发送并同时回复
+你: 两路流各自推进；停止只停当前会话；完成后各自落库可见
+期望: 会话 A 在途时，会话 B 发送成功（两路 streams 共存，前端 store 单测断言）
+期望: 两会话增量互不串流：各自视图末条为各自内容
+期望: stopStreaming 只停当前会话的流，另一会话流不受影响
+期望: 左侧会话列表对该会话显示「正在回复」等待动效（streams 指示）
+数据: 前端单测验证（无需真实 LLM）：A 流挂起→切 B→B 发送→双流增量→A 完成→B 完成→两会话终态可见
+跳过: 前端 UI 状态能力，不进入 agent-eval 冒烟
+```
+真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
+溯源: issue #2906：#2901 修复（liveMessage 单缓冲）仍假设全局单并发流。重构为 messageStore（每会话快照）+ streams（每会话在途流）+ withView 投影（messages/isStreaming 兼容）：sendMessage 只挡当前会话、SSE 按归属流写入、stopStreaming 只停当前、轮换迁移流与快照、SessionList 显示每会话等待动效。truths_ref 置空：纯前端状态用例，真值库为后端 agent 行为，无对应真值（标缺口）。 ｜ tags: streaming, sse, multi_session, concurrency, frontend
 
 ## 跨域（3 case）
 
@@ -2196,7 +2210,7 @@
 - agents：6
 - api：10
 - 分类域：3
-- 对话边界域：27
+- 对话边界域：28
 - 跨域：3
 - 客户域：5
 - 数据域：6
@@ -2217,5 +2231,6 @@
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
 - CH-027: 流式回复中切换会话再切回 - 等待状态与最终回复保留（issue #2901）
+- CH-028: 多会话并发流 - 会话 A 回复中 B 可发送，增量/停止互不干扰（issue #2906）
 - MC-012: CI 失败报告去重 - 同日同标题 open issue 存在时不重复建
 
