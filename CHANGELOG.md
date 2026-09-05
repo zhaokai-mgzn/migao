@@ -6,6 +6,10 @@
 
 ## [Unreleased]
 
+### 图片消息崩溃修复（2026-09-05，#2884）
+
+- `ai-agent-service`：C 端小布 pending_skill 存在时发图崩溃——`intent_router_node` 对多模态 list content 调 `.strip()` 抛 `AttributeError`（会话 sess_806703a2dcca4059 真实报错），改用 `_get_last_human_text` 提取纯文本后再判消息长度；回归测试锁定（case_ids: CH-021，#2884）
+
 ### C 端小布长期记忆系统（2026-09-04，#2815/#2818）
 
 - `ai-agent-service`：C 端用户画像记忆 + 会话末聚合——agent_type 分流（xiaobu/mibao），受控词表 + PII 过滤（手机号/地址/邮箱类记忆不落库），提取提示词禁止 PII

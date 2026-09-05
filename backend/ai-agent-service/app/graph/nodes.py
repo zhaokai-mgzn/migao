@@ -197,12 +197,11 @@ async def intent_router_node(state: AgentState) -> dict:
     pending_skill = state.get("pending_interact_skill", "")
     if pending_skill:
         # 检查最后一条用户消息长度
+        # 注意：必须经 _get_last_human_text 提取纯文本——图片消息的 content 是
+        # 多模态 list（text + image_url 块），直接对 raw content 调 .strip() 会抛
+        # AttributeError（线上 sess_* 会话真实报错 "'list' object has no attribute 'strip'"）。
         messages = state.get("messages", [])
-        last_user_msg = ""
-        for m in reversed(messages):
-            if hasattr(m, 'type') and m.type == 'human':
-                last_user_msg = m.content if hasattr(m, 'content') else str(m)
-                break
+        last_user_msg = _get_last_human_text(messages) or ""
         msg_len = len(last_user_msg.strip()) if last_user_msg else 0
 
         # 短消息：沿用 pending_skill 快捷路由（节省 LLM 调用，防止误分类）

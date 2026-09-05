@@ -8,7 +8,7 @@
 - intent_router_node：plan_rewrite 路径澄清轮护栏（连续模糊意图触发兜底）
 - route_by_intent：direct_reply + 多模态重定向 general、escape hatch 切换、会话连续性
 """
-# case_ids: CH-002, CH-003, CH-018, CH-022
+# case_ids: CH-002, CH-003, CH-018, CH-021, CH-022
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -135,6 +135,35 @@ class TestIntentRouterNode:
         }
         result = await intent_router_node(state)
         assert result["intent_result"]["intent"] == "order_query"
+
+    @pytest.mark.asyncio
+    async def test_pending_skill_multimodal_image_msg_no_crash(self):
+        """缺陷锁定（线上 sess_* 会话真实报错）：pending_skill 存在时用户发图，
+        最后一条 HumanMessage content 为多模态 list（text + image_url），
+        intent_router_node 对 raw content 调 .strip() 抛
+        ``AttributeError: 'list' object has no attribute 'strip'``。
+
+        修复后应走短消息 plan_rewrite 路径（图片消息的文本通常很短），
+        正常路由回 pending skill，不崩溃、不弹交互卡。
+        """
+        from app.graph.clarify_guard import CLARIFY_STATE_KEY
+
+        store = self._mock_clarify_store(
+            {CLARIFY_STATE_KEY: {"count": 1, "force_example": False}}
+        )
+        state = {
+            "pending_interact_skill": "general",
+            "session_id": "s1",
+            "messages": [HumanMessage(content=[
+                {"type": "text", "text": "你懂的"},
+                {"type": "image_url", "image_url": {"url": "https://picsum.photos/seed/curtain-fabric/800/600"}},
+            ])],
+        }
+        with patch("app.memory.session_state_store.SessionStateStore", return_value=store):
+            result = await intent_router_node(state)
+        assert result["intent_result"]["source"] == "plan_rewrite"
+        assert result["route_decision"]["action"] == "full_agent"
+        assert result["intent_result"]["intent"] == "general"
 
     @pytest.mark.asyncio
     async def test_no_pending_skill_runs_llm(self):
