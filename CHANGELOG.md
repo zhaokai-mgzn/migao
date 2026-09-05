@@ -6,6 +6,12 @@
 
 ## [Unreleased]
 
+### 会话自动关闭加固 — 启动宽限期 + 单次扫描上限（2026-09-05，#2915）
+
+- `ai-agent-service`：会话自动关闭循环增加**启动宽限期**（SESSION_STARTUP_GRACE_S=600s）——进程刚启动（部署/重启）时不立即扫描关闭，防部署过渡期把积压/时间戳未修正的会话一次性批量误杀（#2904 部署后首次扫描 89 会话被一批关闭的实证教训）
+- `ai-agent-service`：`close_idle_sessions` 增加**单次扫描上限**（AUTO_CLOSE_SCAN_LIMIT=25）——积压分多轮消化（SQL LIMIT + 客户端截断 + UPDATE 按 ANY(ids) 只动限额内会话），不再出现"一批 89 全关"突袭
+- `ai-agent-service`：`SessionService.expire_idle` 透传 limit；回归单测 5 例（case_ids: MC-009/API-001/CH-005/CH-006/DA-004）
+
 ### 图片识别修复 — 视觉路由不受文本路由开关影响（2026-09-05，#2914）
 
 - `ai-agent-service`：修复 `LLM_ENABLE_MODEL_ROUTING=False` 时视觉请求误路由到纯文本主模型（deepseek-v4-flash 无法看图）导致图片颜色识别失效——`select_model` 的 `has_vision` 判定移到路由开关短路之前，含图消息恒走 `VISION_MODEL`（deepseek-v4-flash-vision-exp）；线上实证 sess_c40f60ffcae94f2b 色卡图原本只能识别"17 个颜色"概要

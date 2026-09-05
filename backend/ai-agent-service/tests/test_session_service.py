@@ -6,7 +6,7 @@ SessionService 是会话状态迁移的唯一写入者：
 - 非法迁移（active→active、closed→closed）被拒绝
 - 底层 SQL 委托 SessionMemory（close/reopen/delete 已实现）
 """
-# case_ids: CH-005
+# case_ids: CH-005, API-001
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -74,12 +74,20 @@ class TestReopen:
 
 class TestExpire:
     async def test_expire_idle_delegates(self, service):
-        """active → expired 批量委托 close_idle_sessions"""
+        """active → expired 批量委托 close_idle_sessions（含单次扫描上限 limit 透传）"""
         s, mem = service
         mem.close_idle_sessions = AsyncMock(return_value=3)
         count = await s.expire_idle(idle_minutes=30)
         assert count == 3
-        mem.close_idle_sessions.assert_awaited_once_with(idle_minutes=30)
+        mem.close_idle_sessions.assert_awaited_once_with(idle_minutes=30, limit=25)
+
+    async def test_expire_idle_passes_custom_limit(self, service):
+        """显式 limit 透传给 close_idle_sessions（issue #2915 防批量误杀）"""
+        s, mem = service
+        mem.close_idle_sessions = AsyncMock(return_value=2)
+        count = await s.expire_idle(idle_minutes=30, limit=2)
+        assert count == 2
+        mem.close_idle_sessions.assert_awaited_once_with(idle_minutes=30, limit=2)
 
 
 class TestPurge:
