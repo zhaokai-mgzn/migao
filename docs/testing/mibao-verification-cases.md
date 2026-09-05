@@ -1057,7 +1057,7 @@
 真值: ai-chat.permission-layers
 溯源: 2026-09-02 新增：POC 演示审查 D 项 — 角色码漂移导致商户员工（非 admin）米宝对话全部 401（UserRole 枚举硬编码三值 vs admin-api 签发五角色码）；修复 UserRole 枚举 + mibao.allowed_roles + 工具层 allowed_roles 三方对齐 ｜ tags: defense, auth, role-drift
 
-## finance（3 case）
+## finance（4 case）
 
 ### FN-001. 资金流水查询与登记 🔵
 ```
@@ -1085,6 +1085,15 @@
 ```
 真值: finance.reconcile
 溯源: 财务对账模块新增 ｜ tags: finance, reconcile
+
+### FN-004. 收支汇总默认本期（自然月）时间范围 🔵
+```
+你: 本期收入退款是多少
+期望: finance_api(action=get_summary, startDate=本月1号, endDate=今天)
+数据: 默认加载时开始/结束日期填充本期（本月1号~今天），getSummary/getTransactions/getReconciliation 均携带该范围
+```
+真值: finance.summary
+溯源: 本期默认时间范围（本月1号~今天） ｜ tags: finance, summary
 
 ## 人事域（5 case）
 
@@ -2285,8 +2294,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：186（活跃 101，跳过 85）
-- tier 分布：smoke 8 / normal 150 / adversarial 28
+- 用例总数：187（活跃 102，跳过 85）
+- tier 分布：smoke 8 / normal 151 / adversarial 28
 - 售后域：5
 - agents：6
 - api：10
@@ -2296,7 +2305,7 @@
 - 客户域：5
 - 数据域：6
 - 防御域：17
-- finance：3
+- finance：4
 - 人事域：5
 - misc：15
 - onboarding：5
