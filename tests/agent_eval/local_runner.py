@@ -216,18 +216,109 @@ async def send_message(token: str, session_id: str, message: str, images: list =
 
         return result
 
+def _parse_expectation(exp: str) -> tuple[str, dict | None]:
+    """解析 'tool(k=v, k2=[a, b])' 期望 → (工具名, args 字典)。
+
+    纯工具名（无括号）→ (工具名, None)。args 值为列表时解析为 list。
+    兼容语义描述值（复用上轮 UUID / 本月1号 / 遮光窗帘 等中文值原样保留）。
+    """
+    m = re.match(r"^([a-zA-Z_]\w*)\s*\((.*)\)\s*$", exp.strip())
+    if not m:
+        return exp.strip(), None
+    tool = m.group(1)
+    body = m.group(2)
+    args: dict = {}
+    for seg in _split_top_level(body, ","):
+        seg = seg.strip()
+        if not seg or "=" not in seg:
+            continue
+        k, _, v = seg.partition("=")
+        k = k.strip()
+        v = v.strip()
+        if v.startswith("[") and v.endswith("]"):
+            inner = v[1:-1]
+            items = [x.strip().strip('"\'') for x in inner.split(",")]
+            args[k] = [x for x in items if x != ""]
+        else:
+            args[k] = v.strip('"\'')
+    return tool, args
+
+
+def _split_top_level(s: str, sep: str = ",") -> list[str]:
+    """按最外层分隔符切分（忽略括号内逗号，如 item_ids=[1, 3, 5]）"""
+    parts, depth, cur = [], 0, []
+    for ch in s:
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth -= 1
+        if ch == sep and depth == 0:
+            parts.append("".join(cur))
+            cur = []
+        else:
+            cur.append(ch)
+    parts.append("".join(cur))
+    return parts
+
+
+_RE_CJK = re.compile(r"[\u4e00-\u9fff]")
+
+
+def _arg_mismatch_reason(actual: dict, expected: dict) -> str | None:
+    """args 关键字段校验：返回第一个不匹配原因；全部匹配返回 None。
+
+    规则（弱断言加固，issue #2854）：
+    - key 必须存在于实际 args（关键字段缺失即失败）
+    - 列表期望（item_ids=[打孔]）：实际列表必须包含期望每个元素（str 化比较）
+    - 纯 ASCII 标量（action/days/price/component）：宽容相等（数字 str/int 混比、bool 大小写）
+    - 含中文标量（复用上轮 UUID / 本月1号 / 遮光窗帘）：语义描述，仅校验 key 存在
+      （与旧弱断言兼容，防止把语义描述期望误判为字面值）
+    """
+    for k, exp_val in expected.items():
+        if k not in actual:
+            return f"missing arg '{k}'"
+        act_val = actual[k]
+        if isinstance(exp_val, list):
+            if not isinstance(act_val, list):
+                act_val = [act_val]
+            exp_set = {str(x) for x in exp_val}
+            act_set = {str(x) for x in act_val}
+            if not exp_set.issubset(act_set):
+                return f"arg '{k}' missing {sorted(exp_set - act_set)}"
+            continue
+        exp_s = str(exp_val).strip()
+        act_s = str(act_val).strip()
+        if _RE_CJK.search(exp_s):
+            # 中文语义描述值：仅 key 存在（旧弱断言兼容）
+            continue
+        if exp_s.lower() in ("true", "false"):
+            truthy = {"true", "1"} if exp_s.lower() == "true" else {"false", "0"}
+            if act_s.lower() not in truthy:
+                return f"arg '{k}' expected {exp_s} got {act_s}"
+            continue
+        try:
+            if float(exp_s) != float(act_s):
+                return f"arg '{k}' expected {exp_s} got {act_s}"
+        except ValueError:
+            if exp_s != act_s:
+                return f"arg '{k}' expected {exp_s} got {act_s}"
+    return None
+
+
 def check_expectation(result: dict, expectation: str) -> tuple[bool, str]:
     """检查一条 expectation 是否满足
 
     支持 OR 逻辑（'A or B'）：任一满足即通过。
     direct_reply 语义（澄清/引导形态）：该轮无 tool_calls 且有 final_text。
     组合形态如 'direct_reply or interact'（模糊意图澄清：文本引导或澄清卡均可）。
+    'tool(k=v, ...)' 形态 → args 关键字段校验（issue #2854 P0-3 弱断言加固）。
     """
     exp_lower = expectation.lower()
 
     # 拆 OR 分支（保持向后兼容：无 or 时等价于单分支）
-    parts = [p.strip() for p in exp_lower.split(" or ") if p.strip()]
-    has_direct_part = any("direct_reply" in p for p in parts)
+    parts = [p.strip() for p in expectation.split(" or ") if p.strip()]
+    parts_lower = [p.lower() for p in parts]
+    has_direct_part = any("direct_reply" in p for p in parts_lower)
 
     if has_direct_part:
         # direct_reply 分支满足：无工具调用且有文本输出
@@ -237,27 +328,50 @@ def check_expectation(result: dict, expectation: str) -> tuple[bool, str]:
         if len(parts) == 1:
             return False, "expected direct_reply (no tool) but got tool calls"
         # 含 or：direct 分支未命中，继续尝试其他工具分支
-        parts = [p for p in parts if "direct_reply" not in p]
+        parts = [p for i, p in enumerate(parts) if "direct_reply" not in parts_lower[i]]
 
-    # 反转断言（未被调用 / not called）优先：不受下方工具名子串匹配干扰
+    # 反转断言（未被调用 / not called）优先：不受下方工具名匹配干扰
     if "未被调用" in expectation or "not called" in exp_lower:
         for tc in result["tool_calls"]:
             if tc["name"] in exp_lower:
                 return False, f"tool {tc['name']} was called but should NOT be"
         return True, "tool not called as expected"
 
-    # 检查 tool 名称（支持 OR 逻辑：A or B）
-    # xiaobu 模式：expectation 里的 order_query 视为 customer_order_query（C 端物理隔离后）
-    expected_tools = []
+    # 检查 tool 名称 + args 关键字段（支持 OR 逻辑：A or B）
+    checked_args = False
+    last_args_detail = ""
     for part in parts:
-        t = part.strip()
-        if PERSONA == "xiaobu" and t == "order_query":
-            t = "customer_order_query"
-        expected_tools.append(t)
-    for tool_name in result.get("__all_tool_names", []):
-        for part in expected_tools:
-            if tool_name in part:
-                return True, f"tool '{tool_name}' matched"
+        tool_name, exp_args = _parse_expectation(part)
+        p_lower = part.lower()
+        if exp_args is None:
+            # 纯工具名（跨轮汇总子串匹配，保持向后兼容）
+            # xiaobu 模式：expectation 里的 order_query 视为 customer_order_query
+            want = p_lower
+            if PERSONA == "xiaobu" and "order_query" in want:
+                want = want.replace("order_query", "customer_order_query")
+            for tn in result.get("__all_tool_names", []):
+                if tn.lower() in want:
+                    return True, f"tool '{tn}' matched"
+            continue
+
+        # 带 args 期望：本轮 tool_calls 里找名字匹配 + args 关键字段校验
+        checked_args = True
+        want = tool_name.lower()
+        if PERSONA == "xiaobu" and want == "order_query":
+            want = "customer_order_query"
+        if not result.get("tool_calls"):
+            continue
+        for tc in result["tool_calls"]:
+            tc_name = str(tc.get("name") or "").lower()
+            if tc_name != want and want not in tc_name:
+                continue
+            reason = _arg_mismatch_reason(tc.get("args") or {}, exp_args)
+            if reason is None:
+                return True, f"tool '{tc['name']}' matched with key args"
+            last_args_detail = f"tool '{tc['name']}' matched but {reason}"
+
+    if checked_args and last_args_detail:
+        return False, last_args_detail
 
     # 检查 success
     if "success=true" in exp_lower or "success=true" in exp_lower:
@@ -392,10 +506,18 @@ async def run_case(case, token: str, session_id: str) -> dict:
     for r in results:
         r["__all_tool_names"] = all_tool_names
 
-    # 检查 expectations
+    # data_checks 中机器可判定的条目（success=true 等）计入评分（issue #2854 P0-3）
+    # 自然语义的 data_checks（如「返回趋势数据」）保持原语义：仅在最后轮错误守卫中参与
+    scoring_checks = list(case.expectations or [])
+    for dc in (case.data_checks or []):
+        dcs = str(dc).strip().lower()
+        if "success=true" in dcs or "error.code=" in dcs or "未被调用" in dc or "not called" in dcs:
+            scoring_checks.append(str(dc))
+
+    # 检查 expectations + 机器可判定 data_checks
     passed_expectations = 0
     failed_expectations = []
-    for exp in case.expectations:
+    for exp in scoring_checks:
         passed = False
         detail = ""
         # 在每一轮的结果中检查
@@ -409,7 +531,7 @@ async def run_case(case, token: str, session_id: str) -> dict:
         else:
             failed_expectations.append((exp, detail))
 
-    total_exp = len(case.expectations)
+    total_exp = len(scoring_checks)
     score = passed_expectations / total_exp if total_exp > 0 else 1.0
 
     # 真实验收守卫：最后轮报错 → 整体判失败（除非用例显式预期错误）
