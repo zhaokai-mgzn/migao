@@ -1904,7 +1904,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## ui（19 case）
+## ui（20 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -2133,6 +2133,19 @@
 真值: frontend-fix.no-api-change
 溯源: 2026-09-04 新增：智能客服名称去硬编码 — 思考中/空态/导航名原写死「AI/小布」（issue #2857） ｜ tags: mini-app, brand
 
+### UI-020. 订单列表采购明细 — 含加工项订单展示加工项计费（加工费合计 + 加工项明细行） 🔵
+```
+你: 订单包含加工项（如打孔、韩式打褶定型）时，订单列表「采购明细」列应展示该项加工费与加工项明细，与详情页口径一致
+期望: direct_reply
+数据: OrderTable 采购明细列从 processingInfo.processingFee（非 totalAmount/totalFee）取加工费，商品行后展示「+ 加工费{金额}元」
+数据: processingInfo 无 processingFee 字段时，按 processingInfo.processingItems 的 amount/subtotal 求和兜底展示加工费
+数据: 含加工项订单逐项展示加工项明细行：名称 × 单价元/米 × 数量米 = 金额元（数据源 item.processingInfo.processingItems）
+数据: 不含加工项订单不出现「+ 加工费0元」等误导信息
+跳过: 纯前端列表展示由 vitest 单测验证（OrderTable.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-09-05 新增：订单列表采购明细漏加工项计费修复（issue #2916） ｜ tags: ui, orders, list, processing-fee
+
 ### UI-019. 米宝工作台「洞察」重构为「会话简报」 — 工具台账转业务简报（结论/待办/办理结果/建议） 🔵
 ```
 你: 米宝会话页顶部「洞察」抽屉展示的是工具调用台账（查询订单/参数校验/请求确认），商家用户不理解也不关心 agent 调用了哪些工具
@@ -2177,8 +2190,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：178（活跃 99，跳过 79）
-- tier 分布：smoke 8 / normal 142 / adversarial 28
+- 用例总数：179（活跃 99，跳过 80）
+- tier 分布：smoke 8 / normal 143 / adversarial 28
 - 售后域：5
 - agents：6
 - api：10
@@ -2199,7 +2212,7 @@
 - registry：1
 - 设置域：8
 - token-refresh：4
-- ui：19
+- ui：20
 - utils：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
