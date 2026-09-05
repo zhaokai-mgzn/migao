@@ -25,7 +25,7 @@ numpy==1.26.4
 sse-starlette==3.4.8
 
 # 数据库
-asyncpg==0.30.0
+asyncpg==0.31.0
 SQLAlchemy==2.0.52
 greenlet==3.5.5
 redis==7.4.1
