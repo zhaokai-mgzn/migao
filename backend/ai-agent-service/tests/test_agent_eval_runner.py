@@ -5,7 +5,7 @@
 发图轮报错时，前面轮次可能已命中 success=true / tool 等 expectation，
 旧逻辑把用例计为通过（假验收 —— 线上 sess_806703a2dcca4059 图片崩溃正是此类）。
 """
-# case_ids: CH-021, CH-026
+# case_ids: CH-021, CH-026, OR-001, PR-001
 import importlib.util
 from pathlib import Path
 
@@ -64,3 +64,66 @@ class TestLastRoundErrorVerdict:
         assert lr._last_round_error_verdict(
             results, ["tool: product_search"], ["suggestion 非空且包含 product_search"]
         ) is None
+
+
+class TestFailureSignature:
+    """失败指纹：判断两次失败是否同根因（波动分类基础）"""
+
+    def test_same_failures_same_signature(self):
+        a = {"failed": [("tool: order_create", "unmatched")], "last_error": None}
+        b = {"failed": [("tool: order_create", "unmatched")], "last_error": None}
+        assert lr._failure_signature(a) == lr._failure_signature(b)
+
+    def test_signature_is_order_independent(self):
+        a = {"failed": [("x", "1"), ("y", "2")], "last_error": None}
+        b = {"failed": [("y", "2"), ("x", "1")], "last_error": None}
+        assert lr._failure_signature(a) == lr._failure_signature(b)
+
+    def test_different_failures_different_signature(self):
+        a = {"failed": [("tool: product_search", "unmatched")], "last_error": None}
+        b = {"failed": [("tool: order_query", "unmatched")], "last_error": None}
+        assert lr._failure_signature(a) != lr._failure_signature(b)
+
+    def test_error_included_in_signature(self):
+        a = {"failed": [], "last_error": "AttributeError: 'list' object ..."}
+        b = {"failed": [], "last_error": "KeyError: 'x'"}
+        assert lr._failure_signature(a) != lr._failure_signature(b)
+
+
+class TestClassifyAttempts:
+    """波动分类（issue #2890）：噪声放行 / 复现型 block / 不稳定标注 / infra 区分"""
+
+    def _r(self, score, failed=None, last_error=None):
+        return {"score": score, "failed": failed or [], "last_error": last_error}
+
+    def test_first_pass_is_pass(self):
+        assert lr._classify_attempts(self._r(1.0), self._r(0.0)) == "pass"
+
+    def test_second_pass_is_llm_noise(self):
+        """首次失败 + 新 session 重试通过 → 噪声，自动放行（记台账）。"""
+        first = self._r(0.5, [("tool: product_search", "unmatched")])
+        second = self._r(1.0)
+        assert lr._classify_attempts(first, second) == "llm-noise"
+
+    def test_same_signature_twice_is_reproducible(self):
+        """两次同指纹失败 → 确定性回归，禁止 rerun 掩盖。"""
+        f = [("tool: order_create", "unmatched")]
+        first = self._r(0.5, f)
+        second = self._r(0.0, f)
+        assert lr._classify_attempts(first, second) == "reproducible"
+
+    def test_different_signature_twice_is_unstable(self):
+        first = self._r(0.5, [("tool: A", "x")])
+        second = self._r(0.0, [("tool: B", "y")])
+        assert lr._classify_attempts(first, second) == "unstable"
+
+    def test_infra_error_classified(self):
+        first = self._r(0.0)
+        second = self._r(0.0, last_error="All connection attempts failed (ConnectError)")
+        assert lr._classify_attempts(first, second) == "infra"
+
+    def test_infra_marker_detection(self):
+        assert lr._is_infra_error("httpx.ConnectError: connection refused")
+        assert lr._is_infra_error("timeout after 120s")
+        assert lr._is_infra_error("Internal Server Error")
+        assert not lr._is_infra_error("AttributeError: 'list' object has no attribute 'strip'")

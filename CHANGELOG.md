@@ -6,6 +6,13 @@
 
 ## [Unreleased]
 
+### Agent Eval 波动根治（2026-09-05，#2890）
+
+- `agent-eval`：失败波动分类——首次失败后新 session 重试并按指纹判定：`llm-noise`（重试通过→自动放行+记 flake 台账）/ `reproducible`（两次同指纹→确定性回归，禁止 rerun 掩盖）/ `unstable`（两次不同指纹→LLM 发散标注）/ `infra`（传输/超时/5xx→运行级）；替代「失败→人工 gh run rerun 拼人品」的 SOP
+- `agent-eval`：flake 台账落盘（`AGENT_EVAL_FLAKE_LOG`，默认 agent-eval-flakes.json）——记录每次噪声放行/复现失败的签名，驱动断言收敛与高波动用例治理；pr-check 上传台账 artifact
+- `agent-eval`：`--no-classify` 兼容开关；pr-check 整跑重试语义收敛为「仅兜底运行级故障」，复现型失败直接按签名排查
+- `ai-agent-service`：回归单测补分类逻辑 10 例（test_agent_eval_runner.py，case_ids: CH-021/CH-026/OR-001/PR-001）
+
 ### Agent Eval 真实验收收口（2026-09-05，#2887）
 
 - `agent-eval`：最后一轮报错即判用例失败——expectations 此前是「任意一轮命中即过」，图片轮崩溃会被前面轮次（success=true 等）掩盖成 100% 通过（假验收，线上 sess_806703a2dcca4059 崩溃漏过多轮验收）；显式预期错误（error.code=/suggestion）的用例豁免
