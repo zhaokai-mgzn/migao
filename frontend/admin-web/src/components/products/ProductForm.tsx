@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, Trash2, RotateCcw, Settings2 } from 'lucide-react'
+import { Plus, Trash2, RotateCcw, Settings2, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button, Input, Select, Modal, Loading } from '@/components/ui'
 import ImageUploader from './ImageUploader'
@@ -45,7 +45,9 @@ const ANCHORS = {
   colors: 'pf-colors',
   sellingMethods: 'pf-selling-methods',
   doorWidths: 'pf-door-widths',
-  skus: 'pf-skus',
+  // #2908: skus 错误锚点指向 SkuMatrix 内警示横幅本身（否则滚到矩阵顶部，
+  // 表格下方的小字提示仍可能不可见）
+  skus: 'pf-skus-error',
   processingItemConfigs: 'pf-processing',
 } as const
 
@@ -495,6 +497,31 @@ export default function ProductForm({
           重置
         </button>
       </div>
+
+      {/* #2908: 表单级校验失败汇总提示（提交校验不通过时醒目可见） */}
+      {Object.keys(errors).length > 0 && (
+        <div
+          role="alert"
+          className="flex items-start gap-3 px-4 py-3 mb-4 rounded-lg border border-red-300 bg-red-50"
+        >
+          <AlertTriangle className="w-5 h-5 mt-0.5 shrink-0 text-red-600" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm text-red-700 leading-relaxed">
+              <span className="font-medium">表单校验未通过：</span>
+              还有{' '}
+              <span className="font-semibold">{Object.keys(errors).length}</span>{' '}
+              处必填内容未完成，请检查标红的字段。
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => scrollToFirstError(Object.keys(errors))}
+            className="shrink-0 h-8 px-3 rounded-md border border-red-300 bg-white text-sm font-medium text-red-600 hover:bg-red-100 transition-colors"
+          >
+            查看第一处问题
+          </button>
+        </div>
+      )}
 
       {/* ============ 基础信息 ============ */}
       <Section title="基础信息">

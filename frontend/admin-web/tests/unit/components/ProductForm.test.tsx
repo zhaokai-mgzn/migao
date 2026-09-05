@@ -1,6 +1,7 @@
 /**
  * ProductForm 组件测试
  * 覆盖：#646 移除 in_warehouse — 按钮数量、labelMap 无仓库中
+ * case_ids: PR-008
  */
 import { render, screen } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
@@ -166,5 +167,48 @@ describe('ProductForm (#1403 — 管理分类入口)', () => {
 
     // 弹窗标题「分类管理」应出现
     expect(screen.getByText('添加分类')).toBeTruthy()
+  })
+})
+
+// ========== #2908: 校验失败提示可见性 ==========
+
+describe('ProductForm (#2908 — 校验失败提示可见性)', () => {
+  const mockOnSubmit = vi.fn().mockResolvedValue(undefined)
+
+  it('提交校验失败时顶部出现错误汇总横幅（必填数量 + 查看第一处问题）', async () => {
+    const { default: userEvent } = await import('@testing-library/user-event')
+    const ue = userEvent.setup()
+    // jsdom 未实现 scrollIntoView，validate() 滚动到首错会触发
+    Element.prototype.scrollIntoView = vi.fn()
+
+    render(<ProductForm onSubmit={mockOnSubmit} />)
+
+    await ue.click(screen.getByText('提交并上架'))
+
+    const alert = screen.getByRole('alert')
+    expect(alert.textContent).toContain('表单校验未通过')
+    expect(alert.textContent).toMatch(/\d+ 处必填/)
+    // 空表单必填项：标题/货号/计价单位/分类/主图/颜色/售卖方式/规格尺寸 = 8 处
+    expect(alert.textContent).toContain('8 处必填')
+    // 提供「查看第一处问题」按钮
+    expect(screen.getByText('查看第一处问题')).toBeTruthy()
+    // 校验失败不调提交
+    expect(mockOnSubmit).not.toHaveBeenCalled()
+  })
+
+  it('修复一处错误后重新提交，汇总数量减少', async () => {
+    const { default: userEvent } = await import('@testing-library/user-event')
+    const ue = userEvent.setup()
+    Element.prototype.scrollIntoView = vi.fn()
+
+    render(<ProductForm onSubmit={mockOnSubmit} />)
+
+    await ue.click(screen.getByText('提交并上架'))
+    expect(screen.getByRole('alert').textContent).toContain('8 处必填')
+
+    // 填写商品标题后重提交 → 7 处
+    await ue.type(screen.getByPlaceholderText('最多可输入50汉字（100字符）'), '测试商品')
+    await ue.click(screen.getByText('提交并上架'))
+    expect(screen.getByRole('alert').textContent).toContain('7 处必填')
   })
 })
