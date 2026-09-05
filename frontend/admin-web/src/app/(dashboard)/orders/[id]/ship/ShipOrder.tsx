@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChevronRight, Zap } from 'lucide-react'
 import { toast } from 'sonner'
+import { toastRequestError } from '@/lib/api-error'
 import { orderApi } from '@/lib/api'
 import { useRouteId } from '@/lib/use-route-id'
 import { Button, Loading } from '@/components/ui'
@@ -76,7 +77,7 @@ export default function ShipOrder() {
       if (data) setOrder(data)
     } catch (e) {
       console.error('加载订单失败:', e)
-      toast.error('加载订单详情失败')
+      toastRequestError(e, '加载订单详情失败')
     } finally {
       setLoading(false)
     }
@@ -109,7 +110,7 @@ export default function ShipOrder() {
       toast.success('发货成功')
       router.push(`/orders/${order.id}`)
     } catch (e) {
-      toast.error('发货失败')
+      toastRequestError(e, '发货失败')
     } finally {
       setSubmitting(false)
     }

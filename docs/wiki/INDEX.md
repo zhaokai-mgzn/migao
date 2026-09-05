@@ -20,6 +20,7 @@ LLM 开发时按需加载对应页面 (~50 行/页，按场景索引)：
 | CI/CD 流水线详情 | [CI-CD](CI-CD.md) |
 | 写测试/了解测试体系 | [Testing](Testing.md) |
 | **测试工程规范（拆分/ignore/脱敏/分层）** | **[test-engineering-standards](../testing/test-engineering-standards.md)** |
+| **复杂交互验证机制（三层：契约/协议流/行为）** | **[interaction-verification](../testing/interaction-verification.md)** |
 | 遇到问题 | [Troubleshooting](Troubleshooting.md) |
 
 ## 深入阅读

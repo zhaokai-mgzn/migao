@@ -1,4 +1,4 @@
-# case_ids: MC-009
+# case_ids: MC-009, API-001
 """应用入口单元测试（app/main.py）
 
 覆盖：create_app / /health / CORS / lifespan / _session_auto_close_loop。
@@ -130,8 +130,10 @@ class TestSessionAutoCloseLoop:
     @pytest.mark.asyncio
     async def test_scans_idle_sessions_and_daily_cleanup(self):
         mock_svc = self._mock_session_service()
+        mono, _ = self._monotonic_clock(3600.0)  # 已过启动宽限期（issue #2915）
         with patch("app.memory.session_service.SessionService", return_value=mock_svc), \
-             patch("app.main.asyncio.sleep", new_callable=AsyncMock, side_effect=[None, asyncio.CancelledError()]):
+             patch("app.main.asyncio.sleep", new_callable=AsyncMock, side_effect=[None, asyncio.CancelledError()]), \
+             patch("app.main.time.monotonic", side_effect=mono):
             with pytest.raises(asyncio.CancelledError):
                 await main_module._session_auto_close_loop()
         mock_svc.expire_idle.assert_awaited_once_with(idle_minutes=240)
@@ -140,10 +142,51 @@ class TestSessionAutoCloseLoop:
     @pytest.mark.asyncio
     async def test_nonfatal_exception_continues_loop(self):
         mock_svc = self._mock_session_service(idle_side_effect=RuntimeError("scan error"))
+        mono, _ = self._monotonic_clock(3600.0)  # 已过启动宽限期（issue #2915）
         with patch("app.memory.session_service.SessionService", return_value=mock_svc), \
-             patch("app.main.asyncio.sleep", new_callable=AsyncMock, side_effect=[None, asyncio.CancelledError()]):
+             patch("app.main.asyncio.sleep", new_callable=AsyncMock, side_effect=[None, asyncio.CancelledError()]), \
+             patch("app.main.time.monotonic", side_effect=mono):
             with pytest.raises(asyncio.CancelledError):
                 await main_module._session_auto_close_loop()
         # 第一次 expire_idle 抛异常被吞（非致命），循环继续到第二次 sleep 后 CancelledError 重抛
         mock_svc.expire_idle.assert_awaited_once_with(idle_minutes=240)
         mock_svc.purge.assert_not_awaited()
+
+    # ── issue #2915：启动宽限期，防部署/重启后首次扫描批量误杀 ──
+
+    @staticmethod
+    def _monotonic_clock(elapsed_seconds: float):
+        """monotonic mock：第一次调用记录启动时刻 0，第二次返回 elapsed_seconds（已运行时长）"""
+        clock = {"n": 0}
+
+        def _monotonic():
+            clock["n"] += 1
+            return 0.0 if clock["n"] == 1 else elapsed_seconds
+
+        return _monotonic, clock
+
+    @pytest.mark.asyncio
+    async def test_startup_grace_skips_scan_within_grace(self):
+        """启动宽限期（SESSION_STARTUP_GRACE_S）内不执行关闭扫描（issue #2915）"""
+        mock_svc = self._mock_session_service()
+        mono, _ = self._monotonic_clock(100.0)  # 启动 100s（< 默认 600s 宽限）
+        with patch("app.memory.session_service.SessionService", return_value=mock_svc), \
+             patch("app.main.asyncio.sleep", new_callable=AsyncMock, side_effect=[None, asyncio.CancelledError()]), \
+             patch("app.main.time.monotonic", side_effect=mono):
+            with pytest.raises(asyncio.CancelledError):
+                await main_module._session_auto_close_loop()
+        mock_svc.expire_idle.assert_not_awaited()
+        mock_svc.purge.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_scan_runs_after_startup_grace(self):
+        """宽限期过后正常执行关闭扫描（既有行为保持）"""
+        mock_svc = self._mock_session_service()
+        mono, _ = self._monotonic_clock(3600.0)  # 启动 3600s（> 宽限）
+        with patch("app.memory.session_service.SessionService", return_value=mock_svc), \
+             patch("app.main.asyncio.sleep", new_callable=AsyncMock, side_effect=[None, asyncio.CancelledError()]), \
+             patch("app.main.time.monotonic", side_effect=mono):
+            with pytest.raises(asyncio.CancelledError):
+                await main_module._session_auto_close_loop()
+        mock_svc.expire_idle.assert_awaited_once()
+        mock_svc.purge.assert_awaited_once()

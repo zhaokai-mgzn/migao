@@ -1057,7 +1057,7 @@
 真值: ai-chat.permission-layers
 溯源: 2026-09-02 新增：POC 演示审查 D 项 — 角色码漂移导致商户员工（非 admin）米宝对话全部 401（UserRole 枚举硬编码三值 vs admin-api 签发五角色码）；修复 UserRole 枚举 + mibao.allowed_roles + 工具层 allowed_roles 三方对齐 ｜ tags: defense, auth, role-drift
 
-## finance（3 case）
+## finance（4 case）
 
 ### FN-001. 资金流水查询与登记 🔵
 ```
@@ -1085,6 +1085,15 @@
 ```
 真值: finance.reconcile
 溯源: 财务对账模块新增 ｜ tags: finance, reconcile
+
+### FN-004. 收支汇总默认本期（自然月）时间范围 🔵
+```
+你: 本期收入退款是多少
+期望: finance_api(action=get_summary, startDate=本月1号, endDate=今天)
+数据: 默认加载时开始/结束日期填充本期（本月1号~今天），getSummary/getTransactions/getReconciliation 均携带该范围
+```
+真值: finance.summary
+溯源: 本期默认时间范围（本月1号~今天） ｜ tags: finance, summary
 
 ## 人事域（5 case）
 
@@ -1622,7 +1631,7 @@
 真值: id-resolve.index
 溯源: eval P006 独有（序号 ID 解析） ｜ tags: id_resolve, adversarial, sequence
 
-## 商品域（13 case）
+## 商品域（15 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
 ```
@@ -1780,6 +1789,39 @@
 真值: fabric-calc.fullness-default, fabric-calc.fixed-height, fabric-calc.fixed-width
 溯源: POC 小布增强新增（算料报价 skill） ｜ tags: quote, fabric_calc, smoke
 
+### PR-014. 加工项多选一次性提交 - 展示选择器→用户点完成→解析全部名称→汇总确认 🔵
+```
+你: 录入这个商品，名称测试窗帘，价格 100
+你: 分类选窗帘
+你: 已选加工项：打孔加工、韩式折边
+期望: interact(component=choice, multiSelect=True)
+期望: processing_item_query
+期望: validate_input
+期望: product_manage(action=create)
+数据: 「已选加工项：打孔加工、韩式折边」被解析为 2 个加工项（不只取第一个）
+数据: 未在用户提交完整列表后再次询问加工项
+数据: 最终创建成功且关联加工项数量 = 2
+```
+真值: product-sku-stock.create-flow, ai-chat.validate-input
+溯源: 2026-09-05 交互验证机制行为层新增（issue #2896 复盘）：前端 choice 多选「完成选择」按钮一次性提交『已选加工项：A、B』格式，需真实 LLM 验证解析全部名称 + 不二次询问 ｜ tags: multi_turn, guided_flow, processing_item, multi_select
+
+### PR-015. 加工项多选翻页 - 翻页后继续选择并一次性提交 🔵
+```
+你: 录入这个商品，名称测试窗帘，价格 100
+你: 分类选窗帘
+你: 翻页查看第2页加工项
+你: 已选加工项：高温定型
+期望: interact(component=choice, multiSelect=True)
+期望: processing_item_query
+期望: validate_input
+期望: product_manage(action=create)
+数据: 翻页（__PAGE__ 协议）后加工项选择仍可继续（multiSelect 不丢）
+数据: 翻页后勾选累积一次性提交被正确解析
+数据: 最终创建成功
+```
+真值: product-sku-stock.create-flow
+溯源: 2026-09-05 交互验证机制行为层新增（issue #2896 复盘）：翻页后 multiSelect/pagination 契约保持 ｜ tags: multi_turn, processing_item, pagination, multi_select
+
 ## registry（1 case）
 
 ### RG-001. ToolRegistry 注册/查询/执行审计 🔵
@@ -1918,7 +1960,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## ui（20 case）
+## ui（24 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -2175,6 +2217,54 @@
 真值: frontend-fix.no-api-change
 溯源: 2026-09-05 新增：米宝「洞察」重构为「会话简报」— 工具语言转业务信息（issue #2897） ｜ tags: ui, admin-web, chat, insight
 
+### UI-021. 米宝展开大面板缩放手柄加大 + 缩放上限放开到视口 100%（拖到最大不留白） 🔵
+```
+你: 米宝 AI 对话浮框（点开机器人后的默认大弹框）的顶部/底部/右侧缩放手柄只有 8px 太大难抓取；高度/宽度最多只能缩放到视口 90%，上下左右总会留空白拖不满屏
+期望: direct_reply
+数据: MibaoChatPanel 顶部/底部手柄高度 h-2→h-3.5、右侧手柄宽度 w-2→w-3.5（抓取区域加大）
+数据: MAX_HEIGHT_RATIO / MAX_WIDTH_RATIO = 1：缩放手柄可把面板拖到视口 100%（innerHeight/innerWidth），不留边距空白
+数据: 保留原有最小尺寸边界（MIN_HEIGHT=300 / MIN_WIDTH=480）与 localStorage 持久化
+跳过: 纯前端 React 组件/单测验证（MibaoChatPanel.test.tsx + useResizableHeight/Width.test.ts），非 LLM 行为
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-09-05 新增：大面板缩放手柄加大 + 缩放上限 100% 不留白（issue #2918） ｜ tags: ui, admin-web, floating-assistant, resize
+
+### UI-022. 米宝展开大面板新增右下角斜向缩放把手（同时调整宽度与高度） 🔵
+```
+你: 米宝大弹框只能横向（右侧把手）/上下（顶部/底部把手）分别缩放，没有斜向缩放能力；希望加一个右下角把手，按住后沿对角线拖动可同时调整宽度与高度
+期望: direct_reply
+数据: MibaoChatPanel 渲染右下角把手 testid=chat-panel-resize-handle-corner，光标 nwse-resize，aria-label「拖拽调整大小（斜向缩放）」
+数据: 斜向拖拽时宽度=起始宽度+dx、高度=起始高度+dy 同步更新（useResizableHeight.setHeight / useResizableWidth.setWidth 新 API，夹在 min/max 内）
+数据: 松开后宽/高持久化到 mibao_chat_panel_height / mibao_chat_panel_width
+跳过: 纯前端 React 组件/单测验证（MibaoChatPanel.test.tsx），非 LLM 行为
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-09-05 新增：大面板右下角斜向缩放把手（issue #2918） ｜ tags: ui, admin-web, floating-assistant, resize
+
+### UI-023. 米宝最小化浮窗 — 默认高度按视口自适应（≥600 上限 760）+ 底部/右下角把手调大小 + 位置与尺寸越界自动钳制 🔵
+```
+你: 米宝收起后的最小化小浮窗固定 400×600，高度不够、聊天布局拥挤；且换屏/改窗口后存储的浮窗位置会落到视口外看不见
+期望: direct_reply
+数据: 默认高度按视口自适应：min(760, max(600, innerHeight*0.8))，小屏不超过视口高度（贴边不留白）
+数据: 底部把手（testid=float-minimized-resize-bottom）拖拽调整高度、右下角把手（float-minimized-resize-corner，nwse-resize）斜向同时调整宽高；尺寸持久化 mibao_minimized_size
+数据: 移动拖拽按当前浮窗尺寸钳制（0 ≤ x ≤ iw-w、0 ≤ y ≤ ih-h）；读取存储位置/尺寸时越界自动钳回视口
+跳过: 纯前端 React 组件/单测验证（floating-assistant.test.tsx），非 LLM 行为
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-09-05 新增：最小化浮窗高度自适应 + 缩放把手 + 越界钳制（issue #2918） ｜ tags: ui, admin-web, floating-assistant, minimized-window
+
+### UI-024. 请求错误提示去重 — 拦截器已展示后端具体错误，页面不再叠加通用错误 toast 🔵
+```
+你: 订单详情页点「确认付款」失败（如商品库存不足）：只看到 1 条具体错误提示（含「库存不足」详情），不再同时叠加「确认付款失败」通用提示
+期望: direct_reply
+数据: request.ts 响应拦截器 toast 后端具体错误（success:false 业务错误 / HTTP 错误 / 网络错误 / 登录已过期）后，给错误对象打已提示标记（api-error.ts 的 markErrorToastShown / isErrorToastShown，Symbol.for 稳定键，frozen 对象不抛错）
+数据: 页面 catch 统一走 toastRequestError(e, fallback, {id?})：拦截器已提示 → 不再重复弹 fallback；传入 loading toast id 且已提示时先 dismiss（订单列表页「操作中…」不滞留）；未标记错误（客户端校验等本地错误）→ 弹 fallback
+数据: 订单域页面（订单详情/订单列表/发货/新建订单）请求失败 catch 不再重复 toast 通用错误；客户端校验类提示（如「请输入快递单号」「请完善订单信息」）保留不变，不回归
+跳过: 纯前端错误提示行为由 vitest 单测验证（api-error/request/order-detail 三套），toast 链路由 request 拦截器单测覆盖，非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change, frontend-fix.vitest, frontend-fix.e2e
+溯源: 2026-09-05 新增：拦截器与页面 catch 双重 toast 导致错误提示重复弹出（issue #2923），订单域落地去重模式，其余模块批量清理留后续 issue ｜ tags: ui, admin-web, toast, error-handling
+
 ## utils（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -2204,8 +2294,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：180（活跃 99，跳过 81）
-- tier 分布：smoke 8 / normal 144 / adversarial 28
+- 用例总数：187（活跃 102，跳过 85）
+- tier 分布：smoke 8 / normal 151 / adversarial 28
 - 售后域：5
 - agents：6
 - api：10
@@ -2215,18 +2305,18 @@
 - 客户域：5
 - 数据域：6
 - 防御域：17
-- finance：3
+- finance：4
 - 人事域：5
 - misc：15
 - onboarding：5
 - ontology：4
 - 订单域：13
 - 加工项域：4
-- 商品域：13
+- 商品域：15
 - registry：1
 - 设置域：8
 - token-refresh：4
-- ui：20
+- ui：24
 - utils：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）

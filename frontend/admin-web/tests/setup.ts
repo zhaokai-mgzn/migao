@@ -233,4 +233,7 @@ vi.mock('lucide-react', () => ({
   AlertCircle: iconStub('alert-circle'),
   Pin: iconStub('pin'),
   Hash: iconStub('hash'),
+  // UI-021/UI-022/UI-023: 浮窗缩放把手新增图标
+  Expand: iconStub('expand'),
+  MoveDiagonal: iconStub('move-diagonal'),
 }))

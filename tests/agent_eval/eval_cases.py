@@ -1331,6 +1331,21 @@ _CASE_FN_003 = EvalCase(
     persona='',
 )
 
+# ── FN-004 [NORMAL] 收支汇总默认本期（自然月）时间范围（源: cases/finance.yml）──
+_CASE_FN_004 = EvalCase(
+    id='FN-004',
+    legacy_id='',
+    title='收支汇总默认本期（自然月）时间范围',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['本期收入退款是多少'],
+    expectations=['finance_api(action=get_summary, startDate=本月1号, endDate=今天)'],
+    data_checks=['默认加载时开始/结束日期填充本期（本月1号~今天），getSummary/getTransactions/getReconciliation 均携带该范围'],
+    skip_reason='',
+    tags=['finance', 'summary'],
+    persona='',
+)
+
 # ── HR-001 [SMOKE] 员工列表（源: cases/hr.yml）──
 _CASE_HR_001 = EvalCase(
     id='HR-001',
@@ -2216,6 +2231,36 @@ _CASE_PR_013 = EvalCase(
     persona='',
 )
 
+# ── PR-014 [NORMAL] 加工项多选一次性提交 - 展示选择器→用户点完成→解析全部名称→汇总确认（源: cases/product.yml）──
+_CASE_PR_014 = EvalCase(
+    id='PR-014',
+    legacy_id='',
+    title='加工项多选一次性提交 - 展示选择器→用户点完成→解析全部名称→汇总确认',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['录入这个商品，名称测试窗帘，价格 100', '分类选窗帘', '已选加工项：打孔加工、韩式折边'],
+    expectations=['interact(component=choice, multiSelect=True)', 'processing_item_query', 'validate_input', 'product_manage(action=create)'],
+    data_checks=['「已选加工项：打孔加工、韩式折边」被解析为 2 个加工项（不只取第一个）', '未在用户提交完整列表后再次询问加工项', '最终创建成功且关联加工项数量 = 2'],
+    skip_reason='',
+    tags=['multi_turn', 'guided_flow', 'processing_item', 'multi_select'],
+    persona='',
+)
+
+# ── PR-015 [NORMAL] 加工项多选翻页 - 翻页后继续选择并一次性提交（源: cases/product.yml）──
+_CASE_PR_015 = EvalCase(
+    id='PR-015',
+    legacy_id='',
+    title='加工项多选翻页 - 翻页后继续选择并一次性提交',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['录入这个商品，名称测试窗帘，价格 100', '分类选窗帘', '翻页查看第2页加工项', '已选加工项：高温定型'],
+    expectations=['interact(component=choice, multiSelect=True)', 'processing_item_query', 'validate_input', 'product_manage(action=create)'],
+    data_checks=['翻页（__PAGE__ 协议）后加工项选择仍可继续（multiSelect 不丢）', '翻页后勾选累积一次性提交被正确解析', '最终创建成功'],
+    skip_reason='',
+    tags=['multi_turn', 'processing_item', 'pagination', 'multi_select'],
+    persona='',
+)
+
 # ── RG-001 [NORMAL] ToolRegistry 注册/查询/执行审计（源: cases/registry.yml）──
 _CASE_RG_001 = EvalCase(
     id='RG-001',
@@ -2711,6 +2756,66 @@ _CASE_UI_019 = EvalCase(
     persona='',
 )
 
+# ── UI-021 [NORMAL] 米宝展开大面板缩放手柄加大 + 缩放上限放开到视口 100%（拖到最大不留白）（源: cases/ui.yml）──
+_CASE_UI_021 = EvalCase(
+    id='UI-021',
+    legacy_id='',
+    title='米宝展开大面板缩放手柄加大 + 缩放上限放开到视口 100%（拖到最大不留白）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['米宝 AI 对话浮框（点开机器人后的默认大弹框）的顶部/底部/右侧缩放手柄只有 8px 太大难抓取；高度/宽度最多只能缩放到视口 90%，上下左右总会留空白拖不满屏'],
+    expectations=['direct_reply'],
+    data_checks=['MibaoChatPanel 顶部/底部手柄高度 h-2→h-3.5、右侧手柄宽度 w-2→w-3.5（抓取区域加大）', 'MAX_HEIGHT_RATIO / MAX_WIDTH_RATIO = 1：缩放手柄可把面板拖到视口 100%（innerHeight/innerWidth），不留边距空白', '保留原有最小尺寸边界（MIN_HEIGHT=300 / MIN_WIDTH=480）与 localStorage 持久化'],
+    skip_reason='纯前端 React 组件/单测验证（MibaoChatPanel.test.tsx + useResizableHeight/Width.test.ts），非 LLM 行为',
+    tags=['ui', 'admin-web', 'floating-assistant', 'resize'],
+    persona='',
+)
+
+# ── UI-022 [NORMAL] 米宝展开大面板新增右下角斜向缩放把手（同时调整宽度与高度）（源: cases/ui.yml）──
+_CASE_UI_022 = EvalCase(
+    id='UI-022',
+    legacy_id='',
+    title='米宝展开大面板新增右下角斜向缩放把手（同时调整宽度与高度）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['米宝大弹框只能横向（右侧把手）/上下（顶部/底部把手）分别缩放，没有斜向缩放能力；希望加一个右下角把手，按住后沿对角线拖动可同时调整宽度与高度'],
+    expectations=['direct_reply'],
+    data_checks=['MibaoChatPanel 渲染右下角把手 testid=chat-panel-resize-handle-corner，光标 nwse-resize，aria-label「拖拽调整大小（斜向缩放）」', '斜向拖拽时宽度=起始宽度+dx、高度=起始高度+dy 同步更新（useResizableHeight.setHeight / useResizableWidth.setWidth 新 API，夹在 min/max 内）', '松开后宽/高持久化到 mibao_chat_panel_height / mibao_chat_panel_width'],
+    skip_reason='纯前端 React 组件/单测验证（MibaoChatPanel.test.tsx），非 LLM 行为',
+    tags=['ui', 'admin-web', 'floating-assistant', 'resize'],
+    persona='',
+)
+
+# ── UI-023 [NORMAL] 米宝最小化浮窗 — 默认高度按视口自适应（≥600 上限 760）+ 底部/右下角把手调大小 + 位置与尺寸越界自动钳制（源: cases/ui.yml）──
+_CASE_UI_023 = EvalCase(
+    id='UI-023',
+    legacy_id='',
+    title='米宝最小化浮窗 — 默认高度按视口自适应（≥600 上限 760）+ 底部/右下角把手调大小 + 位置与尺寸越界自动钳制',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['米宝收起后的最小化小浮窗固定 400×600，高度不够、聊天布局拥挤；且换屏/改窗口后存储的浮窗位置会落到视口外看不见'],
+    expectations=['direct_reply'],
+    data_checks=['默认高度按视口自适应：min(760, max(600, innerHeight*0.8))，小屏不超过视口高度（贴边不留白）', '底部把手（testid=float-minimized-resize-bottom）拖拽调整高度、右下角把手（float-minimized-resize-corner，nwse-resize）斜向同时调整宽高；尺寸持久化 mibao_minimized_size', '移动拖拽按当前浮窗尺寸钳制（0 ≤ x ≤ iw-w、0 ≤ y ≤ ih-h）；读取存储位置/尺寸时越界自动钳回视口'],
+    skip_reason='纯前端 React 组件/单测验证（floating-assistant.test.tsx），非 LLM 行为',
+    tags=['ui', 'admin-web', 'floating-assistant', 'minimized-window'],
+    persona='',
+)
+
+# ── UI-024 [NORMAL] 请求错误提示去重 — 拦截器已展示后端具体错误，页面不再叠加通用错误 toast（源: cases/ui.yml）──
+_CASE_UI_024 = EvalCase(
+    id='UI-024',
+    legacy_id='',
+    title='请求错误提示去重 — 拦截器已展示后端具体错误，页面不再叠加通用错误 toast',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['订单详情页点「确认付款」失败（如商品库存不足）：只看到 1 条具体错误提示（含「库存不足」详情），不再同时叠加「确认付款失败」通用提示'],
+    expectations=['direct_reply'],
+    data_checks=['request.ts 响应拦截器 toast 后端具体错误（success:false 业务错误 / HTTP 错误 / 网络错误 / 登录已过期）后，给错误对象打已提示标记（api-error.ts 的 markErrorToastShown / isErrorToastShown，Symbol.for 稳定键，frozen 对象不抛错）', '页面 catch 统一走 toastRequestError(e, fallback, {id?})：拦截器已提示 → 不再重复弹 fallback；传入 loading toast id 且已提示时先 dismiss（订单列表页「操作中…」不滞留）；未标记错误（客户端校验等本地错误）→ 弹 fallback', '订单域页面（订单详情/订单列表/发货/新建订单）请求失败 catch 不再重复 toast 通用错误；客户端校验类提示（如「请输入快递单号」「请完善订单信息」）保留不变，不回归'],
+    skip_reason='纯前端错误提示行为由 vitest 单测验证（api-error/request/order-detail 三套），toast 链路由 request 拦截器单测覆盖，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ui', 'admin-web', 'toast', 'error-handling'],
+    persona='',
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -2828,6 +2933,7 @@ ALL_CASES = (
     _CASE_FN_001,
     _CASE_FN_002,
     _CASE_FN_003,
+    _CASE_FN_004,
     _CASE_HR_001,
     _CASE_HR_002,
     _CASE_HR_003,
@@ -2887,6 +2993,8 @@ ALL_CASES = (
     _CASE_PR_011,
     _CASE_PR_012,
     _CASE_PR_013,
+    _CASE_PR_014,
+    _CASE_PR_015,
     _CASE_RG_001,
     _CASE_ST_001,
     _CASE_ST_002,
@@ -2920,6 +3028,10 @@ ALL_CASES = (
     _CASE_UI_018,
     _CASE_UI_020,
     _CASE_UI_019,
+    _CASE_UI_021,
+    _CASE_UI_022,
+    _CASE_UI_023,
+    _CASE_UI_024,
     _CASE_UT_001,
     _CASE_UT_002,
 )

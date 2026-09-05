@@ -1,17 +1,19 @@
-// case_ids: OR-001, OR-002, OR-003
+// case_ids: OR-001, OR-002, OR-003, UI-024
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { markErrorToastShown } from '@/lib/api-error'
 
 // Mock API
 const mockGetOrder = vi.fn()
+const mockConfirmPayment = vi.fn()
 const mockRefundOrder = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   orderApi: {
     getOrder: (...args: any[]) => mockGetOrder(...args),
     closeOrder: vi.fn(),
-    confirmPayment: vi.fn(),
+    confirmPayment: (...args: any[]) => mockConfirmPayment(...args),
     updateOrderStatus: vi.fn(),
     updateLogistics: vi.fn(),
     refundOrder: (...args: any[]) => mockRefundOrder(...args),
@@ -32,6 +34,8 @@ vi.mock('next/link', () => ({
 vi.mock('sonner', () => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }))
+
+import { toast } from 'sonner'
 
 // Mock dayjs
 vi.mock('dayjs', () => ({
@@ -294,5 +298,48 @@ describe('OrderDetailPage', () => {
     await waitFor(() => {
       expect(mockGetOrder.mock.calls.length).toBeGreaterThanOrEqual(2)
     })
+  })
+
+  // ===== 确认付款失败：错误提示去重（issue #2923，case UI-019） =====
+
+  it('确认付款失败：拦截器已提示具体错误 → 页面不再重复弹通用提示、弹窗保持打开', async () => {
+    const user = userEvent.setup()
+    mockGetOrder.mockResolvedValue({
+      data: { data: { ...mockOrder, status: 'pending', refundAmount: 0 } },
+    })
+    const stockError = new Error('商品「测试9999」库存不足')
+    markErrorToastShown(stockError) // 模拟拦截器已 toast 具体错误并打标记
+    mockConfirmPayment.mockRejectedValue(stockError)
+    render(<OrderDetailPage />)
+    await waitFor(() => {
+      expect(screen.getByText('待买家付款')).toBeInTheDocument()
+    })
+    await user.click(screen.getByRole('button', { name: '确认付款' }))
+    await user.click(screen.getByRole('button', { name: '确定' }))
+    await waitFor(() => {
+      expect(mockConfirmPayment).toHaveBeenCalledWith('test-order-123')
+    })
+    // 拦截器已提示 → 页面不叠加通用错误
+    expect(toast.error).not.toHaveBeenCalledWith('确认付款失败')
+    // 失败不关闭确认弹窗
+    expect(screen.getByText(/确认已收到付款/)).toBeInTheDocument()
+  })
+
+  it('确认付款失败：未经拦截器的错误 → 仍显示通用 fallback 提示', async () => {
+    const user = userEvent.setup()
+    mockGetOrder.mockResolvedValue({
+      data: { data: { ...mockOrder, status: 'pending', refundAmount: 0 } },
+    })
+    mockConfirmPayment.mockRejectedValue(new Error('client-side error'))
+    render(<OrderDetailPage />)
+    await waitFor(() => {
+      expect(screen.getByText('待买家付款')).toBeInTheDocument()
+    })
+    await user.click(screen.getByRole('button', { name: '确认付款' }))
+    await user.click(screen.getByRole('button', { name: '确定' }))
+    await waitFor(() => {
+      expect(mockConfirmPayment).toHaveBeenCalled()
+    })
+    expect(toast.error).toHaveBeenCalledWith('确认付款失败')
   })
 })

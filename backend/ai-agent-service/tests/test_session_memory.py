@@ -4,7 +4,7 @@
 测试 SessionMemory 的核心方法：create_session, save_message, get_history, 
 get_session, delete_session 等
 """
-# case_ids: CH-005, CH-006, DA-004
+# case_ids: CH-005, CH-006, DA-004, API-001
 
 import pytest
 import json
@@ -525,6 +525,29 @@ class TestCloseIdleSessions:
 
         assert count == 0  # 降级返回0
 
+    async def test_close_idle_sessions_respects_limit(self, memory, mock_db):
+        """单次扫描最多关闭 limit 个会话，其余下一轮再关（issue #2915 防批量误杀）"""
+        # SELECT 命中 3 个空闲，limit=2 → 只关 2 个，UPDATE 仅针对这 2 个
+        select_result = MockDBResult(rows=[("s1",), ("s2",), ("s3",)])
+        update_result = MockDBResult(rowcount=2)
+        mock_db.execute.side_effect = [select_result, update_result]
+        mock_store = AsyncMock()
+        mock_store.clear = AsyncMock(return_value=True)
+
+        with patch("app.memory.session_memory.SessionStateStore", return_value=mock_store), \
+             patch("app.memory.session_memory.SessionMemory._flush_pending_memories",
+                   new_callable=AsyncMock) as mock_flush:
+            count = await memory.close_idle_sessions(idle_minutes=30, limit=2)
+
+        assert count == 2
+        assert mock_store.clear.call_count == 2
+        assert mock_flush.await_count == 2
+        # UPDATE 只针对限额内的会话（WHERE id = ANY(ids)）
+        update_call = mock_db.execute.call_args_list[1]
+        sql, params = update_call.args
+        assert "ANY" in str(sql)
+        assert params["ids"] == ["s1", "s2"]
+
 
 class TestTimestampConsistency:
     """时间戳一致性（线上 sess_60238786c0694dbc 实证）
@@ -562,7 +585,12 @@ class TestTimestampConsistency:
         assert update_params["updated_at"].tzinfo == timezone.utc
 
     async def test_close_idle_sessions_binds_aware_utc(self, memory, mock_db):
-        """close_idle_sessions 的 now/cutoff 必须是 aware UTC（与 PG now() 同尺度比较）"""
+        """close_idle_sessions 的时间参数必须是 aware UTC（与 PG now() 同尺度比较）
+
+        issue #2915 起 UPDATE 改为按 ANY(ids) 限定额内会话：
+        - SELECT（call 0）绑 cutoff（判定空闲）与 limit
+        - UPDATE（call 1）绑定本次限额内的 ids 与 aware UTC 的 now
+        """
         select_result = MockDBResult(rows=[("s1",)])
         update_result = MockDBResult(rowcount=1)
         mock_db.execute.side_effect = [select_result, update_result]
@@ -574,9 +602,12 @@ class TestTimestampConsistency:
                    new_callable=AsyncMock):
             await memory.close_idle_sessions(idle_minutes=30)
 
-        params = self._params(mock_db, 1)
-        assert params["now"].tzinfo == timezone.utc
-        assert params["cutoff"].tzinfo == timezone.utc
+        select_params = self._params(mock_db, 0)
+        assert select_params["cutoff"].tzinfo == timezone.utc
+        assert select_params["limit"] == 25
+        update_params = self._params(mock_db, 1)
+        assert update_params["now"].tzinfo == timezone.utc
+        assert update_params["ids"] == ["s1"]
 
     async def test_cleanup_closed_sessions_binds_aware_utc(self, memory, mock_db):
         """cleanup_closed_sessions 的 cutoff 必须是 aware UTC"""

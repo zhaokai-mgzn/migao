@@ -1,4 +1,4 @@
-# case_ids: MC-008
+# case_ids: MC-008, CH-021
 """
 单元测试: 多模态视觉集成 (Skill 执行层)
 
@@ -271,9 +271,15 @@ class TestSelectModelWithVision:
         assert select_model(tool_count=5, has_vision=True) == MODEL_PRIMARY
 
     def test_select_model_vision_with_routing_off(self, routing_off, vision_enabled):
-        """LLM_ENABLE_MODEL_ROUTING=False 时返回 MINIMAX_MODEL（即 PRIMARY_MODEL），无视 has_vision"""
-        default = settings.MINIMAX_MODEL
-        assert select_model(has_vision=True) == default
+        """路由关闭时含图消息仍走 VISION_MODEL（issue #2914）
+
+        根因回归：此前 routing 关闭时含图消息返回 MINIMAX_MODEL（纯文本主模型，
+        无法看图）→ 线上 sess_c40f60ffcae94f2b 图片颜色识别失效。
+        视觉路由只由 has_vision/VISION_ENABLED 决定，不受文本路由开关影响。
+        """
+        assert select_model(has_vision=True) == "deepseek-v4-flash-vision-exp"
+        # 无图消息在路由关闭时仍走主模型（不回归）
+        assert select_model(has_vision=False) == settings.MINIMAX_MODEL
 
     def test_select_model_vision_default_is_flash(self):
         """视觉模型默认配置与 settings 一致（DeepSeek vision）"""

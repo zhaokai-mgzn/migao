@@ -13,6 +13,11 @@ from loguru import logger
 
 from app.memory.session_state_store import SessionStateStore
 
+# 单次自动关闭扫描的会话数上限（issue #2915）
+# 服务停机数小时/时间戳异常导致的大量积压会话分多轮消化，避免一次性批量误杀
+# "正在沟通中"的会话（线上教训：89 个会话在部署过渡期被一批关闭）。
+AUTO_CLOSE_SCAN_LIMIT = 25
+
 
 class SessionMemory:
     """会话消息管理（短期记忆）"""
@@ -972,13 +977,17 @@ class SessionMemory:
                 logger.error(f"[session-memory] Cleanup failed error={e}")
                 raise
 
-    async def close_idle_sessions(self, idle_minutes: int = 30) -> int:
+    async def close_idle_sessions(self, idle_minutes: int = 30, limit: int = AUTO_CLOSE_SCAN_LIMIT) -> int:
         """
         自动关闭空闲超过指定分钟数的活跃会话。
 
         关闭条件：status='active' 且 last_activity_at 距现在超过 idle_minutes 分钟
         （last_activity_at 由 send 守卫刷新，V13 迁移回填存量）。
         关闭时同步清理会话工作状态（SessionStateStore），与手动 close 语义一致。
+
+        limit（默认 AUTO_CLOSE_SCAN_LIMIT=25，issue #2915）：单次扫描最多关闭的会话数。
+        积压（如服务停机数小时/时间戳异常）分多轮消化，避免一次性批量误杀大量
+        "正在沟通中"的会话。
 
         Returns:
             int: 关闭的会话数量
@@ -990,26 +999,30 @@ class SessionMemory:
                 cutoff = self._now() - timedelta(minutes=idle_minutes)
 
                 # 先取回将被关闭的 session_id（用于清理工作状态）
+                # SQL LIMIT + 客户端截断双保险（测试/驱动差异下仍保证单次扫描不超限）
                 select_sql = text("""
                     SELECT id FROM sessions
                     WHERE status = 'active'
                       AND COALESCE(last_activity_at, created_at) < :cutoff
+                    LIMIT :limit
                 """)
-                rows = await db.execute(select_sql, {"cutoff": cutoff})
-                idle_ids = [r[0] for r in rows.fetchall()]
+                rows = await db.execute(select_sql, {"cutoff": cutoff, "limit": limit})
+                idle_ids = [r[0] for r in rows.fetchall()][:limit]
+                if not idle_ids:
+                    return 0
 
-                # 基于 last_activity_at 判定空闲（替代最后消息时间 or created_at 回退）
+                # 基于 last_activity_at 判定空闲（替代最后消息时间 or created_at 回退）；
+                # UPDATE 只针对本次限额内的会话（WHERE id = ANY(...)）
                 sql = text("""
                     UPDATE sessions
                     SET status = 'closed',
                         ended_at = COALESCE(ended_at, :now),
                         updated_at = :now
-                    WHERE status = 'active'
-                      AND COALESCE(last_activity_at, created_at) < :cutoff
+                    WHERE id = ANY(:ids)
                 """)
                 result = await db.execute(sql, {
                     "now": self._now(),
-                    "cutoff": cutoff,
+                    "ids": idle_ids,
                 })
                 await db.commit()
                 count = result.rowcount or 0
