@@ -1496,7 +1496,7 @@
 真值: order.states, order.create-flow, product-sku-stock.aggregate
 溯源: eval M005 独有（多轮引导细节），与 OR-008 互补不合并 ｜ tags: multi_turn, order_create, sku_select, full_flow
 
-### OR-010. 创建订单 - 汇总确认简化流程 🟢
+### OR-010. 创建订单 - 汇总确认简化流程 🔵
 ```
 你: 创建订单：张三 13812345678，杭州西湖区文三路1号，米白色遮光窗帘 2米
 你: 选散剪售卖，2.8米门幅
@@ -1673,7 +1673,7 @@
 真值: id-resolve.name, id-resolve.no-fabricate
 溯源: eval P007 + verification 2.8（同义，取 eval 的 ID 解析版） ｜ tags: id_resolve, update
 
-### PR-010. 商品全生命周期 - 搜索→查看→修改→关联加工项→验证 🟢
+### PR-010. 商品全生命周期 - 搜索→查看→修改→关联加工项→验证 🔵
 ```
 你: 搜索窗帘
 你: 看看第一个的详情
@@ -2139,7 +2139,7 @@
 ## 覆盖统计（生成）
 
 - 用例总数：175（活跃 98，跳过 77）
-- tier 分布：smoke 10 / normal 137 / adversarial 28
+- tier 分布：smoke 8 / normal 139 / adversarial 28
 - 售后域：5
 - agents：6
 - api：10

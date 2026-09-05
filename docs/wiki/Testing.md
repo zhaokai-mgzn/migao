@@ -40,7 +40,7 @@
 
 | tier | 数量 | 频率 | workflow |
 |------|------|------|----------|
-| smoke | 9 | 每次 PR（100% 通过才合并） | pr-check `agent-eval-smoke` |
+| smoke | 7 | 每次 PR（100% 通过才合并） | pr-check `agent-eval-smoke` |
 | normal | 81 | 按需手动触发 | agent-eval（local_runner.py normal） |
 | adversarial | 26 | 每周六 03:00（只追踪不阻塞） | agent-eval-adversarial |
 
