@@ -1622,7 +1622,7 @@
 真值: id-resolve.index
 溯源: eval P006 独有（序号 ID 解析） ｜ tags: id_resolve, adversarial, sequence
 
-## 商品域（13 case）
+## 商品域（15 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
 ```
@@ -1779,6 +1779,39 @@
 ```
 真值: fabric-calc.fullness-default, fabric-calc.fixed-height, fabric-calc.fixed-width
 溯源: POC 小布增强新增（算料报价 skill） ｜ tags: quote, fabric_calc, smoke
+
+### PR-014. 加工项多选一次性提交 - 展示选择器→用户点完成→解析全部名称→汇总确认 🔵
+```
+你: 录入这个商品，名称测试窗帘，价格 100
+你: 分类选窗帘
+你: 已选加工项：打孔加工、韩式折边
+期望: interact(component=choice, multiSelect=True)
+期望: processing_item_query
+期望: validate_input
+期望: product_manage(action=create)
+数据: 「已选加工项：打孔加工、韩式折边」被解析为 2 个加工项（不只取第一个）
+数据: 未在用户提交完整列表后再次询问加工项
+数据: 最终创建成功且关联加工项数量 = 2
+```
+真值: product-sku-stock.create-flow, ai-chat.validate-input
+溯源: 2026-09-05 交互验证机制行为层新增（issue #2896 复盘）：前端 choice 多选「完成选择」按钮一次性提交『已选加工项：A、B』格式，需真实 LLM 验证解析全部名称 + 不二次询问 ｜ tags: multi_turn, guided_flow, processing_item, multi_select
+
+### PR-015. 加工项多选翻页 - 翻页后继续选择并一次性提交 🔵
+```
+你: 录入这个商品，名称测试窗帘，价格 100
+你: 分类选窗帘
+你: 翻页查看第2页加工项
+你: 已选加工项：高温定型
+期望: interact(component=choice, multiSelect=True)
+期望: processing_item_query
+期望: validate_input
+期望: product_manage(action=create)
+数据: 翻页（__PAGE__ 协议）后加工项选择仍可继续（multiSelect 不丢）
+数据: 翻页后勾选累积一次性提交被正确解析
+数据: 最终创建成功
+```
+真值: product-sku-stock.create-flow
+溯源: 2026-09-05 交互验证机制行为层新增（issue #2896 复盘）：翻页后 multiSelect/pagination 契约保持 ｜ tags: multi_turn, processing_item, pagination, multi_select
 
 ## registry（1 case）
 
@@ -2240,8 +2273,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：183（活跃 99，跳过 84）
-- tier 分布：smoke 8 / normal 147 / adversarial 28
+- 用例总数：185（活跃 101，跳过 84）
+- tier 分布：smoke 8 / normal 149 / adversarial 28
 - 售后域：5
 - agents：6
 - api：10
@@ -2258,7 +2291,7 @@
 - ontology：4
 - 订单域：13
 - 加工项域：4
-- 商品域：13
+- 商品域：15
 - registry：1
 - 设置域：8
 - token-refresh：4

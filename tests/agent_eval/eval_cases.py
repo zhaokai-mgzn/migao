@@ -2216,6 +2216,36 @@ _CASE_PR_013 = EvalCase(
     persona='',
 )
 
+# ── PR-014 [NORMAL] 加工项多选一次性提交 - 展示选择器→用户点完成→解析全部名称→汇总确认（源: cases/product.yml）──
+_CASE_PR_014 = EvalCase(
+    id='PR-014',
+    legacy_id='',
+    title='加工项多选一次性提交 - 展示选择器→用户点完成→解析全部名称→汇总确认',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['录入这个商品，名称测试窗帘，价格 100', '分类选窗帘', '已选加工项：打孔加工、韩式折边'],
+    expectations=['interact(component=choice, multiSelect=True)', 'processing_item_query', 'validate_input', 'product_manage(action=create)'],
+    data_checks=['「已选加工项：打孔加工、韩式折边」被解析为 2 个加工项（不只取第一个）', '未在用户提交完整列表后再次询问加工项', '最终创建成功且关联加工项数量 = 2'],
+    skip_reason='',
+    tags=['multi_turn', 'guided_flow', 'processing_item', 'multi_select'],
+    persona='',
+)
+
+# ── PR-015 [NORMAL] 加工项多选翻页 - 翻页后继续选择并一次性提交（源: cases/product.yml）──
+_CASE_PR_015 = EvalCase(
+    id='PR-015',
+    legacy_id='',
+    title='加工项多选翻页 - 翻页后继续选择并一次性提交',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['录入这个商品，名称测试窗帘，价格 100', '分类选窗帘', '翻页查看第2页加工项', '已选加工项：高温定型'],
+    expectations=['interact(component=choice, multiSelect=True)', 'processing_item_query', 'validate_input', 'product_manage(action=create)'],
+    data_checks=['翻页（__PAGE__ 协议）后加工项选择仍可继续（multiSelect 不丢）', '翻页后勾选累积一次性提交被正确解析', '最终创建成功'],
+    skip_reason='',
+    tags=['multi_turn', 'processing_item', 'pagination', 'multi_select'],
+    persona='',
+)
+
 # ── RG-001 [NORMAL] ToolRegistry 注册/查询/执行审计（源: cases/registry.yml）──
 _CASE_RG_001 = EvalCase(
     id='RG-001',
@@ -2932,6 +2962,8 @@ ALL_CASES = (
     _CASE_PR_011,
     _CASE_PR_012,
     _CASE_PR_013,
+    _CASE_PR_014,
+    _CASE_PR_015,
     _CASE_RG_001,
     _CASE_ST_001,
     _CASE_ST_002,
