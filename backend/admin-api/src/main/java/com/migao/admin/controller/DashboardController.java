@@ -58,110 +58,49 @@ public class DashboardController {
         // 今日起止时间（使用中国标准时间 UTC+8）
         ZoneId cst = ZoneId.of("Asia/Shanghai");
         OffsetDateTime todayStart = LocalDate.now(cst).atStartOfDay().atOffset(ZoneOffset.ofHours(8));
+        OffsetDateTime tomorrowStart = todayStart.plusDays(1);
         OffsetDateTime yesterdayStart = todayStart.minusDays(1);
+        OffsetDateTime monthStart = LocalDate.now(cst).withDayOfMonth(1).atStartOfDay().atOffset(ZoneOffset.ofHours(8));
+        OffsetDateTime lastMonthStart = monthStart.minusMonths(1);
 
-        // 商品总数
-        long totalProducts = productMapper.selectCount(
-                new LambdaQueryWrapper<Product>().eq(Product::getTenantId, tenantId));
+        // #2886 性能优化：订单维度原来 8 次串行 selectCount/selectList → 1 次 SQL FILTER 聚合
+        Map<String, Object> orderStats = orderMapper.selectDashboardOrderStats(
+                todayStart, tomorrowStart, yesterdayStart, monthStart, lastMonthStart);
+        long totalOrders = toLong(orderStats.get("total_orders"));
 
-        // 订单总数
-        long totalOrders = orderMapper.selectCount(
-                new LambdaQueryWrapper<Order>().eq(Order::getTenantId, tenantId));
-
-        // 今日订单数
-        long todayOrders = orderMapper.selectCount(
-                new LambdaQueryWrapper<Order>()
-                        .eq(Order::getTenantId, tenantId)
-                        .ge(Order::getCreatedAt, todayStart));
-
-        // 昨日订单数（用于环比）
-        long yesterdayOrders = orderMapper.selectCount(
-                new LambdaQueryWrapper<Order>()
-                        .eq(Order::getTenantId, tenantId)
-                        .ge(Order::getCreatedAt, yesterdayStart)
-                        .lt(Order::getCreatedAt, todayStart));
-
-        // 订单环比变化
+        // 今日/昨日订单数与销售额（环比）
+        long todayOrders = toLong(orderStats.get("today_orders"));
+        long yesterdayOrders = toLong(orderStats.get("yesterday_orders"));
         double todayOrdersChange = yesterdayOrders > 0
                 ? ((double) (todayOrders - yesterdayOrders) / yesterdayOrders) * 100
                 : 0;
-
-        // 今日销售额
-        java.util.List<Order> todayList = orderMapper.selectList(
-                new LambdaQueryWrapper<Order>().eq(Order::getTenantId, tenantId).ge(Order::getCreatedAt, todayStart));
-        long todaySales = todayList.stream().map(o -> o.getTotalAmount() != null ? o.getTotalAmount() : BigDecimal.ZERO)
-                .reduce(BigDecimal.ZERO, BigDecimal::add)
-                .setScale(0, java.math.RoundingMode.HALF_UP).longValue();
-        java.util.List<Order> yesterdayList = orderMapper.selectList(
-                new LambdaQueryWrapper<Order>().eq(Order::getTenantId, tenantId)
-                        .ge(Order::getCreatedAt, yesterdayStart).lt(Order::getCreatedAt, todayStart));
-        long yesterdaySales = yesterdayList.stream().map(o -> o.getTotalAmount() != null ? o.getTotalAmount() : BigDecimal.ZERO)
-                .reduce(BigDecimal.ZERO, BigDecimal::add)
-                .setScale(0, java.math.RoundingMode.HALF_UP).longValue();
+        long todaySales = toLong(orderStats.get("today_sales"));
+        long yesterdaySales = toLong(orderStats.get("yesterday_sales"));
         double todaySalesChange = yesterdaySales > 0
                 ? ((double) (todaySales - yesterdaySales) / yesterdaySales) * 100 : 0;
 
-        // 客户总数（role=customer 的用户）
-        long totalCustomers = userMapper.selectCount(
-                new LambdaQueryWrapper<User>()
-                        .eq(User::getTenantId, tenantId)
-                        .eq(User::getRole, "customer"));
+        // 本月/上月营收（环比）
+        long monthRevenue = toLong(orderStats.get("month_revenue"));
+        long lastMonthRevenue = toLong(orderStats.get("last_month_revenue"));
+        double monthRevenueChange = lastMonthRevenue > 0
+                ? ((double) (monthRevenue - lastMonthRevenue) / lastMonthRevenue) * 100
+                : 0;
 
-        // 今日新增客户
-        long newCustomersToday = userMapper.selectCount(
-                new LambdaQueryWrapper<User>()
-                        .eq(User::getTenantId, tenantId)
-                        .eq(User::getRole, "customer")
-                        .ge(User::getCreatedAt, todayStart));
+        // #2886：客户维度 2 次串行 count → 1 次 FILTER 聚合
+        Map<String, Object> userStats = userMapper.selectDashboardUserStats(todayStart);
+        long totalCustomers = toLong(userStats.get("total_customers"));
+        long newCustomersToday = toLong(userStats.get("new_customers_today"));
 
         // 售后工单数
         long totalTickets = afterSalesTicketMapper.selectCount(
                 new LambdaQueryWrapper<AfterSalesTicket>()
                         .eq(AfterSalesTicket::getTenantId, tenantId));
 
-        // 本月营收（已确认+已完成订单的总金额）
-        LocalDate now = LocalDate.now(cst);
-        OffsetDateTime monthStart = now.withDayOfMonth(1).atStartOfDay().atOffset(ZoneOffset.ofHours(8));
-        List<Order> monthOrders = orderMapper.selectList(
-                new LambdaQueryWrapper<Order>()
-                        .eq(Order::getTenantId, tenantId)
-                        .ge(Order::getCreatedAt, monthStart)
-                        .in(Order::getStatus, "confirmed", "producing", "shipped", "completed"));
-        // 使用 BigDecimal 累加避免精度丢失（longValue() 会截断小数）
-        BigDecimal monthRevenueBd = monthOrders.stream()
-                .map(o -> o.getTotalAmount() != null ? o.getTotalAmount() : BigDecimal.ZERO)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-        long monthRevenue = monthRevenueBd.setScale(0, java.math.RoundingMode.HALF_UP).longValue();
-
-        // 上月营收（环比）
-        OffsetDateTime lastMonthStart = monthStart.minusMonths(1);
-        List<Order> lastMonthOrders = orderMapper.selectList(
-                new LambdaQueryWrapper<Order>()
-                        .eq(Order::getTenantId, tenantId)
-                        .ge(Order::getCreatedAt, lastMonthStart)
-                        .lt(Order::getCreatedAt, monthStart)
-                        .in(Order::getStatus, "confirmed", "producing", "shipped", "completed"));
-        BigDecimal lastMonthRevenueBd = lastMonthOrders.stream()
-                .map(o -> o.getTotalAmount() != null ? o.getTotalAmount() : BigDecimal.ZERO)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-        long lastMonthRevenue = lastMonthRevenueBd.setScale(0, java.math.RoundingMode.HALF_UP).longValue();
-        double monthRevenueChange = lastMonthRevenue > 0
-                ? ((double) (monthRevenue - lastMonthRevenue) / lastMonthRevenue) * 100
-                : 0;
-
-        // 活跃会话数（最近30分钟内有更新的会话）
+        // #2886：活跃会话/AI 会话 2 次串行 count → 1 次 FILTER 聚合
         OffsetDateTime activeThreshold = OffsetDateTime.now(ZoneOffset.ofHours(8)).minusMinutes(30);
-        long activeSessions = sessionMapper.selectCount(
-                new LambdaQueryWrapper<Session>()
-                        .eq(Session::getTenantId, tenantId)
-                        .ge(Session::getUpdatedAt, activeThreshold));
-
-        // AI 会话占比
-        long aiSessions = sessionMapper.selectCount(
-                new LambdaQueryWrapper<Session>()
-                        .eq(Session::getTenantId, tenantId)
-                        .ge(Session::getUpdatedAt, activeThreshold)
-                        .eq(Session::getAiEnabled, true));
+        Map<String, Object> sessionStats = sessionMapper.selectDashboardSessionStats(activeThreshold);
+        long activeSessions = toLong(sessionStats.get("active_sessions"));
+        long aiSessions = toLong(sessionStats.get("ai_sessions"));
         double aiSessionRate = activeSessions > 0
                 ? Math.round((double) aiSessions / activeSessions * 1000.0) / 10.0
                 : 0;
@@ -170,31 +109,19 @@ public class DashboardController {
         // 待处理区 3 卡片（#387）
         // ════════════════════════════════════════
 
-        // 待发货订单：status = 待发货
-        long pendingShipOrders = orderMapper.selectCount(
-                new LambdaQueryWrapper<Order>()
-                        .eq(Order::getTenantId, tenantId)
-                        .in(Order::getStatus, "confirmed", "producing"));
+        // 待发货订单数（status = 待发货）
+        long pendingShipOrders = toLong(orderStats.get("pending_ship"));
 
-        // 含加工待发货订单：status = 待发货 AND 有关联加工项
-        java.util.Set<String> shipOrderIds = orderMapper.selectList(
-                new LambdaQueryWrapper<Order>()
-                        .eq(Order::getTenantId, tenantId)
-                        .in(Order::getStatus, "confirmed", "producing"))
-                .stream().map(Order::getId).collect(Collectors.toSet());
-        long processingPendingOrders = 0;
-        if (!shipOrderIds.isEmpty()) {
-            processingPendingOrders = orderItemMapper.selectList(
-                    new LambdaQueryWrapper<OrderItem>()
-                            .in(OrderItem::getOrderId, shipOrderIds)
-                            .isNotNull(OrderItem::getProcessingInfo)
-                            .select(OrderItem::getOrderId))
-                    .stream().map(OrderItem::getOrderId).distinct().count();
-        }
+        // 含加工待发货订单：#2886 原「全量待发货 ID 拉取 + order_items IN 两次往返」→ JOIN 一次统计
+        long processingPendingOrders = orderItemMapper.selectProcessingPendingOrdersCount();
 
         // 待补库存商品：SKU 库存 ≤ 100（按颜色规格维度）
         // #1396: 口径统一 — 使用 ProductService 统一方法，排除已删除 + 已下架商品下的 SKU
         long lowStockItems = productService.getLowStockSkuCount(tenantId, 100);
+
+        // 商品总数
+        long totalProducts = productMapper.selectCount(
+                new LambdaQueryWrapper<Product>().eq(Product::getTenantId, tenantId));
 
         DashboardStatsResponse stats = DashboardStatsResponse.builder()
                 .todayOrders(todayOrders)
@@ -216,6 +143,20 @@ public class DashboardController {
                 .build();
 
         return ApiResponse.success(stats);
+    }
+
+    /** 聚合结果数值转换：BigDecimal 按原有 setScale(HALF_UP) 口径舍入，避免 decimal 截断 */
+    private static long toLong(Object v) {
+        if (v == null) {
+            return 0L;
+        }
+        if (v instanceof BigDecimal bd) {
+            return bd.setScale(0, java.math.RoundingMode.HALF_UP).longValue();
+        }
+        if (v instanceof Number n) {
+            return n.longValue();
+        }
+        return Long.parseLong(v.toString());
     }
 
     // ========== 订单趋势 ==========
@@ -329,27 +270,37 @@ public class DashboardController {
                         .orderByDesc(Session::getUpdatedAt)
                         .last("LIMIT " + limit));
 
+        // #2886 性能优化：客户信息 IN 批量一次（替代原来每会话一次 selectById）
+        Set<String> customerIds = sessions.stream()
+                .map(Session::getCustomerId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        Map<String, User> userMap = customerIds.isEmpty() ? Collections.emptyMap()
+                : userMapper.selectBatchIds(customerIds).stream()
+                        .collect(Collectors.toMap(User::getId, u -> u));
+
+        // #2886 性能优化：最后一条消息 DISTINCT ON 批量一次（替代原来每会话一次 LIMIT 1）
+        List<String> sessionIds = sessions.stream().map(Session::getId).collect(Collectors.toList());
+        Map<String, String> lastMessageMap = new HashMap<>();
+        if (!sessionIds.isEmpty()) {
+            for (Map<String, Object> row : sessionMessageMapper.selectLastMessageBySessionIds(sessionIds)) {
+                lastMessageMap.put((String) row.get("session_id"), (String) row.get("content"));
+            }
+        }
+
         List<ActiveSessionResponse> result = new ArrayList<>();
         for (Session s : sessions) {
             // 获取客户名称
             String customerName = "未知客户";
             if (s.getCustomerId() != null) {
-                User customer = userMapper.selectById(s.getCustomerId());
+                User customer = userMap.get(s.getCustomerId());
                 if (customer != null) {
                     customerName = customer.getNickname() != null ? customer.getNickname() : (customer.getPhone() != null ? customer.getPhone() : "未知客户");
                 }
             }
 
             // 获取最后一条消息
-            String lastMessage = "";
-            List<SessionMessage> messages = sessionMessageMapper.selectList(
-                    new LambdaQueryWrapper<SessionMessage>()
-                            .eq(SessionMessage::getSessionId, s.getId())
-                            .orderByDesc(SessionMessage::getCreatedAt)
-                            .last("LIMIT 1"));
-            if (!messages.isEmpty()) {
-                lastMessage = messages.get(0).getContent();
-            }
+            String lastMessage = lastMessageMap.getOrDefault(s.getId(), "");
 
             // 计算持续时间
             String duration = "";
@@ -435,7 +386,6 @@ public class DashboardController {
     public ApiResponse<List<ProductRankingResponse>> getProductRanking(
             @RequestParam(defaultValue = "day") String period,
             @RequestParam(defaultValue = "10") int limit) {
-        Long tenantId = TenantContext.getTenantId();
         ZoneId cst = ZoneId.of("Asia/Shanghai");
         // day: 近7天; month: 近30天（避免当天0点无数据导致"暂无数据"）
         OffsetDateTime periodStart = "month".equals(period)
@@ -443,43 +393,33 @@ public class DashboardController {
                 : LocalDate.now(cst).minusDays(7).atStartOfDay().atOffset(ZoneOffset.ofHours(8));
         OffsetDateTime prevStart = "month".equals(period) ? periodStart.minusDays(30) : periodStart.minusDays(7);
 
-        // 查周期内订单明细，按 productId 分组统计
-        List<OrderItem> items = orderItemMapper.selectList(
-                new LambdaQueryWrapper<OrderItem>()
-                        .eq(OrderItem::getTenantId, tenantId)
-                        .ge(OrderItem::getCreatedAt, periodStart));
-        Map<String, long[]> agg = new java.util.LinkedHashMap<>(); // pid -> [qty, amount]
-        Map<String, String> nameMap = new java.util.HashMap<>();
-        for (OrderItem item : items) {
-            String pid = item.getProductId();
-            if (pid == null) continue;
-            long[] v = agg.computeIfAbsent(pid, k -> new long[2]);
-            v[0] += item.getQuantity() != null ? item.getQuantity() : 0;
-            v[1] += item.getSubtotal() != null ? item.getSubtotal().longValue() : 0;
-            nameMap.putIfAbsent(pid, item.getProductName());
+        // #2886 性能优化：本周期聚合一次 SQL（替代原来全量明细拉到 JVM 分组排序 + 每商品一次上期查询）
+        List<Map<String, Object>> rankingRows = orderItemMapper.selectProductRanking(periodStart, limit);
+
+        // 上期销量：topN 产品 IN 批量一次
+        List<String> productIds = rankingRows.stream()
+                .map(r -> (String) r.get("product_id"))
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+        Map<String, Long> prevQtyMap = new HashMap<>();
+        if (!productIds.isEmpty()) {
+            for (Map<String, Object> row : orderItemMapper.selectPrevPeriodQuantities(productIds, prevStart, periodStart)) {
+                prevQtyMap.put((String) row.get("product_id"), ((Number) row.get("qty")).longValue());
+            }
         }
-        // 按销量排序
-        List<Map.Entry<String, long[]>> sorted = new java.util.ArrayList<>(agg.entrySet());
-        sorted.sort((a, b) -> Long.compare(b.getValue()[0], a.getValue()[0]));
 
         List<ProductRankingResponse> result = new ArrayList<>();
         int rank = 1;
-        for (Map.Entry<String, long[]> e : sorted) {
-            if (rank > limit) break;
-            String pid = e.getKey();
-            long qty = e.getValue()[0], amt = e.getValue()[1];
-            // 上期数量
-            long prevQty = orderItemMapper.selectList(
-                    new LambdaQueryWrapper<OrderItem>().eq(OrderItem::getProductId, pid)
-                            .eq(OrderItem::getTenantId, tenantId)
-                            .ge(OrderItem::getCreatedAt, prevStart)
-                            .lt(OrderItem::getCreatedAt, periodStart))
-                    .stream().mapToLong(i -> i.getQuantity() != null ? i.getQuantity() : 0).sum();
-            double dc = prevQty > 0 ? ((double)(qty - prevQty) / prevQty) * 100 : 0;
+        for (Map<String, Object> row : rankingRows) {
+            String pid = (String) row.get("product_id");
+            long qty = ((Number) row.get("qty")).longValue();
+            long amt = ((Number) row.get("amt")).longValue();
+            long prevQty = prevQtyMap.getOrDefault(pid, 0L);
+            double dc = prevQty > 0 ? ((double) (qty - prevQty) / prevQty) * 100 : 0;
             result.add(ProductRankingResponse.builder().rank(rank++).productId(pid)
-                    .productName(nameMap.getOrDefault(pid, "")).salesQty(qty).salesAmount(amt)
-                    .qtyDisplay(qty >= 10000 ? String.format("%.1fw", qty/10000.0) : String.valueOf(qty))
-                    .amountDisplay(amt >= 10000 ? String.format("%.1fw", amt/10000.0) : String.valueOf(amt))
+                    .productName((String) row.get("product_name")).salesQty(qty).salesAmount(amt)
+                    .qtyDisplay(qty >= 10000 ? String.format("%.1fw", qty / 10000.0) : String.valueOf(qty))
+                    .amountDisplay(amt >= 10000 ? String.format("%.1fw", amt / 10000.0) : String.valueOf(amt))
                     .dailyChange(Math.round(dc * 10.0) / 10.0).build());
         }
         return ApiResponse.success(result);

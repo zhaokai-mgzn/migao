@@ -1,4 +1,4 @@
-// case_ids: DA-001, DA-002, DA-003
+// case_ids: DA-001, DA-002, DA-003, DA-006
 
 package com.migao.admin.controller;
 
@@ -24,10 +24,13 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.math.BigDecimal;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -91,55 +94,76 @@ class DashboardControllerTest {
     @DisplayName("GET /api/admin/dashboard/stats")
     class GetStats {
 
-        @Test
-        @DisplayName("返回完整统计数据 -> 200")
-        void returnFullStats() throws Exception {
-            // given: 所有 mapper count 返回合理数值
+        /** #2886：一次性 stub 聚合查询（原 17 次串行查询的 mock 全部移除） */
+        private void stubAggregations() {
+            when(orderMapper.selectDashboardOrderStats(any(), any(), any(), any(), any())).thenReturn(Map.of(
+                    "total_orders", 50L,
+                    "today_orders", 5L,
+                    "yesterday_orders", 3L,
+                    "today_sales", new BigDecimal("1000"),
+                    "yesterday_sales", new BigDecimal("800"),
+                    "month_revenue", new BigDecimal("10000"),
+                    "last_month_revenue", new BigDecimal("9000"),
+                    "pending_ship", 10L));
+            when(userMapper.selectDashboardUserStats(any())).thenReturn(Map.of(
+                    "total_customers", 200L,
+                    "new_customers_today", 10L));
+            when(sessionMapper.selectDashboardSessionStats(any())).thenReturn(Map.of(
+                    "active_sessions", 3L,
+                    "ai_sessions", 2L));
+            when(orderItemMapper.selectProcessingPendingOrdersCount()).thenReturn(5L);
             when(productMapper.selectCount(any())).thenReturn(100L);
-            when(orderMapper.selectCount(any())).thenReturn(50L, 5L, 3L, 10L, 5L);  // total, today, yesterday, month, pendingShipOrders
-            when(orderMapper.selectList(any())).thenReturn(
-                    List.of(mockOrder(1000L)),
-                    List.of(mockOrder(800L)),
-                    List.of(),
-                    List.of(),
-                    List.of()  // shipOrderIds for #387
-            );
-            when(userMapper.selectCount(any())).thenReturn(200L, 10L);
             when(afterSalesTicketMapper.selectCount(any())).thenReturn(15L);
-            when(sessionMapper.selectCount(any())).thenReturn(3L, 2L);
-            // #387: 待处理区 3 卡片
-            when(orderItemMapper.selectList(any())).thenReturn(List.of());
-            // #1396: 待补库存改用 ProductService 统一口径（排除已删除+已下架商品下的 SKU）
             when(productService.getLowStockSkuCount(eq(1L), eq(100))).thenReturn(8L);
+        }
+
+        @Test
+        @DisplayName("返回完整统计数据 -> 200（#2886 聚合查询）")
+        void returnFullStats() throws Exception {
+            stubAggregations();
 
             // when & then
             mockMvc.perform(get("/api/admin/dashboard/stats"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.success").value(true))
-                    .andExpect(jsonPath("$.data.totalProducts").isNumber())
-                    .andExpect(jsonPath("$.data.totalOrders").isNumber())
-                    .andExpect(jsonPath("$.data.todayOrders").isNumber())
-                    .andExpect(jsonPath("$.data.totalCustomers").isNumber())
-                    .andExpect(jsonPath("$.data.activeSessions").isNumber());
+                    .andExpect(jsonPath("$.data.totalProducts").value(100))
+                    .andExpect(jsonPath("$.data.totalOrders").value(50))
+                    .andExpect(jsonPath("$.data.todayOrders").value(5))
+                    .andExpect(jsonPath("$.data.todaySales").value(1000))
+                    .andExpect(jsonPath("$.data.todayOrdersChange").value(66.7))
+                    .andExpect(jsonPath("$.data.totalCustomers").value(200))
+                    .andExpect(jsonPath("$.data.newCustomersToday").value(10))
+                    .andExpect(jsonPath("$.data.activeSessions").value(3))
+                    .andExpect(jsonPath("$.data.aiSessionRate").value(66.7))
+                    .andExpect(jsonPath("$.data.monthRevenue").value(10000))
+                    .andExpect(jsonPath("$.data.totalTickets").value(15))
+                    .andExpect(jsonPath("$.data.pendingShipOrders").value(10))
+                    .andExpect(jsonPath("$.data.processingPendingOrders").value(5))
+                    .andExpect(jsonPath("$.data.lowStockItems").value(8));
         }
 
         @Test
         @DisplayName("小数销售额舍入口径一致：todaySales 与 monthRevenue 均四舍五入（P2-3）")
         void decimalSalesRoundingConsistent() throws Exception {
             // given: 今日订单 119.8 元（如 59.9×2），本月订单 100.2 元
+            when(orderMapper.selectDashboardOrderStats(any(), any(), any(), any(), any())).thenReturn(Map.of(
+                    "total_orders", 50L,
+                    "today_orders", 5L,
+                    "yesterday_orders", 3L,
+                    "today_sales", new BigDecimal("119.8"),
+                    "yesterday_sales", new BigDecimal("0"),
+                    "month_revenue", new BigDecimal("100.2"),
+                    "last_month_revenue", new BigDecimal("0"),
+                    "pending_ship", 10L));
+            when(userMapper.selectDashboardUserStats(any())).thenReturn(Map.of(
+                    "total_customers", 200L,
+                    "new_customers_today", 10L));
+            when(sessionMapper.selectDashboardSessionStats(any())).thenReturn(Map.of(
+                    "active_sessions", 3L,
+                    "ai_sessions", 2L));
+            when(orderItemMapper.selectProcessingPendingOrdersCount()).thenReturn(5L);
             when(productMapper.selectCount(any())).thenReturn(100L);
-            when(orderMapper.selectCount(any())).thenReturn(50L, 5L, 3L, 10L, 5L);
-            when(orderMapper.selectList(any())).thenReturn(
-                    List.of(mockOrderDecimal("119.8")),   // todayList: 119.8 → 应舍入 120
-                    List.of(mockOrderDecimal("100.2")),   // yesterdayList
-                    List.of(mockOrderDecimal("100.2")),   // monthList: 100.2 → 应舍入 100
-                    List.of(),                            // lastMonthList
-                    List.of()                             // shipOrderIds for #387
-            );
-            when(userMapper.selectCount(any())).thenReturn(200L, 10L);
             when(afterSalesTicketMapper.selectCount(any())).thenReturn(15L);
-            when(sessionMapper.selectCount(any())).thenReturn(3L, 2L);
-            when(orderItemMapper.selectList(any())).thenReturn(List.of());
             when(productService.getLowStockSkuCount(eq(1L), eq(100))).thenReturn(8L);
 
             // when & then
@@ -149,6 +173,23 @@ class DashboardControllerTest {
                     .andExpect(jsonPath("$.data.todaySales").value(120))
                     // monthRevenue: 100.2 → HALF_UP → 100
                     .andExpect(jsonPath("$.data.monthRevenue").value(100));
+        }
+
+        @Test
+        @DisplayName("#2886 回归防护：stats 订单维度只发 1 次聚合查询，不再触发逐指标 selectCount/selectList")
+        void singleAggregationQueryForOrders() throws Exception {
+            stubAggregations();
+
+            mockMvc.perform(get("/api/admin/dashboard/stats"))
+                    .andExpect(status().isOk());
+
+            // 聚合一次；不得回退到原 17 次串行查询模式
+            verify(orderMapper, times(1)).selectDashboardOrderStats(any(), any(), any(), any(), any());
+            verify(orderMapper, never()).selectCount(any());
+            verify(orderMapper, never()).selectList(any());
+            verify(orderItemMapper, never()).selectList(any());
+            verify(userMapper, never()).selectCount(any());
+            verify(sessionMapper, never()).selectCount(any());
         }
     }
 
@@ -246,6 +287,39 @@ class DashboardControllerTest {
                     .andExpect(jsonPath("$.success").value(true))
                     .andExpect(jsonPath("$.data").isArray());
         }
+
+        @Test
+        @DisplayName("#2886 批量取客户与最后消息（替代 N+1），并回填名称与摘要")
+        void batchResolveCustomerAndLastMessage() throws Exception {
+            // given: 2 个会话，1 个有客户、1 个无客户
+            Session s1 = new Session();
+            s1.setId("sess-1");
+            s1.setCustomerId("cust-1");
+            s1.setChannel("web");
+            s1.setAiEnabled(true);
+            s1.setStartedAt(OffsetDateTime.now(ZoneOffset.UTC).minusMinutes(10));
+            Session s2 = new Session();
+            s2.setId("sess-2");
+            s2.setCustomerId(null);
+            when(sessionMapper.selectList(any())).thenReturn(List.of(s1, s2));
+            User c1 = new User();
+            c1.setId("cust-1");
+            c1.setNickname("王老板");
+            when(userMapper.selectBatchIds(any())).thenReturn(List.of(c1));
+            when(sessionMessageMapper.selectLastMessageBySessionIds(any())).thenReturn(List.of(
+                    Map.of("session_id", "sess-1", "content", "这批面料多少钱")));
+
+            mockMvc.perform(get("/api/admin/dashboard/active-sessions"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data[0].customerName").value("王老板"))
+                    .andExpect(jsonPath("$.data[0].lastMessage").value("这批面料多少钱"))
+                    .andExpect(jsonPath("$.data[0].ai").value(true))
+                    .andExpect(jsonPath("$.data[1].customerName").value("未知客户"));
+
+            // #2886 回归防护：不再走每会话 selectById / selectList 的 N+1
+            verify(userMapper, never()).selectById(any());
+            verify(sessionMessageMapper, never()).selectList(any());
+        }
     }
 
     @Nested
@@ -272,12 +346,38 @@ class DashboardControllerTest {
         @Test
         @DisplayName("返回商品销量排行 -> 200")
         void returnProductRanking() throws Exception {
-            when(orderItemMapper.selectList(any())).thenReturn(List.of());
+            when(orderItemMapper.selectProductRanking(any(), anyInt())).thenReturn(List.of());
 
             mockMvc.perform(get("/api/admin/dashboard/product-ranking"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.success").value(true))
                     .andExpect(jsonPath("$.data").isArray());
+        }
+
+        @Test
+        @DisplayName("#2886 排行聚合 + 上期销量 IN 批量 + dailyChange 计算")
+        void rankingAggregationAndPrevQty() throws Exception {
+            when(orderItemMapper.selectProductRanking(any(), anyInt())).thenReturn(List.of(
+                    Map.of("product_id", "p1", "product_name", "2699色卡", "qty", 30L, "amt", 12000L),
+                    Map.of("product_id", "p2", "product_name", "窗帘轨道", "qty", 20L, "amt", 8000L)));
+            when(orderItemMapper.selectPrevPeriodQuantities(any(), any(), any())).thenReturn(List.of(
+                    Map.of("product_id", "p1", "qty", 20L)));
+
+            mockMvc.perform(get("/api/admin/dashboard/product-ranking"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data[0].rank").value(1))
+                    .andExpect(jsonPath("$.data[0].productId").value("p1"))
+                    .andExpect(jsonPath("$.data[0].productName").value("2699色卡"))
+                    .andExpect(jsonPath("$.data[0].salesQty").value(30))
+                    .andExpect(jsonPath("$.data[0].salesAmount").value(12000))
+                    // (30-20)/20*100 = 50.0
+                    .andExpect(jsonPath("$.data[0].dailyChange").value(50.0))
+                    // p2 无上期数据 → 0
+                    .andExpect(jsonPath("$.data[1].dailyChange").value(0.0));
+
+            // #2886 回归防护：上期销量只查一次（IN 批量），不再每商品一次
+            verify(orderItemMapper, times(1)).selectPrevPeriodQuantities(any(), any(), any());
+            verify(orderItemMapper, never()).selectList(any());
         }
     }
 

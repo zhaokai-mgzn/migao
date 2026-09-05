@@ -1,4 +1,4 @@
-// case_ids: UI-003, UI-004, DA-005
+// case_ids: UI-003, UI-004, DA-005, DA-006
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 
@@ -48,6 +48,9 @@ function mockApiSuccess() {
         monthRevenueChange: 15.8,
         // #1396: lowStockItems 从 stats 获取，不再调 low-stock-by-color
         lowStockItems: 2,
+        // #2886: 待发货/含加工计数由 stats 聚合返回（替代 2 个重复计数接口）
+        pendingShipOrders: 8,
+        processingPendingOrders: 3,
       },
     },
   })
@@ -70,15 +73,8 @@ function mockApiSuccess() {
       ],
     },
   })
-  // dashboard 拆 3 端点：待发货 / 含加工待发货 / 低库存 SKU
-  // 按 URL 分发返回
+  // #2886: 待发货/含加工计数已由 stats 聚合返回，不再命中独立计数端点
   mockRequestGet.mockImplementation((url: string) => {
-    if (url === '/api/admin/dashboard/pending-shipment-count') {
-      return Promise.resolve({ data: { data: 8 } })
-    }
-    if (url === '/api/admin/dashboard/processing-shipment-count') {
-      return Promise.resolve({ data: { data: 3 } })
-    }
     if (url.startsWith('/api/admin/products/low-stock-by-color')) {
       return Promise.resolve({
         data: {
@@ -231,17 +227,20 @@ describe('DashboardPage', () => {
     })
   })
 
-  it('should fetch dashboard pending counts via separate endpoints (#1396: lowStockItems from stats)', async () => {
+  it('#2886 stats 单波并发返回全部数据：待发货/含加工计数复用 stats 字段，不再请求重复计数接口', async () => {
     render(<DashboardPage />)
     await waitFor(() => {
-      expect(mockRequestGet).toHaveBeenCalledWith('/api/admin/dashboard/pending-shipment-count')
-      expect(mockRequestGet).toHaveBeenCalledWith('/api/admin/dashboard/processing-shipment-count')
+      // 待发货/含加工计数改由 stats.pendingShipOrders / processingPendingOrders 提供
+      expect(mockRequestGet).not.toHaveBeenCalledWith('/api/admin/dashboard/pending-shipment-count')
+      expect(mockRequestGet).not.toHaveBeenCalledWith('/api/admin/dashboard/processing-shipment-count')
       // #1396: lowStockItems 从 stats.lowStockItems 获取，不再调 low-stock-by-color
       expect(mockRequestGet).not.toHaveBeenCalledWith(
         '/api/admin/products/low-stock-by-color',
         expect.anything(),
       )
     })
+    // 商品排行与 stats 同一波并发（不再串行等待）
+    expect(mockGetProductRanking).toHaveBeenCalled()
   })
 
   it('should display pending shipment counts', async () => {
