@@ -1,4 +1,4 @@
-// case_ids: UI-006
+// case_ids: UI-006, UI-020, UI-021
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useResizableHeight } from '@/hooks/useResizableHeight'
@@ -235,5 +235,37 @@ describe('useResizableHeight', () => {
     act(() => { capturedMoveHandler!({ clientY: 2000 } as MouseEvent) })
     expect(result.current.containerStyle.height).toBe('900px')
     Object.defineProperty(window, 'innerHeight', { value: orig, writable: true, configurable: true })
+  })
+
+  // ── setHeight API（UI-020 右下角斜向缩放共用）──
+  it('setHeight clamps to min/max and updates container style', () => {
+    const { result } = renderHook(() =>
+      useResizableHeight({ storageKey: STORAGE_KEY, defaultHeight: '70vh', minHeight: 300, maxHeight: 900 })
+    )
+    act(() => { result.current.setHeight(500) })
+    expect(result.current.containerStyle.height).toBe('500px')
+    act(() => { result.current.setHeight(50) })
+    expect(result.current.containerStyle.height).toBe('300px')
+    act(() => { result.current.setHeight(5000) })
+    expect(result.current.containerStyle.height).toBe('900px')
+  })
+
+  it('setHeight defaults max to window.innerHeight when maxHeight not provided', () => {
+    const orig = window.innerHeight
+    Object.defineProperty(window, 'innerHeight', { value: 800, writable: true, configurable: true })
+    const { result } = renderHook(() =>
+      useResizableHeight({ storageKey: STORAGE_KEY, defaultHeight: '70vh', minHeight: 300 })
+    )
+    act(() => { result.current.setHeight(5000) })
+    expect(result.current.containerStyle.height).toBe('800px')
+    Object.defineProperty(window, 'innerHeight', { value: orig, writable: true, configurable: true })
+  })
+
+  it('setHeight rounds fractional values', () => {
+    const { result } = renderHook(() =>
+      useResizableHeight({ storageKey: STORAGE_KEY, defaultHeight: '70vh', minHeight: 300, maxHeight: 1000 })
+    )
+    act(() => { result.current.setHeight(543.6) })
+    expect(result.current.containerStyle.height).toBe('544px')
   })
 })

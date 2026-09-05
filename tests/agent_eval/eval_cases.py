@@ -2681,6 +2681,51 @@ _CASE_UI_019 = EvalCase(
     persona='',
 )
 
+# ── UI-020 [NORMAL] 米宝展开大面板缩放手柄加大 + 缩放上限放开到视口 100%（拖到最大不留白）（源: cases/ui.yml）──
+_CASE_UI_020 = EvalCase(
+    id='UI-020',
+    legacy_id='',
+    title='米宝展开大面板缩放手柄加大 + 缩放上限放开到视口 100%（拖到最大不留白）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['米宝 AI 对话浮框（点开机器人后的默认大弹框）的顶部/底部/右侧缩放手柄只有 8px 太大难抓取；高度/宽度最多只能缩放到视口 90%，上下左右总会留空白拖不满屏'],
+    expectations=['direct_reply'],
+    data_checks=['MibaoChatPanel 顶部/底部手柄高度 h-2→h-3.5、右侧手柄宽度 w-2→w-3.5（抓取区域加大）', 'MAX_HEIGHT_RATIO / MAX_WIDTH_RATIO = 1：缩放手柄可把面板拖到视口 100%（innerHeight/innerWidth），不留边距空白', '保留原有最小尺寸边界（MIN_HEIGHT=300 / MIN_WIDTH=480）与 localStorage 持久化'],
+    skip_reason='纯前端 React 组件/单测验证（MibaoChatPanel.test.tsx + useResizableHeight/Width.test.ts），非 LLM 行为',
+    tags=['ui', 'admin-web', 'floating-assistant', 'resize'],
+    persona='',
+)
+
+# ── UI-021 [NORMAL] 米宝展开大面板新增右下角斜向缩放把手（同时调整宽度与高度）（源: cases/ui.yml）──
+_CASE_UI_021 = EvalCase(
+    id='UI-021',
+    legacy_id='',
+    title='米宝展开大面板新增右下角斜向缩放把手（同时调整宽度与高度）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['米宝大弹框只能横向（右侧把手）/上下（顶部/底部把手）分别缩放，没有斜向缩放能力；希望加一个右下角把手，按住后沿对角线拖动可同时调整宽度与高度'],
+    expectations=['direct_reply'],
+    data_checks=['MibaoChatPanel 渲染右下角把手 testid=chat-panel-resize-handle-corner，光标 nwse-resize，aria-label「拖拽调整大小（斜向缩放）」', '斜向拖拽时宽度=起始宽度+dx、高度=起始高度+dy 同步更新（useResizableHeight.setHeight / useResizableWidth.setWidth 新 API，夹在 min/max 内）', '松开后宽/高持久化到 mibao_chat_panel_height / mibao_chat_panel_width'],
+    skip_reason='纯前端 React 组件/单测验证（MibaoChatPanel.test.tsx），非 LLM 行为',
+    tags=['ui', 'admin-web', 'floating-assistant', 'resize'],
+    persona='',
+)
+
+# ── UI-022 [NORMAL] 米宝最小化浮窗 — 默认高度按视口自适应（≥600 上限 760）+ 底部/右下角把手调大小 + 位置与尺寸越界自动钳制（源: cases/ui.yml）──
+_CASE_UI_022 = EvalCase(
+    id='UI-022',
+    legacy_id='',
+    title='米宝最小化浮窗 — 默认高度按视口自适应（≥600 上限 760）+ 底部/右下角把手调大小 + 位置与尺寸越界自动钳制',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['米宝收起后的最小化小浮窗固定 400×600，高度不够、聊天布局拥挤；且换屏/改窗口后存储的浮窗位置会落到视口外看不见'],
+    expectations=['direct_reply'],
+    data_checks=['默认高度按视口自适应：min(760, max(600, innerHeight*0.8))，小屏不超过视口高度（贴边不留白）', '底部把手（testid=float-minimized-resize-bottom）拖拽调整高度、右下角把手（float-minimized-resize-corner，nwse-resize）斜向同时调整宽高；尺寸持久化 mibao_minimized_size', '移动拖拽按当前浮窗尺寸钳制（0 ≤ x ≤ iw-w、0 ≤ y ≤ ih-h）；读取存储位置/尺寸时越界自动钳回视口'],
+    skip_reason='纯前端 React 组件/单测验证（floating-assistant.test.tsx），非 LLM 行为',
+    tags=['ui', 'admin-web', 'floating-assistant', 'minimized-window'],
+    persona='',
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -2888,6 +2933,9 @@ ALL_CASES = (
     _CASE_UI_017,
     _CASE_UI_018,
     _CASE_UI_019,
+    _CASE_UI_020,
+    _CASE_UI_021,
+    _CASE_UI_022,
     _CASE_UT_001,
     _CASE_UT_002,
 )
