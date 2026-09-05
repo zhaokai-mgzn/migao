@@ -384,6 +384,119 @@ class OrderServiceTest {
         verify(orderItemMapper, times(2)).insert(any(OrderItem.class));
     }
 
+    @Test
+    @DisplayName("创建订单 - SKU 库存不足拒绝创建（库存校验前移至下单时，issue #2922）")
+    void createOrder_rejectsInsufficientStock() {
+        // given: 明细 2 件，SKU 库存仅 1
+        OrderCreateRequest.OrderItemRequest itemReq = new OrderCreateRequest.OrderItemRequest();
+        itemReq.setProductId("prod-001");
+        itemReq.setProductName("蜂巢帘");
+        itemReq.setQuantity(2);
+        itemReq.setUnitPrice(new BigDecimal("299.50"));
+        itemReq.setSubtotal(new BigDecimal("599.00"));
+        itemReq.setProcessingInfo(Map.of("skuId", 100L));
+
+        OrderCreateRequest request = new OrderCreateRequest();
+        request.setCustomerName("张三");
+        request.setCustomerPhone("13800138000");
+        request.setItems(List.of(itemReq));
+
+        when(productSkuMapper.selectById(100L))
+                .thenReturn(ProductSku.builder().id(100L).stock(1).build());
+
+        // when & then: 拒绝创建，库存不足提示出现在下单时而非确认付款时
+        assertThatThrownBy(() -> orderService.createOrder(request, 1L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("库存不足");
+        verify(orderMapper, never()).insert(any(Order.class));
+        verify(orderItemMapper, never()).insert(any(OrderItem.class));
+    }
+
+    @Test
+    @DisplayName("创建订单 - SKU 库存充足正常创建（库存校验不误伤）")
+    void createOrder_sufficientStock_allows() {
+        // given: 明细 2 件，SKU 库存 5 充足
+        OrderCreateRequest.OrderItemRequest itemReq = new OrderCreateRequest.OrderItemRequest();
+        itemReq.setProductId("prod-001");
+        itemReq.setProductName("蜂巢帘");
+        itemReq.setQuantity(2);
+        itemReq.setUnitPrice(new BigDecimal("299.50"));
+        itemReq.setSubtotal(new BigDecimal("599.00"));
+        itemReq.setProcessingInfo(Map.of("skuId", 100L));
+
+        OrderCreateRequest request = new OrderCreateRequest();
+        request.setCustomerName("张三");
+        request.setCustomerPhone("13800138000");
+        request.setItems(List.of(itemReq));
+
+        when(productSkuMapper.selectById(100L))
+                .thenReturn(ProductSku.builder().id(100L).stock(5).build());
+        when(orderMapper.insert(any(Order.class))).thenAnswer(invocation -> {
+            Order o = invocation.getArgument(0);
+            o.setId("order-stock-ok");
+            return 1;
+        });
+        when(orderItemMapper.insert(any(OrderItem.class))).thenReturn(1);
+
+        Order savedOrder = Order.builder()
+                .id("order-stock-ok")
+                .tenantId(1L)
+                .customerName("张三")
+                .customerPhone("13800138000")
+                .totalAmount(new BigDecimal("599.00"))
+                .status("pending")
+                .build();
+        when(orderMapper.selectById("order-stock-ok")).thenReturn(savedOrder);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(testOrderItem));
+        when(orderLogisticsMapper.selectByOrderId("order-stock-ok", 1L)).thenReturn(List.of());
+
+        // when & then: 不抛异常，订单正常创建
+        OrderDetailResponse result = orderService.createOrder(request, 1L);
+        assertThat(result).isNotNull();
+        assertThat(result.getStatus()).isEqualTo("pending");
+        verify(orderMapper).insert(any(Order.class));
+    }
+
+    @Test
+    @DisplayName("创建订单 - 明细无 SKU 匹配时不校验库存（与确认支付语义一致）")
+    void createOrder_noSkuMatch_skipsStockCheck() {
+        // given: 明细不带 processingInfo（无 SKU 标识），productSkuMapper 不 mock
+        OrderCreateRequest.OrderItemRequest itemReq = new OrderCreateRequest.OrderItemRequest();
+        itemReq.setProductId("prod-001");
+        itemReq.setProductName("蜂巢帘");
+        itemReq.setQuantity(2);
+        itemReq.setUnitPrice(new BigDecimal("299.50"));
+        itemReq.setSubtotal(new BigDecimal("599.00"));
+
+        OrderCreateRequest request = new OrderCreateRequest();
+        request.setCustomerName("张三");
+        request.setCustomerPhone("13800138000");
+        request.setItems(List.of(itemReq));
+
+        when(orderMapper.insert(any(Order.class))).thenAnswer(invocation -> {
+            Order o = invocation.getArgument(0);
+            o.setId("order-no-sku");
+            return 1;
+        });
+        when(orderItemMapper.insert(any(OrderItem.class))).thenReturn(1);
+
+        Order savedOrder = Order.builder()
+                .id("order-no-sku")
+                .tenantId(1L)
+                .customerName("张三")
+                .totalAmount(new BigDecimal("599.00"))
+                .status("pending")
+                .build();
+        when(orderMapper.selectById("order-no-sku")).thenReturn(savedOrder);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(testOrderItem));
+        when(orderLogisticsMapper.selectByOrderId("order-no-sku", 1L)).thenReturn(List.of());
+
+        // when & then: 不抛异常，订单正常创建
+        OrderDetailResponse result = orderService.createOrder(request, 1L);
+        assertThat(result).isNotNull();
+        verify(orderMapper).insert(any(Order.class));
+    }
+
     // ======================== 更新订单状态测试 ========================
 
     @Test
