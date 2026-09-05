@@ -265,7 +265,7 @@ export default function DashboardPage() {
       {/* 顶部 */}
       <div className="mb-5 flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-neutral-900">数据看板</h1>
+          <h1 className="text-xl font-bold text-neutral-900">经营看板</h1>
           <p className="mt-0.5 text-xs text-neutral-400">数据更新时间：{updateTime}</p>
         </div>
         <button

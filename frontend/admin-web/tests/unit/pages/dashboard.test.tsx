@@ -101,7 +101,7 @@ describe('DashboardPage', () => {
   it('should render page heading', async () => {
     render(<DashboardPage />)
     await waitFor(() => {
-      expect(screen.getByText('数据看板')).toBeInTheDocument()
+      expect(screen.getByText('经营看板')).toBeInTheDocument()
     })
   })
 
@@ -428,7 +428,7 @@ describe('DashboardPage', () => {
     mockGetStats.mockRejectedValue(new Error('Network error'))
     render(<DashboardPage />)
     await waitFor(() => {
-      expect(screen.getByText('数据看板')).toBeInTheDocument()
+      expect(screen.getByText('经营看板')).toBeInTheDocument()
     })
   })
 

@@ -82,7 +82,7 @@ const supportingProducts = [
       { icon: ShoppingBag, text: '商品中心：商品信息管理、加工项配置、知识库维护，商品运营一站搞定' },
       { icon: ShoppingBag, text: '交易中心：订单管理、售后处理、物流跟踪，全链路把控' },
       { icon: Users, text: '客户中心：客户档案、标签管理、行为洞察，精准运营' },
-      { icon: BarChart3, text: '数据看板：经营数据一览，趋势分析，数据驱动决策' },
+      { icon: BarChart3, text: '经营看板：经营数据一览，趋势分析，数据驱动决策' },
     ],
   },
   {

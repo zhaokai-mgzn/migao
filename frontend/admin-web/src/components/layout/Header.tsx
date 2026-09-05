@@ -22,7 +22,7 @@ const ROUTE_BREADCRUMB_MAP: Array<{
   crumbs: { label: string; href?: string }[]
 }> = [
   // 工作台
-  { match: (p) => p === '/' || p === '/dashboard', crumbs: [{ label: '工作台', href: '/dashboard' }, { label: '数据看板' }] },
+  { match: (p) => p === '/' || p === '/dashboard', crumbs: [{ label: '工作台', href: '/dashboard' }, { label: '经营看板' }] },
 
   // 商品管理（与侧边栏"商品管理"分组对齐）
   { match: (p) => p.startsWith('/products'), crumbs: [{ label: '商品管理' }, { label: '商品列表' }] },
@@ -53,7 +53,7 @@ const ROUTE_BREADCRUMB_MAP: Array<{
 ]
 
 function resolveBreadcrumbs(pathname: string | null): { label: string; href?: string }[] {
-  if (!pathname) return [{ label: '数据看板' }]
+  if (!pathname) return [{ label: '经营看板' }]
   const matched = ROUTE_BREADCRUMB_MAP.find((m) => m.match(pathname))
   return matched ? matched.crumbs : [{ label: '工作台', href: '/dashboard' }]
 }
@@ -70,7 +70,7 @@ export default function Header({ title, breadcrumbs }: HeaderProps) {
 
   // 优先级：显式 breadcrumbs > 显式 title > 基于路由的动态面包屑
   const resolvedBreadcrumbs = breadcrumbs ?? (title ? null : resolveBreadcrumbs(pathname))
-  const pageTitle = title || resolvedBreadcrumbs?.[resolvedBreadcrumbs.length - 1]?.label || '数据看板'
+  const pageTitle = title || resolvedBreadcrumbs?.[resolvedBreadcrumbs.length - 1]?.label || '经营看板'
 
   return (
     <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-neutral-200/80 bg-white/85 px-6 backdrop-blur-sm">

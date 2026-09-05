@@ -25,7 +25,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * 数据看板控制器
+ * 经营看板控制器
  * 提供 Dashboard 统计数据接口
  */
 @Slf4j

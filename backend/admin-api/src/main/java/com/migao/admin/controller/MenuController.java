@@ -23,7 +23,7 @@ public class MenuController {
 
     private static List<MenuNode> buildMenuTree() {
         // 权限码格式: 模块:操作 — 与 DB permissions.code 格式一致
-        MenuNode d1 = new MenuNode("dashboard:view", "数据看板");
+        MenuNode d1 = new MenuNode("dashboard:view", "经营看板");
         MenuNode o1 = new MenuNode("order:list", "订单列表");
         MenuNode o2 = new MenuNode("order:detail", "订单详情");
         MenuNode o3 = new MenuNode("order:refund", "退换货");
