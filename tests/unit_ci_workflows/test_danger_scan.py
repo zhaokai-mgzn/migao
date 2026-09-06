@@ -9,7 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / ".github"))
 
-from danger_scan import analyze
+from danger_scan import analyze, _truly_new_secret_lines
 
 
 class TestWorkflowChanges:
@@ -142,6 +142,28 @@ class TestMigrationRules:
             schema_changes=[("M", "docs/sql/schema_full.sql")],
         )
         assert not blockers
+
+
+class TestMovedSecrets:
+    """secrets 引用「移动」不算新增（issue #2949 实证：admin-api docker login 行拆步被误判新增）"""
+
+    def test_moved_secrets_line_not_blocked(self):
+        # 同一 secrets 引用从「build 步骤内」移动到「独立 login 步骤」——
+        # git diff 显示为一行删除 + 一行新增，但引用的 secret 完全相同 → 不应判为新增
+        added = ['+        run: echo "${{ secrets.ACR_PASSWORD }}" | docker login ${{ env.ACR_REGISTRY }} -u ${{ secrets.ACR_USERNAME }} --password-stdin']
+        removed = ['-          echo "${{ secrets.ACR_PASSWORD }}" | docker login ${{ env.ACR_REGISTRY }} -u ${{ secrets.ACR_USERNAME }} --password-stdin']
+        assert _truly_new_secret_lines(added, removed) == []
+
+    def test_truly_new_secret_blocks(self):
+        added = ['+        run: echo "${{ secrets.NEW_SECRET }}" | cmd']
+        removed = ['-          echo "${{ secrets.ACR_PASSWORD }}" | cmd']
+        assert _truly_new_secret_lines(added, removed) == added
+
+    def test_moved_then_modified_line_blocks(self):
+        # 移动且内容变化（引用集合不同）→ 仍是新增（引用集合变化需人工审查）
+        added = ['+        run: echo "${{ secrets.ACR_PASSWORD }}" | docker login --password-stdin']
+        removed = ['-          echo "${{ secrets.ACR_USERNAME }}" | docker login']
+        assert _truly_new_secret_lines(added, removed) == added
 
 
 class TestTrustedActor:

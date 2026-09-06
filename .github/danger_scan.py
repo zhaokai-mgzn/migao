@@ -24,6 +24,32 @@ MIGRATION_DIR = "backend/admin-api/src/main/resources/db/migration"
 SCHEMA_FILES = ("docs/sql/schema.sql", "docs/sql/schema_full.sql")
 MIGRATION_RE = re.compile(r"^V\d+__.*\.sql$")
 
+SECRET_REF_RE = re.compile(r"secrets\.([A-Za-z0-9_]+)")
+
+
+def _truly_new_secret_lines(added_lines, removed_lines):
+    """从 diff 的 added/removed 行中筛出「真正新增」的 secrets 引用行。
+
+    修复（issue #2949 实证）：把 workflow 里已有的 secrets 引用行从一处移到另一处
+    （如 admin-api 的 docker login 从 build 步骤拆为独立 login 步骤）时，
+    git diff 显示为「删除一行 + 新增一行」，但引用的 secrets 标识符集合相同——
+    这是移动而非新增，不应 BLOCK 合并。
+
+    判定：某新增行引用的每个 secret 名都已在删除行中出现过 → 移动，跳过；
+    若引用了删除行中不存在的 secret 名（或删除行无 secret）→ 真新增，保留。
+    保守策略：新增行若混入一个真新 secret（其余为移动），整行保留待人工审查。
+    """
+    removed_refs = set()
+    for line in removed_lines:
+        removed_refs.update(SECRET_REF_RE.findall(line))
+    truly_new = []
+    for line in added_lines:
+        added_refs = set(SECRET_REF_RE.findall(line))
+        if added_refs and added_refs <= removed_refs:
+            continue  # 引用的 secret 都是移动过来的，非新增
+        truly_new.append(line)
+    return truly_new
+
 
 def analyze(workflow_changes, wf_new_secrets, deleted_files, deploy_files, migration_changes, schema_changes, trusted_actor=False):
     """纯函数：对变更清单做安全判定。返回 (blockers, warnings)。
@@ -107,7 +133,7 @@ def _git_name_status(scope):
 
 
 def _workflow_new_secrets(paths):
-    """对修改的 workflow 提取新增的 secrets 引用行"""
+    """对修改的 workflow 提取新增的 secrets 引用行（移动/重排不算新增，issue #2949）"""
     secrets_by_path = {}
     for status, path in paths:
         if status in ("M", "R"):
@@ -116,9 +142,12 @@ def _workflow_new_secrets(paths):
                     ["git", "diff", f"{BASE}...HEAD", "--", path],
                     capture_output=True, text=True, timeout=30,
                 )
-                added = [l for l in out.stdout.splitlines() if l.startswith("+") and "secrets." in l]
-                if added:
-                    secrets_by_path[path] = added
+                lines = out.stdout.splitlines()
+                added = [l for l in lines if l.startswith("+") and "secrets." in l]
+                removed = [l for l in lines if l.startswith("-") and "secrets." in l]
+                truly_new = _truly_new_secret_lines(added, removed)
+                if truly_new:
+                    secrets_by_path[path] = truly_new
             except Exception:
                 pass
     return secrets_by_path
