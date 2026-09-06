@@ -9,10 +9,12 @@ import com.migao.admin.dto.UnreadCountResponse;
 import com.migao.admin.entity.Notification;
 import com.migao.admin.entity.NotificationRule;
 import com.migao.admin.entity.NotificationTemplate;
+import com.migao.admin.entity.User;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.NotificationMapper;
 import com.migao.admin.mapper.NotificationTemplateMapper;
 import com.migao.admin.mapper.NotificationRuleMapper;
+import com.migao.admin.mapper.UserMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.junit.jupiter.api.Disabled;
@@ -32,6 +34,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -50,6 +53,9 @@ class NotificationServiceTest {
 
     @Mock
     private NotificationRuleMapper notificationRuleMapper;
+
+    @Mock
+    private UserMapper userMapper;
 
     @InjectMocks
     private NotificationService notificationService;
@@ -354,5 +360,66 @@ class NotificationServiceTest {
         verify(notificationMapper).insert(argThat((Notification n) ->
                 "user-1".equals(n.getRecipientId())
                         && "新订单ORD-001已创建，金额599.00元".equals(n.getContent())));
+    }
+
+    @Test
+    @DisplayName("triggerForTenantAdmins — 向租户每位管理员逐个发送待办站内信")
+    void triggerForTenantAdmins_sendsToEachAdmin() {
+        // given: 租户有 2 位管理员
+        User admin1 = new User();
+        admin1.setId("admin-1");
+        admin1.setTenantId(1L);
+        admin1.setRole("admin");
+        User admin2 = new User();
+        admin2.setId("admin-2");
+        admin2.setTenantId(1L);
+        admin2.setRole("admin");
+        when(userMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(admin1, admin2));
+
+        NotificationRule rule = new NotificationRule();
+        rule.setId("rule-sys-0001");
+        rule.setTenantId(0L);
+        rule.setEventType("order_created");
+        rule.setRecipientType("employee");
+        rule.setChannels("internal");
+        rule.setEnabled(true);
+        rule.setTemplateId("tpl-sys-order-created");
+
+        NotificationTemplate template = new NotificationTemplate();
+        template.setId("tpl-sys-order-created");
+        template.setName("新订单通知");
+        template.setChannel("internal");
+        template.setTemplateContent("新订单 {{orderNo}} 已创建");
+        template.setStatus("active");
+
+        when(notificationRuleMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(rule));
+        when(notificationTemplateMapper.selectById("tpl-sys-order-created")).thenReturn(template);
+        when(notificationMapper.insert(any(Notification.class))).thenReturn(1);
+
+        java.util.Map<String, String> vars = java.util.Map.of("orderNo", "ORD-001");
+
+        // when
+        notificationService.triggerForTenantAdmins(1L, "order_created", vars);
+
+        // then: 每位管理员各一条，接收人类型为 employee
+        verify(notificationMapper, times(2)).insert(any(Notification.class));
+        verify(notificationMapper).insert(argThat((Notification n) ->
+                "admin-1".equals(n.getRecipientId()) && "employee".equals(n.getRecipientType())));
+        verify(notificationMapper).insert(argThat((Notification n) ->
+                "admin-2".equals(n.getRecipientId()) && "employee".equals(n.getRecipientType())));
+    }
+
+    @Test
+    @DisplayName("triggerForTenantAdmins — 租户无管理员时不产生通知")
+    void triggerForTenantAdmins_noAdmins_skips() {
+        // given
+        when(userMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+
+        // when
+        notificationService.triggerForTenantAdmins(1L, "order_created", java.util.Map.of("orderNo", "ORD-001"));
+
+        // then
+        verify(notificationMapper, never()).insert(any(Notification.class));
+        verify(notificationRuleMapper, never()).selectList(any(LambdaQueryWrapper.class));
     }
 }

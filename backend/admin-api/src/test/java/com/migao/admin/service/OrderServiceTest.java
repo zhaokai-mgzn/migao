@@ -1559,9 +1559,10 @@ class OrderServiceTest {
         // when
         OrderDetailResponse result = orderService.createOrder(request, 1L);
 
-        // then: 触发 order_created 站内信（面向订单归属用户）
+        // then: C 端自助下单 → 触发 order_created 待办通知（接收人由
+        // NotificationService.triggerForTenantAdmins 按租户 admin 角色解析）
         assertThat(result).isNotNull();
-        verify(notificationService).triggerByEvent(eq(1L), eq("order_created"), any());
+        verify(notificationService).triggerForTenantAdmins(eq(1L), eq("order_created"), any());
     }
 
     @Test
@@ -1602,7 +1603,8 @@ class OrderServiceTest {
         // when
         orderService.createOrder(request, 1L);
 
-        // then
+        // then: 商户代录（无归属用户）不触发任何站内信，不影响主流程
+        verify(notificationService, never()).triggerForTenantAdmins(anyLong(), anyString(), any());
         verify(notificationService, never()).triggerByEvent(anyLong(), anyString(), any());
     }
 

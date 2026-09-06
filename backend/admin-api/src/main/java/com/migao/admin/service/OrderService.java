@@ -537,29 +537,32 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     }
 
     /**
-     * 站内信：新订单创建（order_created 事件）
-     * 通知失败不影响订单主流程（旁路逻辑，参考客户建档的容错模式）
+     * 站内信：新订单待处理（order_created 事件）
+     *
+     * 接收人路由（issue #2965 v2）：只有存在归属用户（C 端自助下单）时才属于
+     * 「新订单待处理」场景，通知租户管理员（B 端铃铛）——管理员据此跟进确认；
+     * 商户代录的订单（无归属用户）由录入者自行感知，不发送避免噪音。
      */
     private void notifyOrderCreated(Long tenantId, Order order, BigDecimal totalAmount) {
         if (order.getUserId() == null || order.getUserId().isBlank()) {
-            log.debug("[notify] 订单无归属用户，跳过站内信: orderId={}", order.getId());
+            log.debug("[notify] 订单无归属用户（商户代录），跳过新订单通知: orderId={}", order.getId());
             return;
         }
         try {
-            Map<String, String> ctx = new HashMap<>();
-            ctx.put("recipientId", order.getUserId());
-            ctx.put("recipientType", "user");
-            ctx.put("orderNo", order.getOrderNo() != null ? order.getOrderNo() : order.getId());
-            ctx.put("amount", totalAmount != null ? totalAmount.toPlainString() : "0.00");
-            notificationService.triggerByEvent(tenantId, "order_created", ctx);
+            Map<String, String> vars = new HashMap<>();
+            vars.put("orderNo", order.getOrderNo() != null ? order.getOrderNo() : order.getId());
+            vars.put("amount", totalAmount != null ? totalAmount.toPlainString() : "0.00");
+            notificationService.triggerForTenantAdmins(tenantId, "order_created", vars);
         } catch (Exception e) {
-            log.warn("[notify] 订单创建站内信发送失败，忽略: orderId={}, error={}",
+            log.warn("[notify] 新订单站内信发送失败，忽略: orderId={}, error={}",
                     order.getId(), e.getMessage());
         }
     }
 
     /**
      * 站内信：订单状态变更（order_status_changed 事件）
+     * 接收人路由（issue #2965 v2）：进度告知面向下单客户（C 端「订单归属用户」），
+     * 无归属用户（商户代录）跳过。
      */
     private void notifyOrderStatusChanged(Long tenantId, Order order, String newStatus) {
         if (order.getUserId() == null || order.getUserId().isBlank()) {

@@ -4,10 +4,12 @@ import com.migao.admin.dto.*;
 import com.migao.admin.entity.Notification;
 import com.migao.admin.entity.NotificationRule;
 import com.migao.admin.entity.NotificationTemplate;
+import com.migao.admin.entity.User;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.NotificationMapper;
 import com.migao.admin.mapper.NotificationRuleMapper;
 import com.migao.admin.mapper.NotificationTemplateMapper;
+import com.migao.admin.mapper.UserMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
@@ -19,6 +21,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -35,6 +38,7 @@ public class NotificationService {
     private final NotificationMapper notificationMapper;
     private final NotificationTemplateMapper notificationTemplateMapper;
     private final NotificationRuleMapper notificationRuleMapper;
+    private final UserMapper userMapper;
 
     /**
      * 创建通知
@@ -306,6 +310,42 @@ public class NotificationService {
             notificationMapper.insert(notification);
             log.info("事件触发通知成功: ruleId={}, templateId={}, recipientId={}, eventType={}",
                     rule.getId(), template.getId(), recipientId, eventType);
+        }
+    }
+
+    /**
+     * 面向租户管理员的待办事件广播（站内信接收人路由，issue #2965 v2）
+     *
+     * 主流通知中心设计：B 端待办事件（新订单、新售后工单）应通知负责处理的人——
+     * 本实现按「租户 admin 角色」路由（users.role = 'admin'，与登录鉴权口径一致），
+     * 每位管理员独立收到一条站内信（B 端铃铛即可见），管理员据此分派处理。
+     * 某一管理员发送失败不影响其余管理员（逐个容错）。
+     *
+     * @param tenantId  租户ID
+     * @param eventType 事件类型（order_created / after_sales_created 等）
+     * @param vars      模板变量（不含 recipientId/recipientType，由本方法填充）
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void triggerForTenantAdmins(Long tenantId, String eventType, Map<String, String> vars) {
+        LambdaQueryWrapper<User> adminWrapper = new LambdaQueryWrapper<>();
+        adminWrapper.eq(User::getTenantId, tenantId)
+                .eq(User::getRole, "admin")
+                .eq(User::getDeleted, 0);
+        List<User> admins = userMapper.selectList(adminWrapper);
+        if (admins.isEmpty()) {
+            log.debug("租户无管理员账号，跳过待办通知: tenantId={}, eventType={}", tenantId, eventType);
+            return;
+        }
+        for (User admin : admins) {
+            try {
+                Map<String, String> ctx = vars != null ? new HashMap<>(vars) : new HashMap<>();
+                ctx.put("recipientId", admin.getId());
+                ctx.put("recipientType", "employee");
+                triggerByEvent(tenantId, eventType, ctx);
+            } catch (Exception e) {
+                log.warn("管理员待办通知发送失败，忽略: adminId={}, eventType={}, error={}",
+                        admin.getId(), eventType, e.getMessage());
+            }
         }
     }
 

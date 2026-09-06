@@ -986,9 +986,9 @@ class AfterSalesTicketServiceTest {
         // when
         AfterSalesDetailResponse result = afterSalesTicketService.createTicket(request, 1L, "test-user");
 
-        // then：触发 after_sales_created 站内信（面向订单归属用户）
+        // then：触发 after_sales_created 待办通知（接收人由 triggerForTenantAdmins 按 admin 角色解析）
         assertThat(result).isNotNull();
-        verify(notificationService).triggerByEvent(eq(1L), eq("after_sales_created"), any());
+        verify(notificationService).triggerForTenantAdmins(eq(1L), eq("after_sales_created"), any());
     }
 
     @Test
@@ -1034,8 +1034,8 @@ class AfterSalesTicketServiceTest {
     }
 
     @Test
-    @DisplayName("投诉工单（无关联订单）不触发站内信且不影响主流程")
-    void createTicket_ComplaintWithoutOrder_NoNotification() {
+    @DisplayName("投诉工单（无关联订单）同样通知租户管理员 — 转人工投诉最需要人接（issue #2965 v2）")
+    void createTicket_ComplaintWithoutOrder_NotifiesAdmins() {
         // given
         AfterSalesCreateRequest request = new AfterSalesCreateRequest();
         request.setTicketType("complaint");
@@ -1064,7 +1064,7 @@ class AfterSalesTicketServiceTest {
         // when
         afterSalesTicketService.createTicket(request, 1L, "test-user");
 
-        // then：无关联订单 → 无接收人 → 不触发
-        verify(notificationService, never()).triggerByEvent(anyLong(), anyString(), any());
+        // then：投诉工单无关联订单，但待办通知依然发给租户管理员
+        verify(notificationService).triggerForTenantAdmins(eq(1L), eq("after_sales_created"), any());
     }
 }

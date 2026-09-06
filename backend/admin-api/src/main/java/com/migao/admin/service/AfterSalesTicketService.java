@@ -362,9 +362,8 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
         log.info("创建售后工单成功: id={}, ticketNo={}, orderId={}, operator={}",
             ticket.getId(), ticket.getTicketNo(), request.getOrderId(), operator);
 
-        // 站内信：工单创建成功，通知关联订单的归属用户（投诉工单无关联订单则跳过）
-        notifyTicketEvent(tenantId, order, ticket, "after_sales_created",
-                Map.of("ticketNo", ticket.getTicketNo(), "ticketType", ticket.getTicketType()));
+        // 站内信：新售后工单待处理，通知租户管理员（含转人工投诉工单——最需要人接）
+        notifyTicketCreated(tenantId, ticket);
 
         return getTicketById(ticket.getId());
     }
@@ -460,32 +459,28 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
     }
 
     /**
-     * 站内信：工单创建事件（after_sales_created）
-     * 通知关联订单的归属用户；通知失败不影响工单主流程（旁路容错）
+     * 站内信：新售后工单待处理（after_sales_created 事件）
+     *
+     * 接收人路由（issue #2965 v2）：工单创建面向「需要去处理的人」——租户管理员
+     * （B 端铃铛可见的待办提醒）。与是否关联订单无关：转人工投诉类工单（无关联
+     * 订单）同样需要管理员跟进，因此也发送。通知失败不影响工单主流程（旁路容错）。
      */
-    private void notifyTicketEvent(Long tenantId, Order order, AfterSalesTicket ticket,
-                                   String eventType, Map<String, String> extraVars) {
-        if (order == null || !StringUtils.hasText(order.getUserId())) {
-            return;
-        }
+    private void notifyTicketCreated(Long tenantId, AfterSalesTicket ticket) {
         try {
-            Map<String, String> ctx = new HashMap<>();
-            ctx.put("recipientId", order.getUserId());
-            ctx.put("recipientType", "user");
-            ctx.put("ticketNo", ticket.getTicketNo());
-            ctx.put("ticketType", TICKET_TYPE_LABELS.getOrDefault(ticket.getTicketType(), ticket.getTicketType()));
-            if (extraVars != null) {
-                ctx.putAll(extraVars);
-            }
-            notificationService.triggerByEvent(tenantId, eventType, ctx);
+            Map<String, String> vars = new HashMap<>();
+            vars.put("ticketNo", ticket.getTicketNo());
+            vars.put("ticketType", TICKET_TYPE_LABELS.getOrDefault(ticket.getTicketType(), ticket.getTicketType()));
+            notificationService.triggerForTenantAdmins(tenantId, "after_sales_created", vars);
         } catch (Exception e) {
-            log.warn("[notify] 售后工单站内信发送失败，忽略: ticketId={}, eventType={}, error={}",
-                    ticket.getId(), eventType, e.getMessage());
+            log.warn("[notify] 新售后工单站内信发送失败，忽略: ticketId={}, error={}",
+                    ticket.getId(), e.getMessage());
         }
     }
 
     /**
      * 站内信：工单状态变更事件（after_sales_status_changed）
+     * 接收人路由（issue #2965 v2）：进度/结果告知面向提交方——关联订单的归属用户
+     * （C 端）；无关联订单（投诉类）或订单无归属用户时跳过。
      */
     private void notifyTicketStatusChanged(AfterSalesTicket ticket, String newStatus) {
         if (!StringUtils.hasText(ticket.getOrderId())) {
@@ -493,8 +488,16 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
         }
         try {
             Order order = orderMapper.selectById(ticket.getOrderId());
-            notifyTicketEvent(ticket.getTenantId(), order, ticket, "after_sales_status_changed",
-                    Map.of("status", TICKET_STATUS_LABELS.getOrDefault(newStatus, newStatus)));
+            if (order == null || !StringUtils.hasText(order.getUserId())) {
+                log.debug("[notify] 工单关联订单无归属用户，跳过进度通知: ticketId={}", ticket.getId());
+                return;
+            }
+            Map<String, String> ctx = new HashMap<>();
+            ctx.put("recipientId", order.getUserId());
+            ctx.put("recipientType", "user");
+            ctx.put("ticketNo", ticket.getTicketNo());
+            ctx.put("status", TICKET_STATUS_LABELS.getOrDefault(newStatus, newStatus));
+            notificationService.triggerByEvent(ticket.getTenantId(), "after_sales_status_changed", ctx);
         } catch (Exception e) {
             log.warn("[notify] 售后工单状态变更站内信发送失败，忽略: ticketId={}, error={}",
                     ticket.getId(), e.getMessage());
