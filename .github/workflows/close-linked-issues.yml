@@ -79,7 +79,9 @@ jobs:
             sha="$(printf '%s' "$data" | cut -f2)"
 
             # GitHub 官方支持的关键词（大小写不敏感）：close closes closed / fix fixes fixed / resolve resolves resolved
-            issues="$(printf '%s' "$body" | grep -oiE '(close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)[[:space:]]*#[0-9]+' | grep -oE '#[0-9]+' | sort -u | tr '\n' ' ')"
+            # 注意：set -o pipefail 下 grep 无匹配返回 1 会让整个管道非零 → set -e 崩溃（issue #2950）。
+            #       必须 || issues="" 兜底，否则 PR body 无关键词时脚本在「跳过」分支之前就退出。
+            issues="$(printf '%s' "$body" | grep -oiE '(close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)[[:space:]]*#[0-9]+' | grep -oE '#[0-9]+' | sort -u | tr '\n' ' ')" || issues=""
 
             if [ -z "$issues" ]; then
               echo "ℹ️  PR #$pr body 无 Closes/Fixes/Resolves 关键词，跳过"
