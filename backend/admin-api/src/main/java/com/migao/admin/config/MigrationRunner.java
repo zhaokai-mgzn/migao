@@ -12,6 +12,8 @@ import org.springframework.stereotype.Component;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -53,6 +55,11 @@ public class MigrationRunner implements CommandLineRunner {
         try {
             ensureHistoryTable(jdbc);
             Resource[] resources = resolver.getResources(migrationPattern);
+            // 按文件名升序执行（V1 < V2 < ... < V30）：getResources 的返回顺序
+            // 取决于 classpath 扫描（JAR 内 zip 遍历序），曾实测返回逆序——
+            // 若依赖该顺序，V29 重建表会在 V30 种子之后执行，导致种子被 DROP 清空。
+            Arrays.sort(resources, Comparator.comparing(Resource::getFilename,
+                    Comparator.nullsLast(String::compareTo)));
             List<String> applied = getAppliedMigrations(jdbc);
 
             for (Resource r : resources) {
