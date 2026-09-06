@@ -186,6 +186,23 @@ class TestExpectationArgsValidation:
         ok, _ = lr.check_expectation(result, "order_query")
         assert ok
 
+    def test_query_action_synonyms_pass(self):
+        """查询类动作枚举宽松（HR-004 回归）：list≈all≈query≈detail 业务等价。
+
+        背景：role_manage 工具 read_only_actions={'list','all','detail',...}，
+        LLM 对「系统有哪些角色」调 action=all（合法只读查询）而用例期望 action=list
+        —— P0-3 收紧前弱断言放行，收紧后若仍要求字面相等会误伤合法 LLM 行为。
+        """
+        result = self._result([{"name": "role_manage", "args": {"action": "all"}}])
+        ok, detail = lr.check_expectation(result, "role_manage(action=list)")
+        assert ok, f"list≈all 应等价，实际 detail={detail}"
+
+    def test_write_action_synonyms_strict(self):
+        """写操作枚举保持严格：add≠update，不得被查询等价组放行"""
+        result = self._result([{"name": "product_processing_item_manage", "args": {"action": "update"}}])
+        ok, _ = lr.check_expectation(result, "product_processing_item_manage(action=add, item_ids=[打孔])")
+        assert not ok
+
 
 class TestRunCaseDataChecksScoring:
     """data_checks 落入评分（issue #2854 P0-3）：success=true 等机器可判定检查计入得分
