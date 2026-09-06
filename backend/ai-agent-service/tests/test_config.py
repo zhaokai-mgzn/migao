@@ -1,7 +1,8 @@
 # case_ids: MC-007
 """配置单元测试（app/config.py）
 
-覆盖：Settings 默认值 / MINIMAX_* & DASHSCOPE_* 向后兼容 / validate_production_secrets。
+覆盖：Settings 默认值 / LLM_* & DASHSCOPE_* 统一读取（原 MINIMAX_* 语义，已去品牌命名）/
+validate_production_secrets。
 """
 import pytest
 
@@ -47,37 +48,35 @@ class TestDefaults:
         assert s.LLM_RETRY_MAX_ATTEMPTS == 2
         assert s.LLM_RETRY_BASE_DELAY_S == 0.5
     def test_vision_defaults_deepseek(self):
-        """视觉模型已切换为 DeepSeek vision（替换 MiniMax M3）"""
+        """视觉模型为 DeepSeek vision（2026-08 起替换 MiniMax M3，品牌命名已清理）"""
         s = _make_settings()
         assert s.VISION_MODEL == "deepseek-v4-flash-vision-exp"
         assert s.VISION_BASE_URL == "https://api.deepseek.com/v1"
         assert s.VISION_ENABLED is True
-        # 旧 MINIMAX_VISION_* 命名兼容别名回源到新配置
-        assert s.MINIMAX_VISION_MODEL == s.VISION_MODEL
-        assert s.MINIMAX_VISION_ENABLED is s.VISION_ENABLED
 
 
+class TestLlmCredentialAliases:
+    """LLM_* 统一读取（PRIMARY 优先，VISION 兜底 —— 原 MINIMAX_* 语义）"""
 
-class TestBackwardCompat:
-    def test_minimax_api_key_primary_first(self):
+    def test_llm_api_key_primary_first(self):
         s = _make_settings(PRIMARY_API_KEY="p-key", VISION_API_KEY="v-key")
-        assert s.MINIMAX_API_KEY == "p-key"
+        assert s.LLM_API_KEY == "p-key"
 
-    def test_minimax_api_key_vision_fallback(self):
+    def test_llm_api_key_vision_fallback(self):
         s = _make_settings(PRIMARY_API_KEY="", VISION_API_KEY="v-key")
-        assert s.MINIMAX_API_KEY == "v-key"
+        assert s.LLM_API_KEY == "v-key"
 
-    def test_minimax_base_url_primary_first(self):
+    def test_llm_base_url_primary_first(self):
         s = _make_settings(PRIMARY_BASE_URL="p-url", VISION_BASE_URL="v-url")
-        assert s.MINIMAX_BASE_URL == "p-url"
+        assert s.LLM_BASE_URL == "p-url"
 
-    def test_minimax_model_primary_first(self):
+    def test_llm_model_primary_first(self):
         s = _make_settings(PRIMARY_MODEL="p-model", VISION_MODEL="v-model")
-        assert s.MINIMAX_MODEL == "p-model"
+        assert s.LLM_MODEL == "p-model"
 
-    def test_minimax_model_vision_fallback(self):
+    def test_llm_model_vision_fallback(self):
         s = _make_settings(PRIMARY_MODEL="", VISION_MODEL="v-model")
-        assert s.MINIMAX_MODEL == "v-model"
+        assert s.LLM_MODEL == "v-model"
 
     def test_dashscope_api_key_setter_writes_primary(self):
         s = _make_settings()

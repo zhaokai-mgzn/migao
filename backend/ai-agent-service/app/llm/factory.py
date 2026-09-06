@@ -15,15 +15,15 @@ from langchain_deepseek import ChatDeepSeek
 from app.config import settings
 
 # ===== 唯一配置读取点（从 settings 读一次，全局共享）=====
-MINIMAX_BASE_URL: str = settings.MINIMAX_BASE_URL
-MINIMAX_API_KEY: str = settings.MINIMAX_API_KEY
+LLM_BASE_URL: str = settings.LLM_BASE_URL
+LLM_API_KEY: str = settings.LLM_API_KEY
 
 # === 向后兼容别名（测试/旧代码）===
-DASHSCOPE_BASE_URL = MINIMAX_BASE_URL
+DASHSCOPE_BASE_URL = LLM_BASE_URL
 
 # CI 环境检测：ci-dummy key 时用 ChatOpenAI（避免 mock 问题），否则用 ChatDeepSeek
 def _new_chat_model(**kwargs):
-    if MINIMAX_API_KEY == "ci-dummy":
+    if LLM_API_KEY == "ci-dummy":
         return ChatOpenAI(**kwargs)
     return ChatDeepSeek(**kwargs)
 
@@ -50,11 +50,11 @@ class LLMFactory:
             force_no_think: True → 显式 disabled thinking（轻量任务专用）。
                             不同于 enable_thinking=False（不传参，M3 默认仍开思考）。
         """
-        model = model_override or settings.MINIMAX_MODEL
+        model = model_override or settings.LLM_MODEL
         kwargs: dict = dict(
             model=model,
-            api_key=MINIMAX_API_KEY,
-            base_url=MINIMAX_BASE_URL,
+            api_key=LLM_API_KEY,
+            base_url=LLM_BASE_URL,
             temperature=0.7,
             streaming=True,
             max_completion_tokens=2048,
@@ -100,8 +100,8 @@ class LLMFactory:
         """
         return _new_chat_model(
             model=settings.INTENT_MODEL,
-            api_key=MINIMAX_API_KEY,
-            base_url=MINIMAX_BASE_URL,
+            api_key=LLM_API_KEY,
+            base_url=LLM_BASE_URL,
             temperature=0,
             max_completion_tokens=200,
             extra_body={"thinking": {"type": "disabled"}},
@@ -123,8 +123,8 @@ class LLMFactory:
         """
         return _new_chat_model(
             model=settings.INTENT_MODEL,
-            api_key=MINIMAX_API_KEY,
-            base_url=MINIMAX_BASE_URL,
+            api_key=LLM_API_KEY,
+            base_url=LLM_BASE_URL,
             temperature=temperature,
             max_completion_tokens=max_tokens,
             extra_body={"thinking": {"type": "disabled"}},
@@ -192,8 +192,8 @@ class LLMFactory:
         """
         return _new_chat_model(
             model=settings.INTENT_MODEL,
-            api_key=MINIMAX_API_KEY,
-            base_url=MINIMAX_BASE_URL,
+            api_key=LLM_API_KEY,
+            base_url=LLM_BASE_URL,
             temperature=0,
             max_completion_tokens=800,
             extra_body={"thinking": {"type": "disabled"}},
@@ -209,8 +209,8 @@ class LLMFactory:
         """
         return _new_chat_model(
             model=settings.INTENT_MODEL,
-            api_key=MINIMAX_API_KEY,
-            base_url=MINIMAX_BASE_URL,
+            api_key=LLM_API_KEY,
+            base_url=LLM_BASE_URL,
             temperature=0.3,
             max_completion_tokens=200,
             extra_body={"thinking": {"type": "disabled"}},

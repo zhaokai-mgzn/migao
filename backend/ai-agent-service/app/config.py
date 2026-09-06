@@ -39,30 +39,15 @@ class Settings(BaseSettings):
     VISION_MODEL: str = "deepseek-v4-flash-vision-exp"
     VISION_ENABLED: bool = True
 
-    # === 向后兼容：旧 MINIMAX_VISION_* 命名（已替换为 DeepSeek vision，别名回源）===
+    # === 主 LLM 凭据统一读取（PRIMARY 优先，VISION 兜底 —— 原 MINIMAX_* 语义，已去品牌命名）===
     @property
-    def MINIMAX_VISION_MODEL(self) -> str:
-        return self.VISION_MODEL
-    @MINIMAX_VISION_MODEL.setter
-    def MINIMAX_VISION_MODEL(self, value: str):
-        self.VISION_MODEL = value
-
-    @property
-    def MINIMAX_VISION_ENABLED(self) -> bool:
-        return self.VISION_ENABLED
-    @MINIMAX_VISION_ENABLED.setter
-    def MINIMAX_VISION_ENABLED(self, value: bool):
-        self.VISION_ENABLED = value
-
-    # === 向后兼容：旧 MINIMAX_* 配置作为 fallback ===
-    @property
-    def MINIMAX_API_KEY(self) -> str:
+    def LLM_API_KEY(self) -> str:
         return self.PRIMARY_API_KEY or self.VISION_API_KEY
     @property
-    def MINIMAX_BASE_URL(self) -> str:
+    def LLM_BASE_URL(self) -> str:
         return self.PRIMARY_BASE_URL or self.VISION_BASE_URL
     @property
-    def MINIMAX_MODEL(self) -> str:
+    def LLM_MODEL(self) -> str:
         return self.PRIMARY_MODEL or self.VISION_MODEL
 
     # === 向后兼容：旧 DASHSCOPE_* 配置作为 fallback（测试 monkeypatch 需要）===
