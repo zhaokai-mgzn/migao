@@ -1,4 +1,5 @@
 package com.migao.admin.service;
+// case_ids: ST-004, ST-005
 
 import com.migao.admin.dto.CreateNotificationRequest;
 import com.migao.admin.dto.NotificationDTO;
@@ -6,6 +7,8 @@ import com.migao.admin.dto.NotificationQueryRequest;
 import com.migao.admin.dto.PageResponse;
 import com.migao.admin.dto.UnreadCountResponse;
 import com.migao.admin.entity.Notification;
+import com.migao.admin.entity.NotificationRule;
+import com.migao.admin.entity.NotificationTemplate;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.NotificationMapper;
 import com.migao.admin.mapper.NotificationTemplateMapper;
@@ -27,6 +30,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -283,5 +287,72 @@ class NotificationServiceTest {
                     BusinessException bex = (BusinessException) ex;
                     assertThat(bex.getCode()).isEqualTo("PERMISSION_DENIED");
                 });
+    }
+
+    // ======================== 系统模板/规则回退测试（issue #2965） ========================
+
+    @Test
+    @DisplayName("createFromTemplate — 租户无模板时回退到系统模板(tenantId=0)")
+    void createFromTemplate_FallsBackToSystemTemplate() {
+        // given: 系统级模板（tenantId=0），租户 1 调用也应可用
+        NotificationTemplate systemTemplate = new NotificationTemplate();
+        systemTemplate.setId("tpl-sys-order-status");
+        systemTemplate.setTenantId(0L);
+        systemTemplate.setName("order_status_changed");
+        systemTemplate.setChannel("internal");
+        systemTemplate.setTemplateContent("您的订单{{orderNo}}状态已更新为{{status}}");
+        systemTemplate.setStatus("active");
+
+        when(notificationTemplateMapper.selectOne(any(LambdaQueryWrapper.class)))
+                .thenReturn(systemTemplate);
+        when(notificationMapper.insert(any(Notification.class))).thenReturn(1);
+
+        // when
+        java.util.Map<String, String> vars = java.util.Map.of("orderNo", "ORD-001", "status", "已发货");
+        NotificationDTO result = notificationService.createFromTemplate(1L, "order_status_changed", "user-1", "user", vars);
+
+        // then: 系统模板变量替换成功并落库（查询条件含 tenant_id=0 由实现保证）
+        assertThat(result).isNotNull();
+        verify(notificationMapper).insert(argThat((Notification n) ->
+                "user-1".equals(n.getRecipientId())
+                        && "您的订单ORD-001状态已更新为已发货".equals(n.getContent())));
+    }
+
+    @Test
+    @DisplayName("triggerByEvent — 命中系统规则(tenantId=0)时创建站内信")
+    void triggerByEvent_SystemRuleTriggered() {
+        // given: 系统级规则（tenantId=0）+ 关联模板
+        NotificationRule rule = new NotificationRule();
+        rule.setId("rule-sys-0001");
+        rule.setTenantId(0L);
+        rule.setEventType("order_created");
+        rule.setRecipientType("user");
+        rule.setChannels("internal");
+        rule.setEnabled(true);
+        rule.setTemplateId("tpl-sys-order-created");
+
+        NotificationTemplate template = new NotificationTemplate();
+        template.setId("tpl-sys-order-created");
+        template.setName("新订单创建");
+        template.setChannel("internal");
+        template.setTemplateContent("新订单{{orderNo}}已创建，金额{{amount}}元");
+        template.setStatus("active");
+
+        when(notificationRuleMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(rule));
+        when(notificationTemplateMapper.selectById("tpl-sys-order-created")).thenReturn(template);
+        when(notificationMapper.insert(any(Notification.class))).thenReturn(1);
+
+        // when
+        java.util.Map<String, String> ctx = new java.util.HashMap<>();
+        ctx.put("recipientId", "user-1");
+        ctx.put("recipientType", "user");
+        ctx.put("orderNo", "ORD-001");
+        ctx.put("amount", "599.00");
+        notificationService.triggerByEvent(9L, "order_created", ctx);
+
+        // then
+        verify(notificationMapper).insert(argThat((Notification n) ->
+                "user-1".equals(n.getRecipientId())
+                        && "新订单ORD-001已创建，金额599.00元".equals(n.getContent())));
     }
 }

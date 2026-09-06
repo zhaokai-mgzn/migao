@@ -37,6 +37,7 @@ import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -61,6 +62,7 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     private final ProductSkuMapper productSkuMapper;
     private final FinanceTransactionMapper financeTransactionMapper;
     private final ObjectMapper objectMapper;
+    private final NotificationService notificationService;
 
     /**
      * 订单号序列号（线程安全）
@@ -478,6 +480,9 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
                     order.getId(), request.getCustomerPhone(), e.getMessage());
         }
 
+        // 站内信：新订单创建成功，通知订单归属用户（无归属用户则跳过）
+        notifyOrderCreated(tenantId, order, totalAmount);
+
         return getOrderById(order.getId());
     }
 
@@ -526,6 +531,52 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         }
 
         log.info("更新订单状态成功: id={}, {} -> {}", id, currentStatus, status);
+
+        // 站内信：订单状态变更，通知订单归属用户（无归属用户则跳过）
+        notifyOrderStatusChanged(order.getTenantId(), order, status);
+    }
+
+    /**
+     * 站内信：新订单创建（order_created 事件）
+     * 通知失败不影响订单主流程（旁路逻辑，参考客户建档的容错模式）
+     */
+    private void notifyOrderCreated(Long tenantId, Order order, BigDecimal totalAmount) {
+        if (order.getUserId() == null || order.getUserId().isBlank()) {
+            log.debug("[notify] 订单无归属用户，跳过站内信: orderId={}", order.getId());
+            return;
+        }
+        try {
+            Map<String, String> ctx = new HashMap<>();
+            ctx.put("recipientId", order.getUserId());
+            ctx.put("recipientType", "user");
+            ctx.put("orderNo", order.getOrderNo() != null ? order.getOrderNo() : order.getId());
+            ctx.put("amount", totalAmount != null ? totalAmount.toPlainString() : "0.00");
+            notificationService.triggerByEvent(tenantId, "order_created", ctx);
+        } catch (Exception e) {
+            log.warn("[notify] 订单创建站内信发送失败，忽略: orderId={}, error={}",
+                    order.getId(), e.getMessage());
+        }
+    }
+
+    /**
+     * 站内信：订单状态变更（order_status_changed 事件）
+     */
+    private void notifyOrderStatusChanged(Long tenantId, Order order, String newStatus) {
+        if (order.getUserId() == null || order.getUserId().isBlank()) {
+            log.debug("[notify] 订单无归属用户，跳过站内信: orderId={}", order.getId());
+            return;
+        }
+        try {
+            Map<String, String> ctx = new HashMap<>();
+            ctx.put("recipientId", order.getUserId());
+            ctx.put("recipientType", "user");
+            ctx.put("orderNo", order.getOrderNo() != null ? order.getOrderNo() : order.getId());
+            ctx.put("status", ORDER_STATUS_LABELS.getOrDefault(newStatus, newStatus));
+            notificationService.triggerByEvent(tenantId, "order_status_changed", ctx);
+        } catch (Exception e) {
+            log.warn("[notify] 订单状态变更站内信发送失败，忽略: orderId={}, error={}",
+                    order.getId(), e.getMessage());
+        }
     }
 
     /**

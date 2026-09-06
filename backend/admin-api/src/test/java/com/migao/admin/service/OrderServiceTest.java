@@ -74,6 +74,9 @@ class OrderServiceTest {
     @Mock
     private ObjectMapper objectMapper;
 
+    @Mock
+    private NotificationService notificationService;
+
     private Order testOrder;
     private OrderItem testOrderItem;
 
@@ -1511,5 +1514,120 @@ class OrderServiceTest {
         String sql = wrapperCaptor.getValue().getSqlSegment();
         assertThat(sql).contains("user_id");
         assertThat(sql).doesNotContain("customer_phone");
+    }
+
+    // ======================== 站内信触发（issue #2965） ========================
+
+    @Test
+    @DisplayName("创建订单 - 绑定用户的订单触发 order_created 站内信")
+    void createOrder_WithUserId_TriggersNotification() {
+        // given
+        OrderCreateRequest.OrderItemRequest itemReq = new OrderCreateRequest.OrderItemRequest();
+        itemReq.setProductId("prod-001");
+        itemReq.setProductName("蜂巢帘");
+        itemReq.setQuantity(2);
+        itemReq.setUnitPrice(new BigDecimal("299.50"));
+        itemReq.setSubtotal(new BigDecimal("599.00"));
+
+        OrderCreateRequest request = new OrderCreateRequest();
+        request.setCustomerName("张三");
+        request.setCustomerPhone("13800138000");
+        request.setUserId("user-notif");
+        request.setItems(List.of(itemReq));
+
+        when(orderMapper.insert(any(Order.class))).thenAnswer(invocation -> {
+            Order o = invocation.getArgument(0);
+            o.setId("order-notif");
+            return 1;
+        });
+        when(orderItemMapper.insert(any(OrderItem.class))).thenReturn(1);
+
+        Order savedOrder = Order.builder()
+                .id("order-notif")
+                .tenantId(1L)
+                .orderNo("ORD-20260425-0001")
+                .customerName("张三")
+                .customerPhone("13800138000")
+                .userId("user-notif")
+                .totalAmount(new BigDecimal("599.00"))
+                .status("pending")
+                .build();
+        when(orderMapper.selectById("order-notif")).thenReturn(savedOrder);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(testOrderItem));
+        when(orderLogisticsMapper.selectByOrderId("order-notif", 1L)).thenReturn(List.of());
+
+        // when
+        OrderDetailResponse result = orderService.createOrder(request, 1L);
+
+        // then: 触发 order_created 站内信（面向订单归属用户）
+        assertThat(result).isNotNull();
+        verify(notificationService).triggerByEvent(eq(1L), eq("order_created"), any());
+    }
+
+    @Test
+    @DisplayName("创建订单 - 无归属用户（商户代录）不触发站内信且不影响主流程")
+    void createOrder_WithoutUserId_SkipsNotification() {
+        // given
+        OrderCreateRequest.OrderItemRequest itemReq = new OrderCreateRequest.OrderItemRequest();
+        itemReq.setProductId("prod-001");
+        itemReq.setProductName("蜂巢帘");
+        itemReq.setQuantity(1);
+        itemReq.setUnitPrice(new BigDecimal("299.50"));
+        itemReq.setSubtotal(new BigDecimal("299.50"));
+
+        OrderCreateRequest request = new OrderCreateRequest();
+        request.setCustomerName("李四");
+        request.setCustomerPhone("13900139000");
+        request.setItems(List.of(itemReq));
+
+        when(orderMapper.insert(any(Order.class))).thenAnswer(invocation -> {
+            Order o = invocation.getArgument(0);
+            o.setId("order-skip");
+            return 1;
+        });
+        when(orderItemMapper.insert(any(OrderItem.class))).thenReturn(1);
+
+        Order savedOrder = Order.builder()
+                .id("order-skip")
+                .tenantId(1L)
+                .orderNo("ORD-20260425-0002")
+                .customerName("李四")
+                .totalAmount(new BigDecimal("299.50"))
+                .status("pending")
+                .build();
+        when(orderMapper.selectById("order-skip")).thenReturn(savedOrder);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+        when(orderLogisticsMapper.selectByOrderId("order-skip", 1L)).thenReturn(List.of());
+
+        // when
+        orderService.createOrder(request, 1L);
+
+        // then
+        verify(notificationService, never()).triggerByEvent(anyLong(), anyString(), any());
+    }
+
+    @Test
+    @DisplayName("更新订单状态 - pending -> confirmed 触发 order_status_changed 站内信")
+    void updateOrderStatus_TriggersNotification() {
+        // given
+        Order orderWithUser = Order.builder()
+                .id("order-001")
+                .tenantId(1L)
+                .orderNo("ORD-20260425-0001")
+                .customerName("张三")
+                .customerPhone("13800138000")
+                .userId("user-notif")
+                .totalAmount(new BigDecimal("599.00"))
+                .status("pending")
+                .build();
+        when(orderMapper.selectById("order-001")).thenReturn(orderWithUser);
+        when(orderMapper.update(any(), any())).thenReturn(1);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(testOrderItem));
+
+        // when
+        orderService.updateOrderStatus("order-001", "confirmed");
+
+        // then
+        verify(notificationService).triggerByEvent(eq(1L), eq("order_status_changed"), any());
     }
 }

@@ -41,6 +41,7 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
     private final TicketTimelineMapper ticketTimelineMapper;
     private final FinanceService financeService;
     private final ObjectMapper objectMapper;
+    private final NotificationService notificationService;
 
     /**
      * 合法的状态流转定义
@@ -361,6 +362,10 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
         log.info("创建售后工单成功: id={}, ticketNo={}, orderId={}, operator={}",
             ticket.getId(), ticket.getTicketNo(), request.getOrderId(), operator);
 
+        // 站内信：工单创建成功，通知关联订单的归属用户（投诉工单无关联订单则跳过）
+        notifyTicketEvent(tenantId, order, ticket, "after_sales_created",
+                Map.of("ticketNo", ticket.getTicketNo(), "ticketType", ticket.getTicketType()));
+
         return getTicketById(ticket.getId());
     }
 
@@ -449,6 +454,51 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
 
         log.info("更新工单状态成功: id={}, {} -> {}, remark={}", id, currentStatus, newStatus,
                 StringUtils.hasText(request.getRemark()) ? request.getRemark() : "(无)");
+
+        // 站内信：工单状态变更，通知关联订单的归属用户（无关联订单/无归属用户则跳过）
+        notifyTicketStatusChanged(ticket, newStatus);
+    }
+
+    /**
+     * 站内信：工单创建事件（after_sales_created）
+     * 通知关联订单的归属用户；通知失败不影响工单主流程（旁路容错）
+     */
+    private void notifyTicketEvent(Long tenantId, Order order, AfterSalesTicket ticket,
+                                   String eventType, Map<String, String> extraVars) {
+        if (order == null || !StringUtils.hasText(order.getUserId())) {
+            return;
+        }
+        try {
+            Map<String, String> ctx = new HashMap<>();
+            ctx.put("recipientId", order.getUserId());
+            ctx.put("recipientType", "user");
+            ctx.put("ticketNo", ticket.getTicketNo());
+            ctx.put("ticketType", TICKET_TYPE_LABELS.getOrDefault(ticket.getTicketType(), ticket.getTicketType()));
+            if (extraVars != null) {
+                ctx.putAll(extraVars);
+            }
+            notificationService.triggerByEvent(tenantId, eventType, ctx);
+        } catch (Exception e) {
+            log.warn("[notify] 售后工单站内信发送失败，忽略: ticketId={}, eventType={}, error={}",
+                    ticket.getId(), eventType, e.getMessage());
+        }
+    }
+
+    /**
+     * 站内信：工单状态变更事件（after_sales_status_changed）
+     */
+    private void notifyTicketStatusChanged(AfterSalesTicket ticket, String newStatus) {
+        if (!StringUtils.hasText(ticket.getOrderId())) {
+            return;
+        }
+        try {
+            Order order = orderMapper.selectById(ticket.getOrderId());
+            notifyTicketEvent(ticket.getTenantId(), order, ticket, "after_sales_status_changed",
+                    Map.of("status", TICKET_STATUS_LABELS.getOrDefault(newStatus, newStatus)));
+        } catch (Exception e) {
+            log.warn("[notify] 售后工单状态变更站内信发送失败，忽略: ticketId={}, error={}",
+                    ticket.getId(), e.getMessage());
+        }
     }
 
     /**
