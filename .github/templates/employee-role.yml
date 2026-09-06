@@ -11,6 +11,8 @@ business_truths:
   - [employee-role.api-auth] /api/admin/** 由 Spring Security 限定 hasAnyRole(ADMIN, SUPER_ADMIN, SERVICE)，普通 customer/agent 无法访问；@RequirePermission 注解为预留、当前未被使用
   - [employee-role.tenant-isolation] 租户隔离：MyBatis TenantLineInnerInterceptor 按 JWT tenantId 自动注入 tenant_id 过滤（tenants/tenant_applications/platform_admins 豁免；super_admin 即 tenantId=-1 跳过过滤）
   - [employee-role.role-crud] 角色 CRUD：GET/POST /api/admin/roles、GET /api/admin/roles/all、GET/PUT/DELETE /api/admin/roles/{id}；删除角色前校验无用户使用，否则 422
+  - [employee-role.five-default-positions] 注册新租户初始化五岗种子：管理员(admin)/客服(customer_service)/运营(operator)/销售(sales)/财务(finance)，每岗 status=active；V29 迁移为存量租户补齐 sales/finance 岗位与五岗 role_permissions（幂等）（#2969）
+  - [employee-role.snapshot-permissions] getUserPermissions 快照式：admin 恒 ["*"]；有 users.permissions 快照（员工管理保存勾选）直接返回快照不合并岗位角色；无快照（历史数据/ai-agent 创建）回退 role_permissions/硬编码（#2969）
 
 primary_specs:
   - tests/e2e/specs/admin/employees.spec.ts
