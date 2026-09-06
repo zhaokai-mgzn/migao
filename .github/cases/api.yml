@@ -307,3 +307,33 @@ cases:
       ci:
         - mini-app-tests.yml
       verifies: []
+
+  - id: API-011
+    legacy_id: ""
+    title: "知识库同步历史 - resync 写入记录 + 分页列表接口"
+    domains:
+      - api
+      - knowledge
+    tier: normal
+    tags:
+      - api
+      - knowledge
+      - sync_history
+    truths_ref:
+      - api.knowledge-sync
+    user_inputs:
+      - "管理员触发文档重新同步后应产生同步历史记录，并可分页查询"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "POST /api/admin/knowledge/documents/{id}/embed（resync）同时写入 knowledge_sync_history（syncType=single/sourceType=manual/sourceIds=[docId]/status=processing/totalCount=1）"
+      - "GET /api/admin/knowledge/sync-history 分页返回历史（created_at 倒序，按 tenant 隔离）；空记录返回空列表"
+      - "字段齐全：syncType/sourceType/sourceIds/status/totalCount/successCount/failedCount/startedAt/completedAt"
+    skip_reason: "知识库同步历史闭环由 MockMvc 集成测试验证（KnowledgeControllerTest），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-06 新增（issue #2971 自洽性扫描）：knowledge_sync_history 表/实体/Mapper 就绪但零读写（resync 不记历史、无列表接口），补写读路径形成闭环"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/KnowledgeControllerTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []

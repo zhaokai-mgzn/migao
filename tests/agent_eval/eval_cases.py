@@ -356,6 +356,21 @@ _CASE_API_010 = EvalCase(
     persona='',
 )
 
+# ── API-011 [NORMAL] 知识库同步历史 - resync 写入记录 + 分页列表接口（源: cases/api.yml）──
+_CASE_API_011 = EvalCase(
+    id='API-011',
+    legacy_id='',
+    title='知识库同步历史 - resync 写入记录 + 分页列表接口',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['管理员触发文档重新同步后应产生同步历史记录，并可分页查询'],
+    expectations=['direct_reply'],
+    data_checks=['POST /api/admin/knowledge/documents/{id}/embed（resync）同时写入 knowledge_sync_history（syncType=single/sourceType=manual/sourceIds=[docId]/status=processing/totalCount=1）', 'GET /api/admin/knowledge/sync-history 分页返回历史（created_at 倒序，按 tenant 隔离）；空记录返回空列表', '字段齐全：syncType/sourceType/sourceIds/status/totalCount/successCount/failedCount/startedAt/completedAt'],
+    skip_reason='知识库同步历史闭环由 MockMvc 集成测试验证（KnowledgeControllerTest），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['api', 'knowledge', 'sync_history'],
+    persona='',
+)
+
 # ── CT-001 [NORMAL] 分类树（源: cases/category.yml）──
 _CASE_CT_001 = EvalCase(
     id='CT-001',
@@ -2876,6 +2891,21 @@ _CASE_UI_026 = EvalCase(
     persona='',
 )
 
+# ── UI-027 [NORMAL] 知识库页 - 展示同步历史记录（源: cases/ui.yml）──
+_CASE_UI_027 = EvalCase(
+    id='UI-027',
+    legacy_id='',
+    title='知识库页 - 展示同步历史记录',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['知识库页应能查看文档同步历史（时间/状态/结果），resync 后可见新记录'],
+    expectations=['direct_reply'],
+    data_checks=['知识库页新增「同步历史」视图：展示来源文档（sourceIds 映射标题）、同步类型、状态（pending/processing/completed/failed）、时间；无历史时展示空态', '数据来自 GET /api/admin/knowledge/sync-history 已返回字段，无新增后端字段'],
+    skip_reason='纯前端展示由 vitest 单测验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ui', 'knowledge', 'sync_history', 'admin-web'],
+    persona='',
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -2928,6 +2958,7 @@ ALL_CASES = (
     _CASE_API_008,
     _CASE_API_009,
     _CASE_API_010,
+    _CASE_API_011,
     _CASE_CT_001,
     _CASE_CT_002,
     _CASE_CT_003,
@@ -3096,6 +3127,7 @@ ALL_CASES = (
     _CASE_UI_024,
     _CASE_UI_025,
     _CASE_UI_026,
+    _CASE_UI_027,
     _CASE_UT_001,
     _CASE_UT_002,
 )

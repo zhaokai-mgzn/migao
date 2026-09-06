@@ -4,8 +4,10 @@ import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.dto.PageResponse;
 import com.migao.admin.entity.KnowledgeDocument;
+import com.migao.admin.entity.KnowledgeSyncHistory;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.KnowledgeDocumentMapper;
+import com.migao.admin.mapper.KnowledgeSyncHistoryMapper;
 import com.migao.admin.security.RequirePermission;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -16,6 +18,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -29,6 +32,7 @@ import java.util.Map;
  * - DELETE /api/admin/knowledge/documents/{id}       → deleteDocument
  * - POST   /api/admin/knowledge/documents/{id}/embed → resyncDocument
  * - POST   /api/admin/knowledge/test-search          → searchKnowledge
+ * - GET    /api/admin/knowledge/sync-history         → getSyncHistory（issue #2971 同步历史闭环）
  */
 @Slf4j
 @RequirePermission("knowledge:manage")
@@ -38,6 +42,7 @@ import java.util.Map;
 public class KnowledgeController {
 
     private final KnowledgeDocumentMapper knowledgeDocumentMapper;
+    private final KnowledgeSyncHistoryMapper knowledgeSyncHistoryMapper;
 
     /**
      * 分页查询知识库文档列表
@@ -151,8 +156,43 @@ public class KnowledgeController {
         doc.setEmbeddingStatus("pending");
         knowledgeDocumentMapper.updateById(doc);
 
+        // 写入同步历史（issue #2971：knowledge_sync_history 此前零读写，补写路径形成闭环）
+        knowledgeSyncHistoryMapper.insert(KnowledgeSyncHistory.builder()
+                .tenantId(tenantId)
+                .syncType("single")
+                .sourceType("manual")
+                .sourceIds(List.of(id))
+                .status("processing")
+                .totalCount(1)
+                .successCount(0)
+                .failedCount(0)
+                .startedAt(OffsetDateTime.now())
+                .build());
+
         // TODO: 触发异步嵌入任务
         return ApiResponse.success();
+    }
+
+    /**
+     * 分页查询知识库同步历史（issue #2971：补读路径，闭环）
+     *
+     * GET /api/admin/knowledge/sync-history?page=1&size=20
+     */
+    @GetMapping("/sync-history")
+    public ApiResponse<PageResponse<KnowledgeSyncHistory>> getSyncHistory(
+            @RequestParam(defaultValue = "1") long page,
+            @RequestParam(defaultValue = "20") long size) {
+        Long tenantId = TenantContext.getTenantId();
+        log.info("查询知识库同步历史: page={}, size={}, tenantId={}", page, size, tenantId);
+
+        LambdaQueryWrapper<KnowledgeSyncHistory> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(KnowledgeSyncHistory::getTenantId, tenantId)
+                .orderByDesc(KnowledgeSyncHistory::getCreatedAt);
+
+        Page<KnowledgeSyncHistory> historyPage = new Page<>(page, size);
+        Page<KnowledgeSyncHistory> result = knowledgeSyncHistoryMapper.selectPage(historyPage, wrapper);
+
+        return ApiResponse.success(PageResponse.of(result));
     }
 
     /**
