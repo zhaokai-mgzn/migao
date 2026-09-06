@@ -55,6 +55,16 @@
 5 种卡片组件：ProductCard, KnowledgeCard, LogisticsCard, ToolCallIndicator
 技术：Taro 3.6 / React 18 / Sass / Zustand
 
+## bmini-app (Taro 4.2.1 B 端商家小程序，issue #2977)
+
+B 端 agent 手机版（商家员工「问米宝」）：独立小程序（与 C 端小布不同 appid/主体），
+复用 C 端 mini-app 的基建代码（SSEClient / authStore / request / chatService）。
+
+- 4 个 tab 页：问米宝(SSE对话→米宝) · 数据(经营一屏) · 坐席(移动坐席) · 我的
+- 登录：微信授权手机号 → `POST /api/auth/bmini/login` 匹配员工账号绑定（非自动建号，BM-001~003）
+- 后端接口全复用 admin-api（dashboard / agent-sessions / chat SSE），零新增后端功能
+- CI：`.github/workflows/bmini-app.yml`（typecheck + 单测）
+
 ---
 详见: [UI 设计规范](../design/ui-design-spec.md) · [管理后台设计](../design/admin-dashboard-design.md)
 

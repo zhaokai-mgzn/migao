@@ -1,0 +1,143 @@
+.sessions-page {
+  min-height: 100vh;
+  background: #f5f7fa;
+  padding-bottom: 24px;
+}
+
+.sessions-stats {
+  display: flex;
+  margin: 20px 16px 0;
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 24px 0;
+
+  &__item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  &__num {
+    font-size: 44px;
+    font-weight: 600;
+    color: #0a2540;
+
+    &--danger {
+      color: #f04438;
+    }
+  }
+
+  &__label {
+    margin-top: 6px;
+    font-size: 22px;
+    color: #667085;
+  }
+}
+
+.sessions-section {
+  margin: 24px 16px 0;
+
+  &__title {
+    display: block;
+    font-size: 28px;
+    font-weight: 600;
+    color: #0a2540;
+    margin-bottom: 12px;
+    padding-left: 4px;
+  }
+}
+
+.sessions-empty,
+.sessions-loading {
+  padding: 40px 0;
+  text-align: center;
+  background: #ffffff;
+  border-radius: 16px;
+
+  > Text {
+    font-size: 24px;
+    color: #9aa5b1;
+  }
+}
+
+.session-item {
+  display: flex;
+  align-items: center;
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 20px;
+  margin-bottom: 12px;
+
+  &__avatar {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    background: #eef4ff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+
+    &--urgent {
+      background: #fff1f0;
+    }
+
+    &-text {
+      font-size: 32px;
+      color: #1a73e8;
+    }
+  }
+
+  &__body {
+    flex: 1;
+    min-width: 0;
+    margin-left: 16px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  &__name {
+    font-size: 28px;
+    font-weight: 500;
+    color: #0a2540;
+  }
+
+  &__badge {
+    margin-left: 8px;
+    font-size: 20px;
+    color: #f04438;
+    background: #fff1f0;
+    padding: 2px 10px;
+    border-radius: 8px;
+  }
+
+  &__reason {
+    margin-top: 6px;
+    font-size: 24px;
+    color: #667085;
+  }
+
+  &__time {
+    margin-top: 6px;
+    font-size: 20px;
+    color: #9aa5b1;
+  }
+
+  &__action {
+    margin-left: 12px;
+    flex-shrink: 0;
+  }
+
+  &__status {
+    font-size: 22px;
+
+    &--waiting {
+      color: #f79009;
+    }
+
+    &--active {
+      color: #12b76a;
+    }
+  }
+}

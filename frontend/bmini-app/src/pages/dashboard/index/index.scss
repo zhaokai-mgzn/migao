@@ -1,0 +1,176 @@
+.dashboard-page {
+  min-height: 100vh;
+  background: #f5f7fa;
+  padding-bottom: 24px;
+}
+
+.dashboard-header {
+  padding: 24px 24px 4px;
+
+  &__greet {
+    display: block;
+    font-size: 36px;
+    font-weight: 600;
+    color: #0a2540;
+  }
+
+  &__sub {
+    display: block;
+    margin-top: 8px;
+    font-size: 22px;
+    color: #9aa5b1;
+  }
+}
+
+.metric-grid {
+  display: flex;
+  flex-wrap: wrap;
+  padding: 20px 16px 0;
+
+  &--secondary {
+    padding-top: 16px;
+  }
+}
+
+.metric-card {
+  width: calc((100% - 48px) / 3);
+  margin: 0 8px 16px;
+  padding: 20px;
+  background: #ffffff;
+  border-radius: 16px;
+  box-sizing: border-box;
+
+  &__label {
+    display: block;
+    font-size: 24px;
+    color: #667085;
+  }
+
+  &__value-row {
+    display: flex;
+    align-items: baseline;
+    margin-top: 12px;
+  }
+
+  &__value {
+    font-size: 40px;
+    font-weight: 600;
+    color: #0a2540;
+  }
+
+  &__unit {
+    margin-left: 4px;
+    font-size: 20px;
+    color: #667085;
+  }
+
+  &__change {
+    display: block;
+    margin-top: 8px;
+    font-size: 22px;
+    color: #667085;
+
+    &--up {
+      color: #12b76a;
+    }
+
+    &--down {
+      color: #f04438;
+    }
+  }
+}
+
+.dashboard-section {
+  margin: 8px 16px 0;
+  padding: 24px;
+  background: #ffffff;
+  border-radius: 16px;
+
+  &__title {
+    display: block;
+    font-size: 30px;
+    font-weight: 600;
+    color: #0a2540;
+    margin-bottom: 8px;
+  }
+}
+
+.dashboard-empty {
+  padding: 32px 0;
+  text-align: center;
+
+  > Text {
+    font-size: 24px;
+    color: #9aa5b1;
+  }
+}
+
+.task-item {
+  display: flex;
+  align-items: center;
+  padding: 20px 0;
+  border-bottom: 1px solid #f2f4f7;
+
+  &:last-child {
+    border-bottom: none;
+  }
+
+  &__tag {
+    width: 64px;
+    height: 40px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #eef4ff;
+    flex-shrink: 0;
+
+    &-text {
+      font-size: 22px;
+      color: #1a73e8;
+    }
+  }
+
+  &__body {
+    flex: 1;
+    min-width: 0;
+    margin-left: 16px;
+    display: flex;
+    flex-direction: column;
+
+    > .task-item__title {
+      font-size: 26px;
+      color: #0a2540;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    > .task-item__time {
+      margin-top: 4px;
+      font-size: 20px;
+      color: #9aa5b1;
+    }
+  }
+
+  &__urgent {
+    margin-left: 8px;
+
+    &-text {
+      font-size: 20px;
+      color: #f04438;
+    }
+  }
+}
+
+.dashboard-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+
+  > Text {
+    font-size: 26px;
+    color: #9aa5b1;
+  }
+}

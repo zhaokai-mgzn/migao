@@ -1,0 +1,126 @@
+@use '../../styles/variables.scss' as *;
+
+// ── 瑞幸式商品表单列表：紧凑商品行（图 + 名称 + 规格chips + 价格 + 去下单）──
+.product-form-list {
+  background: $bg-primary;
+  border-radius: $radius-lg;
+  border: 1px solid $border-color;
+  box-shadow: $shadow-card;
+  overflow: hidden;
+  margin-top: 12px;
+
+  &__row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px;
+
+    & + & {
+      border-top: 1px solid $border-color;
+    }
+  }
+
+  &__image {
+    width: 96px;
+    height: 96px;
+    border-radius: $radius-md;
+    background: $bg-secondary;
+    flex-shrink: 0;
+  }
+
+  &__info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  &__name {
+    font-size: 28px;
+    font-weight: 600;
+    color: $text-primary;
+    line-height: 1.35;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  // 可点规格 chips（瑞幸式：点击切换规格）
+  &__specs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  &__chip {
+    padding: 4px 12px;
+    border-radius: $radius-full;
+    background: $bg-secondary;
+    border: 1px solid $border-color;
+
+    &:active {
+      background: $primary-light;
+      border-color: rgba(26, 115, 232, 0.3);
+    }
+  }
+
+  &__chip-text {
+    font-size: 20px;
+    color: $text-secondary;
+  }
+
+  &__price-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+
+  &__price {
+    font-size: 30px;
+    font-weight: 700;
+    color: $brand-gold;
+  }
+
+  &__price-unit {
+    font-size: 20px;
+    font-weight: 500;
+    color: $brand-gold;
+  }
+
+  // 划线原价（「预计到手」时展示）
+  &__price-original {
+    font-size: 20px;
+    color: $text-tertiary;
+    text-decoration: line-through;
+  }
+
+  &__price-hint {
+    font-size: 20px;
+    color: $text-tertiary;
+  }
+
+  &__sales {
+    font-size: 20px;
+    color: $text-tertiary;
+  }
+
+  // 去下单 CTA
+  &__order {
+    flex-shrink: 0;
+    padding: 12px 20px;
+    border-radius: $radius-full;
+    background: $gradient-brand;
+
+    &--hover {
+      opacity: 0.85;
+    }
+  }
+
+  &__order-text {
+    font-size: 24px;
+    font-weight: 600;
+    color: #ffffff;
+  }
+}

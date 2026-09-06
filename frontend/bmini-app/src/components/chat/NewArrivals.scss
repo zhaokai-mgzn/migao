@@ -1,0 +1,85 @@
+// NewArrivals — 新品推荐横滑卡片（空态欢迎屏）
+@use '../../styles/variables.scss' as *;
+
+.new-arrivals {
+  margin-top: 20px;
+  padding: 0 24px;
+
+  &__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+
+  &__title {
+    font-size: 28px;
+    font-weight: 700;
+    color: $text-primary;
+  }
+
+  &__hint {
+    font-size: 20px;
+    color: $text-tertiary;
+  }
+
+  &__scroll {
+    width: 100%;
+    white-space: nowrap;
+  }
+
+  &__row {
+    display: inline-flex;
+    gap: 12px;
+    padding-bottom: 4px;
+  }
+
+  &__card {
+    width: 180px;
+    background: $bg-primary;
+    border: 1px solid $border-color;
+    border-radius: $radius-md;
+    overflow: hidden;
+    display: inline-flex;
+    flex-direction: column;
+    box-shadow: $shadow-card;
+
+    &--hover {
+      opacity: 0.85;
+    }
+  }
+
+  &__img {
+    width: 180px;
+    height: 150px;
+    background: $bg-secondary;
+  }
+
+  &__name {
+    font-size: 24px;
+    color: $text-primary;
+    padding: 8px 12px 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__price-row {
+    display: flex;
+    align-items: baseline;
+    gap: 2px;
+    padding: 4px 12px 12px;
+  }
+
+  &__price-unit {
+    font-size: 20px;
+    color: $brand-gold;
+    font-weight: 600;
+  }
+
+  &__price {
+    font-size: 30px;
+    font-weight: 700;
+    color: $brand-gold;
+  }
+}

@@ -1,0 +1,24 @@
+.suggestion-chips {
+  width: 100%;
+  margin: 12rpx 0;
+}
+
+.suggestion-chips__inner {
+  display: flex;
+  gap: 12rpx;
+  padding: 0 4rpx;
+  white-space: nowrap;
+}
+
+.suggestion-chips__item {
+  flex-shrink: 0;
+  padding: 12rpx 24rpx;
+  background: rgba(183, 121, 31, 0.08);
+  border-radius: 999rpx;
+  border: 1px solid rgba(183, 121, 31, 0.2);
+}
+
+.suggestion-chips__text {
+  font-size: 24rpx;
+  color: #b7791f;
+}
