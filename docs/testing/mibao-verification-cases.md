@@ -265,6 +265,67 @@
 真值: api.knowledge-sync
 溯源: 2026-09-06 新增（issue #2971 自洽性扫描）：knowledge_sync_history 表/实体/Mapper 就绪但零读写（resync 不记历史、无列表接口），补写读路径形成闭环 ｜ tags: api, knowledge, sync_history
 
+## bmini（5 case）
+
+### BM-001. B 端员工首次小程序登录 - 微信授权手机号匹配员工并绑定 openid 🔵
+```
+你: POST /api/auth/bmini/login {code, phoneCode} 首次登录：code2Session 换 openid 无绑定 → getPhoneNumber 换手机号 → 跨租户匹配员工（role≠customer/agent）→ 绑定 user_identities → 签发含 permissions 的员工 JWT
+期望: direct_reply
+数据: 首次登录成功返回 accessToken + user（identityType=bmini）
+数据: user_identities 新增记录：identityType=bmini_app + appId=B端appid + openid + userId=员工
+数据: 签发的 JWT 含 roles + permissions（与 loginBySms 同源，工具级鉴权可用）
+跳过: 纯后端单测契约（AuthService.bminiLogin），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: auth-sms.bypass
+溯源: issue #2977 B 端手机版登录设计新增 ｜ tags: bmini, login, bind
+
+### BM-002. B 端员工二次登录 - openid 已绑定直接登录（免手机号授权） 🔵
+```
+你: POST /api/auth/bmini/login {code} 二次登录：user_identities 已存在 bmini_app 绑定 → 直接签发员工 JWT，不再要求 phoneCode
+期望: direct_reply
+数据: 已有绑定时不调用 getPhoneNumber（无需 phoneCode）
+数据: 返回同一员工账号的 accessToken + user
+跳过: 纯后端单测契约（AuthService.bminiLogin），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: auth-sms.bypass
+溯源: issue #2977 B 端手机版登录设计新增 ｜ tags: bmini, login, rebind
+
+### BM-003. B 端登录手机号未匹配员工 - 明确拒绝且禁止自动建号 🔵
+```
+你: POST /api/auth/bmini/login {code, phoneCode} 手机号在 users 表无员工匹配（或仅 customer 角色）→ 拒绝登录，不自动创建用户（与 C 端 findOrCreate 语义相反）
+期望: direct_reply
+数据: 业务错误：手机号未匹配员工账号（不得建号、不得返回 token）
+数据: 不向 users / user_identities 写入任何新记录
+数据: 仅匹配到 customer 角色账号时同样拒绝（员工专属门禁）
+跳过: 纯后端单测契约（AuthService.bminiLogin），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: auth-sms.bypass
+溯源: issue #2977 B 端手机版登录设计新增 ｜ tags: bmini, login, defense
+
+### BM-004. B 端小程序请求层基建 - Token 注入/401 清理/重试 🔵
+```
+你: bmini-app 复用 C 端 request.ts：请求自动带 Authorization Bearer；401 清 Token 跳登录页；网络错误指数退避重试
+期望: direct_reply
+数据: 非 skipAuth 请求头含 Authorization: Bearer <token>
+数据: 401 响应清除本地 Token 并跳转登录页
+数据: timeout/fail 类错误按指数退避重试（MAX_RETRIES 次）
+跳过: 纯前端单元测试（bmini-app tests/request.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: auth-sms.bypass
+溯源: issue #2977 B 端手机版基建（复制自 mini-app） ｜ tags: bmini, request
+
+### BM-005. B 端认证 store - 登录状态流转/持久化/登出清理 🔵
+```
+你: bmini-app authStore（Zustand+persist）：login 成功写入 token/user；logout 清空；initialize 从本地恢复；token 过期自动登出
+期望: direct_reply
+数据: bminiLoginAction 成功 → isLoggedIn=true + token/user 落 storage
+数据: logout 清空 token/user/isLoggedIn（含 storage 持久化清理）
+数据: initialize 有效 token 恢复登录态；过期 token 自动 logout
+跳过: 纯前端单元测试（bmini-app tests/store-auth.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: auth-sms.bypass
+溯源: issue #2977 B 端手机版基建（复制自 mini-app） ｜ tags: bmini, store, auth
+
 ## 分类域（3 case）
 
 ### CT-001. 分类树 🔵
@@ -2402,11 +2463,12 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：195（活跃 104，跳过 91）
-- tier 分布：smoke 8 / normal 159 / adversarial 28
+- 用例总数：198（活跃 104，跳过 94）
+- tier 分布：smoke 8 / normal 162 / adversarial 28
 - 售后域：5
 - agents：6
 - api：11
+- bmini：5
 - 分类域：3
 - 对话边界域：28
 - 跨域：3

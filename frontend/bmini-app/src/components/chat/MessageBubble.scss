@@ -1,0 +1,183 @@
+@use '../../styles/variables.scss' as *;
+
+.message-bubble {
+  display: flex;
+  padding: 8px 24px;
+
+  // 用户消息 - 右对齐（深蓝渐变气泡）
+  &--user {
+    justify-content: flex-end;
+
+    .message-bubble__content {
+      background: $bubble-user-bg;
+      color: $bubble-user-text;
+      border-radius: $radius-lg $radius-lg 4px $radius-lg;
+      box-shadow: 0 2px 8px rgba(26, 115, 232, 0.25);
+    }
+
+    .message-bubble__time {
+      text-align: right;
+    }
+  }
+
+  // AI 消息 - 左对齐（白卡片）
+  &--assistant {
+    justify-content: flex-start;
+
+    .message-bubble__content {
+      background: $bubble-ai-bg;
+      color: $bubble-ai-text;
+      border-radius: $radius-lg $radius-lg $radius-lg 4px;
+      box-shadow: $shadow-card;
+      border: 1px solid rgba(10, 37, 64, 0.04);
+    }
+
+    .message-bubble__time {
+      text-align: left;
+    }
+  }
+
+  &__wrapper {
+    max-width: 78%;
+    display: flex;
+    flex-direction: column;
+  }
+
+  &__content {
+    padding: 14px 18px;
+    font-size: 28px;
+    line-height: 1.6;
+    word-break: break-all;
+  }
+
+  &__text {
+    white-space: pre-wrap;
+  }
+
+  // 流式光标
+  &__cursor {
+    display: inline;
+    animation: cursor-blink 1s step-end infinite;
+    color: inherit;
+    font-weight: bold;
+  }
+
+  &__time {
+    font-size: 20px;
+    color: $text-tertiary;
+    margin-top: 6px;
+    padding: 0 4px;
+  }
+
+  // 图片区域
+  &__images {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+    padding: 0 4px;
+  }
+
+  &__image {
+    width: 200px;
+    height: 200px;
+    border-radius: $radius-md;
+    background: #F3F4F6;
+  }
+
+  // 工具调用指示器
+  &__tool-calls {
+    margin-top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  &__tool-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    background: #F3F4F6;
+    border-radius: $radius-md;
+    font-size: 24px;
+    color: $text-secondary;
+  }
+
+  &__tool-icon {
+    font-size: 24px;
+  }
+
+  &__tool-name {
+    font-size: 24px;
+    color: $text-secondary;
+  }
+
+  // 卡片区域
+  &__cards {
+    margin-top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  &__card-group {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  &__card-placeholder {
+    padding: 20px;
+    background: $bg-secondary;
+    border: 1px dashed $border-color;
+    border-radius: $radius-md;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__card-text {
+    font-size: 24px;
+    color: $text-tertiary;
+  }
+
+  // 错误消息
+  &__error {
+    .message-bubble__content {
+      background: rgba(229, 72, 77, 0.08);
+      border: 1px solid rgba(229, 72, 77, 0.25);
+    }
+
+    .message-bubble__text {
+      color: $error-color;
+    }
+  }
+}
+
+@keyframes cursor-blink {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+// GB-02: 消息来源标识（AI 助手 / 人工客服，GB/T 47746-2026）
+.message-bubble__source {
+  margin-bottom: 4px;
+}
+
+.message-bubble__source-text {
+  display: inline-flex;
+  align-items: center;
+  font-size: 20px;
+  line-height: 1;
+  color: #94a0b4;
+  letter-spacing: 0.5px;
+}
+
+.message-bubble__source-text--human {
+  color: #2f9e6e;
+}

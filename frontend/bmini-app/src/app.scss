@@ -1,0 +1,18 @@
+// 全局样式入口：引入设计变量（@use 而非 @import，兼容 sass 1.99）
+@use './styles/variables.scss' as *;
+
+// 全局基础样式
+page {
+  background: $bg-secondary;
+  color: $text-primary;
+  font-size: 28px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+// 通用工具类
+.text-ellipsis {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

@@ -1,0 +1,377 @@
+@use "../../../styles/variables.scss" as *;
+
+.profile-page {
+  min-height: 100vh;
+  background-color: $bg-secondary;
+}
+
+// ========== 顶部用户信息卡片 ==========
+.profile-header {
+  background: linear-gradient(135deg, $primary-color 0%, $primary-light 100%);
+  padding: 48px 32px 40px;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.avatar-wrapper {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+  background-color: rgba(255, 255, 255, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 3px solid rgba(255, 255, 255, 0.4);
+}
+
+.avatar-image {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+}
+
+.avatar-placeholder {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background-color: rgba(255, 255, 255, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.avatar-letter {
+  font-size: 32px;
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.user-info {
+  flex: 1;
+  overflow: hidden;
+}
+
+.user-nickname {
+  font-size: 20px;
+  font-weight: 600;
+  color: #ffffff;
+  display: block;
+  margin-bottom: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-id {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.75);
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-phone {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.75);
+  display: block;
+  margin-top: 6px;
+}
+
+.bind-phone-btn {
+  margin-top: 8px;
+  padding: 0 14px;
+  height: 32px;
+  line-height: 32px;
+  font-size: 12px;
+  color: #ffffff;
+  background-color: rgba(255, 255, 255, 0.16);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  display: inline-block;
+
+  &::after {
+    border: none;
+  }
+}
+
+// ========== 我的订单 / 我的售后 区块 ==========
+.section-card {
+  margin: 0 16px 16px;
+  background-color: $bg-primary;
+  border-radius: $radius-lg;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  overflow: hidden;
+  padding: 20px;
+
+  &__header {
+    margin-bottom: 12px;
+  }
+
+  &__title {
+    font-size: 28px;
+    font-weight: 700;
+    color: $text-primary;
+  }
+
+  &__empty {
+    display: block;
+    font-size: 24px;
+    color: $text-tertiary;
+    padding: 8px 0;
+  }
+}
+
+.entry-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 0;
+  border-bottom: 1px solid $border-color;
+
+  &:last-child {
+    border-bottom: none;
+  }
+
+  &--hover {
+    opacity: 0.75;
+  }
+
+  &__main {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__title {
+    display: block;
+    font-size: 26px;
+    font-weight: 500;
+    color: $text-primary;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__sub {
+    display: block;
+    font-size: 22px;
+    color: $text-secondary;
+    margin-top: 4px;
+  }
+
+  &__value {
+    flex-shrink: 0;
+    font-size: 26px;
+    font-weight: 600;
+    color: $brand-gold;
+  }
+
+  &__arrow {
+    flex-shrink: 0;
+    font-size: 28px;
+    color: $text-tertiary;
+  }
+}
+
+// ========== 设置列表 ==========
+.settings-card {
+  margin: 0 16px 16px;
+  background-color: $bg-primary;
+  border-radius: $radius-lg;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  overflow: hidden;
+}
+
+.setting-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  height: 56px;
+  position: relative;
+
+  &:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 20px;
+    right: 20px;
+    height: 1px;
+    background-color: $border-color;
+  }
+
+  &:active {
+    background-color: $bg-secondary;
+  }
+}
+
+.setting-label {
+  font-size: 15px;
+  color: $text-primary;
+}
+
+.setting-arrow {
+  font-size: 16px;
+  color: $text-tertiary;
+  font-weight: 300;
+}
+
+// ========== 退出登录 ==========
+.logout-section {
+  margin: 32px 16px 40px;
+}
+
+.logout-btn {
+  width: 100%;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: $bg-primary;
+  border-radius: $radius-lg;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+}
+
+.logout-text {
+  font-size: 16px;
+  color: $error-color;
+  font-weight: 500;
+}
+
+// ========== 未登录状态 ==========
+.not-logged-in {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background-color: $bg-secondary;
+  gap: 16px;
+}
+
+.not-logged-icon {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background-color: $border-color;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.not-logged-icon-text {
+  font-size: 36px;
+  color: $text-tertiary;
+}
+
+.not-logged-text {
+  font-size: 15px;
+  color: $text-secondary;
+}
+
+.login-btn {
+  margin-top: 8px;
+  padding: 10px 48px;
+  background-color: $primary-color;
+  border-radius: $radius-md;
+}
+
+.login-btn-text {
+  font-size: 15px;
+  color: #ffffff;
+  font-weight: 500;
+}
+
+// ========== B 端版（issue #2977）追加样式 ==========
+.profile-avatar {
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+  background-color: rgba(255, 255, 255, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 3px solid rgba(255, 255, 255, 0.4);
+
+  &-text {
+    font-size: 36px;
+    color: #ffffff;
+    font-weight: 600;
+  }
+}
+
+.profile-info {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.profile-name {
+  font-size: 20px;
+  font-weight: 600;
+  color: #ffffff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-role {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.8);
+  align-self: flex-start;
+  background-color: rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  padding: 2px 10px;
+}
+
+.profile-tenant {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.75);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-menu {
+  margin: 16px;
+  background-color: $bg-primary;
+  border-radius: $radius-lg;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  overflow: hidden;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  height: 56px;
+
+  &:not(:last-child)::after {
+    content: '';
+    position: absolute;
+  }
+
+  &:not(:last-child) {
+    border-bottom: 1px solid $border-color;
+  }
+
+  &__text {
+    font-size: 15px;
+    color: $text-primary;
+  }
+
+  &__arrow {
+    font-size: 16px;
+    color: $text-tertiary;
+    font-weight: 300;
+  }
+}

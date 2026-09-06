@@ -27,6 +27,17 @@ public interface UserMapper extends BaseMapper<User> {
     List<User> selectActiveUsersByPhoneIgnoreTenant(@Param("phone") String phone);
 
     /**
+     * 跨租户按手机号查询活跃「员工」账号（B 端小程序登录用，issue #2977）。
+     *
+     * 门禁语义：仅商户员工（role 非 customer/agent）可绑定 bmini 登录——
+     * C 端消费者账号即使手机号撞号也绝不通过 bmini 入口登录（BM-003 员工专属门禁）。
+     * 与 C 端 findOrCreate 语义相反：B 端「匹配不到即拒绝」，禁止自动建号。
+     */
+    @InterceptorIgnore(tenantLine = "true")
+    @Select("SELECT id, tenant_id, phone, password_hash, nickname, avatar, role, session_ttl, status, created_at, updated_at, deleted FROM users WHERE phone = #{phone} AND deleted = 0 AND status = 'active' AND role NOT IN ('customer', 'agent') ORDER BY updated_at DESC")
+    List<User> selectActiveEmployeesByPhoneIgnoreTenant(@Param("phone") String phone);
+
+    /**
      * 看板客户维度聚合（#2886 性能优化：客户总数 + 今日新增一次查询，替代 2 次串行 selectCount）。
      * 租户条件由 TenantLineInnerInterceptor 自动注入。
      */

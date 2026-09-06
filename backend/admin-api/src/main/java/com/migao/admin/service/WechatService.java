@@ -35,6 +35,13 @@ public class WechatService {
     @Value("${wechat.mini.secret:}")
     private String appSecret;
 
+    /** B 端员工小程序（bmini）appid/secret（issue #2977：与 C 端小布小程序相互独立） */
+    @Value("${wechat.bmini.appid:}")
+    private String bminiAppId;
+
+    @Value("${wechat.bmini.secret:}")
+    private String bminiAppSecret;
+
     /**
      * Mock 模式开关（审计 07 P1-1）：默认 false = 生产 fail-closed。
      * 仅 dev/CI 环境显式设置 WECHAT_MOCK_ENABLED=true 启用；
@@ -63,9 +70,11 @@ public class WechatService {
     private static final String GET_PHONE_URL =
             "https://api.weixin.qq.com/wxa/business/getuserphonenumber?access_token=%s";
 
-    /** access_token 进程内缓存（有效期 7200s，提前 300s 刷新） */
+    /** access_token 进程内缓存（有效期 7200s，提前 300s 刷新）——按小程序渠道分开缓存 */
     private volatile String cachedAccessToken;
     private volatile long accessTokenExpireAt;
+    private volatile String bminiCachedAccessToken;
+    private volatile long bminiAccessTokenExpireAt;
 
     /**
      * 微信 code2Session 响应
@@ -97,25 +106,40 @@ public class WechatService {
      * 模式（从 code 派生确定性手机号，便于联调）；否则 fail-closed 拒绝。
      */
     public PhoneNumberResult getPhoneNumber(String code) {
-        if (!StringUtils.hasText(appId) || !StringUtils.hasText(appSecret)) {
+        return getPhoneNumber(appId, appSecret, code, "C 端 mini");
+    }
+
+    /**
+     * 换取微信授权手机号（B 端员工小程序 bmini 渠道，issue #2977）。
+     *
+     * 与 C 端共用 Mock 开关：bmini appid/secret 未配置且 mock 停用时 fail-closed。
+     */
+    public PhoneNumberResult bminiGetPhoneNumber(String code) {
+        return getPhoneNumber(bminiAppId, bminiAppSecret, code, "B 端 bmini");
+    }
+
+    private PhoneNumberResult getPhoneNumber(String channelAppId, String channelAppSecret,
+                                             String code, String channelLabel) {
+        if (!StringUtils.hasText(channelAppId) || !StringUtils.hasText(channelAppSecret)) {
             if (mockEnabled) {
-                log.warn("【Mock 模式】微信 AppID/Secret 未配置，Mock 换取手机号");
-                return mockGetPhoneNumber(code);
+                log.warn("【Mock 模式】微信 AppID/Secret 未配置（{}渠道），Mock 换取手机号", channelLabel);
+                return mockGetPhoneNumber(code, channelLabel);
             }
             throw new BusinessException("WECHAT_CONFIG_MISSING",
                     "微信小程序手机号能力未配置，请联系管理员（仅 dev 环境可用 Mock 模式）", 503);
         }
-        return realGetPhoneNumber(code);
+        return realGetPhoneNumber(channelAppId, channelAppSecret, code, channelLabel);
     }
 
     /**
      * 真实模式：先取（缓存）access_token，再 POST getuserphonenumber 换号。
      */
-    private PhoneNumberResult realGetPhoneNumber(String code) {
+    private PhoneNumberResult realGetPhoneNumber(String channelAppId, String channelAppSecret,
+                                                 String code, String channelLabel) {
         try {
-            String accessToken = obtainAccessToken();
+            String accessToken = obtainAccessToken(channelAppId, channelAppSecret, channelLabel);
             String url = String.format(GET_PHONE_URL, accessToken);
-            log.info("调用微信 getuserphonenumber 换号: appId={}", appId);
+            log.info("调用微信 getuserphonenumber 换号: appId={}（{}渠道）", channelAppId, channelLabel);
 
             // 换号接口请求体：{"code": "xxx"}（新规范动态令牌）
             Map<String, String> payload = new HashMap<>();
@@ -168,20 +192,25 @@ public class WechatService {
     }
 
     /**
-     * 获取（带缓存）小程序全局 access_token。
+     * 获取（带缓存）小程序全局 access_token——按渠道（mini/bmini）分开缓存，互不污染。
      * 有效期 7200s，提前 300s 视为过期自动刷新；进程内缓存（单实例足够）。
      */
-    private String obtainAccessToken() {
+    private String obtainAccessToken(String channelAppId, String channelAppSecret, String channelLabel) {
         long now = System.currentTimeMillis();
-        if (StringUtils.hasText(cachedAccessToken) && now < accessTokenExpireAt) {
-            return cachedAccessToken;
+        boolean bmini = channelLabel.contains("bmini");
+        String cached = bmini ? bminiCachedAccessToken : cachedAccessToken;
+        long expireAt = bmini ? bminiAccessTokenExpireAt : accessTokenExpireAt;
+        if (StringUtils.hasText(cached) && now < expireAt) {
+            return cached;
         }
         synchronized (this) {
-            if (StringUtils.hasText(cachedAccessToken) && System.currentTimeMillis() < accessTokenExpireAt) {
-                return cachedAccessToken;
+            String cachedAgain = bmini ? bminiCachedAccessToken : cachedAccessToken;
+            long expireAtAgain = bmini ? bminiAccessTokenExpireAt : accessTokenExpireAt;
+            if (StringUtils.hasText(cachedAgain) && System.currentTimeMillis() < expireAtAgain) {
+                return cachedAgain;
             }
-            String url = String.format(ACCESS_TOKEN_URL, appId, appSecret);
-            log.info("刷新微信 access_token: appId={}", appId);
+            String url = String.format(ACCESS_TOKEN_URL, channelAppId, channelAppSecret);
+            log.info("刷新微信 access_token: appId={}（{}渠道）", channelAppId, channelLabel);
             ResponseEntity<String> response = restTemplate.getForEntity(url, String.class);
             String body = response.getBody();
             if (body == null || body.isBlank()) {
@@ -200,8 +229,13 @@ public class WechatService {
                     throw new BusinessException("WECHAT_API_ERROR", "微信 API 未返回 access_token");
                 }
                 int expiresIn = root.path("expires_in").asInt(7200);
-                cachedAccessToken = token;
-                accessTokenExpireAt = now + (expiresIn - 300L) * 1000L;
+                if (bmini) {
+                    bminiCachedAccessToken = token;
+                    bminiAccessTokenExpireAt = now + (expiresIn - 300L) * 1000L;
+                } else {
+                    cachedAccessToken = token;
+                    accessTokenExpireAt = now + (expiresIn - 300L) * 1000L;
+                }
                 return token;
             } catch (BusinessException e) {
                 throw e;
@@ -214,9 +248,9 @@ public class WechatService {
 
     /**
      * Mock 模式：从 code 派生确定性 11 位手机号（同一 code 恒同号，便于联调与断言）。
-     * 前缀取合法号段 139，后 8 位来自 code 哈希。
+     * 前缀取合法号段 139，后 8 位来自 code 哈希。渠道前缀保持确定性（与 openid 无关，手机号可跨渠道对齐）。
      */
-    private PhoneNumberResult mockGetPhoneNumber(String code) {
+    private PhoneNumberResult mockGetPhoneNumber(String code, String channelLabel) {
         String hash = sha256Short(code == null ? "mock-phone" : code);
         // hash 是 16 位 hex → 转十进制后取后 8 位，保证 139xxxxxxxx
         long numeric = Long.parseLong(hash, 16) % 100_000_000L;
@@ -231,7 +265,8 @@ public class WechatService {
     }
 
     /**
-     * 调用微信 code2Session 接口
+     * 调用微信 code2Session 接口（C 端 mini 渠道，兼容既有调用方）
+     *
      * AppID/Secret 未配置时：仅当显式启用 wechat.mock-enabled（dev/CI）才使用 Mock 模式，
      * 否则拒绝登录（fail-closed，防伪造 openid 冒充任意用户，审计 07 P1-1）。
      *
@@ -239,16 +274,37 @@ public class WechatService {
      * @return Code2SessionResult
      */
     public Code2SessionResult code2Session(String code) {
-        if (!StringUtils.hasText(appId) || !StringUtils.hasText(appSecret)) {
+        return code2Session(appId, appSecret, code, "C 端 mini");
+    }
+
+    /**
+     * 调用微信 code2Session 接口（B 端员工小程序 bmini 渠道，issue #2977）
+     *
+     * 与 C 端共用 Mock 模式开关；bmini appid/secret 未配置且 mock 停用时 fail-closed。
+     *
+     * @param code 微信小程序 wx.login() 返回的 code
+     * @return Code2SessionResult
+     */
+    public Code2SessionResult bminiCode2Session(String code) {
+        return code2Session(bminiAppId, bminiAppSecret, code, "B 端 bmini");
+    }
+
+    /**
+     * 双渠道共用的 code2Session 实现
+     */
+    private Code2SessionResult code2Session(String channelAppId, String channelAppSecret,
+                                            String code, String channelLabel) {
+        if (!StringUtils.hasText(channelAppId) || !StringUtils.hasText(channelAppSecret)) {
             if (mockEnabled) {
-                log.warn("【Mock 模式】微信 AppID/Secret 未配置，使用 Mock 模式处理 code2Session");
-                return mockCode2Session(code);
+                log.warn("【Mock 模式】微信 AppID/Secret 未配置（{}渠道），使用 Mock 模式处理 code2Session",
+                        channelLabel);
+                return mockCode2Session(code, channelLabel);
             }
             throw new BusinessException("WECHAT_CONFIG_MISSING",
                     "微信小程序登录未配置，请联系管理员（仅 dev 环境可用 Mock 模式）", 503);
         }
 
-        return realCode2Session(code);
+        return realCode2Session(channelAppId, channelAppSecret, code, channelLabel);
     }
 
     /**
@@ -257,9 +313,10 @@ public class WechatService {
      * 返回 Content-Type: text/plain，RestTemplate 无 text/plain → Map 的转换器，
      * 直接 getForObject(url, Map.class) 会抛 HttpMessageConverter 异常（线上实测发现）。
      */
-    private Code2SessionResult realCode2Session(String code) {
-        String url = String.format(CODE2SESSION_URL, appId, appSecret, code);
-        log.info("调用微信 code2Session 接口: appId={}", appId);
+    private Code2SessionResult realCode2Session(String channelAppId, String channelAppSecret,
+                                                String code, String channelLabel) {
+        String url = String.format(CODE2SESSION_URL, channelAppId, channelAppSecret, code);
+        log.info("调用微信 code2Session 接口: appId={}（{}渠道）", channelAppId, channelLabel);
 
         try {
             ResponseEntity<String> response = restTemplate.getForEntity(url, String.class);
@@ -311,10 +368,12 @@ public class WechatService {
     }
 
     /**
-     * Mock 模式：根据 code 生成固定的 openid
+     * Mock 模式：根据 code 生成固定的 openid。渠道前缀（mini/bmini）隔离，
+     * 避免同一 code 在两端碰撞出相同 openid（issue #2977 双小程序并存安全）。
      */
-    private Code2SessionResult mockCode2Session(String code) {
-        String mockOpenid = "mock_openid_" + sha256Short(code);
+    private Code2SessionResult mockCode2Session(String code, String channelLabel) {
+        String prefix = channelLabel.contains("bmini") ? "mock_bmini_openid_" : "mock_openid_";
+        String mockOpenid = prefix + sha256Short(code);
         log.warn("【Mock 模式】生成 Mock openid: {}", mockOpenid);
 
         Code2SessionResult result = new Code2SessionResult();
