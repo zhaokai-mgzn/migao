@@ -9,7 +9,23 @@
 curl -s https://ifconfig.me
 ```
 
-阿里云 RDS 控制台 → 白名单设置 → 添加 `当前公网IP/32`（如 `183.129.118.190/32`）。运营商 IP 漂移时更新即可，**不建议 /0**。
+### 添加方式（优先：aliyun CLI 自服务，无需进控制台）
+
+本机 aliyun CLI 已配置运维权限账号（`aliyun configure list` 显示 Valid，区域 cn-hangzhou），**AI 可直接自服务**（2026-09-06 实证 TaskId 707541181）：
+
+```bash
+# 1) 查当前白名单（必须：ModifySecurityIps 是整体覆盖语义，先取完整旧列表）
+aliyun rds DescribeDBInstanceIPArrayList --DBInstanceId pgm-bp1p7w92k81ob5to
+
+# 2) 把旧列表原样保留 + 追加当前 IP 后整体写回 dev_local 组（禁止覆盖/清空他人 IP；勿动 default 组）
+aliyun rds ModifySecurityIps --DBInstanceId pgm-bp1p7w92k81ob5to \
+  --SecurityIps "<旧列表,当前公网IP/32>" --DBInstanceIPArrayName dev_local
+
+# 3) 验证
+aliyun rds DescribeDBInstanceIPArrayList --DBInstanceId pgm-bp1p7w92k81ob5to
+```
+
+手动控制台路径（备用）：阿里云 RDS 控制台 → 白名单设置 → 添加 `当前公网IP/32`。运营商 IP 漂移时更新即可，**不建议 /0**。
 
 **重要边界：白名单只服务于「本地起服务联调」，单测/verify-all 不需要也不允许白名单**——`tests/conftest.py` 已用环境变量把单测的 DATABASE_URL/REDIS_URL 钉死在 localhost（环境变量优先级高于 .env 文件），单测连不上/不连云库是**设计行为**（毫秒级失败走降级）。若本地验证变慢，先查 conftest 隔离是否被破坏，而不是加白名单（见 `docs/testing/test-engineering-standards.md` §6）。
 
