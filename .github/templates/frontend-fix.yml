@@ -25,6 +25,9 @@ business_truths:
   - [frontend-fix.chat-input-drag-drop] 米宝聊天输入框支持拖拽图片附件上传（admin-web MessageInput）：输入区（aria-label「消息输入区」）绑定 onDragOver/onDragLeave/onDrop，拖拽悬停显示「松开上传图片」高亮遮罩；drop 图片文件走与点击「添加图片」按钮完全相同的 handleFiles 校验上传链路（chatApi.uploadChatImages，最多 3 张、单张 ≤5MB、仅 image/jpeg|png|gif|webp），成功后生成 localPreview 预览缩略图；非图片 toast「不支持的文件类型」、超 5MB toast「超过 5MB 限制」、已满 3 张 toast「最多上传 3 张图片」；会话已结束/流式生成中/上传中拖拽不生效
   - [frontend-fix.session-list-collapse] 米高会话列表（admin-web SessionList，/chat 与 /agent-workspace/sessions 共用）支持折叠/展开窄 rail（参考 DSH sidebar 折叠交互）：默认展开 w-64 完整列表（新建对话/搜索/右键菜单功能不回归），折叠按钮带 aria-label「折叠会话列表」/「展开会话列表」+ aria-expanded 同步，折叠后仅保留图标态「新建对话」按钮与展开 toggle 的窄 rail（w-12），展开恢复完整列表；Tailwind width transition + overflow-hidden 动画；折叠偏好持久化到 localStorage（key chat.session-list.collapsed），刷新/重挂后恢复
   - [frontend-fix.xiaobu-quick-actions] 小布 C 端聊天主页快捷对话入口（QuickActions）：「算料报价」（首项全宽主入口，发算料 prompt 直达 curtain_calc 报价链路，UI-014）「查订单」「找产品」「售后咨询」「查物流」。原「退换货」入口改名为「售后咨询」（弱化退换货引导，点击仍进入售后工单快捷对话）；原「转人工」入口改名为「查物流」（点击发送物流查询 prompt，进入仅查本人已发货订单物流的 customer_logistics_track 链路）。点击任一入口即发送对应 prompt 触发对话；「转人工」仍可通过输入「转人工」等关键词触发（human_handoff 不因入口移除而失效）
+  - [frontend-fix.position-permission-rename] 岗位权限体系（#2969）：「角色权限」整站改名「岗位权限」（岗位权限页标题/新增岗位按钮/编辑岗位弹窗/岗位名称/岗位编码/删除确认/空态；侧边栏入口「岗位权限」与 Header 面包屑「组织管理 > 岗位权限」同步），URL /roles 与后端接口 /api/admin/roles* 不变（仅文案改名，不做路由迁移）
+  - [frontend-fix.sidebar-seven-groups] 侧边栏七大组重构（#2969）：工作台(经营看板) / 智能客服(米宝·在线对话+AI客服配置+人工客服+知识库) / 商品管理(商品列表+加工项管理) / 订单管理(订单列表+售后工单) / 客户管理(客户列表+财务对账) / 组织管理(员工管理+岗位权限+企业基础信息) / 通知中心（独立、全员可见）；权限过滤不回归（组内全部子项无权限时整组隐藏）
+  - [frontend-fix.employee-position-default-permissions] 员工弹窗岗位下拉（#2969）：岗位=角色体系，岗位选项来自 GET /api/admin/roles/all（role.name），选岗位自动把该岗位默认权限（role.permissions 的 code 列表）预填进权限树（TreeCheckbox），仍可手动增删自定义；编辑员工时切换岗位则权限树重置为新岗位默认、不改岗位保留员工现有权限快照；提交 payload 含 position+permissions、不含 role 字段（#2907 契约）
 
 primary_specs:
   - tests/e2e/specs/

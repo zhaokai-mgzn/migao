@@ -11,11 +11,20 @@ business_truths:
   - [employee-role.api-auth] /api/admin/** 由 Spring Security 限定 hasAnyRole(ADMIN, SUPER_ADMIN, SERVICE)，普通 customer/agent 无法访问；@RequirePermission 注解为预留、当前未被使用
   - [employee-role.tenant-isolation] 租户隔离：MyBatis TenantLineInnerInterceptor 按 JWT tenantId 自动注入 tenant_id 过滤（tenants/tenant_applications/platform_admins 豁免；super_admin 即 tenantId=-1 跳过过滤）
   - [employee-role.role-crud] 角色 CRUD：GET/POST /api/admin/roles、GET /api/admin/roles/all、GET/PUT/DELETE /api/admin/roles/{id}；删除角色前校验无用户使用，否则 422
+  - [employee-role.five-default-positions] 岗位权限体系（#2969）：岗位=角色体系（roles 表即岗位，role_permissions 即岗位默认权限）。新租户注册初始化五岗种子：管理员(admin)/客服(customer_service)/运营(operator)/销售(sales)/财务(finance)，status=active；V29 迁移为存量租户幂等补齐五岗与 role_permissions。非 admin 岗位预置默认权限：客服=看板/订单查看/客户/会话；运营=看板/订单/商品/加工/客户/财务/会话/员工列表；销售=看板/商品/订单查看/客户；财务=看板/订单查看/财务
+  - [employee-role.position-default-permissions] 创建/编辑员工选岗位（下拉，来源 GET /api/admin/roles/all）自动带出该岗位默认权限（role_permissions → permissions code 列表）预填权限树，仍可手动增删；编辑切换岗位则权限树重置为新岗位默认；提交 payload 含 position+permissions，不含 role 字段（#2907 契约），后端按岗位名解析角色（getRoleByPosition，name/code 匹配）并联动 user_roles
+  - [employee-role.snapshot-permissions] 员工权限快照式（#2969）：getUserPermissions 中 admin 恒 ["*"]；有 users.permissions 快照（员工管理保存勾选）直接返回快照，不再与岗位角色权限合并（与岗位脱钩，后续改岗位默认权限不影响已建员工）；无快照（历史员工/ai-agent 直接创建）回退 role_permissions 优先/内置硬编码映射兼容存量
 
 primary_specs:
   - tests/e2e/specs/admin/employees.spec.ts
   - tests/e2e/specs/admin/roles.spec.ts
   - backend/admin-api/src/test/java/com/migao/admin/controller/AdminUserControllerTest.java
+  - backend/admin-api/src/test/java/com/migao/admin/service/RegistrationServiceTest.java
+  - backend/admin-api/src/test/java/com/migao/admin/service/RoleServiceTest.java
+  - frontend/admin-web/tests/unit/pages/employees.test.tsx
+  - frontend/admin-web/tests/unit/pages/roles.test.tsx
+  - frontend/admin-web/tests/unit/components/Sidebar.test.tsx
+  - frontend/admin-web/tests/unit/components/Header.test.tsx
 
 reviewer_asserts:
   - API: GET /api/admin/users?page=1&size=10
@@ -40,3 +49,5 @@ common_pitfalls:
   - 岗位列显示 "-" 而非回退 role 值
   - 跨租户数据泄露（漏掉 TenantLineInnerInterceptor 或 tenantId=-1 豁免）
   - 同手机号可跨租户存在多条（SMS 登录取 updated_at DESC LIMIT 1）——DB 内部事实，verify 不直连库校验
+  - 混淆「岗位默认权限」与「员工实际权限」：岗位 role_permissions 只是创建员工时的默认模板，员工最终权限=保存勾选快照（快照式）
+  - 创建员工 payload 误带 role 字段（#2907 前端去角色化契约：岗位下拉选岗位，payload 只带 position+permissions）
