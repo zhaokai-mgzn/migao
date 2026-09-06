@@ -263,6 +263,19 @@ def _split_top_level(s: str, sep: str = ",") -> list[str]:
 
 _RE_CJK = re.compile(r"[\u4e00-\u9fff]")
 
+# 只读查询类动作等价组（issue #2854 P0-3 回归修复，HR-004）：
+# 工具 read_only_actions 常见 {list, all, detail, query, ...}，LLM 对「看角色列表/有哪些角色」
+# 选择 action=all/list/query 均属业务等价合法调用——弱断言时代放行，args 收紧后不能误伤。
+# 仅限只读查询语义；写操作（add/update/delete/create…）严格匹配。
+_QUERY_ACTION_SYNONYMS: frozenset[str] = frozenset({
+    "list", "all", "query", "detail", "get", "search", "view", "page", "list_categories",
+})
+
+
+def _is_query_action_equal(exp_s: str, act_s: str) -> bool:
+    """只读查询类 action 是否业务等价（list≈all≈query≈detail）。"""
+    return exp_s in _QUERY_ACTION_SYNONYMS and act_s in _QUERY_ACTION_SYNONYMS
+
 
 def _arg_mismatch_reason(actual: dict, expected: dict) -> str | None:
     """args 关键字段校验：返回第一个不匹配原因；全部匹配返回 None。
@@ -295,6 +308,9 @@ def _arg_mismatch_reason(actual: dict, expected: dict) -> str | None:
             truthy = {"true", "1"} if exp_s.lower() == "true" else {"false", "0"}
             if act_s.lower() not in truthy:
                 return f"arg '{k}' expected {exp_s} got {act_s}"
+            continue
+        # 只读查询类 action 等价（HR-004：list≈all≈query≈detail，业务等价不误伤）
+        if k == "action" and _is_query_action_equal(exp_s.lower(), act_s.lower()):
             continue
         try:
             if float(exp_s) != float(act_s):
