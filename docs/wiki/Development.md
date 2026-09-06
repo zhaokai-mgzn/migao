@@ -50,6 +50,34 @@ Commit: `feat(frontend): 描述` / `fix(backend): 描述` / `test:` / `refactor:
    ```
    删除前先确认分支内容已通过 PR 合入 main（squash 合并后 hash 不同，`git cherry` 仍会显示 `+`，以 PR 状态与文件内容为准）。
 
+## 本地验证防恶化（2026-09-06 固化，issue #2957）
+
+**背景**：`verify-all.sh quick` 宣称 3-5 分钟，曾实际恶化到 **58 分钟跑不完**（单用例真实连阿里云 RDS 挂起数十秒 × 数百用例），而 CI 因无 `.env` 一直正常（1-3 分钟）——本地/CI 差异是环境问题信号，不是业务代码问题。
+
+**根因**：本地 `.env` 的 DATABASE_URL/REDIS_URL 指向云 dev（阿里云 RDS/Redis **公网地址**），单测中未 mock 的存储调用（SessionStateStore/SessionMemory/context_manager）真实连接云库 → 每用例挂起/超时数十秒。此类恶化是**渐进累积**的：每新增一个依赖就多几个未 mock 的真实调用，无明显单点故障。
+
+**已固化防复发机制**（PR #2960 合并）：
+1. `backend/ai-agent-service/tests/conftest.py` 顶部 `os.environ.setdefault("DATABASE_URL"/"REDIS_URL", localhost)` —— setdefault 不覆盖 CI 注入的真实 env（环境变量优先级高于 .env 文件）；单测内未 mock 连接毫秒级拒绝走降级。
+2. `pytest.ini` 保留 `--timeout=120 --timeout-method=thread`：hang 用例 120s 兜底快速失败。
+3. `verify-all.sh`：ai-agent quick 去 `--no-cov`、full 用 `-n 4` 并行（pytest-xdist）。
+
+**开发中体检**（发现本地验证变慢时按序，秒级）：
+```bash
+cd backend/ai-agent-service
+# ① 云库隔离
+grep -q 'os.environ.setdefault("DATABASE_URL"' tests/conftest.py && echo "✓ 云库隔离" || echo "⚠️ conftest 缺 DATABASE_URL setdefault"
+# ② timeout 兜底
+grep -q -- '--timeout=' pytest.ini && echo "✓ timeout 兜底" || echo "⚠️ pytest.ini 缺 --timeout"
+# ③ 最慢用例
+pytest -q --durations=20    # 单用例 >2s 即可疑
+# ④ 干净环境对照（决胜手段）：worktree + 新 venv 跑同代码，快 = 环境差异
+```
+
+**红线**：
+- 新增测试**禁止**引入未 mock 的真实外部存储调用（SessionStateStore/SessionMemory/context_manager/DB/Redis）——见 test-engineering-standards.md §6。
+- 升级 requirements.txt 后立即本地 `pip install -r requirements.txt`，防依赖版本漂移导致本地/CI 行为不一致。
+- 每日定时真 LLM 任务连续失败 → 停用 schedule（保留 `workflow_dispatch`）修稳后再恢复，防自动开 issue 刷噪音（2026-09-06 已停 e2e-real/xiaobu-acceptance/nightly）。
+
 ## 测试分层
 
 | 层 | 工具 | 覆盖要求 |
