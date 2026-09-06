@@ -3,6 +3,7 @@ AI 智能客服系统 - 测试公用 Fixtures
 
 提供 JWT Token 生成、mock 配置等公用工具
 """
+# case_ids: AG-001, CH-001, MC-001
 
 import os
 import time
@@ -28,6 +29,14 @@ os.environ.setdefault("LOGISTICS_APPCODE", "test-appcode")
 os.environ.setdefault("SSE_TIMEOUT", "300")
 os.environ.setdefault("SSE_PING_INTERVAL", "30")
 os.environ.setdefault("CORS_ALLOWED_ORIGINS", "http://localhost:3000")
+# issue #2957：本地 .env 的 DATABASE_URL/REDIS_URL 指向云 dev（阿里云 RDS/Redis 公网地址），
+# 单测中未 mock 的存储调用（SessionStateStore/SessionMemory/context_manager）会真实连接云库，
+# 连接挂起/超时数十秒/次 → 本地 pytest 从分钟级恶化到小时级（2026-09-06 实测 52min+ 未完成）。
+# setdefault（而非强制覆盖）：os.environ 无该 key 时（本地无 env 变量）用 localhost，
+# 环境变量优先级高于 .env 文件，本地 .env 的云地址因此失效 → 毫秒级连接拒绝 → 走调用方降级；
+# CI e2e-real / 集成测试显式注入真实云库 env 时，这里不覆盖，保留真实链接。
+os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:test@localhost:5432/test_db")
+os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 
 from app.tools.base import ToolContext  # noqa: E402  (必须在环境变量注入之后)
 

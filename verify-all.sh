@@ -66,7 +66,7 @@ case "$MODE" in
   quick)
     echo "========== MIGAO 快速验证 =========="
     report "admin-api 单测"       bash -c "cd '$ROOT/backend/admin-api' && ./mvnw test -q"
-    report "ai-agent 单测"        bash -c "cd '$ROOT/backend/ai-agent-service' && .venv/bin/python -m pytest tests/unit tests/test_tools_*.py tests/test_graph_*.py tests/test_intent_router.py -q"
+    report "ai-agent 单测"        bash -c "cd '$ROOT/backend/ai-agent-service' && .venv/bin/python -m pytest tests/unit tests/test_tools_*.py tests/test_graph_*.py tests/test_intent_router.py -q --no-cov"
     report "admin-web vitest"     bash -c "cd '$ROOT/frontend/admin-web' && npx vitest run"
     report "admin-web tsc"        bash -c "cd '$ROOT/frontend/admin-web' && npx tsc --noEmit"
     report "QA Growth Gate 预检"  gate_check
@@ -75,7 +75,7 @@ case "$MODE" in
   full)
     echo "========== MIGAO 全量验证 =========="
     report "admin-api 全量"       bash -c "cd '$ROOT/backend/admin-api' && ./mvnw test"
-    report "ai-agent 全量"        bash -c "cd '$ROOT/backend/ai-agent-service' && .venv/bin/python -m pytest tests/ -q"
+    report "ai-agent 全量"        bash -c "cd '$ROOT/backend/ai-agent-service' && .venv/bin/python -m pytest tests/ -q --no-cov -n 4"
     report "admin-web vitest"     bash -c "cd '$ROOT/frontend/admin-web' && npx vitest run"
     report "admin-web tsc"        bash -c "cd '$ROOT/frontend/admin-web' && npx tsc --noEmit"
     report "QA Growth Gate 预检"  gate_check
@@ -89,7 +89,7 @@ case "$MODE" in
     report "admin-api 全量"       bash -c "cd '$ROOT/backend/admin-api' && ./mvnw test"
     ;;
   agent)
-    report "ai-agent 全量"        bash -c "cd '$ROOT/backend/ai-agent-service' && .venv/bin/python -m pytest tests/ -q"
+    report "ai-agent 全量"        bash -c "cd '$ROOT/backend/ai-agent-service' && .venv/bin/python -m pytest tests/ -q --no-cov -n 4"
     ;;
   gate)
     report "QA Growth Gate 预检"  gate_check
