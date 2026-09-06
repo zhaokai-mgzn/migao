@@ -9,6 +9,11 @@ on:
       - 'v*'
     paths:
       - 'frontend/admin-web/**'
+  # 部署对账（issue #2947）：连续快速合并时 GitHub 可能吞掉 push 触发
+  # （2026-09-05 实测 #2927 合并后 frontend/admin-api 未生成任何 deploy run——镜像从未构建，#2936 只覆盖 ai-agent）。
+  # 定时兜底：检查 main HEAD 对应的 sha-xxx 镜像是否已存在，缺失则补一次构建部署。
+  schedule:
+    - cron: '*/20 * * * *'
   workflow_dispatch:
     inputs:
       image_tag:
@@ -28,6 +33,10 @@ env:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    # 部署对账输出（issue #2947）：schedule 触发时若镜像已存在则 skip=true（本轮未部署）
+    outputs:
+      deployed: ${{ steps.sync.outputs.skip }}
+
     concurrency:
       group: deploy-frontend
       cancel-in-progress: false
@@ -50,30 +59,49 @@ jobs:
         if: steps.tag.outputs.MODE == 'build'
         run: echo "${{ secrets.ACR_PASSWORD }}" | docker login ${{ env.ACR_REGISTRY }} -u ${{ secrets.ACR_USERNAME }} --password-stdin
 
+      # ── 部署对账（仅 schedule 触发时生效，issue #2947）──
+      # 连续快速合并时 GitHub 可能吞掉 push 触发（实测 #2927 合入 main 后 frontend
+      # 未生成任何 deploy run——镜像从未构建）。定时兜底：main HEAD 对应的
+      # sha-<head7> 镜像已存在 → 该 commit 构建过，跳过本轮构建部署；
+      # 缺失 → push 触发被吞，执行完整构建部署。
+      - name: Skip if already built (schedule reconcile)
+        id: sync
+        if: github.event_name == 'schedule'
+        run: |
+          EXPECTED_TAG="sha-${GITHUB_SHA::7}"
+          IMAGE="${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.IMAGE_NAME }}:${EXPECTED_TAG}"
+          if docker manifest inspect "$IMAGE" >/dev/null 2>&1; then
+            echo "✅ 镜像 ${IMAGE} 已存在——main 当前 commit 已构建过，跳过构建部署"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "⚠️ 镜像 ${IMAGE} 缺失——该 commit 的部署触发可能被吞（连续快速合并），执行完整构建部署"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/setup-node@v7
-        if: steps.tag.outputs.MODE == 'build'
+        if: steps.tag.outputs.MODE == 'build' && steps.sync.outputs.skip != 'true'
         with:
           node-version: '20'
           cache: 'npm'
           cache-dependency-path: frontend/admin-web/package-lock.json
 
       - name: npm ci
-        if: steps.tag.outputs.MODE == 'build'
+        if: steps.tag.outputs.MODE == 'build' && steps.sync.outputs.skip != 'true'
         working-directory: frontend/admin-web
         run: npm ci
 
       - name: Type check
-        if: steps.tag.outputs.MODE == 'build'
+        if: steps.tag.outputs.MODE == 'build' && steps.sync.outputs.skip != 'true'
         working-directory: frontend/admin-web
         run: npx tsc --noEmit
 
       - name: Unit tests
-        if: steps.tag.outputs.MODE == 'build'
+        if: steps.tag.outputs.MODE == 'build' && steps.sync.outputs.skip != 'true'
         working-directory: frontend/admin-web
         run: npx vitest run
 
       - name: Build and push
-        if: steps.tag.outputs.MODE == 'build'
+        if: steps.tag.outputs.MODE == 'build' && steps.sync.outputs.skip != 'true'
         working-directory: frontend/admin-web
         run: |
           TAG=${{ steps.tag.outputs.IMAGE_TAG }}
@@ -90,6 +118,7 @@ jobs:
 
       # 自动部署目标 = 测试环境（当前 SWAS）；生产发布走 deploy-prod（未来）
       - name: Deploy to SWAS (测试环境)
+        if: steps.sync.outputs.skip != 'true'
         env:
           AK: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
           SK: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
@@ -104,6 +133,8 @@ jobs:
   post-deploy-probe:
     name: Post-Deploy Frontend Probe
     needs: build-and-deploy
+    # schedule 对账跳过构建部署时（本轮未部署）不再跑探测；push/rollback 正常跑
+    if: github.event_name != 'schedule' || needs.build-and-deploy.outputs.deployed == 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
