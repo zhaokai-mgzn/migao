@@ -122,6 +122,7 @@ public class SecurityConfig {
                                 // 认证接口（公开，不需要认证）
                                 "/api/auth/admin/login",
                                 "/api/auth/mini/login",
+                                "/api/auth/bmini/login",
                                 "/api/auth/h5/authorize",
                                 "/api/auth/h5/callback",
                                 "/api/auth/refresh",

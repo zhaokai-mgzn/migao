@@ -371,6 +371,51 @@ _CASE_API_011 = EvalCase(
     persona='',
 )
 
+# ── BM-001 [NORMAL] B 端员工首次小程序登录 - 微信授权手机号匹配员工并绑定 openid（源: cases/bmini.yml）──
+_CASE_BM_001 = EvalCase(
+    id='BM-001',
+    legacy_id='',
+    title='B 端员工首次小程序登录 - 微信授权手机号匹配员工并绑定 openid',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['POST /api/auth/bmini/login {code, phoneCode} 首次登录：code2Session 换 openid 无绑定 → getPhoneNumber 换手机号 → 跨租户匹配员工（role≠customer/agent）→ 绑定 user_identities → 签发含 permissions 的员工 JWT'],
+    expectations=['direct_reply'],
+    data_checks=['首次登录成功返回 accessToken + user（identityType=bmini）', 'user_identities 新增记录：identityType=bmini_app + appId=B端appid + openid + userId=员工', '签发的 JWT 含 roles + permissions（与 loginBySms 同源，工具级鉴权可用）'],
+    skip_reason='纯后端单测契约（AuthService.bminiLogin），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['bmini', 'login', 'bind'],
+    persona='',
+)
+
+# ── BM-002 [NORMAL] B 端员工二次登录 - openid 已绑定直接登录（免手机号授权）（源: cases/bmini.yml）──
+_CASE_BM_002 = EvalCase(
+    id='BM-002',
+    legacy_id='',
+    title='B 端员工二次登录 - openid 已绑定直接登录（免手机号授权）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['POST /api/auth/bmini/login {code} 二次登录：user_identities 已存在 bmini_app 绑定 → 直接签发员工 JWT，不再要求 phoneCode'],
+    expectations=['direct_reply'],
+    data_checks=['已有绑定时不调用 getPhoneNumber（无需 phoneCode）', '返回同一员工账号的 accessToken + user'],
+    skip_reason='纯后端单测契约（AuthService.bminiLogin），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['bmini', 'login', 'rebind'],
+    persona='',
+)
+
+# ── BM-003 [NORMAL] B 端登录手机号未匹配员工 - 明确拒绝且禁止自动建号（源: cases/bmini.yml）──
+_CASE_BM_003 = EvalCase(
+    id='BM-003',
+    legacy_id='',
+    title='B 端登录手机号未匹配员工 - 明确拒绝且禁止自动建号',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['POST /api/auth/bmini/login {code, phoneCode} 手机号在 users 表无员工匹配（或仅 customer 角色）→ 拒绝登录，不自动创建用户（与 C 端 findOrCreate 语义相反）'],
+    expectations=['direct_reply'],
+    data_checks=['业务错误：手机号未匹配员工账号（不得建号、不得返回 token）', '不向 users / user_identities 写入任何新记录', '仅匹配到 customer 角色账号时同样拒绝（员工专属门禁）'],
+    skip_reason='纯后端单测契约（AuthService.bminiLogin），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['bmini', 'login', 'defense'],
+    persona='',
+)
+
 # ── CT-001 [NORMAL] 分类树（源: cases/category.yml）──
 _CASE_CT_001 = EvalCase(
     id='CT-001',
@@ -2989,6 +3034,9 @@ ALL_CASES = (
     _CASE_API_009,
     _CASE_API_010,
     _CASE_API_011,
+    _CASE_BM_001,
+    _CASE_BM_002,
+    _CASE_BM_003,
     _CASE_CT_001,
     _CASE_CT_002,
     _CASE_CT_003,

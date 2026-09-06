@@ -1,6 +1,7 @@
 package com.migao.admin.controller;
 
 import com.migao.admin.dto.ApiResponse;
+import com.migao.admin.dto.BminiLoginRequest;
 import com.migao.admin.dto.LoginRequest;
 import com.migao.admin.dto.LoginResponse;
 import com.migao.admin.dto.MiniPhoneBindRequest;
@@ -92,6 +93,28 @@ public class AuthController {
             HttpServletResponse response) {
         log.info("微信小程序登录请求: tenantId={}", request.getTenantId());
         LoginResponse loginResponse = authService.miniProgramLogin(request.getCode(), request.getTenantId(), response);
+        return ApiResponse.success(loginResponse);
+    }
+
+    // ======================== B 端员工小程序登录（issue #2977） ========================
+
+    /**
+     * B 端员工小程序登录（手机号绑定式，非自动建号）
+     *
+     * POST /api/auth/bmini/login
+     *
+     * Request: { "code": "wx.login()返回的code", "phoneCode": "open-type=getPhoneNumber授权返回的code(首次必传)" }
+     * Response: { "success": true, "data": { "token": "...", "user": {...} } }
+     *
+     * 流程：code→openid → 查 bmini_app 绑定 → 已绑定直接登录；未绑定则换号匹配员工 → 绑定 → 签发员工 JWT。
+     * 语义与 C 端相反：匹配不到员工账号时<b>拒绝且不自动建号</b>（BM-003）。
+     */
+    @PostMapping("/bmini/login")
+    public ApiResponse<LoginResponse> bminiLogin(
+            @Valid @RequestBody BminiLoginRequest request,
+            HttpServletResponse response) {
+        log.info("B 端员工小程序登录请求: hasPhoneCode={}", StringUtils.hasText(request.getPhoneCode()));
+        LoginResponse loginResponse = authService.bminiLogin(request, response);
         return ApiResponse.success(loginResponse);
     }
 

@@ -144,6 +144,11 @@ wechat:
   mini:
     appid: ${WECHAT_MINI_APPID:}
     secret: ${WECHAT_MINI_SECRET:}
+  # B 端员工小程序（bmini，issue #2977）：注册后填 WECHAT_BMINI_APPID/SECRET；
+  # 未填且 mock-enabled 时按 Mock 模式联调（同 C 端行为）
+  bmini:
+    appid: ${WECHAT_BMINI_APPID:}
+    secret: ${WECHAT_BMINI_SECRET:}
   # Mock 模式（审计 07 P1-1）：默认 false = 生产 fail-closed。
   # 仅 dev/CI 显式设置 WECHAT_MOCK_ENABLED=true；生产未配 appid/secret 时 mini 登录直接拒绝。
   mock-enabled: ${WECHAT_MOCK_ENABLED:false}

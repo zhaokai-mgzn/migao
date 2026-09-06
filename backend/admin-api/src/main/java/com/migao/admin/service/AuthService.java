@@ -1,6 +1,7 @@
 package com.migao.admin.service;
 
 import com.migao.admin.config.TenantContext;
+import com.migao.admin.dto.BminiLoginRequest;
 import com.migao.admin.dto.LoginRequest;
 import com.migao.admin.dto.LoginResponse;
 import com.migao.admin.dto.UserInfoResponse;
@@ -88,6 +89,10 @@ public class AuthService {
 
     @Value("${jwt.cookie.same-site:strict}")
     private String cookieSameSite;
+
+    /** B 端员工小程序 appid（issue #2977：绑定/查询 user_identities 时隔离渠道） */
+    @Value("${wechat.bmini.appid:}")
+    private String bminiAppId;
 
     // ======================== 账号密码登录 ========================
 
@@ -401,6 +406,141 @@ public class AuthService {
 
         log.info("自动创建微信小程序用户: userId={}, openid={}", newUser.getId(), openid);
         return newUser;
+    }
+
+    // ======================== B 端员工小程序登录（bmini，issue #2977） ========================
+
+    /**
+     * B 端员工小程序登录（手机号绑定式，非自动建号）。
+     *
+     * 与 C 端 miniProgramLogin 语义相反：
+     * - C 端：openid 无绑定 → 自动创建 customer 用户（拉新）
+     * - B 端：openid 无绑定 → 微信授权手机号换号 → <b>跨租户匹配员工账号</b>（role 非
+     *   customer/agent，UserMapper.selectActiveEmployeesByPhoneIgnoreTenant 门禁）→ 绑定
+     *   user_identities(bmini_app) → 签发员工 JWT（含 roles+permissions，工具级鉴权同源）
+     * - 匹配不到员工：明确拒绝，绝不建号、绝不下发 token（BM-003）
+     *
+     * @param request  {code: wx.login code（必填）, phoneCode: getPhoneNumber 授权 code（首次必填）}
+     * @param response HTTP 响应（Set-Cookie）
+     * @return 员工登录响应
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public LoginResponse bminiLogin(BminiLoginRequest request, HttpServletResponse response) {
+        log.info("B 端员工小程序登录: hasPhoneCode={}", StringUtils.hasText(request.getPhoneCode()));
+
+        // 1. code2Session（bmini 渠道 appid）换 openid
+        WechatService.Code2SessionResult sessionResult = wechatService.bminiCode2Session(request.getCode());
+        String openid = sessionResult.getOpenid();
+
+        // 2. 查既有 bmini 绑定（identityType + appId 双隔离，杜绝与 C 端 openid 串用）
+        UserIdentity identity = userIdentityMapper.selectOne(
+                new LambdaQueryWrapper<UserIdentity>()
+                        .eq(UserIdentity::getOpenid, openid)
+                        .eq(UserIdentity::getIdentityType, "bmini_app")
+                        .eq(UserIdentity::getAppId, bminiAppId)
+                        .eq(UserIdentity::getDeleted, 0));
+
+        if (identity != null) {
+            // 二次登录：已有绑定 → 校验员工 → 直接签发（无需 phoneCode，BM-002）
+            User user = userMapper.selectById(identity.getUserId());
+            if (user == null || user.getDeleted() != null && user.getDeleted() == 1) {
+                throw BusinessException.authFailed("员工账号不存在，请联系管理员");
+            }
+            validateBminiEmployee(user);
+            TenantContext.setTenantId(user.getTenantId());
+            log.info("B 端员工已绑定，直接登录: userId={}, tenantId={}", user.getId(), user.getTenantId());
+            return buildBminiLoginResponse(user, response);
+        }
+
+        // 3. 首次登录：必须授权手机号换号匹配员工
+        if (!StringUtils.hasText(request.getPhoneCode())) {
+            throw BusinessException.authFailed("首次登录需授权手机号绑定员工账号");
+        }
+        WechatService.PhoneNumberResult phoneResult = wechatService.bminiGetPhoneNumber(request.getPhoneCode());
+        String purePhone = phoneResult != null ? phoneResult.getPurePhoneNumber() : null;
+        if (!StringUtils.hasText(purePhone)) {
+            throw BusinessException.authFailed("微信未返回有效手机号，请重新授权");
+        }
+
+        // 4. 跨租户匹配员工（SQL 已门禁 role NOT IN ('customer','agent')，customer 撞号也拒绝）
+        List<User> employees = userMapper.selectActiveEmployeesByPhoneIgnoreTenant(purePhone);
+        if (employees.isEmpty()) {
+            log.warn("B 端员工登录失败，手机号未匹配员工账号: phone={}****{}", maskPhone(purePhone));
+            throw BusinessException.authFailed("手机号未匹配员工账号，请联系管理员开通");
+        }
+        if (employees.size() > 1) {
+            log.warn("B 端员工登录歧义，手机号关联多个员工账号: phone={}****{}", maskPhone(purePhone));
+            throw BusinessException.authFailed("手机号关联多个员工账号，请通过管理后台登录");
+        }
+        User employee = employees.get(0);
+        validateBminiEmployee(employee);
+        TenantContext.setTenantId(employee.getTenantId());
+
+        // 5. 绑定 openid ↔ 员工（identityType=bmini_app + appId 隔离渠道）
+        UserIdentity newIdentity = UserIdentity.builder()
+                .tenantId(employee.getTenantId())
+                .userId(employee.getId())
+                .identityType("bmini_app")
+                .appId(bminiAppId)
+                .openid(openid)
+                .build();
+        userIdentityMapper.insert(newIdentity);
+        log.info("B 端员工首次登录绑定成功: userId={}, tenantId={}, openid=masked",
+                employee.getId(), employee.getTenantId());
+
+        return buildBminiLoginResponse(employee, response);
+    }
+
+    /**
+     * 校验 bmini 员工账号可登录（active + 非 C 端角色双保险）。
+     */
+    private void validateBminiEmployee(User user) {
+        if (!"active".equals(user.getStatus())) {
+            throw BusinessException.authFailed("员工账号状态异常");
+        }
+        String role = user.getRole();
+        if (role == null || "customer".equals(role) || "agent".equals(role)) {
+            // SQL 已门禁，这里是纵深防御：customer/agent 永不通过 bmini 入口
+            log.warn("B 端员工登录拒绝：角色非员工 userId={}, role={}", user.getId(), role);
+            throw BusinessException.authFailed("手机号未匹配员工账号，请联系管理员开通");
+        }
+    }
+
+    /**
+     * 签发 B 端员工 JWT 并构建登录响应（与 smsLogin 同源：roles + permissions + HttpOnly cookie）。
+     */
+    private LoginResponse buildBminiLoginResponse(User user, HttpServletResponse response) {
+        // 角色与权限
+        List<String> roles = userService.getUserRoles(user);
+        List<String> permissions = roleService.getUserPermissions(user.getId());
+
+        // 签发 JWT（username 放手机号，含权限 → 米宝 ToolContext 工具级鉴权可用）
+        String accessToken = jwtTokenProvider.generateAccessToken(
+                user.getId(), user.getTenantId(), user.getPhone(), roles, permissions);
+        String refreshToken = jwtTokenProvider.generateRefreshToken(user.getId(), user.getTenantId());
+
+        // HttpOnly Cookie（审计 07 P1-5：refresh token 仅经 cookie 下发）
+        setTokenCookie(response, accessToken, (int) jwtTokenProvider.getAccessTokenExpiration());
+        setRefreshTokenCookie(response, refreshToken);
+
+        String tenantName = getTenantName(user.getTenantId());
+
+        return LoginResponse.builder()
+                .user(LoginResponse.UserInfo.builder()
+                        .id(user.getId())
+                        .nickname(user.getNickname())
+                        .avatar(user.getAvatar())
+                        .role(user.getRole())
+                        .identityType("bmini")
+                        .roles(roles)
+                        .tenantId(user.getTenantId())
+                        .tenantName(tenantName)
+                        .botName(getBotName(user.getTenantId()))
+                        .build())
+                .accessToken(accessToken)
+                .refreshToken(null)
+                .expiresIn(jwtTokenProvider.getAccessTokenExpiration())
+                .build();
     }
 
     // ======================== 微信公众号 OAuth 登录（占位） ========================

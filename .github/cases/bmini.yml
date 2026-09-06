@@ -1,0 +1,98 @@
+# cases/bmini.yml — B 端员工小程序登录域（issue #2977）
+# 来源：B 端 agent 手机版（微信小程序入口）员工绑定登录行为契约。
+# persona 不标记（admin-api 纯后端行为，不经 agent-eval LLM 冒烟，skip_reason 显式标注）。
+# 均为单元测试契约（AuthService.bminiLogin / WechatService bmini 渠道）。
+
+schema: "case-contract/1.0"
+domain: bmini
+
+cases:
+  - id: BM-001
+    legacy_id: ""
+    title: "B 端员工首次小程序登录 - 微信授权手机号匹配员工并绑定 openid"
+    domains:
+      - bmini
+      - auth
+    tier: normal
+    tags:
+      - bmini
+      - login
+      - bind
+    truths_ref:
+      - auth-sms.bypass
+    user_inputs:
+      - "POST /api/auth/bmini/login {code, phoneCode} 首次登录：code2Session 换 openid 无绑定 → getPhoneNumber 换手机号 → 跨租户匹配员工（role≠customer/agent）→ 绑定 user_identities → 签发含 permissions 的员工 JWT"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "首次登录成功返回 accessToken + user（identityType=bmini）"
+      - "user_identities 新增记录：identityType=bmini_app + appId=B端appid + openid + userId=员工"
+      - "签发的 JWT 含 roles + permissions（与 loginBySms 同源，工具级鉴权可用）"
+    skip_reason: "纯后端单测契约（AuthService.bminiLogin），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "issue #2977 B 端手机版登录设计新增"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/BminiLoginServiceTest.java"
+      ci:
+        - admin-api-test.yml
+      verifies: []
+
+  - id: BM-002
+    legacy_id: ""
+    title: "B 端员工二次登录 - openid 已绑定直接登录（免手机号授权）"
+    domains:
+      - bmini
+      - auth
+    tier: normal
+    tags:
+      - bmini
+      - login
+      - rebind
+    truths_ref:
+      - auth-sms.bypass
+    user_inputs:
+      - "POST /api/auth/bmini/login {code} 二次登录：user_identities 已存在 bmini_app 绑定 → 直接签发员工 JWT，不再要求 phoneCode"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "已有绑定时不调用 getPhoneNumber（无需 phoneCode）"
+      - "返回同一员工账号的 accessToken + user"
+    skip_reason: "纯后端单测契约（AuthService.bminiLogin），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "issue #2977 B 端手机版登录设计新增"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/BminiLoginServiceTest.java"
+      ci:
+        - admin-api-test.yml
+      verifies: []
+
+  - id: BM-003
+    legacy_id: ""
+    title: "B 端登录手机号未匹配员工 - 明确拒绝且禁止自动建号"
+    domains:
+      - bmini
+      - auth
+      - defense
+    tier: normal
+    tags:
+      - bmini
+      - login
+      - defense
+    truths_ref:
+      - auth-sms.bypass
+    user_inputs:
+      - "POST /api/auth/bmini/login {code, phoneCode} 手机号在 users 表无员工匹配（或仅 customer 角色）→ 拒绝登录，不自动创建用户（与 C 端 findOrCreate 语义相反）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "业务错误：手机号未匹配员工账号（不得建号、不得返回 token）"
+      - "不向 users / user_identities 写入任何新记录"
+      - "仅匹配到 customer 角色账号时同样拒绝（员工专属门禁）"
+    skip_reason: "纯后端单测契约（AuthService.bminiLogin），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "issue #2977 B 端手机版登录设计新增"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/BminiLoginServiceTest.java"
+      ci:
+        - admin-api-test.yml
+      verifies: []
