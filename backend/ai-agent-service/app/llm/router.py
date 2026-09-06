@@ -4,7 +4,7 @@ LLM 模型路由
 根据任务复杂度（意图、工具数、文本长度）选择合适的模型，平衡成本与效果。
 
 启用条件：settings.LLM_ENABLE_MODEL_ROUTING=True
-默认关闭：在关闭时直接返回 settings.MINIMAX_MODEL，保持原有行为。
+默认关闭：在关闭时直接返回 settings.LLM_MODEL，保持原有行为。
 """
 
 from __future__ import annotations
@@ -79,7 +79,7 @@ def select_model(
     #    （issue #2914：线上 sess_c40f60ffcae94f2b 图片颜色识别失效——
     #     此前 routing 关闭时含图消息也返回 PRIMARY_MODEL 纯文本模型，无法看图）
     if not settings.LLM_ENABLE_MODEL_ROUTING and not (has_vision and settings.VISION_ENABLED):
-        return settings.MINIMAX_MODEL
+        return settings.LLM_MODEL
 
     # 2. 显式 force_model 优先
     if force_model:
@@ -95,7 +95,7 @@ def select_model(
 
     # 5. 复杂任务 → 主模型（env PRIMARY_MODEL，ops 可切换，如 deepseek-v4-flash）
     if tool_count >= _TOOL_COUNT_MAX_THRESHOLD or text_length > _TEXT_LENGTH_MAX_THRESHOLD:
-        return settings.MINIMAX_MODEL
+        return settings.LLM_MODEL
 
     # 6. 默认 → 主模型（env PRIMARY_MODEL）
-    return settings.MINIMAX_MODEL
+    return settings.LLM_MODEL

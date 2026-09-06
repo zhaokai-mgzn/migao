@@ -6,6 +6,12 @@
 
 ## [Unreleased]
 
+### Vision 弱分析守卫误杀 DeepSeek 简洁回答 + MiniMax 配置清理（2026-09-05，#2914 次生）
+
+- `ai-agent-service`：修复弱分析守卫 `len(text) < 20 → 判弱` 的**次生回归**——DeepSeek vision（deepseek-v4-flash-vision-exp）风格简洁，纯色/实体回答（「这张图片是红色的。」「红色」「这是窗帘」）被原判据误杀丢弃，导致含图消息一直走「抱歉，图片分析暂时无法完成」兜底（线上实测 sess_feec97def7124127）。改为仅在**空/无信息碎片/推诿话术**（分辨率限制/看不清/不敢编造等）时判弱，简洁有效回答直通不重试
+- `ai-agent-service`：**清理 MiniMax 配置残留**——`MINIMAX_API_KEY/BASE_URL/MODEL` 兼容别名统一改名 `LLM_API_KEY/BASE_URL/MODEL`（PRIMARY 优先 VISION 兜底语义不变），删除已无业务意义的 `MINIMAX_VISION_MODEL/ENABLED` 纯别名；生产 `.env.ai-agent` 的 `VISION_MODEL` 误配 `MiniMax-M3` 已改为 DeepSeek vision（部署切换）
+- `ai-agent-service`：回归单测更新（test_config/test_llm_factory/test_vision_integration/test_ontology_vision_grounding，case_ids: MC-007/MC-008/CH-021/ON-002/ON-004）
+
 ### 财务对账「本期」时间口径可见化（2026-09-05，#2910）
 
 - `admin-web`：财务对账页「本期收入/本期退款」统计口径可见——打开页面默认把本期（自然月：本月1号~今天）填充到开始/结束日期并生效查询，资金流水/收支汇总/应收对账三个 tab 默认均按本期范围统计；「重置」恢复本期默认视图（此前未选日期时统计全部历史，与「本期」字面不符且口径不可见；行为用例 FN-004，case_ids: FN-001~004）

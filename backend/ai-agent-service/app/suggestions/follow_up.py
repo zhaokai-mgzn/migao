@@ -22,7 +22,7 @@ from langchain_core.messages import HumanMessage
 from loguru import logger
 
 from app.config import settings
-from app.llm import LLMFactory, MINIMAX_API_KEY, cost_tracker
+from app.llm import LLMFactory, LLM_API_KEY, cost_tracker
 
 
 # ========== Stage hint 映射（用于预设 fallback 和动态 prompt） ==========
@@ -489,7 +489,7 @@ class FollowUpSuggestionGenerator:
     """后续问题建议生成器（Agent 感知）"""
 
     def __init__(self):
-        self._api_key = MINIMAX_API_KEY
+        self._api_key = LLM_API_KEY
         self._model = settings.INTENT_MODEL  # 轻量模型，关闭思考模式
         self._llm = None  # 懒加载 LangChain LLM 实例
 

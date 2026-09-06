@@ -16,12 +16,12 @@ from app.llm.factory import LLMFactory, _new_chat_model
 
 class TestNewChatModel:
     def test_ci_dummy_returns_chatopenai(self):
-        with patch("app.llm.factory.MINIMAX_API_KEY", "ci-dummy"):
+        with patch("app.llm.factory.LLM_API_KEY", "ci-dummy"):
             model = _new_chat_model(model="m", api_key="ci-dummy", base_url="http://x")
         assert isinstance(model, ChatOpenAI)
 
     def test_real_key_returns_chatdeepseek(self):
-        with patch("app.llm.factory.MINIMAX_API_KEY", "real-key"):
+        with patch("app.llm.factory.LLM_API_KEY", "real-key"):
             model = _new_chat_model(model="m", api_key="real-key", base_url="http://x")
         assert isinstance(model, ChatDeepSeek)
 
@@ -30,7 +30,7 @@ class TestCreateSkillLLM:
     def test_defaults(self):
         with patch("app.llm.factory._new_chat_model") as mock_new, \
              patch("app.llm.factory.settings") as mock_settings:
-            mock_settings.MINIMAX_MODEL = "m3"
+            mock_settings.LLM_MODEL = "m3"
             LLMFactory.create_skill_llm()
         kwargs = mock_new.call_args.kwargs
         assert kwargs["model"] == "m3"
@@ -43,14 +43,14 @@ class TestCreateSkillLLM:
     def test_model_override(self):
         with patch("app.llm.factory._new_chat_model") as mock_new, \
              patch("app.llm.factory.settings") as mock_settings:
-            mock_settings.MINIMAX_MODEL = "m3"
+            mock_settings.LLM_MODEL = "m3"
             LLMFactory.create_skill_llm(model_override="custom-model")
         assert mock_new.call_args.kwargs["model"] == "custom-model"
 
     def test_force_no_think_disables_thinking(self):
         with patch("app.llm.factory._new_chat_model") as mock_new, \
              patch("app.llm.factory.settings") as mock_settings:
-            mock_settings.MINIMAX_MODEL = "m3"
+            mock_settings.LLM_MODEL = "m3"
             LLMFactory.create_skill_llm(force_no_think=True)
         kwargs = mock_new.call_args.kwargs
         assert kwargs["extra_body"] == {"thinking": {"type": "disabled"}}
@@ -59,7 +59,7 @@ class TestCreateSkillLLM:
     def test_enable_thinking_bumps_max_tokens(self):
         with patch("app.llm.factory._new_chat_model") as mock_new, \
              patch("app.llm.factory.settings") as mock_settings:
-            mock_settings.MINIMAX_MODEL = "m3"
+            mock_settings.LLM_MODEL = "m3"
             LLMFactory.create_skill_llm(enable_thinking=True)
         kwargs = mock_new.call_args.kwargs
         assert kwargs["extra_body"] == {"thinking": {"type": "enabled"}}

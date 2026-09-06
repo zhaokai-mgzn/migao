@@ -222,9 +222,22 @@ class TestVisionAnalysisQualityGuard:
         assert _is_degraded_vision_analysis("") is True
         assert _is_degraded_vision_analysis(None) is True
 
-    def test_short_text_is_degraded(self):
+    def test_short_concise_answer_not_degraded(self):
+        """DeepSeek vision 简洁风格：短而正确的回答（纯色/实体）是有效分析
+        （issue #2914 次生回归：原『len<20 判弱』把 DeepSeek 简洁回答误杀，
+         生产实测「这张图片是红色的。」len=9 被判弱丢弃 → 走兜底『无法分析』）"""
         from app.graph.skills.base_skill import _is_degraded_vision_analysis
-        assert _is_degraded_vision_analysis("这是窗帘") is True
+        assert _is_degraded_vision_analysis("这是窗帘") is False
+        assert _is_degraded_vision_analysis("红色") is False
+        assert _is_degraded_vision_analysis("这张图片是红色的。") is False
+        assert _is_degraded_vision_analysis("这是一块雪尼尔布") is False
+
+    def test_meaningless_short_text_is_degraded(self):
+        """仍要拦截无信息量的碎片（抖动/噪声），但仅限确无实体的"""
+        from app.graph.skills.base_skill import _is_degraded_vision_analysis
+        assert _is_degraded_vision_analysis("嗯") is True
+        assert _is_degraded_vision_analysis("好的") is True
+        assert _is_degraded_vision_analysis("。") is True
 
     def test_resolution_excuse_is_degraded(self):
         """线上实测弱分析原文：只概括不枚举，并自称看不清"""
@@ -242,13 +255,17 @@ class TestVisionAnalysisQualityGuard:
         assert _vision_retry_needed("受图片分辨率限制", 0) is True
         assert _vision_retry_needed("受图片分辨率限制", 1) is False
         assert _vision_retry_needed("", 0) is True
-        good_short = "1#轻轻茉莉 2#杏仁奶盖 3#栀子生椰"  # >20 字符的实质分析
+        good_short = "1#轻轻茉莉 2#杏仁奶盖 3#栀子生椰"  # 实质分析
         assert _is_degraded_vision_analysis(good_short) is False
         assert _vision_retry_needed(good_short, 0) is False
+        # DeepSeek 简洁回答不触发重试（直接可用，不再浪费一次 LLM 调用）
+        assert _vision_retry_needed("红色", 0) is False
+        assert _vision_retry_needed("这张图片是红色的。", 0) is False
 
     def test_usable_analysis_blanks_degraded(self):
         """弱分析清空 → 不入缓存、走兜底（防一次弱结果毒化会话后续轮次）"""
         from app.graph.skills.base_skill import _usable_vision_analysis
         assert _usable_vision_analysis("受图片分辨率限制") == ""
-        assert _usable_vision_analysis("这是窗帘") == ""
+        assert _usable_vision_analysis("这是窗帘") != ""          # 简洁有效回答保留
+        assert _usable_vision_analysis("红色") != ""              # 简洁有效回答保留
         assert _usable_vision_analysis("1#轻轻茉莉 2#杏仁奶盖 …… 共18色") != ""

@@ -7,8 +7,8 @@ LLM 基础设施层
 
 from app.llm.factory import (
     LLMFactory,
-    MINIMAX_BASE_URL,
-    MINIMAX_API_KEY,
+    LLM_BASE_URL,
+    LLM_API_KEY,
 )
 from app.llm.router import (
     select_model,
@@ -30,13 +30,13 @@ MODEL_MAX = MODEL_PRIMARY
 MODEL_PLUS = MODEL_PRIMARY
 MODEL_LITE = MODEL_FAST
 MODEL_FLASH = MODEL_FAST
-DASHSCOPE_BASE_URL = MINIMAX_BASE_URL
-DASHSCOPE_MODEL = _settings.MINIMAX_MODEL
+DASHSCOPE_BASE_URL = LLM_BASE_URL
+DASHSCOPE_MODEL = _settings.LLM_MODEL
 
 __all__ = [
     "LLMFactory",
-    "MINIMAX_BASE_URL",
-    "MINIMAX_API_KEY",
+    "LLM_BASE_URL",
+    "LLM_API_KEY",
     "select_model",
     "has_images",
     "MODEL_PRIMARY",

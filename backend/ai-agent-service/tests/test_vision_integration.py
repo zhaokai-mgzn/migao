@@ -34,7 +34,7 @@ from app.llm import (
 def _patch_api_key(monkeypatch):
     """ChatOpenAI 构造需要 api_key 非空。
     PRIMARY_API_KEY 是 plain str 字段可直接 monkeypatch；
-    MINIMAX_API_KEY 是 @property 只读，不 patch。"""
+    LLM_API_KEY 是 @property 只读，不 patch。"""
     monkeypatch.setattr(settings, "PRIMARY_API_KEY", "test-api-key")
     # 视觉 LLM 走独立 VISION_API_KEY
     monkeypatch.setattr(settings, "VISION_API_KEY", "test-vision-key")
@@ -78,19 +78,19 @@ class TestVisionRoutingNoModelNameCheck:
 
     测试策略:
         - 验证 select_model(has_vision=True) 在非 vl 模型时仍被正确路由
-        - 验证 base_skill 使用 vision_detected + MINIMAX_VISION_ENABLED
+        - 验证 base_skill 使用 vision_detected + VISION_ENABLED
           而非 "vl" in model 来决定是否创建视觉 LLM
     """
 
     def test_select_model_returns_non_vl_vision_model(self, routing_on, monkeypatch):
-        """MINIMAX_VISION_ENABLED=True 时，has_vision=True 可返回非 vl 后缀的视觉模型"""
+        """VISION_ENABLED=True 时，has_vision=True 可返回非 vl 后缀的视觉模型"""
         monkeypatch.setattr(settings, "VISION_ENABLED", True)
         monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-v4-flash-vision-exp")
         model = select_model(has_vision=True)
         assert model == "deepseek-v4-flash-vision-exp"
 
     def test_base_skill_uses_vision_enabled_not_model_name(self, routing_on, monkeypatch):
-        """base_skill 应通过 vision_detected + MINIMAX_VISION_ENABLED 路由，
+        """base_skill 应通过 vision_detected + VISION_ENABLED 路由，
         而非 "vl" in model — 确保非视觉专用模型也能走视觉 LLM"""
         from app.graph.skills.base_skill import get_skill_llm
         from langchain_core.messages import HumanMessage
@@ -273,18 +273,18 @@ class TestSelectModelWithVision:
     def test_select_model_vision_with_routing_off(self, routing_off, vision_enabled):
         """路由关闭时含图消息仍走 VISION_MODEL（issue #2914）
 
-        根因回归：此前 routing 关闭时含图消息返回 MINIMAX_MODEL（纯文本主模型，
+        根因回归：此前 routing 关闭时含图消息返回主模型（纯文本）（纯文本主模型，
         无法看图）→ 线上 sess_c40f60ffcae94f2b 图片颜色识别失效。
         视觉路由只由 has_vision/VISION_ENABLED 决定，不受文本路由开关影响。
         """
         assert select_model(has_vision=True) == "deepseek-v4-flash-vision-exp"
         # 无图消息在路由关闭时仍走主模型（不回归）
-        assert select_model(has_vision=False) == settings.MINIMAX_MODEL
+        assert select_model(has_vision=False) == settings.LLM_MODEL
 
     def test_select_model_vision_default_is_flash(self):
         """视觉模型默认配置与 settings 一致（DeepSeek vision）"""
         assert settings.VISION_MODEL == "deepseek-v4-flash-vision-exp"
-        assert settings.MINIMAX_VISION_MODEL == settings.VISION_MODEL  # 兼容别名
+        assert settings.VISION_MODEL == settings.VISION_MODEL  # 兼容别名
 
 
 # =============================================================================

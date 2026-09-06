@@ -201,7 +201,7 @@ def get_skill_llm(
 ) -> ChatOpenAI:
     """创建 Skill 专用 LLM 实例（统一走 LLMFactory + Router，支持多模态自动检测）
 
-    - LLM_ENABLE_MODEL_ROUTING=False（默认）：使用 settings.MINIMAX_MODEL，行为与原一致
+    - LLM_ENABLE_MODEL_ROUTING=False（默认）：使用 settings.LLM_MODEL，行为与原一致
     - LLM_ENABLE_MODEL_ROUTING=True：根据 intent / tool_count / text_length 动态选型
     - 若 messages 中含图片且 启用视觉路由，则返回视觉 LLM（不启用 thinking 模式）
     - 深度思考（enable_thinking）仅对复杂意图开启，简单意图（问候/FAQ/闲聊）关闭以提升响应速度
@@ -413,12 +413,31 @@ _DEGRADED_VISION_HINTS = (
     "没有十足把握",
 )
 
+# 无信息量的语气词/占位碎片（不含视觉实体描述），如 "嗯"/"好的"/"。"
+_VISION_NOISE_FRAGMENTS = frozenset({
+    "嗯", "啊", "哦", "好的", "好", "行", "可以", "收到",
+    "明白了", "明白", "知道了", "知道", "哦哦", "嗯嗯",
+    "。", "！", "？", "...", "…", "好的。",
+})
+
 
 def _is_degraded_vision_analysis(text: str) -> bool:
-    """判断 vision 分析是否为弱结果（空/过短/明确表示看不清、无法识别）。"""
+    """判断 vision 分析是否为弱结果（空/无信息碎片/推诿说看不清）。
+
+    注意：不能用『文本过短』判弱 —— DeepSeek vision 风格简洁，纯色/实体回答
+    （如「这张图片是红色的。」「红色」「这是窗帘」）是有效分析（issue #2914
+    次生回归：原 len<20 判据线上实测误杀简洁正确回答，导致含图消息一直走
+    『抱歉，图片分析暂时无法完成』兜底）。判弱仅限：空、无实体碎片、推诿话术。
+    """
     if not text:
         return True
-    if len(text) < 20:
+    stripped = text.strip()
+    if not stripped:
+        return True
+    # 单字符无最小信息量（防御：模型只吐一个标点/语气词）
+    if len(stripped) < 2:
+        return True
+    if stripped in _VISION_NOISE_FRAGMENTS:
         return True
     return any(hint in text for hint in _DEGRADED_VISION_HINTS)
 
