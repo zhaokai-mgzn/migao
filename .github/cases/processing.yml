@@ -103,6 +103,40 @@ cases:
         - agent-eval.yml
       verifies: []
 
+  - id: PP-005
+    legacy_id: ""
+    title: "加工项查询 - 按适用商品分类筛选并透传关联数据"
+    domains:
+      - processing
+    tier: normal
+    tags:
+      - processing_item
+      - category
+      - product_category
+    truths_ref:
+      - processing-manage.crud
+      - product-sku-stock.create-flow
+    user_inputs:
+      - "给窗帘分类筛选可用的加工项"
+    expectations:
+      - tool: processing_item_query
+        args:
+          applicable_category_id: "cat_curtain"
+    data_checks:
+      - "processing_item_query 携带 applicable_category_id 时，admin-api 请求参数含 applicableProductCategoryId（按适用商品分类过滤加工项）"
+      - "响应条目透传 applicable_product_categories（加工项配置的适用商品分类 ID 列表），供 LLM 按分类推荐加工项"
+      - "applicable_product_categories 为空 = 适用所有商品分类（兼容历史数据，不参与过滤变化）"
+    skip_reason: ""
+    merge_log: "2026-09-06 新增（issue #2964）：加工项「适用商品分类」关联此前无任何消费方，本 case 固化加工项查询按适用分类筛选 + 响应透传"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_processing_item_query.py"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingItemServiceTest.java"
+      ci:
+        - agent-eval.yml
+        - pr-check.yml
+      verifies: []
+
   - id: PP-004
     legacy_id: P006
     title: "加工项 - 传序号自动解析 UUID"

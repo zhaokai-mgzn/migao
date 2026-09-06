@@ -1591,7 +1591,7 @@
 真值: order.logistics
 溯源: 2026-09-01 新增：B 端物流查询安全收紧（禁止物流号直查，防用他人运单号刺探） ｜ tags: query, logistics, data_safety
 
-## 加工项域（4 case）
+## 加工项域（5 case）
 
 ### PP-001. 加工项选择 - 分页翻页 🔵
 ```
@@ -1625,6 +1625,17 @@
 真值: id-resolve.name, id-resolve.no-fabricate
 溯源: eval P005 独有（名称 ID 解析）；2026-09-05 #2854 适配 #2785 确认闸：改多轮确认流（轮1 interact(confirm)，轮2 确认后 add） ｜ tags: id_resolve, adversarial, confirm
 
+### PP-005. 加工项查询 - 按适用商品分类筛选并透传关联数据 🔵
+```
+你: 给窗帘分类筛选可用的加工项
+期望: processing_item_query(applicable_category_id=cat_curtain)
+数据: processing_item_query 携带 applicable_category_id 时，admin-api 请求参数含 applicableProductCategoryId（按适用商品分类过滤加工项）
+数据: 响应条目透传 applicable_product_categories（加工项配置的适用商品分类 ID 列表），供 LLM 按分类推荐加工项
+数据: applicable_product_categories 为空 = 适用所有商品分类（兼容历史数据，不参与过滤变化）
+```
+真值: processing-manage.crud, product-sku-stock.create-flow
+溯源: 2026-09-06 新增（issue #2964）：加工项「适用商品分类」关联此前无任何消费方，本 case 固化加工项查询按适用分类筛选 + 响应透传 ｜ tags: processing_item, category, product_category
+
 ### PP-004. 加工项 - 传序号自动解析 UUID 🔴
 ```
 你: 给遮光窗帘添加第1、3、5个加工项
@@ -1638,7 +1649,7 @@
 真值: id-resolve.index
 溯源: eval P006 独有（序号 ID 解析）；2026-09-05 #2854 适配 #2785 确认闸：改多轮确认流（轮1 interact(confirm)，轮2 确认后 add）；action 强校验 + success=true 落评分（#2854 P0-3），item_ids 不写死数字——实测 LLM 会把序号翻译为名称传参（业务等价），序号→UUID 解析真值由 test_id_resolver.py 单测覆盖 ｜ tags: id_resolve, adversarial, sequence, confirm
 
-## 商品域（15 case）
+## 商品域（16 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
 ```
@@ -1829,6 +1840,24 @@
 真值: product-sku-stock.create-flow
 溯源: 2026-09-05 交互验证机制行为层新增（issue #2896 复盘）：翻页后 multiSelect/pagination 契约保持 ｜ tags: multi_turn, processing_item, pagination, multi_select
 
+### PR-016. 建品流程 - 分类确认后按适用商品分类过滤/优先推荐加工项 🔵
+```
+你: 录入这个商品，名称遮光窗帘，价格 100
+你: 分类选窗帘
+你: 已选加工项：高温定型
+期望: category_manage
+期望: processing_item_query(applicable_category_id=cat_curtain)
+期望: interact(component=choice, multiSelect=True)
+期望: validate_input
+期望: product_manage(action=create)
+数据: 分类确认后加工项选择器按「适用商品分类」过滤展示（processing_item_query 携带 applicable_category_id，= 已选商品分类 ID）
+数据: 适用分类为空（applicable_product_categories 为空）的加工项仍展示（= 适用所有分类），不因过滤而丢失
+数据: 当前分类无匹配加工项时以文字提示可跳过，不空转强制选择
+数据: 最终创建成功且关联加工项数量正确
+```
+真值: product-sku-stock.create-flow, processing-manage.crud
+溯源: 2026-09-06 新增（issue #2964）：加工项「适用商品分类」配置此前无消费方，建品流程按已选分类过滤/推荐加工项（设计意图见 docs/design/admin-dashboard-design.md §6.1.1 适用商品分类+AI推荐） ｜ tags: processing_item, product_category, guided_flow, recommendation
+
 ## registry（1 case）
 
 ### RG-001. ToolRegistry 注册/查询/执行审计 🔵
@@ -1967,7 +1996,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## ui（25 case）
+## ui（26 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -2284,6 +2313,17 @@
 真值: frontend-fix.no-api-change, frontend-fix.vitest
 溯源: 2026-09-06 新增：B/C 端输入条统一重设计（issue #2952，设计文档 docs/design/agent-input-bar-unified-design.md §4.2/§4.4） ｜ tags: ui, chat-input, admin-web, design-system
 
+### UI-026. 加工项列表 - 展示「适用商品分类」列（ID→名称映射，空=适用所有） 🔵
+```
+你: 加工项配置列表应能直接看到每个加工项的「适用商品分类」关联（此前仅在编辑弹窗内可见）
+期望: direct_reply
+数据: 列表表格新增「适用商品分类」列：展示已勾选分类的名称（分类树 ID→名称 映射，多选逗号分隔/多标签）；applicableProductCategories 为空展示「适用所有分类」
+数据: 列数据来自列表接口已返回的 applicableProductCategories 字段，无新增后端字段
+跳过: 纯前端列表列展示由 vitest 单测验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change, frontend-fix.vitest
+溯源: 2026-09-06 新增（issue #2964）：加工项「适用商品分类」关联数据此前列表页不可见 ｜ tags: ui, processing, admin-web, list
+
 ## utils（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -2313,8 +2353,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：188（活跃 102，跳过 86）
-- tier 分布：smoke 8 / normal 152 / adversarial 28
+- 用例总数：191（活跃 104，跳过 87）
+- tier 分布：smoke 8 / normal 155 / adversarial 28
 - 售后域：5
 - agents：6
 - api：10
@@ -2330,12 +2370,12 @@
 - onboarding：5
 - ontology：4
 - 订单域：13
-- 加工项域：4
-- 商品域：15
+- 加工项域：5
+- 商品域：16
 - registry：1
 - 设置域：8
 - token-refresh：4
-- ui：25
+- ui：26
 - utils：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）

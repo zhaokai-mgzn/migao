@@ -54,6 +54,15 @@ public class ProcessingItemService extends ServiceImpl<ProcessingItemMapper, Pro
         if (StringUtils.hasText(query.getCategoryId())) {
             wrapper.eq(ProcessingItem::getCategoryId, query.getCategoryId());
         }
+
+        // 适用商品分类筛选（issue #2964）：JSONB 包含目标分类；applicable_product_categories 为空（=适用所有商品分类）仍命中
+        if (StringUtils.hasText(query.getApplicableProductCategoryId())) {
+            // 分类 ID 由系统生成（UUID/字母数字），转义单引号防注入
+            String cid = query.getApplicableProductCategoryId().replace("'", "");
+            wrapper.and(w -> w.apply(
+                    "(applicable_product_categories = '[]'::jsonb OR applicable_product_categories @> {0}::jsonb)",
+                    "[\"" + cid + "\"]"));
+        }
         
         // 状态筛选
         if (StringUtils.hasText(query.getStatus())) {

@@ -33,8 +33,10 @@ class ProcessingItemQueryTool(BaseTool):
     name = "processing_item_query"
     description = (
         "查询店铺加工项目录。用于创建流程阶段2（用户已确认名称/价格等基本信息后）。"
-        "支持按 keyword/category_id/status 筛选。"
-        "用户只需列表时传空参数。"
+        "支持按 keyword/category_id/status/applicable_category_id 筛选。"
+        "applicable_category_id（适用商品分类 ID）：建品流程在用户确认商品分类后传入，"
+        "只返回适用于该商品分类的加工项（applicable_product_categories 包含该分类，"
+        "或无该配置=适用所有分类）。用户只需列表时传空参数。"
         "创建/修改/删除加工项用 processing_item_manage。READONLY"
     )
 
@@ -51,7 +53,13 @@ class ProcessingItemQueryTool(BaseTool):
             },
             "category_id": {
                 "type": "string",
-                "description": "加工项分类 ID（可选）。",
+                "description": "加工项分类 ID（可选，加工分类）。",
+            },
+            "applicable_category_id": {
+                "type": "string",
+                "description": "适用商品分类 ID（可选，商品分类）："
+                "按「适用商品分类」过滤加工项（applicable_product_categories 包含该分类的加工项，"
+                "或未配置适用分类=适用所有分类的加工项）。建品流程在用户确认商品分类后传已选分类 ID。",
             },
             "status": {
                 "type": "string",
@@ -77,6 +85,7 @@ class ProcessingItemQueryTool(BaseTool):
         id: Optional[str] = None,
         keyword: Optional[str] = None,
         category_id: Optional[str] = None,
+        applicable_category_id: Optional[str] = None,
         status: Optional[str] = None,
         page: int = 1,
         size: int = 10,
@@ -87,7 +96,8 @@ class ProcessingItemQueryTool(BaseTool):
             context: Tool 执行上下文
             id: 加工项 ID（提供时查询详情）
             keyword: 名称关键词
-            category_id: 分类 ID
+            category_id: 加工分类 ID
+            applicable_category_id: 适用商品分类 ID（按适用商品分类过滤，issue #2964）
             status: 状态过滤
             page: 页码
             size: 每页数量
@@ -142,12 +152,15 @@ class ProcessingItemQueryTool(BaseTool):
                 params["keyword"] = keyword
             if category_id:
                 params["categoryId"] = category_id
+            if applicable_category_id:
+                params["applicableProductCategoryId"] = applicable_category_id
             if status:
                 params["status"] = status
 
             logger.info(
                 f"[processing-item-query] List: keyword='{keyword or ''}' "
-                f"category_id={category_id} status={status} page={page} size={size} "
+                f"category_id={category_id} applicable_category_id={applicable_category_id} "
+                f"status={status} page={page} size={size} "
                 f"| tenant={context.tenant_id}"
             )
 
@@ -211,7 +224,15 @@ class ProcessingItemQueryTool(BaseTool):
                     "total": total_pages,
                     "totalCount": total,
                     "tool": "processing_item_query",
-                    "params": json.dumps({"keyword": keyword or "", "page": page, "size": size}, ensure_ascii=False),
+                    "params": json.dumps(
+                        {
+                            "keyword": keyword or "",
+                            "applicable_category_id": applicable_category_id or "",
+                            "page": page,
+                            "size": size,
+                        },
+                        ensure_ascii=False,
+                    ),
                 }
 
             return ToolResult(
@@ -255,6 +276,9 @@ class ProcessingItemQueryTool(BaseTool):
             "max_quantity": record.get("maxQuantity") or record.get("max_quantity"),
             "description": record.get("description"),
             "options": record.get("options"),
+            "applicable_product_categories": record.get("applicableProductCategories")
+            or record.get("applicable_product_categories")
+            or [],
             "processing_days": record.get("processingDays") or record.get("processing_days"),
             "ai_recommended": record.get("aiRecommended") or record.get("ai_recommended"),
             "status": record.get("status"),
