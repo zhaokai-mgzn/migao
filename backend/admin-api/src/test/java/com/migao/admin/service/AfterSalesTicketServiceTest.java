@@ -57,6 +57,9 @@ class AfterSalesTicketServiceTest {
     @Mock
     private FinanceService financeService;
 
+    @Mock
+    private NotificationService notificationService;
+
     private AfterSalesTicket testTicket;
     private Order testOrder;
 
@@ -932,5 +935,136 @@ class AfterSalesTicketServiceTest {
         assertThat(p.matcher(insertedTicketNo[0]).matches())
                 .as("新租户首单应为 AS-<date>-0001，实际=" + insertedTicketNo[0])
                 .isTrue();
+    }
+
+    // ======================== 站内信触发（issue #2965） ========================
+
+    @Test
+    @DisplayName("创建售后工单 - 关联订单有归属用户时触发 after_sales_created 站内信")
+    void createTicket_WithOrderUser_TriggersNotification() {
+        // given
+        AfterSalesCreateRequest request = new AfterSalesCreateRequest();
+        request.setOrderId("order-001");
+        request.setTicketType("return");
+        request.setDescription("商品有质量问题");
+        request.setPriority("urgent");
+        request.setRefundAmount(new BigDecimal("100.00"));
+
+        Order orderWithUser = Order.builder()
+                .id("order-001")
+                .tenantId(1L)
+                .orderNo("ORD-20250425-001")
+                .customerName("张三")
+                .customerPhone("13800138000")
+                .userId("user-notif")
+                .totalAmount(new BigDecimal("599.00"))
+                .status("confirmed")
+                .build();
+        when(orderMapper.selectById("order-001")).thenReturn(orderWithUser);
+        when(afterSalesTicketMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+        when(afterSalesTicketMapper.insert(any(AfterSalesTicket.class))).thenAnswer(invocation -> {
+            AfterSalesTicket t = invocation.getArgument(0);
+            t.setId("ticket-notif");
+            return 1;
+        });
+        AfterSalesTicket savedTicket = AfterSalesTicket.builder()
+                .id("ticket-notif")
+                .tenantId(1L)
+                .ticketNo("AS-20250425-0002")
+                .orderId("order-001")
+                .customerId("张三")
+                .ticketType("return")
+                .status("pending")
+                .priority("urgent")
+                .source("agent")
+                .refundAmount(new BigDecimal("100.00"))
+                .createdAt(OffsetDateTime.now())
+                .updatedAt(OffsetDateTime.now())
+                .build();
+        when(afterSalesTicketMapper.selectById("ticket-notif")).thenReturn(savedTicket);
+
+        // when
+        AfterSalesDetailResponse result = afterSalesTicketService.createTicket(request, 1L, "test-user");
+
+        // then：触发 after_sales_created 站内信（面向订单归属用户）
+        assertThat(result).isNotNull();
+        verify(notificationService).triggerByEvent(eq(1L), eq("after_sales_created"), any());
+    }
+
+    @Test
+    @DisplayName("更新工单状态 - 关联订单有归属用户时触发 after_sales_status_changed 站内信")
+    void updateTicketStatus_TriggersNotification() {
+        // given
+        AfterSalesStatusUpdateRequest request = new AfterSalesStatusUpdateRequest();
+        request.setStatus("processing");
+
+        AfterSalesTicket ticket = AfterSalesTicket.builder()
+                .id("ticket-001")
+                .tenantId(1L)
+                .ticketNo("AS-20250425-0001")
+                .orderId("order-001")
+                .customerId("张三")
+                .ticketType("return")
+                .status("pending")
+                .description("商品有质量问题")
+                .source("agent")
+                .priority("normal")
+                .createdAt(OffsetDateTime.now())
+                .updatedAt(OffsetDateTime.now())
+                .build();
+        when(afterSalesTicketMapper.selectById("ticket-001")).thenReturn(ticket);
+        when(afterSalesTicketMapper.updateById(any(AfterSalesTicket.class))).thenReturn(1);
+        when(ticketTimelineMapper.insert(any(TicketTimeline.class))).thenReturn(1);
+
+        Order orderWithUser = Order.builder()
+                .id("order-001")
+                .tenantId(1L)
+                .orderNo("ORD-20250425-001")
+                .customerName("张三")
+                .userId("user-notif")
+                .status("confirmed")
+                .build();
+        when(orderMapper.selectById("order-001")).thenReturn(orderWithUser);
+
+        // when
+        afterSalesTicketService.updateTicketStatus("ticket-001", request);
+
+        // then：触发 after_sales_status_changed 站内信
+        verify(notificationService).triggerByEvent(eq(1L), eq("after_sales_status_changed"), any());
+    }
+
+    @Test
+    @DisplayName("投诉工单（无关联订单）不触发站内信且不影响主流程")
+    void createTicket_ComplaintWithoutOrder_NoNotification() {
+        // given
+        AfterSalesCreateRequest request = new AfterSalesCreateRequest();
+        request.setTicketType("complaint");
+        request.setDescription("转人工投诉");
+
+        when(afterSalesTicketMapper.insert(any(AfterSalesTicket.class))).thenAnswer(invocation -> {
+            AfterSalesTicket t = invocation.getArgument(0);
+            t.setId("ticket-complaint");
+            return 1;
+        });
+        AfterSalesTicket savedTicket = AfterSalesTicket.builder()
+                .id("ticket-complaint")
+                .tenantId(1L)
+                .ticketNo("AS-20250425-0002")
+                .customerId("投诉用户")
+                .ticketType("complaint")
+                .status("pending")
+                .description("转人工投诉")
+                .source("agent")
+                .priority("normal")
+                .createdAt(OffsetDateTime.now())
+                .updatedAt(OffsetDateTime.now())
+                .build();
+        when(afterSalesTicketMapper.selectById("ticket-complaint")).thenReturn(savedTicket);
+
+        // when
+        afterSalesTicketService.createTicket(request, 1L, "test-user");
+
+        // then：无关联订单 → 无接收人 → 不触发
+        verify(notificationService, never()).triggerByEvent(anyLong(), anyString(), any());
     }
 }

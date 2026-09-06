@@ -77,11 +77,14 @@ public class NotificationService {
     @Transactional(rollbackFor = Exception.class)
     public NotificationDTO createFromTemplate(Long tenantId, String templateName, String recipientId,
                                                String recipientType, Map<String, String> variables) {
-        // 查找模板
+        // 查找模板：优先租户自定义模板，其次系统内置模板（tenantId=0），取租户级优先
         LambdaQueryWrapper<NotificationTemplate> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(NotificationTemplate::getTenantId, tenantId)
+        wrapper.and(w -> w.eq(NotificationTemplate::getTenantId, tenantId)
+                        .or().eq(NotificationTemplate::getTenantId, 0L))
                 .eq(NotificationTemplate::getName, templateName)
-                .eq(NotificationTemplate::getStatus, "active");
+                .eq(NotificationTemplate::getStatus, "active")
+                .orderByDesc(NotificationTemplate::getTenantId)
+                .last("LIMIT 1");
         NotificationTemplate template = notificationTemplateMapper.selectOne(wrapper);
 
         if (template == null) {
@@ -239,9 +242,10 @@ public class NotificationService {
      */
     @Transactional(rollbackFor = Exception.class)
     public void triggerByEvent(Long tenantId, String eventType, Map<String, String> contextData) {
-        // 查询匹配的通知规则
+        // 查询匹配的通知规则：优先租户自定义规则，其次系统内置规则（tenantId=0）
         LambdaQueryWrapper<NotificationRule> ruleWrapper = new LambdaQueryWrapper<>();
-        ruleWrapper.eq(NotificationRule::getTenantId, tenantId)
+        ruleWrapper.and(w -> w.eq(NotificationRule::getTenantId, tenantId)
+                        .or().eq(NotificationRule::getTenantId, 0L))
                 .eq(NotificationRule::getEventType, eventType)
                 .eq(NotificationRule::getEnabled, true);
 
