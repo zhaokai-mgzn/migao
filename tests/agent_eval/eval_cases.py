@@ -2021,6 +2021,21 @@ _CASE_PP_003 = EvalCase(
     persona='',
 )
 
+# ── PP-005 [NORMAL] 加工项查询 - 按适用商品分类筛选并透传关联数据（源: cases/processing.yml）──
+_CASE_PP_005 = EvalCase(
+    id='PP-005',
+    legacy_id='',
+    title='加工项查询 - 按适用商品分类筛选并透传关联数据',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['给窗帘分类筛选可用的加工项'],
+    expectations=['processing_item_query(applicable_category_id=cat_curtain)'],
+    data_checks=['processing_item_query 携带 applicable_category_id 时，admin-api 请求参数含 applicableProductCategoryId（按适用商品分类过滤加工项）', '响应条目透传 applicable_product_categories（加工项配置的适用商品分类 ID 列表），供 LLM 按分类推荐加工项', 'applicable_product_categories 为空 = 适用所有商品分类（兼容历史数据，不参与过滤变化）'],
+    skip_reason='',
+    tags=['processing_item', 'category', 'product_category'],
+    persona='',
+)
+
 # ── PP-004 [ADVERSARIAL] 加工项 - 传序号自动解析 UUID（源: cases/processing.yml）──
 _CASE_PP_004 = EvalCase(
     id='PP-004',
@@ -2258,6 +2273,21 @@ _CASE_PR_015 = EvalCase(
     data_checks=['翻页（__PAGE__ 协议）后加工项选择仍可继续（multiSelect 不丢）', '翻页后勾选累积一次性提交被正确解析', '最终创建成功'],
     skip_reason='',
     tags=['multi_turn', 'processing_item', 'pagination', 'multi_select'],
+    persona='',
+)
+
+# ── PR-016 [NORMAL] 建品流程 - 分类确认后按适用商品分类过滤/优先推荐加工项（源: cases/product.yml）──
+_CASE_PR_016 = EvalCase(
+    id='PR-016',
+    legacy_id='',
+    title='建品流程 - 分类确认后按适用商品分类过滤/优先推荐加工项',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['录入这个商品，名称遮光窗帘，价格 100', '分类选窗帘', '已选加工项：高温定型'],
+    expectations=['category_manage', 'processing_item_query(applicable_category_id=cat_curtain)', 'interact(component=choice, multiSelect=True)', 'validate_input', 'product_manage(action=create)'],
+    data_checks=['分类确认后加工项选择器按「适用商品分类」过滤展示（processing_item_query 携带 applicable_category_id，= 已选商品分类 ID）', '适用分类为空（applicable_product_categories 为空）的加工项仍展示（= 适用所有分类），不因过滤而丢失', '当前分类无匹配加工项时以文字提示可跳过，不空转强制选择', '最终创建成功且关联加工项数量正确'],
+    skip_reason='',
+    tags=['processing_item', 'product_category', 'guided_flow', 'recommendation'],
     persona='',
 )
 
@@ -2831,6 +2861,21 @@ _CASE_UI_025 = EvalCase(
     persona='',
 )
 
+# ── UI-026 [NORMAL] 加工项列表 - 展示「适用商品分类」列（ID→名称映射，空=适用所有）（源: cases/ui.yml）──
+_CASE_UI_026 = EvalCase(
+    id='UI-026',
+    legacy_id='',
+    title='加工项列表 - 展示「适用商品分类」列（ID→名称映射，空=适用所有）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['加工项配置列表应能直接看到每个加工项的「适用商品分类」关联（此前仅在编辑弹窗内可见）'],
+    expectations=['direct_reply'],
+    data_checks=['列表表格新增「适用商品分类」列：展示已勾选分类的名称（分类树 ID→名称 映射，多选逗号分隔/多标签）；applicableProductCategories 为空展示「适用所有分类」', '列数据来自列表接口已返回的 applicableProductCategories 字段，无新增后端字段'],
+    skip_reason='纯前端列表列展示由 vitest 单测验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ui', 'processing', 'admin-web', 'list'],
+    persona='',
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -2994,6 +3039,7 @@ ALL_CASES = (
     _CASE_PP_001,
     _CASE_PP_002,
     _CASE_PP_003,
+    _CASE_PP_005,
     _CASE_PP_004,
     _CASE_PR_001,
     _CASE_PR_002,
@@ -3010,6 +3056,7 @@ ALL_CASES = (
     _CASE_PR_013,
     _CASE_PR_014,
     _CASE_PR_015,
+    _CASE_PR_016,
     _CASE_RG_001,
     _CASE_ST_001,
     _CASE_ST_002,
@@ -3048,6 +3095,7 @@ ALL_CASES = (
     _CASE_UI_023,
     _CASE_UI_024,
     _CASE_UI_025,
+    _CASE_UI_026,
     _CASE_UT_001,
     _CASE_UT_002,
 )

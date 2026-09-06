@@ -831,3 +831,34 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: UI-026
+    legacy_id: ""
+    title: "加工项列表 - 展示「适用商品分类」列（ID→名称映射，空=适用所有）"
+    domains:
+      - ui
+      - frontend
+    tier: normal
+    tags:
+      - ui
+      - processing
+      - admin-web
+      - list
+    truths_ref:
+      - frontend-fix.no-api-change
+      - frontend-fix.vitest
+    user_inputs:
+      - "加工项配置列表应能直接看到每个加工项的「适用商品分类」关联（此前仅在编辑弹窗内可见）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "列表表格新增「适用商品分类」列：展示已勾选分类的名称（分类树 ID→名称 映射，多选逗号分隔/多标签）；applicableProductCategories 为空展示「适用所有分类」"
+      - "列数据来自列表接口已返回的 applicableProductCategories 字段，无新增后端字段"
+    skip_reason: "纯前端列表列展示由 vitest 单测验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-06 新增（issue #2964）：加工项「适用商品分类」关联数据此前列表页不可见"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/pages/processing.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []

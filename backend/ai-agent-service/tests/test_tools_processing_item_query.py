@@ -3,7 +3,7 @@
 
 覆盖 ProcessingItemQueryTool.execute() 的列表查询、关键词搜索、详情查询、错误处理。
 """
-# case_ids: PP-001
+# case_ids: PP-001, PP-005
 
 import pytest
 from unittest.mock import patch, AsyncMock
@@ -33,6 +33,7 @@ def sample_processing_items():
             "maxQuantity": 200,
             "description": "金属圈打孔",
             "options": [],
+            "applicableProductCategories": ["cat_curtain", "cat_valance"],
             "processingDays": 1,
             "aiRecommended": True,
             "status": "active",
@@ -134,6 +135,39 @@ class TestProcessingItemList:
         params = mock_client.get.call_args[1]["params"]
         assert params["categoryId"] == "cat_punch"
         assert params["status"] == "active"
+
+    @patch("app.tools.processing_item_query.get_admin_api_client")
+    async def test_list_filter_by_applicable_category_and_passthrough(
+        self, mock_get_client, tool, sample_tool_context, sample_processing_items
+    ):
+        """按适用商品分类筛选（PP-005/issue #2964）：
+        1. applicable_category_id 映射为 admin-api 的 applicableProductCategoryId 参数
+        2. 响应条目透传 applicable_product_categories 供 LLM 按分类推荐加工项
+        """
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value={
+            "success": True,
+            "data": {"items": sample_processing_items, "total": 5},
+        })
+        mock_get_client.return_value = mock_client
+
+        result = await tool.execute(
+            context=sample_tool_context,
+            applicable_category_id="cat_curtain",
+        )
+
+        assert result.success is True
+        # 参数映射
+        params = mock_client.get.call_args[1]["params"]
+        assert params["applicableProductCategoryId"] == "cat_curtain"
+        assert "categoryId" not in params  # 不污染加工分类筛选
+        # 响应透传
+        items = result.data["items"]
+        assert items[0]["applicable_product_categories"] == ["cat_curtain", "cat_valance"]
+        assert result.data["pageMeta"] is not None
+        # pageMeta 透传参数带上适用分类，翻页不丢筛选
+        meta_params = __import__("json").loads(result.data["pageMeta"]["params"])
+        assert meta_params["applicable_category_id"] == "cat_curtain"
 
     @patch("app.tools.processing_item_query.get_admin_api_client")
     async def test_list_empty_result(

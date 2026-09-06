@@ -287,6 +287,18 @@ export default function ProcessingPage() {
     return opt?.label || method
   }
 
+  // 适用商品分类列展示：ID → 名称（分类树多选，多个逗号分隔）；未配置 = 适用所有分类（issue #2964）
+  const getApplicableCategoryLabels = (categories: string[] | undefined) => {
+    const ids = categories || []
+    if (ids.length === 0) return '适用所有分类'
+    return ids
+      .map((id) => {
+        const opt = catOptions.find((o) => o.value === id)
+        return opt ? opt.label.trim() : id
+      })
+      .join('、')
+  }
+
   return (
     <div className="p-6">
       {/* 页面标题 */}
@@ -309,16 +321,19 @@ export default function ProcessingPage() {
         <table className="w-full border-collapse">
           <thead>
             <tr className="border-b border-neutral-200 bg-neutral-50/60">
-              <th className="px-4 py-3 text-left text-sm font-semibold text-neutral-900 w-[30%] whitespace-nowrap">
+              <th className="px-4 py-3 text-left text-sm font-semibold text-neutral-900 w-[25%] whitespace-nowrap">
                 加工项名称
               </th>
-              <th className="px-4 py-3 text-left text-sm font-semibold text-neutral-900 w-[20%] whitespace-nowrap">
+              <th className="px-4 py-3 text-left text-sm font-semibold text-neutral-900 w-[15%] whitespace-nowrap">
                 加工项价格
               </th>
-              <th className="px-4 py-3 text-left text-sm font-semibold text-neutral-900 w-[25%] whitespace-nowrap">
+              <th className="px-4 py-3 text-left text-sm font-semibold text-neutral-900 w-[20%] whitespace-nowrap">
                 加工项计价方式
               </th>
               <th className="px-4 py-3 text-left text-sm font-semibold text-neutral-900 w-[25%] whitespace-nowrap">
+                适用商品分类
+              </th>
+              <th className="px-4 py-3 text-left text-sm font-semibold text-neutral-900 w-[15%] whitespace-nowrap">
                 操作
               </th>
             </tr>
@@ -326,7 +341,7 @@ export default function ProcessingPage() {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={4} className="px-4 py-12 text-center text-neutral-500">
+                <td colSpan={5} className="px-4 py-12 text-center text-neutral-500">
                   <div className="flex items-center justify-center gap-2">
                     <div className="w-5 h-5 border-2 border-primary-600 border-t-transparent rounded-full animate-spin" />
                     加载中...
@@ -335,7 +350,7 @@ export default function ProcessingPage() {
               </tr>
             ) : items.length === 0 ? (
               <tr>
-                <td colSpan={4} className="px-4 py-12 text-center text-sm text-neutral-400">
+                <td colSpan={5} className="px-4 py-12 text-center text-sm text-neutral-400">
                   暂无加工项，点击右上角「新增加工项」开始创建
                 </td>
               </tr>
@@ -349,6 +364,9 @@ export default function ProcessingPage() {
                     </td>
                     <td className="px-4 py-3 text-sm text-neutral-900">
                       {getPricingMethodLabel(item.pricingMethod || '')}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-neutral-600">
+                      {getApplicableCategoryLabels(item.applicableProductCategories)}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3 whitespace-nowrap">

@@ -1,5 +1,9 @@
 package com.migao.admin.service;
 
+// case_ids: PP-005
+// 说明：PP-005 覆盖加工项按「适用商品分类」筛选（issue #2964）——applicable_product_categories 为空 =
+// 适用所有分类，筛选条件为「空列表 OR JSONB 包含目标分类」。
+
 import com.migao.admin.dto.*;
 import com.migao.admin.entity.ProcessingCategory;
 import com.migao.admin.entity.ProcessingItem;
@@ -12,6 +16,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -45,6 +50,15 @@ class ProcessingItemServiceTest {
 
     @BeforeEach
     void setUp() {
+        // 初始化 MyBatis-Plus 实体 lambda 缓存，使 LambdaQueryWrapper 的
+        // ProcessingItem::getXxx 等方法引用可解析（纯 Mockito 环境无 Spring 容器兜底）
+        com.baomidou.mybatisplus.core.MybatisConfiguration conf =
+                new com.baomidou.mybatisplus.core.MybatisConfiguration();
+        org.apache.ibatis.builder.MapperBuilderAssistant assistant =
+                new org.apache.ibatis.builder.MapperBuilderAssistant(conf, "");
+        com.baomidou.mybatisplus.core.metadata.TableInfoHelper.initTableInfo(assistant, ProcessingItem.class);
+        com.baomidou.mybatisplus.core.metadata.TableInfoHelper.initTableInfo(assistant, ProcessingCategory.class);
+
         testCategory = ProcessingCategory.builder()
                 .id("pcat-001")
                 .tenantId(1L)
@@ -141,6 +155,40 @@ class ProcessingItemServiceTest {
         // then
         assertThat(result.getTotal()).isEqualTo(0);
         assertThat(result.getItems()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("分页查询加工项 - 按适用商品分类筛选（空列表=适用所有，JSONB 包含目标分类）")
+    void getProcessingItems_FilterByApplicableProductCategory() {
+        // given
+        ProcessingItemQueryRequest query = new ProcessingItemQueryRequest();
+        query.setApplicableProductCategoryId("cat-curtain");
+
+        Page<ProcessingItem> mockPage = new Page<>(1, 20);
+        mockPage.setRecords(List.of(testItem));
+        mockPage.setTotal(1);
+
+        when(processingItemMapper.selectPage(any(Page.class), any(LambdaQueryWrapper.class)))
+                .thenReturn(mockPage);
+        when(processingCategoryMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(List.of(testCategory));
+
+        // when
+        PageResponse<ProcessingItemResponse> result = processingItemService.getProcessingItems(query, 1L);
+
+        // then
+        assertThat(result).isNotNull();
+        assertThat(result.getItems()).hasSize(1);
+
+        // 筛选 SQL 必须同时包含：空列表（=适用所有）+ JSONB 包含目标分类（目标分类 ID 走参数化占位，值在 paramNameValuePairs）
+        ArgumentCaptor<LambdaQueryWrapper<ProcessingItem>> wrapperCaptor =
+                ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(processingItemMapper).selectPage(any(Page.class), wrapperCaptor.capture());
+        String sql = wrapperCaptor.getValue().getCustomSqlSegment();
+        assertThat(sql).contains("applicable_product_categories");
+        assertThat(sql).contains("'[]'");
+        assertThat(wrapperCaptor.getValue().getParamNameValuePairs().values())
+                .anyMatch(v -> v.toString().contains("cat-curtain"));
     }
 
     // ======================== 创建加工项测试 ========================
