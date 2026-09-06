@@ -1,8 +1,8 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-// case_ids: API-008
+// case_ids: API-008, UI-027
 
 // Mock API — 页面改造后走真实后端 CRUD（P0-1 知识库假成功修复回归）
 vi.mock('@/lib/api', () => ({
@@ -16,6 +16,7 @@ vi.mock('@/lib/api', () => ({
     uploadDocument: vi.fn().mockResolvedValue({ data: { success: true, data: { id: 'doc_new' } } }),
     deleteDocument: vi.fn().mockResolvedValue({ data: { success: true } }),
     resyncDocument: vi.fn().mockResolvedValue({ data: { success: true } }),
+    getSyncHistory: vi.fn().mockResolvedValue({ data: { success: true, data: { items: [], total: 0 } } }),
     searchKnowledge: vi.fn().mockResolvedValue({ data: { success: true, data: { results: [] } } }),
   },
 }))
@@ -150,6 +151,52 @@ describe('KnowledgePage', () => {
     render(<KnowledgePage />)
     await waitFor(() => {
       expect(screen.getByTestId('search-bar')).toBeInTheDocument()
+    })
+  })
+
+  it('should show sync history records in modal (UI-027)', async () => {
+    const user = userEvent.setup()
+    const api = (await import('@/lib/api')).knowledgeApi as any
+    api.getSyncHistory.mockResolvedValue({
+      data: { success: true, data: {
+        items: [{
+          id: 'h1', syncType: 'single', sourceType: 'manual',
+          sourceIds: ['doc_1'], status: 'completed', successCount: 24,
+          createdAt: '2026-04-15T10:30:00',
+        }], total: 1,
+      } },
+    })
+    render(<KnowledgePage />)
+    await waitFor(() => {
+      expect(screen.getByText('知识库管理')).toBeInTheDocument()
+    })
+    await user.click(screen.getByText('同步历史'))
+    const modal = await screen.findByTestId('modal')
+    await waitFor(() => {
+      // 来源文档（sourceIds → 标题映射；scope 到弹窗避免与文档表格同名文本冲突）
+      expect(within(modal).getByText('窗帘常见问题 FAQ')).toBeInTheDocument()
+      // 类型/状态/结果
+      expect(within(modal).getByText('单文档')).toBeInTheDocument()
+      expect(within(modal).getByText('已完成')).toBeInTheDocument()
+      expect(within(modal).getByText('成功 24')).toBeInTheDocument()
+    })
+    // 数据源必须来自 getSyncHistory
+    expect(api.getSyncHistory).toHaveBeenCalled()
+  })
+
+  it('should show empty state for sync history (UI-027)', async () => {
+    const user = userEvent.setup()
+    // 显式置空（clearAllMocks 只清 calls 不清 mockResolvedValue 实现，防止继承上一用例的数据 mock）
+    const api = (await import('@/lib/api')).knowledgeApi as any
+    api.getSyncHistory.mockResolvedValue({ data: { success: true, data: { items: [], total: 0 } } })
+    render(<KnowledgePage />)
+    await waitFor(() => {
+      expect(screen.getByText('知识库管理')).toBeInTheDocument()
+    })
+    await user.click(screen.getByText('同步历史'))
+    const modal = await screen.findByTestId('modal')
+    await waitFor(() => {
+      expect(within(modal).getByText(/暂无同步历史/)).toBeInTheDocument()
     })
   })
 })

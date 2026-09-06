@@ -134,7 +134,7 @@
 真值: ai-chat.agent-factory
 溯源: 2026-08-25 新增：ai-agent-service agents-customer_service_agent 覆盖率补全（issue #2429） ｜ tags: agents, factory, alias
 
-## api（10 case）
+## api（11 case）
 
 ### API-001. chat 会话生命周期 - 租户隔离 + 用户所有权 + 幂等/重开 🔵
 ```
@@ -252,6 +252,18 @@
 ```
 真值: auth-sms.bypass
 溯源: POC mock 登录集成测试新增 ｜ tags: login, mock
+
+### API-011. 知识库同步历史 - resync 写入记录 + 分页列表接口 🔵
+```
+你: 管理员触发文档重新同步后应产生同步历史记录，并可分页查询
+期望: direct_reply
+数据: POST /api/admin/knowledge/documents/{id}/embed（resync）同时写入 knowledge_sync_history（syncType=single/sourceType=manual/sourceIds=[docId]/status=processing/totalCount=1）
+数据: GET /api/admin/knowledge/sync-history 分页返回历史（created_at 倒序，按 tenant 隔离）；空记录返回空列表
+数据: 字段齐全：syncType/sourceType/sourceIds/status/totalCount/successCount/failedCount/startedAt/completedAt
+跳过: 知识库同步历史闭环由 MockMvc 集成测试验证（KnowledgeControllerTest），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: api.knowledge-sync
+溯源: 2026-09-06 新增（issue #2971 自洽性扫描）：knowledge_sync_history 表/实体/Mapper 就绪但零读写（resync 不记历史、无列表接口），补写读路径形成闭环 ｜ tags: api, knowledge, sync_history
 
 ## 分类域（3 case）
 
@@ -1996,7 +2008,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## ui（26 case）
+## ui（27 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -2324,6 +2336,17 @@
 真值: frontend-fix.no-api-change, frontend-fix.vitest
 溯源: 2026-09-06 新增（issue #2964）：加工项「适用商品分类」关联数据此前列表页不可见 ｜ tags: ui, processing, admin-web, list
 
+### UI-027. 知识库页 - 展示同步历史记录 🔵
+```
+你: 知识库页应能查看文档同步历史（时间/状态/结果），resync 后可见新记录
+期望: direct_reply
+数据: 知识库页新增「同步历史」视图：展示来源文档（sourceIds 映射标题）、同步类型、状态（pending/processing/completed/failed）、时间；无历史时展示空态
+数据: 数据来自 GET /api/admin/knowledge/sync-history 已返回字段，无新增后端字段
+跳过: 纯前端展示由 vitest 单测验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change, frontend-fix.vitest
+溯源: 2026-09-06 新增（issue #2971 自洽性扫描）：knowledge_sync_history 此前无任何读路径，知识库页补同步历史展示，字段全部来自已定契约 ｜ tags: ui, knowledge, sync_history, admin-web
+
 ## utils（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -2353,11 +2376,11 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：191（活跃 104，跳过 87）
-- tier 分布：smoke 8 / normal 155 / adversarial 28
+- 用例总数：193（活跃 104，跳过 89）
+- tier 分布：smoke 8 / normal 157 / adversarial 28
 - 售后域：5
 - agents：6
-- api：10
+- api：11
 - 分类域：3
 - 对话边界域：28
 - 跨域：3
@@ -2375,7 +2398,7 @@
 - registry：1
 - 设置域：8
 - token-refresh：4
-- ui：26
+- ui：27
 - utils：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）

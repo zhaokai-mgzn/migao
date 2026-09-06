@@ -1,12 +1,12 @@
 'use client'
 
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { Upload, Trash2, FileText, RefreshCw, Search, Sparkles } from 'lucide-react'
+import { Upload, Trash2, FileText, RefreshCw, Search, Sparkles, History } from 'lucide-react'
 import { toast } from 'sonner'
 import { knowledgeApi } from '@/lib/api'
 import { Table, Pagination, Modal, Button, Badge, SearchBar } from '@/components/ui'
 import type { TableColumn } from '@/components/ui'
-import type { KnowledgeDocument, KnowledgeDocumentUploadForm, KnowledgeDocStatus, KnowledgeSearchResult } from '@/types'
+import type { KnowledgeDocument, KnowledgeDocumentUploadForm, KnowledgeDocStatus, KnowledgeSearchResult, KnowledgeSyncHistory } from '@/types'
 import DateTimeCell from '@/components/common/DateTimeCell'
 
 export default function KnowledgePage() {
@@ -43,6 +43,26 @@ export default function KnowledgePage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<KnowledgeSearchResult[]>([])
   const [searching, setSearching] = useState(false)
+
+  // 同步历史状态（issue #2971：knowledge_sync_history 闭环，读路径 + 展示）
+  const [syncHistoryOpen, setSyncHistoryOpen] = useState(false)
+  const [syncHistory, setSyncHistory] = useState<KnowledgeSyncHistory[]>([])
+  const [syncHistoryLoading, setSyncHistoryLoading] = useState(false)
+
+  // 加载同步历史
+  const loadSyncHistory = useCallback(async () => {
+    setSyncHistoryLoading(true)
+    try {
+      const res = await knowledgeApi.getSyncHistory({ page: 1, size: 50 })
+      const pageData = res.data?.data
+      setSyncHistory(pageData?.items || [])
+    } catch (error) {
+      console.error('加载同步历史失败:', error)
+      toast.error('加载同步历史失败')
+    } finally {
+      setSyncHistoryLoading(false)
+    }
+  }, [])
 
   // 加载数据
   const loadData = useCallback(async () => {
@@ -269,6 +289,33 @@ export default function KnowledgePage() {
     return <Badge variant={variant}>{label}</Badge>
   }
 
+  // 同步历史来源展示：sourceIds → 文档标题映射（issue #2971）
+  const getSyncSourceLabel = (record: KnowledgeSyncHistory) => {
+    const ids = Array.isArray(record.sourceIds) ? record.sourceIds : []
+    const titles = ids
+      .map((id) => documents.find((d) => d.id === id)?.name)
+      .filter(Boolean)
+    if (titles.length > 0) return titles.join('、')
+    if (record.syncType === 'full') return '全量同步'
+    return ids.join('、') || '—'
+  }
+
+  const getSyncTypeLabel = (type: string) => {
+    const labels: Record<string, string> = { single: '单文档', batch: '批量', full: '全量' }
+    return labels[type] || type
+  }
+
+  const getSyncStatusBadge = (status: string) => {
+    const config: Record<string, { variant: 'success' | 'warning' | 'error'; label: string }> = {
+      completed: { variant: 'success', label: '已完成' },
+      processing: { variant: 'warning', label: '处理中' },
+      pending: { variant: 'warning', label: '等待中' },
+      failed: { variant: 'error', label: '失败' },
+    }
+    const { variant, label } = config[status] || { variant: 'default' as const, label: status }
+    return <Badge variant={variant}>{label}</Badge>
+  }
+
   // 表格列
   const columns: TableColumn<KnowledgeDocument>[] = [
     {
@@ -379,6 +426,16 @@ export default function KnowledgePage() {
           <Button variant="secondary" onClick={() => setSearchTestOpen(true)}>
             <Sparkles className="w-4 h-4 mr-1.5" />
             搜索测试
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              setSyncHistoryOpen(true)
+              loadSyncHistory()
+            }}
+          >
+            <History className="w-4 h-4 mr-1.5" />
+            同步历史
           </Button>
           <Button onClick={openUploadModal}>
             <Upload className="w-4 h-4 mr-1.5" />
@@ -586,6 +643,58 @@ export default function KnowledgePage() {
             </div>
           )}
         </div>
+      </Modal>
+
+      {/* 同步历史模态框（issue #2971：knowledge_sync_history 读路径 + 展示） */}
+      <Modal
+        open={syncHistoryOpen}
+        onClose={() => setSyncHistoryOpen(false)}
+        title="同步历史"
+        width={720}
+        footer={
+          <Button variant="secondary" onClick={() => setSyncHistoryOpen(false)}>关闭</Button>
+        }
+      >
+        {syncHistoryLoading ? (
+          <div className="py-12 text-center text-neutral-500 text-sm">加载中...</div>
+        ) : syncHistory.length === 0 ? (
+          <div className="py-12 text-center text-neutral-400 text-sm">
+            暂无同步历史，对文档执行「重新同步」后这里会展示记录
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-neutral-200 text-left text-neutral-500">
+                  <th className="py-2 pr-4 font-medium">来源文档</th>
+                  <th className="py-2 pr-4 font-medium">类型</th>
+                  <th className="py-2 pr-4 font-medium">状态</th>
+                  <th className="py-2 pr-4 font-medium">结果</th>
+                  <th className="py-2 font-medium">时间</th>
+                </tr>
+              </thead>
+              <tbody>
+                {syncHistory.map((h) => (
+                  <tr key={h.id} className="border-b border-neutral-100 last:border-0">
+                    <td className="py-2.5 pr-4 text-neutral-900">{getSyncSourceLabel(h)}</td>
+                    <td className="py-2.5 pr-4 text-neutral-600">{getSyncTypeLabel(h.syncType)}</td>
+                    <td className="py-2.5 pr-4">{getSyncStatusBadge(h.status)}</td>
+                    <td className="py-2.5 pr-4 text-neutral-600">
+                      {h.status === 'failed'
+                        ? h.errorMessage || '失败'
+                        : h.status === 'completed'
+                        ? `成功 ${h.successCount ?? 0}`
+                        : '—'}
+                    </td>
+                    <td className="py-2.5 text-neutral-500 whitespace-nowrap">
+                      <DateTimeCell value={h.createdAt} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Modal>
     </div>
   )

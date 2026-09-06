@@ -862,3 +862,34 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: UI-027
+    legacy_id: ""
+    title: "知识库页 - 展示同步历史记录"
+    domains:
+      - ui
+      - frontend
+    tier: normal
+    tags:
+      - ui
+      - knowledge
+      - sync_history
+      - admin-web
+    truths_ref:
+      - frontend-fix.no-api-change
+      - frontend-fix.vitest
+    user_inputs:
+      - "知识库页应能查看文档同步历史（时间/状态/结果），resync 后可见新记录"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "知识库页新增「同步历史」视图：展示来源文档（sourceIds 映射标题）、同步类型、状态（pending/processing/completed/failed）、时间；无历史时展示空态"
+      - "数据来自 GET /api/admin/knowledge/sync-history 已返回字段，无新增后端字段"
+    skip_reason: "纯前端展示由 vitest 单测验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-06 新增（issue #2971 自洽性扫描）：knowledge_sync_history 此前无任何读路径，知识库页补同步历史展示，字段全部来自已定契约"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/pages/knowledge.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []

@@ -358,6 +358,22 @@ export interface KnowledgeDocumentUploadForm {
   file?: File
 }
 
+// 知识库同步历史（issue #2971：knowledge_sync_history 闭环，同步历史展示）
+export interface KnowledgeSyncHistory {
+  id: string
+  syncType: 'single' | 'batch' | 'full'
+  sourceType: 'product' | 'manual'
+  sourceIds?: string[] | Record<string, unknown> | null
+  status: 'pending' | 'processing' | 'completed' | 'failed'
+  totalCount?: number
+  successCount?: number
+  failedCount?: number
+  errorMessage?: string
+  startedAt?: string
+  completedAt?: string
+  createdAt: string
+}
+
 // ===== 订单状态枚举 =====
 export type OrderStatus = 'pending_payment' | 'pending_shipment' | 'shipped' | 'completed' | 'closed' | 'refund'
 

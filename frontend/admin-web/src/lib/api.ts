@@ -48,6 +48,7 @@ import type {
   ProductRanking,
   KnowledgeSearchResult,
   KnowledgeSearchParams,
+  KnowledgeSyncHistory,
   Customer,
   CustomerListParams,
   CustomerDetail,
@@ -237,6 +238,9 @@ export const knowledgeApi = {
 
   resyncDocument: (id: string) =>
     request.post<ApiResponse<void>>(`/api/admin/knowledge/documents/${id}/embed`),
+
+  getSyncHistory: (params?: { page?: number; size?: number }) =>
+    request.get<ApiResponse<PageResponse<KnowledgeSyncHistory>>>('/api/admin/knowledge/sync-history', { params }),
 
   searchKnowledge: (params: KnowledgeSearchParams) =>
     request.post<ApiResponse<{ results: KnowledgeSearchResult[] }>>('/api/admin/knowledge/test-search', params),

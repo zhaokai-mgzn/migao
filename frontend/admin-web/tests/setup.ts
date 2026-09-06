@@ -232,6 +232,7 @@ vi.mock('lucide-react', () => ({
   // #564: app-routes-part1 覆盖率补全需要的图标
   ArrowLeft: iconStub('arrow-left'),
   Sparkles: iconStub('sparkles'),
+  History: iconStub('history'),
   Receipt: iconStub('receipt'),
   Settings2: iconStub('settings2'),
   CheckCircle2: iconStub('check-circle2'),

@@ -1,13 +1,15 @@
 package com.migao.admin.controller;
-// case_ids: DF-009
+// case_ids: DF-009, API-011
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.entity.KnowledgeDocument;
+import com.migao.admin.entity.KnowledgeSyncHistory;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.config.GlobalExceptionHandler;
 import com.migao.admin.mapper.KnowledgeDocumentMapper;
+import com.migao.admin.mapper.KnowledgeSyncHistoryMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -27,6 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -44,6 +47,9 @@ class KnowledgeControllerTest {
     @Mock
     private KnowledgeDocumentMapper knowledgeDocumentMapper;
 
+    @Mock
+    private KnowledgeSyncHistoryMapper knowledgeSyncHistoryMapper;
+
     @InjectMocks
     private KnowledgeController knowledgeController;
 
@@ -55,6 +61,7 @@ class KnowledgeControllerTest {
         org.apache.ibatis.builder.MapperBuilderAssistant assistant =
                 new org.apache.ibatis.builder.MapperBuilderAssistant(configuration, "");
         TableInfoHelper.initTableInfo(assistant, KnowledgeDocument.class);
+        TableInfoHelper.initTableInfo(assistant, KnowledgeSyncHistory.class);
 
         mockMvc = MockMvcBuilders.standaloneSetup(knowledgeController)
                 .setControllerAdvice(new GlobalExceptionHandler())
@@ -144,6 +151,83 @@ class KnowledgeControllerTest {
 
             mockMvc.perform(post("/api/admin/knowledge/documents/doc-2/embed"))
                     .andExpect(status().isNotFound());
+
+            // 跨租户被拒，不得写入同步历史
+            verify(knowledgeSyncHistoryMapper, never()).insert(any(KnowledgeSyncHistory.class));
+        }
+
+        @Test
+        @DisplayName("重新同步写入同步历史记录（API-011：knowledge_sync_history 闭环）")
+        void resyncWritesSyncHistory() throws Exception {
+            KnowledgeDocument doc = KnowledgeDocument.builder()
+                    .id("doc-1")
+                    .tenantId(1L)
+                    .embeddingStatus("completed")
+                    .build();
+            when(knowledgeDocumentMapper.selectById("doc-1")).thenReturn(doc);
+
+            mockMvc.perform(post("/api/admin/knowledge/documents/doc-1/embed"))
+                    .andExpect(status().isOk());
+
+            ArgumentCaptor<KnowledgeSyncHistory> captor = ArgumentCaptor.forClass(KnowledgeSyncHistory.class);
+            verify(knowledgeSyncHistoryMapper).insert(captor.capture());
+            KnowledgeSyncHistory h = captor.getValue();
+            assertThat(h.getTenantId()).isEqualTo(1L);
+            assertThat(h.getSyncType()).isEqualTo("single");
+            assertThat(h.getSourceType()).isEqualTo("manual");
+            assertThat(h.getSourceIds()).isEqualTo(java.util.List.of("doc-1"));
+            assertThat(h.getStatus()).isEqualTo("processing");
+            assertThat(h.getTotalCount()).isEqualTo(1);
+        }
+    }
+
+    // ============ sync-history 分页列表（API-011）============
+
+    @Nested
+    @DisplayName("GET /sync-history")
+    class SyncHistory {
+
+        @Test
+        @DisplayName("分页返回同步历史（created_at 倒序 + tenant 隔离）")
+        void listSyncHistory() throws Exception {
+            KnowledgeSyncHistory h = KnowledgeSyncHistory.builder()
+                    .id("hist-1")
+                    .tenantId(1L)
+                    .syncType("single")
+                    .status("processing")
+                    .build();
+            com.baomidou.mybatisplus.extension.plugins.pagination.Page<KnowledgeSyncHistory> historyPage =
+                    new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(1, 20);
+            historyPage.setRecords(java.util.List.of(h));
+            historyPage.setTotal(1);
+            when(knowledgeSyncHistoryMapper.selectPage(any(), any())).thenReturn(historyPage);
+
+            mockMvc.perform(get("/api/admin/knowledge/sync-history"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.items[0].id").value("hist-1"))
+                    .andExpect(jsonPath("$.data.items[0].syncType").value("single"))
+                    .andExpect(jsonPath("$.data.total").value(1));
+
+            ArgumentCaptor<LambdaQueryWrapper<KnowledgeSyncHistory>> captor =
+                    ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+            verify(knowledgeSyncHistoryMapper).selectPage(any(), captor.capture());
+            String sql = captor.getValue().getCustomSqlSegment();
+            assertThat(sql).contains("tenant_id").contains("created_at");
+        }
+
+        @Test
+        @DisplayName("无历史记录返回空列表")
+        void listSyncHistoryEmpty() throws Exception {
+            com.baomidou.mybatisplus.extension.plugins.pagination.Page<KnowledgeSyncHistory> historyPage =
+                    new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(1, 20);
+            historyPage.setRecords(java.util.List.of());
+            historyPage.setTotal(0);
+            when(knowledgeSyncHistoryMapper.selectPage(any(), any())).thenReturn(historyPage);
+
+            mockMvc.perform(get("/api/admin/knowledge/sync-history"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.items").isEmpty())
+                    .andExpect(jsonPath("$.data.total").value(0));
         }
     }
 
