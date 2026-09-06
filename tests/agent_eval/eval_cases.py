@@ -2546,17 +2546,17 @@ _CASE_UI_006 = EvalCase(
     persona='',
 )
 
-# ── UI-007 [NORMAL] 小布 C 端输入条 - 默认按住说话（松开发送）与键盘模式切换（源: cases/ui.yml）──
+# ── UI-007 [NORMAL] 小布 C 端输入条 - 单容器双语义（textarea 常驻 + 右下按住说话松开发送）（源: cases/ui.yml）──
 _CASE_UI_007 = EvalCase(
     id='UI-007',
     legacy_id='',
-    title='小布 C 端输入条 - 默认按住说话（松开发送）与键盘模式切换',
+    title='小布 C 端输入条 - 单容器双语义（textarea 常驻 + 右下按住说话松开发送）',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['小布 C 端（小程序/H5 同源）输入条参考瑞幸设计：默认「按住说话、松开直接发送」，可一键切回键盘模式输入文字；上滑取消录音'],
+    user_inputs=['小布 C 端（小程序/H5 同源）输入条重构为单容器布局：textarea 常驻（placeholder「发消息或按住说话」），右下动作组为 [添图][按住说话]，有草稿时语音键位变为发送；上滑取消录音'],
     expectations=['direct_reply'],
-    data_checks=['mini-app MessageInput 默认语音模式：渲染「按住 说话」按钮，不渲染 textarea；左切换键显示 ⌨️', '语音模式按住（touchStart）调用 startRecording，松开（touchEnd）调用 stopAndTranscribe → 转写文本直接 onSend；上滑超过阈值取消不发送', '切到键盘模式：切换键变 🎤，显示 textarea + 图片 + 发送（保留原功能）；切回语音模式恢复按住说话', '流式/无会话时禁止录音；转写失败 toast「未听清，请重试」不发送'],
-    skip_reason='纯前端 C 端输入交互由 mini-app jest 单测验证（message-input.test.tsx，9 例），非 LLM 行为，不进入 agent-eval 冒烟；xiaobu H5 E2E 基建在 WIP 分支（main 未落）',
+    data_checks=['mini-app MessageInput 单容器：textarea 常驻渲染（无键盘/语音模式切换键），placeholder 含「发消息或按住说话」', '按住语音键（touchStart）调用 startRecording，松开（touchEnd）调用 stopAndTranscribe → 转写文本直接 onSend（行为保持不变）；上滑超过阈值取消不发送', '添图入口统一：选图进草稿（预览可删），无按住模式下直接发图旁路；空文本有图点发送 → 纯图消息（UI-013 协议不变）', '自适应动作键：草稿为空显示语音键，有草稿变为发送，流式中变为停止；流式/无会话时禁止录音；转写失败 toast「未听清，请重试」不发送'],
+    skip_reason='纯前端 C 端输入交互由 mini-app jest 单测验证（message-input.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟；xiaobu H5 E2E 基建在 WIP 分支（main 未落）',
     tags=['mini-app', 'voice-input', 'hold-to-talk'],
     persona='',
 )
@@ -2816,6 +2816,21 @@ _CASE_UI_024 = EvalCase(
     persona='',
 )
 
+# ── UI-025 [NORMAL] 米宝输入条统一重设计 — ArrowUp/Square 同形图标、录音状态条替代 placeholder 文案、预览缩略图内嵌容器（源: cases/ui.yml）──
+_CASE_UI_025 = EvalCase(
+    id='UI-025',
+    legacy_id='',
+    title='米宝输入条统一重设计 — ArrowUp/Square 同形图标、录音状态条替代 placeholder 文案、预览缩略图内嵌容器',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['米宝聊天输入条图标与状态呈现和小布同形：发送键 ↑（ArrowUp）、停止键 ■（Square）、语音键音波线稿（AudioLines 弃用 Mic），录音状态在容器内状态条展示而不占用 placeholder，图片预览缩略图收进输入容器内'],
+    expectations=['direct_reply'],
+    data_checks=['发送键图标 lucide ArrowUp（lucide-arrow-up）、流式中停止键 lucide Square（lucide-square）、语音键 lucide AudioLines（lucide-audio-lines，弃用 Mic）；title/aria 语义（发送/停止生成/语音输入）不变', '录音中：placeholder 保持「输入消息…」短句不被录音文案占用；容器内显示录音状态条「正在录音 {m:ss} · 点击停止，Esc 取消」（红点脉冲）；转写中提示「转写中...」不变；Esc 取消 / 右键取消行为不变（B 端转写追加进输入框，D1 既定差异不改）', '图片预览缩略图渲染在「消息输入区」容器内顶部；删除角标常显且带 aria-label「删除图片」；上传中添图键置灰（disabled）但不换图标（仍 ImagePlus），上传进度提示在预览块'],
+    skip_reason='纯前端输入条视觉/图标/状态呈现由 vitest 单测验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ui', 'chat-input', 'admin-web', 'design-system'],
+    persona='',
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -3032,6 +3047,7 @@ ALL_CASES = (
     _CASE_UI_022,
     _CASE_UI_023,
     _CASE_UI_024,
+    _CASE_UI_025,
     _CASE_UT_001,
     _CASE_UT_002,
 )

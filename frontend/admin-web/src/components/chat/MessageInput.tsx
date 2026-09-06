@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef, useEffect, useState, useMemo } from 'react'
-import { Send, Loader2, StopCircle, ImagePlus, X, Plus, Mic } from 'lucide-react'
+import { ArrowUp, Loader2, Square, ImagePlus, X, Plus, AudioLines } from 'lucide-react'
 import NextImage from 'next/image'
 import { cn } from '@/lib/utils'
 import { useChatStore } from '@/store/chat'
@@ -188,43 +188,17 @@ export default function MessageInput() {
 
   const canSend = (input.trim() || images.length > 0) && !isUploading && voice.state !== 'transcribing'
 
+  /** 录音时长格式化 m:ss（录音状态条用） */
+  const formatDuration = (seconds: number) => {
+    const m = Math.floor(seconds / 60)
+    return `${m}:${String(seconds % 60).padStart(2, '0')}`
+  }
+
   if (!currentSessionId) return null
 
   return (
     <div className="px-4 py-3 bg-white border-t border-neutral-200/80">
       <div className="max-w-3xl mx-auto">
-        {/* 图片预览区 */}
-        {images.length > 0 && (
-          <div className="flex gap-2 mb-2 px-1">
-            {images.map((img, index) => (
-              <div
-                key={index}
-                className="relative group w-20 h-20 rounded-lg overflow-hidden border border-neutral-200 bg-neutral-50 flex-shrink-0"
-              >
-                <NextImage
-                  src={img.localPreview || img.url}
-                  alt={img.name}
-                  width={80}
-                  height={80}
-                  className="w-full h-full object-cover"
-                  unoptimized
-                />
-                <button
-                  onClick={() => removeImage(index)}
-                  className="absolute -top-0 -right-0 w-5 h-5 bg-black/60 text-white rounded-bl-md flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              </div>
-            ))}
-            {isUploading && (
-              <div className="w-20 h-20 rounded-lg border border-dashed border-neutral-300 bg-neutral-50 flex items-center justify-center flex-shrink-0">
-                <Loader2 className="w-5 h-5 text-neutral-400 animate-spin" />
-              </div>
-            )}
-          </div>
-        )}
-
         <div
           role="region"
           aria-label="消息输入区"
@@ -232,7 +206,7 @@ export default function MessageInput() {
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
           className={cn(
-            'relative flex items-end gap-2 bg-white border rounded-2xl px-3 py-2 shadow-sm transition-all',
+            'relative flex flex-col gap-1.5 bg-white border rounded-2xl px-3 py-2 shadow-sm transition-all',
             isDragOver
               ? 'border-primary-400 ring-2 ring-primary-400/15'
               : 'border-neutral-200 focus-within:border-primary-300 focus-within:ring-2 focus-within:ring-primary-400/15'
@@ -246,6 +220,56 @@ export default function MessageInput() {
               </span>
             </div>
           )}
+
+          {/* 录音状态条（容器内，替代旧 placeholder 文案 hack，UI-025） */}
+          {voice.state === 'recording' && (
+            <div
+              role="status"
+              className="flex items-center gap-1.5 px-1 pt-0.5 text-xs font-medium text-red-500"
+            >
+              <span className="relative flex h-2 w-2 flex-shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
+              </span>
+              <span>正在录音 {formatDuration(voice.duration)} · 点击停止，Esc 取消</span>
+            </div>
+          )}
+
+          {/* 图片预览区（内嵌容器内顶部，UI-025） */}
+          {(images.length > 0 || isUploading) && (
+            <div className="flex gap-2 px-1">
+              {images.map((img, index) => (
+                <div
+                  key={index}
+                  className="relative w-20 h-20 rounded-lg overflow-hidden border border-neutral-200 bg-neutral-50 flex-shrink-0"
+                >
+                  <NextImage
+                    src={img.localPreview || img.url}
+                    alt={img.name}
+                    width={80}
+                    height={80}
+                    className="w-full h-full object-cover"
+                    unoptimized
+                  />
+                  {/* 删除角标常显（弃 hover 才显，避免触屏不可达），收进缩略图内右上避免溢出裁切 */}
+                  <button
+                    onClick={() => removeImage(index)}
+                    aria-label="删除图片"
+                    className="absolute top-1 right-1 w-5 h-5 bg-black/60 text-white rounded-full flex items-center justify-center transition-opacity"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+              {isUploading && (
+                <div className="w-20 h-20 rounded-lg border border-dashed border-neutral-300 bg-neutral-50 flex items-center justify-center flex-shrink-0">
+                  <Loader2 className="w-5 h-5 text-neutral-400 animate-spin" />
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="flex items-end gap-2">
           {/* 语音输入按钮 */}
           <button
             onClick={
@@ -284,10 +308,8 @@ export default function MessageInput() {
           >
             {voice.state === 'transcribing' ? (
               <Loader2 className="w-5 h-5 animate-spin" />
-            ) : voice.state === 'recording' ? (
-              <Mic className="w-5 h-5" />
             ) : (
-              <Mic className="w-5 h-5" />
+              <AudioLines className="w-5 h-5" />
             )}
           </button>
 
@@ -303,11 +325,8 @@ export default function MessageInput() {
             )}
             title={isSessionClosed ? '会话已结束' : images.length >= MAX_IMAGES ? `最多 ${MAX_IMAGES} 张图片` : '添加图片'}
           >
-            {isUploading ? (
-              <Loader2 className="w-5 h-5 animate-spin" />
-            ) : (
-              <ImagePlus className="w-5 h-5" />
-            )}
+            {/* 上传中按钮置灰但不换图标（进度提示在预览块，UI-025） */}
+            <ImagePlus className="w-5 h-5" />
           </button>
           <input
             ref={fileInputRef}
@@ -354,18 +373,13 @@ export default function MessageInput() {
                   handleKeyDown(e)
                 }}
                 placeholder={
-                  voice.state === 'recording'
-                    ? `🎙️ 正在录音... ${voice.duration}s（点击麦克风停止 / Esc 取消）`
-                    : voice.state === 'transcribing'
-                      ? '转写中...'
-                      : '输入消息... (Enter 发送, Shift+Enter 换行)'
+                  voice.state === 'transcribing'
+                    ? '转写中...'
+                    : '输入消息... (Enter 发送, Shift+Enter 换行)'
                 }
                 disabled={isStreaming || voice.state === 'transcribing'}
                 rows={1}
-                className={cn(
-                  'flex-1 bg-transparent border-0 resize-none max-h-32 px-1 py-1.5 text-sm focus:outline-none focus:ring-0 disabled:opacity-50 placeholder:text-neutral-400',
-                  voice.state === 'recording' && 'placeholder:text-red-400'
-                )}
+                className="flex-1 bg-transparent border-0 resize-none max-h-32 px-1 py-1.5 text-sm focus:outline-none focus:ring-0 disabled:opacity-50 placeholder:text-neutral-400"
               />
 
               {isStreaming ? (
@@ -374,7 +388,7 @@ export default function MessageInput() {
                   className="p-2 rounded-xl bg-red-500 text-white hover:bg-red-600 transition-colors flex-shrink-0"
                   title="停止生成"
                 >
-                  <StopCircle className="w-5 h-5" />
+                  <Square className="w-5 h-5" />
                 </button>
               ) : (
                 <button
@@ -383,16 +397,17 @@ export default function MessageInput() {
                   className={cn(
                     'p-2 rounded-xl transition-all flex-shrink-0',
                     canSend
-                      ? 'bg-gradient-to-br from-primary-500 to-primary-600 text-white hover:from-primary-600 hover:to-primary-700 shadow-sm hover:shadow-md active:scale-95'
+                      ? 'bg-primary-600 text-white hover:bg-primary-700 shadow-sm hover:shadow-md active:scale-95'
                       : 'bg-neutral-100 text-neutral-400 cursor-not-allowed'
                   )}
                   title="发送"
                 >
-                  <Send className="w-5 h-5" />
+                  <ArrowUp className="w-5 h-5" />
                 </button>
               )}
             </>
           )}
+          </div>
         </div>
         <p className="text-[10px] text-neutral-400/70 mt-1.5 text-center">
           AI 生成内容仅供参考
