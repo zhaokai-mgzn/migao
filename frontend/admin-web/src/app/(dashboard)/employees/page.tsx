@@ -12,10 +12,7 @@ import type { Employee, EmployeeStatus, EmployeeFormData } from '@/types'
 import { TreeCheckbox, type TreeNode } from '@/components/ui/TreeCheckbox'
 import DateTimeCell from '@/components/common/DateTimeCell'
 
-// 预定义岗位列表（可下拉选择，也支持手输）
-const PRESET_POSITIONS = ['管理员', '客服', '运营', '销售', '财务']
-
-
+// #2969 岗位=角色体系：岗位列表来自 roleApi.getAllRoles（每岗位含默认权限），不再用硬编码预设
 export default function EmployeesPage() {
   const { has: hasPermission } = usePermission()
   const canWrite = hasPermission('employee:create') // 新增/编辑/删除/禁用均需 employee:create
@@ -33,6 +30,9 @@ export default function EmployeesPage() {
 
   // 菜单权限树
   const [menuTree, setMenuTree] = useState<TreeNode[]>([])
+
+  // 岗位下拉数据源（岗位=角色体系 #2969，role.permissions 即岗位默认权限）
+  const [positionOptions, setPositionOptions] = useState<{ name: string; code: string; permissionCodes: string[] }[]>([])
 
   // 新增/编辑对话框
   const [formOpen, setFormOpen] = useState(false)
@@ -60,6 +60,20 @@ export default function EmployeesPage() {
       setMenuTree(Array.isArray(data) ? data : [])
     }).catch(() => {
       toast.error('加载菜单权限失败，请刷新重试')
+    })
+  }, [])
+
+  // 加载岗位列表（#2969：岗位=角色体系，岗位默认权限 = role.permissions 的 code 列表）
+  useEffect(() => {
+    employeeApi.loadPositions().then((res: any) => {
+      const data = Array.isArray(res?.data?.data) ? res.data.data : (Array.isArray(res?.data) ? res.data : [])
+      setPositionOptions((data as any[]).map((r: any) => ({
+        name: r.name || r.code,
+        code: r.code,
+        permissionCodes: (r.permissions || []).map((p: any) => p.code).filter(Boolean),
+      })))
+    }).catch(() => {
+      // 岗位列表加载失败不阻塞页面，岗位为空时可手输（兼容既有自由输入岗位）
     })
   }, [])
 
@@ -122,6 +136,20 @@ export default function EmployeesPage() {
     setFormOpen(true)
   }
 
+  // #2969 选岗位自动带出该岗位默认权限（仍可手动增删自定义）；切换岗位则重置为新岗位默认
+  // 岗位=角色体系：前端仍不传 role（#2907 去角色化契约），后端按岗位名解析角色并关联 user_roles
+  const handlePositionChange = (name: string) => {
+    const pos = positionOptions.find(p => p.name === name || p.code === name)
+    const defaultPerms = pos ? [...pos.permissionCodes] : []
+    // 编辑时仅当岗位变更才重置权限树（用户已确认：改岗位则重置为新岗位默认）
+    setFormData(prev => ({
+      ...prev,
+      position: name,
+      role: '',
+      permissions: defaultPerms,
+    }))
+  }
+
   // 打开编辑对话框
   const handleEdit = (employee: Employee) => {
     setEditingEmployee(employee)
@@ -141,8 +169,8 @@ export default function EmployeesPage() {
     if (!formData.phone.trim()) { toast.error('请输入手机号'); return }
     if (!formData.position.trim()) { toast.error('请选择岗位'); return }
 
-    // 「角色」字段已从表单移除（#2907）：新建时不传 role，后端默认 operator；
-    // 账号权限由下方权限树直接分配。编辑时回传员工原角色码，避免角色被重置。
+    // 「角色」字段已从表单移除（#2907）：新建时不传 role，由后端按岗位解析（#2969 岗位=角色体系）；
+    // 账号权限由下方权限树直接分配（快照式：保存勾选=员工权限）。编辑时回传员工原角色码，避免角色被重置。
     const payload: EmployeeFormData = {
       name: formData.name,
       phone: formData.phone,
@@ -418,17 +446,13 @@ export default function EmployeesPage() {
           />
           <div>
             <label className="block text-sm font-medium text-neutral-700 mb-1">岗位 *</label>
-            <input
-              list="position-list"
-              placeholder="选择或输入岗位，如：客服"
+            <Select
+              placeholder="请选择岗位"
+              options={positionOptions.map(p => ({ value: p.name, label: p.name }))}
               value={formData.position}
-              onChange={(e) => setFormData(prev => ({ ...prev, position: e.target.value }))}
-              className="w-full h-10 px-3 rounded-lg border border-neutral-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
+              onChange={(e) => handlePositionChange(e.target.value)}
             />
-            <datalist id="position-list">
-              {PRESET_POSITIONS.map(p => <option key={p} value={p} />)}
-            </datalist>
-            <p className="text-xs text-neutral-400 mt-1">选择或输入员工岗位（必填）</p>
+            <p className="text-xs text-neutral-400 mt-1">选择岗位后自动带出该岗位默认权限，可再手动调整</p>
           </div>
           <div>
             <label className="block text-sm font-medium text-neutral-700 mb-2">账号权限 *</label>

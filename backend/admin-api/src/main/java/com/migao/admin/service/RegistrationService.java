@@ -12,8 +12,10 @@ import com.migao.admin.entity.User;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.entity.Permission;
 import com.migao.admin.entity.Role;
+import com.migao.admin.entity.RolePermission;
 import com.migao.admin.mapper.PermissionMapper;
 import com.migao.admin.mapper.RoleMapper;
+import com.migao.admin.mapper.RolePermissionMapper;
 import com.migao.admin.mapper.TenantApplicationMapper;
 import com.migao.admin.mapper.TenantMapper;
 import com.migao.admin.mapper.UserMapper;
@@ -34,7 +36,9 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 企业入驻申请服务（AI 自动甄别版）
@@ -64,6 +68,7 @@ public class RegistrationService {
     private final UserMapper userMapper;
     private final RoleMapper roleMapper;
     private final PermissionMapper permissionMapper;
+    private final RolePermissionMapper rolePermissionMapper;
     private final RegistrationReviewClient reviewClient;
     private final StringRedisTemplate redisTemplate;
 
@@ -483,40 +488,59 @@ public class RegistrationService {
     }
 
     /**
-     * 为新租户初始化默认角色和权限
+     * 为新租户初始化默认岗位（五岗）和权限
      *
-     * @param tenantId 新租户ID
+     * 岗位=角色体系（#2969）：每个岗位在 roles 表落一条记录，role_permissions 即岗位默认权限。
+     * 创建员工时选岗位 → 前端预填该岗位默认权限 → 保存为员工个人权限快照。
      */
     private void initializeDefaultRolesAndPermissions(Long tenantId) {
-        log.info("初始化新租户默认角色和权限: tenantId={}", tenantId);
+        log.info("初始化新租户默认岗位和权限: tenantId={}", tenantId);
 
-        // 创建默认角色
+        // 创建默认岗位（五岗：管理员/客服/运营/销售/财务）
         Role adminRole = Role.builder()
                 .tenantId(tenantId)
-                .name("企业管理员")
+                .name("管理员")
                 .code("admin")
-                .description("企业入驻后的默认管理员角色，拥有全部管理权限")
+                .description("拥有全部管理权限")
                 .status("active")
                 .build();
         roleMapper.insert(adminRole);
 
+        Role csRole = Role.builder()
+                .tenantId(tenantId)
+                .name("客服")
+                .code("customer_service")
+                .description("负责客户服务与咨询")
+                .status("active")
+                .build();
+        roleMapper.insert(csRole);
+
         Role operatorRole = Role.builder()
                 .tenantId(tenantId)
-                .name("运营人员")
+                .name("运营")
                 .code("operator")
                 .description("负责日常运营管理")
                 .status("active")
                 .build();
         roleMapper.insert(operatorRole);
 
-        Role csRole = Role.builder()
+        Role salesRole = Role.builder()
                 .tenantId(tenantId)
-                .name("客服人员")
-                .code("customer_service")
-                .description("负责客户服务与咨询")
+                .name("销售")
+                .code("sales")
+                .description("负责销售业务")
                 .status("active")
                 .build();
-        roleMapper.insert(csRole);
+        roleMapper.insert(salesRole);
+
+        Role financeRole = Role.builder()
+                .tenantId(tenantId)
+                .name("财务")
+                .code("finance")
+                .description("负责财务对账")
+                .status("active")
+                .build();
+        roleMapper.insert(financeRole);
 
         // 创建默认权限目录（RBAC 修复：与代码 @RequirePermission / 前端菜单树 / 内置角色映射
         // 全量对齐——此前仅 5 条大类码，角色管理页无法授予 order:list / employee:create 等细粒度码，
@@ -538,9 +562,10 @@ public class RegistrationService {
                 {"快捷回复", "agent:quickreply", "agent", "quickreply", "机器人设置/快捷回复"},
                 {"员工列表", "employee:list", "employee", "list", "查看员工列表"},
                 {"新增员工", "employee:create", "employee", "create", "新增/编辑/删除员工"},
-                {"系统管理", "system:manage", "system", "manage", "企业信息/角色管理/系统设置"}
+                {"系统管理", "system:manage", "system", "manage", "企业信息/岗位权限/系统设置"}
         };
 
+        Map<String, Permission> permissionByCode = new java.util.HashMap<>();
         for (String[] perm : defaultPermissions) {
             Permission permission = Permission.builder()
                     .tenantId(tenantId)
@@ -552,9 +577,46 @@ public class RegistrationService {
                     .status("active")
                     .build();
             permissionMapper.insert(permission);
+            permissionByCode.put(perm[1], permission);
         }
 
-        log.info("新租户默认角色和权限初始化完成: tenantId={}, roles=3, permissions={}", tenantId, defaultPermissions.length);
+        // 岗位默认权限（role_permissions 预置）：
+        // 管理员=全部；客服=会话+客户+订单查看；运营=看板/订单/商品/加工/客户/财务/会话/员工列表；
+        // 销售=看板/商品/订单查看/客户；财务=看板/订单查看/财务。
+        attachDefaultPermissions(tenantId, adminRole, permissionByCode.keySet(), permissionByCode);
+        attachDefaultPermissions(tenantId, csRole, List.of(
+                "dashboard:view", "order:list", "order:detail", "customer:view", "agent:session", "agent:quickreply"), permissionByCode);
+        attachDefaultPermissions(tenantId, operatorRole, List.of(
+                "dashboard:view", "order:list", "order:detail", "order:refund",
+                "product:list", "product:create", "product:category", "processing:manage",
+                "customer:view", "finance:view", "agent:session", "agent:quickreply", "employee:list"), permissionByCode);
+        attachDefaultPermissions(tenantId, salesRole, List.of(
+                "dashboard:view", "product:list", "order:list", "order:detail", "customer:view"), permissionByCode);
+        attachDefaultPermissions(tenantId, financeRole, List.of(
+                "dashboard:view", "order:list", "order:detail", "finance:view"), permissionByCode);
+
+        log.info("新租户默认岗位和权限初始化完成: tenantId={}, roles=5, permissions={}", tenantId, defaultPermissions.length);
+    }
+
+    /**
+     * 为岗位（角色）关联默认权限，落库 role_permissions。
+     * 管理员岗位也预置全部权限码（岗位权限页回显「全部权限」、员工弹窗选管理员岗位全选），
+     * 运行时 getUserPermissions 对 admin 仍特判返回 ["*"]。
+     */
+    private void attachDefaultPermissions(Long tenantId, Role role, Collection<String> permissionCodes,
+                                          Map<String, Permission> permissionByCode) {
+        for (String code : permissionCodes) {
+            Permission permission = permissionByCode.get(code);
+            if (permission == null) {
+                continue; // 权限目录演进防御：跳过不存在的码
+            }
+            RolePermission rp = RolePermission.builder()
+                    .tenantId(tenantId)
+                    .roleId(role.getId())
+                    .permissionId(permission.getId())
+                    .build();
+            rolePermissionMapper.insert(rp);
+        }
     }
 
     /**

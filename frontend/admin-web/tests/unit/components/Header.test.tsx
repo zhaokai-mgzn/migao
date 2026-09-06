@@ -110,22 +110,20 @@ describe('Header', () => {
     expect(screen.getByText('订单列表')).toBeInTheDocument()
   })
 
-  it('/customers 路径应显示"客户管理"单级面包屑', async () => {
+  it('/customers 路径应显示"客户管理 > 客户列表"面包屑（#2969 客户管理组）', async () => {
     mockPathname = '/customers'
     await act(async () => {
       render(<Header />)
     })
     expect(screen.getByText('客户管理')).toBeInTheDocument()
-    // 单级面包屑不应有分隔符
-    expect(screen.queryByText('/')).not.toBeInTheDocument()
+    expect(screen.getByText('客户列表')).toBeInTheDocument()
   })
 
-  it('/notifications 路径应显示"系统管理 > 通知中心"面包屑', async () => {
+  it('/notifications 路径应显示"通知中心"面包屑（#2969 独立菜单）', async () => {
     mockPathname = '/notifications'
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('系统管理')).toBeInTheDocument()
     expect(screen.getByText('通知中心')).toBeInTheDocument()
   })
 
@@ -161,16 +159,16 @@ describe('Header', () => {
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('客服中心')).toBeInTheDocument()
+    expect(screen.getByText('智能客服')).toBeInTheDocument()
     expect(screen.getByText('会话监控')).toBeInTheDocument()
   })
 
-  it('/agent-workspace 精确路径应显示"客服中心 > 客服工作台"', async () => {
+  it('/agent-workspace 精确路径应显示"智能客服 > 客服工作台"（#2969 归入智能客服组）', async () => {
     mockPathname = '/agent-workspace'
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('客服中心')).toBeInTheDocument()
+    expect(screen.getByText('智能客服')).toBeInTheDocument()
     expect(screen.getByText('客服工作台')).toBeInTheDocument()
   })
 
@@ -192,14 +190,14 @@ describe('Header', () => {
       render(
         <Header
           breadcrumbs={[
-            { label: '系统管理', href: '/settings' },
-            { label: '角色权限' },
+            { label: '组织管理', href: '/settings' },
+            { label: '岗位权限' },
           ]}
         />
       )
     })
-    expect(screen.getByText('系统管理')).toBeInTheDocument()
-    expect(screen.getByText('角色权限')).toBeInTheDocument()
+    expect(screen.getByText('组织管理')).toBeInTheDocument()
+    expect(screen.getByText('岗位权限')).toBeInTheDocument()
     // 不应显示路由推断的面包屑
     expect(screen.queryByText('工作台')).not.toBeInTheDocument()
   })
@@ -354,12 +352,12 @@ describe('Header', () => {
     expect(screen.getByText('加工项管理')).toBeInTheDocument()
   })
 
-  it('/knowledge 路径面包屑', async () => {
+  it('/knowledge 路径面包屑（#2969 知识库归入智能客服组）', async () => {
     mockPathname = '/knowledge'
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('商品管理')).toBeInTheDocument()
+    expect(screen.getByText('智能客服')).toBeInTheDocument()
     expect(screen.getByText('知识库管理')).toBeInTheDocument()
   })
 
@@ -381,45 +379,48 @@ describe('Header', () => {
     expect(screen.getByText('AI 客服配置')).toBeInTheDocument()
   })
 
-  it('/chat 路径面包屑', async () => {
+  it('/chat 路径面包屑（#2969 归入智能客服组）', async () => {
     mockPathname = '/chat'
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('客服中心')).toBeInTheDocument()
-    expect(screen.getByText('在线对话')).toBeInTheDocument()
+    expect(screen.getByText('智能客服')).toBeInTheDocument()
+    expect(screen.getByText('米宝 · 在线对话')).toBeInTheDocument()
   })
 
-  it('/roles 路径面包屑', async () => {
+  it('/roles 路径面包屑（#2969 岗位权限归入组织管理组）', async () => {
     mockPathname = '/roles'
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('系统管理')).toBeInTheDocument()
-    expect(screen.getByText('角色权限')).toBeInTheDocument()
+    expect(screen.getByText('组织管理')).toBeInTheDocument()
+    expect(screen.getByText('岗位权限')).toBeInTheDocument()
   })
 
-  it('/finance 路径面包屑', async () => {
+  it('/finance 路径面包屑（#2969 财务对账归入客户管理组）', async () => {
     mockPathname = '/finance'
     await act(async () => {
       render(<Header />)
     })
+    expect(screen.getByText('客户管理')).toBeInTheDocument()
     expect(screen.getByText('财务对账')).toBeInTheDocument()
   })
 
-  it('/employees 路径面包屑', async () => {
+  it('/employees 路径面包屑（#2969 员工管理归入组织管理组）', async () => {
     mockPathname = '/employees'
     await act(async () => {
       render(<Header />)
     })
+    expect(screen.getByText('组织管理')).toBeInTheDocument()
     expect(screen.getByText('员工管理')).toBeInTheDocument()
   })
 
-  it('/settings 路径面包屑', async () => {
+  it('/settings 路径面包屑（#2969 企业基础信息归入组织管理组）', async () => {
     mockPathname = '/settings'
     await act(async () => {
       render(<Header />)
     })
+    expect(screen.getByText('组织管理')).toBeInTheDocument()
     expect(screen.getByText('企业基础信息')).toBeInTheDocument()
   })
 
@@ -428,7 +429,7 @@ describe('Header', () => {
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('客服中心')).toBeInTheDocument()
+    expect(screen.getByText('智能客服')).toBeInTheDocument()
     expect(screen.getByText('快捷回复')).toBeInTheDocument()
   })
 })

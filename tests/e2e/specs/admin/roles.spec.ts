@@ -31,13 +31,13 @@ const MOCK_PERMISSIONS = [
   { id: 41, name: '查看客户', code: 'customers:view', resource: '客户管理', resourceSort: 4 },
   // 系统设置
   { id: 51, name: '员工管理', code: 'employees:manage', resource: '系统设置', resourceSort: 5 },
-  { id: 52, name: '角色管理', code: 'roles:manage', resource: '系统设置', resourceSort: 5 },
+  { id: 52, name: '岗位权限', code: 'roles:manage', resource: '系统设置', resourceSort: 5 },
   { id: 53, name: '系统配置', code: 'settings:manage', resource: '系统设置', resourceSort: 5 },
 ]
 
 // ==================== Tests ====================
 
-test.describe('角色权限管理页面', () => {
+test.describe('岗位权限管理页面（#2969 由角色权限改名）', () => {
   let page: RolesPage
 
   test.beforeEach(async ({ page: p }) => {
@@ -75,17 +75,17 @@ test.describe('角色权限管理页面', () => {
   })
 
   test('页面标题和描述正确显示', async () => {
-    await expect(page.page.getByRole('heading', { name: '角色权限' })).toBeVisible()
-    await expect(page.page.getByText('管理系统角色和权限分配')).toBeVisible()
+    await expect(page.page.getByRole('heading', { name: '岗位权限' })).toBeVisible()
+    await expect(page.page.getByText('管理岗位及默认权限')).toBeVisible()
   })
 
-  test('角色列表以卡片网格展示', async () => {
+  test('岗位列表以卡片网格展示', async () => {
     await page.waitForLoadingComplete()
     const cards = page.roleCards
     expect(await cards.count()).toBeGreaterThanOrEqual(1)
   })
 
-  test('角色卡片显示名称、编码和权限数量', async () => {
+  test('岗位卡片显示名称、编码和权限数量', async () => {
     await page.waitForLoadingComplete()
     // Should show role names
     await expect(page.page.getByText('超级管理员')).toBeVisible()
@@ -93,10 +93,10 @@ test.describe('角色权限管理页面', () => {
     await expect(page.page.getByText(/个权限/).first()).toBeVisible()
   })
 
-  test('新增角色按钮可打开创建弹窗', async () => {
+  test('新增岗位按钮可打开创建弹窗', async () => {
     await page.createBtn.click()
     await expect(page.roleModal).toBeVisible()
-    await expect(page.roleModal.getByRole('heading', { name: '新增角色' })).toBeVisible()
+    await expect(page.roleModal.getByRole('heading', { name: '新增岗位' })).toBeVisible()
   })
 
   test('创建弹窗包含名称、编码、描述字段', async () => {
@@ -129,18 +129,18 @@ test.describe('角色权限管理页面', () => {
     }
   })
 
-  test('创建角色 - 未填名称时提示错误', async () => {
+  test('创建岗位 - 未填名称时提示错误', async () => {
     await page.createBtn.click()
     await page.code.fill('test_role')
     await page.roleModal.getByRole('button', { name: /创建/ }).click()
-    await page.expectErrorToast(/请输入角色名称/)
+    await page.expectErrorToast(/请输入岗位名称/)
   })
 
-  test('创建角色 - 未填编码时提示错误', async () => {
+  test('创建岗位 - 未填编码时提示错误', async () => {
     await page.createBtn.click()
-    await page.name.fill('测试角色')
+    await page.name.fill('测试岗位')
     await page.roleModal.getByRole('button', { name: /创建/ }).click()
-    await page.expectErrorToast(/请输入角色编码/)
+    await page.expectErrorToast(/请输入岗位编码/)
   })
 
   test('编辑按钮可打开编辑弹窗', async () => {
@@ -149,7 +149,7 @@ test.describe('角色权限管理页面', () => {
     if (await editBtn.isVisible().catch(() => false)) {
       await editBtn.click()
       await expect(page.roleModal).toBeVisible()
-      await expect(page.page.getByText('编辑角色')).toBeVisible()
+      await expect(page.page.getByText('编辑岗位')).toBeVisible()
     }
   })
 
@@ -158,14 +158,14 @@ test.describe('角色权限管理页面', () => {
     const deleteBtn = page.deleteBtn(0)
     if (await deleteBtn.isVisible().catch(() => false)) {
       await deleteBtn.click()
-      const modal = page.page.locator('[role="dialog"]').filter({ hasText: /确认删除|删除角色/ })
+      const modal = page.page.locator('[role="dialog"]').filter({ hasText: /确认删除|删除岗位/ })
       await expect(modal).toBeVisible({ timeout: 5000 })
     }
   })
 
   test('空状态下显示提示文案', async () => {
     await page.waitForLoadingComplete()
-    const emptyText = page.page.getByText(/暂无角色/)
+    const emptyText = page.page.getByText(/暂无岗位/)
     if (await emptyText.isVisible().catch(() => false)) {
       await expect(emptyText).toBeVisible()
     }

@@ -11,6 +11,13 @@ const MOCK_EMPLOYEES = [
   { id: 5, name: '陈伟', phone: '13511112222', position: '财务', status: 'active', permissions: [], createdAt: '2026-06-05 11:00' },
 ]
 
+// #2969 岗位=角色体系：岗位下拉数据源（含岗位默认权限 code）
+const MOCK_POSITIONS = [
+  { id: 'r-admin', name: '管理员', code: 'admin', permissions: [], createdAt: '2026-06-01' },
+  { id: 'r-cs', name: '客服', code: 'customer_service', permissions: [{ id: 'p1', code: 'orders:view', name: '查看订单' }, { id: 'p2', code: 'customers:view', name: '查看客户' }], createdAt: '2026-06-01' },
+  { id: 'r-op', name: '运营', code: 'operator', permissions: [{ id: 'p3', code: 'dashboard:view', name: '查看数据看板' }], createdAt: '2026-06-01' },
+]
+
 const MOCK_MENUS = [
   { id: 1, code: 'dashboard', name: '工作台', children: [{ id: 11, code: 'dashboard:view', name: '查看数据看板', label: '查看数据看板' }] },
   { id: 2, code: 'products', name: '商品管理', children: [
@@ -26,7 +33,7 @@ const MOCK_MENUS = [
   { id: 4, code: 'customers', name: '客户管理', children: [{ id: 41, code: 'customers:view', name: '查看客户', label: '查看客户' }] },
   { id: 5, code: 'settings', name: '系统设置', children: [
     { id: 51, code: 'employees:manage', name: '员工管理', label: '员工管理' },
-    { id: 52, code: 'roles:manage', name: '角色管理', label: '角色管理' },
+    { id: 52, code: 'roles:manage', name: '岗位权限', label: '岗位权限' },
   ]},
 ]
 
@@ -68,6 +75,11 @@ test.describe('员工管理页面', () => {
       route.fulfill({ contentType: 'application/json', body: JSON.stringify({ success: true, data: MOCK_MENUS }) })
     })
 
+    // #2969 岗位下拉数据源（岗位=角色体系）
+    await page.route('**/api/admin/roles/all*', (route) => {
+      route.fulfill({ contentType: 'application/json', body: JSON.stringify({ success: true, data: MOCK_POSITIONS }) })
+    })
+
     await page.goto('/employees')
     await page.waitForLoadState('load')
   })
@@ -99,10 +111,11 @@ test.describe('员工管理页面', () => {
     const modal = page.locator('[role="dialog"]')
     // 用户名字段已删除（#1830），应不存在
     await expect(modal.locator('input[placeholder*="用户名"]')).not.toBeVisible()
-    // 必填字段：姓名、手机号、岗位
+    // 必填字段：姓名、手机号；岗位改为下拉（#2969）
     await expect(modal.locator('input[placeholder*="姓名"]')).toBeVisible()
     await expect(modal.locator('input[placeholder*="手机号"]')).toBeVisible()
-    await expect(modal.locator('input[placeholder*="岗位"]')).toBeVisible()
+    await expect(modal.locator('select').first()).toBeVisible()
+    await expect(modal.getByText('岗位 *')).toBeVisible()
   })
 
   test('搜索筛选栏不含角色下拉（#2946：前端去角色化，仅岗位展示）', async () => {
@@ -180,7 +193,7 @@ test.describe('员工管理页面', () => {
     await page.getByRole('button', { name: /重置/ }).click()
     await expect(searchInput).toHaveValue('')
   })
-  test('创建员工 - 弹窗不含角色字段，payload 不提交 role（#2907）', async ({ page: p }) => {
+  test('创建员工 - 岗位下拉选岗位自动带默认权限，payload 提交岗位名与权限（#2969）', async ({ page: p }) => {
     const modal = p.locator('[role="dialog"]')
     let postedBody = null
     await p.route('**/api/admin/users*', async (route) => {
@@ -190,15 +203,23 @@ test.describe('员工管理页面', () => {
       } else { await route.continue() }
     })
     await p.getByRole('button', { name: /新增员工/ }).click()
-    // 角色字段已移除（#2907）：弹窗内不应存在角色下拉（select）
-    await expect(modal.locator('select')).toHaveCount(0)
-    await modal.locator('input[placeholder*="姓名"]').fill('角色测试')
+    // 岗位字段为下拉（#2969），不再是自由输入框
+    await expect(modal.locator('input[placeholder*="选择或输入岗位"]')).toHaveCount(0)
+    const posSelect = modal.locator('select').first()
+    await posSelect.selectOption('客服')
+    // 选客服岗位 → 权限树自动带出客服默认权限（查看订单 + 查看客户 被勾选）
+    const orderCb = modal.locator('label').filter({ hasText: '查看订单' }).locator('input[type="checkbox"]')
+    const customerCb = modal.locator('label').filter({ hasText: '查看客户' }).locator('input[type="checkbox"]')
+    await expect(orderCb).toBeChecked()
+    await expect(customerCb).toBeChecked()
+    await modal.locator('input[placeholder*="姓名"]').fill('岗位测试')
     await modal.locator('input[placeholder*="手机号"]').fill('13900001111')
-    await modal.locator('input[placeholder*="选择或输入岗位"]').fill('运营专员')
     await modal.getByRole('button', { name: /创建|保存/ }).click()
     await expect(p.locator('[data-sonner-toast]').first()).toBeVisible({ timeout: 5000 })
     expect(postedBody).not.toBeNull()
+    // 前端去角色化契约保持：payload 不含 role 字段（角色由后端按岗位解析）
     expect(postedBody).not.toHaveProperty('role')
-    expect(postedBody.position).toBe('运营专员')
+    expect(postedBody.position).toBe('客服')
+    expect(postedBody.permissions).toEqual(expect.arrayContaining(['orders:view', 'customers:view']))
   })
 })

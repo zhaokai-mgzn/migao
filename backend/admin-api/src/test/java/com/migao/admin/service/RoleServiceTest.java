@@ -1,4 +1,4 @@
-// case_ids: HR-004, HR-005
+// case_ids: HR-004, HR-005, HR-006
 package com.migao.admin.service;
 
 import com.migao.admin.dto.PageResponse;
@@ -541,32 +541,48 @@ class RoleServiceTest {
     }
 
     @Test
-    @DisplayName("getUserPermissions: User.permissions 与角色权限合并")
-    void getUserPermissions_MergeUserPermissionsWithRolePermissions() {
-        // given: operator 角色 + 额外的 User.permissions
-        when(userRoleMapper.selectList(any(LambdaQueryWrapper.class)))
-                .thenReturn(List.of(UserRole.builder().id("ur-1").roleId("role-op").userId("u7").tenantId(1L).deleted(0).build()));
-        Role opRole = Role.builder().id("role-op").code("operator").tenantId(1L).deleted(0).build();
-        when(roleMapper.selectBatchIds(List.of("role-op"))).thenReturn(List.of(opRole));
+    @DisplayName("getUserPermissions: 有 users.permissions 快照（岗位权限体系 #2969）→ 直接以快照为准")
+    void getUserPermissions_SnapshotFirst() {
+        // given: operator 角色 + User.permissions 快照（员工管理保存时的勾选，含岗位默认权限预填）
+        // 快照式短路：无需 stub userRoleMapper/roleMapper（快照优先，角色权限不再合并）
         User user = new User();
         user.setId("u7");
-        // 用户被额外分配了 permissions
+        // 快照：员工页保存的最终勾选（岗位默认权限 ∪ 自定义）
         user.setPermissions("[\"knowledge:manage\",\"report:view\"]");
         when(userMapper.selectById("u7")).thenReturn(user);
 
         // when
         List<String> result = roleService.getUserPermissions("u7");
 
-        // then: operator 的所有权限 + 用户个人权限
+        // then: 快照式 —— 员工权限 = 保存勾选，不再合并岗位角色硬编码（与岗位脱钩 #2969）
+        assertThat(result).containsExactlyInAnyOrder("knowledge:manage", "report:view");
+        assertThat(result).doesNotContain("dashboard:view", "order:list", "product:list");
+    }
+
+    @Test
+    @DisplayName("getUserPermissions: 无 users.permissions 快照（历史员工）→ 回退角色权限逻辑兼容存量")
+    void getUserPermissions_NoSnapshot_FallbackToRolePermissions() {
+        // given: operator 角色，User.permissions 为空（历史员工未在员工页配置快照）
+        when(userRoleMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(List.of(UserRole.builder().id("ur-1").roleId("role-op").userId("u7b").tenantId(1L).deleted(0).build()));
+        Role opRole = Role.builder().id("role-op").code("operator").tenantId(1L).deleted(0).build();
+        when(roleMapper.selectBatchIds(List.of("role-op"))).thenReturn(List.of(opRole));
+        User user = new User();
+        user.setId("u7b");
+        user.setPermissions(null);
+        when(userMapper.selectById("u7b")).thenReturn(user);
+
+        // when
+        List<String> result = roleService.getUserPermissions("u7b");
+
+        // then: 兼容存量 —— 角色权限（operator 硬编码映射）
         assertThat(result).contains("dashboard:view", "order:list", "product:list");
-        assertThat(result).contains("knowledge:manage", "report:view"); // 来自 User.permissions
     }
 
     @Test
     @DisplayName("getUserPermissions: admin User.role 字段返回 *")
     void getUserPermissions_AdminUserRoleFieldReturnsWildcard() {
-        // given: user_roles 为空，但 User.role 是 admin
-        when(userRoleMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+        // given: User.role 是 admin（快照式短路：直接识别 admin 返回 *，无需 user_roles stub）
         User user = new User();
         user.setId("u8");
         user.setRole("admin");

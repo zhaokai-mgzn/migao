@@ -592,6 +592,10 @@ export const settingsApi = {
 
 // 员工管理 API
 export const employeeApi = {
+  /** #2969 岗位=角色体系：岗位列表来自 roleApi.getAllRoles（含岗位默认权限） */
+  loadPositions: () =>
+    request.get<ApiResponse<Role[]>>('/api/admin/roles/all'),
+
   getEmployees: (params?: EmployeeListParams) =>
     request.get<ApiResponse<PageResponse<Employee>>>('/api/admin/users', { params }),
 

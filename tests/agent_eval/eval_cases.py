@@ -1436,6 +1436,21 @@ _CASE_HR_005 = EvalCase(
     persona='',
 )
 
+# ── HR-006 [NORMAL] 岗位权限体系 - 注册新租户初始化五岗默认权限 + 员工权限快照式解析（#2969）（源: cases/hr.yml）──
+_CASE_HR_006 = EvalCase(
+    id='HR-006',
+    legacy_id='',
+    title='岗位权限体系 - 注册新租户初始化五岗默认权限 + 员工权限快照式解析（#2969）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['新租户注册后有哪些默认岗位？每个岗位的默认权限是什么？员工权限与岗位默认权限什么关系？'],
+    expectations=['direct_reply'],
+    data_checks=['审批通过创建租户时初始化五岗种子：管理员(admin)/客服(customer_service)/运营(operator)/销售(sales)/财务(finance)，每岗 status=active', '非 admin 岗位预置默认权限（role_permissions 落库）：客服=看板/订单查看/客户/会话；运营=看板/订单/商品/加工/客户/财务/会话/员工列表；销售=看板/商品/订单查看/客户；财务=看板/订单查看/财务', 'getUserPermissions 快照式：admin 恒 [\\"*\\"]；有 users.permissions 快照（员工管理保存勾选）直接返回快照不合并岗位角色；无快照（历史数据/ai-agent 创建）回退 role_permissions/硬编码', 'V29 迁移为存量租户补齐 sales/finance 岗位与五岗 role_permissions（幂等）'],
+    skip_reason='注册种子的五岗/默认权限/快照解析为 Java 单测验证（RegistrationServiceTest/RoleServiceTest），非 LLM 工具行为，不进入 agent-eval 冒烟',
+    tags=['position', 'permission', 'seed'],
+    persona='',
+)
+
 # ── MC-001 [NORMAL] 记忆提取解析 - 纯 JSON/内嵌数组/非法输入（源: cases/misc.yml）──
 _CASE_MC_001 = EvalCase(
     id='MC-001',
@@ -2906,6 +2921,21 @@ _CASE_UI_027 = EvalCase(
     persona='',
 )
 
+# ── UI-028 [NORMAL] 岗位权限页（原角色权限）改名 + 侧边栏菜单七大组重构 + 员工选岗位自动带默认权限（#2969）（源: cases/ui.yml）──
+_CASE_UI_028 = EvalCase(
+    id='UI-028',
+    legacy_id='',
+    title='岗位权限页（原角色权限）改名 + 侧边栏菜单七大组重构 + 员工选岗位自动带默认权限（#2969）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['把「角色权限」改成「岗位权限」：每个岗位默认设置权限；创建员工选岗位自动带出该岗位默认权限，仍可自定义；侧边栏按七大组重构'],
+    expectations=['direct_reply'],
+    data_checks=['「角色权限」页整站改名「岗位权限」（页面标题/新增按钮/编辑弹窗/删除确认/空态，侧边栏入口与 Header 面包屑同步），URL /roles 不变', '侧边栏七大组：工作台 / 智能客服(含知识库) / 商品管理 / 订单管理 / 客户管理(客户列表+财务对账) / 组织管理(员工管理+岗位权限+企业基础信息) / 通知中心（独立）；权限过滤不回归（组内无可见子项则整组隐藏）', '创建/编辑员工：岗位改为下拉选择（岗位=角色体系，来自 /api/admin/roles/all），选岗位自动把该岗位默认权限（role_permissions codes）预填进权限树；仍可手动增删；编辑切岗位则重置为新岗位默认', '员工权限快照式（#2969）：提交时携带 position+permissions（permissions=最终勾选），不携带 role 字段（#2907 契约），后端按岗位名解析角色'],
+    skip_reason='岗位权限/菜单重构/选岗位带权限均由 vitest 单测 + E2E 点击链路验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ui', 'sidebar', 'menu', 'role', 'position', 'employee'],
+    persona='',
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -3030,6 +3060,7 @@ ALL_CASES = (
     _CASE_HR_003,
     _CASE_HR_004,
     _CASE_HR_005,
+    _CASE_HR_006,
     _CASE_MC_001,
     _CASE_MC_002,
     _CASE_MC_003,
@@ -3128,6 +3159,7 @@ ALL_CASES = (
     _CASE_UI_025,
     _CASE_UI_026,
     _CASE_UI_027,
+    _CASE_UI_028,
     _CASE_UT_001,
     _CASE_UT_002,
 )

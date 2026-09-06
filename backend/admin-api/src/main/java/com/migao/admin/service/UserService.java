@@ -292,17 +292,26 @@ public class UserService implements UserDetailsService {
     }
 
     /**
+     * 更新用户基本信息（兼容签名，不修改岗位）
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public User updateUser(String userId, String nickname, String avatar, String role, String permissions) {
+        return updateUser(userId, nickname, avatar, role, null, permissions);
+    }
+
+    /**
      * 更新用户基本信息
      *
      * @param userId   用户ID
      * @param nickname 昵称
      * @param avatar   头像
      * @param role     角色
+     * @param position 岗位（null 表示不修改；岗位=角色体系 #2969，编辑切岗位时随角色联动）
      * @param permissions 菜单权限码 JSON（如 ["orders.list","products.create"]），null 表示不修改
      * @return 更新后的用户
      */
     @Transactional(rollbackFor = Exception.class)
-    public User updateUser(String userId, String nickname, String avatar, String role, String permissions) {
+    public User updateUser(String userId, String nickname, String avatar, String role, String position, String permissions) {
         // 安全校验：禁止商户侧分配系统保留角色/通配权限（审计 07 P0-2）
         assertAssignableRoleAndPermissions(role, permissions);
 
@@ -314,12 +323,16 @@ public class UserService implements UserDetailsService {
         if (avatar != null) {
             user.setAvatar(avatar);
         }
+        if (position != null) {
+            user.setPosition(position);
+        }
         if (StringUtils.hasText(role) && !role.equals(user.getRole())) {
             user.setRole(role);
             // 更新 user_roles 表
             updateUserRole(userId, role, user.getTenantId());
         }
         if (permissions != null) {
+            // 快照式（#2969）：员工权限 = 员工管理保存的勾选
             user.setPermissions(permissions);
         }
 

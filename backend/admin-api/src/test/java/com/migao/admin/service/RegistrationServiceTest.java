@@ -2,11 +2,15 @@ package com.migao.admin.service;
 
 import com.migao.admin.dto.RegistrationRequest;
 import com.migao.admin.dto.RegistrationResponse;
+import com.migao.admin.entity.Permission;
+import com.migao.admin.entity.Role;
+import com.migao.admin.entity.RolePermission;
 import com.migao.admin.entity.TenantApplication;
 import com.migao.admin.entity.User;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.PermissionMapper;
 import com.migao.admin.mapper.RoleMapper;
+import com.migao.admin.mapper.RolePermissionMapper;
 import com.migao.admin.mapper.TenantApplicationMapper;
 import com.migao.admin.mapper.TenantMapper;
 import com.migao.admin.mapper.UserMapper;
@@ -16,6 +20,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -26,6 +31,7 @@ import org.springframework.data.redis.core.ValueOperations;
 
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -37,7 +43,7 @@ import static org.mockito.Mockito.*;
  * 覆盖：AI 通过/驳回/系统繁忙降级、蜜罐、频率限制、手机号/企业名查重、驳回冷却、
  * 审批副作用（租户+管理员）、审核元数据落库
  */
-// case_ids: OB-001, OB-002, OB-003
+// case_ids: OB-001, OB-002, OB-003, HR-006
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
 @DisplayName("RegistrationService 入驻申请服务测试（AI 自动甄别）")
@@ -50,6 +56,7 @@ class RegistrationServiceTest extends BaseServiceTest {
     @Mock private UserMapper userMapper;
     @Mock private RoleMapper roleMapper;
     @Mock private PermissionMapper permissionMapper;
+    @Mock private RolePermissionMapper rolePermissionMapper;
     @Mock private RegistrationReviewClient reviewClient;
     @Mock private StringRedisTemplate redisTemplate;
     @Mock private ValueOperations<String, String> valueOperations;
@@ -301,6 +308,7 @@ class RegistrationServiceTest extends BaseServiceTest {
             // 模拟 insert 后设置 entity ID（用具体类型避免 MyBatis-Plus 重载歧义）
             doAnswer(inv -> { ((com.migao.admin.entity.Tenant) inv.getArgument(0)).setId(100L); return 1; })
                     .when(tenantMapper).insert(any(com.migao.admin.entity.Tenant.class));
+            mockRoleInsertIds();
             User adminUser = new User();
             adminUser.setId("user-admin");
             when(userService.createUser(anyString(), anyString(), anyString(), eq("admin"), anyString(), isNull(), eq(100L)))
@@ -309,6 +317,47 @@ class RegistrationServiceTest extends BaseServiceTest {
             registrationService.approveApplication(1L, "reviewer-001");
 
             verify(userService).createUser(anyString(), anyString(), anyString(), eq("admin"), anyString(), isNull(), anyLong());
+        }
+
+        @Test
+        @DisplayName("岗位权限体系（#2969）：审批通过 → 初始化默认五岗 + role_permissions 预置")
+        void successInitializesFiveDefaultPositionsWithPermissions() {
+            when(applicationMapper.selectById(1L)).thenReturn(pendingApp);
+            doAnswer(inv -> { ((com.migao.admin.entity.Tenant) inv.getArgument(0)).setId(100L); return 1; })
+                    .when(tenantMapper).insert(any(com.migao.admin.entity.Tenant.class));
+            mockRoleInsertIds();
+            User adminUser = new User();
+            adminUser.setId("user-admin");
+            when(userService.createUser(anyString(), anyString(), anyString(), eq("admin"), anyString(), isNull(), eq(100L)))
+                    .thenReturn(adminUser);
+
+            registrationService.approveApplication(1L, "reviewer-001");
+
+            // 五岗种子：管理员 / 客服 / 运营 / 销售 / 财务
+            ArgumentCaptor<Role> roleCaptor = ArgumentCaptor.forClass(Role.class);
+            verify(roleMapper, times(5)).insert(roleCaptor.capture());
+            List<String> codes = roleCaptor.getAllValues().stream().map(Role::getCode).collect(Collectors.toList());
+            assertThat(codes).contains("admin", "customer_service", "operator", "sales", "finance");
+            assertThat(roleCaptor.getAllValues()).allSatisfy(r ->
+                    assertThat(r.getStatus()).isEqualTo("active"));
+
+            // 每个岗位预置默认权限（role_permissions 落库）
+            ArgumentCaptor<RolePermission> rpCaptor = ArgumentCaptor.forClass(RolePermission.class);
+            verify(rolePermissionMapper, atLeast(5)).insert(rpCaptor.capture());
+            assertThat(rpCaptor.getAllValues()).extracting(RolePermission::getRoleId)
+                    .contains("role-admin", "role-customer_service", "role-operator", "role-sales", "role-finance");
+        }
+
+        /** mock role insert 后回填 id（五岗种子依赖 role.getId() 关联 role_permissions） */
+        private void mockRoleInsertIds() {
+            doAnswer(inv -> {
+                Role role = inv.getArgument(0);
+                role.setId("role-" + role.getCode());
+                return 1;
+            }).when(roleMapper).insert(any(Role.class));
+            doAnswer(inv -> { ((Permission) inv.getArgument(0)).setId("perm-demo"); return 1; })
+                    .when(permissionMapper).insert(any(Permission.class));
+            when(rolePermissionMapper.insert(any(RolePermission.class))).thenReturn(1);
         }
 
         @Test

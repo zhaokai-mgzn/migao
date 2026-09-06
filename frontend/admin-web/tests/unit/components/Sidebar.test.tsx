@@ -1,4 +1,4 @@
-// case_ids: HR-001, DF-007, UI-005, UI-011
+// case_ids: HR-001, DF-007, UI-005, UI-011, UI-028
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -76,35 +76,40 @@ describe('Sidebar', () => {
 
   it('should render all menu items', () => {
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    // 分组标题
+    // 分组标题（#2969 七大组）
     expect(screen.getByText('工作台')).toBeInTheDocument()
     expect(screen.getByText('智能客服')).toBeInTheDocument()
     expect(screen.getByText('商品管理')).toBeInTheDocument()
     expect(screen.getByText('订单管理')).toBeInTheDocument()
+    expect(screen.getByText('客户管理')).toBeInTheDocument() // 客户管理组（客户列表+财务对账）
+    expect(screen.getByText('组织管理')).toBeInTheDocument()  // 组织管理组（员工+岗位权限+企业信息）
     // 子菜单项
     expect(screen.getByText('经营看板')).toBeInTheDocument()
-    // UI-005/UI-011: 智能客服分组下 米宝·在线对话 + AI 客服配置 + 人工客服
+    // UI-005/UI-011: 智能客服分组下 米宝·在线对话 + AI 客服配置 + 人工客服；#2969 知识库并入本组
     expect(screen.getByText('米宝 · 在线对话')).toBeInTheDocument()
     expect(screen.getByText('AI 客服配置')).toBeInTheDocument()
     expect(screen.getByText('人工客服')).toBeInTheDocument()
+    expect(screen.getByText('知识库')).toBeInTheDocument()
     expect(screen.getByText('商品列表')).toBeInTheDocument()
     // #1403: 商品分类管理已移出侧边栏，入口内嵌到新增商品页
     expect(screen.queryByText('商品分类管理')).not.toBeInTheDocument()
     expect(screen.getByText('加工项管理')).toBeInTheDocument()
-    // RBAC 菜单入口修复：角色权限入口应显示（system:manage 权限，admin 全权限）
-    expect(screen.getByText('角色权限')).toBeInTheDocument()
-    // 菜单入口补齐：知识库（knowledge:manage）+ 通知中心（全员）入口可见
-    expect(screen.getByText('知识库')).toBeInTheDocument()
+    // #2969: 岗位权限（原角色权限）归入组织管理组，入口应显示（system:manage 权限，admin 全权限）
+    expect(screen.getByText('岗位权限')).toBeInTheDocument()
+    // 通知中心（全员）入口可见
     expect(screen.getByText('通知中心')).toBeInTheDocument()
     expect(screen.getByText('订单列表')).toBeInTheDocument()
     expect(screen.getByText('售后工单')).toBeInTheDocument()
-    // 独立菜单项
-    expect(screen.getByText('客户管理')).toBeInTheDocument()
+    // 客户管理组子项（#2969：客户列表 + 财务对账）
+    expect(screen.getByText('客户列表')).toBeInTheDocument()
     expect(screen.getByText('财务对账')).toBeInTheDocument()
+    // 组织管理组子项
     expect(screen.getByText('员工管理')).toBeInTheDocument()
     expect(screen.getByText('企业基础信息')).toBeInTheDocument()
     // UI-005: 「机器人设置」已更名为「AI 客服配置」，不再出现旧名
     expect(screen.queryByText('机器人设置')).not.toBeInTheDocument()
+    // #2969: 「角色权限」已改名「岗位权限」，旧名不再出现
+    expect(screen.queryByText('角色权限')).not.toBeInTheDocument()
   })
 
   it('should render navigation links with correct paths', () => {
@@ -199,8 +204,12 @@ describe('Sidebar', () => {
 
   it('should render standalone items exactly once each', () => {
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
+    // #2969: 客户管理已从独立菜单改为客户管理组标题（仍唯一）
     expect(screen.getAllByText('客户管理').length).toBe(1)
     expect(screen.getAllByText('AI 客服配置').length).toBe(1)
+    // #2969: 岗位权限归入组织管理组（唯一），通知中心仍为独立菜单（唯一）
+    expect(screen.getAllByText('岗位权限').length).toBe(1)
+    expect(screen.getAllByText('通知中心').length).toBe(1)
   })
 
   // ── UI-005: 智能客服大类分组与图标 ──
@@ -216,14 +225,15 @@ describe('Sidebar', () => {
     expect(follows(smartCs, productCenter)).toBe(true)
   })
 
-  it('「智能客服」下子菜单顺序：米宝·在线对话 在前、AI 客服配置 次之、人工客服 在后', () => {
+  it('「智能客服」下子菜单顺序：米宝·在线对话 在前、AI 客服配置 次之、人工客服 在后、知识库末位（#2969）', () => {
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
     const groupContainer = screen.getByText('智能客服').closest('.mb-4') as HTMLElement
     const links = groupContainer.querySelectorAll('a')
-    expect(links.length).toBe(3)
+    expect(links.length).toBe(4)
     expect(links[0].textContent).toContain('米宝 · 在线对话')
     expect(links[1].textContent).toContain('AI 客服配置')
     expect(links[2].textContent).toContain('人工客服')
+    expect(links[3].textContent).toContain('知识库')
   })
 
   it('「人工客服」已从「工作台」分组移除（工作台仅剩经营看板）', () => {
@@ -271,9 +281,13 @@ describe('Sidebar', () => {
       // #1403: 商品分类管理已移出侧边栏
       expect(screen.queryByText('商品分类管理')).not.toBeInTheDocument()
       expect(screen.getByText('订单列表')).toBeInTheDocument()
+      // #2969: 客户管理组子项与组织管理组子项均可见
       expect(screen.getByText('客户管理')).toBeInTheDocument()
+      expect(screen.getByText('客户列表')).toBeInTheDocument()
       expect(screen.getByText('财务对账')).toBeInTheDocument()
+      expect(screen.getByText('组织管理')).toBeInTheDocument()
       expect(screen.getByText('员工管理')).toBeInTheDocument()
+      expect(screen.getByText('岗位权限')).toBeInTheDocument()
       expect(screen.getByText('企业基础信息')).toBeInTheDocument()
       expect(screen.getByText('知识库')).toBeInTheDocument()
       expect(screen.getByText('通知中心')).toBeInTheDocument()
@@ -297,9 +311,14 @@ describe('Sidebar', () => {
       expect(screen.queryByText('商品分类管理')).not.toBeInTheDocument()
       expect(screen.queryByText('加工项管理')).not.toBeInTheDocument()
       expect(screen.queryByText('售后工单')).not.toBeInTheDocument()
+      // #2969: 客户管理组（客户列表+财务对账）整组隐藏
       expect(screen.queryByText('客户管理')).not.toBeInTheDocument()
+      expect(screen.queryByText('客户列表')).not.toBeInTheDocument()
       expect(screen.queryByText('财务对账')).not.toBeInTheDocument()
+      // #2969: 组织管理组（员工+岗位权限+企业信息）整组隐藏
+      expect(screen.queryByText('组织管理')).not.toBeInTheDocument()
       expect(screen.queryByText('员工管理')).not.toBeInTheDocument()
+      expect(screen.queryByText('岗位权限')).not.toBeInTheDocument()
       expect(screen.queryByText('企业基础信息')).not.toBeInTheDocument()
       // 无 knowledge:manage → 知识库入口隐藏；通知中心全员可见
       expect(screen.queryByText('知识库')).not.toBeInTheDocument()
@@ -321,8 +340,9 @@ describe('Sidebar', () => {
       expect(screen.queryByText('商品管理')).not.toBeInTheDocument()
       expect(screen.queryByText('订单管理')).not.toBeInTheDocument()
       expect(screen.queryByText('智能客服')).not.toBeInTheDocument()
-      // 独立菜单项也不在
+      // #2969: 客户管理组/组织管理组也不在（整组权限过滤）
       expect(screen.queryByText('客户管理')).not.toBeInTheDocument()
+      expect(screen.queryByText('组织管理')).not.toBeInTheDocument()
       expect(screen.queryByText('员工管理')).not.toBeInTheDocument()
       // 零权限也可见：通知中心（无权限码，全员）
       expect(screen.getByText('通知中心')).toBeInTheDocument()

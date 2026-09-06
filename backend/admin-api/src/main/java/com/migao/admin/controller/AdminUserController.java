@@ -122,21 +122,49 @@ public class AdminUserController {
             position = role; // fallback: 岗位 = 角色名
         }
 
+        // 岗位=角色体系（#2969）：未显式传 role/roleIds 时，按岗位名解析岗位角色，
+        // 使 user_roles 关联 / JWT roles claim / ai-agent allowed_roles 保持岗位角色语义
+        Role positionRole = null;
+        if (!body.containsKey("role") && (roleIdList == null || roleIdList.isEmpty())
+                && org.springframework.util.StringUtils.hasText(position)) {
+            positionRole = roleService.getRoleByPosition(position, tenantId);
+            if (positionRole != null) {
+                role = positionRole.getCode();
+            }
+        }
+
         // 从请求体读取权限列表（前端 TreeCheckbox 发送的菜单权限码 JSON 数组）
         String permissions = null;
         Object permsObj = body.get("permissions");
-        if (permsObj instanceof List<?> list && !list.isEmpty()) {
+        if (permsObj instanceof List<?> list) {
             try {
                 permissions = OBJECT_MAPPER.writeValueAsString(list);
             } catch (Exception e) {
                 log.warn("序列化 permissions 失败", e);
             }
         }
+        // 快照式兜底（#2969）：未传权限或为空时，自动带出岗位默认权限（role_permissions）作为快照
+        if ((permissions == null || "[]".equals(permissions))
+                && positionRole != null && !"admin".equals(positionRole.getCode())) {
+            List<String> defaultCodes = roleService.getRolePermissions(positionRole.getId()).stream()
+                    .map(com.migao.admin.entity.Permission::getCode)
+                    .filter(java.util.Objects::nonNull)
+                    .distinct()
+                    .collect(Collectors.toList());
+            if (!defaultCodes.isEmpty()) {
+                try {
+                    permissions = OBJECT_MAPPER.writeValueAsString(defaultCodes);
+                    log.info("员工无显式权限，按岗位默认权限兜底: position={}, permissions={}", position, defaultCodes);
+                } catch (Exception e) {
+                    log.warn("序列化岗位默认权限失败", e);
+                }
+            }
+        }
 
         log.info("创建用户: phone={}, name={}, role={}, position={}, tenantId={}", phone, name, role, position, tenantId);
         User user = userService.createUser(phone, password, name, role, position, permissions, tenantId);
 
-        // 如果传了 roleIds，同步写入 user_roles 关联表
+        // 如果传了 roleIds，同步写入 user_roles 关联表（岗位场景已由 UserService.createUser 按 role code 关联）
         if (roleIdList != null && !roleIdList.isEmpty()) {
             for (Object rid : roleIdList) {
                 try {
@@ -163,6 +191,16 @@ public class AdminUserController {
         String name = (String) body.get("name");
         String avatar = (String) body.get("avatar");
         String role = (String) body.get("role");
+        String position = (String) body.get("position");
+        Long tenantId = TenantContext.getTenantId();
+
+        // 岗位=角色体系（#2969）：未显式传 role 时，按岗位名解析岗位角色（编辑切岗位联动角色）
+        if (role == null && org.springframework.util.StringUtils.hasText(position)) {
+            Role positionRole = roleService.getRoleByPosition(position, tenantId);
+            if (positionRole != null) {
+                role = positionRole.getCode();
+            }
+        }
 
         // 如果有密码，同步修改
         String password = (String) body.get("password");
@@ -170,7 +208,7 @@ public class AdminUserController {
             userService.changePassword(id, password);
         }
 
-        // 从请求体读取权限列表
+        // 从请求体读取权限列表（快照式：员工权限 = 员工管理保存的勾选）
         String permissions = null;
         Object permsObj = body.get("permissions");
         if (permsObj instanceof List<?> list) {
@@ -180,9 +218,29 @@ public class AdminUserController {
                 log.warn("序列化 permissions 失败", e);
             }
         }
+        // 快照式兜底（#2969）：未传权限或为空且指定了岗位时，自动带出岗位默认权限（role_permissions）作为快照
+        if ((permissions == null || "[]".equals(permissions))
+                && org.springframework.util.StringUtils.hasText(position)) {
+            Role positionRole = roleService.getRoleByPosition(position, tenantId);
+            if (positionRole != null && !"admin".equals(positionRole.getCode())) {
+                List<String> defaultCodes = roleService.getRolePermissions(positionRole.getId()).stream()
+                        .map(com.migao.admin.entity.Permission::getCode)
+                        .filter(java.util.Objects::nonNull)
+                        .distinct()
+                        .collect(Collectors.toList());
+                if (!defaultCodes.isEmpty()) {
+                    try {
+                        permissions = OBJECT_MAPPER.writeValueAsString(defaultCodes);
+                        log.info("员工无显式权限，按岗位默认权限兜底: position={}, permissions={}", position, defaultCodes);
+                    } catch (Exception e) {
+                        log.warn("序列化岗位默认权限失败", e);
+                    }
+                }
+            }
+        }
 
-        log.info("更新用户: id={}, name={}", id, name);
-        User user = userService.updateUser(id, name, avatar, role, permissions);
+        log.info("更新用户: id={}, name={}, position={}", id, name, position);
+        User user = userService.updateUser(id, name, avatar, role, position, permissions);
         return ApiResponse.success(user);
     }
 

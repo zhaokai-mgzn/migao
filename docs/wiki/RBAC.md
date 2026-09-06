@@ -1,31 +1,35 @@
 # RBAC 权限体系
 
 > 2026-08 已实现「员工管理权限全链路」：门禁 → 细粒度接口鉴权 → 前端菜单/按钮/路由 → 米宝工具，见下文「全链路现状」。
+> 2026-09（#2969）「角色权限」改名「**岗位权限**」：岗位=角色体系（roles 表即岗位），role_permissions 即岗位默认权限；创建员工选岗位自动带出默认权限，保存勾选=员工最终权限（快照式）。
 
-## 角色（实际生效）
+## 岗位（实际生效）
 
-| 角色 | 编码 | 权限来源 |
+| 岗位 | 编码 | 权限来源 |
 |------|------|---------|
-| 企业管理员 | admin | 恒为全部权限 `["*"]`（`RoleService.getUserPermissions`） |
+| 管理员 | admin | 恒为全部权限 `["*"]`（`RoleService.getUserPermissions`） |
 | 平台管理员 | super_admin | 全部权限（在 `platform_admins` 表，走 `PermissionInterceptor` 直通） |
-| 运营经理 | operator | 内置角色：无 role_permissions 时回退硬编码权限集（看板/订单/商品/客户/财务/员工列表/系统设置等） |
-| 商品管理员 | product_manager | 内置角色：回退硬编码权限集（看板/商品/加工项） |
-| 知识编辑 | knowledge_editor | 内置角色：回退硬编码权限集（看板） |
-| 自定义角色 | 角色管理创建 | **角色管理页勾选的权限码落库到 `role_permissions`**（V16），分配给员工后精确生效 |
+| 客服 | customer_service | 岗位默认权限：role_permissions 预置（看板/订单查看/客户/会话） |
+| 运营 | operator | 岗位默认权限：role_permissions 预置（看板/订单/商品/加工/客户/财务/会话/员工列表） |
+| 销售 | sales | 岗位默认权限：role_permissions 预置（看板/商品/订单查看/客户） |
+| 财务 | finance | 岗位默认权限：role_permissions 预置（看板/订单查看/财务） |
+| 自定义岗位 | 岗位权限页创建 | **岗位权限页勾选的权限码落库到 `role_permissions`**（V16），作为该岗位默认权限 |
 
-> 权限来源优先级：角色 `role_permissions` 关联（角色管理勾选）> 内置角色硬编码映射 > 员工个人权限码（`users.permissions`）。
-> 员工在「员工管理 → 账号权限」勾选的权限码始终合并进最终权限集。
+> 新租户注册初始化五岗种子（管理员/客服/运营/销售/财务）+ role_permissions 预置（V29 为存量租户补齐）。
+> **快照式权限语义（#2969）**：员工权限 = 员工管理页保存的勾选（users.permissions 快照），与岗位脱钩 ——
+> 后续修改岗位默认权限不影响已建员工；改岗位仅作为下次创建/编辑员工时的默认模板。
+> 兼容存量：无 users.permissions 快照（历史员工 / ai-agent 直接创建）时回退角色权限合并逻辑（role_permissions 优先，内置角色回退硬编码）。
 
 ## 权限模型
 
 ```
-roles ──< role_permissions >── permissions   （角色授权：角色管理页勾选，V16 落库）
-users ──< user_roles >── roles               （用户-角色分配）
-users.permissions (JSON 权限码)               （员工管理页直接勾选）
+roles ──< role_permissions >── permissions   （岗位默认权限：岗位权限页勾选，V16 落库）
+users.permissions (JSON 权限码)               （员工权限快照：员工管理页保存勾选，最终生效）
 ```
 
-- 「角色管理」页创建/编辑角色时勾选权限 → `role_permissions` 全量替换落库；角色详情/列表回填 `permissions` 用于回显
-- 内置角色（admin/operator/product_manager/knowledge_editor）未配置 role_permissions 时沿用硬编码映射，配置后以 role_permissions 为准（admin 恒为 `["*"]`）
+- 「岗位权限」页（原「角色权限」页，URL /roles 不变）创建/编辑岗位时勾选权限 → `role_permissions` 全量替换落库；岗位详情/列表回填 `permissions` 用于回显
+- 创建/编辑员工：岗位下拉选择（岗位列表 = roles 表），选中自动预填该岗位默认权限树 → 可手动增删 → 保存为快照；编辑时切换岗位则权限树重置为新岗位默认
+- admin 恒为 `["*"]`
 
 ## JWT Claims
 
@@ -45,8 +49,9 @@ users.permissions (JSON 权限码)               （员工管理页直接勾选�
 ## 全链路现状（员工管理权限）
 
 ```
-管理员勾选权限(员工管理/账号权限)
-  → users.permissions 落库
+管理员创建/编辑员工(员工管理弹窗)
+  → 选岗位(岗位下拉) → 自动带出岗位默认权限树(role_permissions codes)
+  → 可手动增删 → 保存: users.permissions 快照 + 岗位名/角色关联
   → 员工登录 (短信/JWT)
   → /api/auth/me 返回 permissions+menus → 前端侧边栏按权限过滤
   → 前端路由守卫(403 页) + 按钮级权限(employee:create 才可见新增/编辑/删除/禁用)
@@ -67,7 +72,8 @@ users.permissions (JSON 权限码)               （员工管理页直接勾选�
 
 ## 菜单过滤
 
-前端侧边栏根据 `permissions` 动态渲染（`Sidebar.tsx`），`admin`/`super_admin`/`*` 显示全部菜单；
+前端侧边栏（#2969 重构七大组：工作台 / 智能客服(含知识库) / 商品管理 / 订单管理 / 客户管理(含财务对账) / 组织管理(员工+岗位权限+企业信息) / 通知中心）根据 `permissions` 动态渲染（`Sidebar.tsx`），
+`admin`/`super_admin`/`*` 显示全部菜单；
 `/api/auth/me` 的 `buildMenusByPermissions` 与侧边栏口径一致。
 
 ## 登录方式
