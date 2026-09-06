@@ -3,12 +3,12 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Plus, Search } from 'lucide-react'
 import { toast } from 'sonner'
-import { employeeApi, roleApi } from '@/lib/api'
+import { employeeApi } from '@/lib/api'
 import request from '@/lib/request'
 import { usePermission } from '@/lib/permission'
 import { Button, Input, Select, Modal, Table, Pagination, Badge } from '@/components/ui'
 import type { TableColumn } from '@/components/ui'
-import type { Employee, EmployeeStatus, Role, EmployeeFormData } from '@/types'
+import type { Employee, EmployeeStatus, EmployeeFormData } from '@/types'
 import { TreeCheckbox, type TreeNode } from '@/components/ui/TreeCheckbox'
 import DateTimeCell from '@/components/common/DateTimeCell'
 
@@ -28,16 +28,11 @@ export default function EmployeesPage() {
   const [pageSize, setPageSize] = useState(10)
   const [keyword, setKeyword] = useState('')
   const [statusFilter, setStatusFilter] = useState<EmployeeStatus | ''>('')
-  const [roleFilter, setRoleFilter] = useState<string>('')
   const [searchKeyword, setSearchKeyword] = useState('')
   const [searchStatus, setSearchStatus] = useState<EmployeeStatus | ''>('')
-  const [searchRole, setSearchRole] = useState<string>('')
 
   // 菜单权限树
   const [menuTree, setMenuTree] = useState<TreeNode[]>([])
-
-  // 角色列表（用于搜索筛选）
-  const [allRoles, setAllRoles] = useState<Role[]>([])
 
   // 新增/编辑对话框
   const [formOpen, setFormOpen] = useState(false)
@@ -58,7 +53,7 @@ export default function EmployeesPage() {
   // 内联状态切换 loading（按 ID 防止双击）
   const [togglingId, setTogglingId] = useState<number | null>(null)
 
-  // 加载菜单权限树 + 角色列表
+  // 加载菜单权限树
   useEffect(() => {
     request.get('/api/admin/menus').then((res: any) => {
       const data = res.data?.data || res.data || []
@@ -66,9 +61,6 @@ export default function EmployeesPage() {
     }).catch(() => {
       toast.error('加载菜单权限失败，请刷新重试')
     })
-    roleApi.getAllRoles().then((res) => {
-      setAllRoles(res.data.data || [])
-    }).catch(() => {})
   }, [])
 
   // 从 menuTree 中提取 code → 中文 label 的映射 + 叶子节点总数
@@ -91,7 +83,6 @@ export default function EmployeesPage() {
         keyword: searchKeyword || undefined,
         status: searchStatus || undefined,
       }
-      if (searchRole) params.role = searchRole
 
       const res = await employeeApi.getEmployees(params as Parameters<typeof employeeApi.getEmployees>[0])
       const data = res.data.data
@@ -102,7 +93,7 @@ export default function EmployeesPage() {
     } finally {
       setLoading(false)
     }
-  }, [current, pageSize, searchKeyword, searchStatus, searchRole])
+  }, [current, pageSize, searchKeyword, searchStatus])
 
   useEffect(() => {
     loadEmployees()
@@ -113,18 +104,15 @@ export default function EmployeesPage() {
     setCurrent(1)
     setSearchKeyword(keyword)
     setSearchStatus(statusFilter)
-    setSearchRole(roleFilter)
   }
 
   // 重置
   const handleReset = () => {
     setKeyword('')
     setStatusFilter('')
-    setRoleFilter('')
     setCurrent(1)
     setSearchKeyword('')
     setSearchStatus('')
-    setSearchRole('')
   }
 
   // 打开新增对话框
@@ -367,17 +355,6 @@ export default function EmployeesPage() {
               ]}
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value as EmployeeStatus | '')}
-            />
-          </div>
-          <div className="min-w-[140px]">
-            <Select
-              label="角色"
-              options={[
-                { value: '', label: '全部角色' },
-                ...allRoles.map(r => ({ value: r.code, label: r.name })),
-              ]}
-              value={roleFilter}
-              onChange={(e) => setRoleFilter(e.target.value)}
             />
           </div>
           <div className="flex items-center gap-2 ml-auto">

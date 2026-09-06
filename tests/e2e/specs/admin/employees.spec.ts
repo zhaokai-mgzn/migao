@@ -68,14 +68,6 @@ test.describe('员工管理页面', () => {
       route.fulfill({ contentType: 'application/json', body: JSON.stringify({ success: true, data: MOCK_MENUS }) })
     })
 
-    // Mock roles list
-    await page.route('**/api/admin/roles/all*', (route) => {
-      route.fulfill({ contentType: 'application/json', body: JSON.stringify({
-        success: true,
-        data: [{ id: 1, name: '管理员', code: 'admin' }, { id: 2, name: '客服', code: 'service' }]
-      })})
-    })
-
     await page.goto('/employees')
     await page.waitForLoadState('load')
   })
@@ -111,6 +103,13 @@ test.describe('员工管理页面', () => {
     await expect(modal.locator('input[placeholder*="姓名"]')).toBeVisible()
     await expect(modal.locator('input[placeholder*="手机号"]')).toBeVisible()
     await expect(modal.locator('input[placeholder*="岗位"]')).toBeVisible()
+  })
+
+  test('搜索筛选栏不含角色下拉（#2946：前端去角色化，仅岗位展示）', async () => {
+    // #2946：列表页移除「角色/全部角色」筛选下拉（遗留 UI）——
+    // 弹窗已去角色字段（#2909）、列表无角色列，筛选口径统一为前端不暴露角色
+    await expect(page.getByText('全部角色')).toHaveCount(0)
+    await expect(page.locator('select').filter({ hasText: /角色/ })).toHaveCount(0)
   })
 
   test('搜索框可按姓名搜索', async () => {

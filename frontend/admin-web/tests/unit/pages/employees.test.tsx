@@ -165,7 +165,8 @@ describe('EmployeesPage', () => {
     render(<EmployeesPage />)
     expect(screen.getByText('姓名/手机号')).toBeInTheDocument()
     expect(screen.getByText('状态')).toBeInTheDocument()
-    expect(screen.getByText('角色')).toBeInTheDocument()
+    // #2946：列表页移除「角色/全部角色」筛选下拉（前端去角色化，仅岗位展示）
+    expect(screen.queryByText('角色')).not.toBeInTheDocument()
   })
 
   it('renders search and reset buttons', () => {
@@ -182,6 +183,22 @@ describe('EmployeesPage', () => {
     await waitFor(() => {
       expect(screen.getByTestId('employee-1')).toBeInTheDocument()
     })
+  })
+
+  it('#2946: 列表查询请求参数不含 role（列表页已移除角色筛选）', async () => {
+    mockGetEmployees.mockClear()
+    render(<EmployeesPage />)
+    // 触发一次查询：输入关键字后点「查询」，请求参数只含 page/size/keyword/status，不含 role
+    const searchInput = screen.getByPlaceholderText(/输入姓名或手机号搜索/)
+    fireEvent.change(searchInput, { target: { value: '张' } })
+    fireEvent.click(screen.getByText('查询'))
+    await waitFor(() => {
+      expect(mockGetEmployees).toHaveBeenCalled()
+    })
+    const calls = mockGetEmployees.mock.calls
+    const lastArgs = calls[calls.length - 1]?.[0] || {}
+    expect(lastArgs).not.toHaveProperty('role')
+    expect(lastArgs).toHaveProperty('keyword', '张')
   })
 
   it('renders pagination', async () => {
