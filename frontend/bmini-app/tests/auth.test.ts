@@ -1,8 +1,8 @@
-// case_ids: API-010
+// case_ids: API-010, BM-001, BM-002, BM-003
 /**
  * 认证工具函数测试
  *
- * 覆盖: Token存取、登录态判断、登出清理、JWT过期检查、微信登录流程
+ * 覆盖: Token存取、登录态判断、登出清理、JWT过期检查、微信登录流程（C 端 mini + B 端 bmini）
  */
 import Taro from '@tarojs/taro'
 import {
@@ -13,6 +13,7 @@ import {
   logout,
   checkTokenValidity,
   miniAppLogin,
+  bminiLogin,
 } from '../src/utils/auth'
 import { STORAGE_KEYS } from '../src/utils/constants'
 
@@ -194,6 +195,73 @@ describe('auth utils', () => {
 
       expect(result.success).toBe(false)
       expect(result.error).toBe('Network Error')
+    })
+  })
+
+  // ========== B 端员工小程序登录（issue #2977） ==========
+
+  describe('bminiLogin', () => {
+    const mockEmpUser = { id: 'emp-1', nickname: '运营小王', avatar: null, tenant_id: 1, role: 'operator', tenantId: 1, tenantName: '词元通达' }
+
+    it('首次登录（带 phoneCode）成功应存储 Token/用户/租户 (BM-001)', async () => {
+      mockPost.mockResolvedValueOnce({
+        success: true,
+        data: { accessToken: 'bmini-jwt-token', user: mockEmpUser },
+      })
+
+      const result = await bminiLogin('phone-auth-code-1')
+
+      expect(result.success).toBe(true)
+      expect(result.user).toEqual(mockEmpUser)
+      expect(Taro.login).toHaveBeenCalled()
+      // 请求体：code + phoneCode（首次绑定）
+      expect(mockPost).toHaveBeenCalledWith(
+        '/api/auth/bmini/login',
+        expect.objectContaining({ phoneCode: 'phone-auth-code-1' }),
+        expect.objectContaining({ baseURL: expect.any(String), skipAuth: true }),
+      )
+      expect(Taro.setStorageSync).toHaveBeenCalledWith(STORAGE_KEYS.TOKEN, 'bmini-jwt-token')
+      // tenantId 由后端员工账号定位写入
+      expect(Taro.setStorageSync).toHaveBeenCalledWith(STORAGE_KEYS.TENANT_ID, 1)
+    })
+
+    it('二次登录可不带 phoneCode（openid 已绑定直接签发）(BM-002)', async () => {
+      mockPost.mockResolvedValueOnce({
+        success: true,
+        data: { accessToken: 'bmini-jwt-token-2', user: mockEmpUser },
+      })
+
+      const result = await bminiLogin()
+
+      expect(result.success).toBe(true)
+      expect(mockPost).toHaveBeenCalledWith(
+        '/api/auth/bmini/login',
+        expect.objectContaining({ phoneCode: undefined }),
+        expect.any(Object),
+      )
+    })
+
+    it('后端返回失败（手机号未匹配员工）应透传错误 (BM-003)', async () => {
+      mockPost.mockResolvedValueOnce({
+        success: false,
+        error: { code: 'AUTH_FAILED', message: '手机号未匹配员工账号，请联系管理员开通' },
+      })
+
+      const result = await bminiLogin('phone-auth-code-x')
+
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('未匹配员工')
+      // 不落任何 token
+      expect(Taro.setStorageSync).not.toHaveBeenCalledWith(STORAGE_KEYS.TOKEN, expect.any(String))
+    })
+
+    it('微信 code 获取失败应返回错误', async () => {
+      ;(Taro.login as jest.Mock).mockResolvedValueOnce({ code: '' })
+
+      const result = await bminiLogin()
+
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('微信登录凭证')
     })
   })
 })

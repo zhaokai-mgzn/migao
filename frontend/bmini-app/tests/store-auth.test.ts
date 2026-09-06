@@ -1,5 +1,6 @@
+// case_ids: BM-005
 /**
- * Auth Zustand Store 测试
+ * Auth Zustand Store 测试（B 端小程序基建，issue #2977）
  *
  * 覆盖: 初始化、登录、登出、状态持久化、Token检查
  */

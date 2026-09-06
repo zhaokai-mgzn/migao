@@ -416,6 +416,36 @@ _CASE_BM_003 = EvalCase(
     persona='',
 )
 
+# ── BM-004 [NORMAL] B 端小程序请求层基建 - Token 注入/401 清理/重试（源: cases/bmini.yml）──
+_CASE_BM_004 = EvalCase(
+    id='BM-004',
+    legacy_id='',
+    title='B 端小程序请求层基建 - Token 注入/401 清理/重试',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['bmini-app 复用 C 端 request.ts：请求自动带 Authorization Bearer；401 清 Token 跳登录页；网络错误指数退避重试'],
+    expectations=['direct_reply'],
+    data_checks=['非 skipAuth 请求头含 Authorization: Bearer <token>', '401 响应清除本地 Token 并跳转登录页', 'timeout/fail 类错误按指数退避重试（MAX_RETRIES 次）'],
+    skip_reason='纯前端单元测试（bmini-app tests/request.test.ts），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['bmini', 'request'],
+    persona='',
+)
+
+# ── BM-005 [NORMAL] B 端认证 store - 登录状态流转/持久化/登出清理（源: cases/bmini.yml）──
+_CASE_BM_005 = EvalCase(
+    id='BM-005',
+    legacy_id='',
+    title='B 端认证 store - 登录状态流转/持久化/登出清理',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['bmini-app authStore（Zustand+persist）：login 成功写入 token/user；logout 清空；initialize 从本地恢复；token 过期自动登出'],
+    expectations=['direct_reply'],
+    data_checks=['bminiLoginAction 成功 → isLoggedIn=true + token/user 落 storage', 'logout 清空 token/user/isLoggedIn（含 storage 持久化清理）', 'initialize 有效 token 恢复登录态；过期 token 自动 logout'],
+    skip_reason='纯前端单元测试（bmini-app tests/store-auth.test.ts），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['bmini', 'store', 'auth'],
+    persona='',
+)
+
 # ── CT-001 [NORMAL] 分类树（源: cases/category.yml）──
 _CASE_CT_001 = EvalCase(
     id='CT-001',
@@ -3037,6 +3067,8 @@ ALL_CASES = (
     _CASE_BM_001,
     _CASE_BM_002,
     _CASE_BM_003,
+    _CASE_BM_004,
+    _CASE_BM_005,
     _CASE_CT_001,
     _CASE_CT_002,
     _CASE_CT_003,
