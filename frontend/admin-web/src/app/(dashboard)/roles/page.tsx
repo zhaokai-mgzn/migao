@@ -19,7 +19,7 @@ function groupPermissionsByResource(permissions: Permission[]): Record<string, P
 }
 
 export default function RolesPage() {
-  // 角色列表
+  // 岗位列表
   const [roles, setRoles] = useState<Role[]>([])
   const [loading, setLoading] = useState(false)
 
@@ -41,7 +41,7 @@ export default function RolesPage() {
   const [deleteTarget, setDeleteTarget] = useState<Role | null>(null)
   const [deleting, setDeleting] = useState(false)
 
-  // 加载角色列表
+  // 加载岗位列表
   const loadRoles = useCallback(async () => {
     setLoading(true)
     try {
@@ -54,7 +54,7 @@ export default function RolesPage() {
         setRoles(data?.items || [])
       }
     } catch (e) {
-      toast.error('加载角色列表失败')
+      toast.error('加载岗位列表失败')
     } finally {
       setLoading(false)
     }
@@ -104,8 +104,8 @@ export default function RolesPage() {
 
   // 提交表单
   const handleSubmit = async () => {
-    if (!formData.name.trim()) { toast.error('请输入角色名称'); return }
-    if (!formData.code.trim()) { toast.error('请输入角色编码'); return }
+    if (!formData.name.trim()) { toast.error('请输入岗位名称'); return }
+    if (!formData.code.trim()) { toast.error('请输入岗位编码'); return }
 
     setFormLoading(true)
     try {
@@ -183,16 +183,16 @@ export default function RolesPage() {
       {/* 页面标题 */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-xl font-semibold text-neutral-900">角色权限</h1>
-          <p className="text-sm text-neutral-500 mt-1">管理系统角色和权限分配</p>
+          <h1 className="text-xl font-semibold text-neutral-900">岗位权限</h1>
+          <p className="text-sm text-neutral-500 mt-1">管理岗位及默认权限</p>
         </div>
         <Button onClick={handleAdd}>
           <Plus className="w-4 h-4 mr-1.5" />
-          新增角色
+          新增岗位
         </Button>
       </div>
 
-      {/* 角色列表 - 卡片 */}
+      {/* 岗位列表 - 卡片 */}
       {loading ? (
         <div className="flex items-center justify-center py-20">
           <div className="w-6 h-6 border-2 border-primary-600 border-t-transparent rounded-full animate-spin" />
@@ -200,7 +200,7 @@ export default function RolesPage() {
         </div>
       ) : roles.length === 0 ? (
         <div className="text-center py-20 text-neutral-500">
-          暂无角色，点击上方按钮新增
+          暂无岗位，点击上方按钮新增
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -252,11 +252,11 @@ export default function RolesPage() {
         </div>
       )}
 
-      {/* 新增/编辑角色对话框 */}
+      {/* 新增/编辑岗位对话框 */}
       <Modal
         open={formOpen}
         onClose={() => setFormOpen(false)}
-        title={editingRole ? '编辑角色' : '新增角色'}
+        title={editingRole ? '编辑岗位' : '新增岗位'}
         width={640}
         footer={
           <>
@@ -271,13 +271,13 @@ export default function RolesPage() {
       >
         <div className="space-y-4">
           <Input
-            label="角色名称"
+            label="岗位名称"
             placeholder="例如：管理员、客服"
             value={formData.name}
             onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
           />
           <Input
-            label="角色编码"
+            label="岗位编码"
             placeholder="例如：admin、customer_service"
             value={formData.code}
             onChange={(e) => setFormData(prev => ({ ...prev, code: e.target.value }))}
@@ -287,7 +287,7 @@ export default function RolesPage() {
             <label className="block text-sm font-medium text-neutral-700 mb-1.5">描述</label>
             <textarea
               className="w-full h-20 px-3 py-2 rounded border border-neutral-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 resize-none"
-              placeholder="角色描述（选填）"
+              placeholder="岗位描述（选填）"
               value={formData.description}
               onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
             />
@@ -366,7 +366,7 @@ export default function RolesPage() {
         }
       >
         <p className="text-neutral-600">
-          确定要删除角色 <span className="font-medium text-neutral-900">{deleteTarget?.name}</span> 吗？删除后已分配该角色的员工将失去对应权限。
+          确定要删除岗位 <span className="font-medium text-neutral-900">{deleteTarget?.name}</span> 吗？删除后已分配该岗位的员工将失去对应权限。
         </p>
       </Modal>
     </div>

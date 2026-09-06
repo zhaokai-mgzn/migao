@@ -924,7 +924,7 @@ public class AuthService {
     }
 
     /**
-     * 根据权限构建菜单列表（匹配前端侧边栏结构）
+     * 根据权限构建菜单列表（匹配前端侧边栏结构 — #2969 七大组）
      */
     private List<UserInfoResponse.MenuItem> buildMenusByPermissions(List<String> permissions) {
         boolean isAll = permissions.contains("*");
@@ -934,13 +934,28 @@ public class AuthService {
         // 工作台（所有人可见）
         menus.add(menuItem("dashboard", "工作台", "LayoutDashboard", "/dashboard"));
 
+        // 智能客服分组（米宝·在线对话 / AI 客服配置 / 人工客服 / 知识库）
+        List<UserInfoResponse.MenuItem> csChildren = new java.util.ArrayList<>();
+        if (isAll || permissions.contains("agent:session")) {
+            csChildren.add(menuItem("chat", "米宝 · 在线对话", "MessageCircle", "/chat"));
+        }
+        if (isAll || permissions.contains("agent:quickreply")) {
+            csChildren.add(menuItem("chat-config", "AI 客服配置", "Bot", "/chat/config"));
+        }
+        if (isAll || permissions.contains("agent:session")) {
+            csChildren.add(menuItem("human-sessions", "人工客服", "Headphones", "/agent-workspace/human-sessions"));
+        }
+        if (isAll || permissions.contains("knowledge:manage")) {
+            csChildren.add(menuItem("knowledge", "知识库", "BookOpen", "/knowledge"));
+        }
+        if (!csChildren.isEmpty()) {
+            menus.add(menuGroup("smart-customer-service", "智能客服", "MessageSquare", csChildren));
+        }
+
         // 商品管理分组
         List<UserInfoResponse.MenuItem> productChildren = new java.util.ArrayList<>();
         if (isAll || permissions.contains("product:list")) {
             productChildren.add(menuItem("products", "商品列表", "Package", "/products"));
-        }
-        if (isAll || permissions.contains("product:category")) {
-            productChildren.add(menuItem("categories", "商品分类管理", "FolderTree", "/categories"));
         }
         if (isAll || permissions.contains("processing:manage")) {
             productChildren.add(menuItem("processing", "加工项管理", "Scissors", "/processing"));
@@ -961,31 +976,33 @@ public class AuthService {
             menus.add(menuGroup("trade-center", "订单管理", "ShoppingCart", tradeChildren));
         }
 
-        // 独立菜单项
+        // 客户管理分组（客户列表 / 财务对账）
+        List<UserInfoResponse.MenuItem> customerChildren = new java.util.ArrayList<>();
         if (isAll || permissions.contains("customer:view")) {
-            menus.add(menuItem("customers", "客户管理", "UserCircle", "/customers"));
+            customerChildren.add(menuItem("customers", "客户列表", "UserCircle", "/customers"));
         }
         if (isAll || permissions.contains("finance:view")) {
-            menus.add(menuItem("finance", "财务对账", "Calculator", "/finance"));
+            customerChildren.add(menuItem("finance", "财务对账", "Calculator", "/finance"));
         }
-        if (isAll || permissions.contains("agent:session")) {
-            menus.add(menuItem("chat", "米宝 · 在线对话", "MessageSquare", "/chat"));
+        if (!customerChildren.isEmpty()) {
+            menus.add(menuGroup("customer-center", "客户管理", "UserCircle", customerChildren));
         }
-        if (isAll || permissions.contains("agent:quickreply")) {
-            menus.add(menuItem("chat-config", "机器人设置", "Zap", "/chat/config"));
-        }
+
+        // 组织管理分组（员工管理 / 岗位权限 / 企业基础信息）
+        List<UserInfoResponse.MenuItem> orgChildren = new java.util.ArrayList<>();
         if (isAll || permissions.contains("employee:list")) {
-            menus.add(menuItem("employees", "员工管理", "Users", "/employees"));
+            orgChildren.add(menuItem("employees", "员工管理", "Users", "/employees"));
         }
         if (isAll || permissions.contains("system:manage")) {
-            menus.add(menuItem("settings", "企业基础信息", "Building2", "/settings"));
-        }
-        if (isAll || permissions.contains("knowledge:manage")) {
-            menus.add(menuItem("knowledge", "知识库", "BookOpen", "/knowledge"));
+            orgChildren.add(menuItem("roles", "岗位权限", "ShieldCheck", "/roles"));
         }
         if (isAll || permissions.contains("system:manage")) {
-            menus.add(menuItem("roles", "角色权限", "ShieldCheck", "/roles"));
+            orgChildren.add(menuItem("settings", "企业基础信息", "Building2", "/settings"));
         }
+        if (!orgChildren.isEmpty()) {
+            menus.add(menuGroup("org-center", "组织管理", "Users", orgChildren));
+        }
+
         // 通知中心：全员可见（与顶栏铃铛一致，无权限码限制）
         menus.add(menuItem("notifications", "通知中心", "Bell", "/notifications"));
 

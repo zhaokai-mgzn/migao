@@ -47,7 +47,7 @@ const SIDEBAR_MENU: Record<string, string> = {
   '/agent-workspace/sessions': '会话监控',
   '/agent-workspace/quick-replies': '快捷回复',
   '/employees': '客服团队',
-  '/roles': '角色权限',
+  '/roles': '岗位权限',
   '/notifications': '通知中心',
   '/settings': '系统设置',
 }

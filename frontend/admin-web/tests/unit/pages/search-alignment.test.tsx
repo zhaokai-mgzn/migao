@@ -211,6 +211,7 @@ describe('搜索区域左对齐 — 无居中 CSS 类', () => {
       vi.clearAllMocks()
       vi.doMock('@/lib/api', () => ({
         employeeApi: {
+          loadPositions: vi.fn().mockResolvedValue({ data: { data: [] } }),
           getEmployees: vi.fn().mockResolvedValue({ data: { data: { items: [], total: 0 } } }),
           createEmployee: vi.fn(),
           updateEmployee: vi.fn(),

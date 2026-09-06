@@ -49,6 +49,37 @@ public class RoleService {
     // ==================== 角色查询 ====================
 
     /**
+     * 根据岗位名（或角色码）查找岗位角色（#2969 岗位=角色体系）
+     *
+     * 员工创建/编辑时前端只提交岗位名（position），后端按 name（或 code 兜底）
+     * 解析出岗位对应的角色，便于 user_roles 关联与 JWT roles claim 保持角色语义。
+     *
+     * @param position 岗位名（如「客服」）或角色 code（如 customer_service）
+     * @param tenantId 租户ID
+     * @return 命中角色；未命中返回 null（保持默认 operator 兼容自由输入岗位）
+     */
+    public Role getRoleByPosition(String position, Long tenantId) {
+        if (!StringUtils.hasText(position)) {
+            return null;
+        }
+        // 精确 code 优先（code 唯一）
+        Role byCode = roleMapper.selectOne(new LambdaQueryWrapper<Role>()
+                .eq(Role::getCode, position)
+                .eq(Role::getTenantId, tenantId)
+                .eq(Role::getDeleted, 0)
+                .last("LIMIT 1"));
+        if (byCode != null) {
+            return byCode;
+        }
+        // 其次按 name（岗位名）匹配
+        return roleMapper.selectOne(new LambdaQueryWrapper<Role>()
+                .eq(Role::getName, position)
+                .eq(Role::getTenantId, tenantId)
+                .eq(Role::getDeleted, 0)
+                .last("LIMIT 1"));
+    }
+
+    /**
      * 根据用户ID查询用户的所有角色
      *
      * @param userId 用户ID
@@ -163,17 +194,37 @@ public class RoleService {
     }
 
     /**
-     * 根据用户ID查询用户的所有权限（合并所有角色的权限）
+     * 根据用户ID查询用户的所有权限
+     *
+     * 岗位权限体系（#2969）快照式语义：员工管理保存的权限勾选 = 员工最终权限，
+     * 与岗位脱钩（后续改岗位默认权限不影响已建员工）。admin 恒为全部权限。
+     * 兼容存量：无 users.permissions 快照（历史员工 / ai-agent 直接创建）时，
+     * 回退角色权限合并逻辑（role_permissions 优先，内置角色回退硬编码）。
      *
      * @param userId 用户ID
      * @return 权限代码列表
      */
     public List<String> getUserPermissions(String userId) {
+        User user = userMapper.selectById(userId);
+        if (user != null) {
+            if ("admin".equals(user.getRole())) {
+                return List.of("*");  // admin 恒为全部权限
+            }
+            List<String> snapshot = parseSnapshotPermissions(user.getPermissions());
+            if (snapshot != null) {
+                // 快照式：员工管理保存的勾选即最终权限（岗位默认权限已在创建时预填并入快照）
+                return snapshot;
+            }
+        }
+
+        // ── 兼容存量：无快照时回退角色权限逻辑 ──
         List<Role> roles = getUserRoles(userId);
 
         // 如果用户没有通过 user_roles 分配角色，尝试从 User 表的 role 字段获取
         if (roles.isEmpty()) {
-            User user = userMapper.selectById(userId);
+            if (user == null) {
+                user = userMapper.selectById(userId);
+            }
             if (user != null && StringUtils.hasText(user.getRole())) {
                 if ("admin".equals(user.getRole())) {
                     return List.of("*");  // admin 始终拥有全部权限
@@ -204,12 +255,32 @@ public class RoleService {
         }
 
         // 合并 User.permissions 字段（细粒度菜单权限）
-        User user = userMapper.selectById(userId);
+        if (user == null) {
+            user = userMapper.selectById(userId);
+        }
         if (user != null) {
             mergeUserPermissions(user, permissionSet);
         }
 
         return new ArrayList<>(permissionSet);
+    }
+
+    /**
+     * 解析 users.permissions 快照（岗位权限体系 #2969）。
+     *
+     * @param raw users.permissions 原始值（JSON 数组字符串；null/空白 = 无快照）
+     * @return 快照权限码列表；无快照（raw 为 null/空白）时返回 null
+     */
+    private List<String> parseSnapshotPermissions(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return OBJECT_MAPPER.readValue(raw, new TypeReference<List<String>>() {});
+        } catch (Exception e) {
+            log.warn("解析用户权限快照失败: {}", e.getMessage());
+            return null;
+        }
     }
 
     /**

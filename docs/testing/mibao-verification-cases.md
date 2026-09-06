@@ -1107,7 +1107,7 @@
 真值: finance.summary
 溯源: 本期默认时间范围（本月1号~今天） ｜ tags: finance, summary
 
-## 人事域（5 case）
+## 人事域（6 case）
 
 ### HR-001. 员工列表 🟢
 ```
@@ -1154,6 +1154,19 @@
 ```
 真值: employee-role.role-crud, employee-role.permissions
 溯源: verification 5.5 独有 ｜ tags: create, permission
+
+### HR-006. 岗位权限体系 - 注册新租户初始化五岗默认权限 + 员工权限快照式解析（#2969） 🔵
+```
+你: 新租户注册后有哪些默认岗位？每个岗位的默认权限是什么？员工权限与岗位默认权限什么关系？
+期望: direct_reply
+数据: 审批通过创建租户时初始化五岗种子：管理员(admin)/客服(customer_service)/运营(operator)/销售(sales)/财务(finance)，每岗 status=active
+数据: 非 admin 岗位预置默认权限（role_permissions 落库）：客服=看板/订单查看/客户/会话；运营=看板/订单/商品/加工/客户/财务/会话/员工列表；销售=看板/商品/订单查看/客户；财务=看板/订单查看/财务
+数据: getUserPermissions 快照式：admin 恒 [\"*\"]；有 users.permissions 快照（员工管理保存勾选）直接返回快照不合并岗位角色；无快照（历史数据/ai-agent 创建）回退 role_permissions/硬编码
+数据: V29 迁移为存量租户补齐 sales/finance 岗位与五岗 role_permissions（幂等）
+跳过: 注册种子的五岗/默认权限/快照解析为 Java 单测验证（RegistrationServiceTest/RoleServiceTest），非 LLM 工具行为，不进入 agent-eval 冒烟
+```
+真值: employee-role.five-default-positions, employee-role.snapshot-permissions
+溯源: 2026-09-06 新增：岗位权限体系改造（issue #2969） ｜ tags: position, permission, seed
 
 ## misc（15 case）
 
@@ -2008,7 +2021,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## ui（27 case）
+## ui（28 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -2347,6 +2360,19 @@
 真值: frontend-fix.no-api-change, frontend-fix.vitest
 溯源: 2026-09-06 新增（issue #2971 自洽性扫描）：knowledge_sync_history 此前无任何读路径，知识库页补同步历史展示，字段全部来自已定契约 ｜ tags: ui, knowledge, sync_history, admin-web
 
+### UI-028. 岗位权限页（原角色权限）改名 + 侧边栏菜单七大组重构 + 员工选岗位自动带默认权限（#2969） 🔵
+```
+你: 把「角色权限」改成「岗位权限」：每个岗位默认设置权限；创建员工选岗位自动带出该岗位默认权限，仍可自定义；侧边栏按七大组重构
+期望: direct_reply
+数据: 「角色权限」页整站改名「岗位权限」（页面标题/新增按钮/编辑弹窗/删除确认/空态，侧边栏入口与 Header 面包屑同步），URL /roles 不变
+数据: 侧边栏七大组：工作台 / 智能客服(含知识库) / 商品管理 / 订单管理 / 客户管理(客户列表+财务对账) / 组织管理(员工管理+岗位权限+企业基础信息) / 通知中心（独立）；权限过滤不回归（组内无可见子项则整组隐藏）
+数据: 创建/编辑员工：岗位改为下拉选择（岗位=角色体系，来自 /api/admin/roles/all），选岗位自动把该岗位默认权限（role_permissions codes）预填进权限树；仍可手动增删；编辑切岗位则重置为新岗位默认
+数据: 员工权限快照式（#2969）：提交时携带 position+permissions（permissions=最终勾选），不携带 role 字段（#2907 契约），后端按岗位名解析角色
+跳过: 岗位权限/菜单重构/选岗位带权限均由 vitest 单测 + E2E 点击链路验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.position-permission-rename, frontend-fix.sidebar-seven-groups, frontend-fix.employee-position-default-permissions
+溯源: 2026-09-06 新增：岗位权限体系改造（issue #2969） ｜ tags: ui, sidebar, menu, role, position, employee
+
 ## utils（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -2376,8 +2402,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：193（活跃 104，跳过 89）
-- tier 分布：smoke 8 / normal 157 / adversarial 28
+- 用例总数：195（活跃 104，跳过 91）
+- tier 分布：smoke 8 / normal 159 / adversarial 28
 - 售后域：5
 - agents：6
 - api：11
@@ -2388,7 +2414,7 @@
 - 数据域：6
 - 防御域：17
 - finance：4
-- 人事域：5
+- 人事域：6
 - misc：15
 - onboarding：5
 - ontology：4
@@ -2398,7 +2424,7 @@
 - registry：1
 - 设置域：8
 - token-refresh：4
-- ui：27
+- ui：28
 - utils：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）

@@ -9,8 +9,8 @@ export class RolesPage extends BasePage {
   constructor(page: Page) {
     super(page)
     this.roleCards = page.locator('.grid > div').filter({ has: page.locator('h3') })
-    this.createBtn = page.getByRole('button', { name: /新增角色/ }).or(page.getByText('新增角色'))
-    this.roleModal = page.getByRole('dialog').filter({ hasText: /新增角色|编辑角色/ })
+    this.createBtn = page.getByRole('button', { name: /新增岗位/ }).or(page.getByText('新增岗位'))
+    this.roleModal = page.getByRole('dialog').filter({ hasText: /新增岗位|编辑岗位/ })
   }
 
   async goto(): Promise<void> {
@@ -26,9 +26,9 @@ export class RolesPage extends BasePage {
     return this.roleCards.nth(n).locator('button[title="删除"]')
   }
 
-  get name() { return this.roleModal.locator('input[placeholder*="管理员"]').or(this.roleModal.locator('input[label="角色名称"]')) }
-  get code() { return this.roleModal.locator('input[placeholder*="admin"]').or(this.roleModal.locator('input[label="角色编码"]')) }
-  get description() { return this.roleModal.locator('textarea[placeholder*="角色描述"]') }
+  get name() { return this.roleModal.locator('input[placeholder*="管理员"]').or(this.roleModal.locator('input[label="岗位名称"]')) }
+  get code() { return this.roleModal.locator('input[placeholder*="admin"]').or(this.roleModal.locator('input[label="岗位编码"]')) }
+  get description() { return this.roleModal.locator('textarea[placeholder*="岗位描述"]') }
   get permissionTree() { return this.roleModal.locator('.border.border-gray-200.rounded-lg') }
 
   permissionGroup(name: string): Locator {

@@ -147,3 +147,36 @@ cases:
       ci:
         - agent-eval.yml
       verifies: []
+
+  - id: HR-006
+    legacy_id: ""
+    title: "岗位权限体系 - 注册新租户初始化五岗默认权限 + 员工权限快照式解析（#2969）"
+    domains:
+      - hr
+    tier: normal
+    tags:
+      - position
+      - permission
+      - seed
+    truths_ref:
+      - employee-role.five-default-positions
+      - employee-role.snapshot-permissions
+    user_inputs:
+      - "新租户注册后有哪些默认岗位？每个岗位的默认权限是什么？员工权限与岗位默认权限什么关系？"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "审批通过创建租户时初始化五岗种子：管理员(admin)/客服(customer_service)/运营(operator)/销售(sales)/财务(finance)，每岗 status=active"
+      - "非 admin 岗位预置默认权限（role_permissions 落库）：客服=看板/订单查看/客户/会话；运营=看板/订单/商品/加工/客户/财务/会话/员工列表；销售=看板/商品/订单查看/客户；财务=看板/订单查看/财务"
+      - "getUserPermissions 快照式：admin 恒 [\"*\"]；有 users.permissions 快照（员工管理保存勾选）直接返回快照不合并岗位角色；无快照（历史数据/ai-agent 创建）回退 role_permissions/硬编码"
+      - "V29 迁移为存量租户补齐 sales/finance 岗位与五岗 role_permissions（幂等）"
+    skip_reason: "注册种子的五岗/默认权限/快照解析为 Java 单测验证（RegistrationServiceTest/RoleServiceTest），非 LLM 工具行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-06 新增：岗位权限体系改造（issue #2969）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/RegistrationServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/RoleServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/AdminUserControllerTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []

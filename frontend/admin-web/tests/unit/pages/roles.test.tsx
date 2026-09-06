@@ -1,3 +1,4 @@
+// case_ids: HR-004, HR-005, HR-006, UI-028
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
@@ -86,15 +87,15 @@ describe('RolesPage', () => {
 
   it('renders page title', () => {
     render(<RolesPage />)
-    expect(screen.getByText('角色权限')).toBeInTheDocument()
+    expect(screen.getByText('岗位权限')).toBeInTheDocument()
   })
 
-  it('renders add role button', () => {
+  it('renders add position button', () => {
     render(<RolesPage />)
-    expect(screen.getByText('新增角色')).toBeInTheDocument()
+    expect(screen.getByText('新增岗位')).toBeInTheDocument()
   })
 
-  it('loads and displays role cards', async () => {
+  it('loads and displays position cards', async () => {
     render(<RolesPage />)
     await waitFor(() => {
       expect(mockGetRoles).toHaveBeenCalled()
@@ -105,7 +106,7 @@ describe('RolesPage', () => {
     })
   })
 
-  it('displays role codes', async () => {
+  it('displays position codes', async () => {
     render(<RolesPage />)
     await waitFor(() => {
       expect(screen.getByText('admin')).toBeInTheDocument()
@@ -113,11 +114,11 @@ describe('RolesPage', () => {
     })
   })
 
-  it('shows empty state when no roles', () => {
+  it('shows empty state when no positions', () => {
     mockGetRoles.mockResolvedValue({
       data: { data: { items: [], total: 0 } },
     })
     render(<RolesPage />)
-    expect(screen.getByText('角色权限')).toBeInTheDocument()
+    expect(screen.getByText('岗位权限')).toBeInTheDocument()
   })
 })

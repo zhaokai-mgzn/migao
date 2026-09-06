@@ -1,4 +1,4 @@
-// case_ids: HR-001, HR-002
+// case_ids: HR-001, HR-002, UI-028
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent, within } from '@testing-library/react'
@@ -23,17 +23,20 @@ vi.mock('@/store/auth', () => ({
 // Mock APIs
 const mockGetEmployees = vi.fn()
 const mockCreateEmployee = vi.fn()
+const mockUpdateEmployee = vi.fn()
+const mockGetAllRoles = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   employeeApi: {
+    loadPositions: (...args: any[]) => mockGetAllRoles(...args),
     getEmployees: (...args: any[]) => mockGetEmployees(...args),
     createEmployee: (...args: any[]) => mockCreateEmployee(...args),
-    updateEmployee: vi.fn(),
+    updateEmployee: (...args: any[]) => mockUpdateEmployee(...args),
     deleteEmployee: vi.fn(),
     toggleEmployeeStatus: vi.fn(),
   },
   roleApi: {
-    getAllRoles: vi.fn().mockResolvedValue({ data: { data: [] } }),
+    getAllRoles: (...args: any[]) => mockGetAllRoles(...args),
   },
 }))
 
@@ -44,18 +47,22 @@ vi.mock('@/lib/request', () => ({
   },
 }))
 
-// Mock TreeCheckbox
+// Mock TreeCheckbox — 暴露 selected 以便断言岗位默认权限预填（#2969）
+const mockTreeOnChange = vi.fn()
 vi.mock('@/components/ui/TreeCheckbox', () => ({
-  TreeCheckbox: ({ tree }: any) => (
-    <div data-testid="tree-checkbox">
-      {tree.map((node: any) => (
-        <div key={node.code}>
-          <span>{node.label}</span>
-          {node.children?.map((child: any) => <span key={child.code}>{child.label}</span>)}
-        </div>
-      ))}
-    </div>
-  ),
+  TreeCheckbox: ({ tree, selected, onChange }: any) => {
+    mockTreeOnChange.mockImplementation(onChange || (() => {}))
+    return (
+      <div data-testid="tree-checkbox" data-selected={JSON.stringify(selected || [])}>
+        {tree.map((node: any) => (
+          <div key={node.code}>
+            <span>{node.label}</span>
+            {node.children?.map((child: any) => <span key={child.code}>{child.label}</span>)}
+          </div>
+        ))}
+      </div>
+    )
+  },
 }))
 
 // Mock UI components
@@ -148,6 +155,15 @@ describe('EmployeesPage', () => {
     })
     mockRequestGet.mockResolvedValue({
       data: { data: [{ code: 'products', label: '商品管理', children: [{ code: 'products:view', label: '查看商品' }] }] },
+    })
+    // #2969 岗位下拉数据源：角色体系即岗位，permissions 为岗位默认权限
+    mockGetAllRoles.mockResolvedValue({
+      data: {
+        data: [
+          { id: 'r1', name: '客服', code: 'customer_service', permissions: [{ id: 'p1', code: 'products:view', name: '查看商品' }, { id: 'p2', code: 'order:list', name: '订单列表' }] },
+          { id: 'r2', name: '运营', code: 'operator', permissions: [{ id: 'p3', code: 'dashboard:view', name: '经营看板' }] },
+        ],
+      },
     })
   })
 
@@ -275,9 +291,9 @@ describe('EmployeesPage', () => {
     // Fill phone → mocked Input with placeholder "请输入手机号"
     const phoneInput = screen.getByPlaceholderText('请输入手机号')
     fireEvent.change(phoneInput, { target: { value: '13800138000' } })
-    // Fill position → raw input with placeholder "选择或输入岗位"
-    const posInput = screen.getByPlaceholderText('选择或输入岗位，如：客服')
-    fireEvent.change(posInput, { target: { value: '管理员' } })
+    // 选岗位（#2969 岗位下拉）：选「客服」→ 自动带出岗位默认权限（products:view + order:list）
+    const posSelect = within(screen.getByTestId('modal')).getByRole('combobox')
+    fireEvent.change(posSelect, { target: { value: '客服' } })
     // Click create
     fireEvent.click(screen.getByText('创建'))
     await waitFor(() => {
@@ -289,8 +305,31 @@ describe('EmployeesPage', () => {
     expect(callArgs).not.toHaveProperty('role')
     expect(callArgs).toHaveProperty('name', '张三')
     expect(callArgs).toHaveProperty('phone', '13800138000')
-    expect(callArgs).toHaveProperty('position', '管理员')
-    expect(callArgs).toHaveProperty('permissions')
+    expect(callArgs).toHaveProperty('position', '客服')
+    expect(callArgs.permissions).toEqual(expect.arrayContaining(['products:view', 'order:list']))
+  })
+
+  // ==================== #2969 岗位权限体系：选岗位自动带出默认权限（快照可自定义） ====================
+
+  it('#2969: 新增弹窗选择岗位 → 权限树自动预填该岗位默认权限（快照式，可再自定义）', async () => {
+    render(<EmployeesPage />)
+    fireEvent.click(screen.getByText('新增员工'))
+    await waitFor(() => {
+      expect(screen.getByTestId('modal')).toBeInTheDocument()
+    })
+    // 初始权限树为空
+    expect(screen.getByTestId('tree-checkbox').getAttribute('data-selected')).toBe('[]')
+    // 选「客服」岗位 → 自动带出岗位默认权限
+    const posSelect = within(screen.getByTestId('modal')).getByRole('combobox')
+    fireEvent.change(posSelect, { target: { value: '客服' } })
+    const tree = screen.getByTestId('tree-checkbox')
+    expect(JSON.parse(tree.getAttribute('data-selected') || '[]')).toEqual(
+      expect.arrayContaining(['products:view', 'order:list'])
+    )
+    // 切到「运营」岗位 → 权限重置为新岗位默认（#2969：改岗位则重置为新岗位默认）
+    fireEvent.change(posSelect, { target: { value: '运营' } })
+    expect(JSON.parse(screen.getByTestId('tree-checkbox').getAttribute('data-selected') || '[]'))
+      .toEqual(expect.arrayContaining(['dashboard:view']))
   })
 
   // ==================== 员工管理权限全链路（按钮级权限） ====================
