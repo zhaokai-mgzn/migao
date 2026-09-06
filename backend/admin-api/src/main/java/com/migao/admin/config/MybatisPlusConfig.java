@@ -29,7 +29,14 @@ public class MybatisPlusConfig {
     private static final List<String> IGNORE_TENANT_TABLES = Arrays.asList(
             "tenants",
             "tenant_applications",
-            "platform_admins"
+            "platform_admins",
+            // 通知模板/规则为「系统内置(tenant_id=0) + 租户自定义」混合表：
+            // 查询条件 (tenant_id = 当前租户 OR tenant_id = 0) 已在业务层显式过滤，
+            // 租户插件自动追加 tenant_id = 当前租户 会把系统内置行(tenant_id=0)
+            // 静默过滤掉（生产实证：种子可查但 API total=0、事件触发匹配不到模板）。
+            // notifications 仍保留租户过滤（纯租户数据，见 NotificationService）。
+            "notification_templates",
+            "notification_rules"
     );
 
     /**
