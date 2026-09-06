@@ -103,3 +103,30 @@ EOF
 - 拆分/改名后原 case_ids 集合必须完整保留并分配。
 - 用例库无对应域时，选语义最近的现有用例并注释说明（如登录页测试用 `DF-014` 认证安全用例）。
 - 改 `.github/cases/*.yml` 后必须重渲染生成物（`render_cases.py`）并提交（CI 有 render+diff 护栏）。
+
+## 6. 单测外部依赖隔离（2026-09-06 固化，issue #2957 本地验证恶化根因）
+
+**原则**：单测（`backend/ai-agent-service/tests/` + `tests/unit/` + `tests/test_*.py`）**不得真实连接外部存储/API**。
+
+**为什么**：本地 `.env` 的 DATABASE_URL/REDIS_URL 指向云 dev（阿里云 RDS/Redis 公网地址）。单测一旦真实连接：
+- 每用例挂起/超时数十秒（公网链路/安全组拦截），数百用例 → 本地 pytest 从分钟级恶化到小时级（实测 `verify-all.sh quick` 58min 未完成）；
+- 恶化是**渐进累积**的：每次新增依赖（SessionStateStore/SessionMemory/context_manager 等）多几个未 mock 调用，无单点故障，难察觉；
+- CI 无 `.env` → 一直正常，掩盖问题；本地慢 CI 快 = 环境差异信号，不是业务代码问题。
+
+**强制要求**：
+1. 新增测试若涉及存储/外部调用，必须 mock（`@patch`/`AsyncMock`/fixture），不得走真实连接路径。
+2. `tests/conftest.py` 必须保留存储地址兜底（**已固化于 #2960，勿删**）：
+   ```python
+   os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:test@localhost:5432/test_db")
+   os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
+   ```
+   环境变量优先级高于 `.env` 文件 → 单测内未 mock 连接毫秒级拒绝、走调用方降级；CI/集成测试显式注入真实 env 时 setdefault 不覆盖。
+3. 新增依赖/重构工具链路后，**同步检查既有测试的 mock 面**：`grep -rn "SessionStateStore\|SessionMemory\|get_context_manager" tests/`，新调用点必须被 mock 或 conftest 兜底。
+4. 验收信号：`pytest -q --durations=20` 单用例 >2s 即可疑；整文件应秒级完成。
+
+**排查路径**（本地验证变慢时）：
+```bash
+pytest -q --durations=20   # 找最慢用例
+# 慢用例日志若含 Connect call failed / Connection timeout / redis down / 云库域名 →
+# 未 mock 真实调用泄漏，补 mock（不要在慢用例上堆 sleep/fixture 绕过）
+```
