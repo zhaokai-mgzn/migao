@@ -101,7 +101,13 @@ Element.prototype.scrollIntoView = vi.fn()
 const iconStub = (name: string) => {
   const Component = (props: any) => {
     const React = require('react')
-    return React.createElement('span', { 'data-testid': `icon-${name}`, ...props })
+    // 忠实模拟真实 lucide-react：svg 自带 `lucide lucide-<name>` class（供 icon 断言用）
+    const { className, ...rest } = props || {}
+    return React.createElement('span', {
+      'data-testid': `icon-${name}`,
+      className: className ? `lucide-${name} ${className}` : `lucide-${name}`,
+      ...rest,
+    })
   }
   Component.displayName = name
   return Component
@@ -211,6 +217,9 @@ vi.mock('lucide-react', () => ({
   StopCircle: iconStub('stop-circle'),
   ImagePlus: iconStub('image-plus'),
   Mic: iconStub('mic'),
+  // 输入条统一重设计（issue #2952）：Square 停止 / AudioLines 语音（ArrowUp 已在上方列表）
+  Square: iconStub('square'),
+  AudioLines: iconStub('audio-lines'),
   PanelRightClose: iconStub('panel-right-close'),
   PanelRightOpen: iconStub('panel-right-open'),
   ShoppingBag: iconStub('shopping-bag'),

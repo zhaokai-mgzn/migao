@@ -1967,7 +1967,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## ui（24 case）
+## ui（25 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -2047,18 +2047,18 @@
 真值: frontend-fix.session-list-single-filter, frontend-fix.session-reopen-banner
 溯源: 2026-08-31 新增：会话管理状态 tab 与筛选控件移除，单列表 + 续聊 banner（参考 DSH 会话模型评审结论） ｜ tags: ui, session-list, reopen
 
-### UI-007. 小布 C 端输入条 - 默认按住说话（松开发送）与键盘模式切换 🔵
+### UI-007. 小布 C 端输入条 - 单容器双语义（textarea 常驻 + 右下按住说话松开发送） 🔵
 ```
-你: 小布 C 端（小程序/H5 同源）输入条参考瑞幸设计：默认「按住说话、松开直接发送」，可一键切回键盘模式输入文字；上滑取消录音
+你: 小布 C 端（小程序/H5 同源）输入条重构为单容器布局：textarea 常驻（placeholder「发消息或按住说话」），右下动作组为 [添图][按住说话]，有草稿时语音键位变为发送；上滑取消录音
 期望: direct_reply
-数据: mini-app MessageInput 默认语音模式：渲染「按住 说话」按钮，不渲染 textarea；左切换键显示 ⌨️
-数据: 语音模式按住（touchStart）调用 startRecording，松开（touchEnd）调用 stopAndTranscribe → 转写文本直接 onSend；上滑超过阈值取消不发送
-数据: 切到键盘模式：切换键变 🎤，显示 textarea + 图片 + 发送（保留原功能）；切回语音模式恢复按住说话
-数据: 流式/无会话时禁止录音；转写失败 toast「未听清，请重试」不发送
-跳过: 纯前端 C 端输入交互由 mini-app jest 单测验证（message-input.test.tsx，9 例），非 LLM 行为，不进入 agent-eval 冒烟；xiaobu H5 E2E 基建在 WIP 分支（main 未落）
+数据: mini-app MessageInput 单容器：textarea 常驻渲染（无键盘/语音模式切换键），placeholder 含「发消息或按住说话」
+数据: 按住语音键（touchStart）调用 startRecording，松开（touchEnd）调用 stopAndTranscribe → 转写文本直接 onSend（行为保持不变）；上滑超过阈值取消不发送
+数据: 添图入口统一：选图进草稿（预览可删），无按住模式下直接发图旁路；空文本有图点发送 → 纯图消息（UI-013 协议不变）
+数据: 自适应动作键：草稿为空显示语音键，有草稿变为发送，流式中变为停止；流式/无会话时禁止录音；转写失败 toast「未听清，请重试」不发送
+跳过: 纯前端 C 端输入交互由 mini-app jest 单测验证（message-input.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟；xiaobu H5 E2E 基建在 WIP 分支（main 未落）
 ```
 真值: frontend-fix.xiaobu-voice-holdtalk
-溯源: 2026-08-31 新增：小布 C 端语音输入（按住说话/松开发送/键盘切换，参考瑞幸 C 端设计） ｜ tags: mini-app, voice-input, hold-to-talk
+溯源: 2026-09-06 修订：输入条单容器重构（删模式切换键、textarea 常驻、语音改右下按住键、添图统一草稿语义），「松开直接发送」行为保持不变（issue #2952）；2026-08-31 新增：小布 C 端语音输入（按住说话/松开发送/键盘切换，参考瑞幸 C 端设计） ｜ tags: mini-app, voice-input, hold-to-talk
 
 ### UI-008. 米高会话列表折叠/展开窄 rail（参考 DSH sidebar 折叠交互） 🔵
 ```
@@ -2272,6 +2272,18 @@
 真值: frontend-fix.no-api-change, frontend-fix.vitest, frontend-fix.e2e
 溯源: 2026-09-05 新增：拦截器与页面 catch 双重 toast 导致错误提示重复弹出（issue #2923），订单域落地去重模式，其余模块批量清理留后续 issue ｜ tags: ui, admin-web, toast, error-handling
 
+### UI-025. 米宝输入条统一重设计 — ArrowUp/Square 同形图标、录音状态条替代 placeholder 文案、预览缩略图内嵌容器 🔵
+```
+你: 米宝聊天输入条图标与状态呈现和小布同形：发送键 ↑（ArrowUp）、停止键 ■（Square）、语音键音波线稿（AudioLines 弃用 Mic），录音状态在容器内状态条展示而不占用 placeholder，图片预览缩略图收进输入容器内
+期望: direct_reply
+数据: 发送键图标 lucide ArrowUp（lucide-arrow-up）、流式中停止键 lucide Square（lucide-square）、语音键 lucide AudioLines（lucide-audio-lines，弃用 Mic）；title/aria 语义（发送/停止生成/语音输入）不变
+数据: 录音中：placeholder 保持「输入消息…」短句不被录音文案占用；容器内显示录音状态条「正在录音 {m:ss} · 点击停止，Esc 取消」（红点脉冲）；转写中提示「转写中...」不变；Esc 取消 / 右键取消行为不变（B 端转写追加进输入框，D1 既定差异不改）
+数据: 图片预览缩略图渲染在「消息输入区」容器内顶部；删除角标常显且带 aria-label「删除图片」；上传中添图键置灰（disabled）但不换图标（仍 ImagePlus），上传进度提示在预览块
+跳过: 纯前端输入条视觉/图标/状态呈现由 vitest 单测验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change, frontend-fix.vitest
+溯源: 2026-09-06 新增：B/C 端输入条统一重设计（issue #2952，设计文档 docs/design/agent-input-bar-unified-design.md §4.2/§4.4） ｜ tags: ui, chat-input, admin-web, design-system
+
 ## utils（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -2301,8 +2313,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：187（活跃 102，跳过 85）
-- tier 分布：smoke 8 / normal 151 / adversarial 28
+- 用例总数：188（活跃 102，跳过 86）
+- tier 分布：smoke 8 / normal 152 / adversarial 28
 - 售后域：5
 - agents：6
 - api：10
@@ -2323,7 +2335,7 @@
 - registry：1
 - 设置域：8
 - token-refresh：4
-- ui：24
+- ui：25
 - utils：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
