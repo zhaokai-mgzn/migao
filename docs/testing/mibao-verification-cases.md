@@ -815,7 +815,7 @@
 真值: ai-chat.context-memory, ai-chat.intent-domains, order.states, order.logistics, id-resolve.index
 溯源: eval M007 独有（物流查询是旅程一环，独立用例见 OR-005） ｜ tags: multi_turn, real_scenario, cross_skill, full_journey
 
-## 客户域（5 case）
+## 客户域（6 case）
 
 ### CU-001. 客户列表 🟢
 ```
@@ -869,6 +869,18 @@
 ```
 真值: id-resolve.name, customer-list.search-fields, order.states
 溯源: eval M011 独有（模糊澄清 + 客户搜索真值） ｜ tags: fuzzy_input, progressive_clarification, adversarial
+
+### CU-006. C 端租户域名路由 - 微信用户经企业域名自动关联租户并落 CRM 客户档案（#3011） 🔵
+```
+你: C 端微信用户从企业小程序登录后，客户列表里能看到他吗？租户是怎么挂上的？
+期望: customer_manage(action=list)
+数据: POST /api/auth/mini/login：X-Tenant-Id（nginx 按 <tenantId>.app.migaozn.com 注入）/ Host 子域解析为租户权威来源；body tenantId 仅兼容期兜底；均无 → 400
+数据: 登录（新 openid 自动建号 / 已有 openid）后调用 CustomerService.createFromSession(tenantId, openid, nickname, wechat_mini) 幂等上写 customer_profiles
+数据: 客户列表（CRM）可见 C 端消费者；员工管理列表仍排除 role=customer（#3007 语义不变）
+跳过: 域名解析/建档为 Java 单测验证（TenantDomainResolverTest/AuthServiceTest/AuthIntegrationTest），非 LLM 工具行为差异，不进入 agent-eval 冒烟
+```
+真值: customer-list.profile-creation, auth.mini-program-login
+溯源: 2026-09-07 新增：C 端租户域名路由改造（issue #3011） ｜ tags: c-end, tenant, domain, customer_profile
 
 ## 数据域（7 case）
 
@@ -2596,8 +2608,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：211（活跃 109，跳过 102）
-- tier 分布：smoke 8 / normal 175 / adversarial 28
+- 用例总数：212（活跃 109，跳过 103）
+- tier 分布：smoke 8 / normal 176 / adversarial 28
 - 售后域：6
 - agents：6
 - api：12
@@ -2605,7 +2617,7 @@
 - 分类域：3
 - 对话边界域：29
 - 跨域：3
-- 客户域：5
+- 客户域：6
 - 数据域：7
 - 防御域：17
 - finance：4

@@ -12,6 +12,7 @@ business_truths:
   - [auth-sms.register-fields] 注册接口 POST /api/auth/register 为企业入驻申请：必填 companyName/contactName/phone/smsCode，无 password 字段，返回 {applicationId, status, message, rejectReason?}，不返回 token；status 为 AI 甄别终态：approved（自动开通）/ rejected（带 rejectReason）/ pending（兜底，一般不出现）
   - [auth-sms.error-codes] 验证码错误/过期：登录侧返回 401(AUTH_FAILED)，注册侧返回 422(VALIDATION_ERROR)
 
+  - [auth.mini-program-login] C 端小程序登录 POST /api/auth/mini/login（#3011）：租户判定以域名解析为权威——X-Tenant-Id（nginx 按 <tenantId>.app.migaozn.com 子域名注入并覆盖）优先，Host 正则兜底，body tenantId 仅兼容期兜底（warn 日志）；均无法解析 → 422 显式拒绝，不静默落默认租户
 primary_specs:
   - tests/e2e/specs/auth/login-sms.spec.ts
   - tests/e2e/specs/auth/register.spec.ts

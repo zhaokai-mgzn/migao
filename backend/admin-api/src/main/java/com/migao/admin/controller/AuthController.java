@@ -35,6 +35,7 @@ public class AuthController {
 
     private final AuthService authService;
     private final com.migao.admin.service.MiniPhoneBindService miniPhoneBindService;
+    private final com.migao.admin.config.TenantDomainResolver tenantDomainResolver;
 
     // ======================== 账号密码登录 ========================
 
@@ -90,9 +91,22 @@ public class AuthController {
     @PostMapping("/mini/login")
     public ApiResponse<LoginResponse> miniProgramLogin(
             @Valid @RequestBody MiniLoginRequest request,
+            HttpServletRequest httpRequest,
             HttpServletResponse response) {
-        log.info("微信小程序登录请求: tenantId={}", request.getTenantId());
-        LoginResponse loginResponse = authService.miniProgramLogin(request.getCode(), request.getTenantId(), response);
+        // 租户判定（issue #3011）：域名/网关头解析（<tenantId>.app.migaozn.com）为权威，
+        // body tenantId 仅兼容期兜底；均无 → 显式拒绝，不静默落入默认租户
+        Long effectiveTenantId = tenantDomainResolver.resolve(httpRequest).orElse(null);
+        if (effectiveTenantId == null) {
+            if (request.getTenantId() != null) {
+                effectiveTenantId = request.getTenantId();
+                log.warn("小程序登录使用 body tenantId（兼容期，后续随域名路由移除）: tenantId={}", effectiveTenantId);
+            } else {
+                throw BusinessException.validationError(
+                        "无法识别租户：请通过 <租户ID>.app.migaozn.com 域名访问或提供 tenantId");
+            }
+        }
+        log.info("微信小程序登录请求: effectiveTenantId={}", effectiveTenantId);
+        LoginResponse loginResponse = authService.miniProgramLogin(request.getCode(), effectiveTenantId, response);
         return ApiResponse.success(loginResponse);
     }
 

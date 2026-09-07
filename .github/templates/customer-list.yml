@@ -19,6 +19,7 @@ business_truths:
   - [customer-list.api-auth] 接口权限：/api/admin/** 仅 ADMIN/SUPER_ADMIN/SERVICE 角色可访问，未认证 401、权限不足 403
   - [customer-list.ai-masking] AI 工具 customer_manage 的 list 对手机号脱敏(前3位+****+后4位)且 name 恒为 null；admin-api 原始列表接口返回明文手机号
 
+  - [customer-list.profile-creation] C 端登录自动建档（#3011）：小程序登录后调用 CustomerService.createFromSession(tenantId, openid, nickname, wechat_mini) 幂等上写 customer_profiles——openid+tenantId 已存在则仅刷新 lastActiveAt 返回既有档案，不存在则新建档案（vipLevel=normal/customerStatus=active/lifecycleStage=new/totalOrders=0/totalConsumption=0）；建档失败不阻断登录
 primary_specs:
   - tests/e2e/specs/customers/customer-list.spec.ts
   - tests/e2e/specs/customers/customer-detail.spec.ts

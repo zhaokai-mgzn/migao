@@ -1,7 +1,6 @@
 package com.migao.admin.dto;
 
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
 /**
@@ -17,8 +16,8 @@ public class MiniLoginRequest {
     private String code;
 
     /**
-     * 租户ID
+     * 租户ID（可选，issue #3011）：C 端租户域名路由上线后以服务端域名解析为准，
+     * body tenantId 仅作兼容期兜底；解析到域名租户时本字段被忽略。
      */
-    @NotNull(message = "租户ID不能为空")
     private Long tenantId;
 }

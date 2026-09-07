@@ -1,6 +1,8 @@
 package com.migao.admin.controller;
+// case_ids: CU-006, API-010
 
 import com.migao.admin.config.GlobalExceptionHandler;
+import com.migao.admin.config.TenantDomainResolver;
 import com.migao.admin.dto.LoginRequest;
 import com.migao.admin.dto.LoginResponse;
 import com.migao.admin.dto.UserInfoResponse;
@@ -8,6 +10,7 @@ import com.migao.admin.exception.BusinessException;
 import com.migao.admin.service.AuthService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.Cookie;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -21,6 +24,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.util.List;
+import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -40,6 +44,9 @@ class AuthIntegrationTest {
 
     @Mock
     private AuthService authService;
+
+    @Mock
+    private TenantDomainResolver tenantDomainResolver;
 
     @InjectMocks
     private AuthController authController;
@@ -258,5 +265,39 @@ class AuthIntegrationTest {
                 .andExpect(jsonPath("$.data.user.identityType").value("wechat_mini"));
 
         verify(authService).miniProgramLogin(eq("wx-login-code"), eq(1L), any(HttpServletResponse.class));
+    }
+
+    @Test
+    @DisplayName("小程序登录 - X-Tenant-Id 域名解析权威于 body tenantId（issue #3011）")
+    void testMiniProgramLogin_DomainHeaderWins() throws Exception {
+        // Given：nginx 按 <tenantId>.app.migaozn.com 注入 X-Tenant-Id=5，body 传 1（被覆盖）
+        when(tenantDomainResolver.resolve(any(HttpServletRequest.class))).thenReturn(Optional.of(5L));
+        LoginResponse emptyLogin = LoginResponse.builder().accessToken("t").expiresIn(7200L).build();
+        when(authService.miniProgramLogin(anyString(), anyLong(), any(HttpServletResponse.class)))
+                .thenReturn(emptyLogin);
+
+        // When & Then
+        mockMvc.perform(post("/api/auth/mini/login")
+                        .header("X-Tenant-Id", "5")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"code\":\"wx-login-code\",\"tenantId\":1}"))
+                .andExpect(status().isOk());
+
+        // 传给 service 的是域名解析的 5，而不是 body 的 1
+        verify(authService).miniProgramLogin(eq("wx-login-code"), eq(5L), any(HttpServletResponse.class));
+        verify(authService, never()).miniProgramLogin(eq("wx-login-code"), eq(1L), any(HttpServletResponse.class));
+    }
+
+    @Test
+    @DisplayName("小程序登录 - 无法识别租户（无域名解析且 body 无 tenantId）→ 422")
+    void testMiniProgramLogin_MissingTenantRejected() throws Exception {
+        when(tenantDomainResolver.resolve(any(HttpServletRequest.class))).thenReturn(Optional.empty());
+
+        mockMvc.perform(post("/api/auth/mini/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"code\":\"wx-login-code\"}"))
+                .andExpect(status().isUnprocessableEntity());
+
+        verify(authService, never()).miniProgramLogin(anyString(), anyLong(), any(HttpServletResponse.class));
     }
 }

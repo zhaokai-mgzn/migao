@@ -1,14 +1,17 @@
-// case_ids: API-010
+// case_ids: API-010, CU-006
 package com.migao.admin.service;
 
 import com.migao.admin.dto.LoginRequest;
 import com.migao.admin.dto.LoginResponse;
+import com.migao.admin.entity.Tenant;
 import com.migao.admin.entity.User;
 import com.migao.admin.mapper.PlatformAdminMapper;
 import com.migao.admin.mapper.TenantMapper;
+import com.migao.admin.mapper.UserIdentityMapper;
 import com.migao.admin.mapper.UserMapper;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.security.JwtTokenProvider;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -69,6 +72,12 @@ class AuthServiceTest {
 
     @Mock
     private TenantMapper tenantMapper;
+
+    @Mock
+    private UserIdentityMapper userIdentityMapper;
+
+    @Mock
+    private CustomerService customerService;
 
     private User testUser;
     private LoginRequest loginRequest;
@@ -355,5 +364,86 @@ class AuthServiceTest {
                 "13800138000", "123456", 9L, mock(HttpServletResponse.class)))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("未注册");
+    }
+
+    // ======================== 小程序登录（C 端，issue #3011） ========================
+
+    @Test
+    @DisplayName("小程序登录 - 新 openid 自动建号并落 CRM 客户档案")
+    void miniProgramLogin_NewUser_CreatesCustomerProfile() {
+        // given：租户存在且 active
+        Tenant tenant = new Tenant();
+        tenant.setId(1L);
+        tenant.setStatus("active");
+        when(tenantMapper.selectById(1L)).thenReturn(tenant);
+
+        // 微信 code2Session 返回 openid
+        WechatService.Code2SessionResult sessionResult = new WechatService.Code2SessionResult();
+        sessionResult.setOpenid("openid_c_end_001");
+        when(wechatService.code2Session("wx-code")).thenReturn(sessionResult);
+
+        // 无既有身份 → 自动建号
+        when(userIdentityMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null);
+        when(userMapper.insert(any(User.class))).thenAnswer(inv -> {
+            inv.getArgument(0, User.class).setId("user-mini-c-001");
+            return 1;
+        });
+        when(userService.getUserRoles(any())).thenReturn(List.of("customer"));
+        when(jwtTokenProvider.generateAccessToken(anyString(), anyLong(), anyString(), anyList()))
+                .thenReturn("mini-jwt");
+        when(jwtTokenProvider.generateRefreshToken(anyString(), anyLong())).thenReturn("mini-rt");
+        when(jwtTokenProvider.getAccessTokenExpiration()).thenReturn(7200L);
+
+        // when
+        LoginResponse resp = authService.miniProgramLogin(
+                "wx-code", 1L, mock(HttpServletResponse.class));
+
+        // then：登录成功 + 自动创建 CRM 客户档案（幂等 upsert，渠道 wechat_mini）
+        assertThat(resp).isNotNull();
+        assertThat(resp.getUser().getId()).isEqualTo("user-mini-c-001");
+        verify(customerService).createFromSession(eq(1L), eq("openid_c_end_001"), any(), eq("wechat_mini"));
+    }
+
+    @Test
+    @DisplayName("小程序登录 - 已有 openid 登录同样刷新客户档案（createFromSession 幂等）")
+    void miniProgramLogin_ExistingUser_RefreshesCustomerProfile() {
+        // given：租户存在
+        Tenant tenant = new Tenant();
+        tenant.setId(1L);
+        tenant.setStatus("active");
+        when(tenantMapper.selectById(1L)).thenReturn(tenant);
+
+        WechatService.Code2SessionResult sessionResult = new WechatService.Code2SessionResult();
+        sessionResult.setOpenid("openid_existing");
+        when(wechatService.code2Session("wx-code")).thenReturn(sessionResult);
+
+        // 已存在身份 → 返回既有用户
+        User existing = User.builder()
+                .id("user-existing")
+                .tenantId(1L)
+                .nickname("微信用户")
+                .role("customer")
+                .status("active")
+                .build();
+        when(userIdentityMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(
+                com.migao.admin.entity.UserIdentity.builder()
+                        .userId("user-existing")
+                        .tenantId(1L)
+                        .openid("openid_existing")
+                        .identityType("mini_program")
+                        .build());
+        when(userMapper.selectById("user-existing")).thenReturn(existing);
+        when(userMapper.updateById(any(User.class))).thenReturn(1);
+        when(userService.getUserRoles(any())).thenReturn(List.of("customer"));
+        when(jwtTokenProvider.generateAccessToken(anyString(), anyLong(), anyString(), anyList()))
+                .thenReturn("mini-jwt");
+        when(jwtTokenProvider.generateRefreshToken(anyString(), anyLong())).thenReturn("mini-rt");
+        when(jwtTokenProvider.getAccessTokenExpiration()).thenReturn(7200L);
+
+        // when
+        authService.miniProgramLogin("wx-code", 1L, mock(HttpServletResponse.class));
+
+        // then：既有用户同样触发建档（刷新 last_active_at 语义）
+        verify(customerService).createFromSession(eq(1L), eq("openid_existing"), any(), eq("wechat_mini"));
     }
 }
