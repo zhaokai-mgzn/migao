@@ -1,4 +1,4 @@
-// case_ids: ST-001, ST-003, ST-009
+// case_ids: ST-001, ST-003, ST-009, ST-010
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -37,8 +37,6 @@ const mockGetSettings = vi.fn()
 const mockUpdateSettings = vi.fn()
 const mockGetAiConfig = vi.fn()
 const mockUpdateAiConfig = vi.fn()
-const mockChangePassword = vi.fn()
-const mockGetLoginLogs = vi.fn()
 const mockUploadImage = vi.fn()
 
 vi.mock('@/lib/api', () => ({
@@ -47,8 +45,6 @@ vi.mock('@/lib/api', () => ({
     updateSettings: (...args: any[]) => mockUpdateSettings(...args),
     getAiConfig: (...args: any[]) => mockGetAiConfig(...args),
     updateAiConfig: (...args: any[]) => mockUpdateAiConfig(...args),
-    changePassword: (...args: any[]) => mockChangePassword(...args),
-    getLoginLogs: (...args: any[]) => mockGetLoginLogs(...args),
   },
   uploadApi: {
     uploadImage: (...args: any[]) => mockUploadImage(...args),
@@ -99,15 +95,6 @@ function mockApiSuccess() {
       },
     },
   })
-  mockGetLoginLogs.mockResolvedValue({
-    data: {
-      data: {
-        items: [
-          { id: '1', userName: '管理员', ipAddress: '192.168.1.1', userAgent: 'Chrome / Windows', createdAt: '2026-06-19T12:00:00Z' },
-        ],
-      },
-    },
-  })
 }
 
 describe('SettingsPage — AI tab removed (Issue #502)', () => {
@@ -119,33 +106,27 @@ describe('SettingsPage — AI tab removed (Issue #502)', () => {
   })
 
   // ================================================================
-  // CP-2/CP-3: 验证 AI tab 已拿掉 + 迁移提示出现
+  // #3006: 修改密码/登录日志已隐藏 —— 登录日志无记录、未来统一短信码登录
   // ================================================================
 
-  describe('Tab 结构 — 基本设置/修改密码/登录日志，无 AI 配置', () => {
-    it('默认显示基本设置内容，存在三个 tab', async () => {
+  describe('#3006 企业基础信息页 — 只保留基本设置', () => {
+    it('基本设置内容直接呈现，无 tab 栏（基本设置/修改密码/登录日志均不渲染）', async () => {
       render(<SettingsPage />)
       await waitFor(() => {
         expect(screen.getByText('企业基础信息')).toBeInTheDocument()
       })
-
-      // 三个 tab 存在：基本设置 / 修改密码 / 登录日志
-      expect(screen.getByRole('button', { name: /基本设置/ })).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: /修改密码/ })).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: /登录日志/ })).toBeInTheDocument()
+      // 基本设置内容直接展示（单区块，无 tab 切换）
+      expect(screen.getByText('公司名称')).toBeInTheDocument()
+      expect(screen.getByText('通知设置')).toBeInTheDocument()
+      // #3006 已隐藏：登录日志无记录 + 修改密码未来由短信码取替代 → 整个 tab 栏移除
+      expect(screen.queryByRole('button', { name: /基本设置/ })).toBeNull()
+      expect(screen.queryByRole('button', { name: /修改密码/ })).toBeNull()
+      expect(screen.queryByRole('button', { name: /登录日志/ })).toBeNull()
+      expect(screen.queryByText('暂无登录日志')).toBeNull()
+      expect(screen.queryByPlaceholderText('请输入当前密码')).toBeNull()
       // 不应出现 AI 配置 / 账户安全 tab
       expect(screen.queryByRole('button', { name: /AI 配置/ })).toBeNull()
       expect(screen.queryByRole('button', { name: /账户安全/ })).toBeNull()
-    })
-
-    it('不应该渲染 AI 配置 tab 按钮', async () => {
-      render(<SettingsPage />)
-      await waitFor(() => {
-        expect(screen.getByText('企业基础信息')).toBeInTheDocument()
-      })
-
-      // AI 配置 tab 不应该存在
-      expect(screen.queryByRole('button', { name: /AI 配置/ })).toBeNull()
     })
 
     it('不应该渲染 AI 助手名称输入框', async () => {
@@ -491,90 +472,6 @@ describe('SettingsPage — AI tab removed (Issue #502)', () => {
       // 不再出现「（当前为站内通知开关）」这种含糊/与实际脱节的文案
       expect(screen.getByText(/关闭后不再产生新的站内通知（历史通知保留）/)).toBeInTheDocument()
       expect(screen.queryByText(/当前为站内通知开关/)).not.toBeInTheDocument()
-    })
-  })
-
-  // ================================================================
-  // 修改密码 Tab — 设置体现：账号安全能力
-  // ================================================================
-
-  describe('修改密码 Tab', () => {
-    it('切换到修改密码 tab 显示表单', async () => {
-      const user = userEvent.setup()
-      render(<SettingsPage />)
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: /修改密码/ })).toBeInTheDocument()
-      })
-      await user.click(screen.getAllByRole('button', { name: /修改密码/ })[0])
-
-      expect(screen.getByPlaceholderText('请输入当前密码')).toBeInTheDocument()
-      expect(screen.getByPlaceholderText('至少 8 位')).toBeInTheDocument()
-      expect(screen.getByPlaceholderText('再次输入新密码')).toBeInTheDocument()
-    })
-
-    it('两次新密码不一致 → toast 报错且不调接口', async () => {
-      const user = userEvent.setup()
-      const { toast } = await import('sonner')
-      render(<SettingsPage />)
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: /修改密码/ })).toBeInTheDocument()
-      })
-      await user.click(screen.getAllByRole('button', { name: /修改密码/ })[0])
-
-      fireEvent.change(screen.getByPlaceholderText('请输入当前密码'), { target: { value: 'old123456' } })
-      fireEvent.change(screen.getByPlaceholderText('至少 8 位'), { target: { value: 'new123456' } })
-      fireEvent.change(screen.getByPlaceholderText('再次输入新密码'), { target: { value: 'different' } })
-      fireEvent.click(screen.getAllByRole('button', { name: /修改密码/ })[1])
-
-      await waitFor(() => {
-        expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('不一致'))
-      })
-      expect(mockChangePassword).not.toHaveBeenCalled()
-    })
-
-    it('校验通过后调用 changePassword 接口', async () => {
-      const user = userEvent.setup()
-      mockChangePassword.mockResolvedValue({ data: { success: true } })
-      render(<SettingsPage />)
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: /修改密码/ })).toBeInTheDocument()
-      })
-      await user.click(screen.getAllByRole('button', { name: /修改密码/ })[0])
-
-      fireEvent.change(screen.getByPlaceholderText('请输入当前密码'), { target: { value: 'old123456' } })
-      fireEvent.change(screen.getByPlaceholderText('至少 8 位'), { target: { value: 'new123456' } })
-      fireEvent.change(screen.getByPlaceholderText('再次输入新密码'), { target: { value: 'new123456' } })
-      fireEvent.click(screen.getAllByRole('button', { name: /修改密码/ })[1])
-
-      await waitFor(() => {
-        expect(mockChangePassword).toHaveBeenCalledWith({
-          oldPassword: 'old123456',
-          newPassword: 'new123456',
-          confirmPassword: 'new123456',
-        })
-      })
-    })
-  })
-
-  // ================================================================
-  // 登录日志 Tab — 设置体现：登录审计
-  // ================================================================
-
-  describe('登录日志 Tab', () => {
-    it('切换到登录日志 tab 加载并展示日志', async () => {
-      const user = userEvent.setup()
-      render(<SettingsPage />)
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: /登录日志/ })).toBeInTheDocument()
-      })
-      await user.click(screen.getByRole('button', { name: /登录日志/ }))
-
-      await waitFor(() => {
-        expect(mockGetLoginLogs).toHaveBeenCalled()
-      })
-      await waitFor(() => {
-        expect(screen.getByText('192.168.1.1')).toBeInTheDocument()
-      })
     })
   })
 })

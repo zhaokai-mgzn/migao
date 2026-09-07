@@ -6,6 +6,10 @@
 
 ## [Unreleased]
 
+### 企业基础信息页隐藏「登录日志」「修改密码」入口（2026-09-07，#3006）
+
+- `admin-web`：企业基础信息页改为单区块（品牌设置 + 通知设置），移除 tab 切换栏；「登录日志」（无记录）与「修改密码」（未来统一短信码登录）两个 tab 及区块不再渲染，页面副标题不再提「账号安全与登录审计」；后端/Agent 接口保留，待短信码登录落地后再评估移除（行为用例 ST-010，case_ids: ST-010）
+
 ### 企业基础设置「启用系统通知」从死开关接线为租户级自动站内信总开关（2026-09-07，#3003）
 
 - `admin-api`：`NotificationService.triggerByEvent`（order_created / after_sales_created / order_status_changed / after_sales_status_changed）与 `triggerForTenantAdmins` 新增租户级开关校验——`tenants.notification_enabled=false` 时自动站内信直接跳过（不解析规则/不查管理员/不落库），历史通知保留；`null`（存量租户）默认视为开启，行为不变（此前开关只落库、不影响任何通知发送，属死开关）

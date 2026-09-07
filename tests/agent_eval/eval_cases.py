@@ -2681,6 +2681,21 @@ _CASE_ST_009 = EvalCase(
     persona='',
 )
 
+# ── ST-010 [NORMAL] 企业基础信息页 - 隐藏「登录日志」（无记录）与「修改密码」（未来短信码登录）（#3006）（源: cases/settings.yml）──
+_CASE_ST_010 = EvalCase(
+    id='ST-010',
+    legacy_id='',
+    title='企业基础信息页 - 隐藏「登录日志」（无记录）与「修改密码」（未来短信码登录）（#3006）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['企业基础信息页还有「登录日志」和「修改密码」入口吗？'],
+    expectations=['direct_reply'],
+    data_checks=['企业基础信息页仅展示基本设置（品牌设置 + 通知设置），移除 tab 切换栏；「修改密码」「登录日志」tab 及区块不再渲染（登录日志无记录、修改密码未来由短信验证码登录取代；后端/Agent 接口保留，待短信码登录落地后再评估移除）', '页面副标题不再提「账号安全与登录审计」'],
+    skip_reason='纯前端 UI 隐藏由 vitest 验证（settings.test.tsx ST-010），非 LLM 工具行为，不进入 agent-eval 冒烟',
+    tags=['setting', 'ui', 'tab'],
+    persona='',
+)
+
 # ── TR-001 [NORMAL] refresh-success — 401 自动刷新并重放原请求（源: cases/token-refresh.yml）──
 _CASE_TR_001 = EvalCase(
     id='TR-001',
@@ -3368,6 +3383,7 @@ ALL_CASES = (
     _CASE_ST_007,
     _CASE_ST_008,
     _CASE_ST_009,
+    _CASE_ST_010,
     _CASE_TR_001,
     _CASE_TR_002,
     _CASE_TR_003,
