@@ -2516,6 +2516,21 @@ _CASE_PR_017 = EvalCase(
     persona='',
 )
 
+# ── PR-018 [NORMAL] B端米宝 product_list 卡片引用对齐 — 只渲染回复文本中实际引用的商品（源: cases/product.yml）──
+_CASE_PR_018 = EvalCase(
+    id='PR-018',
+    legacy_id='',
+    title='B端米宝 product_list 卡片引用对齐 — 只渲染回复文本中实际引用的商品',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['查一下低库存商品的具体清单'],
+    expectations=['product_search(stock_status=low_stock)'],
+    data_checks=['米宝（agent_type=mibao）回复中：product_list 卡片仅包含文本实际引用的商品（按商品名/ID 匹配），未被引用的商品不渲染', '文本未引用任何商品时不下发 product_list 卡片（宁可无卡，不误导）', '小布（agent_type=xiaobu）保持现状：product_search 结果全量渲染卡片（货架浏览体验不回退）'],
+    skip_reason='',
+    tags=['card', 'reference_alignment', 'mibao'],
+    persona='',
+)
+
 # ── RG-001 [NORMAL] ToolRegistry 注册/查询/执行审计（源: cases/registry.yml）──
 _CASE_RG_001 = EvalCase(
     id='RG-001',
@@ -3357,6 +3372,7 @@ ALL_CASES = (
     _CASE_PR_015,
     _CASE_PR_016,
     _CASE_PR_017,
+    _CASE_PR_018,
     _CASE_RG_001,
     _CASE_ST_001,
     _CASE_ST_002,

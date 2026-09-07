@@ -479,6 +479,38 @@ def _card_payload(tool_name: str, result: Dict[str, Any]) -> tuple[Optional[str]
     return card_type, data
 
 
+def _filter_products_by_reference(content: str, products: Any) -> List[Dict[str, Any]]:
+    """引用对齐过滤：只保留回复文本中实际引用的商品（按 name/id 子串匹配）。
+
+    背景（issue #3009 / case PR-018）：B 端米宝「低库存清单」等分析型查询里，
+    LLM 用 product_search 取数据做推断并在文本中给出筛选结论；此前的卡片把
+    工具原始返回全量渲染，出现「文本 5 件、卡片 20 件」的两层皮。本函数在
+    LLM 文本生成后按引用过滤，未被文本提及的商品一律不渲染。
+
+    Args:
+        content: LLM 最终回复文本（引用匹配依据）
+        products: 商品列表，兼容裸数组与 card.data（{"products": [...]}）两种形态
+
+    Returns:
+        被文本引用的商品子集；文本为空或未引用任何商品时返回 []（不发卡）。
+    """
+    if not content:
+        return []
+    if isinstance(products, dict):
+        products = products.get("products") or []
+    if not isinstance(products, list):
+        return []
+    kept: List[Dict[str, Any]] = []
+    for p in products:
+        if not isinstance(p, dict):
+            continue
+        name = str(p.get("name") or "")
+        pid = str(p.get("id") or "")
+        if (name and name in content) or (pid and pid in content):
+            kept.append(p)
+    return kept
+
+
 # ============ SSE 流生成器 ============
 
 async def _agent_stream_to_sse(
@@ -506,6 +538,10 @@ async def _agent_stream_to_sse(
     full_response = []
     tool_calls_info = []
     _done_sent = False
+    # B 端引用对齐（issue #3009 / case PR-018）：mibao 的 product_list 卡片
+    # 延迟到文本生成后按引用过滤再发，避免「文本说 5 件、卡片列 20 件」两层皮
+    pending_product_cards: List[Dict[str, Any]] = []
+    agent_type = getattr(agent, "_agent_type", "xiaobu")
 
     try:
         # 发送加载状态
@@ -595,11 +631,19 @@ async def _agent_stream_to_sse(
                                 # 检查是否需要发送卡片（order 卡片自动归一化载荷）
                                 card_type, card_data = _card_payload(tool_name, result_dict)
                                 if card_type:
-                                    logger.info(
-                                        f"[chat/card] Sending card | tool={tool_name} "
-                                        f"type={card_type} data_keys={list(card_data.keys()) if isinstance(card_data, dict) else 'N/A'}"
-                                    )
-                                    yield SSEEvent.card(card_type, card_data)
+                                    if card_type == "product_list" and agent_type == "mibao":
+                                        # B 端引用对齐：收集候选，等 LLM 文本生成后按引用过滤再发
+                                        pending_product_cards.append(card_data)
+                                        logger.info(
+                                            f"[chat/card] Deferred product_list card | tool={tool_name} "
+                                            f"candidates={len(card_data.get('products', []))}"
+                                        )
+                                    else:
+                                        logger.info(
+                                            f"[chat/card] Sending card | tool={tool_name} "
+                                            f"type={card_type} data_keys={list(card_data.keys()) if isinstance(card_data, dict) else 'N/A'}"
+                                        )
+                                        yield SSEEvent.card(card_type, card_data)
 
                                 # 检查是否来自 interact 工具 → 发送交互式组件事件
                                 if tool_name == "interact" and result_dict.get("success"):
@@ -644,6 +688,23 @@ async def _agent_stream_to_sse(
         # 超时/异常时清除 tool_calls 元数据，避免泄漏到前端
         if timed_out:
             tool_calls_info = []
+
+        # B 端引用对齐（issue #3009 / case PR-018）：文本生成后按引用过滤补发卡片。
+        # 只有被 LLM 文本实际引用的商品才渲染；未引用任何商品 → 不发卡（宁可无卡，不误导）
+        for card_data in pending_product_cards:
+            kept = _filter_products_by_reference(assistant_content, card_data.get("products") or [])
+            if kept:
+                filtered_data = {**card_data, "products": kept}
+                logger.info(
+                    f"[chat/card] Sending reference-aligned product_list card | "
+                    f"kept={len(kept)} total={len(card_data.get('products') or [])}"
+                )
+                yield SSEEvent.card("product_list", filtered_data)
+            else:
+                logger.info(
+                    f"[chat/card] Dropped product_list card (no product referenced in final text) | "
+                    f"candidates={len(card_data.get('products') or [])}"
+                )
 
         # 保存消息到数据库（带超时保护，避免阻塞 SSE 流关闭）
         message_id = None
