@@ -232,14 +232,13 @@ CREATE TABLE product_processing_items (
     product_id VARCHAR(64) NOT NULL REFERENCES products(id) ON DELETE CASCADE,
     processing_item_id VARCHAR(64) NOT NULL REFERENCES processing_items(id) ON DELETE CASCADE,
     custom_price DECIMAL(10,2),                           -- 商品专属加工价格（NULL 则用默认价）
-    custom_per_meter_quantity DECIMAL(6,2),               -- 商品专属每米数量密度（NULL 则用加工项默认，issue #2986）
     sort_order INTEGER DEFAULT 0,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 CREATE INDEX idx_product_processing_items_tenant_product ON product_processing_items(tenant_id, product_id);
 ALTER TABLE product_processing_items ADD CONSTRAINT uq_product_processing_items_relation
     UNIQUE (product_id, processing_item_id);
-COMMENT ON TABLE product_processing_items IS '商品-加工项关联表，支持自定义加工价格与每米数量密度覆盖';
+COMMENT ON TABLE product_processing_items IS '商品-加工项关联表，支持自定义加工价格（issue #3005 回滚：无每米数量密度覆盖）';
 
 -- 加工分类表：窗帘加工/配件/纱窗/卷帘等
 CREATE TABLE processing_categories (
@@ -259,9 +258,8 @@ CREATE TABLE processing_items (
     tenant_id BIGINT NOT NULL REFERENCES tenants(id),
     name VARCHAR(128) NOT NULL,
     category_id VARCHAR(64) NOT NULL REFERENCES processing_categories(id),
-    pricing_method VARCHAR(32) NOT NULL,  -- per_meter / per_piece / fixed / per_area
+    pricing_method VARCHAR(32) NOT NULL,  -- per_meter / per_set / fixed / per_area（issue #3005 回滚：无 per_piece）
     unit_price DECIMAL(10, 2) NOT NULL,
-    per_meter_quantity DECIMAL(6,2),  -- 每米数量密度（per_piece 计价时：打孔 6 个/米、四爪钩 10 个/米；NULL=不适用/未配置，issue #2986）
     unit VARCHAR(16) DEFAULT '元',
     min_quantity INTEGER DEFAULT 1,
     max_quantity INTEGER DEFAULT 999,

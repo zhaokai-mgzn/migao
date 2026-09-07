@@ -71,17 +71,18 @@ class TestProcessingItemCreate:
         assert json_data["price"] == 5.0
 
     @patch("app.tools.processing_item_manage.get_admin_api_client")
-    async def test_create_with_per_meter_quantity(self, mock_get_client, tool, admin_tool_context, mock_client):
-        """PP-006：create_item 支持 per_meter_quantity 透传"""
+    async def test_create_without_density_field(self, mock_get_client, tool, admin_tool_context, mock_client):
+        """PP-006（issue #3005 回滚）：create_item 不再支持 per_meter_quantity 透传"""
         mock_client.post = AsyncMock(return_value={"success": True, "data": {"id": "pi-new"}})
         mock_get_client.return_value = mock_client
 
         result = await tool.execute(
-            context=admin_tool_context, action="create_item", name="打孔", price=1.5,
-            category_id="c1", per_meter_quantity=6)
+            context=admin_tool_context, action="create_item", name="打孔", price=8.0,
+            category_id="c1")
         assert result.success is True
         json_data = mock_client.post.call_args[1]["json_data"]
-        assert json_data["perMeterQuantity"] == 6
+        assert json_data["price"] == 8.0
+        assert "perMeterQuantity" not in json_data
 
 
 class TestProcessingItemUpdate:
@@ -107,12 +108,12 @@ class TestProcessingItemUpdate:
         mock_get_client.return_value = mock_client
 
         result = await tool.execute(
-            context=admin_tool_context, action="update_item", item_id="pi-1", name="打孔(更新)", price=6.0,
-            per_meter_quantity=7)
+            context=admin_tool_context, action="update_item", item_id="pi-1", name="打孔(更新)", price=6.0)
         assert result.success is True
         assert mock_client.put.call_args[0][0] == "/api/admin/processing-items/pi-1"
         json_data = mock_client.put.call_args[1]["json_data"]
-        assert json_data["perMeterQuantity"] == 7
+        assert json_data["price"] == 6.0
+        assert "perMeterQuantity" not in json_data
 
 
 class TestProcessingItemDelete:

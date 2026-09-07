@@ -160,15 +160,11 @@ export const productApi = {
 export interface ProductProcessingItem {
   id: string
   name: string
-  pricingMethod: string // per_meter | per_piece | fixed | per_area
+  pricingMethod: string // per_meter | per_set | fixed | per_area
   unitPrice: number
   customPrice: number | null
   finalPrice: number
   unit: string
-  // 每米数量密度（per_piece 计价时数量 = ceil(面料米数 × 密度)；后端已按「商品覆盖优先」合并生效值）（issue #2986）
-  perMeterQuantity?: number
-  // 商品级覆盖密度（仅商品详情/编辑回填可见；订单推导用合并后的 perMeterQuantity）
-  customPerMeterQuantity?: number
 }
 
 // 分类 API

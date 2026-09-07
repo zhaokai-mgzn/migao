@@ -2,8 +2,9 @@ package com.migao.admin.service;
 
 // case_ids: PP-005, PP-006, OR-014
 // PP-005：加工项按「适用商品分类」筛选（issue #2964）。
-// PP-006/OR-014（issue #2986）：加工项「每米数量」密度——per_piece 计价加工项数量自动推导
-// = ceil(面料米数 × per_meter_quantity)，calculatePrice 传 fabricMeters 触发推算，无密度则沿用请求数量。
+// PP-006/OR-014（issue #3005，回滚 #2986）：行业加工费按米计价且辅料含在加工费中，
+// 加工项计价方式仅 per_meter/per_set/fixed/per_area——per_piece 与「每米数量」密度被移除，
+// calculatePrice 不再有 fabricMeters 密度推导，数量由请求方直接给出。
 
 import com.migao.admin.dto.*;
 import com.migao.admin.entity.ProcessingCategory;
@@ -201,7 +202,7 @@ class ProcessingItemServiceTest {
         ProcessingItemCreateRequest request = new ProcessingItemCreateRequest();
         request.setName("新加工项");
         request.setCategoryId("pcat-001");
-        request.setPricingMethod("per_piece");
+        request.setPricingMethod("per_meter");
         request.setUnitPrice(new BigDecimal("20.00"));
 
         when(processingCategoryMapper.selectById("pcat-001")).thenReturn(testCategory);
@@ -215,7 +216,7 @@ class ProcessingItemServiceTest {
                 .id("pi-new")
                 .name("新加工项")
                 .categoryId("pcat-001")
-                .pricingMethod("per_piece")
+                .pricingMethod("per_meter")
                 .unitPrice(new BigDecimal("20.00"))
                 .status("active")
                 .build();
@@ -278,7 +279,7 @@ class ProcessingItemServiceTest {
         ProcessingItemCreateRequest request = new ProcessingItemCreateRequest();
         request.setName("新加工项");
         request.setCategoryId("nonexistent");
-        request.setPricingMethod("per_piece");
+        request.setPricingMethod("per_meter");
         request.setUnitPrice(new BigDecimal("20.00"));
 
         when(processingCategoryMapper.selectById("nonexistent")).thenReturn(null);
@@ -316,7 +317,7 @@ class ProcessingItemServiceTest {
         ProcessingItemUpdateRequest request = new ProcessingItemUpdateRequest();
         request.setName("更新后的加工项");
         request.setCategoryId("pcat-001");
-        request.setPricingMethod("per_piece");
+        request.setPricingMethod("per_meter");
         request.setUnitPrice(new BigDecimal("25.00"));
 
         when(processingItemMapper.selectById("pi-001")).thenReturn(testItem);
@@ -328,7 +329,7 @@ class ProcessingItemServiceTest {
                 .id("pi-001")
                 .name("更新后的加工项")
                 .categoryId("pcat-001")
-                .pricingMethod("per_piece")
+                .pricingMethod("per_meter")
                 .unitPrice(new BigDecimal("25.00"))
                 .status("active")
                 .build();
@@ -349,7 +350,7 @@ class ProcessingItemServiceTest {
         ProcessingItemUpdateRequest request = new ProcessingItemUpdateRequest();
         request.setName("更新后的加工项");
         request.setCategoryId("pcat-001");
-        request.setPricingMethod("per_piece");
+        request.setPricingMethod("per_meter");
         request.setUnitPrice(new BigDecimal("25.00"));
         request.setApplicableProductCategories(List.of("cat-003", "cat-004"));
 
@@ -361,7 +362,7 @@ class ProcessingItemServiceTest {
                 .id("pi-001")
                 .name("更新后的加工项")
                 .categoryId("pcat-001")
-                .pricingMethod("per_piece")
+                .pricingMethod("per_meter")
                 .unitPrice(new BigDecimal("25.00"))
                 .applicableProductCategories(List.of("cat-003", "cat-004"))
                 .status("active")
@@ -383,7 +384,7 @@ class ProcessingItemServiceTest {
         ProcessingItemUpdateRequest request = new ProcessingItemUpdateRequest();
         request.setName("更新");
         request.setCategoryId("pcat-001");
-        request.setPricingMethod("per_piece");
+        request.setPricingMethod("per_meter");
 
         when(processingItemMapper.selectById("nonexistent")).thenReturn(null);
 
@@ -420,13 +421,13 @@ class ProcessingItemServiceTest {
     }
 
     @Test
-    @DisplayName("价格计算 - 按件计价")
-    void calculatePrice_PerPiece() {
+    @DisplayName("价格计算 - 按套计价")
+    void calculatePrice_PerSet() {
         // given
         ProcessingItem perPieceItem = ProcessingItem.builder()
                 .id("pi-002")
                 .name("挂钩")
-                .pricingMethod("per_piece")
+                .pricingMethod("per_set")
                 .unitPrice(new BigDecimal("3.00"))
                 .minQuantity(1)
                 .maxQuantity(500)
@@ -444,7 +445,7 @@ class ProcessingItemServiceTest {
 
         // then
         assertThat(result.getTotalPrice()).isEqualByComparingTo(new BigDecimal("30.00"));
-        assertThat(result.getDetails().get(0).getDescription()).contains("按件计价");
+        assertThat(result.getDetails().get(0).getDescription()).contains("按套计价");
     }
 
     @Test
@@ -591,170 +592,103 @@ class ProcessingItemServiceTest {
                 .hasMessageContaining("width");
     }
 
-    // ======================== 每米数量密度（PP-006 / OR-014） ========================
+    // ======================== 计价方式回滚（PP-006 / OR-014，issue #3005） ========================
+    // 行业加工费按米计价、辅料含在加工费里 → per_piece 与「每米数量」密度已移除：
+    // per_piece 创建/更新被拒绝；calculatePrice 无密度推导（准用请求数量）。
 
     @Test
-    @DisplayName("创建加工项 - 带每米数量（per_piece）")
-    void createProcessingItem_WithPerMeterQuantity() {
+    @DisplayName("创建加工项 - per_piece 计价方式被拒绝")
+    void createProcessingItem_RejectPerPiece() {
         // given
         ProcessingItemCreateRequest request = new ProcessingItemCreateRequest();
         request.setName("打孔（罗马圈）");
         request.setCategoryId("pcat-001");
         request.setPricingMethod("per_piece");
         request.setUnitPrice(new BigDecimal("1.50"));
-        request.setPerMeterQuantity(new BigDecimal("6"));
 
         when(processingCategoryMapper.selectById("pcat-001")).thenReturn(testCategory);
-        when(processingItemMapper.insert(any(ProcessingItem.class))).thenAnswer(invocation -> {
-            ProcessingItem item = invocation.getArgument(0);
-            item.setId("pi-new");
-            return 1;
-        });
-        ProcessingItem savedItem = ProcessingItem.builder()
-                .id("pi-new")
-                .name("打孔（罗马圈）")
-                .categoryId("pcat-001")
-                .pricingMethod("per_piece")
-                .unitPrice(new BigDecimal("1.50"))
-                .perMeterQuantity(new BigDecimal("6"))
-                .status("active")
-                .build();
-        when(processingItemMapper.selectById("pi-new")).thenReturn(savedItem);
-        when(processingCategoryMapper.selectById("pcat-001")).thenReturn(testCategory);
 
-        // when
-        ProcessingItemResponse result = processingItemService.createProcessingItem(request, 1L);
-
-        // then
-        ArgumentCaptor<ProcessingItem> captor = ArgumentCaptor.forClass(ProcessingItem.class);
-        verify(processingItemMapper).insert(captor.capture());
-        assertThat(captor.getValue().getPerMeterQuantity()).isEqualByComparingTo(new BigDecimal("6"));
-        assertThat(result.getPerMeterQuantity()).isEqualByComparingTo(new BigDecimal("6"));
+        // when/then：per_piece 不再合法
+        assertThatThrownBy(() -> processingItemService.createProcessingItem(request, 1L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("无效的计价方式");
+        verify(processingItemMapper, never()).insert(any(ProcessingItem.class));
     }
 
     @Test
-    @DisplayName("更新加工项 - 可修改每米数量")
-    void updateProcessingItem_WithPerMeterQuantity() {
+    @DisplayName("更新加工项 - per_piece 计价方式被拒绝")
+    void updateProcessingItem_RejectPerPiece() {
         // given
         ProcessingItemUpdateRequest request = new ProcessingItemUpdateRequest();
         request.setName("打孔（罗马圈）");
         request.setCategoryId("pcat-001");
         request.setPricingMethod("per_piece");
         request.setUnitPrice(new BigDecimal("1.50"));
-        request.setPerMeterQuantity(new BigDecimal("7"));
 
         when(processingItemMapper.selectById("pi-001")).thenReturn(testItem);
         when(processingCategoryMapper.selectById("pcat-001")).thenReturn(testCategory);
-        when(processingItemMapper.updateById(any(ProcessingItem.class))).thenReturn(1);
 
-        ProcessingItem updatedItem = ProcessingItem.builder()
-                .id("pi-001")
-                .name("打孔（罗马圈）")
-                .categoryId("pcat-001")
-                .pricingMethod("per_piece")
-                .unitPrice(new BigDecimal("1.50"))
-                .perMeterQuantity(new BigDecimal("7"))
-                .status("active")
-                .build();
-        when(processingItemMapper.selectById("pi-001")).thenReturn(testItem).thenReturn(updatedItem);
-
-        // when
-        ProcessingItemResponse result = processingItemService.updateProcessingItem("pi-001", request, 1L);
-
-        // then
-        ArgumentCaptor<ProcessingItem> captor = ArgumentCaptor.forClass(ProcessingItem.class);
-        verify(processingItemMapper).updateById(captor.capture());
-        assertThat(captor.getValue().getPerMeterQuantity()).isEqualByComparingTo(new BigDecimal("7"));
-        assertThat(result.getPerMeterQuantity()).isEqualByComparingTo(new BigDecimal("7"));
+        // when/then
+        assertThatThrownBy(() -> processingItemService.updateProcessingItem("pi-001", request, 1L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("无效的计价方式");
+        verify(processingItemMapper, never()).updateById(any(ProcessingItem.class));
     }
 
     @Test
-    @DisplayName("价格计算 - per_piece + 每米数量密度：传 fabricMeters 自动推导数量")
-    void calculatePrice_PerPiece_FabricMetersDensity() {
-        // given：打孔 1.5 元/个，每米 6 个，面料 3 米 → 数量 = ceil(3×6) = 18 个
-        ProcessingItem perPieceItem = ProcessingItem.builder()
+    @DisplayName("价格计算 - per_meter 无密度推导，数量沿用请求值（面料米数）")
+    void calculatePrice_PerMeter_NoDensityDerivation() {
+        // given：打孔加工 8 元/米，面料 6.6 米 → 数量即面料米数 6.6
+        ProcessingItem perMeterItem = ProcessingItem.builder()
                 .id("pi-punch")
                 .name("打孔（罗马圈）")
-                .pricingMethod("per_piece")
-                .unitPrice(new BigDecimal("1.50"))
+                .pricingMethod("per_meter")
+                .unitPrice(new BigDecimal("8.00"))
                 .minQuantity(1)
                 .maxQuantity(999)
-                .perMeterQuantity(new BigDecimal("6"))
                 .processingDays(1)
                 .build();
 
         PriceCalculateRequest request = new PriceCalculateRequest();
         request.setProcessingItemId("pi-punch");
-        request.setQuantity(new BigDecimal("1"));  // 请求数量被推导覆盖
-        request.setFabricMeters(new BigDecimal("3"));
+        request.setQuantity(new BigDecimal("6.6"));
 
-        when(processingItemMapper.selectById("pi-punch")).thenReturn(perPieceItem);
+        when(processingItemMapper.selectById("pi-punch")).thenReturn(perMeterItem);
 
         // when
         PriceCalculateResponse result = processingItemService.calculatePrice(request, 1L);
 
-        // then：服务端按密度权威推导 = ceil(3×6) = 18，totalPrice = 单价 × 18
-        assertThat(result.getQuantity()).isEqualByComparingTo(new BigDecimal("18"));
-        assertThat(result.getTotalPrice()).isEqualByComparingTo(new BigDecimal("27.00"));
-        assertThat(result.getDetails().get(0).getDescription()).contains("按件计价");
+        // then：数量 = 面料米数，费用 = 8 × 6.6 = 52.8，无任何密度推导
+        assertThat(result.getQuantity()).isEqualByComparingTo(new BigDecimal("6.6"));
+        assertThat(result.getTotalPrice()).isEqualByComparingTo(new BigDecimal("52.80"));
+        assertThat(result.getDetails().get(0).getDescription()).contains("按米计价");
     }
 
     @Test
-    @DisplayName("价格计算 - per_piece + 密度 + 面料米数是小数 → ceil 向上取整")
-    void calculatePrice_PerPiece_DensityCeilRule() {
-        // given：四爪钩 1 元/个，每米 8 个，面料 2.3 米 → 推导 = ceil(18.4) = 19
-        ProcessingItem perPieceItem = ProcessingItem.builder()
-                .id("pi-hook")
-                .name("四爪钩")
-                .pricingMethod("per_piece")
-                .unitPrice(new BigDecimal("1.00"))
+    @DisplayName("价格计算 - fixed 计价：一件一口价，数量=1")
+    void calculatePrice_Fixed_SinglePrice() {
+        // given：固定价加工项
+        ProcessingItem fixedItem = ProcessingItem.builder()
+                .id("pi-fixed")
+                .name("帘头加工")
+                .pricingMethod("fixed")
+                .unitPrice(new BigDecimal("300.00"))
                 .minQuantity(1)
-                .maxQuantity(999)
-                .perMeterQuantity(new BigDecimal("8"))
+                .maxQuantity(1)
                 .processingDays(1)
                 .build();
 
         PriceCalculateRequest request = new PriceCalculateRequest();
-        request.setProcessingItemId("pi-hook");
+        request.setProcessingItemId("pi-fixed");
         request.setQuantity(new BigDecimal("1"));
-        request.setFabricMeters(new BigDecimal("2.3"));
 
-        when(processingItemMapper.selectById("pi-hook")).thenReturn(perPieceItem);
-
-        // when
-        PriceCalculateResponse result = processingItemService.calculatePrice(request, 1L);
-
-        // then：服务端推导 ceil(2.3×8) = 19，费用 = 1 × 19
-        assertThat(result.getQuantity()).isEqualByComparingTo(new BigDecimal("19"));
-        assertThat(result.getTotalPrice()).isEqualByComparingTo(new BigDecimal("19.00"));
-    }
-
-    @Test
-    @DisplayName("价格计算 - per_piece 无密度 → 无 fabricMeters 时沿用请求数量")
-    void calculatePrice_PerPiece_NoDensity_UseRequestQuantity() {
-        // given：无密度配置的按件加工项
-        ProcessingItem perPieceItem = ProcessingItem.builder()
-                .id("pi-piece-plain")
-                .name("无密度加工项")
-                .pricingMethod("per_piece")
-                .unitPrice(new BigDecimal("2.00"))
-                .minQuantity(1)
-                .maxQuantity(999)
-                .processingDays(1)
-                .build();
-
-        PriceCalculateRequest request = new PriceCalculateRequest();
-        request.setProcessingItemId("pi-piece-plain");
-        request.setQuantity(new BigDecimal("5"));
-        request.setFabricMeters(new BigDecimal("10"));
-
-        when(processingItemMapper.selectById("pi-piece-plain")).thenReturn(perPieceItem);
+        when(processingItemMapper.selectById("pi-fixed")).thenReturn(fixedItem);
 
         // when
         PriceCalculateResponse result = processingItemService.calculatePrice(request, 1L);
 
-        // then：无密度 → 忽略 fabricMeters，沿用 quantity
-        assertThat(result.getQuantity()).isEqualByComparingTo(new BigDecimal("5"));
-        assertThat(result.getTotalPrice()).isEqualByComparingTo(new BigDecimal("10.00"));
+        // then：一口价，不随数量变化
+        assertThat(result.getTotalPrice()).isEqualByComparingTo(new BigDecimal("300.00"));
+        assertThat(result.getDetails().get(0).getDescription()).contains("固定价格");
     }
 }

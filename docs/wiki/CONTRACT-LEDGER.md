@@ -64,11 +64,13 @@ grep -rn "字段名" backend/admin-api/src frontend/admin-web/src backend/ai-age
 # 每个测试文件头部: # case_ids: OR-001, OR-002  （按域：OR 订单/AS 售后/PR 商品/FN 财务/CU 客户/DA 看板）
 ```
 
-## 六、加工项每米数量密度契约（issue #2986，2026-09-07）
+## 六、加工项计价方式契约（issue #3005 回滚 #2986，2026-09-07）
+
+行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米单价中 → 加工项计价方式仅 `per_meter / per_set / fixed / per_area`，
+**per_piece 与「每米数量」密度（per_meter_quantity / custom_per_meter_quantity）已全链路移除**（schema V34 回滚迁移 + DTO/TS/Python 删除）。
 
 | 字段 | 后端 Java | 前端 TS | Agent Python | 备注 |
 |---|---|---|---|---|
-| 加工项每米数量 | `perMeterQuantity`（ProcessingItem/Response/CreateRequest/UpdateRequest） | `perMeterQuantity` | `per_meter_quantity`（tool 透传） | 按个计价加工项密度（打孔 6 个/米），数量自动推导 |
-| 商品级覆盖密度 | `customPerMeterQuantity`（ProductProcessingItem/ProcessingItemConfigInput/ConfigResponse/ProductProcessingItemResponse） | `customPerMeterQuantity` | `custom_per_meter_quantity` | 语义同 custom_price，不覆盖用加工项默认 |
-| 推导规则 | per_meter → 数量=面料米数；per_piece+密度 → ceil(面料米数×密度)；无密度/per_set/fixed → 1 | 同 | 同 | 订单/AI 确认只展示「名称+金额」，数量隐藏 |
-| 价格计算入参 | `fabricMeters`（PriceCalculateRequest，面料米数，按个+密度时据此推导数量） | — | — | 无密度时忽略 fabricMeters |
+| 计价方式 | `pricingMethod`（ProcessingItem/Response/Create/Update，枚举 per_meter/per_set/fixed/per_area） | `PricingMethod` 同枚举 | `pricing_method`（tool 透传） | per_piece 创建/更新被 validatePricingMethod 拒绝 |
+| 数量规则 | per_meter → 数量=面料米数；per_set/fixed → 1；per_area → 面积 | 同（deriveProcessingQty） | 同（order prompt） | B 端下单展示「名称+数量+金额」供对账，无数量输入框 |
+| 价格计算入参 | `quantity`（PriceCalculateRequest，per_meter 传面料米数） | — | `quantity` | fabricMeters 字段已删除，无密度推导 |

@@ -1,6 +1,6 @@
 // case_ids: OR-009, OR-014
-// OR-014（issue #2986）：下单加工项数量系统自动推导（per_meter→面料米数；per_piece+密度→ceil(面料×密度)；无密度→1），
-// 商品数量变化联动重算；加工项行不显示数量输入框，用户不感知数量
+// OR-014（issue #3005 回滚 #2986）：下单加工项数量规则——per_meter→面料米数；per_set/fixed/per_area→1，
+// 商品数量变化联动重算；加工项行显示「名称+数量+金额」供对账，无数量输入框（数量由计价方式派生）
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 
@@ -168,7 +168,7 @@ describe('NewOrderPage', () => {
 
   const feeRowText = () => screen.getByText('加工费').closest('div')!.textContent || ''
 
-  it('per_piece+密度：数量=ceil(面料米数×密度)，改商品数量联动重算，行内无数量输入框 (OR-014)', async () => {
+  it('per_meter：数量=面料米数，单价×米数计加工费，行内无数量输入框 (OR-014)', async () => {
     mockGetProducts.mockResolvedValue({
       data: { data: { items: [{ id: 'p1', name: '遮光窗帘', price: 100 }], total: 1 } },
     })
@@ -181,12 +181,11 @@ describe('NewOrderPage', () => {
           {
             id: 'pi1',
             name: '打孔加工',
-            pricingMethod: 'per_piece',
+            pricingMethod: 'per_meter',
             unitPrice: 5,
             customPrice: null,
             finalPrice: 5,
-            unit: '个',
-            perMeterQuantity: 6,
+            unit: '米',
           },
         ],
       },
@@ -195,10 +194,10 @@ describe('NewOrderPage', () => {
     render(<NewOrderPage />)
     await pickProduct('遮光窗帘')
 
-    // 勾选加工项：面料默认 1 米 → 数量 = ceil(1×6) = 6 → 加工费 5×6 = 30
+    // 勾选加工项：面料默认 1 米 → 数量 1 → 加工费 5
     fireEvent.click(await screen.findByRole('checkbox'))
     await waitFor(() => {
-      expect(feeRowText()).toContain('¥30.00')
+      expect(feeRowText()).toContain('¥5.00')
     })
 
     // 加工项行内不出现数量输入框（该行只含 checkbox 输入，无 number 输入）
@@ -206,26 +205,26 @@ describe('NewOrderPage', () => {
     expect(procRow.querySelectorAll('input[type="number"]')).toHaveLength(0)
     expect(procRow.querySelectorAll('input')).toHaveLength(1)
 
-    // 面料米数 3 → 数量 = ceil(3×6) = 18 → 加工费 5×18 = 90（数量联动重算）
+    // 面料米数 3 → 数量 3 → 加工费 5×3 = 15（数量联动重算）
     const qtyInput = (await screen.findByText('数量')).closest('div')!.querySelector('input') as HTMLInputElement
     fireEvent.change(qtyInput, { target: { value: '3' } })
     await waitFor(() => {
-      expect(feeRowText()).toContain('¥90.00')
+      expect(feeRowText()).toContain('¥15.00')
     })
 
-    // 提交时 processingItems.quantity 使用推导数量 18
+    // 提交时 processingItems.quantity = 面料米数 3
     fillCustomerAndSubmit()
     await waitFor(() => {
       expect(mockCreateOrder).toHaveBeenCalled()
     })
     const payload = mockCreateOrder.mock.calls[0][0]
     const detail = payload.items[0].processingInfo.processingItems[0]
-    expect(detail.quantity).toBe(18)
+    expect(detail.quantity).toBe(3)
     expect(detail.unitPrice).toBe(5)
-    expect(detail.subtotal).toBe(90)
+    expect(detail.subtotal).toBe(15)
   })
 
-  it('per_meter：数量=面料米数，单价×米数计加工费 (OR-014)', async () => {
+  it('per_meter：小数面料米数，单价×米数计加工费 (OR-014)', async () => {
     mockGetProducts.mockResolvedValue({
       data: { data: { items: [{ id: 'p2', name: '雪纺纱', price: 80 }], total: 1 } },
     })
@@ -243,7 +242,6 @@ describe('NewOrderPage', () => {
             customPrice: null,
             finalPrice: 3,
             unit: '米',
-            perMeterQuantity: 2,
           },
         ],
       },
@@ -274,7 +272,7 @@ describe('NewOrderPage', () => {
     expect(payload.items[0].processingInfo.processingItems[0].quantity).toBe(2.5)
   })
 
-  it('per_piece 无密度：数量=1，改面料米数也不变 (OR-014)', async () => {
+  it('per_set：数量=1，改面料米数也不变 (OR-014)', async () => {
     mockGetProducts.mockResolvedValue({
       data: { data: { items: [{ id: 'p3', name: '棉麻布', price: 60 }], total: 1 } },
     })
@@ -286,12 +284,12 @@ describe('NewOrderPage', () => {
         data: [
           {
             id: 'pi3',
-            name: '手工裁剪',
-            pricingMethod: 'per_piece',
-            unitPrice: 8,
+            name: '帘头加工',
+            pricingMethod: 'per_set',
+            unitPrice: 50,
             customPrice: null,
-            finalPrice: 8,
-            unit: '件',
+            finalPrice: 50,
+            unit: '套',
           },
         ],
       },
@@ -301,15 +299,15 @@ describe('NewOrderPage', () => {
     await pickProduct('棉麻布')
     fireEvent.click(await screen.findByRole('checkbox'))
 
-    // 无密度 → 数量恒为 1 → 加工费 8
+    // per_set → 数量恒为 1 → 加工费 50
     await waitFor(() => {
-      expect(feeRowText()).toContain('¥8.00')
+      expect(feeRowText()).toContain('¥50.00')
     })
 
     const qtyInput = (await screen.findByText('数量')).closest('div')!.querySelector('input') as HTMLInputElement
     fireEvent.change(qtyInput, { target: { value: '10' } })
     await waitFor(() => {
-      expect(feeRowText()).toContain('¥8.00')
+      expect(feeRowText()).toContain('¥50.00')
     })
 
     // 提交时 quantity = 1
