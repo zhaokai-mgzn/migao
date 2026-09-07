@@ -36,24 +36,35 @@ public interface OrderItemMapper extends BaseMapper<OrderItem> {
     /**
      * 商品销量排行（本周期聚合，#2886 性能优化：替代原来全量明细拉到 JVM 再分组排序）。
      * FLOOR(subtotal) 与旧逻辑 item.getSubtotal().longValue() 的逐行截断语义一致（非负金额下等于截断）。
+     * #2984 口径治理：JOIN orders 只统计有效订单（confirmed/producing/shipped/completed），
+     * 排除 pending(未付款)/cancelled(已取消)——避免未付款测试单/废弃单污染排行并制造虚假环比。
+     * 租户条件由 TenantLineInnerInterceptor 自动注入（order_items + orders 两表均已注册，与
+     * selectProcessingPendingOrdersCount 同模式）。
      */
-    @Select("SELECT product_id, MAX(product_name) AS product_name, " +
-            "COALESCE(SUM(quantity), 0) AS qty, COALESCE(SUM(FLOOR(subtotal)), 0) AS amt " +
-            "FROM order_items WHERE deleted = 0 AND created_at >= #{periodStart} " +
-            "GROUP BY product_id ORDER BY qty DESC LIMIT #{limit}")
+    @Select("SELECT oi.product_id, MAX(oi.product_name) AS product_name, " +
+            "COALESCE(SUM(oi.quantity), 0) AS qty, COALESCE(SUM(FLOOR(oi.subtotal)), 0) AS amt " +
+            "FROM order_items oi JOIN orders o ON oi.order_id = o.id " +
+            "WHERE oi.deleted = 0 AND o.deleted = 0 " +
+            "AND o.status IN ('confirmed','producing','shipped','completed') " +
+            "AND oi.created_at >= #{periodStart} " +
+            "GROUP BY oi.product_id ORDER BY qty DESC LIMIT #{limit}")
     List<Map<String, Object>> selectProductRanking(
             @Param("periodStart") OffsetDateTime periodStart,
             @Param("limit") int limit);
 
     /**
      * 商品上期销量（topN 产品 IN 批量一次，替代原来每商品一次查询，#2886）。
+     * #2984：与 selectProductRanking 同口径 —— JOIN orders 过滤有效状态，保证环比分母一致。
      */
     @Select("<script>" +
-            "SELECT product_id, COALESCE(SUM(quantity), 0) AS qty FROM order_items " +
-            "WHERE deleted = 0 AND product_id IN " +
+            "SELECT oi.product_id, COALESCE(SUM(oi.quantity), 0) AS qty " +
+            "FROM order_items oi JOIN orders o ON oi.order_id = o.id " +
+            "WHERE oi.deleted = 0 AND o.deleted = 0 " +
+            "AND o.status IN ('confirmed','producing','shipped','completed') " +
+            "AND oi.product_id IN " +
             "<foreach collection='productIds' item='pid' open='(' separator=',' close=')'>#{pid}</foreach> " +
-            "AND created_at &gt;= #{prevStart} AND created_at &lt; #{periodStart} " +
-            "GROUP BY product_id" +
+            "AND oi.created_at &gt;= #{prevStart} AND oi.created_at &lt; #{periodStart} " +
+            "GROUP BY oi.product_id" +
             "</script>")
     List<Map<String, Object>> selectPrevPeriodQuantities(
             @Param("productIds") List<String> productIds,

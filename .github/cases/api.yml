@@ -337,3 +337,35 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: API-012
+    legacy_id: ""
+    title: "语音转写接口容错 - 空/极小/静音音频返回友好 4xx/5xx，不裸 500（#2984）"
+    domains:
+      - api
+      - chat
+    tier: normal
+    tags:
+      - asr
+      - voice
+      - error-handling
+    truths_ref: []
+      # ⚠️ 真值缺口：asr 容错语义暂未写入模板，由 data_checks 承载
+    user_inputs:
+      - "语音转写接口异常输入容错"
+    expectations: []
+    data_checks:
+      - "空文件 → 400 中文 detail「音频文件为空，未检测到声音」"
+      - "极小文件（<1KB）→ 400「未检测到有效音频内容，录音可能过短或麦克风未开启」，不裸 500"
+      - "超 10MB / 估算超 60s → 400 中文 detail（音频文件过大 / 音频时长超过上限）"
+      - "DashScope 未识别到语音内容（静音）→ 400「未识别到语音内容，请靠近麦克风重新录音」"
+      - "ASR 上游不可用 → 503「语音识别服务暂时不可用，请稍后重试」"
+      - "正常音频 → 200：text/language/duration_ms 齐全"
+    skip_reason: "函数级容错由 ai-agent 单测（test_asr.py TestTranscribeAudioFriendlyErrors）验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-07 新增：#2984 语音空录音体验优化（生产实证：无声音停止 → 空/极小 webm → 后端裸 500 → 前端 Failed to fetch）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_asr.py"
+      ci:
+        - ai-agent-tests.yml
+      verifies: []

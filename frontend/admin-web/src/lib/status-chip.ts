@@ -1,4 +1,4 @@
-import type { AfterSalesStatus, OrderStatus } from '@/types'
+import { normalizeOrderStatus, type AfterSalesStatus, type OrderStatus } from '@/types'
 
 /**
  * 语义色 chips 的 Tailwind tone 类（织物质感 token，issue #2539 子任务 D）。
@@ -39,9 +39,15 @@ export const afterSalesStatusChip: Record<AfterSalesStatus, StatusChip> = {
 const UNKNOWN_CHIP: StatusChip = { tone: 'neutral', label: '暂无数据' }
 
 /** 订单状态 → chip；未知/空状态回退 neutral 且 label 恒为「暂无数据」。 */
+/**
+ * #2984：先 normalizeOrderStatus 兼容后端原生状态（pending/confirmed/producing/cancelled），
+ * 否则看板「近期订单」等直传后端 status 的调用方全部落入「暂无数据」回退。
+ */
 export function orderStatusChipFor(status: string | null | undefined): StatusChip {
-  if (status && status in orderStatusChip) {
-    return orderStatusChip[status as OrderStatus]
+  if (!status) return UNKNOWN_CHIP
+  const normalized = normalizeOrderStatus(status)
+  if (normalized in orderStatusChip) {
+    return orderStatusChip[normalized as OrderStatus]
   }
   return UNKNOWN_CHIP
 }

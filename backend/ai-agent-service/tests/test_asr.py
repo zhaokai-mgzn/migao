@@ -1,6 +1,7 @@
 """
 Tests for app/api/asr.py — ASR voice transcription endpoint
 """
+# case_ids: API-012
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 
@@ -115,3 +116,102 @@ class TestSupportedMimeTypes:
     def test_mp3_supported(self):
         from app.api.asr import SUPPORTED_MIME_TYPES
         assert "audio/mpeg" in SUPPORTED_MIME_TYPES
+
+
+def _mock_file(data: bytes, filename: str = "recording.webm", content_type: str = "audio/webm"):
+    """构造 mock UploadFile：read() 返回 data，格式信息齐全"""
+    f = MagicMock()
+    f.read = AsyncMock(return_value=data)
+    f.filename = filename
+    f.content_type = content_type
+    return f
+
+
+class TestTranscribeAudioFriendlyErrors:
+    """#2984 语音容错：空/极小/静音音频返回友好 4xx/5xx，不裸 500
+    （生产实证：无声音停止 → 空/极小 webm → 后端裸 500 → 前端 Failed to fetch）"""
+
+    @patch("app.api.asr._transcribe_audio", new_callable=AsyncMock)
+    async def test_empty_audio_returns_400(self, mock_transcribe):
+        from app.api.asr import transcribe_audio
+        from fastapi import HTTPException
+
+        with pytest.raises(HTTPException) as exc:
+            await transcribe_audio(
+                audio=_mock_file(b""),
+                current_user=MagicMock(tenant_id=1),
+            )
+        assert exc.value.status_code == 400
+        assert "音频文件为空" in exc.value.detail
+        mock_transcribe.assert_not_called()
+
+    @patch("app.api.asr._transcribe_audio", new_callable=AsyncMock)
+    async def test_tiny_audio_returns_400(self, mock_transcribe):
+        from app.api.asr import transcribe_audio
+        from fastapi import HTTPException
+
+        with pytest.raises(HTTPException) as exc:
+            await transcribe_audio(
+                audio=_mock_file(b"\x00" * 120),
+                current_user=MagicMock(tenant_id=1),
+            )
+        assert exc.value.status_code == 400
+        assert "有效音频" in exc.value.detail
+        mock_transcribe.assert_not_called()
+
+    @patch("app.api.asr._transcribe_audio", new_callable=AsyncMock)
+    async def test_oversize_audio_returns_400(self, mock_transcribe):
+        from app.api.asr import transcribe_audio
+        from fastapi import HTTPException
+
+        with pytest.raises(HTTPException) as exc:
+            await transcribe_audio(
+                audio=_mock_file(b"\x00" * (11 * 1024 * 1024)),
+                current_user=MagicMock(tenant_id=1),
+            )
+        assert exc.value.status_code == 400
+        assert "过大" in exc.value.detail
+        mock_transcribe.assert_not_called()
+
+    @patch("app.api.asr._convert_to_wav", return_value=b"fake-wav-16000hz" * 2000)
+    @patch("app.api.asr._transcribe_audio", new_callable=AsyncMock)
+    async def test_silent_audio_returns_400(self, mock_transcribe, mock_convert):
+        from app.api.asr import transcribe_audio
+        from fastapi import HTTPException
+
+        mock_transcribe.side_effect = RuntimeError("未识别到语音内容，请检查音频输入")
+        with pytest.raises(HTTPException) as exc:
+            await transcribe_audio(
+                audio=_mock_file(b"\x00" * 64 * 1024),
+                current_user=MagicMock(tenant_id=1),
+            )
+        assert exc.value.status_code == 400
+        assert "未识别到语音内容" in exc.value.detail
+
+    @patch("app.api.asr._convert_to_wav", return_value=b"fake-wav-16000hz" * 2000)
+    @patch("app.api.asr._transcribe_audio", new_callable=AsyncMock)
+    async def test_asr_service_down_returns_503(self, mock_transcribe, mock_convert):
+        from app.api.asr import transcribe_audio
+        from fastapi import HTTPException
+
+        mock_transcribe.side_effect = RuntimeError("ASR 识别失败: 上游超时")
+        with pytest.raises(HTTPException) as exc:
+            await transcribe_audio(
+                audio=_mock_file(b"\x00" * 64 * 1024),
+                current_user=MagicMock(tenant_id=1),
+            )
+        assert exc.value.status_code == 503
+        assert "暂时不可用" in exc.value.detail
+
+    @patch("app.api.asr._convert_to_wav", return_value=b"fake-wav-16000hz" * 2000)
+    @patch("app.api.asr._transcribe_audio", new_callable=AsyncMock)
+    async def test_valid_audio_returns_text(self, mock_transcribe, mock_convert):
+        from app.api.asr import transcribe_audio
+
+        mock_transcribe.return_value = "帮我查一下订单"
+        resp = await transcribe_audio(
+            audio=_mock_file(b"\x00" * 64 * 1024),
+            current_user=MagicMock(tenant_id=1),
+        )
+        assert resp.text == "帮我查一下订单"
+        assert resp.duration_ms > 0

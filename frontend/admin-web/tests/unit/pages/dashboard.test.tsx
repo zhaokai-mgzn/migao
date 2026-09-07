@@ -1,6 +1,6 @@
-// case_ids: UI-003, UI-004, DA-005, DA-006
+// case_ids: UI-003, UI-004, DA-005, DA-006, DA-007
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 
 // Mock request (for /api/admin/orders/statistics)
 const mockRequestGet = vi.fn()
@@ -346,6 +346,19 @@ describe('DashboardPage', () => {
     })
   })
 
+  // #2984：近期订单直传后端 status（confirmed/shipped），状态列必须渲染对应 chip，
+  // 不得因前端枚举键不匹配整体落入「暂无数据」回退
+  it('近期订单状态列渲染后端状态对应 chip（confirmed→待发货，shipped→已发货），无「暂无数据」', async () => {
+    render(<DashboardPage />)
+    const statusHeader = await screen.findByRole('columnheader', { name: '状态' })
+    const table = statusHeader.closest('table')!
+    const rows = table.querySelectorAll('tbody tr')
+    expect(rows.length).toBeGreaterThanOrEqual(2)
+    expect(within(rows[0] as HTMLElement).getByText('待发货')).toBeInTheDocument()
+    expect(within(rows[1] as HTMLElement).getByText('已发货')).toBeInTheDocument()
+    expect(screen.queryByText('暂无数据')).not.toBeInTheDocument()
+  })
+
   it('should render "查看全部" link', async () => {
     render(<DashboardPage />)
     await waitFor(() => {
@@ -379,14 +392,27 @@ describe('DashboardPage', () => {
     })
   })
 
-  // ── #2537 密度治理：表头「日涨」不截断 + 订单趋势 x 轴降采样 ──
+  // ── #2537 密度治理：表头「环比」不截断 + 订单趋势 x 轴降采样 ──
+  // ── #2984 口径治理：排行「成交量」标注近7天、「环比」标注为周期环比（原「日涨/较昨日」误导）──
 
-  it('商品销量排行表头「日涨」列 whitespace-nowrap 不截断', async () => {
+  it('商品销量排行表头「环比」列 whitespace-nowrap 不截断，title 标注周期环比口径', async () => {
     render(<DashboardPage />)
     await waitFor(() => {
-      const th = screen.getByText('日涨')
+      const th = screen.getByText('环比')
       expect(th.tagName).toBe('TH')
       expect(th.className).toContain('whitespace-nowrap')
+      // #2984：环比是「本统计周期 vs 上一统计周期」，不再误导为「较昨日」
+      expect(th.getAttribute('title')).toContain('统计周期')
+      expect(th.getAttribute('title')).not.toContain('昨日')
+    })
+  })
+
+  it('商品销量排行「成交量」列 title 标注近7天口径（与今日订单数的时间口径显式区分）', async () => {
+    render(<DashboardPage />)
+    await waitFor(() => {
+      const th = screen.getByText('成交量')
+      expect(th.tagName).toBe('TH')
+      expect(th.getAttribute('title')).toContain('近7天')
     })
   })
 

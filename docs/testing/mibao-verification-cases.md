@@ -134,7 +134,7 @@
 真值: ai-chat.agent-factory
 溯源: 2026-08-25 新增：ai-agent-service agents-customer_service_agent 覆盖率补全（issue #2429） ｜ tags: agents, factory, alias
 
-## api（11 case）
+## api（12 case）
 
 ### API-001. chat 会话生命周期 - 租户隔离 + 用户所有权 + 幂等/重开 🔵
 ```
@@ -264,6 +264,19 @@
 ```
 真值: api.knowledge-sync
 溯源: 2026-09-06 新增（issue #2971 自洽性扫描）：knowledge_sync_history 表/实体/Mapper 就绪但零读写（resync 不记历史、无列表接口），补写读路径形成闭环 ｜ tags: api, knowledge, sync_history
+
+### API-012. 语音转写接口容错 - 空/极小/静音音频返回友好 4xx/5xx，不裸 500（#2984） 🔵
+```
+你: 语音转写接口异常输入容错
+数据: 空文件 → 400 中文 detail「音频文件为空，未检测到声音」
+数据: 极小文件（<1KB）→ 400「未检测到有效音频内容，录音可能过短或麦克风未开启」，不裸 500
+数据: 超 10MB / 估算超 60s → 400 中文 detail（音频文件过大 / 音频时长超过上限）
+数据: DashScope 未识别到语音内容（静音）→ 400「未识别到语音内容，请靠近麦克风重新录音」
+数据: ASR 上游不可用 → 503「语音识别服务暂时不可用，请稍后重试」
+数据: 正常音频 → 200：text/language/duration_ms 齐全
+跳过: 函数级容错由 ai-agent 单测（test_asr.py TestTranscribeAudioFriendlyErrors）验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-07 新增：#2984 语音空录音体验优化（生产实证：无声音停止 → 空/极小 webm → 后端裸 500 → 前端 Failed to fetch） ｜ tags: asr, voice, error-handling
 
 ## bmini（5 case）
 
@@ -835,7 +848,7 @@
 真值: id-resolve.name, customer-list.search-fields, order.states
 溯源: eval M011 独有（模糊澄清 + 客户搜索真值） ｜ tags: fuzzy_input, progressive_clarification, adversarial
 
-## 数据域（6 case）
+## 数据域（7 case）
 
 ### DA-001. 经营概览 🔵
 ```
@@ -878,7 +891,7 @@
 你: 经营看板页面按织物质感方向重设计
 期望: 
 数据: token：主色靛蓝/点缀陶土/米白底，无默认蓝
-数据: 商品销量排行表头「日涨」在 1440/1280 两视口无截断
+数据: 商品销量排行表头「环比」在 1440/1280 两视口无截断（#2984 口径治理：原名「日涨」易与今日订单数混淆）
 数据: 订单趋势 x 轴刻度在 1280 宽度下降采样不重叠
 数据: 订单/售后状态语义色 chips；空态「暂无数据」无 '-' 占位
 数据: 销售额趋势/迷你图使用真实 amount 数据，无 23.8 假乘数
@@ -902,6 +915,18 @@
 ```
 真值: ai-chat.permission-layers
 溯源: 2026-09-02 新增：POC 演示审查 E 项 — 米宝问数「哪个花色卖得最好」无工具支撑（dashboard_stats 无 TopN）；按订单数据实际粒度实现商品维度排行（order_items 无颜色字段，花色排行需 schema 变更后置） ｜ tags: dashboard, ranking, product
+
+### DA-007. 商品销量排行数据自洽：有效订单过滤 + 环比口径标注（#2984 生产实证） 🔵
+```
+你: 商品销量排行口径自检
+数据: selectProductRanking/selectPrevPeriodQuantities 均 JOIN orders 过滤有效状态 confirmed/producing/shipped/completed，排除 pending(未付款)/cancelled(已取消)；本期与上期同口径，环比分母一致
+数据: 原生 SQL 不手写 tenant_id（租户条件由 TenantLineInnerInterceptor 自动注入，order_items/orders 均已注册）
+数据: 排行表头列名「环比」+ title 标注周期口径（较上一统计周期），不标注「较昨日」；「成交量」列 title 标注近7天，与今日订单数时间口径显式区分
+数据: 修复后生产谱号：米白色遮光窗帘 356件/▲187.1% 的虚假涨跌不再出现（356 件全部来自 pending 测试单）
+跳过: SQL 口径由 admin-api 单测（OrderItemMapperTest）文本断言验证；UI 文案由 vitest（dashboard.test.tsx）验证；不进入 agent-eval 冒烟
+```
+真值: dashboard-ui.ranking-caliber
+溯源: 2026-09-07 新增：#2984 经营看板排行数据自洽治理 — 生产实证今日订单 0 但排行显示 356 件+▲187.1%（实为近7天 pending 测试单累计 × 7天环比，被 UI「日涨/较昨日」标注误导） ｜ tags: dashboard, ranking, ui, data-quality
 
 ## 防御域（17 case）
 
@@ -2126,7 +2151,7 @@
 ```
 你: 经营看板织物质感重设计子任务 B：dashboard 密度修复（表格/图表多视口）
 期望: direct_reply
-数据: 商品销量排行表头「日涨」列渲染 whitespace-nowrap，1440×900 与 1280×800 两视口无截断
+数据: 商品销量排行表头「环比」列渲染 whitespace-nowrap，1440×900 与 1280×800 两视口无截断（#2984：原列名「日涨」误导，改「环比」并标注周期口径）
 数据: 订单趋势图 x 轴刻度按 sampleTickIndices 降采样，1280 宽度下标签数 ≤ 7 且不密集重叠
 数据: dashboard 页面在 1440×900 与 1280×800 两视口无水平/垂直截断或溢出
 跳过: 纯前端密度/布局治理由 vitest 单测验证（axis-sampling.test.ts + dashboard.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
@@ -2394,10 +2419,11 @@
 数据: 发送键图标 lucide ArrowUp（lucide-arrow-up）、流式中停止键 lucide Square（lucide-square）、语音键 lucide AudioLines（lucide-audio-lines，弃用 Mic）；title/aria 语义（发送/停止生成/语音输入）不变
 数据: 录音中：placeholder 保持「输入消息…」短句不被录音文案占用；容器内显示录音状态条「正在录音 {m:ss} · 点击停止，Esc 取消」（红点脉冲）；转写中提示「转写中...」不变；Esc 取消 / 右键取消行为不变（B 端转写追加进输入框，D1 既定差异不改）
 数据: 图片预览缩略图渲染在「消息输入区」容器内顶部；删除角标常显且带 aria-label「删除图片」；上传中添图键置灰（disabled）但不换图标（仍 ImagePlus），上传进度提示在预览块
+数据: #2984 语音容错：空口语/误触录音（<0.8s 或 <4KB）停止不发转写请求，提示「未检测到声音，已取消转写」；转写失败文案友好化（网络失败/裸 500 转中文提示，不透出 Failed to fetch）
 跳过: 纯前端输入条视觉/图标/状态呈现由 vitest 单测验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.no-api-change, frontend-fix.vitest
-溯源: 2026-09-06 新增：B/C 端输入条统一重设计（issue #2952，设计文档 docs/design/agent-input-bar-unified-design.md §4.2/§4.4） ｜ tags: ui, chat-input, admin-web, design-system
+溯源: 2026-09-06 新增：B/C 端输入条统一重设计（issue #2952，设计文档 docs/design/agent-input-bar-unified-design.md §4.2/§4.4）；2026-09-07 补：#2984 空录音不发转写 + 错误文案友好化（voice-guard） ｜ tags: ui, chat-input, admin-web, design-system
 
 ### UI-026. 加工项列表 - 展示「适用商品分类」列（ID→名称映射，空=适用所有） 🔵
 ```
@@ -2463,17 +2489,17 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：200（活跃 104，跳过 96）
-- tier 分布：smoke 8 / normal 164 / adversarial 28
+- 用例总数：202（活跃 104，跳过 98）
+- tier 分布：smoke 8 / normal 166 / adversarial 28
 - 售后域：5
 - agents：6
-- api：11
+- api：12
 - bmini：5
 - 分类域：3
 - 对话边界域：28
 - 跨域：3
 - 客户域：5
-- 数据域：6
+- 数据域：7
 - 防御域：17
 - finance：4
 - 人事域：6
@@ -2490,6 +2516,7 @@
 - utils：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
+- API-012: 语音转写接口容错 - 空/极小/静音音频返回友好 4xx/5xx，不裸 500（#2984）
 - CH-027: 流式回复中切换会话再切回 - 等待状态与最终回复保留（issue #2901）
 - CH-028: 多会话并发流 - 会话 A 回复中 B 可发送，增量/停止互不干扰（issue #2906）
 - MC-012: CI 失败报告去重 - 同日同标题 open issue 存在时不重复建

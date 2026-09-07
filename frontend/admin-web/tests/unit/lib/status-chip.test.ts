@@ -1,4 +1,4 @@
-// case_ids: UI-002
+// case_ids: UI-002, DA-007
 import { describe, it, expect } from 'vitest'
 import {
   chipToneClasses,
@@ -47,6 +47,17 @@ describe('status-chip 语义色 chips', () => {
     expect(orderStatusChipFor('unknown')).toEqual({ tone: 'neutral', label: '暂无数据' })
     expect(orderStatusChipFor(undefined)).toEqual({ tone: 'neutral', label: '暂无数据' })
     expect(orderStatusChipFor(null)).toEqual({ tone: 'neutral', label: '暂无数据' })
+  })
+
+  // #2984：后端原生状态（orders 表存储值）必须先 normalize 再映射，
+  // 否则看板「近期订单」等直传后端 status 的调用方全部掉进「暂无数据」回退
+  it('orderStatusChipFor 兼容后端原生状态（pending/confirmed/producing/cancelled）', () => {
+    expect(orderStatusChipFor('pending')).toEqual({ tone: 'warning', label: '待付款' })
+    expect(orderStatusChipFor('confirmed')).toEqual({ tone: 'info', label: '待发货' })
+    expect(orderStatusChipFor('producing')).toEqual({ tone: 'info', label: '待发货' })
+    expect(orderStatusChipFor('cancelled')).toEqual({ tone: 'neutral', label: '已关闭' })
+    expect(orderStatusChipFor('shipped')).toEqual({ tone: 'info', label: '已发货' })
+    expect(orderStatusChipFor('completed')).toEqual({ tone: 'success', label: '已完成' })
   })
 
   it('afterSalesStatusChipFor 未知/空状态回退 neutral 且 label=暂无数据', () => {

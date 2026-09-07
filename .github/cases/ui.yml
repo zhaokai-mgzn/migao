@@ -128,7 +128,7 @@ cases:
     expectations:
       - tool: direct_reply
     data_checks:
-      - "商品销量排行表头「日涨」列渲染 whitespace-nowrap，1440×900 与 1280×800 两视口无截断"
+      - "商品销量排行表头「环比」列渲染 whitespace-nowrap，1440×900 与 1280×800 两视口无截断（#2984：原列名「日涨」误导，改「环比」并标注周期口径）"
       - "订单趋势图 x 轴刻度按 sampleTickIndices 降采样，1280 宽度下标签数 ≤ 7 且不密集重叠"
       - "dashboard 页面在 1440×900 与 1280×800 两视口无水平/垂直截断或溢出"
     skip_reason: "纯前端密度/布局治理由 vitest 单测验证（axis-sampling.test.ts + dashboard.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟"
@@ -823,11 +823,13 @@ cases:
       - "发送键图标 lucide ArrowUp（lucide-arrow-up）、流式中停止键 lucide Square（lucide-square）、语音键 lucide AudioLines（lucide-audio-lines，弃用 Mic）；title/aria 语义（发送/停止生成/语音输入）不变"
       - "录音中：placeholder 保持「输入消息…」短句不被录音文案占用；容器内显示录音状态条「正在录音 {m:ss} · 点击停止，Esc 取消」（红点脉冲）；转写中提示「转写中...」不变；Esc 取消 / 右键取消行为不变（B 端转写追加进输入框，D1 既定差异不改）"
       - "图片预览缩略图渲染在「消息输入区」容器内顶部；删除角标常显且带 aria-label「删除图片」；上传中添图键置灰（disabled）但不换图标（仍 ImagePlus），上传进度提示在预览块"
+      - "#2984 语音容错：空口语/误触录音（<0.8s 或 <4KB）停止不发转写请求，提示「未检测到声音，已取消转写」；转写失败文案友好化（网络失败/裸 500 转中文提示，不透出 Failed to fetch）"
     skip_reason: "纯前端输入条视觉/图标/状态呈现由 vitest 单测验证，非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-06 新增：B/C 端输入条统一重设计（issue #2952，设计文档 docs/design/agent-input-bar-unified-design.md §4.2/§4.4）"
+    merge_log: "2026-09-06 新增：B/C 端输入条统一重设计（issue #2952，设计文档 docs/design/agent-input-bar-unified-design.md §4.2/§4.4）；2026-09-07 补：#2984 空录音不发转写 + 错误文案友好化（voice-guard）"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/components/MessageInput.test.tsx"
+        - "frontend/admin-web/tests/unit/lib/voice-guard.test.ts"
       ci:
         - pr-check.yml
       verifies: []

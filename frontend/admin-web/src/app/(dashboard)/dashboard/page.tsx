@@ -448,7 +448,7 @@ export default function DashboardPage() {
             </div>
           ) : (
             <table className="w-full text-xs">
-              <thead><tr className="border-b border-neutral-100 text-neutral-400"><th className="w-10 py-2 text-left font-medium whitespace-nowrap">#</th><th className="py-2 text-left font-medium whitespace-nowrap">商品</th><th className="py-2 text-right font-medium whitespace-nowrap">成交量</th><th className="py-2 text-right font-medium whitespace-nowrap" title="较昨日销量涨跌幅">日涨</th></tr></thead>
+              <thead><tr className="border-b border-neutral-100 text-neutral-400"><th className="w-10 py-2 text-left font-medium whitespace-nowrap">#</th><th className="py-2 text-left font-medium whitespace-nowrap">商品</th><th className="py-2 text-right font-medium whitespace-nowrap" title="近7天累计成交量（不含未付款/已取消订单）">成交量</th><th className="py-2 text-right font-medium whitespace-nowrap" title="较上一统计周期(近7天)销量涨跌幅">环比</th></tr></thead>
               <tbody>
                 {ranking.slice(0, 10).map(r => (
                   <tr key={r.productId} className="border-b border-neutral-50 transition-colors hover:bg-neutral-50/70">
