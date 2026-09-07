@@ -307,7 +307,7 @@ export default function SettingsPage() {
                   <div className="flex items-center justify-between">
                     <div>
                       <div className="text-sm font-medium text-neutral-700">启用系统通知</div>
-                      <div className="text-xs text-neutral-500">接收订单、客服等重要通知（当前为站内通知开关）</div>
+                      <div className="text-xs text-neutral-500">控制订单、客服等重要事件站内通知的发送；关闭后不再产生新的站内通知（历史通知保留）</div>
                     </div>
                     <button
                       className={`relative w-11 h-6 rounded-full transition-colors ${
