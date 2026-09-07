@@ -1,5 +1,6 @@
+// case_ids: OR-009
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 
 // Mock API
 const mockCreateOrder = vi.fn()
@@ -113,5 +114,39 @@ describe('NewOrderPage', () => {
       expect(screen.getByText('优惠金额 (¥)')).toBeInTheDocument()
       expect(screen.getByText('实收款 (¥)')).toBeInTheDocument()
     })
+  })
+
+  // #2987：数量输入框默认 1，清空不得被强制弹回（旧 onChange 用 Math.max(1, Number('')) 把空值改回 1）
+  it('商品数量输入框可清空默认值 1 并自由输入（整数与按米小数）', async () => {
+    mockGetProducts.mockResolvedValue({
+      data: { data: { items: [{ id: 'p1', name: '测试窗帘', price: 100 }], total: 1 } },
+    })
+    mockGetProduct.mockResolvedValue({
+      data: { data: { id: 'p1', name: '测试窗帘', skus: [], supportsProcessing: false, price: 100 } },
+    })
+    mockGetProductProcessingItems.mockResolvedValue({ data: { data: [] } })
+
+    render(<NewOrderPage />)
+
+    // 走「点击搜索并选择商品」→ 弹窗选择「测试窗帘」→ 展开数量/单价区域
+    fireEvent.click(await screen.findByText('点击搜索并选择商品'))
+    fireEvent.click(await screen.findByText('测试窗帘'))
+
+    // Label 无 htmlFor 关联，按「数量」label 所在容器定位输入框
+    const qtyLabel = await screen.findByText('数量')
+    const qtyInput = qtyLabel.closest('div')!.querySelector('input') as HTMLInputElement
+    expect(qtyInput).toHaveValue(1)
+
+    // 清空 → 输入框为空（不再被强改回 1）
+    fireEvent.change(qtyInput, { target: { value: '' } })
+    expect(qtyInput.value).toBe('')
+
+    // 重新输入整数
+    fireEvent.change(qtyInput, { target: { value: '3' } })
+    expect(qtyInput).toHaveValue(3)
+
+    // 按米销售支持小数（2.5 米）
+    fireEvent.change(qtyInput, { target: { value: '2.5' } })
+    expect(qtyInput).toHaveValue(2.5)
   })
 })
