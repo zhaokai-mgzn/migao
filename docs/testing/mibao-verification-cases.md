@@ -1737,18 +1737,18 @@
 真值: order.logistics
 溯源: 2026-09-01 新增：B 端物流查询安全收紧（禁止物流号直查，防用他人运单号刺探） ｜ tags: query, logistics, data_safety
 
-### OR-014. 下单加工项数量自动推导 - 按计价方式与密度，用户零感知 🔵
+### OR-014. 下单加工项数量规则 - 按计价方式，无每米数量密度推导 🔵
 ```
 你: 帮我下单，遮光窗帘 3 米，要打孔加工
 期望: product_detail
 期望: order_create
-数据: 加工项数量由系统自动推导，不询问用户：per_meter → 数量=面料米数；per_piece+密度（打孔 6 个/米）→ 数量=ceil(3×6)=18 个；per_piece 无密度/per_set/fixed → 数量=1
+数据: 加工项数量按计价方式确定：per_meter → 数量=面料米数（如打孔 8 元/米 × 3 米 → quantity=3、subtotal=24）；per_set/fixed → 数量=1；per_area → 宽×高
 数据: processing_info.processingItems 逐项含 {id, name, unitPrice, quantity, unit, pricingMethod, subtotal}，processingFee = 各项 unitPrice × quantity 之和
-数据: 订单确认/回复展示加工项只出现「加工项名称 + 金额」（如『打孔加工 ¥27.00』），不出现数量字眼；用户主动询问才说明数量
-数据: 加工费 = 单价 × 推导数量（打孔 1.5 元 × 18 = 27 元），漏算/错算加工费 = 订单金额错误
+数据: 订单确认/回复展示加工项含「名称+数量+金额」（如『打孔（罗马圈）3米 ¥24.00』）——数量可见可对账，禁止虚构每米几个的密度推导
+数据: 加工费 = 单价 × 数量（打孔 8 元/米 × 3 米 = 24 元），漏算/错算加工费 = 订单金额错误
 ```
-真值: order.states, order.create-flow, processing-manage.per-meter-quantity
-溯源: 2026-09-07 新增（issue #2986）：下单加工项数量自动推导 + 数量隐藏——per_piece 数量=ceil(面料米数×密度) 由系统算，订单/AI 确认只见名称+金额，堵加工费错算（#2613/#2615/#2916 同类根因） ｜ tags: order_create, processing_item, pricing
+真值: order.states, order.create-flow, processing-manage.crud
+溯源: 2026-09-07 改写（issue #3005，回滚 #2986）：行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米加工费中——回滚 per_piece 与「每米数量」密度（数量=ceil(面料米数×密度) 与实际车间工艺不符、数量隐藏导致 B 端无法对账），数量改为按计价方式派生且展示（per_meter=面料米数、per_set/fixed=1） ｜ tags: order_create, processing_item, pricing
 
 ## 加工项域（6 case）
 
@@ -1808,18 +1808,18 @@
 真值: id-resolve.index
 溯源: eval P006 独有（序号 ID 解析）；2026-09-05 #2854 适配 #2785 确认闸：改多轮确认流（轮1 interact(confirm)，轮2 确认后 add）；action 强校验 + success=true 落评分（#2854 P0-3），item_ids 不写死数字——实测 LLM 会把序号翻译为名称传参（业务等价），序号→UUID 解析真值由 test_id_resolver.py 单测覆盖 ｜ tags: id_resolve, adversarial, sequence, confirm
 
-### PP-006. 加工项每米数量 - 配置与商品级覆盖 🔵
+### PP-006. 加工项计价方式 - 按米/按套/一口价/按面积，无 per_piece 与每米数量 🔵
 ```
-你: 给打孔加工配置每米数量 6 个/米
-你: 查询打孔加工的配置
-期望: processing_item_manage(action=update_item)
+你: 查询打孔加工的计价方式
+你: 新增加工项，计价方式选按个
 期望: processing_item_query(keyword=打孔)
-数据: processing_item_query 响应条目透传 per_meter_quantity（加工项每米数量密度，如打孔 6 个/米）
-数据: per_meter / per_set 计价的加工项无 per_meter_quantity（不适用，数量 1:1 或按套）
-数据: 商品详情 processingItems 透传 perMeterQuantity（商品级 custom_per_meter_quantity 覆盖后合并值，无覆盖=加工项默认密度）
+期望: processing_item_manage(action=create_item)
+数据: processing_item_query 响应条目无 per_meter_quantity（每米数量已回滚移除，issue #3005）
+数据: 加工项计价方式仅 per_meter / per_set / fixed / per_area——per_piece 创建被拒绝（行业加工费按米计价、辅料含在加工费中）
+数据: 商品详情 processingItems 无 custom_per_meter_quantity / perMeterQuantity（商品级密度覆盖已回滚）
 ```
 真值: processing-manage.crud, product-sku-stock.create-flow
-溯源: 2026-09-07 新增（issue #2986）：加工项每米数量密度配置——per_piece 类加工项（打孔/四爪钩/罗马圈）按个计价但数量随面料米数线性变化，行业标准密度（打孔 6 个/米、四爪钩 10 个/米等）可配置并透传给下单自动推导 ｜ tags: processing_item, per_meter_quantity, pricing
+溯源: 2026-09-07 改写（issue #3005，回滚 #2986）：行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米加工费中——per_piece 与「每米数量」密度不符合实际（数量对不上车间工艺、B 端无法对账），已回滚移除；PP-006 由密度配置用例改为计价方式回归断言 ｜ tags: processing_item, pricing
 
 ## 商品域（18 case）
 

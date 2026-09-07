@@ -2156,16 +2156,16 @@ _CASE_OR_013 = EvalCase(
     persona='',
 )
 
-# ── OR-014 [NORMAL] 下单加工项数量自动推导 - 按计价方式与密度，用户零感知（源: cases/order.yml）──
+# ── OR-014 [NORMAL] 下单加工项数量规则 - 按计价方式，无每米数量密度推导（源: cases/order.yml）──
 _CASE_OR_014 = EvalCase(
     id='OR-014',
     legacy_id='',
-    title='下单加工项数量自动推导 - 按计价方式与密度，用户零感知',
+    title='下单加工项数量规则 - 按计价方式，无每米数量密度推导',
     skill=Skill.ORDER,
     difficulty=Difficulty.NORMAL,
     user_inputs=['帮我下单，遮光窗帘 3 米，要打孔加工'],
     expectations=['product_detail', 'order_create'],
-    data_checks=['加工项数量由系统自动推导，不询问用户：per_meter → 数量=面料米数；per_piece+密度（打孔 6 个/米）→ 数量=ceil(3×6)=18 个；per_piece 无密度/per_set/fixed → 数量=1', 'processing_info.processingItems 逐项含 {id, name, unitPrice, quantity, unit, pricingMethod, subtotal}，processingFee = 各项 unitPrice × quantity 之和', '订单确认/回复展示加工项只出现「加工项名称 + 金额」（如『打孔加工 ¥27.00』），不出现数量字眼；用户主动询问才说明数量', '加工费 = 单价 × 推导数量（打孔 1.5 元 × 18 = 27 元），漏算/错算加工费 = 订单金额错误'],
+    data_checks=['加工项数量按计价方式确定：per_meter → 数量=面料米数（如打孔 8 元/米 × 3 米 → quantity=3、subtotal=24）；per_set/fixed → 数量=1；per_area → 宽×高', 'processing_info.processingItems 逐项含 {id, name, unitPrice, quantity, unit, pricingMethod, subtotal}，processingFee = 各项 unitPrice × quantity 之和', '订单确认/回复展示加工项含「名称+数量+金额」（如『打孔（罗马圈）3米 ¥24.00』）——数量可见可对账，禁止虚构每米几个的密度推导', '加工费 = 单价 × 数量（打孔 8 元/米 × 3 米 = 24 元），漏算/错算加工费 = 订单金额错误'],
     skip_reason='',
     tags=['order_create', 'processing_item', 'pricing'],
     persona='',
@@ -2246,18 +2246,18 @@ _CASE_PP_004 = EvalCase(
     persona='',
 )
 
-# ── PP-006 [NORMAL] 加工项每米数量 - 配置与商品级覆盖（源: cases/processing.yml）──
+# ── PP-006 [NORMAL] 加工项计价方式 - 按米/按套/一口价/按面积，无 per_piece 与每米数量（源: cases/processing.yml）──
 _CASE_PP_006 = EvalCase(
     id='PP-006',
     legacy_id='',
-    title='加工项每米数量 - 配置与商品级覆盖',
+    title='加工项计价方式 - 按米/按套/一口价/按面积，无 per_piece 与每米数量',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['给打孔加工配置每米数量 6 个/米', '查询打孔加工的配置'],
-    expectations=['processing_item_manage(action=update_item)', 'processing_item_query(keyword=打孔)'],
-    data_checks=['processing_item_query 响应条目透传 per_meter_quantity（加工项每米数量密度，如打孔 6 个/米）', 'per_meter / per_set 计价的加工项无 per_meter_quantity（不适用，数量 1:1 或按套）', '商品详情 processingItems 透传 perMeterQuantity（商品级 custom_per_meter_quantity 覆盖后合并值，无覆盖=加工项默认密度）'],
+    user_inputs=['查询打孔加工的计价方式', '新增加工项，计价方式选按个'],
+    expectations=['processing_item_query(keyword=打孔)', 'processing_item_manage(action=create_item)'],
+    data_checks=['processing_item_query 响应条目无 per_meter_quantity（每米数量已回滚移除，issue #3005）', '加工项计价方式仅 per_meter / per_set / fixed / per_area——per_piece 创建被拒绝（行业加工费按米计价、辅料含在加工费中）', '商品详情 processingItems 无 custom_per_meter_quantity / perMeterQuantity（商品级密度覆盖已回滚）'],
     skip_reason='',
-    tags=['processing_item', 'per_meter_quantity', 'pricing'],
+    tags=['processing_item', 'pricing'],
     persona='',
 )
 

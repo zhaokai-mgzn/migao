@@ -78,7 +78,7 @@
                   "quantity": 1,
                   "subtotal": 3,
                   "unitPrice": 3,
-                  "pricingMethod": "per_piece"
+                  "pricingMethod": "per_set"
                 }
               ]
             }

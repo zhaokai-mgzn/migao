@@ -793,7 +793,6 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             entity.setProductId(productId);
             entity.setProcessingItemId(input.getProcessingItemId());
             entity.setCustomPrice(input.getCustomPrice());
-            entity.setCustomPerMeterQuantity(input.getCustomPerMeterQuantity());
             entity.setSortOrder(idx++);
             productProcessingItemMapper.insert(entity);
         }
@@ -839,7 +838,6 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             cfg.setProcessingItemId(rel.getProcessingItemId());
             cfg.setProcessingItemName(itemNameMap.get(rel.getProcessingItemId()));
             cfg.setCustomPrice(rel.getCustomPrice());
-            cfg.setCustomPerMeterQuantity(rel.getCustomPerMeterQuantity());
             configs.add(cfg);
         }
         response.setProcessingItemConfigs(configs);
@@ -1256,12 +1254,6 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             BigDecimal unitPrice = item.getUnitPrice();
             BigDecimal finalPrice = customPrice != null ? customPrice : unitPrice;
 
-            // 每米数量密度合并（issue #2986）：商品级 custom_per_meter_quantity 优先，否则加工项默认
-            BigDecimal customPerMeterQuantity = relation.getCustomPerMeterQuantity();
-            BigDecimal perMeterQuantity = customPerMeterQuantity != null
-                    ? customPerMeterQuantity
-                    : item.getPerMeterQuantity();
-
             result.add(ProductProcessingItemResponse.builder()
                     .id(item.getId())
                     .name(item.getName())
@@ -1269,8 +1261,6 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                     .unitPrice(unitPrice)
                     .customPrice(customPrice)
                     .finalPrice(finalPrice)
-                    .customPerMeterQuantity(customPerMeterQuantity)
-                    .perMeterQuantity(perMeterQuantity)
                     .unit(item.getUnit())
                     .build());
         }
@@ -1596,7 +1586,6 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                     ProcessingItemConfigInput input = new ProcessingItemConfigInput();
                     input.setProcessingItemId(resolved);
                     input.setCustomPrice(cfg.getCustomPrice());
-                    input.setCustomPerMeterQuantity(cfg.getCustomPerMeterQuantity());
                     configs.add(input);
                 }
             }

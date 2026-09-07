@@ -22,17 +22,11 @@ public class PriceCalculateRequest {
     private String processingItemId;
 
     /**
-     * 数量（per_piece 且配置每米数量密度时，若提供 fabricMeters 则按密度重新推导，覆盖此值）
+     * 数量（per_meter 计价的加工项传面料米数；per_set/fixed/per_area 传 1 或其他计数字）
      */
     @NotNull(message = "数量不能为空")
     @Positive(message = "数量必须大于 0")
     private BigDecimal quantity;
-
-    /**
-     * 面料米数（可选）：per_piece 计价且加工项配置了 perMeterQuantity 时，
-     * 数量 = ceil(面料米数 × 每米数量)，由服务端权威推导（用户零感知数量，issue #2986）
-     */
-    private BigDecimal fabricMeters;
 
     /**
      * 尺寸（宽 x 高），某些计价方式需要

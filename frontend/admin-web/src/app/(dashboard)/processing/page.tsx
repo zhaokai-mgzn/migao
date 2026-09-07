@@ -32,8 +32,6 @@ interface FormData {
   name: string
   unitPrice: string
   pricingMethod: PricingMethod | ''
-  // 每米数量（per_piece 计价时展示，字符串输入；空 = 未配置密度）（issue #2986）
-  perMeterQuantity: string
   discount: string
   discountQty: string
   discountRate: string
@@ -44,15 +42,15 @@ interface FormData {
 // 计价方式 → 单位映射
 const PRICING_UNIT_MAP: Record<string, string> = {
   per_meter: '米',
-  per_piece: '套',
+  per_set: '套',
   fixed: '件',
   per_area: '平方米',
 }
 
-// 计价方式选项
+// 计价方式选项（行业加工费按米计价、辅料含在加工费中 → 无按个/每米数量，issue #3005）
 const PRICING_METHOD_OPTIONS = [
   { value: 'per_meter', label: '按购买米数计价（单价 × 米数）' },
-  { value: 'per_piece', label: '按购买套数计价（单价 × 件数）' },
+  { value: 'per_set', label: '按套计价（单价 × 套数）' },
   { value: 'fixed', label: '固定一口价（不论尺寸/数量）' },
   { value: 'per_area', label: '按面积计价（单价 × 宽 × 高 × 数量）' },
 ]
@@ -73,7 +71,6 @@ const EMPTY_FORM: FormData = {
   name: '',
   unitPrice: '',
   pricingMethod: '',
-  perMeterQuantity: '',
   discount: '',
   discountQty: '2',
   discountRate: '',
@@ -142,7 +139,6 @@ export default function ProcessingPage() {
       name: item.name,
       unitPrice: String(item.unitPrice ?? item.basePrice ?? ''),
       pricingMethod: item.pricingMethod || 'per_meter',
-      perMeterQuantity: String(item.perMeterQuantity ?? ''),
       discount: '',
       discountQty: '2',
       discountRate: '',
@@ -185,16 +181,6 @@ export default function ProcessingPage() {
 
     if (!form.pricingMethod) {
       errs.pricingMethod = '请选择计价方式'
-    }
-
-    // 每米数量（仅 per_piece 计价时展示；填写须为正数 ≤999.99，最多 2 位小数）（issue #2986）
-    if (form.pricingMethod === 'per_piece' && form.perMeterQuantity.trim()) {
-      const density = parseFloat(form.perMeterQuantity)
-      if (isNaN(density) || density <= 0 || density > 999.99) {
-        errs.perMeterQuantity = '每米数量范围 0.01 ~ 999.99'
-      } else if (form.perMeterQuantity.includes('.') && form.perMeterQuantity.split('.')[1]?.length > 2) {
-        errs.perMeterQuantity = '最多2位小数'
-      }
     }
 
     if (!form.categoryId) {
@@ -252,10 +238,6 @@ export default function ProcessingPage() {
         pricingMethod,
         unitPrice: parseFloat(form.unitPrice),
         unit: PRICING_UNIT_MAP[pricingMethod] || '套',
-        // 每米数量密度：per_piece 填写时透传数值，未填写/其他计价方式传 null（后端忽略非 per_piece）（issue #2986）
-        perMeterQuantity: form.pricingMethod === 'per_piece' && form.perMeterQuantity.trim()
-          ? parseFloat(form.perMeterQuantity)
-          : null,
         status: 'active' as const,
         applicableProductCategories: form.applicableProductCategories,
       }
@@ -348,9 +330,6 @@ export default function ProcessingPage() {
               <th className="px-4 py-3 text-left text-sm font-semibold text-neutral-900 w-[18%] whitespace-nowrap">
                 加工项计价方式
               </th>
-              <th className="px-4 py-3 text-left text-sm font-semibold text-neutral-900 w-[15%] whitespace-nowrap">
-                每米数量
-              </th>
               <th className="px-4 py-3 text-left text-sm font-semibold text-neutral-900 w-[20%] whitespace-nowrap">
                 适用商品分类
               </th>
@@ -362,7 +341,7 @@ export default function ProcessingPage() {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={6} className="px-4 py-12 text-center text-neutral-500">
+                <td colSpan={5} className="px-4 py-12 text-center text-neutral-500">
                   <div className="flex items-center justify-center gap-2">
                     <div className="w-5 h-5 border-2 border-primary-600 border-t-transparent rounded-full animate-spin" />
                     加载中...
@@ -371,7 +350,7 @@ export default function ProcessingPage() {
               </tr>
             ) : items.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-12 text-center text-sm text-neutral-400">
+                <td colSpan={5} className="px-4 py-12 text-center text-sm text-neutral-400">
                   暂无加工项，点击右上角「新增加工项」开始创建
                 </td>
               </tr>
@@ -385,12 +364,6 @@ export default function ProcessingPage() {
                     </td>
                     <td className="px-4 py-3 text-sm text-neutral-900">
                       {getPricingMethodLabel(item.pricingMethod || '')}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-neutral-600">
-                      {/* 每米数量列：仅 per_piece 且配置密度时展示数值（issue #2986） */}
-                      {item.pricingMethod === 'per_piece' && item.perMeterQuantity != null
-                        ? `${Number(item.perMeterQuantity)} 个/米`
-                        : '—'}
                     </td>
                     <td className="px-4 py-3 text-sm text-neutral-600">
                       {getApplicableCategoryLabels(item.applicableProductCategories)}
@@ -501,33 +474,6 @@ export default function ProcessingPage() {
               <p className="mt-1 text-xs text-red-600">{errors.pricingMethod}</p>
             )}
           </div>
-
-          {/* 每米数量（仅 per_piece 计价时展示；用于下单时数量自动推导）（issue #2986） */}
-          {form.pricingMethod === 'per_piece' && (
-            <div>
-              <label className="block text-sm font-medium text-neutral-800 mb-1.5">
-                每米数量（个/米）
-              </label>
-              <input
-                type="number"
-                className={`w-full h-9 px-3 rounded border text-sm placeholder:text-neutral-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 ${
-                  errors.perMeterQuantity ? 'border-red-500' : 'border-neutral-300'
-                }`}
-                placeholder="请输入每米数量（如 6）"
-                step="0.01"
-                min="0.01"
-                max="999.99"
-                value={form.perMeterQuantity}
-                onChange={(e) => updateField('perMeterQuantity', e.target.value)}
-              />
-              <p className="mt-1 text-xs text-neutral-400">
-                每米布料对应的加工个数，如打孔每米约 6 个；下单时数量自动推导，用户不感知
-              </p>
-              {errors.perMeterQuantity && (
-                <p className="mt-1 text-xs text-red-600">{errors.perMeterQuantity}</p>
-              )}
-            </div>
-          )}
 
           {/* 加工分类（必选：后端加工项强依赖加工分类，新租户从 0 需先建） */}
           <div>

@@ -6,7 +6,7 @@ business_truths:
   - [processing-manage.product-link] 加工项关联商品
   - [processing-manage.order-judge] 含加工订单判定逻辑
   - [processing-manage.category-sort] 加工分类支持排序
-  - [processing-manage.per-meter-quantity] 加工项每米数量密度（per_piece 计价可配，如打孔 6 个/米、四爪钩 10 个/米）：订单数量自动推导 = ceil(面料米数 × 每米数量)，用户零感知数量（issue #2986）
+  - [processing-manage.pricing-methods] 加工项计价方式仅 per_meter/per_set/fixed/per_area（行业加工费按米计价、辅料含在加工费中）；无 per_piece 与「每米数量」密度（issue #3005 回滚 #2986）
 
 primary_specs:
   - tests/e2e/specs/catalog/processing.spec.ts

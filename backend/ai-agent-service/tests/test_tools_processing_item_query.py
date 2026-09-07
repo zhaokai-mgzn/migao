@@ -26,10 +26,9 @@ def sample_processing_items():
             "name": "打孔",
             "categoryId": "cat_punch",
             "categoryName": "穿挂",
-            "pricingMethod": "per_unit",
-            "unitPrice": 2.0,
-            "perMeterQuantity": 6,
-            "unit": "个",
+            "pricingMethod": "per_meter",
+            "unitPrice": 8.0,
+            "unit": "米",
             "minQuantity": 0,
             "maxQuantity": 200,
             "description": "金属圈打孔",
@@ -79,13 +78,12 @@ class TestProcessingItemList:
         assert result.data["total"] == 2
         assert len(result.data["items"]) == 2
         assert result.data["items"][0]["name"] == "打孔"
-        # PP-006：透传每米数量密度
-        assert result.data["items"][0]["per_meter_quantity"] == 6
-        assert result.data["items"][1]["per_meter_quantity"] is None
+        # PP-006（issue #3005 回滚）：不再透传每米数量密度
+        assert "per_meter_quantity" not in result.data["items"][0]
         # 验证字段映射 camelCase -> snake_case
-        assert result.data["items"][0]["unit_price"] == 2.0
+        assert result.data["items"][0]["unit_price"] == 8.0
         assert result.data["items"][0]["category_name"] == "穿挂"
-        assert result.data["items"][0]["pricing_method"] == "per_unit"
+        assert result.data["items"][0]["pricing_method"] == "per_meter"
         assert result.data["page"] == 1
         assert result.data["size"] == 10
 
