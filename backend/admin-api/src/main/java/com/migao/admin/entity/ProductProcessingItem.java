@@ -36,11 +36,6 @@ public class ProductProcessingItem {
 
     private BigDecimal customPrice;
 
-    /**
-     * 商品专属每米数量（密度覆盖）：NULL=用加工项默认密度，非空=商品级覆盖（语义同 customPrice）
-     */
-    private BigDecimal customPerMeterQuantity;
-
     private Integer sortOrder;
 
     @TableField(fill = FieldFill.INSERT)

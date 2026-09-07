@@ -27,7 +27,8 @@ public class ProcessingItemUpdateRequest {
     private String categoryId;
 
     /**
-     * 计价方式：per_meter（按米）、per_piece（按件）、fixed（固定价）、per_area（按面积）
+     * 计价方式：per_meter（按米）、per_set（按套）、fixed（固定价）、per_area（按面积）
+     * 行业加工费按米计价、辅料含在加工费中 → 不支持按个（per_piece）与每米数量（issue #3005）
      */
     @NotBlank(message = "计价方式不能为空")
     private String pricingMethod;
@@ -40,14 +41,6 @@ public class ProcessingItemUpdateRequest {
     @DecimalMax(value = "999.99", message = "加工项价格不能超过999.99")
     @Digits(integer = 3, fraction = 2, message = "价格最多支持2位小数")
     private BigDecimal unitPrice;
-
-    /**
-     * 每米数量（密度）：per_piece 计价加工项每米布料的加工个数（如打孔 6 个/米），per_meter/per_set/fixed 不适用留空
-     */
-    @DecimalMin(value = "0.01", message = "每米数量不能小于 0.01")
-    @DecimalMax(value = "999.99", message = "每米数量不能超过 999.99")
-    @Digits(integer = 3, fraction = 2, message = "每米数量最多支持2位小数")
-    private BigDecimal perMeterQuantity;
 
     /**
      * 单位

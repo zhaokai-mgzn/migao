@@ -23,7 +23,7 @@ public class ProductProcessingItemResponse {
     /** 加工项名称 */
     private String name;
 
-    /** 计价方式：per_meter / per_piece / fixed / per_area */
+    /** 计价方式：per_meter / per_set / fixed / per_area */
     private String pricingMethod;
 
     /** 原始单价 */
@@ -31,12 +31,6 @@ public class ProductProcessingItemResponse {
 
     /** 商品自定义价格（可为 null） */
     private BigDecimal customPrice;
-
-    /** 商品级每米数量（密度覆盖，可为 null）；未覆盖时用加工项默认 perMeterQuantity */
-    private BigDecimal customPerMeterQuantity;
-
-    /** 生效每米数量（合并值）：customPerMeterQuantity 优先，否则加工项默认 perMeterQuantity */
-    private BigDecimal perMeterQuantity;
 
     /** 最终价格：customPrice 不为空则取 customPrice，否则取 unitPrice */
     private BigDecimal finalPrice;

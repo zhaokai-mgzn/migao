@@ -62,15 +62,11 @@ function genId(): string {
   return `li_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
 }
 
-// 加工项数量系统自动推导（用户零感知数量，issue #2986）：
-// per_meter → 数量 = 面料米数；per_piece + 每米数量密度 → ceil(面料米数 × 密度)；
-// per_piece 无密度 / per_set / fixed / per_area → 数量 = 1
+// 加工项数量规则（issue #3005 回滚 #2986）：行业加工费按米计价、辅料含在加工费中，
+// 无 per_piece/每米数量密度——per_meter → 数量=面料米数；per_set/fixed/per_area → 1
 function deriveProcessingQty(pi: ProductProcessingItem, fabricMeters: number): number {
   const method = pi.pricingMethod
   if (method === 'per_meter') return Math.max(1, fabricMeters)
-  if (method === 'per_piece' && pi.perMeterQuantity && pi.perMeterQuantity > 0) {
-    return Math.max(1, Math.ceil(fabricMeters * pi.perMeterQuantity))
-  }
   return 1
 }
 
@@ -250,13 +246,13 @@ export default function NewOrderPage() {
     updateLineItem(line.id, {
       selectedProcessing: {
         ...line.selectedProcessing,
-        // 选中即按当前面料米数推导数量（不再默认 1）；取消勾选保留原值（不参与展示）（issue #2986）
+        // 选中即按当前面料米数推导数量（per_meter=米数，其余=1）；取消勾选保留原值（issue #3005 回滚 #2986）
         [pi.id]: { selected, qty: selected ? deriveProcessingQty(pi, line.quantity) : prev.qty },
       },
     })
   }
 
-  // 行商品数量（面料米数）变化 → 已选中加工项数量联动重算（数量由系统推导，用户不可编辑）（issue #2986）
+  // 行商品数量（面料米数）变化 → 已选中加工项数量联动重算（per_meter=面料米数，其余=1）（issue #3005 回滚 #2986）
   const handleLineQtyChange = (line: OrderLineItem, qty: number) => {
     const selectedProcessing: Record<string, { selected: boolean; qty: number }> = {
       ...line.selectedProcessing,
@@ -1009,9 +1005,10 @@ function LineItemBlock({
                               )}
                             </div>
                           </div>
-                          {/* 加工项行只显示「名称 + 金额」，数量由系统推导不进 UI（issue #2986） */}
+                          {/* 加工项行显示「名称 + 数量 + 金额」，数量=面料米数（按米）或 1（按套/一口价/面积）（issue #3005 回滚 #2986） */}
                           {cfg.selected && (
                             <span className="text-sm font-semibold text-primary-600 shrink-0">
+                              {Math.max(1, Number(cfg.qty) || 1)}{pi.unit || '项'} ·{' '}
                               {formatAmount(finalPrice * (Math.max(1, Number(cfg.qty) || 1)))}
                             </span>
                           )}

@@ -44,10 +44,10 @@ tools: order_query, order_manage, order_create, logistics_track, product_search,
 
 ## 加工项（🔴 用户要求加工时禁止遗漏）
 
-- **数据来源**：product_detail 的 `processing_items`（含 perMeterQuantity 每米数量），加工费按 `finalPrice`（无则 `unitPrice`）计算。
+- **数据来源**：product_detail 的 `processing_items`（containing id/name/unitPrice/pricingMethod），加工费按 `finalPrice`（无则 `unitPrice`）计算。
 - **用户要求加工时**：必须填 order_create 的 `processing_info.processingItems` = `[{id, name, unitPrice, quantity, unit, pricingMethod, subtotal}]`，`processing_info.processingFee` = 各项 `unitPrice × quantity` 之和。
 - **金额**：`subtotal` = 面料小计 + 加工费；漏算加工费 = 订单金额错误 = 严重缺陷。
-- **数量自动推导（🔴 禁止问"需要几个"）**：per_meter → 面料米数；per_piece 且有 perMeterQuantity → ceil(面料米数×密度)；其余 → 1。**确认/回复只展示「加工项+金额」（如「打孔加工 ¥27.00」），不出现数量**；用户主动问才说明。
+- **数量规则**：per_meter → 面料米数（如打孔 8 元/米 × 3 米 = 24 元）；per_set/fixed → 1；per_area → 宽×高。**禁止虚构「每米几个」的密度推导**（行业加工费按米计价、辅料含在加工费中，issue #3005）。
 
 ## 回复格式
 
