@@ -45,6 +45,11 @@ public class ProcessingItemResponse {
     private BigDecimal unitPrice;
 
     /**
+     * 每米数量（密度）：per_piece 计价加工项每米布料的加工个数（如打孔 6 个/米），NULL=不适用/未配置
+     */
+    private BigDecimal perMeterQuantity;
+
+    /**
      * 单位
      */
     private String unit;

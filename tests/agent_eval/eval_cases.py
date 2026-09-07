@@ -2111,6 +2111,21 @@ _CASE_OR_013 = EvalCase(
     persona='',
 )
 
+# ── OR-014 [NORMAL] 下单加工项数量自动推导 - 按计价方式与密度，用户零感知（源: cases/order.yml）──
+_CASE_OR_014 = EvalCase(
+    id='OR-014',
+    legacy_id='',
+    title='下单加工项数量自动推导 - 按计价方式与密度，用户零感知',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['帮我下单，遮光窗帘 3 米，要打孔加工'],
+    expectations=['product_detail', 'order_create'],
+    data_checks=['加工项数量由系统自动推导，不询问用户：per_meter → 数量=面料米数；per_piece+密度（打孔 6 个/米）→ 数量=ceil(3×6)=18 个；per_piece 无密度/per_set/fixed → 数量=1', 'processing_info.processingItems 逐项含 {id, name, unitPrice, quantity, unit, pricingMethod, subtotal}，processingFee = 各项 unitPrice × quantity 之和', '订单确认/回复展示加工项只出现「加工项名称 + 金额」（如『打孔加工 ¥27.00』），不出现数量字眼；用户主动询问才说明数量', '加工费 = 单价 × 推导数量（打孔 1.5 元 × 18 = 27 元），漏算/错算加工费 = 订单金额错误'],
+    skip_reason='',
+    tags=['order_create', 'processing_item', 'pricing'],
+    persona='',
+)
+
 # ── PP-001 [NORMAL] 加工项选择 - 分页翻页（源: cases/processing.yml）──
 _CASE_PP_001 = EvalCase(
     id='PP-001',
@@ -2183,6 +2198,21 @@ _CASE_PP_004 = EvalCase(
     data_checks=['success=true', '确认卡先于写操作（GB/T 47746-2026 确认闸，与 OR-010/PR-010 模式一致）', 'item_ids 解析自序号 1/3/5 对应加工项（LLM 可传名称或序号，resolver 兜底；序号解析单测见 test_id_resolver.py）'],
     skip_reason='',
     tags=['id_resolve', 'adversarial', 'sequence', 'confirm'],
+    persona='',
+)
+
+# ── PP-006 [NORMAL] 加工项每米数量 - 配置与商品级覆盖（源: cases/processing.yml）──
+_CASE_PP_006 = EvalCase(
+    id='PP-006',
+    legacy_id='',
+    title='加工项每米数量 - 配置与商品级覆盖',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['给打孔加工配置每米数量 6 个/米', '查询打孔加工的配置'],
+    expectations=['processing_item_manage(action=update_item)', 'processing_item_query(keyword=打孔)'],
+    data_checks=['processing_item_query 响应条目透传 per_meter_quantity（加工项每米数量密度，如打孔 6 个/米）', 'per_meter / per_set 计价的加工项无 per_meter_quantity（不适用，数量 1:1 或按套）', '商品详情 processingItems 透传 perMeterQuantity（商品级 custom_per_meter_quantity 覆盖后合并值，无覆盖=加工项默认密度）'],
+    skip_reason='',
+    tags=['processing_item', 'per_meter_quantity', 'pricing'],
     persona='',
 )
 
@@ -3210,11 +3240,13 @@ ALL_CASES = (
     _CASE_OR_011,
     _CASE_OR_012,
     _CASE_OR_013,
+    _CASE_OR_014,
     _CASE_PP_001,
     _CASE_PP_002,
     _CASE_PP_003,
     _CASE_PP_005,
     _CASE_PP_004,
+    _CASE_PP_006,
     _CASE_PR_001,
     _CASE_PR_002,
     _CASE_PR_003,

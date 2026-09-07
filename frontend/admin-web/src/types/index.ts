@@ -201,6 +201,8 @@ export interface ProductProcessingItemConfig {
   processingItemId: string | null
   processingItemName?: string
   customPrice: number
+  // 商品级覆盖每米数量密度（仅 per_piece 计价加工项；空=跟随加工项基础密度）（issue #2986）
+  customPerMeterQuantity?: number
 }
 
 export interface ProductFormData {
@@ -258,6 +260,8 @@ export interface ProcessingItem {
   unitPrice: number
   unit: string
   basePrice?: number // legacy alias for unitPrice
+  // 每米数量密度（per_piece 计价时用于数量推导：数量 = ceil(面料米数 × 密度)）（issue #2986）
+  perMeterQuantity?: number
   status: ProcessingItemStatus
   pricingRules?: Record<string, unknown>
   options?: Record<string, unknown>[]
@@ -284,6 +288,8 @@ export interface ProcessingItemFormData {
   pricingMethod: PricingMethod
   unitPrice: number
   unit?: string
+  // 每米数量密度（per_piece 计价时可选；null = 未配置，后端忽略非 per_piece 的此字段）（issue #2986）
+  perMeterQuantity?: number | null
   status?: ProcessingItemStatus
   description?: string
   options?: Record<string, unknown>[]
@@ -508,6 +514,8 @@ export interface OrderProcessingItem {
   unitPrice: number           // 单价（元/米）
   quantity: number            // 数量（米）
   amount: number              // 金额 = unitPrice * quantity
+  // 每米数量密度透传（per_piece 推导依据，仅内部订货批量场景使用）（issue #2986）
+  perMeterQuantity?: number
 }
 
 // 订单备注

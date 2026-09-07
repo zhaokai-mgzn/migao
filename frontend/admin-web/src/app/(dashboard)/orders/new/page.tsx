@@ -62,6 +62,18 @@ function genId(): string {
   return `li_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
 }
 
+// 加工项数量系统自动推导（用户零感知数量，issue #2986）：
+// per_meter → 数量 = 面料米数；per_piece + 每米数量密度 → ceil(面料米数 × 密度)；
+// per_piece 无密度 / per_set / fixed / per_area → 数量 = 1
+function deriveProcessingQty(pi: ProductProcessingItem, fabricMeters: number): number {
+  const method = pi.pricingMethod
+  if (method === 'per_meter') return Math.max(1, fabricMeters)
+  if (method === 'per_piece' && pi.perMeterQuantity && pi.perMeterQuantity > 0) {
+    return Math.max(1, Math.ceil(fabricMeters * pi.perMeterQuantity))
+  }
+  return 1
+}
+
 function createEmptyLineItem(): OrderLineItem {
   return {
     id: genId(),
@@ -238,24 +250,24 @@ export default function NewOrderPage() {
     updateLineItem(line.id, {
       selectedProcessing: {
         ...line.selectedProcessing,
-        [pi.id]: { selected, qty: Math.max(1, prev.qty || 1) },
+        // 选中即按当前面料米数推导数量（不再默认 1）；取消勾选保留原值（不参与展示）（issue #2986）
+        [pi.id]: { selected, qty: selected ? deriveProcessingQty(pi, line.quantity) : prev.qty },
       },
     })
   }
 
-  const updateProcessingQty = (
-    line: OrderLineItem,
-    piId: string,
-    qty: number
-  ) => {
-    const prev = line.selectedProcessing[piId] || { selected: true, qty: 1 }
-    updateLineItem(line.id, {
-      selectedProcessing: {
-        ...line.selectedProcessing,
-        [piId]: { selected: true, qty: Math.max(1, qty || 1) },
-      },
+  // 行商品数量（面料米数）变化 → 已选中加工项数量联动重算（数量由系统推导，用户不可编辑）（issue #2986）
+  const handleLineQtyChange = (line: OrderLineItem, qty: number) => {
+    const selectedProcessing: Record<string, { selected: boolean; qty: number }> = {
+      ...line.selectedProcessing,
+    }
+    Object.entries(selectedProcessing).forEach(([piId, cfg]) => {
+      if (!cfg.selected) return
+      const pi = line.processingItems.find((p) => p.id === piId)
+      if (!pi) return
+      selectedProcessing[piId] = { ...cfg, qty: deriveProcessingQty(pi, qty) }
     })
-    void prev
+    updateLineItem(line.id, { quantity: qty, selectedProcessing })
   }
 
   // ===== 费用汇总 =====
@@ -467,10 +479,9 @@ export default function NewOrderPage() {
                     onRemove={() => removeLineItem(line.id)}
                     onSelectColor={(colorId) => handleSelectColor(line, colorId)}
                     onSelectSku={(sku) => handleSelectSku(line, sku)}
-                    onChangeQty={(q) => updateLineItem(line.id, { quantity: q })}
+                    onChangeQty={(q) => handleLineQtyChange(line, q)}
                     onChangePrice={(p) => updateLineItem(line.id, { unitPrice: p })}
                     onToggleProcessing={(pi, sel) => toggleProcessing(line, pi, sel)}
-                    onChangeProcessingQty={(piId, q) => updateProcessingQty(line, piId, q)}
                   />
                 ))}
               </div>
@@ -738,7 +749,6 @@ interface LineItemBlockProps {
   onChangeQty: (q: number) => void
   onChangePrice: (p: number) => void
   onToggleProcessing: (pi: ProductProcessingItem, selected: boolean) => void
-  onChangeProcessingQty: (piId: string, qty: number) => void
 }
 
 function LineItemBlock({
@@ -753,7 +763,6 @@ function LineItemBlock({
   onChangeQty,
   onChangePrice,
   onToggleProcessing,
-  onChangeProcessingQty,
 }: LineItemBlockProps) {
   const colorOptions = useMemo(
     () => uniqueColors(line.product?.skus),
@@ -1000,16 +1009,11 @@ function LineItemBlock({
                               )}
                             </div>
                           </div>
+                          {/* 加工项行只显示「名称 + 金额」，数量由系统推导不进 UI（issue #2986） */}
                           {cfg.selected && (
-                            <input
-                              type="number"
-                              min={1}
-                              value={cfg.qty}
-                              onChange={(e) =>
-                                onChangeProcessingQty(pi.id, Math.max(1, Number(e.target.value) || 1))
-                              }
-                              className="w-20 h-8 px-2 rounded border border-neutral-300 text-sm text-center focus:outline-none focus:border-primary-500"
-                            />
+                            <span className="text-sm font-semibold text-primary-600 shrink-0">
+                              {formatAmount(finalPrice * (Math.max(1, Number(cfg.qty) || 1)))}
+                            </span>
                           )}
                         </div>
                       )

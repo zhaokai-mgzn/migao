@@ -271,6 +271,7 @@ class ProcessingItemQueryTool(BaseTool):
             "category_name": record.get("categoryName") or record.get("category_name"),
             "pricing_method": record.get("pricingMethod") or record.get("pricing_method"),
             "unit_price": record.get("unitPrice") or record.get("unit_price"),
+            "per_meter_quantity": record.get("perMeterQuantity") or record.get("per_meter_quantity"),
             "unit": record.get("unit"),
             "min_quantity": record.get("minQuantity") or record.get("min_quantity"),
             "max_quantity": record.get("maxQuantity") or record.get("max_quantity"),

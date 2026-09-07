@@ -173,3 +173,43 @@ cases:
       ci:
         - agent-eval.yml
       verifies: []
+
+  - id: PP-006
+    legacy_id: ""
+    title: "加工项每米数量 - 配置与商品级覆盖"
+    domains:
+      - processing
+    tier: normal
+    tags:
+      - processing_item
+      - per_meter_quantity
+      - pricing
+    truths_ref:
+      - processing-manage.crud
+      - product-sku-stock.create-flow
+    user_inputs:
+      - "给打孔加工配置每米数量 6 个/米"
+      - "查询打孔加工的配置"
+    expectations:
+      - tool: processing_item_manage
+        args:
+          action: update_item
+      - tool: processing_item_query
+        args:
+          keyword: "打孔"
+    data_checks:
+      - "processing_item_query 响应条目透传 per_meter_quantity（加工项每米数量密度，如打孔 6 个/米）"
+      - "per_meter / per_set 计价的加工项无 per_meter_quantity（不适用，数量 1:1 或按套）"
+      - "商品详情 processingItems 透传 perMeterQuantity（商品级 custom_per_meter_quantity 覆盖后合并值，无覆盖=加工项默认密度）"
+    skip_reason: ""
+    merge_log: "2026-09-07 新增（issue #2986）：加工项每米数量密度配置——per_piece 类加工项（打孔/四爪钩/罗马圈）按个计价但数量随面料米数线性变化，行业标准密度（打孔 6 个/米、四爪钩 10 个/米等）可配置并透传给下单自动推导"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_processing_item_query.py"
+        - "backend/ai-agent-service/tests/test_tools_processing_item_manage.py"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingItemServiceTest.java"
+      ci:
+        - agent-eval.yml
+        - pr-check.yml
+      verifies: []
+

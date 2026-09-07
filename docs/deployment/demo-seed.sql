@@ -143,6 +143,15 @@ INSERT INTO processing_items (id, tenant_id, name, category_id, pricing_method, 
 SELECT 'pi-trim', :tenant_id, '帘头加工', 'pc-fold', 'per_meter', 50.00, '元', '帘头造型加工（花边另计）', 2, TRUE, 'active'
 WHERE NOT EXISTS (SELECT 1 FROM processing_items WHERE id = 'pi-trim' AND tenant_id = :tenant_id);
 
+-- 按个计价 + 每米数量密度（issue #2986）：数量自动推导 = ceil(面料米数 × per_meter_quantity)，用户零感知
+INSERT INTO processing_items (id, tenant_id, name, category_id, pricing_method, unit_price, per_meter_quantity, unit, description, processing_days, ai_recommended, status)
+SELECT 'pi-punch-pc', :tenant_id, '打孔（罗马圈，按个）', 'pc-fold', 'per_piece', 1.50, 6.00, '个', '按个打孔，每米约 6 个，数量自动推导', 1, TRUE, 'active'
+WHERE NOT EXISTS (SELECT 1 FROM processing_items WHERE id = 'pi-punch-pc' AND tenant_id = :tenant_id);
+
+INSERT INTO processing_items (id, tenant_id, name, category_id, pricing_method, unit_price, per_meter_quantity, unit, description, processing_days, ai_recommended, status)
+SELECT 'pi-hook-pc', :tenant_id, '四爪钩（按个）', 'pc-fold', 'per_piece', 1.00, 10.00, '个', '四爪钩，布带爪位约每 10cm 一个，每米 10 个，数量自动推导', 1, TRUE, 'active'
+WHERE NOT EXISTS (SELECT 1 FROM processing_items WHERE id = 'pi-hook-pc' AND tenant_id = :tenant_id);
+
 -- ──────────────────────────────────────────────
 -- 5. 客户（3 个 RFM 客户）
 -- ──────────────────────────────────────────────

@@ -84,5 +84,7 @@ public class AgentProductCreateRequest {
         private String processingItemId;
         /** 自定义价格（可选） */
         private BigDecimal customPrice;
+        /** 商品级每米数量（密度覆盖，可选）：NULL=用加工项默认密度 */
+        private BigDecimal customPerMeterQuantity;
     }
 }

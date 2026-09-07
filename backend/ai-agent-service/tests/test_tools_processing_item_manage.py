@@ -1,5 +1,5 @@
 """ProcessingItemManageTool 单元测试 — 加工项/加工分类 CRUD + 价格计算。"""
-# case_ids: PP-002, PP-003, PP-004
+# case_ids: PP-002, PP-003, PP-004, PP-006
 import pytest
 from unittest.mock import AsyncMock, patch
 
@@ -70,6 +70,19 @@ class TestProcessingItemCreate:
         assert json_data["categoryId"] == "c1"
         assert json_data["price"] == 5.0
 
+    @patch("app.tools.processing_item_manage.get_admin_api_client")
+    async def test_create_with_per_meter_quantity(self, mock_get_client, tool, admin_tool_context, mock_client):
+        """PP-006：create_item 支持 per_meter_quantity 透传"""
+        mock_client.post = AsyncMock(return_value={"success": True, "data": {"id": "pi-new"}})
+        mock_get_client.return_value = mock_client
+
+        result = await tool.execute(
+            context=admin_tool_context, action="create_item", name="打孔", price=1.5,
+            category_id="c1", per_meter_quantity=6)
+        assert result.success is True
+        json_data = mock_client.post.call_args[1]["json_data"]
+        assert json_data["perMeterQuantity"] == 6
+
 
 class TestProcessingItemUpdate:
     @patch("app.tools.processing_item_manage.get_admin_api_client")
@@ -94,9 +107,12 @@ class TestProcessingItemUpdate:
         mock_get_client.return_value = mock_client
 
         result = await tool.execute(
-            context=admin_tool_context, action="update_item", item_id="pi-1", name="打孔(更新)", price=6.0)
+            context=admin_tool_context, action="update_item", item_id="pi-1", name="打孔(更新)", price=6.0,
+            per_meter_quantity=7)
         assert result.success is True
         assert mock_client.put.call_args[0][0] == "/api/admin/processing-items/pi-1"
+        json_data = mock_client.put.call_args[1]["json_data"]
+        assert json_data["perMeterQuantity"] == 7
 
 
 class TestProcessingItemDelete:
