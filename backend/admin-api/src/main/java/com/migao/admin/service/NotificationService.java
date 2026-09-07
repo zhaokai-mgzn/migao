@@ -4,11 +4,13 @@ import com.migao.admin.dto.*;
 import com.migao.admin.entity.Notification;
 import com.migao.admin.entity.NotificationRule;
 import com.migao.admin.entity.NotificationTemplate;
+import com.migao.admin.entity.Tenant;
 import com.migao.admin.entity.User;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.NotificationMapper;
 import com.migao.admin.mapper.NotificationRuleMapper;
 import com.migao.admin.mapper.NotificationTemplateMapper;
+import com.migao.admin.mapper.TenantMapper;
 import com.migao.admin.mapper.UserMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
@@ -39,6 +41,17 @@ public class NotificationService {
     private final NotificationTemplateMapper notificationTemplateMapper;
     private final NotificationRuleMapper notificationRuleMapper;
     private final UserMapper userMapper;
+    private final TenantMapper tenantMapper;
+
+    /**
+     * 租户系统通知总开关（#3003）：企业基础设置「启用系统通知」。
+     * tenants.notification_enabled=false 时租户不再产生自动站内信（历史通知保留）。
+     * 租户不存在或字段为 null（存量数据）视为开启 —— 不改变既有行为。
+     */
+    private boolean tenantNotificationsEnabled(Long tenantId) {
+        Tenant tenant = tenantMapper.selectById(tenantId);
+        return tenant == null || Boolean.TRUE.equals(tenant.getNotificationEnabled());
+    }
 
     /**
      * 创建通知
@@ -246,6 +259,11 @@ public class NotificationService {
      */
     @Transactional(rollbackFor = Exception.class)
     public void triggerByEvent(Long tenantId, String eventType, Map<String, String> contextData) {
+        // #3003：租户关闭「启用系统通知」→ 自动站内信直接跳过（历史通知保留）
+        if (!tenantNotificationsEnabled(tenantId)) {
+            log.debug("租户已关闭系统通知，跳过事件通知: tenantId={}, eventType={}", tenantId, eventType);
+            return;
+        }
         // 查询匹配的通知规则：优先租户自定义规则，其次系统内置规则（tenantId=0）
         LambdaQueryWrapper<NotificationRule> ruleWrapper = new LambdaQueryWrapper<>();
         ruleWrapper.and(w -> w.eq(NotificationRule::getTenantId, tenantId)
@@ -327,6 +345,11 @@ public class NotificationService {
      */
     @Transactional(rollbackFor = Exception.class)
     public void triggerForTenantAdmins(Long tenantId, String eventType, Map<String, String> vars) {
+        // #3003：租户关闭「启用系统通知」→ 待办广播直接跳过（避免无谓查管理员/逐管理员触发）
+        if (!tenantNotificationsEnabled(tenantId)) {
+            log.debug("租户已关闭系统通知，跳过管理员待办广播: tenantId={}, eventType={}", tenantId, eventType);
+            return;
+        }
         LambdaQueryWrapper<User> adminWrapper = new LambdaQueryWrapper<>();
         adminWrapper.eq(User::getTenantId, tenantId)
                 .eq(User::getRole, "admin")

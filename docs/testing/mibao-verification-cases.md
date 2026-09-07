@@ -2065,7 +2065,7 @@
 真值: ai-chat.tool-classes, ai-chat.permission-layers
 溯源: 2026-08-25 新增：ai-agent-service tools-mixed-part2 覆盖率补全（issue #2426） ｜ tags: registry, tool_execute, audit
 
-## 设置域（8 case）
+## 设置域（9 case）
 
 ### ST-001. 系统设置 - 读取 🔵
 ```
@@ -2142,6 +2142,18 @@
 ```
 真值: settings-manage.ai-config, settings-manage.immediate-effect
 溯源: POC 机器人设置集成新增 ｜ tags: ai_config, handoff
+
+### ST-009. 系统通知总开关 - 租户关闭后自动站内信停止发送（#3003） 🔵
+```
+你: 企业基础设置里关闭「启用系统通知」后，新订单/新售后/状态变更等自动站内信还发吗？
+期望: direct_reply
+数据: tenants.notification_enabled=false 的租户：triggerByEvent（order_created / after_sales_created / order_status_changed / after_sales_status_changed）与 triggerForTenantAdmins 直接跳过，不再产生新的自动站内信；历史通知保留
+数据: 开关字段为 null（存量租户）默认视为开启，行为不变；triggerByEvent 命中规则仍正常落库
+数据: 前端企业基础设置「启用系统通知」描述与实际一致：控制订单、客服等重要事件站内通知的发送；关闭后不再产生新的站内通知（历史通知保留），不再写「当前为站内通知开关」含糊文案
+跳过: 开关接线为 Java 单测验证（NotificationServiceTest）+ 前端文案 vitest，非 LLM 工具行为，不进入 agent-eval 冒烟
+```
+真值: settings-notification.master-switch
+溯源: 2026-09-07 新增：企业基础设置「启用系统通知」从死开关接线为租户级自动站内信总开关（issue #3003） ｜ tags: notification, switch, setting
 
 ## token-refresh（4 case）
 
@@ -2573,7 +2585,7 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：209（活跃 109，跳过 100）
+- 用例总数：209（生成物重渲染后修正）
 - tier 分布：smoke 8 / normal 173 / adversarial 28
 - 售后域：6
 - agents：6
@@ -2594,7 +2606,7 @@
 - 加工项域：6
 - 商品域：18
 - registry：1
-- 设置域：8
+- 设置域：9
 - token-refresh：4
 - ui：28
 - utils：2

@@ -1,4 +1,4 @@
-// case_ids: ST-001, ST-003
+// case_ids: ST-001, ST-003, ST-009
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -473,6 +473,24 @@ describe('SettingsPage — AI tab removed (Issue #502)', () => {
       await waitFor(() => {
         expect(document.querySelector('[data-testid="icon-building2"]')).toBeInTheDocument()
       })
+    })
+  })
+
+  // ── #3003 系统通知开关 —— 描述与实际行为一致（租户级自动站内信总开关）──
+
+  describe('通知设置 — 启用系统通知', () => {
+    it('渲染开关与口径说明（关闭后不再产生新的站内通知，历史保留）', async () => {
+      mockGetSettings.mockResolvedValue({
+        data: { data: { companyName: '测试企业', logo: '', notificationEnabled: true, notificationEmail: '' } },
+      })
+      render(<SettingsPage />)
+      await waitFor(() => {
+        expect(screen.getByText('启用系统通知')).toBeInTheDocument()
+      })
+      // #3003：描述与后端接线一致（tenants.notification_enabled 控制自动站内信），
+      // 不再出现「（当前为站内通知开关）」这种含糊/与实际脱节的文案
+      expect(screen.getByText(/关闭后不再产生新的站内通知（历史通知保留）/)).toBeInTheDocument()
+      expect(screen.queryByText(/当前为站内通知开关/)).not.toBeInTheDocument()
     })
   })
 

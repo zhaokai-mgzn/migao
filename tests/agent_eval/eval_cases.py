@@ -2666,6 +2666,21 @@ _CASE_ST_008 = EvalCase(
     persona='xiaobu',
 )
 
+# ── ST-009 [NORMAL] 系统通知总开关 - 租户关闭后自动站内信停止发送（#3003）（源: cases/settings.yml）──
+_CASE_ST_009 = EvalCase(
+    id='ST-009',
+    legacy_id='',
+    title='系统通知总开关 - 租户关闭后自动站内信停止发送（#3003）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['企业基础设置里关闭「启用系统通知」后，新订单/新售后/状态变更等自动站内信还发吗？'],
+    expectations=['direct_reply'],
+    data_checks=['tenants.notification_enabled=false 的租户：triggerByEvent（order_created / after_sales_created / order_status_changed / after_sales_status_changed）与 triggerForTenantAdmins 直接跳过，不再产生新的自动站内信；历史通知保留', '开关字段为 null（存量租户）默认视为开启，行为不变；triggerByEvent 命中规则仍正常落库', '前端企业基础设置「启用系统通知」描述与实际一致：控制订单、客服等重要事件站内通知的发送；关闭后不再产生新的站内通知（历史通知保留），不再写「当前为站内通知开关」含糊文案'],
+    skip_reason='开关接线为 Java 单测验证（NotificationServiceTest）+ 前端文案 vitest，非 LLM 工具行为，不进入 agent-eval 冒烟',
+    tags=['notification', 'switch', 'setting'],
+    persona='',
+)
+
 # ── TR-001 [NORMAL] refresh-success — 401 自动刷新并重放原请求（源: cases/token-refresh.yml）──
 _CASE_TR_001 = EvalCase(
     id='TR-001',
@@ -3352,6 +3367,7 @@ ALL_CASES = (
     _CASE_ST_006,
     _CASE_ST_007,
     _CASE_ST_008,
+    _CASE_ST_009,
     _CASE_TR_001,
     _CASE_TR_002,
     _CASE_TR_003,
