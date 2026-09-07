@@ -47,7 +47,7 @@ public interface OrderItemMapper extends BaseMapper<OrderItem> {
             "COALESCE(SUM(oi.quantity), 0) AS qty, COALESCE(SUM(FLOOR(oi.subtotal)), 0) AS amt " +
             "FROM order_items oi JOIN orders o ON oi.order_id = o.id " +
             "WHERE oi.deleted = 0 AND o.deleted = 0 " +
-            "AND oi.product_id IS NOT NULL AND oi.product_id <> '' " +
+            "AND oi.product_id IS NOT NULL AND oi.product_id &lt;&gt; '' " +
             "AND o.status IN ('confirmed','producing','shipped','completed') " +
             "AND oi.created_at >= #{periodStart} " +
             "GROUP BY oi.product_id ORDER BY qty DESC LIMIT #{limit}")
@@ -64,7 +64,7 @@ public interface OrderItemMapper extends BaseMapper<OrderItem> {
             "SELECT oi.product_id, COALESCE(SUM(oi.quantity), 0) AS qty " +
             "FROM order_items oi JOIN orders o ON oi.order_id = o.id " +
             "WHERE oi.deleted = 0 AND o.deleted = 0 " +
-            "AND oi.product_id IS NOT NULL AND oi.product_id <> '' " +
+            "AND oi.product_id IS NOT NULL AND oi.product_id &lt;&gt; '' " +
             "AND o.status IN ('confirmed','producing','shipped','completed') " +
             "AND oi.product_id IN " +
             "<foreach collection='productIds' item='pid' open='(' separator=',' close=')'>#{pid}</foreach> " +
