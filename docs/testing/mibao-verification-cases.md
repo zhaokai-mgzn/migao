@@ -1712,7 +1712,7 @@
 数据: 订单确认/回复展示加工项只出现「加工项名称 + 金额」（如『打孔加工 ¥27.00』），不出现数量字眼；用户主动询问才说明数量
 数据: 加工费 = 单价 × 推导数量（打孔 1.5 元 × 18 = 27 元），漏算/错算加工费 = 订单金额错误
 ```
-真值: order.states, order.order-create
+真值: order.states, order.create-flow, processing-manage.per-meter-quantity
 溯源: 2026-09-07 新增（issue #2986）：下单加工项数量自动推导 + 数量隐藏——per_piece 数量=ceil(面料米数×密度) 由系统算，订单/AI 确认只见名称+金额，堵加工费错算（#2613/#2615/#2916 同类根因） ｜ tags: order_create, processing_item, pricing
 
 ## 加工项域（6 case）

@@ -482,7 +482,8 @@ cases:
       - pricing
     truths_ref:
       - order.states
-      - order.order-create
+      - order.create-flow
+      - processing-manage.per-meter-quantity
     user_inputs:
       - "帮我下单，遮光窗帘 3 米，要打孔加工"
     expectations:
