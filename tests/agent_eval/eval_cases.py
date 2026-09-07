@@ -116,6 +116,21 @@ _CASE_AS_005 = EvalCase(
     persona='',
 )
 
+# ── AS-006 [NORMAL] 售后工单退款/退货完结 - 按商品「退货回补库存」开关决定是否回补库存（源: cases/aftersales.yml）──
+_CASE_AS_006 = EvalCase(
+    id='AS-006',
+    legacy_id='',
+    title='售后工单退款/退货完结 - 按商品「退货回补库存」开关决定是否回补库存',
+    skill=Skill.AFTERSALES,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['AS-20260701-0002 退款工单已处理完，完成'],
+    expectations=['after_sales_manage(action=update_status, status=resolved)'],
+    data_checks=['refund/return 工单 resolved 时：订单全部商品 allow_return_restock=true 才恢复 SKU 库存；任一商品为 false 则整单不回补（窗帘定制退货不可再售）', 'allow_return_restock 默认 false；米宝不得在售后完成后默认引导恢复库存/重新上架'],
+    skip_reason='',
+    tags=['update', 'status', 'cross_skill'],
+    persona='',
+)
+
 # ── AG-001 [NORMAL] AgentResponse/AgentContext 数据结构 + _extract_msg_content think 剥离（源: cases/agents.yml）──
 _CASE_AG_001 = EvalCase(
     id='AG-001',
@@ -2456,6 +2471,21 @@ _CASE_PR_016 = EvalCase(
     persona='',
 )
 
+# ── PR-017 [NORMAL] 商品创建/更新/详情透传「退货回补库存」开关（allow_return_restock）（源: cases/product.yml）──
+_CASE_PR_017 = EvalCase(
+    id='PR-017',
+    legacy_id='',
+    title='商品创建/更新/详情透传「退货回补库存」开关（allow_return_restock）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['把「遮光窗帘」设置成退货后可以回补库存'],
+    expectations=['product_update or product_manage(allow_return_restock=True)'],
+    data_checks=['商品详情/列表返回 allowReturnRestock（默认 false，开启后为 true）', '售后工单 refund/return 完结时按商品开关决定是否回补 SKU 库存'],
+    skip_reason='',
+    tags=['inventory', 'write', 'cross_skill'],
+    persona='',
+)
+
 # ── RG-001 [NORMAL] ToolRegistry 注册/查询/执行审计（源: cases/registry.yml）──
 _CASE_RG_001 = EvalCase(
     id='RG-001',
@@ -3107,6 +3137,7 @@ ALL_CASES = (
     _CASE_AS_003,
     _CASE_AS_004,
     _CASE_AS_005,
+    _CASE_AS_006,
     _CASE_AG_001,
     _CASE_AG_002,
     _CASE_AG_003,
@@ -3263,6 +3294,7 @@ ALL_CASES = (
     _CASE_PR_014,
     _CASE_PR_015,
     _CASE_PR_016,
+    _CASE_PR_017,
     _CASE_RG_001,
     _CASE_ST_001,
     _CASE_ST_002,

@@ -169,3 +169,35 @@ cases:
       ci:
         - agent-eval.yml
       verifies: []
+
+  - id: AS-006
+    legacy_id: ""
+    title: "售后工单退款/退货完结 - 按商品「退货回补库存」开关决定是否回补库存"
+    domains:
+      - aftersales
+      - product
+    tier: normal
+    tags:
+      - update
+      - status
+      - cross_skill
+    truths_ref:
+      - aftersales-flow.return-restock-switch
+    user_inputs:
+      - "AS-20260701-0002 退款工单已处理完，完成"
+    expectations:
+      - tool: after_sales_manage
+        args:
+          action: update_status
+          status: resolved
+    data_checks:
+      - "refund/return 工单 resolved 时：订单全部商品 allow_return_restock=true 才恢复 SKU 库存；任一商品为 false 则整单不回补（窗帘定制退货不可再售）"
+      - "allow_return_restock 默认 false；米宝不得在售后完成后默认引导恢复库存/重新上架"
+    skip_reason: ""
+    merge_log: "issue #2991 新增：售后完结库存联动按商品开关收敛，窗帘行业定制退货不可再售"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/AfterSalesTicketServiceTest.java"
+      ci:
+        - agent-eval.yml
+      verifies: []

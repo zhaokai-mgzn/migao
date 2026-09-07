@@ -153,6 +153,8 @@ CREATE TABLE products (
     has_processing BOOLEAN DEFAULT FALSE,                   -- 是否含加工项
     -- 商家推荐标记（来自 V20260903__add_product_recommended.sql）
     recommended BOOLEAN DEFAULT FALSE,                       -- 是否商家推荐（C 端新品推荐位展示依据）
+    -- 退货回补库存开关（来自 V33__add_allow_return_restock.sql）
+    allow_return_restock BOOLEAN DEFAULT FALSE,              -- 是否允许退货回补库存（窗帘行业定制退货不可再售，默认不回补）
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     deleted INTEGER DEFAULT 0
@@ -165,6 +167,7 @@ COMMENT ON COLUMN products.stock_deduction_mode IS '库存扣减模式: on_order
 COMMENT ON COLUMN products.sales_count IS '累计销量';
 COMMENT ON COLUMN products.sales_amount IS '累计销售额';
 COMMENT ON COLUMN products.has_processing IS '是否含加工项';
+COMMENT ON COLUMN products.allow_return_restock IS '是否允许退货回补库存（窗帘行业定制退货不可再售，默认不回补）';
 COMMENT ON COLUMN products.detail_images IS '商品详情图URL列表（JSONB数组）';
 
 -- ================================================

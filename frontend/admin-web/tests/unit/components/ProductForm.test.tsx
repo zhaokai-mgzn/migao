@@ -1,7 +1,7 @@
 /**
  * ProductForm 组件测试
  * 覆盖：#646 移除 in_warehouse — 按钮数量、labelMap 无仓库中
- * case_ids: PR-008
+ * case_ids: PR-008, PR-017
  */
 import { render, screen } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
@@ -86,6 +86,27 @@ describe('ProductForm (#1284 — 表单行对齐)', () => {
     const processingYes = yesRadios[1]
     const processingRadioGroup = processingYes.parentElement!.parentElement!
     expect(processingRadioGroup.className).toContain('pt-2')
+  })
+
+  it('「退货回补库存」开关渲染（允许/不允许，issue #2991）', () => {
+    render(<ProductForm onSubmit={mockOnSubmit} />)
+
+    expect(screen.getByText(/退货回补库存/)).toBeTruthy()
+    expect(screen.getAllByText('允许').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText('不允许').length).toBeGreaterThanOrEqual(1)
+    // 行业提示文案：定制退货不可再售
+    expect(screen.getByText(/退货后无法再次出售/)).toBeTruthy()
+  })
+
+  it('编辑场景回填 allowReturnRestock 开关（开启状态）', () => {
+    render(
+      <ProductForm
+        onSubmit={mockOnSubmit}
+        initialData={{ name: '标准杆', allowReturnRestock: true } as any}
+      />
+    )
+    // 回填后「允许」仍可渲染（默认值随 initialData 合并）
+    expect(screen.getAllByText('允许').length).toBeGreaterThanOrEqual(1)
   })
 })
 

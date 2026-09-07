@@ -84,6 +84,7 @@ const DEFAULT_FORM: ProductFormData = {
   unit: '',
   stockDeductionMode: 'on_place',
   supportsProcessing: false,
+  allowReturnRestock: false,
   status: 'draft',
   images: [],
   detailImages: [],
@@ -664,6 +665,24 @@ export default function ProductForm({
                 { value: 'on_pay', label: '否（付款减库存）' },
               ]}
             />
+          </FieldRow>
+
+          {/* 退货回补库存（issue #2991） */}
+          <FieldRow label="退货回补库存" alignTop>
+            <div className="space-y-2">
+              <RadioGroup<boolean>
+                value={!!form.allowReturnRestock}
+                onChange={(v) => updateField('allowReturnRestock', v)}
+                options={[
+                  { value: true, label: '允许' },
+                  { value: false, label: '不允许' },
+                ]}
+              />
+              <p className="text-xs text-neutral-500">
+                窗帘行业定制商品退货后无法再次出售，默认不允许回补库存；
+                标准件/配件等可再售商品可开启，售后工单退款/退货完成时自动恢复库存
+              </p>
+            </div>
           </FieldRow>
 
           {/* 是否支持加工 */}

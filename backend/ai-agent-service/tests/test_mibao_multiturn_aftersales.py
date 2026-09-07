@@ -1,9 +1,9 @@
 """
-米宝多轮 — 售后域（库存回收/纠纷判定）
+米宝多轮 — 售后域（退货库存规则/纠纷判定）
 
 （由 test_mibao_advanced_multiturn.py 按场景域拆分，2026-08-29）
 """
-# case_ids: AS-005
+# case_ids: AS-005, AS-006
 import pytest
 from app.agents.customer_service_agent import reset_agent
 from app.tools.registry import reset_tool_registry
@@ -28,15 +28,17 @@ def _auto_reset_singletons():
 
 
 class TestMibaoMultiturnAftersales:
-    """米宝多轮 — 售后域（库存回收/纠纷判定）"""
+    """米宝多轮 — 售后域（退货库存规则/纠纷判定）"""
 
-    async def test_case_15_aftersales_inventory_recovery(self):
+    async def test_case_15_aftersales_return_no_restock(self):
         """
-        Case 15: 售后退货→库存回收→重新上架（6轮）
-        验证重点：跨Skill联动（aftersales→order→product）
-        涉及Skill: aftersales, order, product | Tools: order_query, order_manage, inventory_manage, product_manage
+        Case 15: 售后退货→退货完成→不回补库存、不重新上架（6轮）
+        验证重点：跨Skill联动（aftersales→order→product）+ 窗帘行业退货库存规则
+        issue #2991：窗帘行业定制退货不可再售——工单完成(退款/退货)后不得联动恢复商品库存、
+        不得引导重新上架；商品 allow_return_restock 默认关闭，需商家在商品设置显式开启。
+        涉及Skill: aftersales, order | Tools: order_query, order_manage, after_sales_manage
         """
-        runner = MultiTurnRunner(15, "售后退货→库存回收→重新上架")
+        runner = MultiTurnRunner(15, "售后退货→退货完成→不回补库存")
         mock_graph = AsyncMock()
         runner.setup_agent(mock_graph)
 
@@ -72,7 +74,7 @@ class TestMibaoMultiturnAftersales:
             turn_num=3,
             user_message="确认退货，帮我处理",
             expected_graph_result=make_graph_result(
-                final_answer="已将订单 ORD20250428066 状态更新为「退货中」。请通知李女士寄回商品。",
+                final_answer="已将订单 ORD20250428066 标记为「退货处理中」。请通知李女士寄回商品。",
                 skill_used="order", intent="order_query", confidence=0.88,
                 tool_name="order_manage",
                 tool_args={"action": "update_status", "order_id": "ORD20250428066", "new_status": "returning", "reason": "颜色不对"},
@@ -87,45 +89,33 @@ class TestMibaoMultiturnAftersales:
             turn_num=4,
             user_message="商品已收回，帮我把库存加回去",
             expected_graph_result=make_graph_result(
-                final_answer="已将退回的「米白色雪尼尔窗帘」(p001) 库存+1件，当前库存: 106件。",
-                skill_used="product", intent="product_inquiry", confidence=0.85,
-                tool_name="inventory_manage",
-                tool_args={"action": "adjust", "product_id": "p001", "quantity": 1},
-                tool_result_data={"product_id": "p001", "new_stock": 106},
+                final_answer="窗帘行业定制商品退货后无法再次出售，退回商品不回补库存。"
+                            "如需重新上架，请在商品设置里开启「退货回补库存」开关后手动处理。",
+                skill_used="aftersales_skill", intent="after_sales", confidence=0.88,
             ),
             checks=[
-                {"fn": lambda s, r, e: "product" in e.get("skill_used", ""), "desc": "跨Skill到product处理库存"},
-                {"fn": lambda s, r, e: "106" in r.content, "desc": "库存回增成功"},
+                {"fn": lambda s, r, e: "不回补" in r.content or "不可再售" in r.content or "无法再次出售" in r.content,
+                 "desc": "明确说明退货不回补库存（定制不可再售）"},
+                {"fn": lambda s, r, e: "退货回补库存" in r.content or "开关" in r.content,
+                 "desc": "提示商家可显式开启开关"},
+                {"fn": lambda s, r, e: "_test_tool_name" in e and e.get("_test_tool_name", "") != "inventory_manage",
+                 "desc": "未默认调用 inventory_manage 恢复库存"},
             ],
         )
 
         await runner.run_turn(
             turn_num=5,
-            user_message="这个商品现在是什么状态？在售吗",
+            user_message="那这个退货工单就算完成了，帮我完结",
             expected_graph_result=make_graph_result(
-                final_answer="米白色雪尼尔窗帘(p001) 当前状态：在售，库存106件，一切正常。",
-                skill_used="product", intent="product_inquiry", confidence=0.85,
-                tool_name="product_detail",
-                tool_args={"product_id": "p001"},
-                tool_result_data={"id": "p001", "name": "米白色雪尼尔窗帘", "status": "on_sale", "stock": 106},
+                final_answer="已将退货工单完结（已解决）。请注意：该商品为定制商品，退货后库存不回补、不再作为可售库存。",
+                skill_used="aftersales", intent="after_sales_create", confidence=0.90,
+                tool_name="after_sales_manage",
+                tool_args={"action": "update_status", "ticket_id": "AS-20250501-0001", "status": "resolved"},
+                tool_result_data={"ticket_id": "AS-20250501-0001", "status": "resolved"},
             ),
             checks=[
-                {"fn": lambda s, r, e: "在售" in r.content or "on_sale" in r.content, "desc": "商品状态确认为在售"},
-            ],
-        )
-
-        await runner.run_turn(
-            turn_num=6,
-            user_message="好，那这个退货完成了，帮我把订单改成退货完成",
-            expected_graph_result=make_graph_result(
-                final_answer="已将订单 ORD20250428066 状态更新为「退货完成」。整个退货流程已处理完毕。",
-                skill_used="order", intent="order_query", confidence=0.88,
-                tool_name="order_manage",
-                tool_args={"action": "update_status", "order_id": "ORD20250428066", "new_status": "returned"},
-                tool_result_data={"order_no": "ORD20250428066", "new_status": "returned"},
-            ),
-            checks=[
-                {"fn": lambda s, r, e: "退货完成" in r.content or "完毕" in r.content, "desc": "退货流程闭环确认"},
+                {"fn": lambda s, r, e: "完结" in r.content or "已解决" in r.content, "desc": "工单完结闭环确认"},
+                {"fn": lambda s, r, e: "不回补" in r.content or "不再作为" in r.content, "desc": "完结时再次明确不回补库存"},
             ],
         )
 

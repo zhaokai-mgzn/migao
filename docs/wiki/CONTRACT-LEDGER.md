@@ -45,7 +45,8 @@
 | 联动 | 规则 | 违反后果 |
 |---|---|---|
 | 售后工单完结 → 订单 | resolved + refund/return 类 → 订单累加 refundAmount、写退款流水 | 退款不入账 |
-| 订单取消/退款 → 库存 | 确认支付扣库存；取消/退款恢复库存 | 超卖/库存虚增 |
+| 订单确认/取消 → 库存 | 确认支付扣库存；**仅订单取消（confirmed/producing → cancelled）恢复库存**（refundOrder 不恢复库存） | 超卖/库存虚增 |
+| 售后工单完结 → 库存（issue #2991） | refund/return 工单 resolved：**按商品「退货回补库存」开关 `products.allow_return_restock`（默认 false）决定**——窗帘行业定制退货不可再售，默认不回补；订单**全部**商品开启才整单回补（复用 `OrderService.restoreStockForReturn`）；任一商品关闭则整单跳过（宁可少回补不过回补） | 定制退货误入可售库存 → 假可售/误导销售 |
 | 订单 → 财务流水 | confirmPayment 记 income；cancel/refund 记 refund | 对账不平 |
 | 下单 → 客户建档 | 老客户只刷新 lastActiveAt（不累计） | 画像失真（已知，勿重复实现） |
 | C 端查物流 | `customer_logistics_track`（仅本人已发货订单，拒绝快递单号直查）↔ B 端 `logistics_track`（仅 order_id，拒绝 tracking_number） | 用户/LLM 传快递单号直查必须拒绝；快递单号只能由系统从订单详情读取后内部查询轨迹 |

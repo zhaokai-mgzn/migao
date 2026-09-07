@@ -18,6 +18,7 @@ business_truths:
   - [aftersales-flow.handoff] 转人工：human_handoff 工具创建 complaint 类型工单 + 系统通知管理员(recipientRole=admin)，通知失败不阻塞；但工具未传 orderId 且用 reason 字段，与 Java @NotBlank(orderId/description) 冲突（缺口）
   - [aftersales-flow.type-enums] 售后类型：管理端表单校验 return|exchange|repair|refund|complaint|other；Agent 工具枚举 refund/exchange/repair/complaint/other（无 return），跨层枚举不一致
   - [aftersales-flow.agent-create] Agent 专用创建 POST /api/admin/agent/after-sales 的 orderId 可传 UUID 或订单号(ORD-xxx)，服务端自动解析并校验订单属于当前租户
+  - [aftersales-flow.return-restock-switch] 售后库存联动（issue #2991）：refund/return 工单 resolved 时按商品「退货回补库存」开关（products.allow_return_restock，默认 false）决定是否恢复 SKU 库存——订单全部商品允许才整单回补，任一商品不允许则整单不回补（窗帘定制退货不可再售）；米宝不得在售后完成后默认引导恢复库存/重新上架
 
 primary_specs:
   - tests/e2e/specs/after-sales/after-sales-list.spec.ts
