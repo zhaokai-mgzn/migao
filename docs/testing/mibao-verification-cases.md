@@ -2054,7 +2054,7 @@
 真值: ai-chat.tool-classes, ai-chat.permission-layers
 溯源: 2026-08-25 新增：ai-agent-service tools-mixed-part2 覆盖率补全（issue #2426） ｜ tags: registry, tool_execute, audit
 
-## 设置域（9 case）
+## 设置域（10 case）
 
 ### ST-001. 系统设置 - 读取 🔵
 ```
@@ -2143,6 +2143,17 @@
 ```
 真值: settings-notification.master-switch
 溯源: 2026-09-07 新增：企业基础设置「启用系统通知」从死开关接线为租户级自动站内信总开关（issue #3003） ｜ tags: notification, switch, setting
+
+### ST-010. 企业基础信息页 - 隐藏「登录日志」（无记录）与「修改密码」（未来短信码登录）（#3006） 🔵
+```
+你: 企业基础信息页还有「登录日志」和「修改密码」入口吗？
+期望: direct_reply
+数据: 企业基础信息页仅展示基本设置（品牌设置 + 通知设置），移除 tab 切换栏；「修改密码」「登录日志」tab 及区块不再渲染（登录日志无记录、修改密码未来由短信验证码登录取代；后端/Agent 接口保留，待短信码登录落地后再评估移除）
+数据: 页面副标题不再提「账号安全与登录审计」
+跳过: 纯前端 UI 隐藏由 vitest 验证（settings.test.tsx ST-010），非 LLM 工具行为，不进入 agent-eval 冒烟
+```
+真值: settings-page.basic-only
+溯源: 2026-09-07 新增：企业基础信息隐藏登录日志/修改密码入口（issue #3006） ｜ tags: setting, ui, tab
 
 ## token-refresh（4 case）
 
@@ -2574,8 +2585,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：209（活跃 108，跳过 101）
-- tier 分布：smoke 8 / normal 173 / adversarial 28
+- 用例总数：210（活跃 108，跳过 102）
+- tier 分布：smoke 8 / normal 174 / adversarial 28
 - 售后域：6
 - agents：6
 - api：12
@@ -2595,7 +2606,7 @@
 - 加工项域：6
 - 商品域：17
 - registry：1
-- 设置域：9
+- 设置域：10
 - token-refresh：4
 - ui：28
 - utils：2

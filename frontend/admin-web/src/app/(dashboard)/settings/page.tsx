@@ -1,23 +1,21 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Building2, Save, KeyRound, History } from 'lucide-react'
+import { Building2, Save } from 'lucide-react'
 import Image from 'next/image'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Button, Input, Table, Pagination } from '@/components/ui'
-import type { TableColumn } from '@/components/ui'
+import { Button } from '@/components/ui'
 import { settingsApi, uploadApi } from '@/lib/api'
 import { readImageDimensions } from '@/lib/image-dimensions'
-import type { SystemSettings, LoginLog } from '@/types'
-import DateTimeCell from '@/components/common/DateTimeCell'
+import type { SystemSettings } from '@/types'
 
-type SettingsTab = 'basic' | 'password' | 'login-logs'
+// #3006: 登录日志（无记录）+ 修改密码（未来统一短信码登录）已隐藏，
+// 页面仅保留基本设置（品牌 + 通知设置），移除 tab 切换机制
 
 export default function SettingsPage() {
   const searchParams = useSearchParams()
   const router = useRouter()
-  const [tab, setTab] = useState<SettingsTab>('basic')
 
   // 旧链接 /settings?tab=ai → 重定向到 AI 客服配置
   useEffect(() => {
@@ -118,130 +116,15 @@ export default function SettingsPage() {
     }
   }
 
-  // ============ 修改密码 ============
-  const [pwdForm, setPwdForm] = useState({ oldPassword: '', newPassword: '', confirmPassword: '' })
-  const [savingPwd, setSavingPwd] = useState(false)
-
-  const handleChangePassword = async () => {
-    if (!pwdForm.oldPassword || !pwdForm.newPassword) {
-      toast.error('请填写原密码和新密码')
-      return
-    }
-    if (pwdForm.newPassword.length < 8) {
-      toast.error('新密码长度不能少于 8 位')
-      return
-    }
-    if (pwdForm.newPassword !== pwdForm.confirmPassword) {
-      toast.error('两次输入的新密码不一致')
-      return
-    }
-    setSavingPwd(true)
-    try {
-      await settingsApi.changePassword({
-        oldPassword: pwdForm.oldPassword,
-        newPassword: pwdForm.newPassword,
-        confirmPassword: pwdForm.confirmPassword,
-      })
-      toast.success('密码修改成功，下次登录请使用新密码')
-      setPwdForm({ oldPassword: '', newPassword: '', confirmPassword: '' })
-    } catch (error: any) {
-      toast.error(error?.response?.data?.error?.message || '修改密码失败')
-    } finally {
-      setSavingPwd(false)
-    }
-  }
-
-  // ============ 登录日志 ============
-  const [logs, setLogs] = useState<LoginLog[]>([])
-  const [logsTotal, setLogsTotal] = useState(0)
-  const [logsPage, setLogsPage] = useState(1)
-  const [logsSize, setLogsSize] = useState(10)
-  const [loadingLogs, setLoadingLogs] = useState(false)
-
-  const loadLoginLogs = useCallback(async () => {
-    setLoadingLogs(true)
-    try {
-      const res = await settingsApi.getLoginLogs({ page: logsPage, size: logsSize })
-      const data = res.data.data
-      setLogs(data?.items || [])
-      setLogsTotal(data?.total || 0)
-    } catch {
-      toast.error('加载登录日志失败')
-    } finally {
-      setLoadingLogs(false)
-    }
-  }, [logsPage, logsSize])
-
-  useEffect(() => {
-    if (tab === 'login-logs') loadLoginLogs()
-  }, [tab, loadLoginLogs])
-
-  const logColumns: TableColumn<LoginLog>[] = [
-    {
-      key: 'userName',
-      title: '用户',
-      width: '140px',
-      render: (record) => (
-        <span className="text-sm text-neutral-700">{record.userName || record.userId || '-'}</span>
-      ),
-    },
-    {
-      key: 'ipAddress',
-      title: 'IP 地址',
-      width: '160px',
-      render: (record) => <span className="text-sm text-neutral-700">{record.ipAddress || '-'}</span>,
-    },
-    {
-      key: 'userAgent',
-      title: '设备/浏览器',
-      render: (record) => (
-        <span className="text-xs text-neutral-500 block truncate" title={record.userAgent}>
-          {record.userAgent || '-'}
-        </span>
-      ),
-    },
-    {
-      key: 'createdAt',
-      title: '登录时间',
-      width: '190px',
-      render: (record) => <DateTimeCell value={record.createdAt} />,
-    },
-  ]
-
-  const tabs: Array<{ key: SettingsTab; label: string; icon: React.ReactNode }> = [
-    { key: 'basic', label: '基本设置', icon: <Building2 className="w-4 h-4" /> },
-    { key: 'password', label: '修改密码', icon: <KeyRound className="w-4 h-4" /> },
-    { key: 'login-logs', label: '登录日志', icon: <History className="w-4 h-4" /> },
-  ]
-
   return (
     <div className="p-6">
       <div className="mb-6">
         <h1 className="text-xl font-semibold text-neutral-900">企业基础信息</h1>
-        <p className="text-sm text-neutral-500 mt-1">配置公司基本信息、账号安全与登录审计</p>
-      </div>
-
-      {/* Tab 切换 */}
-      <div className="flex gap-1 mb-6 border-b border-neutral-200">
-        {tabs.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
-              tab === t.key
-                ? 'border-primary-600 text-primary-600'
-                : 'border-transparent text-neutral-500 hover:text-neutral-800'
-            }`}
-          >
-            {t.icon}
-            {t.label}
-          </button>
-        ))}
+        <p className="text-sm text-neutral-500 mt-1">配置公司基本信息与站内通知</p>
       </div>
 
       {/* 基本设置 */}
-      {tab === 'basic' && (
-        <div className="bg-white border border-neutral-200 rounded-lg p-6 max-w-lg">
+      <div className="bg-white border border-neutral-200 rounded-lg p-6 max-w-lg">
           {loadingSettings ? (
             <div className="text-sm text-neutral-500 py-8 text-center">加载中...</div>
           ) : (
@@ -347,59 +230,6 @@ export default function SettingsPage() {
             </div>
           )}
         </div>
-      )}
-
-      {/* 修改密码 */}
-      {tab === 'password' && (
-        <div className="bg-white border border-neutral-200 rounded-lg p-6 max-w-lg">
-          <div className="space-y-4">
-            <Input
-              label="原密码"
-              type="password"
-              placeholder="请输入当前密码"
-              value={pwdForm.oldPassword}
-              onChange={(e) => setPwdForm((p) => ({ ...p, oldPassword: e.target.value }))}
-            />
-            <Input
-              label="新密码"
-              type="password"
-              placeholder="至少 8 位"
-              value={pwdForm.newPassword}
-              onChange={(e) => setPwdForm((p) => ({ ...p, newPassword: e.target.value }))}
-            />
-            <Input
-              label="确认新密码"
-              type="password"
-              placeholder="再次输入新密码"
-              value={pwdForm.confirmPassword}
-              onChange={(e) => setPwdForm((p) => ({ ...p, confirmPassword: e.target.value }))}
-            />
-            <div className="pt-2">
-              <Button onClick={handleChangePassword} loading={savingPwd}>
-                <KeyRound className="w-4 h-4 mr-1.5" />
-                修改密码
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 登录日志 */}
-      {tab === 'login-logs' && (
-        <div className="bg-white border border-neutral-200 rounded-lg">
-          <Table<LoginLog> columns={logColumns} dataSource={logs} loading={loadingLogs} rowKey="id" />
-          <Pagination
-            current={logsPage}
-            pageSize={logsSize}
-            total={logsTotal}
-            onChange={setLogsPage}
-            onPageSizeChange={(size) => { setLogsSize(size); setLogsPage(1) }}
-          />
-          {!loadingLogs && logs.length === 0 && (
-            <p className="px-4 pb-4 text-sm text-neutral-400">暂无登录日志</p>
-          )}
-        </div>
-      )}
     </div>
   )
 }
