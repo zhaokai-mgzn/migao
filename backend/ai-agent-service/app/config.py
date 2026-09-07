@@ -39,6 +39,10 @@ class Settings(BaseSettings):
     VISION_MODEL: str = "deepseek-v4-flash-vision-exp"
     VISION_ENABLED: bool = True
 
+    # 建议个性化偏好注入开关（issue #2997：默认关闭，灰度开启；开启后仅小布注入，
+    # 读取 user_suggestion_prefs 的 TOP 偏好意图注入 system prompt，供 LLM 生成个性化建议）
+    SUGGESTION_PREFERENCE_ENABLED: bool = False
+
     # === 主 LLM 凭据统一读取（PRIMARY 优先，VISION 兜底 —— 原 MINIMAX_* 语义，已去品牌命名）===
     @property
     def LLM_API_KEY(self) -> str:

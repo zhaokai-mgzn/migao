@@ -33,6 +33,7 @@ from app.tools.base import ToolContext
 from app.tools.registry import ToolRegistry, set_tool_context, get_tool_context
 from app.utils.log_sanitizer import LogSanitizer
 from app.memory.user_memory import UserMemoryManager
+from app.suggestions.preference_tracker import PreferenceTracker
 from app.core import (
     CircuitBreakerOpenError,
     LLM_FALLBACK_MESSAGE,
@@ -849,6 +850,65 @@ async def _inject_user_memories(system_prompt: str, state: AgentState) -> str:
     return system_prompt
 
 
+def _xml_escape_pref(text: str) -> str:
+    """偏好注入文本消毒：去控制字符 + XML 转义（审计 07 P1-L9 注入安全原则）。"""
+    text = "".join(ch for ch in text if ch >= " " or ch in "\n\t")
+    return (
+        text.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+
+
+async def _inject_user_preferences(system_prompt: str, state: AgentState) -> str:
+    """建议个性化偏好注入（issue #2997：flag 门控，默认关闭；仅 xiaobu）。
+
+    - 开关 SUGGESTION_PREFERENCE_ENABLED=False（默认）→ 直接返回原 prompt（零行为变化）
+    - 开启后读取 user_suggestion_prefs 的 TOP 偏好意图（PreferenceTracker.get_top_intents），
+      生成 <user_preferences> 消毒块前置注入，供 LLM 自然生成个性化「猜你想问」
+    - 标签来自静态 INTENT_LABELS 词表，仍经 _xml_escape_pref 消毒（对齐审计 07 P1-L9）
+    - 注入位置与 _inject_user_memories 相同；任何异常不抛（fire-and-forget 语义）
+    """
+    if not settings.SUGGESTION_PREFERENCE_ENABLED:
+        return system_prompt
+    if state.get("agent_type") != "xiaobu":
+        return system_prompt
+    try:
+        tenant_id = int(state.get("tenant_id", 0) or 0)
+        user_id = state.get("user_id", "")
+        if not tenant_id or not user_id:
+            return system_prompt
+        top = await PreferenceTracker().get_top_intents(tenant_id, user_id, limit=5)
+        if not top:
+            return system_prompt
+        lines = []
+        for item in top[:5]:
+            label = _xml_escape_pref(
+                str(item.get("label") or item.get("intent_type") or "")
+            )
+            try:
+                count = int(item.get("click_count") or 0)
+            except (ValueError, TypeError):
+                count = 0
+            lines.append(f"- {label}（{count} 次）")
+        pref_text = (
+            "<user_preferences>\n"
+            "用户最近常点击的咨询主题（按频次排序，生成「猜你想问」建议时优先覆盖）：\n"
+            + "\n".join(lines)
+            + "\n</user_preferences>"
+        )
+        if len(pref_text) > 800:
+            pref_text = pref_text[:800] + "..."
+        logger.info(
+            f"[preference-inject] Injected | "
+            f"tenant={tenant_id} user={user_id} intents={len(top)}"
+        )
+        return pref_text + "\n\n" + system_prompt
+    except Exception as e:
+        logger.warning(f"[preference-inject] Failed | error={e}")
+    return system_prompt
+
+
 async def execute_skill(
     state: AgentState,
     skill_name: str,
@@ -980,6 +1040,9 @@ async def execute_skill(
 
     # 4b. C 端长期记忆注入（issue #2815：仅 xiaobu；mibao 不注入）
     system_prompt = await _inject_user_memories(system_prompt, state)
+
+    # 4c. 建议个性化偏好注入（issue #2997：flag 门控默认关闭；仅 xiaobu）
+    system_prompt = await _inject_user_preferences(system_prompt, state)
 
     if is_multimodal:
         system_prompt = (

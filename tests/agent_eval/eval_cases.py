@@ -896,6 +896,21 @@ _CASE_CH_025 = EvalCase(
     persona='',
 )
 
+# ── CH-029 [NORMAL] 建议个性化 - 偏好读取注入（flag 门控，默认关闭）（源: cases/chat.yml）──
+_CASE_CH_029 = EvalCase(
+    id='CH-029',
+    legacy_id='',
+    title='建议个性化 - 偏好读取注入（flag 门控，默认关闭）',
+    skill=Skill.MULTI_TURN,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['ai-agent-service 建议生成前的偏好注入（生产接线断言）'],
+    expectations=['direct_reply'],
+    data_checks=['开关 SUGGESTION_PREFERENCE_ENABLED=False（默认）→ _inject_user_preferences 直接返回原 prompt（零行为变化，不调 tracker）', '开启且 xiaobu 有偏好意图 → <user_preferences> 消毒块前置注入 system prompt（标签 XML 转义）+ [preference-inject] 日志', 'mibao 不注入 / 缺 tenant+user / 无偏好 / tracker 异常 → 原样返回不破坏主流程'],
+    skip_reason='偏好注入为纯函数接线，由 pytest 单测验证（tests/test_preference_injection.py），不进入 agent-eval 冒烟',
+    tags=['suggestions', 'xiaobu', 'personalization', 'preference'],
+    persona='',
+)
+
 # ── CH-026 [NORMAL] 澄清卡后发图不崩溃 - 交互等待中用户发图走 vision 链路（线上 AttributeError 修复真实验收）（源: cases/chat.yml）──
 _CASE_CH_026 = EvalCase(
     id='CH-026',
@@ -3189,6 +3204,7 @@ ALL_CASES = (
     _CASE_CH_023,
     _CASE_CH_024,
     _CASE_CH_025,
+    _CASE_CH_029,
     _CASE_CH_026,
     _CASE_CH_027,
     _CASE_CH_028,
