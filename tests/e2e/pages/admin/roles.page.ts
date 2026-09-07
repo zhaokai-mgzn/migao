@@ -29,7 +29,7 @@ export class RolesPage extends BasePage {
   get name() { return this.roleModal.locator('input[placeholder*="管理员"]').or(this.roleModal.locator('input[label="岗位名称"]')) }
   get code() { return this.roleModal.locator('input[placeholder*="admin"]').or(this.roleModal.locator('input[label="岗位编码"]')) }
   get description() { return this.roleModal.locator('textarea[placeholder*="岗位描述"]') }
-  get permissionTree() { return this.roleModal.locator('.border.border-gray-200.rounded-lg') }
+  get permissionTree() { return this.roleModal.locator('.border.border-neutral-200.rounded-lg') }
 
   permissionGroup(name: string): Locator {
     return this.permissionTree.locator('div').filter({ hasText: new RegExp(name) }).first()
