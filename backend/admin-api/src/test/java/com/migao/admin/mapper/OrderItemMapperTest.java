@@ -64,9 +64,9 @@ class OrderItemMapperTest {
         assertThat(sql).doesNotContain("'pending'");
         assertThat(sql).doesNotContain("'cancelled'");
         // #2989：排除 product_id 为 NULL/空 的幽灵明细（生产实证 276 条脏数据被 GROUP BY 聚合成不存在商品行）
-        // 注意 `<>` 在 MyBatis 注解 SQL 中必须转义为 &lt;&gt;（否则 SAXParseException 启动失败，生产实证）
+        // #2994：`!=` 替代 `<>`（后者在 XML 上下文中非法；本方法为普通注解虽然安全，但保持两处口径一致）
         assertThat(sql).contains("oi.product_id IS NOT NULL");
-        assertThat(sql).contains("oi.product_id &lt;&gt; ''");
+        assertThat(sql).contains("oi.product_id != ''");
     }
 
     @Test
@@ -92,7 +92,22 @@ class OrderItemMapperTest {
         assertThat(sql).doesNotContain("'cancelled'");
         // #2989：上期口径与本期一致 —— 排除 product_id 为 NULL/空 的幽灵明细
         assertThat(sql).contains("oi.product_id IS NOT NULL");
-        assertThat(sql).contains("oi.product_id &lt;&gt; ''");
+        assertThat(sql).contains("oi.product_id != ''");
+        // #2994 回归：@Select(<script>) 内容是 XML，必须良构（`<>` 非法会导致镜像启动时
+        // MyBatis 解析 mapper 崩溃、部署健康检查全挂——此前 `<> ''` 线上部署失败实证）
+        String scriptBody = sql.substring(sql.indexOf("<script>") + "<script>".length(),
+                sql.indexOf("</script>"));
+        javax.xml.parsers.DocumentBuilderFactory factory =
+                javax.xml.parsers.DocumentBuilderFactory.newInstance();
+        try {
+            factory.newDocumentBuilder()
+                    .parse(new org.xml.sax.InputSource(new java.io.StringReader(
+                            "<script>" + scriptBody + "</script>")));
+        } catch (Exception e) {
+            throw new AssertionError(
+                    "selectPrevPeriodQuantities 的 <script> 动态 SQL 不是合法 XML（" + e.getMessage()
+                            + "）。<script> 内禁止出现裸 < > 字符（如 <> 应写作 != 或 XML 转义）。", e);
+        }
     }
 
     @Test

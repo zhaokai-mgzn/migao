@@ -47,7 +47,7 @@ public interface OrderItemMapper extends BaseMapper<OrderItem> {
             "COALESCE(SUM(oi.quantity), 0) AS qty, COALESCE(SUM(FLOOR(oi.subtotal)), 0) AS amt " +
             "FROM order_items oi JOIN orders o ON oi.order_id = o.id " +
             "WHERE oi.deleted = 0 AND o.deleted = 0 " +
-            "AND oi.product_id IS NOT NULL AND oi.product_id &lt;&gt; '' " +
+            "AND oi.product_id IS NOT NULL AND oi.product_id != '' " +
             "AND o.status IN ('confirmed','producing','shipped','completed') " +
             "AND oi.created_at >= #{periodStart} " +
             "GROUP BY oi.product_id ORDER BY qty DESC LIMIT #{limit}")
@@ -59,12 +59,14 @@ public interface OrderItemMapper extends BaseMapper<OrderItem> {
      * 商品上期销量（topN 产品 IN 批量一次，替代原来每商品一次查询，#2886）。
      * #2984：与 selectProductRanking 同口径 —— JOIN orders 过滤有效状态，保证环比分母一致。
      * #2989：同样排除 product_id 为 NULL/空 的幽灵明细，与本期口径严格一致。
+     * #2990 回归修复：`!=` 替代 `<>`（`<>` 在 @Select(<script>) XML 块内非法，导致镜像启动时
+     * MyBatis 解析 mapper 崩溃，部署健康检查全挂——见 #2994）。
      */
     @Select("<script>" +
             "SELECT oi.product_id, COALESCE(SUM(oi.quantity), 0) AS qty " +
             "FROM order_items oi JOIN orders o ON oi.order_id = o.id " +
             "WHERE oi.deleted = 0 AND o.deleted = 0 " +
-            "AND oi.product_id IS NOT NULL AND oi.product_id &lt;&gt; '' " +
+            "AND oi.product_id IS NOT NULL AND oi.product_id != '' " +
             "AND o.status IN ('confirmed','producing','shipped','completed') " +
             "AND oi.product_id IN " +
             "<foreach collection='productIds' item='pid' open='(' separator=',' close=')'>#{pid}</foreach> " +
