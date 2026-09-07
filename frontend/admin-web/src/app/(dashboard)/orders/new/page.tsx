@@ -926,8 +926,18 @@ function LineItemBlock({
                 <input
                   type="number"
                   min={1}
-                  value={line.quantity}
-                  onChange={(e) => onChangeQty(Math.max(1, Number(e.target.value) || 1))}
+                  value={line.quantity || ''}
+                  onChange={(e) => {
+                    const raw = e.target.value
+                    // #2987：允许清空输入（空态传 0 显示为空，不再被强制弹回默认 1）；
+                    // 仅接受合法数字（含按米小数如 2.5），非法字符忽略防 NaN；
+                    // 最终由提交校验「数量须大于 0」兜底
+                    if (raw === '') {
+                      onChangeQty(0)
+                    } else if (/^\d*\.?\d*$/.test(raw)) {
+                      onChangeQty(Number(raw))
+                    }
+                  }}
                   className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                 />
                 {errQty && <p className="mt-1 text-sm text-red-600">{errQty}</p>}
