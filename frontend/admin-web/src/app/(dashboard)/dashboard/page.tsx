@@ -447,39 +447,45 @@ export default function DashboardPage() {
               <p className="mt-1 text-xs text-neutral-400">产生订单后，销量排行将在此展示</p>
             </div>
           ) : (
-            <table className="w-full text-xs">
-              <thead><tr className="border-b border-neutral-100 text-neutral-400"><th className="w-10 py-2 text-left font-medium whitespace-nowrap">#</th><th className="py-2 text-left font-medium whitespace-nowrap">商品</th><th className="py-2 text-right font-medium whitespace-nowrap" title="近7天累计成交量（不含未付款/已取消订单）">成交量</th><th className="py-2 text-right font-medium whitespace-nowrap" title="较上一统计周期(近7天)销量涨跌幅">环比</th></tr></thead>
-              <tbody>
-                {ranking.slice(0, 10).map(r => (
-                  <tr key={r.productId} className="border-b border-neutral-50 transition-colors hover:bg-neutral-50/70">
-                    <td className="py-2.5">
-                      <span className={cn(
-                        'inline-flex h-5 w-5 items-center justify-center rounded-md text-[11px] font-semibold',
-                        r.rank === 1 ? 'bg-amber-100 text-amber-700' :
-                        r.rank === 2 ? 'bg-neutral-200 text-neutral-600' :
-                        r.rank === 3 ? 'bg-accent-100 text-accent-700' :
-                        'text-neutral-400'
-                      )}>
-                        {r.rank}
-                      </span>
-                    </td>
-                    <td className="max-w-[160px] py-2.5">
-                      <div className="flex items-center gap-2">
-                        <span className="truncate text-neutral-700" title={r.productName}>{r.productName}</span>
-                      </div>
-                      {/* 销量进度条 — 相对当日冠军的占比 */}
-                      <div className="mt-1 h-1 w-full max-w-[140px] overflow-hidden rounded-full bg-neutral-100">
-                        <div className="h-full rounded-full bg-gradient-to-r from-primary-400 to-primary-500" style={{ width: `${Math.min(100, (r.salesQty || 0) / maxSalesQty * 100)}%` }} />
-                      </div>
-                    </td>
-                    <td className="tnum py-2.5 text-right font-mono text-neutral-900 whitespace-nowrap">{r.qtyDisplay}</td>
-                    <td className={cn('py-2.5 text-right whitespace-nowrap', r.dailyChange > 0 ? 'text-emerald-600' : 'text-red-500')}>
-                      {r.dailyChange > 0 ? '▲' : '▼'} {Math.abs(r.dailyChange)}%
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <>
+              <table className="w-full text-xs">
+                <thead><tr className="border-b border-neutral-100 text-neutral-400"><th className="w-10 py-2 text-left font-medium whitespace-nowrap">#</th><th className="py-2 text-left font-medium whitespace-nowrap">商品</th><th className="py-2 text-right font-medium whitespace-nowrap" title="近7天累计成交量（不含未付款/已取消订单）">成交量</th><th className="py-2 text-right font-medium whitespace-nowrap" title="环比：本期(近7天)销量较上一统计周期(前7天)的涨跌幅">环比</th></tr></thead>
+                <tbody>
+                  {ranking.slice(0, 10).map(r => (
+                    <tr key={r.productId} className="border-b border-neutral-50 transition-colors hover:bg-neutral-50/70">
+                      <td className="py-2.5">
+                        <span className={cn(
+                          'inline-flex h-5 w-5 items-center justify-center rounded-md text-[11px] font-semibold',
+                          r.rank === 1 ? 'bg-amber-100 text-amber-700' :
+                          r.rank === 2 ? 'bg-neutral-200 text-neutral-600' :
+                          r.rank === 3 ? 'bg-accent-100 text-accent-700' :
+                          'text-neutral-400'
+                        )}>
+                          {r.rank}
+                        </span>
+                      </td>
+                      <td className="max-w-[160px] py-2.5">
+                        <div className="flex items-center gap-2">
+                          <span className="truncate text-neutral-700" title={r.productName}>{r.productName}</span>
+                        </div>
+                        {/* 销量进度条 — 相对当日冠军的占比 */}
+                        <div className="mt-1 h-1 w-full max-w-[140px] overflow-hidden rounded-full bg-neutral-100">
+                          <div className="h-full rounded-full bg-gradient-to-r from-primary-400 to-primary-500" style={{ width: `${Math.min(100, (r.salesQty || 0) / maxSalesQty * 100)}%` }} />
+                        </div>
+                      </td>
+                      <td className="tnum py-2.5 text-right font-mono text-neutral-900 whitespace-nowrap">{r.qtyDisplay}</td>
+                      <td className={cn('py-2.5 text-right whitespace-nowrap', r.dailyChange > 0 ? 'text-emerald-600' : 'text-red-500')}>
+                        {r.dailyChange > 0 ? '▲' : '▼'} {Math.abs(r.dailyChange)}%
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {/* #3000: 环比概念可见化 —— 讲明比较周期，避免用户不理解「环比」与哪个时间比 */}
+              <p className="mt-2 text-[11px] leading-relaxed text-neutral-400">
+                环比 = 本期销量（近7天）对比上一期（前7天）的涨跌幅
+              </p>
+            </>
           )}
         </div>
       </div>
