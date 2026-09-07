@@ -67,10 +67,15 @@ app/
 
 Tool 铁律：写前校验 → 失败给 suggestion → 写前弹 confirm → 反幻觉规则
 
-## RAG Pipeline
+## RAG Pipeline（已下线，决策 D1）
+
+> ⚠️ **RAG 已于 2026-06 下线（决策 D1）**：`app/rag/`（BM25 + DashVector + Reranker）与
+> `knowledge_search`/`knowledge_manage` 工具已删除（提交 `3215c322`），客服知识问答改用
+> LLM 内置知识（见 `customer_knowledge_skill.py`）。B 端知识管理模块（`KnowledgeController` +
+> `KnowledgeDocument` 表）**预留未启用**；恢复仅需按 `knowledge_skill.py` 头注 uncomment 注册。
 
 ```
-文档上传 → Chunker分块 → 向量嵌入 → DashVector
+（历史实现）文档上传 → Chunker分块 → 向量嵌入 → DashVector
 用户查询 → BM25关键词 + 向量语义 → Reranker重排 → Top-K
 ```
 

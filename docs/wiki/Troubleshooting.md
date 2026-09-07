@@ -43,7 +43,7 @@
 - 检查 DeepSeek API 服务状态
 - 熔断器会记录连续失败，超过阈值自动降级为规则匹配
 
-**RAG 检索返回空**
+**RAG 检索返回空**（⚠️ RAG 已下线，决策 D1——以下条目仅对历史版本排查有效）
 - 确认知识库文档已完成向量化 (`embedding_status = 'completed'`)
 - 检查 DashVector collection 是否存在: `tenant_{tenant_id}` 格式
 - 向量化异步任务可能还在队列中，查 `embedding_tasks` 表
