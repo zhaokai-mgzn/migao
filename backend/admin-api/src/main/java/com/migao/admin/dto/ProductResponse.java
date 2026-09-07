@@ -127,6 +127,13 @@ public class ProductResponse {
     private Boolean recommended;
 
     /**
+     * 是否允许退货回补库存（issue #2991）
+     * 窗帘行业定制退货不可再售，默认 FALSE；标准件/配件等可再售商品开启后，
+     * 售后工单退款/退货完结时恢复 SKU 库存。
+     */
+    private Boolean allowReturnRestock;
+
+    /**
      * 颜色分类列表（详情接口返回）
      */
     private List<ProductColorResponse> colors;

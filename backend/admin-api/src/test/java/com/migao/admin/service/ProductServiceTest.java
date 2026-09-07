@@ -1,4 +1,4 @@
-// case_ids: PR-001, PR-002, PR-003, PR-004, PR-005, PR-006, PP-006
+// case_ids: PR-001, PR-002, PR-003, PR-004, PR-005, PR-006, PP-006, PR-017
 // PP-006（issue #2986）：商品-加工项关联支持商品级「每米数量」覆盖（custom_per_meter_quantity），
 // 响应合并加工项默认密度与商品覆盖密度
 
@@ -258,6 +258,74 @@ class ProductServiceTest {
         assertThat(result).isNotNull();
         assertThat(result.getName()).isEqualTo("新商品");
         verify(productMapper).insert(any(Product.class));
+    }
+
+    @Test
+    @DisplayName("创建商品 - allowReturnRestock 透传到实体与响应（默认不开启）")
+    void createProduct_AllowReturnRestock_Transmitted() {
+        // Given: 显式开启退货回补库存
+        ProductCreateRequest request = new ProductCreateRequest();
+        request.setName("标准杆");
+        request.setCategoryId("cat-001");
+        request.setBasePrice(new BigDecimal("59.00"));
+        request.setAllowReturnRestock(true);
+
+        when(categoryMapper.selectById("cat-001")).thenReturn(testCategory);
+        ArgumentCaptor<Product> captor = ArgumentCaptor.forClass(Product.class);
+        when(productMapper.insert(captor.capture())).thenAnswer(invocation -> {
+            Product p = invocation.getArgument(0);
+            p.setId("prod-restock");
+            return 1;
+        });
+        Product savedProduct = Product.builder()
+                .id("prod-restock")
+                .name("标准杆")
+                .categoryId("cat-001")
+                .basePrice(new BigDecimal("59.00"))
+                .status("off_sale")
+                .allowReturnRestock(true)
+                .build();
+        when(productMapper.selectById("prod-restock")).thenReturn(savedProduct);
+
+        // When
+        ProductResponse result = productService.createProduct(request, 1L);
+
+        // Then
+        assertThat(captor.getValue().getAllowReturnRestock()).isTrue();
+        assertThat(result.getAllowReturnRestock()).isTrue();
+    }
+
+    @Test
+    @DisplayName("创建商品 - allowReturnRestock 未传时默认 false（窗帘定制退货不可再售）")
+    void createProduct_AllowReturnRestock_DefaultsFalse() {
+        ProductCreateRequest request = new ProductCreateRequest();
+        request.setName("定制帘");
+        request.setCategoryId("cat-001");
+        request.setBasePrice(new BigDecimal("200.00"));
+
+        when(categoryMapper.selectById("cat-001")).thenReturn(testCategory);
+        ArgumentCaptor<Product> captor = ArgumentCaptor.forClass(Product.class);
+        when(productMapper.insert(captor.capture())).thenAnswer(invocation -> {
+            Product p = invocation.getArgument(0);
+            p.setId("prod-custom");
+            return 1;
+        });
+        Product savedProduct = Product.builder()
+                .id("prod-custom")
+                .name("定制帘")
+                .categoryId("cat-001")
+                .basePrice(new BigDecimal("200.00"))
+                .status("off_sale")
+                .allowReturnRestock(false)
+                .build();
+        when(productMapper.selectById("prod-custom")).thenReturn(savedProduct);
+
+        // When
+        ProductResponse result = productService.createProduct(request, 1L);
+
+        // Then
+        assertThat(captor.getValue().getAllowReturnRestock()).isNull(); // 未传 → 不写入，DB 默认 false
+        assertThat(result.getAllowReturnRestock()).isFalse();
     }
 
     @Test

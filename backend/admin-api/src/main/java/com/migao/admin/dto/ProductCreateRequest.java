@@ -112,6 +112,12 @@ public class ProductCreateRequest {
     private String brand;
 
     /**
+     * 是否允许退货回补库存（issue #2991，默认 FALSE）
+     * 窗帘行业定制退货不可再售，默认关闭不回补；可再售商品创建时即可显式开启。
+     */
+    private Boolean allowReturnRestock;
+
+    /**
      * 商品属性字典，key 可为 weight/material/function/craft/style/pattern 等
      */
     private Map<String, String> specifications;

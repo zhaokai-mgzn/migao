@@ -1,15 +1,19 @@
-// case_ids: AS-001, AS-002, AS-003, AS-004, AS-005
+// case_ids: AS-001, AS-002, AS-003, AS-004, AS-005, AS-006
 
 package com.migao.admin.service;
 
 import com.migao.admin.dto.*;
 import com.migao.admin.entity.AfterSalesTicket;
 import com.migao.admin.entity.Order;
+import com.migao.admin.entity.OrderItem;
+import com.migao.admin.entity.Product;
+import com.migao.admin.entity.TicketTimeline;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.AfterSalesTicketMapper;
+import com.migao.admin.mapper.OrderItemMapper;
 import com.migao.admin.mapper.OrderMapper;
+import com.migao.admin.mapper.ProductMapper;
 import com.migao.admin.mapper.TicketTimelineMapper;
-import com.migao.admin.entity.TicketTimeline;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
@@ -28,6 +32,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -49,6 +54,12 @@ class AfterSalesTicketServiceTest {
     private OrderMapper orderMapper;
 
     @Mock
+    private OrderItemMapper orderItemMapper;
+
+    @Mock
+    private ProductMapper productMapper;
+
+    @Mock
     private TicketTimelineMapper ticketTimelineMapper;
 
     @Mock
@@ -60,6 +71,9 @@ class AfterSalesTicketServiceTest {
     @Mock
     private NotificationService notificationService;
 
+    @Mock
+    private OrderService orderService;
+
     private AfterSalesTicket testTicket;
     private Order testOrder;
 
@@ -70,6 +84,8 @@ class AfterSalesTicketServiceTest {
         MapperBuilderAssistant assistant = new MapperBuilderAssistant(conf, "");
         TableInfoHelper.initTableInfo(assistant, Order.class);
         TableInfoHelper.initTableInfo(assistant, AfterSalesTicket.class);
+        TableInfoHelper.initTableInfo(assistant, OrderItem.class);
+        TableInfoHelper.initTableInfo(assistant, Product.class);
 
         testOrder = Order.builder()
                 .id("order-001")
@@ -1066,5 +1082,160 @@ class AfterSalesTicketServiceTest {
 
         // then：投诉工单无关联订单，但待办通知依然发给租户管理员
         verify(notificationService).triggerForTenantAdmins(eq(1L), eq("after_sales_created"), any());
+    }
+
+    // ======================== 售后完结按商品开关回补库存（issue #2991） ========================
+
+    private OrderItem buildOrderItem(String productId) {
+        return OrderItem.builder()
+                .id("item-" + productId)
+                .orderId("order-001")
+                .productId(productId)
+                .quantity(2)
+                .build();
+    }
+
+    @Test
+    @DisplayName("return 工单 resolved — 订单商品 allow_return_restock=true 时回补库存")
+    void updateTicketStatus_ResolvedReturn_allowRestock_true_restoresStock() {
+        // given: processing → resolved 的 return 工单，订单商品允许退货回补
+        AfterSalesTicket processingTicket = AfterSalesTicket.builder()
+                .id("ticket-rs1")
+                .tenantId(1L)
+                .ticketNo("AS-RESTOCK-001")
+                .orderId("order-001")
+                .ticketType("return")
+                .status("processing")
+                .build();
+        AfterSalesStatusUpdateRequest request = new AfterSalesStatusUpdateRequest();
+        request.setStatus("resolved");
+
+        when(afterSalesTicketMapper.selectById("ticket-rs1")).thenReturn(processingTicket);
+        when(afterSalesTicketMapper.updateById(any(AfterSalesTicket.class))).thenReturn(1);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(List.of(buildOrderItem("prod-1"), buildOrderItem("prod-2")));
+        when(productMapper.selectBatchIds(anyCollection()))
+                .thenReturn(List.of(
+                        Product.builder().id("prod-1").allowReturnRestock(true).build(),
+                        Product.builder().id("prod-2").allowReturnRestock(true).build()));
+
+        // when
+        afterSalesTicketService.updateTicketStatus("ticket-rs1", request);
+
+        // then: 订单全部商品允许回补 → 调用库存恢复
+        verify(orderService).restoreStockForReturn("order-001");
+    }
+
+    @Test
+    @DisplayName("refund 工单 resolved — 订单商品 allow_return_restock=false（默认）时不回补库存")
+    void updateTicketStatus_ResolvedRefund_allowRestock_false_noRestock() {
+        // given: refund 工单，商品开关默认 false（窗帘定制退货不可再售）
+        AfterSalesTicket processingTicket = AfterSalesTicket.builder()
+                .id("ticket-rs2")
+                .tenantId(1L)
+                .ticketNo("AS-RESTOCK-002")
+                .orderId("order-001")
+                .ticketType("refund")
+                .status("processing")
+                .build();
+        AfterSalesStatusUpdateRequest request = new AfterSalesStatusUpdateRequest();
+        request.setStatus("resolved");
+
+        when(afterSalesTicketMapper.selectById("ticket-rs2")).thenReturn(processingTicket);
+        when(afterSalesTicketMapper.updateById(any(AfterSalesTicket.class))).thenReturn(1);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(List.of(buildOrderItem("prod-1")));
+        when(productMapper.selectBatchIds(anyCollection()))
+                .thenReturn(List.of(Product.builder().id("prod-1").allowReturnRestock(false).build()));
+
+        // when
+        afterSalesTicketService.updateTicketStatus("ticket-rs2", request);
+
+        // then: 商品不允许回补 → 不调用库存恢复
+        verify(orderService, never()).restoreStockForReturn(anyString());
+    }
+
+    @Test
+    @DisplayName("return 工单 resolved — 多商品任一 allow_return_restock=false 则整单不回补（保守）")
+    void updateTicketStatus_ResolvedReturn_mixedAllow_wholeOrderSkipped() {
+        // given: 同一订单两个商品，一个允许回补一个不允许
+        AfterSalesTicket processingTicket = AfterSalesTicket.builder()
+                .id("ticket-rs3")
+                .tenantId(1L)
+                .ticketNo("AS-RESTOCK-003")
+                .orderId("order-001")
+                .ticketType("return")
+                .status("processing")
+                .build();
+        AfterSalesStatusUpdateRequest request = new AfterSalesStatusUpdateRequest();
+        request.setStatus("resolved");
+
+        when(afterSalesTicketMapper.selectById("ticket-rs3")).thenReturn(processingTicket);
+        when(afterSalesTicketMapper.updateById(any(AfterSalesTicket.class))).thenReturn(1);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(List.of(buildOrderItem("prod-1"), buildOrderItem("prod-2")));
+        when(productMapper.selectBatchIds(anyCollection()))
+                .thenReturn(List.of(
+                        Product.builder().id("prod-1").allowReturnRestock(true).build(),
+                        Product.builder().id("prod-2").allowReturnRestock(false).build()));
+
+        // when
+        afterSalesTicketService.updateTicketStatus("ticket-rs3", request);
+
+        // then: 任一商品不允许 → 整单不回补，防止定制商品误入可售库存
+        verify(orderService, never()).restoreStockForReturn(anyString());
+    }
+
+    @Test
+    @DisplayName("无订单明细时售后完结跳过库存回补")
+    void updateTicketStatus_ResolvedReturn_noItems_noRestock() {
+        // given
+        AfterSalesTicket processingTicket = AfterSalesTicket.builder()
+                .id("ticket-rs4")
+                .tenantId(1L)
+                .ticketNo("AS-RESTOCK-004")
+                .orderId("order-001")
+                .ticketType("return")
+                .status("processing")
+                .build();
+        AfterSalesStatusUpdateRequest request = new AfterSalesStatusUpdateRequest();
+        request.setStatus("resolved");
+
+        when(afterSalesTicketMapper.selectById("ticket-rs4")).thenReturn(processingTicket);
+        when(afterSalesTicketMapper.updateById(any(AfterSalesTicket.class))).thenReturn(1);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+
+        // when
+        afterSalesTicketService.updateTicketStatus("ticket-rs4", request);
+
+        // then: 无明细 → 不查商品开关、不回补库存
+        verify(productMapper, never()).selectBatchIds(anyCollection());
+        verify(orderService, never()).restoreStockForReturn(anyString());
+    }
+
+    @Test
+    @DisplayName("非 refund/return 工单（repair）resolved 不回补库存")
+    void updateTicketStatus_ResolvedRepair_noRestock() {
+        // given
+        AfterSalesTicket processingTicket = AfterSalesTicket.builder()
+                .id("ticket-rs5")
+                .tenantId(1L)
+                .ticketNo("AS-RESTOCK-005")
+                .orderId("order-001")
+                .ticketType("repair")
+                .status("processing")
+                .build();
+        AfterSalesStatusUpdateRequest request = new AfterSalesStatusUpdateRequest();
+        request.setStatus("resolved");
+
+        when(afterSalesTicketMapper.selectById("ticket-rs5")).thenReturn(processingTicket);
+        when(afterSalesTicketMapper.updateById(any(AfterSalesTicket.class))).thenReturn(1);
+
+        // when
+        afterSalesTicketService.updateTicketStatus("ticket-rs5", request);
+
+        // then: repair 工单不触发库存回补
+        verify(orderItemMapper, never()).selectList(any(LambdaQueryWrapper.class));
+        verify(orderService, never()).restoreStockForReturn(anyString());
     }
 }

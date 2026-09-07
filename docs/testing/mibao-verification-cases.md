@@ -4,7 +4,7 @@
 > 单一源：`ershen/seed/migao/cases/`（部署副本 `.github/cases/`）。
 > 启动服务后按序执行；每轮 Case 独立。tier：🟢 smoke / 🔵 normal / 🔴 adversarial。
 
-## 售后域（5 case）
+## 售后域（6 case）
 
 ### AS-001. 售后工单列表 🟢
 ```
@@ -61,6 +61,16 @@
 ```
 真值: aftersales-flow.status-enums, aftersales-flow.timeline, aftersales-flow.create-order-required
 溯源: eval M008 独有（售后全旅程） ｜ tags: multi_turn, cross_skill, real_scenario
+
+### AS-006. 售后工单退款/退货完结 - 按商品「退货回补库存」开关决定是否回补库存 🔵
+```
+你: AS-20260701-0002 退款工单已处理完，完成
+期望: after_sales_manage(action=update_status, status=resolved)
+数据: refund/return 工单 resolved 时：订单全部商品 allow_return_restock=true 才恢复 SKU 库存；任一商品为 false 则整单不回补（窗帘定制退货不可再售）
+数据: allow_return_restock 默认 false；米宝不得在售后完成后默认引导恢复库存/重新上架
+```
+真值: aftersales-flow.return-restock-switch
+溯源: issue #2991 新增：售后完结库存联动按商品开关收敛，窗帘行业定制退货不可再售 ｜ tags: update, status, cross_skill
 
 ## agents（6 case）
 
@@ -1787,7 +1797,7 @@
 真值: processing-manage.crud, product-sku-stock.create-flow
 溯源: 2026-09-07 新增（issue #2986）：加工项每米数量密度配置——per_piece 类加工项（打孔/四爪钩/罗马圈）按个计价但数量随面料米数线性变化，行业标准密度（打孔 6 个/米、四爪钩 10 个/米等）可配置并透传给下单自动推导 ｜ tags: processing_item, per_meter_quantity, pricing
 
-## 商品域（16 case）
+## 商品域（17 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
 ```
@@ -1995,6 +2005,16 @@
 ```
 真值: product-sku-stock.create-flow, processing-manage.crud
 溯源: 2026-09-06 新增（issue #2964）：加工项「适用商品分类」配置此前无消费方，建品流程按已选分类过滤/推荐加工项（设计意图见 docs/design/admin-dashboard-design.md §6.1.1 适用商品分类+AI推荐） ｜ tags: processing_item, product_category, guided_flow, recommendation
+
+### PR-017. 商品创建/更新/详情透传「退货回补库存」开关（allow_return_restock） 🔵
+```
+你: 把「遮光窗帘」设置成退货后可以回补库存
+期望: product_update or product_manage(allow_return_restock=True)
+数据: 商品详情/列表返回 allowReturnRestock（默认 false，开启后为 true）
+数据: 售后工单 refund/return 完结时按商品开关决定是否回补 SKU 库存
+```
+真值: product-sku-stock.aggregate, product-sku-stock.realtime, aftersales-flow.return-restock-switch
+溯源: issue #2991 新增：窗帘行业定制退货不可再售，商品级开关控制售后完结是否回补库存 ｜ tags: inventory, write, cross_skill
 
 ## registry（1 case）
 
@@ -2516,9 +2536,9 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：204（活跃 106，跳过 98）
-- tier 分布：smoke 8 / normal 168 / adversarial 28
-- 售后域：5
+- 用例总数：206（活跃 108，跳过 98）
+- tier 分布：smoke 8 / normal 170 / adversarial 28
+- 售后域：6
 - agents：6
 - api：12
 - bmini：5
@@ -2535,7 +2555,7 @@
 - ontology：4
 - 订单域：14
 - 加工项域：6
-- 商品域：16
+- 商品域：17
 - registry：1
 - 设置域：8
 - token-refresh：4

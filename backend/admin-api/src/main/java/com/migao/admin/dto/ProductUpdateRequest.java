@@ -111,6 +111,12 @@ public class ProductUpdateRequest {
     private String brand;
 
     /**
+     * 是否允许退货回补库存（issue #2991）
+     * 传 null 表示不修改；true=允许退货回补（可再售），false=退货不回补（定制商品）。
+     */
+    private Boolean allowReturnRestock;
+
+    /**
      * 商品属性字典，key 可为 weight/material/function/craft/style/pattern 等
      */
     private Map<String, String> specifications;

@@ -111,6 +111,13 @@ public class Product {
      */
     private Boolean recommended;
 
+    /**
+     * 是否允许退货回补库存（issue #2991）
+     * 窗帘行业定制退货不可再售，默认 FALSE 不回补；标准件/配件等可再售商品显式开启。
+     * 售后工单 refund/return 完结时，仅本开关为 TRUE 才恢复 SKU 库存。
+     */
+    private Boolean allowReturnRestock;
+
     @TableField(fill = FieldFill.INSERT)
     private OffsetDateTime createdAt;
 

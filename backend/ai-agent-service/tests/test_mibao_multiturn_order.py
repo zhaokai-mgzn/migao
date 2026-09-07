@@ -220,7 +220,7 @@ class TestMibaoMultiturnOrder:
 
     # ==================== B. 跨领域联动类 ====================
 
-    # ---------- Case 15: 售后退货→库存回收→重新上架 ----------
+    # ---------- Case 15: 售后退货→退货完成→不回补库存（已在 aftersales 测试中改写，issue #2991） ----------
 
     async def test_case_20_order_not_found_recovery(self):
         """

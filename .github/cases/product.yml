@@ -573,3 +573,37 @@ cases:
       ci:
         - agent-eval.yml
       verifies: []
+
+  - id: PR-017
+    legacy_id: ""
+    title: "商品创建/更新/详情透传「退货回补库存」开关（allow_return_restock）"
+    domains:
+      - product
+      - aftersales
+    tier: normal
+    tags:
+      - inventory
+      - write
+      - cross_skill
+    truths_ref:
+      - product-sku-stock.aggregate
+      - product-sku-stock.realtime
+      - aftersales-flow.return-restock-switch
+    user_inputs:
+      - "把「遮光窗帘」设置成退货后可以回补库存"
+    expectations:
+      - tool: product_update or product_manage
+        args:
+          allow_return_restock: true
+    data_checks:
+      - "商品详情/列表返回 allowReturnRestock（默认 false，开启后为 true）"
+      - "售后工单 refund/return 完结时按商品开关决定是否回补 SKU 库存"
+    skip_reason: ""
+    merge_log: "issue #2991 新增：窗帘行业定制退货不可再售，商品级开关控制售后完结是否回补库存"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/AfterSalesTicketServiceTest.java"
+      ci:
+        - agent-eval.yml
+      verifies: []
