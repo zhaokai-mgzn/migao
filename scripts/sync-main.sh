@@ -89,6 +89,7 @@ else
     echo "ℹ️ --no-commit：请人工审 diff 后自行提交"
     exit 0
   fi
+  git add "$EVAL_OUT" "$CASEBOOK_OUT"
   CHANGES="$(git diff --cached --stat | tail -1 | grep -oE '[0-9]+ files? changed' || echo "生成物更新")"
   git commit -m "chore(cases): 合并 main 后重渲染生成物（${CHANGES}）"
   echo "✅ 已提交生成物重渲染"
