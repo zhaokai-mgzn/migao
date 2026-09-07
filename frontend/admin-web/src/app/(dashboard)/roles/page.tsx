@@ -7,16 +7,9 @@ import { roleApi, permissionApi } from '@/lib/api'
 import { Button, Input, Modal, Badge } from '@/components/ui'
 import type { Role, Permission } from '@/types'
 import DateTimeCell from '@/components/common/DateTimeCell'
-
-// 按资源分组权限
-function groupPermissionsByResource(permissions: Permission[]): Record<string, Permission[]> {
-  const map: Record<string, Permission[]> = {}
-  for (const perm of permissions) {
-    if (!map[perm.resource]) map[perm.resource] = []
-    map[perm.resource].push(perm)
-  }
-  return map
-}
+// #3002 权限分配与真实菜单一致：复用侧边栏菜单配置做单一来源，
+// 弹窗分组/名称 = 侧边栏菜单分组/菜单项，避免展示旧口径权限目录
+import { menuGroups } from '@/config/menu'
 
 export default function RolesPage() {
   // 岗位列表
@@ -77,10 +70,86 @@ export default function RolesPage() {
     loadPermissions()
   }, [loadRoles, loadPermissions])
 
-  // 权限分组
-  const groupedPermissions = useMemo(
-    () => groupPermissionsByResource(allPermissions),
-    [allPermissions]
+  // ── #3002 菜单化权限树：分组/名称来自真实侧边栏菜单（menuGroups 单源）──
+
+  // 菜单组 → 可勾选菜单项（仅带 permissionCode 的菜单项可授予；工作台/通知中心全员可见无码）
+  const menuSections = useMemo(
+    () =>
+      menuGroups
+        .map(group => ({
+          name: group.name,
+          items: group.children
+            .filter(item => item.permissionCode)
+            .map(item => ({ code: item.permissionCode!, label: item.name })),
+        }))
+        .filter(section => section.items.length > 0),
+    []
+  )
+
+  // 权限码 → 权限 ID 列表（roles 保存的是权限 ID，见 RoleService.replaceRolePermissions）
+  const codeIds = useMemo(() => {
+    const map: Record<string, string[]> = {}
+    for (const p of allPermissions) {
+      if (!p.code) continue
+      if (!map[p.code]) map[p.code] = []
+      map[p.code].push(p.id)
+    }
+    return map
+  }, [allPermissions])
+
+  // 非菜单操作权限（新增商品/订单详情/新增员工等）：单独一节，避免与菜单树混排
+  const menuCodeSet = useMemo(() => {
+    const set = new Set<string>()
+    menuGroups.forEach(g => g.children.forEach(item => item.permissionCode && set.add(item.permissionCode)))
+    return set
+  }, [])
+  const extraPermissions = useMemo(
+    () => allPermissions.filter(p => p.code && p.code !== '*' && !menuCodeSet.has(p.code)),
+    [allPermissions, menuCodeSet]
+  )
+
+  const isCodeGranted = useCallback(
+    (code: string) => {
+      const ids = codeIds[code] || []
+      return ids.length > 0 && ids.every(id => formData.permissionIds.includes(id))
+    },
+    [codeIds, formData.permissionIds]
+  )
+
+  const toggleCode = useCallback(
+    (code: string) => {
+      const ids = codeIds[code] || []
+      setFormData(prev => {
+        const granted = ids.length > 0 && ids.every(id => prev.permissionIds.includes(id))
+        return {
+          ...prev,
+          permissionIds: granted
+            ? prev.permissionIds.filter(id => !ids.includes(id))
+            : [...new Set([...prev.permissionIds, ...ids])],
+        }
+      })
+    },
+    [codeIds]
+  )
+
+  // 菜单组全选/取消全选（组内权限码去重后一并授予/移除）
+  const toggleMenuGroup = useCallback(
+    (codes: string[]) => {
+      setFormData(prev => {
+        const allGranted = codes.every(code => {
+          const ids = codeIds[code] || []
+          return ids.length > 0 && ids.every(id => prev.permissionIds.includes(id))
+        })
+        const ids = codes.flatMap(code => codeIds[code] || [])
+        return {
+          ...prev,
+          permissionIds: allGranted
+            ? prev.permissionIds.filter(id => !ids.includes(id))
+            : [...new Set([...prev.permissionIds, ...ids])],
+        }
+      })
+    },
+    [codeIds]
   )
 
   // 打开新增对话框
@@ -151,7 +220,7 @@ export default function RolesPage() {
     }
   }
 
-  // 权限勾选
+  // 权限勾选（操作权限项：按权限 ID）
   const togglePermission = (permId: string) => {
     setFormData(prev => ({
       ...prev,
@@ -159,23 +228,6 @@ export default function RolesPage() {
         ? prev.permissionIds.filter(id => id !== permId)
         : [...prev.permissionIds, permId],
     }))
-  }
-
-  // 资源组全选/取消全选
-  const toggleResourceGroup = (permissions: Permission[]) => {
-    const ids = permissions.map(p => p.id)
-    const allSelected = ids.every(id => formData.permissionIds.includes(id))
-    if (allSelected) {
-      setFormData(prev => ({
-        ...prev,
-        permissionIds: prev.permissionIds.filter(id => !ids.includes(id)),
-      }))
-    } else {
-      setFormData(prev => ({
-        ...prev,
-        permissionIds: [...new Set([...prev.permissionIds, ...ids])],
-      }))
-    }
   }
 
   return (
@@ -299,50 +351,76 @@ export default function RolesPage() {
             {allPermissions.length === 0 ? (
               <p className="text-sm text-neutral-400">暂无权限数据</p>
             ) : (
-              <div className="border border-neutral-200 rounded-lg max-h-[300px] overflow-y-auto">
-                {Object.entries(groupedPermissions).map(([resource, perms]) => {
-                  const allSelected = perms.every(p => formData.permissionIds.includes(p.id))
-                  const someSelected = perms.some(p => formData.permissionIds.includes(p.id))
+              <div className="border border-neutral-200 rounded-lg max-h-[300px] overflow-y-auto" data-testid="perm-menu-sections">
+                {/* #3002 菜单化权限树：分组/名称与真实侧边栏菜单一致（menuGroups 单源） */}
+                {menuSections.map(section => {
+                  const codes = [...new Set(section.items.map(i => i.code))]
+                  const allSelected = codes.every(c => isCodeGranted(c))
+                  const someSelected = codes.some(c => isCodeGranted(c))
                   return (
-                    <div key={resource} className="border-b border-neutral-100 last:border-b-0">
-                      {/* 资源组标题 */}
+                    <div key={section.name} className="border-b border-neutral-100 last:border-b-0">
+                      {/* 菜单组标题（= 侧边栏菜单组名） */}
                       <div
                         className="flex items-center gap-2 px-4 py-2.5 bg-neutral-50 cursor-pointer hover:bg-neutral-100 transition-colors"
-                        onClick={() => toggleResourceGroup(perms)}
+                        onClick={() => toggleMenuGroup(codes)}
                       >
                         <input
                           type="checkbox"
                           checked={allSelected}
                           ref={(el) => { if (el) el.indeterminate = someSelected && !allSelected }}
-                          onChange={() => toggleResourceGroup(perms)}
+                          onChange={() => toggleMenuGroup(codes)}
+                          onClick={(e) => e.stopPropagation()}
                           className="w-4 h-4 text-primary-600 rounded border-neutral-300 focus:ring-primary-500"
                         />
-                        <span className="text-sm font-medium text-neutral-700">{resource}</span>
-                        <span className="text-xs text-neutral-400">({perms.length})</span>
+                        <span className="text-sm font-medium text-neutral-700">{section.name}</span>
+                        <span className="text-xs text-neutral-400">({codes.length}项)</span>
                       </div>
-                      {/* 权限项 */}
+                      {/* 菜单项（= 侧边栏菜单项名，勾选即授予对应权限码） */}
                       <div className="px-4 py-2 flex flex-wrap gap-x-6 gap-y-2">
-                        {perms.map(perm => (
+                        {section.items.map(item => (
                           <label
-                            key={perm.id}
+                            key={`${section.name}-${item.label}`}
                             className="flex items-center gap-2 cursor-pointer"
                           >
                             <input
                               type="checkbox"
-                              checked={formData.permissionIds.includes(perm.id)}
-                              onChange={() => togglePermission(perm.id)}
+                              checked={isCodeGranted(item.code)}
+                              onChange={() => toggleCode(item.code)}
                               className="w-4 h-4 text-primary-600 rounded border-neutral-300 focus:ring-primary-500"
                             />
-                            <span className="text-sm text-neutral-600">{perm.name}</span>
-                            {perm.description && (
-                              <span className="text-xs text-neutral-400" title={perm.description}>({perm.action})</span>
-                            )}
+                            <span className="text-sm text-neutral-600">{item.label}</span>
+                            <span className="text-xs text-neutral-400" title={item.code}>{item.code}</span>
                           </label>
                         ))}
                       </div>
                     </div>
                   )
                 })}
+                {/* 非菜单操作权限（新增商品/订单详情/新增员工等，不直接对应菜单入口） */}
+                {extraPermissions.length > 0 && (
+                  <div className="border-b border-neutral-100 last:border-b-0" data-testid="perm-extra-section">
+                    <div className="flex items-center gap-2 px-4 py-2.5 bg-neutral-50">
+                      <span className="text-sm font-medium text-neutral-700">操作权限</span>
+                      <span className="text-xs text-neutral-400">（不直接对应菜单入口）({extraPermissions.length})</span>
+                    </div>
+                    <div className="px-4 py-2 flex flex-wrap gap-x-6 gap-y-2">
+                      {extraPermissions.map(perm => (
+                        <label key={perm.id} className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={formData.permissionIds.includes(perm.id)}
+                            onChange={() => togglePermission(perm.id)}
+                            className="w-4 h-4 text-primary-600 rounded border-neutral-300 focus:ring-primary-500"
+                          />
+                          <span className="text-sm text-neutral-600">{perm.name}</span>
+                          {perm.description && (
+                            <span className="text-xs text-neutral-400" title={perm.description}>({perm.action})</span>
+                          )}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>

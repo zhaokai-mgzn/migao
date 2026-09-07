@@ -10,29 +10,25 @@ const MOCK_ROLES = [
   { id: 3, name: '订单客服', code: 'order_service', description: '处理订单和售后', status: 'active', permissions: ['perm-orders', 'perm-after-sales'], createdAt: '2026-06-01' },
 ]
 
-// Permissions grouped by resource
+// #3002: 与后端权限目录一致的真实 catalog（resourceType = 旧分组码，页面已不再按它分组）
 const MOCK_PERMISSIONS = [
-  // 工作台
-  { id: 11, name: '查看数据看板', code: 'dashboard:view', resource: '工作台', resourceSort: 1 },
-  // 商品管理
-  { id: 21, name: '查看商品', code: 'products:view', resource: '商品管理', resourceSort: 2 },
-  { id: 22, name: '编辑商品', code: 'products:edit', resource: '商品管理', resourceSort: 2 },
-  { id: 23, name: '删除商品', code: 'products:delete', resource: '商品管理', resourceSort: 2 },
-  { id: 24, name: '上下架商品', code: 'products:status', resource: '商品管理', resourceSort: 2 },
-  { id: 25, name: '管理分类', code: 'categories:manage', resource: '商品管理', resourceSort: 2 },
-  { id: 26, name: '管理加工项', code: 'processing:manage', resource: '商品管理', resourceSort: 2 },
-  // 订单管理
-  { id: 31, name: '查看订单', code: 'orders:view', resource: '订单管理', resourceSort: 3 },
-  { id: 32, name: '创建订单', code: 'orders:create', resource: '订单管理', resourceSort: 3 },
-  { id: 33, name: '编辑订单', code: 'orders:edit', resource: '订单管理', resourceSort: 3 },
-  { id: 34, name: '发货管理', code: 'orders:ship', resource: '订单管理', resourceSort: 3 },
-  { id: 35, name: '管理售后', code: 'after-sales:manage', resource: '订单管理', resourceSort: 3 },
-  // 客户管理
-  { id: 41, name: '查看客户', code: 'customers:view', resource: '客户管理', resourceSort: 4 },
-  // 系统设置
-  { id: 51, name: '员工管理', code: 'employees:manage', resource: '系统设置', resourceSort: 5 },
-  { id: 52, name: '岗位权限', code: 'roles:manage', resource: '系统设置', resourceSort: 5 },
-  { id: 53, name: '系统配置', code: 'settings:manage', resource: '系统设置', resourceSort: 5 },
+  { id: 'p-dashboard', name: '仪表板查看', code: 'dashboard:view', resource: 'dashboard', action: 'view', description: '查看数据概览' },
+  { id: 'p-product-manage', name: '商品管理', code: 'product:manage', resource: 'product', action: 'manage', description: '管理商品(旧大类码，兼容)' },
+  { id: 'p-product-list', name: '商品列表', code: 'product:list', resource: 'product', action: 'list', description: '查看商品列表' },
+  { id: 'p-product-create', name: '新增商品', code: 'product:create', resource: 'product', action: 'create', description: '新增/编辑/上下架商品' },
+  { id: 'p-product-category', name: '商品分类', code: 'product:category', resource: 'product', action: 'category', description: '管理商品分类' },
+  { id: 'p-processing', name: '加工管理', code: 'processing:manage', resource: 'processing', action: 'manage', description: '管理加工项' },
+  { id: 'p-knowledge', name: '知识库管理', code: 'knowledge:manage', resource: 'knowledge', action: 'manage', description: '管理知识库' },
+  { id: 'p-order-list', name: '订单列表', code: 'order:list', resource: 'order', action: 'list', description: '查看订单列表' },
+  { id: 'p-order-detail', name: '订单详情', code: 'order:detail', resource: 'order', action: 'detail', description: '查看订单详情' },
+  { id: 'p-order-refund', name: '订单退款', code: 'order:refund', resource: 'order', action: 'refund', description: '处理退款/售后工单' },
+  { id: 'p-customer', name: '客户管理', code: 'customer:view', resource: 'customer', action: 'view', description: '查看客户' },
+  { id: 'p-finance', name: '财务对账', code: 'finance:view', resource: 'finance', action: 'view', description: '查看财务流水/对账' },
+  { id: 'p-agent-session', name: '会话监控', code: 'agent:session', resource: 'agent', action: 'session', description: '米宝对话/会话监控/人工客服' },
+  { id: 'p-agent-quickreply', name: '快捷回复', code: 'agent:quickreply', resource: 'agent', action: 'quickreply', description: '机器人设置/快捷回复' },
+  { id: 'p-employee-list', name: '员工列表', code: 'employee:list', resource: 'employee', action: 'list', description: '查看员工列表' },
+  { id: 'p-employee-create', name: '新增员工', code: 'employee:create', resource: 'employee', action: 'create', description: '新增/编辑/删除员工' },
+  { id: 'p-system', name: '系统管理', code: 'system:manage', resource: 'system', action: 'manage', description: '企业信息/角色管理/系统设置' },
 ]
 
 // ==================== Tests ====================
@@ -106,27 +102,42 @@ test.describe('岗位权限管理页面（#2969 由角色权限改名）', () =>
     await expect(page.description).toBeVisible()
   })
 
-  test('创建弹窗包含权限树', async () => {
+  test('创建弹窗权限分配与真实侧边栏菜单一致（#3002）', async () => {
     await page.createBtn.click()
     await expect(page.roleModal.getByText('权限分配', { exact: true })).toBeVisible()
-    const tree = page.permissionTree
-    if (await tree.isVisible().catch(() => false)) {
-      expect(await tree.locator('input[type="checkbox"]').count()).toBeGreaterThanOrEqual(1)
-    }
+    const tree = await page.permissionTree.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => null)
+    expect(tree).not.toBeNull()
+    // 菜单组名 = 侧边栏菜单组（智能客服/商品管理/订单管理/客户管理/组织管理）
+    await expect(page.permissionTree.getByText('智能客服', { exact: true })).toBeVisible()
+    await expect(page.permissionTree.getByText('订单管理', { exact: true })).toBeVisible()
+    await expect(page.permissionTree.getByText('客户管理', { exact: true })).toBeVisible()
+    await expect(page.permissionTree.getByText('组织管理', { exact: true })).toBeVisible()
+    // 菜单项名 = 侧边栏菜单项
+    await expect(page.permissionTree.getByText('米宝 · 在线对话', { exact: true })).toBeVisible()
+    await expect(page.permissionTree.getByText('AI 客服配置', { exact: true })).toBeVisible()
+    await expect(page.permissionTree.getByText('售后工单', { exact: true })).toBeVisible()
+    await expect(page.permissionTree.getByText('岗位权限', { exact: true })).toBeVisible()
+    await expect(page.permissionTree.getByText('企业基础信息', { exact: true })).toBeVisible()
+    // 旧权限名（会话监控/快捷回复等）不再出现
+    await expect(page.permissionTree.getByText('会话监控', { exact: true })).toHaveCount(0)
+    await expect(page.permissionTree.getByText('快捷回复', { exact: true })).toHaveCount(0)
+    // 非菜单操作权限单独一节
+    await expect(page.permissionTree.getByText('操作权限', { exact: true })).toBeVisible()
+    await expect(page.permissionTree.getByText('新增商品', { exact: true })).toBeVisible()
   })
 
-  test('权限树支持资源组全选/取消全选', async () => {
+  test('权限分配支持菜单组全选/取消全选（#3002）', async () => {
     await page.createBtn.click()
-    await page.page.waitForTimeout(500) // wait for tree render
-    // All checkboxes
-    const allCheckboxes = page.permissionTree.locator('input[type="checkbox"]')
-    const count = await allCheckboxes.count()
-    if (count > 0) {
-      await allCheckboxes.first().click()
-      await expect(allCheckboxes.first()).toBeChecked()
-      await allCheckboxes.first().click()
-      await expect(allCheckboxes.first()).not.toBeChecked()
-    }
+    await page.permissionTree.waitFor({ state: 'visible', timeout: 5_000 })
+    // 智能客服组：米宝 · 在线对话 + AI 客服配置 + 人工客服 + 知识库
+    const agentItems = page.permissionTree.locator('label').filter({ hasText: /米宝|AI 客服配置|人工客服|知识库/ }).locator('input[type="checkbox"]')
+    await expect(agentItems).toHaveCount(4)
+    // 点击组头（行）→ 组内全部授予
+    await page.permissionTree.getByText('智能客服', { exact: true }).click()
+    await expect(agentItems).toBeChecked()
+    // 再次点击组头 → 全部撤销
+    await page.permissionTree.getByText('智能客服', { exact: true }).click()
+    await expect(agentItems).not.toBeChecked()
   })
 
   test('创建岗位 - 未填名称时提示错误', async () => {
