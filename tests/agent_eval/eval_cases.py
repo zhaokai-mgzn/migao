@@ -371,6 +371,21 @@ _CASE_API_011 = EvalCase(
     persona='',
 )
 
+# ── API-012 [NORMAL] 语音转写接口容错 - 空/极小/静音音频返回友好 4xx/5xx，不裸 500（#2984）（源: cases/api.yml）──
+_CASE_API_012 = EvalCase(
+    id='API-012',
+    legacy_id='',
+    title='语音转写接口容错 - 空/极小/静音音频返回友好 4xx/5xx，不裸 500（#2984）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['语音转写接口异常输入容错'],
+    expectations=[],
+    data_checks=['空文件 → 400 中文 detail「音频文件为空，未检测到声音」', '极小文件（<1KB）→ 400「未检测到有效音频内容，录音可能过短或麦克风未开启」，不裸 500', '超 10MB / 估算超 60s → 400 中文 detail（音频文件过大 / 音频时长超过上限）', 'DashScope 未识别到语音内容（静音）→ 400「未识别到语音内容，请靠近麦克风重新录音」', 'ASR 上游不可用 → 503「语音识别服务暂时不可用，请稍后重试」', '正常音频 → 200：text/language/duration_ms 齐全'],
+    skip_reason='函数级容错由 ai-agent 单测（test_asr.py TestTranscribeAudioFriendlyErrors）验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['asr', 'voice', 'error-handling'],
+    persona='',
+)
+
 # ── BM-001 [NORMAL] B 端员工首次小程序登录 - 微信授权手机号匹配员工并绑定 openid（源: cases/bmini.yml）──
 _CASE_BM_001 = EvalCase(
     id='BM-001',
@@ -1100,7 +1115,7 @@ _CASE_DA_005 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['经营看板页面按织物质感方向重设计'],
     expectations=[''],
-    data_checks=['token：主色靛蓝/点缀陶土/米白底，无默认蓝', '商品销量排行表头「日涨」在 1440/1280 两视口无截断', '订单趋势 x 轴刻度在 1280 宽度下降采样不重叠', "订单/售后状态语义色 chips；空态「暂无数据」无 '-' 占位", '销售额趋势/迷你图使用真实 amount 数据，无 23.8 假乘数', '经营数据 4 卡自洽：客单价 = 今日销售额 ÷ 今日订单数', '涨跌语义色：上涨=绿色（好事）、下跌=红色（需关注）'],
+    data_checks=['token：主色靛蓝/点缀陶土/米白底，无默认蓝', '商品销量排行表头「环比」在 1440/1280 两视口无截断（#2984 口径治理：原名「日涨」易与今日订单数混淆）', '订单趋势 x 轴刻度在 1280 宽度下降采样不重叠', "订单/售后状态语义色 chips；空态「暂无数据」无 '-' 占位", '销售额趋势/迷你图使用真实 amount 数据，无 23.8 假乘数', '经营数据 4 卡自洽：客单价 = 今日销售额 ÷ 今日订单数', '涨跌语义色：上涨=绿色（好事）、下跌=红色（需关注）'],
     skip_reason='UI 页面改版：由 vitest 单测 + Playwright 多视口 E2E + 页面验收（page_accept）验证，不进入 agent-eval 冒烟',
     tags=['dashboard', 'ui-redesign', 'visual'],
     persona='',
@@ -1118,6 +1133,21 @@ _CASE_DA_006 = EvalCase(
     data_checks=['dashboard_stats 支持 action=product_ranking：转发 admin-api GET /api/admin/dashboard/product-ranking（params period=day|month + limit）', '返回按 productId 聚合的销量排行（rank/productName/salesQty/salesAmount），ToolResult.data 为 dict 契约（list 响应包裹为 items）', '摘要含榜首商品名（如「本月销量排行: N个商品，榜首「星空全遮光窗帘」」）', '权限：admin/agent/tenant_admin/operator 可查；customer 拒绝（不越权）'],
     skip_reason='非 LLM 行为：转发实现与权限由 ai-agent 单测验证（test_tools_dashboard_stats.py），不进入 agent-eval 冒烟',
     tags=['dashboard', 'ranking', 'product'],
+    persona='',
+)
+
+# ── DA-007 [NORMAL] 商品销量排行数据自洽：有效订单过滤 + 环比口径标注（#2984 生产实证）（源: cases/data.yml）──
+_CASE_DA_007 = EvalCase(
+    id='DA-007',
+    legacy_id='',
+    title='商品销量排行数据自洽：有效订单过滤 + 环比口径标注（#2984 生产实证）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商品销量排行口径自检'],
+    expectations=[],
+    data_checks=['selectProductRanking/selectPrevPeriodQuantities 均 JOIN orders 过滤有效状态 confirmed/producing/shipped/completed，排除 pending(未付款)/cancelled(已取消)；本期与上期同口径，环比分母一致', '原生 SQL 不手写 tenant_id（租户条件由 TenantLineInnerInterceptor 自动注入，order_items/orders 均已注册）', '排行表头列名「环比」+ title 标注周期口径（较上一统计周期），不标注「较昨日」；「成交量」列 title 标注近7天，与今日订单数时间口径显式区分', '修复后生产谱号：米白色遮光窗帘 356件/▲187.1% 的虚假涨跌不再出现（356 件全部来自 pending 测试单）'],
+    skip_reason='SQL 口径由 admin-api 单测（OrderItemMapperTest）文本断言验证；UI 文案由 vitest（dashboard.test.tsx）验证；不进入 agent-eval 冒烟',
+    tags=['dashboard', 'ranking', 'ui', 'data-quality'],
     persona='',
 )
 
@@ -2645,7 +2675,7 @@ _CASE_UI_004 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['经营看板织物质感重设计子任务 B：dashboard 密度修复（表格/图表多视口）'],
     expectations=['direct_reply'],
-    data_checks=['商品销量排行表头「日涨」列渲染 whitespace-nowrap，1440×900 与 1280×800 两视口无截断', '订单趋势图 x 轴刻度按 sampleTickIndices 降采样，1280 宽度下标签数 ≤ 7 且不密集重叠', 'dashboard 页面在 1440×900 与 1280×800 两视口无水平/垂直截断或溢出'],
+    data_checks=['商品销量排行表头「环比」列渲染 whitespace-nowrap，1440×900 与 1280×800 两视口无截断（#2984：原列名「日涨」误导，改「环比」并标注周期口径）', '订单趋势图 x 轴刻度按 sampleTickIndices 降采样，1280 宽度下标签数 ≤ 7 且不密集重叠', 'dashboard 页面在 1440×900 与 1280×800 两视口无水平/垂直截断或溢出'],
     skip_reason='纯前端密度/布局治理由 vitest 单测验证（axis-sampling.test.ts + dashboard.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['ui', 'dashboard', 'density', 'axis-sampling'],
     persona='',
@@ -2960,7 +2990,7 @@ _CASE_UI_025 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['米宝聊天输入条图标与状态呈现和小布同形：发送键 ↑（ArrowUp）、停止键 ■（Square）、语音键音波线稿（AudioLines 弃用 Mic），录音状态在容器内状态条展示而不占用 placeholder，图片预览缩略图收进输入容器内'],
     expectations=['direct_reply'],
-    data_checks=['发送键图标 lucide ArrowUp（lucide-arrow-up）、流式中停止键 lucide Square（lucide-square）、语音键 lucide AudioLines（lucide-audio-lines，弃用 Mic）；title/aria 语义（发送/停止生成/语音输入）不变', '录音中：placeholder 保持「输入消息…」短句不被录音文案占用；容器内显示录音状态条「正在录音 {m:ss} · 点击停止，Esc 取消」（红点脉冲）；转写中提示「转写中...」不变；Esc 取消 / 右键取消行为不变（B 端转写追加进输入框，D1 既定差异不改）', '图片预览缩略图渲染在「消息输入区」容器内顶部；删除角标常显且带 aria-label「删除图片」；上传中添图键置灰（disabled）但不换图标（仍 ImagePlus），上传进度提示在预览块'],
+    data_checks=['发送键图标 lucide ArrowUp（lucide-arrow-up）、流式中停止键 lucide Square（lucide-square）、语音键 lucide AudioLines（lucide-audio-lines，弃用 Mic）；title/aria 语义（发送/停止生成/语音输入）不变', '录音中：placeholder 保持「输入消息…」短句不被录音文案占用；容器内显示录音状态条「正在录音 {m:ss} · 点击停止，Esc 取消」（红点脉冲）；转写中提示「转写中...」不变；Esc 取消 / 右键取消行为不变（B 端转写追加进输入框，D1 既定差异不改）', '图片预览缩略图渲染在「消息输入区」容器内顶部；删除角标常显且带 aria-label「删除图片」；上传中添图键置灰（disabled）但不换图标（仍 ImagePlus），上传进度提示在预览块', '#2984 语音容错：空口语/误触录音（<0.8s 或 <4KB）停止不发转写请求，提示「未检测到声音，已取消转写」；转写失败文案友好化（网络失败/裸 500 转中文提示，不透出 Failed to fetch）'],
     skip_reason='纯前端输入条视觉/图标/状态呈现由 vitest 单测验证，非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['ui', 'chat-input', 'admin-web', 'design-system'],
     persona='',
@@ -3064,6 +3094,7 @@ ALL_CASES = (
     _CASE_API_009,
     _CASE_API_010,
     _CASE_API_011,
+    _CASE_API_012,
     _CASE_BM_001,
     _CASE_BM_002,
     _CASE_BM_003,
@@ -3114,6 +3145,7 @@ ALL_CASES = (
     _CASE_DA_004,
     _CASE_DA_005,
     _CASE_DA_006,
+    _CASE_DA_007,
     _CASE_DF_001,
     _CASE_DF_002,
     _CASE_DF_003,

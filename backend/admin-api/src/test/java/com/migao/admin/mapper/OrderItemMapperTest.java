@@ -1,4 +1,4 @@
-// case_ids: DA-001, DA-006
+// case_ids: DA-001, DA-006, DA-007
 
 package com.migao.admin.mapper;
 
@@ -46,14 +46,23 @@ class OrderItemMapperTest {
         String sql = String.join(" ", select.value());
 
         assertThat(sql).doesNotContainPattern("(?i)tenant_id");
-        // GROUP BY product_id 一次聚合 + LIMIT 截断 topN
-        assertThat(sql).contains("GROUP BY product_id");
+        // GROUP BY product_id 一次聚合 + LIMIT 截断 topN（JOIN orders 后列名带 oi. 前缀限定，防与 orders 同名列冲突）
+        assertThat(sql).startsWith("SELECT oi.product_id");
+        assertThat(sql).contains("FROM order_items oi");
+        assertThat(sql).contains("GROUP BY oi.product_id");
         assertThat(sql).contains("ORDER BY qty DESC");
         assertThat(sql).contains("LIMIT #{limit}");
-        assertThat(sql).contains("COALESCE(SUM(quantity), 0)");
+        assertThat(sql).contains("COALESCE(SUM(oi.quantity), 0)");
         // FLOOR(subtotal) 与旧逻辑逐行 longValue() 截断语义一致
-        assertThat(sql).contains("SUM(FLOOR(subtotal))");
-        assertThat(sql).contains("MAX(product_name)");
+        assertThat(sql).contains("SUM(FLOOR(oi.subtotal))");
+        assertThat(sql).contains("MAX(oi.product_name)");
+        // #2984：排行只统计有效订单（已付款/在履行中），排除 pending(未付款)/cancelled(已取消)
+        // JOIN orders 过滤状态（租户条件仍由 TenantLineInnerInterceptor 注入，与线上一致）
+        assertThat(sql).contains("JOIN orders o ON oi.order_id = o.id");
+        assertThat(sql).contains("o.status IN ('confirmed','producing','shipped','completed')");
+        assertThat(sql).contains("o.deleted = 0");
+        assertThat(sql).doesNotContain("'pending'");
+        assertThat(sql).doesNotContain("'cancelled'");
     }
 
     @Test
@@ -70,7 +79,13 @@ class OrderItemMapperTest {
         assertThat(sql).contains("<script>");
         assertThat(sql).contains("foreach");
         assertThat(sql).contains("product_id IN");
-        assertThat(sql).contains("GROUP BY product_id");
+        assertThat(sql).contains("GROUP BY oi.product_id");
+        // #2984：上期销量与本期同口径 —— JOIN orders 过滤有效状态，排除 pending/cancelled
+        assertThat(sql).contains("JOIN orders o ON oi.order_id = o.id");
+        assertThat(sql).contains("o.status IN ('confirmed','producing','shipped','completed')");
+        assertThat(sql).contains("o.deleted = 0");
+        assertThat(sql).doesNotContain("'pending'");
+        assertThat(sql).doesNotContain("'cancelled'");
     }
 
     @Test

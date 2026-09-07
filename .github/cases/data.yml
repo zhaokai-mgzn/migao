@@ -148,7 +148,7 @@ cases:
           - 库存偏低
     data_checks:
       - "token：主色靛蓝/点缀陶土/米白底，无默认蓝"
-      - "商品销量排行表头「日涨」在 1440/1280 两视口无截断"
+      - "商品销量排行表头「环比」在 1440/1280 两视口无截断（#2984 口径治理：原名「日涨」易与今日订单数混淆）"
       - "订单趋势 x 轴刻度在 1280 宽度下降采样不重叠"
       - "订单/售后状态语义色 chips；空态「暂无数据」无 '-' 占位"
       - "销售额趋势/迷你图使用真实 amount 数据，无 23.8 假乘数"
@@ -199,4 +199,35 @@ cases:
         - "backend/ai-agent-service/tests/test_tools_dashboard_stats.py"
       ci:
         - ai-agent-tests.yml
+      verifies: []
+
+  - id: DA-007
+    legacy_id: ""
+    title: "商品销量排行数据自洽：有效订单过滤 + 环比口径标注（#2984 生产实证）"
+    domains:
+      - data
+    tier: normal
+    tags:
+      - dashboard
+      - ranking
+      - ui
+      - data-quality
+    truths_ref:
+      - dashboard-ui.ranking-caliber
+    user_inputs:
+      - "商品销量排行口径自检"
+    expectations: []
+    data_checks:
+      - "selectProductRanking/selectPrevPeriodQuantities 均 JOIN orders 过滤有效状态 confirmed/producing/shipped/completed，排除 pending(未付款)/cancelled(已取消)；本期与上期同口径，环比分母一致"
+      - "原生 SQL 不手写 tenant_id（租户条件由 TenantLineInnerInterceptor 自动注入，order_items/orders 均已注册）"
+      - "排行表头列名「环比」+ title 标注周期口径（较上一统计周期），不标注「较昨日」；「成交量」列 title 标注近7天，与今日订单数时间口径显式区分"
+      - "修复后生产谱号：米白色遮光窗帘 356件/▲187.1% 的虚假涨跌不再出现（356 件全部来自 pending 测试单）"
+    skip_reason: "SQL 口径由 admin-api 单测（OrderItemMapperTest）文本断言验证；UI 文案由 vitest（dashboard.test.tsx）验证；不进入 agent-eval 冒烟"
+    merge_log: "2026-09-07 新增：#2984 经营看板排行数据自洽治理 — 生产实证今日订单 0 但排行显示 356 件+▲187.1%（实为近7天 pending 测试单累计 × 7天环比，被 UI「日涨/较昨日」标注误导）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/mapper/OrderItemMapperTest.java"
+        - "frontend/admin-web/tests/unit/pages/dashboard.test.tsx"
+      ci:
+        - pr-check.yml
       verifies: []

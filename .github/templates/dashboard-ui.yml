@@ -5,10 +5,11 @@ red_flags: [2532]
 business_truths:
   - [dashboard-ui.tokens] 页面底色=暖米白 #faf7f2；主色=靛蓝 #48618f；点缀=陶土 #c06a3e（替换默认蓝）
   - [dashboard-ui.insight-bar] 经营看板顶部含米宝「今日经营速览」洞察条（订单环比/含加工占比/低库存预警）
-  - [dashboard-ui.no-truncate] 商品销量排行表头「日涨」列在 1440×900 与 1280×800 均无截断
+  - [dashboard-ui.no-truncate] 商品销量排行表头「环比」列在 1440×900 与 1280×800 均无截断
   - [dashboard-ui.axis-sampling] 订单趋势图 x 轴刻度在 1280 宽度下降采样，不密集重叠
   - [dashboard-ui.status-chips] 订单/售后状态用语义色 chips；空态显示「暂无数据」，禁止整列 '-' 占位
   - [dashboard-ui.no-overflow] 页面在 1440×900 与 1280×800 两视口无截断/溢出
+  - [dashboard-ui.ranking-caliber] 商品销量排行口径（#2984）：成交量=统计周期内有效订单累计（confirmed/producing/shipped/completed，排除 pending 未付款与 cancelled 已取消）；「环比」=本统计周期 vs 上一统计周期涨跌幅，列头 title 显式标注周期口径，禁止标注「较昨日」误导与今日订单数混淆
 
 primary_specs:
   - tests/e2e/specs/dashboard/dashboard.spec.ts
@@ -21,6 +22,7 @@ confidence_required: 100%
 common_pitfalls:
   - 默认蓝 #3b82f6 / blue 系残留（token 未全量替换）
   - x 轴刻度在 1280 宽度下密集重叠（未降采样）
-  - 表头「日涨」列被 CSS 截断（缺 whitespace-nowrap）
+  - 表头「环比」列被 CSS 截断（缺 whitespace-nowrap）
+  - 排行口径倒退：成交量混入 pending/cancelled 订单，或环比标注回退为「较昨日/日涨」（与今日订单数时间口径混淆）
   - 空态整列 '-' 占位或 [object Object]/NaN
   - 洞察条缺失或不在页面顶部（米宝 AI 洞察未一等公民）

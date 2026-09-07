@@ -4,6 +4,7 @@ import { useState, useRef, useCallback } from 'react'
 import { chatApi } from '@/lib/api'
 import { useAuthStore } from '@/store/auth'
 import { toast } from 'sonner'
+import { shouldTranscribeVoice, toFriendlyTranscribeError } from '@/lib/voice-guard'
 
 export type VoiceState = 'idle' | 'recording' | 'transcribing' | 'done'
 
@@ -80,9 +81,17 @@ export function useVoiceRecorder(
       recorder.onstop = async () => {
         const blob = new Blob(chunksRef.current, { type: mimeType })
         chunksRef.current = []
+        const recordedMs = Date.now() - startTimeRef.current
         cleanup()
 
-        if (blob.size === 0) return
+        // #2984：空口语/误触录音（<0.8s 或 <4KB）不发转写请求，轻提示后复位 ——
+        // 取代旧逻辑「无条件 POST → 后端 500 → Failed to fetch 生硬报错」
+        if (!shouldTranscribeVoice(recordedMs, blob.size)) {
+          setState('idle')
+          setDuration(0)
+          toast.info('未检测到声音，已取消转写')
+          return
+        }
 
         // 开始转写
         setState('transcribing')
@@ -95,9 +104,8 @@ export function useVoiceRecorder(
           setTimeout(() => setState('idle'), 1500)
         } catch (err) {
           console.error('语音转写失败:', err)
-          toast.error(
-            err instanceof Error ? err.message : '语音识别失败，请稍后重试'
-          )
+          // #2984：网络失败/裸 500 都转成用户可理解的文案，不再透出 "Failed to fetch"
+          toast.error(toFriendlyTranscribeError(err))
           setState('idle')
         }
       }

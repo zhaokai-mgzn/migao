@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Optional
 
 from dashscope.audio.asr.recognition import Recognition, RecognitionCallback
-from fastapi import APIRouter, Depends, File, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 from app.utils.auth import get_current_user, UserIdentity
@@ -36,6 +36,9 @@ SUPPORTED_MIME_TYPES = {
 
 MAX_AUDIO_SIZE = 10 * 1024 * 1024  # 10 MB
 MAX_AUDIO_DURATION_S = 60          # 最长 60 秒
+# #2984：低于该大小视为无效/空录音（浏览器空口语录音的 webm 容器最小也有几 KB，
+# 前置拦截避免空音频裸 500 与白白消耗 ASR 免费额度）
+MIN_AUDIO_SIZE = 1024
 
 
 class TranscribeResponse(BaseModel):
@@ -203,13 +206,15 @@ async def transcribe_audio(
     - **audio**: 音频文件，支持 WAV/WebM/MP3，最大 10MB，最长 60 秒
     - **language**: 语言提示，如 zh（中文）、yue（粤语）、wuu（吴语），默认 zh
     """
-    # 校验文件大小
+    # 校验文件大小与有效性（#2984：空/极小音频给友好 400，不再裸 500）
     audio_data = await audio.read()
-    if len(audio_data) > MAX_AUDIO_SIZE:
-        raise ValueError(f"音频文件过大，最大 {MAX_AUDIO_SIZE // 1024 // 1024}MB")
-
     if len(audio_data) == 0:
-        raise ValueError("音频文件为空")
+        raise HTTPException(status_code=400, detail="音频文件为空，未检测到声音")
+    if len(audio_data) < MIN_AUDIO_SIZE:
+        # 极小文件 = 空口录音/误触录音，ASR 无法识别，前置拦截省一次外部调用
+        raise HTTPException(status_code=400, detail="未检测到有效音频内容，录音可能过短或麦克风未开启")
+    if len(audio_data) > MAX_AUDIO_SIZE:
+        raise HTTPException(status_code=400, detail=f"音频文件过大，最大 {MAX_AUDIO_SIZE // 1024 // 1024}MB")
 
     # 推断格式
     audio_format, sample_rate = _get_audio_format(
@@ -224,8 +229,9 @@ async def transcribe_audio(
         # WebM/MP3 有损压缩，按较高码率 128kbps 估算
         estimated_s = len(audio_data) / (128 * 1024 / 8)
     if estimated_s > MAX_AUDIO_DURATION_S + 5:  # 5s 容差
-        raise ValueError(
-            f"音频时长约 {int(estimated_s)}s，超过上限 {MAX_AUDIO_DURATION_S}s"
+        raise HTTPException(
+            status_code=400,
+            detail=f"音频时长约 {int(estimated_s)}s，超过上限 {MAX_AUDIO_DURATION_S}s",
         )
 
     # 语言提示
@@ -237,7 +243,7 @@ async def transcribe_audio(
         f"language={language_hints[0]}"
     )
 
-    # 调用 ASR
+    # 调用 ASR（#2984：识别失败/服务不可用 → 友好 4xx/5xx，不向客户端泄漏裸 500）
     try:
         text = await _transcribe_audio(
             audio_data,
@@ -247,7 +253,14 @@ async def transcribe_audio(
         )
     except RuntimeError as e:
         logger.error(f"ASR failed for tenant {current_user.tenant_id}: {e}")
-        raise
+        message = str(e)
+        if "未识别到语音内容" in message:
+            # 静音/无有效语音 → 用户可理解的重试提示（400）
+            raise HTTPException(status_code=400, detail="未识别到语音内容，请靠近麦克风重新录音") from e
+        if "ASR_API_KEY" in message:
+            raise HTTPException(status_code=503, detail="语音识别服务未配置，请联系管理员") from e
+        # 上游（DashScope/网络）异常 → 503 表示服务暂时不可用
+        raise HTTPException(status_code=503, detail="语音识别服务暂时不可用，请稍后重试") from e
 
     # 估算音频时长（WAV: 字节 / (采样率 * 2字节/采样 * 1声道)）
     duration_ms = len(audio_data) / (sample_rate * 2) * 1000
