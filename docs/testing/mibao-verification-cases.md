@@ -2585,8 +2585,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：209（生成物重渲染后修正）
-- tier 分布：smoke 8 / normal 173 / adversarial 28
+- 用例总数：210（活跃 109，跳过 101）
+- tier 分布：smoke 8 / normal 174 / adversarial 28
 - 售后域：6
 - agents：6
 - api：12
