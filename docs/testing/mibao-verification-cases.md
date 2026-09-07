@@ -923,10 +923,11 @@
 数据: 原生 SQL 不手写 tenant_id（租户条件由 TenantLineInnerInterceptor 自动注入，order_items/orders 均已注册）
 数据: 排行表头列名「环比」+ title 标注周期口径（较上一统计周期），不标注「较昨日」；「成交量」列 title 标注近7天，与今日订单数时间口径显式区分
 数据: 修复后生产谱号：米白色遮光窗帘 356件/▲187.1% 的虚假涨跌不再出现（356 件全部来自 pending 测试单）
+数据: #2989 幽灵行治理：selectProductRanking/selectPrevPeriodQuantities 排除 product_id 为 NULL/空的明细，不聚合展示不存在的商品（生产实证曾出现「遮光窗帘」54 件无 productId 的假排行行）
 跳过: SQL 口径由 admin-api 单测（OrderItemMapperTest）文本断言验证；UI 文案由 vitest（dashboard.test.tsx）验证；不进入 agent-eval 冒烟
 ```
 真值: dashboard-ui.ranking-caliber
-溯源: 2026-09-07 新增：#2984 经营看板排行数据自洽治理 — 生产实证今日订单 0 但排行显示 356 件+▲187.1%（实为近7天 pending 测试单累计 × 7天环比，被 UI「日涨/较昨日」标注误导） ｜ tags: dashboard, ranking, ui, data-quality
+溯源: 2026-09-07 新增：#2984 经营看板排行数据自洽治理 — 生产实证今日订单 0 但排行显示 356 件+▲187.1%（实为近7天 pending 测试单累计 × 7天环比，被 UI「日涨/较昨日」标注误导）；2026-09-07 补：#2989 幽灵商品行治理（product_id 为 NULL 明细不进排行） ｜ tags: dashboard, ranking, ui, data-quality
 
 ## 防御域（17 case）
 

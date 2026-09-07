@@ -63,6 +63,9 @@ class OrderItemMapperTest {
         assertThat(sql).contains("o.deleted = 0");
         assertThat(sql).doesNotContain("'pending'");
         assertThat(sql).doesNotContain("'cancelled'");
+        // #2989：排除 product_id 为 NULL/空 的幽灵明细（生产实证 276 条脏数据被 GROUP BY 聚合成不存在商品行）
+        assertThat(sql).contains("oi.product_id IS NOT NULL");
+        assertThat(sql).contains("oi.product_id <> ''");
     }
 
     @Test
@@ -86,6 +89,9 @@ class OrderItemMapperTest {
         assertThat(sql).contains("o.deleted = 0");
         assertThat(sql).doesNotContain("'pending'");
         assertThat(sql).doesNotContain("'cancelled'");
+        // #2989：上期口径与本期一致 —— 排除 product_id 为 NULL/空 的幽灵明细
+        assertThat(sql).contains("oi.product_id IS NOT NULL");
+        assertThat(sql).contains("oi.product_id <> ''");
     }
 
     @Test
