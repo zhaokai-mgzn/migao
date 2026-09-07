@@ -64,8 +64,9 @@ class OrderItemMapperTest {
         assertThat(sql).doesNotContain("'pending'");
         assertThat(sql).doesNotContain("'cancelled'");
         // #2989：排除 product_id 为 NULL/空 的幽灵明细（生产实证 276 条脏数据被 GROUP BY 聚合成不存在商品行）
+        // 注意 `<>` 在 MyBatis 注解 SQL 中必须转义为 &lt;&gt;（否则 SAXParseException 启动失败，生产实证）
         assertThat(sql).contains("oi.product_id IS NOT NULL");
-        assertThat(sql).contains("oi.product_id <> ''");
+        assertThat(sql).contains("oi.product_id &lt;&gt; ''");
     }
 
     @Test
@@ -91,7 +92,7 @@ class OrderItemMapperTest {
         assertThat(sql).doesNotContain("'cancelled'");
         // #2989：上期口径与本期一致 —— 排除 product_id 为 NULL/空 的幽灵明细
         assertThat(sql).contains("oi.product_id IS NOT NULL");
-        assertThat(sql).contains("oi.product_id <> ''");
+        assertThat(sql).contains("oi.product_id &lt;&gt; ''");
     }
 
     @Test
