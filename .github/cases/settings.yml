@@ -246,7 +246,7 @@ cases:
       - switch
       - setting
     truths_ref:
-      - settings-notification.master-switch
+      - agent-notification.master-switch
     user_inputs:
       - "企业基础设置里关闭「启用系统通知」后，新订单/新售后/状态变更等自动站内信还发吗？"
     expectations:
@@ -277,7 +277,7 @@ cases:
       - ui
       - tab
     truths_ref:
-      - settings-page.basic-only
+      - frontend-fix.settings-basic-only
     user_inputs:
       - "企业基础信息页还有「登录日志」和「修改密码」入口吗？"
     expectations:

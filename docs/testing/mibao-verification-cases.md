@@ -2141,7 +2141,7 @@
 数据: 前端企业基础设置「启用系统通知」描述与实际一致：控制订单、客服等重要事件站内通知的发送；关闭后不再产生新的站内通知（历史通知保留），不再写「当前为站内通知开关」含糊文案
 跳过: 开关接线为 Java 单测验证（NotificationServiceTest）+ 前端文案 vitest，非 LLM 工具行为，不进入 agent-eval 冒烟
 ```
-真值: settings-notification.master-switch
+真值: agent-notification.master-switch
 溯源: 2026-09-07 新增：企业基础设置「启用系统通知」从死开关接线为租户级自动站内信总开关（issue #3003） ｜ tags: notification, switch, setting
 
 ### ST-010. 企业基础信息页 - 隐藏「登录日志」（无记录）与「修改密码」（未来短信码登录）（#3006） 🔵
@@ -2152,7 +2152,7 @@
 数据: 页面副标题不再提「账号安全与登录审计」
 跳过: 纯前端 UI 隐藏由 vitest 验证（settings.test.tsx ST-010），非 LLM 工具行为，不进入 agent-eval 冒烟
 ```
-真值: settings-page.basic-only
+真值: frontend-fix.settings-basic-only
 溯源: 2026-09-07 新增：企业基础信息隐藏登录日志/修改密码入口（issue #3006） ｜ tags: setting, ui, tab
 
 ## token-refresh（4 case）
