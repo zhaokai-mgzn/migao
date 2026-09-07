@@ -2,6 +2,7 @@
 
 package com.migao.admin.mapper;
 
+import net.sf.jsqlparser.parser.CCJSqlParserUtil;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.junit.jupiter.api.DisplayName;
@@ -121,6 +122,94 @@ class OrderItemMapperTest {
             if (p != null) {
                 assertThat(p.value()).isNotEqualTo("tenantId");
             }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // #2989/#2994/#2996 事故回归：排行 SQL 必须能被 JSqlParser（MP 多租户
+    // TenantLineInnerInterceptor 依赖）解析。
+    // 事故链：`<> ''` 未转义 → MyBatis XML 解析 SAXParseException 启动崩溃（#2990）；
+    // `&lt;&gt; ''` 转义后 MyBatis 放行，但租户插件 JSqlParser 收到 &lt;&gt; 字面量 →
+    // ParseException: unexpected token "&" → 生产 product-ranking 500（#2994/#2995）。
+    // 红线结论：非 <script> 注解 SQL 不得出现 XML 特殊字符/实体（<、&），
+    // 比较运算符统一用 !=（#2996 已验证可行）。
+    // ═══════════════════════════════════════════════════════════════════
+
+    @Test
+    @DisplayName("selectProductRanking（非 script 注解）— 不含 XML 特殊字符 < 与 &，防 &lt;&gt; 类事故复发")
+    void selectProductRanking_noXmlSensitiveChars() throws Exception {
+        Method method = OrderItemMapper.class.getMethod(
+                "selectProductRanking", java.time.OffsetDateTime.class, int.class);
+        Select select = method.getAnnotation(Select.class);
+        String sql = String.join(" ", select.value());
+
+        // 非 <script> 注解 SQL 会原样交给 JSqlParser：任何 <（含实体 &lt;）与 & 都会解析失败
+        assertThat(sql).doesNotContain("<");
+        assertThat(sql).doesNotContain("&");
+        assertThat(sql).contains("LIMIT #{limit}");
+    }
+
+    @Test
+    @DisplayName("selectProductRanking — 最终 SQL 可被 JSqlParser 解析（模拟租户插件链路）")
+    void selectProductRanking_parseableByJsqlParser() throws Exception {
+        Method method = OrderItemMapper.class.getMethod(
+                "selectProductRanking", java.time.OffsetDateTime.class, int.class);
+        Select select = method.getAnnotation(Select.class);
+        String sql = String.join(" ", select.value());
+
+        String rendered = sql
+                .replace("#{periodStart}", "'2026-09-01 00:00:00'")
+                .replace("#{limit}", "10");
+
+        parseByJsqlParser(rendered);
+        // 追加租户条件（TenantLineInnerInterceptor 注入形态）也应可解析
+        parseByJsqlParser("SELECT * FROM (" + rendered + ") t WHERE tenant_id = 1");
+    }
+
+    @Test
+    @DisplayName("selectPrevPeriodQuantities（script 注解）— 渲染后可解析，幽灵过滤用 != 而非 <>/&lt;&gt;")
+    void selectPrevPeriodQuantities_renderableAndParseable() throws Exception {
+        Method method = OrderItemMapper.class.getMethod(
+                "selectPrevPeriodQuantities", java.util.List.class,
+                java.time.OffsetDateTime.class, java.time.OffsetDateTime.class);
+        Select select = method.getAnnotation(Select.class);
+        String sql = String.join(" ", select.value());
+
+        // 事故红线：幽灵过滤条件必须是 !=，禁止回退到 <>/&lt;&gt;
+        assertThat(sql).contains("oi.product_id != ''");
+        assertThat(sql).doesNotContain("product_id <>");
+        assertThat(sql).doesNotContain("&lt;&gt;");
+        assertThat(sql).doesNotContain("product_id <");
+
+        // 模拟 MyBatis 对 <script> 的渲染（剥动态标签 + XML 实体还原 + 参数字面量化），
+        // 渲染结果必须能被 JSqlParser 解析（防租户插件解析崩溃 500）
+        String rendered = renderScriptSql(sql);
+        parseByJsqlParser(rendered);
+    }
+
+    /** 剥离 MyBatis <script> 动态标签并做 XML 实体还原，模拟 MyBatis 渲染后的最终 SQL */
+    private static String renderScriptSql(String annotatedSql) {
+        return annotatedSql
+                .replace("<script>", "")
+                .replace("</script>", "")
+                .replaceAll("<foreach[^>]*>#\\{pid}</foreach>", "'p1'")
+                // MyBatis 对 <script> 注解走 XML 解析：实体还原为运算符
+                .replace("&lt;", "<")
+                .replace("&gt;", ">")
+                .replace("&amp;", "&")
+                // 参数字面量化（仅语法解析，非实际绑定）
+                .replace("#{prevStart}", "'2026-08-24 00:00:00'")
+                .replace("#{periodStart}", "'2026-08-31 00:00:00'");
+    }
+
+    /** JSqlParser 语法解析：抛解析异常 → 测试失败（锁死租户插件解析事故） */
+    private static void parseByJsqlParser(String sql) throws Exception {
+        try {
+            var stmt = CCJSqlParserUtil.parse(sql);
+            org.junit.jupiter.api.Assertions.assertNotNull(stmt, "SQL 应为可解析语句");
+        } catch (net.sf.jsqlparser.JSQLParserException e) {
+            throw new AssertionError("SQL 无法被 JSqlParser 解析（MyBatis-Plus 租户插件会 500）：\n"
+                    + sql + "\n原始错误: " + e.getMessage(), e);
         }
     }
 }
