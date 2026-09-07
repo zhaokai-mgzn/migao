@@ -1586,6 +1586,21 @@ _CASE_HR_006 = EvalCase(
     persona='',
 )
 
+# ── HR-007 [NORMAL] 员工管理列表排除 C 端消费者账号（role=customer，issue #3004）（源: cases/hr.yml）──
+_CASE_HR_007 = EvalCase(
+    id='HR-007',
+    legacy_id='',
+    title='员工管理列表排除 C 端消费者账号（role=customer，issue #3004）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['有哪些员工？查一下员工列表里为什么有微信用户'],
+    expectations=['employee_manage(action=list)'],
+    data_checks=['GET /api/admin/users 员工分页查询默认排除 role=customer（C 端小程序登录自动建号的消费者账号，见 AuthService.findOrCreateMiniProgramUser）', '不传角色筛选时列表只含员工角色（admin/operator/自定义岗位等），nickname=微信用户、无手机号的消费者账号不出现', '显式传 role=customer 筛选时同样不返回消费者（员工管理范畴定义：customer 不属于员工）'],
+    skip_reason='查询条件由 Java 单测验证（UserServiceTest.getUserPage_ExcludesCustomerRole 断言 wrapper 含 role <> customer），非 LLM 工具行为差异，不进入 agent-eval 冒烟',
+    tags=['employee', 'list', 'scoping'],
+    persona='',
+)
+
 # ── MC-001 [NORMAL] 记忆提取解析 - 纯 JSON/内嵌数组/非法输入（源: cases/misc.yml）──
 _CASE_MC_001 = EvalCase(
     id='MC-001',
@@ -3250,6 +3265,7 @@ ALL_CASES = (
     _CASE_HR_004,
     _CASE_HR_005,
     _CASE_HR_006,
+    _CASE_HR_007,
     _CASE_MC_001,
     _CASE_MC_002,
     _CASE_MC_003,

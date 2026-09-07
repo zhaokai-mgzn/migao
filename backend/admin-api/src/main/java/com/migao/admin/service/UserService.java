@@ -197,6 +197,11 @@ public class UserService implements UserDetailsService {
     public PageResponse<User> getUserPage(long page, long size, String role, String status, String keyword, Long tenantId) {
         LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();
 
+        // 员工管理范畴（issue #3004）：默认排除 C 端消费者账号（role=customer —— 微信小程序登录
+        // 自动建号产生的账号，见 AuthService.findOrCreateMiniProgramUser），避免消费者混入 B 端员工列表。
+        // 显式传 role=customer 筛选同样不返回：消费者不属于员工范畴，员工管理不管理消费者。
+        wrapper.ne(User::getRole, "customer");
+
         // 角色筛选
         if (StringUtils.hasText(role)) {
             wrapper.eq(User::getRole, role);

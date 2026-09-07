@@ -1,5 +1,5 @@
 package com.migao.admin.service;
-// case_ids: HR-002, DF-007
+// case_ids: HR-002, DF-007, HR-007
 
 import com.migao.admin.dto.PageResponse;
 import com.migao.admin.entity.Role;
@@ -10,11 +10,15 @@ import com.migao.admin.mapper.RoleMapper;
 import com.migao.admin.mapper.UserMapper;
 import com.migao.admin.mapper.UserRoleMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -47,6 +51,10 @@ class UserServiceTest {
 
     @BeforeEach
     void setUp() {
+        // 初始化 MyBatis-Plus lambda 缓存（LambdaQueryWrapper 解析 User::getXxx 需要 TableInfo）
+        MybatisConfiguration configuration = new MybatisConfiguration();
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(configuration, ""), User.class);
+
         testUser = User.builder()
                 .id("user-001")
                 .tenantId(1L)
@@ -184,6 +192,30 @@ class UserServiceTest {
         // then
         assertThat(result.getTotal()).isEqualTo(0);
         assertThat(result.getItems()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("员工分页查询 - 默认排除 C 端消费者账号（role=customer，issue #3004）")
+    void getUserPage_ExcludesCustomerRole() {
+        // given（员工列表：行政/运营等员工角色）
+        Page<User> mockPage = new Page<>(1, 20);
+        mockPage.setRecords(List.of(testUser));  // role=admin
+        mockPage.setTotal(1);
+        when(userMapper.selectPage(any(Page.class), any(LambdaQueryWrapper.class)))
+                .thenReturn(mockPage);
+
+        // when：不传角色筛选（员工管理默认列表）
+        userService.getUserPage(1, 20, null, null, null, 1L);
+
+        // then：查询条件必须包含 role <> 'customer'（C 端消费者不进 B 端员工列表）
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<LambdaQueryWrapper<User>> captor =
+                ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(userMapper).selectPage(any(Page.class), captor.capture());
+
+        LambdaQueryWrapper<User> wrapper = captor.getValue();
+        assertThat(wrapper.getSqlSegment()).contains("role <>");
+        assertThat(wrapper.getParamNameValuePairs()).containsValue("customer");
     }
 
     // ======================== createUser 测试 ========================
