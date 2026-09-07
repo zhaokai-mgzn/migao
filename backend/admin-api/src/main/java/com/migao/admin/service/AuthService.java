@@ -57,6 +57,7 @@ public class AuthService {
     private final TenantMapper tenantMapper;
     private final PlatformAdminMapper platformAdminMapper;
     private final com.migao.admin.mapper.TenantAiConfigMapper tenantAiConfigMapper;
+    private final CustomerService customerService;
 
     /**
      * Redis Token 黑名单 key 前缀
@@ -313,6 +314,13 @@ public class AuthService {
 
         // 2. 根据 openid + tenantId 查找用户身份
         User user = findOrCreateMiniProgramUser(openid, tenantId);
+        // C 端登录自动落 CRM 客户档案（issue #3011）：幂等 upsert（openid 已存在则刷新
+        // last_active_at 并返回既有档案）；建档失败不阻断登录（客户台账为增量能力）
+        try {
+            customerService.createFromSession(tenantId, openid, user.getNickname(), "wechat_mini");
+        } catch (Exception e) {
+            log.warn("小程序登录自动建档失败（不阻断登录）: userId={}, openid={}", user.getId(), openid, e);
+        }
 
         // 3. 获取用户角色
         List<String> roles = userService.getUserRoles(user);

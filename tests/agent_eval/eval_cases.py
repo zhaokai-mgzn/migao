@@ -1076,6 +1076,21 @@ _CASE_CU_005 = EvalCase(
     persona='',
 )
 
+# ── CU-006 [NORMAL] C 端租户域名路由 - 微信用户经企业域名自动关联租户并落 CRM 客户档案（#3011）（源: cases/customer.yml）──
+_CASE_CU_006 = EvalCase(
+    id='CU-006',
+    legacy_id='',
+    title='C 端租户域名路由 - 微信用户经企业域名自动关联租户并落 CRM 客户档案（#3011）',
+    skill=Skill.CUSTOMER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['C 端微信用户从企业小程序登录后，客户列表里能看到他吗？租户是怎么挂上的？'],
+    expectations=['customer_manage(action=list)'],
+    data_checks=['POST /api/auth/mini/login：X-Tenant-Id（nginx 按 <tenantId>.app.migaozn.com 注入）/ Host 子域解析为租户权威来源；body tenantId 仅兼容期兜底；均无 → 400', '登录（新 openid 自动建号 / 已有 openid）后调用 CustomerService.createFromSession(tenantId, openid, nickname, wechat_mini) 幂等上写 customer_profiles', '客户列表（CRM）可见 C 端消费者；员工管理列表仍排除 role=customer（#3007 语义不变）'],
+    skip_reason='域名解析/建档为 Java 单测验证（TenantDomainResolverTest/AuthServiceTest/AuthIntegrationTest），非 LLM 工具行为差异，不进入 agent-eval 冒烟',
+    tags=['c-end', 'tenant', 'domain', 'customer_profile'],
+    persona='',
+)
+
 # ── DA-001 [NORMAL] 经营概览（源: cases/data.yml）──
 _CASE_DA_001 = EvalCase(
     id='DA-001',
@@ -3246,6 +3261,7 @@ ALL_CASES = (
     _CASE_CU_003,
     _CASE_CU_004,
     _CASE_CU_005,
+    _CASE_CU_006,
     _CASE_DA_001,
     _CASE_DA_002,
     _CASE_DA_003,
