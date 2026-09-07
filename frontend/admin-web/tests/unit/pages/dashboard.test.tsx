@@ -404,7 +404,19 @@ describe('DashboardPage', () => {
       // #2984：环比是「本统计周期 vs 上一统计周期」，不再误导为「较昨日」
       expect(th.getAttribute('title')).toContain('统计周期')
       expect(th.getAttribute('title')).not.toContain('昨日')
+      // #3000：title 写明具体比较周期 —— 本期(近7天) vs 上一统计周期(前7天)
+      expect(th.getAttribute('title')).toContain('本期')
+      expect(th.getAttribute('title')).toContain('前7天')
     })
+  })
+
+  it('商品销量排行「环比」列有可见文字说明，讲清比较周期（本期近7天 vs 上一期前7天）(#3000)', async () => {
+    render(<DashboardPage />)
+    await waitFor(() => {
+      expect(screen.getByText('商品销量排行')).toBeInTheDocument()
+    })
+    // 可见说明（非 hover title）：本期近7天 与 上期前7天 对比 → 用户无需懂「环比」术语
+    expect(screen.getByText(/环比.*近7天.*前7天/)).toBeInTheDocument()
   })
 
   it('商品销量排行「成交量」列 title 标注近7天口径（与今日订单数的时间口径显式区分）', async () => {

@@ -2750,7 +2750,7 @@ _CASE_UI_004 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['经营看板织物质感重设计子任务 B：dashboard 密度修复（表格/图表多视口）'],
     expectations=['direct_reply'],
-    data_checks=['商品销量排行表头「环比」列渲染 whitespace-nowrap，1440×900 与 1280×800 两视口无截断（#2984：原列名「日涨」误导，改「环比」并标注周期口径）', '订单趋势图 x 轴刻度按 sampleTickIndices 降采样，1280 宽度下标签数 ≤ 7 且不密集重叠', 'dashboard 页面在 1440×900 与 1280×800 两视口无水平/垂直截断或溢出'],
+    data_checks=['商品销量排行表头「环比」列渲染 whitespace-nowrap，1440×900 与 1280×800 两视口无截断（#2984：原列名「日涨」误导，改「环比」并标注周期口径）', '商品销量排行「环比」列有可见口径说明（不依赖 hover title）：表头 title 写明「本期(近7天) vs 上一统计周期(前7天)」，表下渲染「环比 = 本期销量（近7天）对比上一期（前7天）的涨跌幅」（#3000：大部分用户不理解环比概念，需讲明比较周期）', '订单趋势图 x 轴刻度按 sampleTickIndices 降采样，1280 宽度下标签数 ≤ 7 且不密集重叠', 'dashboard 页面在 1440×900 与 1280×800 两视口无水平/垂直截断或溢出'],
     skip_reason='纯前端密度/布局治理由 vitest 单测验证（axis-sampling.test.ts + dashboard.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['ui', 'dashboard', 'density', 'axis-sampling'],
     persona='',

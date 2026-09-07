@@ -260,6 +260,8 @@ test.describe('仪表盘页面', () => {
     await expect(page.getByText('商品销量排行')).toBeVisible()
     // 表头
     await expect(page.getByText('成交量')).toBeVisible()
+    // #3000：排行表下方有可见「环比」说明（近7天 vs 前7天），不依赖 hover title
+    await expect(page.getByText(/环比.*近7天.*前7天/)).toBeVisible()
     // 数据行
     await expect(page.getByText('遮光窗帘A款')).toBeVisible()
     await expect(page.getByText('230')).toBeVisible()

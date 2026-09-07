@@ -2211,12 +2211,13 @@
 你: 经营看板织物质感重设计子任务 B：dashboard 密度修复（表格/图表多视口）
 期望: direct_reply
 数据: 商品销量排行表头「环比」列渲染 whitespace-nowrap，1440×900 与 1280×800 两视口无截断（#2984：原列名「日涨」误导，改「环比」并标注周期口径）
+数据: 商品销量排行「环比」列有可见口径说明（不依赖 hover title）：表头 title 写明「本期(近7天) vs 上一统计周期(前7天)」，表下渲染「环比 = 本期销量（近7天）对比上一期（前7天）的涨跌幅」（#3000：大部分用户不理解环比概念，需讲明比较周期）
 数据: 订单趋势图 x 轴刻度按 sampleTickIndices 降采样，1280 宽度下标签数 ≤ 7 且不密集重叠
 数据: dashboard 页面在 1440×900 与 1280×800 两视口无水平/垂直截断或溢出
 跳过: 纯前端密度/布局治理由 vitest 单测验证（axis-sampling.test.ts + dashboard.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.dashboard-no-truncate, frontend-fix.axis-sampling, frontend-fix.dashboard-no-overflow
-溯源: 2026-08-25 新增：经营看板织物质感重设计子任务 B（issue #2537） ｜ tags: ui, dashboard, density, axis-sampling
+溯源: 2026-08-25 新增：经营看板织物质感重设计子任务 B（issue #2537）；2026-09-07 补：#3000 环比说明可见化——表头 title 写明具体比较周期（本期近7天 vs 上一统计周期前7天），排行表下方新增可见口径说明，用户无需理解「环比」术语 ｜ tags: ui, dashboard, density, axis-sampling
 
 ### UI-005. 侧边栏新增「智能客服」大类——人工客服图标修复 + 机器人设置改名归组 🔵
 ```
