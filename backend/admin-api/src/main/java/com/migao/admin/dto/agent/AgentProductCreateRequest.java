@@ -76,6 +76,12 @@ public class AgentProductCreateRequest {
     /** 库存扣减模式 */
     private String stockDeductionMode;
 
+    /**
+     * 是否允许退货回补库存（issue #2991，null = 默认 false）
+     * 窗帘行业定制退货不可再售，默认不回补；可再售商品（标准件/配件）传 true 开启。
+     */
+    private Boolean allowReturnRestock;
+
     // ---- 加工项配置子对象 ----
 
     @Data

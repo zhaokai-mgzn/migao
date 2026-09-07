@@ -1546,6 +1546,9 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         if (request.getImages() != null) createReq.setImages(request.getImages());
         if (request.getDetailImages() != null) createReq.setDetailImages(request.getDetailImages());
 
+        // 退货回补库存开关（issue #2991）：null 保持默认 false（定制退货不可再售）
+        createReq.setAllowReturnRestock(Boolean.TRUE.equals(request.getAllowReturnRestock()));
+
         // 颜色: 字符串 → ProductColorInput
         if (request.getColors() != null && !request.getColors().isEmpty()) {
             List<ProductColorInput> colorInputs = request.getColors().stream()
@@ -1652,6 +1655,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         if (request.getDetailImages() != null) { updateReq.setDetailImages(request.getDetailImages()); hasUpdate = true; }
         if (request.getSpecifications() != null) { updateReq.setSpecifications(request.getSpecifications()); hasUpdate = true; }
         if (request.getStockDeductionMode() != null) { /* 不支持通过 update 修改，忽略 */ }
+        if (request.getAllowReturnRestock() != null) { updateReq.setAllowReturnRestock(request.getAllowReturnRestock()); hasUpdate = true; }
 
         // 颜色/售卖方式/门幅: 传了才处理（会触发 SKU 重建）
         if (request.getColors() != null) {

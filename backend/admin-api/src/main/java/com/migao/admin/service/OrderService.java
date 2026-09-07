@@ -1234,6 +1234,19 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     }
 
     /**
+     * 售后退货回补库存（issue #2991）。
+     *
+     * 仅由 AfterSalesTicketService 在售后工单 refund/return 完结且订单全部商品
+     * allow_return_restock=true（允许退货回补库存）时调用；复用取消订单的库存恢复路径
+     * （恢复商品级+SKU级库存并减少销量）。窗帘行业定制退货不可再售，默认不走到本路径。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void restoreStockForReturn(String orderId) {
+        restoreStockAndDecreaseSales(orderId);
+        log.info("售后退货回补库存完成: orderId={}", orderId);
+    }
+
+    /**
      * 统一的库存和销量调整逻辑
      *
      * @param orderId  订单ID

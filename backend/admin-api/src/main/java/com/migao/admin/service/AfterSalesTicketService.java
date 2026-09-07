@@ -3,10 +3,14 @@ package com.migao.admin.service;
 import com.migao.admin.dto.*;
 import com.migao.admin.entity.AfterSalesTicket;
 import com.migao.admin.entity.Order;
+import com.migao.admin.entity.OrderItem;
+import com.migao.admin.entity.Product;
 import com.migao.admin.entity.TicketTimeline;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.AfterSalesTicketMapper;
+import com.migao.admin.mapper.OrderItemMapper;
 import com.migao.admin.mapper.OrderMapper;
+import com.migao.admin.mapper.ProductMapper;
 import com.migao.admin.mapper.TicketTimelineMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
@@ -38,8 +42,11 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
 
     private final AfterSalesTicketMapper afterSalesTicketMapper;
     private final OrderMapper orderMapper;
+    private final OrderItemMapper orderItemMapper;
+    private final ProductMapper productMapper;
     private final TicketTimelineMapper ticketTimelineMapper;
     private final FinanceService financeService;
+    private final OrderService orderService;
     private final ObjectMapper objectMapper;
     private final NotificationService notificationService;
 
@@ -437,6 +444,14 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
             linkRefundToOrderAndFinance(ticket);
         }
 
+        // 完结联动：refund/return 工单 resolved 时按商品「退货回补库存」开关（allow_return_restock）
+        // 决定是否恢复库存。窗帘行业定制退货不可再售（issue #2991）——默认关闭不回补；
+        // 仅当订单全部商品允许回补（标准件/配件等可再售商品）时恢复 SKU 库存。
+        if ("resolved".equals(newStatus)
+                && ("refund".equals(ticket.getTicketType()) || "return".equals(ticket.getTicketType()))) {
+            maybeRestockOnReturn(ticket);
+        }
+
         // 写入时间线记录（每次状态变更都记录）
         TicketTimeline timeline = new TicketTimeline();
         timeline.setTicketId(id);
@@ -551,6 +566,85 @@ public class AfterSalesTicketService extends ServiceImpl<AfterSalesTicketMapper,
             financeService.recordRefund(order, applied, "售后工单退款: " + ticket.getTicketNo());
         } catch (Exception e) {
             log.warn("售后工单完结登记退款流水失败（不影响工单主流程）: ticketNo={}, error={}",
+                    ticket.getTicketNo(), e.getMessage());
+        }
+    }
+
+    /**
+     * 售后工单完结（resolved，refund/return 类型）按商品「退货回补库存」开关恢复库存。
+     *
+     * issue #2991：窗帘行业定制退货不可再售——商品开关 allow_return_restock 默认 FALSE，
+     * 退货/退款完成不回补库存、不引导重新上架；标准件/配件等可再售商品商家显式开启后，
+     * 完结时恢复 SKU 库存（复用 OrderService 的恢复路径）。
+     *
+     * 判定口径（保守）：订单全部明细商品均允许回补时才整单恢复；任一商品不允许则整单
+     * 跳过（宁可少回补不过回补，防止定制商品误入可售库存）。无明细/无订单则跳过。
+     * 本方法不影响工单完结主流程与退款流水（旁路容错）。
+     */
+    private void maybeRestockOnReturn(AfterSalesTicket ticket) {
+        if (!StringUtils.hasText(ticket.getOrderId())) {
+            return;
+        }
+        List<OrderItem> items;
+        try {
+            items = orderItemMapper.selectList(
+                    new LambdaQueryWrapper<OrderItem>().eq(OrderItem::getOrderId, ticket.getOrderId()));
+        } catch (Exception e) {
+            log.warn("售后工单完结查询订单明细失败（跳过库存回补）: ticketNo={}, error={}",
+                    ticket.getTicketNo(), e.getMessage());
+            return;
+        }
+        if (items == null || items.isEmpty()) {
+            log.debug("售后工单完结无订单明细，跳过库存回补: ticketNo={}", ticket.getTicketNo());
+            return;
+        }
+
+        // 收集订单全部商品 ID
+        Set<String> productIds = items.stream()
+                .map(OrderItem::getProductId)
+                .filter(StringUtils::hasText)
+                .collect(Collectors.toSet());
+        if (productIds.isEmpty()) {
+            log.debug("售后工单完结订单明细无商品 ID，跳过库存回补: ticketNo={}", ticket.getTicketNo());
+            return;
+        }
+
+        // 查商品「退货回补库存」开关
+        Map<String, Product> productMap;
+        try {
+            productMap = productMapper.selectBatchIds(productIds).stream()
+                    .collect(Collectors.toMap(Product::getId, p -> p, (a, b) -> a));
+        } catch (Exception e) {
+            log.warn("售后工单完结查询商品开关失败（跳过库存回补）: ticketNo={}, error={}",
+                    ticket.getTicketNo(), e.getMessage());
+            return;
+        }
+
+        // 任一商品不允许回补 → 整单不回补（窗帘定制退货不可再售，安全默认）
+        boolean allAllow = productIds.stream().allMatch(pid -> {
+            Product p = productMap.get(pid);
+            return p != null && Boolean.TRUE.equals(p.getAllowReturnRestock());
+        });
+        if (!allAllow) {
+            List<String> blocked = productIds.stream()
+                    .filter(pid -> {
+                        Product p = productMap.get(pid);
+                        return p == null || !Boolean.TRUE.equals(p.getAllowReturnRestock());
+                    })
+                    .collect(Collectors.toList());
+            log.info("售后工单完结跳过库存回补（商品不允许退货回补）: ticketNo={}, orderId={}, " +
+                            "blockedProductIds={}（窗帘行业定制退货不可再售，allow_return_restock 默认关闭）",
+                    ticket.getTicketNo(), ticket.getOrderId(), blocked);
+            return;
+        }
+
+        // 全部商品允许回补 → 复用订单库存恢复路径（恢复 SKU 库存 + 减销量）
+        try {
+            orderService.restoreStockForReturn(ticket.getOrderId());
+            log.info("售后工单完结按商品开关回补库存完成: ticketNo={}, orderId={}, productIds={}",
+                    ticket.getTicketNo(), ticket.getOrderId(), productIds);
+        } catch (Exception e) {
+            log.warn("售后工单完结回补库存失败（不影响工单主流程）: ticketNo={}, error={}",
                     ticket.getTicketNo(), e.getMessage());
         }
     }

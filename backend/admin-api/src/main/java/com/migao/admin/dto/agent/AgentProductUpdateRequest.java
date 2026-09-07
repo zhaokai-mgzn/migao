@@ -70,4 +70,7 @@ public class AgentProductUpdateRequest {
 
     /** 库存扣减模式，null = 不修改 */
     private String stockDeductionMode;
+
+    /** 是否允许退货回补库存（issue #2991，null = 不修改） */
+    private Boolean allowReturnRestock;
 }
