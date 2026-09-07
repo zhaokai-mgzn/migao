@@ -15,6 +15,7 @@ business_truths:
   - [agent-notification.session-end] 会话结束仅 active/waiting 可执行；成功后 status=ended、写 endedAt 并插入 system 消息
   - [agent-notification.session-isolation] 会话租户隔离：列表按 tenant_id 过滤；详情/分配/结束跨租户返回 404 NOT_FOUND（非 403）
   - [agent-notification.monitor] 监控面板：在线员工=status in (online,busy)，含 active/waiting 会话数与今日会话数（今日0点+8时区起）
+  - [settings-notification.master-switch] 企业基础设置「启用系统通知」= tenants.notification_enabled 租户级总开关：false 时 triggerByEvent（order_created/after_sales_created/order_status_changed/after_sales_status_changed）与 triggerForTenantAdmins 跳过，不再产生新的自动站内信（历史通知保留）；null（存量租户）默认视为开启，行为不变（NotificationService#isNotificationEnabled）
 
 primary_specs:
   - backend/admin-api/src/test/java/com/migao/admin/controller/QuickReplyControllerTest.java

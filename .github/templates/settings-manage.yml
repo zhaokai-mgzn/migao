@@ -8,6 +8,7 @@ business_truths:
   - [settings-manage.secret-hidden] 敏感配置（密钥/token）不在 API 响应中明文返回
 
   - [settings-manage.change-password] change_password 必填 old_password + new_password；标注 WRITE|DESTRUCTIVE，执行前需确认（settings_manage.py）
+  - [settings-page.basic-only] 企业基础信息页仅展示基本设置（品牌设置 + 通知设置）：移除顶部 tab 切换栏，「修改密码」「登录日志」tab 及区块不再渲染（登录日志无记录、修改密码未来由短信验证码登录替代；后端/Agent 接口保留）；页面副标题不再提「账号安全与登录审计」
 primary_specs:
   - tests/e2e/specs/settings/settings.spec.ts
   - backend/admin-api/src/test/java/com/migao/admin/controller/SettingsControllerTest.java
