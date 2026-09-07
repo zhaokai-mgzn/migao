@@ -1216,7 +1216,7 @@
 真值: finance.summary
 溯源: 本期默认时间范围（本月1号~今天） ｜ tags: finance, summary
 
-## 人事域（6 case）
+## 人事域（7 case）
 
 ### HR-001. 员工列表 🟢
 ```
@@ -1276,6 +1276,18 @@
 ```
 真值: employee-role.five-default-positions, employee-role.snapshot-permissions
 溯源: 2026-09-06 新增：岗位权限体系改造（issue #2969） ｜ tags: position, permission, seed
+
+### HR-007. 员工管理列表排除 C 端消费者账号（role=customer，issue #3004） 🔵
+```
+你: 有哪些员工？查一下员工列表里为什么有微信用户
+期望: employee_manage(action=list)
+数据: GET /api/admin/users 员工分页查询默认排除 role=customer（C 端小程序登录自动建号的消费者账号，见 AuthService.findOrCreateMiniProgramUser）
+数据: 不传角色筛选时列表只含员工角色（admin/operator/自定义岗位等），nickname=微信用户、无手机号的消费者账号不出现
+数据: 显式传 role=customer 筛选时同样不返回消费者（员工管理范畴定义：customer 不属于员工）
+跳过: 查询条件由 Java 单测验证（UserServiceTest.getUserPage_ExcludesCustomerRole 断言 wrapper 含 role <> customer），非 LLM 工具行为差异，不进入 agent-eval 冒烟
+```
+真值: employee-role.users-endpoint
+溯源: 2026-09-07 新增：员工管理混入 C 端消费者账号治理（issue #3004） ｜ tags: employee, list, scoping
 
 ## misc（15 case）
 
@@ -2549,8 +2561,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：207（活跃 108，跳过 99）
-- tier 分布：smoke 8 / normal 171 / adversarial 28
+- 用例总数：208（活跃 108，跳过 100）
+- tier 分布：smoke 8 / normal 172 / adversarial 28
 - 售后域：6
 - agents：6
 - api：12
@@ -2562,7 +2574,7 @@
 - 数据域：7
 - 防御域：17
 - finance：4
-- 人事域：6
+- 人事域：7
 - misc：15
 - onboarding：5
 - ontology：4
