@@ -36,7 +36,7 @@ migao/
 ├── deploy/terraform/           # 阿里云 IaC
 ├── docs/                       # 文档 + wiki
 ├── tests/                      # E2E (Playwright) + Smoke (pytest)
-└── knowledge_base/             # RAG 种子数据
+└── knowledge_base/             # RAG 种子数据（决策 D1 已下线，预留）
 ```
 
 ## 功能

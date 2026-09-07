@@ -599,7 +599,10 @@ class ProductSearchTool(BaseTool):
         )
 ```
 
-### 5.3 知识库查询 Tool（自托管 RAG — DashVector + 混合检索）
+### 5.3 知识库查询 Tool（~~自托管 RAG — DashVector + 混合检索~~ → ⚠️ 已下线，决策 D1）
+
+> **历史设计文档**：RAG 已按决策 D1 下线（2026-06，提交 `3215c322` 删除 `app/rag/` 与
+> `knowledge_search`/`knowledge_manage` 工具），本节仅作历史参考，不再反映现役架构。
 
 ```python
 # ai-agent-service/app/tools/knowledge_search.py
@@ -678,9 +681,9 @@ class KnowledgeSearchTool(BaseTool):
 
 | 组件 | 说明 |
 |------|------|
-| `DashVector` | 阿里云向量数据库，存储文档 chunk 的 embedding |
-| `BM25` | 全文检索引擎，存储文档 chunk 的倒排索引 |
-| `HybridRetriever` | 混合检索器，对向量检索和 BM25 结果加权融合 |
+| ~~`DashVector`~~ | ~~阿里云向量数据库，存储文档 chunk 的 embedding~~（已下线，决策 D1） |
+| ~~`BM25`~~ | ~~全文检索引擎，存储文档 chunk 的倒排索引~~（已下线，决策 D1） |
+| ~~`HybridRetriever`~~ | ~~混合检索器，对向量检索和 BM25 结果加权融合~~（已下线，决策 D1） |
 | `FabricChunker` | 文档分块器，针对面料/窗帘文档优化的分块策略（按段落、标题、表格边界分割） |
 
 **文档管理 API**：

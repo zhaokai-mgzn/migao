@@ -379,7 +379,7 @@
 真值: category-manage.delete, category-manage.delete-destructive, ai-chat.confirm-required
 溯源: verification 2.12 独有（二次确认行为在测试中未确认，见 category-manage.yml 缺口注释） ｜ tags: delete, destructive, confirm
 
-## 对话边界域（28 case）
+## 对话边界域（29 case）
 
 ### CH-001. 空结果 + suggestion 引导修复 🔴
 ```
@@ -715,6 +715,18 @@
 ```
 真值: ai-chat.context-memory
 溯源: issue #2815：C 端长期记忆系统 — 下单自动填充收货信息场景 ｜ tags: memory, xiaobu, address_prefill, order_create
+
+### CH-029. 建议个性化 - 偏好读取注入（flag 门控，默认关闭） 🔵
+```
+你: ai-agent-service 建议生成前的偏好注入（生产接线断言）
+期望: direct_reply
+数据: 开关 SUGGESTION_PREFERENCE_ENABLED=False（默认）→ _inject_user_preferences 直接返回原 prompt（零行为变化，不调 tracker）
+数据: 开启且 xiaobu 有偏好意图 → <user_preferences> 消毒块前置注入 system prompt（标签 XML 转义）+ [preference-inject] 日志
+数据: mibao 不注入 / 缺 tenant+user / 无偏好 / tracker 异常 → 原样返回不破坏主流程
+跳过: 偏好注入为纯函数接线，由 pytest 单测验证（tests/test_preference_injection.py），不进入 agent-eval 冒烟
+```
+真值: misc.followup-generate-dynamic
+溯源: 2026-09-07 新增：issue #2997 闭环缺口 A 类 — 偏好读取接线（flag 门控） ｜ tags: suggestions, xiaobu, personalization, preference
 
 ### CH-026. 澄清卡后发图不崩溃 - 交互等待中用户发图走 vision 链路（线上 AttributeError 修复真实验收） 🔵
 ```
@@ -2536,14 +2548,14 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：206（活跃 108，跳过 98）
-- tier 分布：smoke 8 / normal 170 / adversarial 28
+- 用例总数：207（活跃 108，跳过 99）
+- tier 分布：smoke 8 / normal 171 / adversarial 28
 - 售后域：6
 - agents：6
 - api：12
 - bmini：5
 - 分类域：3
-- 对话边界域：28
+- 对话边界域：29
 - 跨域：3
 - 客户域：5
 - 数据域：7

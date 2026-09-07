@@ -25,7 +25,7 @@
 | 1. Short-term Memory | PG `session_messages` + `session_states` | ✅ 已实现且较完善 |
 | 2. Long-term Memory | PG `user_memories` | ⚠️ **只写不读（半成品）** |
 | 3. Semantic Memory | DashVector 向量库 | ❌ 已禁用（RAG 下线，决策 D1，见 `registry.py` `[RAG 禁用]`） |
-| 4. Procedural Memory | Tool 执行经验（PG） | ❌ 仅声明，无任何实现 |
+| ~~4. Procedural Memory~~ | — | 🗑 **声明已删除（2026-09-07，issue #2997）**——无落地计划，对齐 RAG 下线处理方式 |
 
 ### 1.3 短期记忆（会话级）——已实现，质量较高
 
@@ -55,14 +55,14 @@
 4. **注入安全**：一旦接线，`extractor` 可被诱导存注入文本（审计 07 P1-L9「记忆提取可被诱导植入持久化注入，当前 format_for_prompt 未接线，潜伏」），且 P1-L1 已指出"DB/工具结果/记忆/vision 间接注入数据原样进 prompt 无信任分级"——**接线前必须先做消毒与信任分级**。
 5. admin-api 侧只有 entity+mapper（`admin-api/.../entity/UserMemory.java`、`mapper/UserMemoryMapper.java`），**无 service/controller 消费**。
 
-### 1.5 偏好追踪（建议点击）——写入接线、读取未接线
+### 1.5 偏好追踪（建议点击）——写入接线、读取已接线（flag 门控）
 
 | 方向 | 状态 | 证据 |
 |---|---|---|
 | 写入 | ✅ 已接线：建议点击 → `PreferenceTracker.record_click` upsert `user_suggestion_prefs`（click_count+1） | `chat.py:1530-1541`；`suggestions/preference_tracker.py:69-119` |
-| 读取 | ❌ 未接线：`FollowUpSuggestionGenerator.generate` 生产代码**零调用点**（仅测试引用 `tests/test_follow_up_suggestions.py` 等）；chat.py:662 注释「suggestions 由 LLM 在回复中自然生成，无需在此额外生成」 | `suggestions/follow_up.py:488-580`；全仓 grep 无 graph/api 调用 |
+| 读取 | ✅ **已接线（issue #2997，2026-09-07）**：`_inject_user_preferences`（base_skill）在 flag `SUGGESTION_PREFERENCE_ENABLED=True` 时注入 TOP 偏好意图（[preference-inject] 日志供采纳率验收）；默认关闭零行为变化。注：`FollowUpSuggestionGenerator.generate` 仍未接生产（chat.py 走 LLM 自然生成建议，此路径维持） | `graph/skills/base_skill.py` `_inject_user_preferences`；`tests/test_preference_injection.py`（CH-026） |
 
-即：用户点击建议的偏好**有收集、无消费**——动态建议生成本可注入 `preference_intents`（`follow_up.py:713-718` 已实现该能力）但从未被调用。
+即：用户点击建议的偏好**从"收集却不消费"变为"flag 门控可消费"**——开启开关后，LLM 生成「猜你想问」时将优先覆盖用户常用主题；动态建议生成器（`follow_up.py:713-718`）仍未被生产调用。
 
 ### 1.6 双 Agent 记忆差异化缺失
 
@@ -100,9 +100,9 @@
 |---|---|---|
 | 短期记忆（会话级） | 完整：token 预算 + 滚动摘要 + 状态机 + 域清理 | ✅ **达标，不需强化**（已超多数同类项目） |
 | 长期记忆（用户级） | 只写不读 + 无衰减 + 无合规闭环 | ⚠️ **最大短板，需优化完善** |
-| 偏好追踪 | 写已接、读未接 | ⚠️ 需接线 |
+| 偏好追踪 | 写已接、读已接（flag 门控） | ✅ 读取已接线（issue #2997，默认关，灰度验收后开启） |
 | 语义记忆 | 禁用（RAG 下线） | ⏸ 与记忆体系解耦，恢复时再评估 |
-| 程序记忆 | 仅声明 | 🗑 实现或删声明（二选一） |
+| ~~程序记忆~~ | ~~仅声明~~ | 🗑 **声明已删除（2026-09-07，issue #2997）** |
 
 ### 3.2 长期记忆数据质量实证（2026-09 真实库抽样，733 行 / 20 用户）
 
@@ -176,7 +176,7 @@ upsert 按 `(tenant,user,key)` 去重，但 key 由 LLM 自由生成 → 同一�
 - 评估引入 LangGraph MemoryStore 或 Mem0（Qdrant/PGVector 后端）做语义检索记忆，解决「按相关性召回而非全量注入 top-20」；namespace = `tenant_id` 天然多租户
 
 ### P2-2（可选）程序记忆决策
-- Procedural Memory 若无落地计划，删除 `memory/__init__.py:8` 声明，避免文档失实（对齐 RAG 下线处理方式）
+- ✅ **已执行删除（2026-09-07，issue #2997）**：Procedural Memory 无落地计划，已删除 `memory/__init__.py` 声明（对齐 RAG 下线处理方式），文档失实债清除
 
 ---
 
