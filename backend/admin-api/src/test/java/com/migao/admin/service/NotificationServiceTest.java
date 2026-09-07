@@ -1,5 +1,5 @@
 package com.migao.admin.service;
-// case_ids: ST-004, ST-005
+// case_ids: ST-004, ST-005, ST-009
 
 import com.migao.admin.dto.CreateNotificationRequest;
 import com.migao.admin.dto.NotificationDTO;
@@ -9,11 +9,13 @@ import com.migao.admin.dto.UnreadCountResponse;
 import com.migao.admin.entity.Notification;
 import com.migao.admin.entity.NotificationRule;
 import com.migao.admin.entity.NotificationTemplate;
+import com.migao.admin.entity.Tenant;
 import com.migao.admin.entity.User;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.NotificationMapper;
 import com.migao.admin.mapper.NotificationTemplateMapper;
 import com.migao.admin.mapper.NotificationRuleMapper;
+import com.migao.admin.mapper.TenantMapper;
 import com.migao.admin.mapper.UserMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -56,6 +58,9 @@ class NotificationServiceTest {
 
     @Mock
     private UserMapper userMapper;
+
+    @Mock
+    private TenantMapper tenantMapper;
 
     @InjectMocks
     private NotificationService notificationService;
@@ -421,5 +426,80 @@ class NotificationServiceTest {
         // then
         verify(notificationMapper, never()).insert(any(Notification.class));
         verify(notificationRuleMapper, never()).selectList(any(LambdaQueryWrapper.class));
+    }
+
+// ======================== #3003 租户系统通知总开关（enable_system_notifications）================
+
+    @Test
+    @DisplayName("triggerByEvent — 租户关闭「启用系统通知」时不再解析规则/产生站内信")
+    void triggerByEvent_tenantDisabled_skips() {
+        // given: 租户 1 关闭了系统通知开关
+        Tenant tenant = new Tenant();
+        tenant.setId(1L);
+        tenant.setNotificationEnabled(false);
+        when(tenantMapper.selectById(1L)).thenReturn(tenant);
+
+        java.util.Map<String, String> ctx = new java.util.HashMap<>();
+        ctx.put("recipientId", "user-1");
+        ctx.put("recipientType", "user");
+        ctx.put("orderNo", "ORD-001");
+        notificationService.triggerByEvent(1L, "order_created", ctx);
+
+        // then: 开关拦截 → 规则都不应被解析，更不落库（历史通知保留，仅不再产生新站内信）
+        verify(notificationRuleMapper, never()).selectList(any(LambdaQueryWrapper.class));
+        verify(notificationMapper, never()).insert(any(Notification.class));
+    }
+
+    @Test
+    @DisplayName("triggerForTenantAdmins — 租户关闭系统通知开关时不向管理员发送待办站内信")
+    void triggerForTenantAdmins_tenantDisabled_skips() {
+        // given: 租户 1 关闭了系统通知开关
+        Tenant tenant = new Tenant();
+        tenant.setId(1L);
+        tenant.setNotificationEnabled(false);
+        when(tenantMapper.selectById(1L)).thenReturn(tenant);
+
+        // when
+        notificationService.triggerForTenantAdmins(1L, "order_created", java.util.Map.of("orderNo", "ORD-001"));
+
+        // then: 不查管理员、不解析规则、不产生任何通知
+        verify(userMapper, never()).selectList(any(LambdaQueryWrapper.class));
+        verify(notificationRuleMapper, never()).selectList(any(LambdaQueryWrapper.class));
+        verify(notificationMapper, never()).insert(any(Notification.class));
+    }
+
+    @Test
+    @DisplayName("triggerByEvent — 开关字段为 null（存量租户）默认视为开启，行为不变")
+    void triggerByEvent_nullFlag_defaultsEnabled() {
+        // given: tenantMapper 未 stub（返回 null）→ 视为开启；规则/模板/插入就绪
+        NotificationRule rule = new NotificationRule();
+        rule.setId("rule-sys-null");
+        rule.setTenantId(0L);
+        rule.setEventType("order_created");
+        rule.setRecipientType("user");
+        rule.setChannels("internal");
+        rule.setEnabled(true);
+        rule.setTemplateId("tpl-sys-order-created");
+
+        NotificationTemplate template = new NotificationTemplate();
+        template.setId("tpl-sys-order-created");
+        template.setName("新订单创建");
+        template.setChannel("internal");
+        template.setTemplateContent("新订单{{orderNo}}已创建");
+        template.setStatus("active");
+
+        when(notificationRuleMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(rule));
+        when(notificationTemplateMapper.selectById("tpl-sys-order-created")).thenReturn(template);
+        when(notificationMapper.insert(any(Notification.class))).thenReturn(1);
+
+        java.util.Map<String, String> ctx = new java.util.HashMap<>();
+        ctx.put("recipientId", "user-1");
+        ctx.put("recipientType", "user");
+        ctx.put("orderNo", "ORD-001");
+        notificationService.triggerByEvent(2L, "order_created", ctx);
+
+        // then: 正常命中规则并落库
+        verify(notificationMapper).insert(argThat((Notification n) ->
+                "user-1".equals(n.getRecipientId()) && "新订单ORD-001已创建".equals(n.getContent())));
     }
 }

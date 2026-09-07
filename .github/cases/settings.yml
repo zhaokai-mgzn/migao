@@ -233,3 +233,34 @@ cases:
       ci:
         - ai-agent-tests.yml
       verifies: []
+
+  - id: ST-009
+    legacy_id: ""
+    title: "系统通知总开关 - 租户关闭后自动站内信停止发送（#3003）"
+    domains:
+      - settings
+      - notification
+    tier: normal
+    tags:
+      - notification
+      - switch
+      - setting
+    truths_ref:
+      - settings-notification.master-switch
+    user_inputs:
+      - "企业基础设置里关闭「启用系统通知」后，新订单/新售后/状态变更等自动站内信还发吗？"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "tenants.notification_enabled=false 的租户：triggerByEvent（order_created / after_sales_created / order_status_changed / after_sales_status_changed）与 triggerForTenantAdmins 直接跳过，不再产生新的自动站内信；历史通知保留"
+      - "开关字段为 null（存量租户）默认视为开启，行为不变；triggerByEvent 命中规则仍正常落库"
+      - "前端企业基础设置「启用系统通知」描述与实际一致：控制订单、客服等重要事件站内通知的发送；关闭后不再产生新的站内通知（历史通知保留），不再写「当前为站内通知开关」含糊文案"
+    skip_reason: "开关接线为 Java 单测验证（NotificationServiceTest）+ 前端文案 vitest，非 LLM 工具行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-07 新增：企业基础设置「启用系统通知」从死开关接线为租户级自动站内信总开关（issue #3003）"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/NotificationServiceTest.java"
+        - "frontend/admin-web/tests/unit/pages/settings.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []

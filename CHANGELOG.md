@@ -6,6 +6,11 @@
 
 ## [Unreleased]
 
+### 企业基础设置「启用系统通知」从死开关接线为租户级自动站内信总开关（2026-09-07，#3003）
+
+- `admin-api`：`NotificationService.triggerByEvent`（order_created / after_sales_created / order_status_changed / after_sales_status_changed）与 `triggerForTenantAdmins` 新增租户级开关校验——`tenants.notification_enabled=false` 时自动站内信直接跳过（不解析规则/不查管理员/不落库），历史通知保留；`null`（存量租户）默认视为开启，行为不变（此前开关只落库、不影响任何通知发送，属死开关）
+- `admin-web`：企业基础设置「启用系统通知」描述与实际一致——「控制订单、客服等重要事件站内通知的发送；关闭后不再产生新的站内通知（历史通知保留）」，删除「（当前为站内通知开关）」含糊文案（行为用例 ST-009，case_ids: ST-009）
+
 ### 岗位权限弹窗「权限分配」与真实侧边栏菜单同构化（2026-09-07，#3002）
 
 - `admin-web`：新增侧边栏菜单配置单一来源 `@/config/menu`（menuGroups/standaloneItems 从 Sidebar.tsx 抽出，Sidebar 与岗位权限弹窗共用），**权限分配弹窗改按真实菜单渲染**——分组=菜单组（智能客服/商品管理/订单管理/客户管理/组织管理），勾选项=菜单项名（米宝 · 在线对话 / AI 客服配置 / 人工客服 / 知识库 / 商品列表 / 加工项管理 / 订单列表 / 售后工单 / 客户列表 / 财务对账 / 员工管理 / 岗位权限 / 企业基础信息），勾选即授予对应权限码（roles 保存权限 ID，前端做码→ID 映射）
