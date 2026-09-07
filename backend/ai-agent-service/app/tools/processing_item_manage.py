@@ -77,6 +77,10 @@ class ProcessingItemManageTool(BaseTool):
                 "type": "number",
                 "description": "单价（create_item 时必填，update_item 时可选）",
             },
+            "per_meter_quantity": {
+                "type": "number",
+                "description": "每米数量密度（可选，per_piece 计价加工项用）：每米布料的加工个数，如打孔 6 个/米、四爪钩 10 个/米；per_meter/per_set/fixed 不适用不传",
+            },
             "description": {
                 "type": "string",
                 "description": "描述信息（可选）",
@@ -110,6 +114,7 @@ class ProcessingItemManageTool(BaseTool):
         category_id: Optional[str] = None,
         name: Optional[str] = None,
         price: Optional[float] = None,
+        per_meter_quantity: Optional[float] = None,
         description: Optional[str] = None,
         unit: Optional[str] = None,
         processing_item_id: Optional[str] = None,
@@ -136,9 +141,9 @@ class ProcessingItemManageTool(BaseTool):
 
         try:
             if action == "create_item":
-                return await self._create_item(context, name, category_id, price, description, unit)
+                return await self._create_item(context, name, category_id, price, per_meter_quantity, description, unit)
             elif action == "update_item":
-                return await self._update_item(context, item_id, name, category_id, price, description, unit)
+                return await self._update_item(context, item_id, name, category_id, price, per_meter_quantity, description, unit)
             elif action == "delete_item":
                 return await self._delete_item(context, item_id)
             elif action == "toggle_item_status":
@@ -176,8 +181,9 @@ class ProcessingItemManageTool(BaseTool):
         name: Optional[str],
         category_id: Optional[str],
         price: Optional[float],
-        description: Optional[str],
-        unit: Optional[str],
+        per_meter_quantity: Optional[float] = None,
+        description: Optional[str] = None,
+        unit: Optional[str] = None,
     ) -> ToolResult:
         """创建加工项"""
         if not name:
@@ -204,6 +210,8 @@ class ProcessingItemManageTool(BaseTool):
             "categoryId": category_id,
             "price": price,
         }
+        if per_meter_quantity is not None:
+            json_data["perMeterQuantity"] = per_meter_quantity
         if description:
             json_data["description"] = description
         if unit:
@@ -211,7 +219,7 @@ class ProcessingItemManageTool(BaseTool):
 
         logger.info(
             f"[processing-item-manage] CreateItem: name={name}, category_id={category_id}, "
-            f"price={price} | tenant={context.tenant_id}"
+            f"price={price}, per_meter_quantity={per_meter_quantity} | tenant={context.tenant_id}"
         )
 
         client = get_admin_api_client()
@@ -243,7 +251,8 @@ class ProcessingItemManageTool(BaseTool):
         name: Optional[str],
         category_id: Optional[str],
         price: Optional[float],
-        description: Optional[str],
+        per_meter_quantity: Optional[float] = None,
+        description: Optional[str] = None,
         unit: Optional[str] = None,
     ) -> ToolResult:
         """更新加工项"""
@@ -261,6 +270,8 @@ class ProcessingItemManageTool(BaseTool):
             json_data["categoryId"] = category_id
         if price is not None:
             json_data["price"] = price
+        if per_meter_quantity is not None:
+            json_data["perMeterQuantity"] = per_meter_quantity
         if description:
             json_data["description"] = description
         if unit:

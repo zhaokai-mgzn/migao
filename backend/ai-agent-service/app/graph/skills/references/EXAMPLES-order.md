@@ -62,7 +62,18 @@
     }])
 → ✅ 订单已创建，总额 ¥324（面料 ¥264 + 加工费 ¥60）
 ```
-规则：用户要求加工时，**必须**把加工项填入 processing_info.processingItems 且 processingFee 计入 subtotal。按米计价的加工项加工数量 = 面料米数。漏传加工项/漏算加工费 = 订单金额错误。
+规则：用户要求加工时，**必须**把加工项填入 processing_info.processingItems 且 processingFee 计入 subtotal。按米计价的加工项加工数量 = 面料米数。
+
+### 例5b: 按个计价加工项（数量自动推导，用户不感知）
+用户: "王先生 13900139000，遮光窗帘 3 米，要打孔加工"
+```
+→ product_detail → processing_items=[{id:"pi-punch-pc", name:"打孔", finalPrice:1.5, pricingMethod:"per_piece", perMeterQuantity:6}]
+→ 数量推导：3×6=18 个（ceil，禁止问"需要几个"）
+→ order_create(items=[{product_name:"遮光窗帘", quantity:3, unit_price:88, subtotal:291,
+    processing_info:{processingFee:27, processingItems:[{id:"pi-punch-pc", name:"打孔", unitPrice:1.5, quantity:18, pricingMethod:"per_piece", subtotal:27}]}}])
+→ ✅ 总额 ¥291（面料 ¥264 + 打孔加工 ¥27.00）
+```
+规则：per_piece 数量 = ceil(面料米数 × perMeterQuantity)，确认卡不出现数量。
 
 ### 例6: 完成订单被拒（状态不符合）
 用户: "把 ORD-002 完成"

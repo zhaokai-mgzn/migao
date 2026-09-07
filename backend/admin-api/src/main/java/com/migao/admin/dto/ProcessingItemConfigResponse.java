@@ -25,4 +25,9 @@ public class ProcessingItemConfigResponse {
      * 商品自定义价格（可为 null）
      */
     private BigDecimal customPrice;
+
+    /**
+     * 商品级每米数量（密度覆盖）：NULL=用加工项默认密度，非空=商品专属密度
+     */
+    private BigDecimal customPerMeterQuantity;
 }

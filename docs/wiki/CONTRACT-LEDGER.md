@@ -62,3 +62,12 @@ grep -rn "字段名" backend/admin-api/src frontend/admin-web/src backend/ai-age
 # 3. case_ids（新增/修改测试必带）
 # 每个测试文件头部: # case_ids: OR-001, OR-002  （按域：OR 订单/AS 售后/PR 商品/FN 财务/CU 客户/DA 看板）
 ```
+
+## 六、加工项每米数量密度契约（issue #2986，2026-09-07）
+
+| 字段 | 后端 Java | 前端 TS | Agent Python | 备注 |
+|---|---|---|---|---|
+| 加工项每米数量 | `perMeterQuantity`（ProcessingItem/Response/CreateRequest/UpdateRequest） | `perMeterQuantity` | `per_meter_quantity`（tool 透传） | 按个计价加工项密度（打孔 6 个/米），数量自动推导 |
+| 商品级覆盖密度 | `customPerMeterQuantity`（ProductProcessingItem/ProcessingItemConfigInput/ConfigResponse/ProductProcessingItemResponse） | `customPerMeterQuantity` | `custom_per_meter_quantity` | 语义同 custom_price，不覆盖用加工项默认 |
+| 推导规则 | per_meter → 数量=面料米数；per_piece+密度 → ceil(面料米数×密度)；无密度/per_set/fixed → 1 | 同 | 同 | 订单/AI 确认只展示「名称+金额」，数量隐藏 |
+| 价格计算入参 | `fabricMeters`（PriceCalculateRequest，面料米数，按个+密度时据此推导数量） | — | — | 无密度时忽略 fabricMeters |

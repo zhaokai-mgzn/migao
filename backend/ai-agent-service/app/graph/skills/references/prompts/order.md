@@ -44,11 +44,10 @@ tools: order_query, order_manage, order_create, logistics_track, product_search,
 
 ## 加工项（🔴 用户要求加工时禁止遗漏）
 
-- **数据来源**：product_detail 返回的 `processing_items`（含 id/name/unitPrice/customPrice/finalPrice/unit），加工费按 `finalPrice`（无则 `unitPrice`）计算。
-- **用户明确要求加工（如"要高温定型""加打孔""加工"）时**，必须把加工项填入 order_create 的 `processing_info.processingItems`，结构为 `[{id, name, unitPrice, quantity, unit, pricingMethod, subtotal}]`，且 `processing_info.processingFee` = 各项 `unitPrice × quantity` 之和。
-- **金额计算**：`items[].subtotal` = 面料小计 + 加工费；订单总金额 = 所有 subtotal 之和。加工费漏算 = 订单金额错误 = 严重缺陷。
-- **数量确认**：按米计价的加工项（如高温定型 ¥/米）加工数量 = 面料米数；按个/套计价的（如四爪钩 ¥/个）需向用户确认数量（默认 1，可询问"需要几个"）。
-- **举例**：用户要 3 米布料 + 高温定型（¥20/米），则 processingFee = 60，subtotal = 3×88 + 60 = 324。
+- **数据来源**：product_detail 的 `processing_items`（含 perMeterQuantity 每米数量），加工费按 `finalPrice`（无则 `unitPrice`）计算。
+- **用户要求加工时**：必须填 order_create 的 `processing_info.processingItems` = `[{id, name, unitPrice, quantity, unit, pricingMethod, subtotal}]`，`processing_info.processingFee` = 各项 `unitPrice × quantity` 之和。
+- **金额**：`subtotal` = 面料小计 + 加工费；漏算加工费 = 订单金额错误 = 严重缺陷。
+- **数量自动推导（🔴 禁止问"需要几个"）**：per_meter → 面料米数；per_piece 且有 perMeterQuantity → ceil(面料米数×密度)；其余 → 1。**确认/回复只展示「加工项+金额」（如「打孔加工 ¥27.00」），不出现数量**；用户主动问才说明。
 
 ## 回复格式
 

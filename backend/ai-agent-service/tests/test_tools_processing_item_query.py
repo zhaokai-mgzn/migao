@@ -3,7 +3,7 @@
 
 覆盖 ProcessingItemQueryTool.execute() 的列表查询、关键词搜索、详情查询、错误处理。
 """
-# case_ids: PP-001, PP-005
+# case_ids: PP-001, PP-005, PP-006
 
 import pytest
 from unittest.mock import patch, AsyncMock
@@ -28,6 +28,7 @@ def sample_processing_items():
             "categoryName": "穿挂",
             "pricingMethod": "per_unit",
             "unitPrice": 2.0,
+            "perMeterQuantity": 6,
             "unit": "个",
             "minQuantity": 0,
             "maxQuantity": 200,
@@ -78,6 +79,9 @@ class TestProcessingItemList:
         assert result.data["total"] == 2
         assert len(result.data["items"]) == 2
         assert result.data["items"][0]["name"] == "打孔"
+        # PP-006：透传每米数量密度
+        assert result.data["items"][0]["per_meter_quantity"] == 6
+        assert result.data["items"][1]["per_meter_quantity"] is None
         # 验证字段映射 camelCase -> snake_case
         assert result.data["items"][0]["unit_price"] == 2.0
         assert result.data["items"][0]["category_name"] == "穿挂"

@@ -42,6 +42,14 @@ public class ProcessingItemUpdateRequest {
     private BigDecimal unitPrice;
 
     /**
+     * 每米数量（密度）：per_piece 计价加工项每米布料的加工个数（如打孔 6 个/米），per_meter/per_set/fixed 不适用留空
+     */
+    @DecimalMin(value = "0.01", message = "每米数量不能小于 0.01")
+    @DecimalMax(value = "999.99", message = "每米数量不能超过 999.99")
+    @Digits(integer = 3, fraction = 2, message = "每米数量最多支持2位小数")
+    private BigDecimal perMeterQuantity;
+
+    /**
      * 单位
      */
     private String unit;

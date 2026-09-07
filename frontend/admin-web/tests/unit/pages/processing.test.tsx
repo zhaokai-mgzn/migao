@@ -1,5 +1,6 @@
-// case_ids: UI-026
+// case_ids: UI-026, PP-006
 // UI-026（issue #2964）：加工项列表展示「适用商品分类」列——applicableProductCategories ID→名称映射，空=「适用所有分类」
+// PP-006（issue #2986）：加工项「每米数量」配置——per_piece 计价显示每米数量输入并可保存，per_meter 不显示；列表展示每米数量列
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
@@ -9,11 +10,12 @@ import userEvent from '@testing-library/user-event'
 const mockGetProcessingItems = vi.fn()
 const mockGetProcessingCategories = vi.fn()
 const mockGetCategories = vi.fn()
+const mockCreateProcessingItem = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   processingItemApi: {
     getProcessingItems: (...args: any[]) => mockGetProcessingItems(...args),
-    createProcessingItem: vi.fn(),
+    createProcessingItem: (...args: any[]) => mockCreateProcessingItem(...args),
     updateProcessingItem: vi.fn(),
     deleteProcessingItem: vi.fn(),
     calculatePrice: vi.fn(),
@@ -49,14 +51,25 @@ vi.mock('@/components/ui', () => ({
 import ProcessingPage from '@/app/(dashboard)/processing/page'
 
 const mockItems = [
-  { id: '1', name: '打孔加工', unitPrice: 5, pricingMethod: 'per_piece', applicableProductCategories: ['pc1'] },
+  {
+    id: '1',
+    name: '打孔加工',
+    unitPrice: 5,
+    pricingMethod: 'per_piece',
+    perMeterQuantity: 6,
+    applicableProductCategories: ['pc1'],
+  },
   { id: '2', name: '挂钩加工', unitPrice: 3, pricingMethod: 'per_piece', applicableProductCategories: [] },
+  { id: '3', name: '韩式定型', unitPrice: 8, pricingMethod: 'per_meter', applicableProductCategories: ['pc2'] },
 ]
 
 const mockCategories = [{ id: 'cat1', name: '通用加工' }]
 
 // 商品分类树（适用商品分类列的 ID→名称 映射来源）
-const mockProductCategories = [{ id: 'pc1', name: '窗帘', children: [] }]
+const mockProductCategories = [
+  { id: 'pc1', name: '窗帘', children: [] },
+  { id: 'pc2', name: '纱帘', children: [] },
+]
 
 describe('ProcessingPage', () => {
   beforeEach(() => {
@@ -145,6 +158,73 @@ describe('ProcessingPage', () => {
       expect(screen.getByText('窗帘')).toBeInTheDocument()
       // 未配置适用分类（空数组）= 适用所有分类
       expect(screen.getByText('适用所有分类')).toBeInTheDocument()
+    })
+  })
+
+  it('should show per meter quantity input for per_piece pricing and submit perMeterQuantity (PP-006)', async () => {
+    const user = userEvent.setup()
+    render(<ProcessingPage />)
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '新增加工项' })).toBeInTheDocument()
+    })
+    await user.click(screen.getByRole('button', { name: '新增加工项' }))
+
+    // 计价方式选 per_piece → 出现「每米数量」输入
+    // 计价方式选 per_piece → 出现「每米数量」输入
+    // （页面表格表头与弹窗 label 均为「加工项计价方式」文本，需取含 <select> 的那个）
+    const methodSelect = screen
+      .getAllByText('加工项计价方式')
+      .map((el) => el.closest('div')!.querySelector('select'))
+      .find(Boolean) as HTMLSelectElement
+    await user.selectOptions(methodSelect, 'per_piece')
+    await waitFor(() => {
+      expect(screen.getByText('每米数量（个/米）')).toBeInTheDocument()
+      expect(screen.getByPlaceholderText('请输入每米数量（如 6）')).toBeInTheDocument()
+    })
+    // 校验提示文案：下单时数量自动推导，用户不感知
+    expect(screen.getByText(/数量自动推导/)).toBeInTheDocument()
+
+    // 填写表单并保存 → payload 带 perMeterQuantity
+    await user.type(screen.getByPlaceholderText('请输入加工项名称（最多20个字符）'), '测试打孔')
+    await user.type(screen.getByPlaceholderText('请输入价格（0.10 ~ 999.99）'), '5')
+    await user.type(screen.getByPlaceholderText('请输入每米数量（如 6）'), '6')
+    await user.click(screen.getByText('保存'))
+    await waitFor(() => {
+      expect(mockCreateProcessingItem).toHaveBeenCalledTimes(1)
+    })
+    const payload = mockCreateProcessingItem.mock.calls[0][0]
+    expect(payload.perMeterQuantity).toBe(6)
+    expect(payload.pricingMethod).toBe('per_piece')
+  })
+
+  it('should hide per meter quantity input for non per_piece pricing (PP-006)', async () => {
+    const user = userEvent.setup()
+    render(<ProcessingPage />)
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '新增加工项' })).toBeInTheDocument()
+    })
+    await user.click(screen.getByRole('button', { name: '新增加工项' }))
+
+    // 计价方式选 per_meter → 不出现「每米数量」输入
+    const methodSelect = screen
+      .getAllByText('加工项计价方式')
+      .map((el) => el.closest('div')!.querySelector('select'))
+      .find(Boolean) as HTMLSelectElement
+    await user.selectOptions(methodSelect, 'per_meter')
+    expect(screen.queryByPlaceholderText('请输入每米数量（如 6）')).not.toBeInTheDocument()
+    expect(screen.queryByText('每米数量（个/米）')).not.toBeInTheDocument()
+  })
+
+  it('should render per meter quantity column in list (PP-006)', async () => {
+    render(<ProcessingPage />)
+    await waitFor(() => {
+      expect(screen.getByText('每米数量')).toBeInTheDocument()
+    })
+    // per_piece + 密度 → 显示「{value} 个/米」
+    expect(screen.getByText('6 个/米')).toBeInTheDocument()
+    // per_piece 无密度 / per_meter → 显示「—」
+    await waitFor(() => {
+      expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(2)
     })
   })
 })

@@ -1,4 +1,6 @@
-// case_ids: PR-001, PR-002, PR-003, PR-004, PR-005, PR-006
+// case_ids: PR-001, PR-002, PR-003, PR-004, PR-005, PR-006, PP-006
+// PP-006（issue #2986）：商品-加工项关联支持商品级「每米数量」覆盖（custom_per_meter_quantity），
+// 响应合并加工项默认密度与商品覆盖密度
 
 package com.migao.admin.service;
 
@@ -7,6 +9,8 @@ import com.migao.admin.entity.Category;
 import com.migao.admin.entity.Product;
 import com.migao.admin.entity.ProductColor;
 import com.migao.admin.entity.ProductSku;
+import com.migao.admin.entity.ProcessingItem;
+import com.migao.admin.entity.ProductProcessingItem;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.CategoryMapper;
 import com.migao.admin.mapper.ProcessingItemMapper;
@@ -1234,5 +1238,108 @@ class ProductServiceTest {
         productService.getProducts(query, 1L);
 
         verify(productMapper).selectPage(any(Page.class), any(LambdaQueryWrapper.class));
+    }
+
+    // ======================== 商品级每米数量覆盖（PP-006） ========================
+
+    @Test
+    @DisplayName("商品关联加工项 - 无商品覆盖时合并加工项默认密度")
+    void getProductProcessingItems_DefaultPerMeterQuantity() {
+        // given
+        ProcessingItem punch = ProcessingItem.builder()
+                .id("pi-punch")
+                .name("打孔")
+                .pricingMethod("per_piece")
+                .unitPrice(new BigDecimal("1.50"))
+                .perMeterQuantity(new BigDecimal("6"))
+                .status("active")
+                .build();
+        ProductProcessingItem relation = ProductProcessingItem.builder()
+                .id(1L)
+                .tenantId(1L)
+                .productId("prod-001")
+                .processingItemId("pi-punch")
+                .sortOrder(0)
+                .build();
+
+        when(productMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(testProduct);
+        when(productProcessingItemMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(List.of(relation));
+        when(processingItemMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(List.of(punch));
+
+        // when
+        List<ProductProcessingItemResponse> result = productService.getProductProcessingItems("prod-001", 1L);
+
+        // then：无商品级覆盖 → perMeterQuantity = 加工项默认 6
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getPerMeterQuantity()).isEqualByComparingTo(new BigDecimal("6"));
+        assertThat(result.get(0).getCustomPerMeterQuantity()).isNull();
+    }
+
+    @Test
+    @DisplayName("商品关联加工项 - 商品级每米数量覆盖优先于加工项默认")
+    void getProductProcessingItems_CustomPerMeterQuantityWins() {
+        // given：加工项默认 6 个/米，商品覆盖 8 个/米
+        ProcessingItem punch = ProcessingItem.builder()
+                .id("pi-punch")
+                .name("打孔")
+                .pricingMethod("per_piece")
+                .unitPrice(new BigDecimal("1.50"))
+                .perMeterQuantity(new BigDecimal("6"))
+                .status("active")
+                .build();
+        ProductProcessingItem relation = ProductProcessingItem.builder()
+                .id(1L)
+                .tenantId(1L)
+                .productId("prod-001")
+                .processingItemId("pi-punch")
+                .customPerMeterQuantity(new BigDecimal("8"))
+                .sortOrder(0)
+                .build();
+
+        when(productMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(testProduct);
+        when(productProcessingItemMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(List.of(relation));
+        when(processingItemMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(List.of(punch));
+
+        // when
+        List<ProductProcessingItemResponse> result = productService.getProductProcessingItems("prod-001", 1L);
+
+        // then：商品覆盖 8 生效，并透传覆盖来源
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getPerMeterQuantity()).isEqualByComparingTo(new BigDecimal("8"));
+        assertThat(result.get(0).getCustomPerMeterQuantity()).isEqualByComparingTo(new BigDecimal("8"));
+    }
+
+    @Test
+    @DisplayName("保存商品加工项配置 - 透传商品级每米数量覆盖")
+    void updateProduct_PersistsCustomPerMeterQuantity() {
+        // given
+        ProductUpdateRequest request = new ProductUpdateRequest();
+        request.setName("更新后的商品");
+        request.setCategoryId("cat-001");
+        request.setBasePrice(new BigDecimal("399.00"));
+        ProcessingItemConfigInput cfg = new ProcessingItemConfigInput();
+        cfg.setProcessingItemId("pi-punch");
+        cfg.setCustomPrice(new BigDecimal("1.80"));
+        cfg.setCustomPerMeterQuantity(new BigDecimal("8"));
+        request.setProcessingItemConfigs(List.of(cfg));
+
+        when(productMapper.selectById("prod-001")).thenReturn(testProduct);
+        when(categoryMapper.selectById("cat-001")).thenReturn(testCategory);
+        when(productMapper.updateById(any(Product.class))).thenReturn(1);
+        when(productMapper.selectById("prod-001")).thenReturn(testProduct).thenReturn(testProduct);
+
+        // when
+        productService.updateProduct("prod-001", request, 1L);
+
+        // then
+        ArgumentCaptor<ProductProcessingItem> captor = ArgumentCaptor.forClass(ProductProcessingItem.class);
+        verify(productProcessingItemMapper).insert(captor.capture());
+        assertThat(captor.getValue().getProcessingItemId()).isEqualTo("pi-punch");
+        assertThat(captor.getValue().getCustomPrice()).isEqualByComparingTo(new BigDecimal("1.80"));
+        assertThat(captor.getValue().getCustomPerMeterQuantity()).isEqualByComparingTo(new BigDecimal("8"));
     }
 }

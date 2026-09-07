@@ -216,6 +216,8 @@ export default function ProductForm({
     if (patch.processingItemId !== undefined && patch.processingItemId !== null) {
       // 加工项 ID 为字符串 UUID（如 "proc_item_punch_nano"），不能用 Number 转换
       const targetId = String(patch.processingItemId)
+      // 每米数量密度属于加工项自身属性，切换加工项时必须清空（防止 A 的密度带到 B）（issue #2986）
+      merged = { ...merged, processingItemId: targetId, customPerMeterQuantity: undefined }
       const ref = processingItems.find((p) => String(p.id) === targetId)
       if (ref) {
         // 优先采用加工项基础价；仅当用户已显式输入大于 0 的自定义价时保留
@@ -226,7 +228,6 @@ export default function ProductForm({
         const refPrice = Number(ref.unitPrice ?? ref.basePrice ?? 0) || 0
         merged = {
           ...merged,
-          processingItemId: targetId,
           processingItemName: ref.name,
           customPrice: hasCustomPrice ? Number(current.customPrice) : refPrice,
         }
@@ -279,6 +280,14 @@ export default function ProductForm({
         doorWidths: (form.doorWidths || []).filter(Boolean),
         price: derivePrice(form.skus || [], form.price),
         status: targetStatus,
+        // 商品级每米数量覆盖：空/0 → undefined（跟随加工项基础密度）（issue #2986）
+        processingItemConfigs: (form.processingItemConfigs || []).map((cfg) => ({
+          ...cfg,
+          customPerMeterQuantity:
+            cfg.customPerMeterQuantity != null && Number(cfg.customPerMeterQuantity) > 0
+              ? Number(cfg.customPerMeterQuantity)
+              : undefined,
+        })),
       }
       await onSubmit(payload, targetStatus)
       const labelMap: Record<ProductStatus, string> = {
@@ -673,65 +682,96 @@ export default function ProductForm({
               />
               {form.supportsProcessing && (
                 <div id={ANCHORS.processingItemConfigs} className="space-y-2">
-                  {(form.processingItemConfigs || []).map((cfg, idx) => (
-                    <div key={idx} className="flex items-center gap-2">
-                      <div className="w-56">
-                        <Select
-                          placeholder="请选择加工项"
-                          options={processingItems.map((p) => ({
-                            value: String(p.id),
-                            label: `${p.name}（基础价 ¥${p.unitPrice ?? p.basePrice}/${p.unit}）`,
-                          }))}
-                          value={
-                            cfg.processingItemId != null && cfg.processingItemId !== ''
-                              ? String(cfg.processingItemId)
-                              : ''
-                          }
-                          onChange={(e) =>
-                            handleUpdateProcessingConfig(idx, {
-                              processingItemId: e.target.value || null,
-                            })
-                          }
-                        />
-                      </div>
-                      <div className="w-44">
-                        <Input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          placeholder="请输入加工项价格"
-                          value={
-                            cfg.customPrice != null && Number(cfg.customPrice) > 0
-                              ? String(cfg.customPrice)
-                              : ''
-                          }
-                          onChange={(e) =>
-                            handleUpdateProcessingConfig(idx, {
-                              customPrice: parseFloat(e.target.value) || 0,
-                            })
-                          }
-                        />
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveProcessingConfig(idx)}
-                        className="w-9 h-9 inline-flex items-center justify-center rounded text-neutral-400 hover:text-red-500 hover:bg-red-50"
-                        title="删除"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                      {idx === (form.processingItemConfigs || []).length - 1 && (
+                  {(form.processingItemConfigs || []).map((cfg, idx) => {
+                    // 每米数量覆盖仅对 per_piece 计价加工项可配（issue #2986）
+                    const refItem =
+                      cfg.processingItemId != null && cfg.processingItemId !== ''
+                        ? processingItems.find((p) => String(p.id) === String(cfg.processingItemId))
+                        : undefined
+                    const isPerPiece = refItem?.pricingMethod === 'per_piece'
+                    return (
+                      <div key={idx} className="flex items-center gap-2">
+                        <div className="w-56">
+                          <Select
+                            placeholder="请选择加工项"
+                            options={processingItems.map((p) => ({
+                              value: String(p.id),
+                              label: `${p.name}（基础价 ¥${p.unitPrice ?? p.basePrice}/${p.unit}）`,
+                            }))}
+                            value={
+                              cfg.processingItemId != null && cfg.processingItemId !== ''
+                                ? String(cfg.processingItemId)
+                                : ''
+                            }
+                            onChange={(e) =>
+                              handleUpdateProcessingConfig(idx, {
+                                processingItemId: e.target.value || null,
+                              })
+                            }
+                          />
+                        </div>
+                        <div className="w-44">
+                          <Input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            placeholder="请输入加工项价格"
+                            value={
+                              cfg.customPrice != null && Number(cfg.customPrice) > 0
+                                ? String(cfg.customPrice)
+                                : ''
+                            }
+                            onChange={(e) =>
+                              handleUpdateProcessingConfig(idx, {
+                                customPrice: parseFloat(e.target.value) || 0,
+                              })
+                            }
+                          />
+                        </div>
+                        {isPerPiece && (
+                          <div className="w-32">
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              placeholder="自定义每米数量"
+                              aria-label="自定义每米数量（个/米）"
+                              title="自定义每米数量（个/米）：覆盖加工项基础密度，下单时数量自动推导"
+                              value={
+                                cfg.customPerMeterQuantity != null &&
+                                Number(cfg.customPerMeterQuantity) > 0
+                                  ? String(cfg.customPerMeterQuantity)
+                                  : ''
+                              }
+                              onChange={(e) =>
+                                handleUpdateProcessingConfig(idx, {
+                                  customPerMeterQuantity: parseFloat(e.target.value) || 0,
+                                })
+                              }
+                            />
+                          </div>
+                        )}
                         <button
                           type="button"
-                          onClick={handleAddProcessingConfig}
-                          className="w-9 h-9 inline-flex items-center justify-center rounded border border-dashed border-neutral-300 text-neutral-500 hover:border-primary-400 hover:text-primary-600"
-                          title="添加"
+                          onClick={() => handleRemoveProcessingConfig(idx)}
+                          className="w-9 h-9 inline-flex items-center justify-center rounded text-neutral-400 hover:text-red-500 hover:bg-red-50"
+                          title="删除"
                         >
-                          <Plus className="w-4 h-4" />
+                          <Trash2 className="w-4 h-4" />
                         </button>
-                      )}
-                    </div>
-                  ))}
+                        {idx === (form.processingItemConfigs || []).length - 1 && (
+                          <button
+                            type="button"
+                            onClick={handleAddProcessingConfig}
+                            className="w-9 h-9 inline-flex items-center justify-center rounded border border-dashed border-neutral-300 text-neutral-500 hover:border-primary-400 hover:text-primary-600"
+                            title="添加"
+                          >
+                            <Plus className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    )
+                  })}
                   {(form.processingItemConfigs || []).length === 0 && (
                     <div className="flex items-center gap-2">
                       <div className="w-56">

@@ -210,8 +210,20 @@ public class ProcessingItemService extends ServiceImpl<ProcessingItemMapper, Pro
             throw BusinessException.notFound("加工项");
         }
         
-        // 校验数量范围
+        // 数量推导（issue #2986）：per_piece 计价且加工项配置了每米数量密度、且请求携带面料米数时，
+        // 数量由服务端权威推导 = ceil(面料米数 × 每米数量)——用户零感知数量，只关心最终加工费。
         BigDecimal quantity = request.getQuantity();
+        BigDecimal fabricMeters = request.getFabricMeters();
+        boolean densityApplicable = "per_piece".equals(item.getPricingMethod())
+                && item.getPerMeterQuantity() != null
+                && item.getPerMeterQuantity().compareTo(BigDecimal.ZERO) > 0
+                && fabricMeters != null;
+        if (densityApplicable && fabricMeters.compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal derived = fabricMeters.multiply(item.getPerMeterQuantity());
+            quantity = derived.setScale(0, RoundingMode.CEILING);
+        }
+        
+        // 校验数量范围
         if (item.getMinQuantity() != null && quantity.compareTo(BigDecimal.valueOf(item.getMinQuantity())) < 0) {
             throw BusinessException.validationError("数量不能小于最小数量 " + item.getMinQuantity());
         }

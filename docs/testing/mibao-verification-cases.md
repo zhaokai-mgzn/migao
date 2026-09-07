@@ -1551,7 +1551,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（13 case）
+## 订单域（14 case）
 
 ### OR-001. 订单列表查询 🟢
 ```
@@ -1703,7 +1703,20 @@
 真值: order.logistics
 溯源: 2026-09-01 新增：B 端物流查询安全收紧（禁止物流号直查，防用他人运单号刺探） ｜ tags: query, logistics, data_safety
 
-## 加工项域（5 case）
+### OR-014. 下单加工项数量自动推导 - 按计价方式与密度，用户零感知 🔵
+```
+你: 帮我下单，遮光窗帘 3 米，要打孔加工
+期望: product_detail
+期望: order_create
+数据: 加工项数量由系统自动推导，不询问用户：per_meter → 数量=面料米数；per_piece+密度（打孔 6 个/米）→ 数量=ceil(3×6)=18 个；per_piece 无密度/per_set/fixed → 数量=1
+数据: processing_info.processingItems 逐项含 {id, name, unitPrice, quantity, unit, pricingMethod, subtotal}，processingFee = 各项 unitPrice × quantity 之和
+数据: 订单确认/回复展示加工项只出现「加工项名称 + 金额」（如『打孔加工 ¥27.00』），不出现数量字眼；用户主动询问才说明数量
+数据: 加工费 = 单价 × 推导数量（打孔 1.5 元 × 18 = 27 元），漏算/错算加工费 = 订单金额错误
+```
+真值: order.states, order.create-flow, processing-manage.per-meter-quantity
+溯源: 2026-09-07 新增（issue #2986）：下单加工项数量自动推导 + 数量隐藏——per_piece 数量=ceil(面料米数×密度) 由系统算，订单/AI 确认只见名称+金额，堵加工费错算（#2613/#2615/#2916 同类根因） ｜ tags: order_create, processing_item, pricing
+
+## 加工项域（6 case）
 
 ### PP-001. 加工项选择 - 分页翻页 🔵
 ```
@@ -1760,6 +1773,19 @@
 ```
 真值: id-resolve.index
 溯源: eval P006 独有（序号 ID 解析）；2026-09-05 #2854 适配 #2785 确认闸：改多轮确认流（轮1 interact(confirm)，轮2 确认后 add）；action 强校验 + success=true 落评分（#2854 P0-3），item_ids 不写死数字——实测 LLM 会把序号翻译为名称传参（业务等价），序号→UUID 解析真值由 test_id_resolver.py 单测覆盖 ｜ tags: id_resolve, adversarial, sequence, confirm
+
+### PP-006. 加工项每米数量 - 配置与商品级覆盖 🔵
+```
+你: 给打孔加工配置每米数量 6 个/米
+你: 查询打孔加工的配置
+期望: processing_item_manage(action=update_item)
+期望: processing_item_query(keyword=打孔)
+数据: processing_item_query 响应条目透传 per_meter_quantity（加工项每米数量密度，如打孔 6 个/米）
+数据: per_meter / per_set 计价的加工项无 per_meter_quantity（不适用，数量 1:1 或按套）
+数据: 商品详情 processingItems 透传 perMeterQuantity（商品级 custom_per_meter_quantity 覆盖后合并值，无覆盖=加工项默认密度）
+```
+真值: processing-manage.crud, product-sku-stock.create-flow
+溯源: 2026-09-07 新增（issue #2986）：加工项每米数量密度配置——per_piece 类加工项（打孔/四爪钩/罗马圈）按个计价但数量随面料米数线性变化，行业标准密度（打孔 6 个/米、四爪钩 10 个/米等）可配置并透传给下单自动推导 ｜ tags: processing_item, per_meter_quantity, pricing
 
 ## 商品域（16 case）
 
@@ -2490,8 +2516,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：202（活跃 104，跳过 98）
-- tier 分布：smoke 8 / normal 166 / adversarial 28
+- 用例总数：204（活跃 106，跳过 98）
+- tier 分布：smoke 8 / normal 168 / adversarial 28
 - 售后域：5
 - agents：6
 - api：12
@@ -2507,8 +2533,8 @@
 - misc：15
 - onboarding：5
 - ontology：4
-- 订单域：13
-- 加工项域：5
+- 订单域：14
+- 加工项域：6
 - 商品域：16
 - registry：1
 - 设置域：8
