@@ -607,3 +607,34 @@ cases:
       ci:
         - agent-eval.yml
       verifies: []
+
+  - id: PR-018
+    legacy_id: ""
+    title: "B端米宝 product_list 卡片引用对齐 — 只渲染回复文本中实际引用的商品"
+    domains:
+      - product
+    tier: normal
+    tags:
+      - card
+      - reference_alignment
+      - mibao
+    truths_ref:
+      - product-sku-stock.low-stock
+    user_inputs:
+      - "查一下低库存商品的具体清单"
+    expectations:
+      - tool: product_search
+        args:
+          stock_status: low_stock
+    data_checks:
+      - "米宝（agent_type=mibao）回复中：product_list 卡片仅包含文本实际引用的商品（按商品名/ID 匹配），未被引用的商品不渲染"
+      - "文本未引用任何商品时不下发 product_list 卡片（宁可无卡，不误导）"
+      - "小布（agent_type=xiaobu）保持现状：product_search 结果全量渲染卡片（货架浏览体验不回退）"
+    skip_reason: ""
+    merge_log: "2026-09-07 新增（issue #3009）：sess_66c12e3cf3a14ee0 低库存清单场景，LLM 文本正确筛出 5 件低库存商品，但下方渲染了 2 页×10 张原始返回商品卡，文本与卡片两层皮。方案 B：mibao 延迟到文本生成后按引用过滤再发卡"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_card_reference_alignment.py"
+      ci:
+        - agent-eval.yml
+      verifies: []

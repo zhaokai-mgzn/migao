@@ -2531,6 +2531,21 @@ _CASE_PR_017 = EvalCase(
     persona='',
 )
 
+# ── PR-018 [NORMAL] B端米宝 product_list 卡片引用对齐 — 只渲染回复文本中实际引用的商品（源: cases/product.yml）──
+_CASE_PR_018 = EvalCase(
+    id='PR-018',
+    legacy_id='',
+    title='B端米宝 product_list 卡片引用对齐 — 只渲染回复文本中实际引用的商品',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['查一下低库存商品的具体清单'],
+    expectations=['product_search(stock_status=low_stock)'],
+    data_checks=['米宝（agent_type=mibao）回复中：product_list 卡片仅包含文本实际引用的商品（按商品名/ID 匹配），未被引用的商品不渲染', '文本未引用任何商品时不下发 product_list 卡片（宁可无卡，不误导）', '小布（agent_type=xiaobu）保持现状：product_search 结果全量渲染卡片（货架浏览体验不回退）'],
+    skip_reason='',
+    tags=['card', 'reference_alignment', 'mibao'],
+    persona='',
+)
+
 # ── RG-001 [NORMAL] ToolRegistry 注册/查询/执行审计（源: cases/registry.yml）──
 _CASE_RG_001 = EvalCase(
     id='RG-001',
@@ -2678,6 +2693,21 @@ _CASE_ST_009 = EvalCase(
     data_checks=['tenants.notification_enabled=false 的租户：triggerByEvent（order_created / after_sales_created / order_status_changed / after_sales_status_changed）与 triggerForTenantAdmins 直接跳过，不再产生新的自动站内信；历史通知保留', '开关字段为 null（存量租户）默认视为开启，行为不变；triggerByEvent 命中规则仍正常落库', '前端企业基础设置「启用系统通知」描述与实际一致：控制订单、客服等重要事件站内通知的发送；关闭后不再产生新的站内通知（历史通知保留），不再写「当前为站内通知开关」含糊文案'],
     skip_reason='开关接线为 Java 单测验证（NotificationServiceTest）+ 前端文案 vitest，非 LLM 工具行为，不进入 agent-eval 冒烟',
     tags=['notification', 'switch', 'setting'],
+    persona='',
+)
+
+# ── ST-010 [NORMAL] 企业基础信息页 - 隐藏「登录日志」（无记录）与「修改密码」（未来短信码登录）（#3006）（源: cases/settings.yml）──
+_CASE_ST_010 = EvalCase(
+    id='ST-010',
+    legacy_id='',
+    title='企业基础信息页 - 隐藏「登录日志」（无记录）与「修改密码」（未来短信码登录）（#3006）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['企业基础信息页还有「登录日志」和「修改密码」入口吗？'],
+    expectations=['direct_reply'],
+    data_checks=['企业基础信息页仅展示基本设置（品牌设置 + 通知设置），移除 tab 切换栏；「修改密码」「登录日志」tab 及区块不再渲染（登录日志无记录、修改密码未来由短信验证码登录取代；后端/Agent 接口保留，待短信码登录落地后再评估移除）', '页面副标题不再提「账号安全与登录审计」'],
+    skip_reason='纯前端 UI 隐藏由 vitest 验证（settings.test.tsx ST-010），非 LLM 工具行为，不进入 agent-eval 冒烟',
+    tags=['setting', 'ui', 'tab'],
     persona='',
 )
 
@@ -3358,6 +3388,7 @@ ALL_CASES = (
     _CASE_PR_015,
     _CASE_PR_016,
     _CASE_PR_017,
+    _CASE_PR_018,
     _CASE_RG_001,
     _CASE_ST_001,
     _CASE_ST_002,
@@ -3368,6 +3399,7 @@ ALL_CASES = (
     _CASE_ST_007,
     _CASE_ST_008,
     _CASE_ST_009,
+    _CASE_ST_010,
     _CASE_TR_001,
     _CASE_TR_002,
     _CASE_TR_003,

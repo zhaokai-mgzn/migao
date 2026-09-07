@@ -1833,7 +1833,7 @@
 真值: processing-manage.crud, product-sku-stock.create-flow
 溯源: 2026-09-07 新增（issue #2986）：加工项每米数量密度配置——per_piece 类加工项（打孔/四爪钩/罗马圈）按个计价但数量随面料米数线性变化，行业标准密度（打孔 6 个/米、四爪钩 10 个/米等）可配置并透传给下单自动推导 ｜ tags: processing_item, per_meter_quantity, pricing
 
-## 商品域（17 case）
+## 商品域（18 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
 ```
@@ -2052,6 +2052,17 @@
 真值: product-sku-stock.aggregate, product-sku-stock.realtime, aftersales-flow.return-restock-switch
 溯源: issue #2991 新增：窗帘行业定制退货不可再售，商品级开关控制售后完结是否回补库存 ｜ tags: inventory, write, cross_skill
 
+### PR-018. B端米宝 product_list 卡片引用对齐 — 只渲染回复文本中实际引用的商品 🔵
+```
+你: 查一下低库存商品的具体清单
+期望: product_search(stock_status=low_stock)
+数据: 米宝（agent_type=mibao）回复中：product_list 卡片仅包含文本实际引用的商品（按商品名/ID 匹配），未被引用的商品不渲染
+数据: 文本未引用任何商品时不下发 product_list 卡片（宁可无卡，不误导）
+数据: 小布（agent_type=xiaobu）保持现状：product_search 结果全量渲染卡片（货架浏览体验不回退）
+```
+真值: product-sku-stock.low-stock
+溯源: 2026-09-07 新增（issue #3009）：sess_66c12e3cf3a14ee0 低库存清单场景，LLM 文本正确筛出 5 件低库存商品，但下方渲染了 2 页×10 张原始返回商品卡，文本与卡片两层皮。方案 B：mibao 延迟到文本生成后按引用过滤再发卡 ｜ tags: card, reference_alignment, mibao
+
 ## registry（1 case）
 
 ### RG-001. ToolRegistry 注册/查询/执行审计 🔵
@@ -2066,7 +2077,7 @@
 真值: ai-chat.tool-classes, ai-chat.permission-layers
 溯源: 2026-08-25 新增：ai-agent-service tools-mixed-part2 覆盖率补全（issue #2426） ｜ tags: registry, tool_execute, audit
 
-## 设置域（9 case）
+## 设置域（10 case）
 
 ### ST-001. 系统设置 - 读取 🔵
 ```
@@ -2155,6 +2166,17 @@
 ```
 真值: settings-notification.master-switch
 溯源: 2026-09-07 新增：企业基础设置「启用系统通知」从死开关接线为租户级自动站内信总开关（issue #3003） ｜ tags: notification, switch, setting
+
+### ST-010. 企业基础信息页 - 隐藏「登录日志」（无记录）与「修改密码」（未来短信码登录）（#3006） 🔵
+```
+你: 企业基础信息页还有「登录日志」和「修改密码」入口吗？
+期望: direct_reply
+数据: 企业基础信息页仅展示基本设置（品牌设置 + 通知设置），移除 tab 切换栏；「修改密码」「登录日志」tab 及区块不再渲染（登录日志无记录、修改密码未来由短信验证码登录取代；后端/Agent 接口保留，待短信码登录落地后再评估移除）
+数据: 页面副标题不再提「账号安全与登录审计」
+跳过: 纯前端 UI 隐藏由 vitest 验证（settings.test.tsx ST-010），非 LLM 工具行为，不进入 agent-eval 冒烟
+```
+真值: settings-page.basic-only
+溯源: 2026-09-07 新增：企业基础信息隐藏登录日志/修改密码入口（issue #3006） ｜ tags: setting, ui, tab
 
 ## token-refresh（4 case）
 
@@ -2586,8 +2608,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：210（活跃 108，跳过 102）
-- tier 分布：smoke 8 / normal 174 / adversarial 28
+- 用例总数：212（活跃 109，跳过 103）
+- tier 分布：smoke 8 / normal 176 / adversarial 28
 - 售后域：6
 - agents：6
 - api：12
@@ -2605,9 +2627,9 @@
 - ontology：4
 - 订单域：14
 - 加工项域：6
-- 商品域：17
+- 商品域：18
 - registry：1
-- 设置域：9
+- 设置域：10
 - token-refresh：4
 - ui：28
 - utils：2
