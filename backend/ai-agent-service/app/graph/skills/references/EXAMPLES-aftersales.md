@@ -29,6 +29,20 @@
 → "好的，已更新退款方案：退款¥132（50%）。确认创建工单？"
 ```
 
+### 例4: 换货（选目标商品后必须确认加工项）
+用户: "这个订单的面料有瑕疵，帮我换货，换成2699面料"
+```
+→ order_query(order_no=...) → 确认订单存在 + 涉及商品
+→ product_search(keyword="2699") → 命中目标
+→ product_detail(目标商品) → 档案含 processing_items（若有加工项）
+→ **加工项环节（confirm 前必做）**：interact(choice, multiSelect=true) 展示目标商品加工项
+   （透传 pageMeta；processing_items 为空则告知"该商品无可用加工项"继续）
+→ 用户: "波浪定型 + 双折边" / "不需要加工项"
+→ 汇总换货方案（含加工项名称+计价，写入 description）
+→ confirm: "确认创建换货工单？…换货目标 2699面料 加工项：波浪定型 ¥8/米"
+→ after_sales_manage(action=create, ticket_type="exchange", ...) → "换货工单已创建 AS-xxx"
+```
+
 ## ❌ 错误示例
 
 ### 反例1: 未查订单直接处理
