@@ -499,6 +499,9 @@ def get_changed_files(base="origin/main"):
             if parts[0].startswith("R") and len(parts) >= 3:
                 # R100  old_path  new_path → 只保留新路径
                 files.append(parts[2])
+            elif parts[0].startswith("D"):
+                # 删除的文件不需要配套测试（issue #3051 旧知识库移除误报修复）
+                continue
             else:
                 files.append(parts[1])
         return files
@@ -618,6 +621,10 @@ def main(argv=None):
     if not rules:
         print("::warning:: tech-stack.yml 的 modules 为空，覆盖率门禁无规则可执行", file=sys.stderr)
     files = args.files if args.files else get_changed_files(args.base)
+
+    # 仅保留磁盘上存在的文件：git diff --name-only 会把「已删除/改名前的旧路径」也列入，
+    # 这些路径无配套测试要求（issue #3051 知识卡片改名 + 旧知识库移除误报修复）。
+    files = [f for f in files if os.path.exists(os.path.join(args.repo_root, f))]
 
     results = [classify_file(f, rules, exemptions, args.repo_root) for f in files]
     blockers, warnings = summarize(results)

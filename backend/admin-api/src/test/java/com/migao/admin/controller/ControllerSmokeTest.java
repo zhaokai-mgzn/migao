@@ -1,5 +1,7 @@
 package com.migao.admin.controller;
 
+// case_ids: API-015, API-016
+
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
