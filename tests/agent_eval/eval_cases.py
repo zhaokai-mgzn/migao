@@ -479,6 +479,21 @@ _CASE_API_019 = EvalCase(
     persona='',
 )
 
+# ── API-020 [NORMAL] 会话提炼闭环 - 人工客服会话 → AI 提炼候选 → 待确认队列（LLM WIKI 板块 #3051 P5b）（源: cases/api.yml）──
+_CASE_API_020 = EvalCase(
+    id='API-020',
+    legacy_id='',
+    title='会话提炼闭环 - 人工客服会话 → AI 提炼候选 → 待确认队列（LLM WIKI 板块 #3051 P5b）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['客服会话结束后，系统自动提炼候选知识卡片进入待确认队列；商家采纳后生效'],
+    expectations=[],
+    data_checks=['POST /api/admin/knowledge/distill/conversations?hours=24：提炼最近 N 小时已结束人工会话（agent_sessions status=ended）的顾客/客服文本消息，返回 {sessions, candidates, created, skipped}', 'ai-agent 内部 POST /internal/knowledge/distill（Service Token）：会话文本 → LLM 提炼 JSON 候选数组（title/answer/category/keywords/confidence/evidence），解析失败/异常降级返回空候选（不阻断）', '候选写入 knowledge_candidates：sourceType=conversation、sourceRef=会话ID、status=pending；同名知识卡片或同名待确认候选已存在 → 跳过（去重）', '单会话提炼上限 5 条、单条消息 200 字、会话文本超长截断（防 prompt 超限）'],
+    skip_reason='提炼逻辑由 ai-agent 单测（test_knowledge_distill.py）+ admin-api Service/MockMvc 测试（KnowledgeDistillServiceTest/KnowledgeDistillControllerTest）验证，LLM 行为 mock，不进入 agent-eval 冒烟',
+    tags=['api', 'knowledge', 'wiki', 'distill'],
+    persona='',
+)
+
 # ── API-012 [NORMAL] 语音转写接口容错 - 空/极小/静音音频返回友好 4xx/5xx，不裸 500（#2984）（源: cases/api.yml）──
 _CASE_API_012 = EvalCase(
     id='API-012',
@@ -3511,6 +3526,7 @@ ALL_CASES = (
     _CASE_API_017,
     _CASE_API_018,
     _CASE_API_019,
+    _CASE_API_020,
     _CASE_API_012,
     _CASE_BM_001,
     _CASE_BM_002,

@@ -158,7 +158,7 @@
 真值: ai-chat.agent-factory
 溯源: 2026-08-25 新增：ai-agent-service agents-customer_service_agent 覆盖率补全（issue #2429） ｜ tags: agents, factory, alias
 
-## api（17 case）
+## api（18 case）
 
 ### API-001. chat 会话生命周期 - 租户隔离 + 用户所有权 + 幂等/重开 🔵
 ```
@@ -339,6 +339,17 @@
 跳过: 队列读写路径由 MockMvc + Service 单测验证（KnowledgeCandidateControllerTest/KnowledgeCandidateServiceTest），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-09-08 新增（issue #3051 LLM WIKI 板块 P5）：待确认队列闭环——不重复 knowledge_sync_history 零读写事故，读写路径齐全；AI 只产生候选，发布权在商家 ｜ tags: api, knowledge, wiki, candidates
+
+### API-020. 会话提炼闭环 - 人工客服会话 → AI 提炼候选 → 待确认队列（LLM WIKI 板块 #3051 P5b） 🔵
+```
+你: 客服会话结束后，系统自动提炼候选知识卡片进入待确认队列；商家采纳后生效
+数据: POST /api/admin/knowledge/distill/conversations?hours=24：提炼最近 N 小时已结束人工会话（agent_sessions status=ended）的顾客/客服文本消息，返回 {sessions, candidates, created, skipped}
+数据: ai-agent 内部 POST /internal/knowledge/distill（Service Token）：会话文本 → LLM 提炼 JSON 候选数组（title/answer/category/keywords/confidence/evidence），解析失败/异常降级返回空候选（不阻断）
+数据: 候选写入 knowledge_candidates：sourceType=conversation、sourceRef=会话ID、status=pending；同名知识卡片或同名待确认候选已存在 → 跳过（去重）
+数据: 单会话提炼上限 5 条、单条消息 200 字、会话文本超长截断（防 prompt 超限）
+跳过: 提炼逻辑由 ai-agent 单测（test_knowledge_distill.py）+ admin-api Service/MockMvc 测试（KnowledgeDistillServiceTest/KnowledgeDistillControllerTest）验证，LLM 行为 mock，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-08 新增（issue #3051 LLM WIKI 板块 P5b）：闭环三检索-会话飞轮——人工客服会话是 SME 唯一稳定知识原料，会话→提炼→采纳→检索形成知识增长闭环 ｜ tags: api, knowledge, wiki, distill
 
 ### API-012. 语音转写接口容错 - 空/极小/静音音频返回友好 4xx/5xx，不裸 500（#2984） 🔵
 ```
@@ -2820,11 +2831,11 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：229（活跃 114，跳过 115）
-- tier 分布：smoke 8 / normal 192 / adversarial 29
+- 用例总数：230（活跃 114，跳过 116）
+- tier 分布：smoke 8 / normal 193 / adversarial 29
 - 售后域：7
 - agents：6
-- api：17
+- api：18
 - bmini：5
 - 分类域：3
 - 对话边界域：32
@@ -2854,6 +2865,7 @@
 - API-017: 行业模板 - 目录 + 一键套用（去重 + source=template）（LLM WIKI 板块 #3051 P3）
 - API-018: 商品/配置派生知识卡片 - 价格区间自动生成 + 变更自动更新（LLM WIKI 板块 #3051 P4）
 - API-019: 待确认队列闭环 - 候选读+写路径齐全，采纳转卡片、拒绝记原因（LLM WIKI 板块 #3051 P5）
+- API-020: 会话提炼闭环 - 人工客服会话 → AI 提炼候选 → 待确认队列（LLM WIKI 板块 #3051 P5b）
 - API-012: 语音转写接口容错 - 空/极小/静音音频返回友好 4xx/5xx，不裸 500（#2984）
 - CH-027: 流式回复中切换会话再切回 - 等待状态与最终回复保留（issue #2901）
 - CH-028: 多会话并发流 - 会话 A 回复中 B 可发送，增量/停止互不干扰（issue #2906）

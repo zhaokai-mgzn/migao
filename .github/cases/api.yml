@@ -492,6 +492,40 @@ cases:
         - pr-check.yml
       verifies: []
 
+  - id: API-020
+    legacy_id: ""
+    title: "会话提炼闭环 - 人工客服会话 → AI 提炼候选 → 待确认队列（LLM WIKI 板块 #3051 P5b）"
+    domains:
+      - api
+      - knowledge
+      - chat
+    tier: normal
+    tags:
+      - api
+      - knowledge
+      - wiki
+      - distill
+    truths_ref: []
+    user_inputs:
+      - "客服会话结束后，系统自动提炼候选知识卡片进入待确认队列；商家采纳后生效"
+    expectations: []
+    data_checks:
+      - "POST /api/admin/knowledge/distill/conversations?hours=24：提炼最近 N 小时已结束人工会话（agent_sessions status=ended）的顾客/客服文本消息，返回 {sessions, candidates, created, skipped}"
+      - "ai-agent 内部 POST /internal/knowledge/distill（Service Token）：会话文本 → LLM 提炼 JSON 候选数组（title/answer/category/keywords/confidence/evidence），解析失败/异常降级返回空候选（不阻断）"
+      - "候选写入 knowledge_candidates：sourceType=conversation、sourceRef=会话ID、status=pending；同名知识卡片或同名待确认候选已存在 → 跳过（去重）"
+      - "单会话提炼上限 5 条、单条消息 200 字、会话文本超长截断（防 prompt 超限）"
+    skip_reason: "提炼逻辑由 ai-agent 单测（test_knowledge_distill.py）+ admin-api Service/MockMvc 测试（KnowledgeDistillServiceTest/KnowledgeDistillControllerTest）验证，LLM 行为 mock，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-08 新增（issue #3051 LLM WIKI 板块 P5b）：闭环三检索-会话飞轮——人工客服会话是 SME 唯一稳定知识原料，会话→提炼→采纳→检索形成知识增长闭环"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_knowledge_distill.py"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/KnowledgeDistillServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/KnowledgeDistillControllerTest.java"
+      ci:
+        - pr-check.yml
+        - ai-agent-tests.yml
+      verifies: []
+
   - id: API-012
     legacy_id: ""
     title: "语音转写接口容错 - 空/极小/静音音频返回友好 4xx/5xx，不裸 500（#2984）"

@@ -88,7 +88,7 @@ grep -rn "字段名" backend/admin-api/src frontend/admin-web/src backend/ai-age
 | 候选来源 | `conversation / document / product / config` | 同上 |
 | 知识卡片分类 | `faq / product / measure / aftersale / config` | 前后端同枚举 |
 | 知识卡片检索端点 | `GET /api/admin/knowledge/cards/search?query=&productId=&category=` | 仅返回本租户 `published` 知识卡片（显式 eq tenant_id + status） |
-| 提炼触发端点 | `POST /api/admin/knowledge/distill/conversations` | 返回提炼统计（created/skipped/failed） |
+| 提炼触发端点 | `POST /api/admin/knowledge/distill/conversations?hours=24` | 提炼最近 N 小时已结束人工会话 → 待确认队列；返回 {sessions,candidates,created,skipped}；ai-agent 内部 POST /internal/knowledge/distill 负责 LLM 提炼 |
 | 模板目录 | `GET /api/admin/knowledge/templates` | 平台预置模板（templateId/industry/name/version/entryCount，布艺 curtain 32 条） |
 | 模板套用 | `POST /api/admin/knowledge/templates/{templateId}/apply` | 复制为租户卡片（sourceType=template/sourceRef=templateId/status=published），按 (tenant_id,title) 去重，返回 {created,skipped} |
 | 候选队列 | `GET /api/admin/knowledge/candidates` + `POST /{id}/adopt` / `adopt-edited` / `reject` | 待确认队列闭环：候选读+写路径齐全；采纳转卡片 published（来源继承），拒绝记 status_note |

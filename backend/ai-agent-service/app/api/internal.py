@@ -3,6 +3,7 @@
 
 提供内部服务之间的调用接口：
 - Tool 执行接口（供 admin-api 反向调用）
+- 会话知识提炼（LLM WIKI 板块 P5b，issue #3051：客服会话 → 知识卡片候选）
 - 健康检查
 """
 
@@ -14,6 +15,7 @@ from loguru import logger
 from app.utils.auth import verify_service_token
 from app.tools import ToolContext, get_tool_registry
 from app.api.response_models import make_response
+from app.knowledge.distill import distill
 
 router = APIRouter()
 
@@ -25,6 +27,13 @@ class ToolExecuteRequest(BaseModel):
     tenant_id: int = Field(..., description="租户 ID")
     user_id: str = Field(..., description="用户 ID")
     session_id: Optional[str] = Field(None, description="会话 ID")
+
+
+class KnowledgeDistillRequest(BaseModel):
+    """会话知识提炼请求"""
+    tenant_id: int = Field(..., description="租户 ID")
+    conversation_text: str = Field(..., description="客服会话对话文本（顾客/客服轮次）")
+    max_candidates: int = Field(5, ge=1, le=10, description="最多提炼候选数")
 
 
 @router.post("/tools/execute")
@@ -130,3 +139,23 @@ async def list_tools(
             "count": len(tools),
         }
     }
+
+
+@router.post("/knowledge/distill")
+async def distill_knowledge(
+    request: KnowledgeDistillRequest,
+    authorized: bool = Depends(verify_service_token),
+):
+    """
+    会话知识提炼（LLM WIKI 板块 P5b，issue #3051）
+
+    admin-api 把人工客服会话文本传来，AI 提炼为「顾客问题 → 标准回答」知识卡片候选，
+    返回候选列表由 admin-api 写入待确认队列（knowledge_candidates），商家采纳后生效。
+    提炼失败降级返回空候选（不阻断 admin-api 流程）。
+    """
+    logger.info(
+        f"Knowledge distill triggered: tenant_id={request.tenant_id}, "
+        f"text_len={len(request.conversation_text or '')}, max_candidates={request.max_candidates}"
+    )
+    candidates = await distill(request.conversation_text, max_candidates=request.max_candidates)
+    return make_response(True, data={"candidates": candidates})

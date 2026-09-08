@@ -98,6 +98,10 @@ class SecurityConfigTest {
     @MockBean
     private com.migao.admin.service.KnowledgeCandidateService knowledgeCandidateService;
 
+    // LLM WIKI 板块（issue #3051 P5b）：会话提炼服务
+    @MockBean
+    private com.migao.admin.service.KnowledgeDistillService knowledgeDistillService;
+
     @MockBean
     private com.migao.admin.service.NotificationService notificationService;
 
