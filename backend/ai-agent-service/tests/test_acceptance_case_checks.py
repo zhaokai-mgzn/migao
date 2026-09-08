@@ -205,7 +205,7 @@ class TestRunCaseCaseLevelChecks:
 # AS-007（选品后不问加工项）；瑕疵商品 choice 卡（options 带 ¥）被误判为加工项卡。
 # 新增：组件/语义限定时序 + 必填参数（create 缺 specifications/加工项价格即失败，
 # 2026-09-08 Round2 实拍 S3 验收常青0908 specs={} 假成功）+ 确认死循环 + 假成功。
-# case_ids: OR-016, AS-007, PR-019, CH-010, PR-014
+# case_ids: OR-016, AS-007, PR-019, PR-020, CH-010, PR-014, PR-020
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -413,3 +413,98 @@ class TestRunCasePhase15:
             [[card], [card], [card]], ["确认？", "确认？", "确认？"]))
         assert result["score"] == 0.0
         assert any("死循环" in str(f) for f, _ in result["failed"])
+class TestDbVerifyProcessingConfigs:
+    """db_verify 落库层验证（协议 §3.2 / issue #3056 回归防线）：
+    'processingItemConfigs.<all|名称>.<field><op><value>' 谓词评估"""
+
+    def _configs(self):
+        return [
+            {"processingItemName": "刺绣工艺", "customPrice": 45.0, "unitPrice": 30.0, "finalPrice": 45.0, "unit": "平方米"},
+            {"processingItemName": "波浪定型", "customPrice": 8.0, "unitPrice": 8.0, "finalPrice": 8.0, "unit": "米"},
+        ]
+
+    def test_all_final_price_positive_passes(self):
+        ok, _ = lr._evaluate_processing_configs_check(self._configs(), "processingItemConfigs.all.finalPrice>0")
+        assert ok
+
+    def test_named_item_price_equals_passes(self):
+        ok, _ = lr._evaluate_processing_configs_check(self._configs(), "processingItemConfigs.刺绣工艺.finalPrice==45")
+        assert ok
+
+    def test_named_item_price_mismatch_fails(self):
+        """回归防线：若 BFF 丢价（45→30），finalPrice==45 必须判失败。"""
+        configs = [dict(c, finalPrice=30.0) for c in self._configs() if c["processingItemName"] == "刺绣工艺"]
+        ok, detail = lr._evaluate_processing_configs_check(configs, "processingItemConfigs.刺绣工艺.finalPrice==45")
+        assert not ok
+        assert "不满足" in detail
+
+    def test_missing_price_fails(self):
+        """价格未带入（finalPrice 为空）→ 失败。"""
+        configs = [{"processingItemName": "刺绣工艺", "finalPrice": None}]
+        ok, detail = lr._evaluate_processing_configs_check(configs, "processingItemConfigs.刺绣工艺.finalPrice>0")
+        assert not ok
+        assert "为空" in detail
+
+    def test_unknown_item_fails(self):
+        ok, detail = lr._evaluate_processing_configs_check(self._configs(), "processingItemConfigs.不存在的加工项.finalPrice>0")
+        assert not ok
+        assert "未找到" in detail
+
+    def test_empty_configs_fails(self):
+        ok, detail = lr._evaluate_processing_configs_check([], "processingItemConfigs.all.finalPrice>0")
+        assert not ok
+        assert "无 processingItemConfigs" in detail
+
+    def test_malformed_check_fails(self):
+        ok, detail = lr._evaluate_processing_configs_check(self._configs(), "processingItemConfigs")
+        assert not ok
+        assert "无法解析" in detail
+
+    def test_greater_than_value_fails(self):
+        ok, _ = lr._evaluate_processing_configs_check(self._configs(), "processingItemConfigs.波浪定型.finalPrice>8")
+        assert not ok
+
+    def test_not_equal_passes(self):
+        ok, _ = lr._evaluate_processing_configs_check(self._configs(), "processingItemConfigs.刺绣工艺.finalPrice!=30")
+        assert ok
+
+
+class TestRunCaseDbVerify:
+    """run_case 集成：db_verify 违规 → score 0（落库层与用户确认价不一致 = 假验收拦截）"""
+
+    def _case(self, db_verify):
+        return lr.EvalCase(
+            id="DBV-TEST", legacy_id="", title="t", skill=lr.Skill.PRODUCT,
+            difficulty=lr.Difficulty.NORMAL, user_inputs=["u1"], expectations=["tool: product_manage"],
+            data_checks=[], db_verify=db_verify,
+        )
+
+    async def _run(self, case, configs):
+        async def fake_send(token, session_id, message, images=None):
+            return {"user_message": message, "images": images or [],
+                    "tool_calls": [{"name": "product_manage", "args": {"action": "create"}}],
+                    "tool_results": [], "interactive": [], "final_text": "创建成功",
+                    "error": None, "streamed": False, "done": True}
+        import unittest.mock as mock
+        async def fake_fetch(token, name):
+            return configs
+        with mock.patch.object(lr, "send_message", new=fake_send), \
+             mock.patch.object(lr, "_fetch_product_configs", new=fake_fetch):
+            return await lr.run_case(case, "tok", "sess")
+
+    def test_db_verify_violation_scores_zero(self):
+        import asyncio
+        case = self._case([{"fetch": "product_by_name", "name": "盯防0908",
+                            "checks": ["processingItemConfigs.刺绣工艺.finalPrice==45"]}])
+        configs = [{"processingItemName": "刺绣工艺", "finalPrice": 30.0}]  # BFF 丢价形态
+        result = asyncio.run(self._run(case, configs))
+        assert result["score"] == 0.0
+        assert any("db_verify" in str(f) or "finalPrice" in str(f) for f, _ in result["failed"])
+
+    def test_db_verify_pass_keeps_score(self):
+        import asyncio
+        case = self._case([{"fetch": "product_by_name", "name": "盯防0908",
+                            "checks": ["processingItemConfigs.刺绣工艺.finalPrice==45"]}])
+        configs = [{"processingItemName": "刺绣工艺", "finalPrice": 45.0}]
+        result = asyncio.run(self._run(case, configs))
+        assert result["score"] == 1.0

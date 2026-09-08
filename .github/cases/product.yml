@@ -688,3 +688,46 @@ cases:
         - ai-agent-tests.yml
         - admin-api-tests.yml
       verifies: []
+
+  - id: PR-020
+    legacy_id: ""
+    title: "建品加工项价格落库盯防 — 自定义价须等于用户确认价（BFF 合并回归）"
+    domains:
+      - product
+      - chat
+    tier: normal
+    tags:
+      - product_create
+      - processing_item
+      - price
+      - regression
+    truths_ref:
+      - product-sku-stock.create-flow
+      - ai-chat.validate-input
+    user_inputs:
+      - "创建一个窗帘商品，名称：盯防加工项价格0908，单价：88元/米，分类：窗帘布艺，颜色：浅灰"
+      - "商品名称: 盯防加工项价格0908\n单价(元/米): 88\n分类: 窗帘布艺\n颜色: 浅灰\n售卖方式: 散剪\n门幅: 2.8米\n货号: DF-0908"
+      - "已选加工项：刺绣工艺（价格自定义为45元/平方米）、波浪定型"
+      - "确认创建"
+    expectations:
+      - tool: product_manage
+        args:
+          action: create
+    data_checks:
+      - "create 参数 processing_item_configs 含 customPrice=用户确认价（刺绣工艺 45）"
+      - "创建后商品详情 processingItemConfigs 的 finalPrice = 用户确认价（非默认价回退）——issue #3056 回归防线"
+    db_verify:
+      - fetch: product_by_name
+        name: "盯防加工项价格0908"
+        checks:
+          - "processingItemConfigs.all.finalPrice>0"
+          - "processingItemConfigs.刺绣工艺.finalPrice==45"
+    skip_reason: ""
+    merge_log: "2026-09-08 新增（issue #3056 复盘）：建品自定义加工价曾被 BFF create 的 ids 分支静默丢弃（45→30，读回退掩盖后复发）。required_args 只查 create args 层，本 case 用 db_verify 查落库层（finalPrice=确认价），args+落库双保险"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_acceptance_case_checks.py"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/AgentProductServiceTest.java"
+      ci:
+        - agent-eval.yml
+      verifies: []
