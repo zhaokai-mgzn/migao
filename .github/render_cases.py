@@ -162,6 +162,7 @@ def to_eval_py(cases):
            '    persona: str = ""   # 归属 agent: mibao / xiaobu / ""(双端)，issue #2855',
            '    order_before: List[str] = field(default_factory=list)   # 时序断言 "A before B"（跨轮，acceptance-protocol §3.1）',
            '    forbidden_text: List[str] = field(default_factory=list) # final_text 反模式词，命中即失败（§3.4 幻觉式撤回/报错文案）',
+           '    required_args: List[dict] = field(default_factory=list) # 必填参数断言（create 缺 specifications/加工项价格即失败，§3.2）',
            "", ""]
 
     for c in cases:
@@ -186,6 +187,8 @@ def to_eval_py(cases):
             out.append(f"    order_before={c.get('order_before')!r},")
         if c.get("forbidden_text"):
             out.append(f"    forbidden_text={c.get('forbidden_text')!r},")
+        if c.get("required_args"):
+            out.append(f"    required_args={c.get('required_args')!r},")
         out.append(")")
         out.append("")
 
@@ -261,6 +264,8 @@ def to_md(cases):
                 lines.append(f"时序: {ob}")
             for ft in (c.get("forbidden_text") or []):
                 lines.append(f"禁词: {ft}")
+            for ra in (c.get("required_args") or []):
+                lines.append(f"必填: {ra.get('tool')}({ra.get('action', '')}) 字段 {', '.join(ra.get('fields') or [])}")
             if c.get("skip_reason"):
                 lines.append(f"跳过: {c['skip_reason']}")
             lines.append("```")

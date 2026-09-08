@@ -197,3 +197,219 @@ class TestRunCaseCaseLevelChecks:
         case = self._case(expectations=["tool: interact"])
         result = asyncio.run(self._run(case, [{"tools": ["interact"], "text": "hi"}]))
         assert result["score"] == 1.0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 1.5（2026-09-08 工具自验证补强）：语义级断言
+# 自验证发现：工具级 order_before 抓不到 OR-016 A5（confirm 卡先于加工项卡）与
+# AS-007（选品后不问加工项）；瑕疵商品 choice 卡（options 带 ¥）被误判为加工项卡。
+# 新增：组件/语义限定时序 + 必填参数（create 缺 specifications/加工项价格即失败，
+# 2026-09-08 Round2 实拍 S3 验收常青0908 specs={} 假成功）+ 确认死循环 + 假成功。
+# case_ids: OR-016, AS-007, PR-019, CH-010, PR-014
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _rounds_with_args(tool_rounds):
+    """扩展 helper：支持 (轮次, [(工具名, args)], 文本) 三元组"""
+    out = []
+    for rnd, tools, text in tool_rounds:
+        tcs = [{"name": n, "args": a} for n, a in tools]
+        out.append({"__round": rnd, "tool_calls": tcs, "final_text": text, "text": text})
+    return out
+
+
+class TestQualifiedOrderBefore:
+    """组件/语义级时序断言（DSL v2）：interact[component]、[component:sem]、processing_ask"""
+
+    def test_parse_qualified(self):
+        assert lr._parse_qualified_order_before("interact[choice] before order_create") == (
+            "interact", "choice", None, "order_create", None, None)
+
+    def test_parse_processing_semantic(self):
+        assert lr._parse_qualified_order_before("interact[choice:processing_items] before interact[confirm]") == (
+            "interact", "choice", "processing_items", "interact", "confirm", None)
+
+    def test_parse_processing_ask_token(self):
+        assert lr._parse_qualified_order_before("processing_ask before after_sales_manage") == (
+            "processing_ask", None, None, "after_sales_manage", None, None)
+
+    def test_parse_legacy_still_works(self):
+        assert lr._parse_qualified_order_before("interact before order_create") == (
+            "interact", None, None, "order_create", None, None)
+
+    def test_a5_confirm_before_processing_is_violation(self):
+        """OR-016 A5 旧失败：confirm 卡先于加工项 choice 卡 → 违规。"""
+        results = _rounds_with_args([
+            (1, [("interact", {"component": "confirm", "title": "确认创建订单"})], "请确认订单"),
+            (2, [("interact", {"component": "choice", "title": "请选择加工项", "multiSelect": True,
+                               "options": [{"label": "波浪定型 ¥8/米", "value": "proc_item_shape_wave"}]})], "选择加工项"),
+        ])
+        issues = lr.check_order_before(results, ["interact[choice:processing_items] before interact[confirm]"])
+        assert issues and "晚于" in issues[0]
+
+    def test_processing_before_confirm_passes(self):
+        results = _rounds_with_args([
+            (1, [("interact", {"component": "choice", "title": "请选择加工项", "multiSelect": True,
+                               "options": [{"label": "波浪定型 ¥8/米", "value": "proc_item_shape_wave"}]})], "选加工项"),
+            (3, [("interact", {"component": "confirm", "title": "确认创建订单"})], "确认订单"),
+        ])
+        assert lr.check_order_before(results, ["interact[choice:processing_items] before interact[confirm]"]) == []
+
+    def test_no_processing_ask_is_violation(self):
+        """AS-007 旧失败：选品后全程不问加工项 → processing_ask 未调用 → 违规。"""
+        results = _rounds_with_args([
+            (1, [("interact", {"component": "choice", "title": "哪件商品有瑕疵", "options": [
+                {"label": "2611 家居系统 ¥2665.60", "value": "2611"}, {"label": "今天试试看 ¥11880", "value": "8827"}]})], "选瑕疵商品"),
+            (5, [("after_sales_manage", {"action": "create", "ticket_type": "exchange"})], "工单已创建"),
+        ])
+        issues = lr.check_order_before(results, ["processing_ask before after_sales_manage"])
+        assert issues and "未调用" in issues[0]
+
+    def test_text_ask_counts_as_processing_ask(self):
+        """修复后换货行为：文本询问加工项（非卡）也算 processing_ask（#3034 语义）。"""
+        results = _rounds_with_args([
+            (2, [], "加工项：换货的 2699 面料是否需要加加工项？需要的话请把加工项名称告诉我"),
+            (5, [("after_sales_manage", {"action": "create", "ticket_type": "exchange"})], "工单已创建"),
+        ])
+        assert lr.check_order_before(results, ["processing_ask before after_sales_manage"]) == []
+
+    def test_flawed_item_card_not_processing(self):
+        """瑕疵商品卡（选项含 ¥ 但 value 非 proc_item）不得误判为加工项卡。"""
+        results = _rounds_with_args([
+            (1, [("interact", {"component": "choice", "title": "哪件商品有瑕疵",
+                               "options": [{"label": "A ¥100", "value": "A"}, {"label": "B ¥200", "value": "B"}]})], "选商品"),
+        ])
+        assert lr._is_processing_items_card({"options": [{"label": "A ¥100", "value": "A"}]}) is False
+        assert lr._is_processing_items_card({"options": [{"label": "波浪定型 ¥8/米", "value": "proc_item_shape_wave"}]}) is True
+        assert lr._is_processing_items_card({"title": "请选择加工项", "options": []}) is True
+
+
+class TestConfirmLoop:
+    """确认死循环（sess_c1fce183dae24f22 #3026 场景）：同标题 confirm 卡 >=3 次未收敛"""
+
+    def test_loop_detected(self):
+        results = _rounds_with_args([
+            (1, [("interact", {"component": "confirm", "title": "确认补充商品属性"})], "请确认"),
+            (2, [("interact", {"component": "confirm", "title": "确认补充商品属性"})], "请确认"),
+            (3, [("interact", {"component": "confirm", "title": "确认补充商品属性"})], "请确认"),
+        ])
+        assert lr.check_confirm_loop(results) and "死循环" in lr.check_confirm_loop(results)[0]
+
+    def test_single_confirm_passes(self):
+        results = _rounds_with_args([
+            (1, [("interact", {"component": "confirm", "title": "确认补充商品属性"})], "请确认"),
+            (2, [("product_manage", {"action": "update"})], "已执行"),
+        ])
+        assert lr.check_confirm_loop(results) == []
+
+    def test_two_confirms_passes(self):
+        results = _rounds_with_args([
+            (1, [("interact", {"component": "confirm", "title": "确认A"})], "x"),
+            (2, [("interact", {"component": "confirm", "title": "确认A"})], "y"),
+        ])
+        assert lr.check_confirm_loop(results) == []
+
+
+class TestFalseSuccess:
+    """假成功：前序轮报错 + 后续文本称成功 → 违规（sess_e52cff42 类）"""
+
+    def test_error_then_success_claim_fails(self):
+        results = _rounds_with_args([
+            (1, [("product_manage", {"action": "create"})], "创建失败，稍后再试"),
+            (2, [], "✅ 规格属性补充成功！"),
+        ])
+        results[0]["error"] = "boom"
+        issues = lr.check_false_success(results)
+        assert issues and "假成功" in issues[0]
+
+    def test_no_error_passes(self):
+        results = _rounds_with_args([
+            (1, [("product_manage", {"action": "update"})], "✅ 更新成功"),
+        ])
+        assert lr.check_false_success(results) == []
+
+    def test_error_without_success_claim_passes(self):
+        results = _rounds_with_args([
+            (1, [("product_manage", {"action": "create"})], "创建失败"),
+        ])
+        results[0]["error"] = "boom"
+        assert lr.check_false_success(results) == []
+
+
+class TestRequiredArgs:
+    """必填参数断言：create 缺 specifications / 加工项缺价格 → 违规（Round2 S3 实拍）"""
+
+    def test_missing_specifications_fails(self):
+        results = _rounds_with_args([
+            (4, [("product_manage", {"action": "create", "name": "验收常青0908",
+                                     "processing_item_configs": [{"processingItemId": "p1", "customPrice": 8.0}]})], "成功"),
+        ])
+        issues = lr.check_required_args(results, [{"tool": "product_manage", "action": "create",
+                                                   "fields": ["specifications"]}])
+        assert issues and "specifications" in issues[0]
+
+    def test_missing_processing_price_fails(self):
+        """#3028 假成功原型：processing_item_configs 只传名称不带 customPrice。"""
+        results = _rounds_with_args([
+            (4, [("product_manage", {"action": "create", "specifications": {"材质": "涤纶"},
+                                     "processing_item_configs": [{"processingItemId": "p1"},
+                                                                 {"processingItemId": "p2"}]})], "成功"),
+        ])
+        issues = lr.check_required_args(results, [{"tool": "product_manage", "action": "create",
+                                                   "fields": ["specifications", "processing_item_configs.customPrice"]}])
+        assert issues and "customPrice" in issues[0]
+
+    def test_complete_create_passes(self):
+        results = _rounds_with_args([
+            (4, [("product_manage", {"action": "create", "specifications": {"材质": "涤纶"},
+                                     "processing_item_configs": [{"processingItemId": "p1", "customPrice": 30.0, "unit": "平方米"},
+                                                                 {"processingItemId": "p2", "customPrice": 8.0, "unit": "米"}]})], "成功"),
+        ])
+        assert lr.check_required_args(results, [{"tool": "product_manage", "action": "create",
+                                                 "fields": ["specifications", "processing_item_configs.customPrice"]}]) == []
+
+    def test_tool_not_called_fails(self):
+        results = _rounds_with_args([(1, [("product_search", {"keyword": "x"})], "hi")])
+        issues = lr.check_required_args(results, [{"tool": "product_manage", "action": "create", "fields": ["specifications"]}])
+        assert issues and "未调用" in issues[0]
+
+
+class TestRunCasePhase15:
+    """run_case 集成：required_args / confirm_loop / false_success 违规 → score 0"""
+
+    def _case(self, **kw):
+        base = dict(id="P15-TEST", legacy_id="", title="t", skill=lr.Skill.PRODUCT,
+                    difficulty=lr.Difficulty.NORMAL, user_inputs=["u1"], expectations=["tool: product_manage"],
+                    data_checks=[], order_before=[], forbidden_text=[])
+        base.update(kw)
+        return lr.EvalCase(**base)
+
+    async def _run(self, case, tc_list, texts, errors=None):
+        seq = list(zip(tc_list, texts))
+        errs = errors or []
+        async def fake_send(token, session_id, message, images=None):
+            tcs, text = seq.pop(0)
+            return {"user_message": message, "images": images or [], "tool_calls": tcs,
+                    "tool_results": [], "interactive": [], "final_text": text, "error": errs.pop(0) if errs else None,
+                    "streamed": False, "done": True}
+        import unittest.mock as mock
+        with mock.patch.object(lr, "send_message", new=fake_send):
+            return await lr.run_case(case, "tok", "sess")
+
+    def test_required_args_violation_scores_zero(self):
+        import asyncio
+        case = self._case(required_args=[{"tool": "product_manage", "action": "create", "fields": ["specifications"]}])
+        result = asyncio.run(self._run(case,
+            [[{"name": "product_manage", "args": {"action": "create", "name": "X"}}]],
+            ["✅ 创建成功"]))
+        assert result["score"] == 0.0
+        assert any("required_args" in str(f) for f, _ in result["failed"])
+
+    def test_confirm_loop_scores_zero(self):
+        import asyncio
+        card = {"name": "interact", "args": {"component": "confirm", "title": "确认X"}}
+        case = self._case(user_inputs=["u1", "u2", "u3"])
+        result = asyncio.run(self._run(case,
+            [[card], [card], [card]], ["确认？", "确认？", "确认？"]))
+        assert result["score"] == 0.0
+        assert any("死循环" in str(f) for f, _ in result["failed"])
