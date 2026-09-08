@@ -680,6 +680,7 @@ cases:
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_prompt_snapshots.py"
+        - "backend/ai-agent-service/tests/test_tools_validate_input.py"
         - "backend/admin-api/src/test/java/com/migao/admin/service/ProductServiceTest.java"
         - "frontend/admin-web/tests/unit/pages/product-detail.test.tsx"
       ci:
