@@ -239,13 +239,13 @@ CREATE INDEX IF NOT EXISTS idx_knowledge_candidates_status ON knowledge_candidat
 |---|---|---|---|
 | P1 | 知识卡片数据模型 | V35 迁移（entries/candidates）+ Entity/Mapper + 单测 + schema.sql 同步 + 契约 | ✅ 已提交（bf067c41） |
 | P2 | **知识卡片 CRUD + 检索 API + 旧知识库移除（后端）** | V36 DROP 三表 + 删旧实体/Mapper/Controller/测试 + KnowledgeCardService/Controller（CRUD/发布/归档/search）+ 单测 + 用例更新 | 进行中 |
-| P3 | 行业模板体系 | 种子 Markdown → 结构化 JSON 模板 + 丰富 + templates 目录/套用 API + 单测 | P2 |
+| P3 | 行业模板体系 | 种子 Markdown → 结构化 JSON 模板 + 丰富 + templates 目录/套用 API + 单测 | ✅ 已提交（7458c35f） |
 | P4 | L2 派生 | 商品/加工项 → 派生知识卡片（同步 + 定时对账）+ 变量填充 + 单测 | P2 |
-| P5 | L3 会话提炼 | candidates 队列 API + 提炼 pipeline（LLM）+ 采纳流 + 单测 | P2 |
-| P6 | L4 文档提炼 | 文档上传后提炼 + 单测 | P5 |
+| P5 | L3 会话提炼 | candidates 队列 API + 提炼 pipeline（LLM）+ 采纳流 + 单测 | ✅ 已提交（5fa85154 P5a / c4d15768 P5b） |
+| P6 | L4 文档提炼 | 文档上传后提炼 + 单测 | ✅ 已提交（fd46b0d2 + 6ecb2d7a） |
 | P7 | Agent 检索 + 旧知识库移除（Agent） | knowledge_search 重注册为知识卡片检索 + customer_knowledge prompt 更新 + registry/参考文档清理 + agent 单测 | P2/P4 |
 | P8 | 前端改造 + 旧知识库移除（前端） | 知识库页改造（知识卡片/待采纳/模板）+ api.ts 替换 + 旧 UI/测试移除 + 契约对齐 | P2~P6 |
-| P9 | 文档与用例收口（自洽） | README/Home/AI-Agent/api-reference/rag-architecture 归档、cases API-008/011 移除、schema_full 同步、grep 归零核销 | P2~P8 |
+| P9 | 文档与用例收口（自洽） | README/Home/AI-Agent/api-reference 更新、ontology 清理、grep 归零核销（保留 V36 迁移/历史教训注释） | ✅ 本提交 |
 
 ## 十四、验收业务真值（映射 issue #3051，验收时逐条核对）
 
