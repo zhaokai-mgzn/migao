@@ -21,6 +21,7 @@ Java admin-api + Python ai-agent-service + Next.js admin-web + Taro mini-app。
 | 全部场景索引 | [docs/wiki/INDEX.md](docs/wiki/INDEX.md) |
 | 开发流程 / 验证命令清单 | [docs/wiki/Development.md](docs/wiki/Development.md) |
 | 测试工程规范（拆分/ignore/脱敏/分层） | [docs/testing/test-engineering-standards.md](docs/testing/test-engineering-standards.md) |
+| **验收/评测（下"验收通过"结论前必读）** | [docs/testing/acceptance-protocol.md](docs/testing/acceptance-protocol.md)（配套 DSH 技能 `migao-acceptance`） |
 | CI/CD / 部署 | [docs/wiki/CI-CD.md](docs/wiki/CI-CD.md) |
 | 行为用例单一源 | `.github/cases/`（改后必须跑 `render_cases.py` 并提交生成物） |
 
