@@ -2201,6 +2201,21 @@ _CASE_OR_014 = EvalCase(
     persona='',
 )
 
+# ── OR-015 [NORMAL] order_create 写操作前置校验必须真正执行（validate_input 规则分层修复，issue #3029 复盘）（源: cases/order.yml）──
+_CASE_OR_015 = EvalCase(
+    id='OR-015',
+    legacy_id='',
+    title='order_create 写操作前置校验必须真正执行（validate_input 规则分层修复，issue #3029 复盘）',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['创建订单，张三 13800138000 遮光窗帘 3 米'],
+    expectations=['validate_input', 'order_create'],
+    data_checks=['validate_input(target_tool=order_create, target_action=create) 必须真正执行必填与类型校验：缺少 customer_name/customer_phone/items 任一 → 校验失败并给出缺失字段列表', 'customer_phone 非 11 位手机号（或不以 1 开头）→ 校验失败提示「请输入 11 位中国大陆手机号」', '合法参数（customer_name + 11 位 phone + items 非空列表）→ 校验通过 validated=true', '禁止返回「无需校验（该操作无预定义规则）」跳过（平铺结构 vs 分层读取不匹配的回归防线，sess_7f27137647e14b1e A5 轮实证）'],
+    skip_reason='',
+    tags=['order_create', 'validate_input', 'defense'],
+    persona='',
+)
+
 # ── PP-001 [NORMAL] 加工项选择 - 分页翻页（源: cases/processing.yml）──
 _CASE_PP_001 = EvalCase(
     id='PP-001',
@@ -3411,6 +3426,7 @@ ALL_CASES = (
     _CASE_OR_012,
     _CASE_OR_013,
     _CASE_OR_014,
+    _CASE_OR_015,
     _CASE_PP_001,
     _CASE_PP_002,
     _CASE_PP_003,

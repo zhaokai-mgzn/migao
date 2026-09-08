@@ -30,12 +30,14 @@ _VALIDATION_RULES: Dict[str, Dict[str, Any]] = {
         },
     },
     "order_create": {
-        "required": ["customer_name", "customer_phone", "items"],
-        "customer_name": {"type": str, "min_len": 1, "label": "客户姓名"},
-        "customer_phone": {"type": str, "min_len": 1, "label": "客户电话（11位手机号）"},
-        "items": {"type": list, "min_len": 1, "label": "商品明细"},
-        "customer_address": {"type": str, "label": "收货地址"},
-        "remark": {"type": str, "label": "备注"},
+        "create": {
+            "required": ["customer_name", "customer_phone", "items"],
+            "customer_name": {"type": str, "min_len": 1, "label": "客户姓名"},
+            "customer_phone": {"type": str, "min_len": 1, "label": "客户电话（11位手机号）"},
+            "items": {"type": list, "min_len": 1, "label": "商品明细"},
+            "customer_address": {"type": str, "label": "收货地址"},
+            "remark": {"type": str, "label": "备注"},
+        },
     },
     "product_processing_item_manage": {
         "add": {
