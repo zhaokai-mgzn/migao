@@ -2224,7 +2224,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## ui（28 case）
+## ui（29 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -2582,6 +2582,20 @@
 真值: frontend-fix.position-permission-rename, frontend-fix.sidebar-seven-groups, frontend-fix.employee-position-default-permissions
 溯源: 2026-09-06 新增：岗位权限体系改造（issue #2969）；2026-09-07 补：#3002 权限弹窗菜单同构渲染——复用侧边栏 menuGroups/standaloneItems 单源（@/config/menu），弹窗分组/名称与真实侧边栏一致，操作权限单独一节，修复原按 resourceType 英文码分组 + 旧权限名的口径漂移 ｜ tags: ui, sidebar, menu, role, position, employee
 
+### UI-029. 米宝面板缩放防冻结与恢复默认 —— 双击手柄复位 + 残留尺寸视口钳制 + 角把手误触防护（#3021） 🔵
+```
+你: 米宝对话面板被拖拽/误触缩放后宽度被冻成固定 px：窗口尺寸变化后面板不重新适配，右侧露出大片白色卡片底（观感『页面坏了』），且界面上没有任何恢复默认大小的入口
+期望: direct_reply
+数据: 双击任意缩放手柄（底部/顶部/右侧/右下角）恢复默认尺寸（宽 100% / 高 85vh）并清除 localStorage（mibao_chat_panel_width/height）
+数据: 四个缩放手柄 title 含「双击恢复默认」，用户可发现自救入口
+数据: useResizableWidth/useResizableHeight 挂载时把超过视口的残留 px 钳制到视口上限，窗口 resize 持续钳制；视口变大不放大刻意缩小的浮窗（保留浮窗能力）
+数据: 右下角斜向把手未发生拖动的 mouseup 不持久化（单击误触不再把 100% 流式宽度冻结成 px）
+数据: 既有拖拽缩放/持久化行为不回退（UI-021/UI-022）
+跳过: 纯前端 React 组件/hook 行为，由 vitest 单测（MibaoChatPanel.test.tsx + useResizableWidth/Height.test.ts）+ E2E 双击复位与角把手防误触链路验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-09-08 新增：面板缩放防冻结 + 双击恢复默认（issue #3021） ｜ tags: ui, admin-web, chat, resize
+
 ## utils（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -2611,8 +2625,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：212（活跃 109，跳过 103）
-- tier 分布：smoke 8 / normal 176 / adversarial 28
+- 用例总数：213（活跃 109，跳过 104）
+- tier 分布：smoke 8 / normal 177 / adversarial 28
 - 售后域：6
 - agents：6
 - api：12
@@ -2634,7 +2648,7 @@
 - registry：1
 - 设置域：10
 - token-refresh：4
-- ui：28
+- ui：29
 - utils：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
