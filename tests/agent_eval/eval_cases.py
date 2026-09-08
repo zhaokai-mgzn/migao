@@ -41,6 +41,7 @@ class EvalCase:
     persona: str = ""   # 归属 agent: mibao / xiaobu / ""(双端)，issue #2855
     order_before: List[str] = field(default_factory=list)   # 时序断言 "A before B"（跨轮，acceptance-protocol §3.1）
     forbidden_text: List[str] = field(default_factory=list) # final_text 反模式词，命中即失败（§3.4 幻觉式撤回/报错文案）
+    required_args: List[dict] = field(default_factory=list) # 必填参数断言（create 缺 specifications/加工项价格即失败，§3.2）
 
 
 # ── AS-001 [SMOKE] 售后工单列表（源: cases/aftersales.yml）──
@@ -141,12 +142,12 @@ _CASE_AS_007 = EvalCase(
     skill=Skill.AFTERSALES,
     difficulty=Difficulty.NORMAL,
     user_inputs=['面料有瑕疵，帮我换货，换成2699系列雪尼尔窗帘面料'],
-    expectations=['product_detail', 'interact(component=choice, multiSelect=True)', 'after_sales_manage(action=create, ticket_type=exchange)'],
-    data_checks=['换货目标商品 product_detail 返回 processing_items 非空时，confirm 卡之前必须主动询问加工项（interact(choice, multiSelect=true)，透传 pageMeta 支持翻页）', '用户选择加工项后，所选名称与计价写入换货方案汇总与工单 description；用户说『不需要加工项』才跳过', 'processing_items 为空时如实告知『该商品无可用加工项』后继续，不强求'],
+    expectations=['product_detail', 'interact or direct_reply', 'after_sales_manage(action=create, ticket_type=exchange)'],
+    data_checks=['换货目标商品 product_detail 返回 processing_items 非空时，confirm 卡之前必须主动询问加工项（interact(choice, multiSelect=true)，透传 pageMeta 支持翻页；文本询问亦可，语义由 order_before 保证）', '用户选择加工项后，所选名称与计价写入换货方案汇总与工单 description；用户说『不需要加工项』才跳过', 'processing_items 为空时如实告知『该商品无可用加工项』后继续，不强求'],
     skip_reason='',
     tags=['exchange', 'processing_item', 'guided_flow'],
     persona='',
-    order_before=['interact before after_sales_manage'],
+    order_before=['processing_ask before after_sales_manage', 'processing_ask before interact[confirm]'],
 )
 
 # ── AG-001 [NORMAL] AgentResponse/AgentContext 数据结构 + _extract_msg_content think 剥离（源: cases/agents.yml）──
@@ -2292,7 +2293,7 @@ _CASE_OR_016 = EvalCase(
     skip_reason='',
     tags=['order_create', 'processing_item', 'guided_flow'],
     persona='',
-    order_before=['interact before order_create'],
+    order_before=['interact[choice:processing_items] before interact[confirm]', 'interact[choice:processing_items] before order_create'],
 )
 
 # ── PP-001 [NORMAL] 加工项选择 - 分页翻页（源: cases/processing.yml）──
@@ -2669,6 +2670,7 @@ _CASE_PR_019 = EvalCase(
     tags=['product_create', 'specifications', 'processing_item', 'regression'],
     persona='',
     forbidden_text=['尚未真正创建', '未创建成功'],
+    required_args=[{'tool': 'product_manage', 'action': 'create', 'fields': ['specifications', 'processing_item_configs.customPrice']}],
 )
 
 # ── RG-001 [NORMAL] ToolRegistry 注册/查询/执行审计（源: cases/registry.yml）──

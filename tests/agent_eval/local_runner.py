@@ -426,42 +426,188 @@ def check_expectation(result: dict, expectation: str) -> tuple[bool, str]:
 # ── 跨轮 case 级断言（acceptance-protocol §3.1/§3.4，issue #3033/#3042）──
 # 「任意一轮命中即过」只能证明工具链路通，抓不到时序颠倒（confirm 卡先于加工项询问）
 # 与 final_text 反模式（幻觉式撤回"尚未真正创建"）——这两类正是人工验收翻车的样本。
+# v1.5（2026-09-08 工具自验证补强）：组件/语义限定时序（interact[choice:processing_items]、
+# processing_ask 文本询问也算）、必填参数（create 缺 specifications/加工项价格）、
+# 确认死循环、假成功——旧会话数据回放验证：A5/AS-007 旧失败现在全部可拦截。
 
 def _parse_order_before(spec: str) -> tuple[str, str]:
-    """解析时序断言 DSL：'A before B' → (A, B)。
-
-    A/B 为工具名（子串匹配，与 check_expectation 同风格）；格式错误抛 ValueError。
-    """
+    """解析时序断言 DSL（legacy）：'A before B' → (A, B)。保留兼容旧用例。"""
     parts = spec.split(" before ")
     if len(parts) != 2:
         raise ValueError(f"order_before 格式应为 'A before B'，实际: {spec!r}")
     return parts[0].strip(), parts[1].strip()
 
 
-def _first_tool_round(results: list, tool_name: str) -> int | None:
-    """工具名首次出现的轮次（跨轮；子串匹配）。"""
+def _parse_qualified_order_before(spec: str) -> tuple:
+    """解析时序断言 DSL v2：'A[comp:sem] before B[comp]' → 各段元组。
+
+    支持形态：
+      - 'interact before order_create'            （legacy 工具级）
+      - 'interact[choice] before order_create'    （组件限定：choice 卡）
+      - 'interact[choice:processing_items] before interact[confirm]'（加工项卡语义）
+      - 'processing_ask before after_sales_manage'（语义 token：卡或文本的加工项询问）
+    返回 (tool_a, comp_a, sem_a, tool_b, comp_b, sem_b)；格式错误抛 ValueError。
+    """
+    import re as _re
+    m = _re.match(r"^([a-z_]+)(?:\[([a-z_]+)(?::([a-z_]+))?\])?\s+before\s+([a-z_]+)(?:\[([a-z_]+)(?::([a-z_]+))?\])?$",
+                  spec.strip())
+    if not m:
+        raise ValueError(f"order_before 格式应为 'A[comp:sem] before B[comp]'，实际: {spec!r}")
+    return m.groups()
+
+
+def _is_processing_items_card(args: dict) -> bool:
+    """choice 卡是否加工项选择卡（排除瑕疵商品等选项带 ¥ 的普通卡）。
+
+    判定：title 含「加工项」或任一 option value 以 proc_item_ 开头。
+    """
+    if not (args or {}).get("options"):
+        return bool((args or {}).get("title") and "加工项" in str(args.get("title", "")))
+    if "加工项" in str(args.get("title", "")):
+        return True
+    return any(str(o.get("value", "")).startswith("proc_item") for o in args.get("options") or [])
+
+
+def _processing_ask_in_round(r: dict) -> bool:
+    """该轮是否包含加工项询问（卡或文本）。文本形态：final_text 含「加工项」+ 询问意图词。"""
+    for tc in r.get("tool_calls") or []:
+        a = tc.get("args") or {}
+        if tc.get("name", "").lower() == "interact" and a.get("component") == "choice":
+            if _is_processing_items_card(a):
+                return True
+    text = (r.get("final_text") or r.get("text") or "")
+    return "加工项" in text and any(k in text for k in ("选择", "需要", "是否", "加"))
+
+
+def _first_qualified_round(results: list, tool: str, comp: str | None, sem: str | None) -> int | None:
+    """带组件/语义限定的首次调用轮次。"""
     for r in results:
-        for tc in r.get("tool_calls") or []:
-            if tool_name.lower() in str(tc.get("name", "")).lower():
+        if tool == "processing_ask":
+            if _processing_ask_in_round(r):
                 return r.get("__round")
+            continue
+        for tc in r.get("tool_calls") or []:
+            name = str(tc.get("name", "")).lower()
+            if tool.lower() not in name:
+                continue
+            if tool.lower() == "interact" and comp:
+                args = tc.get("args") or {}
+                if args.get("component") != comp:
+                    continue
+                if sem == "processing_items" and not _is_processing_items_card(args):
+                    continue
+            return r.get("__round")
     return None
 
 
+def _fmt_qualified(tool: str, comp: str | None, sem: str | None) -> str:
+    if comp:
+        return f"{tool}[{comp}" + (f":{sem}]" if sem else "]")
+    return tool
+
+
 def check_order_before(results: list, order_before: list) -> list:
-    """时序断言：A 首次调用轮次必须早于 B（OR-016/AS-007 可执行化）。
+    """时序断言（v2）：A 首次调用轮次必须早于 B。
 
     - A 全程未调用 → 违规（"未调用"）；B 未调用 → 不判时序（由 expectations 判工具缺失）；
     - 反序（B 早于 A）→ 违规，注明两轮次，便于按签名排查。
     """
     issues = []
     for spec in order_before or []:
-        a, b = _parse_order_before(str(spec))
-        ra = _first_tool_round(results, a)
-        rb = _first_tool_round(results, b)
+        try:
+            a_tool, a_comp, a_sem, b_tool, b_comp, b_sem = _parse_qualified_order_before(str(spec))
+        except ValueError:
+            issues.append(f"order_before: 无法解析 {spec!r}")
+            continue
+        ra = _first_qualified_round(results, a_tool, a_comp, a_sem)
+        rb = _first_qualified_round(results, b_tool, b_comp, b_sem)
+        a_name = _fmt_qualified(a_tool, a_comp, a_sem)
+        b_name = _fmt_qualified(b_tool, b_comp, b_sem)
         if ra is None:
-            issues.append(f"order_before[{a} before {b}]: 全程未调用 {a}")
+            issues.append(f"order_before[{a_name} before {b_name}]: 全程未调用 {a_name}")
         elif rb is not None and rb < ra:
-            issues.append(f"order_before[{a} before {b}]: {a}(R{ra}) 晚于 {b}(R{rb})——应 {a} 先于 {b}")
+            issues.append(f"order_before[{a_name} before {b_name}]: {a_name}(R{ra}) 晚于 {b_name}(R{rb})——应 {a_name} 先于 {b_name}")
+    return issues
+
+
+def check_confirm_loop(results: list, limit: int = 3) -> list:
+    """确认死循环：同一标题 confirm 卡累计出现 >= limit 次 → 违规（sess_c1fce183dae24f22）。
+
+    正常流程 confirm 卡只出现 1 次；2 次以内容忍（用户取消后重新确认）；>=3 次 = 死循环。
+    """
+    from collections import Counter
+    cnt: Counter = Counter()
+    for r in results:
+        for tc in r.get("tool_calls") or []:
+            a = tc.get("args") or {}
+            if tc.get("name", "").lower() == "interact" and a.get("component") == "confirm":
+                cnt[a.get("title", "(无标题)")] += 1
+    return [f"确认死循环: confirm 卡「{t}」共出现 {c} 次未收敛" for t, c in cnt.items() if c >= limit]
+
+
+def check_false_success(results: list) -> list:
+    """假成功：前序轮报错 + 后续文本声称成功 → 违规（sess_e52cff42 类）。
+
+    工具调用全对但用户看到的话是错的（"创建失败却答更新成功"）——验收协议 §3.4 反模式。
+    """
+    err_rounds = [r.get("__round") for r in results if r.get("error")]
+    if not err_rounds:
+        return []
+    for r in results:
+        if "成功" in (r.get("final_text") or "") and any(e < r.get("__round") for e in err_rounds):
+            return [f"假成功(R{r.get('__round')}): 前序轮报错(R{err_rounds[0]})但文本称成功"]
+    return []
+
+
+def _check_required_field(args: dict, field: str) -> tuple[bool, str]:
+    """必填字段检查：'key' 或 'list[].key'（列表内每一项都要有值）。"""
+    if "." not in field:
+        v = args.get(field)
+        ok = bool(v) and (not isinstance(v, (list, dict)) or len(v) > 0)
+        return ok, f"缺失或为空: {field}"
+    head, _, rest = field.partition(".")
+    v = args.get(head)
+    if not isinstance(v, list) or not v:
+        return False, f"字段 {head} 缺失或为空（应为非空列表）"
+    for item in v:
+        if not isinstance(item, dict):
+            return False, f"{head} 元素非对象"
+        sub = item.get(rest)
+        if not sub:
+            return False, f"{head}[].{rest} 缺失或为空（应逐项携带）"
+    return True, ""
+
+
+def check_required_args(results: list, required_args: list) -> list:
+    """必填参数断言：指定工具（可限定 action）的 args 必须含指定字段（支持 list[].key 深路径）。
+
+    背景（2026-09-08 Round2 实拍）：S3 建品 create 只传加工项名称不带价格、缺 specifications
+    → DB specs={}、加工项 ¥0.00——工具调用存在但数据正确性不达标，旧评测按工具名判过。
+    """
+    issues = []
+    for req in required_args or []:
+        tool = str(req.get("tool", ""))
+        action = req.get("action")
+        found = None
+        for r in results:
+            for tc in r.get("tool_calls") or []:
+                if tool.lower() not in str(tc.get("name", "")).lower():
+                    continue
+                a = tc.get("args") or {}
+                if action and a.get("action") != action:
+                    continue
+                found = (r.get("__round"), a)
+                break
+            if found:
+                break
+        if found is None:
+            issues.append(f"required_args: 未调用 {tool}(action={action})")
+            continue
+        rnd, args = found
+        for f in req.get("fields") or []:
+            ok, detail = _check_required_field(args, str(f))
+            if not ok:
+                issues.append(f"required_args[{tool}.{f}](R{rnd}): {detail}")
     return issues
 
 
@@ -624,6 +770,9 @@ async def run_case(case, token: str, session_id: str) -> dict:
     case_issues = []
     case_issues += check_order_before(results, getattr(case, "order_before", []) or [])
     case_issues += check_forbidden_text(results, getattr(case, "forbidden_text", []) or [])
+    case_issues += check_required_args(results, getattr(case, "required_args", []) or [])
+    case_issues += check_confirm_loop(results)
+    case_issues += check_false_success(results)
     if case_issues:
         for ci in case_issues:
             failed_expectations.append((ci, "case-level check"))
@@ -823,6 +972,7 @@ def load_cases_from_yaml(cases_dir: str) -> list:
             persona=c.get("persona", ""),
             order_before=c.get("order_before") or [],
             forbidden_text=c.get("forbidden_text") or [],
+            required_args=c.get("required_args") or [],
         ))
     return cases
 

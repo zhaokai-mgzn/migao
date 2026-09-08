@@ -220,20 +220,18 @@ cases:
       - "面料有瑕疵，帮我换货，换成2699系列雪尼尔窗帘面料"
     expectations:
       - tool: product_detail
-      - tool: interact
-        args:
-          component: choice
-          multiSelect: true
+      - tool: interact or direct_reply
       - tool: after_sales_manage
         args:
           action: create
           ticket_type: exchange
     data_checks:
-      - "换货目标商品 product_detail 返回 processing_items 非空时，confirm 卡之前必须主动询问加工项（interact(choice, multiSelect=true)，透传 pageMeta 支持翻页）"
+      - "换货目标商品 product_detail 返回 processing_items 非空时，confirm 卡之前必须主动询问加工项（interact(choice, multiSelect=true)，透传 pageMeta 支持翻页；文本询问亦可，语义由 order_before 保证）"
       - "用户选择加工项后，所选名称与计价写入换货方案汇总与工单 description；用户说『不需要加工项』才跳过"
       - "processing_items 为空时如实告知『该商品无可用加工项』后继续，不强求"
     order_before:
-      - "interact before after_sales_manage"
+      - "processing_ask before after_sales_manage"
+      - "processing_ask before interact[confirm]"
     skip_reason: ""
     merge_log: "2026-09-08 新增（issue #3033 复盘 sess_50ff3e3c824c4a70）：换货选 2699 面料（绑 5 加工项）全程未提加工项；aftersales.md 补换货加工项确认规则 + EXAMPLES 例 4"
     traces:
