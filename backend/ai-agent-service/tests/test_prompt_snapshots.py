@@ -99,6 +99,29 @@ def test_order_prompt_requires_interact_for_sku_selection():
     assert 'interact(component="choice")' in prompt
 
 
+def test_order_prompt_requires_proactive_processing_item():
+    """issue #3033：创建订单 confirm 前必须主动询问加工项，禁止直接弹确认卡。
+
+    旧 prompt 是「用户要求加工时禁止遗漏」（被动式）→ sess_7f27137647e14b1e 实证
+    confirm 卡在加工项询问前弹出、金额不含加工费，用户质问后才补。
+    """
+    prompt = _build_system_prompt("order")
+    assert "必须主动询问" in prompt, "order prompt 缺少『主动询问加工项』强制词"
+    assert "确认卡之前" in prompt or "确认订单卡之前" in prompt, (
+        "order prompt 未约束加工项询问必须先于 confirm 卡"
+    )
+
+
+def test_aftersales_prompt_requires_exchange_processing_item():
+    """issue #3033：换货/维修选目标商品后必须确认加工项。
+
+    旧 prompt 完全无加工项概念 → sess_50ff3e3c824c4a70 实证换货选 2699 面料
+    （有 5 个加工项）全程未提加工项，工单 description 无加工信息。
+    """
+    prompt = _build_system_prompt("aftersales")
+    assert "加工项" in prompt, "aftersales prompt 缺少换货加工项规则"
+
+
 def test_general_is_fallback_friendly():
     """兜底节点必须引导用户说出具体需求"""
     prompt = _build_system_prompt("general")
@@ -194,8 +217,8 @@ def test_snapshot_all_skills():
     # 最大长度快照（防止无限制膨胀）
     expected_max = {
         "product": 10800,  # +400: 澄清话术(#2784)+承诺边界(#2785) + 加工项主动询问增强（issue #2892，达 9985）+ 建品规格/加工项价格规则（#3027，达 10732）
-        "order": 8600,    # +600: 加工项数量自动推导与用户零感知（issue #2986，per_piece 密度推导 + 确认卡仅展示名称与金额）
-        "aftersales": 5600,  # +700: 禁英文枚举全局规则 + 售后工单枚举中文对照 + 退货库存规则（issue #2991 定制退货不可再售/不回补）
+        "order": 9000,    # +600: 加工项数量自动推导与用户零感知（issue #2986）+ 200: confirm 前必须主动询问加工项 + 示例加工项环节（issue #3033，达 8836）
+        "aftersales": 6500,  # +700: 禁英文枚举全局规则 + 售后工单枚举中文对照 + 退货库存规则（issue #2991）+ 900: 换货目标商品加工项确认（issue #3033，达 6269）
         "customer": 5000,  # +500: 禁英文枚举全局规则（共享原则增长）
         "staff": 4900,    # +400: 禁英文枚举全局规则（共享原则增长）
         "settings": 4900, # +400: 禁英文枚举全局规则（共享原则增长）

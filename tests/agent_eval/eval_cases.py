@@ -131,6 +131,21 @@ _CASE_AS_006 = EvalCase(
     persona='',
 )
 
+# ── AS-007 [NORMAL] 换货选目标商品后必须确认加工项（before 生成换货工单确认卡）（源: cases/aftersales.yml）──
+_CASE_AS_007 = EvalCase(
+    id='AS-007',
+    legacy_id='',
+    title='换货选目标商品后必须确认加工项（before 生成换货工单确认卡）',
+    skill=Skill.AFTERSALES,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['面料有瑕疵，帮我换货，换成2699系列雪尼尔窗帘面料'],
+    expectations=['product_detail', 'interact(component=choice, multiSelect=True)', 'after_sales_manage(action=create, ticket_type=exchange)'],
+    data_checks=['换货目标商品 product_detail 返回 processing_items 非空时，confirm 卡之前必须主动询问加工项（interact(choice, multiSelect=true)，透传 pageMeta 支持翻页）', '用户选择加工项后，所选名称与计价写入换货方案汇总与工单 description；用户说『不需要加工项』才跳过', 'processing_items 为空时如实告知『该商品无可用加工项』后继续，不强求'],
+    skip_reason='',
+    tags=['exchange', 'processing_item', 'guided_flow'],
+    persona='',
+)
+
 # ── AG-001 [NORMAL] AgentResponse/AgentContext 数据结构 + _extract_msg_content think 剥离（源: cases/agents.yml）──
 _CASE_AG_001 = EvalCase(
     id='AG-001',
@@ -2216,6 +2231,21 @@ _CASE_OR_015 = EvalCase(
     persona='',
 )
 
+# ── OR-016 [NORMAL] 创建订单 confirm 前必须主动询问加工项（商品绑定加工项时）（源: cases/order.yml）──
+_CASE_OR_016 = EvalCase(
+    id='OR-016',
+    legacy_id='',
+    title='创建订单 confirm 前必须主动询问加工项（商品绑定加工项时）',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['给赵凯创建一个订单，2699系列雪尼尔窗帘面料，10米，散剪2.8米门幅，2699-03暖米色'],
+    expectations=['product_detail', 'interact(component=choice, multiSelect=True)', 'order_create'],
+    data_checks=['product_detail 返回 processing_items 非空时，生成订单确认卡之前必须主动询问加工项（interact(choice, multiSelect=true) 展示，透传 pageMeta 支持翻页；空则如实告知后继续）', '用户选择加工项后，order_create 的 processing_info.processingItems 含 {id, name, unitPrice, quantity, unit, pricingMethod, subtotal}，processingFee 计入 subtotal（金额=面料小计+加工费）', '一次性提交『已选加工项：A、B』→ 解析全部名称，禁止只取第一个；用户说『不需要加工项』才跳过'],
+    skip_reason='',
+    tags=['order_create', 'processing_item', 'guided_flow'],
+    persona='',
+)
+
 # ── PP-001 [NORMAL] 加工项选择 - 分页翻页（源: cases/processing.yml）──
 _CASE_PP_001 = EvalCase(
     id='PP-001',
@@ -3288,6 +3318,7 @@ ALL_CASES = (
     _CASE_AS_004,
     _CASE_AS_005,
     _CASE_AS_006,
+    _CASE_AS_007,
     _CASE_AG_001,
     _CASE_AG_002,
     _CASE_AG_003,
@@ -3427,6 +3458,7 @@ ALL_CASES = (
     _CASE_OR_013,
     _CASE_OR_014,
     _CASE_OR_015,
+    _CASE_OR_016,
     _CASE_PP_001,
     _CASE_PP_002,
     _CASE_PP_003,

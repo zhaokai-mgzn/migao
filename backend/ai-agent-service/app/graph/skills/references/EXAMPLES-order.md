@@ -19,7 +19,11 @@
 → 用户: "张三，138xxxx，翻领刺绣客厅窗帘，2件"
 → query: product_search(keyword="翻领刺绣客厅窗帘") → 显示商品列表
 → 用户: "选1"
-→ confirm: "确认创建？张三 138xxxx，翻领刺绣客厅窗帘×2"
+→ product_detail → 档案含 processing_items（若有）
+→ **加工项环节（confirm 前必做）**：interact(choice, multiSelect=true) 展示该商品加工项
+   （透传 pageMeta；processing_items 为空则告知"该商品无可用加工项"继续）
+→ 用户: "不需要加工项" / 选择加工项
+→ confirm: "确认创建？张三 138xxxx，翻领刺绣客厅窗帘×2"（含加工项则列出名称+金额）
 → 用户: "确认"
 → order_create(...) → "订单已创建 ORD-xxx"
 ```

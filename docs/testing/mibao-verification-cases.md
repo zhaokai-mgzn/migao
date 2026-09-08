@@ -4,7 +4,7 @@
 > 单一源：`ershen/seed/migao/cases/`（部署副本 `.github/cases/`）。
 > 启动服务后按序执行；每轮 Case 独立。tier：🟢 smoke / 🔵 normal / 🔴 adversarial。
 
-## 售后域（6 case）
+## 售后域（7 case）
 
 ### AS-001. 售后工单列表 🟢
 ```
@@ -71,6 +71,19 @@
 ```
 真值: aftersales-flow.return-restock-switch
 溯源: issue #2991 新增：售后完结库存联动按商品开关收敛，窗帘行业定制退货不可再售 ｜ tags: update, status, cross_skill
+
+### AS-007. 换货选目标商品后必须确认加工项（before 生成换货工单确认卡） 🔵
+```
+你: 面料有瑕疵，帮我换货，换成2699系列雪尼尔窗帘面料
+期望: product_detail
+期望: interact(component=choice, multiSelect=True)
+期望: after_sales_manage(action=create, ticket_type=exchange)
+数据: 换货目标商品 product_detail 返回 processing_items 非空时，confirm 卡之前必须主动询问加工项（interact(choice, multiSelect=true)，透传 pageMeta 支持翻页）
+数据: 用户选择加工项后，所选名称与计价写入换货方案汇总与工单 description；用户说『不需要加工项』才跳过
+数据: processing_items 为空时如实告知『该商品无可用加工项』后继续，不强求
+```
+真值: aftersales.flow
+溯源: 2026-09-08 新增（issue #3033 复盘 sess_50ff3e3c824c4a70）：换货选 2699 面料（绑 5 加工项）全程未提加工项；aftersales.md 补换货加工项确认规则 + EXAMPLES 例 4 ｜ tags: exchange, processing_item, guided_flow
 
 ## agents（6 case）
 
@@ -1608,7 +1621,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（15 case）
+## 订单域（16 case）
 
 ### OR-001. 订单列表查询 🟢
 ```
@@ -1785,6 +1798,19 @@
 ```
 真值: order.create-flow
 溯源: 2026-09-08 新增（issue #3029 复盘）：_VALIDATION_RULES[order_create] 平铺结构而 execute 按 tool_rules.get(target_action) 分层读取 → 校验永远空转，手机号/必填空转；修复为 {create: {...}} 分层并对齐 product_manage，补 L2 单测 ｜ tags: order_create, validate_input, defense
+
+### OR-016. 创建订单 confirm 前必须主动询问加工项（商品绑定加工项时） 🔵
+```
+你: 给赵凯创建一个订单，2699系列雪尼尔窗帘面料，10米，散剪2.8米门幅，2699-03暖米色
+期望: product_detail
+期望: interact(component=choice, multiSelect=True)
+期望: order_create
+数据: product_detail 返回 processing_items 非空时，生成订单确认卡之前必须主动询问加工项（interact(choice, multiSelect=true) 展示，透传 pageMeta 支持翻页；空则如实告知后继续）
+数据: 用户选择加工项后，order_create 的 processing_info.processingItems 含 {id, name, unitPrice, quantity, unit, pricingMethod, subtotal}，processingFee 计入 subtotal（金额=面料小计+加工费）
+数据: 一次性提交『已选加工项：A、B』→ 解析全部名称，禁止只取第一个；用户说『不需要加工项』才跳过
+```
+真值: order.create-flow
+溯源: 2026-09-08 新增（issue #3033 复盘 sess_7f27137647e14b1e）：A5 confirm 卡在加工项询问前弹出、金额 ¥238 不含加工费，用户质问后才补 A6；order.md 加工项段从被动式改主动式 + EXAMPLES 例 2 补加工项环节 ｜ tags: order_create, processing_item, guided_flow
 
 ## 加工项域（6 case）
 
@@ -2663,9 +2689,9 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：216（活跃 112，跳过 104）
-- tier 分布：smoke 8 / normal 179 / adversarial 29
-- 售后域：6
+- 用例总数：218（活跃 114，跳过 104）
+- tier 分布：smoke 8 / normal 181 / adversarial 29
+- 售后域：7
 - agents：6
 - api：12
 - bmini：5
@@ -2680,7 +2706,7 @@
 - misc：15
 - onboarding：5
 - ontology：4
-- 订单域：15
+- 订单域：16
 - 加工项域：6
 - 商品域：19
 - registry：1
