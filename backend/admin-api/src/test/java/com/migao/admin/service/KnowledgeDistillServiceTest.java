@@ -29,6 +29,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -144,6 +145,34 @@ class KnowledgeDistillServiceTest {
             Map<String, Object> result = knowledgeDistillService.distillConversations(1L, 24);
 
             assertThat(result.get("sessions")).isEqualTo(0);
+            verify(distillClient, never()).distill(anyString(), anyInt(), any());
+        }
+
+        @Test
+        @DisplayName("文档提炼：文档文本 → 候选（source=document/pending）")
+        void distillDocument_createsPendingCandidates() throws Exception {
+            when(distillClient.distill(anyString(), eq(5), eq(1L))).thenReturn(List.of(
+                    candidate("文档里的知识", "提炼出的标准回答")));
+            when(knowledgeCardMapper.selectCount(any(LambdaQueryWrapper.class))).thenReturn(0L);
+            when(knowledgeCandidateMapper.selectCount(any(LambdaQueryWrapper.class))).thenReturn(0L);
+
+            Map<String, Object> result = knowledgeDistillService.distillDocument(1L, "面料手册", "这是一段足够长的文档内容。".repeat(10));
+
+            assertThat(result.get("created")).isEqualTo(1);
+            ArgumentCaptor<KnowledgeCandidate> captor = ArgumentCaptor.forClass(KnowledgeCandidate.class);
+            verify(knowledgeCandidateMapper).insert(captor.capture());
+            KnowledgeCandidate saved = captor.getValue();
+            assertThat(saved.getSourceType()).isEqualTo("document");
+            assertThat(saved.getSourceRef()).isEqualTo("面料手册");
+            assertThat(saved.getStatus()).isEqualTo("pending");
+        }
+
+        @Test
+        @DisplayName("文档提炼：内容过短 → 422")
+        void distillDocument_tooShort_rejected() {
+            assertThatThrownBy(() -> knowledgeDistillService.distillDocument(1L, "t", "太短"))
+                    .isInstanceOf(com.migao.admin.exception.BusinessException.class)
+                    .hasMessageContaining("过短");
             verify(distillClient, never()).distill(anyString(), anyInt(), any());
         }
 

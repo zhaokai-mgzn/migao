@@ -158,7 +158,7 @@
 真值: ai-chat.agent-factory
 溯源: 2026-08-25 新增：ai-agent-service agents-customer_service_agent 覆盖率补全（issue #2429） ｜ tags: agents, factory, alias
 
-## api（18 case）
+## api（19 case）
 
 ### API-001. chat 会话生命周期 - 租户隔离 + 用户所有权 + 幂等/重开 🔵
 ```
@@ -350,6 +350,17 @@
 跳过: 提炼逻辑由 ai-agent 单测（test_knowledge_distill.py）+ admin-api Service/MockMvc 测试（KnowledgeDistillServiceTest/KnowledgeDistillControllerTest）验证，LLM 行为 mock，不进入 agent-eval 冒烟
 ```
 溯源: 2026-09-08 新增（issue #3051 LLM WIKI 板块 P5b）：闭环三检索-会话飞轮——人工客服会话是 SME 唯一稳定知识原料，会话→提炼→采纳→检索形成知识增长闭环 ｜ tags: api, knowledge, wiki, distill
+
+### API-021. 文档提炼闭环 - 文档文本 → AI 提炼候选 → 待确认队列（LLM WIKI 板块 #3051 P6） 🔵
+```
+你: 商家上传文档后，系统提炼候选知识卡片进入待确认队列（文档→知识卡片提炼，非文档→切块检索）
+数据: POST /api/admin/knowledge/distill/documents（body: {title, content}）→ 文档文本提炼为候选，返回 {candidates, created, skipped}
+数据: 候选写入 knowledge_candidates：sourceType=document、sourceRef=文档标题、status=pending；同名卡片/待确认候选已存在 → 跳过
+数据: 文档内容 <50 字 → 422 中文提示；超长内容截断至 8000 字；提炼失败降级空候选
+数据: 原文仅作 evidence 保留，不参与运行时检索（文档→提炼，非文档→切块检索）
+跳过: 文档提炼复用 KnowledgeDistillService/Controller 单测（已扩展文档用例），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-08 新增（issue #3051 LLM WIKI 板块 P6）：L4 文档提炼——文档是 SME 的补充知识源，提炼为候选后由商家确认，与会话提炼共用待确认队列闭环 ｜ tags: api, knowledge, wiki, distill, document
 
 ### API-012. 语音转写接口容错 - 空/极小/静音音频返回友好 4xx/5xx，不裸 500（#2984） 🔵
 ```
@@ -2831,11 +2842,11 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：230（活跃 114，跳过 116）
-- tier 分布：smoke 8 / normal 193 / adversarial 29
+- 用例总数：231（活跃 114，跳过 117）
+- tier 分布：smoke 8 / normal 194 / adversarial 29
 - 售后域：7
 - agents：6
-- api：18
+- api：19
 - bmini：5
 - 分类域：3
 - 对话边界域：32
@@ -2866,6 +2877,7 @@
 - API-018: 商品/配置派生知识卡片 - 价格区间自动生成 + 变更自动更新（LLM WIKI 板块 #3051 P4）
 - API-019: 待确认队列闭环 - 候选读+写路径齐全，采纳转卡片、拒绝记原因（LLM WIKI 板块 #3051 P5）
 - API-020: 会话提炼闭环 - 人工客服会话 → AI 提炼候选 → 待确认队列（LLM WIKI 板块 #3051 P5b）
+- API-021: 文档提炼闭环 - 文档文本 → AI 提炼候选 → 待确认队列（LLM WIKI 板块 #3051 P6）
 - API-012: 语音转写接口容错 - 空/极小/静音音频返回友好 4xx/5xx，不裸 500（#2984）
 - CH-027: 流式回复中切换会话再切回 - 等待状态与最终回复保留（issue #2901）
 - CH-028: 多会话并发流 - 会话 A 回复中 B 可发送，增量/停止互不干扰（issue #2906）

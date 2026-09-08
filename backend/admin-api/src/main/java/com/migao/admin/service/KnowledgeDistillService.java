@@ -6,6 +6,7 @@ import com.migao.admin.config.TenantContext;
 import com.migao.admin.entity.AgentMessage;
 import com.migao.admin.entity.AgentSession;
 import com.migao.admin.entity.KnowledgeCandidate;
+import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.AgentMessageMapper;
 import com.migao.admin.mapper.AgentSessionMapper;
 import com.migao.admin.mapper.KnowledgeCandidateMapper;
@@ -96,6 +97,54 @@ public class KnowledgeDistillService {
         log.info("会话提炼完成: tenantId={}, sessions={}, candidates={}, created={}, skipped={}",
                 tenantId, sessions.size(), candidates, created, skipped);
         return Map.of("sessions", sessions.size(), "candidates", candidates, "created", created, "skipped", skipped);
+    }
+
+    /**
+     * 文档提炼（L4，issue #3051）：文档文本 → AI 提炼候选 → 待确认队列。
+     * 定位是「文档→知识卡片提炼」而非「文档→切块检索」；原文仅作 evidence，不参与运行时检索。
+     *
+     * @param title   文档标题（sourceRef 追溯用）
+     * @param content 文档文本内容
+     * @return {candidates, created, skipped}
+     */
+    public Map<String, Object> distillDocument(Long tenantId, String title, String content) {
+        if (!StringUtils.hasText(content) || content.trim().length() < 50) {
+            throw BusinessException.validationError("文档内容过短（至少 50 字），无法提炼");
+        }
+        String text = content.length() > 8000 ? content.substring(0, 8000) : content;
+        List<JsonNode> distilled = distillClient.distill(text, MAX_PER_SESSION, tenantId);
+        int candidates = 0;
+        int created = 0;
+        int skipped = 0;
+        for (JsonNode c : distilled) {
+            String suggestedTitle = c.path("title").asText("");
+            String answer = c.path("answer").asText("");
+            if (!StringUtils.hasText(suggestedTitle) || !StringUtils.hasText(answer)) {
+                continue;
+            }
+            candidates++;
+            if (isDuplicate(tenantId, suggestedTitle)) {
+                skipped++;
+                continue;
+            }
+            KnowledgeCandidate candidate = KnowledgeCandidate.builder()
+                    .tenantId(tenantId)
+                    .sourceType("document")
+                    .sourceRef(StringUtils.hasText(title) ? title : "document")
+                    .suggestedTitle(suggestedTitle)
+                    .suggestedAnswer(answer)
+                    .suggestedCategory(c.path("category").asText("faq"))
+                    .suggestedKeywords(c.path("keywords").asText(null))
+                    .confidence(parseConfidence(c.path("confidence").asText("0.5")))
+                    .evidence(c.path("evidence").asText(null))
+                    .status("pending")
+                    .build();
+            knowledgeCandidateMapper.insert(candidate);
+            created++;
+        }
+        log.info("文档提炼完成: tenantId={}, title={}, candidates={}, created={}, skipped={}",
+                tenantId, title, candidates, created, skipped);
+        return Map.of("candidates", candidates, "created", created, "skipped", skipped);
     }
 
     /** 去重：同名知识卡片（任意状态）或同名待确认候选 → 跳过 */

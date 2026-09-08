@@ -494,6 +494,21 @@ _CASE_API_020 = EvalCase(
     persona='',
 )
 
+# ── API-021 [NORMAL] 文档提炼闭环 - 文档文本 → AI 提炼候选 → 待确认队列（LLM WIKI 板块 #3051 P6）（源: cases/api.yml）──
+_CASE_API_021 = EvalCase(
+    id='API-021',
+    legacy_id='',
+    title='文档提炼闭环 - 文档文本 → AI 提炼候选 → 待确认队列（LLM WIKI 板块 #3051 P6）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家上传文档后，系统提炼候选知识卡片进入待确认队列（文档→知识卡片提炼，非文档→切块检索）'],
+    expectations=[],
+    data_checks=['POST /api/admin/knowledge/distill/documents（body: {title, content}）→ 文档文本提炼为候选，返回 {candidates, created, skipped}', '候选写入 knowledge_candidates：sourceType=document、sourceRef=文档标题、status=pending；同名卡片/待确认候选已存在 → 跳过', '文档内容 <50 字 → 422 中文提示；超长内容截断至 8000 字；提炼失败降级空候选', '原文仅作 evidence 保留，不参与运行时检索（文档→提炼，非文档→切块检索）'],
+    skip_reason='文档提炼复用 KnowledgeDistillService/Controller 单测（已扩展文档用例），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['api', 'knowledge', 'wiki', 'distill', 'document'],
+    persona='',
+)
+
 # ── API-012 [NORMAL] 语音转写接口容错 - 空/极小/静音音频返回友好 4xx/5xx，不裸 500（#2984）（源: cases/api.yml）──
 _CASE_API_012 = EvalCase(
     id='API-012',
@@ -3527,6 +3542,7 @@ ALL_CASES = (
     _CASE_API_018,
     _CASE_API_019,
     _CASE_API_020,
+    _CASE_API_021,
     _CASE_API_012,
     _CASE_BM_001,
     _CASE_BM_002,

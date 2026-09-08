@@ -18,6 +18,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.util.Map;
 
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -50,6 +51,19 @@ class KnowledgeDistillControllerTest {
     @AfterEach
     void tearDown() {
         TenantContext.clear();
+    }
+
+    @Test
+    @DisplayName("POST /distill/documents 文档提炼，返回统计")
+    void distillDocument_success() throws Exception {
+        when(knowledgeDistillService.distillDocument(eq(1L), eq("面料手册"), anyString()))
+                .thenReturn(Map.of("candidates", 2, "created", 2, "skipped", 0));
+
+        mockMvc.perform(post("/api/admin/knowledge/distill/documents")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"面料手册\",\"content\":\"" + "这是一段内容。".repeat(20) + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.created").value(2));
     }
 
     @Test
