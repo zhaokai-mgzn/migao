@@ -121,8 +121,8 @@ intent_ownership:
   # ── 知识域（B 端 RAG 禁用，仅 xiaobu 可达）──
   knowledge_faq:
     route_key: knowledge
-    agents: [xiaobu]
-    description: 知识库问答（C 端小布）
+    agents: [mibao, xiaobu]
+    description: 知识卡片问答（双端：小布 C 端消费者 + 米宝 B 端员工，issue #3059）
   knowledge_manage:
     route_key: knowledge
     agents: [xiaobu]

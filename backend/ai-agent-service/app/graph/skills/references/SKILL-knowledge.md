@@ -2,34 +2,33 @@
 name: knowledge
 domain: knowledge
 display_name: 知识库管理
-version: 1.0.0
+version: 1.1.0
 description: >
-  知识库条目的增删改查与管理。
-  支持 FAQ 搜索、知识条目创建/编辑/删除、分类管理。
+  本店知识卡片检索（LLM WIKI 板块，issue #3051/#3059）。
+  回答顾客/员工的本店知识问题：面料特性、清洗保养、测量安装、加工计价、售后政策等。
 tools:
-  - knowledge_search    # DISABLED — commented out in registry.py (RAG not deployed)
-  - knowledge_manage    # DISABLED — commented out in registry.py (RAG not deployed)
+  - knowledge_search    # 本店知识卡片检索（已启用）
 triggers:
   - 知识库 / FAQ / 问答
-  - 添加知识 / 编辑知识条目
-  - 搜索知识 / 查找答案
+  - 本店政策 / 加工计价 / 售后规则 / 测量方法
 constraints:
-  - 写操作前必须收集完整信息并展示确认
-  - 禁止编造知识条目内容
-  - 知识条目删除需二次确认
+  - 命中知识卡片时基于卡片内容回答并注明「📖 来自本店知识库」
+  - 未命中时用通用行业建议谨慎回答并注明「💡 通用行业建议」，禁止编造本店事实
+  - 知识条目管理操作（创建/更新/删除）引导用户到后台「知识卡片」页面，不使用 Agent 工具
 ---
 
-# Knowledge Skill
+# Knowledge Skill（B 端米宝）
 
-知识库管理技能，覆盖 FAQ 搜索和条目管理。
+本店知识问答技能：优先检索本店已发布知识卡片（行业模板/商品派生/会话提炼/文档提炼），
+命中基于卡片回答并标注来源；未命中用 LLM 通用行业知识兜底 + 通用建议免责。
 
-> **⚠️ 当前状态：RAG 已禁用。** `knowledge_search` 和 `knowledge_manage` 工具已在
-> `app/graph/tools/registry.py` 中被注释掉，因此该 Skill 当前绑定了 0 个活跃工具。
-> Skill 定义和 System Prompt 保留作为占位符，待 RAG 基础设施就绪后重新启用。
-> 重新启用步骤见 `knowledge_skill.py` 顶部的注释块。
+> **当前状态：已启用（issue #3059）**。`knowledge_search` 已注册（知识卡片检索，无向量库）；
+> `knowledge_manage` 不注册——知识管理操作走 admin-web（knowledge:manage 权限），不经 Agent。
+> 旧 RAG（DashVector 文档检索）已随 issue #3051 完全移除。
 
 ## 执行原则
 
-1. **RAG 引用**：搜索回答时注明知识来源
-2. **确认再写**：创建/编辑/删除前展示变更摘要并获确认
-3. **内容来自用户**：知识条目内容由用户提供，不编造
+1. **知识卡片优先**：知识类问题先调 knowledge_search 检索本店已发布知识卡片，命中基于卡片回答并注明「📖 来自本店知识库」
+2. **未命中兜底**：知识库暂无收录时，可基于通用行业知识谨慎回答，注明「💡 以上为通用行业建议，具体以本店为准」
+3. **不编造本店事实**：卡片之外的本店价格/政策/规则不得编造，实时数据用对应工具查询
+4. **管理走后台**：知识条目的创建/编辑/删除引导用户到后台「知识卡片」页面操作

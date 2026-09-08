@@ -1447,6 +1447,42 @@
 真值: employee-role.users-endpoint
 溯源: 2026-09-07 新增：员工管理混入 C 端消费者账号治理（issue #3004） ｜ tags: employee, list, scoping
 
+## knowledge（4 case）
+
+### KN-001. 小布知识问答 - 面料问题先检索本店知识卡片（query 必填） 🟢
+```
+你: 雪尼尔面料会不会起球
+期望: knowledge_search(query=雪尼尔)
+数据: knowledge_search 返回后会话正常结束（无报错）；命中则基于卡片回答并注明「来自本店知识库」，未命中用通用行业建议兜底，不得编造本店事实
+```
+溯源: 2026-09-08 新增（issue #3059 知识问答评测闭环）：C 端小布知识卡片优先回归——此前知识域零 LLM 级冒烟覆盖 ｜ tags: knowledge, wiki, smoke, xiaobu
+
+### KN-002. 小布知识问答 - 清洗保养类问题走知识卡片检索 🔵
+```
+你: 窗帘多久洗一次？
+期望: knowledge_search(query=清洗)
+期望: success=true
+数据: 知识卡片命中时回答基于卡片内容并注明来源；未命中时如实告知知识库暂无收录，用通用行业建议谨慎回答
+```
+溯源: 2026-09-08 新增（issue #3059）：小布知识问答日常回归（清洗保养子域） ｜ tags: knowledge, wiki, xiaobu
+
+### KN-003. 米宝知识问答 - 本店售后政策先检索知识卡片（B 端接线回归，issue #3059） 🟢
+```
+你: 我们店的退换货政策是什么？
+期望: knowledge_search(query=退换货)
+数据: 米宝知识问答走知识卡片检索（B 端 skill 接线不可回退）；命中基于卡片回答，未命中通用兜底不编造本店事实
+```
+溯源: 2026-09-08 新增（issue #3059）：米宝启用 knowledge skill 后的接线回归——防止 future 再次注释禁用导致 B 端知识问答静默退化 ｜ tags: knowledge, wiki, smoke, mibao
+
+### KN-004. 米宝知识问答 - 加工计价规则走知识卡片检索 🔵
+```
+你: 我们店打孔加工怎么计价？
+期望: knowledge_search(query=加工)
+期望: success=true
+数据: 加工计价规则类问题优先检索本店知识卡片（config/商品派生卡片）；命中基于卡片回答并注明来源
+```
+溯源: 2026-09-08 新增（issue #3059）：米宝知识问答日常回归（加工计价子域，L2 派生卡片） ｜ tags: knowledge, wiki, mibao
+
 ## misc（15 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
@@ -1720,11 +1756,11 @@
 
 ### ON-003. intent 归属表全量登记 + 双端能力视图契约校验（v2 按 agent 核对） 🔵
 ```
-你: schema 全量登记 27 个业务 intent（双端 23 + finance 仅 mibao + knowledge_faq/knowledge_manage/quote 仅 xiaobu）；契约校验与双端真实映射按 agent 分别对比
+你: schema 全量登记 27 个业务 intent（双端 24 + finance 仅 mibao + knowledge_manage/quote 仅 xiaobu——knowledge_faq 已双端可达，issue #3059）；契约校验与双端真实映射按 agent 分别对比
 期望: none
-数据: schema.intent_ownership 全量登记 27 个业务 intent（排除 general 兜底；mibao 因 RAG 禁用不可达 knowledge 域）
+数据: schema.intent_ownership 全量登记 27 个业务 intent（排除 general 兜底；mibao 已启用 knowledge_faq 知识卡片检索，issue #3059；knowledge_manage 管理意图不可达 agent——管理走 admin-web）
 数据: 契约校验 v2：schema 声明某 agent 可达的 intent 必须在该 agent 映射中存在（防假声明）；mibao route_key 严格一致（B 端是约定事实源，xiaobu 兜底覆盖不计漂移）；任一 agent 映射有但 schema 未登记 → 违规；声明可达的 route_key 必须在该 agent 真实可达集合中
-数据: xiaobu 专属 intent（quote/knowledge_faq/knowledge_manage）在 mibao 映射缺失是正常的，不得误报
+数据: xiaobu 专属 intent（quote/knowledge_manage）在 mibao 映射缺失是正常的，不得误报（knowledge_faq 现为双端可达）
 数据: 缺失/漂移返回违规清单（不抛异常，由调用方决定阻断）
 跳过: 契约校验为纯数据结构逻辑，由 pytest 单测验证（backend/ai-agent-service/tests/test_ontology_contract.py），非 LLM 行为，不进入 agent-eval 冒烟
 ```
@@ -2857,8 +2893,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：232（活跃 114，跳过 118）
-- tier 分布：smoke 8 / normal 195 / adversarial 29
+- 用例总数：236（活跃 118，跳过 118）
+- tier 分布：smoke 10 / normal 197 / adversarial 29
 - 售后域：7
 - agents：6
 - api：20
@@ -2871,6 +2907,7 @@
 - 防御域：18
 - finance：4
 - 人事域：7
+- knowledge：4
 - misc：15
 - onboarding：5
 - ontology：4
@@ -2900,5 +2937,9 @@
 - CH-030: C 端交互组件提交锁（防重复提交）—— confirm/choice/form 点选/提交后本地锁卡，已答消息携带 interactiveAnswered，历史回放后不复活
 - CH-031: C 端交互组件历史回放透传—— getSessionMessages 映射透传 interactive/interactive_answered，刷新/切会话后已答卡片只读呈现而非消失
 - CH-032: C 端交互组件流式门控 + XML 伪代码兜底剥离—— 流式期间交互组件隐藏（防闪烁/防误点），历史残留 <interact>/```tool_call 伪代码块不展示
+- KN-001: 小布知识问答 - 面料问题先检索本店知识卡片（query 必填）
+- KN-002: 小布知识问答 - 清洗保养类问题走知识卡片检索
+- KN-003: 米宝知识问答 - 本店售后政策先检索知识卡片（B 端接线回归，issue #3059）
+- KN-004: 米宝知识问答 - 加工计价规则走知识卡片检索
 - MC-012: CI 失败报告去重 - 同日同标题 open issue 存在时不重复建
 

@@ -85,13 +85,13 @@ cases:
     truths_ref:
       - ai-chat.context-memory
     user_inputs:
-      - "schema 全量登记 27 个业务 intent（双端 23 + finance 仅 mibao + knowledge_faq/knowledge_manage/quote 仅 xiaobu）；契约校验与双端真实映射按 agent 分别对比"
+      - "schema 全量登记 27 个业务 intent（双端 24 + finance 仅 mibao + knowledge_manage/quote 仅 xiaobu——knowledge_faq 已双端可达，issue #3059）；契约校验与双端真实映射按 agent 分别对比"
     expectations:
       - tool: none
     data_checks:
-      - "schema.intent_ownership 全量登记 27 个业务 intent（排除 general 兜底；mibao 因 RAG 禁用不可达 knowledge 域）"
+      - "schema.intent_ownership 全量登记 27 个业务 intent（排除 general 兜底；mibao 已启用 knowledge_faq 知识卡片检索，issue #3059；knowledge_manage 管理意图不可达 agent——管理走 admin-web）"
       - "契约校验 v2：schema 声明某 agent 可达的 intent 必须在该 agent 映射中存在（防假声明）；mibao route_key 严格一致（B 端是约定事实源，xiaobu 兜底覆盖不计漂移）；任一 agent 映射有但 schema 未登记 → 违规；声明可达的 route_key 必须在该 agent 真实可达集合中"
-      - "xiaobu 专属 intent（quote/knowledge_faq/knowledge_manage）在 mibao 映射缺失是正常的，不得误报"
+      - "xiaobu 专属 intent（quote/knowledge_manage）在 mibao 映射缺失是正常的，不得误报（knowledge_faq 现为双端可达）"
       - "缺失/漂移返回违规清单（不抛异常，由调用方决定阻断）"
     skip_reason: "契约校验为纯数据结构逻辑，由 pytest 单测验证（backend/ai-agent-service/tests/test_ontology_contract.py），非 LLM 行为，不进入 agent-eval 冒烟"
     merge_log: "2026-09-04 更新：切片 A 全量登记 27 intent + 契约校验 v2（按 agent 核对，get_all_skill_names 口径）"

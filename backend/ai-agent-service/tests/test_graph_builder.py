@@ -83,7 +83,7 @@ class TestBuildGraph:
             "order_query": "order",
             "logistics_track": "order",
             "product_inquiry": "product",
-            "knowledge_faq": "general",
+            "knowledge_faq": "knowledge",  # issue #3059：米宝已启用知识卡片检索（原 fallback general）
             "after_sales": "aftersales",
             "complaint": "aftersales",
             "greeting": "direct_reply",
@@ -94,7 +94,7 @@ class TestBuildGraph:
             state = {
                 "route_decision": {"action": "full_agent"},
                 "intent_result": {"intent": intent},
-                "agent_type": "mibao",  # mibao uses _KNOWLEDGE_FALLBACK
+                "agent_type": "mibao",  # mibao：knowledge_faq 走 knowledge skill；仅 knowledge_manage fallback general（管理走 admin-web）
             }
             result = route_by_intent(state)
             assert result == expected_skill, f"Intent '{intent}' routed to '{result}', expected '{expected_skill}'"

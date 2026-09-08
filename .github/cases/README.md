@@ -18,6 +18,7 @@ cases/
 ├── chat.yml           # ✅ 边界/多轮（7 条）
 ├── cross.yml          # ✅ 跨 Skill（3 条）
 ├── defense.yml        # ✅ 防御（15 条）
+├── knowledge.yml     # ✅ 知识问答（LLM WIKI 双端，4 条：KN-001~004）
 └── category.yml       # ✅ 分类管理（3 条）
 ```
 
