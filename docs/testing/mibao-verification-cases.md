@@ -2288,7 +2288,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## ui（29 case）
+## ui（32 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -2660,6 +2660,47 @@
 真值: frontend-fix.no-api-change
 溯源: 2026-09-08 新增：面板缩放防冻结 + 双击恢复默认（issue #3021） ｜ tags: ui, admin-web, chat, resize
 
+### UI-030. 米宝交互组件渲染三态固化 —— interactive（等待用户）/ readonly（已答只读）/ hidden（流式中），渲染决策收敛为纯函数 resolveInteractiveState，FAB 浮窗与 /chat 工作台共用同一 MessageList 链路 🔵
+```
+你: 米宝（admin-web）interact 交互组件（choice/confirm/form）渲染不确定：已回复的卡片锁是组件本地 useState(submitted)，FAB 关闭重开/会话切换后组件重挂载 → 锁重置 → 已经确认的卡片重新可点 → 可重复提交（重复建单/下单）
+你: 企业级要求渲染逻辑与效果固定：同一消息任何时候渲染结果一致，不能一会渲染可交互控件、一会渲染只读/消失控件
+期望: direct_reply
+数据: frontend/admin-web/src/lib/interactive-render.ts（或等价位置）导出纯函数 resolveInteractiveState(msg) → 'interactive' | 'readonly' | 'hidden'：有 interactive 且非流式且未答 → interactive；有 interactive 且 interactiveAnswered → readonly；流式中或无 interactive → hidden
+数据: MessageList.tsx 渲染交互组件时经 resolveInteractiveState 决策，不再直接用 message.isStreaming 作为 disabled：流式中隐藏（hidden），已答（interactiveAnswered=true）渲染同构只读变体（disabled=true，按钮置灰不可点），未答复渲染可交互（disabled=false）
+数据: InteractiveMessage ChoiceCard/ConfirmCard/FormCard 在 disabled=true 时不可点击且视觉置灰（opacity/disabled 属性），点击不触发 sendMessage
+数据: 锁的单一事实源为消息级 interactiveAnswered（来自 store 透传/历史回放），非组件本地 useState：FAB 关闭重开（ChatArea 卸载重挂载）后已答卡片仍保持只读不可点
+数据: FAB 浮窗（FloatingAssistant）与 /chat 工作台共用 MessageList/InteractiveMessage 链路，两入口渲染决策一致
+跳过: 纯前端渲染决策由 vitest 单测（components-chat.test.tsx + interactive-render 单测）验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-09-08 新增：米宝交互组件渲染三态固化（issue #3036） ｜ tags: ui, admin-web, chat, interactive, render-freeze
+
+### UI-031. 米宝交互组件历史回放透传 —— interactive 载荷落库 + history 返回，刷新/切会话后已答卡片以只读变体呈现而非消失 🔵
+```
+你: 米宝交互组件（choice/confirm/form）只存在于前端内存态：后端 save_message 只存 content+tool_calls，interactive 载荷从不落库，get_history 不返回；前端 selectSession 历史映射同样丢弃 interactive → 刷新/切会话后确认卡片整体消失只剩纯文本，待确认状态（session-insight detectPendingInteraction）失效
+期望: direct_reply
+数据: ai-agent-service 保存 assistant 消息时把 interactive 载荷写入 metadata（interactive JSON 字段），get_history 返回 interactive 字段；历史消息的 interactive 状态（interactive_answered）随消息返回
+数据: admin-web store selectSession 历史映射透传 interactive 与 interactiveAnswered（不再丢弃），历史回放后交互组件按 UI-030 三态渲染（已答 → 只读变体，未答 → 仍可交互）
+数据: detectPendingInteraction 在历史回放后仍能检测未答交互（interactive 随历史返回）
+数据: 卡片信息（fields/options/formFields）不回退：历史回放的只读变体仍展示完整字段内容
+跳过: 前后端契约由 vitest（interactive-contract.test.ts / components-chat.test.tsx）+ ai-agent 单测（get_history 返回 interactive）验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-09-08 新增：米宝交互组件历史回放透传（issue #3036） ｜ tags: ui, admin-web, chat, interactive, history, persistence
+
+### UI-032. LLM 幻觉 <interact> XML 伪代码块剥离/解析 —— 后端识别文本流中的 <interact>…</interact> 并转换为 SSE interactive 事件，前后端兜底剥离防止原始 XML 泄漏到气泡 🔵
+```
+你: LLM（如 Vision 建品流程）把 <interact> <component>form</component> … </interact> XML 伪代码块直接输出到文本流，前端只剥离 ```tool_call 伪代码块不剥 XML → 卡片未渲染为 FormCard，用户看到原始 XML 文本（渲染不确定）
+期望: direct_reply
+数据: ai-agent-service 在文本输出流中识别 <interact>…</interact> XML 块：解析 component/title/options/formFields/fields 等字段并转换为 SSE interactive 事件（与 interact 工具同协议，前端无需新分支）；同时从文本中剥离该 XML 块，不再进入 message.content
+数据: 解析失败或字段缺失时兜底剥离 XML 块（不展示原始 XML），SSE 不再下发残缺 payload
+数据: admin-web AIMessageContent.cleanContent 增加 <interact>…</interact> 剥离正则（与 ```tool_call 剥离同处），历史消息若有残留 XML 也不展示
+数据: 正常 interact 工具路径（SSE interactive 事件）不回退：choice/confirm/form 仍渲染为对应交互组件
+跳过: 后端 XML 解析/剥离由 ai-agent 单测（test_chat.py XML 用例）验证，前端兜底由 vitest（components-chat.test.tsx cleanContent）验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-09-08 新增：LLM 幻觉 <interact> XML 伪代码块剥离/解析（issue #3036） ｜ tags: ui, chat, interactive, xml, sanitize
+
 ## utils（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -2689,8 +2730,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：218（活跃 114，跳过 104）
-- tier 分布：smoke 8 / normal 181 / adversarial 29
+- 用例总数：221（活跃 114，跳过 107）
+- tier 分布：smoke 8 / normal 184 / adversarial 29
 - 售后域：7
 - agents：6
 - api：12
@@ -2712,7 +2753,7 @@
 - registry：1
 - 设置域：10
 - token-refresh：4
-- ui：29
+- ui：32
 - utils：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）

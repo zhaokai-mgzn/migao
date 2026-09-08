@@ -22,6 +22,7 @@ import type { ChatMessage, ChatCard } from '@/types'
 
 import ToolResultCard from './ToolResultCard'
 import InteractiveMessage from './InteractiveMessage'
+import { resolveInteractiveState } from '@/lib/interactive-render'
 import WelcomePanel from './WelcomePanel'
 
 export default function MessageList() {
@@ -198,12 +199,13 @@ function MessageBubble({ message }: { message: ChatMessage }) {
           </div>
         )}
 
-        {/* 交互式组件 */}
-        {isAI && message.interactive && !message.isStreaming && (
+        {/* 交互式组件 — 三态渲染（issue #3036 / UI-030）：
+            interactive（未答复可点）/ readonly（已答复置灰）/ hidden（流式中隐藏） */}
+        {isAI && message.interactive && resolveInteractiveState(message) !== 'hidden' && (
           <div className="mt-2 w-full">
             <InteractiveMessage
               interactive={message.interactive}
-              disabled={message.isStreaming}
+              disabled={resolveInteractiveState(message) === 'readonly'}
             />
           </div>
         )}
@@ -303,11 +305,13 @@ function AIMessageContent({ message }: { message: ChatMessage }) {
     )
   }
 
-  // 清理 AI 回复中的 tool_call 伪代码块（Vision LLM 可能有幻觉输出）
-  const cleanContent = (message.content || '').replace(
-    /```tool_call[\s\S]*?```/g,
-    ''
-  ).trim()
+  // 清理 AI 回复中的 tool_call 伪代码块（Vision LLM 可能有幻觉输出）；
+  // 同时兜底剥离 <interact>…</interact> XML 伪代码块（issue #3036 / UI-032）——
+  // 正常路径下后端已转 SSE interactive 事件并剥离，此处兜底历史消息残留
+  const cleanContent = (message.content || '')
+    .replace(/```tool_call[\s\S]*?```/g, '')
+    .replace(/<interact>[\s\S]*?<\/interact>/g, '')
+    .trim()
 
   if (!cleanContent && !message.isStreaming) {
     // 用户主动中断 → 显示"对话已中断"

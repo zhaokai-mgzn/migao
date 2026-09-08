@@ -172,6 +172,7 @@ class SessionMemory:
         tenant_id: Optional[int] = None,
         content_type: str = "text",
         extra_metadata: Optional[Dict[str, Any]] = None,
+        interactive: Optional[Dict[str, Any]] = None,
     ) -> str:
         """
         保存消息到 session_messages 表
@@ -184,6 +185,8 @@ class SessionMemory:
             tenant_id: 租户 ID（可选）
             content_type: 内容类型 (text / mixed / image / card 等)
             extra_metadata: 额外的 metadata 字段（如 images 等）
+            interactive: 交互组件载荷（choice/confirm/form，存 metadata.interactive，
+                用于历史回放渲染只读/可交互变体，issue #3036）
             
         Returns:
             str: 消息 ID
@@ -196,6 +199,10 @@ class SessionMemory:
         meta_dict = {}
         if tool_calls:
             meta_dict["tool_calls"] = tool_calls
+        # 交互组件载荷落库：历史回放按 interactive_answered 渲染只读/可交互变体（issue #3036）
+        if interactive:
+            meta_dict["interactive"] = interactive
+            meta_dict["interactive_answered"] = False
         if extra_metadata:
             meta_dict.update(extra_metadata)
         metadata = json.dumps(meta_dict) if meta_dict else "{}"
@@ -285,6 +292,11 @@ class SessionMemory:
                     # 从 metadata 中提取 tool_calls（降级处理）
                     metadata = row[5] or {}
                     tool_calls = metadata.get("tool_calls") if isinstance(metadata, dict) else None
+                    # 交互组件载荷 + 已答标记（issue #3036：历史回放透传）
+                    interactive = metadata.get("interactive") if isinstance(metadata, dict) else None
+                    interactive_answered = False
+                    if isinstance(metadata, dict):
+                        interactive_answered = metadata.get("interactive_answered", False) is True
                     messages.append({
                         "id": row[0],
                         "session_id": row[1],
@@ -292,6 +304,8 @@ class SessionMemory:
                         "content_type": row[3],
                         "content": row[4],
                         "tool_calls": tool_calls,
+                        "interactive": interactive,
+                        "interactive_answered": interactive_answered,
                         "metadata": metadata,
                         "created_at": row[6],
                     })
@@ -300,6 +314,46 @@ class SessionMemory:
             except Exception as e:
                 logger.error(f"[session-memory] Operation failed | session_id={session_id} error={type(e).__name__}: {e}", exc_info=True)
                 return []
+
+    async def mark_last_interactive_answered(self, session_id: str) -> None:
+        """把会话中最近一条带 interactive 且未答复的 assistant 消息标记为已答复。
+
+        语义（issue #3036）：用户发出一轮新消息（含点击 choice/confirm/form 按钮
+        产生的消息、__PAGE__ 翻页）后，上一条交互组件即视为已答复——前端据此
+        渲染只读变体，防止 FAB 重开/会话切换后卡片「复活」导致重复提交。
+
+        Args:
+            session_id: 会话 ID
+        """
+        async with await self._get_session() as db:
+            try:
+                from sqlalchemy import text
+                sql = text("""
+                    UPDATE session_messages
+                    SET metadata = jsonb_set(
+                        COALESCE(metadata, '{}'::jsonb),
+                        '{interactive_answered}',
+                        'true'::jsonb,
+                        true
+                    )
+                    WHERE id = (
+                        SELECT id FROM session_messages
+                        WHERE session_id = :session_id
+                          AND role = 'assistant'
+                          AND metadata ? 'interactive'
+                          AND NOT COALESCE((metadata->>'interactive_answered')::boolean, false)
+                        ORDER BY created_at DESC
+                        LIMIT 1
+                    )
+                """)
+                await db.execute(sql, {"session_id": session_id})
+                await db.commit()
+                logger.debug(f"[session-memory] Interactive marked answered | session_id={session_id}")
+            except Exception as e:
+                await db.rollback()
+                logger.warning(
+                    f"[session-memory] mark_interactive_answered failed | session={session_id} error={e}"
+                )
 
     async def get_history_by_tokens(
         self,

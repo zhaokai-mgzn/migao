@@ -1078,6 +1078,9 @@ export interface ChatMessage {
   isStreaming?: boolean
   suggestions?: string[]  // 后续问题建议列表
   interactive?: InteractiveComponent  // 交互式组件
+  // 该交互组件是否已被用户答复（issue #3036）：消息级状态作为只读锁的单一事实源，
+  // 历史回放/刷新/FAB 重开后仍保持，防止已答复卡片「复活」重复提交。
+  interactiveAnswered?: boolean
   wasAborted?: boolean  // 是否被用户主动中断（用于区分"已处理"与"对话已中断"）
 }
 

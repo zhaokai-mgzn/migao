@@ -1,4 +1,4 @@
-// case_ids: CH-001, CH-002, CH-003, UI-006, PP-001, PR-010
+// case_ids: CH-001, CH-002, CH-003, UI-006, PP-001, PR-010, UI-030, UI-031, UI-032
 /**
  * components/chat 覆盖率补全 — Issue #567
  *
@@ -313,6 +313,83 @@ describe('MessageList', () => {
 
     expect(screen.getByText('（已处理）')).toBeInTheDocument()
     expect(screen.queryByText('对话已中断')).not.toBeInTheDocument()
+  })
+
+  it('renders interactive component as clickable when unanswered', () => {
+    // UI-030：未答复 → interactive（可点击操作）
+    mockUseChatStore.mockReturnValue(
+      makeDefaultChatState({
+        currentSessionId: 's1',
+        messages: [
+          {
+            id: '1',
+            role: 'assistant',
+            content: '请选择分类',
+            interactive: {
+              component: 'choice',
+              title: '请选择分类',
+              options: [{ label: '窗帘', value: 'curtain' }],
+            },
+            isStreaming: false,
+          },
+        ],
+      })
+    )
+    render(<MessageList />)
+
+    const btn = screen.getByRole('button', { name: /窗帘/ })
+    expect(btn).not.toBeDisabled()
+  })
+
+  it('renders answered interactive component as readonly (disabled)', () => {
+    // UI-030：已答复 → readonly（按钮置灰不可点，防重复提交）
+    mockUseChatStore.mockReturnValue(
+      makeDefaultChatState({
+        currentSessionId: 's1',
+        messages: [
+          {
+            id: '1',
+            role: 'assistant',
+            content: '请确认订单信息',
+            interactive: {
+              component: 'confirm',
+              title: '确认创建订单',
+              fields: [{ label: '商品', value: '窗帘-001' }],
+              confirmLabel: '确认创建',
+              cancelLabel: '取消',
+            },
+            interactiveAnswered: true,
+            isStreaming: false,
+          },
+        ],
+      })
+    )
+    render(<MessageList />)
+
+    const confirmBtn = screen.getByRole('button', { name: '确认创建' })
+    expect(confirmBtn).toBeDisabled()
+    expect(screen.getByText('窗帘-001')).toBeInTheDocument() // 只读变体仍展示字段
+  })
+
+  it('hides interactive component while streaming', () => {
+    // UI-030：流式中 → hidden（卡片延迟到流结束展示）
+    mockUseChatStore.mockReturnValue(
+      makeDefaultChatState({
+        currentSessionId: 's1',
+        messages: [
+          {
+            id: '1',
+            role: 'assistant',
+            content: '',
+            interactive: { component: 'choice', title: '请选择分类' },
+            isStreaming: true,
+          },
+        ],
+      })
+    )
+    render(<MessageList />)
+
+    expect(screen.queryByText('请选择分类')).not.toBeInTheDocument()
   })
 })
 
@@ -681,6 +758,71 @@ describe('InteractiveMessage', () => {
     render(<InteractiveMessage interactive={interactive} />)
     expect(screen.getByText('确认退款')).toBeInTheDocument()
     expect(screen.getByText('ORD-001')).toBeInTheDocument()
+  })
+
+  it('disabled confirm card: 按钮不可点且不触发 sendMessage（只读变体）', () => {
+    // UI-030：已答复 → readonly 变体 —— disabled=true 时点确认/取消不发送
+    const sendMessage = vi.fn()
+    mockUseChatStore.mockReturnValue(
+      makeDefaultChatState({ sendMessage }),
+    )
+    const interactive = {
+      component: 'confirm' as const,
+      title: '确认创建订单',
+      fields: [{ label: '商品', value: '窗帘-001' }],
+      confirmLabel: '确认创建',
+      cancelLabel: '取消',
+      confirmValue: '确认创建订单',
+      cancelValue: '取消创建',
+    }
+    render(<InteractiveMessage interactive={interactive} disabled />)
+
+    const confirmBtn = screen.getByRole('button', { name: '确认创建' })
+    const cancelBtn = screen.getByRole('button', { name: '取消' })
+    expect(confirmBtn).toBeDisabled()
+    expect(cancelBtn).toBeDisabled()
+    fireEvent.click(confirmBtn)
+    fireEvent.click(cancelBtn)
+    expect(sendMessage).not.toHaveBeenCalled()
+  })
+
+  it('disabled choice card: 选项不可点（只读变体）', () => {
+    // UI-030：disabled choice → 选项置灰不可点
+    const sendMessage = vi.fn()
+    mockUseChatStore.mockReturnValue(
+      makeDefaultChatState({ sendMessage }),
+    )
+    const interactive = {
+      component: 'choice' as const,
+      title: '请选择分类',
+      options: [{ label: '窗帘', value: 'curtain' }],
+    }
+    render(<InteractiveMessage interactive={interactive} disabled />)
+
+    const opt = screen.getByRole('button', { name: /窗帘/ })
+    expect(opt).toBeDisabled()
+    fireEvent.click(opt)
+    expect(sendMessage).not.toHaveBeenCalled()
+  })
+
+  it('disabled form card: 输入与提交按钮不可用（只读变体）', () => {
+    // UI-030：disabled form → 输入框与提交都禁用
+    const sendMessage = vi.fn()
+    mockUseChatStore.mockReturnValue(
+      makeDefaultChatState({ sendMessage }),
+    )
+    const interactive = {
+      component: 'form' as const,
+      title: '补充商品信息',
+      formFields: [{ key: 'name', label: '商品名称' }],
+      submitLabel: '提交',
+    }
+    render(<InteractiveMessage interactive={interactive} disabled />)
+
+    const input = screen.getByPlaceholderText('请输入商品名称')
+    expect(input).toBeDisabled()
+    const submit = screen.getByRole('button', { name: '提交' })
+    expect(submit).toBeDisabled()
   })
 })
 
