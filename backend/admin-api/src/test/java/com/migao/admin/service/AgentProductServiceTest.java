@@ -1,6 +1,6 @@
 package com.migao.admin.service;
 
-// case_ids=[PR-005]
+// case_ids=[PR-005, PR-019]
 
 import com.migao.admin.dto.*;
 import com.migao.admin.dto.agent.*;
@@ -108,6 +108,108 @@ class AgentProductServiceTest {
 
             ProductResponse r = productService.createProductForAgent(req, 1L);
             assertThat(r).isNotNull();
+        }
+    }
+
+    @Nested @DisplayName("Agent 创建商品 — 加工项价格合并（issue #3056）")
+    class CreateProcessingPriceMerge {
+        /** 建品参数：ids+configs 并存时 customPrice 不得被 ids 分支丢弃（live 复现实证：45→30） */
+        private AgentProductCreateRequest baseRequest() {
+            AgentProductCreateRequest req = new AgentProductCreateRequest();
+            req.setName("价格合并测试");
+            req.setCategoryId("cat-001");
+            req.setBasePrice(new BigDecimal("66"));
+            return req;
+        }
+
+        private void mockStandardCreate() {
+            when(categoryMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(testCategory));
+            when(categoryMapper.selectById("cat-001")).thenReturn(testCategory);
+            when(productMapper.insert(any(Product.class))).thenAnswer(inv -> {
+                Product p = inv.getArgument(0);
+                p.setId("prod-pm");
+                return 1;
+            });
+            when(productMapper.selectById("prod-pm")).thenReturn(
+                    Product.builder().id("prod-pm").name("价格合并测试").categoryId("cat-001").status("draft").build());
+            // 加工项解析列表：pi-001 打孔 + pi-002 波浪定型
+            ProcessingItem pi2 = ProcessingItem.builder().id("pi-002").name("波浪定型").tenantId(1L).status("active").build();
+            when(processingItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(testPi, pi2));
+        }
+
+        private java.util.Map<String, BigDecimal> capturePrices(int count) {
+            ArgumentCaptor<ProductProcessingItem> captor = ArgumentCaptor.forClass(ProductProcessingItem.class);
+            verify(productProcessingItemMapper, times(count)).insert(captor.capture());
+            java.util.Map<String, BigDecimal> priceByItem = new java.util.HashMap<>();
+            for (ProductProcessingItem ppi : captor.getAllValues()) {
+                priceByItem.put(ppi.getProcessingItemId(), ppi.getCustomPrice());
+            }
+            return priceByItem;
+        }
+
+        @Test
+        @DisplayName("ids+configs 并存 → configs 的 customPrice 保留（回归）")
+        void idsAndConfigsKeepCustomPrice() {
+            mockStandardCreate();
+            AgentProductCreateRequest req = baseRequest();
+            req.setProcessingItemIds(List.of("pi-001", "pi-002"));
+            AgentProductCreateRequest.AgentProcessingItemConfig c1 = new AgentProductCreateRequest.AgentProcessingItemConfig();
+            c1.setProcessingItemId("pi-001"); c1.setCustomPrice(new BigDecimal("45"));
+            AgentProductCreateRequest.AgentProcessingItemConfig c2 = new AgentProductCreateRequest.AgentProcessingItemConfig();
+            c2.setProcessingItemId("pi-002"); c2.setCustomPrice(new BigDecimal("12"));
+            req.setProcessingItemConfigs(List.of(c1, c2));
+
+            productService.createProductForAgent(req, 1L);
+
+            java.util.Map<String, BigDecimal> priceByItem = capturePrices(2);
+            assertThat(priceByItem.get("pi-001")).isEqualByComparingTo("45");
+            assertThat(priceByItem.get("pi-002")).isEqualByComparingTo("12");
+        }
+
+        @Test
+        @DisplayName("仅 ids → customPrice null（读回退默认价）")
+        void idsOnlyNullPrice() {
+            mockStandardCreate();
+            AgentProductCreateRequest req = baseRequest();
+            req.setProcessingItemIds(List.of("pi-001"));
+
+            productService.createProductForAgent(req, 1L);
+
+            ArgumentCaptor<ProductProcessingItem> captor = ArgumentCaptor.forClass(ProductProcessingItem.class);
+            verify(productProcessingItemMapper, times(1)).insert(captor.capture());
+            assertThat(captor.getValue().getCustomPrice()).isNull();
+        }
+
+        @Test
+        @DisplayName("仅 configs → customPrice 保留")
+        void configsOnlyKeepPrice() {
+            mockStandardCreate();
+            AgentProductCreateRequest req = baseRequest();
+            AgentProductCreateRequest.AgentProcessingItemConfig c1 = new AgentProductCreateRequest.AgentProcessingItemConfig();
+            c1.setProcessingItemId("pi-001"); c1.setCustomPrice(new BigDecimal("45"));
+            req.setProcessingItemConfigs(List.of(c1));
+
+            productService.createProductForAgent(req, 1L);
+
+            java.util.Map<String, BigDecimal> priceByItem = capturePrices(1);
+            assertThat(priceByItem.get("pi-001")).isEqualByComparingTo("45");
+        }
+
+        @Test
+        @DisplayName("configs 为 ids 子集 → 全部关联且 configs 项带价，未定价项为 null")
+        void configsSubsetOfIds() {
+            mockStandardCreate();
+            AgentProductCreateRequest req = baseRequest();
+            req.setProcessingItemIds(List.of("pi-001", "pi-002"));
+            AgentProductCreateRequest.AgentProcessingItemConfig c1 = new AgentProductCreateRequest.AgentProcessingItemConfig();
+            c1.setProcessingItemId("pi-001"); c1.setCustomPrice(new BigDecimal("45"));
+            req.setProcessingItemConfigs(List.of(c1));
+
+            productService.createProductForAgent(req, 1L);
+
+            java.util.Map<String, BigDecimal> priceByItem = capturePrices(2);
+            assertThat(priceByItem.get("pi-001")).isEqualByComparingTo("45");
+            assertThat(priceByItem.get("pi-002")).isNull();
         }
     }
 
