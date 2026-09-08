@@ -1861,6 +1861,36 @@ _CASE_KN_003 = EvalCase(
     persona='mibao',
 )
 
+# ── KN-006 [NORMAL] 文档提炼 - 有效售后文本必须产出候选进待确认队列（P1-1 回归，issue #3063）（源: cases/knowledge.yml）──
+_CASE_KN_006 = EvalCase(
+    id='KN-006',
+    legacy_id='',
+    title='文档提炼 - 有效售后文本必须产出候选进待确认队列（P1-1 回归，issue #3063）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家上传售后政策文本后，系统提炼候选知识卡片进入待确认队列'],
+    expectations=['direct_reply'],
+    data_checks=['success=true'],
+    skip_reason='提炼链路由 admin-api/ai-agent 单测 + 生产验收重放验证；LLM 行为 mock。验收实测：部署前后均 candidates:0（P1-1，issue #3063）——修复后重放必须 candidates>0',
+    tags=['knowledge', 'wiki', 'distill'],
+    persona='',
+)
+
+# ── KN-007 [NORMAL] 售后政策类问题走知识卡片检索（双端，P1-2 回归，issue #3064）（源: cases/knowledge.yml）──
+_CASE_KN_007 = EvalCase(
+    id='KN-007',
+    legacy_id='',
+    title='售后政策类问题走知识卡片检索（双端，P1-2 回归，issue #3064）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['你们退换货政策是怎样的？'],
+    expectations=['knowledge_search(query=退换货)'],
+    data_checks=['售后政策/质保类咨询为知识问题：双端应调 knowledge_search 命中本店退换货卡片并标注来源，而非通用售后流程话术；操作类（我要退货/申请退款）仍走售后工单（不回归）'],
+    skip_reason='路由改判由 rule_matcher 单测验证（test_rule_matcher.py 新增 4 例）；LLM 链路待部署后重放。case 有效性验证：旧场景（验收实测无 tool 调用）重放必 fail，修复部署后重放必 pass',
+    tags=['knowledge', 'wiki', 'xiaobu', 'mibao'],
+    persona='',
+)
+
 # ── KN-004 [NORMAL] 米宝知识问答 - 加工计价规则走知识卡片检索（源: cases/knowledge.yml）──
 _CASE_KN_004 = EvalCase(
     id='KN-004',
@@ -3727,6 +3757,8 @@ ALL_CASES = (
     _CASE_KN_001,
     _CASE_KN_002,
     _CASE_KN_003,
+    _CASE_KN_006,
+    _CASE_KN_007,
     _CASE_KN_004,
     _CASE_MC_001,
     _CASE_MC_002,

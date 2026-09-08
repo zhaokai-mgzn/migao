@@ -47,7 +47,9 @@ KEYWORD_MAP: dict[IntentType, list[str]] = {
     # 会话管理（"看看当前有哪些会话" 此前无法触发 session_manage，SE-001 修复）
     IntentType.SESSION_MANAGE: ["客服会话", "在线会话", "排队会话", "历史会话", "会话列表", "会话"],
     IntentType.AFTER_SALES: ["退货", "退款", "换货", "售后", "维修"],
-    IntentType.KNOWLEDGE_FAQ: ["怎么清洗", "怎么安装", "怎么保养", "怎么测量", "怎么选", "如何", "什么是", "为什么", "教程"],
+    IntentType.KNOWLEDGE_FAQ: ["怎么清洗", "怎么安装", "怎么保养", "怎么测量", "怎么选", "如何", "什么是", "为什么", "教程",
+                         # 售后/规则政策咨询（issue #3064 P1-2：双端「退换货政策/质保」此前被 after_sales 关键词抢占）
+                         "退换货政策", "售后政策", "退货政策", "政策", "规则", "质保", "保修", "条款"],
     IntentType.FAREWELL: ["再见", "拜拜", "bye", "goodbye", "下次见", "回见"],
     IntentType.CAPABILITIES: [
         "你能做什么", "你会什么", "你有什么功能", "能帮我做什么",
@@ -147,6 +149,21 @@ class RuleMatcher:
                 confidence=0.95,
                 source="rule",
                 matched_keywords=["尺寸+褶皱"],
+            )
+
+        # ── 售后政策类知识咨询改判（issue #3064 P1-2）──
+        # 「退换货政策/售后政策/质保/保修」等命中 AFTER_SALES 关键词（换货/退货/售后）的
+        # **政策咨询**应路由到 knowledge_faq（走知识卡片检索），而非售后工单操作。
+        # 判定：AFTER_SALES 任一关键词 + 政策咨询词 → KNOWLEDGE_FAQ（确定性改判，不过 L2）。
+        _AFTER_SALES_KEYWORDS = KEYWORD_MAP.get(IntentType.AFTER_SALES, [])
+        _POLICY_HINTS = ("政策", "规则", "质保", "保修", "条款", "标准")
+        if any(kw.lower() in msg_lower for kw in _AFTER_SALES_KEYWORDS) \
+                and any(hint in msg_lower for hint in _POLICY_HINTS):
+            return IntentResult(
+                intent=IntentType.KNOWLEDGE_FAQ,
+                confidence=0.98,
+                source="rule",
+                matched_keywords=["售后政策咨询→知识卡片"],
             )
 
         # 收集所有命中的意图，而不是第一个命中即返回。

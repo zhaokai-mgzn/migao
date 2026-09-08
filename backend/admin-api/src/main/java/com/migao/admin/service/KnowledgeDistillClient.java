@@ -60,12 +60,13 @@ public class KnowledgeDistillClient {
      * @param maxCandidates    单会话提炼上限
      * @return 候选列表（title/answer/category/keywords/confidence/evidence）；失败返回空列表
      */
-    public List<JsonNode> distill(String conversationText, int maxCandidates, Long tenantId) {
+    public List<JsonNode> distill(String conversationText, int maxCandidates, Long tenantId, String mode) {
         try {
             Map<String, Object> body = new HashMap<>();
             body.put("tenant_id", tenantId);
             body.put("conversation_text", conversationText);
             body.put("max_candidates", maxCandidates);
+            body.put("mode", mode);
 
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);

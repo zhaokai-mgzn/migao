@@ -32,8 +32,9 @@ class ToolExecuteRequest(BaseModel):
 class KnowledgeDistillRequest(BaseModel):
     """会话知识提炼请求"""
     tenant_id: int = Field(..., description="租户 ID")
-    conversation_text: str = Field(..., description="客服会话对话文本（顾客/客服轮次）")
+    conversation_text: str = Field(..., description="待提炼文本（客服会话 或 店铺资料文档）")
     max_candidates: int = Field(5, ge=1, le=10, description="最多提炼候选数")
+    mode: str = Field("conversation", description="提炼模式：conversation（客服问答对）/ document（文档→FAQ 条目）")
 
 
 @router.post("/tools/execute")
@@ -157,5 +158,5 @@ async def distill_knowledge(
         f"Knowledge distill triggered: tenant_id={request.tenant_id}, "
         f"text_len={len(request.conversation_text or '')}, max_candidates={request.max_candidates}"
     )
-    candidates = await distill(request.conversation_text, max_candidates=request.max_candidates)
+    candidates = await distill(request.conversation_text, max_candidates=request.max_candidates, mode=request.mode)
     return make_response(True, data={"candidates": candidates})

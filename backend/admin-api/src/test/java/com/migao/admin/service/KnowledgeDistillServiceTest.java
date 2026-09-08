@@ -94,7 +94,7 @@ class KnowledgeDistillServiceTest {
             when(agentMessageMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(
                     AgentMessage.builder().tenantId(1L).sessionId("s1").senderType("customer").content("多久洗一次？").isInternal(false).build(),
                     AgentMessage.builder().tenantId(1L).sessionId("s1").senderType("agent").content("建议每3-6个月清洗一次。").isInternal(false).build()));
-            when(distillClient.distill(anyString(), eq(5), eq(1L))).thenReturn(List.of(
+            when(distillClient.distill(anyString(), eq(5), eq(1L), anyString())).thenReturn(List.of(
                     candidate("窗帘多久洗一次", "建议每 3-6 个月清洗一次。")));
             when(knowledgeCardMapper.selectCount(any(LambdaQueryWrapper.class))).thenReturn(0L);
             when(knowledgeCandidateMapper.selectCount(any(LambdaQueryWrapper.class))).thenReturn(0L);
@@ -125,7 +125,7 @@ class KnowledgeDistillServiceTest {
             when(agentMessageMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(
                     AgentMessage.builder().tenantId(1L).sessionId("s1").senderType("customer").content("Q").isInternal(false).build(),
                     AgentMessage.builder().tenantId(1L).sessionId("s1").senderType("agent").content("A").isInternal(false).build()));
-            when(distillClient.distill(anyString(), eq(5), eq(1L))).thenReturn(List.of(
+            when(distillClient.distill(anyString(), eq(5), eq(1L), anyString())).thenReturn(List.of(
                     candidate("已存在的标题", "答案")));
             // 卡片已存在 → 去重跳过
             when(knowledgeCardMapper.selectCount(any(LambdaQueryWrapper.class))).thenReturn(1L);
@@ -145,13 +145,13 @@ class KnowledgeDistillServiceTest {
             Map<String, Object> result = knowledgeDistillService.distillConversations(1L, 24);
 
             assertThat(result.get("sessions")).isEqualTo(0);
-            verify(distillClient, never()).distill(anyString(), anyInt(), any());
+            verify(distillClient, never()).distill(anyString(), anyInt(), any(), anyString());
         }
 
         @Test
         @DisplayName("文档提炼：文档文本 → 候选（source=document/pending）")
         void distillDocument_createsPendingCandidates() throws Exception {
-            when(distillClient.distill(anyString(), eq(5), eq(1L))).thenReturn(List.of(
+            when(distillClient.distill(anyString(), eq(5), eq(1L), anyString())).thenReturn(List.of(
                     candidate("文档里的知识", "提炼出的标准回答")));
             when(knowledgeCardMapper.selectCount(any(LambdaQueryWrapper.class))).thenReturn(0L);
             when(knowledgeCandidateMapper.selectCount(any(LambdaQueryWrapper.class))).thenReturn(0L);
@@ -173,7 +173,7 @@ class KnowledgeDistillServiceTest {
             assertThatThrownBy(() -> knowledgeDistillService.distillDocument(1L, "t", "太短"))
                     .isInstanceOf(com.migao.admin.exception.BusinessException.class)
                     .hasMessageContaining("过短");
-            verify(distillClient, never()).distill(anyString(), anyInt(), any());
+            verify(distillClient, never()).distill(anyString(), anyInt(), any(), anyString());
         }
 
         @Test
@@ -183,7 +183,7 @@ class KnowledgeDistillServiceTest {
             when(agentSessionMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(session));
             when(agentMessageMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(
                     AgentMessage.builder().tenantId(1L).sessionId("s1").senderType("customer").content("Q").isInternal(false).build()));
-            when(distillClient.distill(anyString(), eq(5), eq(1L))).thenReturn(List.of());
+            when(distillClient.distill(anyString(), eq(5), eq(1L), anyString())).thenReturn(List.of());
 
             Map<String, Object> result = knowledgeDistillService.distillConversations(1L, 24);
 

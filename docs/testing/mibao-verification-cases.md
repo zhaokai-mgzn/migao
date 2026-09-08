@@ -1447,7 +1447,7 @@
 真值: employee-role.users-endpoint
 溯源: 2026-09-07 新增：员工管理混入 C 端消费者账号治理（issue #3004） ｜ tags: employee, list, scoping
 
-## knowledge（4 case）
+## knowledge（6 case）
 
 ### KN-001. 小布知识问答 - 面料问题先检索本店知识卡片（query 必填） 🟢
 ```
@@ -1473,6 +1473,24 @@
 数据: 米宝知识问答走知识卡片检索（B 端 skill 接线不可回退）；命中基于卡片回答，未命中通用兜底不编造本店事实
 ```
 溯源: 2026-09-08 新增（issue #3059）：米宝启用 knowledge skill 后的接线回归——防止 future 再次注释禁用导致 B 端知识问答静默退化 ｜ tags: knowledge, wiki, smoke, mibao
+
+### KN-006. 文档提炼 - 有效售后文本必须产出候选进待确认队列（P1-1 回归，issue #3063） 🔵
+```
+你: 商家上传售后政策文本后，系统提炼候选知识卡片进入待确认队列
+期望: direct_reply
+数据: success=true
+跳过: 提炼链路由 admin-api/ai-agent 单测 + 生产验收重放验证；LLM 行为 mock。验收实测：部署前后均 candidates:0（P1-1，issue #3063）——修复后重放必须 candidates>0
+```
+溯源: 2026-09-08 新增（issue #3063 验收 P1-1）：文档提炼生产 0 候选——case 有效性验证：旧场景重放必 fail（0 候选），修复后重放必 pass ｜ tags: knowledge, wiki, distill
+
+### KN-007. 售后政策类问题走知识卡片检索（双端，P1-2 回归，issue #3064） 🔵
+```
+你: 你们退换货政策是怎样的？
+期望: knowledge_search(query=退换货)
+数据: 售后政策/质保类咨询为知识问题：双端应调 knowledge_search 命中本店退换货卡片并标注来源，而非通用售后流程话术；操作类（我要退货/申请退款）仍走售后工单（不回归）
+跳过: 路由改判由 rule_matcher 单测验证（test_rule_matcher.py 新增 4 例）；LLM 链路待部署后重放。case 有效性验证：旧场景（验收实测无 tool 调用）重放必 fail，修复部署后重放必 pass
+```
+溯源: 2026-09-08 新增（issue #3064 验收 P1-2）：双端售后政策类问题未走知识卡片——根因 rule_matcher AFTER_SALES 关键词抢占（换货/售后），规则层加政策咨询改判 KNOWLEDGE_FAQ ｜ tags: knowledge, wiki, xiaobu, mibao
 
 ### KN-004. 米宝知识问答 - 加工计价规则走知识卡片检索 🔵
 ```
@@ -2907,8 +2925,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：237（活跃 119，跳过 118）
-- tier 分布：smoke 10 / normal 198 / adversarial 29
+- 用例总数：239（活跃 119，跳过 120）
+- tier 分布：smoke 10 / normal 200 / adversarial 29
 - 售后域：7
 - agents：6
 - api：20
@@ -2921,7 +2939,7 @@
 - 防御域：18
 - finance：4
 - 人事域：7
-- knowledge：4
+- knowledge：6
 - misc：15
 - onboarding：5
 - ontology：4
@@ -2954,6 +2972,8 @@
 - KN-001: 小布知识问答 - 面料问题先检索本店知识卡片（query 必填）
 - KN-002: 小布知识问答 - 清洗保养类问题走知识卡片检索
 - KN-003: 米宝知识问答 - 本店售后政策先检索知识卡片（B 端接线回归，issue #3059）
+- KN-006: 文档提炼 - 有效售后文本必须产出候选进待确认队列（P1-1 回归，issue #3063）
+- KN-007: 售后政策类问题走知识卡片检索（双端，P1-2 回归，issue #3064）
 - KN-004: 米宝知识问答 - 加工计价规则走知识卡片检索
 - MC-012: CI 失败报告去重 - 同日同标题 open issue 存在时不重复建
 

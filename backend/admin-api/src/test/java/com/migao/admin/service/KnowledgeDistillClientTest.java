@@ -45,7 +45,7 @@ class KnowledgeDistillClientTest {
                         + "]}}"));
 
         List<com.fasterxml.jackson.databind.JsonNode> candidates =
-                client.distill("顾客：x\n客服：y", 5, 1L);
+                client.distill("顾客：x\n客服：y", 5, 1L, "conversation");
 
         assertThat(candidates).hasSize(2);
         assertThat(candidates.get(0).path("title").asText()).isEqualTo("T1");
@@ -59,7 +59,7 @@ class KnowledgeDistillClientTest {
                 .thenReturn(ResponseEntity.ok("{\"success\":false,\"error\":{\"code\":\"X\"}}"));
 
         List<com.fasterxml.jackson.databind.JsonNode> candidates =
-                client.distill("文本", 5, 1L);
+                client.distill("文本", 5, 1L, "document");
 
         assertThat(candidates).isEmpty();
     }
@@ -72,7 +72,7 @@ class KnowledgeDistillClientTest {
                 .thenThrow(new RuntimeException("connection refused"));
 
         List<com.fasterxml.jackson.databind.JsonNode> candidates =
-                client.distill("文本", 5, 1L);
+                client.distill("文本", 5, 1L, "document");
 
         assertThat(candidates).isEmpty();
     }

@@ -105,6 +105,65 @@ cases:
         - pr-check.yml
       verifies: []
 
+  - id: KN-006
+    legacy_id: ""
+    title: "文档提炼 - 有效售后文本必须产出候选进待确认队列（P1-1 回归，issue #3063）"
+    domains:
+      - api
+      - knowledge
+    tier: normal
+    tags:
+      - knowledge
+      - wiki
+      - distill
+    truths_ref: []
+    persona: ""
+    user_inputs:
+      - "商家上传售后政策文本后，系统提炼候选知识卡片进入待确认队列"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "success=true"
+    skip_reason: "提炼链路由 admin-api/ai-agent 单测 + 生产验收重放验证；LLM 行为 mock。验收实测：部署前后均 candidates:0（P1-1，issue #3063）——修复后重放必须 candidates>0"
+    merge_log: "2026-09-08 新增（issue #3063 验收 P1-1）：文档提炼生产 0 候选——case 有效性验证：旧场景重放必 fail（0 候选），修复后重放必 pass"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_knowledge_distill.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: KN-007
+    legacy_id: ""
+    title: "售后政策类问题走知识卡片检索（双端，P1-2 回归，issue #3064）"
+    domains:
+      - knowledge
+      - chat
+    tier: normal
+    tags:
+      - knowledge
+      - wiki
+      - xiaobu
+      - mibao
+    truths_ref: []
+    persona: ""
+    user_inputs:
+      - "你们退换货政策是怎样的？"
+    expectations:
+      - tool: knowledge_search
+        args:
+          query: 退换货
+    data_checks:
+      - "售后政策/质保类咨询为知识问题：双端应调 knowledge_search 命中本店退换货卡片并标注来源，而非通用售后流程话术；操作类（我要退货/申请退款）仍走售后工单（不回归）"
+    skip_reason: "路由改判由 rule_matcher 单测验证（test_rule_matcher.py 新增 4 例）；LLM 链路待部署后重放。case 有效性验证：旧场景（验收实测无 tool 调用）重放必 fail，修复部署后重放必 pass"
+    merge_log: "2026-09-08 新增（issue #3064 验收 P1-2）：双端售后政策类问题未走知识卡片——根因 rule_matcher AFTER_SALES 关键词抢占（换货/售后），规则层加政策咨询改判 KNOWLEDGE_FAQ"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_rule_matcher.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
   - id: KN-004
     legacy_id: ""
     title: "米宝知识问答 - 加工计价规则走知识卡片检索"
