@@ -1451,6 +1451,21 @@ _CASE_DF_017 = EvalCase(
     persona='',
 )
 
+# ── DF-018 [ADVERSARIAL] 长会话确认守卫不被污染 - 会话长度提示不得拼入用户消息，保证确认词可识别（源: cases/defense.yml）──
+_CASE_DF_018 = EvalCase(
+    id='DF-018',
+    legacy_id='',
+    title='长会话确认守卫不被污染 - 会话长度提示不得拼入用户消息，保证确认词可识别',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.ADVERSARIAL,
+    user_inputs=['（长会话）确认补充商品属性', '（长会话，>20 条消息）确认'],
+    expectations=['product_manage'],
+    data_checks=['会话消息数 >20 时最后一条用户消息content不被追加任何提示文本（无「当前对话已持续」字样）', '长会话下确认词仍被 _is_explicit_confirmation 识别为明确确认（长度不超限）'],
+    skip_reason='',
+    tags=['defense', 'confirm', 'multi_turn', 'regression'],
+    persona='',
+)
+
 # ── FN-001 [NORMAL] 资金流水查询与登记（源: cases/finance.yml）──
 _CASE_FN_001 = EvalCase(
     id='FN-001',
@@ -3331,6 +3346,7 @@ ALL_CASES = (
     _CASE_DF_015,
     _CASE_DF_016,
     _CASE_DF_017,
+    _CASE_DF_018,
     _CASE_FN_001,
     _CASE_FN_002,
     _CASE_FN_003,

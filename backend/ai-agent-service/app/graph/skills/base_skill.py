@@ -955,10 +955,8 @@ async def execute_skill(
             logger.warning(f"[{skill_name}] Input truncated: {len(content)}→{MAX_USER_INPUT_LEN} | session={session_id}")
 
     # 超过消息数上限时裁剪 + 友善提醒
-    session_truncated = False
     if len(raw_messages) > MAX_CONVERSATION_MSGS:
         raw_messages = list(raw_messages[-MAX_CONVERSATION_MSGS:])
-        session_truncated = True
         truncation_msg = (
             f"⚠️ 对话已达 {len(state.get('messages',[]))} 轮，历史记录已自动裁剪。"
             f"早期对话内容无法再被引用。建议新建会话以获得最佳体验。"
@@ -966,18 +964,10 @@ async def execute_skill(
         raw_messages.insert(0, SystemMessage(content=truncation_msg))
         logger.warning(f"[{skill_name}] History truncated: {len(state.get('messages',[]))}→{MAX_CONVERSATION_MSGS} msgs | session={session_id}")
 
-    # 接近上限时提醒：20 条后每次对话追加提示
-    SESSION_LENGTH_HINT = 20
-    if len(raw_messages) > SESSION_LENGTH_HINT and not session_truncated:
-        hint = (
-            f"\n\n---\n"
-            f"💡 当前对话已持续 {len(raw_messages)} 轮，上下文较长可能导致响应变慢、对早期内容记忆减弱。\n"
-            f"建议点击右上角「新建会话」开始新对话，处理效率更高。"
-        )
-        if isinstance(raw_messages[-1], HumanMessage):
-            raw_messages[-1] = HumanMessage(
-                content=(getattr(raw_messages[-1], 'content', '') or '') + hint
-            )
+    # 会话长度提示已移除（2026-09-08 sess_c1fce183dae24f22 复盘）：
+    # 旧实现把「当前对话已持续 N 轮」提示拼入最新用户消息，污染确认守卫判定
+    # （长度 >24 无法识别为确认 → 长会话写操作确认被反复拦截、死循环）。
+    # 不再计算/拼接会话长度提示，用户消息原样保留。
 
     # ── 1. 上下文 & 工具准备 ──
     from app.memory.session_memory import SessionMemory  # noqa: F811 — 函数内多处使用
