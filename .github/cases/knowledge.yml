@@ -75,15 +75,14 @@ cases:
 
   - id: KN-003
     legacy_id: ""
-    title: "米宝知识问答 - 本店售后政策先检索知识卡片（B 端接线回归，issue #3059）"
+    title: "米宝知识问答 - 本店售后政策先检索知识卡片（B 端接线回归，issue #3059，normal 每日回归）"
     domains:
       - knowledge
       - chat
-    tier: smoke
+    tier: normal
     tags:
       - knowledge
       - wiki
-      - smoke
       - mibao
     truths_ref: []
     persona: mibao
@@ -96,7 +95,7 @@ cases:
     data_checks:
       - "米宝知识问答走知识卡片检索（B 端 skill 接线不可回退）；命中基于卡片回答，未命中通用兜底不编造本店事实"
     skip_reason: ""
-    merge_log: "2026-09-08 新增（issue #3059）：米宝启用 knowledge skill 后的接线回归——防止 future 再次注释禁用导致 B 端知识问答静默退化"
+    merge_log: "2026-09-08 新增（issue #3059）：米宝启用 knowledge skill 后的接线回归——防止 future 再次注释禁用导致 B 端知识问答静默退化。tier=normal：PR gate 的 smoke 跑生产部署服务（非 PR 分支），米宝接线合入部署后由每日 normal 回归守护"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_knowledge_search.py"

@@ -1846,18 +1846,18 @@ _CASE_KN_002 = EvalCase(
     persona='xiaobu',
 )
 
-# ── KN-003 [SMOKE] 米宝知识问答 - 本店售后政策先检索知识卡片（B 端接线回归，issue #3059）（源: cases/knowledge.yml）──
+# ── KN-003 [NORMAL] 米宝知识问答 - 本店售后政策先检索知识卡片（B 端接线回归，issue #3059，normal 每日回归）（源: cases/knowledge.yml）──
 _CASE_KN_003 = EvalCase(
     id='KN-003',
     legacy_id='',
-    title='米宝知识问答 - 本店售后政策先检索知识卡片（B 端接线回归，issue #3059）',
+    title='米宝知识问答 - 本店售后政策先检索知识卡片（B 端接线回归，issue #3059，normal 每日回归）',
     skill=Skill.GENERAL,
-    difficulty=Difficulty.SMOKE,
+    difficulty=Difficulty.NORMAL,
     user_inputs=['我们店的退换货政策是什么？'],
     expectations=['knowledge_search(query=退换货)'],
     data_checks=['米宝知识问答走知识卡片检索（B 端 skill 接线不可回退）；命中基于卡片回答，未命中通用兜底不编造本店事实'],
     skip_reason='',
-    tags=['knowledge', 'wiki', 'smoke', 'mibao'],
+    tags=['knowledge', 'wiki', 'mibao'],
     persona='mibao',
 )
 
