@@ -207,7 +207,7 @@ describe('useResizableWidth', () => {
     expect(result.current.containerStyle.width).toBe('544px')
   })
 
-  // ── UI-029：残留尺寸视口钳制 —— 窗口变化后不留死白/不溢出（issue #3021）──
+// ── UI-029：残留尺寸视口钳制 —— 窗口变化后不留死白/不溢出（issue #3021）──
 
   it('mount 时把超过视口的残留宽度钳制到视口上限', () => {
     localStorage.setItem(STORAGE_KEY, '1900')
@@ -235,6 +235,25 @@ describe('useResizableWidth', () => {
     act(() => { window.dispatchEvent(new Event('resize')) })
     expect(result.current.containerStyle.width).toBe('800px')
     Object.defineProperty(window, 'innerWidth', { value: 1024, writable: true, configurable: true })
+  })
+
+  it('persisted width within viewport → unchanged（未传 maxWidth 时以视口为上限）', () => {
+    localStorage.setItem(STORAGE_KEY, '700')
+    const { result } = renderHook(() =>
+      useResizableWidth({ storageKey: STORAGE_KEY, defaultWidth: '100%', minWidth: 480, maxWidth: 900 })
+    )
+    expect(result.current.containerStyle.width).toBe('700px')
+  })
+
+  it('explicit maxWidth smaller than viewport wins over viewport clamp', () => {
+    const orig = window.innerWidth
+    Object.defineProperty(window, 'innerWidth', { value: 1000, writable: true, configurable: true })
+    localStorage.setItem(STORAGE_KEY, '1200')
+    const { result } = renderHook(() =>
+      useResizableWidth({ storageKey: STORAGE_KEY, defaultWidth: '100%', minWidth: 480, maxWidth: 850 })
+    )
+    expect(result.current.containerStyle.width).toBe('850px')
+    Object.defineProperty(window, 'innerWidth', { value: orig, writable: true, configurable: true })
   })
 
   it('无残留宽度时钳制不生效（保持 defaultWidth）', () => {

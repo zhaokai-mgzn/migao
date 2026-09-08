@@ -148,6 +148,8 @@ export function useResizableWidth({
   }, [minWidth, maxWidthProp])
 
   const containerStyle = {
+    // UI-029 状态层已钳制（clampToViewport）：残留宽度 ≤ min(maxWidth, 当前视口宽)，
+    // 渲染层直接输出即可，不重复钳制
     width: storedWidth !== null ? `${storedWidth}px` : defaultWidth,
   }
 

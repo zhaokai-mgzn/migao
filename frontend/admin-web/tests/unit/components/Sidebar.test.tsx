@@ -190,6 +190,44 @@ describe('Sidebar', () => {
     expect(getActiveClass(link)).toContain('bg-primary-600')
   })
 
+  // ── 前缀嵌套路由互斥单高亮（用户报障：/chat/config 下 /chat 与 /chat/config 同时高亮）──
+
+  it('/chat/config 时仅「AI 客服配置」高亮，「米宝 · 在线对话」不再同时高亮', () => {
+    mockUsePathname.mockReturnValue('/chat/config')
+    render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
+    const configLink = screen.getByText('AI 客服配置').closest('a')!
+    const chatLink = screen.getByText('米宝 · 在线对话').closest('a')!
+    expect(getActiveClass(configLink)).toContain('bg-primary-600')
+    expect(getActiveClass(chatLink)).not.toContain('bg-primary-600')
+  })
+
+  it('/chat 时仅「米宝 · 在线对话」高亮', () => {
+    mockUsePathname.mockReturnValue('/chat')
+    render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
+    const chatLink = screen.getByText('米宝 · 在线对话').closest('a')!
+    const configLink = screen.getByText('AI 客服配置').closest('a')!
+    expect(getActiveClass(chatLink)).toContain('bg-primary-600')
+    expect(getActiveClass(configLink)).not.toContain('bg-primary-600')
+  })
+
+  it('任意时刻侧边栏有且仅有一个高亮菜单项（/chat/config）', () => {
+    mockUsePathname.mockReturnValue('/chat/config')
+    render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
+    const links = Array.from(document.querySelectorAll('nav a'))
+    const activeLinks = links.filter((a) => a.className.includes('bg-primary-600'))
+    expect(activeLinks).toHaveLength(1)
+    expect(activeLinks[0].textContent).toContain('AI 客服配置')
+  })
+
+  it('/orders/new 时「订单列表」高亮（嵌套路由前缀匹配回归保护）', () => {
+    mockUsePathname.mockReturnValue('/orders/new')
+    render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
+    const ordersLink = screen.getByText('订单列表').closest('a')!
+    const afterSalesLink = screen.getByText('售后工单').closest('a')!
+    expect(getActiveClass(ordersLink)).toContain('bg-primary-600')
+    expect(getActiveClass(afterSalesLink)).not.toContain('bg-primary-600')
+  })
+
   // ── 分组折叠/展开 ──
 
   it('should toggle group expansion when clicking group header', async () => {

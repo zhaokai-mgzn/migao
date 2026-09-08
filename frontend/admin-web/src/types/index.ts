@@ -597,6 +597,7 @@ export interface OrderFormData {
   customerPhone: string
   customerAddress?: string
   actualAmount?: number           // 实收款（用户输入的实际收款金额）
+  discountAmount?: number         // 优惠金额（后端校验 应收-优惠≈实收，必须随单携带）
   remark?: string
   items: OrderItemFormData[]
 }

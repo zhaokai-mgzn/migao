@@ -110,6 +110,9 @@ describe('useResizableHeight', () => {
     vi.spyOn(document, 'addEventListener').mockImplementation((event: string, handler: any) => {
       if (event === 'mousemove') capturedMoveHandler = handler as (e: MouseEvent) => void
     })
+    // 视口大于 maxHeight，排除视口钳制干扰（jsdom 默认 innerHeight=768 < 800）
+    const orig = window.innerHeight
+    Object.defineProperty(window, 'innerHeight', { value: 900, writable: true, configurable: true })
     const { result } = renderHook(() =>
       useResizableHeight({ storageKey: STORAGE_KEY, defaultHeight: '70vh', minHeight: 300, maxHeight: 800 })
     )
@@ -121,6 +124,7 @@ describe('useResizableHeight', () => {
     act(() => { result.current.handleProps.onMouseDown(fakeEvent) })
     act(() => { capturedMoveHandler!({ clientY: 1000 } as MouseEvent) })
     expect(result.current.containerStyle.height).toBe('800px')
+    Object.defineProperty(window, 'innerHeight', { value: orig, writable: true, configurable: true })
   })
 
   it('persists height to localStorage on mouseup', () => {
@@ -239,6 +243,9 @@ describe('useResizableHeight', () => {
 
   // ── setHeight API（UI-020 右下角斜向缩放共用）──
   it('setHeight clamps to min/max and updates container style', () => {
+    // 视口大于 maxHeight，排除视口钳制干扰（jsdom 默认 innerHeight=768 < 900）
+    const orig = window.innerHeight
+    Object.defineProperty(window, 'innerHeight', { value: 1000, writable: true, configurable: true })
     const { result } = renderHook(() =>
       useResizableHeight({ storageKey: STORAGE_KEY, defaultHeight: '70vh', minHeight: 300, maxHeight: 900 })
     )
@@ -248,6 +255,7 @@ describe('useResizableHeight', () => {
     expect(result.current.containerStyle.height).toBe('300px')
     act(() => { result.current.setHeight(5000) })
     expect(result.current.containerStyle.height).toBe('900px')
+    Object.defineProperty(window, 'innerHeight', { value: orig, writable: true, configurable: true })
   })
 
   it('setHeight defaults max to window.innerHeight when maxHeight not provided', () => {
@@ -269,7 +277,7 @@ describe('useResizableHeight', () => {
     expect(result.current.containerStyle.height).toBe('544px')
   })
 
-  // ── UI-029：残留尺寸视口钳制 —— 窗口变化后不留死白/不溢出（issue #3021）──
+// ── UI-029：残留尺寸视口钳制 —— 窗口变化后不留死白/不溢出（issue #3021）──
 
   it('mount 时把超过视口的残留高度钳制到视口上限', () => {
     localStorage.setItem(STORAGE_KEY, '2000')
@@ -297,6 +305,25 @@ describe('useResizableHeight', () => {
     act(() => { window.dispatchEvent(new Event('resize')) })
     expect(result.current.containerStyle.height).toBe('600px')
     Object.defineProperty(window, 'innerHeight', { value: 768, writable: true, configurable: true })
+  })
+
+  it('persisted height within viewport → unchanged（未传 maxHeight 时以视口为上限）', () => {
+    localStorage.setItem(STORAGE_KEY, '500')
+    const { result } = renderHook(() =>
+      useResizableHeight({ storageKey: STORAGE_KEY, defaultHeight: '85vh', minHeight: 300, maxHeight: 900 })
+    )
+    expect(result.current.containerStyle.height).toBe('500px')
+  })
+
+  it('explicit maxHeight smaller than viewport wins over viewport clamp', () => {
+    const orig = window.innerHeight
+    Object.defineProperty(window, 'innerHeight', { value: 1000, writable: true, configurable: true })
+    localStorage.setItem(STORAGE_KEY, '1200')
+    const { result } = renderHook(() =>
+      useResizableHeight({ storageKey: STORAGE_KEY, defaultHeight: '85vh', minHeight: 300, maxHeight: 850 })
+    )
+    expect(result.current.containerStyle.height).toBe('850px')
+    Object.defineProperty(window, 'innerHeight', { value: orig, writable: true, configurable: true })
   })
 
   it('无残留高度时钳制不生效（保持 defaultHeight）', () => {

@@ -159,6 +159,8 @@ export function useResizableHeight({
   }, [minHeight, maxHeightProp])
 
   const containerStyle = {
+    // UI-029 状态层已钳制（clampToViewport）：残留高度 ≤ min(maxHeight, 当前视口高)，
+    // 渲染层直接输出即可，不重复钳制
     height: storedHeight !== null ? `${storedHeight}px` : defaultHeight,
   }
 

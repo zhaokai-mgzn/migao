@@ -105,12 +105,28 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
       return hasPermission(item.permissionCode)
     })
 
-  const isActive = (path: string) => {
-    if (path === '/dashboard') {
-      return pathname === '/dashboard' || pathname === '/'
+  // 激活判定：前缀匹配（'/chat' 匹配 '/chat/config'）+ 最长前缀互斥单高亮。
+  // 修复：/chat/config 下 '/chat' 与 '/chat/config' 同时 startsWith 命中 → 双高亮。
+  // 规则：当前路由在所有可见菜单项中只激活「最长匹配路径」的那一项。
+  const matchesRoute = (itemPath: string, current: string) => {
+    if (itemPath === '/dashboard') {
+      return current === '/dashboard' || current === '/'
     }
-    return pathname.startsWith(path)
+    return current === itemPath || current.startsWith(itemPath + '/')
   }
+
+  const activePath = (() => {
+    const allPaths = [
+      ...menuGroups.flatMap((g) => filterItems(g.children).map((i) => i.path)),
+      ...filterItems(standaloneItems).map((i) => i.path),
+    ]
+    const hits = allPaths.filter((p) => matchesRoute(p, pathname))
+    if (hits.length === 0) return null
+    // 最长前缀胜出（路径互异，长度相同不可能同时命中）
+    return hits.reduce((a, b) => (b.length > a.length ? b : a))
+  })()
+
+  const isActive = (path: string) => activePath === path
 
   return (
     <aside
