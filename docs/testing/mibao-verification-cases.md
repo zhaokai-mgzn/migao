@@ -1608,7 +1608,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（14 case）
+## 订单域（15 case）
 
 ### OR-001. 订单列表查询 🟢
 ```
@@ -1772,6 +1772,19 @@
 ```
 真值: order.states, order.create-flow, processing-manage.crud
 溯源: 2026-09-07 改写（issue #3005，回滚 #2986）：行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米加工费中——回滚 per_piece 与「每米数量」密度（数量=ceil(面料米数×密度) 与实际车间工艺不符、数量隐藏导致 B 端无法对账），数量改为按计价方式派生且展示（per_meter=面料米数、per_set/fixed=1） ｜ tags: order_create, processing_item, pricing
+
+### OR-015. order_create 写操作前置校验必须真正执行（validate_input 规则分层修复，issue #3029 复盘） 🔵
+```
+你: 创建订单，张三 13800138000 遮光窗帘 3 米
+期望: validate_input
+期望: order_create
+数据: validate_input(target_tool=order_create, target_action=create) 必须真正执行必填与类型校验：缺少 customer_name/customer_phone/items 任一 → 校验失败并给出缺失字段列表
+数据: customer_phone 非 11 位手机号（或不以 1 开头）→ 校验失败提示「请输入 11 位中国大陆手机号」
+数据: 合法参数（customer_name + 11 位 phone + items 非空列表）→ 校验通过 validated=true
+数据: 禁止返回「无需校验（该操作无预定义规则）」跳过（平铺结构 vs 分层读取不匹配的回归防线，sess_7f27137647e14b1e A5 轮实证）
+```
+真值: order.create-flow
+溯源: 2026-09-08 新增（issue #3029 复盘）：_VALIDATION_RULES[order_create] 平铺结构而 execute 按 tool_rules.get(target_action) 分层读取 → 校验永远空转，手机号/必填空转；修复为 {create: {...}} 分层并对齐 product_manage，补 L2 单测 ｜ tags: order_create, validate_input, defense
 
 ## 加工项域（6 case）
 
@@ -2650,8 +2663,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：215（活跃 111，跳过 104）
-- tier 分布：smoke 8 / normal 178 / adversarial 29
+- 用例总数：216（活跃 112，跳过 104）
+- tier 分布：smoke 8 / normal 179 / adversarial 29
 - 售后域：6
 - agents：6
 - api：12
@@ -2667,7 +2680,7 @@
 - misc：15
 - onboarding：5
 - ontology：4
-- 订单域：14
+- 订单域：15
 - 加工项域：6
 - 商品域：19
 - registry：1

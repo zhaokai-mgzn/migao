@@ -502,3 +502,36 @@ cases:
       ci:
         - agent-eval.yml
       verifies: []
+
+  - id: OR-015
+    legacy_id: ""
+    title: "order_create 写操作前置校验必须真正执行（validate_input 规则分层修复，issue #3029 复盘）"
+    domains:
+      - order
+      - chat
+    tier: normal
+    tags:
+      - order_create
+      - validate_input
+      - defense
+    truths_ref:
+      - order.create-flow
+    user_inputs:
+      - "创建订单，张三 13800138000 遮光窗帘 3 米"
+    expectations:
+      - tool: validate_input
+      - tool: order_create
+    data_checks:
+      - "validate_input(target_tool=order_create, target_action=create) 必须真正执行必填与类型校验：缺少 customer_name/customer_phone/items 任一 → 校验失败并给出缺失字段列表"
+      - "customer_phone 非 11 位手机号（或不以 1 开头）→ 校验失败提示「请输入 11 位中国大陆手机号」"
+      - "合法参数（customer_name + 11 位 phone + items 非空列表）→ 校验通过 validated=true"
+      - "禁止返回「无需校验（该操作无预定义规则）」跳过（平铺结构 vs 分层读取不匹配的回归防线，sess_7f27137647e14b1e A5 轮实证）"
+    skip_reason: ""
+    merge_log: "2026-09-08 新增（issue #3029 复盘）：_VALIDATION_RULES[order_create] 平铺结构而 execute 按 tool_rules.get(target_action) 分层读取 → 校验永远空转，手机号/必填空转；修复为 {create: {...}} 分层并对齐 product_manage，补 L2 单测"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_validate_input.py"
+        - "backend/ai-agent-service/tests/test_tools_order_create_validation.py"
+      ci:
+        - ai-agent-tests.yml
+      verifies: []
