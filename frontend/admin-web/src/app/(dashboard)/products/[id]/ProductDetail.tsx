@@ -402,12 +402,17 @@ export default function ProductDetailPage() {
             <div className="bg-neutral-50 rounded-lg p-4">
               <h3 className="text-sm font-semibold text-neutral-700 mb-2">加工项</h3>
               <div className="space-y-2">
-                {product.processingItemConfigs.map((cfg, idx) => (
-                  <div key={idx} className="flex items-center justify-between text-sm">
-                    <span className="font-medium text-neutral-800">{cfg.processingItemName || '未知加工项'}</span>
-                    <span className="text-primary-600 font-medium">¥{cfg.customPrice?.toFixed(2) || '0.00'}/米</span>
-                  </div>
-                ))}
+                {product.processingItemConfigs.map((cfg, idx) => {
+                  // 价格回退：customPrice 优先，为空回退加工项默认单价（AI 建品未带自定义价时）
+                  const price = Number(cfg.finalPrice ?? cfg.customPrice ?? cfg.unitPrice ?? 0)
+                  const unit = cfg.unit || '项'
+                  return (
+                    <div key={idx} className="flex items-center justify-between text-sm">
+                      <span className="font-medium text-neutral-800">{cfg.processingItemName || '未知加工项'}</span>
+                      <span className="text-primary-600 font-medium">¥{price.toFixed(2)}/{unit}</span>
+                    </div>
+                  )
+                })}
               </div>
             </div>
           )}

@@ -2561,6 +2561,21 @@ _CASE_PR_018 = EvalCase(
     persona='',
 )
 
+# ── PR-019 [NORMAL] 建品规格与加工项价格落库 — 推理属性经 specifications 落库、加工项经 processing_item_configs 携带价格（源: cases/product.yml）──
+_CASE_PR_019 = EvalCase(
+    id='PR-019',
+    legacy_id='',
+    title='建品规格与加工项价格落库 — 推理属性经 specifications 落库、加工项经 processing_item_configs 携带价格',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['根据这张图片录入商品（色卡图，可识别材质/克重）', '商品名称: 2699系列雪尼尔窗帘面料\\n单价(元/米): 23.8\\n颜色…门幅…', '已选加工项：刺绣工艺 ¥30/平方米、波浪定型 ¥8/米', '确认创建'],
+    expectations=['product_manage(action=create)'],
+    data_checks=['create 参数含 specifications（材质/克重/工艺等推理属性，随 specs 落库到 product_attributes，非仅展示）', 'create 参数含 processing_item_configs（含 customPrice=加工项默认单价 unit_price、unit=真实单位），禁止只传 processing_item_ids 名称列表', '商品详情接口 processingItemConfigs 回填 unitPrice/finalPrice（customPrice 空时 finalPrice=unitPrice），前端展示非 ¥0.00 且单位正确'],
+    skip_reason='',
+    tags=['product_create', 'specifications', 'processing_item', 'regression'],
+    persona='',
+)
+
 # ── RG-001 [NORMAL] ToolRegistry 注册/查询/执行审计（源: cases/registry.yml）──
 _CASE_RG_001 = EvalCase(
     id='RG-001',
@@ -3420,6 +3435,7 @@ ALL_CASES = (
     _CASE_PR_016,
     _CASE_PR_017,
     _CASE_PR_018,
+    _CASE_PR_019,
     _CASE_RG_001,
     _CASE_ST_001,
     _CASE_ST_002,

@@ -9,7 +9,7 @@
 
 改动 references/ 下的 Prompt 文件后运行此测试即可发现意外变更。
 """
-# case_ids: MC-003, MC-010, CH-003, CH-018
+# case_ids: MC-003, MC-010, CH-003, CH-018, PR-019
 
 import pytest
 
@@ -53,13 +53,14 @@ def test_skill_has_principles(skill):
 
 @pytest.mark.parametrize("skill", MIBAO_SKILLS)
 def test_skill_prompt_length_reasonable(skill):
-    """Prompt 长度在合理范围（200-10500 字符）
+    """Prompt 长度在合理范围（200-10800 字符）
 
     2026-09-03 上限 9500→10500：product 累积澄清话术（#2784）+ 承诺边界（#2785）
     达 9586，9500 误报；10500 仍防失控膨胀（正常增量 ~几百字符/PR）。
+    2026-09-08 上限 10500→10800：product 建品规格落库 + 加工项价格配置规则（#3027），达 10732。
     """
     prompt = _build_system_prompt(skill)
-    assert 200 < len(prompt) < 10500, f"{skill}: prompt 长度异常 ({len(prompt)} chars)"
+    assert 200 < len(prompt) < 10800, f"{skill}: prompt 长度异常 ({len(prompt)} chars)"
 
 
 # ============ 领域隔离检查 ============
@@ -138,6 +139,31 @@ def test_product_image_create_wording_unified():
     assert "不做二次确认" not in prompt, "product prompt 出现旧矛盾措辞『不做二次确认』"
 
 
+def test_product_create_carries_inferred_specifications():
+    """图片建品：推理属性必须随 create 传入 specifications（sess_c1fce183dae24f22 复盘）。
+
+    旧缺陷：prompt 要求预填表单展示推理属性（材质/克重等），但未要求 create 时
+    把这些推理属性经 specifications 落库 → 商品规格（product_attributes）为空，
+    用户需事后补一次「给这个商品生成商品属性」。
+    """
+    prompt = _build_system_prompt("product")
+    # 图片建品的推理属性必须带入 create 的 specifications
+    assert "specifications" in prompt, "product prompt 未提及 specifications 参数"
+    assert "推理" in prompt, "product prompt 未要求携带图片推理属性"
+
+
+def test_product_create_carries_processing_item_configs():
+    """建品：加工项必须经 processing_item_configs 传入（含价格），禁止只传名称列表（sess_c1fce183dae24f22 复盘）。
+
+    旧缺陷：prompt 要求 create 时只传 processing_item_ids=[名称] → 商品加工项
+    custom_price 全 NULL → 详情页展示 ¥0.00。加工项选择器已展示价格，必须一并落库。
+    """
+    prompt = _build_system_prompt("product")
+    assert "processing_item_configs" in prompt, "product prompt 未要求创建时携带加工项价格配置"
+    # 价格需从查询结果取真实 unit_price，禁止编造
+    assert "unit_price" in prompt or "unitPrice" in prompt, "product prompt 未要求取加工项真实默认单价"
+
+
 # ============ Prompt 增量快照 ============
 
 def test_snapshot_all_skills():
@@ -167,7 +193,7 @@ def test_snapshot_all_skills():
 
     # 最大长度快照（防止无限制膨胀）
     expected_max = {
-        "product": 10500,  # +400: 澄清话术(#2784)+承诺边界(#2785) + 加工项主动询问增强（issue #2892，达 9985）
+        "product": 10800,  # +400: 澄清话术(#2784)+承诺边界(#2785) + 加工项主动询问增强（issue #2892，达 9985）+ 建品规格/加工项价格规则（#3027，达 10732）
         "order": 8600,    # +600: 加工项数量自动推导与用户零感知（issue #2986，per_piece 密度推导 + 确认卡仅展示名称与金额）
         "aftersales": 5600,  # +700: 禁英文枚举全局规则 + 售后工单枚举中文对照 + 退货库存规则（issue #2991 定制退货不可再售/不回补）
         "customer": 5000,  # +500: 禁英文枚举全局规则（共享原则增长）

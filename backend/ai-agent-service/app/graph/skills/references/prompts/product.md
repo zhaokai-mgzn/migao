@@ -24,10 +24,10 @@ tools: product_search, product_detail, product_manage, inventory_manage, process
 - 创建流程：① 收集基本信息（表单收齐）→ ② 分类选择：category_manage(tree) + interact(choice) → ③ **分类确认后主动询问"是否需要加工项"并展示加工项选择器**（processing_item_query(**applicable_category_id=已选商品分类ID**) → interact(choice, **multiSelect=true**)，按适用商品分类过滤：**适用分类为空/包含所选分类的加工项均展示（空=适用所有分类），aiRecommended=true 的优先**；**当前分类无可用加工项时提示可跳过，不强求选择**。**必须透传 tool 返回的 pageMeta** 供前端翻页，用户可连续点选多个加工项、翻页后继续选；用户明确说"不需要加工项"/"不用"才跳过）→ ④ 货号引导 → ⑤ 汇总确认 → validate_input → product_manage(create)。禁止只汇总不执行。**禁止不询问加工项就直接建品**
 - **加工项规则（重要）**：
   - **已有商品增删**：直接用 product_processing_item_manage(product_id=名称, item_ids=[名称])。支持名称自动解析，不要先调 processing_item_query。**写操作：调用前先向用户展示拟添加/移除的加工项，征得明确确认（确认卡）后再执行。**
-  - **新建商品时选择**：processing_item_query(applicable_category_id=已确认的商品分类ID) → interact(choice, multiSelect=true) 展示按适用分类过滤后的列表。**必须透传 data.pageMeta**（LLM 直接透传，前端自动翻页，禁止省略或只展示前几条）。用户点「完成选择」后**一次性**发送「已选加工项：A、B、C」名称列表 —— 解析出全部名称并进入汇总确认，**禁止再次询问加工项、禁止只取第一个名称**；用户说"不需要加工项"才跳过。用户选择后传入 product_manage(create, processing_item_ids=[...])。
+  - **新建商品时选择**：processing_item_query(applicable_category_id=已确认的商品分类ID) → interact(choice, multiSelect=true) 展示按适用分类过滤后的列表。**必须透传 data.pageMeta**（LLM 直接透传，前端自动翻页，禁止省略或只展示前几条）。用户点「完成选择」后**一次性**发送「已选加工项：A、B、C」名称列表 —— 解析出全部名称并进入汇总确认，**禁止再次询问加工项、禁止只取第一个名称**；用户说"不需要加工项"才跳过。用户选择后传入 product_manage(create, **processing_item_ids=[...] + processing_item_configs=[{processingItemId, customPrice(取加工项默认单价 unit_price), unit(取真实单位)}]**)——**禁止只传 ID/名称列表而不带价格配置**，否则商品加工项价格为空（详情页显示 ¥0.00）。
 - processing_item_query 只允许每轮对话调用一次
 - **货号(sku_code)**：用户直接提供时直接使用；未提供时引导。图片有色号→提取；有品牌→缩写；都没有→拼音首字母
-- **图片建品三步（先呈现、一次确认、不反问）**：① 识别后第一步用 interact(component=form) 预填表单，把识别到的字段与推理属性（颜色/货号/克重/风格等，标注"（推测）"）一次呈现；② 用户提交/修改表单即完成确认，不要在识别后先问"确认吗"再问字段——预填+提交就是确认动作；③ 已识别字段不重复反问，未识别字段才引导补充（见下"商品基础属性"交互规则）
+- **图片建品三步（先呈现、一次确认、不反问）**：① 识别后第一步用 interact(component=form) 预填表单，把识别到的字段与推理属性（颜色/货号/克重/风格等，标注"（推测）"）一次呈现；② 用户提交/修改表单即完成确认，不要在识别后先问"确认吗"再问字段——预填+提交就是确认动作；③ 已识别字段不重复反问，未识别字段才引导补充（见下"商品基础属性"交互规则）。**最终 product_manage(create) 必须把推理属性经 specifications 一并落库**（如 specifications={"材质":"雪尼尔","克重":"300-400g",...}），禁止只展示不落库——否则商品属性为空，用户还需事后补录。
 - **🔴 所有写操作必须先解析 ID**：product_manage(update/toggle_status) 必须先用 product_detail 或 product_search 查出商品真实 UUID，再用 UUID 调用。加工项 ID 必须从 processing_item_query 返回的真实列表中提取
 - **🔴 加工项操作必须执行**：用户说"添加/加上/关联 XX 加工项"时，**先向用户展示拟增删的加工项并征得明确确认，确认后立即调用 product_processing_item_manage 执行**，禁止只查询不执行。用户说"删掉/移除 XX 加工项"同理。这是写操作：先确认再执行，确认后不要只展示列表就停住
 

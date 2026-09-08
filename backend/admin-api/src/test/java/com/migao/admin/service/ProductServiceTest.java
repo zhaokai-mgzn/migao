@@ -1,4 +1,4 @@
-// case_ids: PR-001, PR-002, PR-003, PR-004, PR-005, PR-006, PP-006, PR-017
+// case_ids: PR-001, PR-002, PR-003, PR-004, PR-005, PR-006, PP-006, PR-017, PR-019
 // PP-006（issue #3005，回滚 #2986）：商品-加工项关联只支持价格自定义（custom_price），
 // 「每米数量」密度（custom_per_meter_quantity）已回滚移除，响应无密度字段
 
@@ -202,6 +202,91 @@ class ProductServiceTest {
         assertThat(result.getName()).isEqualTo("蜂巢帘");
         assertThat(result.getCategoryName()).isEqualTo("窗帘");
         assertThat(result.getBasePrice()).isEqualByComparingTo(new BigDecimal("299.00"));
+    }
+
+    @Test
+    @DisplayName("商品详情 - 加工项配置回填默认单价（customPrice 为空 → finalPrice=unitPrice）")
+    void getProductById_ProcessingItemConfigFallsBackUnitPrice() {
+        // Given：加工项默认 8 元/米，商品关联未覆盖自定义价
+        ProcessingItem punch = ProcessingItem.builder()
+                .id("pi-punch")
+                .name("打孔")
+                .pricingMethod("per_meter")
+                .unitPrice(new BigDecimal("8.00"))
+                .unit("米")
+                .status("active")
+                .build();
+        ProductProcessingItem relation = ProductProcessingItem.builder()
+                .id(1L)
+                .tenantId(1L)
+                .productId("prod-001")
+                .processingItemId("pi-punch")
+                .sortOrder(0)
+                .build();
+
+        when(productMapper.selectById("prod-001")).thenReturn(testProduct);
+        when(productMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(testProduct);
+        when(categoryMapper.selectById("cat-001")).thenReturn(testCategory);
+        when(productColorMapper.selectCount(any(LambdaQueryWrapper.class))).thenReturn(0L);
+        when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(Collections.emptyList());
+        // getProductById 内部 getProductProcessingItems + fillProcessingItemConfigs 两处查询关联
+        when(productProcessingItemMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(List.of(relation));
+        when(processingItemMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(List.of(punch));
+
+        // When
+        ProductResponse result = productService.getProductById("prod-001", 1L);
+
+        // Then：商品详情 processingItemConfigs 必须回填默认单价与单位
+        assertThat(result.getProcessingItemConfigs()).hasSize(1);
+        ProcessingItemConfigResponse cfg = result.getProcessingItemConfigs().get(0);
+        assertThat(cfg.getProcessingItemName()).isEqualTo("打孔");
+        assertThat(cfg.getUnitPrice()).isEqualByComparingTo(new BigDecimal("8.00"));
+        assertThat(cfg.getCustomPrice()).isNull();
+        assertThat(cfg.getFinalPrice()).isEqualByComparingTo(new BigDecimal("8.00"));
+        assertThat(cfg.getUnit()).isEqualTo("米");
+    }
+
+    @Test
+    @DisplayName("商品详情 - 加工项配置自定义价格优先（customPrice 非空 → finalPrice=customPrice）")
+    void getProductById_ProcessingItemConfigCustomPriceWins() {
+        // Given：加工项默认 8 元/米，商品覆盖 10 元/米
+        ProcessingItem punch = ProcessingItem.builder()
+                .id("pi-punch")
+                .name("打孔")
+                .pricingMethod("per_meter")
+                .unitPrice(new BigDecimal("8.00"))
+                .unit("米")
+                .status("active")
+                .build();
+        ProductProcessingItem relation = ProductProcessingItem.builder()
+                .id(1L)
+                .tenantId(1L)
+                .productId("prod-001")
+                .processingItemId("pi-punch")
+                .customPrice(new BigDecimal("10.00"))
+                .sortOrder(0)
+                .build();
+
+        when(productMapper.selectById("prod-001")).thenReturn(testProduct);
+        when(productMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(testProduct);
+        when(categoryMapper.selectById("cat-001")).thenReturn(testCategory);
+        when(productColorMapper.selectCount(any(LambdaQueryWrapper.class))).thenReturn(0L);
+        when(productSkuMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(Collections.emptyList());
+        when(productProcessingItemMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(List.of(relation));
+        when(processingItemMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(List.of(punch));
+
+        // When
+        ProductResponse result = productService.getProductById("prod-001", 1L);
+
+        // Then：商品自定义价 10 生效
+        ProcessingItemConfigResponse cfg = result.getProcessingItemConfigs().get(0);
+        assertThat(cfg.getUnitPrice()).isEqualByComparingTo(new BigDecimal("8.00"));
+        assertThat(cfg.getCustomPrice()).isEqualByComparingTo(new BigDecimal("10.00"));
+        assertThat(cfg.getFinalPrice()).isEqualByComparingTo(new BigDecimal("10.00"));
     }
 
     @Test

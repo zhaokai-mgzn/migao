@@ -1844,7 +1844,7 @@
 真值: processing-manage.crud, product-sku-stock.create-flow
 溯源: 2026-09-07 改写（issue #3005，回滚 #2986）：行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米加工费中——per_piece 与「每米数量」密度不符合实际（数量对不上车间工艺、B 端无法对账），已回滚移除；PP-006 由密度配置用例改为计价方式回归断言 ｜ tags: processing_item, pricing
 
-## 商品域（18 case）
+## 商品域（19 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
 ```
@@ -2073,6 +2073,20 @@
 ```
 真值: product-sku-stock.low-stock
 溯源: 2026-09-07 新增（issue #3009）：sess_66c12e3cf3a14ee0 低库存清单场景，LLM 文本正确筛出 5 件低库存商品，但下方渲染了 2 页×10 张原始返回商品卡，文本与卡片两层皮。方案 B：mibao 延迟到文本生成后按引用过滤再发卡 ｜ tags: card, reference_alignment, mibao
+
+### PR-019. 建品规格与加工项价格落库 — 推理属性经 specifications 落库、加工项经 processing_item_configs 携带价格 🔵
+```
+你: 根据这张图片录入商品（色卡图，可识别材质/克重）
+你: 商品名称: 2699系列雪尼尔窗帘面料\n单价(元/米): 23.8\n颜色…门幅…
+你: 已选加工项：刺绣工艺 ¥30/平方米、波浪定型 ¥8/米
+你: 确认创建
+期望: product_manage(action=create)
+数据: create 参数含 specifications（材质/克重/工艺等推理属性，随 specs 落库到 product_attributes，非仅展示）
+数据: create 参数含 processing_item_configs（含 customPrice=加工项默认单价 unit_price、unit=真实单位），禁止只传 processing_item_ids 名称列表
+数据: 商品详情接口 processingItemConfigs 回填 unitPrice/finalPrice（customPrice 空时 finalPrice=unitPrice），前端展示非 ¥0.00 且单位正确
+```
+真值: product-sku-stock.low-stock
+溯源: 2026-09-08 新增（issue #3027）：sess_c1fce183dae24f22 复盘 — AI 预填表单展示了推理属性但 create 未落库（product_attributes 0 行）；加工项只传名称列表 → custom_price 全 NULL → 详情页 ¥0.00/米（单位硬编码）。三端修复：prompt 强制 specifications+processing_item_configs、admin-api finalPrice 回退、admin-web 渲染回退 ｜ tags: product_create, specifications, processing_item, regression
 
 ## registry（1 case）
 
@@ -2636,8 +2650,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：214（活跃 110，跳过 104）
-- tier 分布：smoke 8 / normal 177 / adversarial 29
+- 用例总数：215（活跃 111，跳过 104）
+- tier 分布：smoke 8 / normal 178 / adversarial 29
 - 售后域：6
 - agents：6
 - api：12
@@ -2655,7 +2669,7 @@
 - ontology：4
 - 订单域：14
 - 加工项域：6
-- 商品域：18
+- 商品域：19
 - registry：1
 - 设置域：10
 - token-refresh：4

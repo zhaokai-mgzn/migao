@@ -203,6 +203,12 @@ export interface ProductProcessingItemConfig {
   processingItemId: string | null
   processingItemName?: string
   customPrice: number
+  /** 加工项默认单价（customPrice 为空时回退展示） */
+  unitPrice?: number | null
+  /** 最终价格：customPrice ?? unitPrice */
+  finalPrice?: number | null
+  /** 计价单位（米/平方米/件等） */
+  unit?: string
 }
 
 export interface ProductFormData {
