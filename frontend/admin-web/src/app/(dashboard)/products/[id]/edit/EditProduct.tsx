@@ -6,7 +6,7 @@ import ProductForm from '@/components/products/ProductForm'
 import { productApi } from '@/lib/api'
 import { Loading } from '@/components/ui'
 import { useRouteId } from '@/lib/use-route-id'
-import { toEnglishSpecKeys } from '@/lib/spec-keys'
+import { toEnglishSpecKeys } from '@/lib/attribute-keys'
 import { toast } from 'sonner'
 import type { Product, ProductFormData } from '@/types'
 

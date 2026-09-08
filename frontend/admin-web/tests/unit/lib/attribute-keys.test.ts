@@ -17,7 +17,7 @@ import { describe, it, expect } from 'vitest'
 import {
   toChineseSpecKeys,
   toEnglishSpecKeys,
-} from '@/lib/spec-keys'
+} from '@/lib/attribute-keys'
 
 describe('spec-keys 双向映射（issue #3044）', () => {
   it('toEnglishSpecKeys: agent 中文 key 规格 → 编辑表单英文 key', () => {

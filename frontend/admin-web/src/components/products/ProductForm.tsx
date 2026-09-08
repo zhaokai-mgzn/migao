@@ -13,7 +13,7 @@ import CategoryTree from './CategoryTree'
 import CategoryDialog from './CategoryDialog'
 import { categoryApi, processingItemApi } from '@/lib/api'
 import { validateProductForm, derivePrice } from '@/lib/product-utils'
-import { toChineseSpecKeys } from '@/lib/spec-keys'
+import { toChineseSpecKeys } from '@/lib/attribute-keys'
 import type {
   ProductFormData,
   ProductStatus,
