@@ -19,6 +19,14 @@ vi.mock('@/lib/api', () => ({
     deleteCard: vi.fn().mockResolvedValue({ data: { success: true } }),
     publishCard: vi.fn().mockResolvedValue({ data: { success: true, data: { id: 'entry_1', status: 'published' } } }),
     archiveCard: vi.fn().mockResolvedValue({ data: { success: true, data: { id: 'entry_1', status: 'archived' } } }),
+    getCandidates: vi.fn().mockResolvedValue({ data: { success: true, data: { items: [{ id: 'c1', sourceType: 'conversation', suggestedTitle: '窗帘多久洗一次', suggestedAnswer: '建议每 3-6 个月清洗一次。', confidence: 0.9, status: 'pending', createdAt: '2026-09-08T10:00:00' }], total: 1 } } }),
+    getPendingCount: vi.fn().mockResolvedValue({ data: { success: true, data: { pending: 1 } } }),
+    adoptCandidate: vi.fn().mockResolvedValue({ data: { success: true, data: { id: 'card-1', status: 'published' } } }),
+    rejectCandidate: vi.fn().mockResolvedValue({ data: { success: true } }),
+    getTemplates: vi.fn().mockResolvedValue({ data: { success: true, data: [{ templateId: 'curtain', industry: 'curtain', name: '布艺窗帘行业模板', version: 1, entryCount: 32 }] } }),
+    applyTemplate: vi.fn().mockResolvedValue({ data: { success: true, data: { templateId: 'curtain', created: 32, skipped: 0 } } }),
+    distillConversations: vi.fn().mockResolvedValue({ data: { success: true, data: { sessions: 1, candidates: 2, created: 2, skipped: 0 } } }),
+    distillDocument: vi.fn().mockResolvedValue({ data: { success: true, data: { candidates: 2, created: 2, skipped: 0 } } }),
   },
 }))
 
@@ -90,7 +98,7 @@ describe('KnowledgePage（LLM WIKI 知识卡片管理）', () => {
   it('should render page title and description', async () => {
     render(<KnowledgePage />)
     await waitFor(() => {
-      expect(screen.getByText('知识卡片')).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: '知识卡片' })).toBeInTheDocument()
     })
     expect(screen.getByText(/LLM WIKI 知识卡片管理/)).toBeInTheDocument()
   })
@@ -139,6 +147,43 @@ describe('KnowledgePage（LLM WIKI 知识卡片管理）', () => {
     await user.click(screen.getByText('发布'))
     await waitFor(() => {
       expect(api.publishCard).toHaveBeenCalledWith('entry_2')
+    })
+  })
+
+  it('should show pending candidates queue and adopt', async () => {
+    const user = userEvent.setup()
+    render(<KnowledgePage />)
+    await waitFor(() => {
+      expect(screen.getByText('待确认')).toBeInTheDocument()
+    })
+    await user.click(screen.getByText('待确认'))
+    await waitFor(() => {
+      expect(screen.getByText('窗帘多久洗一次')).toBeInTheDocument()
+    })
+    await waitFor(() => {
+      expect(screen.getByText('待确认 (1)')).toBeInTheDocument()
+    })
+    await user.click(screen.getByText('采纳'))
+    const api = (await import('@/lib/api')).knowledgeApi as any
+    await waitFor(() => {
+      expect(api.adoptCandidate).toHaveBeenCalledWith('c1')
+    })
+  })
+
+  it('should list industry templates and apply', async () => {
+    const user = userEvent.setup()
+    render(<KnowledgePage />)
+    await waitFor(() => {
+      expect(screen.getByText('行业模板')).toBeInTheDocument()
+    })
+    await user.click(screen.getByText('行业模板'))
+    await waitFor(() => {
+      expect(screen.getByText('布艺窗帘行业模板')).toBeInTheDocument()
+    })
+    await user.click(screen.getByText('一键套用'))
+    const api = (await import('@/lib/api')).knowledgeApi as any
+    await waitFor(() => {
+      expect(api.applyTemplate).toHaveBeenCalledWith('curtain')
     })
   })
 })

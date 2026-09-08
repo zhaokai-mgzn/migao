@@ -6,7 +6,7 @@ import { toast } from 'sonner'
 import { knowledgeApi } from '@/lib/api'
 import { Table, Pagination, Modal, Button, Badge, SearchBar } from '@/components/ui'
 import type { TableColumn } from '@/components/ui'
-import type { KnowledgeCard, KnowledgeCardStatus } from '@/types'
+import type { KnowledgeCard, KnowledgeCardStatus, KnowledgeCandidate, KnowledgeTemplateInfo } from '@/types'
 import DateTimeCell from '@/components/common/DateTimeCell'
 
 // 知识卡片状态 → 徽标（三端一致契约：draft/pending_review/published/archived）
@@ -53,6 +53,17 @@ export default function KnowledgePage() {
   const [saving, setSaving] = useState(false)
 
   const [deleteTarget, setDeleteTarget] = useState<KnowledgeCard | null>(null)
+
+  // ===== 待确认队列 / 行业模板 / 提炼（LLM WIKI P3/P5/P6）=====
+  const [activeTab, setActiveTab] = useState<'cards' | 'candidates' | 'templates'>('cards')
+  const [candidates, setCandidates] = useState<KnowledgeCandidate[]>([])
+  const [candidatesTotal, setCandidatesTotal] = useState(0)
+  const [pendingCount, setPendingCount] = useState(0)
+  const [templates, setTemplates] = useState<KnowledgeTemplateInfo[]>([])
+  const [distilling, setDistilling] = useState(false)
+  const [docModalOpen, setDocModalOpen] = useState(false)
+  const [docForm, setDocForm] = useState({ title: '', content: '' })
+  const [applying, setApplying] = useState('')
 
   const loadEntries = useCallback(async () => {
     setLoading(true)
@@ -161,6 +172,102 @@ export default function KnowledgePage() {
     }
   }
 
+  const loadCandidates = useCallback(async () => {
+    try {
+      const [list, count] = await Promise.all([
+        knowledgeApi.getCandidates({ status: 'pending', page: 1, size: 20 }),
+        knowledgeApi.getPendingCount(),
+      ])
+      setCandidates(list.data?.data?.items ?? [])
+      setCandidatesTotal(list.data?.data?.total ?? 0)
+      setPendingCount(count.data?.data?.pending ?? 0)
+    } catch {
+      toast.error('加载待确认队列失败')
+    }
+  }, [])
+
+  useEffect(() => {
+    if (activeTab === 'candidates') loadCandidates()
+    if (activeTab === 'templates') loadTemplates()
+  }, [activeTab]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const loadTemplates = async () => {
+    try {
+      const res = await knowledgeApi.getTemplates()
+      setTemplates(res.data?.data ?? [])
+    } catch {
+      toast.error('加载行业模板失败')
+    }
+  }
+
+  const adoptCandidate = async (candidate: KnowledgeCandidate) => {
+    try {
+      await knowledgeApi.adoptCandidate(candidate.id)
+      toast.success('已采纳，知识卡片已发布')
+      loadCandidates()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '采纳失败')
+    }
+  }
+
+  const rejectCandidate = async (candidate: KnowledgeCandidate) => {
+    try {
+      await knowledgeApi.rejectCandidate(candidate.id, '商家拒绝')
+      toast.success('已拒绝')
+      loadCandidates()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '拒绝失败')
+    }
+  }
+
+  const applyTemplate = async (templateId: string) => {
+    setApplying(templateId)
+    try {
+      const res = await knowledgeApi.applyTemplate(templateId)
+      toast.success(`模板已套用：新增 ${res.data?.data?.created ?? 0} 条，跳过 ${res.data?.data?.skipped ?? 0} 条`)
+      loadTemplates()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '套用失败')
+    } finally {
+      setApplying('')
+    }
+  }
+
+  const triggerConversationDistill = async () => {
+    setDistilling(true)
+    try {
+      const res = await knowledgeApi.distillConversations(24)
+      toast.success(`会话提炼完成：候选 ${res.data?.data?.candidates ?? 0} 条（新增 ${res.data?.data?.created ?? 0}）`)
+      loadCandidates()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '会话提炼失败')
+    } finally {
+      setDistilling(false)
+    }
+  }
+
+  const submitDocumentDistill = async () => {
+    if (docForm.content.trim().length < 50) {
+      toast.error('文档内容过短（至少 50 字）')
+      return
+    }
+    setDistilling(true)
+    try {
+      const res = await knowledgeApi.distillDocument({
+        title: docForm.title.trim() || undefined,
+        content: docForm.content,
+      })
+      toast.success(`文档提炼完成：候选 ${res.data?.data?.candidates ?? 0} 条（新增 ${res.data?.data?.created ?? 0}）`)
+      setDocModalOpen(false)
+      setDocForm({ title: '', content: '' })
+      loadCandidates()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '文档提炼失败')
+    } finally {
+      setDistilling(false)
+    }
+  }
+
   const columns: TableColumn<KnowledgeCard>[] = [
     {
       key: 'title',
@@ -241,11 +348,35 @@ export default function KnowledgePage() {
           <h1 className="text-lg font-semibold">知识卡片</h1>
           <p className="text-sm text-muted-foreground">LLM WIKI 知识卡片管理 — 发布后的知识卡片将优先用于 AI 客服知识问答</p>
         </div>
-        <Button onClick={openCreate}>
-          <Plus className="h-4 w-4" /> 新建知识卡片
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="secondary" size="sm" onClick={triggerConversationDistill} disabled={distilling}>
+            {distilling ? '提炼中…' : '会话提炼'}
+          </Button>
+          <Button variant="secondary" size="sm" onClick={() => setDocModalOpen(true)}>文档提炼</Button>
+          <Button onClick={openCreate}>
+            <Plus className="h-4 w-4" /> 新建知识卡片
+          </Button>
+        </div>
       </div>
 
+      <div className="flex items-center gap-1 border-b">
+        {([
+          { key: 'cards', label: '知识卡片' },
+          { key: 'candidates', label: pendingCount > 0 ? `待确认 (${pendingCount})` : '待确认' },
+          { key: 'templates', label: '行业模板' },
+        ] as const).map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key)}
+            className={`px-3 py-2 text-sm border-b-2 -mb-px ${activeTab === tab.key ? 'border-blue-500 font-medium text-blue-600' : 'border-transparent text-muted-foreground'}`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'cards' && (
+      <>
       <SearchBar
         fields={[
           { key: 'keyword', label: '关键词', type: 'input', placeholder: '搜索标题 / 关键词 / 常见问法 / 回答内容' },
@@ -286,6 +417,74 @@ export default function KnowledgePage() {
         total={total}
         onChange={(page) => { setCurrent(page) }}
       />
+      </>
+      )}
+
+      {/* ===== 待确认队列（LLM WIKI P5）===== */}
+      {activeTab === 'candidates' && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">AI 从客服会话/文档中提炼的候选知识卡片，采纳后立即生效（AI 只产生候选，发布权在您）</p>
+            <Button size="sm" variant="secondary" onClick={triggerConversationDistill} disabled={distilling}>
+              {distilling ? '提炼中…' : '重新提炼会话'}
+            </Button>
+          </div>
+          <div className="rounded-lg border divide-y">
+            {candidates.length === 0 && (
+              <p className="p-4 text-sm text-muted-foreground">暂无待确认候选。点击「会话提炼」或「文档提炼」让 AI 从客服会话/资料中提炼知识。</p>
+            )}
+            {candidates.map((c) => (
+              <div key={c.id} className="p-3 flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium">{c.suggestedTitle}</span>
+                    <Badge variant={c.sourceType === 'document' ? 'info' : 'warning'}>
+                      {c.sourceType === 'document' ? '文档提炼' : '会话提炼'}
+                    </Badge>
+                    {c.confidence != null && (
+                      <span className="text-xs text-muted-foreground">置信度 {(Number(c.confidence) * 100).toFixed(0)}%</span>
+                    )}
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-1 line-clamp-2">{c.suggestedAnswer}</p>
+                  {c.evidence && <p className="text-xs text-muted-foreground/70 mt-1">依据：{c.evidence}</p>}
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <Button size="sm" onClick={() => adoptCandidate(c)}>采纳</Button>
+                  <Button size="sm" variant="ghost" onClick={() => rejectCandidate(c)}>拒绝</Button>
+                </div>
+              </div>
+            ))}
+            {candidatesTotal > candidates.length && (
+              <p className="p-3 text-xs text-muted-foreground">共 {candidatesTotal} 条待确认（仅展示最近 20 条）</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ===== 行业模板（LLM WIKI P3）===== */}
+      {activeTab === 'templates' && (
+        <div className="space-y-3">
+          <p className="text-sm text-muted-foreground">平台预置行业知识模板，一键套用自动获得该行业的预置知识卡片（可编辑）</p>
+          <div className="rounded-lg border divide-y">
+            {templates.length === 0 && <p className="p-4 text-sm text-muted-foreground">暂无可用模板</p>}
+            {templates.map((t) => (
+              <div key={t.templateId} className="p-3 flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium">{t.name}</span>
+                    <Badge variant="info">v{t.version}</Badge>
+                    <span className="text-xs text-muted-foreground">{t.entryCount} 条预置知识卡片</span>
+                  </div>
+                  {t.description && <p className="text-sm text-muted-foreground mt-1">{t.description}</p>}
+                </div>
+                <Button size="sm" onClick={() => applyTemplate(t.templateId)} disabled={applying === t.templateId}>
+                  {applying === t.templateId ? '套用中…' : '一键套用'}
+                </Button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* 新建/编辑模态框 */}
       <Modal open={editorOpen} onClose={() => setEditorOpen(false)} title={editing ? '编辑知识卡片' : '新建知识卡片'}>
@@ -353,6 +552,34 @@ export default function KnowledgePage() {
         <div className="mt-4 flex justify-end gap-2">
           <Button variant="secondary" onClick={() => setDeleteTarget(null)}>取消</Button>
           <Button variant="danger" onClick={confirmDelete}>删除</Button>
+        </div>
+      </Modal>
+
+      {/* 文档提炼（LLM WIKI P6） */}
+      <Modal open={docModalOpen} onClose={() => setDocModalOpen(false)} title="文档提炼">
+        <div className="space-y-3">
+          <div>
+            <label className="text-sm font-medium">文档标题</label>
+            <input
+              className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
+              value={docForm.title}
+              onChange={(e) => setDocForm({ ...docForm, title: e.target.value })}
+              placeholder="如：面料手册 / 价格表说明"
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium">文档内容 <span className="text-red-500">*</span>（至少 50 字）</label>
+            <textarea
+              className="mt-1 w-full rounded-md border px-3 py-2 text-sm min-h-[160px]"
+              value={docForm.content}
+              onChange={(e) => setDocForm({ ...docForm, content: e.target.value })}
+              placeholder="粘贴面料说明、产品资料、售后政策等文本内容，AI 将提炼为知识卡片候选"
+            />
+          </div>
+        </div>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button variant="secondary" onClick={() => setDocModalOpen(false)}>取消</Button>
+          <Button onClick={submitDocumentDistill} disabled={distilling}>{distilling ? '提炼中…' : '开始提炼'}</Button>
         </div>
       </Modal>
     </div>

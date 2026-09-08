@@ -368,6 +368,34 @@ export interface KnowledgeCard {
   updatedAt: string
 }
 
+// 知识提炼候选（AI 提炼 → 待确认队列，issue #3051 P5）
+export interface KnowledgeCandidate {
+  id: string
+  tenantId?: number
+  sourceType: 'conversation' | 'document' | 'product' | 'config'
+  sourceRef?: string
+  suggestedTitle: string
+  suggestedAnswer: string
+  suggestedCategory?: string
+  suggestedKeywords?: string
+  confidence?: number | string
+  evidence?: string
+  status: 'pending' | 'adopted' | 'edited' | 'rejected'
+  statusNote?: string
+  reviewedAt?: string
+  createdAt: string
+}
+
+// 行业模板（平台预置资产，issue #3051 P3）
+export interface KnowledgeTemplateInfo {
+  templateId: string
+  industry: string
+  name: string
+  version: number
+  description?: string
+  entryCount: number
+}
+
 // 知识卡片列表查询参数
 export interface KnowledgeCardListParams extends PageParams {
   keyword?: string

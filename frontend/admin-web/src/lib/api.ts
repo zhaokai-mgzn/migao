@@ -24,6 +24,8 @@ import type {
   ProcessingCalculateResult,
   KnowledgeCard,
   KnowledgeCardListParams,
+  KnowledgeCandidate,
+  KnowledgeTemplateInfo,
   LoginParams,
   LoginResponse,
   RefreshTokenResponse,
@@ -234,6 +236,30 @@ export const knowledgeApi = {
 
   archiveCard: (id: string) =>
     request.post<ApiResponse<KnowledgeCard>>(`/api/admin/knowledge/cards/${id}/archive`),
+
+  // ===== 待确认队列（issue #3051 P5）=====
+  getCandidates: (params: { status?: string; page?: number; size?: number }) =>
+    request.get<ApiResponse<PageResponse<KnowledgeCandidate>>>('/api/admin/knowledge/candidates', { params }),
+  getPendingCount: () =>
+    request.get<ApiResponse<{ pending: number }>>('/api/admin/knowledge/candidates/pending-count'),
+  adoptCandidate: (id: string) =>
+    request.post<ApiResponse<KnowledgeCard>>(`/api/admin/knowledge/candidates/${id}/adopt`),
+  adoptEditedCandidate: (id: string, patch: Partial<KnowledgeCandidate>) =>
+    request.post<ApiResponse<KnowledgeCard>>(`/api/admin/knowledge/candidates/${id}/adopt-edited`, patch),
+  rejectCandidate: (id: string, note?: string) =>
+    request.post<ApiResponse<void>>(`/api/admin/knowledge/candidates/${id}/reject`, { note }),
+
+  // ===== 行业模板（issue #3051 P3）=====
+  getTemplates: () =>
+    request.get<ApiResponse<KnowledgeTemplateInfo[]>>('/api/admin/knowledge/templates'),
+  applyTemplate: (templateId: string) =>
+    request.post<ApiResponse<{ templateId: string; created: number; skipped: number }>>(`/api/admin/knowledge/templates/${templateId}/apply`),
+
+  // ===== 提炼触发（issue #3051 P5b/P6）=====
+  distillConversations: (hours = 24) =>
+    request.post<ApiResponse<{ sessions: number; candidates: number; created: number; skipped: number }>>(`/api/admin/knowledge/distill/conversations?hours=${hours}`),
+  distillDocument: (data: { title?: string; content: string }) =>
+    request.post<ApiResponse<{ candidates: number; created: number; skipped: number }>>('/api/admin/knowledge/distill/documents', data),
 }
 
 // 售后工单 API
