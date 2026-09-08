@@ -19,7 +19,7 @@ from render_cases import filter_by_persona, load_case_dicts  # noqa: E402
 CASES_DIR = REPO_ROOT / ".github" / "cases"
 
 # 已标记 persona: xiaobu 的 C 端专属用例（issue #2855 修复对象；#3038 新增 3 条交互固化用例）
-XIAOBU_ONLY = {"CH-008", "CH-012", "CH-013", "CH-014", "CH-015", "CH-017", "OR-012", "ST-008", "CH-030", "CH-031", "CH-032"}
+XIAOBU_ONLY = {"CH-008", "CH-012", "CH-013", "CH-014", "CH-015", "CH-017", "OR-012", "ST-008", "CH-030", "CH-031", "CH-032", "KN-001", "KN-002"}  # KN-001/002：小布知识问答（issue #3059）
 
 
 def _all_cases():
