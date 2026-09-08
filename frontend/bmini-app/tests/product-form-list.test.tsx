@@ -1,4 +1,4 @@
-// case_ids: PR-001, PR-003, OR-010
+// case_ids: PR-001, PR-003, OR-010, CH-030
 /**
  * 商品表单列表测试 — 瑞幸式选品列表（参考 C 端 agent 选品交互）
  *
@@ -9,6 +9,8 @@ import React from 'react'
 import '@testing-library/jest-dom'
 import { render, screen, fireEvent } from '@testing-library/react'
 import ProductFormList from '../src/components/cards/ProductFormList'
+
+const onInteract = jest.fn()
 
 describe('ProductFormList — 瑞幸式商品表单列表', () => {
   const products = [
@@ -27,8 +29,6 @@ describe('ProductFormList — 瑞幸式商品表单列表', () => {
       specifications: { colorName: '米白' },
     },
   ]
-
-  const onInteract = jest.fn()
 
   afterEach(() => {
     jest.clearAllMocks()
@@ -70,5 +70,18 @@ describe('ProductFormList — 瑞幸式商品表单列表', () => {
   it('空列表不渲染', () => {
     const { container } = render(<ProductFormList products={[]} onInteract={onInteract} />)
     expect(container.firstChild).toBeNull()
+  })
+})
+
+describe('ProductFormList — 去下单防连点锁（issue #3040 收尾）', () => {
+  afterEach(() => {
+    jest.clearAllMocks()
+  })
+
+  it('点「去下单」后锁卡：同一商品第二次点击不再触发 onInteract', () => {
+    render(<ProductFormList products={[{ id: 'p-1', name: '遮光窗帘', price: 199 }]} onInteract={onInteract} />)
+    fireEvent.click(screen.getByText(/去下单/))
+    fireEvent.click(screen.getByText(/去下单/))
+    expect(onInteract).toHaveBeenCalledTimes(1)
   })
 })

@@ -120,3 +120,9 @@
   color: #fff;
   font-weight: 600;
 }
+
+/* 订单已发出/防连点锁：确认下单按钮置灰（issue #3040） */
+.quotation-card__btn--locked {
+  opacity: 0.5;
+  pointer-events: none;
+}

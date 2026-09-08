@@ -1,4 +1,4 @@
-// case_ids: PR-001, PR-003, OR-010
+// case_ids: PR-001, PR-003, OR-010, CH-030
 /**
  * 商品卡片交互测试 — 瑞幸式商品卡（参考 C 端 agent 设计）
  *
@@ -64,5 +64,19 @@ describe('ProductCard — 瑞幸式商品卡交互', () => {
   it('无 original_price 时不显示划线原价', () => {
     render(<ProductCard data={baseProduct} />)
     expect(screen.queryByText('预计到手')).not.toBeInTheDocument()
+  })
+})
+
+describe('ProductCard — 下单防连点锁（issue #3040 收尾）', () => {
+  afterEach(() => {
+    jest.clearAllMocks()
+  })
+
+  it('点「下单」后锁卡：第二次点击不再触发 onOrder（防重复下单）', () => {
+    const onOrder = jest.fn()
+    render(<ProductCard data={{ id: 'p-001', name: '遮光窗帘', price: 199 }} onOrder={onOrder} />)
+    fireEvent.click(screen.getByText(/去下单/))
+    fireEvent.click(screen.getByText(/去下单/))
+    expect(onOrder).toHaveBeenCalledTimes(1)
   })
 })

@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { View, Text, Image } from '@tarojs/components'
 import './ProductFormList.scss'
 
@@ -40,6 +41,8 @@ function buildSpecChips(p: ProductFormItem): string[] {
 }
 
 export default function ProductFormList({ products, onInteract }: ProductFormListProps) {
+  // 去下单防连点锁：任一商品点击「去下单」后整列表锁卡（message already sent, issue #3040）
+  const [ordered, setOrdered] = useState(false)
   if (!products || products.length === 0) return null
 
   return (
@@ -94,9 +97,13 @@ export default function ProductFormList({ products, onInteract }: ProductFormLis
             </View>
 
             <View
-              className='product-form-list__order'
-              hoverClass='product-form-list__order--hover'
-              onClick={() => onInteract(`我要下单${p.name}`)}
+              className={`product-form-list__order${ordered ? ' product-form-list__order--locked' : ''}`}
+              hoverClass={ordered ? undefined : 'product-form-list__order--hover'}
+              onClick={() => {
+                if (ordered) return
+                setOrdered(true)
+                onInteract(`我要下单${p.name}`)
+              }}
             >
               <Text className='product-form-list__order-text'>去下单</Text>
             </View>

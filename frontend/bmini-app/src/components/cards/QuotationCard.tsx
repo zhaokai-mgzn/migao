@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { View, Text } from '@tarojs/components'
 import './QuotationCard.scss'
 
@@ -27,6 +28,8 @@ interface QuotationCardProps {
 
 export default function QuotationCard({ data, onConfirm }: QuotationCardProps) {
   const breakdown = data.breakdown || []
+  // 确认下单防连点锁：点击后锁卡（issue #3040 收尾 #3038，防重复下单）
+  const [confirmed, setConfirmed] = useState(false)
 
   return (
     <View className='quotation-card'>
@@ -67,7 +70,14 @@ export default function QuotationCard({ data, onConfirm }: QuotationCardProps) {
 
       {onConfirm && (
         <View className='quotation-card__actions'>
-          <View className='quotation-card__btn quotation-card__btn--primary' onClick={onConfirm}>
+          <View
+            className={`quotation-card__btn quotation-card__btn--primary${confirmed ? ' quotation-card__btn--locked' : ''}`}
+            onClick={() => {
+              if (confirmed || !onConfirm) return
+              setConfirmed(true)
+              onConfirm()
+            }}
+          >
             <Text className='quotation-card__btn-text'>确认下单</Text>
           </View>
         </View>

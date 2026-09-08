@@ -142,3 +142,9 @@
     }
   }
 }
+
+/* 订单已发出/防连点锁：下单按钮置灰（issue #3040） */
+.product-card__btn--locked {
+  opacity: 0.5;
+  pointer-events: none;
+}

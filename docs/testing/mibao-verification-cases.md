@@ -787,9 +787,10 @@
 数据: mini-app/bmini-app types Message 含 interactiveAnswered 字段；chatStore sendMessage 发送时把最后一条未答 interactive 消息标记 interactiveAnswered
 数据: 历史回放（getSessionMessages 透传 interactive_answered）后已答卡片保持只读不可点
 数据: 翻页等同答复：#3037 后端 __PAGE__ 路径已 mark_last_interactive_answered，前端翻页后旧页卡片不再可交互
-跳过: 纯前端行为由 jest 单测（confirm-card/choice-card/form-card/chatStore）验证，非 LLM 行为，不进入 agent-eval 冒烟
+数据: 下单入口按钮防连点（issue #3040 收尾）：ProductFormList 去下单 / QuotationCard 确认下单 / ProductCard 下单按钮点击后本地锁（第二次点击不触发 onOrder/onConfirm/onInteract），按钮置灰（--locked）
+跳过: 纯前端行为由 jest 单测（confirm-card/choice-card/form-card/quotation-card/product-card/product-form-list/chatStore）验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
-溯源: 2026-09-08 新增：C 端交互组件提交锁与只读变体（issue #3038） ｜ tags: interactive, submit-lock, customer-end, freeze
+溯源: 2026-09-08 新增：C 端交互组件提交锁与只读变体（issue #3038）；2026-09-08 补：下单入口按钮防连点锁（issue #3040） ｜ tags: interactive, submit-lock, customer-end, freeze
 
 ### CH-031. C 端交互组件历史回放透传—— getSessionMessages 映射透传 interactive/interactive_answered，刷新/切会话后已答卡片只读呈现而非消失 🔵
 ```

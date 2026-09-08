@@ -124,3 +124,9 @@
     color: #ffffff;
   }
 }
+
+/* 订单已发出/防连点锁：去下单按钮置灰（issue #3040） */
+.product-form-list__order--locked {
+  opacity: 0.5;
+  pointer-events: none;
+}
