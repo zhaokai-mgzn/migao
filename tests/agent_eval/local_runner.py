@@ -882,7 +882,7 @@ async def run_suite(cases, label: str, classify: bool = True):
         print(f"✅ 登录成功")
     except Exception as e:
         print(f"❌ 登录失败: {e}")
-        return []
+        raise RuntimeError(f"登录失败: {e}")
 
     results = []
     passed_count = 0
@@ -978,6 +978,14 @@ async def run_suite(cases, label: str, classify: bool = True):
                 print(f"     ⚠️  last_error: {str(r['last_error'])[:100]}")
         except Exception as e:
             print(f"  {icon} ❌ {case.id}: EXCEPTION: {e}")
+            exc_record = {
+                "case_id": case.id, "title": case.title, "difficulty": case.difficulty.value,
+                "tags": case.tags, "rounds": 0, "tool_calls": [],
+                "passed": 0, "total": 0, "score": 0.0,
+                "failed": [(f"EXCEPTION: {e}", "case crashed")],
+                "last_error": str(e), "final_text": "", "classification": "error",
+            }
+            results.append(exc_record)
         finally:
             for pid in snapshot_pids:
                 await restore_product(token, pid)
@@ -1018,6 +1026,20 @@ async def run_suite(cases, label: str, classify: bool = True):
     print(f"{'='*60}")
 
     return results
+
+
+def _ci_verdict(results: list) -> tuple[bool, str]:
+    """CI 判定（2026-09-08 假绿修复，issue #3062）：空结果 / 存在未通过 → 失败。
+
+    背景：登录失败时 run_suite 曾返回 [] → main 判"全部通过"退出 0 → CI 假绿
+    （0 用例执行却报 PASS）。零执行 = 环境/登录失败，必须显式失败。
+    """
+    if not results:
+        return False, "0 个用例执行（疑似登录/环境失败，禁止假绿）"
+    failed = [r for r in results if r.get("score", 0) < 1.0]
+    if failed:
+        return False, f"{len(failed)}/{len(results)} 个用例未通过"
+    return True, "全部用例通过"
 
 
 def load_cases_from_yaml(cases_dir: str) -> list:
@@ -1101,28 +1123,32 @@ async def main():
     def active_cases():
         return [c for c in cases if not c.skip_reason]
 
-    if args.suite == "case":
-        case = next((c for c in cases
-                     if c.id == args.case_id or getattr(c, "legacy_id", "") == args.case_id), None)
-        if not case:
-            print(f"用例 {args.case_id} 不存在")
-            return
-        results = await run_suite([case], f"单条 {args.case_id}", classify=not args.no_classify)
-    elif args.suite == "smoke":
-        results = await run_suite(smoke_cases(), "冒烟", classify=not args.no_classify)
-    elif args.suite == "normal":
-        results = await run_suite(normal_cases(), "每日回归（normal）")
-    elif args.suite == "adversarial":
-        results = await run_suite(adversarial_cases(), "对抗")
-    elif args.suite == "full":
-        results = await run_suite(active_cases(), "全量")
-
-    # CI 判定：有未通过用例 → exit 1
-    failed = [r for r in results if r.get("score", 0) < 1.0]
-    if failed:
-        print(f"\n❌ {len(failed)}/{len(results)} 个用例未通过")
+    try:
+        if args.suite == "case":
+            case = next((c for c in cases
+                         if c.id == args.case_id or getattr(c, "legacy_id", "") == args.case_id), None)
+            if not case:
+                print(f"用例 {args.case_id} 不存在")
+                sys.exit(1)
+            results = await run_suite([case], f"单条 {args.case_id}", classify=not args.no_classify)
+        elif args.suite == "smoke":
+            results = await run_suite(smoke_cases(), "冒烟", classify=not args.no_classify)
+        elif args.suite == "normal":
+            results = await run_suite(normal_cases(), "每日回归（normal）")
+        elif args.suite == "adversarial":
+            results = await run_suite(adversarial_cases(), "对抗")
+        elif args.suite == "full":
+            results = await run_suite(active_cases(), "全量")
+        else:
+            results = []
+    except RuntimeError as e:
+        print(f"❌ {e}")
         sys.exit(1)
-    print("\n✅ 全部用例通过")
+
+    # CI 判定（issue #3062 假绿修复）：空结果/未通过 → exit 1
+    ok, msg = _ci_verdict(results)
+    print(f"\n{'✅' if ok else '❌'} {msg}")
+    sys.exit(0 if ok else 1)
 
 if __name__ == "__main__":
     asyncio.run(main())

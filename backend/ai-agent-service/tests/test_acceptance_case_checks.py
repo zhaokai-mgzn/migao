@@ -12,6 +12,8 @@
 # case_ids: OR-016, AS-007, PR-019, CH-010
 import asyncio
 import importlib.util
+
+import pytest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -508,3 +510,57 @@ class TestRunCaseDbVerify:
         configs = [{"processingItemName": "刺绣工艺", "finalPrice": 45.0}]
         result = asyncio.run(self._run(case, configs))
         assert result["score"] == 1.0
+
+
+class TestCiVerdict:
+    """CI 判定（issue #3062 假绿修复）：空结果 = 失败，存在未通过 = 失败"""
+
+    def test_empty_results_fails(self):
+        """0 用例执行（登录失败返回空）→ 必须判失败，禁止"全部通过"假绿。"""
+        ok, msg = lr._ci_verdict([])
+        assert not ok
+        assert "0 个用例" in msg
+
+    def test_all_pass_ok(self):
+        ok, _ = lr._ci_verdict([{"score": 1.0}, {"score": 1.0}])
+        assert ok
+
+    def test_any_fail_fails(self):
+        ok, msg = lr._ci_verdict([{"score": 1.0}, {"score": 0.5}])
+        assert not ok
+        assert "1/2" in msg
+
+
+class TestRunSuiteFailures:
+    """run_suite 失败路径：登录失败必须抛错；用例崩溃必须记为失败（不得静默假绿）"""
+
+    def test_login_failure_raises(self):
+        """登录失败 → RuntimeError（旧实现 return [] → CI 假绿）。"""
+        import unittest.mock as mock
+        async def boom():
+            raise RuntimeError("All connection attempts failed")
+        with mock.patch.object(lr, "login", new=boom):
+            with pytest.raises(RuntimeError) as ei:
+                asyncio.run(lr.run_suite([], "t"))
+            assert "登录失败" in str(ei.value)
+
+    def test_case_exception_scores_zero(self):
+        """用例内 EXCEPTION → 记为 score 0 的失败记录（旧实现静默丢弃不计数）。"""
+        import unittest.mock as mock
+        async def fake_login():
+            return "tok"
+        async def fake_sess(token, prefer_new=True):
+            return "sess"
+        async def fake_send(token, sid, message, images=None):
+            raise RuntimeError("boom: tool crashed")
+        case = lr.EvalCase(id="FG-1", title="t", skill=lr.Skill.GENERAL,
+                           difficulty=lr.Difficulty.NORMAL, user_inputs=["hi"],
+                           expectations=[], data_checks=[])
+        with mock.patch.object(lr, "login", new=fake_login), \
+             mock.patch.object(lr, "get_or_create_session", new=fake_sess), \
+             mock.patch.object(lr, "send_message", new=fake_send):
+            results = asyncio.run(lr.run_suite([case], "t", classify=False))
+        assert len(results) == 1
+        assert results[0]["score"] == 0.0
+        assert results[0]["classification"] == "error"
+        assert any("boom" in str(f) for f, _ in results[0]["failed"])
