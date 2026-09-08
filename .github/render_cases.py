@@ -160,6 +160,8 @@ def to_eval_py(cases):
            '    legacy_id: str = ""',
            "    tags: List[str] = field(default_factory=list)",
            '    persona: str = ""   # 归属 agent: mibao / xiaobu / ""(双端)，issue #2855',
+           '    order_before: List[str] = field(default_factory=list)   # 时序断言 "A before B"（跨轮，acceptance-protocol §3.1）',
+           '    forbidden_text: List[str] = field(default_factory=list) # final_text 反模式词，命中即失败（§3.4 幻觉式撤回/报错文案）',
            "", ""]
 
     for c in cases:
@@ -180,6 +182,10 @@ def to_eval_py(cases):
         out.append(f"    skip_reason={_py_repr(c.get('skip_reason', ''))},")
         out.append(f"    tags={c.get('tags') or []!r},")
         out.append(f"    persona={_py_repr(c.get('persona', ''))},")
+        if c.get("order_before"):
+            out.append(f"    order_before={c.get('order_before')!r},")
+        if c.get("forbidden_text"):
+            out.append(f"    forbidden_text={c.get('forbidden_text')!r},")
         out.append(")")
         out.append("")
 
@@ -251,6 +257,10 @@ def to_md(cases):
                 lines.append(f"期望: {exp_to_str(e)}")
             for d in (c.get("data_checks") or []):
                 lines.append(f"数据: {d}")
+            for ob in (c.get("order_before") or []):
+                lines.append(f"时序: {ob}")
+            for ft in (c.get("forbidden_text") or []):
+                lines.append(f"禁词: {ft}")
             if c.get("skip_reason"):
                 lines.append(f"跳过: {c['skip_reason']}")
             lines.append("```")

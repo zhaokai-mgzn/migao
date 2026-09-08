@@ -39,6 +39,8 @@ class EvalCase:
     legacy_id: str = ""
     tags: List[str] = field(default_factory=list)
     persona: str = ""   # 归属 agent: mibao / xiaobu / ""(双端)，issue #2855
+    order_before: List[str] = field(default_factory=list)   # 时序断言 "A before B"（跨轮，acceptance-protocol §3.1）
+    forbidden_text: List[str] = field(default_factory=list) # final_text 反模式词，命中即失败（§3.4 幻觉式撤回/报错文案）
 
 
 # ── AS-001 [SMOKE] 售后工单列表（源: cases/aftersales.yml）──
@@ -144,6 +146,7 @@ _CASE_AS_007 = EvalCase(
     skip_reason='',
     tags=['exchange', 'processing_item', 'guided_flow'],
     persona='',
+    order_before=['interact before after_sales_manage'],
 )
 
 # ── AG-001 [NORMAL] AgentResponse/AgentContext 数据结构 + _extract_msg_content think 剥离（源: cases/agents.yml）──
@@ -2289,6 +2292,7 @@ _CASE_OR_016 = EvalCase(
     skip_reason='',
     tags=['order_create', 'processing_item', 'guided_flow'],
     persona='',
+    order_before=['interact before order_create'],
 )
 
 # ── PP-001 [NORMAL] 加工项选择 - 分页翻页（源: cases/processing.yml）──
@@ -2664,6 +2668,7 @@ _CASE_PR_019 = EvalCase(
     skip_reason='',
     tags=['product_create', 'specifications', 'processing_item', 'regression'],
     persona='',
+    forbidden_text=['尚未真正创建', '未创建成功'],
 )
 
 # ── RG-001 [NORMAL] ToolRegistry 注册/查询/执行审计（源: cases/registry.yml）──

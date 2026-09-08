@@ -170,6 +170,7 @@ async def send_message(token: str, session_id: str, message: str, images: list =
             "images": images or [],
             "tool_calls": [],
             "tool_results": [],
+            "interactive": [],  # SSE interactive 事件（卡片：choice/confirm/form，验收协议 §3.5）
             "final_text": "",
             "error": None,
             "streamed": False,
@@ -208,6 +209,8 @@ async def send_message(token: str, session_id: str, message: str, images: list =
                         result["tool_calls"].append(tc)
                     elif current_event == "tool_result":
                         result["tool_results"].append(payload)
+                    elif current_event == "interactive":
+                        result["interactive"].append(payload)
                     elif current_event == "error":
                         result["error"] = str(payload)
                     elif current_event == "done":
@@ -419,6 +422,66 @@ def check_expectation(result: dict, expectation: str) -> tuple[bool, str]:
 
     return False, f"unmatched expectation: {expectation[:80]}"
 
+
+# ── 跨轮 case 级断言（acceptance-protocol §3.1/§3.4，issue #3033/#3042）──
+# 「任意一轮命中即过」只能证明工具链路通，抓不到时序颠倒（confirm 卡先于加工项询问）
+# 与 final_text 反模式（幻觉式撤回"尚未真正创建"）——这两类正是人工验收翻车的样本。
+
+def _parse_order_before(spec: str) -> tuple[str, str]:
+    """解析时序断言 DSL：'A before B' → (A, B)。
+
+    A/B 为工具名（子串匹配，与 check_expectation 同风格）；格式错误抛 ValueError。
+    """
+    parts = spec.split(" before ")
+    if len(parts) != 2:
+        raise ValueError(f"order_before 格式应为 'A before B'，实际: {spec!r}")
+    return parts[0].strip(), parts[1].strip()
+
+
+def _first_tool_round(results: list, tool_name: str) -> int | None:
+    """工具名首次出现的轮次（跨轮；子串匹配）。"""
+    for r in results:
+        for tc in r.get("tool_calls") or []:
+            if tool_name.lower() in str(tc.get("name", "")).lower():
+                return r.get("__round")
+    return None
+
+
+def check_order_before(results: list, order_before: list) -> list:
+    """时序断言：A 首次调用轮次必须早于 B（OR-016/AS-007 可执行化）。
+
+    - A 全程未调用 → 违规（"未调用"）；B 未调用 → 不判时序（由 expectations 判工具缺失）；
+    - 反序（B 早于 A）→ 违规，注明两轮次，便于按签名排查。
+    """
+    issues = []
+    for spec in order_before or []:
+        a, b = _parse_order_before(str(spec))
+        ra = _first_tool_round(results, a)
+        rb = _first_tool_round(results, b)
+        if ra is None:
+            issues.append(f"order_before[{a} before {b}]: 全程未调用 {a}")
+        elif rb is not None and rb < ra:
+            issues.append(f"order_before[{a} before {b}]: {a}(R{ra}) 晚于 {b}(R{rb})——应 {a} 先于 {b}")
+    return issues
+
+
+def check_forbidden_text(results: list, forbidden_text: list) -> list:
+    """final_text 反模式词：任一轮回复含任一禁词 → 违规（幻觉式撤回/报错文案）。
+
+    背景（2026-09-08 验收）：S3 建品 create 成功且 DB 已落库，agent 却因创建后
+    即时验证查不到（索引延迟）撤回正确结论、声称"商品尚未真正创建"——工具调用全对
+    但用户看到的话是错的（PR-019 用本断言拦截）。
+    """
+    issues = []
+    for w in forbidden_text or []:
+        w = str(w)
+        for r in results:
+            if w in (r.get("final_text") or ""):
+                issues.append(f"forbidden_text: 回复含反模式词「{w}」（R{r.get('__round')}）")
+                break
+    return issues
+
+
 def _last_round_error_verdict(results: list, expectations: list, data_checks: list) -> str | None:
     """真实验收守卫（issue #2887 验收复盘）：最后轮报错 → 用例判失败。
 
@@ -554,6 +617,16 @@ async def run_case(case, token: str, session_id: str) -> dict:
     verdict = _last_round_error_verdict(results, case.expectations, case.data_checks)
     if verdict:
         failed_expectations.append((verdict, results[-1].get("error", "")))
+        score = 0.0
+
+    # 跨轮 case 级断言（acceptance-protocol §3.1/§3.4）：时序 + final_text 反模式词
+    # getattr 兜底：兼容未重新渲染的旧生成物（字段缺失按空处理，行为不变）。
+    case_issues = []
+    case_issues += check_order_before(results, getattr(case, "order_before", []) or [])
+    case_issues += check_forbidden_text(results, getattr(case, "forbidden_text", []) or [])
+    if case_issues:
+        for ci in case_issues:
+            failed_expectations.append((ci, "case-level check"))
         score = 0.0
 
     return {
@@ -748,6 +821,8 @@ def load_cases_from_yaml(cases_dir: str) -> list:
             skip_reason=c.get("skip_reason", ""),
             tags=c.get("tags") or [],
             persona=c.get("persona", ""),
+            order_before=c.get("order_before") or [],
+            forbidden_text=c.get("forbidden_text") or [],
         ))
     return cases
 
