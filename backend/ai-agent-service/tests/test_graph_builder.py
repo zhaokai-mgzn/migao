@@ -6,6 +6,8 @@ LangGraph 图构建测试
 - 图的节点和边结构正确
 """
 
+// case_ids: KN-003
+
 import pytest
 from unittest.mock import patch, MagicMock, AsyncMock
 
