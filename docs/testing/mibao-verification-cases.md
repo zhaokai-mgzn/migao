@@ -2043,7 +2043,7 @@
 真值: processing-manage.crud, product-sku-stock.create-flow
 溯源: 2026-09-07 改写（issue #3005，回滚 #2986）：行业加工费按米计价、辅料（罗马圈/四爪钩等）含在按米加工费中——per_piece 与「每米数量」密度不符合实际（数量对不上车间工艺、B 端无法对账），已回滚移除；PP-006 由密度配置用例改为计价方式回归断言 ｜ tags: processing_item, pricing
 
-## 商品域（19 case）
+## 商品域（20 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
 ```
@@ -2289,6 +2289,20 @@
 ```
 真值: product-sku-stock.low-stock
 溯源: 2026-09-08 新增（issue #3027）：sess_c1fce183dae24f22 复盘 — AI 预填表单展示了推理属性但 create 未落库（product_attributes 0 行）；加工项只传名称列表 → custom_price 全 NULL → 详情页 ¥0.00/米（单位硬编码）。三端修复：prompt 强制 specifications+processing_item_configs、admin-api finalPrice 回退、admin-web 渲染回退 ｜ tags: product_create, specifications, processing_item, regression
+
+### PR-020. 建品加工项价格落库盯防 — 自定义价须等于用户确认价（BFF 合并回归） 🔵
+```
+你: 创建一个窗帘商品，名称：盯防加工项价格0908，单价：88元/米，分类：窗帘布艺，颜色：浅灰
+你: 商品名称: 盯防加工项价格0908\n单价(元/米): 88\n分类: 窗帘布艺\n颜色: 浅灰\n售卖方式: 散剪\n门幅: 2.8米\n货号: DF-0908
+你: 已选加工项：刺绣工艺（价格自定义为45元/平方米）、波浪定型
+你: 确认创建
+期望: product_manage(action=create)
+数据: create 参数 processing_item_configs 含 customPrice=用户确认价（刺绣工艺 45）
+数据: 创建后商品详情 processingItemConfigs 的 finalPrice = 用户确认价（非默认价回退）——issue #3056 回归防线
+落库: product_by_name 盯防加工项价格0908 → processingItemConfigs.all.finalPrice>0; processingItemConfigs.刺绣工艺.finalPrice==45
+```
+真值: product-sku-stock.create-flow, ai-chat.validate-input
+溯源: 2026-09-08 新增（issue #3056 复盘）：建品自定义加工价曾被 BFF create 的 ids 分支静默丢弃（45→30，读回退掩盖后复发）。required_args 只查 create args 层，本 case 用 db_verify 查落库层（finalPrice=确认价），args+落库双保险 ｜ tags: product_create, processing_item, price, regression
 
 ## registry（1 case）
 
@@ -2893,8 +2907,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：236（活跃 118，跳过 118）
-- tier 分布：smoke 10 / normal 197 / adversarial 29
+- 用例总数：237（活跃 119，跳过 118）
+- tier 分布：smoke 10 / normal 198 / adversarial 29
 - 售后域：7
 - agents：6
 - api：20
@@ -2913,7 +2927,7 @@
 - ontology：4
 - 订单域：16
 - 加工项域：6
-- 商品域：19
+- 商品域：20
 - registry：1
 - 设置域：10
 - token-refresh：4
