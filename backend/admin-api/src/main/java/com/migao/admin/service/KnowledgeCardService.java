@@ -185,6 +185,17 @@ public class KnowledgeCardService {
      * 关键词命中 title/keywords/question/answer；.or() 必须嵌套在 eq 内（P1-6 回归）。
      */
     public List<KnowledgeCard> search(String query, String productId, String category) {
+        List<KnowledgeCard> result = doSearch(query, productId, category);
+        // 分类是软过滤（issue #3064 P1-2 二层缺陷）：LLM 猜测的 category 可能与本店卡片
+        // 实际分类不符（如退换货政策卡是 faq，LLM 传 aftersale）→ 分类筛选为空时去掉分类重试，
+        // 保证知识类问题能命中卡片（分类只是优先提示，不是硬性门槛）。
+        if (result.isEmpty() && StringUtils.hasText(category)) {
+            result = doSearch(query, productId, null);
+        }
+        return result;
+    }
+
+    private List<KnowledgeCard> doSearch(String query, String productId, String category) {
         LambdaQueryWrapper<KnowledgeCard> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(KnowledgeCard::getTenantId, TenantContext.getTenantId())
                 .eq(KnowledgeCard::getStatus, STATUS_PUBLISHED);

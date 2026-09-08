@@ -54,6 +54,12 @@ class KnowledgeCardServiceTest {
 
     @BeforeEach
     void setUp() {
+        // 纯单测环境需初始化 MP 实体元数据（LambdaQueryWrapper 依赖 lambda 缓存，防测试顺序侥幸）
+        com.baomidou.mybatisplus.core.MybatisConfiguration configuration =
+                new com.baomidou.mybatisplus.core.MybatisConfiguration();
+        org.apache.ibatis.builder.MapperBuilderAssistant assistant =
+                new org.apache.ibatis.builder.MapperBuilderAssistant(configuration, "");
+        com.baomidou.mybatisplus.core.metadata.TableInfoHelper.initTableInfo(assistant, KnowledgeCard.class);
         TenantContext.setTenantId(1L);
     }
 
@@ -212,6 +218,17 @@ class KnowledgeCardServiceTest {
             assertThat(sql).contains("tenant_id = #{ew.paramNameValuePairs.MPGENVAL1}");
             assertThat(sql).contains("status = #{ew.paramNameValuePairs.MPGENVAL2}");
             assertThat(sql).contains("published");
+        }
+
+        @Test
+        @DisplayName("分类软过滤：category 筛选为空 → 去掉分类重试（issue #3064 P1-2 二层缺陷）")
+        void search_categorySoftFilter_retriesWithoutCategory() {
+            when(knowledgeCardMapper.selectList(any(LambdaQueryWrapper.class)))
+                    .thenReturn(java.util.List.of())
+                    .thenReturn(java.util.List.of(sampleEntry()));
+            List<KnowledgeCard> result = knowledgeCardService.search("退换货政策", null, "aftersale");
+            assertThat(result).hasSize(1);
+            verify(knowledgeCardMapper, times(2)).selectList(any(LambdaQueryWrapper.class));
         }
 
         @Test
