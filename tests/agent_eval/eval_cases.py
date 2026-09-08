@@ -42,6 +42,7 @@ class EvalCase:
     order_before: List[str] = field(default_factory=list)   # 时序断言 "A before B"（跨轮，acceptance-protocol §3.1）
     forbidden_text: List[str] = field(default_factory=list) # final_text 反模式词，命中即失败（§3.4 幻觉式撤回/报错文案）
     required_args: List[dict] = field(default_factory=list) # 必填参数断言（create 缺 specifications/加工项价格即失败，§3.2）
+    db_verify: List[dict] = field(default_factory=list) # 落库层验证（创建后查 admin-api 断言价格=确认价，§3.2/issue #3056）
 
 
 # ── AS-001 [SMOKE] 售后工单列表（源: cases/aftersales.yml）──
@@ -2793,6 +2794,22 @@ _CASE_PR_019 = EvalCase(
     required_args=[{'tool': 'product_manage', 'action': 'create', 'fields': ['specifications', 'processing_item_configs.customPrice']}],
 )
 
+# ── PR-020 [NORMAL] 建品加工项价格落库盯防 — 自定义价须等于用户确认价（BFF 合并回归）（源: cases/product.yml）──
+_CASE_PR_020 = EvalCase(
+    id='PR-020',
+    legacy_id='',
+    title='建品加工项价格落库盯防 — 自定义价须等于用户确认价（BFF 合并回归）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['创建一个窗帘商品，名称：盯防加工项价格0908，单价：88元/米，分类：窗帘布艺，颜色：浅灰', '商品名称: 盯防加工项价格0908\\n单价(元/米): 88\\n分类: 窗帘布艺\\n颜色: 浅灰\\n售卖方式: 散剪\\n门幅: 2.8米\\n货号: DF-0908', '已选加工项：刺绣工艺（价格自定义为45元/平方米）、波浪定型', '确认创建'],
+    expectations=['product_manage(action=create)'],
+    data_checks=['create 参数 processing_item_configs 含 customPrice=用户确认价（刺绣工艺 45）', '创建后商品详情 processingItemConfigs 的 finalPrice = 用户确认价（非默认价回退）——issue #3056 回归防线'],
+    skip_reason='',
+    tags=['product_create', 'processing_item', 'price', 'regression'],
+    persona='',
+    db_verify=[{'fetch': 'product_by_name', 'name': '盯防加工项价格0908', 'checks': ['processingItemConfigs.all.finalPrice>0', 'processingItemConfigs.刺绣工艺.finalPrice==45']}],
+)
+
 # ── RG-001 [NORMAL] ToolRegistry 注册/查询/执行审计（源: cases/registry.yml）──
 _CASE_RG_001 = EvalCase(
     id='RG-001',
@@ -3712,6 +3729,7 @@ ALL_CASES = (
     _CASE_PR_017,
     _CASE_PR_018,
     _CASE_PR_019,
+    _CASE_PR_020,
     _CASE_RG_001,
     _CASE_ST_001,
     _CASE_ST_002,
