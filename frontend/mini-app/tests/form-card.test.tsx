@@ -1,4 +1,4 @@
-// case_ids: CH-009, API-006
+// case_ids: CH-009, API-006, CH-030
 /**
  * FormCard 组件测试（form 交互组件：多字段表单收集 + 本地校验 + __FORM__ 提交序列化）
  *
@@ -101,5 +101,47 @@ describe('FormCard', () => {
     render(<FormCard data={withCancel} onAction={onAction} />)
     fireEvent.click(screen.getByText('稍后再说'))
     expect(onAction).toHaveBeenCalledWith('取消填写')
+  })
+})
+
+describe('FormCard — 提交锁（CH-030 防重复提交）', () => {
+  afterEach(() => {
+    jest.clearAllMocks()
+  })
+
+  it('提交后锁卡：第二次提交或取消不再触发 onAction', () => {
+    const onAction = jest.fn()
+    const data: InteractiveData = {
+      type: 'form',
+      component: 'form',
+      title: '请填写收货信息',
+      formFields: [{ key: 'name', label: '收货人', required: true }],
+      submitLabel: '提交',
+      cancelLabel: '取消',
+      cancelValue: '取消',
+    }
+    render(<FormCard data={data} onAction={onAction} />)
+    fireEvent.change(screen.getByPlaceholderText('请输入收货人'), { target: { value: '张三' } })
+    fireEvent.click(screen.getByText('提交'))
+    fireEvent.click(screen.getByText('提交'))
+    fireEvent.click(screen.getByText('取消'))
+    expect(onAction).toHaveBeenCalledTimes(1)
+  })
+
+  it('disabled=true（历史已答只读）：提交/取消均不触发 onAction', () => {
+    const onAction = jest.fn()
+    const data: InteractiveData = {
+      type: 'form',
+      component: 'form',
+      title: '请填写收货信息',
+      formFields: [{ key: 'name', label: '收货人', required: true }],
+      submitLabel: '提交',
+      cancelLabel: '取消',
+      cancelValue: '取消',
+    }
+    render(<FormCard data={data} onAction={onAction} disabled />)
+    fireEvent.change(screen.getByPlaceholderText('请输入收货人'), { target: { value: '张三' } })
+    fireEvent.click(screen.getByText('提交'))
+    expect(onAction).not.toHaveBeenCalled()
   })
 })

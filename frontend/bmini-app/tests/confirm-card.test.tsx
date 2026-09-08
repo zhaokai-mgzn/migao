@@ -1,4 +1,4 @@
-// case_ids: OR-010, CH-010
+// case_ids: OR-010, CH-010, CH-030
 /**
  * ConfirmCard 交互测试 — 订单确认附加交互（参考瑞幸 C 端 agent）
  *
@@ -112,5 +112,64 @@ describe('ConfirmCard — 订单确认附加交互', () => {
     expect(screen.queryByText('自提')).not.toBeInTheDocument()
     expect(screen.queryByText('外送')).not.toBeInTheDocument()
     expect(screen.queryByText('微信支付')).not.toBeInTheDocument()
+  })
+})
+
+describe('ConfirmCard — 提交锁（CH-030 防重复提交）', () => {
+  afterEach(() => {
+    jest.clearAllMocks()
+  })
+
+  it('点确认后锁卡：第二次点击不再触发 onAction', () => {
+    const onAction = jest.fn()
+    const data: InteractiveData = {
+      type: 'confirm',
+      component: 'confirm',
+      title: '确认订单信息',
+      fields: [{ label: '商品', value: '窗帘' }],
+      confirmLabel: '确认下单',
+      cancelLabel: '取消',
+      confirmValue: '确认下单',
+      cancelValue: '取消',
+    }
+    render(<ConfirmCard data={data} onAction={onAction} />)
+    fireEvent.click(screen.getByText('确认下单'))
+    fireEvent.click(screen.getByText('确认下单'))
+    expect(onAction).toHaveBeenCalledTimes(1)
+  })
+
+  it('点取消后锁卡：后续确认/取消不再触发 onAction', () => {
+    const onAction = jest.fn()
+    const data: InteractiveData = {
+      type: 'confirm',
+      component: 'confirm',
+      title: '确认订单信息',
+      fields: [{ label: '商品', value: '窗帘' }],
+      confirmLabel: '确认下单',
+      confirmValue: '确认下单',
+      cancelValue: '取消',
+    }
+    render(<ConfirmCard data={data} onAction={onAction} />)
+    fireEvent.click(screen.getByText('取消'))
+    fireEvent.click(screen.getByText('确认下单'))
+    expect(onAction).toHaveBeenCalledTimes(1)
+  })
+
+  it('disabled=true（历史已答只读）：点击确认/取消均不触发 onAction', () => {
+    const onAction = jest.fn()
+    const data: InteractiveData = {
+      type: 'confirm',
+      component: 'confirm',
+      title: '确认订单信息',
+      fields: [{ label: '商品', value: '窗帘' }],
+      confirmLabel: '确认下单',
+      cancelLabel: '取消',
+      confirmValue: '确认下单',
+      cancelValue: '取消',
+    }
+    render(<ConfirmCard data={data} onAction={onAction} disabled />)
+    fireEvent.click(screen.getByText('确认下单'))
+    fireEvent.click(screen.getByText('取消'))
+    expect(onAction).not.toHaveBeenCalled()
   })
 })

@@ -1,4 +1,4 @@
-// case_ids: OR-001, CH-001, API-010
+// case_ids: OR-001, CH-001, API-010, CH-031
 /**
  * API 集成测试
  *
@@ -105,6 +105,70 @@ describe('chatService API', () => {
       expect(messages).toHaveLength(2)
       expect(messages[0].role).toBe('user')
       expect(messages[1].role).toBe('assistant')
+    })
+
+    it('历史回放透传 interactive 与 interactive_answered（CH-031, issue #3038）', async () => {
+      const interactive = {
+        type: 'confirm',
+        component: 'confirm',
+        title: '确认订单信息',
+        fields: [{ label: '商品', value: '窗帘' }],
+      }
+      ;(Taro.request as jest.Mock).mockResolvedValueOnce({
+        statusCode: 200,
+        data: {
+          success: true,
+          data: {
+            session_id: 's1',
+            messages: [
+              {
+                id: 'm2', session_id: 's1', role: 'assistant', content: '请确认订单信息',
+                created_at: '2024-01-01',
+                interactive,
+                interactive_answered: true,
+              },
+            ],
+          },
+        },
+      })
+
+      const { getSessionMessages } = require('../src/services/chatService')
+      const messages = await getSessionMessages('s1')
+
+      expect(messages[0].interactive).toEqual(interactive)
+      expect(messages[0].interactiveAnswered).toBe(true)
+    })
+
+    it('未答交互历史回放 interactiveAnswered=false（CH-031）', async () => {
+      const interactive = {
+        type: 'choice',
+        component: 'choice',
+        title: '请选择加工项',
+        options: [{ label: '打孔加工', value: 'pi_hole' }],
+      }
+      ;(Taro.request as jest.Mock).mockResolvedValueOnce({
+        statusCode: 200,
+        data: {
+          success: true,
+          data: {
+            session_id: 's1',
+            messages: [
+              {
+                id: 'm2', session_id: 's1', role: 'assistant', content: '请选择加工项',
+                created_at: '2024-01-01',
+                interactive,
+                interactive_answered: false,
+              },
+            ],
+          },
+        },
+      })
+
+      const { getSessionMessages } = require('../src/services/chatService')
+      const messages = await getSessionMessages('s1')
+
+      expect(messages[0].interactive).toEqual(interactive)
+      expect(messages[0].interactiveAnswered).toBe(false)
     })
   })
 

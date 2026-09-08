@@ -253,12 +253,22 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       isStreaming: true,
     }
 
-    set(state => ({
-      messages: [...state.messages, userMsg, aiMsg],
-      isStreaming: true,
-      streamingContent: '',
-      error: null,
-    }))
+    set(state => {
+      // 用户已回复（含点击 choice/confirm/form 按钮、翻页产生的消息）→ 所有未答复的
+      // 交互组件消息标记为 interactiveAnswered（issue #3038 / CH-030 本地即时锁，
+      // 防重复提交；后端已由 #3037 持久化，历史回放一致）
+      const locked = state.messages.map(m =>
+        m.role === 'assistant' && m.interactive && !m.interactiveAnswered && !m.isStreaming
+          ? { ...m, interactiveAnswered: true }
+          : m
+      )
+      return {
+        messages: [...locked, userMsg, aiMsg],
+        isStreaming: true,
+        streamingContent: '',
+        error: null,
+      }
+    })
 
     // 创建 SSE 客户端
     const sseClient = createChatSSEClient()

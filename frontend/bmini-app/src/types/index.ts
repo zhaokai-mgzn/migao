@@ -64,6 +64,9 @@ export interface Message {
   toolCall?: ToolCallData
   tool_calls?: ToolCallData[]
   interactive?: InteractiveData
+  // 该交互组件是否已被用户答复（issue #3038）：消息级状态作为只读锁的单一事实源，
+  // 历史回放/刷新后仍保持，防止已答复卡片「复活」重复提交（对齐 B 端 #3036）
+  interactiveAnswered?: boolean
   suggestions?: string[]
 }
 

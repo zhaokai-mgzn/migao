@@ -1,4 +1,4 @@
-// case_ids: API-006
+// case_ids: API-006, CH-030
 /**
  * ChoiceCard 组件测试（choice 交互组件：选项列表 + 翻页）
  *
@@ -10,16 +10,17 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import ChoiceCard from '../src/components/cards/ChoiceCard'
 import type { InteractiveData } from '../src/types'
 
+const baseChoice: InteractiveData = {
+  type: 'choice',
+  component: 'choice',
+  title: '窗帘有哪些款式？(第1/3页)',
+  options: [
+    { label: '现代简约', value: '现代简约', description: '百搭耐看' },
+    { label: '北欧风', value: '北欧风', description: '清新自然' },
+  ],
+}
+
 describe('ChoiceCard', () => {
-  const baseChoice: InteractiveData = {
-    type: 'choice',
-    component: 'choice',
-    title: '窗帘有哪些款式？(第1/3页)',
-    options: [
-      { label: '现代简约', value: '现代简约', description: '百搭耐看' },
-      { label: '北欧风', value: '北欧风', description: '清新自然' },
-    ],
-  }
 
   it('应渲染标题和选项列表', () => {
     render(<ChoiceCard data={baseChoice} onAction={jest.fn()} />)
@@ -68,5 +69,26 @@ describe('ChoiceCard', () => {
     fireEvent.click(screen.getByText('下一页'))
     // 翻页动作以可读文本形式回传，由 AI 处理
     expect(onAction).toHaveBeenCalled()
+  })
+})
+
+describe('ChoiceCard — 提交锁（CH-030 防重复提交）', () => {
+  afterEach(() => {
+    jest.clearAllMocks()
+  })
+
+  it('点选项后锁卡：后续点击不再触发 onAction', () => {
+    const onAction = jest.fn()
+    render(<ChoiceCard data={baseChoice} onAction={onAction} />)
+    fireEvent.click(screen.getByText('现代简约'))
+    fireEvent.click(screen.getByText('北欧风'))
+    expect(onAction).toHaveBeenCalledTimes(1)
+  })
+
+  it('disabled=true（历史已答只读）：点击选项不触发 onAction', () => {
+    const onAction = jest.fn()
+    render(<ChoiceCard data={baseChoice} onAction={onAction} disabled />)
+    fireEvent.click(screen.getByText('现代简约'))
+    expect(onAction).not.toHaveBeenCalled()
   })
 })

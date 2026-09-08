@@ -6,6 +6,8 @@ import './ConfirmCard.scss'
 interface ConfirmCardProps {
   data: InteractiveData
   onAction: (value: string) => void
+  /** 只读（已答复/历史回放）：按钮不可点，防重复提交（issue #3038 CH-030） */
+  disabled?: boolean
 }
 
 /** 确认卡片：展示待确认信息 + 确认/取消按钮（interact confirm 组件）
@@ -14,7 +16,7 @@ interface ConfirmCardProps {
  * 支付方式选择 + 应付金额；确认时把选中值拼到 confirmValue 一并回传，
  * 供 LLM 带入下单流程。
  */
-export default function ConfirmCard({ data, onAction }: ConfirmCardProps) {
+export default function ConfirmCard({ data, onAction, disabled }: ConfirmCardProps) {
   const fields = data.fields || []
   const confirmLabel = data.confirmLabel || '确认'
   const cancelLabel = data.cancelLabel || '取消'
@@ -27,10 +29,15 @@ export default function ConfirmCard({ data, onAction }: ConfirmCardProps) {
   // 默认选中第一项
   const [delivery, setDelivery] = useState<string>(deliveryOptions[0]?.value || '')
   const [payment, setPayment] = useState<string>(paymentOptions[0]?.value || '')
+  // 提交锁：点击确认/取消后锁卡，防重复提交（issue #3038 CH-030）
+  const [submitted, setSubmitted] = useState(false)
+  const locked = disabled || submitted
 
   const isOrderConfirm = data.orderConfirm === true
 
   const handleConfirm = () => {
+    if (locked) return
+    setSubmitted(true)
     let value = confirmValue
     if (isOrderConfirm) {
       const extras: string[] = []
@@ -42,6 +49,8 @@ export default function ConfirmCard({ data, onAction }: ConfirmCardProps) {
   }
 
   const handleCancel = () => {
+    if (locked) return
+    setSubmitted(true)
     onAction(cancelValue)
   }
 
@@ -108,7 +117,7 @@ export default function ConfirmCard({ data, onAction }: ConfirmCardProps) {
 
       {renderOrderMeta}
 
-      <View className='confirm-card__actions'>
+      <View className={`confirm-card__actions${locked ? ' confirm-card__actions--locked' : ''}`}>
         <View
           className='confirm-card__btn confirm-card__btn--cancel'
           onClick={handleCancel}

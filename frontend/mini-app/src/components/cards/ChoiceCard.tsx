@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { View, Text } from '@tarojs/components'
 import type { InteractiveData } from '../../types'
 import './ChoiceCard.scss'
@@ -5,6 +6,8 @@ import './ChoiceCard.scss'
 interface ChoiceCardProps {
   data: InteractiveData
   onAction: (value: string) => void
+  /** 只读（已答复/历史回放）：选项不可点，防重复提交（issue #3038 CH-030） */
+  disabled?: boolean
 }
 
 /**
@@ -13,19 +16,24 @@ interface ChoiceCardProps {
  * 用于翻页查询场景（查订单/商品列表）：用户点击选项或翻页按钮，
  * 以可读文本形式回传给 AI 继续处理。
  */
-export default function ChoiceCard({ data, onAction }: ChoiceCardProps) {
+export default function ChoiceCard({ data, onAction, disabled }: ChoiceCardProps) {
   const options = data.options || []
   const pageMeta = data.pageMeta
   const hasPaging = !!pageMeta && (pageMeta.total || 0) > 0
+  // 提交锁：点击选项/翻页后锁卡，防重复提交（issue #3038 CH-030）
+  const [submitted, setSubmitted] = useState(false)
+  const locked = disabled || submitted
 
   // 翻页：构造下一/上一页指令文本回传
   const handlePrev = () => {
-    if (!pageMeta || pageMeta.current <= 1) return
+    if (locked || !pageMeta || pageMeta.current <= 1) return
+    setSubmitted(true)
     onAction(`上一页（${pageMeta.current - 1}）`)
   }
 
   const handleNext = () => {
-    if (!pageMeta || pageMeta.current >= pageMeta.total) return
+    if (locked || !pageMeta || pageMeta.current >= pageMeta.total) return
+    setSubmitted(true)
     onAction(`下一页（${pageMeta.current + 1}）`)
   }
 
@@ -39,9 +47,13 @@ export default function ChoiceCard({ data, onAction }: ChoiceCardProps) {
         {options.map((opt, idx) => (
           <View
             key={`co-${idx}`}
-            className='choice-card__option'
-            onClick={() => onAction(opt.value)}
-            hoverClass='choice-card__option--hover'
+            className={`choice-card__option${locked ? ' choice-card__option--locked' : ''}`}
+            onClick={() => {
+              if (locked) return
+              setSubmitted(true)
+              onAction(opt.value)
+            }}
+            hoverClass={locked ? undefined : 'choice-card__option--hover'}
           >
             <View className='choice-card__option-main'>
               <Text className='choice-card__option-label'>{opt.label}</Text>

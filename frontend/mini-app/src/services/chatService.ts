@@ -158,6 +158,10 @@ export async function getSessionMessages(
     content_type: msg.content_type,
     images: msg.images,
     tool_calls: msg.tool_calls,
+    // 历史回放透传交互组件与已答标记（issue #3038 / CH-031）：
+    // 未答交互回放后仍可操作；已答卡片渲染只读变体而非消失
+    interactive: msg.interactive,
+    interactiveAnswered: msg.interactive_answered,
     created_at: msg.created_at,
   }))
 }
