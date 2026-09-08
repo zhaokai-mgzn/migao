@@ -73,7 +73,8 @@ public class KnowledgeDistillClient {
                 headers.set("X-Service-Token", serviceToken);
             }
 
-            String url = baseUrl.trim().replaceAll("/+$", "") + DISTILL_PATH;
+            String url = (StringUtils.hasText(baseUrl) ? baseUrl : "http://localhost:8000")
+                    .trim().replaceAll("/+$", "") + DISTILL_PATH;
             ResponseEntity<String> response = restTemplate.exchange(
                     url, HttpMethod.POST, new HttpEntity<>(body, headers), String.class);
 
