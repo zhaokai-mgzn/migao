@@ -7,7 +7,7 @@ customer_order_query / customer_logistics_track 等仅注册于小布 customer_*
 修复：cases/*.yml 支持 persona 字段（mibao/xiaobu/""双端），render 透传 +
 local_runner 按 persona 过滤（mibao 跳过 xiaobu 专属，反之亦然）。
 """
-# case_ids: CH-008, CH-012, CH-013, CH-014, CH-015, CH-017, OR-012, ST-008
+# case_ids: CH-008, CH-012, CH-013, CH-014, CH-015, CH-017, OR-012, ST-008, CH-030, CH-031, CH-032
 import sys
 from pathlib import Path
 
@@ -18,8 +18,8 @@ from render_cases import filter_by_persona, load_case_dicts  # noqa: E402
 
 CASES_DIR = REPO_ROOT / ".github" / "cases"
 
-# 已标记 persona: xiaobu 的 C 端专属用例（issue #2855 修复对象）
-XIAOBU_ONLY = {"CH-008", "CH-012", "CH-013", "CH-014", "CH-015", "CH-017", "OR-012", "ST-008"}
+# 已标记 persona: xiaobu 的 C 端专属用例（issue #2855 修复对象；#3038 新增 3 条交互固化用例）
+XIAOBU_ONLY = {"CH-008", "CH-012", "CH-013", "CH-014", "CH-015", "CH-017", "OR-012", "ST-008", "CH-030", "CH-031", "CH-032"}
 
 
 def _all_cases():
@@ -83,4 +83,4 @@ class TestGeneratedArtifact:
         eval_py = (REPO_ROOT / "tests" / "agent_eval" / "eval_cases.py").read_text(encoding="utf-8")
         assert "persona: str = \"\"" in eval_py, "EvalCase dataclass 应含 persona 字段"
         assert eval_py.count("persona='xiaobu'") == len(XIAOBU_ONLY), \
-            "生成物应包含 8 条 xiaobu 专属用例的 persona 声明"
+            "生成物应包含 xiaobu 专属用例的 persona 声明（数量与 XIAOBU_ONLY 一致）"
