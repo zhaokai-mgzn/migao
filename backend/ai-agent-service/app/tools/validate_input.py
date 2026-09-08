@@ -279,6 +279,40 @@ class ValidateInputTool(BaseTool):
                     )
                 # 非数字非 UUID 格式的 ID — 宽松通过（processing_item_query 返回的 ID 格式多样）
 
+        # 6. 建品参数确定性兜底（issue #3052，2026-09-08 Round2 实拍）：
+        #    prompt 指令会被 LLM 方差漏掉 → validate_input 必须成为确定性闸门
+        #    - specifications 键必须存在（用户明确拒绝规格时传空对象 {}）
+        #    - 选了加工项 → processing_item_configs 必须存在且每项含 customPrice+unit
+        if target_tool == "product_manage" and target_action == "create":
+            if "specifications" not in params:
+                issues.append(
+                    "缺少 specifications（窗帘默认规格：{\"克重\":\"200-300g\",\"材质\":\"涤纶\",\"功能\":\"遮光\","
+                    "\"工艺\":\"色织\",\"风格\":\"现代简约\",\"图案\":\"纯色\"}；"
+                    "用户明确表示不需要规格时传空对象 {}）"
+                )
+            pcs = params.get("processing_item_configs")
+            if (pids and isinstance(pids, list) and pids) or (pcs and isinstance(pcs, list) and pcs):
+                if not pcs or not isinstance(pcs, list) or not pcs:
+                    issues.append(
+                        "选了加工项但未传 processing_item_configs（必须为列表，每项含 "
+                        "{processingItemId, customPrice, unit}；customPrice 取 processing_item_query 返回的 unit_price）"
+                    )
+                else:
+                    for pc in pcs:
+                        if not isinstance(pc, dict):
+                            issues.append("processing_item_configs 元素必须是对象")
+                            break
+                        if not (pc.get("customPrice") or pc.get("unit_price")):
+                            issues.append(
+                                f"processing_item_configs 缺价格 customPrice/unit_price: {str(pc)[:100]}"
+                            )
+                            break
+                        if not pc.get("unit"):
+                            issues.append(
+                                f"processing_item_configs 缺单位 unit: {str(pc)[:100]}"
+                            )
+                            break
+
         if issues:
             return ToolResult(
                 success=False,
