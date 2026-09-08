@@ -557,3 +557,34 @@ cases:
       ci:
         - ai-agent-tests.yml
       verifies: []
+
+  - id: DF-018
+    legacy_id: ""
+    title: "长会话确认守卫不被污染 - 会话长度提示不得拼入用户消息，保证确认词可识别"
+    domains:
+      - chat
+      - product
+    tier: adversarial
+    tags:
+      - defense
+      - confirm
+      - multi_turn
+      - regression
+    truths_ref:
+      - ai-chat.confirm-required
+    user_inputs:
+      - "（长会话）确认补充商品属性"
+      - "（长会话，>20 条消息）确认"
+    expectations:
+      - tool: product_manage
+    data_checks:
+      - "会话消息数 >20 时最后一条用户消息content不被追加任何提示文本（无「当前对话已持续」字样）"
+      - "长会话下确认词仍被 _is_explicit_confirmation 识别为明确确认（长度不超限）"
+    skip_reason: ""
+    merge_log: "2026-09-08 新增：sess_c1fce183dae24f22 复盘 — SESSION_LENGTH_HINT 把会话长度提示拼入最新 HumanMessage，污染确认守卫判定（长度>24 无法识别为确认），商品属性补充确认死循环 4 轮"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_graph_skills.py"
+      ci:
+        - ai-agent-tests.yml
+      verifies: []

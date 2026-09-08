@@ -7,7 +7,7 @@ LangGraph Skill 节点测试
 - ToolContext 从 state 正确构建
 - base_skill 的 execute_skill 逻辑
 """
-# case_ids: AG-004, CH-003, CH-023, MC-008
+# case_ids: AG-004, CH-003, CH-023, MC-008, DF-018
 
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
@@ -211,6 +211,68 @@ class TestExecuteSkill:
         assert "messages" in result
         # P3：entities 死字段已移除
         assert "entities" not in result
+
+    @patch("app.graph.skills.base_skill.get_breaker")
+    @patch("app.graph.skills.base_skill.get_skill_llm")
+    @patch("app.graph.skills.base_skill.create_skill_registry")
+    @patch("app.graph.skills.base_skill.set_tool_context")
+    async def test_long_session_no_length_hint_appended_to_user_msg(
+        self, mock_set_ctx, mock_create_reg, mock_get_llm, mock_get_breaker
+    ):
+        """长会话（>20 条消息）时最后一条用户消息不被附加任何提示文本。
+
+        回归背景（sess_c1fce183dae24f22 复盘）：旧实现把「当前对话已持续 N 轮」
+        的会话长度提示直接拼在最新 HumanMessage 的 content 后面，污染了
+        _is_explicit_confirmation 的判定输入（长度 > 24 无法识别为确认），
+        导致长会话中写操作确认被反复拦截、确认死循环。
+
+        修复后：不再计算/拼接会话长度提示，用户消息原样保留。
+        """
+        # Mock registry
+        mock_registry = MagicMock()
+        mock_registry.get_langchain_tools.return_value = []
+        mock_create_reg.return_value = mock_registry
+
+        # Mock breaker — 直接透传
+        mock_breaker = MagicMock()
+        async def _passthrough(fn):
+            return await fn()
+        mock_breaker.call = _passthrough
+        mock_get_breaker.return_value = mock_breaker
+
+        # Mock LLM response (no tool_calls)
+        mock_response = MagicMock(spec=AIMessage)
+        mock_response.content = "这是回复"
+        mock_response.tool_calls = []
+
+        mock_llm = MagicMock()
+        mock_llm.bind_tools.return_value = mock_llm
+        mock_llm.ainvoke = AsyncMock(return_value=mock_response)
+        mock_get_llm.return_value = mock_llm
+
+        # 构造 >20 条消息的长会话，最后一条是用户确认消息（模拟真实死循环现场）
+        messages = []
+        for i in range(22):
+            messages.append(HumanMessage(content=f"用户消息{i}"))
+            messages.append(AIMessage(content=f"助手回复{i}"))
+        messages.append(HumanMessage(content="确认补充商品属性"))
+
+        state = _make_state(messages=messages)
+        result = await execute_skill(
+            state=state,
+            skill_name="product",
+            tool_names=[],
+            system_prompt="你是商品助手",
+        )
+
+        assert result["final_answer"] == "这是回复"
+        # 关键断言：最后一条用户消息未被附加「会话长度」提示（confirm 判定不受污染）
+        last_content = state["messages"][-1].content
+        assert last_content == "确认补充商品属性", f"用户消息被附加了提示: {last_content!r}"
+        assert "当前对话已持续" not in str(last_content)
+        # 确认词仍能被确认守卫识别
+        from app.graph.skills.base_skill import _is_explicit_confirmation
+        assert _is_explicit_confirmation(str(last_content)) is True
 
     @patch("app.graph.skills.base_skill.get_breaker")
     @patch("app.graph.skills.base_skill.LLMFactory")
