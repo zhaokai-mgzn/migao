@@ -158,7 +158,7 @@
 真值: ai-chat.agent-factory
 溯源: 2026-08-25 新增：ai-agent-service agents-customer_service_agent 覆盖率补全（issue #2429） ｜ tags: agents, factory, alias
 
-## api（14 case）
+## api（15 case）
 
 ### API-001. chat 会话生命周期 - 租户隔离 + 用户所有权 + 幂等/重开 🔵
 ```
@@ -306,6 +306,17 @@
 跳过: 知识卡片检索由 MockMvc + Service 单测验证（KnowledgeCardControllerTest/KnowledgeCardServiceTest），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-09-08 新增（issue #3051 LLM WIKI 板块 P2）：检索链路 = 结构化过滤 + 关键词匹配，不引入向量库；含 P1-6 租户隔离回归 ｜ tags: api, knowledge, wiki, search
+
+### API-017. 行业模板 - 目录 + 一键套用（去重 + source=template）（LLM WIKI 板块 #3051 P3） 🔵
+```
+你: 商家一键套用行业模板后自动获得预置知识卡片，无需逐条手写
+数据: GET /api/admin/knowledge/templates 返回平台预置模板目录（templateId/industry/name/version/description/entryCount），布艺模板 entryCount≥30
+数据: POST /api/admin/knowledge/templates/{templateId}/apply 将模板知识卡片复制到本租户：sourceType=template、sourceRef=templateId、status=published
+数据: 按 (tenant_id, title) 去重：重复标题跳过不重复插入，返回 {created, skipped} 统计
+数据: 套用跨租户无影响：仅当前租户可见（租户隔离拦截器）
+跳过: 模板套用由 MockMvc + Service 单测验证（KnowledgeTemplateControllerTest/KnowledgeTemplateServiceTest），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-08 新增（issue #3051 LLM WIKI 板块 P3）：行业模板体系——种子 Markdown 结构化迁移为 knowledge-templates/curtain/template.json（32 条），模板=平台资产，一键套用复制为租户词条 ｜ tags: api, knowledge, wiki, template
 
 ### API-012. 语音转写接口容错 - 空/极小/静音音频返回友好 4xx/5xx，不裸 500（#2984） 🔵
 ```
@@ -2787,11 +2798,11 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：226（活跃 114，跳过 112）
-- tier 分布：smoke 8 / normal 189 / adversarial 29
+- 用例总数：227（活跃 114，跳过 113）
+- tier 分布：smoke 8 / normal 190 / adversarial 29
 - 售后域：7
 - agents：6
-- api：14
+- api：15
 - bmini：5
 - 分类域：3
 - 对话边界域：32
@@ -2818,6 +2829,7 @@
 - API-014: 提炼候选数据模型 - knowledge_candidates 表/实体/Mapper（LLM WIKI 板块 #3051）
 - API-015: 知识知识卡片 CRUD + 状态机 - 创建/编辑/发布/归档/删除（LLM WIKI 板块 #3051）
 - API-016: 知识知识卡片检索 - 仅 published + 租户隔离 + 关键词命中（LLM WIKI 板块 #3051）
+- API-017: 行业模板 - 目录 + 一键套用（去重 + source=template）（LLM WIKI 板块 #3051 P3）
 - API-012: 语音转写接口容错 - 空/极小/静音音频返回友好 4xx/5xx，不裸 500（#2984）
 - CH-027: 流式回复中切换会话再切回 - 等待状态与最终回复保留（issue #2901）
 - CH-028: 多会话并发流 - 会话 A 回复中 B 可发送，增量/停止互不干扰（issue #2906）

@@ -162,7 +162,7 @@ migao/
 │   └── audit-2026-08/          # 2026-08 审计与决策记录
 │
 ├── tests/smoke/                # E2E 冒烟测试（pytest）
-├── knowledge_base/             # 行业知识种子数据（RAG 决策 D1 已下线，预留）
+├── backend/admin-api/src/main/resources/knowledge-templates/  # 行业模板（布艺 curtain，32 条预置知识卡片）
 └── .github/workflows/          # CI/CD（19 个工作流）
 ```
 

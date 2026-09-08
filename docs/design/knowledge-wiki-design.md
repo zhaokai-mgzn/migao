@@ -64,7 +64,7 @@ LLM WIKI **完全替代**旧知识库：以下组件整体移除，不留并存�
 | Agent | `registry.py` 知识工具禁用注释 / `SKILL-customer_knowledge.md` RAG 优先描述 | 改为知识卡片检索工具 + 知识卡片优先描述（Phase 7） |
 | 用例 | `API-008`（RAG 降级）/ `API-011`（同步历史）→ 已过时 | 从 `.github/cases/api.yml` 删除或标注 removed，重渲染生成物 |
 | 文档 | README 知识库(RAG) 说明、`docs/wiki/Home.md`、`AI-Agent.md` RAG Pipeline 节、`api-reference.md` §5.5、`rag-architecture.md`、`Database.md` 知识库行、`mibao-verification-cases.md` | 按现状改写为知识卡片模型描述；`rag-architecture.md` 归档为历史 |
-| 种子数据 | `knowledge_base/*.md`（Markdown 文档形态） | 结构化迁移为 `knowledge_base/templates/curtain/` 知识卡片模板（Phase 3），原 md 删除 |
+| 种子数据 | `knowledge_base/*.md`（Markdown 文档形态） | 结构化迁移为 `resources/knowledge-templates/curtain/template.json`（Phase 3，32 条），原 md 删除 |
 | CI 模板 | `.github/templates/knowledge-ai.yml`（若引用旧工具） | 按知识卡片检索更新 |
 
 **移除验收标准**：全仓 `grep -rn "knowledge_documents\|rag_chunks\|knowledge_sync_history\|KnowledgeDocument\|KnowledgeChunk\|KnowledgeSyncHistory"`（排除历史审计文档）为 0；`docs/sql/schema.sql` 无三表；三模块测试全绿。
@@ -163,7 +163,7 @@ CREATE INDEX IF NOT EXISTS idx_knowledge_candidates_status ON knowledge_candidat
 
 ### 5.3 行业模板
 
-- **v1 不做模板表**：模板以结构化文件存放 `knowledge_base/templates/<industry>/`（JSON，字段对齐 knowledge_cards），「模板目录」接口读取文件列表，「一键套用」接口把模板知识卡片复制进租户（`source_type=template`, `source_ref=模板ID`）。
+- **v1 不做模板表**：模板以结构化文件存放 `backend/admin-api/src/main/resources/knowledge-templates/<industry>/template.json`（JSON，字段对齐 knowledge_cards；随 jar 打包，部署可用），索引 `index.json` 维护模板清单；「模板目录」接口读取索引（entryCount 动态计算），「一键套用」接口把模板知识卡片复制进租户（`sourceType=template`, `sourceRef=模板ID`, `status=published`，按 (tenant_id, title) 去重）。
 - 模板文件 = `{template_id, industry, name, version, entries: [{title, category, question, answer, keywords}]}`。
 - 理由：模板是平台资产、低频变更，文件 + Git 版本管理最省；模板市场 UI 直接读目录即可。若未来需要跨租户共享/交易再升级为表。
 

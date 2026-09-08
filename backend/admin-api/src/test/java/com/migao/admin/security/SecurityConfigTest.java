@@ -86,6 +86,10 @@ class SecurityConfigTest {
     @MockBean
     private com.migao.admin.service.KnowledgeCardService knowledgeCardService;
 
+    // LLM WIKI 板块（issue #3051 P3）：行业模板服务
+    @MockBean
+    private com.migao.admin.service.KnowledgeTemplateService knowledgeTemplateService;
+
     @MockBean
     private com.migao.admin.service.NotificationService notificationService;
 

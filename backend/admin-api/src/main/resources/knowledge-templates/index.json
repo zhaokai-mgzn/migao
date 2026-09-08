@@ -1,0 +1,12 @@
+{
+  "templates": [
+    {
+      "templateId": "curtain",
+      "industry": "curtain",
+      "name": "布艺窗帘行业模板",
+      "version": 1,
+      "description": "布艺窗帘行业预置知识卡片：面料/清洗/安装/测量/价格售后 FAQ + 主流产品目录 + 尺寸测量指南。套用后可编辑，价格等请按本店实际调整。",
+      "file": "curtain/template.json"
+    }
+  ]
+}

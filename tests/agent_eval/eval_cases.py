@@ -434,6 +434,21 @@ _CASE_API_016 = EvalCase(
     persona='',
 )
 
+# ── API-017 [NORMAL] 行业模板 - 目录 + 一键套用（去重 + source=template）（LLM WIKI 板块 #3051 P3）（源: cases/api.yml）──
+_CASE_API_017 = EvalCase(
+    id='API-017',
+    legacy_id='',
+    title='行业模板 - 目录 + 一键套用（去重 + source=template）（LLM WIKI 板块 #3051 P3）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家一键套用行业模板后自动获得预置知识卡片，无需逐条手写'],
+    expectations=[],
+    data_checks=['GET /api/admin/knowledge/templates 返回平台预置模板目录（templateId/industry/name/version/description/entryCount），布艺模板 entryCount≥30', 'POST /api/admin/knowledge/templates/{templateId}/apply 将模板知识卡片复制到本租户：sourceType=template、sourceRef=templateId、status=published', '按 (tenant_id, title) 去重：重复标题跳过不重复插入，返回 {created, skipped} 统计', '套用跨租户无影响：仅当前租户可见（租户隔离拦截器）'],
+    skip_reason='模板套用由 MockMvc + Service 单测验证（KnowledgeTemplateControllerTest/KnowledgeTemplateServiceTest），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['api', 'knowledge', 'wiki', 'template'],
+    persona='',
+)
+
 # ── API-012 [NORMAL] 语音转写接口容错 - 空/极小/静音音频返回友好 4xx/5xx，不裸 500（#2984）（源: cases/api.yml）──
 _CASE_API_012 = EvalCase(
     id='API-012',
@@ -3463,6 +3478,7 @@ ALL_CASES = (
     _CASE_API_014,
     _CASE_API_015,
     _CASE_API_016,
+    _CASE_API_017,
     _CASE_API_012,
     _CASE_BM_001,
     _CASE_BM_002,
