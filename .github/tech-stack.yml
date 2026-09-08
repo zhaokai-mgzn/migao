@@ -96,6 +96,11 @@ modules:
       - pattern: 'backend/ai-agent-service/app/ontology/(.+)\.py'
         tests:
           - 'tests/test_ontology_schema.py'
+      # 知识提炼模块（issue #3051 P5b）：distill 由 test_knowledge_distill 覆盖
+      - pattern: 'backend/ai-agent-service/app/knowledge/(.+)\.py'
+        tests:
+          - 'tests/test_knowledge_{1}.py'
+          - 'tests/test_{1}.py'
       - pattern: 'backend/ai-agent-service/app/(.+)\.py'
         tests:
           - 'tests/test_{1}.py'

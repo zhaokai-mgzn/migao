@@ -15,7 +15,7 @@
 - **微信小程序** — Taro 跨端框架，SSE 流式对话，原生体验
 - **阿里云全栈部署** — SWAS 轻量应用服务器（CI 构建镜像 + 服务器 pull）+ RDS + Redis(Tair) + OSS，GitHub Actions CI/CD
 
-> ℹ️ **知识库（RAG）说明**：POC 阶段暂不开放（决策记录见 `docs/audit-2026-08/06-open-source-production-gap-analysis.md` 决策 D1），知识问答当前走 LLM 通用知识。
+> ℹ️ **知识库说明**：旧 RAG 知识库（向量检索文档库）已随 LLM WIKI 板块完全移除（issue #3051）。知识问答采用「知识卡片」模型：行业模板一键套用 + 商品/配置自动派生 + 会话/文档 AI 提炼待确认，AI 客服直接读已发布的知识卡片回答，检索用结构化过滤 + 关键词（无向量库）。设计见 `docs/design/knowledge-wiki-design.md`。
 
 ## 🏗️ 系统架构
 
@@ -62,7 +62,7 @@ graph TB
 | **前端 — 管理后台** | Next.js (App Router) + React + TypeScript + Tailwind CSS | 14.2 / React 18 / TS 5.7 |
 | **前端 — 微信小程序** | Taro + React + TypeScript + Sass | 4.2.1 / React 18 |
 | **数据库** | PostgreSQL + Redis | PG 15 / Redis 7 |
-| **向量数据库** | DashVector（阿里云，RAG 恢复时启用） | — |
+| **知识库** | PostgreSQL（knowledge_cards 词条模型，结构化检索，无向量库） | LLM WIKI（issue #3051） |
 | **大语言模型** | DeepSeek V4 Pro (主) + DeepSeek V4 Flash Vision (视觉) | V4-Pro / V4-Flash / V4-Flash-Vision |
 | **认证** | RS256 JWT (BouncyCastle) + 微信小程序登录 + 短信验证码 | — |
 | **部署** | 阿里云 SWAS + RDS + Redis(Tair) + OSS + GitHub Actions | — |
@@ -77,7 +77,7 @@ graph TB
 | 订单服务 | 下单查询、状态跟踪、历史订单、AI 下单（服务端取价校验） |
 | 售后处理 | 退货/换货/投诉、问题跟踪 |
 | 物流查询 | 实时物流状态、配送时间预估 |
-| 知识库问答 | 基于 LLM 通用知识的产品和 FAQ 问答（RAG 暂不开放，见决策 D1） |
+| 知识库问答 | 知识卡片优先（本店已发布：模板/商品派生/会话提炼/文档提炼）+ LLM 通用知识兜底 |
 | 图片识别 | 窗帘/面料图片分析（DeepSeek V4 Flash Vision）；随手发图自动澄清 |
 | 人工转接 | AI 自动判断并转接人工坐席，转人工携带 AI 对话上下文快照 |
 | 多轮对话 | 上下文维护、会话记忆、智能追问、连续模糊意图护栏 |
@@ -95,7 +95,7 @@ graph TB
 | 售后工单 | 退货/换货/维修/投诉工单流转 |
 | 客户 CRM | 客户画像、标签管理、客户分群、RFM 评分 |
 | 人工坐席 | 坐席管理、会话分配、快捷回复 |
-| 知识库 | 文档上传与管理（RAG 检索暂不开放，见决策 D1） |
+| 知识库 | 知识卡片管理（词条 CRUD/发布/归档）+ 待确认队列（AI 提炼候选，采纳后生效）+ 行业模板一键套用 |
 | 通知中心 | 模板消息、规则引擎、多渠道推送 |
 | 角色权限 | RBAC 五角色、细粒度权限、动态菜单 |
 | 系统设置 | AI 配置（模型/温度/提示词）、租户信息、密码管理 |
@@ -162,7 +162,7 @@ migao/
 │   └── audit-2026-08/          # 2026-08 审计与决策记录
 │
 ├── tests/smoke/                # E2E 冒烟测试（pytest）
-├── knowledge_base/             # 行业知识种子数据（RAG 决策 D1 已下线，预留）
+├── backend/admin-api/src/main/resources/knowledge-templates/  # 行业模板（布艺 curtain，32 条预置知识卡片）
 └── .github/workflows/          # CI/CD（19 个工作流）
 ```
 

@@ -30,7 +30,6 @@ PRODUCT_STATUS_LEDGER = [
 EMPLOYEE_STATUS_LEDGER = ["online", "offline", "busy"]
 PROCESSING_ITEM_STATUS_LEDGER = ["active", "inactive"]
 CATEGORY_STATUS_LEDGER = ["active", "inactive"]
-KNOWLEDGE_DOC_STATUS_LEDGER = ["processed", "processing", "failed"]
 
 
 @pytest.fixture(scope="module")
@@ -43,9 +42,10 @@ class TestOntologyLoad:
     def test_load_returns_eight_objects(self, ontology):
         """默认 schema 必须包含八对象（核心四 + 扩展四）"""
         names = sorted(ontology.objects.keys())
+        # 知识库对象（knowledge_document）已随旧 RAG 知识库移除（issue #3051），当前七对象
         assert names == [
             "aftersales", "category", "customer", "employee",
-            "knowledge_document", "order", "processing_item", "product_sku",
+            "order", "processing_item", "product_sku",
         ]
 
     def test_each_object_has_required_sections(self, ontology):
@@ -89,11 +89,6 @@ class TestExtendedObjectStatusEnum:
         """分类状态与 CategoryCreateRequest 注释一致（active/inactive）"""
         category = ontology.objects["category"]
         assert category.properties["status"].enum_values == CATEGORY_STATUS_LEDGER
-
-    def test_knowledge_doc_status_matches_ledger(self, ontology):
-        """知识文档状态与前端 KnowledgeDocStatus 一致（processed/processing/failed）"""
-        doc = ontology.objects["knowledge_document"]
-        assert doc.properties["status"].enum_values == KNOWLEDGE_DOC_STATUS_LEDGER
 
 
 class TestEnumValidation:

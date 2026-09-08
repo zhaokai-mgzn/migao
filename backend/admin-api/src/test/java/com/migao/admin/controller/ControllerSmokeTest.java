@@ -1,5 +1,7 @@
 package com.migao.admin.controller;
 
+// case_ids: API-015, API-016
+
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -10,6 +12,6 @@ class ControllerSmokeTest {
     @Test void quickReplyControllerExists() { assertNotNull(QuickReplyController.class); }
     @Test void agentSessionControllerExists() { assertNotNull(AgentSessionController.class); }
     @Test void uploadControllerExists() { assertNotNull(UploadController.class); }
-    @Test void knowledgeControllerExists() { assertNotNull(KnowledgeController.class); }
+    @Test void knowledgeCardControllerExists() { assertNotNull(KnowledgeCardController.class); }
     @Test void authControllerExists() { assertNotNull(AuthController.class); }
 }

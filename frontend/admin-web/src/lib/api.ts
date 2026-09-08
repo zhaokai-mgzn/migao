@@ -22,9 +22,10 @@ import type {
   ProcessingCategoryFormData,
   ProcessingCalculateParams,
   ProcessingCalculateResult,
-  KnowledgeDocument,
-  KnowledgeDocumentListParams,
-  KnowledgeDocumentUploadForm,
+  KnowledgeCard,
+  KnowledgeCardListParams,
+  KnowledgeCandidate,
+  KnowledgeTemplateInfo,
   LoginParams,
   LoginResponse,
   RefreshTokenResponse,
@@ -46,9 +47,6 @@ import type {
   ActiveSession,
   PendingTask,
   ProductRanking,
-  KnowledgeSearchResult,
-  KnowledgeSearchParams,
-  KnowledgeSyncHistory,
   Customer,
   CustomerListParams,
   CustomerDetail,
@@ -216,34 +214,52 @@ export const processingCategoryApi = {
     request.post<ApiResponse<ProcessingCategory>>('/api/admin/processing-categories', data),
 }
 
-// 知识库 API
+// 知识卡片 API（LLM WIKI 板块，issue #3051 — 替代旧文档/同步历史接口）
 export const knowledgeApi = {
-  getDocuments: (params?: KnowledgeDocumentListParams) => 
-    request.get<ApiResponse<PageResponse<KnowledgeDocument>>>('/api/admin/knowledge/documents', { params }),
-  
-  uploadDocument: (data: KnowledgeDocumentUploadForm) => {
-    const formData = new FormData()
-    formData.append('name', data.name)
-    formData.append('type', data.type)
-    if (data.description) formData.append('description', data.description)
-    if (data.file) formData.append('file', data.file)
-    
-    return request.post<ApiResponse<KnowledgeDocument>>('/api/admin/knowledge/documents', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    })
-  },
-  
-  deleteDocument: (id: string) => 
-    request.delete<ApiResponse<void>>(`/api/admin/knowledge/documents/${id}`),
+  getCards: (params?: KnowledgeCardListParams) =>
+    request.get<ApiResponse<PageResponse<KnowledgeCard>>>('/api/admin/knowledge/cards', { params }),
 
-  resyncDocument: (id: string) =>
-    request.post<ApiResponse<void>>(`/api/admin/knowledge/documents/${id}/embed`),
+  searchCards: (params: { query?: string; productId?: string; category?: string }) =>
+    request.get<ApiResponse<KnowledgeCard[]>>('/api/admin/knowledge/cards/search', { params }),
 
-  getSyncHistory: (params?: { page?: number; size?: number }) =>
-    request.get<ApiResponse<PageResponse<KnowledgeSyncHistory>>>('/api/admin/knowledge/sync-history', { params }),
+  createCard: (data: Partial<KnowledgeCard>) =>
+    request.post<ApiResponse<KnowledgeCard>>('/api/admin/knowledge/cards', data),
 
-  searchKnowledge: (params: KnowledgeSearchParams) =>
-    request.post<ApiResponse<{ results: KnowledgeSearchResult[] }>>('/api/admin/knowledge/test-search', params),
+  updateCard: (id: string, data: Partial<KnowledgeCard>) =>
+    request.put<ApiResponse<KnowledgeCard>>(`/api/admin/knowledge/cards/${id}`, data),
+
+  deleteCard: (id: string) =>
+    request.delete<ApiResponse<void>>(`/api/admin/knowledge/cards/${id}`),
+
+  publishCard: (id: string) =>
+    request.post<ApiResponse<KnowledgeCard>>(`/api/admin/knowledge/cards/${id}/publish`),
+
+  archiveCard: (id: string) =>
+    request.post<ApiResponse<KnowledgeCard>>(`/api/admin/knowledge/cards/${id}/archive`),
+
+  // ===== 待确认队列（issue #3051 P5）=====
+  getCandidates: (params: { status?: string; page?: number; size?: number }) =>
+    request.get<ApiResponse<PageResponse<KnowledgeCandidate>>>('/api/admin/knowledge/candidates', { params }),
+  getPendingCount: () =>
+    request.get<ApiResponse<{ pending: number }>>('/api/admin/knowledge/candidates/pending-count'),
+  adoptCandidate: (id: string) =>
+    request.post<ApiResponse<KnowledgeCard>>(`/api/admin/knowledge/candidates/${id}/adopt`),
+  adoptEditedCandidate: (id: string, patch: Partial<KnowledgeCandidate>) =>
+    request.post<ApiResponse<KnowledgeCard>>(`/api/admin/knowledge/candidates/${id}/adopt-edited`, patch),
+  rejectCandidate: (id: string, note?: string) =>
+    request.post<ApiResponse<void>>(`/api/admin/knowledge/candidates/${id}/reject`, { note }),
+
+  // ===== 行业模板（issue #3051 P3）=====
+  getTemplates: () =>
+    request.get<ApiResponse<KnowledgeTemplateInfo[]>>('/api/admin/knowledge/templates'),
+  applyTemplate: (templateId: string) =>
+    request.post<ApiResponse<{ templateId: string; created: number; skipped: number }>>(`/api/admin/knowledge/templates/${templateId}/apply`),
+
+  // ===== 提炼触发（issue #3051 P5b/P6）=====
+  distillConversations: (hours = 24) =>
+    request.post<ApiResponse<{ sessions: number; candidates: number; created: number; skipped: number }>>(`/api/admin/knowledge/distill/conversations?hours=${hours}`),
+  distillDocument: (data: { title?: string; content: string }) =>
+    request.post<ApiResponse<{ candidates: number; created: number; skipped: number }>>('/api/admin/knowledge/distill/documents', data),
 }
 
 // 售后工单 API

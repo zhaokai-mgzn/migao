@@ -159,7 +159,7 @@
 真值: ai-chat.agent-factory
 溯源: 2026-08-25 新增：ai-agent-service agents-customer_service_agent 覆盖率补全（issue #2429） ｜ tags: agents, factory, alias
 
-## api（12 case）
+## api（20 case）
 
 ### API-001. chat 会话生命周期 - 租户隔离 + 用户所有权 + 幂等/重开 🔵
 ```
@@ -243,18 +243,6 @@
 真值: api.tool-execute-guard
 溯源: 2026-08-25 新增：ai-agent-service api 覆盖率补全（issue #2428） ｜ tags: api, internal, tool_guard
 
-### API-008. internal.trigger_knowledge_sync - 参数校验 + RAG 降级 🔵
-```
-你: admin-api 触发知识库同步（document_created/updated/deleted/product_updated/full_sync）
-期望: direct_reply
-数据: RAG 未部署(ImportError)→success=false RAG_DISABLED
-数据: document_created 缺 content 400 MISSING_CONTENT；document_updated/deleted 缺 resource_id 400 MISSING_RESOURCE_ID
-数据: 未知 type 忽略；异常 500 SYNC_ERROR
-跳过: 知识同步由 pytest 单测验证（tests/test_internal.py），非 LLM 行为，不进入 agent-eval 冒烟
-```
-真值: api.knowledge-sync
-溯源: 2026-08-25 新增：ai-agent-service api 覆盖率补全（issue #2428） ｜ tags: api, internal, knowledge_sync
-
 ### API-009. upload.upload_chat_image 校验 + 嗅探 + 代理转发 🔵
 ```
 你: ai-agent-service 上传聊天图片并代理转发到 admin-api
@@ -278,17 +266,114 @@
 真值: auth-sms.bypass
 溯源: POC mock 登录集成测试新增 ｜ tags: login, mock
 
-### API-011. 知识库同步历史 - resync 写入记录 + 分页列表接口 🔵
+### API-013. 知识知识卡片数据模型 - knowledge_cards 表/实体/Mapper（LLM WIKI 板块 #3051） 🔵
 ```
-你: 管理员触发文档重新同步后应产生同步历史记录，并可分页查询
-期望: direct_reply
-数据: POST /api/admin/knowledge/documents/{id}/embed（resync）同时写入 knowledge_sync_history（syncType=single/sourceType=manual/sourceIds=[docId]/status=processing/totalCount=1）
-数据: GET /api/admin/knowledge/sync-history 分页返回历史（created_at 倒序，按 tenant 隔离）；空记录返回空列表
-数据: 字段齐全：syncType/sourceType/sourceIds/status/totalCount/successCount/failedCount/startedAt/completedAt
-跳过: 知识库同步历史闭环由 MockMvc 集成测试验证（KnowledgeControllerTest），非 LLM 行为，不进入 agent-eval 冒烟
+你: 知识卡片（问题+标准回答+分类+关键词+来源+状态）可持久化存储与检索
+数据: V35 迁移创建 knowledge_cards：tenant_id/title/category/industry/source_type/source_ref/question/answer/keywords/apply_products/variables/status(draft|pending_review|published|archived)/version/review_note/created_by/reviewed_by/reviewed_at 全字段
+数据: KnowledgeCard 实体字段与列名一一映射（MyBatis-Plus），Mapper 继承 BaseMapper（租户隔离由拦截器注入）
+数据: docs/sql/schema.sql 全量 schema 同步包含 knowledge_cards（防文档-代码漂移 P0-3）
+跳过: 数据模型由 Mapper/迁移契约测试验证（KnowledgeCardMapperTest/KnowledgeWikiMigrationTest），非 LLM 行为，不进入 agent-eval 冒烟
 ```
-真值: api.knowledge-sync
-溯源: 2026-09-06 新增（issue #2971 自洽性扫描）：knowledge_sync_history 表/实体/Mapper 就绪但零读写（resync 不记历史、无列表接口），补写读路径形成闭环 ｜ tags: api, knowledge, sync_history
+溯源: 2026-09-08 新增（issue #3051 企业级 LLM WIKI 板块 P1）：RAG 文档模型升级为知识卡片模型，知识单元从 chunk 变为结构化知识卡片 ｜ tags: api, knowledge, wiki, data-model
+
+### API-014. 提炼候选数据模型 - knowledge_candidates 表/实体/Mapper（LLM WIKI 板块 #3051） 🔵
+```
+你: AI 提炼的候选知识卡片（建议标题/答案/置信度/依据/状态）可进入待采纳队列
+数据: V35 迁移创建 knowledge_candidates：tenant_id/source_type(conversation|document|product|config)/source_ref/suggested_title/suggested_answer/suggested_category/suggested_keywords/confidence/evidence/status(pending|adopted|edited|rejected)/status_note/reviewed_by/reviewed_at 全字段
+数据: KnowledgeCandidate 实体字段与列名一一映射（MyBatis-Plus），Mapper 继承 BaseMapper
+数据: docs/sql/schema.sql 全量 schema 同步包含 knowledge_candidates（防文档-代码漂移 P0-3）
+跳过: 数据模型由 Mapper/迁移契约测试验证（KnowledgeCandidateMapperTest/KnowledgeWikiMigrationTest），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-08 新增（issue #3051 企业级 LLM WIKI 板块 P1）：AI 只产生候选、发布权在商家，提炼流统一进待采纳队列 ｜ tags: api, knowledge, wiki, data-model
+
+### API-015. 知识知识卡片 CRUD + 状态机 - 创建/编辑/发布/归档/删除（LLM WIKI 板块 #3051） 🔵
+```
+你: 商家创建/编辑知识卡片（问题+标准回答+分类+关键词）并发布/归档
+数据: POST /api/admin/knowledge/entries 创建知识卡片：title/answer 必填（缺则 400 中文 detail），sourceType=manual，version=1，status 缺省 draft（可显式 published）
+数据: PUT /api/admin/knowledge/entries/{id} 编辑：version+1；跨租户 404
+数据: POST /{id}/publish：draft/pending_review → published（记录 reviewedAt）；archived 拒绝
+数据: POST /{id}/archive：published → archived；DELETE /{id} 逻辑删除；全部按 tenant 隔离
+数据: GET /api/admin/knowledge/entries 分页：keyword/category/sourceType/status 筛选，updated_at 倒序
+跳过: 知识卡片 CRUD/状态机由 MockMvc + Service 单测验证（KnowledgeCardControllerTest/KnowledgeCardServiceTest），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-08 新增（issue #3051 LLM WIKI 板块 P2）：知识卡片模型 CRUD + 状态机闭环（draft→published→archived 每状态有 API 动作） ｜ tags: api, knowledge, wiki, entries
+
+### API-016. 知识知识卡片检索 - 仅 published + 租户隔离 + 关键词命中（LLM WIKI 板块 #3051） 🔵
+```
+你: AI 客服/商家检索知识卡片：发布知识卡片可查、草稿/归档不可查、跨租户不可见
+数据: GET /api/admin/knowledge/entries/search?query=&productId=&category= 仅返回本租户 status=published 知识卡片（draft/pending_review/archived 不返回）
+数据: 关键词命中 title/keywords/question/answer（租户内 LIKE，.or() 必须嵌套在 eq 内防跨租户泄露——审计 07 P1-6）
+数据: 跨租户知识卡片在任何查询下不可见（显式 eq tenant_id，复测 P1-6 回归）
+跳过: 知识卡片检索由 MockMvc + Service 单测验证（KnowledgeCardControllerTest/KnowledgeCardServiceTest），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-08 新增（issue #3051 LLM WIKI 板块 P2）：检索链路 = 结构化过滤 + 关键词匹配，不引入向量库；含 P1-6 租户隔离回归 ｜ tags: api, knowledge, wiki, search
+
+### API-017. 行业模板 - 目录 + 一键套用（去重 + source=template）（LLM WIKI 板块 #3051 P3） 🔵
+```
+你: 商家一键套用行业模板后自动获得预置知识卡片，无需逐条手写
+数据: GET /api/admin/knowledge/templates 返回平台预置模板目录（templateId/industry/name/version/description/entryCount），布艺模板 entryCount≥30
+数据: POST /api/admin/knowledge/templates/{templateId}/apply 将模板知识卡片复制到本租户：sourceType=template、sourceRef=templateId、status=published
+数据: 按 (tenant_id, title) 去重：重复标题跳过不重复插入，返回 {created, skipped} 统计
+数据: 套用跨租户无影响：仅当前租户可见（租户隔离拦截器）
+跳过: 模板套用由 MockMvc + Service 单测验证（KnowledgeTemplateControllerTest/KnowledgeTemplateServiceTest），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-08 新增（issue #3051 LLM WIKI 板块 P3）：行业模板体系——种子 Markdown 结构化迁移为 knowledge-templates/curtain/template.json（32 条），模板=平台资产，一键套用复制为租户词条 ｜ tags: api, knowledge, wiki, template
+
+### API-018. 商品/配置派生知识卡片 - 价格区间自动生成 + 变更自动更新（LLM WIKI 板块 #3051 P4） 🔵
+```
+你: 商品/加工项信息变更后，关联的派生知识卡片自动更新，AI 回答价格/规格问题与商品数据一致
+数据: 商品创建/更新/上下架后自动生成/更新「{商品名}多少钱」知识卡片：answer 含 SKU 价格区间（如 88-128 元/米），sourceType=product、sourceRef=商品ID、status=published
+数据: 加工项创建/更新后自动生成「{加工项名}怎么计价」卡片：按 pricingMethod 生成文案（per_meter 按米/per_set 按套/fixed 固定价格+单价/per_area 按面积）
+数据: 同源（tenant+sourceType+sourceRef）upsert：存在则更新 version+1，不重复插入；跨租户商品不派生
+数据: 价格区间实时读取 SKU 价格，商品变更后卡片自动同步（验收真值 #3）
+跳过: 派生逻辑由 Service 单测验证（KnowledgeDeriveServiceTest）+ 商品/加工项服务触发断言，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-08 新增（issue #3051 LLM WIKI 板块 P4）：L2 本店事实层——商品/加工项结构化数据直接生成知识卡片（替代 RAG 检索），商品变更触发自动更新 ｜ tags: api, knowledge, wiki, derive
+
+### API-019. 待确认队列闭环 - 候选读+写路径齐全，采纳转卡片、拒绝记原因（LLM WIKI 板块 #3051 P5） 🔵
+```
+你: AI 提炼的候选知识卡片进入待确认队列，商家采纳（或编辑后采纳）后生效，拒绝则不生效
+数据: GET /api/admin/knowledge/candidates 分页返回候选（缺省 status=pending，created_at 倒序，租户隔离）；GET /candidates/pending-count 返回待确认数
+数据: POST /{id}/adopt 采纳：候选 → 知识卡片（status=published，sourceType/sourceRef 继承候选来源），候选置 adopted；立即可被检索
+数据: POST /{id}/adopt-edited 编辑后采纳：人工修订标题/回答覆盖（标题回答必填），候选置 edited
+数据: POST /{id}/reject 拒绝：候选置 rejected + status_note 记录原因，不产生卡片；跨租户一律 404
+跳过: 队列读写路径由 MockMvc + Service 单测验证（KnowledgeCandidateControllerTest/KnowledgeCandidateServiceTest），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-08 新增（issue #3051 LLM WIKI 板块 P5）：待确认队列闭环——不重复 knowledge_sync_history 零读写事故，读写路径齐全；AI 只产生候选，发布权在商家 ｜ tags: api, knowledge, wiki, candidates
+
+### API-020. 会话提炼闭环 - 人工客服会话 → AI 提炼候选 → 待确认队列（LLM WIKI 板块 #3051 P5b） 🔵
+```
+你: 客服会话结束后，系统自动提炼候选知识卡片进入待确认队列；商家采纳后生效
+数据: POST /api/admin/knowledge/distill/conversations?hours=24：提炼最近 N 小时已结束人工会话（agent_sessions status=ended）的顾客/客服文本消息，返回 {sessions, candidates, created, skipped}
+数据: ai-agent 内部 POST /internal/knowledge/distill（Service Token）：会话文本 → LLM 提炼 JSON 候选数组（title/answer/category/keywords/confidence/evidence），解析失败/异常降级返回空候选（不阻断）
+数据: 候选写入 knowledge_candidates：sourceType=conversation、sourceRef=会话ID、status=pending；同名知识卡片或同名待确认候选已存在 → 跳过（去重）
+数据: 单会话提炼上限 5 条、单条消息 200 字、会话文本超长截断（防 prompt 超限）
+跳过: 提炼逻辑由 ai-agent 单测（test_knowledge_distill.py）+ admin-api Service/MockMvc 测试（KnowledgeDistillServiceTest/KnowledgeDistillControllerTest）验证，LLM 行为 mock，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-08 新增（issue #3051 LLM WIKI 板块 P5b）：闭环三检索-会话飞轮——人工客服会话是 SME 唯一稳定知识原料，会话→提炼→采纳→检索形成知识增长闭环 ｜ tags: api, knowledge, wiki, distill
+
+### API-021. 文档提炼闭环 - 文档文本 → AI 提炼候选 → 待确认队列（LLM WIKI 板块 #3051 P6） 🔵
+```
+你: 商家上传文档后，系统提炼候选知识卡片进入待确认队列（文档→知识卡片提炼，非文档→切块检索）
+数据: POST /api/admin/knowledge/distill/documents（body: {title, content}）→ 文档文本提炼为候选，返回 {candidates, created, skipped}
+数据: 候选写入 knowledge_candidates：sourceType=document、sourceRef=文档标题、status=pending；同名卡片/待确认候选已存在 → 跳过
+数据: 文档内容 <50 字 → 422 中文提示；超长内容截断至 8000 字；提炼失败降级空候选
+数据: 原文仅作 evidence 保留，不参与运行时检索（文档→提炼，非文档→切块检索）
+跳过: 文档提炼复用 KnowledgeDistillService/Controller 单测（已扩展文档用例），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-08 新增（issue #3051 LLM WIKI 板块 P6）：L4 文档提炼——文档是 SME 的补充知识源，提炼为候选后由商家确认，与会话提炼共用待确认队列闭环 ｜ tags: api, knowledge, wiki, distill, document
+
+### API-022. Agent 知识卡片检索 - 词条优先、命中标注来源、未命中通用兜底（LLM WIKI 板块 #3051 P7） 🔵
+```
+你: AI 客服回答知识类问题时优先采用本店知识卡片内容，未命中才用通用知识兜底
+期望: knowledge_search
+数据: customer_knowledge 技能启用 knowledge_search（tool_names 含之，System Prompt 词条优先：命中注明「📖 来自本店知识库」、未命中注明「💡 通用行业建议」）
+数据: knowledge_search 调 GET /api/admin/knowledge/cards/search（query/category），命中返回 ≤3 条卡片（title/answer≤500 字/category/sourceType），hit=true
+数据: 未命中 hit=false → LLM 通用知识兜底 + 通用建议免责；检索接口不可用 → 降级同兜底（不阻断回答）
+数据: query 必填（空拒绝）；权限不足拒绝；租户隔离由 admin-api 强制（工具侧无跨租户入口）
+跳过: 工具行为由 ai-agent 单测验证（test_tools_knowledge_search.py + test_customer_knowledge_simplified.py），LLM 行为 mock，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-08 新增（issue #3051 LLM WIKI 板块 P7）：Agent 检索链路——词条检索（结构化+关键词，无向量库）替代 RAG，两级策略落地（卡片优先→通用兜底） ｜ tags: api, knowledge, wiki, tool, agent
 
 ### API-012. 语音转写接口容错 - 空/极小/静音音频返回友好 4xx/5xx，不裸 500（#2984） 🔵
 ```
@@ -2772,11 +2857,11 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：224（活跃 114，跳过 110）
-- tier 分布：smoke 8 / normal 187 / adversarial 29
+- 用例总数：232（活跃 114，跳过 118）
+- tier 分布：smoke 8 / normal 195 / adversarial 29
 - 售后域：7
 - agents：6
-- api：12
+- api：20
 - bmini：5
 - 分类域：3
 - 对话边界域：32
@@ -2799,6 +2884,16 @@
 - utils：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
+- API-013: 知识知识卡片数据模型 - knowledge_cards 表/实体/Mapper（LLM WIKI 板块 #3051）
+- API-014: 提炼候选数据模型 - knowledge_candidates 表/实体/Mapper（LLM WIKI 板块 #3051）
+- API-015: 知识知识卡片 CRUD + 状态机 - 创建/编辑/发布/归档/删除（LLM WIKI 板块 #3051）
+- API-016: 知识知识卡片检索 - 仅 published + 租户隔离 + 关键词命中（LLM WIKI 板块 #3051）
+- API-017: 行业模板 - 目录 + 一键套用（去重 + source=template）（LLM WIKI 板块 #3051 P3）
+- API-018: 商品/配置派生知识卡片 - 价格区间自动生成 + 变更自动更新（LLM WIKI 板块 #3051 P4）
+- API-019: 待确认队列闭环 - 候选读+写路径齐全，采纳转卡片、拒绝记原因（LLM WIKI 板块 #3051 P5）
+- API-020: 会话提炼闭环 - 人工客服会话 → AI 提炼候选 → 待确认队列（LLM WIKI 板块 #3051 P5b）
+- API-021: 文档提炼闭环 - 文档文本 → AI 提炼候选 → 待确认队列（LLM WIKI 板块 #3051 P6）
+- API-022: Agent 知识卡片检索 - 词条优先、命中标注来源、未命中通用兜底（LLM WIKI 板块 #3051 P7）
 - API-012: 语音转写接口容错 - 空/极小/静音音频返回友好 4xx/5xx，不裸 500（#2984）
 - CH-027: 流式回复中切换会话再切回 - 等待状态与最终回复保留（issue #2901）
 - CH-028: 多会话并发流 - 会话 A 回复中 B 可发送，增量/停止互不干扰（issue #2906）

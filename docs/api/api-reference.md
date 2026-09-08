@@ -601,7 +601,7 @@ Content-Type: application/json
 
 ## 5.5 知识库管理 API (admin-api)
 
-> 知识库（RAG）在 POC 阶段暂不开放（决策 D1，2026-08-29），本节约 API 形态参考。
+> 知识库已升级为 LLM WIKI 知识卡片模型（issue #3051）：卡片 CRUD/检索 + 待确认队列 + 行业模板 + 提炼触发。旧 RAG 文档 API（documents/embed/sync-history/test-search）已移除。
 
 ### 5.5.1 创建/上传文档
 

@@ -361,7 +361,7 @@ def create_default_registry() -> ToolRegistry:
     - product_search: 商品搜索
     - product_detail: 商品详情
     - logistics_track: 物流查询
-    - knowledge_search: 知识库搜索
+    - knowledge_search: 知识卡片检索（本店已发布知识，LLM WIKI）
     - order_query: 订单查询
     - order_manage: 订单管理
     - order_create: 订单创建
@@ -388,7 +388,7 @@ def create_default_registry() -> ToolRegistry:
     from app.tools.product_detail import ProductDetailTool
     from app.tools.logistics_track import LogisticsTrackTool
     from app.tools.customer_logistics_track import CustomerLogisticsTrackTool
-    # [RAG 禁用] from app.tools.knowledge_search import KnowledgeSearchTool
+    from app.tools.knowledge_search import KnowledgeSearchTool
     from app.tools.order_query import OrderQueryTool
     from app.tools.customer_order_query import CustomerOrderQueryTool
     from app.tools.customer_address_query import CustomerAddressQueryTool
@@ -427,7 +427,7 @@ def create_default_registry() -> ToolRegistry:
     registry.register(ProductDetailTool())
     registry.register(LogisticsTrackTool())
     registry.register(CustomerLogisticsTrackTool())
-    # [RAG 禁用] registry.register(KnowledgeSearchTool())
+    registry.register(KnowledgeSearchTool())
     registry.register(OrderQueryTool())
     registry.register(CustomerOrderQueryTool())
     registry.register(CustomerAddressQueryTool())

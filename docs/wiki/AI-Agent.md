@@ -18,7 +18,7 @@ app/
 │   └── skills/  # 19 Skill节点 + references/(SKILL + EXAMPLES).md
 ├── tools/       # 30+ 业务工具
 ├── router/      # 意图分类 (L1关键词 + L2 LLM)
-├── rag/         # BM25 + DashVector + Reranker
+├── knowledge/   # 会话知识提炼（LLM WIKI，issue #3051）
 ├── llm/         # LLM工厂/模型路由/成本追踪
 ├── api/         # SSE流式聊天 + 内部API
 ├── cache/       # 语义缓存
@@ -67,15 +67,20 @@ app/
 
 Tool 铁律：写前校验 → 失败给 suggestion → 写前弹 confirm → 反幻觉规则
 
-## RAG Pipeline（已下线，决策 D1）
+## 知识检索链路（LLM WIKI，issue #3051）
 
-> ⚠️ **RAG 已于 2026-06 下线（决策 D1）**：`app/rag/`（BM25 + DashVector + Reranker）与
+> 旧 RAG Pipeline（BM25 + DashVector + Reranker）已下线（决策 D1）并随 issue #3051 完全移除。当前知识问答两级策略：
+> 1. **知识卡片优先**：`knowledge_search` 工具调 admin-api `GET /api/admin/knowledge/cards/search` 检索本店已发布知识卡片（结构化过滤 + 关键词，无向量库），命中基于卡片回答并注明「📖 来自本店知识库」；
+> 2. **通用兜底**：未命中用 LLM 行业通用知识谨慎回答 + 通用建议免责。
+> 知识卡片来源：行业模板一键套用 / 商品配置派生 / 会话·文档 AI 提炼（待确认队列，商家采纳后生效）。
+
+（历史实现）文档上传 → Chunker分块 → 向量嵌入 → DashVector（已随 RAG 移除，仅存历史参考）
 > `knowledge_search`/`knowledge_manage` 工具已删除（提交 `3215c322`），客服知识问答改用
 > LLM 内置知识（见 `customer_knowledge_skill.py`）。B 端知识管理模块（`KnowledgeController` +
 > `KnowledgeDocument` 表）**预留未启用**；恢复仅需按 `knowledge_skill.py` 头注 uncomment 注册。
 
 ```
-（历史实现）文档上传 → Chunker分块 → 向量嵌入 → DashVector
+（历史实现）文档上传 → Chunker分块 → 向量嵌入 → DashVector（已随 RAG 移除，仅存历史参考）
 用户查询 → BM25关键词 + 向量语义 → Reranker重排 → Top-K
 ```
 

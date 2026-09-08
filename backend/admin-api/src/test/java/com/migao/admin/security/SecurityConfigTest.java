@@ -82,6 +82,26 @@ class SecurityConfigTest {
     @MockBean
     private com.migao.admin.service.CustomerService customerService;
 
+    // LLM WIKI 板块（issue #3051）：知识卡片服务（其依赖 Mapper 已在上方 @MockBean）
+    @MockBean
+    private com.migao.admin.service.KnowledgeCardService knowledgeCardService;
+
+    // LLM WIKI 板块（issue #3051 P3）：行业模板服务
+    @MockBean
+    private com.migao.admin.service.KnowledgeTemplateService knowledgeTemplateService;
+
+    // LLM WIKI 板块（issue #3051 P4）：商品/配置派生服务
+    @MockBean
+    private com.migao.admin.service.KnowledgeDeriveService knowledgeDeriveService;
+
+    // LLM WIKI 板块（issue #3051 P5）：提炼候选队列服务
+    @MockBean
+    private com.migao.admin.service.KnowledgeCandidateService knowledgeCandidateService;
+
+    // LLM WIKI 板块（issue #3051 P5b）：会话提炼服务
+    @MockBean
+    private com.migao.admin.service.KnowledgeDistillService knowledgeDistillService;
+
     @MockBean
     private com.migao.admin.service.NotificationService notificationService;
 
@@ -99,6 +119,13 @@ class SecurityConfigTest {
     // UserMemoryMapper — MyBatis-Plus 自动扫描到的 Mapper，CI 无 sqlSessionFactory
     @MockBean
     private com.migao.admin.mapper.UserMemoryMapper userMemoryMapper;
+
+    // LLM WIKI 板块（issue #3051）：knowledge_cards / knowledge_candidates 的 Mapper
+    @MockBean
+    private com.migao.admin.mapper.KnowledgeCardMapper knowledgeCardMapper;
+
+    @MockBean
+    private com.migao.admin.mapper.KnowledgeCandidateMapper knowledgeCandidateMapper;
 
     // OssService 带有 @ConditionalOnBean 在测试环境下不会被加载，
     // 因此不需要 @MockBean FileStorageService / OssService，
@@ -154,12 +181,6 @@ class SecurityConfigTest {
     private com.migao.admin.mapper.CustomerSegmentMemberMapper customerSegmentMemberMapper;
     @MockBean
     private com.migao.admin.mapper.CustomerTagMapper customerTagMapper;
-    @MockBean
-    private com.migao.admin.mapper.KnowledgeChunkMapper knowledgeChunkMapper;
-    @MockBean
-    private com.migao.admin.mapper.KnowledgeDocumentMapper knowledgeDocumentMapper;
-    @MockBean
-    private com.migao.admin.mapper.KnowledgeSyncHistoryMapper knowledgeSyncHistoryMapper;
     @MockBean
     private com.migao.admin.mapper.NotificationMapper notificationMapper;
     @MockBean

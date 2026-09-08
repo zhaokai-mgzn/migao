@@ -345,21 +345,6 @@ _CASE_API_007 = EvalCase(
     persona='',
 )
 
-# ── API-008 [NORMAL] internal.trigger_knowledge_sync - 参数校验 + RAG 降级（源: cases/api.yml）──
-_CASE_API_008 = EvalCase(
-    id='API-008',
-    legacy_id='',
-    title='internal.trigger_knowledge_sync - 参数校验 + RAG 降级',
-    skill=Skill.GENERAL,
-    difficulty=Difficulty.NORMAL,
-    user_inputs=['admin-api 触发知识库同步（document_created/updated/deleted/product_updated/full_sync）'],
-    expectations=['direct_reply'],
-    data_checks=['RAG 未部署(ImportError)→success=false RAG_DISABLED', 'document_created 缺 content 400 MISSING_CONTENT；document_updated/deleted 缺 resource_id 400 MISSING_RESOURCE_ID', '未知 type 忽略；异常 500 SYNC_ERROR'],
-    skip_reason='知识同步由 pytest 单测验证（tests/test_internal.py），非 LLM 行为，不进入 agent-eval 冒烟',
-    tags=['api', 'internal', 'knowledge_sync'],
-    persona='',
-)
-
 # ── API-009 [NORMAL] upload.upload_chat_image 校验 + 嗅探 + 代理转发（源: cases/api.yml）──
 _CASE_API_009 = EvalCase(
     id='API-009',
@@ -390,18 +375,153 @@ _CASE_API_010 = EvalCase(
     persona='',
 )
 
-# ── API-011 [NORMAL] 知识库同步历史 - resync 写入记录 + 分页列表接口（源: cases/api.yml）──
-_CASE_API_011 = EvalCase(
-    id='API-011',
+# ── API-013 [NORMAL] 知识知识卡片数据模型 - knowledge_cards 表/实体/Mapper（LLM WIKI 板块 #3051）（源: cases/api.yml）──
+_CASE_API_013 = EvalCase(
+    id='API-013',
     legacy_id='',
-    title='知识库同步历史 - resync 写入记录 + 分页列表接口',
+    title='知识知识卡片数据模型 - knowledge_cards 表/实体/Mapper（LLM WIKI 板块 #3051）',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['管理员触发文档重新同步后应产生同步历史记录，并可分页查询'],
-    expectations=['direct_reply'],
-    data_checks=['POST /api/admin/knowledge/documents/{id}/embed（resync）同时写入 knowledge_sync_history（syncType=single/sourceType=manual/sourceIds=[docId]/status=processing/totalCount=1）', 'GET /api/admin/knowledge/sync-history 分页返回历史（created_at 倒序，按 tenant 隔离）；空记录返回空列表', '字段齐全：syncType/sourceType/sourceIds/status/totalCount/successCount/failedCount/startedAt/completedAt'],
-    skip_reason='知识库同步历史闭环由 MockMvc 集成测试验证（KnowledgeControllerTest），非 LLM 行为，不进入 agent-eval 冒烟',
-    tags=['api', 'knowledge', 'sync_history'],
+    user_inputs=['知识卡片（问题+标准回答+分类+关键词+来源+状态）可持久化存储与检索'],
+    expectations=[],
+    data_checks=['V35 迁移创建 knowledge_cards：tenant_id/title/category/industry/source_type/source_ref/question/answer/keywords/apply_products/variables/status(draft|pending_review|published|archived)/version/review_note/created_by/reviewed_by/reviewed_at 全字段', 'KnowledgeCard 实体字段与列名一一映射（MyBatis-Plus），Mapper 继承 BaseMapper（租户隔离由拦截器注入）', 'docs/sql/schema.sql 全量 schema 同步包含 knowledge_cards（防文档-代码漂移 P0-3）'],
+    skip_reason='数据模型由 Mapper/迁移契约测试验证（KnowledgeCardMapperTest/KnowledgeWikiMigrationTest），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['api', 'knowledge', 'wiki', 'data-model'],
+    persona='',
+)
+
+# ── API-014 [NORMAL] 提炼候选数据模型 - knowledge_candidates 表/实体/Mapper（LLM WIKI 板块 #3051）（源: cases/api.yml）──
+_CASE_API_014 = EvalCase(
+    id='API-014',
+    legacy_id='',
+    title='提炼候选数据模型 - knowledge_candidates 表/实体/Mapper（LLM WIKI 板块 #3051）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['AI 提炼的候选知识卡片（建议标题/答案/置信度/依据/状态）可进入待采纳队列'],
+    expectations=[],
+    data_checks=['V35 迁移创建 knowledge_candidates：tenant_id/source_type(conversation|document|product|config)/source_ref/suggested_title/suggested_answer/suggested_category/suggested_keywords/confidence/evidence/status(pending|adopted|edited|rejected)/status_note/reviewed_by/reviewed_at 全字段', 'KnowledgeCandidate 实体字段与列名一一映射（MyBatis-Plus），Mapper 继承 BaseMapper', 'docs/sql/schema.sql 全量 schema 同步包含 knowledge_candidates（防文档-代码漂移 P0-3）'],
+    skip_reason='数据模型由 Mapper/迁移契约测试验证（KnowledgeCandidateMapperTest/KnowledgeWikiMigrationTest），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['api', 'knowledge', 'wiki', 'data-model'],
+    persona='',
+)
+
+# ── API-015 [NORMAL] 知识知识卡片 CRUD + 状态机 - 创建/编辑/发布/归档/删除（LLM WIKI 板块 #3051）（源: cases/api.yml）──
+_CASE_API_015 = EvalCase(
+    id='API-015',
+    legacy_id='',
+    title='知识知识卡片 CRUD + 状态机 - 创建/编辑/发布/归档/删除（LLM WIKI 板块 #3051）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家创建/编辑知识卡片（问题+标准回答+分类+关键词）并发布/归档'],
+    expectations=[],
+    data_checks=['POST /api/admin/knowledge/entries 创建知识卡片：title/answer 必填（缺则 400 中文 detail），sourceType=manual，version=1，status 缺省 draft（可显式 published）', 'PUT /api/admin/knowledge/entries/{id} 编辑：version+1；跨租户 404', 'POST /{id}/publish：draft/pending_review → published（记录 reviewedAt）；archived 拒绝', 'POST /{id}/archive：published → archived；DELETE /{id} 逻辑删除；全部按 tenant 隔离', 'GET /api/admin/knowledge/entries 分页：keyword/category/sourceType/status 筛选，updated_at 倒序'],
+    skip_reason='知识卡片 CRUD/状态机由 MockMvc + Service 单测验证（KnowledgeCardControllerTest/KnowledgeCardServiceTest），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['api', 'knowledge', 'wiki', 'entries'],
+    persona='',
+)
+
+# ── API-016 [NORMAL] 知识知识卡片检索 - 仅 published + 租户隔离 + 关键词命中（LLM WIKI 板块 #3051）（源: cases/api.yml）──
+_CASE_API_016 = EvalCase(
+    id='API-016',
+    legacy_id='',
+    title='知识知识卡片检索 - 仅 published + 租户隔离 + 关键词命中（LLM WIKI 板块 #3051）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['AI 客服/商家检索知识卡片：发布知识卡片可查、草稿/归档不可查、跨租户不可见'],
+    expectations=[],
+    data_checks=['GET /api/admin/knowledge/entries/search?query=&productId=&category= 仅返回本租户 status=published 知识卡片（draft/pending_review/archived 不返回）', '关键词命中 title/keywords/question/answer（租户内 LIKE，.or() 必须嵌套在 eq 内防跨租户泄露——审计 07 P1-6）', '跨租户知识卡片在任何查询下不可见（显式 eq tenant_id，复测 P1-6 回归）'],
+    skip_reason='知识卡片检索由 MockMvc + Service 单测验证（KnowledgeCardControllerTest/KnowledgeCardServiceTest），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['api', 'knowledge', 'wiki', 'search'],
+    persona='',
+)
+
+# ── API-017 [NORMAL] 行业模板 - 目录 + 一键套用（去重 + source=template）（LLM WIKI 板块 #3051 P3）（源: cases/api.yml）──
+_CASE_API_017 = EvalCase(
+    id='API-017',
+    legacy_id='',
+    title='行业模板 - 目录 + 一键套用（去重 + source=template）（LLM WIKI 板块 #3051 P3）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家一键套用行业模板后自动获得预置知识卡片，无需逐条手写'],
+    expectations=[],
+    data_checks=['GET /api/admin/knowledge/templates 返回平台预置模板目录（templateId/industry/name/version/description/entryCount），布艺模板 entryCount≥30', 'POST /api/admin/knowledge/templates/{templateId}/apply 将模板知识卡片复制到本租户：sourceType=template、sourceRef=templateId、status=published', '按 (tenant_id, title) 去重：重复标题跳过不重复插入，返回 {created, skipped} 统计', '套用跨租户无影响：仅当前租户可见（租户隔离拦截器）'],
+    skip_reason='模板套用由 MockMvc + Service 单测验证（KnowledgeTemplateControllerTest/KnowledgeTemplateServiceTest），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['api', 'knowledge', 'wiki', 'template'],
+    persona='',
+)
+
+# ── API-018 [NORMAL] 商品/配置派生知识卡片 - 价格区间自动生成 + 变更自动更新（LLM WIKI 板块 #3051 P4）（源: cases/api.yml）──
+_CASE_API_018 = EvalCase(
+    id='API-018',
+    legacy_id='',
+    title='商品/配置派生知识卡片 - 价格区间自动生成 + 变更自动更新（LLM WIKI 板块 #3051 P4）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商品/加工项信息变更后，关联的派生知识卡片自动更新，AI 回答价格/规格问题与商品数据一致'],
+    expectations=[],
+    data_checks=['商品创建/更新/上下架后自动生成/更新「{商品名}多少钱」知识卡片：answer 含 SKU 价格区间（如 88-128 元/米），sourceType=product、sourceRef=商品ID、status=published', '加工项创建/更新后自动生成「{加工项名}怎么计价」卡片：按 pricingMethod 生成文案（per_meter 按米/per_set 按套/fixed 固定价格+单价/per_area 按面积）', '同源（tenant+sourceType+sourceRef）upsert：存在则更新 version+1，不重复插入；跨租户商品不派生', '价格区间实时读取 SKU 价格，商品变更后卡片自动同步（验收真值 #3）'],
+    skip_reason='派生逻辑由 Service 单测验证（KnowledgeDeriveServiceTest）+ 商品/加工项服务触发断言，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['api', 'knowledge', 'wiki', 'derive'],
+    persona='',
+)
+
+# ── API-019 [NORMAL] 待确认队列闭环 - 候选读+写路径齐全，采纳转卡片、拒绝记原因（LLM WIKI 板块 #3051 P5）（源: cases/api.yml）──
+_CASE_API_019 = EvalCase(
+    id='API-019',
+    legacy_id='',
+    title='待确认队列闭环 - 候选读+写路径齐全，采纳转卡片、拒绝记原因（LLM WIKI 板块 #3051 P5）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['AI 提炼的候选知识卡片进入待确认队列，商家采纳（或编辑后采纳）后生效，拒绝则不生效'],
+    expectations=[],
+    data_checks=['GET /api/admin/knowledge/candidates 分页返回候选（缺省 status=pending，created_at 倒序，租户隔离）；GET /candidates/pending-count 返回待确认数', 'POST /{id}/adopt 采纳：候选 → 知识卡片（status=published，sourceType/sourceRef 继承候选来源），候选置 adopted；立即可被检索', 'POST /{id}/adopt-edited 编辑后采纳：人工修订标题/回答覆盖（标题回答必填），候选置 edited', 'POST /{id}/reject 拒绝：候选置 rejected + status_note 记录原因，不产生卡片；跨租户一律 404'],
+    skip_reason='队列读写路径由 MockMvc + Service 单测验证（KnowledgeCandidateControllerTest/KnowledgeCandidateServiceTest），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['api', 'knowledge', 'wiki', 'candidates'],
+    persona='',
+)
+
+# ── API-020 [NORMAL] 会话提炼闭环 - 人工客服会话 → AI 提炼候选 → 待确认队列（LLM WIKI 板块 #3051 P5b）（源: cases/api.yml）──
+_CASE_API_020 = EvalCase(
+    id='API-020',
+    legacy_id='',
+    title='会话提炼闭环 - 人工客服会话 → AI 提炼候选 → 待确认队列（LLM WIKI 板块 #3051 P5b）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['客服会话结束后，系统自动提炼候选知识卡片进入待确认队列；商家采纳后生效'],
+    expectations=[],
+    data_checks=['POST /api/admin/knowledge/distill/conversations?hours=24：提炼最近 N 小时已结束人工会话（agent_sessions status=ended）的顾客/客服文本消息，返回 {sessions, candidates, created, skipped}', 'ai-agent 内部 POST /internal/knowledge/distill（Service Token）：会话文本 → LLM 提炼 JSON 候选数组（title/answer/category/keywords/confidence/evidence），解析失败/异常降级返回空候选（不阻断）', '候选写入 knowledge_candidates：sourceType=conversation、sourceRef=会话ID、status=pending；同名知识卡片或同名待确认候选已存在 → 跳过（去重）', '单会话提炼上限 5 条、单条消息 200 字、会话文本超长截断（防 prompt 超限）'],
+    skip_reason='提炼逻辑由 ai-agent 单测（test_knowledge_distill.py）+ admin-api Service/MockMvc 测试（KnowledgeDistillServiceTest/KnowledgeDistillControllerTest）验证，LLM 行为 mock，不进入 agent-eval 冒烟',
+    tags=['api', 'knowledge', 'wiki', 'distill'],
+    persona='',
+)
+
+# ── API-021 [NORMAL] 文档提炼闭环 - 文档文本 → AI 提炼候选 → 待确认队列（LLM WIKI 板块 #3051 P6）（源: cases/api.yml）──
+_CASE_API_021 = EvalCase(
+    id='API-021',
+    legacy_id='',
+    title='文档提炼闭环 - 文档文本 → AI 提炼候选 → 待确认队列（LLM WIKI 板块 #3051 P6）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家上传文档后，系统提炼候选知识卡片进入待确认队列（文档→知识卡片提炼，非文档→切块检索）'],
+    expectations=[],
+    data_checks=['POST /api/admin/knowledge/distill/documents（body: {title, content}）→ 文档文本提炼为候选，返回 {candidates, created, skipped}', '候选写入 knowledge_candidates：sourceType=document、sourceRef=文档标题、status=pending；同名卡片/待确认候选已存在 → 跳过', '文档内容 <50 字 → 422 中文提示；超长内容截断至 8000 字；提炼失败降级空候选', '原文仅作 evidence 保留，不参与运行时检索（文档→提炼，非文档→切块检索）'],
+    skip_reason='文档提炼复用 KnowledgeDistillService/Controller 单测（已扩展文档用例），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['api', 'knowledge', 'wiki', 'distill', 'document'],
+    persona='',
+)
+
+# ── API-022 [NORMAL] Agent 知识卡片检索 - 词条优先、命中标注来源、未命中通用兜底（LLM WIKI 板块 #3051 P7）（源: cases/api.yml）──
+_CASE_API_022 = EvalCase(
+    id='API-022',
+    legacy_id='',
+    title='Agent 知识卡片检索 - 词条优先、命中标注来源、未命中通用兜底（LLM WIKI 板块 #3051 P7）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['AI 客服回答知识类问题时优先采用本店知识卡片内容，未命中才用通用知识兜底'],
+    expectations=['knowledge_search'],
+    data_checks=['customer_knowledge 技能启用 knowledge_search（tool_names 含之，System Prompt 词条优先：命中注明「📖 来自本店知识库」、未命中注明「💡 通用行业建议」）', 'knowledge_search 调 GET /api/admin/knowledge/cards/search（query/category），命中返回 ≤3 条卡片（title/answer≤500 字/category/sourceType），hit=true', '未命中 hit=false → LLM 通用知识兜底 + 通用建议免责；检索接口不可用 → 降级同兜底（不阻断回答）', 'query 必填（空拒绝）；权限不足拒绝；租户隔离由 admin-api 强制（工具侧无跨租户入口）'],
+    skip_reason='工具行为由 ai-agent 单测验证（test_tools_knowledge_search.py + test_customer_knowledge_simplified.py），LLM 行为 mock，不进入 agent-eval 冒烟',
+    tags=['api', 'knowledge', 'wiki', 'tool', 'agent'],
     persona='',
 )
 
@@ -3429,10 +3549,18 @@ ALL_CASES = (
     _CASE_API_005,
     _CASE_API_006,
     _CASE_API_007,
-    _CASE_API_008,
     _CASE_API_009,
     _CASE_API_010,
-    _CASE_API_011,
+    _CASE_API_013,
+    _CASE_API_014,
+    _CASE_API_015,
+    _CASE_API_016,
+    _CASE_API_017,
+    _CASE_API_018,
+    _CASE_API_019,
+    _CASE_API_020,
+    _CASE_API_021,
+    _CASE_API_022,
     _CASE_API_012,
     _CASE_BM_001,
     _CASE_BM_002,

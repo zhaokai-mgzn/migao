@@ -74,3 +74,22 @@ grep -rn "字段名" backend/admin-api/src frontend/admin-web/src backend/ai-age
 | 计价方式 | `pricingMethod`（ProcessingItem/Response/Create/Update，枚举 per_meter/per_set/fixed/per_area） | `PricingMethod` 同枚举 | `pricing_method`（tool 透传） | per_piece 创建/更新被 validatePricingMethod 拒绝 |
 | 数量规则 | per_meter → 数量=面料米数；per_set/fixed → 1；per_area → 面积 | 同（deriveProcessingQty） | 同（order prompt） | B 端下单展示「名称+数量+金额」供对账，无数量输入框 |
 | 价格计算入参 | `quantity`（PriceCalculateRequest，per_meter 传面料米数） | — | `quantity` | fabricMeters 字段已删除，无密度推导 |
+
+## 七、LLM WIKI 知识板块契约（issue #3051，2026-09-08 起）
+
+知识单元从 RAG chunk 升级为**知识卡片**（knowledge_cards）+ 提炼候选（knowledge_candidates）。
+检索用结构化过滤 + 关键词匹配，**不引入向量库**（决策 D1 维持）。设计单一事实源：`docs/design/knowledge-wiki-design.md`。
+
+| 业务对象 | 合法值 | 三端一致要求 |
+|---|---|---|
+| 知识卡片状态 | `draft / pending_review / published / archived` | Java `KnowledgeCard.status` = TS `KnowledgeCardStatus` = Agent 检索过滤条件（仅 published） |
+| 候选状态 | `pending / adopted / edited / rejected` | Java `KnowledgeCandidate.status` = TS 同 |
+| 知识卡片来源 | `template / product / config / conversation / document / manual` | Java `sourceType` = TS `sourceType` = Agent 展示徽标 |
+| 候选来源 | `conversation / document / product / config` | 同上 |
+| 知识卡片分类 | `faq / product / measure / aftersale / config` | 前后端同枚举 |
+| 知识卡片检索端点 | `GET /api/admin/knowledge/cards/search?query=&productId=&category=` | 仅返回本租户 `published` 知识卡片（显式 eq tenant_id + status） |
+| 提炼触发端点 | `POST /api/admin/knowledge/distill/conversations?hours=24` | 提炼最近 N 小时已结束人工会话 → 待确认队列；返回 {sessions,candidates,created,skipped}；ai-agent 内部 POST /internal/knowledge/distill 负责 LLM 提炼 |
+| 模板目录 | `GET /api/admin/knowledge/templates` | 平台预置模板（templateId/industry/name/version/entryCount，布艺 curtain 32 条） |
+| 模板套用 | `POST /api/admin/knowledge/templates/{templateId}/apply` | 复制为租户卡片（sourceType=template/sourceRef=templateId/status=published），按 (tenant_id,title) 去重，返回 {created,skipped} |
+| 候选队列 | `GET /api/admin/knowledge/candidates` + `POST /{id}/adopt` / `adopt-edited` / `reject` | 待确认队列闭环：候选读+写路径齐全；采纳转卡片 published（来源继承），拒绝记 status_note |
+| 待确认计数 | `GET /api/admin/knowledge/candidates/pending-count` | 前端红点 |

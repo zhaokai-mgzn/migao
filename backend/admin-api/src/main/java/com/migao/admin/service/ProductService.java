@@ -66,6 +66,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
     private final ProductProcessingItemMapper productProcessingItemMapper;
     private final ProcessingItemMapper processingItemMapper;
     private final ProductAttributeMapper productAttributeMapper;
+    private final KnowledgeDeriveService knowledgeDeriveService;
 
     /**
      * 商品品牌存储在 product_attributes 表的 attr_key
@@ -365,6 +366,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
 
         log.info("创建商品成功: id={}, name={}", product.getId(), product.getName());
 
+        knowledgeDeriveService.deriveProductCard(tenantId, product.getId());
         return getProductById(product.getId(), tenantId);
     }
 
@@ -439,6 +441,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
 
         log.info("更新商品成功: id={}, name={}", id, product.getName());
 
+        knowledgeDeriveService.deriveProductCard(tenantId, id);
         return getProductById(id, tenantId);
     }
 
@@ -931,6 +934,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         product.setEditedAt(OffsetDateTime.now());
         productMapper.updateById(product);
 
+        knowledgeDeriveService.deriveProductCard(tenantId, id);
         log.info("更新商品状态成功: id={}, {} -> {}", id, currentStatus, status);
     }
 
