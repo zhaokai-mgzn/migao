@@ -1575,32 +1575,36 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         // 规格
         if (request.getSpecifications() != null) createReq.setSpecifications(request.getSpecifications());
 
-        // 加工项: 解析 ID → ProcessingItemConfigInput
-        if (request.getProcessingItemIds() != null && !request.getProcessingItemIds().isEmpty()) {
-            List<String> resolved = resolveProcessingItemIds(request.getProcessingItemIds(), tenantId);
-            if (!resolved.isEmpty()) {
-                createReq.setProcessingItemConfigs(resolved.stream()
-                        .map(id -> {
-                            ProcessingItemConfigInput cfg = new ProcessingItemConfigInput();
-                            cfg.setProcessingItemId(id);
-                            return cfg;
-                        })
-                        .collect(Collectors.toList()));
-            }
-        } else if (request.getProcessingItemConfigs() != null) {
-            // 带自定义价格的加工项配置
-            List<ProcessingItemConfigInput> configs = new ArrayList<>();
-            for (var cfg : request.getProcessingItemConfigs()) {
-                if (!StringUtils.hasText(cfg.getProcessingItemId())) continue;
-                String resolved = resolveProcessingItemId(cfg.getProcessingItemId(), tenantId);
-                if (resolved != null) {
-                    ProcessingItemConfigInput input = new ProcessingItemConfigInput();
-                    input.setProcessingItemId(resolved);
-                    input.setCustomPrice(cfg.getCustomPrice());
-                    configs.add(input);
+        // 加工项: 解析 ID → ProcessingItemConfigInput（issue #3056 价格合并）
+        // 回归背景：LLM 按 product.md 同时传 processingItemIds + processingItemConfigs(customPrice)，
+        // 旧 if/else-if 走 ids 分支 → configs 的 customPrice 被静默丢弃（live 实证 45→30）。
+        // 合并语义：configs 的 customPrice 按 resolved ID 合并进全量关联；ids 仅作补充关联。
+        boolean hasIds = request.getProcessingItemIds() != null && !request.getProcessingItemIds().isEmpty();
+        boolean hasConfigs = request.getProcessingItemConfigs() != null && !request.getProcessingItemConfigs().isEmpty();
+        if (hasIds || hasConfigs) {
+            Map<String, BigDecimal> priceById = new java.util.LinkedHashMap<>();
+            Set<String> idSet = new java.util.LinkedHashSet<>();
+            if (hasConfigs) {
+                for (var cfg : request.getProcessingItemConfigs()) {
+                    if (!StringUtils.hasText(cfg.getProcessingItemId())) continue;
+                    String resolved = resolveProcessingItemId(cfg.getProcessingItemId(), tenantId);
+                    if (resolved != null) {
+                        idSet.add(resolved);
+                        if (cfg.getCustomPrice() != null) priceById.put(resolved, cfg.getCustomPrice());
+                    }
                 }
             }
-            if (!configs.isEmpty()) createReq.setProcessingItemConfigs(configs);
+            if (hasIds) {
+                idSet.addAll(resolveProcessingItemIds(request.getProcessingItemIds(), tenantId));
+            }
+            if (!idSet.isEmpty()) {
+                createReq.setProcessingItemConfigs(idSet.stream().map(id -> {
+                    ProcessingItemConfigInput cfg = new ProcessingItemConfigInput();
+                    cfg.setProcessingItemId(id);
+                    cfg.setCustomPrice(priceById.get(id));
+                    return cfg;
+                }).collect(Collectors.toList()));
+            }
         }
 
         return createProduct(createReq, tenantId);
