@@ -449,6 +449,21 @@ _CASE_API_017 = EvalCase(
     persona='',
 )
 
+# ── API-018 [NORMAL] 商品/配置派生知识卡片 - 价格区间自动生成 + 变更自动更新（LLM WIKI 板块 #3051 P4）（源: cases/api.yml）──
+_CASE_API_018 = EvalCase(
+    id='API-018',
+    legacy_id='',
+    title='商品/配置派生知识卡片 - 价格区间自动生成 + 变更自动更新（LLM WIKI 板块 #3051 P4）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商品/加工项信息变更后，关联的派生知识卡片自动更新，AI 回答价格/规格问题与商品数据一致'],
+    expectations=[],
+    data_checks=['商品创建/更新/上下架后自动生成/更新「{商品名}多少钱」知识卡片：answer 含 SKU 价格区间（如 88-128 元/米），sourceType=product、sourceRef=商品ID、status=published', '加工项创建/更新后自动生成「{加工项名}怎么计价」卡片：按 pricingMethod 生成文案（per_meter 按米/per_set 按套/fixed 固定价格+单价/per_area 按面积）', '同源（tenant+sourceType+sourceRef）upsert：存在则更新 version+1，不重复插入；跨租户商品不派生', '价格区间实时读取 SKU 价格，商品变更后卡片自动同步（验收真值 #3）'],
+    skip_reason='派生逻辑由 Service 单测验证（KnowledgeDeriveServiceTest）+ 商品/加工项服务触发断言，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['api', 'knowledge', 'wiki', 'derive'],
+    persona='',
+)
+
 # ── API-012 [NORMAL] 语音转写接口容错 - 空/极小/静音音频返回友好 4xx/5xx，不裸 500（#2984）（源: cases/api.yml）──
 _CASE_API_012 = EvalCase(
     id='API-012',
@@ -3479,6 +3494,7 @@ ALL_CASES = (
     _CASE_API_015,
     _CASE_API_016,
     _CASE_API_017,
+    _CASE_API_018,
     _CASE_API_012,
     _CASE_BM_001,
     _CASE_BM_002,

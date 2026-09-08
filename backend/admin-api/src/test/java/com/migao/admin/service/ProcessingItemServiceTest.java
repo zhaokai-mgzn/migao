@@ -47,6 +47,9 @@ class ProcessingItemServiceTest {
     @Mock
     private ProcessingCategoryMapper processingCategoryMapper;
 
+    @Mock
+    private KnowledgeDeriveService knowledgeDeriveService;
+
     private ProcessingItem testItem;
     private ProcessingCategory testCategory;
 

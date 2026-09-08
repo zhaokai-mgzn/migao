@@ -34,6 +34,7 @@ public class ProcessingItemService extends ServiceImpl<ProcessingItemMapper, Pro
 
     private final ProcessingItemMapper processingItemMapper;
     private final ProcessingCategoryMapper processingCategoryMapper;
+    private final KnowledgeDeriveService knowledgeDeriveService;
 
     /**
      * 分页查询加工项列表
@@ -137,6 +138,7 @@ public class ProcessingItemService extends ServiceImpl<ProcessingItemMapper, Pro
         
         // 保存加工项
         processingItemMapper.insert(item);
+        knowledgeDeriveService.deriveAllProcessingCards(tenantId);
         
         log.info("创建加工项成功: id={}, name={}", item.getId(), item.getName());
         
@@ -175,6 +177,7 @@ public class ProcessingItemService extends ServiceImpl<ProcessingItemMapper, Pro
         
         // 更新加工项
         processingItemMapper.updateById(item);
+        knowledgeDeriveService.deriveAllProcessingCards(tenantId);
         
         log.info("更新加工项成功: id={}, name={}", id, item.getName());
         
