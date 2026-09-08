@@ -3056,16 +3056,16 @@ _CASE_UI_020 = EvalCase(
     persona='',
 )
 
-# ── UI-019 [NORMAL] 米宝工作台「洞察」重构为「会话简报」 — 工具台账转业务简报（结论/待办/办理结果/建议）（源: cases/ui.yml）──
+# ── UI-019 [NORMAL] 米宝工作台「洞察」重构为「会话简报」 — 工具台账转业务简报（结论/待办/办理结果/建议，/chat 工作台默认右侧展开可缩回）（源: cases/ui.yml）──
 _CASE_UI_019 = EvalCase(
     id='UI-019',
     legacy_id='',
-    title='米宝工作台「洞察」重构为「会话简报」 — 工具台账转业务简报（结论/待办/办理结果/建议）',
+    title='米宝工作台「洞察」重构为「会话简报」 — 工具台账转业务简报（结论/待办/办理结果/建议，/chat 工作台默认右侧展开可缩回）',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['米宝会话页顶部「洞察」抽屉展示的是工具调用台账（查询订单/参数校验/请求确认），商家用户不理解也不关心 agent 调用了哪些工具', '应改为「会话简报」：业务语言回答三个问题 — ①刚办了什么事（会话结论）②哪些事还需要确认/跟进（需要你处理）③涉及的业务对象什么状态、接下来可以问什么（办理结果 + 建议）'],
+    user_inputs=['米宝会话页顶部「洞察」抽屉展示的是工具调用台账（查询订单/参数校验/请求确认），商家用户不理解也不关心 agent 调用了哪些工具', '应改为「会话简报」：业务语言回答三个问题 — ①刚办了什么事（会话结论）②哪些事还需要确认/跟进（需要你处理）③涉及的业务对象什么状态、接下来可以问什么（办理结果 + 建议）', '从侧边栏「米宝 · 在线对话」进入 /chat 工作台页右侧完全空白：会话简报应默认在右侧展开（docked 常驻列、无遮罩），可像抽屉一样向右缩回；右下角 FAB 浮窗入口保持现有设计（overlay 覆盖式抽屉、默认收起、带遮罩）'],
     expectations=['direct_reply'],
-    data_checks=['frontend/admin-web/src/components/chat/SessionInsight.tsx 渲染四区块：会话结论 / 需要你处理 / 办理结果 / 接下来可以问，标题与顶部按钮文案为「会话简报」', '会话结论 = buildSessionBrief 确定性推导：查询类按域聚合（如「查询了 2 笔订单」）、写操作完成（如「已创建售后工单」）、失败（含业务化原因）、待确认，全部业务语言，不含工具原始名/参数校验等机器语言', '办理结果 = extractLedgerRows：订单行带状态/金额/客户，有 orderId 时点击跳订单详情，其余点击发送追问；跨来源去重', '接下来可以问 = collectSuggestions 取最近 assistant 消息的 suggestions，点击即发送', '删除：处理进度工具时间线、业务域 ×N 计数、裸编号便签；会话标识弱化保留（调试用）'],
+    data_checks=['frontend/admin-web/src/components/chat/SessionInsight.tsx 渲染四区块：会话结论 / 需要你处理 / 办理结果 / 接下来可以问，标题与顶部按钮文案为「会话简报」；variant prop 支持 overlay（覆盖式+遮罩，FAB 用）与 docked（右侧常驻列、无遮罩）两种布局', 'chat/page.tsx 传 <ChatArea insightDefaultOpen insightVariant=\\"docked\\" />：/chat 工作台进入即右侧展开会话简报（不再右侧空白），点击顶部按钮可向右缩回、再点可再次展开；docked 变体无遮罩', 'FloatingAssistant.tsx 不传 insightDefaultOpen/insightVariant：FAB 浮窗保持现有设计 — overlay 覆盖式抽屉默认收起、点击展开、遮罩点击关闭', '会话结论 = buildSessionBrief 确定性推导：查询类按域聚合（如「查询了 2 笔订单」）、写操作完成（如「已创建售后工单」）、失败（含业务化原因）、待确认，全部业务语言，不含工具原始名/参数校验等机器语言', '办理结果 = extractLedgerRows：订单行带状态/金额/客户，有 orderId 时点击跳订单详情，其余点击发送追问；跨来源去重', '接下来可以问 = collectSuggestions 取最近 assistant 消息的 suggestions，点击即发送', '删除：处理进度工具时间线、业务域 ×N 计数、裸编号便签；会话标识弱化保留（调试用）'],
     skip_reason='纯前端重构由 vitest 单测（session-insight.test.ts + SessionInsight.test.tsx）+ e2e 抽屉链路验证，非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['ui', 'admin-web', 'chat', 'insight'],
     persona='',

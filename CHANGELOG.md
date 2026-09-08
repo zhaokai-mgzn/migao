@@ -6,6 +6,12 @@
 
 ## [Unreleased]
 
+### /chat 工作台会话简报默认右侧展开、可向右缩回；FAB 浮窗保持原样（2026-09-08，#3018）
+
+- `admin-web`：修复从侧边栏「米宝 · 在线对话」进入 /chat 工作台页右侧大片空白——会话简报改为**右侧常驻列（docked 变体，无遮罩）**：进入即默认在右侧展开，点击顶部「会话简报」按钮可像抽屉一样向右缩回、再点重新展开；`ChatArea` 新增 `insightDefaultOpen`/`insightVariant` props（`chat/page.tsx` 传 `insightDefaultOpen insightVariant="docked"`）
+- `admin-web`：右下角 FAB 浮窗入口保持现有设计不变——overlay 覆盖式抽屉（带遮罩）默认收起、按需展开（`FloatingAssistant.tsx` 不传新 props 即行为不变）
+- `admin-web`：WelcomePanel 引导文案同步——「点击顶部会话简报按钮」改为「右侧的会话简报会自动汇总」；行为用例 UI-019 更新 + 生成物重渲染（case_ids: UI-019）
+
 ### 企业基础信息页隐藏「登录日志」「修改密码」入口（2026-09-07，#3006）
 
 - `admin-web`：企业基础信息页改为单区块（品牌设置 + 通知设置），移除 tab 切换栏；「登录日志」（无记录）与「修改密码」（未来统一短信码登录）两个 tab 及区块不再渲染，页面副标题不再提「账号安全与登录审计」；后端/Agent 接口保留，待短信码登录落地后再评估移除（行为用例 ST-010，case_ids: ST-010）

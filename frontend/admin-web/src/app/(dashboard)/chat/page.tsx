@@ -36,9 +36,9 @@ export default function ChatPage() {
       <Suspense fallback={null}>
         <SessionFromQuery />
       </Suspense>
-      {/* 左中两栏布局 — SessionInsight 已在 ChatArea 内部作为抽屉 */}
+      {/* 左中两栏布局 — 会话简报默认在右侧展开（docked 常驻列，可向右缩回） */}
       <SessionList />
-      <ChatArea />
+      <ChatArea insightDefaultOpen insightVariant="docked" />
     </MibaoChatPanel>
   )
 }
