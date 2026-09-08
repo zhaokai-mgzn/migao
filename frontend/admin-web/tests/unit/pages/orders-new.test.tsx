@@ -21,16 +21,8 @@ vi.mock('@/lib/api', () => ({
   },
 }))
 
-// Mock useOrderAmounts hook
-vi.mock('@/hooks/useOrderAmounts', () => ({
-  useOrderAmounts: (total: number) => ({
-    discountAmount: '0.00',
-    setDiscountAmount: vi.fn(),
-    actualAmount: total.toFixed(2),
-    setActualAmount: vi.fn(),
-    actualTouched: false,
-  }),
-}))
+// useOrderAmounts 使用真实实现（纯状态 hook，无外部依赖）：
+// 页面级集成验证「优惠金额不吞键 / 实收款反算优惠 / 提交 payload 携带 discountAmount」
 
 // Mock next/link
 vi.mock('next/link', () => ({
@@ -317,5 +309,78 @@ describe('NewOrderPage', () => {
     })
     const payload = mockCreateOrder.mock.calls[0][0]
     expect(payload.items[0].processingInfo.processingItems[0].quantity).toBe(1)
+  })
+
+  // ===== 优惠金额/实收款 双向联动（页面级集成，真实 useOrderAmounts）=====
+
+  // 场景复刻用户报障（化简）：测试9999 ¥9 × 20 = 订单 180；实收 165 → 优惠应为 15
+  const setupOrder180 = async () => {
+    mockGetProducts.mockResolvedValue({
+      data: { data: { items: [{ id: 'p9', name: '测试9999', price: 9 }], total: 1 } },
+    })
+    mockGetProduct.mockResolvedValue({
+      data: { data: { id: 'p9', name: '测试9999', skus: [], supportsProcessing: false, price: 9 } },
+    })
+    mockGetProductProcessingItems.mockResolvedValue({ data: { data: [] } })
+
+    render(<NewOrderPage />)
+    await pickProduct('测试9999')
+
+    const qtyInput = (await screen.findByText('数量')).closest('div')!.querySelector('input') as HTMLInputElement
+    fireEvent.change(qtyInput, { target: { value: '20' } })
+
+    const totalRow = await screen.findByText('订单金额')
+    expect(totalRow.closest('div')!.textContent).toContain('¥180.00')
+  }
+
+  const discountInput = () => screen.getByLabelText('优惠金额 (¥)') as HTMLInputElement
+  const actualInput = () => screen.getByLabelText('实收款 (¥)') as HTMLInputElement
+
+  it('优惠金额输入框可自由键入，不被每键重格式化吞键（修复锁死）', async () => {
+    await setupOrder180()
+
+    // 键入 "1" → 输入框保持 "1"（旧实现立即重格式化为 "1.00"，后续键入被吞 → 视觉上锁死）
+    fireEvent.change(discountInput(), { target: { value: '1' } })
+    expect(discountInput().value).toBe('1')
+
+    // 继续键入 "15" → 保持 "15"
+    fireEvent.change(discountInput(), { target: { value: '15' } })
+    expect(discountInput().value).toBe('15')
+
+    // 实收款联动：180 - 15 = 165
+    expect(actualInput().value).toBe('165.00')
+
+    // blur 归一化为两位小数
+    fireEvent.blur(discountInput())
+    expect(discountInput().value).toBe('15.00')
+  })
+
+  it('输入实收款 → 优惠金额自动反算（双向联动）', async () => {
+    await setupOrder180()
+
+    // 实收 165 → 优惠 = 180 - 165 = 15.00（旧实现优惠恒为 0.00 不联动）
+    fireEvent.change(actualInput(), { target: { value: '165' } })
+    expect(discountInput().value).toBe('15.00')
+    expect(actualInput().value).toBe('165')
+
+    // blur 后实收归一为两位小数
+    fireEvent.blur(actualInput())
+    expect(actualInput().value).toBe('165.00')
+    expect(discountInput().value).toBe('15.00')
+  })
+
+  it('提交订单 payload 携带 discountAmount（后端校验 应收-优惠≈实收 必需）', async () => {
+    await setupOrder180()
+
+    fireEvent.change(actualInput(), { target: { value: '165' } })
+    fireEvent.blur(actualInput())
+
+    fillCustomerAndSubmit()
+    await waitFor(() => {
+      expect(mockCreateOrder).toHaveBeenCalled()
+    })
+    const payload = mockCreateOrder.mock.calls[0][0]
+    expect(payload.actualAmount).toBe(165)
+    expect(payload.discountAmount).toBe(15)
   })
 })

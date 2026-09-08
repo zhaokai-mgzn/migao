@@ -291,14 +291,25 @@ export default function NewOrderPage() {
     }
   }, [lineItems])
 
-  // ===== 优惠金额 + 实收款 联动逻辑 =====
+  // ===== 优惠金额 + 实收款 双向联动逻辑 =====
   const {
     discountAmount,
     setDiscountAmount,
+    commitDiscount,
     actualAmount,
     setActualAmount,
-    actualTouched,
+    commitActual,
   } = useOrderAmounts(totals.total)
+
+  // 提交用数值：输入中间态（''/非法）兜底为默认值，负数 clamp 0
+  const discountNumber = (() => {
+    const num = Number(discountAmount)
+    return Number.isNaN(num) || num < 0 ? 0 : num
+  })()
+  const actualNumber = (() => {
+    const num = Number(actualAmount)
+    return Number.isNaN(num) || num < 0 ? totals.total : num
+  })()
 
   // ===== 校验 =====
   const validate = (): boolean => {
@@ -404,10 +415,10 @@ export default function NewOrderPage() {
         } as OrderItemFormData
       })
 
-    const actual = Number(actualAmount)
+    const actual = actualNumber
     let finalRemark = remark.trim()
-    if (!Number.isNaN(actual) && Math.abs(actual - totals.total) > 0.001) {
-      const note = `实收款：¥${actual.toFixed(2)}（订单总额 ¥${totals.total.toFixed(2)}）`
+    if (Math.abs(actual - totals.total) > 0.001) {
+      const note = `实收款：¥${actual.toFixed(2)}（订单总额 ¥${totals.total.toFixed(2)}，优惠 ¥${discountNumber.toFixed(2)}）`
       finalRemark = finalRemark ? `${finalRemark}\n${note}` : note
     }
 
@@ -417,7 +428,9 @@ export default function NewOrderPage() {
         customerName: customerName.trim(),
         customerPhone: customerPhone.trim(),
         customerAddress: customerAddress.trim(),
-        actualAmount: Number.isNaN(Number(actualAmount)) ? totals.total : Number(actualAmount),
+        actualAmount: actual,
+        // 后端校验 应收 - 优惠 ≈ 实收（容差 0.01），必须随单携带，否则实收≠应收会被拒
+        discountAmount: discountNumber,
         remark: finalRemark || undefined,
         items,
       })
@@ -607,20 +620,22 @@ export default function NewOrderPage() {
                   </span>
                 </div>
 
-                {/* 优惠金额 — issue #672 */}
+                {/* 优惠金额 — issue #672；双向联动 + blur 归一化（修复输入被每键重格式化吞键锁死） */}
                 <div className="pt-3 mt-2 border-t border-neutral-100">
-                  <label className="block text-sm font-medium text-neutral-700 mb-1.5">
+                  <label htmlFor="discountAmount" className="block text-sm font-medium text-neutral-700 mb-1.5">
                     优惠金额 (¥)
                   </label>
                   <input
                     type="number"
+                    id="discountAmount"
                     min={0}
                     step={0.01}
                     value={discountAmount}
                     onChange={(e) => setDiscountAmount(e.target.value)}
+                    onBlur={commitDiscount}
                     className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                   />
-                  <p className="mt-1 text-xs text-neutral-400">默认 0，修改后实收款自动联动</p>
+                  <p className="mt-1 text-xs text-neutral-400">默认 0；修改后实收款自动联动（订单金额 - 优惠）</p>
                 </div>
 
                 <div className="pt-3 mt-2 border-t border-neutral-100">
@@ -634,9 +649,10 @@ export default function NewOrderPage() {
                     step={0.01}
                     value={actualAmount}
                     onChange={(e) => setActualAmount(e.target.value)}
+                    onBlur={commitActual}
                     className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                   />
-                  <p className="mt-1 text-xs text-neutral-400">默认与订单金额（扣除优惠后）一致，可手动调整</p>
+                  <p className="mt-1 text-xs text-neutral-400">默认与订单金额（扣除优惠后）一致；手动输入后自动反算优惠金额</p>
                 </div>
               </dl>
             </div>
