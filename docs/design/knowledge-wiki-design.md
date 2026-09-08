@@ -1,9 +1,10 @@
 # 企业级 LLM WIKI 知识板块设计（词条化 + AI 提炼 + 行业模板）
 
-> 版本 v1.0 ｜ 2026-09-08 ｜ Issue [#3051](https://github.com/zhaokai-mgzn/migao/issues/3051)
-> 性质：功能板块设计文档（单一事实源）。实施按 §十三 Phase 1~8 推进，全部 AI-TDD（测试先行 + case_ids）。
+> 版本 v1.1 ｜ 2026-09-08 ｜ Issue [#3051](https://github.com/zhaokai-mgzn/migao/issues/3051)
+> 性质：功能板块设计文档（单一事实源）。实施按 §十四 Phase 1~9 推进，全部 AI-TDD（测试先行 + case_ids）。
 > 背景决策：RAG（DashVector + 切块检索）维持下线（决策 D1，2026-08-29）。本设计以「**词条**」为知识单元，
 > 检索用「结构化过滤 + 关键词匹配」，**不引入向量库**；「知识是生成的，不是检索的」。
+> **v1.1（2026-09-08）**：**LLM WIKI 完全替代旧知识库**——RAG 文档模型（表/实体/Mapper/Controller/前端/文档/用例）整体移除，非并存；新板块必须**闭环**（词条生命周期/提炼采纳/检索使用全链路无死端）且**自洽**（schema/契约/文档/生成物一致，无孤儿引用）。
 
 ---
 
@@ -12,7 +13,7 @@
 **问题**：中小商户几乎没有自己的知识文档，RAG「先有文档、再切块检索」的前提不成立（决策 D1 已下线）。
 客服知识问答目前走 LLM 通用知识 + 免责，无租户定制能力，无法回答「本店」事实（价格、加工项、售后政策）。
 
-**方案**：把知识库从「RAG 文档模型」升级为「**词条模型**」，四层知识供给：
+**方案**：LLM WIKI **完全替代**旧知识库——以「**词条模型**」为唯一知识模型（非与文档模型并存），四层知识供给：
 
 | 层 | 供给方式 | 知识单元 | 谁产生 |
 |---|---|---|---|
@@ -23,6 +24,7 @@
 
 **运行时**：AI 客服知识问答按「词条检索（精确/关键词）→ LLM 通用兜底」两级走；词条回答**优先、可溯源、租户隔离**。
 **无向量库**：词条量级几百~几千条，PG 结构化过滤 + 关键词匹配足够，租户隔离沿用 MyBatis 拦截器 + 显式 eq（吸取审计 07 P1-6 `.or()` 教训）。
+**替代边界**：旧 RAG 知识库（`knowledge_documents` / `rag_chunks` / `knowledge_sync_history` / 文档 CRUD API / 知识库文档页）**全部移除**，见 §三·五 移除清单。
 
 ---
 
@@ -43,6 +45,43 @@
 | 前端 | 知识库页：文档列表/上传/resync/删除/test-search/同步历史弹窗 | `frontend/admin-web/src/app/(dashboard)/knowledge/page.tsx` |
 | 种子数据 | `knowledge_base/curtain_faq/faq.md`、`products/product_catalog.md`、`size_guide/measurement_guide.md`（Markdown，未结构化） | `knowledge_base/` |
 | 相关领域 | 商品 SKU 矩阵 + 加工项（pricingMethod: per_meter/per_set/fixed/per_area，契约 §六）+ 租户 AI 配置（V10） | `CONTRACT-LEDGER.md` |
+
+## 三·五、旧知识库完全移除清单（替代边界，v1.1）
+
+LLM WIKI **完全替代**旧知识库：以下组件整体移除，不留并存、不留孤儿引用（grep 全仓核销）。
+
+| 层 | 移除项 | 替代/动作 |
+|---|---|---|
+| 数据 | `knowledge_documents` / `rag_chunks` / `knowledge_sync_history` 三表 | V36 迁移 DROP（rag_chunks → knowledge_documents → knowledge_sync_history 顺序）；`docs/sql/schema.sql`/`schema_full.sql` 同步删除 |
+| 后端实体 | `KnowledgeDocument` / `KnowledgeChunk` / `KnowledgeSyncHistory` | 删除 |
+| 后端 Mapper | `KnowledgeDocumentMapper` / `KnowledgeChunkMapper` / `KnowledgeSyncHistoryMapper` | 删除（`SecurityConfigTest` 若引用同步清理） |
+| 后端 Controller | `KnowledgeController`（文档 CRUD/embed/test-search/同步历史） | 删除，由 `KnowledgeEntryController`（词条 CRUD/检索/候选队列）替代 |
+| 前端 API | `api.ts` knowledgeApi 文档方法（upload/resync/search/sync-history） | 替换为词条/候选/模板方法 |
+| 前端页面 | 知识库页文档上传/同步历史 UI | 改造为词条管理/待采纳/模板 Tab（见 §十一） |
+| 前端测试 | `frontend/admin-web/tests/unit/pages/knowledge.test.tsx` | 重写为词条页测试 |
+| 后端测试 | `KnowledgeControllerTest`（文档端点 IDOR） | 删除，由 `KnowledgeEntryControllerTest` 覆盖 |
+| 冒烟测试 | `ControllerSmokeTest` 中知识库端点断言 | 改为词条端点断言 |
+| Agent | `registry.py` 知识工具禁用注释 / `SKILL-customer_knowledge.md` RAG 优先描述 | 改为词条检索工具 + 词条优先描述（Phase 7） |
+| 用例 | `API-008`（RAG 降级）/ `API-011`（同步历史）→ 已过时 | 从 `.github/cases/api.yml` 删除或标注 removed，重渲染生成物 |
+| 文档 | README 知识库(RAG) 说明、`docs/wiki/Home.md`、`AI-Agent.md` RAG Pipeline 节、`api-reference.md` §5.5、`rag-architecture.md`、`Database.md` 知识库行、`mibao-verification-cases.md` | 按现状改写为词条模型描述；`rag-architecture.md` 归档为历史 |
+| 种子数据 | `knowledge_base/*.md`（Markdown 文档形态） | 结构化迁移为 `knowledge_base/templates/curtain/` 词条模板（Phase 3），原 md 删除 |
+| CI 模板 | `.github/templates/knowledge-ai.yml`（若引用旧工具） | 按词条检索更新 |
+
+**移除验收标准**：全仓 `grep -rn "knowledge_documents\|rag_chunks\|knowledge_sync_history\|KnowledgeDocument\|KnowledgeChunk\|KnowledgeSyncHistory"`（排除历史审计文档）为 0；`docs/sql/schema.sql` 无三表；三模块测试全绿。
+
+## 三·六、闭环与自洽保证（新板块铁律，v1.1）
+
+> 旧知识库的教训：`knowledge_sync_history` 曾被审计发现「表/实体/Mapper 就绪但**零读写**」（issue #2971）——功能没闭环。新板块把「无死端」作为验收前置。
+
+**闭环一：词条生命周期**。`draft → pending_review → published → archived`（+ 编辑版本递增）每个状态都有 API 动作与 UI 入口；published 词条一定可被 `entries/search` 检索到（自洽测试断言：发布后可查、归档后不可查）。
+
+**闭环二：提炼采纳流**。`会话/文档 → candidate（pending）→ 采纳/编辑后采纳 → entry（published）→ 可检索`；拒绝必须记 `status_note`。待采纳队列 UI 必须有读路径（列表）与写路径（采纳/编辑/拒绝）——**不重复 knowledge_sync_history 零读写事故**。
+
+**闭环三：检索-会话飞轮**。`词条 → knowledge_search 命中 → 客服回答 → 会话结束 → 提炼候选 → 采纳 → 新词条`——会话沉淀持续反哺词条库，形成知识增长闭环。
+
+**闭环四：替代闭环（无孤儿）**。旧知识库每层移除项都有核销点（grep 归零 + 测试断言），禁止「表删了实体还在 / API 删了前端还在调用 / 文档还宣称 RAG」的中间态；同一提交内后端+前端+文档同步移除。
+
+**自洽保证**：schema.sql ↔ V35/V36 迁移 ↔ 实体字段 ↔ CONTRACT-LEDGER 枚举 ↔ 前端类型 ↔ Agent 过滤条件五方一致；每次改 `.github/cases/` 必跑 `render_cases.py` 并提交生成物（CI 新鲜度校验）；`contract-check.sh` 三端字段对齐。
 
 ## 四、总体架构：四层知识 + 检索链路
 
@@ -178,8 +217,9 @@ CREATE INDEX IF NOT EXISTS idx_knowledge_candidates_status ON knowledge_candidat
 |---|---|
 | 词条管理 | 列表（标题/分类/来源/状态/版本）+ 筛选（分类/来源/状态/关键词）+ 新建/编辑/发布/归档 + 来源徽标（模板/商品/会话/文档/人工） |
 | 待采纳队列 | 候选列表（建议标题/答案/置信度/来源/依据）+ 采纳 / 编辑后采纳 / 拒绝 |
-| 文档资料 | 保留现有文档上传/列表/同步历史（L4 入口） |
 | 行业模板 | 模板列表 + 「一键套用」+ 套用结果提示（去重统计） |
+
+> 说明：旧「文档资料/同步历史」Tab 随旧知识库移除（§三·五），L4 文档提炼入口并入「行业模板」旁的新「文档提炼」入口或词条管理页（Phase 6 定）。
 
 ## 十二、契约（新增，进 CONTRACT-LEDGER）
 
@@ -191,19 +231,21 @@ CREATE INDEX IF NOT EXISTS idx_knowledge_candidates_status ON knowledge_candidat
 | 候选来源 | `conversation / document / product / config` | 同上 |
 | 词条分类 | `faq / product / measure / aftersale / config` | 前后端同枚举 |
 | 提炼接口 | `POST /api/admin/knowledge/distill/conversations` | 触发+返回统计 |
+| 词条检索端点 | `GET /api/admin/knowledge/entries/search?query=&productId=&category=` | 仅返回本租户 published 词条（显式 eq tenant_id + status） |
 
-## 十三、分阶段实施计划（每阶段独立 PR + Closes #3051 链条）
+## 十三、分阶段实施计划（v1.1：每阶段独立提交，同一 PR 链最终 Closes #3051）
 
-| Phase | 内容 | 交付物 | 依赖 |
+| Phase | 内容 | 交付物 | 状态 |
 |---|---|---|---|
-| P1 | 词条数据模型 | V35 迁移（entries/candidates）+ Entity/Mapper + 单测 + schema.sql 同步 | 无 |
-| P2 | 词条 CRUD + 检索 API | EntryController（CRUD/发布/归档）+ entries/search + 单测 | P1 |
+| P1 | 词条数据模型 | V35 迁移（entries/candidates）+ Entity/Mapper + 单测 + schema.sql 同步 + 契约 | ✅ 已提交（bf067c41） |
+| P2 | **词条 CRUD + 检索 API + 旧知识库移除（后端）** | V36 DROP 三表 + 删旧实体/Mapper/Controller/测试 + KnowledgeEntryService/Controller（CRUD/发布/归档/search）+ 单测 + 用例更新 | 进行中 |
 | P3 | 行业模板体系 | 种子 Markdown → 结构化 JSON 模板 + 丰富 + templates 目录/套用 API + 单测 | P2 |
 | P4 | L2 派生 | 商品/加工项 → 派生词条（同步 + 定时对账）+ 变量填充 + 单测 | P2 |
 | P5 | L3 会话提炼 | candidates 队列 API + 提炼 pipeline（LLM）+ 采纳流 + 单测 | P2 |
 | P6 | L4 文档提炼 | 文档上传后提炼 + 单测 | P5 |
-| P7 | Agent 检索 | knowledge_search 重注册为词条检索 + customer_knowledge prompt 更新 + agent 单测 | P2/P4 |
-| P8 | 前端改造 | 知识库页四 Tab + 契约对齐 | P2~P6 |
+| P7 | Agent 检索 + 旧知识库移除（Agent） | knowledge_search 重注册为词条检索 + customer_knowledge prompt 更新 + registry/参考文档清理 + agent 单测 | P2/P4 |
+| P8 | 前端改造 + 旧知识库移除（前端） | 知识库页改造（词条/待采纳/模板）+ api.ts 替换 + 旧 UI/测试移除 + 契约对齐 | P2~P6 |
+| P9 | 文档与用例收口（自洽） | README/Home/AI-Agent/api-reference/rag-architecture 归档、cases API-008/011 移除、schema_full 同步、grep 归零核销 | P2~P8 |
 
 ## 十四、验收业务真值（映射 issue #3051，验收时逐条核对）
 
@@ -213,3 +255,5 @@ CREATE INDEX IF NOT EXISTS idx_knowledge_candidates_status ON knowledge_candidat
 4. 客服会话结束后，系统自动提炼候选词条进入「待采纳」队列；商家采纳（或编辑后采纳）后词条生效，拒绝则不生效
 5. 商家上传文档后，系统提炼候选词条进入「待采纳」队列（文档→词条提炼，非文档→切块检索）
 6. 词条检索严格按租户隔离，任何租户无法看到其他租户词条
+7. **（v1.1 替代）旧知识库完全移除**：knowledge_documents/rag_chunks/knowledge_sync_history 三表、旧文档 CRUD API、知识库文档页全部下线；全仓 grep（排除历史审计文档）无旧组件引用
+8. **（v1.1 闭环）无死端**：词条每状态有 API+UI 动作；待采纳队列有读+写路径；发布词条必可检索（发布后查得到、归档后查不到）；会话→提炼→采纳→检索形成闭环
