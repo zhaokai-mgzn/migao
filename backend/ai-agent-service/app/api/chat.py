@@ -332,16 +332,35 @@ def _convert_history_to_agent_format(messages: List[Dict[str, Any]]) -> List[Dic
         metadata = msg.get("metadata")
         if isinstance(metadata, dict) and metadata.get("images"):
             entry["images"] = [_rewrite_image_url(url) for url in metadata["images"] if _validate_image_url(url)]
+            # issue #3046：图片 URL 必须同时以文本注入，LLM 才能在工具调用中直接引用
+            # （否则仅 vision 图像块可见，LLM 会回复「无法提取图片存储地址」）
+            entry["content"] = content + _image_url_hint(metadata["images"])
         elif isinstance(metadata, str):
             try:
                 import json
                 meta_parsed = json.loads(metadata)
                 if meta_parsed.get("images"):
                     entry["images"] = [_rewrite_image_url(url) for url in meta_parsed["images"] if _validate_image_url(url)]
+                    entry["content"] = content + _image_url_hint(meta_parsed["images"])
             except (json.JSONDecodeError, TypeError):
                 pass
         history.append(entry)
     return history
+
+
+def _image_url_hint(images) -> str:
+    """把用户上传图片 URL 转成文本提示，供 LLM 在工具调用中直接引用（issue #3046）。
+
+    仅做展示提示，不改变发送给 vision 的图像块；无效 URL 过滤、CDN 域名重写
+    与 _convert_history_to_agent_format / send_message 保持同一规则。
+    """
+    if not images:
+        return ""
+    valid = [url for url in images if _validate_image_url(url)]
+    if not valid:
+        return ""
+    joined = "；".join(_rewrite_image_url(url) for url in valid)
+    return f"\n\n[用户上传的图片（可直接引用 URL）：{joined}]"
 
 
 def _validate_image_url(url: str) -> bool:
@@ -1337,7 +1356,8 @@ async def send_message(
             # 3. 构建多模态消息内容
             if images:
                 user_message_content: Union[str, List[Dict[str, Any]]] = [
-                    {"type": "text", "text": request.message}
+                    # issue #3046：图片 URL 以文本注入，LLM 工具调用可引用；vision 块并行保留
+                    {"type": "text", "text": request.message + _image_url_hint(images)}
                 ]
                 for img_url in images:
                     user_message_content.append({

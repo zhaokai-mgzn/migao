@@ -6,6 +6,7 @@ import ProductForm from '@/components/products/ProductForm'
 import { productApi } from '@/lib/api'
 import { Loading } from '@/components/ui'
 import { useRouteId } from '@/lib/use-route-id'
+import { toEnglishSpecKeys } from '@/lib/spec-keys'
 import { toast } from 'sonner'
 import type { Product, ProductFormData } from '@/types'
 
@@ -61,7 +62,10 @@ export default function EditProductPage() {
     status: product.status,
     images: product.images || [],
     detailImages: product.detailImages || [],
-    specifications: product.specifications || {},
+    // 反显归一化：agent 落库为中文 key（克重/材质/...），编辑表单内部用英文 key
+    // （weight/material/...），此处 中文→英文 保证 agent 建的商品编辑时属性正常回显
+    // （issue #3044）
+    specifications: toEnglishSpecKeys(product.specifications || {}),
     processingItems: product.processingItems,
     processingItemConfigs: product.processingItemConfigs || [],
     supportsProcessing: (product.processingItemConfigs && product.processingItemConfigs.length > 0) || false,

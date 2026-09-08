@@ -142,6 +142,30 @@ function TimeDivider({ date }: { date: string }) {
   )
 }
 
+/**
+ * 用户消息展示文案转换（issue #3043）
+ *
+ * 翻页等内部协议消息（__PAGE__|tool|params_json）由 PageControls 直接发送给后端
+ * 直调工具（绕过 LLM），协议原文不得泄漏到聊天气泡。这里转为用户可读的自然语言，
+ * 与后端历史落库文案保持一致（ai-agent chat.py _page_stream 保存「查看第N页」），
+ * 保证乐观消息与刷新后历史展示完全一致。
+ *
+ * 非协议消息原样返回（历史中后端已存的「查看第N页」不会被二次改写）。
+ */
+export function userMessageDisplay(content: string): string {
+  if (!content.startsWith('__PAGE__|')) return content
+  try {
+    const [, , paramsStr] = content.split('|', 3)
+    const params = JSON.parse(paramsStr)
+    const page = Number(params.page)
+    if (Number.isInteger(page) && page >= 1) return `查看第${page}页`
+    return '翻页查看'
+  } catch {
+    // 解析失败兜底：仍以自然语言呈现，不暴露内部协议
+    return '翻页查看'
+  }
+}
+
 function MessageBubble({ message }: { message: ChatMessage }) {
   if (message.role === 'system') {
     return (
@@ -155,6 +179,9 @@ function MessageBubble({ message }: { message: ChatMessage }) {
 
   const isUser = message.role === 'user'
   const isAI = message.role === 'assistant'
+
+  // 用户消息展示文案：内部协议（__PAGE__|tool|params）转自然语言，协议原文不泄漏到气泡
+  const userDisplay = isUser ? userMessageDisplay(message.content) : message.content
 
   return (
     <div className={cn('flex gap-3', isUser ? 'justify-end' : 'justify-start')}>
@@ -179,7 +206,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
             <AIMessageContent message={message} />
           ) : (
             <>
-              <p className="text-sm whitespace-pre-wrap break-words">{message.content}</p>
+              <p className="text-sm whitespace-pre-wrap break-words">{userDisplay}</p>
               {message.images && message.images.length > 0 && (
                 <MessageImages images={message.images} />
               )}

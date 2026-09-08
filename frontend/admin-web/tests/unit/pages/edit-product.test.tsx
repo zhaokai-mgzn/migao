@@ -1,3 +1,4 @@
+// case_ids: PR-010
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
@@ -59,6 +60,7 @@ vi.mock('@/components/products/ProductForm', () => ({
             <span data-testid="product-price">{props.initialData.price}</span>
             <span data-testid="product-stock-deduction">{props.initialData.stockDeductionMode}</span>
             <span data-testid="product-supports-processing">{String(props.initialData.supportsProcessing)}</span>
+            <span data-testid="product-specs">{JSON.stringify(props.initialData.specifications || {})}</span>
           </div>
         )}
         <button
@@ -239,6 +241,41 @@ describe('EditProductPage', () => {
     render(<EditProductPage />)
     await waitFor(() => {
       expect(screen.getByTestId('product-supports-processing')).toHaveTextContent('true')
+    })
+  })
+
+  it('should convert Chinese spec keys to English in initialData (issue #3044)', async () => {
+    // agent 建品以中文 key（克重/材质/...）落库 product_attributes，
+    // 编辑页反显时必须映射为编辑表单内部的英文 key（weight/material/...），
+    // 否则 agent 建的商品编辑时规格属性全部空白。
+    mockGetProduct.mockResolvedValue({
+      data: {
+        data: {
+          ...mockProduct,
+          specifications: {
+            克重: '200-300g',
+            材质: '涤纶',
+            功能: '遮光',
+            工艺: '色织',
+            风格: '现代简约',
+            图案: '纯色',
+          },
+        },
+      },
+    })
+    render(<EditProductPage />)
+    await waitFor(() => {
+      expect(screen.getByTestId('product-form')).toBeInTheDocument()
+    })
+    await waitFor(() => {
+      expect(JSON.parse(screen.getByTestId('product-specs').textContent || '{}')).toEqual({
+        weight: '200-300g',
+        material: '涤纶',
+        function: '遮光',
+        craft: '色织',
+        style: '现代简约',
+        pattern: '纯色',
+      })
     })
   })
 
