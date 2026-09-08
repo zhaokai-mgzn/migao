@@ -126,6 +126,27 @@ export function useResizableHeight({
     prevDragging.current = isDragging
   }, [isDragging, storedHeight, storageKey])
 
+  /** UI-029：把残留高度钳制进 [minHeight, min(maxHeight, 当前视口高)] ——
+   *  换更大/更小窗口后，旧 px 残留不得溢出视口（不留死白）；
+   *  视口变大时不放大刻意缩小的高度；无残留（null）原样返回。 */
+  const clampToViewport = useCallback(
+    (h: number | null): number | null => {
+      if (h === null) return null
+      const liveMax = typeof window !== 'undefined' ? window.innerHeight : h
+      const bound = maxHeightProp !== undefined ? Math.min(maxHeightProp, liveMax) : liveMax
+      return Math.round(Math.min(Math.max(h, minHeight), bound))
+    },
+    [minHeight, maxHeightProp]
+  )
+
+  // UI-029：挂载时钳制历史残留 + 监听窗口 resize 持续钳制（issue #3021）
+  useEffect(() => {
+    setStoredHeight(clampToViewport)
+    const handleResize = () => setStoredHeight(clampToViewport)
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [clampToViewport])
+
   const resetHeight = useCallback(() => {
     try { localStorage.removeItem(storageKey) } catch { /* ignore */ }
     setStoredHeight(null)

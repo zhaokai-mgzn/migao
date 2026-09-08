@@ -1,8 +1,9 @@
-// case_ids: UI-008
+// case_ids: UI-008, UI-029
 /**
  * 米宝对话面板高度调整 + 拖拽缩放 E2E 测试
  *
  * 验证 issue #1402：默认高度调高、鼠标拖拽缩放、localStorage 持久化。
+ * 验证 issue #3021：双击手柄恢复默认尺寸（误冻结自救入口）。
  *
  * 运行: npx playwright test specs/chat/chat-panel-resize.spec.ts --project=web
  */
@@ -11,11 +12,18 @@ import { test, expect } from '../../fixtures'
 import { ChatPage } from '../../pages/chat/chat.page'
 
 const STORAGE_KEY = 'mibao_chat_panel_height'
+const WIDTH_STORAGE_KEY = 'mibao_chat_panel_width'
 
 async function getPanelHeight(page: import('@playwright/test').Page): Promise<number> {
   const handle = page.locator('[data-testid="chat-panel-resize-container"]')
   const box = await handle.boundingBox()
   return box?.height ?? 0
+}
+
+async function getPanelWidth(page: import('@playwright/test').Page): Promise<number> {
+  const handle = page.locator('[data-testid="chat-panel-resize-container"]')
+  const box = await handle.boundingBox()
+  return box?.width ?? 0
 }
 
 test.describe('Chat Panel Resize', () => {
@@ -88,5 +96,43 @@ test.describe('Chat Panel Resize', () => {
     await page.mouse.up()
 
     await expect(page.locator('[data-testid="chat-panel-content"]')).toBeVisible()
+  })
+
+  // UI-029 (#3021): 双击右侧手柄 → 恢复默认宽度 100%，持久化清除
+  test('double-click right handle resets panel to default width', async ({ page }) => {
+    const handle = page.locator('[data-testid="chat-panel-resize-handle-horizontal"]')
+    const box = await handle.boundingBox()
+    if (!box) throw new Error('Handle not found')
+
+    // 向左拖 200px 收窄 → 宽度持久化为 px
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(box.x + box.width / 2 - 200, box.y + box.height / 2, { steps: 5 })
+    await page.mouse.up()
+    const narrowed = await getPanelWidth(page)
+    expect(narrowed).toBeGreaterThan(0)
+    expect(await page.evaluate((k) => localStorage.getItem(k), WIDTH_STORAGE_KEY)).not.toBeNull()
+
+    // 双击 → 恢复默认 100%（宽度显著变宽）且 localStorage 清除
+    await handle.dblclick()
+    await expect.poll(async () =>
+      page.evaluate((k) => localStorage.getItem(k), WIDTH_STORAGE_KEY)
+    ).toBeNull()
+    const widened = await getPanelWidth(page)
+    expect(widened).toBeGreaterThan(narrowed + 150)
+  })
+
+  // UI-029 (#3021): 角把手单击未拖动 → 不冻结当前尺寸
+  test('corner handle click without drag does not freeze size', async ({ page }) => {
+    const corner = page.locator('[data-testid="chat-panel-resize-handle-corner"]')
+    const box = await corner.boundingBox()
+    if (!box) throw new Error('Corner handle not found')
+
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    await page.mouse.down()
+    await page.mouse.up()
+
+    expect(await page.evaluate((k) => localStorage.getItem(k), WIDTH_STORAGE_KEY)).toBeNull()
+    expect(await page.evaluate((k) => localStorage.getItem(k), STORAGE_KEY)).toBeNull()
   })
 })

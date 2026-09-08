@@ -115,6 +115,27 @@ export function useResizableWidth({
     prevDragging.current = isDragging
   }, [isDragging, storedWidth, storageKey])
 
+  /** UI-029：把残留宽度钳制进 [minWidth, min(maxWidth, 当前视口宽)] ——
+   *  换更大/更小窗口后，旧 px 残留不得溢出视口（不留死白）；
+   *  视口变大时不放大刻意缩小的浮窗；无残留（null）原样返回。 */
+  const clampToViewport = useCallback(
+    (w: number | null): number | null => {
+      if (w === null) return null
+      const liveMax = typeof window !== 'undefined' ? window.innerWidth : w
+      const bound = maxWidthProp !== undefined ? Math.min(maxWidthProp, liveMax) : liveMax
+      return Math.round(Math.min(Math.max(w, minWidth), bound))
+    },
+    [minWidth, maxWidthProp]
+  )
+
+  // UI-029：挂载时钳制历史残留 + 监听窗口 resize 持续钳制（issue #3021）
+  useEffect(() => {
+    setStoredWidth(clampToViewport)
+    const handleResize = () => setStoredWidth(clampToViewport)
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [clampToViewport])
+
   const resetWidth = useCallback(() => {
     try { localStorage.removeItem(storageKey) } catch { /* ignore */ }
     setStoredWidth(null)

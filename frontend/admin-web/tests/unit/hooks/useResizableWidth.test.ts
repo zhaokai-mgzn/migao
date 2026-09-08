@@ -1,4 +1,4 @@
-// case_ids: UI-021, UI-022
+// case_ids: UI-021, UI-022, UI-029
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useResizableWidth } from '@/hooks/useResizableWidth'
@@ -205,5 +205,43 @@ describe('useResizableWidth', () => {
     )
     act(() => { result.current.setWidth(543.6) })
     expect(result.current.containerStyle.width).toBe('544px')
+  })
+
+  // ── UI-029：残留尺寸视口钳制 —— 窗口变化后不留死白/不溢出（issue #3021）──
+
+  it('mount 时把超过视口的残留宽度钳制到视口上限', () => {
+    localStorage.setItem(STORAGE_KEY, '1900')
+    const { result } = renderHook(() =>
+      useResizableWidth({ storageKey: STORAGE_KEY, defaultWidth: '100%', minWidth: 480, maxWidth: 1024 })
+    )
+    expect(result.current.containerStyle.width).toBe('1024px')
+  })
+
+  it('窗口 resize 时钳制超视口残留，且不放大刻意缩小的浮窗', () => {
+    localStorage.setItem(STORAGE_KEY, '1500')
+    const { result } = renderHook(() =>
+      useResizableWidth({ storageKey: STORAGE_KEY, defaultWidth: '100%', minWidth: 480, maxWidth: 2000 })
+    )
+    // jsdom 默认 innerWidth=1024 → mount 钳制
+    expect(result.current.containerStyle.width).toBe('1024px')
+
+    // 视口缩小到 800 → resize 后钳到 800
+    Object.defineProperty(window, 'innerWidth', { value: 800, writable: true, configurable: true })
+    act(() => { window.dispatchEvent(new Event('resize')) })
+    expect(result.current.containerStyle.width).toBe('800px')
+
+    // 视口变大到 1600 → 不放大用户刻意缩小的浮窗
+    Object.defineProperty(window, 'innerWidth', { value: 1600, writable: true, configurable: true })
+    act(() => { window.dispatchEvent(new Event('resize')) })
+    expect(result.current.containerStyle.width).toBe('800px')
+    Object.defineProperty(window, 'innerWidth', { value: 1024, writable: true, configurable: true })
+  })
+
+  it('无残留宽度时钳制不生效（保持 defaultWidth）', () => {
+    const { result } = renderHook(() =>
+      useResizableWidth({ storageKey: STORAGE_KEY, defaultWidth: '100%', minWidth: 480, maxWidth: 1024 })
+    )
+    act(() => { window.dispatchEvent(new Event('resize')) })
+    expect(result.current.containerStyle.width).toBe('100%')
   })
 })
