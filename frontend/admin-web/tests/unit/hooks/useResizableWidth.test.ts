@@ -1,4 +1,4 @@
-// case_ids: UI-021, UI-022
+// case_ids: UI-021, UI-022, UI-029
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useResizableWidth } from '@/hooks/useResizableWidth'
@@ -207,39 +207,42 @@ describe('useResizableWidth', () => {
     expect(result.current.containerStyle.width).toBe('544px')
   })
 
-  // ── 视口钳制（用户报障：多轮对话/换窗口/缩放后面板宽度错乱，右侧会话简报被推出视口）──
-  it('persisted width larger than current viewport → clamped to viewport on load', () => {
-    const orig = window.innerWidth
-    Object.defineProperty(window, 'innerWidth', { value: 800, writable: true, configurable: true })
-    localStorage.setItem(STORAGE_KEY, '1300')
+// ── UI-029：残留尺寸视口钳制 —— 窗口变化后不留死白/不溢出（issue #3021）──
+
+  it('mount 时把超过视口的残留宽度钳制到视口上限', () => {
+    localStorage.setItem(STORAGE_KEY, '1900')
     const { result } = renderHook(() =>
-      useResizableWidth({ storageKey: STORAGE_KEY, defaultWidth: '100%', minWidth: 480 })
+      useResizableWidth({ storageKey: STORAGE_KEY, defaultWidth: '100%', minWidth: 480, maxWidth: 1024 })
     )
-    expect(result.current.containerStyle.width).toBe('800px')
-    Object.defineProperty(window, 'innerWidth', { value: orig, writable: true, configurable: true })
+    expect(result.current.containerStyle.width).toBe('1024px')
   })
 
-  it('persisted width within viewport → unchanged', () => {
+  it('窗口 resize 时钳制超视口残留，且不放大刻意缩小的浮窗', () => {
+    localStorage.setItem(STORAGE_KEY, '1500')
+    const { result } = renderHook(() =>
+      useResizableWidth({ storageKey: STORAGE_KEY, defaultWidth: '100%', minWidth: 480, maxWidth: 2000 })
+    )
+    // jsdom 默认 innerWidth=1024 → mount 钳制
+    expect(result.current.containerStyle.width).toBe('1024px')
+
+    // 视口缩小到 800 → resize 后钳到 800
+    Object.defineProperty(window, 'innerWidth', { value: 800, writable: true, configurable: true })
+    act(() => { window.dispatchEvent(new Event('resize')) })
+    expect(result.current.containerStyle.width).toBe('800px')
+
+    // 视口变大到 1600 → 不放大用户刻意缩小的浮窗
+    Object.defineProperty(window, 'innerWidth', { value: 1600, writable: true, configurable: true })
+    act(() => { window.dispatchEvent(new Event('resize')) })
+    expect(result.current.containerStyle.width).toBe('800px')
+    Object.defineProperty(window, 'innerWidth', { value: 1024, writable: true, configurable: true })
+  })
+
+  it('persisted width within viewport → unchanged（未传 maxWidth 时以视口为上限）', () => {
     localStorage.setItem(STORAGE_KEY, '700')
     const { result } = renderHook(() =>
       useResizableWidth({ storageKey: STORAGE_KEY, defaultWidth: '100%', minWidth: 480, maxWidth: 900 })
     )
     expect(result.current.containerStyle.width).toBe('700px')
-  })
-
-  it('window resize below persisted width → re-clamped to new viewport', () => {
-    const orig = window.innerWidth
-    Object.defineProperty(window, 'innerWidth', { value: 900, writable: true, configurable: true })
-    localStorage.setItem(STORAGE_KEY, '1200')
-    const { result } = renderHook(() =>
-      useResizableWidth({ storageKey: STORAGE_KEY, defaultWidth: '100%', minWidth: 480 })
-    )
-    expect(result.current.containerStyle.width).toBe('900px')
-
-    Object.defineProperty(window, 'innerWidth', { value: 640, writable: true, configurable: true })
-    act(() => { window.dispatchEvent(new Event('resize')) })
-    expect(result.current.containerStyle.width).toBe('640px')
-    Object.defineProperty(window, 'innerWidth', { value: orig, writable: true, configurable: true })
   })
 
   it('explicit maxWidth smaller than viewport wins over viewport clamp', () => {
@@ -251,5 +254,13 @@ describe('useResizableWidth', () => {
     )
     expect(result.current.containerStyle.width).toBe('850px')
     Object.defineProperty(window, 'innerWidth', { value: orig, writable: true, configurable: true })
+  })
+
+  it('无残留宽度时钳制不生效（保持 defaultWidth）', () => {
+    const { result } = renderHook(() =>
+      useResizableWidth({ storageKey: STORAGE_KEY, defaultWidth: '100%', minWidth: 480, maxWidth: 1024 })
+    )
+    act(() => { window.dispatchEvent(new Event('resize')) })
+    expect(result.current.containerStyle.width).toBe('100%')
   })
 })

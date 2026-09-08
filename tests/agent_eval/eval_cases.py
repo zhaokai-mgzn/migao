@@ -3191,6 +3191,21 @@ _CASE_UI_028 = EvalCase(
     persona='',
 )
 
+# ── UI-029 [NORMAL] 米宝面板缩放防冻结与恢复默认 —— 双击手柄复位 + 残留尺寸视口钳制 + 角把手误触防护（#3021）（源: cases/ui.yml）──
+_CASE_UI_029 = EvalCase(
+    id='UI-029',
+    legacy_id='',
+    title='米宝面板缩放防冻结与恢复默认 —— 双击手柄复位 + 残留尺寸视口钳制 + 角把手误触防护（#3021）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['米宝对话面板被拖拽/误触缩放后宽度被冻成固定 px：窗口尺寸变化后面板不重新适配，右侧露出大片白色卡片底（观感『页面坏了』），且界面上没有任何恢复默认大小的入口'],
+    expectations=['direct_reply'],
+    data_checks=['双击任意缩放手柄（底部/顶部/右侧/右下角）恢复默认尺寸（宽 100% / 高 85vh）并清除 localStorage（mibao_chat_panel_width/height）', '四个缩放手柄 title 含「双击恢复默认」，用户可发现自救入口', 'useResizableWidth/useResizableHeight 挂载时把超过视口的残留 px 钳制到视口上限，窗口 resize 持续钳制；视口变大不放大刻意缩小的浮窗（保留浮窗能力）', '右下角斜向把手未发生拖动的 mouseup 不持久化（单击误触不再把 100% 流式宽度冻结成 px）', '既有拖拽缩放/持久化行为不回退（UI-021/UI-022）'],
+    skip_reason='纯前端 React 组件/hook 行为，由 vitest 单测（MibaoChatPanel.test.tsx + useResizableWidth/Height.test.ts）+ E2E 双击复位与角把手防误触链路验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ui', 'admin-web', 'chat', 'resize'],
+    persona='',
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -3432,6 +3447,7 @@ ALL_CASES = (
     _CASE_UI_026,
     _CASE_UI_027,
     _CASE_UI_028,
+    _CASE_UI_029,
     _CASE_UT_001,
     _CASE_UT_002,
 )

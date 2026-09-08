@@ -1,4 +1,4 @@
-// case_ids: UI-021, UI-022
+// case_ids: UI-021, UI-022, UI-029
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import MibaoChatPanel from '@/components/business/MibaoChatPanel'
@@ -179,5 +179,81 @@ describe('MibaoChatPanel', () => {
     const style = panel.getAttribute('style')!
     expect(style).toContain('width: 480px')
     expect(style).toContain('height: 300px')
+  })
+
+  // ── UI-029：双击手柄恢复默认尺寸 + 角把手误触防护（issue #3021）──
+
+  it('双击底部手柄恢复默认尺寸（宽 100% / 高 85vh）并清除持久化', () => {
+    localStorageMock.setItem('mibao_chat_panel_width', '900')
+    localStorageMock.setItem('mibao_chat_panel_height', '700')
+    const { container } = render(<MibaoChatPanel><div>test content</div></MibaoChatPanel>)
+    const panel = container.querySelector('[data-testid="chat-panel-resize-container"]')!
+    expect(panel.getAttribute('style')).toContain('width: 900px')
+    expect(panel.getAttribute('style')).toContain('height: 700px')
+
+    fireEvent.doubleClick(screen.getByTestId('chat-panel-resize-handle'))
+
+    const style = panel.getAttribute('style')!
+    expect(style).toContain('width: 100%')
+    expect(style).toContain('height: 85vh')
+    expect(localStorageMock.getItem('mibao_chat_panel_width')).toBeNull()
+    expect(localStorageMock.getItem('mibao_chat_panel_height')).toBeNull()
+  })
+
+  it('双击右侧手柄同样恢复默认尺寸', () => {
+    localStorageMock.setItem('mibao_chat_panel_width', '760')
+    localStorageMock.setItem('mibao_chat_panel_height', '650')
+    const { container } = render(<MibaoChatPanel><div>test content</div></MibaoChatPanel>)
+    const panel = container.querySelector('[data-testid="chat-panel-resize-container"]')!
+    expect(panel.getAttribute('style')).toContain('width: 760px')
+
+    fireEvent.doubleClick(screen.getByTestId('chat-panel-resize-handle-horizontal'))
+
+    const style = panel.getAttribute('style')!
+    expect(style).toContain('width: 100%')
+    expect(style).toContain('height: 85vh')
+    expect(localStorageMock.getItem('mibao_chat_panel_width')).toBeNull()
+    expect(localStorageMock.getItem('mibao_chat_panel_height')).toBeNull()
+  })
+
+  it('双击右下角把手恢复默认尺寸', () => {
+    localStorageMock.setItem('mibao_chat_panel_width', '600')
+    localStorageMock.setItem('mibao_chat_panel_height', '500')
+    const { container } = render(<MibaoChatPanel><div>test content</div></MibaoChatPanel>)
+    const panel = container.querySelector('[data-testid="chat-panel-resize-container"]')!
+    expect(panel.getAttribute('style')).toContain('width: 600px')
+
+    fireEvent.doubleClick(screen.getByTestId('chat-panel-resize-handle-corner'))
+
+    const style = panel.getAttribute('style')!
+    expect(style).toContain('width: 100%')
+    expect(style).toContain('height: 85vh')
+    expect(localStorageMock.getItem('mibao_chat_panel_width')).toBeNull()
+    expect(localStorageMock.getItem('mibao_chat_panel_height')).toBeNull()
+  })
+
+  it('角把手单击未拖动时 mouseup 不冻结当前尺寸（防误触持久化 px）', () => {
+    const { container } = render(<MibaoChatPanel><div>test content</div></MibaoChatPanel>)
+    const panel = container.querySelector('[data-testid="chat-panel-resize-container"]')!
+    vi.spyOn(panel, 'getBoundingClientRect').mockReturnValue({
+      width: 720, height: 600, top: 0, left: 0, right: 720, bottom: 600, x: 0, y: 0,
+      toJSON: () => ({}),
+    } as DOMRect)
+
+    const corner = screen.getByTestId('chat-panel-resize-handle-corner')
+    // 只有 mousedown + mouseup，没有任何 mousemove —— 不得写入 localStorage
+    fireEvent.mouseDown(corner, { clientX: 700, clientY: 500 })
+    fireEvent.mouseUp(document)
+
+    expect(localStorageMock.getItem('mibao_chat_panel_width')).toBeNull()
+    expect(localStorageMock.getItem('mibao_chat_panel_height')).toBeNull()
+  })
+
+  it('缩放手柄 title 提示「双击恢复默认大小」（底/右/角）', () => {
+    render(<MibaoChatPanel showTopHandle><div>test content</div></MibaoChatPanel>)
+    expect(screen.getByTestId('chat-panel-resize-handle')).toHaveAttribute('title', expect.stringContaining('双击恢复默认'))
+    expect(screen.getByTestId('chat-panel-resize-handle-top')).toHaveAttribute('title', expect.stringContaining('双击恢复默认'))
+    expect(screen.getByTestId('chat-panel-resize-handle-horizontal')).toHaveAttribute('title', expect.stringContaining('双击恢复默认'))
+    expect(screen.getByTestId('chat-panel-resize-handle-corner')).toHaveAttribute('title', expect.stringContaining('双击恢复默认'))
   })
 })

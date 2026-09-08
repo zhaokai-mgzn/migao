@@ -1,4 +1,4 @@
-// case_ids: UI-006, UI-021, UI-022
+// case_ids: UI-006, UI-021, UI-022, UI-029
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useResizableHeight } from '@/hooks/useResizableHeight'
@@ -277,39 +277,42 @@ describe('useResizableHeight', () => {
     expect(result.current.containerStyle.height).toBe('544px')
   })
 
-  // ── 视口钳制（用户报障：多轮对话/换窗口/缩放后面板高度错乱，超出可视区被裁切）──
-  it('persisted height larger than current viewport → clamped to viewport on load', () => {
-    const orig = window.innerHeight
-    Object.defineProperty(window, 'innerHeight', { value: 600, writable: true, configurable: true })
-    localStorage.setItem(STORAGE_KEY, '1200')
+// ── UI-029：残留尺寸视口钳制 —— 窗口变化后不留死白/不溢出（issue #3021）──
+
+  it('mount 时把超过视口的残留高度钳制到视口上限', () => {
+    localStorage.setItem(STORAGE_KEY, '2000')
     const { result } = renderHook(() =>
-      useResizableHeight({ storageKey: STORAGE_KEY, defaultHeight: '85vh', minHeight: 300 })
+      useResizableHeight({ storageKey: STORAGE_KEY, defaultHeight: '85vh', minHeight: 300, maxHeight: 768 })
     )
-    expect(result.current.containerStyle.height).toBe('600px')
-    Object.defineProperty(window, 'innerHeight', { value: orig, writable: true, configurable: true })
+    expect(result.current.containerStyle.height).toBe('768px')
   })
 
-  it('persisted height within viewport → unchanged', () => {
+  it('窗口 resize 时钳制超视口残留，且不放大刻意缩小的高度', () => {
+    localStorage.setItem(STORAGE_KEY, '1200')
+    const { result } = renderHook(() =>
+      useResizableHeight({ storageKey: STORAGE_KEY, defaultHeight: '85vh', minHeight: 300, maxHeight: 2000 })
+    )
+    // jsdom 默认 innerHeight=768 → mount 钳制
+    expect(result.current.containerStyle.height).toBe('768px')
+
+    // 视口缩小到 600 → resize 后钳到 600
+    Object.defineProperty(window, 'innerHeight', { value: 600, writable: true, configurable: true })
+    act(() => { window.dispatchEvent(new Event('resize')) })
+    expect(result.current.containerStyle.height).toBe('600px')
+
+    // 视口变大到 900 → 不放大用户刻意缩小的高度
+    Object.defineProperty(window, 'innerHeight', { value: 900, writable: true, configurable: true })
+    act(() => { window.dispatchEvent(new Event('resize')) })
+    expect(result.current.containerStyle.height).toBe('600px')
+    Object.defineProperty(window, 'innerHeight', { value: 768, writable: true, configurable: true })
+  })
+
+  it('persisted height within viewport → unchanged（未传 maxHeight 时以视口为上限）', () => {
     localStorage.setItem(STORAGE_KEY, '500')
     const { result } = renderHook(() =>
       useResizableHeight({ storageKey: STORAGE_KEY, defaultHeight: '85vh', minHeight: 300, maxHeight: 900 })
     )
     expect(result.current.containerStyle.height).toBe('500px')
-  })
-
-  it('window resize below persisted height → re-clamped to new viewport', () => {
-    const orig = window.innerHeight
-    Object.defineProperty(window, 'innerHeight', { value: 800, writable: true, configurable: true })
-    localStorage.setItem(STORAGE_KEY, '1000')
-    const { result } = renderHook(() =>
-      useResizableHeight({ storageKey: STORAGE_KEY, defaultHeight: '85vh', minHeight: 300 })
-    )
-    expect(result.current.containerStyle.height).toBe('800px')
-
-    Object.defineProperty(window, 'innerHeight', { value: 500, writable: true, configurable: true })
-    act(() => { window.dispatchEvent(new Event('resize')) })
-    expect(result.current.containerStyle.height).toBe('500px')
-    Object.defineProperty(window, 'innerHeight', { value: orig, writable: true, configurable: true })
   })
 
   it('explicit maxHeight smaller than viewport wins over viewport clamp', () => {
@@ -321,5 +324,13 @@ describe('useResizableHeight', () => {
     )
     expect(result.current.containerStyle.height).toBe('850px')
     Object.defineProperty(window, 'innerHeight', { value: orig, writable: true, configurable: true })
+  })
+
+  it('无残留高度时钳制不生效（保持 defaultHeight）', () => {
+    const { result } = renderHook(() =>
+      useResizableHeight({ storageKey: STORAGE_KEY, defaultHeight: '85vh', minHeight: 300, maxHeight: 768 })
+    )
+    act(() => { window.dispatchEvent(new Event('resize')) })
+    expect(result.current.containerStyle.height).toBe('85vh')
   })
 })

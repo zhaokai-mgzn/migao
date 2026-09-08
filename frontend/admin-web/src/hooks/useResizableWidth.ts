@@ -55,19 +55,6 @@ export function useResizableWidth({
   )
   const [isDragging, setIsDragging] = useState(false)
 
-  // 视口宽度（加载 + resize 时刷新）：持久化的 px 宽度若大于当前视口（换窗口/浏览器
-  // 缩放/FAB 与 /chat 工作台共用 storageKey 互相污染），面板会超出视口、右侧「会话简报」
-  // 被推出屏幕 → 样式错乱。加载/缩放时实时钳制到视口内（不覆盖持久化原文，仅渲染层钳制）。
-  const [viewportWidth, setViewportWidth] = useState<number | null>(() =>
-    typeof window !== 'undefined' ? window.innerWidth : null
-  )
-
-  useEffect(() => {
-    const onResize = () => setViewportWidth(window.innerWidth)
-    window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
-  }, [])
-
   const dragRef = useRef<{
     startX: number
     startWidth: number
@@ -128,6 +115,27 @@ export function useResizableWidth({
     prevDragging.current = isDragging
   }, [isDragging, storedWidth, storageKey])
 
+  /** UI-029：把残留宽度钳制进 [minWidth, min(maxWidth, 当前视口宽)] ——
+   *  换更大/更小窗口后，旧 px 残留不得溢出视口（不留死白）；
+   *  视口变大时不放大刻意缩小的浮窗；无残留（null）原样返回。 */
+  const clampToViewport = useCallback(
+    (w: number | null): number | null => {
+      if (w === null) return null
+      const liveMax = typeof window !== 'undefined' ? window.innerWidth : w
+      const bound = maxWidthProp !== undefined ? Math.min(maxWidthProp, liveMax) : liveMax
+      return Math.round(Math.min(Math.max(w, minWidth), bound))
+    },
+    [minWidth, maxWidthProp]
+  )
+
+  // UI-029：挂载时钳制历史残留 + 监听窗口 resize 持续钳制（issue #3021）
+  useEffect(() => {
+    setStoredWidth(clampToViewport)
+    const handleResize = () => setStoredWidth(clampToViewport)
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [clampToViewport])
+
   const resetWidth = useCallback(() => {
     try { localStorage.removeItem(storageKey) } catch { /* ignore */ }
     setStoredWidth(null)
@@ -140,10 +148,9 @@ export function useResizableWidth({
   }, [minWidth, maxWidthProp])
 
   const containerStyle = {
-    width: storedWidth !== null
-      ? // 钳制：不超过视口；显式 maxWidth（如 UI 上限）比视口更小时取更小值
-        `${Math.min(storedWidth, maxWidthProp ?? Infinity, viewportWidth ?? Infinity)}px`
-      : defaultWidth,
+    // UI-029 状态层已钳制（clampToViewport）：残留宽度 ≤ min(maxWidth, 当前视口宽)，
+    // 渲染层直接输出即可，不重复钳制
+    width: storedWidth !== null ? `${storedWidth}px` : defaultWidth,
   }
 
   const handleProps = {

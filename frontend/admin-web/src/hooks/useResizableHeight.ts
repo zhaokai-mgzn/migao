@@ -63,19 +63,6 @@ export function useResizableHeight({
   )
   const [isDragging, setIsDragging] = useState(false)
 
-  // 视口高度（加载 + resize 时刷新）：持久化的 px 高度若大于当前视口（换窗口/浏览器
-  // 缩放/FAB 与 /chat 工作台共用 storageKey 互相污染），面板超出可视区被裁切 → 样式错乱。
-  // 加载/缩放时实时钳制到视口内（不覆盖持久化原文，仅渲染层钳制）。
-  const [viewportHeight, setViewportHeight] = useState<number | null>(() =>
-    typeof window !== 'undefined' ? window.innerHeight : null
-  )
-
-  useEffect(() => {
-    const onResize = () => setViewportHeight(window.innerHeight)
-    window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
-  }, [])
-
   const dragRef = useRef<{
     startY: number
     startHeight: number
@@ -139,6 +126,27 @@ export function useResizableHeight({
     prevDragging.current = isDragging
   }, [isDragging, storedHeight, storageKey])
 
+  /** UI-029：把残留高度钳制进 [minHeight, min(maxHeight, 当前视口高)] ——
+   *  换更大/更小窗口后，旧 px 残留不得溢出视口（不留死白）；
+   *  视口变大时不放大刻意缩小的高度；无残留（null）原样返回。 */
+  const clampToViewport = useCallback(
+    (h: number | null): number | null => {
+      if (h === null) return null
+      const liveMax = typeof window !== 'undefined' ? window.innerHeight : h
+      const bound = maxHeightProp !== undefined ? Math.min(maxHeightProp, liveMax) : liveMax
+      return Math.round(Math.min(Math.max(h, minHeight), bound))
+    },
+    [minHeight, maxHeightProp]
+  )
+
+  // UI-029：挂载时钳制历史残留 + 监听窗口 resize 持续钳制（issue #3021）
+  useEffect(() => {
+    setStoredHeight(clampToViewport)
+    const handleResize = () => setStoredHeight(clampToViewport)
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [clampToViewport])
+
   const resetHeight = useCallback(() => {
     try { localStorage.removeItem(storageKey) } catch { /* ignore */ }
     setStoredHeight(null)
@@ -151,10 +159,9 @@ export function useResizableHeight({
   }, [minHeight, maxHeightProp])
 
   const containerStyle = {
-    height: storedHeight !== null
-      ? // 钳制：不超过视口；显式 maxHeight（如 UI 上限）比视口更小时取更小值
-        `${Math.min(storedHeight, maxHeightProp ?? Infinity, viewportHeight ?? Infinity)}px`
-      : defaultHeight,
+    // UI-029 状态层已钳制（clampToViewport）：残留高度 ≤ min(maxHeight, 当前视口高)，
+    // 渲染层直接输出即可，不重复钳制
+    height: storedHeight !== null ? `${storedHeight}px` : defaultHeight,
   }
 
   const handleProps = {
