@@ -13,6 +13,7 @@ import CategoryTree from './CategoryTree'
 import CategoryDialog from './CategoryDialog'
 import { categoryApi, processingItemApi } from '@/lib/api'
 import { validateProductForm, derivePrice } from '@/lib/product-utils'
+import { toChineseSpecKeys } from '@/lib/attribute-keys'
 import type {
   ProductFormData,
   ProductStatus,
@@ -280,6 +281,9 @@ export default function ProductForm({
         price: derivePrice(form.skus || [], form.price),
         status: targetStatus,
         processingItemConfigs: form.processingItemConfigs,
+        // 提交归一化：表单内部英文 key（weight/...）→ 落库中文 key（克重/...），
+        // 与 ai-agent 建品风格统一，详情页天然中文展示（issue #3044）
+        specifications: toChineseSpecKeys(form.specifications || {}),
       }
       await onSubmit(payload, targetStatus)
       const labelMap: Record<ProductStatus, string> = {

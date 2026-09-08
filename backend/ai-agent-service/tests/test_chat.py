@@ -218,6 +218,43 @@ class TestConvertHistory:
         }])
         assert result[0]["images"] == ["https://a.com/1.jpg", "/api/files/3.jpg"]
 
+    def test_images_url_injected_as_text_hint(self):
+        # issue #3046：用户上传图片的 URL 必须同时以文本注入 content，
+        # LLM 才能把 URL 写进工具调用（如 product_manage 设置 main_image），
+        # 而不是回复「无法从对话中提取图片存储地址」。
+        result = _convert_history_to_agent_format([{
+            "role": "user", "content": "这是主图",
+            "metadata": {"images": ["https://a.com/1.jpg"]},
+        }])
+        assert "https://a.com/1.jpg" in result[0]["content"]
+        assert "图片" in result[0]["content"]
+
+    def test_images_url_hint_no_double_rewrite_noop(self):
+        # 无图片的历史消息不得拼接 URL 提示（content 原样）
+        result = _convert_history_to_agent_format([{
+            "role": "user", "content": "普通文本",
+        }])
+        assert result[0]["content"] == "普通文本"
+        assert "可直接引用" not in result[0]["content"]
+
+    def test_image_url_hint_filters_invalid_and_rewrites_cdn(self):
+        # issue #3046：_image_url_hint 供当前消息与历史消息共用——
+        # 无效 URL 过滤、CDN 域名重写、无图片返回空串
+        from app.api.chat import _image_url_hint
+        with patch("app.api.chat.settings") as mock_settings:
+            mock_settings.IMAGE_URL_REWRITE_FROM = "cdn.a.com"
+            mock_settings.IMAGE_URL_REWRITE_TO = "oss.a.com"
+            hint = _image_url_hint([
+                "https://cdn.a.com/1.jpg",
+                "http://bad.com/2.jpg",
+                "/api/files/3.jpg",
+            ])
+            assert "https://oss.a.com/1.jpg" in hint
+            assert "/api/files/3.jpg" in hint
+            assert "bad.com" not in hint
+        assert _image_url_hint([]) == ""
+        assert _image_url_hint(None) == ""
+
     def test_metadata_json_string_images(self):
         import json
         result = _convert_history_to_agent_format([{

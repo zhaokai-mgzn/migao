@@ -108,6 +108,43 @@ describe('ProductForm (#1284 — 表单行对齐)', () => {
     // 回填后「允许」仍可渲染（默认值随 initialData 合并）
     expect(screen.getAllByText('允许').length).toBeGreaterThanOrEqual(1)
   })
+
+  it('提交时规格属性英文 key 转中文 key 落库（issue #3044）', async () => {
+    // 表单内部用英文 key（weight/material/...），提交 payload 必须统一为中文 key
+    // （克重/材质/...）与 ai-agent 建品风格一致，详情页天然中文展示。
+    const submit = vi.fn().mockResolvedValue(undefined)
+    render(
+      <ProductForm
+        onSubmit={submit}
+        initialData={{
+          name: '常青藤系列窗帘',
+          specifications: {
+            weight: '200-300g',
+            material: '涤纶',
+            function: '遮光',
+            craft: '色织',
+            style: '现代简约',
+            pattern: '纯色',
+          },
+        } as any}
+      />
+    )
+
+    // draft 状态仅校验名称；initialData 已提供名称
+    const { fireEvent } = await import('@testing-library/react')
+    fireEvent.click(screen.getByText('存草稿'))
+
+    await new Promise((r) => setTimeout(r, 0))
+    const payload = submit.mock.calls[0]?.[0]
+    expect(payload.specifications).toEqual({
+      克重: '200-300g',
+      材质: '涤纶',
+      功能: '遮光',
+      工艺: '色织',
+      风格: '现代简约',
+      图案: '纯色',
+    })
+  })
 })
 
 describe('ProductForm (#646 — 移除 in_warehouse)', () => {

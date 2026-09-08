@@ -238,6 +238,39 @@ describe('MessageList', () => {
     expect(screen.getByText('会话已创建')).toBeInTheDocument()
   })
 
+  it('renders __PAGE__ pagination protocol as natural language (issue #3043)', () => {
+    // 点击「下一页」时前端以 __PAGE__|tool|params 直调后端工具（绕过 LLM），
+    // 但聊天气泡必须展示用户能理解的自然语言，而非原始协议串。
+    // 历史场景（后端落库已是「查看第N页」）同样不得出现协议原文。
+    mockUseChatStore.mockReturnValue(
+      makeDefaultChatState({
+        currentSessionId: 's1',
+        messages: [
+          {
+            id: 'page-opt',
+            role: 'user',
+            content:
+              '__PAGE__|processing_item_query|{"keyword":"","applicable_category_id":"88b6c50fbc2695fd0fca51705e957d17","size":10,"page":3}',
+            created_at: '2025-01-01T10:00:00Z',
+          },
+          // 后端历史落库的既成文案应原样展示（不二次改写）
+          {
+            id: 'page-his',
+            role: 'user',
+            content: '查看第2页',
+            created_at: '2025-01-01T10:00:05Z',
+          },
+        ],
+      })
+    )
+    render(<MessageList />)
+
+    expect(screen.getByText('查看第3页')).toBeInTheDocument()
+    expect(screen.getByText('查看第2页')).toBeInTheDocument()
+    expect(screen.queryByText(/__PAGE__/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/processing_item_query/)).not.toBeInTheDocument()
+  })
+
   it('renders message suggestions', () => {
     mockUseChatStore.mockReturnValue(
       makeDefaultChatState({
