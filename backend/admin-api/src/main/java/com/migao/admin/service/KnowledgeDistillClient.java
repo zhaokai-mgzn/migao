@@ -28,7 +28,7 @@ import java.util.Map;
 @Component
 public class KnowledgeDistillClient {
 
-    private static final String DISTILL_PATH = "/internal/knowledge/distill";
+    private static final String DISTILL_PATH = "/api/internal/knowledge/distill";  // 完整路径含 /api 前缀（routes.py include_router prefix=/internal + main.py prefix=/api）
     private static final int CONNECT_TIMEOUT_MS = 3_000;
     private static final int READ_TIMEOUT_MS = 30_000;
 

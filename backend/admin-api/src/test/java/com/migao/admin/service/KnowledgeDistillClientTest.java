@@ -65,6 +65,22 @@ class KnowledgeDistillClientTest {
     }
 
     @Test
+    @DisplayName("请求 URL 为完整 internal 路径（含 /api 前缀，issue #3063 修复）")
+    void distill_usesFullInternalPath() {
+        KnowledgeDistillClient client = new KnowledgeDistillClient(restTemplate);
+        when(restTemplate.exchange(anyString(), eq(HttpMethod.POST), any(HttpEntity.class), eq(String.class)))
+                .thenReturn(ResponseEntity.ok("{\"success\":true,\"data\":{\"candidates\":[]}}"));
+
+        client.distill("文本", 5, 1L, "document");
+
+        var captor = org.mockito.ArgumentCaptor.forClass(String.class);
+        org.mockito.Mockito.verify(restTemplate).exchange(captor.capture(), eq(HttpMethod.POST), any(HttpEntity.class), eq(String.class));
+        org.assertj.core.api.Assertions.assertThat(captor.getValue())
+                .as("internal 路径必须含 /api 前缀（缺前缀 → ai-agent 404 → 降级空候选）")
+                .endsWith("/api/internal/knowledge/distill");
+    }
+
+    @Test
     @DisplayName("网络异常 → 空列表（fail-closed 降级）")
     void distill_exception_returnsEmpty() {
         KnowledgeDistillClient client = new KnowledgeDistillClient(restTemplate);
