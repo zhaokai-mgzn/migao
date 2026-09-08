@@ -800,6 +800,11 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
 
     /**
      * 查询商品加工项配置并填充到 ProductResponse
+     *
+     * 价格回退（2026-09-08 sess_c1fce183dae24f22 复盘固化）：
+     * AI 建品可能只传加工项 ID 未带自定义价（custom_price=null），
+     * 必须回填加工项默认单价 unitPrice 并计算 finalPrice=customPrice?:unitPrice，
+     * 与 getProductProcessingItems 一致，避免前端展示 ¥0.00。
      */
     private void fillProcessingItemConfigs(ProductResponse response, String productId, Long tenantId) {
         List<ProductProcessingItem> relations = productProcessingItemMapper.selectList(
@@ -813,13 +818,13 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             return;
         }
 
-        // 批量查询加工项名称
+        // 批量查询加工项信息（名称 + 默认单价 + 单位）
         List<String> processingItemIds = relations.stream()
                 .map(ProductProcessingItem::getProcessingItemId)
                 .filter(StringUtils::hasText)
                 .distinct()
                 .collect(Collectors.toList());
-        Map<String, String> itemNameMap = new HashMap<>();
+        Map<String, ProcessingItem> itemMap = new HashMap<>();
         if (!processingItemIds.isEmpty()) {
             List<ProcessingItem> items = processingItemMapper.selectList(
                     new LambdaQueryWrapper<ProcessingItem>()
@@ -827,17 +832,23 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             );
             if (items != null) {
                 for (ProcessingItem item : items) {
-                    itemNameMap.put(item.getId(), item.getName());
+                    itemMap.put(item.getId(), item);
                 }
             }
         }
 
         List<ProcessingItemConfigResponse> configs = new ArrayList<>();
         for (ProductProcessingItem rel : relations) {
+            ProcessingItem item = itemMap.get(rel.getProcessingItemId());
             ProcessingItemConfigResponse cfg = new ProcessingItemConfigResponse();
             cfg.setProcessingItemId(rel.getProcessingItemId());
-            cfg.setProcessingItemName(itemNameMap.get(rel.getProcessingItemId()));
-            cfg.setCustomPrice(rel.getCustomPrice());
+            cfg.setProcessingItemName(item != null ? item.getName() : null);
+            BigDecimal customPrice = rel.getCustomPrice();
+            BigDecimal unitPrice = item != null ? item.getUnitPrice() : null;
+            cfg.setCustomPrice(customPrice);
+            cfg.setUnitPrice(unitPrice);
+            cfg.setFinalPrice(customPrice != null ? customPrice : unitPrice);
+            cfg.setUnit(item != null ? item.getUnit() : null);
             configs.add(cfg);
         }
         response.setProcessingItemConfigs(configs);

@@ -638,3 +638,43 @@ cases:
       ci:
         - agent-eval.yml
       verifies: []
+
+  - id: PR-019
+    legacy_id: ""
+    title: "建品规格与加工项价格落库 — 推理属性经 specifications 落库、加工项经 processing_item_configs 携带价格"
+    domains:
+      - product
+      - chat
+    tier: normal
+    tags:
+      - product_create
+      - specifications
+      - processing_item
+      - regression
+    truths_ref:
+      - product-sku-stock.low-stock
+    user_inputs:
+      - "根据这张图片录入商品（色卡图，可识别材质/克重）"
+      - "商品名称: 2699系列雪尼尔窗帘面料\n单价(元/米): 23.8\n颜色…门幅…"
+      - "已选加工项：刺绣工艺 ¥30/平方米、波浪定型 ¥8/米"
+      - "确认创建"
+    expectations:
+      - tool: product_manage
+        args:
+          action: create
+    data_checks:
+      - "create 参数含 specifications（材质/克重/工艺等推理属性，随 specs 落库到 product_attributes，非仅展示）"
+      - "create 参数含 processing_item_configs（含 customPrice=加工项默认单价 unit_price、unit=真实单位），禁止只传 processing_item_ids 名称列表"
+      - "商品详情接口 processingItemConfigs 回填 unitPrice/finalPrice（customPrice 空时 finalPrice=unitPrice），前端展示非 ¥0.00 且单位正确"
+    skip_reason: ""
+    merge_log: "2026-09-08 新增（issue #3027）：sess_c1fce183dae24f22 复盘 — AI 预填表单展示了推理属性但 create 未落库（product_attributes 0 行）；加工项只传名称列表 → custom_price 全 NULL → 详情页 ¥0.00/米（单位硬编码）。三端修复：prompt 强制 specifications+processing_item_configs、admin-api finalPrice 回退、admin-web 渲染回退"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_prompt_snapshots.py"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductServiceTest.java"
+        - "frontend/admin-web/tests/unit/pages/product-detail.test.tsx"
+      ci:
+        - agent-eval.yml
+        - ai-agent-tests.yml
+        - admin-api-tests.yml
+      verifies: []
