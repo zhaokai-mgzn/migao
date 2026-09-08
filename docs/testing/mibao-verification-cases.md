@@ -158,7 +158,7 @@
 真值: ai-chat.agent-factory
 溯源: 2026-08-25 新增：ai-agent-service agents-customer_service_agent 覆盖率补全（issue #2429） ｜ tags: agents, factory, alias
 
-## api（12 case）
+## api（14 case）
 
 ### API-001. chat 会话生命周期 - 租户隔离 + 用户所有权 + 幂等/重开 🔵
 ```
@@ -288,6 +288,26 @@
 ```
 真值: api.knowledge-sync
 溯源: 2026-09-06 新增（issue #2971 自洽性扫描）：knowledge_sync_history 表/实体/Mapper 就绪但零读写（resync 不记历史、无列表接口），补写读路径形成闭环 ｜ tags: api, knowledge, sync_history
+
+### API-013. 知识词条数据模型 - knowledge_entries 表/实体/Mapper（LLM WIKI 板块 #3051） 🔵
+```
+你: 词条（问题+标准回答+分类+关键词+来源+状态）可持久化存储与检索
+数据: V35 迁移创建 knowledge_entries：tenant_id/title/category/industry/source_type/source_ref/question/answer/keywords/apply_products/variables/status(draft|pending_review|published|archived)/version/review_note/created_by/reviewed_by/reviewed_at 全字段
+数据: KnowledgeEntry 实体字段与列名一一映射（MyBatis-Plus），Mapper 继承 BaseMapper（租户隔离由拦截器注入）
+数据: docs/sql/schema.sql 全量 schema 同步包含 knowledge_entries（防文档-代码漂移 P0-3）
+跳过: 数据模型由 Mapper/迁移契约测试验证（KnowledgeEntryMapperTest/KnowledgeWikiMigrationTest），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-08 新增（issue #3051 企业级 LLM WIKI 板块 P1）：RAG 文档模型升级为词条模型，知识单元从 chunk 变为结构化词条 ｜ tags: api, knowledge, wiki, data-model
+
+### API-014. 提炼候选数据模型 - knowledge_candidates 表/实体/Mapper（LLM WIKI 板块 #3051） 🔵
+```
+你: AI 提炼的候选词条（建议标题/答案/置信度/依据/状态）可进入待采纳队列
+数据: V35 迁移创建 knowledge_candidates：tenant_id/source_type(conversation|document|product|config)/source_ref/suggested_title/suggested_answer/suggested_category/suggested_keywords/confidence/evidence/status(pending|adopted|edited|rejected)/status_note/reviewed_by/reviewed_at 全字段
+数据: KnowledgeCandidate 实体字段与列名一一映射（MyBatis-Plus），Mapper 继承 BaseMapper
+数据: docs/sql/schema.sql 全量 schema 同步包含 knowledge_candidates（防文档-代码漂移 P0-3）
+跳过: 数据模型由 Mapper/迁移契约测试验证（KnowledgeCandidateMapperTest/KnowledgeWikiMigrationTest），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-08 新增（issue #3051 企业级 LLM WIKI 板块 P1）：AI 只产生候选、发布权在商家，提炼流统一进待采纳队列 ｜ tags: api, knowledge, wiki, data-model
 
 ### API-012. 语音转写接口容错 - 空/极小/静音音频返回友好 4xx/5xx，不裸 500（#2984） 🔵
 ```
@@ -2769,11 +2789,11 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：224（活跃 114，跳过 110）
-- tier 分布：smoke 8 / normal 187 / adversarial 29
+- 用例总数：226（活跃 114，跳过 112）
+- tier 分布：smoke 8 / normal 189 / adversarial 29
 - 售后域：7
 - agents：6
-- api：12
+- api：14
 - bmini：5
 - 分类域：3
 - 对话边界域：32
@@ -2796,6 +2816,8 @@
 - utils：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
+- API-013: 知识词条数据模型 - knowledge_entries 表/实体/Mapper（LLM WIKI 板块 #3051）
+- API-014: 提炼候选数据模型 - knowledge_candidates 表/实体/Mapper（LLM WIKI 板块 #3051）
 - API-012: 语音转写接口容错 - 空/极小/静音音频返回友好 4xx/5xx，不裸 500（#2984）
 - CH-027: 流式回复中切换会话再切回 - 等待状态与最终回复保留（issue #2901）
 - CH-028: 多会话并发流 - 会话 A 回复中 B 可发送，增量/停止互不干扰（issue #2906）

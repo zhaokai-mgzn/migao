@@ -338,6 +338,64 @@ cases:
         - pr-check.yml
       verifies: []
 
+  - id: API-013
+    legacy_id: ""
+    title: "知识词条数据模型 - knowledge_entries 表/实体/Mapper（LLM WIKI 板块 #3051）"
+    domains:
+      - api
+      - knowledge
+    tier: normal
+    tags:
+      - api
+      - knowledge
+      - wiki
+      - data-model
+    truths_ref: []
+    user_inputs:
+      - "词条（问题+标准回答+分类+关键词+来源+状态）可持久化存储与检索"
+    expectations: []
+    data_checks:
+      - "V35 迁移创建 knowledge_entries：tenant_id/title/category/industry/source_type/source_ref/question/answer/keywords/apply_products/variables/status(draft|pending_review|published|archived)/version/review_note/created_by/reviewed_by/reviewed_at 全字段"
+      - "KnowledgeEntry 实体字段与列名一一映射（MyBatis-Plus），Mapper 继承 BaseMapper（租户隔离由拦截器注入）"
+      - "docs/sql/schema.sql 全量 schema 同步包含 knowledge_entries（防文档-代码漂移 P0-3）"
+    skip_reason: "数据模型由 Mapper/迁移契约测试验证（KnowledgeEntryMapperTest/KnowledgeWikiMigrationTest），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-08 新增（issue #3051 企业级 LLM WIKI 板块 P1）：RAG 文档模型升级为词条模型，知识单元从 chunk 变为结构化词条"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/mapper/KnowledgeEntryMapperTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: API-014
+    legacy_id: ""
+    title: "提炼候选数据模型 - knowledge_candidates 表/实体/Mapper（LLM WIKI 板块 #3051）"
+    domains:
+      - api
+      - knowledge
+    tier: normal
+    tags:
+      - api
+      - knowledge
+      - wiki
+      - data-model
+    truths_ref: []
+    user_inputs:
+      - "AI 提炼的候选词条（建议标题/答案/置信度/依据/状态）可进入待采纳队列"
+    expectations: []
+    data_checks:
+      - "V35 迁移创建 knowledge_candidates：tenant_id/source_type(conversation|document|product|config)/source_ref/suggested_title/suggested_answer/suggested_category/suggested_keywords/confidence/evidence/status(pending|adopted|edited|rejected)/status_note/reviewed_by/reviewed_at 全字段"
+      - "KnowledgeCandidate 实体字段与列名一一映射（MyBatis-Plus），Mapper 继承 BaseMapper"
+      - "docs/sql/schema.sql 全量 schema 同步包含 knowledge_candidates（防文档-代码漂移 P0-3）"
+    skip_reason: "数据模型由 Mapper/迁移契约测试验证（KnowledgeCandidateMapperTest/KnowledgeWikiMigrationTest），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-08 新增（issue #3051 企业级 LLM WIKI 板块 P1）：AI 只产生候选、发布权在商家，提炼流统一进待采纳队列"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/mapper/KnowledgeCandidateMapperTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+
   - id: API-012
     legacy_id: ""
     title: "语音转写接口容错 - 空/极小/静音音频返回友好 4xx/5xx，不裸 500（#2984）"

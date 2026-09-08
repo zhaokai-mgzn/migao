@@ -100,6 +100,13 @@ class SecurityConfigTest {
     @MockBean
     private com.migao.admin.mapper.UserMemoryMapper userMemoryMapper;
 
+    // LLM WIKI 板块（issue #3051）：knowledge_entries / knowledge_candidates 的 Mapper
+    @MockBean
+    private com.migao.admin.mapper.KnowledgeEntryMapper knowledgeEntryMapper;
+
+    @MockBean
+    private com.migao.admin.mapper.KnowledgeCandidateMapper knowledgeCandidateMapper;
+
     // OssService 带有 @ConditionalOnBean 在测试环境下不会被加载，
     // 因此不需要 @MockBean FileStorageService / OssService，
     // 避免由于多个实现导致 NoUniqueBeanDefinitionException。

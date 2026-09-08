@@ -74,3 +74,18 @@ grep -rn "字段名" backend/admin-api/src frontend/admin-web/src backend/ai-age
 | 计价方式 | `pricingMethod`（ProcessingItem/Response/Create/Update，枚举 per_meter/per_set/fixed/per_area） | `PricingMethod` 同枚举 | `pricing_method`（tool 透传） | per_piece 创建/更新被 validatePricingMethod 拒绝 |
 | 数量规则 | per_meter → 数量=面料米数；per_set/fixed → 1；per_area → 面积 | 同（deriveProcessingQty） | 同（order prompt） | B 端下单展示「名称+数量+金额」供对账，无数量输入框 |
 | 价格计算入参 | `quantity`（PriceCalculateRequest，per_meter 传面料米数） | — | `quantity` | fabricMeters 字段已删除，无密度推导 |
+
+## 七、LLM WIKI 知识板块契约（issue #3051，2026-09-08 起）
+
+知识单元从 RAG chunk 升级为**词条**（knowledge_entries）+ 提炼候选（knowledge_candidates）。
+检索用结构化过滤 + 关键词匹配，**不引入向量库**（决策 D1 维持）。设计单一事实源：`docs/design/knowledge-wiki-design.md`。
+
+| 业务对象 | 合法值 | 三端一致要求 |
+|---|---|---|
+| 词条状态 | `draft / pending_review / published / archived` | Java `KnowledgeEntry.status` = TS `KnowledgeEntryStatus` = Agent 检索过滤条件（仅 published） |
+| 候选状态 | `pending / adopted / edited / rejected` | Java `KnowledgeCandidate.status` = TS 同 |
+| 词条来源 | `template / product / config / conversation / document / manual` | Java `sourceType` = TS `sourceType` = Agent 展示徽标 |
+| 候选来源 | `conversation / document / product / config` | 同上 |
+| 词条分类 | `faq / product / measure / aftersale / config` | 前后端同枚举 |
+| 词条检索端点 | `GET /api/admin/knowledge/entries/search?query=&productId=&category=` | 仅返回本租户 `published` 词条（显式 eq tenant_id + status） |
+| 提炼触发端点 | `POST /api/admin/knowledge/distill/conversations` | 返回提炼统计（created/skipped/failed） |

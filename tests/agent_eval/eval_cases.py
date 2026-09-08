@@ -404,6 +404,36 @@ _CASE_API_011 = EvalCase(
     persona='',
 )
 
+# ── API-013 [NORMAL] 知识词条数据模型 - knowledge_entries 表/实体/Mapper（LLM WIKI 板块 #3051）（源: cases/api.yml）──
+_CASE_API_013 = EvalCase(
+    id='API-013',
+    legacy_id='',
+    title='知识词条数据模型 - knowledge_entries 表/实体/Mapper（LLM WIKI 板块 #3051）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['词条（问题+标准回答+分类+关键词+来源+状态）可持久化存储与检索'],
+    expectations=[],
+    data_checks=['V35 迁移创建 knowledge_entries：tenant_id/title/category/industry/source_type/source_ref/question/answer/keywords/apply_products/variables/status(draft|pending_review|published|archived)/version/review_note/created_by/reviewed_by/reviewed_at 全字段', 'KnowledgeEntry 实体字段与列名一一映射（MyBatis-Plus），Mapper 继承 BaseMapper（租户隔离由拦截器注入）', 'docs/sql/schema.sql 全量 schema 同步包含 knowledge_entries（防文档-代码漂移 P0-3）'],
+    skip_reason='数据模型由 Mapper/迁移契约测试验证（KnowledgeEntryMapperTest/KnowledgeWikiMigrationTest），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['api', 'knowledge', 'wiki', 'data-model'],
+    persona='',
+)
+
+# ── API-014 [NORMAL] 提炼候选数据模型 - knowledge_candidates 表/实体/Mapper（LLM WIKI 板块 #3051）（源: cases/api.yml）──
+_CASE_API_014 = EvalCase(
+    id='API-014',
+    legacy_id='',
+    title='提炼候选数据模型 - knowledge_candidates 表/实体/Mapper（LLM WIKI 板块 #3051）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['AI 提炼的候选词条（建议标题/答案/置信度/依据/状态）可进入待采纳队列'],
+    expectations=[],
+    data_checks=['V35 迁移创建 knowledge_candidates：tenant_id/source_type(conversation|document|product|config)/source_ref/suggested_title/suggested_answer/suggested_category/suggested_keywords/confidence/evidence/status(pending|adopted|edited|rejected)/status_note/reviewed_by/reviewed_at 全字段', 'KnowledgeCandidate 实体字段与列名一一映射（MyBatis-Plus），Mapper 继承 BaseMapper', 'docs/sql/schema.sql 全量 schema 同步包含 knowledge_candidates（防文档-代码漂移 P0-3）'],
+    skip_reason='数据模型由 Mapper/迁移契约测试验证（KnowledgeCandidateMapperTest/KnowledgeWikiMigrationTest），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['api', 'knowledge', 'wiki', 'data-model'],
+    persona='',
+)
+
 # ── API-012 [NORMAL] 语音转写接口容错 - 空/极小/静音音频返回友好 4xx/5xx，不裸 500（#2984）（源: cases/api.yml）──
 _CASE_API_012 = EvalCase(
     id='API-012',
@@ -3431,6 +3461,8 @@ ALL_CASES = (
     _CASE_API_009,
     _CASE_API_010,
     _CASE_API_011,
+    _CASE_API_013,
+    _CASE_API_014,
     _CASE_API_012,
     _CASE_BM_001,
     _CASE_BM_002,
