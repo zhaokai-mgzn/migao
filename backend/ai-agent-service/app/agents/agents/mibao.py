@@ -19,7 +19,7 @@ MIBAO_CONFIG = AgentConfig(
         "staff",
         "settings",
         "data",
-        # [RAG 禁用] "knowledge",  # 知识库功能当前禁用，启用后取消注释
+        "knowledge",  # 知识卡片检索（issue #3059：B 端米宝启用，本店政策/价目/售后走知识卡片）
     ],
     fallback_skill="general",
     allowed_roles={

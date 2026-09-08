@@ -516,7 +516,7 @@ async def direct_reply_node(state: AgentState) -> dict:
 _DIRECT_REPLY_INTENTS = {"greeting", "farewell", "capabilities"}
 
 # RAG 禁用期间知识库意图 fallback 到 general（仅 mibao，其 knowledge skill 已禁用）
-_KNOWLEDGE_FALLBACK = {"knowledge_faq": "general", "knowledge_manage": "general"}
+_KNOWLEDGE_FALLBACK = {"knowledge_manage": "general"}  # 仅管理意图 fallback（知识管理走 admin-web，不经 agent）
 
 
 def _get_intent_to_route(agent_type: str = "") -> dict[str, str]:
@@ -532,8 +532,8 @@ def _get_intent_to_route(agent_type: str = "") -> dict[str, str]:
     for intent in _DIRECT_REPLY_INTENTS:
         intent_map[intent] = "direct_reply"
     intent_map["general"] = "general"
-    # knowledge fallback 仅对 mibao 生效（其 knowledge skill 已禁用）；
-    # xiaobu 的 customer_knowledge_skill 保留知识库路由
+    # 米宝已启用 knowledge skill（issue #3059）：knowledge_faq 走知识卡片检索；
+    # 仅 knowledge_manage 管理意图 fallback 到 general（知识管理走 admin-web，不经 agent）
     if agent_type == "mibao":
         intent_map.update(_KNOWLEDGE_FALLBACK)
     return intent_map

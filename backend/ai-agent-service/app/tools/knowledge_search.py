@@ -26,7 +26,11 @@ class KnowledgeSearchTool(BaseTool):
         "【反例】实时价格/库存/订单仍用 product_search/order_query 等工具；不得编造卡片之外的本店事实。"
         "【标注】READONLY — 放心调用，无需确认"
     )
-    allowed_roles = ["customer", "admin", "agent", "tenant_admin", "operator"]
+    # 双端覆盖（issue #3059 B 端启用）：xiaobu(customer) + 米宝商户员工角色
+    # （admin/operator/product_manager/knowledge_editor/customer_service 等均可能问本店知识）
+    allowed_roles = ["customer", "admin", "agent", "tenant_admin", "operator",
+                     "product_manager", "knowledge_editor", "customer_service",
+                     "operation_manager", "support_supervisor", "support_agent"]
 
     parameters = {
         "type": "object",

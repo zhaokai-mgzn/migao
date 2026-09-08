@@ -1816,6 +1816,66 @@ _CASE_HR_007 = EvalCase(
     persona='',
 )
 
+# ── KN-001 [SMOKE] 小布知识问答 - 面料问题先检索本店知识卡片（query 必填）（源: cases/knowledge.yml）──
+_CASE_KN_001 = EvalCase(
+    id='KN-001',
+    legacy_id='',
+    title='小布知识问答 - 面料问题先检索本店知识卡片（query 必填）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.SMOKE,
+    user_inputs=['雪尼尔面料会不会起球'],
+    expectations=['knowledge_search(query=雪尼尔)'],
+    data_checks=['knowledge_search 返回后会话正常结束（无报错）；命中则基于卡片回答并注明「来自本店知识库」，未命中用通用行业建议兜底，不得编造本店事实'],
+    skip_reason='',
+    tags=['knowledge', 'wiki', 'smoke', 'xiaobu'],
+    persona='xiaobu',
+)
+
+# ── KN-002 [NORMAL] 小布知识问答 - 清洗保养类问题走知识卡片检索（源: cases/knowledge.yml）──
+_CASE_KN_002 = EvalCase(
+    id='KN-002',
+    legacy_id='',
+    title='小布知识问答 - 清洗保养类问题走知识卡片检索',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['窗帘多久洗一次？'],
+    expectations=['knowledge_search(query=清洗)', 'success=true'],
+    data_checks=['知识卡片命中时回答基于卡片内容并注明来源；未命中时如实告知知识库暂无收录，用通用行业建议谨慎回答'],
+    skip_reason='',
+    tags=['knowledge', 'wiki', 'xiaobu'],
+    persona='xiaobu',
+)
+
+# ── KN-003 [SMOKE] 米宝知识问答 - 本店售后政策先检索知识卡片（B 端接线回归，issue #3059）（源: cases/knowledge.yml）──
+_CASE_KN_003 = EvalCase(
+    id='KN-003',
+    legacy_id='',
+    title='米宝知识问答 - 本店售后政策先检索知识卡片（B 端接线回归，issue #3059）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.SMOKE,
+    user_inputs=['我们店的退换货政策是什么？'],
+    expectations=['knowledge_search(query=退换货)'],
+    data_checks=['米宝知识问答走知识卡片检索（B 端 skill 接线不可回退）；命中基于卡片回答，未命中通用兜底不编造本店事实'],
+    skip_reason='',
+    tags=['knowledge', 'wiki', 'smoke', 'mibao'],
+    persona='mibao',
+)
+
+# ── KN-004 [NORMAL] 米宝知识问答 - 加工计价规则走知识卡片检索（源: cases/knowledge.yml）──
+_CASE_KN_004 = EvalCase(
+    id='KN-004',
+    legacy_id='',
+    title='米宝知识问答 - 加工计价规则走知识卡片检索',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['我们店打孔加工怎么计价？'],
+    expectations=['knowledge_search(query=加工)', 'success=true'],
+    data_checks=['加工计价规则类问题优先检索本店知识卡片（config/商品派生卡片）；命中基于卡片回答并注明来源'],
+    skip_reason='',
+    tags=['knowledge', 'wiki', 'mibao'],
+    persona='mibao',
+)
+
 # ── MC-001 [NORMAL] 记忆提取解析 - 纯 JSON/内嵌数组/非法输入（源: cases/misc.yml）──
 _CASE_MC_001 = EvalCase(
     id='MC-001',
@@ -2153,9 +2213,9 @@ _CASE_ON_003 = EvalCase(
     title='intent 归属表全量登记 + 双端能力视图契约校验（v2 按 agent 核对）',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['schema 全量登记 27 个业务 intent（双端 23 + finance 仅 mibao + knowledge_faq/knowledge_manage/quote 仅 xiaobu）；契约校验与双端真实映射按 agent 分别对比'],
+    user_inputs=['schema 全量登记 27 个业务 intent（双端 24 + finance 仅 mibao + knowledge_manage/quote 仅 xiaobu——knowledge_faq 已双端可达，issue #3059）；契约校验与双端真实映射按 agent 分别对比'],
     expectations=['none'],
-    data_checks=['schema.intent_ownership 全量登记 27 个业务 intent（排除 general 兜底；mibao 因 RAG 禁用不可达 knowledge 域）', '契约校验 v2：schema 声明某 agent 可达的 intent 必须在该 agent 映射中存在（防假声明）；mibao route_key 严格一致（B 端是约定事实源，xiaobu 兜底覆盖不计漂移）；任一 agent 映射有但 schema 未登记 → 违规；声明可达的 route_key 必须在该 agent 真实可达集合中', 'xiaobu 专属 intent（quote/knowledge_faq/knowledge_manage）在 mibao 映射缺失是正常的，不得误报', '缺失/漂移返回违规清单（不抛异常，由调用方决定阻断）'],
+    data_checks=['schema.intent_ownership 全量登记 27 个业务 intent（排除 general 兜底；mibao 已启用 knowledge_faq 知识卡片检索，issue #3059；knowledge_manage 管理意图不可达 agent——管理走 admin-web）', '契约校验 v2：schema 声明某 agent 可达的 intent 必须在该 agent 映射中存在（防假声明）；mibao route_key 严格一致（B 端是约定事实源，xiaobu 兜底覆盖不计漂移）；任一 agent 映射有但 schema 未登记 → 违规；声明可达的 route_key 必须在该 agent 真实可达集合中', 'xiaobu 专属 intent（quote/knowledge_manage）在 mibao 映射缺失是正常的，不得误报（knowledge_faq 现为双端可达）', '缺失/漂移返回违规清单（不抛异常，由调用方决定阻断）'],
     skip_reason='契约校验为纯数据结构逻辑，由 pytest 单测验证（backend/ai-agent-service/tests/test_ontology_contract.py），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['ontology', 'intent_ownership', 'contract', 'dual_agent'],
     persona='',
@@ -3664,6 +3724,10 @@ ALL_CASES = (
     _CASE_HR_005,
     _CASE_HR_006,
     _CASE_HR_007,
+    _CASE_KN_001,
+    _CASE_KN_002,
+    _CASE_KN_003,
+    _CASE_KN_004,
     _CASE_MC_001,
     _CASE_MC_002,
     _CASE_MC_003,

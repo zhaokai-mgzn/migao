@@ -21,7 +21,7 @@ CASES_DIR = REPO_ROOT / ".github" / "cases"
 DRIFT_PATHS = ["OR-010", "PR-010"]
 
 # 降级后 smoke 集合（9 → 7）：全部为稳定单轮/双轮查询类用例
-EXPECTED_SMOKE = {"AS-001", "CU-001", "HR-001", "HR-004", "OR-001", "PR-001", "PR-003"}
+EXPECTED_SMOKE = {"AS-001", "CU-001", "HR-001", "HR-004", "OR-001", "PR-001", "PR-003", "KN-001", "KN-003"}  # KN-001/003：双端知识问答冒烟（issue #3059）
 
 
 def _active_smoke_ids():

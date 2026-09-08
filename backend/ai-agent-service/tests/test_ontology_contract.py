@@ -36,7 +36,8 @@ REAL_AGENT_INTENT_MAPS = {
         "complaint": "aftersales", "customer_manage": "customer",
         "customer_query": "customer", "dashboard": "data",
         "data_report": "data", "employee_manage": "staff",
-        "finance": "data", "logistics_track": "order",
+        "finance": "data", "knowledge_faq": "knowledge",
+        "logistics_track": "order",
         "notification": "settings", "order_create": "order",
         "order_query": "order", "permission_manage": "staff",
         "processing_manage": "product", "product_inquiry": "product",
@@ -63,7 +64,7 @@ REAL_AGENT_INTENT_MAPS = {
 
 # 真实可达 route_keys（含 fallback 兜底 skill 的 route_keys）
 REAL_AGENT_ROUTE_KEYS = {
-    "mibao": {"aftersales", "customer", "data", "general", "order", "product", "settings", "staff"},
+    "mibao": {"aftersales", "customer", "data", "general", "knowledge", "order", "product", "settings", "staff"},
     "xiaobu": {"aftersales", "customer", "data", "general", "knowledge", "order", "product", "quote", "settings", "staff"},
 }
 
@@ -91,7 +92,7 @@ class TestSchemaIntentOwnership:
         owned = ontology.intent_ownership
         assert owned["finance"].agents == ["mibao"]
         assert owned["quote"].agents == ["xiaobu"]
-        assert owned["knowledge_faq"].agents == ["xiaobu"]
+        assert set(owned["knowledge_faq"].agents) == {"mibao", "xiaobu"}
         assert set(owned["order_query"].agents) == {"mibao", "xiaobu"}
 
     def test_route_keys_match_mibao_global_map(self, ontology):

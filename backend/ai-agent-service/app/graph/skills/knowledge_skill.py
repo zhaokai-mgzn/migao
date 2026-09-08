@@ -1,25 +1,10 @@
 """
-知识 Skill 节点
+知识 Skill 节点（B 端米宝，issue #3059）
 
-处理知识库检索相关操作（面料知识、保养方法、安装指南、售后政策等）。
-
-============================================================================
-⚠️  RAG DISABLED — 0 ACTIVE TOOLS
-
-The tools bound to this skill (knowledge_search, knowledge_manage) are
-commented out in app/graph/tools/registry.py because the RAG knowledge-base
-infrastructure is not yet deployed.
-
-As a result, this skill currently has ZERO active tools. The skill definition
-and its system prompt are kept as a placeholder so that re-enabling RAG only
-requires uncommenting the tool registrations in registry.py — no changes
-needed in this file.
-
-When RAG is re-enabled:
-  1. Uncomment knowledge_search and knowledge_manage in registry.py.
-  2. Verify the DashVector collection and embedding pipeline are ready.
-  3. Run the knowledge skill integration tests.
-============================================================================
+处理本店知识问答（面料知识、保养方法、安装指南、售后政策等）。
+知识单元为「知识卡片」（LLM WIKI 板块 issue #3051，完全替代旧 RAG）：
+knowledge_search 检索本店已发布知识卡片（来源：行业模板/商品派生/会话·文档提炼/人工维护）。
+knowledge_manage 管理操作不走 Agent——知识管理在 admin-web（knowledge:manage 权限）。
 """
 
 from app.graph.state import AgentState
@@ -27,7 +12,7 @@ from app.graph.skills.base_skill import execute_skill
 from app.graph.skills.skill_config import SkillConfig
 
 # 知识 Skill 可用的 Tool 列表
-KNOWLEDGE_TOOLS = ["knowledge_search", "knowledge_manage"]
+KNOWLEDGE_TOOLS = ["knowledge_search"]
 
 # 知识 Skill 专用 System Prompt
 KNOWLEDGE_SYSTEM_PROMPT = """## 核心原则
@@ -42,7 +27,7 @@ KNOWLEDGE_SYSTEM_PROMPT = """## 核心原则
 - 安装步骤、加工流程（如"打孔窗帘怎么安装"）
 - 加工费、价格标准（如"打孔加工多少钱"）
 - 售后政策、退换货规则
-- 知识条目的创建/更新/删除等管理操作，使用 knowledge_manage 工具"""
+- 知识管理操作（创建/更新/删除）请引导用户到后台「知识卡片」页面操作"""
 
 KNOWLEDGE_SKILL_CONFIG = SkillConfig(
     name="knowledge",
@@ -50,7 +35,7 @@ KNOWLEDGE_SKILL_CONFIG = SkillConfig(
     display_name="知识库",
     tool_names=KNOWLEDGE_TOOLS,
     route_keys=["knowledge"],
-    intents=["knowledge_faq", "knowledge_manage"],
+    intents=["knowledge_faq"],
     system_prompts={"mibao": KNOWLEDGE_SYSTEM_PROMPT},
     default_persona="mibao",
 )
