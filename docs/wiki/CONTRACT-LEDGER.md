@@ -89,3 +89,5 @@ grep -rn "字段名" backend/admin-api/src frontend/admin-web/src backend/ai-age
 | 知识卡片分类 | `faq / product / measure / aftersale / config` | 前后端同枚举 |
 | 知识卡片检索端点 | `GET /api/admin/knowledge/cards/search?query=&productId=&category=` | 仅返回本租户 `published` 知识卡片（显式 eq tenant_id + status） |
 | 提炼触发端点 | `POST /api/admin/knowledge/distill/conversations` | 返回提炼统计（created/skipped/failed） |
+| 模板目录 | `GET /api/admin/knowledge/templates` | 平台预置模板（templateId/industry/name/version/entryCount，布艺 curtain 32 条） |
+| 模板套用 | `POST /api/admin/knowledge/templates/{templateId}/apply` | 复制为租户卡片（sourceType=template/sourceRef=templateId/status=published），按 (tenant_id,title) 去重，返回 {created,skipped} |
