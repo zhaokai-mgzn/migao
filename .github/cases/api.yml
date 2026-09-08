@@ -430,6 +430,36 @@ cases:
         - pr-check.yml
       verifies: []
 
+  - id: API-023
+    legacy_id: ""
+    title: "知识派生对账 - 存量商品/加工项全量重建派生卡片（P2-1，issue #3051 收尾）"
+    domains:
+      - api
+      - knowledge
+    tier: normal
+    tags:
+      - api
+      - knowledge
+      - wiki
+      - derive
+    truths_ref: []
+    user_inputs:
+      - "管理端触发存量对账：历史商品/加工项无需逐个编辑即可补生成派生知识卡片"
+    expectations: []
+    data_checks:
+      - "POST /api/admin/knowledge/derive/rebuild 全量重建派生卡片：返回 {products, processingItems} 统计"
+      - "同源（tenant+sourceType+sourceRef）upsert：已存在卡片更新 version+1，不重复插入"
+      - "对账为 P2 收尾：存量商品此前无派生卡片（验收发现 P2-1），商品变更仍实时自动触发（不回归）"
+    skip_reason: "对账逻辑由 Service 单测（KnowledgeDeriveServiceTest deriveAll）+ Controller MockMvc 测试验证，非 LLM 行为"
+    merge_log: "2026-09-09 新增（验收 P2-1 收尾）：设计 §七 承诺的存量对账入口补齐——此前仅商品变更触发，存量商品无派生卡片"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/KnowledgeDeriveControllerTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/KnowledgeDeriveServiceTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+
   - id: API-018
     legacy_id: ""
     title: "商品/配置派生知识卡片 - 价格区间自动生成 + 变更自动更新（LLM WIKI 板块 #3051 P4）"
