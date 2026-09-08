@@ -558,6 +558,40 @@ cases:
         - pr-check.yml
       verifies: []
 
+  - id: API-022
+    legacy_id: ""
+    title: "Agent 知识卡片检索 - 词条优先、命中标注来源、未命中通用兜底（LLM WIKI 板块 #3051 P7）"
+    domains:
+      - api
+      - knowledge
+      - chat
+    tier: normal
+    tags:
+      - api
+      - knowledge
+      - wiki
+      - tool
+      - agent
+    truths_ref: []
+    user_inputs:
+      - "AI 客服回答知识类问题时优先采用本店知识卡片内容，未命中才用通用知识兜底"
+    expectations:
+      - tool: knowledge_search
+    data_checks:
+      - "customer_knowledge 技能启用 knowledge_search（tool_names 含之，System Prompt 词条优先：命中注明「📖 来自本店知识库」、未命中注明「💡 通用行业建议」）"
+      - "knowledge_search 调 GET /api/admin/knowledge/cards/search（query/category），命中返回 ≤3 条卡片（title/answer≤500 字/category/sourceType），hit=true"
+      - "未命中 hit=false → LLM 通用知识兜底 + 通用建议免责；检索接口不可用 → 降级同兜底（不阻断回答）"
+      - "query 必填（空拒绝）；权限不足拒绝；租户隔离由 admin-api 强制（工具侧无跨租户入口）"
+    skip_reason: "工具行为由 ai-agent 单测验证（test_tools_knowledge_search.py + test_customer_knowledge_simplified.py），LLM 行为 mock，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-08 新增（issue #3051 LLM WIKI 板块 P7）：Agent 检索链路——词条检索（结构化+关键词，无向量库）替代 RAG，两级策略落地（卡片优先→通用兜底）"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_tools_knowledge_search.py"
+        - "backend/ai-agent-service/tests/test_customer_knowledge_simplified.py"
+      ci:
+        - ai-agent-tests.yml
+      verifies: []
+
   - id: API-012
     legacy_id: ""
     title: "语音转写接口容错 - 空/极小/静音音频返回友好 4xx/5xx，不裸 500（#2984）"

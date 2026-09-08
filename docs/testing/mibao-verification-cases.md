@@ -158,7 +158,7 @@
 真值: ai-chat.agent-factory
 溯源: 2026-08-25 新增：ai-agent-service agents-customer_service_agent 覆盖率补全（issue #2429） ｜ tags: agents, factory, alias
 
-## api（19 case）
+## api（20 case）
 
 ### API-001. chat 会话生命周期 - 租户隔离 + 用户所有权 + 幂等/重开 🔵
 ```
@@ -361,6 +361,18 @@
 跳过: 文档提炼复用 KnowledgeDistillService/Controller 单测（已扩展文档用例），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-09-08 新增（issue #3051 LLM WIKI 板块 P6）：L4 文档提炼——文档是 SME 的补充知识源，提炼为候选后由商家确认，与会话提炼共用待确认队列闭环 ｜ tags: api, knowledge, wiki, distill, document
+
+### API-022. Agent 知识卡片检索 - 词条优先、命中标注来源、未命中通用兜底（LLM WIKI 板块 #3051 P7） 🔵
+```
+你: AI 客服回答知识类问题时优先采用本店知识卡片内容，未命中才用通用知识兜底
+期望: knowledge_search
+数据: customer_knowledge 技能启用 knowledge_search（tool_names 含之，System Prompt 词条优先：命中注明「📖 来自本店知识库」、未命中注明「💡 通用行业建议」）
+数据: knowledge_search 调 GET /api/admin/knowledge/cards/search（query/category），命中返回 ≤3 条卡片（title/answer≤500 字/category/sourceType），hit=true
+数据: 未命中 hit=false → LLM 通用知识兜底 + 通用建议免责；检索接口不可用 → 降级同兜底（不阻断回答）
+数据: query 必填（空拒绝）；权限不足拒绝；租户隔离由 admin-api 强制（工具侧无跨租户入口）
+跳过: 工具行为由 ai-agent 单测验证（test_tools_knowledge_search.py + test_customer_knowledge_simplified.py），LLM 行为 mock，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-08 新增（issue #3051 LLM WIKI 板块 P7）：Agent 检索链路——词条检索（结构化+关键词，无向量库）替代 RAG，两级策略落地（卡片优先→通用兜底） ｜ tags: api, knowledge, wiki, tool, agent
 
 ### API-012. 语音转写接口容错 - 空/极小/静音音频返回友好 4xx/5xx，不裸 500（#2984） 🔵
 ```
@@ -2842,11 +2854,11 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：231（活跃 114，跳过 117）
-- tier 分布：smoke 8 / normal 194 / adversarial 29
+- 用例总数：232（活跃 114，跳过 118）
+- tier 分布：smoke 8 / normal 195 / adversarial 29
 - 售后域：7
 - agents：6
-- api：19
+- api：20
 - bmini：5
 - 分类域：3
 - 对话边界域：32
@@ -2878,6 +2890,7 @@
 - API-019: 待确认队列闭环 - 候选读+写路径齐全，采纳转卡片、拒绝记原因（LLM WIKI 板块 #3051 P5）
 - API-020: 会话提炼闭环 - 人工客服会话 → AI 提炼候选 → 待确认队列（LLM WIKI 板块 #3051 P5b）
 - API-021: 文档提炼闭环 - 文档文本 → AI 提炼候选 → 待确认队列（LLM WIKI 板块 #3051 P6）
+- API-022: Agent 知识卡片检索 - 词条优先、命中标注来源、未命中通用兜底（LLM WIKI 板块 #3051 P7）
 - API-012: 语音转写接口容错 - 空/极小/静音音频返回友好 4xx/5xx，不裸 500（#2984）
 - CH-027: 流式回复中切换会话再切回 - 等待状态与最终回复保留（issue #2901）
 - CH-028: 多会话并发流 - 会话 A 回复中 B 可发送，增量/停止互不干扰（issue #2906）
