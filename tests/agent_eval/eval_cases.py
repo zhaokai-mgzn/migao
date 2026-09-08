@@ -451,6 +451,21 @@ _CASE_API_017 = EvalCase(
     persona='',
 )
 
+# ── API-023 [NORMAL] 知识派生对账 - 存量商品/加工项全量重建派生卡片（P2-1，issue #3051 收尾）（源: cases/api.yml）──
+_CASE_API_023 = EvalCase(
+    id='API-023',
+    legacy_id='',
+    title='知识派生对账 - 存量商品/加工项全量重建派生卡片（P2-1，issue #3051 收尾）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['管理端触发存量对账：历史商品/加工项无需逐个编辑即可补生成派生知识卡片'],
+    expectations=[],
+    data_checks=['POST /api/admin/knowledge/derive/rebuild 全量重建派生卡片：返回 {products, processingItems} 统计', '同源（tenant+sourceType+sourceRef）upsert：已存在卡片更新 version+1，不重复插入', '对账为 P2 收尾：存量商品此前无派生卡片（验收发现 P2-1），商品变更仍实时自动触发（不回归）'],
+    skip_reason='对账逻辑由 Service 单测（KnowledgeDeriveServiceTest deriveAll）+ Controller MockMvc 测试验证，非 LLM 行为',
+    tags=['api', 'knowledge', 'wiki', 'derive'],
+    persona='',
+)
+
 # ── API-018 [NORMAL] 商品/配置派生知识卡片 - 价格区间自动生成 + 变更自动更新（LLM WIKI 板块 #3051 P4）（源: cases/api.yml）──
 _CASE_API_018 = EvalCase(
     id='API-018',
@@ -3663,6 +3678,7 @@ ALL_CASES = (
     _CASE_API_015,
     _CASE_API_016,
     _CASE_API_017,
+    _CASE_API_023,
     _CASE_API_018,
     _CASE_API_019,
     _CASE_API_020,

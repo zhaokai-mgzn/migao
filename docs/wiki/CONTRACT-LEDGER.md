@@ -93,3 +93,4 @@ grep -rn "字段名" backend/admin-api/src frontend/admin-web/src backend/ai-age
 | 模板套用 | `POST /api/admin/knowledge/templates/{templateId}/apply` | 复制为租户卡片（sourceType=template/sourceRef=templateId/status=published），按 (tenant_id,title) 去重，返回 {created,skipped} |
 | 候选队列 | `GET /api/admin/knowledge/candidates` + `POST /{id}/adopt` / `adopt-edited` / `reject` | 待确认队列闭环：候选读+写路径齐全；采纳转卡片 published（来源继承），拒绝记 status_note |
 | 待确认计数 | `GET /api/admin/knowledge/candidates/pending-count` | 前端红点 |
+| 派生对账 | `POST /api/admin/knowledge/derive/rebuild` | 存量商品/加工项全量重建派生卡片，返回 {products,processingItems}（P2-1 收尾，issue #3051） |

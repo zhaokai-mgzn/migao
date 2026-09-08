@@ -159,7 +159,7 @@
 真值: ai-chat.agent-factory
 溯源: 2026-08-25 新增：ai-agent-service agents-customer_service_agent 覆盖率补全（issue #2429） ｜ tags: agents, factory, alias
 
-## api（20 case）
+## api（21 case）
 
 ### API-001. chat 会话生命周期 - 租户隔离 + 用户所有权 + 幂等/重开 🔵
 ```
@@ -318,6 +318,16 @@
 跳过: 模板套用由 MockMvc + Service 单测验证（KnowledgeTemplateControllerTest/KnowledgeTemplateServiceTest），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-09-08 新增（issue #3051 LLM WIKI 板块 P3）：行业模板体系——种子 Markdown 结构化迁移为 knowledge-templates/curtain/template.json（32 条），模板=平台资产，一键套用复制为租户词条 ｜ tags: api, knowledge, wiki, template
+
+### API-023. 知识派生对账 - 存量商品/加工项全量重建派生卡片（P2-1，issue #3051 收尾） 🔵
+```
+你: 管理端触发存量对账：历史商品/加工项无需逐个编辑即可补生成派生知识卡片
+数据: POST /api/admin/knowledge/derive/rebuild 全量重建派生卡片：返回 {products, processingItems} 统计
+数据: 同源（tenant+sourceType+sourceRef）upsert：已存在卡片更新 version+1，不重复插入
+数据: 对账为 P2 收尾：存量商品此前无派生卡片（验收发现 P2-1），商品变更仍实时自动触发（不回归）
+跳过: 对账逻辑由 Service 单测（KnowledgeDeriveServiceTest deriveAll）+ Controller MockMvc 测试验证，非 LLM 行为
+```
+溯源: 2026-09-09 新增（验收 P2-1 收尾）：设计 §七 承诺的存量对账入口补齐——此前仅商品变更触发，存量商品无派生卡片 ｜ tags: api, knowledge, wiki, derive
 
 ### API-018. 商品/配置派生知识卡片 - 价格区间自动生成 + 变更自动更新（LLM WIKI 板块 #3051 P4） 🔵
 ```
@@ -2925,11 +2935,11 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：239（活跃 119，跳过 120）
-- tier 分布：smoke 10 / normal 200 / adversarial 29
+- 用例总数：240（活跃 119，跳过 121）
+- tier 分布：smoke 10 / normal 201 / adversarial 29
 - 售后域：7
 - agents：6
-- api：20
+- api：21
 - bmini：5
 - 分类域：3
 - 对话边界域：32
@@ -2958,6 +2968,7 @@
 - API-015: 知识知识卡片 CRUD + 状态机 - 创建/编辑/发布/归档/删除（LLM WIKI 板块 #3051）
 - API-016: 知识知识卡片检索 - 仅 published + 租户隔离 + 关键词命中（LLM WIKI 板块 #3051）
 - API-017: 行业模板 - 目录 + 一键套用（去重 + source=template）（LLM WIKI 板块 #3051 P3）
+- API-023: 知识派生对账 - 存量商品/加工项全量重建派生卡片（P2-1，issue #3051 收尾）
 - API-018: 商品/配置派生知识卡片 - 价格区间自动生成 + 变更自动更新（LLM WIKI 板块 #3051 P4）
 - API-019: 待确认队列闭环 - 候选读+写路径齐全，采纳转卡片、拒绝记原因（LLM WIKI 板块 #3051 P5）
 - API-020: 会话提炼闭环 - 人工客服会话 → AI 提炼候选 → 待确认队列（LLM WIKI 板块 #3051 P5b）
