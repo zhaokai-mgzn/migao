@@ -2493,7 +2493,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## ui（32 case）
+## ui（33 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -2906,6 +2906,20 @@
 真值: frontend-fix.no-api-change
 溯源: 2026-09-08 新增：LLM 幻觉 <interact> XML 伪代码块剥离/解析（issue #3036） ｜ tags: ui, chat, interactive, xml, sanitize
 
+### UI-029. 知识库页 UI 修复：面包屑对齐菜单名 + 页面样式统一 + 分页不被米宝浮动按钮遮挡 + 模板套用/候选采纳后结果立即可见可编辑（#3070） 🔵
+```
+你: 知识库页面包屑应与侧边栏菜单一致叫「知识库」（非「知识库管理」）；页面样式与全局产品样式一致；右下角分页不被米宝浮动按钮遮挡；行业模板一键套用后套用出的卡片立即可见可编辑；待确认候选采纳后结果立即可见可编辑
+期望: direct_reply
+数据: Header 面包屑 /knowledge → 智能客服 / 知识库（与侧边栏菜单名一致，不再出现「知识库管理」）
+数据: 知识库页内容区 p-6 内边距、页面标题 text-xl text-neutral-900 + 副标题、Tab 高亮用 primary-600（非蓝色 border-blue-500）、筛选/表单控件带标准 focus 态（focus:border-primary-500 focus:ring-2）
+数据: dashboard 布局底部预留米宝浮动按钮（FAB）空间（main pb-24 + 内容卡片 min-h 联动），内容不足一屏时底部锚定元素（分页等）不被右下角浮动按钮遮挡、可正常点击
+数据: 行业模板一键套用后：跳转「知识卡片」Tab、重置筛选并刷新列表，套用出的卡片（published）立即可见且可编辑（打开编辑弹窗回填标题）
+数据: 待确认候选「采纳」后：跳转「知识卡片」Tab 并刷新列表，已发布卡片立即可见可编辑
+跳过: 纯前端样式/交互由 vitest 单测验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change, frontend-fix.vitest
+溯源: 2026-09-09 新增（issue #3070）：知识库页 UI 修复 — 面包屑对齐/样式统一/分页遮挡/模板套用与候选采纳结果可见性 ｜ tags: ui, knowledge, breadcrumb, pagination, admin-web
+
 ## utils（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -2935,8 +2949,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：240（活跃 119，跳过 121）
-- tier 分布：smoke 10 / normal 201 / adversarial 29
+- 用例总数：241（活跃 119，跳过 122）
+- tier 分布：smoke 10 / normal 202 / adversarial 29
 - 售后域：7
 - agents：6
 - api：21
@@ -2959,7 +2973,7 @@
 - registry：1
 - 设置域：10
 - token-refresh：4
-- ui：32
+- ui：33
 - utils：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）

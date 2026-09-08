@@ -1,4 +1,4 @@
-// case_ids: UI-005
+// case_ids: UI-005, UI-029
 /**
  * Header 组件测试
  *
@@ -358,7 +358,8 @@ describe('Header', () => {
       render(<Header />)
     })
     expect(screen.getByText('智能客服')).toBeInTheDocument()
-    expect(screen.getByText('知识库管理')).toBeInTheDocument()
+    expect(screen.getByText('知识库')).toBeInTheDocument()
+    expect(screen.queryByText('知识库管理')).not.toBeInTheDocument()
   })
 
   it('/after-sales 路径面包屑', async () => {
