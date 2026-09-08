@@ -977,3 +977,99 @@ cases:
         - "frontend/admin-web/tests/unit/components/SessionList.test.tsx"
       ci: []
       verifies: []
+
+  - id: CH-030
+    legacy_id: ""
+    title: "C 端交互组件提交锁（防重复提交）—— confirm/choice/form 点选/提交后本地锁卡，已答消息携带 interactiveAnswered，历史回放后不复活"
+    domains:
+      - chat
+      - frontend
+    tier: normal
+    tags:
+      - interactive
+      - submit-lock
+      - customer-end
+      - freeze
+    persona: xiaobu
+    truths_ref: []
+    user_inputs:
+      - "C 端小布（mini-app/bmini-app）interact 交互组件（confirm/choice/form）点选后无任何提交锁：ConfirmCard/ChoiceCard/FormCard 点几次就触发几次 onAction（可重复下单/重复确认），与 B 端 #3036 同源不固化"
+    expectations:
+      - "点在响应中的应用：用户回复后 sendMessage 把最后一条未答 interactive 消息标记 interactiveAnswered（本地即时锁），后端已由 #3037 持久化"
+    data_checks:
+      - "frontend/mini-app 与 frontend/bmini-app 的 ConfirmCard/ChoiceCard/FormCard 点确认/选项/提交后锁卡（submitted 本地锁 + disabled 视觉），第二次点击不再触发 onAction"
+      - "mini-app/bmini-app types Message 含 interactiveAnswered 字段；chatStore sendMessage 发送时把最后一条未答 interactive 消息标记 interactiveAnswered"
+      - "历史回放（getSessionMessages 透传 interactive_answered）后已答卡片保持只读不可点"
+      - "翻页等同答复：#3037 后端 __PAGE__ 路径已 mark_last_interactive_answered，前端翻页后旧页卡片不再可交互"
+    skip_reason: "纯前端行为由 jest 单测（confirm-card/choice-card/form-card/chatStore）验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-08 新增：C 端交互组件提交锁与只读变体（issue #3038）"
+    traces:
+      tests:
+        - "frontend/mini-app/tests/confirm-card.test.tsx"
+        - "frontend/mini-app/tests/choice-card.test.tsx"
+        - "frontend/mini-app/tests/form-card.test.tsx"
+        - "frontend/mini-app/tests/store-chat.test.ts"
+      ci: []
+      verifies: []
+
+  - id: CH-031
+    legacy_id: ""
+    title: "C 端交互组件历史回放透传—— getSessionMessages 映射透传 interactive/interactive_answered，刷新/切会话后已答卡片只读呈现而非消失"
+    domains:
+      - chat
+      - frontend
+    tier: normal
+    tags:
+      - interactive
+      - history
+      - persistence
+      - customer-end
+      - freeze
+    persona: xiaobu
+    truths_ref: []
+    user_inputs:
+      - "C 端小布历史消息映射（mini-app/bmini-app services/chatService.ts getSessionMessages）丢弃 interactive 与 interactive_answered → 刷新后交互组件整体消失只剩文本（#3036 同源；后端 #3037 已返回 interactive 字段，仅前端映射未透传）"
+    expectations:
+      - "历史回放后 interactive 组件按三态渲染：未答 → 可交互；已答 → 只读变体"
+    data_checks:
+      - "frontend/mini-app 与 frontend/bmini-app 的 getSessionMessages 映射返回 message 包含 interactive（原样）与 interactiveAnswered（由 interactive_answered 转换）"
+      - "loadMessages 落库后交互组件不消失：未答交互历史回放后仍可点击"
+      - "detectPendingInteraction 能力对齐：历史回放后未答交互可被识别（模型透传 interactive 字段）"
+    skip_reason: "纯前端映射由 jest 单测（chatService/chatStore）验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-08 新增：C 端交互组件历史回放透传（issue #3038）"
+    traces:
+      tests:
+        - "frontend/mini-app/tests/store-chat.test.ts"
+      ci: []
+      verifies: []
+
+  - id: CH-032
+    legacy_id: ""
+    title: "C 端交互组件流式门控 + XML 伪代码兜底剥离—— 流式期间交互组件隐藏（防闪烁/防误点），历史残留 <interact>/```tool_call 伪代码块不展示"
+    domains:
+      - chat
+      - frontend
+    tier: normal
+    tags:
+      - interactive
+      - streaming
+      - sanitize
+      - customer-end
+      - freeze
+    persona: xiaobu
+    truths_ref: []
+    user_inputs:
+      - "C 端 MessageBubble 流式期间渲染 interactive 无 isStreaming 门控（流式中点击被 sendMessage 静默丢弃，体验不确定）；且无 <interact> 或 ```tool_call 伪代码块兜底剥离（后端 #3037 已实时剥离，但历史残留消息仍可能带 XML）"
+    expectations:
+      - "渲染固定：流式中隐藏、结束后按 interactiveAnswered 三态渲染；原始伪代码永远不展示"
+    data_checks:
+      - "frontend/mini-app 与 frontend/bmini-app 的 MessageBubble 渲染交互组件前检查 isStreaming（流式中不渲染交互组件，避免闪烁与误点）"
+      - "MessageBubble 文本内容剥离 <interact>…</interact> 与 ```tool_call 伪代码块（与 admin-web cleanContent 对齐）"
+      - "正常路径（SSE interactive 事件）不回退：choice/confirm/form 仍渲染为对应交互组件"
+    skip_reason: "纯前端渲染由 jest 单测（message-bubble）验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-09-08 新增：C 端交互组件流式门控 + XML 兜底剥离（issue #3038）"
+    traces:
+      tests:
+        - "frontend/mini-app/tests/message-bubble.test.tsx"
+      ci: []
+      verifies: []

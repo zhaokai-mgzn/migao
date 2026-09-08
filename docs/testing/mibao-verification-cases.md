@@ -392,7 +392,7 @@
 真值: category-manage.delete, category-manage.delete-destructive, ai-chat.confirm-required
 溯源: verification 2.12 独有（二次确认行为在测试中未确认，见 category-manage.yml 缺口注释） ｜ tags: delete, destructive, confirm
 
-## 对话边界域（29 case）
+## 对话边界域（32 case）
 
 ### CH-001. 空结果 + suggestion 引导修复 🔴
 ```
@@ -778,6 +778,40 @@
 ```
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
 溯源: issue #2906：#2901 修复（liveMessage 单缓冲）仍假设全局单并发流。重构为 messageStore（每会话快照）+ streams（每会话在途流）+ withView 投影（messages/isStreaming 兼容）：sendMessage 只挡当前会话、SSE 按归属流写入、stopStreaming 只停当前、轮换迁移流与快照、SessionList 显示每会话等待动效。truths_ref 置空：纯前端状态用例，真值库为后端 agent 行为，无对应真值（标缺口）。 ｜ tags: streaming, sse, multi_session, concurrency, frontend
+
+### CH-030. C 端交互组件提交锁（防重复提交）—— confirm/choice/form 点选/提交后本地锁卡，已答消息携带 interactiveAnswered，历史回放后不复活 🔵
+```
+你: C 端小布（mini-app/bmini-app）interact 交互组件（confirm/choice/form）点选后无任何提交锁：ConfirmCard/ChoiceCard/FormCard 点几次就触发几次 onAction（可重复下单/重复确认），与 B 端 #3036 同源不固化
+期望: 点在响应中的应用：用户回复后 sendMessage 把最后一条未答 interactive 消息标记 interactiveAnswered（本地即时锁），后端已由 #3037 持久化
+数据: frontend/mini-app 与 frontend/bmini-app 的 ConfirmCard/ChoiceCard/FormCard 点确认/选项/提交后锁卡（submitted 本地锁 + disabled 视觉），第二次点击不再触发 onAction
+数据: mini-app/bmini-app types Message 含 interactiveAnswered 字段；chatStore sendMessage 发送时把最后一条未答 interactive 消息标记 interactiveAnswered
+数据: 历史回放（getSessionMessages 透传 interactive_answered）后已答卡片保持只读不可点
+数据: 翻页等同答复：#3037 后端 __PAGE__ 路径已 mark_last_interactive_answered，前端翻页后旧页卡片不再可交互
+跳过: 纯前端行为由 jest 单测（confirm-card/choice-card/form-card/chatStore）验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-08 新增：C 端交互组件提交锁与只读变体（issue #3038） ｜ tags: interactive, submit-lock, customer-end, freeze
+
+### CH-031. C 端交互组件历史回放透传—— getSessionMessages 映射透传 interactive/interactive_answered，刷新/切会话后已答卡片只读呈现而非消失 🔵
+```
+你: C 端小布历史消息映射（mini-app/bmini-app services/chatService.ts getSessionMessages）丢弃 interactive 与 interactive_answered → 刷新后交互组件整体消失只剩文本（#3036 同源；后端 #3037 已返回 interactive 字段，仅前端映射未透传）
+期望: 历史回放后 interactive 组件按三态渲染：未答 → 可交互；已答 → 只读变体
+数据: frontend/mini-app 与 frontend/bmini-app 的 getSessionMessages 映射返回 message 包含 interactive（原样）与 interactiveAnswered（由 interactive_answered 转换）
+数据: loadMessages 落库后交互组件不消失：未答交互历史回放后仍可点击
+数据: detectPendingInteraction 能力对齐：历史回放后未答交互可被识别（模型透传 interactive 字段）
+跳过: 纯前端映射由 jest 单测（chatService/chatStore）验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-08 新增：C 端交互组件历史回放透传（issue #3038） ｜ tags: interactive, history, persistence, customer-end, freeze
+
+### CH-032. C 端交互组件流式门控 + XML 伪代码兜底剥离—— 流式期间交互组件隐藏（防闪烁/防误点），历史残留 <interact>/```tool_call 伪代码块不展示 🔵
+```
+你: C 端 MessageBubble 流式期间渲染 interactive 无 isStreaming 门控（流式中点击被 sendMessage 静默丢弃，体验不确定）；且无 <interact> 或 ```tool_call 伪代码块兜底剥离（后端 #3037 已实时剥离，但历史残留消息仍可能带 XML）
+期望: 渲染固定：流式中隐藏、结束后按 interactiveAnswered 三态渲染；原始伪代码永远不展示
+数据: frontend/mini-app 与 frontend/bmini-app 的 MessageBubble 渲染交互组件前检查 isStreaming（流式中不渲染交互组件，避免闪烁与误点）
+数据: MessageBubble 文本内容剥离 <interact>…</interact> 与 ```tool_call 伪代码块（与 admin-web cleanContent 对齐）
+数据: 正常路径（SSE interactive 事件）不回退：choice/confirm/form 仍渲染为对应交互组件
+跳过: 纯前端渲染由 jest 单测（message-bubble）验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-09-08 新增：C 端交互组件流式门控 + XML 兜底剥离（issue #3038） ｜ tags: interactive, streaming, sanitize, customer-end, freeze
 
 ## 跨域（3 case）
 
@@ -2730,14 +2764,14 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：221（活跃 114，跳过 107）
-- tier 分布：smoke 8 / normal 184 / adversarial 29
+- 用例总数：224（活跃 114，跳过 110）
+- tier 分布：smoke 8 / normal 187 / adversarial 29
 - 售后域：7
 - agents：6
 - api：12
 - bmini：5
 - 分类域：3
-- 对话边界域：29
+- 对话边界域：32
 - 跨域：3
 - 客户域：6
 - 数据域：7
@@ -2760,5 +2794,8 @@
 - API-012: 语音转写接口容错 - 空/极小/静音音频返回友好 4xx/5xx，不裸 500（#2984）
 - CH-027: 流式回复中切换会话再切回 - 等待状态与最终回复保留（issue #2901）
 - CH-028: 多会话并发流 - 会话 A 回复中 B 可发送，增量/停止互不干扰（issue #2906）
+- CH-030: C 端交互组件提交锁（防重复提交）—— confirm/choice/form 点选/提交后本地锁卡，已答消息携带 interactiveAnswered，历史回放后不复活
+- CH-031: C 端交互组件历史回放透传—— getSessionMessages 映射透传 interactive/interactive_answered，刷新/切会话后已答卡片只读呈现而非消失
+- CH-032: C 端交互组件流式门控 + XML 伪代码兜底剥离—— 流式期间交互组件隐藏（防闪烁/防误点），历史残留 <interact>/```tool_call 伪代码块不展示
 - MC-012: CI 失败报告去重 - 同日同标题 open issue 存在时不重复建
 

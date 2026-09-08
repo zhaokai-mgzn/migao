@@ -6,6 +6,8 @@ import './FormCard.scss'
 interface FormCardProps {
   data: InteractiveData
   onAction: (value: string) => void
+  /** 只读（已答复/历史回放）：输入与提交均禁用，防重复提交（issue #3038 CH-030） */
+  disabled?: boolean
 }
 
 /** 字段值集合：field.key -> 用户输入 */
@@ -57,7 +59,7 @@ function validateField(key: string, label: string, value: string, required: bool
  * - 提交前本地校验（必填/手机号/数字），错误不发送
  * - 地址字段用多行输入，防超长粘贴（maxlength 200）
  */
-export default function FormCard({ data, onAction }: FormCardProps) {
+export default function FormCard({ data, onAction, disabled }: FormCardProps) {
   const fields = data.formFields || []
   const [values, setValues] = useState<FieldValues>(() => {
     const init: FieldValues = {}
@@ -66,8 +68,10 @@ export default function FormCard({ data, onAction }: FormCardProps) {
   })
   const [errors, setErrors] = useState<FieldErrors>({})
   const [submitting, setSubmitting] = useState(false)
+  const locked = disabled || submitting
 
   const handleChange = (key: string, value: string) => {
+    if (locked) return
     setValues((prev) => ({ ...prev, [key]: value }))
     // 输入变化时清除该字段错误
     setErrors((prev) => {
@@ -79,7 +83,7 @@ export default function FormCard({ data, onAction }: FormCardProps) {
   }
 
   const handleSubmit = () => {
-    if (submitting) return
+    if (locked) return
     // 全量校验：任一错误则不提交
     const errs: FieldErrors = {}
     for (const f of fields) {
@@ -89,14 +93,9 @@ export default function FormCard({ data, onAction }: FormCardProps) {
     setErrors(errs)
     if (Object.keys(errs).length > 0) return
 
+    // 提交锁：提交后保持锁卡（消息已发出，卡片保留展示防重复提交，issue #3038 CH-030）
     setSubmitting(true)
-    try {
-      const payload = JSON.stringify(values)
-      onAction(`__FORM__|${payload}`)
-    } finally {
-      // 提交后不重置 submitting（消息已发出，卡片保留展示）
-      setSubmitting(false)
-    }
+    onAction(`__FORM__|${JSON.stringify(values)}`)
   }
 
   return (
@@ -147,17 +146,21 @@ export default function FormCard({ data, onAction }: FormCardProps) {
 
       <View className='form-card__actions'>
         <View
-          className='form-card__submit'
+          className={`form-card__submit${locked ? ' form-card__submit--locked' : ''}`}
           onClick={handleSubmit}
-          hoverClass='form-card__submit--hover'
+          hoverClass={locked ? undefined : 'form-card__submit--hover'}
         >
           <Text className='form-card__submit-text'>{data.submitLabel || '提交'}</Text>
         </View>
         {data.cancelLabel && (
           <View
-            className='form-card__cancel'
-            onClick={() => onAction(data.cancelValue || '取消')}
-            hoverClass='form-card__cancel--hover'
+            className={`form-card__cancel${locked ? ' form-card__cancel--locked' : ''}`}
+            onClick={() => {
+              if (locked) return
+              setSubmitting(true)
+              onAction(data.cancelValue || '取消')
+            }}
+            hoverClass={locked ? undefined : 'form-card__cancel--hover'}
           >
             <Text className='form-card__cancel-text'>{data.cancelLabel}</Text>
           </View>

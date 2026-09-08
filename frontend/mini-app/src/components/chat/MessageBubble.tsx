@@ -149,14 +149,19 @@ function renderSingleCard(cardData: CardData, onInteract?: (value: string) => vo
   )
 }
 
-/** 渲染交互式组件（confirm/choice/form） */
-function renderInteractive(interactive: InteractiveData, onInteract?: (value: string) => void) {
+/** 渲染交互式组件（confirm/choice/form）—— disabled（已答复/历史回放）时只读锁卡（issue #3038 CH-030） */
+function renderInteractive(
+  interactive: InteractiveData,
+  onInteract?: (value: string) => void,
+  disabled?: boolean,
+) {
   switch (interactive.type) {
     case 'confirm':
       return (
         <ConfirmCard
           data={interactive}
           onAction={(value) => onInteract?.(value)}
+          disabled={disabled}
         />
       )
     case 'choice':
@@ -164,6 +169,7 @@ function renderInteractive(interactive: InteractiveData, onInteract?: (value: st
         <ChoiceCard
           data={interactive}
           onAction={(value) => onInteract?.(value)}
+          disabled={disabled}
         />
       )
     case 'form':
@@ -171,6 +177,7 @@ function renderInteractive(interactive: InteractiveData, onInteract?: (value: st
         <FormCard
           data={interactive}
           onAction={(value) => onInteract?.(value)}
+          disabled={disabled}
         />
       )
     default:
@@ -182,9 +189,19 @@ export default function MessageBubble({ message, onInteract }: MessageBubbleProp
   const {
     role, content, isStreaming, cards, cardData,
     type, created_at, images, interactive, suggestions,
+    interactiveAnswered,
   } = message
 
   const timeStr = useMemo(() => formatTime(created_at), [created_at])
+
+  // 兜底剥离 LLM 幻觉伪代码块（issue #3038 / CH-032）：后端已实时剥离，
+  // 此处兜底历史残留 —— <interact>…</interact> XML 与 ```tool_call 代码块
+  const cleanContent = useMemo(
+    () => (content || '')
+      .replace(/<interact>[\s\S]*?<\/interact>/g, '')
+      .replace(/```tool_call[\s\S]*?```/g, ''),
+    [content],
+  )
 
   const handlePreviewImage = useCallback((current: string) => {
     if (images?.length) {
@@ -221,7 +238,7 @@ export default function MessageBubble({ message, onInteract }: MessageBubbleProp
         {content && (
           <View className='message-bubble__content'>
             <Text className='message-bubble__text'>
-              {content}
+              {cleanContent}
               {isStreaming && <Text className='message-bubble__cursor'>|</Text>}
             </Text>
           </View>
@@ -251,8 +268,13 @@ export default function MessageBubble({ message, onInteract }: MessageBubbleProp
         {/* 卡片区域 - 单个 cardData（兼容） */}
         {!cards?.length && cardData && renderSingleCard(cardData, onInteract)}
 
-        {/* 交互式组件（confirm 等） */}
-        {interactive && renderInteractive(interactive, onInteract)}
+        {/* 交互式组件（confirm 等）—— 流式进行中不渲染（防闪烁/防误点，CH-032）；
+            已答复（interactiveAnswered/历史回放）→ 只读锁卡（CH-030） */}
+        {interactive && !isStreaming && renderInteractive(
+          interactive,
+          onInteract,
+          interactiveAnswered,
+        )}
 
         {/* 建议追问 chips */}
         {suggestions && suggestions.length > 0 && onInteract && (

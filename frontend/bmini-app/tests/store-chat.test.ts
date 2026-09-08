@@ -3,7 +3,7 @@
  *
  * 覆盖: 会话管理(创建/加载/删除/选择)、消息管理、流式状态
  */
-// case_ids: UI-013
+// case_ids: UI-013, CH-030, CH-031
 
 // Mock chatService
 jest.mock('../src/services/chatService', () => ({
@@ -337,5 +337,91 @@ describe('转人工轮询映射（GB-02, issue #2780）', () => {
     // 清理轮询定时器，避免 open handle
     const timer = (store.getState() as any)._agentPollTimer
     if (timer) clearInterval(timer)
+  })
+})
+
+describe('历史回放透传 + 交互组件本地锁（CH-030/CH-031, issue #3038）', () => {
+  beforeEach(() => {
+    jest.clearAllMocks()
+  })
+
+  it('selectSession 历史回放透传 interactive 与 interactive_answered（已答卡片不消失）', async () => {
+    const store = getChatStore()
+    // getChatStore() 内部 jest.resetModules()，须在其后 require 获取当前 mock 实例
+    const { getSessionMessages } = require('../src/services/chatService')
+    const interactive = {
+      type: 'confirm',
+      component: 'confirm',
+      title: '确认订单信息',
+      fields: [{ label: '商品', value: '窗帘' }],
+    }
+    // 注释：mock 返回映射后的最终形态（interactive/interactiveAnswered）；
+    // 后端 interactive_answered → interactiveAnswered 的映射转换由
+    // api-integration.test.ts（真实 getSessionMessages）覆盖
+    getSessionMessages.mockResolvedValueOnce([
+      {
+        id: 'm1', role: 'user', content: '确认', created_at: '2024-01-01T00:00:00Z',
+      },
+      {
+        id: 'm2', role: 'assistant', content: '请确认订单信息', created_at: '2024-01-01T00:00:01Z',
+        interactive,
+        interactiveAnswered: true,
+      },
+    ])
+    await store.getState().selectSession('s1')
+
+    const aiMsg = store.getState().messages.find((m: any) => m.id === 'm2')
+    expect(aiMsg?.interactive).toEqual(interactive)
+    expect(aiMsg?.interactiveAnswered).toBe(true)
+  })
+
+  it('未答交互历史回放后 interactiveAnswered=false（保持可交互）', async () => {
+    const store = getChatStore()
+    const { getSessionMessages } = require('../src/services/chatService')
+    const interactive = {
+      type: 'choice',
+      component: 'choice',
+      title: '请选择加工项',
+      options: [{ label: '打孔加工', value: 'pi_hole' }],
+    }
+    getSessionMessages.mockResolvedValueOnce([
+      {
+        id: 'm2', role: 'assistant', content: '请选择加工项', created_at: '2024-01-01T00:00:00Z',
+        interactive,
+        interactiveAnswered: false,
+      },
+    ])
+    await store.getState().selectSession('s1')
+
+    const aiMsg = store.getState().messages.find((m: any) => m.id === 'm2')
+    expect(aiMsg?.interactive).toEqual(interactive)
+    expect(aiMsg?.interactiveAnswered).toBe(false)
+  })
+
+  it('sendMessage 后上一条未答交互组件标记 interactiveAnswered（本地即时锁）', async () => {
+    const store = getChatStore()
+    const interactive = {
+      type: 'confirm',
+      component: 'confirm',
+      title: '确认订单信息',
+      fields: [{ label: '商品', value: '窗帘' }],
+    }
+    store.setState({
+      currentSessionId: 's1',
+      messages: [
+        {
+          id: 'm1', role: 'assistant', content: '请确认订单信息',
+          created_at: '2024-01-01T00:00:00Z', interactive,
+        },
+      ],
+      isStreaming: false,
+    })
+    const { createChatSSEClient } = require('../src/services/chatService')
+    createChatSSEClient.mockReturnValue({ sendMessage: jest.fn() })
+
+    await store.getState().sendMessage('确认下单')
+
+    const aiMsg = store.getState().messages.find((m: any) => m.id === 'm1')
+    expect(aiMsg?.interactiveAnswered).toBe(true)
   })
 })
