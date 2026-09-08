@@ -64,6 +64,39 @@ class TestTruncateConversation:
 
 class TestDistill:
     @pytest.mark.asyncio
+    async def test_document_mode_uses_document_prompt(self):
+        """文档模式（mode=document）：使用文档提炼 prompt，且能产出候选（P1-1 修复，issue #3063）"""
+        mock_llm = MagicMock()
+        mock_llm.ainvoke = AsyncMock(return_value=MagicMock(content='''[
+          {"title": "本店退换货政策是什么", "answer": "成品窗帘7天内未使用可无理由退换；定制窗帘不支持无理由退换，但色差明显、尺寸误差超2厘米、质量问题可免费处理。", "category": "aftersale", "keywords": "退换货,政策", "confidence": 0.95, "evidence": "文档原文：成品窗帘7天内未使用可无理由退换"}
+        ]'''))
+        captured = {}
+        async def fake_ainvoke(messages):
+            captured["prompt"] = messages[0].content
+            return MagicMock(content='''[
+              {"title": "本店退换货政策是什么", "answer": "成品窗帘7天内未使用可无理由退换；定制窗帘不支持无理由退换。", "category": "aftersale", "keywords": "退换货", "confidence": 0.95, "evidence": "文档原文"}
+            ]''')
+        mock_llm.ainvoke = fake_ainvoke
+        with patch("app.knowledge.distill.LLMFactory.create_suggestion_llm", return_value=mock_llm):
+            result = await distill("本店窗帘验收标准：成品窗帘7天内未使用可无理由退换，运费买家承担。", max_candidates=5, mode="document")
+        assert len(result) == 1, f"文档模式应产出候选，实际 {len(result)}"
+        assert result[0]["title"] == "本店退换货政策是什么"
+        assert "店铺资料文档" in captured["prompt"], "文档模式应使用文档提炼 prompt（而非对话问答对 prompt）"
+
+    @pytest.mark.asyncio
+    async def test_conversation_mode_default(self):
+        """缺省 mode=conversation：使用对话问答对 prompt（不回归）"""
+        mock_llm = MagicMock()
+        captured = {}
+        async def fake_ainvoke(messages):
+            captured["prompt"] = messages[0].content
+            return MagicMock(content="[]")
+        mock_llm.ainvoke = fake_ainvoke
+        with patch("app.knowledge.distill.LLMFactory.create_suggestion_llm", return_value=mock_llm):
+            await distill("顾客：多久洗一次？客服：建议每3-6个月。")
+        assert "顾客与客服的真实对话" in captured["prompt"], "对话模式应使用对话 prompt"
+
+    @pytest.mark.asyncio
     async def test_success(self):
         mock_llm = MagicMock()
         mock_llm.ainvoke = AsyncMock(return_value=MagicMock(content=GOOD_JSON))
@@ -100,7 +133,7 @@ async def test_internal_endpoint_distill(monkeypatch):
     from app.api.internal import distill_knowledge
     from app.api.internal import KnowledgeDistillRequest
 
-    async def fake_distill(text, max_candidates=5):
+    async def fake_distill(text, max_candidates=5, mode="conversation"):
         return [{"title": "t", "answer": "a", "category": "faq", "keywords": "", "confidence": 0.9, "evidence": "e"}]
 
     monkeypatch.setattr("app.api.internal.distill", fake_distill)

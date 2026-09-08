@@ -168,3 +168,32 @@ class TestMatch:
         result = self._match("打孔帘 2.7米高 报价")
         assert result is not None
         assert result.intent == IntentType.QUOTE
+
+    # ── 售后政策类知识咨询（issue #3064 验收 P1-2：双端「退换货政策」未走知识卡片）──
+    def test_return_policy_inquiry_routes_to_knowledge_faq(self):
+        # 验收实测失败场景：小布/米宝问退换货政策 → 规则判 after_sales → 未调 knowledge_search
+        result = self._match("你们退换货政策是怎样的？")
+        assert result is not None
+        assert result.intent == IntentType.KNOWLEDGE_FAQ
+
+    def test_store_return_policy_inquiry_routes_to_knowledge_faq(self):
+        result = self._match("我们店的退换货政策是什么")
+        assert result is not None
+        assert result.intent == IntentType.KNOWLEDGE_FAQ
+
+    def test_aftersales_policy_inquiry_routes_to_knowledge_faq(self):
+        result = self._match("售后政策是什么？")
+        assert result is not None
+        assert result.intent == IntentType.KNOWLEDGE_FAQ
+
+    def test_warranty_inquiry_routes_to_knowledge_faq(self):
+        result = self._match("窗帘质保多久？")
+        assert result is not None
+        assert result.intent == IntentType.KNOWLEDGE_FAQ
+
+    def test_aftersales_operation_still_routes_to_after_sales(self):
+        # 操作类不回归：无政策咨询词 → 仍售后工单
+        for msg in ["我要退货", "帮我退款", "看看售后工单", "申请换货"]:
+            result = self._match(msg)
+            assert result is not None, f"{msg} 应命中"
+            assert result.intent == IntentType.AFTER_SALES, f"{msg} 应判售后操作而非知识咨询"

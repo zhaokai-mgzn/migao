@@ -33,6 +33,21 @@ DISTILL_SYSTEM_PROMPT = """你是电商客服经验萃取助手。给你一段�
 最多输出 {max_candidates} 条。"""
 
 
+DISTILL_DOCUMENT_SYSTEM_PROMPT = """你是电商知识库整理助手。给你一份店铺资料文档，请提炼出值得沉淀为知识卡片的内容（FAQ 条目）。
+
+提炼规则：
+1. 把文档中的关键知识点提炼为「问题 → 标准回答」条目，每条一个独立知识点
+2. 回答保留关键事实（价格、周期、政策、参数、规则等），删掉冗余，控制在 100 字以内
+3. 不得编造文档中不存在的店铺事实
+4. 置信度：0~1，文档明确给出的事实给 0.9+，推断或含糊给 0.7 以下
+5. evidence：引用文档原文片段佐证
+6. category 取值：faq / product / measure / aftersale / config
+
+输出格式（严格 JSON 数组，不要输出其他文字）：
+[{{"title": "问题标题", "answer": "标准回答", "category": "aftersale", "keywords": "关键词,逗号,分隔", "confidence": 0.9, "evidence": "文档原文佐证"}}]
+最多输出 {max_candidates} 条。"""
+
+
 def _extract_json_array(text: str) -> Optional[List[dict]]:
     """从 LLM 输出中容错抽取 JSON 数组。"""
     if not text:
@@ -97,14 +112,20 @@ def _truncate_conversation(conversation_text: str) -> str:
     return head + "\n……（中间省略）……\n" + tail
 
 
-async def distill(conversation_text: str, max_candidates: int = MAX_CANDIDATES) -> List[dict]:
-    """提炼会话 → 候选知识卡片列表（异常降级返回空列表，不阻断调用方）。"""
+async def distill(conversation_text: str, max_candidates: int = MAX_CANDIDATES, mode: str = "conversation") -> List[dict]:
+    """提炼文本 → 候选知识卡片列表（异常降级返回空列表，不阻断调用方）。
+
+    mode: conversation=客服对话问答对提炼；document=店铺资料文档→FAQ 条目提炼（issue #3063 P1-1）。
+    """
     text = _truncate_conversation(conversation_text or "")
     if not text.strip():
         return []
     try:
         llm = LLMFactory.create_suggestion_llm()
-        prompt = f"{DISTILL_SYSTEM_PROMPT.format(max_candidates=max_candidates)}\n\n<对话开始>\n{text}\n<对话结束>"
+        if mode == "document":
+            prompt = f"{DISTILL_DOCUMENT_SYSTEM_PROMPT.format(max_candidates=max_candidates)}\n\n<文档内容>\n{text}\n<文档结束>"
+        else:
+            prompt = f"{DISTILL_SYSTEM_PROMPT.format(max_candidates=max_candidates)}\n\n<对话开始>\n{text}\n<对话结束>"
         from langchain_core.messages import HumanMessage
         response = await llm.ainvoke([HumanMessage(content=prompt)])
         content = response.content if isinstance(response.content, str) else ""

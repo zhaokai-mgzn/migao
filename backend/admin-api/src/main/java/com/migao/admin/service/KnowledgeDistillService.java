@@ -66,7 +66,7 @@ public class KnowledgeDistillService {
             if (!StringUtils.hasText(conversationText)) {
                 continue;
             }
-            List<JsonNode> distilled = distillClient.distill(conversationText, MAX_PER_SESSION, tenantId);
+            List<JsonNode> distilled = distillClient.distill(conversationText, MAX_PER_SESSION, tenantId, "conversation");
             for (JsonNode c : distilled) {
                 String title = c.path("title").asText("");
                 String answer = c.path("answer").asText("");
@@ -112,7 +112,7 @@ public class KnowledgeDistillService {
             throw BusinessException.validationError("文档内容过短（至少 50 字），无法提炼");
         }
         String text = content.length() > 8000 ? content.substring(0, 8000) : content;
-        List<JsonNode> distilled = distillClient.distill(text, MAX_PER_SESSION, tenantId);
+        List<JsonNode> distilled = distillClient.distill(text, MAX_PER_SESSION, tenantId, "document");
         int candidates = 0;
         int created = 0;
         int skipped = 0;
