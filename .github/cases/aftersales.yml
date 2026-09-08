@@ -214,7 +214,8 @@ cases:
       - processing_item
       - guided_flow
     truths_ref:
-      - aftersales.flow
+      - aftersales-flow.agent-create
+      - aftersales-flow.flow
     user_inputs:
       - "面料有瑕疵，帮我换货，换成2699系列雪尼尔窗帘面料"
     expectations:
